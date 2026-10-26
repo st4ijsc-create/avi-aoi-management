@@ -67,6 +67,16 @@ Ràng buộc giữ nguyên (không đổi bởi spec này): `AI_OT_CONTROL_ENABL
 - Nút "Nhờ AI ngoài kiểm định" trên câu trả lời chat và trên diff của AICodingWorkspace / lượt agent (cùng hợp đồng, người bấm).
 - Model ngoài chọn trực tiếp trong ô chọn A3 (Q4) — cùng hàng rào B3.
 
+**B6. Bổ sung bắt buộc sau rà độc lập của kiem-dinh (2026-10-26, dieu-phoi duyệt nguyên khối):**
+- **Bộ che hiện có KHÔNG đủ (đã đo):** `redactSecretsAndPII` (`aiSafety.ts:303`) không che JSON có khoá trong nháy, IP nội bộ, `user=`, MAC, tên khách; lách được bằng ký tự rộng-0 / chữ tách ⇒ bộ che MỚI duyệt cấu trúc JSON (che theo tên khoá + giá trị), chuẩn hoá NFKC + bỏ ký tự rộng-0; vector test gồm khoá mẫu đúng định dạng 4 nhà cung cấp; MỘT điểm che sau khi lắp xong toàn bộ yêu cầu (system, lịch sử, kết quả tool, schema, tên tệp); ảnh / tệp đính kèm cấm với model ngoài; che cả lời lỗi nhà cung cấp.
+- **`aiApiKeys`** thiếu factoryId, enum thiếu anthropic/gemini, còn hàng mã hoá 'legacy' ⇒ factoryId NOT NULL, hàng cũ inactive / nhập lại.
+- **Nhãn "dữ liệu vận hành" là taint theo item** truyền qua Set / Code / biểu thức `{{ }}` (mơ hồ ⇒ vận hành), không do node tự khai. `ai.agent` + model ngoài: phân loại từng lượt, loại MỌI tool ghi / điều khiển, phản hồi ngoài là UNTRUSTED với node sau.
+- **Phạm vi:** khoá / cờ / trần theo nhà máy của CHỦ LUỒNG; luồng toàn cục ⇒ từ chối model ngoài; "auto" không bao giờ chọn model ngoài; kiểm cờ lúc GỌI; bật luồng có node ngoài ⇒ duyệt SoD + ghim phiên bản.
+- **URL tương thích OpenAI:** https với host công cộng; nội bộ chỉ khi khai rõ host:cổng; metadata / link-local luôn cấm; chuẩn hoá hostname; vô hiệu proxy env; không theo chuyển hướng.
+- **B4 chỉ là rào chống NHẦM**, không chống người có quyền sửa luồng: danh sách chặn mở rộng được (gồm aggregator + host tương thích đã khai), áp lúc lưu VÀ lúc gọi, gồm cả MCP / email / webhook.
+- **Trần chi phí đặt-trước nguyên tử** (giữ chỗ rồi kết toán), retry vẫn tính, model không bảng giá ⇒ trần token / số lần, DB đếm hỏng ⇒ từ chối. Sổ WORM: hàng ý định TRƯỚC + hàng kết quả SAU; ghi sổ lỗi ⇒ không gọi.
+- Thứ tự lô 10.3: bộ che + vector → cổng + sổ + trần (nhà cung cấp giả) → khoá / phạm vi → nhà cung cấp thật → B4.
+
 ## 6. Phần C — Bài học (Q3 = đề xuất → người duyệt)
 
 **C1. Hàng chờ.** `baiHocDeXuat` của B5 vào bảng `ai_lesson_proposals` (nguồn: lượt kiểm định nào, nhà cung cấp, model; nội dung đã che; phạm vi đề xuất: người / dự án / **nhà máy**). Không bài nào tự áp dụng.

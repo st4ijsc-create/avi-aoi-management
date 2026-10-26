@@ -28,6 +28,7 @@
 
 import { scanForInjection, scanUntrustedContent, type InjectionRisk } from "../../../shared/quetMenhLenh";
 import { RE_TOKEN_CO_TIEN_TO, RE_TOKEN_CO_TIEN_TO_DANG_GO } from "../../../shared/mauBiMat";
+import { cheChuoiKetNoi, cheEmail, chePem } from "./cheTuyenTinh";
 
 // Kiểu + bộ quét mệnh lệnh sống ở `shared/quetMenhLenh.ts` (nguyên văn, thuần) — xuất lại để người gọi cũ không đổi.
 export type { InjectionRisk, InjectionScanResult } from "../../../shared/quetMenhLenh";
@@ -180,6 +181,12 @@ interface RedactPattern {
    *   che, nên người đọc log mất luôn manh mối chẩn đoán.
    */
   giuNhan?: true;
+  /**
+   * ★★★ Kiểm định 2026-10-26 — phép che TUYẾN TÍNH thay cho `re` (regex gốc giữ lại làm tài liệu / chuẩn đối chiếu của lưới
+   * `cheTuyenTinh.test.ts`). Có `ham` ⇒ `applyRedactPatterns` dùng `ham`, KHÔNG chạy `re`: `re` bậc hai trên đầu vào xấu
+   * (`"10.1.1.".repeat(20000)` = 11,6 s trên vòng lặp sự kiện duy nhất). Xem `cheTuyenTinh.ts`.
+   */
+  ham?: (text: string, thay: string) => { text: string; n: number };
 }
 
 // Order matters: multi-line/structured patterns first (PEM blocks, connection strings) so a
@@ -189,12 +196,14 @@ const REDACT_PATTERNS: RedactPattern[] = [
     type: "private_key",
     re: /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PRIVATE KEY-----/g,
     placeholder: "[REDACTED_SECRET]",
+    ham: chePem,
   },
   // scheme://user:pass@host — generic DB/broker connection string with embedded credentials.
   {
     type: "connection_string",
     re: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@]+@[^\s]+/gi,
     placeholder: "[REDACTED_SECRET]",
+    ham: cheChuoiKetNoi,
   },
   { type: "bearer_token", re: /\bBearer\s+[A-Za-z0-9\-_.]{10,}/gi, placeholder: "[REDACTED_SECRET]" },
   { type: "jwt", re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, placeholder: "[REDACTED_SECRET]" },
@@ -219,7 +228,7 @@ const REDACT_PATTERNS: RedactPattern[] = [
     placeholder: "[REDACTED_SECRET]",
     giuNhan: true,
   },
-  { type: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, placeholder: "[REDACTED_EMAIL]" },
+  { type: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, placeholder: "[REDACTED_EMAIL]", ham: cheEmail },
   // NOTE: phone numbers are handled separately by `redactPhones()` below, NOT via this
   // shape-only pattern list — see that function's doc comment for why.
 ];
@@ -234,6 +243,14 @@ function applyRedactPatterns(text: string, patterns: RedactPattern[]): Redaction
   let out = text;
   const counts = new Map<string, number>();
   for (const p of patterns) {
+    if (p.ham) {
+      const r = p.ham(out, p.placeholder);
+      if (r.n > 0) {
+        out = r.text;
+        counts.set(p.type, (counts.get(p.type) ?? 0) + r.n);
+      }
+      continue;
+    }
     out = out.replace(p.re, (_khop: string, nhan?: string, dongNhay?: string) => {
       counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
       // ★ G12 — giữ nhãn + dấu nháy, chỉ thay GIÁ TRỊ. Xem `RedactPattern.giuNhan`.

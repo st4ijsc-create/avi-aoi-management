@@ -62,7 +62,7 @@ export interface ThongTinModelLuotChay {
   /** Vai của tác nhân (`code.plc` / `code.software`), hoặc — Đợt 10.1 — vai / `ho-so` người dùng chọn tường minh. */
   vaiTro: VaiTroTacNhan | (string & {});
   model: string | null;
-  nguon: KetQuaDinhTuyen["nguon"];
+  nguon: KetQuaDinhTuyen["nguon"] | "chon-tuong-minh"; // Đợt 10.1: hồ sơ người dùng chọn tường minh (giaiChonModel)
   bangChung: string;
 }
 

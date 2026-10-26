@@ -33,7 +33,10 @@
  *      CA vào `<pki>/issuers/certs/` (+ CRL vào `<pki>/issuers/crl/`).
  *   4. Chiều ngược lại: đưa `<pki>/own/certs/client_certificate.pem` vào trust-list của
  *      server (PLC) — không có bước này server sẽ từ chối client.
- *   5. Nối lại — trust-list được đọc lại từ đĩa (watcher), không cần restart.
+ *   5. Nối lại — trust-list được đọc lại từ đĩa (watcher), không cần restart. ⚠ CHỜ VÀI GIÂY sau bước 3 rồi mới nối lại
+ *      (đo 2026-10-26, kiem-dinh): danh sách tin cậy nằm trong BỘ NHỚ, watcher cập nhật trễ ms…trăm ms khi máy bận. Một lần nối
+ *      (kể cả vòng reconnect tự động) đến TRƯỚC khi watcher thấy tệp mới ở trusted/ sẽ bị từ chối VÀ node-opcua-pki dời chứng chỉ
+ *      NGƯỢC về rejected/ — hoàn tác bước 3. Nếu tệp quay về `<pki>/rejected/` thì chuyển lần nữa (rồi chờ).
  *   `trustOnFirstUse: true` bỏ bước 1–3 (tự tin chứng chỉ lạ lần đầu) — CHỈ cho chạy thử.
  *   Fix round 1 (R20): TOFU chỉ chạy khi người vận hành đặt env
  *   `OPCUA_ALLOW_TRUST_ON_FIRST_USE=true` (mặc định tắt ⇒ từ chối trước khi mở socket), và dùng

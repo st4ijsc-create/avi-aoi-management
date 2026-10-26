@@ -431,6 +431,28 @@ export const aiGgufRouter = router({
     }),
 
   /**
+   * GỠ MỀM một gán (đặt `retiredAt`; lịch sử giữ) — admin. Gán không tồn tại / đã gỡ ⇒ NOT_FOUND. Audit: middleware mutation của tRPC (`aiGguf.soModelGoGan`) như `soModelDatGan`.
+   * Logic ở `soModel/datGan.ts#goGanModel`; làm mới ảnh sổ model ngay sau khi gỡ.
+   */
+  soModelGoGan: adminDoiModel.input(z.object({ id: z.number().int().positive() }).strict()).mutation(async ({ input }) => {
+    const [{ getDb }, { goGanModel, LoiDatGan }, { lamMoiAnhSoModel }] = await Promise.all([
+      import("../db/connection"),
+      import("../services/ai/soModel/datGan"),
+      import("../services/ai/soModel/napSoModel"),
+    ]);
+    const db = await getDb();
+    if (!db) throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "soModelGoGan" }, "Không có kết nối CSDL.");
+    try {
+      const kq = await goGanModel(db, input.id);
+      await lamMoiAnhSoModel();
+      return kq;
+    } catch (e) {
+      if (e instanceof LoiDatGan) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "soModelGoGan" }, e.message);
+      throw e;
+    }
+  }),
+
+  /**
    * ★★ Đợt 7.4 — khai giấy phép / cách ly một artifact. `missing` KHÔNG đặt tay được (việc của "Đồng bộ kho").
    * Logic + cổng ở `soModel/suaSoModel.ts`; router mỏng.
    */

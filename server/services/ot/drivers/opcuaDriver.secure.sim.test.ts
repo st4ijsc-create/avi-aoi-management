@@ -215,11 +215,22 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     // Oracle độc lập: tệp bị từ chối chính là chứng chỉ server của PLC giả (so nội dung PEM).
     const serverPem = fs.readFileSync(secure.server.certificateFile, "utf8").replace(/\s+/g, "");
     expect(fs.readFileSync(path.join(rejectedDir, rejected[0]), "utf8").replace(/\s+/g, "")).toBe(serverPem);
-    for (const f of rejected) fs.renameSync(path.join(rejectedDir, f), path.join(trustedDir, f));
+    // ★ GỐC của "đỏ 10/16 khi chạy song song" (kiem-dinh 2026-10-26; tái hiện 1/6 tệp chạy đồng thời dưới tải CPU, chẩn đoán thư mục lúc hết hạn:
+    //   rejected/ có chứng chỉ, trusted/certs RỖNG). Danh sách tin cậy của node-opcua-pki nằm TRONG BỘ NHỚ và chỉ cập nhật khi watcher thấy tệp
+    //   (trễ vài ms… vài trăm ms khi máy bận). Nếu lần nối ĐẦU đến trước khi watcher kịp thấy tệp mới ở trusted/, kiểm tra chứng chỉ thất bại và
+    //   node-opcua-pki chủ động DỜI chứng chỉ NGƯỢC về rejected/ (rejectCertificate) — HOÀN TÁC bước chuyển của người vận hành. Mọi lần thử lại sau đó
+    //   chỉ tiếp tục thất bại vì tệp không còn ở trusted/ (vòng cũ không làm lại bước chuyển) ⇒ ca này quá hạn và mọi ca bảo mật sau đó (cùng
+    //   client-pki) đỏ BadCertificateUntrusted. Sửa: (1) chờ watcher thấy tệp trước lần nối đầu; (2) mỗi vòng thử lại LÀM LẠI bước chuyển nếu chứng
+    //   chỉ bị dời ngược. (Bật polling KHÔNG giúp: polling chậm hơn fs.watch ⇒ lần nối đầu thua cuộc đua thường xuyên hơn — đã đo 12/12 đỏ.)
+    const chuyenSangTrusted = () => {
+      for (const f of fs.readdirSync(rejectedDir)) fs.renameSync(path.join(rejectedDir, f), path.join(trustedDir, f));
+    };
+    chuyenSangTrusted();
+    await new Promise((r) => setTimeout(r, 700 * ESCALA));
 
     const d = await newDriver();
-    // Watcher của PKI đọc lại trust-list — thử lại có hạn (≤ 15 s), không dựa vào timeout vitest.
-    const deadline = Date.now() + 15_000;
+    // Watcher của PKI đọc lại trust-list — thử lại có hạn, không dựa vào timeout vitest; hạn tính theo ESCALA như mọi hạn khác của tệp.
+    const deadline = Date.now() + 15_000 * ESCALA;
     let lastErr: unknown = null;
     for (;;) {
       try {
@@ -228,7 +239,8 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
       } catch (e) {
         lastErr = e;
         if (Date.now() > deadline) throw lastErr;
-        await new Promise((r) => setTimeout(r, 300));
+        chuyenSangTrusted(); // lần nối hỏng có thể đã dời chứng chỉ ngược về rejected/ — làm lại bước của người vận hành
+        await new Promise((r) => setTimeout(r, 300 * ESCALA));
       }
     }
     expect(d.isConnected()).toBe(true);

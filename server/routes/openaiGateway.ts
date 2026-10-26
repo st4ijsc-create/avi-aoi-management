@@ -70,6 +70,7 @@ import { xacThucTokenNguoiDung, ghiDungLanCuoi, type KetQuaXacThucToken } from "
 import { TIEN_TO_TOKEN, phamViCuaDuong } from "../services/ai/gatewayToken/maToken";
 import { TU_CHOI_TOKEN, loaiLoiTheoMa } from "../services/ai/gatewayToken/tuChoiToken";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
+import { kiemTranV1 } from "../services/ai/tranDauVao";
 // ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được từ đây với chi
 // phí ~0 ⇒ hàng rào là vô điều kiện theo CẤU TẠO, không phụ thuộc một `await import()` trong try.
 // ⚠ THỨ TỰ BẮT BUỘC: cắt thẻ TRƯỚC — che bí mật SAU. Cắt thẻ là phép XOÁ nên nó NỐI LIỀN hai đoạn
@@ -1125,6 +1126,12 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const messages = body.messages;
       if (!Array.isArray(messages) || messages.length === 0) {
         jsonError(res, 400, "`messages` must be a non-empty array.");
+        return;
+      }
+      // Trần đầu vào ở cửa vào (kiem-dinh 2026-10-26, `tranDauVao.ts`): thân /v1 cho tới 20 MB nhưng context của model là 64k token.
+      const quaDai = kiemTranV1(messages);
+      if (!quaDai.ok) {
+        jsonError(res, 413, `Input too long (limit ${quaDai.tran} characters of message text).`, "invalid_request_error", "context_length_exceeded");
         return;
       }
       // Phần lạ KHÔNG phải ảnh báo trước (mã đúng loại); chỉ còn ảnh ⇒ mã ảnh.

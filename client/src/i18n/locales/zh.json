@@ -3963,6 +3963,7 @@
       "doiModelLlamaServer": "切换 llama-server 上运行的模型",
       "soModelTongQuan": "查看模型注册表（角色 → 模型）",
       "soModelDatGan": "更改角色 → 模型的绑定",
+      "soModelGoGan": "移除角色的模型分配",
       "soModelSuaArtifact": "修改模型文件的许可证/状态",
       "soModelTaoHoSo": "创建/编辑模型服务配置",
       "generateText": "生成文本",
@@ -13542,12 +13543,14 @@
       "datGan": {
         "tieuDe": "设置绑定",
         "nut": "设置绑定",
-        "daDat": "已设置绑定（替换 {{n}} 个旧绑定）。",
         "maPhamVi": "范围 ID",
         "loaiDich": "目标类型",
         "duPhong": "备用（配置 ID，逗号分隔，最多 4 个）",
         "cong": "指向配置的生效模式需要该配置至少 1 次评测且已声明模型许可证。绑定到 .env 键无需评测。",
-        "chuaDoChan": "配置 {{id}} 尚无任何测量 — 暂不能以 active 分配。请先以“试用”模式分配，运行该角色的测试集，再激活。"
+        "chuaDoChan": "配置 {{id}} 尚无任何测量 — 暂不能以 active 分配。请先以“试用”模式分配，运行该角色的测试集，再激活。",
+        "daGan": "已分配 {{vaiTro}} → {{dich}}（{{cheDo}}）——替换了 {{n}} 个旧分配。",
+        "khongDoi": "无变化：{{vaiTro}} 已分配为 {{dich}}（{{cheDo}}）。",
+        "canhBaoCheDo": "“试用”/“影子”不会改变正在运行的模型——请选择“生效”才会真正生效。"
       },
       "kho": {
         "dongBo": "同步模型库",
@@ -13662,6 +13665,18 @@
           "kem": "在同一测试集上，目标比当前分配的配置更差。",
           "bang": "在同一测试集上，目标与当前分配的配置相当。"
         }
+      },
+      "goGan": {
+        "cot": "操作",
+        "nut": "移除",
+        "tieuDe": "确认移除分配",
+        "activeGlobal": "移除角色 {{vaiTro}} 的全局生效分配：该角色将改用 .env 键 {{envKey}}。",
+        "activeKhac": "移除 {{vaiTro}} 在范围 {{phamVi}} {{scopeId}} 的生效分配：该范围将改用更宽范围的分配或 .env 键。",
+        "thu": "{{vaiTro}} 的 {{cheDo}} 分配不影响正在运行的模型——移除只会把它从有效分配列表中去掉（历史保留）。",
+        "xacNhan": "确认移除",
+        "huy": "取消",
+        "daGo": "已移除分配 {{vaiTro}}（{{cheDo}}）。",
+        "diTheoEnv": "角色 {{vaiTro}} 现在改用 .env 键。"
       }
     }
   },

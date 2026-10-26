@@ -303,6 +303,10 @@ describe("otManager khởi động có hạn (doc 81 Đợt 1B Task 2)", () => {
     expect(r.mgr.getOtAdapterStatus(1)?.state).toBe("active");
     expect(r.mgr.getSupervisorStatus(1)?.state).toBe("connected");
     for (const id of [2, 3]) {
+      // ★ ĐỎ KHI CHẠY SONG SONG (kiem-dinh 2026-10-26): startOt() trả về ĐÚNG hạn (đã khẳng định ở trên) nhưng việc chuyển trạng thái 'starting' → 'error' của adapter chết
+      // là bất đồng bộ phía sau hạn (callback hẹn giờ của lớp trong) — dưới tải CPU nó tới trễ vài trăm ms ⇒ đọc NGAY lúc startOt trả về thấy 'starting'. Hợp đồng là
+      // "KHÔNG KẸT ở starting": chờ có hạn (3 s) cho tới khi rời 'starting'; kẹt mãi ⇒ vẫn đỏ với trạng thái cuối trong thông báo.
+      await waitFor(() => !["starting", undefined].includes(r.mgr.getOtAdapterStatus(id)?.state), 3000);
       const st = r.mgr.getOtAdapterStatus(id);
       expect(["error", "reconnecting"], `adapter #${id} state=${st?.state}`).toContain(st?.state);
       expect(r.mgr.getSupervisorStatus(id)?.state).not.toBe("connected");
