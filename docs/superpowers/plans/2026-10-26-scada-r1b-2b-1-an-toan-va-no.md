@@ -888,6 +888,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 23. T3 c2: ghi trong lúc phiên chờ lần đọc tốt đầu tiên.
 24. T3: thứ tự canh `sinkPhien` legacy (nit).
 52. K13: xem lại "`stale` = đã trả lời" khi có nguồn `stale` thật.
+60. OPC UA: cuộc đua tin cậy chứng chỉ (kiem-dinh đo được ở SẢN PHẨM, điều phối 2026-10-26). Danh sách tin cậy của node-opcua-pki nằm trong bộ nhớ, chỉ cập nhật khi watcher thấy tệp mới ở `trusted/`; nếu vòng nối lại của `opcuaDriver` rơi giữa lúc người vận hành chuyển chứng chỉ `rejected/`→`trusted/` và lúc watcher cập nhật ⇒ nối thất bại và node-opcua-pki DỜI chứng chỉ NGƯỢC về `rejected/`. Hướng sửa: nạp lại danh sách tin cậy từ đĩa trước mỗi lượt nối lại (hoặc không tự dời ngược chứng chỉ vừa được chuyển trong N giây); test đua 6 bản song song dưới tải. Cơ chế: `opcuaDriver.secure.sim.test.ts` bản sửa của kiem-dinh trên `chore/ai-luoi-do`; kiem-dinh chỉ sửa comment hướng dẫn đầu `opcuaSecurity.ts`.
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).
