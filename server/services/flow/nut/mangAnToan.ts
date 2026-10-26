@@ -203,12 +203,17 @@ export function fetchGhim(url: URL, init: RequestInit, dich: DichDen): Promise<R
 
 /** Đọc thân dạng LUỒNG, ngắt ngay khi vượt `tran` byte (kể cả không có Content-Length). */
 export async function docThanCoTran(r: Response, tran: number): Promise<string> {
+  return (await docBytesCoTran(r, tran)).toString("utf8");
+}
+
+/** Như `docThanCoTran` nhưng trả BYTE (ảnh, tệp nhị phân) — cùng trần, ngắt luồng khi vượt. */
+export async function docBytesCoTran(r: Response, tran: number): Promise<Buffer> {
   const cl = Number(r.headers.get("content-length"));
   if (Number.isFinite(cl) && cl > tran) {
     await r.body?.cancel().catch(() => undefined);
     throw new LoiHttpLuong(`phản hồi quá ${tran} byte`);
   }
-  if (!r.body) return "";
+  if (!r.body) return Buffer.alloc(0);
   const reader = r.body.getReader();
   const manh: Uint8Array[] = [];
   let n = 0;
@@ -222,5 +227,5 @@ export async function docThanCoTran(r: Response, tran: number): Promise<string> 
     }
     manh.push(value);
   }
-  return Buffer.concat(manh).toString("utf8");
+  return Buffer.concat(manh);
 }

@@ -1,6 +1,6 @@
 # Đợt 10.3 — Cổng AI ngoài: báo cáo nghiệm thu
 
-> Phiên **do-model** · nhánh `feat/ai-do-model` · 2026-10-26 · main đã có tới `6d3860227` (fresh/main `a03700211`); còn chờ gộp: `1b01838d8` + bản vá rawErrorCensus + báo cáo này
+> Phiên **do-model** · nhánh `feat/ai-do-model` · 2026-10-26 · main đã có tới `6d3860227` (fresh/main `a03700211`); gộp tiếp tới `c6f6f0cb7` (cổng dieu-phoi)
 > Spec: `docs/superpowers/specs/2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` · Kế hoạch: `docs/superpowers/plans/2026-10-26-dot10-3-cong-ai-ngoai.md`
 > Người đọc: dieu-phoi (gộp), kiem-dinh (rà checklist A–F), chủ dự án (§5 vận hành), luong-ui (§7 bàn giao 10.4).
 
@@ -9,7 +9,7 @@
 | Hạng mục | Trạng thái |
 |---|---|
 | Task 1–10 (B1–B4) | XONG. kiem-dinh ĐẠT từng lô: lô 1–2, Task 7, Task 8, Task 9 + sửa proxy, Task 10 (13/15 đột biến bắt; 2 lỗ đã đóng ở `1b01838d8`) |
-| Gộp main | Task 8+9+10 tới `6d3860227` đã lên fresh/main `a03700211` (cổng dieu-phoi; đỏ duy nhất — census nguoiDungTest ở `flowRouterNgoai.db.test.ts` — dieu-phoi sửa bằng `taoNguoiDungTest`). `1b01838d8` (3 mục bắt buộc của rà T10) chờ kiem-dinh xác nhận đột biến |
+| Gộp main | Task 8+9+10 tới `6d3860227` đã lên fresh/main `a03700211` (cổng dieu-phoi; đỏ duy nhất — census nguoiDungTest ở `flowRouterNgoai.db.test.ts` — dieu-phoi sửa bằng `taoNguoiDungTest`). `1b01838d8` (3 mục bắt buộc của rà T10) + `c6f6f0cb7` ĐÃ được kiem-dinh xác nhận; kiem-dinh NGHIỆM THU 10.3 ĐẠT (A–F); cổng gộp `c6f6f0cb7` do dieu-phoi chạy |
 | Migration 0413–0416 | ĐÃ ÁP **DEV** + **_test**, nghiệm thu bằng `avi_app` (cấu trúc · quyền · hành vi hoàn tác · sổ). 0414 áp DEV 2026-10-26 theo hiệu lệnh dieu-phoi; CHECK `ai_api_keys_active_can_nha_may_chk` đã đặt lại trên _test |
 | tsc toàn cây (`--max-old-space-size=12288`) | 0 lỗi (cây gộp `f560f8d77`) |
 | Lưới lô | ngoai + flow + flowRouter + aiNgoai + openaiGateway + chonModel + 3 census + appErrorParamsCoverage: xanh (lượt cuối: ngoai + flow/nut 365/365; trước đó lô rộng 1022/1022) |
@@ -64,6 +64,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 1. **Tạo khoá** trong màn quản trị (`aiNgoai.taoKhoa`, gắn nhà máy). KHÔNG đặt khoá trong `.env`, KHÔNG gửi khoá qua bất kỳ phiên Claude nào.
 2. **Danh mục model** (`aiNgoai.datModel`): bắt buộc có giá vào/ra HOẶC trần token mỗi lượt (CHECK 0414).
 3. **Cấu hình nhà máy** (`aiNgoai.ghiCauHinh`): `batNgoai`; trần ngày (token / USD), trần mỗi người / mỗi luồng / mỗi lượt / số lần mỗi phút; `hanGiuNgay`. Mở `batNgoai` / `choDuLieuVanHanh` / `luuNguyenVan` ⇒ audit mức CAO.
+   - ⚠ Ước tính token lúc ĐẶT TRƯỚC là BI QUAN (byte UTF-8 / 2 ⇒ cao hơn thật **2–4×** với tiếng Anh / mã — tiếng Việt có dấu chưa đo) — chỗ dư hoàn lại khi kết toán, nhưng trần chặn SỚM: đặt trần ngày / người / luồng / lượt theo nhu cầu thật × hệ số 2–4.
 4. **Quyết riêng "dữ liệu vận hành"** (`choDuLieuVanHanh`). Mặc định TẮT: số liệu / kết quả tool / ngữ cảnh KB nhà máy không ra ngoài.
 5. **Host nội bộ** cho máy chủ tương thích OpenAI trong mạng nhà máy (`aiNgoai.datHostNoiBo`, chỉ admin toàn hệ). Khai đúng `host:cổng`.
 6. **Luồng dùng model ngoài**: mỗi PHIÊN BẢN phải `aiNgoai.duyetNgoai`. Băm định nghĩa đổi ⇒ phải duyệt lại. Luồng toàn hệ thống không dùng được.
@@ -91,8 +92,8 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 
 ## 8. Backlog sau 10.3 (chưa làm)
 
-1. `server/_core/llm.ts:237` tải `image_url` bằng `fetch` thô (theo chuyển hướng, không rào SSRF). Cần xác nhận nguồn URL (`annotationRouters`, `inspectionRouters`) hoặc chuyển sang `fetchGhim`.
-2. Forge: lưới "`BUILT_IN_FORGE_API_URL` rỗng ⇒ 0 lời gọi", hoặc cảnh báo lúc khởi động khi URL được đặt.
+1. ~~`server/_core/llm.ts:237` tải `image_url` bằng `fetch` thô~~ — XONG (lô sau nghiệm thu, phương án B của dieu-phoi): SSRF THẬT (nguồn: `annotation.analyzeImage` chuỗi tự do của người dùng; `inspection.analyzeWithAI` đọc URL do Machine API ghi). Nay qua `_core/taiAnhAnToan.ts` (ghim IP, metadata cấm, nội bộ chỉ khi khai `AI_IMAGE_HOST_CHO_PHEP`, không chuyển hướng, 20 MB, 15 s, `image/*`); ảnh http CHỈ tải khi sidecar thị giác sẵn sàng; `annotation.analyzeImage` sau MOD_AI. **Backlog mới:** Machine API `imageUrl: z.string().url()` — kiểm dạng URL lúc GHI (chỉ khoá kho tệp / data: / host khai).
+2. ~~Forge: lưới "URL rỗng ⇒ 0 lời gọi" + cảnh báo khởi động~~ — XONG (lô sau nghiệm thu): `forgeNgoai.ts` + test, cảnh báo khởi động một lần, `oversight.posture.forgeNgoaiBat`.
 3. Kiểm `chanHostAiNgoai` lúc LƯU cấu hình của 5 đích admin ở §6.
 4. `urlNgoai`: host nội bộ đặt tên công khai (vd `gpu.nhamay.vn` → 10.x) bị buộc https dù đã khai. Hạn chế chức năng, không phải lỗ.
 5. Bộ che: trần chuỗi liền 2 000 ký tự (`RE_KHONG_TRANG_DAI`) đặt vì `aiSafety` bậc hai. Main nay đã có bản tuyến tính (`134988874`) ⇒ đo lại xem nới trần được không (lô 1 mục 1).

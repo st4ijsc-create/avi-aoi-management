@@ -4091,7 +4091,8 @@
       "flowXuat": "export an AI flow package",
       "flowNhap": "import an AI flow from a package",
       "aiNgoaiDatModel": "set external AI model",
-      "aiNgoaiDuyet": "approve flow using external AI"
+      "aiNgoaiDuyet": "approve flow using external AI",
+      "taiAnhAi": "download image for AI analysis"
     },
     "field": {
       "stationId": "station",
@@ -4562,7 +4563,14 @@
       "khong-co-node-ngoai": "this version does not use an external AI model",
       "NGOAI_TU_DUYET_VAN_HANH": "you cannot self-approve a flow that sends operational data to external AI",
       "NGOAI_CHUA_DUYET": "the version using an external AI model has not been approved",
-      "NGOAI_LUONG_TOAN_CUC": "system-wide flows cannot use external AI models"
+      "NGOAI_LUONG_TOAN_CUC": "system-wide flows cannot use external AI models",
+      "anh-url-sai": "invalid image URL (http/https only, no credentials)",
+      "anh-dich-cam": "image destination is an undeclared internal host (AI_IMAGE_HOST_CHO_PHEP) or a metadata address",
+      "anh-ket-noi": "could not connect to the image server",
+      "anh-chuyen-huong": "the image server returned a redirect (not followed)",
+      "anh-http-loi": "the image server returned an error",
+      "anh-khong-phai-anh": "the downloaded content is not an image",
+      "anh-qua-lon": "the image exceeds 20 MB"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
