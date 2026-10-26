@@ -478,7 +478,7 @@ export async function* streamCodingAnswer(
    * thắng ⇒ không định tuyến. Khoá khe giữ model khác và không có dự phòng ⇒ NÓI THẬT, 0 lượt gọi model. Kết quả đi xuống mọi nhánh
    * qua ô SERVER-ONLY `context.modelVaiTro` (`parseContext` dựng ctx từng ô ⇒ client không đặt được).
    */
-  if (troLyTheoVaiTroBat() && !context.modelTask) {
+  if (troLyTheoVaiTroBat() && !context.modelTask && !context.modelVaiTro) {
     const g = await giaiModelTheoVaiTro(
       { cauHoi: question, gocDuAn: goc.goc ?? "", projectId: idDuAnBaiHoc },
       { layAnh: layAnhSoModel, nguCanhKhe, laDuAnPlc: (p) => (p ? laDuAnPlc(p) : false), lamMoiKhe: lamMoiKheDangGiu },
