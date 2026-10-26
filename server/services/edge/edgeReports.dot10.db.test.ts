@@ -7,7 +7,11 @@
  * completed refused while a step is not done; gap when reports are missing), lock events only through the guarded functions
  * and only for owned robots (A3), command acks.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// ★ Đỏ khi chạy song song (kiem-dinh 2026-10-26): mỗi ca dựng nhiều hàng DB + gọi HTTP thật, đo 5–13 s riêng lẻ nhưng hạn mặc định là 30 s (testTimeout) ⇒ dưới tải DB dùng chung
+// vượt hạn. Đây KHÔNG phải ngưỡng thời gian của sản phẩm — chỉ là hạn chạy của chính ca test: nới 4× (120 s).
+vi.setConfig({ testTimeout: 120_000 });
 import { setupKit, kitSteps, nonce, type Kit } from "./__edgeCentralKit.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
