@@ -161,8 +161,11 @@ async function chayToolLuong(ngu: NguCanhChay, k: KhaiToolLuong, thamSo: Record<
 
 /** Luồng con hạng `thuan` / `doc` (hạng tính LÚC GỌI qua `kiemGoiLuongCon`) + tra tài liệu; con lỗi / hạng cao ⇒ bỏ khỏi tập cấp. */
 async function locCongCuNgoai(ngu: NguCanhChay, khai: KhaiToolLuong[], congCu: WireTool[]): Promise<WireTool[]> {
+  const { schemaHoTro } = await import("../../ai/ngoai/congNgoai");
   const ra: WireTool[] = [];
   for (const c of congCu) {
+    // Schema ngoài tập con cổng kiểm được (tham số mảng / đối tượng) ⇒ KHÔNG cấp (cấp rồi bị từ chối mọi lời gọi là hỏng im lặng).
+    if (!schemaHoTro(c.function.parameters)) continue;
     if (c.function.name === TOOL_TRA_TAI_LIEU) {
       ra.push(c);
       continue;

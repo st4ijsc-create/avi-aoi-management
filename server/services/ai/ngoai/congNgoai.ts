@@ -80,6 +80,8 @@ export interface PhuThuocCong {
 
 export const TRAN_CHUOI_BYTE = 256 * 1024;
 export const TRAN_YEU_CAU_BYTE = 1024 * 1024;
+/** Trần cứng token RA mỗi lời gọi (dù model / nhà máy không đặt trần). */
+export const MAX_TOKENS_CUNG = 32_000;
 
 const MANG_CHUA_CAI: MangNgoai = {
   async goiJson() {
@@ -124,6 +126,16 @@ function hopSchema(v: unknown, schema: unknown): boolean {
     if (!dung) return false;
   }
   return true;
+}
+
+/**
+ * Schema tool thuộc tập con kiểm được (object + thuộc tính nguyên thuỷ). Ngoài tập ⇒ KHÔNG cấp tool cho model ngoài (rà lô 2 mục 4: cấp rồi
+ * từ chối mọi lời gọi là im lặng hỏng).
+ */
+export function schemaHoTro(schema: unknown): boolean {
+  const s = schema as { type?: unknown; properties?: Record<string, { type?: unknown }> } | null;
+  if (!s || s.type !== "object" || typeof s.properties !== "object" || s.properties === null) return false;
+  return Object.values(s.properties).every((p) => ["string", "number", "integer", "boolean"].includes(String(p?.type)));
 }
 
 export function kiemToolCallTraVe(toolCalls: KetQuaNhaCungCap["toolCalls"], congCuDaCap: readonly CongCuNgoai[] | undefined): KetQuaNhaCungCap["toolCalls"] {
@@ -221,7 +233,9 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   if (muc === "van-hanh" && tap.some((f) => !cauHinh.get(f)!.choDuLieuVanHanh)) throw new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH");
   // (5)
   buoc("lap");
-  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens: yc.maxTokens, nhietDo: 0.2 };
+  // maxTokens KẸP (rà lô 2 mục 1): ≤ trần lượt của model, ≤ MAX cứng, ≥ 1 — người gọi không đặt được 10^9.
+  const maxTokens = Math.max(1, Math.min(Math.floor(Number(yc.maxTokens) || 1), model.tranTokenLuot ?? MAX_TOKENS_CUNG, MAX_TOKENS_CUNG));
+  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");
   let tu: TuDienNhay;
@@ -232,53 +246,58 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   }
   const { daChe, soTruong } = cheYeuCau(yeuCau, tu);
   const noiDungDaChe = JSON.stringify(daChe);
-  // (7)
+  // (7)–(9) MỖI lần thử: giữ chỗ → sổ Ý ĐỊNH riêng → gọi (rà kiem-dinh lô 2 mục 5: mỗi lần thử có hàng ý định + kết quả của nó ⇒
+  //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
   const cfg = cauHinh.get(tinhTran)!;
   const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
   const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
   const tokenVaoUoc = uocTokenVao(daChe);
   const tienUoc =
-    model.giaVaoUsdTrieu !== null && model.giaRaUsdTrieu !== null ? (tokenVaoUoc * model.giaVaoUsdTrieu + yc.maxTokens * model.giaRaUsdTrieu) / 1e6 : null;
-  const giuCho = () => {
-    buoc("dat-truoc");
-    return datTruoc(db, { factoryId: tinhTran, userId: yc.ngu.userId, flowId: yc.ngu.flowId, runId: yc.ngu.runId, tokenUoc: tokenVaoUoc + yc.maxTokens, tienUocUsd: tienUoc }, tran);
+    model.giaVaoUsdTrieu !== null && model.giaRaUsdTrieu !== null ? (tokenVaoUoc * model.giaVaoUsdTrieu + maxTokens * model.giaRaUsdTrieu) / 1e6 : null;
+  const bam = bamNoiDung(noiDungDaChe);
+  const ghiKq = async (yDinhId: number, h: Parameters<typeof ghiKetQua>[2]) => {
+    // Thử lại MỘT lần; vẫn lỗi ⇒ cảnh báo (đối soát sẽ đánh `khong-ro` sau 30 phút) — không làm hỏng lượt đã có kết quả.
+    for (let i = 0; i < 2; i++) {
+      try {
+        return await ghiKetQua(db, yDinhId, h);
+      } catch {
+        /* thử lại */
+      }
+    }
+    console.warn(`[AiNgoai] không ghi được kết quả sổ cho ý định ${yDinhId} (${h.ketCuc})`);
   };
-  let phieu: PhieuGiu = await giuCho();
-  // (8)
-  buoc("so-y-dinh");
-  let yDinhId: number;
-  try {
-    yDinhId = await ghiYDinh(db, {
-      factoryId: tinhTran,
-      nhaMayDuLieu: tap,
-      userId: yc.ngu.userId,
-      flowId: yc.ngu.flowId,
-      runId: yc.ngu.runId,
-      tuDong: yc.ngu.tuDong,
-      nhaCungCap: yc.dich.nhaCungCap,
-      model: model.model,
-      mucDich: yc.mucDich,
-      mucDuLieu: muc,
-      soTruongDaChe: soTruong,
-      bamNoiDung: bamNoiDung(noiDungDaChe),
-    });
-  } catch {
-    await huyGiuChuaGui(db, phieu).catch(() => undefined);
-    throw new LoiNgoai("NGOAI_SO_HONG");
-  }
-  // (9)
-  const ketThucLoi = async (e: unknown, ketCuc: "loi" | "tu-choi"): Promise<never> => {
-    const loi =
-      e instanceof LoiNgoai
-        ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-          ? new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500))
-          : e
-        : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
-    await ghiKetQua(db, yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc, maLoi: loi.ma }).catch(() => undefined);
-    throw loi;
-  };
+  const cheLoi = (e: unknown): LoiNgoai =>
+    e instanceof LoiNgoai
+      ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
+        ? new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500))
+        : e
+      : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
   let kq: KetQuaNhaCungCap | null = null;
+  let phieu: PhieuGiu;
+  let yDinhId = 0;
   for (let lan = 1; ; lan++) {
+    buoc("dat-truoc");
+    phieu = await datTruoc(db, { factoryId: tinhTran, userId: yc.ngu.userId, flowId: yc.ngu.flowId, runId: yc.ngu.runId, tokenUoc: tokenVaoUoc + maxTokens, tienUocUsd: tienUoc }, tran);
+    buoc("so-y-dinh");
+    try {
+      yDinhId = await ghiYDinh(db, {
+        factoryId: tinhTran,
+        nhaMayDuLieu: tap,
+        userId: yc.ngu.userId,
+        flowId: yc.ngu.flowId,
+        runId: yc.ngu.runId,
+        tuDong: yc.ngu.tuDong,
+        nhaCungCap: yc.dich.nhaCungCap,
+        model: model.model,
+        mucDich: yc.mucDich,
+        mucDuLieu: muc,
+        soTruongDaChe: soTruong,
+        bamNoiDung: bam,
+      });
+    } catch {
+      await huyGiuChuaGui(db, phieu).catch(() => undefined);
+      throw new LoiNgoai("NGOAI_SO_HONG");
+    }
     buoc("nha-cung-cap");
     try {
       const endpoint = yc.dich.nhaCungCap === "openai_compat" ? await dep.layEndpoint(db, model.keyId) : null;
@@ -288,12 +307,9 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
       const loi = e instanceof LoiNgoai ? e : null;
       if (loi?.chuaGui) await huyGiuChuaGui(db, phieu).catch(() => undefined);
       else await ketToan(db, phieu, null).catch(() => undefined); // đã rời máy, không usage ⇒ giữ ước tính
-      if (!loi?.thuLai || lan >= dep.soLanThu) return ketThucLoi(e, "loi");
-      try {
-        phieu = await giuCho(); // MỖI lần thử lại giữ chỗ lại
-      } catch (e2) {
-        return ketThucLoi(e2, "tu-choi");
-      }
+      const loiDaChe = cheLoi(e);
+      await ghiKq(yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: loiDaChe.ma });
+      if (!loi?.thuLai || lan >= dep.soLanThu) throw loiDaChe;
     }
   }
   // (10)
@@ -303,16 +319,19 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
       ? (kq.tokenVao * model.giaVaoUsdTrieu + kq.tokenRa * model.giaRaUsdTrieu) / 1e6
       : null;
   await ketToan(db, phieu, kq.tokenVao !== null && kq.tokenRa !== null ? { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, tienUsd: chiPhi } : null).catch(() => undefined);
-  // (11)
+  // (11) kiểm đầu ra: trần kích thước phản hồi (rà lô 2 mục 2) + toolCalls theo tập ĐÃ CẤP (rà mục 6)
   buoc("kiem-tool");
   try {
+    if (Buffer.byteLength(kq.noiDung ?? "", "utf8") > TRAN_CHUOI_BYTE) throw new LoiNgoai("NGOAI_PHAN_HOI_QUA_LON");
     kiemToolCallTraVe(kq.toolCalls, daChe.congCu);
   } catch (e) {
-    return ketThucLoi(e, "tu-choi");
+    const loi = cheLoi(e);
+    await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "tu-choi", maLoi: loi.ma });
+    throw loi;
   }
   // (12)
   buoc("so-ket-qua");
-  await ghiKetQua(db, yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" }).catch(() => undefined);
+  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
   return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa };
 }

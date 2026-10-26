@@ -280,3 +280,33 @@ describe("cổng AI ngoài — luồng, dữ liệu vận hành từ phạm vi c
     expect(r!.nhaMayDuLieu).toEqual([A]);
   });
 });
+
+describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / sổ mỗi lần thử)", () => {
+  it("maxTokens 10^9 ⇒ nhà cung cấp nhận ≤ 32 000 (trần cứng) — không giữ chỗ khổng lồ", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const truoc = await tokenGiu(A);
+    await goiAiNgoai(yc({ maxTokens: 1e9 }), dep(g));
+    expect(g.nhan[0]!.yc.maxTokens).toBe(32_000);
+    expect((await tokenGiu(A)) - truoc).toBeLessThan(40_000);
+  });
+
+  it("phản hồi > 256 KB ⇒ NGOAI_PHAN_HOI_QUA_LON, sổ kết quả 'tu-choi' (chi phí đã kết toán)", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "x".repeat(257 * 1024) }]);
+    expect(await maLoi(goiAiNgoai(yc(), dep(g)))).toBe("NGOAI_PHAN_HOI_QUA_LON");
+    const [r] = await exec(sql`SELECT "ketCuc", "maLoi" FROM ai_external_calls WHERE "factoryId" = ${A} AND loai = 'ket-qua' ORDER BY id DESC LIMIT 1`);
+    expect(r).toEqual({ ketCuc: "tu-choi", maLoi: "NGOAI_PHAN_HOI_QUA_LON" });
+  });
+
+  it("thử lại: MỖI lần thử một hàng ý định + kết quả (lần 1 'loi', lần 2 'ok') — đối soát chi phí khớp bộ đếm", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "503", thuLai: true }, { kieu: "tra", noiDung: "ok" }]);
+    const moc = Number((await exec(sql`SELECT COALESCE(max(id),0)::bigint AS m FROM ai_external_calls`))[0]!.m);
+    await goiAiNgoai(yc(), dep(g));
+    const hangMoi = await exec(sql`SELECT loai, "ketCuc" FROM ai_external_calls WHERE "factoryId" = ${A} AND id > ${moc} ORDER BY id`);
+    expect(hangMoi).toEqual([
+      { loai: "y-dinh", ketCuc: null },
+      { loai: "ket-qua", ketCuc: "loi" },
+      { loai: "y-dinh", ketCuc: null },
+      { loai: "ket-qua", ketCuc: "ok" },
+    ]);
+  });
+});

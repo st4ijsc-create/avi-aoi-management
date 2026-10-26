@@ -8,6 +8,7 @@ export type MaLoiNgoai =
   | "NGOAI_CAM_DINH_KEM"
   | "NGOAI_DU_LIEU_VAN_HANH"
   | "NGOAI_QUA_LON"
+  | "NGOAI_PHAN_HOI_QUA_LON"
   | "NGOAI_VUOT_TRAN"
   | "NGOAI_DEM_HONG"
   | "NGOAI_SO_HONG"
@@ -51,6 +52,7 @@ export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBID
     case "NGOAI_CHE_HONG":
       return "SERVICE_UNAVAILABLE";
     case "NGOAI_NHA_CUNG_CAP_LOI":
+    case "NGOAI_PHAN_HOI_QUA_LON":
       return "BAD_GATEWAY";
     case "NGOAI_DU_LIEU_VAN_HANH":
     case "NGOAI_LUONG_TOAN_CUC":

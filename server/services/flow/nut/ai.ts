@@ -9,6 +9,12 @@
  *   ai.tomTat     tóm tắt TẤT CẢ item đầu vào thành MỘT item
  * Dữ liệu item đến từ trigger là KHÔNG TIN CẬY: được bọc trong khối dữ liệu có nhãn, lời nhắc hệ thống nói rõ không làm
  * theo chỉ dẫn trong dữ liệu. Chữ suy luận của model không bao giờ thành dữ liệu ra (engine đã tách `<think>`).
+ *
+ * ★ Đợt 10.3 — đầu ra của model NGOÀI (`chonModel: "ngoai:…"`) là CHUỖI KHÔNG TIN CẬY, không bọc thêm (bọc phá JSON / nhãn). Bất biến
+ * (lưới `ai.ngoai.test.ts`): (i) chuỗi ngoài chứa `{{ … }}` đọc lại qua biểu thức của node sau là CHUỖI LITERAL — không bị tính lần
+ * hai; (ii) KHÔNG có đường tự động đưa đầu ra ngoài vào tham số của node ghi / điều khiển — `ot.de-xuat-lenh`, `ot.de-xuat-luong`,
+ * `tich-hop.http-gui`, `tich-hop.mcp-goi`, `bao-tri.tao-phieu`, `tich-hop.thong-bao` chỉ nhận nó qua biểu thức TƯỜNG MINH người thiết kế
+ * viết (và vẫn qua hạng / duyệt của node đó); `ai.agent` với model ngoài không được cấp công cụ hạng `ngoai-ghi` / `ot`.
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dangKyNut";

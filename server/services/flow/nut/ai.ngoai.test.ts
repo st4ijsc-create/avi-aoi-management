@@ -121,3 +121,24 @@ describe("ai.agent + model ngoài", () => {
     expect(daTra).toBe(false);
   });
 });
+
+describe("đầu ra model ngoài là DỮ LIỆU (rà kiem-dinh lô 2 mục 3)", () => {
+  it("(i) chuỗi ngoài chứa `{{ … }}` đọc lại qua biểu thức node sau ⇒ CHUỖI LITERAL, không tính lần hai", async () => {
+    traVe = [{ noiDung: "{{ 1+1 }} và {{ $env.BI_MAT }}", toolCalls: [] }];
+    const ra = (await layNut("ai.llm")!.chay({ loiNhac: "x", chonModel: "ngoai:anthropic:claude-thu" }, ngu())) as { main: Array<{ json: Record<string, unknown> }> };
+    const { danhGiaThamSo } = await import("../../../../shared/flow/bieuThuc");
+    const { nguCanhItem } = await import("../dangKyNut");
+    const n = ngu();
+    const item = ra.main[0]!;
+    const sau = danhGiaThamSo({ x: "{{ $json.traLoi }}" }, nguCanhItem({ ...n, env: { BI_MAT: "lo" } } as NguCanhChay, item as never, [item as never])) as { x: unknown };
+    expect(sau.x).toBe("{{ 1+1 }} và {{ $env.BI_MAT }}");
+  });
+
+  it("(ii) schema tool ngoài tập con cổng kiểm được (mảng / đối tượng) ⇒ schemaHoTro=false ⇒ locCongCuNgoai không cấp", async () => {
+    const { schemaHoTro } = await import("../../ai/ngoai/congNgoai");
+    expect(schemaHoTro({ type: "object", properties: { q: { type: "string" }, n: { type: "number" } } })).toBe(true);
+    expect(schemaHoTro({ type: "object", properties: { ds: { type: "array", items: { type: "string" } } } })).toBe(false);
+    expect(schemaHoTro({ type: "object", properties: { o: { type: "object" } } })).toBe(false);
+    expect(schemaHoTro({ type: "string" })).toBe(false);
+  });
+});
