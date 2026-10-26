@@ -159,7 +159,18 @@ export function laGiaTriQc(v: unknown): boolean {
 }
 
 /** Tên khoá (JSON / nhãn văn bản) có phải tên của một bí mật không. */
+/** Đệm kết quả theo tên (nhãn lặp lại rất nhiều trong một văn bản — `a:b a:b …`); xoá sạch khi quá 4 096 mục. */
+const DEM_TEN_NHAY = new Map<string, boolean>();
 export function laTenKhoaNhay(ten: string): boolean {
+  const co = DEM_TEN_NHAY.get(ten);
+  if (co !== undefined) return co;
+  const kq = laTenKhoaNhayTinh(ten);
+  if (DEM_TEN_NHAY.size >= 4096) DEM_TEN_NHAY.clear();
+  DEM_TEN_NHAY.set(ten, kq);
+  return kq;
+}
+
+function laTenKhoaNhayTinh(ten: string): boolean {
   const doan = tachDoan(ten);
   if (doan.length === 0) return false;
   const gop = doan.join("");

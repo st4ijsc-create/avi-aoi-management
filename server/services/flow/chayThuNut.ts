@@ -11,6 +11,7 @@
  *              sinh mã, agent, duyệt người, luồng con, kích hoạt). `credentialRef` chỉ được lặp lại dạng id.
  * Loại chưa phân loại ⇒ xem trước (fail-safe).
  */
+import { ganMucDuLieu } from "../ai/ngoai/phanLoai";
 import { danhGiaThamSo, type ItemLuong } from "../../../shared/flow/bieuThuc";
 import type { NodeInstance } from "../../../shared/flow/model";
 import { layNut, nguCanhItem, type BoKiemPhamVi, type KetQuaChay, type NguCanhChay, type VetModel } from "./dangKyNut";
@@ -120,10 +121,14 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
   const nodes: Record<string, ItemLuong[]> = {};
   for (const [id, ds] of Object.entries(y.dauRaNutTruoc ?? {})) nodes[id] = cat(ds);
 
-  const ngu: NguCanhChay = {
-    runId: "chay-thu", flowId: "chay-thu", nodeId: nut.id, lan: 1, idempotencyKey: `chay-thu:${nut.id}:1`,
-    inputs, nodes, env: {}, kiemPhamVi: boKiem, run: { id: "chay-thu", flowId: "chay-thu", batDau: new Date().toISOString() },
-  };
+  // ★ Đợt 10.3 — chạy thử: đầu vào / đầu ra node trước do CLIENT cấp (có thể chép từ lượt thật) ⇒ mức dữ liệu `van-hanh` (fail-closed).
+  const ngu: NguCanhChay = ganMucDuLieu(
+    {
+      runId: "chay-thu", flowId: "chay-thu", nodeId: nut.id, lan: 1, idempotencyKey: `chay-thu:${nut.id}:1`,
+      inputs, nodes, env: {}, kiemPhamVi: boKiem, run: { id: "chay-thu", flowId: "chay-thu", batDau: new Date().toISOString() },
+    } as NguCanhChay,
+    async () => "van-hanh",
+  );
 
   const thamChieu = THAM_CHIEU_TAI_NGUYEN[nut.type];
   // Đóng theo mặc định: node tham chiếu tài nguyên mà KHÔNG có bộ kiểm phạm vi ⇒ không chạy, chỉ xem trước.
