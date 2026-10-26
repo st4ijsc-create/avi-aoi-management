@@ -61,7 +61,9 @@ _(Task 16)_
 
 ## 6. Giới hạn đã biết
 
-_(Task 16)_
+- (Task 2 fix round 1) luật/FOE tạo sau triển khai: luật interlock bị kiểm lúc lưu + tư thế; workflow FOE chỉ bị chặn sớm lúc gửi (TYPE_MISMATCH), không lúc lưu.
+
+_(Task 16 — phần còn lại)_
 
 ## Phụ lục A — `task-2-census.sql` (NGUYÊN VĂN, chỉ đọc)
 

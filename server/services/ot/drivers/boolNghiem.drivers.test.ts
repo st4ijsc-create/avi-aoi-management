@@ -200,6 +200,37 @@ for (const [ten, lib, mod, lop, diaChi] of [
   });
 }
 
+// fix round 1 (M1) — địa chỉ BIT của S7 / MC: MỘT luật bool BẤT KỂ dataType (như coil Modbus / bit SLMP); word ⇒ theo dataType như cũ
+for (const [ten, lib, mod, lop, bit, word] of [
+  ["S7", "nodes7", "./s7Driver", "S7Driver", "DB1,X0.1", "DB1,INT2"],
+  ["MC", "mcprotocol", "./mitsubishiMcDriver", "MitsubishiMcDriver", "M100", "D100"],
+] as const) {
+  describe(`${ten} — địa chỉ BIT kiểu INT: bool chặt; STOP khoan dung; word không đổi`, () => {
+    async function dung() {
+      const conn = mockNodes(lib);
+      const m = (await import(/* @vite-ignore */ mod)) as Record<string, new () => import("../otDriver").OtDriver>;
+      const d = new m[lop]();
+      await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+      return { d, conn };
+    }
+    it(`${bit} int: 2 ⇒ ok:false, không vào writeItems; "1" ⇒ true; STOP dungGhim 2 ⇒ true; ${word} int 2 ⇒ số 2`, async () => {
+      const { d, conn } = await dung();
+      const out = await d.writeTags([
+        { tagKey: "a", address: bit, value: 2, dataType: "int" },
+        { tagKey: "b", address: bit, value: "1", dataType: "int" },
+        { tagKey: "c", address: word, value: 2, dataType: "int" },
+      ]);
+      expect(out.map((r) => r.ok)).toEqual([false, true, true]);
+      expect(out[0].error).toMatch(/bool không hợp lệ: 2/);
+      expect(conn.writeItems.mock.calls[0][0]).toEqual(["b", "c"]);
+      expect(conn.writeItems.mock.calls[0][1]).toEqual([true, 2]);
+      const [s] = await d.writeTags([{ tagKey: "a", address: bit, value: 2, dataType: "int", dungGhim: true }]);
+      expect(s.ok).toBe(true);
+      expect(conn.writeItems.mock.calls[1][1]).toEqual([true]);
+    });
+  });
+}
+
 describe("Giải mã ĐỌC bool (S7 / MC / EIP / OPC UA)", () => {
   it('S7: bool "1" ⇒ true, "false" ⇒ false, "x" ⇒ bad (cờ V2 bật ⇒ lý do bad_value / device_error)', async () => {
     vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");

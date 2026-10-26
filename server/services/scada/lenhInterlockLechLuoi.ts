@@ -23,20 +23,28 @@
  *
  * Không chạm DB lúc import. Luật bật mà CHƯA duyệt cũng đếm (engine chỉ tự gửi luật đã duyệt, nhưng một luật bật hỏng vẫn là cấu hình hỏng).
  */
-import { and, eq, inArray, ne, type SQL } from "drizzle-orm";
-import { deviceTags, interlockRules } from "../../../drizzle/schema";
+import { and, eq, inArray, ne, or, type SQL } from "drizzle-orm";
+import { deviceAdapters, deviceTags, interlockRules } from "../../../drizzle/schema";
+import { kiemGiaTriDiaChiBit } from "../ot/drivers/diaChiBit";
 import { getDb } from "../../db/connection";
 import { giaTriLenhInterlock, kiemLenhInterlockTrenKenh, type DbHoacTx, type MaViPham } from "./nhatQuanKenh";
 
 /**
- * Điều kiện SQL của ỨNG VIÊN (cần `innerJoin(deviceTags, dieuKienNoiDichLenh())`): luật bật, ghi lệnh, đích là tag int. R1b-2a T1: bỏ vế
+ * Điều kiện SQL của ỨNG VIÊN (cần `innerJoin(deviceTags, dieuKienNoiDichLenh())` + — T2 fix round 1 — `innerJoin(deviceAdapters, adapterId)`): luật bật, ghi lệnh, đích là tag int. R1b-2a T1: bỏ vế
  * "scale ≠ 1 / offset ≠ 0" — tag int scale 1 cũng có lưới thô (số nguyên) và cũng từ chối giá trị không phải số hữu hạn.
  */
 export function dieuKienUngVienLenhLechLuoi(): SQL {
   // R1b-2a T2 (phán quyết T1 c3) — cả đích FLOAT: tag float CHƯA khai nay từ chối giá trị không phải số hữu hạn ở cổng kênh của dispatch().
   // R1b-2b-1 T2 (kiem-dinh G1) — cả đích BOOL: tag bool CHƯA khai nay từ chối giá trị ngoài tập hợp lệ (`boolTuGiaTri`) ở cổng kênh của
   // dispatch() ⇒ luật bật gửi "on" / 2 / {"v":1} lên tag bool là cấu hình hỏng (posture + khởi động). SQL thuần: `TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL`.
-  return and(eq(interlockRules.enabled, true), ne(interlockRules.action, "alert"), inArray(deviceTags.dataType, ["int", "float", "bool"])) as SQL;
+  // R1b-2b-1 T2 fix round 1 (I1) — HOẶC đích trên adapter có địa chỉ lớp bit được (modbus / slmp / mitsubishi-mc / s7), MỌI dataType: driver ghi
+  // MỘT BIT bằng `boolGhi` chặt ⇒ "2" lên coil kiểu int là lệnh dispatch() từ chối. Lớp bit thật sự do `kiemGiaTriDiaChiBit` (JS) quyết —
+  // SQL chỉ lọc ứng viên. Cần `innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))`.
+  return and(
+    eq(interlockRules.enabled, true),
+    ne(interlockRules.action, "alert"),
+    or(inArray(deviceTags.dataType, ["int", "float", "bool"]), inArray(deviceAdapters.protocol, ["modbus", "slmp", "mitsubishi-mc", "s7"])),
+  ) as SQL;
 }
 
 /** Nối luật ↔ tag đích (cùng khoá `kiemLenhInterlockTx` đọc). */
@@ -144,14 +152,22 @@ export async function luatLenhLechLuoi(d: DbHoacTx, them?: SQL): Promise<LuatLen
       writeStep: deviceTags.writeStep,
       scale: deviceTags.scale,
       offset: deviceTags.offset,
+      address: deviceTags.address,
+      protocol: deviceAdapters.protocol,
     })
     .from(interlockRules)
     .innerJoin(deviceTags, dieuKienNoiDichLenh())
+    .innerJoin(deviceAdapters, eq(deviceAdapters.id, deviceTags.adapterId))
     .where(them ? and(dieuKienUngVienLenhLechLuoi(), them) : dieuKienUngVienLenhLechLuoi())
     .orderBy(interlockRules.id);
   const ra: LuatLenhLechLuoi[] = [];
   for (const h of hang) {
-    const kq = kiemLenhInterlockTrenKenh(h, giaTriLenhInterlock(h));
+    const gt = giaTriLenhInterlock(h);
+    // int / float / bool: luật cổng kênh đầy đủ (+ địa chỉ bit — `kiemLenhInterlockTrenKenh` nhận protocol + address). Kiểu khác (string / json) chỉ
+    // vào đây vì adapter có địa chỉ lớp bit được ⇒ CHỈ luật địa chỉ bit (không đổi phán quyết cũ của các kiểu đó).
+    const kq = ["int", "float", "bool"].includes(String(h.dataType))
+      ? kiemLenhInterlockTrenKenh(h, gt)
+      : ((b) => (b.ok ? ({ ok: true } as const) : ({ ok: false, ma: "TYPE_MISMATCH", chiTiet: b.chiTiet } as const)))(kiemGiaTriDiaChiBit(h.protocol, h.address, h.dataType, gt));
     if (!kq.ok) ra.push({ id: h.id, name: h.name, ma: kq.ma, chiTiet: kq.chiTiet });
   }
   return ra;

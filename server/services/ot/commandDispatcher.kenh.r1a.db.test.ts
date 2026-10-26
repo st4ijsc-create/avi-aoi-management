@@ -258,7 +258,7 @@ describe.skipIf(!DB_URL)(
         .values({
           code: `${DAU}-A`,
           name: `${DAU} adapter`,
-          protocol: "stub",
+          protocol: "modbus", // R1b-2b-1 T2 fix round 1 — modbus: tag coil:7 / coil:8 là địa chỉ BIT (luật 6 của congKenhSom); địa chỉ D2xx không phải địa chỉ Modbus ⇒ không lớp bit
           endpoint: "stub://r1a-t3",
           isEnabled: true,
           machineId: MACHINE,
@@ -319,7 +319,7 @@ describe.skipIf(!DB_URL)(
       fake.drivers.set(adapterId, fakeDriver);
       fake.fingerprints.set(
         adapterId,
-        adapterTargetFingerprint({ protocol: "stub", endpoint: "stub://r1a-t3", machineId: MACHINE, connectionOptions: null }),
+        adapterTargetFingerprint({ protocol: "modbus", endpoint: "stub://r1a-t3", machineId: MACHINE, connectionOptions: null }),
       );
     }, 60_000);
 
@@ -1223,7 +1223,7 @@ describe.skipIf(!DB_URL)(
       }
     });
 
-    it("KD-T2 + điều kiện 1c (bản DB): ghim STOP CŨ 255 (và 1) trên coil kiểu INT ⇒ STOP acked, coil nhận TRUE — driver không bao giờ chặn STOP; cùng 255 trên đường THƯỜNG ⇒ driver từ chối (failed), coil 0 lần", async () => {
+    it("KD-T2 + điều kiện 1c (bản DB): ghim STOP CŨ 255 (và 1) trên coil kiểu INT ⇒ STOP acked, coil nhận TRUE — driver không bao giờ chặn STOP; cùng 255 trên đường THƯỜNG ⇒ fix round 1 (I1): rejected TYPE_MISMATCH SỚM (cổng kênh, luật địa chỉ bit), thiết bị 0 lần", async () => {
       process.env.OT_CONTROL_ENABLED = "true";
       try {
         await voiModbusThat(async ({ coil, coDung }) => {
@@ -1238,13 +1238,25 @@ describe.skipIf(!DB_URL)(
           expect(coDung).toEqual([true, true]);
           coil.length = 0;
           await datGhimTag("icoil", null);
-          const writes = [{ tagKey: "icoil", value: 255 }];
-          const actionId = await makeAction({ writes });
-          const res = await dispatch(input({ actionId, writes }));
-          expect(res.ok).toBe(false);
-          expect(res.status).toBe("failed");
-          expect(res.results[0]!.error ?? "").toMatch(/bool không hợp lệ: 255/);
+          const n0 = writeCalls;
+          for (const value of [255, 2]) {
+            const writes = [{ tagKey: "icoil", value }];
+            const actionId = await makeAction({ writes });
+            const inp = input({ actionId, writes });
+            const res = await dispatch(inp);
+            expect(res.status, String(value)).toBe("rejected");
+            expect(res.reason).toBe("TYPE_MISMATCH");
+            expect(res.appError).toEqual({ appCode: "SCADA_VALUE_TYPE_MISMATCH", appParams: { ma: "TYPE_MISMATCH", tagKey: "icoil", dataType: "int" } });
+            expect((await ledger(inp.idempotencyKey))[0]!.errorText).toMatch(/^TYPE_MISMATCH: Tag "icoil": Địa chỉ coil:8 \(modbus_coil\) được ghi thành MỘT BIT/);
+            expect(await pendingStatus(actionId)).toBe("confirmed");
+          }
+          expect(writeCalls).toBe(n0); // thiết bị 0 lần
           expect(coil).toEqual([]);
+          // đúng tập (1 / "0") trên coil kiểu int, đường thường ⇒ qua, coil nhận bool
+          const writes = [{ tagKey: "icoil", value: 1 }];
+          const actionId = await makeAction({ writes });
+          expect((await dispatch(input({ actionId, writes }))).status).toBe("acked");
+          expect(coil).toEqual([[7, true]]);
         });
       } finally {
         await datGhimTag("icoil", null);

@@ -533,7 +533,9 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
           }
           const dataType = w.dataType ?? "float";
           const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-          return { tagKey: w.tagKey, addr: parsed.mc, value: coerceMcWrite(raw, dataType, w.dungGhim) };
+          // R1b-2b-1 T2 fix round 1 (M1) — bit-device / "<word>.<bit>": MỘT luật bool BẤT KỂ dataType (như coil Modbus / bit SLMP): ngoài tập ⇒ write
+          // đó ok:false; STOP đã xác minh ⇒ `boolDungGhim` (KD-T2). Giá trị là giá trị người gọi (không inverse-scale — một bit không có thang đo).
+          return { tagKey: w.tagKey, addr: parsed.mc, value: parsed.isBit ? boolChoGhi(w.value, w.dungGhim) : coerceMcWrite(raw, dataType, w.dungGhim) };
         } catch (err) {
           return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
         }

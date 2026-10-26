@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { boolChoGhi, boolDungGhim, boolGhi, boolTuGiaTri, giaiMaBoolDoc, LoiGiaTriBool } from "./boolNghiem";
-import { lopDiaChiBit } from "./diaChiBit";
+import { kiemGiaTriDiaChiBit, lopDiaChiBit } from "./diaChiBit";
 
 const HOP_LE: ReadonlyArray<readonly [unknown, boolean]> = [
   [true, true],
@@ -126,8 +126,19 @@ describe("lopDiaChiBit — địa chỉ driver ghi thành MỘT BIT (điều ki�
     for (const a of ["M100", "D6000.1", "TS0", "X1A"]) expect(lopDiaChiBit("mitsubishi-mc", a, "int"), a).toBe("mc_bit");
     for (const a of ["D100", "TN0", "RFLOAT5000"]) expect(lopDiaChiBit("mitsubishi-mc", a, "int"), a).toBeNull();
   });
-  it("S7 / EtherNet/IP / OPC UA / stub ⇒ null (driver ghi theo dataType)", () => {
-    expect(lopDiaChiBit("s7", "DB1,X14.0", "int")).toBeNull();
+  it("fix round 1 (M1 + lo ngại 4): bit S7 (DB…,X / M0.0 / MX3.1 / Q0.0) ⇒ s7_bit mọi dataType; word S7 ⇒ null", () => {
+    for (const a of ["DB1,X14.0", "M0.0", "MX3.1", "Q0.0"]) expect(lopDiaChiBit("s7", a, "int"), a).toBe("s7_bit");
+    for (const a of ["DB1,INT12", "MW0", "MD4", "rác"]) expect(lopDiaChiBit("s7", a, "int"), a).toBeNull();
+  });
+  it("kiemGiaTriDiaChiBit: lớp bit ⇒ tập bool; ngoài lớp / thiếu protocol hay address ⇒ ok", () => {
+    expect(kiemGiaTriDiaChiBit("modbus", "coil:1", "int", 2)).toMatchObject({ ok: false, lopBit: "modbus_coil", chiTiet: expect.stringMatching(/được ghi thành MỘT BIT/) });
+    for (const v of [1, 0, true, "false", " 1 "]) expect(kiemGiaTriDiaChiBit("modbus", "coil:1", "int", v)).toEqual({ ok: true });
+    expect(kiemGiaTriDiaChiBit("modbus", "40001", "int", 2)).toEqual({ ok: true });
+    expect(kiemGiaTriDiaChiBit("s7", "M0.0", "int", 255)).toMatchObject({ ok: false, lopBit: "s7_bit" });
+    expect(kiemGiaTriDiaChiBit(null, "coil:1", "int", 2)).toEqual({ ok: true });
+    expect(kiemGiaTriDiaChiBit("modbus", null, "int", 2)).toEqual({ ok: true });
+  });
+  it("EtherNet/IP / OPC UA / stub ⇒ null (địa chỉ là TÊN / driver không phải Modbus)", () => {
     expect(lopDiaChiBit("ethernet-ip", "Run", "int")).toBeNull();
     expect(lopDiaChiBit("opcua", "ns=2;s=Run", "int")).toBeNull();
     expect(lopDiaChiBit("stub", "coil:1", "int")).toBeNull();

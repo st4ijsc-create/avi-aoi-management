@@ -583,7 +583,7 @@ describe("★★★ điều phối M4 (b) — gợi ý tongHop từ CÙNG khảo
     expect(khe.dangGiu).toBe(0);
     khe.datLaiCao();
     H.edgeDinh = 0;
-    // pha 1 — hai lượt ĐỒNG THỜI
+    // bước 1 — hai lượt ĐỒNG THỜI
     const [k1, k2] = await Promise.all([goc.opD.caller.scadaCommands.mayDungKhanCap(), goc.opD.caller.scadaCommands.mayDungKhanCap()]);
     for (const kq of [k1, k2]) {
       expect(kq.may).toHaveLength(SO_MAY_D);
@@ -593,7 +593,7 @@ describe("★★★ điều phối M4 (b) — gợi ý tongHop từ CÙNG khảo
     expect(H.edgeDinh, "tổng lượt kiểm chủ edge đang chạy của CẢ HAI lượt gọi").toBeLessThanOrEqual(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
     expect(H.edgeDinh).toBeGreaterThan(1);
     const sau1 = _kheKhaoSatDungKhanCapChoTest();
-    // pha 2 — lượt thứ ba trong lúc khe còn bị giữ: không xếp hàng, không việc mới
+    // bước 2 — lượt thứ ba trong lúc khe còn bị giữ: không xếp hàng, không việc mới
     const goiTruoc = H.edgeSoGoi;
     const batDau = Date.now();
     const k3 = await goc.opD.caller.scadaCommands.mayDungKhanCap();

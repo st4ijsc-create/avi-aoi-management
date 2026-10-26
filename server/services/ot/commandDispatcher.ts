@@ -189,6 +189,7 @@ import { loadStopPins, matchPinnedStop, stopPinsFromTagRows, validateStopValue, 
 import { luatDuyetConHieuLuc } from "../interlock/dinhNghiaDuyet"; // kiem-dinh R1b-1 I1 (a): duyệt còn hiệu lực = bám định nghĩa tag khớp
 import { giaTriLenhInterlock } from "../interlock/giaTriLenh"; // R1a T12 fix 1 (c1): giá trị luật GỬI = giá trị so ở đây = giá trị kiểm lúc cấu hình
 import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
+import { kiemGiaTriDiaChiBit, lopDiaChiBit } from "./drivers/diaChiBit"; // R1b-2b-1 T2 fix round 1 (I1) — bit-address rule of the early gate
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
@@ -923,11 +924,22 @@ function epKieuKenh(tag: Pick<DeviceTag, "dataType"> & Partial<Pick<DeviceTag, "
  *      (nobody relies on the rounding / on the NaN write). A pinned STOP is exempt (whole-command rule above), like range/step: an
  *      off-grid pin is still written (and rounded by the driver) — STOP is never blocked; such pins are a configuration finding, not a
  *      dispatch refusal.
+ *   6. R1b-2b-1 T2 fix round 1 (I1) — BIT ADDRESS (`protocol` given): a write to an address the driver writes as ONE BIT whatever the tag
+ *      dataType (Modbus coil, bool holding register, SLMP / MC / S7 bit — `kiemGiaTriDiaChiBit`) must carry a value in the bool set (the driver's
+ *      strict `boolGhi` would otherwise fail it AFTER every gate and the ledger) ⇒ TYPE_MISMATCH here, device called 0 times. Runs LAST, after
+ *      the stop-typed pinned-STOP exemption, and is also skipped when the whole command equals the pinned values (a STOP by content, written
+ *      with the lenient `boolDungGhim` — KD-T2: a verified STOP is never refused for its bool form).
  * ok ⇒ the writes to use downstream: declared tags carry the COERCED value, undeclared ones the caller's write object.
  *
  * R1a Task 4 (ledger R-1) appends its mode gate (3c) right after this block in dispatchCore, on the same tag rows.
  */
-export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchWrite>, tags: ReadonlyArray<TagCongKenh>): KetQuaCongKenhSom {
+export function congKenhSom(
+  commandType: string,
+  writes: ReadonlyArray<DispatchWrite>,
+  tags: ReadonlyArray<TagCongKenh>,
+  /** R1b-2b-1 T2 fix round 1 — the adapter protocol (bit-address rule 6); absent ⇒ rule 6 does not run (pure callers / old behaviour). */
+  protocol?: string | null,
+): KetQuaCongKenhSom {
   const tuChoi = (i: number, ma: MaCongKenh, chiTiet: string, luoi?: { buoc?: number; goiY?: number }): KetQuaCongKenhSom => ({
     ok: false,
     ma,
@@ -954,12 +966,15 @@ export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchW
     out.push({ ...w, value: kieu.giaTri });
     canKiem.push(i);
   }
-  if (canKiem.length === 0) return { ok: true, writes: out };
+  // rule 6 candidates: writes to a bit-class address (any dataType)
+  const bitIdx = protocol ? writes.map((_, i) => i).filter((i) => lopDiaChiBit(protocol, tags[i].address, tags[i].dataType) !== null) : [];
+  if (canKiem.length === 0 && bitIdx.length === 0) return { ok: true, writes: out };
 
-  if (isStopCommandType(commandType)) {
+  const khopGhim = (): boolean => {
     const pins = stopPinsFromTagRows(tags.map((t) => ({ tagKey: t.tagKey, dataType: t.dataType, stopValue: t.stopValue, writable: t.writable, isEnabled: t.isEnabled })));
-    if (matchPinnedStop(pins, out.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok) return { ok: true, writes: out };
-  }
+    return matchPinnedStop(pins, out.map((w) => ({ tagKey: w.tagKey, value: w.value }))).ok;
+  };
+  if (isStopCommandType(commandType) && khopGhim()) return { ok: true, writes: out };
 
   for (const i of canKiem) {
     const kq = kenhDaKhaiGhi(tags[i]) ? kiemGiaTriGhi(tags[i], writes[i].value) : kiemLuoiThoChuaKhai(tags[i], writes[i].value);
@@ -967,6 +982,13 @@ export function congKenhSom(commandType: string, writes: ReadonlyArray<DispatchW
       return tuChoi(i, kq.ma, `Tag "${writes[i].tagKey}": ${kq.chiTiet}${kq.goiY !== undefined ? ` (goiY=${kq.goiY})` : ""}`, { buoc: kq.buoc, goiY: kq.goiY });
     }
     // declared: kq.giaTri === the pass-1 coerced value (kiemGiaTriGhi never rounds or clamps); undeclared: the value as sent
+  }
+  // rule 6 — on the value the driver receives (`out`); a STOP by content (whole command = the pinned values) is exempt (KD-T2)
+  if (bitIdx.length > 0 && !khopGhim()) {
+    for (const i of bitIdx) {
+      const bit = kiemGiaTriDiaChiBit(protocol, tags[i].address, tags[i].dataType, out[i].value);
+      if (!bit.ok) return tuChoi(i, "TYPE_MISMATCH", `Tag "${writes[i].tagKey}": ${bit.chiTiet}`);
+    }
   }
   return { ok: true, writes: out };
 }
@@ -1208,7 +1230,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const ids = await writeRejected(db, input, ma, chiTiet, tagKey, address);
     return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids, ...(appError ? { appError } : {}) };
   };
-  const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3);
+  const kenh = congKenhSom(input.commandType, input.writes, tagRowsBuoc3, adapter.protocol);
   if (!kenh.ok) return tuChoiSom(kenh.ma, kenh.chiTiet, kenh.tagKey, kenh.address, appErrorCongKenh(kenh, tagRowsBuoc3));
   if (kenh.writes.some((w, i) => w !== rawCallerWrites[i])) {
     input = { ...input, writes: kenh.writes };

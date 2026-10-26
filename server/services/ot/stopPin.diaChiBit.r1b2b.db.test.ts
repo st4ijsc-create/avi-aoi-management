@@ -56,6 +56,10 @@ const TAG: Array<[string, string, string, string]> = [
   ["mitsubishi-mc", "bitWordInt", "D6000.1", "int"],
   ["mitsubishi-mc", "dInt", "D200", "int"],
   ["stub", "coilInt", "coil:1", "int"],
+  // fix round 1 (lo ngại 4) — bit S7
+  ["s7", "xInt", "DB1,X0.0", "int"],
+  ["s7", "mInt", "M0.1", "int"],
+  ["s7", "wInt", "DB1,INT2", "int"],
 ];
 
 beforeAll(async () => {
@@ -69,7 +73,7 @@ beforeAll(async () => {
   const [s] = await dung(sql`INSERT INTO stations ("lineId", code, name) VALUES (${l.id}, ${code}, ${code}) RETURNING id`);
   const [m] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${s.id}, ${code}, ${code}, 'AOI', true) RETURNING id`);
   mid = Number(m.id);
-  for (const gt of ["modbus", "slmp", "mitsubishi-mc", "stub"]) {
+  for (const gt of ["modbus", "slmp", "mitsubishi-mc", "stub", "s7"]) {
     const [a] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "isEnabled")
       VALUES (${mid}, ${code + "-" + gt}, ${code}, ${gt}::otprotocolenum, 'tcp://192.0.2.1:502', false) RETURNING id`);
     adapter[gt] = Number(a.id);
@@ -145,6 +149,17 @@ describe("R1b-2b-1 T2 — setStopPin trên địa chỉ coil / bit: chỉ tập 
     expect((await ghim("slmp", "dInt", 2, lyDo("slmp-d"))).stopValue).toBe(2);
     expect((await ghim("mitsubishi-mc", "dInt", 2, lyDo("mc-d"))).stopValue).toBe(2);
     expect((await ghim("slmp", "mInt", 1, lyDo("slmp-m-ok"))).stopValue).toBe(1);
+  });
+
+  it("fix round 1 (lo ngại 4): bit S7 (DB1,X0.0 / M0.1) kiểu INT: 2 ⇒ từ chối, không ghi; 1 ⇒ OK; word S7 (DB1,INT2) 2 ⇒ OK như cũ", async () => {
+    for (const k of ["xInt", "mInt"]) {
+      const ld = lyDo(`s7-${k}`);
+      expect(await loiCua(ghim("s7", k, 2, ld)), k).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "stopValue", reason: "stopPinBitAddress" } });
+      expect(await stopCua(`s7/${k}`)).toBeNull();
+      expect(await audit(ld)).toHaveLength(0);
+    }
+    expect((await ghim("s7", "xInt", 1, lyDo("s7-x-ok"))).stopValue).toBe(1);
+    expect((await ghim("s7", "wInt", 2, lyDo("s7-w"))).stopValue).toBe(2);
   });
 
   it("holding Modbus kiểu INT (không phải bit) 255 ⇒ OK; adapter stub địa chỉ 'coil:1' (driver không phải Modbus) 2 ⇒ OK", async () => {
