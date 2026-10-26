@@ -19,7 +19,8 @@ import { EventEmitter } from "node:events";
 import net from "node:net";
 import type { OtDriver } from "../otDriver";
 
-const HAN_NHANH_MS = 300;
+// T17 fix round 1 (review Minor 5) — 500 ms: vẫn nhỏ hơn lỗi 5000 ms một bậc, bớt chập chờn trên máy tải nặng.
+const HAN_NHANH_MS = 500;
 
 type Ex = { timedOut: boolean; outcomes: Array<{ ok: boolean; status: string; errorText: string | null }> };
 
@@ -87,14 +88,16 @@ function giaLibCallback() {
 }
 
 describe.each([
-  { ten: "S7 (nodes7)", pkg: "nodes7", mod: "./s7Driver", lop: "S7Driver", address: "DB1,X0.0" },
-  { ten: "MC (mcprotocol)", pkg: "mcprotocol", mod: "./mitsubishiMcDriver", lop: "MitsubishiMcDriver", address: "M100" },
-])("R1b-2b-1 $ten — lệnh ghi đang bay ⇒ 'timeout' (không rõ) NGAY", ({ pkg, mod, lop, address }) => {
+  // T17 fix round 1 (review Minor 2) — nodes7 THẬT không phải EventEmitter: (i) ở đây là GIẢ ĐỊNH (thư viện có phát thì driver huỷ); đường thật của S7 khi
+  // liên kết rớt là `isoConnectionState` ≠ 4 ⇒ vòng canh ⇒ disconnect() ⇒ (ii).
+  { ten: "S7 (nodes7)", pkg: "nodes7", mod: "./s7Driver", lop: "S7Driver", address: "DB1,X0.0", ghiChuI: " — GIẢ ĐỊNH (nodes7 thật không phát; đường thật = vòng canh ⇒ (ii))" },
+  { ten: "MC (mcprotocol)", pkg: "mcprotocol", mod: "./mitsubishiMcDriver", lop: "MitsubishiMcDriver", address: "M100", ghiChuI: " — qua conn.on (đường gia cố thật: ca riêng bên dưới)" },
+])("R1b-2b-1 $ten — lệnh ghi đang bay ⇒ 'timeout' (không rõ) NGAY", ({ pkg, mod, lop, address, ghiChuI }) => {
   beforeEach(() => vi.resetModules());
   afterEach(() => vi.doUnmock(pkg));
 
   for (const diem of ["i", "ii", "iii"] as Diem[]) {
-    it(`(${diem}) ${diem === "i" ? "lỗi/đóng liên kết của phiên" : diem === "ii" ? "disconnect()" : "connect() thay phiên cũ"} ⇒ timeout < ${HAN_NHANH_MS} ms`, async () => {
+    it(`(${diem}) ${diem === "i" ? `lỗi/đóng liên kết của phiên${ghiChuI}` : diem === "ii" ? "disconnect()" : "connect() thay phiên cũ"} ⇒ timeout < ${HAN_NHANH_MS} ms`, async () => {
       const { Lib, dsConn } = giaLibCallback();
       vi.doMock(pkg, () => ({ default: Lib }));
       const M = await import(mod);
@@ -113,6 +116,61 @@ describe.each([
       await d.disconnect();
     }, 15_000);
   }
+});
+
+// T17 fix round 1 (review Minor 2) — MC (i) qua ĐƯỜNG THẬT: lớp gia cố (`hardenMcInstance`) gắn listener 'error' lên socket `isoclient` mỗi lần thư viện
+// `connectNow()`; lỗi socket ⇒ `onSocketError` ⇒ markLinkLost(…, conn) ⇒ huỷ. Thư viện giả có connectNow / connectionCleanup / isoclient (như mcprotocol) và
+// KHÔNG có `on` (không đi đường attachLinkLossHandlers).
+describe("R1b-2b-1 MC (mcprotocol) — (i) qua lớp gia cố lỗi socket ⇒ 'timeout' (không rõ) NGAY", () => {
+  beforeEach(() => vi.resetModules());
+  afterEach(() => vi.doUnmock("mcprotocol"));
+
+  it(`(i) isoclient 'error' (ECONNRESET) khi lệnh ghi đang bay ⇒ timeout < ${HAN_NHANH_MS} ms`, async () => {
+    const ds: any[] = [];
+    function MC(this: any) {
+      Object.assign(this, {
+        isoConnectionState: 0,
+        isoclient: undefined as EventEmitter | undefined,
+        connectNow(this: any) {
+          this.isoclient = new EventEmitter();
+          this.isoConnectionState = 4;
+        },
+        connectionCleanup() {},
+        initiateConnection(this: any, _o: unknown, cb: (e?: unknown) => void) {
+          this.connectNow(); // qua lớp bọc của gia cố ⇒ guard(isoclient)
+          cb();
+        },
+        setTranslationCB() {},
+        addItems() {},
+        removeItems() {},
+        readAllItems() {},
+        soGhi: 0,
+        writeItems(this: any) {
+          this.soGhi += 1;
+          return 0; // không bao giờ gọi lại
+        },
+        dropConnection() {},
+      });
+      ds.push(this);
+    }
+    vi.doMock("mcprotocol", () => ({ default: MC }));
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "127.0.0.1" });
+    const conn = ds[0];
+    expect(typeof conn.on).toBe("undefined");
+    expect(conn.isoclient.listeners("error").length).toBe(1); // listener của lớp gia cố
+    const p = guiStop(d, { tagKey: "stop", address: "M100", dataType: "bool", value: true });
+    const { ex, ms } = await doDiemHuy(
+      p,
+      () => conn.soGhi === 1,
+      () => conn.isoclient.emit("error", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })),
+    );
+    laKhongRoKetCuc(ex);
+    expect(ms).toBeLessThan(HAN_NHANH_MS);
+    expect(d.isConnected()).toBe(false);
+    await d.disconnect();
+  }, 15_000);
 });
 
 // ───────────────────────── EtherNet/IP (Controller là EventEmitter) ─────────────────────────
@@ -227,6 +285,55 @@ describe("R1b-2b-1 OPC UA (node-opcua) — lệnh ghi đang bay ⇒ 'timeout' (k
       await d.disconnect();
     }, 15_000);
   }
+});
+
+// T17 fix round 1 (review Minor 3) — OPC UA connect() lại: phiên cũ bị hạ (capture-and-null) TRƯỚC cửa sổ connect / createSession ⇒ lệnh ghi trong cửa sổ
+// KHÔNG đi lên client cũ (DeviceUnreachableError, không gửi ⇒ 'failed' đúng nghĩa); client cũ được đóng (trước: bỏ lại, rò).
+describe("R1b-2b-1 OPC UA — connect() lại: không lệnh ghi nào lên client cũ trong cửa sổ nối; client cũ được đóng", () => {
+  beforeEach(() => vi.resetModules());
+  afterEach(() => vi.doUnmock("node-opcua"));
+
+  it("ghi trong lúc connect lần 2 đang chờ ⇒ ném, session cũ không nhận write; session.close + disconnect của client cũ được gọi", async () => {
+    const ds: any[] = [];
+    let thaConnect: (() => void) | null = null;
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: {
+        create: vi.fn(() => {
+          const client: any = new EventEmitter();
+          const session = { read: vi.fn(async () => []), write: vi.fn(async (n: any[]) => n.map(() => ({ value: 0 }))), close: vi.fn(async () => {}) };
+          Object.assign(client, {
+            session,
+            connect: vi.fn(() => (ds.length === 1 ? Promise.resolve() : new Promise<void>((r) => (thaConnect = r)))),
+            createSession: vi.fn(async () => session),
+            disconnect: vi.fn(async () => {}),
+          });
+          ds.push(client);
+          return client;
+        }),
+      },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {
+        constructor(public o: any) {}
+      },
+    }));
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const c0 = ds[0];
+    const pc = d.connect({ endpoint: "opc.tcp://x" });
+    for (let i = 0; i < 200 && !thaConnect; i++) await tick();
+    expect(thaConnect).not.toBeNull(); // đang trong cửa sổ connect lần 2
+    await expect(d.writeTags([{ tagKey: "stop", address: "ns=2;s=Stop", value: true, dataType: "bool" }])).rejects.toThrow();
+    expect(c0.session.write).not.toHaveBeenCalled();
+    for (let i = 0; i < 200 && c0.disconnect.mock.calls.length === 0; i++) await tick();
+    expect(c0.session.close).toHaveBeenCalled();
+    expect(c0.disconnect).toHaveBeenCalled();
+    thaConnect!();
+    await pc;
+    expect(d.isConnected()).toBe(true);
+    await d.disconnect();
+  }, 15_000);
 });
 
 // ───────────────────────── SLMP (socket riêng, server TCP thật trong tiến trình) ─────────────────────────

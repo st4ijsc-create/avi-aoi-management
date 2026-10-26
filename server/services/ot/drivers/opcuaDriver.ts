@@ -251,7 +251,20 @@ export class OpcuaDriver extends NotImplementedDriver {
     const timeoutMs = cfg.timeoutMs ?? 5000;
     this.timeoutMs = timeoutMs;
     // R1b-2b-1 (iii) — connect lại trên CÙNG driver: lệnh ghi đang bay trên client hiện tại trả lời NGAY (không rõ kết cục).
-    if (this.client) this.dangBay.huy(this.client, "reconnect replaced the session");
+    // T17 fix round 1 (review Minor 3) — capture-and-null TRƯỚC (như các driver khác): trong cửa sổ connect / createSession (có thể vài giây) không
+    // lệnh ghi nào đi lên client cũ (writeTags ⇒ DeviceUnreachableError, không gửi); client cũ đóng nền CÓ HẠN (trước: bị bỏ lại, rò).
+    const clientCu = this.client;
+    const sessionCu = this.session;
+    if (clientCu || sessionCu) {
+      this.client = null;
+      this.session = null;
+      this.connected = false;
+      this.dangBay.huy(clientCu, "reconnect replaced the session");
+      void (async () => {
+        if (sessionCu) await settleWithin(() => sessionCu.close(), OPCUA_CLOSE_STEP_MS, "opcua session.close (phiên cũ)");
+        if (clientCu) await settleWithin(() => clientCu.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect (phiên cũ)");
+      })();
+    }
     const createOpts: Record<string, unknown> = {
       endpointMustExist: false,
       connectionStrategy: { maxRetry: 1 },

@@ -231,7 +231,7 @@ describe("R1b-2b-1 — lần ghi đang bay khi liên kết mất / phiên bị h
     khongAckGia(r.ex, sim.coil.v);
   }, 15_000);
 
-  it("(i) socket close/error: peer đóng lúc nhận FC5, KHÔNG vòng canh, KHÔNG ai gọi disconnect ⇒ 'timeout' (không rõ) trong < 300 ms", async () => {
+  it("(i) socket close/error: peer đóng lúc nhận FC5, KHÔNG vòng canh, KHÔNG ai gọi disconnect ⇒ 'timeout' (không rõ) trong < 500 ms", async () => {
     const sim = await startSim();
     const driver = await moDriver(sim);
     await sleep(100);
@@ -241,11 +241,11 @@ describe("R1b-2b-1 — lần ghi đang bay khi liên kết mất / phiên bị h
     console.log("[i-socket-close]", JSON.stringify({ ms: r.ms, outcomes: r.ex.outcomes }));
     expect(sim.nhanFc5).toBe(1);
     laKhongRoKetCuc(r.ex); // trước bản vá: 'failed' "Timed out" ~800 ms
-    expect(r.ms).toBeLessThan(300);
+    expect(r.ms).toBeLessThan(500);
     khongAckGia(r.ex, sim.coil.v);
   }, 15_000);
 
-  it("(ii) disconnect(): peer IM LẶNG (không đóng) ⇒ ta gọi disconnect() khi FC5 đang bay ⇒ 'timeout' (không rõ) trong < 300 ms kể từ disconnect", async () => {
+  it("(ii) disconnect(): peer IM LẶNG (không đóng) ⇒ ta gọi disconnect() khi FC5 đang bay ⇒ 'timeout' (không rõ) trong < 500 ms kể từ disconnect", async () => {
     const sim = await startSim();
     const driver = await moDriver(sim);
     await sleep(100);
@@ -259,11 +259,11 @@ describe("R1b-2b-1 — lần ghi đang bay khi liên kết mất / phiên bị h
     // eslint-disable-next-line no-console
     console.log("[ii-disconnect]", JSON.stringify({ ms, outcomes: ex.outcomes }));
     laKhongRoKetCuc(ex); // trước bản vá: đóng êm ⇒ hạn giao dịch thư viện ⇒ 'failed' ~800 ms
-    expect(ms).toBeLessThan(300);
+    expect(ms).toBeLessThan(500);
     khongAckGia(ex, sim.coil.v);
   }, 15_000);
 
-  it("(iii) connect() trên CÙNG driver (supervisor nối lại) khi FC5 đang bay trên client cũ ⇒ 'timeout' (không rõ) trong < 300 ms kể từ connect", async () => {
+  it("(iii) connect() trên CÙNG driver (supervisor nối lại) khi FC5 đang bay trên client cũ ⇒ 'timeout' (không rõ) trong < 500 ms kể từ connect", async () => {
     const sim = await startSim();
     const driver = await moDriver(sim);
     await sleep(100);
@@ -278,7 +278,7 @@ describe("R1b-2b-1 — lần ghi đang bay khi liên kết mất / phiên bị h
     // eslint-disable-next-line no-console
     console.log("[iii-connect]", JSON.stringify({ ms, outcomes: ex.outcomes, soKetNoi: sim.soKetNoi }));
     laKhongRoKetCuc(ex); // trước bản vá: client cũ đóng êm ⇒ 'failed' ~800 ms
-    expect(ms).toBeLessThan(300);
+    expect(ms).toBeLessThan(500);
     expect(driver.isConnected()).toBe(true); // phiên MỚI không bị ảnh hưởng
     khongAckGia(ex, sim.coil.v);
   }, 15_000);
