@@ -93,7 +93,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 ## 8. Backlog sau 10.3 (chưa làm)
 
 1. `server/_core/llm.ts:237` tải `image_url` bằng `fetch` thô (theo chuyển hướng, không rào SSRF). Cần xác nhận nguồn URL (`annotationRouters`, `inspectionRouters`) hoặc chuyển sang `fetchGhim`.
-2. Forge: lưới "`BUILT_IN_FORGE_API_URL` rỗng ⇒ 0 lời gọi", hoặc cảnh báo lúc khởi động khi URL được đặt.
+2. ~~Forge: lưới "URL rỗng ⇒ 0 lời gọi" + cảnh báo khởi động~~ — XONG (lô sau nghiệm thu): `forgeNgoai.ts` + test, cảnh báo khởi động một lần, `oversight.posture.forgeNgoaiBat`.
 3. Kiểm `chanHostAiNgoai` lúc LƯU cấu hình của 5 đích admin ở §6.
 4. `urlNgoai`: host nội bộ đặt tên công khai (vd `gpu.nhamay.vn` → 10.x) bị buộc https dù đã khai. Hạn chế chức năng, không phải lỗ.
 5. Bộ che: trần chuỗi liền 2 000 ký tự (`RE_KHONG_TRANG_DAI`) đặt vì `aiSafety` bậc hai. Main nay đã có bản tuyến tính (`134988874`) ⇒ đo lại xem nới trần được không (lô 1 mục 1).

@@ -74,6 +74,7 @@ import { isOtControlEnabled, isInterlockAutoBlockEnabled } from "../services/ot/
 import { isRobotControlEnabled } from "../services/robot/robotCommandDispatcher";
 import { dpcDeployEnabled as isDpcDeployEnabled } from "../services/programming/programmingService";
 import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine";
+import { forgeNgoaiBat } from "../_core/forgeNgoai";
 // doc 81 Đợt 3 Task 4 — "Của tôi": vị từ CHỜ DUYỆT dùng chung (một nguồn cho cả "Chờ duyệt" lẫn "Của tôi") +
 // đếm theo phân công active (bảng `engineering_assignments`, mig 0363).
 import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
@@ -780,6 +781,8 @@ export const oversightRouter = router({
         stopQuaHan24h,
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
+        // Đợt 10.3 (§12) — dịch vụ forge (sinh ảnh / chuyển giọng nói… ra ngoài KHÔNG qua cổng AI ngoài) đang cấu hình?
+        forgeNgoaiBat: forgeNgoaiBat(),
         generatedAt: new Date().toISOString(),
       };
     }),
