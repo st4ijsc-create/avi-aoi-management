@@ -1,136 +1,137 @@
-# Đợt 10.4 — Kiểm định bởi AI ngoài (node + nút + model ngoài trong ô chọn): KẾ HOẠCH
+# Đợt 10.4 — Kiểm định bởi AI ngoài (node + nút + model ngoài trong ô chọn): KẾ HOẠCH v2
 
-> Phiên **luong-ui** · nhánh `feat/ai-flow-studio` · 2026-10-27 · **DỰ THẢO — chờ dieu-phoi + kiem-dinh + do-model duyệt, CHƯA làm.**
-> Spec: `docs/superpowers/specs/2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` §5 B5/B6, §6, §9 · Bàn giao: `2026-10-26-dot10-3-bao-cao-nghiem-thu.md` §7 · Hợp đồng máy chủ do **do-model** xác nhận 2026-10-27 (thư gửi luong-ui).
-> Người đọc: dieu-phoi (duyệt/gộp), kiem-dinh (rà trước khi làm), do-model (chốt chữ ký phía máy chủ), chủ dự án (§8 quyết định cần có).
+> Phiên **luong-ui** · nhánh `feat/ai-flow-studio` · 2026-10-27 · **v2** = v1 (`c77235641`) + quyết định dieu-phoi + 7 trả lời do-model + rà kiem-dinh (B1–B9, N1–N4, bảng đột biến). **CHỜ kiem-dinh đọc lại diff + dieu-phoi duyệt TRƯỚC khi làm T2–T6.** T0 đã xong.
+> Spec: `docs/superpowers/specs/2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` §5 B5/B6, §6, §9 · Bàn giao: `2026-10-26-dot10-3-bao-cao-nghiem-thu.md` §7.
+> Người đọc: dieu-phoi (duyệt/gộp), kiem-dinh (rà), do-model (chữ ký phía máy chủ), chủ dự án (§8).
 
-## 0. Tóm tắt một đoạn
+## 0. Tóm tắt
 
-10.4 đưa AI ngoài tới tay người dùng ở HAI nơi, cả hai **không bao giờ cho AI ngoài công cụ ghi/chạy**: (1) **node Luồng `ai.kiem-dinh-ngoai`** (tự động, Q2), (2) **nút "Nhờ AI ngoài kiểm định"** trên câu trả lời chat + lượt coding/agent (người bấm). Model ngoài vào ô chọn **chỉ ở bề mặt mà máy chủ khai là dùng được** (`duocDungO`). **Đề xuất (cần chủ dự án gật):** KHÔNG biến model ngoài thành model SINH của Chat/Coding/KB ở 10.4 — nút kiểm định đã phục vụ đúng nhu cầu "AI Local làm xong → AI mạnh hơn kiểm lại"; mở sinh-chữ ngoài là lô riêng 10.4b. Việc phải sửa NGAY (độc lập): ô chọn ở chat/coding/agent/extension hiện **có thể hiện mục `ngoai:` mà máy chủ trả 404** — ẩn cho tới khi máy chủ khai.
+10.4 đưa AI ngoài tới tay người dùng ở HAI nơi, **không bao giờ cho AI ngoài công cụ**: (1) **node Luồng `ai.kiem-dinh-ngoai`** (tự động, Q2 chủ dự án), (2) **nút "Nhờ AI ngoài kiểm định"** (người bấm) trên câu trả lời `/ai-chat`, lượt agent, lượt coding. Nút gửi **ID của lượt đã lưu** — máy chủ tự đọc, tự suy nhà máy + mức dữ liệu, **mặc định đóng (`van-hanh`) khi không chứng minh được là kỹ thuật**. 10.4 **không nhận văn bản tự do** từ client.
+**Quyết định đã có (dieu-phoi 2026-10-27):** (Q1) sinh chữ bằng model ngoài ở Chat/Coding/KB **KHÔNG tuỳ chọn** — chủ dự án đã quyết (Q4 26/10) "ô chọn gồm model ngoài khi admin bật" ⇒ **lô 10.4b BẮT BUỘC ngay sau 10.4** (§6); (Q2) hộp xác nhận hiển thị chi phí ước + phần trần ngày còn lại; (Q3) bong bóng/extension → 10.4b; (Q4) SoD chạy tay chỉ hiện mã lỗi + hướng dẫn.
 
-## 1. Hiện trạng đã đo (2026-10-27, main `35c8a2835`)
+## 1. Hiện trạng đã đo
 
 | Việc | Trạng thái |
 |---|---|
 | `aiChonModel.danhMuc` trả `ngoai:<ncc>:<model>` | CÓ (chỉ khi `AI_NGOAI_ENABLED` + nhà máy `batNgoai` + model `batModel`; `auto` không bao giờ chọn ngoài) |
-| Node `ai.llm` / `ai.agent` + `chonModel: "ngoai:…"` | CÓ (qua cổng, `ai.agent` bỏ công cụ ghi/điều khiển) |
-| Cổng `goiAiNgoai` + `nguonMuc: {loai:"be-mat", beMat:"chat"|"coding"|"agent-turn"|"v1"}` | CÓ trong kiểu (cổng sẵn sàng cho bề mặt người bấm) |
-| KB / chat / coding / agent-lập-trình với `ngoai:` | **404 "chưa cài đặt"** |
-| Node `ai.kiem-dinh-ngoai`, nút kiểm định, thủ tục kiểm định | CHƯA CÓ |
-| UI cho `aiNgoai.*` (khoá/cấu hình/model/duyệt phiên bản) | CHƯA CÓ ở client (toàn `adminProcedure`); `AISettingsPage` mới có ô nhà máy cho khoá cũ (10.2 bước 6) |
-| Client ô chọn | `nhomMuc` chỉ giấu `ngoai` ở bề mặt `luong` (cờ `HIEN_NGOAI_O_LUONG=false`); chat/coding/agent/extension sẽ HIỆN `ngoai:` nếu danh mục có ⇒ chọn xong gặp 404 |
+| Node `ai.llm` / `ai.agent` + `chonModel: "ngoai:…"` | CÓ (qua cổng; `ai.agent` bỏ công cụ ghi/điều khiển) |
+| Cổng `goiAiNgoai` + `nguonMuc: be-mat chat/coding/agent-turn/v1` | CÓ (mức dữ liệu do CỔNG suy) |
+| KB / chat / coding / agent-lập-trình với `ngoai:` | **404 "chưa cài đặt"** → 10.4b |
+| Node `ai.kiem-dinh-ngoai`, thủ tục nút | CHƯA (do-model nhận làm) |
+| UI `aiNgoai.*` (khoá, cấu hình, duyệt phiên bản) | CHƯA ở client (toàn `adminProcedure`); `AISettingsPage` đã có ô nhà máy cho khoá (10.2 B6) |
+| **T0** (ẩn `ngoai:` theo `duocDungO`) | **XONG** — client `2663c2719`; extension 0.4.1 `d200ab348` (đã cài, sha256 khớp). Thiếu `duocDungO` ⇒ []; extension cần CẢ `chat` + `agent` |
 
-## 2. Quyết định thiết kế đề xuất
+## 2. Quyết định thiết kế
 
-**D1 — Hai đường, không thêm đường thứ ba.** Node Luồng (tự động) + nút (người bấm). Cả hai gọi CÙNG một hàm kiểm định phía máy chủ (`kiemDinhNgoai(...)`: lắp prompt + gọi `goiAiNgoai` + kiểm schema) để schema/prompt/lỗi giống nhau.
+**D1 — Hai đường, không thêm đường thứ ba.** Node + nút gọi CÙNG một hàm máy chủ (`kiemDinhNgoai(...)`: lắp prompt + `goiAiNgoai` + `parseKetQuaKiemDinh`).
 
-**D2 — Hợp đồng kết quả MỘT chỗ** (`shared/ai/kiemDinhNgoai.ts`, zod + kiểu, dùng cả server lẫn client):
-
+**D2 — Hợp đồng kết quả MỘT chỗ:** `shared/ai/kiemDinhNgoai.ts` (**luong-ui viết schema + test; do-model import**), kèm **một hàm kiểm dùng chung** `parseKetQuaKiemDinh(raw: unknown): { ok: true; data: KetQuaKiemDinh } | { ok: false; loi: string }` — node và thủ tục đều gọi ĐÚNG hàm này; chuỗi `loi` đi vào lời nhắc thử lại.
 ```
-KetQuaKiemDinh = {
+KetQuaKiemDinh = {                                   // zod .strict() (khoá lạ, __proto__, constructor ⇒ sai)
   ketLuan: "dat" | "can-sua" | "sai",
   diem: int 0..100,
-  banChuanHoa?: string            // ≤ 20 000 ký tự
-  loi: { muc: "nghiem-trong"|"vua"|"nhe", moTa: string≤500, viTri?: string≤200 }[]   // ≤ 20
-  baiHocDeXuat: { noiDung: string≤500, phamVi: "nguoi"|"du-an"|"nha-may", viDu?: string≤1000 }[]  // ≤ 5
-}
+  banChuanHoa?: string ≤ 20 000,
+  loi: { muc: "nghiem-trong"|"vua"|"nhe", moTa ≤500, viTri? ≤200 }[] ≤ 20,
+  baiHocDeXuat: { noiDung ≤500, phamVi: "nguoi"|"du-an"|"nha-may", viDu? ≤1000 }[] ≤ 5,
+}   // TỔNG kích thước kết quả đã chuẩn hoá ≤ 64 KB
 ```
-Kiểm hợp lệ chặt (khoá lạ ⇒ sai; kiểu sai ⇒ sai); **thử lại tối đa 1 lần** với lời nhắc nêu lỗi (như `ai.trich-xuat`), vẫn sai ⇒ lỗi rõ `KIEM_DINH_SAI_SCHEMA` (không lưu kết quả nửa vời). `ketLuan="dat"` mà `loi` có `nghiem-trong` ⇒ coi là sai schema (mâu thuẫn nội tại).
+Luật nội tại: `ketLuan="dat"` mà có lỗi `nghiem-trong` ⇒ sai schema. **Làm sạch TRƯỚC khi kiểm/lưu/hiển thị (B8):** bỏ ký tự điều khiển + bidi (U+202A–202E, U+2066–2069, U+200B–200F), chuẩn hoá NFKC, cắt theo trần. Thử lại **tối đa 1 lần** (lời nhắc nêu `loi`; là LƯỢT TRẢ PHÍ thứ hai, tính vào trần/sổ như lượt riêng — cổng tự làm; hộp kết quả hiện token/chi phí của CẢ HAI — N2); vẫn sai ⇒ `NGOAI_SAI_SCHEMA` (BAD_GATEWAY 502; UI có thể đặt tên hiển thị "kiểm định sai định dạng").
 
-**D3 — Đầu ra của AI ngoài luôn KHÔNG TIN CẬY.** Node: trường kết quả (`kiemDinh`) là dữ liệu thuần; chuỗi trong đó đọc lại bằng `{{ }}` ở node sau là CHUỖI LITERAL (đúng bất biến `ai.ngoai.test.ts` đã có). UI: mọi chuỗi hiển thị bằng `textContent` / Markdown đã lọc (cùng bộ render của chat), **không** `dangerouslySetInnerHTML`; nút "Áp dụng bản chuẩn hoá" KHÔNG tồn tại ở 10.4 (chỉ **Chép**) — áp vào tệp phải đi qua cửa duyệt diff có sẵn, làm ở lô sau nếu cần.
+**D3 — Đầu ra AI ngoài luôn KHÔNG TIN CẬY; hiển thị là VĂN BẢN THUẦN (B6–B9).**
+- `banChuanHoa` / `moTa` / `viDu` / `noiDung` hiển thị bằng `<pre>`/`textContent`. **KHÔNG dựng Markdown/HTML** (không ảnh tự tải, không liên kết). Nếu sau này cần định dạng ⇒ bộ render phải tắt HTML thô, chặn `![]()`, liên kết chỉ http(s)+`rel="noopener noreferrer"`+hộp xác nhận, không `javascript:`/`data:`/`vbscript:` — ngoài phạm vi 10.4.
+- `viTri` và mọi chuỗi AI khai: CHỈ HIỂN THỊ — không thành liên kết/nút mở tệp/điều hướng (ghi ở đây + test `../../etc/passwd`, `C:\Windows`, `\\server\share`, `file:///`).
+- Nút **Chép** bản chuẩn hoá: chỉ đặt clipboard văn bản, kèm **cảnh báo cố định** "Kiểm tra trước khi chạy/dán vào terminal"; KHÔNG tự chèn vào editor/terminal/tệp. **Không có nút "Áp dụng"** ở 10.4 (áp vào tệp phải qua cửa duyệt diff — lô sau).
+- **Một bộ hiển thị duy nhất** `HienThiKetQuaNgoai` (N3) dùng cho hộp kết quả, lịch sử chạy luồng, xuất báo cáo; census (quét AST): mọi chỗ render trường từ `KetQuaKiemDinh` phải import bộ này.
+- Node: trường kết quả là dữ liệu thuần; chuỗi trong đó đọc lại bằng `{{ }}` ở node sau là CHUỖI LITERAL; đầu ra node đi vào `ai.agent` phía sau luôn trong khối UNTRUSTED (bất biến `ai.ngoai.test.ts` — dẫn chiếu, N4).
 
-**D4 — Không công cụ cho AI ngoài ở cả hai đường** (theo cấu trúc: yêu cầu kiểm định KHÔNG mang `congCu`). Quy tắc §7 bàn giao ("model ngoài ⇒ bỏ tool ghi/chạy") chỉ có nghĩa ở 10.4b; ở 10.4 nó được thoả bằng cách **không có đường nào đưa model ngoài vào vòng tool**.
+**D4 — Không công cụ cho AI ngoài ở cả hai đường** (yêu cầu kiểm định KHÔNG mang `congCu`, không nhận đính kèm). Quy tắc §7 ("chọn model ngoài ⇒ bỏ tool ghi/chạy") thoả bằng cấu trúc ở 10.4; ở 10.4b nó thành cờ máy chủ (§6).
 
-**D5 — Phân loại dữ liệu do MÁY CHỦ làm.** Nút kiểm định gửi **ID lượt đã lưu**, không gửi văn bản: máy chủ đọc câu hỏi/câu trả lời/diff từ kho, suy mức (`ky-thuat`/`van-hanh`: câu trả lời mang trích dẫn KB hoặc kết quả tool ⇒ `van-hanh`). Chỉ nguồn **không có kho** (bong bóng chat, extension) dùng nguồn `van-ban` (văn bản tự dán ⇒ `ky-thuat`, trách nhiệm người dán — spec §9, UI ghi rõ).
+**D5 — MÁY CHỦ đọc kho và tự suy; MẶC ĐỊNH ĐÓNG (B1–B4).**
+Nguồn (zod `.strict()` — khoá lạ ⇒ 400; **`chay` KHÔNG nhận `mucDuLieu` / nhà máy / văn bản / `congCu` / đính kèm** ⇒ 400):
+```
+Nguon =
+  | { loai: "chat",   cuocTroChuyenId: number, tinNhanId: number }   // ai_chat_conversations + ai_chat_messages (id serial; userId)
+  | { loai: "agent",  runId: uuid }                                  // ai_agent_runs (id uuid; userId, projectId, cauHoi, suKien jsonb, tomTat); đáp = tomTat, rỗng ⇒ tin assistant cuối trong suKien
+  | { loai: "coding", phienId: uuid, chiSoLuot: number }             // ai_coding_sessions (id uuid; userId, projectId, turns jsonb); chiSoLuot = lượt ASSISTANT, hỏi = lượt user gần nhất trước nó; phiên chưa lưu ⇒ nút vô hiệu
+```
+**10.4 KHÔNG có nguồn `van-ban`** (đóng cửa lách B4): bong bóng/extension → 10.4b (kèm cơ chế bề mặt-không-kho do-model đề xuất). Bất biến test DOM: bề mặt có kho **không bao giờ** gọi với `loai:"van-ban"` (không còn khoá đó) + đột biến.
+- **Sở hữu:** CHỈ chủ lượt (`userId` = người gọi), **không ngoại lệ admin** (kho không có nhà máy để chặn) ⇒ khác ⇒ `NOT_FOUND`.
+- **Nhà máy của dữ liệu (B2):** người gọi phải có **đúng MỘT nhà máy** trong phạm vi (như `/v1`); không có/nhiều ⇒ `NOT_FOUND` — **không lấy "nhà máy đầu"** (an toàn hơn quy tắc "mọi nhà máy phải bật", vì kho không gắn nhà máy). Test chéo: người {A,B} ⇒ từ chối dù A bật.
+- **Mức dữ liệu — provenance bắt buộc, thiếu ⇒ `van-hanh`:**
 
-**D6 — Người bấm thấy TRƯỚC khi gửi.** Hộp xác nhận hiện: model + nhà cung cấp, **mức dữ liệu** máy chủ suy (`ky-thuat`/`van-hanh`; `van-hanh` mà nhà máy chưa cho ⇒ nút gửi vô hiệu + lý do), số token ước + chi phí ước (nếu có bảng giá), câu "nội dung được che trước khi rời máy; tự dán = trách nhiệm người dán". Cần thủ tục đọc `xemTruoc` (§4 T1).
+| Nguồn | Provenance LƯU được | Quy tắc |
+|---|---|---|
+| chat | `toolCalls`/`toolResults` mỗi tin; **nguồn KB (trích dẫn) CÓ lưu không? — câu hỏi M1** | tin đáp hoặc BẤT KỲ tin trước trong cuộc có `toolResults` ⇒ `van-hanh`; **không chứng minh được KB-free ⇒ `van-hanh`** |
+| agent | tên tool trong `suKien` | tool ngoài danh sách MÃ (đọc tệp / tìm mã / tra tài liệu mã) ⇒ `van-hanh`; **tool lạ/không phân loại ⇒ `van-hanh`**; chỉ đọc mã ⇒ `ky-thuat` |
+| coding | chỉ `role`/`content` (không có nguồn) | `ky-thuat` **chỉ khi** phiên là `codingMode` (5 tool đọc/sửa/chạy repo, không KB vận hành) — **câu hỏi M2 cho kiem-dinh**: mặc định `ky-thuat` (spec §9: mã + văn bản tự dán là trách nhiệm người dán) hay đóng `van-hanh`? |
 
-**D7 — Model ngoài ở ô chọn theo `duocDungO`.** Mục danh mục `ngoai:*` mang thêm `duocDungO: ("luong"|"kiem-dinh"|"chat"|"coding"|"agent")[]`; máy chủ điền, client lọc theo bề mặt. 10.4 máy chủ khai `["luong","kiem-dinh"]`. Nhờ vậy 10.4b mở bề mặt mới chỉ cần đổi máy chủ, không sửa client.
+`van-hanh` mà nhà máy chưa `choDuLieuVanHanh` ⇒ `NGOAI_DU_LIEU_VAN_HANH` (403) — UI vô hiệu nút + nói rõ lý do, **nhưng rào thật ở máy chủ** (test gọi thẳng thủ tục).
+- **`xemTruoc` chỉ là thông tin** (không gọi mạng, không đặt trần); **`chay` TỰ tính lại mọi thứ** (đọc cờ/nhà máy/mức LÚC GỌI), không nhận token/kết quả `xemTruoc`.
+- **Chống bấm đúp/lặp (N1):** `chay` có khoá chống lặp (cùng người + nguồn + model trong N giây ⇒ trả kết quả cũ hoặc 409) + nút vô hiệu khi đang chạy; mỗi lần gọi là TIỀN THẬT.
 
-**D8 — Phiên bản luồng có node ngoài phải được duyệt (`aiNgoai.duyetNgoai`).** Hiện chưa có UI ⇒ người dùng gặp `NGOAI_CHUA_DUYET` mà không biết làm gì. 10.4 thêm banner + nút duyệt trong Flow Studio (xem T5).
+**D6 — Người bấm thấy TRƯỚC khi gửi (Q2):** hộp xác nhận hiện: model + nhà cung cấp, **mức dữ liệu** máy chủ suy, **ước token bi quan ("ước tính bi quan, có thể cao hơn thật 2–4×") + chi phí ước + phần TRẦN NGÀY CÒN LẠI của nhà máy**, kích thước (`kichThuocByte`/`tranByte` ⇒ quá lớn ⇒ "chọn tệp con" **trước** khi gửi; server vẫn chặn 413), câu "nội dung được che trước khi rời máy". Nút gửi vô hiệu khi `duocPhep=false` (chỉ tiện lợi; `chay` tự kiểm).
+
+**D7 — Danh mục:** mục `ngoai:*` mang `duocDungO` (máy chủ điền). 10.4: `["luong","kiem-dinh"]`; 10.4b mở thêm `chat`/`coding`/`agent`. Client: thiếu ⇒ [] (T0).
+
+**D8 — Phiên bản luồng có node ngoài phải duyệt (`aiNgoai.duyetNgoai`).** T5 thêm UI; do-model thêm `flow.chiTiet.ngoai`. **UI phải HIỂN THỊ cái đang duyệt** (danh sách node ngoài: nhà cung cấp/model/tóm tắt lệnh nhắc, mức dữ liệu tĩnh, ai tạo phiên bản, băm) **trước** nút Duyệt; tự duyệt ⇒ cờ rõ + cảnh báo; non-admin không thấy nút (máy chủ vẫn kiểm — test gọi thẳng).
 
 ## 3. Phân việc
 
-| Phần | Chủ | Ghi chú |
-|---|---|---|
-| Server: hàm `kiemDinhNgoai` + node `ai.kiem-dinh-ngoai` + census (`PHAN_LOAI_NGUON_NUT`, hạng `ngoai-ghi`, `kiemThamSoNut`, `xuatNhap`) | **do-model** (đã nhận 2026-10-27) | chữ ký §4 |
-| Server: thủ tục `aiKiemDinh.{xemTruoc,chay}` (MOD_AI, KHÔNG admin) | do-model | §4 |
-| Server: danh mục thêm `duocDungO` | do-model | tương thích ngược (trường thêm) |
-| Client: mọi thứ còn lại (T0, T2–T6) | **luong-ui** | |
-| Rà độc lập mỗi lô | kiem-dinh | trọng tâm: D3, D5, D6, phạm vi nhà máy, chống XSS ở hộp kết quả |
-| 10.4b (model ngoài làm model SINH của chat/coding) | **KHÔNG làm** nếu chủ dự án không gật (§8-Q1) | |
+| Phần | Chủ |
+|---|---|
+| Hàm `kiemDinhNgoai` + node `ai.kiem-dinh-ngoai` + census (`PHAN_LOAI_NGUON_NUT`, hạng `ngoai-ghi`, `kiemThamSoNut`, `xuatNhap`) + `NGOAI_SAI_SCHEMA` | **do-model** |
+| Router `aiKiemDinh.{xemTruoc,chay}` (`moduleProcedure("MOD_AI")`, KHÔNG admin) + khoá chống lặp + 3 census ghim | do-model |
+| Danh mục `duocDungO`; `flow.chiTiet.ngoai` | do-model |
+| `shared/ai/kiemDinhNgoai.ts` + `parseKetQuaKiemDinh` + test schema | **luong-ui** (do-model import) |
+| Toàn bộ client (T3–T6), T0 (đã xong) | luong-ui |
+| Rà độc lập mỗi lô | kiem-dinh |
+| **10.4b** (§6) | do-model (máy chủ) + luong-ui (UI) — BẮT BUỘC sau 10.4 |
 
-## 4. Chữ ký đề xuất cho do-model (xin xác nhận/sửa)
+## 4. Chữ ký máy chủ (do-model xác nhận 2026-10-27; mục ★ = cần bổ sung)
 
-**T1a. Thủ tục `aiKiemDinh.xemTruoc`** (`moduleProcedure("MOD_AI")`, query):
-```
-input:  { chonModel: /^ngoai:…$/ (CHON_MODEL_RE nhánh ngoai), nguon: Nguon, tieuChi?: string≤2000 }
-output: { duocPhep: boolean, lyDo?: MaLoiNgoai,
-          mucDuLieu: "ky-thuat"|"van-hanh", tokenUoc: number, chiPhiUocUsd: number|null,
-          nhaCungCap: string, model: string, dinhKemBiCam: boolean }
-```
-**T1b. `aiKiemDinh.chay`** (mutation, cùng input) ⇒ `{ ketQua: KetQuaKiemDinh, vet: { nhaCungCap, model, tokenVao, tokenRa, chiPhiUocUsd|null }, callId }`. Lỗi: bảng `MaLoiNgoai` §4 báo cáo 10.3 + `KIEM_DINH_SAI_SCHEMA` (đề xuất 502).
-```
-Nguon =
-  | { loai: "chat",   cuocTroChuyenId: number, tinNhanId: number }     // /ai-chat (đã lưu)
-  | { loai: "agent",  runId: string, chiSoTin?: number }               // lượt agent (sổ lượt chạy)
-  | { loai: "coding", projectId: string, luotId: string }              // lượt hỏi–đáp màn lập trình (nếu đã lưu — do-model xác nhận có kho nào)
-  | { loai: "van-ban", cauHoi: string≤20000, traLoi: string≤50000 }    // CHỈ khi không có kho: bong bóng, extension; coi `ky-thuat`, tự dán
-```
-Máy chủ kiểm: người gọi **sở hữu** lượt (hoặc admin trong phạm vi), lượt thuộc nhà máy trong phạm vi (ngoài ⇒ `NOT_FOUND`), model ngoài đã `duocDungO` chứa `"kiem-dinh"`. Không nhận `congCu`, không nhận đính kèm.
-
-**T1c. Node `ai.kiem-dinh-ngoai`** (`typeVersion 1`, `tacDungPhu:"ngoai-ghi"`, `lapLai:"atMostOnce"` — gọi trả phí, không lặp):
-- tham số: `chonModel` (BẮT BUỘC, chuỗi cố định `ngoai:…`, kiểm lúc lưu — vắng/không phải ngoai ⇒ lỗi lưu), `cauHoi` (biểu thức/chuỗi), `traLoi` (biểu thức/chuỗi), `tieuChi?`, `truongRa` (mặc định `kiemDinh`), `maxTokens?`.
-- đầu ra mỗi item: `{ ...item.json, [truongRa]: KetQuaKiemDinh, [truongRa+"Vet"]: {nhaCungCap, model, tokenVao, tokenRa} }`.
-- `PHAN_LOAI_NGUON_NUT["ai.kiem-dinh-ngoai"] = "ke-thua"` (đầu ra suy từ đầu vào); `chayThuNut` đóng (như node ngoài khác: `NGOAI_CHUA_DUYET`); `xuatNhap`: bỏ `chonModel ngoai:*` + việc "chon-model" (đã có).
-
-**T1d. Danh mục:** thêm `duocDungO` cho mục `ngoai`.
+- `aiKiemDinh.xemTruoc` (query) — input `{ chonModel: ngoai:…, nguon, tieuChi?: string≤2000 }` (zod strict) → output `{ duocPhep, lyDo?: MaLoiNgoai, mucDuLieu, tokenUoc, chiPhiUocUsd|null, nhaCungCap, model, dinhKemBiCam, kichThuocByte, tranByte, ★ conLaiTranNgay: { token: number|null, usd: number|null } }` (★ thêm cho Q2). `duocPhep` chỉ tham khảo.
+- `aiKiemDinh.chay` (mutation) — cùng input → `{ ketQua: KetQuaKiemDinh, vet: { nhaCungCap, model, tokenVao, tokenRa, chiPhiUocUsd|null }, callId }` (★ `vet` cộng dồn cả lượt thử lại). Lỗi: bảng `MaLoiNgoai` + `NGOAI_SAI_SCHEMA`.
+- Node `ai.kiem-dinh-ngoai` (`typeVersion 1`, `tacDungPhu:"ngoai-ghi"`, `lapLai:"atMostOnce"`): tham số `chonModel` (BẮT BUỘC `ngoai:…`, kiểm lúc lưu), `cauHoi`, `traLoi`, `tieuChi?`, `truongRa` (mặc định `kiemDinh`), `maxTokens?`; đầu ra item `{ ...json, [truongRa]: KetQuaKiemDinh, [truongRa+"Vet"]: {...} }`; `PHAN_LOAI_NGUON_NUT = "ke-thua"`; `chayThuNut` đóng.
+- `flow.chiTiet.ngoai`: `{ coNodeNgoai, daDuyet, duyetBoi?, duyetLuc?, tuDuyet, toanHeThong, ★ nodes: [{ nodeId, nhaCungCap, model, mucTinh, tomTatLenh }], ★ taoBoi }` — ★ để UI hiển thị cái đang duyệt (D8).
 
 ## 5. Phần client (luong-ui)
 
 | Lô | Nội dung | Phụ thuộc |
 |---|---|---|
-| **T0** (làm ngay, nhỏ) | `nhomMuc` ẩn mục `ngoai` ở mọi bề mặt trừ khi `duocDungO` chứa bề mặt đó (thay cờ cứng `HIEN_NGOAI_O_LUONG`); danh mục cũ không có `duocDungO` ⇒ coi như `[]`. Ô trong extension: cùng luật trong `chuanHoaDanhMuc`. Test hợp đồng + đột biến. | không (chỉ thêm trường tuỳ chọn) |
-| **T2** | `shared/ai/kiemDinhNgoai.ts` (zod + kiểu) — **thống nhất với do-model, MỘT bản** (server import từ `shared/`). Kiểm thử schema (≥ 25 ca: khoá lạ, kiểu sai, vượt trần, mâu thuẫn dat/nghiem-trong). | thoả thuận chữ ký |
-| **T3** | Form node `FormKiemDinhNgoai` trong `NodeConfigPanel` (thêm vào `CO_FORM_CO_KIEU` + hợp đồng `formNutMoi.hopDongMayChu`): ô model CHỈ liệt kê `ngoai:*` (`duocDungO ∋ "luong"`), biểu thức cho `cauHoi`/`traLoi` (gợi ý `{{ $json.… }}`), `tieuChi`, ô Model ngoài tại các node `ai.*` khác bật theo `duocDungO`. Ghi chú bắt buộc trong form: "mỗi PHIÊN BẢN luồng có node ngoài phải được duyệt; số liệu vận hành ra ngoài chỉ khi nhà máy cho phép; kết quả AI ngoài là dữ liệu không tin cậy". i18n vi/en/zh. | T1c, T2 |
-| **T4** | `NutKiemDinhNgoai` + `HopKiemDinhNgoai` (hộp xác nhận D6 → chạy → thẻ kết quả: huy hiệu `ketLuan`, điểm, danh sách lỗi theo mức, `banChuanHoa` có nút Chép, `baiHocDeXuat` chỉ HIỂN THỊ ("chuyển vào hàng chờ" là 10.5), vết model/token/chi phí). Gắn vào: câu trả lời `/ai-chat`, thẻ lượt agent + kết thúc lượt coding (`DongThoiGianAgent`), (bong bóng/extension: nguồn `van-ban` — quyết ở §8-Q3). Nút CHỈ hiện khi danh mục có mục `ngoai` với `duocDungO ∋ "kiem-dinh"`. Lỗi `MaLoiNgoai` → câu BẢN ĐỊA chỉ đúng việc phải làm (404 "chưa bật cho nhà máy" … 429 "vượt trần"). | T1a/T1b |
-| **T5** | **Duyệt phiên bản có node ngoài** trong Flow Studio: banner "phiên bản này dùng AI ngoài — chưa duyệt" + nút Duyệt (chỉ admin; người khác thấy hướng dẫn nhờ admin); hiện `tuDuyet`/`bam`/`daDuyetTruoc`; lỗi `NGOAI_TU_DUYET_VAN_HANH`/`NGOAI_CHUA_DUYET` thành thông điệp rõ ở nút Bật/Chạy. Cần `flow` trả cờ "có node ngoài + đã duyệt chưa" (xin do-model/`flowRouter`; hoặc client suy từ định nghĩa + `duyetNgoai` read — hỏi). | do-model (đọc trạng thái duyệt) |
-| **T6** | e2e production (cổng riêng, DB test) với **nhà cung cấp GIẢ** (`openai_compat` trỏ máy chủ giả trong tiến trình, `host:cổng` khai vào `ai_ngoai_host_noi_bo`): (1) nhà máy tắt ⇒ không có nút/mục ngoài; (2) bật + khoá giả + model ⇒ nút hiện, hộp xác nhận hiện mức dữ liệu, kết quả đúng schema hiển thị; (3) máy chủ giả trả JSON sai ⇒ lỗi rõ, không vỡ UI; (4) chuỗi độc (`<img onerror>`, `{{ }}`) trong `banChuanHoa`/`loi` hiển thị NGUYÊN VĂN, không chạy; (5) luồng có node ngoài: bản chưa duyệt ⇒ chặn + banner; admin duyệt ⇒ chạy, `kiemDinh` có trong output; (6) người ngoài phạm vi nhà máy ⇒ 404. ×3. | T1–T5 |
+| **T0** ✅ | Ẩn `ngoai:` theo `duocDungO` (client + extension 0.4.1) | — |
+| **T2** | `shared/ai/kiemDinhNgoai.ts` + `parseKetQuaKiemDinh` + làm sạch + test (≥ 40 ca: khoá lạ/`__proto__`/`constructor`, kiểu sai, vượt trần từng trường, tổng > 64 KB, dat⇒nghiem-trong, bidi/điều khiển, NFKC, chuỗi lồng JSON) | thoả thuận (xong) |
+| **T3** | Form node `FormKiemDinhNgoai` (`CO_FORM_CO_KIEU` + hợp đồng `formNutMoi.hopDongMayChu`): ô model CHỈ `ngoai:*` (`duocDungO ∋ "luong"`), biểu thức `cauHoi`/`traLoi`, `tieuChi`; ghi chú bắt buộc (duyệt phiên bản, số liệu vận hành chỉ khi nhà máy cho, kết quả là dữ liệu không tin cậy); ô Model ngoài ở node `ai.*` khác theo `duocDungO`. i18n vi/en/zh | T1c, T2 |
+| **T4** | `NutKiemDinhNgoai` + `HopKiemDinhNgoai` (D6) + `HienThiKetQuaNgoai` (D3: `<pre>`, huy hiệu `ketLuan`, điểm, lỗi theo mức, `viTri` thuần chữ, Chép + cảnh báo cố định, `baiHocDeXuat` chỉ hiển thị, vết token/chi phí cả hai lượt). Gắn vào: câu trả lời `/ai-chat` (có `tinNhanId`), thẻ lượt agent (`runId`), lượt coding (`phienId`+`chiSoLuot`; chưa lưu ⇒ vô hiệu + lý do). Nút CHỈ hiện khi danh mục có `ngoai` với `duocDungO ∋ "kiem-dinh"`. Chống bấm đúp. Lỗi `MaLoiNgoai` ⇒ câu bản địa chỉ đúng việc phải làm | T1a/b |
+| **T5** | UI duyệt phiên bản luồng có node ngoài (D8): bảng node ngoài + mức dữ liệu + người tạo + băm; Duyệt (admin); banner ở nút Bật/Chạy; `NGOAI_TU_DUYET_VAN_HANH`/`NGOAI_CHUA_DUYET` thành thông điệp rõ | `flow.chiTiet.ngoai` |
+| **T6** | e2e production, nhà cung cấp GIẢ (`openai_compat` → máy chủ giả trong tiến trình, `host:cổng` khai vào `ai_ngoai_host_noi_bo`) ×3: (1) nhà máy tắt ⇒ không nút/mục ngoài; (2) bật ⇒ nút → hộp xác nhận (mức, ước, trần còn lại) → kết quả đúng schema; (3) JSON sai ⇒ thử lại 1 lần ⇒ vẫn sai ⇒ lỗi rõ, UI không vỡ, token cả hai lượt; (4) chuỗi độc trong `banChuanHoa`/`loi`/`viTri` (`<img onerror>`, `<script>`, `[a](javascript:…)`, **`![](http://127.0.0.1:<cổng>/x)` — đếm yêu cầu tới máy chủ giả = 0**, bidi override, `../../etc/passwd`) hiển thị NGUYÊN VĂN, không phần tử/mạng nguy hiểm; (5) luồng có node ngoài: bản chưa duyệt ⇒ chặn + banner; admin duyệt ⇒ chạy; (6) người ngoài phạm vi/không chủ lượt ⇒ 404; (7) bấm đúp ⇒ một lần gọi | T1–T5 |
 
-Mẫu luồng (`kiem-dinh-ngoai`) **không** thêm ở 10.4 — mẫu phải mang `chonModel ngoai:…` cụ thể của một nhà máy, nên chỉ có nghĩa sau khi có ghi chú chọn lại (làm cùng 10.5 khi có đường "đề xuất → hàng chờ").
+Mẫu luồng kiểm định: không thêm ở 10.4 (cần `chonModel ngoai:` cụ thể của nhà máy) — làm cùng 10.5.
 
-## 6. Kiểm thử, đột biến, census
+## 6. Lô 10.4b — BẮT BUỘC ngay sau 10.4 (dieu-phoi, theo quyết định chủ dự án 26/10 Q4)
 
-- Mỗi lô: DOM/unit + **đột biến bắt buộc** (bỏ lọc `duocDungO` ⇒ đỏ; bỏ kiểm schema ⇒ đỏ; render `innerHTML` ⇒ đỏ; gửi `van-ban` thay vì ID ở nguồn có kho ⇒ đỏ; nút hiện khi danh mục không có ngoai ⇒ đỏ).
-- Server (do-model): đột biến "node nhận `chonModel` không phải ngoai ⇒ đỏ", "đầu ra không qua schema ⇒ đỏ", "yêu cầu mang `congCu` ⇒ đỏ", census registry (`phanLoaiNut`), `phamViDocCensus`/`phamViGhiCensus`/`congGiayPhepAiCensus` cho 2 thủ tục mới (ghim ĐO, có ngày), `appErrorParamsCoverage` cho mã mới.
-- i18n vi/en/zh + `i18n:check` 0 mới; tsc 0 (heap 12 GB); extension KHÔNG đổi ở 10.4 ngoài T0 (nếu chủ dự án không chọn §8-Q3).
-- Gộp: dieu-phoi chạy cổng đủ census sau mỗi mốc (nhớ: không chạy full suite song song — `_test` dùng chung).
+Sinh chữ bằng model ngoài ở **Chat / Coding / KB / bong bóng / extension / `/v1`**:
+- **Máy chủ (do-model, mục (c)):** định tuyến `ngoai:` ở KB/chat/coding tới `goiAiNgoai` (`nguonMuc: be-mat`, phân loại tại điểm ghép); **tool ghi/chạy (`ghi_tep`, `chay_lenh`, `ap_diff`…) BỊ BỎ mặc định**, chỉ bật lại khi yêu cầu mang cờ TƯỜNG MINH (`choPhepCongCuGhi`, mặc định `false`; **không có công tắc ở UI** — đề xuất); nguồn `van-ban` cho bề mặt không-kho (bong bóng, extension) với cơ chế bề mặt-từ-danh-sách-đóng + kiểm vai; `duocDungO` mở `chat`/`coding`/`agent`.
+- **Client (luong-ui):** bỏ ẩn theo `duocDungO` (đã sẵn — chỉ máy chủ đổi giá trị); extension (0.4.x): ô nhận `ngoai:` khi `chat`+`agent`; nút kiểm định ở bong bóng/extension (nguồn `van-ban`, UI ghi "văn bản tự dán = trách nhiệm người dán"); cảnh báo cố định khi chọn model ngoài ở bề mặt có công cụ ("AI ngoài chỉ đọc; công cụ ghi/chạy bị tắt").
+- Kiểm định độc lập riêng (egress ở KB/chat/coding là bề mặt mới).
 
-## 7. Thứ tự và cổng
+## 7. Kiểm thử, đột biến, census
 
-`T0` (ngay, độc lập) → thoả thuận chữ ký T1/T2 (do-model trả lời §9) → do-model làm T1 (kiem-dinh rà) song song luong-ui làm T2/T3 trên máy chủ GIẢ → T4 → T5 → T6 e2e → báo cáo nghiệm thu 10.4. Không bắt đầu T3–T6 trước khi kiem-dinh/dieu-phoi duyệt kế hoạch này.
+**Đột biến BẮT BUỘC (mỗi lô; bỏ ⇒ đỏ):**
+- Client: bỏ lọc `duocDungO` ✅(T0); bỏ kiểm schema; render `innerHTML`/Markdown; `viTri` thành anchor; bỏ cảnh báo Chép; nút hiện khi danh mục không có `ngoai`/không có `kiem-dinh`; bề mặt có kho gửi `van-ban` (không còn khoá); bỏ chống bấm đúp; bỏ hiển thị node ngoài ở hộp duyệt.
+- Máy chủ (do-model): node nhận `chonModel` không phải `ngoai:`; đầu ra không qua schema; yêu cầu mang `congCu`/đính kèm/khoá lạ ⇒ 400; `chay` tin `mucDuLieu` từ client; **phân loại node mới thành `ky-thuat` thay vì `ke-thua`**; thiếu cột provenance ⇒ phải `van-hanh`; **tool lạ ⇒ `van-hanh`**; người khác/ngoài phạm vi ⇒ `NOT_FOUND` (bỏ kiểm ⇒ đỏ); `xemTruoc` gọi mạng/đặt trần (spy provider/`datTruoc` = 0); cờ nhà máy tắt GIỮA `xemTruoc` và `chay` ⇒ `chay` từ chối; `van-hanh` + `choDuLieuVanHanh=false` gọi thẳng thủ tục ⇒ từ chối; thử lại vô hạn; bỏ khoá chống lặp ⇒ gọi 2 lần; chuỗi `ot.doc → set → ai.kiem-dinh-ngoai` với nhà máy chưa cho vận hành ⇒ `NGOAI_DU_LIEU_VAN_HANH`; chuỗi kiểm-định → kiểm-định giữ taint; người {A,B}, A bật, B tắt ⇒ từ chối.
+- T0 bổ sung (đã làm): danh mục cũ không `duocDungO` ⇒ []; mã `ngoai:` đã lưu mà bề mặt không phục vụ ⇒ `auto` + thông báo (không gửi lên máy chủ).
+- Census: mục `PHAN_LOAI_NGUON_NUT`; `phamViDocCensus`/`phamViGhiCensus`/`congGiayPhepAiCensus` (ghim ĐO, có ngày) cho router mới; `appErrorParamsCoverage` cho `NGOAI_SAI_SCHEMA`; **census AST: mọi render trường `KetQuaKiemDinh` import `HienThiKetQuaNgoai`** (N3).
+- i18n vi/en/zh + `i18n:check` 0 mới; tsc 0 (heap 12 GB); gộp: dieu-phoi chạy đủ census, không full suite song song.
 
-## 8. Quyết định cần có
+## 8. Quyết định còn mở
 
-- **Q1 (chủ dự án / dieu-phoi):** KHÔNG mở model ngoài làm model sinh của Chat/Coding/KB ở 10.4 (đề xuất) — chỉ node + nút kiểm định? Nếu muốn mở: lô 10.4b riêng (máy chủ: định tuyến `ngoai:` ở KB/chat/coding + cờ `choPhepCongCuGhi` mặc định `false`, **không có công tắc bật ở UI**; client: bỏ lọc `duocDungO`) và kiem-dinh rà riêng.
-- **Q2:** `chiPhiUocUsd` hiển thị cho MỌI người dùng hay chỉ admin? (đề xuất: hiện cho người bấm — họ chịu trần của nhà máy).
-- **Q3:** Nút ở **bong bóng chat** và **extension** (không có kho lượt ⇒ nguồn `van-ban`): làm hay để sau? (đề xuất: để sau — extension 0.4.x, tránh mở đường văn bản tự do ra ngoài khi chưa cần.)
-- **Q4:** SoD khi chạy tay luồng có node ngoài (`NGOAI_TU_DUYET_VAN_HANH`): UI chỉ hiển thị mã lỗi + hướng dẫn, không tự tìm người duyệt khác. Đồng ý?
+- **M1 (do-model):** `ai_chat_messages` có lưu NGUỒN KB (trích dẫn) không? Nếu không ⇒ mọi câu trả lời chat qua KB coi `van-hanh` (đóng) — chấp nhận hệ quả "nút ở chat chỉ dùng được khi nhà máy cho dữ liệu vận hành"?
+- **M2 (kiem-dinh/do-model):** lượt coding (không provenance): `ky-thuat` (đề xuất — phiên `codingMode`, spec §9) hay đóng `van-hanh`?
+- **M3 (do-model):** `chay` chống lặp: cửa sổ N giây và hành vi (trả kết quả cũ vs 409)?
+- **M4 (dieu-phoi):** 10.4 và 10.4b gộp mốc riêng (10.4 gộp được trước)? Đề xuất: có — 10.4 độc lập, 10.4b sau.
 
-## 9. Câu hỏi cho do-model (cần trả lời để chốt T1/T2)
+## 9. Rủi ro và giới hạn
 
-1. Chấp nhận `shared/ai/kiemDinhNgoai.ts` làm nguồn schema duy nhất? Ai viết (đề xuất: luong-ui viết schema + test, do-model import)?
-2. Nguồn `chat` / `agent` / `coding`: kho nào thật sự lưu câu hỏi–đáp (bảng + khoá)? Nguồn nào KHÔNG có kho ⇒ chỉ `van-ban`?
-3. `aiKiemDinh` đặt router riêng hay trong `aiNgoai` (mà `aiNgoai` toàn `adminProcedure`)? Đề xuất router riêng `moduleProcedure("MOD_AI")` để người dùng thường bấm được.
-4. `xemTruoc` có tốn một lượt gọi mạng/giữ chỗ trần không? (đề xuất: KHÔNG — chỉ suy mức + ước token cục bộ, không đặt trước).
-5. Đọc trạng thái duyệt phiên bản cho T5: `flow.*` trả thêm `{ coNodeNgoai, daDuyetNgoai, bam }` hay một thủ tục đọc riêng?
-6. `KIEM_DINH_SAI_SCHEMA`: mã HTTP/tRPC + khoá i18n do ai thêm?
-7. Trần/độ dài: kiểm định gửi cả diff lớn — trần `NGOAI_QUA_LON` 256 KB/chuỗi có đủ? (diff lớn ⇒ UI báo "quá lớn, chọn tệp con" thay vì cắt âm thầm.)
-
-## 10. Rủi ro và giới hạn
-
-- **Rò dữ liệu qua nút:** giảm bằng D5 (máy chủ đọc kho, tự suy mức) + D6 (người thấy mức + xác nhận); vẫn là rào chống NHẦM, không chống cố ý (spec §9).
-- **Phản hồi độc:** D3; e2e ca (4).
-- **Chi phí:** trần nhà máy (10.3) — UI chỉ hiển thị, không tự đặt trần.
-- **Kết luận AI ngoài có thể sai:** UI ghi "ý kiến của AI ngoài, cần người xem xét"; bài học chỉ là đề xuất (10.5 mới có duyệt).
-- Ngoài phạm vi 10.4: extension (trừ T0), hàng chờ/duyệt bài học (10.5), fine-tune (G9), áp bản chuẩn hoá tự động vào tệp.
+- Rò dữ liệu qua nút: D5 (máy chủ đọc kho + mặc định đóng + một nhà máy duy nhất) + D6 (người thấy mức + xác nhận) — vẫn là rào chống NHẦM (spec §9).
+- Phản hồi độc: D3 (văn bản thuần) + e2e (4). Chi phí: trần nhà máy (10.3), UI chỉ hiển thị. Kết luận AI ngoài có thể sai: UI ghi "ý kiến của AI ngoài, cần người xem xét"; bài học chỉ là đề xuất — 10.5 **bắt buộc** đi qua người duyệt và **không bao giờ chèn `banChuanHoa`/`baiHocDeXuat` vào prompt Local có tool mà không bọc khối "dữ liệu không tin cậy"** (N4, nhắc lại ở kế hoạch 10.5).
+- Ngoài phạm vi 10.4: extension (trừ T0, đã xong), hàng chờ/duyệt bài học (10.5), fine-tune (G9), áp bản chuẩn hoá tự động vào tệp.
