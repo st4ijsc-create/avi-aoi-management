@@ -318,6 +318,20 @@ describe("oversightRouter.posture (ILK-06)", () => {
     }
   });
 
+  it("Đợt 10.3 (rà kiem-dinh F4) — forgeNgoaiBat phản ánh THẬT BUILT_IN_FORGE_API_URL (rỗng ⇒ false; đặt ⇒ true)", async () => {
+    const { ENV } = await import("../_core/env");
+    const cu = ENV.forgeApiUrl;
+    try {
+      mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);
+      ENV.forgeApiUrl = "";
+      expect((await oversightRouter.createCaller(admin()).posture()).forgeNgoaiBat).toBe(false);
+      ENV.forgeApiUrl = "https://forge.example.com/";
+      expect((await oversightRouter.createCaller(admin()).posture()).forgeNgoaiBat).toBe(true);
+    } finally {
+      ENV.forgeApiUrl = cu;
+    }
+  });
+
   it("ILK-06 — OT_CONTROL_ENABLED=true và engine interlock TẮT ⇒ writesOnEngineOff=true", async () => {
     process.env.OT_CONTROL_ENABLED = "true";
     mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);

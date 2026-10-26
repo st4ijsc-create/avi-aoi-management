@@ -218,9 +218,20 @@ const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[
  * dài một chuỗi liền (đo: `"10.1.1.".repeat(20000)` ⇒ 11,6 s, chặn vòng lặp sự kiện chung với đường STOP). Chuỗi liền
  * ≥ 2 000 ký tự không trắng KHÔNG phải văn xuôi / mã đọc được — che NGUYÊN khối (fail-closed, che thừa) TRƯỚC mọi luật
  * khác ⇒ mọi luật sau chạy trên chuỗi liền có trần (chi phí ≤ 2 000 × n). Lookbehind neo ở ĐẦU chuỗi liền ⇒ tuyến tính.
- * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s).
+ * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s) — KHI tầng cũ còn bậc hai (trước `134988874`).
+ *
+ * ★ NỚI 2 000 → 8 000 (2026-10-26, dieu-phoi c — ĐO trên `aiSafety` TUYẾN TÍNH đã ở main `134988874`): KHÔNG trần, 12 họ xấu × 256 KB
+ * (trần mỗi chuỗi của cổng) ⇒ chậm nhất 30 ms (`a-…%`), tỉ lệ t(2n)/t(n) 1,0–2,8 ⇒ trần không còn cần cho HIỆU NĂNG. Giá của 2 000:
+ * log JSON gọn bị cắt 2,4 KB (`log:{"may":…,"nhietDo":[600 số]…` không đóng) bị che NGUYÊN khối ⇒ mất dữ liệu kỹ thuật vô hại; 8 000
+ * giữ được. Vẫn GIỮ trần (phòng thủ nếu tầng cũ hồi quy bậc hai; khối liền > 8 KB thường là base64 / tệp nhị phân ⇒ che là đúng).
+ *
+ * ★ Rà kiem-dinh (c): nới thẳng lên 8 000 làm khối KHÔNG NHÃN 2–8 KB lọt nguyên (base64 3 / 6 KB, hex 5 KB — keystore / PFX / DER /
+ * khoá dán một khối) ⇒ thêm `RE_BANG_MA_DAI`: chuỗi liền ≥ 2 000 ký tự mà TOÀN BỘ thuộc bảng base64 / base64url / hex
+ * (`A–Z a–z 0–9 + / = _ -`, không có `"{}[]:,` của JSON / log) ⇒ che nguyên khối; ≥ 8 000 ký tự bất kỳ ⇒ che (`RE_KHONG_TRANG_DAI`).
+ * Neo đầu (lookbehind) + neo cuối (lookahead) ⇒ mỗi chuỗi liền thử MỘT lần, tuyến tính.
  */
-const RE_KHONG_TRANG_DAI = /(?<!\S)\S{2000,}/g;
+const RE_KHONG_TRANG_DAI = /(?<!\S)\S{8000,}/g;
+const RE_BANG_MA_DAI = /(?<!\S)[A-Za-z0-9+/=_-]{2000,}(?!\S)/g;
 
 /** PEM khoá riêng — quét TUYẾN TÍNH (regex lười `[\s\S]*?` của tầng cũ bậc hai khi nhiều BEGIN không END). Không có END ⇒ che tới hết văn bản. */
 function chePem(t: string, dem: (loai: string) => void): string {
@@ -549,6 +560,7 @@ function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) 
 
 function cheVanBan(van: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
   let t = van.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+  t = t.replace(RE_BANG_MA_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
   t = giaiPhanTram(gomChuTach(suaDongChu(t)));
 
   t = t.replace(RE_WEBHOOK, (_k, dau: string) => (dem("webhook"), dau + THAY.biMat));
