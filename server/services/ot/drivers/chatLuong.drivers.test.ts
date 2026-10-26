@@ -1150,3 +1150,97 @@ describe("R1b-2a T13 fix round 2 (I1) — S7/MC packet timeout ⇒ comm failure,
     expect(laDocMcQuaHanGoi(12, 4500)).toBe(false);
   });
 });
+
+// ─────────── R1b-2b-1 T3 (kiem-dinh G2) — "BAD n" của thư viện theo kiểu tag + cờ anythingBad ───────────
+describe("R1b-2b-1 T3 — chuỗi 'BAD n' tag string là giá trị THẬT khi thư viện không báo lỗi", () => {
+  const strTag: OtTagAddress[] = [{ tagKey: "t", address: "DB1,CHAR0", dataType: "string" }];
+  const mcStr: OtTagAddress[] = [
+    { tagKey: "a", address: "D100", dataType: "string" },
+    { tagKey: "b", address: "D200", dataType: "string" },
+  ];
+  const dongTick = async (d: { subscribe: unknown }, tags: OtTagAddress[]) => {
+    const ticks: SuKienDoc[] = [];
+    const mau: OtSample[] = [];
+    const h = await (d.subscribe as (t: OtTagAddress[], s: (x: OtSample) => void, ms: number, o: { onTick: (e: SuKienDoc) => void }) => Promise<{ close: () => Promise<void> }>).call(
+      d,
+      tags,
+      (s) => void mau.push(s),
+      30,
+      { onTick: (e) => void ticks.push(e) },
+    );
+    dongSau.push(() => h.close());
+    await waitFor(() => ticks.length > 0, 2000);
+    await h.close();
+    return { ticks, mau };
+  };
+  const cb2 = (bad: boolean, v: Record<string, unknown>) => vi.fn((cb: (b: boolean, v: Record<string, unknown>) => void) => cb(bad, v));
+
+  it("S7 cờ BẬT: (false, { t: 'BAD 12' }) ⇒ mẫu good 'BAD 12', tick là đọc tốt, phiên connected", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: cb2(false, { t: "BAD 12" }) });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const [s] = await d.readTags(strTag);
+    expect(s).toMatchObject({ quality: "good", value: "BAD 12" });
+    const { ticks } = await dongTick(d, strTag);
+    expect(ticks[0].ok).toBe(true);
+    expect(laDocTot(ticks[0])).toBe(true);
+    expect(laTickHong(ticks[0])).toBe(false);
+    expect(d.isConnected()).toBe(true);
+    expect((await d.health()).connected).toBe(true);
+  });
+
+  it("S7 cờ BẬT: cùng giá trị với anythingBad=true ⇒ mẫu bad", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: cb2(true, { t: "BAD 12" }) });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const [s] = await d.readTags(strTag);
+    expect(s).toMatchObject({ quality: "bad", value: null });
+  });
+
+  it("MC cờ BẬT: (false, { a: 'BAD 1', b: 'BAD 1' }) sau ≥ 90 % hạn gói (44/40 ms, tỉ lệ của 4,4/4,5 s) ⇒ KHÔNG ném McReadTimeoutError; hai mẫu good", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("mcprotocol", {}, {
+      isoConnectionState: 4,
+      globalTimeout: 40,
+      readAllItems: vi.fn((cb: (b: boolean, v: Record<string, unknown>) => void) => void setTimeout(() => cb(false, { a: "BAD 1", b: "BAD 1" }), 44)),
+    });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const out = await d.readTags(mcStr);
+    expect(out).toHaveLength(2);
+    for (const s of out) expect(s).toMatchObject({ quality: "good", value: "BAD 1" });
+  });
+
+  it("MC cờ BẬT: cùng giá trị với anythingBad=true sau ≥ 90 % hạn gói ⇒ mất liên lạc (ném McReadTimeoutError)", async () => {
+    vi.stubEnv(FLAG, "true");
+    mockNodes("mcprotocol", {}, {
+      isoConnectionState: 4,
+      globalTimeout: 40,
+      readAllItems: vi.fn((cb: (b: boolean, v: Record<string, unknown>) => void) => void setTimeout(() => cb(true, { a: "BAD 1", b: "BAD 1" }), 44)),
+    });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const d = new MitsubishiMcDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    expect(await d.readTags(mcStr).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
+  });
+
+  it("S7 và MC: tag INT 'BAD 255' với anythingBad=false (thư viện giả bất thường) ⇒ VẪN bad (kiểu int không bao giờ nhận chuỗi BAD)", async () => {
+    vi.stubEnv(FLAG, "true");
+    const intTag: OtTagAddress[] = [{ tagKey: "t", address: "DB1,INT0", dataType: "int" }];
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: cb2(false, { t: "BAD 255" }) });
+    const { S7Driver } = await import("./s7Driver");
+    const s7 = new S7Driver();
+    await s7.connect({ endpoint: "tcp://127.0.0.1:102" });
+    expect((await s7.readTags(intTag))[0]).toMatchObject({ quality: "bad", value: null });
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: cb2(false, { t: "BAD 255" }) });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const mc = new MitsubishiMcDriver();
+    await mc.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    expect((await mc.readTags([{ tagKey: "t", address: "D100", dataType: "int" }]))[0]).toMatchObject({ quality: "bad", value: null });
+  });
+});

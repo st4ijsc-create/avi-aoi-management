@@ -11,6 +11,7 @@ import {
   mauXauChoMoiTag,
   laLoiTimeout,
   laLoiMucLienKet,
+  laMauBadThuVien,
 } from "./chatLuong";
 import type { OtTagAddress } from "./otDriver";
 
@@ -169,5 +170,18 @@ describe("mauXauChoMoiTag", () => {
         reason: "comm_lost",
       });
     }
+  });
+});
+
+// R1b-2b-1 T3 (kiem-dinh G2) — "BAD n" của thư viện theo kiểu tag + cờ anythingBad
+describe("laMauBadThuVien", () => {
+  it("theo kiểu dữ liệu + cờ thư viện", () => {
+    expect(laMauBadThuVien("BAD 12", "string", false)).toBe(false);
+    expect(laMauBadThuVien("BAD 12", "string", true)).toBe(true);
+    expect(laMauBadThuVien("BAD 12", "json", false)).toBe(false);
+    expect(laMauBadThuVien("BAD 255", "bool", false)).toBe(true);
+    expect(laMauBadThuVien("BAD 255", "int", false)).toBe(true);
+    expect(laMauBadThuVien("BAD 255", "float", false)).toBe(true);
+    expect(laMauBadThuVien("BAD PART", "string", true)).toBe(false);
   });
 });

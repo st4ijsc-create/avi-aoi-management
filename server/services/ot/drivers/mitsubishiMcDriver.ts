@@ -82,7 +82,7 @@ import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
 function coerceMcWrite(raw: unknown, dataType: string, dungGhim?: boolean): number | boolean | string {
@@ -400,9 +400,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
+    /** R1b-2b-1 T3 (G2) — cờ `anythingBad` của thư viện ở lần đọc này. */
+    let thuVienBaoLoi = true;
     let values: Record<string, unknown> = {};
     if (addrByKey.size > 0) {
       const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      const kieuTheoKhoa = new Map(tags.map((t) => [t.tagKey, t.dataType] as const));
       this.conn.removeItems();
       this.conn.addItems(keys);
 
@@ -413,7 +416,8 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
       values = await withDeadline(
         new Promise<Record<string, unknown>>((resolve, reject) => {
-          this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
+          this.conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+            thuVienBaoLoi = anythingBad !== false;
             if (vals && typeof vals === "object") resolve(vals);
             else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
           });
@@ -432,7 +436,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       //   • MỌI item BAD mà trả về NHANH ⇒ PLC CÒN SỐNG và đã trả lời lỗi ⇒ từng item device_error, phiên GIỮ nguyên, lệnh ghi (STOP ghim)
       //     vẫn đi được (final review I-1: trước đó adapter bị hạ + lùi dần ⇒ STOP ADAPTER_OFFLINE).
       // Còn sót (biết, ghi giới hạn): PLC trả lời lỗi CHẬM sát globalTimeout (≥ 90 %) bị coi là mất liên lạc (fail-closed cho đọc).
-      if (v2 && keys.length > 0 && keys.every((k) => laGiaTriBadThuVien(values[k]))) {
+      if (v2 && keys.length > 0 && keys.every((k) => laMauBadThuVien(values[k], kieuTheoKhoa.get(k) ?? "string", thuVienBaoLoi))) {
         const globalTimeoutMs = hanGoiThuVienMc(this.conn);
         const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
         const libRoi = typeof st === "number" && st !== 4;
@@ -456,7 +460,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       const loi = loiDiaChi.get(tag.tagKey);
       if (loi) return loi;
       const raw = values[tag.tagKey];
-      const co = coerceMcValue(raw, tag.dataType);
+      const co = coerceMcValue(raw, tag.dataType, { thuVienBaoLoi });
 
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {

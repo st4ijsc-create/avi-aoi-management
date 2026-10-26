@@ -14,7 +14,7 @@
  * Helper giữ nguyên địa chỉ gốc để mcprotocol tự parse; chỉ suy ra cờ isBit.
  */
 import type { OtDataType } from "../otDriver";
-import { laGiaTriBadThuVien } from "../chatLuong";
+import { laMauBadThuVien } from "../chatLuong";
 import { giaiMaBoolDoc } from "./boolNghiem";
 
 export interface ParsedMcAddress {
@@ -131,8 +131,8 @@ export interface CoercedMcValue {
  *   - int → Number round; float → Number; string/json → String/serialize
  * NaN sau ép → quality:"bad".
  */
-export function coerceMcValue(raw: unknown, dataType: OtDataType): CoercedMcValue {
-  if (raw === null || raw === undefined || laGiaTriBadThuVien(raw)) {
+export function coerceMcValue(raw: unknown, dataType: OtDataType, tuyChon?: { thuVienBaoLoi?: boolean }): CoercedMcValue {
+  if (raw === null || raw === undefined || laMauBadThuVien(raw, dataType, tuyChon?.thuVienBaoLoi ?? true)) {
     return { value: null, quality: "bad" };
   }
   switch (dataType) {

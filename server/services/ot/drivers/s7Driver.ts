@@ -45,7 +45,7 @@ import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
@@ -254,9 +254,12 @@ export class S7Driver extends NotImplementedDriver {
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
+    /** R1b-2b-1 T3 (G2) — cờ `anythingBad` của thư viện ở lần đọc này (false ⇒ "BAD n" của tag string/json là giá trị thật). */
+    let thuVienBaoLoi = true;
     let values: Record<string, unknown> = {};
     if (addrByKey.size > 0) {
       const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      const kieuTheoKhoa = new Map(tags.map((t) => [t.tagKey, t.dataType] as const));
       this.conn.removeItems(); // xoá item phiên trước
       this.conn.addItems(keys);
 
@@ -270,6 +273,7 @@ export class S7Driver extends NotImplementedDriver {
           conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
             const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
             trangThaiSauDoc = typeof st === "number" ? st : undefined;
+            thuVienBaoLoi = anythingBad !== false;
             // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
             if (vals && typeof vals === "object") resolve(vals);
             else reject(new Error("S7Driver: readAllItems returned no values"));
@@ -283,7 +287,7 @@ export class S7Driver extends NotImplementedDriver {
       // ⇒ connectionReset() ⇒ readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và isoConnectionState đã rời 4. Đó là
       // lần đọc KHÔNG được trả lời ⇒ ném lỗi mức liên kết (chatLuongLoiChung ⇒ comm_lost; vòng poll ⇒ tick ok:false, D1 đếm), KHÔNG trả mẫu
       // device_error (sẽ thành "đã trả lời" ⇒ connected giả, D1 không bao giờ bắn). Item BAD khi liên kết vẫn 4 = PLC báo lỗi item ⇒ device_error.
-      if (v2 && trangThaiSauDoc !== undefined && trangThaiSauDoc !== 4 && keys.some((k) => laGiaTriBadThuVien(values[k]))) {
+      if (v2 && trangThaiSauDoc !== undefined && trangThaiSauDoc !== 4 && keys.some((k) => laMauBadThuVien(values[k], kieuTheoKhoa.get(k) ?? "string", thuVienBaoLoi))) {
         const err = new DeviceUnreachableError("s7", `read not answered: nodes7 returned BAD and left the link (isoConnectionState ${trangThaiSauDoc})`);
         this.lastError = err.message;
         throw err;
@@ -295,7 +299,7 @@ export class S7Driver extends NotImplementedDriver {
       const loi = loiDiaChi.get(tag.tagKey);
       if (loi) return loi;
       const raw = values[tag.tagKey];
-      const co = coerceS7Value(raw, tag.dataType);
+      const co = coerceS7Value(raw, tag.dataType, { thuVienBaoLoi });
 
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {

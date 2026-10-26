@@ -15,7 +15,7 @@
  * truyền thẳng cho NodeS7 (lib tự parse). Nhờ vậy ta không phải tự encode lại S7.
  */
 import type { OtDataType } from "../otDriver";
-import { laGiaTriBadThuVien } from "../chatLuong";
+import { laMauBadThuVien } from "../chatLuong";
 import { giaiMaBoolDoc } from "./boolNghiem";
 
 /** Địa chỉ S7 đã validate — giữ nguyên dạng gốc để truyền cho NodeS7. */
@@ -98,8 +98,8 @@ export interface CoercedS7Value {
   quality: "good" | "bad";
 }
 
-export function coerceS7Value(raw: unknown, dataType: OtDataType): CoercedS7Value {
-  if (raw === null || raw === undefined || laGiaTriBadThuVien(raw)) {
+export function coerceS7Value(raw: unknown, dataType: OtDataType, tuyChon?: { thuVienBaoLoi?: boolean }): CoercedS7Value {
+  if (raw === null || raw === undefined || laMauBadThuVien(raw, dataType, tuyChon?.thuVienBaoLoi ?? true)) {
     return { value: null, quality: "bad" };
   }
   switch (dataType) {

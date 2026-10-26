@@ -7,7 +7,7 @@
  *   - `reason` là phân loại thô (LyDoChatLuong) cho UI/cảnh báo/interlock.
  */
 import { DeviceUnreachableError } from "../../_core/deviceErrors";
-import type { LyDoChatLuong, OtQuality, OtSample, OtTagAddress } from "./otDriver";
+import type { LyDoChatLuong, OtDataType, OtQuality, OtSample, OtTagAddress } from "./otDriver";
 
 /** OPC UA StatusCode (mã lõi = 16 bit cao; 16 bit thấp là bit thông tin, đã che) báo MẤT LIÊN LẠC. */
 const OPCUA_MAT_LIEN_LAC = new Set<number>([
@@ -154,6 +154,15 @@ export function laGiaTriBadThuVien(raw: unknown): boolean {
   if (typeof raw === "string") return /^BAD \d{1,3}$/.test(raw);
   if (Array.isArray(raw)) return raw.some((x) => typeof x === "string" && /^BAD \d{1,3}$/.test(x));
   return false;
+}
+
+/**
+ * R1b-2b-1 T3 (kiem-dinh G2) — chuỗi `BAD n` là mẫu xấu theo KIỂU tag + cờ `anythingBad` của thư viện: tag bool/int/float ⇒ luôn xấu
+ * (không phải giá trị hợp lệ của kiểu đó); tag string/json ⇒ chỉ xấu khi thư viện báo lỗi (`thuVienBaoLoi`), nếu không là giá trị THẬT.
+ * Giới hạn: tag string có giá trị thật "BAD n" cùng lần đọc với một item lỗi khác bị coi là xấu (fail-closed).
+ */
+export function laMauBadThuVien(raw: unknown, dataType: OtDataType, thuVienBaoLoi: boolean): boolean {
+  return laGiaTriBadThuVien(raw) && (thuVienBaoLoi || (dataType !== "string" && dataType !== "json"));
 }
 
 /**
