@@ -2,7 +2,7 @@
  * SCADA R1b-1 Task 12 — bench nghiệm thu STOP HMI (`scadaCommands.dungMay`) trên OpenPLC (Docker) + safety PLC MÔ PHỎNG. CHẠY TAY, không vào CI.
  *
  *   npx tsx scripts/scada-r1b-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
- *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a] [--r1b2b1]
+ *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a] [--r1b2b1] [--cat-lien-ket]
  *
  * R1b-2a Task 15 — `--r1b2a` thêm ô L1 vào MỖI lượt (sau S1 / S2 / X2): `dispatch()` như tool AI lên một thanh ghi int CHƯA khai scale 1
  * (thanh ghi thứ TƯ giữ giá trị của bước 0): 2,5 ⇒ OFF_STEP goiY 3 (thanh ghi không đổi); "abc" ⇒ TYPE_MISMATCH (thanh ghi không đổi);
@@ -25,6 +25,16 @@
  *     `ketQua.length === 1` vẫn đúng nhưng ô S đổi nội dung) và B1b không tách được khỏi ghim `dung`. Ghim đặt bằng INSERT thẳng như ghim `dung`
  *     (1 thuộc tập 8 giá trị nên `datStopPin` cũng nhận; census `stopPinDatMotCho` cho phép tệp này).
  *   • Cuối MỖI lượt: coil trả về giá trị gốc của bước 0b, đọc lại bằng client riêng (dòng "B1-trả").
+ *
+ * R1b-2b-1 Task 17 (bench B1b lượt 1: STOP `timeout` 5124 ms khi liên kết b1 rớt lúc FC5 đang bay) — `--cat-lien-ket` (cần `--r1b2b1`): adapter
+ * B1b nối qua một PROXY TCP trong tiến trình (127.0.0.1, cổng OS cấp) tới `--endpoint`; ngay trước STOP HMI của ô B1b mỗi lượt, proxy được LÊN CÒ và
+ * CẮT kết nối của b1 ở FC5 đầu tiên — tái hiện CÓ CHỦ ĐÍCH (tất định, không trông vào OpenPLC) việc liên kết mất khi lệnh ghi đang bay:
+ *   • lượt LẺ "cắt trước khi gửi": FC5 KHÔNG được chuyển tới PLC ⇒ coil giữ 0;
+ *   • lượt CHẴN "cắt sau khi gửi": FC5 được chuyển tới PLC rồi mới cắt (không chuyển câu trả lời) ⇒ coil lên 1 nhưng ta không biết.
+ *   Mong đợi CẢ HAI: `timeout` ok=false (không rõ kết cục) trong < 1000 ms — KHÔNG `acked*`, KHÔNG `failed`, không treo 5000 ms. Bằng chứng in
+ *   theo lượt: `health().lastError` của b1, mốc cắt so với lúc bấm, thời gian b1 nối lại. Trước lượt kế, đợi b1 nối lại (vòng canh legacy).
+ *   Ô B1b thường (ghim 1 ⇒ acked_verified) KHÔNG chạy khi có cờ này. Không có biến thể "khởi động lại container + adapter MỚI mỗi lượt" (cần
+ *   docker + dựng lại otManager mỗi lượt — xem task-17-report.md).
  *
  * Container DÙNG CHUNG (điều phối 2026-10-25): mặc định script KHÔNG khởi động container. Container không `running` hoặc Modbus không trả lời
  * ⇒ in "bench not run — container unavailable" kèm bằng chứng (trạng thái `docker inspect`, kết quả thăm dò) và thoát mã 3, không đụng gì.
@@ -85,6 +95,8 @@ interface TuyChon {
   r1b2a: boolean;
   /** R1b-2b-1 T16 — thêm ô B1 (bool chặt trên coil + ghim STOP 1 trên coil kiểu int) */
   r1b2b1: boolean;
+  /** R1b-2b-1 T17 — ô B1b qua proxy cắt liên kết ở FC5 đầu tiên (tái hiện có chủ đích STOP đang bay khi liên kết mất) */
+  catLienKet: boolean;
 }
 function docThamSo(argv: string[]): TuyChon {
   const lay = (k: string, mac: string) => {
@@ -102,6 +114,76 @@ function docThamSo(argv: string[]): TuyChon {
     khongDocker: argv.includes("--khong-docker"),
     r1b2a: argv.includes("--r1b2a"),
     r1b2b1: argv.includes("--r1b2b1"),
+    catLienKet: argv.includes("--cat-lien-ket"),
+  };
+}
+
+/**
+ * R1b-2b-1 T17 — proxy TCP trong tiến trình: chuyển nguyên byte hai chiều tới `dich`; khi LÊN CÒ, cắt (destroy cả hai phía) ở khung Modbus TCP
+ * FC5 đầu tiên từ phía client — "truoc_khi_gui": không chuyển khung đó; "sau_khi_gui": chuyển khung rồi mới cắt (câu trả lời không bao giờ về).
+ */
+type KieuCat = "truoc_khi_gui" | "sau_khi_gui";
+async function proxyCatLienKet(dich: string): Promise<{ port: number; lenCo(kieu: KieuCat): void; daCatLuc: () => number | null; close(): Promise<void> }> {
+  const net = await import("node:net");
+  const { host, port } = hostPort(dich);
+  const caCap = new Set<{ a: import("node:net").Socket; b: import("node:net").Socket }>();
+  let co: KieuCat | null = null;
+  let catLuc: number | null = null;
+  const coFc5 = (buf: Buffer): boolean => {
+    for (let i = 0; i + 8 <= buf.length; ) {
+      const len = buf.readUInt16BE(i + 4);
+      if (buf[i + 7] === 5) return true;
+      if (len < 2) return false;
+      i += 6 + len;
+    }
+    return false;
+  };
+  const server = net.createServer((a) => {
+    const b = net.connect({ host, port });
+    const cap = { a, b };
+    caCap.add(cap);
+    const xong = () => {
+      caCap.delete(cap);
+      a.destroy();
+      b.destroy();
+    };
+    a.on("error", xong);
+    b.on("error", xong);
+    a.on("close", xong);
+    b.on("close", xong);
+    b.on("data", (d) => {
+      if (!a.destroyed) a.write(d);
+    });
+    a.on("data", (d) => {
+      if (co && coFc5(d)) {
+        const kieu = co;
+        co = null;
+        catLuc = Date.now();
+        if (kieu === "sau_khi_gui") {
+          b.write(d, () => xong());
+          a.destroy(); // câu trả lời không bao giờ về client
+        } else xong();
+        return;
+      }
+      if (!b.destroyed) b.write(d);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  return {
+    port: (server.address() as import("node:net").AddressInfo).port,
+    lenCo: (kieu) => {
+      co = kieu;
+      catLuc = null;
+    },
+    daCatLuc: () => catLuc,
+    close: () =>
+      new Promise<void>((r) => {
+        for (const c of caCap) {
+          c.a.destroy();
+          c.b.destroy();
+        }
+        server.close(() => r());
+      }),
   };
 }
 
@@ -554,6 +636,12 @@ async function main(): Promise<void> {
     const tagCoil = `coil:${COIL_B1 + 1}`;
     let machineB1 = -1;
     let adapterB1 = -1;
+    // R1b-2b-1 T17 — `--cat-lien-ket`: adapter B1b đi qua proxy cắt liên kết (adapter bench chính vẫn nối thẳng)
+    const proxy = coB1 && o.catLienKet ? await proxyCatLienKet(o.endpoint) : null;
+    if (proxy) don.push(() => proxy.close());
+    const endpointB1 = proxy ? `tcp://127.0.0.1:${proxy.port}` : o.endpoint;
+    if (o.catLienKet && !coB1) console.log("[bench] --cat-lien-ket bỏ qua: không có ô B1 (cần --r1b2b1 và một coil giữ giá trị)");
+    if (proxy) console.log(`[bench] --cat-lien-ket: adapter B1b nối qua proxy ${endpointB1} ⇒ ${o.endpoint}`);
     if (coB1) {
       // R1b-2b-1 B1a — bool CHƯA khai (mọi cột 0431 NULL) trên coil, adapter bench
       await dung1(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", scale, writable, "isEnabled")
@@ -564,7 +652,7 @@ async function main(): Promise<void> {
       machineB1 = Number(m2.id);
       don.push(() => dung1(sql`DELETE FROM machines WHERE code = ${maB1}`));
       const [a2] = await dung1(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status, "connectionOptions")
-        VALUES (${machineB1}, ${maB1}, ${maB1}, 'modbus', ${o.endpoint}, ${o.pollMs}, true, 'disabled', ${JSON.stringify({ unitId: 1, timeoutMs: o.timeoutMs })}::json) RETURNING id`);
+        VALUES (${machineB1}, ${maB1}, ${maB1}, 'modbus', ${endpointB1}, ${o.pollMs}, true, 'disabled', ${JSON.stringify({ unitId: 1, timeoutMs: o.timeoutMs })}::json) RETURNING id`);
       adapterB1 = Number(a2.id);
       don.push(async () => {
         await dung1(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${adapterB1}`);
@@ -608,7 +696,7 @@ async function main(): Promise<void> {
               code: `${RUN}b1`,
               machineId: machineB1,
               protocol: "modbus" as const,
-              connection: { endpoint: o.endpoint, timeoutMs: o.timeoutMs, options: { unitId: 1, timeoutMs: o.timeoutMs } },
+              connection: { endpoint: endpointB1, timeoutMs: o.timeoutMs, options: { unitId: 1, timeoutMs: o.timeoutMs } },
               pollIntervalMs: o.pollMs,
               tags: [{ tagKey: "icoil", address: tagCoil, dataType: "int" as const }],
               driver: createDriver("modbus"),
@@ -828,8 +916,54 @@ async function main(): Promise<void> {
               sau === truoc,
           });
         }
-        // B1b — điều kiện 1c: STOP HMI trên máy B1b, ghim 1 trên coil kiểu INT ⇒ coil TRUE, acked_verified
-        {
+        // R1b-2b-1 T17 — `--cat-lien-ket`: STOP HMI trên máy B1b khi proxy cắt liên kết ở FC5 ⇒ `timeout` (không rõ) NGAY, không ack, không 5 s
+        if (proxy) {
+          const kieu: KieuCat = lap % 2 === 1 ? "truoc_khi_gui" : "sau_khi_gui";
+          const msNoi = await doiDen(() => ot.getActiveDriver(adapterB1)?.isConnected() === true, 15_000);
+          const drvB1 = ot.getActiveDriver(adapterB1); // giữ tham chiếu: sau khi mất liên kết getActiveDriver (legacy) trả rỗng
+          await ghiCoil(o.endpoint, COIL_B1, false);
+          const truoc = await docCoil(o.endpoint, COIL_B1);
+          proxy.lenCo(kieu);
+          const t0 = Date.now();
+          let duoc = "";
+          let st = "";
+          let okR: boolean | undefined;
+          try {
+            const kq = await caller.dungMay({ machineId: machineB1, clientRequestId: randomUUID() });
+            const r = kq.ketQua[0];
+            st = String(r?.status);
+            okR = r?.ok;
+            duoc = `${r?.status} ok=${r?.ok}${r?.reason ? ` ${r.reason}` : ""} · ${kq.ketQua.length} adapter`;
+          } catch (e) {
+            duoc = `NÉM ${maLoi(e)}`;
+          }
+          const ms = Date.now() - t0;
+          const catLuc = proxy.daCatLuc();
+          const loiB1 = drvB1 ? ((await drvB1.health()).lastError ?? "(trống — b1 đã nối lại trước khi đọc)") : "(không có driver b1 lúc bấm)";
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          const msNoiLai = await doiDen(() => ot.getActiveDriver(adapterB1)?.isConnected() === true, 15_000);
+          console.log(
+            `[bench] B1b-cắt lượt ${lap} (${kieu}): b1 đã nối sau ${msNoi ?? "KHÔNG"} ms; cắt ở +${catLuc === null ? "KHÔNG CẮT" : catLuc - t0} ms; trả lời ${ms} ms;` +
+              ` lastError b1 = ${loiB1}; b1 nối lại sau ${msNoiLai ?? "KHÔNG (15 s)"} ms`,
+          );
+          bang.push({
+            lap,
+            o: "B1b-cắt",
+            buoc: `STOP HMI máy B1b, proxy cắt liên kết ở FC5 (${kieu === "truoc_khi_gui" ? "trước khi gửi" : "sau khi gửi"})`,
+            mong: `timeout ok=false (không rõ kết cục) < 1000 ms; KHÔNG acked / failed; coil ${kieu === "truoc_khi_gui" ? "0 → 0" : "0 → 1"}`,
+            duoc,
+            ms,
+            thanhGhi: coilTxt(truoc, sau),
+            dat:
+              catLuc !== null &&
+              st === "timeout" &&
+              okR === false &&
+              ms < 1000 &&
+              truoc === false &&
+              sau === (kieu === "sau_khi_gui"),
+          });
+        } else {
+          // B1b — điều kiện 1c: STOP HMI trên máy B1b, ghim 1 trên coil kiểu INT ⇒ coil TRUE, acked_verified
           await ghiCoil(o.endpoint, COIL_B1, false);
           const truoc = await docCoil(o.endpoint, COIL_B1);
           const t0 = Date.now();
