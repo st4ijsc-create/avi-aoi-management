@@ -59,7 +59,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 // R1b-2a T12 — phạm vi nhà máy cho `posture` (danh tính từ ctx) + đếm STOP HMI quá hạn (T4, ruling K7).
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
-import { dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
+import { BUOC_QUA_HAN_STOP_HMI, dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
 import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
 // Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
@@ -563,7 +563,7 @@ const CUA_SO_STOP_QUA_HAN_GIO = 24;
 export interface StopQuaHanPosture {
   /** tổng: dòng sổ trong phạm vi + (toàn quyền) bộ đếm trong bộ nhớ */
   count: number;
-  /** dòng sổ theo `buoc` (dòng có adapter ⇒ "adapter") */
+  /** dòng sổ theo LOẠI bước (tập đóng `BUOC_QUA_HAN_STOP_HMI` + "khac" / "khong_ro"; dòng có adapter ⇒ "adapter") — final-fix M-2 */
   theoBuoc: Record<string, number>;
   /** từ chối KHÔNG ghi được sổ (bộ nhớ tiến trình này, từ `batDauLuc`) — `null` = người gọi không phải toàn quyền (không biết máy ⇒ không lộ) */
   khongGhiSo: { count: number; theoBuoc: Record<string, number>; batDauLuc: string } | null;
@@ -578,7 +578,18 @@ async function fetchStopQuaHan(d: Db | null, pv: PhamViPosture | null, them?: SQ
   const hong: StopQuaHanPosture = { count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true };
   if (!d || !pv) return hong;
   try {
-    const buoc = sql<string>`CASE WHEN ${scadaCommandAttempts.adapterId} IS NULL THEN coalesce(${scadaCommandAttempts.requestedValue}->>'buoc', 'khong_ro') ELSE 'adapter' END`;
+    // final-fix M-2 — nhóm theo LOẠI bước trong tập ĐÓNG `BUOC_QUA_HAN_STOP_HMI`: khoá `theoBuoc` không bao giờ phình theo tổ hợp mã adapter.
+    // Dòng cũ (trước fix) mang "adapter A1, A2" ⇒ gộp về "adapter"; giá trị lạ khác ⇒ "khac"; thiếu ⇒ "khong_ro".
+    const rvBuoc = sql`(${scadaCommandAttempts.requestedValue}->>'buoc')`;
+    const tapBuoc = sql.join(
+      BUOC_QUA_HAN_STOP_HMI.map((b) => sql`${b}`),
+      sql`, `,
+    );
+    const buoc = sql<string>`CASE WHEN ${scadaCommandAttempts.adapterId} IS NOT NULL THEN 'adapter'
+      WHEN ${rvBuoc} IS NULL THEN 'khong_ro'
+      WHEN ${rvBuoc} IN (${tapBuoc}) THEN ${rvBuoc}
+      WHEN ${rvBuoc} LIKE 'adapter %' THEN 'adapter'
+      ELSE 'khac' END`;
     const rows = await d
       .select({ buoc, n: sql<number>`count(*)::int` })
       .from(scadaCommandAttempts)

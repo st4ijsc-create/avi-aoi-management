@@ -32,6 +32,10 @@ const H = vi.hoisted(() => ({
   phamViCho: 0,
   /** fix round 1 (I-1) — ms chờ trước phaiDoiMatKhau thật (cổng đổi mật khẩu, middleware gốc) */
   matKhauCho: 0,
+  /** final-fix M-1 — true ⇒ lượt chèn dòng scada_command_attempts mã STOP_QUA_HAN NÉM (giả reset kết nối); dòng khác đi thật */
+  hongGhiQuaHan: false,
+  /** bảng scada_command_attempts (gán ở beforeAll — so sánh danh tính trong proxy getDb) */
+  bangThu: null as unknown,
 }));
 
 const cho = (ms: number) =>
@@ -82,6 +86,35 @@ vi.mock("../db", async (importOriginal) => {
       if (H.matKhauCho > 0) await cho(H.matKhauCho);
       return real.phaiDoiMatKhau(...a);
     }) as typeof real.phaiDoiMatKhau,
+  };
+});
+
+// final-fix M-1 — DB "sống nhưng ghi sổ hỏng": getDb THẬT bọc proxy; chỉ khi H.hongGhiQuaHan thì INSERT dòng attempts STOP_QUA_HAN ném.
+vi.mock("../db/connection", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db/connection")>();
+  const boc = (d: any) =>
+    new Proxy(d, {
+      get(t, p) {
+        if (p === "insert") {
+          return (bang: unknown) => {
+            const q = t.insert(bang);
+            if (!H.hongGhiQuaHan || bang !== H.bangThu) return q;
+            return {
+              values: (v: { reasonCode?: string | null }) =>
+                v?.reasonCode === "STOP_QUA_HAN" ? Promise.reject(new Error("ECONNRESET giả (final-fix M-1)")) : q.values(v),
+            };
+          };
+        }
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" && p !== "constructor" ? v.bind(t) : v;
+      },
+    });
+  return {
+    ...real,
+    getDb: (async (...a: Parameters<typeof real.getDb>) => {
+      const d = await real.getDb(...a);
+      return d ? boc(d) : d;
+    }) as typeof real.getDb,
   };
 });
 
@@ -156,7 +189,7 @@ let db: Db;
 let scadaCommandsRouter: Router;
 let boDem: typeof import("../services/scada/boDemHienTai");
 
-const fx = { fCode: "", sid: 0, m1: 0, m2: 0, a1: 0, a2a: 0, a2b: 0 };
+const fx = { fCode: "", sid: 0, m1: 0, m2: 0, a1: 0, a2a: 0, a2b: 0, fCodeB: "", mB: 0 };
 const stub: Record<"a1" | "a2a" | "a2b", StubGhi> = {} as never;
 const userIds: number[] = [];
 let op: { id: number; caller: Caller };
@@ -216,12 +249,12 @@ async function choThuQuaHan(m: number, n: number): Promise<DongThu[]> {
   );
   return rows;
 }
-async function choAuditQuaHan(idMoc: number, machineId: number, clientRequestId: string) {
+async function choAuditQuaHan(idMoc: number, machineId: number, clientRequestId: string, entityType: "machine" | "user" = "machine") {
   let rows: Array<{ afterJson: any; actorId: number }> = [];
   await vi.waitFor(
     async () => {
       rows = ((await dung(sql`SELECT "afterJson", "actorId" FROM control_audit_log WHERE id > ${idMoc} AND action = 'scada_hmi_stop'
-        AND "entityId" = ${String(machineId)} ORDER BY id`)) as typeof rows).filter((r) => r.afterJson?.clientRequestId === clientRequestId);
+        AND "entityType" = ${entityType} AND "entityId" = ${String(machineId)} ORDER BY id`)) as typeof rows).filter((r) => r.afterJson?.clientRequestId === clientRequestId);
       if (rows.length < 1) throw new Error("audit chưa ghi");
     },
     { timeout: 5_000, interval: 50 },
@@ -257,6 +290,16 @@ beforeAll(async () => {
   const [m2] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${fx.sid}, ${RUN + "m2"}, 'May T4-2', 'AOI', true) RETURNING id`);
   fx.m1 = Number(m1.id);
   fx.m2 = Number(m2.id);
+  H.bangThu = scadaCommandAttempts;
+  // final-fix M-3 — nhà máy B (người dùng tệp KHÔNG được gán): một máy, không adapter
+  const codeB = `${RUN}b`;
+  fx.fCodeB = codeB;
+  const [fB] = await dung(sql`INSERT INTO factories (code, name) VALUES (${codeB}, ${codeB + " f"}) RETURNING id`);
+  const [wB] = await dung(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${fB.id}, ${codeB}, ${codeB + " w"}) RETURNING id`);
+  const [lB] = await dung(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${wB.id}, ${codeB}, ${codeB + " l"}) RETURNING id`);
+  const [sB] = await dung(sql`INSERT INTO stations ("lineId", code, name) VALUES (${lB.id}, ${codeB}, ${codeB + " s"}) RETURNING id`);
+  const [mB] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${sB.id}, ${RUN + "mB"}, 'May T4-B', 'AOI', true) RETURNING id`);
+  fx.mB = Number(mB.id);
 
   // M1: máy REMOTE (kênh chế độ khai, mẫu = giá trị REMOTE), MỘT adapter có ghim mức 1
   fx.a1 = await seedAdapter(fx.m1, "a1");
@@ -310,12 +353,14 @@ afterAll(async () => {
       await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
     }
-    await dung(sql`DELETE FROM machines WHERE code IN (${RUN + "m1"}, ${RUN + "m2"})`);
+    await dung(sql`DELETE FROM machines WHERE code IN (${RUN + "m1"}, ${RUN + "m2"}, ${RUN + "mB"})`);
     await dung(sql`DELETE FROM user_factory_assignments WHERE "factoryCode" = ${fx.fCode}`);
-    await dung(sql`DELETE FROM stations WHERE code = ${fx.fCode}`);
-    await dung(sql`DELETE FROM production_lines WHERE code = ${fx.fCode}`);
-    await dung(sql`DELETE FROM workshops WHERE code = ${fx.fCode}`);
-    await dung(sql`DELETE FROM factories WHERE code = ${fx.fCode}`);
+    for (const c of [fx.fCode, fx.fCodeB].filter(Boolean)) {
+      await dung(sql`DELETE FROM stations WHERE code = ${c}`);
+      await dung(sql`DELETE FROM production_lines WHERE code = ${c}`);
+      await dung(sql`DELETE FROM workshops WHERE code = ${c}`);
+      await dung(sql`DELETE FROM factories WHERE code = ${c}`);
+    }
   } catch (e) {
     console.warn("[r1b2t4] dọn dữ liệu:", (e as Error).message, String((e as { cause?: unknown }).cause ?? ""));
   }
@@ -327,6 +372,7 @@ const datLaiH = () => {
   H.quyenCho = 0;
   H.phamViCho = 0;
   H.matKhauCho = 0;
+  H.hongGhiQuaHan = false;
 };
 beforeEach(datLaiH);
 afterEach(() => {
@@ -371,7 +417,10 @@ describe("Review Focus 5 — DB chậm-mà-sống TRƯỚC khi gửi ⇒ từ ch
     const [au] = await choAuditQuaHan(am, fx.m1, crid);
     expect(au.actorId).toBe(op.id);
     expect(au.afterJson).toMatchObject({ ketCuc: "QUA_HAN", pha: "truoc_gui", machineId: fx.m1, daXacMinhPhamVi: true, hanMs: 2000 });
-    expect(String(au.afterJson.buoc)).toContain("a1");
+    // final-fix M-2 — buoc là LOẠI bước (tập đóng), mã adapter đi riêng
+    expect(au.afterJson.buoc).toBe("adapter");
+    expect(au.afterJson.adapters.map((x: { code: string }) => x.code)).toEqual([`${RUN}-a1`]);
+    expect(rows[0].requested_value).toMatchObject({ buoc: "adapter", adapters: [`${RUN}-a1`] });
     // không dòng chờ hmi.stop nào được tạo (chưa tới bước đó)
     const cho_ = await dung(sql`SELECT id FROM ai_pending_actions WHERE "userId" = ${op.id} AND "previewJson"->>'clientRequestId' = ${crid}`);
     expect(cho_).toHaveLength(0);
@@ -518,8 +567,83 @@ describe("fix round 1 M-2 — machineId chưa qua kiểm phạm vi được đá
     expect(e.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
     const rows = await choThuQuaHan(m, 1);
     expect(rows[0].requested_value).toMatchObject({ machineId: fx.m1, buoc: "pham_vi", daXacMinhPhamVi: false });
-    const [au] = await choAuditQuaHan(am, fx.m1, crid);
-    expect(au.afterJson).toMatchObject({ daXacMinhPhamVi: false, machineCode: null });
+    // final-fix M-3 — chưa xác minh ⇒ audit gắn NGƯỜI BẤM, machineId chỉ trong payload (machineIdChuaXacMinh)
+    const [au] = await choAuditQuaHan(am, op.id, crid, "user");
+    expect(au.afterJson).toMatchObject({ daXacMinhPhamVi: false, machineCode: null, machineIdChuaXacMinh: fx.m1, chiAdminXem: true });
+    expect(au.afterJson.machineId).toBeUndefined();
+  }, 10_000);
+
+  it("★ final-fix M-3 — người nhà máy A gửi machineId của máy nhà máy B, hết hạn TRƯỚC kiểm phạm vi ⇒ KHÔNG audit nào gắn máy B; dòng gắn người bấm, máy B chỉ trong payload", async () => {
+    H.phamViCho = 3_000;
+    const am = await mocAudit();
+    const m = await moc();
+    const crid = uuid();
+    const e = await loiCua(op.caller.dungMay({ machineId: fx.mB, clientRequestId: crid }));
+    expect(e.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
+    const rows = await choThuQuaHan(m, 1);
+    expect(rows[0].requested_value).toMatchObject({ machineId: fx.mB, buoc: "pham_vi", daXacMinhPhamVi: false });
+    const [au] = await choAuditQuaHan(am, op.id, crid, "user");
+    expect(au.actorId).toBe(op.id);
+    expect(au.afterJson).toMatchObject({ ketCuc: "QUA_HAN", daXacMinhPhamVi: false, machineIdChuaXacMinh: fx.mB });
+    // oracle: KHÔNG dòng audit nào (bất kỳ action) gắn thực thể máy B kể từ mốc
+    await cho(300);
+    const ganB = await dung(sql`SELECT id FROM control_audit_log WHERE id > ${am} AND "entityType" = 'machine' AND "entityId" = ${String(fx.mB)}`);
+    expect(ganB).toHaveLength(0);
+  }, 10_000);
+
+  it("đối chứng M-3 — hết hạn SAU kiểm phạm vi (bước vai) ⇒ audit VẪN gắn máy (đã xác minh)", async () => {
+    H.quyenCho = 3_000;
+    const am = await mocAudit();
+    const crid = uuid();
+    await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: crid }));
+    const [au] = await choAuditQuaHan(am, fx.m1, crid, "machine");
+    expect(au.afterJson).toMatchObject({ daXacMinhPhamVi: true, machineId: fx.m1, buoc: "vai_tro" });
+    expect(au.afterJson.machineIdChuaXacMinh).toBeUndefined();
+  }, 10_000);
+});
+
+describe("★ final-fix M-1 — dòng từ chối STOP_QUA_HAN ghi sổ HỎNG ⇒ vẫn đếm (bộ nhớ, 'ghi_so_loi')", () => {
+  it("từ chối CẢ lệnh (hết hạn ở bước vai), INSERT attempts ném ⇒ demStopQuaHanKhongGhiSo +1 'ghi_so_loi'; không dòng sổ", async () => {
+    _datLaiDemStopQuaHanChoTest();
+    H.quyenCho = 3_000;
+    H.hongGhiQuaHan = true;
+    const m = await moc();
+    const e = await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: uuid() }));
+    expect(e.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
+    await vi.waitFor(
+      () => {
+        if ((demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0) < 1) throw new Error("chưa đếm");
+      },
+      { timeout: 3_000, interval: 25 },
+    );
+    expect(demStopQuaHanKhongGhiSo().theoBuoc).toEqual({ ghi_so_loi: 1 });
+    expect((await thuSau(m)).filter((r) => r.reason_code === MA_STOP_QUA_HAN)).toHaveLength(0);
+  }, 10_000);
+
+  it("từ chối THEO ADAPTER (a2a quá hạn đọc ghim, a2b đã gửi), INSERT attempts STOP_QUA_HAN ném ⇒ +1 'ghi_so_loi'; a2b vẫn gửi", async () => {
+    _datLaiDemStopQuaHanChoTest();
+    H.ghimCho.set(fx.a2a, 3_000);
+    H.hongGhiQuaHan = true;
+    const ghiTruoc = stub.a2b.ghi.length;
+    const kq = await op.caller.dungMay({ machineId: fx.m2, clientRequestId: uuid() });
+    expect(kq.ketQua.find((k) => k.adapterId === fx.a2a)).toMatchObject({ status: "failed", reason: MA_STOP_QUA_HAN });
+    expect(stub.a2b.ghi.length).toBe(ghiTruoc + 1);
+    await vi.waitFor(
+      () => {
+        if ((demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0) < 1) throw new Error("chưa đếm");
+      },
+      { timeout: 3_000, interval: 25 },
+    );
+    expect(demStopQuaHanKhongGhiSo().theoBuoc).toEqual({ ghi_so_loi: 1 });
+  }, 10_000);
+
+  it("đối chứng — ghi sổ THÀNH CÔNG ⇒ bộ đếm bộ nhớ KHÔNG tăng (không đếm đôi)", async () => {
+    _datLaiDemStopQuaHanChoTest();
+    H.quyenCho = 3_000;
+    const m = await moc();
+    await loiCua(op.caller.dungMay({ machineId: fx.m1, clientRequestId: uuid() }));
+    await choThuQuaHan(m, 1);
+    expect(demStopQuaHanKhongGhiSo().tong).toBe(0);
   }, 10_000);
 });
 
@@ -597,5 +721,101 @@ describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (cre
     vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(300).then(() => nguoiXacThuc()) as never);
     const kq = await guiRequest(uuid());
     expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.a1, status: "acked_verified", ok: true });
+  }, 10_000);
+});
+
+// ═════════ final-fix (điều phối 2026-10-26) — miễn RIÊNG scadaCommands.dungMay khỏi cổng buộc đổi mật khẩu (STOP không bao giờ bị chặn) ═════════
+describe("★★★ điều phối 2026-10-26 — người bị buộc đổi mật khẩu VẪN dừng được máy; thủ tục khác VẪN bị chặn; có audit", () => {
+  /** hai mốc trên hàng users (khuôn buocDoiMatKhau.test.ts): thu hồi SAU lượt đổi gần nhất ⇒ phải đổi */
+  const datCo = (bat: boolean) =>
+    bat
+      ? dung(sql`UPDATE users SET "passwordChangedAt" = now() - interval '1 minute', "passwordInvalidBefore" = now() WHERE id = ${op.id}`)
+      : dung(sql`UPDATE users SET "passwordChangedAt" = now(), "passwordInvalidBefore" = NULL WHERE id = ${op.id}`);
+  async function auditBuocDoi(idMoc: number): Promise<Array<{ entityType: string; entityId: string; actorId: number; afterJson: any }>> {
+    return (await dung(sql`SELECT "entityType", "entityId", "actorId", "afterJson" FROM control_audit_log
+      WHERE id > ${idMoc} AND action = 'scada_hmi_stop_buoc_doi_mat_khau' AND "actorId" = ${op.id} ORDER BY id`)) as never;
+  }
+  afterEach(async () => {
+    await datCo(false);
+  });
+  /**
+   * ⚠ Gọi qua `appRouter` (đường THẬT `scadaCommands.dungMay` mà cổng nhìn thấy trong `path`) — caller của router con thấy `path` = "dungMay"
+   * và KHÔNG đo đúng tập miễn cổng.
+   */
+  let goc: ReturnType<(typeof import("../routers"))["appRouter"]["createCaller"]>;
+  beforeAll(async () => {
+    const { appRouter } = await import("../routers");
+    goc = appRouter.createCaller({ user: { id: op.id, role: "operator", name: "R1B2 T4 op", twoFactorEnabled: false } } as never);
+  }, 120_000);
+
+  it("cầu chì — cờ bật thật trong DB (phaiDoiMatKhau đọc MỚI)", async () => {
+    const { phaiDoiMatKhau } = await import("../db");
+    await datCo(true);
+    expect(await phaiDoiMatKhau(op.id)).toBe(true);
+    await datCo(false);
+    expect(await phaiDoiMatKhau(op.id)).toBe(false);
+  });
+
+  it("★ người bị buộc đổi mật khẩu bấm DỪNG MÁY ⇒ STOP ĐI (acked_verified, driver nhận ghim) + ĐÚNG MỘT audit 'STOP khi đang bị buộc đổi mật khẩu' gắn máy", async () => {
+    await datCo(true);
+    const am = await mocAudit();
+    const ghiTruoc = stub.a1.ghi.length;
+    const crid = uuid();
+    const kq = await goc.scadaCommands.dungMay({ machineId: fx.m1, clientRequestId: crid });
+    expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.a1, status: "acked_verified", ok: true });
+    expect(stub.a1.ghi.length).toBe(ghiTruoc + 1);
+    let rows: Awaited<ReturnType<typeof auditBuocDoi>> = [];
+    await vi.waitFor(
+      async () => {
+        rows = (await auditBuocDoi(am)).filter((r) => r.afterJson?.clientRequestId === crid);
+        if (rows.length < 1) throw new Error("audit chưa ghi");
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+    await cho(200);
+    rows = (await auditBuocDoi(am)).filter((r) => r.afterJson?.clientRequestId === crid);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entityType: "machine", entityId: String(fx.m1), actorId: op.id });
+    expect(rows[0].afterJson).toMatchObject({ suKien: "STOP khi đang bị buộc đổi mật khẩu", machineId: fx.m1, daXacMinhPhamVi: true, nguoiBam: { userId: op.id, role: "operator" } });
+  }, 10_000);
+
+  it("★ CÙNG người bị buộc đổi ⇒ thủ tục KHÁC (scadaCommands.request, scadaCommands.huy) VẪN MUST_CHANGE_PASSWORD — không mở thủ tục nào khác", async () => {
+    await datCo(true);
+    const e1 = await loiCua(goc.scadaCommands.request({ adapterId: fx.a1, tagKey: "stop_cmd", value: true, lyDo: "thu cong doi mat khau" } as never));
+    expect(e1).toMatchObject({ code: "FORBIDDEN", appCode: "MUST_CHANGE_PASSWORD" });
+    const e2 = await loiCua(goc.scadaCommands.huy({ requestId: uuid() }));
+    expect(e2).toMatchObject({ code: "FORBIDDEN", appCode: "MUST_CHANGE_PASSWORD" });
+    // và dungMay của CÙNG người, CÙNG lúc, đi qua cổng (đối chứng trong cùng ca)
+    const kq = await goc.scadaCommands.dungMay({ machineId: fx.m1, clientRequestId: uuid() });
+    expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.a1, ok: true });
+  }, 10_000);
+
+  it("★ người bị buộc đổi gửi máy NGOÀI phạm vi (nhà máy B) ⇒ VẪN NOT_FOUND (phạm vi vẫn đòi); audit gắn NGƯỜI BẤM, không gắn máy B", async () => {
+    await datCo(true);
+    const am = await mocAudit();
+    const crid = uuid();
+    const e = await loiCua(goc.scadaCommands.dungMay({ machineId: fx.mB, clientRequestId: crid }));
+    expect(e.code).toBe("NOT_FOUND");
+    let rows: Awaited<ReturnType<typeof auditBuocDoi>> = [];
+    await vi.waitFor(
+      async () => {
+        rows = (await auditBuocDoi(am)).filter((r) => r.afterJson?.clientRequestId === crid);
+        if (rows.length < 1) throw new Error("audit chưa ghi");
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+    expect(rows[0]).toMatchObject({ entityType: "user", entityId: String(op.id) });
+    expect(rows[0].afterJson).toMatchObject({ daXacMinhPhamVi: false, machineIdChuaXacMinh: fx.mB, ketCuc: "NOT_FOUND" });
+    const ganB = await dung(sql`SELECT id FROM control_audit_log WHERE id > ${am} AND "entityType" = 'machine' AND "entityId" = ${String(fx.mB)}`);
+    expect(ganB).toHaveLength(0);
+  }, 10_000);
+
+  it("đối chứng — người KHÔNG bị buộc đổi ⇒ STOP đi như cũ, KHÔNG audit 'buộc đổi mật khẩu'", async () => {
+    await datCo(false);
+    const am = await mocAudit();
+    const kq = await goc.scadaCommands.dungMay({ machineId: fx.m1, clientRequestId: uuid() });
+    expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.a1, status: "acked_verified", ok: true });
+    await cho(300);
+    expect(await auditBuocDoi(am)).toHaveLength(0);
   }, 10_000);
 });

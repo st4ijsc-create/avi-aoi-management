@@ -48,6 +48,12 @@ export type TrpcContext = {
    * lại. Vắng ⇒ không hạn (mọi request khác).
    */
   hanChotStopHmi?: number;
+  /**
+   * SCADA R1b-2a final-fix (điều phối 2026-10-26) — `true` ⇔ người gọi ĐANG bị buộc đổi mật khẩu và thủ tục là `scadaCommands.dungMay`
+   * (miễn cổng — `THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU`). CHỈ `chanKhiPhaiDoiMatKhau` đặt (qua `next({ ctx })`); createContext không bao giờ
+   * đặt, không đọc từ dây. `dungMayHmi` dùng nó để ghi audit "STOP khi đang bị buộc đổi mật khẩu".
+   */
+  stopKhiBuocDoiMatKhau?: true;
 };
 
 function extractSessionToken(

@@ -183,7 +183,11 @@ export const scadaCommandsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       // R1b-2a T4 fix round 1 (I-1) — pha trước-gửi dùng phần CÒN LẠI của hạn tổng của request (đặt ở createContext), không phải 2 s mới
-      const kq = await dungMayHmi(nguoiGoi(ctx), phamViCua(ctx), input, { hanChotYeuCau: ctx.hanChotStopHmi });
+      // final-fix (điều phối 2026-10-26) — người đang bị buộc đổi mật khẩu VẪN dừng được máy (cổng miễn riêng dungMay); dungMayHmi ghi audit
+      const kq = await dungMayHmi(nguoiGoi(ctx), phamViCua(ctx), input, {
+        hanChotYeuCau: ctx.hanChotStopHmi,
+        dangBiBuocDoiMatKhau: ctx.stopKhiBuocDoiMatKhau === true,
+      });
       if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
       return kq.ketQua;
     }),

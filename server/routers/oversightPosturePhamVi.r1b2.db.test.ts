@@ -264,6 +264,24 @@ describe("★★★ STOP HMI quá hạn 24 h (ruling K7) — theo phạm vi; ch�
     expect(await rt._internal.fetchStopQuaHan(db, pvA, stopN)).toEqual({ count: 0, theoBuoc: {}, khongGhiSo: null, degraded: false });
   });
 
+  it("★ final-fix M-2 — theoBuoc là tập ĐÓNG: buoc cũ mang mã adapter ('adapter A1, A2', 'adapter X9') gộp về 'adapter'; giá trị lạ ⇒ 'khac'; không khoá nào mang mã adapter", async () => {
+    // chạy SAU các ca đếm chính xác ở trên (dòng WORM — thêm ở đây để không đổi số của các ca đó)
+    const nhan = `${RUN}-m2`;
+    await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "adapter A1, A2", hanMs: 2000, nhan });
+    await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "adapter X9", hanMs: 2000, nhan });
+    await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "adapter", adapters: ["A7"], hanMs: 2000, nhan });
+    await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "zzz-la", hanMs: 2000, nhan });
+    await seedStop(null, { machineId: A.mid, daXacMinhPhamVi: true, buoc: "doc_ghim", hanMs: 2000, nhan });
+    const chiNhan = sql`${scadaCommandAttempts.requestedValue}->>'nhan' = ${nhan}`;
+    const pvAdmin = await rt._internal.layPhamViPosture(ctxAdmin, db);
+    const r = await rt._internal.fetchStopQuaHan(db, pvAdmin, chiNhan);
+    expect(r.theoBuoc).toEqual({ adapter: 3, khac: 1, doc_ghim: 1 });
+    expect(Object.keys(r.theoBuoc).some((k) => /A1|A2|X9|A7/.test(k))).toBe(false);
+    // người A (máy A trong phạm vi) cùng tập khoá
+    const pvA = await rt._internal.layPhamViPosture(ctxA, db);
+    expect((await rt._internal.fetchStopQuaHan(db, pvA, chiNhan)).theoBuoc).toEqual({ adapter: 3, khac: 1, doc_ghim: 1 });
+  });
+
   it("phạm vi không phân giải được (pv null) ⇒ degraded, 0 (fail-closed, không đoán toàn quyền)", async () => {
     expect(await rt._internal.fetchStopQuaHan(db, null)).toEqual({ count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true });
   });

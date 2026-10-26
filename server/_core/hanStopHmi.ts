@@ -40,8 +40,12 @@ export function laGoiChiDungMay(info: unknown): boolean {
 }
 
 export type PhaQuaHanStopHmi = "truoc_gui" | "xac_thuc";
-/** Bước mà từ chối vì hạn KHÔNG ghi được scada_command_attempts / audit. */
-export type BuocKhongGhiSo = "xac_thuc" | "cong_doi_mat_khau" | "giay_phep" | "pham_vi_tenant" | "db";
+/**
+ * Bước mà từ chối vì hạn KHÔNG ghi được scada_command_attempts / audit.
+ * R1b-2a final-fix M-1: "ghi_so_loi" = đã có kết nối DB nhưng lượt chèn dòng từ chối STOP_QUA_HAN ném (reset kết nối, thiếu cột 0433 …) ⇒
+ * dòng không có trong sổ ⇒ đếm ở đây để posture `stopQuaHan24h` không đếm thiếu.
+ */
+export type BuocKhongGhiSo = "xac_thuc" | "cong_doi_mat_khau" | "giay_phep" | "pham_vi_tenant" | "db" | "ghi_so_loi";
 
 /** Lỗi tRPC của một từ chối vì hạn (HTTP 503 + appCode — client hiện băng "dùng E-STOP cứng"). */
 export function loiStopQuaHan(pha: PhaQuaHanStopHmi, chiTiet: string): TRPCError {
@@ -64,8 +68,15 @@ export function trongHanYeuCauStopHmi<T>(p: Promise<T>, hanChot: number | undefi
 }
 
 async function choTrongHan<T>(p: Promise<T>, hanChot: number, buoc: BuocKhongGhiSo, pha: PhaQuaHanStopHmi, tran?: number): Promise<T> {
-  const ms = Math.max(1, Math.min(tran ?? Number.POSITIVE_INFINITY, hanChot - Date.now()));
+  const conLai = hanChot - Date.now();
+  const ms = Math.max(1, Math.min(tran ?? Number.POSITIVE_INFINITY, conLai));
   try {
+    // final-fix — hạn ĐÃ cạn ⇒ từ chối NGAY, tất định (trước: cuộc đua 1 ms với lượt đọc DB — DB ấm thắng ⇒ cổng cho qua rồi cổng sau mới từ
+    // chối, pha khác; lưới "hạn tổng ĐÃ cạn qua router" chập chờn theo thứ tự chạy). Lời hứa `p` bị bỏ rơi chạy nền như mọi lượt quá hạn.
+    if (conLai <= 0) {
+      p.catch(() => undefined);
+      throw new LoiHetHanYeuCauStopHmi();
+    }
     return await withDeadline(p, ms, "HMI STOP request", { unref: true, loi: () => new LoiHetHanYeuCauStopHmi() });
   } catch (e) {
     if (!(e instanceof LoiHetHanYeuCauStopHmi)) throw e;

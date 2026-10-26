@@ -33,7 +33,7 @@ import type { TrpcContext } from "./context";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { readAppErrorMeta } from "./appError";
-import { chanKhiPhaiDoiMatKhau, THU_TUC_CHO_QUA } from "./trpc";
+import { chanKhiPhaiDoiMatKhau, THU_TUC_CHO_QUA, THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU } from "./trpc";
 import { redactServerOnlyUserFields } from "./publicUser";
 import {
   VAI_MIEN_TRU_BUOC_DOI_MAT_KHAU,
@@ -145,6 +145,28 @@ describe("★★★ I-4 §2 — tập CHO QUA: LƯỚI HAI CHIỀU (khuôn `publ
       expect(CHO_QUA.has(d), `${d} KHÔNG được nằm trong tập cho qua`).toBe(false);
       expect(d in THU_TUC, `${d} phải tồn tại (nếu không, ca trên là chân lý rỗng)`).toBe(true);
     }
+  });
+});
+
+describe("★★★ §2b — tập miễn cổng cho STOP (điều phối 2026-10-26): LƯỚI HAI CHIỀU, đúng MỘT thủ tục", () => {
+  it("★★★ chiều A — đường trong tập TỒN TẠI trên `appRouter` (mục ma ⇒ STOP lại bị chặn im lặng)", () => {
+    const ma = THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU.filter((d) => !(d in THU_TUC));
+    expect(ma.join(" · "), "đường miễn cổng STOP không tồn tại trên appRouter").toBe("");
+  });
+
+  it("★★★ chiều B — tập TỐI THIỂU: CHỈ scadaCommands.dungMay (mở thêm thủ tục nào là một quyết định phải nói ra)", () => {
+    expect([...THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU]).toEqual(["scadaCommands.dungMay"]);
+    // không trùng tập CHO QUA (CHO QUA bỏ qua cả lượt đọc cờ; miễn STOP VẪN đọc cờ để ghi audit)
+    for (const d of THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU) expect(THU_TUC_CHO_QUA.includes(d)).toBe(false);
+    // các thủ tục lệnh khác KHÔNG được miễn
+    for (const d of ["scadaCommands.request", "scadaCommands.confirm", "scadaCommands.huy", "scadaCommands.trangThai"]) {
+      expect(d in THU_TUC, `${d} phải tồn tại (nếu không, ca này là chân lý rỗng)`).toBe(true);
+      expect(THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU.includes(d), `${d} KHÔNG được miễn cổng`).toBe(false);
+    }
+  });
+
+  it("★★ cổng VẪN nằm trong chuỗi của scadaCommands.dungMay (miễn ở TRONG cổng, không gỡ cổng khỏi chuỗi)", () => {
+    expect(chuoiCua("scadaCommands.dungMay")[0]).toBe(HAM_CONG);
   });
 });
 

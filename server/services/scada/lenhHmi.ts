@@ -1394,9 +1394,26 @@ export function dieuKienThuStopQuaHan() {
 }
 
 /** Hết hạn trước-gửi (lỗi CÓ KIỂU — phân biệt với lỗi DB bằng `instanceof`). `buoc` = lượt chờ đang dở khi hết hạn. */
+/**
+ * R1b-2a final-fix M-2 — LOẠI bước của từ chối STOP_QUA_HAN: tập ĐÓNG (posture `theoBuoc` nhóm theo nó — không bao giờ phình theo tổ hợp
+ * adapter). Mã adapter đi riêng (`requested_value.adapters`, audit `adapters`, log, lyDo).
+ */
+export const BUOC_QUA_HAN_STOP_HMI = [
+  "db",
+  "het_han_tong_truoc_handler",
+  "pham_vi",
+  "doc_may",
+  "vai_tro",
+  "doc_adapter",
+  "doc_ghim",
+  "dong_cho",
+  "adapter",
+] as const;
+export type BuocQuaHanStopHmi = (typeof BUOC_QUA_HAN_STOP_HMI)[number];
+
 export class LoiQuaHanStopHmi extends Error {
   constructor(
-    readonly buoc: string,
+    readonly buoc: BuocQuaHanStopHmi,
     readonly ms: number,
   ) {
     super(`HMI STOP precheck (${buoc}) timeout after ${ms}ms`);
@@ -1414,7 +1431,7 @@ export function hanChotTruocGuiStopHmi(batDau: number, hanChotYeuCau?: number): 
 }
 
 /** Chờ `p` trong phần CÒN LẠI của ngân sách (tối thiểu 1 ms — hết sạch thì hết hạn ngay ở lượt chờ kế). */
-function trongHanStop<T>(p: Promise<T>, hanChot: number, buoc: string): Promise<T> {
+function trongHanStop<T>(p: Promise<T>, hanChot: number, buoc: BuocQuaHanStopHmi): Promise<T> {
   const ms = Math.max(1, hanChot - Date.now());
   return withDeadline(p, ms, "HMI STOP precheck", { unref: true, loi: () => new LoiQuaHanStopHmi(buoc, ms) });
 }
@@ -1604,7 +1621,12 @@ async function guiStopMotAdapter(
  * Fix round 1 (I-1): `opts.hanChotYeuCau` = hạn TỔNG của request (`ctx.hanChotStopHmi`, đặt ở createContext) ⇒ ngân sách thật là
  * min(2 s từ đây, phần CÒN LẠI của hạn tổng) — KHÔNG phải 2 s mới sau khi xác thực + middleware đã tiêu.
  */
-export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input: DauVaoDungMay, opts: { hanChotYeuCau?: number } = {}): Promise<KetQuaDungMay> {
+export async function dungMayHmi(
+  nguoi: NguoiGoiLenh,
+  pv: PhamViNguoiXem,
+  input: DauVaoDungMay,
+  opts: { hanChotYeuCau?: number; dangBiBuocDoiMatKhau?: boolean } = {},
+): Promise<KetQuaDungMay> {
   // 1. cờ — không chạm DB (QĐ D-6)
   if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
 
@@ -1612,7 +1634,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const batDau = Date.now();
   const hanChot = hanChotTruocGuiStopHmi(batDau, opts.hanChotYeuCau);
   const hanMs = hanChot - batDau;
-  const han = <T>(p: Promise<T>, buoc: string): Promise<T> => trongHanStop(p, hanChot, buoc);
+  const han = <T>(p: Promise<T>, buoc: BuocQuaHanStopHmi): Promise<T> => trongHanStop(p, hanChot, buoc);
   /** M-2 — machineId đã đọc được VÀ qua kiểm phạm vi chưa (false ⇒ machineId trong sổ là thứ client gửi, chưa kiểm) */
   let daXacMinhPhamVi = false;
 
@@ -1622,30 +1644,77 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   let db: Db | null = null;
 
   /**
+   * final-fix (điều phối 2026-10-26) — người gọi ĐANG bị buộc đổi mật khẩu mà vẫn dừng máy (cổng miễn riêng dungMay). ĐÚNG MỘT dòng audit
+   * "STOP khi đang bị buộc đổi mật khẩu" (người bấm + máy), FIRE-AND-FORGET dưới hạn (không bao giờ giữ STOP). Cột thực thể là máy CHỈ khi máy
+   * đã qua kiểm phạm vi (cùng luật M-3); chưa xác minh ⇒ gắn người bấm, machineId chỉ trong payload.
+   */
+  let daGhiAuditBuocDoi = false;
+  const ghiAuditBuocDoiMatKhau = (d: DbHoacTx, daXacMinh: boolean, machineCode: string | null, ketCuc: string): void => {
+    if (!opts.dangBiBuocDoiMatKhau || daGhiAuditBuocDoi) return;
+    daGhiAuditBuocDoi = true;
+    logger.warn({ userId, machineId: input.machineId, daXacMinh, ketCuc }, "[SCADA] STOP HMI khi người bấm đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26)");
+    const viec = recordAuditEvent(d, {
+      ...(daXacMinh ? { entityType: "machine", entityId: input.machineId } : { entityType: "user", entityId: userId }),
+      action: "scada_hmi_stop_buoc_doi_mat_khau",
+      actorId: userId,
+      before: null,
+      after: {
+        suKien: "STOP khi đang bị buộc đổi mật khẩu",
+        nguoiBam: { userId, role: nguoi.user.role },
+        ...(daXacMinh ? { machineId: input.machineId } : { machineIdChuaXacMinh: input.machineId, chiAdminXem: true }),
+        daXacMinhPhamVi: daXacMinh,
+        machineCode,
+        ketCuc,
+        clientRequestId: input.clientRequestId,
+      },
+      reason: "STOP khi đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26)",
+    });
+    void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit buộc đổi mật khẩu").catch((err) =>
+      logger.error({ err: (err as Error)?.message ?? String(err), userId }, "[SCADA] STOP HMI: ghi audit 'buộc đổi mật khẩu' lỗi hoặc quá hạn"),
+    );
+  };
+
+  /**
    * R1b-2a T4 — từ chối CẢ lệnh vì hạn trước-gửi (chưa adapter nào vào dispatch). ĐÚNG MỘT dòng attempts (adapter_id NULL) + audit
    * `QUA_HAN`, cả hai fire-and-forget: DB đang chậm, sổ không được giữ câu "dùng E-STOP cứng" lại. `machineCode` chỉ có khi máy đã đọc được
    * (hết hạn có thể rơi TRƯỚC kiểm phạm vi ⇒ machineId là thứ client gửi — chỉ vào sổ phía máy chủ, không trả về).
    */
-  const tuChoiQuaHan = (buoc: string, machineCode: string | null, adapterQuaHan: KetQuaDungMayAdapter[] = []): KetQuaDungMay => {
+  const tuChoiQuaHan = (buoc: BuocQuaHanStopHmi, machineCode: string | null, adapterQuaHan: KetQuaDungMayAdapter[] = []): KetQuaDungMay => {
     const troi = Date.now() - batDau;
-    const chiTiet = `Máy chủ chậm — STOP HMI CHƯA được gửi (quá hạn ${hanMs} ms ở bước ${buoc}). Dùng E-STOP cứng tại máy.`;
-    logger.error({ userId, machineId: input.machineId, buoc, troiMs: troi, hanMs, daXacMinhPhamVi }, "[SCADA] STOP HMI: quá hạn TRƯỚC khi gửi — STOP CHƯA được gửi; dùng E-STOP cứng");
+    // final-fix M-2 — `buoc` là LOẠI bước (tập đóng BUOC_QUA_HAN_STOP_HMI, posture nhóm theo nó); mã adapter chỉ vào log / lyDo / mảng riêng
+    const maAdapter = adapterQuaHan.map((k) => k.code);
+    const noiBuoc = maAdapter.length > 0 ? `${buoc} ${maAdapter.join(", ")}` : buoc;
+    const chiTiet = `Máy chủ chậm — STOP HMI CHƯA được gửi (quá hạn ${hanMs} ms ở bước ${noiBuoc}). Dùng E-STOP cứng tại máy.`;
+    logger.error(
+      { userId, machineId: input.machineId, buoc, adapters: maAdapter, troiMs: troi, hanMs, daXacMinhPhamVi },
+      "[SCADA] STOP HMI: quá hạn TRƯỚC khi gửi — STOP CHƯA được gửi; dùng E-STOP cứng",
+    );
     if (!db) {
       // M-3 — chưa có kết nối DB ⇒ không ghi được sổ: đếm trong bộ nhớ (posture T12)
       ghiNhanStopQuaHanKhongGhiSo("db");
     } else {
       const d = db;
+      ghiAuditBuocDoiMatKhau(d, false, machineCode, MA_STOP_QUA_HAN); // no-op nếu đã ghi sau kiểm phạm vi
       void ghiThuLenh(d, {
         userId,
         stage: "dispatch",
         outcome: "rejected",
         reasonCode: MA_STOP_QUA_HAN,
-        requestedValue: { machineId: input.machineId, daXacMinhPhamVi, buoc, hanMs },
+        requestedValue: { machineId: input.machineId, daXacMinhPhamVi, buoc, hanMs, ...(maAdapter.length > 0 ? { adapters: maAdapter } : {}) },
         lyDo: lyDo ?? chiTiet,
-      }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han"));
+      }).catch((e) => {
+        // final-fix M-1 — dòng từ chối không vào sổ ⇒ đếm trong bộ nhớ (posture không đếm thiếu)
+        ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi");
+        ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han");
+      });
+      // final-fix M-3 — cột thực thể của audit CHỈ là máy khi máy ĐÃ qua kiểm phạm vi. Chưa xác minh ⇒ machineId là lời client gửi (có thể
+      // là máy nhà máy khác): dòng gắn vào NGƯỜI BẤM (entityType "user" — cùng khuôn totpKhoaSai), machineId chỉ nằm trong payload dưới tên
+      // `machineIdChuaXacMinh` + daXacMinhPhamVi=false. Không bộ đọc audit theo máy nào thấy dòng này (chỉ admin đọc thẳng sổ).
+      const thucThe = daXacMinhPhamVi
+        ? { entityType: "machine", entityId: input.machineId }
+        : { entityType: "user", entityId: userId };
       const viec = recordAuditEvent(d, {
-        entityType: "machine",
-        entityId: input.machineId,
+        ...thucThe,
         action: "scada_hmi_stop",
         actorId: userId,
         before: null,
@@ -1656,7 +1725,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
           hanMs,
           troiMs: troi,
           nguoiBam: { userId, role: nguoi.user.role },
-          machineId: input.machineId,
+          ...(daXacMinhPhamVi ? { machineId: input.machineId } : { machineIdChuaXacMinh: input.machineId, chiAdminXem: true }),
           daXacMinhPhamVi,
           machineCode,
           clientRequestId: input.clientRequestId,
@@ -1693,10 +1762,12 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
     const idsMay = await han(idsTrongPhamVi("machine", pv, { strict: true }), "pham_vi");
     [may] = await han(dbx.select({ id: machines.id, code: machines.code }).from(machines).where(eq(machines.id, input.machineId)).limit(1), "doc_may");
     if (!may || (idsMay !== null && !idsMay.includes(may.id))) {
+      ghiAuditBuocDoiMatKhau(dbx, false, null, "NOT_FOUND");
       return tuChoiMay({ ma: "NOT_FOUND", entity: "machine", chiTiet: "Máy không tồn tại." });
     }
     mayDa = may;
     daXacMinhPhamVi = true;
+    ghiAuditBuocDoiMatKhau(dbx, true, mayDa.code, "qua_kiem_pham_vi");
 
     // 3. sàn vai mức 1 + machine_control.canEdit (mức 1 ⇒ không 2FA)
     const vai = await han(kiemCongVaiTro(nguoi, 1), "vai_tro");
@@ -1763,7 +1834,7 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
   const coDispatch = ong.some((o) => o.loai === "gui" && o.daGoiDispatch);
 
   // R1b-2a T4 — có adapter quá hạn mà KHÔNG adapter nào vào dispatch ⇒ STOP chưa đi đâu cả ⇒ từ chối cả lệnh (câu E-STOP nổi bật ở client)
-  if (quaHan.length > 0 && !coDispatch) return tuChoiQuaHan(`adapter ${quaHan.map((k) => k.code).join(", ")}`, mayDa.code, quaHan);
+  if (quaHan.length > 0 && !coDispatch) return tuChoiQuaHan("adapter", mayDa.code, quaHan);
 
   /**
    * fix round 1 (important 2) — FIRE-AND-FORGET dưới hạn (khuôn `auditPinnedStopOverride` của dispatcher): với SEC_PLATFORM bật,
@@ -1858,7 +1929,11 @@ export async function dungMayHmi(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, input:
       outcome: "rejected",
       reasonCode: MA_STOP_QUA_HAN,
       lyDo: lyDo ?? `STOP: máy chủ chậm — adapter ${k.code} CHƯA được gửi (quá hạn ${hanMs} ms trước-gửi); dùng E-STOP cứng.`,
-    }).catch((e) => ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han_adapter"));
+    }).catch((e) => {
+      // final-fix M-1 — dòng từ chối theo adapter không vào sổ ⇒ đếm trong bộ nhớ (posture không đếm thiếu)
+      ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi");
+      ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han_adapter");
+    });
   }
 
   // 6. audit — gửi đã xong trong từng đường ống (lỗi một adapter không chặn adapter khác)
