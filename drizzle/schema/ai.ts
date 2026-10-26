@@ -1438,6 +1438,8 @@ export const aiApiKeys = pgTable("ai_api_keys", {
   encryptedKey: text("encryptedKey").notNull(),
   endpoint: text("endpoint"),
   status: apiKeyStatusEnum("status").default("active").notNull(),
+  /** ★ Đợt 10.3 (mig 0414) — khoá THEO NHÀ MÁY; CHECK: `active` ⇒ có nhà máy (hàng cũ không nhà máy ⇒ inactive). FK factories (SQL). */
+  factoryId: integer("factoryId"),
   lastTestedAt: timestamp("lastTestedAt"),
   createdBy: integer("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

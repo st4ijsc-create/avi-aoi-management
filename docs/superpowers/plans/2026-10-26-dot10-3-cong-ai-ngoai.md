@@ -157,7 +157,7 @@
   - `interface TinNhanNgoai { vaiTro: "system" | "user" | "assistant" | "tool"; noiDung: string; tenTool?: string }`
   - `interface YeuCauNhaCungCap { model: string; tinNhan: TinNhanNgoai[]; congCu?: Array<{ ten: string; moTa: string; schema: unknown }>; maxTokens: number; nhietDo: number }`
   - `interface KetQuaNhaCungCap { noiDung: string; toolCalls: Array<{ ten: string; thamSo: unknown }>; tokenVao: number; tokenRa: number }`
-  - `interface NhaCungCapAi { ma: "anthropic" | "openai" | "gemini" | "openai-compat"; goi(yc: YeuCauNhaCungCap, layKhoa: () => Promise<string>, mang: MangNgoai): Promise<KetQuaNhaCungCap> }`
+  - `interface NhaCungCapAi { ma: "anthropic" | "openai" | "gemini" | "openai_compat"; goi(yc: YeuCauNhaCungCap, layKhoa: () => Promise<string>, mang: MangNgoai): Promise<KetQuaNhaCungCap> }`
 - Produces (`congNgoai.ts`):
   - `interface YeuCauGoiNgoai { dich: { nhaCungCap: string; model: string }; tinNhan: TinNhanNgoai[]; dinhKem?: unknown[]; congCu?: YeuCauNhaCungCap["congCu"]; maxTokens: number; mucDich: string; ngu: { userId: number | null; flowId: string | null; runId: string | null; tuDong: boolean; nhaMayNguoiGoi: number[]; nhaMayChuDuLieu: number[]; nguonMuc: NguonMuc } }` — KHÔNG có `factoryId`/`mucDuLieu` do người gọi khai (Task 3).
   - `nhaMayTinhTran(ngu): number` — luồng: nhà máy CHỦ LUỒNG; chat/coding/KB: nhà máy của dữ liệu đã ghép (`nhaMayChuDuLieu`), không có dữ liệu nhà máy nào ⇒ nhà máy MẶC ĐỊNH của người dùng (một và chỉ một; nhiều nhà máy không mặc định ⇒ `NGOAI_KHONG_TON_TAI`).

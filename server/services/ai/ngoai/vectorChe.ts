@@ -103,6 +103,14 @@ export const VECTOR_CHE: readonly VectorChe[] = [
     dauVao: "mật khẩu wifi là Zz99887766\nmật khẩu admin là Ab#12345\nmật khẩu máy chủ là Srv2026!x",
     phaiKhongCon: ["Zz99887766", "Ab#12345", "Srv2026!x"],
   },
+  // ── lưới cổng lô 2: JSON NHÚNG trong văn xuôi (cả chuỗi không parse được) ──
+  {
+    ten: "json-nhung-van-ban",
+    dauVao: 'Cấu hình: [{"name":"DB_PASSWORD","value":"x8x8x8"}] xong. Ghi chú {"password":"p7p7p7","note":"ok"} hết; nháy lẻ " ở đây {"token":"t6t6t6t6"}',
+    phaiKhongCon: ["x8x8x8", "p7p7p7", "t6t6t6t6"],
+    phaiConLai: ["Cấu hình:", "xong.", "note", "hết;"],
+  },
+  { ten: "json-thoat-trong-van-ban", dauVao: 'log: "{\\"password\\":\\"p5p5p5\\",\\"ok\\":1}" xong', phaiKhongCon: ["p5p5p5"], phaiConLai: ["log:", "xong"] },
   // ── giữ nguyên (che thừa = lỗi) ──
   { ten: "pass-qc-giu-nguyen", dauVao: { pass: true, status: "Pass: PASSED", note: "pass = 1" }, phaiKhongCon: [], phaiConLai: ['"pass":true', "Pass: PASSED", "pass = 1"] },
   { ten: "viet-van-xuoi-giu-nguyen", dauVao: "mật khẩu là gì?\nmật khẩu mạnh là mật khẩu dài", phaiKhongCon: [], phaiConLai: ["mật khẩu là gì?", "mật khẩu mạnh là mật khẩu dài"] },

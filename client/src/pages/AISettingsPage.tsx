@@ -48,7 +48,7 @@ type ApiKeyStatus = 'active' | 'inactive' | 'expired' | 'error';
 interface ApiKeyEntry {
   id: number;
   name: string;
-  provider: ApiKeyProvider;
+  provider: ApiKeyProvider | "anthropic" | "gemini" | "openai_compat"; // Đợt 10.3: khoá AI ngoài tạo ở màn aiNgoai cũng hiện ở danh sách này
   maskedKey?: string;
   endpoint?: string | null;
   status: ApiKeyStatus;
@@ -226,7 +226,7 @@ function ApiKeysSection() {
       ) : (
         <div className="grid gap-3">
           {keys.map((key) => {
-            const provider = PROVIDER_INFO[key.provider] ?? PROVIDER_INFO.custom;
+            const provider = (PROVIDER_INFO as Partial<Record<string, (typeof PROVIDER_INFO)[ApiKeyProvider]>>)[key.provider] ?? PROVIDER_INFO.custom;
             const status = STATUS_CONFIG[key.status] ?? STATUS_CONFIG.inactive;
             return (
               <Card key={key.id}>

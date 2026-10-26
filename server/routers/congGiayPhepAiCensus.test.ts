@@ -548,7 +548,9 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-26 gỡ gán (UX Trung tâm Model): +1 mutation aiGguf.soModelGoGan (MOD_AI, admin + audit) ⇒ 2412 · 439 · 377.
 // 2026-10-26 Đợt 10.1 (do-model): +1 aiChonModel.danhMuc (query MOD_AI, mặt AI có cổng) ⇒ tong 2412, beMatAi 439, aiCoCong 377.
 // 2026-10-26 dieu-phoi GỘP: soModelGoGan (luong-ui) + aiChonModel.danhMuc (do-model) cùng +1 ⇒ ĐO trên cây gộp.
-const GHIM = { tong: 2413, beMatAi: 440, aiCoCong: 378, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-26 Đợt 10.3 (do-model): +4 aiNgoai.taoKhoa|xoayKhoa|thuHoiKhoa|dsKhoa (adminProcedure.use(moduleGate("MOD_AI"))) ⇒ tong 2416, beMatAi 443, aiCoCong 381.
+const GHIM = { tong: 2417, beMatAi: 444, aiCoCong: 382, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

@@ -159,7 +159,18 @@ export function laGiaTriQc(v: unknown): boolean {
 }
 
 /** Tên khoá (JSON / nhãn văn bản) có phải tên của một bí mật không. */
+/** Đệm kết quả theo tên (nhãn lặp lại rất nhiều trong một văn bản — `a:b a:b …`); xoá sạch khi quá 4 096 mục. */
+const DEM_TEN_NHAY = new Map<string, boolean>();
 export function laTenKhoaNhay(ten: string): boolean {
+  const co = DEM_TEN_NHAY.get(ten);
+  if (co !== undefined) return co;
+  const kq = laTenKhoaNhayTinh(ten);
+  if (DEM_TEN_NHAY.size >= 4096) DEM_TEN_NHAY.clear();
+  DEM_TEN_NHAY.set(ten, kq);
+  return kq;
+}
+
+function laTenKhoaNhayTinh(ten: string): boolean {
   const doan = tachDoan(ten);
   if (doan.length === 0) return false;
   const gop = doan.join("");
@@ -199,7 +210,7 @@ const RE_WEBHOOK =
   /(https?:\/\/(?:hooks\.slack\.com\/(?:services|workflows|triggers)\/|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/|[A-Za-z0-9.-]*webhook\.office\.com\/|api\.telegram\.org\/bot))[^\s"'<>]+/gi;
 const RE_TELEGRAM = /(?<![A-Za-z0-9])\d{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g;
 /** Nhãn + ngăn (KHÔNG gồm giá trị — giá trị quét tay ở `cheNhan`, chỉ khi nhãn nhạy ⇒ tuyến tính). */
-const RE_NHAN_DAU = /(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.-]{0,63})(["']?[ \t]*[=:](?![=:/])[ \t]*)/g;
+const RE_NHAN_DAU = /(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.-]{0,63})((?:\\?["'])?[ \t]*[=:](?![=:/])[ \t]*)/g;
 const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[=:][ \t]*)(["']?)([A-Za-z0-9._@\\-]+)(?![^\s"',;&})\]])/gi;
 
 /**
@@ -243,6 +254,12 @@ const NGAT_GIA_TRI = new Set([";", ",", "&", "}", "]", ")", '"', "'"]);
 function ketThucGiaTri(t: string, p: number, caDong: boolean): number {
   const q = t[p];
   let i = p;
+  // JSON thoát một lớp trong văn bản (`\"password\":\"x\"`) ⇒ giá trị tới `\"` kế cùng dòng.
+  if (q === "\\" && t[p + 1] === '"') {
+    const e = t.indexOf('\\"', p + 2);
+    const nl = t.indexOf("\n", p + 2);
+    if (e >= 0 && (nl < 0 || e < nl)) return e + 2;
+  }
   if (q === '"' || q === "'") {
     const e = t.indexOf(q, p + 1);
     const nl = t.indexOf("\n", p + 1);
@@ -287,8 +304,13 @@ function cheNhan(t: string, dem: (loai: string) => void): string {
     const p = m.index + m[0].length;
     const kt = ketThucGiaTri(t, p, NHAN_CA_DONG.has(nhan.toLowerCase().replace(/[-_]/g, "")));
     const tho = t.slice(p, kt);
-    const nhay = (tho[0] === '"' || tho[0] === "'") && tho.length > 1 && tho.endsWith(tho[0]) ? tho[0] : "";
-    const loi = (nhay ? tho.slice(1, -1) : tho).trim();
+    const nhay =
+      tho.length >= 4 && tho.startsWith('\\"') && tho.endsWith('\\"')
+        ? '\\"'
+        : (tho[0] === '"' || tho[0] === "'") && tho.length > 1 && tho.endsWith(tho[0])
+          ? tho[0]
+          : "";
+    const loi = (nhay ? tho.slice(nhay.length, -nhay.length) : tho).trim();
     if (!loi || laGiaTriMa(loi) || (laTenPass(nhan) && laGiaTriQc(loi))) continue;
     out += t.slice(viTri, p) + nhay + THAY.biMat + nhay;
     dem("nhan");
@@ -471,9 +493,62 @@ function boDem(): { dem: (loai: string, n?: number) => void; theoLoai: Record<st
   };
 }
 
-function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
-  let t = chePem(chuanHoaDeKhop(s), dem);
-  t = t.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+/**
+ * JSON NHÚNG trong văn bản (rà lô 2: `"Hệ thống. [{"name":"DB_PASSWORD","value":"x"}]"` — cả chuỗi không parse được nên luật CẶP / tên
+ * khoá trên cây không chạy). MỘT lượt tuyến tính ghép ngoặc (bỏ qua ngoặc trong chuỗi "…"), lấy các cặp NGOÀI CÙNG `{…}` / `[…]`, thử
+ * `JSON.parse` từng đoạn (≤ 256 KB); đoạn parse được ⇒ che theo CÂY (`cheNut`), phần còn lại che theo luật văn bản.
+ */
+const TRAN_DOAN_JSON = 256 * 1024;
+function tachJsonNhung(t: string): Array<{ van: string } | { json: unknown }> {
+  if (!/[{[]/.test(t)) return [{ van: t }];
+  const cap: Array<[number, number]> = [];
+  const ngan: Array<{ i: number; c: string }> = [];
+  let trongChuoi = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]!;
+    if (trongChuoi) {
+      if (c === "\\") i++;
+      else if (c === '"' || c === "\n") trongChuoi = false;
+      continue;
+    }
+    if (c === '"') {
+      if (ngan.length) trongChuoi = true; // chỉ coi là chuỗi JSON khi đang trong ngoặc
+    } else if (c === "{" || c === "[") ngan.push({ i, c });
+    else if (c === "}" || c === "]") {
+      const mo = ngan.pop();
+      if (!mo || (mo.c === "{") !== (c === "}")) ngan.length = 0;
+      else if (ngan.length === 0) cap.push([mo.i, i]);
+    }
+  }
+  const ra: Array<{ van: string } | { json: unknown }> = [];
+  let viTri = 0;
+  for (const [a, b] of cap) {
+    if (b - a + 1 > TRAN_DOAN_JSON || b - a < 2) continue;
+    let v: unknown;
+    try {
+      v = JSON.parse(t.slice(a, b + 1));
+    } catch {
+      continue;
+    }
+    if (v === null || typeof v !== "object") continue;
+    if (a > viTri) ra.push({ van: t.slice(viTri, a) });
+    ra.push({ json: v });
+    viTri = b + 1;
+  }
+  if (viTri === 0) return [{ van: t }];
+  if (viTri < t.length) ra.push({ van: t.slice(viTri) });
+  return ra;
+}
+
+function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void, sau = 0): string {
+  const t = chePem(chuanHoaDeKhop(s), dem);
+  return tachJsonNhung(t)
+    .map((d) => ("json" in d ? JSON.stringify(cheNut(d.json, tu, dem, sau + 1)) : cheVanBan(d.van, tu, dem)))
+    .join("");
+}
+
+function cheVanBan(van: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
+  let t = van.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
   t = giaiPhanTram(gomChuTach(suaDongChu(t)));
 
   t = t.replace(RE_WEBHOOK, (_k, dau: string) => (dem("webhook"), dau + THAY.biMat));
@@ -541,7 +616,7 @@ function cheNut(v: unknown, tu: TuDienNhay, dem: (loai: string, n?: number) => v
       for (let i = 0; i < boc.lop; i++) ra = JSON.stringify(ra);
       return ra;
     }
-    return cheChuoiVao(v, tu, dem);
+    return cheChuoiVao(v, tu, dem, sau);
   }
   if (Array.isArray(v)) return v.map((x) => cheNut(x, tu, dem, sau + 1));
   if (v === null || typeof v !== "object") return v;

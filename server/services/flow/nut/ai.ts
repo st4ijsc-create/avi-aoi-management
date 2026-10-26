@@ -9,6 +9,12 @@
  *   ai.tomTat     tóm tắt TẤT CẢ item đầu vào thành MỘT item
  * Dữ liệu item đến từ trigger là KHÔNG TIN CẬY: được bọc trong khối dữ liệu có nhãn, lời nhắc hệ thống nói rõ không làm
  * theo chỉ dẫn trong dữ liệu. Chữ suy luận của model không bao giờ thành dữ liệu ra (engine đã tách `<think>`).
+ *
+ * ★ Đợt 10.3 — đầu ra của model NGOÀI (`chonModel: "ngoai:…"`) là CHUỖI KHÔNG TIN CẬY, không bọc thêm (bọc phá JSON / nhãn). Bất biến
+ * (lưới `ai.ngoai.test.ts`): (i) chuỗi ngoài chứa `{{ … }}` đọc lại qua biểu thức của node sau là CHUỖI LITERAL — không bị tính lần
+ * hai; (ii) KHÔNG có đường tự động đưa đầu ra ngoài vào tham số của node ghi / điều khiển — `ot.de-xuat-lenh`, `ot.de-xuat-luong`,
+ * `tich-hop.http-gui`, `tich-hop.mcp-goi`, `bao-tri.tao-phieu`, `tich-hop.thong-bao` chỉ nhận nó qua biểu thức TƯỜNG MINH người thiết kế
+ * viết (và vẫn qua hạng / duyệt của node đó); `ai.agent` với model ngoài không được cấp công cụ hạng `ngoai-ghi` / `ot`.
  */
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dangKyNut";
@@ -16,6 +22,7 @@ import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dang
 import { stripThinking } from "../../ai/thinkingStrip";
 import { tinCayNhan, type LogprobToken } from "../../ai/logprobDau";
 import type { PhuThuocDanhMuc } from "../../ai/chonModel/kieu";
+import type { YeuCauGoiNgoai } from "../../ai/ngoai/congNgoai";
 
 /** `ngu` vắng = lời gọi ngoài một lượt chạy (vd `flow.taoTuMoTa`, Đợt 8.4). */
 export type HamGoiAi = (y: {
@@ -113,7 +120,14 @@ export function datPhuThuocChonModelNut(f: (() => Promise<PhuThuocDanhMuc>) | nu
  * ★ Đợt 10.1 A2 — `thamSo.chonModel` THÔ của node ⇒ model + vết. Vắng / `auto` ⇒ null (định tuyến vai như cũ). Giá trị lạ (kể cả
  * biểu thức `{{ }}`) ⇒ lỗi node — KHÔNG rơi về mặc định. `ngoai:` ⇒ lỗi tới khi 10.3 nối cổng AI ngoài.
  */
-export async function giaiChonModelNut(chonModel: unknown, ngu: NguCanhChay | undefined): Promise<{ modelId: string | undefined; vet: VetModel } | null> {
+export interface ChonModelNut {
+  modelId: string | undefined;
+  vet: VetModel;
+  /** ★ Đợt 10.3 — model AI NGOÀI (đi qua `goiAiNgoai`, không qua engine local). */
+  ngoai?: { nhaCungCap: string; model: string };
+}
+
+export async function giaiChonModelNut(chonModel: unknown, ngu: NguCanhChay | undefined): Promise<ChonModelNut | null> {
   if (chonModel === undefined || chonModel === null || chonModel === "" || chonModel === "auto") return null;
   if (typeof chonModel !== "string") throw new LoiNutAi("chonModel không hợp lệ (phải là chuỗi cố định, không phải biểu thức)");
   const [{ giaiChonModel }, { nguCanhKhe, defaultModelBasename }] = await Promise.all([
@@ -124,14 +138,21 @@ export async function giaiChonModelNut(chonModel: unknown, ngu: NguCanhChay | un
   try {
     dich = await giaiChonModel(
       chonModel,
-      { beMatChu: true, factoryId: null, ...(ngu ? { phamVi: { flowId: ngu.flowId, beMat: "luong" } } : {}), kheBiKhoa: nguCanhKhe().kheBiKhoa },
+      // Model ngoài: danh mục của nhà máy CHỦ LUỒNG (luồng toàn hệ thống ⇒ null ⇒ không có mục ngoài ⇒ NOT_FOUND).
+      { beMatChu: true, factoryId: ngu?.nhaMayLuong ?? null, ...(ngu ? { phamVi: { flowId: ngu.flowId, beMat: "luong" } } : {}), kheBiKhoa: nguCanhKhe().kheBiKhoa },
       await layDepChonModel(),
     );
   } catch (e) {
     throw new LoiNutAi(`chonModel: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!dich) return null;
-  if (dich.loai !== "local") throw new LoiNutAi("chonModel: model ngoài chưa được cài đặt");
+  if (dich.loai !== "local") {
+    return {
+      modelId: undefined,
+      ngoai: { nhaCungCap: dich.nhaCungCap, model: dich.model },
+      vet: { vaiTro: "ngoai", model: dich.model, nguon: "chon-tuong-minh", phamVi: null, duPhong: false, kheBan: false, lyDo: [`chọn tường minh ${chonModel}`], nhaCungCap: dich.nhaCungCap },
+    };
+  }
   return {
     modelId: dich.modelId,
     vet: {
@@ -149,6 +170,7 @@ export async function giaiChonModelNut(chonModel: unknown, ngu: NguCanhChay | un
 /** Báo vết model (nếu lượt chạy / chạy thử đang lắng nghe) rồi gọi model. Lỗi định tuyến KHÔNG làm hỏng node — trừ `chonModel` lạ. */
 async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
   const chon = await giaiChonModelNut(y.chonModel, y.ngu);
+  if (chon?.ngoai) return goiAiNgoaiChoNut(y, chon);
   if (chon) y = { ...y, chon: { modelId: chon.modelId } };
   let vet: VetModel | undefined;
   if (y.ngu?.ghiModel) {
@@ -161,6 +183,79 @@ async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
   }
   // Token thật điền vào CHÍNH đối tượng vết (động cơ ghi sự kiện `buoc.model` SAU khi bước kết thúc) ⇒ thống kê token theo luồng / model.
   return goiAi(vet ? { ...y, baoTokens: (vao, ra) => { vet!.tokVao = vao; vet!.tokRa = ra; y.baoTokens?.(vao, ra); } } : y);
+}
+
+/** Chỉ lưới: thay cổng AI ngoài của node (null ⇒ cổng thật `goiAiNgoai`). */
+type HamGoiNgoai = (yc: YeuCauGoiNgoai) => Promise<{ noiDung: string; toolCalls: Array<{ ten: string; thamSo: unknown }>; tokenVao: number | null; tokenRa: number | null }>;
+let goiNgoai: HamGoiNgoai | null = null;
+export function datHamGoiNgoaiNut(f: HamGoiNgoai | null): void {
+  goiNgoai = f;
+}
+/** Cổng AI ngoài hiện hành của node (thật, hoặc hàm giả của lưới) — dùng chung cho `ai.agent`. */
+export async function goiCongNgoaiHienHanh(yc: YeuCauGoiNgoai): ReturnType<HamGoiNgoai> {
+  return goiNgoai ? goiNgoai(yc) : (await import("../../ai/ngoai/congNgoai")).goiAiNgoai(yc);
+}
+
+/**
+ * ★ Đợt 10.3 — node AI dùng model NGOÀI: MỘT lời gọi qua cổng (`goiAiNgoai`) — cổng tự suy mức dữ liệu từ `ngu.mucDuLieu` (động cơ gắn,
+ * node không hạ được), nhà máy CHỦ LUỒNG tính trần, dữ liệu vận hành thì mọi nhà máy trong phạm vi chủ lượt phải cho phép. Ngoài lượt
+ * chạy thật (chạy thử / không có `ngu`) ⇒ chủ không xác định ⇒ cổng từ chối. Đầu ra là CHỮ của model ngoài — node sau đã bọc mọi
+ * dữ liệu item trong khối `<du_lieu>` (không tin cậy) nên không bọc thêm (bọc ở đây sẽ phá JSON của trích xuất / nhãn của phân loại).
+ */
+/** Phần `ngu` của yêu cầu AI ngoài từ ngữ cảnh lượt (dùng chung node AI + `ai.agent`). `phanThem` = mức của dữ liệu node tự ghép thêm. */
+export function nguNgoaiTuLuot(ngu: NguCanhChay | undefined, phanThem?: () => readonly ("ky-thuat" | "van-hanh")[]): YeuCauGoiNgoai["ngu"] {
+  const mucLuot = ngu?.mucDuLieu;
+  const them = [...(phanThem?.() ?? [])]; // ảnh chụp LÚC dựng yêu cầu (lượt sau ghép thêm không đổi lượt này)
+  return {
+    userId: ngu?.kiemPhamVi?.phamVi?.userId ?? null,
+    flowId: ngu?.flowId ?? null,
+    runId: ngu?.runId ?? null,
+    tuDong: true,
+    nhaMayNguoiGoi: null,
+    nhaMayChuDuLieu: [ngu?.nhaMayLuong ?? null],
+    nguonMuc: {
+      loai: "luong",
+      ...(mucLuot
+        ? { mucDuLieu: async () => ((await mucLuot()) === "van-hanh" || them.includes("van-hanh") ? "van-hanh" : "ky-thuat") }
+        : {}),
+    },
+    ...(ngu?.nhaMayPhamViChu ? { nhaMayKhiVanHanh: ngu.nhaMayPhamViChu } : {}),
+  };
+}
+
+async function goiAiNgoaiChoNut(y: Parameters<HamGoiAi>[0], chon: ChonModelNut): Promise<string> {
+  const ngu = y.ngu;
+  const vet: VetModel = { ...chon.vet, lyDo: [...chon.vet.lyDo] };
+  if (ngu?.ghiModel) {
+    try {
+      ngu.ghiModel(vet);
+    } catch {
+      /* vết là thông tin phụ */
+    }
+  }
+  const yc: YeuCauGoiNgoai = {
+    dich: chon.ngoai!,
+    tinNhan: [
+      { vaiTro: "system", noiDung: y.heThong },
+      { vaiTro: "user", noiDung: y.nguoiDung },
+    ],
+    maxTokens: y.maxTokens,
+    mucDich: `flow_${y.loai}`.slice(0, 32),
+    ngu: nguNgoaiTuLuot(ngu),
+  };
+  try {
+    const kq = await goiCongNgoaiHienHanh(yc);
+    y.baoLogprobs?.(undefined);
+    if (kq.tokenVao !== null && kq.tokenRa !== null) {
+      vet.tokVao = kq.tokenVao;
+      vet.tokRa = kq.tokenRa;
+      y.baoTokens?.(kq.tokenVao, kq.tokenRa);
+    }
+    return stripThinking(kq.noiDung).answer;
+  } catch (e) {
+    const ma = (e as { ma?: unknown })?.ma;
+    throw new LoiNutAi(`AI ngoài: ${typeof ma === "string" ? ma : e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** Đợt 8.4 — gọi model qua hàm hiện hành (Cổng AI, hoặc hàm giả của lưới) cho các node/thủ tục ở tệp khác. */
