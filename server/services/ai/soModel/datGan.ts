@@ -17,7 +17,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export const ENV_KEY_HOP_LE: readonly EnvKeyModel[] = [...new Set(VAI_TRO_GOC.map((v) => v.envKey))];
 
-export type MaLoiDatGan = "VAI_TRO_KHONG_CO" | "PROFILE_KHONG_CO" | "CHUA_CO_DO" | "GIAY_PHEP_CHUA_RO" | "DICH_SAI";
+export type MaLoiDatGan = "VAI_TRO_KHONG_CO" | "PROFILE_KHONG_CO" | "CHUA_CO_DO" | "GIAY_PHEP_CHUA_RO" | "DICH_SAI" | "GAN_KHONG_CO";
 
 export class LoiDatGan extends Error {
   constructor(
@@ -37,6 +37,29 @@ export interface YeuCauDatGan {
   envKey: EnvKeyModel | null;
   fallback: string[];
   mode: CheDoGan;
+}
+
+/**
+ * GỠ MỀM một gán (`retiredAt = now()`) — chỉ khi hàng còn sống; không có / đã gỡ ⇒ `LoiDatGan GAN_KHONG_CO` (KHÔNG xoá hàng: lịch sử giữ nguyên). Trả thông tin hàng vừa gỡ + `vaiTroDiTheoEnv`:
+ * sau khi gỡ, vai trò đó không còn gán `active` phạm vi `global` nào ⇒ phân giải rơi về khoá .env của vai (chỉ có ý nghĩa khi hàng vừa gỡ là active global).
+ */
+export async function goGanModel(
+  db: Db,
+  id: number,
+): Promise<{ id: number; roleId: string; scopeKind: string; scopeId: string | null; mode: string; profileId: string | null; envKey: string | null; vaiTroDiTheoEnv: boolean }> {
+  return db.transaction(async (tx) => {
+    const [h] = await tx
+      .update(aiModelBindings)
+      .set({ retiredAt: sql`now()` })
+      .where(and(eq(aiModelBindings.id, id), isNull(aiModelBindings.retiredAt)))
+      .returning();
+    if (!h) throw new LoiDatGan("GAN_KHONG_CO", `Không có gán #${id} đang hiệu lực (không tồn tại hoặc đã gỡ).`);
+    const [con] = await tx
+      .select({ n: count() })
+      .from(aiModelBindings)
+      .where(and(eq(aiModelBindings.roleId, h.roleId), eq(aiModelBindings.scopeKind, "global"), eq(aiModelBindings.mode, "active"), isNull(aiModelBindings.retiredAt)));
+    return { id: h.id, roleId: h.roleId, scopeKind: h.scopeKind, scopeId: h.scopeId, mode: h.mode, profileId: h.profileId, envKey: h.envKey, vaiTroDiTheoEnv: (con?.n ?? 0) === 0 };
+  });
 }
 
 /** Hai danh sách dự phòng (null / rỗng là một) bằng nhau KỂ CẢ thứ tự. */

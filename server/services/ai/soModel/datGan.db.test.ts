@@ -113,3 +113,50 @@ describe("datGanModel (DB _test, Đợt 7.0)", () => {
     expect(await maLoi(datGanModel(db, yc({ profileId: `${TT}-pa`, mode: "active" }), null))).toBe("GIAY_PHEP_CHUA_RO");
   });
 });
+
+describe("goGanModel — gỡ mềm một gán (lô UX Trung tâm Model)", () => {
+  const SCOPE_GO = `${TT}-go`;
+  beforeAll(async () => {
+    const db = (await getDb())!;
+    await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, SCOPE_GO));
+  });
+  afterAll(async () => {
+    const db = await getDb();
+    if (db) await db.delete(aiModelBindings).where(eq(aiModelBindings.scopeId, SCOPE_GO));
+  });
+
+  it("★ gỡ ⇒ retiredAt đặt (KHÔNG xoá hàng: lịch sử còn), biến khỏi ảnh sổ model; gỡ lần hai / id lạ ⇒ GAN_KHONG_CO", async () => {
+    const { goGanModel } = await import("./datGan");
+    const { napAnhSoModel } = await import("./napSoModel");
+    const db = (await getDb())!;
+    const g = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const truoc = await napAnhSoModel();
+    expect(truoc?.gan.some((x) => x.id === g.id)).toBe(true);
+    const kq = await goGanModel(db, g.id);
+    expect(kq).toMatchObject({ id: g.id, roleId: "code.plc", scopeKind: "project", scopeId: SCOPE_GO, mode: "active", envKey: "GGUF_CODE_MODEL" });
+    const [hang] = await db.select().from(aiModelBindings).where(eq(aiModelBindings.id, g.id));
+    expect(hang.retiredAt).not.toBeNull();
+    expect((await napAnhSoModel())?.gan.some((x) => x.id === g.id)).toBe(false);
+    expect(await maLoi(goGanModel(db, g.id))).toBe("GAN_KHONG_CO");
+    expect(await maLoi(goGanModel(db, 2_000_000_000))).toBe("GAN_KHONG_CO");
+  });
+
+  it("vaiTroDiTheoEnv phản ánh ĐÚNG việc vai trò còn gán active toàn cục hay không (so với đếm trực tiếp)", async () => {
+    const { goGanModel } = await import("./datGan");
+    const db = (await getDb())!;
+    const g = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const conGlobal = await db.select().from(aiModelBindings).where(and(eq(aiModelBindings.roleId, "code.plc"), eq(aiModelBindings.scopeKind, "global"), eq(aiModelBindings.mode, "active"), isNull(aiModelBindings.retiredAt)));
+    const kq = await goGanModel(db, g.id);
+    expect(kq.vaiTroDiTheoEnv).toBe(conGlobal.length === 0);
+  });
+
+  it("chỉ gỡ ĐÚNG hàng được chỉ: hàng khác cùng vai/phạm vi khác chế độ vẫn sống", async () => {
+    const { goGanModel } = await import("./datGan");
+    const db = (await getDb())!;
+    const a = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "active" }), null);
+    const b = await datGanModel(db, yc({ scopeId: SCOPE_GO, envKey: "GGUF_CODE_MODEL", mode: "thu" }), null);
+    await goGanModel(db, a.id);
+    const [conB] = await db.select().from(aiModelBindings).where(eq(aiModelBindings.id, b.id));
+    expect(conB.retiredAt).toBeNull();
+  });
+});
