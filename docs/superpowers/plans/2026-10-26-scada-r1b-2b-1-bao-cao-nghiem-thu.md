@@ -24,7 +24,8 @@
   thuận, các hàng cắt liên kết KHÔNG đủ điều kiện làm bằng chứng — bằng chứng T17 là test tất định trong tiến trình + lưới T16 + đột biến (§8). Chỉ
   bench Modbus B1; không bench S7 / MC / EIP / SLMP / OPC UA.
 - **Chạy toàn bộ (§5) — ĐÃ chạy** (HEAD `b473cf1e9`, 35751 ca): **0 đỏ thật, 1 đỏ do tải** (`rateLimitConfig.duPhongBoNho.test.ts` ca Redis khoẻ, chạy
-  riêng 3/3 xanh ⇒ R1b-2b-2 mục 68; ngưỡng không nới).
+  riêng 3/3 xanh ⇒ R1b-2b-2 mục 68; ngưỡng không nới). **Phần THIẾT BỊ ĐO đã sửa** (T14 load-robustness fix, 2026-10-27 — `task-14-report.md`): ca
+  Redis khoẻ không còn phụ thuộc hạn 250 ms dưới tải; 6/6 xanh khi chạy riêng dưới tải ~100 % CPU. Mục 68 nay CHỈ còn hành vi sản phẩm.
 - **Task 17 (bench B1b lượt 1: STOP `timeout ok=false` 5124 ms, coil 0 → 0):** lệnh ghi ĐANG BAY khi liên kết mất / phiên bị hạ bị mồ côi
   (`ModbusRTU.destroy()` huỷ hẹn giờ giao dịch mà không gọi callback) ⇒ dispatcher chỉ trả lời ở hạn 5000 ms. **Lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có
   trên main/:3000 hiện tại; R1b-2b-1 sửa** (điều phối 2026-10-27: Phương án A + nhãn (a) "không rõ kết cục"): mọi driver reject NGAY lệnh đang bay ở ba
@@ -161,6 +162,13 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 - 1 đỏ chỉ khi chạy song song: `server/_core/rateLimitConfig.duPhongBoNho.test.ts`, ca Redis khoẻ — 4 lần rơi về bộ nhớ dưới tải CPU. Chạy riêng 3/3
   xanh ⇒ phân loại **tải**. Ngưỡng KHÔNG được nới. Đây cũng là hành vi SẢN PHẨM: dưới tải vòng lặp sự kiện, Redis khoẻ vẫn quá 250 ms và bộ giới
   hạn rơi về bộ nhớ (§6 VẬN HÀNH 3). Thành mục 68 của R1b-2b-2.
+- **Sau đó (2026-10-27, T14 load-robustness fix): phần TEST của ca đỏ này đã sửa**, ngưỡng sản phẩm không đổi (`HAN_LENH_REDIS_GIOI_HAN_MS` = 250):
+  - ca Redis khoẻ (và pha khoẻ của ca I1) nới TẠM hạn lệnh của chính client dùng chung lên 10 s rồi trả lại 250, vì ca này chứng minh ĐI DÂY
+    ("Redis khoẻ ⇒ đếm ở Redis, bộ nhớ không tăng"), còn hạn 250 ms vẫn do các ca Redis chậm phủ;
+  - điều kiện "tải đồng thời" của ca STOP < 1 s nay đếm lệnh đang bay TẠI máy chủ giả (máy chủ giữ câu trả lời ngoài tầng STOP), không dựa nhịp hẹn giờ.
+  - Bằng chứng: tệp cũ dưới tải hỗn hợp (16 tiến trình bận + một lượt vitest khác) đỏ 1/3 với đúng lỗi `expected 4 to be +0`. Tệp mới chạy riêng
+    6/6 xanh dưới cùng tải (~100 % CPU) và 6/6 dưới tải 4 lõi. Đột biến bỏ dự phòng bộ nhớ / bỏ `commandTimeout` / vòng lặp bận vẫn ĐỎ dưới tải.
+  - Mục 68 chỉ còn phần hành vi sản phẩm.
 - Lô serial 7/7 (66 ca). Opt-in R0 + R1a + R1b-1 + R1b-2a + R1b-2b-1 5/5 (74 ca). `npm run check` 0. `i18n:check` 0.
 - Phân loại tệp đỏ: lô 0 / tải 1 / có sẵn 0.
 
@@ -316,7 +324,7 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
    khảo sát không trần của `cheDo.danhSach` (mục 33).
    **Bộ giới hạn dưới tải vòng lặp sự kiện (T14, hành vi SẢN PHẨM — không chỉ chuyện cô lập test):** khi vòng lặp sự kiện của tiến trình API trễ
    ≥ 250 ms, lệnh tới một Redis KHOẺ cũng chạm `commandTimeout` 250 ms ⇒ bộ giới hạn rơi về đếm trong bộ nhớ THEO TIẾN TRÌNH (đếm tách đôi Redis /
-   bộ nhớ ⇒ một khách có thể thêm tới một trần mỗi tiến trình mỗi cửa sổ; không fail-open). Ca đỏ do tải ở §5 chính là hành vi này ⇒ mục 68.
+   bộ nhớ ⇒ một khách có thể thêm tới một trần mỗi tiến trình mỗi cửa sổ; không fail-open). Ca đỏ do tải ở §5 chính là hành vi này ⇒ mục 68. Phần test của ca ấy đã cô lập (T14 load-robustness fix), nên mục 68 chỉ còn hành vi này.
 4. Lý do `moi_tag_sai_cau_hinh` chỉ ở RAM — công cụ đọc `device_adapters.status` trực tiếp không thấy; sau khởi động lại hiện lại sau ≤ 1 chu kỳ poll.
 5. Trong cửa sổ tắt → khởi động lại, `device_adapters.status` có thể còn `connected` (T8, Q6).
 6. STOP HMI vẫn có thể gặp hạn: khi DB chậm, câu trả lời trễ ≤ 500 ms mỗi lượt sổ; luôn có E-STOP cứng. Batch có `dungMay` có thể làm lượt khác cùng batch
@@ -390,9 +398,10 @@ riêng)"** (số giữ theo báo cáo R1b-2a §11). Mười mục mới từ R1b
 - **66 (ƯU TIÊN — thứ tự 61 → 66 → 62)** — hết hạn yêu cầu của CHÍNH driver (Modbus 800 ms, S7/MC/EIP 5000 ms cố định, OPC UA, SLMP) ⇒ `timeout` (chưa rõ)
   thay vì `failed` — lệnh có thể đã tới thiết bị (§6 LOGIC mục 18 (a)).
 - **67** — bench cắt liên kết ổn định, ví dụ một OpenPLC riêng cho mỗi adapter hoặc proxy phần cứng. Lý do: ở R1b-2b-1, ô đối chứng proxy thông suốt ĐỎ trên OpenPLC dùng chung (§3 lượt 3).
-- **68** — làm ca Redis khoẻ của `rateLimitConfig.duPhongBoNho.test.ts` không phụ thuộc tải vòng lặp sự kiện. Lý do: dưới tải, 4 lần tăng quá 250 ms và rơi về bộ nhớ (§5).
-  Đây CŨNG là hành vi sản phẩm, không chỉ cô lập test: dưới tải vòng lặp sự kiện, một Redis KHOẺ vẫn vượt `commandTimeout` 250 ms và bộ giới hạn rơi
-  về bộ nhớ theo tiến trình (§6 VẬN HÀNH 3) — mục này xét cả hai (thiết bị đo và hành vi).
+- **68** — hành vi SẢN PHẨM của bộ giới hạn dưới tải vòng lặp sự kiện. Khi vòng lặp của tiến trình API trễ ≥ 250 ms, lệnh tới một Redis KHOẺ cũng chạm
+  `commandTimeout` 250 ms ⇒ bộ giới hạn rơi về đếm trong bộ nhớ theo tiến trình (đếm tách đôi Redis / bộ nhớ, không fail-open; §6 VẬN HÀNH 3). Cần xét:
+  ngưỡng / bộ ngắt mạch / đo trễ vòng lặp trước khi coi Redis là chậm.
+  Phần THIẾT BỊ ĐO của mục này (ca Redis khoẻ của `rateLimitConfig.duPhongBoNho.test.ts` đỏ do tải) đã sửa ở R1b-2b-1 (T14 load-robustness fix, 2026-10-27, §5).
 - **69** — OPC UA: mất liên kết giữa một lô ghi (`opcuaDriver.ts` ~941 ném lỗi có kiểu cho cả `writeTags`) ⇒ các write CHƯA BAO GIỜ được gửi (vd hỏng
   ép kiểu cục bộ) cũng mang nhãn `timeout` thay vì `failed`. Chiều an toàn (không ack giả); trả lỗi theo từng item cho phần chưa chuẩn bị (rà soát cuối M-9).
 - **70** — mục rủi ro "lệnh ghi cũ" gộp (`otDeviceWrite.ts` ~214) lớn dần khi liên kết chập chờn: mỗi lần huỷ vì mất liên kết trong cửa sổ nối thêm

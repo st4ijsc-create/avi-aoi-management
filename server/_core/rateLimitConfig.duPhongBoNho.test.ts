@@ -33,8 +33,30 @@ const gia = {
   het: new Map<string, number>(),
   lenh: new Map<string, number>(),
   choTraLoi: 0,
+  /**
+   * Load-robustness fix (2026-10-27): GIỮ câu trả lời của mọi lệnh dữ liệu KHÔNG thuộc tầng STOP (`rl:hmistop:`) cho tới khi `thaGiu()` —
+   * tải đồng thời ở ca (2) thành TẤT ĐỊNH: số lệnh đang bay tại máy chủ chỉ TĂNG trong lúc đo, không phụ thuộc nhịp hẹn giờ.
+   */
+  giu: false,
+  dangGiu: 0,
+  /** số lệnh đang bị giữ tại máy chủ ĐÚNG lúc lệnh của tầng STOP tới (mỗi lệnh STOP một số) */
+  dangGiuKhiStop: [] as number[],
+  thaGiu: () => {},
+  choThaGiu: Promise.resolve() as Promise<void>,
   socket: new Set<net.Socket>(),
 };
+function batDauGiu(): void {
+  gia.giu = true;
+  gia.dangGiu = 0;
+  gia.dangGiuKhiStop = [];
+  gia.choThaGiu = new Promise<void>((r) => {
+    gia.thaGiu = r;
+  });
+}
+function ketThucGiu(): void {
+  gia.giu = false;
+  gia.thaGiu();
+}
 const bayGia = () => Date.now() + gia.lechMs;
 function donHetHan(k: string): void {
   const h = gia.het.get(k);
@@ -148,12 +170,20 @@ const redisGia = net.createServer((sock) => {
       const r = docLenh(buf);
       if (!r) break;
       buf = buf.subarray(r.dung);
-      const han = Date.now() + (LENH_DU_LIEU.has(r.args[0]!.toLowerCase()) ? gia.treMs : 0);
+      const laDuLieu = LENH_DU_LIEU.has(r.args[0]!.toLowerCase());
+      const han = Date.now() + (laDuLieu ? gia.treMs : 0);
+      const khoaLenh = r.args[0]!.toLowerCase() === "eval" ? (r.args[3] ?? "") : (r.args[1] ?? "");
+      const laStop = khoaLenh.startsWith("rl:hmistop:");
+      if (laDuLieu && laStop && gia.giu) gia.dangGiuKhiStop.push(gia.dangGiu);
+      const biGiu = laDuLieu && !laStop && gia.giu;
+      if (biGiu) gia.dangGiu++;
+      const choGiu = biGiu ? gia.choThaGiu : null;
       const traLoi = thucThi(r.args);
       gia.choTraLoi++;
       hang = hang
         .then(
           () =>
+            choGiu ??
             new Promise<void>((xong) => {
               const con = han - Date.now();
               if (con <= 0) xong();
@@ -183,6 +213,13 @@ const { sdk } = await import("./sdk");
 const STOP = "/api/trpc/scadaCommands.dungMay";
 const THONG_DIEP_STOP = { error: "Too many STOP requests — use the hard E-STOP" };
 const TRAN_LOGIN = rl.AUTH_RATE_LIMIT.max;
+/**
+ * Load-robustness fix (2026-10-27). Ca (2): số luồng đăng nhập chạy song song trong lúc đo (bản trước 50 — chính 50 luồng ấy ăn CPU của tiến trình
+ * test, phần đó helper lag KHÔNG nới) và trần phần nới của helper lag. Trần 500 ms < biên lỗi ca muốn bắt: bỏ `commandTimeout` ⇒ lệnh STOP kẹt
+ * sau các câu trả lời đang GIỮ ⇒ STOP treo (vô hạn), xa hơn 1000 + 500 ms; đột biến vòng lặp bận 1100 ms là CPU của chính ta ⇒ không được nới.
+ */
+const SO_LUONG_TAI = 20;
+const TRAN_LAG_STOP_MS = 500;
 
 type ClientThat = { status: string; options: { commandTimeout?: number }; once(ev: string, f: () => void): unknown; disconnect(): void };
 const clientThat = (): ClientThat => rl.getRateLimitRedis() as unknown as ClientThat;
@@ -191,6 +228,24 @@ async function choSanSang(): Promise<void> {
   const c = clientThat();
   if (c.status === "ready") return;
   await new Promise<void>((r) => c.once("ready", () => r()));
+}
+/**
+ * Load-robustness fix (2026-10-27) — điểm nối TEST cho các pha "Redis KHOẺ": máy chủ giả và hẹn giờ `commandTimeout` của client chạy CHUNG vòng lặp
+ * sự kiện với test ⇒ dưới tải CPU, một Redis khoẻ cũng trễ > 250 ms và vài lượt rơi về bộ nhớ (đúng hành vi SẢN PHẨM — mục 68 — nhưng làm ca
+ * "đếm ở Redis" phụ thuộc tải). Trong `fn`, nới hạn lệnh của CHÍNH client dùng chung (ioredis đọc `options.commandTimeout` ở MỖI lệnh gửi đi —
+ * `built/Redis.js` sendCommand) rồi trả lại đúng giá trị cũ. Hằng sản phẩm `HAN_LENH_REDIS_GIOI_HAN_MS` không đổi; hạn 250 ms vẫn do các ca
+ * Redis chậm phủ.
+ */
+async function voiHanLenhTest<T>(ms: number, fn: () => Promise<T>): Promise<T> {
+  const c = clientThat();
+  const cu = c.options.commandTimeout;
+  expect(cu, "trước khi nới: hạn sản phẩm đang có hiệu lực").toBe(rl.HAN_LENH_REDIS_GIOI_HAN_MS);
+  c.options.commandTimeout = ms;
+  try {
+    return await fn();
+  } finally {
+    c.options.commandTimeout = cu;
+  }
 }
 async function choHetHang(): Promise<void> {
   while (gia.choTraLoi > 0) await new Promise((r) => setTimeout(r, 20));
@@ -266,6 +321,10 @@ beforeAll(async () => {
   expect((await stop(app.base, await cookieCua("t14-lam-am"))).status).toBe(200);
   await dong(app.server);
 }, 30_000);
+// một ca hết giờ giữa lúc GIỮ (vd. đột biến bỏ hạn lệnh) không được treo các ca sau
+afterEach(() => {
+  if (gia.giu) ketThucGiu();
+});
 afterAll(async () => {
   memInc.mockRestore();
   try {
@@ -332,16 +391,19 @@ for (const treMs of [400, 2000]) {
       }
     }, 10_000);
 
-    it("(2) STOP ký hợp lệ qua tầng giới hạn < 1 s TRONG KHI 50 luồng đăng nhập đồng thời đang chờ cùng Redis chậm; (3) lượt 601 trong một phiên ⇒ 429 E-STOP", async () => {
+    it(`(2) STOP ký hợp lệ qua tầng giới hạn < 1 s TRONG KHI ${SO_LUONG_TAI} luồng đăng nhập đồng thời có lệnh đang bay tại cùng Redis`, async () => {
       await datLai("khoe", treMs);
       const app = await taoApp();
       try {
         const c = await cookieCua(`t14-cham-${treMs}-c-${Date.now()}`);
-        // review M2 / KD-T14: tải ĐỒNG THỜI trên CÙNG client Redis chậm trong suốt phép đo
+        // review M2 / KD-T14: tải ĐỒNG THỜI trên CÙNG client Redis trong suốt phép đo. Load-robustness fix (2026-10-27): máy chủ giả GIỮ mọi
+        // câu trả lời ngoài tầng STOP ⇒ số lệnh đang bay chỉ TĂNG trong lúc đo; điều kiện tiên quyết đếm TẠI máy chủ. Bản trước đếm lệnh TỚI
+        // trong cửa sổ đo — dưới tải có lúc chỉ thấy 1, vì mọi luồng chờ hết hạn 250 ms cùng nhịp rồi gửi lại cùng lúc.
         let chay = true;
         let soLogin = 0;
+        batDauGiu();
         const nen = Promise.all(
-          Array.from({ length: 50 }, async () => {
+          Array.from({ length: SO_LUONG_TAI }, async () => {
             while (chay) {
               await login(app.base);
               soLogin++;
@@ -349,23 +411,35 @@ for (const treMs of [400, 2000]) {
           }),
         );
         try {
-          await new Promise((r) => setTimeout(r, 300)); // tải đã vào guồng (lượt đầu của mỗi luồng đang chờ Redis)
+          // chờ theo SỐ ĐẾM (không theo thời gian; trần an toàn 5 s)
+          for (let i = 0; i < 250 && gia.dangGiu < SO_LUONG_TAI; i++) await new Promise((r) => setTimeout(r, 20));
+          expect(gia.dangGiu, `tải đã vào guồng: ≥ ${SO_LUONG_TAI} lệnh đang bay tại máy chủ`).toBeGreaterThanOrEqual(SO_LUONG_TAI);
           for (let i = 0; i < 3; i++) {
-            const evalTruoc = gia.lenh.get("eval") ?? 0;
             const lag = batDauDoLag();
             const t0 = performance.now();
             const r = await stop(app.base, c);
             const ms = performance.now() - t0;
-            const nho = await lag.dung();
+            const nho = await lag.dung(TRAN_LAG_STOP_MS);
             expect(r.status).toBe(200);
             expect(ms, `STOP thứ ${i + 1} qua tầng giới hạn dưới tải (máy không chạy ta: ${nho} ms)`).toBeLessThan(1000 + nho);
-            expect((gia.lenh.get("eval") ?? 0) - evalTruoc, "tải đồng thời thật sự đang gửi lệnh tới Redis chậm").toBeGreaterThan(1);
           }
+          expect(gia.dangGiuKhiStop, "mỗi lệnh STOP được máy chủ ghi số lệnh đang bay").toHaveLength(3);
+          for (const n of gia.dangGiuKhiStop) expect(n, "tải đồng thời thật sự đang bay khi lệnh STOP tới").toBeGreaterThanOrEqual(SO_LUONG_TAI);
         } finally {
           chay = false;
+          ketThucGiu();
           await nen;
         }
-        expect(soLogin, "các luồng đăng nhập đã chạy trong lúc đo").toBeGreaterThan(50);
+        expect(soLogin, "các luồng đăng nhập đã chạy").toBeGreaterThanOrEqual(SO_LUONG_TAI);
+      } finally {
+        await dong(app.server);
+      }
+    }, 15_000);
+
+    it("(3) lượt 601 trong một phiên ⇒ 429 E-STOP (600 lượt đồng thời đều 200)", async () => {
+      await datLai("khoe", treMs);
+      const app = await taoApp();
+      try {
         const a = await cookieCua(`t14-cham-${treMs}-a-${Date.now()}`);
         const lo = await dongThoi(600, () => stop(app.base, a));
         expect(lo.filter((r) => r.status !== 200).map((r) => r.status)).toEqual([]);
@@ -375,7 +449,7 @@ for (const treMs of [400, 2000]) {
       } finally {
         await dong(app.server);
       }
-    }, 10_000);
+    }, 30_000);
   });
 }
 
@@ -386,7 +460,8 @@ describe("★★★ fix round 1 (review I1) — đợt Redis CHẬM rồi KHOẺ
     const warn = vi.spyOn(console, "warn");
     try {
       memInc.mockClear();
-      const c = await cookieCua(`t14-i1-${Date.now()}`);
+      const OPEN_I1 = `t14-i1-${Date.now()}`;
+      const c = await cookieCua(OPEN_I1);
       // pha CHẬM: mọi EVAL quá hạn ở client (250 ms < 400 ms) nhưng máy chủ giả vẫn THỰC THI chúng
       await dongThoi(TRAN_LOGIN + 5, () => login(app.base), 25);
       await dongThoi(5, () => stop(app.base, c), 5);
@@ -400,7 +475,7 @@ describe("★★★ fix round 1 (review I1) — đợt Redis CHẬM rồi KHOẺ
       const ttlA = pttlGia(kA);
       expect(ttlA, "khoá đăng nhập tạo trong đợt chậm PHẢI có TTL").toBeGreaterThan(0);
       expect(ttlA).toBeLessThanOrEqual(rl.AUTH_RATE_LIMIT.windowMs);
-      const khoaStop = [...gia.dem.keys()].filter((k) => k.startsWith("rl:hmistop:"));
+      const khoaStop = [...gia.dem.keys()].filter((k) => k.startsWith(`rl:hmistop:hmistop:u:${OPEN_I1}:`)); // chỉ phiên CỦA ca này
       expect(khoaStop).toHaveLength(1);
       const ttlS = pttlGia(khoaStop[0]!);
       expect(ttlS, "khoá STOP tạo trong đợt chậm PHẢI có TTL").toBeGreaterThan(0);
@@ -411,7 +486,8 @@ describe("★★★ fix round 1 (review I1) — đợt Redis CHẬM rồi KHOẺ
       // tua đồng hồ Redis giả qua cửa sổ đăng nhập (15 phút) ⇒ khoá hết hạn như Redis thật
       gia.lechMs += rl.AUTH_RATE_LIMIT.windowMs + 1;
       warn.mockClear();
-      expect(await login(app.base), "lượt đầu sau cửa sổ ⇒ 200, không phải 429 cả cửa sổ mới").toBe(200);
+      // pha KHOẺ: hạn lệnh nới chỉ cho lượt này (load-robustness fix) — dưới tải CPU, lượt rơi về bộ nhớ sẽ thấy 25 lượt của đợt chậm ⇒ 429 giả
+      expect(await voiHanLenhTest(10_000, () => login(app.base)), "lượt đầu sau cửa sổ ⇒ 200, không phải 429 cả cửa sổ mới").toBe(200);
       expect(gia.dem.get(kA), "đếm lại từ 1 TRONG Redis").toBe(1);
       expect(pttlGia(kA)).toBeGreaterThan(0);
       expect(
@@ -427,27 +503,32 @@ describe("★★★ fix round 1 (review I1) — đợt Redis CHẬM rồi KHOẺ
 
 describe("★★★ Redis KHOẺ ⇒ đếm ở Redis, bộ nhớ không tăng", () => {
   it("600 STOP một phiên ⇒ Redis 600 INCR trên rl:hmistop:, 0 lượt MemoryStore.increment; lượt 601 ⇒ 429 (đếm Redis); đăng nhập đếm ở rl:auth:", async () => {
+    // Load-robustness fix: ca này chứng minh ĐI DÂY ("Redis khoẻ ⇒ đếm ở Redis, bộ nhớ không tăng"), không phải hạn 250 ms (các ca chậm phủ hạn) ⇒
+    // hạn lệnh của client dùng chung nới tạm lên 10 s để tải CPU của máy (máy chủ giả + hẹn giờ chung vòng lặp test) không đẩy lượt nào xuống bộ nhớ.
     await datLai("khoe", 0);
     const app = await taoApp();
     try {
-      memInc.mockClear();
-      const a = await cookieCua(`t14-khoe-a-${Date.now()}`);
-      const lo = await dongThoi(600, () => stop(app.base, a));
-      expect(lo.every((r) => r.status === 200)).toBe(true);
-      expect(tongRedis("rl:hmistop:")).toBe(600);
-      expect(memInc.mock.calls.length, "Redis khoẻ ⇒ không đếm dự phòng").toBe(0);
-      const thu601 = await stop(app.base, a);
-      expect(thu601.status).toBe(429);
-      expect(JSON.parse(thu601.body)).toEqual(THONG_DIEP_STOP);
-      const dn = await dongThoi(TRAN_LOGIN, () => login(app.base));
-      expect(dn.every((s) => s === 200)).toBe(true);
-      expect(await login(app.base)).toBe(429);
-      expect(tongRedis("rl:auth:")).toBe(TRAN_LOGIN + 1);
-      expect(memInc.mock.calls.length).toBe(0);
+      await voiHanLenhTest(10_000, async () => {
+        memInc.mockClear();
+        const a = await cookieCua(`t14-khoe-a-${Date.now()}`);
+        const lo = await dongThoi(600, () => stop(app.base, a));
+        expect(lo.every((r) => r.status === 200)).toBe(true);
+        expect(tongRedis("rl:hmistop:")).toBe(600);
+        expect(memInc.mock.calls.length, "Redis khoẻ ⇒ không đếm dự phòng").toBe(0);
+        const thu601 = await stop(app.base, a);
+        expect(thu601.status).toBe(429);
+        expect(JSON.parse(thu601.body)).toEqual(THONG_DIEP_STOP);
+        const dn = await dongThoi(TRAN_LOGIN, () => login(app.base));
+        expect(dn.every((s) => s === 200)).toBe(true);
+        expect(await login(app.base)).toBe(429);
+        expect(tongRedis("rl:auth:")).toBe(TRAN_LOGIN + 1);
+        expect(memInc.mock.calls.length).toBe(0);
+      });
+      expect(clientThat().options.commandTimeout, "hạn sản phẩm được trả lại").toBe(rl.HAN_LENH_REDIS_GIOI_HAN_MS);
     } finally {
       await dong(app.server);
     }
-  }, 10_000);
+  }, 30_000);
 });
 
 // ── StoreDuPhongBoNho — đơn vị ───────────────────────────────────────────────
