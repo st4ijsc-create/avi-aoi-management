@@ -190,7 +190,10 @@ export const aiSettingsRouter = router({
           status: aiApiKeys.status,
           createdAt: aiApiKeys.createdAt,
         });
-      return result;
+      // ★ Đợt 10.3 (dieu-phoi) — KHÔNG tạo khoá inactive ÂM THẦM: báo rõ để màn hình hiển thị (và gửi factoryId ở 10.2/10.4).
+      return input.factoryId
+        ? { ...result, kichHoat: true as const }
+        : { ...result, kichHoat: false as const, lyDo: "can-nha-may" as const };
     }),
 
   deleteApiKey: adminProcedure

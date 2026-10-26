@@ -70,6 +70,8 @@ describe.skipIf(!db)("aiSettingsRouter — aiApiKeys security (doc 69 W0-4, inte
       apiKey: plaintext,
     });
     expect(created?.id).toBeTruthy();
+    // ★ Đợt 10.3 — vắng factoryId ⇒ khoá inactive VÀ phản hồi nói rõ (không âm thầm).
+    expect(created).toMatchObject({ status: "inactive", kichHoat: false, lyDo: "can-nha-may" });
 
     const [row] = await db!.select().from(aiApiKeys).where(eq(aiApiKeys.id, created!.id));
     expect(row).toBeTruthy();
