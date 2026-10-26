@@ -893,6 +893,7 @@ Số giữ theo báo cáo R1b-2a §11 để đối chiếu 1-1.
 62. Interlock `resolveEvent`: đọc luật không khoá và kiểm phạm vi adapter qua pool TRONG giao dịch (R1b-2b-1 T10 review) — đưa vào `khoaDichLuatTx` (adapter FOR SHARE → luật) như các đường sửa luật.
 63. Census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng (R1b-2b-1 T10 review: lượt đọc pool trong tx là kết nối thứ hai — treo khi pool cạn).
 64. Đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi
+65. Thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — chủ dự án quyết (điều phối 2026-10-27: không làm ở R1b-2b-1). Nền: R1b-2b-1 Task 17 (bench B1b) — lệnh STOP đang bay khi liên kết mất nay được trả lời NGAY `timeout` (không rõ kết cục) thay vì treo 5 s; không có thử lại nào.
 
 **AI và cổng mức:**
 17. `congOtLuong` dùng mức kênh (cần `adapterId` trong luồng AI).

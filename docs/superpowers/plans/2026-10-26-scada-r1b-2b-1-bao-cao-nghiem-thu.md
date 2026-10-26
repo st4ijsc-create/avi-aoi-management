@@ -18,6 +18,12 @@
   lại THÔ thật). Chiều hỏng vẫn chỉ là NHÃN (không gửi lại, không chặn STOP).
 - **Đột biến cấp hệ thống** (coil Modbus quay về `Boolean(w.value)`) ⇒ B1 ĐỎ; hoàn tác, `git diff` của tệp rỗng (§2).
 - Bench OpenPLC và chạy toàn bộ: CHƯA chạy (việc của bộ điều khiển, §3 / §5).
+- **Task 17 (bench B1b lượt 1: STOP `timeout ok=false` 5124 ms, coil 0 → 0):** lệnh ghi ĐANG BAY khi liên kết mất / phiên bị hạ bị mồ côi
+  (`ModbusRTU.destroy()` huỷ hẹn giờ giao dịch mà không gọi callback) ⇒ dispatcher chỉ trả lời ở hạn 5000 ms. **Lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có
+  trên main/:3000 hiện tại; R1b-2b-1 sửa** (điều phối 2026-10-27: Phương án A + nhãn (a) "không rõ kết cục"): mọi driver reject NGAY lệnh đang bay ở ba
+  điểm (socket close/error · `disconnect()` · `connect()` trước khi đóng phiên cũ) bằng lỗi có kiểu `LoiMatLienKetKhiDangGui`; dispatcher ánh xạ sang
+  CÙNG `timeout` (không rõ — lệnh có thể đã tới PLC; không bao giờ `failed`, không ack giả). Không thử lại, không trì hoãn gửi, không cổng nào trước STOP.
+  Chi tiết + bảng driver: `.superpowers/sdd/2026-10-26-scada-r1b-2b-1-an-toan-va-no/task-17-report.md`.
 - **R1b-2b-1 là điều kiện cần; bật `AI_OT_CONTROL_ENABLED` là quyết định của chủ dự án sau rà soát độc lập riêng**. Báo cáo này không ngụ ý gì khác:
   cờ giữ TẮT ở mọi nơi; lưới và bench đặt `"false"` chỉ trong tiến trình.
 
@@ -163,6 +169,11 @@ _(chạy toàn bộ: chưa chạy)_
   thời; luật nay ngoài phạm vi ⇒ `NOT_FOUND`. `approve` nay khoá adapter đích trước luật.
 - (T11, mục 48) Khai mức hàng loạt: MỘT `UPDATE … FROM VALUES` + MỘT INSERT audit nhiều hàng; mọi hàng audit của một lô cùng `hashTs`; nhanh hơn ~9×.
 - (T7) EIP: `timeout_sp` của thư viện = `timeoutMs` của adapter (trước: mặc định thư viện).
+- (T17, bench B1b) **Lệnh ghi đang bay khi liên kết mất / phiên bị hạ ⇒ `timeout` ("không rõ") NGAY** (đo: ≤ 20 ms sau sự kiện mất liên kết / hạ phiên; trước: 5000 ms hạn dispatcher với
+  Modbus khi vòng canh hạ phiên, 5000 ms `failed` với S7 / MC / EIP, ~800 ms `failed` với Modbus khi không ai hạ phiên, `failed` với SLMP / OPC UA). Status
+  và nhãn HMI GIỐNG HỆT `timeout` hôm nay (dòng "chưa xác minh" + "Dùng E-STOP cứng tại máy"); chỉ `errorText` đổi thành `link lost while the write was
+  in flight (after N ms) — outcome unknown: …`. Poll: tick bị huỷ vì mất liên kết mang `link_lost` / `comm_lost`. Với `OT_CMD_SERIALIZE_ENABLED` bật,
+  lệnh kế (STOP) không còn đợi 5 s + ân hạn 1 s + đặt lại phiên sau lệnh treo.
 
 ## 6. Giới hạn đã biết
 
@@ -215,6 +226,11 @@ _(chạy toàn bộ: chưa chạy)_
     nền (khe dùng chung toàn tiến trình 16); bức tường giấy phép làm khối im lặng (cả `dungMay` cũng chịu giấy phép); `khong_ro` có thể hiện hai cảnh báo.
     Chi phí khảo sát ở site lớn chưa đo trên DEV.
 17. (T13) Nhánh từ chối edge-node của script dọn chỉ có test đơn vị; chạy khô với tiền tố DÙNG CHUNG liệt kê cả fixture sống của test đang chạy song song.
+18. (T17, bench B1b) **STOP treo 5 s khi liên kết mất lúc lệnh ghi đang bay — lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có trên main/:3000 hiện tại;
+    R1b-2b-1 sửa.** Còn lại: (a) quá hạn giao dịch CỦA DRIVER (Modbus 800 ms "Timed out", SLMP, hạn cứng 5000 ms của S7 / MC / EIP, `timeout_sp` EIP)
+    vẫn ra `failed` dù kết cục cũng không rõ — hình có sẵn, ngoài phạm vi được duyệt (nêu ở `task-17-report.md`); (b) S7: nodes7 không phát sự kiện
+    liên kết ⇒ điểm (i) đi qua vòng canh (`isoConnectionState` ≠ 4 ⇒ `disconnect()` ≤ 500 ms) — vẫn < 1 s; (c) lô nhiều write mất liên kết giữa chừng ⇒
+    cả lô `timeout` (write đã ack trước đó cũng mang nhãn không rõ — giống `timeout` hôm nay); write sau trong lô không được gửi.
 
 ### DỮ LIỆU
 
@@ -247,6 +263,9 @@ _(chạy toàn bộ: chưa chạy)_
 7. `doLagBucleSuKien` (cận trên đồng hồ tường của test): trên máy Windows này phần nới cho lúc NGỦ vẫn đáng kể ở trần lớn (L1: 300–375 ms cho ~570 ms) —
    mọi cận dùng trần ≤ chính cận (khuôn T9). Chỉ ảnh hưởng thiết bị đo, không phải sản phẩm.
 8. Không có migration; không cờ mới; `AI_OT_CONTROL_ENABLED` giữ TẮT.
+9. (T17) **Nguyên nhân OpenPLC ngắt kết nối b1 ở bench B1b lượt 1 CHƯA xác nhận** (giả thuyết xếp hạng + phép đo phân biệt ở
+   `.superpowers/sdd/2026-10-26-scada-r1b-2b-1-an-toan-va-no/bench-b1b-investigation.md` §4: `docker logs` của OpenPLC, `health().lastError` FIN/RST,
+   `DEBUG=modbus-serial`). Bản sửa không phụ thuộc nguyên nhân; bench tái hiện có chủ đích (`--cat-lien-ket N`) chưa chạy với OpenPLC thật.
 
 ## 7. Bảng số đo
 
@@ -269,6 +288,9 @@ _(chạy toàn bộ: chưa chạy)_
 | Phiên S7 mọi địa chỉ sai (C1) | `connecting` + lý do sau 3 lượt đọc (chu kỳ 300 ms); ô 3,2 s / nhánh | T16 lưới |
 | T1 tắt tiến trình (chờ điều tiết 5 s × 2 + đối chứng) | 17,5–17,7 s | T16 lưới |
 | Cả lưới (18 ca) | 53–57 s mỗi lượt (tests 49,6–53,2 s) | T16 |
+| STOP đang bay khi liên kết mất (Modbus THẬT + `executeOtDeviceWrite`) | trả lời `timeout` 0–2 ms sau sự kiện (REPRO, (i), (ii), (iii)); trước: 5009 ms / ~800 ms `failed` | T17 |
+| STOP kế tiếp phát lúc STOP đang bay (liên kết cắt 150 ms sau FC5), serialize tắt / bật | STOP2 trả lời sau 0 ms (acked, chạy song song) / 142 ms (chạy ngay khi STOP1 trả lời `timeout` lúc mất liên kết; không gửi gì, `failed` "not connected"); trước: 0 / 5997 ms | T17 |
+| Bench chạy khô `--cat-lien-ket --lap 5` (máy chủ mô phỏng, không OpenPLC) | B1b-cắt 101–107 ms `timeout` ok=false 5/5 (coil 0→0 lượt lẻ, 0→1 lượt chẵn); cả bảng 55/55; mã cũ 5150 / 5126 ms | T17 |
 
 ## 8. Đột biến theo task (mỗi đột biến chạy, đỏ, hoàn tác; `git diff` rỗng sau mỗi lượt — chi tiết ở `task-N-report.md`)
 
@@ -290,17 +312,19 @@ _(chạy toàn bộ: chưa chạy)_
 | T14 (G3, mục 45) | M1 nuốt lỗi ⇒ 10 đỏ; M2 bỏ `commandTimeout` ⇒ 3 đỏ (ca 400 ms nay xanh — hạn được kiểm bởi ca 2000 ms); M3 đăng nhập không dự phòng ⇒ 4; M4 không init dự phòng ⇒ đỏ; M5 vòng bận ⇒ 2; M6 ba lệnh tuần tự ⇒ 4 |
 | T15 (G4) | quay về `laGoiChiDungMay` ⇒ 3 đỏ; vòng bận 400 ms ⇒ ca HTTP đỏ; fix round: bỏ nhánh anh em ⇒ 1 đỏ |
 | T16 | hệ thống: coil Modbus `Boolean(w.value)` ⇒ ô B1 đỏ (§2) |
+| T17 (bench B1b) | M1–M3 bỏ từng điểm huỷ Modbus (socket close · `disconnect()` · `connect()`) ⇒ đúng ca (i) / (ii) / (iii) đỏ (mỗi lượt 1); M4 `writeOne` gộp lỗi vào ok:false ⇒ 6 đỏ; M5 dispatcher ánh xạ mất liên kết ⇒ `failed` ⇒ 6 đỏ; M6–M20 bỏ từng điểm huỷ ở S7 / MC / EIP / OPC UA, SLMP quay về lỗi thường ⇒ đúng ca của nó đỏ (15/15). Mã cũ: tệp tái hiện 6/8 đỏ (REPRO 5009 ms `timeout`, (i)/(ii)/(iii) ~790–800 ms `failed`, STOP kế tiếp 5008 / 5997 ms); bench chạy khô `--cat-lien-ket` trên mã cũ: 5150 / 5126 ms |
 
 ## 9. Danh sách R1b-2b-2
 
 Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-an-toan-va-no.md`, mục **"Danh sách R1b-2b-2 (chỉ liệt kê — kế hoạch
-riêng)"** (số giữ theo báo cáo R1b-2a §11). Bốn mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1):
+riêng)"** (số giữ theo báo cáo R1b-2a §11). Năm mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65 từ T17):
 
 - **61 (ƯU TIÊN ĐẦU R1b-2b-2)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
   theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình.
 - **62** — interlock `resolveEvent`: đọc luật + kiểm phạm vi adapter dưới `khoaDichLuatTx` (adapter FOR SHARE → luật), không gọi pool trong giao dịch.
 - **63** — census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng.
 - **64** — đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi (§6 LOGIC mục 1).
+- **65** — thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — chủ dự án quyết (điều phối 2026-10-27: không làm ở R1b-2b-1).
 
 Lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1 — đã sửa ở T6 fix round 1 trước bàn giao; chỉ giới hạn còn lại (mục 64) sang R1b-2b-2.
 
