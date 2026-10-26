@@ -27,7 +27,7 @@ import {
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
-import { baoTrangThaiAdapter, datLyDoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
+import { baoTrangThaiAdapter, datCheDoTatTienTrinh, datLyDoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
@@ -948,6 +948,7 @@ export async function startOt(): Promise<boolean> {
 }
 
 async function startOtOnce(): Promise<boolean> {
+  datCheDoTatTienTrinh(false); // R1b-2b-1 T8 — khởi động lại trong cùng tiến trình: ghi trạng thái như thường
   if (!flagEnabled()) {
     console.log("[OT] disabled (set OT_GATEWAY_ENABLED=true to enable)");
     return false;
@@ -1086,7 +1087,9 @@ async function startOtOnce(): Promise<boolean> {
  * doc 81 Đợt 1B Task 2 — mỗi lời gọi hạ kết nối có hạn; khởi động/nối lại đang chạy của thế
  * hệ cũ tự huỷ khi xong (epoch).
  */
-export async function stopOt(): Promise<void> {
+export async function stopOt(tuyChon?: { tatTienTrinh?: boolean }): Promise<void> {
+  // R1b-2b-1 T8 — TRƯỚC mọi báo `disabled` (supervisor.stop() và baoLegacy bên dưới): tắt tiến trình không ghi DB.
+  if (tuyChon?.tatTienTrinh) datCheDoTatTienTrinh(true);
   epoch += 1;
   startInFlight = null;
   if (legacyTimer) {

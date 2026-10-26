@@ -59,6 +59,10 @@ ORDER BY r.id
 
 _(Task 16)_
 
+## Thay đổi hành vi nhìn thấy được
+
+- (T8, mục 13) Tắt tiến trình không ghi `disabled`: trong cửa sổ từ lúc tắt tới lúc khởi động lại, DB vẫn để trạng thái cuối (có thể `connected`); `disabled` chỉ còn nghĩa adapter bị tắt thật / gateway tắt / khởi động lại khung OT.
+
 ## 6. Giới hạn đã biết
 
 - (Task 2 fix round 1) luật/FOE tạo sau triển khai: luật interlock bị kiểm lúc lưu + tư thế; workflow FOE chỉ bị chặn sớm lúc gửi (TYPE_MISMATCH), không lúc lưu.

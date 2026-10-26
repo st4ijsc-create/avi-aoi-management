@@ -4539,7 +4539,7 @@ async function startServer() {
       .catch(() => {});
     // F1.1 — dừng OT framework (no-op nếu chưa chạy)
     import("../services/ot")
-      .then((m) => m.stopOt())
+      .then((m) => m.stopOt({ tatTienTrinh: true })) // R1b-2b-1 T8 — tắt tiến trình không ghi `disabled` vào DB
       .catch(() => {});
     // MTConnect — dừng poller (no-op nếu chưa chạy)
     import("../services/mtconnect/mtconnectPoller")

@@ -58,6 +58,16 @@ interface BanGhi {
 }
 
 const trangThai = new Map<number, BanGhi>();
+let tatTienTrinh = false;
+
+/**
+ * SCADA R1b-2b-1 T8 (mục 13) — chế độ TẮT TIẾN TRÌNH: bật ⇒ báo `disabled` chỉ cập nhật RAM, KHÔNG ghi `device_adapters.status`.
+ * Tắt tiến trình không phải "adapter bị tắt": ghi `disabled` làm UI và bản API khác đọc sai tới lần khởi động kế. Chỉ
+ * stopOt({ tatTienTrinh }) bật; startOt tắt lại. Gateway tắt thật / khởi động lại khung OT / adapter bị tắt thật vẫn ghi `disabled`.
+ */
+export function datCheDoTatTienTrinh(bat: boolean): void {
+  tatTienTrinh = bat;
+}
 let ghiDbThay: GhiDb | null = null;
 
 function ghiDbBat(): boolean {
@@ -188,7 +198,7 @@ export function baoTrangThaiAdapter(
       b.daPhatXau = true;
       phatMauXau(a, now, statusCode || "comm_lost");
     }
-    if (ghiDbBat()) lenLichGhi(a.adapterId, b, { tt, loi: b.loi, at: now });
+    if (ghiDbBat() && !(tatTienTrinh && tt === "disabled")) lenLichGhi(a.adapterId, b, { tt, loi: b.loi, at: now });
   } catch (err) {
     console.warn(`[OT] baoTrangThaiAdapter ${a.adapterId} lỗi: ${(err as Error)?.message ?? err}`);
   }
