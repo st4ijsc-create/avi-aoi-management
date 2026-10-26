@@ -669,10 +669,12 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     const legB = (await startRun(rLegB, {}, ADMIN)).runId!;
     const legA = (await startRun(rLegA, {}, ADMIN)).runId!;
     await sql`UPDATE orchestration_runs SET "paramsJson" = '{}'::jsonb WHERE id IN ${sql([legA, legB])}`;
+    // parity is checked on the newest PARIDAD_MAU runs: the cost is one resolver round-trip per run, and the shared _test DB keeps hundreds of runs from other files (50 s for 700 checks)
+    const PARIDAD_MAU = 60;
     // (1) parity: every run the SQL page shows is visible by the per-run rule, and every visible recent run is shown
     const page = await listVisibleRuns({ limit: 500 }, scopeA);
-    for (const r of page.runs) expect(await runIdVisibleTo(r.id, scopeA), `run ${r.id}`).toBe(true);
-    const recent = await sql`SELECT id FROM orchestration_runs ORDER BY "createdAt" DESC, id DESC LIMIT 200`;
+    for (const r of page.runs.slice(0, PARIDAD_MAU)) expect(await runIdVisibleTo(r.id, scopeA), `run ${r.id}`).toBe(true);
+    const recent = await sql`SELECT id FROM orchestration_runs ORDER BY "createdAt" DESC, id DESC LIMIT ${PARIDAD_MAU}`;
     const shown = new Set(page.runs.map((r) => r.id));
     for (const row of recent) if (await runIdVisibleTo(Number(row.id), scopeA)) expect(shown.has(Number(row.id)), `run ${row.id}`).toBe(true);
     expect(page.truncated).toBe(false);
