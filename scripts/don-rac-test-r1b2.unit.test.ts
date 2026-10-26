@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error — .mjs không có khai báo kiểu
-import { chay, laDbTest, tenDbLaTest, MUC_TIEU, MAU_MA_TEST, MAU_MA_TEST_SQL, kiemMoCoi, TuChoi, inIds, docIds } from "./don-rac-test-r1b2.mjs";
+import { chay, laDbTest, tenDbLaTest, MUC_TIEU, MAU_MA_TEST, MAU_MA_TEST_SQL, kiemMoCoi, kiemConTro, TuChoi, inIds, docIds } from "./don-rac-test-r1b2.mjs";
 
 const DEV = "postgresql://avi_app:x@127.0.0.1:5434/aoi_management";
 const TEST = "postgresql://avi_app:x@127.0.0.1:5434/aoi_management_test";
@@ -193,5 +193,28 @@ describe("R1b-2b-1 T13 — tìm mục tiêu bằng truy vấn, --ids duyệt, t�
     expect(await chayVoi(["--test-only", "--ghi", "--ids=adapters:5"], g.connect)).toBe(2);
     expect(g.st.mo).toBe(1);
     expect(g.st.cau.some((c) => /DELETE/i.test(c))).toBe(false);
+  });
+});
+
+describe("R1b-2b-1 T13 vòng sửa 1 — máy lơ lửng, con trỏ ngoài đích, chuỗi duyệt moCoi", () => {
+  const rong = { adapters: [], edgeNodes: [], machines: [1], stations: [], lines: [], workshops: [], factories: [] };
+  it("kiemMoCoi: máy ngoài tập CÓ THẬT ⇒ TuChoi; KHÔNG tồn tại ⇒ trả { adapter: máy }; null ⇒ {}", () => {
+    expect(() => kiemMoCoi(rong, [{ id: 9, machineId: 2 }], new Set([2]))).toThrow(TuChoi);
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: 2 }], new Set())).toEqual({ 9: 2 });
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: null }], new Set())).toEqual({});
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: 1 }], new Set())).toEqual({});
+  });
+  it("kiemConTro: adapter ngoài đích trỏ máy / edge node đích ⇒ TuChoi", () => {
+    const muc = { ...rong, edgeNodes: [7] };
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: 1, edgeNodeId: null }])).toThrow(TuChoi);
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: null, edgeNodeId: 7 }])).toThrow(TuChoi);
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: 2, edgeNodeId: 8 }])).not.toThrow();
+  });
+  it("inIds/docIds mang nhóm moCoi (khứ hồi, thứ tự ổn định); nhóm moCoi lặp / sai ⇒ TuChoi", () => {
+    const m = { ...rong, adapters: [3], moCoi: { 9: 20, 3: 10 } };
+    expect(inIds(m)).toBe("adapters:3,machines:1,moCoi:3>10.9>20");
+    expect(inIds(docIds(inIds(m)))).toBe(inIds(m));
+    expect(inIds(m)).not.toBe(inIds({ ...m, moCoi: { 3: 11, 9: 20 } }));
+    for (const xau of ["moCoi:1", "moCoi:1>2,moCoi:3>4", "moCoi:1>"]) expect(() => docIds(xau), xau).toThrow(TuChoi);
   });
 });

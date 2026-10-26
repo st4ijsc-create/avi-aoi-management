@@ -14,7 +14,7 @@ import { asOwner, testDbUrl } from "./apply-migration-dot10-common.mjs";
 const T = Date.now().toString(36);
 const DAU = `t13dr${T}`;
 const DAU_CANH = `t13dq${T}`; // lính canh: KHÔNG khớp ^t13dr
-const MAU = "^t13dr";
+const MAU = `^${DAU}`; // duy nhất cho lượt chạy này: dư lại của lượt chạy hỏng trước đó không bị tìm thấy
 let sql: ReturnType<typeof postgres>;
 let adminId: number;
 const muc = { adapters: [] as number[], edgeNodes: [] as number[], machines: [] as number[], stations: [] as number[], lines: [] as number[], workshops: [] as number[], factories: [] as number[] };
@@ -108,17 +108,41 @@ describe("don-rac-test-r1b2 trên _test", () => {
   it("adapter tìm được mà gắn máy KHÔNG khớp mẫu ⇒ từ chối (mồ côi), 0 xoá; gỡ nó ⇒ chạy khô in JSON đúng id", async () => {
     const orphan = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${`${DAU}yy`}, 'o', 'stub', 'stub://t13', false, ${linhGac.machines[0]}) RETURNING id`);
     linhGac.adapters.push(orphan);
-    const truoc = await dem(muc);
-    const r = await chayThat(["--test-only"]);
-    expect(r.code, r.out).toBe(2);
-    expect(r.err).toMatch(new RegExp(`device_adapters id ${orphan} gan may`));
-    expect(await dem(muc)).toEqual(truoc);
-    await sql`DELETE FROM device_adapters WHERE id = ${orphan}`;
-    linhGac.adapters.pop();
+    try {
+      const truoc = await dem(muc);
+      const r = await chayThat(["--test-only"]);
+      expect(r.code, r.out).toBe(2);
+      expect(r.err).toMatch(new RegExp(`device_adapters id ${orphan} gan may`));
+      expect(await dem(muc)).toEqual(truoc);
+    } finally {
+      await sql`DELETE FROM device_adapters WHERE id = ${orphan}`;
+      linhGac.adapters.pop();
+    }
     const k = await chayThat(["--test-only"]);
     expect(k.code, k.err).toBe(0);
     const json = JSON.parse(/MUC_TIEU tìm được:\n([\s\S]*?)\n\[don-rac r1b2\] --ids=/.exec(k.out)![1]);
-    expect(json).toEqual({ adapters: muc.adapters, edgeNodes: muc.edgeNodes, machines: muc.machines, stations: muc.stations, lines: muc.lines, workshops: muc.workshops, factories: muc.factories });
+    expect(json).toEqual({ adapters: muc.adapters, edgeNodes: muc.edgeNodes, machines: muc.machines, stations: muc.stations, lines: muc.lines, workshops: muc.workshops, factories: muc.factories, machineMoCoi: {} });
+  });
+
+  it("adapter NGOÀI đích trỏ máy đích ⇒ từ chối (xoá máy sẽ làm nó mồ côi), 0 xoá", async () => {
+    const ngoai = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${`${DAU_CANH}pp`}, 'p', 'stub', 'stub://t13', false, ${muc.machines[0]}) RETURNING id`);
+    linhGac.adapters.push(ngoai);
+    try {
+      const truoc = await dem(muc);
+      const ids = (["adapters", "edgeNodes", "machines", "stations", "lines", "workshops", "factories"] as const)
+        .filter((k) => muc[k].length)
+        .map((k) => `${k}:${muc[k].join(".")}`)
+        .join(",");
+      for (const argv of [["--test-only"], ["--test-only", "--ghi", `--ids=${ids}`]]) {
+        const r = await chayThat(argv);
+        expect(r.code, r.out).toBe(2);
+        expect(r.err).toMatch(new RegExp(`adapter ngoai dich id ${ngoai} tro may dich`));
+      }
+      expect(await dem(muc)).toEqual(truoc);
+    } finally {
+      await sql`DELETE FROM device_adapters WHERE id = ${ngoai}`;
+      linhGac.adapters.pop();
+    }
   });
 
   it("chạy khô: in bảng, thoát 0, KHÔNG ghi gì (đếm trước = sau, STOP vẫn chưa giải quyết)", async () => {
@@ -181,10 +205,30 @@ describe("don-rac-test-r1b2 trên _test", () => {
 
   it("--ghi xoá ĐÚNG danh sách tìm được; lính canh (tiền tố khác) còn nguyên", async () => {
     const canhTruoc = await dem(linhGac);
-    const { ids } = await layIds();
-    const r = await chayThat(["--test-only", "--ghi", `--ids=${ids}`]);
-    expect(r.code, r.err).toBe(0);
-    expect(r.out).toMatch(/DA XOA/);
+    // adapter mồ côi lơ lửng: machineId trỏ id không tồn tại (không FK), id rất cao hơn last_value của machines_id_seq
+    const [{ last_value: lv }] = await sql`SELECT last_value FROM machines_id_seq`;
+    const may = Number(lv) + 1_000_000;
+    expect(Number((await sql`SELECT count(*)::int AS n FROM machines WHERE id = ${may}`)[0].n)).toBe(0);
+    const treo = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${`${DAU}dd`}, 'd', 'stub', 'stub://t13', false, ${may}) RETURNING id`);
+    // adapter machineId NULL cũng là đích hợp lệ
+    const khong = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled") VALUES (${`${DAU}nn`}, 'n', 'stub', 'stub://t13', false) RETURNING id`);
+    try {
+      const { kho, ids } = await layIds();
+      expect(ids).toContain(`moCoi:${treo}>${may}`);
+      expect(ids).toContain(String(khong));
+      expect(kho.out).toMatch(new RegExp(`"machineMoCoi": \\{\\s*"${treo}": ${may}\\s*\\}`));
+      // bỏ nhóm moCoi khỏi chuỗi duyệt ⇒ từ chối, treo còn nguyên
+      const khongMoCoi = ids.replace(/,moCoi:\S+$/, "");
+      const tu = await chayThat(["--test-only", "--ghi", `--ids=${khongMoCoi}`]);
+      expect(tu.code, tu.out).toBe(2);
+      expect(Number((await sql`SELECT count(*)::int AS n FROM device_adapters WHERE id = ${treo}`)[0].n)).toBe(1);
+      const r = await chayThat(["--test-only", "--ghi", `--ids=${ids}`]);
+      expect(r.code, r.err).toBe(0);
+      expect(r.out).toMatch(/DA XOA/);
+      expect(Number((await sql`SELECT count(*)::int AS n FROM device_adapters WHERE id IN (${treo}, ${khong})`)[0].n)).toBe(0);
+    } finally {
+      await sql`DELETE FROM device_adapters WHERE id IN (${treo}, ${khong})`;
+    }
     expect(await dem(muc)).toEqual({ adapters: 0, edgeNodes: 0, machines: 0, stations: 0, lines: 0, workshops: 0, factories: 0, tags: 0, stops: 0 });
     expect(await dem(linhGac)).toEqual(canhTruoc);
     expect(canhTruoc.adapters).toBe(1);
