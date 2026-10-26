@@ -98,6 +98,8 @@ export class SlmpDriver implements OtDriver {
     resolve: (buf: Buffer) => void;
     reject: (err: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    /** 4E: serial request đang chờ phản hồi (khung khác serial bị bỏ). */
+    serialMongDoi?: number;
   } | null = null;
   private txChain: Promise<unknown> = Promise.resolve();
 
@@ -211,15 +213,26 @@ export class SlmpDriver implements OtDriver {
   private onData(chunk: Buffer): void {
     this.rxBuf = this.rxBuf.length === 0 ? chunk : Buffer.concat([this.rxBuf, chunk]);
     // Chỉ 1 giao dịch outstanding → xử lý đúng 1 frame khi đủ.
-    const need = expectedFrameLength(this.rxBuf, this.frame);
-    if (need < 0 || this.rxBuf.length < need) return;
-    const frameBuf = this.rxBuf.subarray(0, need);
-    this.rxBuf = this.rxBuf.subarray(need);
-    const p = this.pending;
-    this.pending = null;
-    if (p) {
-      clearTimeout(p.timer);
-      p.resolve(Buffer.from(frameBuf));
+    for (;;) {
+      const need = expectedFrameLength(this.rxBuf, this.frame);
+      if (need < 0 || this.rxBuf.length < need) return;
+      const frameBuf = this.rxBuf.subarray(0, need);
+      this.rxBuf = this.rxBuf.subarray(need);
+      const p = this.pending;
+      // R1b-2b-1 T7 (mục 12) — 4E: khung khác serial đang chờ ⇒ bỏ (không giải quyết nhầm giao dịch); giao dịch chờ tiếp tới hạn.
+      if (p && this.frame === "4E" && p.serialMongDoi !== undefined && frameBuf.length >= 4) {
+        const got = frameBuf.readUInt16LE(2);
+        if (got !== p.serialMongDoi) {
+          console.warn(`[slmp] bo khung 4E serial ${got} (dang cho ${p.serialMongDoi})`);
+          continue;
+        }
+      }
+      this.pending = null;
+      if (p) {
+        clearTimeout(p.timer);
+        p.resolve(Buffer.from(frameBuf));
+      }
+      return;
     }
   }
 
@@ -233,7 +246,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   /** Gửi 1 request, chờ đúng 1 response frame (tuần tự hoá qua txChain). */
-  private transact(request: Buffer): Promise<Buffer> {
+  private transact(request: Buffer, serialMongDoi?: number): Promise<Buffer> {
     const run = async (): Promise<Buffer> => {
       const socket = this.socket;
       if (!this.connected || !socket) throw new DeviceUnreachableError("slmp");
@@ -250,9 +263,11 @@ export class SlmpDriver implements OtDriver {
             reject(new Error(`slmp transaction timeout after ${this.timeoutMs}ms`));
           }
         }, this.timeoutMs);
-        this.pending = { resolve, reject, timer };
+        const p = { resolve, reject, timer, serialMongDoi };
+        this.pending = p;
+        // R1b-2b-1 T7 — callback ghi muộn của giao dịch cũ KHÔNG đánh hỏng giao dịch kế.
         socket.write(request, (err) => {
-          if (err) this.failPending(err);
+          if (err && this.pending === p && this.socket === socket) this.failPending(err);
         });
       });
     };
@@ -281,13 +296,13 @@ export class SlmpDriver implements OtDriver {
       let raw: number | boolean;
       if (tag.dataType === "bool" || (dev.isBit && tag.dataType !== "int" && tag.dataType !== "float")) {
         const { request } = buildBatchReadBit(tag.address, 1, cfg);
-        const resp = parseResponse(await this.transact(request), this.frame);
+        const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
         if (resp.endCode !== 0) return this.badSample(tag, resp.endCode);
         raw = decodeBits(resp.data, 1)[0];
       } else {
         const count = wordCountFor(tag.dataType);
         const { request } = buildBatchReadWord(tag.address, count, cfg);
-        const resp = parseResponse(await this.transact(request), this.frame);
+        const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
         if (resp.endCode !== 0) return this.badSample(tag, resp.endCode);
         raw = tag.dataType === "float" ? decodeFloat32(resp.data) : decodeInt16(resp.data);
       }
@@ -416,7 +431,7 @@ export class SlmpDriver implements OtDriver {
         request = buildBatchWriteWord(w.address, words, cfg).request;
       }
 
-      const resp = parseResponse(await this.transact(request), this.frame);
+      const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
       if (resp.endCode !== 0) {
         const msg = `slmp write end-code 0x${resp.endCode.toString(16).padStart(4, "0").toUpperCase()}`;
         this.lastError = msg;

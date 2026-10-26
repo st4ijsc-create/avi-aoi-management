@@ -117,6 +117,10 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const host = parseHost(cfg.endpoint);
     const slot = typeof opts.slot === "number" ? opts.slot : 0;
     const timeoutMs = cfg.timeoutMs ?? 5000;
+    // R1b-2b-1 T7 (muc 11) — setter timeout_sp cua st-ethernet-ip doi SO; nghe 'error' TRUOC connect: EventEmitter khong nguoi nghe nem
+    // 'error' => lam sap tien trinh. Listener canh `this.plc === plc` (chua gan luc dang ket noi) => khong lat phien.
+    if (typeof timeoutMs === "number") plc.timeout_sp = timeoutMs;
+    this.attachLinkLossHandlers(plc);
 
     try {
       await withTimeout(plc.connect(host, slot), timeoutMs, "eip connect");
@@ -128,8 +132,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
       // doc 40 OT-F1 — st-ethernet-ip Controller là EventEmitter; lắng 'close'/'error'/
       // 'Disconnected' để phát hiện mất kết nối giữa phiên (rớt cáp / PLC reboot). Trước
       // đây `connected` chỉ lật ở disconnect() → supervisor không thấy rớt. Lật
-      // connected=false → isConnected()/health() nói thật, supervisor reconnect/failover.
-      this.attachLinkLossHandlers(plc);
+      // connected=false → isConnected()/health() nói thật, supervisor reconnect/failover. (R1b-2b-1 T7: gắn TRƯỚC connect.)
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
       try {
