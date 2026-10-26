@@ -150,43 +150,102 @@ function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void
 /**
  * B3 fix scan (3) / scan 3 (b)(c) — the abandoned write of an adapter whose fate is unknown (until = epoch ms): its
  * identity and values, so the watch can recognise it landing and AUDIT-LINK that observation to the abandoned command.
- * One entry per adapter (overwritten by a newer abandonment); expired entries are swept on every write to the map and on
- * lookup — the map never holds more than one entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
+ * One entry per adapter; expired entries are swept on every write to the map and on lookup — the map never holds more than one
+ * entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
+ * R1b-2b-1 T17 fix round 1 (rà soát bảo mật: trôi trạng thái fail-open) — một lần bỏ MỚI không bao giờ LÀM YẾU mục đang có: GỘP (hợp intent theo
+ * thứ tự, nối writes, windowMs = max, hạn = max); mục được sửa TẠI CHỖ (danh tính giữ nguyên). Hạn = ∞ khi còn ≥ 1 lượt giữ chỗ B3 đang đặt lại phiên
+ * (`soGiu`), ngược lại = `untilHuuHan` (max các hạn hữu hạn) — `nhaGiuRuiRo` của lượt giữ chỉ trừ lượt của NÓ trên mục ĐANG ở map.
  */
 type StaleWrite = {
   until: number;
-  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned. */
+  /** hạn hữu hạn lớn nhất đã cấp (dùng khi không còn lượt giữ nào) */
+  untilHuuHan: number;
+  /** số lượt giữ chỗ B3 đang đặt lại phiên (mỗi lượt giữ mục sống vô hạn tới khi nhả) */
+  soGiu: number;
+  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned (max khi gộp). */
   windowMs: number;
+  /** của lệnh bỏ ĐẦU TIÊN còn trong mục (nhận diện cho báo động / audit) */
   commandType: string;
   idempotencyKey: string | null;
-  intentIds: number[];
+  /** mảng intent của TỪNG lệnh bỏ, theo thứ tự (giữ tham chiếu: R-11-n nối intent của STOP giống hệt vào mảng đang ghi) */
+  nguonIntent: number[][];
   confirmedBy: number;
   machineId: number | null;
   writes: Array<{ tagKey: string; value: unknown }>;
 };
+/** Hợp intent của mọi lệnh bỏ trong mục, theo thứ tự, không trùng. */
+function intentCuaRuiRo(e: StaleWrite): number[] {
+  return [...new Set(e.nguonIntent.flat())];
+}
 const staleWriteRisk = new Map<number, StaleWrite>();
 function sweepStaleWriteRisk(now = Date.now()): void {
   for (const [id, r] of staleWriteRisk) if (now > r.until) staleWriteRisk.delete(id);
 }
+function hanHieuLuc(e: StaleWrite): number {
+  return e.soGiu > 0 ? Number.POSITIVE_INFINITY : e.untilHuuHan;
+}
 /**
- * Ghi (đè) mục "lệnh ghi bị bỏ, kết cục không rõ" của adapter — MỘT nguồn cho hai đường: quá hạn giữ chỗ (B3, `until` = ∞ trong lúc đặt lại
- * phiên) và R1b-2b-1 T17 fix round 1 (I1): lệnh bị huỷ vì mất liên kết / hạ phiên lúc đang bay (`until` = bây giờ + cửa sổ).
+ * Ghi mục "lệnh ghi bị bỏ, kết cục không rõ" của adapter — MỘT nguồn cho hai đường: quá hạn giữ chỗ (B3, `kieu` "giu": sống vô hạn tới khi
+ * `nhaGiuRuiRo`) và R1b-2b-1 T17 fix round 1 (I1): lệnh bị huỷ vì mất liên kết / hạ phiên lúc đang bay ("cua_so": bây giờ + cửa sổ). Đã có mục
+ * còn hạn ⇒ GỘP tại chỗ, không bao giờ làm yếu (hạn = max, intent / writes hợp lại). Trả mục đang ở map.
  */
-function ghiRuiRoGhiCu(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, until: number | "cua_so"): StaleWrite {
+function ghiRuiRoGhiCu(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, kieu: "giu" | "cua_so"): StaleWrite {
   sweepStaleWriteRisk();
+  const now = Date.now();
   const windowMs = staleWriteRiskWindowMs(input.adapterId);
-  const entry: StaleWrite = {
-    until: until === "cua_so" ? Date.now() + windowMs : until,
-    windowMs,
-    commandType: input.commandType,
-    idempotencyKey: input.idempotencyKey ?? null,
-    intentIds: ledger.intentIds,
-    confirmedBy: ledger.confirmedBy,
-    machineId: input.machineId ?? null,
-    writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
-  };
-  staleWriteRisk.set(input.adapterId, entry);
-  return entry;
+  const writes = input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }));
+  let e = staleWriteRisk.get(input.adapterId);
+  if (!e) {
+    e = {
+      until: 0,
+      untilHuuHan: 0,
+      soGiu: 0,
+      windowMs,
+      commandType: input.commandType,
+      idempotencyKey: input.idempotencyKey ?? null,
+      nguonIntent: [ledger.intentIds],
+      confirmedBy: ledger.confirmedBy,
+      machineId: input.machineId ?? null,
+      writes,
+    };
+    staleWriteRisk.set(input.adapterId, e);
+  } else {
+    e.windowMs = Math.max(e.windowMs, windowMs);
+    if (!e.nguonIntent.includes(ledger.intentIds)) e.nguonIntent.push(ledger.intentIds);
+    e.writes.push(...writes);
+  }
+  if (kieu === "giu") e.soGiu += 1;
+  else e.untilHuuHan = Math.max(e.untilHuuHan, now + windowMs);
+  e.until = hanHieuLuc(e);
+  return e;
+}
+/**
+ * Lượt giữ B3 kết thúc (đặt lại phiên xong / lỗi / hết ngân sách): trừ lượt của nó trên mục ĐANG ở map (không phải tham chiếu cũ) và cấp hạn hữu hạn
+ * bây giờ + cửa sổ (R-4-r) — chỉ nới, không rút (max). Mục ở map khác mục đã giữ (không xảy ra khi đang giữ — hạn ∞ không bị quét) ⇒ gộp vào mục
+ * hiện tại, không đè.
+ */
+function nhaGiuRuiRo(adapterId: number, daGiu: StaleWrite): void {
+  const now = Date.now();
+  const hienTai = staleWriteRisk.get(adapterId);
+  if (hienTai === daGiu) {
+    daGiu.soGiu = Math.max(0, daGiu.soGiu - 1);
+    daGiu.untilHuuHan = Math.max(daGiu.untilHuuHan, now + daGiu.windowMs);
+    daGiu.until = hanHieuLuc(daGiu);
+    return;
+  }
+  const hanCuaGiu = now + daGiu.windowMs;
+  if (!hienTai) {
+    daGiu.soGiu = 0;
+    daGiu.untilHuuHan = Math.max(daGiu.untilHuuHan, hanCuaGiu);
+    daGiu.until = hanHieuLuc(daGiu);
+    staleWriteRisk.set(adapterId, daGiu);
+    return;
+  }
+  hienTai.windowMs = Math.max(hienTai.windowMs, daGiu.windowMs);
+  for (const n of daGiu.nguonIntent) if (!hienTai.nguonIntent.includes(n)) hienTai.nguonIntent.push(n);
+  hienTai.writes.push(...daGiu.writes);
+  hienTai.untilHuuHan = Math.max(hienTai.untilHuuHan, hanCuaGiu);
+  hienTai.until = hanHieuLuc(hienTai);
 }
 /** Test seams (B3 fix scan 3 (b)) — sizes of the per-adapter state and an explicit sweep. */
 export function _staleWriteRiskSizeForTests(): number {
@@ -197,7 +256,18 @@ export function _sweepStaleWriteRiskForTests(now: number): void {
 }
 /** doc 81 Đợt 11 (R-11-k 2, kept by R-11-n) — test seam: the intents the adapter's abandoned (timed-out) write carries, null when none. */
 export function _staleWriteRiskIntentIdsForTests(adapterId: number): number[] | null {
-  return staleWriteRisk.get(adapterId)?.intentIds ?? null;
+  const e = staleWriteRisk.get(adapterId);
+  return e ? intentCuaRuiRo(e) : null;
+}
+/** R1b-2b-1 T17 fix round 1 — test seam: hạn hiệu lực + writes của mục rủi ro (null khi không có). */
+export function _staleWriteRiskForTests(adapterId: number): { until: number; writes: Array<{ tagKey: string; value: unknown }>; intentIds: number[] } | null {
+  const e = staleWriteRisk.get(adapterId);
+  return e ? { until: e.until, writes: e.writes.map((w) => ({ ...w })), intentIds: intentCuaRuiRo(e) } : null;
+}
+/** R1b-2b-1 T17 fix round 1 — test seam: đường ghi rủi ro của B3 (giữ / nhả) và của mất liên kết, gọi thẳng. */
+export function _ghiRuiRoGhiCuForTests(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, kieu: "giu" | "cua_so"): () => void {
+  const e = ghiRuiRoGhiCu(input, ledger, kieu);
+  return () => nhaGiuRuiRo(input.adapterId, e);
 }
 export function _stopWatchCountForTests(adapterId: number): number {
   return stopWatches.get(adapterId)?.size ?? 0;
@@ -816,7 +886,7 @@ async function holdSlotAfterTimedOutWrite(
     // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
     // (until = ∞) and gets its TTL only when the reset SETTLES (success, failure or budget expiry) — a full-budget reset
     // can no longer expire it before the STOP behind it runs. The STOP's read-only watch then runs TTL from the STOP.
-    const riskEntry = ghiRuiRoGhiCu(input, ledger, Number.POSITIVE_INFINITY);
+    const riskEntry = ghiRuiRoGhiCu(input, ledger, "giu");
     // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
     const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
     let resetError: string;
@@ -835,7 +905,8 @@ async function holdSlotAfterTimedOutWrite(
       resetError = (err as Error)?.message || String(err);
     } finally {
       // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
-      riskEntry.until = Date.now() + riskEntry.windowMs;
+      // T17 fix round 1 — trên mục ĐANG ở map (có thể đã được gộp với lệnh bỏ khác), chỉ nới.
+      nhaGiuRuiRo(input.adapterId, riskEntry);
     }
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
@@ -878,7 +949,7 @@ function startStopWatch(
   // R-4-r — the watch window starts at the STOP and lasts the adapter's risk window (Đợt 5 F3; no risk ⇒ no window).
   const end = risk ? Date.now() + risk.windowMs : Date.now();
   const abandoned = risk
-    ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
+    ? { idempotencyKey: risk.idempotencyKey, intentIds: intentCuaRuiRo(risk), commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: [...risk.writes] }
     : null;
   const stopRef = { idempotencyKey: input.idempotencyKey ?? null, intentIds: ledger.intentIds, commandType: input.commandType };
   void (async () => {
@@ -921,8 +992,9 @@ function startStopWatch(
           // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác nhận được STOP: uncertain mang giá trị CŨ (last usable), bad không có giá trị.
           if (!s || s.value == null || s.quality !== "good") unread.push(t.tagKey);
           else if (!readbackMatches(expected, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t))) {
-            const old = abandoned?.writes.find((w) => w.tagKey === t.tagKey);
-            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t)) });
+            // T17 fix round 1 — mục có thể gộp nhiều lệnh bỏ: bất kỳ giá trị bỏ nào của tag này khớp ⇒ "giá trị bị bỏ đã tới".
+            const cacCu = abandoned?.writes.filter((w) => w.tagKey === t.tagKey) ?? [];
+            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: cacCu.some((old) => readbackMatches(old.value, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t))) });
           }
         }
         if (drift.length === 0 && unread.length === 0) continue;

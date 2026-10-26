@@ -180,6 +180,8 @@ _(chạy toàn bộ: chưa chạy)_
   "lệnh ghi cũ" của B3 (không giữ chỗ, không đặt lại phiên — phiên đã hạ) ⇒ STOP acked kế tiếp có canh chỉ-báo-động như sau một lệnh quá hạn. Lý do: kết
   cục không rõ — khi CHÍNH ta hạ một socket còn sống (reset HA lúc mạng phân mảnh, `connect()` lại sau khi trạng thái iso rớt), byte kernel đã nhận vẫn
   được gửi nốt và PLC vẫn xử lý phần đã nhận, nên lệnh cũ CÓ THỂ tới sau STOP; "socket đã huỷ nên không thể tới" chỉ đúng khi PLC đóng kết nối.
+  (rà soát bảo mật) Mục rủi ro của adapter không bao giờ bị làm yếu: lần bỏ mới GỘP vào mục đang có (hạn = max, intent + writes hợp lại; trước: lần quá
+  hạn sau ĐÈ lần trước); lượt giữ B3 nhả trên mục đang ở map, chỉ nới hạn; canh STOP coi "giá trị bị bỏ đã tới" khi BẤT KỲ giá trị bỏ nào của tag khớp.
 
 ## 6. Giới hạn đã biết
 
