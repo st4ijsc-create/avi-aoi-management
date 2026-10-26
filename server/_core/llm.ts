@@ -11,6 +11,7 @@ import {
   describeImage,
 } from "../services/aiProviderRouter";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
+import { taiAnhQuaMang } from "./taiAnhAnToan";
 import fs from "fs";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -209,12 +210,13 @@ const normalizeResponseFormat = ({
 type SplitMessages = {
   systemPrompt: string;
   prompt: string;
-  images: Buffer[];
+  /** URL ảnh CHƯA tải — chỉ tải ở nhánh thị giác khi sidecar sẵn sàng (Đợt 10.3: không gọi mạng khi model thị giác tắt). */
+  imageUrls: string[];
 };
 
 /** Resolve an image_url url field to a Buffer. Supports:
  *  - data: URIs (base64 decode)
- *  - http(s): URLs (fetch → Buffer)
+ *  - http(s): URLs — `taiAnhQuaMang` (Đợt 10.3: chống SSRF — ghim IP, metadata cấm, nội bộ chỉ khi khai, không chuyển hướng, 20 MB, 15 s)
  *  - storage keys / relative paths (read from the uploads dir via safeImagePath)
  */
 async function resolveImageUrlToBuffer(url: string): Promise<Buffer | null> {
@@ -232,15 +234,8 @@ async function resolveImageUrlToBuffer(url: string): Promise<Buffer | null> {
     return Buffer.from(decodeURIComponent(data), "utf8");
   }
 
-  // http(s) → fetch
-  if (/^https?:\/\//i.test(url)) {
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch image_url (${res.status} ${res.statusText})`);
-    }
-    const arr = await res.arrayBuffer();
-    return Buffer.from(arr);
-  }
+  // http(s) → tải qua lớp mạng an toàn (KHÔNG fetch thô)
+  if (/^https?:\/\//i.test(url)) return taiAnhQuaMang(url);
 
   // Otherwise treat as a storage key / relative path under the uploads dir.
   // Strip a leading "/uploads/" prefix if present so safeImagePath confines it.
@@ -257,7 +252,7 @@ async function resolveImageUrlToBuffer(url: string): Promise<Buffer | null> {
 async function splitMessages(messages: Message[]): Promise<SplitMessages> {
   const systemParts: string[] = [];
   const promptParts: string[] = [];
-  const images: Buffer[] = [];
+  const imageUrls: string[] = [];
 
   for (const message of messages) {
     const parts = ensureArray(message.content);
@@ -271,8 +266,7 @@ async function splitMessages(messages: Message[]): Promise<SplitMessages> {
           promptParts.push(part.text);
         }
       } else if (part.type === "image_url") {
-        const buf = await resolveImageUrlToBuffer(part.image_url.url);
-        if (buf) images.push(buf);
+        if (part.image_url.url) imageUrls.push(part.image_url.url);
       }
       // file_url parts are unsupported by the local engine → ignored.
     }
@@ -281,7 +275,7 @@ async function splitMessages(messages: Message[]): Promise<SplitMessages> {
   return {
     systemPrompt: systemParts.join("\n\n"),
     prompt: promptParts.join("\n\n"),
-    images,
+    imageUrls,
   };
 }
 
@@ -423,7 +417,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     userId,
   } = params;
 
-  const { systemPrompt, prompt, images } = await splitMessages(messages);
+  const { systemPrompt, prompt, imageUrls } = await splitMessages(messages);
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -452,7 +446,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     const choice = chuanHoaToolChoiceNoiBo(params.toolChoice ?? params.tool_choice);
 
     // Hai tổ hợp KHÔNG phục vụ được — nói ra, không degrade:
-    if (images.length > 0) {
+    if (imageUrls.length > 0) {
       throw new LoiKhongHoTroToolCall(
         "yêu cầu có ảnh (vision) VÀ `tools`: đường vision đi qua sidecar mô tả ảnh, không qua chat template có khối <tools>."
       );
@@ -487,9 +481,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   // ─── Vision branch ───────────────────────────────────────────
-  if (images.length > 0) {
+  if (imageUrls.length > 0) {
+    // Đợt 10.3 — tải ảnh CHỈ khi sidecar thị giác sẵn sàng (tắt ⇒ describeImage trả "không khả dụng" mà không gọi mạng nào).
+    const { isVisionSidecarAvailable } = await import("../services/llamaVisionSidecar");
+    // data: / khoá kho tệp là CỤC BỘ (không mạng) ⇒ luôn giải; chỉ http(s) phải chờ sidecar.
+    const url0 = imageUrls[0]!;
+    const image = isVisionSidecarAvailable() || !/^https?:/i.test(url0) ? await resolveImageUrlToBuffer(url0) : null;
     const description = await describeImage({
-      image: images[0]!,
+      image: image ?? Buffer.alloc(0),
       prompt: prompt || systemPrompt,
       systemPrompt: systemPrompt || undefined,
       maxTokens: effectiveMaxTokens,

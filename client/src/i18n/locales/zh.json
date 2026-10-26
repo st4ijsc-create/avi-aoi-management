@@ -4092,7 +4092,8 @@
       "flowXuat": "导出 AI 流程包",
       "flowNhap": "从包导入 AI 流程",
       "aiNgoaiDatModel": "设置外部AI模型",
-      "aiNgoaiDuyet": "审批使用外部AI的流程"
+      "aiNgoaiDuyet": "审批使用外部AI的流程",
+      "taiAnhAi": "下载用于AI分析的图像"
     },
     "field": {
       "stationId": "工位",
@@ -4564,7 +4565,14 @@
       "khong-co-node-ngoai": "此版本未使用外部AI模型",
       "NGOAI_TU_DUYET_VAN_HANH": "不能自行审批向外部AI发送运营数据的流程",
       "NGOAI_CHUA_DUYET": "使用外部AI模型的版本尚未审批",
-      "NGOAI_LUONG_TOAN_CUC": "全系统流程不能使用外部AI模型"
+      "NGOAI_LUONG_TOAN_CUC": "全系统流程不能使用外部AI模型",
+      "anh-url-sai": "图像URL无效（仅限http/https，不含凭据）",
+      "anh-dich-cam": "图像目标是未声明的内部主机（AI_IMAGE_HOST_CHO_PHEP）或元数据地址",
+      "anh-ket-noi": "无法连接到图像服务器",
+      "anh-chuyen-huong": "图像服务器返回重定向（不跟随）",
+      "anh-http-loi": "图像服务器返回错误",
+      "anh-khong-phai-anh": "下载的内容不是图像",
+      "anh-qua-lon": "图像超过20 MB"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

@@ -1,4 +1,4 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { moduleGate, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
@@ -690,7 +690,11 @@ export const annotationRouter = router({
     }),
 
   // AI-assisted annotation analysis
+  // ★ Đợt 10.3 (dieu-phoi e) — thủ tục AI ⇒ sau MOD_AI như mọi thủ tục AI (congGiayPhepAiCensus khai TƯỜNG MINH theo tên).
+  //   KHÔNG thêm phạm vi nhà máy: `imageUrl` là chuỗi tự do, không định vị được về máy/nhà máy nào; rào thật là lớp tải ảnh
+  //   (`_core/taiAnhAnToan.ts`: ghim IP, metadata cấm, nội bộ chỉ khi khai AI_IMAGE_HOST_CHO_PHEP, không chuyển hướng, 20 MB).
   analyzeImage: protectedProcedure
+    .use(moduleGate("MOD_AI"))
     .input(z.object({
       imageUrl: z.string(),
       context: z.string().optional(),

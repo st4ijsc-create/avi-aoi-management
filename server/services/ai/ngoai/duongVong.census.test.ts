@@ -58,7 +58,6 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/_core/dataApi.ts": { so: 1, lyDo: "⚠ dịch vụ 'forge' của khung gốc (ENV.forgeApiUrl, quản trị cấu hình) — đường dịch vụ ngoài CÓ SẴN ngoài cổng AI ngoài; báo dieu-phoi" },
   "server/_core/imageGeneration.ts": { so: 1, lyDo: "⚠ dịch vụ 'forge' của khung gốc (ENV.forgeApiUrl, quản trị cấu hình) — đường dịch vụ ngoài CÓ SẴN ngoài cổng AI ngoài; báo dieu-phoi (sinh ảnh)" },
   "server/_core/index.ts": { so: 5, lyDo: "máy chủ HTTP/HTTPS của ứng dụng + proxy tải tệp lưu trữ nội bộ (URL ký sẵn của kho tệp)" },
-  "server/_core/llm.ts": { so: 1, lyDo: "tải ẢNH đính kèm (URL do người dùng đưa) để chuyển cho model CỤC BỘ — chiều vào, không gửi dữ liệu" },
   "server/_core/map.ts": { so: 1, lyDo: "⚠ dịch vụ 'forge' của khung gốc (ENV.forgeApiUrl, quản trị cấu hình) — đường dịch vụ ngoài CÓ SẴN ngoài cổng AI ngoài; báo dieu-phoi (bản đồ)" },
   "server/_core/notification.ts": { so: 1, lyDo: "⚠ dịch vụ 'forge' của khung gốc (ENV.forgeApiUrl, quản trị cấu hình) — đường dịch vụ ngoài CÓ SẴN ngoài cổng AI ngoài; báo dieu-phoi (thông báo chủ dự án)" },
   "server/_core/oauth.ts": { so: 2, lyDo: "OAuth — đổi mã / đọc hồ sơ ở máy chủ xác thực đã cấu hình" },
@@ -120,7 +119,8 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/utils/spcAlertSink.ts": { so: 1, lyDo: "⚠ đích do QUẢN TRỊ cấu hình NGOÀI Luồng (webhook / ERP / SIEM / cảnh báo / giao báo cáo) — không phải đường của Luồng; rủi ro còn lại: quản trị trỏ tới máy chủ AI — báo dieu-phoi" },
 };
 /** GHIM: số tệp miễn trừ + tổng điểm — đổi ⇒ đo lại + ghi lý do (ratchet). */
-const GHIM = { tep: 64, diem: 97 } as const;
+// 2026-10-26 (dieu-phoi e): _core/llm.ts hết fetch thô (ảnh qua taiAnhAnToan → fetchGhim) ⇒ 64→63 tệp, 97→96 điểm.
+const GHIM = { tep: 63, diem: 96 } as const;
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};
@@ -161,7 +161,8 @@ describe("census đường vòng — điểm gọi ra mạng trong server/", () 
       const src = readFileSync(p, "utf8");
       if (/\b(kiemDichDen|fetchGhim)\(/.test(src)) dung.push(`${tep}:${/\bchanHostAiNgoai\(/.test(src)}`);
     }
-    expect(dung.sort()).toEqual(["server/services/flow/nut/mcpKhach.ts:true", "server/services/flow/nut/tichHop.ts:true"]);
+    // _core/taiAnhAnToan.ts: GET ẢNH chiều VÀO cho model thị giác CỤC BỘ (không gửi dữ liệu nhà máy ra) — không áp chanHostAiNgoai (dieu-phoi e, 2026-10-26).
+    expect(dung.sort()).toEqual(["server/_core/taiAnhAnToan.ts:false", "server/services/flow/nut/mcpKhach.ts:true", "server/services/flow/nut/tichHop.ts:true"]);
   });
 });
 

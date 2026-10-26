@@ -218,9 +218,60 @@ const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[
  * dài một chuỗi liền (đo: `"10.1.1.".repeat(20000)` ⇒ 11,6 s, chặn vòng lặp sự kiện chung với đường STOP). Chuỗi liền
  * ≥ 2 000 ký tự không trắng KHÔNG phải văn xuôi / mã đọc được — che NGUYÊN khối (fail-closed, che thừa) TRƯỚC mọi luật
  * khác ⇒ mọi luật sau chạy trên chuỗi liền có trần (chi phí ≤ 2 000 × n). Lookbehind neo ở ĐẦU chuỗi liền ⇒ tuyến tính.
- * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s).
+ * Lưới "TUYẾN TÍNH" trong `cheDuLieu.test.ts` đỏ khi bỏ dòng này (họ `x://a:b`: 6 s) — KHI tầng cũ còn bậc hai (trước `134988874`).
+ *
+ * ★ NỚI 2 000 → 8 000 (2026-10-26, dieu-phoi c — ĐO trên `aiSafety` TUYẾN TÍNH đã ở main `134988874`): KHÔNG trần, 12 họ xấu × 256 KB
+ * (trần mỗi chuỗi của cổng) ⇒ chậm nhất 30 ms (`a-…%`), tỉ lệ t(2n)/t(n) 1,0–2,8 ⇒ trần không còn cần cho HIỆU NĂNG. Giá của 2 000:
+ * log JSON gọn bị cắt 2,4 KB (`log:{"may":…,"nhietDo":[600 số]…` không đóng) bị che NGUYÊN khối ⇒ mất dữ liệu kỹ thuật vô hại; 8 000
+ * giữ được. Vẫn GIỮ trần (phòng thủ nếu tầng cũ hồi quy bậc hai; khối liền > 8 KB thường là base64 / tệp nhị phân ⇒ che là đúng).
+ *
+ * ★ Rà kiem-dinh (c): nới thẳng lên 8 000 làm khối KHÔNG NHÃN 2–8 KB lọt nguyên (base64 3 / 6 KB, hex 5 KB — keystore / PFX / DER /
+ * khoá dán một khối) ⇒ thêm `RE_BANG_MA_DAI`: chuỗi liền ≥ 2 000 ký tự mà TOÀN BỘ thuộc bảng base64 / base64url / hex
+ * (`A–Z a–z 0–9 + / = _ -`, không có `"{}[]:,` của JSON / log) ⇒ che nguyên khối; ≥ 8 000 ký tự bất kỳ ⇒ che (`RE_KHONG_TRANG_DAI`).
+ *
+ * ★ Rà kiem-dinh lần 2 (BẮT BUỘC trước khi bật AI_NGOAI_ENABLED) — ba cách né khối 2–8 KB, mỗi cách một luật:
+ *   (a) BỎ neo khoảng trắng: MỌI đoạn bảng base64/hex ≥ 2 000 ký tự, bất kể ký tự dính hai bên (`x:<b64>`, `<b64>.`, `(<b64>)`).
+ *       Lớp ký tự tham lam không có gì phía sau ⇒ không quay lui; khớp xong máy regex đi TIẾP sau đoạn ⇒ tuyến tính.
+ *   (b) NHIỀU DÒNG (`cheKhoiNhieuDong`): ≥ 12 dòng LIÊN TIẾP, mỗi dòng (bỏ khoảng trắng đầu/cuối) ≥ 40 ký tự toàn bảng base64 ⇒ che cả
+ *       khối (PEM / MIME không nhãn, 64 / 76 ký tự mỗi dòng; dòng đuôi ngắn ngay sau khối cũng che). Quét THỦ CÔNG theo dòng, tuyến tính.
+ *   (c) HEX CÓ NGĂN `:` / khoảng trắng: ≥ 900 cặp ⇒ che. Mô phỏng nhóm NGUYÊN TỬ bằng lookahead + tham chiếu ngược
+ *       (`(?=(…+))\1`): mỗi lần thử nuốt CẢ dải tối đa rồi đi tiếp ⇒ không quay lui, mỗi dải xét một lần; độ dài xét trong hàm thay.
  */
-const RE_KHONG_TRANG_DAI = /(?<!\S)\S{2000,}/g;
+const RE_KHONG_TRANG_DAI = /(?<!\S)\S{8000,}/g;
+const RE_BANG_MA_DAI = /[A-Za-z0-9+/=_-]{2000,}/g;
+const RE_HEX_NGAN = /(?=((?:[0-9a-fA-F]{2}[: ])+(?:[0-9a-fA-F]{2}(?![0-9A-Za-z]))?))\1/g;
+const SO_CAP_HEX_NGAN_TOI_THIEU = 900;
+const RE_DONG_BANG_MA = /^[A-Za-z0-9+/=_-]+$/;
+const SO_DONG_KHOI_TOI_THIEU = 12;
+const DO_DAI_DONG_KHOI_TOI_THIEU = 40;
+
+/** (b) — khối ≥ 12 dòng liên tiếp toàn bảng base64, mỗi dòng ≥ 40 ký tự (+ dòng đuôi ngắn toàn bảng ngay sau) ⇒ MỘT ký hiệu che. */
+function cheKhoiNhieuDong(t: string, dem: (loai: string) => void): string {
+  if (!t.includes("\n")) return t;
+  const dong = t.split("\n");
+  const ra: string[] = [];
+  let i = 0;
+  while (i < dong.length) {
+    let j = i;
+    while (j < dong.length) {
+      const d = dong[j]!.trim();
+      if (d.length < DO_DAI_DONG_KHOI_TOI_THIEU || !RE_DONG_BANG_MA.test(d)) break;
+      j++;
+    }
+    if (j - i >= SO_DONG_KHOI_TOI_THIEU) {
+      if (j < dong.length && dong[j]!.trim().length > 0 && RE_DONG_BANG_MA.test(dong[j]!.trim())) j++; // dòng đuôi ngắn
+      dem("chuoi_lien_dai");
+      ra.push(THAY.biMat);
+      i = j;
+    } else {
+      // không đủ khối: giữ nguyên các dòng i..j (dải con bắt đầu bên trong chỉ NGẮN hơn ⇒ không cần xét lại) — mỗi dòng xét một lần
+      const het = Math.max(j, i + 1);
+      for (let k = i; k < het; k++) ra.push(dong[k]!);
+      i = het;
+    }
+  }
+  return ra.join("\n");
+}
 
 /** PEM khoá riêng — quét TUYẾN TÍNH (regex lười `[\s\S]*?` của tầng cũ bậc hai khi nhiều BEGIN không END). Không có END ⇒ che tới hết văn bản. */
 function chePem(t: string, dem: (loai: string) => void): string {
@@ -549,6 +600,9 @@ function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) 
 
 function cheVanBan(van: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
   let t = van.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+  t = cheKhoiNhieuDong(t, dem);
+  t = t.replace(RE_BANG_MA_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+  t = t.replace(RE_HEX_NGAN, (khop: string) => (khop.length >= SO_CAP_HEX_NGAN_TOI_THIEU * 3 - 1 ? (dem("chuoi_lien_dai"), THAY.biMat) : khop));
   t = giaiPhanTram(gomChuTach(suaDongChu(t)));
 
   t = t.replace(RE_WEBHOOK, (_k, dau: string) => (dem("webhook"), dau + THAY.biMat));

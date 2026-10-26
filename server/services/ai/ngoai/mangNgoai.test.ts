@@ -69,7 +69,7 @@ describe("chính sách URL + DNS (mỗi lần gọi)", () => {
   });
 
   it("tên model trong đường dẫn Gemini", () => {
-    for (const m of ["../v1/x", "a?b", "a#b", "a%2fb", "a/b", ""]) expect(() => kiemTenModelDuongDan(m), m).toThrow(LoiNgoai);
+    for (const m of ["../v1/x", "a?b", "a#b", "a%2fb", "a/b", "", "a..b", "gemini..pro"]) expect(() => kiemTenModelDuongDan(m), m).toThrow(LoiNgoai);
     expect(kiemTenModelDuongDan("gemini-2.5-pro")).toBe("gemini-2.5-pro");
   });
 

@@ -3,8 +3,8 @@
  * env + host/IP ĐỘNG của khoá tương thích / host nội bộ đã khai). Lúc LƯU (URL viết thẳng) và lúc CHẠY (URL từ biểu thức), MCP lúc
  * NẠP danh sách và lúc GỌI. Không mạng thật (DNS giả, fetch giả).
  */
-import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { chanHostAiNgoai, hostChanThemEnv, laHostAiNgoai, __datNguonHostDongChoTest } from "./hostAiNgoai";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { chanHostAiNgoai, docHostDongTuDb, hostChanThemEnv, laHostAiNgoai, __datNguonHostDongChoTest } from "./hostAiNgoai";
 import { datPhanGiaiDns } from "../../flow/nut/mangAnToan";
 import { kiemThamSoNutMoi } from "../../flow/kiemThamSoNut";
 import { mayChuMcpChoPhep } from "../../flow/nut/mcpKhach";
@@ -61,7 +61,7 @@ describe("chanHostAiNgoai — lúc gọi", () => {
 
   it("host tương thích ĐÃ KHAI (llm.nha-may.vn ⇒ 203.0.113.7): chặn theo TÊN và theo IP đã ghim (tên khác cùng IP)", async () => {
     dns["llm.nha-may.vn"] = "203.0.113.7";
-    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn"]);
+    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn:443"]);
     expect(await ma(chanHostAiNgoai(new URL("https://LLM.nha-may.vn/v1")))).toBe("DICH_LA_AI_NGOAI");
     expect(await ma(chanHostAiNgoai(new URL("https://khac.vn/v1"), { ip: "203.0.113.7", family: 4 }))).toBe("DICH_LA_AI_NGOAI");
     expect(await ma(chanHostAiNgoai(new URL("https://khac.vn/v1"), { ip: "203.0.113.8", family: 4 }))).toBeNull();
@@ -104,7 +104,7 @@ describe("lúc CHẠY — node http (URL từ biểu thức) và MCP (lúc gọi
     process.env.AI_FLOW_HTTP_HOST_CHO_PHEP = "api.openai.com,khac.vn,example.com";
     dns["llm.nha-may.vn"] = "8.8.4.4";
     dns["khac.vn"] = "8.8.4.4";
-    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn"]);
+    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn:443"]);
     try {
       const chay = (u: string) => layNut("tich-hop.http-doc")!.chay({ url: "{{ $json.u }}" }, ngu([{ json: { u } }]));
       expect(await ma(chay("https://api.openai.com/v1/models"))).toBe("DICH_LA_AI_NGOAI");
@@ -127,7 +127,7 @@ describe("lúc CHẠY — node http (URL từ biểu thức) và MCP (lúc gọi
     process.env.AI_FLOW_MCP_CHO_PHEP = JSON.stringify({ vong: { url: "https://mcp.khac.vn/mcp", tools: ["t"] } });
     dns["llm.nha-may.vn"] = "8.8.4.4";
     dns["mcp.khac.vn"] = "8.8.4.4";
-    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn"]);
+    __datNguonHostDongChoTest(async () => ["llm.nha-may.vn:443"]);
     try {
       expect(await ma(layNut("tich-hop.mcp-goi")!.chay({ server: "vong", tool: "t", thamSo: {} }, ngu([{ json: {} }])))).toBe("DICH_LA_AI_NGOAI");
       expect(gui).toEqual([]);
@@ -136,5 +136,42 @@ describe("lúc CHẠY — node http (URL từ biểu thức) và MCP (lúc gọi
       if (cuEnv === undefined) delete process.env.AI_FLOW_MCP_CHO_PHEP;
       else process.env.AI_FLOW_MCP_CHO_PHEP = cuEnv;
     }
+  });
+});
+
+describe("rà kiem-dinh T10 — so CẶP IP:cổng; tập động lỗi ⇒ ĐÓNG", () => {
+  // datFetchLuong(cu) của khối trước trả bộ phân giải THẬT ⇒ đặt lại bộ giả cho từng ca
+  beforeEach(() => void datPhanGiaiDns(async (h) => [{ address: dns[h] ?? "93.184.216.34", family: 4 }]));
+
+  it("khai llm.local:8000 (10.0.0.5): cùng IP KHÁC cổng (mes.local:3000) ⇒ cho; đúng cổng (tên khác) ⇒ chặn", async () => {
+    dns["llm.local"] = "10.0.0.5";
+    __datNguonHostDongChoTest(async () => ["llm.local:8000"]);
+    expect(await ma(chanHostAiNgoai(new URL("http://mes.local:3000/api"), { ip: "10.0.0.5", family: 4 }))).toBeNull();
+    expect(await ma(chanHostAiNgoai(new URL("http://ten-khac.local:8000/v1"), { ip: "10.0.0.5", family: 4 }))).toBe("DICH_LA_AI_NGOAI");
+    expect(await ma(chanHostAiNgoai(new URL("http://LLM.local:8000/v1"), { ip: "10.0.0.5", family: 4 }))).toBe("DICH_LA_AI_NGOAI");
+    expect(await ma(chanHostAiNgoai(new URL("http://llm.local:8001/v1"), { ip: "10.0.0.5", family: 4 }))).toBeNull();
+  });
+
+  it("khai localhost:8000: MCP cục bộ 127.0.0.1:8811 vẫn gọi được; 127.0.0.1:8000 bị chặn; endpoint khoá https không cổng ⇒ 443", async () => {
+    dns.localhost = "127.0.0.1";
+    dns["llm.cong-ty.vn"] = "8.8.4.4";
+    __datNguonHostDongChoTest(() => docHostDongTuDb(async () => ({
+      execute: async (q: { queryChunks?: unknown[] }) => (JSON.stringify(q).includes("ai_api_keys") ? [{ endpoint: "https://llm.cong-ty.vn/v1" }] : [{ hostCong: "localhost:8000" }]),
+    })));
+    expect(await ma(chanHostAiNgoai(new URL("http://127.0.0.1:8811/mcp"), { ip: "127.0.0.1", family: 4 }))).toBeNull();
+    expect(await ma(chanHostAiNgoai(new URL("http://127.0.0.1:8000/v1"), { ip: "127.0.0.1", family: 4 }))).toBe("DICH_LA_AI_NGOAI");
+    expect(await ma(chanHostAiNgoai(new URL("https://khac.vn/x"), { ip: "8.8.4.4", family: 4 }))).toBe("DICH_LA_AI_NGOAI");
+    expect(await ma(chanHostAiNgoai(new URL("https://khac.vn:8443/x"), { ip: "8.8.4.4", family: 4 }))).toBeNull();
+  });
+
+  it("nguồn tập động NÉM / CSDL vắng ⇒ chanHostAiNgoai ném DICH_AI_KHONG_RO (không mở); host tĩnh vẫn DICH_LA_AI_NGOAI", async () => {
+    __datNguonHostDongChoTest(async () => {
+      throw new Error("db sập");
+    });
+    expect(await ma(chanHostAiNgoai(new URL("https://example.com/x"), { ip: "93.184.216.34", family: 4 }))).toBe("DICH_AI_KHONG_RO");
+    expect(await ma(chanHostAiNgoai(new URL("https://api.openai.com/x")))).toBe("DICH_LA_AI_NGOAI");
+    await expect(docHostDongTuDb(async () => null)).rejects.toThrow();
+    __datNguonHostDongChoTest(() => docHostDongTuDb(async () => null));
+    expect(await ma(chanHostAiNgoai(new URL("https://example.com/x"), { ip: "93.184.216.34", family: 4 }))).toBe("DICH_AI_KHONG_RO");
   });
 });
