@@ -16,6 +16,7 @@ import * as React from "react";
 import i18next from "i18next";
 import vi_ from "@/i18n/locales/vi.json";
 import en_ from "@/i18n/locales/en.json";
+import zh_ from "@/i18n/locales/zh.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { resolvePermissionModule } from "@shared/permissions";
 
@@ -231,7 +232,7 @@ describe("ScadaDiag — bảng", () => {
     expect(within(lost).getByText(/80 · 12 · 3/)).toBeInTheDocument();
   });
 
-  it("R1b-2b-1 T5 (C5) — 'Đang kết nối' + lý do 'moi_tag_sai_cau_hinh' ⇒ hiện chữ lý do (vi, en); không lý do ⇒ không có; 'chỉ lỗi' giữ hàng", async () => {
+  it("R1b-2b-1 T5 (C5) — 'Đang kết nối' + lý do 'moi_tag_sai_cau_hinh' ⇒ hiện chữ lý do (vi, en, zh); không lý do ⇒ không có; 'chỉ lỗi' giữ hàng", async () => {
     srv.rows = [
       ...rows3(),
       { ...base, adapterId: 4, code: "AD-SAI", ten: "Sai cấu hình", trangThai: "connecting", lyDo: "moi_tag_sai_cau_hinh", tag: { tot: 0, nghiNgo: 0, xau: 0 } },
@@ -246,10 +247,19 @@ describe("ScadaDiag — bảng", () => {
     fireEvent.click(screen.getByRole("switch", { name: S("scada.diag.loc.chiLoi") }));
     expect(screen.getByText("AD-SAI")).toBeInTheDocument();
     expect(screen.queryByText("AD-CHO")).toBeNull();
+    i18next.addResourceBundle("en", "translation", en_ as Record<string, unknown>, true, true);
+    i18next.addResourceBundle("zh", "translation", zh_ as Record<string, unknown>, true, true);
     await act(async () => {
       await i18next.changeLanguage("en");
     });
     expect(within(hang("AD-SAI")).getByTestId("ly-do-trang-thai")).toHaveTextContent((en_ as any).scada.diag.lyDo.moi_tag_sai_cau_hinh);
+    // fix round 1 (Minor) — zh hiện ĐÚNG chữ zh (không rơi về vi/en)
+    await act(async () => {
+      await i18next.changeLanguage("zh");
+    });
+    const zh = (zh_ as any).scada.diag.lyDo.moi_tag_sai_cau_hinh as string;
+    expect(zh).not.toBe((en_ as any).scada.diag.lyDo.moi_tag_sai_cau_hinh);
+    expect(within(hang("AD-SAI")).getByTestId("ly-do-trang-thai")).toHaveTextContent(zh);
   });
 
   it("lọc 'chỉ lỗi' ẩn adapter ổn và adapter edge, giữ adapter lỗi", () => {

@@ -600,17 +600,26 @@ export class OpcuaDriver extends NotImplementedDriver {
     // bad (kèm statusCode) cho tag đó, giới hạn tần suất theo tag. Đóng êm (close) ⇒ không phát.
     let closing = false;
     const lastBadAt = new Map<string, number>();
-    const emitBad = (tag: OtTagAddress, statusCode: string) => {
+    const emitBad = (tag: OtTagAddress, statusCode: string, reason?: LyDoChatLuong) => {
       if (closing) return;
       const now = Date.now();
       const prev = lastBadAt.get(tag.tagKey);
       if (prev !== undefined && now - prev < OPCUA_MONITORED_BAD_MIN_INTERVAL_MS) return;
       lastBadAt.set(tag.tagKey, now);
       void Promise.resolve(
-        onSample({ tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode }),
+        onSample({
+          tagKey: tag.tagKey,
+          raw: undefined,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          statusCode,
+          ...(reason ? { reason } : {}),
+        }),
       ).catch(() => undefined);
     };
-    const deferredBad: Array<[OtTagAddress, string]> = [];
+    const deferredBad: Array<[OtTagAddress, string, LyDoChatLuong?]> = [];
 
     for (const tag of tags) {
       // Task 12 — cùng bộ phân giải với readTags (nsu=, kiểm cú pháp bằng thư viện).
@@ -618,7 +627,9 @@ export class OpcuaDriver extends NotImplementedDriver {
       if ("error" in r) {
         // Bad address → skip this tag (do NOT tear down the whole subscription).
         console.error(`[OPCUA] monitored-item skip bad address "${tag.address}": ${r.error} (${r.statusCode})`);
-        deferredBad.push([tag, r.statusCode]);
+        // R1b-2b-1 T5 fix round 1 (I1) — địa chỉ không phân giải được (cục bộ) ⇒ lỗi cấu hình, đúng như readTags khi cờ V2 bật: mẫu
+        // `BadNodeIdInvalid` + `config_error` là TRUNG TÍNH (reconnectNhanh.laMauTrungTinh), không phải "chưa trả lời" (bad trần).
+        deferredBad.push([tag, r.statusCode, chatLuongV2Bat() ? "config_error" : undefined]);
         continue;
       }
       const nodeId = r.nodeId;
@@ -674,7 +685,7 @@ export class OpcuaDriver extends NotImplementedDriver {
       return null;
     }
     // Có đường push ⇒ tag không tạo được item vẫn phải nói "bad" (đường poll không chạy).
-    for (const [tag, sc] of deferredBad) emitBad(tag, sc);
+    for (const [tag, sc, lyDo] of deferredBad) emitBad(tag, sc, lyDo);
 
     return {
       close: async () => {

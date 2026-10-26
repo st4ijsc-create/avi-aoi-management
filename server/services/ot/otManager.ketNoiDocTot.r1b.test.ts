@@ -787,3 +787,151 @@ describe("R1b-2a T13 — luật chung `mauMayChuDaTraLoi` / `taoBatDocTot` (reco
     expect(bao2).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * R1b-2b-1 T5 fix round 1 (I1) — phiên OPC UA THẬT (OpcuaDriver + node-opcua giả, OT_OPCUA_MONITORED_ITEMS bật, cờ V2 bật), qua otManager
+ * (legacy và HA). MỌI địa chỉ sai cục bộ ⇒ đường push lui về poll ⇒ 'connecting' + lý do; MỘT PHẦN sai ⇒ đường push thật: lý do tạm cho
+ * tới thay đổi good đầu của item hợp lệ ⇒ 'connected', lý do xoá.
+ */
+describe.each([
+  ["legacy", "false"],
+  ["HA (ConnectionSupervisor thật)", "true"],
+] as const)("R1b-2b-1 T5 fix round 1 — phiên OPC UA thật, địa chỉ sai cục bộ (%s)", (_nhan, ha) => {
+  const ID_OPC = 4345;
+  let ot: typeof import("./otManager");
+  let tt: typeof import("./trangThaiAdapter");
+  let bao: string[];
+  let tagsAdapter: OtTagAddress[];
+  let session: { read: ReturnType<typeof vi.fn> };
+  let taoItem: ReturnType<typeof vi.fn>;
+  let items: Array<{ fire: (dv: unknown) => void }>;
+  let soConnect: number;
+
+  const khoiDong = async (tags: OtTagAddress[]): Promise<void> => {
+    tagsAdapter = tags;
+    vi.doMock("./deviceAdapter", () => ({
+      loadEnabledAdapters: async () => [
+        {
+          adapterId: ID_OPC,
+          code: "T5-OPC-SAI",
+          machineId: null,
+          protocol: "opcua" as OtProtocol,
+          connection: { endpoint: "opc.tcp://127.0.0.1:4840", timeoutMs: 800 } as OtConnectionConfig,
+          pollIntervalMs: 1000,
+          tags: tagsAdapter,
+          driver: await taoDriver(),
+        },
+      ],
+    }));
+    ot = await import("./otManager");
+    tt = await import("./trangThaiAdapter");
+    tt.__datLaiTrangThaiAdapter();
+    tt.__datGhiDb(async () => undefined);
+    expect(await ot.startOt()).toBe(true);
+  };
+  let taoDriver: () => Promise<OtDriver>;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
+    vi.stubEnv("OT_CONN_HA_ENABLED", ha);
+    vi.stubEnv("OT_CONN_HA_BACKOFF_MS", "2000");
+    vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "true");
+    vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000");
+    vi.stubEnv("OT_CONN_HA_HEALTH_INTERVAL_MS", "100");
+    vi.stubEnv("OT_CONN_HA_BACKOFF_JITTER", "0");
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
+    bao = [];
+    items = [];
+    soConnect = 0;
+    session = { read: vi.fn(async (nodes: unknown[]) => nodes.map(() => ({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } }))) };
+    const s = { ...session, write: vi.fn(async () => []), close: vi.fn(async () => {}), createSubscription2: vi.fn(async () => ({ terminate: vi.fn(async () => {}) })) };
+    taoItem = vi.fn(async () => {
+      let h: ((dv: unknown) => void) | null = null;
+      const item = {
+        on: (evt: string, cb: (dv: unknown) => void) => {
+          if (evt === "changed") h = cb;
+        },
+        fire: (dv: unknown) => h?.(dv),
+      };
+      items.push(item);
+      return item;
+    });
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: {
+        create: vi.fn(() => ({
+          connect: vi.fn(async () => {
+            soConnect += 1;
+          }),
+          createSession: vi.fn(async () => s),
+          disconnect: vi.fn(async () => {}),
+        })),
+      },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {},
+      ClientSubscription: { create: vi.fn(async () => ({ terminate: vi.fn(async () => {}) })) },
+      ClientMonitoredItem: { create: taoItem },
+      TimestampsToReturn: { Both: 2 },
+      MonitoringMode: { Reporting: 1 },
+    }));
+    taoDriver = async () => {
+      const { OpcuaDriver } = await import("./drivers/opcuaDriver");
+      return new OpcuaDriver();
+    };
+    vi.doMock("./driverRegistry", () => ({ createDriver: () => taoDriverDongBo() }));
+    const { OpcuaDriver } = await import("./drivers/opcuaDriver");
+    const taoDriverDongBo = () => new OpcuaDriver();
+    vi.doMock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: async () => undefined }));
+    vi.doMock("./trangThaiAdapter", async (importOriginal) => {
+      const that = await importOriginal<typeof import("./trangThaiAdapter")>();
+      return {
+        ...that,
+        baoTrangThaiAdapter: (...args: Parameters<typeof that.baoTrangThaiAdapter>) => {
+          if (args[0].adapterId === ID_OPC) bao.push(args[1]);
+          return that.baoTrangThaiAdapter(...args);
+        },
+      };
+    });
+  });
+
+  afterEach(async () => {
+    await ot?.stopOt();
+    tt?.__datGhiDb(null);
+    tt?.__datLaiTrangThaiAdapter();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.doUnmock("node-opcua");
+  });
+
+  const SAI = (k: string): OtTagAddress => ({ tagKey: k, address: `garbage-not-a-node-${k}`, dataType: "float" });
+
+  it("MỌI địa chỉ sai ⇒ (lui về poll) sau ≥ 3 tick: 'connecting' + lý do 'moi_tag_sai_cau_hinh'; không lost/connected, không nối lại, không session.read", async () => {
+    await khoiDong([SAI("a"), SAI("b")]);
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    expect(bao).not.toContain("lost");
+    expect(bao).not.toContain("connected");
+    expect(soConnect).toBe(1);
+    expect(taoItem).not.toHaveBeenCalled();
+    expect(session.read).not.toHaveBeenCalled();
+  });
+
+  it("MỘT PHẦN sai (đường push thật) ⇒ lý do tạm khi chỉ có mẫu trung tính; thay đổi good đầu của item hợp lệ ⇒ 'connected', lý do xoá", async () => {
+    await khoiDong([{ tagKey: "tot", address: "ns=2;s=Temp", dataType: "float" }, SAI("a")]);
+    await vi.waitFor(() => expect(items).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    items[0].fire({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } });
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connected"));
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBeNull();
+    expect(bao).not.toContain("lost");
+  });
+});

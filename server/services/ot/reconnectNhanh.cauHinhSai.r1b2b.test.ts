@@ -217,3 +217,152 @@ describe("R1b-2b-1 T5 — driver thật: mọi địa chỉ sai (cờ V2 bật) 
     expect(mau.every((s) => laMauTrungTinh(s))).toBe(true);
   });
 });
+
+// ─────────────────────────────── OPC UA THẬT (fix round 1, I1) ───────────────────────────────
+/**
+ * R1b-2b-1 T5 fix round 1 (I1) — OpcuaDriver THẬT, node-opcua giả (khuôn chatLuong.drivers.test.ts "đường monitored-items"), cờ
+ * OT_OPCUA_MONITORED_ITEMS bật. Đo ĐƯỜNG THẬT:
+ *   - MỘT PHẦN địa chỉ sai: subscription có item ⇒ tag sai được xả qua `emitBad` (deferredBad) ⇒ mẫu phải TRUNG TÍNH (config_error).
+ *   - MỌI địa chỉ sai: không item nào ⇒ trySubscribeMonitored trả null ⇒ lui về vòng poll ⇒ readTags phát mẫu trung tính, tick trung tính.
+ */
+function mockOpcuaPush() {
+  const session: Record<string, unknown> = {
+    read: vi.fn(async (nodes: unknown[]) => nodes.map(() => ({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } }))),
+    write: vi.fn(async () => []),
+    close: vi.fn(async () => {}),
+  };
+  const subscription = { terminate: vi.fn(async () => {}) };
+  session.createSubscription2 = vi.fn(async () => subscription);
+  const items: Array<{ fire: (dv: unknown) => void }> = [];
+  const taoItem = vi.fn(async () => {
+    let h: ((dv: unknown) => void) | null = null;
+    const item = {
+      on: (evt: string, cb: (dv: unknown) => void) => {
+        if (evt === "changed") h = cb;
+      },
+      fire: (dv: unknown) => h?.(dv),
+    };
+    items.push(item);
+    return item;
+  });
+  vi.doMock("node-opcua", () => ({
+    OPCUAClient: {
+      create: vi.fn(() => ({ connect: vi.fn(async () => {}), createSession: vi.fn(async () => session), disconnect: vi.fn(async () => {}) })),
+    },
+    AttributeIds: { Value: 13 },
+    DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+    Variant: class {},
+    ClientSubscription: { create: vi.fn(async () => subscription) },
+    ClientMonitoredItem: { create: taoItem },
+    TimestampsToReturn: { Both: 2 },
+    MonitoringMode: { Reporting: 1 },
+  }));
+  return { session, subscription, items, taoItem };
+}
+
+const OPC_TOT: OtTagAddress = { tagKey: "tot", address: "ns=2;s=Temp", dataType: "float" };
+const OPC_SAI = (k: string): OtTagAddress => ({ tagKey: k, address: `garbage-not-a-node-${k}`, dataType: "float" });
+const MAU_OPC_TRUNG_TINH = { quality: "bad", reason: "config_error", statusCode: "BadNodeIdInvalid (0x80330000)" };
+
+describe("R1b-2b-1 T5 fix round 1 (I1) — OpcuaDriver thật, đường push (monitored items)", () => {
+  const dong: Array<() => Promise<unknown>> = [];
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
+  });
+  afterEach(async () => {
+    while (dong.length) await dong.pop()!().catch(() => undefined);
+    vi.unstubAllEnvs();
+    vi.doUnmock("node-opcua");
+  });
+
+  async function moi() {
+    const m = mockOpcuaPush();
+    const { OpcuaDriver } = await import("./drivers/opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://localhost:4840" });
+    return { d, ...m };
+  }
+
+  it("MỘT PHẦN sai (cờ V2 bật): tag sai cục bộ được xả qua emitBad TRUNG TÍNH (config_error); bộ bắt báo lý do rồi đọc tốt ở thay đổi good đầu", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { d, items, taoItem } = await moi();
+    const mau: OtSample[] = [];
+    const docTot = vi.fn();
+    const trungTinh = vi.fn();
+    const bat = taoBatDocTot(docTot, trungTinh);
+    const h = await d.subscribe([OPC_TOT, OPC_SAI("a"), OPC_SAI("b")], (s) => {
+      mau.push(s);
+      bat.quaMau(s);
+    }, 1000);
+    dong.push(() => h.close());
+    expect(taoItem).toHaveBeenCalledTimes(1); // chỉ tag hợp lệ thành item: đường PUSH thật, không lui về poll
+    await waitFor(() => mau.length >= 2, 1000);
+    expect(mau.map((s) => s.tagKey).sort()).toEqual(["a", "b"]);
+    for (const s of mau) {
+      expect(s).toMatchObject(MAU_OPC_TRUNG_TINH);
+      expect(laMauTrungTinh(s)).toBe(true);
+    }
+    expect(trungTinh.mock.calls).toEqual([[true], [true]]);
+    expect(docTot).not.toHaveBeenCalled();
+    items[0].fire({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } });
+    await waitFor(() => docTot.mock.calls.length > 0, 1000);
+    expect(mau.find((s) => s.tagKey === "tot")!.quality).toBe("good");
+  });
+
+  it("MỘT PHẦN sai, cờ V2 TẮT ⇒ hình dạng cũ (bad + statusCode, KHÔNG reason)", async () => {
+    const { d } = await moi();
+    const mau: OtSample[] = [];
+    const h = await d.subscribe([OPC_TOT, OPC_SAI("a")], (s) => void mau.push(s), 1000);
+    dong.push(() => h.close());
+    await waitFor(() => mau.length >= 1, 1000);
+    expect(mau[0]).toMatchObject({ tagKey: "a", quality: "bad", statusCode: "BadNodeIdInvalid (0x80330000)" });
+    expect(mau[0].reason).toBeUndefined();
+  });
+
+  it("MỌI địa chỉ sai (cờ V2 bật): không item, subscription bị huỷ ⇒ lui về vòng poll; không session.read; mẫu + tick trung tính; không đọc tốt, D1 không bắn", async () => {
+    vi.stubEnv(FLAG, "true");
+    const { d, session, subscription, taoItem } = await moi();
+    const ticks: SuKienDoc[] = [];
+    const mau: OtSample[] = [];
+    const docTot = vi.fn();
+    const trungTinh = vi.fn();
+    const d1 = vi.fn();
+    const bat = taoBatDocTot(docTot, trungTinh);
+    const dem = taoDemTickHong(SO_TICK_HONG_DE_MAT, d1);
+    const tags = [OPC_SAI("a"), OPC_SAI("b")];
+    const h = await d.subscribe(
+      tags,
+      (s) => {
+        mau.push(s);
+        bat.quaMau(s);
+      },
+      20,
+      {
+        onTick: (e) => {
+          ticks.push(e);
+          bat.quaTick(e);
+          dem(e);
+        },
+      },
+    );
+    dong.push(() => h.close());
+    await waitFor(() => ticks.length >= 3, 3000);
+    await h.close();
+    expect(taoItem).not.toHaveBeenCalled();
+    expect(subscription.terminate).toHaveBeenCalled();
+    expect(session.read).not.toHaveBeenCalled(); // KHÔNG gửi yêu cầu đọc nào
+    for (const e of ticks) {
+      expect(e.ok).toBe(true);
+      expect(e.tags).toEqual(tags.map((t) => ({ tagKey: t.tagKey, ...MAU_OPC_TRUNG_TINH })));
+      expect(laDocTot(e)).toBe(false);
+      expect(laTickHong(e)).toBe(false);
+    }
+    expect(mau.length).toBeGreaterThanOrEqual(2);
+    expect(mau.every((s) => laMauTrungTinh(s))).toBe(true);
+    expect(docTot).not.toHaveBeenCalled();
+    expect(d1).not.toHaveBeenCalled();
+    expect(trungTinh).toHaveBeenCalledWith(true);
+    expect(trungTinh).not.toHaveBeenCalledWith(false);
+  });
+});
