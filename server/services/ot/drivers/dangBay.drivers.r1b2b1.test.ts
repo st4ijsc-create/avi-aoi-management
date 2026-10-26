@@ -14,13 +14,40 @@
  *        hoặc lỗi socket qua lớp gia cố MC. Ca (i) ở đây đi qua listener `conn.on` mà driver gắn khi thư viện có — cùng markLinkLost.
  * Trước bản vá: S7/MC/EIP ⇒ 'failed' sau 5000 ms (hạn cứng của driver); OPC UA/SLMP ⇒ 'failed' (nói sai: lệnh có thể đã tới PLC).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import net from "node:net";
 import type { OtDriver } from "../otDriver";
+import { batDauDoLag, hieuChuanChuKy, type PhuThuocDoLag } from "../../../testing/doLagBucleSuKien";
 
 // T17 fix round 1 (review Minor 5) — 500 ms: vẫn nhỏ hơn lỗi 5000 ms một bậc, bớt chập chờn trên máy tải nặng.
 const HAN_NHANH_MS = 500;
+/**
+ * kiem-dinh R1b-2b-1 ghi chú (d) — cận đồng hồ tường của ca S7 / MC (S7 (i) chập chờn 2/~14 ở 2,2–2,4 s khi máy tải nặng / khởi động lạnh) cộng
+ * phần thời gian tiến trình KHÔNG được chạy (`batDauDoLag`, tính từ lúc bắn điểm huỷ), kẹp ở trần này: nhỏ hơn biên lỗi (hạn cứng 5000 ms của driver
+ * − 500 ms) ⇒ một hồi quy "trả lời ở hạn cứng" vẫn đỏ; tự chặn đồng bộ trong đường huỷ KHÔNG được nới (đột biến vòng lặp bận 800 ms ⇒ đỏ — báo cáo).
+ */
+const TRAN_LAG_MS = 3000;
+/**
+ * Chu kỳ hẹn giờ lúc RẢNH đo trong `beforeAll` (sau khi nạp tệp), KHÔNG dùng bản đo lúc nạp mô-đun của helper: trong tệp này lượt đo lúc nạp trùng
+ * pha nạp mô-đun chặn vòng lặp ⇒ nhịp kế tiếp được hẹn theo giờ vòng lặp CŨ và trông ngắn (~5 ms thay vì 15,6 ms thật trên Windows) ⇒ mỗi nhịp
+ * rảnh bị cộng ~10 ms (đo: ngủ 800 ms ⇒ "máy không chạy ta" 425–551 ms; với chu kỳ đo ở đây ⇒ ~30 ms).
+ */
+let chuKyRanhDo = 5;
+beforeAll(async () => {
+  chuKyRanhDo = await hieuChuanChuKy({ now: () => Date.now(), setInterval: (f, ms) => setInterval(f, ms), clearInterval: (h) => clearInterval(h as NodeJS.Timeout) }, 5);
+});
+const depDoLag: PhuThuocDoLag = {
+  now: () => Date.now(),
+  cpuMs: () => {
+    const c = process.cpuUsage();
+    return (c.user + c.system) / 1000;
+  },
+  setInterval: (f, ms) => setInterval(f, ms),
+  clearInterval: (h) => clearInterval(h as NodeJS.Timeout),
+  setTimeout: (f, ms) => setTimeout(f, ms),
+  chuKyRanh: async () => chuKyRanhDo,
+};
 
 type Ex = { timedOut: boolean; outcomes: Array<{ ok: boolean; status: string; errorText: string | null }> };
 
@@ -48,15 +75,17 @@ function laKhongRoKetCuc(ex: Ex): void {
 
 const tick = () => new Promise<void>((r) => setImmediate(r));
 
-/** Bắn điểm huỷ khi lệnh ghi đã tới thư viện; đo từ lúc bắn tới lúc dispatcher trả lời. */
-async function doDiemHuy(p: Promise<Ex>, daToiThuVien: () => boolean, ban: () => unknown): Promise<{ ex: Ex; ms: number }> {
+/** Bắn điểm huỷ khi lệnh ghi đã tới thư viện; đo từ lúc bắn tới lúc dispatcher trả lời (`lagMs` = phần máy không chạy ta trong cùng cửa sổ, kẹp `TRAN_LAG_MS`). */
+async function doDiemHuy(p: Promise<Ex>, daToiThuVien: () => boolean, ban: () => unknown): Promise<{ ex: Ex; ms: number; lagMs: number }> {
   const het = performance.now() + 2000;
   while (!daToiThuVien() && performance.now() < het) await (daToiThuVien() ? tick() : new Promise<void>((r) => setTimeout(r, 2)));
   expect(daToiThuVien()).toBe(true);
+  const lag = batDauDoLag(5, depDoLag);
   const t0 = performance.now();
   void Promise.resolve(ban()).catch(() => undefined);
   const ex = await Promise.race([p, new Promise<Ex>((_, rej) => setTimeout(() => rej(new Error("không trả lời trong 6 s")), 6000))]);
-  return { ex, ms: Math.round(performance.now() - t0) };
+  const ms = Math.round(performance.now() - t0);
+  return { ex, ms, lagMs: await lag.dung(TRAN_LAG_MS) };
 }
 
 type Diem = "i" | "ii" | "iii";
@@ -105,13 +134,13 @@ describe.each([
       await d.connect({ endpoint: "127.0.0.1" });
       const p = guiStop(d, { tagKey: "stop", address, dataType: "bool", value: true });
       const conn = dsConn[0];
-      const { ex, ms } = await doDiemHuy(
+      const { ex, ms, lagMs } = await doDiemHuy(
         p,
         () => conn.soGhi === 1,
         () => (diem === "i" ? conn.emit("error", new Error("ECONNRESET")) : diem === "ii" ? d.disconnect() : d.connect({ endpoint: "127.0.0.1" })),
       );
       laKhongRoKetCuc(ex);
-      expect(ms).toBeLessThan(HAN_NHANH_MS);
+      expect(ms, `trả lời sau ${ms} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(HAN_NHANH_MS + lagMs);
       if (diem === "iii") expect(d.isConnected()).toBe(true);
       await d.disconnect();
     }, 15_000);
