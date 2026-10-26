@@ -70,7 +70,7 @@ export interface PhuThuocCong {
   env: () => NodeJS.ProcessEnv;
   layTuDien: () => Promise<TuDienNhay>;
   layNhaCungCap: (ma: string) => NhaCungCapAi | null;
-  layKhoa: (db: DbCong, keyId: number, factoryId: number) => () => Promise<string>;
+  layKhoa: (db: DbCong, keyId: number, factoryId: number, nhaCungCap: string) => () => Promise<string>;
   layEndpoint: (db: DbCong, keyId: number) => Promise<string | null>;
   mang: () => MangNgoai;
   soLanThu: number;
@@ -94,7 +94,7 @@ export const phuThuocMacDinh: PhuThuocCong = {
   env: () => process.env,
   layTuDien: () => layTuDienNhay(),
   layNhaCungCap: () => null, // Task 9: bản cài thật
-  layKhoa: (db, keyId, factoryId) => layKhoaChoNhaCungCap(db, keyId, factoryId),
+  layKhoa: (db, keyId, factoryId, nhaCungCap) => layKhoaChoNhaCungCap(db, keyId, factoryId, nhaCungCap),
   layEndpoint: (db, keyId) => layEndpointKhoa(db, keyId),
   mang: () => MANG_CHUA_CAI,
   soLanThu: 2,
@@ -301,7 +301,7 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
     buoc("nha-cung-cap");
     try {
       const endpoint = yc.dich.nhaCungCap === "openai_compat" ? await dep.layEndpoint(db, model.keyId) : null;
-      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran), dep.mang(), { endpoint });
+      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran, yc.dich.nhaCungCap), dep.mang(), { endpoint });
       break;
     } catch (e) {
       const loi = e instanceof LoiNgoai ? e : null;

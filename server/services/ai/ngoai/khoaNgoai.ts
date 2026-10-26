@@ -11,10 +11,12 @@ import { LoiNgoai } from "./loi";
 
 const hang = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
 
-export function layKhoaChoNhaCungCap(db: DbDoc, keyId: number, factoryId: number): () => Promise<string> {
+export function layKhoaChoNhaCungCap(db: DbDoc, keyId: number, factoryId: number, nhaCungCap?: string): () => Promise<string> {
   return async () => {
-    const [r] = hang(await db.execute(sql`SELECT "encryptedKey", status, "factoryId" FROM ai_api_keys WHERE id = ${keyId}`));
+    const [r] = hang(await db.execute(sql`SELECT "encryptedKey", status, "factoryId", provider FROM ai_api_keys WHERE id = ${keyId}`));
     if (!r || Number(r.factoryId) !== factoryId || r.status !== "active") throw new LoiNgoai("NGOAI_KHOA_KHONG_HOP_LE", "", { chuaGui: true });
+    // rà kiem-dinh Task 7 F5 — model trỏ nhầm khoá của nhà cung cấp KHÁC ⇒ không gửi khoá OpenAI tới host Anthropic.
+    if (nhaCungCap !== undefined && r.provider !== nhaCungCap) throw new LoiNgoai("NGOAI_KHOA_KHONG_HOP_LE", "nha-cung-cap", { chuaGui: true });
     const ma = String(r.encryptedKey ?? "");
     if (!isEncrypted(ma)) throw new LoiNgoai("NGOAI_KHOA_KHONG_HOP_LE", "legacy", { chuaGui: true });
     const khoa = decryptSecret(ma);

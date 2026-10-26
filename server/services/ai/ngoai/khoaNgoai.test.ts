@@ -9,6 +9,22 @@ vi.hoisted(() => {
   process.env.SECRET_ENCRYPTION_KEY ??= "khoa-thu-khoa-ngoai-0123456789abcdef";
 });
 
+const h = vi.hoisted(() => ({ cho: null as number[] | null, auditHong: false }));
+vi.mock("../../flow/phamViLuong", async (goc) => {
+  const that = await goc<typeof import("../../flow/phamViLuong")>();
+  return { ...that, nhaMayChoPhep: vi.fn(async (pv: never) => (h.cho !== null ? h.cho : that.nhaMayChoPhep(pv))) };
+});
+vi.mock("../../auditTrailService", async (goc) => {
+  const that = await goc<typeof import("../../auditTrailService")>();
+  return {
+    ...that,
+    logCrudOperationInTx: vi.fn(async (...a: Parameters<typeof that.logCrudOperationInTx>) => {
+      if (h.auditHong) throw new Error("audit hỏng");
+      return that.logCrudOperationInTx(...a);
+    }),
+  };
+});
+
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { aiNgoaiRouter } from "../../../routers/aiNgoaiRouter";
@@ -61,7 +77,7 @@ describe("khoá theo nhà máy", () => {
     expect(String(r!.encryptedKey)).toMatch(/^enc:v1:/);
     expect(String(r!.encryptedKey)).not.toContain("ZZZZ");
     const ds = await goi.dsKhoa({ factoryId: A });
-    expect(ds).toEqual([{ id: tao.id, ten: `${TAG}-k`, nhaCungCap: "anthropic", status: "active", cuoi4: "ZZZZ" }]);
+    expect(ds).toEqual([{ id: tao.id, ten: `${TAG}-k`, nhaCungCap: "anthropic", status: "active", cuoi4: "ZZZZ", capNhatLuc: expect.any(Date) }]);
 
     expect(await layKhoaChoNhaCungCap(await db(), tao.id, A)()).toBe(KHOA);
     expect(await maLoi(layKhoaChoNhaCungCap(await db(), tao.id, B)())).toBe("NGOAI_KHOA_KHONG_HOP_LE");
@@ -128,5 +144,76 @@ describe("khoaKhongLo — khoá không xuất hiện ở bất kỳ đường ra
     } finally {
       for (const s of spies) s.mockRestore();
     }
+  });
+});
+
+describe("rà kiem-dinh Task 7 (F1–F4)", () => {
+  it("F1: người gọi phạm vi {A} ⇒ MỌI thủ tục khoá (cũ + mới) trên nhà máy / khoá của B ⇒ NOT_FOUND", async () => {
+    const kB = await aiNgoaiRouter.createCaller(ADMIN).taoKhoa({ factoryId: B, nhaCungCap: "openai", ten: `${TAG}-B`, khoa: KHOA });
+    h.cho = [A];
+    try {
+      const ngoai = aiNgoaiRouter.createCaller(ADMIN);
+      const cu = aiSettingsRouter.createCaller(ADMIN);
+      const ma = async (p: Promise<unknown>) => ((await maLoi(p)) as string);
+      expect(await ma(ngoai.taoKhoa({ factoryId: B, nhaCungCap: "openai", ten: "x", khoa: KHOA }))).toBe("NOT_FOUND");
+      expect(await ma(ngoai.xoayKhoa({ id: kB.id, khoa: KHOA_MOI }))).toBe("NOT_FOUND");
+      expect(await ma(ngoai.thuHoiKhoa({ id: kB.id }))).toBe("NOT_FOUND");
+      expect(await ma(ngoai.dsKhoa({ factoryId: B }))).toBe("NOT_FOUND");
+      expect(await ma(cu.createApiKey({ name: "x", provider: "openai", apiKey: KHOA, factoryId: B }))).toBe("NOT_FOUND");
+      expect(await ma(cu.toggleApiKey({ id: kB.id }))).toBe("NOT_FOUND");
+      expect(await ma(cu.deleteApiKey({ id: kB.id }))).toBe("NOT_FOUND");
+      expect(await ma(cu.testApiKey({ id: kB.id }))).toBe("NOT_FOUND");
+      expect((await cu.listApiKeys()).some((k: { id: number }) => k.id === kB.id)).toBe(false);
+      const [r] = await exec(sql`SELECT status FROM ai_api_keys WHERE id = ${kB.id}`);
+      expect(r!.status).toBe("active");
+    } finally {
+      h.cho = null;
+    }
+  });
+
+  it("F2: khoá ngắn (< 20 ký tự) ⇒ không lộ đuôi ('••••'), audit ghi độ dài", async () => {
+    const t = await aiNgoaiRouter.createCaller(ADMIN).taoKhoa({ factoryId: A, nhaCungCap: "openai", ten: `${TAG}-ngan`, khoa: "vllm1234" });
+    expect(t.cuoi4).toBe("••••");
+    const [a] = await exec(sql`SELECT details FROM audit_logs WHERE "entityType" = 'ai_ngoai_khoa' AND "entityId" = ${t.id}`);
+    expect(String(a!.details)).not.toContain("1234");
+    expect(String(a!.details)).toContain('"doDai":8');
+  });
+
+  it("F3: endpoint lưu — scheme lạ / userinfo / metadata / nội bộ chưa khai ⇒ BAD_REQUEST; công cộng https và nội bộ ĐÃ khai ⇒ được", async () => {
+    const goi = aiNgoaiRouter.createCaller(ADMIN);
+    const tao = (endpoint: string) => goi.taoKhoa({ factoryId: A, nhaCungCap: "openai_compat", ten: `${TAG}-ep`, khoa: KHOA, endpoint });
+    for (const e of ["file:///etc/passwd", "ftp://x.com", "https://user:pw@api.x.com/v1", "https://169.254.169.254/v1", "https://[fe80::1]/v1", "http://llm.local:8000/v1", "http://api.public.com/v1", "https://api.x.com/v1?key=abc"]) {
+      expect(await maLoi(tao(e)), e).toBe("BAD_REQUEST");
+    }
+    await exec(sql`INSERT INTO ai_ngoai_host_noi_bo ("factoryId", "hostCong") VALUES (${A}, 'llm.local:8000') ON CONFLICT DO NOTHING`);
+    try {
+      expect(await maLoi(tao("http://LLM.local.:8000/v1"))).toBeNull();
+      expect(await maLoi(tao("https://api.groq.example/v1"))).toBeNull();
+      const [r] = await exec(sql`SELECT endpoint FROM ai_api_keys WHERE "factoryId" = ${A} AND name = ${`${TAG}-ep`} ORDER BY id LIMIT 1`);
+      expect(r!.endpoint).toBe("http://llm.local:8000/v1");
+    } finally {
+      await exec(sql`DELETE FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${A}`);
+    }
+  });
+
+  it("F4: audit ghi lỗi ⇒ thay đổi khoá ROLLBACK (tạo không còn hàng, xoay giữ khoá cũ, thu hồi giữ active)", async () => {
+    const goi = aiNgoaiRouter.createCaller(ADMIN);
+    const k = await goi.taoKhoa({ factoryId: A, nhaCungCap: "anthropic", ten: `${TAG}-au`, khoa: KHOA });
+    h.auditHong = true;
+    try {
+      expect(await maLoi(goi.taoKhoa({ factoryId: A, nhaCungCap: "anthropic", ten: `${TAG}-au2`, khoa: KHOA }))).not.toBeNull();
+      expect(await maLoi(goi.xoayKhoa({ id: k.id, khoa: KHOA_MOI }))).not.toBeNull();
+      expect(await maLoi(goi.thuHoiKhoa({ id: k.id }))).not.toBeNull();
+    } finally {
+      h.auditHong = false;
+    }
+    expect((await exec(sql`SELECT count(*)::int AS n FROM ai_api_keys WHERE name = ${`${TAG}-au2`}`))[0]!.n).toBe(0);
+    expect(await layKhoaChoNhaCungCap(await db(), k.id, A)()).toBe(KHOA);
+  });
+
+  it("F5: thunk đòi đúng nhà cung cấp của khoá", async () => {
+    const k = await aiNgoaiRouter.createCaller(ADMIN).taoKhoa({ factoryId: A, nhaCungCap: "openai", ten: `${TAG}-ncc`, khoa: KHOA });
+    expect(await maLoi(layKhoaChoNhaCungCap(await db(), k.id, A, "anthropic")())).toBe("NGOAI_KHOA_KHONG_HOP_LE");
+    expect(await layKhoaChoNhaCungCap(await db(), k.id, A, "openai")()).toBe(KHOA);
   });
 });
