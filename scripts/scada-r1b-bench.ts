@@ -2,13 +2,29 @@
  * SCADA R1b-1 Task 12 — bench nghiệm thu STOP HMI (`scadaCommands.dungMay`) trên OpenPLC (Docker) + safety PLC MÔ PHỎNG. CHẠY TAY, không vào CI.
  *
  *   npx tsx scripts/scada-r1b-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
- *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a]
+ *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a] [--r1b2b1]
  *
  * R1b-2a Task 15 — `--r1b2a` thêm ô L1 vào MỖI lượt (sau S1 / S2 / X2): `dispatch()` như tool AI lên một thanh ghi int CHƯA khai scale 1
  * (thanh ghi thứ TƯ giữ giá trị của bước 0): 2,5 ⇒ OFF_STEP goiY 3 (thanh ghi không đổi); "abc" ⇒ TYPE_MISMATCH (thanh ghi không đổi);
  * 3 ⇒ thanh ghi = 3. Trước R1b-2a, 2,5 đi nguyên tới driver và PLC nhận Math.round(2,5) = 3 im lặng. Không tải chương trình PLC, chỉ ghi / đọc
  * thanh ghi holding như R1b-1. Chạy trên OpenPLC CHỈ khi điều phối OK tại thời điểm đó (Q10, sau khi đo commit còn trống ≥ 10 GB và
  * `docker update --memory 1g --memory-swap 1g avi-openplc-bench`).
+ *
+ * R1b-2b-1 Task 16 Step 3 — `--r1b2b1` thêm ô B1 (kiem-dinh G1 + điều kiện 1c của điều phối) vào MỖI lượt (sau L1 nếu có), trên MỘT coil:
+ *   • BƯỚC 0b: coil 0..15 (`coil:1..16`, 1-BASED như cú pháp sản phẩm) — tìm coil ĐẦU TIÊN GIỮ giá trị: ghi FC05 giá trị NGƯỢC gốc, đọc lại
+ *     +200/+1000/+2500 ms bằng client riêng, rồi ghi lại giá trị gốc và đọc lại +200/+1000/+2500 ms (giữ CẢ HAI giá trị + trả gốc). Chương trình
+ *     OpenPLC có thể lái một số coil mỗi chu kỳ ⇒ coil đó bị bỏ qua. Không coil nào giữ ⇒ in "bench B1 not measurable" kèm bằng chứng (mọi lần
+ *     đọc), ghi một dòng B1 KHÔNG ĐẠT vào bảng (không giả số) — các ô khác vẫn chạy.
+ *   • B1a: tag `bcoil` kiểu bool CHƯA khai (mọi cột 0431 NULL) trên coil đó, adapter bench; `dispatch()` như tool AI (cùng đường X2 / L1,
+ *     AI_OT_CONTROL_ENABLED=false): "false" ⇒ coil 0 (coil đặt 1 trước); "0" ⇒ coil 0 (coil đặt lại 1 bằng client riêng ở giữa); "off" ⇒ rejected
+ *     TYPE_MISMATCH, coil không đổi (đặt 1 trước — bản lỏng "off"⇒FALSE sẽ thấy được); 2 ⇒ rejected TYPE_MISMATCH, coil không đổi (đặt 0 trước —
+ *     bản lỏng Boolean(2)=TRUE sẽ thấy được).
+ *   • B1b (điều kiện 1c): tag `icoil` kiểu INT trên CÙNG coil, ghim STOP `stop_value = 1` (mức 1), trên MÁY + ADAPTER RIÊNG cùng trạm (cùng endpoint):
+ *     coil đặt 0, bấm STOP HMI `scadaCommands.dungMay` trên máy đó ⇒ `acked_verified` (T6: đọc lại lớp bit so theo bool) và client riêng đọc coil
+ *     = 1. Máy riêng vì `dungMay` gửi MỌI ghim của MỌI adapter của máy: ghim thứ hai trên máy bench sẽ làm S1 / S2 ghi cả coil (kiểm
+ *     `ketQua.length === 1` vẫn đúng nhưng ô S đổi nội dung) và B1b không tách được khỏi ghim `dung`. Ghim đặt bằng INSERT thẳng như ghim `dung`
+ *     (1 thuộc tập 8 giá trị nên `datStopPin` cũng nhận; census `stopPinDatMotCho` cho phép tệp này).
+ *   • Cuối MỖI lượt: coil trả về giá trị gốc của bước 0b, đọc lại bằng client riêng (dòng "B1-trả").
  *
  * Container DÙNG CHUNG (điều phối 2026-10-25): mặc định script KHÔNG khởi động container. Container không `running` hoặc Modbus không trả lời
  * ⇒ in "bench not run — container unavailable" kèm bằng chứng (trạng thái `docker inspect`, kết quả thăm dò) và thoát mã 3, không đụng gì.
@@ -39,8 +55,8 @@
  * BƯỚC 0 (bắt buộc): thanh ghi holding 0..17 (`holding:1..18`) có GIỮ giá trị ghi vào không (ghi FC06 một giá trị lạ, đọc lại +200/+1000/
  * +2500 ms, trả giá trị gốc). Cú pháp tag của sản phẩm là 1-BASED (`holding:N` = thanh ghi N-1).
  *
- * Trạng thái cũ của container được GHI và TRẢ LẠI: giá trị gốc của MỌI thanh ghi 0..17 đọc trước khi chạm (ghi lại cuối cùng) + trạng thái
- * running/paused/exited. Mọi hàng không-WORM đã tạo được dọn.
+ * Trạng thái cũ của container được GHI và TRẢ LẠI: giá trị gốc của MỌI thanh ghi 0..17 đọc trước khi chạm (ghi lại cuối cùng) + coil B1 (gốc
+ * của bước 0b, ghi lại cuối mỗi lượt và cuối cùng) + trạng thái running/paused/exited. Mọi hàng không-WORM đã tạo được dọn.
  */
 import { execFileSync } from "node:child_process";
 import { createRequire, registerHooks } from "node:module";
@@ -67,6 +83,8 @@ interface TuyChon {
   khongDocker: boolean;
   /** R1b-2a T15 — thêm ô L1 (int CHƯA khai scale 1) */
   r1b2a: boolean;
+  /** R1b-2b-1 T16 — thêm ô B1 (bool chặt trên coil + ghim STOP 1 trên coil kiểu int) */
+  r1b2b1: boolean;
 }
 function docThamSo(argv: string[]): TuyChon {
   const lay = (k: string, mac: string) => {
@@ -83,6 +101,7 @@ function docThamSo(argv: string[]): TuyChon {
     startNeuTat: argv.includes("--start-neu-tat"),
     khongDocker: argv.includes("--khong-docker"),
     r1b2a: argv.includes("--r1b2a"),
+    r1b2b1: argv.includes("--r1b2b1"),
   };
 }
 
@@ -154,6 +173,10 @@ async function voiClient<T>(endpoint: string, fn: (c: any) => Promise<T>, hanMs 
 }
 const docThanhGhi = (ep: string, reg0: number) => voiClient(ep, async (c) => Number((await c.readHoldingRegisters(reg0, 1)).data[0]));
 const ghiThanhGhi = (ep: string, reg0: number, v: number) => voiClient(ep, async (c) => void (await c.writeRegister(reg0, v)));
+/** R1b-2b-1 B1 — coil qua client riêng: FC01 đọc, FC05 ghi (coil0 = số 0-based; tag `coil:N` = coil N-1). */
+const docCoil = (ep: string, coil0: number) => voiClient(ep, async (c) => Boolean((await c.readCoils(coil0, 1)).data[0]));
+const ghiCoil = (ep: string, coil0: number, v: boolean) => voiClient(ep, async (c) => void (await c.writeCoil(coil0, v)));
+const so01 = (b: boolean) => (b ? "1" : "0");
 
 async function thamDo(endpoint: string): Promise<boolean> {
   try {
@@ -216,6 +239,49 @@ async function kiemGiuGiaTri(ep: string): Promise<Array<{ reg0: number; goc: num
       console.log(`[bench] bước 0: thanh ghi ${reg0} lỗi: ${(e as Error).message}`);
     }
     out.push({ reg0, goc, ghi, doc, giu: doc.length === 3 && doc.every((v) => v === ghi) });
+  }
+  return out;
+}
+
+/** Số coil bước 0b quét (`coil:1..16`). */
+const SO_COIL_QUET = 16;
+interface KetQuaGiuCoil {
+  coil0: number;
+  goc: boolean | null;
+  /** 6 lần đọc: 3 sau khi ghi giá trị NGƯỢC gốc (+200/+1000/+2500 ms), 3 sau khi ghi lại gốc */
+  doc: string[];
+  giu: boolean;
+  loi?: string;
+}
+/**
+ * Bước 0b (R1b-2b-1 B1) — coil 0..SO_COIL_QUET-1 nào GIỮ giá trị ghi vào (chương trình PLC không lái mỗi chu kỳ)? Dừng ở coil ĐẦU TIÊN giữ cả
+ * hai giá trị (chạm ít coil nhất). Mỗi coil thử: ghi !gốc, đọc +200/+1000/+2500 ms; ghi gốc, đọc +200/+1000/+2500 ms (đây cũng là bước trả gốc).
+ */
+async function kiemGiuCoil(ep: string): Promise<KetQuaGiuCoil[]> {
+  const out: KetQuaGiuCoil[] = [];
+  for (let coil0 = 0; coil0 < SO_COIL_QUET; coil0++) {
+    let goc: boolean | null = null;
+    const doc: boolean[] = [];
+    let loi: string | undefined;
+    try {
+      goc = await docCoil(ep, coil0);
+      for (const ghi of [!goc, goc]) {
+        await ghiCoil(ep, coil0, ghi);
+        let tr = 0;
+        for (const moc of [200, 1000, 2500]) {
+          await ngu(moc - tr);
+          tr = moc;
+          doc.push(await docCoil(ep, coil0));
+        }
+      }
+    } catch (e) {
+      loi = (e as Error).message;
+      console.log(`[bench] bước 0b: coil ${coil0} lỗi: ${loi}`);
+      if (goc !== null) await ghiCoil(ep, coil0, goc).catch(() => undefined);
+    }
+    const giu = goc !== null && doc.length === 6 && doc.slice(0, 3).every((v) => v === !goc) && doc.slice(3).every((v) => v === goc);
+    out.push({ coil0, goc, doc: doc.map(so01), giu, ...(loi ? { loi } : {}) });
+    if (giu) break;
   }
   return out;
 }
@@ -374,6 +440,35 @@ async function main(): Promise<void> {
     await ghiThanhGhi(o.endpoint, REG_SC10, 0);
     if (o.r1b2a) await ghiThanhGhi(o.endpoint, REG_SC1, 0);
 
+    // ── BƯỚC 0b (R1b-2b-1 B1): coil nào GIỮ giá trị? ──
+    let COIL_B1 = -1;
+    let gocCoilB1 = false;
+    let b1KhongDo = "";
+    if (o.r1b2b1) {
+      const giuCoil = await kiemGiuCoil(o.endpoint);
+      for (const g of giuCoil) {
+        console.log(
+          `[bench] bước 0b: coil ${g.coil0} (tag coil:${g.coil0 + 1}) gốc=${g.goc === null ? "?" : so01(g.goc)} ghi ${g.goc === null ? "?" : so01(!g.goc)} đọc@200/1000/2500ms=${g.doc.slice(0, 3).join("/")}` +
+            ` · ghi lại ${g.goc === null ? "?" : so01(g.goc)} đọc=${g.doc.slice(3).join("/")}${g.loi ? ` · lỗi ${g.loi}` : ""} ⇒ ${g.giu ? "GIỮ" : "KHÔNG GIỮ"}`,
+        );
+      }
+      const chon = giuCoil.find((g) => g.giu);
+      if (!chon || chon.goc === null) {
+        b1KhongDo = `bước 0b: 0/${giuCoil.length} coil (coil:1..${SO_COIL_QUET}) giữ giá trị — ${giuCoil.map((g) => `coil ${g.coil0}: ${g.doc.join("/") || "-"}${g.loi ? ` lỗi` : ""}`).join("; ")}`;
+        console.log(`[bench] bench B1 not measurable — ${b1KhongDo}`);
+      } else {
+        COIL_B1 = chon.coil0;
+        gocCoilB1 = chon.goc;
+        console.log(`[bench] dùng: B1 coil ${COIL_B1} (coil:${COIL_B1 + 1}), gốc = ${so01(gocCoilB1)}`);
+        don.push(async () => {
+          await ghiCoil(o.endpoint, COIL_B1, gocCoilB1);
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          console.log(`[bench] trả lại coil ${COIL_B1}: ${so01(sau)} ⇒ ${sau === gocCoilB1 ? "KHỚP gốc" : "LỆCH gốc"}`);
+        });
+      }
+    }
+    const coB1 = o.r1b2b1 && COIL_B1 >= 0;
+
     // ── server ──
     await import("../server/services/ot"); // đăng ký driver
     const [{ getDb }, { sql }, schema, { taoNguoiDungTest, donNguoiDungTest }, { acquireSeedExclusive }] = await Promise.all([
@@ -456,6 +551,32 @@ async function main(): Promise<void> {
       await dung1(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", scale, writable, "isEnabled")
         VALUES (${adapterId}, 'sc1cu', ${tagSc1}, 'int', 1, true, true)`);
     }
+    const tagCoil = `coil:${COIL_B1 + 1}`;
+    let machineB1 = -1;
+    let adapterB1 = -1;
+    if (coB1) {
+      // R1b-2b-1 B1a — bool CHƯA khai (mọi cột 0431 NULL) trên coil, adapter bench
+      await dung1(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", scale, writable, "isEnabled")
+        VALUES (${adapterId}, 'bcoil', ${tagCoil}, 'bool', 1, true, true)`);
+      // R1b-2b-1 B1b — MÁY + ADAPTER RIÊNG (cùng trạm, cùng endpoint): tag INT trên CÙNG coil, ghim STOP 1 mức 1 (xem đầu tệp vì sao tách máy)
+      const maB1 = `${RUN}b1`;
+      const [m2] = await dung1(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${s.id}, ${maB1}, 'May bench R1b-2b-1 B1b', 'AOI', true) RETURNING id`);
+      machineB1 = Number(m2.id);
+      don.push(() => dung1(sql`DELETE FROM machines WHERE code = ${maB1}`));
+      const [a2] = await dung1(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status, "connectionOptions")
+        VALUES (${machineB1}, ${maB1}, ${maB1}, 'modbus', ${o.endpoint}, ${o.pollMs}, true, 'disabled', ${JSON.stringify({ unitId: 1, timeoutMs: o.timeoutMs })}::json) RETURNING id`);
+      adapterB1 = Number(a2.id);
+      don.push(async () => {
+        await dung1(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${adapterB1}`);
+        await dung1(sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterB1}`);
+        await dung1(sql`DELETE FROM commissioning_records WHERE "adapterId" = ${adapterB1}`).catch(() => undefined);
+        await dung1(sql`DELETE FROM device_adapters WHERE id = ${adapterB1}`);
+      });
+      await dung1(sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference") VALUES (${adapterB1}, 'active', 1, ${maB1})`);
+      await dung1(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", scale, writable, "isEnabled", channel_kind, display_name,
+          write_min, write_max, write_step, actuation_level, stop_value, stop_pinned_by, stop_pinned_at)
+        VALUES (${adapterB1}, 'icoil', ${tagCoil}, 'int', 1, true, true, 'input_output'::scada_channel_kind, 'Coil int bench (ghim 1)', 0, 1, 1, 1, '1'::jsonb, '1', now())`);
+    }
     await dung1(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by) VALUES (${machineId}, ${adapterId}, 'che_do', '2'::jsonb, 1)`);
 
     const admin = await taoNguoiDungTest("admin", "admin", { tienTo: "r1bbench", ts: RUN, ten: "R1b-1 bench admin" });
@@ -476,15 +597,31 @@ async function main(): Promise<void> {
           { tagKey: "che_do", address: tagCheDo, dataType: "int" as const },
           { tagKey: "sc10cu", address: tagSc10, dataType: "int" as const, scale: 10 },
           ...(o.r1b2a ? [{ tagKey: "sc1cu", address: tagSc1, dataType: "int" as const }] : []),
+          ...(coB1 ? [{ tagKey: "bcoil", address: tagCoil, dataType: "bool" as const }] : []),
         ],
         driver: createDriver("modbus"),
       } as never,
+      ...(coB1
+        ? [
+            {
+              adapterId: adapterB1,
+              code: `${RUN}b1`,
+              machineId: machineB1,
+              protocol: "modbus" as const,
+              connection: { endpoint: o.endpoint, timeoutMs: o.timeoutMs, options: { unitId: 1, timeoutMs: o.timeoutMs } },
+              pollIntervalMs: o.pollMs,
+              tags: [{ tagKey: "icoil", address: tagCoil, dataType: "int" as const }],
+              driver: createDriver("modbus"),
+            } as never,
+          ]
+        : []),
     ]);
     if (!(await ot.startOt())) throw new Error("startOt trả false");
     don.push(async () => {
       await ot.stopOt();
       setAdapterSource(null);
       boDem.xoaAdapter(adapterId);
+      if (coB1) boDem.xoaAdapter(adapterB1);
     });
     const doiDen = async (dk: () => boolean, hanMs: number) => {
       const t0 = Date.now();
@@ -633,6 +770,103 @@ async function main(): Promise<void> {
         const sau3 = await docThanhGhi(o.endpoint, REG_SC1);
         bang.push({ lap, o: "L1", buoc: "dispatch AI sc1cu=3", mong: "gửi, thanh ghi = 3", duoc: `${r3.status} ok=${r3.ok}`, ms: ms3, thanhGhi: `${truoc} → ${sau3}`, dat: r3.ok === true && r3.simulated === false && sau3 === 3 });
       }
+
+      // ── R1b-2b-1 B1: bool chặt trên coil (B1a) + ghim STOP 1 trên coil kiểu INT qua STOP HMI (B1b, điều kiện 1c) ──
+      if (o.r1b2b1 && !coB1) {
+        bang.push({ lap, o: "B1", buoc: "bước 0b: tìm coil giữ giá trị", mong: "≥ 1 coil giữ giá trị", duoc: `bench B1 not measurable — ${b1KhongDo}`, ms: 0, thanhGhi: "-", dat: false });
+      } else if (coB1) {
+        const coilTxt = (a: boolean, b: boolean) => `coil ${so01(a)} → ${so01(b)}`;
+        // B1a — "false" / "0" ⇒ coil 0 (coil đặt 1 trước bằng client riêng)
+        for (const v of ["false", "0"]) {
+          await ghiCoil(o.endpoint, COIL_B1, true);
+          const truoc = await docCoil(o.endpoint, COIL_B1);
+          const n0 = await demLenh();
+          const t0 = Date.now();
+          const r = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "bcoil", value: v }]));
+          const ms = Date.now() - t0;
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          const n1 = await demLenh();
+          bang.push({
+            lap,
+            o: "B1a",
+            buoc: `dispatch AI bcoil=${JSON.stringify(v)} (bool chưa khai, coil:${COIL_B1 + 1})`,
+            mong: "gửi, coil = 0",
+            duoc: `${r.status} ok=${r.ok}${r.reason ? ` ${r.reason}` : ""} · command_log +${n1 - n0}`,
+            ms,
+            thanhGhi: coilTxt(truoc, sau),
+            dat: r.ok === true && r.simulated === false && truoc === true && sau === false,
+          });
+        }
+        // B1a — "off" (coil đặt 1: bản lỏng "off"⇒FALSE sẽ đổi coil) / 2 (coil đặt 0: bản lỏng Boolean(2)=TRUE sẽ đổi coil) ⇒ TYPE_MISMATCH
+        for (const [v, datTruoc] of [
+          ["off", true],
+          [2, false],
+        ] as const) {
+          await ghiCoil(o.endpoint, COIL_B1, datTruoc);
+          const truoc = await docCoil(o.endpoint, COIL_B1);
+          const n0 = await demLenh();
+          const t0 = Date.now();
+          const r = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "bcoil", value: v }]));
+          const ms = Date.now() - t0;
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          const n1 = await demLenh();
+          const ae = r.appError as { appCode?: string; appParams?: { ma?: string } } | undefined;
+          bang.push({
+            lap,
+            o: "B1a",
+            buoc: `dispatch AI bcoil=${JSON.stringify(v)} (coil đặt ${so01(datTruoc)} trước)`,
+            mong: "rejected TYPE_MISMATCH (appError SCADA_VALUE_TYPE_MISMATCH), command_log +1, coil không đổi",
+            duoc: `${r.status} ${r.reason ?? ""} ${ae?.appCode ?? "-"} · command_log +${n1 - n0}`,
+            ms,
+            thanhGhi: coilTxt(truoc, sau),
+            dat:
+              r.status === "rejected" &&
+              r.reason === "TYPE_MISMATCH" &&
+              ae?.appCode === "SCADA_VALUE_TYPE_MISMATCH" &&
+              n1 - n0 === 1 &&
+              truoc === datTruoc &&
+              sau === truoc,
+          });
+        }
+        // B1b — điều kiện 1c: STOP HMI trên máy B1b, ghim 1 trên coil kiểu INT ⇒ coil TRUE, acked_verified
+        {
+          await ghiCoil(o.endpoint, COIL_B1, false);
+          const truoc = await docCoil(o.endpoint, COIL_B1);
+          const t0 = Date.now();
+          let duoc = "";
+          let dat = false;
+          try {
+            const kq = await caller.dungMay({ machineId: machineB1, clientRequestId: randomUUID() });
+            const r = kq.ketQua[0];
+            duoc = `${r?.status} ok=${r?.ok}${r?.reason ? ` ${r.reason}` : ""} · ${kq.ketQua.length} adapter · writes=${JSON.stringify(r?.writes ?? null)}`;
+            dat =
+              kq.ketQua.length === 1 &&
+              r.adapterId === adapterB1 &&
+              r.status === "acked_verified" &&
+              r.ok === true &&
+              r.simulated === false &&
+              JSON.stringify(r.writes) === JSON.stringify([{ tagKey: "icoil", value: 1 }]);
+          } catch (e) {
+            duoc = `NÉM ${maLoi(e)}`;
+          }
+          const ms = Date.now() - t0;
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          bang.push({
+            lap,
+            o: "B1b",
+            buoc: `STOP HMI máy B1b — icoil (INT, coil:${COIL_B1 + 1}) ghim STOP 1`,
+            mong: "acked_verified, coil = 1 (TRUE)",
+            duoc,
+            ms,
+            thanhGhi: coilTxt(truoc, sau),
+            dat: dat && truoc === false && sau === true,
+          });
+        }
+        // trả coil về gốc của bước 0b
+        await ghiCoil(o.endpoint, COIL_B1, gocCoilB1);
+        const sauTra = await docCoil(o.endpoint, COIL_B1);
+        bang.push({ lap, o: "B1-trả", buoc: `trả coil:${COIL_B1 + 1} về gốc`, mong: `coil = gốc ${so01(gocCoilB1)}`, duoc: `đọc ${so01(sauTra)}`, ms: 0, thanhGhi: `coil ${so01(sauTra)}`, dat: sauTra === gocCoilB1 });
+      }
     }
     console.log(`[bench] số hàng telemetry đi qua bus (seam ghi, không ghi DB): ${soHangTelemetry}`);
   } finally {
@@ -655,7 +889,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const out = ["| Lượt | Ô | Bước | Mong đợi | Đo được | ms | Thanh ghi (client riêng) | Kết quả |", "|---|---|---|---|---|---|---|---|"];
+  const out = ["| Lượt | Ô | Bước | Mong đợi | Đo được | ms | Thanh ghi / coil (client riêng) | Kết quả |", "|---|---|---|---|---|---|---|---|"];
   for (const d of bang) out.push(`| ${d.lap} | ${d.o} | ${d.buoc} | ${d.mong} | ${d.duoc} | ${d.ms} | ${d.thanhGhi} | ${d.dat ? "ĐẠT" : "KHÔNG ĐẠT"} |`);
   console.log(out.join("\n"));
   const dat = bang.filter((d) => d.dat).length;

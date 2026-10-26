@@ -33,7 +33,7 @@ const CHO_PHEP: Record<string, string> = {
   "scripts/apply-migration-0362.mjs":
     "thăm dò sau migration 0362 (dòng ~146): ghi `false` lên MỘT hàng trong transaction rồi khôi phục giá trị cũ — kiểm cột ghi được, không để lại ghim",
   "scripts/scada-r1b-bench.ts":
-    "bench OpenPLC R1b (tag `dung` holding:… kiểu int, ghim '0') — dữ liệu bench trên adapter bench do chính script tạo và xoá; không phải đường sản phẩm",
+    "bench OpenPLC R1b (tag `dung` holding:… kiểu int, ghim '0'; `--r1b2b1` ô B1b: tag `icoil` coil:… kiểu int, ghim '1' — điều kiện 1c, thuộc tập 8 giá trị) — dữ liệu bench trên adapter bench do chính script tạo và xoá; không phải đường sản phẩm",
 };
 
 function moiTep(thuMuc: string, ra: string[] = []): string[] {
