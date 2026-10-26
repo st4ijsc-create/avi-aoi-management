@@ -96,7 +96,7 @@ export async function createContext(
     const warmTicket = beginStopAuthWarm(); // R-10-bh — the invalidation generation at the START of this authentication (before its reads)
     const xacThuc = sdk.authenticateRequest(opts.req, { boQuaCongDoiMatKhau: true });
     /**
-     * SCADA R1b-2a T4 (+ fix round 1 I-1/I-2) — request CHỈ gồm STOP HMI (`scadaCommands.dungMay`): xác thực ĐẦY ĐỦ như mọi request (sổ
+     * SCADA R1b-2a T4 (+ fix round 1 I-1/I-2) — request CÓ CHỨA STOP HMI (`scadaCommands.dungMay`, một mình hoặc trong batch — T15): xác thực ĐẦY ĐỦ như mọi request (sổ
      * phiên, isActive, cổng đổi mật khẩu — KHÔNG có đường suy giảm như robot.consoleStop), dưới min(HAN_XAC_THUC_STOP_HMI_MS, còn lại của
      * hạn tổng). Quá hạn ⇒ NÉM `SCADA_STOP_PRECHECK_TIMEOUT {ma STOP_QUA_HAN, pha xac_thuc}` (HTTP 503; tRPC 11 trả nguyên TRPCError của
      * createContext — thủ tục KHÔNG chạy): fail-closed. Truy vấn bị bỏ rơi VẪN chạy nền. Chưa biết danh tính ⇒ không có dòng

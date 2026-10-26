@@ -652,7 +652,9 @@ describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (cre
   /** một request như adapter tRPC làm: createContext (info = dungMay) rồi gọi thủ tục với ctx đó */
   async function guiRequest(crid: string) {
     const ctx = await createContext({ req: { headers: { cookie: "app_session_id=x" } } as never, res: {} as never, info: { calls: [{ path: "scadaCommands.dungMay" }] } as never });
-    return scadaCommandsRouter.createCaller(ctx).dungMay({ machineId: fx.m1, clientRequestId: crid });
+    // T15 vòng sửa 1: qua một router tối thiểu `{ scadaCommands }` (đường THẬT `scadaCommands.dungMay`) — middleware phân biệt STOP với lượt gọi anh em theo `path` đầy đủ; caller của router con thấy "dungMay"
+    const { router } = await import("../_core/trpc");
+    return router({ scadaCommands: scadaCommandsRouter }).createCaller(ctx).scadaCommands.dungMay({ machineId: fx.m1, clientRequestId: crid });
   }
   const nguoiXacThuc = () => ({ id: op.id, openId: `${RUN}-op`, role: "operator", name: "R1B2 T4 op", twoFactorEnabled: false });
 

@@ -2,8 +2,8 @@
  * SCADA R1b-2a Task 4 fix round 1 (review I-1, I-2, M-3) — MỘT hạn cho CẢ request STOP HMI (`scadaCommands.dungMay`).
  *
  * Lời hứa của kế hoạch (Review Focus 5): DB chậm-mà-sống ⇒ người vận hành nhận từ chối có mã "dùng E-STOP cứng" trong ≤ 2,5 s, tính từ
- * lúc request tới tRPC. Một hạn duy nhất `HAN_TONG_STOP_HMI_MS` bắt đầu ở `createContext` (server/_core/context.ts) khi request CHỈ gồm
- * dungMay, đi qua `ctx.hanChotStopHmi` (theo request, không có trạng thái module cho hạn) và bọc MỌI lượt chờ DB trước dispatch:
+ * lúc request tới tRPC. Một hạn duy nhất `HAN_TONG_STOP_HMI_MS` bắt đầu ở `createContext` (server/_core/context.ts) khi request CÓ CHỨA
+ * dungMay (một mình HOẶC trong batch tRPC — R1b-2b-1 T15, bọc hạn chứ không từ chối), đi qua `ctx.hanChotStopHmi` (theo request, không có trạng thái module cho hạn) và bọc MỌI lượt chờ DB trước dispatch:
  *   1. xác thực đầy đủ (`sdk.authenticateRequest`) — min(HAN_XAC_THUC_STOP_HMI_MS, còn lại)            · context.ts
  *   2. cổng buộc đổi mật khẩu (`phaiDoiMatKhau`, SELECT users)                                         · trpc.ts chanKhiPhaiDoiMatKhau
  *   3. cổng giấy phép module (`resolveEntitlement`, 2 × getAllLicenses) — khi LICENSE_MODULE_GATE bật  · moduleGate.ts
@@ -77,12 +77,19 @@ class LoiHetHanYeuCauStopHmi extends Error {}
  * Chờ `p` trong phần CÒN LẠI của hạn request `hanChot` (và ≤ `tran` nếu có). `hanChot` vắng (request không phải STOP HMI) ⇒ trả `p`
  * nguyên vẹn — mọi đường khác KHÔNG đổi. Hết hạn ⇒ đếm (M-3) + NÉM `loiStopQuaHan(pha)`. Lỗi của chính `p` đi nguyên.
  */
-export function trongHanYeuCauStopHmi<T>(p: Promise<T>, hanChot: number | undefined, buoc: BuocKhongGhiSo, pha: PhaQuaHanStopHmi, tran?: number): Promise<T> {
+export function trongHanYeuCauStopHmi<T>(
+  p: Promise<T>,
+  hanChot: number | undefined,
+  buoc: BuocKhongGhiSo,
+  pha: PhaQuaHanStopHmi,
+  tran?: number,
+  duongThuTuc?: string,
+): Promise<T> {
   // không hạn ⇒ ĐÚNG promise gốc (không thêm một nhịp microtask nào cho mọi request khác)
-  return hanChot === undefined ? p : choTrongHan(p, hanChot, buoc, pha, tran);
+  return hanChot === undefined ? p : choTrongHan(p, hanChot, buoc, pha, tran, duongThuTuc);
 }
 
-async function choTrongHan<T>(p: Promise<T>, hanChot: number, buoc: BuocKhongGhiSo, pha: PhaQuaHanStopHmi, tran?: number): Promise<T> {
+async function choTrongHan<T>(p: Promise<T>, hanChot: number, buoc: BuocKhongGhiSo, pha: PhaQuaHanStopHmi, tran?: number, duongThuTuc?: string): Promise<T> {
   const conLai = hanChot - Date.now();
   const ms = Math.max(1, Math.min(tran ?? Number.POSITIVE_INFINITY, conLai));
   try {
@@ -95,6 +102,16 @@ async function choTrongHan<T>(p: Promise<T>, hanChot: number, buoc: BuocKhongGhi
     return await withDeadline(p, ms, "HMI STOP request", { unref: true, loi: () => new LoiHetHanYeuCauStopHmi() });
   } catch (e) {
     if (!(e instanceof LoiHetHanYeuCauStopHmi)) throw e;
+    // R1b-2b-1 T15 vòng sửa 1 (I1): `duongThuTuc` biết ⇒ và KHÔNG phải dungMay ⇒ lượt gọi ANH EM cùng batch (KD-T15): vẫn nhận 503 (fail-closed, chung hạn)
+    // nhưng KHÔNG đếm vào `stopQuaHan24h` và KHÔNG log "STOP CHƯA được gửi" (không phải STOP). Vắng `duongThuTuc` (xác thực ở createContext — cả request
+    // có dungMay) ⇒ tính là STOP như trước.
+    if (duongThuTuc !== undefined && duongThuTuc !== DUONG_DUNG_MAY_HMI) {
+      logger.warn({ buoc, pha, hanMs: ms, duongThuTuc }, "[SCADA] call cùng batch với dungMay quá hạn tổng STOP — nhận 503 chung hạn (không phải STOP, không đếm stopQuaHan24h)");
+      throw loiStopQuaHan(
+        pha,
+        `Máy chủ chậm — lượt gọi này nằm CÙNG batch với STOP HMI nên chung hạn ${HAN_TONG_STOP_HMI_MS} ms và quá hạn ở bước ${buoc}. Gửi lại riêng lượt này.`,
+      );
+    }
     ghiNhanStopQuaHanKhongGhiSo(buoc);
     logger.error({ buoc, pha, hanMs: ms }, "[SCADA] STOP HMI: quá hạn trước khi gửi (middleware / xác thực) — STOP CHƯA được gửi; dùng E-STOP cứng");
     throw loiStopQuaHan(
