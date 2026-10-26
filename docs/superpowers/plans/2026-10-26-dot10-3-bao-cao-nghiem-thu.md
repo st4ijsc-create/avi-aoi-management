@@ -1,6 +1,6 @@
 # Đợt 10.3 — Cổng AI ngoài: báo cáo nghiệm thu
 
-> Phiên **do-model** · nhánh `feat/ai-do-model` · 2026-10-26 · main đã có tới `6d3860227` (fresh/main `a03700211`); còn chờ gộp: `1b01838d8` + bản vá rawErrorCensus + báo cáo này
+> Phiên **do-model** · nhánh `feat/ai-do-model` · 2026-10-26 · main đã có tới `6d3860227` (fresh/main `a03700211`); gộp tiếp tới `c6f6f0cb7` (cổng dieu-phoi)
 > Spec: `docs/superpowers/specs/2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` · Kế hoạch: `docs/superpowers/plans/2026-10-26-dot10-3-cong-ai-ngoai.md`
 > Người đọc: dieu-phoi (gộp), kiem-dinh (rà checklist A–F), chủ dự án (§5 vận hành), luong-ui (§7 bàn giao 10.4).
 
@@ -9,7 +9,7 @@
 | Hạng mục | Trạng thái |
 |---|---|
 | Task 1–10 (B1–B4) | XONG. kiem-dinh ĐẠT từng lô: lô 1–2, Task 7, Task 8, Task 9 + sửa proxy, Task 10 (13/15 đột biến bắt; 2 lỗ đã đóng ở `1b01838d8`) |
-| Gộp main | Task 8+9+10 tới `6d3860227` đã lên fresh/main `a03700211` (cổng dieu-phoi; đỏ duy nhất — census nguoiDungTest ở `flowRouterNgoai.db.test.ts` — dieu-phoi sửa bằng `taoNguoiDungTest`). `1b01838d8` (3 mục bắt buộc của rà T10) chờ kiem-dinh xác nhận đột biến |
+| Gộp main | Task 8+9+10 tới `6d3860227` đã lên fresh/main `a03700211` (cổng dieu-phoi; đỏ duy nhất — census nguoiDungTest ở `flowRouterNgoai.db.test.ts` — dieu-phoi sửa bằng `taoNguoiDungTest`). `1b01838d8` (3 mục bắt buộc của rà T10) + `c6f6f0cb7` ĐÃ được kiem-dinh xác nhận; kiem-dinh NGHIỆM THU 10.3 ĐẠT (A–F); cổng gộp `c6f6f0cb7` do dieu-phoi chạy |
 | Migration 0413–0416 | ĐÃ ÁP **DEV** + **_test**, nghiệm thu bằng `avi_app` (cấu trúc · quyền · hành vi hoàn tác · sổ). 0414 áp DEV 2026-10-26 theo hiệu lệnh dieu-phoi; CHECK `ai_api_keys_active_can_nha_may_chk` đã đặt lại trên _test |
 | tsc toàn cây (`--max-old-space-size=12288`) | 0 lỗi (cây gộp `f560f8d77`) |
 | Lưới lô | ngoai + flow + flowRouter + aiNgoai + openaiGateway + chonModel + 3 census + appErrorParamsCoverage: xanh (lượt cuối: ngoai + flow/nut 365/365; trước đó lô rộng 1022/1022) |
