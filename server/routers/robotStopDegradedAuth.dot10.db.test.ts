@@ -9,6 +9,7 @@
  *   • R-10-be: a revoked session, a disabled user, an expired memory, a role change ⇒ no STOP from memory;
  *   • R-10-bc: another factory's STOP and MOVE are refused (scope known).
  */
+import { batDauDoLag } from "../testing/doLagBucleSuKien";
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import postgres from "postgres";
 
@@ -371,9 +372,11 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     H.mode = "hang";
     const req = { headers: { cookie: `${COOKIE_NAME}=${tok}` }, ip: "127.0.0.1" } as never;
     const ctx = await createContext({ req, res: {} as never, info: { calls: [{ path: "robot.consoleStop" }] } as never });
+    const lag = batDauDoLag();
     const t0 = Date.now();
     await expect(probe.createCaller(ctx as never).any({ robotId: ids.robot, command: "home" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(Date.now() - t0).toBeLessThan(150); // refused before the 300 ms auth bundle
+    const troi = Date.now() - t0;
+    expect(troi).toBeLessThan(150 + Math.min(await lag.dung(), 100)); // refused before the 300 ms auth bundle (+ unscheduled time of this run, capped so a wait on the bundle still fails)
   });
   it("★ R-10-bg — through the real chain: a session revoked WHILE its STOP's full auth is in flight is not re-warmed by that auth", async () => {
     const tok = await token();
