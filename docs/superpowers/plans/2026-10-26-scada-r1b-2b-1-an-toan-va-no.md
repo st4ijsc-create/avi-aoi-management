@@ -92,6 +92,15 @@ Giữ cách tách của điều phối. Ba mục driver 11 / 12 / 13 nằm ở R
 - Không migration. Cần schema thì dùng 0437–0439, gửi SQL trước khi áp DEV.
 - Trước khi gửi bàn giao: chạy ĐỦ census (grep -i census toàn cây + server/_core + routers/services/routes + client/src + shared), không chỉ test của task.
 
+**T1 — M4 rà soát (điều phối 2026-10-26): chọn (b), kèm ràng buộc.**
+1. Thêm trường `tongHop: "du" | "mot_phan" | "khong_toi" | "khong_ro"` cho mỗi máy. Dùng `"khong_ro"` khi khảo sát quá hạn hoặc không kiểm được; không bao giờ suy ra `"du"`.
+2. Tính `tongHop` từ CHÍNH kết quả `khaoSatKhaNangDungNhieu` mà `khaNangDung` đang dùng, theo cùng luật phân loại với HMI (edge-owned / mất kết nối / sim). Không tạo đường khảo sát thứ hai. Adapter sim tính là KHÔNG tới thiết bị thật.
+3. `tongHop` chỉ là gợi ý: KHÔNG BAO GIỜ ẩn hay vô hiệu nút DỪNG. Với `khong_toi`, `mot_phan` hay `khong_ro`, nút vẫn bấm được, kèm một dòng i18n (vi/en/zh) dạng "Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng".
+4. Vẫn đúng C16: không mã adapter, tagKey, endpoint, giá trị ghim hay lastError. Test:
+   - JSON không có các khoá ấy;
+   - một ca DOM cho mỗi giá trị `tongHop`, nút vẫn bấm được;
+   - đột biến "khong_toi ⇒ disabled" phải đỏ.
+
 ## Global Constraints
 
 - **Nơi làm và nhánh.**
