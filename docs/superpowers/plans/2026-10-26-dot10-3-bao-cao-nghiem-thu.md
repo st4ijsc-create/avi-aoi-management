@@ -64,6 +64,7 @@ Thứ tự bật cho một nhà máy. Không bước nào làm qua `.env` hay qu
 1. **Tạo khoá** trong màn quản trị (`aiNgoai.taoKhoa`, gắn nhà máy). KHÔNG đặt khoá trong `.env`, KHÔNG gửi khoá qua bất kỳ phiên Claude nào.
 2. **Danh mục model** (`aiNgoai.datModel`): bắt buộc có giá vào/ra HOẶC trần token mỗi lượt (CHECK 0414).
 3. **Cấu hình nhà máy** (`aiNgoai.ghiCauHinh`): `batNgoai`; trần ngày (token / USD), trần mỗi người / mỗi luồng / mỗi lượt / số lần mỗi phút; `hanGiuNgay`. Mở `batNgoai` / `choDuLieuVanHanh` / `luuNguyenVan` ⇒ audit mức CAO.
+   - ⚠ Ước tính token lúc ĐẶT TRƯỚC là BI QUAN (byte UTF-8 / 2 ⇒ cao hơn thật **2–4×** với tiếng Anh / mã; ~1–1,5× với tiếng Việt có dấu) — chỗ dư hoàn lại khi kết toán, nhưng trần chặn SỚM: đặt trần ngày / người / luồng / lượt theo nhu cầu thật × hệ số 2–4.
 4. **Quyết riêng "dữ liệu vận hành"** (`choDuLieuVanHanh`). Mặc định TẮT: số liệu / kết quả tool / ngữ cảnh KB nhà máy không ra ngoài.
 5. **Host nội bộ** cho máy chủ tương thích OpenAI trong mạng nhà máy (`aiNgoai.datHostNoiBo`, chỉ admin toàn hệ). Khai đúng `host:cổng`.
 6. **Luồng dùng model ngoài**: mỗi PHIÊN BẢN phải `aiNgoai.duyetNgoai`. Băm định nghĩa đổi ⇒ phải duyệt lại. Luồng toàn hệ thống không dùng được.
