@@ -231,6 +231,27 @@ describe("ScadaDiag — bảng", () => {
     expect(within(lost).getByText(/80 · 12 · 3/)).toBeInTheDocument();
   });
 
+  it("R1b-2b-1 T5 (C5) — 'Đang kết nối' + lý do 'moi_tag_sai_cau_hinh' ⇒ hiện chữ lý do (vi, en); không lý do ⇒ không có; 'chỉ lỗi' giữ hàng", async () => {
+    srv.rows = [
+      ...rows3(),
+      { ...base, adapterId: 4, code: "AD-SAI", ten: "Sai cấu hình", trangThai: "connecting", lyDo: "moi_tag_sai_cau_hinh", tag: { tot: 0, nghiNgo: 0, xau: 0 } },
+      { ...base, adapterId: 5, code: "AD-CHO", ten: "Đang nối", trangThai: "connecting", lyDo: null },
+    ];
+    render(<ScadaDiag />);
+    const sai = hang("AD-SAI");
+    expect(within(sai).getByText(S("scada.diag.trangThai.connecting"))).toBeInTheDocument();
+    expect(within(sai).getByTestId("ly-do-trang-thai")).toHaveTextContent(S("scada.diag.lyDo.moi_tag_sai_cau_hinh"));
+    expect(within(hang("AD-CHO")).queryByTestId("ly-do-trang-thai")).toBeNull();
+    expect(within(hang("AD-OK")).queryByTestId("ly-do-trang-thai")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: S("scada.diag.loc.chiLoi") }));
+    expect(screen.getByText("AD-SAI")).toBeInTheDocument();
+    expect(screen.queryByText("AD-CHO")).toBeNull();
+    await act(async () => {
+      await i18next.changeLanguage("en");
+    });
+    expect(within(hang("AD-SAI")).getByTestId("ly-do-trang-thai")).toHaveTextContent((en_ as any).scada.diag.lyDo.moi_tag_sai_cau_hinh);
+  });
+
   it("lọc 'chỉ lỗi' ẩn adapter ổn và adapter edge, giữ adapter lỗi", () => {
     render(<ScadaDiag />);
     fireEvent.click(screen.getByRole("switch", { name: S("scada.diag.loc.chiLoi") }));

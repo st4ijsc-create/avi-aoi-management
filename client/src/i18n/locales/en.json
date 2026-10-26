@@ -23798,6 +23798,9 @@
       "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "lyDo": {
+        "moi_tag_sai_cau_hinh": "All tags misconfigured — no read was sent to the device; fix the tag addresses"
+      },
       "trangThai": {
         "connected": "Connected",
         "connecting": "Connecting",

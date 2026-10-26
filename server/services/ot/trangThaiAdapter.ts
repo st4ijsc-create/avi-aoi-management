@@ -19,6 +19,13 @@ import { chatLuongV2Bat, mauXauChoMoiTag } from "./chatLuong";
 
 export type TrangThaiKetNoi = "connecting" | "connected" | "lost" | "disabled";
 
+/**
+ * SCADA R1b-2b-1 T5 (mục 51, điều kiện 5 / C5) — lý do CÓ MÃ đi kèm trạng thái (chỉ RAM — xem datLyDoTrangThaiAdapter).
+ * `moi_tag_sai_cau_hinh`: phiên chưa đọc tốt và MỌI tag sai cấu hình cục bộ (reconnectNhanh.laMauTrungTinh) — driver không gửi yêu cầu
+ * nào ⇒ phiên ở `connecting` (không connected, không vòng nối lại); không có lý do thì UI chỉ là vòng quay vô tận.
+ */
+export type LyDoTrangThaiKetNoi = "moi_tag_sai_cau_hinh";
+
 /** Khoảng điều tiết ghi DB cho mỗi adapter (ms). */
 export const KHOANG_GHI_TRANG_THAI_MS = 5_000;
 
@@ -36,6 +43,8 @@ interface BanGhi {
   tu: Date;
   loi: string | null;
   soLanMat: number;
+  /** R1b-2b-1 T5 — lý do có mã (RAM); xoá khi chuyển sang connected/lost/disabled. */
+  lyDo: LyDoTrangThaiKetNoi | null;
   /** `onDinhMs` của lần báo `connected` gần nhất (0 = kết thúc đợt mất ngay khi connected). */
   onDinhMs: number;
   /** Đang trong một đợt mất (đặt ở `lost` đầu đợt, xoá khi `connected`/`disabled`). */
@@ -141,7 +150,7 @@ export function baoTrangThaiAdapter(
     let b = trangThai.get(a.adapterId);
     if (b && b.tt === tt) return;
     if (!b) {
-      b = { tt, tu: now, loi: null, soLanMat: 0, onDinhMs: 0, trongDotMat: false, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
+      b = { tt, tu: now, loi: null, lyDo: null, soLanMat: 0, onDinhMs: 0, trongDotMat: false, daPhatXau: false, ghiLuc: 0, hen: null, choGhi: null };
       trangThai.set(a.adapterId, b);
     }
     const truoc = b.tt;
@@ -149,6 +158,7 @@ export function baoTrangThaiAdapter(
     b.tt = tt;
     b.tu = now;
     b.loi = tt === "lost" ? loi : null;
+    if (tt !== "connecting") b.lyDo = null; // R1b-2b-1 T5 — lý do chỉ sống ở 'connecting' (đổi sang connected/lost/disabled ⇒ xoá)
     if (tt === "connected") {
       b.onDinhMs = onDinhMs && onDinhMs > 0 ? onDinhMs : 0;
       if (b.onDinhMs === 0) {
@@ -187,9 +197,19 @@ export function baoTrangThaiAdapter(
 /** Trạng thái kết nối hiện tại của adapter (null = chưa từng báo — gồm mọi adapter do edge sở hữu). */
 export function layTrangThaiAdapter(
   adapterId: number,
-): { tt: TrangThaiKetNoi; tu: Date; loi: string | null; soLanMat: number } | null {
+): { tt: TrangThaiKetNoi; tu: Date; loi: string | null; lyDo: LyDoTrangThaiKetNoi | null; soLanMat: number } | null {
   const b = trangThai.get(adapterId);
-  return b ? { tt: b.tt, tu: b.tu, loi: b.loi, soLanMat: b.soLanMat } : null;
+  return b ? { tt: b.tt, tu: b.tu, loi: b.loi, lyDo: b.lyDo, soLanMat: b.soLanMat } : null;
+}
+
+/**
+ * SCADA R1b-2b-1 T5 — đặt/xoá lý do có mã của adapter (KHÔNG đổi trạng thái, không ghi DB, không phát mẫu). Đồng bộ, không ném.
+ * Chưa từng báo trạng thái ⇒ bỏ qua. Chỉ trong RAM: `device_adapters` không có cột lý do (status là enum cố định, `lastError` chỉ mang lỗi
+ * của `lost` cùng `lastErrorAt`) và task này không có migration; M10 đọc RAM trước DB (scadaDiagRouter.trangThaiHienThi) nên vẫn thấy.
+ */
+export function datLyDoTrangThaiAdapter(adapterId: number, lyDo: LyDoTrangThaiKetNoi | null): void {
+  const b = trangThai.get(adapterId);
+  if (b) b.lyDo = lyDo;
 }
 
 /** Chỉ cho test: xoá mọi trạng thái và huỷ mọi hẹn ghi (hàm ghi thay thế do `__datGhiDb` quản). */

@@ -23795,6 +23795,9 @@
       "dangTai": "正在加载适配器列表…",
       "matKetNoi": "连接丢失",
       "edgeChuaCoSoLieu": "由边缘 {{edgeCode}} 持有 —— R0 暂无数据",
+      "lyDo": {
+        "moi_tag_sai_cau_hinh": "所有标签配置错误 —— 未向设备发送任何读取请求；请修正标签地址"
+      },
       "trangThai": {
         "connected": "已连接",
         "connecting": "连接中",

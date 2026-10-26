@@ -27,7 +27,7 @@ import {
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
-import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
+import { baoTrangThaiAdapter, datLyDoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
@@ -264,7 +264,13 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu của phiên cũng báo lần đọc tốt. Bọc sink
     // RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
     // R1b-2a T13 — mẫu "máy chủ đã trả lời" (không chỉ `good`), cùng luật với tick poll: một bộ bắt chung (taoBatDocTot) cho cả hai.
-    const bat = v2Phien ? taoBatDocTot(() => khiDocTotLegacy(entry, phien, myEpoch)) : null;
+    // R1b-2b-1 T5 — cùng bộ bắt báo "mọi tag sai cấu hình cục bộ" (lý do có mã ở RAM, phiên ở connecting).
+    const bat = v2Phien
+      ? taoBatDocTot(
+          () => khiDocTotLegacy(entry, phien, myEpoch),
+          (co) => khiMoiTagTrungTinhLegacy(entry, phien, myEpoch, co),
+        )
+      : null;
     const sinkPhien: OnOtSample = bat
       ? (s) => {
           bat.quaMau(s);
@@ -373,8 +379,20 @@ function khiDocTotLegacy(entry: LegacyEntry, phien: number, myEpoch: number): vo
   if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
   if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
   entry.phienDocTot = phien;
+  datLyDoTrangThaiAdapter(entry.adapter.adapterId, null); // R1b-2b-1 T5 — đọc tốt thật ⇒ gỡ lý do "mọi tag sai cấu hình"
   if (entry.phienHoatDong !== phien || entry.state !== "active" || entry.inflight) return;
   if (driverDangNoi(entry.adapter)) baoLegacy(entry, "connected");
+}
+
+/**
+ * R1b-2b-1 T5 (mục 51, C5; legacy, cờ V2) — phiên `phien` chưa đọc tốt và chỉ thấy tag sai cấu hình cục bộ (`co`) / thôi như thế. Chỉ
+ * phiên MỚI NHẤT của entry còn quản adapter, cùng thế hệ ⇒ gắn/gỡ lý do `moi_tag_sai_cau_hinh` (RAM). Không đổi trạng thái: phiên vẫn
+ * ở 'connecting' (không đọc tốt, không tick hỏng ⇒ không connected, không vòng nối lại).
+ */
+function khiMoiTagTrungTinhLegacy(entry: LegacyEntry, phien: number, myEpoch: number, co: boolean): void {
+  if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
+  if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
+  datLyDoTrangThaiAdapter(entry.adapter.adapterId, co ? "moi_tag_sai_cau_hinh" : null);
 }
 
 /**
@@ -844,6 +862,13 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
       if (hienTai && chinhNo && hienTai !== chinhNo) return;
       if (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung) return;
       baoTrangThaiAdapter(adapter, "connected", null, new Date(), null, thoiGianOnDinhMs(adapter.pollIntervalMs));
+    },
+    // R1b-2b-1 T5 (mục 51, C5) — phiên chỉ thấy tag sai cấu hình cục bộ ⇒ lý do có mã (RAM); cùng chốt thế hệ với onDocTotDauTien.
+    onMoiTagTrungTinh: (co) => {
+      const hienTai = supervisors.get(adapter.adapterId)?.supervisor;
+      if (hienTai && chinhNo && hienTai !== chinhNo) return;
+      if (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung) return;
+      datLyDoTrangThaiAdapter(adapter.adapterId, co ? "moi_tag_sai_cau_hinh" : null);
     },
     // SCADA R0 Task 5 (C1/C3) — trạng thái kết nối + mẫu xấu khi mất (xem trangThaiAdapter.ts).
     onStateChange: (prev, next, lastError, statusCode) => {

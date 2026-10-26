@@ -614,7 +614,7 @@ describe("S7", () => {
     await waitFor(() => ticks.length > 0, 2000);
     await h.close();
     expect(ticks[0].ok).toBe(true);
-    expect(ticks[0].tags).toEqual([{ tagKey: "t1", quality: "bad", reason: "device_error" }]);
+    expect(ticks[0].tags).toEqual([{ tagKey: "t1", quality: "bad", reason: "device_error", statusCode: "bad_value" }]); // R1b-2b-1 T5: tick mang statusCode của mẫu
     expect(laTickHong(ticks[0])).toBe(false);
     expect(laDocTot(ticks[0])).toBe(true);
   });
