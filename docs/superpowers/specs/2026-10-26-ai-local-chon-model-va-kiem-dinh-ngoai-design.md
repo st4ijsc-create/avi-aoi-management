@@ -104,5 +104,8 @@ Census: mọi thủ tục mới vào `phamViDocCensus` / `phamViGhiCensus` / `co
 ## 9. Giới hạn đã biết
 
 - Che dữ liệu theo mẫu không bắt được mọi bí mật nghiệp vụ (tên dự án, công thức) — nhà máy chịu trách nhiệm bật "dữ liệu vận hành".
+- Mức dữ liệu do CỔNG tự suy, người gọi không khai: nội dung do máy chủ ghép (ngữ cảnh KB, kết quả tool, số liệu, kết quả node) được phân loại tại điểm ghép; văn bản NGƯỜI DÙNG TỰ DÁN vào chat/lập trình và payload `kich-hoat.tay` do người chạy nhập được coi là `ky-thuat` — trách nhiệm của người dán/nhập (UI 10.4 ghi rõ khi chọn model ngoài). (Bổ sung 2026-10-26 theo rà kiem-dinh.)
+- Taint theo LƯỢT, đơn điệu: một nhánh đọc dữ liệu vận hành làm CẢ lượt thành `van-hanh` (kể cả nhánh khác không dùng dữ liệu đó) — cái giá của việc `{{ }}` tham chiếu được mọi bước trước; ghi trong tài liệu node.
+- Bộ che: đồng chữ ngoài bảng ánh xạ và tên vừa tạo trong 5 phút đệm có thể lọt — luật giá trị (định dạng khoá) vẫn bắt khoá thật.
 - Kết luận của AI ngoài có thể sai ⇒ vì vậy bài học bắt buộc qua người duyệt và đo trước/sau.
 - Chất lượng AI Local tăng nhờ bài học trong prompt có trần (ngân sách ngữ cảnh); tăng sâu hơn cần fine-tune — ngoài phạm vi (G9).

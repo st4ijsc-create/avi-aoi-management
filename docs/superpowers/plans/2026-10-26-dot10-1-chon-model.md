@@ -26,7 +26,8 @@
 1. Hồ sơ đủ điều kiện nhưng đang `enabled=false` hoặc `artifactStatus≠available` ⇒ phải là `trangThai:"tat"` và `giaiChonModel` từ chối (không âm thầm rơi về mặc định).
 2. `vai-tro:` một vai không sinh chữ (`embed`, `rerank`, `vision`, `fim`) trên bề mặt chat ⇒ BAD_REQUEST, không gọi engine với model nhúng.
 3. Node Luồng xuất/nhập gói sang nhà máy khác giữ `ho-so:<id>` không tồn tại ở đó ⇒ lỗi rõ lúc chạy (BAD_REQUEST), không rơi mặc định im lặng.
-4. /v1 trước đây nhận tên tệp GGUF trần (`kiemModelV1` nhánh 4) — client cũ gửi tên tệp ⇒ nay 400 `model_not_found`; tên logic cũ (`chat`, `code`, `fast`, `fim`, `embed`) và id hồ sơ trần vẫn qua.
+4. /v1 trước đây nhận tên tệp GGUF trần (`kiemModelV1` nhánh 4) — client cũ gửi tên tệp ⇒ nay 400 `model_not_found` KÈM danh sách dạng hợp lệ; mọi bên gọi trong repo (extension, scripts/ai-eval, mẫu cấu hình) đổi trong cùng lô (Task 4 Step 1b); tên logic cũ (`chat`, `code`, `fast`, `fim`, `embed`) và id hồ sơ trần vẫn qua.
+6. /v1 `model:"ngoai:…"` (10.3): đi qua CÙNG cổng `goiAiNgoai`; nhà máy lấy từ chủ của API key — key không gắn nhà máy / chủ không xác định ⇒ NOT_FOUND (10.3 Task 8 sở hữu ca này; 10.1 chỉ trả NOT_FOUND vì danh mục ngoài rỗng).
 5. `chonModel:"auto"` trên node Luồng có vai mặc định nhẹ ⇒ vẫn `khongDoiKhe:true` (không kéo đổi khe nặng giữa lượt nền).
 
 ---
@@ -95,7 +96,9 @@
   - `"ho-so:p35"` đang giữ ⇒ `{loai:"local", modelId:"<artifactFile của p35>", nguon:"chon-tuong-minh", canDoiKhe:false}`; `"ho-so:p27"` nang chưa giữ ⇒ `canDoiKhe:true, uocTinhDoiKheGiay:45`;
   - `"ho-so:p-unknown-license"` / `"ho-so:khong-co"` / `"ho-so:p-tat"` ⇒ BAD_REQUEST `chonModelKhongHopLe`;
   - `"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"`, `"code"`, `"../x"`, `"vai-tro:"` ⇒ BAD_REQUEST (không còn tên tệp trần);
-  - `"ngoai:anthropic:claude-opus-5-5"` khi `ngoai.layModelDaBat(factoryId)` có mục đó ⇒ `{loai:"ngoai", nhaCungCap:"anthropic", model:"claude-opus-5-5"}`; khi không có (nhà máy tắt / factoryId null) ⇒ `NOT_FOUND` reason `modelNgoaiKhongTonTaiHoacNgoaiPhamVi`.
+  - `"ngoai:anthropic:claude-opus-5-5"` khi `ngoai.layModelDaBat(factoryId)` có mục đó ⇒ `{loai:"ngoai", nhaCungCap:"anthropic", model:"claude-opus-5-5"}`; khi không có (nhà máy tắt / factoryId null) ⇒ `NOT_FOUND` reason `modelNgoaiKhongTonTaiHoacNgoaiPhamVi`; `"ngoai:anthropic:claude-gia-hop-le"` (khớp `CHON_MODEL_RE` nhưng KHÔNG có trong `layModelDaBat`) ⇒ NOT_FOUND (không tin regex — rà kiem-dinh mục 13);
+  - `khong-bao-gio-ra-ngoai` (rà kiem-dinh mục 6): với MỌI vai trong `VAI_TRO_GOC` (`vai-tro:<id>`, bỏ vai không sinh chữ khi `beMatChu`) và MỌI hồ sơ trong danh mục dựng tay, kể cả khi `ngoai.layModelDaBat` trả danh sách KHÔNG rỗng và ảnh sổ có gán vai trỏ tới chuỗi trông như `ngoai:…` ⇒ kết quả luôn `loai:"local"` hoặc ném; `auto` luôn `null`;
+  - `uoc-tinh-vang`: `uocTinhDoiKheGiay` dep trả `null` ⇒ `canDoiKhe:true` và KHÔNG có trường `uocTinhDoiKheGiay` (UI 10.2 ghi "chưa đo", không bịa số — dieu-phoi).
 - [ ] **Step 2: Chạy** `npx vitest run server/services/ai/chonModel/giaiChonModel.test.ts` — FAIL.
 - [ ] **Step 3: Cài**. `vai-tro:` truyền `khongDoiKhe` = `ngu.khongDoiKhe ?? VAI_TRO_NHE_KHONG_DOI_KHE.has(vaiTro)` khi `phamVi.beMat==="luong"`, và `...nguCanhKhe()`. `ho-so:` hợp lệ ⇔ có trong danh mục (Task 1) với `trangThai≠"tat"`.
 - [ ] **Step 4: Chạy** — PASS.
@@ -117,6 +120,8 @@
   - Agent: `POST /api/ai/agent/runs` `chonModel:"ho-so:p27"` ⇒ `taoGoiModelMayChu` nhận `modelId` của p27; vắng ⇒ `chuanBiLuotChayTheoVaiTro` như cũ.
   - Luồng: `ai.tom-tat` `thamSo.chonModel:"vai-tro:chat"` ⇒ `resolve` có `phamVi:{flowId,beMat:"luong"}`, `khongDoiKhe:true`; vết `buoc.model` có `nguon`; `thamSo.chonModel:"Qwen.gguf"` ⇒ node lỗi `BAD_REQUEST`.
   - Mọi bề mặt: `chonModel:"ngoai:anthropic:x"` ⇒ NOT_FOUND (danh mục ngoài rỗng ở 10.1).
+  - /v1 từ chối tên tệp trần: thân lỗi 400 nêu giá trị HỢP LỆ (`"auto"`, tên logic `chat|code|fast|fim|embed`, `vai-tro:<id>`, `ho-so:<id>`, và gợi ý `GET /v1/models`) — test kiểm chuỗi lỗi chứa `vai-tro:` và `ho-so:` (dieu-phoi).
+- [ ] **Step 1b: Kiểm kê bên gọi TRƯỚC khi bỏ nhánh 4** (điều kiện dieu-phoi): `rg -n "\.gguf" ` trên extension (`aviAiLocal.agentModel` mặc định + `package.json` contributes + README), `scripts/ai-eval/**`, `.env.example`, cấu hình mẫu, `docs/**` (chỉ hướng dẫn đang dùng, không sửa tài liệu lịch sử) — lọc nơi tên tệp GGUF được GỬI làm `model` tới /v1; đổi từng nơi sang `ho-so:<id>`/tên logic TRONG CÙNG lô commit; ghi bảng "nơi gọi → giá trị mới" vào thân commit. Extension: chỉ đổi mã nguồn mặc định + migration cấu hình người dùng (giá trị cũ kết thúc `.gguf` ⇒ đọc thành `auto` + cảnh báo một lần) — đóng gói/cài extension do luong-ui (chủ extension) — báo họ trước khi đụng tệp extension.
 - [ ] **Step 2: Chạy** từng tệp — FAIL.
 - [ ] **Step 3: Cài** theo Files; ghi `vaiTro/model/nguon/nhaCungCap` vào vết như `ai.ts:70-92`.
 - [ ] **Step 4: Chạy** test mới + lưới cũ của các bề mặt: `npx vitest run server/routes/openaiGateway server/routes/aiLocalKnowledge server/services/ai/agent server/services/flow server/services/ai/kiemModelV1` — PASS.
