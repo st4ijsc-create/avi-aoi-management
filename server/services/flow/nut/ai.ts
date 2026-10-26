@@ -220,6 +220,7 @@ export function nguNgoaiTuLuot(ngu: NguCanhChay | undefined, phanThem?: () => re
         : {}),
     },
     ...(ngu?.nhaMayPhamViChu ? { nhaMayKhiVanHanh: ngu.nhaMayPhamViChu } : {}),
+    ...(typeof ngu?.version === "number" ? { phienBan: ngu.version } : {}),
   };
 }
 

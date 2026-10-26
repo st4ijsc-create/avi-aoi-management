@@ -55,6 +55,8 @@ export interface YeuCauGoiNgoai {
      * `van-hanh`, cổng thêm các nhà máy này vào tập và đòi MỖI nhà máy `batNgoai` + `choDuLieuVanHanh`.
      */
     nhaMayKhiVanHanh?: () => Promise<number[]>;
+    /** Luồng: phiên bản của lượt đang chạy — cổng KIỂM LẠI duyệt ngoài (phòng thủ chiều sâu ngoài `taoRunTx`). */
+    phienBan?: number;
   };
 }
 
@@ -193,6 +195,18 @@ function cheYeuCau(yc: YeuCauNhaCungCap, tu: TuDienNhay): { daChe: YeuCauNhaCung
   return { daChe: { ...yc, tinNhan, ...(congCu ? { congCu } : {}) }, soTruong };
 }
 
+async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: number | undefined, nhaMay: number): Promise<void> {
+  if (!flowId || typeof phienBan !== "number") throw new LoiNgoai("NGOAI_CHUA_DUYET", "thieu-phien-ban");
+  const { sql } = await import("drizzle-orm");
+  const { kiemDuyetNgoaiTruocKhiBat } = await import("./duyetNgoai");
+  const r = (await db.execute(sql`SELECT v.definition, v."ngoaiDuyetLuc", v."ngoaiBamDuyet", f."factoryId"
+    FROM ai_flow_versions v JOIN ai_flows f ON f.id = v."flowId" WHERE v."flowId" = ${flowId} AND v.version = ${phienBan}`)) as unknown;
+  const [h] = (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ definition: unknown; ngoaiDuyetLuc: Date | null; ngoaiBamDuyet: string | null; factoryId: number | null }>;
+  if (!h) throw new LoiNgoai("NGOAI_CHUA_DUYET", "khong-co-phien-ban");
+  if (h.factoryId !== nhaMay) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");
+  kiemDuyetNgoaiTruocKhiBat({ definition: h.definition, ngoaiDuyetLuc: h.ngoaiDuyetLuc, ngoaiBamDuyet: h.ngoaiBamDuyet }, h.factoryId);
+}
+
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
   // (1)
@@ -214,6 +228,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
     if (!c?.batNgoai) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");
     cauHinh.set(f, c);
   }
+  // Luồng: phiên bản của lượt phải ĐÃ DUYỆT NGOÀI và băm khớp (cổng là điểm ra DUY NHẤT — kiểm lại dù `taoRunTx` đã kiểm).
+  if (laLuong) await kiemDuyetLuong(db, yc.ngu.flowId, yc.ngu.phienBan, tinhTran);
   const model = await layModelNgoai(db, tinhTran, yc.dich.nhaCungCap, yc.dich.model).catch(() => null);
   const ncc = dep.layNhaCungCap(yc.dich.nhaCungCap);
   if (!model?.batModel || !ncc) throw new LoiNgoai("NGOAI_KHONG_TON_TAI");

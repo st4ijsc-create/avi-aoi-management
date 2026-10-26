@@ -66,7 +66,7 @@ async function docBanGhim(flowId: string, version: number): Promise<{ version: n
  *   có `version` ⇒ TỪ CHỐI (lưu lại cha để ghim), không fallback im lặng.
  */
 export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versionGhim?: number): Promise<{ version: number; hang: HangTacDungPhu; nutVao: string; def: FlowDefinition }> {
-  const { chuoiLuotCha, hangDu, hangPhienBan } = await import("../dongCo");
+  const { chuoiLuotCha, hangDu, hangPhienBan, kiemDuyetNgoaiPhienBan } = await import("../dongCo");
   // Đợt 9 (IDOR) — luồng con phải thuộc phạm vi CHỦ LƯỢT; vắng bộ kiểm / ngoài phạm vi ⇒ cùng câu với "không tồn tại" (không lộ).
   if (!ngu.kiemPhamVi || !(await ngu.kiemPhamVi.luong(flowIdCon))) throw new LoiLuongCon(`luồng con '${flowIdCon}' không tồn tại hoặc chưa có phiên bản hoạt động`);
   if (versionGhim === undefined || !Number.isInteger(versionGhim) || versionGhim < 1) {
@@ -75,6 +75,10 @@ export async function kiemGoiLuongCon(ngu: NguCanhChay, flowIdCon: string, versi
   const con = await docBanGhim(flowIdCon, versionGhim);
   if (!con) throw new LoiLuongCon(`luồng con '${flowIdCon}'@${versionGhim} không tồn tại`);
   if (!con.enabled) throw new LoiLuongCon(`từ chối: luồng con '${flowIdCon}' đang TẮT (kill switch) — không gọi được`);
+  // Đợt 10.3 — bản ghim có node model ngoài phải ĐÃ DUYỆT NGOÀI (băm khớp); cha "sạch" không mở đường vòng cho con chưa duyệt.
+  await kiemDuyetNgoaiPhienBan(flowIdCon, con.version, con.def).catch((e: Error) => {
+    throw new LoiLuongCon(`từ chối: ${e.message}`, "NGOAI_CHUA_DUYET");
+  });
   const hangCha = ngu.version ? await hangPhienBan(ngu.flowId, ngu.version) : null;
   if (!hangCha) throw new LoiLuongCon(`không xác định được hạng của luồng ${ngu.flowId}@${ngu.version ?? "?"}`);
   if (!hangDu(hangCha, con.hang)) {
