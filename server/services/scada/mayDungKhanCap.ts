@@ -6,8 +6,9 @@
  * đã được miễn cổng ở máy chủ (R1b-2a final-fix), nhưng không có trang nào cho người ấy bấm. Khối khẩn cấp cần MỘT lượt đọc tối thiểu —
  * thủ tục này là phần tử THỨ HAI (và cuối) của tập miễn cổng `THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU` (`server/_core/trpc.ts`).
  *
- * HỢP ĐỒNG (ruling C16 — tối thiểu): mỗi máy CHỈ gồm `machineId`, `ten` (nhãn máy "mã máy · tên máy"), `chuyen` (nhãn chuyền), `coDung`
- * (có adapter nhận STOP HMI không; null = không biết) và `soAdapter` (số adapter nhận STOP HMI; null = không biết). KHÔNG mã adapter,
+ * HỢP ĐỒNG (ruling C16 — tối thiểu; fix round 1 + điều phối M4 phương án b): mỗi máy CHỈ gồm `machineId`, `ten` (nhãn máy "mã máy · tên
+ * máy"), `chuyen` (nhãn chuyền), `coDung` (có adapter nhận STOP HMI không; null = không biết), `soAdapter` (số adapter nhận STOP HMI; null =
+ * không biết) và `tongHop` (gợi ý cấp máy "du" | "mot_phan" | "khong_toi" | "khong_ro" — `shared/dungKhanCap.ts`). KHÔNG mã adapter,
  * edgeCode, tagKey, endpoint, kênh, lastError, stopValue hay giá trị ghim. Thứ tự kiểm:
  *   1. `SCADA_COMMANDS_ENABLED` tắt ⇒ rỗng (không chạm DB — cùng QĐ D-6 của dungMay);
  *   2. sàn vai mức 1 + `machine_control.canEdit` (`kiemCongVaiTro(nguoi, 1)` — CÙNG cổng 3 của dungMay) không đạt ⇒ rỗng (không ném: người
@@ -15,10 +16,14 @@
  *   3. phạm vi máy `idsTrongPhamVi("machine", pv, {strict:true})` (cùng luật dungMay);
  *   4. máy "có nối" (`dieuKienMayCoNoi` — CÙNG vị từ của `scadaKenh.cheDo.danhSach`, ruling C11), ORDER BY mã máy, LIMIT TRẦN + 1 (điều
  *      kiện 6 / ruling C6: hàng thứ 201 chỉ để biết danh sách BỊ CẮT ⇒ `biCat`, client hiện "danh sách có thể chưa đủ — dùng E-STOP cứng");
- *   5. `coDung` / `soAdapter` = `coGhim` / `soCoGhim` trên `khaoSatKhaNangDungNhieu` (CÙNG hàm của cheDo.danhSach, không chép).
- * HẠN: cả thân (2–5) bọc `withDeadline(…, HAN_DANH_SACH_DUNG_KHAN_CAP_MS)`; quá hạn ⇒ ném (503) ⇒ client hiện dòng "Không tải được danh sách
- * máy — dùng E-STOP cứng tại máy". ⚠ Giới hạn đã ghi (C16): lượt đọc cờ ở cổng và xác thực KHÔNG nằm trong hạn này (thủ tục không phải
- * dungMay ⇒ không có `ctx.hanChotStopHmi`); DB treo ở đó ⇒ khối không hiện — E-STOP cứng vẫn là lớp an toàn thật.
+ *   5. `coDung` / `soAdapter` / `tongHop` = `coGhim` / `soCoGhim` / `tongHopDungKhanCap` trên MỘT lượt `khaoSatKhaNangDungNhieu` (CÙNG hàm
+ *      của cheDo.danhSach, không chép, không đường khảo sát thứ hai).
+ * HẠN (fix round 1, review I1): cả thân (2–5) bọc `withDeadline(…, HAN_DANH_SACH_DUNG_KHAN_CAP_MS)` — quá hạn ⇒ ném (503) ⇒ client hiện "Không
+ *   tải được danh sách máy — dùng E-STOP cứng tại máy". Khảo sát (5) có hạn CON riêng `HAN_KHAO_SAT_DUNG_KHAN_CAP_MS` (kẹp vào phần còn lại của
+ *   hạn thân, chừa `DU_PHONG_TRA_VE_MS`) và tối đa `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` adapter kiểm đồng thời: một adapter chậm chỉ làm MÁY của
+ *   nó thành "không kiểm được" (`coDung`/`soAdapter` null, `tongHop` "khong_ro") — danh sách vẫn về, nút DỪNG vẫn bấm được; dungMay tự quyết
+ *   lúc gửi. ⚠ Giới hạn đã ghi (C16): lượt đọc cờ ở cổng và xác thực KHÔNG nằm trong hạn này (thủ tục không phải dungMay ⇒ không có
+ *   `ctx.hanChotStopHmi`); DB treo ở đó ⇒ khối không hiện — E-STOP cứng vẫn là lớp an toàn thật.
  */
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { machines, productionLines, stations } from "../../../drizzle/schema";
@@ -26,25 +31,34 @@ import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import { appError } from "../../_core/appError";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { coGhim, dieuKienMayCoNoi, khaoSatKhaNangDungNhieu, soCoGhim } from "./khaNangDung";
+import { TRAN_MAY_DUNG_KHAN_CAP, type TongHopDungKhanCap } from "../../../shared/dungKhanCap";
+import { coGhim, dieuKienMayCoNoi, khaoSatKhaNangDungNhieu, soCoGhim, tongHopDungKhanCap } from "./khaNangDung";
 import { kiemCongVaiTro, lenhHmiBat, type NguoiGoiLenh } from "./lenhHmi";
+
+export { TRAN_MAY_DUNG_KHAN_CAP };
 
 /** Hạn của cả thân thủ tục (vai + phạm vi + máy + khảo sát). */
 export const HAN_DANH_SACH_DUNG_KHAN_CAP_MS = 3000;
-/** Số máy tối đa hiện trong khối; máy chủ đọc TRẦN + 1 để biết danh sách bị cắt (điều kiện 6). */
-export const TRAN_MAY_DUNG_KHAN_CAP = 200;
+/** fix round 1 (I1) — hạn CON của khảo sát khả năng dừng; quá hạn ⇒ máy chưa kết luận "không kiểm được", danh sách vẫn về. */
+export const HAN_KHAO_SAT_DUNG_KHAN_CAP_MS = 1500;
+/** fix round 1 (I1) — số adapter khảo sát đồng thời tối đa (không bắn cả loạt truy vấn vào pool dùng chung với dungMay). */
+export const DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP = 16;
+/** Phần hạn thân chừa lại sau khảo sát để dựng và trả danh sách. */
+const DU_PHONG_TRA_VE_MS = 250;
 
-/** Một máy của khối DỪNG khẩn cấp — ĐÚNG năm trường (ruling C16). */
+/** Một máy của khối DỪNG khẩn cấp — ĐÚNG sáu trường (ruling C16 + điều phối M4 phương án b). */
 export type MayDungKhanCap = {
   machineId: number;
   /** nhãn máy: "mã máy · tên máy" */
   ten: string;
   /** nhãn chuyền (tên chuyền, không có thì mã chuyền); null ⇒ không xác định */
   chuyen: string | null;
-  /** có ≥ 1 adapter nhận STOP HMI (`coGhim`); null = không biết (khảo sát lỗi) */
+  /** có ≥ 1 adapter nhận STOP HMI (`coGhim`); null = không biết (khảo sát lỗi / quá hạn) */
   coDung: boolean | null;
   /** số adapter nhận STOP HMI (`soCoGhim`); null = không biết */
   soAdapter: number | null;
+  /** gợi ý: STOP HMI tới thiết bị thật tới đâu (`tongHopDungKhanCap`); KHÔNG BAO GIỜ dùng để ẩn / khoá nút */
+  tongHop: TongHopDungKhanCap;
 };
 
 export type DanhSachDungKhanCap = {
@@ -56,7 +70,7 @@ export type DanhSachDungKhanCap = {
 
 const rong = (): DanhSachDungKhanCap => ({ may: [], biCat: false });
 
-async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem): Promise<DanhSachDungKhanCap> {
+async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, batDau: number): Promise<DanhSachDungKhanCap> {
   // 2. sàn vai mức 1 + machine_control.canEdit — không đạt ⇒ rỗng (người không có quyền dừng không thấy khối)
   const vai = await kiemCongVaiTro(nguoi, 1);
   if (!vai.ok) return rong();
@@ -80,10 +94,12 @@ async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem): Promise<DanhSachDu
     .limit(TRAN_MAY_DUNG_KHAN_CAP + 1);
   if (rows.length === 0) return rong();
 
-  // 5. khả năng dừng — CÙNG hàm của cheDo.danhSach; chỉ lấy số đếm (không chuyển danh sách adapter ra ngoài — C16)
+  // 5. khả năng dừng — CÙNG hàm của cheDo.danhSach, có hạn CON + giới hạn đồng thời (I1); chỉ lấy số đếm + gợi ý cấp máy (C16)
+  const hanKhaoSat = Math.min(HAN_KHAO_SAT_DUNG_KHAN_CAP_MS, batDau + HAN_DANH_SACH_DUNG_KHAN_CAP_MS - DU_PHONG_TRA_VE_MS - Date.now());
   const khaNang = await khaoSatKhaNangDungNhieu(
     db,
     rows.map((r) => r.id),
+    { hanMs: Math.max(0, hanKhaoSat), dongThoiToiDa: DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP },
   );
   return {
     may: rows.map((r) => ({
@@ -92,6 +108,7 @@ async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem): Promise<DanhSachDu
       chuyen: r.lineName || r.lineCode || null,
       coDung: coGhim(khaNang.get(r.id)),
       soAdapter: soCoGhim(khaNang.get(r.id)),
+      tongHop: tongHopDungKhanCap(khaNang.get(r.id)),
     })),
     biCat: rows.length > TRAN_MAY_DUNG_KHAN_CAP,
   };
@@ -99,12 +116,12 @@ async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem): Promise<DanhSachDu
 
 /**
  * Máy trong phạm vi mà người gọi được dừng (khối DỪNG khẩn cấp). Không bao giờ lộ chi tiết adapter. Quá hạn ⇒ ném `OPERATION_FAILED`
- * (SERVICE_UNAVAILABLE) — client đọc mọi lỗi thành "Không tải được danh sách máy — dùng E-STOP cứng tại máy".
+ * (SERVICE_UNAVAILABLE) — client đọc lỗi (trừ tường giấy phép) thành "Không tải được danh sách máy — dùng E-STOP cứng tại máy".
  */
 export async function mayDungKhanCap(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem): Promise<DanhSachDungKhanCap> {
   // 1. cờ — không chạm DB
   if (!lenhHmiBat()) return rong();
-  return withDeadline(than(nguoi, pv), HAN_DANH_SACH_DUNG_KHAN_CAP_MS, "mayDungKhanCap", {
+  return withDeadline(than(nguoi, pv, Date.now()), HAN_DANH_SACH_DUNG_KHAN_CAP_MS, "mayDungKhanCap", {
     unref: true,
     loi: () =>
       appError(

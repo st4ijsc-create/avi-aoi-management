@@ -24246,7 +24246,8 @@
         "tieuDe": "EMERGENCY MACHINE STOP",
         "moTa": "You can still stop machines before changing your password.",
         "loiTai": "Could not load the machine list — use the hardwired E-STOP at the machine",
-        "biCat": "The list may be incomplete — use the hardwired E-STOP"
+        "biCat": "The list may be incomplete — use the hardwired E-STOP",
+        "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
       }
     }
   }

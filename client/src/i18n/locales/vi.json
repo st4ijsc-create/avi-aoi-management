@@ -24243,7 +24243,8 @@
         "tieuDe": "DỪNG MÁY khẩn cấp",
         "moTa": "Bạn vẫn dừng được máy trong khi chưa đổi mật khẩu.",
         "loiTai": "Không tải được danh sách máy — dùng E-STOP cứng tại máy",
-        "biCat": "Danh sách có thể chưa đủ — dùng E-STOP cứng"
+        "biCat": "Danh sách có thể chưa đủ — dùng E-STOP cứng",
+        "khongToiMoi": "Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng"
       }
     }
   }

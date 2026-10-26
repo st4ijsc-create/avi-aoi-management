@@ -39,6 +39,7 @@ import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { edgeNodeReachability } from "../edge/edgeNodeCommands";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
+import type { TongHopDungKhanCap } from "../../../shared/dungKhanCap";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -62,7 +63,7 @@ export interface KhaNangDungMay {
   machineId: number;
   adapters: KhaNangDungAdapter[];
   tongHop: "duoc" | "mot_phan" | "khong";
-  /** lỗi đọc chung (adapter / ghim) — không kết luận được cho máy này */
+  /** lỗi đọc chung (adapter / ghim) — không kết luận được cho máy này; R1b-2b-1 T1 fix round 1: cả khi khảo sát có hạn quá hạn (`TuyChonKhaoSat.hanMs`) */
   loiKhaoSat?: true;
 }
 
@@ -146,40 +147,75 @@ async function ketLuanCoGhim(db: Db, a: HangAdapter, dem: DemToiEdge): Promise<O
   return { trangThai: "duoc" };
 }
 
+/**
+ * R1b-2b-1 T1 fix round 1 (review I1, điều phối 2026-10-26) — tuỳ chọn của khảo sát. Vắng ⇒ hành vi CŨ (không hạn, không giới hạn đồng thời —
+ * `cheDo.danhSach` không đổi). `scadaCommands.mayDungKhanCap` truyền cả hai: một adapter chậm không được làm mất cả khối DỪNG khẩn cấp.
+ */
+export interface TuyChonKhaoSat {
+  /**
+   * Hạn của CẢ lượt khảo sát (ms, đo từ lúc gọi). Đọc chung (adapter / ghim) chưa xong khi hết hạn ⇒ MỌI máy `loiKhaoSat`; một adapter chưa
+   * kết luận khi hết hạn ⇒ MÁY của nó `loiKhaoSat` (adapters rỗng — "không kiểm được", KHÔNG BAO GIỜ "được"); máy khác giữ kết luận.
+   */
+  hanMs?: number;
+  /** số adapter kiểm đồng thời tối đa (hồ chờ); vắng ⇒ không giới hạn */
+  dongThoiToiDa?: number;
+}
+
+/** Dấu "hết hạn khảo sát" (không ném lỗi thô — ngân sách rawErrorCensus). */
+const HET_HAN_KHAO_SAT: unique symbol = Symbol("het_han_khao_sat");
+
+/** `p` trong `ms` ms (null ⇒ không hạn). Hết hạn ⇒ HET_HAN_KHAO_SAT; reject muộn của `p` đã có handler (không thành unhandledRejection). */
+function trongHanKhaoSat<T>(p: Promise<T>, ms: number | null): Promise<T | typeof HET_HAN_KHAO_SAT> {
+  if (ms === null) return p;
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(HET_HAN_KHAO_SAT), Math.max(0, ms));
+    (t as { unref?: () => void }).unref?.();
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** Chạy `f` trên từng phần tử với tối đa `toiDa` lượt đồng thời, giữ thứ tự. `f` không được ném (nơi gọi tự bắt). */
+async function chayGioiHanDongThoi<T, R>(ds: readonly T[], toiDa: number | undefined, f: (x: T) => Promise<R>): Promise<R[]> {
+  if (toiDa === undefined || toiDa <= 0 || toiDa >= ds.length) return Promise.all(ds.map(f));
+  const out = new Array<R>(ds.length);
+  let tiep = 0;
+  const tho = async () => {
+    while (tiep < ds.length) {
+      const i = tiep++;
+      out[i] = await f(ds[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: toiDa }, tho));
+  return out;
+}
+
 /** Bản nhiều máy (một lượt đọc adapter + một lượt đọc ghim) — `scadaKenh.cheDo.danhSach` dùng. Không bao giờ ném. */
-export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Promise<Map<number, KhaNangDungMay>> {
+export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[], tuyChon: TuyChonKhaoSat = {}): Promise<Map<number, KhaNangDungMay>> {
   const out = new Map<number, KhaNangDungMay>();
   for (const m of machineIds) out.set(m, { machineId: m, adapters: [], tongHop: "khong" });
   if (machineIds.length === 0) return out;
-  let adapters: HangAdapter[];
+  const hetHanLuc = tuyChon.hanMs === undefined ? null : Date.now() + tuyChon.hanMs;
+  const conLai = (): number | null => (hetHanLuc === null ? null : hetHanLuc - Date.now());
+  let adapters: HangAdapter[] = [];
   const ghim = new Map<number, StopPinTagRowMuc[]>();
   try {
-    adapters = await docAdapterBat(db, machineIds);
-    if (adapters.length > 0) {
-      const rows = await db
-        .select({
-          adapterId: deviceTags.adapterId,
-          tagKey: deviceTags.tagKey,
-          dataType: deviceTags.dataType,
-          stopValue: deviceTags.stopValue,
-          writable: deviceTags.writable,
-          isEnabled: deviceTags.isEnabled,
-          actuationLevel: deviceTags.actuationLevel,
-        })
-        .from(deviceTags)
-        .where(
-          and(
-            inArray(
-              deviceTags.adapterId,
-              adapters.map((a) => a.id),
-            ),
-            eq(deviceTags.isEnabled, true),
-            eq(deviceTags.writable, true),
-            isNotNull(deviceTags.stopValue),
-          ),
-        );
-      for (const r of rows) ghim.set(r.adapterId, [...(ghim.get(r.adapterId) ?? []), r]);
+    const docChung = await trongHanKhaoSat(docAdapterVaGhim(db, machineIds, ghim), conLai());
+    if (docChung === HET_HAN_KHAO_SAT) {
+      // fix round 1 (I1) — đọc chung quá hạn: mọi máy "không kiểm được" (không bao giờ "được"); danh sách máy vẫn trả về
+      logger.warn({ hanMs: tuyChon.hanMs, soMay: machineIds.length }, "[SCADA] khảo sát khả năng dừng: đọc adapter/ghim quá hạn");
+      for (const v of out.values()) v.loiKhaoSat = true;
+      return out;
     }
+    adapters = docChung;
   } catch (err) {
     // fix round 2 — đọc chung hỏng: KHÔNG làm hỏng danh sách; mọi máy "không kiểm được" (không bao giờ "được")
     logger.error({ err: (err as Error)?.message ?? String(err) }, "[SCADA] khảo sát khả năng dừng: đọc adapter/ghim lỗi");
@@ -187,27 +223,100 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[]): Pro
     return out;
   }
   const dem: DemToiEdge = new Map();
-  const ketLuan = await Promise.all(
-    adapters.map(async (a): Promise<KhaNangDungAdapter & { machineId: number }> => {
-      const co = { machineId: a.machineId, adapterId: a.id, code: a.code };
-      try {
-        const hang = ghim.get(a.id) ?? [];
-        if (stopPinsFromTagRows(hang).length === 0) return { ...co, trangThai: "chua_ghim" };
-        // kiem-dinh R1b-1 H1 (b) — cùng luật với dungMay: ghim mức cao bị bỏ qua; không còn ghim gửi được ⇒ "không tới bằng STOP HMI"
-        const { gui, boQua } = phanLoaiGhimStopHmi(hang);
-        const ghimBoQua = boQua.map((b) => b.tagKey);
-        if (gui.length === 0) return { ...co, trangThai: "ghim_muc_cao", ghimBoQua };
-        return { ...co, ...(await ketLuanCoGhim(db, a, dem)), ...(ghimBoQua.length > 0 ? { ghimBoQua } : {}) };
-      } catch (err) {
-        // fix round 2 — lỗi khi kiểm MỘT adapter ⇒ chỉ adapter đó "không kiểm được"
-        logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] khảo sát khả năng dừng: kiểm adapter lỗi");
-        return { ...co, trangThai: "khong_kiem_duoc" };
-      }
-    }),
-  );
-  for (const { machineId, ...k } of ketLuan) out.get(machineId)?.adapters.push(k);
-  for (const v of out.values()) v.tongHop = tongHopKhaNang(v.adapters);
+  type KetQuaMot = (KhaNangDungAdapter & { machineId: number }) | { machineId: number; hetHan: true };
+  const ketLuan = await chayGioiHanDongThoi(adapters, tuyChon.dongThoiToiDa, async (a): Promise<KetQuaMot> => {
+    const co = { machineId: a.machineId, adapterId: a.id, code: a.code };
+    try {
+      const hang = ghim.get(a.id) ?? [];
+      if (stopPinsFromTagRows(hang).length === 0) return { ...co, trangThai: "chua_ghim" };
+      // kiem-dinh R1b-1 H1 (b) — cùng luật với dungMay: ghim mức cao bị bỏ qua; không còn ghim gửi được ⇒ "không tới bằng STOP HMI"
+      const { gui, boQua } = phanLoaiGhimStopHmi(hang);
+      const ghimBoQua = boQua.map((b) => b.tagKey);
+      if (gui.length === 0) return { ...co, trangThai: "ghim_muc_cao", ghimBoQua };
+      // fix round 1 (I1) — hết hạn trước khi tới lượt (hồ chờ) hoặc trong lúc kiểm ⇒ máy "không kiểm được"
+      const ms = conLai();
+      if (ms !== null && ms <= 0) return { machineId: a.machineId, hetHan: true };
+      const kl = await trongHanKhaoSat(ketLuanCoGhim(db, a, dem), ms);
+      if (kl === HET_HAN_KHAO_SAT) return { machineId: a.machineId, hetHan: true };
+      return { ...co, ...kl, ...(ghimBoQua.length > 0 ? { ghimBoQua } : {}) };
+    } catch (err) {
+      // fix round 2 — lỗi khi kiểm MỘT adapter ⇒ chỉ adapter đó "không kiểm được"
+      logger.error({ err: (err as Error)?.message ?? String(err), adapterId: a.id }, "[SCADA] khảo sát khả năng dừng: kiểm adapter lỗi");
+      return { ...co, trangThai: "khong_kiem_duoc" };
+    }
+  });
+  const mayHetHan = new Set<number>();
+  for (const k of ketLuan) {
+    if ("hetHan" in k) {
+      mayHetHan.add(k.machineId);
+      continue;
+    }
+    const { machineId, ...kq } = k;
+    out.get(machineId)?.adapters.push(kq);
+  }
+  for (const v of out.values()) {
+    v.tongHop = tongHopKhaNang(v.adapters);
+    if (mayHetHan.has(v.machineId)) {
+      // máy có adapter chưa kết luận khi hết hạn ⇒ cả máy "không kiểm được" (adapters rỗng — cùng hình dạng lỗi đọc chung)
+      v.loiKhaoSat = true;
+      v.adapters = [];
+      v.tongHop = "khong";
+    }
+  }
+  if (mayHetHan.size > 0) logger.warn({ hanMs: tuyChon.hanMs, may: [...mayHetHan] }, "[SCADA] khảo sát khả năng dừng: adapter quá hạn ⇒ máy 'không kiểm được'");
   return out;
+}
+
+/** Đọc chung: adapter bật của các máy + ghim của chúng (điền `ghim`). Ném khi DB lỗi (nơi gọi bắt). */
+async function docAdapterVaGhim(db: Db, machineIds: number[], ghim: Map<number, StopPinTagRowMuc[]>): Promise<HangAdapter[]> {
+  const adapters = await docAdapterBat(db, machineIds);
+  if (adapters.length > 0) {
+    const rows = await db
+      .select({
+        adapterId: deviceTags.adapterId,
+        tagKey: deviceTags.tagKey,
+        dataType: deviceTags.dataType,
+        stopValue: deviceTags.stopValue,
+        writable: deviceTags.writable,
+        isEnabled: deviceTags.isEnabled,
+        actuationLevel: deviceTags.actuationLevel,
+      })
+      .from(deviceTags)
+      .where(
+        and(
+          inArray(
+            deviceTags.adapterId,
+            adapters.map((a) => a.id),
+          ),
+          eq(deviceTags.isEnabled, true),
+          eq(deviceTags.writable, true),
+          isNotNull(deviceTags.stopValue),
+        ),
+      );
+    for (const r of rows) ghim.set(r.adapterId, [...(ghim.get(r.adapterId) ?? []), r]);
+  }
+  return adapters;
+}
+
+/**
+ * R1b-2b-1 T1 fix round 1 (điều phối M4 phương án b, 2026-10-26) — gợi ý cấp máy cho khối DỪNG khẩn cấp, suy từ CHÍNH kết quả khảo sát (không
+ * đường khảo sát thứ hai) theo CÙNG phân loại của HMI (`tongHopKhaNang`: chỉ `duoc` là tới thiết bị thật — qua edge / mất kết nối / mô phỏng /
+ * ghim cũ / chưa ghim / ghim mức cao đều KHÔNG tới). Không kiểm được (khảo sát lỗi / quá hạn / vắng / adapter `khong_kiem_duoc`) ⇒ "khong_ro" —
+ * KHÔNG BAO GIỜ suy thành "du". Chỉ là gợi ý: client KHÔNG BAO GIỜ ẩn / khoá nút DỪNG theo nó.
+ */
+export function tongHopDungKhanCap(k: KhaNangDungMay | undefined): TongHopDungKhanCap {
+  if (!k || k.loiKhaoSat) return "khong_ro";
+  if (k.adapters.some((a) => a.trangThai === "khong_kiem_duoc")) return "khong_ro";
+  switch (k.tongHop) {
+    case "duoc":
+      return "du";
+    case "mot_phan":
+      return "mot_phan";
+    case "khong":
+      return "khong_toi";
+    default:
+      return "khong_ro";
+  }
 }
 
 /** Khả năng dừng của MỘT máy (hộp xác nhận + cảnh báo cấp máy). */

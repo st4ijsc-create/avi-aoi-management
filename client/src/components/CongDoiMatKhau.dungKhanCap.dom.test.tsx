@@ -24,7 +24,7 @@ const S = (k: string, o?: Record<string, string | number>): string => {
 const srv = vi.hoisted(() => ({
   user: null as Record<string, unknown> | null,
   /** trả lời của mayDungKhanCap.useQuery */
-  q: { data: undefined as unknown, isLoading: false, isError: false },
+  q: { data: undefined as unknown, isLoading: false, isError: false, error: null as unknown },
   /** số lần gọi mayDungKhanCap.useQuery (mỗi lượt render) + tuỳ chọn */
   goiQuery: [] as unknown[],
   calls: [] as Array<{ proc: string; vars: unknown }>,
@@ -62,10 +62,19 @@ vi.mock("@/lib/trpc", () => {
 });
 
 import { CongDoiMatKhau } from "./CongDoiMatKhau";
-import { TRAN_HIEN_MAY_DUNG_KHAN_CAP } from "./scada/KhoiDungKhanCap";
+import { TRAN_MAY_DUNG_KHAN_CAP } from "@shared/dungKhanCap";
+import { laLoiGiayPhep } from "./scada/KhoiDungKhanCap";
 
-type May = { machineId: number; ten: string; chuyen: string | null; coDung: boolean | null; soAdapter: number | null };
-const may = (id: number, o: Partial<May> = {}): May => ({ machineId: id, ten: `RF-${id} · Reflow ${id}`, chuyen: "Chuyền SMT 1", coDung: true, soAdapter: 1, ...o });
+type May = { machineId: number; ten: string; chuyen: string | null; coDung: boolean | null; soAdapter: number | null; tongHop: string };
+const may = (id: number, o: Partial<May> = {}): May => ({
+  machineId: id,
+  ten: `RF-${id} · Reflow ${id}`,
+  chuyen: "Chuyền SMT 1",
+  coDung: true,
+  soAdapter: 1,
+  tongHop: "du",
+  ...o,
+});
 const nhieuMay = (n: number) => Array.from({ length: n }, (_, i) => may(1000 + i));
 
 const DAU_ROUTER = "dau-bang-route";
@@ -91,7 +100,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   srv.user = { id: 9, role: "operator", name: "T", mustChangePassword: true };
-  srv.q = { data: { may: [may(11), may(12, { ten: "RF-12 · Reflow 12", soAdapter: 2 })], biCat: false }, isLoading: false, isError: false };
+  srv.q = { data: { may: [may(11), may(12, { ten: "RF-12 · Reflow 12", soAdapter: 2 })], biCat: false }, isLoading: false, isError: false, error: null };
   srv.goiQuery = [];
   srv.calls = [];
   srv.opts = {};
@@ -141,7 +150,7 @@ describe("★★★ mục 59 — operator BỊ BUỘC ĐỔI MẬT KHẨU tới 
 
   it("★★★ máy chủ trả rỗng (viewer / thiếu quyền dừng / tính năng tắt — mayDungKhanCap rỗng) ⇒ KHÔNG có khối", () => {
     srv.user = { id: 10, role: "viewer", name: "V", mustChangePassword: true };
-    srv.q = { data: { may: [], biCat: false }, isLoading: false, isError: false };
+    srv.q = { data: { may: [], biCat: false }, isLoading: false, isError: false, error: null };
     ve();
     expect(screen.queryByTestId("khoi-dung-khan-cap")).toBeNull();
     expect(screen.queryByTestId("nut-dung-may")).toBeNull();
@@ -149,19 +158,57 @@ describe("★★★ mục 59 — operator BỊ BUỘC ĐỔI MẬT KHẨU tới 
   });
 
   it("★★ đang tải ⇒ không hiện gì", () => {
-    srv.q = { data: undefined, isLoading: true, isError: false };
+    srv.q = { data: undefined, isLoading: true, isError: false, error: null };
     ve();
     expect(screen.queryByTestId("khoi-dung-khan-cap")).toBeNull();
     expect(screen.queryByTestId("khoi-dung-khan-cap-loi")).toBeNull();
   });
 
-  it("★★★ query LỖI ⇒ một dòng đỏ 'Không tải được danh sách máy — dùng E-STOP cứng tại máy' (token DỪNG)", () => {
-    srv.q = { data: undefined, isLoading: false, isError: true };
+  it("★★★ query LỖI (không phải giấy phép — vd quá hạn 503) ⇒ một dòng đỏ 'Không tải được danh sách máy — dùng E-STOP cứng tại máy' (token DỪNG)", () => {
+    srv.q = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: { message: "x", data: { code: "SERVICE_UNAVAILABLE", httpStatus: 503, appCode: "OPERATION_FAILED", appParams: { operation: "mayDungKhanCap" } } },
+    };
     ve();
     const loi = screen.getByTestId("khoi-dung-khan-cap-loi");
     expect(loi).toHaveTextContent(S("scada.dungMay.khanCap.loiTai"));
     expect(loi.getAttribute("style") ?? "").toContain("--packml-abort");
     expect(screen.queryByTestId("nut-dung-may")).toBeNull();
+  });
+
+  it("★★★ review M5 — lỗi TƯỜNG GIẤY PHÉP (OT control chưa cấp phép: FORBIDDEN / FEATURE_DISABLED) ⇒ KHÔNG hiện gì (không báo động 'dùng E-STOP')", () => {
+    srv.q = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: { message: "x", data: { code: "FORBIDDEN", httpStatus: 403, appCode: "FEATURE_DISABLED", appParams: { feature: "moduleOtControl" } } },
+    };
+    ve();
+    expect(screen.queryByTestId("khoi-dung-khan-cap-loi")).toBeNull();
+    expect(screen.queryByTestId("khoi-dung-khan-cap")).toBeNull();
+    expect(screen.queryByText(S("scada.dungMay.khanCap.loiTai"))).toBeNull();
+    // vị từ thuần: chỉ FEATURE_DISABLED là giấy phép; lỗi khác / lỗi không mã ⇒ KHÔNG phải (chiều an toàn: hiện dòng E-STOP)
+    expect(laLoiGiayPhep({ data: { appCode: "FEATURE_DISABLED" } })).toBe(true);
+    expect(laLoiGiayPhep({ data: { appCode: "OPERATION_FAILED" } })).toBe(false);
+    expect(laLoiGiayPhep({ data: { appCode: "MUST_CHANGE_PASSWORD" } })).toBe(false);
+    expect(laLoiGiayPhep(new Error("mạng"))).toBe(false);
+    expect(laLoiGiayPhep(null)).toBe(false);
+  });
+
+  it("★★★ fix round 1 (I1) — coDung / soAdapter null (khảo sát quá hạn) ⇒ máy VẪN hiện, cảnh báo 'không kiểm được', nút BẤM ĐƯỢC, hộp nói 'không rõ số adapter'", async () => {
+    srv.q = { data: { may: [may(21, { coDung: null, soAdapter: null, tongHop: "khong_ro" })], biCat: false }, isLoading: false, isError: false, error: null };
+    ve();
+    const dong = screen.getByTestId("may-khan-cap-21");
+    expect(within(dong).getByText(S("scada.dungMay.canhBao.khongKiemDuoc"))).toBeInTheDocument();
+    const nut = within(dong).getByTestId("nut-dung-may");
+    expect(nut).toBeEnabled();
+    fireEvent.click(nut);
+    expect(within(screen.getByTestId("hop-dung-may")).getByText(S("scada.dungMay.moTaKhongRo"))).toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    expect(goi("dungMay")).toHaveLength(1);
+    expect((goi("dungMay")[0].vars as Record<string, unknown>).machineId).toBe(21);
   });
 
   it("★★ dungMay trả SCADA_STOP_PRECHECK_TIMEOUT ⇒ băng đỏ 'DÙNG E-STOP CỨNG' hiện (hồi quy dùng lại HopDungMay)", async () => {
@@ -191,29 +238,66 @@ describe("★★★ mục 59 — operator BỊ BUỘC ĐỔI MẬT KHẨU tới 
   });
 });
 
+describe("★★★ điều phối M4 (b) — gợi ý tongHop: MỘT dòng cho mot_phan / khong_toi / khong_ro; nút DỪNG KHÔNG BAO GIỜ ẩn / khoá", () => {
+  for (const [tongHop, coDong] of [
+    ["du", false],
+    ["mot_phan", true],
+    ["khong_toi", true],
+    ["khong_ro", true],
+  ] as const) {
+    it(`★★★ tongHop "${tongHop}" ⇒ ${coDong ? "dòng 'Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng'" : "không dòng gợi ý"}; nút bật + bấm mở hộp + Enter gửi`, async () => {
+      srv.q = {
+        data: { may: [may(31, { tongHop, ...(tongHop === "khong_ro" ? { coDung: null, soAdapter: null } : {}) })], biCat: false },
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
+      ve();
+      const dong = screen.getByTestId("may-khan-cap-31");
+      expect(dong).toHaveAttribute("data-tong-hop", tongHop);
+      const goiY = within(dong).queryByTestId("khan-cap-goi-y-31");
+      if (coDong) {
+        expect(goiY).toHaveTextContent(S("scada.dungMay.khanCap.khongToiMoi"));
+        expect(goiY!.getAttribute("style") ?? "").toContain("--packml-abort");
+      } else {
+        expect(goiY).toBeNull();
+      }
+      const nut = within(dong).getByTestId("nut-dung-may");
+      expect(nut).toBeVisible();
+      expect(nut).toBeEnabled();
+      expect(nut.closest("fieldset[disabled]")).toBeNull();
+      fireEvent.click(nut);
+      expect(screen.getByTestId("hop-dung-may")).toBeInTheDocument();
+      await userEvent.keyboard("{Enter}");
+      expect(goi("dungMay")).toHaveLength(1);
+      expect((goi("dungMay")[0].vars as Record<string, unknown>).machineId).toBe(31);
+    });
+  }
+});
+
 describe("★★★ điều kiện 6 / ruling C6 — danh sách bị CẮT", () => {
-  it(`★★★ máy chủ trả ${TRAN_HIEN_MAY_DUNG_KHAN_CAP + 1} hàng + biCat ⇒ ${TRAN_HIEN_MAY_DUNG_KHAN_CAP} nút + dòng 'danh sách có thể chưa đủ — dùng E-STOP cứng'`, () => {
-    expect(TRAN_HIEN_MAY_DUNG_KHAN_CAP).toBe(200);
-    srv.q = { data: { may: nhieuMay(TRAN_HIEN_MAY_DUNG_KHAN_CAP + 1), biCat: true }, isLoading: false, isError: false };
+  it(`★★★ máy chủ trả ${TRAN_MAY_DUNG_KHAN_CAP + 1} hàng + biCat ⇒ ${TRAN_MAY_DUNG_KHAN_CAP} nút + dòng 'danh sách có thể chưa đủ — dùng E-STOP cứng'`, () => {
+    expect(TRAN_MAY_DUNG_KHAN_CAP).toBe(200);
+    srv.q = { data: { may: nhieuMay(TRAN_MAY_DUNG_KHAN_CAP + 1), biCat: true }, isLoading: false, isError: false, error: null };
     ve();
     const khoi = screen.getByTestId("khoi-dung-khan-cap");
-    expect(within(khoi).getAllByTestId("nut-dung-may")).toHaveLength(TRAN_HIEN_MAY_DUNG_KHAN_CAP);
+    expect(within(khoi).getAllByTestId("nut-dung-may")).toHaveLength(TRAN_MAY_DUNG_KHAN_CAP);
     const cat = within(khoi).getByTestId("khoi-dung-khan-cap-bi-cat");
     expect(cat).toHaveTextContent(S("scada.dungMay.khanCap.biCat"));
     expect(cat.getAttribute("style") ?? "").toContain("--packml-abort");
   });
 
-  it(`★★ đúng ${TRAN_HIEN_MAY_DUNG_KHAN_CAP} hàng, biCat false ⇒ ${TRAN_HIEN_MAY_DUNG_KHAN_CAP} nút, KHÔNG có dòng cắt`, () => {
-    srv.q = { data: { may: nhieuMay(TRAN_HIEN_MAY_DUNG_KHAN_CAP), biCat: false }, isLoading: false, isError: false };
+  it(`★★ đúng ${TRAN_MAY_DUNG_KHAN_CAP} hàng, biCat false ⇒ ${TRAN_MAY_DUNG_KHAN_CAP} nút, KHÔNG có dòng cắt`, () => {
+    srv.q = { data: { may: nhieuMay(TRAN_MAY_DUNG_KHAN_CAP), biCat: false }, isLoading: false, isError: false, error: null };
     ve();
     const khoi = screen.getByTestId("khoi-dung-khan-cap");
-    expect(within(khoi).getAllByTestId("nut-dung-may")).toHaveLength(TRAN_HIEN_MAY_DUNG_KHAN_CAP);
+    expect(within(khoi).getAllByTestId("nut-dung-may")).toHaveLength(TRAN_MAY_DUNG_KHAN_CAP);
     expect(within(khoi).queryByTestId("khoi-dung-khan-cap-bi-cat")).toBeNull();
   });
 
-  it("★★ i18n — bốn khoá khanCap có ở vi / en / zh, en và zh không còn chữ Việt", () => {
+  it("★★ i18n — năm khoá khanCap có ở vi / en / zh, en và zh không còn chữ Việt", () => {
     const CHU_VIET = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i;
-    for (const k of ["tieuDe", "moTa", "loiTai", "biCat"]) {
+    for (const k of ["tieuDe", "moTa", "loiTai", "biCat", "khongToiMoi"]) {
       for (const [ten, b] of [["vi", vi_], ["en", en_], ["zh", zh_]] as const) {
         const v = doc(b, `scada.dungMay.khanCap.${k}`);
         expect(typeof v === "string" && v.length > 0, `${ten}: thiếu scada.dungMay.khanCap.${k}`).toBe(true);

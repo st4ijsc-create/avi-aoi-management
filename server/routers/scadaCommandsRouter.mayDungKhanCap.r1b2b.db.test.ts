@@ -18,6 +18,14 @@ const H = vi.hoisted(() => ({
   fingerprints: new Map<number, string>(),
   /** ms chờ trước idsTrongPhamVi thật (ca hạn 3 s của thân) */
   phamViCho: 0,
+  /** fix round 1 (I1) — adapter có lượt kiểm chủ edge (bước 2 của khảo sát) TREO `treoMs` ms; 0 = không treo */
+  treoAdapter: 0,
+  treoMs: 0,
+  /** fix round 1 (I1) — đo số lượt kiểm adapter đồng thời (mỗi lượt giữ `dongThoiGiuMs` ms) */
+  doDongThoi: false,
+  dongThoiGiuMs: 0,
+  dangChay: 0,
+  dongThoiMax: 0,
 }));
 
 const cho = (ms: number) =>
@@ -34,6 +42,27 @@ vi.mock("../db/hierarchy", async (importOriginal) => {
       if (H.phamViCho > 0) await cho(H.phamViCho);
       return real.idsTrongPhamVi(...a);
     }) as typeof real.idsTrongPhamVi,
+  };
+});
+
+// fix round 1 (I1) — callee THẬT của khảo sát khả năng dừng (bước 2, mỗi adapter có ghim) bọc chờ: treo một adapter / đo đồng thời
+vi.mock("../services/ot/otAdapterOwnerGate", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/otAdapterOwnerGate")>();
+  return {
+    ...real,
+    adapterOwnedByEdge: (async (...a: Parameters<typeof real.adapterOwnedByEdge>) => {
+      if (H.treoAdapter !== 0 && a[1] === H.treoAdapter && H.treoMs > 0) await cho(H.treoMs);
+      if (H.doDongThoi) {
+        H.dangChay++;
+        H.dongThoiMax = Math.max(H.dongThoiMax, H.dangChay);
+        try {
+          await cho(H.dongThoiGiuMs);
+        } finally {
+          H.dangChay--;
+        }
+      }
+      return real.adapterOwnedByEdge(...a);
+    }) as typeof real.adapterOwnedByEdge,
   };
 });
 
@@ -77,7 +106,13 @@ import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
-import { HAN_DANH_SACH_DUNG_KHAN_CAP_MS, TRAN_MAY_DUNG_KHAN_CAP } from "../services/scada/mayDungKhanCap";
+import {
+  DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP,
+  HAN_DANH_SACH_DUNG_KHAN_CAP_MS,
+  HAN_KHAO_SAT_DUNG_KHAN_CAP_MS,
+  TRAN_MAY_DUNG_KHAN_CAP,
+} from "../services/scada/mayDungKhanCap";
+import { TRAN_MAY_DUNG_KHAN_CAP as TRAN_SHARED } from "@shared/dungKhanCap";
 
 class StubGhi extends StubDriver {
   ghi: Array<Array<{ tagKey: string; value: unknown }>> = [];
@@ -91,10 +126,14 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Goc = ReturnType<(typeof import("../routers"))["appRouter"]["createCaller"]>;
 
 let db: Db;
-const fx = { fA: "", fB: "", fC: "", sA: 0, mA1: 0, mA2: 0, mB: 0, a1: 0, a2: 0, aB: 0 };
+const fx = { fA: "", fB: "", fC: "", fD: "", fE: "", sA: 0, mA1: 0, mA2: 0, mA3: 0, mA4: 0, mB: 0, a1: 0, a2: 0, a4d: 0, a4m: 0, aB: 0 };
 let stubA1: StubGhi;
+let stubA4: StubGhi;
 const userIds: number[] = [];
-const goc: Record<"op" | "viewer" | "opKhongSua" | "opC", { id: number; caller: Goc }> = {} as never;
+type Vai = "op" | "viewer" | "opKhongSua" | "opC" | "opD" | "opE";
+const goc: Record<Vai, { id: number; caller: Goc }> = {} as never;
+/** fix round 1 — nhà máy D: số máy có adapter BẬT + ghim (đo giới hạn đồng thời của khảo sát) */
+const SO_MAY_D = 40;
 
 async function dung(q: ReturnType<typeof sql>): Promise<any[]> {
   return (await db.execute(q)) as unknown as any[];
@@ -119,6 +158,30 @@ async function seedAdapter(mid: number, ma: string): Promise<number> {
 async function seedGhim(adapterId: number, key: string): Promise<void> {
   await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind, stop_value, stop_pinned_by, stop_pinned_at, actuation_level)
     VALUES (${adapterId}, ${key}, ${"M." + key}, 'bool', true, true, 'input_output'::scada_channel_kind, 'true'::jsonb, '1', now(), 1)`);
+}
+/** `n` máy ở trạm `sid`, mã `${RUN}${tienTo}001…`, mỗi máy MỘT adapter (bật/tắt); `ghim` ⇒ mỗi adapter một tag ghim DỪNG mức 1 */
+async function seedNhieuMay(sid: number, tienTo: string, n: number, o: { bat: boolean; ghim: boolean }): Promise<void> {
+  await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+    SELECT ${sid}, ${RUN + tienTo} || lpad(g::text, 3, '0'), 'May ' || ${tienTo.toUpperCase()} || ' ' || g, 'AOI', true FROM generate_series(1, ${n}) g`);
+  await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
+    SELECT m.id, ${RUN + "-a" + tienTo} || m.id, ${RUN + "-a" + tienTo} || m.id, 'stub', 'stub://' || m.id, 60000, ${o.bat}, 'disabled'
+    FROM machines m WHERE m."stationId" = ${sid}`);
+  if (o.ghim) {
+    await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable, "isEnabled", channel_kind, stop_value, stop_pinned_by, stop_pinned_at, actuation_level)
+      SELECT a.id, 'stop_cmd', 'M.stop_cmd', 'bool', true, true, 'input_output'::scada_channel_kind, 'true'::jsonb, '1', now(), 1
+      FROM device_adapters a WHERE a.code LIKE ${RUN + "-a" + tienTo + "%"}`);
+  }
+}
+async function ganStub(adapterId: number, ma: string): Promise<StubGhi> {
+  const s = new StubGhi();
+  await s.connect({ endpoint: `stub://${RUN}-${ma}` } as never);
+  H.drivers.set(adapterId, s);
+  const [row] = await dung(sql`SELECT protocol, endpoint, "machineId", "connectionOptions" FROM device_adapters WHERE id = ${adapterId}`);
+  H.fingerprints.set(
+    adapterId,
+    adapterTargetFingerprint({ protocol: row.protocol, endpoint: row.endpoint, machineId: row.machineId ?? null, connectionOptions: row.connectionOptions ?? null }),
+  );
+  return s;
 }
 async function seedNguoi(tag: string, role: "operator" | "viewer", nhaMay: string, canEdit: boolean) {
   const u = await taoNguoiDungTest(tag, role, { tienTo: "r1b2bt1", ts: RUN, ten: `R1B2B T1 ${tag}` });
@@ -166,48 +229,59 @@ beforeAll(async () => {
   fx.fA = `${RUN}a`;
   fx.fB = `${RUN}b`;
   fx.fC = `${RUN}c`;
+  fx.fD = `${RUN}d`;
+  fx.fE = `${RUN}e`;
   fx.sA = await seedNhaMay(fx.fA);
   const sB = await seedNhaMay(fx.fB);
   const sC = await seedNhaMay(fx.fC);
-  // A: mA1 có adapter ghim DỪNG (nhận STOP); mA2 có adapter KHÔNG ghim (coDung false, 0 adapter)
+  const sD = await seedNhaMay(fx.fD);
+  const sE = await seedNhaMay(fx.fE);
+  // A: mA1 có adapter ghim DỪNG, driver sống ⇒ "du"; mA2 có adapter KHÔNG ghim (coDung false, 0 adapter) ⇒ "khong_toi"
   fx.mA1 = await seedMay(fx.sA, "m1", "May T1-1");
   fx.mA2 = await seedMay(fx.sA, "m2", "May T1-2");
   fx.a1 = await seedAdapter(fx.mA1, "a1");
   await seedGhim(fx.a1, "stop_cmd");
   fx.a2 = await seedAdapter(fx.mA2, "a2");
+  // fix round 1 (M6) — mA3: KHÔNG adapter, CHỈ kênh chế độ (nhánh thứ hai của vị từ "có nối"; kênh trỏ adapter của mA2) ⇒ "khong_toi"
+  fx.mA3 = await seedMay(fx.sA, "m3", "May T1-3");
+  await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by) VALUES (${fx.mA3}, ${fx.a2}, 'che_do', '2'::jsonb, 1)`);
+  // fix round 1 (M4 b) — mA4: HAI adapter ghim: a4d driver sống (duoc) + a4m không driver (mat_ket_noi) ⇒ "mot_phan"
+  fx.mA4 = await seedMay(fx.sA, "m4", "May T1-4");
+  fx.a4d = await seedAdapter(fx.mA4, "a4d");
+  fx.a4m = await seedAdapter(fx.mA4, "a4m");
+  await seedGhim(fx.a4d, "stop_cmd");
+  await seedGhim(fx.a4m, "stop_cmd");
   // B: máy có adapter ghim — KHÔNG được hiện cho người nhà máy A
   fx.mB = await seedMay(sB, "mB", "May T1-B");
   fx.aB = await seedAdapter(fx.mB, "aB");
   await seedGhim(fx.aB, "stop_cmd");
-  // C: TRẦN + 1 = 201 máy, mỗi máy MỘT adapter TẮT (vị từ "có nối"; khảo sát không gọi gì theo adapter) — điều kiện 6
-  await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
-    SELECT ${sC}, ${RUN + "c"} || lpad(g::text, 3, '0'), 'May C ' || g, 'AOI', true FROM generate_series(1, ${TRAN_MAY_DUNG_KHAN_CAP + 1}) g`);
-  await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
-    SELECT m.id, ${RUN + "-ac"} || m.id, ${RUN + "-ac"} || m.id, 'stub', 'stub://' || m.id, 60000, false, 'disabled'
-    FROM machines m WHERE m."stationId" = ${sC}`);
+  // C: TRẦN + 3 = 203 máy (fix round 1 M1 — bỏ hẳn LIMIT phải lộ), mỗi máy MỘT adapter TẮT (khảo sát không gọi gì theo adapter) — điều kiện 6
+  await seedNhieuMay(sC, "c", TRAN_MAY_DUNG_KHAN_CAP + 3, { bat: false, ghim: false });
+  // D: 40 máy, mỗi máy MỘT adapter BẬT có ghim, không driver (mat_ket_noi) — đo giới hạn đồng thời của khảo sát (I1)
+  await seedNhieuMay(sD, "d", SO_MAY_D, { bat: true, ghim: true });
+  // E: ĐÚNG TRẦN = 200 máy (fix round 1 M2 — biCat false đúng ở biên)
+  await seedNhieuMay(sE, "e", TRAN_MAY_DUNG_KHAN_CAP, { bat: false, ghim: false });
 
-  stubA1 = new StubGhi();
-  await stubA1.connect({ endpoint: `stub://${RUN}-a1` } as never);
-  H.drivers.set(fx.a1, stubA1);
-  const [row] = await dung(sql`SELECT protocol, endpoint, "machineId", "connectionOptions" FROM device_adapters WHERE id = ${fx.a1}`);
-  H.fingerprints.set(
-    fx.a1,
-    adapterTargetFingerprint({ protocol: row.protocol, endpoint: row.endpoint, machineId: row.machineId ?? null, connectionOptions: row.connectionOptions ?? null }),
-  );
+  stubA1 = await ganStub(fx.a1, "a1");
+  stubA4 = await ganStub(fx.a4d, "a4d");
 
   goc.op = await seedNguoi("op", "operator", fx.fA, true);
   // viewer CÓ machine_control.canEdit ⇒ thứ chặn là SÀN VAI mức 1 (đột biến "bỏ kiemCongVaiTro" làm ca viewer đỏ)
   goc.viewer = await seedNguoi("viewer", "viewer", fx.fA, true);
   goc.opKhongSua = await seedNguoi("opks", "operator", fx.fA, false);
   goc.opC = await seedNguoi("opC", "operator", fx.fC, true);
+  goc.opD = await seedNguoi("opD", "operator", fx.fD, true);
+  goc.opE = await seedNguoi("opE", "operator", fx.fE, true);
 }, 120_000);
 
 afterAll(async () => {
   vi.unstubAllEnvs();
-  try {
-    await stubA1?.disconnect();
-  } catch {
-    /* bỏ qua */
+  for (const s of [stubA1, stubA4]) {
+    try {
+      await s?.disconnect();
+    } catch {
+      /* bỏ qua */
+    }
   }
   if (!db) return;
   try {
@@ -216,14 +290,12 @@ afterAll(async () => {
       await dung(sql`DELETE FROM ai_pending_actions WHERE "userId" = ${id} AND tool LIKE 'hmi.%'`);
       await dung(sql`DELETE FROM permissions WHERE "userId" = ${id}`);
     }
-    for (const id of [fx.a1, fx.a2, fx.aB].filter(Boolean)) {
-      await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id = ${id}`);
-      await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
-      await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
-    }
-    await dung(sql`DELETE FROM device_adapters WHERE code LIKE ${RUN + "-ac%"}`);
+    if (fx.mA3) await dung(sql`DELETE FROM scada_kenh_che_do WHERE machine_id = ${fx.mA3}`);
+    await dung(sql`DELETE FROM scada_khoa_chon WHERE adapter_id IN (SELECT id FROM device_adapters WHERE code LIKE ${RUN + "-%"})`);
+    await dung(sql`DELETE FROM device_tags WHERE "adapterId" IN (SELECT id FROM device_adapters WHERE code LIKE ${RUN + "-%"})`);
+    await dung(sql`DELETE FROM device_adapters WHERE code LIKE ${RUN + "-%"}`);
     await dung(sql`DELETE FROM machines WHERE code LIKE ${RUN + "%"}`);
-    for (const c of [fx.fA, fx.fB, fx.fC].filter(Boolean)) {
+    for (const c of [fx.fA, fx.fB, fx.fC, fx.fD, fx.fE].filter(Boolean)) {
       await dung(sql`DELETE FROM user_factory_assignments WHERE "factoryCode" = ${c}`);
       await dung(sql`DELETE FROM stations WHERE code = ${c}`);
       await dung(sql`DELETE FROM production_lines WHERE code = ${c}`);
@@ -235,17 +307,25 @@ afterAll(async () => {
   }
 }, 120_000);
 
-beforeEach(() => {
+const datLaiH = () => {
   H.phamViCho = 0;
-});
+  H.treoAdapter = 0;
+  H.treoMs = 0;
+  H.doDongThoi = false;
+  H.dongThoiGiuMs = 0;
+  H.dangChay = 0;
+  H.dongThoiMax = 0;
+};
+beforeEach(datLaiH);
 afterEach(async () => {
-  H.phamViCho = 0;
+  datLaiH();
   vi.stubEnv("SCADA_COMMANDS_ENABLED", "true");
-  for (const k of ["op", "viewer", "opKhongSua", "opC"] as const) if (goc[k]) await datCo(goc[k].id, false);
+  vi.stubEnv("OT_CONTROL_ENABLED", "true");
+  for (const k of ["op", "viewer", "opKhongSua", "opC", "opD", "opE"] as const) if (goc[k]) await datCo(goc[k].id, false);
 });
 
-/** Năm trường của hợp đồng tối thiểu (ruling C16) — sắp xếp để so tập khoá. */
-const KHOA_HOP_DONG = ["chuyen", "coDung", "machineId", "soAdapter", "ten"];
+/** Sáu trường của hợp đồng tối thiểu (ruling C16 + điều phối M4 b) — sắp xếp để so tập khoá. */
+const KHOA_HOP_DONG = ["chuyen", "coDung", "machineId", "soAdapter", "ten", "tongHop"];
 
 describe("★★★ mục 59 — operator ĐANG BỊ BUỘC ĐỔI MẬT KHẨU tới được STOP; mọi thủ tục khác vẫn bị chặn", () => {
   it("cầu chì — cờ bật thật trong DB (phaiDoiMatKhau đọc MỚI)", async () => {
@@ -260,14 +340,18 @@ describe("★★★ mục 59 — operator ĐANG BỊ BUỘC ĐỔI MẬT KHẨU 
     await datCo(goc.op.id, true);
     const kq = await goc.op.caller.scadaCommands.mayDungKhanCap();
     expect(kq.biCat).toBe(false);
-    expect(kq.may.map((m) => m.machineId)).toEqual([fx.mA1, fx.mA2]);
-    expect(kq.may[0]).toEqual({ machineId: fx.mA1, ten: `${RUN}m1 · May T1-1`, chuyen: `Chuyen ${fx.fA}`, coDung: true, soAdapter: 1 });
-    expect(kq.may[1]).toEqual({ machineId: fx.mA2, ten: `${RUN}m2 · May T1-2`, chuyen: `Chuyen ${fx.fA}`, coDung: false, soAdapter: 0 });
+    // mA3 (chỉ kênh chế độ, không adapter) CÓ trong danh sách — nhánh thứ hai của vị từ "có nối" (fix round 1 M6)
+    expect(kq.may.map((m) => m.machineId)).toEqual([fx.mA1, fx.mA2, fx.mA3, fx.mA4]);
+    const chuyen = `Chuyen ${fx.fA}`;
+    expect(kq.may[0]).toEqual({ machineId: fx.mA1, ten: `${RUN}m1 · May T1-1`, chuyen, coDung: true, soAdapter: 1, tongHop: "du" });
+    expect(kq.may[1]).toEqual({ machineId: fx.mA2, ten: `${RUN}m2 · May T1-2`, chuyen, coDung: false, soAdapter: 0, tongHop: "khong_toi" });
+    expect(kq.may[2]).toEqual({ machineId: fx.mA3, ten: `${RUN}m3 · May T1-3`, chuyen, coDung: false, soAdapter: 0, tongHop: "khong_toi" });
+    expect(kq.may[3]).toEqual({ machineId: fx.mA4, ten: `${RUN}m4 · May T1-4`, chuyen, coDung: true, soAdapter: 2, tongHop: "mot_phan" });
     for (const m of kq.may) expect(Object.keys(m).sort()).toEqual(KHOA_HOP_DONG);
     expect(Object.keys(kq).sort()).toEqual(["biCat", "may"]);
     // ruling C16 + Q1: không mã adapter / edgeCode / tagKey / endpoint / lastError / stopValue / giá trị ghim
     const json = JSON.stringify(kq);
-    for (const cam of [`${RUN}-a1`, `${RUN}-a2`, "stub://", "LOI-BI-MAT", "stop_cmd", "endpoint", "lastError", "stopValue", "edgeCode", "adapters", "khaNangDung", "ghimBoQua", "tagKey"]) {
+    for (const cam of [`${RUN}-a1`, `${RUN}-a2`, `${RUN}-a4d`, `${RUN}-a4m`, "stub://", "mat_ket_noi", "duoc\"", "LOI-BI-MAT", "stop_cmd", "endpoint", "lastError", "stopValue", "edgeCode", "adapters", "khaNangDung", "ghimBoQua", "tagKey"]) {
       expect(json, `JSON lộ "${cam}"`).not.toContain(cam);
     }
     expect(json).not.toContain(String(fx.mB));
@@ -306,7 +390,7 @@ describe("★★★ mục 59 — operator ĐANG BỊ BUỘC ĐỔI MẬT KHẨU 
       await loiCua(goc.op.caller.scadaCommands.request({ adapterId: fx.a1, tagKey: "stop_cmd", value: true, lyDo: "thu cong doi mat khau", clientRequestId: crypto.randomUUID() } as never)),
     ).toMatchObject({ code: "FORBIDDEN", appCode: "MUST_CHANGE_PASSWORD" });
     // đối chứng trong cùng ca: thủ tục miễn vẫn đi qua
-    expect((await goc.op.caller.scadaCommands.mayDungKhanCap()).may).toHaveLength(2);
+    expect((await goc.op.caller.scadaCommands.mayDungKhanCap()).may).toHaveLength(4);
   }, 10_000);
 
   it("★★★ đối chứng — người KHÔNG cờ ⇒ CÙNG danh sách", async () => {
@@ -338,8 +422,12 @@ describe("★★★ chỉ người CÓ QUYỀN DỪNG thấy máy (sàn vai mứ
 });
 
 describe("★★★ điều kiện 6 / ruling C6 — danh sách bị CẮT: TRẦN + 1 hàng + biCat", () => {
-  it(`★★★ ${TRAN_MAY_DUNG_KHAN_CAP + 1} máy có nối trong phạm vi ⇒ trả ${TRAN_MAY_DUNG_KHAN_CAP + 1} hàng, biCat = true, thứ tự mã máy`, async () => {
-    expect(TRAN_MAY_DUNG_KHAN_CAP).toBe(200);
+  it("★★ hằng TRẦN có MỘT chủ (shared/dungKhanCap.ts) — máy chủ dùng lại đúng hằng ấy (fix round 1 M3)", () => {
+    expect(TRAN_SHARED).toBe(200);
+    expect(TRAN_MAY_DUNG_KHAN_CAP).toBe(TRAN_SHARED);
+  });
+
+  it(`★★★ ${TRAN_MAY_DUNG_KHAN_CAP + 3} máy có nối trong phạm vi ⇒ trả ĐÚNG ${TRAN_MAY_DUNG_KHAN_CAP + 1} hàng (bỏ LIMIT phải lộ — M1), biCat = true, thứ tự mã máy`, async () => {
     await datCo(goc.opC.id, true);
     const kq = await goc.opC.caller.scadaCommands.mayDungKhanCap();
     expect(kq.may).toHaveLength(TRAN_MAY_DUNG_KHAN_CAP + 1);
@@ -347,7 +435,57 @@ describe("★★★ điều kiện 6 / ruling C6 — danh sách bị CẮT: TR�
     expect(kq.may[0].ten).toBe(`${RUN}c001 · May C 1`);
     expect(kq.may[TRAN_MAY_DUNG_KHAN_CAP].ten).toBe(`${RUN}c201 · May C 201`);
     // adapter TẮT ⇒ không adapter nào nhận STOP HMI
-    expect(kq.may.every((m) => m.coDung === false && m.soAdapter === 0)).toBe(true);
+    expect(kq.may.every((m) => m.coDung === false && m.soAdapter === 0 && m.tongHop === "khong_toi")).toBe(true);
+  }, 10_000);
+
+  it(`★★★ ĐÚNG ${TRAN_MAY_DUNG_KHAN_CAP} máy ⇒ ${TRAN_MAY_DUNG_KHAN_CAP} hàng, biCat = false (biên — M2)`, async () => {
+    await datCo(goc.opE.id, true);
+    const kq = await goc.opE.caller.scadaCommands.mayDungKhanCap();
+    expect(kq.may).toHaveLength(TRAN_MAY_DUNG_KHAN_CAP);
+    expect(kq.biCat).toBe(false);
+    expect(kq.may[TRAN_MAY_DUNG_KHAN_CAP - 1].ten).toBe(`${RUN}e200 · May E 200`);
+  }, 10_000);
+});
+
+describe("★★★ điều phối M4 (b) — gợi ý tongHop từ CÙNG khảo sát: du / mot_phan / khong_toi / khong_ro", () => {
+  it("★★★ du (driver sống) · mot_phan (một adapter mất kết nối) · khong_toi (chưa ghim / không adapter) — xem ca JSON; ở đây: MÔ PHỎNG ⇒ KHÔNG tới", async () => {
+    // OT control tắt (chỉ trong tiến trình) ⇒ adapter sống thành `mo_phong` (writeSimulated) ⇒ KHÔNG tới thiết bị thật
+    vi.stubEnv("OT_CONTROL_ENABLED", "false");
+    const kq = await goc.op.caller.scadaCommands.mayDungKhanCap();
+    const theo = new Map(kq.may.map((m) => [m.machineId, m]));
+    expect(theo.get(fx.mA1)).toMatchObject({ coDung: true, soAdapter: 1, tongHop: "khong_toi" });
+    // mA4: a4d mô phỏng + a4m mất kết nối ⇒ không adapter nào tới ⇒ khong_toi (không phải mot_phan)
+    expect(theo.get(fx.mA4)).toMatchObject({ coDung: true, soAdapter: 2, tongHop: "khong_toi" });
+  }, 10_000);
+
+  it(`★★★ I1 — MỘT adapter treo lúc khảo sát ⇒ danh sách VẪN về < ${HAN_DANH_SACH_DUNG_KHAN_CAP_MS} ms, đủ mọi máy; máy treo coDung/soAdapter null + tongHop khong_ro (KHÔNG BAO GIỜ du); máy khác giữ kết luận`, async () => {
+    expect(HAN_KHAO_SAT_DUNG_KHAN_CAP_MS).toBe(1500);
+    H.treoAdapter = fx.a1;
+    H.treoMs = 3_500;
+    await datCo(goc.op.id, true);
+    const batDau = Date.now();
+    const kq = await goc.op.caller.scadaCommands.mayDungKhanCap();
+    const troi = Date.now() - batDau;
+    expect(troi).toBeGreaterThanOrEqual(HAN_KHAO_SAT_DUNG_KHAN_CAP_MS - 50);
+    expect(troi).toBeLessThan(HAN_DANH_SACH_DUNG_KHAN_CAP_MS);
+    expect(kq.may.map((m) => m.machineId)).toEqual([fx.mA1, fx.mA2, fx.mA3, fx.mA4]);
+    expect(kq.may[0]).toMatchObject({ machineId: fx.mA1, coDung: null, soAdapter: null, tongHop: "khong_ro" });
+    expect(kq.may[1]).toMatchObject({ tongHop: "khong_toi", coDung: false });
+    expect(kq.may[3]).toMatchObject({ tongHop: "mot_phan", coDung: true, soAdapter: 2 });
+    // lượt bị bỏ rơi chạy xong trước ca kế (không truy vấn rơi vào lúc dọn)
+    await cho(H.treoMs - troi + 300);
+  }, 10_000);
+
+  it(`★★ I1 — khảo sát kiểm tối đa ${DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP} adapter đồng thời (${SO_MAY_D} adapter có ghim)`, async () => {
+    expect(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP).toBe(16);
+    H.doDongThoi = true;
+    H.dongThoiGiuMs = 40;
+    const kq = await goc.opD.caller.scadaCommands.mayDungKhanCap();
+    expect(kq.may).toHaveLength(SO_MAY_D);
+    // không driver ⇒ mất kết nối ⇒ không tới; mọi máy đã kết luận (không máy nào "khong_ro")
+    expect(kq.may.every((m) => m.tongHop === "khong_toi" && m.soAdapter === 1)).toBe(true);
+    expect(H.dongThoiMax).toBeGreaterThan(1);
+    expect(H.dongThoiMax).toBeLessThanOrEqual(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
   }, 10_000);
 });
 
