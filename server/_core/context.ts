@@ -1,8 +1,7 @@
-import { COOKIE_NAME } from "@shared/const";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import { parse as parseCookieHeader } from "cookie";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { docVePhienTuCookie } from "./vePhienCookie";
 import { beginStopAuthWarm, isStopOnlyCall, noteAuthenticatedUser } from "../services/robot/robotStopAuthMemo"; // doc 81 Đợt 10 D fix review 5 (R-10-bb) + 7 (R-10-bg/bh)
 import { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
 
@@ -59,10 +58,7 @@ export type TrpcContext = {
 function extractSessionToken(
   req: CreateExpressContextOptions["req"]
 ): string | null {
-  const cookieHeader = req.headers?.cookie;
-  if (!cookieHeader) return null;
-  const parsed = parseCookieHeader(cookieHeader);
-  return parsed[COOKIE_NAME] ?? null;
+  return docVePhienTuCookie(req.headers?.cookie) ?? null;
 }
 
 export async function createContext(

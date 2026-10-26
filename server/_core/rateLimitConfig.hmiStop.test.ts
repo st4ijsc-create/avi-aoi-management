@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import express from "express";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { phanDaKyCuaVe } from "./vePhienCookie";
 import { parse as parseCookieHeader } from "cookie";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -251,7 +252,7 @@ describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER SESSION OF A PERSON (
     // precondition (what makes this an attack): the verifier accepts every variant as the same signed ticket
     for (const v of bienThe) expect(await rl.laStopHmiCoPhienKy(r(cookieCua(v))), JSON.stringify(v.slice(-12))).toBe(true);
     // all of them hash to the same signed part
-    expect(new Set(bienThe.map(rl.phanDaKyCuaVe))).toEqual(new Set([`${h}.${p}`]));
+    expect(new Set(bienThe.map(phanDaKyCuaVe))).toEqual(new Set([`${h}.${p}`]));
 
     const lo = await guiNLan(base, cookieCua(t), 600);
     expect(lo.every((x) => x.status === 200)).toBe(true);
@@ -262,14 +263,14 @@ describe("★★★ R1b-2a T3 — STOP tier: 600 / min PER SESSION OF A PERSON (
   }, 60_000);
 
   it("phanDaKyCuaVe: header.payload of a 3-segment compact JWS; null for 0 / 1 / 3+ dots or an empty segment (re-review m-6)", () => {
-    expect(rl.phanDaKyCuaVe("aaa.bbb.ccc")).toBe("aaa.bbb");
-    expect(rl.phanDaKyCuaVe("aaa.bbb.c c=\n")).toBe("aaa.bbb");
-    expect(rl.phanDaKyCuaVe("khong-co-cham")).toBeNull();
-    expect(rl.phanDaKyCuaVe("aaa.bbb")).toBeNull();
-    expect(rl.phanDaKyCuaVe("aaa.bbb.ccc.ddd")).toBeNull();
-    expect(rl.phanDaKyCuaVe(".bbb.ccc")).toBeNull();
-    expect(rl.phanDaKyCuaVe("aaa..ccc")).toBeNull();
-    expect(rl.phanDaKyCuaVe("aaa.bbb.")).toBeNull();
+    expect(phanDaKyCuaVe("aaa.bbb.ccc")).toBe("aaa.bbb");
+    expect(phanDaKyCuaVe("aaa.bbb.c c=\n")).toBe("aaa.bbb");
+    expect(phanDaKyCuaVe("khong-co-cham")).toBeNull();
+    expect(phanDaKyCuaVe("aaa.bbb")).toBeNull();
+    expect(phanDaKyCuaVe("aaa.bbb.ccc.ddd")).toBeNull();
+    expect(phanDaKyCuaVe(".bbb.ccc")).toBeNull();
+    expect(phanDaKyCuaVe("aaa..ccc")).toBeNull();
+    expect(phanDaKyCuaVe("aaa.bbb.")).toBeNull();
   });
 
   it("★★★ re-review C-2: the STOP tier reads the cookie EXACTLY as auth does (`cookie.parse`) — whitespace / tab around name or value and a trimmed duplicate name all resolve to the SAME exhausted ticket ⇒ 429", async () => {
