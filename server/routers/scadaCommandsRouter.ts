@@ -8,6 +8,8 @@
  *   trangThai (query)    — chủ yêu cầu xem: dòng chờ + attempts + command_log theo actionId (không address/errorText).
  *   dungMay (mutation)   — R1b-1 Task 2: STOP HMI MỘT bước — giá trị DỪNG ĐÃ GHIM tới mọi adapter bật của máy qua `dispatch()` (không khoá
  *                          chọn, không kiểm chế độ, không 2FA, mức 1; miễn nhóm giới hạn "2fa" — census trpcGioiHanThuTuc). Thứ tự: lenhHmi.ts.
+ *   mayDungKhanCap (query) — R1b-2b-1 T1 (mục 59): máy trong phạm vi mà người gọi được dừng, cho khối DỪNG khẩn cấp trên trang buộc đổi
+ *                          mật khẩu (tối thiểu; miễn cổng buộc-đổi-mật-khẩu cùng dungMay). Logic: services/scada/mayDungKhanCap.ts.
  *
  * Router MỎNG: logic + thứ tự cổng + nhật ký `scada_command_attempts` ở `server/services/scada/lenhHmi.ts`. Ở đây chỉ: danh tính + phạm
  * vi từ `ctx` (`phamViCua(ctx)`, không bao giờ từ input) và đổi từ chối thành `appError` (mỗi mã MỘT lời gọi literal — cổng
@@ -30,6 +32,7 @@ import {
   type NguoiGoiLenh,
   type TuChoiYeuCau,
 } from "../services/scada/lenhHmi";
+import { mayDungKhanCap } from "../services/scada/mayDungKhanCap";
 
 const thuTucLenh = moduleProcedure("MOD_OT_CONTROL");
 
@@ -191,4 +194,11 @@ export const scadaCommandsRouter = router({
       if (!kq.ok) throw loiTuChoiLenh(kq.tuChoi);
       return kq.ketQua;
     }),
+
+  /**
+   * R1b-2b-1 T1 (mục 59, điều phối Q1 2026-10-26) — danh sách TỐI THIỂU cho khối "DỪNG MÁY khẩn cấp" trên trang buộc đổi mật khẩu: máy trong
+   * phạm vi mà người gọi được dừng (sàn vai mức 1 + machine_control.canEdit, như dungMay; không đạt ⇒ rỗng). Phần tử THỨ HAI của tập miễn cổng
+   * buộc-đổi-mật-khẩu. Chỉ id / nhãn máy / nhãn chuyền / coDung / số adapter (ruling C16); ≤ 201 hàng + `biCat` (C6). Thân có hạn 3 s.
+   */
+  mayDungKhanCap: thuTucLenh.query(({ ctx }) => mayDungKhanCap(nguoiGoi(ctx), phamViCua(ctx))),
 });

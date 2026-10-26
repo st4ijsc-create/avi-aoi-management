@@ -27,8 +27,8 @@
  * tongHop: mọi adapter `duoc` ⇒ "duoc"; không adapter nào `duoc` (kể cả máy không có adapter bật / lỗi khảo sát) ⇒ "khong"; còn lại ⇒
  * "mot_phan". `qua_edge` không tính là `duoc`.
  */
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { deviceAdapters, deviceTags } from "../../../drizzle/schema";
+import { and, asc, eq, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { deviceAdapters, deviceTags, machines } from "../../../drizzle/schema";
 import type { getDb } from "../../db/connection";
 import { logger } from "../../logger";
 import { getActiveDriver } from "../ot/otManager";
@@ -64,6 +64,32 @@ export interface KhaNangDungMay {
   tongHop: "duoc" | "mot_phan" | "khong";
   /** lỗi đọc chung (adapter / ghim) — không kết luận được cho máy này */
   loiKhaoSat?: true;
+}
+
+/**
+ * R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). fix round 3: khảo sát LỖI (`loiKhaoSat`) / vắng ⇒ null
+ * (KHÔNG BIẾT — không được đọc thành "chưa ghim" / 0 adapter).
+ * kiem-dinh R1b-1 H1 (b) — adapter chỉ có ghim mức cao (`ghim_muc_cao`) KHÔNG nhận STOP HMI ⇒ không đếm (cùng luật với dungMay).
+ * R1b-2b-1 T1 (2026-10-26) — chuyển từ `scadaKenhRouter.ts` (thân giữ nguyên) để `cheDo.danhSach` và `mayDungKhanCap` dùng CHUNG một hàm.
+ */
+export function soCoGhim(k: KhaNangDungMay | undefined): number | null {
+  return !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim" && a.trangThai !== "ghim_muc_cao").length;
+}
+export function coGhim(k: KhaNangDungMay | undefined): boolean | null {
+  const n = soCoGhim(k);
+  return n === null ? null : n > 0;
+}
+
+/**
+ * Vị từ "máy CÓ NỐI" của `scadaKenh.cheDo.danhSach`: máy có ≥ 1 adapter (bật hay tắt) HOẶC đã khai kênh chế độ. R1b-2b-1 T1 (2026-10-26,
+ * ruling C11) — rút từ router thành MỘT nguồn để `mayDungKhanCap` liệt kê CÙNG tập máy với HMI (không chép điều kiện).
+ * ⚠ Tham chiếu cột `machines.id` của truy vấn ngoài ⇒ chỉ dùng trong `.from(machines)`.
+ */
+export function dieuKienMayCoNoi(): SQL {
+  return or(
+    sql`EXISTS (SELECT 1 FROM device_adapters a WHERE a."machineId" = ${machines.id})`,
+    sql`EXISTS (SELECT 1 FROM scada_kenh_che_do k WHERE k.machine_id = ${machines.id})`,
+  ) as SQL;
 }
 
 export function tongHopKhaNang(adapters: ReadonlyArray<KhaNangDungAdapter>): KhaNangDungMay["tongHop"] {

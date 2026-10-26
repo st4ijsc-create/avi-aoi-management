@@ -545,7 +545,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // ★★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **tong 2411 · beMatAi 438 · aiCoCong 376 · aiMienTru 62 · ngoaiAiCoCong 0**, ĐO trên
 //   cây đã gộp (đặt ghim 0 rồi đọc số nhận được): = main 2410/438/376 + 1 mutation `scadaKenh.khaiHangLoat` của nhánh (ngoài bề mặt AI). `tong` 2411
 //   trùng `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2411, beMatAi: 438, aiCoCong: 376, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-10-26 · R1b-2b-1 scadaCommands.mayDungKhanCap +1 (SCADA R1b-2b-1 Task 1, mục 59) — **tong 2411 → 2412 · beMatAi / aiCoCong /
+//   aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI `scadaCommands.mayDungKhanCap` của `server/routers/scadaCommandsRouter.ts` (không phải bề
+//   mặt AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 128 → 129). Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1 ở `tong`. `tong`
+//   2412 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2412, beMatAi: 438, aiCoCong: 376, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -600,7 +604,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — 127 → 128: mutation `scadaKenh.khaiHangLoat` trên
   //   `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))` (+ `canEdit`), như `capNhat`. Không thủ tục cũ
   //   nào đổi cổng.
-  MOD_OT_CONTROL: 128,
+  // ★ 2026-10-26 · R1b-2b-1 scadaCommands.mayDungKhanCap +1 (SCADA R1b-2b-1 Task 1, mục 59) — 128 → 129: query `scadaCommands.mayDungKhanCap`
+  //   (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu) trên `moduleProcedure("MOD_OT_CONTROL")` như `dungMay` (sàn vai mức 1 +
+  //   `machine_control.canEdit` kiểm TRONG service; không đạt ⇒ rỗng). Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1. Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 129,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

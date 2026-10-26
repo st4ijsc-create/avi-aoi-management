@@ -24238,6 +24238,12 @@
         "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
         "nutBo": "Đã hiểu"
+      },
+      "khanCap": {
+        "tieuDe": "DỪNG MÁY khẩn cấp",
+        "moTa": "Bạn vẫn dừng được máy trong khi chưa đổi mật khẩu.",
+        "loiTai": "Không tải được danh sách máy — dùng E-STOP cứng tại máy",
+        "biCat": "Danh sách có thể chưa đủ — dùng E-STOP cứng"
       }
     }
   }

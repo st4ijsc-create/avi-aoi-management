@@ -72,6 +72,14 @@ const PHIEN: { user: unknown } = { user: null };
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: PHIEN.user }) }));
 vi.mock("wouter", () => ({ useLocation: () => ["/dashboard", () => {}] }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+/**
+ * R1b-2b-1 T1 (mục 59, 2026-10-26) — khối DỪNG khẩn cấp trong nhánh KHOÁ. Thay bằng một dấu (khối thật gọi tRPC — ngoại vi của phép đo
+ * này; hành vi của nó đo ở `CongDoiMatKhau.dungKhanCap.dom.test.tsx`). Ruling C11: `createElement` nhập từ react (tệp không có `React`).
+ */
+const DAU_KHOI_DUNG = "khoi-dung-khan-cap";
+vi.mock("@/components/scada/KhoiDungKhanCap", () => ({
+  KhoiDungKhanCap: () => createElement("div", { "data-testid": DAU_KHOI_DUNG }),
+}));
 
 /** Dấu nhận biết *"bảng route ĐÃ được render"*. Nó đứng thay cho `<Router/>` thật. */
 const DAU_ROUTER = "DAU-CUA-BANG-ROUTE";
@@ -258,6 +266,11 @@ describe("★★★★ I-4 §4 (client) — RENDER THẬT: cổng có KHOÁ hay 
     expect(html, "không thấy lời giải thích ⇒ người dùng bị chặn mà không biết vì sao").toContain(
       "auth.mustChangePasswordTitle",
     );
+    // R1b-2b-1 T1 (mục 59) — nhánh khoá VẪN cho tới STOP: khối DỪNG khẩn cấp nằm DƯỚI băng cảnh báo
+    expect(html, "nhánh khoá thiếu khối DỪNG khẩn cấp ⇒ người bị buộc đổi mật khẩu không tới được STOP").toContain(DAU_KHOI_DUNG);
+    expect(html.indexOf(DAU_KHOI_DUNG), "khối DỪNG phải nằm SAU (dưới) băng cảnh báo").toBeGreaterThan(
+      html.indexOf("auth.mustChangePasswordTitle"),
+    );
   });
 
   it("★★★★ ĐỐI CHỨNG DƯƠNG — KHÔNG cờ ⇒ bảng route render bình thường (cổng không khoá nhầm ai)", async () => {
@@ -266,6 +279,8 @@ describe("★★★★ I-4 §4 (client) — RENDER THẬT: cổng có KHOÁ hay 
     const html = await renderCong({ role: "user", mustChangePassword: false });
     expect(html).toContain(DAU_ROUTER);
     expect(html).not.toContain("auth.mustChangePasswordTitle");
+    // R1b-2b-1 T1 — nhánh KHÔNG khoá không render khối DỪNG khẩn cấp (HMI thật đã có nút DỪNG)
+    expect(html).not.toContain(DAU_KHOI_DUNG);
   });
 
   it("★★★ CHƯA ĐĂNG NHẬP (`auth.me` = null) ⇒ render bình thường, KHÔNG nhốt khách vào màn cần phiên", async () => {
@@ -282,5 +297,6 @@ describe("★★★★ I-4 §4 (client) — RENDER THẬT: cổng có KHOÁ hay 
     const html = await renderCong({ role: "admin", mustChangePassword: true });
     expect(html, "admin đang có cờ mà bị khoá ⇒ miễn trừ (quyết định chủ dự án) đã mất").toContain(DAU_ROUTER);
     expect(html).not.toContain("auth.mustChangePasswordTitle");
+    expect(html).not.toContain(DAU_KHOI_DUNG);
   });
 });

@@ -42,7 +42,7 @@
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, roleProcedure, require2FA } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
@@ -62,19 +62,9 @@ import { kiemPatchKenh, patchKenhInput, patchKhaiKenh, type KhaiKenh } from "../
 import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { tagDeadbandEnabled } from "../services/ot/otManager";
 import { TAG_DUNG_MAC_DINH } from "../services/ot/tagLenhMacDinh";
-import { khaoSatKhaNangDungNhieu, type KhaNangDungMay } from "../services/scada/khaNangDung";
-
-/**
- * R1b-1 T2 — số adapter bật có ≥ 1 ghim DỪNG hợp lệ (mọi kết luận ≠ chua_ghim). fix round 3: khảo sát LỖI (`loiKhaoSat`) / vắng ⇒ null
- * (KHÔNG BIẾT — không được đọc thành "chưa ghim" / 0 adapter).
- */
-// kiem-dinh R1b-1 H1 (b) — adapter chỉ có ghim mức cao (`ghim_muc_cao`) KHÔNG nhận STOP HMI ⇒ không đếm (cùng luật với dungMay).
-const soCoGhim = (k: KhaNangDungMay | undefined): number | null =>
-  !k || k.loiKhaoSat ? null : k.adapters.filter((a) => a.trangThai !== "chua_ghim" && a.trangThai !== "ghim_muc_cao").length;
-const coGhim = (k: KhaNangDungMay | undefined): boolean | null => {
-  const n = soCoGhim(k);
-  return n === null ? null : n > 0;
-};
+// R1b-1 T2 — `soCoGhim` / `coGhim` (số adapter nhận STOP HMI / có ghim): R1b-2b-1 T1 (2026-10-26) chuyển sang khaNangDung.ts, thân giữ
+// nguyên — MỘT hàm cho cheDo.danhSach và scadaCommands.mayDungKhanCap. `dieuKienMayCoNoi` = vị từ "máy có nối" của cheDo.danhSach (cùng nguồn).
+import { coGhim, dieuKienMayCoNoi, khaoSatKhaNangDungNhieu, soCoGhim } from "../services/scada/khaNangDung";
 import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 // kiem-dinh P1-2 — TOTP TƯƠI (mức 5) + ánh xạ lỗi: R1b-1 Task 9 chuyển sang `services/scada/totpCauHinh.ts` để `deviceAdapter.tags.update` và
@@ -208,10 +198,7 @@ const cheDoRouter = router({
     const db = await getDb();
     const idsMay = await idsMayCua(ctx);
     if (idsMay !== null && idsMay.length === 0) return [];
-    const coNoi = or(
-      sql`EXISTS (SELECT 1 FROM device_adapters a WHERE a."machineId" = ${machines.id})`,
-      sql`EXISTS (SELECT 1 FROM scada_kenh_che_do k WHERE k.machine_id = ${machines.id})`,
-    );
+    const coNoi = dieuKienMayCoNoi();
     const mays = await db
       .select({ id: machines.id, code: machines.code, name: machines.name })
       .from(machines)

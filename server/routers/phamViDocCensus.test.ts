@@ -973,7 +973,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   rồi đọc số nhận được) = main { A 36, S 711, D 1202, tong 2410 } + nhánh T12 (`oversight.posture` A → S: A −1, S +1) + nhánh T6 (mutation
 //   `scadaKenh.khaiHangLoat`: D +1, tong +1). Sổ nợ đọc: gỡ cả 4 mục ngRateThreshold (main L9) lẫn `oversight.posture` (nhánh T12). `tong` 2411
 //   trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 453, D: 1203, S: 712, tong: 2411 } as const;
+// ★★ 2026-10-26 · R1b-2b-1 Task 1 (mục 59) — **S 712 → 713 · tong 2411 → 2412 · A/B/C/D KHÔNG đổi.** Query MỚI `scadaCommands.mayDungKhanCap`
+//   (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu) — nhóm S: đọc CÓ phạm vi (`services/scada/mayDungKhanCap.ts` ⇒
+//   `idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`; máy nhà máy khác không bao giờ hiện — `scadaCommandsRouter.mayDungKhanCap.r1b2b.db.test.ts`).
+//   Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1 S / +1 tong. `tong` 2412 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 35, B: 8, C: 453, D: 1203, S: 713, tong: 2412 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
