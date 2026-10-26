@@ -130,15 +130,6 @@ function layCacPath(req: Request): string[] {
 }
 
 /**
- * Chuỗi vé phiên trong cookie `COOKIE_NAME`, đọc bằng ĐÚNG bộ đọc của đường xác thực (`vePhienCookie.docVePhienTuCookie`, `cookie.parse`:
- * cắt khoảng trắng quanh tên và giá trị, tên trùng ⇒ bản ĐẦU), hoặc null. R1b-2a T3 fix round 3 (C-2): regex tự viết cũ không cắt khoảng
- * trắng ⇒ `app_session_id= T` / `app_session_id =T` bị tầng STOP coi là vô danh trong khi auth nhận T ⇒ vượt trần. Chỉ dùng trong `phienKyVaVe`.
- */
-function veTuCookie(req: Pick<Request, "headers">): string | null {
-  return docVePhienTuCookie(req.headers?.cookie) ?? null;
-}
-
-/**
  * Phiên trong cookie có CHỮ KÝ JWT + hạn hợp lệ (`sdk.verifySession` — stateless, KHÔNG chạm DB, không tra sổ phiên): `{ openId }`, ngược lại
  * null (không cookie, cookie rác, chữ ký sai, hết hạn). CHỈ phục vụ GIỚI HẠN TỐC ĐỘ, không cấp quyền gì — xác thực thật vẫn ở createContext.
  * Hai người dùng: khoá đếm theo người của middleware này, và `rateLimitConfig.laStopHmiCoPhienKy` (SCADA R1b-1 rà soát cuối I-2; R1b-2a T3):
@@ -160,8 +151,8 @@ export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ ope
  * Merge main 134293775 (2026-10-26): phép kiểm chữ ký đi qua `phienKyHopLeTuVe` — vẫn đúng MỘT lượt `verifySession` trong tệp này.
  */
 export async function phienKyVaVe(req: Pick<Request, "headers">): Promise<{ openId: string; ve: string } | null> {
-  const ve = veTuCookie(req);
-  if (ve === null) return null;
+  const ve = docVePhienTuCookie(req.headers?.cookie);
+  if (ve === undefined) return null;
   const phien = await phienKyHopLeTuVe(ve);
   return phien ? { openId: phien.openId, ve } : null;
 }

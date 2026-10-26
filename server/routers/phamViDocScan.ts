@@ -959,9 +959,12 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
   const tuyenTinh: string[] = [];
   for (const f of files) {
     const src = noiDung.get(f) ?? "";
-    if (!/\.(get|post|put|patch|delete|head|options|all)\s*\(/.test(src) && !src.includes(".use(")) continue;
+    // W22 — chọn tệp theo TÊN phương thức (KHÔNG đòi dấu `(` liền sau): `router.get<P>(…)` / `.get\n(` / `.get?.(` từng làm tệp bị bỏ qua IM LẶNG.
+    // Chỉ là bộ lọc rẻ; việc khớp tuyến thật nằm ở AST + kiểm đối tượng gọi (`laNguoiNhanTuyen`).
+    if (!/\.(get|post|put|patch|delete|head|options|all|use)\b/.test(src)) continue;
     const rel = duong(f);
     const sf = cay(f);
+    const loaiBien = bangLoaiNguoiNhan(sf);
 
     const di = (x: ts.Node): void => {
       if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression)) {
@@ -977,7 +980,7 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
           );
         }
 
-        if (PHUONG_THUC_TUYEN.has(m) && x.arguments.length >= 2 && cuoi !== undefined) {
+        if (PHUONG_THUC_TUYEN.has(m) && x.arguments.length >= 2 && cuoi !== undefined && laNguoiNhanTuyen(x.expression.expression, loaiBien)) {
           const laHam =
             ts.isArrowFunction(cuoi) ||
             ts.isFunctionExpression(cuoi) ||
@@ -1037,6 +1040,66 @@ export function quetPhamViDoc(goc: string, ghiDe: Readonly<Record<string, string
     bang,
     soNutDocTenant: docTenant.size,
   };
+}
+
+// ── W22 (kiểm định 2026-10-26) — ĐỐI TƯỢNG GỌI của một lượt đăng ký tuyến phải là Express (app / Router), không phải máy khách HTTP ──────────────────────────────
+// Trước W22 mọi `x.get("/…", h)` với đối số cuối là hàm / định danh / lời gọi đều bị tính là TUYẾN, bất kể `x` là gì: `axios.get("/api/x", cfg)`,
+// `this.client.post(PATH, payload)` (sdk.ts) rơi vào nhóm D và làm ghim trôi khi ai đó sửa mã máy khách không liên quan (T3: D 96→94). Nay:
+//   · `express`   : tên được KHAI trong tệp bằng `express()` / `express.Router()` / `Router()` hoặc có kiểu `Express|Application|Router|IRouter` ⇒ luôn là tuyến (mọi tên);
+//   · `khac`      : tên được khai là máy khách HTTP (`axios.create()`, `got`, `new …Client()`, kiểu `…Client|Axios…`) ⇒ KHÔNG phải tuyến;
+//   · `khong-biet`: nhập từ nơi khác / tham số không kiểu ⇒ chỉ nhận nếu tên theo quy ước (`app|r|router|apiRouter|api|server`).
+type LoaiNguoiNhan = "express" | "khac" | "khong-biet";
+const TEN_QUY_UOC_TUYEN = /^(app|r|router|apiRouter|api|server)$/;
+const RE_KHOI_TAO_EXPRESS = /^(express|express\.Router|Router|\w+\.Router)$/;
+const RE_KHOI_TAO_CLIENT = /^(axios(\.create)?|got(\.extend)?|ky(\.create)?|superagent|supertest|request|createClient|createAxios\w*|\w*[Cc]lient)$/;
+const RE_KIEU_EXPRESS = /\b(Express|Application|Router|IRouter)\b/;
+const RE_KIEU_CLIENT = /(Axios|Client|Http|Fetch|SuperTest|Supertest|Agent)/;
+
+function loaiTuKhoiTao(init: ts.Expression | undefined, sf: ts.SourceFile): LoaiNguoiNhan | null {
+  if (init === undefined) return null;
+  const e = boVo(init) as ts.Expression;
+  if (ts.isCallExpression(e)) {
+    const callee = e.expression.getText(sf);
+    if (RE_KHOI_TAO_EXPRESS.test(callee)) return "express";
+    if (RE_KHOI_TAO_CLIENT.test(callee)) return "khac";
+  } else if (ts.isNewExpression(e)) {
+    if (RE_KIEU_CLIENT.test(e.expression.getText(sf))) return "khac";
+  }
+  return null;
+}
+function loaiTuKieu(kieu: ts.TypeNode | undefined, sf: ts.SourceFile): LoaiNguoiNhan | null {
+  if (kieu === undefined) return null;
+  const t = kieu.getText(sf);
+  if (RE_KIEU_EXPRESS.test(t)) return "express";
+  if (RE_KIEU_CLIENT.test(t)) return "khac";
+  return null;
+}
+/** Tên → loại, từ MỌI khai báo biến / tham số / thuộc tính / gán `this.x = …` trong tệp (một tên có cả hai loại ⇒ `express` thắng). */
+function bangLoaiNguoiNhan(sf: ts.SourceFile): Map<string, LoaiNguoiNhan> {
+  const bang = new Map<string, LoaiNguoiNhan>();
+  const ghi = (ten: string, loai: LoaiNguoiNhan | null) => {
+    if (loai === null) return;
+    if (bang.get(ten) !== "express") bang.set(ten, loai);
+  };
+  const di = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) ghi(n.name.text, loaiTuKieu(n.type, sf) ?? loaiTuKhoiTao(n.initializer, sf));
+    else if (ts.isParameter(n) && ts.isIdentifier(n.name)) ghi(n.name.text, loaiTuKieu(n.type, sf));
+    else if (ts.isPropertyDeclaration(n) && ts.isIdentifier(n.name)) ghi(n.name.text, loaiTuKieu(n.type, sf) ?? loaiTuKhoiTao(n.initializer, sf));
+    else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left)) ghi(n.left.name.text, loaiTuKhoiTao(n.right, sf));
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return bang;
+}
+/** `recv` là biểu thức đứng TRƯỚC `.get/.post/…`. */
+function laNguoiNhanTuyen(recv: ts.Expression, bang: Map<string, LoaiNguoiNhan>): boolean {
+  const e = boVo(recv) as ts.Expression;
+  const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
+  if (ten === null) return false;
+  const loai = bang.get(ten) ?? "khong-biet";
+  if (loai === "express") return true;
+  if (loai === "khac") return false;
+  return TEN_QUY_UOC_TUYEN.test(ten);
 }
 
 /** Phương thức HTTP được coi là một ĐĂNG KÝ TUYẾN (không phải `req.get("host")`). */
