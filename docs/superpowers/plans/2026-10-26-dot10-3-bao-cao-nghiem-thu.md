@@ -1,6 +1,6 @@
 # Đợt 10.3 — Cổng AI ngoài: báo cáo nghiệm thu
 
-> Phiên **do-model** · nhánh `feat/ai-do-model` · tip `1b01838d8` · 2026-10-26
+> Phiên **do-model** · nhánh `feat/ai-do-model` · 2026-10-26 · main đã có tới `6d3860227` (fresh/main `a03700211`); còn chờ gộp: `1b01838d8` + bản vá rawErrorCensus + báo cáo này
 > Spec: `docs/superpowers/specs/2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` · Kế hoạch: `docs/superpowers/plans/2026-10-26-dot10-3-cong-ai-ngoai.md`
 > Người đọc: dieu-phoi (gộp), kiem-dinh (rà checklist A–F), chủ dự án (§5 vận hành), luong-ui (§7 bàn giao 10.4).
 
@@ -9,11 +9,11 @@
 | Hạng mục | Trạng thái |
 |---|---|
 | Task 1–10 (B1–B4) | XONG. kiem-dinh ĐẠT từng lô: lô 1–2, Task 7, Task 8, Task 9 + sửa proxy, Task 10 (13/15 đột biến bắt; 2 lỗ đã đóng ở `1b01838d8`) |
-| Gộp main | dieu-phoi gộp tới `6d3860227`. `1b01838d8` (3 mục bắt buộc của rà T10) chờ kiem-dinh xác nhận đột biến |
+| Gộp main | Task 8+9+10 tới `6d3860227` đã lên fresh/main `a03700211` (cổng dieu-phoi; đỏ duy nhất — census nguoiDungTest ở `flowRouterNgoai.db.test.ts` — dieu-phoi sửa bằng `taoNguoiDungTest`). `1b01838d8` (3 mục bắt buộc của rà T10) chờ kiem-dinh xác nhận đột biến |
 | Migration 0413–0416 | ĐÃ ÁP **DEV** + **_test**, nghiệm thu bằng `avi_app` (cấu trúc · quyền · hành vi hoàn tác · sổ). 0414 áp DEV 2026-10-26 theo hiệu lệnh dieu-phoi; CHECK `ai_api_keys_active_can_nha_may_chk` đã đặt lại trên _test |
-| tsc toàn cây (`--max-old-space-size=12288`) | 0 lỗi trên `1b01838d8` |
+| tsc toàn cây (`--max-old-space-size=12288`) | 0 lỗi (cây gộp `f560f8d77`) |
 | Lưới lô | ngoai + flow + flowRouter + aiNgoai + openaiGateway + chonModel + 3 census + appErrorParamsCoverage: xanh (lượt cuối: ngoai + flow/nut 365/365; trước đó lô rộng 1022/1022) |
-| **Task 11 — quét toàn bộ** (`server/services/ai server/services/flow server/routers server/routes ensus`) | **CHỜ** cổng gộp của dieu-phoi xong (luật: không chạy song song full suite trên _test). Kết quả sẽ bổ sung vào §1 |
+| **Task 11 — quét toàn bộ** (`server/services/ai server/services/flow server/routers server/routes ensus`, cây gộp `f560f8d77`) | 896 tệp / 11 871 ca: **11 858 xanh · 3 đỏ · 10 bỏ qua** (671 s). Đỏ 1+2: `rawErrorCensus` 463 > 462 — do `throw new Error` mới ở `hostAiNgoai.docHostDongTuDb` (`1b01838d8`) ⇒ ĐÃ VÁ thành `LoiHttpLuong(DICH_AI_KHONG_RO)`, chạy lại 32/32 xanh. Đỏ 3: `orchestrationScope.dot5.db.test` F3 (23,9 s dưới tải, không thuộc lô) — chạy riêng 30/30 xanh ⇒ chậm dưới tải, không phải hồi quy |
 | Cờ | `AI_NGOAI_ENABLED` mặc định `false` (`.env.example`). Mọi nhà máy mặc định TẮT (`ai_ngoai_nha_may` vắng ⇒ tắt hết). Không có khoá thật trong repo/.env. Mọi lưới dùng máy chủ giả trong tiến trình |
 
 Census GHIM trên nhánh: `congGiayPhepAi` 2425 / beMatAi 452 / aiCoCong 390 / aiMienTru 62 · `phamViDoc` A35 B8 C453 D1212 S717 tổng 2425 · `phamViGhi` 1212 / nợ 142 · `duongVong` 64 tệp miễn trừ / 97 điểm. Gộp vào main mới ⇒ dieu-phoi đo lại trên cây gộp.

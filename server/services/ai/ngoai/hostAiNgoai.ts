@@ -76,7 +76,7 @@ const congMacDinh = (u: URL) => u.port || (u.protocol === "https:" ? "443" : "80
 export async function docHostDongTuDb(layDb?: () => Promise<unknown>): Promise<string[]> {
   const { sql } = await import("drizzle-orm");
   const db = (await (layDb ?? (async () => (await import("../../../db/connection")).getDb()))()) as { execute(q: unknown): Promise<unknown> } | null;
-  if (!db) throw new Error("khong-co-csdl");
+  if (!db) throw new LoiHttpLuong("không có CSDL để đọc danh sách máy chủ AI ngoài đã khai", "DICH_AI_KHONG_RO");
   const hang = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
   const khoa = hang(await db.execute(sql`SELECT endpoint FROM ai_api_keys WHERE provider = 'openai_compat' AND endpoint IS NOT NULL`));
   const noiBo = hang(await db.execute(sql`SELECT DISTINCT "hostCong" FROM ai_ngoai_host_noi_bo`));
