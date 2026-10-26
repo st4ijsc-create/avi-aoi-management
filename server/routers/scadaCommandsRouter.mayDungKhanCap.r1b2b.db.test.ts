@@ -624,7 +624,7 @@ describe("★★★ điều phối M4 (b) — gợi ý tongHop từ CÙNG khảo
   }, 10_000);
 
   it(`★★ I1 — khảo sát kiểm tối đa ${DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP} adapter đồng thời (${SO_MAY_D} adapter có ghim)`, async () => {
-    expect(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP).toBe(16);
+    expect(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP).toBe(8); // final fix I-1 (2026-10-27): 16 → 8 — ngân sách pool chung với sổ treo T9 (nganSachPoolStop.test.ts)
     H.doDongThoi = true;
     H.dongThoiGiuMs = 40;
     const kq = await goc.opD.caller.scadaCommands.mayDungKhanCap();

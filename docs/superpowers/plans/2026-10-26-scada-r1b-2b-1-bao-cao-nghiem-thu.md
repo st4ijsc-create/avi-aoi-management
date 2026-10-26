@@ -261,7 +261,7 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 15. (T15) Bộ phân loại dựa trên `path` ĐẦY ĐỦ: người gọi qua router con (path ngắn `dungMay`) bị coi là anh em (chỉ test). Lượt anh em trong batch có
     `dungMay` có thể nhận 503 (chấp nhận, KD-T15).
 16. (T1) Hạn 3 s chỉ bọc THÂN `mayDungKhanCap` — xác thực + đọc cờ ở cổng không có hạn (C16 đã chấp nhận); khảo sát bị bỏ rơi sau hạn con 1,5 s vẫn chạy
-    nền (khe dùng chung toàn tiến trình 16); bức tường giấy phép làm khối im lặng (cả `dungMay` cũng chịu giấy phép); `khong_ro` có thể hiện hai cảnh báo.
+    nền (khe dùng chung toàn tiến trình 8 — final fix I-1, trước 16; ngân sách pool ở VẬN HÀNH 3); bức tường giấy phép làm khối im lặng (cả `dungMay` cũng chịu giấy phép); `khong_ro` có thể hiện hai cảnh báo.
     Chi phí khảo sát ở site lớn chưa đo trên DEV.
 17. (T13) Nhánh từ chối edge-node của script dọn chỉ có test đơn vị; chạy khô với tiền tố DÙNG CHUNG liệt kê cả fixture sống của test đang chạy song song.
 18. (T17, bench B1b) **STOP treo 5 s khi liên kết mất lúc lệnh ghi đang bay — lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có trên main/:3000 hiện tại;
@@ -292,8 +292,14 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 1. **MC không có PLC thật.** M1 chỉ chứng minh trên thư viện giả ở lưới và thư viện mcprotocol THẬT trên máy chủ TCP giả (probe T4). Hành vi với PLC
    Mitsubishi thật quá tải (trả lỗi chậm) chưa được đo.
 2. **Bench OpenPLC B1** chưa chạy ở T16 (§3, bộ điều khiển). Không có bench cho S7 / MC / EIP / SLMP / OPC UA.
-3. **Trần THEO TIẾN TRÌNH** (T9: 8 lượt sổ treo; T14: mọi bộ giới hạn khi Redis sập) — chạy N bản API thì trần thực là N ×. Pool DB mặc định 25:
-   tối đa 8 kết nối bị lượt sổ treo giữ.
+3. **Trần THEO TIẾN TRÌNH** (T9: 8 lượt sổ treo; T1: 8 khe khảo sát; T14: mọi bộ giới hạn khi Redis sập) — chạy N bản API thì trần thực là N ×.
+   **Ngân sách pool DB (rà soát cuối I-1, final fix):** pool chính mặc định 25 (`resolvePoolMax()`, env `DB_POOL_MAX`). Khi DB chậm, truy vấn bị bỏ
+   rơi giữ kết nối tới khi DB trả lời (≤ `statement_timeout` 30 s): khe khảo sát của khối DỪNG khẩn cấp tối đa **8** (`DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP`;
+   bản trước rà soát cuối: 16) + lượt sổ STOP treo tối đa **8** (`TRAN_GHI_SO_TREO_STOP_HMI`) = **16** ⇒ còn ≥ **9** (`DU_TRU_POOL_CHO_DUNG_MAY`) cho lượt
+   đọc trước-gửi của `dungMay`. Hai trần từng được định cỡ RIÊNG (16 + 8 = 24 / 25 ⇒ `dungMay` còn 1 kết nối ⇒ có thể `STOP_QUA_HAN`). Bất đẳng thức
+   ghim ở `server/services/scada/nganSachPoolStop.test.ts` (nâng một trần / hạ pool mặc định ⇒ đỏ). **Không** đặt `DB_POOL_MAX` < 25 trên bản API
+   phục vụ STOP HMI. Ngân sách chưa phủ: lượt bắn-rồi-quên có từ trước trên đường STOP (R1b-2b-2 mục 61 — gộp thành MỘT ngân sách dùng chung) và
+   khảo sát không trần của `cheDo.danhSach` (mục 33).
 4. Lý do `moi_tag_sai_cau_hinh` chỉ ở RAM — công cụ đọc `device_adapters.status` trực tiếp không thấy; sau khởi động lại hiện lại sau ≤ 1 chu kỳ poll.
 5. Trong cửa sổ tắt → khởi động lại, `device_adapters.status` có thể còn `connected` (T8, Q6).
 6. STOP HMI vẫn có thể gặp hạn: khi DB chậm, câu trả lời trễ ≤ 500 ms mỗi lượt sổ; luôn có E-STOP cứng. Batch có `dungMay` có thể làm lượt khác cùng batch
@@ -316,7 +322,7 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 | STOP máy KHÁC khi 8 lượt sổ treo (cận 1700) | T9: 117 / 246 ms; lưới L2: 107 / 104 / 115 ms | T9 fix round, T16 |
 | Lượt sổ treo tối đa khi bấm 12 lần, chỉ bảng attempts chậm | ĐÚNG 8 (Postgres: 8 backend chờ, sau 200 ms vẫn 8); 4 lượt bỏ qua có log nội dung | T9 fix round, T16 L2 |
 | Đột biến "bỏ trần" (T9) | lượt treo 11; ca mất 31 s thay vì 6 s (bấm xếp hàng sau kết nối kẹt) | T9 fix round |
-| `mayDungKhanCap` với một adapter treo 3,5 s | trả trong [1450, 3000) ms, máy treo `khong_ro`, máy khác giữ kết quả; khảo sát đồng thời tối đa ∈ [2, 16] trên 40 adapter | T1 fix round 1–2 |
+| `mayDungKhanCap` với một adapter treo 3,5 s | trả trong [1450, 3000) ms, máy treo `khong_ro`, máy khác giữ kết quả; khảo sát đồng thời tối đa ∈ [2, 16] trên 40 adapter (final fix I-1: trần 8 ⇒ ∈ [2, 8], ca DB 17/17 xanh) | T1 fix round 1–2, final fix |
 | G4 batch `[…, dungMay]`, xác thực treo 5 s (cận 1700 sau trừ lag) | thô 1521 / 1512 / 1522 ms, trừ lag 1421 / 1412 / 1422 ms | T16 lưới (T15 cùng cận) |
 | G3 Redis NÉM: 600 STOP + 1 + phiên khác + đăng nhập | 620 / 597 / 628 ms cho cả ô | T16 lưới |
 | STOP dưới Redis chậm 400 ms / 2000 ms + 50 vòng đăng nhập đồng thời (cận `1000 + lag`) | < 1 s mỗi lượt; ca dài nhất 5,4 s; đột biến bỏ `commandTimeout`: 2010 ms (đỏ) | T14 fix round |
@@ -334,7 +340,7 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 
 | Task | Đột biến → kết quả |
 |---|---|
-| T1 (mục 59) | phần tử thứ ba trong tập miễn ⇒ §2b đỏ; bỏ `mayDungKhanCap` khỏi tập ⇒ 6 ca DB đỏ; bỏ `kiemCongVaiTro` ⇒ 2; lộ mã adapter ⇒ 1; `LIMIT 200` ⇒ 1; bỏ dòng `biCat` ⇒ DOM 1; gỡ `KhoiDungKhanCap` ⇒ 7; khối ở nhánh không khoá ⇒ 4; fix round: `khong_toi ⇒ disabled` đỏ; khe 16 dùng chung / bỏ qua truy vấn sau hạn / N2 ⇒ 3 đỏ |
+| T1 (mục 59) | phần tử thứ ba trong tập miễn ⇒ §2b đỏ; bỏ `mayDungKhanCap` khỏi tập ⇒ 6 ca DB đỏ; bỏ `kiemCongVaiTro` ⇒ 2; lộ mã adapter ⇒ 1; `LIMIT 200` ⇒ 1; bỏ dòng `biCat` ⇒ DOM 1; gỡ `KhoiDungKhanCap` ⇒ 7; khối ở nhánh không khoá ⇒ 4; fix round: `khong_toi ⇒ disabled` đỏ; khe 16 dùng chung / bỏ qua truy vấn sau hạn / N2 ⇒ 3 đỏ; final fix I-1 (khe 16 → 8): nâng khe lên 9 / nâng sổ treo lên 9 / hạ dự trữ xuống 7 / hạ pool mặc định xuống 20 ⇒ `nganSachPoolStop.test.ts` đỏ (4/4) |
 | T2 (G1) | M1–M10 (`"on"` hợp lệ, coil `Boolean()`, bỏ `"bool"` ở cổng kênh, SQL bỏ nhánh chuỗi, STOP qua `boolGhi`, `boolGhi` khoan dung, bỏ kiểm bit lúc đặt ghim, bỏ `dungGhim`, giải mã S7 `Boolean`, so đọc lại `Boolean`) đều đỏ; fix round F1a–F3 (8) đều đỏ |
 | T3 (G2) | bỏ vế `thuVienBaoLoi` ⇒ 3 đỏ; MC "mọi BAD" bỏ `anythingBad` ⇒ 1; bỏ vế dataType ⇒ chỉ ca thuần đỏ (ca driver int không phân biệt được — đã ghi) |
 | T4 (mục 58) | M1 luôn `khong_ro` ⇒ 4; M2 bỏ lọc `valid===false` ⇒ ban đầu SỐNG, thêm 2 ca ⇒ 2 đỏ; M3 đảo "mọi item lỗi PLC" ⇒ đỏ; M4 `khong_ro` bỏ luật thời gian ⇒ 3 |
@@ -358,7 +364,8 @@ Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-
 riêng)"** (số giữ theo báo cáo R1b-2a §11). Tám mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; 67, 68 từ T16 Step 3 / 5; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
 
 - **61 (ƯU TIÊN ĐẦU R1b-2b-2; thứ tự 61 → 66 → 62)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
-  theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình.
+  theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình. Gộp thành MỘT
+  ngân sách "truy vấn có thể bị bỏ rơi" dùng chung với khe khảo sát T1 (8) và sổ treo T9 (8) ≤ pool − dự trữ 9 (§6 VẬN HÀNH 3; rà soát cuối I-1).
 - **62** — interlock `resolveEvent`: đọc luật + kiểm phạm vi adapter dưới `khoaDichLuatTx` (adapter FOR SHARE → luật), không gọi pool trong giao dịch.
 - **63** — census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng.
 - **64** — đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi (§6 LOGIC mục 1).

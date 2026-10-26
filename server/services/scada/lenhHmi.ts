@@ -1392,8 +1392,18 @@ export const HAN_GHI_SO_STOP_HMI_MS = 500;
  * thì vài người bấm liên tục khi CHỈ bảng sổ chậm sẽ VẮT CẠN pool (25) ⇒ lượt đọc trước-gửi của MỌI máy xếp hàng ⇒ STOP_QUA_HAN toàn nhà máy
  * (phá "STOP không bao giờ bị chặn"). Đầy trần ⇒ lượt ghi KHÔNG được phát (log `<nhan>_bo_qua_day` mang nội dung dòng để dựng lại từ log;
  * `command_log` của dispatch vẫn ghi STOP). Chỉ đếm lượt ĐÃ quá hạn ⇒ DB nhanh không bao giờ bị bỏ qua. 8 ≈ 1/3 pool mặc định.
+ * final fix (rà soát cuối I-1): trần này CHUNG NGÂN SÁCH pool với khe khảo sát của khối DỪNG khẩn cấp (`DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP`,
+ * `mayDungKhanCap.ts`): tổng hai trần ≤ pool mặc định − `DU_TRU_POOL_CHO_DUNG_MAY` (`nganSachPoolStop.test.ts`).
  */
 export const TRAN_GHI_SO_TREO_STOP_HMI = 8;
+
+/**
+ * final fix (rà soát cuối I-1, 2026-10-27) — số kết nối của pool DB chính (`resolvePoolMax()`, mặc định 25) DÀNH cho lượt đọc trước-gửi của
+ * `dungMay` khi DB chậm: tổng các trần "truy vấn bị bỏ rơi" của tiến trình (khe khảo sát `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` + lượt sổ treo
+ * `TRAN_GHI_SO_TREO_STOP_HMI`) phải ≤ pool − DU_TRU. 9 > 8 trần sổ treo: một lượt dungMay cần vài lượt đọc nối nhau + vài máy bấm cùng lúc.
+ * Không phải cổng (không gì chặn STOP theo số này) — chỉ là ngân sách được ghim bằng test.
+ */
+export const DU_TRU_POOL_CHO_DUNG_MAY = 9;
 let ghiSoTreo = 0;
 /** Số lượt ghi sổ STOP HMI đã quá hạn mà còn treo (đọc cho test / chẩn đoán). */
 export function soGhiSoTreoStopHmi(): number {

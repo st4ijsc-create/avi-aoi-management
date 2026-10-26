@@ -22,7 +22,7 @@
  *   tải được danh sách máy — dùng E-STOP cứng tại máy". Khảo sát (5) có hạn CON riêng `HAN_KHAO_SAT_DUNG_KHAN_CAP_MS` (kẹp vào phần còn lại của
  *   hạn thân, chừa `DU_PHONG_TRA_VE_MS`) và tối đa `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` adapter kiểm đồng thời: một adapter chậm chỉ làm MÁY của
  *   nó thành "không kiểm được" (`coDung`/`soAdapter` null, `tongHop` "khong_ro") — danh sách vẫn về, nút DỪNG vẫn bấm được; dungMay tự quyết
- *   lúc gửi. fix round 2 (N1): giới hạn 16 là KHE DÙNG CHUNG toàn tiến trình (`KHE_KHAO_SAT_DUNG_KHAN_CAP`) giữa mọi lượt gọi — việc bị bỏ rơi
+ *   lúc gửi. fix round 2 (N1): giới hạn (8 từ final fix I-1; trước 16) là KHE DÙNG CHUNG toàn tiến trình (`KHE_KHAO_SAT_DUNG_KHAN_CAP`) giữa mọi lượt gọi — việc bị bỏ rơi
  *   giữ khe tới khi THẬT xong và bỏ các truy vấn còn lại sau hạn; hết khe ⇒ "không kiểm được" ngay. ⚠ Giới hạn đã ghi (C16): lượt đọc cờ ở cổng và xác thực KHÔNG nằm trong hạn này (thủ tục không phải dungMay ⇒ không có
  *   `ctx.hanChotStopHmi`); DB treo ở đó ⇒ khối không hiện — E-STOP cứng vẫn là lớp an toàn thật.
  */
@@ -42,15 +42,24 @@ export { TRAN_MAY_DUNG_KHAN_CAP };
 export const HAN_DANH_SACH_DUNG_KHAN_CAP_MS = 3000;
 /** fix round 1 (I1) — hạn CON của khảo sát khả năng dừng; quá hạn ⇒ máy chưa kết luận "không kiểm được", danh sách vẫn về. */
 export const HAN_KHAO_SAT_DUNG_KHAN_CAP_MS = 1500;
-/** fix round 1 (I1) — số adapter khảo sát đồng thời tối đa (không bắn cả loạt truy vấn vào pool dùng chung với dungMay). */
-export const DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP = 16;
+/**
+ * fix round 1 (I1) — số adapter khảo sát đồng thời tối đa (không bắn cả loạt truy vấn vào pool dùng chung với dungMay).
+ * final fix (rà soát cuối I-1, 2026-10-27): 16 → 8. Khe này và trần lượt sổ treo của T9 (`TRAN_GHI_SO_TREO_STOP_HMI` = 8, `lenhHmi.ts`) cùng giữ
+ * kết nối của MỘT pool (mặc định `resolvePoolMax()` = 25) khi DB chậm; mỗi trần được định cỡ RIÊNG thì tổng 16 + 8 = 24 ⇒ lượt đọc trước-gửi của
+ * `dungMay` chỉ còn 1 kết nối. NGÂN SÁCH chung: khảo sát 8 + sổ treo 8 = 16 ≤ pool 25 − `DU_TRU_POOL_CHO_DUNG_MAY` (9). Test
+ * `nganSachPoolStop.test.ts` ghim bất đẳng thức đó trên pool mặc định — nâng một trần hoặc hạ pool mặc định ⇒ đỏ.
+ */
+export const DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP = 8;
 /** Phần hạn thân chừa lại sau khảo sát để dựng và trả danh sách. */
 const DU_PHONG_TRA_VE_MS = 250;
 
 /**
  * fix round 2 (re-review N1) — khe khảo sát DÙNG CHUNG TOÀN TIẾN TRÌNH cho MỌI lượt `mayDungKhanCap` (mọi người dùng, mọi lần tải lại): tổng
- * việc khảo sát đang chạy (kể cả việc bị bỏ rơi sau hạn con) ≤ DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP ⇒ pool DB (25) luôn còn chỗ cho dungMay. Hết
- * khe ⇒ máy "không kiểm được" NGAY (không xếp hàng). Khe chỉ trả khi việc THẬT xong.
+ * việc khảo sát đang chạy (kể cả việc bị bỏ rơi sau hạn con) ≤ DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP (mỗi việc giữ tối đa MỘT kết nối). Hết khe ⇒
+ * máy "không kiểm được" NGAY (không xếp hàng). Khe chỉ trả khi việc THẬT xong.
+ * final fix (I-1): khe này KHÔNG một mình bảo đảm chỗ cho dungMay. Cùng trần sổ treo T9, nó giữ tối đa 8 + 8 = 16 kết nối của pool mặc định 25
+ * ⇒ còn ≥ 9 (`DU_TRU_POOL_CHO_DUNG_MAY`) — CHỈ trong số kết nối mà hai trần này giữ. Lượt ghi bắn-rồi-quên có từ trước trên đường STOP (R1b-2b-2
+ * mục 61) và khảo sát không trần của `cheDo.danhSach` (mục 33) CHƯA nằm trong ngân sách; N bản API ⇒ mỗi bản có ngân sách riêng trên pool riêng.
  */
 const KHE_KHAO_SAT_DUNG_KHAN_CAP = taoKheKhaoSat(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
 
