@@ -501,3 +501,47 @@ describe("★★★ phán quyết 2 + 4 — thứ tự khoá ADAPTER → LUẬT 
     console.info(`[T10] 10 vòng hai update đổi đích: ${soConflict} CONFLICT scadaKenhThuLai, ${10 - soConflict} vòng tuần tự cả hai thành công`);
   }, 120_000);
 });
+
+/**
+ * kiem-dinh R1b-2b-1 (T10d) — `khoaAdapterTx` khoá các adapter theo id TĂNG (thứ tự toàn cục). Hai lượt FOR SHARE không xung đột nhau, nên hai
+ * luật đổi đích ngược chiều (A→B ∥ B→A) KHÔNG thể lộ thứ tự khoá (cả hai bản đều không 40P01) — ca dưới dùng bên ghi ĐỘC QUYỀN theo đúng
+ * thứ tự toàn cục (FOR UPDATE id nhỏ → id lớn, như mọi bên khoá nhiều hàng ORDER BY id) làm đối thủ.
+ *
+ * Tất định (không đua giờ): (1) W khoá `lo` FOR UPDATE; (2) `interlock.update` đổi đích luật `hi → lo` ⇒ `khoaAdapterTx([hi, lo])` chạy và BỊ CHẶN
+ * bởi W (đo `pg_blocking_pids`) — bản đúng chặn ở `lo` khi CHƯA giữ gì, bản đột biến (không sắp) đã giữ `hi` FOR SHARE rồi mới chặn ở `lo`;
+ * (3) W khoá `hi` FOR UPDATE: bản đúng ⇒ đi ngay; đột biến ⇒ vòng chờ chắc chắn ⇒ Postgres huỷ một bên 40P01 (sau deadlock_timeout).
+ */
+describe("★★ T10d — khoaAdapterTx khoá adapter theo id TĂNG: không vòng chờ với bên ghi theo thứ tự toàn cục", () => {
+  it("update đổi đích hi → lo ∥ bên ghi FOR UPDATE lo rồi hi ⇒ cả hai thành công, 0 lỗi 40P01, đích = lo", async () => {
+    const lo = await seedAdapter(A.mid);
+    const hi = await seedAdapter(A.mid);
+    expect(lo).toBeLessThan(hi);
+    const id = await seedLuat(hi);
+
+    let diTiep!: () => void;
+    const choDiTiep = new Promise<void>((r) => (diTiep = r));
+    let daKhoa!: (pid: number) => void;
+    const choKhoa = new Promise<number>((r) => (daKhoa = r));
+    const benGhi = thuGoi(
+      db.transaction(async (tx) => {
+        const [p] = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{ pid: number }>;
+        await tx.execute(sql`SELECT id FROM device_adapters WHERE id = ${lo} FOR UPDATE`);
+        daKhoa(Number(p.pid));
+        await choDiTiep;
+        await tx.execute(sql`SELECT id FROM device_adapters WHERE id = ${hi} FOR UPDATE`);
+      }),
+    );
+    const pidGhi = await choKhoa;
+    const thuTuc = thuGoi(engA.ilk.update({ id, targetAdapterId: lo }));
+    try {
+      await choBiChan(pidGhi, "interlock.update phải BỊ CHẶN ở lượt khoá adapter (bên ghi giữ lo FOR UPDATE)");
+    } finally {
+      diTiep();
+    }
+    const [g, t] = [await benGhi, await thuTuc];
+    expect({ benGhiDeadlock: laDeadlock(g.loi), thuTucDeadlock: laDeadlock(t.loi) }).toEqual({ benGhiDeadlock: false, thuTucDeadlock: false });
+    expect(g.loi ? String(g.loi).slice(0, 200) : null).toBeNull();
+    expect(moTa(t.loi)).toBeNull();
+    expect((await hangLuat(id)).targetAdapterId).toBe(lo);
+  }, 60_000);
+});
