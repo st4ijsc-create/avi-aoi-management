@@ -55,6 +55,21 @@ const demFoeCuaTest = async (moc: number, runIds: readonly string[]) => {
   const dkSql = dk.reduce((a, b) => sql`${a} OR ${b}`);
   return ((await (await db()).execute(sql`SELECT count(*)::int AS n FROM orchestration_runs WHERE id > ${moc} AND ("workflowRef" LIKE 'wf-%' OR ${dkSql})`)) as unknown as { n: number }[])[0].n;
 };
+/**
+ * Hàng `command_log` do CHÍNH luồng của test sinh ra: id > mốc chụp trước VÀ một cột định danh (actionId / idempotencyKey / correlation_id / requestedValue / errorText)
+ * nhắc tới một lượt luồng của test (`ot:<runId>:…` là deXuatId) hoặc tiền tố `t85ot` của luồng. KHÔNG đếm cả bảng: `command_log` là bảng DÙNG CHUNG — các bộ
+ * dispatcher chạy song song chèn hàng liên tục (đo 2026-10-26: chạy chung với commandDispatcher.* thì 3/3 lượt ĐỎ, lệch 300 hàng). Mô phỏng ⇒ phải bằng 0.
+ */
+const mocLenh = async () =>
+  ((await (await db()).execute(sql`SELECT coalesce(max(id), 0)::int AS m FROM command_log`)) as unknown as { m: number }[])[0].m;
+const demLenhCuaTest = async (moc: number, runIds: readonly string[]) => {
+  const nhan = [...runIds, TT];
+  const dk = nhan.map(
+    (n) => sql`("actionId" LIKE ${"%" + n + "%"} OR "idempotencyKey" LIKE ${"%" + n + "%"} OR correlation_id LIKE ${"%" + n + "%"} OR "requestedValue"::text LIKE ${"%" + n + "%"} OR "errorText" LIKE ${"%" + n + "%"})`,
+  );
+  const dkSql = dk.reduce((a, b) => sql`${a} OR ${b}`);
+  return ((await (await db()).execute(sql`SELECT count(*)::int AS n FROM command_log WHERE id > ${moc} AND (${dkSql})`)) as unknown as { n: number }[])[0].n;
+};
 const demBang = async (bang: "command_log" | "orchestration_runs") =>
   ((await (await db()).execute(sql.raw(`SELECT count(*)::int AS n FROM ${bang}`))) as unknown as { n: number }[])[0].n;
 const demDeXuat = async (runIds: string[]) =>
@@ -81,7 +96,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
 
   it(`★★★ bộ đột biến: ${CA_CAO.length} yêu cầu mức 4–5 ⇒ ${CA_CAO.length}/${CA_CAO.length} lượt bị chặn, 0 đề xuất (đếm bảng); ${CA_THAP.length} stop/pause ⇒ ${CA_THAP.length} đề xuất mô phỏng`, async () => {
     const { version } = await luuPhienBan(luongLenh, null);
-    const cmd0 = await demBang("command_log");
+    const cmd0 = await mocLenh();
     const moc0 = await mocFoe();
 
     const runCao: string[] = [];
@@ -100,13 +115,13 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
     for (const r of runThap) expect(await trangThai(r)).toBe("cho-duyet");
     expect(await demDeXuat(runThap)).toBe(CA_THAP.length);
 
-    expect(await demBang("command_log"), "command_log phải đứng yên").toBe(cmd0);
+    expect(await demLenhCuaTest(cmd0, [...runCao, ...runThap]), "luồng mô phỏng KHÔNG sinh hàng command_log nào").toBe(0);
     expect(await demFoeCuaTest(moc0, [...runCao, ...runThap]), "không có lượt FOE nào do luồng này sinh ra").toBe(0);
   }, 120_000); // 55 lượt × (bước + kiểm toán FLOW_BUOC_NGOAI_GHI mỗi bước ot) — trần mặc định 30 s không đủ khi máy tải
 
   it("★★ đồng ý một đề xuất ⇒ 'đã duyệt (mô phỏng) — không gửi', item mang deXuatId/muc/ketQua; command_log đứng yên", async () => {
     const { version } = await luuPhienBan(luongLenh, null);
-    const cmd0 = await demBang("command_log");
+    const cmd0 = await mocLenh();
     const r = await batDauRun({ flowId: luongLenh.id, version, items: [{ json: { may: 7, lenh: "stop", tag: null, giaTri: null } }] });
     await chayHet();
     const [w] = (await (await db()).execute(sql`SELECT payload FROM ai_flow_waits WHERE "runId" = ${r}`)) as unknown as { payload: Record<string, unknown> }[];
@@ -119,7 +134,7 @@ describe("Đợt 8.5 — node OT chế độ mô phỏng (động cơ thật, DB
     const item = (b.output as { main: { json: Record<string, unknown> }[] }).main[0].json;
     expect(item).toMatchObject({ deXuatId: `ot:${r}:d:1`, muc: 1, ketQua: "da-de-xuat", moPhong: true, nhanh: "dong-y" });
     expect(item.thucThi).toMatchObject({ daGui: false, moPhong: true, ghiChu: GHI_CHU_DA_DUYET_MO_PHONG });
-    expect(await demBang("command_log")).toBe(cmd0);
+    expect(await demLenhCuaTest(cmd0, [r]), "luồng mô phỏng KHÔNG sinh hàng command_log nào").toBe(0);
   });
 
   it("nhiều item vào một node đề xuất ⇒ lỗi, không đề xuất hàng loạt", async () => {
