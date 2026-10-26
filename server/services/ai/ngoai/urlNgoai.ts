@@ -12,7 +12,10 @@ import { LoiNgoai } from "./loi";
 
 const RE_IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-function laLinkLocalHoacMetadata(host: string): boolean {
+/** Link-local / metadata — dùng cho cả HOST (lúc lưu) lẫn ĐỊA CHỈ ĐÃ PHÂN GIẢI (lúc gọi, `mangNgoai`). */
+export function laLinkLocalHoacMetadata(hostTho: string): boolean {
+  // IPv6 ánh xạ IPv4 (::ffff:169.254.x.x) ⇒ xét phần IPv4
+  const host = hostTho.replace(/^\[|\]$/g, "").replace(/^::ffff:/i, "");
   const m = host.match(RE_IPV4);
   if (m && Number(m[1]) === 169 && Number(m[2]) === 254) return true;
   if (/^\[?fe[89ab][0-9a-f]:/i.test(host)) return true;

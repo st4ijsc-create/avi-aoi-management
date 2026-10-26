@@ -168,7 +168,8 @@ export const aiNgoaiRouter = router({
         action: "update",
         entityType: "ai_ngoai_cau_hinh",
         entityId: input.factoryId,
-        details: { operation: "CAU_HINH", before: cu ?? {}, after: input },
+        // Rà kiem-dinh Task 8 D — MỞ cửa (tắt → bật) batNgoai / choDuLieuVanHanh / luuNguyenVan ⇒ mức CAO để soát.
+        details: { operation: "CAU_HINH", before: cu ?? {}, after: input, metadata: { muc: (["batNgoai", "choDuLieuVanHanh", "luuNguyenVan"] as const).some((k) => input[k] && !cu?.[k]) ? "cao" : "thuong" } },
         status: "success",
       });
     });
@@ -288,6 +289,9 @@ export const aiNgoaiRouter = router({
     const [{ coNodeNgoai, bamDinhNghia }, { mucTinhCuaDinhNghia }] = await Promise.all([import("../services/ai/ngoai/duyetNgoai"), import("../services/ai/ngoai/phanLoai")]);
     const def = v.definition as never;
     if (!coNodeNgoai(def)) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiNgoaiDuyet", reason: "khong-co-node-ngoai" }, "Phiên bản không dùng model ngoài.");
+    const bam = bamDinhNghia(def);
+    // Rà kiem-dinh Task 8 C — đã duyệt + băm còn khớp ⇒ KHÔNG ghi đè người duyệt / thời điểm / cờ tự duyệt (trả trạng thái hiện có).
+    if (v.ngoaiDuyetLuc && v.ngoaiBamDuyet === bam) return { ok: true as const, tuDuyet: v.ngoaiTuDuyet, bam, daDuyetTruoc: true };
     const tuDuyet = v.createdBy === ctx.user.id;
     if (tuDuyet) {
       const muc = await mucTinhCuaDinhNghia(def, async (fid, ver) => {
@@ -296,12 +300,14 @@ export const aiNgoaiRouter = router({
       });
       if (muc === "van-hanh") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "aiNgoaiDuyet", reason: "NGOAI_TU_DUYET_VAN_HANH" }, "Không tự duyệt luồng có dữ liệu vận hành gửi AI ngoài.");
     }
-    const bam = bamDinhNghia(def);
-    await db.transaction(async (tx) => {
-      await tx
+    const ghi = await db.transaction(async (tx) => {
+      // Điều kiện trong CÙNG câu UPDATE: hai người duyệt đồng thời ⇒ người sau không ghi đè (0 dòng ⇒ không audit).
+      const doi = await tx
         .update(aiFlowVersions)
         .set({ coNodeNgoai: true, ngoaiDuyetBoi: ctx.user.id, ngoaiDuyetLuc: new Date(), ngoaiTuDuyet: tuDuyet, ngoaiBamDuyet: bam })
-        .where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version)));
+        .where(and(eq(aiFlowVersions.flowId, input.flowId), eq(aiFlowVersions.version, input.version), sql`("ngoaiDuyetLuc" IS NULL OR "ngoaiBamDuyet" IS DISTINCT FROM ${bam})`))
+        .returning({ v: aiFlowVersions.version });
+      if (!doi.length) return false;
       await auditTrongGiaoDich(tx, ctx, {
         action: "approve",
         entityType: "ai_flow_duyet_ngoai",
@@ -309,7 +315,8 @@ export const aiNgoaiRouter = router({
         details: { operation: tuDuyet ? "TU_DUYET_NGOAI" : "DUYET_NGOAI", metadata: { muc: tuDuyet ? "cao" : "thuong", bam, factoryId: f.factoryId } },
         status: "success",
       });
+      return true;
     });
-    return { ok: true as const, tuDuyet, bam };
+    return { ok: true as const, tuDuyet, bam, daDuyetTruoc: !ghi };
   }),
 });

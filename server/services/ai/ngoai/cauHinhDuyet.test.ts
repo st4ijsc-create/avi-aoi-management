@@ -20,6 +20,9 @@ import { luuPhienBan } from "../../flow/dongCo";
 import { createLocalUser } from "../../../db/auth";
 import { bamDinhNghia, coNodeNgoai, kiemDuyetNgoaiTruocKhiBat } from "./duyetNgoai";
 import { layModelDaBat } from "./cauHinhNgoai";
+import { phuThuocMacDinh, type DbCong } from "./congNgoai";
+import { datFetchNgoaiChoTest } from "./mangNgoai";
+import { datPhanGiaiDns } from "../../flow/nut/mangAnToan";
 import type { FlowDefinition } from "../../../../shared/flow/model";
 
 const hang = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
@@ -98,6 +101,14 @@ describe("cấu hình / danh mục / host (tRPC + CSDL)", () => {
     const d = JSON.parse(String(a!.details));
     expect(d.before.tranTokenNgay).toBe(1000);
     expect(d.after.tranTokenNgay).toBe(2000);
+    // rà Task 8 D — MỞ batNgoai (chưa có ⇒ bật) ⇒ mức cao; chỉ đổi trần ⇒ thường; mở choDuLieuVanHanh / luuNguyenVan ⇒ cao
+    const muc = async () =>
+      (await exec(sql`SELECT details FROM audit_logs WHERE "entityType" = 'ai_ngoai_cau_hinh' AND "entityId" = ${A} ORDER BY id`)).map((x) => JSON.parse(String(x.details)).metadata.muc);
+    expect(await muc()).toEqual(["cao", "thuong"]);
+    await goi.ghiCauHinh({ ...cfg, tranTokenNgay: 2000, choDuLieuVanHanh: true });
+    await goi.ghiCauHinh({ ...cfg, tranTokenNgay: 2000, choDuLieuVanHanh: true, luuNguyenVan: true });
+    await goi.ghiCauHinh({ ...cfg, tranTokenNgay: 2000 });
+    expect(await muc()).toEqual(["cao", "thuong", "cao", "cao", "thuong"]);
 
     const k = await goi.taoKhoa({ factoryId: A, nhaCungCap: "anthropic", ten: `${TAG}-k`, khoa: "sk-ant-api03-" + "M".repeat(95) });
     await goi.datModel({ factoryId: A, nhaCungCap: "anthropic", model: "claude-thu", nhan: "C", keyId: k.id, giaVaoUsdTrieu: null, giaRaUsdTrieu: null, tranTokenLuot: 5000, batModel: true });
@@ -128,6 +139,25 @@ describe("cấu hình / danh mục / host (tRPC + CSDL)", () => {
     await aiNgoaiRouter.createCaller(admin()).datHostNoiBo({ factoryId: A, hostCong: "LLM.local:8000" });
     expect(await exec(sql`SELECT "hostCong" FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${A}`)).toEqual([{ hostCong: "llm.local:8000" }]);
     expect((await exec(sql`SELECT count(*)::int AS n FROM audit_logs WHERE "entityType" = 'ai_ngoai_host_noi_bo' AND "entityId" = ${A}`))[0]!.n).toBe(1);
+  });
+
+  it("rà Task 8 E — metadata / link-local LUÔN cấm kể cả khi nằm trong bảng ai_ngoai_host_noi_bo (đường mạng THẬT của cổng; IPv6 [fe80::] không lưu được — CHECK của bảng — có ở mangNgoai.test)", async () => {
+    await exec(sql`INSERT INTO ai_ngoai_host_noi_bo ("factoryId", "hostCong") VALUES (${A}, '169.254.169.254:443'), (${A}, 'meta.local:443') ON CONFLICT DO NOTHING`);
+    const toi: string[] = [];
+    datFetchNgoaiChoTest(async (url) => (toi.push(url), { status: 200, json: {} }));
+    datPhanGiaiDns(async () => [{ address: "169.254.169.254", family: 4 }]);
+    try {
+      const mang = await phuThuocMacDinh.mang((await getDb()) as unknown as DbCong, A);
+      const INIT = { method: "POST" as const, headers: { "content-type": "application/json" }, body: "{}" };
+      for (const u of ["https://169.254.169.254/latest/meta-data", "https://meta.local/v1"]) {
+        await expect(mang.goiJson(u, INIT), u).rejects.toMatchObject({ ma: "NGOAI_URL_KHONG_HOP_LE", chuaGui: true });
+      }
+      expect(toi).toEqual([]);
+    } finally {
+      datFetchNgoaiChoTest(null);
+      datPhanGiaiDns(null);
+      await exec(sql`DELETE FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${A} AND "hostCong" IN ('169.254.169.254:443', 'meta.local:443')`);
+    }
   });
 
   it("xemNoiDung: ngoài phạm vi ⇒ NOT_FOUND; hợp lệ ⇒ trả nội dung ĐÃ che + audit mỗi lần xem", async () => {
@@ -161,5 +191,22 @@ describe("duyệt ngoài (tRPC + CSDL)", () => {
     const [au] = await exec(sql`SELECT details FROM audit_logs WHERE "entityType" = 'ai_flow_duyet_ngoai' AND "entityName" = ${`${a.flowId}@${a.version}`}`);
     expect(JSON.parse(String(au!.details)).metadata.muc).toBe("cao");
     expect(await maLoi(aiNgoaiRouter.createCaller(admin()).duyetNgoai({ flowId: b.flowId, version: b.version }))).toBe("FORBIDDEN");
+  });
+
+  it("rà Task 8 C — duyệt lại khi đã duyệt + băm khớp ⇒ KHÔNG ghi đè (người / lúc / cờ tự duyệt / audit giữ nguyên); băm lệch ⇒ duyệt lại được", async () => {
+    const def = luong(`${TAG}-c`, [nut("t", "kich-hoat.thu-cong"), nut("ai", "ai.llm", { chonModel: "ngoai:anthropic:claude-thu", loiNhac: "x" })]);
+    const a = await luuPhienBan(def, null, A);
+    const goi = aiNgoaiRouter.createCaller(admin());
+    const dong = async () => (await exec(sql`SELECT "ngoaiDuyetBoi", "ngoaiDuyetLuc", "ngoaiTuDuyet", "ngoaiBamDuyet" FROM ai_flow_versions WHERE "flowId" = ${a.flowId} AND version = ${a.version}`))[0]!;
+    const soAudit = async () => (await exec(sql`SELECT count(*)::int AS n FROM audit_logs WHERE "entityType" = 'ai_flow_duyet_ngoai' AND "entityName" = ${`${a.flowId}@${a.version}`}`))[0]!.n;
+    expect(await goi.duyetNgoai({ flowId: a.flowId, version: a.version })).toMatchObject({ daDuyetTruoc: false, tuDuyet: false });
+    const truoc = await dong();
+    expect(await goi.duyetNgoai({ flowId: a.flowId, version: a.version })).toMatchObject({ daDuyetTruoc: true });
+    expect(await dong()).toEqual(truoc);
+    expect(await soAudit()).toBe(1);
+    await exec(sql`UPDATE ai_flow_versions SET "ngoaiBamDuyet" = ${"9".repeat(64)} WHERE "flowId" = ${a.flowId} AND version = ${a.version}`);
+    expect(await goi.duyetNgoai({ flowId: a.flowId, version: a.version })).toMatchObject({ daDuyetTruoc: false });
+    expect((await dong()).ngoaiBamDuyet).toBe(truoc.ngoaiBamDuyet);
+    expect(await soAudit()).toBe(2);
   });
 });

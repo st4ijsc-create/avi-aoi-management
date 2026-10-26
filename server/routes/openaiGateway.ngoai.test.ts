@@ -103,6 +103,28 @@ describe("/v1 model ngoài", () => {
     expect(h.goi).toHaveLength(0);
   });
 
+  it("rà Task 8 B — lượt mang kết quả tool (role tool / function / assistant.tool_calls) ⇒ phanDaGhep van-hanh + chủ dữ liệu = nhà máy chủ token; lời thường ⇒ []", async () => {
+    const lots = [
+      [{ role: "user", content: "hi" }, { role: "tool", tool_call_id: "x", content: "nhiệt độ lò 231" }],
+      [{ role: "user", content: "hi" }, { role: "function", name: "f", content: "OEE 81" }],
+      [{ role: "user", content: "hi" }, { role: "assistant", content: null, tool_calls: [{ id: "x", type: "function", function: { name: "f", arguments: "{}" } }] }],
+    ];
+    for (const messages of lots) expect((await chat(T1, { messages })).status).toBe(200);
+    expect(h.goi).toHaveLength(3);
+    for (const g of h.goi) expect(g).toMatchObject({ ngu: { nhaMayChuDuLieu: [7], nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: ["van-hanh"] } } });
+    h.goi = [];
+    await chat(T1, { messages: [{ role: "system", content: "s" }, { role: "assistant", content: "a" }, { role: "user", content: "u" }] });
+    expect(h.goi[0]).toMatchObject({ ngu: { nhaMayChuDuLieu: [], nguonMuc: { phanDaGhep: [] } } });
+  });
+
+  it("rà Task 8 F — max_tokens rác / âm / 0 / 1e12 / chuỗi ⇒ kẹp ở biên trong [1, 32000]", async () => {
+    for (const [v, mong] of [["abc", 1024], [-5, 1024], [0, 1024], [1e12, 32_000], ["4000", 1024], [77.9, 77]] as const) {
+      h.goi = [];
+      expect((await chat(T1, { max_tokens: v })).status).toBe(200);
+      expect((h.goi[0] as { maxTokens: number }).maxTokens, String(v)).toBe(mong);
+    }
+  });
+
   it("tools ⇒ 400; stream ⇒ một mảnh + [DONE]; lỗi cổng ⇒ mã (không chi tiết)", async () => {
     expect((await chat(T1, { tools: [{ type: "function", function: { name: "x", parameters: {} } }] })).status).toBe(400);
     const s = await (await chat(T1, { stream: true })).text();

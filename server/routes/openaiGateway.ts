@@ -482,7 +482,13 @@ async function traLoiNgoaiV1(res: Response, body: Record<string, unknown>, messa
     }
     return { vaiTro: role as "system" | "user" | "assistant" | "tool", noiDung };
   });
-  const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
+  // Kẹp ở biên (cổng kẹp lần nữa theo trần model): rác / âm / 1e12 ⇒ không lọt xuống nhà cung cấp.
+  const maxTokens = typeof body.max_tokens === "number" && Number.isFinite(body.max_tokens) && body.max_tokens >= 1 ? Math.min(Math.floor(body.max_tokens), 32_000) : 1024;
+  // Rà kiem-dinh Task 8 B — lượt mang KẾT QUẢ TOOL (role tool/function, hoặc assistant có tool_calls) = dữ liệu tool cục bộ của
+  // nhà máy chủ token ⇒ mức `van-hanh` (cổng đòi `choDuLieuVanHanh`), không phải lời người dùng gõ.
+  const coKetQuaTool = messages.some(
+    (m) => m.role === "tool" || m.role === "function" || (m.role === "assistant" && (m as { tool_calls?: unknown }).tool_calls != null) || (m as { function_call?: unknown }).function_call != null,
+  );
   const { goiAiNgoai } = await import("../services/ai/ngoai/congNgoai");
   const { maTrpcCua } = await import("../services/ai/ngoai/loi");
   let kq;
@@ -499,8 +505,8 @@ async function traLoiNgoaiV1(res: Response, body: Record<string, unknown>, messa
         runId: null,
         tuDong: false,
         nhaMayNguoiGoi: [dich.factoryId],
-        nhaMayChuDuLieu: [],
-        nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: [] },
+        nhaMayChuDuLieu: coKetQuaTool ? [dich.factoryId] : [],
+        nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: coKetQuaTool ? ["van-hanh"] : [] },
       },
     });
   } catch (e) {

@@ -11,7 +11,7 @@
 import { fetchGhim, kiemDichDen, docThanCoTran } from "../../flow/nut/mangAnToan";
 import { LoiNgoai } from "./loi";
 import type { MangNgoai } from "./nhaCungCap/kieu";
-import { kiemEndpointLuu } from "./urlNgoai";
+import { kiemEndpointLuu, laLinkLocalHoacMetadata } from "./urlNgoai";
 
 export const TRAN_THAN_PHAN_HOI = 4 * 1024 * 1024;
 export const HAN_GOI_MS = 120_000;
@@ -50,6 +50,8 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
       } catch (e) {
         throw new LoiNgoai("NGOAI_URL_KHONG_HOP_LE", (e as { ma?: string }).ma ?? "dns", { chuaGui: true });
       }
+      // Rà kiem-dinh Task 8 E — host ĐÃ KHAI nội bộ nhưng PHÂN GIẢI ra link-local / metadata ⇒ vẫn cấm (danh sách trắng chỉ mở dải nội bộ thường).
+      if (laLinkLocalHoacMetadata(dich.ip)) throw new LoiNgoai("NGOAI_URL_KHONG_HOP_LE", "metadata-sau-dns", { chuaGui: true });
       if (fetchChoTest) return fetchChoTest(u.toString(), init);
       let r: Response;
       try {

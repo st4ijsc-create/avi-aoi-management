@@ -464,6 +464,8 @@ export const flowRouter = router({
         runId = await batDauRun({ flowId: input.flowId, version, items: input.items, nutKichHoat: thuCong?.id, triggerKind: "thu-cong", chuLuong: ctx.user.id });
       } catch (e) {
         if (e instanceof LoiLuong && (e.code === "QUA_TRAN_DONG_THOI" || e.code === "QUA_TRAN_LUOT_TREO")) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "flowChayTay", reason: "flowQuaTranDongThoi" }, e.message);
+        // Đợt 10.3 — chạy tay phiên bản có node model ngoài CHƯA duyệt (taoRunTx chặn) ⇒ cùng lý do với lúc bật.
+        if (e instanceof LoiLuong && e.code === "NGOAI_CHUA_DUYET") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowChayTay", reason: "NGOAI_CHUA_DUYET" }, "Phiên bản dùng model AI ngoài cần được duyệt (aiNgoai.duyetNgoai) trước khi chạy.");
         throw e;
       }
       if (laHangCao(v.riskClass)) await ghiKiemToanLuong({ nguoi: ctx.user.id, hanhDong: "FLOW_CHAY_TAY", loaiThucThe: "ai_flow_run", thucThe: runId, chiTiet: { flowId: input.flowId, version, hang: v.riskClass, soItem: input.items?.length ?? 0, daBat } });

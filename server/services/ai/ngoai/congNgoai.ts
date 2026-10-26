@@ -68,7 +68,7 @@ export interface KetQuaGoiNgoai {
   tokenRa: number | null;
 }
 
-type DbCong = DbDem & DbSo & DbDoc;
+export type DbCong = DbDem & DbSo & DbDoc;
 
 export interface PhuThuocCong {
   db: () => Promise<DbCong | null>;
