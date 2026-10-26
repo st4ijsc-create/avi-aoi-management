@@ -963,7 +963,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // mọi số đếm (độ phủ interlock, luật hỏng cấu hình / lệch lưới, STOP HMI quá hạn 24 h) lọc theo phạm vi nhà máy từ `ctx`
 // (`layPhamViPosture` ⇒ `idsTrongPhamVi(…, phamViCua(ctx), { strict: true })`). Dòng sổ nợ đọc GỠ (mục cuối mà main L9 để lại cho T12).
 // Đo trên cây này (gốc 003fd94b8 + T12): ghim cũ đỏ ĐÚNG −1 A / +1 S. A/B + đột biến: `oversightPosturePhamVi.r1b2.db.test.ts`.
-const GHIM = { A: 51, B: 8, C: 452, D: 1202, S: 693, tong: 2406 } as const;
+//   (nhánh R1b-2a: { A: 51, B: 8, C: 452, D: 1202, S: 693, tong: 2406 })
+// [main] L9 (2026-10-25): 16 thủ tục đọc cấu hình A→S (shift/layout/maintenanceSchedule/ngRate/process/productVariant/thresholdApproval) + 3 miễn trừ mới vẫn nhóm A: A 52→36, S 692→708 — loCauHinhDocPhamVi.db.test.ts
+// [main] 2026-10-25 lô nhập/xuất luồng: +3 thủ tục (xuat · nhapXemTruoc [miễn trừ: phân tích gói thuần] · nhap) ⇒ C 453 · D 1202 · S 710 · tong 2409, đo bằng chính lưới này. Trước đó
+//   (lô Luồng-form 709/2406): +1 query flow.nguoiNhanChoLuong (nhóm S: chanLuong ⇒ luongTrongPhamVi, ngoài phạm vi ≡ NOT_FOUND; người nhận lọc bằng nguoiNhanHopLeTheoNhaMay) — đo bằng chính lưới này
+// [main] 2026-10-26 lô B7-D: +1 thủ tục flow.thongKe (nhóm S: đọc có phạm vi — chanLuong theo flowId) ⇒ S 710→711 · tong 2409→2410.
+//   (main: { A: 36, B: 8, C: 453, D: 1202, S: 711, tong: 2410 })
+// ★★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **A 35 · B 8 · C 453 · D 1203 · S 712 · tong 2411**, ĐO trên cây đã gộp (đặt ghim 0
+//   rồi đọc số nhận được) = main { A 36, S 711, D 1202, tong 2410 } + nhánh T12 (`oversight.posture` A → S: A −1, S +1) + nhánh T6 (mutation
+//   `scadaKenh.khaiHangLoat`: D +1, tong +1). Sổ nợ đọc: gỡ cả 4 mục ngRateThreshold (main L9) lẫn `oversight.posture` (nhánh T12). `tong` 2411
+//   trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 35, B: 8, C: 453, D: 1203, S: 712, tong: 2411 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
@@ -1075,7 +1085,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(31); // 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(34); // L9: 31 → 34 (shiftConfig.defaults · alertRouter.getById|listAll); 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

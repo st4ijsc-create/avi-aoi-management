@@ -24,6 +24,8 @@ interface DuLieuNut extends Record<string, unknown> {
   ten: string;
   type: string;
   kb: KhaiBaoNutClient | undefined;
+  /** khiLoi = nhanh-loi ⇒ cổng ẨN `loi` hiện ra để nối nhánh lỗi. */
+  coCongLoi: boolean;
   trangThai: string | undefined;
   tat: boolean;
   nhanHang: string;
@@ -32,7 +34,7 @@ interface DuLieuNut extends Record<string, unknown> {
 
 const NutLuong = memo(function NutLuong({ data, selected }: NodeProps<Node<DuLieuNut>>) {
   const vao = data.kb?.congVao ?? ["main"];
-  const ra = data.kb?.congRa ?? ["main"];
+  const ra = [...(data.kb?.congRa ?? ["main"]), ...(data.coCongLoi ? ["loi"] : [])];
   const mauTT = data.trangThai ? MAU_TRANG_THAI[data.trangThai] : undefined;
   const cao = Math.max(vao.length, ra.length, 1);
   return (
@@ -109,6 +111,7 @@ function NoiDungCanvas({ def, danhMuc, onChange, chon, onChon, trangThai, khop }
             ten: n.name,
             type: n.type,
             kb,
+            coCongLoi: n.khiLoi === "nhanh-loi",
             trangThai: tt,
             tat: n.disabled === true,
             nhanHang: kb ? t(`flowStudio.hang.${kb.tacDungPhu}`) : "",
@@ -177,7 +180,8 @@ function NoiDungCanvas({ def, danhMuc, onChange, chon, onChon, trangThai, khop }
     const b = danhMuc.get(d.nodes.find((n) => n.id === c.target)?.type ?? "");
     const ra = c.sourceHandle ?? "main";
     const vao = c.targetHandle ?? "main";
-    return !!a && !!b && !b.laKichHoat && a.congRa.includes(ra) && b.congVao.includes(vao);
+    const congLoiAn = ra === "loi" && d.nodes.find((n) => n.id === c.source)?.khiLoi === "nhanh-loi";
+    return !!a && !!b && !b.laKichHoat && (a.congRa.includes(ra) || congLoiAn) && b.congVao.includes(vao);
   }, [danhMuc]);
 
   const onConnect = useCallback((c: Connection) => {

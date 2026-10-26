@@ -104,6 +104,8 @@ async function warm(tok: string) {
   H.alerts = [];
 }
 
+let appRouter: (typeof import("../routers"))["appRouter"];
+
 describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route through the real chain (_test)", () => {
   beforeAll(async () => {
     for (const k of ["ROBOT_CONTROL_ENABLED", "AUTH_CACHE_TTL_S"]) env[k] = process.env[k];
@@ -126,6 +128,8 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     ids.other = Number((await sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId") VALUES (${`${TAG}-R2`}, 'r', 'fanuc', 'tcp://192.0.2.1:1', true, ${b.l}) RETURNING id`)[0].id);
     await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.user}, ${`${TAG}-F1`})`;
     H.live = new Set([ids.robot, ids.other]);
+    // Nạp appRouter ĐẦY ĐỦ ở đây (hookTimeout 60 s), không trong thân ca: nạp lạnh mất ~12 s (đo) và cộng vào testTimeout 30 s của ca NF5-1 "PER USER" ⇒ chạm trần khi cả bộ chạy song song.
+    ({ appRouter } = await import("../routers"));
   });
   afterAll(async () => {
     H.mode = "ok";
@@ -312,7 +316,6 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     try {
       const vt = await sdk.signSession({ openId: viewerOpenId, appId: "dot10-test", name: "dot10 viewer" }, { expiresInMs: 3_600_000 });
       await sql`INSERT INTO user_sessions ("userId", "sessionToken", "expiresAt", "isActive") VALUES (${viewer}, ${vt}, now() + interval '1 hour', true)`;
-      const { appRouter } = await import("../routers");
       const req = { headers: { cookie: `${COOKIE_NAME}=${vt}` }, ip: "127.0.0.1" } as never;
       const vctx = await createContext({ req, res: {} as never, info: { calls: [{ path: "user.updateProfile" }] } as never });
       await appRouter.createCaller(vctx as never).user.updateProfile({ name: "dot10 viewer renamed" }); // through the real audit middleware

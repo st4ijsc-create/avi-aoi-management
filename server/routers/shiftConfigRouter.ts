@@ -2,13 +2,16 @@ import { protectedProcedure, writeProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import * as db from "../db";
 import { hangTheoNhaMay, caLamViecGhi } from "./_cauHinhPhamVi";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
 
 // ============ SHIFT CONFIG ROUTER ============
 export const shiftConfigRouter = router({
   list: protectedProcedure
     .input(z.object({ factoryId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.getShiftConfigs(input?.factoryId);
+    .query(async ({ input, ctx }) => {
+      // phạm vi người dùng (L9 2026-10-25): ca của nhà máy khác ẩn; ca toàn cục (factoryId NULL) dùng chung
+      return db.getShiftConfigs(input?.factoryId, await idsTrongPhamVi("factory", phamViCua(ctx), { strict: true }));
     }),
 
   defaults: protectedProcedure

@@ -18,6 +18,8 @@ export interface KhaiBaoNutClient {
   lapLai: "idempotent" | "atMostOnce";
   choDuCong: boolean;
   nhanBiMat: boolean;
+  /** Cổng ra nên được nối (vd `khac` của logic.chon) — canvas cảnh báo khi chưa nối. */
+  congNenNoi?: string[];
 }
 
 /** Màu huy hiệu hạng tác dụng phụ (token ngữ nghĩa, không hex). */
@@ -68,6 +70,22 @@ export function nhomDanhMuc(ds: readonly KhaiBaoNutClient[], loc = ""): { nhom: 
   return [...theoNhom.entries()].sort((a, b) => thuTu(a[0]) - thuTu(b[0]) || a[0].localeCompare(b[0])).map(([nhom, nut]) => ({ nhom, nut }));
 }
 
+/** Cổng ra "nên nối" (vd `khac` của logic.chon) mà CHƯA có đường nối ⇒ item tới đó bị bỏ: danh sách cảnh báo {nodeId, cong} cho canvas. */
+export function canhBaoCongChuaNoi(
+  def: { nodes: { id: string; type: string; disabled?: boolean; khiLoi?: string }[]; connections: { from: { node: string; port: string } }[] },
+  danhMuc: ReadonlyMap<string, { congNenNoi?: readonly string[] }>,
+): { nodeId: string; cong: string }[] {
+  const ra: { nodeId: string; cong: string }[] = [];
+  for (const n of def.nodes) {
+    if (n.disabled) continue;
+    // khiLoi = nhanh-loi ⇒ cổng ẨN `loi` cũng nên nối (lỗi node đi nhánh này; không nối ⇒ item lỗi bị bỏ).
+    for (const cong of [...(danhMuc.get(n.type)?.congNenNoi ?? []), ...(n.khiLoi === "nhanh-loi" ? ["loi"] : [])]) {
+      if (!def.connections.some((c) => c.from.node === n.id && c.from.port === cong)) ra.push({ nodeId: n.id, cong });
+    }
+  }
+  return ra;
+}
+
 /** Tham số mặc định khi thả một node mới lên canvas. */
 export function thamSoMacDinh(type: string): Record<string, unknown> {
   switch (type) {
@@ -89,6 +107,32 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { url: "", truongRa: "phanHoi" };
     case "tich-hop.http-gui":
       return { url: "", phuongThuc: "POST", than: "", truongRa: "phanHoi" };
+    case "du-lieu.so-lieu":
+      return { truyVan: "san-luong.tong-quan", gio: 8, gioiHan: 10, truongRa: "soLieu" };
+    case "tich-hop.thong-bao":
+      return { nguoiNhan: [], tieuDe: "", noiDung: "", loai: "INFO", uuTien: "NORMAL" };
+    case "logic.chon":
+      return { giaTri: "{{ $json.nhan }}", nhanh: [{ so: "eq", dich: "" }] };
+    case "tich-hop.mcp-goi":
+      return { server: "", tool: "", thamSo: {}, truongRa: "mcp" };
+    case "nguoi.bieu-mau":
+      return { tieuDe: "", noiDung: "", hetHanGio: 24, vaiTroDuyet: "supervisor", truong: [{ ten: "ghiChu", nhan: "Ghi chú", kieu: "chuoi" }], truongRa: "bieuMau" };
+    case "logic.cho":
+      return { giay: 60 };
+    case "logic.dung-loi":
+      return { thongDiep: "Luồng dừng có chủ ý" };
+    case "logic.loc":
+      return { dieuKien: [{ giaTri: "{{ $json.x }}", so: "eq", dich: "" }] };
+    case "logic.sap-xep":
+      return { giaTri: "{{ $json.x }}", huong: "tang", kieu: "so" };
+    case "logic.gom":
+      return { truongRa: "danhSach" };
+    case "bao-tri.tao-phieu":
+      return { may: "{{ $json.idMay }}", tieuDe: "{{ $json.lyDo }}", moTa: "", nhom: "{{ $json.nhan }}", uuTien: 3, loai: "CORRECTIVE", truongRa: "phieu" };
+    case "kich-hoat.su-kien":
+      return { suKien: "ng.alert", bat: false, cuaSoPhut: 10, tranMoiGio: 10 };
+    case "ai.tra-tri-thuc":
+      return { cauHoi: "{{ $json.cauHoi }}", kho: "all", k: 5, truongRa: "triThuc" };
     case "kich-hoat.lich":
       return { cron: "0 6 * * *", muiGio: "Asia/Ho_Chi_Minh" };
     case "du-lieu.ma":

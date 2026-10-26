@@ -537,7 +537,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   ngoaiAiCoCong KHÔNG đổi.** Mutation MỚI `scadaKenh.khaiHangLoat` (khai mức hàng loạt, một mã TOTP cho ≤ 200 tag) của
 //   `server/routers/scadaKenhRouter.ts` — không phải bề mặt AI, cùng cổng `kySuProcedure` (MOD_OT_CONTROL) với `capNhat` (xem
 //   `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 127 → 128). Đo: ghim cũ (gốc 4395bfd11) đỏ ĐÚNG +1. `tong` 2406 trùng `phamViDocCensus.test.ts#GHIM.tong`.
-const GHIM = { tong: 2406, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // R1b-2a T6: +1 mutation scadaKenh.khaiHangLoat ⇒ 2406; W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+//   (nhánh R1b-2a: { tong: 2406, beMatAi: 433, aiCoCong: 371, aiMienTru: 62, ngoaiAiCoCong: 0 })
+// [main] 2026-10-25 lô nhập/xuất luồng: +3 thủ tục flow.xuat|nhapXemTruoc|nhap (đều MOD_AI, có cổng giấy phép) ⇒ 2409 · 437 · 375 (đo bằng lưới). Trước đó lô
+//   Luồng-form 2406/434/372: +1 query flow.nguoiNhanChoLuong (MOD_AI, có cổng giấy phép: xemProcedure = moduleProcedure("MOD_AI")) ⇒ 2406 · beMatAi 434 · aiCoCong 372.
+// [main] 2026-10-26 lô B7-D: +1 thủ tục flow.thongKe (đọc thống kê MỘT luồng; MOD_AI, có cổng giấy phép) ⇒ 2410 · 438 · 376.
+//   (main: { tong: 2410, beMatAi: 438, aiCoCong: 376, aiMienTru: 62, ngoaiAiCoCong: 0 })
+// ★★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **tong 2411 · beMatAi 438 · aiCoCong 376 · aiMienTru 62 · ngoaiAiCoCong 0**, ĐO trên
+//   cây đã gộp (đặt ghim 0 rồi đọc số nhận được): = main 2410/438/376 + 1 mutation `scadaKenh.khaiHangLoat` của nhánh (ngoài bề mặt AI). `tong` 2411
+//   trùng `phamViDocCensus.test.ts#GHIM.tong`.
+const GHIM = { tong: 2411, beMatAi: 438, aiCoCong: 376, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

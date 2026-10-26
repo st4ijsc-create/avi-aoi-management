@@ -31,7 +31,8 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { maintenanceWorkOrders, machines } from "../../../../drizzle/schema";
+import { machines } from "../../../../drizzle/schema";
+import { ghiPhieuBaoTri } from "../../maintenance/ghiPhieuBaoTri";
 import {
   registerTool,
   type ActionPreview,
@@ -79,12 +80,6 @@ async function getMachine(id: number) {
   if (!db) return null;
   const [row] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
   return row ?? null;
-}
-
-/** Generate a unique-enough work-order number (WO-<machineId>-<ts>-<rand>). */
-function buildWorkOrderNumber(machineId: number): string {
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `WO-${machineId}-${Date.now()}-${rand}`;
 }
 
 async function previewCreateWorkOrder(
@@ -146,22 +141,16 @@ export const createMaintenanceWorkOrderTool: Tool<CreateMaintenanceWorkOrderPara
     if (!db) {
       return { type: "action_result", title: "DB không khả dụng", data: { id: null }, textSummary: summarizeCreateWorkOrder(p, ctx.lang), note: "DB_UNAVAILABLE" };
     }
-    const machine = await getMachine(p.machineId);
-    const [row] = await db
-      .insert(maintenanceWorkOrders)
-      .values({
-        workOrderNumber: buildWorkOrderNumber(p.machineId),
-        machineId: p.machineId,
-        machineCode: machine?.code ?? null,
-        type: p.type,
-        status: "OPEN",
-        trigger: "MANUAL",
-        priority: p.priority,
-        title: p.title,
-        description: p.description ?? null,
-        assignedTo: p.assignedTo ?? null,
-      } as any)
-      .returning({ id: maintenanceWorkOrders.id });
+    // ★ MỘT điểm ghi chung với maintenance.createWorkOrder và node luồng `bao-tri.tao-phieu` (cổng phạm vi W11c đã chạy ở phamViGhi trước execute).
+    const row = await ghiPhieuBaoTri(db, {
+      machineId: p.machineId,
+      title: p.title,
+      description: p.description ?? null,
+      type: p.type,
+      priority: p.priority,
+      assignedTo: p.assignedTo ?? null,
+      status: "OPEN",
+    });
     const id = row?.id ?? null;
     return {
       type: "action_result",

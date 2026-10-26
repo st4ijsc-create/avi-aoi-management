@@ -19,9 +19,12 @@ import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlow
 import { getDb } from "../../db/connection";
 import { THU_TU_HANG, TRAN_DONG_THOI_MAC_DINH, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
-import { layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho } from "./dangKyNut";
+import { TRAN_TUOI_LUOT_HEN_MS, layNut, type KetQuaChay, type NguCanhChay, type VetModel, type YeuCauCho, type YeuCauHen } from "./dangKyNut";
 import { LoiBiMat, bienTheBiMat, cheBiMat, cheSau, giaiMaChoChay } from "./biMat";
 import { ghimLuongCon, hangLuongConGhim, thamChieuTho } from "./ghimLuongCon";
+import { KIND_MAY_DOC } from "./soLieu/kind";
+import { createAuditLog } from "../../db/system";
+import { banGhiKiemToan, type BanGhiKiemToan } from "./kiemToan";
 import "./nut";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -31,7 +34,7 @@ const UU_TIEN_SO: Record<string, number> = { interactive: 0, agent: 1, backgroun
 
 export class LoiLuong extends Error {
   constructor(
-    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI",
+    public readonly code: "LUONG_KHONG_HOP_LE" | "LUONG_KHONG_CO" | "KHONG_CO_DB" | "LOAI_NODE_MAT" | "QUA_TRAN_DONG_THOI" | "QUA_TRAN_LUOT_GIO" | "QUA_TRAN_LUOT_TREO",
     message: string,
   ) {
     super(message);
@@ -110,6 +113,10 @@ interface YeuCauRun {
    * Chạy tay truyền NGƯỜI BẤM.
    */
   chuLuong?: number | null;
+  /** Lượt khởi bởi sự kiện máy: ghi `idMay` vào nhật ký tập máy NGAY LÚC BẮT ĐẦU (cùng giao dịch) để `tich-hop.thong-bao` kiểm người nhận ⊇ máy đó. */
+  mayCuaSuKien?: number;
+  /** Trần số lượt cùng `triggerKind` của luồng trong 1 giờ — đếm + chèn NGUYÊN TỬ (cùng khoá cố vấn theo luồng với trần đồng thời). Vượt ⇒ ném `QUA_TRAN_LUOT_GIO`. */
+  tranLuotMoiGio?: number;
 }
 
 /** Chủ lượt cho một lượt mới (xem `YeuCauRun.chuLuong`). */
@@ -130,9 +137,21 @@ async function suyChuLuong(tx: Db | Tx, y: YeuCauRun): Promise<number | null> {
  * ★ M5 — thi hành `settings.maxConcurrentRuns` (mặc định `TRAN_DONG_THOI_MAC_DINH` = 1). CHỌN: TỪ CHỐI lượt vượt trần (ném
  * `LoiLuong QUA_TRAN_DONG_THOI`), KHÔNG xếp hàng — hàng đợi không trần chỉ dời DoS sang bảng (và cần bộ đẩy lượt chờ trong `dongRun`);
  * người gọi tự xử lý: chạy tay ⇒ CONFLICT, webhook ⇒ 429, lịch ⇒ bỏ mốc + ghi log, MCP ⇒ lỗi tool. Chỉ đếm lượt GỐC `dang-chay`
- * (lượt chờ duyệt/chờ con không chiếm tài nguyên; lượt con bị chặn bởi trần cây lượt `TRAN_LUOT_TRONG_CAY`). Khoá cố vấn theo luồng
+ * (lượt chờ duyệt/chờ con không chiếm tài nguyên; lượt con bị chặn bởi trần cây lượt `TRAN_LUOT_TRONG_CAY`). Lượt ĐANG HẸN GIỜ (`logic.cho`: còn mục hàng nhưng mọi mục đều ở
+ * tương lai, không bước nào đang chạy) cũng KHÔNG chiếm chỗ — nó không dùng tài nguyên; nếu không, trần mặc định 1 sẽ từ chối mọi sự kiện đến trong lúc luồng đang chờ. Khoá cố vấn theo luồng
  * để hai lượt gọi cùng lúc không cùng lọt qua phép đếm. Lượt trùng khoá idempotency được miễn (để đường cũ trả đúng lượt đã có).
  */
+/** Trần số lượt GỐC đang TREO (cho-duyet, hoặc đang hẹn giờ) của MỘT luồng — mặc định 100, đặt bằng env `FLOW_TRAN_LUOT_TREO` (số nguyên 1…100000; rác ⇒ mặc định). */
+export const TRAN_LUOT_TREO_MAC_DINH = 100;
+export function tranLuotTreo(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.FLOW_TRAN_LUOT_TREO);
+  return Number.isInteger(n) && n >= 1 && n <= 100_000 ? n : TRAN_LUOT_TREO_MAC_DINH;
+}
+
+/** Mã từ chối "luồng đã đủ lượt" — người gọi xử lý như nhau (bỏ mốc / 429 / CONFLICT / lỗi tool). */
+export const laLoiTranLuot = (e: unknown): e is Error =>
+  e instanceof Error && e.name === "LoiLuong" && ((e as { code?: string }).code === "QUA_TRAN_DONG_THOI" || (e as { code?: string }).code === "QUA_TRAN_LUOT_TREO");
+
 async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition): Promise<void> {
   if (y.parentRunId) return;
   const tran = def.settings?.maxConcurrentRuns ?? TRAN_DONG_THOI_MAC_DINH;
@@ -141,16 +160,45 @@ async function kiemTranDongThoi(tx: Db | Tx, y: YeuCauRun, def: FlowDefinition):
     const da = (await tx.execute(sql`SELECT 1 FROM ai_flow_runs WHERE "idempotencyKey" = ${y.idempotencyKey} LIMIT 1`)) as unknown as unknown[];
     if (da.length) return;
   }
-  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND status = 'dang-chay' AND "parentRunId" IS NULL`)) as unknown as { n: number }[];
+  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND status = 'dang-chay' AND "parentRunId" IS NULL
+      AND NOT (
+        EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id)
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id AND q."availableAt" <= now())
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_steps s WHERE s."runId" = ai_flow_runs.id AND s.status = 'dang-chay'))`)) as unknown as { n: number }[];
+  // Lượt hẹn giờ / chờ duyệt KHÔNG tính vào trần đồng thời ⇒ có TRẦN RIÊNG, để sự kiện dồn dập không tích hàng nghìn lượt treo.
+  const [t] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND "parentRunId" IS NULL AND (
+      status = 'cho-duyet' OR (status = 'dang-chay'
+        AND EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id)
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_queue q WHERE q."runId" = ai_flow_runs.id AND q."availableAt" <= now())
+        AND NOT EXISTS (SELECT 1 FROM ai_flow_steps s WHERE s."runId" = ai_flow_runs.id AND s.status = 'dang-chay')))`)) as unknown as { n: number }[];
+  const tranTreo = tranLuotTreo();
+  if (t.n >= tranTreo) {
+    throw new LoiLuong("QUA_TRAN_LUOT_TREO", `luồng ${y.flowId} đang có ${t.n} lượt treo (chờ duyệt / đang hẹn giờ; trần ${tranTreo}) — lượt mới bị TỪ CHỐI cho tới khi bớt`);
+  }
   if (d.n >= tran) {
     throw new LoiLuong("QUA_TRAN_DONG_THOI", `luồng ${y.flowId} đang có ${d.n} lượt chạy (trần maxConcurrentRuns=${tran}) — lượt mới bị TỪ CHỐI (không xếp hàng)`);
   }
+}
+
+/**
+ * Trần lượt/giờ theo `triggerKind` — gọi SAU `kiemTranDongThoi` (đã giữ khoá cố vấn theo luồng đến hết giao dịch) ⇒ đếm rồi chèn là NGUYÊN TỬ giữa các tiến trình.
+ * Lượt trùng khoá idempotency được miễn (đường cũ trả đúng lượt đã có / báo trùng).
+ */
+async function kiemTranLuotGio(tx: Db | Tx, y: YeuCauRun): Promise<void> {
+  if (y.tranLuotMoiGio === undefined || y.parentRunId) return;
+  if (y.idempotencyKey) {
+    const da = (await tx.execute(sql`SELECT 1 FROM ai_flow_runs WHERE "idempotencyKey" = ${y.idempotencyKey} LIMIT 1`)) as unknown as unknown[];
+    if (da.length) return;
+  }
+  const [d] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_runs WHERE "flowId" = ${y.flowId} AND "triggerKind" = ${y.triggerKind ?? "thu-cong"} AND "startedAt" > now() - interval '1 hour'`)) as unknown as { n: number }[];
+  if (d.n >= y.tranLuotMoiGio) throw new LoiLuong("QUA_TRAN_LUOT_GIO", `luồng ${y.flowId} đã ${d.n} lượt ${y.triggerKind ?? "thu-cong"} trong 1 giờ (trần ${y.tranLuotMoiGio})`);
 }
 
 /** Tạo lượt + mục hàng của node kích hoạt TRONG một giao dịch có sẵn. */
 async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   const def = await dinhNghia(tx, y.flowId, y.version);
   await kiemTranDongThoi(tx, y, def);
+  await kiemTranLuotGio(tx, y);
   const runId = randomUUID();
   const uuTien = def.settings?.uuTien ?? "background";
   const kichHoat = def.nodes.filter((n) => layNut(n.type)?.laKichHoat && (!y.nutKichHoat || n.id === y.nutKichHoat));
@@ -161,7 +209,15 @@ async function taoRunTx(tx: Db | Tx, y: YeuCauRun): Promise<string> {
   for (const n of kichHoat) {
     await tx.insert(aiFlowQueue).values({ runId, nodeId: n.id, lan: 1, inputs: { main: y.items ?? [{ json: {} }] }, uuTien: UU_TIEN_SO[uuTien] ?? 2 });
   }
+  if (y.mayCuaSuKien !== undefined) await tx.insert(aiFlowEvents).values({ runId, kind: KIND_MAY_DOC, payload: { nodeId: "su-kien", may: [y.mayCuaSuKien] } });
   await tx.insert(aiFlowEvents).values({ runId, kind: "run.bat-dau", payload: { kichHoat: kichHoat.map((n) => n.id), ...(y.parentRunId ? { parentRunId: y.parentRunId } : {}) } });
+  // settings.timeoutS: trần tuổi lượt theo luồng (≤ trần 7 ngày) — mục kiểm bền trong hàng đợi, kể cả khi lượt đang chờ duyệt / hẹn giờ.
+  const timeoutS = def.settings?.timeoutS;
+  if (timeoutS !== undefined) {
+    const giay = Math.min(timeoutS, Math.floor(TRAN_TUOI_LUOT_HEN_MS / 1000));
+    await tx.execute(sql`INSERT INTO ai_flow_queue ("runId", "nodeId", lan, inputs, "uuTien", "availableAt")
+      VALUES (${runId}, '__han-luot', 1, ${JSON.stringify({ [CONG_KIEM_HAN_LUOT]: [] })}::jsonb, ${UU_TIEN_SO[uuTien] ?? 2}, now() + (${giay}::bigint * interval '1 second'))`);
+  }
   return runId;
 }
 
@@ -278,7 +334,7 @@ export function cheThongDiepLoi(loi: unknown, bienThe: readonly string[]): strin
  * (3) Chạy node (node tắt ⇒ cho item `main` đi thẳng). Node có `credentialRef` (loại khai `nhanBiMat`) ⇒ giải mã NGAY ĐÂY và
  * gắn vào ô `ngu.biMat` KHÔNG liệt kê được; lỗi/đầu ra của node được che trước khi rời hàm.
  */
-export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho> {
+export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho | YeuCauHen> {
   const nut = def.nodes.find((n) => n.id === ngu.nodeId)!;
   if (nut.disabled) return { main: ngu.inputs.main ?? [] };
   const loai = layNut(nut.type);
@@ -305,6 +361,37 @@ export async function thucThi(def: FlowDefinition, ngu: NguCanhChay): Promise<Ke
   }
 }
 
+/**
+ * Item ra cổng ẨN `loi` (node đặt khiLoi = nhanh-loi): với MỖI item đầu vào của bước lỗi, giữ NGUYÊN item gốc và thêm `loi: { ma?, thongDiep, nodeId }`
+ * (đè khoá `loi` cũ nếu item gốc đã có). Không có item đầu vào ⇒ một item chỉ mang `loi` — lỗi không bao giờ mất item.
+ */
+export function itemLoi(inputs: Record<string, ItemLuong[]> | readonly ItemLuong[] | undefined, nodeId: string, ma: string | undefined, thongDiep: string): ItemLuong[] {
+  const goc: readonly ItemLuong[] = Array.isArray(inputs) ? (inputs as readonly ItemLuong[]) : Object.values((inputs ?? {}) as Record<string, ItemLuong[]>).flat();
+  const loi = { ...(ma ? { ma } : {}), thongDiep, nodeId };
+  return goc.length ? goc.map((it) => ({ json: { ...it.json, loi } })) : [{ json: { loi } }];
+}
+
+/**
+ * Kiểm toán (audit_logs, WORM) MỘT dòng cho mỗi bước node TÁC DỤNG PHỤ (ngoai-ghi / ot) kết thúc — xong hoặc lỗi cuối (không ghi lần thử lại). CÙNG giao dịch với việc đóng bước:
+ * ghi kiểm toán lỗi ⇒ đóng bước lỗi ⇒ (atMostOnce) lượt `khong-ro` — thà dừng còn hơn có tác dụng phụ không dấu vết.
+ */
+async function kiemToanBuocNgoai(tx: Tx, muc: MucHang, nutLoai: string, ketQua: "xong" | "loi", ma?: string): Promise<void> {
+  const loai = layNut(nutLoai);
+  if (!loai || (loai.tacDungPhu !== "ngoai-ghi" && loai.tacDungPhu !== "ot")) return;
+  const [r] = await tx.select({ chu: aiFlowRuns.chuLuong, flowId: aiFlowRuns.flowId }).from(aiFlowRuns).where(eq(aiFlowRuns.id, muc.runId));
+  await createAuditLog(
+    banGhiKiemToan({
+      nguoi: r?.chu ?? null,
+      hanhDong: "FLOW_BUOC_NGOAI_GHI",
+      loaiThucThe: "ai_flow_run",
+      thucThe: muc.runId,
+      chiTiet: { flowId: r?.flowId, nodeId: muc.nodeId, loaiNode: nutLoai, hang: loai.tacDungPhu, lan: muc.lan, ketQua, ...(ma ? { ma } : {}) },
+      thatBai: ketQua === "loi",
+    }),
+    tx,
+  );
+}
+
 async function dongRun(tx: Tx, runId: string, status: "xong" | "loi" | "huy", error: unknown = null): Promise<void> {
   const dong = await tx
     .update(aiFlowRuns)
@@ -315,6 +402,9 @@ async function dongRun(tx: Tx, runId: string, status: "xong" | "loi" | "huy", er
     await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.runId, runId));
     await tx.delete(aiFlowInbox).where(eq(aiFlowInbox.runId, runId));
     await tx.execute(sql`DELETE FROM ai_flow_waits WHERE "runId" = ${runId}`);
+  } else {
+    // Xong: các mục KIỂM còn treo (hạn lượt, hết hạn chờ) không còn nghĩa — gỡ để không nằm lại hàng đợi tới giờ hạn.
+    await tx.execute(sql`DELETE FROM ai_flow_queue WHERE "runId" = ${runId} AND (${LA_MUC_KIEM_SQL})`);
   }
   await tx.insert(aiFlowEvents).values({ runId, kind: `run.${status}`, payload: error as object | null });
   if (!dong.length) return; // đã đóng từ trước — không báo cha / huỷ con lần hai
@@ -328,6 +418,24 @@ async function dongRun(tx: Tx, runId: string, status: "xong" | "loi" | "huy", er
   }
   // Đợt 8.4 — lượt CON đóng ⇒ trả lời hàng chờ `luong-con` của cha (nếu cha còn chờ) trong CÙNG giao dịch.
   if (dong[0].parentRunId) await baoChaKhiConDong(tx, dong[0].parentRunId, runId, { flowId: dong[0].flowId, version: dong[0].version }, status, error);
+  await thuGonDuLieu(tx, runId, status); // SAU khi cha đã đọc đầu ra của con (cùng giao dịch)
+}
+
+/** Lượt gốc được đọc kết quả ĐỒNG BỘ sau khi đóng (tool của ai.agent, MCP) — KHÔNG gỡ dữ liệu bước (xem `thuGonDuLieu`). */
+export const KIEU_KICH_HOAT_DOC_SAU_DONG: readonly string[] = ["agent", "mcp"];
+
+/**
+ * settings.luuDuLieu — thi hành lúc ĐÓNG lượt (không gỡ giữa chừng: node sau cần `$node()`, lượt con cần đầu ra):
+ *   day-du (mặc định) giữ hết · chi-loi giữ input/output các bước CHỈ khi lượt kết thúc `loi` · khong gỡ luôn.
+ * "Gỡ" = input/output của bước về NULL; trạng thái, thời gian, lỗi, sự kiện GIỮ NGUYÊN. Lượt do agent / MCP gọi đồng bộ được miễn (kết quả đọc sau khi đóng).
+ */
+async function thuGonDuLieu(tx: Tx, runId: string, status: "xong" | "loi" | "huy"): Promise<void> {
+  await tx.execute(sql`UPDATE ai_flow_steps s SET input = NULL, output = NULL
+    FROM ai_flow_runs r JOIN ai_flow_versions v ON v."flowId" = r."flowId" AND v.version = r.version
+    WHERE s."runId" = r.id AND r.id = ${runId}
+      AND r."triggerKind" NOT IN (${sql.join(KIEU_KICH_HOAT_DOC_SAU_DONG.map((k) => sql`${k}`), sql`, `)})
+      AND (v.definition->'settings'->>'luuDuLieu' = 'khong' OR (v.definition->'settings'->>'luuDuLieu' = 'chi-loi' AND ${status} <> 'loi'))
+      AND (s.input IS NOT NULL OR s.output IS NOT NULL)`);
 }
 
 /**
@@ -384,7 +492,7 @@ export async function ketThucBuoc(
   muc: MucHang,
   def: FlowDefinition,
   lanThu: number,
-  kq: { ok: true; ra: KetQuaChay | YeuCauCho } | { ok: false; loi: unknown },
+  kq: { ok: true; ra: KetQuaChay | YeuCauCho | YeuCauHen } | { ok: false; loi: unknown },
 ): Promise<void> {
   const db = await layDb();
   const nut = def.nodes.find((n) => n.id === muc.nodeId)!;
@@ -397,10 +505,11 @@ export async function ketThucBuoc(
   await db.transaction(async (tx) => {
     const buoc = and(eq(aiFlowSteps.runId, muc.runId), eq(aiFlowSteps.nodeId, muc.nodeId), eq(aiFlowSteps.lan, muc.lan), eq(aiFlowSteps.lanThu, lanThu));
     let ra: KetQuaChay;
+    let hen = 0;
     if (kq.ok && "__cho" in kq.ra) {
       // Node xin CHỜ: bước giữ `dang-chay` (dấu "đã bắt đầu" + chặn đóng lượt), mục hàng xong việc.
       await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
-      await batDauCho(tx, muc.runId, muc.nodeId, (kq.ra as YeuCauCho).__cho, muc.lan);
+      await batDauCho(tx, muc.runId, muc.nodeId, (kq.ra as YeuCauCho).__cho, muc.lan, uuTien);
       await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "buoc.cho", payload: { nodeId: muc.nodeId, lan: muc.lan } });
       return;
     }
@@ -419,24 +528,61 @@ export async function ketThucBuoc(
         return;
       }
       await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
+      if (!nut.disabled) await kiemToanBuocNgoai(tx, muc, nut.type, "loi", ma);
       if ((nut.khiLoi ?? "dung") === "dung") {
         await dongRun(tx, muc.runId, "loi", ma ? { nodeId: muc.nodeId, thongDiep, ma } : { nodeId: muc.nodeId, thongDiep });
         return;
       }
-      ra = { loi: [{ json: { thongDiep, nodeId: muc.nodeId } }] };
+      ra = { loi: itemLoi(muc.inputs, muc.nodeId, ma, thongDiep) };
     } else {
-      ra = kq.ra as KetQuaChay;
+      let henMs = 0;
+      if ("__hen" in kq.ra) {
+        henMs = Math.max(0, Math.floor((kq.ra as YeuCauHen).__hen.ms));
+        ra = (kq.ra as YeuCauHen).__hen.ra;
+        // Trần tuổi lượt: node kế sẽ chạy lúc now()+henMs; vượt startedAt + 7 ngày ⇒ bước LỖI (mã ổn định), không hẹn.
+        const [q] = (await tx.execute(sql`SELECT (now() + (${henMs}::bigint * interval '1 millisecond') > "startedAt" + (${TRAN_TUOI_LUOT_HEN_MS}::bigint * interval '1 millisecond')) AS vuot
+          FROM ai_flow_runs WHERE id = ${muc.runId}`)) as unknown as { vuot: boolean }[];
+        if (q?.vuot) {
+          const thongDiep = "hẹn giờ vượt trần tuổi lượt (7 ngày) — luồng không được chờ vô hạn";
+          await tx.update(aiFlowSteps).set({ status: "loi", finishedAt: sql`now()`, error: { thongDiep, ma: "QUA_TRAN_CHO" } }).where(buoc);
+          await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
+          if ((nut.khiLoi ?? "dung") === "dung") {
+            await dongRun(tx, muc.runId, "loi", { nodeId: muc.nodeId, thongDiep, ma: "QUA_TRAN_CHO" });
+            return;
+          }
+          await xepNodeKe(tx, def, muc.runId, muc.nodeId, { loi: itemLoi(muc.inputs, muc.nodeId, "QUA_TRAN_CHO", thongDiep) }, uuTien);
+          await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "buoc.xong", payload: { nodeId: muc.nodeId, lan: muc.lan } });
+          await dongNeuHetViec(tx, muc.runId);
+          return;
+        }
+        if (henMs > 0) await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "buoc.hen", payload: { nodeId: muc.nodeId, lan: muc.lan, ms: henMs } });
+        hen = henMs;
+      } else {
+        ra = kq.ra as KetQuaChay;
+      }
       await tx.update(aiFlowSteps).set({ status: "xong", finishedAt: sql`now()`, output: ra }).where(buoc);
       await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
+      if (!nut.disabled) await kiemToanBuocNgoai(tx, muc, nut.type, "xong");
     }
-    await xepNodeKe(tx, def, muc.runId, muc.nodeId, ra, uuTien);
+    await xepNodeKe(tx, def, muc.runId, muc.nodeId, ra, uuTien, hen);
     await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "buoc.xong", payload: { nodeId: muc.nodeId, lan: muc.lan } });
     await dongNeuHetViec(tx, muc.runId);
   });
 }
 
 /** Xếp node kế cho các cổng có item (node gộp: qua hộp nhận, đủ cổng mới thành mục hàng). */
-async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: string, ra: KetQuaChay, uuTien: number): Promise<void> {
+async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: string, ra: KetQuaChay, uuTien: number, henMs = 0): Promise<void> {
+  const luc = henMs > 0 ? sql`now() + (${henMs}::bigint * interval '1 millisecond')` : sql`now()`;
+  // Item tới cổng NÊN-NỐI mà KHÔNG có đường nối ⇒ bị bỏ (đường đi của luồng): ghi sự kiện để lượt nhìn thấy được, không bỏ âm thầm.
+  const loaiNguon = layNut(def.nodes.find((n) => n.id === nodeId)?.type ?? "");
+  const nutNguon = def.nodes.find((n) => n.id === nodeId);
+  // Cổng ẨN `loi` (khiLoi = nhanh-loi) cũng là cổng NÊN NỐI: lỗi không được rơi im lặng.
+  for (const cong of [...(loaiNguon?.congNenNoi ?? []), ...(nutNguon?.khiLoi === "nhanh-loi" ? ["loi"] : [])]) {
+    const items = ra[cong] ?? [];
+    if (items.length && !def.connections.some((x) => x.from.node === nodeId && x.from.port === cong)) {
+      await tx.insert(aiFlowEvents).values({ runId, kind: "cong.khong-noi", payload: { nodeId, cong, soItem: items.length } });
+    }
+  }
   for (const [cong, items] of Object.entries(ra)) {
     if (!items.length) continue;
     for (const c of def.connections.filter((x) => x.from.node === nodeId && x.from.port === cong)) {
@@ -451,11 +597,11 @@ async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: str
         const hop = await tx.select().from(aiFlowInbox).where(and(eq(aiFlowInbox.runId, runId), eq(aiFlowInbox.nodeId, dich.id)));
         if (congCan.every((p) => hop.some((h) => h.port === p))) {
           const inputs = Object.fromEntries(hop.map((h) => [h.port, h.items]));
-          await tx.insert(aiFlowQueue).values({ runId, nodeId: dich.id, lan: await lanKe(tx, runId, dich.id), inputs, uuTien });
+          await tx.insert(aiFlowQueue).values({ runId, nodeId: dich.id, lan: await lanKe(tx, runId, dich.id), inputs, uuTien, availableAt: luc as never });
           await tx.delete(aiFlowInbox).where(and(eq(aiFlowInbox.runId, runId), eq(aiFlowInbox.nodeId, dich.id)));
         }
       } else {
-        await tx.insert(aiFlowQueue).values({ runId, nodeId: dich.id, lan: await lanKe(tx, runId, dich.id), inputs: { [c.to.port]: items }, uuTien });
+        await tx.insert(aiFlowQueue).values({ runId, nodeId: dich.id, lan: await lanKe(tx, runId, dich.id), inputs: { [c.to.port]: items }, uuTien, availableAt: luc as never });
       }
     }
   }
@@ -464,18 +610,32 @@ async function xepNodeKe(tx: Tx, def: FlowDefinition, runId: string, nodeId: str
 /** Hết việc (không mục hàng, không bước đang chạy/chờ) ⇒ đóng lượt. Hộp nhận dở = nhánh gộp không đủ ⇒ node gộp không chạy. */
 async function dongNeuHetViec(tx: Tx, runId: string): Promise<void> {
   const [con] = (await tx.execute(sql`
-    SELECT (SELECT count(*) FROM ai_flow_queue WHERE "runId" = ${runId})::int
+    SELECT (SELECT count(*) FROM ai_flow_queue WHERE "runId" = ${runId} AND NOT (${LA_MUC_KIEM_SQL}))::int
          + (SELECT count(*) FROM ai_flow_steps WHERE "runId" = ${runId} AND status = 'dang-chay')::int AS n`)) as unknown as { n: number }[];
   if (con.n === 0) await dongRun(tx, runId, "xong");
 }
 
 /** Node xin CHỜ (duyệt người / webhook / thời gian): lượt ⇒ `cho-duyet`, ghi `ai_flow_waits` (giữ item để trả lời sau). */
-async function batDauCho(tx: Tx, runId: string, nodeId: string, cho: YeuCauCho["__cho"], lan = 1): Promise<void> {
+/** Khoá cổng đầu vào của mục hàng "kiểm hết hạn" (không phải node): mục này chỉ đánh thức hàng chờ có `expiresAt`. */
+export const CONG_KIEM_HET_HAN = "__kiem-het-han";
+/** Mục "kiểm hạn lượt" (settings.timeoutS): xếp lúc tạo lượt, availableAt = bắt đầu + timeoutS; tới hạn mà lượt còn mở ⇒ lượt `loi` QUA_HAN_LUOT. */
+export const CONG_KIEM_HAN_LUOT = "__kiem-han-luot";
+/** Các khoá đầu vào đánh dấu mục hàng KIỂM (không phải node): loại khỏi mọi phép đếm "còn việc". */
+const KHOA_MUC_KIEM = [CONG_KIEM_HET_HAN, CONG_KIEM_HAN_LUOT];
+const LA_MUC_KIEM_SQL = sql`inputs ?| array[${sql.join(KHOA_MUC_KIEM.map((k) => sql`${k}`), sql`, `)}]`;
+
+async function batDauCho(tx: Tx, runId: string, nodeId: string, cho: YeuCauCho["__cho"], lan = 1, uuTien = 2): Promise<void> {
   const hetHan = cho.hetHanMs ? sql`now() + (${cho.hetHanMs}::bigint * interval '1 millisecond')` : sql`NULL`;
   const chen = (await tx.execute(sql`INSERT INTO ai_flow_waits ("runId", "nodeId", kind, "tokenHash", "expiresAt", payload)
     VALUES (${runId}, ${nodeId}, ${cho.kind}, ${cho.tokenHash ?? null}, ${hetHan}, ${JSON.stringify({ ...(cho.payload ?? {}), items: cho.items })}::jsonb)
     ON CONFLICT ("runId", "nodeId") DO NOTHING RETURNING "nodeId"`)) as unknown as unknown[];
   await tx.update(aiFlowRuns).set({ status: "cho-duyet" }).where(and(eq(aiFlowRuns.id, runId), eq(aiFlowRuns.status, "dang-chay")));
+  // Chờ có hạn ⇒ xếp MỘT mục "kiểm hết hạn" (availableAt = expiresAt, cùng giao dịch, chỉ khi hàng chờ vừa được chèn): tới hạn mà chờ còn mở ⇒ cổng `het-han`.
+  // Không có nó, quá hạn chỉ có hiệu lực khi ai đó bấm ⇒ yêu cầu duyệt bị bỏ quên treo mãi.
+  if (cho.hetHanMs && chen.length) {
+    await tx.execute(sql`INSERT INTO ai_flow_queue ("runId", "nodeId", lan, inputs, "uuTien", "availableAt")
+      VALUES (${runId}, ${nodeId}, ${lan}, ${JSON.stringify({ [CONG_KIEM_HET_HAN]: [] })}::jsonb, ${uuTien}, now() + (${cho.hetHanMs}::bigint * interval '1 millisecond'))`);
+  }
   // Đợt 8.4 — chờ LUỒNG CON: tạo lượt con trong CÙNG giao dịch (chỉ khi hàng chờ vừa được chèn ⇒ chạy lại không tạo con thứ hai).
   if (cho.kind === "luong-con" && cho.con && chen.length) {
     const runCon = await taoRunTx(tx, {
@@ -498,7 +658,7 @@ export type KetQuaTraLoiCho = { ok: true; cong: string } | { ok: false; lyDo: "k
  * xếp node kế, lượt về `dang-chay` nếu hết chờ, đóng lượt nếu hết việc — MỘT giao dịch, hàng chờ khoá `FOR UPDATE`
  * (hai người bấm cùng lúc ⇒ người sau nhận `khong-co-cho`).
  */
-export async function traLoiCho(y: { runId: string; nodeId: string; cong: string; them?: Record<string, unknown> }): Promise<KetQuaTraLoiCho> {
+export async function traLoiCho(y: { runId: string; nodeId: string; cong: string; them?: Record<string, unknown>; kiemToan?: BanGhiKiemToan }): Promise<KetQuaTraLoiCho> {
   const db = await layDb();
   return db.transaction((tx) => traLoiChoTx(tx, y));
 }
@@ -509,7 +669,7 @@ export async function traLoiCho(y: { runId: string; nodeId: string; cong: string
  */
 async function traLoiChoTx(
   tx: Tx,
-  y: { runId: string; nodeId: string; cong: string; them?: Record<string, unknown>; itemsThay?: ItemLuong[]; loi?: string },
+  y: { runId: string; nodeId: string; cong: string; them?: Record<string, unknown>; itemsThay?: ItemLuong[]; loi?: string; hetHanEp?: boolean; kiemToan?: BanGhiKiemToan },
 ): Promise<KetQuaTraLoiCho> {
   const rows = (await tx.execute(sql`SELECT payload, ("expiresAt" IS NOT NULL AND "expiresAt" < now()) AS "hetHan"
     FROM ai_flow_waits WHERE "runId" = ${y.runId} AND "nodeId" = ${y.nodeId} FOR UPDATE`)) as unknown as { payload: { items?: ItemLuong[] }; hetHan: boolean }[];
@@ -518,6 +678,8 @@ async function traLoiChoTx(
   if (!run || (run.status !== "cho-duyet" && run.status !== "dang-chay")) return { ok: false, lyDo: "khong-co-cho" } as const;
   const def = await dinhNghia(tx, run.flowId, run.version);
   await tx.execute(sql`DELETE FROM ai_flow_waits WHERE "runId" = ${y.runId} AND "nodeId" = ${y.nodeId}`);
+  // Hàng chờ đã được trả lời ⇒ bỏ mục "kiểm hết hạn" còn treo (nếu không, lượt không đóng được tới tận giờ hết hạn).
+  await tx.execute(sql`DELETE FROM ai_flow_queue WHERE "runId" = ${y.runId} AND "nodeId" = ${y.nodeId} AND inputs ? ${CONG_KIEM_HET_HAN}`);
   const buocDangCho = and(eq(aiFlowSteps.runId, y.runId), eq(aiFlowSteps.nodeId, y.nodeId), eq(aiFlowSteps.status, "dang-chay"));
   const [conCho] = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_flow_waits WHERE "runId" = ${y.runId}`)) as unknown as { n: number }[];
   if (conCho.n === 0) await tx.update(aiFlowRuns).set({ status: "dang-chay" }).where(and(eq(aiFlowRuns.id, y.runId), eq(aiFlowRuns.status, "cho-duyet")));
@@ -532,15 +694,17 @@ async function traLoiChoTx(
       return { ok: true, cong: "loi" } as const;
     }
     cong = "loi";
-    ra = { loi: [{ json: { thongDiep: y.loi, nodeId: y.nodeId } }] };
+    ra = { loi: itemLoi(rows[0].payload.items, y.nodeId, undefined, y.loi) };
   } else {
-    cong = rows[0].hetHan ? "het-han" : y.cong;
+    cong = rows[0].hetHan || y.hetHanEp ? "het-han" : y.cong;
     const items = (y.itemsThay ?? rows[0].payload.items ?? []).map((it) => ({ json: { ...it.json, ...(y.them ?? {}) } }));
     ra = { [cong]: items };
     await tx.update(aiFlowSteps).set({ status: "xong", finishedAt: sql`now()`, output: ra }).where(buocDangCho);
   }
   await xepNodeKe(tx, def, y.runId, y.nodeId, ra, UU_TIEN_SO[def.settings?.uuTien ?? "background"] ?? 2);
   await tx.insert(aiFlowEvents).values({ runId: y.runId, kind: "cho.tra-loi", payload: { nodeId: y.nodeId, cong } });
+  // Bằng chứng duyệt / điền vào audit_logs (WORM) CÙNG giao dịch với việc trả lời: không có hàng kiểm toán ⇒ không có câu trả lời.
+  if (y.kiemToan) await createAuditLog({ ...y.kiemToan, details: { ...(y.kiemToan.details ?? {}), cong } }, tx);
   await dongNeuHetViec(tx, y.runId);
   return { ok: true, cong } as const;
 }
@@ -549,9 +713,17 @@ async function traLoiChoTx(
 export async function chayMotMuc(workerId: string, leaseMs?: number, tienToFlow?: string, chiRun?: string): Promise<boolean> {
   const muc = await nhatMuc(workerId, leaseMs, tienToFlow, chiRun);
   if (!muc) return false;
+  if (CONG_KIEM_HET_HAN in muc.inputs) {
+    await xuLyKiemHetHan(muc);
+    return true;
+  }
+  if (CONG_KIEM_HAN_LUOT in muc.inputs) {
+    await xuLyKiemHanLuot(muc);
+    return true;
+  }
   const bd = await batDauBuoc(muc);
   if (!bd.tiep) return true;
-  let kq: { ok: true; ra: KetQuaChay | YeuCauCho } | { ok: false; loi: unknown };
+  let kq: { ok: true; ra: KetQuaChay | YeuCauCho | YeuCauHen } | { ok: false; loi: unknown };
   const vet: VetModel[] = [];
   bd.ngu.ghiModel = (v) => void vet.push(v);
   try {
@@ -562,6 +734,42 @@ export async function chayMotMuc(workerId: string, leaseMs?: number, tienToFlow?
   await ketThucBuoc(muc, bd.def, bd.lanThu, kq);
   if (vet.length) await ghiVetModel(muc.runId, muc.nodeId, muc.lan, vet);
   return true;
+}
+
+/**
+ * Mục "kiểm hết hạn" tới hạn: chờ VẪN MỞ và `expiresAt <= now()` ⇒ trả lời cổng `het-han` (MỘT lần: trả lời xong thì hàng chờ mất, người bấm sau nhận khong-co-cho);
+ * chờ đã được trả lời / lượt đã đóng ⇒ chỉ bỏ mục. Một giao dịch: worker chết giữa chừng ⇒ khôi phục, mục lại sẵn sàng sau lease ⇒ vẫn đúng một lần.
+ */
+export async function xuLyKiemHetHan(muc: MucHang): Promise<void> {
+  const db = await layDb();
+  await db.transaction(async (tx) => {
+    await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
+    const dangMo = (await tx.execute(sql`SELECT 1 AS x FROM ai_flow_waits WHERE "runId" = ${muc.runId} AND "nodeId" = ${muc.nodeId} AND "expiresAt" IS NOT NULL AND "expiresAt" <= now() FOR UPDATE`)) as unknown as unknown[];
+    if (!dangMo.length) return;
+    const kq = await traLoiChoTx(tx, {
+      runId: muc.runId,
+      nodeId: muc.nodeId,
+      cong: "het-han",
+      hetHanEp: true,
+      kiemToan: banGhiKiemToan({ nguoi: null, hanhDong: "FLOW_DUYET", loaiThucThe: "ai_flow_run", thucThe: muc.runId, chiTiet: { nodeId: muc.nodeId, hetHan: true, tuDong: true } }),
+    });
+    if (kq.ok) await tx.insert(aiFlowEvents).values({ runId: muc.runId, kind: "cho.het-han", payload: { nodeId: muc.nodeId } });
+  });
+}
+
+/**
+ * Mục "kiểm hạn lượt" tới hạn (settings.timeoutS): lượt còn `dang-chay` / `cho-duyet` ⇒ đóng `loi` mã QUA_HAN_LUOT (xoá hàng đợi, hàng chờ, huỷ lượt con — qua `dongRun`); đã đóng ⇒ chỉ bỏ mục.
+ * Một giao dịch + khoá hàng lượt ⇒ worker chết giữa chừng vẫn đúng một lần.
+ */
+export async function xuLyKiemHanLuot(muc: MucHang): Promise<void> {
+  const db = await layDb();
+  await db.transaction(async (tx) => {
+    await tx.delete(aiFlowQueue).where(eq(aiFlowQueue.id, muc.id));
+    const [run] = (await tx.execute(sql`SELECT id, "flowId", version, status FROM ai_flow_runs WHERE id = ${muc.runId} FOR UPDATE`)) as unknown as { id: string; flowId: string; version: number; status: string }[];
+    if (!run || (run.status !== "dang-chay" && run.status !== "cho-duyet")) return;
+    const def = await dinhNghia(tx, run.flowId, run.version);
+    await dongRun(tx, muc.runId, "loi", { ma: "QUA_HAN_LUOT", thongDiep: `lượt vượt hạn ${def.settings?.timeoutS ?? "?"} giây của luồng (settings.timeoutS)` });
+  });
 }
 
 /** Đợt 9 — ghi sự kiện `buoc.model` (model thực chạy của từng lần gọi AI trong bước). Thông tin phụ: lỗi ghi không làm hỏng lượt. */
@@ -602,7 +810,7 @@ export async function chayLuotDongBo(runId: string, tranMs: number, workerId = `
     }
     if (Date.now() > han) return { runId, status: "het-gio", items: [] };
     if (!coViec) {
-      const [con] = (await db.execute(sql`SELECT (SELECT count(*) FROM ai_flow_queue WHERE "runId" = ${runId})::int AS q,
+      const [con] = (await db.execute(sql`SELECT (SELECT count(*) FROM ai_flow_queue WHERE "runId" = ${runId} AND NOT (${LA_MUC_KIEM_SQL}))::int AS q,
           (SELECT count(*) FROM ai_flow_waits WHERE "runId" = ${runId})::int AS w`)) as unknown as { q: number; w: number }[];
       if (con.q === 0 && con.w > 0) return { runId, status: "cho-duyet", items: [] };
       await new Promise((r) => setTimeout(r, 100));

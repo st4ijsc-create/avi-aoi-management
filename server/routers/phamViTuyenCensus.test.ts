@@ -173,7 +173,12 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 // `…/GetUserInfoWithJwt` — hai lượt gọi axios RA NGOÀI (`this.client.post<T>(…)`), không phải tuyến Express. Vì sao rời: bộ lọc sơ bộ
 // của bộ quét chỉ mở tệp có `.get(` / `.post(` / `.use(` theo VĂN BẢN; sdk.ts từng lọt nhờ `cookies.get(COOKIE_NAME)`, nay đọc vé qua
 // `vePhienCookie.docVePhienTuCookie` ⇒ tệp không còn khớp bộ lọc (`.post<` không khớp `\.post\s*\(`).
-const GHIM = { A: 4, C: 39, D: 94, S: 96, U: 16, tong: 249 } as const;
+//   (nhánh R1b-2a: { A: 4, C: 39, D: 94, S: 96, U: 16, tong: 249 })
+// [main] 2026-10-25 (F1): A 4→5 / C 39→38 — `GET /api/stream` (SSE) vào nhóm A dưới dạng MIỄN TRỪ CÓ BẰNG CHỨNG (handler định danh nên bộ quét không thấy lọc bên trong; xem phamViTuyenBaseline + sse.test.ts). Không phải nợ.
+//   (main: { A: 5, C: 38, D: 96, S: 96, U: 16, tong: 251 })
+// ★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **A 5 · C 38 · D 94 · S 96 · U 16 · tong 249**, ĐO trên cây đã gộp (đặt ghim 0 rồi
+//   đọc số nhận được) = main F1 (A +1 / C −1, `GET /api/stream`) + nhánh C-2 (D −2, hai dương tính giả axios của sdk.ts rời bảng).
+const GHIM = { A: 5, C: 38, D: 94, S: 96, U: 16, tong: 249 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
@@ -299,7 +304,7 @@ describe("§4 — RÒ RỈ MỚI ⇒ ĐỎ (lý do tồn tại của cổng này
 });
 
 describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
-  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 4", () => {
+  it("★★ MIỄN TRỪ CÓ CHỦ Ý (tuyến): còn tồn tại · còn nhóm (A) · lý do thật có ngày duyệt · không trùng sổ nợ · ghim số = 5", () => {
     const nhomTheoKhoa = new Map(QUET.tuyen.map((t) => [khoaTuyen(t), nhomTuyenCua(t)]));
     const loi: string[] = [];
     for (const [k, lyDo] of Object.entries(MIEN_TRU_TUYEN_CO_CHU_Y)) {
@@ -309,7 +314,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(4);
+    expect(Object.keys(MIEN_TRU_TUYEN_CO_CHU_Y).length, "thêm miễn trừ = quyết định, ghi lý do ở đây").toBe(5); // 5: +GET /api/stream (SSE, F1 2026-10-25) — miễn trừ CÓ bằng chứng (sse.test.ts)
   });
 
   it("★ mọi mục trong sổ vẫn còn là một tuyến CÓ THẬT", () => {

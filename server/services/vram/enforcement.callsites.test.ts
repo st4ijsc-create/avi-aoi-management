@@ -18,6 +18,11 @@
  * file đó đã được dạy"*. Lưới đúng phải đi theo **ĐƯỜNG THOÁT**, không theo **FILE**.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 
 const MIB = 1024 * 1024;
 

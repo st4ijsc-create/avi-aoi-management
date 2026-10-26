@@ -77,6 +77,7 @@ import { appError } from "../_core/appError";
 import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { ghiPhieuBaoTri } from "../services/maintenance/ghiPhieuBaoTri";
 import { idsTrongPhamVi, trongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
 import { getDb } from "../db/connection";
@@ -90,12 +91,6 @@ const WORK_ORDER_STATUSES = ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD", "COM
 const WORK_ORDER_TYPES = ["PREVENTIVE", "PREDICTIVE", "CORRECTIVE", "BREAKDOWN", "INSPECTION"] as const;
 
 const OPEN_STATUSES = new Set(["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD"]);
-
-/** Generate a unique-enough work-order number (mirrors writeHandlers/maintenance.ts). */
-function buildWorkOrderNumber(machineId: number): string {
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `WO-${machineId}-${Date.now()}-${rand}`;
-}
 
 /**
  * ★ L-1 — đọc một phiếu **theo `id` TỰ KHAI**, đã qua cổng phạm vi.
@@ -202,24 +197,7 @@ export const maintenanceRouter = router({
           `machine ${input.machineId} not found`,
         );
       }
-      const [machine] = await db.select({ code: machines.code }).from(machines).where(eq(machines.id, input.machineId)).limit(1);
-      const [row] = await db
-        .insert(maintenanceWorkOrders)
-        .values({
-          workOrderNumber: buildWorkOrderNumber(input.machineId),
-          machineId: input.machineId,
-          machineCode: machine?.code ?? null,
-          type: input.type,
-          status: input.status,
-          trigger: "MANUAL",
-          priority: input.priority,
-          title: input.title,
-          description: input.description ?? null,
-          assignedTo: input.assignedTo ?? null,
-          scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
-        } as any)
-        .returning();
-      return row;
+      return ghiPhieuBaoTri(db, { ...input, scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null });
     }),
 
   // ── update (write) — assign / priority / status / type / notes ────────────────

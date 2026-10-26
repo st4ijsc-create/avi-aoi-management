@@ -503,9 +503,9 @@ const analyticsDefectHeatmapSummary: Tool<z.infer<typeof heatmapParams>, Heatmap
     const scope = await resolveFactoryScope({ id: auth.data.userId, role: auth.data.role } as never);
     let factoryCode: string | undefined;
     if (!scope.isGlobal) {
-      // Người gọi bị giới hạn: thu về ĐÚNG MỘT mã nhà máy trong phạm vi của họ
-      // (`getTopNGMeasurementPointsEnhanced` chỉ nhận một mã). Không phân giải được
-      // ⇒ phạm vi RỖNG ⇒ trả câu trung thực và KHÔNG chạm một hàng dữ liệu nào.
+      // Người gọi bị giới hạn: phạm vi RỖNG ⇒ trả câu trung thực và KHÔNG chạm một hàng dữ liệu nào.
+      // Phạm vi KHÔNG rỗng ⇒ truy vấn dùng HỢP mọi nhà máy trong phạm vi (userId/userRole → resolveStatsScope) —
+      // trước L8 chỉ lấy MỘT mã nhà máy đầu tiên nên người nhiều nhà máy chỉ thấy số của một nhà máy (lỗi chức năng).
       const picked = await firstFactoryCodeInScope(scope);
       if (!picked) {
         return {
@@ -516,14 +516,14 @@ const analyticsDefectHeatmapSummary: Tool<z.infer<typeof heatmapParams>, Heatmap
           note: "SCOPE_EMPTY",
         };
       }
-      factoryCode = picked;
+      factoryCode = [...scope.factoryCodes].sort().join(", ") || picked; // nhãn phạm vi: các nhà máy (hoặc nhà máy đầu của tập đoàn)
     }
 
     const startDate = sinceDays(days);
     const endDate = new Date();
     let rows: Awaited<ReturnType<typeof getTopNGMeasurementPointsEnhanced>>;
     try {
-      rows = await getTopNGMeasurementPointsEnhanced({ startDate, endDate, machineId, productModelId, factoryCode, limit: topN });
+      rows = await getTopNGMeasurementPointsEnhanced({ startDate, endDate, machineId, productModelId, limit: topN, ...statsScopeArgs(__authCtx) });
     } catch {
       return {
         type: "analytics_heatmap",

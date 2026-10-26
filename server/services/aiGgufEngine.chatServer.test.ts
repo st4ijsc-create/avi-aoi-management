@@ -20,6 +20,11 @@
  *   (c) điểm nghẽn `loadGgufModel()` vẫn chặn đường chat khi đường server KHÔNG được chọn.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// ★ Đợt 9 (2026-10-25) — lưới này giả lập node-llama-cpp và KIỂM chính đường nạp in-process; vitest không phải tiến trình máy chủ
+// nên phải bật TƯỜNG MINH (hàng rào `ai/napServerNgoai` chặn mặc định — sự cố tràn VRAM 2026-10-25).
+vi.hoisted(() => {
+  process.env.AI_CHO_NAP_TRONG_TIEN_TRINH = "1";
+});
 
 const shouldUseServerForTextMock = vi.fn(() => true);
 const laModelServerDangGiuMock = vi.fn(() => true);
@@ -340,5 +345,33 @@ describe("Đợt 9 — ảnh không lùi in-process", () => {
     const r = await eng.chatCompletion(HOI_ANH);
     expect(r.text).toBe("E082");
     expect(serverChatCompletionMock.mock.calls[0][0].messages[0].anh).toEqual(["data:image/png;base64,AAAA"]);
+  });
+});
+
+// ★ Đợt 9 (2026-10-25) — nhánh 1 của hàng rào nạp trùng (model KHÔNG phải "của server" theo env) nay đi qua `kiemNapKhiServerNgoaiSong`:
+// llama-server NGOÀI đang sống ⇒ NÉM trước khi nạp trọng số. Đột biến bỏ lời gọi trong `chanNapTrungModelServer` ⇒ ca đầu đỏ.
+describe("Đợt 9 — nạp in-process khi llama-server ngoài đang sống", () => {
+  it("hàng rào ngoài NÉM ⇒ chatCompletion bị từ chối, KHÔNG nạp model", async () => {
+    shouldUseServerForTextMock.mockReturnValue(false);
+    laModelServerDangGiuMock.mockReturnValue(false);
+    vi.doMock("./ai/napServerNgoai", () => ({
+      kiemNapKhiServerNgoaiSong: vi.fn(async () => {
+        const e = new Error("NAP_TRUNG"); e.name = "LoiNapServerNgoai"; (e as any).code = "NAP_TRUNG_SERVER_NGOAI"; throw e;
+      }),
+    }));
+    const eng = await freshEngine();
+    const err = await eng.chatCompletion(HOI).catch((e) => e);
+    expect(err?.code).toBe("NAP_TRUNG_SERVER_NGOAI");
+    expect(napModel).not.toHaveBeenCalled();
+    vi.doUnmock("./ai/napServerNgoai");
+  });
+  it("hàng rào ngoài cho qua ⇒ hành vi cũ (nạp in-process)", async () => {
+    shouldUseServerForTextMock.mockReturnValue(false);
+    laModelServerDangGiuMock.mockReturnValue(false);
+    vi.doMock("./ai/napServerNgoai", () => ({ kiemNapKhiServerNgoaiSong: vi.fn(async () => undefined) }));
+    const eng = await freshEngine();
+    const r = await eng.chatCompletion(HOI);
+    expect(r.text).toBe(IN_PROCESS);
+    vi.doUnmock("./ai/napServerNgoai");
   });
 });

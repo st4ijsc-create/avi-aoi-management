@@ -14,69 +14,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Trash2, Plus, RefreshCw, ShieldAlert } from "lucide-react";
 import { MAU_HANG, loiBieuThucChuoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
-
-const O_CHON =
-  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+import { LoiBt, OBieuThuc, OChon, OHop, Truong, O_CHON } from "./FormKit";
+import { FormSoLieu, FormSuKien, FormTaoPhieu, FormThongBao } from "./FormNutMoi";
+import { FormChon, FormGom } from "./FormChon";
+import { FormCho, FormDungLoi, FormLoc, FormSapXep } from "./FormLoc";
+import { FormBieuMau } from "./FormBieuMau";
+import { FormMcp } from "./FormMcp";
 
 type ThamSo = Record<string, unknown>;
 
-function LoiBt({ giaTri }: { giaTri: unknown }) {
-  const { t } = useTranslation();
-  if (typeof giaTri !== "string") return null;
-  const l = loiBieuThucChuoi(giaTri);
-  if (!l) return null;
-  return (
-    <p className="text-xs text-destructive mt-1" role="alert" data-testid="loi-bieu-thuc">
-      {t("flowStudio.cauHinh.loiBieuThuc", { loi: l })}
-    </p>
-  );
-}
-
-function Truong({ nhan, children, goiY }: { nhan: string; children: ReactNode; goiY?: string }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs">{nhan}</Label>
-      {children}
-      {goiY && <p className="text-[11px] text-muted-foreground">{goiY}</p>}
-    </div>
-  );
-}
-
-/** Ô chữ có thể chứa biểu thức (một dòng hoặc nhiều dòng). */
-function OBieuThuc({ giaTri, onDoi, nhieuDong, placeholder, testId }: { giaTri: unknown; onDoi: (v: string) => void; nhieuDong?: boolean; placeholder?: string; testId?: string }) {
-  const s = typeof giaTri === "string" ? giaTri : giaTri === undefined || giaTri === null ? "" : JSON.stringify(giaTri);
-  const loi = typeof giaTri === "string" && !!loiBieuThucChuoi(giaTri);
-  const cls = loi ? "border-destructive focus-visible:ring-destructive" : "";
-  return (
-    <>
-      {nhieuDong ? (
-        <Textarea data-testid={testId} className={`text-xs font-mono min-h-[72px] ${cls}`} value={s} placeholder={placeholder} onChange={(e) => onDoi(e.target.value)} />
-      ) : (
-        <Input data-testid={testId} className={`h-9 text-xs font-mono ${cls}`} value={s} placeholder={placeholder} onChange={(e) => onDoi(e.target.value)} />
-      )}
-      <LoiBt giaTri={giaTri} />
-    </>
-  );
-}
-
-function OChon({ giaTri, onDoi, luaChon, testId }: { giaTri: string; onDoi: (v: string) => void; luaChon: { v: string; nhan: string }[]; testId?: string }) {
-  return (
-    <select data-testid={testId} className={O_CHON} value={giaTri} onChange={(e) => onDoi(e.target.value)}>
-      {luaChon.map((o) => (
-        <option key={o.v} value={o.v}>{o.nhan}</option>
-      ))}
-    </select>
-  );
-}
-
-function OHop({ giaTri, onDoi, nhan, testId }: { giaTri: boolean; onDoi: (v: boolean) => void; nhan: string; testId?: string }) {
-  return (
-    <label className="flex items-center gap-2 text-xs cursor-pointer">
-      <input data-testid={testId} type="checkbox" className="h-4 w-4" checked={giaTri} onChange={(e) => onDoi(e.target.checked)} />
-      {nhan}
-    </label>
-  );
-}
+/** Node có form có kiểu — vẫn có ô JSON cho người nâng cao (nút chuyển); máy chủ kiểm tham số như nhau ở cả hai đường. */
+const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau", "tich-hop.mcp-goi"]);
 
 const VAI_TRO_GOI_Y = ["chat", "extract", "classify", "summarize", "code.software", "code.plc"];
 
@@ -275,6 +223,8 @@ export interface BiMatTomTat {
 }
 
 export interface NodeConfigPanelProps {
+  /** Id luồng đang sửa — form chọn người nhận cần để máy chủ lọc theo nhà máy của luồng. */
+  flowId?: string;
   node: NodeInstance;
   kb: KhaiBaoNutClient | undefined;
   onDoi: (n: NodeInstance) => void;
@@ -283,14 +233,51 @@ export interface NodeConfigPanelProps {
   webhook: { flowId: string; coToken: boolean; dangBat: boolean; onXoay: () => void; dangXoay: boolean; tokenMoi: string | null };
 }
 
-export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook }: NodeConfigPanelProps) {
+export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook, flowId }: NodeConfigPanelProps) {
   const { t } = useTranslation();
   const p = node.parameters ?? {};
+  const [xemJson, setXemJson] = useState(false);
   const doi = (k: string, v: unknown) => onDoi({ ...node, parameters: { ...p, [k]: v } });
   const s = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : p[k] === undefined || p[k] === null ? "" : String(p[k]));
 
   let form: ReactNode;
   switch (node.type) {
+    case "du-lieu.so-lieu":
+      form = <FormSoLieu p={p} doi={doi} />;
+      break;
+    case "tich-hop.thong-bao":
+      form = <FormThongBao p={p} doi={doi} flowId={flowId} />;
+      break;
+    case "kich-hoat.su-kien":
+      form = <FormSuKien p={p} doi={doi} />;
+      break;
+    case "bao-tri.tao-phieu":
+      form = <FormTaoPhieu p={p} doi={doi} />;
+      break;
+    case "logic.chon":
+      form = <FormChon p={p} doi={doi} />;
+      break;
+    case "logic.gom":
+      form = <FormGom p={p} doi={doi} />;
+      break;
+    case "tich-hop.mcp-goi":
+      form = <FormMcp node={node} p={p} doi={doi} onDoi={onDoi} biMat={biMat} />;
+      break;
+    case "nguoi.bieu-mau":
+      form = <FormBieuMau p={p} doi={doi} />;
+      break;
+    case "logic.cho":
+      form = <FormCho p={p} doi={doi} />;
+      break;
+    case "logic.dung-loi":
+      form = <FormDungLoi p={p} doi={doi} />;
+      break;
+    case "logic.loc":
+      form = <FormLoc p={p} doi={doi} />;
+      break;
+    case "logic.sap-xep":
+      form = <FormSapXep p={p} doi={doi} />;
+      break;
     case "kich-hoat.thu-cong":
       form = <p className="text-xs text-muted-foreground">{t("flowStudio.cauHinh.thuCongGoiY")}</p>;
       break;
@@ -464,7 +451,18 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
       <Truong nhan={t("flowStudio.cauHinh.ten")}>
         <Input data-testid="node-ten" className="h-9 text-sm" value={node.name} onChange={(e) => onDoi({ ...node, name: e.target.value })} />
       </Truong>
-      <div key={node.id}>{form}</div>
+      <div key={`${node.id}:${xemJson ? "json" : "form"}`}>
+        {CO_FORM_CO_KIEU.has(node.type) && xemJson ? (
+          <FormJson nhan={t("flowStudio.cauHinh.thamSoJson")} giaTri={p} onDoi={(v) => onDoi({ ...node, parameters: v })} />
+        ) : (
+          form
+        )}
+        {CO_FORM_CO_KIEU.has(node.type) && (
+          <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 px-2 text-xs" data-testid={xemJson ? "chuyen-form" : "chuyen-json"} onClick={() => setXemJson((v) => !v)}>
+            {xemJson ? t("flowStudio.form.chuyenForm") : t("flowStudio.form.chuyenJson")}
+          </Button>
+        )}
+      </div>
       <div className="border-t pt-3 space-y-2">
         <Truong nhan={t("flowStudio.cauHinh.khiLoi")}>
           <OChon

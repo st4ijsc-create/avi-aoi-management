@@ -11,6 +11,10 @@
  *   hằng:     số, 'chuỗi' / "chuỗi", true, false, null
  *   toán tử:  . [ ] ( )  !  -  * / %  + -  < <= > >=  == !=  &&  ||  ? :
  *             `==`/`!=` là so sánh CHẶT (không ép kiểu). `+` có chuỗi ⇒ nối chuỗi.
+ *             ⚠ `< <= > >=` LỎNG (ngữ nghĩa JavaScript, KHÔNG chặn kiểu — chủ ý GIỮ nguyên, đã có test ghi lại): số so với chuỗi ép chuỗi về số
+ *             ("0.99" >= 0.7 là true; "abc" >= 0.7 là false); chuỗi so chuỗi theo THỨ TỰ TỪ ĐIỂN ("10" < "9" là true); null ép về 0
+ *             (null >= 0 và null <= 0.7 đều true; null >= 0.7 là false); thiếu trường (undefined) ⇒ luôn false. Muốn nghiêm ngặt
+ *             (vd ngưỡng độ tin cậy) thì kèm `x != null`, hoặc dùng node `logic.chon` (gt/lt/gte/lte: cả hai PHẢI là số hữu hạn).
  *   hàm:      len lower upper trim round floor ceil abs min max join split contains startsWith toNumber toString isEmpty
  */
 

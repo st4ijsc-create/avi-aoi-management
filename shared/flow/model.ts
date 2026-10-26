@@ -63,6 +63,8 @@ export interface KhaiBaoNut {
   lapLai: "idempotent" | "atMostOnce";
   /** `gop`: node chờ ĐỦ mọi cổng vào có nối mới chạy (vd `logic.gop`). Mặc định: chạy khi có item ở bất kỳ cổng nào. */
   choDuCong?: boolean;
+  /** Cổng ra NÊN được nối (vd cổng `khac` của `logic.chon`): item tới cổng KHÔNG nối bị bỏ — động cơ ghi sự kiện `cong.khong-noi`, canvas cảnh báo khi lưu. */
+  congNenNoi?: readonly string[];
   /** Đợt 8.2: node nhận bí mật qua `credentialRef` (vd HTTP). Node khác có `credentialRef` ⇒ luồng không hợp lệ. */
   nhanBiMat?: boolean;
 }
@@ -212,7 +214,9 @@ export function kiemLuong(raw: unknown, dangKy: (type: string) => KhaiBaoNut | u
     const b = theoId.get(c.to.node);
     if (!a) loi.push(`nối từ node không tồn tại '${c.from.node}'`);
     if (!b) loi.push(`nối tới node không tồn tại '${c.to.node}'`);
-    if (a?.kb && !a.kb.congRa.includes(c.from.port)) loi.push(`node '${c.from.node}' không có cổng ra '${c.from.port}'`);
+    // Cổng `loi` là cổng ẨN của MỌI node, chỉ nối được khi node đặt khiLoi = "nhanh-loi" (lỗi node đi nhánh này thay vì dừng lượt).
+    const congLoiAn = c.from.port === "loi" && a?.n.khiLoi === "nhanh-loi";
+    if (a?.kb && !congLoiAn && !a.kb.congRa.includes(c.from.port)) loi.push(`node '${c.from.node}' không có cổng ra '${c.from.port}'`);
     if (b?.kb && !b.kb.congVao.includes(c.to.port)) loi.push(`node '${c.to.node}' không có cổng vào '${c.to.port}'`);
     if (b?.kb?.laKichHoat) loi.push(`node kích hoạt '${c.to.node}' không nhận nối vào`);
     if (!canh.has(c.from.node)) canh.set(c.from.node, new Set());

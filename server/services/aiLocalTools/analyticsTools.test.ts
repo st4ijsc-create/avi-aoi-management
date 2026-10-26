@@ -304,14 +304,15 @@ describe("analytics_defect_heatmap_summary", () => {
       expect(r.data!.factoryScope).toBeNull();
     });
 
-    it("CHIỀU ÂM+DƯƠNG: người gán nhà máy A ⇒ truy vấn bị ghim vào ĐÚNG A, và vẫn có dữ liệu", async () => {
+    it("CHIỀU ÂM+DƯƠNG: người gán nhà máy A ⇒ phạm vi do userId/userRole (resolveStatsScope) cưỡng chế, nhãn nêu nhà máy, vẫn có dữ liệu", async () => {
       resolveFactoryScope.mockResolvedValue({ isGlobal: false, factoryCodes: ["FAC_A"], corporateCodes: [] });
       firstFactoryCodeInScope.mockResolvedValue("FAC_A");
       getTopNGMeasurementPointsEnhanced.mockResolvedValue(NG_ROWS);
 
       const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
 
-      expect(factoryArg()).toBe("FAC_A"); // ← phép cưỡng chế: nhà máy khác không vào được truy vấn
+      // L8: KHÔNG còn ghim MỘT mã nhà máy (người nhiều nhà máy từng chỉ thấy nhà máy đầu); phạm vi là HỢP mọi nhà máy được gán, cưỡng chế ở db/statistics (phamViDoc.db.test.ts đo thật).
+      expect(factoryArg()).toBeUndefined();
       expect(r.data!.totalNG).toBe(30); // ← không vá quá tay: dữ liệu của CHÍNH HỌ vẫn về đủ
       expect(r.data!.factoryScope).toBe("FAC_A");
       expect(r.textSummary).toContain("FAC_A"); // con số phải tự khai nó thuộc nhà máy nào

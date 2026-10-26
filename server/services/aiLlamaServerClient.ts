@@ -71,6 +71,7 @@ import {
 // ★ Đợt 0.3 — cổng ưu tiên trước llama-server (1 slot): tương tác > agent > nền. Module LÁ (chỉ
 //   `node:async_hooks`) ⇒ import TĨNH. Cắm ở ĐÚNG ba chỗ chạm mạng: `postChatCompletion`,
 //   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
+import { chuanHoaLogprobDau } from "./ai/logprobDau";
 import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
 import { layAnhSoModel } from "./ai/soModel/anhSoModel";
 import { laModelHoSoKheNang, laModelKheNangPhu } from "./ai/soModel/tapKheNang";
@@ -901,6 +902,10 @@ export async function serverChatCompletion(
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
+  if (options.topLogprobs && options.topLogprobs > 0) {
+    body.logprobs = true;
+    body.top_logprobs = Math.min(20, Math.floor(options.topLogprobs));
+  }
 
   const { json, totalTimeMs } = await postChatCompletion(body);
   const message = json?.choices?.[0]?.message;
@@ -942,6 +947,7 @@ export async function serverChatCompletion(
     totalTimeMs,
     tokensPerSecond: Number(tokensPerSecond.toFixed(1)),
     modelId: String(body.model),
+    ...(options.topLogprobs ? { logprobsDau: chuanHoaLogprobDau(json?.choices?.[0]?.logprobs?.content) } : {}),
   };
 }
 

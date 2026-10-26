@@ -18,6 +18,7 @@ import * as cron from "node-cron";
 import {
   listPointDefsWithSpecLimits,
   getMeasurementValuesForSPC,
+  getMeasurementValuesForSPCBatch,
   saveCpkHistory,
 } from "../db/spc";
 import { calculateCapabilityIndices, mean, stdDev } from "../utils/spc";
@@ -30,6 +31,8 @@ const WINDOW_DAYS = Math.max(1, Number(process.env.CPK_SNAPSHOT_WINDOW_DAYS ?? 3
 const MIN_SAMPLES = Math.max(2, Number(process.env.CPK_SNAPSHOT_MIN_SAMPLES ?? 30));
 const MAX_POINTS = Math.max(1, Number(process.env.CPK_SNAPSHOT_MAX_POINTS ?? 5000));
 const VALUE_LIMIT = Math.max(100, Number(process.env.CPK_SNAPSHOT_VALUE_LIMIT ?? 50000));
+/** Số điểm đo mỗi truy vấn lô (tuần tự, KHÔNG song song — tránh dồn pool DB). */
+const BATCH_POINTS = Math.max(1, Math.min(200, Number(process.env.CPK_SNAPSHOT_BATCH_POINTS ?? 50)));
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 let job: cron.ScheduledTask | null = null;
@@ -41,10 +44,52 @@ export interface CpkSnapshotStats {
   points: number;    // capable points considered
   snapshotted: number; // rows written to cpk_history
   skippedThin: number; // points with < MIN_SAMPLES samples
+  /** Điểm có dữ liệu HẰNG (σ ≈ 0): ghi nhưng Cp/Cpk/Pp/Ppk/Cpl/Cpu = NULL ("không xác định"). */
+  degenerate?: number;
   errors: number;
   windowDays: number;
   minSamples: number;
   ms: number;
+}
+
+/** Ngưỡng σ coi là 0 (nhiễu dấu phẩy động của dữ liệu hằng): σ < 1e-9 × max(1, |mean|). */
+export const SIGMA_XAP_XI_0 = 1e-9;
+/** cpk_history: decimal(10,4) ⇒ |giá trị| < 1e6; lớn hơn sẽ làm INSERT lỗi. */
+const TRAN_CHI_SO = 1e6;
+
+export interface ChiSoGhi {
+  stdDev: string;
+  cp: string | null;
+  cpk: string | null;
+  pp: string | null;
+  ppk: string | null;
+  cpl: string | null;
+  cpu: string | null;
+  /** dữ liệu hằng (σ ≈ 0) ⇒ mọi chỉ số năng lực = NULL */
+  degenerate: boolean;
+}
+
+/**
+ * Chuẩn hoá các chỉ số năng lực trước khi ghi `cpk_history`. Dữ liệu HẰNG (σ nhiễu ≈ 1e-16) cho Cp ~ 1e14 vô nghĩa và làm tràn decimal(10,4) ⇒ INSERT lỗi (điểm đo 73015 trên _test):
+ * σ ≈ 0 ⇒ stdDev = "0", mọi chỉ số = NULL (UI hiển thị "—", interlock/quality gate coi như thiếu dữ liệu); giá trị hữu hạn nhưng ≥ 1e6 ⇒ NULL (không bao giờ tràn cột).
+ */
+export function chuanHoaChiSoGhi(
+  idx: { cp?: number | null; cpk?: number | null; pp?: number | null; ppk?: number | null; cpl?: number | null; cpu?: number | null; mean: number; overallStdDev: number },
+  sigma: number,
+): ChiSoGhi {
+  const eps = SIGMA_XAP_XI_0 * Math.max(1, Math.abs(idx.mean));
+  const degenerate = !(idx.overallStdDev >= eps) && !(sigma >= eps);
+  const f = (v: number | null | undefined): string | null => (degenerate || v == null || !Number.isFinite(v) || Math.abs(v) >= TRAN_CHI_SO ? null : String(v));
+  return {
+    stdDev: degenerate ? "0" : String(idx.overallStdDev),
+    cp: f(idx.cp),
+    cpk: f(idx.cpk),
+    pp: f(idx.pp),
+    ppk: f(idx.ppk),
+    cpl: f(idx.cpl),
+    cpu: f(idx.cpu),
+    degenerate,
+  };
 }
 
 /**
@@ -98,7 +143,22 @@ export async function runCpkSnapshotNow(opts?: {
     return stats;
   }
 
-  for (const def of defs.slice(0, MAX_POINTS)) {
+  const dsDiem = defs.slice(0, MAX_POINTS);
+  // Tối ưu (kiểm định 2026-10-25): MỘT truy vấn cho mỗi lô BATCH_POINTS điểm thay vì N+1 (xem getMeasurementValuesForSPCBatch). Lô lỗi ⇒ lùi về truy vấn từng điểm CHO LÔ ĐÓ (giữ cô lập lỗi từng điểm).
+  let lo: Map<number, Array<{ value: unknown }>> | null = null;
+  for (let idx = 0; idx < dsDiem.length; idx++) {
+    const def = dsDiem[idx]!;
+    if (idx % BATCH_POINTS === 0) {
+      try {
+        lo = await getMeasurementValuesForSPCBatch(
+          dsDiem.slice(idx, idx + BATCH_POINTS).map((d) => d.id),
+          { startDate, limitPerPoint: VALUE_LIMIT },
+        );
+      } catch (e) {
+        lo = null;
+        console.error(`[cpkSnapshotScheduler] batch ${idx}..${idx + BATCH_POINTS - 1} failed, falling back to per-point:`, (e as any)?.message || e);
+      }
+    }
     stats.points++;
     try {
       const usl = Number(def.upperLimit);
@@ -110,11 +170,14 @@ export async function runCpkSnapshotNow(opts?: {
       // "fake-UTC" shifted inspectionTimes (see processInspectionSubmission), so
       // an upper bound of real-now can wrongly exclude the freshest rows in a
       // positive-offset timezone. A trailing window only needs its lower bound.
-      const rows = await getMeasurementValuesForSPC({
-        measurementPointDefId: def.id,
-        startDate,
-        limit: VALUE_LIMIT,
-      });
+      const rows =
+        lo !== null
+          ? (lo.get(def.id) ?? [])
+          : await getMeasurementValuesForSPC({
+              measurementPointDefId: def.id,
+              startDate,
+              limit: VALUE_LIMIT,
+            });
       const values: number[] = [];
       for (const r of rows) {
         const v = Number((r as any).value);
@@ -127,6 +190,8 @@ export async function runCpkSnapshotNow(opts?: {
 
       const sigma = estimateWithinSigma(values);
       const idx = calculateCapabilityIndices(values, usl, lsl, sigma);
+      const ghi = chuanHoaChiSoGhi(idx, sigma);
+      if (ghi.degenerate) stats.degenerate = (stats.degenerate ?? 0) + 1;
 
       await saveCpkHistory({
         measurementPointDefId: def.id,
@@ -136,13 +201,13 @@ export async function runCpkSnapshotNow(opts?: {
         periodEnd: endDate,
         sampleSize: values.length,
         mean: String(idx.mean),
-        stdDev: String(idx.overallStdDev),
-        cp: idx.cp != null ? String(idx.cp) : null,
-        cpk: idx.cpk != null ? String(idx.cpk) : null,
-        pp: idx.pp != null ? String(idx.pp) : null,
-        ppk: idx.ppk != null ? String(idx.ppk) : null,
-        cpl: idx.cpl != null ? String(idx.cpl) : null,
-        cpu: idx.cpu != null ? String(idx.cpu) : null,
+        stdDev: ghi.stdDev,
+        cp: ghi.cp,
+        cpk: ghi.cpk,
+        pp: ghi.pp,
+        ppk: ghi.ppk,
+        cpl: ghi.cpl,
+        cpu: ghi.cpu,
         usl: String(usl),
         lsl: String(lsl),
         nominal: nominal != null && Number.isFinite(nominal) ? String(nominal) : null,
@@ -175,7 +240,7 @@ export function startCpkSnapshotScheduler(): void {
       if (running) return; // no overlap
       running = true;
       runCpkSnapshotNow()
-        .then((s) => console.log(`[cpkSnapshotScheduler] snapshotted ${s.snapshotted}/${s.points} point(s), ${s.skippedThin} thin, ${s.errors} err in ${s.ms}ms`))
+        .then((s) => console.log(`[cpkSnapshotScheduler] snapshotted ${s.snapshotted}/${s.points} point(s), ${s.skippedThin} thin, ${s.degenerate ?? 0} constant-data (indices NULL), ${s.errors} err in ${s.ms}ms`))
         .catch((e) => console.error("[cpkSnapshotScheduler] cron error:", e))
         .finally(() => { running = false; });
     },

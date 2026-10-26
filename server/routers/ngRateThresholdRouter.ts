@@ -22,6 +22,9 @@ import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { protectedProcedure, adminProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { dieuKienViTriTrongPhamVi } from "./_adapterPhamVi";
+import { phamViCua } from "./_phamViNguoiXem";
+import { viTriHopLe } from "./_cauHinhPhamVi";
 import {
   mqttNgRateThresholds,
   mqttNgRateAlertHistory,
@@ -50,11 +53,13 @@ export const ngRateThresholdRouter = router({
         isEnabled: z.boolean().optional(),
       }).optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
+      const congPv = await dieuKienViTriTrongPhamVi(phamViCua(ctx), { stationId: mqttNgRateThresholds.stationId, machineId: mqttNgRateThresholds.machineId }); // phạm vi người dùng (L9 2026-10-25)
+      if (congPv) conditions.push(congPv);
       if (input?.stationId) conditions.push(eq(mqttNgRateThresholds.stationId, input.stationId));
       if (input?.machineId) conditions.push(eq(mqttNgRateThresholds.machineId, input.machineId));
       if (input?.isEnabled !== undefined) conditions.push(eq(mqttNgRateThresholds.isEnabled, input.isEnabled));
@@ -93,9 +98,10 @@ export const ngRateThresholdRouter = router({
    */
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
+      await nguongNgGhi(ctx, input.id); // phạm vi người dùng (L9 2026-10-25): cùng luật GHI (trạm / máy của ngưỡng); ngoài phạm vi ≡ "Threshold not found"
 
       const result = await db
         .select({
@@ -309,11 +315,13 @@ export const ngRateThresholdRouter = router({
         offset: z.number().min(0).default(0),
       }).optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
+      const congPv = await dieuKienViTriTrongPhamVi(phamViCua(ctx), { stationId: mqttNgRateAlertHistory.stationId, machineId: mqttNgRateAlertHistory.machineId }); // phạm vi người dùng (L9 2026-10-25)
+      if (congPv) conditions.push(congPv);
       if (input?.stationId) conditions.push(eq(mqttNgRateAlertHistory.stationId, input.stationId));
       if (input?.thresholdId) conditions.push(eq(mqttNgRateAlertHistory.thresholdId, input.thresholdId));
       if (input?.severity) conditions.push(eq(mqttNgRateAlertHistory.severity, input.severity));
@@ -374,7 +382,8 @@ export const ngRateThresholdRouter = router({
    */
   currentNgRates: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await viTriHopLe(ctx, { stationId: input.stationId }, "station"); // phạm vi người dùng (L9 2026-10-25): trạm ngoài phạm vi ≡ không tồn tại
       return await getNgRateStatsForStation(input.stationId);
     }),
 

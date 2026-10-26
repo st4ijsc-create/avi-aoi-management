@@ -23,6 +23,12 @@ export const NUT_CHAY_THAT: ReadonlySet<string> = new Set([
   "du-lieu.dat",
   "logic.neu",
   "logic.gop",
+  "logic.chon",
+  "logic.gom",
+  "logic.cho",
+  "logic.dung-loi",
+  "logic.loc",
+  "logic.sap-xep",
   "ai.llm",
   "ai.trich-xuat",
   "ai.phan-loai",
@@ -42,7 +48,7 @@ export const THAM_CHIEU_TAI_NGUYEN: Readonly<Record<string, readonly { tham: str
 };
 
 /** CHAY nhưng KHÔNG tham chiếu tài nguyên theo id (dữ liệu chỉ đến từ item mẫu + biểu thức) — khai tường minh, census đối chiếu. */
-export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
+export const NUT_KHONG_THAM_CHIEU: ReadonlySet<string> = new Set(["kich-hoat.thu-cong", "du-lieu.dat", "logic.neu", "logic.gop", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "ai.llm", "ai.trich-xuat", "ai.phan-loai", "ai.tom-tat"]);
 
 
 
@@ -50,13 +56,23 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "kich-hoat.lich",
   "kich-hoat.webhook",
   "kich-hoat.mcp",
+  "kich-hoat.su-kien",
   "nguoi.duyet",
+  "nguoi.bieu-mau",
   "tich-hop.http-doc",
   "tich-hop.http-gui",
+  "tich-hop.mcp-goi",
   "du-lieu.ma",
   "ai.sinh-ma",
   "ai.agent",
   "luong.goi-con",
+  // Lô Luồng-1: đọc số liệu nhà máy (theo phạm vi chủ lượt) và gửi thông báo nội bộ — chạy thử chỉ XEM TRƯỚC tham số.
+  "du-lieu.so-lieu",
+  "tich-hop.thong-bao",
+  // Lô Luồng-2: tra kho tri thức (vai chủ lượt) — chạy thử chỉ XEM TRƯỚC tham số.
+  "ai.tra-tri-thuc",
+  // Lô Luồng-A: tạo phiếu bảo trì — ghi thật chỉ ở lượt chạy; chạy thử chỉ XEM TRƯỚC.
+  "bao-tri.tao-phieu",
   // FOE workflow: không có cột tenant (phạm vi suy từ máy của các bước) và chưa có bộ kiểm ⇒ chỉ xem trước.
   "ot.de-xuat-luong",
 ]);
@@ -141,6 +157,8 @@ export async function chayThuNut(y: YeuCauChayThu, boKiem?: BoKiemPhamVi): Promi
       const { kind, items, hetHanMs, payload } = (kq as { __cho: { kind: string; items: ItemLuong[]; hetHanMs?: number; payload?: Record<string, unknown> } }).__cho;
       return kemModel({ che: "chay", ok: true, ms: ms(), cho: { kind, items, hetHanMs, payload } });
     }
+    // logic.cho: chạy thử KHÔNG chờ — hiện đầu ra như thể đã qua hạn (hẹn giờ chỉ có nghĩa trong một lượt thật).
+    if (kq && typeof kq === "object" && "__hen" in kq) return kemModel({ che: "chay", ok: true, ms: ms(), output: (kq as { __hen: { ra: KetQuaChay } }).__hen.ra });
     return kemModel({ che: "chay", ok: true, ms: ms(), output: kq as KetQuaChay });
   } catch (e) {
     // Phạm vi do NODE kiểm (cùng giá trị node dùng) — ngoài phạm vi phải đi tới router thành NOT_FOUND, không thành "lỗi node".

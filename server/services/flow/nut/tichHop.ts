@@ -18,7 +18,7 @@ import { LoiHttpLuong, coMucHostCong, datPhanGiaiDns, docThanCoTran, fetchGhim, 
 export { LoiHttpLuong };
 
 const TRAN_THAN = 1024 * 1024;
-const TIEU_DE_CAM = new Set(["authorization", "cookie", "proxy-authorization", "host"]);
+export const TIEU_DE_CAM = new Set(["authorization", "cookie", "set-cookie", "proxy-authorization", "host", "x-api-key", "api-key", "apikey", "x-auth-token", "x-access-token", "x-token", "x-secret"]);
 /** Tiêu đề không bao giờ được đặt bằng `header:<tên>` (khung giao thức / khoá idempotency của động cơ). */
 const TIEU_DE_BI_MAT_CAM = new Set(["host", "content-length", "transfer-encoding", "connection", "idempotency-key", "content-type"]);
 const RE_TEN_TIEU_DE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
@@ -69,6 +69,8 @@ export function kiemUrl(raw: unknown, choPhep: Set<string>): URL {
 export type HamFetch = ((url: URL, init: RequestInit, dich: DichDen) => Promise<Response>) | typeof fetch;
 const fetchMacDinh: HamFetch = (url, init, dich) => fetchGhim(url, init, dich);
 let fetchLuong: HamFetch = fetchMacDinh;
+/** Hàm gửi hiện hành (node MCP client dùng chung — cùng ghim IP / chống SSRF; lưới thay bằng `datFetchLuong`). */
+export const layFetchLuong = (): HamFetch => fetchLuong;
 /** IP công cộng cố định của bộ phân giải GIẢ (lưới thay fetch thì không có mạng/DNS thật). */
 export const IP_CONG_KHAI_GIA = "93.184.216.34";
 /**

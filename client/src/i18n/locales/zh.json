@@ -1595,7 +1595,8 @@
     "unsavedChangesWarning": "未保存更改警告",
     "websocketDescription": "WebSocket描述",
     "websocketRealtimeDescription": "WebSocket实时描述",
-    "websocketServer": "WebSocket服务器"
+    "websocketServer": "WebSocket服务器",
+    "clearHistoryTitle": "清除查询历史？"
   },
   "ai": {
     "citation": {
@@ -2278,7 +2279,14 @@
     "totalBackups": "备份总数",
     "weekly": "每周",
     "previewTitle": "备份预览",
-    "versionLabel": "版本"
+    "versionLabel": "版本",
+    "cancel": "取消",
+    "confirmRestoreAction": "是，立即恢复",
+    "confirmRestoreMergeBody": "此操作将把此备份文件中的记录载入所选类别（{{categories}}）。现有记录将保留，重复行将被跳过。",
+    "confirmRestoreOverwriteBody": "此操作将删除所选类别（{{categories}}）中的所有现有记录，并以此备份文件的内容替换。此操作无法撤销。",
+    "confirmRestoreTitle": "恢复并替换数据？",
+    "overwriteHint": "开启后，将在载入备份之前删除所选类别中的所有现有记录。关闭时仅添加记录并跳过重复项。",
+    "overwriteLabel": "覆盖现有数据"
   },
   "cache": {
     "warming": {
@@ -4074,7 +4082,10 @@
       "scadaSelectTag": "选择要下达命令的通道",
       "scadaKenhCapNhat": "更新通道声明",
       "scadaTotpCauHinh": "校验通道配置变更的验证码",
-      "dieuKienDoiTuongTrongPhamVi": "范围内对象条件"
+      "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
+      "flowNguoiNhan": "查找流程接收人",
+      "flowXuat": "导出 AI 流程包",
+      "flowNhap": "从包导入 AI 流程"
     },
     "field": {
       "stationId": "工位",
@@ -5741,7 +5752,9 @@
       "replayMessageTitle": "重放消息",
       "title": "MQTT 主题与消息",
       "topicsTab": "主题",
-      "topicStatistics": "主题统计"
+      "topicStatistics": "主题统计",
+      "resendUnavailable": "重新发送（暂不可用）",
+      "resendUnavailableHint": "消息重发功能暂不可用"
     },
     "testConnection": "测试连接",
     "replayPage": {
@@ -5781,7 +5794,17 @@
       "play": "播放",
       "timestampLabel": "时间戳",
       "title": "MQTT 消息重放",
-      "topicLabel": "主题"
+      "topicLabel": "主题",
+      "registerCodeLabel": "设备编码",
+      "registerConfirm": "注册",
+      "registerDialogDesc": "根据此发现的 MQTT 设备创建设备记录。",
+      "registerDialogTitle": "注册设备",
+      "registerNameLabel": "设备名称",
+      "registerNoStations": "尚未配置工位——请先创建工位。",
+      "registerStationLabel": "工位",
+      "registerStationPlaceholder": "选择工位",
+      "registerSuccess": "设备 {{code}} 已注册",
+      "registerTypeLabel": "设备类型"
     },
     "profileMgmt": {
       "update": "更新",
@@ -9943,7 +9966,8 @@
     "activeBadge": "活跃徽章",
     "active": "活跃",
     "actions": "操作",
-    "acknowledge": "确认"
+    "acknowledge": "确认",
+    "cpkKhongXacDinh": "部分 Cpk/Ppk 点无法确定（数据恒定——标准差为 0）：不绘制柱形，并非为 0。"
   },
   "users": {
     "userList": "用户列表",
@@ -22342,7 +22366,8 @@
       "dongNgan": "关闭处理面板",
       "demTheoNhaMay": "（按整座工厂统计）",
       "bangSucKhoe": "设备健康",
-      "demTheoNhieuNhaMay": "(按当前载入的 {{n}} 家工厂统计)"
+      "demTheoNhieuNhaMay": "(按当前载入的 {{n}} 家工厂统计)",
+      "soMayNgan_other": "{{n}} 台设备"
     },
     "studio": {
       "tieuDe": "3D 工厂 — 设计",
@@ -22750,7 +22775,8 @@
         "oeeTrungBinh": "平均 OEE",
         "andonMo": "有安灯的机台",
         "ruiRoPdm": "预测性维护风险"
-      }
+      },
+      "mauSo_other": "{{n}} 台设备"
     },
     "model": {
       "tamGiac": "三角面",
@@ -22856,7 +22882,8 @@
     },
     "daiHopNhat": {
       "an": "隐藏",
-      "tomTat": "{{so}} 项需知"
+      "tomTat": "{{so}} 项需知",
+      "tomTat_other": "{{so}} 项须知"
     }
   },
   "provenance": {
@@ -23324,7 +23351,11 @@
         "chi-loi": "仅错误",
         "khong": "不保留"
       },
-      "loiKiemTruoc": "保存前检查："
+      "loiKiemTruoc": "保存前检查：",
+      "congChuaNoi": "节点 '{{node}}' 的端口 '{{cong}}' 未连接——到达该端口的项将被丢弃",
+      "hanLuot": "每次运行的最长时限（小时）",
+      "hanLuotGoiY": "留空 = 不设独立时限。运行/等待/延时超过该时限的运行将以错误 QUA_HAN_LUOT 终止（最长 168 小时 = 7 天）。",
+      "tabThongKe": "统计"
     },
     "cauHinh": {
       "loiBieuThuc": "表达式错误：{{loi}}",
@@ -23420,7 +23451,8 @@
         "DICH_NOI_BO": "目标是内部地址 — 仅当白名单明确列出 host:端口 时才可调用。参见",
         "CAY_LUOT_DAY": "运行树已达运行数量上限（父 + 子 + 孙）— 请减少子流程调用或拆分流程。参见",
         "ITEM_GOI_CON_QUA_NHIEU": "单次子流程调用收到的条目过多 — 调用前请分批。参见"
-      }
+      },
+      "duLieuDaGo": "各步骤的输入/输出数据已按流程的“保留步骤数据”设置移除——状态、时间和错误仍保留。"
     },
     "duyet": {
       "tieuDe": "流程审批箱",
@@ -23513,6 +23545,242 @@
         "them": "新增",
         "bo": "移除"
       }
+    },
+    "form": {
+      "theoBieuThuc": "按表达式…",
+      "truongRa": "结果字段名",
+      "soLieu": {
+        "truyVan": "数据查询",
+        "truyVanGoiY": "只能从有名称的目录中选择，不支持自由 SQL。数据范围 = 流程所有者运行时的范围，且限于流程所属工厂。",
+        "chonTruyVan": "— 选择查询 —",
+        "gio": "回看小时数",
+        "gioGoiY": "整数 1–168（默认 8）。",
+        "gioiHan": "最大行数",
+        "gioiHanGoiY": "整数 1–20（默认 10）。",
+        "tv": {
+          "sanLuong": "产量与 NG 率（OK / NG / NTF）",
+          "oee": "各机器平均 OEE",
+          "ng": "NG 最多的测量点",
+          "may": "机器状态与故障机器",
+          "canhBao": "未关闭的预测告警",
+          "dungMay": "停机：次数、总分钟、按类别及停机最多的机器",
+          "phieuMo": "未关闭工单按优先级及开启最久的工单",
+          "phieuDong": "已关闭工单：从开启到关闭工单的时间（并非标准 MTTR）",
+          "tonKho": "需补货的备件（按工厂最低库存水平——与库存界面一致）"
+        }
+      },
+      "thongBao": {
+        "nguoiNhan": "接收人",
+        "nguoiNhanGoiY": "仅内部渠道（通知铃）。只能选择在职且能看到该流程所属工厂的人；全系统流程只能通知全权限人员。",
+        "chuaChon": "尚未选择接收人",
+        "bo": "移除接收人",
+        "demNguoi": "已选 {{n}}/{{max}}",
+        "timNguoi": "输入姓名搜索（≥ 2 个字符）…",
+        "khongThay": "流程所属工厂范围内没有匹配的人。",
+        "them": "添加",
+        "veDanhSach": "切换回列表选择",
+        "tieuDe": "标题",
+        "noiDung": "内容",
+        "loai": "类型",
+        "uuTien": "优先级",
+        "duongDan": "内部链接（可选）",
+        "loaiOpt": {
+          "REPORT": "报告",
+          "INFO": "信息",
+          "WARNING": "警告"
+        },
+        "uuTienOpt": {
+          "LOW": "低",
+          "NORMAL": "普通",
+          "HIGH": "高"
+        }
+      },
+      "suKien": {
+        "suKien": "内部事件",
+        "suKienGoiY": "仅机器事件；触发时按流程所有者（启用该版本的人）检查范围。",
+        "chonSuKien": "— 选择事件 —",
+        "bat": "监听此事件",
+        "batGoiY": "默认关闭。只有已批准/已启用的版本才会监听。",
+        "cuaSo": "去重窗口（分钟）",
+        "cuaSoGoiY": "整数 1–1440（默认 10）：同一窗口内相同事件类型 + 机器只产生一次运行。",
+        "tran": "每小时运行上限",
+        "tranGoiY": "整数 1–30（默认 10）。",
+        "sk": {
+          "ngAlert": "NG 告警",
+          "yieldWarning": "良率过低警告",
+          "downtimeStart": "机器开始停机（原因由操作员输入）"
+        }
+      },
+      "taoPhieu": {
+        "may": "机器（id）",
+        "mayGoiY": "通常为读取事件节点 idMay 字段的表达式（如 $json.idMay）。机器必须在流程所有者范围内并属于流程所属工厂。",
+        "tieuDe": "工单标题",
+        "moTa": "描述",
+        "nhom": "处理组",
+        "nhomGoiY": "写入标题和描述第一行（工单表没有分组列）。",
+        "uuTien": "优先级（1 = 最高）",
+        "uuTienGoiY": "整数 1–5。",
+        "loai": "工单类型",
+        "nhomOpt": {
+          "dien": "电气",
+          "coKhi": "机械",
+          "plcPhanMem": "PLC / 软件",
+          "vatTuKhac": "物料 / 其他"
+        },
+        "loaiOpt": {
+          "CORRECTIVE": "纠正性",
+          "BREAKDOWN": "突发故障",
+          "INSPECTION": "检查"
+        }
+      },
+      "chuyenJson": "用 JSON 编辑（高级）",
+      "chuyenForm": "返回表单",
+      "chon": {
+        "giaTri": "比较的值",
+        "giaTriGoiY": "逐项表达式（如 $json.nhan）；保持类型——数字不等于字符串。",
+        "dieuKien": "条件（{{n}}/{{max}}）——第一个匹配者胜出",
+        "so": {
+          "eq": "等于",
+          "in": "在列表中",
+          "gt": "大于",
+          "lt": "小于",
+          "gte": "大于或等于",
+          "lte": "小于或等于"
+        },
+        "giaTriDichGoiY": "如 dien · 42 · true · \"1\"（引号 = 字符串）",
+        "dsGoiY": "如 dien, co-khi, 3",
+        "themDieuKien": "添加条件",
+        "boDieuKien": "移除条件",
+        "khacGoiY": "不匹配任何条件（或表达式出错）的项走 'khac' 端口。请连接 'khac'——到达未连接端口的项会被丢弃。"
+      },
+      "gom": {
+        "truongRa": "列表字段名",
+        "goiY": "将所有项合并为一个项 {名称: […], soItem}；每次运行最多 1000 项。"
+      },
+      "cho": {
+        "giay": "等待多少秒",
+        "goiY": "0 … {{max}} 秒。数据项原样通过；下一个节点在此延迟后才运行（不占用服务器资源，重启后仍有效）。该次运行仍算运行中；运行总时长 ≤ 7 天。"
+      },
+      "dungLoi": {
+        "thongDiep": "错误信息",
+        "goiY": "可使用按数据项的表达式；最多 {{max}} 个字符。此节点以错误终止流程——没有输出端口。"
+      },
+      "loc": {
+        "dieuKien": "保留数据项的条件（{{n}}/{{max}}）——必须全部满足",
+        "boDieuKien": "删除条件",
+        "goiY": "满足所有条件的数据项走 'giu' 端口；其余（或表达式出错）走 'loai'（可不连接）。严格按类型比较——字符串 '5' 不等于数字 5。"
+      },
+      "sapXep": {
+        "khoa": "排序键",
+        "khoaGoiY": "按数据项的表达式（如 $json.oee）。稳定排序；键类型错误或缺失的数据项排在最后。",
+        "huong": "方向",
+        "huongLoai": {
+          "tang": "升序",
+          "giam": "降序"
+        },
+        "kieu": "键类型",
+        "kieuGoiY": "数字：仅接受有限数字。文本：按字符编码比较（确定性，与语言环境无关）。",
+        "kieuLoai": {
+          "so": "数字",
+          "chu": "文本"
+        }
+      },
+      "bieuMau": {
+        "truongRa": "存放填写值的键名",
+        "truongRaGoiY": "填写的值以此键名写入数据项（默认 bieuMau）——这是用户输入的数据，不是指令。",
+        "truong": "字段（{{n}}/{{max}}）",
+        "ten": "名称（a-z、0-9、_）",
+        "nhan": "显示标签",
+        "boTruong": "删除字段",
+        "themTruong": "添加字段",
+        "batBuoc": "必填",
+        "luaChonGoiY": "选项，以逗号分隔",
+        "kieuLoai": {
+          "chuoi": "文本",
+          "so": "数字",
+          "boolean": "是/否",
+          "chon": "单选"
+        },
+        "goiY": "输出端口：dong-y = 已填写 · tu-choi = 跳过（未填写）· het-han。填写人需有足够角色，且不能是启用该流程的人。",
+        "co": "是",
+        "chonMuc": "— 请选择 —"
+      },
+      "mcp": {
+        "server": "MCP 服务器",
+        "serverGoiY": "由管理员声明的名称（a-z、0-9、-、_），不是 URL。未声明 ⇒ 节点拒绝所有调用（功能关闭）。",
+        "serverSai": "服务器名称只能包含 a-z、0-9、-、_（以字母/数字开头）。",
+        "tool": "工具",
+        "toolGoiY": "固定的工具名（不可用表达式），且必须在该服务器的白名单内。",
+        "toolSai": "工具名只能包含字母、数字、_ . -",
+        "doiSo": "工具参数（{{n}}/{{max}}）",
+        "boDoiSo": "删除参数",
+        "themDoiSo": "添加参数",
+        "biMatGoiY": "可选。密钥必须声明该 MCP 服务器的主机；任何流程密钥都不会自行流向 MCP 服务器。",
+        "truongRaGoiY": "结果以此键名写入数据项（默认 mcp）：{may, tool, noiDung, cauTruc}。",
+        "canhBao": "工具结果是不可信的数据——绝不会被当作命令/表达式执行。对外写入级别：流程需要相应的启用权限。最多 20 个数据项、30 秒、每个响应 1 MiB。"
+      }
+    },
+    "xuatNhap": {
+      "xuat": "导出",
+      "xuatTieuDe": "将流程导出为包",
+      "xuatMoTa": "包不含密钥、机器 id、接收人、子流程、固定数据或流程 id。请查看下方警告后下载。",
+      "canhBaoVanBan": "自由文本仍提到源工厂（{{n}}）",
+      "khongCanhBao": "流程文本中未发现源工厂的机器编码 / 工厂名 / 人名。",
+      "canhBaoKhongXoa": "自由文本不会被自动删除（避免破坏提示词）——如需请手动修改。这些警告不在包文件中。",
+      "viecPhaiDien": "导入者需要填写的内容（{{n}}）",
+      "viecPhaiDienNhap": "导入后需要填写（{{n}}）",
+      "taiVe": "下载包",
+      "loaiCanhBao": {
+        "ma-may": "机器编码",
+        "nha-may": "工厂",
+        "nguoi-dung": "用户",
+        "bi-mat": "疑似密钥模式",
+        "id-so": "源工厂的数字 id"
+      },
+      "viec": {
+        "may": "重新选择机器",
+        "nguoi-nhan": "重新选择接收人",
+        "luong-con": "重新选择子流程（节点已变为占位）",
+        "workflow-ot": "重新选择 FOE 工作流",
+        "bi-mat": "重新关联密钥",
+        "luong-loi": "重新选择错误流程",
+        "bat-su-kien": "重新开启事件监听（当前关闭）",
+        "http-bi-mat": "重新填写已从 HTTP url / 头 / 正文中移除的内容（查询参数、密钥、密码——请使用流程的密钥）",
+        "affinity": "重新选择处理亲和组"
+      },
+      "nhap": "导入",
+      "nhapTieuDe": "从包导入流程",
+      "nhapMoTa": "创建您的新流程（关闭状态）。服务器会再次清理包：不含密钥 / 其他工厂的 id。",
+      "khongPhaiJson": "文件不是有效的 JSON。",
+      "khongHopLe": "流程尚无效",
+      "xacNhanNhap": "导入流程",
+      "canhBaoGoi": {
+        "bam-thieu": "包没有哈希——无法判断是否被手动修改。",
+        "bam-lech": "哈希不匹配——包在导出后被修改过。",
+        "co-du-lieu-ghim": "包含固定数据——将被丢弃。",
+        "co-bi-mat": "包引用了密钥——将被丢弃（稍后重新关联）。",
+        "co-id-nha-may": "包携带机器 / 接收人 / 流程 id——将被清除（稍后重新选择）。"
+      }
+    },
+    "thongKe": {
+      "cuaSo": "时间窗口",
+      "ngay": "{{n}} 天",
+      "tiLe": "成功率",
+      "chiTietLuot": "{{tong}} 次运行：{{xong}} 完成 · {{loi}} 出错 · {{huy}} 取消 · {{dangChay}} 运行中 · {{choDuyet}} 待审批",
+      "thoiGian": "已完成运行的耗时（墙钟时间，含等待人工的时间）",
+      "soLuotXong": "{{n}} 次已完成运行",
+      "theoNut": "按节点",
+      "chuaCoDuLieu": "该时间窗口内暂无数据。",
+      "nut": "节点",
+      "buoc": "步骤",
+      "loi": "错误",
+      "theoModel": "按模型",
+      "model": "模型",
+      "loiGoi": "调用",
+      "tokenVao": "输入令牌",
+      "tokenRa": "输出令牌",
+      "khongBaoToken": "{{n}} 次调用未上报令牌",
+      "doiKhe": "槽位切换（估算值，根据同一次运行中相邻调用的模型序列推断——不读取监督器）：{{uoc}} 次；{{ban}} 次调用遇到槽位繁忙。"
     }
   },
   "scada": {

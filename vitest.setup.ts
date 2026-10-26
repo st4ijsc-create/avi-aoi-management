@@ -127,3 +127,26 @@ process.env.VRAM_GPU_HOLDER_SCAN ??= "off";
  * mục tạm RỖNG (không có tệp ⇒ không khoá); lưới khoá dùng đường tường minh.
  */
 process.env.LLAMA_WATCHDOG_PAUSE_FILE = resolve(mkdtempSync(resolve(tmpdir(), "vitest-khoa-khe-")), "llama-watchdog.pause");
+
+/**
+ * ★ Đợt 9 (2026-10-25, dieu-phoi) — HÀNG RÀO NẠP IN-PROCESS (`server/services/ai/napServerNgoai.ts`) và ĐO TƯƠI của broker
+ * (`server/services/vram/vramTickTuoi.ts`) KHÔNG được chạm :8091 / nvidia-smi THẬT trong lưới. Sự cố: enforcement.callsites +
+ * wiring.inprocess xanh lúc gộp rồi ĐỎ khi :3000 giữ thêm VRAM ("cần ~5425 MiB, VRAM trống 4907 MiB") — lưới phụ thuộc máy.
+ * Bản giả nằm trên `globalThis` (Symbol.for — sống qua `vi.resetModules()`); hai module đọc nó khi không có bản giả riêng của lưới.
+ *   • hàng rào: không có llama-server ngoài, VRAM không đo được ⇒ nhánh "như cũ" (cổng tiến trình VẪN áp — lưới nạp cần cờ tường minh);
+ *   • broker tick null: thiết bị TRỐNG (tiền đề lịch sử của các lưới broker — "không ai khác giữ GPU").
+ * Ca ĐO SỐNG (chủ đích chạm máy thật) đặt `AI_NAP_DO_SONG=1`. Lưới canh: server/services/ai/napServerNgoai.khongChamMay.test.ts.
+ */
+// ⚠ (2026-10-26) KHÔNG giả khi lượt chạy được KHỞI từ dòng lệnh với AI_CHO_NAP_TRONG_TIEN_TRINH=1 (đo model thật trong vitest): lúc đó
+// hàng rào PHẢI thấy card thật — giả ở đây sẽ cho 4B nạp vào card đã đầy. Lưới giả lập tự đặt cờ đó TRONG tệp (vi.hoisted, chạy SAU
+// setup) nên vẫn nhận bản giả.
+if (process.env.AI_CHO_NAP_TRONG_TIEN_TRINH !== "1") {
+  (globalThis as Record<symbol, unknown>)[Symbol.for("avi.ai.napServerNgoai.phuThuocTest")] = {
+    modelServer: async () => null,
+    vram: async () => null,
+  };
+  (globalThis as Record<symbol, unknown>)[Symbol.for("avi.vram.tickTuoi.docThietBiTest")] = async () => ({
+    usedBytes: 0,
+    totalBytes: 32 * 1024 ** 3,
+  });
+}

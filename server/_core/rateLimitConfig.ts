@@ -38,6 +38,7 @@ import rateLimit, {
 import { createHash } from "crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import Redis from "ioredis";
+import { parse as parseCookieHeader } from "cookie";
 import { COOKIE_NAME } from "@shared/const";
 import { duongDinhTuyen, duongDinhTuyenGoc, duongKhopChinhXac } from "./duongDinhTuyen";
 
@@ -635,6 +636,58 @@ export function apiKeyGenerator(req: Request): string {
   return credentialKey(req) ?? ipKeyGenerator(req.ip ?? "", 56);
 }
 
+/**
+ * W21 (kiểm định 2026-10-25) — khoá của limiter /api CHUNG theo PHIÊN CHỈ KHI phiên qua phép kiểm chữ ký.
+ * Lỗ cũ: `apiKeyGenerator` băm GIÁ TRỊ cookie / Bearer chưa kiểm chữ ký ⇒ kẻ vô danh xoay giá trị rác mỗi yêu cầu được MỘT XÔ MỚI (300/phút) mỗi lần ⇒ vượt limiter chung.
+ * Nay: cookie phiên / Bearer có HÌNH JWT (3 đoạn) → `phienKyHopLeTuVe` (HS256 jose qua sdk.verifySession ở `trpcGioiHanThuTuc`, stateless, cùng phép kiểm tầng STOP `laStopHmiCoPhienKy`); qua ⇒ khoá theo PHẦN ĐÃ KÝ
+ * (`sha256(header.payload)`, KHÔNG băm cả token: jose chấp nhận biến thể đoạn chữ ký của cùng một vé ⇒ băm cả token vẫn xoay được); không qua ⇒ khoá theo IP.
+ * Không đổi: mặt phẳng máy (OT ingest / machine ingest — limiter riêng), `X-API-Key`, Bearer KHÔNG có hình JWT (khoá API) — vẫn theo `apiKeyGenerator`.
+ */
+export type KiemChuKyPhien = (token: string) => Promise<boolean>;
+const kiemChuKyMacDinh: KiemChuKyPhien = async (token) => {
+  const { phienKyHopLeTuVe } = await import("./trpcGioiHanThuTuc"); // CÙNG chủ phép kiểm chữ ký với laStopHmiCoPhienKy (import động: tệp ấy nhập tệp này)
+  return (await phienKyHopLeTuVe(token)) !== null;
+};
+
+/** `header.payload` của một JWT (bỏ đoạn chữ ký); null nếu không có hình `a.b.c`. */
+export function phanDaKyJwt(token: string): string | null {
+  const p = token.split(".");
+  return p.length === 3 && p[0] && p[1] ? `${p[0]}.${p[1]}` : null;
+}
+
+export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien = kiemChuKyMacDinh): Promise<string> {
+  const ip = () => ipKeyGenerator(req.ip ?? "", 56);
+  if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return apiKeyGenerator(req);
+  const { bearer, xApiKey } = headerCredentials(req);
+  let token: string | null = null;
+  let tienTo = "sess";
+  if (bearer) {
+    if (!phanDaKyJwt(bearer)) return apiKeyGenerator(req); // khoá API (không phải JWT): giữ nguyên
+    token = bearer;
+    tienTo = "bearer";
+  } else if (!xApiKey) {
+    // ĐÚNG bộ phân tích của `sdk.parseCookies` (thư viện `cookie`: cắt khoảng trắng, bỏ nháy, giải %-mã, tên lặp ⇒ lần ĐẦU) — không cắt chuỗi thô ⇒ mọi biến thể
+    // văn bản mà auth coi là CÙNG một vé cũng rơi vào CÙNG một lớp khoá (phiên đã ký / IP).
+    const cookies = req.headers?.cookie;
+    if (typeof cookies === "string" && cookies.length > 0) {
+      try {
+        const v = parseCookieHeader(cookies)[COOKIE_NAME];
+        if (v) token = v;
+      } catch {
+        return ip();
+      }
+    }
+  }
+  if (token === null) return apiKeyGenerator(req);
+  const daKy = phanDaKyJwt(token);
+  try {
+    if (daKy !== null && (await kiem(token))) return `${tienTo}:${hashToken(daKy)}`;
+  } catch {
+    /* phép kiểm lỗi ⇒ coi như không verify được */
+  }
+  return ip();
+}
+
 // ── Limiter factories ────────────────────────────────────────────────────────
 
 export function createApiLimiter() {
@@ -643,7 +696,7 @@ export function createApiLimiter() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later" },
-    keyGenerator: apiKeyGenerator,
+    keyGenerator: (req: Request) => apiKeyGeneratorXacThuc(req),
     // doc 48 R3: EXEMPT the machine telemetry ingest path from the 300/60 browser
     // tier — it is governed by the dedicated createOtIngestLimiter high tier instead.
     // doc 51 R6: likewise EXEMPT the machine data plane (/api/machine/*, allowlisted
@@ -703,6 +756,47 @@ export function createHmiStopLimiter(): RequestHandler {
     skip: async (req: Request) => !(await laStopHmiCoPhienKy(req)),
     passOnStoreError: true, // Redis down → allow (fail-open, accepted c4 — see JSDoc), never 500 a STOP
     ...storeOption("rl:hmistop:"),
+  });
+}
+
+/**
+ * W21b — TRẦN IP THỨ HAI, hẹp: CHỈ cho yêu cầu mang thông tin xác thực CHƯA verify được ở tầng limiter (Bearer KHÔNG có hình JWT, hoặc X-API-Key — khoá API/khoá máy chỉ tra được ở DB).
+ * Lỗ còn lại sau W21: `apiKeyGenerator` khoá các thứ này theo GIÁ TRỊ ⇒ kẻ xoay giá trị rác mỗi yêu cầu được xô 300/phút MỚI mỗi lần. Trần này đếm theo IP (cùng `req.ip` /
+ * cấu hình trust proxy hiện có), rộng (mặc định 3000/phút, `RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE`) để khách API thật sau NAT không bị ảnh hưởng, độc lập với khoá của limiter chung.
+ * KHÔNG áp cho: phiên đã verify (cookie / Bearer JWT — W21), mặt phẳng máy (limiter riêng). Chạm trần ⇒ 429 + log cảnh báo (tối đa 1 dòng/IP/cửa sổ) để biết khách thật có bị ảnh hưởng.
+ */
+const UNVERIFIED_IP_PER_MIN = envInt("RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE", 3000);
+
+/** True ⇔ yêu cầu mang credential chưa verify được ở tầng limiter (và không thuộc mặt phẳng máy). Pure — exported cho test. */
+export function mangCredentialChuaVerify(req: Request): boolean {
+  if (isLegacyOtIngestRequest(req) || isOtIngestRequest(req) || isMachineIngestRequest(req)) return false;
+  const { bearer, xApiKey } = headerCredentials(req);
+  if (bearer) return phanDaKyJwt(bearer) === null; // Bearer JWT: do khoá phiên (W21) xử lý
+  return !!xApiKey;
+}
+
+export function createUnverifiedCredentialIpLimiter() {
+  const daCanhBao = new Map<string, number>();
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: UNVERIFIED_IP_PER_MIN,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later" },
+    keyGenerator: (req: Request) => `uip:${ipKeyGenerator(req.ip ?? "", 56)}`,
+    skip: (req: Request) => !mangCredentialChuaVerify(req),
+    handler: (req: Request, res: Response) => {
+      const ip = ipKeyGenerator(req.ip ?? "", 56);
+      const now = Date.now();
+      if (now - (daCanhBao.get(ip) ?? 0) > 60_000) {
+        daCanhBao.set(ip, now);
+        if (daCanhBao.size > 10_000) daCanhBao.clear();
+        console.warn(`[RateLimit] IP ${ip} chạm trần ${UNVERIFIED_IP_PER_MIN}/phút cho yêu cầu mang credential chưa verify (Bearer không-JWT / X-API-Key) — nếu là khách API thật sau NAT, nâng RATE_LIMIT_UNVERIFIED_IP_PER_MINUTE`);
+      }
+      res.status(429).json({ error: "Too many requests, please try again later" });
+    },
+    passOnStoreError: true,
+    ...storeOption("rl:api-uip:"),
   });
 }
 

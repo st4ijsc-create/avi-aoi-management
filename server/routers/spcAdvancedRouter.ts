@@ -749,7 +749,8 @@ export const cpkTrendRouter = router({
       }, phamViCua(ctx));
 
       // Compute trend direction
-      const cpkValues = data.map((d: any) => Number(d.cpk)).filter(v => !isNaN(v));
+      // Cpk NULL = "không xác định" (vd. dữ liệu hằng σ ≈ 0 — cpkSnapshotScheduler.chuanHoaChiSoGhi): KHÔNG được coi là 0 (Number(null) === 0 từng kéo xu hướng/cảnh báo về "critical").
+      const cpkValues = data.filter((d: any) => d.cpk != null).map((d: any) => Number(d.cpk)).filter(v => !isNaN(v));
       let trendDirection: 'improving' | 'declining' | 'stable' = 'stable';
       if (cpkValues.length >= 3) {
         const recent = mean(cpkValues.slice(0, Math.ceil(cpkValues.length / 3)));
@@ -759,7 +760,8 @@ export const cpkTrendRouter = router({
       }
 
       // Alert if latest CPK < 1.33
-      const latestCpk = cpkValues.length > 0 ? cpkValues[0] : null;
+      // Bản ghi MỚI NHẤT không xác định (Cpk NULL) ⇒ không có Cpk hiện tại và không cảnh báo (không mượn Cpk của bản ghi cũ hơn).
+      const latestCpk = data.length > 0 && (data[0] as any).cpk != null && Number.isFinite(Number((data[0] as any).cpk)) ? Number((data[0] as any).cpk) : null;
       let alert: { level: 'ok' | 'warning' | 'critical'; message: string } | null = null;
       if (latestCpk != null) {
         if (latestCpk < 1.0) {

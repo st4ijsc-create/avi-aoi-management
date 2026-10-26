@@ -187,6 +187,8 @@ export class LoiAnhKhongHoTro extends Error {
 
 export interface GgufChatOptions {
   messages: GgufChatMessage[];
+  /** Xin logprobs (top-N) của vài token đầu — CHỈ đường llama-server; in-process bỏ qua ⇒ `GgufGenerateResult.logprobsDau` vắng. */
+  topLogprobs?: number;
   maxTokens?: number;
   temperature?: number;
   topP?: number;
@@ -268,6 +270,8 @@ export interface GgufGenerateResult {
   totalTimeMs: number;
   tokensPerSecond: number;
   modelId: string;
+  /** Logprob của ≤ 8 token đầu (khi `topLogprobs` được xin VÀ server trả). Vắng = không có — KHÔNG phải "không chắc". */
+  logprobsDau?: import("./ai/logprobDau").LogprobToken[];
   /**
    * ★★★ G2-B — các lượt gọi tool model TỰ QUYẾT ĐỊNH phát ra. `undefined` = lượt này không có
    * tool-call. ⚠ **KHÔNG BAO GIỜ gán `[]` cho một đường chưa hỗ trợ** — đó chính là lời nói dối
@@ -1060,7 +1064,13 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
    * chặn nó là từ chối một thứ vô hại.
    * ⚠ Nằm TRƯỚC `motLuotThoi()`: một lượt bị cấm không được chiếm khoá in-flight của lượt khác.
    */
-  await chanNapTrungModelServer(modelId, "loadGgufModel");
+  await chanNapTrungModelServer(modelId, "loadGgufModel", resolvedPath);
+  // ★ Đợt 9 (2026-10-25) — hàng rào trên nay có I/O (thăm dò :8091 + đo VRAM tươi) ⇒ một lượt đồng thời có thể đã nạp xong trong lúc
+  // chờ. Kiểm lại TRƯỚC khoá in-flight, nếu không lượt này nạp bản thứ hai (lưới embedNoTextCtx "hai lượt nhúng ĐỒNG THỜI").
+  if (loadedModels.has(modelId)) {
+    loadedModels.get(modelId)!.lastUsedAt = new Date();
+    return modelId;
+  }
 
   // Đợt 1 Task 1 — khoá in-flight (nay qua helper `motLuotThoi()`, xem khai báo `inFlightLoads`).
   return motLuotThoi(inFlightLoads, modelId, async () => {
@@ -1659,6 +1669,9 @@ async function getGenerationModel(contextSize?: number): Promise<{ modelId: stri
       if (got) return got;
       why.push(`GGUF_DEFAULT_MODEL "${defaultId}" reported loaded but is not resident`);
     } catch (err) {
+      // ★ Đợt 9 (2026-10-25) — hàng rào nạp in-process (`ai/napServerNgoai`: tiến trình không phải máy chủ / server ngoài giữ cùng model /
+      // VRAM không đủ) ⇒ lỗi CẤU HÌNH/TÀI NGUYÊN, không phải "model hỏng": ném nguyên lỗi có mã, KHÔNG rơi xuống bước 4 (nạp GGUF khác).
+      if ((err as { name?: unknown })?.name === "LoiNapServerNgoai") throw err;
       const msg = (err as any)?.message ?? String(err);
       why.push(`GGUF_DEFAULT_MODEL "${defaultId}" failed to load: ${msg}`);
       console.error(`[aiGgufEngine] could not load GGUF_DEFAULT_MODEL "${defaultId}": ${msg}`);
@@ -2059,9 +2072,14 @@ function cauTuChoiNapTrung(modelId: string, viTri: string): string {
  * (embedder, FIM, fast) KHÔNG tốn thêm gì. Ở nhánh có tốn: một lượt nạp 30B mất 10–60 s, thăm dò
  * 2 s là ~3% — trả để không mất 19 GB.
  */
-async function chanNapTrungModelServer(modelId: string, viTri: string): Promise<void> {
+async function chanNapTrungModelServer(modelId: string, viTri: string, duongTep?: string): Promise<void> {
   const srv = await import("./aiLlamaServerClient");
-  if (!srv.laModelServerDangGiu(modelId)) return; // nhánh 1 — đa số
+  if (!srv.laModelServerDangGiu(modelId)) {
+    // ★ Đợt 9 (2026-10-25) — nhánh 1 KHÔNG còn tin env: GGUF lớn + llama-server NGOÀI đang sống (cùng model, hoặc VRAM không đủ) ⇒ NÉM.
+    // Sự cố: vitest thiếu LLAMA_SERVER_ENABLED nạp 35B in-process, đẩy VRAM :8091 24 → 8,8 GB. Xem `ai/napServerNgoai.ts`.
+    await (await import("./ai/napServerNgoai")).kiemNapKhiServerNgoaiSong(modelId, duongTep, viTri);
+    return; // nhánh 1 — đa số
+  }
 
   const conSong = await srv.preflightHealthy().catch(() => false);
   if (!conSong) {

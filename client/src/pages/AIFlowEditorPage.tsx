@@ -14,12 +14,14 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearch } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { NutXuatLuong } from "@/components/aiFlow/XuatNhapLuong";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import FlowThongKe from "@/components/aiFlow/FlowThongKe";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
@@ -29,7 +31,7 @@ import FlowCanvas, { KIEU_KEO_NUT } from "@/components/aiFlow/FlowCanvas";
 import NodeConfigPanel from "@/components/aiFlow/NodeConfigPanel";
 import RunTimeline from "@/components/aiFlow/RunTimeline";
 import ChayThuNutPanel from "@/components/aiFlow/ChayThuNutPanel";
-import { MAU_HANG, docItemsNhap, laHang, loiBieuThucThamSo, nhomDanhMuc, taoNutMoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
+import { MAU_HANG, canhBaoCongChuaNoi, docItemsNhap, laHang, loiBieuThucThamSo, nhomDanhMuc, taoNutMoi, type KhaiBaoNutClient } from "@/lib/flowStudio";
 
 const O_CHON =
   "h-9 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -87,6 +89,7 @@ export default function AIFlowEditorPage() {
   }, [def, banGoc]);
 
   const kiem = useMemo(() => (def && danhMuc.size ? kiemLuong(def, (ty) => danhMuc.get(ty) as KhaiBaoNut | undefined) : null), [def, danhMuc]);
+  const congChuaNoi = useMemo(() => (def ? canhBaoCongChuaNoi(def, danhMuc) : []), [def, danhMuc]);
   const soLoiBieuThuc = useMemo(() => (def ? def.nodes.reduce((s, n) => s + Object.keys(loiBieuThucThamSo(n.parameters)).length, 0) : 0), [def]);
 
   const luong = chiTiet.data?.luong;
@@ -98,6 +101,8 @@ export default function AIFlowEditorPage() {
     onSuccess: async (r) => {
       setLoiLuu(null);
       toast.success(t("flowStudio.sua.daLuu", { version: r.version }));
+      // Cảnh báo của máy chủ (vd settings.errorFlowId chưa được hỗ trợ) — lưu vẫn thành công.
+      for (const cb of r.canhBao ?? []) toast.warning(String(cb));
       await utils.flow.chiTiet.invalidate({ flowId });
       setPhienBanXem(r.version);
     },
@@ -251,6 +256,13 @@ export default function AIFlowEditorPage() {
               {t("flowStudio.sua.soLoi", { n: Math.max(kiem?.loi.length ?? 0, soLoiBieuThuc) })}
             </Badge>
           ) : null}
+          {congChuaNoi.length > 0 && (
+            <Badge variant="outline" className="bg-warning/15 text-warning border-warning/40" data-testid="canh-bao-cong-chua-noi" title={congChuaNoi.map((c) => t("flowStudio.sua.congChuaNoi", { cong: c.cong, node: def?.nodes.find((n) => n.id === c.nodeId)?.name ?? c.nodeId })).join("\n")}>
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              {t("flowStudio.sua.congChuaNoi", { cong: congChuaNoi[0].cong, node: def?.nodes.find((n) => n.id === congChuaNoi[0].nodeId)?.name ?? congChuaNoi[0].nodeId })}
+              {congChuaNoi.length > 1 ? ` (+${congChuaNoi.length - 1})` : ""}
+            </Badge>
+          )}
           <div className="ml-auto flex flex-wrap gap-2">
             <Button size="sm" data-testid="nut-luu" disabled={!def || luu.isPending} onClick={() => def && luu.mutate({ definition: def as unknown as Record<string, unknown> })}>
               {luu.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
@@ -278,6 +290,7 @@ export default function AIFlowEditorPage() {
                 {t("flowStudio.sua.bat", { version: version ?? "" })}
               </Button>
             )}
+            <NutXuatLuong flowId={flowId} version={version} disabled={!version} />
             <Button size="sm" variant="outline" data-testid="nut-tu-mo-ta" disabled={!def} onClick={() => { setLoiMoTa(null); setMoMoTa(true); }}>
               <Sparkles className="h-4 w-4 mr-1" />
               {t("flowStudio.moTaLuong.nut")}
@@ -367,6 +380,7 @@ export default function AIFlowEditorPage() {
               <TabsList className="m-2 grid grid-cols-2">
                 <TabsTrigger value="cauHinh" data-testid="tab-cau-hinh">{t("flowStudio.sua.tabCauHinh")}</TabsTrigger>
                 <TabsTrigger value="chay" data-testid="tab-chay">{t("flowStudio.sua.tabChay")}</TabsTrigger>
+                <TabsTrigger value="thongKe" data-testid="tab-thong-ke">{t("flowStudio.sua.tabThongKe")}</TabsTrigger>
               </TabsList>
               <TabsContent value="cauHinh" className="px-3 pb-4">
                 {nutChon ? (
@@ -374,6 +388,7 @@ export default function AIFlowEditorPage() {
                   <NodeConfigPanel
                     key={nutChon.id}
                     node={nutChon}
+                    flowId={flowId}
                     kb={danhMuc.get(nutChon.type)}
                     onDoi={doiNut}
                     onXoa={() => xoaNut(nutChon.id)}
@@ -413,6 +428,24 @@ export default function AIFlowEditorPage() {
                           {(["day-du", "chi-loi", "khong"] as const).map((v) => <option key={v} value={v}>{t(`flowStudio.sua.luuDuLieuChon.${v}`)}</option>)}
                         </select>
                       </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">{t("flowStudio.sua.hanLuot")}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={168}
+                          step={0.5}
+                          data-testid="han-luot-gio"
+                          className={`${O_CHON} w-full`}
+                          value={def.settings?.timeoutS === undefined ? "" : String(Math.round((def.settings.timeoutS / 3600) * 100) / 100)}
+                          onChange={(e) => {
+                            const h = Number(e.target.value);
+                            const { timeoutS: _bo, ...con } = def.settings ?? { uuTien: "background" as const, luuDuLieu: "day-du" as const };
+                            setDef({ ...def, settings: e.target.value === "" || !Number.isFinite(h) || h <= 0 ? (con as FlowDefinition["settings"]) : { ...(con as FlowDefinition["settings"]), timeoutS: Math.min(7 * 24 * 3600, Math.max(1, Math.round(h * 3600))) } });
+                          }}
+                        />
+                        <p className="text-[11px] text-muted-foreground">{t("flowStudio.sua.hanLuotGoiY")}</p>
+                      </div>
                       {kiem && kiem.loi.length > 0 && (
                         <div className="rounded border border-destructive/40 bg-destructive/10 p-2">
                           <div className="text-xs font-medium text-destructive mb-1">{t("flowStudio.sua.loiKiemTruoc")}</div>
@@ -422,6 +455,9 @@ export default function AIFlowEditorPage() {
                     </div>
                   )
                 )}
+              </TabsContent>
+              <TabsContent value="thongKe" className="px-3 pb-4">
+                <FlowThongKe flowId={flowId} />
               </TabsContent>
               <TabsContent value="chay" className="px-3 pb-4">
                 <RunTimeline flowId={flowId} runId={runId} onChonRun={setRunId} tenNut={tenNut} onTrangThai={nhanTrangThaiLuot} />

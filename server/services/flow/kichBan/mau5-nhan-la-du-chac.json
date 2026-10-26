@@ -1,0 +1,16 @@
+{
+  "ten": "mau5 nhan la du tin cay cao van cho nguoi duyet",
+  "mau": "phieu-bao-tri-phan-loai.json",
+  "thayNut": {
+    "su-kien": { "type": "kich-hoat.thu-cong", "parameters": {} },
+    "tao-phieu": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu" } } },
+    "tao-phieu-duyet": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu-sau-duyet" } } }
+  },
+  "items": [{ "json": { "lyDo": "Có tiếng kêu lạ", "idMay": 1 } }],
+  "ai": [{ "khop": "tiếng kêu", "tra": "khong-biet", "tinCay": 0.99 }],
+  "kyVong": {
+    "trangThai": "cho-duyet",
+    "khongChay": ["tao-phieu"],
+    "buoc": { "phan-loai": { "dauRa": { "main": [{ "json": { "nhan": "khac" } }] } } }
+  }
+}

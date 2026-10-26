@@ -14,14 +14,27 @@ import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc"
 import { dangKyNut, nguCanhItem, type NguCanhChay, type VetModel } from "../dangKyNut";
 // Module LÁ (0 import) — cắt chuỗi suy luận khỏi chữ model trước khi chữ thành DỮ LIỆU của luồng (hiển thị + chảy xuống node sau).
 import { stripThinking } from "../../ai/thinkingStrip";
+import { tinCayNhan, type LogprobToken } from "../../ai/logprobDau";
 
 /** `ngu` vắng = lời gọi ngoài một lượt chạy (vd `flow.taoTuMoTa`, Đợt 8.4). */
-export type HamGoiAi = (y: { vaiTro: string; heThong: string; nguoiDung: string; nghi: boolean; maxTokens: number; loai: string; ngu?: NguCanhChay }) => Promise<string>;
+export type HamGoiAi = (y: {
+  vaiTro: string;
+  heThong: string;
+  nguoiDung: string;
+  nghi: boolean;
+  maxTokens: number;
+  loai: string;
+  ngu?: NguCanhChay;
+  /** Có ⇒ xin logprobs; hàm gọi báo lại logprob token đầu (undefined = đường không trả). Hàm giả của lưới có thể gọi nó để thử. */
+  baoLogprobs?: (lp: LogprobToken[] | undefined) => void;
+  /** Hàm gọi báo lại token thật (prompt, sinh) sau lời gọi — vào vết `buoc.model` để thống kê. */
+  baoTokens?: (vao: number, ra: number) => void;
+}) => Promise<string>;
 
 export const VAI_TRO_TASK: Record<string, "code" | "extract" | "chat"> = { "code.plc": "code", "code.software": "code", extract: "extract", classify: "extract" };
 
 /** Mặc định: Cổng AI + engine (nạp động — lưới thay bằng `datHamGoiAi`). */
-let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai, ngu }) => {
+let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai, ngu, baoLogprobs, baoTokens }) => {
   const [{ routeInference }, { chatCompletion }, { resolveLogicalModel, defaultModelBasename }] = await Promise.all([
     import("../../aiGateway"),
     import("../../aiGgufEngine"),
@@ -38,9 +51,11 @@ let goiAi: HamGoiAi = async ({ vaiTro, heThong, nguoiDung, nghi, maxTokens, loai
     { task: VAI_TRO_TASK[vaiTro] ?? "chat", text: nguoiDung, auditTask: `flow_${loai}`.slice(0, 32) },
     async (_d, _ab, safeText) => {
       const r = await chatCompletion(
-        { messages: [{ role: "system", content: heThong }, { role: "user", content: safeText }], maxTokens, temperature: 0.2, disableThinking: !nghi },
+        { messages: [{ role: "system", content: heThong }, { role: "user", content: safeText }], maxTokens, temperature: 0.2, disableThinking: !nghi, ...(baoLogprobs ? { topLogprobs: 10 } : {}) },
         modelId,
       );
+      baoLogprobs?.(r.logprobsDau);
+      baoTokens?.(r.tokensPrompt, r.tokensGenerated);
       return { result: stripThinking(r.text).answer, tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, model: modelThuc };
     },
     { getResponseText: (t) => t },
@@ -79,14 +94,17 @@ export async function diemModel(vaiTro: string, ngu: NguCanhChay): Promise<VetMo
 
 /** Báo vết model (nếu lượt chạy / chạy thử đang lắng nghe) rồi gọi model. Lỗi định tuyến KHÔNG làm hỏng node. */
 async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
+  let vet: VetModel | undefined;
   if (y.ngu?.ghiModel) {
     try {
-      y.ngu.ghiModel(await diemModel(y.vaiTro, y.ngu));
+      vet = await diemModel(y.vaiTro, y.ngu);
+      y.ngu.ghiModel(vet);
     } catch {
       /* vết là thông tin phụ */
     }
   }
-  return goiAi(y);
+  // Token thật điền vào CHÍNH đối tượng vết (động cơ ghi sự kiện `buoc.model` SAU khi bước kết thúc) ⇒ thống kê token theo luồng / model.
+  return goiAi(vet ? { ...y, baoTokens: (vao, ra) => { vet!.tokVao = vao; vet!.tokRa = ra; y.baoTokens?.(vao, ra); } } : y);
 }
 
 /** Đợt 8.4 — gọi model qua hàm hiện hành (Cổng AI, hoặc hàm giả của lưới) cho các node/thủ tục ở tệp khác. */
@@ -228,6 +246,7 @@ dangKyNut({
     const ra: ItemLuong[] = [];
     for (const item of vao) {
       const t = thamSoItem(thamSo, ngu, item, vao);
+      let lp: LogprobToken[] | undefined;
       const chu = await goiAiCoVet({
         vaiTro: String(t.vaiTro ?? "classify"),
         heThong: HE_THONG_CHUNG,
@@ -236,10 +255,15 @@ dangKyNut({
         maxTokens: 32,
         loai: "phan-loai",
         ngu,
+        baoLogprobs: (x) => {
+          lp = x;
+        },
       });
       const sach = chu.trim().replace(/^["'`]+|["'`.]+$/g, "").toLowerCase();
       const khop = nhan.find((n) => n.toLowerCase() === sach) ?? nhan.find((n) => sach.includes(n.toLowerCase()));
-      ra.push({ json: { ...item.json, [String(t.truongRa ?? "nhan")]: khop ?? "khac" } });
+      // Độ tin cậy từ logprob (không thêm lượt gọi). Đường không trả logprobs ⇒ null + nguon "khong-co" — KHÔNG bịa số.
+      const tinCay = tinCayNhan(lp, khop ?? null, nhan);
+      ra.push({ json: { ...item.json, [String(t.truongRa ?? "nhan")]: khop ?? "khac", tinCay, tinCayNguon: tinCay === null ? "khong-co" : "logprob" } });
     }
     return { main: ra };
   },

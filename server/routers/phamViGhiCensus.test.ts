@@ -26,7 +26,11 @@ const SO = new Set(NO_PHAM_VI_GHI);
 const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 
 /** Ghim (đo 2026-10-24). Đổi một số là một LỜI KHAI: mutation mới ⇒ +tổng; trả nợ ⇒ −nợ (và xoá dòng sổ). */
-const GHIM = { tongMutation: 1202, no: 142 } as const; // 2026-10-25 · R1b-2a T6: + scadaKenh.khaiHangLoat (có cổng phạm vi — kiemPhamViDuoiKhoa dưới khoá adapter; bộ quét KHÔNG xếp vào nợ) ⇒ tổng 1202, nợ giữ 142 (đo, gốc 4395bfd11); // W17d: aiRobotAnomaly evaluateRollback|manualRollback có cổng toàn quyền thật (miễn trừ gỡ) −2 ⇒ 142; // W17c: aiAnalysisHub ×3 + aiVisionLanguage describeDefect|generateReport có cổng ảnh-theo-khoá (miễn trừ gỡ) −5 ⇒ 144; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
+// ★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — tổng 1203 · nợ 142, ĐO trên cây đã gộp (đặt ghim 0 rồi đọc số nhận được; sổ 142 khớp nợ).
+//   Lịch sử hai phía (mỗi phía 1201 + 1 mutation riêng):
+//   · nhánh R1b-2a T6 (2026-10-25): + scadaKenh.khaiHangLoat (có cổng phạm vi — kiemPhamViDuoiKhoa dưới khoá adapter; bộ quét KHÔNG xếp vào nợ) ⇒ tổng 1202, nợ giữ 142 (đo, gốc 4395bfd11);
+//   · main 2026-10-25 lô nhập/xuất luồng: +1 mutation flow.nhap (ghi qua luuLuongCore: luongTrongPhamVi/nhaMayMoi — cùng đường flow.luu, có cổng; không vào sổ nợ) ⇒ 1202.
+const GHIM = { tongMutation: 1203, no: 142 } as const; // W17d: aiRobotAnomaly evaluateRollback|manualRollback có cổng toàn quyền thật (miễn trừ gỡ) −2 ⇒ 142; // W17c: aiAnalysisHub ×3 + aiVisionLanguage describeDefect|generateReport có cổng ảnh-theo-khoá (miễn trừ gỡ) −5 ⇒ 144; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

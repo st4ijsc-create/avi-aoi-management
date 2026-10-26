@@ -1,0 +1,16 @@
+{
+  "ten": "mau5 duong khong tra logprobs thi cho nguoi duyet",
+  "mau": "phieu-bao-tri-phan-loai.json",
+  "thayNut": {
+    "su-kien": { "type": "kich-hoat.thu-cong", "parameters": {} },
+    "tao-phieu": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu" } } },
+    "tao-phieu-duyet": { "type": "du-lieu.dat", "parameters": { "truong": { "kenh": "tao-phieu-sau-duyet" } } }
+  },
+  "items": [{ "json": { "lyDo": "PLC báo lỗi giao tiếp", "idMay": 1 } }],
+  "ai": [{ "khop": "PLC", "tra": "plc-phan-mem" }],
+  "kyVong": {
+    "trangThai": "cho-duyet",
+    "khongChay": ["tao-phieu"],
+    "buoc": { "phan-loai": { "dauRa": { "main": [{ "json": { "nhan": "plc-phan-mem", "tinCay": null, "tinCayNguon": "khong-co" } }] } } }
+  }
+}

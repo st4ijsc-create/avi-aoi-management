@@ -44,6 +44,8 @@ if (process.env.AI_FLOW_ENABLED === "true") {
   void import("./services/flow/worker").then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong());
   // Đợt 8.1 Task 4a — bộ lập lịch Luồng AI (bầu chủ ⇒ an toàn khi API cũng khởi nó).
   void import("./services/flow/kichHoat/lich").then(({ khoiChayLich }) => khoiChayLich());
+  // Lô B7-B — cắt tỉa lượt cũ: TẮT mặc định (FLOW_RETENTION_ENABLED=true mới chạy; mặc định chỉ BÁO — xem services/flow/catTia.ts).
+  void import("./services/flow/catTia").then(({ khoiChayCatTia }) => khoiChayCatTia());
 }
 
 runWorkerProcess().catch((err) => {

@@ -1,0 +1,67 @@
+{
+  "id": "mau-bao-cao-ca-so-lieu",
+  "name": "Báo cáo ca có số liệu thật (06:00)",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "lich-6h",
+      "type": "kich-hoat.lich",
+      "typeVersion": 1,
+      "name": "06:00 hằng ngày",
+      "position": [0, 0],
+      "parameters": { "cron": "0 6 * * *", "muiGio": "Asia/Ho_Chi_Minh" }
+    },
+    {
+      "id": "san-luong",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "Sản lượng 12 giờ",
+      "position": [240, 0],
+      "parameters": { "truyVan": "san-luong.tong-quan", "gio": 12, "truongRa": "sanLuong" }
+    },
+    {
+      "id": "oee",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "OEE 12 giờ",
+      "position": [480, 0],
+      "parameters": { "truyVan": "oee.trung-binh", "gio": 12, "gioiHan": 5, "truongRa": "oee" }
+    },
+    {
+      "id": "may",
+      "type": "du-lieu.so-lieu",
+      "typeVersion": 1,
+      "name": "Trạng thái máy",
+      "position": [720, 0],
+      "parameters": { "truyVan": "may.trang-thai", "gioiHan": 5, "truongRa": "may" }
+    },
+    {
+      "id": "tom-tat",
+      "type": "ai.tom-tat",
+      "typeVersion": 1,
+      "name": "Tóm tắt ca",
+      "position": [960, 0],
+      "parameters": {
+        "vaiTro": "summarize",
+        "yeuCau": "Viết báo cáo ca ngắn bằng tiếng Việt từ ba khối số liệu sanLuong, oee, may: sản lượng và tỉ lệ NG, máy OEE thấp nhất, máy đang lỗi. Chỉ dùng số liệu có trong dữ liệu; thiếu thì ghi 'chưa có dữ liệu'.",
+        "truongRa": "baoCao"
+      }
+    },
+    {
+      "id": "thong-bao",
+      "type": "tich-hop.thong-bao",
+      "typeVersion": 1,
+      "name": "Gửi thông báo nội bộ (điền người nhận)",
+      "position": [1200, 0],
+      "parameters": { "nguoiNhan": [], "tieuDe": "Báo cáo ca", "noiDung": "{{ $json.baoCao }}", "loai": "REPORT", "uuTien": "NORMAL", "duongDan": "/" }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "lich-6h", "port": "main" }, "to": { "node": "san-luong", "port": "main" } },
+    { "from": { "node": "san-luong", "port": "main" }, "to": { "node": "oee", "port": "main" } },
+    { "from": { "node": "oee", "port": "main" }, "to": { "node": "may", "port": "main" } },
+    { "from": { "node": "may", "port": "main" }, "to": { "node": "tom-tat", "port": "main" } },
+    { "from": { "node": "tom-tat", "port": "main" }, "to": { "node": "thong-bao", "port": "main" } }
+  ]
+}

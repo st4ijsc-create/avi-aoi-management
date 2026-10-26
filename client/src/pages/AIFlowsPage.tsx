@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { FileStack, Inbox, KeyRound, Loader2, Plus, Trash2, Workflow } from "lucide-react";
 import type { FlowDefinition } from "@shared/flow/model";
+import { NutNhapLuong } from "@/components/aiFlow/XuatNhapLuong";
 import { MAU_HANG, MAU_TRANG_THAI, idLuongTuTen, laHang, luongMoi, saoTuMau } from "@/lib/flowStudio";
 
 const O_CHON =
@@ -256,6 +257,7 @@ export default function AIFlowsPage() {
           description={t("flowStudio.danhSach.moTa")}
           actions={
             <div className="flex flex-wrap gap-2">
+              <NutNhapLuong laAdmin={laAdmin} />
               <Link href="/ai-flows/duyet">
                 <Button variant="outline" size="sm" data-testid="link-hop-duyet">
                   <Inbox className="h-4 w-4 mr-1" />

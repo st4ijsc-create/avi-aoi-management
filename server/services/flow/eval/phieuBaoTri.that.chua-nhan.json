@@ -1,0 +1,59 @@
+{
+  "ghi_chu": "CHƯA GÁN NHÃN. Nhãn hợp lệ: dien | co-khi | plc-phan-mem | vat-tu-khac | khong-ap-dung (điền vào trường nhan). Văn bản đã ẩn danh (email/số/mã máy/số phiếu). DEV chỉ có dữ liệu MÔ PHỎNG (máy SIM-*, 9 lý do dừng khác nhau) — chưa phải văn bản vận hành viên thật; cần lấy mẫu từ môi trường thật nếu muốn đo thật. Mô tả phiếu (maintenance_work_orders.description) trong DEV toàn là mẫu hệ thống ('Tự sinh từ PdM…', 'Công việc … cho <may>') — đã LOẠI, không có giá trị gán nhãn.",
+  "mau": [
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Lỗi cấp liệu feeder",
+      "so_dong_giong": 33,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Vệ sinh đầu phun",
+      "so_dong_giong": 22,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Bảo trì định kỳ",
+      "so_dong_giong": 21,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Đổi sản phẩm",
+      "so_dong_giong": 4,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Hết linh kiện",
+      "so_dong_giong": 4,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "NG vượt ngưỡng",
+      "so_dong_giong": 2,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Đang dừng — chờ bảo trì",
+      "so_dong_giong": 2,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Kẹt băng tải",
+      "so_dong_giong": 2,
+      "nhan": null
+    },
+    {
+      "nguon": "downtime_events.reason (DEV, mô phỏng)",
+      "van_ban": "Bảo trì đột xuất",
+      "so_dong_giong": 1,
+      "nhan": null
+    }
+  ]
+}

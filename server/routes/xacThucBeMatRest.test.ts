@@ -677,9 +677,11 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "`app.use(\"/uploads\", express.static(...))` và `app.use(\"/uploads\", …)` để ghi lại VÌ SAO thứ tự gắn có ý " +
           "nghĩa (đặt sau dòng resize thì mọi yêu cầu kèm `?w=` đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở). " +
           "⚠ Vẫn ghi lại thay vì sửa chú thích cho vừa bộ đếm, đúng lý do đã nêu ở lượt +2 phía trên. " +
+          "★ 2026-10-26 MERGE main 134293775 vào feat/scada-r1b2: ĐO trên cây đã gộp (đặt ghim 0 rồi đọc số nhận được) = 87 — hai lịch sử dưới đây đều tính từ 84 (nhánh R1b-2a: 84 → 86 → 85, +1 hmiStopLimiter; main W21b: 84 → 86, +2 unverifiedIpLimiter). " +
           "★ 2026-10-25 86 → 85 (SCADA R1b-2a T3 fix round 1 c2): gỡ app.use('/trpc/', hmiStopLimiter) — mount CHẾT (bộ phân loại STOP chỉ khớp /api/trpc, không router tRPC nào gắn ở /trpc); đo lại sau khi gỡ = 85, còn MỘT điểm gắn mới app.use('/api/', hmiStopLimiter). " +
           "★ 2026-10-25 84 → 86 (SCADA R1b-2a T3, tầng STOP HMI): HAI điểm gắn THẬT, đếm bằng diff với HEAD — app.use('/api/', hmiStopLimiter) và app.use('/trpc/', hmiStopLimiter). " +
           "Cả hai là MIDDLEWARE giới hạn tốc độ (600 / phút theo người cho STOP HMI có vé ký hợp lệ), không phải handler; chủ: server/_core/rateLimitConfig.ts createHmiStopLimiter, canh bởi rateLimitConfig.hmiStop.test.ts / .db.test.ts. " +
+          "★ 2026-10-25 84 → 86 (W21b, kiem-dinh): HAI điểm gắn MIDDLEWARE — app.use('/api/', unverifiedIpLimiter) và app.use('/trpc/', unverifiedIpLimiter): trần IP thứ hai CHỈ cho thông tin xác thực chưa verify (Bearer không-JWT / X-API-Key), không phải handler; canh bởi server/_core/rateLimitTranIpThuHai.test.ts. " +
           "★ 2026-10-24 91 → 84 (nhóm ④): BẢY tuyến THẬT (hierarchy/tree · factory/:id · mqtt-topics · mqtt-message-types · summary · statistics/measurement-points · dashboard/summary) chuyển nguyên văn sang routes/externalHierarchyApi.ts — registrar mới khai ở NGOAI_PHAM_VI (soTuyen 7), đo bởi routes/externalHierarchyPhamVi.db.test.ts. " +
           "★ 2026-10-24 103 → 91 (nhóm ③): MƯỜI HAI tuyến THẬT (stations · stations/resolve-topic · stations/:id + 7 nhánh · workstations · workstations/:id) chuyển nguyên văn sang routes/externalStationApi.ts — registrar mới khai ở NGOAI_PHAM_VI (soTuyen 12), đo bởi routes/externalStationPhamVi.db.test.ts. " +
           "★ 2026-10-24 108 → 103 (rà bảo mật /api/external): NĂM tuyến THẬT chuyển nguyên văn sang routes/externalAlertApi.ts (alerts · alerts/:alertId · acknowledge · resolve · bulletins) — registrar mới khai ở NGOAI_PHAM_VI (soTuyen 5), đo hành vi bởi routes/externalAlertPhamVi.db.test.ts. " +
@@ -688,7 +690,7 @@ describe("★★★ Pha 9 A1 §6 — ĐẢO LƯỢNG TỪ: ∀ registrar TRÊN �
           "★ 2026-10-17 104 → 106: MÀU ĐỎ BỊ CHE — §6b dừng ở khẳng định 'file chưa khai' đầu tiên (giàn thử edge) nên chưa bao giờ tới vòng so số. " +
           "Đo bộ đếm trên các commit 8c12bbbc7…7e849be39: đều 106 (không đổi trong Đợt 8-12) ⇒ độ lệch +2 có từ trước, không do Đợt 10-12 thêm; " +
           "con số ghim chỉ được đưa về sự thật đo được, chưa truy ra 2 điểm gắn nào. Cần một lượt đối chiếu riêng nếu muốn biết chúng là gì.",
-        soTuyen: 85,
+        soTuyen: 87,
       },
       "server/services/edge/__edgeE2eHarness.dot10.ts": {
         viSao:

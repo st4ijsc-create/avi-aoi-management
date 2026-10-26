@@ -1,0 +1,69 @@
+{
+  "id": "mau-phieu-bao-tri-phan-loai",
+  "name": "Phiếu bảo trì → phân loại → tạo việc (nhãn lạ → người duyệt)",
+  "version": 1,
+  "settings": { "uuTien": "background", "luuDuLieu": "day-du" },
+  "nodes": [
+    {
+      "id": "su-kien",
+      "type": "kich-hoat.su-kien",
+      "typeVersion": 1,
+      "name": "Máy dừng (vận hành viên nhập lý do)",
+      "position": [0, 0],
+      "parameters": { "suKien": "downtime.start", "bat": false, "cuaSoPhut": 10, "tranMoiGio": 10 }
+    },
+    {
+      "id": "phan-loai",
+      "type": "ai.phan-loai",
+      "typeVersion": 1,
+      "name": "Phân loại nhóm xử lý",
+      "position": [260, 0],
+      "parameters": {
+        "vaiTro": "classify",
+        "vanBan": "{{ $json.lyDo }}",
+        "nhan": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"],
+        "huongDan": "dien = nguồn, cầu chì, aptomat, relay, contactor, biến tần, động cơ, dây dẫn, mất điện/pha, chập cháy. co-khi = băng tải, dây curoa, vòng bi, xi lanh khí nén, kẹp, ray trượt, bánh răng, giác hút, ốc lỏng, mòn/kẹt/rơ/rung. plc-phan-mem = PLC, HMI, phần mềm, chương trình, giao tiếp/kết nối mạng, camera/driver, cấu hình, dữ liệu, mã vạch, cảm biến báo sai trong chương trình. vat-tu-khac = hết/thiếu vật tư, vệ sinh, bảo dưỡng định kỳ, hiệu chuẩn, cấp phát, không rõ nguyên nhân.",
+        "truongRa": "nhan"
+      }
+    },
+    {
+      "id": "kiem-nhan",
+      "type": "logic.chon",
+      "typeVersion": 1,
+      "name": "AI đủ chắc? (ngưỡng 0,8 TẠM: 72 phiếu, 3 mẫu sai; thiếu độ tin cậy ⇒ người duyệt)",
+      "position": [520, 0],
+      "parameters": { "giaTri": "{{ $json.tinCay != null && $json.tinCay >= 0.8 ? $json.nhan : \"khac\" }}", "nhanh": [{ "so": "in", "dich": ["dien", "co-khi", "plc-phan-mem", "vat-tu-khac"] }] }
+    },
+    {
+      "id": "tao-phieu",
+      "type": "bao-tri.tao-phieu",
+      "typeVersion": 1,
+      "name": "Tạo phiếu bảo trì đúng nhóm",
+      "position": [780, -80],
+      "parameters": { "may": "{{ $json.idMay }}", "tieuDe": "{{ $json.lyDo }}", "moTa": "Loại dừng: {{ $json.loaiDung }}", "nhom": "{{ $json.nhan }}", "uuTien": 3, "loai": "CORRECTIVE", "truongRa": "phieu" }
+    },
+    {
+      "id": "duyet",
+      "type": "nguoi.duyet",
+      "typeVersion": 1,
+      "name": "Người xác nhận khi AI không xếp được nhóm",
+      "position": [780, 100],
+      "parameters": { "tieuDe": "Phiếu bảo trì cần xác nhận nhóm", "noiDung": "Lý do dừng máy: {{ $json.lyDo }} — AI không xếp được hoặc không đủ chắc (nhãn: {{ $json.nhan }}, độ tin cậy: {{ $json.tinCay }}). Đồng ý = tạo phiếu nhóm Vật tư/Khác.", "vaiTroDuyet": "supervisor", "hetHanGio": 24 }
+    },
+    {
+      "id": "tao-phieu-duyet",
+      "type": "bao-tri.tao-phieu",
+      "typeVersion": 1,
+      "name": "Tạo phiếu (đã xác nhận, nhóm Vật tư/Khác)",
+      "position": [1040, 100],
+      "parameters": { "may": "{{ $json.idMay }}", "tieuDe": "{{ $json.lyDo }}", "moTa": "Đã được người xác nhận. Loại dừng: {{ $json.loaiDung }}", "nhom": "vat-tu-khac", "uuTien": 3, "loai": "CORRECTIVE", "truongRa": "phieu" }
+    }
+  ],
+  "connections": [
+    { "from": { "node": "su-kien", "port": "main" }, "to": { "node": "phan-loai", "port": "main" } },
+    { "from": { "node": "phan-loai", "port": "main" }, "to": { "node": "kiem-nhan", "port": "main" } },
+    { "from": { "node": "kiem-nhan", "port": "nhanh-1" }, "to": { "node": "tao-phieu", "port": "main" } },
+    { "from": { "node": "kiem-nhan", "port": "khac" }, "to": { "node": "duyet", "port": "main" } },
+    { "from": { "node": "duyet", "port": "dong-y" }, "to": { "node": "tao-phieu-duyet", "port": "main" } }
+  ]
+}

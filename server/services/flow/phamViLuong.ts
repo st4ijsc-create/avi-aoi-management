@@ -66,3 +66,11 @@ export async function nhaMayChoLuongMoi(pv: PhamViNguoiXem, yeuCau: number | nul
   if (cho.length === 1) return { ok: true, factoryId: cho[0] };
   return { ok: false, lyDo: "can-chon-nha-may" };
 }
+
+/** Nhà máy của luồng (ai_flows.factoryId); NULL = toàn hệ thống; luồng không có => undefined. */
+export async function nhaMayCuaLuong(flowId: string): Promise<number | null | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [f] = await db.select({ f: aiFlows.factoryId }).from(aiFlows).where(eq(aiFlows.id, flowId)).limit(1);
+  return f ? f.f : undefined;
+}

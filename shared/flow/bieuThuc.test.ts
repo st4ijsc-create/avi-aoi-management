@@ -126,3 +126,28 @@ describe("trần độ dài kết quả chuỗi (Đợt 9 — L1)", () => {
     expect(danhGia("join($json.l)", ngu({ l: [] }))).toBe("");
   });
 });
+
+describe("so sánh thứ tự < <= > >= là LỎNG (ngữ nghĩa JS) — test ghi lại hành vi hiện tại, KHÔNG đổi ngữ nghĩa", () => {
+  const ev = (bt: string, json: Record<string, unknown>) => danhGia(bt, { json });
+  it("số vs chuỗi số: chuỗi bị ép về số", () => {
+    expect(ev("$json.x >= 0.7", { x: "0.99" })).toBe(true);
+    expect(ev("$json.x >= 0.7", { x: "0.5" })).toBe(false);
+    expect(ev("$json.x >= 0.7", { x: "abc" })).toBe(false); // NaN
+  });
+  it("chuỗi vs chuỗi: thứ tự từ điển, không phải số", () => {
+    expect(ev("$json.a < $json.b", { a: "10", b: "9" })).toBe(true);
+  });
+  it("null ép về 0; thiếu trường (undefined) ⇒ luôn false", () => {
+    expect(ev("$json.x >= 0", { x: null })).toBe(true);
+    expect(ev("$json.x <= 0.7", { x: null })).toBe(true);
+    expect(ev("$json.x >= 0.7", { x: null })).toBe(false);
+    expect(ev("$json.x >= 0", {})).toBe(false);
+    expect(ev("$json.x <= 0.7", {})).toBe(false);
+  });
+  it("mẫu #5: 'tinCay != null && tinCay >= 0.7' an toàn với null / thiếu; chuỗi số là KHE HỞ đã biết (tinCay do node sinh luôn là số|null)", () => {
+    const bt = '$json.tinCay != null && $json.tinCay >= 0.7 ? $json.nhan : "khac"';
+    expect(ev(bt, { nhan: "dien", tinCay: null })).toBe("khac");
+    expect(ev(bt, { nhan: "dien" })).toBe("khac"); // undefined != null là false
+    expect(ev(bt, { nhan: "dien", tinCay: "0.99" })).toBe("dien"); // hành vi lỏng, được ghi nhận
+  });
+});

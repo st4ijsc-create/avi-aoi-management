@@ -157,13 +157,25 @@ export async function phienKyHopLe(req: Pick<Request, "headers">): Promise<{ ope
  * R1b-2a T3 fix round 2 (review m-2): MỘT lượt đọc cookie trả cả `openId` lẫn `ve` — chuỗi vé ĐÚNG như đã đưa cho verifier, nên chuỗi tầng
  * STOP băm là chuỗi đã kiểm THEO CẤU TẠO (không phải do hai lượt đọc tình cờ khớp nhau). Chỉ cho giới hạn tốc độ; `ve` không bao giờ được
  * log hay lưu (tầng STOP chỉ giữ 16 hex sha256 của phần đã ký `header.payload`).
+ * Merge main 134293775 (2026-10-26): phép kiểm chữ ký đi qua `phienKyHopLeTuVe` — vẫn đúng MỘT lượt `verifySession` trong tệp này.
  */
 export async function phienKyVaVe(req: Pick<Request, "headers">): Promise<{ openId: string; ve: string } | null> {
   const ve = veTuCookie(req);
   if (ve === null) return null;
-  const { sdk } = await import("./sdk");
-  const phien = await sdk.verifySession(ve, { imLang: true });
+  const phien = await phienKyHopLeTuVe(ve);
   return phien ? { openId: phien.openId, ve } : null;
+}
+
+/**
+ * Như `phienKyHopLe` nhưng từ CHUỖI vé đã tách (cookie hoặc Bearer) — MỘT lượt `verifySession` duy nhất của tệp này. W21 (kiểm định 2026-10-25): `rateLimitConfig`
+ * dùng cùng phép kiểm chữ ký này để CHỌN XÔ đếm của limiter chung (chỉ kết quả đúng/sai; không gắn danh tính vào req, không cấp quyền — createContext vẫn kiểm sổ phiên / isActive / buộc đổi MK).
+ * Merge main 134293775 (2026-10-26): kiểm IM LẶNG (`{ imLang: true }`, R1b-2a T3 N-2) — mọi người gọi đều dùng kết quả làm KHOÁ giới hạn tốc độ (tầng STOP,
+ * khoá người của middleware này, khoá xô W21 của limiter chung), đúng hợp đồng tuỳ chọn `imLang` của `sdk.verifySession`; đường xác thực thật vẫn log.
+ */
+export async function phienKyHopLeTuVe(token: string): Promise<{ openId: string } | null> {
+  const { sdk } = await import("./sdk");
+  const phien = await sdk.verifySession(token, { imLang: true });
+  return phien ? { openId: phien.openId } : null;
 }
 
 /** Khoá người dùng từ cookie phiên: `u:<openId>` khi cookie hợp lệ (chỉ kiểm chữ ký JWT, không chạm DB), ngược lại null. */

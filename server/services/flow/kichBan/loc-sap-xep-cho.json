@@ -1,0 +1,37 @@
+{
+  "ten": "loc sap xep cho gom",
+  "luong": {
+    "id": "x",
+    "name": "loc sap xep cho",
+    "version": 1,
+    "nodes": [
+      { "id": "t", "type": "kich-hoat.thu-cong", "typeVersion": 1, "name": "t", "position": [0, 0], "parameters": {} },
+      { "id": "loc", "type": "logic.loc", "typeVersion": 1, "name": "loc", "position": [0, 0], "parameters": { "dieuKien": [{ "giaTri": "{{ $json.oee }}", "so": "lt", "dich": 0.8 }] } },
+      { "id": "xep", "type": "logic.sap-xep", "typeVersion": 1, "name": "xep", "position": [0, 0], "parameters": { "giaTri": "{{ $json.oee }}", "huong": "tang", "kieu": "so" } },
+      { "id": "cho", "type": "logic.cho", "typeVersion": 1, "name": "cho", "position": [0, 0], "parameters": { "giay": 3600 } },
+      { "id": "gom", "type": "logic.gom", "typeVersion": 1, "name": "gom", "position": [0, 0], "parameters": { "truongRa": "ds" } }
+    ],
+    "connections": [
+      { "from": { "node": "t", "port": "main" }, "to": { "node": "loc", "port": "main" } },
+      { "from": { "node": "loc", "port": "giu" }, "to": { "node": "xep", "port": "main" } },
+      { "from": { "node": "xep", "port": "main" }, "to": { "node": "cho", "port": "main" } },
+      { "from": { "node": "cho", "port": "main" }, "to": { "node": "gom", "port": "main" } }
+    ]
+  },
+  "items": [
+    { "json": { "may": "A", "oee": 0.9 } },
+    { "json": { "may": "B", "oee": 0.5 } },
+    { "json": { "may": "C", "oee": 0.7 } },
+    { "json": { "may": "D" } }
+  ],
+  "tuaGio": true,
+  "kyVong": {
+    "trangThai": "xong",
+    "buoc": {
+      "loc": { "dauRa": { "giu": [{ "json": { "may": "B" } }, { "json": { "may": "C" } }], "loai": [{ "json": { "may": "A" } }, { "json": { "may": "D" } }] } },
+      "xep": { "dauRa": { "main": [{ "json": { "may": "B" } }, { "json": { "may": "C" } }] } },
+      "cho": { "trangThai": "xong" },
+      "gom": { "trangThai": "xong", "dauRa": { "main": [{ "json": { "soItem": 2, "ds": [{ "may": "B", "oee": 0.5 }, { "may": "C", "oee": 0.7 }] } }] } }
+    }
+  }
+}

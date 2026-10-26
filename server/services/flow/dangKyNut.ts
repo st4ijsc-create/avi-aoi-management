@@ -4,6 +4,7 @@
  */
 import { danhGiaThamSo, type ItemLuong, type NguCanhBieuThuc } from "../../../shared/flow/bieuThuc";
 import type { KhaiBaoNut } from "../../../shared/flow/model";
+import type { PhamViNguoiXem } from "../../db/hierarchy";
 
 /**
  * ★★★ Đợt 9 (IDOR) — bộ kiểm PHẠM VI của người mà lần chạy thử / lượt chạy dưới quyền. `true` ⇔ tài nguyên TỒN TẠI VÀ thuộc phạm vi;
@@ -15,6 +16,8 @@ export interface BoKiemPhamVi {
   biMat(id: string): Promise<boolean>;
   /** Luồng (luồng con / tool agent) tồn tại và thuộc phạm vi. */
   luong(flowId: string): Promise<boolean>;
+  /** Lô Luồng-1 — định danh phạm vi của người đang chạy (chủ lượt, tính LÚC CHẠY; chạy thử: người gọi). Node đọc số liệu nhà máy PHẢI dùng cái này; vắng ⇒ từ chối. */
+  phamVi?: PhamViNguoiXem;
 }
 
 /**
@@ -31,6 +34,9 @@ export interface VetModel {
   /** Dự phòng vì khe nặng đang giữ model khác (`khe-dang-giu-model-khac`). */
   kheBan: boolean;
   lyDo: string[];
+  /** Token THẬT của lời gọi (điền SAU khi model trả lời — cùng đối tượng đã ghi vào vết; vắng = đường không báo / lời gọi lỗi). */
+  tokVao?: number;
+  tokRa?: number;
 }
 
 export interface NguCanhChay {
@@ -79,8 +85,19 @@ export interface YeuCauCho {
   };
 }
 
+/**
+ * Node xong NGAY nhưng các node KẾ chỉ chạy sau `ms` mili-giây (logic.cho): động cơ xếp node kế vào hàng đợi với `availableAt = now() + ms` trong CÙNG giao dịch
+ * kết thúc bước — không giữ worker, bền qua khởi động lại, lượt vẫn `dang-chay`. Trần: `TRAN_TUOI_LUOT_HEN_MS` tính từ lúc lượt bắt đầu (vượt ⇒ bước lỗi, không hẹn).
+ */
+export interface YeuCauHen {
+  __hen: { ms: number; ra: KetQuaChay };
+}
+
+/** Tuổi tối đa của một lượt khi còn hẹn giờ (7 ngày) — luồng không treo vô hạn. */
+export const TRAN_TUOI_LUOT_HEN_MS = 7 * 24 * 3600_000;
+
 export interface DinhNghiaNut extends KhaiBaoNut {
-  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho>;
+  chay(thamSo: Record<string, unknown>, ngu: NguCanhChay): Promise<KetQuaChay | YeuCauCho | YeuCauHen>;
 }
 
 /** Ngữ cảnh biểu thức cho MỘT item. */

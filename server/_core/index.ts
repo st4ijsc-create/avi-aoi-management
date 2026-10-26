@@ -67,7 +67,7 @@ import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createHmiStopLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createHmiStopLimiter, createMachineIngestLimiter, createOtIngestLimiter, createUnverifiedCredentialIpLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 import { khoiChayDongBoLuaChonModel } from "../services/ai/luaChonModelLlamaServer";
@@ -75,9 +75,13 @@ import { khoiChayDongBoSoModel } from "../services/ai/soModel/napSoModel";
 import { dongBoKhoModel } from "../services/ai/soModel/dongBoKhoModel";
 import { batTuDoiKheNang } from "../services/ai/soModel/kheNangMacDinh";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
+import { danhDauTienTrinhMayChu } from "../services/ai/napServerNgoai";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
+
+// ★ Đợt 9 (2026-10-25) — CHỈ tiến trình máy chủ (api/worker) được nạp GGUF in-process; vitest/script mặc định bị chặn (`ai/napServerNgoai`).
+danhDauTienTrinhMayChu();
 
 /**
  * ★★★ Pha 2B Task 5 — CỔNG CẤU HÌNH CƯỠNG CHẾ, VÀ ĐÂY LÀ **CHỖ DUY NHẤT TRONG REPO NGOÀI MỌI `try`**.
@@ -387,6 +391,10 @@ async function startServer() {
   app.use('/api/', hmiStopLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
+  // W21b — trần IP thứ hai (rộng) cho credential chưa verify được (Bearer không-JWT / X-API-Key); phiên verify + mặt phẳng máy không bị đếm.
+  const unverifiedIpLimiter = createUnverifiedCredentialIpLimiter();
+  app.use('/api/', unverifiedIpLimiter);
+  app.use('/trpc/', unverifiedIpLimiter);
 
   // Stricter rate limit for auth endpoints
   const authLimiter = createAuthLimiter();
@@ -4192,6 +4200,8 @@ async function startServer() {
     void import("../services/flow/worker")
       .then(({ khoiChayWorkerLuong }) => khoiChayWorkerLuong())
       .catch((err) => console.error("[luong-ai] worker không khởi chạy được:", (err as any)?.message || err));
+    // Lô B7-B — cắt tỉa lượt cũ (TẮT mặc định; FLOW_RETENTION_ENABLED=true; mặc định chỉ BÁO) cùng nơi với worker.
+    void import("../services/flow/catTia").then(({ khoiChayCatTia }) => khoiChayCatTia()).catch((err) => console.error("[luong-ai] cắt tỉa không khởi chạy được:", (err as any)?.message || err));
   }
   // ★★ Đợt 8.1 Task 4a — bộ lập lịch Luồng AI (node `kich-hoat.lich`). BẦU CHỦ (`giuQuyenChu("lich")`) ⇒ khởi ở cả API lẫn
   // worker vẫn chỉ MỘT tiến trình bắn; khoá idempotency theo phút chặn bắn trùng khi chuyển chủ.
@@ -4199,6 +4209,10 @@ async function startServer() {
     void import("../services/flow/kichHoat/lich")
       .then(({ khoiChayLich }) => khoiChayLich())
       .catch((err) => console.error("[luong-ai] bộ lập lịch không khởi chạy được:", (err as any)?.message || err));
+    // Lô Luồng-2 — bộ nghe sự kiện nội bộ (eventBus chỉ sống trong tiến trình phát ⇒ khởi ở API). Node phải `bat: true` mới bắn.
+    void import("../services/flow/kichHoat/suKien")
+      .then(({ khoiChaySuKien }) => khoiChaySuKien())
+      .catch((err) => console.error("[luong-ai] bộ nghe sự kiện không khởi chạy được:", (err as any)?.message || err));
   }
 
   // Đợt 0.1 (AI Local) — GIÁM SÁT llama-server: không ai nghe cổng ≥ 2 nhịp (15 s) ⇒ chạy
