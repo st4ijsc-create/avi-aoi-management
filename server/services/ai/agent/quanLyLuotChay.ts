@@ -62,6 +62,9 @@ import {
 import type { CopilotUser } from "../../aiCopilotActions";
 import { taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
+import { giaiChonModel } from "../chonModel/giaiChonModel";
+import { layPhuThuocDanhMucMacDinh } from "../chonModel/danhMuc";
+import { CHON_MODEL_RE, type PhuThuocDanhMuc } from "../chonModel/kieu";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 import {
   boDemLuotModel,
@@ -69,6 +72,7 @@ import {
   tacNhanTheoVaiTroBat,
   type MaTuChoiVaiTro,
   type PhuThuocVaiTro,
+  type ThongTinModelLuotChay,
 } from "./vaiTroTacNhan";
 import { planInference, type GatewayPlan } from "../../aiGateway";
 import { nguCanhKhe } from "../modelResolver";
@@ -169,6 +173,10 @@ export type MaTuChoiTao =
   /** Chế độ tu-dong khi công tắc AI_CODING_TU_TRI_GHI (model ghi không người duyệt) TẮT. */
   | "TU_DONG_TAT"
   | "DANG_CO_LUOT_CHAY"
+  /** (Đợt 10.1) `chonModel` sai hình dạng / hồ sơ không dùng được / vai không sinh chữ. */
+  | "CHON_MODEL_SAI"
+  /** (Đợt 10.1) `chonModel` là model ngoài không có / ngoài phạm vi (10.1: chưa cài cổng ngoài). */
+  | "CHON_MODEL_KHONG_CO"
   /** (Đợt 9, chỉ khi `AI_AGENT_THEO_VAI_TRO`) từ chối ở bước chọn model / gating aiGateway — TRƯỚC mọi token. */
   | MaTuChoiVaiTro;
 
@@ -181,6 +189,8 @@ const HTTP_CUA_MA: Record<MaTuChoiTao, number> = {
   THIEU_QUYEN_THUC_THI: 403,
   TU_DONG_TAT: 403,
   DANG_CO_LUOT_CHAY: 409,
+  CHON_MODEL_SAI: 400,
+  CHON_MODEL_KHONG_CO: 404,
   AI_KHONG_CO_MODEL: 503,
   AI_GIOI_HAN_TAN_SUAT: 429,
   AI_HET_HAN_MUC: 429,
@@ -197,6 +207,8 @@ export interface YeuCauTaoLuotChay {
   sessionId?: unknown;
   ngonNgu?: unknown;
   req?: ToolExecContext["req"];
+  /** ★ Đợt 10.1 A2 — model chọn tường minh (`vai-tro:` / `ho-so:` / `ngoai:`); vắng / `auto` ⇒ đường cũ y nguyên. */
+  chonModel?: unknown;
 }
 
 export type KetQuaTaoLuotChay =
@@ -218,6 +230,39 @@ export interface PhuThuocQuanLy {
   timTaiLieu?: TimTaiLieu;
   /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
   vaiTro?: Partial<PhuThuocVaiTro>;
+  /** (Đợt 10.1) phụ thuộc danh mục cho `chonModel` (lưới thay; mặc định `layPhuThuocDanhMucMacDinh`). */
+  danhMucModel?: () => Promise<PhuThuocDanhMuc>;
+}
+
+// ─── ★ Đợt 10.1 — model chọn tường minh ───────────────────────────────────────────────────────
+
+type KetQuaChonLuotChay =
+  | { ok: true; modelChon: { modelId: string | undefined; thongTin: ThongTinModelLuotChay } | null }
+  | { ok: false; ma: "CHON_MODEL_SAI" | "CHON_MODEL_KHONG_CO"; thongDiep: string };
+
+async function giaiChonModelLuotChay(
+  raw: unknown,
+  projectId: string,
+  layDep: () => Promise<PhuThuocDanhMuc> = layPhuThuocDanhMucMacDinh,
+): Promise<KetQuaChonLuotChay> {
+  if (raw === undefined || raw === null || raw === "" || raw === "auto") return { ok: true, modelChon: null };
+  if (typeof raw !== "string" || !CHON_MODEL_RE.test(raw)) {
+    return { ok: false, ma: "CHON_MODEL_SAI", thongDiep: "chonModel không hợp lệ; dạng hợp lệ: auto | vai-tro:<id> | ho-so:<id> | ngoai:<nha-cung-cap>:<model>" };
+  }
+  try {
+    const dich = await giaiChonModel(raw, { beMatChu: true, factoryId: null, phamVi: { projectId }, kheBiKhoa: nguCanhKhe().kheBiKhoa }, await layDep());
+    if (!dich) return { ok: true, modelChon: null };
+    if (dich.loai !== "local") return { ok: false, ma: "CHON_MODEL_KHONG_CO", thongDiep: "model ngoài chưa được cài đặt" };
+    return {
+      ok: true,
+      modelChon: { modelId: dich.modelId, thongTin: { vaiTro: dich.vaiTro, model: dich.modelId ?? null, nguon: dich.nguon, bangChung: `chọn tường minh ${raw}` } },
+    };
+  } catch (e) {
+    const code = (e as { code?: unknown })?.code;
+    if (code === "NOT_FOUND") return { ok: false, ma: "CHON_MODEL_KHONG_CO", thongDiep: (e as Error).message };
+    if (code === "BAD_REQUEST") return { ok: false, ma: "CHON_MODEL_SAI", thongDiep: (e as Error).message };
+    throw e;
+  }
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -547,6 +592,11 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         return { ok: false, ma: "TU_DONG_TAT", http: HTTP_CUA_MA.TU_DONG_TAT };
       }
 
+      // ★ Đợt 10.1 A2 — model chọn tường minh: giải TRƯỚC khi giữ chỗ (từ chối không phải nhả gì). Lạ ⇒ 400/404, không rơi mặc định.
+      const chon = await giaiChonModelLuotChay(y.chonModel, projectId, phuThuoc.danhMucModel);
+      if (!chon.ok) return { ok: false, ma: chon.ma, http: HTTP_CUA_MA[chon.ma], thongDiep: chon.thongDiep };
+      const modelChon = chon.modelChon;
+
       const dangCo = dangChayCuaNguoi.get(user.id);
       if (dangCo && theoId.has(dangCo)) return { ok: false, ma: "DANG_CO_LUOT_CHAY", http: HTTP_CUA_MA.DANG_CO_LUOT_CHAY, runId: dangCo };
 
@@ -595,7 +645,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         };
         try {
           const cb = await chuanBiLuotChayTheoVaiTro(
-            { cauHoi, gocDuAn: goc, projectId, user },
+            { cauHoi, gocDuAn: goc, projectId, user, ...(modelChon ? { modelChon } : {}) },
             {
               planInference,
               layAnh: layAnhSoModel,
@@ -668,8 +718,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                     outcome: "ok",
                   }),
                 )
-              : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id })),
-            ...(theoVaiTro ? { thongTinModel: theoVaiTro.thongTin } : {}),
+              : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id, ...(modelChon ? { modelId: modelChon.modelId } : {}) })),
+            ...(theoVaiTro ? { thongTinModel: theoVaiTro.thongTin } : modelChon ? { thongTinModel: modelChon.thongTin } : {}),
             boThucThi,
             phat: (e) => phat(s, e),
             signal: boHuy.signal,
