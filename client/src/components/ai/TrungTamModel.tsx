@@ -112,7 +112,7 @@ export default function TrungTamModel() {
 
 // ─── Vai trò & gán ─────────────────────────────────────────────────────────────
 
-function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
+export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
   const { t } = useTranslation();
   const envKeys = useMemo(() => [...new Set(d.vaiTro.map((v) => v.envKey))].sort(), [d.vaiTro]);
   const [roleId, setRoleId] = useState("");
@@ -124,8 +124,11 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
   const [mode, setMode] = useState<(typeof CHE_DO)[number]>("thu");
 
   const datGan = trpc.aiGguf.soModelDatGan.useMutation({
-    onSuccess: (r) => {
-      toast.success(t("gguf.trungTam.datGan.daDat", "Đã đặt gán (thay {{n}} gán cũ).", { n: r.daThay }));
+    onSuccess: (r, v) => {
+      // Thông báo CỤ THỂ (vai → đích, chế độ) để người dùng biết điều gì vừa xảy ra; gán trùng hàng đang có ⇒ máy chủ trả khongDoi ⇒ nói thẳng "không đổi".
+      const p = { vaiTro: v.roleId, dich: v.profileId ?? v.envKey ?? "?", cheDo: t(`gguf.trungTam.cheDo.${v.mode}`, v.mode), n: r.daThay };
+      if ((r as { khongDoi?: boolean }).khongDoi) toast.info(t("gguf.trungTam.datGan.khongDoi", "Không đổi: {{vaiTro}} đã gán đúng {{dich}} ({{cheDo}}).", p));
+      else toast.success(t("gguf.trungTam.datGan.daGan", "Đã gán {{vaiTro}} → {{dich}} ({{cheDo}}) — thay {{n}} gán cũ.", p));
       lamMoi();
     },
   });
@@ -305,6 +308,11 @@ function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                 </option>
               ))}
             </select>
+            {mode !== "active" ? (
+              <span className="block text-amber-600 dark:text-amber-400" role="status" data-testid="canh-bao-che-do">
+                {t("gguf.trungTam.datGan.canhBaoCheDo", "'thử' / 'chạy bóng' KHÔNG đổi model đang chạy — chọn 'chạy thật' (active) để có hiệu lực.")}
+              </span>
+            ) : null}
           </label>
           <label className="space-y-1 text-xs sm:col-span-3">
             <span>{t("gguf.trungTam.datGan.duPhong", "Dự phòng (mã hồ sơ, cách nhau dấu phẩy, tối đa 4)")}</span>

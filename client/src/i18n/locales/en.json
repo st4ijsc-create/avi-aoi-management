@@ -13767,12 +13767,14 @@
       "datGan": {
         "tieuDe": "Set binding",
         "nut": "Set binding",
-        "daDat": "Binding set (replaced {{n}} old binding(s)).",
         "maPhamVi": "Scope ID",
         "loaiDich": "Target type",
         "duPhong": "Fallback (profile IDs, comma-separated, up to 4)",
         "cong": "Active mode on a profile requires ≥ 1 evaluation run of that profile and a declared model licence. Bindings to a .env key need no evaluation.",
-        "chuaDoChan": "Profile {{id}} has no eval run yet — it can't be assigned as active. Assign it in 'trial' mode, run the role's suite, then activate."
+        "chuaDoChan": "Profile {{id}} has no eval run yet — it can't be assigned as active. Assign it in 'trial' mode, run the role's suite, then activate.",
+        "daGan": "Assigned {{vaiTro}} → {{dich}} ({{cheDo}}) — replaced {{n}} previous assignment(s).",
+        "khongDoi": "No change: {{vaiTro}} is already assigned to {{dich}} ({{cheDo}}).",
+        "canhBaoCheDo": "'trial' / 'shadow' do NOT change the model that is running — choose 'active' to take effect."
       },
       "kho": {
         "dongBo": "Sync store",

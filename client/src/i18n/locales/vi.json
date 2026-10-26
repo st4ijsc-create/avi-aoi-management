@@ -13767,12 +13767,14 @@
       "datGan": {
         "tieuDe": "Đặt gán",
         "nut": "Đặt gán",
-        "daDat": "Đã đặt gán (thay {{n}} gán cũ).",
         "maPhamVi": "Mã phạm vi",
         "loaiDich": "Loại đích",
         "duPhong": "Dự phòng (mã hồ sơ, cách nhau dấu phẩy, tối đa 4)",
         "cong": "Chế độ active trỏ hồ sơ cần ≥ 1 lượt đo của hồ sơ đó và giấy phép model đã khai. Gán theo khoá .env không cần đo.",
-        "chuaDoChan": "Hồ sơ {{id}} chưa có lượt đo nào — chưa gán active được. Gán ở chế độ 'thử', chạy bộ đo của vai trò, rồi mới active."
+        "chuaDoChan": "Hồ sơ {{id}} chưa có lượt đo nào — chưa gán active được. Gán ở chế độ 'thử', chạy bộ đo của vai trò, rồi mới active.",
+        "daGan": "Đã gán {{vaiTro}} → {{dich}} ({{cheDo}}) — thay {{n}} gán cũ.",
+        "khongDoi": "Không đổi: {{vaiTro}} đã gán đúng {{dich}} ({{cheDo}}).",
+        "canhBaoCheDo": "'thử' / 'chạy bóng' KHÔNG đổi model đang chạy — chọn 'chạy thật' (active) để có hiệu lực."
       },
       "kho": {
         "dongBo": "Đồng bộ kho",
