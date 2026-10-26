@@ -150,7 +150,9 @@ Mọi lượt gọi model AI NGOÀI (Anthropic / OpenAI / Gemini / máy chủ t�
   - Hiện `BUILT_IN_FORGE_API_URL` RỖNG trong `.env` của máy chạy (đã đo) ⇒ đường này không hoạt động.
   - ⚠ ĐẶT `BUILT_IN_FORGE_API_URL` = MỞ một đường ra ngoài KHÔNG qua cổng AI ngoài (không che dữ liệu, không trần, không sổ) — cần quyết định của chủ dự án trước khi đặt.
   - Census `duongVong` giữ các miễn trừ này có dấu ⚠.
+- **URL máy suy luận "cục bộ" do quản trị đặt** (`OLLAMA_BASE_URL`, `LLAMA_SERVER_URL`, KB API…): cùng lớp rủi ro admin — trỏ ra Internet là mở đường ngoài cổng AI ngoài; giữ trỏ 127.0.0.1 / mạng nhà máy.
 - **`kiemDichDen` luôn từ chối link-local / metadata kể cả khi danh sách trắng khai host:cổng:** ĐỒNG Ý (chặt hơn Đợt 9).
+- **Tập động so theo CẶP host:cổng / IP:cổng** (rà kiem-dinh): khai `llm.local:8000` không chặn dịch vụ khác cùng máy (`mes.local:3000`, MCP cục bộ `127.0.0.1:8811`); đọc tập động lỗi / CSDL vắng ⇒ `DICH_AI_KHONG_RO` (đóng).
 
 ## Phụ lục — việc cần làm khi nâng cấp
 
