@@ -11,8 +11,11 @@
  *   5. pha trước-gửi của handler (phạm vi / vai / ghim / dòng chờ) — min(HAN_TRUOC_GUI_STOP_HMI_MS, còn lại) · lenhHmi.dungMayHmi
  * Hết hạn ở 1–4 ⇒ NÉM `loiStopQuaHan` (fail-closed: thủ tục không chạy, không bao giờ để STOP đi tiếp mà bỏ qua một cổng). Hết hạn ở 5 ⇒
  * từ chối có mã của handler (có dòng attempts + audit). `dispatch()` NGOÀI mọi hạn: đã gửi thì không bao giờ từ chối vì hạn.
- * NGOÀI hạn (đo, ghi rõ): phần Express TRƯỚC tRPC — bộ giới hạn tần suất (Redis, passOnStoreError) và đọc thân request; middleware
- * giấy phép Express (`licenseEnforcementMiddleware`) không chạm DB. Truy vấn bị bỏ rơi khi hết hạn vẫn chạy nền tới khi DB trả lời.
+ * NGOÀI hạn (đo, ghi rõ): phần Express TRƯỚC tRPC — bộ giới hạn tần suất và đọc thân request; middleware giấy phép Express
+ * (`licenseEnforcementMiddleware`) không chạm DB. Bộ giới hạn (R1b-2b-1 T14): MỘT lệnh Redis nguyên tử mỗi lượt đếm (`LUA_TANG_DEM`), hạn
+ * `HAN_LENH_REDIS_GIOI_HAN_MS` = 250 ms mỗi lệnh ⇒ thêm tối đa ~250 ms trước `createContext`; Redis sập / lỗi / chậm quá hạn ⇒ đếm DỰ PHÒNG trong
+ * bộ nhớ tiến trình (`StoreDuPhongBoNho`, cùng trần — 600 / phút / phiên cho STOP — nhưng THEO TIẾN TRÌNH), không bao giờ fail-open.
+ * Truy vấn bị bỏ rơi khi hết hạn vẫn chạy nền tới khi DB trả lời.
  *
  * I-2: mã tRPC `SERVICE_UNAVAILABLE` (HTTP 503), KHÔNG phải TIMEOUT/408 — Chromium tự gửi lại một POST nhận 408 trên socket keep-alive dùng
  * lại (một lần bấm ⇒ hai lần thử, gấp đôi thời gian chờ). appCode `SCADA_STOP_PRECHECK_TIMEOUT` giữ nguyên (client không đổi).

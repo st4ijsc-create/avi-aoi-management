@@ -315,18 +315,45 @@ export function resolveRateLimitStoreKind(): RateLimitStoreKind {
 
 /** Minimal Redis surface the store needs — lets tests inject a fake client. */
 export interface MinimalRedisClient {
-  incr(key: string): Promise<number>;
-  pttl(key: string): Promise<number>;
-  pexpire(key: string, ms: number): Promise<unknown>;
-  decr(key: string): Promise<number>;
+  eval(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown>;
   del(key: string): Promise<unknown>;
 }
 
 /**
- * Fixed-window Redis store for express-rate-limit v7+/v8 (INCR + PEXPIRE).
- * Small on purpose (no extra dependency): INCR the counter, stamp the window
- * TTL on first hit (or when the key somehow lost its TTL), report resetTime
- * from PTTL. Any thrown error (incl. the 250 ms command deadline) is caught by the `StoreDuPhongBoNho` wrapping it.
+ * R1b-2b-1 T14 fix round 1 (review I1) — ONE atomic round trip per hit: INCR, then arm the window TTL when the key has none (new key, or a
+ * key that somehow lost its TTL), and return `{count, pttl}`. Before, INCR / PTTL / PEXPIRE were three round trips: with the 250 ms
+ * `commandTimeout`, a slow-but-alive Redis still EXECUTED the timed-out INCR while PTTL / PEXPIRE were never sent ⇒ TTL-less counters that
+ * kept growing through the episode and, after recovery, 429'd legitimate clients for a whole fresh window (and leaked keys). Whatever
+ * Redis executes now always carries the TTL. Also cuts the limiter's worst case in front of tRPC from ~3 × 250 ms to 250 ms.
+ * KEYS[1] = counter, ARGV[1] = windowMs.
+ */
+export const LUA_TANG_DEM =
+  "local v = redis.call('INCR', KEYS[1]) " +
+  "local t = redis.call('PTTL', KEYS[1]) " +
+  "if t < 0 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) t = tonumber(ARGV[1]) end " +
+  "return {v, t}";
+
+/**
+ * Decrement only an existing positive counter (DECR keeps the TTL). A bare DECR on a missing / expired key would create a TTL-less `-1`
+ * that never expires. KEYS[1] = counter. Not used by any limiter today (no `skipSuccessfulRequests` / `skipFailedRequests`).
+ */
+export const LUA_GIAM_DEM =
+  "local v = tonumber(redis.call('GET', KEYS[1]) or '0') " +
+  "if v > 0 then return redis.call('DECR', KEYS[1]) end " +
+  "return 0";
+
+/**
+ * A malformed counter-script reply (internal invariant). Always caught by `StoreDuPhongBoNho` (⇒ memory count) and never reaches tRPC —
+ * rawErrorCensus rule (a)+(b): a coded local class, not a bare `Error`.
+ */
+export class LoiTraLoiRedisGioiHan extends Error {
+  readonly code = "RATE_LIMIT_REDIS_REPLY";
+}
+
+/**
+ * Fixed-window Redis store for express-rate-limit v7+/v8. Small on purpose (no extra dependency): one Lua `EVAL` (`LUA_TANG_DEM`) INCRs the
+ * counter and stamps the window TTL on the first hit, atomically; resetTime comes from the returned PTTL. Any thrown error (incl. the
+ * 250 ms command deadline, or a malformed reply) is caught by the `StoreDuPhongBoNho` wrapping it.
  */
 export class RedisRateLimitStore implements Store {
   /** Counters live in Redis — shared across instances. */
@@ -345,19 +372,16 @@ export class RedisRateLimitStore implements Store {
   }
 
   async increment(key: string): Promise<ClientRateLimitInfo> {
-    const k = this.prefix + key;
-    const totalHits = await this.client.incr(k);
-    let ttl = await this.client.pttl(k);
-    if (ttl < 0) {
-      // First hit of a window (or TTL lost) — start the window now.
-      await this.client.pexpire(k, this.windowMs);
-      ttl = this.windowMs;
+    const r = await this.client.eval(LUA_TANG_DEM, 1, this.prefix + key, this.windowMs);
+    const [totalHits, ttl] = Array.isArray(r) ? r.map(Number) : [];
+    if (!Number.isInteger(totalHits) || totalHits < 1 || !Number.isFinite(ttl) || ttl < 0) {
+      throw new LoiTraLoiRedisGioiHan(`RedisRateLimitStore: unexpected EVAL reply ${JSON.stringify(r)}`);
     }
     return { totalHits, resetTime: new Date(Date.now() + ttl) };
   }
 
   async decrement(key: string): Promise<void> {
-    await this.client.decr(this.prefix + key);
+    await this.client.eval(LUA_GIAM_DEM, 1, this.prefix + key);
   }
 
   async resetKey(key: string): Promise<void> {
@@ -369,7 +393,7 @@ export class RedisRateLimitStore implements Store {
  * R1b-2b-1 T14 (kiem-dinh G3, mục 45) — deadline of EVERY command on the limiters' shared ioredis client (`commandTimeout`). A slow-but-alive
  * Redis (each command 2 s) would otherwise hold every request — a signed HMI STOP included — in the Express limiter tier BEFORE tRPC, outside
  * the STOP request's own deadline (`hanStopHmi.ts`). Past the deadline the command throws and `StoreDuPhongBoNho` counts in memory instead.
- * Extra latency in front of tRPC ≤ ~3 × 250 ms (INCR + PTTL + PEXPIRE). Shared by every limiter: that is safe ONLY because every limiter on
+ * Extra latency in front of tRPC ≤ ~250 ms (one atomic EVAL per hit — `LUA_TANG_DEM`, fix round 1). Shared by every limiter: that is safe ONLY because every limiter on
  * this client is wrapped in `StoreDuPhongBoNho` (dieu-phoi condition 4, option (b)) — a timeout never turns into fail-open.
  */
 export const HAN_LENH_REDIS_GIOI_HAN_MS = 250;
@@ -382,11 +406,18 @@ export const HAN_LENH_REDIS_GIOI_HAN_MS = 250;
  * a permanent lock-out). Logs at most one line per 60 s per store. `prefix` / `localKeys` are the primary's, so express-rate-limit's
  * double-count check keys on the same `rl:<tier>:` namespace as before.
  * `resetKey` also clears `duPhong` (a count made during an outage must not outlive an explicit reset).
+ * Fix round 1 (review M4): the first successful primary call after a fallback episode logs ONE "Redis answering again" line (also at most
+ * one / 60 s per store) so ops can bound the per-process window.
+ * ⚠ `decrement` is routed independently of where the matching `increment` landed (a hit counted in memory during an outage may be
+ * decremented in a recovered Redis — `LUA_GIAM_DEM` then leaves a missing key alone, but the memory +1 stays until its window ends).
+ * Harmless today (no limiter here sets `skipSuccessfulRequests` / `skipFailedRequests`); revisit before enabling either.
  */
 export class StoreDuPhongBoNho implements Store {
   readonly localKeys: boolean;
   readonly prefix?: string;
   private lanLogCuoi = Number.NEGATIVE_INFINITY;
+  private lanLogHoiPhuc = Number.NEGATIVE_INFINITY;
+  private dangDuPhong = false;
 
   constructor(
     private readonly chinh: Store | undefined,
@@ -405,6 +436,7 @@ export class StoreDuPhongBoNho implements Store {
   }
 
   private ghiLog(e: unknown): void {
+    this.dangDuPhong = true;
     const bay = Date.now();
     if (bay - this.lanLogCuoi < 60_000) return;
     this.lanLogCuoi = bay;
@@ -414,10 +446,21 @@ export class StoreDuPhongBoNho implements Store {
     );
   }
 
+  private daHoiPhuc(): void {
+    if (!this.dangDuPhong) return;
+    this.dangDuPhong = false;
+    const bay = Date.now();
+    if (bay - this.lanLogHoiPhuc < 60_000) return;
+    this.lanLogHoiPhuc = bay;
+    console.warn(`[RateLimit] ${this.prefix ?? ""} Redis answering again — counting in Redis (shared across instances) again`);
+  }
+
   async increment(key: string): Promise<ClientRateLimitInfo> {
     if (!this.chinh) return this.duPhong.increment(key);
     try {
-      return await this.chinh.increment(key);
+      const kq = await this.chinh.increment(key);
+      this.daHoiPhuc();
+      return kq;
     } catch (e) {
       this.ghiLog(e);
       return this.duPhong.increment(key);
@@ -798,7 +841,7 @@ export const TRAN_STOP_HMI_MOI_PHUT = 600;
  * No DB on this path: the ticket check is stateless (signature + expiry) and shared with the general tier (one verification per request).
  * Redis outage (R1b-2b-1 T14, kiem-dinh G3 — replaces the c4 fail-open): while Redis is down, erroring or slower than
  * `HAN_LENH_REDIS_GIOI_HAN_MS` (250 ms), this tier counts in THIS PROCESS's memory (`StoreDuPhongBoNho`) ⇒ a signed STOP is still capped at
- * `TRAN_STOP_HMI_MOI_PHUT` (600) / min per session PER PROCESS (N API instances ⇒ N × 600), and the limiter tier adds at most ~3 × 250 ms
+ * `TRAN_STOP_HMI_MOI_PHUT` (600) / min per session PER PROCESS (N API instances ⇒ N × 600), and the limiter tier adds at most ~250 ms (one EVAL)
  * in front of tRPC. `passOnStoreError: true` stays only for the case where the in-memory store itself throws (a store failure must never 500 a STOP).
  */
 export function createHmiStopLimiter(): RequestHandler {
