@@ -21113,7 +21113,7 @@
       "auto": "model: tự động",
       "codeTen": "model: {{ten}}",
       "code": "model: tầng mã",
-      "tip": "Tự động = theo mặc định của hệ + độ khó câu hỏi. Coder = ép tầng chuyên sinh mã (đo được: chính xác hơn trên tác vụ lập trình). Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Huy hiệu bên cạnh cho biết model THẬT SỰ được chọn. Cố ý KHÔNG có lựa chọn \"Nhanh\": bộ định tuyến leo tầng theo ĐỘ KHÓ, mà prompt lập trình luôn là câu khó, nên một lựa chọn như thế sẽ bị bỏ qua trong im lặng."
+      "tip": "Tự động = bộ định tuyến chọn theo tác vụ + độ khó câu hỏi. Chọn một vai trò (vd. code.software) hoặc hồ sơ Local để ghim model cho các lượt sau. Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Mục ghi \"cần đổi khe\" sẽ mất vài giây nạp model. Huy hiệu bên cạnh cho biết model THẬT SỰ được dùng."
     },
     "khoi": {
       "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",
@@ -23466,7 +23466,10 @@
         "tiep-tuc": "Tiếp tục",
         "nhanh-loi": "Đi nhánh lỗi"
       },
-      "tatNode": "Tắt node này"
+      "tatNode": "Tắt node này",
+      "chonModel": "Model",
+      "chonModelGoiY": "Tự động = bộ định tuyến chọn theo tác vụ. Chọn một vai trò, hồ sơ Local cụ thể… để ghim model cho node này.",
+      "chonModelBieuThuc": "Luồng cũ đang đặt model bằng biểu thức ({{bt}}) — không còn được hỗ trợ khi lưu. Hãy chọn một model ở ô trên (hoặc Tự động) để thay."
     },
     "chay": {
       "lichSu": "Lịch sử chạy",
@@ -23787,7 +23790,8 @@
         "luong-loi": "chọn lại luồng xử lý lỗi",
         "bat-su-kien": "bật lại nghe sự kiện (đang TẮT)",
         "http-bi-mat": "nhập lại phần đã bị gỡ khỏi url / tiêu đề / thân HTTP (tham số truy vấn, khoá, mật khẩu — dùng bí mật của luồng)",
-        "affinity": "chọn lại nhóm máy xử lý (affinity)"
+        "affinity": "chọn lại nhóm máy xử lý (affinity)",
+        "chon-model": "chọn lại model (model ngoài không đi theo gói — nhà máy đích có thể chưa bật nhà cung cấp)"
       },
       "nhap": "Nhập",
       "nhapTieuDe": "Nhập luồng từ gói",
@@ -24280,6 +24284,19 @@
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
         "nutBo": "Đã hiểu"
       }
+    }
+  },
+  "chonModel": {
+    "nhan": "Chọn model",
+    "tuDong": "Tự động",
+    "tat": "tắt",
+    "canDoiKhe": "cần đổi khe ~{{n}} s",
+    "canDoiKheChuaDo": "cần đổi khe (chưa đo)",
+    "hetHieuLuc": "Model đã chọn không còn khả dụng — dùng Tự động.",
+    "nhom": {
+      "vaiTro": "Vai trò",
+      "hoSo": "Hồ sơ Local",
+      "ngoai": "Model ngoài"
     }
   }
 }
