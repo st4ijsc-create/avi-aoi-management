@@ -44,4 +44,11 @@ export interface PhuThuocDanhMuc {
  * có trong danh mục lúc giải (`giaiChonModel`) — không tin regex.
  */
 export const CHON_MODEL_RE =
-  /^(auto|vai-tro:[a-z][a-z0-9]*(\.[a-z0-9-]+)?|ho-so:[A-Za-z0-9._@-]{1,96}|ngoai:[a-z0-9-]{1,32}:[A-Za-z0-9._:-]{1,96})$/;
+  /^(auto|vai-tro:[a-z][a-z0-9]*(\.[a-z0-9-]+)?|ho-so:[A-Za-z0-9._@-]{1,96}|ngoai:[a-z0-9_-]{1,32}:[A-Za-z0-9._:-]{1,96})$/;
+
+/**
+ * ★ Đợt 10.3 — MỘT cách viết tên nhà cung cấp AI ngoài cho MỌI nơi (dieu-phoi 2026-10-26): enum `apikeyprovider` (mig 0413), CHECK
+ * `ai_ngoai_model.nhaCungCap` (mig 0414), mã `ngoai:<ncc>:<model>`, i18n. Lưới `nhaCungCap.test.ts` canh SQL + enum drizzle khớp danh sách này.
+ */
+export const NHA_CUNG_CAP_NGOAI = ["anthropic", "openai", "gemini", "openai_compat"] as const;
+export type NhaCungCapNgoai = (typeof NHA_CUNG_CAP_NGOAI)[number];

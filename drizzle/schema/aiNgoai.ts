@@ -30,7 +30,7 @@ export const aiNgoaiModel = pgTable(
   {
     id: serial("id").primaryKey(),
     factoryId: integer("factoryId").notNull().references(() => factories.id, { onDelete: "cascade" }),
-    /** `anthropic` | `openai` | `gemini` | `openai-compat` */
+    /** `anthropic` | `openai` | `gemini` | `openai_compat` */
     nhaCungCap: varchar("nhaCungCap", { length: 16 }).notNull(),
     model: varchar("model", { length: 96 }).notNull(),
     nhan: varchar("nhan", { length: 120 }).notNull(),

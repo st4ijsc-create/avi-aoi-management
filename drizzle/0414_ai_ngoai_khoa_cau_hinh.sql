@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public."ai_ngoai_model" (
   "capNhatBoi" integer,
   "capNhatLuc" timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "ai_ngoai_model_uniq" UNIQUE ("factoryId", "nhaCungCap", "model"),
-  CONSTRAINT "ai_ngoai_model_ncc_chk" CHECK ("nhaCungCap" IN ('anthropic','openai','gemini','openai-compat')),
+  CONSTRAINT "ai_ngoai_model_ncc_chk" CHECK ("nhaCungCap" IN ('anthropic','openai','gemini','openai_compat')),
   CONSTRAINT "ai_ngoai_model_ten_chk" CHECK ("model" ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$'),
   CONSTRAINT "ai_ngoai_model_gia_hoac_tran_chk" CHECK (("giaVaoUsdTrieu" IS NOT NULL AND "giaRaUsdTrieu" IS NOT NULL) OR "tranTokenLuot" IS NOT NULL)
 );
