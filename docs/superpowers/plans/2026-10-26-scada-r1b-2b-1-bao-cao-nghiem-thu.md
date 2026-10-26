@@ -234,7 +234,7 @@ _(chạy toàn bộ: chưa chạy)_
 17. (T13) Nhánh từ chối edge-node của script dọn chỉ có test đơn vị; chạy khô với tiền tố DÙNG CHUNG liệt kê cả fixture sống của test đang chạy song song.
 18. (T17, bench B1b) **STOP treo 5 s khi liên kết mất lúc lệnh ghi đang bay — lỗi CÓ SẴN từ 1e0ae656c (2026-09-26), có trên main/:3000 hiện tại;
     R1b-2b-1 sửa.** Còn lại: (a) quá hạn giao dịch CỦA DRIVER (Modbus 800 ms "Timed out", SLMP, hạn cứng 5000 ms của S7 / MC / EIP, `timeout_sp` EIP)
-    vẫn ra `failed` dù kết cục cũng không rõ — hình có sẵn, ngoài phạm vi được duyệt (nêu ở `task-17-report.md`); (b) S7: nodes7 không phát sự kiện
+    vẫn ra `failed` dù kết cục cũng không rõ — hình có sẵn, ngoài phạm vi được duyệt ⇒ R1b-2b-2 mục 66 (ưu tiên, thứ tự 61 → 66 → 62); (b) S7: nodes7 không phát sự kiện
     liên kết ⇒ điểm (i) đi qua vòng canh (`isoConnectionState` ≠ 4 ⇒ `disconnect()` ≤ 500 ms) — vẫn < 1 s; (c) lô nhiều write mất liên kết giữa chừng ⇒
     cả lô `timeout` (write đã ack trước đó cũng mang nhãn không rõ — giống `timeout` hôm nay); write sau trong lô không được gửi.
 
@@ -323,14 +323,16 @@ _(chạy toàn bộ: chưa chạy)_
 ## 9. Danh sách R1b-2b-2
 
 Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-an-toan-va-no.md`, mục **"Danh sách R1b-2b-2 (chỉ liệt kê — kế hoạch
-riêng)"** (số giữ theo báo cáo R1b-2a §11). Năm mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65 từ T17):
+riêng)"** (số giữ theo báo cáo R1b-2a §11). Sáu mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
 
-- **61 (ƯU TIÊN ĐẦU R1b-2b-2)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
+- **61 (ƯU TIÊN ĐẦU R1b-2b-2; thứ tự 61 → 66 → 62)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
   theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình.
 - **62** — interlock `resolveEvent`: đọc luật + kiểm phạm vi adapter dưới `khoaDichLuatTx` (adapter FOR SHARE → luật), không gọi pool trong giao dịch.
 - **63** — census thứ tự khoá ADAPTER → LUẬT interlock + cấm gọi pool (`getDb()`) bên trong giao dịch đang giữ khoá hàng.
 - **64** — đọc lại THÔ thật từ driver (giá trị trước scale) cho so đọc lại tag int có scale lẻ — R1b-2b-1 T16 phát hiện làm tròn che lỗi (§6 LOGIC mục 1).
 - **65** — thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — chủ dự án quyết (điều phối 2026-10-27: không làm ở R1b-2b-1).
+- **66 (ƯU TIÊN — thứ tự 61 → 66 → 62)** — hết hạn yêu cầu của CHÍNH driver (Modbus 800 ms, S7/MC/EIP 5000 ms cố định, OPC UA, SLMP) ⇒ `timeout` (chưa rõ)
+  thay vì `failed` — lệnh có thể đã tới thiết bị (§6 LOGIC mục 18 (a)).
 
 Lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1 — đã sửa ở T6 fix round 1 trước bàn giao; chỉ giới hạn còn lại (mục 64) sang R1b-2b-2.
 
