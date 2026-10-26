@@ -24,7 +24,9 @@ for (const f of [".env"]) {
 }
 
 const VAI_TRO = "mcp_chi_doc";
-const RE_NHAY_CAM = /(pass|pwd|hash|secret|token|salt|totp|otp|api_?key|apikey|private|credential|cipher|encrypt|ma_?hoa|bi_?mat|signing|session|recovery|backup_?code)/i;
+const RE_NHAY_CAM = /(pass|pwd|hash|secret|token|salt|totp|otp|api_?key|apikey|private|credential|cipher|encrypt|ma_?hoa|bi_?mat|signing|session|recovery|backup_?code|noi_?dung_?da_?che)/i;
+/** băm theo cách đặt tên tiếng Việt (`bamNoiDung`, `ngoaiBamDuyet`) — PHÂN BIỆT hoa thường để không bắt nhầm từ khác (do-model 2026-10-26). */
+const laCotNhayCam = (c) => RE_NHAY_CAM.test(c) || /(^bam|Bam)[A-Z]/.test(c);
 
 const co = process.argv.slice(2);
 const dich = co.includes("--test-only") ? "test" : co.includes("--dev-only") ? "dev" : null;
@@ -77,13 +79,13 @@ try {
       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm')
       GROUP BY c.relname ORDER BY c.relname`;
     for (const { t, cot } of bang) {
-      const an = cot.filter((c) => RE_NHAY_CAM.test(c));
+      const an = cot.filter((c) => laCotNhayCam(c));
       const ten = `public."${t.replace(/"/g, '""')}"`;
       if (an.length === 0) {
         await tx.unsafe(`GRANT SELECT ON ${ten} TO ${VAI_TRO}`);
         soBangDu++;
       } else {
-        const con = cot.filter((c) => !RE_NHAY_CAM.test(c));
+        const con = cot.filter((c) => !laCotNhayCam(c));
         soCotAn += an.length;
         if (con.length > 0) {
           await tx.unsafe(`GRANT SELECT (${con.map((c) => `"${c.replace(/"/g, '""')}"`).join(", ")}) ON ${ten} TO ${VAI_TRO}`);
@@ -106,7 +108,7 @@ try {
     if (n !== 0) throw new Error(`vai trò có ${n} quyền khác SELECT`);
     const nhay = await s2`SELECT table_name AS t, column_name AS c FROM information_schema.columns
       WHERE table_schema = 'public' AND has_column_privilege(current_user, 'public.' || quote_ident(table_name), column_name, 'SELECT')`;
-    const lo = nhay.filter((r) => RE_NHAY_CAM.test(r.c));
+    const lo = nhay.filter((r) => laCotNhayCam(r.c));
     if (lo.length > 0) throw new Error(`cột nhạy cảm đọc được: ${lo.slice(0, 5).map((r) => `${r.t}.${r.c}`).join(", ")}`);
     const [{ k }] = await s2`SELECT count(DISTINCT table_name)::int AS k FROM information_schema.column_privileges WHERE grantee = ${VAI_TRO} AND table_schema = 'public'`;
     let ghiBiChan = false;
