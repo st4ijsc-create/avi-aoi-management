@@ -666,7 +666,7 @@ export async function apiKeyGeneratorXacThuc(req: Request, kiem: KiemChuKyPhien 
     token = bearer;
     tienTo = "bearer";
   } else if (!xApiKey) {
-    // ĐÚNG bộ phân tích của `sdk.parseCookies` (thư viện `cookie`: cắt khoảng trắng, bỏ nháy, giải %-mã, tên lặp ⇒ lần ĐẦU) — không cắt chuỗi thô ⇒ mọi biến thể
+    // ĐÚNG bộ phân tích của `vePhienCookie.docVePhienTuCookie` (thư viện `cookie`: cắt khoảng trắng, bỏ nháy, giải %-mã, tên lặp ⇒ lần ĐẦU) — không cắt chuỗi thô ⇒ mọi biến thể
     // văn bản mà auth coi là CÙNG một vé cũng rơi vào CÙNG một lớp khoá (phiên đã ký / IP).
     const cookies = req.headers?.cookie;
     if (typeof cookies === "string" && cookies.length > 0) {

@@ -220,19 +220,11 @@ function kiemLuoiTho(tag: KenhGhiThuan, v: number, goiYPhaiNguyen = true): KetQu
 }
 
 /**
- * R1b-1 T13 (điều phối 2026-10-24) — tag int CHƯA khai mô hình ghi (cột 0431 đều NULL): cổng kênh sớm của `dispatch()` phải kiểm lưới thô như
- * tag đã khai, không để driver làm tròn im lặng (scale 10: 25 ⇒ raw 3 = 30). true ⇔ phải kiểm.
- * R1b-2a T1 (Q-T13 b, điều phối 2026-10-25) — MỌI tag int, kể cả scale 1 / offset 0 (trước: false ⇒ 2.5 đi nguyên, driver ghi 3; "abc" đi nguyên,
- * driver ghi Math.round(NaN)). `scale` / `offset` không còn quyết định có kiểm hay không; chữ ký giữ nguyên.
- */
-export function canKiemLuoiThoChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">): boolean {
-  return tag.dataType === "int";
-}
-
-/**
  * R1b-2a T2 (phán quyết T1 c3 của bộ điều khiển: M2 mở rộng sang float) — giá trị gửi lên tag CHƯA khai phải được kiểm ở cổng kênh sớm của
- * `dispatch()` (pass 2) ⇔ tag int (lưới thô + số hữu hạn — `canKiemLuoiThoChuaKhai`) HOẶC tag float (chỉ số hữu hạn: driver `inverseScale`
- * không làm tròn float, nhưng `Number("abc")` = NaN, `Number("")` = 0 vẫn tới thiết bị). bool / string / json: driver không đọc số ⇒ false.
+ * `dispatch()` (pass 2) ⇔ tag int (lưới thô + số hữu hạn — R1b-1 T13 / R1b-2a T1: MỌI tag int, kể cả scale 1 / offset 0) HOẶC tag float (chỉ số
+ * hữu hạn: driver `inverseScale` không làm tròn float, nhưng `Number("abc")` = NaN, `Number("")` = 0 vẫn tới thiết bị). bool / string / json:
+ * driver không đọc số ⇒ false.
+ * final-fix M-4: `canKiemLuoiThoChuaKhai` (chỉ int) đã gỡ — không còn bên gọi sản phẩm nào sau T2; hàm này là cổng DUY NHẤT.
  */
 export function canKiemGiaTriChuaKhai(tag: Pick<KenhGhiThuan, "dataType" | "scale" | "offset">): boolean {
   return tag.dataType === "int" || tag.dataType === "float";
@@ -272,8 +264,8 @@ function soChoKenhSoChuaKhai(v: unknown): number | undefined {
 }
 
 /**
- * R1b-1 T13 — kiểm lưới thô cho tag int CHƯA khai (`canKiemLuoiThoChuaKhai`). Tag chưa khai KHÔNG được ép kiểu (hành vi cũ: giá trị đi nguyên
- * như người gọi gửi), nên số đem kiểm là ĐÚNG số driver sẽ dùng (`soChoIntChuaKhai`: true ⇒ 1, "25" ⇒ 25). Lệch lưới ⇒ `OFF_STEP` với
+ * R1b-1 T13 — kiểm lưới thô cho tag int CHƯA khai (`canKiemGiaTriChuaKhai`). Tag chưa khai KHÔNG được ép kiểu (hành vi cũ: giá trị đi nguyên
+ * như người gọi gửi), nên số đem kiểm là ĐÚNG số driver sẽ dùng (`soChoKenhSoChuaKhai`: true ⇒ 1, "25" ⇒ 25). Lệch lưới ⇒ `OFF_STEP` với
  * `buoc` = |scale| và `goiY` = điểm lưới gần nhất (không đòi số nguyên — tag chưa khai không qua epInt; scale 0.5 ⇒ 2.5 là giá trị đúng lưới).
  * `ok` trả LẠI giá trị NGUYÊN VẸN, không đổi.
  * R1b-2a T1 — MỌI tag int (scale 1 ⇒ lưới số nguyên: 2.5 ⇒ OFF_STEP goiY 3, buoc 1, gocLuoi 0); giá trị không phải số hữu hạn có chủ đích ⇒

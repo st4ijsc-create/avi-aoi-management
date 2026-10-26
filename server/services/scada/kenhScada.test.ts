@@ -7,7 +7,6 @@ import { canonicalOtValue } from "../ot/otActionBinding";
 import { inverseScale } from "../ot/drivers/otScale";
 import {
   canKiemGiaTriChuaKhai,
-  canKiemLuoiThoChuaKhai,
   epKieuGiaTri,
   kiemGiaTriGhi,
   kiemLuoiThoChuaKhai,
@@ -417,14 +416,15 @@ describe("kiemGiaTriGhi — đối tượng kiểu Long (Sparkplug B 64 bit)", (
 describe("R1b-1 T13 — tag int CHƯA khai có scale/offset: lưới thô kiểm trên Number(giá trị) như inverseScale, giá trị KHÔNG bị ép kiểu", () => {
   const i10 = { dataType: "int" as const, scale: "10.000000", offset: "0.000000" };
   // R1b-2a T1 (Q-T13 b) — thay ghim cũ "scale 1 / offset 0 ⇒ false": MỌI tag int chưa khai đều kiểm (lưới thô số nguyên + M2).
-  it("canKiemLuoiThoChuaKhai: MỌI int (kể cả scale 1 / offset 0 / NULL / scale 0) — R1b-2a T1; float / bool ⇒ false", () => {
-    expect(canKiemLuoiThoChuaKhai(i10)).toBe(true);
-    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: 1, offset: 5 })).toBe(true);
-    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "1.000000", offset: "0.000000" })).toBe(true);
-    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
-    expect(canKiemLuoiThoChuaKhai({ dataType: "int", scale: "0", offset: null })).toBe(true); // driver: scale 0 ⇒ 1 — lưới số nguyên
-    expect(canKiemLuoiThoChuaKhai({ dataType: "float", scale: 10, offset: 0 })).toBe(false);
-    expect(canKiemLuoiThoChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(false);
+  // final-fix M-4 — canKiemLuoiThoChuaKhai (chỉ int, không bên gọi sản phẩm) đã gỡ; cổng duy nhất là canKiemGiaTriChuaKhai.
+  it("canKiemGiaTriChuaKhai: MỌI int (kể cả scale 1 / offset 0 / NULL / scale 0) — R1b-2a T1; float ⇒ true (T2); bool ⇒ false", () => {
+    expect(canKiemGiaTriChuaKhai(i10)).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: 1, offset: 5 })).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: "1.000000", offset: "0.000000" })).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: "0", offset: null })).toBe(true); // driver: scale 0 ⇒ 1 — lưới số nguyên
+    expect(canKiemGiaTriChuaKhai({ dataType: "float", scale: 10, offset: 0 })).toBe(true);
+    expect(canKiemGiaTriChuaKhai({ dataType: "bool", scale: 10, offset: 0 })).toBe(false);
   });
   it("scale 10: 30 ⇒ ok, giá trị NGUYÊN VẸN; 25 ⇒ OFF_STEP goiY 30 buoc 10", () => {
     expect(tot(kiemLuoiThoChuaKhai(i10, 30))).toBe(30);
@@ -486,7 +486,7 @@ describe("R1b-1 T13 polish m3 — tag int CHƯA khai: scale ÂM và offset ÂM (
 describe("R1b-2a T1 — tag int CHƯA khai: mọi int đi lưới thô; không hữu hạn / không phải số ⇒ TYPE_MISMATCH; so lưới ở KHÔNG GIAN THÔ", () => {
   const int1 = { dataType: "int", scale: null, offset: null } as const;
   it("int chưa khai scale 1: 2.5 ⇒ OFF_STEP buoc 1 goiY 3; -2.5 ⇒ goiY -2; 3 / true / '7' / ' 7 ' ⇒ nguyên vẹn", () => {
-    expect(canKiemLuoiThoChuaKhai(int1)).toBe(true);
+    expect(canKiemGiaTriChuaKhai(int1)).toBe(true);
     expect(kiemLuoiThoChuaKhai(int1, 2.5)).toMatchObject({ ok: false, ma: "OFF_STEP", buoc: 1, gocLuoi: 0, goiY: 3 });
     expect(kiemLuoiThoChuaKhai(int1, -2.5)).toMatchObject({ ok: false, goiY: -2 });
     for (const v of [3, true, false, "7", " 7 ", -0]) expect(kiemLuoiThoChuaKhai(int1, v)).toEqual({ ok: true, giaTri: v });
@@ -606,11 +606,10 @@ describe("R1b-2a T2 — epKieuGiaTri: int (s, o) ≠ (1, 0) mang giá trị KỸ
 describe("R1b-2a T2 — tag float CHƯA khai (phán quyết T1 c3: M2 mở rộng sang float): không phải số hữu hạn ⇒ TYPE_MISMATCH; số / chuỗi số đi NGUYÊN VẸN", () => {
   const f = { dataType: "float" as const, scale: null, offset: null };
   const f10 = { dataType: "float" as const, scale: "10", offset: "5" };
-  it("canKiemGiaTriChuaKhai ⇔ int | float; canKiemLuoiThoChuaKhai vẫn chỉ int (lưới thô)", () => {
+  it("canKiemGiaTriChuaKhai ⇔ int | float (lưới thô chỉ áp cho int, bên trong kiemLuoiThoChuaKhai)", () => {
     expect(canKiemGiaTriChuaKhai(f)).toBe(true);
     expect(canKiemGiaTriChuaKhai({ dataType: "int", scale: null, offset: null })).toBe(true);
     for (const dataType of ["bool", "string", "json"] as const) expect(canKiemGiaTriChuaKhai({ dataType, scale: null, offset: null })).toBe(false);
-    expect(canKiemLuoiThoChuaKhai(f)).toBe(false);
   });
   it("NaN / ±Infinity / \"abc\" / \"\" / chỉ khoảng trắng / mảng / đối tượng / \"Infinity\" / \"1e400\" / null / undefined / Symbol / hàm ⇒ TYPE_MISMATCH", () => {
     for (const tag of [f, f10])
