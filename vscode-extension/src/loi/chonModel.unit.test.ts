@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CHON_MODEL_RE, chuanHoaChon, chuanHoaDanhMuc, hauToTrangThai, modelChoAgent, xacThucChon } from "./chonModel";
+import { CHON_MODEL_RE, duocDungOExtension, chuanHoaChon, chuanHoaDanhMuc, hauToTrangThai, modelChoAgent, xacThucChon } from "./chonModel";
 
 describe("CHON_MODEL_RE — khớp máy chủ", () => {
   it("nguồn regex TRÙNG server/services/ai/chonModel/kieu.ts", () => {
@@ -36,6 +36,19 @@ describe("chuanHoaDanhMuc", () => {
   it("đầu vào không phải mảng ⇒ chỉ auto", () => {
     expect(chuanHoaDanhMuc(undefined).map((m) => m.ma)).toEqual(["auto"]);
     expect(chuanHoaDanhMuc({}).map((m) => m.ma)).toEqual(["auto"]);
+  });
+});
+
+describe("★ 10.4 T0 — mục ngoai trong ô extension chỉ khi máy chủ khai phục vụ CẢ chat lẫn agent", () => {
+  const e = (duocDungO?: string[]) => ({ ma: "ngoai:openai_compat:gpt-x", loai: "ngoai", nhan: "X", moTa: "", trangThai: "san-sang", ...(duocDungO ? { duocDungO } : {}) });
+  it("thiếu / rỗng / chỉ một đường / chỉ luong+kiem-dinh ⇒ BỎ; đủ chat+agent ⇒ giữ", () => {
+    for (const du of [undefined, [], ["chat"], ["agent"], ["luong", "kiem-dinh"], ["coding"]]) expect(chuanHoaDanhMuc([e(du)]).map((m) => m.ma), JSON.stringify(du)).toEqual(["auto"]);
+    expect(chuanHoaDanhMuc([e(["chat", "agent", "coding"])]).map((m) => m.ma)).toEqual(["auto", "ngoai:openai_compat:gpt-x"]);
+  });
+  it("hàm vị từ", () => {
+    expect(duocDungOExtension(["chat", "agent"])).toBe(true);
+    expect(duocDungOExtension(["chat"])).toBe(false);
+    expect(duocDungOExtension(undefined)).toBe(false);
   });
 });
 

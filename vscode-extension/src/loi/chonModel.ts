@@ -24,10 +24,16 @@ export interface MucModel {
   moTa: string;
   trangThai: TrangThaiMuc;
   uocTinhDoiKheGiay?: number;
+  duocDungO?: string[];
 }
 
 const LOAI = new Set(["auto", "vai-tro", "ho-so", "ngoai"]);
 const TRANG_THAI = new Set(["san-sang", "can-doi-khe", "tat"]);
+
+/** Mục `ngoai:*` chỉ vào ô của extension khi máy chủ khai phục vụ CẢ Trợ lý (`chat`) lẫn Agent (`agent`) — ô là MỘT điều khiển cho cả hai đường (10.4 T0). */
+export function duocDungOExtension(duocDungO: readonly string[] | undefined): boolean {
+  return Array.isArray(duocDungO) && duocDungO.includes("chat") && duocDungO.includes("agent");
+}
 
 /** Phản hồi tRPC (đã bóc superjson) → danh mục sạch. Phần tử sai hình dạng / mã ngoài regex / vai không sinh chữ bị BỎ; luôn có "auto" đứng đầu. */
 export function chuanHoaDanhMuc(tho: unknown): MucModel[] {
@@ -41,6 +47,8 @@ export function chuanHoaDanhMuc(tho: unknown): MucModel[] {
     if (!CHON_MODEL_RE.test(ma) || thay.has(ma)) continue;
     if (typeof o.loai !== "string" || !LOAI.has(o.loai) || o.loai === "auto") continue;
     if (ma.startsWith("vai-tro:") && VAI_KHONG_SINH_CHU.has(ma.slice("vai-tro:".length))) continue;
+    const duocDungO = Array.isArray(o.duocDungO) ? o.duocDungO.filter((x): x is string => typeof x === "string").slice(0, 10) : [];
+    if (o.loai === "ngoai" && !duocDungOExtension(duocDungO)) continue;
     const trangThai = typeof o.trangThai === "string" && TRANG_THAI.has(o.trangThai) ? (o.trangThai as TrangThaiMuc) : "tat";
     thay.add(ma);
     ra.push({
