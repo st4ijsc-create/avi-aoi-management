@@ -121,9 +121,11 @@ export default function ScadaDiag() {
     if (!hanhDong || !lyDoDu || dangGui) return;
     const vars = { adapterId: hanhDong.hang.adapterId, lyDo: lyDoCat };
     if (hanhDong.kieu === "ketNoiLai") ketNoiLai.mutate(vars);
-    else if (canMa) {
-      if (maDu) tamTat.mutate({ ...vars, totpCode: ma });
-    } else tamTat.mutate(vars);
+    else {
+      if (canMa && !maDu) return;
+      // MỘT điểm gọi (R1b-2a T15 — census KHOA_TOTP_TRONG_HANDLER: mọi điểm gọi tamTat mang `totpCode`): lượt đầu không mã; máy chủ đòi ⇒ gửi lại kèm mã.
+      tamTat.mutate({ ...vars, totpCode: canMa ? ma : undefined });
+    }
   };
 
   return (
