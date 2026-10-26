@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { randomBytes } from "node:crypto";
 import {
   __xoaDemTuDien,
   chuanHoaDeKhop,
@@ -172,16 +173,47 @@ describe("layTuDienNhay — đệm 5 phút", () => {
   });
 });
 
-describe("trần chuỗi liền 8 000 (dieu-phoi c, 2026-10-26 — đo trên aiSafety tuyến tính)", () => {
-  it("log JSON gọn KHÔNG đóng ~2,4 KB giữ nguyên dữ liệu kỹ thuật; khối liền > 8 KB vẫn che NGUYÊN khối", () => {
+describe("chuỗi liền dài (dieu-phoi c + rà kiem-dinh, 2026-10-26): ≥ 2 000 ký tự bảng base64/hex ⇒ che; ≥ 8 000 bất kỳ ⇒ che; JSON / log gọn giữ", () => {
+  const ngauNhien = (n: number, bang: string) => {
+    const b = randomBytes(n);
+    let s = "";
+    for (let i = 0; i < n; i++) s += bang[b[i]! % bang.length];
+    return s;
+  };
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  it.each([
+    ["base64 3 KB", () => randomBytes(2250).toString("base64")],
+    ["base64 6 KB", () => randomBytes(4500).toString("base64")],
+    ["base64url 3 KB", () => randomBytes(2250).toString("base64url")],
+    ["hex 5 KB", () => randomBytes(2500).toString("hex")],
+    ["bảng base64 không đệm 2 001", () => ngauNhien(2001, B64)],
+  ])("%s (sinh lúc chạy, không nhãn) ⇒ che NGUYÊN khối", (_ten, sinh) => {
+    const khoi = sinh();
+    expect(khoi.length).toBeGreaterThanOrEqual(2000);
+    const k = cheChuoi(`dán vào đây:\n${khoi}\nhết`);
+    expect(k.theoLoai).toHaveProperty("chuoi_lien_dai");
+    expect(k.giaTri).not.toContain(khoi.slice(100, 140));
+    expect(k.giaTri).toContain("dán vào đây");
+  });
+
+  it("JSON gọn 3,6 KB (trong văn) + log JSON gọn KHÔNG đóng 2,4 KB ⇒ GIỮ dữ liệu kỹ thuật", () => {
+    const json = JSON.stringify({ may: "M-07", mau: Array.from({ length: 360 }, (_, i) => ({ i, v: 200 + (i % 9) })) });
+    expect(json.length).toBeGreaterThan(3500);
+    const k1 = cheChuoi(`ket qua: ${json}`);
+    expect(k1.giaTri).toContain('"v":201');
+    expect(k1.theoLoai).not.toHaveProperty("chuoi_lien_dai");
     const log = `log:{"may":"M-07","nhietDo":[${Array.from({ length: 600 }, (_, i) => 200 + (i % 7)).join(",")}],"trangThai":"chay"`;
     expect(log.length).toBeGreaterThan(2000);
-    const k = cheChuoi(log);
-    expect(k.giaTri).toContain('"nhietDo":[200,201');
-    expect(k.theoLoai).not.toHaveProperty("chuoi_lien_dai");
-    const khoi = "QUJD".repeat(2100); // 8 400 ký tự liền (base64)
-    const k2 = cheChuoi(`tep: ${khoi} het`);
-    expect(k2.theoLoai).toHaveProperty("chuoi_lien_dai");
-    expect(k2.giaTri).not.toContain("QUJDQUJD");
+    const k2 = cheChuoi(log);
+    expect(k2.giaTri).toContain('"nhietDo":[200,201');
+    expect(k2.theoLoai).not.toHaveProperty("chuoi_lien_dai");
+  });
+
+  it("≥ 8 000 ký tự liền BẤT KỲ (không phải bảng base64) vẫn che; < 2 000 bảng base64 giữ", () => {
+    const k = cheChuoi(`x ${"a.b,".repeat(2100)} y`);
+    expect(k.theoLoai).toHaveProperty("chuoi_lien_dai");
+    const ngan = randomBytes(1000).toString("hex");
+    const ngan2 = ngan.slice(0, 1990);
+    expect(cheChuoi(`id ${ngan2}`).theoLoai).not.toHaveProperty("chuoi_lien_dai");
   });
 });
