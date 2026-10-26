@@ -232,3 +232,71 @@ describe("cờ BẬT", () => {
     expect((await docHangLuotChay(uid, kq.luot.id))?.cauHoi).toBe("đọc tệp rồi trả lời");
   }, 60_000);
 });
+
+// ★ Đợt 10.1 A2 — `chonModel` tường minh: thắng bộ chọn vai của tác nhân (cờ bật hay tắt); lạ ⇒ 400/404 TRƯỚC giữ chỗ.
+describe("chonModel tường minh (Đợt 10.1)", () => {
+  const danhMucModel = async () => ({
+    anh: ANH,
+    hoSoCoDo: new Set(["p27", "p35"]),
+    kheDangGiu: M35,
+    uocTinhDoiKheGiay: async () => null,
+    ngoai: { layModelDaBat: async () => [] },
+    env: ENV,
+  });
+  const phu = (ghi: Ghi) => ({
+    planInference: planInferenceGia(ghi),
+    layAnh: () => ANH,
+    nguCanhKhe: () => ({ kheBiKhoa: false, kheDangGiu: M35 }),
+    env: ENV,
+  });
+  const chay = async (ql: ReturnType<typeof taoQuanLyLuotChay>, chonModel: unknown, projectId = "vtts") => {
+    const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "vt" }, cauHoi: "đọc tệp rồi trả lời", projectId, cheDo: "hoi", chonModel });
+    if (!kq.ok) return { kq, suKien: [] as SuKienAgent[] };
+    await kq.luot.xong;
+    const suKien: SuKienAgent[] = [];
+    ql.nghe(kq.luot.id, uid, 0, (m) => suKien.push(m.suKien))?.();
+    return { kq, suKien };
+  };
+
+  it("cờ BẬT: ho-so:p27 trên dự án TS ⇒ engine nhận 27B (không phải code.software 35B), vẫn qua planInference; bat-dau mang lựa chọn", async () => {
+    delete process.env.AI_AGENT_THEO_VAI_TRO;
+    const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
+    h.kichBan = [{ chu: "xong." }];
+    const { kq, suKien } = await chay(taoQuanLyLuotChay({ vaiTro: phu(ghi), danhMucModel }), "ho-so:p27");
+    expect(kq.ok, JSON.stringify(kq)).toBe(true);
+    expect(h.modelNhan).toEqual([M27]);
+    expect(ghi.yeuCau).toHaveLength(1);
+    expect(suKien.find((e) => e.loai === "bat-dau")).toMatchObject({ model: { vaiTro: "ho-so", model: M27, nguon: "chon-tuong-minh" } });
+  }, 60_000);
+
+  it("cờ TẮT: vai-tro:code.plc ⇒ engine nhận model của định tuyến vai (27B); auto / vắng ⇒ undefined như cũ", async () => {
+    process.env.AI_AGENT_THEO_VAI_TRO = "false";
+    const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
+    h.kichBan = [{ chu: "xong." }];
+    const ql = taoQuanLyLuotChay({ vaiTro: phu(ghi), danhMucModel });
+    await chay(ql, "vai-tro:code.plc");
+    await chay(ql, "auto");
+    await chay(ql, undefined);
+    expect(h.modelNhan).toEqual([M27, undefined, undefined]);
+    expect(ghi.yeuCau).toHaveLength(0);
+  }, 60_000);
+
+  it.each([
+    ["Qwen3.6-27B-UD-Q4_K_XL.gguf", "CHON_MODEL_SAI", 400],
+    ["ho-so:khong-co", "CHON_MODEL_SAI", 400],
+    ["vai-tro:embed", "CHON_MODEL_SAI", 400],
+    [7, "CHON_MODEL_SAI", 400],
+    ["ngoai:anthropic:claude-x", "CHON_MODEL_KHONG_CO", 404],
+  ])("%s ⇒ %s (%i), không gọi model, không giữ chỗ", async (v, ma, http) => {
+    delete process.env.AI_AGENT_THEO_VAI_TRO;
+    const ghi: Ghi = { record: [], phu: [], yeuCau: [] };
+    h.kichBan = [{ chu: "xong." }];
+    const ql = taoQuanLyLuotChay({ vaiTro: phu(ghi), danhMucModel });
+    const { kq } = await chay(ql, v);
+    expect(kq).toMatchObject({ ok: false, ma, http });
+    expect(h.soLuotGoi).toBe(0);
+    expect(ghi.yeuCau).toHaveLength(0);
+    const lai = await chay(ql, undefined);
+    expect(lai.kq.ok).toBe(true);
+  }, 60_000);
+});

@@ -27,22 +27,33 @@ import type { TinNhan, WireTool, WireToolCall } from "../../../../shared/agentCo
 import { danhGiaThamSo, type ItemLuong } from "../../../../shared/flow/bieuThuc";
 import { LOAI_AGENT } from "../../../../shared/flow/model";
 import { dangKyNut, nguCanhItem, type NguCanhChay } from "../dangKyNut";
-import { HE_THONG_CHUNG, LoiNutAi, VAI_TRO_TASK, boc } from "./ai";
+import { HE_THONG_CHUNG, LoiNutAi, VAI_TRO_TASK, boc, diemModel, giaiChonModelNut } from "./ai";
+import type { VetModel } from "../dangKyNut";
 import { kiemGoiLuongCon } from "./luong";
 import type { TimTaiLieu } from "../../ai/agent/timTaiLieuAgent";
 // Module LÁ — chữ cuối của agent thành dữ liệu luồng; chuỗi suy luận KHÔNG BAO GIỜ đi theo (và không bao giờ thành lệnh).
 import { stripThinking } from "../../ai/thinkingStrip";
 
-export type HamGoiAgent = (y: { vaiTro: string; tinNhan: TinNhan[]; congCu: WireTool[]; maxTokens: number; ngu: NguCanhChay }) => Promise<{ chu: string; toolCalls: WireToolCall[] }>;
+export type HamGoiAgent = (y: {
+  vaiTro: string;
+  tinNhan: TinNhan[];
+  congCu: WireTool[];
+  maxTokens: number;
+  ngu: NguCanhChay;
+  /** ★ Đợt 10.1 — model đã giải từ `thamSo.chonModel` (THÔ); vắng ⇒ định tuyến vai trong phạm vi luồng. */
+  chon?: { modelId: string | undefined };
+}) => Promise<{ chu: string; toolCalls: WireToolCall[] }>;
 
 /** Mặc định: Cổng AI (`routeInference`, audit `flow_agent`) + engine tool-calling GỐC (`chatCompletion({ tools })`). */
-let goiAgent: HamGoiAgent = async ({ vaiTro, tinNhan, congCu, maxTokens }) => {
+let goiAgent: HamGoiAgent = async ({ vaiTro, tinNhan, congCu, maxTokens, ngu, chon }) => {
   const [{ routeInference }, { chatCompletion }, { resolveLogicalModel }] = await Promise.all([
     import("../../aiGateway"),
     import("../../aiGgufEngine"),
     import("../../ai/modelResolver"),
   ]);
-  const modelId = resolveLogicalModel(vaiTro);
+  // ★ Đợt 10.1 A4 — cùng định tuyến như `goiAi` của node AI: phạm vi flow + bề mặt `luong` (gán theo luồng thắng gán toàn cục)
+  //   và `khongDoiKhe` (vai nhẹ của lượt nền không kéo đổi khe nặng). Trước A4 node này gọi `resolveLogicalModel(vaiTro)` trần.
+  const modelId = chon ? chon.modelId : resolveLogicalModel(vaiTro, { phamVi: { flowId: ngu.flowId, beMat: "luong" }, khongDoiKhe: true });
   const cuoi = tinNhan[tinNhan.length - 1];
   const { result } = await routeInference(
     { task: VAI_TRO_TASK[vaiTro] ?? "chat", text: cuoi?.content ?? "", auditTask: "flow_agent" },
@@ -181,6 +192,8 @@ dangKyNut({
     if (theoTen.size !== congCu.length) throw new LoiNutAi("ai.agent: hai luồng con trùng tên tool");
     if (thamSo.traTaiLieu === true) congCu.push(TOOL_KB);
     const soLuot = Math.min(10, Math.max(1, Math.round(Number(thamSo.soLuotToiDa ?? 6)) || 6));
+    // ★ Đợt 10.1 — `chonModel` THÔ (không qua biểu thức), giải MỘT lần cho node; lạ ⇒ lỗi node.
+    const chon = await giaiChonModelNut(thamSo.chonModel, ngu);
     const ra: ItemLuong[] = [];
     for (const item of vao) {
       const t = danhGiaThamSo({ loiNhac: thamSo.loiNhac, heThong: thamSo.heThong, vaiTro: thamSo.vaiTro, truongRa: thamSo.truongRa }, nguCanhItem(ngu, item, vao)) as Record<string, unknown>;
@@ -198,7 +211,17 @@ dangKyNut({
       let traLoi = "";
       let ketThuc: "hoan-thanh" | "het-luot" = "het-luot";
       for (let luot = 1; luot <= soLuot; luot++) {
-        const r = await goiAgent({ vaiTro, tinNhan, congCu, maxTokens: 2000, ngu });
+        // ★ Đợt 10.1 A4 — vết `buoc.model` MỖI lượt model (như `goiAiCoVet`); lỗi vết không làm hỏng node.
+        let vet: VetModel | undefined;
+        if (ngu.ghiModel) {
+          try {
+            vet = chon ? { ...chon.vet, lyDo: [...chon.vet.lyDo] } : await diemModel(vaiTro, ngu);
+            ngu.ghiModel(vet);
+          } catch {
+            /* vết là thông tin phụ */
+          }
+        }
+        const r = await goiAgent({ vaiTro, tinNhan, congCu, maxTokens: 2000, ngu, ...(chon ? { chon: { modelId: chon.modelId } } : {}) });
         const chu = boThink(r.chu ?? "");
         if (!r.toolCalls?.length) {
           traLoi = chu;

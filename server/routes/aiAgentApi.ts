@@ -93,6 +93,7 @@ export function registerAiAgentRoutes(app: express.Express, ql: QuanLyLuotChay =
       lichSu: b.lichSu,
       sessionId: b.sessionId,
       ngonNgu: b.ngonNgu,
+      chonModel: b.chonModel,
       req: reqChoAudit(req),
     });
     if (!kq.ok) {

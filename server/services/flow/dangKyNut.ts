@@ -37,6 +37,8 @@ export interface VetModel {
   /** Token THẬT của lời gọi (điền SAU khi model trả lời — cùng đối tượng đã ghi vào vết; vắng = đường không báo / lời gọi lỗi). */
   tokVao?: number;
   tokRa?: number;
+  /** ★ Đợt 10.1 — nhà cung cấp khi model là AI NGOÀI (10.3); vắng = model local. */
+  nhaCungCap?: string;
 }
 
 export interface NguCanhChay {

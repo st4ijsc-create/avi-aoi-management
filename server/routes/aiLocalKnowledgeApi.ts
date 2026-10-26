@@ -1,3 +1,5 @@
+import { CHON_MODEL_RE } from "../services/ai/chonModel/kieu";
+import { apChonModelKb } from "../services/ai/chonModel/kbChonModel";
 import type express from "express";
 import { locTacVuNguoiChon } from "../services/ai/chonTacVuModel";
 import { locCheDoNghi } from "../services/ai/loaiLuot";
@@ -195,6 +197,9 @@ export function parseContext(raw: unknown): KbQueryContext | undefined {
    *   nên đây rộng gấp đôi — không bao giờ cắt nhầm đầu ra thật). Trần THẬT đi vào prompt là
    *   `TRAN_KY_TU_DAU_RA_MAY`, suy ra từ trần một lượt lịch sử.
    */
+  // ★ Đợt 10.1 A2 — model chọn tường minh: chỉ hình dạng `CHON_MODEL_RE` (lạ ⇒ bỏ, như mọi ô client-khai); `auto` ⇒ không đặt.
+  //   Có trong danh mục hay không do TUYẾN giải (`apChonModelKb`) ⇒ 400/404, không rơi về mặc định.
+  if (typeof r.chonModel === "string" && r.chonModel !== "auto" && CHON_MODEL_RE.test(r.chonModel)) ctx.chonModel = r.chonModel;
   if (typeof r.dauRaKhongTinCay === "string" && r.dauRaKhongTinCay.trim() !== "") {
     ctx.dauRaKhongTinCay = r.dauRaKhongTinCay.slice(0, 64 * 1024);
   }
@@ -579,7 +584,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       const history = parseHistory(req.body?.history);
       if (tuChoiQuaDaiKb(res, question, history)) return;
       const userRole = parseUserRole(req.body?.userRole);
-      const context = parseContext(req.body?.context);
+      const chon = await apChonModelKb(parseContext(req.body?.context));
+      if (!chon.ok) {
+        res.status(chon.status).json({ success: false, error: chon.error, code: chon.code });
+        return;
+      }
+      const context = chon.context;
       const execCtx = buildExecCtx(user as any, req, question, context);
       // P3/D8 (doc 34) — optional attached image: read via Qwen3-VL, fold into the
       // question so the answer combines the VL reading with manual RAG. Degrades to
@@ -645,7 +655,13 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const history = parseHistory(req.body?.history);
     if (tuChoiQuaDaiKb(res, question, history)) return;
     const userRole = parseUserRole(req.body?.userRole);
-    const context = parseContext(req.body?.context);
+    // ★ Đợt 10.1 — `chonModel` lạ ⇒ 400/404 TRƯỚC khi mở SSE.
+    const chon = await apChonModelKb(parseContext(req.body?.context));
+    if (!chon.ok) {
+      res.status(chon.status).json({ success: false, error: chon.error, code: chon.code });
+      return;
+    }
+    const context = chon.context;
     // ★★★ 2026-08-23 — cờ huỷ của LƯỢT, dựng TRƯỚC `buildExecCtx` để nó đi cùng ngữ cảnh xuống tận
     //   `ggufStream`. Lý lẽ đầy đủ ở khối ⚠ tại chỗ gọi `huyKhiClientBoDi` ngay dưới.
     const boHuy = new AbortController();
