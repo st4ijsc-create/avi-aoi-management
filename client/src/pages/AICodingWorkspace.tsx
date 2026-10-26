@@ -65,6 +65,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import ChonModel from "@/components/ai/ChonModel";
 import { docChonLapTrinh } from "@/lib/chonModel";
+import { docCheDoNghi, luuCheDoNghi } from "@/lib/cheDoNghi";
+import { GhiChuCheDoNghi } from "@/components/aiCoding/GhiChuCheDoNghi";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
 // ★ Đợt 1 · T5 — CHẾ ĐỘ AGENT (Hỏi / duyệt từng bước / tự động). Logic + giao diện ở `components/aiCoding/agent/`;
 //   trang chỉ nối: bộ chọn chế độ, rẽ `handleSend`, dòng thời gian, nút Dừng, làm mới cây/tab khi agent ghi tệp.
@@ -1377,14 +1379,9 @@ export default function AICodingWorkspace() {
    * (`thinking_budget_tokens` 24k, `ai/nghiSau.ts`) nhưng ĐO trục H: sâu 25/36 vs cân bằng 30/36 — tụt, chậm hơn 25 %.
    *   Một nút đo được là KÉM ĐÚNG hơn mặc định là lời mời sai (audit 8.4m). Bày lại khi có số ≥ cân bằng.
    */
-  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => {
-    try {
-      const v = localStorage.getItem("repoWs.cheDoNghi");
-      return v === "nhanh" ? v : "can-bang";
-    } catch { return "can-bang"; }
-  });
+  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => docCheDoNghi()); // di trú một lần: xem lib/cheDoNghi.ts
   useEffect(() => {
-    try { localStorage.setItem("repoWs.cheDoNghi", cheDoNghi); } catch { /* chế độ riêng tư */ }
+    luuCheDoNghi(cheDoNghi);
   }, [cheDoNghi]);
 
   const nganSachQ = trpc.repoWorkspace.nganSachHopCat.useQuery(undefined, {
@@ -1450,6 +1447,7 @@ export default function AICodingWorkspace() {
   //   (cùng đường trang dùng sau khi duyệt diff: `listFiles.invalidate` + `fileQ.refetch`). Hook giữ callback MỚI NHẤT qua ref.
   const agent = useLuotChayAgent({
     projectId,
+    chonModel, // ★ Đợt 10.2 — cùng ô chọn model với chế độ Hỏi
     ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
     onTepDaDoi: (tep) => {
       void utils.repoWorkspace.listFiles.invalidate();
@@ -2470,6 +2468,7 @@ export default function AICodingWorkspace() {
                 )}
               </TooltipContent>
             </Tooltip>
+            <GhiChuCheDoNghi cheDo={cheDoNghi} />
             {modelQ.data && (
               <Tooltip>
                 <TooltipTrigger asChild>
