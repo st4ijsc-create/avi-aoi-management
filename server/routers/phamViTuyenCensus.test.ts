@@ -178,7 +178,10 @@ const NOI_DUNG_TUYEN_TINH: readonly string[] = [
 //   (main: { A: 5, C: 38, D: 96, S: 96, U: 16, tong: 251 })
 // ★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **A 5 · C 38 · D 94 · S 96 · U 16 · tong 249**, ĐO trên cây đã gộp (đặt ghim 0 rồi
 //   đọc số nhận được) = main F1 (A +1 / C −1, `GET /api/stream`) + nhánh C-2 (D −2, hai dương tính giả axios của sdk.ts rời bảng).
-const GHIM = { A: 5, C: 38, D: 94, S: 96, U: 16, tong: 249 } as const;
+// ★ 2026-10-27 (luong-ui · Đợt 10.2 bước 5): C 38→39 · tong 249→250 — ĐO bằng chạy bộ quét trước/sau (ghim cũ cho C 39 ≠ 38 nhận được): đúng MỘT tuyến mới
+//   `aiLocalKnowledgeApi.ts#GET /api/ai/chon-model/danh-muc` (danh mục model cho extension; `thuXacThucRest` + phạm vi nhà máy suy từ NGƯỜI xác thực, không từ query; không đọc bảng tenant;
+//   sau cổng giấy phép `/api/ai`). Nằm trong registrar CÓ SẴN nên không đổi số registrar. Lưới hành vi: `aiLocalKnowledgeApi.chonModelDanhMuc.test.ts`.
+const GHIM = { A: 5, C: 39, D: 94, S: 96, U: 16, tong: 250 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
