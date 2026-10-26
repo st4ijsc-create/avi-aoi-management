@@ -10,7 +10,11 @@ import { chay } from "./don-rac-test-r1b2.mjs";
 // @ts-expect-error — .mjs không có khai báo kiểu
 import { asOwner, testDbUrl } from "./apply-migration-dot10-common.mjs";
 
-const DAU = `r1b2t14${Date.now().toString(36)}`;
+// Tiền tố RIÊNG (không phải ^(r1b2|pvk|tth) dùng chung trên _test): đích tìm bằng mauMaSql riêng ⇒ không chạm fixture của test DB khác đang chạy.
+const T = Date.now().toString(36);
+const DAU = `t13dr${T}`;
+const DAU_CANH = `t13dq${T}`; // lính canh: KHÔNG khớp ^t13dr
+const MAU = "^t13dr";
 let sql: ReturnType<typeof postgres>;
 let adminId: number;
 const muc = { adapters: [] as number[], edgeNodes: [] as number[], machines: [] as number[], stations: [] as number[], lines: [] as number[], workshops: [] as number[], factories: [] as number[] };
@@ -18,7 +22,7 @@ const linhGac = { edgeNodes: [] as number[], adapters: [] as number[], machines:
 
 const one = async (p: Promise<any[]>) => Number((await p)[0].id);
 
-async function dungChuoi(nhan: string, m: typeof muc) {
+async function dungChuoi(nhan: string, m: typeof muc, DAU: string) {
   const f = await one(sql`INSERT INTO factories (code, name) VALUES (${`${DAU}${nhan}`}, ${`${DAU}${nhan}`}) RETURNING id`);
   const w = await one(sql`INSERT INTO workshops ("factoryId", code, name) VALUES (${f}, ${`${DAU}${nhan}`}, 'w') RETURNING id`);
   const l = await one(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${w}, ${`${DAU}${nhan}`}, 'l') RETURNING id`);
@@ -68,15 +72,15 @@ beforeAll(async () => {
   const [d] = await sql`SELECT current_database() AS d`;
   expect(String(d.d)).toMatch(/_test$/);
   adminId = Number((await sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" = true ORDER BY id LIMIT 1`)[0].id);
-  const a = await dungChuoi("a", muc);
+  const a = await dungChuoi("a", muc, DAU);
   muc.edgeNodes.push(await one(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${DAU}-en`}, 'r1b2 edge', 'offline') RETURNING id`));
   // STOP đã bị từ chối và chưa giải quyết — chặn xoá thiết bị cho tới khi `edge_stop_resolve`
   const [{ ownerEpoch: ep }] = await sql`UPDATE device_adapters SET "edgeNodeId" = ${muc.edgeNodes[0]} WHERE id = ${a} RETURNING "ownerEpoch"`;
   const q = await one(sql`INSERT INTO robot_motion_lock_requests ("adapterId", "edgeNodeId", kind, "requestedBy", "expiresAt", "ownerEpoch")
             VALUES (${a}, ${muc.edgeNodes[0]}, 'stop', ${adminId}, now() + interval '1 hour', ${ep}) RETURNING id`);
   await sql`UPDATE robot_motion_lock_requests SET "deliveredAt" = now(), "ackedAt" = now(), outcome = 'refused' WHERE id = ${q}`;
-  linhGac.edgeNodes.push(await one(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${DAU}-eg`}, 'r1b2 edge', 'offline') RETURNING id`));
-  await dungChuoi("g", linhGac); // lính canh: tiền tố r1b2 nhưng KHÔNG nằm trong danh sách
+  linhGac.edgeNodes.push(await one(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${DAU_CANH}-eg`}, 'r1b2 edge', 'offline') RETURNING id`));
+  await dungChuoi("g", linhGac, DAU_CANH); // lính canh: tiền tố khác, KHÔNG khớp mẫu tìm
 });
 
 afterAll(async () => {
@@ -85,13 +89,38 @@ afterAll(async () => {
   await sql.end({ timeout: 2 });
 });
 
-const chayThat = (argv: string[], m = muc) => {
+const chayThat = (argv: string[]) => {
   const out: string[] = [];
   const err: string[] = [];
-  return chay({ argv, muc: m, log: (x: string) => out.push(x), err: (x: string) => err.push(x) }).then((code: number) => ({ code, out: out.join("\n"), err: err.join("\n") }));
+  return chay({ argv, mauMaSql: MAU, log: (x: string) => out.push(x), err: (x: string) => err.push(x) }).then((code: number) => ({ code, out: out.join("\n"), err: err.join("\n") }));
 };
 
+/** Chạy khô rồi lấy đúng chuỗi --ids đã in. */
+async function layIds() {
+  const kho = await chayThat(["--test-only"]);
+  expect(kho.code, kho.err).toBe(0);
+  const m = /--ids=(\S+)/.exec(kho.out);
+  expect(m, kho.out).not.toBeNull();
+  return { kho, ids: m![1] };
+}
+
 describe("don-rac-test-r1b2 trên _test", () => {
+  it("adapter tìm được mà gắn máy KHÔNG khớp mẫu ⇒ từ chối (mồ côi), 0 xoá; gỡ nó ⇒ chạy khô in JSON đúng id", async () => {
+    const orphan = await one(sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId") VALUES (${`${DAU}yy`}, 'o', 'stub', 'stub://t13', false, ${linhGac.machines[0]}) RETURNING id`);
+    linhGac.adapters.push(orphan);
+    const truoc = await dem(muc);
+    const r = await chayThat(["--test-only"]);
+    expect(r.code, r.out).toBe(2);
+    expect(r.err).toMatch(new RegExp(`device_adapters id ${orphan} gan may`));
+    expect(await dem(muc)).toEqual(truoc);
+    await sql`DELETE FROM device_adapters WHERE id = ${orphan}`;
+    linhGac.adapters.pop();
+    const k = await chayThat(["--test-only"]);
+    expect(k.code, k.err).toBe(0);
+    const json = JSON.parse(/MUC_TIEU tìm được:\n([\s\S]*?)\n\[don-rac r1b2\] --ids=/.exec(k.out)![1]);
+    expect(json).toEqual({ adapters: muc.adapters, edgeNodes: muc.edgeNodes, machines: muc.machines, stations: muc.stations, lines: muc.lines, workshops: muc.workshops, factories: muc.factories });
+  });
+
   it("chạy khô: in bảng, thoát 0, KHÔNG ghi gì (đếm trước = sau, STOP vẫn chưa giải quyết)", async () => {
     const truoc = await dem(muc);
     expect(truoc).toMatchObject({ adapters: 1, edgeNodes: 1, machines: 1, stations: 1, lines: 1, workshops: 1, factories: 1, tags: 1, stops: 1 });
@@ -111,7 +140,12 @@ describe("don-rac-test-r1b2 trên _test", () => {
               VALUES (${muc.adapters[0]}, ${muc.edgeNodes[0]}, 'stop', ${adminId}, now() + interval '1 hour', ${ep}) RETURNING id`);
     try {
       const truoc = await dem(muc);
-      for (const argv of [["--test-only"], ["--test-only", "--ghi"]]) {
+      const { ids } = await (async () => {
+        // chạy khô bị chặn bởi STOP chưa ack ⇒ dựng --ids từ tập đã biết
+        const g = (m: typeof muc) => ["adapters", "edgeNodes", "machines", "stations", "lines", "workshops", "factories"].map((k) => [k, (m as any)[k]] as const).filter(([, v]) => v.length).map(([k, v]) => `${k}:${v.join(".")}`).join(",");
+        return { ids: g(muc) };
+      })();
+      for (const argv of [["--test-only"], ["--test-only", "--ghi", `--ids=${ids}`]]) {
         const r = await chayThat(argv);
         expect(r.code, r.out).toBe(2);
         expect(r.err).toMatch(new RegExp(`STOP chua ack \\(id ${q}\\)`));
@@ -125,14 +159,30 @@ describe("don-rac-test-r1b2 trên _test", () => {
 
   it("mã không khớp mẫu ⇒ từ chối (thoát 2), không xoá gì", async () => {
     const truoc = await dem(muc);
-    const r = await chay({ argv: ["--test-only", "--ghi"], muc, mauMa: /^khong-khop-/, log: () => undefined, err: () => undefined });
+    const { ids } = await layIds();
+    const r = await chay({ argv: ["--test-only", "--ghi", `--ids=${ids}`], mauMaSql: MAU, mauMa: /^khong-khop-/, log: () => undefined, err: () => undefined });
     expect(r).toBe(2);
     expect(await dem(muc)).toEqual(truoc);
   });
 
-  it("--ghi xoá ĐÚNG danh sách; lính canh r1b2 (không có trong danh sách) còn nguyên", async () => {
+  it("--ghi thiếu --ids, hoặc --ids thiếu/dư một id so với tập tìm lại ⇒ từ chối, 0 xoá", async () => {
+    const truoc = await dem(muc);
+    const { ids } = await layIds();
+    expect((await chayThat(["--test-only", "--ghi"])).code).toBe(2);
+    const bot = ids.replace(/^adapters:\d+,?/, "") || "-"; // bỏ nhóm adapters
+    const thua = ids.replace(/factories:(\d+)/, "factories:$1.999999999");
+    for (const sai of [bot, thua]) {
+      const r = await chayThat(["--test-only", "--ghi", `--ids=${sai}`]);
+      expect(r.code, r.out).toBe(2);
+      expect(r.err).toMatch(/KHAC --ids da duyet/);
+    }
+    expect(await dem(muc)).toEqual(truoc);
+  });
+
+  it("--ghi xoá ĐÚNG danh sách tìm được; lính canh (tiền tố khác) còn nguyên", async () => {
     const canhTruoc = await dem(linhGac);
-    const r = await chayThat(["--test-only", "--ghi"]);
+    const { ids } = await layIds();
+    const r = await chayThat(["--test-only", "--ghi", `--ids=${ids}`]);
     expect(r.code, r.err).toBe(0);
     expect(r.out).toMatch(/DA XOA/);
     expect(await dem(muc)).toEqual({ adapters: 0, edgeNodes: 0, machines: 0, stations: 0, lines: 0, workshops: 0, factories: 0, tags: 0, stops: 0 });
@@ -141,7 +191,9 @@ describe("don-rac-test-r1b2 trên _test", () => {
   });
 
   it("chạy lại ⇒ xoá 0 (idempotent)", async () => {
-    const r = await chayThat(["--test-only", "--ghi"]);
+    const { ids } = await layIds();
+    expect(ids).toBe("-");
+    const r = await chayThat(["--test-only", "--ghi", `--ids=${ids}`]);
     expect(r.code, r.err).toBe(0);
     expect(r.out).toMatch(/so hang xoa: 0\b/);
   });
