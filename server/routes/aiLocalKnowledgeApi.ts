@@ -27,6 +27,7 @@ import { describeImage } from "../services/aiGgufEngine";
 import { isVisionSidecarAvailable, sidecarDangChay } from "../services/llamaVisionSidecar";
 import { sanitizeUntrustedBlock, wrapUntrustedBlock } from "../services/ai/aiSafety";
 import { mimeTheoByteDau } from "../services/ai/anhDinhKem";
+import { kiemTranKb } from "../services/ai/tranDauVao";
 
 // Stage 13.D — feedback log path. JSONL append-only for easy diffing &
 // future re-ingestion into KB curation.
@@ -38,6 +39,17 @@ const VALID_USER_ROLES: ReadonlySet<UserRole> = new Set([
   "manager",
   "it_admin",
 ]);
+
+/**
+ * Trần đầu vào ở cửa vào (kiem-dinh 2026-10-26, `tranDauVao.ts`): vượt ⇒ 413 — KHÔNG che / embed / gọi model một chuỗi
+ * nghìn lần lớn hơn context (thân JSON của /api/ai/* cho tới 200 MB, trước đây `question` không có trần).
+ */
+function tuChoiQuaDaiKb(res: express.Response, question: string, history: ReadonlyArray<{ content: string }>): boolean {
+  const kq = kiemTranKb(question, history);
+  if (kq.ok) return false;
+  res.status(413).json({ success: false, error: "input too long", ma: "DAU_VAO_QUA_DAI", noi: kq.noi, tran: kq.tran });
+  return true;
+}
 
 function parseHistory(raw: unknown): ConversationMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -527,6 +539,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       const user = xacThuc.user;
 
       const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+      if (tuChoiQuaDaiKb(res, question, [])) return;
       const topK = Number(req.body?.topK ?? 5);
       if (!question) {
         res.status(400).json({ success: false, error: "question is required" });
@@ -564,6 +577,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       }
 
       const history = parseHistory(req.body?.history);
+      if (tuChoiQuaDaiKb(res, question, history)) return;
       const userRole = parseUserRole(req.body?.userRole);
       const context = parseContext(req.body?.context);
       const execCtx = buildExecCtx(user as any, req, question, context);
@@ -629,6 +643,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
 
     const history = parseHistory(req.body?.history);
+    if (tuChoiQuaDaiKb(res, question, history)) return;
     const userRole = parseUserRole(req.body?.userRole);
     const context = parseContext(req.body?.context);
     // ★★★ 2026-08-23 — cờ huỷ của LƯỢT, dựng TRƯỚC `buildExecCtx` để nó đi cùng ngữ cảnh xuống tận
