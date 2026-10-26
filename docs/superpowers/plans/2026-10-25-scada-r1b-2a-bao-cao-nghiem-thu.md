@@ -300,8 +300,21 @@ thua đua bị phân loại sai `khong_khop` (có thể khoá người thắng �
     trắng đi không mã / không audit (nhãn hiển thị — chấp nhận T8). Client chưa có form sửa cột nhịp (nhánh `tagForm.id` chết — R1b-2b).
 
 **Kết nối (T13)**
-13. **MC: mọi item lỗi ⇒ coi là mất liên lạc ⇒ vòng nối lại** — cái giá fail-closed được chấp nhận (ruling T13 r2): một cấu hình MC mà MỌI địa chỉ sai sẽ
-    nối lại liên tục thay vì báo "connected"; chỉ ảnh hưởng `connected` / D1.
+13. **MC (cờ V2): mọi item BAD chỉ là mất liên lạc khi lần đọc đã trôi ≥ ~hạn gói của thư viện** (final-fix I-1, rà soát toàn nhánh; thay luật T13 r2).
+    - *Trước final-fix (ghi đúng hậu quả):* mọi item `BAD 255` ⇒ ném lỗi quá hạn ⇒ D1 hạ transport + nối lại lùi dần ⇒ adapter phần lớn thời gian
+      ở trạng thái ngắt ⇒ MỌI lệnh ghi tới adapter đó, **kể cả STOP ghim (HMI / AI / hệ thống), thất bại `ADAPTER_OFFLINE`** — không phải "chỉ
+      `connected` / D1" như bản trước của mục này viết. Ca thật: PLC CÒN SỐNG trả lời lỗi cho cả khối (một tag ngoài dải trong khối liền, mã thiết
+      bị không hỗ trợ) — mcprotocol tô 0xFF y như quá hạn.
+    - *Nay:* mcprotocol chỉ gọi `readResponse(undefined)` từ bộ hẹn gói `globalTimeout` (4500 ms, `mcprotocol.js`; driver không ghi đè, đọc từ
+      instance). Driver đo thời gian đọc trên đồng hồ ĐƠN ĐIỆU (`performance.now()`): mọi item BAD **và** đã trôi ≥ 90 % `globalTimeout` (≥ 4050 ms)
+      — hoặc thư viện tự báo rời (`isoConnectionState ≠ 4`) — ⇒ mất liên lạc (`McReadTimeoutError`, tick hỏng, D1 đếm) như cũ. Mọi item BAD mà trả
+      về NHANH ⇒ PLC còn sống ⇒ từng item `bad / device_error`, tick vẫn là đọc tốt, phiên GIỮ, **STOP ghim vẫn ghi được**. Lưới:
+      `chatLuong.drivers.test.ts` (quá hạn ⇒ ném + D1; nhanh ⇒ device_error + connected + `writeTags` ghim tới thư viện ok; lib rời ⇒ ném; ngưỡng);
+      đột biến bỏ phép đo thời gian ⇒ 2 ca "nhanh" đỏ; đột biến luôn "nhanh" ⇒ ca quá hạn đỏ. Luật S7 (`isoConnectionState ≠ 4`) giữ nguyên.
+    - *Còn sót (biết):* PLC trả lời lỗi **CHẬM sát hạn** (≥ 90 % của 4,5 s — PLC quá tải, đường mạng rất chậm) vẫn bị coi là mất liên lạc ⇒ vòng
+      nối lại + STOP `ADAPTER_OFFLINE` như trước final-fix (fail-closed cho đọc, fail-unavailable cho STOP). Nhiều gói song song: một gói quá hạn
+      thật kéo cả lần đọc ≥ hạn ⇒ cả lần đọc là mất liên lạc nếu MỌI item BAD (kể cả gói khác PLC trả lời lỗi nhanh). Đề xuất R1b-2b mục 58
+      (phân biệt bằng `errCode` của item thư viện — "Timeout error - zero length packet" vs "MC Error Response" / "Invalid Response Length").
 14. Phiên mà MỌI tag cấu hình sai vẫn có thể báo `connected` (T13 m4) — R1b-2b. Cờ V2 tắt: `BAD 255` sửa xong phát mẫu xấu TRẦN (không lý do).
 15. Đường push: mẫu xấu không lý do = chưa trả lời (fail-closed); lỗi driver quên gắn lý do làm chậm `connected` (chiều an toàn).
 
@@ -348,6 +361,12 @@ R1b-1 §7 vẫn áp dụng nguyên văn. R1b-2a đóng / thêm các mục sau:
 - [ ] Bộ giám sát đọc `/health`: CÓ MẶT `schemaR1a` (kể cả `dang_kiem`) = chưa khoẻ về schema.
 - [ ] Người vận hành biết băng đỏ "DÙNG E-STOP CỨNG TẠI MÁY" (DB chậm hoặc quá 600 STOP / phút) — E-STOP cứng là đường dừng THẬT duy nhất khi
       `OT_CONTROL_ENABLED` còn tắt (D9).
+- [ ] **MC + `OT_CHAT_LUONG_V2_ENABLED` (final-fix I-1):** trước khi bật V2 trên một adapter MC, xác nhận MỌI khối được poll đọc SẠCH (không item
+      `BAD`) và thời gian đọc bình thường xa dưới 4,05 s (`latencyMs` ở `/scada/diag`). PLC trả lời lỗi nhanh nay chỉ ra `device_error` (STOP vẫn
+      ghi được); nhưng PLC trả lời lỗi CHẬM sát 4,5 s vẫn bị coi là mất liên lạc ⇒ STOP tới adapter đó `ADAPTER_OFFLINE` (§8 mục 13).
+- [ ] **Người đang bị buộc đổi mật khẩu VẪN dừng được máy** (điều phối 2026-10-26): `scadaCommands.dungMay` miễn riêng khỏi cổng buộc đổi mật khẩu,
+      có audit `scada_hmi_stop_buoc_doi_mat_khau`; mọi thủ tục khác vẫn bị chặn. ⚠ Giao diện vẫn khoá điều hướng người bị buộc đổi vào
+      `/change-password` (client `congDoiMatKhau`) ⇒ nút DỪNG MÁY chỉ tới được từ trang HMI đã mở sẵn trước khi `auth.me` làm mới — xem R1b-2b mục 59.
 - [ ] **`AI_OT_CONTROL_ENABLED` GIỮ TẮT.** R1b-2a là ĐIỀU KIỆN CẦN. Bật cờ là quyết định của chủ dự án sau một rà soát / kiểm định độc lập riêng;
       báo cáo này KHÔNG nói "đã sẵn sàng bật".
 
@@ -382,7 +401,23 @@ m-6 ⇒ R1b-2b · T6 polish m-2…m-5 + nới biên `scadaKenhTotpHan` (5000 ms)
 luật máy chủ; polish 4 mục · T8 c3 / c4 chấp nhận (trim, CLI chặt hơn), c5 ⇒ R1b-2b · T9 polish (typo, xếp lại một lần khi chèn tổng kết lỗi) · T10 r1 I1
 (lượt phát lại tự đặt khoá ⇒ audit `phat_lai` + `TAM_KHOA`), M1–M4; M5 ⇒ backlog báo cáo này; lỗi hai-SELECT tự phát hiện + sửa · T11 polish · T12 polish
 M-1…M-5 · T13 c2 mẫu xấu không lý do = chưa trả lời; r2 vá I1 / I2 (commit riêng cho I2), cờ tắt phát mẫu xấu trần (chấp nhận), vòng nối lại MC (chấp nhận,
-ghi giới hạn); r3 census `stale` mở rộng · T14 fix: ghim host:port = `DATABASE_URL`, test STOP chưa ack.
+ghi giới hạn; thu hẹp ở final-fix I-1 — chỉ khi lần đọc trôi ≥ ~hạn gói); r3 census `stale` mở rộng · T14 fix: ghim host:port = `DATABASE_URL`, test STOP chưa ack.
+
+**Điều phối quyết 2026-10-26: miễn riêng scadaCommands.dungMay khỏi cổng buộc đổi mật khẩu (bất biến STOP không bao giờ bị chặn); vẫn đòi phiên hợp
+lệ + phạm vi + mọi kiểm STOP; có audit.** Thực hiện ở final-fix: tập có tên `THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU = ["scadaCommands.dungMay"]`
+(`server/_core/trpc.ts`, lý do có ngày) — KHÁC tập cho qua: cổng VẪN đọc cờ (trong hạn tổng STOP; hết hạn ⇒ từ chối "dùng E-STOP cứng"), có cờ ⇒ đi
+tiếp với `ctx.stopKhiBuocDoiMatKhau`, `dungMayHmi` ghi đúng MỘT audit "STOP khi đang bị buộc đổi mật khẩu" (người bấm + máy; cột thực thể là máy CHỈ
+khi máy đã qua kiểm phạm vi, ngược lại gắn người bấm). Lưới hai chiều `buocDoiMatKhau.test.ts` §2b (tồn tại + đúng một phần tử + cổng vẫn đứng đầu
+chuỗi) và hành vi sống ở `scadaCommandsRouter.dungMay.hanTruocGui.r1b2.db.test.ts` (qua `appRouter` thật: STOP đi + audit; `request` / `huy` vẫn
+`MUST_CHANGE_PASSWORD`; máy nhà máy B vẫn `NOT_FOUND`; người không cờ không đổi); đột biến gỡ miễn ⇒ 3 ca đỏ.
+
+**Rà soát toàn nhánh (final-review I-1, M-1…M-5) — đã sửa ở final-fix:** I-1 thu hẹp luật MC mọi-item-BAD theo thời gian đọc (§8 mục 13, §9) ·
+M-1 dòng từ chối `STOP_QUA_HAN` ghi sổ hỏng ⇒ vẫn đếm (`ghi_so_loi`, bộ nhớ) · M-2 posture `theoBuoc` nhóm theo LOẠI bước (tập đóng
+`BUOC_QUA_HAN_STOP_HMI`; dòng cũ "adapter A1, A2" gộp về `adapter`; mã adapter đi riêng `requested_value.adapters`) · M-3 từ chối trước kiểm phạm
+vi KHÔNG gắn audit vào máy client gửi (gắn người bấm; `machineIdChuaXacMinh` chỉ trong payload, `chiAdminXem`) · M-4 hai chú thích cũ + gỡ
+`canKiemLuoiThoChuaKhai` (chỉ test dùng); KHÔNG gộp bộ đọc cookie / helper vé (điều phối giao sau gộp — R1b-2b mục 53) · M-5 `planTargets`
+từ chối khi đích "dev" là DB `_test` hoặc dev = test cùng một DB. Kèm: hạn tổng STOP ĐÃ cạn ⇒ cổng từ chối NGAY, tất định (trước: đua 1 ms với lượt
+đọc DB — ca "hạn tổng ĐÃ cạn qua router" chập chờn theo thứ tự chạy). Chi tiết + số đo: `.superpowers/sdd/2026-10-25-scada-r1b-2a-an-toan-va-no-tiep/final-fix-report.md`.
 
 **Lệch kế hoạch đã ghi (có lý do):** `hoanLuotThu` có tham số thứ tư `cuaSo` (T10 — chặn hoàn lượt ăn vào đếm của mã SAI); T4 đường ống theo từng adapter
 (adapter khoẻ không chờ adapter chậm); `trpcLinks` biến mọi 429 của `dungMay` thành lỗi tRPC `httpStatus 429`; T7 ô mã có sẵn trong hộp lô; S1 của báo cáo
@@ -451,11 +486,23 @@ bước đỏ); vài lần dùng heredoc trái luật ở T1 / T7 / T9 / T10 / T
 51. T13 m4: phiên mà mọi tag cấu hình sai vẫn báo `connected`.
 52. T13 m1 (ghi chú điều phối): `stale` = đã trả lời chưa có nơi sinh — xem lại K13 khi có nguồn `stale` thật.
 53. Hợp nhất hai bộ giới hạn (STOP tier R1b-2a + W21 main): một bộ đọc cookie, một helper phần đã ký, một độ dài băm (điều phối giao sau gộp).
-54. T12: posture `theoBuoc` chưa hiển thị; i18n tên bước; vô hiệu cache posture khi phạm vi người dùng đổi (30 s).
+    Danh sách đo ở final-fix (M-4, KHÔNG gộp lúc này; `grep "[COOKIE_NAME]" server` ngoài test = 3 chỗ): bộ đọc cookie phiên ×3 —
+    `vePhienCookie.docVePhienTuCookie` (`vePhienCookie.ts:20-22`, sdk + tầng STOP dùng), `rateLimitConfig.ts:674` (`apiKeyGeneratorXacThuc` của W21,
+    `cookie.parse` trực tiếp), `context.ts:59-65` `extractSessionToken` (rà soát cuối ghi "bản thứ tư" ở `vePhienCookie.ts:132` — đo lại không còn
+    dòng đó); helper phần đã ký của vé ×2 — `rateLimitConfig.ts` `phanDaKyCuaVe` (~:272) và `phanDaKyJwt` (~:653), quy tắc đoạn
+    rỗng khác nhau; bí danh thuần `lenhHmi.ts` `PhaQuaHanStop = PhaQuaHanStopHmi`; `context.ts` tái xuất `HAN_TONG_STOP_HMI_MS` /
+    `HAN_XAC_THUC_STOP_HMI_MS` / `laGoiChiDungMay` chỉ test dùng.
+54. T12: posture `theoBuoc` chưa hiển thị (khoá nay là tập đóng — final-fix M-2); i18n tên bước; vô hiệu cache posture khi phạm vi người dùng đổi (30 s).
 55. Census: bộ lọc văn bản của census tuyến (`phamViTuyenCensus`) mong manh (T3 tư vấn ⇒ chủ census qua điều phối); `i18n:check` không thấy khoá động
     (kiem-dinh W23).
 56. T4 M-7: `robotStopDegradedAuth.dot10.db` NF5-1 hết giờ 30 s khi chạy trong lô (có sẵn, xanh khi riêng) — kiem-dinh.
 57. T1 c7: hậu tố tiếng Việt "(chưa đọc được lưới tag)" trong `rationale` tiếng Anh.
+58. **Final-fix I-1 (đề xuất, điều phối 2026-10-26):** MC — PLC trả lời lỗi CHẬM sát hạn gói (≥ 90 % của 4,5 s) vẫn bị coi là mất liên lạc ⇒ vòng nối
+    lại, STOP tới adapter đó `ADAPTER_OFFLINE`. Phân biệt bằng `errCode` của item thư viện (đọc trạng thái item nội bộ của mcprotocol, có gia cố như
+    `hardenMcInstance`) thay vì thời gian; hoặc tách đường ghi STOP khỏi trạng thái phiên đọc. Kèm đo trên bench (PLC thật trả end code lỗi).
+59. **Điều phối 2026-10-26 (hệ quả):** client vẫn khoá điều hướng người bị buộc đổi mật khẩu vào `/change-password` (`congDoiMatKhau` /
+    `CongDoiMatKhau.tsx`) ⇒ nút DỪNG MÁY chỉ tới được từ trang đã mở. Quyết định giao diện (cho phép trang HMI / nút DỪNG MÁY khi bị buộc đổi) thuộc
+    điều phối / chủ dự án — máy chủ đã miễn.
 
 ## 12. Commit R1b-2a
 
@@ -478,7 +525,8 @@ bước đỏ); vài lần dùng heredoc trái luật ở T1 / T7 / T9 / T10 / T
 | T13 đường push "đã trả lời" + vá S7 / MC | `dcb4300a9`, `35b9b4a7a`, `a9eda95c6`, `b4a2d38e2`, `e504eec98` |
 | T14 dọn `_test` | `b76e6034c`, `bcd806ef9` |
 | Gộp main `134293775` | `8e6baab06` |
-| T15 nghiệm thu (lưới `r1b2aNghiemThu.db.test.ts` + bench `--r1b2a` + báo cáo + test SQL báo cáo; sửa đỏ do T11: `KHOA_TOTP_TRONG_HANDLER` + một điểm gọi `tamTat` ở `ScadaDiag.tsx`) | commit chứa báo cáo này |
+| T15 nghiệm thu (lưới `r1b2aNghiemThu.db.test.ts` + bench `--r1b2a` + báo cáo + test SQL báo cáo; sửa đỏ do T11: `KHOA_TOTP_TRONG_HANDLER` + một điểm gọi `tamTat` ở `ScadaDiag.tsx`) | `5dd59d0ce`, `f07c5023c` |
+| Final-fix rà soát toàn nhánh (I-1, M-1…M-5) + miễn cổng đổi mật khẩu cho `dungMay` (điều phối 2026-10-26) | `dd7a1a43f` (I-1), `2b4f378d7` (M-1/M-2/M-3 + cổng đổi mật khẩu), `e37debace` (M-4/M-5), commit chứa bản sửa báo cáo này |
 
 ## 13. Bàn giao
 
