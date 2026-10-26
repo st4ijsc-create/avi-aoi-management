@@ -66,14 +66,37 @@ Ghi chú ô:
 
 ## 3. Bench OpenPLC
 
-> **CHỖ TRỐNG — bộ điều khiển điền (Step 3).** Chỉ chạy khi điều phối trả lời "OK chạy ngay" (đo commit trống ≥ 10 GB trước;
-> `docker update --memory 1g --memory-swap 1g avi-openplc-bench`; không chạm :3000 / :8091 / GPU; không tải chương trình PLC).
-> Ô B1 trên MỘT coil: `"false"` ⇒ coil 0; `"off"` ⇒ từ chối, coil không đổi; 3 lượt; đọc lại bằng client riêng; trả coil + container về gốc.
-> Không được phép ⇒ ghi "bench not run" + lý do. Bản DB tương đương: ô B1 của lưới + `commandDispatcher.kenh.r1a.db.test.ts` ca "KD-T2 + điều kiện 1c".
-> M1 (MC): **không có PLC Mitsubishi thật** — chỉ thư viện mcprotocol thật trên máy chủ TCP giả (probe `mcErrCode.thuVienThat.test.ts` của T4) và
-> thư viện giả ở lưới ⇒ giới hạn (§6 VẬN HÀNH).
+Bench thật trên container OpenPLC (`avi-openplc-bench`), ba lượt chạy. Tiền điều kiện của MỖI lượt đều được điều phối duyệt tại thời điểm chạy:
 
-_(bench: chưa chạy)_
+| | Lượt 1 | Lượt 2 | Lượt 3 |
+|---|---|---|---|
+| Commit trống trước chạy | 21,0 GB | 20,8 GB | 20,7 GB |
+| Giới hạn container | `1g` / `1g` (memory / swap) | `1g` / `1g` | `1g` / `1g` |
+| Khởi động | `--start-neu-tat` | `--start-neu-tat` | `--start-neu-tat` |
+
+Chung cho cả ba lượt: KHÔNG tải chương trình PLC; không chạm :3000 / :8091 / GPU; mọi coil và thanh ghi đã trả về giá trị gốc; container trả về trạng thái
+`exited`, xác nhận bằng `docker inspect`.
+
+**Lượt 1 — 41/42** (`bench-r1b2b1.txt`):
+- Mọi ô S1 / S2 / X2 / L1 / B1a: 3/3 lượt đạt.
+- B1b đạt ở lượt 2 và 3: ghim STOP pin 1 trên một coil INT ⇒ `acked_verified`, coil 0 → 1, thoả điều kiện 1c.
+- B1b lượt 1 hết hạn sau 5124 ms. Chính lượt này dẫn tới phát hiện ở T17: một lỗi ĐÃ CÓ SẴN từ `1e0ae656c`, được sửa trong R1b-2b-1.
+
+**Lượt 2 — huỷ giữa chừng, không có dữ liệu** (`bench-catlienket.txt`): kịch bản bench tự văng `TransactionTimedOutError` không bắt (từ bộ đối chứng
+trực tiếp `voiClient`). Kịch bản đã được sửa (`b473cf1e9`: mỗi lỗi của một bước ⇒ dòng ĐỎ có lý do + stack, chạy tiếp, in ngay từng dòng).
+
+**Lượt 3 — 61/66, ô ĐỐI CHỨNG chạy trước** (`bench-doichung.txt`):
+- Ô đối chứng **B1b-thông** (proxy thông suốt, chưa cắt) ĐỎ: b1 qua proxy rớt một lần (19/25 tốt; thống kê proxy) trong khi main vẫn sống. Theo luật đã
+  thoả thuận ⇒ lỗi nằm ở ĐƯỜNG / CÔNG CỤ bench, các ô cắt KHÔNG đủ điều kiện làm bằng chứng.
+- Chỉ để tham khảo: 5/5 lượt cắt trả `timeout` trong 106–137 ms, 0 ack giả, 0 `failed`. Lượt 2 (cắt SAU khi gửi) kết thúc coil 0 → 0; lượt 4 kết thúc 0 → 1.
+- 3 lỗi bước đến từ bộ đối chứng trực tiếp (OpenPLC nghẽn khi nhiều kết nối đồng thời).
+- Bằng chứng T17 dùng để nghiệm thu: các test tất định trong tiến trình + lưới T16 18/18 + 20 đột biến (§8). Bench lượt 3 KHÔNG được dùng làm bằng chứng.
+  Việc dựng bench cắt liên kết ổn định ⇒ R1b-2b-2 mục 67.
+
+**M1 (MC):** không có PLC Mitsubishi thật — chỉ thư viện mcprotocol thật trên máy chủ TCP giả (probe `mcErrCode.thuVienThat.test.ts` của T4) và thư viện giả
+ở lưới ⇒ ghi nhận là giới hạn (§6 VẬN HÀNH).
+
+Bản DB tương đương: ô B1 của lưới + `commandDispatcher.kenh.r1a.db.test.ts` ca "KD-T2 + điều kiện 1c".
 
 ## 4. Thứ tự triển khai
 
@@ -121,12 +144,17 @@ ORDER BY r.id
 
 ## 5. Chạy toàn bộ
 
-> **CHỖ TRỐNG — bộ điều khiển điền (Step 5)**, sau bench và sau khi điều phối trả lời "OK chạy ngay":
-> `node scripts/luoi-truoc-gop.mjs --nang server shared client/src scripts vscode-extension/src`; lô serial (`vitest.serial.config.ts`); mọi `*census*`;
-> opt-in R0 + R1a + R1b-1 + R1b-2a + R1b-2b-1; `npm run check` (12 GB); `npm run i18n:check`. Phân loại MỌI tệp đỏ (lô / tải / có sẵn; tải ⇒ chạy lại
-> riêng tệp; không nới ngưỡng). Opt-in R1b-2b-1: R1-đc đã xanh sau T6 fix round 1 (§1).
+HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
 
-_(chạy toàn bộ: chưa chạy)_
+- Lưới trước gộp (`node scripts/luoi-truoc-gop.mjs --nang ...`): **35751 ca**.
+  - Thường: 31748 ca, 1 đỏ.
+  - DB tuần tự: 3921 ca, 0 đỏ.
+  - Nặng: 82 ca, 0 đỏ.
+- **0 đỏ THẬT.**
+- 1 đỏ chỉ khi chạy song song: `server/_core/rateLimitConfig.duPhongBoNho.test.ts`, ca Redis khoẻ — 4 lần rơi về bộ nhớ dưới tải CPU. Chạy riêng 3/3
+  xanh ⇒ phân loại **tải**. Ngưỡng KHÔNG được nới. Thành mục 68 của R1b-2b-2.
+- Lô serial 7/7 (66 ca). Opt-in R0 + R1a + R1b-1 + R1b-2a + R1b-2b-1 5/5 (74 ca). `npm run check` 0. `i18n:check` 0.
+- Phân loại tệp đỏ: lô 0 / tải 1 / có sẵn 0.
 
 Đã chạy ở T16 (phạm vi T16, không phải Step 5):
 - lưới opt-in: 3 lượt, 17/18 mỗi lượt (R1-đc đỏ); không đặt biến ⇒ 18 bị bỏ qua; sau T6 fix round 1: 3 lượt 18/18;
@@ -327,7 +355,7 @@ _(chạy toàn bộ: chưa chạy)_
 ## 9. Danh sách R1b-2b-2
 
 Danh sách 1-1 ở kế hoạch `docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-an-toan-va-no.md`, mục **"Danh sách R1b-2b-2 (chỉ liệt kê — kế hoạch
-riêng)"** (số giữ theo báo cáo R1b-2a §11). Sáu mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
+riêng)"** (số giữ theo báo cáo R1b-2a §11). Tám mục mới từ R1b-2b-1 (61–63 theo thứ tự điều phối 2026-10-26; 64 từ T6 fix round 1; 65, 66 từ T17; 67, 68 từ T16 Step 3 / 5; thứ tự ưu tiên 61 → 66 → 62, điều phối 2026-10-27):
 
 - **61 (ƯU TIÊN ĐẦU R1b-2b-2; thứ tự 61 → 66 → 62)** — lượt ghi bắn-rồi-quên CÓ TỪ TRƯỚC trên đường `dungMay` (attempts + audit của `tuChoiQuaHan`, vòng `STOP_QUA_HAN`
   theo adapter, mọi `recordAuditEvent`) vào CÙNG bộ đếm trần T9; bỏ qua audit khi đầy phải log nội dung hàng; trần theo tiến trình.
@@ -337,6 +365,8 @@ riêng)"** (số giữ theo báo cáo R1b-2a §11). Sáu mục mới từ R1b-2b
 - **65** — thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — chủ dự án quyết (điều phối 2026-10-27: không làm ở R1b-2b-1).
 - **66 (ƯU TIÊN — thứ tự 61 → 66 → 62)** — hết hạn yêu cầu của CHÍNH driver (Modbus 800 ms, S7/MC/EIP 5000 ms cố định, OPC UA, SLMP) ⇒ `timeout` (chưa rõ)
   thay vì `failed` — lệnh có thể đã tới thiết bị (§6 LOGIC mục 18 (a)).
+- **67** — bench cắt liên kết ổn định, ví dụ một OpenPLC riêng cho mỗi adapter hoặc proxy phần cứng. Lý do: ở R1b-2b-1, ô đối chứng proxy thông suốt ĐỎ trên OpenPLC dùng chung (§3 lượt 3).
+- **68** — làm ca Redis khoẻ của `rateLimitConfig.duPhongBoNho.test.ts` không phụ thuộc tải vòng lặp sự kiện. Lý do: dưới tải, 4 lần tăng quá 250 ms và rơi về bộ nhớ (§5).
 
 Lỗi R1-đc (§6 LOGIC mục 1) là ô ĐỎ của R1b-2b-1 — đã sửa ở T6 fix round 1 trước bàn giao; chỉ giới hạn còn lại (mục 64) sang R1b-2b-2.
 
