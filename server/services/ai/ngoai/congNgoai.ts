@@ -47,6 +47,11 @@ export interface YeuCauGoiNgoai {
     /** Nhà máy CHỦ của dữ liệu trong yêu cầu (luồng: nhà máy chủ luồng); phần tử `null` = chủ không xác định ⇒ từ chối. */
     nhaMayChuDuLieu: Array<number | null>;
     nguonMuc: NguonMuc;
+    /**
+     * Luồng: dữ liệu VẬN HÀNH có thể đến từ MỌI nhà máy trong phạm vi chủ lượt (node số liệu đọc theo phạm vi chủ) ⇒ khi mức là
+     * `van-hanh`, cổng thêm các nhà máy này vào tập và đòi MỖI nhà máy `batNgoai` + `choDuLieuVanHanh`.
+     */
+    nhaMayKhiVanHanh?: () => Promise<number[]>;
   };
 }
 
@@ -198,6 +203,21 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   // (4)
   buoc("muc-du-lieu");
   const muc = await mucCuaYeuCau(yc.ngu.nguonMuc);
+  if (muc === "van-hanh" && yc.ngu.nhaMayKhiVanHanh) {
+    let them: number[];
+    try {
+      them = await yc.ngu.nhaMayKhiVanHanh();
+    } catch {
+      throw new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH");
+    }
+    for (const f of them) {
+      if (cauHinh.has(f)) continue;
+      const c = await layCauHinhNhaMay(db, f).catch(() => null);
+      if (!c?.batNgoai) throw new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH");
+      cauHinh.set(f, c);
+      tap.push(f);
+    }
+  }
   if (muc === "van-hanh" && tap.some((f) => !cauHinh.get(f)!.choDuLieuVanHanh)) throw new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH");
   // (5)
   buoc("lap");

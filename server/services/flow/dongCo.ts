@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { aiFlowEvents, aiFlowInbox, aiFlowQueue, aiFlowRuns, aiFlowSteps, aiFlowVersions, aiFlows } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
+import { appError } from "../../_core/appError";
 import { ganMucDuLieu, taoMucDuLieuLuot } from "../ai/ngoai/phanLoai";
 import { THU_TU_HANG, TRAN_DONG_THOI_MAC_DINH, kiemLuong, type FlowDefinition, type HangTacDungPhu } from "../../../shared/flow/model";
 import type { ItemLuong } from "../../../shared/flow/bieuThuc";
@@ -306,6 +307,8 @@ export async function batDauBuoc(muc: MucHang): Promise<KetQuaBatDau> {
   // ★ Đợt 10.3 — mức dữ liệu của lượt: MỌI node đã có bước trong lượt (xong / lỗi / không rõ — node lỗi vẫn có thể đã đưa dữ liệu
   //   vào thông điệp lỗi đi nhánh lỗi) + phân loại tĩnh luồng con; ảnh chụp, gắn không liệt kê / không ghi (node không hạ được).
   const daCoBuoc = await db.selectDistinct({ nodeId: aiFlowSteps.nodeId }).from(aiFlowSteps).where(eq(aiFlowSteps.runId, muc.runId));
+  const kiemPhamVi = (await (await import("./boKiemPhamVi")).boKiemChoChuLuong(run.chuLuong)) ?? undefined;
+  const [luongNm] = await db.select({ f: aiFlows.factoryId }).from(aiFlows).where(eq(aiFlows.id, run.flowId));
   return {
     tiep: true,
     def,
@@ -314,9 +317,24 @@ export async function batDauBuoc(muc: MucHang): Promise<KetQuaBatDau> {
       runId: muc.runId, flowId: run.flowId, nodeId: muc.nodeId, lan: muc.lan, idempotencyKey: key, inputs: muc.inputs, nodes,
       env: {}, run: { id: muc.runId, flowId: run.flowId, batDau: new Date(run.startedAt).toISOString() }, version: run.version,
       // Đợt 9 (IDOR) — phạm vi tính lại LÚC CHẠY từ người dùng hiện tại; không chủ / bị khoá / xoá / mất quyền ⇒ vắng ⇒ node tài nguyên từ chối.
-      kiemPhamVi: (await (await import("./boKiemPhamVi")).boKiemChoChuLuong(run.chuLuong)) ?? undefined,
+      kiemPhamVi,
+      // ★ Đợt 10.3 — nhà máy CHỦ LUỒNG (NULL = luồng toàn hệ thống ⇒ cổng AI ngoài từ chối) + nhà máy dữ liệu vận hành có thể tới (phạm vi chủ lượt).
+      nhaMayLuong: luongNm?.f ?? null,
+      nhaMayPhamViChu: () => nhaMayTrongPhamVi(kiemPhamVi?.phamVi),
     } as NguCanhChay, taoMucDuLieuLuot(def, daCoBuoc.map((b) => b.nodeId).filter((id) => id !== muc.nodeId), docDinhNghiaCon)),
   };
+}
+
+/** Nhà máy trong phạm vi chủ lượt (toàn quyền ⇒ MỌI nhà máy). Không có phạm vi ⇒ ném (cổng AI ngoài từ chối dữ liệu vận hành). */
+async function nhaMayTrongPhamVi(phamVi: { userId?: number; userRole?: string } | undefined): Promise<number[]> {
+  if (!phamVi?.userId) throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "nhaMayTrongPhamVi", reason: "khongCoPhamViChu" });
+  const { resolveTenantFactoryScope } = await import("../../db/reportAggregators");
+  const { factoryIds } = await resolveTenantFactoryScope(phamVi, { strict: true });
+  if (factoryIds) return factoryIds;
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "nhaMayTrongPhamVi", reason: "dbUnavailable" });
+  const { factories } = await import("../../../drizzle/schema");
+  return (await db.select({ id: factories.id }).from(factories)).map((r) => r.id);
 }
 
 /** Định nghĩa luồng con ghim phiên bản (cho phân loại tĩnh mức dữ liệu). */
