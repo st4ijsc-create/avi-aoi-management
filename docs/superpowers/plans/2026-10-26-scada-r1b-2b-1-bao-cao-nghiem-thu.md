@@ -169,6 +169,9 @@ _(chạy toàn bộ: chưa chạy)_
   thời; luật nay ngoài phạm vi ⇒ `NOT_FOUND`. `approve` nay khoá adapter đích trước luật.
 - (T11, mục 48) Khai mức hàng loạt: MỘT `UPDATE … FROM VALUES` + MỘT INSERT audit nhiều hàng; mọi hàng audit của một lô cùng `hashTs`; nhanh hơn ~9×.
 - (T7) EIP: `timeout_sp` của thư viện = `timeoutMs` của adapter (trước: mặc định thư viện).
+- (T17 fix round 1, điều phối 2026-10-27) **STOP HMI có ≥ 1 adapter kết thúc `timeout` (không rõ kết cục) ⇒ băng đỏ CỐ ĐỊNH "DÙNG E-STOP CỨNG TẠI MÁY"**
+  (`BangEstopCung`, `data-loai="khong_ro"`, câu `scada.dungMay.bangEstop.khongRo` nêu adapter — vi / en / zh) như STOP chưa gửi: trong hộp và Ở LẠI trên
+  trang tới khi bấm "Đã hiểu"; dòng đỏ trong hàng giữ nguyên. Cùng lần có adapter bị bỏ vì hạn ⇒ băng `qua_han_mot_phan` thêm dòng không rõ.
 - (T17, bench B1b) **Lệnh ghi đang bay khi liên kết mất / phiên bị hạ ⇒ `timeout` ("không rõ") NGAY** (đo: ≤ 20 ms sau sự kiện mất liên kết / hạ phiên; trước: 5000 ms hạn dispatcher với
   Modbus khi vòng canh hạ phiên, 5000 ms `failed` với S7 / MC / EIP, ~800 ms `failed` với Modbus khi không ai hạ phiên, `failed` với SLMP / OPC UA). Status
   và nhãn HMI GIỐNG HỆT `timeout` hôm nay (dòng "chưa xác minh" + "Dùng E-STOP cứng tại máy"); chỉ `errorText` đổi thành `link lost while the write was

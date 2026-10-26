@@ -24283,6 +24283,7 @@
         "quaHan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới máy.",
         "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
+        "khongRo": "Không rõ adapter {{list}} đã nhận STOP hay chưa — máy có thể CHƯA dừng.",
         "nutBo": "Đã hiểu"
       },
       "khanCap": {

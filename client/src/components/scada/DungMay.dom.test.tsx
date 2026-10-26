@@ -762,6 +762,47 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
     expect(screen.queryByTestId("bang-estop-cung")).toBeNull();
   });
 
+  it("★ R1b-2b-1 T17 fix round 1 (điều phối) — MỘT adapter 'timeout' (không rõ) + một 'acked_verified' ⇒ băng CỐ ĐỊNH khong_ro nêu adapter đó; dòng đỏ trong hàng GIỮ; adapter đạt vẫn đạt", async () => {
+    veHop({ soAdapter: 2 });
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "PLC-A", status: "timeout", ok: false, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [8] },
+        { adapterId: 2, code: "PLC-B", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [9] },
+      ],
+    });
+    expect(bang()).toHaveAttribute("role", "alert");
+    expect(bang()).toHaveAttribute("data-loai", "khong_ro");
+    expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.tieuDe"));
+    expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.khongRo", { list: "PLC-A" }));
+    expect(bang()).not.toHaveTextContent("PLC-B");
+    expect(within(screen.getByTestId("ket-qua-dung-1")).getByTestId("dung-estop")).toBeInTheDocument();
+    expect(screen.getByTestId("ket-qua-dung-2")).toHaveAttribute("data-loai", "dat");
+  });
+
+  it("★ R1b-2b-1 T17 fix round 1 — MỌI adapter 'acked_verified' ⇒ KHÔNG băng", async () => {
+    veHop({ soAdapter: 2 });
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "PLC-A", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [8] },
+        { adapterId: 2, code: "PLC-B", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [9] },
+      ],
+    });
+    expect(screen.queryByTestId("bang-estop-cung")).toBeNull();
+  });
+
+  it("★ R1b-2b-1 T17 fix round 1 — NutDungMay: 'timeout' ⇒ băng Ở LẠI trên trang sau khi đóng hộp (như STOP chưa gửi)", async () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" soAdapter={1} />);
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", { ketQua: [{ adapterId: 1, code: "PLC-A", status: "timeout", ok: false, simulated: false, writes: [], commandLogIds: [8] }] });
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") }));
+    const b = within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung");
+    expect(b).toHaveAttribute("data-loai", "khong_ro");
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.khongRo", { list: "PLC-A" }));
+  });
+
   it("bangEstopTuLoi / bangEstopTuKetQua (thuần)", () => {
     expect(bangEstopTuLoi(LOI_QUA_HAN)).toEqual({ loai: "qua_han" });
     expect(bangEstopTuLoi(LOI_429_LINKS)).toEqual({ loai: "gioi_han" });
@@ -773,6 +814,10 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
     expect(bangEstopTuLoi(null)).toBeNull();
     expect(bangEstopTuKetQua([{ code: "A", reason: "STOP_QUA_HAN" }, { code: "B" }, { code: "C", reason: "STOP_QUA_HAN" }])).toEqual({ loai: "qua_han_mot_phan", list: "A, C" });
     expect(bangEstopTuKetQua([{ code: "A", reason: "SAFETY_BLOCKED" }])).toBeNull();
+    // R1b-2b-1 T17 fix round 1 — timeout (không rõ) ⇒ khong_ro; cùng lần có STOP_QUA_HAN ⇒ qua_han_mot_phan + khongRo; acked / failed thường ⇒ không
+    expect(bangEstopTuKetQua([{ code: "A", status: "timeout" }, { code: "B", status: "acked_verified" }])).toEqual({ loai: "khong_ro", list: "A" });
+    expect(bangEstopTuKetQua([{ code: "A", status: "failed", reason: "STOP_QUA_HAN" }, { code: "B", status: "timeout" }])).toEqual({ loai: "qua_han_mot_phan", list: "A", khongRo: "B" });
+    expect(bangEstopTuKetQua([{ code: "A", status: "acked_verified" }, { code: "B", status: "failed", reason: "SAFETY_BLOCKED" }])).toBeNull();
   });
 
   it("chữ mới ở en không có chữ Việt; vi/en/zh đều có khoá", () => {
@@ -781,6 +826,7 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
       "scada.dungMay.bangEstop.quaHan",
       "scada.dungMay.bangEstop.quaHanMotPhan",
       "scada.dungMay.bangEstop.gioiHan",
+      "scada.dungMay.bangEstop.khongRo",
       "scada.dungMay.bangEstop.nutBo",
       "scada.lenh.loi.STOP_QUA_HAN",
       "errors.SCADA_STOP_PRECHECK_TIMEOUT",
