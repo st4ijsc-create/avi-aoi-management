@@ -10,7 +10,11 @@
  *        started for a node is created 'queued' + assigned atomically and is NEVER walked by central (start, approval);
  *        release / interrupted move a claimed run to 'held' (interrupted only once the claim is stale).
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+
+// ★ Đỏ khi chạy song song (kiem-dinh 2026-10-26): mỗi ca dựng nhiều hàng DB + gọi HTTP thật, đo 5–13 s riêng lẻ nhưng hạn mặc định là 30 s (testTimeout) ⇒ dưới tải DB dùng chung
+// vượt hạn. Đây KHÔNG phải ngưỡng thời gian của sản phẩm — chỉ là hạn chạy của chính ca test: nới 4× (120 s).
+vi.setConfig({ testTimeout: 120_000 });
 import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
