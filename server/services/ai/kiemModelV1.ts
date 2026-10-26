@@ -3,49 +3,33 @@
  *   • tên logic cũ (chat/code/coder/fast/fim/infill/embed/embedding/embeddings) hoặc `auto`;
  *   • tên VAI TRÒ đã biết (sổ hoặc bộ gốc);
  *   • id HỒ SƠ phục vụ trong sổ (⇒ basename artifact của hồ sơ đó; hồ sơ tắt / artifact không available ⇒ từ chối);
- *   • TÊN TỆP trần (không dấu phân cách, không `..`, không ổ đĩa) mà `<GGUF_MODELS_DIR>/<tên>[.gguf]` CÓ THẬT và realpath
- *     của nó nằm TRONG realpath của thư mục (symlink trỏ ra ngoài ⇒ từ chối).
- * Mọi thứ khác ⇒ `{ ok: false }` ⇒ 400 với thông điệp chung (không phản chiếu đường dẫn, không lộ tệp có/không).
+ *   • ★ Đợt 10.1 — MÃ DANH MỤC `vai-tro:<id>` | `ho-so:<id>` | `ngoai:<ncc>:<model>` (hình dạng `CHON_MODEL_RE`; giải +
+ *     kiểm có trong danh mục ở `giaiChonModel`, gọi từ cổng).
+ * ★ Đợt 10.1 — BỎ nhánh "TÊN TỆP trần trong GGUF_MODELS_DIR" (spec §4 A2: không còn tên tệp ở mọi bề mặt; kiểm kê bên gọi
+ *   2026-10-26 — extension `aviAiLocal.agentModel` mặc định "chat", FIM "fim", scripts dùng tên logic/vai trò — không bên
+ *   nào gửi tên tệp). Mọi thứ khác ⇒ `{ ok: false }` ⇒ 400 nêu các dạng hợp lệ (`THONG_DIEP_MODEL_KHONG_HOP_LE`; không phản
+ *   chiếu đường dẫn, không lộ tệp có/không).
  */
-import fs from "node:fs";
 import path from "node:path";
 import { laTenVaiTro } from "../../../shared/aiRoles";
+import { CHON_MODEL_RE } from "./chonModel/kieu";
 import { layAnhSoModel, type AnhSoModel } from "./soModel/anhSoModel";
 import { laVaiTroDaBiet } from "./soModel/dinhTuyenVaiTro";
 
 const TEN_LOGIC = new Set(["chat", "code", "coder", "fast", "fim", "infill", "embed", "embedding", "embeddings", "auto"]);
-const RE_TEN_TEP = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,159}$/;
 
 export type KetQuaKiemModelV1 = { ok: true; ten: string } | { ok: false };
 
-function thuMucMacDinh(): string {
-  return process.env.GGUF_MODELS_DIR ? path.resolve(process.env.GGUF_MODELS_DIR) : path.join(process.cwd(), "uploads", "gguf-models");
-}
+/** Lời từ chối của `/v1` khi `model` không hợp lệ — nêu dạng hợp lệ (dieu-phoi 2026-10-26). */
+export const THONG_DIEP_MODEL_KHONG_HOP_LE =
+  "Unknown model. Valid: auto | chat | code | fast | fim | embed | <role> | vai-tro:<role> | ho-so:<profile-id> (see GET /v1/models).";
 
-function trongThuMuc(goc: string, ten: string): boolean {
-  let gocThat: string;
-  try {
-    gocThat = fs.realpathSync(goc);
-  } catch {
-    return false;
-  }
-  for (const ung of [ten, `${ten}.gguf`]) {
-    const p = path.join(gocThat, ung);
-    try {
-      const that = fs.realpathSync(p);
-      if (that.startsWith(gocThat + path.sep) && fs.statSync(that).isFile()) return true;
-    } catch {
-      /* không có ⇒ thử ứng viên kế */
-    }
-  }
-  return false;
-}
-
-export function kiemModelV1(model: string, y: { thuMucModel?: string; anh?: AnhSoModel } = {}): KetQuaKiemModelV1 {
+export function kiemModelV1(model: string, y: { anh?: AnhSoModel } = {}): KetQuaKiemModelV1 {
   const tho = (model ?? "").trim();
   if (!tho || tho.length > 160) return { ok: false };
   const key = tho.toLowerCase();
   if (TEN_LOGIC.has(key)) return { ok: true, ten: key };
+  if (CHON_MODEL_RE.test(tho)) return { ok: true, ten: tho };
   const anh = y.anh ?? layAnhSoModel();
   if (laTenVaiTro(key) && laVaiTroDaBiet(key, anh)) return { ok: true, ten: key };
   const hs = anh.profile.get(tho);
@@ -53,8 +37,7 @@ export function kiemModelV1(model: string, y: { thuMucModel?: string; anh?: AnhS
     if (!hs.enabled || hs.artifactStatus !== "available") return { ok: false };
     return { ok: true, ten: path.basename(hs.artifactFile).replace(/\.gguf$/i, "") };
   }
-  if (!RE_TEN_TEP.test(tho) || tho.includes("..")) return { ok: false };
-  return trongThuMuc(y.thuMucModel ?? thuMucMacDinh(), tho) ? { ok: true, ten: tho } : { ok: false };
+  return { ok: false };
 }
 
 /**

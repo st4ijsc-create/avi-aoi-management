@@ -82,7 +82,7 @@ import { stripThinking, StreamingThinkingStripper } from "../services/ai/thinkin
 // for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
 // fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
 import { defaultModelBasename, resolveLogicalModel, toBasename } from "../services/ai/modelResolver";
-import { kiemModelV1, thongDiepLoiChoKhachV1 } from "../services/ai/kiemModelV1";
+import { kiemModelV1, thongDiepLoiChoKhachV1, THONG_DIEP_MODEL_KHONG_HOP_LE } from "../services/ai/kiemModelV1";
 import { cheDoKiemBienDichV1, kiemVaSuaST, nhanKiemBienDich, tranMsVongSuaST, type KetQuaKiemBienDichST } from "../services/ai/st/kiemBienDichSt";
 import { auditKiemBienDich, headerKiemBienDich } from "../services/ai/st/auditKiemBienDich";
 import { trichMaST } from "../services/ai/st/trichMaST";
@@ -391,6 +391,34 @@ function apTranDoiKhe(res: Response, modelId: string | undefined): string | unde
   });
   if (kq.doi && !res.headersSent) res.setHeader("x-st4i-khe", "tran-doi-khe-token");
   return kq.model;
+}
+
+/**
+ * ★ Đợt 10.1 A2 — `model` là MÃ DANH MỤC (`vai-tro:` / `ho-so:` / `ngoai:`) ⇒ giải bằng hợp đồng chung `giaiChonModel`.
+ * `undefined` = không phải mã danh mục (đường cũ); `null` = đã trả lỗi cho client. `ngoai:` ⇒ 404 tới khi 10.3 nối cổng
+ * AI ngoài (chưa có danh mục ngoài ⇒ `giaiChonModel` đã NOT_FOUND).
+ */
+async function giaiMaDanhMucV1(res: Response, ma: string): Promise<{ nhan: string; modelId: string | undefined } | null | undefined> {
+  if (!/^(vai-tro|ho-so|ngoai):/.test(ma)) return undefined;
+  const [{ giaiChonModel }, { layPhuThuocDanhMucMacDinh }, { nguCanhKhe }] = await Promise.all([
+    import("../services/ai/chonModel/giaiChonModel"),
+    import("../services/ai/chonModel/danhMuc"),
+    import("../services/ai/modelResolver"),
+  ]);
+  try {
+    const dich = await giaiChonModel(ma, { beMatChu: true, factoryId: null, kheBiKhoa: nguCanhKhe().kheBiKhoa }, await layPhuThuocDanhMucMacDinh());
+    if (dich?.loai !== "local") {
+      jsonError(res, 404, "Model not found.", "invalid_request_error", "model_not_found");
+      return null;
+    }
+    return { nhan: dich.vaiTro === "ho-so" ? ma : dich.vaiTro, modelId: dich.modelId };
+  } catch (e) {
+    const code = (e as { code?: unknown })?.code;
+    if (code === "NOT_FOUND") jsonError(res, 404, "Model not found.", "invalid_request_error", "model_not_found");
+    else if (code === "BAD_REQUEST") jsonError(res, 400, (e as Error).message, "invalid_request_error", "model_not_found");
+    else throw e;
+    return null;
+  }
 }
 
 /**
@@ -1027,7 +1055,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // ★ M4 (audit kiem-dinh) — `model` chỉ là tên logic / vai trò / hồ sơ trong sổ / tên tệp TRONG GGUF_MODELS_DIR.
       const kiem = kiemModelV1(modelLabel);
       if (!kiem.ok) {
-        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        jsonError(res, 400, THONG_DIEP_MODEL_KHONG_HOP_LE, "invalid_request_error", "model_not_found");
         return;
       }
       modelLabel = kiem.ten;
@@ -1043,7 +1071,11 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
       // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
       await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
-      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
+      // ★ Đợt 10.1 — mã danh mục (vai-tro:/ho-so:/ngoai:) ⇒ hợp đồng chung `giaiChonModel`.
+      const maDanhMuc = await giaiMaDanhMucV1(res, modelLabel);
+      if (maDanhMuc === null) return;
+      if (maDanhMuc) modelLabel = maDanhMuc.nhan;
+      const modelId = apTranDoiKhe(res, maDanhMuc ? maDanhMuc.modelId : resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
@@ -1521,13 +1553,16 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const kiem = kiemModelV1(typeof body.model === "string" && body.model ? body.model : isFim ? "fim" : "code");
       // ★ M4 (audit kiem-dinh) — như /chat/completions.
       if (!kiem.ok) {
-        jsonError(res, 400, "Unknown model.", "invalid_request_error", "model_not_found");
+        jsonError(res, 400, THONG_DIEP_MODEL_KHONG_HOP_LE, "invalid_request_error", "model_not_found");
         return;
       }
-      const modelLabel = kiem.ten;
+      let modelLabel = kiem.ten;
       // ★ Đợt 9 (2026-10-23) — làm mới "khe đang giữ" TRƯỚC định tuyến vai trò (đổi khe ngoài tiến trình ⇒ lượt đầu bị từ chối oan).
       await (await import("../services/ai/soModel/kheNangMacDinh")).lamMoiKheDangGiu();
-      const modelId = apTranDoiKhe(res, resolveModelId(modelLabel));
+      const maDanhMuc = await giaiMaDanhMucV1(res, modelLabel);
+      if (maDanhMuc === null) return;
+      if (maDanhMuc) modelLabel = maDanhMuc.nhan;
+      const modelId = apTranDoiKhe(res, maDanhMuc ? maDanhMuc.modelId : resolveModelId(modelLabel));
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : isFim ? 256 : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
