@@ -376,7 +376,7 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     const t0 = Date.now();
     await expect(probe.createCaller(ctx as never).any({ robotId: ids.robot, command: "home" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     const troi = Date.now() - t0;
-    expect(troi).toBeLessThan(150 + Math.min(await lag.dung(), 100)); // refused before the 300 ms auth bundle (+ unscheduled time of this run, capped so a wait on the bundle still fails)
+    expect(troi).toBeLessThan(150 + (await lag.dung(100))); // refused before the 300 ms auth bundle (+ unscheduled time of this run, capped so a wait on the bundle still fails)
   });
   it("★ R-10-bg — through the real chain: a session revoked WHILE its STOP's full auth is in flight is not re-warmed by that auth", async () => {
     const tok = await token();

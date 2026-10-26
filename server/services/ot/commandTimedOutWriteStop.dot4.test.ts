@@ -338,7 +338,7 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
     expect(rStop.status).toBe("acked");
     const stop = D.log.find((w) => w.tag === "cmd_stop")!;
     expect(stop.start - t0).toBeGreaterThanOrEqual(TIMEOUT_MS + GRACE - 20);
-    expect(stop.start - t0).toBeLessThanOrEqual(TIMEOUT_MS + GRACE + D.reset.boundMs + 400 + (await lag.dung())); // + the time this process was not scheduled (same run)
+    expect(stop.start - t0).toBeLessThanOrEqual(TIMEOUT_MS + GRACE + D.reset.boundMs + 400 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(await until(() => audit.events.some((e) => e.action === "ot_write_overlap_risk"), 2000)).toBe(true);
     const ev = audit.events.find((e) => e.action === "ot_write_overlap_risk")!;
     expect(ev).toMatchObject({ entityType: "ot_command", actorId: 1 });
@@ -451,7 +451,7 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect((await within(dispatch(input("cmd_run", "stop", `al-stop2-${actSeq}`, false)), 1000)).status).toBe("acked");
     expect((await within(dispatch(input("cmd_speed", "set_speed", `al-speed-${actSeq}`, true)), 1000)).status).toBe("acked");
     const troi = Date.now() - t1;
-    expect(troi).toBeLessThan(400 + (await lag.dung()));
+    expect(troi).toBeLessThan(400 + (await lag.dung(60)));
   });
 
   it("★ a newer command that WRITES the STOP's tag ends the watch for it — no alarm about the operator's own start", async () => {

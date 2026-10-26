@@ -217,7 +217,7 @@ describe("U fix 1 (M1) — retry + fallback fit one budget, never two sessions",
     const t0 = Date.now();
     const r = await b.readBatch();
     const troi = Date.now() - t0;
-    expect(troi).toBeLessThan(400 + (await lag.dung())); // + the time this process was not scheduled (same run)
+    expect(troi).toBeLessThan(400 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(r.mode).toBe("poll_fallback");
     expect(r.reads[0]).not.toHaveProperty("error");
     expect(polls).toHaveLength(1);
@@ -243,7 +243,7 @@ describe("U fix 1 (M1) — retry + fallback fit one budget, never two sessions",
     const t0 = Date.now();
     const r = await b.readBatch();
     const troi = Date.now() - t0;
-    expect(troi).toBeLessThan(360 + (await lag.dung())); // + the time this process was not scheduled (same run)
+    expect(troi).toBeLessThan(360 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(r.mode).toBe("poll_fallback");
     expect(r.reads).toEqual([{ error: expect.stringMatching(/still closing — no second session/) }]); // the attempt has not settled
     expect(polls).toHaveLength(0);
