@@ -25,6 +25,9 @@ import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
 import { datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
+import { anthropic } from "./nhaCungCap/anthropic";
+import { gemini } from "./nhaCungCap/gemini";
+import { openai, openaiTuongThich } from "./nhaCungCap/openai";
 
 export type NguonMuc =
   | { loai: "luong"; mucDuLieu?: () => Promise<MucDuLieu> }
@@ -72,7 +75,8 @@ export interface PhuThuocCong {
   layNhaCungCap: (ma: string) => NhaCungCapAi | null;
   layKhoa: (db: DbCong, keyId: number, factoryId: number, nhaCungCap: string) => () => Promise<string>;
   layEndpoint: (db: DbCong, keyId: number) => Promise<string | null>;
-  mang: () => MangNgoai;
+  /** Mạng ra ngoài với chính sách host nội bộ của NHÀ MÁY tính trần. */
+  mang: (db: DbCong, factoryId: number) => Promise<MangNgoai>;
   soLanThu: number;
   /** Lưới: nhật ký thứ tự bước. */
   ghiBuoc?: (buoc: string) => void;
@@ -83,20 +87,25 @@ export const TRAN_YEU_CAU_BYTE = 1024 * 1024;
 /** Trần cứng token RA mỗi lời gọi (dù model / nhà máy không đặt trần). */
 export const MAX_TOKENS_CUNG = 32_000;
 
-const MANG_CHUA_CAI: MangNgoai = {
-  async goiJson() {
-    throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "mạng ngoài chưa cài", { chuaGui: true });
-  },
-};
+/** Bản cài THẬT (Task 9) — tĩnh: chỉ phụ thuộc lỗi / kiểu, không mạng lúc nạp. */
+const cacNhaCungCap = new Map<string, NhaCungCapAi>([anthropic, openai, openaiTuongThich, gemini].map((n) => [n.ma, n]));
+
+async function mangChoNhaMay(db: DbCong, factoryId: number): Promise<MangNgoai> {
+  const { sql } = await import("drizzle-orm");
+  const { taoMangNgoai } = await import("./mangNgoai");
+  const r = (await db.execute(sql`SELECT "hostCong" FROM ai_ngoai_host_noi_bo WHERE "factoryId" = ${factoryId}`)) as unknown;
+  const ds = (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ hostCong: string }>;
+  return taoMangNgoai({ hostNoiBo: new Set(ds.map((x) => x.hostCong)) });
+}
 
 export const phuThuocMacDinh: PhuThuocCong = {
   db: async () => (await (await import("../../../db/connection")).getDb()) as unknown as DbCong | null,
   env: () => process.env,
   layTuDien: () => layTuDienNhay(),
-  layNhaCungCap: () => null, // Task 9: bản cài thật
+  layNhaCungCap: (ma) => cacNhaCungCap.get(ma) ?? null,
   layKhoa: (db, keyId, factoryId, nhaCungCap) => layKhoaChoNhaCungCap(db, keyId, factoryId, nhaCungCap),
   layEndpoint: (db, keyId) => layEndpointKhoa(db, keyId),
-  mang: () => MANG_CHUA_CAI,
+  mang: (db, factoryId) => mangChoNhaMay(db, factoryId),
   soLanThu: 2,
 };
 
@@ -301,7 +310,7 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
     buoc("nha-cung-cap");
     try {
       const endpoint = yc.dich.nhaCungCap === "openai_compat" ? await dep.layEndpoint(db, model.keyId) : null;
-      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran, yc.dich.nhaCungCap), dep.mang(), { endpoint });
+      kq = await ncc.goi(daChe, dep.layKhoa(db, model.keyId, tinhTran, yc.dich.nhaCungCap), await dep.mang(db, tinhTran), { endpoint });
       break;
     } catch (e) {
       const loi = e instanceof LoiNgoai ? e : null;
