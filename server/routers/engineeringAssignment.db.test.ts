@@ -1106,12 +1106,11 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
         const pred = await runAssigneeVisibilitySql(d, runId);
         const rows = await d.select({ id: users.id }).from(users).where(and(inArray(users.id, Object.values(uid)), pred));
         const sqlSet = new Set(rows.map((r) => r.id));
-        for (const [k, id] of Object.entries(uid)) {
-          const want = await runIdVisibleTo(runId, { userId: id, userRole: ROLES[k] });
-          expect(sqlSet.has(id), `run ${runId} · ${k} (${ROLES[k]})`).toBe(want);
-        }
+        // one resolver round-trip per (run, person): in parallel — serial it is ~6 x people sequential DB trips, which under a loaded machine passed 60 s
+        const wants = await Promise.all(Object.entries(uid).map(async ([k, id]) => [k, id, await runIdVisibleTo(runId, { userId: id, userRole: ROLES[k] })] as const));
+        for (const [k, id, want] of wants) expect(sqlSet.has(id), `run ${runId} · ${k} (${ROLES[k]})`).toBe(want);
       }
-    });
+    }, 180_000);
 
     it("★ security scan — người được giao NGOÀI luật (tài khoản thật của nhà máy khác) ⇒ lời từ chối Y HỆT id người dùng không tồn tại / tài khoản tắt", async () => {
       const ecnB = await mkEcnF(h5.facB);
