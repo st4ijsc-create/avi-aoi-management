@@ -127,8 +127,36 @@ export function trichDoiTuongJson(text: string): string | undefined {
 
 export type KetQuaParseKiemDinh = { ok: true; data: KetQuaKiemDinh } | { ok: false; loi: string };
 
+/**
+ * Tóm lỗi zod cho LỜI NHẮC THỬ LẠI gửi lại AI ngoài. ⚠ CHỈ đường dẫn + mã lỗi CỐ ĐỊNH + hằng của schema (trần, tập giá trị hợp lệ): KHÔNG BAO GIỜ phản chiếu
+ * giá trị / tên khoá do MODEL viết (message mặc định của zod có "received '…'", "Unrecognized key(s): '…'") — đó là kênh tiêm lời nhắc (rà kiem-dinh T2).
+ */
 function tomLoi(e: z.ZodError): string {
-  const ds = e.issues.slice(0, 6).map((i) => `${i.path.length ? i.path.join(".") : "(gốc)"}: ${i.message}`);
+  const ds = e.issues.slice(0, 6).map((i) => {
+    const duong = i.path.length ? i.path.map((p) => (typeof p === "number" ? String(p) : String(p).replace(/[^A-Za-z0-9_]/g, "?").slice(0, 40))).join(".") : "(gốc)";
+    let nd: string;
+    switch (i.code) {
+      case "invalid_type":
+        nd = "sai kiểu (cần " + String((i as { expected?: unknown }).expected).replace(/[^a-z]/g, "") + ")";
+        break;
+      case "invalid_value" as string: // zod 4 (`values`)
+      case "invalid_enum_value" as string: // zod 3 (`options`)
+        nd = "giá trị không thuộc tập cho phép: " + ((i as { values?: unknown[]; options?: unknown[] }).values ?? (i as { options?: unknown[] }).options ?? []).map((o) => String(o).replace(/[^a-z-]/g, "")).join("|");
+        break;
+      case "unrecognized_keys":
+        nd = "có khoá không được phép";
+        break;
+      case "too_big":
+        nd = "vượt trần (tối đa " + Number((i as { maximum?: unknown }).maximum) + ")";
+        break;
+      case "too_small":
+        nd = "quá ngắn/nhỏ (tối thiểu " + Number((i as { minimum?: unknown }).minimum) + ")";
+        break;
+      default:
+        nd = "giá trị không hợp lệ";
+    }
+    return duong + ": " + nd;
+  });
   return ds.join("; ").slice(0, 600);
 }
 
@@ -144,7 +172,8 @@ export function parseKetQuaKiemDinh(raw: unknown): KetQuaParseKiemDinh {
     try {
       v = JSON.parse(j);
     } catch (e) {
-      return { ok: false, loi: "JSON không hợp lệ: " + (e instanceof Error ? e.message : "lỗi cú pháp").slice(0, 200) };
+      void e; // KHÔNG phản chiếu message của JSON.parse (chứa đoạn văn bản của model)
+      return { ok: false, loi: "JSON không hợp lệ (lỗi cú pháp)" };
     }
   }
   if (v === null || typeof v !== "object" || Array.isArray(v)) return { ok: false, loi: "phải là một đối tượng JSON" };

@@ -135,3 +135,15 @@ describe("HienThiKetQuaNgoai — kiểm lại dữ liệu vào", () => {
     },
   );
 });
+
+describe("HienThiKetQuaNgoai — viDu của bài học (rà kiem-dinh)", () => {
+  it("viDu hiển thị trong <pre> như CHỮ (payload HTML không tạo phần tử con)", () => {
+    const p = "<img src=x onerror=alert(1)>";
+    const { container } = render(<HienThiKetQuaNgoai ketQua={{ ...GOC, baiHocDeXuat: [{ noiDung: "n", phamVi: "nguoi", viDu: p }] }} />);
+    const pre = screen.getByTestId("kdn-bai-hoc").querySelector("pre")!;
+    expect(pre).not.toBeNull();
+    expect(pre.textContent).toBe(p);
+    expect(pre.children.length).toBe(0);
+    expect(nguyHiem(container).length).toBe(0);
+  });
+});
