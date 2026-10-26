@@ -16,7 +16,7 @@ Mọi số dưới đây là **đo thật** (khẳng định của test hoặc d
 |---|---|
 | Ma trận 14 ô của brief (`r1b2aNghiemThu.db.test.ts`, stub + safety PLC mô phỏng + CSDL `_test`) | **14/14 ô đúng mã, đúng số dòng WORM**; **3 lượt tuần tự 14/14** (+ 1 lượt phát triển 14/14); không đặt biến ⇒ skipped |
 | Đột biến cấp hệ thống | trả lại lối tắt scale 1 trong `kiemLuoiTho` ⇒ **L1 đỏ** (2,5 `acked` tới driver) + **L3 đỏ** (tập JS từ chối 32 ≠ 33); 12 ô khác xanh; hoàn tác, `git diff` rỗng |
-| Bench OpenPLC (`scripts/scada-r1b-bench.ts --r1b2a`) | **bench chờ OK điều phối** (Q10) — script đã viết; chạy khô trên máy chủ Modbus giả: **24/24 bước** (3 lượt × S1, S2-ĐC, S2, X2 ×2, L1 ×3); KHÔNG phải số đo PLC thật (§3) |
+| Bench OpenPLC (`scripts/scada-r1b-bench.ts --r1b2a`) | **24/24 ĐẠT, 3 lượt, PLC thật** (2026-10-26, điều phối OK; commit trống 32,0 → 27,5 GB): S1/S2 STOP HMI REMOTE + LOCAL ⇒ ghim 0; S2-ĐC ghi thường ở LOCAL ⇒ MODE_LOCAL; X2 OFF_STEP 25 / 30 ⇒ thô 3; **L1** int scale 1 chưa khai: 2,5 ⇒ OFF_STEP goiY 3, "abc" ⇒ TYPE_MISMATCH, 3 ⇒ thô 3; thanh ghi + container trả về gốc (§3) |
 | Chạy toàn bộ (Step 5) | 2492 tệp, **34 898 ca: 34 807 qua, 1 đỏ (1 tệp), 90 bỏ qua**; serial 7 tệp 66/66. Tệp đỏ duy nhất **DO R1b-2a (T11)** — `vramPanelStepUp.unit.test.ts` (census client step-up): đã sửa trong commit nghiệm thu, chạy lại xanh (§5). Không đỏ có sẵn / do tải |
 | Census (mọi `*census*`) | **69 tệp, 1034 qua, 3 bỏ qua, 0 đỏ** |
 | Lưới nghiệm thu opt-in R0 / R1a / R1b-1 / R1b-2a | **56/56** (16 + 10 + 16 + 14), một lượt chung |
@@ -93,8 +93,39 @@ qua các lượt (B1: vị trí lượt thắng khác nhau, luôn đúng 1 true)
 
 ## 3. Bench OpenPLC — `scripts/scada-r1b-bench.ts --r1b2a`
 
-**Trạng thái: bench chờ OK điều phối** (Q10: chỉ chạy khi điều phối OK ngay tại thời điểm đó, sau khi đo commit còn trống). Người thực thi KHÔNG khởi động
-container, KHÔNG chạy script ở chế độ docker.
+**Trạng thái: ĐÃ CHẠY 2026-10-26 — 24/24 bước ĐẠT (3 lượt) trên PLC thật**, thanh ghi `holding 0..17` trả về 0 (KHỚP gốc), container trả về `exited` (ban đầu `exited`, giới hạn 1 GiB giữ nguyên).
+
+Điều kiện của điều phối và cách làm: điều phối OK 2026-10-26; commit trống ngay trước start **32,0 GB** (≥ 10 GB), sau khi chạy + dừng **27,5 GB**. Lệnh: `npx tsx scripts/scada-r1b-bench.ts --lap 3 --r1b2a --start-neu-tat`. CSDL `aoi_management_test`, cờ chỉ trong tiến trình (`OT_CONTROL_ENABLED=true`, `AI_OT_CONTROL_ENABLED=false`). Không chạm :3000 / :8091 / GPU / DEV.
+
+| Lượt | Ô | Bước | Mong đợi | Đo được | ms | Thanh ghi (client riêng) | Kết quả |
+|---|---|---|---|---|---|---|---|
+| 1 | S1 | STOP HMI, máy REMOTE (chế độ = 2) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 540 | 77 → 0 | ĐẠT |
+| 1 | S2-ĐC | request dung=50 ở LOCAL (chế độ=1 thấy sau 115 ms) | MODE_LOCAL, thanh ghi không đổi | MODE_LOCAL (khac_remote) | 132 | 77 → 77 | ĐẠT |
+| 1 | S2 | STOP HMI, máy LOCAL (chế độ = 1) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 443 | 77 → 0 | ĐẠT |
+| 1 | X2 | dispatch AI sc10cu=25 (int chưa khai, scale 10) | rejected OFF_STEP goiY 30, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=30 · command_log +1 | 43 | 0 → 0 | ĐẠT |
+| 1 | X2 | dispatch AI sc10cu=30 | gửi, thanh ghi = số thô 3 | acked ok=true | 286 | 0 → 3 | ĐẠT |
+| 1 | L1 | dispatch AI sc1cu=2.5 (int chưa khai, scale 1) | rejected OFF_STEP goiY 3, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=3 · command_log +1 | 35 | 0 → 0 | ĐẠT |
+| 1 | L1 | dispatch AI sc1cu="abc" (int chưa khai, scale 1) | rejected TYPE_MISMATCH, command_log +1, thanh ghi không đổi | rejected TYPE_MISMATCH · command_log +1 | 54 | 0 → 0 | ĐẠT |
+| 1 | L1 | dispatch AI sc1cu=3 | gửi, thanh ghi = 3 | acked ok=true | 383 | 0 → 3 | ĐẠT |
+| 2 | S1 | STOP HMI, máy REMOTE (chế độ = 2) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 346 | 77 → 0 | ĐẠT |
+| 2 | S2-ĐC | request dung=50 ở LOCAL (chế độ=1 thấy sau 847 ms) | MODE_LOCAL, thanh ghi không đổi | MODE_LOCAL (khac_remote) | 160 | 77 → 77 | ĐẠT |
+| 2 | S2 | STOP HMI, máy LOCAL (chế độ = 1) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 501 | 77 → 0 | ĐẠT |
+| 2 | X2 | dispatch AI sc10cu=25 (int chưa khai, scale 10) | rejected OFF_STEP goiY 30, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=30 · command_log +1 | 67 | 0 → 0 | ĐẠT |
+| 2 | X2 | dispatch AI sc10cu=30 | gửi, thanh ghi = số thô 3 | acked ok=true | 415 | 0 → 3 | ĐẠT |
+| 2 | L1 | dispatch AI sc1cu=2.5 (int chưa khai, scale 1) | rejected OFF_STEP goiY 3, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=3 · command_log +1 | 74 | 0 → 0 | ĐẠT |
+| 2 | L1 | dispatch AI sc1cu="abc" (int chưa khai, scale 1) | rejected TYPE_MISMATCH, command_log +1, thanh ghi không đổi | rejected TYPE_MISMATCH · command_log +1 | 83 | 0 → 0 | ĐẠT |
+| 2 | L1 | dispatch AI sc1cu=3 | gửi, thanh ghi = 3 | acked ok=true | 453 | 0 → 3 | ĐẠT |
+| 3 | S1 | STOP HMI, máy REMOTE (chế độ = 2) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 490 | 77 → 0 | ĐẠT |
+| 3 | S2-ĐC | request dung=50 ở LOCAL (chế độ=1 thấy sau 339 ms) | MODE_LOCAL, thanh ghi không đổi | MODE_LOCAL (khac_remote) | 125 | 77 → 77 | ĐẠT |
+| 3 | S2 | STOP HMI, máy LOCAL (chế độ = 1) | acked_verified, thanh ghi dừng = ghim 0 | acked_verified ok=true · 1 adapter · command_log +2 | 446 | 77 → 0 | ĐẠT |
+| 3 | X2 | dispatch AI sc10cu=25 (int chưa khai, scale 10) | rejected OFF_STEP goiY 30, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=30 · command_log +1 | 56 | 0 → 0 | ĐẠT |
+| 3 | X2 | dispatch AI sc10cu=30 | gửi, thanh ghi = số thô 3 | acked ok=true | 342 | 0 → 3 | ĐẠT |
+| 3 | L1 | dispatch AI sc1cu=2.5 (int chưa khai, scale 1) | rejected OFF_STEP goiY 3, command_log +1, thanh ghi không đổi | rejected OFF_STEP goiY=3 · command_log +1 | 49 | 0 → 0 | ĐẠT |
+| 3 | L1 | dispatch AI sc1cu="abc" (int chưa khai, scale 1) | rejected TYPE_MISMATCH, command_log +1, thanh ghi không đổi | rejected TYPE_MISMATCH · command_log +1 | 57 | 0 → 0 | ĐẠT |
+| 3 | L1 | dispatch AI sc1cu=3 | gửi, thanh ghi = 3 | acked ok=true | 442 | 0 → 3 | ĐẠT |
+
+Lịch sử: trước khi có OK, chỉ chạy khô trên máy chủ Modbus giả (24/24, không phải số đo PLC).
+
 
 **Script (đã viết, sẵn sàng):** cờ mới `--r1b2a` thêm ô **L1** vào mỗi lượt (sau S1 / S2-ĐC / S2 / X2 của R1b-1 — giữ làm hồi quy trên PLC thật):
 - bước 0 cần ≥ 4 thanh ghi holding giữ giá trị (dừng, chế độ, X2, L1);
@@ -297,7 +328,7 @@ thua đua bị phân loại sai `khong_khop` (có thể khoá người thắng �
 
 ### VẬN HÀNH
 
-25. **Bench OpenPLC cho L1 chờ OK điều phối** — L1 hôm nay chỉ có số đo lưới (stub) + chạy khô trên Modbus giả.
+25. ~~Bench OpenPLC cho L1~~ — ĐÃ CHẠY 2026-10-26, 24/24 trên PLC thật (§3).
 26. Safety PLC trong lưới / bench là PLC giả (D9).
 27. `.env` của cây chính và worktree vẫn `OT_CONTROL_ENABLED=true` (có từ trước, R1b-1 §6 mục 33) — không sửa (luật); điều phối / chủ dự án quyết.
 28. Posture trên EngineeringHub cache 30 s (đổi phạm vi người dùng ⇒ số cũ tới 30 s).
@@ -358,7 +389,7 @@ ghi giới hạn); r3 census `stale` mở rộng · T14 fix: ghim host:port = `D
 này đo 8 thủ tục thay cho 7 (thay `applyImport` admin-only bằng `khaiHangLoat` + `setStopPin`); TDD đảo thứ tự ở T6 / T7 / T8 / T11 / T12 (đột biến thay cho
 bước đỏ); vài lần dùng heredoc trái luật ở T1 / T7 / T9 / T10 / T12 (nội dung được test xác nhận; ghi ở từng báo cáo task).
 
-**Mục tạm gác (parked):** bench OpenPLC L1 (chờ OK — §3); hợp nhất hai limiter (điều phối giao sau gộp); kế hoạch R1b-2b (viết sau khi R1b-2a được duyệt).
+**Mục tạm gác (parked):** hợp nhất hai limiter (điều phối giao sau gộp); kế hoạch R1b-2b (viết sau khi R1b-2a được duyệt).
 
 ## 11. Backlog R1b-2b
 
@@ -453,5 +484,5 @@ bước đỏ); vài lần dùng heredoc trái luật ở T1 / T7 / T9 / T10 / T
 
 - Báo điều phối để giao kiem-dinh. Gộp chỉ sau khi R1b-1 đã gộp (đã gộp: `9b56e5743`). **Không push.**
 - Không migration. Không đổi `AI_OT_CONTROL_ENABLED` ở bất cứ đâu.
-- Bench OpenPLC L1: chờ OK của điều phối (§3), rồi điền bảng số đo vào §3.
+- Bench OpenPLC L1: ĐÃ CHẠY 2026-10-26, 24/24 (§3).
 - Viết kế hoạch R1b-2b sau khi R1b-2a được duyệt (§11).
