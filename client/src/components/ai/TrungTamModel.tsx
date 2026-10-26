@@ -122,6 +122,21 @@ export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
   const [dich, setDich] = useState("");
   const [fallback, setFallback] = useState("");
   const [mode, setMode] = useState<(typeof CHE_DO)[number]>("thu");
+  /** Gán đang chờ xác nhận GỠ (hộp xác nhận trong trang — không dùng confirm()). */
+  const [goChon, setGoChon] = useState<TongQuan["gan"][number] | null>(null);
+  const goGan = trpc.aiGguf.soModelGoGan.useMutation({
+    onSuccess: (r) => {
+      toast.success(t("gguf.trungTam.goGan.daGo", "Đã gỡ gán {{vaiTro}} ({{cheDo}}).", { vaiTro: r.roleId, cheDo: t(`gguf.trungTam.cheDo.${r.mode}`, r.mode) }));
+      if (r.vaiTroDiTheoEnv && r.mode === "active" && r.scopeKind === "global") toast.info(t("gguf.trungTam.goGan.diTheoEnv", "Vai trò {{vaiTro}} nay đi theo khoá .env.", { vaiTro: r.roleId }));
+      setGoChon(null);
+      lamMoi();
+    },
+    onError: (e) => {
+      toastTrpcError(e);
+      setGoChon(null);
+      lamMoi(); // gán có thể đã được gỡ ở nơi khác — làm mới danh sách
+    },
+  });
 
   const datGan = trpc.aiGguf.soModelDatGan.useMutation({
     onSuccess: (r, v) => {
@@ -193,6 +208,7 @@ export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                   <TableHead>{t("gguf.trungTam.gan.cot.cheDo", "Chế độ")}</TableHead>
                   <TableHead>{t("gguf.trungTam.gan.cot.dich", "Đích")}</TableHead>
                   <TableHead>{t("gguf.trungTam.gan.cot.duPhong", "Dự phòng")}</TableHead>
+                  <TableHead>{t("gguf.trungTam.goGan.cot", "Thao tác")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -220,6 +236,13 @@ export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-xs whitespace-normal break-all">{g.fallback.length ? g.fallback.join(" → ") : "—"}</TableCell>
+                    <TableCell>
+                      {g.id !== undefined ? (
+                        <Button type="button" size="sm" variant="outline" data-testid={`go-gan-${g.id}`} onClick={() => setGoChon(g)} disabled={goGan.isPending}>
+                          {t("gguf.trungTam.goGan.nut", "Gỡ")}
+                        </Button>
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -227,6 +250,28 @@ export function TabVaiTro({ d, lamMoi }: { d: TongQuan; lamMoi: () => void }) {
           </div>
         )}
       </div>
+
+      {goChon ? (
+        <div className="space-y-2 rounded-md border border-destructive/40 p-3" role="alertdialog" aria-label={t("gguf.trungTam.goGan.tieuDe", "Xác nhận gỡ gán")} data-testid="hop-xac-nhan-go">
+          <h4 className="text-sm font-medium">{t("gguf.trungTam.goGan.tieuDe", "Xác nhận gỡ gán")}</h4>
+          <p className="text-xs" data-testid="noi-dung-go">
+            {goChon.mode === "active" && goChon.scopeKind === "global"
+              ? t("gguf.trungTam.goGan.activeGlobal", "Gỡ gán chạy thật toàn cục của vai trò {{vaiTro}}: vai trò này sẽ đi theo khoá .env {{envKey}}.", { vaiTro: goChon.roleId, envKey: d.vaiTro.find((v) => v.id === goChon.roleId)?.envKey ?? "?" })
+              : goChon.mode === "active"
+                ? t("gguf.trungTam.goGan.activeKhac", "Gỡ gán chạy thật phạm vi {{phamVi}} {{scopeId}} của {{vaiTro}}: phạm vi này sẽ đi theo gán rộng hơn hoặc khoá .env.", { vaiTro: goChon.roleId, phamVi: goChon.scopeKind, scopeId: goChon.scopeId ?? "" })
+                : t("gguf.trungTam.goGan.thu", "Gán {{cheDo}} của {{vaiTro}} KHÔNG ảnh hưởng model đang chạy — gỡ chỉ bỏ nó khỏi danh sách gán còn hiệu lực (lịch sử còn).", { vaiTro: goChon.roleId, cheDo: t(`gguf.trungTam.cheDo.${goChon.mode}`, goChon.mode) })}
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="destructive" data-testid="xac-nhan-go" disabled={goGan.isPending} onClick={() => goChon.id !== undefined && goGan.mutate({ id: goChon.id })}>
+              {goGan.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden /> : null}
+              {t("gguf.trungTam.goGan.xacNhan", "Xác nhận gỡ")}
+            </Button>
+            <Button type="button" size="sm" variant="outline" data-testid="huy-go" disabled={goGan.isPending} onClick={() => setGoChon(null)}>
+              {t("gguf.trungTam.goGan.huy", "Huỷ")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="space-y-3 rounded-md border p-3"

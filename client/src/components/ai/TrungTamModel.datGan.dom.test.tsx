@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 const h = vi.hoisted(() => ({
+  go: [] as unknown[],
+  traGo: { id: 5, roleId: "classify", scopeKind: "global", scopeId: null, mode: "active", vaiTroDiTheoEnv: true } as Record<string, unknown>,
   thanhCong: [] as string[],
   thongTin: [] as string[],
   mutate: [] as unknown[],
@@ -24,6 +26,16 @@ vi.mock("sonner", () => ({ toast: { success: (m: string) => h.thanhCong.push(m),
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     aiGguf: {
+      soModelGoGan: {
+        useMutation: (o: { onSuccess?: (r: unknown) => void }) => ({
+          mutate: (v: unknown) => {
+            h.go.push(v);
+            o.onSuccess?.(h.traGo);
+          },
+          isPending: false,
+          error: null,
+        }),
+      },
       soModelDatGan: {
         useMutation: (o: { onSuccess?: (r: unknown, v: unknown) => void }) => ({
           mutate: (v: unknown) => {
@@ -46,6 +58,7 @@ afterEach(() => {
   h.thanhCong.length = 0;
   h.thongTin.length = 0;
   h.mutate.length = 0;
+  h.go.length = 0;
   h.tra = { id: 1, daThay: 1 };
 });
 const D = {
@@ -93,5 +106,53 @@ describe("Đặt gán — thông báo thành công", () => {
     fireEvent.submit(container.querySelector('[data-testid="form-dat-gan"]')!);
     expect(h.thongTin).toEqual(["Không đổi: classify đã gán đúng GGUF_CLASSIFY_MODEL (thu)."]);
     expect(h.thanhCong).toHaveLength(0);
+  });
+});
+
+describe("Gỡ gán — hộp xác nhận trong trang", () => {
+  const gan = (o: Record<string, unknown>) => ({ id: 5, roleId: "classify", scopeKind: "global", scopeId: null, profileId: null, envKey: "GGUF_CLASSIFY_MODEL", fallback: [], mode: "active", ...o });
+  const Dg = (g: Record<string, unknown>[]) => ({ ...(D as object), gan: g }) as never;
+
+  it("★ bấm Gỡ ⇒ hiện hộp xác nhận (CHƯA gọi máy chủ); Huỷ ⇒ đóng và KHÔNG gọi mutation", () => {
+    const { queryByTestId, getByTestId } = render(<TabVaiTro d={Dg([gan({})])} lamMoi={vi.fn()} />);
+    expect(queryByTestId("hop-xac-nhan-go")).toBeNull();
+    fireEvent.click(getByTestId("go-gan-5"));
+    expect(queryByTestId("hop-xac-nhan-go")).not.toBeNull();
+    expect(h.go).toHaveLength(0);
+    fireEvent.click(getByTestId("huy-go"));
+    expect(queryByTestId("hop-xac-nhan-go")).toBeNull();
+    expect(h.go).toHaveLength(0);
+  });
+
+  it("★ Xác nhận ⇒ mutate({ id }) đúng hàng; thành công ⇒ hộp đóng + làm mới + thông báo 'Đã gỡ' và 'nay đi theo khoá .env' (active global)", () => {
+    const lamMoi = vi.fn();
+    const { queryByTestId, getByTestId } = render(<TabVaiTro d={Dg([gan({})])} lamMoi={lamMoi} />);
+    fireEvent.click(getByTestId("go-gan-5"));
+    fireEvent.click(getByTestId("xac-nhan-go"));
+    expect(h.go).toEqual([{ id: 5 }]);
+    expect(queryByTestId("hop-xac-nhan-go")).toBeNull();
+    expect(lamMoi).toHaveBeenCalled();
+    expect(h.thanhCong[0]).toContain("Đã gỡ gán classify");
+    expect(h.thongTin[0]).toContain("nay đi theo khoá .env");
+  });
+
+  it("★ nội dung hộp theo loại gán: active TOÀN CỤC nêu 'sẽ đi theo khoá .env <khoá của vai>'; active phạm vi hẹp nêu phạm vi; thu / shadow nêu 'KHÔNG ảnh hưởng model đang chạy'", () => {
+    const hien = (g: Record<string, unknown>) => {
+      const r = render(<TabVaiTro d={Dg([gan(g)])} lamMoi={vi.fn()} />);
+      fireEvent.click(r.getByTestId(`go-gan-${(g.id as number) ?? 5}`));
+      const txt = r.getByTestId("noi-dung-go").textContent ?? "";
+      r.unmount();
+      return txt;
+    };
+    expect(hien({})).toContain("sẽ đi theo khoá .env GGUF_CLASSIFY_MODEL");
+    expect(hien({ scopeKind: "project", scopeId: "du-an-x" })).toMatch(/phạm vi project du-an-x/);
+    expect(hien({ mode: "thu" })).toContain("KHÔNG ảnh hưởng model đang chạy");
+    expect(hien({ mode: "shadow" })).toContain("KHÔNG ảnh hưởng model đang chạy");
+  });
+
+  it("hàng KHÔNG có id (ảnh dựng tay) ⇒ không có nút Gỡ", () => {
+    const { queryByTestId } = render(<TabVaiTro d={Dg([gan({ id: undefined })])} lamMoi={vi.fn()} />);
+    expect(queryByTestId("go-gan-undefined")).toBeNull();
+    expect(document.querySelector('[data-testid^="go-gan-"]')).toBeNull();
   });
 });

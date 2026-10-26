@@ -13889,6 +13889,18 @@
           "kem": "Đích KÉM hơn hồ sơ đang gán trên cùng bộ đo.",
           "bang": "Đích ngang hồ sơ đang gán trên cùng bộ đo."
         }
+      },
+      "goGan": {
+        "cot": "Thao tác",
+        "nut": "Gỡ",
+        "tieuDe": "Xác nhận gỡ gán",
+        "activeGlobal": "Gỡ gán chạy thật toàn cục của vai trò {{vaiTro}}: vai trò này sẽ đi theo khoá .env {{envKey}}.",
+        "activeKhac": "Gỡ gán chạy thật phạm vi {{phamVi}} {{scopeId}} của {{vaiTro}}: phạm vi này sẽ đi theo gán rộng hơn hoặc khoá .env.",
+        "thu": "Gán {{cheDo}} của {{vaiTro}} KHÔNG ảnh hưởng model đang chạy — gỡ chỉ bỏ nó khỏi danh sách gán còn hiệu lực (lịch sử còn).",
+        "xacNhan": "Xác nhận gỡ",
+        "huy": "Huỷ",
+        "daGo": "Đã gỡ gán {{vaiTro}} ({{cheDo}}).",
+        "diTheoEnv": "Vai trò {{vaiTro}} nay đi theo khoá .env."
       }
     }
   },

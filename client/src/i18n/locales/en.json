@@ -13889,6 +13889,18 @@
           "kem": "Target is WORSE than the assigned profile on the same suite.",
           "bang": "Target is on par with the assigned profile on the same suite."
         }
+      },
+      "goGan": {
+        "cot": "Actions",
+        "nut": "Remove",
+        "tieuDe": "Confirm removing the assignment",
+        "activeGlobal": "Removing the global active assignment of role {{vaiTro}}: this role will follow the .env key {{envKey}}.",
+        "activeKhac": "Removing the active assignment for scope {{phamVi}} {{scopeId}} of {{vaiTro}}: that scope will follow the broader assignment or the .env key.",
+        "thu": "The {{cheDo}} assignment of {{vaiTro}} does NOT affect the running model — removing it only drops it from the list of effective assignments (history is kept).",
+        "xacNhan": "Confirm removal",
+        "huy": "Cancel",
+        "daGo": "Removed assignment {{vaiTro}} ({{cheDo}}).",
+        "diTheoEnv": "Role {{vaiTro}} now follows the .env key."
       }
     }
   },

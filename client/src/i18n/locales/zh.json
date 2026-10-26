@@ -13664,6 +13664,18 @@
           "kem": "在同一测试集上，目标比当前分配的配置更差。",
           "bang": "在同一测试集上，目标与当前分配的配置相当。"
         }
+      },
+      "goGan": {
+        "cot": "操作",
+        "nut": "移除",
+        "tieuDe": "确认移除分配",
+        "activeGlobal": "移除角色 {{vaiTro}} 的全局生效分配：该角色将改用 .env 键 {{envKey}}。",
+        "activeKhac": "移除 {{vaiTro}} 在范围 {{phamVi}} {{scopeId}} 的生效分配：该范围将改用更宽范围的分配或 .env 键。",
+        "thu": "{{vaiTro}} 的 {{cheDo}} 分配不影响正在运行的模型——移除只会把它从有效分配列表中去掉（历史保留）。",
+        "xacNhan": "确认移除",
+        "huy": "取消",
+        "daGo": "已移除分配 {{vaiTro}}（{{cheDo}}）。",
+        "diTheoEnv": "角色 {{vaiTro}} 现在改用 .env 键。"
       }
     }
   },
