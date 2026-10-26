@@ -221,8 +221,12 @@ describe("node HTTP đi qua mạng an toàn", () => {
       expect(goi).toHaveLength(0);
 
       process.env.AI_FLOW_HTTP_HOST_CHO_PHEP = "erp.local:80";
+      // Đợt 10.3 — metadata (169.254/16) LUÔN cấm kể cả có mục host:cổng; mục khai mở dải nội bộ THƯỜNG
+      await expect(layNut("tich-hop.http-doc")!.chay({ url: "http://erp.local/x" }, ngu([{ json: {} }]))).rejects.toThrow(/metadata/);
+      expect(goi).toHaveLength(0);
+      datPhanGiaiDns(async () => [{ address: "10.20.30.40", family: 4 }]);
       await layNut("tich-hop.http-doc")!.chay({ url: "http://erp.local/x" }, ngu([{ json: {} }]));
-      expect(goi).toEqual([{ url: "http://erp.local/x", ip: "169.254.169.254" }]);
+      expect(goi).toEqual([{ url: "http://erp.local/x", ip: "10.20.30.40" }]);
     } finally {
       datFetchLuong(cu);
     }

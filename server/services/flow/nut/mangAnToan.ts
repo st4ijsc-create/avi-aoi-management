@@ -82,10 +82,29 @@ export function laDiaChiNoiBo(ip: string): boolean {
   return true;
 }
 
+/**
+ * ★ Đợt 10.3 (rà kiem-dinh Task 8 E) — link-local / metadata đám mây (169.254.0.0/16, fe80::/10, v4-mapped của chúng): LUÔN cấm, kể cả
+ * khi danh sách trắng ghi rõ host:cổng — mục khai chỉ mở dải nội bộ THƯỜNG (máy ERP / LLM trong nhà máy), không mở máy chủ metadata.
+ */
+export function laDiaChiMetadata(ip: string): boolean {
+  const f = isIP(ip);
+  const v4 = (s: string) => /^169\.254\./.test(s);
+  if (f === 4) return v4(ip);
+  if (f === 6) {
+    const g = moRongV6(ip);
+    if (!g) return true;
+    if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) return v4(v4Tu(g[6], g[7]));
+    return (g[0] & 0xffc0) === 0xfe80;
+  }
+  return false;
+}
+
 // ── phân giải DNS (tiêm được cho lưới) ───────────────────────────────────────────────────────────
 export type HamPhanGiaiDns = (host: string) => Promise<{ address: string; family: number }[]>;
 const phanGiaiThat: HamPhanGiaiDns = (host) => dns.lookup(host, { all: true, verbatim: true });
 let phanGiai: HamPhanGiaiDns = phanGiaiThat;
+/** Phân giải qua bộ HIỆN HÀNH (thật, hoặc bộ lưới đã đặt) — dùng chung cho mô-đun khác cần cùng nguồn DNS (vd `hostAiNgoai`). */
+export const phanGiaiDns: HamPhanGiaiDns = (host) => phanGiai(host);
 
 /** Chỉ lưới: thay bộ phân giải DNS. `null` ⇒ về bộ thật. Trả bộ cũ. */
 export function datPhanGiaiDns(f: HamPhanGiaiDns | null): HamPhanGiaiDns {
@@ -116,6 +135,9 @@ export async function kiemDichDen(url: URL, choPhep: ReadonlySet<string>): Promi
     }
   }
   if (!ds.length) throw new LoiHttpLuong(`host '${host.slice(0, 100)}' không có địa chỉ`);
+  if (ds.some((d) => laDiaChiMetadata(d.address))) {
+    throw new LoiHttpLuong(`đích '${host.slice(0, 100)}' là địa chỉ link-local / metadata (nội bộ) — LUÔN cấm, kể cả khi danh sách trắng ghi host:cổng`, "DICH_METADATA");
+  }
   const roRang = coMucHostCong(url, choPhep);
   if (!roRang && ds.some((d) => laDiaChiNoiBo(d.address))) {
     throw new LoiHttpLuong(`đích '${host.slice(0, 100)}' là địa chỉ nội bộ / không công cộng — chỉ cho phép khi danh sách trắng ghi rõ host:cổng`, "DICH_NOI_BO");
