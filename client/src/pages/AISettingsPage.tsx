@@ -232,7 +232,7 @@ function ApiKeysSection() {
       ) : (
         <div className="grid gap-3">
           {keys.map((key) => {
-            const provider = PROVIDER_INFO[key.provider] ?? PROVIDER_INFO.custom;
+            const provider = (PROVIDER_INFO as Partial<Record<string, (typeof PROVIDER_INFO)[ApiKeyProvider]>>)[key.provider] ?? PROVIDER_INFO.custom;
             const status = STATUS_CONFIG[key.status] ?? STATUS_CONFIG.inactive;
             return (
               <Card key={key.id}>

@@ -3696,6 +3696,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "aiNgoaiKhoa": "external AI provider key",
       "corporate": "corporation",
       "edgeNode": "edge node",
       "scadaRequest": "SCADA command request",
@@ -3707,7 +3708,6 @@
       "aiModel": "AI model",
       "aiModelCard": "AI model card",
       "aiModelVersion": "AI model version",
-      "aiNgoaiKhoa": "external AI provider key",
       "alert": "alert",
       "alertSetting": "alert setting",
       "andonEvent": "Andon event",
@@ -3891,6 +3891,8 @@
       "lateWriteResult": "late write result"
     },
     "operation": {
+      "toggleApiKey": "toggle API key",
+      "aiNgoaiEndpoint": "external AI endpoint",
       "dieuKienViTriTrongPhamVi": "build the location scope condition",
       "retireEdgeNode": "retire the edge node",
       "updateApiKey": "update the API key",
@@ -4387,6 +4389,8 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "can-nha-may": "the key must belong to a factory before it can be activated",
+      "thieu-endpoint": "endpoint missing",
       "totpSelfUnlock": "You cannot unlock your own two-factor authentication — another administrator must do it.",
       "edgeNodeBusy": "The node is being changed by another operation (a device assignment, a credential rotation…). Nothing was changed — retry in a moment.",
       "edgeNodeRetireBlocked": "The node still has: {{blockers}}. Release its devices to central, let its STOPs / lock requests be acknowledged (or resolved) and finish its runs, then retry. Nothing was changed.",
