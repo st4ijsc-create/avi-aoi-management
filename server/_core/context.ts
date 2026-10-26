@@ -3,14 +3,14 @@ import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 import { docVePhienTuCookie } from "./vePhienCookie";
 import { beginStopAuthWarm, isStopOnlyCall, noteAuthenticatedUser } from "../services/robot/robotStopAuthMemo"; // doc 81 Đợt 10 D fix review 5 (R-10-bb) + 7 (R-10-bg/bh)
-import { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
+import { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laGoiCoDungMay, laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
 
 /**
- * SCADA R1b-2a Task 4 (M-1; mở rộng R-10-bb cho STOP HMI) + fix round 1 (I-1): request CHỈ gồm `scadaCommands.dungMay` có MỘT hạn tổng
+ * SCADA R1b-2a Task 4 (M-1; mở rộng R-10-bb cho STOP HMI) + fix round 1 (I-1): request CÓ chứa `scadaCommands.dungMay` (một mình hoặc trong batch — T15; lượt gọi khác trong batch cũng chịu hạn, KD-T15) có MỘT hạn tổng
  * `HAN_TONG_STOP_HMI_MS` (2,5 s) bắt đầu Ở ĐÂY, gắn vào `ctx.hanChotStopHmi`; xác thực dùng min(`HAN_XAC_THUC_STOP_HMI_MS`, còn lại),
  * middleware và handler dùng phần còn lại. Chi tiết + những gì nằm NGOÀI hạn: server/_core/hanStopHmi.ts.
  */
-export { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay };
+export { HAN_TONG_STOP_HMI_MS, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laGoiCoDungMay };
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -74,7 +74,9 @@ export async function createContext(
   }
 
   // SCADA R1b-2a T4 fix round 1 (I-1) — hạn TỔNG của request STOP HMI, đo từ đây (theo request; middleware + handler đọc `ctx.hanChotStopHmi`)
-  const hanChotStopHmi = laGoiChiDungMay(opts.info) ? Date.now() + HAN_TONG_STOP_HMI_MS : undefined;
+  // R1b-2b-1 T15 (G4, KD-T15): `laGoiCoDungMay` — BẤT KỲ lượt gọi dungMay nào trong batch ⇒ cả request chung hạn tổng (bọc hạn, KHÔNG từ chối STOP).
+  // ⚠ Hệ quả chấp nhận: lượt gọi KHÁC cùng batch cũng có thể nhận 503 SCADA_STOP_PRECHECK_TIMEOUT khi DB / xác thực chậm.
+  const hanChotStopHmi = laGoiCoDungMay(opts.info) ? Date.now() + HAN_TONG_STOP_HMI_MS : undefined;
 
   try {
     /**

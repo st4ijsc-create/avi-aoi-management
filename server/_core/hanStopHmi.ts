@@ -42,6 +42,18 @@ export function laGoiChiDungMay(info: unknown): boolean {
   return Array.isArray(calls) && calls.length > 0 && calls.every((c) => typeof c?.path === "string" && c.path === DUONG_DUNG_MAY_HMI);
 }
 
+/**
+ * R1b-2b-1 T15 (kiểm định G4) — true ⇔ `info.calls` là mảng và có ≥ 1 phần tử `scadaCommands.dungMay` (batch trộn CŨNG tính).
+ * Quyết định: BỌC HẠN, KHÔNG từ chối — từ chối một STOP vì hình dạng request là một cổng phần mềm đứng trước STOP (bất biến: STOP không bao giờ
+ * bị chặn bởi hình dạng request). Hệ quả CHẤP NHẬN (KD-T15): các lượt gọi KHÁC trong cùng batch dùng chung hạn tổng ⇒ khi DB / xác thực chậm
+ * chúng cũng có thể nhận 503 `SCADA_STOP_PRECHECK_TIMEOUT`. Chỉ client không chuẩn gửi hình này (trpcLinks tách dungMay riêng).
+ * `laGoiChiDungMay` giữ nguyên cho tầng giới hạn tần suất và log.
+ */
+export function laGoiCoDungMay(info: unknown): boolean {
+  const calls = (info as { calls?: Array<{ path?: unknown }> } | undefined)?.calls;
+  return Array.isArray(calls) && calls.some((c) => typeof c?.path === "string" && c.path === DUONG_DUNG_MAY_HMI);
+}
+
 export type PhaQuaHanStopHmi = "truoc_gui" | "xac_thuc";
 /**
  * Bước mà từ chối vì hạn KHÔNG ghi được scada_command_attempts / audit.
