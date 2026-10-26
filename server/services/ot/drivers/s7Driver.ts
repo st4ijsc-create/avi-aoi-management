@@ -283,7 +283,12 @@ export class S7Driver extends NotImplementedDriver {
         this.dangBay.bay(
           conn,
           new Promise<Record<string, unknown>>((resolve, reject) => {
+            // final fix (rà soát cuối M-4) — CHỈ callback ĐẦU TIÊN được ghi: một callback lặp MUỘN (anythingBad=false) rơi giữa resolve(vals1) và
+            // phần tiếp theo sẽ ghi đè `thuVienBaoLoi` / `trangThaiSauDoc` ⇒ chuỗi "BAD n" của vals1 đọc thành giá trị tốt.
+            let daGoi = false;
             conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              if (daGoi) return;
+              daGoi = true;
               const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
               trangThaiSauDoc = typeof st === "number" ? st : undefined;
               thuVienBaoLoi = anythingBad !== false;

@@ -1229,6 +1229,39 @@ describe("R1b-2b-1 T3 — chuỗi 'BAD n' tag string là giá trị THẬT khi t
     expect(await d.readTags(mcStr).catch((e) => e as Error)).toMatchObject({ name: "McReadTimeoutError" });
   });
 
+  it("final fix M-4: callback readAllItems LẶP MUỘN (lần 1 anythingBad=true, lần 2 false, trước phần tiếp theo) ⇒ cờ của lần ĐẦU giữ: 'BAD 12' vẫn bad (S7 và MC)", async () => {
+    vi.stubEnv(FLAG, "true");
+    // thư viện gọi lại HAI lần đồng bộ: lần 2 rơi giữa resolve(vals1) và phần tiếp theo của driver (mọi lớp promise còn chờ microtask)
+    const goiHaiLan = (v: Record<string, unknown>) =>
+      vi.fn((cb: (b: boolean, v: Record<string, unknown>) => void) => {
+        cb(true, v);
+        cb(false, { ...v });
+      });
+    const s7Tags2: OtTagAddress[] = [
+      { tagKey: "t", address: "DB1,CHAR0", dataType: "string" },
+      { tagKey: "n", address: "DB1,INT20", dataType: "int" },
+    ];
+    mockNodes("nodes7", {}, { isoConnectionState: 4, readAllItems: goiHaiLan({ t: "BAD 12", n: 5 }) });
+    const { S7Driver } = await import("./s7Driver");
+    const s7 = new S7Driver();
+    await s7.connect({ endpoint: "tcp://127.0.0.1:102" });
+    const o7 = await s7.readTags(s7Tags2);
+    expect(o7.find((s) => s.tagKey === "t")).toMatchObject({ quality: "bad", value: null });
+    expect(o7.find((s) => s.tagKey === "n")).toMatchObject({ quality: "good", value: 5 });
+    vi.resetModules();
+    const mcTags2: OtTagAddress[] = [
+      { tagKey: "t", address: "D100", dataType: "string" },
+      { tagKey: "n", address: "D200", dataType: "int" },
+    ];
+    mockNodes("mcprotocol", {}, { isoConnectionState: 4, readAllItems: goiHaiLan({ t: "BAD 12", n: 5 }) });
+    const { MitsubishiMcDriver } = await import("./mitsubishiMcDriver");
+    const mc = new MitsubishiMcDriver();
+    await mc.connect({ endpoint: "tcp://127.0.0.1:1281" });
+    const om = await mc.readTags(mcTags2);
+    expect(om.find((s) => s.tagKey === "t")).toMatchObject({ quality: "bad", value: null });
+    expect(om.find((s) => s.tagKey === "n")).toMatchObject({ quality: "good", value: 5 });
+  });
+
   it("S7 và MC: tag INT 'BAD 255' với anythingBad=false (thư viện giả bất thường) ⇒ VẪN bad (kiểu int không bao giờ nhận chuỗi BAD)", async () => {
     vi.stubEnv(FLAG, "true");
     const intTag: OtTagAddress[] = [{ tagKey: "t", address: "DB1,INT0", dataType: "int" }];

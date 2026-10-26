@@ -235,6 +235,8 @@ HEAD `b473cf1e9`, 2026-10-27 03:12–04:07.
    `isBit`). Posture join trong với adapter có thể bỏ sót luật trỏ tag mồ côi.
 5. (T3, Q4 — điều phối CHẤP NHẬN) Tag string có giá trị thật `"BAD n"` đọc CÙNG lượt với một item lỗi khác (thư viện `anythingBad=true`) vẫn bị coi là
    xấu (fail-closed). `anythingBad` vắng / không phải `false` ⇒ coi là có lỗi. Chưa có ca S7 mất liên kết + string + `anythingBad=false`.
+   (Rà soát cuối M-4, ĐÃ SỬA ở final fix) S7 / MC: chỉ callback `readAllItems` ĐẦU TIÊN ghi cờ `anythingBad` (và trạng thái liên kết của S7); callback
+   lặp muộn bị bỏ ⇒ không còn làm "BAD n" của lần đọc trước thành giá trị tốt (test "final fix M-4"; đột biến bỏ chốt ở từng driver ⇒ đỏ).
 6. (T4) Phân loại MC dựa trên CHUỖI `errCode` của mcprotocol 0.1.2 (`MC_ERRCODE_QUA_HAN_GOI`, probe `mcErrCode.thuVienThat.test.ts`): thư viện đổi bản /
    đổi chuỗi ⇒ `khong_ro` ⇒ quay về luật thời gian cũ (90 % hạn gói). (Rà soát cuối M-3, ĐÃ SỬA ở final fix) `valid=false` với `errCode` không phải
    chuỗi (undefined = item chưa được xử lý ở lần đọc này) không còn tính là "PLC đã trả lời": không item lỗi nào mang `errCode` chuỗi ⇒ `khong_ro` ⇒

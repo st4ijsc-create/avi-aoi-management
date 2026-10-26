@@ -472,7 +472,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
         this.dangBay.bay(
           connDoc,
           new Promise<Record<string, unknown>>((resolve, reject) => {
+            // final fix (rà soát cuối M-4) — CHỈ callback ĐẦU TIÊN được ghi: một callback lặp MUỘN (anythingBad=false) rơi giữa resolve(vals1) và
+            // phần tiếp theo sẽ ghi đè `thuVienBaoLoi` ⇒ chuỗi "BAD n" của vals1 đọc thành giá trị tốt.
+            let daGoi = false;
             connDoc.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              if (daGoi) return;
+              daGoi = true;
               thuVienBaoLoi = anythingBad !== false;
               if (vals && typeof vals === "object") resolve(vals);
               else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
