@@ -24,6 +24,7 @@ import { aiFlowRuns, aiFlows } from "../../drizzle/schema";
 import { readAppErrorMeta } from "../_core/appError";
 import { bamDinhNghia } from "../services/ai/ngoai/duyetNgoai";
 import { flowRouter } from "./flowRouter";
+import { donNguoiDungTest, taoNguoiDungTest } from "../testing/nguoiDungTest";
 
 const TT = "t103bn";
 const MA_NM = `${TT}F`;
@@ -61,9 +62,9 @@ beforeAll(async () => {
   await donNhaMayVaNguoiTheoMa(MA_NM, TT + "-");
   const [fa] = await exec(sql`INSERT INTO factories (code, name, "isActive") VALUES (${MA_NM}, ${"T103 " + MA_NM}, true) RETURNING id`);
   fid = Number(fa!.id);
-  const [u] = await exec(sql`INSERT INTO users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
-    VALUES (${TT + "-nd-" + Date.now().toString(36)}, ${TT + "_nd_" + Date.now().toString(36)}, ${"người bật"}, ${"password"}, ${"admin"}, true, false, now()) RETURNING id`);
-  uid = Number(u!.id);
+  // census nguoiDungTest: người dùng test qua helper (tự dọn theo daTao), không INSERT INTO users trực tiếp — dieu-phoi 2026-10-26 lúc gộp.
+  const u = await taoNguoiDungTest("bat", "admin", { tienTo: TT, ten: "người bật", extra: { loginMethod: "password", isActive: true, passwordChangedAt: new Date() } });
+  uid = u.id;
   await exec(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${uid}, ${MA_NM})`);
 });
 afterAll(async () => {
@@ -73,7 +74,7 @@ afterAll(async () => {
   await db.delete(aiFlows).where(like(aiFlows.id, `${TT}%`));
   await exec(sql`DELETE FROM user_factory_assignments WHERE "userId" = ${uid} AND "factoryCode" = ${MA_NM}`);
   await exec(sql`DELETE FROM factories WHERE id = ${fid}`);
-  await exec(sql`DELETE FROM users WHERE id = ${uid}`);
+  await donNguoiDungTest();
 });
 
 describe("datPhienBanHoatDong — phiên bản có node model ngoài", () => {
