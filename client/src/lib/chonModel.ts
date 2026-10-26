@@ -85,3 +85,23 @@ export function hauToTrangThai(m: MucModel, t: (k: string, def: string, o?: Reco
 
 /** Giá trị gửi lên máy chủ cho một lựa chọn: "auto" ⇒ undefined (KHÔNG gửi trường). */
 export const chonModelGui = (ma: string): string | undefined => (ma === "auto" || !ma ? undefined : ma);
+
+/**
+ * Màn lập trình: đọc lựa chọn dính, DI TRÚ khoá cũ `repoWs.tangModel` ("code" ⇒ `vai-tro:code.software`; "auto" ⇒ auto) MỘT lần rồi xoá khoá cũ.
+ * Khoá cũ chỉ phục vụ người đã chọn trước Đợt 10.2 — GỠ hàm di trú này khi extension 0.4.0 đã phát hành (dự kiến 2026-11-30).
+ */
+export function docChonLapTrinh(): string {
+  const da = docChonDaLuu("lap-trinh");
+  try {
+    const cu = localStorage.getItem("repoWs.tangModel");
+    if (cu === null) return da;
+    localStorage.removeItem("repoWs.tangModel");
+    if (da === "auto" && cu === "code") {
+      luuChon("lap-trinh", "vai-tro:code.software");
+      return "vai-tro:code.software";
+    }
+  } catch {
+    /* chế độ riêng tư */
+  }
+  return da;
+}

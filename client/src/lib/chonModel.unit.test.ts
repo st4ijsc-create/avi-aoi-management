@@ -95,3 +95,31 @@ describe("chonModelGui", () => {
     expect(chonModelGui("ho-so:p1")).toBe("ho-so:p1");
   });
 });
+
+import { docChonLapTrinh } from "./chonModel";
+describe("docChonLapTrinh — di trú khoá cũ repoWs.tangModel", () => {
+  it('"code" ⇒ vai-tro:code.software, lưu khoá mới, xoá khoá cũ (một lần)', () => {
+    vi.stubGlobal("localStorage", mem());
+    localStorage.setItem("repoWs.tangModel", "code");
+    expect(docChonLapTrinh()).toBe("vai-tro:code.software");
+    expect(localStorage.getItem("repoWs.tangModel")).toBeNull();
+    expect(localStorage.getItem("aiChon.lap-trinh")).toBe("vai-tro:code.software");
+    expect(docChonLapTrinh()).toBe("vai-tro:code.software");
+  });
+  it('khoá cũ "auto" ⇒ auto và xoá khoá cũ; lựa chọn mới đã có thì KHÔNG bị ghi đè', () => {
+    vi.stubGlobal("localStorage", mem());
+    localStorage.setItem("repoWs.tangModel", "auto");
+    expect(docChonLapTrinh()).toBe("auto");
+    expect(localStorage.getItem("repoWs.tangModel")).toBeNull();
+    localStorage.setItem("repoWs.tangModel", "code");
+    localStorage.setItem("aiChon.lap-trinh", "ho-so:p1");
+    expect(docChonLapTrinh()).toBe("ho-so:p1");
+  });
+  it("localStorage ném lỗi ⇒ auto, không văng", () => {
+    const boom = () => {
+      throw new Error("x");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom, removeItem: boom });
+    expect(docChonLapTrinh()).toBe("auto");
+  });
+});

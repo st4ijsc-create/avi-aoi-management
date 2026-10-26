@@ -21113,7 +21113,7 @@
       "auto": "model: tự động",
       "codeTen": "model: {{ten}}",
       "code": "model: tầng mã",
-      "tip": "Tự động = theo mặc định của hệ + độ khó câu hỏi. Coder = ép tầng chuyên sinh mã (đo được: chính xác hơn trên tác vụ lập trình). Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Huy hiệu bên cạnh cho biết model THẬT SỰ được chọn. Cố ý KHÔNG có lựa chọn \"Nhanh\": bộ định tuyến leo tầng theo ĐỘ KHÓ, mà prompt lập trình luôn là câu khó, nên một lựa chọn như thế sẽ bị bỏ qua trong im lặng."
+      "tip": "Tự động = bộ định tuyến chọn theo tác vụ + độ khó câu hỏi. Chọn một vai trò (vd. code.software) hoặc hồ sơ Local để ghim model cho các lượt sau. Đổi có hiệu lực NGAY ở lượt sau — KHÔNG cần khởi động lại. Mục ghi \"cần đổi khe\" sẽ mất vài giây nạp model. Huy hiệu bên cạnh cho biết model THẬT SỰ được dùng."
     },
     "khoi": {
       "modelSinh": "Mã do model viết — có thể khác tệp trên đĩa",

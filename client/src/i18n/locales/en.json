@@ -21113,7 +21113,7 @@
       "auto": "model: auto",
       "codeTen": "model: {{ten}}",
       "code": "model: code tier",
-      "tip": "Auto = system default + question difficulty. Code tier = force the code-specialised tier (measured: more accurate on programming tasks). Takes effect on the NEXT turn — no restart. The badge next to it shows the model ACTUALLY chosen. Deliberately no \"Fast\" option: the router climbs tiers by DIFFICULTY and coding prompts are always hard, so such an option would be silently ignored."
+      "tip": "Automatic = the router picks by task and question difficulty. Choose a role (e.g. code.software) or a Local profile to pin the model for following turns. Takes effect on the NEXT turn — no restart. Entries marked \"needs slot swap\" take a few seconds to load. The badge next to it shows the model actually used."
     },
     "khoi": {
       "modelSinh": "Code written by the model — may differ from the file on disk",
