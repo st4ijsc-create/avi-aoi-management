@@ -2,7 +2,7 @@
  * SCADA R1b-1 Task 12 — bench nghiệm thu STOP HMI (`scadaCommands.dungMay`) trên OpenPLC (Docker) + safety PLC MÔ PHỎNG. CHẠY TAY, không vào CI.
  *
  *   npx tsx scripts/scada-r1b-bench.ts [--endpoint tcp://127.0.0.1:15502] [--container avi-openplc-bench] [--web http://127.0.0.1:18080]
- *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a] [--r1b2b1] [--cat-lien-ket]
+ *       [--poll 1000] [--timeout 800] [--lap 3] [--start-neu-tat] [--khong-docker] [--r1b2a] [--r1b2b1] [--cat-lien-ket] [--dump-proxy]
  *
  * R1b-2a Task 15 — `--r1b2a` thêm ô L1 vào MỖI lượt (sau S1 / S2 / X2): `dispatch()` như tool AI lên một thanh ghi int CHƯA khai scale 1
  * (thanh ghi thứ TƯ giữ giá trị của bước 0): 2,5 ⇒ OFF_STEP goiY 3 (thanh ghi không đổi); "abc" ⇒ TYPE_MISMATCH (thanh ghi không đổi);
@@ -33,7 +33,13 @@
  *   • lượt CHẴN "cắt sau khi gửi": FC5 được chuyển tới PLC rồi mới cắt (không chuyển câu trả lời) ⇒ coil lên 1 nhưng ta không biết.
  *   Mong đợi CẢ HAI: `timeout` ok=false (không rõ kết cục) trong < 1000 ms — KHÔNG `acked*`, KHÔNG `failed`, không treo 5000 ms. Bằng chứng in
  *   theo lượt: `health().lastError` của b1, mốc cắt so với lúc bấm, thời gian b1 nối lại. Trước lượt kế, đợi b1 nối lại (vòng canh legacy).
- *   Ô B1b thường (ghim 1 ⇒ acked_verified) KHÔNG chạy khi có cờ này. Không có biến thể "khởi động lại container + adapter MỚI mỗi lượt" (cần
+ *   Ô B1b thường (ghim 1 ⇒ acked_verified) KHÔNG chạy khi có cờ này.
+ *   Chẩn đoán lần chạy OpenPLC thật bị huỷ (task-17-report.md "Bench diagnosis"): proxy nay ở `scripts/scada-bench-proxy.ts` — chuyển tiếp THEO KHUNG MBAP
+ *   (tách khung qua biên đoạn, mỗi khung một write, setNoDelay), cắt đúng ở KHUNG FC5. Lượt 1 chạy TRƯỚC một ô ĐỐI CHỨNG "B1b-thông": proxy thông suốt
+ *   (không cắt) 5 s poll b1 + STOP HMI ⇒ acked_verified. Đọc kết quả trên OpenPLC thật: ĐỐI CHỨNG đỏ (b1 rớt / yêu cầu qua proxy không được trả lời)
+ *   ⇒ lỗi ở CÔNG CỤ (proxy), các ô cắt không đọc được; ĐỐI CHỨNG xanh ⇒ proxy trung thực, b1 rớt poll lúc trước phải tìm ở đường nối lại của sản phẩm qua
+ *   proxy / OpenPLC khựng lúc khởi động. `--dump-proxy`: in từng đoạn + khung MBAP mỗi chiều (bằng chứng). MỌI lỗi của một bước ⇒ một dòng ĐỎ có lý do +
+ *   stack, lượt chạy tiếp (không bao giờ huỷ cả lần chạy); mỗi dòng in ngay khi có. Không có biến thể "khởi động lại container + adapter MỚI mỗi lượt" (cần
  *   docker + dựng lại otManager mỗi lượt — xem task-17-report.md).
  *
  * Container DÙNG CHUNG (điều phối 2026-10-25): mặc định script KHÔNG khởi động container. Container không `running` hoặc Modbus không trả lời
@@ -73,6 +79,8 @@ import { createRequire, registerHooks } from "node:module";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve as duongDan } from "node:path";
 import { randomUUID } from "node:crypto";
+import { inspect } from "node:util";
+import { taoProxyModbus, type KieuCat } from "./scada-bench-proxy";
 
 // ── "vitest" ⇒ shim (taoNguoiDungTest đăng ký afterAll lúc nạp module; ngoài vitest runner lời gọi đó ném) ──
 registerHooks({
@@ -97,6 +105,8 @@ interface TuyChon {
   r1b2b1: boolean;
   /** R1b-2b-1 T17 — ô B1b qua proxy cắt liên kết ở FC5 đầu tiên (tái hiện có chủ đích STOP đang bay khi liên kết mất) */
   catLienKet: boolean;
+  /** R1b-2b-1 T17 (chẩn đoán) — in từng đoạn / khung MBAP qua proxy */
+  dumpProxy: boolean;
 }
 function docThamSo(argv: string[]): TuyChon {
   const lay = (k: string, mac: string) => {
@@ -115,75 +125,7 @@ function docThamSo(argv: string[]): TuyChon {
     r1b2a: argv.includes("--r1b2a"),
     r1b2b1: argv.includes("--r1b2b1"),
     catLienKet: argv.includes("--cat-lien-ket"),
-  };
-}
-
-/**
- * R1b-2b-1 T17 — proxy TCP trong tiến trình: chuyển nguyên byte hai chiều tới `dich`; khi LÊN CÒ, cắt (destroy cả hai phía) ở khung Modbus TCP
- * FC5 đầu tiên từ phía client — "truoc_khi_gui": không chuyển khung đó; "sau_khi_gui": chuyển khung rồi mới cắt (câu trả lời không bao giờ về).
- */
-type KieuCat = "truoc_khi_gui" | "sau_khi_gui";
-async function proxyCatLienKet(dich: string): Promise<{ port: number; lenCo(kieu: KieuCat): void; daCatLuc: () => number | null; close(): Promise<void> }> {
-  const net = await import("node:net");
-  const { host, port } = hostPort(dich);
-  const caCap = new Set<{ a: import("node:net").Socket; b: import("node:net").Socket }>();
-  let co: KieuCat | null = null;
-  let catLuc: number | null = null;
-  const coFc5 = (buf: Buffer): boolean => {
-    for (let i = 0; i + 8 <= buf.length; ) {
-      const len = buf.readUInt16BE(i + 4);
-      if (buf[i + 7] === 5) return true;
-      if (len < 2) return false;
-      i += 6 + len;
-    }
-    return false;
-  };
-  const server = net.createServer((a) => {
-    const b = net.connect({ host, port });
-    const cap = { a, b };
-    caCap.add(cap);
-    const xong = () => {
-      caCap.delete(cap);
-      a.destroy();
-      b.destroy();
-    };
-    a.on("error", xong);
-    b.on("error", xong);
-    a.on("close", xong);
-    b.on("close", xong);
-    b.on("data", (d) => {
-      if (!a.destroyed) a.write(d);
-    });
-    a.on("data", (d) => {
-      if (co && coFc5(d)) {
-        const kieu = co;
-        co = null;
-        catLuc = Date.now();
-        if (kieu === "sau_khi_gui") {
-          b.write(d, () => xong());
-          a.destroy(); // câu trả lời không bao giờ về client
-        } else xong();
-        return;
-      }
-      if (!b.destroyed) b.write(d);
-    });
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
-  return {
-    port: (server.address() as import("node:net").AddressInfo).port,
-    lenCo: (kieu) => {
-      co = kieu;
-      catLuc = null;
-    },
-    daCatLuc: () => catLuc,
-    close: () =>
-      new Promise<void>((r) => {
-        for (const c of caCap) {
-          c.a.destroy();
-          c.b.destroy();
-        }
-        server.close(() => r());
-      }),
+    dumpProxy: argv.includes("--dump-proxy"),
   };
 }
 
@@ -485,6 +427,26 @@ async function main(): Promise<void> {
   }
 
   const bang: Dong[] = [];
+  /** R1b-2b-1 T17 (chẩn đoán) — ghi dòng VÀ in ngay (lần chạy bị huỷ sau đó vẫn để lại bằng chứng từng bước). */
+  const themDong = (d: Dong): void => {
+    bang.push(d);
+    console.log(`[bench] dòng | ${d.lap} | ${d.o} | ${d.buoc} | ${d.duoc} | ${d.ms} ms | ${d.thanhGhi} | ${d.dat ? "ĐẠT" : "KHÔNG ĐẠT"}`);
+  };
+  /** Lỗi của MỘT bước ⇒ một dòng ĐỎ có lý do + stack in ra; lượt chạy tiếp (không huỷ cả lần chạy). */
+  const ghiLoiBuoc = (lap: number, o2: string, e: unknown): void => {
+    const err = e as Error;
+    // lỗi của modbus-serial là object thường (không phải Error, không có stack) ⇒ inspect + stack của chỗ bắt
+    console.error(`[bench] LỖI BƯỚC lượt ${lap} ô ${o2}: ${err?.stack ?? inspect(e)}${err?.stack ? "" : `
+  (bắt tại) ${new Error("vị trí bắt").stack}`}`);
+    themDong({ lap, o: o2, buoc: "LỖI BƯỚC — bước bỏ dở, lượt chạy tiếp", mong: "bước chạy hết", duoc: `${err?.name ?? "Error"}: ${err?.message ?? String(e)}`, ms: 0, thanhGhi: "-", dat: false });
+  };
+  const buoc = async (lap: number, o2: string, fn: () => Promise<void>): Promise<void> => {
+    try {
+      await fn();
+    } catch (e) {
+      ghiLoiBuoc(lap, o2, e);
+    }
+  };
   const don: Array<() => Promise<unknown>> = [];
   try {
     const daBam = await doiModbusTraLoi(o, 3000);
@@ -637,7 +599,7 @@ async function main(): Promise<void> {
     let machineB1 = -1;
     let adapterB1 = -1;
     // R1b-2b-1 T17 — `--cat-lien-ket`: adapter B1b đi qua proxy cắt liên kết (adapter bench chính vẫn nối thẳng)
-    const proxy = coB1 && o.catLienKet ? await proxyCatLienKet(o.endpoint) : null;
+    const proxy = coB1 && o.catLienKet ? await taoProxyModbus(o.endpoint, o.dumpProxy ? { dump: (d) => console.log(d) } : {}) : null;
     if (proxy) don.push(() => proxy.close());
     const endpointB1 = proxy ? `tcp://127.0.0.1:${proxy.port}` : o.endpoint;
     if (o.catLienKet && !coB1) console.log("[bench] --cat-lien-ket bỏ qua: không có ô B1 (cần --r1b2b1 và một coil giữ giá trị)");
@@ -774,14 +736,15 @@ async function main(): Promise<void> {
       const ms = Date.now() - t0;
       const sau = await docThanhGhi(o.endpoint, REG_DUNG);
       const n1 = await demLenh();
-      bang.push({ lap, o: o2, buoc: nhan, mong: "acked_verified, thanh ghi dừng = ghim 0", duoc: `${duoc} · command_log +${n1 - n0}`, ms, thanhGhi: `${truoc} → ${sau}`, dat: dat && sau === 0 && truoc === DANG_CHAY });
+      themDong({ lap, o: o2, buoc: nhan, mong: "acked_verified, thanh ghi dừng = ghim 0", duoc: `${duoc} · command_log +${n1 - n0}`, ms, thanhGhi: `${truoc} → ${sau}`, dat: dat && sau === 0 && truoc === DANG_CHAY });
     };
 
     for (let lap = 1; lap <= o.lap; lap++) {
       // ── S1: STOP HMI ở REMOTE ──
-      await stopHmi(lap, "S1", "STOP HMI, máy REMOTE (chế độ = 2)");
+      await buoc(lap, "S1", () => stopHmi(lap, "S1", "STOP HMI, máy REMOTE (chế độ = 2)"));
 
       // ── S2: máy LOCAL (kênh chế độ ≠ 2, đọc từ PLC qua vòng poll THẬT) ──
+      await buoc(lap, "S2", async () => {
       await ghiThanhGhi(o.endpoint, REG_CHE_DO, 1);
       const msThay = await doiDen(cheDoLa(1), 10_000);
       if (msThay === null) throw new Error("kênh chế độ không về 1 trong 10 s");
@@ -799,14 +762,15 @@ async function main(): Promise<void> {
         }
         const ms = Date.now() - t0;
         const sau = await docThanhGhi(o.endpoint, REG_DUNG);
-        bang.push({ lap, o: "S2-ĐC", buoc: `request dung=50 ở LOCAL (chế độ=1 thấy sau ${msThay} ms)`, mong: "MODE_LOCAL, thanh ghi không đổi", duoc, ms, thanhGhi: `${truoc} → ${sau}`, dat: duoc.startsWith("MODE_LOCAL") && sau === truoc });
+        themDong({ lap, o: "S2-ĐC", buoc: `request dung=50 ở LOCAL (chế độ=1 thấy sau ${msThay} ms)`, mong: "MODE_LOCAL, thanh ghi không đổi", duoc, ms, thanhGhi: `${truoc} → ${sau}`, dat: duoc.startsWith("MODE_LOCAL") && sau === truoc });
       }
       await stopHmi(lap, "S2", "STOP HMI, máy LOCAL (chế độ = 1)");
       await ghiThanhGhi(o.endpoint, REG_CHE_DO, 2);
       if ((await doiDen(cheDoLa(2), 10_000)) === null) throw new Error("kênh chế độ không về 2 trong 10 s");
+      });
 
       // ── X2: tag int CHƯA khai scale 10 — 25 ⇒ OFF_STEP; 30 ⇒ số thô 3 trên PLC ──
-      {
+      await buoc(lap, "X2", async () => {
         await ghiThanhGhi(o.endpoint, REG_SC10, 0);
         const n0 = await demLenh();
         const t0 = Date.now();
@@ -815,17 +779,17 @@ async function main(): Promise<void> {
         const sau25 = await docThanhGhi(o.endpoint, REG_SC10);
         const n1 = await demLenh();
         const goiY = (r25.appError?.appParams as { goiY?: unknown } | undefined)?.goiY;
-        bang.push({ lap, o: "X2", buoc: "dispatch AI sc10cu=25 (int chưa khai, scale 10)", mong: "rejected OFF_STEP goiY 30, command_log +1, thanh ghi không đổi", duoc: `${r25.status} ${r25.reason ?? ""} goiY=${String(goiY)} · command_log +${n1 - n0}`, ms, thanhGhi: `0 → ${sau25}`, dat: r25.status === "rejected" && r25.reason === "OFF_STEP" && goiY === 30 && n1 - n0 === 1 && sau25 === 0 });
+        themDong({ lap, o: "X2", buoc: "dispatch AI sc10cu=25 (int chưa khai, scale 10)", mong: "rejected OFF_STEP goiY 30, command_log +1, thanh ghi không đổi", duoc: `${r25.status} ${r25.reason ?? ""} goiY=${String(goiY)} · command_log +${n1 - n0}`, ms, thanhGhi: `0 → ${sau25}`, dat: r25.status === "rejected" && r25.reason === "OFF_STEP" && goiY === 30 && n1 - n0 === 1 && sau25 === 0 });
 
         const t1 = Date.now();
         const r30 = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "sc10cu", value: 30 }]));
         const ms2 = Date.now() - t1;
         const sau30 = await docThanhGhi(o.endpoint, REG_SC10);
-        bang.push({ lap, o: "X2", buoc: "dispatch AI sc10cu=30", mong: "gửi, thanh ghi = số thô 3", duoc: `${r30.status} ok=${r30.ok}`, ms: ms2, thanhGhi: `0 → ${sau30}`, dat: r30.ok === true && r30.simulated === false && sau30 === 3 });
-      }
+        themDong({ lap, o: "X2", buoc: "dispatch AI sc10cu=30", mong: "gửi, thanh ghi = số thô 3", duoc: `${r30.status} ok=${r30.ok}`, ms: ms2, thanhGhi: `0 → ${sau30}`, dat: r30.ok === true && r30.simulated === false && sau30 === 3 });
+      });
 
       // ── R1b-2a L1: tag int CHƯA khai scale 1 — 2,5 ⇒ OFF_STEP goiY 3; "abc" ⇒ TYPE_MISMATCH; 3 ⇒ thanh ghi = 3 ──
-      if (o.r1b2a) {
+      if (o.r1b2a) await buoc(lap, "L1", async () => {
         await ghiThanhGhi(o.endpoint, REG_SC1, 0);
         for (const [v, ma] of [
           [2.5, "OFF_STEP"],
@@ -840,7 +804,7 @@ async function main(): Promise<void> {
           const n1 = await demLenh();
           const goiY = (r.appError?.appParams as { goiY?: unknown } | undefined)?.goiY;
           const mongGoiY = ma === "OFF_STEP" ? goiY === 3 : true;
-          bang.push({
+          themDong({
             lap,
             o: "L1",
             buoc: `dispatch AI sc1cu=${JSON.stringify(v)} (int chưa khai, scale 1)`,
@@ -856,14 +820,15 @@ async function main(): Promise<void> {
         const r3 = await disp.dispatch(await lenhAi("set_param", [{ tagKey: "sc1cu", value: 3 }]));
         const ms3 = Date.now() - t1;
         const sau3 = await docThanhGhi(o.endpoint, REG_SC1);
-        bang.push({ lap, o: "L1", buoc: "dispatch AI sc1cu=3", mong: "gửi, thanh ghi = 3", duoc: `${r3.status} ok=${r3.ok}`, ms: ms3, thanhGhi: `${truoc} → ${sau3}`, dat: r3.ok === true && r3.simulated === false && sau3 === 3 });
-      }
+        themDong({ lap, o: "L1", buoc: "dispatch AI sc1cu=3", mong: "gửi, thanh ghi = 3", duoc: `${r3.status} ok=${r3.ok}`, ms: ms3, thanhGhi: `${truoc} → ${sau3}`, dat: r3.ok === true && r3.simulated === false && sau3 === 3 });
+      });
 
       // ── R1b-2b-1 B1: bool chặt trên coil (B1a) + ghim STOP 1 trên coil kiểu INT qua STOP HMI (B1b, điều kiện 1c) ──
       if (o.r1b2b1 && !coB1) {
-        bang.push({ lap, o: "B1", buoc: "bước 0b: tìm coil giữ giá trị", mong: "≥ 1 coil giữ giá trị", duoc: `bench B1 not measurable — ${b1KhongDo}`, ms: 0, thanhGhi: "-", dat: false });
+        themDong({ lap, o: "B1", buoc: "bước 0b: tìm coil giữ giá trị", mong: "≥ 1 coil giữ giá trị", duoc: `bench B1 not measurable — ${b1KhongDo}`, ms: 0, thanhGhi: "-", dat: false });
       } else if (coB1) {
         const coilTxt = (a: boolean, b: boolean) => `coil ${so01(a)} → ${so01(b)}`;
+        await buoc(lap, "B1a", async () => {
         // B1a — "false" / "0" ⇒ coil 0 (coil đặt 1 trước bằng client riêng)
         for (const v of ["false", "0"]) {
           await ghiCoil(o.endpoint, COIL_B1, true);
@@ -874,7 +839,7 @@ async function main(): Promise<void> {
           const ms = Date.now() - t0;
           const sau = await docCoil(o.endpoint, COIL_B1);
           const n1 = await demLenh();
-          bang.push({
+          themDong({
             lap,
             o: "B1a",
             buoc: `dispatch AI bcoil=${JSON.stringify(v)} (bool chưa khai, coil:${COIL_B1 + 1})`,
@@ -899,7 +864,7 @@ async function main(): Promise<void> {
           const sau = await docCoil(o.endpoint, COIL_B1);
           const n1 = await demLenh();
           const ae = r.appError as { appCode?: string; appParams?: { ma?: string } } | undefined;
-          bang.push({
+          themDong({
             lap,
             o: "B1a",
             buoc: `dispatch AI bcoil=${JSON.stringify(v)} (coil đặt ${so01(datTruoc)} trước)`,
@@ -916,6 +881,61 @@ async function main(): Promise<void> {
               sau === truoc,
           });
         }
+        });
+        // R1b-2b-1 T17 (chẩn đoán bench OpenPLC bị huỷ, điều phối) — ĐỐI CHỨNG chạy TRƯỚC mọi ô cắt: proxy THÔNG SUỐT (không cắt). b1 poll 5 s qua proxy
+        // (không rớt, mẫu good), rồi STOP HMI máy B1b qua proxy ⇒ acked_verified coil 0 → 1; mọi yêu cầu qua proxy được trả lời. ĐỎ trên OpenPLC thật ⇒
+        // lỗi ở công cụ (proxy); XANH ⇒ proxy trung thực — b1 rớt poll trước đây phải tìm ở đường nối lại của sản phẩm qua proxy / OpenPLC khựng.
+        if (proxy && lap === 1) await buoc(lap, "B1b-thông", async () => {
+          proxy.datLaiThongKe();
+          const msNoi = await doiDen(() => ot.getActiveDriver(adapterB1)?.isConnected() === true, 15_000);
+          let mauTot = 0;
+          let mauXau = 0;
+          let rot = 0;
+          let dangNoi = ot.getActiveDriver(adapterB1)?.isConnected() === true;
+          const tQuan = Date.now();
+          while (Date.now() - tQuan < 5000) {
+            await ngu(200);
+            const g = boDem.layGiaTri(adapterB1, "icoil");
+            if (g && g.q === "good" && !g.stale) mauTot += 1;
+            else mauXau += 1;
+            const noi = ot.getActiveDriver(adapterB1)?.isConnected() === true;
+            if (dangNoi && !noi) rot += 1;
+            dangNoi = noi;
+          }
+          await ghiCoil(o.endpoint, COIL_B1, false);
+          const truoc = await docCoil(o.endpoint, COIL_B1);
+          const t0 = Date.now();
+          let st = "";
+          let okR: boolean | undefined;
+          let duocStop = "";
+          try {
+            const kq = await caller.dungMay({ machineId: machineB1, clientRequestId: randomUUID() });
+            const r = kq.ketQua[0];
+            st = String(r?.status);
+            okR = r?.ok;
+            duocStop = `${r?.status} ok=${r?.ok}${r?.reason ? ` ${r.reason}` : ""}`;
+          } catch (e) {
+            duocStop = `NÉM ${maLoi(e)}`;
+          }
+          const ms = Date.now() - t0;
+          const sau = await docCoil(o.endpoint, COIL_B1);
+          await ngu(1100); // để mọi yêu cầu còn bay kịp được trả lời trước khi đếm "treo > 1 s"
+          const tk = proxy.thongKe();
+          console.log(`[bench] B1b-thông lượt ${lap}: b1 nối sau ${msNoi ?? "KHÔNG"} ms; thống kê proxy ${JSON.stringify(tk)}`);
+          themDong({
+            lap,
+            o: "B1b-thông",
+            buoc: "ĐỐI CHỨNG proxy THÔNG SUỐT (không cắt): b1 poll 5 s qua proxy + STOP HMI máy B1b",
+            mong: "b1 không rớt, mẫu icoil good, acked_verified, coil 0 → 1, mọi yêu cầu qua proxy được trả lời",
+            duoc:
+              `rớt ${rot}, mẫu tốt ${mauTot}/${mauTot + mauXau}; STOP ${duocStop}; proxy ↑ ${tk.di.khung} khung / ${tk.di.doan} đoạn (gộp ${tk.di.doanGop}, tách ${tk.di.doanTach})` +
+              ` ↓ ${tk.ve.khung} khung / ${tk.ve.doan} đoạn (gộp ${tk.ve.doanGop}, tách ${tk.ve.doanTach}); không trả lời: treo>1s ${tk.treoQua1s}, mất khi đóng ${tk.matKhiDong}`,
+            ms,
+            thanhGhi: coilTxt(truoc, sau),
+            dat: rot === 0 && mauXau === 0 && st === "acked_verified" && okR === true && truoc === false && sau === true && tk.treoQua1s === 0 && tk.matKhiDong === 0,
+          });
+        });
+        await buoc(lap, "B1b", async () => {
         // R1b-2b-1 T17 — `--cat-lien-ket`: STOP HMI trên máy B1b khi proxy cắt liên kết ở FC5 ⇒ `timeout` (không rõ) NGAY, không ack, không 5 s
         if (proxy) {
           const kieu: KieuCat = lap % 2 === 1 ? "truoc_khi_gui" : "sau_khi_gui";
@@ -946,7 +966,7 @@ async function main(): Promise<void> {
             `[bench] B1b-cắt lượt ${lap} (${kieu}): b1 đã nối sau ${msNoi ?? "KHÔNG"} ms; cắt ở +${catLuc === null ? "KHÔNG CẮT" : catLuc - t0} ms; trả lời ${ms} ms;` +
               ` lastError b1 = ${loiB1}; b1 nối lại sau ${msNoiLai ?? "KHÔNG (15 s)"} ms`,
           );
-          bang.push({
+          themDong({
             lap,
             o: "B1b-cắt",
             buoc: `STOP HMI máy B1b, proxy cắt liên kết ở FC5 (${kieu === "truoc_khi_gui" ? "trước khi gửi" : "sau khi gửi"})`,
@@ -985,7 +1005,7 @@ async function main(): Promise<void> {
           }
           const ms = Date.now() - t0;
           const sau = await docCoil(o.endpoint, COIL_B1);
-          bang.push({
+          themDong({
             lap,
             o: "B1b",
             buoc: `STOP HMI máy B1b — icoil (INT, coil:${COIL_B1 + 1}) ghim STOP 1`,
@@ -996,13 +1016,19 @@ async function main(): Promise<void> {
             dat: dat && truoc === false && sau === true,
           });
         }
+        });
         // trả coil về gốc của bước 0b
+        await buoc(lap, "B1-trả", async () => {
         await ghiCoil(o.endpoint, COIL_B1, gocCoilB1);
         const sauTra = await docCoil(o.endpoint, COIL_B1);
-        bang.push({ lap, o: "B1-trả", buoc: `trả coil:${COIL_B1 + 1} về gốc`, mong: `coil = gốc ${so01(gocCoilB1)}`, duoc: `đọc ${so01(sauTra)}`, ms: 0, thanhGhi: `coil ${so01(sauTra)}`, dat: sauTra === gocCoilB1 });
+        themDong({ lap, o: "B1-trả", buoc: `trả coil:${COIL_B1 + 1} về gốc`, mong: `coil = gốc ${so01(gocCoilB1)}`, duoc: `đọc ${so01(sauTra)}`, ms: 0, thanhGhi: `coil ${so01(sauTra)}`, dat: sauTra === gocCoilB1 });
+        });
       }
     }
     console.log(`[bench] số hàng telemetry đi qua bus (seam ghi, không ghi DB): ${soHangTelemetry}`);
+  } catch (e) {
+    // R1b-2b-1 T17 (chẩn đoán) — lỗi NGOÀI các bước (thiết lập / OT không lên …) ⇒ một dòng ĐỎ có lý do + stack; dọn và bảng vẫn chạy.
+    ghiLoiBuoc(0, "THIẾT LẬP", e);
   } finally {
     for (const fn of don.reverse()) {
       try {
