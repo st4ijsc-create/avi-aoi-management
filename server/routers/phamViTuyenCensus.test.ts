@@ -613,3 +613,86 @@ describe("§8 — NHÓM (U): lượt UỶ QUYỀN là một PHÉP NỐI CÓ KI�
     expect(cua("U").length).toBe(GHIM.U);
   });
 });
+
+describe("§8 — W22: tệp chọn + khớp tuyến bằng AST theo ĐỐI TƯỢNG GỌI (không mù với generic, không đếm máy khách HTTP)", () => {
+  const quet = (rel: string, ma: string) => quetPhamViDoc(GOC_REPO, { [rel]: ma }).tuyen.filter((t) => t.file === rel);
+
+  it("★ `router.get<P>(…)` (generic) trong tệp KHÔNG có `.get(` nào khác vẫn được thấy (trước W22: tệp bị bỏ qua im lặng)", () => {
+    const t = quet(
+      "server/routes/__w22Generic.ts",
+      `import { Router } from "express";
+const router = Router();
+router.get<{ id: string }>("/api/__w22/generic/:id", (req, res) => { res.json({ id: req.params.id }); });
+router.post<{}, {}, { a: number }>("/api/__w22/generic-post", async (req, res) => { res.json(req.body); });
+export default router;`,
+    );
+    expect(t.map((x) => `${x.phuongThuc} ${x.duong}`).sort()).toEqual(["GET /api/__w22/generic/:id", "POST /api/__w22/generic-post"]);
+  });
+
+  it("`.get\n(` xuống dòng và `.get?.(`: vẫn chọn tệp", () => {
+    const t = quet(
+      "server/routes/__w22Xuong.ts",
+      `import express from "express";
+export function gan(app: express.Express) {
+  app.get
+  ("/api/__w22/xuong-dong", (_q, r) => r.json({}));
+}`,
+    );
+    expect(t.map((x) => x.duong)).toEqual(["/api/__w22/xuong-dong"]);
+  });
+
+  it("★ máy khách HTTP KHÔNG phải tuyến: axios.get, axios.create(), this.client.post(PATH, payload), new XxxClient()", () => {
+    const t = quet(
+      "server/services/__w22MayKhach.ts",
+      `import axios from "axios";
+const PATH_TOKEN = "/oauth/token";
+const api = axios.create({ baseURL: "https://x.test" });
+export class Dich {
+  private client = axios.create();
+  constructor(private http: AxiosInstance) {}
+  async chay(cfg: object, payload: object) {
+    await axios.get("/v1/a", cfg);
+    await api.get("/v1/b", cfg);
+    await this.client.post(PATH_TOKEN, payload);
+    await this.http.put("/v1/c", payload);
+    const c = new HttpClient();
+    await c.delete("/v1/d", cfg);
+  }
+}`,
+    );
+    expect(t).toEqual([]);
+  });
+
+  it("★ Express với tên KHÔNG theo quy ước vẫn là tuyến khi được KHAI bằng express()/Router() hoặc kiểu Express; tên lạ không khai ⇒ không phải tuyến", () => {
+    const t = quet(
+      "server/routes/__w22TenLa.ts",
+      `import express, { Router, type Express } from "express";
+const web = express();
+web.get("/api/__w22/web", (_q, r) => r.json({}));
+const dichVu = Router();
+dichVu.get("/api/__w22/dich-vu", (_q, r) => r.json({}));
+export function gan(servidor: Express, sub: express.Router, la: unknown) {
+  servidor.get("/api/__w22/servidor", (_q, r) => r.json({}));
+  sub.get("/api/__w22/sub", (_q, r) => r.json({}));
+  (la as any).get("/api/__w22/khong-biet", (_q: unknown, r: any) => r.json({}));
+  const khongKhai = (globalThis as any).khongKhai;
+  khongKhai.get("/api/__w22/khong-khai", (_q: unknown, r: any) => r.json({}));
+}`,
+    );
+    expect(t.map((x) => x.duong).sort()).toEqual(["/api/__w22/dich-vu", "/api/__w22/servidor", "/api/__w22/sub", "/api/__w22/web"]);
+  });
+
+  it("tên theo quy ước (app/router/r) không khai trong tệp (nhập từ nơi khác) vẫn được tính; `req.get('host')` thì không", () => {
+    const t = quet(
+      "server/routes/__w22QuyUoc.ts",
+      `import { app } from "../app";
+app.get("/api/__w22/quy-uoc", (req, res) => res.json({ host: req.get("host") }));`,
+    );
+    expect(t.map((x) => x.duong)).toEqual(["/api/__w22/quy-uoc"]);
+  });
+
+  it("cây thật: số tuyến theo đối tượng gọi chỉ gồm app / r / router (không còn đối tượng lạ lọt vào nhóm)", () => {
+    const doiTuong = new Set(QUET.tuyen.map((t) => t.bien));
+    expect([...doiTuong].sort()).toEqual(["app", "r", "router"]);
+  });
+});
