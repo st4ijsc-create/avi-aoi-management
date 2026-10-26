@@ -22,7 +22,8 @@
  *   tải được danh sách máy — dùng E-STOP cứng tại máy". Khảo sát (5) có hạn CON riêng `HAN_KHAO_SAT_DUNG_KHAN_CAP_MS` (kẹp vào phần còn lại của
  *   hạn thân, chừa `DU_PHONG_TRA_VE_MS`) và tối đa `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` adapter kiểm đồng thời: một adapter chậm chỉ làm MÁY của
  *   nó thành "không kiểm được" (`coDung`/`soAdapter` null, `tongHop` "khong_ro") — danh sách vẫn về, nút DỪNG vẫn bấm được; dungMay tự quyết
- *   lúc gửi. ⚠ Giới hạn đã ghi (C16): lượt đọc cờ ở cổng và xác thực KHÔNG nằm trong hạn này (thủ tục không phải dungMay ⇒ không có
+ *   lúc gửi. fix round 2 (N1): giới hạn 16 là KHE DÙNG CHUNG toàn tiến trình (`KHE_KHAO_SAT_DUNG_KHAN_CAP`) giữa mọi lượt gọi — việc bị bỏ rơi
+ *   giữ khe tới khi THẬT xong và bỏ các truy vấn còn lại sau hạn; hết khe ⇒ "không kiểm được" ngay. ⚠ Giới hạn đã ghi (C16): lượt đọc cờ ở cổng và xác thực KHÔNG nằm trong hạn này (thủ tục không phải dungMay ⇒ không có
  *   `ctx.hanChotStopHmi`); DB treo ở đó ⇒ khối không hiện — E-STOP cứng vẫn là lớp an toàn thật.
  */
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -32,7 +33,7 @@ import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import { appError } from "../../_core/appError";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { TRAN_MAY_DUNG_KHAN_CAP, type TongHopDungKhanCap } from "../../../shared/dungKhanCap";
-import { coGhim, dieuKienMayCoNoi, khaoSatKhaNangDungNhieu, soCoGhim, tongHopDungKhanCap } from "./khaNangDung";
+import { coGhim, dieuKienMayCoNoi, khaoSatKhaNangDungNhieu, soCoGhim, taoKheKhaoSat, tongHopDungKhanCap } from "./khaNangDung";
 import { kiemCongVaiTro, lenhHmiBat, type NguoiGoiLenh } from "./lenhHmi";
 
 export { TRAN_MAY_DUNG_KHAN_CAP };
@@ -45,6 +46,18 @@ export const HAN_KHAO_SAT_DUNG_KHAN_CAP_MS = 1500;
 export const DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP = 16;
 /** Phần hạn thân chừa lại sau khảo sát để dựng và trả danh sách. */
 const DU_PHONG_TRA_VE_MS = 250;
+
+/**
+ * fix round 2 (re-review N1) — khe khảo sát DÙNG CHUNG TOÀN TIẾN TRÌNH cho MỌI lượt `mayDungKhanCap` (mọi người dùng, mọi lần tải lại): tổng
+ * việc khảo sát đang chạy (kể cả việc bị bỏ rơi sau hạn con) ≤ DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP ⇒ pool DB (25) luôn còn chỗ cho dungMay. Hết
+ * khe ⇒ máy "không kiểm được" NGAY (không xếp hàng). Khe chỉ trả khi việc THẬT xong.
+ */
+const KHE_KHAO_SAT_DUNG_KHAN_CAP = taoKheKhaoSat(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
+
+/** CHỈ test: số khe đang giữ + mức giữ cao nhất từ lần đặt lại gần nhất. */
+export function _kheKhaoSatDungKhanCapChoTest(): { dangGiu: number; cao: number; datLaiCao: () => void } {
+  return { dangGiu: KHE_KHAO_SAT_DUNG_KHAN_CAP.dangGiu(), cao: KHE_KHAO_SAT_DUNG_KHAN_CAP.cao(), datLaiCao: () => KHE_KHAO_SAT_DUNG_KHAN_CAP._datLaiCao() };
+}
 
 /** Một máy của khối DỪNG khẩn cấp — ĐÚNG sáu trường (ruling C16 + điều phối M4 phương án b). */
 export type MayDungKhanCap = {
@@ -99,7 +112,7 @@ async function than(nguoi: NguoiGoiLenh, pv: PhamViNguoiXem, batDau: number): Pr
   const khaNang = await khaoSatKhaNangDungNhieu(
     db,
     rows.map((r) => r.id),
-    { hanMs: Math.max(0, hanKhaoSat), dongThoiToiDa: DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP },
+    { hanMs: Math.max(0, hanKhaoSat), dongThoiToiDa: DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP, khe: KHE_KHAO_SAT_DUNG_KHAN_CAP },
   );
   return {
     may: rows.map((r) => ({

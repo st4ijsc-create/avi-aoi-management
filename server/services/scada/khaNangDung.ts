@@ -135,14 +135,28 @@ function edgeToiDuoc(dem: DemToiEdge, nodeId: number): Promise<boolean> {
 }
 
 /** Một adapter có ghim: các bước 2–7 (thứ tự dispatchCore). Có thể ném — nơi gọi đổi thành `khong_kiem_duoc`. */
-async function ketLuanCoGhim(db: Db, a: HangAdapter, dem: DemToiEdge): Promise<Omit<KhaNangDungAdapter, "adapterId" | "code">> {
+/**
+ * R1b-2b-1 T1 fix round 2 (N1 b) — `daHetHan` (vắng ⇒ không bao giờ): khảo sát có hạn đã quá hạn ⇒ BỎ các bước truy vấn CÒN LẠI, trả
+ * HET_HAN_KHAO_SAT (lượt bị bỏ rơi chỉ tốn đúng truy vấn nó đang chạy, không đi tiếp truy vấn 2–3).
+ */
+async function ketLuanCoGhim(
+  db: Db,
+  a: HangAdapter,
+  dem: DemToiEdge,
+  daHetHan: () => boolean = () => false,
+): Promise<Omit<KhaNangDungAdapter, "adapterId" | "code"> | typeof HET_HAN_KHAO_SAT> {
   const chu = await adapterOwnedByEdge(db, a.id);
   if (chu) {
+    if (daHetHan()) return HET_HAN_KHAO_SAT;
     return { trangThai: "qua_edge", edgeCode: chu.edgeCode, edgeToiDuoc: await edgeToiDuoc(dem, chu.edgeNodeId) };
   }
   if (!getActiveDriver(a.id)) return { trangThai: "mat_ket_noi" };
   if (!isOtControlEnabled()) return { trangThai: "mo_phong", lyDo: "ot_control_tat" };
-  if (isCommissioningRequired() && !(await isCommissioned(a.id))) return { trangThai: "mo_phong", lyDo: "chua_nghiem_thu" };
+  if (isCommissioningRequired()) {
+    if (daHetHan()) return HET_HAN_KHAO_SAT;
+    if (!(await isCommissioned(a.id))) return { trangThai: "mo_phong", lyDo: "chua_nghiem_thu" };
+  }
+  if (daHetHan()) return HET_HAN_KHAO_SAT;
   if (!(await runningConnectionMatchesAdapterRow(db, a.id))) return { trangThai: "ghim_cu" };
   return { trangThai: "duoc" };
 }
@@ -159,10 +173,65 @@ export interface TuyChonKhaoSat {
   hanMs?: number;
   /** số adapter kiểm đồng thời tối đa (hồ chờ); vắng ⇒ không giới hạn */
   dongThoiToiDa?: number;
+  /**
+   * R1b-2b-1 T1 fix round 2 (N1 a) — khe khảo sát DÙNG CHUNG TOÀN TIẾN TRÌNH (giữa MỌI lượt gọi). Mỗi việc có truy vấn (đọc chung; kiểm một
+   * adapter) phải lấy MỘT khe NGAY (không xếp hàng); hết khe ⇒ việc ấy coi như quá hạn ("không kiểm được"). Khe chỉ trả khi việc THẬT xong
+   * (không phải lúc hạn con hết) ⇒ việc bị bỏ rơi vẫn giữ khe ⇒ tải lại liên tục không chồng thêm truy vấn lên pool dùng chung với dungMay.
+   */
+  khe?: KheKhaoSat;
 }
 
 /** Dấu "hết hạn khảo sát" (không ném lỗi thô — ngân sách rawErrorCensus). */
 const HET_HAN_KHAO_SAT: unique symbol = Symbol("het_han_khao_sat");
+
+/** Khe khảo sát dùng chung (semaphore KHÔNG xếp hàng). `cao` = mức giữ cao nhất từng đo (cho test). */
+export interface KheKhaoSat {
+  readonly toiDa: number;
+  /** lấy một khe NGAY; false ⇒ hết khe (không chờ) */
+  thu(): boolean;
+  /** trả một khe (gọi đúng một lần cho mỗi `thu()` thành công) */
+  tra(): void;
+  dangGiu(): number;
+  cao(): number;
+  /** chỉ test: đặt lại mức cao (không đụng số đang giữ) */
+  _datLaiCao(): void;
+}
+
+export function taoKheKhaoSat(toiDa: number): KheKhaoSat {
+  let giu = 0;
+  let cao = 0;
+  return {
+    toiDa,
+    thu() {
+      if (giu >= toiDa) return false;
+      giu++;
+      if (giu > cao) cao = giu;
+      return true;
+    },
+    tra() {
+      if (giu > 0) giu--;
+    },
+    dangGiu: () => giu,
+    cao: () => cao,
+    _datLaiCao() {
+      cao = giu;
+    },
+  };
+}
+
+/** Chạy `viec` trong một khe (nếu có `khe`): hết khe ⇒ HET_HAN_KHAO_SAT ngay; khe trả khi promise THẬT của `viec` xong. */
+function trongKhe<T>(khe: KheKhaoSat | undefined, viec: () => Promise<T>): Promise<T | typeof HET_HAN_KHAO_SAT> {
+  if (!khe) return viec();
+  if (!khe.thu()) return Promise.resolve(HET_HAN_KHAO_SAT);
+  let p: Promise<T>;
+  try {
+    p = viec();
+  } catch (e) {
+    khe.tra();
+    return Promise.reject(e);
+  }
+  return p.finally(() => khe.tra());
+}
 
 /** `p` trong `ms` ms (null ⇒ không hạn). Hết hạn ⇒ HET_HAN_KHAO_SAT; reject muộn của `p` đã có handler (không thành unhandledRejection). */
 function trongHanKhaoSat<T>(p: Promise<T>, ms: number | null): Promise<T | typeof HET_HAN_KHAO_SAT> {
@@ -205,13 +274,20 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[], tuyC
   if (machineIds.length === 0) return out;
   const hetHanLuc = tuyChon.hanMs === undefined ? null : Date.now() + tuyChon.hanMs;
   const conLai = (): number | null => (hetHanLuc === null ? null : hetHanLuc - Date.now());
+  // fix round 2 (N1 b) — việc bị bỏ rơi kiểm cái này trước MỖI truy vấn kế tiếp
+  const daHetHan = (): boolean => hetHanLuc !== null && Date.now() >= hetHanLuc;
+  const khe = tuyChon.khe;
   let adapters: HangAdapter[] = [];
   const ghim = new Map<number, StopPinTagRowMuc[]>();
   try {
-    const docChung = await trongHanKhaoSat(docAdapterVaGhim(db, machineIds, ghim), conLai());
+    // fix round 2 (N1 a) — đọc chung cũng giữ MỘT khe dùng chung tới khi đọc THẬT xong; hết khe ⇒ như quá hạn (không xếp hàng)
+    const docChung = await trongHanKhaoSat(
+      trongKhe(khe, () => docAdapterVaGhim(db, machineIds, ghim, daHetHan)),
+      conLai(),
+    );
     if (docChung === HET_HAN_KHAO_SAT) {
-      // fix round 1 (I1) — đọc chung quá hạn: mọi máy "không kiểm được" (không bao giờ "được"); danh sách máy vẫn trả về
-      logger.warn({ hanMs: tuyChon.hanMs, soMay: machineIds.length }, "[SCADA] khảo sát khả năng dừng: đọc adapter/ghim quá hạn");
+      // fix round 1 (I1) — đọc chung quá hạn / hết khe: mọi máy "không kiểm được" (không bao giờ "được"); danh sách máy vẫn trả về
+      logger.warn({ hanMs: tuyChon.hanMs, soMay: machineIds.length }, "[SCADA] khảo sát khả năng dừng: đọc adapter/ghim quá hạn hoặc hết khe");
       for (const v of out.values()) v.loiKhaoSat = true;
       return out;
     }
@@ -236,7 +312,11 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[], tuyC
       // fix round 1 (I1) — hết hạn trước khi tới lượt (hồ chờ) hoặc trong lúc kiểm ⇒ máy "không kiểm được"
       const ms = conLai();
       if (ms !== null && ms <= 0) return { machineId: a.machineId, hetHan: true };
-      const kl = await trongHanKhaoSat(ketLuanCoGhim(db, a, dem), ms);
+      // fix round 2 (N1) — lấy khe dùng chung NGAY (hết khe ⇒ "không kiểm được", không chờ); khe trả khi kiểm THẬT xong; quá hạn ⇒ bỏ truy vấn còn lại
+      const kl = await trongHanKhaoSat(
+        trongKhe(khe, () => ketLuanCoGhim(db, a, dem, daHetHan)),
+        ms,
+      );
       if (kl === HET_HAN_KHAO_SAT) return { machineId: a.machineId, hetHan: true };
       return { ...co, ...kl, ...(ghimBoQua.length > 0 ? { ghimBoQua } : {}) };
     } catch (err) {
@@ -268,8 +348,15 @@ export async function khaoSatKhaNangDungNhieu(db: Db, machineIds: number[], tuyC
 }
 
 /** Đọc chung: adapter bật của các máy + ghim của chúng (điền `ghim`). Ném khi DB lỗi (nơi gọi bắt). */
-async function docAdapterVaGhim(db: Db, machineIds: number[], ghim: Map<number, StopPinTagRowMuc[]>): Promise<HangAdapter[]> {
+async function docAdapterVaGhim(
+  db: Db,
+  machineIds: number[],
+  ghim: Map<number, StopPinTagRowMuc[]>,
+  daHetHan: () => boolean = () => false,
+): Promise<HangAdapter[] | typeof HET_HAN_KHAO_SAT> {
   const adapters = await docAdapterBat(db, machineIds);
+  // fix round 2 (N1 b) — quá hạn sau truy vấn 1 ⇒ không chạy truy vấn ghim
+  if (daHetHan()) return HET_HAN_KHAO_SAT;
   if (adapters.length > 0) {
     const rows = await db
       .select({

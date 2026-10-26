@@ -26,6 +26,17 @@ const H = vi.hoisted(() => ({
   dongThoiGiuMs: 0,
   dangChay: 0,
   dongThoiMax: 0,
+  /** fix round 2 (N1) — TẬP adapter treo `treoMs` (cùng lúc nhiều adapter) */
+  treoTap: new Set<number>(),
+  /** fix round 2 (N1) — đếm MỌI lượt kiểm chủ edge đang chạy (mọi lượt gọi cộng lại) + đỉnh + tổng số lượt bắt đầu */
+  edgeDangChay: 0,
+  edgeDinh: 0,
+  edgeSoGoi: 0,
+  /** fix round 2 (N1 b) — số lượt so vân tay kết nối (bước 3 của kiểm adapter) theo adapter */
+  vanTayGoi: new Map<number, number>(),
+  /** fix round 2 (N2) — ms trễ mọi SELECT … FROM device_adapters (đọc chung của khảo sát); 0 = không trễ */
+  docChungCho: 0,
+  bangAdapter: null as unknown,
 }));
 
 const cho = (ms: number) =>
@@ -51,18 +62,81 @@ vi.mock("../services/ot/otAdapterOwnerGate", async (importOriginal) => {
   return {
     ...real,
     adapterOwnedByEdge: (async (...a: Parameters<typeof real.adapterOwnedByEdge>) => {
-      if (H.treoAdapter !== 0 && a[1] === H.treoAdapter && H.treoMs > 0) await cho(H.treoMs);
-      if (H.doDongThoi) {
-        H.dangChay++;
-        H.dongThoiMax = Math.max(H.dongThoiMax, H.dangChay);
-        try {
-          await cho(H.dongThoiGiuMs);
-        } finally {
-          H.dangChay--;
+      H.edgeSoGoi++;
+      H.edgeDangChay++;
+      H.edgeDinh = Math.max(H.edgeDinh, H.edgeDangChay);
+      try {
+        if (H.treoMs > 0 && ((H.treoAdapter !== 0 && a[1] === H.treoAdapter) || H.treoTap.has(a[1]))) await cho(H.treoMs);
+        if (H.doDongThoi) {
+          H.dangChay++;
+          H.dongThoiMax = Math.max(H.dongThoiMax, H.dangChay);
+          try {
+            await cho(H.dongThoiGiuMs);
+          } finally {
+            H.dangChay--;
+          }
         }
+        return await real.adapterOwnedByEdge(...a);
+      } finally {
+        H.edgeDangChay--;
       }
-      return real.adapterOwnedByEdge(...a);
     }) as typeof real.adapterOwnedByEdge,
+  };
+});
+
+// fix round 2 (N1 b) — bước 3 THẬT của kiểm adapter (so vân tay kết nối): đếm theo adapter (việc bị bỏ rơi sau hạn KHÔNG được chạy bước này)
+vi.mock("../services/ot/commandDispatcher", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/commandDispatcher")>();
+  return {
+    ...real,
+    runningConnectionMatchesAdapterRow: (async (...a: Parameters<typeof real.runningConnectionMatchesAdapterRow>) => {
+      H.vanTayGoi.set(a[1], (H.vanTayGoi.get(a[1]) ?? 0) + 1);
+      return real.runningConnectionMatchesAdapterRow(...a);
+    }) as typeof real.runningConnectionMatchesAdapterRow,
+  };
+});
+
+// fix round 2 (N2) — DB "chậm-mà-sống" CHỈ ở đọc chung của khảo sát: mọi SELECT … FROM device_adapters trễ H.docChungCho ms (getDb THẬT bọc
+// proxy; danh sách máy FROM machines không trễ). Không nới mã sản phẩm.
+vi.mock("../db/connection", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../db/connection")>();
+  const treHoan = (q: any): any =>
+    new Proxy(q, {
+      get(t, p) {
+        if (p === "then") return (ok?: any, err?: any) => cho(H.docChungCho).then(() => t.then(ok, err));
+        const v = Reflect.get(t, p, t);
+        if (typeof v !== "function") return v;
+        return (...a: unknown[]) => {
+          const r = v.apply(t, a);
+          return r === t ? treHoan(t) : r && typeof r.then === "function" ? treHoan(r) : r;
+        };
+      },
+    });
+  const boc = (d: any) =>
+    new Proxy(d, {
+      get(t, p) {
+        if (p === "select" && H.docChungCho > 0) {
+          return (...a: unknown[]) => {
+            const b = t.select(...a);
+            return new Proxy(b, {
+              get(bt, bp) {
+                if (bp === "from") return (bang: unknown) => (bang === H.bangAdapter ? treHoan(bt.from(bang)) : bt.from(bang));
+                const v = Reflect.get(bt, bp, bt);
+                return typeof v === "function" ? v.bind(bt) : v;
+              },
+            });
+          };
+        }
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" && p !== "constructor" ? v.bind(t) : v;
+      },
+    });
+  return {
+    ...real,
+    getDb: (async (...a: Parameters<typeof real.getDb>) => {
+      const d = await real.getDb(...a);
+      return d ? boc(d) : d;
+    }) as typeof real.getDb,
   };
 });
 
@@ -106,7 +180,9 @@ import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
+import { deviceAdapters } from "../../drizzle/schema";
 import {
+  _kheKhaoSatDungKhanCapChoTest,
   DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP,
   HAN_DANH_SACH_DUNG_KHAN_CAP_MS,
   HAN_KHAO_SAT_DUNG_KHAN_CAP_MS,
@@ -225,6 +301,7 @@ beforeAll(async () => {
   const d = await getDb();
   if (!d) throw new Error("test cần CSDL _test");
   db = d;
+  H.bangAdapter = deviceAdapters;
 
   fx.fA = `${RUN}a`;
   fx.fB = `${RUN}b`;
@@ -315,8 +392,25 @@ const datLaiH = () => {
   H.dongThoiGiuMs = 0;
   H.dangChay = 0;
   H.dongThoiMax = 0;
+  H.treoTap.clear();
+  H.edgeDinh = H.edgeDangChay;
+  H.vanTayGoi.clear();
+  H.docChungCho = 0;
 };
-beforeEach(datLaiH);
+/** chờ (có hạn) tới khi mọi khe khảo sát dùng chung được trả (việc bị bỏ rơi đã THẬT xong) */
+async function choKheTrong(): Promise<void> {
+  await vi.waitFor(
+    () => {
+      if (_kheKhaoSatDungKhanCapChoTest().dangGiu !== 0) throw new Error("còn khe đang giữ");
+    },
+    { timeout: 6_000, interval: 50 },
+  );
+}
+beforeEach(async () => {
+  // cô lập: việc khảo sát bị bỏ rơi của ca TRƯỚC (kể cả ca đỏ dừng giữa chừng) phải trả khe dùng chung trước khi ca này chạy
+  await choKheTrong();
+  datLaiH();
+});
 afterEach(async () => {
   datLaiH();
   vi.stubEnv("SCADA_COMMANDS_ENABLED", "true");
@@ -472,8 +566,61 @@ describe("★★★ điều phối M4 (b) — gợi ý tongHop từ CÙNG khảo
     expect(kq.may[0]).toMatchObject({ machineId: fx.mA1, coDung: null, soAdapter: null, tongHop: "khong_ro" });
     expect(kq.may[1]).toMatchObject({ tongHop: "khong_toi", coDung: false });
     expect(kq.may[3]).toMatchObject({ tongHop: "mot_phan", coDung: true, soAdapter: 2 });
-    // lượt bị bỏ rơi chạy xong trước ca kế (không truy vấn rơi vào lúc dọn)
-    await cho(H.treoMs - troi + 300);
+    // lượt bị bỏ rơi chạy xong trước ca kế (không truy vấn rơi vào lúc dọn): khe dùng chung được trả khi việc THẬT xong
+    await choKheTrong();
+    // fix round 2 (N1 b) — việc bị bỏ rơi của a1 (driver sống, OT bật) xong truy vấn 1 SAU hạn ⇒ KHÔNG chạy bước 3 (so vân tay)
+    expect(H.vanTayGoi.get(fx.a1) ?? 0).toBe(0);
+    // đối chứng: a4d (không treo) chạy đủ bước 3 trong hạn
+    expect(H.vanTayGoi.get(fx.a4d) ?? 0).toBe(1);
+  }, 10_000);
+
+  it(`★★★ N1 — khe khảo sát DÙNG CHUNG giữa các lượt gọi: hai lượt ĐỒNG THỜI + adapter treo ⇒ tổng việc khảo sát đang chạy ≤ ${DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP}; lượt thứ ba (khe còn bị việc bỏ rơi giữ) về NGAY, mọi máy khong_ro, 0 việc mới`, async () => {
+    const idsD = ((await dung(sql`SELECT id FROM device_adapters WHERE code LIKE ${RUN + "-ad%"}`)) as Array<{ id: number }>).map((r) => Number(r.id));
+    expect(idsD).toHaveLength(SO_MAY_D);
+    for (const id of idsD) H.treoTap.add(id);
+    H.treoMs = 3_000;
+    const khe = _kheKhaoSatDungKhanCapChoTest();
+    expect(khe.dangGiu).toBe(0);
+    khe.datLaiCao();
+    H.edgeDinh = 0;
+    // pha 1 — hai lượt ĐỒNG THỜI
+    const [k1, k2] = await Promise.all([goc.opD.caller.scadaCommands.mayDungKhanCap(), goc.opD.caller.scadaCommands.mayDungKhanCap()]);
+    for (const kq of [k1, k2]) {
+      expect(kq.may).toHaveLength(SO_MAY_D);
+      expect(kq.may.every((m) => m.coDung === null && m.soAdapter === null && m.tongHop === "khong_ro")).toBe(true);
+    }
+    // oracle ĐỘC LẬP (đếm ở callee thật, không đọc bộ đếm của sản phẩm) đứng TRƯỚC
+    expect(H.edgeDinh, "tổng lượt kiểm chủ edge đang chạy của CẢ HAI lượt gọi").toBeLessThanOrEqual(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
+    expect(H.edgeDinh).toBeGreaterThan(1);
+    const sau1 = _kheKhaoSatDungKhanCapChoTest();
+    // pha 2 — lượt thứ ba trong lúc khe còn bị giữ: không xếp hàng, không việc mới
+    const goiTruoc = H.edgeSoGoi;
+    const batDau = Date.now();
+    const k3 = await goc.opD.caller.scadaCommands.mayDungKhanCap();
+    const troi = Date.now() - batDau;
+    expect(troi).toBeLessThan(700);
+    expect(k3.may).toHaveLength(SO_MAY_D);
+    expect(k3.may.every((m) => m.coDung === null && m.soAdapter === null && m.tongHop === "khong_ro")).toBe(true);
+    expect(H.edgeSoGoi - goiTruoc).toBe(0);
+    // bộ đếm khe của sản phẩm (chỉ test): đã được dùng, không vượt trần, việc bị bỏ rơi giữ khe tới khi THẬT xong
+    expect(sau1.cao, "khe dùng chung phải được dùng (cầu chì của bộ đếm)").toBeGreaterThan(0);
+    expect(sau1.dangGiu, "việc bị bỏ rơi vẫn giữ khe tới khi THẬT xong").toBeGreaterThan(0);
+    expect(_kheKhaoSatDungKhanCapChoTest().cao).toBeLessThanOrEqual(DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP);
+    await choKheTrong();
+  }, 10_000);
+
+  it("★★★ N2 — ĐỌC CHUNG (adapter / ghim) chậm quá hạn con ⇒ danh sách VẪN về < 3000 ms, đủ mọi máy, MỌI máy null / null / khong_ro", async () => {
+    H.docChungCho = 3_500;
+    await datCo(goc.op.id, true);
+    const batDau = Date.now();
+    const kq = await goc.op.caller.scadaCommands.mayDungKhanCap();
+    const troi = Date.now() - batDau;
+    expect(troi).toBeGreaterThanOrEqual(HAN_KHAO_SAT_DUNG_KHAN_CAP_MS - 50);
+    expect(troi).toBeLessThan(HAN_DANH_SACH_DUNG_KHAN_CAP_MS);
+    expect(kq.may.map((m) => m.machineId)).toEqual([fx.mA1, fx.mA2, fx.mA3, fx.mA4]);
+    for (const m of kq.may) expect(m).toMatchObject({ coDung: null, soAdapter: null, tongHop: "khong_ro" });
+    await choKheTrong();
+    H.docChungCho = 0;
   }, 10_000);
 
   it(`★★ I1 — khảo sát kiểm tối đa ${DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP} adapter đồng thời (${SO_MAY_D} adapter có ghim)`, async () => {
