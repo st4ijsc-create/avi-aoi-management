@@ -55,6 +55,7 @@ interface ApiKeyEntry {
   maskedKey?: string;
   endpoint?: string | null;
   status: ApiKeyStatus;
+  factoryId?: number | null;
   lastTestedAt?: string | Date | null;
   createdAt?: string | Date;
 }
@@ -138,16 +139,22 @@ export default function AISettingsPage() {
 
 // ─── API Keys Management Section ─────────────────────────────────────────────
 
-function ApiKeysSection() {
+export function ApiKeysSection() {
   const { t } = useTranslation();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Set<number>>(new Set());
 
   // Fetch API keys
   const { data: apiKeys, isLoading, refetch } = trpc.aiSettings.listApiKeys.useQuery();
+  // ★ Đợt 10.2 bước 6 — nhà máy theo PHẠM VI người dùng (`factory.list`): hiện tên nhà máy của khoá + chọn nhà máy khi tạo.
+  const dsNhaMay = trpc.factory.list.useQuery();
+  const nhaMays = dsNhaMay.data ?? [];
+  const tenNhaMay = (id: number | null | undefined) => (id == null ? null : nhaMays.find((f) => f.id === id)?.name ?? '#' + id);
   const createMutation = trpc.aiSettings.createApiKey.useMutation({
-    onSuccess: () => {
-      toast.success(t('aiSettings.apiKeys.created', 'API key created successfully'));
+    onSuccess: (r) => {
+      // Máy chủ báo RÕ khoá inactive vì thiếu nhà máy (kichHoat:false, lyDo:'can-nha-may') — không để khoá chết âm thầm.
+      if (r && 'kichHoat' in r && r.kichHoat === false) toast.warning(t('aiSettings.apiKeys.createdInactive', 'API key created but NOT active: it needs a factory. Assign a factory to use it.'));
+      else toast.success(t('aiSettings.apiKeys.created', 'API key created successfully'));
       refetch();
       setShowAddDialog(false);
     },
@@ -214,6 +221,7 @@ function ApiKeysSection() {
             <AddApiKeyForm
               onSubmit={(data) => createMutation.mutate(data)}
               isLoading={createMutation.isPending}
+              nhaMays={nhaMays}
             />
           </DialogContent>
         </Dialog>
@@ -249,6 +257,16 @@ function ApiKeysSection() {
                             {status.icon}
                             {status.label}
                           </Badge>
+                          {key.factoryId != null && (
+                            <Badge variant="outline" className="text-xs" data-testid={`khoa-nha-may-${key.id}`}>
+                              {tenNhaMay(key.factoryId)}
+                            </Badge>
+                          )}
+                          {key.factoryId == null && key.status !== 'active' && (
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-700" data-testid={`khoa-can-nha-may-${key.id}`} title={t('aiSettings.apiKeys.needsFactoryHint', 'This key has no factory, so it cannot be activated.')}>
+                              {t('aiSettings.apiKeys.needsFactory', 'Needs a factory to activate')}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">{provider.label}</p>
                         <div className="flex items-center gap-2 mt-1">
@@ -278,7 +296,9 @@ function ApiKeysSection() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Switch
+                        data-testid={`khoa-bat-tat-${key.id}`}
                         checked={key.status === 'active'}
+                        disabled={key.factoryId == null && key.status !== 'active'}
                         onCheckedChange={() => toggleMutation.mutate({ id: key.id })}
                       />
                       <Button
@@ -313,19 +333,23 @@ function ApiKeysSection() {
 
 // ─── Add API Key Form ────────────────────────────────────────────────────────
 
-function AddApiKeyForm({ onSubmit, isLoading }: {
-  onSubmit: (data: { name: string; provider: ApiKeyProvider; apiKey: string; endpoint?: string }) => void;
+export function AddApiKeyForm({ onSubmit, isLoading, nhaMays = [] }: {
+  onSubmit: (data: { name: string; provider: ApiKeyProvider; apiKey: string; endpoint?: string; factoryId?: number }) => void;
   isLoading: boolean;
+  nhaMays?: Array<{ id: number; name: string; code?: string | null }>;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [provider, setProvider] = useState<ApiKeyProvider>('openai');
   const [apiKey, setApiKey] = useState('');
   const [endpoint, setEndpoint] = useState('');
+  // Một nhà máy duy nhất trong phạm vi ⇒ chọn sẵn; nhiều ⇒ phải chọn; chưa chọn ⇒ cảnh báo khoá sẽ KHÔNG hoạt động.
+  const [nhaMay, setNhaMay] = useState('');
+  const nhaMayDung = nhaMay || (nhaMays.length === 1 ? String(nhaMays[0]!.id) : '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ name, provider, apiKey, endpoint: endpoint || undefined });
+    onSubmit({ name, provider, apiKey, endpoint: endpoint || undefined, ...(nhaMayDung ? { factoryId: Number(nhaMayDung) } : {}) });
   };
 
   return (
@@ -374,6 +398,28 @@ function AddApiKeyForm({ onSubmit, isLoading }: {
             required
           />
         </div>
+        {nhaMays.length > 0 && (
+          <div className="space-y-2">
+            <Label htmlFor="khoa-nha-may">{t('aiSettings.apiKeys.factory', 'Factory')}</Label>
+            <select
+              id="khoa-nha-may"
+              data-testid="khoa-nha-may"
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={nhaMayDung}
+              onChange={(e) => setNhaMay(e.target.value)}
+            >
+              <option value="">{t('aiSettings.apiKeys.noFactory', '— No factory (key will be inactive) —')}</option>
+              {nhaMays.map((f) => (
+                <option key={f.id} value={String(f.id)}>{f.name}{f.code ? ' (' + f.code + ')' : ''}</option>
+              ))}
+            </select>
+            {!nhaMayDung && (
+              <p className="text-xs text-amber-700" role="alert" data-testid="khoa-canh-bao-nha-may">
+                {t('aiSettings.apiKeys.noFactoryWarn', 'Without a factory the key is created INACTIVE and cannot be enabled until a factory is assigned.')}
+              </p>
+            )}
+          </div>
+        )}
         {(provider === 'azure_openai' || provider === 'custom') && (
           <div className="space-y-2">
             <Label>{t('aiSettings.apiKeys.endpoint', 'Endpoint')}</Label>

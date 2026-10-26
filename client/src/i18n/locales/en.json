@@ -13340,7 +13340,13 @@
       "name": "Name",
       "namePlaceholder": "e.g. Production OpenAI Key",
       "provider": "Provider",
-      "key": "API Key"
+      "key": "API Key",
+      "createdInactive": "API key created but NOT active: it needs a factory. Assign a factory to use it.",
+      "needsFactory": "Needs a factory to activate",
+      "needsFactoryHint": "This key has no factory, so it cannot be activated.",
+      "factory": "Factory",
+      "noFactory": "— No factory (key will be inactive) —",
+      "noFactoryWarn": "Without a factory the key is created INACTIVE and cannot be enabled until a factory is assigned."
     },
     "modelConfig": {
       "title": "Model Configuration",

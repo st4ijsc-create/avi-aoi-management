@@ -13115,7 +13115,13 @@
       "name": "名称",
       "namePlaceholder": "例如：生产环境OpenAI密钥",
       "provider": "提供商",
-      "key": "API密钥"
+      "key": "API密钥",
+      "createdInactive": "密钥已创建但尚未启用：密钥需要归属某个工厂。请分配工厂后使用。",
+      "needsFactory": "需要工厂才能启用",
+      "needsFactoryHint": "此密钥尚未归属任何工厂，无法启用。",
+      "factory": "工厂",
+      "noFactory": "— 不选择（密钥将处于未启用状态）—",
+      "noFactoryWarn": "未选择工厂时，密钥将以未启用状态创建，分配工厂前无法启用。"
     },
     "modelConfig": {
       "title": "模型配置",

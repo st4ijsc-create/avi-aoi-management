@@ -13340,7 +13340,13 @@
       "name": "Tên",
       "namePlaceholder": "VD: Khóa OpenAI Production",
       "provider": "Nhà Cung Cấp",
-      "key": "Khóa API"
+      "key": "Khóa API",
+      "createdInactive": "Đã tạo khoá nhưng CHƯA hoạt động: khoá cần thuộc một nhà máy. Gán nhà máy để dùng.",
+      "needsFactory": "Cần nhà máy để bật",
+      "needsFactoryHint": "Khoá chưa thuộc nhà máy nào nên không thể bật.",
+      "factory": "Nhà máy",
+      "noFactory": "— Không chọn (khoá sẽ không hoạt động) —",
+      "noFactoryWarn": "Không chọn nhà máy ⇒ khoá được tạo ở trạng thái KHÔNG hoạt động và không bật được cho tới khi gán nhà máy."
     },
     "modelConfig": {
       "title": "Cấu Hình Mô Hình",
