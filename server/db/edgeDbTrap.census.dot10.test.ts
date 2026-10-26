@@ -25,6 +25,7 @@ const KNOWN: Record<string, number> = {
   "_core/workerLeader.ts": 1,
   "_core/healthProbes.ts": 1,
   "services/backupService.ts": 2,
+  "services/mcpCucBo/dbChiDoc.ts": 1, // 2026-10-26 dieu-phoi: MCP cục bộ — kết nối vai trò mcp_chi_doc (chỉ SELECT), tiến trình riêng scripts/mcp-cuc-bo.ts
 };
 
 const isTestFile = (name: string) => /\.(test|spec)\.tsx?$/.test(name);

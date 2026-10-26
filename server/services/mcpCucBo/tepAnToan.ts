@@ -45,7 +45,7 @@ export function docGocTuEnv(giaTri: string | undefined): GocTep[] {
   const ra: GocTep[] = [];
   for (const muc of (giaTri ?? "").split(";").map((s) => s.trim()).filter(Boolean)) {
     const i = muc.indexOf("=");
-    if (i <= 0) throw new Error(`MCP_CUC_BO_THU_MUC: mục "${muc}" phải có dạng ten=duong_dan[:ro]`);
+    if (i <= 0) throw new LoiTep(`MCP_CUC_BO_THU_MUC: mục "${muc}" phải có dạng ten=duong_dan[:ro]`, "CAU_HINH_SAI");
     const ten = muc.slice(0, i).trim().toLowerCase();
     let p = muc.slice(i + 1).trim();
     let chiDoc = false;
@@ -53,9 +53,9 @@ export function docGocTuEnv(giaTri: string | undefined): GocTep[] {
       chiDoc = true;
       p = p.slice(0, -3);
     }
-    if (!RE_TEN_GOC.test(ten)) throw new Error(`MCP_CUC_BO_THU_MUC: tên gốc "${ten}" không hợp lệ (a-z, 0-9, -, _)`);
-    if (!path.isAbsolute(p)) throw new Error(`MCP_CUC_BO_THU_MUC: gốc "${ten}" phải là đường dẫn tuyệt đối`);
-    if (ra.some((g) => g.ten === ten)) throw new Error(`MCP_CUC_BO_THU_MUC: trùng tên gốc "${ten}"`);
+    if (!RE_TEN_GOC.test(ten)) throw new LoiTep(`MCP_CUC_BO_THU_MUC: tên gốc "${ten}" không hợp lệ (a-z, 0-9, -, _)`, "CAU_HINH_SAI");
+    if (!path.isAbsolute(p)) throw new LoiTep(`MCP_CUC_BO_THU_MUC: gốc "${ten}" phải là đường dẫn tuyệt đối`, "CAU_HINH_SAI");
+    if (ra.some((g) => g.ten === ten)) throw new LoiTep(`MCP_CUC_BO_THU_MUC: trùng tên gốc "${ten}"`, "CAU_HINH_SAI");
     ra.push({ ten, duongDan: path.resolve(p), chiDoc });
   }
   return ra;

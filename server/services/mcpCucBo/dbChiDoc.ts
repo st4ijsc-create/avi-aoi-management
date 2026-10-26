@@ -13,6 +13,7 @@
  *   MCP của Luồng mang hạng `ngoai-ghi` (bật luồng cần quyền). Không mở cổng MCP ra mạng.
  */
 import postgres from "postgres";
+import { edgeDbRefused } from "../../db/edgeDbTrap";
 
 export const TRAN_HANG = 500;
 export const TRAN_BYTE_KET_QUA = 900 * 1024;
@@ -70,7 +71,9 @@ export interface KetNoiDb {
   dong(): Promise<void>;
 }
 
-export function taoKetNoiDb(url: string): KetNoiDb {
+/** null ⇔ tiến trình edge (không có CSDL trung tâm — bẫy `edgeDbRefused`). */
+export function taoKetNoiDb(url: string): KetNoiDb | null {
+  if (edgeDbRefused("mcpCucBo.taoKetNoiDb")) return null;
   const sql = postgres(url, { max: 3, idle_timeout: 30, connect_timeout: 10, prepare: false, onnotice: () => undefined });
   return { sql, dong: () => sql.end({ timeout: 5 }) };
 }

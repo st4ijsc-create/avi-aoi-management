@@ -20,7 +20,7 @@ if (token && token.length < 24) throw new Error("MCP_CUC_BO_TOKEN quá ngắn (�
 const goc = docGocTuEnv(process.env.MCP_CUC_BO_THU_MUC);
 const dbUrl = process.env.MCP_CUC_BO_DB_URL?.trim();
 if (dbUrl && /\/\/(aoi|postgres|avi_app)[:@]/i.test(dbUrl)) throw new Error("MCP_CUC_BO_DB_URL phải dùng vai trò mcp_chi_doc, không dùng vai trò chủ / ứng dụng");
-const db = dbUrl ? taoKetNoiDb(dbUrl) : undefined;
+const db = (dbUrl ? taoKetNoiDb(dbUrl) : null) ?? undefined;
 
 const ghiNhatKy = (d: Record<string, unknown>) => process.stdout.write(JSON.stringify(d) + "\n");
 const mayChu = taoMayChuHttp({ cong, token, goc, db, ghiNhatKy });
