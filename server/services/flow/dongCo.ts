@@ -82,7 +82,9 @@ export async function luuPhienBan(rawGoc: unknown, userId: number | null, factor
     await tx.insert(aiFlows).values({ id: def.id, name: def.name, ownerId: userId, riskClass: kq.hang, factoryId }).onConflictDoNothing();
     const [m] = (await tx.execute(sql`SELECT coalesce(max(version), 0)::int AS v FROM ai_flow_versions WHERE "flowId" = ${def.id}`)) as unknown as { v: number }[];
     const version = m.v + 1;
-    await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId });
+    // ★ Đợt 10.3 — phiên bản có node model NGOÀI ⇒ đánh dấu (mỗi phiên bản cần duyệt ngoài riêng trước khi bật).
+    const { coNodeNgoai } = await import("../ai/ngoai/duyetNgoai");
+    await tx.insert(aiFlowVersions).values({ flowId: def.id, version, definition: { ...def, version }, riskClass: kq.hang, createdBy: userId, coNodeNgoai: coNodeNgoai(def) });
     await tx.update(aiFlows).set({ name: def.name, riskClass: kq.hang, updatedAt: sql`now()` }).where(eq(aiFlows.id, def.id));
     return { flowId: def.id, version, hang: kq.hang };
   });

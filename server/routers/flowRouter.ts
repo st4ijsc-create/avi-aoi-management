@@ -199,6 +199,22 @@ async function kiemThamChieuKhiLuu(def: Record<string, unknown>, ctx: CoCtx): Pr
  * ★ Đợt 9 (IDOR) — lúc BẬT: mọi `may` / FOE workflow viết THẲNG trong định nghĩa phải nằm trong phạm vi NGƯỜI BẬT (biểu thức động để kiểm lúc
  * chạy). Ngoài phạm vi / không tồn tại ⇒ NOT_FOUND, cùng thông điệp.
  */
+/**
+ * ★ Đợt 10.3 — phiên bản có node dùng model AI NGOÀI chỉ bật được khi: luồng thuộc nhà máy, phiên bản đã DUYỆT NGOÀI và băm duyệt khớp
+ * băm định nghĩa hiện tại (`aiNgoai.duyetNgoai`). Áp cho CẢ `datPhienBanHoatDong` lẫn `batLuongOt`.
+ */
+async function kiemNgoaiKhiBat(v: { definition: unknown; ngoaiDuyetLuc: Date | null; ngoaiBamDuyet: string | null }, flowId: string): Promise<void> {
+  const db = await layDb("flowKichHoat");
+  const [f] = await db.select({ f: aiFlows.factoryId }).from(aiFlows).where(eq(aiFlows.id, flowId));
+  const { kiemDuyetNgoaiTruocKhiBat } = await import("../services/ai/ngoai/duyetNgoai");
+  try {
+    kiemDuyetNgoaiTruocKhiBat(v, f?.f ?? null);
+  } catch (e) {
+    const ma = (e as { ma?: string }).ma ?? "NGOAI_CHUA_DUYET";
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoat", reason: ma }, ma === "NGOAI_LUONG_TOAN_CUC" ? "Luồng toàn hệ thống không dùng được model AI ngoài." : "Phiên bản dùng model AI ngoài cần được duyệt (aiNgoai.duyetNgoai) trước khi bật.");
+  }
+}
+
 async function kiemTruocKhiBat(def: FlowDefinition, ctx: { user: { id: number; role: string } }): Promise<void> {
   const loi = await thamChieuTinhNgoai(def, boKiemPhamVi(phamViCua(ctx)));
   // MỘT câu cho cả "không tồn tại" lẫn "ngoài phạm vi"; chỉ nêu id node (người soạn luồng biết node nào của mình).
@@ -373,6 +389,7 @@ export const flowRouter = router({
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "flowKichHoatHangCao", reason: "flowChiAdminBat", hang: v.riskClass }, `Luồng hạng ${v.riskClass} chỉ quản trị viên được bật.`);
       }
       if (input.bat) await kiemTruocKhiBat(v.definition as FlowDefinition, ctx);
+      if (input.bat) await kiemNgoaiKhiBat(v, input.flowId);
       await db
         .update(aiFlows)
         .set({ activeVersion: input.version, enabled: input.bat, updatedAt: sql`now()` })
@@ -401,6 +418,7 @@ export const flowRouter = router({
       if (!v) throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "flowKichHoat", reason: "flowKhongTonTaiHoacNgoaiPhamVi" }, `Không có luồng ${input.flowId}@${input.version}.`);
       if (v.riskClass !== "ot") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowKichHoat" }, `Luồng ${input.flowId}@${input.version} không phải hạng ot.`);
       await kiemTruocKhiBat(v.definition as FlowDefinition, ctx);
+      await kiemNgoaiKhiBat(v, input.flowId);
       await db
         .update(aiFlows)
         .set({ activeVersion: input.version, enabled: true, updatedAt: sql`now()` })
