@@ -203,6 +203,18 @@ async function kiemThamChieuKhiLuu(def: Record<string, unknown>, ctx: CoCtx): Pr
  * ★ Đợt 10.3 — phiên bản có node dùng model AI NGOÀI chỉ bật được khi: luồng thuộc nhà máy, phiên bản đã DUYỆT NGOÀI và băm duyệt khớp
  * băm định nghĩa hiện tại (`aiNgoai.duyetNgoai`). Áp cho CẢ `datPhienBanHoatDong` lẫn `batLuongOt`.
  */
+async function tomTatNgoaiCuaPhienBan(
+  v: { definition: unknown; ngoaiDuyetLuc: Date | null; ngoaiBamDuyet: string | null; ngoaiDuyetBoi: number | null; ngoaiTuDuyet: boolean; createdBy: number | null },
+  factoryId: number | null,
+) {
+  const db = await layDb("flowXem");
+  const { tomTatNgoaiPhienBan } = await import("../services/ai/ngoai/duyetNgoai");
+  return tomTatNgoaiPhienBan(v, factoryId, async (fid, ver) => {
+    const [c] = await db.select({ d: aiFlowVersions.definition }).from(aiFlowVersions).where(and(eq(aiFlowVersions.flowId, fid), eq(aiFlowVersions.version, ver)));
+    return (c?.d as FlowDefinition | undefined) ?? null;
+  });
+}
+
 async function kiemNgoaiKhiBat(v: { definition: unknown; ngoaiDuyetLuc: Date | null; ngoaiBamDuyet: string | null }, flowId: string): Promise<void> {
   const db = await layDb("flowKichHoat");
   const [f] = await db.select({ f: aiFlows.factoryId }).from(aiFlows).where(eq(aiFlows.id, flowId));
@@ -362,6 +374,8 @@ export const flowRouter = router({
       definition: (v?.definition ?? null) as FlowDefinition | null,
       dsPhienBan,
       coTokenWebhook: await coTokenWebhook(input.flowId),
+      // ★ Đợt 10.4 (D8) — phiên bản có node model ngoài: đã duyệt chưa + ĐANG DUYỆT GÌ (cho màn duyệt; cùng phạm vi đọc).
+      ngoai: v ? await tomTatNgoaiCuaPhienBan(v, f.factoryId) : ({ coNodeNgoai: false } as const),
     };
   }),
 

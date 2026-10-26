@@ -50,3 +50,67 @@ export function kiemDuyetNgoaiTruocKhiBat(v: PhienBanDuyet, factoryIdLuong: numb
   if (!v.ngoaiDuyetLuc || !v.ngoaiBamDuyet) throw new LoiNgoai("NGOAI_CHUA_DUYET");
   if (v.ngoaiBamDuyet !== bamDinhNghia(def)) throw new LoiNgoai("NGOAI_CHUA_DUYET", "bam-lech");
 }
+
+/** ★ Đợt 10.4 (D8, T5) — tóm tắt ĐANG DUYỆT GÌ cho màn duyệt: `flow.chiTiet.ngoai`. */
+export type TomTatNgoaiPhienBan =
+  | { coNodeNgoai: false }
+  | {
+      coNodeNgoai: true;
+      /** Đã duyệt VÀ băm duyệt khớp định nghĩa hiện tại. */
+      daDuyet: boolean;
+      duyetBoi?: number;
+      duyetLuc?: string;
+      tuDuyet: boolean;
+      /** Luồng toàn hệ thống (`factoryId` NULL) ⇒ model ngoài KHÔNG BAO GIỜ dùng được. */
+      toanHeThong: boolean;
+      taoBoi: number | null;
+      /** Mức tĩnh của CẢ luồng (gồm luồng con ghim) — `van-hanh` ⇒ tự duyệt bị cấm. */
+      mucTinhLuong: "ky-thuat" | "van-hanh";
+      nodes: Array<{ nodeId: string; nhaCungCap: string; model: string; mucTinh: "ky-thuat" | "van-hanh" | "ke-thua"; tomTatLenh: string }>;
+    };
+
+const THAM_SO_LENH = ["loiNhac", "tieuChi", "lenh", "prompt", "cauHoi", "moTa"] as const;
+
+export async function tomTatNgoaiPhienBan(
+  v: { definition: unknown; ngoaiDuyetLuc: Date | string | null; ngoaiBamDuyet: string | null; ngoaiDuyetBoi: number | null; ngoaiTuDuyet: boolean; createdBy: number | null },
+  factoryIdLuong: number | null,
+  docCon: (flowId: string, version: number) => Promise<FlowDefinition | null>,
+): Promise<TomTatNgoaiPhienBan> {
+  const def = v.definition as FlowDefinition;
+  if (!def || !coNodeNgoai(def)) return { coNodeNgoai: false };
+  const [{ cheChuoi }, { mucNguonNut, mucTinhCuaDinhNghia }] = await Promise.all([import("./cheDuLieu"), import("./phanLoai")]);
+  const nodes = (def.nodes ?? [])
+    .filter((n) => typeof (n.parameters as Record<string, unknown> | undefined)?.chonModel === "string" && String((n.parameters as Record<string, unknown>).chonModel).startsWith("ngoai:"))
+    .map((n) => {
+      const t = (n.parameters ?? {}) as Record<string, unknown>;
+      const [, nhaCungCap = "", ...m] = String(t.chonModel).split(":");
+      const lenh = THAM_SO_LENH.map((k) => t[k]).find((x): x is string => typeof x === "string" && x.trim().length > 0) ?? "";
+      // tóm tắt SAU bộ che — màn duyệt không bao giờ hiện khoá / mật khẩu viết trong lời nhắc
+      return { nodeId: n.id, nhaCungCap, model: m.join(":"), mucTinh: mucNguonNut(n.type), tomTatLenh: String(cheChuoi(lenh).giaTri).slice(0, 200) };
+    });
+  let mucTinhLuong: "ky-thuat" | "van-hanh";
+  try {
+    mucTinhLuong = await mucTinhCuaDinhNghia(def, docCon);
+  } catch {
+    mucTinhLuong = "van-hanh";
+  }
+  let daDuyet = false;
+  try {
+    kiemDuyetNgoaiTruocKhiBat(v, factoryIdLuong);
+    daDuyet = true;
+  } catch {
+    daDuyet = false;
+  }
+  const luc = v.ngoaiDuyetLuc ? new Date(v.ngoaiDuyetLuc).toISOString() : undefined;
+  return {
+    coNodeNgoai: true,
+    daDuyet,
+    ...(v.ngoaiDuyetBoi !== null ? { duyetBoi: v.ngoaiDuyetBoi } : {}),
+    ...(luc ? { duyetLuc: luc } : {}),
+    tuDuyet: v.ngoaiTuDuyet,
+    toanHeThong: factoryIdLuong === null,
+    taoBoi: v.createdBy,
+    mucTinhLuong,
+    nodes,
+  };
+}
