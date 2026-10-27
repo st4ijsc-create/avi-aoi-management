@@ -177,6 +177,29 @@ describe("KY_TU_AN_CAM — Trojan Source (kiem-dinh T1)", () => {
   it("tiếng Việt có dấu / emoji thường vẫn được", () => {
     expect(phanTichDinhNghia("doc-ma.md", hopLe().replace("You read code.", "Đọc mã tiếng Việt có dấu, rồi tóm tắt 👍.")).ok).toBe(true);
   });
+  it("kiem-dinh: các điểm sót lần trước đều bị chặn", () => {
+    const sot = [0x206a, 0x206f, 0xfff9, 0xfffc, 0x34f, 0x17b4, 0x17b5, 0xffa0, 0x1d173, 0x1d17a, 0xe0100, 0xe01ef, 0x2800, 0x200a, 0x202f, 0x00a0, 0x2003, 0x205f, 0x3000];
+    for (const n of sot) expect(coKyTuAn(`a${cp(n)}b`), n.toString(16)).toBe(true);
+  });
+  it("QUÉT CẢ KHỐI UNICODE: mọi điểm được CHẤP NHẬN chỉ thuộc chữ/số/dấu câu/ký hiệu/dấu kết hợp hoặc tab-LF-CR-dấu cách", () => {
+    const hopLeRe = /^[\p{L}\p{N}\p{P}\p{S}\p{M}]$/u;
+    const loi: string[] = [];
+    let nhan = 0;
+    for (let n = 0; n <= 0x10ffff; n++) {
+      const ch = String.fromCodePoint(n);
+      if (coKyTuAn(`a${ch}b`)) continue;
+      nhan++;
+      if (n === 0x20 || n === 0x09 || n === 0x0a || n === 0x0d) continue;
+      if (!hopLeRe.test(ch)) loi.push(n.toString(16));
+    }
+    expect(loi).toEqual([]);
+    expect(nhan).toBeGreaterThan(100_000);
+  });
+  it("tiếng Việt NFC và NFD (dấu kết hợp Mn) vẫn được", () => {
+    const vi = "Đọc mã tiếng Việt có dấu";
+    expect(coKyTuAn(vi)).toBe(false);
+    expect(coKyTuAn(vi.normalize("NFD"))).toBe(false);
+  });
   it("coKyTuAn công khai cho host kiểm lại trước khi hiển thị", () => {
     expect(coKyTuAn("abc")).toBe(false);
     expect(coKyTuAn(`a${cp(0x202e)}b`)).toBe(true);

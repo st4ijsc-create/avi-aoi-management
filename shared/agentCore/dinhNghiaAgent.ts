@@ -179,22 +179,37 @@ const KHOANG_KY_TU_AN: ReadonlyArray<readonly [number, number]> = [
   [0x7f, 0x9f],
   [0xad, 0xad],
   [0x61c, 0x61c],
+  [0x34f, 0x34f],
   [0x115f, 0x1160],
-  [0x180e, 0x180e],
+  [0x17b4, 0x17b5],
+  [0x180b, 0x180f],
   [0x200b, 0x200f],
   [0x2028, 0x202e],
   [0x2060, 0x2069],
+  [0x2800, 0x2800],
   [0x3164, 0x3164],
   [0xfe00, 0xfe0f],
   [0xfeff, 0xfeff],
-  [0xe0000, 0xe007f],
+  [0xffa0, 0xffa0],
+  [0xfff9, 0xfffc],
+  [0x1d173, 0x1d17a],
+  [0xe0000, 0xe01ef],
 ];
 
-/** Có ký tự ẩn không. BOM ĐẦU tệp được phép (`chuanHoa` bỏ nó, băm không tính nó). */
+/**
+ * Theo NHÓM Unicode (bảng tay luôn lỗi thời): điều khiển Cc, định dạng Cf (bidi, zero-width, thẻ…), thay thế Cs, dùng riêng
+ * Co, CHƯA GÁN Cn, tách dòng/đoạn Zl/Zp, và MỌI khoảng trắng Zs trừ U+0020 (giấu ranh giới từ). Cho phép dấu kết hợp Mn
+ * (tiếng Việt NFD) — KHÔNG cấm cả \p{M}. Bảng `KHOANG_KY_TU_AN` là lớp phụ cho điểm vô hình nằm NGOÀI các nhóm trên.
+ */
+const RE_NHOM_KY_TU_AN = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
+
+/** Có ký tự ẩn không. BOM ĐẦU tệp được phép (`chuanHoa` bỏ nó, băm không tính nó); tab/LF/CR/dấu cách thường được phép. */
 export function coKyTuAn(s: string): boolean {
   const thau = s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
   for (const ch of thau) {
     const cp = ch.codePointAt(0)!;
+    if (cp === 0x20 || cp === 0x09 || cp === 0x0a || cp === 0x0d) continue;
+    if (RE_NHOM_KY_TU_AN.test(ch)) return true;
     for (const [lo, hi] of KHOANG_KY_TU_AN) if (cp >= lo && cp <= hi) return true;
   }
   return false;
