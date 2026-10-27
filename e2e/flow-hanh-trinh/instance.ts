@@ -29,7 +29,9 @@ function serverEnv(logDir: string): NodeJS.ProcessEnv {
     JWT_SECRET: "fht-" + crypto.randomBytes(32).toString("hex"),
     LICENSE_BYPASS: "true", AUTH_2FA_BAT_BUOC: "0", VITE_APP_ID: "ui-metrics",
     EDGE_FACTORY_DRIFT_ALERT: "off",
-  }, ALWAYS_OFF, { FOE_ENABLED: "false", OT_GATEWAY_ENABLED: "false", OT_CONTROL_ENABLED: "false", AI_OT_CONTROL_ENABLED: "false", AI_FLOW_ENABLED: "true", AI_FLOW_WORKER_TRONG_API: "true" });
+  }, ALWAYS_OFF, { FOE_ENABLED: "false", OT_GATEWAY_ENABLED: "false", OT_CONTROL_ENABLED: "false", AI_OT_CONTROL_ENABLED: "false", AI_FLOW_ENABLED: "true", AI_FLOW_WORKER_TRONG_API: "true",
+    // Đợt 10.4 — cờ toàn hệ BẬT cho e2e kiểm định ngoài; mỗi nhà máy vẫn MẶC ĐỊNH TẮT (`ai_ngoai_nha_may` vắng ⇒ tắt) nên spec khác không bị ảnh hưởng.
+    AI_NGOAI_ENABLED: "true" });
   return env;
 }
 

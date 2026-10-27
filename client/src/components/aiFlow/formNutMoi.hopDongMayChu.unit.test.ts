@@ -16,6 +16,8 @@ import { TOAN_TU_CHON_FORM, TRAN_NHANH_CHON_FORM } from "./FormChon";
 import { CONG_CHON, TOAN_TU_CHON, TRAN_NHANH_CHON } from "../../../../server/services/flow/nut/chon";
 import { CHO_MAC_DINH_GIAY, CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "../../../../server/services/flow/nut/cho";
 import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_ITEM_MCP } from "../../../../server/services/flow/nut/mcpKhach";
+import { RE_TRUONG_RA_KIEM_DINH_FORM, TRAN_ITEM_KIEM_DINH_FORM } from "./FormKiemDinhNgoai";
+import { TRAN_ITEM_KIEM_DINH } from "../../../../server/services/flow/nut/kiemDinhNgoai";
 import { RE_TEN_MAY_CHU_FORM, RE_TEN_TOOL_FORM, TRAN_DOI_SO_FORM_MCP } from "./FormMcp";
 import { KIEU_TRUONG_BIEU_MAU, TRAN_CHUOI_BIEU_MAU, TRAN_LUA_CHON_BIEU_MAU, TRAN_TRUONG_BIEU_MAU, kiemDinhNghiaBieuMau } from "../../../../server/services/flow/nut/bieuMau";
 import { KIEU_TRUONG_FORM, TRAN_CHUOI_FORM, TRAN_LUA_CHON_FORM, TRAN_TRUONG_FORM } from "./FormBieuMau";
@@ -62,7 +64,7 @@ describe("census: node có tham số theo danh mục / khoảng phải có form 
     "ot.de-xuat-luong": "node OT: JSON thô qua cổng aiControlGate.",
     "luong.goi-con": "chọn luồng con cần bộ chọn riêng — lô sau; máy chủ kiểm lúc lưu.",
   };
-  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau", "tich-hop.mcp-goi"];
+  const NODE_MOI_CO_FORM = ["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau", "tich-hop.mcp-goi", "ai.kiem-dinh-ngoai"];
 
   it("4 node mới có `case` trong NodeConfigPanel; danh sách JSON-thô-có-lý-do không chứa node mới và không có mục lỗi thời", () => {
     const nguon = readFileSync(join(AQUI, "NodeConfigPanel.tsx"), "utf8");
@@ -141,5 +143,28 @@ describe("tich-hop.mcp-goi: form ⇄ máy chủ", () => {
     expect(kiemThamSoNutMoi(d({ server: "may-do", tool: "do-oee", thamSo: { may: "{{ $json.x }}" }, truongRa: "mcp" }))).toEqual([]);
     expect(kiemThamSoNutMoi(d({ server: "", tool: "" })).length).toBe(2); // form mặc định (rỗng) chưa hợp lệ cho tới khi điền
     expect(kiemThamSoNutMoi(d({ server: "{{ $json.s }}", tool: "t" })).length).toBe(1);
+  });
+});
+
+describe("ai.kiem-dinh-ngoai: form ⇄ máy chủ (10.4 T3)", () => {
+  it("trần item + biểu thức tên trường ra của form KHỚP máy chủ (trần: hằng xuất; biểu thức: đọc từ NGUỒN máy chủ vì không xuất)", () => {
+    expect(TRAN_ITEM_KIEM_DINH_FORM).toBe(TRAN_ITEM_KIEM_DINH);
+    const src = readFileSync(join(AQUI, "../../../../server/services/flow/nut/kiemDinhNgoai.ts"), "utf8");
+    const m = /const RE_TRUONG_RA = (\/.+\/);/.exec(src);
+    expect(m).not.toBeNull();
+    expect(RE_TRUONG_RA_KIEM_DINH_FORM.source).toBe(new RegExp(m![1].slice(1, -1)).source);
+  });
+  it("mọi giá trị form sinh ra qua bộ kiểm lúc lưu; ngoài khoảng gõ tay bằng JSON vẫn bị máy chủ chặn", () => {
+    const d = (parameters: Record<string, unknown>) => dinh("ai.kiem-dinh-ngoai", parameters);
+    // mặc định của form (chưa chọn model) lưu được; chọn model ngoài cố định lưu được
+    expect(kiemThamSoNutMoi(d({ chonModel: "", cauHoi: "{{ $json.cauHoi }}", traLoi: "{{ $json.traLoi }}", tieuChi: "", truongRa: "kiemDinh" }))).toEqual([]);
+    expect(kiemThamSoNutMoi(d({ chonModel: "ngoai:openai_compat:gpt-x", cauHoi: "{{ $json.c }}", traLoi: "{{ $json.t }}" }))).toEqual([]);
+    expect(kiemThamSoNutMoi(d({ chonModel: "ngoai:anthropic:claude-x", truongRa: "kq_1" }))).toEqual([]);
+    // thiếu khoá chonModel (node từ gói nhập: máy chủ bỏ khoá) cũng lưu được — "việc phải điền"
+    expect(kiemThamSoNutMoi(d({ cauHoi: "x", traLoi: "y" }))).toEqual([]);
+    // form KHÔNG sinh được các giá trị này, nhưng JSON thô gõ được ⇒ máy chủ chặn
+    for (const sai of ["auto", "vai-tro:chat", "ho-so:p1", "{{ $json.m }}", "ngoai:", "tên-tệp.gguf"]) expect(kiemThamSoNutMoi(d({ chonModel: sai })).length, sai).toBe(1);
+    expect(kiemThamSoNutMoi(d({ chonModel: "", truongRa: "1abc" })).length).toBe(1);
+    expect(kiemThamSoNutMoi(d({ chonModel: "", truongRa: "a".repeat(49) })).length).toBe(1);
   });
 });

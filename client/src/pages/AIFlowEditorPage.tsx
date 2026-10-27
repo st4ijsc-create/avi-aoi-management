@@ -24,6 +24,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FlowThongKe from "@/components/aiFlow/FlowThongKe";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { BangDuyetNgoai } from "@/components/aiFlow/BangDuyetNgoai";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { ArrowLeft, Inbox, Loader2, Play, Plus, Power, PowerOff, Save, Search, AlertTriangle, Sparkles } from "lucide-react";
 import { kiemLuong, type FlowDefinition, type KhaiBaoNut, type NodeInstance } from "@shared/flow/model";
@@ -42,6 +44,7 @@ export default function AIFlowEditorPage() {
   const search = useSearch();
   const runTuUrl = new URLSearchParams(search).get("run");
   const utils = trpc.useUtils();
+  const { user } = useAuth();
 
   const [phienBanXem, setPhienBanXem] = useState<number | undefined>(undefined);
   const chiTiet = trpc.flow.chiTiet.useQuery({ flowId, version: phienBanXem }, { enabled: !!flowId });
@@ -278,8 +281,8 @@ export default function AIFlowEditorPage() {
                 size="sm"
                 variant="outline"
                 data-testid="nut-bat"
-                disabled={datBat.isPending || batOt.isPending || !version || dirty}
-                title={dirty ? t("flowStudio.sua.luuTruocKhiBat") : undefined}
+                disabled={datBat.isPending || batOt.isPending || !version || dirty || (chiTiet.data?.ngoai?.coNodeNgoai === true && !chiTiet.data.ngoai.daDuyet)}
+                title={dirty ? t("flowStudio.sua.luuTruocKhiBat") : chiTiet.data?.ngoai?.coNodeNgoai === true && !chiTiet.data.ngoai.daDuyet ? t("kiemDinhNgoai.duyet.chuaDuyet") : undefined}
                 onClick={() => {
                   if (!version) return;
                   if (hangHienThi === "ot") stepUp.guard((totpCode) => batOt.mutate({ flowId, version, totpCode }));
@@ -304,6 +307,9 @@ export default function AIFlowEditorPage() {
             </Link>
           </div>
         </div>
+
+        {/* ★ Đợt 10.4 (T5) — phiên bản có node AI ngoài: hiện cái đang duyệt + nút Duyệt (admin). */}
+        <BangDuyetNgoai flowId={flowId} version={version} ngoai={chiTiet.data?.ngoai as never} laAdmin={user?.role === "admin"} nguoiDungId={user?.id ?? null} dirty={dirty} onDaDuyet={() => void utils.flow.chiTiet.invalidate({ flowId })} />
 
         {loiLuu && (
           <div className="border-b bg-destructive/10 px-4 py-2 text-sm" role="alert" data-testid="loi-luu">
