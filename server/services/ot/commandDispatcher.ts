@@ -174,6 +174,7 @@ import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
+import { ghiCoTran } from "./ghiTreoCoTran"; // R1b-2b-2a T1 (mục 61) — one stuck-write cap for the STOP path
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 // Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
@@ -1937,6 +1938,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
  * reason as the robot M1 fix: under SEC_PLATFORM the hash-chain lock has no timeout and must not hold the stop's
  * answer). Its failure is logged (no secrets), never surfaced as a stop failure; the ledger row already carries
  * the override.
+ * R1b-2b-2a T1 (mục 61, điều phối Q2) — runs as a THUNK under the STOP path's ONE stuck-write cap (`ghiCoTran`, `ghiTreoCoTran.ts`) for EVERY
+ * pinned stop (one rule for every STOP source): the getDb() / import() / INSERT are issued only while fewer than TRAN_GHI_TREO_STOP background
+ * writes are in flight; a full cap ⇒ the row content is logged (`dispatch_pinned_stop_audit_bo_qua_day`) + counted for posture, never retried.
  */
 function auditPinnedStopOverride(
   input: DispatchInput,
@@ -1947,25 +1951,35 @@ function auditPinnedStopOverride(
   confirmer: number,
 ): void {
   const action = kind === "policyOverride" ? "stop_policy_override" : "stop_interlock_override";
-  const work = (async () => {
-    const db = await getDb();
-    if (!db) {
-      console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
-      return;
-    }
-    const { recordAuditEvent } = await import("../audit/controlAuditService");
-    await recordAuditEvent(db, {
-      entityType: "ot_command",
-      entityId: resultId ?? "unrecorded",
-      action,
-      actorId: confirmer,
-      after: { adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, ...override },
-      reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
-    });
-  })();
-  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, `pinned-stop ${action} audit`).catch((err) => {
-    console.error(`[Dispatch] audit ${action} failed or is stuck for command_log #${resultId ?? "?"} (the pinned stop was sent):`, (err as Error)?.message || err);
-  });
+  const suKien = {
+    entityType: "ot_command",
+    entityId: resultId ?? "unrecorded",
+    action,
+    actorId: confirmer,
+    after: { adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, ...override },
+    reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
+  };
+  void ghiCoTran(
+    async () => {
+      const db = await getDb();
+      if (!db) {
+        console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
+        return;
+      }
+      const { recordAuditEvent } = await import("../audit/controlAuditService");
+      await recordAuditEvent(db, suKien);
+    },
+    {
+      nhan: "dispatch_pinned_stop_audit",
+      requestId: input.idempotencyKey ?? "-",
+      noiDung: { bang: "control_audit_log", ...suKien, resultId: resultId ?? null, adapterId: input.adapterId },
+      khiLoi: (err, muon) =>
+        console.error(
+          `[Dispatch] audit ${action} failed${muon ? " (late, after the background-write deadline)" : ""} for command_log #${resultId ?? "?"} (the pinned stop was sent):`,
+          (err as Error)?.message || err,
+        ),
+    },
+  );
 }
 
 /** The cached (idempotent replay) result of a prior terminal ledger row for this key. */

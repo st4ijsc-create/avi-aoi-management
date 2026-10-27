@@ -330,6 +330,13 @@ let loiLog: ReturnType<typeof vi.spyOn>;
 const nhanGhiLoiChot = () =>
   loiLog.mock.calls.map((c) => (c[0] as { cho?: unknown })?.cho).filter((x): x is string => typeof x === "string");
 
+/**
+ * R1b-2b-2a T1 (mục 61) — chỉ nhãn của lượt ghi SỔ (attempts / chốt dòng chờ) trên đường trả lời. Audit HMI nay cũng đi qua `ghiSoCoHan` (trần
+ * ghi nền chung) ⇒ khi pool bão hoà nó log `audit_hmi_stop_qua_han` 500 ms SAU câu trả lời (void — trước: chỉ log sau 10 s của voiHanUnref);
+ * nhãn đó có hay chưa tuỳ đồng hồ lúc đọc, không thuộc oracle của tệp này (Review Focus 1 ở `ghiNenCoTran.r1b2b2.db.test.ts`).
+ */
+const nhanSo = () => nhanGhiLoiChot().filter((x) => !x.startsWith("audit_"));
+
 beforeAll(async () => {
   vi.stubEnv("SCADA_COMMANDS_ENABLED", "true");
   vi.stubEnv("SCADA_LIVE_CACHE_ENABLED", "true");
@@ -477,7 +484,7 @@ describe("★ R1b-2b-1 T9 (mục 44) — sổ chậm THẬT: câu trả lời ST
     // cận dưới thô: lượt sổ ĐÃ chạm hạn (không phải DB nhanh tình cờ)
     expect(troi).toBeGreaterThanOrEqual(HAN_GHI_SO_STOP_HMI_MS - 5);
     expect(troi).toBeLessThan(CAN_CHUA_GHIM_MS + phanNoi);
-    expect(nhanGhiLoiChot()).toEqual(["attempts_hmi_stop_chua_ghim_qua_han"]);
+    expect(nhanSo()).toEqual(["attempts_hmi_stop_chua_ghim_qua_han"]);
     expect(H.dispatchInputs.length - dTu).toBe(0);
     // pool còn bão hoà ⇒ đọc qua kết nối giữ: dòng attempts CHƯA vào sổ
     const luc = (await baoHoa!.tx.execute(cauThu(m))) as unknown as DongThu[];
@@ -530,7 +537,7 @@ describe("★ R1b-2b-1 T9 (mục 44) — sổ chậm THẬT: câu trả lời ST
     expect(dongDispatch).toBeLessThan(2_500 + (await lag.dung(300)));
     // (3) ledger sau dispatch: hai lượt × 500 ms (chạm hạn) + dư; bỏ hẹn giờ 500 ms ⇒ chờ cả 5 s ⇒ đỏ
     expect(sauRao).toBeLessThan(1_000 + 400 + (await lag.dung(300)));
-    expect(nhanGhiLoiChot()).toEqual(["hmi_stop_sau_dispatch_qua_han", "attempts_hmi_stop_qua_han"]);
+    expect(nhanSo()).toEqual(["hmi_stop_sau_dispatch_qua_han", "attempts_hmi_stop_qua_han"]);
     // pool còn bão hoà ⇒ đọc qua kết nối giữ. Dòng chờ ĐÃ 'executed' — do dispatcher (đặt chỗ CAS confirmed→executed TRONG dispatch, trước rào);
     // lượt chốt của lenhHmi (CAS confirmed→…, ở đây khớp 0 hàng) còn xếp hàng — bằng chứng nó chạm hạn là log hmi_stop_sau_dispatch_qua_han ở trên.
     const [choLuc] = (await baoHoa!.tx.execute(cauCho(actionId))) as unknown as Array<{ status: string }>;

@@ -61,6 +61,7 @@ import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { BUOC_QUA_HAN_STOP_HMI, dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
 import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
+import { demGhiBoQuaDay } from "../services/ot/ghiTreoCoTran";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
 // Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
@@ -572,6 +573,22 @@ export interface StopQuaHanPosture {
 }
 
 /**
+ * R1b-2b-2a T1 (mục 61, kiem-dinh KD-A3) — lượt ghi nền của đường STOP (audit HMI / audit STOP ghim của dispatcher / attempts / chốt dòng chờ) bị
+ * BỎ QUA vì đầy trần ghi đang bay (`ghiTreoCoTran.ts`) trong 24 h, theo bảng đích. Bộ nhớ tiến trình này (từ `batDauLuc`), không biết máy ⇒
+ * CHỈ toàn quyền thấy (`null` cho người khác / phạm vi không phân giải được). STOP của các lượt ấy vẫn có dòng `command_log`.
+ */
+export interface GhiNenStopBoQuaPosture {
+  count: number;
+  theoBang: Record<string, number>;
+  batDauLuc: string;
+}
+function ghiNenStopBoQua(pv: PhamViPosture | null): GhiNenStopBoQuaPosture | null {
+  if (!pv?.toanQuyen) return null;
+  const m = demGhiBoQuaDay();
+  return { count: m.tong, theoBang: { ...m.theoBang } as Record<string, number>, batDauLuc: m.batDauLuc };
+}
+
+/**
  * R1b-2a T12 (ruling K7) — số STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (`MA_STOP_QUA_HAN` / `dieuKienThuStopQuaHan()` của T4), theo bước.
  * `pv` null = phạm vi không phân giải được ⇒ degraded. `them` (chỉ test) = điều kiện thêm trên `scada_command_attempts`.
  */
@@ -779,6 +796,8 @@ export const oversightRouter = router({
         interlockRulesCauHinhHong: cauHinhHong.count,
         // R1b-2a T12 (ruling K7, Q4) — STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (theo phạm vi; bộ nhớ tiến trình chỉ toàn quyền).
         stopQuaHan24h,
+        // R1b-2b-2a T1 (KD-A3) — ghi nền của đường STOP bị bỏ qua vì đầy trần (bộ nhớ tiến trình; chỉ toàn quyền)
+        ghiNenStopBoQua24h: ghiNenStopBoQua(pv),
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         // Đợt 10.3 (§12) — dịch vụ forge (sinh ảnh / chuyển giọng nói… ra ngoài KHÔNG qua cổng AI ngoài) đang cấu hình?
@@ -790,6 +809,7 @@ export const oversightRouter = router({
 
 // Xuất riêng cho test đơn vị (không đi qua tRPC caller) — mỗi nhánh + đường degraded.
 export const _internal = {
+  ghiNenStopBoQua,
   fetchRecipesDraftPending,
   fetchRecipesActiveUnapproved,
   fetchInterlockRulesPending,
