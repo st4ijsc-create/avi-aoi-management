@@ -20,27 +20,12 @@ import { FormChon, FormGom } from "./FormChon";
 import { FormCho, FormDungLoi, FormLoc, FormSapXep } from "./FormLoc";
 import { FormBieuMau } from "./FormBieuMau";
 import { FormMcp } from "./FormMcp";
+import OChonModel from "./OChonModel";
 
 type ThamSo = Record<string, unknown>;
 
 /** Node có form có kiểu — vẫn có ô JSON cho người nâng cao (nút chuyển); máy chủ kiểm tham số như nhau ở cả hai đường. */
 const CO_FORM_CO_KIEU: ReadonlySet<string> = new Set(["du-lieu.so-lieu", "tich-hop.thong-bao", "kich-hoat.su-kien", "bao-tri.tao-phieu", "logic.chon", "logic.gom", "logic.cho", "logic.dung-loi", "logic.loc", "logic.sap-xep", "nguoi.bieu-mau", "tich-hop.mcp-goi"]);
-
-const VAI_TRO_GOI_Y = ["chat", "extract", "classify", "summarize", "code.software", "code.plc"];
-
-function OVaiTro({ giaTri, onDoi }: { giaTri: unknown; onDoi: (v: string) => void }) {
-  const { t } = useTranslation();
-  return (
-    <Truong nhan={t("flowStudio.cauHinh.vaiTro")} goiY={t("flowStudio.cauHinh.vaiTroGoiY")}>
-      <Input className="h-9 text-xs font-mono" list="flow-vai-tro" value={String(giaTri ?? "")} onChange={(e) => onDoi(e.target.value)} />
-      <datalist id="flow-vai-tro">
-        {VAI_TRO_GOI_Y.map((v) => (
-          <option key={v} value={v} />
-        ))}
-      </datalist>
-    </Truong>
-  );
-}
 
 /** `du-lieu.dat` — danh sách cặp tên/giá trị (giữ thứ tự hàng đang sửa, kể cả tên rỗng chưa gõ xong). */
 function FormDatTruong({ p, doi }: { p: ThamSo; doi: (k: string, v: unknown) => void }) {
@@ -237,6 +222,7 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
   const { t } = useTranslation();
   const p = node.parameters ?? {};
   const [xemJson, setXemJson] = useState(false);
+  const [lanChon, setLanChon] = useState(0); // đổi ô model ⇒ dựng lại trình sửa JSON (nếu không nó giữ chữ cũ)
   const doi = (k: string, v: unknown) => onDoi({ ...node, parameters: { ...p, [k]: v } });
   const s = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : p[k] === undefined || p[k] === null ? "" : String(p[k]));
 
@@ -294,7 +280,7 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
     case "ai.llm":
       form = (
         <div className="space-y-3">
-          <OVaiTro giaTri={p.vaiTro} onDoi={(v) => doi("vaiTro", v)} />
+          <OChonModel p={p} onDoiThamSo={(n) => onDoi({ ...node, parameters: n })} />
           <Truong nhan={t("flowStudio.cauHinh.heThong")}><OBieuThuc nhieuDong giaTri={p.heThong} onDoi={(v) => doi("heThong", v)} /></Truong>
           <Truong nhan={t("flowStudio.cauHinh.loiNhac")}><OBieuThuc nhieuDong giaTri={p.loiNhac} onDoi={(v) => doi("loiNhac", v)} /></Truong>
           <OHop nhan={t("flowStudio.cauHinh.nghi")} giaTri={p.nghi === true} onDoi={(v) => doi("nghi", v)} />
@@ -306,7 +292,7 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
     case "ai.trich-xuat":
       form = (
         <div className="space-y-3">
-          <OVaiTro giaTri={p.vaiTro} onDoi={(v) => doi("vaiTro", v)} />
+          <OChonModel p={p} onDoiThamSo={(n) => onDoi({ ...node, parameters: n })} />
           <Truong nhan={t("flowStudio.cauHinh.vanBan")}><OBieuThuc giaTri={p.vanBan} onDoi={(v) => doi("vanBan", v)} /></Truong>
           <FormTrichXuat p={p} doi={doi} />
           <Truong nhan={t("flowStudio.cauHinh.truongRa")}><Input className="h-9 text-xs font-mono" value={s("truongRa")} onChange={(e) => doi("truongRa", e.target.value)} /></Truong>
@@ -316,7 +302,7 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
     case "ai.phan-loai":
       form = (
         <div className="space-y-3">
-          <OVaiTro giaTri={p.vaiTro} onDoi={(v) => doi("vaiTro", v)} />
+          <OChonModel p={p} onDoiThamSo={(n) => onDoi({ ...node, parameters: n })} />
           <Truong nhan={t("flowStudio.cauHinh.vanBan")}><OBieuThuc giaTri={p.vanBan} onDoi={(v) => doi("vanBan", v)} /></Truong>
           <Truong nhan={t("flowStudio.cauHinh.nhan")} goiY={t("flowStudio.cauHinh.nhanGoiY")}>
             <Input
@@ -333,7 +319,7 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
     case "ai.tom-tat":
       form = (
         <div className="space-y-3">
-          <OVaiTro giaTri={p.vaiTro} onDoi={(v) => doi("vaiTro", v)} />
+          <OChonModel p={p} onDoiThamSo={(n) => onDoi({ ...node, parameters: n })} />
           <Truong nhan={t("flowStudio.cauHinh.yeuCau")}><OBieuThuc nhieuDong giaTri={p.yeuCau} onDoi={(v) => doi("yeuCau", v)} /></Truong>
           <OHop nhan={t("flowStudio.cauHinh.nghi")} giaTri={p.nghi === true} onDoi={(v) => doi("nghi", v)} />
           <Truong nhan={t("flowStudio.cauHinh.truongRa")}><Input className="h-9 text-xs font-mono" value={s("truongRa")} onChange={(e) => doi("truongRa", e.target.value)} /></Truong>
@@ -432,7 +418,12 @@ export default function NodeConfigPanel({ node, kb, onDoi, onXoa, biMat, webhook
       );
       break;
     default:
-      form = <FormJson key={node.id} nhan={t("flowStudio.cauHinh.thamSoJson")} giaTri={p} onDoi={(v) => onDoi({ ...node, parameters: v })} />;
+      form = (
+        <div className="space-y-3">
+          {(node.type === "ai.agent" || node.type === "ai.sinh-ma") && <OChonModel p={p} onDoiThamSo={(n) => { setLanChon((x) => x + 1); onDoi({ ...node, parameters: n }); }} />}
+          <FormJson key={`${node.id}:${lanChon}`} nhan={t("flowStudio.cauHinh.thamSoJson")} giaTri={p} onDoi={(v) => onDoi({ ...node, parameters: v })} />
+        </div>
+      );
   }
 
   return (

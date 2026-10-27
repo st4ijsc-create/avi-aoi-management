@@ -63,6 +63,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
+import ChonModel from "@/components/ai/ChonModel";
+import { docChonLapTrinh } from "@/lib/chonModel";
+import { docCheDoNghi, luuCheDoNghi } from "@/lib/cheDoNghi";
+import { GhiChuCheDoNghi } from "@/components/aiCoding/GhiChuCheDoNghi";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
 // ★ Đợt 1 · T5 — CHẾ ĐỘ AGENT (Hỏi / duyệt từng bước / tự động). Logic + giao diện ở `components/aiCoding/agent/`;
 //   trang chỉ nối: bộ chọn chế độ, rẽ `handleSend`, dòng thời gian, nút Dừng, làm mới cây/tab khi agent ghi tệp.
@@ -1350,16 +1354,6 @@ export default function AICodingWorkspace() {
    */
   const modelQ = trpc.repoWorkspace.modelDangDung.useQuery(undefined, { staleTime: 5 * 60_000 });
   /**
-   * ★ 2026-09-22 — nhãn nút "tầng mã" lấy từ MODEL THẬT server đang định tuyến (`modelDangDung.modelId`), không
-   * viết cứng "Coder": model mặc định đã đổi sang Qwen3.6-35B-A3B mà nút vẫn ghi "model: Coder" — một nhãn cũ nói
-   * sai điều đang chạy. Rút gọn hậu tố lượng tử hoá (`-UD-Q4_K_XL`, `.gguf`) cho vừa 22 px; tên đầy đủ ở thanh trạng thái.
-   */
-  const tenTangMa = useMemo(() => {
-    const id = modelQ.data?.modelId;
-    if (!id) return null;
-    return String(id).replace(/\.gguf$/i, "").replace(/-(UD-)?Q\d[^-]*(_[A-Z]+)*$/i, "").replace(/-UD$/i, "");
-  }, [modelQ.data?.modelId]);
-  /**
    * ★ G17 (2026-09-22) — danh sách trắng lệnh, để pane "Lệnh & Nhật ký" NÓI THẲNG cái gì gõ được.
    * Hằng của mã nguồn ⇒ cache dài; server vẫn là hàng rào, đây chỉ là bảng chỉ dẫn.
    */
@@ -1376,12 +1370,8 @@ export default function AICodingWorkspace() {
    * (`context.modelTask`), KHÔNG qua biến môi trường ⇒ không cần khởi động lại.
    * Nhớ theo trình duyệt để người dùng không phải chọn lại mỗi lần mở màn.
    */
-  const [tangModel, datTangModel] = useState<"auto" | "code">(() => {
-    try {
-      const v = localStorage.getItem("repoWs.tangModel");
-      return v === "code" ? v : "auto";
-    } catch { return "auto"; }
-  });
+  // ★ Đợt 10.2 — thay `tangModel` (auto|code → `modelTask`) bằng mã chọn model chung (`context.chonModel`); khoá cũ được di trú (docChonLapTrinh).
+  const [chonModel, datChonModel] = useState<string>(() => docChonLapTrinh());
   /**
    * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
    * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
@@ -1389,17 +1379,9 @@ export default function AICodingWorkspace() {
    * (`thinking_budget_tokens` 24k, `ai/nghiSau.ts`) nhưng ĐO trục H: sâu 25/36 vs cân bằng 30/36 — tụt, chậm hơn 25 %.
    *   Một nút đo được là KÉM ĐÚNG hơn mặc định là lời mời sai (audit 8.4m). Bày lại khi có số ≥ cân bằng.
    */
-  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => {
-    try {
-      const v = localStorage.getItem("repoWs.cheDoNghi");
-      return v === "nhanh" ? v : "can-bang";
-    } catch { return "can-bang"; }
-  });
+  const [cheDoNghi, datCheDoNghi] = useState<"can-bang" | "nhanh">(() => docCheDoNghi()); // di trú một lần: xem lib/cheDoNghi.ts
   useEffect(() => {
-    try { localStorage.setItem("repoWs.tangModel", tangModel); } catch { /* chế độ riêng tư */ }
-  }, [tangModel]);
-  useEffect(() => {
-    try { localStorage.setItem("repoWs.cheDoNghi", cheDoNghi); } catch { /* chế độ riêng tư */ }
+    luuCheDoNghi(cheDoNghi);
   }, [cheDoNghi]);
 
   const nganSachQ = trpc.repoWorkspace.nganSachHopCat.useQuery(undefined, {
@@ -1465,6 +1447,7 @@ export default function AICodingWorkspace() {
   //   (cùng đường trang dùng sau khi duyệt diff: `listFiles.invalidate` + `fileQ.refetch`). Hook giữ callback MỚI NHẤT qua ref.
   const agent = useLuotChayAgent({
     projectId,
+    chonModel, // ★ Đợt 10.2 — cùng ô chọn model với chế độ Hỏi
     ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
     onTepDaDoi: (tep) => {
       void utils.repoWorkspace.listFiles.invalidate();
@@ -1515,8 +1498,8 @@ export default function AICodingWorkspace() {
         // ★★★ doc 79 · TRỤC 2 — projectId (ID, KHÔNG phải đường dẫn): tác nhân bám gốc dự án đang chọn.
         context: {
           route: "/ai-coding-workspace", uiLanguage: i18n.language, codingMode: true, projectId,
-          // ★ G4 — tầng model người dùng chọn cho LƯỢT NÀY. Server lọc qua danh sách TRẮNG.
-          modelTask: tangModel,
+          // ★ Đợt 10.2 — model người dùng chọn cho LƯỢT NÀY (auto ⇒ không gửi). Server kiểm hình dạng + danh mục; KHÔNG còn gửi `modelTask`.
+          ...(chonModel !== "auto" ? { chonModel } : {}),
           // ★ F3 — chế độ nghĩ cho LƯỢT NÀY (can-bang | nhanh). Server lọc qua danh sách TRẮNG (`locCheDoNghi`).
           cheDoNghi,
           ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
@@ -2454,20 +2437,7 @@ export default function AICodingWorkspace() {
                 `context.modelTask`, server lọc bằng danh sách TRẮNG và nó KHÔNG nới quyền gì. */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <select
-                  data-chon-tang-model
-                  aria-label={t("repoWs.modelPick.label", "Chọn tầng model")}
-                  value={tangModel}
-                  onChange={(e) => datTangModel(e.target.value as "auto" | "code")}
-                  className="h-[22px] cursor-pointer rounded-md border bg-background px-1.5 text-[10px]"
-                >
-                  <option value="auto">{t("repoWs.modelPick.auto", "model: tự động")}</option>
-                  <option value="code">
-                    {tenTangMa
-                      ? t("repoWs.modelPick.codeTen", "model: {{ten}}", { ten: tenTangMa })
-                      : t("repoWs.modelPick.code", "model: tầng mã")}
-                  </option>
-                </select>
+                <span><ChonModel beMat="lap-trinh" giaTri={chonModel} onDoi={datChonModel} compact /></span>
               </TooltipTrigger>
               <TooltipContent className="max-w-[320px] text-xs">
                 {t(
@@ -2498,6 +2468,7 @@ export default function AICodingWorkspace() {
                 )}
               </TooltipContent>
             </Tooltip>
+            <GhiChuCheDoNghi cheDo={cheDoNghi} />
             {modelQ.data && (
               <Tooltip>
                 <TooltipTrigger asChild>

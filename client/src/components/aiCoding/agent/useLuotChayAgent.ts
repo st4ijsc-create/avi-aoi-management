@@ -36,6 +36,8 @@ const TRAN_LICH_SU = 8;
 export interface DauVaoHookAgent {
   projectId: string;
   ngonNgu?: NgonNgu;
+  /** ★ Đợt 10.2 — model người dùng chọn cho lượt agent (auto/vắng ⇒ không gửi). */
+  chonModel?: string;
   /** Gọi khi tập tệp đã đổi lớn thêm (hoặc sau hoàn tác) — trang làm mới cây/tab. */
   onTepDaDoi?: (tep: string[]) => void;
 }
@@ -65,7 +67,7 @@ export interface HookAgent {
   datLai: () => void;
 }
 
-export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi }: DauVaoHookAgent): HookAgent {
+export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: DauVaoHookAgent): HookAgent {
   const sRef = useRef<TrangThaiAgent>(TRANG_THAI_RONG);
   const [trangThai, setTrangThai] = useState<TrangThaiAgent>(TRANG_THAI_RONG);
   const [matKetNoi, setMatKetNoi] = useState<string | null>(null);
@@ -129,7 +131,7 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi }: DauVaoHookA
       datTrangThai(batDauGui(cau, cheDo));
       const lichSu = lichSuRef.current.slice(-TRAN_LICH_SU);
       await docLuong((o) =>
-        moLuotChay({ cauHoi: cau, projectId, cheDo, ...(lichSu.length ? { lichSu } : {}), ...(ngonNgu ? { ngonNgu } : {}) }, o),
+        moLuotChay({ cauHoi: cau, projectId, cheDo, ...(lichSu.length ? { lichSu } : {}), ...(ngonNgu ? { ngonNgu } : {}), ...(chonModel && chonModel !== "auto" ? { chonModel } : {}) }, o),
       );
       const s = sRef.current;
       if (s.ketThuc) {
@@ -137,7 +139,7 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi }: DauVaoHookA
         lichSuRef.current = [...lichSuRef.current, { role: "user" as const, content: cau }, ...(traLoi ? [{ role: "assistant" as const, content: traLoi }] : [])].slice(-TRAN_LICH_SU);
       }
     },
-    [datTrangThai, docLuong, ngonNgu, projectId],
+    [datTrangThai, docLuong, ngonNgu, projectId, chonModel],
   );
 
   const dung = useCallback(async () => {

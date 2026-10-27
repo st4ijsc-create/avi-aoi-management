@@ -295,3 +295,15 @@ describe("dungYeuCauStream — Đợt M (choPhepChayLenh)", () => {
     expect(String(t.question)).not.toContain("chay_lenh");
   });
 });
+
+describe("dungYeuCauStream — chonModel (Đợt 10.2)", () => {
+  const cd = { loai: "local" as const, nhan: "d:/du-an" };
+  it("chọn cụ thể ⇒ context.chonModel; auto / vắng / sai hình dạng ⇒ KHÔNG có trường (payload không đổi)", () => {
+    const co = (dungYeuCauStream({ ...CHUNG, cheDo: cd, chonModel: "ho-so:p27" }).context as Record<string, unknown>);
+    expect(co.chonModel).toBe("ho-so:p27");
+    for (const v of ["auto", "", undefined, "{{ x }}", "tên-tệp.gguf"]) {
+      const ctx = dungYeuCauStream({ ...CHUNG, cheDo: cd, chonModel: v }).context as Record<string, unknown>;
+      expect("chonModel" in ctx, String(v)).toBe(false);
+    }
+  });
+});

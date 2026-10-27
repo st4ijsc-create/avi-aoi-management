@@ -41,7 +41,8 @@ import { kiemThamSoNutMoi } from "../services/flow/kiemThamSoNut";
 import { nguoiNhanHopLeTheoNhaMay } from "../services/flow/nut/thongBao";
 import { bieuMauCuaPayload, kiemGiaTriBieuMau } from "../services/flow/nut/bieuMau";
 import { banGhiKiemToan, ghiKiemToanLuong } from "../services/flow/kiemToan";
-import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi } from "../services/flow/xuatNhap";
+import { idLuongNhap, phanTichGoi, quetBiMat, quetVanBan, taoGoi, canhBaoHoSoChonModel } from "../services/flow/xuatNhap";
+import { layAnhSoModel } from "../services/ai/soModel/anhSoModel";
 import { dauVetNhaMay } from "../services/flow/xuatNhapDb";
 import { nhaMayCuaLuong } from "../services/flow/phamViLuong";
 import { capTokenWebhook, coNodeWebhook, coTokenWebhook } from "../services/flow/kichHoat/webhook";
@@ -335,7 +336,7 @@ export const flowRouter = router({
     const p = phanTichGoi(input.goi);
     if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
     const kq = kiemLuong(p.luong, layNut);
-    return { tenGoc: p.luong.name, soNode: p.luong.nodes.length, hang: kq.hang, hopLe: kq.ok, loi: kq.loi.slice(0, 20), canhBao: p.canhBao, viec: p.viec };
+    return { tenGoc: p.luong.name, soNode: p.luong.nodes.length, hang: kq.hang, hopLe: kq.ok, loi: kq.loi.slice(0, 20), canhBao: [...p.canhBao, ...canhBaoHoSoChonModel(p.luong, (id) => layAnhSoModel().profile.has(id))], viec: p.viec };
   }),
 
   /**
@@ -349,7 +350,7 @@ export const flowRouter = router({
       if (!p.ok) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "flowNhap", reason: "flowChiTietMayChu", chiTiet: p.thongDiep }, p.thongDiep);
       const definition = { ...p.luong, id: idLuongNhap(input.ten), name: input.ten };
       const kq = await luuLuongCore({ definition: definition as unknown as Record<string, unknown>, ...(input.factoryId !== undefined ? { factoryId: input.factoryId } : {}) }, ctx, "nhap");
-      return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: [...p.canhBao, ...((kq as { canhBao?: string[] }).canhBao ?? [])] };
+      return { ...(kq as object), flowId: definition.id, viec: p.viec, canhBao: [...p.canhBao, ...canhBaoHoSoChonModel(p.luong, (id) => layAnhSoModel().profile.has(id)), ...((kq as { canhBao?: string[] }).canhBao ?? [])] };
     }),
 
   chiTiet: xemProcedure.input(z.object({ flowId: flowIdSchema, version: z.number().int().min(1).optional() })).query(async ({ input, ctx }) => {

@@ -222,6 +222,8 @@ export interface KbStreamContext {
   modelTask?: string;
   /** ★ F3 — chế độ nghĩ cho lượt (`can-bang` | `nhanh`); server lọc danh sách TRẮNG (`locCheDoNghi`). */
   cheDoNghi?: string;
+  /** ★ Đợt 10.2 — model người dùng chọn cho lượt (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:<ncc>:<model>`); `auto`/vắng ⇒ KHÔNG gửi. Máy chủ kiểm lại bằng `CHON_MODEL_RE` + danh mục. */
+  chonModel?: string;
 }
 
 export interface KbStreamRequest {
@@ -338,6 +340,28 @@ export interface KbToolLoopProgress {
   stop?: string;
 }
 
+/**
+ * Dựng `context` của /api/ai/local-kb/stream từ `KbStreamContext`. Mỗi trường CHỈ đi khi có giá trị (payload lượt thường KHÔNG đổi một byte).
+ * ★ 2026-10-27 (Đợt 10.2) — `modelTask` + `cheDoNghi` từng được màn lập trình khai nhưng KHÔNG BAO GIỜ tới máy chủ (hàm cũ chỉ chép 6 trường):
+ *   bộ chọn tầng model (G4) và chế độ nghĩ (F3) là nút TRANG TRÍ ở đường stream. Giờ chuyển đủ; `chonModel` là đường chọn mới.
+ */
+export function dungNguCanhKb(c: KbStreamContext): Record<string, unknown> {
+  const out: Record<string, unknown> = { route: c.route, uiLanguage: c.uiLanguage };
+  if (c.selectedMachineCode) out.selectedMachineCode = c.selectedMachineCode;
+  // ★★★ doc 79 · TRỤC 1 (A) — chỉ gửi khi TRUE (giữ payload vận hành không đổi một byte).
+  if (c.codingMode) out.codingMode = true;
+  // ★★★ doc 79 · TRỤC 2 — gửi id DỰ ÁN (KHÔNG phải đường dẫn) để server tra danh sách trắng.
+  if (c.projectId) out.projectId = c.projectId;
+  // ★★★ doc 79 · VÒNG TỰ ĐỘNG — chỉ khi vòng đang ghim một tệp.
+  if (c.codingEditPath) out.codingEditPath = c.codingEditPath;
+  // ★★★ 2026-08-23 — đầu ra máy đi RIÊNG khỏi `question`. Xem `KbStreamContext.dauRaKhongTinCay`.
+  if (c.dauRaKhongTinCay) out.dauRaKhongTinCay = c.dauRaKhongTinCay;
+  if (c.modelTask && c.modelTask !== "auto") out.modelTask = c.modelTask;
+  if (c.cheDoNghi) out.cheDoNghi = c.cheDoNghi;
+  if (c.chonModel && c.chonModel !== "auto") out.chonModel = c.chonModel;
+  return out;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useKbChatStream() {
@@ -368,30 +392,7 @@ export function useKbChatStream() {
 
       // Build the local-kb payload (same shape the bubble sends). Only include
       // selectedMachineCode when present so the backend treats it as absent.
-      const context: Record<string, unknown> = {
-        route: req.context.route,
-        uiLanguage: req.context.uiLanguage,
-      };
-      if (req.context.selectedMachineCode) {
-        context.selectedMachineCode = req.context.selectedMachineCode;
-      }
-      // ★★★ doc 79 · TRỤC 1 (A) — chỉ gửi khi TRUE (giữ payload vận hành không đổi một byte).
-      if (req.context.codingMode) {
-        context.codingMode = true;
-      }
-      // ★★★ doc 79 · TRỤC 2 — gửi id DỰ ÁN (KHÔNG phải đường dẫn) để server tra danh sách trắng.
-      if (req.context.projectId) {
-        context.projectId = req.context.projectId;
-      }
-      // ★★★ doc 79 · VÒNG TỰ ĐỘNG — chỉ gửi khi vòng đang ghim một tệp (payload các lượt khác
-      // KHÔNG đổi một byte).
-      if (req.context.codingEditPath) {
-        context.codingEditPath = req.context.codingEditPath;
-      }
-      // ★★★ 2026-08-23 — đầu ra máy đi RIÊNG khỏi `question`. Xem `KbStreamContext.dauRaKhongTinCay`.
-      if (req.context.dauRaKhongTinCay) {
-        context.dauRaKhongTinCay = req.context.dauRaKhongTinCay;
-      }
+      const context = dungNguCanhKb(req.context);
 
       let confidence = 0;
       let intent = "general";
