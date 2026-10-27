@@ -154,6 +154,12 @@ i18n vi/en/zh + `i18n:check`; tsc 0 (heap 12 GB); census ghim ĐO có ngày; c�
 
 10.4 gộp xong → **L0** (server do-model ‖ client luong-ui) → **L1** → **L2** → **L3** → **L4** → **E** (extension 0.5.0). Báo cáo nghiệm thu 10.4b sau L4 (+E). 10.5 (hàng chờ/duyệt bài học) sau đó — nhắc lại điều kiện UNTRUSTED (N4 của 10.4) và "chỉ qua người duyệt" (D9-iv).
 
+## 8b. ĐÃ DUYỆT (dieu-phoi 27/10)
+
+- **Kế hoạch v2.1 (`7ab5aa0b8`) DUYỆT**, giữ cách tách của kiem-dinh: **L0a** (do-model, máy chủ: `ghepPhan` + deny-list `shared/`) → **L0a'** (do-model: migration 0417–0418 + trần + `van-ban` + tách `choPhepCongCuGhi`) → **L0b** (luong-ui, client: bộ render duy nhất + đồng ý theo phiên/xác nhận vận hành) — mỗi phần rà riêng. luong-ui bắt đầu L0b khi hợp đồng L0a đã chốt.
+- **Q-A — CHỦ DỰ ÁN CHỐT:** model ngoài ở Chat/KB/bong bóng/trợ lý extension **CHỈ cho nhà máy đã bật "cho gửi dữ liệu vận hành"** (phần người gõ = `van-hanh`). Chế độ "chỉ kỹ thuật" = **BACKLOG** (nếu mở sau ⇒ công tắc RIÊNG của admin nhà máy, không gộp `choDuLieuVanHanh`; tắt truy hồi KB vận hành + `nguCanh`; cảnh báo cố định).
+- Thứ tự: 10.4 gộp → L0a → L0a' → L0b → L1 → L2 → L3 → L4 → E (extension 0.5.0).
+
 ## 9. Trả lời đã có
 
 dieu-phoi: Q1 ĐỒNG Ý (không stream; van-hanh chưa cho ⇒ 403 trước khi gọi) · Q6 TÁCH (extension 0.5.0 sau L1–L3; agent ở extension chỉ khi harness LIVE chứng minh) · Q7 PHIÊN đủ kèm nhãn mỗi lượt + đổi model/nhà cung cấp hỏi lại. kiem-dinh: Q1 đồng ý · Q2 backlog theo N2 · Q3 do-model (mặc định van-hanh) · Q4 đồng ý thủ tục đọc nhẹ, quyền tối thiểu Q2(b) · Q5 như D10 + deny-list M3 · Q6 như D8 · Q7 phiên + xác nhận van-hanh (N1).
