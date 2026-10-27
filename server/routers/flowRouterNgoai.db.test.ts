@@ -159,3 +159,21 @@ describe("★ Đợt 10.4 (D8) — flow.chiTiet.ngoai: đã duyệt chưa + ĐAN
     expect((await goi("admin").chiTiet({ flowId: d.id, version })).ngoai).toMatchObject({ coNodeNgoai: true, toanHeThong: true, daDuyet: false });
   });
 });
+
+describe("★ Đợt 10.4 (luong-ui báo lỗi) — node ai.kiem-dinh-ngoai đi HẾT vòng xuất → xem trước nhập → nhập", () => {
+  it("chonModel ngoai ⇒ xuất bỏ chonModel + việc chon-model; nhapXemTruoc hợp lệ; nhap LƯU ĐƯỢC (không bị chặn bởi kiểm chonModel chung)", async () => {
+    const d = {
+      id: `${TT}-xuat-kd`, name: "xkd", version: 1,
+      nodes: [nut("t", "kich-hoat.thu-cong"), nut("kd", "ai.kiem-dinh-ngoai", { chonModel: "ngoai:anthropic:claude-x", cauHoi: "{{ $json.cauHoi }}", traLoi: "{{ $json.traLoi }}", truongRa: "kiemDinh" })],
+      connections: [noi("t", "main", "kd")],
+    };
+    const { version } = await goi("engineer").luu({ definition: d, factoryId: fid } as never);
+    const x = await goi("engineer").xuat({ flowId: d.id, version });
+    expect(x.goi.luong.nodes.find((n) => n.id === "kd")!.parameters).not.toHaveProperty("chonModel");
+    expect(x.viec).toContainEqual(expect.objectContaining({ nodeId: "kd", truong: "chonModel", viec: "chon-model" }));
+    const xt = await goi("engineer").nhapXemTruoc({ goi: x.goi });
+    expect(xt.hopLe).toBe(true);
+    const n = await goi("engineer").nhap({ goi: x.goi, ten: `${TT}-nhap-kd`, factoryId: fid } as never);
+    expect(n.viec).toContainEqual(expect.objectContaining({ nodeId: "kd", viec: "chon-model" }));
+  });
+});

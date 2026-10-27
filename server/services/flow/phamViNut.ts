@@ -95,8 +95,8 @@ export const THAM_SO_THEO_NHA_MAY: Readonly<Record<string, DongThamSoNhaMay>> = 
   "ai.sinh-ma": KHONG_ID("Mô tả + ngôn ngữ; không mang id."),
   "ai.tra-tri-thuc": KHONG_ID("Câu hỏi + kho + k; không mang id theo nhà máy."),
   "ai.agent": { truong: [{ truong: "luongCon", thanh: "luong-con", viec: "luong-con" }] },
-  // ★ 10.4 — model ngoài là danh mục CỦA MỘT NHÀ MÁY (khoá + giá + trần) ⇒ xuất/nhập đưa về trống, người nhập chọn lại.
-  "ai.kiem-dinh-ngoai": { truong: [{ truong: "chonModel", thanh: "chuoi-rong", viec: "chon-model" }] },
+  // ★ 10.4 — `chonModel` ngoai:* (danh mục CỦA MỘT NHÀ MÁY) đã được `xuatNhap` xử lý CHUNG cho mọi node ai.* (10.2: bỏ khoá + việc "chon-model").
+  "ai.kiem-dinh-ngoai": KHONG_ID("Model ngoài (chonModel) do xuatNhap bỏ chung cho node ai.* (việc chon-model); còn lại là chữ / biểu thức của luồng."),
   "nguoi.duyet": KHONG_ID("Chỉ vai trò duyệt (supervisor…), không phải id người dùng."),
   "luong.goi-con": { truong: [{ truong: "flowId", thanh: "chuoi-rong", viec: "luong-con" }, { truong: "version", thanh: "bo", viec: "luong-con" }] },
   "tich-hop.http-doc": KHONG_ID("URL + tên trường; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),

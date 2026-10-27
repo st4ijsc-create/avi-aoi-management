@@ -94,19 +94,26 @@ describe("ai.kiem-dinh-ngoai — chạy", () => {
 
 describe("ai.kiem-dinh-ngoai — lưu / chạy thử / xuất", () => {
   const def = (chonModel: unknown) => ({ nodes: [{ id: "kd", type: "ai.kiem-dinh-ngoai", parameters: { ...TS, chonModel } }] });
-  it("lúc lưu: chonModel phải là ngoai cố định; rỗng (việc phải điền sau nhập) chấp nhận; truongRa sai tên ⇒ lỗi", () => {
+  it("lúc lưu: chonModel phải là ngoai cố định; VẮNG / rỗng (việc phải điền) chấp nhận; truongRa sai tên ⇒ lỗi", () => {
     expect(kiemThamSoNutMoi(def("ngoai:anthropic:claude-thu"))).toEqual([]);
     expect(kiemThamSoNutMoi(def(""))).toEqual([]);
-    for (const c of ["auto", "vai-tro:chat", "{{ $json.m }}", undefined, 5]) expect(kiemThamSoNutMoi(def(c)).join(), String(c)).toContain("chonModel");
+    expect(kiemThamSoNutMoi(def(undefined))).toEqual([]);
+    for (const c of ["auto", "vai-tro:chat", "{{ $json.m }}", 5]) {
+      const l = kiemThamSoNutMoi(def(c));
+      expect(l, String(c)).toHaveLength(1); // ĐÚNG một lỗi (không nhân đôi với kiểm chonModel chung của node ai.*)
+      expect(l[0], String(c)).toContain("chonModel");
+    }
+    // biên luong-ui báo: node mới thả lên canvas (chonModel "" + biểu thức cauHoi/traLoi + truongRa mặc định) ⇒ lưu được
+    expect(kiemThamSoNutMoi({ nodes: [{ id: "n", type: "ai.kiem-dinh-ngoai", parameters: { chonModel: "", cauHoi: "{{ $json.cauHoi }}", traLoi: "{{ $json.traLoi }}", truongRa: "kiemDinh" } }] })).toEqual([]);
     expect(kiemThamSoNutMoi({ nodes: [{ id: "kd", type: "ai.kiem-dinh-ngoai", parameters: { ...TS, truongRa: "a-b" } }] }).join()).toContain("truongRa");
   });
 
-  it("node ngoai ⇒ phiên bản cần duyệt (coNodeNgoai); chạy thử chỉ XEM TRƯỚC; xuất ⇒ chonModel '' + việc chon-model", () => {
+  it("node ngoai ⇒ phiên bản cần duyệt (coNodeNgoai); chạy thử chỉ XEM TRƯỚC; xuất ⇒ bỏ chonModel + ĐÚNG MỘT việc chon-model", () => {
     const d = { id: "x", name: "x", version: 1, nodes: [{ id: "kd", type: "ai.kiem-dinh-ngoai", typeVersion: 1, name: "kd", position: [0, 0], parameters: { ...TS } }], connections: [] } as unknown as FlowDefinition;
     expect(coNodeNgoai(d)).toBe(true);
     expect(NUT_XEM_TRUOC.has("ai.kiem-dinh-ngoai")).toBe(true);
     const { luong, viec } = lamSachLuong(d);
-    expect(luong.nodes[0]!.parameters.chonModel).toBe("");
-    expect(viec).toContainEqual({ nodeId: "kd", truong: "chonModel", viec: "chon-model" });
+    expect(luong.nodes[0]!.parameters).not.toHaveProperty("chonModel");
+    expect(viec.filter((v) => v.nodeId === "kd")).toEqual([{ nodeId: "kd", truong: "chonModel", viec: "chon-model" }]); // đúng MỘT việc
   });
 });
