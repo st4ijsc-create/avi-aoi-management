@@ -18,7 +18,7 @@
  * Kết quả LUÔN mang `khongTinCay: true` — người gọi bọc như dữ liệu không tin cậy trước khi đưa sang bước sau.
  */
 import { cheChuoi, cheGiaTri, cheSchemaTool, layTuDienNhay, type TuDienNhay } from "./cheDuLieu";
-import { layCauHinhNhaMay, layModelNgoai, ngoaiBatTheoEnv, type CauHinhNhaMay, type DbDoc } from "./cauHinhNgoai";
+import { layCauHinhNhaMay, layModelNgoai, ngoaiBatTheoEnv, type CauHinhNhaMay, type DbDoc, type ModelNgoai } from "./cauHinhNgoai";
 import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
@@ -66,6 +66,10 @@ export interface KetQuaGoiNgoai {
   khongTinCay: true;
   tokenVao: number | null;
   tokenRa: number | null;
+  /** ★ 10.4 — chi phí ước theo bảng giá model (null ⇒ model không có giá / nhà cung cấp không báo usage). */
+  chiPhiUocUsd: number | null;
+  /** ★ 10.4 — id hàng Ý ĐỊNH trong sổ `ai_external_calls` (đối chiếu / `aiNgoai.xemNoiDung`). */
+  callId: number;
 }
 
 export type DbCong = DbDem & DbSo & DbDoc;
@@ -207,7 +211,24 @@ async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: numbe
   kiemDuyetNgoaiTruocKhiBat({ definition: h.definition, ngoaiDuyetLuc: h.ngoaiDuyetLuc, ngoaiBamDuyet: h.ngoaiBamDuyet }, h.factoryId);
 }
 
-export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
+/** Kết quả các bước (1)–(5) của cổng — KHÔNG giữ chỗ trần, KHÔNG gọi mạng (dùng chung cho `goiAiNgoai` và xem trước của kiểm định). */
+export interface KiemTruocNgoai {
+  db: DbCong;
+  laLuong: boolean;
+  tinhTran: number;
+  tap: number[];
+  cfg: CauHinhNhaMay;
+  model: ModelNgoai;
+  ncc: NhaCungCapAi;
+  muc: MucDuLieu;
+  maxTokens: number;
+}
+
+/**
+ * ★ Đợt 10.4 — bước (1)–(5) của cổng tách thành hàm: `goiAiNgoai` gọi nó TRƯỚC giữ chỗ; `aiKiemDinh.xemTruoc` gọi nó để báo trước
+ * "được phép không / vì sao" mà không tiêu tiền. Cùng một mã ⇒ xem trước và gọi thật không thể lệch luật.
+ */
+export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KiemTruocNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
   // (1)
   buoc("co-env");
@@ -260,6 +281,12 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   buoc("lap");
   // maxTokens KẸP (rà lô 2 mục 1): ≤ trần lượt của model, ≤ MAX cứng, ≥ 1 — người gọi không đặt được 10^9.
   const maxTokens = Math.max(1, Math.min(Math.floor(Number(yc.maxTokens) || 1), model.tranTokenLuot ?? MAX_TOKENS_CUNG, MAX_TOKENS_CUNG));
+  return { db, laLuong, tinhTran, tap, cfg: cauHinh.get(tinhTran)!, model, ncc, muc, maxTokens };
+}
+
+export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
+  const buoc = (b: string) => dep.ghiBuoc?.(b);
+  const { db, tinhTran, tap, cfg, model, ncc, muc, maxTokens } = await kiemTruocNgoai(yc, dep);
   const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");
@@ -273,7 +300,6 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   const noiDungDaChe = JSON.stringify(daChe);
   // (7)–(9) MỖI lần thử: giữ chỗ → sổ Ý ĐỊNH riêng → gọi (rà kiem-dinh lô 2 mục 5: mỗi lần thử có hàng ý định + kết quả của nó ⇒
   //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
-  const cfg = cauHinh.get(tinhTran)!;
   const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
   const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
   const tokenVaoUoc = uocTokenVao(daChe);
@@ -358,5 +384,5 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   buoc("so-ket-qua");
   await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
-  return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa };
+  return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, callId: yDinhId };
 }

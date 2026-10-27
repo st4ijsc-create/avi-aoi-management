@@ -20,7 +20,11 @@ export type MaLoiNgoai =
   | "NGOAI_URL_KHONG_HOP_LE"
   | "NGOAI_LUONG_TOAN_CUC"
   | "NGOAI_TU_DUYET_VAN_HANH"
-  | "NGOAI_CHUA_DUYET";
+  | "NGOAI_CHUA_DUYET"
+  /** ★ 10.4 — kết quả kiểm định của model ngoài sai định dạng (sau MỘT lần thử lại). */
+  | "NGOAI_SAI_SCHEMA"
+  /** ★ 10.4 — cùng một yêu cầu kiểm định đang chạy (chống bấm đúp — mỗi lần gọi là tiền thật). */
+  | "NGOAI_DANG_CHAY";
 
 export class LoiNgoai extends Error {
   /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
@@ -40,7 +44,7 @@ export class LoiNgoai extends Error {
 }
 
 /** Mã tRPC tương ứng (NOT_FOUND cho "không có / ngoài phạm vi" — không lộ sự tồn tại). */
-export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBIDDEN" | "TOO_MANY_REQUESTS" | "SERVICE_UNAVAILABLE" | "BAD_GATEWAY" | "PAYLOAD_TOO_LARGE" {
+export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBIDDEN" | "TOO_MANY_REQUESTS" | "SERVICE_UNAVAILABLE" | "BAD_GATEWAY" | "PAYLOAD_TOO_LARGE" | "CONFLICT" {
   switch (ma) {
     case "NGOAI_TAT":
     case "NGOAI_KHONG_TON_TAI":
@@ -55,7 +59,10 @@ export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBID
       return "SERVICE_UNAVAILABLE";
     case "NGOAI_NHA_CUNG_CAP_LOI":
     case "NGOAI_PHAN_HOI_QUA_LON":
+    case "NGOAI_SAI_SCHEMA":
       return "BAD_GATEWAY";
+    case "NGOAI_DANG_CHAY":
+      return "CONFLICT";
     case "NGOAI_DU_LIEU_VAN_HANH":
     case "NGOAI_LUONG_TOAN_CUC":
     case "NGOAI_TU_DUYET_VAN_HANH":

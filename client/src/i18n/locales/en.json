@@ -4094,7 +4094,8 @@
       "aiNgoaiDatModel": "set external AI model",
       "aiNgoaiDuyet": "approve flow using external AI",
       "taiAnhAi": "download image for AI analysis",
-      "mayDungKhanCap": "load the emergency STOP machine list"
+      "mayDungKhanCap": "load the emergency STOP machine list",
+      "aiKiemDinh": "external AI verification"
     },
     "field": {
       "stationId": "station",
@@ -4573,7 +4574,23 @@
       "anh-chuyen-huong": "the image server returned a redirect (not followed)",
       "anh-http-loi": "the image server returned an error",
       "anh-khong-phai-anh": "the downloaded content is not an image",
-      "anh-qua-lon": "the image exceeds 20 MB"
+      "anh-qua-lon": "the image exceeds 20 MB",
+      "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
+      "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "NGOAI_TAT": "external AI is turned off",
+      "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
+      "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",
+      "NGOAI_VUOT_TRAN": "the factory cost / rate cap is exceeded",
+      "NGOAI_QUA_LON": "the content is too large to send — choose a smaller part",
+      "NGOAI_NHA_CUNG_CAP_LOI": "the external AI provider returned an error",
+      "NGOAI_PHAN_HOI_QUA_LON": "the external AI response is too large",
+      "NGOAI_SAI_SCHEMA": "the verification result has an invalid format",
+      "NGOAI_DANG_CHAY": "this verification request is already running",
+      "NGOAI_DEM_HONG": "the cost counter is unavailable — try again later",
+      "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
+      "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
+      "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
+      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

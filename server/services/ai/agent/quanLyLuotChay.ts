@@ -99,7 +99,7 @@ export const TRAN_KY_TU_TIN_LICH_SU = 20_000;
 /** Giữ lượt đã xong trong bộ nhớ (để nối lại/phát lại) trước khi chỉ còn sổ CSDL. */
 const GIU_SAU_KHI_XONG_MS = 30 * 60_000;
 /** Sự kiện lưu vào sổ: trần số mục + trần chữ mỗi mục gộp. */
-const TRAN_SU_KIEN_LUU = 3_000;
+export const TRAN_SU_KIEN_LUU = 3_000;
 const TRAN_CHU_MOI_MUC_LUU = 20_000;
 /** Nhịp ghi sổ cho sự kiện thường (sự kiện đổi trạng thái ghi NGAY). */
 const NHIP_LUU_MS = 5_000;

@@ -4094,7 +4094,8 @@
       "aiNgoaiDatModel": "设置外部AI模型",
       "aiNgoaiDuyet": "审批使用外部AI的流程",
       "taiAnhAi": "下载用于AI分析的图像",
-      "mayDungKhanCap": "加载紧急停机设备列表"
+      "mayDungKhanCap": "加载紧急停机设备列表",
+      "aiKiemDinh": "外部AI审核"
     },
     "field": {
       "stationId": "工位",
@@ -4573,7 +4574,23 @@
       "anh-chuyen-huong": "图像服务器返回重定向（不跟随）",
       "anh-http-loi": "图像服务器返回错误",
       "anh-khong-phai-anh": "下载的内容不是图像",
-      "anh-qua-lon": "图像超过20 MB"
+      "anh-qua-lon": "图像超过20 MB",
+      "kiem-dinh-khong-co-nguon": "未找到要审核的轮次（或账户属于多个工厂——暂不可用外部审核）",
+      "kiem-dinh-tra-loi-rong": "该轮次没有可审核的回答",
+      "NGOAI_TAT": "外部AI已关闭",
+      "NGOAI_KHONG_TON_TAI": "该工厂未启用此外部AI模型",
+      "NGOAI_DU_LIEU_VAN_HANH": "工厂未允许向外部AI发送运营数据",
+      "NGOAI_VUOT_TRAN": "超出工厂的费用/次数上限",
+      "NGOAI_QUA_LON": "内容过大，请选择较小的部分",
+      "NGOAI_NHA_CUNG_CAP_LOI": "外部AI提供商返回错误",
+      "NGOAI_PHAN_HOI_QUA_LON": "外部AI响应过大",
+      "NGOAI_SAI_SCHEMA": "审核结果格式无效",
+      "NGOAI_DANG_CHAY": "该审核请求正在运行",
+      "NGOAI_DEM_HONG": "费用计数器不可用，请稍后重试",
+      "NGOAI_SO_HONG": "无法写入外部AI审计日志，请稍后重试",
+      "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
+      "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
+      "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

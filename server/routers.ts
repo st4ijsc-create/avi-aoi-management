@@ -123,6 +123,7 @@ import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
 import { aiGgufRouter } from "./routers/aiGgufRouter";
 import { aiChonModelRouter } from "./routers/aiChonModelRouter"; // ★ Đợt 10.1 — danh mục model chọn được
+import { aiKiemDinhRouter } from "./routers/aiKiemDinhRouter"; // ★ Đợt 10.4 — nút "Nhờ AI ngoài kiểm định"
 import { aiNgoaiRouter } from "./routers/aiNgoaiRouter"; // ★ Đợt 10.3 — quản trị AI ngoài (khoá / cấu hình theo nhà máy)
 import { flowRouter } from "./routers/flowRouter"; // ★★ AI Local Đợt 8.1 — Luồng AI (kiểu n8n)
 import { vramRouter } from "./routers/vramRouter"; // Pha 4 Task 1: mặt ĐỌC trạng thái VRAM cho AI Agent
@@ -764,6 +765,7 @@ export const appRouter = router({
   aiGguf: aiGgufRouter,
   // ★ Đợt 10.1 — danh mục model chọn được cho mọi bề mặt (auto / vai trò / hồ sơ / ngoài)
   aiChonModel: aiChonModelRouter,
+  aiKiemDinh: aiKiemDinhRouter,
   // ★ Đợt 10.3 — quản trị AI NGOÀI theo nhà máy (admin, MOD_AI, phạm vi nhà máy; khoá không bao giờ trả về)
   aiNgoai: aiNgoaiRouter,
   // ★★ AI Local Đợt 8.1 — LUỒNG AI: luồng · phiên bản · bật/tắt · chạy tay · dòng thời gian · duyệt · danh mục node

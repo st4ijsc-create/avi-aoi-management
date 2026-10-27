@@ -36,6 +36,7 @@ export const KHOA_PHAM_VI_NUT: Readonly<Record<string, LuatPhamViNut>> = {
   "du-lieu.dat": { kieu: "khong", lyDo: KHONG_CHAM_DU_LIEU },
   "du-lieu.ma": { kieu: "khong", lyDo: "Chạy mã trong Docker cách ly (không mạng, không đĩa); chỉ nhận item đầu vào." },
   "ai.llm": { kieu: "khong", lyDo: "Gọi model qua Cổng AI theo vai trò với chữ do luồng cấp; không đọc bảng dữ liệu nhà máy." },
+  "ai.kiem-dinh-ngoai": { kieu: "khong", lyDo: "Gửi chữ do luồng cấp tới CỔNG AI NGOÀI (goiAiNgoai): cổng kiểm nhà máy chủ luồng + duyệt phiên bản + mức dữ liệu theo lượt; node không đọc bảng dữ liệu nhà máy." },
   "ai.trich-xuat": { kieu: "khong", lyDo: "Gọi model qua Cổng AI với chữ do luồng cấp; không đọc bảng dữ liệu nhà máy." },
   "ai.phan-loai": { kieu: "khong", lyDo: "Gọi model qua Cổng AI với chữ do luồng cấp; không đọc bảng dữ liệu nhà máy." },
   "ai.tom-tat": { kieu: "khong", lyDo: "Gọi model qua Cổng AI với chữ do luồng cấp; không đọc bảng dữ liệu nhà máy." },
@@ -58,7 +59,7 @@ export interface ThamSoNhaMay {
   truong: string;
   thanh: CachLamTrong;
   /** nhãn việc phải điền (khoá i18n phía giao diện) */
-  viec: "may" | "nguoi-nhan" | "luong-con" | "workflow-ot" | "bat-su-kien";
+  viec: "may" | "nguoi-nhan" | "luong-con" | "workflow-ot" | "bat-su-kien" | "chon-model";
 }
 export interface DongThamSoNhaMay {
   truong: ThamSoNhaMay[];
@@ -94,6 +95,8 @@ export const THAM_SO_THEO_NHA_MAY: Readonly<Record<string, DongThamSoNhaMay>> = 
   "ai.sinh-ma": KHONG_ID("Mô tả + ngôn ngữ; không mang id."),
   "ai.tra-tri-thuc": KHONG_ID("Câu hỏi + kho + k; không mang id theo nhà máy."),
   "ai.agent": { truong: [{ truong: "luongCon", thanh: "luong-con", viec: "luong-con" }] },
+  // ★ 10.4 — `chonModel` ngoai:* (danh mục CỦA MỘT NHÀ MÁY) đã được `xuatNhap` xử lý CHUNG cho mọi node ai.* (10.2: bỏ khoá + việc "chon-model").
+  "ai.kiem-dinh-ngoai": KHONG_ID("Model ngoài (chonModel) do xuatNhap bỏ chung cho node ai.* (việc chon-model); còn lại là chữ / biểu thức của luồng."),
   "nguoi.duyet": KHONG_ID("Chỉ vai trò duyệt (supervisor…), không phải id người dùng."),
   "luong.goi-con": { truong: [{ truong: "flowId", thanh: "chuoi-rong", viec: "luong-con" }, { truong: "version", thanh: "bo", viec: "luong-con" }] },
   "tich-hop.http-doc": KHONG_ID("URL + tên trường; bí mật (credentialRef cấp node) luôn bị xoá khi xuất."),

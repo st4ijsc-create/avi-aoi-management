@@ -4102,7 +4102,8 @@
       "aiNgoaiDatModel": "đặt model AI ngoài",
       "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
       "taiAnhAi": "tải ảnh cho phân tích AI",
-      "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp"
+      "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp",
+      "aiKiemDinh": "kiểm định bởi AI ngoài"
     },
     "field": {
       "stationId": "trạm",
@@ -4573,7 +4574,23 @@
       "anh-chuyen-huong": "máy chủ ảnh trả chuyển hướng (không theo)",
       "anh-http-loi": "máy chủ ảnh trả lỗi",
       "anh-khong-phai-anh": "nội dung tải về không phải ảnh",
-      "anh-qua-lon": "ảnh vượt 20 MB"
+      "anh-qua-lon": "ảnh vượt 20 MB",
+      "kiem-dinh-khong-co-nguon": "không tìm thấy lượt cần kiểm định (hoặc tài khoản thuộc nhiều nhà máy — chưa dùng được kiểm định ngoài)",
+      "kiem-dinh-tra-loi-rong": "lượt không có câu trả lời để kiểm định",
+      "NGOAI_TAT": "AI ngoài đang tắt",
+      "NGOAI_KHONG_TON_TAI": "model AI ngoài chưa được bật cho nhà máy",
+      "NGOAI_DU_LIEU_VAN_HANH": "nhà máy chưa cho phép gửi dữ liệu vận hành ra AI ngoài",
+      "NGOAI_VUOT_TRAN": "vượt trần chi phí / số lần của nhà máy",
+      "NGOAI_QUA_LON": "nội dung quá lớn để gửi — chọn phần nhỏ hơn",
+      "NGOAI_NHA_CUNG_CAP_LOI": "nhà cung cấp AI ngoài báo lỗi",
+      "NGOAI_PHAN_HOI_QUA_LON": "phản hồi của AI ngoài quá lớn",
+      "NGOAI_SAI_SCHEMA": "kết quả kiểm định sai định dạng",
+      "NGOAI_DANG_CHAY": "yêu cầu kiểm định này đang chạy",
+      "NGOAI_DEM_HONG": "bộ đếm chi phí không sẵn sàng — thử lại sau",
+      "NGOAI_SO_HONG": "sổ kiểm toán AI ngoài không ghi được — thử lại sau",
+      "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
+      "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
+      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
