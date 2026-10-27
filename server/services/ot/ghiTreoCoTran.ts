@@ -16,11 +16,15 @@
  *     `TRAN_BYTE_MUC_HANG_CHO` (JSON của `noiDung`); nội dung giữ cho log / tóm tắt bị CẮT (`rutGon`).
  *   · lượt phát từ hàng chờ nhận `{ daXepHang: true, lucSuKien }` = giờ SỰ KIỆN (lúc gọi `ghiCoTran`) — bên gọi ghi nó vào hàng (attempts: cột
  *     `at`; audit: `after.lucSuKien` qua `themLucSuKien` — `recordAuditEvent` không nhận giờ; chốt dòng chờ: `executedAt`).
+ *   · mục QUÁ LỚN (fix round 2, điều kiện 2 của điều phối): nội dung bị CẮT cho vừa trần (`daCat: true`) và ghi bằng `viecTuNoiDung` của bên gọi
+ *     (thunk gốc — giữ cả nội dung lớn — bị bỏ); không có `viecTuNoiDung` hoặc cắt rồi vẫn không vừa ⇒ BỎ (lyDo "qua_lon").
  *   · CHỈ tràn / quá tuổi / quá lớn / tắt máy mới BỎ: log error `<nhan>_bo_<lyDo>` + `khiBoQua` + đếm 24 h (`demGhiBoQuaDay`, posture) + gộp vào
- *     MỘT dòng tóm tắt `control_audit_log` (`ot_stop_ghi_nen_bo_roi`: số lượng, nhãn, khoảng thời gian, requestIds có trần). Dòng tóm tắt
+ *     MỘT dòng tóm tắt `control_audit_log` (`ot_stop_ghi_nen_bo_roi`: mã, số lượng, nhãn, khoảng thời gian, requestIds có trần). Dòng tóm tắt
  *     KHÔNG BAO GIỜ bị bỏ: nó đi trước hàng chờ khi có chỗ; ghi hỏng ⇒ gộp lại vào tóm tắt kế tiếp và thử lại (hẹn giờ + lần xả sau).
- *   · tắt tiến trình (`xaHangChoKhiTat`, gọi từ `stopOt({ tatTienTrinh })`): xả tối đa 2 s; còn lại ⇒ một dòng log + bỏ (lyDo "tat_may") + thử
- *     ghi tóm tắt. Mất khi sập / khởi động lại: GIỚI HẠN (spool bền ở R1b-2b-2b).
+ *   · fix round 2 (re-review m5): lượt AUDIT (`bang` control_audit_log) tới DB rồi GHI HỎNG ⇒ cũng vào tóm tắt (lyDo "loi_ghi") + đếm.
+ *   · tắt tiến trình (`xaHangChoKhiTat`, gọi từ `stopOt({ tatTienTrinh })`): xả tối đa 2 s — chờ CẢ hàng chờ, tóm tắt VÀ lượt đang bay (fix round 2,
+ *     re-review N-1); còn lại ⇒ bỏ (lyDo "tat_may"); lượt VẪN ĐANG BAY ở hạn ⇒ MỘT dòng log LIỆT KÊ + vào tóm tắt (lyDo "dang_bay_khi_tat",
+ *     `khongRoDaGhi` — có thể đã hoặc chưa commit) + thử ghi tóm tắt. Mất khi sập / khởi động lại: GIỚI HẠN (spool bền ở R1b-2b-2b).
  *
  * Hạn `HAN_GHI_TREO_MS` chỉ quyết định khi nào người gọi đang `await` nhận trả lời (xong trong hạn ⇒ trả lúc xong; quá hạn ⇒ log `<nhan>_qua_han`,
  * trả, lượt ghi chạy nền). Handler gắn THẲNG lên promise của lượt ghi ⇒ ném MUỘN không thành `unhandledRejection`. Không bao giờ reject / ném
@@ -63,9 +67,15 @@ export interface TuyChonGhiCoTran {
   khiLoi?: (e: unknown, muon: boolean) => void;
   /** lượt ghi KHÔNG BAO GIỜ được ghi (tràn / quá tuổi / quá lớn / tắt máy). Xếp hàng KHÔNG gọi nó. */
   khiBoQua?: () => void;
+  /**
+   * fix round 2 — người ghi TỪ NỘI DUNG (đã cắt, `daCat: true`) cho mục quá lớn trong hàng chờ: chỉ được bắt `db`, KHÔNG bắt nội dung gốc (để thả
+   * nó khỏi bộ nhớ). Vắng ⇒ mục quá lớn bị bỏ (lyDo "qua_lon").
+   */
+  viecTuNoiDung?: (noiDungDaCat: unknown, t: BoiCanhGhi) => Promise<unknown>;
 }
 
-export type LyDoBo = "tran" | "qua_tuoi" | "qua_lon" | "tat_may";
+/** tran / qua_tuoi / qua_lon / tat_may = KHÔNG ghi; loi_ghi = audit tới DB rồi hỏng; dang_bay_khi_tat = KHÔNG RÕ (đang bay lúc tắt) */
+export type LyDoBo = "tran" | "qua_tuoi" | "qua_lon" | "tat_may" | "loi_ghi" | "dang_bay_khi_tat";
 type Viec = (t: BoiCanhGhi) => Promise<unknown>;
 interface MucCho {
   viec: Viec;
@@ -80,6 +90,16 @@ let theHe = 0;
 /** giờ bộ đếm chạm trần (posture "đầy từ"), null khi còn chỗ — review M-4 */
 let dayTu: number | null = null;
 const hangCho: MucCho[] = [];
+/** fix round 2 (re-review N-1) — lượt ĐANG BAY (không gồm dòng tóm tắt): nhãn / requestId / bảng / giờ sự kiện — để liệt kê khi tắt */
+interface MucDangBay {
+  nhan: string;
+  requestId: string;
+  bang: BangGhiNenStop;
+  lucSuKien: number;
+  noiDung: unknown;
+}
+const dangBayMuc = new Map<number, MucDangBay>();
+let soMucDaPhat = 0;
 
 // ─── log / callback không bao giờ ném (review M-2) ──────────────────────────────────────────────────────────────────────────────
 function logAnToan(muc: "error" | "warn" | "info", obj: Record<string, unknown>, msg: string): void {
@@ -126,6 +146,12 @@ export function demGhiBoQuaDay(now: number = Date.now()): { tong: number; theoBa
 
 // ─── dòng tóm tắt lượt bị bỏ (không bao giờ bị bỏ) ──────────────────────────────────────────────────────────────────────────────
 export interface TomTatBoRoi {
+  /** fix round 2 (re-review m1) — mã của đợt tóm tắt: một dòng ghi hai lần (COMMIT mơ hồ / đua lúc tắt) mang CÙNG mã ⇒ phát hiện được */
+  ma: string;
+  /** mã của các tóm tắt chưa ghi đã gộp vào dòng này (≤ 16) */
+  maDaGop: string[];
+  /** số lượt KHÔNG RÕ đã ghi hay chưa (đang bay lúc tắt — lyDo dang_bay_khi_tat) */
+  khongRoDaGhi: number;
   soLuong: number;
   theoLyDo: Partial<Record<LyDoBo, number>>;
   /** ≤ TRAN_NHAN_TOM_TAT nhãn; phần dư gộp vào "khac" */
@@ -144,10 +170,33 @@ let tomTatDangGhi: TomTatBoRoi | null = null;
 let henThuLai: ReturnType<typeof setTimeout> | null = null;
 /** ghi tóm tắt hỏng ⇒ không thử lại trước mốc này (không quay vòng nóng khi DB hỏng liên tục) */
 let thuLaiTomTatSau = 0;
+/** fix round 2 (re-review m1) — lượt ghi tóm tắt CUỐI lúc tắt đã bắt đầu ⇒ `xa` không phát lại tóm tắt (chống ghi đôi khi đua hạn) */
+let daGhiTomTatKhiTat = false;
+const maMoi = (): string => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `tt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
 
 function gopTomTat(dich: TomTatBoRoi | null, them: TomTatBoRoi): TomTatBoRoi {
-  if (!dich) return { ...them, theoLyDo: { ...them.theoLyDo }, theoNhan: { ...them.theoNhan }, theoBang: { ...them.theoBang }, requestIds: [...them.requestIds] };
+  if (!dich)
+    return {
+      ...them,
+      ma: them.ma || maMoi(),
+      maDaGop: [...them.maDaGop],
+      theoLyDo: { ...them.theoLyDo },
+      theoNhan: { ...them.theoNhan },
+      theoBang: { ...them.theoBang },
+      requestIds: [...them.requestIds],
+    };
+  const maDaGop = [...dich.maDaGop];
+  for (const m of [them.ma, ...them.maDaGop]) if (m && m !== dich.ma && !maDaGop.includes(m) && maDaGop.length < 16) maDaGop.push(m);
   const kq: TomTatBoRoi = {
+    ma: dich.ma || maMoi(),
+    maDaGop,
+    khongRoDaGhi: dich.khongRoDaGhi + them.khongRoDaGhi,
     soLuong: dich.soLuong + them.soLuong,
     theoLyDo: { ...dich.theoLyDo },
     theoNhan: { ...dich.theoNhan },
@@ -192,7 +241,9 @@ async function ghiTomTatMacDinh(tt: TomTatBoRoi): Promise<void> {
     actorId: null,
     before: null,
     after: tt,
-    reason: `R1b-2b-2a T1: ${tt.soLuong} lượt ghi nền của đường STOP KHÔNG được ghi (${tt.tu} → ${tt.den}) — xem theoNhan / requestIds`,
+    reason:
+      `R1b-2b-2a T1: ${tt.soLuong} lượt ghi nền của đường STOP KHÔNG được ghi hoặc KHÔNG RÕ (${tt.tu} → ${tt.den}) — xem theoLyDo / theoNhan / requestIds` +
+      (tt.khongRoDaGhi > 0 ? `; ${tt.khongRoDaGhi} lượt đang bay lúc tắt tiến trình: CÓ THỂ đã hoặc chưa commit` : ""),
   });
 }
 let ghiTomTat: (tt: TomTatBoRoi) => Promise<unknown> = ghiTomTatMacDinh;
@@ -227,6 +278,67 @@ export function rutGon(v: unknown, sau = 0): unknown {
   }
   return o;
 }
+/** review m7 — cắt KHÔNG BAO GIỜ ném (getter ném / proxy lạ ⇒ chuỗi đánh dấu). */
+export function rutGonAnToan(v: unknown): unknown {
+  try {
+    return rutGon(v);
+  } catch {
+    return "[rutGon lỗi]";
+  }
+}
+function rutGonMuc(v: unknown, sMax: number, aMax: number, dMax: number, kMax: number, sau = 0): unknown {
+  if (typeof v === "string") return cat(v, sMax);
+  if (v === null || typeof v !== "object") return v;
+  if (v instanceof Date) return v.toISOString();
+  if (sau >= dMax) return "[…]";
+  if (Array.isArray(v)) {
+    const a = v.slice(0, aMax).map((x) => rutGonMuc(x, sMax, aMax, dMax, kMax, sau + 1));
+    if (v.length > aMax) a.push(`[+${v.length - aMax}]`);
+    return a;
+  }
+  const o: Record<string, unknown> = {};
+  let i = 0;
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (i++ >= kMax) {
+      o["…"] = "[cắt]";
+      break;
+    }
+    o[k] = rutGonMuc(x, sMax, aMax, dMax, kMax, sau + 1);
+  }
+  return o;
+}
+/**
+ * fix round 2 — CẮT nội dung cho VỪA `TRAN_BYTE_MUC_HANG_CHO` qua các mức ngày càng chặt; trả bản cắt (object ⇒ thêm `daCat: true`) hoặc null nếu
+ * không mức nào vừa. Giữ nguyên các khoá cấp đầu ngắn (bang, action, entityType, entityId, actorId…) trong giới hạn khoá.
+ */
+export function rutGonVua(v: unknown, tran: number = TRAN_BYTE_MUC_HANG_CHO): unknown | null {
+  const MUC: Array<[number, number, number, number]> = [
+    [200, 16, 4, 32],
+    [60, 4, 3, 16],
+    [20, 2, 2, 12],
+  ];
+  for (const [sM, aM, dM, kM] of MUC) {
+    let c: unknown;
+    try {
+      c = rutGonMuc(v, sM, aM, dM, kM);
+    } catch {
+      return null;
+    }
+    if (c !== null && typeof c === "object" && !Array.isArray(c)) c = { ...(c as Record<string, unknown>), daCat: true };
+    if (coJson(c) <= tran) return c;
+  }
+  return null;
+}
+/** Sự kiện audit dựng lại từ nội dung đã cắt (`{ bang, daCat, ...AuditEventInput }`): bỏ `bang` / `daCat`, đánh dấu `after.daCat`. */
+export function suKienAuditTuNoiDung<T = { entityType: string; entityId: string | number; action: string; after?: unknown }>(nd: unknown): T {
+  const { bang: _b, daCat, ...e } = (nd ?? {}) as Record<string, unknown>;
+  void _b;
+  if (daCat === true) {
+    const goc = e.after;
+    e.after = goc !== null && typeof goc === "object" && !Array.isArray(goc) ? { ...(goc as Record<string, unknown>), daCat: true } : { goc: goc ?? null, daCat: true };
+  }
+  return e as T;
+}
 function coJson(v: unknown): number {
   try {
     return JSON.stringify(v ?? null)?.length ?? 0;
@@ -235,19 +347,30 @@ function coJson(v: unknown): number {
   }
 }
 
-/** Một lượt KHÔNG BAO GIỜ được ghi: log + callback + đếm + gộp vào tóm tắt chờ. */
-function bo(o: TuyChonGhiCoTran, lucSuKien: number, lyDo: LyDoBo): void {
+/**
+ * Một lượt KHÔNG được ghi (hoặc KHÔNG RÕ — `dang_bay_khi_tat`): log + callback + đếm + gộp vào tóm tắt chờ. `tuyChon` (fix round 2): `khiBoQua` false ⇒
+ * không gọi callback (audit lỗi ghi — người gọi đã nhận `khiLoi`); `dem` false ⇒ không vào `demGhiBoQuaDay` (không rõ); `log` false ⇒ người gọi
+ * tự log (một dòng liệt kê lúc tắt).
+ */
+function bo(o: TuyChonGhiCoTran, lucSuKien: number, lyDo: LyDoBo, tuyChon: { khiBoQua?: boolean; dem?: boolean; log?: boolean } = {}): void {
   const { nhan, requestId } = o;
-  logAnToan(
-    "error",
-    { cho: `${nhan}_bo_${lyDo}`, requestId, lyDo, dangBay, hangCho: hangCho.length, lucSuKien: new Date(lucSuKien).toISOString(), noiDung: rutGon(o.noiDung) },
-    "[OT] đường STOP: BỎ một lượt ghi nền (hàng chờ tràn / quá tuổi / quá lớn / tắt máy); nội dung hàng ở noiDung, STOP vẫn có trong command_log; một dòng tóm tắt sẽ vào control_audit_log",
-  );
+  if (tuyChon.log !== false) {
+    logAnToan(
+      "error",
+      { cho: `${nhan}_bo_${lyDo}`, requestId, lyDo, dangBay, hangCho: hangCho.length, lucSuKien: new Date(lucSuKien).toISOString(), noiDung: rutGonAnToan(o.noiDung) },
+      "[OT] đường STOP: một lượt ghi nền KHÔNG vào sổ (hàng chờ tràn / quá tuổi / quá lớn / tắt máy / audit ghi hỏng); nội dung hàng ở noiDung, STOP vẫn có trong command_log; một dòng tóm tắt sẽ vào control_audit_log",
+    );
+  }
   const bang = bangCua(o.noiDung);
-  mocBoQua.push({ at: Date.now(), bang });
-  tiaMocBoQua(Date.now());
+  if (tuyChon.dem !== false) {
+    mocBoQua.push({ at: Date.now(), bang });
+    tiaMocBoQua(Date.now());
+  }
   const iso = new Date(lucSuKien).toISOString();
   tomTatCho = gopTomTat(tomTatCho, {
+    ma: "",
+    maDaGop: [],
+    khongRoDaGhi: lyDo === "dang_bay_khi_tat" ? 1 : 0,
     soLuong: 1,
     theoLyDo: { [lyDo]: 1 },
     theoNhan: { [cat(nhan, 80)]: 1 },
@@ -257,12 +380,14 @@ function bo(o: TuyChonGhiCoTran, lucSuKien: number, lyDo: LyDoBo): void {
     requestIds: [cat(String(requestId), 80)],
     soRequestIdBoBot: 0,
   });
-  if (o.khiBoQua) goiAnToan(o.khiBoQua, nhan, requestId);
+  if (o.khiBoQua && tuyChon.khiBoQua !== false) goiAnToan(o.khiBoQua, nhan, requestId);
 }
 
-/** Bỏ các mục ĐẦU hàng chờ đã quá tuổi. */
-function tiaHangCho(now: number): void {
-  while (hangCho.length > 0 && now - hangCho[0].lucSuKien > TUOI_TOI_DA_HANG_CHO_MS) {
+/** Bỏ các mục ĐẦU hàng chờ đã quá tuổi — tối đa `toiDa` mục mỗi lần (re-review m3: trên đường STOP chỉ tỉa một ít; phần còn lại ở lần xả / posture). */
+export const TRAN_TIA_MOT_LUOT_STOP = 16;
+function tiaHangCho(now: number, toiDa = Number.POSITIVE_INFINITY): void {
+  let n = 0;
+  while (n++ < toiDa && hangCho.length > 0 && now - hangCho[0].lucSuKien > TUOI_TOI_DA_HANG_CHO_MS) {
     const m = hangCho.shift()!;
     bo(m.o, m.lucSuKien, "qua_tuoi");
   }
@@ -276,7 +401,7 @@ function capNhatDay(): void {
 /** Xả: dòng tóm tắt (nếu có) trước, rồi hàng chờ FIFO — mỗi lượt chiếm một chỗ của CÙNG trần. */
 function xa(): void {
   tiaHangCho(Date.now());
-  if (tomTatCho && !tomTatDangGhi && dangBay < TRAN_GHI_TREO_STOP && Date.now() >= thuLaiTomTatSau) phatTomTat();
+  if (tomTatCho && !tomTatDangGhi && !daGhiTomTatKhiTat && dangBay < TRAN_GHI_TREO_STOP && Date.now() >= thuLaiTomTatSau) phatTomTat();
   while (dangBay < TRAN_GHI_TREO_STOP && hangCho.length > 0) {
     const m = hangCho.shift()!;
     phat(m.viec, m.o, m.lucSuKien, true);
@@ -334,6 +459,8 @@ function henThuLaiTomTat(): void {
 function phat(viec: Viec, o: TuyChonGhiCoTran, lucSuKien: number, daXepHang: boolean): Promise<void> {
   const { nhan, requestId } = o;
   const theHeLuot = theHe;
+  const maMuc = ++soMucDaPhat;
+  dangBayMuc.set(maMuc, { nhan, requestId, bang: bangCua(o.noiDung), lucSuKien, noiDung: o.noiDung });
   // KD-A1 — +1 lúc PHÁT; `giam` chạy đúng một lần trên MỌI đường thoát (xong, lỗi, ném đồng bộ; lượt bỏ rơi: khi nó xong)
   dangBay += 1;
   capNhatDay();
@@ -342,6 +469,7 @@ function phat(viec: Viec, o: TuyChonGhiCoTran, lucSuKien: number, daXepHang: boo
     if (daGiam) return;
     daGiam = true;
     if (theHeLuot !== theHe) return; // review M-1: lượt của thế hệ trước khi đặt lại — không đụng bộ đếm mới
+    dangBayMuc.delete(maMuc);
     dangBay -= 1;
     capNhatDay();
     xa();
@@ -350,9 +478,11 @@ function phat(viec: Viec, o: TuyChonGhiCoTran, lucSuKien: number, daXepHang: boo
     if (o.khiLoi) {
       const khiLoi = o.khiLoi;
       goiAnToan(() => khiLoi(e, muon), nhan, requestId);
-      return;
+    } else {
+      logAnToan("error", { err: (e as Error)?.message ?? String(e), requestId, cho: muon ? `${nhan}_muon` : nhan }, "[OT] đường STOP: ghi nền lỗi");
     }
-    logAnToan("error", { err: (e as Error)?.message ?? String(e), requestId, cho: muon ? `${nhan}_muon` : nhan }, "[OT] đường STOP: ghi nền lỗi");
+    // fix round 2 (re-review m5) — AUDIT ghi hỏng (tới DB rồi lỗi) ⇒ một khoảng trống trong chuỗi: vào tóm tắt + đếm, nội dung (cắt) ở log
+    if (bangCua(o.noiDung) === "control_audit_log" && theHeLuot === theHe) bo(o, lucSuKien, "loi_ghi", { khiBoQua: false });
   };
   let p: Promise<unknown>;
   try {
@@ -399,7 +529,7 @@ function phat(viec: Viec, o: TuyChonGhiCoTran, lucSuKien: number, daXepHang: boo
  */
 export function ghiCoTran(viec: Viec, o: TuyChonGhiCoTran): Promise<void> {
   const lucSuKien = Date.now();
-  tiaHangCho(lucSuKien);
+  tiaHangCho(lucSuKien, TRAN_TIA_MOT_LUOT_STOP);
   if (dangBay < TRAN_GHI_TREO_STOP && hangCho.length === 0) return phat(viec, o, lucSuKien, false);
   // xếp hàng (MỘT FIFO) — người gọi trả NGAY
   if (hangCho.length >= TRAN_HANG_CHO_GHI_NEN) {
@@ -407,10 +537,18 @@ export function ghiCoTran(viec: Viec, o: TuyChonGhiCoTran): Promise<void> {
     return Promise.resolve();
   }
   if (coJson(o.noiDung) > TRAN_BYTE_MUC_HANG_CHO) {
-    bo(o, lucSuKien, "qua_lon");
+    // fix round 2 (điều kiện 2) — CẮT cho vừa trần, ghi bằng `viecTuNoiDung` (thunk gốc giữ nội dung lớn bị thả); không được ⇒ bỏ "qua_lon"
+    const daCat = o.viecTuNoiDung ? rutGonVua(o.noiDung) : null;
+    if (daCat === null || !o.viecTuNoiDung) {
+      bo(o, lucSuKien, "qua_lon");
+      return Promise.resolve();
+    }
+    const viecCat = o.viecTuNoiDung;
+    hangCho.push({ viec: (t) => viecCat(daCat, t), o: { ...o, noiDung: daCat }, lucSuKien });
+    logAnToan("warn", { cho: `${o.nhan}_xep_hang`, requestId: o.requestId, dangBay, hangCho: hangCho.length, daCat: true }, "[OT] đường STOP: ghi nền XẾP HÀNG — nội dung quá lớn đã CẮT cho vừa trần (daCat)");
     return Promise.resolve();
   }
-  hangCho.push({ viec, o: { ...o, noiDung: rutGon(o.noiDung) }, lucSuKien });
+  hangCho.push({ viec, o: { ...o, noiDung: rutGonAnToan(o.noiDung) }, lucSuKien });
   logAnToan("warn", { cho: `${o.nhan}_xep_hang`, requestId: o.requestId, dangBay, hangCho: hangCho.length }, "[OT] đường STOP: ghi nền XẾP HÀNG (đủ trần lượt đang bay) — sẽ ghi khi có chỗ, giữ giờ sự kiện");
   return Promise.resolve();
 }
@@ -459,30 +597,65 @@ export function trangThaiGhiTreo(now: number = Date.now()): {
 }
 
 let dangXaKhiTat: Promise<void> | null = null;
+/** Trần số lượt đang bay được LIỆT KÊ trong dòng log lúc tắt (mọi lượt vẫn vào tóm tắt; requestIds của tóm tắt có trần riêng). */
+export const TRAN_LIET_KE_DANG_BAY_KHI_TAT = 32;
 /**
- * Tắt tiến trình: xả hàng chờ tối đa `hanMs`; còn lại ⇒ MỘT dòng log + bỏ (lyDo "tat_may") + thử ghi tóm tắt trong phần hạn còn lại. Không ném.
- * Gọi nhiều lần ⇒ cùng một promise.
+ * Tắt tiến trình: xả tối đa `hanMs` — chờ hàng chờ, tóm tắt VÀ lượt đang bay (re-review N-1: `process.exit` sau đó giết lượt đang bay — audit dưới
+ * SEC_PLATFORM là giao dịch ⇒ ROLLBACK). Ở hạn: hàng chờ còn lại ⇒ bỏ ("tat_may"); lượt VẪN đang bay ⇒ MỘT dòng log LIỆT KÊ chúng + tóm tắt
+ * ("dang_bay_khi_tat", `khongRoDaGhi`); rồi ghi tóm tắt cuối (kể cả nội dung của tóm tắt đang bay, cùng mã) trong phần hạn còn lại. Không ném.
+ * Hẹn giờ KHÔNG `unref` (re-review m8): lượt chờ ≤ hạn phải giữ được vòng lặp sự kiện. Gọi nhiều lần ⇒ cùng một promise.
  */
 export function xaHangChoKhiTat(hanMs: number = HAN_XA_KHI_TAT_MS): Promise<void> {
   dangXaKhiTat ??= (async () => {
     const het = Date.now() + hanMs;
-    const ngu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.());
+    const ngu = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
     xa();
-    while ((hangCho.length > 0 || tomTatCho || tomTatDangGhi) && Date.now() < het) await ngu(20);
+    while ((hangCho.length > 0 || tomTatCho || tomTatDangGhi || dangBay > 0) && Date.now() < het) await ngu(20);
     if (hangCho.length > 0) {
       const con = hangCho.splice(0);
       logAnToan("error", { cho: "ot_stop_ghi_nen_tat_may_con_lai", soLuong: con.length, dangBay }, "[OT] tắt tiến trình: hàng chờ ghi nền của đường STOP chưa xả hết trong hạn — các lượt còn lại bị BỎ (đã gộp vào dòng tóm tắt)");
       for (const m of con) bo(m.o, m.lucSuKien, "tat_may");
     }
-    if (tomTatCho && !tomTatDangGhi) {
-      const tt = tomTatCho;
+    const conBay = [...dangBayMuc.values()];
+    if (conBay.length > 0) {
+      logAnToan(
+        "error",
+        {
+          cho: "ot_stop_ghi_nen_tat_may_dang_bay",
+          soLuong: conBay.length,
+          ketCuc: "khong_ro",
+          lietKe: conBay.slice(0, TRAN_LIET_KE_DANG_BAY_KHI_TAT).map((m) => ({
+            nhan: cat(m.nhan, 80),
+            requestId: cat(String(m.requestId), 80),
+            bang: m.bang,
+            lucSuKien: new Date(m.lucSuKien).toISOString(),
+          })),
+          soKhongLietKe: Math.max(0, conBay.length - TRAN_LIET_KE_DANG_BAY_KHI_TAT),
+        },
+        "[OT] tắt tiến trình: lượt ghi nền của đường STOP VẪN ĐANG BAY khi hết hạn xả — KHÔNG RÕ đã commit hay chưa (thoát tiến trình có thể rollback); đã gộp vào dòng tóm tắt",
+      );
+      for (const m of conBay) bo({ nhan: m.nhan, requestId: m.requestId, noiDung: m.noiDung }, m.lucSuKien, "dang_bay_khi_tat", { khiBoQua: false, dem: false, log: false });
+    }
+    // tóm tắt cuối: phần chờ + (nếu đang ghi dở) nội dung của tóm tắt đang bay — CÙNG mã ⇒ ghi đôi phát hiện được
+    let tt = tomTatCho;
+    if (tomTatDangGhi) tt = tt ? gopTomTat(tomTatDangGhi, tt) : { ...tomTatDangGhi };
+    if (tt) {
+      daGhiTomTatKhiTat = true; // re-review m1: `xa` không phát lại tóm tắt nữa
       tomTatCho = null;
       const conLai = Math.max(1, het - Date.now());
+      let hen: ReturnType<typeof setTimeout> | undefined;
       try {
-        await Promise.race([Promise.resolve(ghiTomTat(tt)), new Promise((_, b) => setTimeout(() => b(new Error("hết hạn tắt máy")), conLai).unref?.())]);
+        await Promise.race([
+          Promise.resolve(ghiTomTat(tt)),
+          new Promise((_, b) => {
+            hen = setTimeout(() => b(new Error("hết hạn tắt máy")), conLai);
+          }),
+        ]);
       } catch (e) {
         tomTatCho = tomTatCho ? gopTomTat(tt, tomTatCho) : tt;
         logAnToan("error", { err: (e as Error)?.message ?? String(e), cho: "ot_stop_ghi_nen_tat_may_tom_tat_loi", tomTat: tt }, "[OT] tắt tiến trình: không ghi được dòng tóm tắt lượt bị bỏ — nội dung ở log");
+      } finally {
+        if (hen) clearTimeout(hen);
       }
     }
   })();
@@ -500,7 +673,9 @@ export function _datLaiGhiTreoChoTest(): void {
   if (henThuLai) clearTimeout(henThuLai);
   henThuLai = null;
   thuLaiTomTatSau = 0;
+  daGhiTomTatKhiTat = false;
   dangXaKhiTat = null;
+  dangBayMuc.clear();
   mocBoQua.length = 0;
   batDauDemBoQua = Date.now();
 }

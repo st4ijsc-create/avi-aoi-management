@@ -31,6 +31,8 @@ _(Task 11)_
   Truy vấn chỉ được phát khi trần còn chỗ. Trước, `recordAuditEvent` được gọi trước mọi kiểm tra.
 - **Đầy trần ⇒ XẾP HÀNG, không bỏ (fix round 1, điều phối DUYỆT 2026-10-27; thay "bỏ khi đầy" của bản đầu T1).**
   - MỘT FIFO, ≤ 256 mục HOẶC 10 phút (cái nào tới trước), mỗi mục ≤ 16 KB (JSON nội dung). Nội dung giữ cho log / tóm tắt bị cắt.
+  - Mục QUÁ 16 KB (fix round 2): audit được CẮT cho vừa (`after.daCat: true`) và ghi bằng người ghi từ nội dung (thunk gốc bị thả); attempts / chốt
+    dòng chờ quá lớn (không có người ghi từ nội dung) và mục cắt rồi vẫn không vừa ⇒ bỏ (`qua_lon`). Đường nhanh (không xếp hàng) ghi nguyên.
   - Xả dưới CÙNG trần 8 (kể cả dòng tóm tắt): ngân sách pool 8 + 8 ≤ 25 − 9 không đổi. Lượt mới không vượt lượt đang chờ (không đói).
   - STOP không bao giờ chờ hàng chờ: lượt xếp hàng trả người gọi NGAY.
   - **Giờ SỰ KIỆN được giữ:**
@@ -38,15 +40,19 @@ _(Task 11)_
     - audit: `after.lucSuKien` + `after.tuHangCho: true`, vì `recordAuditEvent` không nhận giờ; nằm trong phần được băm của chuỗi;
     - chốt dòng chờ: `executedAt` = giờ sự kiện.
   - Log `<nhan>_xep_hang` (warn) khi xếp hàng.
-- **Chỉ tràn / quá tuổi / quá lớn / tắt máy mới BỎ.**
+- **Chỉ tràn / quá tuổi / quá lớn (không cắt được) / tắt máy mới BỎ; audit ghi HỎNG (fix round 2, `loi_ghi`) cũng vào tóm tắt.**
   - Log error `<nhan>_bo_<lyDo>` mang nội dung hàng (cắt), gọi `khiBoQua`.
   - Đếm 24 h `demGhiBoQuaDay()` theo bảng đích (KD-A3). Attempts STOP_QUA_HAN bị bỏ còn đếm vào `stopQuaHan24h.khongGhiSo.theoBuoc.ghi_so_loi` (Q2).
-  - Gộp vào **MỘT dòng tóm tắt** `control_audit_log` `ot_stop_ghi_nen_bo_roi` (số lượng, theo lý do / nhãn / bảng, khoảng giờ sự kiện, ≤ 32 requestId),
+  - Gộp vào **MỘT dòng tóm tắt** `control_audit_log` `ot_stop_ghi_nen_bo_roi` (mã `ma` + `maDaGop`, số lượng, theo lý do / nhãn / bảng, khoảng giờ sự
+    kiện, ≤ 32 requestId, `khongRoDaGhi`),
     nằm TRONG chuỗi băm khi SEC_PLATFORM bật.
   - Dòng tóm tắt không bao giờ bị bỏ: nó đi trước hàng chờ khi có chỗ; ghi hỏng ⇒ giữ lại, gộp lượt bỏ mới, thử lại sau 2 s và ở lần xả kế tiếp.
 - **Tắt tiến trình** (`stopOt({ tatTienTrinh: true })` → `xaHangChoKhiTat`; `server.close` chờ cùng promise trước `process.exit`):
-  - xả tối đa 2 s;
-  - còn lại ⇒ MỘT dòng log `ot_stop_ghi_nen_tat_may_con_lai`, các lượt còn lại bị bỏ (lyDo `tat_may`), và thử ghi dòng tóm tắt trong phần hạn còn lại.
+  - xả tối đa 2 s, chờ CẢ hàng chờ, tóm tắt VÀ lượt đang bay (fix round 2, re-review N-1);
+  - hàng chờ còn lại ⇒ MỘT dòng log `ot_stop_ghi_nen_tat_may_con_lai`, các lượt ấy bị bỏ (lyDo `tat_may`);
+  - lượt VẪN ĐANG BAY ở hạn ⇒ MỘT dòng log `ot_stop_ghi_nen_tat_may_dang_bay` LIỆT KÊ chúng (≤ 32: nhãn, requestId, bảng, giờ sự kiện; `ketCuc: khong_ro`)
+    và vào tóm tắt (lyDo `dang_bay_khi_tat`, `khongRoDaGhi` — có thể đã hoặc chưa commit);
+  - rồi ghi tóm tắt cuối trong phần hạn còn lại; sau đó `xa` không phát lại tóm tắt (chống ghi đôi).
 - **Posture** `oversight.posture.ghiNenStopBoQua24h` (chỉ toàn quyền; chỉ trường máy chủ — dòng giao diện ở Task 9):
   - `count` / `theoBang`: lượt bị bỏ trong 24 h;
   - tín hiệu sống: `dangBay` / `tran`, `dayTu` (lúc trần đầy), `hangCho` / `hangChoTheoBang` / `tranHangCho`, `tomTatCho`.
@@ -77,6 +83,12 @@ _(Task 11)_
 - (T1) **"Hố đen mạng"** (không có `statement_timeout` nào bắn): 8 lượt treo giữ trần mãi ⇒ hàng chờ không xả, các mục quá tuổi bị bỏ sau 10 phút.
   Posture `dayTu` cho thấy trần đã đầy từ khi nào.
 - (T1) **Trần theo TIẾN TRÌNH.** N bản API cho N × 8 kết nối và N hàng chờ.
+- (T1) **Chặn đầu hàng (head-of-line):** dưới tranh chấp khoá chuỗi băm, sổ (attempts, chốt dòng chờ) xếp sau audit chậm trong MỘT FIFO — cái giá của
+  luật "không đói" của điều phối.
+- (T1) **Hai đồng hồ:** `at` của attempts xếp hàng là đồng hồ ỨNG DỤNG; attempts đường nhanh dùng `now()` của DB.
+- (T1) **Tóm tắt ghi đôi (hiếm):** COMMIT mơ hồ (kết nối rớt sau COMMIT) có thể ghi một tóm tắt hai lần — CÙNG `ma` nên phát hiện được; luôn thừa,
+  không bao giờ thiếu. Đua lúc tắt đã chặn bằng cờ.
+- (T1) **`stopQuaHan24h` đếm thiếu tạm thời** dòng STOP_QUA_HAN đang xếp hàng (tới khi xả, ≤ 10 phút); `hangChoTheoBang` cho thấy chúng.
 - (T1) **Số adapter mỗi máy — mã KHÔNG giới hạn** (`lenhHmi.ts` đọc adapter không `limit`). ĐO 2026-10-27, chỉ đọc:
   - DEV `aoi_management`: 15 adapter / 15 máy, mỗi máy ĐÚNG 1 adapter, 0 máy có ghim STOP;
   - `_test` (dữ liệu test để lại): tối đa 9 adapter bật / máy (2 máy), tối đa 3 adapter có ghim / máy.

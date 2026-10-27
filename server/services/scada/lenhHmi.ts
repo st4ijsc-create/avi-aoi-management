@@ -70,7 +70,7 @@ import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "
 import { batXaTongKet, laMaOn, nenGhiThuLenh, type TongKetHetHan } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
 import { ghiNhanStopQuaHanKhongGhiSo, type PhaQuaHanStopHmi } from "../../_core/hanStopHmi";
-import { ghiCoTran, HAN_GHI_TREO_MS, soGhiTreoStop, themLucSuKien, TRAN_GHI_TREO_STOP, type BoiCanhGhi } from "../ot/ghiTreoCoTran";
+import { ghiCoTran, HAN_GHI_TREO_MS, soGhiTreoStop, suKienAuditTuNoiDung, themLucSuKien, TRAN_GHI_TREO_STOP, type BoiCanhGhi } from "../ot/ghiTreoCoTran";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -1453,6 +1453,20 @@ export function ghiSoCoHan(
 }
 
 /** Một dòng attempts trên đường trả lời của STOP HMI qua `ghiSoCoHan` (nội dung dòng đi kèm để dựng lại khi bị bỏ). */
+/**
+ * R1b-2b-2a T1 fix round 2 — MỘT audit nền của đường STOP HMI qua trần chung (như `ghiSoCoHan`, không có `khiKhongVaoSo`): ghi xếp hàng mang giờ sự
+ * kiện (`themLucSuKien`); mục QUÁ LỚN trong hàng chờ được CẮT (`daCat`) và ghi bằng `viecTuNoiDung` — chỉ bắt `d`, không bắt nội dung gốc.
+ */
+function ghiAuditNen(d: DbHoacTx, suKien: AuditEventInput, nhan: string, requestId: string): Promise<void> {
+  return ghiCoTran((t) => recordAuditEvent(d, themLucSuKien(suKien, t)), {
+    nhan,
+    requestId,
+    noiDung: { bang: "control_audit_log", ...suKien },
+    khiLoi: (e, muon) => ghiLoiChot(e, requestId, muon ? `${nhan}_muon` : nhan),
+    viecTuNoiDung: (nd, t) => recordAuditEvent(d, themLucSuKien(suKienAuditTuNoiDung<AuditEventInput>(nd), t)),
+  });
+}
+
 function ghiThuCoHan(d: DbHoacTx, dong: Parameters<typeof ghiThuLenh>[1], nhan: string, requestId: string, khiKhongVaoSo?: () => void): Promise<void> {
   // fix round 1 — lượt ghi từ hàng chờ mang giờ SỰ KIỆN vào cột `at` (không phải giờ xả)
   return ghiSoCoHan((t) => ghiThuLenh(d, t.daXepHang ? { ...dong, at: t.lucSuKien } : dong), nhan, requestId, { bang: "scada_command_attempts", ...dong }, khiKhongVaoSo);
@@ -1758,7 +1772,7 @@ export async function dungMayHmi(
       },
       reason: "STOP khi đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26)",
     };
-    void ghiSoCoHan((t) => recordAuditEvent(d, themLucSuKien(suKien, t)), "audit_hmi_stop_buoc_doi_mat_khau", input.clientRequestId, { bang: "control_audit_log", ...suKien });
+    void ghiAuditNen(d, suKien, "audit_hmi_stop_buoc_doi_mat_khau", input.clientRequestId);
   };
 
   /**
@@ -1824,7 +1838,7 @@ export async function dungMayHmi(
         },
         reason: lyDo ?? "HMI DỪNG MÁY — quá hạn trước-gửi",
       };
-      void ghiSoCoHan((t) => recordAuditEvent(d, themLucSuKien(suKien, t)), "audit_hmi_stop_qua_han", input.clientRequestId, { bang: "control_audit_log", ...suKien });
+      void ghiAuditNen(d, suKien, "audit_hmi_stop_qua_han", input.clientRequestId);
     }
     return { ok: false, tuChoi: { ma: MA_STOP_QUA_HAN, pha: "truoc_gui", chiTiet } };
   };
@@ -1968,7 +1982,7 @@ export async function dungMayHmi(
       reason: lyDo ?? "HMI DỪNG MÁY",
     };
     // QĐ D-5 — STOP đã gửi; sổ hỏng / treo không được che kết quả khỏi người vận hành
-    void ghiSoCoHan((t) => recordAuditEvent(dbx, themLucSuKien(suKien, t)), "audit_hmi_stop", input.clientRequestId, { bang: "control_audit_log", ...suKien });
+    void ghiAuditNen(dbx, suKien, "audit_hmi_stop", input.clientRequestId);
   };
 
   if (daGui.length === 0 && loiDoc.length === 0 && boQua.length > 0) {

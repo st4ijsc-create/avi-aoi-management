@@ -68,7 +68,7 @@ export const HAM_BOC_GOC = ["ghiCoTran", "ghiSoCoHan"] as const;
 export const HAM_GHI_SO = ["recordAuditEvent", "ghiThuLenh", "doiTrangThaiCho"] as const;
 /** đồng bộ, không chạm DB (log / đếm trong bộ nhớ) — thêm tên mới ở đây là quyết định CÓ RÀ SOÁT */
 export const DONG_BO_DUOC_PHEP = ["ghiNhanStopQuaHanKhongGhiSo", "ghiLoiChot"] as const;
-export const HAM_QUET_LENH_HMI = ["dungMayHmi", "guiStopMotAdapter", "ghiThuCoHan"] as const;
+export const HAM_QUET_LENH_HMI = ["dungMayHmi", "guiStopMotAdapter", "ghiThuCoHan", "ghiAuditNen"] as const;
 export const HAM_QUET_DISPATCHER = ["auditPinnedStopOverride"] as const;
 
 export interface KetQuaQuetGhiNen {
@@ -228,7 +228,18 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
         let bao: ts.Node | undefined = n.parent;
         while (bao && !laHam(bao)) bao = bao.parent;
         const cha = bao?.parent;
-        const trongThunk = !!bao && !!cha && ts.isCallExpression(cha) && hamBoc.has(tenGoiHam(cha) ?? "") && cha.arguments[0] === bao;
+        // fix round 2 — hoặc là `viecTuNoiDung` (người ghi từ nội dung đã cắt) trong object tuỳ chọn của một lời gọi bọc
+        const laViecTuNoiDung =
+          !!bao &&
+          !!cha &&
+          ts.isPropertyAssignment(cha) &&
+          ts.isIdentifier(cha.name) &&
+          cha.name.text === "viecTuNoiDung" &&
+          ts.isObjectLiteralExpression(cha.parent) &&
+          ts.isCallExpression(cha.parent.parent) &&
+          hamBoc.has(tenGoiHam(cha.parent.parent) ?? "") &&
+          cha.parent.parent.arguments.includes(cha.parent);
+        const trongThunk = laViecTuNoiDung || (!!bao && !!cha && ts.isCallExpression(cha) && hamBoc.has(tenGoiHam(cha) ?? "") && cha.arguments[0] === bao);
         if (trongThunk) ra.soGhiTrongThunk += 1;
         else ra.viPhamThuan.push(`${ten}:${dongCua(n)}: ${ma1(n)}`);
       }
@@ -244,8 +255,9 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
  *   · lenhHmi — câu lệnh nổi đã bọc 5: `void ghiSoCoHan` × 3 (audit buộc đổi mật khẩu, audit QUA_HAN, audit `ghiAudit`) + `void ghiThuCoHan` × 2
  *     (attempts STOP_QUA_HAN cả lệnh, vòng STOP_QUA_HAN theo adapter);
  *   · dispatcher — 1: `void ghiCoTran` của `auditPinnedStopOverride`;
- *   · lời gọi ghi sổ trong thunk 8: lenhHmi 3 `recordAuditEvent` + 1 `ghiThuLenh` (ghiThuCoHan) + 3 `doiTrangThaiCho` (dispatch ném × 1, sau
- *     dispatch × 2) + dispatcher 1 `recordAuditEvent`.
+ *   · lời gọi ghi sổ trong thunk 8 (đo lại ở fix round 2: audit gom vào `ghiAuditNen`, mỗi audit có thêm người ghi `viecTuNoiDung`): lenhHmi
+ *     `ghiAuditNen` 2 `recordAuditEvent` + 1 `ghiThuLenh` (ghiThuCoHan) + 3 `doiTrangThaiCho` (dispatch ném × 1, sau dispatch × 2) + dispatcher 2
+ *     `recordAuditEvent` (thunk + viecTuNoiDung).
  */
 const SO_BOC_LENH_HMI = 5;
 const SO_BOC_DISPATCHER = 1;
@@ -326,6 +338,13 @@ describe("★ R1b-2b-2a T1 (mục 61, KD-A2) — mọi lượt ghi nền của �
       expect(quet(`async function dungMayHmi(viec: any) { void ghiCoTran(viec, { nhan: "a", requestId: "-" }); }`).viPhamThuan).toHaveLength(1);
       // đối chứng: thunk phát truy vấn BÊN TRONG ⇒ hợp lệ
       expect(quet(`async function dungMayHmi(db: any) { void ghiCoTran(async () => { const r = await db.update(x); return r; }, { nhan: "a", requestId: "-" }); }`).viPhamThuan).toEqual([]);
+    });
+    it("fix round 2 — `viecTuNoiDung` trong tuỳ chọn của lời gọi bọc là chỗ ghi HỢP LỆ; ghi sổ trong tuỳ chọn KHÁC (vd. khiLoi) ⇒ BẮT (B)", () => {
+      const ok = quet(`async function dungMayHmi(d: any) { void ghiCoTran((t) => recordAuditEvent(d, t), { nhan: "a", requestId: "-", viecTuNoiDung: (nd, t) => recordAuditEvent(d, nd) }); }`);
+      expect(ok.viPhamThuan).toEqual([]);
+      expect(ok.soGhiTrongThunk).toBe(2);
+      const sai = quet(`async function dungMayHmi(d: any) { void ghiCoTran((t) => recordAuditEvent(d, t), { nhan: "a", requestId: "-", khiLoi: () => recordAuditEvent(d, {}) }); }`);
+      expect(sai.viPhamThuan).toHaveLength(1);
     });
     it("hàm cấp tệp chỉ `return ghiSoCoHan(…)` ⇒ là bọc (suy ra); hàm bị đổi tên / mất ⇒ thieuHam", () => {
       const r = quetGhiNen(

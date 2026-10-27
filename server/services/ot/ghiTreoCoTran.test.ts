@@ -26,6 +26,7 @@ import {
   trangThaiGhiTreo,
   TUOI_TOI_DA_HANG_CHO_MS,
   xaHangChoKhiTat,
+  suKienAuditTuNoiDung,
   type BoiCanhGhi,
   type TomTatBoRoi,
 } from "./ghiTreoCoTran";
@@ -448,8 +449,11 @@ describe("★ điều phối — −1 trên MỌI đường thoát; về 0 sau k
     await vi.advanceTimersByTimeAsync(20_000);
     await nhuong();
     expect(viec.filter((f) => f.mock.calls.length === 1)).toHaveLength(100);
-    expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, dayTu: null });
-    expect(demGhiBoQuaDay().tong).toBe(0);
+    expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, dayTu: null, tomTatCho: 0 });
+    // fix round 2 (re-review m5) — AUDIT tới DB rồi ghi HỎNG ⇒ khoảng trống trong chuỗi: đếm + tóm tắt (lyDo loi_ghi), nội dung ở log `_bo_loi_ghi`
+    expect(demGhiBoQuaDay()).toMatchObject({ tong: 100, theoBang: { control_audit_log: 100 } });
+    expect(nhan(loiLog).filter((o) => o.cho === "audit_hmi_stop_bo_loi_ghi")).toHaveLength(100);
+    expect(tomTat.reduce((n, t) => n + (t.theoLyDo.loi_ghi ?? 0), 0)).toBe(100);
     expect(khongXuLy).toEqual([]);
   });
 
@@ -529,6 +533,131 @@ describe("★ tắt tiến trình — xả ≤ 2 s; còn lại ⇒ một dòng l
     expect(nhan(loiLog).filter((o) => o.cho === "ot_stop_ghi_nen_tat_may_con_lai")).toHaveLength(1);
     expect(boQua).toHaveBeenCalledTimes(30);
     expect(tomTat).toHaveLength(1);
-    expect(tomTat[0]).toMatchObject({ soLuong: 30, theoLyDo: { tat_may: 30 } });
+    // + 8 lượt treo vẫn đang bay ở hạn (fix round 2, N-1): KHÔNG RÕ đã commit hay chưa
+    expect(tomTat[0]).toMatchObject({ soLuong: 38, theoLyDo: { tat_may: 30, dang_bay_khi_tat: 8 }, khongRoDaGhi: 8 });
+  });
+
+  it("★ N-1 — hàng chờ RỖNG nhưng còn lượt ĐANG BAY lúc tắt ⇒ chờ chúng (trong hạn 2 s); lượt xong kịp ⇒ không tóm tắt, không log", async () => {
+    const h = [hoan(), hoan(), hoan()];
+    h.forEach((x, i) => void ghiCoTran(() => x.p, { nhan: "audit_hmi_stop", requestId: `b${i}`, noiDung: { bang: "control_audit_log" } }));
+    expect(trangThaiGhiTreo().hangCho).toBe(0);
+    let xong = false;
+    void xaHangChoKhiTat().then(() => (xong = true));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(xong, "còn lượt đang bay ⇒ CHƯA xong").toBe(false);
+    h.forEach((x) => x.giai());
+    await vi.advanceTimersByTimeAsync(40);
+    await nhuong(5);
+    expect(xong).toBe(true);
+    expect(tomTat).toEqual([]);
+    expect(nhan(loiLog).filter((o) => o.cho === "ot_stop_ghi_nen_tat_may_dang_bay")).toEqual([]);
+  });
+
+  it("★ N-1 — hàng chờ RỖNG, 3 lượt đang bay KHÔNG xong ⇒ chờ ĐÚNG ~2 s; MỘT dòng log LIỆT KÊ 3 lượt (nhãn, requestId, bảng, giờ sự kiện); tóm tắt dang_bay_khi_tat = 3, khongRoDaGhi = 3", async () => {
+    const t0 = Date.now();
+    for (let i = 0; i < 3; i++) void ghiCoTran(treoMai, { nhan: i === 0 ? "dispatch_pinned_stop_audit" : "audit_hmi_stop", requestId: `k${i}`, noiDung: { bang: "control_audit_log" } });
+    expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 3, hangCho: 0 });
+    let xong = -1;
+    void xaHangChoKhiTat().then(() => (xong = Date.now() - t0));
+    await vi.advanceTimersByTimeAsync(1_990);
+    expect(xong).toBe(-1);
+    await vi.advanceTimersByTimeAsync(50);
+    await nhuong(5);
+    expect(xong).toBeGreaterThanOrEqual(2_000);
+    expect(xong).toBeLessThan(2_100);
+    const dong = loiLog.mock.calls.map((c) => c[0] as { cho?: string; lietKe?: Array<Record<string, unknown>>; ketCuc?: string }).filter((o) => o?.cho === "ot_stop_ghi_nen_tat_may_dang_bay");
+    expect(dong).toHaveLength(1);
+    expect(dong[0].ketCuc).toBe("khong_ro");
+    expect(dong[0].lietKe).toEqual([
+      { nhan: "dispatch_pinned_stop_audit", requestId: "k0", bang: "control_audit_log", lucSuKien: new Date(t0).toISOString() },
+      { nhan: "audit_hmi_stop", requestId: "k1", bang: "control_audit_log", lucSuKien: new Date(t0).toISOString() },
+      { nhan: "audit_hmi_stop", requestId: "k2", bang: "control_audit_log", lucSuKien: new Date(t0).toISOString() },
+    ]);
+    expect(tomTat).toHaveLength(1);
+    expect(tomTat[0]).toMatchObject({ soLuong: 3, theoLyDo: { dang_bay_khi_tat: 3 }, khongRoDaGhi: 3, requestIds: ["k0", "k1", "k2"] });
+    expect(demGhiBoQuaDay().tong, "không rõ ⇒ KHÔNG đếm là bị bỏ").toBe(0);
+  });
+
+  it("re-review m1 — lượt ghi tóm tắt cuối lúc tắt hết hạn ⇒ `xa` KHÔNG phát lại tóm tắt khi một lượt khác xong (chống ghi đôi)", async () => {
+    let soLanGhi = 0;
+    _datGhiTomTatChoTest(() => {
+      soLanGhi++;
+      return new Promise<never>(() => undefined);
+    });
+    const h = hoan();
+    void ghiCoTran(() => h.p, { nhan: "a", requestId: "a" });
+    void xaHangChoKhiTat(100);
+    await vi.advanceTimersByTimeAsync(200);
+    await nhuong(5);
+    expect(soLanGhi).toBe(1); // tóm tắt (dang_bay_khi_tat) được thử đúng một lần
+    h.giai();
+    await nhuong(5);
+    await vi.advanceTimersByTimeAsync(HAN_THU_LAI_TOM_TAT_MS * 2);
+    await nhuong(5);
+    expect(soLanGhi, "không phát lại sau khi đã ghi lúc tắt").toBe(1);
+  });
+});
+
+describe("★ fix round 2 — mục QUÁ LỚN bị CẮT (không bỏ); mã tóm tắt", () => {
+  it("quá 16 KB + có viecTuNoiDung ⇒ XẾP HÀNG bản CẮT (daCat, vừa trần); thunk gốc KHÔNG gọi; khi có chỗ ⇒ viecTuNoiDung ghi bản cắt", async () => {
+    const ds = dayTran();
+    const goc = vi.fn(async () => undefined);
+    const tuNd = vi.fn(async (_nd: unknown, _t: BoiCanhGhi) => undefined);
+    const lon = { bang: "control_audit_log", action: "scada_hmi_stop", entityType: "machine", entityId: 7, after: { adapters: Array.from({ length: 400 }, (_, i) => ({ i, ghim: "x".repeat(100) })) } };
+    await ghiCoTran(goc, { nhan: "audit_hmi_stop", requestId: "lon", noiDung: lon, viecTuNoiDung: tuNd });
+    expect(nhan(canhLog).filter((o) => o.cho === "audit_hmi_stop_xep_hang")).toHaveLength(1);
+    expect(nhan(loiLog).filter((o) => /_bo_/.test(o.cho ?? ""))).toEqual([]);
+    ds[0].giai();
+    await nhuong(5);
+    expect(goc).not.toHaveBeenCalled();
+    expect(tuNd).toHaveBeenCalledTimes(1);
+    const nd = tuNd.mock.calls[0][0] as Record<string, unknown>;
+    expect(nd.daCat).toBe(true);
+    expect(nd).toMatchObject({ bang: "control_audit_log", action: "scada_hmi_stop", entityType: "machine", entityId: 7 });
+    expect(JSON.stringify(nd).length).toBeLessThanOrEqual(TRAN_BYTE_MUC_HANG_CHO);
+    expect(tuNd.mock.calls[0][1]).toMatchObject({ daXepHang: true });
+    expect(suKienAuditTuNoiDung<{ after: Record<string, unknown> }>(nd).after.daCat).toBe(true);
+    expect("bang" in suKienAuditTuNoiDung<Record<string, unknown>>(nd)).toBe(false);
+  });
+
+  it("quá lớn mà cắt rồi VẪN không vừa (khoá rất dài) hoặc không có viecTuNoiDung ⇒ BỎ qua_lon", async () => {
+    dayTran();
+    const khoaDai = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${i}${"k".repeat(2_000)}`, 1]));
+    await ghiCoTran(async () => undefined, { nhan: "a", requestId: "a", noiDung: khoaDai, viecTuNoiDung: async () => undefined });
+    await ghiCoTran(async () => undefined, { nhan: "b", requestId: "b", noiDung: { x: "y".repeat(TRAN_BYTE_MUC_HANG_CHO + 1) } });
+    expect(nhan(loiLog).filter((o) => /_bo_qua_lon$/.test(o.cho ?? "")).map((o) => o.cho)).toEqual(["a_bo_qua_lon", "b_bo_qua_lon"]);
+  });
+
+  it("re-review m1 — tóm tắt mang `ma`; ghi hỏng rồi thử lại ⇒ CÙNG mã, mã của phần gộp vào maDaGop", async () => {
+    let hong = 1;
+    const thay: TomTatBoRoi[] = [];
+    _datGhiTomTatChoTest(async (tt) => {
+      thay.push(JSON.parse(JSON.stringify(tt)));
+      if (hong-- > 0) throw new Error("hỏng");
+    });
+    const ds = dayTran();
+    for (let i = 0; i < TRAN_HANG_CHO_GHI_NEN; i++) void ghiCoTran(async () => undefined, { nhan: "q", requestId: `q${i}` });
+    await ghiCoTran(async () => undefined, { nhan: "x", requestId: "x1" });
+    ds[0].giai();
+    await nhuong(10);
+    expect(thay).toHaveLength(1);
+    const ma1 = thay[0].ma;
+    expect(ma1).toMatch(/\S{8,}/);
+    await vi.advanceTimersByTimeAsync(HAN_THU_LAI_TOM_TAT_MS + 1);
+    for (const h of ds) h.giai();
+    await nhuong(10);
+    expect(thay.length).toBeGreaterThanOrEqual(2);
+    expect(thay.at(-1)!.ma).toBe(ma1);
+  });
+
+  it("re-review m7 — nội dung có getter NÉM ⇒ ghiCoTran không ném (xếp hàng / bỏ đều an toàn)", async () => {
+    dayTran();
+    const doc = { bang: "control_audit_log" } as Record<string, unknown>;
+    Object.defineProperty(doc, "hong", { enumerable: true, get: () => { throw new Error("getter"); } });
+    await expect(ghiCoTran(async () => undefined, { nhan: "g", requestId: "g", noiDung: doc })).resolves.toBeUndefined();
+    // không đo được cỡ (JSON ném) ⇒ coi như quá lớn ⇒ bỏ có log (nội dung "[rutGon lỗi]") — không bao giờ ném ra STOP
+    const bo = nhan(loiLog).filter((o) => o.cho === "g_bo_qua_lon");
+    expect(bo).toHaveLength(1);
+    expect(bo[0].noiDung).toBe("[rutGon lỗi]");
   });
 });

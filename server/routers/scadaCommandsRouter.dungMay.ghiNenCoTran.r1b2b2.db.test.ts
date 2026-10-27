@@ -633,6 +633,20 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
     const bqSau = demGhiBoQuaDay().theoBang;
     expect((bqSau.scada_command_attempts ?? 0) - (bqTruoc.scada_command_attempts ?? 0)).toBe(1);
     expect((bqSau.control_audit_log ?? 0) - (bqTruoc.control_audit_log ?? 0)).toBe(1);
+    // fix round 2 (re-review m4) — (c) ở chế độ TRÀN: hàng chờ ĐẦY 256 + trần đầy ⇒ STOP máy KHÁC vẫn trong hạn (mọi lượt ghi nền của nó đi qua `bo()`)
+    expect(trangThaiGhiTreo()).toMatchObject({ dangBay: TRAN, hangCho: TRAN_HANG_CHO_GHI_NEN });
+    const boTruocG2 = boLog().length;
+    const lag = batDauDoLag();
+    const batDau = Date.now();
+    const kq2 = await op.caller.dungMay({ machineId: fx.mG2, clientRequestId: uuid() });
+    const truocGui = H.lucVaoDispatch.get(fx.aG2)! - batDau;
+    const sauDispatch = Date.now() - H.lucRaDispatch.get(fx.aG2)!;
+    console.info(`[r1b2b2t1] G2 khi hàng chờ TRÀN: truocGui ${truocGui} · sauDispatch ${sauDispatch}`);
+    expect(kq2.ketQua[0]).toMatchObject({ adapterId: fx.aG2, status: "acked_verified", ok: true });
+    expect(truocGui).toBeLessThan(1_000 + (await lag.dung(150)));
+    expect(sauDispatch).toBeLessThan(500 + 400 + (await lag.dung(300)));
+    const boG2 = boLog().length - boTruocG2;
+    expect(boG2, "các lượt ghi nền của G2 bị bỏ vì tràn (có log + tóm tắt)").toBeGreaterThanOrEqual(1);
     // DB hết chậm + lượt giả xong ⇒ hàng chờ xả; MỘT dòng tóm tắt (SEC_PLATFORM tắt ở tệp này: INSERT thường)
     H.chamAudit = false;
     nhaGia.r();
@@ -644,7 +658,8 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
       if (tt.length < 1) throw new Error("chưa có tóm tắt");
     }, { timeout: 15_000, interval: 50 });
     expect(tt).toHaveLength(1);
-    expect(tt[0].afterJson).toMatchObject({ soLuong: 2, theoLyDo: { tran: 2 }, theoNhan: { attempts_hmi_stop_qua_han: 1, audit_hmi_stop_qua_han: 1 } });
+    expect(tt[0].afterJson).toMatchObject({ soLuong: 2 + boG2, theoLyDo: { tran: 2 + boG2 }, theoNhan: { attempts_hmi_stop_qua_han: 1, audit_hmi_stop_qua_han: 1 } });
+    expect(tt[0].afterJson.ma).toEqual(expect.any(String));
     await cho(200);
     expect((await thuQuaHan()).length).toBe(nTruoc); // dòng bị bỏ: không có hàng (chỉ log + đếm + tóm tắt)
     await vi.waitFor(() => expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 }), { timeout: 15_000, interval: 50 });

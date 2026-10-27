@@ -582,6 +582,9 @@ export interface StopQuaHanPosture {
  *     bỏ CHƯA vào dòng tóm tắt).
  * ⚠ ĐẾM ĐÔI có chủ ý (review M-6): một dòng attempts STOP_QUA_HAN bị bỏ được đếm CẢ ở `stopQuaHan24h.khongGhiSo.theoBuoc.ghi_so_loi` (từ chối STOP
  * không vào sổ) LẪN ở `ghiNenStopBoQua24h.theoBang.scada_command_attempts` (lượt ghi nền bị bỏ). Hai câu hỏi khác nhau — giao diện KHÔNG cộng chúng.
+ * ⚠ ĐẾM THIẾU tạm thời (re-review m6): dòng attempts STOP_QUA_HAN đang XẾP HÀNG chưa ở DB cũng chưa ở bộ đếm trong bộ nhớ ⇒ `stopQuaHan24h` thiếu
+ * chúng tới khi xả (≤ 10 phút); `hangChoTheoBang.scada_command_attempts` cho thấy số đang chờ.
+ * fix round 2: `count` gồm cả audit tới DB rồi ghi HỎNG (lyDo loi_ghi); lượt KHÔNG RÕ lúc tắt (dang_bay_khi_tat) chỉ vào dòng tóm tắt, không đếm ở đây.
  */
 export interface GhiNenStopBoQuaPosture {
   count: number;
