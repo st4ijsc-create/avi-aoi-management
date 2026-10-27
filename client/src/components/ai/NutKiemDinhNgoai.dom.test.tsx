@@ -250,3 +250,11 @@ describe("gửi", () => {
     }
   });
 });
+
+describe("rà kiem-dinh 10.4 (NÊN #3) — cảnh báo ô tiêu chí", () => {
+  it("dưới ô tiêu chí LUÔN có dòng cảnh báo cố định 'không dán dữ liệu vận hành'", () => {
+    render(<NutKiemDinhNgoai nguon={CHAT} />);
+    mo();
+    expect(screen.getByTestId("kdnh-tieu-chi-canh-bao").textContent).toContain("Không dán dữ liệu vận hành");
+  });
+});

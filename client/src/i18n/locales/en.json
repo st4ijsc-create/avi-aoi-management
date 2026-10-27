@@ -24422,7 +24422,8 @@
       "co": "yes",
       "khong": "no",
       "tranNhaMayHet": "(the FACTORY's cap is used up)",
-      "tranNguoiHetLyDo": "(YOUR cap is used up)"
+      "tranNguoiHetLyDo": "(YOUR cap is used up)",
+      "tieuChiCanhBao": "Do not paste operational data (measurements, customer names, keys…) into this box — the server only masks by pattern and cannot classify what you type."
     },
     "duyet": {
       "tieuDe": "Version that uses external AI",
@@ -24447,7 +24448,8 @@
       "nhoAdmin": "An administrator must approve this version (after reviewing the nodes above) before the flow can be enabled or run.",
       "camTuDuyet": "You created this version and the flow carries operational data to an external AI — you may not approve it yourself. Ask another administrator.",
       "canhBaoTuDuyet": "You created this version: approving will be recorded as SELF-APPROVAL (high-level audit).",
-      "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version."
+      "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version.",
+      "biCat": "… (truncated — only the beginning is shown; check ALL of the node's parameters in the config panel before approving)"
     }
   }
 }

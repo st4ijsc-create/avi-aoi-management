@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 
+/** Máy chủ cắt `tomTatLenh` ở 200 ký tự (sau bộ che) — chạm trần ⇒ báo rõ phần còn lại KHÔNG hiển thị ở đây. */
+const TRAN_TOM_TAT_LENH = 200;
+
 type MucTinh = "ky-thuat" | "van-hanh" | "ke-thua";
 export type TomTatNgoai =
   | { coNodeNgoai: false }
@@ -104,7 +107,14 @@ export function BangDuyetNgoai({ flowId, version, ngoai, laAdmin, nguoiDungId, d
                 {n.nhaCungCap} · {n.model}
               </td>
               <td className="pr-2">{n.mucTinh}</td>
-              <td className="whitespace-pre-wrap break-words">{n.tomTatLenh}</td>
+              <td className="whitespace-pre-wrap break-words">
+                {n.tomTatLenh}
+                {n.tomTatLenh.length >= TRAN_TOM_TAT_LENH && (
+                  <span data-testid={`bdn-cat-${n.nodeId}`} className="ml-1 text-amber-700">
+                    {t("kiemDinhNgoai.duyet.biCat", "… (đã cắt — chỉ thấy phần đầu; kiểm tra TOÀN BỘ tham số của node trong bảng cấu hình trước khi duyệt)")}
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

@@ -92,6 +92,9 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
             <label className="block text-xs font-medium">
               {t("kiemDinhNgoai.hop.tieuChi", "Tiêu chí (tuỳ chọn)")}
               <Textarea data-testid="kdnh-tieu-chi" className="mt-1 min-h-[60px] text-xs" maxLength={TRAN_TIEU_CHI} value={tieuChi} disabled={chay.isPending} onChange={(e) => setTieuChi(e.target.value)} />
+              <span data-testid="kdnh-tieu-chi-canh-bao" className="mt-0.5 block text-[11px] font-normal text-amber-700">
+                {t("kiemDinhNgoai.hop.tieuChiCanhBao", "Không dán dữ liệu vận hành (số liệu, tên khách hàng, khoá…) vào ô này — máy chủ chỉ che theo mẫu, không phân loại được nội dung bạn gõ.")}
+              </span>
             </label>
 
             {xem.isError && (

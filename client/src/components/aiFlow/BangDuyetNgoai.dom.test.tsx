@@ -134,3 +134,11 @@ describe("BangDuyetNgoai", () => {
     expect(h.toasts[0]).toContain("từ trước");
   });
 });
+
+describe("rà kiem-dinh 10.4 (NÊN #2) — tóm tắt lệnh bị cắt phải NÓI RÕ", () => {
+  it("tomTatLenh chạm trần 200 ký tự ⇒ nhãn 'đã cắt'; ngắn hơn ⇒ không nhãn", () => {
+    dung(NG({ nodes: [{ ...NODE, tomTatLenh: "x".repeat(200) }, { ...NODE, nodeId: "kd2", tomTatLenh: "ngắn" }] }));
+    expect(screen.getByTestId("bdn-cat-kd1").textContent).toContain("đã cắt");
+    expect(screen.queryByTestId("bdn-cat-kd2")).toBeNull();
+  });
+});

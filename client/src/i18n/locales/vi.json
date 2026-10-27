@@ -24419,7 +24419,8 @@
       "co": "có",
       "khong": "không",
       "tranNhaMayHet": "(trần của NHÀ MÁY đã hết)",
-      "tranNguoiHetLyDo": "(trần CỦA BẠN đã hết)"
+      "tranNguoiHetLyDo": "(trần CỦA BẠN đã hết)",
+      "tieuChiCanhBao": "Không dán dữ liệu vận hành (số liệu, tên khách hàng, khoá…) vào ô này — máy chủ chỉ che theo mẫu, không phân loại được nội dung bạn gõ."
     },
     "duyet": {
       "tieuDe": "Phiên bản dùng AI ngoài",
@@ -24444,7 +24445,8 @@
       "nhoAdmin": "Cần quản trị viên duyệt phiên bản này (sau khi xem các node ở trên) trước khi bật hoặc chạy luồng.",
       "camTuDuyet": "Bạn là người tạo phiên bản này và luồng có dữ liệu vận hành gửi AI ngoài — không được tự duyệt. Nhờ một quản trị viên khác.",
       "canhBaoTuDuyet": "Bạn là người tạo phiên bản này: duyệt sẽ được ghi nhận là TỰ DUYỆT (nhật ký mức cao).",
-      "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu."
+      "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu.",
+      "biCat": "… (đã cắt — chỉ thấy phần đầu; kiểm tra TOÀN BỘ tham số của node trong bảng cấu hình trước khi duyệt)"
     }
   }
 }
