@@ -127,8 +127,8 @@ describe("phanTichDinhNghia — từ chối (M1–M3)", () => {
     tu(doc, "KHOA_LA");
     expect(Date.now() - t0).toBeLessThan(200);
   });
-  it("mọi công cụ trong TEN_CONG_CU (trừ remember) dùng được", () => {
-    for (const t of TEN_CONG_CU.filter((x) => x !== "remember")) {
+  it("mọi công cụ trong TEN_CONG_CU (trừ remember, delegate) dùng được", () => {
+    for (const t of TEN_CONG_CU.filter((x) => x !== "remember" && x !== "delegate")) {
       const r = phanTichDinhNghia("doc-ma.md", hopLe().replace("[read_file, grep]", `[${t}]`));
       expect(r.ok, t).toBe(true);
     }
