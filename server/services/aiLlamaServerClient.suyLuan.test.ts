@@ -348,6 +348,21 @@ describe("G5-D §5 — vị từ trên MÃ NGUỒN: không có bản sao thứ h
     expect(soGoi, "định nghĩa + ít nhất 4 điểm gọi (text · JSON · chat · stream)").toBeGreaterThanOrEqual(5);
   });
 
+  it("★ (rà kiem-dinh 11.0) GHI `reasoning_content` lên dây: ĐÚNG MỘT điểm, nằm trong `chuyenMessageLenDay` — mọi dạng ghi đều đếm", () => {
+    // Quy tắc DƯƠNG: đếm khoá literal (`reasoning_content:` — dạng `Object.assign`/spread/literal), gán thuộc tính
+    // (`.reasoning_content =`) và dạng ngoặc (`["reasoning_content"]`). Thêm điểm ghi thứ hai ở BẤT KỲ dạng nào ⇒ đỏ.
+    const khoa = [...BOC.matchAll(/\breasoning_content\s*:/g)].map((m) => m.index!);
+    const gan = (BOC.match(/\.reasoning_content\s*=(?!=)/g) || []).length;
+    const ngoac = (BOC.match(/\[\s*["'`]reasoning_content["'`]\s*\]/g) || []).length;
+    expect(khoa.length + gan + ngoac, "đúng một điểm ghi `reasoning_content` trên dây").toBe(1);
+    expect(khoa).toHaveLength(1);
+    const dau = BOC.indexOf("function chuyenMessageLenDay(");
+    expect(dau).toBeGreaterThan(-1);
+    const sau = BOC.slice(dau + 1).search(/\n(?:export\s+)?(?:async\s+)?function[\s*]/);
+    const cuoi = sau === -1 ? BOC.length : dau + 1 + sau;
+    expect(khoa[0]! > dau && khoa[0]! < cuoi, "điểm ghi phải nằm trong chuyenMessageLenDay").toBe(true);
+  });
+
   it("★ `chat_template_kwargs` được lắp ở ĐÚNG MỘT hàm dùng chung", () => {
     // ⚠ Đếm ĐIỂM GHI (`… .chat_template_kwargs = …`), không đếm mọi lần chuỗi xuất hiện: câu lỗi
     // của `LoiTokenCanKietVaoSuyLuan` cũng nhắc tên trường (cố ý — người vận hành cần biết gọi cờ

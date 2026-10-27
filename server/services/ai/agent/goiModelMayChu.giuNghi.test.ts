@@ -29,6 +29,11 @@ describe("goiModelMayChu — preserveThinking", () => {
     expect(o).not.toHaveProperty("preserveThinking");
     expect(o.messages.some((m) => "nghiTruoc" in m)).toBe(false);
   });
+  it("rà kiem-dinh — suy luận chỉ-khoảng-trắng ⇒ coi như KHÔNG có (không gửi, không preserveThinking)", async () => {
+    const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: " \t \n " }]);
+    expect(o).not.toHaveProperty("preserveThinking");
+    expect(o.messages.some((m) => "nghiTruoc" in m)).toBe(false);
+  });
   it("lịch sử CÓ reasoning_content ⇒ preserveThinking + chuyển nguyên trên assistant", async () => {
     const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }]);
     expect(o.preserveThinking).toBe(true);

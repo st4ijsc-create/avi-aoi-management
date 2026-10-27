@@ -114,3 +114,38 @@ describe("nenLichSu", () => {
     expect(uocLuongTinNhan(b, demKyTu) - uocLuongTinNhan(a, demKyTu)).toBeGreaterThanOrEqual(100);
   });
 });
+
+describe("★ Đợt 11.0 (rà kiem-dinh) — suy luận giữ trong lịch sử (`reasoning_content`)", () => {
+  it("ước lượng CỘNG suy luận (bỏ sót ⇒ lõi tưởng còn chỗ trong khi llama-server đã vượt ctx)", () => {
+    const co: TinNhan[] = [{ role: "assistant", content: "ab", reasoning_content: "x".repeat(100) }];
+    const khong: TinNhan[] = [{ role: "assistant", content: "ab" }];
+    expect(uocLuongTinNhan(co, demKyTu) - uocLuongTinNhan(khong, demKyTu)).toBe(100);
+  });
+
+  it("vượt ngưỡng ⇒ bỏ suy luận lượt CŨ (cũ nhất trước) TRƯỚC khi rút gọn kết quả tool; vùng giữ (2 lượt cuối) nguyên văn; không đột biến đầu vào", () => {
+    const luot = (i: number, nghi: string, kq: string): TinNhan[] => {
+      const [a, t] = luotTool(i, "read_file", `f${i}.ts`, kq);
+      return [{ ...a, reasoning_content: nghi }, t];
+    };
+    const ds: TinNhan[] = [
+      { role: "system", content: "s" },
+      { role: "user", content: "hỏi" },
+      ...luot(1, "n".repeat(400), "k".repeat(300)),
+      ...luot(2, "m".repeat(400), "j".repeat(300)),
+      ...luot(3, "p".repeat(400), "q".repeat(300)),
+      ...luot(4, "r".repeat(400), "z".repeat(300)),
+    ];
+    const truoc = JSON.stringify(ds);
+    // ngưỡng 70 % × 3500 = 2450; tổng 2966 ⇒ bỏ nghĩ lượt 1 (−400) + lượt 2 (−400) là đủ — KHÔNG đụng kết quả tool
+    const kq = nenLichSu(ds, { nganSachToken: 3500, uocLuong: demKyTu });
+    expect(JSON.stringify(ds)).toBe(truoc);
+    expect(kq.soNen).toBe(2);
+    expect(kq.tinNhan[2]).not.toHaveProperty("reasoning_content");
+    expect(kq.tinNhan[4]).not.toHaveProperty("reasoning_content");
+    expect(kq.tinNhan.filter((m) => m.role === "tool").every((m) => !m.content.startsWith("[compacted:"))).toBe(true);
+    expect(kq.tinNhan[6]!.reasoning_content).toBe("p".repeat(400));
+    expect(kq.tinNhan[8]!.reasoning_content).toBe("r".repeat(400));
+    expect(kq.tokenSau).toBe(uocLuongTinNhan(kq.tinNhan, demKyTu));
+    expect(kq.tokenSau).toBeLessThanOrEqual(2450);
+  });
+});

@@ -309,7 +309,7 @@ export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown>
   };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
   // ★ Đợt 11.0 (CHỈ ĐO) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
-  //   Tên NỘI BỘ `nghiTruoc` ≠ tên trên dây — đây là GHI lịch sử đi, không phải điểm ĐỌC phản hồi (lưới §5 chỉ cho 2 điểm đọc).
+  //   Tên NỘI BỘ `nghiTruoc` ≠ tên trên dây. ĐIỂM GHI DUY NHẤT trên dây — lưới §5 (suyLuan.test) khai báo DƯƠNG: đúng 1, trong hàm này.
   if (m.role === "assistant" && m.nghiTruoc) Object.assign(ra, { reasoning_content: m.nghiTruoc });
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
   //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
