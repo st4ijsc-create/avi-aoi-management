@@ -81,6 +81,9 @@ vi.mock("@/lib/trpc", () => {
         saveStreamedMessage: mut(),
       },
       machine: { list: q([]) },
+      // 10.4 — NutKiemDinhNgoai (đã ở main) gọi danh mục model + xem trước kiểm định
+      aiChonModel: { danhMuc: q([]) },
+      aiKiemDinh: { xemTruoc: q(undefined), chay: mut() },
       aiCopilot: {
         confirmAction: { useMutation: () => ({ isPending: false, mutateAsync: H.confirm }) },
         cancelAction: mut(),
