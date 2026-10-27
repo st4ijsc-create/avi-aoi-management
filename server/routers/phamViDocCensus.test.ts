@@ -981,7 +981,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
 // 2026-10-26 Đợt 10.3 Task 8: +5 D (ghiCauHinh, datModel, datHostNoiBo, xemNoiDung, duyetNgoai) + 3 S (cauHinh, dsModel, dsHostNoiBo — nhaMayNgoaiTrongPhamVi) ⇒ D 1211, S 717, tong 2424.
 // 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan D +1 với Đợt 10.3 ⇒ đo trên cây gộp.
-const GHIM = { A: 35, B: 8, C: 453, D: 1212, S: 717, tong: 2425 } as const;
+// 2026-10-27 Đợt 10.4 (do-model): aiKiemDinh.chay (D, nguonKiemDinhTrongPhamVi) + aiKiemDinh.xemTruoc (S) ⇒ D 1213, S 718, tong 2427.
+const GHIM = { A: 35, B: 8, C: 453, D: 1213, S: 718, tong: 2427 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

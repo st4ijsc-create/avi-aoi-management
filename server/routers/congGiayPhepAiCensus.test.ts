@@ -560,7 +560,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-26 Đợt 10.3 Task 8: +8 aiNgoai.cauHinh|ghiCauHinh|dsModel|datModel|dsHostNoiBo|datHostNoiBo|xemNoiDung|duyetNgoai ⇒ 2424 / 451 / 389.
 // 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan +1 (bề mặt AI, có cổng) với Đợt 10.3 ⇒ 2425 / 452 / 390 ĐO trên cây gộp.
 // 2026-10-26 Đợt 10.3 lô sau nghiệm thu (dieu-phoi e): annotation.analyzeImage vào bề mặt AI (THU_TUC_AI_TUONG_MINH) + sau MOD_AI ⇒ beMatAi 452→453, aiCoCong 390→391; tong không đổi.
-const GHIM = { tong: 2425, beMatAi: 453, aiCoCong: 391, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-10-27 Đợt 10.4 (do-model): +2 aiKiemDinh.xemTruoc|chay (moduleProcedure MOD_AI) ⇒ 2427 / 455 / 393.
+const GHIM = { tong: 2427, beMatAi: 455, aiCoCong: 393, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
