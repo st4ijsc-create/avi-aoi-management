@@ -91,6 +91,20 @@ export async function teardownFixtures(): Promise<Record<string, number>> {
       await sql`DELETE FROM ai_flow_runs WHERE "flowId" IN ${sql(fl)}`;
       out.ai_flows_ui = (await sql`DELETE FROM ai_flows WHERE id IN ${sql(fl)}`).count;
     }
+    // Đợt 10.4 — dữ liệu e2e kiểm định AI ngoài của nhà máy fixture (khoá/model/cấu hình/host nội bộ/bộ đếm) PHẢI gỡ TRƯỚC nhà máy (FK RESTRICT/CASCADE). `ai_external_calls` là WORM (không xoá được, không có FK) ⇒ để lại hàng mồ côi theo thiết kế.
+    const nm = sql`SELECT id FROM factories WHERE code LIKE ${like}`;
+    await sql`DELETE FROM ai_ngoai_model WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    await sql`DELETE FROM ai_ngoai_host_noi_bo WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    await sql`DELETE FROM ai_ngoai_nha_may WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    await sql`DELETE FROM ai_ngoai_dem WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    await sql`DELETE FROM ai_ngoai_dem_phut WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    await sql`DELETE FROM ai_external_call_noi_dung WHERE "factoryId" IN (${nm})`.catch(() => undefined);
+    out.ai_api_keys = (await sql`DELETE FROM ai_api_keys WHERE "factoryId" IN (${nm})`.catch(() => ({ count: 0 }))).count;
+    // kho chat/agent/coding của người dùng fixture (seed của e2e kiểm định)
+    await sql`DELETE FROM ai_chat_messages WHERE "conversationId" IN (SELECT id FROM ai_chat_conversations WHERE "userId" IN (SELECT id FROM users WHERE "openId" LIKE ${like}))`.catch(() => undefined);
+    await sql`DELETE FROM ai_chat_conversations WHERE "userId" IN (SELECT id FROM users WHERE "openId" LIKE ${like})`.catch(() => undefined);
+    await sql`DELETE FROM ai_agent_runs WHERE "userId" IN (SELECT id FROM users WHERE "openId" LIKE ${like})`.catch(() => undefined);
+    await sql`DELETE FROM ai_coding_sessions WHERE "userId" IN (SELECT id FROM users WHERE "openId" LIKE ${like})`.catch(() => undefined);
     out.machines = (await sql`DELETE FROM machines WHERE code LIKE ${like}`).count;
     out.stations = (await sql`DELETE FROM stations WHERE code LIKE ${like}`).count;
     out.production_lines = (await sql`DELETE FROM production_lines WHERE code LIKE ${like}`).count;
