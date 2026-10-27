@@ -94,6 +94,14 @@ Ký hiệu: ✅ có · ◐ một phần · ✗ chưa có. Chi tiết file:dòng 
 ### 11.7 Đặt tên "Thợ Cả" (luong-ui) — chủ dự án chọn 2026-10-27
 - Đổi **tên hiển thị** thành "Thợ Cả" (en: "ThoCa"; zh: giữ "Thợ Cả" kèm chú thích) (giao diện, tiêu đề extension, tiền tố lệnh, tài liệu); GIỮ mã định danh (`st4i.avi-ai-local`, `aviAiLocal.*`) để không phải cài lại / mất cài đặt.
 
+### 11.8 Phiên · Agent · Agent con (phiên **tho-ca-agent**, chủ dự án yêu cầu 2026-10-27)
+Hiện trạng: một vòng agent duy nhất (`shared/agentCore/vongAgent.ts`, 16 công cụ cố định); kho chat / lập trình / lượt agent tách rời; VS Code lưu lịch sử cục bộ;
+không có định nghĩa agent đặt tên, không có agent con, không có kho phiên thống nhất.
+- **Phiên:** kho phiên máy chủ cho chat / lập trình / agent, dùng chung web + VS Code (UX-C09); danh sách, tiếp tục, đổi tên, nhân bản, xoá; tóm tắt sang NOTES.md + phiên mới khi ngữ cảnh ≥ 80 % (UX-C06); vị trí hàng chờ khi model bận (UX-D09).
+- **Định nghĩa agent:** `.thoca/agents/<tên>.md` trong repo (và/hoặc khai trên web) — tên, mô tả, lời dặn, tập công cụ được phép (tập con), model (`chonModel`), chính sách duyệt; agent mẫu: Khám phá mã (chỉ đọc), Viết test, Review, PLC.
+- **Agent con:** công cụ "giao việc" — tập công cụ con ⊆ cha, trần lượt/token, chỉ trả TÓM TẮT; ghi/chạy của con vẫn qua người duyệt; huỷ cha ⇒ huỷ con; audit nối cha–con; độ sâu ≤ 2. Một khe GPU ⇒ con chạy tuần tự (lợi ích = ngữ cảnh gọn, không phải tốc độ).
+- Cổng: agent-f / G6 không tụt; đỉnh ngữ cảnh tác vụ dài giảm; mọi bất biến an toàn giữ nguyên. Kế hoạch riêng `docs/superpowers/plans/2026-10-27-dot11-8-phien-agent-agent-con.md`.
+
 ## 4. Không làm (khác báo cáo) — có lý do
 - **Ứng dụng desktop riêng:** màn `/ai-coding-workspace` (web) đóng vai "Desktop"; không dựng ứng dụng Windows thứ hai (câu hỏi mở số 4 của báo cáo).
 - **Agent ngoài (OpenCode, Continue, Aider, Claude Code) làm agent chính:** ta có agent riêng + extension; client ngoài vẫn dùng được qua `/v1` — chỉ viết hướng dẫn.
