@@ -739,3 +739,14 @@ Số giữ theo danh sách R1b-2b-2 của kế hoạch R1b-2b-1 để đối chi
 - **Q12 (mục 65).** Thử lại STOP MỘT lần trên kết nối mới trong hạn tổng 2,5 s — quyết định của chủ dự án; sau Task 2–3, mọi kết cục không rõ đều là `timeout` có băng E-STOP, nên thử lại tự động sẽ gửi STOP lần hai khi có thể đã tới. *Khuyến nghị:* KHÔNG làm ở R1b-2b-2a; hỏi chủ dự án kèm số đo của ô D1 / O1.
 - **Q13 (T5).** Phạm vi census (B) "pool trong giao dịch" giới hạn ở bề mặt SCADA / OT / interlock / engineeringAssignment, nợ đo được ghim bằng ratchet, không sửa ở lát này. *Khuyến nghị:* duyệt; mở rộng toàn `server/**` ở R1b-2b-2b mục 75.
 - **Q14 (T11).** Chạy ô bench tuỳ chọn cho mục 66 (OpenPLC qua proxy giữ phản hồi FC5, đối chứng thông suốt trước)? *Khuyến nghị:* không chạy trừ khi điều phối muốn số đo trên thiết bị thật; bằng chứng tất định là driver thật + thư viện thật trong tiến trình (mục 67 vẫn mở).
+
+## ĐÃ DUYỆT — điều phối 2026-10-27 (có hiệu lực như Global Constraints)
+
+Kế hoạch c75bf354e DUYỆT. Trả lời:
+- **Q1** hoãn sang 2b. **Q2** đồng ý; bản ghi bị bỏ qua ⇒ đếm vào `ghi_so_loi`, có test. **Q3** đồng ý (nhất quán T17: chưa rõ ⇒ "không rõ" + băng E-STOP; ghi vào "thay đổi hành vi nhìn thấy được").
+- **Q4** đồng ý: dự phòng driver 6500 ms > 5000 ms của dispatcher; test đua khẳng định dispatcher thắng. **Q5** đồng ý.
+- **Q6 CÓ** — cả 6 driver; viết lại các test T17 ghim "writeTags reject" sang kết quả từng ghi, mỗi test viết lại phải giữ đột biến đỏ.
+- **Q7** đồng ý. **Q8** đồng ý (float giữ sai số tương đối). **Q9** đồng ý (16 / 64, giữ ý định đầu; vượt trần ⇒ đếm + log, không mất ý định đầu). **Q10** đồng ý (chỉ cảnh báo log + posture).
+- **Q11** đồng ý (mở 5 s chung, không thăm dò đơn; ghi rõ cái giá: mọi tầng rơi bộ nhớ 5 s). **Q12** KHÔNG ở lát này — chờ chủ dự án. **Q13** đồng ý (ratchet theo nợ đo được). **Q14** KHÔNG chạy bench (đối chứng proxy đã đỏ — công cụ chưa tin được).
+- **T5 Step 1:** thấy luật bị khoá TRƯỚC adapter ở bất kỳ đường nào ⇒ DỪNG, báo điều phối + kiem-dinh ngay.
+- Quy trình: kiem-dinh rà kế hoạch song song; T0 (chỉ test) bắt đầu ngay. Hợp đồng máy chủ cho phần giao diện ở kế hoạch riêng 2b-A (scada-master); giao diện ở 2b-B (phiên scada-ui).
