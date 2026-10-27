@@ -24,6 +24,8 @@ await runMigration({
     expectExact("(a) agentSource", { d: m.agentSource?.d, n: m.agentSource?.n }, { d: "character varying", n: "YES" });
     const [t] = await appSql`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name='ai_agent_def_trust'`;
     if (t.n !== 1) throw new Error("(a) thiếu bảng ai_agent_def_trust");
+    const [ts] = await appSql`SELECT data_type AS d FROM information_schema.columns WHERE table_schema='public' AND table_name='ai_agent_def_trust' AND column_name='confirmedAt'`;
+    expectExact("(a) confirmedAt", ts, { d: "timestamp with time zone" });
     log("(a) cột sổ cha–con + bảng tin cậy có mặt");
 
     const [u] = await appSql`SELECT (SELECT id FROM public.users ORDER BY id LIMIT 1) AS a, (SELECT id FROM public.users ORDER BY id OFFSET 1 LIMIT 1) AS b`;

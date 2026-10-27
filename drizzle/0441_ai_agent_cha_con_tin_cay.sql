@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.ai_agent_def_trust (
   "projectId"   varchar(64) NOT NULL,
   "agentName"   varchar(32) NOT NULL,
   "contentHash" char(64)    NOT NULL,
-  "confirmedAt" timestamp   NOT NULL DEFAULT now()
+  "confirmedAt" timestamptz NOT NULL DEFAULT now()
 );
 
 DO $$
@@ -72,6 +72,17 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_ai_agent_def_trust_hash') THEN
     ALTER TABLE public.ai_agent_def_trust ADD CONSTRAINT chk_ai_agent_def_trust_hash CHECK ("contentHash" ~ '^[0-9a-f]{64}$');
+  END IF;
+END $$;
+
+-- Bảng đã tạo ở lần áp đầu với kiểu `timestamp` (naive) ⇒ đổi sang timestamptz (lớp lỗi naive lệch −7 h). Idempotent: chỉ đổi khi còn là timestamp.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ai_agent_def_trust' AND column_name = 'confirmedAt' AND data_type = 'timestamp without time zone'
+  ) THEN
+    ALTER TABLE public.ai_agent_def_trust ALTER COLUMN "confirmedAt" TYPE timestamptz USING "confirmedAt" AT TIME ZONE 'UTC';
   END IF;
 END $$;
 

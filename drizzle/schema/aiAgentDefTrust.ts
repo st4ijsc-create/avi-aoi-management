@@ -19,7 +19,7 @@ export const aiAgentDefTrust = pgTable(
     projectId: varchar("projectId", { length: 64 }).notNull(),
     agentName: varchar("agentName", { length: 32 }).notNull(),
     contentHash: char("contentHash", { length: 64 }).notNull(),
-    confirmedAt: timestamp("confirmedAt").defaultNow().notNull(),
+    confirmedAt: timestamp("confirmedAt", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     unique("uq_ai_agent_def_trust_key").on(table.userId, table.projectId, table.agentName, table.contentHash),
