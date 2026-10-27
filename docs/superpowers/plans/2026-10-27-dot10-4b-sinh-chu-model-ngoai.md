@@ -133,6 +133,14 @@ i18n vi/en/zh + `i18n:check`; tsc 0 (heap 12 GB); census ghim ĐO có ngày; c�
 5. **`CAN_XAC_NHAN_VAN_HANH`**: máy chủ trả mã TRƯỚC khi gọi nhà cung cấp (không tốn phí, không egress) + test "không gọi mạng khi chưa xác nhận"; cờ client không nâng được mức hay bỏ qua 403 `NGOAI_DU_LIEU_VAN_HANH`.
 6. Migration: dải 0417–0418, DDL owner `aoi`, idempotent, áp `_test` trước; census cột mới.
 
+## 6c. Trả lời của do-model (27/10) cho Q-C/D/E/B
+
+- **Q-C:** `ghepPhan(muc: MucDuLieu, nguon: string, text: string): PhanGhep` (kiểu thương hiệu — chỉ bộ dựng tạo được) + `dungYeuCauNgoai(phan: PhanGhep[], …) ⇒ { tinNhan, phanDaGhep }`, mức = MAX trên mọi phần mọi vòng. `loaiKho` ĐÃ CÓ: `sourceType` trên mọi chunk/trích dẫn KB (`aiLocalKnowledgeService`, trọng số `aiKbSourceWeights.ts`). Ánh xạ đề xuất: **ky-thuat** = {vendor_manual, router, service, type, route, nav, schema_table, module, pattern, feature, doc}; **van-hanh** = {operational, playbook, domain, feedback, studio} + MỌI loại lạ. Bảng thành HẰNG + census khi làm L0a.
+- **Q-D:** `shared/aiNgoaiDenyList.ts`, thuần, `realpath` tiêm vào. **`repoSandbox.ts:145-159` ĐÃ có danh sách tệp cấm ⇒ L0a CHUYỂN nó vào module này và `repoSandbox` import lại (MỘT danh sách), không dựng danh sách thứ hai.**
+- **Q-E:** `ai_ngoai_dem` đủ cho trần/run (khoá `luot:<runId>` giữ chỗ cộng dồn nguyên tử, token + USD cùng hàng; vòng agent chỉ cần truyền `runId` vào `ngu`); thêm cột trần USD/run vào cấu hình (cần migration — gộp dải 0417–0418). **"1 lượt ngoài bay/người" = khoá TRONG TIẾN TRÌNH** (Map userId, giải phóng trong `finally`, như chống lặp 10.4; `chay` chỉ chạy ở vai api; tránh advisory lock DB vì dính kết nối trong pool) — **lệch NÊN #3 của kiem-dinh (DB có TTL):** khoá in-memory tự hết khi tiến trình chết (không thể kẹt vĩnh viễn qua khởi động lại) nhưng không phủ NHIỀU tiến trình api song song — chờ kiem-dinh xác nhận chấp nhận (hiện chỉ một tiến trình api).
+- **Q-B:** `ai_chat_messages.nguonModel varchar(120)` + `ai_agent_runs.nguonModel` + `ai_ngoai_nha_may.tranTienLuotUsd numeric` (coding chưa có nhật ký lượt do máy chủ ghi ⇒ lượt ngoài ở coding coi như history `van-hanh` + bọc UNTRUSTED).
+- **xemTruoc (b3740e6a5):** áp ĐỦ mọi trần như `chay` (`chotTranLuot` rút `maxTokens` còn `trần − ước vào`, <256 ⇒ `NGOAI_VUOT_TRAN "luot"`; `xemTranNgay` chỉ-đọc); thêm `tranVuot?: "luot"|"nha-may"|"nguoi"|"lan-phut"` (khi `duocPhep=false` do trần) ⇒ UI nói đúng trần nào; `nhaMay.duTranChoLuotNay = (tranVuot !== "nha-may")`.
+
 ## 7. Rủi ro và giới hạn
 
 - **Egress tự động mỗi lượt** — cái giá của yêu cầu chủ dự án; giảm bằng mặc định đóng theo bề mặt, người gõ = vận hành ⇒ đòi quyền nhà máy, đồng ý theo phiên + xác nhận vận hành, trần chi phí, che, tập đọc thuần, deny-list dùng chung. Vẫn là rào chống NHẦM (spec §9).
