@@ -43,6 +43,11 @@ export interface TinNhan {
   tool_calls?: WireToolCall[];
   tool_call_id?: string;
   name?: string;
+  /**
+   * ★ Đợt 11.0 (CHỈ ĐO, mặc định không dùng) — suy luận ĐÃ CHE của lượt assistant trước, giữ trong lịch sử khi host bật
+   * `giuNghiTrongLichSu` (env `AI_AGENT_GIU_NGHI=1`). Template Qwen3.6 đọc `message.reasoning_content` + `preserve_thinking`.
+   */
+  reasoning_content?: string;
 }
 
 export interface LoiGoiTool {

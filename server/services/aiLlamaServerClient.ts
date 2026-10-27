@@ -220,7 +220,16 @@ export function phanDinhCauTraLoiRong(
  * cờ bị template bỏ qua — xem `intentClassifier`. Cờ tắt suy luận là phép TỐI ƯU; hạn mức token
  * là lưới AN TOÀN. Nhầm vai hai thứ đó là cách lỗ này quay lại.
  */
-function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined): void {
+/**
+ * ★ Đợt 11.0 (CHỈ ĐO) — `preserve_thinking`: template Qwen3.6 giữ `reasoning_content` của các lượt assistant TRƯỚC trong prompt
+ * (đọc `/props.chat_template` 2026-10-27). Gộp vào `chat_template_kwargs` đã có (không đè `enable_thinking`). Vắng cờ ⇒ không chạm thân.
+ */
+export function lapGiuNghi(body: Record<string, unknown>, giu: boolean | undefined): void {
+  if (!giu) return;
+  body.chat_template_kwargs = { ...((body.chat_template_kwargs as Record<string, unknown> | undefined) ?? {}), preserve_thinking: true };
+}
+
+export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined): void {
   if (!tat) return;
   body.chat_template_kwargs = { enable_thinking: false };
 }
@@ -303,6 +312,8 @@ export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown>
       : m.content,
   };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
+  // ★ Đợt 11.0 (CHỈ ĐO) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
+  if (m.role === "assistant" && m.reasoning_content) ra.reasoning_content = m.reasoning_content;
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
   //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
   //   sửa mảng của người gọi.
@@ -899,6 +910,7 @@ export async function serverChatCompletion(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapGiuNghi(body, options.preserveThinking);
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
@@ -1486,6 +1498,7 @@ export async function* serverChatCompletionStream(
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
   lapCoTatSuyLuan(body, options.disableThinking);
+  lapGiuNghi(body, options.preserveThinking);
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
