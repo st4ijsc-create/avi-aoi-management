@@ -31,12 +31,21 @@ interface Props {
   onTuChoi: () => void;
 }
 
-const TRAN_VUOT_MAC_DINH: Record<string, string> = { luot: "trần mỗi lượt của model", "nha-may": "trần ngày của nhà máy", nguoi: "trần ngày của bạn", phut: "quá nhiều lượt mỗi phút" };
 const fmt = (n: number | null | undefined, donVi = "") => (n == null ? "—" : `${n.toLocaleString("vi-VN")}${donVi}`);
 
 export function HopDongYNgoai({ ma, beMat, thongTin: x, dangTai, loi, onDongY, onTuChoi }: Props) {
   const { t } = useTranslation();
   const tach = tachMaNgoai(ma);
+  const nhanTranVuot = (k: string) =>
+    k === "luot"
+      ? t("hopDongYNgoai.tranVuot.luot", "trần mỗi lượt của model")
+      : k === "nha-may"
+        ? t("hopDongYNgoai.tranVuot.nha-may", "trần ngày của nhà máy")
+        : k === "nguoi"
+          ? t("hopDongYNgoai.tranVuot.nguoi", "trần ngày của bạn")
+          : k === "phut"
+            ? t("hopDongYNgoai.tranVuot.phut", "quá nhiều lượt mỗi phút")
+            : k;
   const khoa = !x || !x.duocPhep || !!dangTai;
   return (
     <Dialog open onOpenChange={(v) => (!v ? onTuChoi() : undefined)}>
@@ -84,7 +93,7 @@ export function HopDongYNgoai({ ma, beMat, thongTin: x, dangTai, loi, onDongY, o
               {!x.duocPhep && (
                 <p role="alert" data-testid="hdy-khoa" className="text-red-700">
                   {t("hopDongYNgoai.chuaDuocPhep", "Chưa dùng được")}: {x.lyDo ? t(`errors.reason.${x.lyDo}`, x.lyDo) : ""}
-                  {x.tranVuot && <span data-testid="hdy-tran-vuot"> ({t(`hopDongYNgoai.tranVuot.${x.tranVuot}`, TRAN_VUOT_MAC_DINH[x.tranVuot] ?? x.tranVuot)})</span>}
+                  {x.tranVuot && <span data-testid="hdy-tran-vuot"> ({nhanTranVuot(x.tranVuot)})</span>}
                 </p>
               )}
             </div>
