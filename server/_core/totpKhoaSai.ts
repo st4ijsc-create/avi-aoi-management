@@ -440,13 +440,22 @@ export async function moKhoaTotpCuaNguoiDung(args: {
   const { controlAuditLog: a } = await import("../../drizzle/schema/controlAudit");
   const { recordAuditEvent } = await import("../services/audit/controlAuditService");
   return db.transaction(async (tx) => {
+    // ★ C6 fix round 1 — MÚI GIỜ. `control_audit_log."createdAt"` là `timestamp` NAIVE, `DEFAULT now()` (mig 0166): giá trị lưu = giờ tường
+    //   theo `TimeZone` của PHIÊN GHI. Quy ước của repo cho cột naive là GIỜ TƯỜNG UTC (drizzle typed đọc/ghi theo UTC — xem
+    //   `db/andonBoard.ts`, `db/lechGioTruyVanTho.db.test.ts`). Nếu chỉ so `LOCALTIMESTAMP` (giờ tường phiên ĐỌC): phiên ghi UTC + phiên đọc
+    //   Asia/Ho_Chi_Minh ⇒ mọi dòng trông "già" 7 h ⇒ trần TẮT (fail-open). Nếu chỉ so `now() AT TIME ZONE 'UTC'`: DB cài theo múi hệ điều
+    //   hành ⇒ dòng ghi bằng giờ tường +07 trông "ở tương lai" 7 h ⇒ trần kẹt 8 h. Nên GHIM CẢ HAI ĐẦU vào UTC: `SET LOCAL` (chỉ giao dịch
+    //   này) làm dòng audit `totp.mo_khoa` / `…_vuot_tran` — CHỈ hàm này ghi chúng — mang giờ tường UTC bất kể cấu hình phiên/máy chủ, và
+    //   phép so dùng `now() AT TIME ZONE 'UTC'` tường minh. Không giá trị giờ nào đi qua JS (lớp lỗi postgres.js −7 h không chạm tới đây).
+    //   `totp_khoa_sai` dùng `timestamptz` ⇒ không bị `SET LOCAL` ảnh hưởng.
+    await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`totp.mo_khoa:${args.userId}`}))`);
     const demTrong = async (action: string, ms: number) => {
       const [r] = await tx
         .select({ n: sql<number>`count(*)::int`.mapWith(Number) })
         .from(a)
         .where(sql`${a.entityType} = 'user' AND ${a.entityId} = ${String(args.userId)} AND ${a.action} = ${action}
-          AND ${a.createdAt} > LOCALTIMESTAMP - make_interval(secs => ${ms / 1000})`);
+          AND ${a.createdAt} > (now() AT TIME ZONE 'UTC') - make_interval(secs => ${ms / 1000})`);
       return Number(r?.n ?? 0);
     };
     if ((await demTrong("totp.mo_khoa", MO_KHOA_CUA_SO_MS)) >= MO_KHOA_TOI_DA_MOI_GIO) {
