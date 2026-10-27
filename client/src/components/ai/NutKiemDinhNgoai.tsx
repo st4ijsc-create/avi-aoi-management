@@ -116,10 +116,27 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
                 <p data-testid="kdnh-uoc">
                   {t("kiemDinhNgoai.hop.uoc", "Ước tính (bi quan, có thể cao hơn thật 2–4×)")}: {fmt(x.tokenUoc, " token")} · {x.chiPhiUocUsd === null ? t("kiemDinhNgoai.hop.chuaCoGia", "chưa có bảng giá") : `~$${x.chiPhiUocUsd.toFixed(4)}`}
                 </p>
-                <p data-testid="kdnh-tran">
-                  {t("kiemDinhNgoai.hop.tranConLai", "Trần còn lại hôm nay")}: {t("kiemDinhNgoai.hop.nhaMay", "nhà máy")} {x.conLaiTranNgay.nhaMay.token === null && x.conLaiTranNgay.nhaMay.usd === null ? t("kiemDinhNgoai.hop.chuaDatTran", "chưa đặt trần") : `${fmt(x.conLaiTranNgay.nhaMay.token, " token")} / ${x.conLaiTranNgay.nhaMay.usd === null ? "—" : `$${x.conLaiTranNgay.nhaMay.usd}`}`} · {t("kiemDinhNgoai.hop.nguoi", "bạn")}{" "}
-                  {x.conLaiTranNgay.nguoi.token === null ? t("kiemDinhNgoai.hop.chuaDatTran", "chưa đặt trần") : fmt(x.conLaiTranNgay.nguoi.token, " token")}
-                </p>
+                {/* Q2 (dieu-phoi): người KHÔNG phải admin chỉ thấy trần CỦA MÌNH + "nhà máy còn đủ trần cho lượt này"; số token/USD của NHÀ MÁY chỉ có khi admin (khoá vắng ⇒ không hiện). */}
+                <div data-testid="kdnh-tran" className="space-y-0.5">
+                  <p data-testid="kdnh-tran-nguoi">
+                    {t("kiemDinhNgoai.hop.tranNguoi", "Trần còn lại của bạn hôm nay")}: {x.conLaiTranNgay.nguoi.token === null ? t("kiemDinhNgoai.hop.chuaDatTran", "chưa đặt trần") : fmt(x.conLaiTranNgay.nguoi.token, " token")}
+                    {x.conLaiTranNgay.nguoi.token !== null && x.conLaiTranNgay.nguoi.token < x.tokenUoc && (
+                      <b data-testid="kdnh-tran-nguoi-het" className="ml-1 text-red-700">
+                        {t("kiemDinhNgoai.hop.tranNguoiHet", "— không đủ cho lượt này")}
+                      </b>
+                    )}
+                  </p>
+                  <p data-testid="kdnh-tran-nha-may">
+                    {t("kiemDinhNgoai.hop.nhaMayDuTran", "Nhà máy còn đủ trần cho lượt này")}:{" "}
+                    <b className={x.conLaiTranNgay.nhaMay.duTranChoLuotNay ? "" : "text-red-700"}>{x.conLaiTranNgay.nhaMay.duTranChoLuotNay ? t("kiemDinhNgoai.hop.co", "có") : t("kiemDinhNgoai.hop.khong", "không")}</b>
+                    {"token" in x.conLaiTranNgay.nhaMay || "usd" in x.conLaiTranNgay.nhaMay ? (
+                      <span data-testid="kdnh-tran-nha-may-so" className="text-muted-foreground">
+                        {" "}
+                        ({fmt(x.conLaiTranNgay.nhaMay.token ?? null, " token")} / {x.conLaiTranNgay.nhaMay.usd === null || x.conLaiTranNgay.nhaMay.usd === undefined ? "—" : `$${x.conLaiTranNgay.nhaMay.usd}`})
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
                 <p className="text-muted-foreground">{t("kiemDinhNgoai.hop.kichThuoc", "Kích thước")}: {fmt(x.kichThuocByte, " byte")} / {fmt(x.tranByte, " byte")}</p>
                 {x.kichThuocByte > x.tranByte && (
                   <p role="alert" data-testid="kdnh-qua-lon" className="text-red-700">
@@ -129,6 +146,11 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
                 {!x.duocPhep && (
                   <p role="alert" data-testid="kdnh-khoa" className="text-red-700">
                     {t("kiemDinhNgoai.hop.khoa", "Chưa gửi được")}: {x.lyDo ? t(`errors.reason.${x.lyDo}`, x.lyDo) : ""}
+                    {x.lyDo === "NGOAI_VUOT_TRAN" && (
+                      <span data-testid="kdnh-khoa-tran-ai" className="ml-1">
+                        {!x.conLaiTranNgay.nhaMay.duTranChoLuotNay ? t("kiemDinhNgoai.hop.tranNhaMayHet", "(trần của NHÀ MÁY đã hết)") : t("kiemDinhNgoai.hop.tranNguoiHetLyDo", "(trần CỦA BẠN đã hết)")}
+                      </span>
+                    )}
                   </p>
                 )}
                 <p className="text-muted-foreground">{t("kiemDinhNgoai.hop.cheDuLieu", "Nội dung được che trước khi rời máy. Đây là rào chống nhầm, không thay trách nhiệm của người gửi.")}</p>

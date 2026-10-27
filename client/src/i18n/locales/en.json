@@ -24415,7 +24415,14 @@
       "cheDuLieu": "Content is masked before it leaves the machine. This guards against mistakes; it does not replace the sender's responsibility.",
       "huy": "Close",
       "dangGui": "Reviewing…",
-      "gui": "Send for review (paid)"
+      "gui": "Send for review (paid)",
+      "tranNguoi": "Your remaining cap today",
+      "tranNguoiHet": "— not enough for this request",
+      "nhaMayDuTran": "Factory has enough cap for this request",
+      "co": "yes",
+      "khong": "no",
+      "tranNhaMayHet": "(the FACTORY's cap is used up)",
+      "tranNguoiHetLyDo": "(YOUR cap is used up)"
     },
     "duyet": {
       "tieuDe": "Version that uses external AI",

@@ -24412,7 +24412,14 @@
       "cheDuLieu": "Nội dung được che trước khi rời máy. Đây là rào chống nhầm, không thay trách nhiệm của người gửi.",
       "huy": "Đóng",
       "dangGui": "Đang kiểm định…",
-      "gui": "Gửi kiểm định (trả phí)"
+      "gui": "Gửi kiểm định (trả phí)",
+      "tranNguoi": "Trần còn lại của bạn hôm nay",
+      "tranNguoiHet": "— không đủ cho lượt này",
+      "nhaMayDuTran": "Nhà máy còn đủ trần cho lượt này",
+      "co": "có",
+      "khong": "không",
+      "tranNhaMayHet": "(trần của NHÀ MÁY đã hết)",
+      "tranNguoiHetLyDo": "(trần CỦA BẠN đã hết)"
     },
     "duyet": {
       "tieuDe": "Phiên bản dùng AI ngoài",

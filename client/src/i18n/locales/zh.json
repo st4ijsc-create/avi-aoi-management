@@ -24412,7 +24412,14 @@
       "cheDuLieu": "内容在离开本机前已被屏蔽。这是防误操作的措施，不免除发送者的责任。",
       "huy": "关闭",
       "dangGui": "正在审查…",
-      "gui": "发送审查（收费）"
+      "gui": "发送审查（收费）",
+      "tranNguoi": "您今日剩余上限",
+      "tranNguoiHet": "— 不足以完成本次请求",
+      "nhaMayDuTran": "工厂上限足够本次请求",
+      "co": "是",
+      "khong": "否",
+      "tranNhaMayHet": "（工厂上限已用完）",
+      "tranNguoiHetLyDo": "（您的上限已用完）"
     },
     "duyet": {
       "tieuDe": "使用外部 AI 的版本",

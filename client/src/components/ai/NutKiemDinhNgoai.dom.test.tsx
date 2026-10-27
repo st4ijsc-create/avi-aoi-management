@@ -70,7 +70,8 @@ const XEM_OK = {
   dinhKemBiCam: true,
   kichThuocByte: 4000,
   tranByte: 1048576,
-  conLaiTranNgay: { nhaMay: { token: 500000, usd: 12.5 }, nguoi: { token: null } },
+  // non-admin: nhaMay CHỈ có duTranChoLuotNay (không số); admin có thêm token/usd
+  conLaiTranNgay: { nguoi: { token: null }, nhaMay: { duTranChoLuotNay: true } } as { nguoi: { token: number | null }; nhaMay: { duTranChoLuotNay: boolean; token?: number | null; usd?: number | null } },
 };
 const KET_QUA = { ketLuan: "can-sua", diem: 60, banChuanHoa: "<img src=x onerror=alert(1)>", loi: [{ muc: "vua", moTa: "<script>alert(1)</script>", viTri: "../../etc/passwd" }], baiHocDeXuat: [] };
 const VET = { nhaCungCap: "openai_compat", model: "gpt-x", tokenVao: 100, tokenRa: 50, chiPhiUocUsd: 0.01, soLanGoi: 1 };
@@ -121,9 +122,41 @@ describe("hộp xác nhận", () => {
     expect(screen.getByTestId("kdnh-muc").textContent).toContain("kỹ thuật");
     expect(screen.getByTestId("kdnh-uoc").textContent).toMatch(/bi quan.*2–4×/);
     expect(screen.getByTestId("kdnh-uoc").textContent).toContain("~$0.0123");
-    expect(screen.getByTestId("kdnh-tran").textContent).toContain("chưa đặt trần"); // người: null
-    expect(screen.getByTestId("kdnh-tran").textContent).toContain("$12.5");
+    expect(screen.getByTestId("kdnh-tran-nguoi").textContent).toContain("chưa đặt trần"); // người: null
+    expect(screen.getByTestId("kdnh-tran-nha-may").textContent).toContain("có");
     expect(screen.getByTestId("hop-kiem-dinh-ngoai").textContent).toContain("che trước khi rời máy");
+  });
+  it("★ Q2: NON-ADMIN không thấy số token/USD của NHÀ MÁY (khoá vắng ⇒ không hiện số), chỉ 'còn đủ trần cho lượt này: có/không'", () => {
+    h.xem = { ...h.xem, data: { ...XEM_OK, conLaiTranNgay: { nguoi: { token: 90000 }, nhaMay: { duTranChoLuotNay: true } } } };
+    render(<NutKiemDinhNgoai nguon={CHAT} />);
+    mo();
+    expect(screen.queryByTestId("kdnh-tran-nha-may-so")).toBeNull();
+    expect(screen.getByTestId("kdnh-tran-nha-may").textContent).toMatch(/có/);
+    expect(screen.getByTestId("kdnh-tran-nguoi").textContent).toContain("90.000");
+    expect(screen.getByTestId("kdnh-tran").textContent).not.toContain("$");
+  });
+  it("★ Q2: ADMIN thấy thêm số token/USD của nhà máy", () => {
+    h.xem = { ...h.xem, data: { ...XEM_OK, conLaiTranNgay: { nguoi: { token: null }, nhaMay: { duTranChoLuotNay: true, token: 500000, usd: 12.5 } } } };
+    render(<NutKiemDinhNgoai nguon={CHAT} />);
+    mo();
+    expect(screen.getByTestId("kdnh-tran-nha-may-so").textContent).toContain("500.000");
+    expect(screen.getByTestId("kdnh-tran-nha-may-so").textContent).toContain("$12.5");
+  });
+  it("★ Q2: trần NHÀ MÁY không đủ ⇒ 'không' + khoá + lý do nói rõ trần của NHÀ MÁY", () => {
+    h.xem = { ...h.xem, data: { ...XEM_OK, duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nguoi: { token: 99999999 }, nhaMay: { duTranChoLuotNay: false } } } };
+    render(<NutKiemDinhNgoai nguon={CHAT} />);
+    mo();
+    expect(screen.getByTestId("kdnh-gui")).toBeDisabled();
+    expect(screen.getByTestId("kdnh-tran-nha-may").textContent).toMatch(/không/);
+    expect(screen.getByTestId("kdnh-khoa-tran-ai").textContent).toContain("NHÀ MÁY");
+  });
+  it("★ Q2: trần CỦA NGƯỜI không đủ (nguoi.token < tokenUoc) ⇒ nói 'không đủ' + khoá + lý do nói rõ trần CỦA BẠN", () => {
+    h.xem = { ...h.xem, data: { ...XEM_OK, duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tokenUoc: 1200, conLaiTranNgay: { nguoi: { token: 300 }, nhaMay: { duTranChoLuotNay: true } } } };
+    render(<NutKiemDinhNgoai nguon={CHAT} />);
+    mo();
+    expect(screen.getByTestId("kdnh-tran-nguoi-het")).toBeInTheDocument();
+    expect(screen.getByTestId("kdnh-khoa-tran-ai").textContent).toContain("CỦA BẠN");
+    expect(screen.getByTestId("kdnh-gui")).toBeDisabled();
   });
   it("chi phí null ⇒ 'chưa có bảng giá'; coding ⇒ ghi rõ 'nội dung lập trình được coi là dữ liệu vận hành'", () => {
     h.xem = { ...h.xem, data: { ...XEM_OK, chiPhiUocUsd: null, mucDuLieu: "van-hanh" } };
