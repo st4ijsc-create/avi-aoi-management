@@ -3638,6 +3638,7 @@
     "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "此账户尚未启用双因素认证。{{reason}}",
     "RATE_LIMITED": "操作过于频繁，请稍后再试。",
+    "TRPC_GIOI_HAN_THU_TUC": "敏感操作尝试次数过多——请在 {{retryAfterGiay}} 秒后重试。",
     "ACCOUNT_LOCKED": "由于多次登录失败，账户已被临时锁定。请在 {{remainingMinutes}} 分钟后重试。",
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
     "MUST_CHANGE_PASSWORD": "您必须先修改密码，然后才能继续使用系统。",

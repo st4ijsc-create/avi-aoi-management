@@ -3638,6 +3638,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Two-factor authentication is not enabled for this account. {{reason}}",
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
+    "TRPC_GIOI_HAN_THU_TUC": "Too many attempts at a sensitive action — try again in {{retryAfterGiay}} seconds.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
     "MUST_CHANGE_PASSWORD": "You must change your password before you can continue using the system.",

@@ -130,13 +130,20 @@ function getAppError(error: unknown): { appCode: string; appParams?: Record<stri
   if (!error || typeof error !== "object") return null;
   const data = (error as { data?: { appCode?: unknown; appParams?: unknown } }).data;
   if (!data || typeof data.appCode !== "string") return null;
-  return {
-    appCode: data.appCode,
-    appParams:
-      data.appParams && typeof data.appParams === "object"
-        ? (data.appParams as Record<string, string | number>)
-        : undefined,
-  };
+  const appParams =
+    data.appParams && typeof data.appParams === "object"
+      ? (data.appParams as Record<string, string | number>)
+      : undefined;
+  // Bộ giới hạn thủ tục (server/_core/trpcGioiHanThuTuc.ts) đặt `retryAfterGiay` ở MỨC TRÊN
+  // của `data`, không trong `appParams`.
+  if (data.appCode === "TRPC_GIOI_HAN_THU_TUC" && !appParams) {
+    const giay = Number((data as { retryAfterGiay?: unknown }).retryAfterGiay);
+    return {
+      appCode: data.appCode,
+      appParams: { retryAfterGiay: Number.isFinite(giay) && giay >= 1 ? Math.ceil(giay) : 60 },
+    };
+  }
+  return { appCode: data.appCode, appParams };
 }
 
 // ── Doc 44 G5.4 — 403 KHÔNG nuốt reason cụ thể ────────────────────────────────

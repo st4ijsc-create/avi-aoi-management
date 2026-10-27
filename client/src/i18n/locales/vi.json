@@ -3646,6 +3646,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Tài khoản này chưa bật xác thực 2 lớp. {{reason}}",
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+    "TRPC_GIOI_HAN_THU_TUC": "Quá nhiều lần thử thao tác nhạy cảm — thử lại sau {{retryAfterGiay}} giây.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
     "MUST_CHANGE_PASSWORD": "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
