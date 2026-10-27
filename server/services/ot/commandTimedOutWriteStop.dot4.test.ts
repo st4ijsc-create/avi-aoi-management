@@ -338,6 +338,7 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
     expect(rStop.status).toBe("acked");
     const stop = D.log.find((w) => w.tag === "cmd_stop")!;
     expect(stop.start - t0).toBeGreaterThanOrEqual(TIMEOUT_MS + GRACE - 20);
+    // dư ~160 ms so với nền ~1 900 ms; đột biến ≥ 300 ms đỏ ở cận này, ≥ 450 ms đỏ trước ở within(pStop, …+700) — R1b-2b-2a T0 c, 2026-10-27
     expect(stop.start - t0).toBeLessThanOrEqual(TIMEOUT_MS + GRACE + D.reset.boundMs + 400 + (await lag.dung(60))); // + the time this process was not scheduled (same run)
     expect(await until(() => audit.events.some((e) => e.action === "ot_write_overlap_risk"), 2000)).toBe(true);
     const ev = audit.events.find((e) => e.action === "ot_write_overlap_risk")!;
