@@ -3638,6 +3638,7 @@
     "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "此账户尚未启用双因素认证。{{reason}}",
     "RATE_LIMITED": "操作过于频繁，请稍后再试。",
+    "TRPC_GIOI_HAN_THU_TUC": "敏感操作尝试次数过多——请在 {{retryAfterGiay}} 秒后重试。",
     "ACCOUNT_LOCKED": "由于多次登录失败，账户已被临时锁定。请在 {{remainingMinutes}} 分钟后重试。",
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
     "MUST_CHANGE_PASSWORD": "您必须先修改密码，然后才能继续使用系统。",
@@ -10019,6 +10020,19 @@
     "cpkKhongXacDinh": "部分 Cpk/Ppk 点无法确定（数据恒定——标准差为 0）：不绘制柱形，并非为 0。"
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "解锁双因素认证",
+        "tieuDe": "解锁 {{name}} 的双因素认证",
+        "moTa": "当此人因多次输错验证码被锁定或丢失设备时使用。每次解锁都会连同原因记入日志；每小时对每个人的解锁次数有限。",
+        "lyDo": "原因",
+        "lyDoGoiY": "至少 {{min}} 个字符。",
+        "gui": "解锁",
+        "huy": "取消",
+        "daMoKhoa": "已解锁双因素认证。",
+        "khongBiKhoa": "此人未被锁定（已记入日志）。"
+      }
+    },
     "userList": "用户列表",
     "userAssignments": "用户分配",
     "user": "用户",
@@ -23885,6 +23899,7 @@
       "dangTai": "正在加载适配器列表…",
       "matKetNoi": "连接丢失",
       "edgeChuaCoSoLieu": "由边缘 {{edgeCode}} 持有 —— R0 暂无数据",
+      "khongQuyenKenh": "无权查看通道配置——数值和质量仍会显示。",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "所有标签配置错误 —— 未向设备发送任何读取请求；请修正标签地址"
       },
@@ -23980,6 +23995,12 @@
     },
     "kenh": {
       "title": "通道与限值",
+      "timKiem": {
+        "nhan": "搜索通道",
+        "goiY": "标签或显示名称（忽略变音符号）",
+        "hien": "显示 {{n}} / {{m}}",
+        "khongCo": "没有匹配的通道。"
+      },
       "subtitle": "声明每个标签的通道类型、范围、步长和作用等级，以及每台设备的模式通道。所有更改都会连同原因记入审计。",
       "adapter": "适配器",
       "khongCoAdapter": "您的权限范围内没有适配器。",
@@ -24074,6 +24095,7 @@
         "giaTriRemote": "REMOTE 值",
         "giaTriSai": "REMOTE 值与标签的数据类型不符。",
         "khongCoAdapterMay": "您的权限范围内此设备没有适配器。",
+        "chonAdapter": "选择适配器…",
         "goTieuDe": "移除模式通道 — 设备 {{code}}",
         "goMoTa": "在重新声明通道之前，设备将视为 LOCAL（未声明）。",
         "soLoi": "数值无效（输入未完成？）— 请使用小数点，或清空字段以取消声明。"

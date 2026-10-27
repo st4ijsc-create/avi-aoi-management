@@ -3646,6 +3646,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Tài khoản này chưa bật xác thực 2 lớp. {{reason}}",
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+    "TRPC_GIOI_HAN_THU_TUC": "Quá nhiều lần thử thao tác nhạy cảm — thử lại sau {{retryAfterGiay}} giây.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
     "MUST_CHANGE_PASSWORD": "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
@@ -10244,6 +10245,19 @@
     "cpkKhongXacDinh": "Có điểm Cpk/Ppk không xác định (dữ liệu hằng — độ lệch chuẩn bằng 0): không vẽ thanh, KHÔNG phải 0."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Mở khoá xác thực hai lớp",
+        "tieuDe": "Mở khoá xác thực hai lớp của {{name}}",
+        "moTa": "Dùng khi người này bị khoá do nhập sai mã nhiều lần hoặc mất thiết bị. Mỗi lần mở khoá đều được ghi nhật ký kèm lý do; mỗi người chỉ được mở khoá một số lần giới hạn trong một giờ.",
+        "lyDo": "Lý do",
+        "lyDoGoiY": "Tối thiểu {{min}} ký tự.",
+        "gui": "Mở khoá",
+        "huy": "Huỷ",
+        "daMoKhoa": "Đã mở khoá xác thực hai lớp.",
+        "khongBiKhoa": "Người này không bị khoá (đã ghi nhật ký)."
+      }
+    },
     "assignUserToCorporateFactory": "Phân công Người dùng đến Tập đoàn Nhà máy",
     "selectUserAndCorporateCode": "Chọn Người dùng và Tập đoàn Mã",
     "removedCorporateAssignment": "Removed Tập đoàn Phân công",
@@ -23885,6 +23899,7 @@
       "dangTai": "Đang tải danh sách adapter…",
       "matKetNoi": "Mất kết nối",
       "edgeChuaCoSoLieu": "do edge {{edgeCode}} sở hữu — chưa có số liệu R0",
+      "khongQuyenKenh": "Không có quyền xem cấu hình kênh — giá trị và chất lượng vẫn hiện.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "Mọi tag sai cấu hình — chưa gửi yêu cầu đọc nào tới thiết bị; hãy sửa địa chỉ tag"
       },
@@ -23980,6 +23995,12 @@
     },
     "kenh": {
       "title": "Kênh & giới hạn",
+      "timKiem": {
+        "nhan": "Tìm kênh",
+        "goiY": "Tag hoặc tên hiển thị (không cần dấu)",
+        "hien": "Hiện {{n}} / {{m}}",
+        "khongCo": "Không có kênh nào khớp."
+      },
       "subtitle": "Khai báo loại kênh, dải, bước, mức tác động của từng tag và kênh chế độ của từng máy. Mọi thay đổi ghi audit kèm lý do.",
       "adapter": "Adapter",
       "khongCoAdapter": "Chưa có adapter nào trong phạm vi của bạn.",
@@ -24074,6 +24095,7 @@
         "giaTriRemote": "Giá trị REMOTE",
         "giaTriSai": "Giá trị REMOTE không đúng kiểu của tag.",
         "khongCoAdapterMay": "Máy này chưa có adapter nào trong phạm vi của bạn.",
+        "chonAdapter": "Chọn adapter…",
         "goTieuDe": "Gỡ kênh chế độ — máy {{code}}",
         "goMoTa": "Máy sẽ được coi là LOCAL (chưa khai) cho tới khi khai lại kênh.",
         "soLoi": "Giá trị số không hợp lệ (đang gõ dở?) — dùng dấu chấm thập phân, hoặc xoá trắng ô để bỏ khai báo."

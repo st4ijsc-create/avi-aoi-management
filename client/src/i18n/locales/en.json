@@ -3638,6 +3638,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Two-factor authentication is not enabled for this account. {{reason}}",
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
+    "TRPC_GIOI_HAN_THU_TUC": "Too many attempts at a sensitive action — try again in {{retryAfterGiay}} seconds.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
     "MUST_CHANGE_PASSWORD": "You must change your password before you can continue using the system.",
@@ -10244,6 +10245,19 @@
     "cpkKhongXacDinh": "Some Cpk/Ppk points are undetermined (constant data — zero standard deviation): no bar is drawn; this is NOT zero."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Unlock two-factor authentication",
+        "tieuDe": "Unlock two-factor authentication for {{name}}",
+        "moTa": "Use this when the person is locked out after too many wrong codes or lost their device. Every unlock is logged with its reason; each person can be unlocked only a limited number of times per hour.",
+        "lyDo": "Reason",
+        "lyDoGoiY": "At least {{min}} characters.",
+        "gui": "Unlock",
+        "huy": "Cancel",
+        "daMoKhoa": "Two-factor authentication unlocked.",
+        "khongBiKhoa": "This person was not locked (the attempt was logged)."
+      }
+    },
     "userList": "User list",
     "userAssignments": "User assignments",
     "user": "User",
@@ -23888,6 +23902,7 @@
       "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "khongQuyenKenh": "You don't have permission to view channel configuration — values and quality are still shown.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "All tags misconfigured — no read was sent to the device; fix the tag addresses"
       },
@@ -23983,6 +23998,12 @@
     },
     "kenh": {
       "title": "Channels & limits",
+      "timKiem": {
+        "nhan": "Search channels",
+        "goiY": "Tag or display name (accents ignored)",
+        "hien": "Showing {{n}} / {{m}}",
+        "khongCo": "No channel matches."
+      },
       "subtitle": "Declare each tag's channel kind, range, step and actuation level, and each machine's mode channel. Every change is audited with a reason.",
       "adapter": "Adapter",
       "khongCoAdapter": "There are no adapters in your scope.",
@@ -24077,6 +24098,7 @@
         "giaTriRemote": "REMOTE value",
         "giaTriSai": "The REMOTE value does not match the tag's data type.",
         "khongCoAdapterMay": "This machine has no adapter in your scope.",
+        "chonAdapter": "Choose an adapter…",
         "goTieuDe": "Unlink mode channel — machine {{code}}",
         "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again.",
         "soLoi": "Invalid number (half-typed?) — use a decimal point, or empty the field to clear the declaration."
