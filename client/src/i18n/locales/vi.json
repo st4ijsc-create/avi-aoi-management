@@ -24354,7 +24354,8 @@
       "vaiTro": "Vai trò",
       "hoSo": "Hồ sơ Local",
       "ngoai": "Model ngoài"
-    }
+    },
+    "nhanNgoai": "ngoài · gửi dữ liệu ra"
   },
   "kiemDinhNgoai": {
     "khongHopLe": "Kết quả kiểm định không đúng định dạng nên không hiển thị.",
@@ -24449,6 +24450,36 @@
       "canhBaoTuDuyet": "Bạn là người tạo phiên bản này: duyệt sẽ được ghi nhận là TỰ DUYỆT (nhật ký mức cao).",
       "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu.",
       "biCat": "… (đã cắt — chỉ thấy phần đầu; kiểm tra TOÀN BỘ tham số của node trong bảng cấu hình trước khi duyệt)"
+    }
+  },
+  "noiDungNgoai": {
+    "nhan": "ngoài",
+    "guiDuLieuRa": "gửi dữ liệu ra",
+    "lienKetChan": "liên kết bị chặn",
+    "anhChan": "ảnh bị chặn",
+    "canhBaoMa": "Do AI ngoài viết — kiểm tra trước khi chạy/dán vào terminal hoặc tệp."
+  },
+  "hopDongYNgoai": {
+    "tieuDe": "Dùng model bên ngoài",
+    "moTa": "Mỗi lượt hỏi bằng model này gửi nội dung ra nhà cung cấp bên ngoài (trả phí). Nội dung được che dữ liệu nhạy cảm theo mẫu trước khi rời máy.",
+    "dangTai": "Đang kiểm tra điều kiện…",
+    "nguoiGoVanHanh": "Câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH (đây là trợ lý vận hành) — chỉ gửi được khi nhà máy đã cho phép gửi dữ liệu vận hành ra ngoài.",
+    "nhaMayCho": "Nhà máy đã cho phép gửi dữ liệu vận hành ra ngoài",
+    "co": "có",
+    "chua": "chưa",
+    "khong": "không",
+    "tranNguoi": "Trần còn lại của bạn hôm nay",
+    "chuaDatTran": "chưa đặt trần",
+    "nhaMayDuTran": "Nhà máy còn đủ trần cho lượt này",
+    "chiDoc": "AI ngoài chỉ đọc — công cụ ghi/chạy lệnh bị tắt. Không đính kèm được ảnh/tệp.",
+    "chuaDuocPhep": "Chưa dùng được",
+    "tuChoi": "Không, giữ model hiện tại",
+    "dongY": "Đồng ý, dùng model này",
+    "tranVuot": {
+      "luot": "trần mỗi lượt của model",
+      "nha-may": "trần ngày của nhà máy",
+      "nguoi": "trần ngày của bạn",
+      "phut": "quá nhiều lượt mỗi phút"
     }
   }
 }
