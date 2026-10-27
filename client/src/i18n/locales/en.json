@@ -23949,6 +23949,12 @@
     },
     "kenh": {
       "title": "Channels & limits",
+      "timKiem": {
+        "nhan": "Search channels",
+        "goiY": "Tag or display name (accents ignored)",
+        "hien": "Showing {{n}} / {{m}}",
+        "khongCo": "No channel matches."
+      },
       "subtitle": "Declare each tag's channel kind, range, step and actuation level, and each machine's mode channel. Every change is audited with a reason.",
       "adapter": "Adapter",
       "khongCoAdapter": "There are no adapters in your scope.",
@@ -24043,6 +24049,7 @@
         "giaTriRemote": "REMOTE value",
         "giaTriSai": "The REMOTE value does not match the tag's data type.",
         "khongCoAdapterMay": "This machine has no adapter in your scope.",
+        "chonAdapter": "Choose an adapter…",
         "goTieuDe": "Unlink mode channel — machine {{code}}",
         "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again.",
         "soLoi": "Invalid number (half-typed?) — use a decimal point, or empty the field to clear the declaration."

@@ -23946,6 +23946,12 @@
     },
     "kenh": {
       "title": "通道与限值",
+      "timKiem": {
+        "nhan": "搜索通道",
+        "goiY": "标签或显示名称（忽略变音符号）",
+        "hien": "显示 {{n}} / {{m}}",
+        "khongCo": "没有匹配的通道。"
+      },
       "subtitle": "声明每个标签的通道类型、范围、步长和作用等级，以及每台设备的模式通道。所有更改都会连同原因记入审计。",
       "adapter": "适配器",
       "khongCoAdapter": "您的权限范围内没有适配器。",
@@ -24040,6 +24046,7 @@
         "giaTriRemote": "REMOTE 值",
         "giaTriSai": "REMOTE 值与标签的数据类型不符。",
         "khongCoAdapterMay": "您的权限范围内此设备没有适配器。",
+        "chonAdapter": "选择适配器…",
         "goTieuDe": "移除模式通道 — 设备 {{code}}",
         "goMoTa": "在重新声明通道之前，设备将视为 LOCAL（未声明）。",
         "soLoi": "数值无效（输入未完成？）— 请使用小数点，或清空字段以取消声明。"

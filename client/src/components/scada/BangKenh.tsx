@@ -28,7 +28,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BIEN_MAU_TONE } from "./chatLuongHienThi";
-import { dinhDangSo, docSoNhap, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
+import { EmptyState } from "@/components/patterns";
+import { dinhDangSo, docSoNhap, khopTimKiem, laLoaiKenhGhi, mucHienThi } from "./kenhHienThi";
 import { LOP_O_CHON, TruongLyDo, TruongTotp, laLoiMaTotp, lyDoDuDai, maTotpDu } from "./TruongLyDo";
 import { HopKhaiHangLoat, TRAN_HANG_LOAT } from "./HopKhaiHangLoat";
 import { KhoiCanhBao } from "./KhoiCanhBao";
@@ -223,6 +224,9 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
   const { t, i18n } = useTranslation();
   const [sua, setSua] = useState<HangKenh | null>(null);
   const so = (v: number | null) => dinhDangSo(v, i18n.language);
+  // R1b-2b-2b B-T5 — ô tìm tại client (không dấu, không hoa thường). Đổi adapter ⇒ trang đặt `key` mới ⇒ chuỗi tìm tự xoá.
+  const [tim, setTim] = useState("");
+  const hienRows = rows.filter((h) => khopTimKiem(h, tim));
 
   // ── R1b-2a T7 — chọn kênh cho khai mức hàng loạt: chỉ khi `canAct`, chỉ hàng `kenhGhiDuoc`, tối đa TRAN_HANG_LOAT ──
   const coChon = canAct && adapterId !== undefined;
@@ -270,6 +274,20 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
           )}
         </div>
       )}
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+        <Label htmlFor="scada-kenh-tim">{t("scada.kenh.timKiem.nhan")}</Label>
+        <Input
+          id="scada-kenh-tim"
+          className="w-64"
+          type="search"
+          autoComplete="off"
+          placeholder={t("scada.kenh.timKiem.goiY")}
+          value={tim}
+          onChange={(e) => setTim(e.target.value)}
+        />
+        <span className="text-muted-foreground">{t("scada.kenh.timKiem.hien", { n: hienRows.length, m: rows.length })}</span>
+      </div>
+      {hienRows.length === 0 && <EmptyState variant="no-data" title={t("scada.kenh.timKiem.khongCo")} compact />}
       <Table data-testid="bang-kenh">
         <TableHeader>
           <TableRow>
@@ -297,7 +315,7 @@ export function BangKenh({ rows, canAct, onFaceplate, adapterId }: BangKenhProps
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((h) => {
+          {hienRows.map((h) => {
             const muc = mucHienThi(h);
             const coDai = h.writeMin !== null || h.writeMax !== null;
             return (
