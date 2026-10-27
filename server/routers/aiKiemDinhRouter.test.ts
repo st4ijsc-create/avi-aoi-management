@@ -181,6 +181,41 @@ describe("xemTruoc", () => {
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nguoi: { token: 10 }, nhaMay: { duTranChoLuotNay: true } } });
   });
 
+  it("rà kiem-dinh Q8/Q9/Q11/Q3 — biên trần: còn lại ĐÚNG bằng ước ⇒ được, thiếu 1 ⇒ không; hết USD (token đủ) ⇒ không; giá chưa khai (chi phí null) ⇒ không so USD; vai khác admin không thấy số nhà máy", async () => {
+    const cauHinh = (cfg: object, rows: unknown[] = [], gia: [number | null, number | null] = [3, 15]) =>
+      dat({ kiemTruoc: async () => ({ db: { execute: async () => rows }, cfg, model: { giaVaoUsdTrieu: gia[0], giaRaUsdTrieu: gia[1] }, maxTokens: 4000 }) });
+    const VO_HAN = { tranTokenNgay: null, tranTienNgayUsd: null, tranTokenNguoiNgay: null };
+    cauHinh(VO_HAN);
+    const goc = await goi().xemTruoc(INPUT);
+    const uoc = goc.tokenUoc;
+    const chiPhi = goc.chiPhiUocUsd!;
+    // Q8: biên token
+    cauHinh({ ...VO_HAN, tranTokenNgay: uoc });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true, conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
+    cauHinh({ ...VO_HAN, tranTokenNgay: uoc - 1 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: false } } });
+    cauHinh({ ...VO_HAN, tranTokenNguoiNgay: uoc });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true });
+    cauHinh({ ...VO_HAN, tranTokenNguoiNgay: uoc - 1 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN" });
+    // Q9: hết USD, token đủ ⇒ không; USD còn đúng bằng chi phí ước ⇒ được
+    cauHinh({ ...VO_HAN, tranTokenNgay: 10 * uoc, tranTienNgayUsd: chiPhi / 2 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: false } } });
+    cauHinh({ ...VO_HAN, tranTienNgayUsd: chiPhi });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true });
+    // Q11: model chưa khai giá (chi phí ước null) + trần USD hữu hạn rất nhỏ ⇒ KHÔNG so USD ⇒ được
+    cauHinh({ ...VO_HAN, tranTienNgayUsd: 0.000001 }, [], [null, null]);
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true, chiPhiUocUsd: null, conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
+    // Q3: vai KHÁC admin (kể cả vai cao) không thấy số nhà máy
+    cauHinh({ ...VO_HAN, tranTokenNgay: 10 * uoc });
+    for (const vai of ["engineer", "manager", "supervisor", "user"]) {
+      const r = await goi(vai).xemTruoc(INPUT);
+      expect(r.conLaiTranNgay.nhaMay, vai).not.toHaveProperty("token");
+      expect(r.conLaiTranNgay.nhaMay, vai).not.toHaveProperty("usd");
+    }
+    expect((await goi("admin").xemTruoc(INPUT)).conLaiTranNgay.nhaMay).toHaveProperty("token", 10 * uoc);
+  });
+
   it("cổng từ chối ở bước kiểm (vd dữ liệu vận hành chưa cho) ⇒ duocPhep false + lyDo, không ném", async () => {
     dat({ kiemTruoc: async () => Promise.reject(new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH")) });
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_DU_LIEU_VAN_HANH", chiPhiUocUsd: null });
