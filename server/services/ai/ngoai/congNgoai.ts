@@ -22,6 +22,7 @@ import { layCauHinhNhaMay, layModelNgoai, ngoaiBatTheoEnv, type CauHinhNhaMay, t
 import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
+import { mucCuaGhep } from "./ghepPhan";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
 import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
@@ -35,7 +36,8 @@ export type NguonMuc =
 
 export interface YeuCauGoiNgoai {
   dich: { nhaCungCap: string; model: string };
-  tinNhan: TinNhanNgoai[];
+  /** ★ 10.4b L0a — PHẢI do `ghepPhan` tạo (cổng kiểm dấu; mảng chép / tự dựng ⇒ `NGOAI_KHONG_QUA_BO_GHEP`). */
+  tinNhan: readonly TinNhanNgoai[];
   dinhKem?: unknown[];
   congCu?: CongCuNgoai[];
   maxTokens: number;
@@ -262,7 +264,8 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
   kiemKichThuoc(yc);
   // (4)
   buoc("muc-du-lieu");
-  const muc = await mucCuaYeuCau(yc.ngu.nguonMuc);
+  // ★ 10.4b L0a — MAX giữa mức nguồn khai và mức BỘ DỰNG tính (`ghepPhan`): người gọi không hạ được mức của phần đã ghép.
+  const muc = gopMuc(await mucCuaYeuCau(yc.ngu.nguonMuc), mucCuaGhep(yc.tinNhan) ?? "ky-thuat");
   if (muc === "van-hanh" && yc.ngu.nhaMayKhiVanHanh) {
     let them: number[];
     try {
@@ -292,6 +295,8 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
 
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
+  // ★ 10.4b L0a — đường DUY NHẤT dựng yêu cầu: chỉ `tinNhan` mang dấu của `ghepPhan` mới được gửi (TRƯỚC mọi bước — không giữ chỗ, không sổ).
+  if (mucCuaGhep(yc.tinNhan) === undefined) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP");
   const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
   let maxTokens = maxTokensYeuCau;
   // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent

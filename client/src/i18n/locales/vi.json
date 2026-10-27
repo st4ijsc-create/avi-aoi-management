@@ -4588,6 +4588,7 @@
       "NGOAI_PHAN_HOI_QUA_LON": "phản hồi của AI ngoài quá lớn",
       "NGOAI_SAI_SCHEMA": "kết quả kiểm định sai định dạng",
       "NGOAI_DANG_CHAY": "yêu cầu kiểm định này đang chạy",
+      "NGOAI_KHONG_QUA_BO_GHEP": "yêu cầu AI ngoài không được dựng qua bộ dựng của máy chủ (lỗi hệ thống)",
       "NGOAI_DEM_HONG": "bộ đếm chi phí không sẵn sàng — thử lại sau",
       "NGOAI_SO_HONG": "sổ kiểm toán AI ngoài không ghi được — thử lại sau",
       "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",

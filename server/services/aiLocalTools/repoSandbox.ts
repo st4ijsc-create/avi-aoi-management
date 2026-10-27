@@ -65,6 +65,13 @@ import {
   readConfined,
   type ConfinedEntry,
 } from "./readToolsProgramming";
+import {
+  DOAN_THU_MUC_CAM,
+  DUOI_CHO_PHEP,
+  KHUON_TEP_CAM,
+  TEN_TEP_CHO_PHEP,
+  TIEN_TO_DUONG_DAN_CAM,
+} from "../../../shared/aiNgoaiDenyList";
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // MÃ MÁY-ĐỌC-ĐƯỢC — **0 dòng im lặng là nói dối**
@@ -115,168 +122,9 @@ export function gocHopCat(): string {
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // CHÍNH SÁCH — cấm theo THƯ MỤC · cấm theo TÊN · cho phép theo ĐUÔI
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-/**
- * Đoạn thư mục bị cấm — so **TỪNG ĐOẠN**, không so tiền tố chuỗi.
- * ⚠ So tiền tố chuỗi (`rel.startsWith("dist/")` như `repoContextService`) mù với
- * `client/dist/bundle.js` và với `server/node_modules/...`. Một đoạn tên `dist` ở BẤT KỲ nấc nào
- * cũng là dist.
- */
-export const DOAN_THU_MUC_CAM: ReadonlySet<string> = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  "uploads",
-  "coverage",
-  ".superpowers",
-  ".playwright-mcp",
-  ".venv",
-  "playwright-report",
-  "test-results",
-  ".vite",
-  ".cache",
-  "programming-workspace",
-]);
-
-/**
- * Tệp bị cấm theo TÊN. ⚠ `/^\.env/i` (không phải `/^\.env$/`) — xem khối đầu file: 6/11 tệp `.env*`
- * của repo này là bản SAO LƯU có hậu tố tự do.
- */
-export const KHUON_TEP_CAM: readonly RegExp[] = [
-  /^\.env/i,
-  /\.pem$/i,
-  /\.key$/i,
-  /\.p12$/i,
-  /\.pfx$/i,
-  /\.jks$/i,
-  /\.keystore$/i,
-  /^id_rsa/i,
-  /^id_ed25519/i,
-  /^id_ecdsa/i,
-  /^\.npmrc$/i,
-  /^\.pgpass$/i,
-  /^\.htpasswd$/i,
-  /^\.gitleaks/i,
-];
-
-/**
- * Đường dẫn (tương đối, POSIX, thường) bị cấm theo TIỀN TỐ — dành cho tác tạo KHỔNG LỒ không phải
- * thư mục riêng. `knowledge/embeddings.jsonl` là **162 MB**; nó lọt lưới đuôi chỉ vì `.jsonl`
- * không nằm trong danh sách trắng, nhưng khai tường minh thì lời từ chối nói đúng lý do.
- */
-export const TIEN_TO_DUONG_DAN_CAM: readonly string[] = ["knowledge/embeddings"];
-
-/**
- * ★ DANH SÁCH **TRẮNG** — thứ một tác nhân lập trình cần đọc để trả lời *"hàm này gọi ở đâu"*.
- * Cố ý KHÔNG có: `.jsonl`, `.log`, `.pdf`, `.png`, `.zip`, `.exe`, `.gguf`, `.node`, `.map` —
- * không cái nào là mã nguồn, và mọi cái đều lớn hoặc nhị phân.
- */
-export const DUOI_CHO_PHEP: ReadonlySet<string> = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".json",
-  ".sql",
-  ".md",
-  ".css",
-  ".scss",
-  ".html",
-  ".yml",
-  ".yaml",
-  ".toml",
-  ".txt",
-  ".sh",
-  ".mts",
-  ".cts",
-  // doc 79 — C# (dự án thử `sandbox-projects/csharp-demo`): mã nguồn + tệp dự án đều là VĂN BẢN.
-  // Thiếu ba đuôi này thì `dotnet test` CHẠY được nhưng AI KHÔNG đọc/sửa được `.cs` ⇒ vòng khép
-  // kín (đọc → sửa → chạy → đọc lỗi) đứt ở nhịp đầu cho C#.
-  ".cs",
-  ".csproj",
-  ".sln",
-  // ★ 2026-08-24 — đường TẠO KHUNG DỰ ÁN: một khung WPF là bất khả thi nếu thiếu `.xaml`
-  // (App.xaml/MainWindow.xaml là XML văn bản thuần, cùng họ `.html`/`.xml` đã cho). Đo trước khi
-  // thêm: `duoiDuocPhep("App.xaml")` = false ⇒ `apply_diff_batch` từ chối DENIED_EXT cả lô khung.
-  ".xaml",
-  // ★ 2026-08-24 — NGHIỆM THU LIVE lượt tạo khung ĐẦU TIÊN bắt được ngay: model 30B đưa
-  //   `Resources/Strings.resx` vào khung WPF ⇒ cả lô bị từ chối `DUONG_KHONG_HOP_LE` (đúng thiết
-  //   kế fail-closed, "chưa một byte nào được ghi") — nhưng `.resx` là định dạng tài nguyên CHUẨN
-  //   của C#/WPF: XML văn bản thuần, cùng họ `.xaml` ngay trên. Thiếu nó thì mọi khung có chuỗi
-  //   đa ngôn ngữ đều chết ở cửa. Cùng phép đo, cùng lý lẽ, cùng ngày với `.xaml`.
-  ".resx",
-  // ★ 2026-08-24 — quyết định chủ dự án: *"khi prompt yêu cầu tạo dự án thì vẫn tạo các file liên
-  //   quan dự án được như bình thường"*. `Directory.Build.props`/`Directory.Build.targets` là tệp
-  //   cấu hình MSBuild CHUẨN của mọi dự án C# nhiều tầng — XML văn bản thuần, cùng họ `.csproj`.
-  //   ĐO trước khi thêm: `duoiDuocPhep("Directory.Build.props")` = false (extname `.props` không
-  //   nằm trong danh sách) ⇒ trước bản vá, một khung khai tệp ấy chết ở cửa đuôi.
-  ".props",
-  ".targets",
-  // ★ 2026-10-17 · Đợt 1 — bộ đo F: 2/2 bài Python TRƯỢT vì `read_file` từ chối `.py` (model nói thật "không đọc
-  //   được tệp .py" rồi dừng). Mục tiêu "dự án bất kỳ" đòi các ngôn ngữ nguồn VĂN BẢN phổ biến. Tất cả là văn bản
-  //   thuần; bí mật (`.env*`, `.pem`, `.key`…) vẫn bị `KHUON_TEP_CAM` chặn độc lập, nhị phân/tệp chạy được của
-  //   hệ điều hành (`.exe .dll .pyc .bat .cmd .ps1`) vẫn NGOÀI danh sách (lưới §D3 ghim cả hai chiều).
-  ".py",
-  ".pyi",
-  ".ini",
-  ".cfg",
-  ".xml",
-  ".java",
-  ".kt",
-  ".go",
-  ".rs",
-  ".c",
-  ".h",
-  ".cpp",
-  ".hpp",
-  ".vue",
-  ".svelte",
-  // PLC (Structured Text / SCL) — văn bản; corpus lập trình PLC đã có từ trước.
-  ".st",
-  ".scl",
-]);
-
-/**
- * ★ 2026-08-24 — DANH SÁCH TRẮNG **BASENAME** cho tệp KHÔNG-ĐUÔI, cùng lượt với quyết định chủ dự
- * án *"khi prompt yêu cầu tạo dự án thì vẫn tạo các file liên quan dự án được như bình thường"*.
- *
- * Vì sao cần một tập RIÊNG thay vì nhét vào `DUOI_CHO_PHEP`: `path.extname(".gitignore")` = `""` —
- * dotfile không-đuôi là VÔ HÌNH với phép soi đuôi, nên `.gitignore`/`.editorconfig`/`.gitattributes`
- * (tệp VĂN BẢN chuẩn của mọi dự án) bị chặn oan `DENIED_EXT` suốt từ doc 78 pha A.
- *
- * ⚠⚠ SO **BASENAME NGUYÊN VĂN** (thường hoá), KHÔNG so hậu tố — quyết định ngữ nghĩa, ghi ra:
- *   `path.extname("x.gitignore")` trả về `".gitignore"`, nên nếu nhét `".gitignore"` vào
- *   `DUOI_CHO_PHEP` thì MỌI tệp `<bất-kỳ>.gitignore` đi qua — một cái tên tuỳ ý lách được danh
- *   sách trắng chỉ bằng cách đổi đuôi. Tập này vì thế chỉ khớp khi CẢ TÊN TỆP bằng đúng một mục
- *   (`x.gitignore` vẫn bị chặn — có ca lưới ghim chiều này).
- * ⚠ NHỊ PHÂN (ico/png/font) vẫn NGOÀI mọi danh sách: đường ống này ghi VĂN BẢN — một icon "viết
- *   bằng text" là một tệp hỏng; icon/tài nguyên nhị phân để người dùng tự thêm sau.
- * ⚠ `Directory.Build.props` KHÔNG nằm ở đây dù brief gợi ý: nó CÓ đuôi (`.props` — vừa thêm ở
- *   trên) nên nhánh đuôi đã cho qua; một mục basename trùng lặp là mục CHẾT — không đột biến nào
- *   làm nó đỏ được, tức một lời khai không đo được.
- * ⚠ KHÔNG mục nào ở đây được trùng họ `.env*`/`KHUON_TEP_CAM` — lớp TÊN-CẤM chạy TRƯỚC trong
- *   `phanQuyetDuongDan`, nhưng hai lớp phải ĐỘC LẬP cùng chặn (bài học "hai lớp che nhau" §G).
- */
-export const TEN_TEP_CHO_PHEP: ReadonlySet<string> = new Set([
-  ".gitignore",
-  ".editorconfig",
-  ".gitattributes",
-  // ★ 2026-08-31 · PDCA vòng 1 (T02b) — đo trên UI thật: mở `.prettierrc` bị DENIED_EXT
-  // "(không có đuôi)" trong khi VSCode/Cursor mở được mọi tệp cấu hình văn bản. Bổ sung các
-  // basename cấu hình PHỔ BIẾN, thuần văn bản, không mang bí mật theo cấu tạo.
-  // ⚠ CỐ Ý VẮNG MẶT: `.npmrc` (mang được `_authToken` — một dòng registry token là một bí mật
-  //   thật) và mọi họ `.env*` (đã cấm ở `KHUON_TEP_CAM`, hai lớp phải ĐỘC LẬP cùng chặn).
-  ".prettierrc",
-  ".prettierignore",
-  ".dockerignore",
-  ".eslintrc",
-  ".nvmrc",
-  "dockerfile",
-  "makefile",
-  "license",
-]);
+// ★ Đợt 10.4b L0a — năm danh sách CƠ SỞ chuyển sang `shared/aiNgoaiDenyList.ts` (MỘT nguồn cho hộp cát máy chủ, danh sách cấm
+//   AI NGOÀI và host extension). Docblock lý lẽ đi cùng danh sách. Nhập ở đầu tệp, XUẤT LẠI ở đây ⇒ mọi điểm nhập cũ không đổi.
+export { DOAN_THU_MUC_CAM, DUOI_CHO_PHEP, KHUON_TEP_CAM, TEN_TEP_CHO_PHEP, TIEN_TO_DUONG_DAN_CAM };
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // TRẦN — số tệp/lượt · byte/tệp · byte/phiên · hạn giờ

@@ -471,25 +471,29 @@ async function traLoiNgoaiV1(res: Response, body: Record<string, unknown>, messa
     return;
   }
   const dinhKem: unknown[] = [];
-  const tinNhan = messages.map((m) => {
-    const role = m.role === "system" || m.role === "assistant" || m.role === "tool" ? m.role : "user";
-    let noiDung = "";
-    if (typeof m.content === "string") noiDung = m.content;
-    else if (Array.isArray(m.content)) {
-      for (const p of m.content as Array<{ type?: unknown; text?: unknown }>) {
-        if (p?.type === "text" && typeof p.text === "string") noiDung += p.text;
-        else dinhKem.push(p);
+  const laKetQuaTool = (m: (typeof messages)[number]) =>
+    m.role === "tool" || m.role === "function" || (m.role === "assistant" && (m as { tool_calls?: unknown }).tool_calls != null) || (m as { function_call?: unknown }).function_call != null;
+  // ★ 10.4b L0a — qua bộ dựng: kết quả tool = `ket-qua-tool-van-hanh`; tin khác = `tin-v1-client` (ky-thuat — hiện trạng 10.3, lô E xét lại)
+  const { ghepPhan } = await import("../services/ai/ngoai/ghepPhan");
+  const { tinNhan } = ghepPhan(
+    messages.map((m) => {
+      const role = m.role === "system" || m.role === "assistant" || m.role === "tool" ? m.role : "user";
+      let noiDung = "";
+      if (typeof m.content === "string") noiDung = m.content;
+      else if (Array.isArray(m.content)) {
+        for (const p of m.content as Array<{ type?: unknown; text?: unknown }>) {
+          if (p?.type === "text" && typeof p.text === "string") noiDung += p.text;
+          else dinhKem.push(p);
+        }
       }
-    }
-    return { vaiTro: role as "system" | "user" | "assistant" | "tool", noiDung };
-  });
+      return { vaiTro: role as "system" | "user" | "assistant" | "tool", phan: [{ loai: laKetQuaTool(m) ? ("ket-qua-tool-van-hanh" as const) : ("tin-v1-client" as const), noiDung }] };
+    }),
+  );
   // Kẹp ở biên (cổng kẹp lần nữa theo trần model): rác / âm / 1e12 ⇒ không lọt xuống nhà cung cấp.
   const maxTokens = typeof body.max_tokens === "number" && Number.isFinite(body.max_tokens) && body.max_tokens >= 1 ? Math.min(Math.floor(body.max_tokens), 32_000) : 1024;
   // Rà kiem-dinh Task 8 B — lượt mang KẾT QUẢ TOOL (role tool/function, hoặc assistant có tool_calls) = dữ liệu tool cục bộ của
   // nhà máy chủ token ⇒ mức `van-hanh` (cổng đòi `choDuLieuVanHanh`), không phải lời người dùng gõ.
-  const coKetQuaTool = messages.some(
-    (m) => m.role === "tool" || m.role === "function" || (m.role === "assistant" && (m as { tool_calls?: unknown }).tool_calls != null) || (m as { function_call?: unknown }).function_call != null,
-  );
+  const coKetQuaTool = messages.some(laKetQuaTool);
   const { goiAiNgoai } = await import("../services/ai/ngoai/congNgoai");
   const { maTrpcCua } = await import("../services/ai/ngoai/loi");
   let kq;

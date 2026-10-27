@@ -46,6 +46,7 @@ vi.mock("../services/ai/ngoai/congNgoai", async (goc) => ({
 
 import { createOpenAiGatewayRouter } from "./openaiGateway";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
+import { mucCuaGhep } from "../services/ai/ngoai/ghepPhan";
 import type { KetQuaXacThucToken } from "../db/aiGatewayTokens";
 
 const T1 = "avgw_" + "A".repeat(43);
@@ -112,9 +113,12 @@ describe("/v1 model ngoài", () => {
     for (const messages of lots) expect((await chat(T1, { messages })).status).toBe(200);
     expect(h.goi).toHaveLength(3);
     for (const g of h.goi) expect(g).toMatchObject({ ngu: { nhaMayChuDuLieu: [7], nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: ["van-hanh"] } } });
+    // ★ 10.4b L0a — yêu cầu dựng qua bộ dựng; mức BỘ DỰNG tính cũng là van-hanh (cổng lấy MAX — hai nguồn độc lập cùng đóng)
+    for (const g of h.goi) expect(mucCuaGhep((g as { tinNhan: unknown }).tinNhan)).toBe("van-hanh");
     h.goi = [];
     await chat(T1, { messages: [{ role: "system", content: "s" }, { role: "assistant", content: "a" }, { role: "user", content: "u" }] });
     expect(h.goi[0]).toMatchObject({ ngu: { nhaMayChuDuLieu: [], nguonMuc: { phanDaGhep: [] } } });
+    expect(mucCuaGhep((h.goi[0] as { tinNhan: unknown }).tinNhan)).toBe("ky-thuat");
   });
 
   it("rà Task 8 F — max_tokens rác / âm / 0 / 1e12 / chuỗi ⇒ kẹp ở biên trong [1, 32000]", async () => {

@@ -4588,6 +4588,7 @@
       "NGOAI_PHAN_HOI_QUA_LON": "外部AI响应过大",
       "NGOAI_SAI_SCHEMA": "审核结果格式无效",
       "NGOAI_DANG_CHAY": "该审核请求正在运行",
+      "NGOAI_KHONG_QUA_BO_GHEP": "外部 AI 请求未经服务器请求构建器生成（系统错误）",
       "NGOAI_DEM_HONG": "费用计数器不可用，请稍后重试",
       "NGOAI_SO_HONG": "无法写入外部AI审计日志，请稍后重试",
       "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",

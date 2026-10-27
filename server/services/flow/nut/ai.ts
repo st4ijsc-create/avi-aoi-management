@@ -23,6 +23,7 @@ import { stripThinking } from "../../ai/thinkingStrip";
 import { tinCayNhan, type LogprobToken } from "../../ai/logprobDau";
 import type { PhuThuocDanhMuc } from "../../ai/chonModel/kieu";
 import type { YeuCauGoiNgoai } from "../../ai/ngoai/congNgoai";
+import { ghepPhan } from "../../ai/ngoai/ghepPhan";
 
 /** `ngu` vắng = lời gọi ngoài một lượt chạy (vd `flow.taoTuMoTa`, Đợt 8.4). */
 export type HamGoiAi = (y: {
@@ -238,10 +239,11 @@ async function goiAiNgoaiChoNut(y: Parameters<HamGoiAi>[0], chon: ChonModelNut):
   }
   const yc: YeuCauGoiNgoai = {
     dich: chon.ngoai!,
-    tinNhan: [
-      { vaiTro: "system", noiDung: y.heThong },
-      { vaiTro: "user", noiDung: y.nguoiDung },
-    ],
+    // ★ 10.4b L0a — qua bộ dựng: nội dung node = `du-lieu-luong` (mức do động cơ luồng — `nguNgoaiTuLuot`)
+    tinNhan: ghepPhan([
+      { vaiTro: "system", phan: [{ loai: "du-lieu-luong", noiDung: y.heThong }] },
+      { vaiTro: "user", phan: [{ loai: "du-lieu-luong", noiDung: y.nguoiDung }] },
+    ]).tinNhan,
     maxTokens: y.maxTokens,
     mucDich: `flow_${y.loai}`.slice(0, 32),
     ngu: nguNgoaiTuLuot(ngu),
