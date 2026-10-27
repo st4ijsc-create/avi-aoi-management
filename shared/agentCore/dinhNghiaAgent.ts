@@ -48,6 +48,7 @@ export interface DinhNghiaAgent {
 
 export type MaLoiDinhNghia =
   | "TEN_SAI"
+  | "KY_TU_AN_CAM"
   | "TEP_QUA_LON"
   | "THIEU_RAO"
   | "FRONT_MATTER_DAI"
@@ -165,10 +166,47 @@ function boNgoac(v: string): string {
   return m ? m[2] : v;
 }
 
+/**
+ * Ký tự ẨN/điều khiển (Trojan Source): người duyệt đọc nội dung hiển thị rồi xác nhận băm, nên không được có ký tự làm
+ * nội dung hiển thị KHÁC nội dung băm. TỪ CHỐI (không "làm sạch rồi nhận"). Khoảng [thấp, cao] theo mã điểm:
+ * C0 trừ tab/LF/CR, DEL+C1, soft hyphen, ALM (bidi), Hangul filler, Mongolian separator, ZWSP..RLM, dấu tách dòng/đoạn,
+ * bidi embedding/override, word joiner..bidi isolate, Hangul filler 3164, bộ chọn biến thể, BOM, thẻ.
+ */
+const KHOANG_KY_TU_AN: ReadonlyArray<readonly [number, number]> = [
+  [0x00, 0x08],
+  [0x0b, 0x0c],
+  [0x0e, 0x1f],
+  [0x7f, 0x9f],
+  [0xad, 0xad],
+  [0x61c, 0x61c],
+  [0x115f, 0x1160],
+  [0x180e, 0x180e],
+  [0x200b, 0x200f],
+  [0x2028, 0x202e],
+  [0x2060, 0x2069],
+  [0x3164, 0x3164],
+  [0xfe00, 0xfe0f],
+  [0xfeff, 0xfeff],
+  [0xe0000, 0xe007f],
+];
+
+/** Có ký tự ẩn không. BOM ĐẦU tệp được phép (`chuanHoa` bỏ nó, băm không tính nó). */
+export function coKyTuAn(s: string): boolean {
+  const thau = s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+  for (const ch of thau) {
+    const cp = ch.codePointAt(0)!;
+    for (const [lo, hi] of KHOANG_KY_TU_AN) if (cp >= lo && cp <= hi) return true;
+  }
+  return false;
+}
+
 export function phanTichDinhNghia(tenTep: string, noiDung: string): KetQuaPhanTich {
+  if (coKyTuAn(tenTep)) return loi("KY_TU_AN_CAM", "tên tệp chứa ký tự ẩn/điều khiển");
   const mt = RE_TEN_TEP.exec(tenTep);
   if (!mt) return loi("TEN_SAI", "tên tệp phải là <tên>.md với tên theo ^[a-z][a-z0-9-]{0,31}$");
   if (utf8(noiDung).length > TRAN_BYTE_TEP_DINH_NGHIA) return loi("TEP_QUA_LON", `tệp vượt ${TRAN_BYTE_TEP_DINH_NGHIA} byte`);
+
+  if (coKyTuAn(noiDung)) return loi("KY_TU_AN_CAM", "nội dung chứa ký tự ẩn/điều khiển (bidi, zero-width, thẻ…): không được chấp nhận");
 
   const s = chuanHoa(noiDung);
   if (!s.startsWith("---\n")) return loi("THIEU_RAO", "tệp phải mở đầu bằng dòng ---");

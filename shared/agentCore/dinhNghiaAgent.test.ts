@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TEN_CONG_CU } from "./congCu";
 import {
   bamNoiDung,
+  coKyTuAn,
   DINH_NGHIA_DUNG_SAN,
   locDinhNghiaTuRepo,
   phanTichDinhNghia,
@@ -132,6 +133,53 @@ describe("phanTichDinhNghia — từ chối (M1–M3)", () => {
       const r = phanTichDinhNghia("doc-ma.md", hopLe().replace("[read_file, grep]", `[${t}]`));
       expect(r.ok, t).toBe(true);
     }
+  });
+});
+
+describe("KY_TU_AN_CAM — Trojan Source (kiem-dinh T1)", () => {
+  const cp = (n: number) => String.fromCodePoint(n);
+  const NHOM: Array<[string, number]> = [
+    ["bidi override 202E", 0x202e],
+    ["bidi isolate 2066", 0x2066],
+    ["bidi isolate 2069", 0x2069],
+    ["bidi embedding 202A", 0x202a],
+    ["ALM 061C", 0x61c],
+    ["zero-width space 200B", 0x200b],
+    ["ZWJ 200D", 0x200d],
+    ["LRM 200E", 0x200e],
+    ["word joiner 2060", 0x2060],
+    ["line separator 2028", 0x2028],
+    ["paragraph separator 2029", 0x2029],
+    ["soft hyphen 00AD", 0xad],
+    ["BOM giữa chuỗi FEFF", 0xfeff],
+    ["Mongolian 180E", 0x180e],
+    ["variation selector FE0F", 0xfe0f],
+    ["Hangul filler 3164", 0x3164],
+    ["tag char E0041", 0xe0041],
+    ["NUL", 0x00],
+    ["ESC", 0x1b],
+    ["DEL", 0x7f],
+    ["C1 0085", 0x85],
+  ];
+  for (const [nhan, n] of NHOM) {
+    it(`${nhan}: bị từ chối ở mô tả, thân, giá trị tools, giá trị model, tên tệp`, () => {
+      const ch = cp(n);
+      tu(hopLe().replace("Doc ma khong sua", `Doc ${ch}ma`), "KY_TU_AN_CAM");
+      tu(hopLe().replace("You read code.", `You read ${ch}code.`), "KY_TU_AN_CAM");
+      tu(hopLe().replace("[read_file, grep]", `[read_file, gre${ch}p]`), "KY_TU_AN_CAM");
+      tu(hopLe().replace("model: auto", `model: au${ch}to`), "KY_TU_AN_CAM");
+      tu(hopLe(), "KY_TU_AN_CAM", `doc${ch}-ma.md`);
+    });
+  }
+  it("tab, LF, CRLF và BOM Ở ĐẦU tệp vẫn được", () => {
+    expect(phanTichDinhNghia("doc-ma.md", cp(0xfeff) + hopLe().replace("You read code.", "Line1\r\n\tLine2")).ok).toBe(true);
+  });
+  it("tiếng Việt có dấu / emoji thường vẫn được", () => {
+    expect(phanTichDinhNghia("doc-ma.md", hopLe().replace("You read code.", "Đọc mã tiếng Việt có dấu, rồi tóm tắt 👍.")).ok).toBe(true);
+  });
+  it("coKyTuAn công khai cho host kiểm lại trước khi hiển thị", () => {
+    expect(coKyTuAn("abc")).toBe(false);
+    expect(coKyTuAn(`a${cp(0x202e)}b`)).toBe(true);
   });
 });
 
