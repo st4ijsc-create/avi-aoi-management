@@ -66,6 +66,7 @@ import {
 import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
+import { lamAmDuongStopHmi } from "./hanStopHmi";
 import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createHmiStopLimiter, createMachineIngestLimiter, createOtIngestLimiter, createUnverifiedCredentialIpLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
@@ -4391,6 +4392,13 @@ async function startServer() {
   const onListening = () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
 
+    // SCADA R1b-2b-1 T9 (mục 46) — làm ấm import động của đường STOP HMI (trpc / moduleGate / context): STOP đầu tiên sau khởi động không
+    // trả giá import lạnh trong hạn tổng HAN_TONG_STOP_HMI_MS. Nền, không chặn listen; lamAmDuongStopHmi không bao giờ ném.
+    void lamAmDuongStopHmi().then(({ ok, loi }) => {
+      if (loi.length > 0) logger.warn({ ok, loi }, "[SCADA] làm ấm import đường STOP HMI: có module lỗi (STOP vẫn tự import khi cần)");
+      else logger.info({ ok }, "[SCADA] làm ấm import đường STOP HMI xong");
+    });
+
     // ★ Đợt 3c — proxy xem trước trên CỔNG RIÊNG (origin tách khỏi ứng dụng). Vắng AI_PREVIEW_PROXY_PORT ⇒ TẮT.
     import("../services/ai/chayUngDung")
       .then((m) => m.khoiDongProxyXemTruoc(port))
@@ -4542,7 +4550,7 @@ async function startServer() {
       .catch(() => {});
     // F1.1 — dừng OT framework (no-op nếu chưa chạy)
     import("../services/ot")
-      .then((m) => m.stopOt())
+      .then((m) => m.stopOt({ tatTienTrinh: true })) // R1b-2b-1 T8 — tắt tiến trình không ghi `disabled` vào DB
       .catch(() => {});
     // MTConnect — dừng poller (no-op nếu chưa chạy)
     import("../services/mtconnect/mtconnectPoller")

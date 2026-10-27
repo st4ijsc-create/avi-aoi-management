@@ -45,6 +45,7 @@ export const PHAN_LOAI_NGUON_NUT: Readonly<Record<string, MucNguonNut>> = Object
   "ai.phan-loai": "ke-thua",
   "ai.tom-tat": "ke-thua",
   "ai.sinh-ma": "ke-thua",
+  "ai.kiem-dinh-ngoai": "ke-thua", // ★ 10.4 — đầu ra suy từ đầu vào (câu hỏi / câu trả lời của bước trước)
   "ai.agent": "ke-thua", // + phân loại TĨNH các luồng con khai làm công cụ
   "ai.tra-tri-thuc": "van-hanh", // kho tri thức gồm tài liệu vận hành
   // người

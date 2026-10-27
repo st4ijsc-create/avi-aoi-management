@@ -27,7 +27,7 @@ import {
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
 import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
-import { baoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
+import { baoTrangThaiAdapter, datCheDoTatTienTrinh, datLyDoTrangThaiAdapter, dongBoTrangThaiAdapterTat, layTrangThaiAdapter, type TrangThaiKetNoi } from "./trangThaiAdapter";
 import { chatLuongLoiChung, chatLuongV2Bat } from "./chatLuong";
 import {
   khoangNoiLaiMs,
@@ -264,7 +264,13 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number, budgetMs?
     // R1b-1 T3 fix round 1 — đường PUSH (OPC UA monitored items) không bao giờ gọi onTick: mẫu của phiên cũng báo lần đọc tốt. Bọc sink
     // RIÊNG của phiên này (closure giữ `phien`) ⇒ cùng bảo đảm định danh phiên như đường tick.
     // R1b-2a T13 — mẫu "máy chủ đã trả lời" (không chỉ `good`), cùng luật với tick poll: một bộ bắt chung (taoBatDocTot) cho cả hai.
-    const bat = v2Phien ? taoBatDocTot(() => khiDocTotLegacy(entry, phien, myEpoch)) : null;
+    // R1b-2b-1 T5 — cùng bộ bắt báo "mọi tag sai cấu hình cục bộ" (lý do có mã ở RAM, phiên ở connecting).
+    const bat = v2Phien
+      ? taoBatDocTot(
+          () => khiDocTotLegacy(entry, phien, myEpoch),
+          (co) => khiMoiTagTrungTinhLegacy(entry, phien, myEpoch, co),
+        )
+      : null;
     const sinkPhien: OnOtSample = bat
       ? (s) => {
           bat.quaMau(s);
@@ -373,8 +379,20 @@ function khiDocTotLegacy(entry: LegacyEntry, phien: number, myEpoch: number): vo
   if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
   if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
   entry.phienDocTot = phien;
+  datLyDoTrangThaiAdapter(entry.adapter.adapterId, null); // R1b-2b-1 T5 — đọc tốt thật ⇒ gỡ lý do "mọi tag sai cấu hình"
   if (entry.phienHoatDong !== phien || entry.state !== "active" || entry.inflight) return;
   if (driverDangNoi(entry.adapter)) baoLegacy(entry, "connected");
+}
+
+/**
+ * R1b-2b-1 T5 (mục 51, C5; legacy, cờ V2) — phiên `phien` chưa đọc tốt và chỉ thấy tag sai cấu hình cục bộ (`co`) / thôi như thế. Chỉ
+ * phiên MỚI NHẤT của entry còn quản adapter, cùng thế hệ ⇒ gắn/gỡ lý do `moi_tag_sai_cau_hinh` (RAM). Không đổi trạng thái: phiên vẫn
+ * ở 'connecting' (không đọc tốt, không tick hỏng ⇒ không connected, không vòng nối lại).
+ */
+function khiMoiTagTrungTinhLegacy(entry: LegacyEntry, phien: number, myEpoch: number, co: boolean): void {
+  if (myEpoch !== epoch || legacy.get(entry.adapter.adapterId) !== entry) return;
+  if (phien !== entry.demPhien || entry.phienDocTot === phien) return;
+  datLyDoTrangThaiAdapter(entry.adapter.adapterId, co ? "moi_tag_sai_cau_hinh" : null);
 }
 
 /**
@@ -845,6 +863,13 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
       if (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung) return;
       baoTrangThaiAdapter(adapter, "connected", null, new Date(), null, thoiGianOnDinhMs(adapter.pollIntervalMs));
     },
+    // R1b-2b-1 T5 (mục 51, C5) — phiên chỉ thấy tag sai cấu hình cục bộ ⇒ lý do có mã (RAM); cùng chốt thế hệ với onDocTotDauTien.
+    onMoiTagTrungTinh: (co) => {
+      const hienTai = supervisors.get(adapter.adapterId)?.supervisor;
+      if (hienTai && chinhNo && hienTai !== chinhNo) return;
+      if (epoch !== epochLucDung || detachToken(adapter.adapterId) !== tokLucDung) return;
+      datLyDoTrangThaiAdapter(adapter.adapterId, co ? "moi_tag_sai_cau_hinh" : null);
+    },
     // SCADA R0 Task 5 (C1/C3) — trạng thái kết nối + mẫu xấu khi mất (xem trangThaiAdapter.ts).
     onStateChange: (prev, next, lastError, statusCode) => {
       if (prev === "stopped") return; // 'stopped' là cuối: vòng nối trễ không được kéo adapter đã dừng về 'lost'
@@ -923,6 +948,7 @@ export async function startOt(): Promise<boolean> {
 }
 
 async function startOtOnce(): Promise<boolean> {
+  datCheDoTatTienTrinh(false); // R1b-2b-1 T8 — khởi động lại trong cùng tiến trình: ghi trạng thái như thường
   if (!flagEnabled()) {
     console.log("[OT] disabled (set OT_GATEWAY_ENABLED=true to enable)");
     return false;
@@ -1061,7 +1087,9 @@ async function startOtOnce(): Promise<boolean> {
  * doc 81 Đợt 1B Task 2 — mỗi lời gọi hạ kết nối có hạn; khởi động/nối lại đang chạy của thế
  * hệ cũ tự huỷ khi xong (epoch).
  */
-export async function stopOt(): Promise<void> {
+export async function stopOt(tuyChon?: { tatTienTrinh?: boolean }): Promise<void> {
+  // R1b-2b-1 T8 — TRƯỚC mọi báo `disabled` (supervisor.stop() và baoLegacy bên dưới): tắt tiến trình không ghi DB.
+  if (tuyChon?.tatTienTrinh) datCheDoTatTienTrinh(true);
   epoch += 1;
   startInFlight = null;
   if (legacyTimer) {

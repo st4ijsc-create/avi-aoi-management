@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { datTruoc, donDemCu, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
+import { datTruoc, docConLaiNgay, donDemCu, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
 import { LoiNgoai } from "./loi";
 
 const NM = () => 900_000_000 + Math.floor(Math.random() * 99_000_000);
@@ -146,5 +146,21 @@ describe("kết toán / hoàn / dọn", () => {
     await donDemCu(d, 90, bayGio);
     expect(await giu(f, "k89")).not.toBeNull();
     expect(await giu(f, "k91")).toBeNull();
+  });
+});
+
+describe("★ 10.4 — docConLaiNgay (đọc, không giữ chỗ)", () => {
+  it("trần nhà máy token + USD và trần người: còn lại = trần − đã giữ; trần null ⇒ null; KHÔNG ghi hàng nào", async () => {
+    const f = nm();
+    const tran = { ...TRAN, tranTokenNgay: 1000, tranTienNgayUsd: 2, tranTokenNguoiNgay: 500 };
+    expect(await docConLaiNgay(await db(), f, 7, tran)).toEqual({ nhaMay: { token: 1000, usd: 2 }, nguoi: { token: 500 } });
+    expect(await giu(f)).toBeNull();
+    await datTruoc(await db(), yc(f, 300, { userId: 7, tienUocUsd: 0.5 }), tran);
+    const c = await docConLaiNgay(await db(), f, 7, tran);
+    expect(c.nhaMay.token).toBe(700);
+    expect(c.nhaMay.usd).toBeCloseTo(1.5);
+    expect(c.nguoi.token).toBe(200);
+    expect(await docConLaiNgay(await db(), f, 8, tran)).toMatchObject({ nguoi: { token: 500 } });
+    expect(await docConLaiNgay(await db(), f, null, { ...tran, tranTokenNgay: null, tranTienNgayUsd: null })).toEqual({ nhaMay: { token: null, usd: null }, nguoi: { token: null } });
   });
 });

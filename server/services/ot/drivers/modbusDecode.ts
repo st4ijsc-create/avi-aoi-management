@@ -10,6 +10,7 @@
  * hiệu chỉnh kỹ thuật theo tag, để driver áp giúp hai protocol đồng nhất.
  */
 import type { OtDataType } from "../otDriver";
+import { boolGhi } from "./boolNghiem";
 
 export type ModbusRegisterType = "holding" | "input" | "coil" | "discrete";
 
@@ -190,7 +191,8 @@ export function decodeModbus(
  * Mã hoá một số RAW thành mảng word (16-bit) để GHI xuống Modbus — đối xứng
  * decodeModbus (round-trip encode→decode trả lại giá trị gốc với cùng opts).
  *
- *   - bool → [value ? 1 : 0]
+ *   - bool → [boolGhi(value) ? 1 : 0] (R1b-2b-1 T2: một luật bool — "false" ⇒ 0, ngoài tập hợp lệ ⇒ ném `LoiGiaTriBool`; driver đổi trước
+ *     bằng `boolChoGhi` nên STOP đã xác minh tới đây là boolean)
  *   - int  → 1 word: int16 (signed) hoặc uint16, kẹp & 0xffff
  *   - float → float32 ghép 2 word theo wordOrder + endianness
  *
@@ -207,7 +209,7 @@ export function encodeModbus(
 
   switch (dataType) {
     case "bool":
-      return [value ? 1 : 0];
+      return [boolGhi(value) ? 1 : 0];
 
     case "float": {
       const buf = Buffer.alloc(4);

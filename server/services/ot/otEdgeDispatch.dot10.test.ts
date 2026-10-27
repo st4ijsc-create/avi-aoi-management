@@ -299,7 +299,7 @@ describe("otEdgeDispatch — ★ a PINNED OT STOP never asks (L-7)", () => {
     } });
     const r = await dispatchOtOnEdge({ ...STOP, run }, rt);
     expect(r).toMatchObject({ ok: true, stop: true, pinnedStop: true, status: "acked" });
-    expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined }]]);
+    expect(H.driver!.writes).toEqual([[{ tagKey: "run", address: "00001", value: false, dataType: "bool", scale: undefined, offset: undefined, dungGhim: true }]]); // R1b-2b-1 T2 (KD-T2): STOP đã xác minh mang cờ dungGhim
     expect(authCalls.pending).toBe(0);
     expect(j.order).toEqual([]);
     expect(H.safetyReads).toBe(0);

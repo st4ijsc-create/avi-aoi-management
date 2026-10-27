@@ -14,6 +14,7 @@
  *   - "MyArray[3]"                → phần tử mảng (giữ nguyên trong name)
  */
 import type { OtDataType } from "../otDriver";
+import { giaiMaBoolDoc } from "./boolNghiem";
 
 export interface ParsedEipTag {
   /** Tên tag truyền cho newTag(name, ...). */
@@ -56,7 +57,7 @@ export interface CoercedEipValue {
 /**
  * Ép giá trị tag.value (st-ethernet-ip) theo dataType (KHÔNG áp scale/offset).
  *   - null/undefined → {value:null, quality:"bad"}
- *   - bool → Boolean; int → round; float → Number; string/json → String/serialize
+ *   - bool → `giaiMaBoolDoc` (R1b-2b-1 T2; chuỗi lạ ⇒ bad); int → round; float → Number; string/json → String/serialize
  * NaN sau ép → quality:"bad".
  */
 export function coerceEipValue(raw: unknown, dataType: OtDataType): CoercedEipValue {
@@ -64,8 +65,11 @@ export function coerceEipValue(raw: unknown, dataType: OtDataType): CoercedEipVa
     return { value: null, quality: "bad" };
   }
   switch (dataType) {
-    case "bool":
-      return { value: Boolean(raw), quality: "good" };
+    case "bool": {
+      // R1b-2b-1 T2 — MỘT luật bool phía ĐỌC (`giaiMaBoolDoc`): số khác 0 ⇒ TRUE, "false" ⇒ FALSE, chuỗi lạ ⇒ bad (trước: `Boolean("x")` = TRUE).
+      const b = giaiMaBoolDoc(raw);
+      return b === undefined ? { value: null, quality: "bad" } : { value: b, quality: "good" };
+    }
     case "int": {
       const n = Number(raw);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };

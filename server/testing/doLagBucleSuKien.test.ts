@@ -105,6 +105,22 @@ describe("doLagBucleSuKien", () => {
     expect(await p).toBe(5);
   });
 
+  it("(6) số đo lúc nạp CŨ/THẤP (5 ms) mà chu kỳ rảnh hiện tại 15,6 ms ⇒ lấy số lớn: 64 nhịp rảnh vẫn nới ≤ 5 % (bản chỉ dùng số cũ ⇒ ~680 ms)", async () => {
+    const g = dongHoGia(5);
+    const dep: PhuThuocDoLag = { ...g.dep, chuKyMoi: async () => 15.6 };
+    const lag = batDauDoLag(5, dep);
+    g.chay(15.6, 0, 64);
+    expect(await lag.dung(Infinity)).toBeLessThanOrEqual(50);
+  });
+
+  it("(7) số đo mới THẤP hơn số cũ ⇒ vẫn dùng số cũ (chặt hơn, không nới thêm)", async () => {
+    const g = dongHoGia(15.6);
+    const dep: PhuThuocDoLag = { ...g.dep, chuKyMoi: async () => 5 };
+    const lag = batDauDoLag(5, dep);
+    g.chay(15.6, 0, 64);
+    expect(await lag.dung(Infinity)).toBeLessThanOrEqual(50);
+  });
+
   it("bản thật: hiệu chuẩn trả chu kỳ trong khoảng hợp lý và dung() chạy được (không khẳng định mức nới — đồng hồ thật + tải)", async () => {
     const lag = batDauDoLag();
     await new Promise((r) => setTimeout(r, 120));

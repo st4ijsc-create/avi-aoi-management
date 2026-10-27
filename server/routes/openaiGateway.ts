@@ -456,6 +456,7 @@ const HTTP_CUA_MA_TRPC: Record<string, number> = {
   SERVICE_UNAVAILABLE: 503,
   BAD_GATEWAY: 502,
   PAYLOAD_TOO_LARGE: 413,
+  CONFLICT: 409,
 };
 
 /**

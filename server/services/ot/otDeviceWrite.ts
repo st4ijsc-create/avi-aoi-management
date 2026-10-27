@@ -11,8 +11,10 @@ import { getDb } from "../../db/connection";
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
 import type { OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { lopDiaChiBit } from "./drivers/diaChiBit";
 import { canonicalOtValue } from "./otActionBinding";
 import { withDeadline } from "./drivers/boundedClose";
+import { laLoiMatLienKetKhiDangGui } from "./drivers/dangBay";
 import { ghiNhanLenh } from "./boDemTruyenThong";
 import type { DispatchInput, DispatchStatus } from "./commandDispatcher";
 
@@ -148,23 +150,104 @@ function releaseWatchedTags(adapterId: number, tagKeys: readonly string[]): void
 /**
  * B3 fix scan (3) / scan 3 (b)(c) — the abandoned write of an adapter whose fate is unknown (until = epoch ms): its
  * identity and values, so the watch can recognise it landing and AUDIT-LINK that observation to the abandoned command.
- * One entry per adapter (overwritten by a newer abandonment); expired entries are swept on every write to the map and on
- * lookup — the map never holds more than one entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
+ * One entry per adapter; expired entries are swept on every write to the map and on lookup — the map never holds more than one
+ * entry per adapter and none older than its own window (windowMs, Đợt 5 F3).
+ * R1b-2b-1 T17 fix round 1 (rà soát bảo mật: trôi trạng thái fail-open) — một lần bỏ MỚI không bao giờ LÀM YẾU mục đang có: GỘP (hợp intent theo
+ * thứ tự, nối writes, windowMs = max, hạn = max); mục được sửa TẠI CHỖ (danh tính giữ nguyên). Hạn = ∞ khi còn ≥ 1 lượt giữ chỗ B3 đang đặt lại phiên
+ * (`soGiu`), ngược lại = `untilHuuHan` (max các hạn hữu hạn) — `nhaGiuRuiRo` của lượt giữ chỉ trừ lượt của NÓ trên mục ĐANG ở map.
  */
 type StaleWrite = {
   until: number;
-  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned. */
+  /** hạn hữu hạn lớn nhất đã cấp (dùng khi không còn lượt giữ nào) */
+  untilHuuHan: number;
+  /** số lượt giữ chỗ B3 đang đặt lại phiên (mỗi lượt giữ mục sống vô hạn tới khi nhả) */
+  soGiu: number;
+  /** Đợt 5 F3 — this adapter's risk window (staleWriteRiskWindowMs), captured when the write was abandoned (max khi gộp). */
   windowMs: number;
+  /** của lệnh bỏ ĐẦU TIÊN còn trong mục (nhận diện cho báo động / audit) */
   commandType: string;
   idempotencyKey: string | null;
-  intentIds: number[];
+  /** mảng intent của TỪNG lệnh bỏ, theo thứ tự (giữ tham chiếu: R-11-n nối intent của STOP giống hệt vào mảng đang ghi) */
+  nguonIntent: number[][];
   confirmedBy: number;
   machineId: number | null;
   writes: Array<{ tagKey: string; value: unknown }>;
 };
+/** Hợp intent của mọi lệnh bỏ trong mục, theo thứ tự, không trùng. */
+function intentCuaRuiRo(e: StaleWrite): number[] {
+  return [...new Set(e.nguonIntent.flat())];
+}
 const staleWriteRisk = new Map<number, StaleWrite>();
 function sweepStaleWriteRisk(now = Date.now()): void {
   for (const [id, r] of staleWriteRisk) if (now > r.until) staleWriteRisk.delete(id);
+}
+function hanHieuLuc(e: StaleWrite): number {
+  return e.soGiu > 0 ? Number.POSITIVE_INFINITY : e.untilHuuHan;
+}
+/**
+ * Ghi mục "lệnh ghi bị bỏ, kết cục không rõ" của adapter — MỘT nguồn cho hai đường: quá hạn giữ chỗ (B3, `kieu` "giu": sống vô hạn tới khi
+ * `nhaGiuRuiRo`) và R1b-2b-1 T17 fix round 1 (I1): lệnh bị huỷ vì mất liên kết / hạ phiên lúc đang bay ("cua_so": bây giờ + cửa sổ). Đã có mục
+ * còn hạn ⇒ GỘP tại chỗ, không bao giờ làm yếu (hạn = max, intent / writes hợp lại). Trả mục đang ở map.
+ */
+function ghiRuiRoGhiCu(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, kieu: "giu" | "cua_so"): StaleWrite {
+  sweepStaleWriteRisk();
+  const now = Date.now();
+  const windowMs = staleWriteRiskWindowMs(input.adapterId);
+  const writes = input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value }));
+  let e = staleWriteRisk.get(input.adapterId);
+  if (!e) {
+    e = {
+      until: 0,
+      untilHuuHan: 0,
+      soGiu: 0,
+      windowMs,
+      commandType: input.commandType,
+      idempotencyKey: input.idempotencyKey ?? null,
+      nguonIntent: [ledger.intentIds],
+      confirmedBy: ledger.confirmedBy,
+      machineId: input.machineId ?? null,
+      writes,
+    };
+    staleWriteRisk.set(input.adapterId, e);
+  } else {
+    e.windowMs = Math.max(e.windowMs, windowMs);
+    if (!e.nguonIntent.includes(ledger.intentIds)) e.nguonIntent.push(ledger.intentIds);
+    e.writes.push(...writes);
+  }
+  if (kieu === "giu") e.soGiu += 1;
+  else e.untilHuuHan = Math.max(e.untilHuuHan, now + windowMs);
+  e.until = hanHieuLuc(e);
+  return e;
+}
+/**
+ * Lượt giữ B3 kết thúc (đặt lại phiên xong / lỗi / hết ngân sách): trừ lượt của nó trên mục ĐANG ở map (không phải tham chiếu cũ) và cấp hạn hữu hạn
+ * bây giờ + cửa sổ (R-4-r) — chỉ nới, không rút (max). Mục ở map khác mục đã giữ (không xảy ra khi đang giữ — hạn ∞ không bị quét) ⇒ gộp vào mục
+ * hiện tại, không đè.
+ */
+function nhaGiuRuiRo(adapterId: number, daGiu: StaleWrite): void {
+  const now = Date.now();
+  const hienTai = staleWriteRisk.get(adapterId);
+  if (hienTai === daGiu) {
+    daGiu.soGiu = Math.max(0, daGiu.soGiu - 1);
+    daGiu.untilHuuHan = Math.max(daGiu.untilHuuHan, now + daGiu.windowMs);
+    daGiu.until = hanHieuLuc(daGiu);
+    return;
+  }
+  const hanCuaGiu = now + daGiu.windowMs;
+  if (!hienTai) {
+    // (không xảy ra ngoài seam test — chỉ seam test xoá map) — trừ lượt CỦA MÌNH, các lượt giữ khác đã gộp vào mục vẫn giữ ∞ (re-review N1).
+    daGiu.soGiu = Math.max(0, daGiu.soGiu - 1);
+    daGiu.untilHuuHan = Math.max(daGiu.untilHuuHan, hanCuaGiu);
+    daGiu.until = hanHieuLuc(daGiu);
+    staleWriteRisk.set(adapterId, daGiu);
+    return;
+  }
+  // (không xảy ra trong sản phẩm: mục đang giữ có hạn ∞, không bị quét) — gộp nội dung, không chuyển lượt giữ.
+  hienTai.windowMs = Math.max(hienTai.windowMs, daGiu.windowMs);
+  for (const n of daGiu.nguonIntent) if (!hienTai.nguonIntent.includes(n)) hienTai.nguonIntent.push(n);
+  hienTai.writes.push(...daGiu.writes);
+  hienTai.untilHuuHan = Math.max(hienTai.untilHuuHan, hanCuaGiu);
+  hienTai.until = hanHieuLuc(hienTai);
 }
 /** Test seams (B3 fix scan 3 (b)) — sizes of the per-adapter state and an explicit sweep. */
 export function _staleWriteRiskSizeForTests(): number {
@@ -175,7 +258,18 @@ export function _sweepStaleWriteRiskForTests(now: number): void {
 }
 /** doc 81 Đợt 11 (R-11-k 2, kept by R-11-n) — test seam: the intents the adapter's abandoned (timed-out) write carries, null when none. */
 export function _staleWriteRiskIntentIdsForTests(adapterId: number): number[] | null {
-  return staleWriteRisk.get(adapterId)?.intentIds ?? null;
+  const e = staleWriteRisk.get(adapterId);
+  return e ? intentCuaRuiRo(e) : null;
+}
+/** R1b-2b-1 T17 fix round 1 — test seam: hạn hiệu lực + writes của mục rủi ro (null khi không có). */
+export function _staleWriteRiskForTests(adapterId: number): { until: number; writes: Array<{ tagKey: string; value: unknown }>; intentIds: number[] } | null {
+  const e = staleWriteRisk.get(adapterId);
+  return e ? { until: e.until, writes: e.writes.map((w) => ({ ...w })), intentIds: intentCuaRuiRo(e) } : null;
+}
+/** R1b-2b-1 T17 fix round 1 — test seam: đường ghi rủi ro của B3 (giữ / nhả) và của mất liên kết, gọi thẳng. */
+export function _ghiRuiRoGhiCuForTests(input: DispatchInput, ledger: { intentIds: number[]; confirmedBy: number }, kieu: "giu" | "cua_so"): () => void {
+  const e = ghiRuiRoGhiCu(input, ledger, kieu);
+  return () => nhaGiuRuiRo(input.adapterId, e);
 }
 export function _stopWatchCountForTests(adapterId: number): number {
   return stopWatches.get(adapterId)?.size ?? 0;
@@ -782,30 +876,26 @@ async function holdSlotAfterTimedOutWrite(
     const first = await Promise.race([
       write.then(
         () => "settled" as const,
-        () => "settled" as const,
+        // R1b-2b-1 T17 fix round 2 (New-1) — huỷ vì mất liên kết / hạ phiên TRONG ân hạn (vòng canh S7/MC disconnect(), resetSession HA,
+        // connect() của supervisor) KHÔNG phải "đã xong": kết cục vẫn không rõ và byte đã vào socket còn có thể tới PLC ⇒ kết quả riêng.
+        (e: unknown) => (laLoiMatLienKetKhiDangGui(e) ? ("huy_mat_lien_ket" as const) : ("settled" as const)),
       ),
       new Promise<"grace">((resolve) => {
         graceTimer = setTimeout(() => resolve("grace"), OT_TIMED_OUT_WRITE_GRACE_MS);
       }),
     ]);
     clearTimeout(graceTimer);
+    if (first === "huy_mat_lien_ket") {
+      // ghi rủi ro "lệnh ghi cũ" (gộp, không làm yếu) để STOP acked kế tiếp có canh chỉ-báo-động; KHÔNG đặt lại phiên (phiên đã hạ); nhả chỗ ngay.
+      ghiRuiRoGhiCu(input, ledger, "cua_so");
+      return;
+    }
     if (first === "settled") return;
 
     // The old write is abandoned with its fate unknown. Fix round 1 (R-4-r): the risk entry is LIVE for the whole reset
     // (until = ∞) and gets its TTL only when the reset SETTLES (success, failure or budget expiry) — a full-budget reset
     // can no longer expire it before the STOP behind it runs. The STOP's read-only watch then runs TTL from the STOP.
-    sweepStaleWriteRisk();
-    const riskEntry: StaleWrite = {
-      until: Number.POSITIVE_INFINITY,
-      windowMs: staleWriteRiskWindowMs(input.adapterId),
-      commandType: input.commandType,
-      idempotencyKey: input.idempotencyKey ?? null,
-      intentIds: ledger.intentIds,
-      confirmedBy: ledger.confirmedBy,
-      machineId: input.machineId ?? null,
-      writes: input.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
-    };
-    staleWriteRisk.set(input.adapterId, riskEntry);
+    const riskEntry = ghiRuiRoGhiCu(input, ledger, "giu");
     // fix scan (1) — the reset gets ONE budget it honours itself (cooperative); the outer deadline adds only a slack.
     const resetBoundMs = adapterSessionResetBoundMs(input.adapterId);
     let resetError: string;
@@ -824,7 +914,8 @@ async function holdSlotAfterTimedOutWrite(
       resetError = (err as Error)?.message || String(err);
     } finally {
       // R-4-r — the reset has settled (any outcome): the risk window now counts from here.
-      riskEntry.until = Date.now() + riskEntry.windowMs;
+      // T17 fix round 1 — trên mục ĐANG ở map (có thể đã được gộp với lệnh bỏ khác), chỉ nới.
+      nhaGiuRuiRo(input.adapterId, riskEntry);
     }
     console.error(
       `[Dispatch] adapter ${input.adapterId}: overlapRisk — a timed-out write may still be running on the old session and its reset failed (${resetError}); the next command (a STOP) proceeds anyway (L-7, B3)`,
@@ -867,7 +958,7 @@ function startStopWatch(
   // R-4-r — the watch window starts at the STOP and lasts the adapter's risk window (Đợt 5 F3; no risk ⇒ no window).
   const end = risk ? Date.now() + risk.windowMs : Date.now();
   const abandoned = risk
-    ? { idempotencyKey: risk.idempotencyKey, intentIds: risk.intentIds, commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: risk.writes }
+    ? { idempotencyKey: risk.idempotencyKey, intentIds: intentCuaRuiRo(risk), commandType: risk.commandType, confirmedBy: risk.confirmedBy, writes: [...risk.writes] }
     : null;
   const stopRef = { idempotencyKey: input.idempotencyKey ?? null, intentIds: ledger.intentIds, commandType: input.commandType };
   void (async () => {
@@ -901,15 +992,18 @@ function startStopWatch(
         if (token.cancelled) break;
         const drift: Array<{ tagKey: string; expected: unknown; actual: unknown; abandonedValueLanded: boolean }> = [];
         const unread: string[] = [];
+        // R1b-2b-1 T6 — địa chỉ lớp bit so theo luật bool; STOP đã xác minh ghi bằng boolDungGhim ⇒ expected cũng thế.
+        const bitStop = (t: OtTagAddress) => ({ lopBit: lopDiaChiBit(stopDriver.protocol, t.address, t.dataType) !== null, dungGhim: true });
         for (const t of tags) {
           if (!token.tags.has(t.tagKey)) continue; // released by a newer command while we were reading
           const s = samples?.find((x) => x.tagKey === t.tagKey);
           const expected = writes.find((w) => w.tagKey === t.tagKey)?.value;
           // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác nhận được STOP: uncertain mang giá trị CŨ (last usable), bad không có giá trị.
           if (!s || s.value == null || s.quality !== "good") unread.push(t.tagKey);
-          else if (!readbackMatches(expected, s.value, t.dataType, tol)) {
-            const old = abandoned?.writes.find((w) => w.tagKey === t.tagKey);
-            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: old != null && readbackMatches(old.value, s.value, t.dataType, tol) });
+          else if (!readbackMatches(expected, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t))) {
+            // T17 fix round 1 — mục có thể gộp nhiều lệnh bỏ: bất kỳ giá trị bỏ nào của tag này khớp ⇒ "giá trị bị bỏ đã tới".
+            const cacCu = abandoned?.writes.filter((w) => w.tagKey === t.tagKey) ?? [];
+            drift.push({ tagKey: t.tagKey, expected, actual: s.value as unknown, abandonedValueLanded: cacCu.some((old) => readbackMatches(old.value, s.value, t.dataType, tol, { scale: t.scale, offset: t.offset }, bitStop(t))) });
           }
         }
         if (drift.length === 0 && unread.length === 0) continue;
@@ -1176,7 +1270,12 @@ export async function executeOtDeviceWrite(a: {
   const { intentIds, confirmedBy: ledgerConfirmer } = a.ledger;
   // R-11-d — NO await may precede driver.writeTags below: executeOtDeviceWriteUnlessStopped checks the STOP epoch in the same
   // tick as this call (its check is "right before the device write"), and this bump is "when the STOP is sent" (K-fix 2, R-11-i b).
-  if (a.bumpStopEpoch ?? stopTyped) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  const stopDaXacMinh = a.bumpStopEpoch ?? stopTyped;
+  if (stopDaXacMinh) bumpAdapterStopEpoch(input.adapterId, { idempotencyKey: input.idempotencyKey ?? null, commandType: input.commandType });
+  // SCADA R1b-2b-1 T2 (KD-T2) — MỘT chỗ gắn cờ cho driver: write của STOP ĐÃ XÁC MINH (cùng điều kiện dời mốc STOP ở trên: dispatcher truyền
+  // `trueStop`, edge truyền STOP pinned / verified, quét STOP chuyển chủ sở hữu ghi đúng giá trị ghim với stopTyped) ⇒ `dungGhim: true` ⇒ driver
+  // đổi bool bằng `boolDungGhim` (không bao giờ từ chối một STOP). Mọi write khác ⇒ `boolGhi` chặt.
+  const driverWritesGui = stopDaXacMinh ? driverWrites.map((w) => ({ ...w, dungGhim: true })) : driverWrites;
   const TIMEOUT = Symbol("timeout");
   // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
   // read-back only refines an acked write's status (verified/unverified) and
@@ -1192,6 +1291,10 @@ export async function executeOtDeviceWrite(a: {
 
   let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
   let threwError: string | null = null;
+  // SCADA R1b-2b-1 (bench B1b, điều phối 2026-10-27 Phương án A + nhãn (a)) — driver reject lệnh ĐANG BAY vì liên kết mất / phiên bị hạ
+  // (`LoiMatLienKetKhiDangGui`): lệnh đã giao cho thư viện ⇒ CÓ THỂ đã tới thiết bị ⇒ kết cục KHÔNG RÕ = đúng ngữ nghĩa `timeout` hôm nay
+  // (B3: timeout ≠ không áp), chỉ trả lời NGAY thay vì ở hạn OT_CONTROL_TIMEOUT_MS. Không bao giờ `failed`. Không thử lại.
+  let matLienKetSauMs: number | null = null;
   // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
   let writePromise: Promise<unknown> | undefined;
   let writeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1199,7 +1302,7 @@ export async function executeOtDeviceWrite(a: {
     // B3 fix scan 3 (a) — this write is DISPATCHED now: a running STOP watch gives up exactly these tags (the newer
     // intent for them wins); watches on other tags keep running.
     releaseWatchedTags(input.adapterId, driverWrites.map((w) => w.tagKey));
-    const wp = Promise.resolve(driver.writeTags(driverWrites));
+    const wp = Promise.resolve(driver.writeTags(driverWritesGui));
     writePromise = wp;
     wp.catch(() => undefined); // a late rejection after the timeout is expected, never unhandled
     writeResults = await Promise.race([
@@ -1209,7 +1312,8 @@ export async function executeOtDeviceWrite(a: {
       }),
     ]);
   } catch (err) {
-    threwError = (err as Error)?.message || String(err);
+    if (laLoiMatLienKetKhiDangGui(err)) matLienKetSauMs = Date.now() - sentAt.getTime();
+    else threwError = (err as Error)?.message || String(err);
     writeResults = [];
   } finally {
     clearTimeout(writeTimer);
@@ -1221,13 +1325,19 @@ export async function executeOtDeviceWrite(a: {
   }
 
   // Decide a per-write outcome from the write result (status BEFORE read-back).
-  const timedOut = writeResults === TIMEOUT;
+  // R1b-2b-1 — mất liên kết lúc đang bay ⇒ CÙNG nhánh với quá hạn (status / nhãn / giữ chỗ B3 / bỏ đọc lại / bỏ STOP watch giống hệt).
+  const timedOut = writeResults === TIMEOUT || matLienKetSauMs !== null;
   // B3 — a timed-out write keeps the adapter's queue slot (only the serialized path has one) until it settles or
   // its grace expires and the session is reset; the caller's answer is not delayed by this.
   const slotHold =
-    timedOut && writePromise && isCmdSerializeEnabled()
+    writeResults === TIMEOUT && writePromise && isCmdSerializeEnabled()
       ? holdSlotAfterTimedOutWrite(input, writePromise, { intentIds, confirmedBy: ledgerConfirmer }, a.sink)
       : undefined;
+  // R1b-2b-1 T17 fix round 1 (I1) — lệnh bị huỷ vì mất liên kết / hạ phiên lúc ĐANG BAY: lời ghi đã settle nên không giữ chỗ và không đặt lại
+  // phiên (phiên đã hạ), nhưng kết cục KHÔNG RÕ và byte đã vào socket vẫn có thể TỚI thiết bị SAU (ta tự hạ một socket còn sống — reset HA lúc
+  // mạng phân mảnh, connect() lại sau khi trạng thái iso rớt: kernel vẫn gửi nốt, PLC xử lý phần đã nhận) ⇒ ghi rủi ro "lệnh ghi cũ" như B3 để
+  // STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch). Chỉ khi tuần tự hoá bật — cùng phạm vi với B3.
+  if (matLienKetSauMs !== null && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
   const outcomes: Outcome[] = resolved.map((r, i) => {
@@ -1237,7 +1347,10 @@ export async function executeOtDeviceWrite(a: {
         idx: i,
         ok: false,
         status: "timeout",
-        errorText: `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
+        errorText:
+          matLienKetSauMs !== null
+            ? `link lost while the write was in flight (after ${matLienKetSauMs}ms) — outcome unknown: the write may have been applied on the device`
+            : `write timeout after ${timeoutMs}ms — outcome unknown: the write may have been applied on the device`,
         readBackValue: null,
       };
     }
@@ -1312,7 +1425,10 @@ export async function executeOtDeviceWrite(a: {
       const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
       // SCADA R0 (F2) — chỉ mẫu quality "good" mới xác minh được lệnh ghi: uncertain mang giá trị CŨ (last usable) nên khớp giá trị
       // không chứng minh gì; uncertain/bad ⇒ acked_unverified.
-      const matched = s != null && s.quality === "good" && readbackMatches(r.write.value, actual, dataType, tol);
+      const matched = s != null && s.quality === "good" && readbackMatches(r.write.value, actual, dataType, tol, { scale: r.scale, offset: r.offset }, {
+        lopBit: lopDiaChiBit(driver.protocol, r.address, r.dataType) !== null,
+        dungGhim: stopDaXacMinh,
+      });
       if (matched) {
         o.status = "acked_verified";
         o.readBackValue = actual;

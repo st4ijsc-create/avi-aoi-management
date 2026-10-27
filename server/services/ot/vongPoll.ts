@@ -207,7 +207,13 @@ export function taoVongPoll(o: TuyChonVongPollChung): OtSubscriptionHandle & { s
       const ms = Date.now() - t0;
       const treo = await phatCoHan(mau);
       if (dong) return;
-      const tags = mau.map((s) => (s.reason ? { tagKey: s.tagKey, quality: s.quality, reason: s.reason } : { tagKey: s.tagKey, quality: s.quality }));
+      // R1b-2b-1 T5 — chép cả `statusCode` của mẫu (laMauTrungTinh: tag sai cấu hình cục bộ không nói gì về liên lạc).
+      const tags = mau.map((s) => ({
+        tagKey: s.tagKey,
+        quality: s.quality,
+        ...(s.reason ? { reason: s.reason } : {}),
+        ...(s.statusCode !== undefined ? { statusCode: s.statusCode } : {}),
+      }));
       // R1b-1 T4 — lượt phát quá hạn: lần đọc VẪN thành công (thiết bị đã trả lời) ⇒ ok:true + tag của lần đọc (D1/đọc tốt phán theo tag),
       // `timeout:true, lyDo:"ingest_treo"` để bộ đếm thấy treo (không tính loi/timeout thiết bị). `ms` = thời gian đọc, không gồm phát.
       baoTick(treo ? { ok: true, timeout: true, lyDo: "ingest_treo", ms, tags } : { ok: true, timeout: false, ms, tags });

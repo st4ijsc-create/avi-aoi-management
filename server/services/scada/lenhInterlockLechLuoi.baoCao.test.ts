@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { TRUY_VAN_TRUOC_TRIEN_KHAI } from "./lenhInterlockLechLuoi";
+import { TRUY_VAN_TRUOC_TRIEN_KHAI, TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL } from "./lenhInterlockLechLuoi";
 
 const BAO_CAO = path.resolve(__dirname, "../../../docs/superpowers/plans/2026-10-24-scada-r1b-1-bao-cao-nghiem-thu.md");
 
@@ -38,7 +38,27 @@ function khoiSqlBaoCaoR1b2a(): string {
   return doc.slice(sauChuThich, cuoi);
 }
 
+/**
+ * R1b-2b-1 Task 2 (kiem-dinh G1) — báo cáo nghiệm thu R1b-2b-1 §4 mục 2b mang `TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL` (khối ```sql không thụt lề, dòng chú
+ * thích đầu `-- R1b-2b-1 §4 mục 2b` không thuộc hằng). Hằng cũ `TRUY_VAN_TRUOC_TRIEN_KHAI` không đổi (hai ca trên).
+ */
+const BAO_CAO_R1B2B1 = path.resolve(__dirname, "../../../docs/superpowers/plans/2026-10-26-scada-r1b-2b-1-bao-cao-nghiem-thu.md");
+function khoiSqlBaoCaoR1b2b1(): string {
+  const doc = readFileSync(BAO_CAO_R1B2B1, "utf8").replace(/\r\n/g, "\n");
+  const dau = doc.indexOf("```sql\n-- R1b-2b-1 §4 mục 2b");
+  expect(dau, "báo cáo R1b-2b-1 §4 mục 2b phải có khối ```sql bắt đầu bằng chú thích '-- R1b-2b-1 §4 mục 2b'").toBeGreaterThan(-1);
+  const sauChuThich = doc.indexOf("\n", doc.indexOf("-- R1b-2b-1 §4 mục 2b", dau)) + 1;
+  const cuoi = doc.indexOf("\n```\n", sauChuThich);
+  return doc.slice(sauChuThich, cuoi);
+}
+
 describe("kiem-dinh N-1 — SQL trước triển khai trong báo cáo = hằng trong mã", () => {
+  it("R1b-2b-1 T2 — khối SQL §4 mục 2b của báo cáo nghiệm thu R1b-2b-1 bằng TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL từng ký tự", () => {
+    expect(khoiSqlBaoCaoR1b2b1()).toBe(TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL);
+    expect(TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL).toContain("'KHONG_PARSE_DUOC'");
+    expect(TRUY_VAN_TRUOC_TRIEN_KHAI_BOOL).toMatch(/t\."dataType"::text = 'bool'/);
+  });
+
   it("khối SQL §4 mục 2 (bỏ thụt 3 dấu cách) bằng TRUY_VAN_TRUOC_TRIEN_KHAI từng ký tự", () => {
     expect(khoiSqlBaoCao()).toBe(TRUY_VAN_TRUOC_TRIEN_KHAI);
   });

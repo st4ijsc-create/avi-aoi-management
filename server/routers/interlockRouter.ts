@@ -49,7 +49,8 @@ const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
 import { interlockRules, interlockEvents, controlAuditLog, deviceAdapters, deviceTags, type InterlockRule } from "../../drizzle/schema";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { idsTrongPhamVi } from "../db/hierarchy";
-import { adapterTrongPhamVi } from "./_adapterPhamVi";
+import { adapterTrongPhamVi, idsMayTrongPhamVi, kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
+import { khoaAdapterTx } from "../services/scada/troLaiKenh";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { kiemLenhInterlockTx, luatCoGhiLenh, thamSoNgoaiDaiInterlock, type DbHoacTx } from "../services/scada/nhatQuanKenh";
@@ -124,6 +125,93 @@ async function luatTrongPhamVi(
       throw ngoai();
     }
   }
+}
+
+/** Ngoài phạm vi ≡ không tồn tại (cùng lỗi id không có thật). */
+const loiLuatKhongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+
+/**
+ * SCADA R1b-2b-1 T10 (mục 47, T5 m-6) — như `luatTrongPhamVi` nhưng vế `targetAdapterId` kiểm trên `machineId` ĐÃ KHOÁ (`adapters` của
+ * `khoaDichLuatTx`, FOR SHARE trong giao dịch của thủ tục) thay cho lượt đọc không khoá `adapterTrongPhamVi` (qua pool, ngoài giao dịch): một
+ * `deviceAdapter.update` đổi máy sang nhà máy ngoài phạm vi giữ adapter FOR UPDATE ⇒ commit xong rồi mới tới ta, và không đổi được nữa cho tới khi
+ * ta commit. ĐỒNG BỘ (không gọi pool): `tap` và `idsMay` tính TRƯỚC giao dịch. Adapter đích không có trong `adapters` (không khoá được — đã bị
+ * xoá) ⇒ ngoài phạm vi (trừ toàn quyền, như `luatTrongPhamVi`). Ngoài phạm vi ≡ không tồn tại: CÙNG NOT_FOUND "interlockRule".
+ */
+function luatTrongPhamViDuoiKhoa(
+  r: { lineId?: number | null; stationId?: number | null; machineId?: number | null; targetMachineId?: number | null; targetAdapterId?: number | null },
+  tap: TapPhamViLuat,
+  adapters: Map<number, { machineId: number | null }>,
+  idsMay: number[] | null,
+): void {
+  const [dong, tram, may] = tap;
+  if (dong === null && tram === null && may === null) return;
+  const ngoai = loiLuatKhongThay;
+  const coViTri = r.lineId != null || r.stationId != null || r.machineId != null || r.targetMachineId != null || r.targetAdapterId != null;
+  if (!coViTri) throw ngoai();
+  if (r.lineId != null && !(dong ?? []).includes(r.lineId)) throw ngoai();
+  if (r.stationId != null && !(tram ?? []).includes(r.stationId)) throw ngoai();
+  if (r.machineId != null && !(may ?? []).includes(r.machineId)) throw ngoai();
+  if (r.targetMachineId != null && !(may ?? []).includes(r.targetMachineId)) throw ngoai();
+  if (r.targetAdapterId != null) kiemPhamViDuoiKhoa(adapters.get(r.targetAdapterId)?.machineId, idsMay, ngoai);
+}
+
+/** Phạm vi của người gọi cho GHI luật, tính TRƯỚC giao dịch (không gọi pool trong giao dịch — thứ tự khoá dự án). */
+type PhamViGhiLuat = { tap: TapPhamViLuat; idsMay: number[] | null };
+async function layPhamViGhiLuat(ctx: CoDanhTinh): Promise<PhamViGhiLuat> {
+  const [tap, idsMay] = await Promise.all([layTapPhamViLuat(ctx), idsMayTrongPhamVi(ctx)]);
+  return { tap, idsMay };
+}
+
+/**
+ * SCADA R1b-2b-1 T10 (mục 47) — khoá ĐÍCH của một lượt ghi luật theo thứ tự khoá dự án ADAPTER → LUẬT (troLaiKenh.ts; KHÔNG đảo — khuôn
+ * `congAdapterTx` của deviceAdapter.update / delete, scadaDiag.tamTat khoá adapter FOR UPDATE rồi mọi luật nhắm nó FOR SHARE: thủ tục khoá luật
+ * trước adapter sẽ tạo vòng chờ 40P01 với chúng):
+ *   1. `ruleId` có ⇒ đọc `targetAdapterId` hiện tại KHÔNG khoá;
+ *   2. `khoaAdapterTx(tx, [cũ, ...mới])` — FOR SHARE, id tăng dần (luật chuyển giữa hai adapter ⇒ khoá cả hai, theo id);
+ *   3. luật `FOR UPDATE`; `targetAdapterId` khác giá trị đọc ở bước 1 (đổi đồng thời — adapter đích mới KHÔNG nằm trong tập đã khoá) ⇒
+ *      CONFLICT `scadaKenhThuLai` (thử lại); nhưng luật NAY ngoài phạm vi của người gọi (`phamVi` có) ⇒ NOT_FOUND như mọi lượt ngoài phạm vi
+ *      (không lộ sự tồn tại bằng CONFLICT). Adapter đích mới chỉ được ĐỌC (không khoá — khoá adapter sau luật là đảo thứ tự) để chọn lỗi; cả hai
+ *      nhánh đều từ chối, không ghi gì.
+ * Luật không tồn tại (ở bước 3) ⇒ `existing: null` (bên gọi ném NOT_FOUND). `ruleId` null (create) ⇒ chỉ bước 2.
+ * Bên gọi chạy `luatTrongPhamViDuoiKhoa` cho luật hiện có (và luật sau vá) với `adapters` trả về. Mọi lượt đọc protocol / trạng thái adapter đích sau
+ * đó trong cùng giao dịch (`kiemLenhInterlockTx` — luật địa chỉ bit; `assertDichNguonSanSang`; bám định nghĩa) đọc hàng ĐANG bị ta giữ FOR SHARE.
+ */
+async function khoaDichLuatTx(
+  tx: DbHoacTx,
+  ruleId: number | null,
+  adapterIdsMoi: ReadonlyArray<number | null | undefined>,
+  phamVi?: PhamViGhiLuat,
+): Promise<{ existing: InterlockRule | null; adapters: Map<number, { machineId: number | null }> }> {
+  let dichDaDoc: number | null = null;
+  if (ruleId != null) {
+    const [r0] = await tx.select({ targetAdapterId: interlockRules.targetAdapterId }).from(interlockRules).where(eq(interlockRules.id, ruleId)).limit(1);
+    dichDaDoc = r0?.targetAdapterId ?? null;
+  }
+  const adapters = await khoaAdapterTx(
+    tx,
+    [dichDaDoc, ...adapterIdsMoi].filter((x): x is number => x != null),
+  );
+  if (ruleId == null) return { existing: null, adapters };
+  const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, ruleId)).limit(1).for("update");
+  if (!existing) return { existing: null, adapters };
+  if ((existing.targetAdapterId ?? null) !== dichDaDoc) {
+    if (phamVi) {
+      const dichMoi = existing.targetAdapterId;
+      const xem = new Map(adapters);
+      if (dichMoi != null && !xem.has(dichMoi)) {
+        const [a] = await tx.select({ machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, dichMoi)).limit(1);
+        if (a) xem.set(dichMoi, { machineId: a.machineId ?? null });
+      }
+      luatTrongPhamViDuoiKhoa(existing, phamVi.tap, xem, phamVi.idsMay); // ngoài phạm vi ⇒ NOT_FOUND
+    }
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation: "interlockRule", reason: "scadaKenhThuLai" },
+      "Adapter đích của luật vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
+    );
+  }
+  return { existing, adapters };
 }
 
 async function getDb() {
@@ -285,10 +373,11 @@ function loiDichChuaSanSang(luat: { id: number; name: string }, tagKey: string, 
  *     mơ hồ của cổng: >1 adapter của máy khai tag ⇒ mo_ho mãi). Chỉ đếm adapter của ĐÚNG máy của luật (M-3).
  * Luật đích chỉ `targetMachineId` (cổng chặn, không dispatch) ⇒ không có tag để kiểm.
  *
- * THỨ TỰ KHOÁ (troLaiKenh.ts: ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ): bên gọi đã khoá LUẬT FOR UPDATE; ở đây TAG FOR SHARE (`of` device_tags —
- * hàng adapter của phép JOIN KHÔNG bị khoá). Adapter đọc KHÔNG khoá: khoá nó sau luật là đảo thứ tự với `congAdapterTx` (adapter FOR UPDATE →
- * luật FOR SHARE). Không mất an toàn: mọi đường TẮT adapter / tag khoá LUẬT liên quan FOR SHARE trước khi ghi ⇒ nó chờ lượt bật này commit
- * rồi thấy luật đang bật ⇒ `INTERLOCK_MAT_DICH`; ngược lại lượt bật chờ lượt tắt (khoá luật) commit rồi đọc adapter / tag đã tắt ⇒ từ chối.
+ * THỨ TỰ KHOÁ (troLaiKenh.ts: ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ): bên gọi đã khoá ADAPTER ĐÍCH FOR SHARE rồi LUẬT FOR UPDATE (`khoaDichLuatTx`,
+ * R1b-2b-1 T10) ⇒ `isEnabled` của adapter đích đọc ở đây là hàng ta ĐANG giữ; ở đây TAG FOR SHARE (`of` device_tags — hàng adapter NGUỒN của phép
+ * JOIN KHÔNG bị khoá: khoá nó sau luật là đảo thứ tự với `congAdapterTx` (adapter FOR UPDATE → luật FOR SHARE)). Không mất an toàn: mọi đường TẮT
+ * adapter / tag khoá LUẬT liên quan FOR SHARE trước khi ghi ⇒ nó chờ lượt bật này commit rồi thấy luật đang bật ⇒ `INTERLOCK_MAT_DICH`; ngược lại
+ * lượt bật chờ lượt tắt commit rồi đọc adapter / tag đã tắt ⇒ từ chối.
  */
 async function assertDichNguonSanSang(tx: DbHoacTx, luat: InterlockRule): Promise<void> {
   if (!luatCoGhiLenh(luat.action)) return;
@@ -496,12 +585,17 @@ export const interlockRouter = router({
     .input(createInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      await luatTrongPhamVi(ctx, input); // phạm vi nhà máy: luật mới không được nhắm vị trí / đích ngoài phạm vi
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch (không gọi pool trong giao dịch)
+      await luatTrongPhamVi(ctx, input, phamVi.tap); // phạm vi nhà máy (kiểm-trước, đường nhanh): luật mới không được nhắm vị trí / đích ngoài phạm vi
       // ILK-05 — validate BEFORE writing anything.
       assertTargetIfNotAlert(input.action, input);
       assertTelemetryCauHinh(input);
       // ILK-10 — rule insert + audit row: cùng một transaction.
       return db.transaction(async (tx) => {
+        // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE rồi kiểm LẠI phạm vi trên `machineId` ĐÃ KHOÁ: adapter đổi sang máy nhà máy khác đã commit
+        // sau kiểm-trước ⇒ cùng NOT_FOUND, không chèn. Protocol của nó (luật địa chỉ bit, `kiemLenhInterlockTx`) đọc dưới khoá này.
+        const { adapters } = await khoaDichLuatTx(tx, null, [input.targetAdapterId]);
+        luatTrongPhamViDuoiKhoa(input, phamVi.tap, adapters, phamVi.idsMay);
         // SCADA R1a Task 12 — commandValue phải ghi được trên kênh đích (trước khi ghi gì).
         await assertLenhTrongDaiKenh(tx, input);
         // SAFETY: a freshly-created rule is ALWAYS disabled, unapproved, HITL-gated.
@@ -530,12 +624,14 @@ export const interlockRouter = router({
       const db = await getDb();
       // kiem-dinh R1b-1 I1 (b) — `totpCode` KHÔNG BAO GIỜ vào patch / audit.
       const { id, threshold, totpCode, ...rest } = input;
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — SELECT/UPDATE/audit-INSERT trong CÙNG một transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1).for("update");
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy: luật HIỆN CÓ phải trong phạm vi
-        await luatTrongPhamVi(ctx, { ...existing, ...rest }); // … và luật SAU KHI vá (không "đẩy" luật sang vị trí / đích ngoài phạm vi)
+        // R1b-2b-1 T10 (mục 47) — ADAPTER đích (cũ + mới, theo id) FOR SHARE → LUẬT FOR UPDATE (đích đổi giữa chừng ⇒ CONFLICT / NOT_FOUND).
+        const { existing, adapters } = await khoaDichLuatTx(tx, id, "targetAdapterId" in rest ? [rest.targetAdapterId] : [], phamVi);
+        if (!existing) throw loiLuatKhongThay();
+        luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy: luật HIỆN CÓ phải trong phạm vi
+        luatTrongPhamViDuoiKhoa({ ...existing, ...rest }, phamVi.tap, adapters, phamVi.idsMay); // … và luật SAU KHI vá (không "đẩy" luật sang vị trí / đích ngoài phạm vi)
 
         // ILK-05 — merge patch lên existing rồi kiểm: một update KHÔNG được âm
         // thầm bỏ đích cuối cùng của một rule action khác 'alert'.
@@ -606,12 +702,14 @@ export const interlockRouter = router({
     .input(z.object({ id: z.number().int().positive(), reason: z.string().min(3), totpCode: totpCauHinhInput }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — audit + hard-delete trong CÙNG transaction (before-audit vẫn
       // đứng trước DELETE, nay atomically: cả hai cùng đậu hoặc cùng rollback).
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
+        // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE → LUẬT FOR UPDATE (thứ tự khoá dự án); phạm vi kiểm trên machineId ĐÃ KHOÁ.
+        const { existing, adapters } = await khoaDichLuatTx(tx, input.id, [], phamVi);
+        if (!existing) throw loiLuatKhongThay();
+        luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy
         // kiem-dinh R1b-1 I1 (b) — xoá luật bảo vệ ⇒ TOTP tươi mức 5, CUỐI (sau tồn tại + phạm vi), trước audit + DELETE.
         if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, input.totpCode);
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
@@ -630,8 +728,10 @@ export const interlockRouter = router({
       const db = await getDb();
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+        // R1b-2b-1 T10 (mục 47, phán quyết KD-T10 2) — admin: phạm vi toàn quyền (không đổi) nhưng CÙNG thứ tự khoá ADAPTER đích FOR SHARE → LUẬT
+        // FOR UPDATE như mọi đường ghi luật (bám định nghĩa + protocol của adapter đích đọc dưới khoá này).
+        const { existing } = await khoaDichLuatTx(tx, input.id, []);
+        if (!existing) throw loiLuatKhongThay();
         // ILK-02 (SoD) — người duyệt KHÔNG được là người tạo (createdBy) hay
         // người sửa cuối (updatedBy) của rule — MOC đòi một cặp mắt độc lập.
         // kiem-dinh R1b-1 I-B (fix round 2, 2026-10-25): `updatedBy` nay CHỈ do `update` (sửa NỘI DUNG) ghi — approve / enable / disable thôi ghi
@@ -687,11 +787,13 @@ export const interlockRouter = router({
     .input(z.object({ id: z.number().int().positive(), expectedVersion: expectedVersionInput }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
+        // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE → LUẬT FOR UPDATE (thứ tự khoá dự án); phạm vi kiểm trên machineId ĐÃ KHOÁ.
+        const { existing, adapters } = await khoaDichLuatTx(tx, input.id, [], phamVi);
+        if (!existing) throw loiLuatKhongThay();
+        luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy
         // SAFETY: cannot enable a rule that has not been approved.
         if (existing.approvedBy == null) {
           throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
@@ -733,11 +835,13 @@ export const interlockRouter = router({
     .input(z.object({ id: z.number().int().positive(), reason: z.string().min(3) }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
       return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1).for("update");
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-        await luatTrongPhamVi(ctx, existing); // phạm vi nhà máy
+        // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE → LUẬT FOR UPDATE (thứ tự khoá dự án); phạm vi kiểm trên machineId ĐÃ KHOÁ.
+        const { existing, adapters } = await khoaDichLuatTx(tx, input.id, [], phamVi);
+        if (!existing) throw loiLuatKhongThay();
+        luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy
         const [row] = await tx
           .update(interlockRules)
           .set({ enabled: false, updatedAt: new Date() }) // I-B: không ghi updatedBy (người tắt nằm ở audit)

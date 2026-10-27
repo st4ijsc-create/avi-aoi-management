@@ -9,7 +9,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { VAI_TRO_GOC } from "../../../../shared/aiRoles";
 import { toBasename } from "../modelResolver";
 import { hoanDoiKheNangBat } from "../soModel/tapKheNang";
-import type { MucModel, PhuThuocDanhMuc, TrangThaiMuc } from "./kieu";
+import { BE_MAT_NGOAI_DUOC_DUNG, type MucModel, type PhuThuocDanhMuc, type TrangThaiMuc } from "./kieu";
 import type { ProfileTrongAnh } from "../soModel/anhSoModel";
 
 /** Trạng thái của MỘT hồ sơ (dùng chung với `giaiChonModel`); `null` = không thuộc danh mục. */
@@ -56,6 +56,7 @@ export async function layDanhMucModel(factoryId: number | null, dep: PhuThuocDan
       moTa: `AI bên ngoài (${m.nhaCungCap})`,
       trangThai: "san-sang",
       nhaCungCap: m.nhaCungCap,
+      duocDungO: [...BE_MAT_NGOAI_DUOC_DUNG],
     });
   }
   return ds;

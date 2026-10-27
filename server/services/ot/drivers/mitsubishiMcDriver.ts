@@ -77,17 +77,20 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { boundedClose, withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
-function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
+function coerceMcWrite(raw: unknown, dataType: string, dungGhim?: boolean): number | boolean | string {
+  // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): "false" / "0" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (write đó ok:false); STOP đã xác minh ⇒ không chặn.
   switch (dataType) {
     case "bool":
-      return Boolean(raw);
+      return boolChoGhi(raw, dungGhim);
     case "int":
       return Math.round(Number(raw));
     case "float":
@@ -117,6 +120,48 @@ export function hanGoiThuVienMc(conn: unknown): number {
 /** Lần đọc mọi-item-BAD có phải lib tự quá hạn gói (không phải PLC trả lời lỗi nhanh)? Đo trên đồng hồ đơn điệu. */
 export function laDocMcQuaHanGoi(daTroiMs: number, globalTimeoutMs: number): boolean {
   return daTroiMs >= globalTimeoutMs * TI_LE_NGUONG_QUA_HAN_MC;
+}
+
+/**
+ * R1b-2b-1 T4 (muc 58) - chuoi errCode nguyen van khi goi doc qua han: mcprotocol 0.1.2 `mcprotocol.js` :1263
+ * (`processMBPacket(undefined, ...)` tu bo hen globalTimeout cua goi).
+ */
+export const MC_ERRCODE_QUA_HAN_GOI = "Timeout error - zero length packet";
+export type LoaiLoiDocMc = "qua_han_goi" | "plc_tra_loi_loi" | "khong_ro";
+
+/**
+ * Phan loai loi cua lan doc "moi item BAD" bang `errCode` tung item cua thu vien (mcprotocol 0.1.2: `conn.readPacketArray[*].itemList[*]`;
+ * `processMBPacket` dat `valid=false` + `errCode` cho item loi, `valid=true` cho item tot va KHONG xoa errCode cu ⇒ chi xet `valid === false`).
+ *   - moi item loi la "Timeout error - zero length packet" ⇒ "qua_han_goi";
+ *   - >= 1 item loi mang errCode khac (MC Error Response / Invalid Response Length / ...) ⇒ "plc_tra_loi_loi" (it nhat mot goi duoc PLC tra loi ⇒ PLC song);
+ *   - khong doc duoc cau truc (thu vien khac ban, mang rong, khong item nao valid===false) ⇒ "khong_ro" ⇒ goi gia tri van dung luat thoi gian
+ *     `laDocMcQuaHanGoi` (du phong khi cau truc noi bo doi, nen khong xoa luat do). Truy cap phong thu, khong nem.
+ *   - final fix (ra soat cuoi M-3): item valid===false ma errCode KHONG phai chuoi (undefined = mac dinh cua constructor item mcprotocol.js
+ *     :2411-2412, tuc "chua duoc xu ly o lan doc nay"; hoac so / null) KHONG phai bang chung PLC da tra loi ⇒ khong dem. Khong item loi nao mang
+ *     errCode chuoi ⇒ "khong_ro" (fail-closed: luat thoi gian quyet), khong bao gio "plc_tra_loi_loi".
+ */
+export function phanLoaiLoiDocMc(conn: unknown): LoaiLoiDocMc {
+  try {
+    const arr = (conn as { readPacketArray?: unknown } | null)?.readPacketArray;
+    if (!Array.isArray(arr)) return "khong_ro";
+    let soLoi = 0;
+    let coLoiKhac = false;
+    for (const goi of arr) {
+      const ds = (goi as { itemList?: unknown } | null)?.itemList;
+      if (!Array.isArray(ds)) continue;
+      for (const it of ds) {
+        if (!it || typeof it !== "object" || (it as { valid?: unknown }).valid !== false) continue;
+        const errCode = (it as { errCode?: unknown }).errCode;
+        if (typeof errCode !== "string") continue; // final fix M-3: khong co errCode chuoi ⇒ khong phai bang chung (khong dem)
+        soLoi++;
+        if (errCode !== MC_ERRCODE_QUA_HAN_GOI) coLoiKhac = true;
+      }
+    }
+    if (soLoi === 0) return "khong_ro";
+    return coLoiKhac ? "plc_tra_loi_loi" : "qua_han_goi";
+  } catch {
+    return "khong_ro";
+  }
 }
 
 /**
@@ -265,6 +310,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  /**
+   * SCADA R1b-2b-1 — yêu cầu đang bay theo phiên mcprotocol: dropConnection ⇒ connectionCleanup ⇒ clearWritePacketTimeouts xoá hẹn giờ
+   * gói mà KHÔNG gọi writeDoneCallback (mcprotocol.js:128-134, 422-431, 1211-1225) ⇒ lệnh ghi chỉ xong ở hạn 5000 ms của driver, 'failed'.
+   * Reject NGAY (kết cục không rõ) ở: lỗi socket (markLinkLost qua lớp gia cố), disconnect(), connect() trước khi hạ phiên cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("mitsubishi-mc");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -279,11 +330,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.conn = null;
       this.hardening = null;
       this.connected = false;
+      this.dangBay.huy(prev, "reconnect replaced the session"); // R1b-2b-1 (iii)
       await dropMcBounded(prev, prevHardening);
     }
     const conn = new MC();
     const hardening = hardenMcInstance(conn, (err) => {
-      if (this.conn === conn) this.markLinkLost("error", err);
+      if (this.conn === conn) this.markLinkLost("error", err, conn);
     });
 
     const opts = cfg.options ?? {};
@@ -329,6 +381,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     this.conn = null;
     this.hardening = null;
     this.connected = false;
+    this.dangBay.huy(conn, "session torn down (disconnect)"); // R1b-2b-1 (ii) — trước dropConnection (huỷ hẹn giờ gói, không gọi lại)
     // doc 81 Đợt 1B Task 1 — ngắt có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
     await dropMcBounded(conn, hardening);
   }
@@ -352,7 +405,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     for (const ev of ["error", "close"]) {
       try {
         conn.on(ev, (arg?: unknown) => {
-          if (this.conn === conn) this.markLinkLost(ev, arg);
+          if (this.conn === conn) this.markLinkLost(ev, arg, conn);
         });
       } catch {
         // ignore
@@ -361,11 +414,13 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  private markLinkLost(ev: string, arg: unknown, conn: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `mitsubishi-mc link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(conn, `link ${ev}${detail}`); // R1b-2b-1 (i)
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -398,9 +453,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
+    /** R1b-2b-1 T3 (G2) — cờ `anythingBad` của thư viện ở lần đọc này. */
+    let thuVienBaoLoi = true;
     let values: Record<string, unknown> = {};
     if (addrByKey.size > 0) {
       const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      const kieuTheoKhoa = new Map(tags.map((t) => [t.tagKey, t.dataType] as const));
       this.conn.removeItems();
       this.conn.addItems(keys);
 
@@ -409,13 +467,23 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       const t0DonDieu = performance.now();
       // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
       // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
+      const connDoc = this.conn;
       values = await withDeadline(
-        new Promise<Record<string, unknown>>((resolve, reject) => {
-          this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
-            if (vals && typeof vals === "object") resolve(vals);
-            else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
-          });
-        }),
+        this.dangBay.bay(
+          connDoc,
+          new Promise<Record<string, unknown>>((resolve, reject) => {
+            // final fix (rà soát cuối M-4) — CHỈ callback ĐẦU TIÊN được ghi: một callback lặp MUỘN (anythingBad=false) rơi giữa resolve(vals1) và
+            // phần tiếp theo sẽ ghi đè `thuVienBaoLoi` ⇒ chuỗi "BAD n" của vals1 đọc thành giá trị tốt.
+            let daGoi = false;
+            connDoc.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              if (daGoi) return;
+              daGoi = true;
+              thuVienBaoLoi = anythingBad !== false;
+              if (vals && typeof vals === "object") resolve(vals);
+              else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
+            });
+          }),
+        ),
         Math.max(this.timeoutMs, 4500) + 1000,
         "mc readAllItems",
       );
@@ -430,14 +498,17 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       //   • MỌI item BAD mà trả về NHANH ⇒ PLC CÒN SỐNG và đã trả lời lỗi ⇒ từng item device_error, phiên GIỮ nguyên, lệnh ghi (STOP ghim)
       //     vẫn đi được (final review I-1: trước đó adapter bị hạ + lùi dần ⇒ STOP ADAPTER_OFFLINE).
       // Còn sót (biết, ghi giới hạn): PLC trả lời lỗi CHẬM sát globalTimeout (≥ 90 %) bị coi là mất liên lạc (fail-closed cho đọc).
-      if (v2 && keys.length > 0 && keys.every((k) => laGiaTriBadThuVien(values[k]))) {
+      if (v2 && keys.length > 0 && keys.every((k) => laMauBadThuVien(values[k], kieuTheoKhoa.get(k) ?? "string", thuVienBaoLoi))) {
         const globalTimeoutMs = hanGoiThuVienMc(this.conn);
         const st = (this.conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
         const libRoi = typeof st === "number" && st !== 4;
-        if (libRoi || laDocMcQuaHanGoi(daTroiMs, globalTimeoutMs)) {
+        // R1b-2b-1 T4 (muc 58): errCode tung item cua thu vien quyet dinh truoc; chi "khong_ro" moi roi ve luat thoi gian.
+        const loai = phanLoaiLoiDocMc(this.conn);
+        const matLienLac = libRoi || loai === "qua_han_goi" || (loai === "khong_ro" && laDocMcQuaHanGoi(daTroiMs, globalTimeoutMs));
+        if (matLienLac) {
           const err = Object.assign(
             new Error(
-              `mc read not answered: every item BAD (mcprotocol packet timeout, ${Math.round(daTroiMs)} ms ≥ ~${globalTimeoutMs} ms${libRoi ? ", lib not connected" : ""})`,
+              `mc read not answered: every item BAD (mcprotocol packet timeout, ${Math.round(daTroiMs)} ms, ~${globalTimeoutMs} ms, ${loai}${libRoi ? ", lib not connected" : ""})`,
             ),
             { name: "McReadTimeoutError" },
           );
@@ -445,7 +516,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
           throw err;
         }
         // nhanh ⇒ PLC đã trả lời lỗi cho mọi item: KHÔNG ném; từng item ra device_error bên dưới (MAU_GIA_TRI_HONG).
-        this.lastError = `mc read answered with error for every item (${Math.round(daTroiMs)} ms < ~${globalTimeoutMs} ms) — device_error, session kept`;
+        this.lastError = `mc read answered with error for every item (${Math.round(daTroiMs)} ms, ~${globalTimeoutMs} ms, ${loai}) — device_error, session kept`;
       }
       this.lastOkAt = new Date();
     }
@@ -454,14 +525,12 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       const loi = loiDiaChi.get(tag.tagKey);
       if (loi) return loi;
       const raw = values[tag.tagKey];
-      const co = coerceMcValue(raw, tag.dataType);
+      const co = coerceMcValue(raw, tag.dataType, { thuVienBaoLoi });
 
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = value * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(value, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       return {
@@ -531,7 +600,9 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
           }
           const dataType = w.dataType ?? "float";
           const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-          return { tagKey: w.tagKey, addr: parsed.mc, value: coerceMcWrite(raw, dataType) };
+          // R1b-2b-1 T2 fix round 1 (M1) — bit-device / "<word>.<bit>": MỘT luật bool BẤT KỂ dataType (như coil Modbus / bit SLMP): ngoài tập ⇒ write
+          // đó ok:false; STOP đã xác minh ⇒ `boolDungGhim` (KD-T2). Giá trị là giá trị người gọi (không inverse-scale — một bit không có thang đo).
+          return { tagKey: w.tagKey, addr: parsed.mc, value: parsed.isBit ? boolChoGhi(w.value, w.dungGhim) : coerceMcWrite(raw, dataType, w.dungGhim) };
         } catch (err) {
           return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
         }
@@ -550,21 +621,28 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    const conn = this.conn;
     try {
       await withTimeout(
-        new Promise<void>((resolve, reject) => {
-          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
-            if (anyBadQualities) reject(new Error("bad write quality"));
-            else resolve();
-          });
-          if (rc === 1) reject(new Error("MC write busy"));
-        }),
+        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / lỗi socket ⇒ reject NGAY (không chờ hạn 5000 ms rồi báo 'failed').
+        this.dangBay.bay(
+          conn,
+          new Promise<void>((resolve, reject) => {
+            const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+              if (anyBadQualities) reject(new Error("bad write quality"));
+              else resolve();
+            });
+            if (rc === 1) reject(new Error("MC write busy"));
+          }),
+        ),
         5000,
         "mc writeItems",
       );
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
     }
 
     if (!batchError) this.lastOkAt = new Date();

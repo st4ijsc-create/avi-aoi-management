@@ -3916,6 +3916,7 @@
       "taiModelMay": "upload machine 3D model",
       "restoreBackup": "restore backup",
       "activateInterlockRule": "activate interlock rule",
+      "interlockRule": "save interlock rule",
       "createProgramArtifactVersion": "create program artifact version",
       "requestRecipeModelChangeover": "request recipe model changeover",
       "approveChangeoverRequest": "approve changeover request",
@@ -4092,7 +4093,9 @@
       "flowNhap": "import an AI flow from a package",
       "aiNgoaiDatModel": "set external AI model",
       "aiNgoaiDuyet": "approve flow using external AI",
-      "taiAnhAi": "download image for AI analysis"
+      "taiAnhAi": "download image for AI analysis",
+      "mayDungKhanCap": "load the emergency STOP machine list",
+      "aiKiemDinh": "external AI verification"
     },
     "field": {
       "stationId": "station",
@@ -4406,6 +4409,7 @@
       "reservedSettingKey": "This setting can only be changed on its own screen (robot automation switch: Robot Control) — it needs a reason and is audited.",
       "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
       "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
+      "stopPinBitAddress": "This tag address is written as a SINGLE BIT (Modbus coil, bool holding register, SLMP / MC bit device, S7 bit address) whatever its data type — the stop value must be true/false, 1/0, \"1\"/\"0\" or \"true\"/\"false\".",
       "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
       "telemetryTagChiPhamViMay": "A device-tag (telemetry_tag) rule can only use Machine scope — set the scope to Machine and save again.",
       "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
@@ -4570,7 +4574,23 @@
       "anh-chuyen-huong": "the image server returned a redirect (not followed)",
       "anh-http-loi": "the image server returned an error",
       "anh-khong-phai-anh": "the downloaded content is not an image",
-      "anh-qua-lon": "the image exceeds 20 MB"
+      "anh-qua-lon": "the image exceeds 20 MB",
+      "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
+      "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "NGOAI_TAT": "external AI is turned off",
+      "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
+      "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",
+      "NGOAI_VUOT_TRAN": "the factory cost / rate cap is exceeded",
+      "NGOAI_QUA_LON": "the content is too large to send — choose a smaller part",
+      "NGOAI_NHA_CUNG_CAP_LOI": "the external AI provider returned an error",
+      "NGOAI_PHAN_HOI_QUA_LON": "the external AI response is too large",
+      "NGOAI_SAI_SCHEMA": "the verification result has an invalid format",
+      "NGOAI_DANG_CHAY": "this verification request is already running",
+      "NGOAI_DEM_HONG": "the cost counter is unavailable — try again later",
+      "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
+      "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
+      "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
+      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -23849,6 +23869,9 @@
       "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "lyDo": {
+        "moi_tag_sai_cau_hinh": "All tags misconfigured — no read was sent to the device; fix the tag addresses"
+      },
       "trangThai": {
         "connected": "Connected",
         "connecting": "Connecting",
@@ -24292,7 +24315,15 @@
         "quaHan": "Server is slow — the HMI STOP was NOT sent to the machine.",
         "quaHanMotPhan": "Server is slow — the HMI STOP was NOT sent to adapter {{list}}.",
         "gioiHan": "The server refused: too many requests (HTTP 429) — the HMI STOP was NOT sent.",
+        "khongRo": "Unknown whether adapter {{list}} received the STOP — the machine may NOT have stopped.",
         "nutBo": "Understood"
+      },
+      "khanCap": {
+        "tieuDe": "EMERGENCY MACHINE STOP",
+        "moTa": "You can still stop machines before changing your password.",
+        "loiTai": "Could not load the machine list — use the hardwired E-STOP at the machine",
+        "biCat": "The list may be incomplete — use the hardwired E-STOP",
+        "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
       }
     }
   },

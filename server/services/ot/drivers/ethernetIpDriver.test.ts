@@ -2,7 +2,8 @@
  * Sprint F1.3 — ethernetIpDriver tests với package GIẢ (vi.doMock + vi.resetModules).
  * Không cần lib/PLC thật.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { EventEmitter } from "node:events";
 import type { OtTagAddress } from "../otDriver";
 
 const tags: OtTagAddress[] = [
@@ -141,5 +142,53 @@ describe("EthernetIpDriver (mocked st-ethernet-ip)", () => {
     await expect(d.connect({ endpoint: "192.168.1.10" })).rejects.toThrow(
       /st-ethernet-ip not installed/,
     );
+  });
+
+  describe("R1b-2b-1 T7 (muc 11) — timeout_sp + 'error' truoc connect", () => {
+    const loi: unknown[] = [];
+    const onUncaught = (e: unknown) => loi.push(e);
+    beforeEach(() => {
+      loi.length = 0;
+      process.on("uncaughtException", onUncaught);
+      process.on("unhandledRejection", onUncaught);
+    });
+    afterEach(() => {
+      process.off("uncaughtException", onUncaught);
+      process.off("unhandledRejection", onUncaught);
+    });
+
+    function mockEmitter(connectImpl: (plc: any) => Promise<void>) {
+      class Fake extends EventEmitter {
+        timeout_sp: unknown = undefined;
+        connect = vi.fn(() => connectImpl(this));
+        disconnect = vi.fn(async () => {});
+      }
+      const plc = new Fake();
+      vi.doMock("st-ethernet-ip", () => ({ Controller: function () { return plc; } }));
+      return plc;
+    }
+
+    it("connect({timeoutMs:1500}) ⇒ plc.timeout_sp === 1500 (số)", async () => {
+      const plc = mockEmitter(async () => {});
+      const { EthernetIpDriver } = await import("./ethernetIpDriver");
+      const d = new EthernetIpDriver();
+      await d.connect({ endpoint: "192.168.1.10", timeoutMs: 1500 });
+      expect(plc.timeout_sp).toBe(1500);
+      await d.disconnect();
+    });
+
+    it("'error' phát TRONG connect ⇒ không uncaughtException/unhandledRejection; connect hết hạn; lastError có chuỗi", async () => {
+      const plc = mockEmitter(() => {
+        setTimeout(() => plc.emit("error", new Error("ECONNRESET giua connect")), 5);
+        return new Promise<void>(() => {}); // không bao giờ xong ⇒ withTimeout hết hạn
+      });
+      const { EthernetIpDriver } = await import("./ethernetIpDriver");
+      const d = new EthernetIpDriver();
+      await expect(d.connect({ endpoint: "192.168.1.10", timeoutMs: 60 })).rejects.toThrow();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(loi).toEqual([]);
+      expect(typeof (await d.health()).lastError).toBe("string");
+      expect(d.isConnected()).toBe(false);
+    });
   });
 });

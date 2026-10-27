@@ -2,17 +2,29 @@
 /**
  * R1b-2a T14 — dọn rác của R1b-1 T2 / R1b-2a T5 ở CSDL `aoi_management_test`, bằng vai owner.
  *
- *   npx tsx scripts/don-rac-test-r1b2.mjs --test-only          CHẠY KHÔ (mặc định): chạy ĐÚNG các lệnh xoá trong MỘT giao dịch rồi HOÀN TÁC,
- *                                                              in bảng "sẽ xoá"; không còn gì ghi lại.
- *   npx tsx scripts/don-rac-test-r1b2.mjs --test-only --ghi    xoá thật: MỘT giao dịch, đếm lại ⇒ 0 mới COMMIT; lỗi bất kỳ ⇒ hoàn tác toàn bộ.
+ *   npx tsx scripts/don-rac-test-r1b2.mjs --test-only          CHẠY KHÔ (mặc định): TÌM mục tiêu bằng truy vấn mã test, in MỘT khối JSON `MUC_TIEU tìm được:` + dòng
+ *                                                              `--ids=...`, chạy ĐÚNG các lệnh xoá trong MỘT giao dịch rồi HOÀN TÁC, in bảng "sẽ xoá".
+ *   npx tsx scripts/don-rac-test-r1b2.mjs --test-only --ghi --ids=<đúng chuỗi chạy khô đã in>
+ *                                                              xoá thật: MỘT giao dịch, tìm lại; KHÁC `--ids` dù một id ⇒ từ chối, không xoá gì;
+ *                                                              đếm lại ⇒ 0 mới COMMIT; lỗi bất kỳ ⇒ hoàn tác toàn bộ.
+ *
+ * ĐỊNH DẠNG --ids (không ký tự đặc biệt của shell): `nhom:id.id.id,nhom:id.id` — nhóm ∈ adapters, edgeNodes, machines, stations, lines,
+ *   workshops, factories; id tăng dần; không có gì ⇒ `-`. Ví dụ: `--ids=adapters:26336.26342,machines:38939.38940`.
+ * KHÔNG chạy song song với lưới test: fixture `pvk` / `tth` / `r1b2` đang sống của lưới khác khớp mẫu và sẽ bị liệt kê (rồi bị xoá nếu --ghi).
  *
  * AN TOÀN (phán quyết K14, điều phối 2026-10-25):
  *   - PHẢI có `--test-only`; không cờ nào chọn DEV (`--dev-only`, `--apply`, … ⇒ thoát 2, không mở kết nối).
  *   - Hai lớp chốt: (1) tên CSDL trong URL owner PHẢI kết thúc `_test` (`laDbTest`) — kiểm TRƯỚC khi mở kết nối;
  *     (2) `current_database()` trên CHÍNH kết nối ghi (qua `asOwner`, kể cả khi MIGRATION_DB_URL đè URL) PHẢI kết thúc `_test`,
  *     kiểm lại TRONG giao dịch. Sai ⇒ thoát 2, không câu lệnh nào khác.
- *   - Đích là DANH SÁCH id tường minh (không `LIKE 'r1b2%'` — tiền tố đó trùng dữ liệu test đang sống). Mỗi id còn tồn tại phải mang mã
- *     khớp mẫu test (r1b2 / pvk / tth); không khớp ⇒ từ chối. Id đã mất ⇒ bỏ qua (chạy lại ⇒ xoá 0).
+ *   - Đích được TÌM bằng truy vấn `code ~* MAU_MA_TEST_SQL` (không id viết tay), nhưng KHÔNG xoá mù theo tiền tố — tiền tố đó trùng dữ liệu
+ *     test đang sống của lượt chạy khác. Nên: chạy khô liệt kê; `--ghi` BẮT BUỘC kèm `--ids` chép đúng từ chạy khô; trong giao dịch xoá,
+ *     script tìm lại và so với `--ids`: lệch bất kỳ ⇒ từ chối, xoá 0. Thiếu `--ids` với `--ghi` ⇒ từ chối (thoát 2, không mở kết nối).
+ *   - Adapter tìm được mà `machineId` trỏ máy NGOÀI tập tìm được (`kiemMoCoi`, cùng giao dịch, hàng adapter khoá FOR UPDATE):
+ *     máy CÓ THẬT ⇒ từ chối (không xoá adapter gắn máy thật); máy KHÔNG tồn tại (id lơ lửng, không FK) ⇒ adapter mồ côi, được xoá, được IN
+ *     (`machineMoCoi` trong khối JSON) và là một nhóm của chuỗi duyệt (`moCoi:adapter>may`) ⇒ `--ghi` từ chối nếu tập này đổi.
+ *   - Adapter NGOÀI đích trỏ máy / edge node đích ⇒ từ chối (`kiemConTro`; xoá sẽ làm nó mồ côi).
+ *     Mỗi id phải mang mã khớp mẫu test (`kiemTenMa`).
  *   - KHÔNG xoá hàng WORM: scada_command_attempts, command_log, các bảng audit — để nguyên và in rõ.
  *   - STOP chưa ack ⇒ từ chối (không thể tự ack); STOP bị refused/failed chưa giải quyết ⇒ `edge_stop_resolve` bằng admin id nhỏ nhất.
  * Exit: 0 xong (kể cả chạy khô); 1 lỗi (đã hoàn tác); 2 từ chối.
@@ -27,7 +39,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
-/** Đích tường minh (khảo sát chỉ-đọc trên `_test` 2026-10-26). */
+/** Mẫu cố định CHO TEST (khảo sát chỉ-đọc 2026-10-26) — chạy thật không còn dùng; đích do `timMucTieu` tìm. Truyền qua `o.muc`. */
 export const MUC_TIEU = {
   // R1b-1 §6 mục 28: 26336 / 26342 / 26343 còn; 26337 đã mất; 27035 là adapter r1b2 thứ tư (lượt chạy thứ ba, cùng loại rác)
   adapters: [26336, 26342, 26343, 27035],
@@ -40,7 +52,9 @@ export const MUC_TIEU = {
   factories: [...range(30757, 30760), 30959, 30960, 45079, 45080, 45115, 45116, 45261],
 };
 
-export const MAU_MA_TEST = /^(r1b2|pvk|tth)/i;
+/** Một nguồn: chuỗi cho SQL `~*`, RegExp dựng từ chính nó. */
+export const MAU_MA_TEST_SQL = "^(r1b2|pvk|tth)";
+export const MAU_MA_TEST = new RegExp(MAU_MA_TEST_SQL, "i");
 
 export class TuChoi extends Error {}
 const HOAN_TAC = new Error("chay-kho-hoan-tac");
@@ -90,6 +104,86 @@ const BANG_MA = [
   ["workshops", "workshops"],
   ["factories", "factories"],
 ];
+
+const NHOM = BANG_MA.map(([, k]) => k);
+
+/** Tìm mục tiêu: với mỗi bảng `SELECT id WHERE code ~* mẫu ORDER BY id`. */
+export async function timMucTieu(tx, mauMaSql = MAU_MA_TEST_SQL) {
+  const muc = {};
+  for (const [bang, khoa] of BANG_MA) {
+    const rows = await tx`SELECT id FROM ${tx(bang)} WHERE code ~* ${mauMaSql} ORDER BY id`;
+    muc[khoa] = rows.map((r) => Number(r.id));
+  }
+  return muc;
+}
+
+/**
+ * Adapter tìm được mà machineId không NULL và không thuộc muc.machines:
+ *   - máy ĐÓ CÓ THẬT (nằm trong `mayTonTai`, tập id máy ngoài đích đang tồn tại) ⇒ TuChoi (không xoá adapter gắn máy thật);
+ *   - máy KHÔNG tồn tại ⇒ adapter mồ côi lơ lửng, được phép xoá; trả về { [adapterId]: machineId } để IN và đưa vào chuỗi --ids.
+ * `mayTonTai` bỏ trống (null) ⇒ không biết ⇒ coi mọi máy ngoài đích là CÓ THẬT (an toàn).
+ */
+export function kiemMoCoi(muc, hangAdapter, mayTonTai = null) {
+  const may = new Set(muc.machines ?? []);
+  const moCoi = {};
+  for (const a of hangAdapter) {
+    if (a.machineId == null || may.has(Number(a.machineId))) continue;
+    if (mayTonTai === null || mayTonTai.has(Number(a.machineId))) {
+      throw new TuChoi(`device_adapters id ${a.id} gan may ${a.machineId} KHONG nam trong tap tim duoc — tu choi (khong xoa adapter gan may that).`);
+    }
+    moCoi[a.id] = Number(a.machineId);
+  }
+  return moCoi;
+}
+
+/** Adapter NGOÀI đích trỏ máy / edge node ĐÍCH ⇒ TuChoi (xoá sẽ làm nó mồ côi). `hang` = [{id, machineId, edgeNodeId}] của adapter ngoài đích. */
+export function kiemConTro(muc, hang) {
+  const may = new Set(muc.machines ?? []);
+  const node = new Set(muc.edgeNodes ?? []);
+  for (const a of hang) {
+    if (a.machineId != null && may.has(Number(a.machineId))) throw new TuChoi(`adapter ngoai dich id ${a.id} tro may dich ${a.machineId} — xoa may se lam no mo coi, tu choi.`);
+    if (a.edgeNodeId != null && node.has(Number(a.edgeNodeId))) throw new TuChoi(`adapter ngoai dich id ${a.id} tro edge node dich ${a.edgeNodeId} — tu choi.`);
+  }
+}
+
+/** Chuẩn hoá: đủ nhóm, id số duy nhất tăng dần; `moCoi` = { adapterId: machineId } sắp theo adapterId. */
+function chuanHoa(muc) {
+  const out = {};
+  for (const k of NHOM) out[k] = [...new Set((muc?.[k] ?? []).map(Number))].sort((a, b) => a - b);
+  out.moCoi = Object.fromEntries(
+    Object.entries(muc?.moCoi ?? {})
+      .map(([a, m]) => [Number(a), Number(m)])
+      .sort((x, y) => x[0] - y[0]),
+  );
+  return out;
+}
+/** `nhom:id.id,nhom:id,moCoi:adapter>may.adapter>may` hoặc `-`. */
+export function inIds(muc) {
+  const m = chuanHoa(muc);
+  const p = NHOM.filter((k) => m[k].length).map((k) => `${k}:${m[k].join(".")}`);
+  const mc = Object.entries(m.moCoi);
+  if (mc.length) p.push(`moCoi:${mc.map(([a, x]) => `${a}>${x}`).join(".")}`);
+  return p.length ? p.join(",") : "-";
+}
+export function docIds(chuoi) {
+  const out = chuanHoa({});
+  if (chuoi === "-" || chuoi === "") return out;
+  const thay = new Set();
+  for (const phan of chuoi.split(",")) {
+    const mo = /^moCoi:(\d+>\d+(?:\.\d+>\d+)*)$/.exec(phan);
+    if (mo) {
+      if (thay.has("moCoi")) throw new TuChoi(`--ids sai dinh dang o "${phan}" — nhom lap.`);
+      thay.add("moCoi");
+      out.moCoi = Object.fromEntries(mo[1].split(".").map((c) => c.split(">").map(Number)));
+      continue;
+    }
+    const m = /^([A-Za-z]+):(\d+(?:\.\d+)*)$/.exec(phan);
+    if (!m || !NHOM.includes(m[1]) || thay.has(m[1])) throw new TuChoi(`--ids sai dinh dang o "${phan}" — chep dung dong "--ids=..." cua lan chay kho.`);
+    thay.add(m[1]);
+    out[m[1]] = m[2].split(".").map(Number);
+  }
+  return chuanHoa(out);
+}
 
 /** Mọi id còn tồn tại phải mang mã khớp mẫu test. */
 async function kiemTenMa(tx, muc, mauMa) {
@@ -176,24 +270,39 @@ function inBang(log, tieuDe, buoc) {
 
 /**
  * Điểm vào kiểm thử được. `connect(url)` là seam (mặc định postgres.js). Trả về mã thoát; không gọi process.exit.
- * @param {{ argv?: string[], connect?: (url: string) => any, muc?: typeof MUC_TIEU, mauMa?: RegExp, log?: (m: string) => void, err?: (m: string) => void }} o
+ * `o.muc` (tập cố định, cho test) bỏ qua bước tìm; `o.mauMaSql` đổi mẫu tìm (DB test dùng tiền tố RIÊNG, không đụng fixture của test khác).
+ * @param {{ argv?: string[], connect?: (url: string) => any, muc?: typeof MUC_TIEU, mauMaSql?: string, mauMa?: RegExp, log?: (m: string) => void, err?: (m: string) => void }} o
  */
 export async function chay(o = {}) {
   const argv = o.argv ?? process.argv.slice(2);
   const log = o.log ?? ((m) => console.log(m));
   const err = o.err ?? ((m) => console.error(m));
   const connect = o.connect ?? ((url) => postgres(url, { max: 1, onnotice: () => {} }));
-  const muc = o.muc ?? MUC_TIEU;
-  const mauMa = o.mauMa ?? MAU_MA_TEST;
+  const mauMaSql = o.mauMaSql ?? MAU_MA_TEST_SQL;
+  const mauMa = o.mauMa ?? new RegExp(mauMaSql, "i");
   const TAG = "[don-rac r1b2]";
 
   const la = argv.filter((a) => a.startsWith("--"));
-  const la_la = la.filter((a) => a !== "--test-only" && a !== "--ghi");
-  if (!la.includes("--test-only") || la_la.length || argv.some((a) => !a.startsWith("--"))) {
-    err(`${TAG} chi chap nhan --test-only [--ghi]; nhan: ${argv.join(" ") || "khong co"}. Khong co co chon DEV. Khong chay gi.`);
+  const idsArg = la.filter((a) => a.startsWith("--ids="));
+  const la_la = la.filter((a) => a !== "--test-only" && a !== "--ghi" && !a.startsWith("--ids="));
+  if (!la.includes("--test-only") || la_la.length || idsArg.length > 1 || argv.some((a) => !a.startsWith("--"))) {
+    err(`${TAG} chi chap nhan --test-only [--ghi --ids=...]; nhan: ${argv.join(" ") || "khong co"}. Khong co co chon DEV. Khong chay gi.`);
     return 2;
   }
   const GHI = la.includes("--ghi");
+  if (GHI && !idsArg.length) {
+    err(`${TAG} --ghi BAT BUOC kem --ids=<chuoi in ra boi lan chay kho> — tu choi, khong mo ket noi.`);
+    return 2;
+  }
+  let idsDuyet = null;
+  if (idsArg.length) {
+    try {
+      idsDuyet = docIds(idsArg[0].slice("--ids=".length));
+    } catch (e) {
+      err(`${TAG} ${e.message}`);
+      return 2;
+    }
+  }
 
   let urlOwner;
   try {
@@ -227,7 +336,32 @@ export async function chay(o = {}) {
         log(`${TAG} current_database()=${cdb.d} · che do: ${GHI ? "GHI THAT" : "CHAY KHO (hoan tac)"}`);
         await tx`SET LOCAL lock_timeout = '5s'`;
         await tx`SET LOCAL statement_timeout = '60s'`;
+        const muc = o.muc ? chuanHoa(o.muc) : chuanHoa(await timMucTieu(tx, mauMaSql));
+        const inKhoi = () => {
+          const { moCoi, ...con } = muc;
+          log(`${TAG} MUC_TIEU tìm được:\n${JSON.stringify({ ...con, machineMoCoi: moCoi }, null, 2)}\n${TAG} --ids=${inIds(muc)}`);
+        };
+        // Khoá hàng adapter đích (FOR UPDATE) để machineId không đổi giữa lúc kiểm và lúc xoá
+        const hangAdapter = muc.adapters.length ? await tx`SELECT id, "machineId" FROM device_adapters WHERE id IN ${tx(muc.adapters)} ORDER BY id FOR UPDATE` : [];
+        const ngoaiDich = [...new Set(hangAdapter.filter((a) => a.machineId != null && !muc.machines.includes(Number(a.machineId))).map((a) => Number(a.machineId)))];
+        const mayTonTai = new Set(ngoaiDich.length ? (await tx`SELECT id FROM machines WHERE id IN ${tx(ngoaiDich)}`).map((r) => Number(r.id)) : []);
+        try {
+          muc.moCoi = kiemMoCoi(muc, hangAdapter, mayTonTai);
+        } catch (e) {
+          inKhoi(); // cho người vận hành thấy tập tìm được ngay cả khi từ chối
+          throw e;
+        }
+        inKhoi();
+        if (GHI && inIds(muc) !== inIds(idsDuyet)) {
+          throw new TuChoi(`tap tim lai trong giao dich (--ids=${inIds(muc)}) KHAC --ids da duyet (--ids=${inIds(idsDuyet)}) — tu choi, xoa 0.`);
+        }
         await kiemTenMa(tx, muc, mauMa);
+        if (muc.machines.length || muc.edgeNodes.length) {
+          const khac = await tx`SELECT id, "machineId", "edgeNodeId" FROM device_adapters
+            WHERE (${muc.machines.length ? tx`"machineId" IN ${tx(muc.machines)}` : tx`false`} OR ${muc.edgeNodes.length ? tx`"edgeNodeId" IN ${tx(muc.edgeNodes)}` : tx`false`})
+              AND ${muc.adapters.length ? tx`id NOT IN ${tx(muc.adapters)}` : tx`true`}`;
+          kiemConTro(muc, khac);
+        }
         const buoc = await cacBuocXoa(tx, muc);
         const [w] = (muc.adapters ?? []).length
           ? await tx`SELECT (SELECT count(*)::int FROM scada_command_attempts WHERE adapter_id IN ${tx(muc.adapters)}) AS dich,

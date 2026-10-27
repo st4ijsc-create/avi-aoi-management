@@ -172,6 +172,7 @@ import { dieuKienThuStopQuaHan, HAN_TRUOC_GUI_STOP_HMI_MS, hanChotTruocGuiStopHm
 import { sdk } from "../_core/sdk";
 import { createContext } from "../_core/context";
 import { _datLaiDemStopQuaHanChoTest, demStopQuaHanKhongGhiSo, HAN_TONG_STOP_HMI_MS } from "../_core/hanStopHmi";
+import { batDauDoLag } from "../testing/doLagBucleSuKien";
 
 class StubGhi extends StubDriver {
   ghi: Array<Array<{ tagKey: string; value: unknown }>> = [];
@@ -651,7 +652,9 @@ describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (cre
   /** một request như adapter tRPC làm: createContext (info = dungMay) rồi gọi thủ tục với ctx đó */
   async function guiRequest(crid: string) {
     const ctx = await createContext({ req: { headers: { cookie: "app_session_id=x" } } as never, res: {} as never, info: { calls: [{ path: "scadaCommands.dungMay" }] } as never });
-    return scadaCommandsRouter.createCaller(ctx).dungMay({ machineId: fx.m1, clientRequestId: crid });
+    // T15 vòng sửa 1: qua một router tối thiểu `{ scadaCommands }` (đường THẬT `scadaCommands.dungMay`) — middleware phân biệt STOP với lượt gọi anh em theo `path` đầy đủ; caller của router con thấy "dungMay"
+    const { router } = await import("../_core/trpc");
+    return router({ scadaCommands: scadaCommandsRouter }).createCaller(ctx).scadaCommands.dungMay({ machineId: fx.m1, clientRequestId: crid });
   }
   const nguoiXacThuc = () => ({ id: op.id, openId: `${RUN}-op`, role: "operator", name: "R1B2 T4 op", twoFactorEnabled: false });
 
@@ -708,9 +711,13 @@ describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (cre
     const { dungMayHmi } = await import("../services/scada/lenhHmi");
     const m = await moc();
     const dTu = H.dispatchInputs.length;
+    // R1b-2b-1 T9 (điều phối C14) — cận trên đồng hồ tường trả lại phần máy KHÔNG chạy tiến trình test (doLagBucleSuKien), chặn trên 800 ms (Windows: bộ đo
+    // ghi ~68 % thời gian ngủ thành nới — đo ở soCoHan.r1b2b); đột biến vòng lặp bận 900 ms ⇒ đỏ
+    const lag = batDauDoLag();
     const batDau = Date.now();
     const kq = await dungMayHmi({ user: { id: op.id, role: "operator", twoFactorEnabled: false } }, { userId: op.id, userRole: "operator" }, { machineId: fx.m1, clientRequestId: uuid() }, { hanChotYeuCau: Date.now() - 1 });
-    expect(Date.now() - batDau).toBeLessThan(800);
+    const troi = Date.now() - batDau;
+    expect(troi).toBeLessThan(800 + (await lag.dung(800)));
     expect(kq).toMatchObject({ ok: false, tuChoi: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
     expect(H.dispatchInputs.length - dTu).toBe(0);
     const rows = await choThuQuaHan(m, 1);

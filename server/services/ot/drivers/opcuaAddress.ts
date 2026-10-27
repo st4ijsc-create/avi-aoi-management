@@ -5,6 +5,8 @@
  * opcuaDriver.ts dùng các hàm này để parse nodeId và chuẩn hoá giá trị đọc về.
  */
 import type { OtDataType } from "../otDriver";
+import { scaleXuoi } from "./otScale";
+import { boolDungGhim, boolTuGiaTri, giaiMaBoolDoc } from "./boolNghiem";
 
 /** Một nodeId OPC-UA đã được validate. */
 export interface ParsedOpcuaAddress {
@@ -132,19 +134,17 @@ function toFiniteNumber(raw: unknown): number | null {
  * THUẦN. Trước Task 12 driver luôn gửi Int32/Double ⇒ server trả BadTypeMismatch với
  * Float/Int16/UInt16/UInt32/Byte (BE1 §1.1). Ngoài miền / sai dạng ⇒ ok:false (không gửi).
  */
-export function coerceOpcuaWriteValue(raw: unknown, builtinType: number): CoercedOpcuaWrite {
+export function coerceOpcuaWriteValue(raw: unknown, builtinType: number, dungGhim?: boolean): CoercedOpcuaWrite {
   const name = BUILTIN_NAME[builtinType];
   if (!name) {
     return { ok: false, error: `unsupported OPC UA data type (builtin id ${builtinType}) for write` };
   }
   if (builtinType === OPCUA_BUILTIN.Boolean) {
-    if (typeof raw === "boolean") return { ok: true, dataType: builtinType, value: raw };
-    if (raw === 0 || raw === 1) return { ok: true, dataType: builtinType, value: raw === 1 };
-    if (typeof raw === "string") {
-      const s = raw.trim().toLowerCase();
-      if (s === "true" || s === "1") return { ok: true, dataType: builtinType, value: true };
-      if (s === "false" || s === "0") return { ok: true, dataType: builtinType, value: false };
-    }
+    // R1b-2b-1 T2 — MỘT luật bool (`boolNghiem`): tập hợp lệ như trước; STOP đã xác minh (`dungGhim`, KD-T2) ⇒ `boolDungGhim` — node Boolean
+    // nhận ghim cũ 255 của tag int là TRUE, không bao giờ từ chối một STOP.
+    if (dungGhim === true) return { ok: true, dataType: builtinType, value: boolDungGhim(raw) };
+    const b = boolTuGiaTri(raw);
+    if (b !== undefined) return { ok: true, dataType: builtinType, value: b };
     return { ok: false, error: `value ${JSON.stringify(raw)} is not a Boolean (true/false/0/1)` };
   }
   if (builtinType === OPCUA_BUILTIN.String) {
@@ -178,7 +178,7 @@ export interface NormalizedOpcuaValue {
  * Chuẩn hoá giá trị thô đọc từ OPC-UA về kiểu khai báo của tag, áp scale/offset.
  *
  * - raw null/undefined → {value:null, quality:"bad"}.
- * - bool → Boolean(raw).
+ * - bool → `giaiMaBoolDoc(raw)` (R1b-2b-1 T2: số khác 0 ⇒ TRUE, chuỗi lạ ⇒ bad).
  * - int → Math.round(Number(raw)*scale+offset).
  * - float → Number(raw)*scale+offset.
  * - string → String(raw).
@@ -200,17 +200,20 @@ export function normalizeOpcuaValue(
   const o = offset ?? 0;
 
   switch (dataType) {
-    case "bool":
-      return { value: Boolean(raw), quality: "good" };
+    case "bool": {
+      const b = giaiMaBoolDoc(raw);
+      return b === undefined ? { value: null, quality: "bad" } : { value: b, quality: "good" };
+    }
 
     case "int": {
-      const n = Number(raw) * s + o;
+      // R1b-2b-1 T6 fix round 1 — MỘT nguồn scale xuôi + làm tròn (`otScale.scaleXuoi`); Math.round(NaN) = NaN ⇒ kiểm NaN sau vẫn đúng.
+      const n = scaleXuoi(Number(raw), "int", s, o);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };
-      return { value: Math.round(n), quality: "good" };
+      return { value: n, quality: "good" };
     }
 
     case "float": {
-      const n = Number(raw) * s + o;
+      const n = scaleXuoi(Number(raw), "float", s, o);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };
       return { value: n, quality: "good" };
     }

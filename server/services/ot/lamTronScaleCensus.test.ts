@@ -166,12 +166,21 @@ describe("T13 (B) — congKenhSom: tag int CHƯA khai có scale/offset ⇒ lư�
     expect(congKenhSom("set_param", [{ tagKey: "sc10cu", value: 25 }], [ghim])).toMatchObject({ ok: false, ma: "OFF_STEP" }); // không phải lệnh dừng
   });
 
-  it("scale 1 / offset 0 (kể cả NULL), float, bool ⇒ hành vi cũ: không kiểm (đi nguyên)", () => {
-    for (const t of [tag({ tagKey: "k", scale: "1", offset: "0" }), tag({ tagKey: "k", scale: null, offset: null }), tag({ tagKey: "k", dataType: "float" }), tag({ tagKey: "k", dataType: "bool" })]) {
+  it("scale 1 / offset 0 (kể cả NULL), float ⇒ hành vi cũ: không kiểm lưới (đi nguyên)", () => {
+    for (const t of [tag({ tagKey: "k", scale: "1", offset: "0" }), tag({ tagKey: "k", scale: null, offset: null }), tag({ tagKey: "k", dataType: "float" })]) {
       const w = { tagKey: "k", value: 25 };
       const kq = congKenhSom("set_param", [w], [t]);
       expect(kq.ok && kq.writes[0]).toBe(w);
     }
+  });
+
+  // R1b-2b-1 T2 (kiem-dinh G1) — ĐỔI ghim cũ ("bool ⇒ đi nguyên"): tag bool CHƯA khai nay kiểm tập bool hợp lệ (driver không còn `Boolean(25)`).
+  it("bool CHƯA khai: 25 ⇒ TYPE_MISMATCH; \"false\" ⇒ ok, ĐÚNG đối tượng write (không ép kiểu)", () => {
+    const t = tag({ tagKey: "k", dataType: "bool" });
+    expect(congKenhSom("set_param", [{ tagKey: "k", value: 25 }], [t])).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
+    const w = { tagKey: "k", value: "false" };
+    const kq = congKenhSom("set_param", [w], [t]);
+    expect(kq.ok && kq.writes[0]).toBe(w);
   });
 
   it("tag ĐÃ khai (P1-3) không đổi: 25 ⇒ OFF_STEP goiY 30; 30 ⇒ ok", () => {

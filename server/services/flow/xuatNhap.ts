@@ -244,6 +244,10 @@ function lamTrongNut(n: NodeInstance, viec: ViecPhaiDien[]): NodeInstance {
   if (ra.type.startsWith("ai.") && typeof ra.parameters.chonModel === "string" && ra.parameters.chonModel.startsWith("ngoai:")) {
     delete ra.parameters.chonModel;
     viec.push({ nodeId: ra.id, truong: "chonModel", viec: "chon-model" });
+  } else if (ra.type === "ai.kiem-dinh-ngoai" && (ra.parameters.chonModel === undefined || ra.parameters.chonModel === "")) {
+    // ★ 10.4 — node kiểm định ngoài KHÔNG có "auto": vắng model (gói đã làm sạch / node mới) vẫn là việc phải chọn — lúc NHẬP gói không còn
+    //   khoá chonModel để nhánh trên bắt, nên việc phải nêu ở đây (không thì người nhập không biết node chưa chạy được).
+    viec.push({ nodeId: ra.id, truong: "chonModel", viec: "chon-model" });
   }
   if (LOAI_HTTP.has(ra.type)) lamSachHttp(ra, viec);
   if (ra.type === LOAI_MCP) lamSachMcp(ra, viec);
