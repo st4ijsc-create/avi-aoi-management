@@ -105,15 +105,19 @@ async function maTuLoi(e: unknown): Promise<never> {
   throw e;
 }
 
+/** Độ dài trích câu trả lời nguồn trong `xemTruoc`. */
+export const TRAN_TRICH_TRA_LOI = 200;
+
 export const aiKiemDinhRouter = router({
   /** THÔNG TIN trước khi gửi (không mạng, không giữ chỗ). `duocPhep` chỉ tham khảo — `chay` tự kiểm lại. */
   xemTruoc: thuTuc.input(INPUT).query(async ({ ctx, input }) => {
     const c = await nguonKiemDinhTrongPhamVi(ctx, input);
-    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay, chotTranLuot, xemTranNgay }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }] = await Promise.all([
+    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay, chotTranLuot, xemTranNgay }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }, { cheChuoi }] = await Promise.all([
       import("../services/ai/ngoai/kiemDinhNgoai"),
       import("../services/ai/ngoai/tranChiPhi"),
       import("../services/ai/ngoai/congNgoai"),
       import("../services/ai/ngoai/loi"),
+      import("../services/ai/ngoai/cheDuLieu"),
     ]);
     const tinNhan = lapTinNhanKiemDinh({ cauHoi: c.nguon.cauHoi, traLoi: c.nguon.traLoi, ...(input.tieuChi ? { tieuChi: input.tieuChi } : {}) });
     const yc: YeuCauGoiNgoai = { dich: c.dich, tinNhan, maxTokens: MAX_TOKENS_KIEM_DINH_MAC_DINH, mucDich: "kiem-dinh", ngu: c.ngu };
@@ -165,6 +169,10 @@ export const aiKiemDinhRouter = router({
       tranByte: TRAN_YEU_CAU_BYTE,
       conLaiTranNgay,
       ...(tranVuot ? { tranVuot } : {}),
+      // ★ 10.4 (rà client luong-ui) — người dùng thấy ĐÚNG câu trả lời nào sẽ gửi đi: trích ĐÃ CHE (che CẢ chuỗi rồi mới cắt — cắt trước
+      //   có thể chẻ đôi một bí mật để nửa đầu lọt qua bộ che) + độ dài gốc.
+      trichTraLoi: String(cheChuoi(c.nguon.traLoi).giaTri).slice(0, TRAN_TRICH_TRA_LOI),
+      doDaiTraLoi: c.nguon.traLoi.length,
     };
   }),
 

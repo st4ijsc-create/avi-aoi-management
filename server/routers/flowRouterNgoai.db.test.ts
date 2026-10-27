@@ -142,7 +142,7 @@ describe("★ Đợt 10.4 (D8) — flow.chiTiet.ngoai: đã duyệt chưa + ĐAN
     const { version } = await goi("engineer").luu({ definition: d, factoryId: fid } as never);
     const t1 = (await goi("engineer").chiTiet({ flowId: d.id, version })).ngoai;
     expect(t1).toMatchObject({ coNodeNgoai: true, daDuyet: false, tuDuyet: false, toanHeThong: false, taoBoi: uid, mucTinhLuong: "ky-thuat" });
-    expect(t1.coNodeNgoai && t1.nodes).toEqual([{ nodeId: "ai", nhaCungCap: "anthropic", model: "claude-x", mucTinh: "ke-thua", tomTatLenh: expect.any(String) }]);
+    expect(t1.coNodeNgoai && t1.nodes).toEqual([{ nodeId: "ai", nhaCungCap: "anthropic", model: "claude-x", mucTinh: "ke-thua", tomTatLenh: expect.any(String), thamChieu: [] }]);
     expect(JSON.stringify(t1)).not.toContain("Hunter2xyz99");
     await duyet(d.id, version);
     const t2 = (await goi("engineer").chiTiet({ flowId: d.id, version })).ngoai;

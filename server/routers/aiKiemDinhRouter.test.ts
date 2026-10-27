@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
 import { afterEach, describe, expect, it } from "vitest";
-import { aiKiemDinhRouter, __datPhuThuocKiemDinhChoTest } from "./aiKiemDinhRouter";
+import { aiKiemDinhRouter, __datPhuThuocKiemDinhChoTest, TRAN_TRICH_TRA_LOI } from "./aiKiemDinhRouter";
 import { readAppErrorMeta } from "../_core/appError";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
 import type { YeuCauGoiNgoai } from "../services/ai/ngoai/congNgoai";
@@ -168,6 +168,23 @@ describe("xemTruoc", () => {
     expect(JSON.stringify(r)).not.toMatch(/"token":99900|"usd":1.5/);
     expect(kiem).toHaveLength(1);
     expect(nhan).toHaveLength(0);
+  });
+
+  it("rà client luong-ui — trích câu trả lời nguồn ĐÃ CHE (≤ TRAN_TRICH_TRA_LOI) + độ dài gốc; bí mật nằm VẮT qua mốc cắt cũng không lọt", async () => {
+    // bí mật bắt đầu ở ký tự 190 — cắt TRƯỚC rồi mới che sẽ để lọt "password=Hunt…" (không đủ hình dạng để bộ che nhận ra)
+    const traLoi = "a ".repeat(95) + "password=Hunter2xyz99 " + "đuôi ".repeat(100);
+    dat({ nguon: { cauHoi: "hỏi", traLoi, muc: "ky-thuat", beMat: "chat" } });
+    const r = await goi().xemTruoc(INPUT);
+    expect(TRAN_TRICH_TRA_LOI).toBe(200);
+    expect(r.doDaiTraLoi).toBe(traLoi.length);
+    expect(r.trichTraLoi.length).toBeLessThanOrEqual(TRAN_TRICH_TRA_LOI);
+    expect(r.trichTraLoi.startsWith("a a a")).toBe(true);
+    expect(r.trichTraLoi).not.toMatch(/Hunt/);
+    expect(JSON.stringify(r)).not.toContain("đuôi đuôi đuôi đuôi");
+    dat({ nguon: { cauHoi: "hỏi", traLoi: "khoá: password=Hunter2xyz99 xong", muc: "ky-thuat", beMat: "chat" } });
+    const r2 = await goi().xemTruoc(INPUT);
+    expect(r2.trichTraLoi).toContain("khoá:");
+    expect(r2.trichTraLoi).not.toContain("Hunter2xyz99");
   });
 
   it("dieu-phoi Q2 — admin thấy số nhà máy; trần nhà máy / trần người KHÔNG đủ cho ước tính lượt này ⇒ duocPhep false + NGOAI_VUOT_TRAN", async () => {
