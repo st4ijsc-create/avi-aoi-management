@@ -30,7 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
-import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
+import { laTuChoiAiMucCao, tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -204,6 +204,8 @@ export default function ApprovalsInbox() {
   // onError rỗng: `approveProposal` tự hiện lỗi (một toast) — không để lưới cuối của main.tsx thêm toast thứ hai.
   const confirmM = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const dismissM = trpc.aiInbox.dismiss.useMutation();
+  // AI mức >= 4 bị từ chối vĩnh viễn (máy chủ giữ nguyên hàng) ⇒ không cho Duyệt lại hàng đó.
+  const [daTuChoi, setDaTuChoi] = useState<ReadonlySet<string>>(new Set());
   const invalidateInbox = () => {
     void utils.aiInbox.list.invalidate();
     void utils.aiInbox.count.invalidate();
@@ -224,6 +226,7 @@ export default function ApprovalsInbox() {
     } catch (err) {
       // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác dùng câu đã dịch chung của mapTrpcError.
       toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
+      if (laTuChoiAiMucCao(err)) setDaTuChoi((p) => new Set(p).add(actionId));
     } finally {
       invalidateInbox();
     }
@@ -519,7 +522,10 @@ export default function ApprovalsInbox() {
               >
                 <ul className="space-y-2">
                   {inboxItems.map((item) => {
-                    const isProposal = item.type === "proposal" && item.actions.includes("approve");
+                    const isProposal =
+                      item.type === "proposal" &&
+                      item.actions.includes("approve") &&
+                      !daTuChoi.has(item.actionId ?? item.id);
                     return (
                       <li
                         key={`${item.type}:${item.id}`}

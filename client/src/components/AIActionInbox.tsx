@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
+import { laTuChoiAiMucCao, tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { cn } from "@/lib/utils";
 
 // ─── Types (mirror server/services/aiActionInbox.ts InboxItem) ─────────────────
@@ -123,12 +123,15 @@ function useCountdown(expiresAt?: string) {
 function InboxCard({
   item,
   busy,
+  daTuChoi,
   onApprove,
   onDismiss,
   onAsk,
 }: {
   item: InboxItem;
   busy: boolean;
+  /** AI mức >= 4 bị từ chối vĩnh viễn (máy chủ giữ nguyên hàng) ⇒ không cho Duyệt lại. */
+  daTuChoi: boolean;
   onApprove: (item: InboxItem) => void;
   onDismiss: (item: InboxItem) => void;
   onAsk: (item: InboxItem) => void;
@@ -188,7 +191,7 @@ function InboxCard({
 
           {/* 1-tap actions (large touch targets) */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {actions.includes("approve") && (
+            {actions.includes("approve") && !daTuChoi && (
               <Button
                 className="h-10 min-h-[40px] px-4 text-sm font-semibold"
                 disabled={busy || (ttl?.expired ?? false)}
@@ -259,6 +262,7 @@ export function AIActionInbox({
   const connected = useSocketConnected();
   const items = (listQuery.data?.items ?? []) as InboxItem[];
   const busyId = confirmActionMutation.isPending || dismissMutation.isPending;
+  const [daTuChoi, setDaTuChoi] = useState<ReadonlySet<string>>(new Set());
 
   const invalidate = () => {
     void utils.aiInbox.list.invalidate();
@@ -303,6 +307,7 @@ export function AIActionInbox({
     } catch (err) {
       // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác giữ câu chung cũ.
       toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
+      if (laTuChoiAiMucCao(err)) setDaTuChoi((p) => new Set(p).add(actionId));
     } finally {
       invalidate();
     }
@@ -378,6 +383,7 @@ export function AIActionInbox({
                   key={`${item.type}:${item.id}`}
                   item={item}
                   busy={busyId}
+                  daTuChoi={daTuChoi.has(item.actionId ?? item.id)}
                   onApprove={handleApprove}
                   onDismiss={handleDismiss}
                   onAsk={handleAsk}
