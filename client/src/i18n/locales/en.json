@@ -24387,6 +24387,35 @@
       "nha-may": "Factory"
     },
     "thuLai": "retried once (two charged calls)",
-    "tuBoNho": "result from the previous call — not charged again"
+    "tuBoNho": "result from the previous call — not charged again",
+    "nut": {
+      "nhan": "Ask external AI to review",
+      "chuaLuu": "This turn has not been saved yet, so it cannot be reviewed.",
+      "tip": "Ask an external AI to review this answer (you click it; data is masked, cost is capped)."
+    },
+    "hop": {
+      "tieuDe": "Ask external AI to review",
+      "moTa": "This turn's question and answer are masked for sensitive data and sent to an external AI (paid). The external AI has no tools and cannot act on the system.",
+      "model": "External model",
+      "tieuChi": "Criteria (optional)",
+      "dangTinh": "Computing estimate…",
+      "muc": "Data level",
+      "vanHanh": "operational data",
+      "kyThuat": "technical",
+      "codingVanHanh": "Programming content is treated as operational data.",
+      "uoc": "Estimate (pessimistic, may be 2–4× higher than actual)",
+      "chuaCoGia": "no price table",
+      "tranConLai": "Cap remaining today",
+      "nhaMay": "factory",
+      "chuaDatTran": "no cap set",
+      "nguoi": "you",
+      "kichThuoc": "Size",
+      "quaLon": "Too large to send — review a smaller turn/section.",
+      "khoa": "Cannot send yet",
+      "cheDuLieu": "Content is masked before it leaves the machine. This guards against mistakes; it does not replace the sender's responsibility.",
+      "huy": "Close",
+      "dangGui": "Reviewing…",
+      "gui": "Send for review (paid)"
+    }
   }
 }

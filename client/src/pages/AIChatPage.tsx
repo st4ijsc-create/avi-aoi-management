@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ChonModel from "@/components/ai/ChonModel";
+import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
 import { docChonDaLuu } from "@/lib/chonModel";
 import { useTranslation } from "react-i18next";
 import { useSearch, useLocation } from "wouter";
@@ -917,6 +918,12 @@ export default function AIChatPage() {
                           idx === lastAssistantIdx &&
                           lastExtras &&
                           renderKbExtras(lastExtras)}
+                        {/* ★ Đợt 10.4 — nhờ AI ngoài kiểm định: chỉ gửi ID tin nhắn ĐÃ LƯU (máy chủ đọc kho, tự suy mức dữ liệu). */}
+                        {msg.role !== "user" && typeof msg.id === "number" && selectedConvId !== null && (
+                          <div className="mt-1.5">
+                            <NutKiemDinhNgoai nguon={{ loai: "chat", cuocTroChuyenId: selectedConvId, tinNhanId: msg.id }} />
+                          </div>
+                        )}
                       </div>
                       {msg.role === "user" && (
                         <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center shrink-0">

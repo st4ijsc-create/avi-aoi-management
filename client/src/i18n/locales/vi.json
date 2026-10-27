@@ -24384,6 +24384,35 @@
       "nha-may": "Nhà máy"
     },
     "thuLai": "đã thử lại 1 lần (tính phí hai lượt)",
-    "tuBoNho": "kết quả đã có từ lần gọi trước — không tính phí lần nữa"
+    "tuBoNho": "kết quả đã có từ lần gọi trước — không tính phí lần nữa",
+    "nut": {
+      "nhan": "Nhờ AI ngoài kiểm định",
+      "chuaLuu": "Lượt này chưa được lưu nên chưa kiểm định được.",
+      "tip": "Nhờ một AI bên ngoài kiểm định lại câu trả lời này (người bấm; có che dữ liệu, có trần chi phí)."
+    },
+    "hop": {
+      "tieuDe": "Nhờ AI ngoài kiểm định",
+      "moTa": "Câu hỏi và câu trả lời của lượt này được che dữ liệu nhạy cảm rồi gửi cho AI bên ngoài (trả phí). AI ngoài không có công cụ và không thể thao tác gì trên hệ thống.",
+      "model": "Model ngoài",
+      "tieuChi": "Tiêu chí (tuỳ chọn)",
+      "dangTinh": "Đang tính ước lượng…",
+      "muc": "Mức dữ liệu",
+      "vanHanh": "dữ liệu vận hành",
+      "kyThuat": "kỹ thuật",
+      "codingVanHanh": "Nội dung lập trình được coi là dữ liệu vận hành.",
+      "uoc": "Ước tính (bi quan, có thể cao hơn thật 2–4×)",
+      "chuaCoGia": "chưa có bảng giá",
+      "tranConLai": "Trần còn lại hôm nay",
+      "nhaMay": "nhà máy",
+      "chuaDatTran": "chưa đặt trần",
+      "nguoi": "bạn",
+      "kichThuoc": "Kích thước",
+      "quaLon": "Quá lớn để gửi — hãy kiểm định một lượt/đoạn nhỏ hơn.",
+      "khoa": "Chưa gửi được",
+      "cheDuLieu": "Nội dung được che trước khi rời máy. Đây là rào chống nhầm, không thay trách nhiệm của người gửi.",
+      "huy": "Đóng",
+      "dangGui": "Đang kiểm định…",
+      "gui": "Gửi kiểm định (trả phí)"
+    }
   }
 }
