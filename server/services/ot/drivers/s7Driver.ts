@@ -40,18 +40,21 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
-import { chatLuongLoiChung, chatLuongV2Bat, laGiaTriBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
+import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
-function coerceS7Write(raw: unknown, dataType: string): number | boolean | string {
+function coerceS7Write(raw: unknown, dataType: string, dungGhim?: boolean): number | boolean | string {
+  // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): "false" / "0" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (write đó ok:false); STOP đã xác minh ⇒ không chặn.
   switch (dataType) {
     case "bool":
-      return Boolean(raw);
+      return boolChoGhi(raw, dungGhim);
     case "int":
       return Math.round(Number(raw));
     case "float":
@@ -99,6 +102,12 @@ export class S7Driver extends NotImplementedDriver {
   private timeoutMs = 5000;
   /** doc 81 Đợt 9 T1 — where the program checksum is read (same host / port / rack / slot as the nodes7 session). */
   private checksumTarget: S7ChecksumTarget | null = null;
+  /**
+   * SCADA R1b-2b-1 — yêu cầu đang bay theo phiên NodeS7: dropConnection ⇒ connectionCleanup ⇒ clearWritePacketTimeouts /
+   * clearReadPacketTimeouts xoá hẹn giờ gói mà KHÔNG gọi writeDoneCallback ⇒ lệnh ghi chỉ xong ở hạn 5000 ms của driver, thành 'failed'.
+   * Reject NGAY (kết cục không rõ) ở: mất liên kết (markLinkLost), disconnect(), connect() trước khi hạ phiên cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("s7");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -113,6 +122,7 @@ export class S7Driver extends NotImplementedDriver {
     if (cu) {
       this.conn = null;
       this.connected = false;
+      this.dangBay.huy(cu, "reconnect replaced the session"); // R1b-2b-1 (iii)
       try {
         if (typeof cu.dropConnection === "function") cu.dropConnection(() => undefined);
       } catch {
@@ -175,6 +185,7 @@ export class S7Driver extends NotImplementedDriver {
     const conn = this.conn;
     this.conn = null;
     this.connected = false;
+    this.dangBay.huy(conn, "session torn down (disconnect)"); // R1b-2b-1 (ii) — trước dropConnection (huỷ hẹn giờ gói, không gọi lại)
     if (conn && typeof conn.dropConnection === "function") {
       try {
         await new Promise<void>((resolve) => conn.dropConnection(() => resolve()));
@@ -205,7 +216,7 @@ export class S7Driver extends NotImplementedDriver {
     for (const ev of ["error", "close"]) {
       try {
         conn.on(ev, (arg?: unknown) => {
-          if (this.conn === conn) this.markLinkLost(ev, arg);
+          if (this.conn === conn) this.markLinkLost(ev, arg, conn);
         });
       } catch {
         // ignore
@@ -214,11 +225,13 @@ export class S7Driver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  private markLinkLost(ev: string, arg: unknown, conn: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `s7 link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `s7 link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(conn, `link ${ev}${detail}`); // R1b-2b-1 (i)
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
@@ -252,9 +265,12 @@ export class S7Driver extends NotImplementedDriver {
     }
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
 
+    /** R1b-2b-1 T3 (G2) — cờ `anythingBad` của thư viện ở lần đọc này (false ⇒ "BAD n" của tag string/json là giá trị thật). */
+    let thuVienBaoLoi = true;
     let values: Record<string, unknown> = {};
     if (addrByKey.size > 0) {
       const keys = tags.filter((t) => addrByKey.has(t.tagKey)).map((t) => t.tagKey);
+      const kieuTheoKhoa = new Map(tags.map((t) => [t.tagKey, t.dataType] as const));
       this.conn.removeItems(); // xoá item phiên trước
       this.conn.addItems(keys);
 
@@ -264,15 +280,24 @@ export class S7Driver extends NotImplementedDriver {
       const conn = this.conn;
       // SCADA R0 (C5) — readAllItems có thể không bao giờ gọi lại ⇒ đọc CÓ HẠN (không cờ, sửa lỗi treo).
       values = await withDeadline(
-        new Promise<Record<string, unknown>>((resolve, reject) => {
-          conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
-            const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
-            trangThaiSauDoc = typeof st === "number" ? st : undefined;
-            // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
-            if (vals && typeof vals === "object") resolve(vals);
-            else reject(new Error("S7Driver: readAllItems returned no values"));
-          });
-        }),
+        this.dangBay.bay(
+          conn,
+          new Promise<Record<string, unknown>>((resolve, reject) => {
+            // final fix (rà soát cuối M-4) — CHỈ callback ĐẦU TIÊN được ghi: một callback lặp MUỘN (anythingBad=false) rơi giữa resolve(vals1) và
+            // phần tiếp theo sẽ ghi đè `thuVienBaoLoi` / `trangThaiSauDoc` ⇒ chuỗi "BAD n" của vals1 đọc thành giá trị tốt.
+            let daGoi = false;
+            conn.readAllItems((anythingBad: boolean, vals: Record<string, unknown>) => {
+              if (daGoi) return;
+              daGoi = true;
+              const st = (conn as { isoConnectionState?: unknown } | null)?.isoConnectionState;
+              trangThaiSauDoc = typeof st === "number" ? st : undefined;
+              thuVienBaoLoi = anythingBad !== false;
+              // anythingBad=true vẫn trả vals (item lỗi mang giá trị BAD) — không reject.
+              if (vals && typeof vals === "object") resolve(vals);
+              else reject(new Error("S7Driver: readAllItems returned no values"));
+            });
+          }),
+        ),
         this.timeoutMs + 1000,
         "s7 readAllItems",
       );
@@ -281,7 +306,7 @@ export class S7Driver extends NotImplementedDriver {
       // ⇒ connectionReset() ⇒ readResponse(undefined)) VẪN gọi lại, mọi item mang chuỗi "BAD 255", và isoConnectionState đã rời 4. Đó là
       // lần đọc KHÔNG được trả lời ⇒ ném lỗi mức liên kết (chatLuongLoiChung ⇒ comm_lost; vòng poll ⇒ tick ok:false, D1 đếm), KHÔNG trả mẫu
       // device_error (sẽ thành "đã trả lời" ⇒ connected giả, D1 không bao giờ bắn). Item BAD khi liên kết vẫn 4 = PLC báo lỗi item ⇒ device_error.
-      if (v2 && trangThaiSauDoc !== undefined && trangThaiSauDoc !== 4 && keys.some((k) => laGiaTriBadThuVien(values[k]))) {
+      if (v2 && trangThaiSauDoc !== undefined && trangThaiSauDoc !== 4 && keys.some((k) => laMauBadThuVien(values[k], kieuTheoKhoa.get(k) ?? "string", thuVienBaoLoi))) {
         const err = new DeviceUnreachableError("s7", `read not answered: nodes7 returned BAD and left the link (isoConnectionState ${trangThaiSauDoc})`);
         this.lastError = err.message;
         throw err;
@@ -293,14 +318,12 @@ export class S7Driver extends NotImplementedDriver {
       const loi = loiDiaChi.get(tag.tagKey);
       if (loi) return loi;
       const raw = values[tag.tagKey];
-      const co = coerceS7Value(raw, tag.dataType);
+      const co = coerceS7Value(raw, tag.dataType, { thuVienBaoLoi });
 
       let value = co.value;
       if (co.quality === "good" && typeof value === "number" && tag.dataType !== "bool") {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = value * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(value, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       return {
@@ -372,7 +395,9 @@ export class S7Driver extends NotImplementedDriver {
           }
           const dataType = w.dataType ?? "float";
           const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-          return { tagKey: w.tagKey, addr: parsed.s7, value: coerceS7Write(raw, dataType) };
+          // R1b-2b-1 T2 fix round 1 (M1) — địa chỉ BIT (DBx,X / M0.0…): MỘT luật bool BẤT KỂ dataType (như coil Modbus / bit SLMP): ngoài tập ⇒ write
+          // đó ok:false; STOP đã xác minh ⇒ `boolDungGhim` (KD-T2). Giá trị là giá trị người gọi (không inverse-scale — một bit không có thang đo).
+          return { tagKey: w.tagKey, addr: parsed.s7, value: parsed.isBit ? boolChoGhi(w.value, w.dungGhim) : coerceS7Write(raw, dataType, w.dungGhim) };
         } catch (err) {
           return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
         }
@@ -393,22 +418,29 @@ export class S7Driver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    const conn = this.conn;
     try {
       await withTimeout(
-        new Promise<void>((resolve, reject) => {
-          // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
-          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
-            if (anyBadQualities) reject(new Error("bad write quality"));
-            else resolve();
-          });
-          if (rc === 1) reject(new Error("S7 write busy"));
-        }),
+        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / liên kết mất ⇒ reject NGAY (không chờ hạn 5000 ms rồi báo 'failed').
+        this.dangBay.bay(
+          conn,
+          new Promise<void>((resolve, reject) => {
+            // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
+            const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+              if (anyBadQualities) reject(new Error("bad write quality"));
+              else resolve();
+            });
+            if (rc === 1) reject(new Error("S7 write busy"));
+          }),
+        ),
         5000,
         "s7 writeItems",
       );
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
     }
 
     if (!batchError) this.lastOkAt = new Date();

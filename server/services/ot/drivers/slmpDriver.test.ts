@@ -447,4 +447,55 @@ describe("SlmpDriver — thay socket (T12b fix round 1)", () => {
       await sv.close();
     }
   });
+
+  describe("R1b-2b-1 T7 (muc 12) — callback ghi muộn + khung 4E sai serial", () => {
+    function giaLap(frame: "3E" | "4E") {
+      const d = new SlmpDriver();
+      const writes: Array<{ buf: Buffer; cb: (err?: Error | null) => void }> = [];
+      const socket = {
+        write: vi.fn((buf: Buffer, cb: (err?: Error | null) => void) => {
+          writes.push({ buf, cb });
+          return true;
+        }),
+        destroy: vi.fn(),
+      };
+      const x = d as unknown as Record<string, unknown>;
+      x.socket = socket;
+      x.connected = true;
+      x.frame = frame;
+      x.timeoutMs = 40;
+      const transact = (req: Buffer, serial?: number) =>
+        (d as unknown as { transact(r: Buffer, s?: number): Promise<Buffer> }).transact(req, serial);
+      const onData = (b: Buffer) => (d as unknown as { onData(b: Buffer): void }).onData(b);
+      return { d, writes, transact, onData, socket };
+    }
+
+    it("callback ghi MUỘN (lỗi) của giao dịch A đã hết hạn KHÔNG reject giao dịch B đang chờ", async () => {
+      const g = giaLap("3E");
+      const a = g.transact(Buffer.from([1]));
+      const aKq = a.then(() => "ok", (e: Error) => e.message);
+      expect(await aKq).toMatch(/timeout/);
+      // timeout đã hạ socket (connected=false); dựng lại phiên cho B như sau reconnect (cùng socket giả).
+      (g.d as unknown as Record<string, unknown>).connected = true;
+      const b = g.transact(Buffer.from([2]));
+      await new Promise((r) => setTimeout(r, 1));
+      g.writes[0].cb(new Error("EPIPE muon cua A"));
+      g.onData(buildResponse("3E", 0, Buffer.alloc(0), 0));
+      await expect(b).resolves.toBeInstanceOf(Buffer);
+    });
+
+    it("4E: khung serial 7 tới khi chờ serial 8 ⇒ bị bỏ; khung serial 8 giải quyết B", async () => {
+      const g = giaLap("4E");
+      const b = g.transact(Buffer.from([2]), 8);
+      let xong = false;
+      void b.then(() => (xong = true), () => (xong = true));
+      await new Promise((r) => setTimeout(r, 1)); // run() bất đồng bộ: chờ pending được đặt
+      g.onData(buildResponse("4E", 0, Buffer.alloc(0), 7));
+      await new Promise((r) => setTimeout(r, 5));
+      expect(xong).toBe(false);
+      g.onData(buildResponse("4E", 0, Buffer.alloc(0), 8));
+      const kq = await b;
+      expect(kq.readUInt16LE(2)).toBe(8);
+    });
+  });
 });

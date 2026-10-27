@@ -151,7 +151,14 @@ export const THU_TUC_CHO_QUA: readonly string[] = [
 const CHO_QUA = new Set<string>(THU_TUC_CHO_QUA);
 
 /**
- * ★★★ **TẬP MIỄN CỔNG BUỘC-ĐỔI-MẬT-KHẨU CHO STOP — MỘT phần tử, có ngày và lý do.**
+ * ★★★ **TẬP MIỄN CỔNG BUỘC-ĐỔI-MẬT-KHẨU CHO STOP — HAI phần tử, có ngày và lý do.**
+ *
+ * 2026-10-26 (SCADA R1b-2b-1 T1, mục 59 — điều phối Q1 DUYỆT): thêm phần tử THỨ HAI `scadaCommands.mayDungKhanCap` — thủ tục ĐỌC tối thiểu
+ * cho khối "DỪNG MÁY khẩn cấp" trên trang buộc đổi mật khẩu (`client/src/components/scada/KhoiDungKhanCap.tsx`). Không có nó, `dungMay` được
+ * miễn mà người bị buộc đổi KHÔNG có trang nào để bấm (cổng client chỉ render trang đổi mật khẩu). Nó trả CHỈ id / nhãn máy / nhãn chuyền /
+ * coDung / số adapter (ruling C16 — không adapter, endpoint, lastError, ghim) và tự kiểm sàn vai mức 1 + machine_control.canEdit + phạm vi
+ * (không đạt ⇒ rỗng). Ghim ĐÚNG HAI phần tử theo cả hai chiều: `server/_core/buocDoiMatKhau.test.ts` §2b. Hành vi sống:
+ * `server/routers/scadaCommandsRouter.mayDungKhanCap.r1b2b.db.test.ts`.
  *
  * Điều phối quyết 2026-10-26 (SCADA R1b-2a final-fix): miễn riêng `scadaCommands.dungMay` khỏi cổng buộc đổi mật khẩu — bất biến
  * *"STOP không bao giờ bị chặn"* (duyệt từ R1b-1). Trước đó một người vận hành (không phải admin) bị buộc đổi mật khẩu nhận FORBIDDEN ở nút
@@ -163,10 +170,11 @@ const CHO_QUA = new Set<string>(THU_TUC_CHO_QUA);
  *     "STOP khi đang bị buộc đổi mật khẩu" (người bấm + máy);
  *   · MỌI kiểm khác của STOP vẫn chạy: phiên hợp lệ (createContext), phạm vi máy, sàn vai mức 1 + machine_control.canEdit, hạn trước-gửi,
  *     tầng giới hạn STOP, giấy phép module, phạm vi tenant.
- * ⚠ KHÔNG mở thủ tục nào khác (request / confirm / mọi mutation vẫn bị chặn). Lưới hai chiều: `server/_core/buocDoiMatKhau.test.ts` §2b
- *   (tồn tại trên appRouter + đúng tập này) và `server/routers/scadaCommandsRouter.dungMay.hanTruocGui.r1b2.db.test.ts` (hành vi sống).
+ * ⚠ KHÔNG mở thủ tục nào khác (request / confirm / mọi mutation, mọi thủ tục đọc của HMI như scadaKenh.* vẫn bị chặn). Lưới hai chiều:
+ *   `server/_core/buocDoiMatKhau.test.ts` §2b (tồn tại trên appRouter + đúng tập này) và
+ *   `server/routers/scadaCommandsRouter.dungMay.hanTruocGui.r1b2.db.test.ts` (hành vi sống).
  */
-export const THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU: readonly string[] = [DUONG_DUNG_MAY_HMI];
+export const THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU: readonly string[] = [DUONG_DUNG_MAY_HMI, "scadaCommands.mayDungKhanCap"];
 const STOP_MIEN_CONG = new Set<string>(THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU);
 
 /**
@@ -196,7 +204,7 @@ export const chanKhiPhaiDoiMatKhau = t.middleware(async (opts) => {
   const { phaiDoiMatKhau } = await import("../db");
   // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI (`ctx.hanChotStopHmi`): lượt đọc chờ trong phần CÒN LẠI của hạn tổng; hết hạn ⇒ NÉM
   // từ chối "dùng E-STOP cứng" (fail-closed — không bao giờ cho qua mà không biết kết quả cổng). Không có hạn ⇒ `await` như cũ.
-  const phaiDoi = await trongHanYeuCauStopHmi(phaiDoiMatKhau(ctx.user.id), ctx.hanChotStopHmi, "cong_doi_mat_khau", "xac_thuc");
+  const phaiDoi = await trongHanYeuCauStopHmi(phaiDoiMatKhau(ctx.user.id), ctx.hanChotStopHmi, "cong_doi_mat_khau", "xac_thuc", undefined, path);
   if (!biChanBoiCongDoiMatKhau(ctx.user.role, phaiDoi)) return next();
   // Điều phối 2026-10-26 — STOP HMI không bao giờ bị cổng này chặn; đánh dấu để dungMayHmi ghi audit (mọi kiểm STOP khác vẫn chạy).
   if (STOP_MIEN_CONG.has(path)) return next({ ctx: { stopKhiBuocDoiMatKhau: true as const } });
@@ -339,7 +347,7 @@ const tenantScopeMiddleware = t.middleware(async (opts) => {
     const { getTenantScope } = await import("./accessControl");
     // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI: chờ trong phần còn lại của hạn tổng; hết hạn ⇒ NÉM từ chối "dùng E-STOP cứng"
     // (catch dưới chuyển tiếp nó — KHÔNG rơi về next() không phạm vi). Không có hạn ⇒ như cũ.
-    const scope = await trongHanYeuCauStopHmi(getTenantScope(ctx.user.id, String(ctx.user.role)), ctx.hanChotStopHmi, "pham_vi_tenant", "truoc_gui");
+    const scope = await trongHanYeuCauStopHmi(getTenantScope(ctx.user.id, String(ctx.user.role)), ctx.hanChotStopHmi, "pham_vi_tenant", "truoc_gui", undefined, opts.path);
     // NỬA THỨ HAI của điểm nối: đặt phạm vi vào AsyncLocalStorage cho toàn bộ
     // nhánh async của request. Tầng dữ liệu đọc lại bằng
     // `chayTheoPhamViTenantHienTai(db, fn)` mà KHÔNG cần `ctx` luồn qua chữ ký.

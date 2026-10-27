@@ -401,6 +401,86 @@ describe.each([
       expect(trangThai()).toBe("connected");
     });
 
+    describe("R1b-2b-1 T5 (mục 51, C5) — MỌI tag sai cấu hình cục bộ ⇒ 'connecting' + lý do 'moi_tag_sai_cau_hinh', không lost, không nối lại", () => {
+      const lyDo = () => tt.layTrangThaiAdapter(ID)?.lyDo ?? null;
+      const mauTrungTinh = (tagKey: string): OtSample => ({
+        tagKey,
+        raw: undefined,
+        value: null,
+        quality: "bad",
+        timestamp: new Date(),
+        tsSource: "server",
+        statusCode: "BadNodeIdInvalid (0x80330000)",
+        reason: "config_error",
+      });
+      const TICK_TRUNG_TINH: SuKienDoc = {
+        ok: true,
+        timeout: false,
+        ms: 1,
+        tags: TAGS.map((t) => ({ tagKey: t.tagKey, quality: "bad" as const, reason: "config_error" as const, statusCode: "invalid_address" })),
+      };
+
+      it("push OPC UA: mọi item BadNodeIdInvalid (lặp 3 lượt) ⇒ connecting + lý do; không lost, không phiên mới; mẫu good ⇒ connected, lý do xoá", async () => {
+        legacyDrv.push = true;
+        await khoiDong("true");
+        const p = drv.phien[0];
+        expect(p.onTick).toBeUndefined();
+        for (let i = 0; i < 3; i++) {
+          await p.onSample(mauTrungTinh("t1"));
+          await p.onSample(mauTrungTinh("t2"));
+          await vi.advanceTimersByTimeAsync(1000);
+        }
+        expect(trangThai()).toBe("connecting");
+        expect(lyDo()).toBe("moi_tag_sai_cau_hinh");
+        await vi.advanceTimersByTimeAsync(6000);
+        expect(bao).not.toContain("connected");
+        expect(bao).not.toContain("lost");
+        expect(drv.phien).toHaveLength(1);
+        expect(ha === "true" ? haDrv.length : 1).toBe(1);
+        await p.onSample(MAU_GOOD);
+        expect(trangThai()).toBe("connected");
+        expect(lyDo()).toBeNull();
+      });
+
+      it("poll: tick mọi tag invalid_address (kể cả lần đọc đầu trong subscribe) ⇒ connecting + lý do; tick tốt ⇒ connected, lý do xoá", async () => {
+        await khoiDong("true", TICK_TRUNG_TINH);
+        for (let i = 0; i < 3; i++) {
+          phienCuoi().onTick!(TICK_TRUNG_TINH);
+          await vi.advanceTimersByTimeAsync(1000);
+        }
+        expect(trangThai()).toBe("connecting");
+        expect(lyDo()).toBe("moi_tag_sai_cau_hinh");
+        expect(bao).not.toContain("lost");
+        expect(drv.phien).toHaveLength(1);
+        phienCuoi().onTick!(TICK_TOT);
+        expect(trangThai()).toBe("connected");
+        expect(lyDo()).toBeNull();
+      });
+
+      it("lý do không bám sang 'lost': phiên trung tính rồi mất (driver báo ngắt) ⇒ lost, lý do xoá", async () => {
+        await khoiDong("true", TICK_TRUNG_TINH);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(lyDo()).toBe("moi_tag_sai_cau_hinh");
+        // phiên nối lại KHÔNG có lần đọc nào (không tick trung tính mới) ⇒ lý do chỉ có thể còn nếu 'lost' không xoá nó
+        drv.tickTrongSubscribe = null;
+        legacyDrv.tickTrongSubscribe = null;
+        drv.connected = false;
+        await vi.waitFor(() => expect(trangThai()).toBe("lost"), { timeout: 5000 });
+        expect(lyDo()).toBeNull();
+      });
+
+      it("mẫu trung tính SAU lần đọc tốt của cùng phiên (push) không gắn lại lý do cho phiên đã connected", async () => {
+        legacyDrv.push = true;
+        await khoiDong("true");
+        const p = drv.phien[0];
+        await p.onSample(MAU_GOOD);
+        expect(trangThai()).toBe("connected");
+        await p.onSample(mauTrungTinh("t2"));
+        expect(trangThai()).toBe("connected");
+        expect(lyDo()).toBeNull();
+      });
+    });
+
     describe("R1b-2a T13 — đường PUSH đếm đọc tốt theo 'máy chủ đã trả lời', cùng luật với đường poll (K13)", () => {
       it.each([
         ["uncertain", MAU_UNCERTAIN],
@@ -519,6 +599,129 @@ describe.each([
   });
 });
 
+/**
+ * R1b-2b-1 T5 (mục 51, C5) — phiên S7 THẬT (S7Driver + vòng poll chung THẬT; nodes7 giả) mà MỌI địa chỉ sai, cờ V2 bật. Driver không gửi
+ * yêu cầu đọc nào (readAllItems không bao giờ được gọi) ⇒ sau 3 tick: 'connecting' + lý do 'moi_tag_sai_cau_hinh'; không 'lost', không nối lại.
+ */
+describe.each([
+  ["legacy", "false"],
+  ["HA (ConnectionSupervisor thật)", "true"],
+] as const)("R1b-2b-1 T5 — phiên S7 thật, mọi địa chỉ sai (%s)", (_nhan, ha) => {
+  const ID_S7 = 4344;
+  const TAGS_SAI: OtTagAddress[] = [
+    { tagKey: "a", address: "XYZ", dataType: "float" },
+    { tagKey: "b", address: "DB1,QQQ9", dataType: "float" },
+  ];
+  let ot: typeof import("./otManager");
+  let tt: typeof import("./trangThaiAdapter");
+  let bao: string[];
+  let soDoc: number;
+  let soTaoDriver: number;
+  let lib: { initiateConnection: ReturnType<typeof vi.fn>; readAllItems: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
+    vi.stubEnv("OT_CONN_HA_ENABLED", ha);
+    vi.stubEnv("OT_CONN_HA_BACKOFF_MS", "2000");
+    vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "true");
+    vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000");
+    vi.stubEnv("OT_CONN_HA_HEALTH_INTERVAL_MS", "100");
+    vi.stubEnv("OT_CONN_HA_BACKOFF_JITTER", "0");
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    bao = [];
+    soDoc = 0;
+    soTaoDriver = 0;
+    lib = {
+      initiateConnection: vi.fn((_o: unknown, cb: (err?: unknown) => void) => cb()),
+      readAllItems: vi.fn((cb: (bad: boolean, v: Record<string, unknown>) => void) => cb(false, {})),
+    };
+    const conn = {
+      ...lib,
+      setTranslationCB: vi.fn(),
+      addItems: vi.fn(),
+      removeItems: vi.fn(),
+      writeItems: vi.fn(),
+      dropConnection: vi.fn((cb: () => void) => cb()),
+      isoConnectionState: 4,
+    };
+    function NodeS7(this: Record<string, unknown>) {
+      Object.assign(this, conn);
+    }
+    vi.doMock("nodes7", () => ({ default: NodeS7 }));
+    const { S7Driver } = await import("./drivers/s7Driver");
+    const taoDriver = () => {
+      soTaoDriver += 1;
+      const d = new S7Driver();
+      const doc = d.readTags.bind(d);
+      d.readTags = async (t) => {
+        soDoc += 1;
+        return doc(t);
+      };
+      return d;
+    };
+    const legacyDrv = taoDriver();
+    vi.doMock("./driverRegistry", () => ({ createDriver: () => taoDriver() }));
+    vi.doMock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: async () => undefined }));
+    vi.doMock("./deviceAdapter", () => ({
+      loadEnabledAdapters: async () => [
+        {
+          adapterId: ID_S7,
+          code: "T5-S7-SAI",
+          machineId: null,
+          protocol: "s7" as OtProtocol,
+          connection: { endpoint: "tcp://127.0.0.1:102", timeoutMs: 800 } as OtConnectionConfig,
+          pollIntervalMs: 1000,
+          tags: TAGS_SAI,
+          driver: legacyDrv,
+        },
+      ],
+    }));
+    vi.doMock("./trangThaiAdapter", async (importOriginal) => {
+      const that = await importOriginal<typeof import("./trangThaiAdapter")>();
+      return {
+        ...that,
+        baoTrangThaiAdapter: (...args: Parameters<typeof that.baoTrangThaiAdapter>) => {
+          if (args[0].adapterId === ID_S7) bao.push(args[1]);
+          return that.baoTrangThaiAdapter(...args);
+        },
+      };
+    });
+    ot = await import("./otManager");
+    tt = await import("./trangThaiAdapter");
+    tt.__datLaiTrangThaiAdapter();
+    tt.__datGhiDb(async () => undefined);
+  });
+
+  afterEach(async () => {
+    await ot.stopOt();
+    tt.__datGhiDb(null);
+    tt.__datLaiTrangThaiAdapter();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.doUnmock("nodes7");
+  });
+
+  it("sau ≥ 3 tick: 'connecting' + lý do 'moi_tag_sai_cau_hinh'; không lost, không connected, không nối lại, không gửi yêu cầu đọc", async () => {
+    expect(await ot.startOt()).toBe(true);
+    await vi.waitFor(() => expect(soDoc).toBeGreaterThanOrEqual(1));
+    await vi.advanceTimersByTimeAsync(2500); // lần đọc đầu (D2) + 2 chu kỳ 1000 ms
+    expect(soDoc).toBeGreaterThanOrEqual(3);
+    expect(tt.layTrangThaiAdapter(ID_S7)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_S7)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    await vi.advanceTimersByTimeAsync(10_000); // thêm 10 tick: D1 không bắn, vòng canh/health không nối lại
+    expect(tt.layTrangThaiAdapter(ID_S7)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_S7)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    expect(bao).not.toContain("lost");
+    expect(bao).not.toContain("connected");
+    expect(lib.initiateConnection).toHaveBeenCalledTimes(1);
+    expect(soTaoDriver).toBe(ha === "true" ? 2 : 1); // HA: driver fixture (không dùng) + MỘT driver của supervisor
+    expect(lib.readAllItems).not.toHaveBeenCalled();
+  });
+});
+
 describe("R1b-2a T13 — luật chung `mauMayChuDaTraLoi` / `taoBatDocTot` (reconnectNhanh, thuần)", () => {
   const Q = ["good", "uncertain", "bad"] as const;
   const R = [undefined, "comm_lost", "device_error", "config_error", "out_of_range", "stale"] as const;
@@ -582,5 +785,153 @@ describe("R1b-2a T13 — luật chung `mauMayChuDaTraLoi` / `taoBatDocTot` (reco
     expect(bao2).not.toHaveBeenCalled();
     b2.quaTick(TICK_OK_MOI_TAG_BAD_CAU_HINH);
     expect(bao2).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * R1b-2b-1 T5 fix round 1 (I1) — phiên OPC UA THẬT (OpcuaDriver + node-opcua giả, OT_OPCUA_MONITORED_ITEMS bật, cờ V2 bật), qua otManager
+ * (legacy và HA). MỌI địa chỉ sai cục bộ ⇒ đường push lui về poll ⇒ 'connecting' + lý do; MỘT PHẦN sai ⇒ đường push thật: lý do tạm cho
+ * tới thay đổi good đầu của item hợp lệ ⇒ 'connected', lý do xoá.
+ */
+describe.each([
+  ["legacy", "false"],
+  ["HA (ConnectionSupervisor thật)", "true"],
+] as const)("R1b-2b-1 T5 fix round 1 — phiên OPC UA thật, địa chỉ sai cục bộ (%s)", (_nhan, ha) => {
+  const ID_OPC = 4345;
+  let ot: typeof import("./otManager");
+  let tt: typeof import("./trangThaiAdapter");
+  let bao: string[];
+  let tagsAdapter: OtTagAddress[];
+  let session: { read: ReturnType<typeof vi.fn> };
+  let taoItem: ReturnType<typeof vi.fn>;
+  let items: Array<{ fire: (dv: unknown) => void }>;
+  let soConnect: number;
+
+  const khoiDong = async (tags: OtTagAddress[]): Promise<void> => {
+    tagsAdapter = tags;
+    vi.doMock("./deviceAdapter", () => ({
+      loadEnabledAdapters: async () => [
+        {
+          adapterId: ID_OPC,
+          code: "T5-OPC-SAI",
+          machineId: null,
+          protocol: "opcua" as OtProtocol,
+          connection: { endpoint: "opc.tcp://127.0.0.1:4840", timeoutMs: 800 } as OtConnectionConfig,
+          pollIntervalMs: 1000,
+          tags: tagsAdapter,
+          driver: await taoDriver(),
+        },
+      ],
+    }));
+    ot = await import("./otManager");
+    tt = await import("./trangThaiAdapter");
+    tt.__datLaiTrangThaiAdapter();
+    tt.__datGhiDb(async () => undefined);
+    expect(await ot.startOt()).toBe(true);
+  };
+  let taoDriver: () => Promise<OtDriver>;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("OT_GATEWAY_ENABLED", "true");
+    vi.stubEnv("OT_CONN_HA_ENABLED", ha);
+    vi.stubEnv("OT_CONN_HA_BACKOFF_MS", "2000");
+    vi.stubEnv("OT_GHI_TRANG_THAI_ADAPTER_ENABLED", "true");
+    vi.stubEnv("OT_LEGACY_RECONNECT_MS", "5000");
+    vi.stubEnv("OT_CONN_HA_HEALTH_INTERVAL_MS", "100");
+    vi.stubEnv("OT_CONN_HA_BACKOFF_JITTER", "0");
+    vi.stubEnv("OT_CHAT_LUONG_V2_ENABLED", "true");
+    vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
+    bao = [];
+    items = [];
+    soConnect = 0;
+    session = { read: vi.fn(async (nodes: unknown[]) => nodes.map(() => ({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } }))) };
+    const s = { ...session, write: vi.fn(async () => []), close: vi.fn(async () => {}), createSubscription2: vi.fn(async () => ({ terminate: vi.fn(async () => {}) })) };
+    taoItem = vi.fn(async () => {
+      let h: ((dv: unknown) => void) | null = null;
+      const item = {
+        on: (evt: string, cb: (dv: unknown) => void) => {
+          if (evt === "changed") h = cb;
+        },
+        fire: (dv: unknown) => h?.(dv),
+      };
+      items.push(item);
+      return item;
+    });
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: {
+        create: vi.fn(() => ({
+          connect: vi.fn(async () => {
+            soConnect += 1;
+          }),
+          createSession: vi.fn(async () => s),
+          disconnect: vi.fn(async () => {}),
+        })),
+      },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {},
+      ClientSubscription: { create: vi.fn(async () => ({ terminate: vi.fn(async () => {}) })) },
+      ClientMonitoredItem: { create: taoItem },
+      TimestampsToReturn: { Both: 2 },
+      MonitoringMode: { Reporting: 1 },
+    }));
+    taoDriver = async () => {
+      const { OpcuaDriver } = await import("./drivers/opcuaDriver");
+      return new OpcuaDriver();
+    };
+    vi.doMock("./driverRegistry", () => ({ createDriver: () => taoDriverDongBo() }));
+    const { OpcuaDriver } = await import("./drivers/opcuaDriver");
+    const taoDriverDongBo = () => new OpcuaDriver();
+    vi.doMock("./ingest", () => ({ ingestSample: async () => undefined, ingestSamples: async () => undefined }));
+    vi.doMock("./trangThaiAdapter", async (importOriginal) => {
+      const that = await importOriginal<typeof import("./trangThaiAdapter")>();
+      return {
+        ...that,
+        baoTrangThaiAdapter: (...args: Parameters<typeof that.baoTrangThaiAdapter>) => {
+          if (args[0].adapterId === ID_OPC) bao.push(args[1]);
+          return that.baoTrangThaiAdapter(...args);
+        },
+      };
+    });
+  });
+
+  afterEach(async () => {
+    await ot?.stopOt();
+    tt?.__datGhiDb(null);
+    tt?.__datLaiTrangThaiAdapter();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.doUnmock("node-opcua");
+  });
+
+  const SAI = (k: string): OtTagAddress => ({ tagKey: k, address: `garbage-not-a-node-${k}`, dataType: "float" });
+
+  it("MỌI địa chỉ sai ⇒ (lui về poll) sau ≥ 3 tick: 'connecting' + lý do 'moi_tag_sai_cau_hinh'; không lost/connected, không nối lại, không session.read", async () => {
+    await khoiDong([SAI("a"), SAI("b")]);
+    await vi.advanceTimersByTimeAsync(2500);
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    expect(bao).not.toContain("lost");
+    expect(bao).not.toContain("connected");
+    expect(soConnect).toBe(1);
+    expect(taoItem).not.toHaveBeenCalled();
+    expect(session.read).not.toHaveBeenCalled();
+  });
+
+  it("MỘT PHẦN sai (đường push thật) ⇒ lý do tạm khi chỉ có mẫu trung tính; thay đổi good đầu của item hợp lệ ⇒ 'connected', lý do xoá", async () => {
+    await khoiDong([{ tagKey: "tot", address: "ns=2;s=Temp", dataType: "float" }, SAI("a")]);
+    await vi.waitFor(() => expect(items).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connecting");
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBe("moi_tag_sai_cau_hinh");
+    items[0].fire({ statusCode: { value: 0 }, sourceTimestamp: new Date(), value: { value: 2 } });
+    await vi.waitFor(() => expect(tt.layTrangThaiAdapter(ID_OPC)?.tt).toBe("connected"));
+    expect(tt.layTrangThaiAdapter(ID_OPC)?.lyDo).toBeNull();
+    expect(bao).not.toContain("lost");
   });
 });

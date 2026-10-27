@@ -13,6 +13,8 @@ export interface MucModel {
   trangThai: TrangThaiMuc;
   uocTinhDoiKheGiay?: number;
   nhaCungCap?: string;
+  /** ★ 10.4 T0 — bề mặt máy chủ PHỤC VỤ được mục này (chỉ điền cho `ngoai`). Thiếu ⇒ coi như [] (chưa phục vụ bề mặt nào). */
+  duocDungO?: string[];
 }
 /** Bề mặt chọn: mỗi nơi nhớ lựa chọn RIÊNG (chat và lập trình cần model khác nhau). */
 export type BeMatChon = "chat" | "lap-trinh" | "agent" | "luong";
@@ -24,8 +26,8 @@ export const CHON_MODEL_RE =
 /** Vai KHÔNG sinh chữ — ẩn khỏi mọi bề mặt hiện có (chat / lập trình / agent / node sinh chữ): máy chủ cũng từ chối (`beMatChu`). */
 export const VAI_KHONG_SINH_CHU: ReadonlySet<string> = new Set(["embed", "rerank", "vision", "fim"]);
 
-/** Giấu mục `ngoai:*` ở node Luồng cho tới khi có node kiểm định ngoài (10.4). */
-export const HIEN_NGOAI_O_LUONG = false;
+/** Tên bề mặt (BeMatChon) → giá trị `duocDungO` máy chủ khai. Mục `ngoai:*` chỉ hiện ở bề mặt mà máy chủ khai phục vụ (10.4 T0). */
+export const DUOC_DUNG_O: Readonly<Record<BeMatChon, string>> = { chat: "chat", "lap-trinh": "coding", agent: "agent", luong: "luong" };
 
 export const AUTO: MucModel = { ma: "auto", loai: "auto", nhan: "Tự động", moTa: "", trangThai: "san-sang" };
 
@@ -57,20 +59,26 @@ export function xacThucChon(ma: string, danhMuc: readonly MucModel[]): { ma: str
   return { ma, hetHieuLuc: false };
 }
 
+/** Tập mục THẤY ĐƯỢC ở bề mặt (dùng cả để vẽ lẫn để kiểm mã đã lưu còn hợp lệ): auto + nhóm đã lọc. */
+export function mucHienThi(danhMuc: readonly MucModel[], beMat: BeMatChon): MucModel[] {
+  const n = nhomMuc(danhMuc, beMat);
+  return [n.tuDong, ...n.vaiTro, ...n.hoSo, ...n.ngoai];
+}
+
 export interface NhomMuc {
   tuDong: MucModel;
   vaiTro: MucModel[];
   hoSo: MucModel[];
   ngoai: MucModel[];
 }
-/** Chia danh mục thành nhóm cho ô chọn của bề mặt. Vai không sinh chữ bị ẩn; `luong` giấu `ngoai:*` (xem HIEN_NGOAI_O_LUONG). Client không thêm gì ngoài danh mục. */
+/** Chia danh mục thành nhóm cho ô chọn của bề mặt. Vai không sinh chữ bị ẩn; mục `ngoai:*` chỉ hiện khi `duocDungO` chứa bề mặt này (thiếu ⇒ ẩn). Client không thêm gì ngoài danh mục. */
 export function nhomMuc(danhMuc: readonly MucModel[], beMat: BeMatChon): NhomMuc {
   const tuDong = danhMuc.find((m) => m.loai === "auto") ?? AUTO;
   return {
     tuDong,
     vaiTro: danhMuc.filter((m) => m.loai === "vai-tro" && !VAI_KHONG_SINH_CHU.has(m.ma.slice("vai-tro:".length))),
     hoSo: danhMuc.filter((m) => m.loai === "ho-so"),
-    ngoai: beMat === "luong" && !HIEN_NGOAI_O_LUONG ? [] : danhMuc.filter((m) => m.loai === "ngoai"),
+    ngoai: danhMuc.filter((m) => m.loai === "ngoai" && Array.isArray(m.duocDungO) && m.duocDungO.includes(DUOC_DUNG_O[beMat])),
   };
 }
 

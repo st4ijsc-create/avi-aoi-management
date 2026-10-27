@@ -13,6 +13,7 @@ vi.mock("./ingest", () => ({
 
 import {
   baoTrangThaiAdapter,
+  datLyDoTrangThaiAdapter,
   layTrangThaiAdapter,
   __datLaiTrangThaiAdapter,
   __datGhiDb,
@@ -104,7 +105,31 @@ describe("ghi DB điều tiết 5 s (C3)", () => {
     baoTrangThaiAdapter(AD, "lost", "x", t);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ghi).toHaveLength(0);
-    expect(layTrangThaiAdapter(AD.adapterId)).toEqual({ tt: "lost", tu: t, loi: "x", soLanMat: 1 });
+    expect(layTrangThaiAdapter(AD.adapterId)).toEqual({ tt: "lost", tu: t, loi: "x", lyDo: null, soLanMat: 1 });
+  });
+
+  it("R1b-2b-1 T5 — lý do có mã: chỉ RAM, không ghi DB, không đổi trạng thái; sống qua báo lại 'connecting', xoá khi connected/lost/disabled", async () => {
+    batCo(true, true);
+    datLyDoTrangThaiAdapter(AD.adapterId, "moi_tag_sai_cau_hinh"); // chưa từng báo ⇒ bỏ qua
+    expect(layTrangThaiAdapter(AD.adapterId)).toBeNull();
+    baoTrangThaiAdapter(AD, "connecting", null);
+    await vi.advanceTimersByTimeAsync(10);
+    const soGhi = ghi.length;
+    datLyDoTrangThaiAdapter(AD.adapterId, "moi_tag_sai_cau_hinh");
+    baoTrangThaiAdapter(AD, "connecting", null);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(ghi).toHaveLength(soGhi);
+    expect(layTrangThaiAdapter(AD.adapterId)).toMatchObject({ tt: "connecting", lyDo: "moi_tag_sai_cau_hinh" });
+    for (const sau of ["connected", "lost", "disabled"] as const) {
+      baoTrangThaiAdapter(AD, "connecting", null);
+      datLyDoTrangThaiAdapter(AD.adapterId, "moi_tag_sai_cau_hinh");
+      baoTrangThaiAdapter(AD, sau, null);
+      expect(layTrangThaiAdapter(AD.adapterId)).toMatchObject({ tt: sau, lyDo: null });
+    }
+    baoTrangThaiAdapter(AD, "connecting", null);
+    datLyDoTrangThaiAdapter(AD.adapterId, "moi_tag_sai_cau_hinh");
+    datLyDoTrangThaiAdapter(AD.adapterId, null);
+    expect(layTrangThaiAdapter(AD.adapterId)?.lyDo).toBeNull();
   });
 
   it("adapter chưa từng báo (vd do edge sở hữu) ⇒ layTrangThaiAdapter null", () => {

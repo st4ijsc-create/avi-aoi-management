@@ -116,6 +116,14 @@ function loiStopPin(e: StopPinLoi): never {
         { field: "stopValue", reason: "stopPinTypeMismatch" },
         `Stop pin refused: value does not match the tag dataType (${String(e.chiTiet.detail ?? "")}).`,
       );
+    case "dia_chi_bit":
+      // SCADA R1b-2b-1 T2 (điều kiện 1b) — địa chỉ coil / bit (driver ghi MỘT BIT bất kể dataType): ghim phải là true/false, 1/0, "1"/"0", "true"/"false".
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "stopValue", reason: "stopPinBitAddress" },
+        `Stop pin refused: the tag address ${String(e.chiTiet.address ?? "")} is written as a single bit, so the stop value must be true/false, 1/0, "1"/"0" or "true"/"false".`,
+      );
     case "ngoai_dai": {
       // SCADA R1a Task 12 — ghim không ghi được trên kênh theo khai báo kênh hiện tại (cùng mã với scadaKenh.capNhat).
       // R1b-2a T2 (m4, phán quyết K17) — step = lưới vừa trượt (`buoc`: writeStep hoặc |scale| của lưới thô trên tag CHƯA khai) ?? writeStep,

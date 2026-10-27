@@ -26,11 +26,21 @@ export function tenEdge(h: HangDiag): string | null {
   return h.soHuu.loai === "edge" ? (h.soHuu.edgeCode ?? String(h.soHuu.edgeNodeId)) : null;
 }
 
-/** Chỉ báo lỗi cho bộ lọc "chỉ lỗi": mất kết nối / không rõ / có tag xấu / có lỗi hoặc timeout trong 1 h. Edge và adapter tắt KHÔNG phải lỗi. */
+/**
+ * Chỉ báo lỗi cho bộ lọc "chỉ lỗi": mất kết nối / không rõ / có lý do có mã (R1b-2b-1 T5) / có tag xấu / có lỗi hoặc timeout trong 1 h.
+ * Edge và adapter tắt KHÔNG phải lỗi.
+ */
 export function coLoi(h: HangDiag): boolean {
   if (h.trangThai === "edge_chua_co_so_lieu" || h.trangThai === "disabled") return false;
-  return h.trangThai === "lost" || h.trangThai === "khong_ro" || h.tag.xau > 0 || h.boDem1h.loi > 0 || h.boDem1h.timeout > 0;
+  return (
+    h.trangThai === "lost" || h.trangThai === "khong_ro" || h.lyDo != null || h.tag.xau > 0 || h.boDem1h.loi > 0 || h.boDem1h.timeout > 0
+  );
 }
+
+/** R1b-2b-1 T5 (mục 51, C5) — khoá i18n của lý do có mã đi kèm trạng thái (máy chủ: trangThaiAdapter.LyDoTrangThaiKetNoi). */
+const NHAN_LY_DO: Record<NonNullable<HangDiag["lyDo"]>, string> = {
+  moi_tag_sai_cau_hinh: "scada.diag.lyDo.moi_tag_sai_cau_hinh",
+};
 
 export function useDonViThoiGian(): DonViThoiGian {
   const { t } = useTranslation();
@@ -56,6 +66,12 @@ export function ChipTrangThai({ hang, now }: { hang: HangDiag; now: number }) {
       <span>
         {chu}
         {nt.thoiGian ? ` ${nt.thoiGian}` : ""}
+        {/* R1b-2b-1 T5 — "Đang kết nối" không có lý do là vòng quay vô tận: lý do có mã hiện ngay dưới trạng thái. */}
+        {hang.lyDo && (
+          <span data-testid="ly-do-trang-thai" className="block whitespace-normal text-xs text-muted-foreground">
+            {t(NHAN_LY_DO[hang.lyDo])}
+          </span>
+        )}
       </span>
     </span>
   );

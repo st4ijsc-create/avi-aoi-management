@@ -96,8 +96,12 @@ export interface SuKienDoc {
   ok: boolean;
   timeout: boolean;
   ms: number;
-  /** Tick tốt: chất lượng từng tag (`reason` khi mẫu mang lý do). Tick lỗi: rỗng. */
-  tags: { tagKey: string; quality: OtQuality; reason?: LyDoChatLuong }[];
+  /**
+   * Tick tốt: chất lượng từng tag (`reason` khi mẫu mang lý do). Tick lỗi: rỗng.
+   * R1b-2b-1 T5 — `statusCode` của mẫu (khi có) để phân biệt tag sai cấu hình CỤC BỘ (driver không gửi yêu cầu — laMauTrungTinh) với lỗi
+   * cấu hình mà thiết bị trả.
+   */
+  tags: { tagKey: string; quality: OtQuality; reason?: LyDoChatLuong; statusCode?: string }[];
   /** SCADA R0 T12 (D1) — chỉ tick lỗi (`ok:false`): phân loại lỗi của lần đọc (phanLoiLoi của driver). */
   statusCode?: string;
   reason?: LyDoChatLuong;
@@ -147,6 +151,12 @@ export interface OtWrite {
   dataType?: OtDataType;
   scale?: number;
   offset?: number;
+  /**
+   * SCADA R1b-2b-1 T2 (KD-T2) — write này là giá trị GHIM của một STOP ĐÃ XÁC MINH (đặt DUY NHẤT ở `otDeviceWrite.executeOtDeviceWrite`, theo
+   * cùng điều kiện dời mốc STOP `bumpStopEpoch ?? stopTyped`). true ⇒ driver đổi sang bool bằng `boolDungGhim` (không bao giờ từ chối một STOP);
+   * vắng / false ⇒ `boolGhi` chặt (ngoài tập hợp lệ ⇒ write đó ok:false). Xem `drivers/boolNghiem.ts`.
+   */
+  dungGhim?: boolean;
 }
 
 /** Callback nhận mỗi mẫu từ subscription. */

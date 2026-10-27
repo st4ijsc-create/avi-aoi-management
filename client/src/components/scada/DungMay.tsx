@@ -175,8 +175,16 @@ export function CanhBaoChuaGhimStop() {
   );
 }
 
-/** R1b-2a T4 — vì sao STOP HMI CHƯA được gửi (băng đỏ cố định). */
-export type BangEstop = { loai: "qua_han" } | { loai: "qua_han_mot_phan"; list: string } | { loai: "gioi_han" };
+/**
+ * R1b-2a T4 — vì sao STOP HMI CHƯA được gửi (băng đỏ cố định). R1b-2b-1 T17 fix round 1 (điều phối 2026-10-27): `khong_ro` — ≥ 1 adapter kết thúc
+ * `timeout` (KHÔNG RÕ máy đã nhận STOP: máy có thể CHƯA dừng, người vận hành phải hành động; dòng đỏ trong hàng dễ bị bỏ sót). `khongRo` trên
+ * `qua_han_mot_phan`: cùng lần bấm có cả adapter không gửi vì hạn VÀ adapter không rõ.
+ */
+export type BangEstop =
+  | { loai: "qua_han" }
+  | { loai: "qua_han_mot_phan"; list: string; khongRo?: string }
+  | { loai: "khong_ro"; list: string }
+  | { loai: "gioi_han" };
 
 /**
  * Lỗi của CẢ lần bấm ⇒ băng đỏ (thuần — test được):
@@ -191,10 +199,15 @@ export function bangEstopTuLoi(e: unknown): BangEstop | null {
   return null;
 }
 
-/** Kết quả theo adapter có adapter bị bỏ vì hạn trước-gửi (reason STOP_QUA_HAN) ⇒ băng đỏ nêu các adapter đó. */
-export function bangEstopTuKetQua(ketQua: Array<{ code: string; reason?: string }>): BangEstop | null {
+/**
+ * Kết quả theo adapter có adapter bị bỏ vì hạn trước-gửi (reason STOP_QUA_HAN) ⇒ băng đỏ nêu các adapter đó. R1b-2b-1 T17 fix round 1 — adapter kết thúc
+ * `timeout` (không rõ kết cục, vd. liên kết mất khi STOP đang bay) ⇒ cũng băng đỏ (`khong_ro`), giữ dòng đỏ trong hàng.
+ */
+export function bangEstopTuKetQua(ketQua: Array<{ code: string; reason?: string; status?: string }>): BangEstop | null {
   const ds = ketQua.filter((r) => r.reason === "STOP_QUA_HAN").map((r) => r.code);
-  return ds.length > 0 ? { loai: "qua_han_mot_phan", list: ds.join(", ") } : null;
+  const khongRo = ketQua.filter((r) => r.status === "timeout" && r.reason !== "STOP_QUA_HAN").map((r) => r.code);
+  if (ds.length > 0) return { loai: "qua_han_mot_phan", list: ds.join(", "), ...(khongRo.length > 0 ? { khongRo: khongRo.join(", ") } : {}) };
+  return khongRo.length > 0 ? { loai: "khong_ro", list: khongRo.join(", ") } : null;
 }
 
 /** Băng đỏ CỐ ĐỊNH "DÙNG E-STOP CỨNG TẠI MÁY" (không phải toast; không tự tắt). `onBo` vắng ⇒ không có nút bỏ (băng trong hộp). */
@@ -205,7 +218,10 @@ export function BangEstopCung({ bang, onBo }: { bang: BangEstop; onBo?: () => vo
       ? t("scada.dungMay.bangEstop.quaHan")
       : bang.loai === "qua_han_mot_phan"
         ? t("scada.dungMay.bangEstop.quaHanMotPhan", { list: bang.list })
-        : t("scada.dungMay.bangEstop.gioiHan");
+        : bang.loai === "khong_ro"
+          ? t("scada.dungMay.bangEstop.khongRo", { list: bang.list })
+          : t("scada.dungMay.bangEstop.gioiHan");
+  const lyThem = bang.loai === "qua_han_mot_phan" && bang.khongRo ? t("scada.dungMay.bangEstop.khongRo", { list: bang.khongRo }) : null;
   return (
     <div
       role="alert"
@@ -217,6 +233,7 @@ export function BangEstopCung({ bang, onBo }: { bang: BangEstop; onBo?: () => vo
       <div className="flex-1 space-y-0.5">
         <p className="text-base font-bold tracking-wide">{t("scada.dungMay.bangEstop.tieuDe")}</p>
         <p className="text-sm font-medium">{ly}</p>
+        {lyThem && <p className="text-sm font-medium">{lyThem}</p>}
       </div>
       {onBo && (
         <Button

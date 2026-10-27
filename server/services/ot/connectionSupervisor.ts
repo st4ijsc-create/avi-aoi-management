@@ -192,6 +192,12 @@ export interface SupervisorOptions {
    * `dangChoDocTot()` trả false ngay khi supervisor vào 'connected'. Ném ⇒ bị nuốt.
    */
   onDocTotDauTien?: () => void;
+  /**
+   * SCADA R1b-2b-1 T5 (mục 51, C5) — phiên MỚI NHẤT (đang chờ đọc tốt) chỉ thấy tag sai cấu hình cục bộ (`co = true`: driver không gửi
+   * yêu cầu nào — reconnectNhanh.laMauTrungTinh) hoặc thôi như thế (`false`: thấy mẫu/tick trái lại, hoặc vừa đọc tốt). Host gắn/gỡ lý do
+   * `moi_tag_sai_cau_hinh`. KHÔNG đổi trạng thái supervisor. Ném ⇒ bị nuốt.
+   */
+  onMoiTagTrungTinh?: (co: boolean) => void;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -320,6 +326,7 @@ export class ConnectionSupervisor {
   private phienDaDocTot = 0;
   private readonly choDocTotDauTien: (() => boolean) | null;
   private readonly onDocTotDauTien: (() => void) | null;
+  private readonly onMoiTagTrungTinh: ((co: boolean) => void) | null;
 
   constructor(opts: SupervisorOptions) {
     this.adapterId = opts.adapterId;
@@ -349,6 +356,7 @@ export class ConnectionSupervisor {
     this.soTickHongDeMat = opts.soTickHongDeMat ?? 0;
     this.choDocTotDauTien = opts.choDocTotDauTien ?? null;
     this.onDocTotDauTien = opts.onDocTotDauTien ?? null;
+    this.onMoiTagTrungTinh = opts.onMoiTagTrungTinh ?? null;
     this.disconnectTimeoutMs =
       typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
         ? opts.disconnectTimeoutMs
@@ -915,7 +923,7 @@ export class ConnectionSupervisor {
     this.phienChoDocTot = cho ? phien : 0;
     if (k <= 0 && !cho) return { tuyChon: this.tuyChon, bat: null };
     // R1b-2a T13 — một bộ bắt cho cả tick (onTick dưới đây) và mẫu (onSample của connectAndSubscribe) của phiên này.
-    const bat = cho ? taoBatDocTot(() => this.danhDauDocTot(phien)) : null;
+    const bat = cho ? taoBatDocTot(() => this.danhDauDocTot(phien), (co) => this.baoMoiTagTrungTinh(phien, co)) : null;
     const hostOnTick = this.tuyChon?.onTick;
     const dem =
       k > 0
@@ -950,9 +958,24 @@ export class ConnectionSupervisor {
   private danhDauDocTot(phien: number): void {
     if (phien !== this.demPhien || this.phienDaDocTot === phien) return;
     this.phienDaDocTot = phien;
+    this.baoLyDoTrungTinh(false); // R1b-2b-1 T5 — đọc tốt thật ⇒ gỡ lý do "mọi tag sai cấu hình"
     if (this.stopped || this.state !== "connected" || phien !== this.phienHoatDong) return; // vào 'connected' sau ⇒ dangChoDocTot() = false
     try {
       this.onDocTotDauTien?.();
+    } catch {
+      // người nghe của host không được làm hỏng vòng poll
+    }
+  }
+
+  /** R1b-2b-1 T5 — bộ bắt của phiên `phien` báo "mọi tag trung tính" (co) — chỉ phiên MỚI NHẤT, chưa đọc tốt, supervisor chưa dừng. */
+  private baoMoiTagTrungTinh(phien: number, co: boolean): void {
+    if (this.stopped || phien !== this.demPhien || this.phienDaDocTot === phien) return;
+    this.baoLyDoTrungTinh(co);
+  }
+
+  private baoLyDoTrungTinh(co: boolean): void {
+    try {
+      this.onMoiTagTrungTinh?.(co);
     } catch {
       // người nghe của host không được làm hỏng vòng poll
     }

@@ -61,6 +61,12 @@ const PARAM_SPACE: Record<string, string> = {
 };
 const PARAM_KEYS = Object.keys(PARAM_SPACE);
 
+/**
+ * SCADA R1b-2b-1 final fix (rà soát cuối M-5) — `appError()` ở TẦNG DỊCH VỤ SCADA / OT cũng tới người dùng (vd `mayDungKhanCap.ts`
+ * `{ operation: "mayDungKhanCap" }` lọt cổng vì cổng chỉ quét `server/routers/**`). Hai thư mục này đã 0 thiếu lúc thêm (2026-10-27).
+ */
+const THU_MUC_DICH_VU_THEM = [join(ROUTERS_DIR, "..", "services", "scada"), join(ROUTERS_DIR, "..", "services", "ot")];
+
 function walkTsFiles(dir: string): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
@@ -115,7 +121,7 @@ describe("cổng chặn — mọi tham số tự-do của appError() phải có 
 
   it("mọi entity/parent/operation/field/feature/action literal có khoá ở vi/en/zh", () => {
     const missing: string[] = [];
-    for (const file of walkTsFiles(ROUTERS_DIR)) {
+    for (const file of [...walkTsFiles(ROUTERS_DIR), ...THU_MUC_DICH_VU_THEM.flatMap(walkTsFiles)]) {
       const src = readFileSync(file, "utf8");
       if (!src.includes("appError(")) continue;
       for (const { key, value } of extractAppErrorParams(src)) {

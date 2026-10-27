@@ -25,10 +25,11 @@
  *   `stopPin.ts` ⇒ vòng import). Test `stopPin.dai.r1a.db.test.ts` so hai bản trên mọi tổ hợp NULL/khác NULL.
  */
 import { and, eq } from "drizzle-orm";
-import { deviceTags, interlockRules, type DeviceTag } from "../../../drizzle/schema";
+import { deviceAdapters, deviceTags, interlockRules, type DeviceTag } from "../../../drizzle/schema";
 import type { getDb } from "../../db/connection";
 import { kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, type KetQuaGiaTri } from "./kenhScada";
 import { giaTriLenhInterlock } from "../interlock/giaTriLenh";
+import { kiemGiaTriDiaChiBit } from "../ot/drivers/diaChiBit";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -37,7 +38,12 @@ export type DbHoacTx = Db | Tx;
 
 export type KenhNhatQuan = Pick<DeviceTag, "dataType" | "channelKind" | "writable" | "writeMin" | "writeMax" | "writeStep"> &
   // kiem-dinh P1-3 — cùng luật lưới thô (int có scale/offset) với `dispatch()` cho kênh ĐÃ khai.
-  Partial<Pick<DeviceTag, "scale" | "offset">>;
+  Partial<Pick<DeviceTag, "scale" | "offset">> & {
+    // R1b-2b-1 T2 fix round 1 (I1) — địa chỉ + giao thức của adapter: có CẢ HAI ⇒ `kiemLenhInterlockTrenKenh` áp thêm luật địa chỉ bit
+    // (`kiemGiaTriDiaChiBit`). Vắng ⇒ không áp (hành vi cũ).
+    address?: string | null;
+    protocol?: string | null;
+  };
 
 /**
  * R1b-1 T13 polish (m1) — lưới vừa trượt của một OFF_STEP (lưới = `gocLuoi` + k·`buoc`; `goiY` = điểm lưới gần nhất), để lời từ chối nêu ĐÚNG
@@ -114,9 +120,14 @@ export function kiemNhatQuanKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhat
  * hạn của tag float (R1b-2a T2); bool / string / json ⇒ ok. R1b-2a T2: `datStopPin` cũng dùng hàm này cho giá trị ghim.
  */
 export function kiemLenhInterlockTrenKenh(tag: KenhNhatQuan, giaTri: unknown): KetQuaNhatQuan {
-  if (kenhDaKhai(tag)) return kiemNhatQuanKenh(tag, giaTri);
-  const kq = kiemLuoiThoChuaKhai(tag, giaTri);
-  return kq.ok ? { ok: true } : tuChoiTu(kq);
+  const kq: KetQuaNhatQuan = kenhDaKhai(tag)
+    ? kiemNhatQuanKenh(tag, giaTri)
+    : ((r) => (r.ok ? ({ ok: true } as const) : tuChoiTu(r)))(kiemLuoiThoChuaKhai(tag, giaTri));
+  if (!kq.ok) return kq;
+  // R1b-2b-1 T2 fix round 1 (I1) — địa chỉ lớp bit (coil Modbus, holding bool, bit SLMP / MC / S7): driver ghi MỘT BIT bằng `boolGhi` chặt bất kể
+  // dataType ⇒ giá trị ngoài tập bool là lệnh dispatch() sẽ từ chối (TYPE_MISMATCH ở cổng kênh sớm). Chỉ khi biết protocol + address.
+  const bit = kiemGiaTriDiaChiBit(tag.protocol, tag.address, tag.dataType, giaTri);
+  return bit.ok ? kq : { ok: false, ma: "TYPE_MISMATCH", chiTiet: bit.chiTiet };
 }
 
 /** Hành động của luật interlock có ghi xuống thiết bị không: `alert` không bao giờ dispatch (interlockEngine chỉ auto-block hành động khác). */
@@ -183,7 +194,7 @@ export async function kiemLenhInterlockTx(
   luat: { action: string; targetAdapterId: number | null | undefined; commandTag: string | null | undefined; commandValue: unknown },
 ): Promise<{ tag: KenhNhatQuan & { tagKey: string }; ma: MaViPham; chiTiet: string; luoi?: LuoiLech } | null> {
   if (!luatCoGhiLenh(luat.action) || luat.targetAdapterId == null || !luat.commandTag) return null;
-  const [tag] = await tx
+  const [dong] = await tx
     .select({
       tagKey: deviceTags.tagKey,
       dataType: deviceTags.dataType,
@@ -194,12 +205,18 @@ export async function kiemLenhInterlockTx(
       writeStep: deviceTags.writeStep,
       scale: deviceTags.scale,
       offset: deviceTags.offset,
+      address: deviceTags.address,
     })
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, luat.targetAdapterId), eq(deviceTags.tagKey, luat.commandTag)))
     .limit(1)
     .for("share");
-  if (!tag) return null;
-  const kq = kiemLenhInterlockTrenKenh(tag, giaTriLenhInterlock(luat)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô
+  if (!dong) return null;
+  // R1b-2b-1 T2 fix round 1 (I1) — giao thức của adapter cho luật địa chỉ bit. KHÔNG khoá ở đây (khoá adapter SAU tag sẽ đảo thứ tự khoá dự án
+  // adapter → tag): bên gọi (interlockRouter, R1b-2b-1 T10 `khoaDichLuatTx`) đã khoá adapter đích FOR SHARE TRƯỚC luật ⇒ hàng đọc ở đây là hàng
+  // giao dịch đang giữ, `deviceAdapter.update` đổi protocol phải chờ ta commit (hoặc ta chờ nó và đọc protocol MỚI).
+  const [ad] = await tx.select({ protocol: deviceAdapters.protocol }).from(deviceAdapters).where(eq(deviceAdapters.id, luat.targetAdapterId)).limit(1);
+  const tag = { ...dong, protocol: ad?.protocol ?? null };
+  const kq = kiemLenhInterlockTrenKenh(tag, giaTriLenhInterlock(luat)); // R1b-1 T13: kênh chưa khai ⇒ lưới thô; T2 fix round 1: địa chỉ bit
   return kq.ok ? null : { tag, ma: kq.ma, chiTiet: kq.chiTiet, ...(kq.luoi ? { luoi: kq.luoi } : {}) };
 }

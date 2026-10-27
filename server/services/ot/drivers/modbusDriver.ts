@@ -36,10 +36,12 @@ import {
   wordCountFor,
   type DecodeModbusOpts,
 } from "./modbusDecode";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -82,6 +84,11 @@ export class ModbusDriver extends NotImplementedDriver {
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
   private decodeOpts: DecodeModbusOpts = {};
+  /**
+   * SCADA R1b-2b-1 (bench B1b) — yêu cầu đang bay theo client: `destroy()` của modbus-serial huỷ hẹn giờ giao dịch mà không gọi callback
+   * ⇒ phải reject chúng NGAY ở ba điểm: socket close/error (markLinkLost), disconnect(), connect() trước khi đóng client cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("modbus");
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -95,6 +102,8 @@ export class ModbusDriver extends NotImplementedDriver {
       const prev = this.client;
       this.client = null;
       this.connected = false;
+      // R1b-2b-1 (iii) — yêu cầu đang bay trên client cũ trả lời NGAY (không rõ kết cục) TRƯỚC khi đóng nó (destroy() không gọi callback).
+      this.dangBay.huy(prev, "reconnect replaced the session");
       await closeModbusClient(prev);
     }
     const client = new ModbusRTU();
@@ -139,6 +148,8 @@ export class ModbusDriver extends NotImplementedDriver {
     const client = this.client;
     this.client = null;
     this.connected = false;
+    // R1b-2b-1 (ii) — yêu cầu đang bay trả lời NGAY (không rõ kết cục) TRƯỚC khi đóng: closeModbusClient ⇒ destroy() không gọi callback.
+    this.dangBay.huy(client, "session torn down (disconnect)");
     // doc 81 Đợt 1B Task 1 — đóng có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
     await closeModbusClient(client);
   }
@@ -161,7 +172,7 @@ export class ModbusDriver extends NotImplementedDriver {
       for (const ev of ["close", "error"]) {
         try {
           emitter.on(ev, (arg?: unknown) => {
-            if (this.client === client) this.markLinkLost(ev, arg);
+            if (this.client === client) this.markLinkLost(ev, arg, client);
           });
         } catch {
           // ignore
@@ -170,12 +181,14 @@ export class ModbusDriver extends NotImplementedDriver {
     }
   }
 
-  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
-    if (!this.connected) return;
-    this.connected = false;
+  /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). R1b-2b-1 (i) — và trả lời NGAY mọi yêu cầu đang bay của client đó. */
+  private markLinkLost(ev: string, arg: unknown, client: any): void {
     const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
-    this.lastError = `modbus link lost (${ev})${detail}`;
+    if (this.connected) {
+      this.connected = false;
+      this.lastError = `modbus link lost (${ev})${detail}`;
+    }
+    this.dangBay.huy(client, `socket ${ev}${detail}`);
   }
 
   /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
@@ -185,18 +198,21 @@ export class ModbusDriver extends NotImplementedDriver {
       const { registerType, register } = parseModbusAddress(tag.address);
       const count = wordCountFor(tag.dataType);
 
+      // R1b-2b-1 — client chốt lúc gọi; lời gọi thư viện đi qua sổ đang bay (liên kết mất ⇒ reject ngay, không treo tới hạn).
+      const client = this.client;
+      if (!client) throw new DeviceUnreachableError("modbus");
       let raw: number | boolean;
       if (registerType === "coil" || registerType === "discrete") {
         const res =
           registerType === "coil"
-            ? await this.client.readCoils(register, 1)
-            : await this.client.readDiscreteInputs(register, 1);
+            ? await this.dangBay.bay(client, client.readCoils(register, 1))
+            : await this.dangBay.bay(client, client.readDiscreteInputs(register, 1));
         raw = decodeModbus([res.data?.[0] ? 1 : 0], "bool", this.decodeOpts);
       } else {
         const res =
           registerType === "holding"
-            ? await this.client.readHoldingRegisters(register, count)
-            : await this.client.readInputRegisters(register, count);
+            ? await this.dangBay.bay(client, client.readHoldingRegisters(register, count))
+            : await this.dangBay.bay(client, client.readInputRegisters(register, count));
         const words: number[] = Array.isArray(res.data) ? res.data : [];
         raw = decodeModbus(words, tag.dataType, this.decodeOpts);
       }
@@ -206,10 +222,8 @@ export class ModbusDriver extends NotImplementedDriver {
       if (typeof raw === "boolean") {
         value = raw;
       } else {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = raw * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(raw, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       this.lastOkAt = now();
@@ -304,20 +318,25 @@ export class ModbusDriver extends NotImplementedDriver {
   private async writeOne(w: OtWrite): Promise<OtCommandResult> {
     try {
       const { registerType, register } = parseModbusAddress(w.address);
+      // R1b-2b-1 — client chốt lúc gọi; lời ghi đi qua sổ đang bay (liên kết mất / phiên bị hạ ⇒ reject NGAY, kết cục không rõ).
+      const client = this.client;
+      if (!client) throw new DeviceUnreachableError("modbus");
 
       if (registerType === "input" || registerType === "discrete") {
         return { tagKey: w.tagKey, ok: false, error: "register type not writable" };
       }
 
       if (registerType === "coil") {
-        await this.client.writeCoil(register, Boolean(w.value));
+        // R1b-2b-1 T2 — MỘT luật bool bất kể dataType: "false" / "0" ⇒ FALSE, "off" / 2 ⇒ ok:false (khối catch dưới); STOP đã xác minh
+        // (`w.dungGhim`) ⇒ `boolDungGhim` — ghim cũ 255 trên coil int ⇒ TRUE, không bao giờ bị chặn (KD-T2).
+        await this.dangBay.bay(client, client.writeCoil(register, boolChoGhi(w.value, w.dungGhim)));
         return { tagKey: w.tagKey, ok: true };
       }
 
       // holding register — int (1 word) hoặc float (2 word).
       const dataType = w.dataType ?? "int";
-      // INVERSE scale/offset (int/float); bool không tới đây với holding.
-      const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
+      // INVERSE scale/offset (int/float). R1b-2b-1 T2 — bool trên holding: cùng luật với coil (`boolChoGhi`), rồi encodeModbus ghi 1 / 0.
+      const raw = dataType === "bool" ? boolChoGhi(w.value, w.dungGhim) : (inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number);
       if (dataType === "int" || dataType === "float") {
         const rangeErr = modbusRangeError(Number(raw), dataType, this.decodeOpts.signed !== false);
         if (rangeErr) {
@@ -328,14 +347,17 @@ export class ModbusDriver extends NotImplementedDriver {
       const words = encodeModbus(raw, dataType, this.decodeOpts);
 
       if (wordCountFor(dataType) > 1 || words.length > 1) {
-        await this.client.writeRegisters(register, words);
+        await this.dangBay.bay(client, client.writeRegisters(register, words));
       } else {
-        await this.client.writeRegister(register, words[0]);
+        await this.dangBay.bay(client, client.writeRegister(register, words[0]));
       }
       return { tagKey: w.tagKey, ok: true };
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
+      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (writeTags reject) để dispatcher trả 'timeout'
+      // NGAY — không gộp vào ok:false ('failed' nói sai: lệnh có thể đã tới PLC). Các write sau trong lô không được gửi (liên kết đã mất).
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

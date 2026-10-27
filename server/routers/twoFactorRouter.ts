@@ -10,7 +10,10 @@ import { verifyTotpOnce } from "../_core/totpOnce";
 // (`TOTP_TAM_KHOA` kèm phút còn lại / `TOTP_KHONG_KIEM_DUOC`) và cho admin mở khoá (`moKhoaTotp`).
 // Mã sai / phát lại ⇒ `hopLe:false`, mỗi thủ tục giữ câu lỗi cũ (không kèm số lần sai); `kiemKhoaTotp` NÉM `TOTP_TAM_KHOA`
 // (TOO_MANY_REQUESTS, `{ remainingMinutes }`) / `TOTP_KHONG_KIEM_DUOC` (SERVICE_UNAVAILABLE).
-import { kiemKhoaTotp, moKhoaTotpCuaNguoiDung } from "../_core/totpKhoaSai";
+import { kiemKhoaTotp, moKhoaTotpCuaNguoiDung, MO_KHOA_TOI_DA_MOI_GIO } from "../_core/totpKhoaSai";
+// R1b-2b-2b C6 — phạm vi người đích của `moKhoaTotp`: bộ phân giải phạm vi DUY NHẤT + danh tính từ ctx.
+import { resolveTenantFactoryScope } from "../db/reportAggregators";
+import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import QRCode from "qrcode";
 import { getDb, get2FAStatus, setup2FA, disable2FA, xoaMoiMaDuPhong, quayVongMaDuPhong, verifyBackupCode, getUserById, layBiMatNguoiDung } from "../db";
 // ★ Pha 8 — siết `disable` cho khớp tuyến song song `user.disable2FA`: đòi MẬT KHẨU + một yếu tố
@@ -373,6 +376,12 @@ export const twoFactorRouter = router({
    * Xoá hàng `totp_khoa_sai` của người đó + một dòng audit `totp.mo_khoa` (kèm `lyDo`) trong CÙNG giao dịch
    * (`moKhoaTotpCuaNguoiDung`). Không có hàng ⇒ vẫn ghi audit (một hành động admin luôn để dấu), trả `daMoKhoa: false`.
    * Không trả / không đọc số lần sai (điều phối: không lộ đếm).
+   *
+   * ★ R1b-2b-2b C6 (kiem-dinh KD-2bA) — ba cổng, theo thứ tự:
+   *   ① PHẠM VI + ② KHÔNG LEO THANG (`dichMoKhoaDuoc`): ngoài phạm vi / leo thang ≡ id KHÔNG TỒN TẠI — CÙNG mã, CÙNG câu, cùng chuỗi truy
+   *     vấn (người đích vắng vẫn chạy bước phân giải phạm vi) ⇒ một admin bị thu hẹp không dò được id nhà máy khác, cũng không dò được
+   *     "id này là một admin cao hơn mình" (FORBIDDEN sẽ xác nhận đúng điều ấy — lý do chọn NOT_FOUND).
+   *   ③ TRẦN theo người đích (`MO_KHOA_TOI_DA_MOI_GIO` / giờ, `moKhoaTotpCuaNguoiDung`) — đứng SAU ①② để lỗi trần không thành máy dò tồn tại.
    */
   moKhoaTotp: adminProcedure
     .input(z.object({ userId: z.number().int().positive(), lyDo: z.string().trim().min(5).max(300) }))
@@ -387,12 +396,46 @@ export const twoFactorRouter = router({
         throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess", reason: "totpSelfUnlock" }, "Không tự mở khoá xác thực hai lớp của chính mình — cần một admin khác.");
       }
       const dich = await getUserById(input.userId);
-      if (!dich) {
+      // ⚠ Chạy cổng phạm vi CẢ KHI `dich` vắng (role ⇒ "user"): id không tồn tại và id ngoài phạm vi đi CÙNG đường truy vấn.
+      const choPhep = await dichMoKhoaDuoc(ctx, input.userId, dich?.role ?? null);
+      if (!dich || !choPhep) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
-      const { daMoKhoa } = await moKhoaTotpCuaNguoiDung({ userId: input.userId, actorId: ctx.user.id, lyDo: input.lyDo });
+      const { daMoKhoa, vuotTran } = await moKhoaTotpCuaNguoiDung({ userId: input.userId, actorId: ctx.user.id, lyDo: input.lyDo });
+      if (vuotTran) {
+        throw appError(
+          "TOO_MANY_REQUESTS",
+          "RATE_LIMITED",
+          undefined,
+          `Người dùng này đã được mở khoá xác thực hai lớp ${MO_KHOA_TOI_DA_MOI_GIO} lần trong một giờ — chờ khoá tự hết (5 phút) hoặc thử lại sau.`,
+        );
+      }
       return { success: true, daMoKhoa };
     }),
 });
+
+/**
+ * ★ R1b-2b-2b C6 — người gọi (admin) có được mở khoá TOTP của `userId` không. DÙNG LẠI bộ phân giải phạm vi DUY NHẤT
+ * (`resolveTenantFactoryScope`, `server/db/reportAggregators.ts`) cho CẢ HAI phía — không có bộ luật phạm vi người dùng thứ hai:
+ *   · người gọi: `phamViCua(ctx)` (danh tính từ phiên, không từ input) — `factoryIds: null` = TOÀN HỆ THỐNG ⇒ miễn hai cổng dưới.
+ *     ⚠ Theo mô hình HIỆN TẠI mọi `role === "admin"` đều là toàn hệ thống (`phamViGhiCensus` §5c ghim tiền đề ấy) ⇒ HÔM NAY hai cổng
+ *     này không bao giờ từ chối một admin thật; chúng tự có hiệu lực ngay khi phạm vi admin bị thu hẹp (lúc đó §5c đỏ).
+ *   · người đích: chính tập nhà máy mà người ấy được thấy (theo vai thật của họ; admin ⇒ null = mọi nhà máy).
+ *   ① PHẠM VI: đích thuộc ÍT NHẤT một nhà máy của người gọi (`null` của đích = thuộc mọi nhà máy). Chưa gán nhà máy nào ⇒ ngoài phạm vi.
+ *   ② KHÔNG LEO THANG: đích là admin ⇒ TẦM của đích phải ⊆ tầm người gọi. Vai trong `roleenum` không có bậc giữa các admin; "bậc" của
+ *     một admin = độ rộng phạm vi của họ (toàn hệ thống > tập đoàn > nhà máy) ⇒ admin toàn hệ thống / admin nhiều nhà máy hơn chỉ một
+ *     admin toàn hệ thống mới mở được.
+ * `strict`: không hỏi được DB ⇒ NÉM (không bao giờ đoán "trong phạm vi").
+ */
+export async function dichMoKhoaDuoc(ctx: CoDanhTinh, userId: number, roleDich: string | null): Promise<boolean> {
+  const goi = await resolveTenantFactoryScope(phamViCua(ctx), { strict: true });
+  if (goi.factoryIds === null) return true;
+  const tapGoi = new Set(goi.factoryIds);
+  const dich = await resolveTenantFactoryScope({ userId, userRole: roleDich ?? "user" }, { strict: true });
+  const trongPhamVi = dich.factoryIds === null || dich.factoryIds.some((id) => tapGoi.has(id));
+  if (!trongPhamVi) return false;
+  if (roleDich === "admin" && (dich.factoryIds === null || !dich.factoryIds.every((id) => tapGoi.has(id)))) return false;
+  return true;
+}
 
 export default twoFactorRouter;

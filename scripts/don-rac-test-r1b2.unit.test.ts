@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error — .mjs không có khai báo kiểu
-import { chay, laDbTest, tenDbLaTest, MUC_TIEU } from "./don-rac-test-r1b2.mjs";
+import { chay, laDbTest, tenDbLaTest, MUC_TIEU, MAU_MA_TEST, MAU_MA_TEST_SQL, kiemMoCoi, kiemConTro, TuChoi, inIds, docIds } from "./don-rac-test-r1b2.mjs";
 
 const DEV = "postgresql://avi_app:x@127.0.0.1:5434/aoi_management";
 const TEST = "postgresql://avi_app:x@127.0.0.1:5434/aoi_management_test";
@@ -78,14 +78,14 @@ describe("guard URL (lớp 1) — trước khi mở kết nối", () => {
   it("TEST_DATABASE_URL trỏ DEV ⇒ thoát 2, 0 kết nối", async () => {
     process.env.TEST_DATABASE_URL = DEV;
     const g = gia("aoi_management");
-    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=-"], g.connect)).toBe(2);
     expect(g.st.mo).toBe(0);
   });
   it("MIGRATION_DB_URL đè URL owner sang DEV ⇒ thoát 2, 0 kết nối (asOwner bỏ qua url)", async () => {
     process.env.TEST_DATABASE_URL = TEST;
     process.env.MIGRATION_DB_URL = "postgresql://aoi:aoi@127.0.0.1:5434/aoi_management";
     const g = gia("aoi_management");
-    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=-"], g.connect)).toBe(2);
     expect(g.st.mo).toBe(0);
   });
   it("tên CSDL chứa test nhưng không kết thúc _test ⇒ thoát 2, 0 kết nối", async () => {
@@ -100,7 +100,7 @@ describe("guard thời chạy (lớp 2) — current_database() trên chính kế
   it("URL trông như _test nhưng máy chủ trả CSDL không kết thúc _test ⇒ thoát 2 sau ĐÚNG một câu lệnh", async () => {
     process.env.TEST_DATABASE_URL = TEST;
     const g = gia("aoi_management"); // đổi tên / URL trỏ sai nhưng chuỗi vẫn _test
-    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=-"], g.connect)).toBe(2);
     expect(g.st.mo).toBe(1);
     expect(g.st.cau).toHaveLength(1);
     expect(g.st.cau[0]).toMatch(/current_database/);
@@ -109,7 +109,7 @@ describe("guard thời chạy (lớp 2) — current_database() trên chính kế
     process.env.TEST_DATABASE_URL = TEST;
     process.env.MIGRATION_DB_URL = "postgresql://aoi:aoi@127.0.0.1:5434/aoi_management_test";
     const g = gia("aoi_management");
-    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=-"], g.connect)).toBe(2);
     expect(g.st.url).toBe(process.env.MIGRATION_DB_URL);
     expect(g.st.cau).toHaveLength(1);
   });
@@ -123,7 +123,7 @@ describe("ghim máy chủ — cùng host:port với DATABASE_URL", () => {
     process.env.TEST_DATABASE_URL = TEST;
     process.env.MIGRATION_DB_URL = url;
     const g = gia("aoi_management_test"); // tên CSDL đúng — chỉ máy chủ sai
-    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=-"], g.connect)).toBe(2);
     expect(g.st.mo).toBe(0);
   });
   it("TEST_DATABASE_URL ở máy khác ⇒ thoát 2, 0 kết nối", async () => {
@@ -155,5 +155,66 @@ describe("danh sách đích", () => {
     }
     expect(MUC_TIEU.adapters).toEqual([26336, 26342, 26343, 27035]);
     for (const id of [56136, 56139, 56182, 56185, 56440]) expect(MUC_TIEU.machines).toContain(id);
+  });
+});
+
+describe("R1b-2b-1 T13 — tìm mục tiêu bằng truy vấn, --ids duyệt, từ chối mồ côi", () => {
+  it("MAU_MA_TEST dựng từ MAU_MA_TEST_SQL (một nguồn)", () => {
+    expect(MAU_MA_TEST.source).toBe(MAU_MA_TEST_SQL);
+    expect(MAU_MA_TEST.flags).toBe("i");
+  });
+  it("kiemMoCoi: adapter gắn máy ngoài tập ⇒ TuChoi; machineId NULL hoặc trong tập ⇒ không ném", () => {
+    expect(() => kiemMoCoi({ machines: [1] }, [{ id: 9, machineId: 2 }])).toThrow(TuChoi);
+    expect(() => kiemMoCoi({ machines: [1] }, [{ id: 9, machineId: null }])).not.toThrow();
+    expect(() => kiemMoCoi({ machines: [1] }, [{ id: 9, machineId: 1 }])).not.toThrow();
+  });
+  it("inIds/docIds khứ hồi; sai định dạng ⇒ TuChoi", () => {
+    const m = { adapters: [3, 1], machines: [5], edgeNodes: [], stations: [], lines: [], workshops: [], factories: [] };
+    expect(inIds(m)).toBe("adapters:1.3,machines:5");
+    expect(inIds(docIds(inIds(m)))).toBe(inIds(m));
+    expect(inIds(docIds("-"))).toBe("-");
+    for (const xau of ["adapters:", "bay:1", "adapters:1,adapters:2", "adapters:1;machines:2", "adapters:a"]) expect(() => docIds(xau), xau).toThrow(TuChoi);
+  });
+  it("--ghi không có --ids ⇒ thoát 2, 0 kết nối", async () => {
+    process.env.TEST_DATABASE_URL = TEST;
+    const g = gia("aoi_management_test");
+    expect(await chayVoi(["--test-only", "--ghi"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(0);
+  });
+  it("--ids sai định dạng ⇒ thoát 2, 0 kết nối", async () => {
+    process.env.TEST_DATABASE_URL = TEST;
+    const g = gia("aoi_management_test");
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=rac"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(0);
+  });
+  it("--ids lệch tập tìm lại ⇒ thoát 2, không câu DELETE nào", async () => {
+    process.env.TEST_DATABASE_URL = TEST;
+    const g = gia("aoi_management_test"); // tìm lại ra rỗng, --ids đòi adapters:5
+    expect(await chayVoi(["--test-only", "--ghi", "--ids=adapters:5"], g.connect)).toBe(2);
+    expect(g.st.mo).toBe(1);
+    expect(g.st.cau.some((c) => /DELETE/i.test(c))).toBe(false);
+  });
+});
+
+describe("R1b-2b-1 T13 vòng sửa 1 — máy lơ lửng, con trỏ ngoài đích, chuỗi duyệt moCoi", () => {
+  const rong = { adapters: [], edgeNodes: [], machines: [1], stations: [], lines: [], workshops: [], factories: [] };
+  it("kiemMoCoi: máy ngoài tập CÓ THẬT ⇒ TuChoi; KHÔNG tồn tại ⇒ trả { adapter: máy }; null ⇒ {}", () => {
+    expect(() => kiemMoCoi(rong, [{ id: 9, machineId: 2 }], new Set([2]))).toThrow(TuChoi);
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: 2 }], new Set())).toEqual({ 9: 2 });
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: null }], new Set())).toEqual({});
+    expect(kiemMoCoi(rong, [{ id: 9, machineId: 1 }], new Set())).toEqual({});
+  });
+  it("kiemConTro: adapter ngoài đích trỏ máy / edge node đích ⇒ TuChoi", () => {
+    const muc = { ...rong, edgeNodes: [7] };
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: 1, edgeNodeId: null }])).toThrow(TuChoi);
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: null, edgeNodeId: 7 }])).toThrow(TuChoi);
+    expect(() => kiemConTro(muc, [{ id: 5, machineId: 2, edgeNodeId: 8 }])).not.toThrow();
+  });
+  it("inIds/docIds mang nhóm moCoi (khứ hồi, thứ tự ổn định); nhóm moCoi lặp / sai ⇒ TuChoi", () => {
+    const m = { ...rong, adapters: [3], moCoi: { 9: 20, 3: 10 } };
+    expect(inIds(m)).toBe("adapters:3,machines:1,moCoi:3>10.9>20");
+    expect(inIds(docIds(inIds(m)))).toBe(inIds(m));
+    expect(inIds(m)).not.toBe(inIds({ ...m, moCoi: { 3: 11, 9: 20 } }));
+    for (const xau of ["moCoi:1", "moCoi:1>2,moCoi:3>4", "moCoi:1>"]) expect(() => docIds(xau), xau).toThrow(TuChoi);
   });
 });

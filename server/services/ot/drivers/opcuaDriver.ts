@@ -32,8 +32,10 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName, OpcuaNodeError } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
@@ -188,6 +190,13 @@ export class OpcuaDriver extends NotImplementedDriver {
   private lastLatencyMs: number | undefined;
   /** SCADA R0 (C5) — hạn giao dịch đã cấu hình ở connect(); `session.read` có thể treo vô hạn khi cáp rút. */
   private timeoutMs = 5000;
+  /**
+   * SCADA R1b-2b-1 — lệnh ghi đang bay theo OPCUAClient. node-opcua TRẢ LỜI giao dịch đang chờ khi transport đóng
+   * (client_secure_channel_layer `_cancel_pending_transactions`) — không mồ côi — nhưng bằng lỗi thường ⇒ trước đây 'failed' (nói sai:
+   * lệnh có thể đã tới server). 'connection_lost'/'close' của client phát ĐỒNG BỘ trước bước huỷ đó ⇒ reject ở đây trước với
+   * `LoiMatLienKetKhiDangGui` ⇒ dispatcher 'timeout' (không rõ). Ba điểm: markLinkLost, disconnect(), connect() khi thay client cũ.
+   */
+  private readonly dangBay = new SoYeuCauDangBay("opcua");
   // doc 81 Đợt 1B Task 12 — theo PHIÊN (xoá khi connect/disconnect: PLC tải lại project có
   // thể đổi chỉ số namespace và kiểu biến).
   private resolveNodeIdFn: ((s: string) => unknown) | null = null;
@@ -241,6 +250,21 @@ export class OpcuaDriver extends NotImplementedDriver {
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
     this.timeoutMs = timeoutMs;
+    // R1b-2b-1 (iii) — connect lại trên CÙNG driver: lệnh ghi đang bay trên client hiện tại trả lời NGAY (không rõ kết cục).
+    // T17 fix round 1 (review Minor 3) — capture-and-null TRƯỚC (như các driver khác): trong cửa sổ connect / createSession (có thể vài giây) không
+    // lệnh ghi nào đi lên client cũ (writeTags ⇒ DeviceUnreachableError, không gửi); client cũ đóng nền CÓ HẠN (trước: bị bỏ lại, rò).
+    const clientCu = this.client;
+    const sessionCu = this.session;
+    if (clientCu || sessionCu) {
+      this.client = null;
+      this.session = null;
+      this.connected = false;
+      this.dangBay.huy(clientCu, "reconnect replaced the session");
+      void (async () => {
+        if (sessionCu) await settleWithin(() => sessionCu.close(), OPCUA_CLOSE_STEP_MS, "opcua session.close (phiên cũ)");
+        if (clientCu) await settleWithin(() => clientCu.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect (phiên cũ)");
+      })();
+    }
     const createOpts: Record<string, unknown> = {
       endpointMustExist: false,
       connectionStrategy: { maxRetry: 1 },
@@ -313,6 +337,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     this.session = null;
     this.client = null;
     this.connected = false;
+    this.dangBay.huy(client, "session torn down (disconnect)"); // R1b-2b-1 (ii)
     this.resetSessionCaches();
     // Task 12 — mỗi bước có hạn (tổng ≤ 2 s): session/secure channel treo không giữ stop().
     if (session) {
@@ -426,7 +451,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     for (const ev of events) {
       try {
         client.on(ev, (arg?: unknown) => {
-          if (this.client === client) this.markLinkLost(ev, arg);
+          if (this.client === client) this.markLinkLost(ev, arg, client);
         });
       } catch {
         // ignore — không phải mọi build đều expose event này
@@ -435,10 +460,12 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
-  private markLinkLost(ev: string, arg?: unknown): void {
+  private markLinkLost(ev: string, arg: unknown, client: any): void {
+    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
+    // R1b-2b-1 (i) — 'backoff' chỉ là một lần thử nối lại (không hạ transport đang dùng) ⇒ không huỷ lệnh đang bay vì nó.
+    if (ev !== "backoff") this.dangBay.huy(client, `link ${ev}${detail}`);
     if (!this.connected) return;
     this.connected = false;
-    const detail = arg ? `: ${(arg as Error)?.message ?? String(arg)}` : "";
     this.lastError = `opcua link lost (${ev})${detail}`;
   }
 
@@ -599,17 +626,26 @@ export class OpcuaDriver extends NotImplementedDriver {
     // bad (kèm statusCode) cho tag đó, giới hạn tần suất theo tag. Đóng êm (close) ⇒ không phát.
     let closing = false;
     const lastBadAt = new Map<string, number>();
-    const emitBad = (tag: OtTagAddress, statusCode: string) => {
+    const emitBad = (tag: OtTagAddress, statusCode: string, reason?: LyDoChatLuong) => {
       if (closing) return;
       const now = Date.now();
       const prev = lastBadAt.get(tag.tagKey);
       if (prev !== undefined && now - prev < OPCUA_MONITORED_BAD_MIN_INTERVAL_MS) return;
       lastBadAt.set(tag.tagKey, now);
       void Promise.resolve(
-        onSample({ tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), tsSource: "server", statusCode }),
+        onSample({
+          tagKey: tag.tagKey,
+          raw: undefined,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          tsSource: "server",
+          statusCode,
+          ...(reason ? { reason } : {}),
+        }),
       ).catch(() => undefined);
     };
-    const deferredBad: Array<[OtTagAddress, string]> = [];
+    const deferredBad: Array<[OtTagAddress, string, LyDoChatLuong?]> = [];
 
     for (const tag of tags) {
       // Task 12 — cùng bộ phân giải với readTags (nsu=, kiểm cú pháp bằng thư viện).
@@ -617,7 +653,9 @@ export class OpcuaDriver extends NotImplementedDriver {
       if ("error" in r) {
         // Bad address → skip this tag (do NOT tear down the whole subscription).
         console.error(`[OPCUA] monitored-item skip bad address "${tag.address}": ${r.error} (${r.statusCode})`);
-        deferredBad.push([tag, r.statusCode]);
+        // R1b-2b-1 T5 fix round 1 (I1) — địa chỉ không phân giải được (cục bộ) ⇒ lỗi cấu hình, đúng như readTags khi cờ V2 bật: mẫu
+        // `BadNodeIdInvalid` + `config_error` là TRUNG TÍNH (reconnectNhanh.laMauTrungTinh), không phải "chưa trả lời" (bad trần).
+        deferredBad.push([tag, r.statusCode, chatLuongV2Bat() ? "config_error" : undefined]);
         continue;
       }
       const nodeId = r.nodeId;
@@ -673,7 +711,7 @@ export class OpcuaDriver extends NotImplementedDriver {
       return null;
     }
     // Có đường push ⇒ tag không tạo được item vẫn phải nói "bad" (đường poll không chạy).
-    for (const [tag, sc] of deferredBad) emitBad(tag, sc);
+    for (const [tag, sc, lyDo] of deferredBad) emitBad(tag, sc, lyDo);
 
     return {
       close: async () => {
@@ -862,9 +900,9 @@ export class OpcuaDriver extends NotImplementedDriver {
             return { tagKey: w.tagKey, error: `cannot read DataType of ${nodeId}: ${(e as Error)?.message || String(e)}` };
           }
           if (builtin === null) {
-            variantValue = this.coerce(raw, dataType);
+            variantValue = this.coerce(raw, dataType, w.dungGhim);
           } else {
-            const c = coerceOpcuaWriteValue(raw, builtin);
+            const c = coerceOpcuaWriteValue(raw, builtin, w.dungGhim);
             if (!c.ok) return { tagKey: w.tagKey, error: c.error };
             try {
               variantValue = this.Variant
@@ -893,11 +931,14 @@ export class OpcuaDriver extends NotImplementedDriver {
     let statusCodes: any[] = [];
     if (toWrite.length > 0) {
       try {
-        const res = await this.session.write(toWrite);
+        // R1b-2b-1 — qua sổ đang bay (theo client): liên kết mất / phiên bị hạ ⇒ reject NGAY với kết cục KHÔNG RÕ.
+        const res = await this.dangBay.bay(this.client, this.session.write(toWrite));
         statusCodes = Array.isArray(res) ? res : [res];
       } catch (err) {
         const msg = (err as Error)?.message || String(err);
         this.lastError = msg;
+        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+        if (laLoiMatLienKetKhiDangGui(err)) throw err;
         // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
         return prepared.map((p) => ({
           tagKey: p.tagKey,
@@ -925,7 +966,7 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   /** Bọc raw vào Variant theo OtDataType (int→Int32, float→Double, bool→Boolean, string→String). */
-  private coerce(raw: unknown, dataType: string): any {
+  private coerce(raw: unknown, dataType: string, dungGhim?: boolean): any {
     const DataType = this.DataType ?? {};
     const Variant = this.Variant;
     let dt: any;
@@ -933,7 +974,8 @@ export class OpcuaDriver extends NotImplementedDriver {
     switch (dataType) {
       case "bool":
         dt = DataType.Boolean;
-        value = Boolean(raw);
+        // R1b-2b-1 T2 — MỘT luật bool (`boolChoGhi`): ngoài tập hợp lệ ⇒ ném (khối try của write ⇒ ok:false); STOP đã xác minh ⇒ không chặn.
+        value = boolChoGhi(raw, dungGhim);
         break;
       case "int":
         dt = DataType.Int32; // Int32 phổ biến nhất với PLC.

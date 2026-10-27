@@ -12,6 +12,8 @@ import { COOKIE_NAME } from "@shared/const";
 import {
   resolveRateLimitStoreKind,
   RedisRateLimitStore,
+  LUA_TANG_DEM,
+  LUA_GIAM_DEM,
   apiKeyGenerator,
   createApiLimiter,
   type MinimalRedisClient,
@@ -55,28 +57,38 @@ describe("store selection (B6)", () => {
   });
 });
 
+/**
+ * Fake client: R1b-2b-1 T14 fix round 1 — the store talks to Redis through ONE atomic EVAL per hit. The fake runs the documented semantics
+ * of exactly the two exported scripts (any other script text ⇒ reject, so a changed script cannot silently pass) and records every call.
+ */
 function fakeRedis() {
   const counters = new Map<string, number>();
   const ttls = new Map<string, number>();
-  const calls = { pexpire: 0 };
+  const calls = { pexpire: 0, eval: [] as Array<[string, number, ...Array<string | number>]> };
   const client: MinimalRedisClient = {
-    async incr(k) {
-      const v = (counters.get(k) ?? 0) + 1;
-      counters.set(k, v);
-      return v;
-    },
-    async pttl(k) {
-      return ttls.has(k) ? ttls.get(k)! : -1;
-    },
-    async pexpire(k, ms) {
-      calls.pexpire++;
-      ttls.set(k, ms);
-      return 1;
-    },
-    async decr(k) {
-      const v = (counters.get(k) ?? 0) - 1;
-      counters.set(k, v);
-      return v;
+    async eval(script, numKeys, ...args) {
+      calls.eval.push([script, numKeys, ...args]);
+      const k = String(args[0]);
+      if (script === LUA_TANG_DEM) {
+        const v = (counters.get(k) ?? 0) + 1;
+        counters.set(k, v);
+        let t = ttls.has(k) ? ttls.get(k)! : -1;
+        if (t < 0) {
+          calls.pexpire++;
+          t = Number(args[1]);
+          ttls.set(k, t);
+        }
+        return [v, t];
+      }
+      if (script === LUA_GIAM_DEM) {
+        const v = counters.get(k) ?? 0;
+        if (v > 0) {
+          counters.set(k, v - 1);
+          return v - 1;
+        }
+        return 0;
+      }
+      throw new Error("fake: unknown script");
     },
     async del(k) {
       counters.delete(k);
@@ -87,7 +99,7 @@ function fakeRedis() {
   return { client, counters, ttls, calls };
 }
 
-describe("RedisRateLimitStore (fixed window: INCR + PEXPIRE)", () => {
+describe("RedisRateLimitStore (fixed window: ONE atomic EVAL — INCR + PEXPIRE-if-no-TTL)", () => {
   it("counts hits, arms the window TTL exactly once, and reports resetTime", async () => {
     const { client, counters, ttls, calls } = fakeRedis();
     const store = new RedisRateLimitStore({ prefix: "rl:test:", client });
@@ -105,6 +117,11 @@ describe("RedisRateLimitStore (fixed window: INCR + PEXPIRE)", () => {
     const second = await store.increment("client-a");
     expect(second.totalHits).toBe(2);
     expect(calls.pexpire).toBe(1); // TTL only armed on first hit of the window
+    // ONE round trip per hit: the counter script, one key, the window as ARGV
+    expect(calls.eval).toEqual([
+      [LUA_TANG_DEM, 1, "rl:test:client-a", 60_000],
+      [LUA_TANG_DEM, 1, "rl:test:client-a", 60_000],
+    ]);
 
     // independent buckets per key
     const other = await store.increment("client-b");
@@ -123,6 +140,25 @@ describe("RedisRateLimitStore (fixed window: INCR + PEXPIRE)", () => {
 
     await store.resetKey("k");
     expect(counters.has("rl:test:k")).toBe(false);
+    // decrement of a missing / expired key must not create a TTL-less negative counter
+    await store.decrement("k");
+    expect(counters.has("rl:test:k")).toBe(false);
+  });
+
+  it("the counter script arms the TTL whenever the key has none (new key or lost TTL) and returns {count, pttl}", () => {
+    expect(LUA_TANG_DEM).toContain("redis.call('INCR', KEYS[1])");
+    expect(LUA_TANG_DEM).toContain("redis.call('PTTL', KEYS[1])");
+    expect(LUA_TANG_DEM).toContain("if t < 0 then redis.call('PEXPIRE', KEYS[1], ARGV[1])");
+    expect(LUA_TANG_DEM).toContain("return {v, t}");
+    expect(LUA_GIAM_DEM).toContain("if v > 0 then return redis.call('DECR', KEYS[1]) end");
+  });
+
+  it("a malformed EVAL reply throws (⇒ StoreDuPhongBoNho counts in memory) instead of returning a bogus count", async () => {
+    for (const bad of [null, "x", [0, 1000], [1, -1], ["a", 5], [2]]) {
+      const store = new RedisRateLimitStore({ prefix: "p:", client: { eval: async () => bad, del: async () => 1 } });
+      store.init({ windowMs: 1_000 } as any);
+      await expect(store.increment("k"), JSON.stringify(bad)).rejects.toThrow(/unexpected EVAL reply/);
+    }
   });
 
   it("is shared-friendly: localKeys is false (counters live in Redis)", () => {

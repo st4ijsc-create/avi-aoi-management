@@ -182,9 +182,11 @@ export function moduleGate(moduleCode: string) {
   return async ({
     ctx,
     next,
+    path,
   }: {
     ctx: TrpcContext & { user: NonNullable<TrpcContext["user"]> };
     next: Function;
+    path?: string;
   }) => {
     // ── Flag OFF (default) → pass-through, byte-for-byte current behaviour. ──
     if (!ENV.licenseModuleGate) {
@@ -205,7 +207,7 @@ export function moduleGate(moduleCode: string) {
     try {
       // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI (`ctx.hanChotStopHmi`): 2 lượt getAllLicenses chờ trong phần CÒN LẠI của hạn
       // tổng; hết hạn ⇒ NÉM từ chối "dùng E-STOP cứng" (là TRPCError ⇒ catch dưới chuyển tiếp, không rơi về fail-safe allow). Không hạn ⇒ như cũ.
-      const entitlement = await trongHanYeuCauStopHmi(resolveEntitlement(), ctx.hanChotStopHmi, "giay_phep", "truoc_gui");
+      const entitlement = await trongHanYeuCauStopHmi(resolveEntitlement(), ctx.hanChotStopHmi, "giay_phep", "truoc_gui", undefined, path);
       // No-brick: SKU never configured → allow (never lock an unconfigured system).
       if (!entitlement.configured) {
         return next({ ctx });

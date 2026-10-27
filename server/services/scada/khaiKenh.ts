@@ -19,11 +19,13 @@
  */
 import { z } from "zod";
 import { appError } from "../../_core/appError";
-import type { DeviceTag } from "../../../drizzle/schema";
+import { sql } from "drizzle-orm";
+import { deviceTags, scadaChannelKindEnum, type DeviceTag } from "../../../drizzle/schema";
 import { laKenhGhi, mucTacDongKenh } from "./kenhScada";
-import { kiemNhatQuanKenh, thamSoNgoaiDaiInterlock, thamSoNgoaiDaiStopPin, viPhamInterlock, type KenhNhatQuan, type LuatNhamTag } from "./nhatQuanKenh";
+import { kiemNhatQuanKenh, thamSoNgoaiDaiInterlock, thamSoNgoaiDaiStopPin, viPhamInterlock, type DbHoacTx, type KenhNhatQuan, type LuatNhamTag } from "./nhatQuanKenh";
 import { MUC_TOI_DA_STOP_HMI, validateStopValue } from "../ot/stopPin";
 import { loiGoGhimTruoc } from "./troLaiKenh";
+import { kiemThamSoLo } from "../audit/controlAuditService";
 
 /** Cột kênh (mig 0431) — before/after của audit và kết quả trả về. */
 export const COT_KENH = ["channelKind", "displayName", "displayFormat", "writeMin", "writeMax", "writeStep", "actuationLevel"] as const;
@@ -185,4 +187,39 @@ export function kiemPatchKenh(
     loiGoGhimTruoc(tag, `nâng mức tác động lên ${mucTacDongKenh(sau)} (STOP HMI chỉ gửi ghim của tag mức ≤ ${MUC_TOI_DA_STOP_HMI})`, tagId);
   }
   return { truoc, sau, doi: true };
+}
+
+/** Tham số bind của MỘT hàng trong `ghiKenhLoTx` (id + 7 cột `COT_KENH`); +1 cho `updatedAt` dùng chung. */
+export const SO_THAM_SO_MOT_HANG_KENH = 1 + COT_KENH.length;
+
+/**
+ * R1b-2b-1 T11 (mục 48) — ghi các tag ĐỔI của một lô khai kênh bằng MỘT `UPDATE device_tags AS t SET … FROM (VALUES …) AS v(…) WHERE t.id = v.id`
+ * (trước: một `UPDATE` mỗi tag). Giá trị là `sau` ĐẦY ĐỦ của `kiemPatchKenh` (mọi cột `COT_KENH`) — cột patch không chạm có `sau` = `truoc` = giá
+ * trị hiện tại của hàng ĐANG khoá FOR UPDATE, nên ghi lại nó không đổi gì. Bên gọi đã khoá mọi hàng (ADAPTER → LUẬT → TAG ORDER BY id FOR UPDATE).
+ *
+ * Kiểu SQL TƯỜNG MINH cho MỌI cột của VALUES (kể cả cột cả lô đều NULL — không ép thì Postgres suy `text` rồi lỗi khi gán vào enum / số): theo
+ * ĐÚNG kiểu cột trong schema drizzle (`drizzle/schema/ot.ts`): `id` serial ⇒ `::int`; `channel_kind` ⇒ enum `scada_channel_kind`;
+ * `display_name` / `display_format` varchar ⇒ `::text`; `write_min/max/step` doublePrecision ⇒ `::double precision` (không `::numeric` — tránh
+ * vòng numeric→float8); `actuation_level` smallint ⇒ `::smallint`. Tên cột lấy từ `deviceTags.<cột>.name`, không gõ tay.
+ * `updatedAt` qua `sql.param(now, deviceTags.updatedAt)` — CÙNG bộ ánh xạ của `.set({ updatedAt })` trước đây.
+ * Cổng tham số bind < 65535 (`kiemThamSoLo`; ≤ 200 tag × 8 + 1 = 1601).
+ */
+export async function ghiKenhLoTx(tx: DbHoacTx, hang: ReadonlyArray<{ id: number; sau: KhaiKenh }>, now: Date): Promise<void> {
+  if (hang.length === 0) return;
+  kiemThamSoLo(hang.length, SO_THAM_SO_MOT_HANG_KENH, 1);
+  const cot = (c: "id" | CotKenh | "updatedAt") => sql.identifier(deviceTags[c].name);
+  const loaiKenh = sql.identifier(scadaChannelKindEnum.enumName);
+  const values = sql.join(
+    hang.map(
+      ({ id, sau }) =>
+        sql`(${id}::int, ${sau.channelKind}::${loaiKenh}, ${sau.displayName}::text, ${sau.displayFormat}::text, ${sau.writeMin}::double precision, ${sau.writeMax}::double precision, ${sau.writeStep}::double precision, ${sau.actuationLevel}::smallint)`,
+    ),
+    sql`, `,
+  );
+  await tx.execute(sql`UPDATE ${deviceTags} AS t SET
+      ${cot("channelKind")} = v.ck, ${cot("displayName")} = v.dn, ${cot("displayFormat")} = v.df,
+      ${cot("writeMin")} = v.wmin, ${cot("writeMax")} = v.wmax, ${cot("writeStep")} = v.ws, ${cot("actuationLevel")} = v.al,
+      ${cot("updatedAt")} = ${sql.param(now, deviceTags.updatedAt)}
+    FROM (VALUES ${values}) AS v(id, ck, dn, df, wmin, wmax, ws, al)
+    WHERE t.${cot("id")} = v.id`);
 }

@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CHON_MODEL_RE, chonModelGui, docChonDaLuu, hauToTrangThai, luuChon, nhomMuc, xacThucChon, type MucModel } from "./chonModel";
+import { CHON_MODEL_RE, chonModelGui, docChonDaLuu, hauToTrangThai, luuChon, mucHienThi, nhomMuc, xacThucChon, type MucModel } from "./chonModel";
 
 const m = (ma: string, loai: MucModel["loai"], trangThai: MucModel["trangThai"] = "san-sang", extra: Partial<MucModel> = {}): MucModel => ({ ma, loai, nhan: ma, moTa: "", trangThai, ...extra });
 const DM: MucModel[] = [
@@ -14,6 +14,7 @@ const DM: MucModel[] = [
   m("ho-so:abc", "ho-so", "tat"),
   m("ngoai:openai_compat:gpt-x", "ngoai"),
 ];
+const NGOAI = (duocDungO?: string[]): MucModel => m("ngoai:openai_compat:gpt-x", "ngoai", "san-sang", { duocDungO });
 
 function mem() {
   const kho = new Map<string, string>();
@@ -39,10 +40,27 @@ describe("nhomMuc", () => {
     const n = nhomMuc(DM, "chat");
     expect(n.vaiTro.map((x) => x.ma)).toEqual(["vai-tro:code.software"]);
   });
-  it("ngoài: chat có, luồng giấu; không tự thêm mục ngoài danh mục", () => {
-    expect(nhomMuc(DM, "chat").ngoai).toHaveLength(1);
-    expect(nhomMuc(DM, "luong").ngoai).toHaveLength(0);
+  it("★ 10.4 T0 — mục ngoai CHỈ hiện ở bề mặt mà máy chủ khai trong duocDungO; thiếu trường / rỗng ⇒ ẩn ở MỌI bề mặt", () => {
+    const co = (du: string[] | undefined, b: "chat" | "lap-trinh" | "agent" | "luong") => nhomMuc([m("auto", "auto"), NGOAI(du)], b).ngoai.length;
+    for (const b of ["chat", "lap-trinh", "agent", "luong"] as const) {
+      expect(co(undefined, b), "thiếu trường ⇒ ẩn " + b).toBe(0);
+      expect(co([], b), "rỗng ⇒ ẩn " + b).toBe(0);
+    }
+    expect(co(["luong", "kiem-dinh"], "luong")).toBe(1);
+    expect(co(["luong", "kiem-dinh"], "chat")).toBe(0);
+    expect(co(["chat"], "chat")).toBe(1);
+    expect(co(["coding"], "lap-trinh")).toBe(1);
+    expect(co(["coding"], "chat")).toBe(0);
+    expect(co(["agent"], "agent")).toBe(1);
+  });
+  it("không tự thêm mục ngoài danh mục", () => {
     expect(nhomMuc(DM.filter((x) => x.loai !== "ngoai"), "chat").ngoai).toHaveLength(0);
+  });
+  it("mucHienThi = auto + nhóm đã lọc (dùng kiểm mã đã lưu): mã ngoai đã lưu mà bề mặt không phục vụ ⇒ xacThucChon đưa về auto", () => {
+    const dm = [m("auto", "auto"), m("vai-tro:chat", "vai-tro"), NGOAI(["luong"])];
+    expect(mucHienThi(dm, "chat").map((x) => x.ma)).toEqual(["auto", "vai-tro:chat"]);
+    expect(xacThucChon("ngoai:openai_compat:gpt-x", mucHienThi(dm, "chat"))).toEqual({ ma: "auto", hetHieuLuc: true });
+    expect(xacThucChon("ngoai:openai_compat:gpt-x", mucHienThi(dm, "luong")).hetHieuLuc).toBe(false);
   });
   it("danh mục rỗng ⇒ vẫn có Tự động", () => expect(nhomMuc([], "chat").tuDong.ma).toBe("auto"));
 });

@@ -115,6 +115,8 @@ export function thamSoMacDinh(type: string): Record<string, unknown> {
       return { giaTri: "{{ $json.nhan }}", nhanh: [{ so: "eq", dich: "" }] };
     case "tich-hop.mcp-goi":
       return { server: "", tool: "", thamSo: {}, truongRa: "mcp" };
+    case "ai.kiem-dinh-ngoai":
+      return { chonModel: "", cauHoi: "{{ $json.cauHoi }}", traLoi: "{{ $json.traLoi }}", tieuChi: "", truongRa: "kiemDinh" };
     case "nguoi.bieu-mau":
       return { tieuDe: "", noiDung: "", hetHanGio: 24, vaiTroDuyet: "supervisor", truong: [{ ten: "ghiChu", nhan: "Ghi chú", kieu: "chuoi" }], truongRa: "bieuMau" };
     case "logic.cho":

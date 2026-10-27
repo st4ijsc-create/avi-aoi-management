@@ -64,6 +64,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThanhTrangThaiAiLocal } from "@/components/aiCoding/ThanhTrangThaiAiLocal";
 import ChonModel from "@/components/ai/ChonModel";
+import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
+import { chiSoLuotPhien } from "@/lib/chiSoLuotPhien";
 import { docChonLapTrinh } from "@/lib/chonModel";
 import { docCheDoNghi, luuCheDoNghi } from "@/lib/cheDoNghi";
 import { GhiChuCheDoNghi } from "@/components/aiCoding/GhiChuCheDoNghi";
@@ -3386,6 +3388,12 @@ export default function AICodingWorkspace() {
                           </div>
                         );
                       })()}
+                      {/* ★ Đợt 10.4 — nhờ AI ngoài kiểm định lượt TRỢ LÝ đã lưu (phienId + chỉ số trong bản lưu); chưa lưu / đang stream ⇒ nút vô hiệu. */}
+                      {m.role === "assistant" && (
+                        <div className="mt-1">
+                          <NutKiemDinhNgoai nguon={sessionId && !isStreaming && chiSoLuotPhien(transcript, i) !== null ? { loai: "coding", phienId: sessionId, chiSoLuot: chiSoLuotPhien(transcript, i)! } : null} />
+                        </div>
+                      )}
                     </div>
                     {m.role === "user" && <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary"><User className="h-3.5 w-3.5" /></div>}
                   </div>

@@ -24,6 +24,7 @@
  */
 import net from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { LoiMatLienKetKhiDangGui, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import type {
   OtProtocol,
   OtDriver,
@@ -37,7 +38,8 @@ import type {
   OnOtSample,
   TuyChonVongPoll,
 } from "../otDriver";
-import { inverseScale } from "./otScale";
+import { inverseScale, scaleXuoi } from "./otScale";
+import { boolChoGhi } from "./boolNghiem";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongEndCodeSlmp, chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
 import {
@@ -97,6 +99,8 @@ export class SlmpDriver implements OtDriver {
     resolve: (buf: Buffer) => void;
     reject: (err: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    /** 4E: serial request đang chờ phản hồi (khung khác serial bị bỏ). */
+    serialMongDoi?: number;
   } | null = null;
   private txChain: Promise<unknown> = Promise.resolve();
 
@@ -122,7 +126,8 @@ export class SlmpDriver implements OtDriver {
     if (cu) {
       this.socket = null;
       this.connected = false;
-      this.failPending(new Error("slmp reconnect: previous session dropped"));
+      // R1b-2b-1 (iii) — giao dịch đang bay đã ghi lên socket ⇒ kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout'), không 'failed'.
+      this.failPending(new LoiMatLienKetKhiDangGui("slmp", "reconnect replaced the session"));
       try {
         cu.removeAllListeners("data");
         cu.destroy();
@@ -173,7 +178,7 @@ export class SlmpDriver implements OtDriver {
     const s = this.socket;
     this.socket = null;
     this.connected = false;
-    this.failPending(new Error("slmp disconnected"));
+    this.failPending(new LoiMatLienKetKhiDangGui("slmp", "session torn down (disconnect)")); // R1b-2b-1 (ii) — kết cục không rõ
     if (s) {
       try {
         s.removeAllListeners("data");
@@ -203,22 +208,34 @@ export class SlmpDriver implements OtDriver {
       this.connected = false;
       this.lastError = `slmp link lost (${ev})${detail}`;
     }
-    this.failPending(new Error(this.lastError ?? `slmp link lost (${ev})`));
+    // R1b-2b-1 (i) — giao dịch đang bay (đã ghi lên socket) ⇒ kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout'), không 'failed'.
+    this.failPending(new LoiMatLienKetKhiDangGui("slmp", `socket ${ev}${detail}`));
   }
 
   /** Nhận chunk TCP; gộp tới đủ 1 frame rồi giải quyết giao dịch đang chờ. */
   private onData(chunk: Buffer): void {
     this.rxBuf = this.rxBuf.length === 0 ? chunk : Buffer.concat([this.rxBuf, chunk]);
     // Chỉ 1 giao dịch outstanding → xử lý đúng 1 frame khi đủ.
-    const need = expectedFrameLength(this.rxBuf, this.frame);
-    if (need < 0 || this.rxBuf.length < need) return;
-    const frameBuf = this.rxBuf.subarray(0, need);
-    this.rxBuf = this.rxBuf.subarray(need);
-    const p = this.pending;
-    this.pending = null;
-    if (p) {
-      clearTimeout(p.timer);
-      p.resolve(Buffer.from(frameBuf));
+    for (;;) {
+      const need = expectedFrameLength(this.rxBuf, this.frame);
+      if (need < 0 || this.rxBuf.length < need) return;
+      const frameBuf = this.rxBuf.subarray(0, need);
+      this.rxBuf = this.rxBuf.subarray(need);
+      const p = this.pending;
+      // R1b-2b-1 T7 (mục 12) — 4E: khung khác serial đang chờ ⇒ bỏ (không giải quyết nhầm giao dịch); giao dịch chờ tiếp tới hạn.
+      if (p && this.frame === "4E" && p.serialMongDoi !== undefined && frameBuf.length >= 4) {
+        const got = frameBuf.readUInt16LE(2);
+        if (got !== p.serialMongDoi) {
+          console.warn(`[slmp] bo khung 4E serial ${got} (dang cho ${p.serialMongDoi})`);
+          continue;
+        }
+      }
+      this.pending = null;
+      if (p) {
+        clearTimeout(p.timer);
+        p.resolve(Buffer.from(frameBuf));
+      }
+      return;
     }
   }
 
@@ -232,7 +249,7 @@ export class SlmpDriver implements OtDriver {
   }
 
   /** Gửi 1 request, chờ đúng 1 response frame (tuần tự hoá qua txChain). */
-  private transact(request: Buffer): Promise<Buffer> {
+  private transact(request: Buffer, serialMongDoi?: number): Promise<Buffer> {
     const run = async (): Promise<Buffer> => {
       const socket = this.socket;
       if (!this.connected || !socket) throw new DeviceUnreachableError("slmp");
@@ -249,9 +266,11 @@ export class SlmpDriver implements OtDriver {
             reject(new Error(`slmp transaction timeout after ${this.timeoutMs}ms`));
           }
         }, this.timeoutMs);
-        this.pending = { resolve, reject, timer };
+        const p = { resolve, reject, timer, serialMongDoi };
+        this.pending = p;
+        // R1b-2b-1 T7 — callback ghi muộn của giao dịch cũ KHÔNG đánh hỏng giao dịch kế.
         socket.write(request, (err) => {
-          if (err) this.failPending(err);
+          if (err && this.pending === p && this.socket === socket) this.failPending(err);
         });
       });
     };
@@ -280,13 +299,13 @@ export class SlmpDriver implements OtDriver {
       let raw: number | boolean;
       if (tag.dataType === "bool" || (dev.isBit && tag.dataType !== "int" && tag.dataType !== "float")) {
         const { request } = buildBatchReadBit(tag.address, 1, cfg);
-        const resp = parseResponse(await this.transact(request), this.frame);
+        const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
         if (resp.endCode !== 0) return this.badSample(tag, resp.endCode);
         raw = decodeBits(resp.data, 1)[0];
       } else {
         const count = wordCountFor(tag.dataType);
         const { request } = buildBatchReadWord(tag.address, count, cfg);
-        const resp = parseResponse(await this.transact(request), this.frame);
+        const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
         if (resp.endCode !== 0) return this.badSample(tag, resp.endCode);
         raw = tag.dataType === "float" ? decodeFloat32(resp.data) : decodeInt16(resp.data);
       }
@@ -296,10 +315,8 @@ export class SlmpDriver implements OtDriver {
       if (typeof raw === "boolean") {
         value = raw;
       } else {
-        const scale = tag.scale ?? 1;
-        const offset = tag.offset ?? 0;
-        const n = raw * scale + offset;
-        value = tag.dataType === "int" ? Math.round(n) : n;
+        // R1b-2b-1 T6 fix round 1 — scale xuôi + làm tròn int qua MỘT nguồn (`otScale.scaleXuoi`), cũng là nguồn mô phỏng của so đọc lại.
+        value = scaleXuoi(raw, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
       this.lastOkAt = now();
@@ -403,7 +420,9 @@ export class SlmpDriver implements OtDriver {
 
       let request: Buffer;
       if (dataType === "bool" || dev.isBit) {
-        request = buildBatchWriteBit(w.address, [Boolean(w.value)], cfg).request;
+        // R1b-2b-1 T2 — MỘT luật bool cho MỌI write lên bit-device (bất kể dataType): "false" ⇒ FALSE; ngoài tập hợp lệ ⇒ ném (khối catch ⇒
+        // ok:false, không gửi); STOP đã xác minh (`w.dungGhim`) ⇒ `boolDungGhim` — ghim cũ 2 trên M100 kiểu int ⇒ TRUE (KD-T2).
+        request = buildBatchWriteBit(w.address, [boolChoGhi(w.value, w.dungGhim)], cfg).request;
       } else {
         const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
         const words =
@@ -413,7 +432,7 @@ export class SlmpDriver implements OtDriver {
         request = buildBatchWriteWord(w.address, words, cfg).request;
       }
 
-      const resp = parseResponse(await this.transact(request), this.frame);
+      const resp = parseResponse(await this.transact(request, cfg.serial), this.frame);
       if (resp.endCode !== 0) {
         const msg = `slmp write end-code 0x${resp.endCode.toString(16).padStart(4, "0").toUpperCase()}`;
         this.lastError = msg;
@@ -424,6 +443,8 @@ export class SlmpDriver implements OtDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
+      // R1b-2b-1 — lệnh ĐÃ ghi lên socket khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      if (laLoiMatLienKetKhiDangGui(err)) throw err;
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }
