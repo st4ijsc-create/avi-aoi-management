@@ -121,6 +121,24 @@ describe("chay", () => {
     expect(nhan).toHaveLength(2);
   });
 
+  it("rà kiem-dinh R5 — bộ nhớ 120 s: nhà máy vừa tắt AI ngoài / gỡ model (kiemTruoc từ chối) ⇒ lỗi, KHÔNG trả kết quả cũ", async () => {
+    let tuChoi = false;
+    const { nhan } = dat({ kiemTruoc: async () => (tuChoi ? Promise.reject(new LoiNgoai("NGOAI_KHONG_TON_TAI")) : ({ db: { execute: async () => [] }, cfg: {}, model: {}, maxTokens: 1 } as never)) });
+    await goi().chay(INPUT);
+    tuChoi = true;
+    expect(await loi(goi().chay(INPUT))).toBe("NOT_FOUND:NGOAI_KHONG_TON_TAI");
+    expect(nhan).toHaveLength(1);
+  });
+
+  it("rà kiem-dinh R6 — khoá chống lặp gồm NGƯỜI GỌI: người khác cùng ID nguồn (giả định nguồn đọc được) KHÔNG nhận bộ nhớ của người kia", async () => {
+    const { nhan } = dat();
+    await goi().chay(INPUT);
+    const nguoiKhac = aiKiemDinhRouter.createCaller({ user: { id: 8, role: "user", name: "v" } } as never);
+    const kq = await nguoiKhac.chay(INPUT);
+    expect(kq).not.toHaveProperty("tuBoNho");
+    expect(nhan).toHaveLength(2);
+  });
+
   it("rà kiem-dinh T1 — bộ nhớ 120 s KHÔNG vượt quyền: người đã rời nhà máy / nhà máy vừa tắt ngoài ⇒ lỗi, không nhận kết quả cũ", async () => {
     const { nhan } = dat();
     await goi().chay(INPUT);

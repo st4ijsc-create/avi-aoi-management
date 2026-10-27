@@ -53,18 +53,23 @@ export const TRAN_SU_KIEN_LUU_AGENT = 3_000;
 
 /**
  * Mức của một lượt agent từ sự kiện đã lưu — CHỈ `ky-thuat` khi CHỨNG MINH được (rà kiem-dinh T1): nhật ký là mảng KHÔNG rỗng, CHƯA chạm
- * trần lưu, `seq` liền mạch (không khoảng trống do cắt), mọi `goi-tool` / `ket-qua-tool` có tên chuỗi thuộc tập kỹ thuật. Thiếu một điều
- * ⇒ `van-hanh` (không có bằng chứng ≠ kỹ thuật).
+ * trần lưu, `seq` TĂNG NGẶT và chỉ có KHE trước mục `chu` / `nghi` (`noiVaoDem` GỘP các delta chữ liền nhau, giữ seq của delta CUỐI ⇒ khe
+ * hợp lệ; khe trước mục khác = mất sự kiện), mọi `goi-tool` / `ket-qua-tool` có tên chuỗi thuộc tập kỹ thuật. Thiếu một điều ⇒ `van-hanh`.
  */
 export function mucCuaLuotAgent(suKien: unknown, tran = TRAN_SU_KIEN_LUU_AGENT): MucDuLieu {
   if (!Array.isArray(suKien) || suKien.length === 0 || suKien.length >= tran) return "van-hanh";
   let seqTruoc: number | null = null;
   for (const m of suKien) {
     const seq = (m as { seq?: unknown })?.seq;
-    if (typeof seq !== "number" || !Number.isInteger(seq) || (seqTruoc !== null && seq !== seqTruoc + 1)) return "van-hanh";
-    seqTruoc = seq;
     const e = (m as { suKien?: unknown })?.suKien as { loai?: unknown; goi?: { ten?: unknown }; ten?: unknown } | undefined;
     if (!e || typeof e !== "object") return "van-hanh";
+    if (typeof seq !== "number" || !Number.isInteger(seq)) return "van-hanh";
+    if (seqTruoc !== null) {
+      if (seq <= seqTruoc) return "van-hanh";
+      const laMucGop = e.loai === "chu" || e.loai === "nghi";
+      if (seq !== seqTruoc + 1 && !laMucGop) return "van-hanh";
+    }
+    seqTruoc = seq;
     if (e.loai === "goi-tool" || e.loai === "ket-qua-tool") {
       const ten = e.loai === "goi-tool" ? e.goi?.ten : e.ten;
       if (typeof ten !== "string" || !TOOL_AGENT_KY_THUAT.has(ten)) return "van-hanh";

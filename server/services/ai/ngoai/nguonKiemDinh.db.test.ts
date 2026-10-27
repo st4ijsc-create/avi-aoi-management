@@ -9,7 +9,7 @@ import { donNguoiDungTest, taoNguoiDungTest } from "../../../testing/nguoiDungTe
 import { taoHangLuotChay, capNhatHangLuotChay } from "../../../db/aiAgentRuns";
 import { luuPhien } from "../../../db/aiCodingSessions";
 import { docNguonKiemDinh, mucCuaLuotAgent, TRAN_SU_KIEN_LUU_AGENT } from "./nguonKiemDinh";
-import { suKienDeLuu, TRAN_SU_KIEN_LUU } from "../agent/quanLyLuotChay";
+import { noiVaoDem, suKienDeLuu, TRAN_SU_KIEN_LUU } from "../agent/quanLyLuotChay";
 
 const TT = `nkd${Date.now().toString(36)}`;
 let A = 0;
@@ -53,9 +53,14 @@ describe("mucCuaLuotAgent", () => {
     // đúng trần, seq liền, toàn đọc mã ⇒ vẫn van-hanh (nhật ký chạm trần không chứng minh được đầy đủ)
     expect(mucCuaLuotAgent(Array.from({ length: TRAN_SU_KIEN_LUU }, (_, i) => ({ seq: i + 1, suKien: { loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 } })))).toBe("van-hanh");
     expect(mucCuaLuotAgent(Array.from({ length: TRAN_SU_KIEN_LUU - 1 }, (_, i) => ({ seq: i + 1, suKien: { loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 } })))).toBe("ky-thuat");
+    // khe trước mục KHÔNG phải chữ (vd tool) = mất sự kiện ⇒ van-hanh; seq lùi ⇒ van-hanh
     const hoSeq = nhatKy(...DOC);
-    hoSeq[2]!.seq = 9;
+    hoSeq[1]!.seq = 5; // khe 1→5 trước ket-qua-tool, seq vẫn tăng
+    hoSeq[2]!.seq = 6;
     expect(mucCuaLuotAgent(hoSeq)).toBe("van-hanh");
+    const lui = nhatKy(...DOC);
+    lui[2]!.seq = 1;
+    expect(mucCuaLuotAgent(lui)).toBe("van-hanh");
     expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "goi-tool", goi: {}, luot: 2 }))).toBe("van-hanh");
     expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "goi-tool", luot: 2 }))).toBe("van-hanh");
     expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "ket-qua-tool", ok: true }))).toBe("van-hanh");
@@ -95,5 +100,31 @@ describe("docNguonKiemDinh — CSDL", () => {
     expect(await docNguonKiemDinh(A, { loai: "coding", phienId: l.id!, chiSoLuot: 0 })).toBeNull();
     expect(await docNguonKiemDinh(A, { loai: "coding", phienId: l.id!, chiSoLuot: 9 })).toBeNull();
     expect(await docNguonKiemDinh(B, { loai: "coding", phienId: l.id!, chiSoLuot: 1 })).toBeNull();
+  });
+});
+
+describe("rà kiem-dinh — nhật ký THẬT (noiVaoDem gộp delta chữ ⇒ seq có khe hợp lệ) → suKienDeLuu → JSON", () => {
+  const that = (ds: unknown[]) => {
+    const dem: Parameters<typeof noiVaoDem>[0] = [];
+    ds.forEach((e, i) => noiVaoDem(dem, { seq: i + 1, suKien: e } as never));
+    return JSON.parse(JSON.stringify(suKienDeLuu(dem)));
+  };
+  const KHUNG = (giua: unknown[]) => [
+    { loai: "bat-dau", runId: "r", cheDo: "hoi" },
+    { loai: "chu", noiDung: "Để tôi " },
+    { loai: "chu", noiDung: "đọc tệp." },
+    ...giua,
+    { loai: "chu", noiDung: "Kết " },
+    { loai: "chu", noiDung: "luận." },
+    { loai: "xong", lyDo: "hoan-thanh" },
+  ];
+  it("chỉ đọc mã ⇒ ky-thuat (log thật có khe trước mục chữ gộp)", () => {
+    const luu = that(KHUNG([{ loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 }, { loai: "ket-qua-tool", id: "1", ten: "read_file", ok: true, tomTat: "x" }]));
+    expect(luu.map((m: { seq: number }) => m.seq)).not.toEqual(luu.map((_: unknown, i: number) => i + 1)); // đúng là có khe
+    expect(mucCuaLuotAgent(luu)).toBe("ky-thuat");
+  });
+  it("có tool ghi (giữa các mục chữ gộp) ⇒ van-hanh", () => {
+    const luu = that(KHUNG([{ loai: "goi-tool", goi: { ten: "write_file" }, luot: 1 }, { loai: "ket-qua-tool", id: "1", ten: "write_file", ok: true, tomTat: "x" }]));
+    expect(mucCuaLuotAgent(luu)).toBe("van-hanh");
   });
 });
