@@ -299,3 +299,12 @@ Không chuyển (ở Phần A, có lý do): 49b (tệp `DeviceAdapterManagement.
 - **Q-B2 (B-T10).** Mục 38 (màn admin mở khoá TOTP) nằm ngoài màn SCADA (`Users.tsx`). Cho scada-ui làm? *Khuyến nghị:* có — thủ tục có sẵn, máy chủ cấm tự mở khoá, có audit; nếu điều phối muốn giữ mọi thứ liên quan xác thực ở scada-master thì B-T10 chuyển sang Phần A.
 - **Q-B3 (B-T11).** "Điều kiện cho phép" có được khoá nút Gửi khi chạy khô nói "không được phép"? *Khuyến nghị:* KHÔNG khoá (chỉ hiển thị) — tránh lệch giữa chạy khô và `request`, máy chủ luôn là trọng tài.
 - **Q-B4 (B-T8).** Mục điều hướng "/scada/journal" hiện cho mọi người có `machine_control.canView` (không chỉ kỹ sư)? *Khuyến nghị:* có (`engineerOriented: false`) — người vận hành cần xem lệnh của chính ca mình; chi tiết kỹ thuật đã bị máy chủ che.
+
+## ĐÃ DUYỆT — điều phối 2026-10-27 (có hiệu lực như Global Constraints)
+
+Kế hoạch 8a8d1240c DUYỆT. Với phần B:
+- **Bắt đầu ngay:** B-T1, B-T2, B-T4, B-T5, B-T10 (B-T10 chờ thêm hợp đồng **C6** ở A xác nhận phạm vi + audit của `twoFactor.moKhoaTotp` — làm giao diện trước, gộp sau khi C6 xong).
+- **Q-B1** chip chỉ ở trang SCADA. **Q-B2** CÓ — chỉ giao diện, trên thủ tục admin do scada-master cung cấp. **Q-B3** chạy khô KHÔNG bao giờ khoá nút Gửi. **Q-B4** mục menu nhật ký hiện cho mọi người có `machine_control.canView`.
+- Lab (B-T9 / C4): KHÔNG bắt buộc 2FA; S7 / MC không có trong danh sách giao thức của Lab.
+- **Locales:** chỉ thêm khoá trong namespace của phần B; điều phối giải xung đột văn bản khi gộp.
+- Mỗi task: bàn giao scada-master rà kỹ thuật ⇒ kiem-dinh rà độc lập ⇒ điều phối gộp.
