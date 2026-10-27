@@ -65,6 +65,15 @@ describe("TRPC_GIOI_HAN_THU_TUC — câu đã dịch kèm số giây thử lại
     }
   });
 
+  it("máy chủ gửi appParams thiếu retryAfterGiay ⇒ vẫn lấy từ data, không lộ {{retryAfterGiay}}", async () => {
+    await i18n.changeLanguage("vi");
+    const e = loi(45);
+    (e.data as Record<string, unknown>).appParams = {};
+    const s = mapTrpcError(e);
+    expect(s).toContain("45 giây");
+    expect(s).not.toContain("{{");
+  });
+
   it("số lẻ được làm tròn lên thành số nguyên ≥ 1", async () => {
     await i18n.changeLanguage("vi");
     expect(mapTrpcError(loi(29.2))).toContain("30 giây");

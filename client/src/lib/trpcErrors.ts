@@ -136,11 +136,11 @@ function getAppError(error: unknown): { appCode: string; appParams?: Record<stri
       : undefined;
   // Bộ giới hạn thủ tục (server/_core/trpcGioiHanThuTuc.ts) đặt `retryAfterGiay` ở MỨC TRÊN
   // của `data`, không trong `appParams`.
-  if (data.appCode === "TRPC_GIOI_HAN_THU_TUC" && !appParams) {
+  if (data.appCode === "TRPC_GIOI_HAN_THU_TUC" && appParams?.retryAfterGiay === undefined) {
     const giay = Number((data as { retryAfterGiay?: unknown }).retryAfterGiay);
     return {
       appCode: data.appCode,
-      appParams: { retryAfterGiay: Number.isFinite(giay) && giay >= 1 ? Math.ceil(giay) : 60 },
+      appParams: { ...appParams, retryAfterGiay: Number.isFinite(giay) && giay >= 1 ? Math.ceil(giay) : 60 },
     };
   }
   return { appCode: data.appCode, appParams };
