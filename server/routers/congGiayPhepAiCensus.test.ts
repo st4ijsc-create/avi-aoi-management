@@ -552,6 +552,10 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // ★★ 2026-10-26 · MERGE main 134293775 vào feat/scada-r1b2 — **tong 2411 · beMatAi 438 · aiCoCong 376 · aiMienTru 62 · ngoaiAiCoCong 0**, ĐO trên
 //   cây đã gộp (đặt ghim 0 rồi đọc số nhận được): = main 2410/438/376 + 1 mutation `scadaKenh.khaiHangLoat` của nhánh (ngoài bề mặt AI). `tong` 2411
 //   trùng `phamViDocCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-26 · R1b-2b-1 scadaCommands.mayDungKhanCap +1 (SCADA R1b-2b-1 Task 1, mục 59) — **tong 2411 → 2412 · beMatAi / aiCoCong /
+//   aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI `scadaCommands.mayDungKhanCap` của `server/routers/scadaCommandsRouter.ts` (không phải bề
+//   mặt AI), sau `MOD_OT_CONTROL` (xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 128 → 129). Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1 ở `tong`. `tong`
+//   2412 trùng `phamViDocCensus.test.ts#GHIM.tong`.
 // 2026-10-26 gỡ gán (UX Trung tâm Model): +1 mutation aiGguf.soModelGoGan (MOD_AI, admin + audit) ⇒ 2412 · 439 · 377.
 // 2026-10-26 Đợt 10.1 (do-model): +1 aiChonModel.danhMuc (query MOD_AI, mặt AI có cổng) ⇒ tong 2412, beMatAi 439, aiCoCong 377.
 // 2026-10-26 dieu-phoi GỘP: soModelGoGan (luong-ui) + aiChonModel.danhMuc (do-model) cùng +1 ⇒ ĐO trên cây gộp.
@@ -559,8 +563,10 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
 // 2026-10-26 Đợt 10.3 Task 8: +8 aiNgoai.cauHinh|ghiCauHinh|dsModel|datModel|dsHostNoiBo|datHostNoiBo|xemNoiDung|duyetNgoai ⇒ 2424 / 451 / 389.
 // 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan +1 (bề mặt AI, có cổng) với Đợt 10.3 ⇒ 2425 / 452 / 390 ĐO trên cây gộp.
+// ★★ 2026-10-26 · scada-master GỘP main a03700211 vào feat/scada-r1b2b — ĐO trên cây gộp: main 2425/452/390 + nhánh mayDungKhanCap +1 (ngoài bề mặt AI) ⇒ tong 2426. `tong` trùng `phamViDocCensus.test.ts#GHIM.tong`.
 // 2026-10-26 Đợt 10.3 lô sau nghiệm thu (dieu-phoi e): annotation.analyzeImage vào bề mặt AI (THU_TUC_AI_TUONG_MINH) + sau MOD_AI ⇒ beMatAi 452→453, aiCoCong 390→391; tong không đổi.
-const GHIM = { tong: 2425, beMatAi: 453, aiCoCong: 391, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-10-26 · scada-master GỘP main 107e49111 (T14 Step 0) — ĐO trên cây gộp: main 2425/453/391 + nhánh mayDungKhanCap +1 (ngoài bề mặt AI) ⇒ tong 2426.
+const GHIM = { tong: 2426, beMatAi: 453, aiCoCong: 391, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -615,7 +621,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-25 · R1b-2a scadaKenh.khaiHangLoat +1 (SCADA R1b-2a Task 6) — 127 → 128: mutation `scadaKenh.khaiHangLoat` trên
   //   `roleProcedure("admin","engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"))` (+ `canEdit`), như `capNhat`. Không thủ tục cũ
   //   nào đổi cổng.
-  MOD_OT_CONTROL: 128,
+  // ★ 2026-10-26 · R1b-2b-1 scadaCommands.mayDungKhanCap +1 (SCADA R1b-2b-1 Task 1, mục 59) — 128 → 129: query `scadaCommands.mayDungKhanCap`
+  //   (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu) trên `moduleProcedure("MOD_OT_CONTROL")` như `dungMay` (sàn vai mức 1 +
+  //   `machine_control.canEdit` kiểm TRONG service; không đạt ⇒ rỗng). Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1. Không thủ tục cũ nào đổi cổng.
+  MOD_OT_CONTROL: 129,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

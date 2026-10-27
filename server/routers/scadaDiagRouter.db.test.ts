@@ -463,6 +463,19 @@ describe("scadaDiag.tagCuaAdapter / mauTho", () => {
   });
 });
 
+describe("R1b-2b-1 T5 (C5) — lý do có mã của trạng thái (RAM)", () => {
+  it("RAM 'connecting' + lý do 'moi_tag_sai_cau_hinh' ⇒ danhSach mang lyDo; rời 'connecting' ⇒ null; adapter edge ⇒ luôn null", async () => {
+    const bao = { adapterId: ad.n, code: ma.n, machineId: null, protocol: "stub" as const, tags: [] };
+    tt.baoTrangThaiAdapter(bao, "connecting", null);
+    tt.datLyDoTrangThaiAdapter(ad.n, "moi_tag_sai_cau_hinh");
+    expect(await dongCua(admin, ad.n)).toMatchObject({ trangThai: "connecting", lyDo: "moi_tag_sai_cau_hinh" });
+    tt.baoTrangThaiAdapter(bao, "disabled", null); // trả về đúng trạng thái hàng (isEnabled=false)
+    expect(await dongCua(admin, ad.n)).toMatchObject({ trangThai: "disabled", lyDo: null });
+    tt.datLyDoTrangThaiAdapter(ad.e, "moi_tag_sai_cau_hinh");
+    expect(await dongCua(admin, ad.e)).toMatchObject({ trangThai: "edge_chua_co_so_lieu", lyDo: null });
+  });
+});
+
 describe("adapter do EDGE sở hữu", () => {
   it("trangThai 'edge_chua_co_so_lieu' + soHuu edge — kể cả khi DB status='error' và RAM báo 'lost'", async () => {
     const r1 = (await dongCua(viewerA, ad.e))!;

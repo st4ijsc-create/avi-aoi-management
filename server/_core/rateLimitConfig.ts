@@ -10,10 +10,12 @@
  *   - otherwise → express-rate-limit's built-in MemoryStore (previous
  *     behaviour, unchanged). Single-instance only.
  *
- * Fail-open posture: `passOnStoreError: true` — if Redis is down, requests are
- * ALLOWED (and the error logged) instead of 500-ing all traffic. The store
- * client uses `enableOfflineQueue: false` so a dead Redis fails fast instead
- * of buffering commands.
+ * Redis-outage posture (R1b-2b-1 T14, kiem-dinh G3 — replaces the old fail-open): every Redis store is wrapped in
+ * `StoreDuPhongBoNho` ⇒ if Redis is down, answers `-ERR`, or is slower than `HAN_LENH_REDIS_GIOI_HAN_MS` (250 ms
+ * `commandTimeout` on the shared client), each limiter keeps counting with its SAME ceiling in THIS PROCESS's memory
+ * (N API instances ⇒ N × the ceiling) instead of letting requests through. `passOnStoreError: true` stays, but only
+ * matters if the in-memory store itself throws (then the request is allowed rather than 500-ing all traffic). The
+ * client uses `enableOfflineQueue: false` so a dead Redis fails fast instead of buffering commands.
  *
  * Key strategy (API limiter, gap B6 "key theo API-key/user"): machine/API-key
  * clients are keyed by a SHA-256 hash of their `x-api-key`; browser sessions
@@ -313,18 +315,45 @@ export function resolveRateLimitStoreKind(): RateLimitStoreKind {
 
 /** Minimal Redis surface the store needs — lets tests inject a fake client. */
 export interface MinimalRedisClient {
-  incr(key: string): Promise<number>;
-  pttl(key: string): Promise<number>;
-  pexpire(key: string, ms: number): Promise<unknown>;
-  decr(key: string): Promise<number>;
+  eval(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown>;
   del(key: string): Promise<unknown>;
 }
 
 /**
- * Fixed-window Redis store for express-rate-limit v7+/v8 (INCR + PEXPIRE).
- * Small on purpose (no extra dependency): INCR the counter, stamp the window
- * TTL on first hit (or when the key somehow lost its TTL), report resetTime
- * from PTTL. Any thrown error is handled by the limiter's passOnStoreError.
+ * R1b-2b-1 T14 fix round 1 (review I1) — ONE atomic round trip per hit: INCR, then arm the window TTL when the key has none (new key, or a
+ * key that somehow lost its TTL), and return `{count, pttl}`. Before, INCR / PTTL / PEXPIRE were three round trips: with the 250 ms
+ * `commandTimeout`, a slow-but-alive Redis still EXECUTED the timed-out INCR while PTTL / PEXPIRE were never sent ⇒ TTL-less counters that
+ * kept growing through the episode and, after recovery, 429'd legitimate clients for a whole fresh window (and leaked keys). Whatever
+ * Redis executes now always carries the TTL. Also cuts the limiter's worst case in front of tRPC from ~3 × 250 ms to 250 ms.
+ * KEYS[1] = counter, ARGV[1] = windowMs.
+ */
+export const LUA_TANG_DEM =
+  "local v = redis.call('INCR', KEYS[1]) " +
+  "local t = redis.call('PTTL', KEYS[1]) " +
+  "if t < 0 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) t = tonumber(ARGV[1]) end " +
+  "return {v, t}";
+
+/**
+ * Decrement only an existing positive counter (DECR keeps the TTL). A bare DECR on a missing / expired key would create a TTL-less `-1`
+ * that never expires. KEYS[1] = counter. Not used by any limiter today (no `skipSuccessfulRequests` / `skipFailedRequests`).
+ */
+export const LUA_GIAM_DEM =
+  "local v = tonumber(redis.call('GET', KEYS[1]) or '0') " +
+  "if v > 0 then return redis.call('DECR', KEYS[1]) end " +
+  "return 0";
+
+/**
+ * A malformed counter-script reply (internal invariant). Always caught by `StoreDuPhongBoNho` (⇒ memory count) and never reaches tRPC —
+ * rawErrorCensus rule (a)+(b): a coded local class, not a bare `Error`.
+ */
+export class LoiTraLoiRedisGioiHan extends Error {
+  readonly code = "RATE_LIMIT_REDIS_REPLY";
+}
+
+/**
+ * Fixed-window Redis store for express-rate-limit v7+/v8. Small on purpose (no extra dependency): one Lua `EVAL` (`LUA_TANG_DEM`) INCRs the
+ * counter and stamps the window TTL on the first hit, atomically; resetTime comes from the returned PTTL. Any thrown error (incl. the
+ * 250 ms command deadline, or a malformed reply) is caught by the `StoreDuPhongBoNho` wrapping it.
  */
 export class RedisRateLimitStore implements Store {
   /** Counters live in Redis — shared across instances. */
@@ -343,19 +372,16 @@ export class RedisRateLimitStore implements Store {
   }
 
   async increment(key: string): Promise<ClientRateLimitInfo> {
-    const k = this.prefix + key;
-    const totalHits = await this.client.incr(k);
-    let ttl = await this.client.pttl(k);
-    if (ttl < 0) {
-      // First hit of a window (or TTL lost) — start the window now.
-      await this.client.pexpire(k, this.windowMs);
-      ttl = this.windowMs;
+    const r = await this.client.eval(LUA_TANG_DEM, 1, this.prefix + key, this.windowMs);
+    const [totalHits, ttl] = Array.isArray(r) ? r.map(Number) : [];
+    if (!Number.isInteger(totalHits) || totalHits < 1 || !Number.isFinite(ttl) || ttl < 0) {
+      throw new LoiTraLoiRedisGioiHan(`RedisRateLimitStore: unexpected EVAL reply ${JSON.stringify(r)}`);
     }
     return { totalHits, resetTime: new Date(Date.now() + ttl) };
   }
 
   async decrement(key: string): Promise<void> {
-    await this.client.decr(this.prefix + key);
+    await this.client.eval(LUA_GIAM_DEM, 1, this.prefix + key);
   }
 
   async resetKey(key: string): Promise<void> {
@@ -363,11 +389,111 @@ export class RedisRateLimitStore implements Store {
   }
 }
 
+/**
+ * R1b-2b-1 T14 (kiem-dinh G3, mục 45) — deadline of EVERY command on the limiters' shared ioredis client (`commandTimeout`). A slow-but-alive
+ * Redis (each command 2 s) would otherwise hold every request — a signed HMI STOP included — in the Express limiter tier BEFORE tRPC, outside
+ * the STOP request's own deadline (`hanStopHmi.ts`). Past the deadline the command throws and `StoreDuPhongBoNho` counts in memory instead.
+ * Extra latency in front of tRPC ≤ ~250 ms (one atomic EVAL per hit — `LUA_TANG_DEM`, fix round 1). Shared by every limiter: that is safe ONLY because every limiter on
+ * this client is wrapped in `StoreDuPhongBoNho` (dieu-phoi condition 4, option (b)) — a timeout never turns into fail-open.
+ */
+export const HAN_LENH_REDIS_GIOI_HAN_MS = 250;
+
+/**
+ * R1b-2b-1 T14 — Redis store with an IN-MEMORY fallback. `increment` / `decrement` / `resetKey` go to `chinh` (the Redis store); when it
+ * throws (Redis down, `-ERR`, or `HAN_LENH_REDIS_GIOI_HAN_MS` exceeded) the SAME key goes to `duPhong` (express-rate-limit's MemoryStore) ⇒
+ * the limiter keeps counting with the SAME ceiling, but PER PROCESS (N API instances ⇒ N × the ceiling) — never fail-open. `chinh` absent
+ * (memory mode) ⇒ only `duPhong`. `init` reaches BOTH stores (C4: a MemoryStore that is never initialised has no window and never resets —
+ * a permanent lock-out). Logs at most one line per 60 s per store. `prefix` / `localKeys` are the primary's, so express-rate-limit's
+ * double-count check keys on the same `rl:<tier>:` namespace as before.
+ * `resetKey` also clears `duPhong` (a count made during an outage must not outlive an explicit reset).
+ * Fix round 1 (review M4): the first successful primary call after a fallback episode logs ONE "Redis answering again" line (also at most
+ * one / 60 s per store) so ops can bound the per-process window.
+ * ⚠ `decrement` is routed independently of where the matching `increment` landed (a hit counted in memory during an outage may be
+ * decremented in a recovered Redis — `LUA_GIAM_DEM` then leaves a missing key alone, but the memory +1 stays until its window ends).
+ * Harmless today (no limiter here sets `skipSuccessfulRequests` / `skipFailedRequests`); revisit before enabling either.
+ */
+export class StoreDuPhongBoNho implements Store {
+  readonly localKeys: boolean;
+  readonly prefix?: string;
+  private lanLogCuoi = Number.NEGATIVE_INFINITY;
+  private lanLogHoiPhuc = Number.NEGATIVE_INFINITY;
+  private dangDuPhong = false;
+
+  constructor(
+    private readonly chinh: Store | undefined,
+    private readonly duPhong: Store,
+  ) {
+    this.localKeys = chinh ? chinh.localKeys === true : true;
+    this.prefix = chinh?.prefix ?? duPhong.prefix;
+  }
+
+  init(options: Options): void {
+    try {
+      this.duPhong.init?.(options);
+    } finally {
+      this.chinh?.init?.(options);
+    }
+  }
+
+  private ghiLog(e: unknown): void {
+    this.dangDuPhong = true;
+    const bay = Date.now();
+    if (bay - this.lanLogCuoi < 60_000) return;
+    this.lanLogCuoi = bay;
+    console.warn(
+      `[RateLimit] ${this.prefix ?? ""} Redis store failed — counting in THIS PROCESS's memory (same ceiling, per process) until Redis answers again:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  private daHoiPhuc(): void {
+    if (!this.dangDuPhong) return;
+    this.dangDuPhong = false;
+    const bay = Date.now();
+    if (bay - this.lanLogHoiPhuc < 60_000) return;
+    this.lanLogHoiPhuc = bay;
+    console.warn(`[RateLimit] ${this.prefix ?? ""} Redis answering again — counting in Redis (shared across instances) again`);
+  }
+
+  async increment(key: string): Promise<ClientRateLimitInfo> {
+    if (!this.chinh) return this.duPhong.increment(key);
+    try {
+      const kq = await this.chinh.increment(key);
+      this.daHoiPhuc();
+      return kq;
+    } catch (e) {
+      this.ghiLog(e);
+      return this.duPhong.increment(key);
+    }
+  }
+
+  async decrement(key: string): Promise<void> {
+    if (!this.chinh) return void (await this.duPhong.decrement(key));
+    try {
+      await this.chinh.decrement(key);
+    } catch (e) {
+      this.ghiLog(e);
+      await this.duPhong.decrement(key);
+    }
+  }
+
+  async resetKey(key: string): Promise<void> {
+    await this.duPhong.resetKey(key);
+    if (!this.chinh) return;
+    try {
+      await this.chinh.resetKey(key);
+    } catch (e) {
+      this.ghiLog(e);
+    }
+  }
+}
+
 // One shared (lazy) ioredis connection for all limiters in this process.
 let _redisClient: MinimalRedisClient | null = null;
 let _redisInitFailed = false;
 
-function getRateLimitRedis(): MinimalRedisClient | null {
+/** The limiters' shared client (lazy). Exported for tests (`client.options.commandTimeout`). */
+export function getRateLimitRedis(): MinimalRedisClient | null {
   if (_redisClient || _redisInitFailed) return _redisClient;
   const url = process.env.REDIS_URL;
   if (!url) return null;
@@ -377,15 +503,16 @@ function getRateLimitRedis(): MinimalRedisClient | null {
     // 3 tries while a limiter store should keep trying (capped backoff).
     const client = new Redis(url, {
       lazyConnect: true,
-      enableOfflineQueue: false, // fail fast → passOnStoreError lets requests through
+      enableOfflineQueue: false, // fail fast → StoreDuPhongBoNho counts in memory
       maxRetriesPerRequest: 1,
+      commandTimeout: HAN_LENH_REDIS_GIOI_HAN_MS, // T14: slow-but-alive Redis ⇒ throw ⇒ memory fallback, never a held request
       retryStrategy: (times: number) => Math.min(times * 200, 5000),
     });
     client.on("error", (err: Error) => {
-      console.error("[RateLimit] Redis store error (fail-open):", err.message);
+      console.error("[RateLimit] Redis store error (limiters count in process memory):", err.message);
     });
     client.connect().catch((err: Error) => {
-      console.error("[RateLimit] Redis store initial connect failed (fail-open):", err.message);
+      console.error("[RateLimit] Redis store initial connect failed (limiters count in process memory):", err.message);
     });
     _redisClient = client;
     console.log("[RateLimit] Using Redis-backed rate-limit store");
@@ -396,16 +523,22 @@ function getRateLimitRedis(): MinimalRedisClient | null {
   return _redisClient;
 }
 
-/** `{ store }` option when Redis mode is active, `{}` for the memory default. */
+/**
+ * `{ store }` option when Redis mode is active, `{}` for the memory default. THE one place every limiter here (and `taoStoreDem`) gets its
+ * store — R1b-2b-1 T14: the Redis store is ALWAYS wrapped in `StoreDuPhongBoNho` ⇒ Redis down / erroring / slower than
+ * `HAN_LENH_REDIS_GIOI_HAN_MS` ⇒ each limiter counts in process memory with its own ceiling (never fail-open).
+ */
 function storeOption(prefix: string): { store?: Store } {
   if (resolveRateLimitStoreKind() !== "redis") return {};
   const client = getRateLimitRedis();
   if (!client) return {}; // init failed → memory fallback
-  return { store: new RedisRateLimitStore({ prefix, client }) };
+  return { store: new StoreDuPhongBoNho(new RedisRateLimitStore({ prefix, client }), new MemoryStore()) };
 }
 
 /**
  * Store ĐẾM cho bộ giới hạn theo SỐ THỦ TỤC (`trpcGioiHanThuTuc.ts`): Redis khi bật chế độ redis (dùng chung nhiều instance), ngược lại bộ nhớ. `init` đặt cửa sổ đếm.
+ * R1b-2b-1 T14: ở chế độ redis store là `StoreDuPhongBoNho` ⇒ Redis sập / lỗi / chậm quá 250 ms ⇒ đếm trong bộ nhớ tiến trình (cùng ngưỡng, theo tiến trình),
+ * KHÔNG ném ⇒ nhánh "store lỗi — FAIL-OPEN" của middleware chỉ còn khi chính bộ nhớ ném.
  */
 export function taoStoreDem(prefix: string, windowMs: number): Store {
   const s: Store = storeOption(prefix).store ?? new MemoryStore();
@@ -683,7 +816,7 @@ export function createApiLimiter() {
     // floods of dungMay are counted like any other /api request.
     // R1b-2a T3: the exempted request is counted by `createHmiStopLimiter` instead (600 / min per session of a person) — exactly one tier counts it.
     skip: async (req: Request) => isOtIngestRequest(req) || isMachineIngestRequest(req) || (await laStopHmiCoPhienKy(req)),
-    passOnStoreError: true, // Redis down → allow (fail-open), never 500 all traffic
+    passOnStoreError: true, // Redis down / slow ⇒ counted in process memory (StoreDuPhongBoNho, T14); allow only if memory itself throws — never 500 all traffic
     ...storeOption("rl:api:"),
   });
 }
@@ -706,9 +839,10 @@ export const TRAN_STOP_HMI_MOI_PHUT = 600;
  * Everything else is `skip`ped here and counted by the general tier. Mounted BEFORE `apiLimiter` on `/api/` only (_core/index.ts) — the STOP
  * classifier matches `/api/trpc` only and no tRPC router is mounted on `/trpc`.
  * No DB on this path: the ticket check is stateless (signature + expiry) and shared with the general tier (one verification per request).
- * ⚠ Fail-open, ACCEPTED (dieu-phoi 2026-10-25, c4): `passOnStoreError: true` ⇒ while the Redis store is down this tier lets every signed STOP
- * through and the general tier skips it ⇒ signed STOPs are UNBOUNDED for the outage — the same fail-open policy as every limiter here
- * (a store outage must never 500 a STOP).
+ * Redis outage (R1b-2b-1 T14, kiem-dinh G3 — replaces the c4 fail-open): while Redis is down, erroring or slower than
+ * `HAN_LENH_REDIS_GIOI_HAN_MS` (250 ms), this tier counts in THIS PROCESS's memory (`StoreDuPhongBoNho`) ⇒ a signed STOP is still capped at
+ * `TRAN_STOP_HMI_MOI_PHUT` (600) / min per session PER PROCESS (N API instances ⇒ N × 600), and the limiter tier adds at most ~250 ms (one EVAL)
+ * in front of tRPC. `passOnStoreError: true` stays only for the case where the in-memory store itself throws (a store failure must never 500 a STOP).
  */
 export function createHmiStopLimiter(): RequestHandler {
   return rateLimit({
@@ -729,7 +863,7 @@ export function createHmiStopLimiter(): RequestHandler {
       return `hmistop:k:${apiKeyGenerator(req)}`;
     },
     skip: async (req: Request) => !(await laStopHmiCoPhienKy(req)),
-    passOnStoreError: true, // Redis down → allow (fail-open, accepted c4 — see JSDoc), never 500 a STOP
+    passOnStoreError: true, // only if the in-memory fallback itself throws — Redis down / slow ⇒ counted in memory (T14, see JSDoc); never 500 a STOP
     ...storeOption("rl:hmistop:"),
   });
 }
@@ -803,7 +937,7 @@ export function createOtIngestLimiter() {
     legacyHeaders: false,
     message: { error: "OT ingest rate limit exceeded" },
     keyGenerator: apiKeyGenerator,
-    passOnStoreError: true, // Redis down → allow (fail-open), never 500 the ingest path
+    passOnStoreError: true, // Redis down / slow ⇒ counted in process memory (StoreDuPhongBoNho, T14); allow only if memory itself throws — never 500 the ingest path
     ...storeOption("rl:otingest:"),
   });
 }
@@ -831,7 +965,7 @@ export function createMachineIngestLimiter() {
     message: { error: "Machine ingest rate limit exceeded" },
     keyGenerator: apiKeyGenerator,
     skip: (req: Request) => !isMachineIngestRequest(req),
-    passOnStoreError: true, // Redis down → allow (fail-open), never 500 the ingest path
+    passOnStoreError: true, // Redis down / slow ⇒ counted in process memory (StoreDuPhongBoNho, T14); allow only if memory itself throws — never 500 the ingest path
     ...storeOption("rl:machingest:"),
   });
 }

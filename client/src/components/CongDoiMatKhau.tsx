@@ -21,6 +21,12 @@
  *
  * ⚠ Quyết định *"có khoá không"* nằm ở `client/src/lib/congDoiMatKhau.ts` (có lưới thật); file này
  *   cố tình chỉ còn một lượt `if`. Xem lý do (node-env, không jsdom) ở docstring module ấy.
+ *
+ * ★★★ SCADA R1b-2b-1 T1 (mục 59, điều phối 2026-10-26): nhánh khoá render thêm **khối DỪNG MÁY khẩn cấp**
+ *   (`components/scada/KhoiDungKhanCap`) NGAY DƯỚI băng cảnh báo, TRÊN màn đổi mật khẩu — STOP không bao giờ
+ *   bị một cổng phần mềm chặn. Khối chỉ gọi MỘT thủ tục đọc tối thiểu (`scadaCommands.mayDungKhanCap`, miễn
+ *   cổng máy chủ cùng `dungMay`) và dùng lại `NutDungMay`; bảng route VẪN không render. Nhánh không khoá
+ *   không render khối (HMI thật đã có nút DỪNG).
  */
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { useLocation } from "wouter";
@@ -28,6 +34,7 @@ import { Loader2, KeyRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DUONG_DOI_MAT_KHAU, phaiKhoaVaoManDoiMatKhau } from "@/lib/congDoiMatKhau";
+import { KhoiDungKhanCap } from "@/components/scada/KhoiDungKhanCap";
 
 /** ⚠ DÙNG LẠI màn đã có — cùng module mà `<Route path="/change-password">` trỏ tới. */
 const ChangePassword = lazy(() => import("@/pages/ChangePassword"));
@@ -58,6 +65,8 @@ export function CongDoiMatKhau({ children }: { children: ReactNode }) {
           <p className="text-muted-foreground">{t("auth.mustChangePasswordBanner")}</p>
         </div>
       </div>
+      {/* SCADA R1b-2b-1 T1 (mục 59) — người có quyền dừng VẪN dừng được máy khi chưa đổi mật khẩu (máy chủ trả rỗng cho người khác) */}
+      <KhoiDungKhanCap />
       <Suspense
         fallback={
           <div className="flex h-screen items-center justify-center">

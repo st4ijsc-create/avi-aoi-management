@@ -15,7 +15,8 @@
  * truyền thẳng cho NodeS7 (lib tự parse). Nhờ vậy ta không phải tự encode lại S7.
  */
 import type { OtDataType } from "../otDriver";
-import { laGiaTriBadThuVien } from "../chatLuong";
+import { laMauBadThuVien } from "../chatLuong";
+import { giaiMaBoolDoc } from "./boolNghiem";
 
 /** Địa chỉ S7 đã validate — giữ nguyên dạng gốc để truyền cho NodeS7. */
 export interface ParsedS7Address {
@@ -87,7 +88,7 @@ export function parseS7Address(address: string): ParsedS7Address {
  * Ép giá trị thô NodeS7 trả về theo dataType khai báo (KHÔNG áp scale/offset).
  *   - giá trị BAD của NodeS7 → {value:null, quality:"bad"}: null/undefined, VÀ chuỗi chất lượng "BAD <mã>" mà nodes7 đặt vào chỗ giá trị
  *     cho item lỗi (R1b-2a T13 fix round 2, I2 — `laGiaTriBadThuVien`; trước đây bool đọc TRUE / string đọc "BAD 255" là good)
- *   - bool → Boolean(raw)
+ *   - bool → `giaiMaBoolDoc(raw)` (R1b-2b-1 T2; chuỗi lạ ⇒ bad)
  *   - int → ép Number (round), float → Number
  *   - string/json → String(raw)
  * Số NaN sau ép → quality:"bad".
@@ -97,13 +98,16 @@ export interface CoercedS7Value {
   quality: "good" | "bad";
 }
 
-export function coerceS7Value(raw: unknown, dataType: OtDataType): CoercedS7Value {
-  if (raw === null || raw === undefined || laGiaTriBadThuVien(raw)) {
+export function coerceS7Value(raw: unknown, dataType: OtDataType, tuyChon?: { thuVienBaoLoi?: boolean }): CoercedS7Value {
+  if (raw === null || raw === undefined || laMauBadThuVien(raw, dataType, tuyChon?.thuVienBaoLoi ?? true)) {
     return { value: null, quality: "bad" };
   }
   switch (dataType) {
-    case "bool":
-      return { value: Boolean(raw), quality: "good" };
+    case "bool": {
+      // R1b-2b-1 T2 — MỘT luật bool phía ĐỌC (`giaiMaBoolDoc`): số khác 0 ⇒ TRUE, "false" ⇒ FALSE, chuỗi lạ ⇒ bad (trước: `Boolean("x")` = TRUE).
+      const b = giaiMaBoolDoc(raw);
+      return b === undefined ? { value: null, quality: "bad" } : { value: b, quality: "good" };
+    }
     case "int": {
       const n = Number(raw);
       if (Number.isNaN(n)) return { value: null, quality: "bad" };

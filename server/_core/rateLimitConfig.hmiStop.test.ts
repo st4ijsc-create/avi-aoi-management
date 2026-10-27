@@ -47,6 +47,20 @@ vi.mock("ioredis", async (importOriginal) => {
     connect() {
       return Promise.resolve();
     }
+    /** R1b-2b-1 T14 fix round 1: the store counts with ONE EVAL (`LUA_TANG_DEM` INCR + PEXPIRE-if-no-TTL, `LUA_GIAM_DEM` guarded DECR). */
+    async eval(script: string, _n: number, k: string, ms?: number) {
+      if (script.includes("redis.call('INCR'")) {
+        const v = await this.incr(k);
+        let t = await this.pttl(k);
+        if (t < 0) {
+          await this.pexpire(k, Number(ms));
+          t = Number(ms);
+        }
+        return [v, t];
+      }
+      if (script.includes("redis.call('DECR'")) return (redisGia.dem.get(k) ?? 0) > 0 ? this.decr(k) : 0;
+      throw new Error("RedisGia: unknown script");
+    }
     async incr(k: string) {
       const n = (redisGia.dem.get(k) ?? 0) + 1;
       redisGia.dem.set(k, n);

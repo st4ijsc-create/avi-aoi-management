@@ -5,7 +5,7 @@
  * poll khi thiết bị vừa rớt); từ lần thứ 11 trở đi quay về backoff lũy thừa như cũ (bắt đầu lại từ bước đầu, trần không đổi).
  * Bộ đếm là số lần thất bại liên tiếp của từng adapter và về 0 khi nối thành công (đã có sẵn ở supervisor/otManager).
  */
-import type { OtSample, SuKienDoc } from "./otDriver";
+import type { LyDoChatLuong, OtQuality, OtSample, SuKienDoc } from "./otDriver";
 
 export const NOI_LAI_NHANH_SO_LAN = 10;
 export const NOI_LAI_NHANH_TOI_THIEU_MS = 500;
@@ -69,7 +69,29 @@ export function mauMayChuDaTraLoi(s: Pick<OtSample, "quality" | "reason">): bool
   return !(s.quality === "bad" && (s.reason === "comm_lost" || s.reason === undefined));
 }
 
-const moiTagMatLienLac = (e: SuKienDoc): boolean => e.tags.length > 0 && e.tags.every((t) => !mauMayChuDaTraLoi(t));
+/**
+ * SCADA R1b-2b-1 T5 (mục 51, T13 m4) — mã mà driver TỰ đặt khi KHÔNG gửi yêu cầu nào cho tag (địa chỉ sai, phát hiện cục bộ):
+ * S7 / MC `invalid_address`; OPC UA cú pháp sai `STATUS_BAD_NODEID_INVALID` (opcuaDriver.ts, gõ tay trước khi gửi).
+ */
+export const MA_CAU_HINH_KHONG_GUI: ReadonlySet<string> = new Set(["invalid_address", "BadNodeIdInvalid (0x80330000)"]);
+
+/**
+ * SCADA R1b-2b-1 T5 — mẫu TRUNG TÍNH: `bad` + `config_error` + mã ∈ MA_CAU_HINH_KHONG_GUI. Thiết bị chưa hề được hỏi ⇒ mẫu không nói gì
+ * về liên lạc: không "đã trả lời", không "chưa trả lời". Lỗi cấu hình mà THIẾT BỊ trả (Modbus exception, SLMP end code, OPC UA
+ * BadNodeIdUnknown) KHÔNG trung tính (máy chủ đã trả lời — K13 giữ); MC `device_error` không trung tính.
+ */
+export function laMauTrungTinh(s: { quality: OtQuality; reason?: LyDoChatLuong; statusCode?: string }): boolean {
+  return s.quality === "bad" && s.reason === "config_error" && s.statusCode !== undefined && MA_CAU_HINH_KHONG_GUI.has(s.statusCode);
+}
+
+/** Mọi tag KHÔNG trung tính đều chưa trả lời. Không còn tag nào sau khi bỏ tag trung tính ⇒ false (không nói gì về liên lạc). */
+const moiTagMatLienLac = (e: SuKienDoc): boolean => {
+  const coNghia = e.tags.filter((t) => !laMauTrungTinh(t));
+  return coNghia.length > 0 && coNghia.every((t) => !mauMayChuDaTraLoi(t));
+};
+
+/** R1b-2b-1 T5 — tick đọc THÀNH CÔNG mà MỌI tag trung tính: không đọc tốt, không hỏng ⇒ phiên ở `connecting` + lý do. */
+export const laTickMoiTagTrungTinh = (e: SuKienDoc): boolean => e.ok === true && e.tags.length > 0 && e.tags.every((t) => laMauTrungTinh(t));
 
 /**
  * Tick hỏng = quá hạn (giao dịch hoặc hạn vòng poll), lỗi comm_lost cho CẢ tick, hoặc tick "ok" mà MỌI tag CHƯA trả lời (bad/comm_lost
@@ -92,7 +114,8 @@ export function laTickHong(e: SuKienDoc): boolean {
  * không kèm lần đọc (`ok:false`) thì không.
  */
 export function laDocTot(e: SuKienDoc): boolean {
-  return e.ok === true && !laTickHong(e);
+  // R1b-2b-1 T5 — tick mà MỌI tag trung tính (driver không gửi yêu cầu nào) không phải đọc tốt: thiết bị chưa hề được hỏi.
+  return e.ok === true && !laTickHong(e) && (e.tags.length === 0 || e.tags.some((t) => !laMauTrungTinh(t)));
 }
 
 /** R1b-2a T13 — bộ bắt "lần đọc tốt" của MỘT phiên (xem taoBatDocTot). */
@@ -100,7 +123,7 @@ export interface BatDocTot {
   /** Mọi tick của phiên (đường poll). */
   quaTick: (e: SuKienDoc) => void;
   /** Mọi mẫu của phiên (đường push — OPC UA monitored items không gọi onTick). */
-  quaMau: (s: Pick<OtSample, "quality" | "reason">) => void;
+  quaMau: (s: Pick<OtSample, "quality" | "reason" | "statusCode">) => void;
 }
 
 /**
@@ -112,16 +135,35 @@ export interface BatDocTot {
  * laDocTot nói KHÔNG ⇒ đường poll sẽ báo connected oan. Lần đọc THÀNH CÔNG phát mẫu TRƯỚC tick của nó, và ≥ 1 mẫu đã trả lời ⇔
  * laDocTot(tick đó) ⇒ trước tick đầu, mẫu không đổi nghĩa đường poll. Driver push không bao giờ gọi onTick ⇒ mẫu luôn quyết định.
  * `khiDocTot` có thể bị gọi nhiều lần; người gọi tự chốt lần đầu (khiDocTotLegacy / danhDauDocTot).
+ * R1b-2b-1 T5 — mẫu trung tính (laMauTrungTinh) KHÔNG đánh dấu đọc tốt. `khiMoiTagTrungTinh(co)` (tuỳ chọn) báo lý do "mọi tag sai cấu
+ * hình cục bộ" của phiên CHƯA đọc tốt: `true` khi chỉ thấy mẫu trung tính — tick laTickMoiTagTrungTinh (poll), hoặc mẫu trung tính khi
+ * phiên chưa thấy tick nào VÀ chưa thấy mẫu không trung tính nào (push); `false` khi phiên thấy điều trái lại (tick không đọc tốt mà không
+ * trung tính, mẫu chưa trả lời) — lý do "sai cấu hình" không được che việc mất liên lạc. Báo ingest treo không kèm lần đọc: không nói gì.
+ * Đã đọc tốt ⇒ không gọi nữa (người gọi xoá lý do ở `connected`).
  */
-export function taoBatDocTot(khiDocTot: () => void): BatDocTot {
+export function taoBatDocTot(khiDocTot: () => void, khiMoiTagTrungTinh?: (co: boolean) => void): BatDocTot {
   let daThayTick = false;
+  let daDocTot = false;
+  let daThayMauCoNghia = false;
+  const docTot = () => {
+    daDocTot = true;
+    khiDocTot();
+  };
   return {
     quaTick: (e) => {
       daThayTick = true;
-      if (laDocTot(e)) khiDocTot();
+      if (laDocTot(e)) docTot();
+      else if (!daDocTot && !(e.lyDo === "ingest_treo" && e.ok !== true)) khiMoiTagTrungTinh?.(laTickMoiTagTrungTinh(e));
     },
     quaMau: (s) => {
-      if (!daThayTick && mauMayChuDaTraLoi(s)) khiDocTot();
+      if (daThayTick) return;
+      if (laMauTrungTinh(s)) {
+        if (!daDocTot && !daThayMauCoNghia) khiMoiTagTrungTinh?.(true);
+        return;
+      }
+      daThayMauCoNghia = true;
+      if (mauMayChuDaTraLoi(s)) docTot();
+      else if (!daDocTot) khiMoiTagTrungTinh?.(false);
     },
   };
 }

@@ -89,7 +89,6 @@ interface AdapterForm {
 }
 
 interface TagForm {
-  id?: number;
   tagKey: string;
   address: string;
   dataType: DataType;
@@ -659,7 +658,6 @@ export default function DeviceAdapterManagement() {
 
   const adapters = adaptersQuery.data ?? [];
   const tags = tagsQuery.data ?? [];
-  const tagEditGuard = useStopPinRemovalGuard("edit");
   const submitTag = () => {
     if (tagSheetAdapterId == null) return;
     const base = {
@@ -672,11 +670,8 @@ export default function DeviceAdapterManagement() {
       writable: tagForm.writable,
       isEnabled: tagForm.isEnabled,
     };
-    if (tagForm.id != null) {
-      // doc 81 Đợt 4 Task C1 — saving the tag form asks first when the shared rule says the save clears the pin.
-      const id = tagForm.id;
-      tagEditGuard.guard(tags.find((tg) => tg.id === id), base, () => updateTag.mutate({ id, ...base }));
-    } else createTag.mutate({ adapterId: tagSheetAdapterId, ...base });
+    // R1b-2b-1 T12 (mục 49): form này CHỈ tạo; nhánh sửa qua `tagForm.id` đã gỡ (form sửa tag thật sang R1b-2b-2).
+    createTag.mutate({ adapterId: tagSheetAdapterId, ...base });
   };
 
 
@@ -981,7 +976,6 @@ export default function DeviceAdapterManagement() {
         </SheetContent>
       </Sheet>
 
-      {tagEditGuard.dialog}
       {troLaiTotp.hop}
       {taoTagTotp.hop}
       {xoaTagTotp.hop}

@@ -7,7 +7,8 @@
  *   - `reason` là phân loại thô (LyDoChatLuong) cho UI/cảnh báo/interlock.
  */
 import { DeviceUnreachableError } from "../../_core/deviceErrors";
-import type { LyDoChatLuong, OtQuality, OtSample, OtTagAddress } from "./otDriver";
+import { laLoiMatLienKetKhiDangGui } from "./drivers/dangBay";
+import type { LyDoChatLuong, OtDataType, OtQuality, OtSample, OtTagAddress } from "./otDriver";
 
 /** OPC UA StatusCode (mã lõi = 16 bit cao; 16 bit thấp là bit thông tin, đã che) báo MẤT LIÊN LẠC. */
 const OPCUA_MAT_LIEN_LAC = new Set<number>([
@@ -96,6 +97,8 @@ export function laLoiMucLienKet(err: unknown): boolean {
   if (err instanceof DeviceUnreachableError) return true;
   if (err == null || typeof err !== "object") return false;
   if ((err as { name?: unknown }).name === "PortNotOpenError") return true;
+  // R1b-2b-1 — yêu cầu đang bay bị huỷ vì liên kết mất / phiên bị hạ (drivers/dangBay.ts).
+  if (laLoiMatLienKetKhiDangGui(err)) return true;
   const code = maLoi(err);
   return code !== undefined && MA_LOI_LIEN_KET.has(code);
 }
@@ -114,6 +117,7 @@ export function laLoiHuyTickPoll(err: unknown): boolean {
 export function chatLuongLoiChung(err: unknown): { statusCode: string; reason: LyDoChatLuong } {
   if (laLoiTimeout(err)) return { statusCode: "timeout", reason: "comm_lost" };
   if (err instanceof DeviceUnreachableError) return { statusCode: "unreachable", reason: "comm_lost" };
+  if (laLoiMatLienKetKhiDangGui(err)) return { statusCode: "link_lost", reason: "comm_lost" }; // R1b-2b-1
   const code = maLoi(err);
   if (code && MA_LOI_MANG.has(code)) return { statusCode: code, reason: "comm_lost" };
   return { statusCode: thongDiepNgan(err), reason: "device_error" };
@@ -154,6 +158,15 @@ export function laGiaTriBadThuVien(raw: unknown): boolean {
   if (typeof raw === "string") return /^BAD \d{1,3}$/.test(raw);
   if (Array.isArray(raw)) return raw.some((x) => typeof x === "string" && /^BAD \d{1,3}$/.test(x));
   return false;
+}
+
+/**
+ * R1b-2b-1 T3 (kiem-dinh G2) — chuỗi `BAD n` là mẫu xấu theo KIỂU tag + cờ `anythingBad` của thư viện: tag bool/int/float ⇒ luôn xấu
+ * (không phải giá trị hợp lệ của kiểu đó); tag string/json ⇒ chỉ xấu khi thư viện báo lỗi (`thuVienBaoLoi`), nếu không là giá trị THẬT.
+ * Giới hạn: tag string có giá trị thật "BAD n" cùng lần đọc với một item lỗi khác bị coi là xấu (fail-closed).
+ */
+export function laMauBadThuVien(raw: unknown, dataType: OtDataType, thuVienBaoLoi: boolean): boolean {
+  return laGiaTriBadThuVien(raw) && (thuVienBaoLoi || (dataType !== "string" && dataType !== "json"));
 }
 
 /**

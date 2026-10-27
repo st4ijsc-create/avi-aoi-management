@@ -148,18 +148,24 @@ describe("★★★ I-4 §2 — tập CHO QUA: LƯỚI HAI CHIỀU (khuôn `publ
   });
 });
 
-describe("★★★ §2b — tập miễn cổng cho STOP (điều phối 2026-10-26): LƯỚI HAI CHIỀU, đúng MỘT thủ tục", () => {
+describe("★★★ §2b — tập miễn cổng cho STOP (điều phối 2026-10-26; R1b-2b-1 T1 mục 59, Q1): LƯỚI HAI CHIỀU, ĐÚNG HAI thủ tục", () => {
   it("★★★ chiều A — đường trong tập TỒN TẠI trên `appRouter` (mục ma ⇒ STOP lại bị chặn im lặng)", () => {
     const ma = THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU.filter((d) => !(d in THU_TUC));
     expect(ma.join(" · "), "đường miễn cổng STOP không tồn tại trên appRouter").toBe("");
   });
 
-  it("★★★ chiều B — tập TỐI THIỂU: CHỈ scadaCommands.dungMay (mở thêm thủ tục nào là một quyết định phải nói ra)", () => {
-    expect([...THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU]).toEqual(["scadaCommands.dungMay"]);
+  /**
+   * 2026-10-26 (R1b-2b-1 T1, mục 59 — điều phối Q1 DUYỆT): tập có ĐÚNG HAI phần tử — `dungMay` + thủ tục đọc tối thiểu `mayDungKhanCap`
+   * (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu). Ghim TẬP theo cả HAI chiều: thêm phần tử thứ ba ⇒ đỏ; bớt một ⇒ đỏ.
+   */
+  it("★★★ chiều B — tập TỐI THIỂU: ĐÚNG dungMay + mayDungKhanCap (mục 59; mở thêm thủ tục nào là một quyết định phải nói ra)", () => {
+    expect([...THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU]).toEqual(["scadaCommands.dungMay", "scadaCommands.mayDungKhanCap"]);
+    expect(THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU).toHaveLength(2);
+    expect(new Set(THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU).size, "phần tử trùng ⇒ tập không còn là tập").toBe(2);
     // không trùng tập CHO QUA (CHO QUA bỏ qua cả lượt đọc cờ; miễn STOP VẪN đọc cờ để ghi audit)
     for (const d of THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU) expect(THU_TUC_CHO_QUA.includes(d)).toBe(false);
-    // các thủ tục lệnh khác KHÔNG được miễn
-    for (const d of ["scadaCommands.request", "scadaCommands.confirm", "scadaCommands.huy", "scadaCommands.trangThai"]) {
+    // các thủ tục lệnh khác + mọi thủ tục đọc của HMI KHÔNG được miễn (Review Focus 1)
+    for (const d of ["scadaCommands.request", "scadaCommands.confirm", "scadaCommands.huy", "scadaCommands.trangThai", "scadaKenh.cheDo.danhSach", "scadaKenh.danhSach"]) {
       expect(d in THU_TUC, `${d} phải tồn tại (nếu không, ca này là chân lý rỗng)`).toBe(true);
       expect(THU_TUC_STOP_MIEN_CONG_DOI_MAT_KHAU.includes(d), `${d} KHÔNG được miễn cổng`).toBe(false);
     }
@@ -167,6 +173,10 @@ describe("★★★ §2b — tập miễn cổng cho STOP (điều phối 2026-1
 
   it("★★ cổng VẪN nằm trong chuỗi của scadaCommands.dungMay (miễn ở TRONG cổng, không gỡ cổng khỏi chuỗi)", () => {
     expect(chuoiCua("scadaCommands.dungMay")[0]).toBe(HAM_CONG);
+  });
+
+  it("★★ cổng VẪN đứng đầu chuỗi của scadaCommands.mayDungKhanCap (R1b-2b-1 T1)", () => {
+    expect(chuoiCua("scadaCommands.mayDungKhanCap")[0]).toBe(HAM_CONG);
   });
 });
 

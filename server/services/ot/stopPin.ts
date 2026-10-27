@@ -42,6 +42,9 @@ import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 import { lyDoGoStopPinKhiSuaTag } from "@shared/stopPinTagRule";
 // SCADA R1a Task 12 — ghim phải ghi được trên kênh theo khai báo kênh HIỆN TẠI (loại / dải / bước), cùng luật cổng kênh của dispatch()
 import { kiemLenhInterlockTrenKenh } from "../scada/nhatQuanKenh";
+// SCADA R1b-2b-1 T2 (điều kiện 1b) — ghim MỚI trên địa chỉ coil / bit phải thuộc tập bool hợp lệ
+import { boolTuGiaTri } from "./drivers/boolNghiem";
+import { lopDiaChiBit } from "./drivers/diaChiBit";
 // doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — the cached "adapter has any pin" answer: seeded here, invalidated on a change
 import { invalidateStopPinPresence, rememberStopPinPresence, stopPinChanged, stopPinReadToken } from "./stopPinPresence";
 
@@ -255,7 +258,7 @@ export interface NguoiSuaStopPin {
 /** Lỗi nghiệp vụ của `datStopPin` — router đổi sang appError có mã. */
 export class StopPinLoi extends Error {
   constructor(
-    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch" | "ngoai_dai",
+    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch" | "ngoai_dai" | "dia_chi_bit",
     readonly chiTiet: Record<string, unknown> = {},
   ) {
     super(loai);
@@ -411,7 +414,7 @@ async function datStopPinTx(
 ): Promise<KetQuaStopPin> {
   return db.transaction(async (tx) => {
     const [adapter] = await tx
-      .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId })
+      .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId, protocol: deviceAdapters.protocol })
       .from(deviceAdapters)
       .where(eq(deviceAdapters.id, input.adapterId))
       .limit(1)
@@ -440,6 +443,14 @@ async function datStopPinTx(
       }
       const v = validateStopValue(String(tag.dataType), input.stopValue);
       if (!v.ok) throw new StopPinLoi("type_mismatch", { tagKey: tag.tagKey, dataType: tag.dataType, detail: v.reason });
+      // SCADA R1b-2b-1 T2 (điều kiện 1b, preflight C1) — địa chỉ mà driver ghi thành MỘT BIT bất kể dataType (coil Modbus, holding bool, bit-device
+      // SLMP / MC — `lopDiaChiBit`, đọc trên adapter đã khoá FOR SHARE): ghim MỚI phải thuộc tập bool hợp lệ (true/false, 1/0, "1"/"0",
+      // "true"/"false" — `boolTuGiaTri`). Ghim 255 / "on" trên coil kiểu int là một STOP mà nghĩa phụ thuộc truthy của driver ⇒ từ chối LÚC ĐẶT.
+      // CỐ Ý không ở `validateStopValue` (chạy cả lúc dispatch ⇒ ghim cũ sẽ "biến mất"); ghim CŨ vẫn gửi, driver ghi bằng `boolDungGhim` (KD-T2).
+      const lopBit = lopDiaChiBit(adapter.protocol, tag.address, tag.dataType);
+      if (lopBit !== null && boolTuGiaTri(v.value) === undefined) {
+        throw new StopPinLoi("dia_chi_bit", { tagKey: tag.tagKey, dataType: tag.dataType, address: tag.address, lopBit, stopValue: v.value });
+      }
       // SCADA R1a Task 12 — trên khai báo kênh đọc dưới CÙNG khoá FOR UPDATE (scadaKenh.capNhat khoá cùng hàng ⇒ không lọt giữa hai bên).
       // R1b-2a T2 (m4) — `kiemLenhInterlockTrenKenh`: đã khai ⇒ `kiemNhatQuanKenh` như trước; CHƯA khai ⇒ lưới thô của tag int (scale 10: 25 ⇒
       // OFF_STEP buoc 10 goiY 30). Chỉ từ chối CẤU HÌNH (đặt ghim) — không bao giờ một lệnh STOP (dispatch vẫn miễn cả lệnh khớp ghim).

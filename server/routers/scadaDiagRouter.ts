@@ -34,7 +34,7 @@ import { phamViCua } from "./_phamViNguoiXem";
 import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
-import { baoTrangThaiAdapter, layTrangThaiAdapter } from "../services/ot/trangThaiAdapter";
+import { baoTrangThaiAdapter, layTrangThaiAdapter, type LyDoTrangThaiKetNoi } from "../services/ot/trangThaiAdapter";
 import { layBoDem } from "../services/ot/boDemTruyenThong";
 import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
@@ -139,27 +139,30 @@ async function tuChoiNeuEdge(adapterId: number, operation: string): Promise<void
   }
 }
 
-/** Trạng thái hiển thị: edge ⇒ edge_chua_co_so_lieu; RAM trước; DB sau (isEnabled=false ⇒ disabled; trạng thái lạ ⇒ khong_ro). */
+/**
+ * Trạng thái hiển thị: edge ⇒ edge_chua_co_so_lieu; RAM trước; DB sau (isEnabled=false ⇒ disabled; trạng thái lạ ⇒ khong_ro).
+ * R1b-2b-1 T5 — `lyDo` (lý do có mã, vd `moi_tag_sai_cau_hinh`) CHỈ có ở RAM (không cột DB) ⇒ nhánh DB/edge luôn null.
+ */
 export function trangThaiHienThi(
   row: Pick<HangAdapter, "id" | "status" | "isEnabled" | "lastConnectedAt" | "lastErrorAt" | "lastError">,
   edge: boolean,
   ram: ReturnType<typeof layTrangThaiAdapter>,
-): { trangThai: TrangThaiM10; tu: string | null; loi: string | null; soLanMat: number } {
-  if (edge) return { trangThai: "edge_chua_co_so_lieu", tu: null, loi: null, soLanMat: 0 };
-  if (ram) return { trangThai: ram.tt, tu: ram.tu.toISOString(), loi: ram.loi, soLanMat: ram.soLanMat };
+): { trangThai: TrangThaiM10; tu: string | null; loi: string | null; lyDo: LyDoTrangThaiKetNoi | null; soLanMat: number } {
+  if (edge) return { trangThai: "edge_chua_co_so_lieu", tu: null, loi: null, lyDo: null, soLanMat: 0 };
+  if (ram) return { trangThai: ram.tt, tu: ram.tu.toISOString(), loi: ram.loi, lyDo: ram.lyDo ?? null, soLanMat: ram.soLanMat };
   const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
-  if (!row.isEnabled) return { trangThai: "disabled", tu: null, loi: null, soLanMat: 0 };
+  if (!row.isEnabled) return { trangThai: "disabled", tu: null, loi: null, lyDo: null, soLanMat: 0 };
   switch (row.status) {
     case "connected":
-      return { trangThai: "connected", tu: iso(row.lastConnectedAt), loi: null, soLanMat: 0 };
+      return { trangThai: "connected", tu: iso(row.lastConnectedAt), loi: null, lyDo: null, soLanMat: 0 };
     case "error":
-      return { trangThai: "lost", tu: iso(row.lastErrorAt), loi: row.lastError ?? null, soLanMat: 0 };
+      return { trangThai: "lost", tu: iso(row.lastErrorAt), loi: row.lastError ?? null, lyDo: null, soLanMat: 0 };
     case "connecting":
-      return { trangThai: "connecting", tu: null, loi: null, soLanMat: 0 };
+      return { trangThai: "connecting", tu: null, loi: null, lyDo: null, soLanMat: 0 };
     case "disabled":
-      return { trangThai: "disabled", tu: null, loi: null, soLanMat: 0 };
+      return { trangThai: "disabled", tu: null, loi: null, lyDo: null, soLanMat: 0 };
     default:
-      return { trangThai: "khong_ro", tu: null, loi: null, soLanMat: 0 };
+      return { trangThai: "khong_ro", tu: null, loi: null, lyDo: null, soLanMat: 0 };
   }
 }
 
@@ -234,6 +237,7 @@ export const scadaDiagRouter = router({
         trangThai: st.trangThai,
         tu: st.tu,
         loi: st.loi,
+        lyDo: st.lyDo, // R1b-2b-1 T5 — lý do có mã của trạng thái (RAM), M10 hiện bằng i18n
         soLanMat: st.soLanMat,
         pollMs: thongTinAdapter(r.id)?.pollMs ?? r.pollIntervalMs,
         p95Ms: bd.p95Ms,

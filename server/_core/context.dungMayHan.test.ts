@@ -1,12 +1,12 @@
 /**
- * SCADA R1b-2a Task 4 (M-1, ruling K6, R-10-bb mở rộng) — hạn xác thực của lượt gọi CHỈ gồm `scadaCommands.dungMay`.
+ * SCADA R1b-2a Task 4 (M-1, ruling K6, R-10-bb mở rộng) — hạn xác thực của request CÓ CHỨA `scadaCommands.dungMay` (một mình hoặc trong batch — R1b-2b-1 T15, kiểm định G4; bọc hạn, không từ chối).
  *
  * Hợp đồng:
- *   · request CHỈ gồm `scadaCommands.dungMay` ⇒ `sdk.authenticateRequest` chạy dưới hạn `HAN_XAC_THUC_STOP_HMI_MS` (1,5 s). Quá hạn ⇒ NÉM
+ *   · request CÓ CHỨA `scadaCommands.dungMay` (kể cả batch trộn — T15; lượt gọi khác cùng batch chung hạn, KD-T15) ⇒ `sdk.authenticateRequest` chạy dưới hạn `HAN_XAC_THUC_STOP_HMI_MS` (1,5 s). Quá hạn ⇒ NÉM
  *     `TRPCError SERVICE_UNAVAILABLE` (HTTP 503, fix round 1 I-2) mang appCode `SCADA_STOP_PRECHECK_TIMEOUT` `{ ma: "STOP_QUA_HAN", pha: "xac_thuc" }` — fail-closed: không bao giờ để
  *     một STOP chưa xác thực đi tiếp (không có `user = null` lặng lẽ rồi chạy thủ tục).
  *   · lỗi xác thực khác (cookie rác, phiên thu hồi) ⇒ như cũ: `user = null` (thủ tục tự trả UNAUTHORIZED).
- *   · mọi request khác (confirm, batch trộn) ⇒ KHÔNG có hạn (như cũ). `robot.consoleStop` không đổi (nhánh STOP-only của R-10-bb).
+ *   · request KHÔNG chứa dungMay (confirm, batch không có dungMay) ⇒ KHÔNG có hạn (như cũ). `robot.consoleStop` không đổi (nhánh STOP-only của R-10-bb).
  * Đồng hồ GIẢ cho mọi ca của createContext (K15); MỘT ca HTTP thật qua `fetchRequestHandler` + `errorFormatter` THẬT (đồng hồ thật, ~1,5 s)
  * chứng minh tRPC 11 trả nguyên lỗi của createContext tới dây (HTTP 503 + appCode).
  */
@@ -15,7 +15,10 @@ import { initTRPC } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import superjson from "superjson";
 import { sdk } from "./sdk";
-import { createContext, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, type TrpcContext } from "./context";
+import { createContext, HAN_XAC_THUC_STOP_HMI_MS, laGoiChiDungMay, laGoiCoDungMay, type TrpcContext } from "./context";
+import { batDauDoLag } from "../testing/doLagBucleSuKien";
+import { _datLaiDemStopQuaHanChoTest, demStopQuaHanKhongGhiSo, laLoiStopQuaHan, trongHanYeuCauStopHmi } from "./hanStopHmi";
+import { logger } from "../logger";
 import { errorFormatter } from "./trpc";
 
 const NGUOI = { id: 77, openId: "o-77", role: "operator", name: "Op" } as unknown as NonNullable<TrpcContext["user"]>;
@@ -51,8 +54,61 @@ describe("laGoiChiDungMay — cùng hình isStopOnlyCall", () => {
   });
 });
 
+describe("trongHanYeuCauStopHmi — lượt gọi ANH EM cùng batch với dungMay (T15 vòng sửa 1, I1)", () => {
+  beforeEach(() => {
+    _datLaiDemStopQuaHanChoTest();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function quaHan(duong?: string) {
+    const p = trongHanYeuCauStopHmi(cho(10_000, 1), Date.now() + 500, "giay_phep", "truoc_gui", undefined, duong);
+    const s = theoDoi(p);
+    await vi.advanceTimersByTimeAsync(500);
+    return s;
+  }
+
+  it("★ anh em (auth.me) quá hạn ⇒ VẪN 503 SCADA_STOP_PRECHECK_TIMEOUT nhưng KHÔNG đếm stopQuaHan24h, KHÔNG log error 'STOP CHƯA được gửi', có log warn riêng", async () => {
+    const err = vi.spyOn(logger, "error").mockImplementation((() => undefined) as never);
+    const warn = vi.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    const s = await quaHan("auth.me");
+    expect(laLoiStopQuaHan(s.loi)).toBe(true);
+    expect(demStopQuaHanKhongGhiSo().tong).toBe(0);
+    expect(err).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[1])).toContain("cùng batch với dungMay");
+  });
+
+  it("★ dungMay quá hạn ⇒ đếm đúng 1 + log error; vắng đường dẫn (xác thực ở createContext) ⇒ cũng tính là STOP", async () => {
+    const err = vi.spyOn(logger, "error").mockImplementation((() => undefined) as never);
+    await quaHan("scadaCommands.dungMay");
+    expect(demStopQuaHanKhongGhiSo().tong).toBe(1);
+    await quaHan(undefined);
+    expect(demStopQuaHanKhongGhiSo().tong).toBe(2);
+    expect(err).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("laGoiCoDungMay — bảng chân trị (T15)", () => {
+  it("≥ 1 phần tử dungMay ⇒ true; còn lại false", () => {
+    expect(laGoiCoDungMay(info())).toBe(false); // rỗng
+    expect(laGoiCoDungMay({})).toBe(false); // vắng calls
+    expect(laGoiCoDungMay(undefined)).toBe(false);
+    expect(laGoiCoDungMay({ calls: "scadaCommands.dungMay" })).toBe(false); // không phải mảng
+    expect(laGoiCoDungMay({ calls: [{ path: 42 }, null, {}] })).toBe(false);
+    expect(laGoiCoDungMay(info("auth.me", "scadaCommands.confirm"))).toBe(false);
+    expect(laGoiCoDungMay(info("scadaCommands.dungMay"))).toBe(true); // một
+    expect(laGoiCoDungMay(info("auth.me", "scadaCommands.dungMay"))).toBe(true); // trộn
+    expect(laGoiCoDungMay(info("scadaCommands.dungMay", "auth.me"))).toBe(true);
+  });
+});
+
 describe("createContext — hạn xác thực của STOP HMI (đồng hồ giả)", () => {
   beforeEach(() => {
+    _datLaiDemStopQuaHanChoTest();
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -101,13 +157,39 @@ describe("createContext — hạn xác thực của STOP HMI (đồng hồ giả
     expect(s.giaTri?.user).toBe(NGUOI);
   });
 
-  it("★ batch trộn [dungMay, confirm] ⇒ không hạn (laGoiChiDungMay false) — như mọi request thường", async () => {
+  it("★ T15: batch [auth.me, dungMay] + xác thực treo 5 s ⇒ CŨNG bị hạn: NÉM SCADA_STOP_PRECHECK_TIMEOUT ĐÚNG lúc 1500 ms (bọc hạn, không từ chối)", async () => {
     vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(5_000, NGUOI) as never);
-    const s = theoDoi(createContext({ req: req(), res: {} as never, info: info("scadaCommands.dungMay", "scadaCommands.confirm") }));
-    await vi.advanceTimersByTimeAsync(4_000);
+    const s = theoDoi(createContext({ req: req(), res: {} as never, info: info("auth.me", "scadaCommands.dungMay") }));
+    await vi.advanceTimersByTimeAsync(HAN_XAC_THUC_STOP_HMI_MS - 1);
     expect(s.xong).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.xong).toBe(true);
+    const e = s.loi as { code?: string; cause?: { appCode?: string; appParams?: Record<string, unknown> } };
+    expect(e?.code).toBe("SERVICE_UNAVAILABLE");
+    expect(e.cause?.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
+    expect(e.cause?.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "xac_thuc" });
+  });
+
+  it("★ T15: batch [dungMay, confirm] (dungMay đứng đầu), xác thực kịp (1000 ms) ⇒ có user và ctx.hanChotStopHmi = bắt đầu + 2500", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(1_000, NGUOI) as never);
+    const t0 = Date.now();
+    const s = theoDoi(createContext({ req: req(), res: {} as never, info: info("scadaCommands.dungMay", "scadaCommands.confirm") }));
     await vi.advanceTimersByTimeAsync(1_000);
+    expect(s.loi).toBeUndefined();
     expect(s.giaTri?.user).toBe(NGUOI);
+    expect(s.giaTri?.hanChotStopHmi).toBe(t0 + 2500);
+  });
+
+  it("★ T15: batch KHÔNG có dungMay ⇒ không hạn (chờ đủ 5 s giả), ctx.hanChotStopHmi vắng", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(5_000, NGUOI) as never);
+    const s = theoDoi(createContext({ req: req(), res: {} as never, info: info("auth.me", "scadaCommands.confirm") }));
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(s.xong).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.loi).toBeUndefined();
+    expect(s.giaTri?.user).toBe(NGUOI);
+    expect(s.giaTri).not.toHaveProperty("hanChotStopHmi");
+    expect(demStopQuaHanKhongGhiSo().tong).toBe(0); // vòng sửa 1: batch không dungMay ⇒ bộ đếm 0
   });
 
   it("robot.consoleStop không đổi: nhánh STOP-only của R-10-bb, KHÔNG gọi authenticateRequest", async () => {
@@ -154,5 +236,51 @@ describe("HTTP thật (fetchRequestHandler + errorFormatter THẬT) — tRPC 11 
     expect(body.error.json.data.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
     expect(body.error.json.data.appParams).toEqual({ ma: "STOP_QUA_HAN", pha: "xac_thuc" });
     expect(daChay).toBe(0);
+  }, 10_000);
+
+  it("★ T15 (KD-T15) batch trộn [auth.me, dungMay] qua HTTP thật, xác thực treo ⇒ CẢ HAI lượt nhận 503 SCADA_STOP_PRECHECK_TIMEOUT trong < 1700 ms (đồng hồ tường trừ lag) — hành vi CHẤP NHẬN, không phải tai nạn; thủ tục không chạy", async () => {
+    vi.spyOn(sdk, "authenticateRequest").mockImplementation(() => cho(5_000, NGUOI) as never);
+    const t = initTRPC.context<TrpcContext>().create({ transformer: superjson, errorFormatter });
+    let daChay = 0;
+    const appRouter = t.router({
+      auth: t.router({
+        me: t.procedure.mutation(() => {
+          daChay += 1;
+          return "me";
+        }),
+      }),
+      scadaCommands: t.router({
+        dungMay: t.procedure.mutation(() => {
+          daChay += 1;
+          return "da_gui";
+        }),
+      }),
+    });
+    _datLaiDemStopQuaHanChoTest();
+    const lag = batDauDoLag();
+    const batDau = Date.now();
+    const res = await fetchRequestHandler({
+      endpoint: "/api/trpc",
+      req: new Request("http://x/api/trpc/auth.me,scadaCommands.dungMay?batch=1", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: "app_session_id=abc" },
+        body: JSON.stringify({ 0: { json: null }, 1: { json: { machineId: 1 } } }),
+      }),
+      router: appRouter,
+      createContext: ({ info: i }) => createContext({ req: req(), res: {} as never, info: i }),
+    });
+    const tho = Date.now() - batDau;
+    const troi = tho - (await lag.dung());
+    expect(tho).toBeGreaterThanOrEqual(HAN_XAC_THUC_STOP_HMI_MS - 50); // cận dưới trên đồng hồ THÔ (không bao giờ xong sớm)
+    expect(troi).toBeLessThan(1_700);
+    const body = (await res.json()) as Array<{ error: { json: { data: Record<string, unknown> } } }>;
+    expect(body).toHaveLength(2);
+    for (const phan of body) {
+      expect(phan.error.json.data.code).toBe("SERVICE_UNAVAILABLE");
+      expect(phan.error.json.data.appCode).toBe("SCADA_STOP_PRECHECK_TIMEOUT");
+    }
+    expect(daChay).toBe(0);
+    // vòng sửa 1 (I1): MỘT request có dungMay hết hạn ở xác thực ⇒ đếm ĐÚNG 1 (cho dungMay), không phải 2 (mỗi lượt gọi)
+    expect(demStopQuaHanKhongGhiSo()).toMatchObject({ tong: 1, theoBuoc: { xac_thuc: 1 } });
   }, 10_000);
 });
