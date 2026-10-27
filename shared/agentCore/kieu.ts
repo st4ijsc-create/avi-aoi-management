@@ -152,6 +152,13 @@ export type SuKienAgent =
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
+  /**
+   * (Đợt 11.8) AGENT CON. Mọi sự kiện của vòng con đi qua `su-kien-con` (BỌC, không bao giờ phát thẳng) ⇒ con không giả
+   * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
+   */
+  | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string }
+  | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
   | { loai: "xong"; lyDo: LyDoDung; tomTat?: string }
   | { loai: "loi"; ma: string; thongDiep: string };
 
