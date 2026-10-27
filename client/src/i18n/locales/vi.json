@@ -4103,7 +4103,8 @@
       "aiNgoaiDatModel": "đặt model AI ngoài",
       "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
       "taiAnhAi": "tải ảnh cho phân tích AI",
-      "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp"
+      "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp",
+      "aiKiemDinh": "kiểm định bởi AI ngoài"
     },
     "field": {
       "stationId": "trạm",
@@ -4574,7 +4575,23 @@
       "anh-chuyen-huong": "máy chủ ảnh trả chuyển hướng (không theo)",
       "anh-http-loi": "máy chủ ảnh trả lỗi",
       "anh-khong-phai-anh": "nội dung tải về không phải ảnh",
-      "anh-qua-lon": "ảnh vượt 20 MB"
+      "anh-qua-lon": "ảnh vượt 20 MB",
+      "kiem-dinh-khong-co-nguon": "không tìm thấy lượt cần kiểm định (hoặc tài khoản thuộc nhiều nhà máy — chưa dùng được kiểm định ngoài)",
+      "kiem-dinh-tra-loi-rong": "lượt không có câu trả lời để kiểm định",
+      "NGOAI_TAT": "AI ngoài đang tắt",
+      "NGOAI_KHONG_TON_TAI": "model AI ngoài chưa được bật cho nhà máy",
+      "NGOAI_DU_LIEU_VAN_HANH": "nhà máy chưa cho phép gửi dữ liệu vận hành ra AI ngoài",
+      "NGOAI_VUOT_TRAN": "vượt trần chi phí / số lần của nhà máy",
+      "NGOAI_QUA_LON": "nội dung quá lớn để gửi — chọn phần nhỏ hơn",
+      "NGOAI_NHA_CUNG_CAP_LOI": "nhà cung cấp AI ngoài báo lỗi",
+      "NGOAI_PHAN_HOI_QUA_LON": "phản hồi của AI ngoài quá lớn",
+      "NGOAI_SAI_SCHEMA": "kết quả kiểm định sai định dạng",
+      "NGOAI_DANG_CHAY": "yêu cầu kiểm định này đang chạy",
+      "NGOAI_DEM_HONG": "bộ đếm chi phí không sẵn sàng — thử lại sau",
+      "NGOAI_SO_HONG": "sổ kiểm toán AI ngoài không ghi được — thử lại sau",
+      "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
+      "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
+      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -23786,6 +23803,23 @@
         "biMatGoiY": "Tuỳ chọn. Bí mật phải khai host của máy chủ MCP này; không bí mật nào tự chảy sang máy chủ MCP.",
         "truongRaGoiY": "Kết quả ghi vào item dưới khoá này (mặc định mcp): {may, tool, noiDung, cauTruc}.",
         "canhBao": "Kết quả của tool là DỮ LIỆU không tin cậy — không bao giờ được chạy như lệnh/biểu thức. Hạng ghi ngoài: luồng cần quyền bật tương ứng. Tối đa 20 item, 30 giây, 1 MiB mỗi phản hồi."
+      },
+      "kiemDinhNgoai": {
+        "ghiChu": "Gửi câu hỏi + câu trả lời của bước trước cho AI BÊN NGOÀI kiểm định (trả phí, tối đa {{max}} item mỗi lượt). Mỗi PHIÊN BẢN luồng có node này phải được admin duyệt trước khi bật/chạy; dữ liệu vận hành chỉ ra ngoài khi nhà máy cho phép; nội dung được che trước khi rời máy; kết quả của AI ngoài là dữ liệu KHÔNG tin cậy (chỉ để tham khảo/duyệt).",
+        "model": "Model ngoài",
+        "modelGoiY": "Chỉ liệt kê model ngoài mà nhà máy của bạn đã bật. Không có 'Tự động' và không có model cục bộ ở node này.",
+        "chuaChon": "— Chọn model ngoài —",
+        "khongCoModel": "Nhà máy chưa bật AI ngoài hoặc chưa khai model nào — nhờ quản trị viên cấu hình (Cài đặt AI).",
+        "modelHet": "Model này không còn dùng được ở nhà máy hiện tại (đã tắt hoặc nhà máy khác). Hãy chọn lại.",
+        "chuaChonCanhBao": "Chưa chọn model — luồng lưu được nhưng node sẽ KHÔNG chạy cho tới khi chọn.",
+        "cauHoi": "Câu hỏi gốc",
+        "cauHoiGoiY": "Biểu thức, ví dụ $json.cauHoi. Có thể để trống.",
+        "traLoi": "Câu trả lời / mã cần kiểm định",
+        "traLoiGoiY": "Biểu thức lấy từ bước trước, ví dụ $json.traLoi. Rỗng ⇒ node báo lỗi.",
+        "tieuChi": "Tiêu chí kiểm định (tuỳ chọn)",
+        "tieuChiGoiY": "Mô tả điều AI ngoài cần kiểm tra (đúng/sai kỹ thuật, an toàn, phong cách…).",
+        "truongRaGoiY": "Tên trường chứa kết quả kiểm định; vết model/token nằm ở <tên>Vet.",
+        "truongRaSai": "Tên trường: bắt đầu bằng chữ, chỉ gồm chữ/số/gạch dưới, tối đa 48 ký tự."
       }
     },
     "xuatNhap": {
@@ -24340,6 +24374,101 @@
       "vaiTro": "Vai trò",
       "hoSo": "Hồ sơ Local",
       "ngoai": "Model ngoài"
+    }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "Kết quả kiểm định không đúng định dạng nên không hiển thị.",
+    "daChep": "Đã chép bản chuẩn hoá.",
+    "chepLoi": "Không chép được — hãy bôi đen và chép tay.",
+    "yKienNgoai": "Ý kiến của AI bên ngoài — cần người xem xét, có thể sai.",
+    "ketLuan": {
+      "dat": "Đạt",
+      "can-sua": "Cần sửa",
+      "sai": "Sai"
+    },
+    "diem": "Điểm",
+    "loi": "Lỗi / góp ý",
+    "muc": {
+      "nghiem-trong": "Nghiêm trọng",
+      "vua": "Vừa",
+      "nhe": "Nhẹ"
+    },
+    "viTri": "Vị trí",
+    "banChuanHoa": "Bản chuẩn hoá (AI ngoài đề xuất)",
+    "chep": "Chép",
+    "daChepNut": "Đã chép",
+    "canhBaoChep": "Kiểm tra kỹ trước khi chạy hoặc dán vào terminal/tệp. Nội dung do AI bên ngoài viết, không được tự áp dụng.",
+    "baiHoc": "Bài học đề xuất",
+    "baiHocGhiChu": "Chỉ là đề xuất — chưa được áp dụng; cần người duyệt.",
+    "phamVi": {
+      "nguoi": "Người dùng",
+      "du-an": "Dự án",
+      "nha-may": "Nhà máy"
+    },
+    "thuLai": "đã thử lại 1 lần (tính phí hai lượt)",
+    "tuBoNho": "kết quả đã có từ lần gọi trước — không tính phí lần nữa",
+    "nut": {
+      "nhan": "Nhờ AI ngoài kiểm định",
+      "chuaLuu": "Lượt này chưa được lưu nên chưa kiểm định được.",
+      "tip": "Nhờ một AI bên ngoài kiểm định lại câu trả lời này (người bấm; có che dữ liệu, có trần chi phí)."
+    },
+    "hop": {
+      "tieuDe": "Nhờ AI ngoài kiểm định",
+      "moTa": "Câu hỏi và câu trả lời của lượt này được che dữ liệu nhạy cảm rồi gửi cho AI bên ngoài (trả phí). AI ngoài không có công cụ và không thể thao tác gì trên hệ thống.",
+      "model": "Model ngoài",
+      "tieuChi": "Tiêu chí (tuỳ chọn)",
+      "dangTinh": "Đang tính ước lượng…",
+      "muc": "Mức dữ liệu",
+      "vanHanh": "dữ liệu vận hành",
+      "kyThuat": "kỹ thuật",
+      "codingVanHanh": "Nội dung lập trình được coi là dữ liệu vận hành.",
+      "uoc": "Ước tính (bi quan, có thể cao hơn thật 2–4×)",
+      "chuaCoGia": "chưa có bảng giá",
+      "tranConLai": "Trần còn lại hôm nay",
+      "nhaMay": "nhà máy",
+      "chuaDatTran": "chưa đặt trần",
+      "nguoi": "bạn",
+      "kichThuoc": "Kích thước",
+      "quaLon": "Quá lớn để gửi — hãy kiểm định một lượt/đoạn nhỏ hơn.",
+      "khoa": "Chưa gửi được",
+      "cheDuLieu": "Nội dung được che trước khi rời máy. Đây là rào chống nhầm, không thay trách nhiệm của người gửi.",
+      "huy": "Đóng",
+      "dangGui": "Đang kiểm định…",
+      "gui": "Gửi kiểm định (trả phí)",
+      "tranNguoi": "Trần còn lại của bạn hôm nay",
+      "tranNguoiHet": "— không đủ cho lượt này",
+      "nhaMayDuTran": "Nhà máy còn đủ trần cho lượt này",
+      "co": "có",
+      "khong": "không",
+      "tranNhaMayHet": "(trần của NHÀ MÁY đã hết)",
+      "tranNguoiHetLyDo": "(trần CỦA BẠN đã hết)",
+      "tieuChiCanhBao": "Không dán dữ liệu vận hành (số liệu, tên khách hàng, khoá…) vào ô này — máy chủ chỉ che theo mẫu, không phân loại được nội dung bạn gõ."
+    },
+    "duyet": {
+      "tieuDe": "Phiên bản dùng AI ngoài",
+      "daDuyet": "Đã duyệt",
+      "chuaDuyet": "Chưa duyệt — chưa bật/chạy được",
+      "mucVanHanh": "Mức dữ liệu cả luồng: vận hành",
+      "mucKyThuat": "Mức dữ liệu cả luồng: kỹ thuật",
+      "taoBoi": "Tạo bởi người dùng",
+      "duyetBoi": "Duyệt bởi",
+      "tuDuyetCo": "Tự duyệt (người tạo cũng là người duyệt)",
+      "nutDuyet": "Duyệt phiên bản này",
+      "dangDuyet": "Đang duyệt…",
+      "thanhCong": "Đã duyệt phiên bản dùng AI ngoài.",
+      "daCoTruoc": "Phiên bản này đã được duyệt từ trước.",
+      "bang": {
+        "node": "Node",
+        "model": "Nhà cung cấp · model",
+        "muc": "Mức dữ liệu (tĩnh)",
+        "lenh": "Lệnh gửi đi (đã che, 200 ký tự đầu)"
+      },
+      "toanHeThong": "Luồng toàn hệ thống không dùng được AI ngoài (dữ liệu ngoài phải thuộc một nhà máy).",
+      "nhoAdmin": "Cần quản trị viên duyệt phiên bản này (sau khi xem các node ở trên) trước khi bật hoặc chạy luồng.",
+      "camTuDuyet": "Bạn là người tạo phiên bản này và luồng có dữ liệu vận hành gửi AI ngoài — không được tự duyệt. Nhờ một quản trị viên khác.",
+      "canhBaoTuDuyet": "Bạn là người tạo phiên bản này: duyệt sẽ được ghi nhận là TỰ DUYỆT (nhật ký mức cao).",
+      "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu.",
+      "biCat": "… (đã cắt — chỉ thấy phần đầu; kiểm tra TOÀN BỘ tham số của node trong bảng cấu hình trước khi duyệt)"
     }
   }
 }

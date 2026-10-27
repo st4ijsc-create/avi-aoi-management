@@ -4095,7 +4095,8 @@
       "aiNgoaiDatModel": "设置外部AI模型",
       "aiNgoaiDuyet": "审批使用外部AI的流程",
       "taiAnhAi": "下载用于AI分析的图像",
-      "mayDungKhanCap": "加载紧急停机设备列表"
+      "mayDungKhanCap": "加载紧急停机设备列表",
+      "aiKiemDinh": "外部AI审核"
     },
     "field": {
       "stationId": "工位",
@@ -4574,7 +4575,23 @@
       "anh-chuyen-huong": "图像服务器返回重定向（不跟随）",
       "anh-http-loi": "图像服务器返回错误",
       "anh-khong-phai-anh": "下载的内容不是图像",
-      "anh-qua-lon": "图像超过20 MB"
+      "anh-qua-lon": "图像超过20 MB",
+      "kiem-dinh-khong-co-nguon": "未找到要审核的轮次（或账户属于多个工厂——暂不可用外部审核）",
+      "kiem-dinh-tra-loi-rong": "该轮次没有可审核的回答",
+      "NGOAI_TAT": "外部AI已关闭",
+      "NGOAI_KHONG_TON_TAI": "该工厂未启用此外部AI模型",
+      "NGOAI_DU_LIEU_VAN_HANH": "工厂未允许向外部AI发送运营数据",
+      "NGOAI_VUOT_TRAN": "超出工厂的费用/次数上限",
+      "NGOAI_QUA_LON": "内容过大，请选择较小的部分",
+      "NGOAI_NHA_CUNG_CAP_LOI": "外部AI提供商返回错误",
+      "NGOAI_PHAN_HOI_QUA_LON": "外部AI响应过大",
+      "NGOAI_SAI_SCHEMA": "审核结果格式无效",
+      "NGOAI_DANG_CHAY": "该审核请求正在运行",
+      "NGOAI_DEM_HONG": "费用计数器不可用，请稍后重试",
+      "NGOAI_SO_HONG": "无法写入外部AI审计日志，请稍后重试",
+      "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
+      "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
+      "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -23786,6 +23803,23 @@
         "biMatGoiY": "可选。密钥必须声明该 MCP 服务器的主机；任何流程密钥都不会自行流向 MCP 服务器。",
         "truongRaGoiY": "结果以此键名写入数据项（默认 mcp）：{may, tool, noiDung, cauTruc}。",
         "canhBao": "工具结果是不可信的数据——绝不会被当作命令/表达式执行。对外写入级别：流程需要相应的启用权限。最多 20 个数据项、30 秒、每个响应 1 MiB。"
+      },
+      "kiemDinhNgoai": {
+        "ghiChu": "把上一步的问题与回答交给外部 AI 审查（收费，每次运行最多 {{max}} 项）。含此节点的每个流程版本须经管理员批准后才能启用/运行；运营数据仅在工厂允许时才会外发；内容离开本机前会被屏蔽；外部 AI 的结果是不可信数据（仅供参考/审批）。",
+        "model": "外部模型",
+        "modelGoiY": "仅列出您工厂已启用的外部模型。此节点没有“自动”，也没有本地模型。",
+        "chuaChon": "— 选择外部模型 —",
+        "khongCoModel": "工厂尚未启用外部 AI 或未声明任何模型 — 请联系管理员（AI 设置）。",
+        "modelHet": "此模型在当前工厂已不可用（已停用或属于其他工厂）。请重新选择。",
+        "chuaChonCanhBao": "尚未选择模型 — 流程可以保存，但选择之前此节点不会运行。",
+        "cauHoi": "原始问题",
+        "cauHoiGoiY": "表达式，例如 $json.cauHoi。可留空。",
+        "traLoi": "待审查的回答 / 代码",
+        "traLoiGoiY": "取自上一步的表达式，例如 $json.traLoi。为空则节点报错。",
+        "tieuChi": "审查标准（可选）",
+        "tieuChiGoiY": "说明外部 AI 需检查的内容（技术正确性、安全、风格…）。",
+        "truongRaGoiY": "接收审查结果的字段；模型/token 轨迹在 <名称>Vet。",
+        "truongRaSai": "字段名：以字母开头，仅限字母/数字/下划线，最多 48 个字符。"
       }
     },
     "xuatNhap": {
@@ -24340,6 +24374,101 @@
       "vaiTro": "角色",
       "hoSo": "本地配置",
       "ngoai": "外部模型"
+    }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "审查结果格式无效，未显示。",
+    "daChep": "已复制标准化版本。",
+    "chepLoi": "无法复制 — 请选中文本后手动复制。",
+    "yKienNgoai": "外部 AI 的意见 — 需要人工审阅，可能有误。",
+    "ketLuan": {
+      "dat": "通过",
+      "can-sua": "需要修改",
+      "sai": "不通过"
+    },
+    "diem": "得分",
+    "loi": "问题 / 意见",
+    "muc": {
+      "nghiem-trong": "严重",
+      "vua": "中等",
+      "nhe": "轻微"
+    },
+    "viTri": "位置",
+    "banChuanHoa": "标准化版本（外部 AI 建议）",
+    "chep": "复制",
+    "daChepNut": "已复制",
+    "canhBaoChep": "运行或粘贴到终端/文件前请仔细检查。内容由外部 AI 编写，不得自动应用。",
+    "baiHoc": "建议的经验教训",
+    "baiHocGhiChu": "仅为建议 — 尚未应用，需要人工批准。",
+    "phamVi": {
+      "nguoi": "用户",
+      "du-an": "项目",
+      "nha-may": "工厂"
+    },
+    "thuLai": "已重试 1 次（两次计费调用）",
+    "tuBoNho": "来自上次调用的结果 — 不再计费",
+    "nut": {
+      "nhan": "请外部 AI 审查",
+      "chuaLuu": "此回合尚未保存，暂无法审查。",
+      "tip": "请外部 AI 重新审查此回答（由您点击；数据已屏蔽，费用有上限）。"
+    },
+    "hop": {
+      "tieuDe": "请外部 AI 审查",
+      "moTa": "此回合的问题和回答在屏蔽敏感数据后发送给外部 AI（收费）。外部 AI 没有工具，也无法对系统进行任何操作。",
+      "model": "外部模型",
+      "tieuChi": "标准（可选）",
+      "dangTinh": "正在计算估算…",
+      "muc": "数据级别",
+      "vanHanh": "运营数据",
+      "kyThuat": "技术",
+      "codingVanHanh": "编程内容视为运营数据。",
+      "uoc": "估算（偏保守，可能比实际高 2–4 倍）",
+      "chuaCoGia": "无价格表",
+      "tranConLai": "今日剩余上限",
+      "nhaMay": "工厂",
+      "chuaDatTran": "未设上限",
+      "nguoi": "您",
+      "kichThuoc": "大小",
+      "quaLon": "内容过大无法发送 — 请审查更小的回合/片段。",
+      "khoa": "暂时无法发送",
+      "cheDuLieu": "内容在离开本机前已被屏蔽。这是防误操作的措施，不免除发送者的责任。",
+      "huy": "关闭",
+      "dangGui": "正在审查…",
+      "gui": "发送审查（收费）",
+      "tranNguoi": "您今日剩余上限",
+      "tranNguoiHet": "— 不足以完成本次请求",
+      "nhaMayDuTran": "工厂上限足够本次请求",
+      "co": "是",
+      "khong": "否",
+      "tranNhaMayHet": "（工厂上限已用完）",
+      "tranNguoiHetLyDo": "（您的上限已用完）",
+      "tieuChiCanhBao": "请勿在此框中粘贴运营数据（测量数据、客户名称、密钥等）— 服务器仅按模式屏蔽，无法对您输入的内容分类。"
+    },
+    "duyet": {
+      "tieuDe": "使用外部 AI 的版本",
+      "daDuyet": "已批准",
+      "chuaDuyet": "未批准 — 暂不能启用/运行",
+      "mucVanHanh": "整个流程的数据级别：运营",
+      "mucKyThuat": "整个流程的数据级别：技术",
+      "taoBoi": "创建者用户",
+      "duyetBoi": "批准者",
+      "tuDuyetCo": "自批准（创建者同时是批准者）",
+      "nutDuyet": "批准此版本",
+      "dangDuyet": "正在批准…",
+      "thanhCong": "已批准使用外部 AI 的版本。",
+      "daCoTruoc": "此版本此前已批准。",
+      "bang": {
+        "node": "节点",
+        "model": "提供商 · 模型",
+        "muc": "数据级别（静态）",
+        "lenh": "发送的提示（已屏蔽，前 200 个字符）"
+      },
+      "toanHeThong": "系统级流程不能使用外部 AI（外部数据必须属于某个工厂）。",
+      "nhoAdmin": "需要管理员在查看上述节点后批准此版本，才能启用或运行流程。",
+      "camTuDuyet": "您是此版本的创建者，且流程向外部 AI 发送运营数据 — 不能自行批准。请联系其他管理员。",
+      "canhBaoTuDuyet": "您是此版本的创建者：批准将被记录为自批准（高级别审计）。",
+      "chuaLuu": "有未保存的更改 — 请先保存再批准；批准仅适用于已保存的版本。",
+      "biCat": "…（已截断 — 仅显示开头；批准前请在配置面板中检查该节点的全部参数）"
     }
   }
 }

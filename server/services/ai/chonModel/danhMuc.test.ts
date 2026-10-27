@@ -93,8 +93,11 @@ describe("layDanhMucModel (A1)", () => {
       ma: "ngoai:anthropic:claude-opus-5-5",
       nhaCungCap: "anthropic",
       trangThai: "san-sang",
+      duocDungO: ["luong", "kiem-dinh"], // ★ 10.4 D7 — chat/coding/agent CHƯA (10.4b)
     });
     expect((await layDanhMucModel(1, dep())).some((m) => m.loai === "ngoai")).toBe(false);
+    // mục không phải ngoai KHÔNG mang duocDungO
+    expect((await layDanhMucModel(1, dep({ ngoai }))).filter((m) => m.loai !== "ngoai").every((m) => m.duocDungO === undefined)).toBe(true);
   });
 });
 

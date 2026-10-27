@@ -14,6 +14,7 @@ import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
 import { CHON_MODEL_RE } from "../ai/chonModel/kieu";
 import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_DOI_SO_MCP } from "./nut/mcpKhach";
 import { laHostAiNgoai } from "../ai/ngoai/hostAiNgoai";
+import { LOAI_KIEM_DINH_NGOAI, laChonModelNgoai } from "./nut/kiemDinhNgoai";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
@@ -30,7 +31,8 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
     const id = String(n?.id);
     // Đợt 10.2 — `chonModel` của node AI là chuỗi CỐ ĐỊNH khớp hợp đồng (auto | vai-tro:<id> | ho-so:<id> | ngoai:<ncc>:<model>), KHÔNG biểu thức (dữ liệu item không được chọn model). Lỗi LÚC LƯU,
     // chỉ nêu node sai — node khác kiểm độc lập. (Còn phải có trong danh mục lúc GỌI: máy chủ giải ở `giaiChonModel`.)
-    if (typeof n?.type === "string" && n.type.startsWith("ai.") && p.chonModel !== undefined && p.chonModel !== null) {
+    // ★ 10.4 — `ai.kiem-dinh-ngoai` có nhánh RIÊNG (chỉ model ngoài cố định, rỗng = việc phải điền sau nhập) ⇒ không kiểm hai lần.
+    if (typeof n?.type === "string" && n.type.startsWith("ai.") && n.type !== LOAI_KIEM_DINH_NGOAI && p.chonModel !== undefined && p.chonModel !== null) {
       if (typeof p.chonModel !== "string" || laBieuThuc(p.chonModel) || !CHON_MODEL_RE.test(p.chonModel)) {
         loi.push(`node '${id}': chonModel phải là chuỗi cố định (auto | vai-tro:<id> | ho-so:<id> | ngoai:<nhà-cung-cấp>:<model>), không phải biểu thức`);
       }
@@ -56,6 +58,11 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
       if (p.duongDan !== undefined && p.duongDan !== "" && !laBieuThuc(p.duongDan) && safeInternalPath(p.duongDan) === null) loi.push(`node '${id}': duongDan phải là đường dẫn NỘI BỘ bắt đầu bằng một dấu '/' (không URL ngoài, không '//', không dấu gạch ngược)`);
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_TB.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_TB.join(" | ")}`);
       if (p.uuTien !== undefined && !laBieuThuc(p.uuTien) && !UU_TIEN_TB.includes(String(p.uuTien))) loi.push(`node '${id}': uuTien phải là ${UU_TIEN_TB.join(" | ")}`);
+    } else if (n?.type === LOAI_KIEM_DINH_NGOAI) {
+      // ★ 10.4 — model ngoài CỐ ĐỊNH (không auto / model cục bộ / biểu thức). VẮNG / rỗng chỉ chấp nhận như "việc phải điền" (node mới thả lên
+      //   canvas; sau NHẬP — xuatNhap bỏ chonModel ngoai:* + việc "chon-model"); node chưa chọn model không chạy được (lỗi lúc chạy).
+      if (p.chonModel !== undefined && p.chonModel !== "" && !laChonModelNgoai(p.chonModel)) loi.push(`node '${id}': chonModel phải là model ngoài cố định dạng 'ngoai:<nhà cung cấp>:<model>'`);
+      if (p.truongRa !== undefined && !laBieuThuc(p.truongRa) && (typeof p.truongRa !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(p.truongRa))) loi.push(`node '${id}': truongRa phải là tên trường (chữ, số, _; ≤ 48 ký tự)`);
     } else if (n?.type === "tich-hop.http-doc" || n?.type === "tich-hop.http-gui") {
       // Đợt 10.3 B4 — URL VIẾT THẲNG tới máy chủ AI ngoài ⇒ từ chối lúc lưu (biểu thức: node kiểm lúc chạy, cùng hàm + tập động).
       if (typeof p.url === "string" && !laBieuThuc(p.url)) {

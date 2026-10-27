@@ -4095,7 +4095,8 @@
       "aiNgoaiDatModel": "set external AI model",
       "aiNgoaiDuyet": "approve flow using external AI",
       "taiAnhAi": "download image for AI analysis",
-      "mayDungKhanCap": "load the emergency STOP machine list"
+      "mayDungKhanCap": "load the emergency STOP machine list",
+      "aiKiemDinh": "external AI verification"
     },
     "field": {
       "stationId": "station",
@@ -4574,7 +4575,23 @@
       "anh-chuyen-huong": "the image server returned a redirect (not followed)",
       "anh-http-loi": "the image server returned an error",
       "anh-khong-phai-anh": "the downloaded content is not an image",
-      "anh-qua-lon": "the image exceeds 20 MB"
+      "anh-qua-lon": "the image exceeds 20 MB",
+      "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
+      "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "NGOAI_TAT": "external AI is turned off",
+      "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
+      "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",
+      "NGOAI_VUOT_TRAN": "the factory cost / rate cap is exceeded",
+      "NGOAI_QUA_LON": "the content is too large to send — choose a smaller part",
+      "NGOAI_NHA_CUNG_CAP_LOI": "the external AI provider returned an error",
+      "NGOAI_PHAN_HOI_QUA_LON": "the external AI response is too large",
+      "NGOAI_SAI_SCHEMA": "the verification result has an invalid format",
+      "NGOAI_DANG_CHAY": "this verification request is already running",
+      "NGOAI_DEM_HONG": "the cost counter is unavailable — try again later",
+      "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
+      "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
+      "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
+      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -23789,6 +23806,23 @@
         "biMatGoiY": "Optional. The secret must declare this MCP server's host; no flow secret ever flows to an MCP server on its own.",
         "truongRaGoiY": "The result is written into the item under this key (default mcp): {may, tool, noiDung, cauTruc}.",
         "canhBao": "The tool result is untrusted DATA — never executed as a command/expression. External-write class: the flow needs the matching enable permission. Max 20 items, 30 s, 1 MiB per response."
+      },
+      "kiemDinhNgoai": {
+        "ghiChu": "Sends the previous step's question + answer to an EXTERNAL AI for review (paid, at most {{max}} items per run). Every flow VERSION containing this node must be approved by an admin before it is enabled/run; operational data leaves only if the factory allows it; content is masked before it leaves the machine; the external AI's result is UNTRUSTED data (for reference/approval only).",
+        "model": "External model",
+        "modelGoiY": "Lists only external models enabled for your factory. This node has no 'Automatic' and no local models.",
+        "chuaChon": "— Choose an external model —",
+        "khongCoModel": "The factory has not enabled external AI or declared any model — ask an administrator (AI settings).",
+        "modelHet": "This model is no longer usable in the current factory (disabled or another factory). Choose again.",
+        "chuaChonCanhBao": "No model chosen — the flow can be saved but this node will NOT run until one is chosen.",
+        "cauHoi": "Original question",
+        "cauHoiGoiY": "Expression, e.g. $json.cauHoi. May be empty.",
+        "traLoi": "Answer / code to review",
+        "traLoiGoiY": "Expression from the previous step, e.g. $json.traLoi. Empty ⇒ the node fails.",
+        "tieuChi": "Review criteria (optional)",
+        "tieuChiGoiY": "Describe what the external AI should check (technical correctness, safety, style…).",
+        "truongRaGoiY": "Field that receives the review result; model/token trace goes to <name>Vet.",
+        "truongRaSai": "Field name: start with a letter, letters/digits/underscore only, at most 48 characters."
       }
     },
     "xuatNhap": {
@@ -24343,6 +24377,101 @@
       "vaiTro": "Roles",
       "hoSo": "Local profiles",
       "ngoai": "External models"
+    }
+  },
+  "kiemDinhNgoai": {
+    "khongHopLe": "The review result has an invalid format and is not shown.",
+    "daChep": "Standardised version copied.",
+    "chepLoi": "Could not copy — select the text and copy it manually.",
+    "yKienNgoai": "Opinion of an external AI — needs human review, may be wrong.",
+    "ketLuan": {
+      "dat": "Pass",
+      "can-sua": "Needs changes",
+      "sai": "Fail"
+    },
+    "diem": "Score",
+    "loi": "Issues / remarks",
+    "muc": {
+      "nghiem-trong": "Critical",
+      "vua": "Medium",
+      "nhe": "Minor"
+    },
+    "viTri": "Location",
+    "banChuanHoa": "Standardised version (suggested by the external AI)",
+    "chep": "Copy",
+    "daChepNut": "Copied",
+    "canhBaoChep": "Check carefully before running it or pasting it into a terminal/file. This was written by an external AI and must not be applied automatically.",
+    "baiHoc": "Suggested lessons",
+    "baiHocGhiChu": "Suggestions only — not applied; a person must approve them.",
+    "phamVi": {
+      "nguoi": "User",
+      "du-an": "Project",
+      "nha-may": "Factory"
+    },
+    "thuLai": "retried once (two charged calls)",
+    "tuBoNho": "result from the previous call — not charged again",
+    "nut": {
+      "nhan": "Ask external AI to review",
+      "chuaLuu": "This turn has not been saved yet, so it cannot be reviewed.",
+      "tip": "Ask an external AI to review this answer (you click it; data is masked, cost is capped)."
+    },
+    "hop": {
+      "tieuDe": "Ask external AI to review",
+      "moTa": "This turn's question and answer are masked for sensitive data and sent to an external AI (paid). The external AI has no tools and cannot act on the system.",
+      "model": "External model",
+      "tieuChi": "Criteria (optional)",
+      "dangTinh": "Computing estimate…",
+      "muc": "Data level",
+      "vanHanh": "operational data",
+      "kyThuat": "technical",
+      "codingVanHanh": "Programming content is treated as operational data.",
+      "uoc": "Estimate (pessimistic, may be 2–4× higher than actual)",
+      "chuaCoGia": "no price table",
+      "tranConLai": "Cap remaining today",
+      "nhaMay": "factory",
+      "chuaDatTran": "no cap set",
+      "nguoi": "you",
+      "kichThuoc": "Size",
+      "quaLon": "Too large to send — review a smaller turn/section.",
+      "khoa": "Cannot send yet",
+      "cheDuLieu": "Content is masked before it leaves the machine. This guards against mistakes; it does not replace the sender's responsibility.",
+      "huy": "Close",
+      "dangGui": "Reviewing…",
+      "gui": "Send for review (paid)",
+      "tranNguoi": "Your remaining cap today",
+      "tranNguoiHet": "— not enough for this request",
+      "nhaMayDuTran": "Factory has enough cap for this request",
+      "co": "yes",
+      "khong": "no",
+      "tranNhaMayHet": "(the FACTORY's cap is used up)",
+      "tranNguoiHetLyDo": "(YOUR cap is used up)",
+      "tieuChiCanhBao": "Do not paste operational data (measurements, customer names, keys…) into this box — the server only masks by pattern and cannot classify what you type."
+    },
+    "duyet": {
+      "tieuDe": "Version that uses external AI",
+      "daDuyet": "Approved",
+      "chuaDuyet": "Not approved — cannot be enabled/run yet",
+      "mucVanHanh": "Whole-flow data level: operational",
+      "mucKyThuat": "Whole-flow data level: technical",
+      "taoBoi": "Created by user",
+      "duyetBoi": "Approved by",
+      "tuDuyetCo": "Self-approved (creator is also the approver)",
+      "nutDuyet": "Approve this version",
+      "dangDuyet": "Approving…",
+      "thanhCong": "Version using external AI approved.",
+      "daCoTruoc": "This version was already approved.",
+      "bang": {
+        "node": "Node",
+        "model": "Provider · model",
+        "muc": "Data level (static)",
+        "lenh": "Prompt sent (masked, first 200 characters)"
+      },
+      "toanHeThong": "A system-wide flow cannot use external AI (external data must belong to a factory).",
+      "nhoAdmin": "An administrator must approve this version (after reviewing the nodes above) before the flow can be enabled or run.",
+      "camTuDuyet": "You created this version and the flow carries operational data to an external AI — you may not approve it yourself. Ask another administrator.",
+      "canhBaoTuDuyet": "You created this version: approving will be recorded as SELF-APPROVAL (high-level audit).",
+      "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version.",
+      "biCat": "… (truncated — only the beginning is shown; check ALL of the node's parameters in the config panel before approving)"
     }
   }
 }

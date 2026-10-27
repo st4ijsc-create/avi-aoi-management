@@ -66,6 +66,8 @@ export const NUT_XEM_TRUOC: ReadonlySet<string> = new Set([
   "du-lieu.ma",
   "ai.sinh-ma",
   "ai.agent",
+  // ★ 10.4 — kiểm định bởi AI ngoài: lời gọi TRẢ PHÍ ra ngoài cần phiên bản đã duyệt ⇒ chạy thử chỉ XEM TRƯỚC tham số.
+  "ai.kiem-dinh-ngoai",
   "luong.goi-con",
   // Lô Luồng-1: đọc số liệu nhà máy (theo phạm vi chủ lượt) và gửi thông báo nội bộ — chạy thử chỉ XEM TRƯỚC tham số.
   "du-lieu.so-lieu",

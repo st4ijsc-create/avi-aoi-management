@@ -35,7 +35,8 @@ const MIEN = new Set(Object.keys(MIEN_TRU_GHI));
 // 2026-10-26 dieu-phoi GỘP 10.3 (tới Task 7) vào main 84a308ee6 — ghim ĐO trên cây gộp.
 // 2026-10-26 Đợt 10.3 Task 8: +5 mutation aiNgoai.ghiCauHinh|datModel|datHostNoiBo|xemNoiDung|duyetNgoai (đều có cổng phạm vi) ⇒ 1211.
 // 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan +1 với Đợt 10.3 +8 ⇒ 1212 (đo trên cây gộp).
-const GHIM = { tongMutation: 1212, no: 142 } as const; // W17d: aiRobotAnomaly evaluateRollback|manualRollback có cổng toàn quyền thật (miễn trừ gỡ) −2 ⇒ 142; // W17c: aiAnalysisHub ×3 + aiVisionLanguage describeDefect|generateReport có cổng ảnh-theo-khoá (miễn trừ gỡ) −5 ⇒ 144; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
+// 2026-10-27 Đợt 10.4 (do-model): +1 mutation aiKiemDinh.chay (nguonKiemDinhTrongPhamVi — chủ lượt + đúng một nhà máy; không nợ) ⇒ 1213.
+const GHIM = { tongMutation: 1213, no: 142 } as const; // W17d: aiRobotAnomaly evaluateRollback|manualRollback có cổng toàn quyền thật (miễn trừ gỡ) −2 ⇒ 142; // W17c: aiAnalysisHub ×3 + aiVisionLanguage describeDefect|generateReport có cổng ảnh-theo-khoá (miễn trừ gỡ) −5 ⇒ 144; // W17b: yield ×2 + mqttAlert ×4 có khoá thật (miễn trừ gỡ) −6 ⇒ 149; yield.create|delete +2 mutation (có cổng) ⇒ tổng 1201; // W17a: reportArtifact.delete có cổng thật (−1): 156 → 155; // 2026-10-25 gộp L6w (feederVerify/inspectionVariant/pdfReport −3) với main R1b-1 ⇒ đo bằng census
 
 describe("§1 bộ quét không mù", () => {
   it("không có ô mù và duyệt đủ file", () => {

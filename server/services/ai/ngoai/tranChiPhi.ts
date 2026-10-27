@@ -151,3 +151,30 @@ export async function donDemCu(db: DbDem, giuNgay = 90, bayGio = new Date()): Pr
   const b = await db.execute(sql`DELETE FROM ai_ngoai_dem_phut WHERE phut < ${new Date(bayGio.getTime() - 3600_000).toISOString()}::timestamptz RETURNING 1`);
   return hang(a).length + hang(b).length;
 }
+
+/**
+ * ★ Đợt 10.4 (D6) — phần TRẦN NGÀY CÒN LẠI (đọc, tham khảo — KHÔNG giữ chỗ): nhà máy (token + USD) và người gọi (token). `null` = trần
+ * đó chưa đặt. Đọc cùng bảng đếm `ai_ngoai_dem` với `datTruoc` (đã gồm chỗ đang giữ của lượt đang chạy).
+ */
+export async function docConLaiNgay(
+  db: DbDem,
+  factoryId: number,
+  userId: number | null,
+  tran: Pick<TranNhaMay, "tranTokenNgay" | "tranTienNgayUsd" | "tranTokenNguoiNgay">,
+  bayGio = new Date(),
+): Promise<{ nhaMay: { token: number | null; usd: number | null }; nguoi: { token: number | null } }> {
+  const ngay = ngayUtc7(bayGio);
+  const khoaNguoi = userId === null ? null : `nguoi:${userId}`;
+  const r = hang(
+    await db.execute(sql`SELECT khoa, "tokenGiu", "tienGiuUsd" FROM ai_ngoai_dem
+      WHERE "factoryId" = ${factoryId} AND ngay = ${ngay}::date AND khoa IN ('nha-may', ${khoaNguoi ?? "nha-may"})`),
+  ) as Array<{ khoa: string; tokenGiu: number | string; tienGiuUsd: number | string | null }>;
+  const dong = (k: string) => r.find((x) => x.khoa === k);
+  const conLai = (tran_: number | null, daDung: unknown) => (tran_ === null ? null : Math.max(0, tran_ - Number(daDung ?? 0)));
+  const nm = dong("nha-may");
+  const ng = khoaNguoi ? dong(khoaNguoi) : undefined;
+  return {
+    nhaMay: { token: conLai(tran.tranTokenNgay, nm?.tokenGiu), usd: conLai(tran.tranTienNgayUsd, nm?.tienGiuUsd) },
+    nguoi: { token: userId === null ? null : conLai(tran.tranTokenNguoiNgay, ng?.tokenGiu) },
+  };
+}

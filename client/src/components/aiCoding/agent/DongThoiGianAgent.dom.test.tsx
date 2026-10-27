@@ -23,6 +23,8 @@ vi.mock("react-i18next", () => ({
 vi.mock("streamdown", () => ({ Streamdown: (p: { children: string }) => <div>{p.children}</div> }));
 vi.mock("@/components/diff/HunkDiffView", () => ({ HunkDiffView: () => null }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() } }));
+// ★ Đợt 10.4 — thẻ trả lời có thêm nút kiểm định ngoài (đọc danh mục model qua tRPC); danh mục chưa tải/không có ngoai ⇒ nút không render.
+vi.mock("@/lib/trpc", () => ({ trpc: { aiChonModel: { danhMuc: { useQuery: () => ({ data: undefined }) } } } }));
 
 import { useLuotChayAgent } from "./useLuotChayAgent";
 import { DongThoiGianAgent } from "./DongThoiGianAgent";

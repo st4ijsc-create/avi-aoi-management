@@ -47,6 +47,7 @@ import { agentTrpc, phieuTraLoiCuaToi } from "@/lib/agentApi";
 import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
+import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
 import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
 import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
@@ -410,8 +411,10 @@ function PhanHoiTraLoi({ runId, chiSoTin }: { runId: string; chiSoTin: number })
   }, [khoa, runId, chiSoTin]);
   if (!daDoc || daDoc.khoa !== khoa) return null;
   return (
-    <div data-testid="agent-phan-hoi-tra-loi" className="pl-1">
+    <div data-testid="agent-phan-hoi-tra-loi" className="flex flex-wrap items-center gap-1 pl-1">
       <NutPhanHoi key={khoa} dich={{ loai: "tra-loi", runId, chiSoTin }} danhGiaBanDau={daDoc.danhGia} />
+      {/* ★ Đợt 10.4 — kiểm định bằng AI ngoài theo `runId` (sổ lượt chạy do MÁY CHỦ ghi — nguồn duy nhất có provenance thật). */}
+      <NutKiemDinhNgoai nguon={{ loai: "agent", runId }} />
     </div>
   );
 }
