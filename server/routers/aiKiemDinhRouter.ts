@@ -152,15 +152,20 @@ export const aiKiemDinhRouter = router({
 
   /** Chạy kiểm định (TRẢ PHÍ). Tự tính lại mọi thứ; không nhận gì từ `xemTruoc`. */
   chay: thuTuc.input(INPUT).mutation(async ({ ctx, input }) => {
+    // Rà kiem-dinh T1: phạm vi (chủ lượt + đúng MỘT nhà máy — chỉ đọc CSDL, không mạng) kiểm TRƯỚC khi trả bộ nhớ ⇒ người vừa rời nhà máy /
+    // lượt vừa bị xoá trong 120 s không nhận lại kết quả cũ. Cờ / model của nhà máy: `kiemTruocNgoai` (không mạng) cũng chạy trước bộ nhớ.
+    const c = await nguonKiemDinhTrongPhamVi(ctx, input);
     const bayGio = Date.now();
     donBoNho(bayGio);
     const khoa = khoaLap(ctx.user.id, input);
     const cu = boNho.get(khoa);
     if (cu?.trangThai === "dang-chay") throw loiNgoai("NGOAI_DANG_CHAY", "CONFLICT");
-    if (cu?.trangThai === "xong") return { ...cu.kq, tuBoNho: true as const };
+    if (cu?.trangThai === "xong") {
+      await dep.kiemTruoc({ dich: c.dich, tinNhan: [], maxTokens: 1, mucDich: "kiem-dinh", ngu: c.ngu }).catch(maTuLoi);
+      return { ...cu.kq, tuBoNho: true as const };
+    }
     boNho.set(khoa, { trangThai: "dang-chay" });
     try {
-      const c = await nguonKiemDinhTrongPhamVi(ctx, input);
       const { kiemDinhNgoai } = await import("../services/ai/ngoai/kiemDinhNgoai");
       const kq = await kiemDinhNgoai(
         { dich: c.dich, cauHoi: c.nguon.cauHoi, traLoi: c.nguon.traLoi, ...(input.tieuChi ? { tieuChi: input.tieuChi } : {}), ngu: c.ngu },

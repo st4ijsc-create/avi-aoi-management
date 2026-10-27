@@ -8,7 +8,8 @@ import { getDb } from "../../../db/connection";
 import { donNguoiDungTest, taoNguoiDungTest } from "../../../testing/nguoiDungTest";
 import { taoHangLuotChay, capNhatHangLuotChay } from "../../../db/aiAgentRuns";
 import { luuPhien } from "../../../db/aiCodingSessions";
-import { docNguonKiemDinh, mucCuaLuotAgent } from "./nguonKiemDinh";
+import { docNguonKiemDinh, mucCuaLuotAgent, TRAN_SU_KIEN_LUU_AGENT } from "./nguonKiemDinh";
+import { suKienDeLuu, TRAN_SU_KIEN_LUU } from "../agent/quanLyLuotChay";
 
 const TT = `nkd${Date.now().toString(36)}`;
 let A = 0;
@@ -25,16 +26,39 @@ afterAll(async () => {
   await donNguoiDungTest();
 });
 
-const ev = (suKien: unknown) => ({ seq: 1, suKien });
+let SEQ = 0;
+const ev = (suKien: unknown) => ({ seq: ++SEQ, suKien });
+const nhatKy = (...ds: unknown[]) => {
+  SEQ = 0;
+  return ds.map(ev);
+};
 
 describe("mucCuaLuotAgent", () => {
+  const DOC = [{ loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 }, { loai: "ket-qua-tool", ten: "search_docs" }, { loai: "chu", noiDung: "x" }];
   it("chỉ tool đọc mã / tra tài liệu mã ⇒ ky-thuat; run_command / ghi tệp / tool lạ / sự kiện hỏng ⇒ van-hanh", () => {
-    const doc = [ev({ loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 }), ev({ loai: "ket-qua-tool", ten: "search_docs" }), ev({ loai: "chu", noiDung: "x" })];
-    expect(mucCuaLuotAgent(doc)).toBe("ky-thuat");
-    expect(mucCuaLuotAgent([])).toBe("ky-thuat");
-    for (const ten of ["run_command", "write_file", "query_db", 5]) expect(mucCuaLuotAgent([...doc, ev({ loai: "goi-tool", goi: { ten }, luot: 2 })]), String(ten)).toBe("van-hanh");
+    expect(mucCuaLuotAgent(nhatKy(...DOC))).toBe("ky-thuat");
+    for (const ten of ["run_command", "write_file", "query_db", 5]) expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "goi-tool", goi: { ten }, luot: 2 })), String(ten)).toBe("van-hanh");
     expect(mucCuaLuotAgent("x")).toBe("van-hanh");
     expect(mucCuaLuotAgent([null])).toBe("van-hanh");
+  });
+
+  it("rà kiem-dinh T1 — KHÔNG có bằng chứng ≠ kỹ thuật: rỗng / chạm trần lưu / seq hở / goi-tool hay ket-qua-tool thiếu tên ⇒ van-hanh", () => {
+    expect(mucCuaLuotAgent([])).toBe("van-hanh");
+    expect(TRAN_SU_KIEN_LUU_AGENT).toBe(TRAN_SU_KIEN_LUU);
+    // nhật ký thật qua suKienDeLuu: 3 500 mục đọc mã + MỘT run_command ở giữa ⇒ bị cắt mất ⇒ vẫn phải van-hanh
+    const dem = Array.from({ length: 3500 }, (_, i) => ({ seq: i + 1, suKien: i === 1000 ? { loai: "goi-tool", goi: { ten: "run_command" }, luot: 1 } : { loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 } }));
+    const luu = suKienDeLuu(dem as never);
+    expect(luu.some((m) => (m.suKien as { goi?: { ten?: string } }).goi?.ten === "run_command")).toBe(false); // đúng là đã mất
+    expect(mucCuaLuotAgent(luu)).toBe("van-hanh");
+    // đúng trần, seq liền, toàn đọc mã ⇒ vẫn van-hanh (nhật ký chạm trần không chứng minh được đầy đủ)
+    expect(mucCuaLuotAgent(Array.from({ length: TRAN_SU_KIEN_LUU }, (_, i) => ({ seq: i + 1, suKien: { loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 } })))).toBe("van-hanh");
+    expect(mucCuaLuotAgent(Array.from({ length: TRAN_SU_KIEN_LUU - 1 }, (_, i) => ({ seq: i + 1, suKien: { loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 } })))).toBe("ky-thuat");
+    const hoSeq = nhatKy(...DOC);
+    hoSeq[2]!.seq = 9;
+    expect(mucCuaLuotAgent(hoSeq)).toBe("van-hanh");
+    expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "goi-tool", goi: {}, luot: 2 }))).toBe("van-hanh");
+    expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "goi-tool", luot: 2 }))).toBe("van-hanh");
+    expect(mucCuaLuotAgent(nhatKy(...DOC, { loai: "ket-qua-tool", ok: true }))).toBe("van-hanh");
   });
 });
 
@@ -53,9 +77,12 @@ describe("docNguonKiemDinh — CSDL", () => {
   it("agent: chủ ⇒ cauHoi + tomTat; mức theo tool; tomTat rỗng ⇒ chữ cuối; người khác / id sai dạng ⇒ null", async () => {
     const id = randomUUID();
     expect(await taoHangLuotChay({ id, userId: A, projectId: "du-an-thu", cheDo: "hoi", cauHoi: "tìm lỗi hàm cong" })).toBe(true);
-    await capNhatHangLuotChay(A, id, { suKien: [ev({ loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 }), ev({ loai: "chu", noiDung: "chữ cuối" })] } as never);
+    await capNhatHangLuotChay(A, id, { suKien: nhatKy({ loai: "goi-tool", goi: { ten: "read_file" }, luot: 1 }, { loai: "chu", noiDung: "chữ cuối" }) } as never);
+    // lượt CHƯA xong (dang-chay) ⇒ nhật ký chưa đủ ⇒ van-hanh
+    expect(await docNguonKiemDinh(A, { loai: "agent", runId: id })).toMatchObject({ muc: "van-hanh" });
+    await capNhatHangLuotChay(A, id, { trangThai: "xong" } as never);
     expect(await docNguonKiemDinh(A, { loai: "agent", runId: id })).toEqual({ cauHoi: "tìm lỗi hàm cong", traLoi: "chữ cuối", muc: "ky-thuat", beMat: "agent-turn" });
-    await capNhatHangLuotChay(A, id, { tomTat: "kết luận", suKien: [ev({ loai: "goi-tool", goi: { ten: "run_command" }, luot: 1 })] } as never);
+    await capNhatHangLuotChay(A, id, { tomTat: "kết luận", suKien: nhatKy({ loai: "goi-tool", goi: { ten: "run_command" }, luot: 1 }) } as never);
     expect(await docNguonKiemDinh(A, { loai: "agent", runId: id })).toMatchObject({ traLoi: "kết luận", muc: "van-hanh" });
     expect(await docNguonKiemDinh(B, { loai: "agent", runId: id })).toBeNull();
     expect(await docNguonKiemDinh(A, { loai: "agent", runId: "khong-phai-uuid" })).toBeNull();

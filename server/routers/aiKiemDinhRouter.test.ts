@@ -120,6 +120,15 @@ describe("chay", () => {
     await goi().chay({ ...INPUT, tieuChi: "khác" });
     expect(nhan).toHaveLength(2);
   });
+
+  it("rà kiem-dinh T1 — bộ nhớ 120 s KHÔNG vượt quyền: người đã rời nhà máy / nhà máy vừa tắt ngoài ⇒ lỗi, không nhận kết quả cũ", async () => {
+    const { nhan } = dat();
+    await goi().chay(INPUT);
+    dat({ nhaMay: [5, 6] }); // __dat… xoá bộ nhớ ⇒ dựng lại bộ nhớ có kết quả rồi đổi phạm vi
+    const r = aiKiemDinhRouter.createCaller({ user: { id: 7, role: "user", name: "u" } } as never);
+    expect(await loi(r.chay(INPUT))).toBe("NOT_FOUND:kiem-dinh-khong-co-nguon");
+    expect(nhan).toHaveLength(1);
+  });
 });
 
 describe("xemTruoc", () => {

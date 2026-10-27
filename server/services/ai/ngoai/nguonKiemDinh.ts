@@ -45,14 +45,30 @@ export const TOOL_AGENT_KY_THUAT: ReadonlySet<string> = new Set([
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Mức của một lượt agent từ sự kiện đã lưu: có tool ngoài tập kỹ thuật ⇒ `van-hanh`. Sự kiện hỏng ⇒ `van-hanh`. */
-export function mucCuaLuotAgent(suKien: unknown): MucDuLieu {
-  if (!Array.isArray(suKien)) return "van-hanh";
+/**
+ * Trần số mục của nhật ký lượt khi LƯU (`quanLyLuotChay.TRAN_SU_KIEN_LUU` — lưới đối chiếu bằng nhau). Quá trần thì `suKienDeLuu` giữ
+ * ĐẦU + CUỐI, BỎ GIỮA ⇒ nhật ký đầy trần là KHÔNG ĐẦY ĐỦ (tool ghi / lệnh ở giữa có thể đã mất) ⇒ không chứng minh được.
+ */
+export const TRAN_SU_KIEN_LUU_AGENT = 3_000;
+
+/**
+ * Mức của một lượt agent từ sự kiện đã lưu — CHỈ `ky-thuat` khi CHỨNG MINH được (rà kiem-dinh T1): nhật ký là mảng KHÔNG rỗng, CHƯA chạm
+ * trần lưu, `seq` liền mạch (không khoảng trống do cắt), mọi `goi-tool` / `ket-qua-tool` có tên chuỗi thuộc tập kỹ thuật. Thiếu một điều
+ * ⇒ `van-hanh` (không có bằng chứng ≠ kỹ thuật).
+ */
+export function mucCuaLuotAgent(suKien: unknown, tran = TRAN_SU_KIEN_LUU_AGENT): MucDuLieu {
+  if (!Array.isArray(suKien) || suKien.length === 0 || suKien.length >= tran) return "van-hanh";
+  let seqTruoc: number | null = null;
   for (const m of suKien) {
+    const seq = (m as { seq?: unknown })?.seq;
+    if (typeof seq !== "number" || !Number.isInteger(seq) || (seqTruoc !== null && seq !== seqTruoc + 1)) return "van-hanh";
+    seqTruoc = seq;
     const e = (m as { suKien?: unknown })?.suKien as { loai?: unknown; goi?: { ten?: unknown }; ten?: unknown } | undefined;
     if (!e || typeof e !== "object") return "van-hanh";
-    const ten = e.loai === "goi-tool" ? e.goi?.ten : e.loai === "ket-qua-tool" ? e.ten : undefined;
-    if (ten !== undefined && (typeof ten !== "string" || !TOOL_AGENT_KY_THUAT.has(ten))) return "van-hanh";
+    if (e.loai === "goi-tool" || e.loai === "ket-qua-tool") {
+      const ten = e.loai === "goi-tool" ? e.goi?.ten : e.ten;
+      if (typeof ten !== "string" || !TOOL_AGENT_KY_THUAT.has(ten)) return "van-hanh";
+    }
   }
   return "ky-thuat";
 }
@@ -73,7 +89,8 @@ export async function docNguonKiemDinh(userId: number, nguon: NguonKiemDinh): Pr
     const h = await docHangLuotChay(userId, nguon.runId);
     if (!h) return null;
     const traLoi = (h.tomTat ?? "").trim() || chuCuoiAgent(h.suKien);
-    return { cauHoi: h.cauHoi, traLoi, muc: mucCuaLuotAgent(h.suKien), beMat: "agent-turn" };
+    // Lượt CHƯA kết thúc ⇒ nhật ký còn đang ghi (chưa đủ) ⇒ không chứng minh được ⇒ van-hanh.
+    return { cauHoi: h.cauHoi, traLoi, muc: h.trangThai === "dang-chay" ? "van-hanh" : mucCuaLuotAgent(h.suKien), beMat: "agent-turn" };
   }
   if (nguon.loai === "coding") {
     if (!RE_UUID.test(nguon.phienId) || !Number.isInteger(nguon.chiSoLuot) || nguon.chiSoLuot < 0) return null;
