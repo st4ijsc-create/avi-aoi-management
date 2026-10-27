@@ -31,7 +31,10 @@ Nguồn: yêu cầu dieu-phoi 2026-10-27 (spec lô 11.8 chưa vào file spec; sp
 **D6. Ngữ cảnh ≥ 80 % (UX-C06):** hạ ngưỡng cảnh báo 85→80 % (hằng số dùng chung). Khi đạt: lõi phát sự kiện mới `de-xuat-tom-tat-phien` {tomTat, duong:"NOTES.md"}; host KHÔNG tự ghi — ghi qua `write_file/edit_file` thường ⇒ thẻ duyệt diff NGƯỜI duyệt; sau khi duyệt, tạo phiên mới (`parent_session_id`) mang tóm tắt làm lịch sử mở đầu. Tóm tắt do model sinh (cùng khe; chạy tuần tự sau lượt hiện tại).
 **D7. Hàng chờ (UX-D09):** không đổi lõi; bảo đảm `dang-cho-model` chảy qua SSE + tRPC `aiAgent.trangThaiHangCho` (số người phía trước, đo từ broker khe) — thin, luong-ui hiển thị.
 
-## 2. Migration (xin dải)
+## 2. Migration — DẢI ĐÃ CẤP 0440–0442 (dieu-phoi 2026-10-27; 0420–0429 KHÔNG dùng)
+Đổi tên: `0440_ai_phien_hop_nhat.sql`, `0441_ai_agent_runs_cha_con.sql`, (T12) `0442_ai_agent_defs.sql`. Viết tay idempotent theo khuôn `scripts/apply-migration-*.mjs`; DDL owner `aoi`, nghiệm thu bằng `avi_app`; áp `_test` tự do; **gửi SQL cho dieu-phoi TRƯỚC khi áp DEV**.
+
+(Bản xin dải gốc:)
 Cần **1–2 file**: `0420_ai_phien_hop_nhat.sql` (cột kind/source/parent_session_id/context_pct + CHECK) và `0421_ai_agent_runs_cha_con.sql` (cột cha–con + chỉ mục `parent_run_id`); nếu làm D4b thêm `0422_ai_agent_defs.sql`. Xin dieu-phoi dải **0420–0422** (AI báo còn 0419; lô scada/kiem-dinh có 0421 "thiết bị đo theo nhà máy" — XIN XÁC NHẬN không trùng). DDL bằng owner `aoi`, áp `aoi_management` và `_test`; idempotent.
 
 ## 3. Nhiệm vụ (mỗi nhiệm vụ: test đỏ → mã → xanh → đột biến đỏ → commit pathspec)
@@ -64,6 +67,9 @@ Thứ tự: T1 → T2 → T3/T4 → T5 → T6 → T7/T8 → T9/T10 → T11 → T
 6. Định nghĩa agent không nâng quyền: `approval`/`tools` ngoài tập con bị từ chối; thân tệp là dữ liệu (kèm chỉ thị nhúng trong `.thoca/agents/*.md` ⇒ không đổi chế độ).
 7. Phiên: mọi hàm `userId` bắt buộc; hai người không thấy phiên của nhau; phiên không mang thẻ duyệt.
 8. `thuan.test.ts` xanh (lõi vẫn thuần); census `TEN_CONG_CU` (có `boThucThiMayChu.khongTuGanCo.census`) được cập nhật có chủ đích — con KHÔNG nằm trong tập tự gán cờ.
+
+## 4b. Quyết định đã duyệt (dieu-phoi 2026-10-27)
+Q2 `delegate` sau cờ `AI_AGENT_GIAO_VIEC` mặc định TẮT; test cờ tắt ⇒ danh sách công cụ + hành vi y hệt hiện tại (đột biến bật ngầm ⇒ đỏ). Q3 độ sâu 1 (tối đa 2). Q4 T12 cắt được. Thân tệp agent quét chỉ thị nhúng; tệp agent không tin cậy, chỉ thu hẹp quyền. Phơi `delegate` ở extension = lô luong-ui SAU khi máy chủ xong (T11 chỉ còn đồng bộ phiên). Bắt đầu T1 sau khi kiem-dinh không có điều kiện BẮT BUỘC chặn.
 
 ## 5. Rủi ro / câu hỏi mở
 - **R1** Thêm công cụ thứ 17 làm đổi grammar + tập thử của agent-f/G6 ⇒ nếu `delegate` làm model gọi sai/thừa, tụt cổng. Giảm: chỉ phơi `delegate` khi (a) agent có định nghĩa hoặc (b) cờ `AI_AGENT_GIAO_VIEC=1` (mặc định TẮT cho tới khi do-model đo xong); lời nhắc chỉ nêu khi phơi. Cổng "không tụt" đo với cờ TẮT và BẬT.
