@@ -1,6 +1,6 @@
-# Đợt 10.4b — Sinh chữ bằng model NGOÀI ở Chat / Coding / KB / bong bóng / extension + nút kiểm định ở bong bóng/extension: KẾ HOẠCH v2
+# Đợt 10.4b — Sinh chữ bằng model NGOÀI ở Chat / Coding / KB / bong bóng / extension + nút kiểm định ở bong bóng/extension: KẾ HOẠCH v2.1 (kiem-dinh DUYỆT bắt đầu L0 — CHỜ dieu-phoi duyệt sau Q-A)
 
-> Phiên **luong-ui** · nhánh `feat/ai-flow-studio` · 2026-10-27 · **v2** = v1 (`142c67027`) + quyết định dieu-phoi (Q1/Q6/Q7) + rà kiem-dinh (8 mục BẮT BUỘC M1–M8, N1–N6, bảng đột biến bổ sung). **CHỜ kiem-dinh đọc lại + do-model chốt chữ ký trước khi mở L0/L1.** Chưa làm gì.
+> Phiên **luong-ui** · nhánh `feat/ai-flow-studio` · 2026-10-27 · **v2** = v1 (`142c67027`) + quyết định dieu-phoi (Q1/Q6/Q7) + rà kiem-dinh (8 mục BẮT BUỘC M1–M8, N1–N6, bảng đột biến bổ sung). **kiem-dinh đã DUYỆT bắt đầu L0 (27/10); dieu-phoi: CHƯA bắt đầu L0 cho tới khi duyệt v2.1 sau khi có Q-A của chủ dự án.** Chưa làm gì.
 > Căn cứ: chủ dự án (Q4 26/10) "ô chọn model gồm cả model bên ngoài khi admin bật" ⇒ 10.4b BẮT BUỘC · spec `2026-10-26-ai-local-chon-model-va-kiem-dinh-ngoai-design.md` §4 A3, §5 B3/B6, §9 · báo cáo 10.3 §7 · kế hoạch 10.4 v3 · bài học 10.4: kho chat/coding do CLIENT ghi ⇒ không là provenance.
 > Người đọc: dieu-phoi (duyệt/gộp), kiem-dinh (rà egress + vòng tool + render), do-model (máy chủ), chủ dự án (§10).
 
@@ -85,7 +85,10 @@ Nguyên tắc: **mặc định đóng, mở từng bề mặt (cờ `duocDungO`)
 
 | Lô | Nội dung | `duocDungO` thêm |
 |---|---|---|
-| **L0** | nền tảng (D2 bộ dựng, D3 deny-list shared, D6 bộ render, D9 dấu nguồn, D10 trần, D7 `van-ban`) — chưa mở bề mặt nào | — |
+| **L0a** (máy chủ, rà lần 1) | bộ dựng `ghepPhan` + census AST + module deny-list `shared/` (thuần; bộ test biến thể) | — |
+| **L0a'** (máy chủ, rà lần 2 — chạm DB/cổng, đột biến DB riêng) | migration dấu nguồn (dải **0417–0418**, 0419 dự phòng; do-model viết SQL gửi dieu-phoi TRƯỚC khi áp DEV) + trần D10 + `van-ban` + tách `choPhepCongCuGhi` | — |
+| **L0b** (client, rà lần 3 — DOM) | bộ render duy nhất (D6) + đồng ý theo phiên / xác nhận vận hành (D4) | — |
+(Nếu dieu-phoi muốn ít vòng: gộp L0a+L0a', GIỮ L0b riêng. Chưa mở bề mặt nào ở L0.)
 | **L1** | `/ai-chat` + KB (không công cụ); người gõ = van-hanh; truy hồi KB theo loại kho | `chat` |
 | **L2** | màn lập trình — **Hỏi** (đọc repo; người gõ + mã = ky-thuat; tool đọc theo TỪNG vòng) | `coding` |
 | **L3** | Agent máy chủ (`sua`/`tu-dong` khoá với model ngoài; thẻ duyệt không xuất hiện) | `agent` |
@@ -121,6 +124,15 @@ Nguyên tắc: **mặc định đóng, mở từng bề mặt (cờ `duocDungO`)
 16. Đồng ý theo phiên lưu `sessionStorage` (không bền); đổi nhà cung cấp/model ⇒ hỏi lại; `CAN_XAC_NHAN_VAN_HANH` một lần/hội thoại.
 i18n vi/en/zh + `i18n:check`; tsc 0 (heap 12 GB); census ghim ĐO có ngày; cổng đủ census do dieu-phoi.
 
+## 6b. Bổ sung theo rà vòng 2 của kiem-dinh (NÊN — đưa vào L0/L2)
+
+1. **D3 deny theo TÊN** ngoài allowlist đuôi (vì `*.json/*.yaml/*.md/*.toml` vẫn chứa bí mật): `*secret* *credential* *password* *token* appsettings*.json docker-compose*.y*ml *.local.* *.prod.* config/*local*` — test mỗi mẫu + biến thể hoa-thường (bộ che ở cổng là lớp sau, không thay thế).
+2. **L2 Coding "Hỏi"**: workspace còn TỰ ĐÍNH KÈM ngữ cảnh khác ngoài tool đọc (repo-context 4k tiêm sẵn, TERMINAL/đuôi sống, Problems, log dán) ⇒ bảng D2: terminal/log/đầu ra lệnh ⇒ KHÔNG gửi khi model ngoài (hoặc van-hanh); repo-context tiêm sẵn ⇒ cũng qua deny-list.
+3. **D10(ii) "một lượt bay/người"** phải sống qua nhiều tiến trình/khởi động lại: lưu DB (hàng/khoá có TTL, hết hạn khi tiến trình chết), không chỉ bộ nhớ; đột biến: bỏ giải phóng khi lỗi/huỷ ⇒ người dùng kẹt vĩnh viễn ⇒ test TTL.
+4. **D9 dấu nguồn** GHI cùng giao dịch với câu trả lời, KHÔNG có đường client cập nhật; thêm cột cho cả coding session/agent run (hoặc, nếu chưa, lượt ngoài ở coding/agent coi như history `van-hanh` + bọc UNTRUSTED); test: client sửa/ghi đè dấu ⇒ bị bỏ.
+5. **`CAN_XAC_NHAN_VAN_HANH`**: máy chủ trả mã TRƯỚC khi gọi nhà cung cấp (không tốn phí, không egress) + test "không gọi mạng khi chưa xác nhận"; cờ client không nâng được mức hay bỏ qua 403 `NGOAI_DU_LIEU_VAN_HANH`.
+6. Migration: dải 0417–0418, DDL owner `aoi`, idempotent, áp `_test` trước; census cột mới.
+
 ## 7. Rủi ro và giới hạn
 
 - **Egress tự động mỗi lượt** — cái giá của yêu cầu chủ dự án; giảm bằng mặc định đóng theo bề mặt, người gõ = vận hành ⇒ đòi quyền nhà máy, đồng ý theo phiên + xác nhận vận hành, trần chi phí, che, tập đọc thuần, deny-list dùng chung. Vẫn là rào chống NHẦM (spec §9).
@@ -140,9 +152,9 @@ dieu-phoi: Q1 ĐỒNG Ý (không stream; van-hanh chưa cho ⇒ 403 trước khi
 
 ## 10. Câu hỏi còn mở
 
-- **Q-A (chủ dự án/dieu-phoi):** chat/KB/bong bóng với model ngoài **chỉ cho nhà máy đã bật dữ liệu vận hành** (hệ quả của M1) — chấp nhận? Hay muốn một chế độ riêng "chỉ kỹ thuật" (người gõ coi ky-thuat, KHÔNG truy hồi KB vận hành, KHÔNG nguCanh, kèm cảnh báo cố định) cho nhà máy chưa bật dữ liệu vận hành?
-- **Q-B (dieu-phoi):** **dải migration** cho dấu nguồn ngoài trên bản ghi tin nhắn (D9) — cấp số; và cột/bảng nào (do-model đề xuất: `ai_chat_messages.nguonModel varchar(120)` + bảng/trường tương đương cho coding/agent).
+- **Q-A (chủ dự án, dieu-phoi đang hỏi):** kiem-dinh ĐỒNG Ý ĐÓNG: chat/KB/bong bóng với model ngoài **chỉ cho nhà máy đã bật dữ liệu vận hành**. Chế độ "chỉ kỹ thuật" cho chat ⇒ **BACKLOG, không làm ở 10.4b** (câu gõ không chứng minh được là kỹ thuật, chỉ là lời khai người dùng); nếu sau này mở ⇒ công tắc RIÊNG của admin nhà máy (không gộp `choDuLieuVanHanh`), tắt truy hồi KB vận hành + nguCanh, cảnh báo cố định.
+- **Q-B — ĐÃ CẤP:** dải **0417–0418** (0419 dự phòng); do-model viết SQL gửi dieu-phoi trước khi áp DEV. DDL bằng owner `aoi`, idempotent, áp `_test` TRƯỚC; census cột mới không lộ ra `list` của client chưa cần.
 - **Q-C (do-model):** chốt chữ ký `ghepPhan`, danh sách khối thực tế của đường KB/chat hiện tại (bảng D2) — xác nhận/sửa từng dòng; `loaiKho` của chunk có ở đâu.
 - **Q-D (do-model):** vị trí module deny-list `shared/` (ý kiến: `shared/aiNgoaiDenyList.ts`, thuần, không phụ thuộc Node `fs` — chuẩn hoá đường dẫn nhận hàm `realpath` tiêm vào để dùng được ở extension host lẫn máy chủ).
 - **Q-E (do-model):** cơ chế "1 lượt ngoài bay/người" + trần chi phí/run (giữ chỗ nguyên tử cộng dồn): bảng đếm hiện có (`ai_ngoai_dem`) có đủ hay cần khoá run?
-- **Q-F (kiem-dinh):** thứ tự L0 trước L1 có đủ, hay muốn tách L0 thành hai lô (L0a server nền tảng, L0b render+đồng ý) để rà nhỏ hơn?
+- **Q-F — ĐÃ CHỐT:** TÁCH L0a / L0a' / L0b (xem §4).
