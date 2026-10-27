@@ -27,28 +27,34 @@ describe("goiModelMayChu — preserveThinking", () => {
   it("lịch sử KHÔNG có reasoning_content ⇒ không preserveThinking, tin không có trường đó", async () => {
     const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp" }]);
     expect(o).not.toHaveProperty("preserveThinking");
-    expect(o.messages.some((m) => "reasoning_content" in m)).toBe(false);
+    expect(o.messages.some((m) => "nghiTruoc" in m)).toBe(false);
   });
   it("lịch sử CÓ reasoning_content ⇒ preserveThinking + chuyển nguyên trên assistant", async () => {
     const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }]);
     expect(o.preserveThinking).toBe(true);
-    expect(o.messages[1]).toMatchObject({ role: "assistant", reasoning_content: "nghĩ" });
+    expect(o.messages[1]).toMatchObject({ role: "assistant", nghiTruoc: "nghĩ" });
   });
   it("lên dây llama-server: assistant mang reasoning_content; user không", () => {
-    expect(chuyenMessageLenDay({ role: "assistant", content: "đáp", reasoning_content: "nghĩ" })).toMatchObject({ reasoning_content: "nghĩ" });
-    expect(chuyenMessageLenDay({ role: "user", content: "x", reasoning_content: "lạ" } as never)).not.toHaveProperty("reasoning_content");
+    expect(chuyenMessageLenDay({ role: "assistant", content: "đáp", nghiTruoc: "nghĩ" })).toMatchObject({ reasoning_content: "nghĩ" });
+    expect(chuyenMessageLenDay({ role: "user", content: "x", nghiTruoc: "lạ" } as never)).not.toHaveProperty("reasoning_content");
+    expect(chuyenMessageLenDay({ role: "assistant", content: "đáp" })).not.toHaveProperty("reasoning_content");
   });
 });
 
 describe("thân yêu cầu llama-server — chat_template_kwargs", async () => {
-  const { lapGiuNghi, lapCoTatSuyLuan } = await import("../../aiLlamaServerClient");
-  it("preserve_thinking GỘP với enable_thinking (không đè); vắng cờ ⇒ không chạm thân", () => {
+  const { lapCoTatSuyLuan } = await import("../../aiLlamaServerClient");
+  it("preserve_thinking GỘP với enable_thinking (một điểm ghi); cờ tắt ⇒ thân Y HỆT trước 11.0", () => {
     const b: Record<string, unknown> = {};
-    lapCoTatSuyLuan(b, true);
-    lapGiuNghi(b, true);
+    lapCoTatSuyLuan(b, true, true);
     expect(b.chat_template_kwargs).toEqual({ enable_thinking: false, preserve_thinking: true });
+    const g: Record<string, unknown> = {};
+    lapCoTatSuyLuan(g, undefined, true);
+    expect(g.chat_template_kwargs).toEqual({ preserve_thinking: true });
+    const t: Record<string, unknown> = {};
+    lapCoTatSuyLuan(t, true, undefined);
+    expect(t).toEqual({ chat_template_kwargs: { enable_thinking: false } }); // như trước 11.0
     const c: Record<string, unknown> = {};
-    lapGiuNghi(c, undefined);
+    lapCoTatSuyLuan(c, undefined, undefined);
     expect(c).toEqual({});
   });
 });

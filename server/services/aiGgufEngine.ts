@@ -157,8 +157,8 @@ export interface GgufChatMessage {
   tool_call_id?: string;
   /** G2-B — chỉ trên `role:"assistant"`: các lượt gọi model đã phát ra ở lượt trước. */
   tool_calls?: NativeToolCall[];
-  /** ★ Đợt 11.0 (CHỈ ĐO) — suy luận của lượt assistant trước (chỉ llama-server; template đọc khi `preserveThinking`). */
-  reasoning_content?: string;
+  /** ★ Đợt 11.0 (CHỈ ĐO) — suy luận của lượt assistant trước (chỉ llama-server; lên dây thành `reasoning_content`; template đọc khi `preserveThinking`). */
+  nghiTruoc?: string;
   /**
    * ★ Đợt 9 (2026-10-24) — ẢNH đính kèm (data URL `data:image/<png|jpeg|webp>;base64,…`), CHỈ trên vai `user`. `content` VẪN là
    * chuỗi (mọi đường cũ không đổi); `aiLlamaServerClient.chuyenMessageLenDay` dựng mảng phần OpenAI khi có ảnh. Chỉ llama-server

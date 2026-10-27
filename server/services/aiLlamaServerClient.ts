@@ -221,17 +221,13 @@ export function phanDinhCauTraLoiRong(
  * là lưới AN TOÀN. Nhầm vai hai thứ đó là cách lỗ này quay lại.
  */
 /**
- * ★ Đợt 11.0 (CHỈ ĐO) — `preserve_thinking`: template Qwen3.6 giữ `reasoning_content` của các lượt assistant TRƯỚC trong prompt
- * (đọc `/props.chat_template` 2026-10-27). Gộp vào `chat_template_kwargs` đã có (không đè `enable_thinking`). Vắng cờ ⇒ không chạm thân.
+ * ĐIỂM GHI DUY NHẤT của `chat_template_kwargs` (lưới §5 của `aiLlamaServerClient.suyLuan.test.ts`).
+ * ★ Đợt 11.0 (CHỈ ĐO) — `giuNghi` ⇒ `preserve_thinking: true`: template Qwen3.6 giữ suy luận của các lượt assistant TRƯỚC trong prompt
+ * (đọc `/props.chat_template` 2026-10-27). Cả hai cờ vắng ⇒ không chạm thân (thân y hệt trước 11.0).
  */
-export function lapGiuNghi(body: Record<string, unknown>, giu: boolean | undefined): void {
-  if (!giu) return;
-  body.chat_template_kwargs = { ...((body.chat_template_kwargs as Record<string, unknown> | undefined) ?? {}), preserve_thinking: true };
-}
-
-export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined): void {
-  if (!tat) return;
-  body.chat_template_kwargs = { enable_thinking: false };
+export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined, giuNghi?: boolean): void {
+  if (!tat && !giuNghi) return;
+  body.chat_template_kwargs = { ...(tat ? { enable_thinking: false } : {}), ...(giuNghi ? { preserve_thinking: true } : {}) };
 }
 
 /**
@@ -313,7 +309,8 @@ export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown>
   };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
   // ★ Đợt 11.0 (CHỈ ĐO) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
-  if (m.role === "assistant" && m.reasoning_content) ra.reasoning_content = m.reasoning_content;
+  //   Tên NỘI BỘ `nghiTruoc` ≠ tên trên dây — đây là GHI lịch sử đi, không phải điểm ĐỌC phản hồi (lưới §5 chỉ cho 2 điểm đọc).
+  if (m.role === "assistant" && m.nghiTruoc) Object.assign(ra, { reasoning_content: m.nghiTruoc });
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
   //   máy chủ, `/v1` của extension, lịch sử cũ): chỉ object JSON chặt lên dây, còn lại `{}` (KHÔNG vớt). Bản sao — không
   //   sửa mảng của người gọi.
@@ -909,8 +906,7 @@ export async function serverChatCompletion(
     stream: false,
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
-  lapCoTatSuyLuan(body, options.disableThinking);
-  lapGiuNghi(body, options.preserveThinking);
+  lapCoTatSuyLuan(body, options.disableThinking, options.preserveThinking);
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);
@@ -1497,8 +1493,7 @@ export async function* serverChatCompletionStream(
     stream_options: { include_usage: true },
   };
   if (options.jsonMode) body.response_format = { type: "json_object" };
-  lapCoTatSuyLuan(body, options.disableThinking);
-  lapGiuNghi(body, options.preserveThinking);
+  lapCoTatSuyLuan(body, options.disableThinking, options.preserveThinking);
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
   lapToolsLenThan(body, options);

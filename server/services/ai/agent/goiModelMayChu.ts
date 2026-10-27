@@ -84,7 +84,7 @@ function sangTinNhanGguf(ds: TinNhan[]): GgufChatMessage[] {
     const ra: GgufChatMessage = { role: m.role, content: m.content ?? "" };
     if (m.role === "assistant" && m.tool_calls?.length) ra.tool_calls = m.tool_calls;
     if (m.role === "tool" && m.tool_call_id) ra.tool_call_id = m.tool_call_id;
-    if (m.role === "assistant" && m.reasoning_content) ra.reasoning_content = m.reasoning_content; // ★ 11.0 — chỉ có khi host bật giữ nghĩ
+    if (m.role === "assistant" && m.reasoning_content) ra.nghiTruoc = m.reasoning_content; // ★ 11.0 — chỉ có khi host bật giữ nghĩ
     return ra;
   });
 }
