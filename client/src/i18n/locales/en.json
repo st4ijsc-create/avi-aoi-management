@@ -23792,6 +23792,23 @@
         "biMatGoiY": "Optional. The secret must declare this MCP server's host; no flow secret ever flows to an MCP server on its own.",
         "truongRaGoiY": "The result is written into the item under this key (default mcp): {may, tool, noiDung, cauTruc}.",
         "canhBao": "The tool result is untrusted DATA — never executed as a command/expression. External-write class: the flow needs the matching enable permission. Max 20 items, 30 s, 1 MiB per response."
+      },
+      "kiemDinhNgoai": {
+        "ghiChu": "Sends the previous step's question + answer to an EXTERNAL AI for review (paid, at most {{max}} items per run). Every flow VERSION containing this node must be approved by an admin before it is enabled/run; operational data leaves only if the factory allows it; content is masked before it leaves the machine; the external AI's result is UNTRUSTED data (for reference/approval only).",
+        "model": "External model",
+        "modelGoiY": "Lists only external models enabled for your factory. This node has no 'Automatic' and no local models.",
+        "chuaChon": "— Choose an external model —",
+        "khongCoModel": "The factory has not enabled external AI or declared any model — ask an administrator (AI settings).",
+        "modelHet": "This model is no longer usable in the current factory (disabled or another factory). Choose again.",
+        "chuaChonCanhBao": "No model chosen — the flow can be saved but this node will NOT run until one is chosen.",
+        "cauHoi": "Original question",
+        "cauHoiGoiY": "Expression, e.g. $json.cauHoi. May be empty.",
+        "traLoi": "Answer / code to review",
+        "traLoiGoiY": "Expression from the previous step, e.g. $json.traLoi. Empty ⇒ the node fails.",
+        "tieuChi": "Review criteria (optional)",
+        "tieuChiGoiY": "Describe what the external AI should check (technical correctness, safety, style…).",
+        "truongRaGoiY": "Field that receives the review result; model/token trace goes to <name>Vet.",
+        "truongRaSai": "Field name: start with a letter, letters/digits/underscore only, at most 48 characters."
       }
     },
     "xuatNhap": {

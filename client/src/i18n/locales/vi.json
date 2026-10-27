@@ -23789,6 +23789,23 @@
         "biMatGoiY": "Tuỳ chọn. Bí mật phải khai host của máy chủ MCP này; không bí mật nào tự chảy sang máy chủ MCP.",
         "truongRaGoiY": "Kết quả ghi vào item dưới khoá này (mặc định mcp): {may, tool, noiDung, cauTruc}.",
         "canhBao": "Kết quả của tool là DỮ LIỆU không tin cậy — không bao giờ được chạy như lệnh/biểu thức. Hạng ghi ngoài: luồng cần quyền bật tương ứng. Tối đa 20 item, 30 giây, 1 MiB mỗi phản hồi."
+      },
+      "kiemDinhNgoai": {
+        "ghiChu": "Gửi câu hỏi + câu trả lời của bước trước cho AI BÊN NGOÀI kiểm định (trả phí, tối đa {{max}} item mỗi lượt). Mỗi PHIÊN BẢN luồng có node này phải được admin duyệt trước khi bật/chạy; dữ liệu vận hành chỉ ra ngoài khi nhà máy cho phép; nội dung được che trước khi rời máy; kết quả của AI ngoài là dữ liệu KHÔNG tin cậy (chỉ để tham khảo/duyệt).",
+        "model": "Model ngoài",
+        "modelGoiY": "Chỉ liệt kê model ngoài mà nhà máy của bạn đã bật. Không có 'Tự động' và không có model cục bộ ở node này.",
+        "chuaChon": "— Chọn model ngoài —",
+        "khongCoModel": "Nhà máy chưa bật AI ngoài hoặc chưa khai model nào — nhờ quản trị viên cấu hình (Cài đặt AI).",
+        "modelHet": "Model này không còn dùng được ở nhà máy hiện tại (đã tắt hoặc nhà máy khác). Hãy chọn lại.",
+        "chuaChonCanhBao": "Chưa chọn model — luồng lưu được nhưng node sẽ KHÔNG chạy cho tới khi chọn.",
+        "cauHoi": "Câu hỏi gốc",
+        "cauHoiGoiY": "Biểu thức, ví dụ $json.cauHoi. Có thể để trống.",
+        "traLoi": "Câu trả lời / mã cần kiểm định",
+        "traLoiGoiY": "Biểu thức lấy từ bước trước, ví dụ $json.traLoi. Rỗng ⇒ node báo lỗi.",
+        "tieuChi": "Tiêu chí kiểm định (tuỳ chọn)",
+        "tieuChiGoiY": "Mô tả điều AI ngoài cần kiểm tra (đúng/sai kỹ thuật, an toàn, phong cách…).",
+        "truongRaGoiY": "Tên trường chứa kết quả kiểm định; vết model/token nằm ở <tên>Vet.",
+        "truongRaSai": "Tên trường: bắt đầu bằng chữ, chỉ gồm chữ/số/gạch dưới, tối đa 48 ký tự."
       }
     },
     "xuatNhap": {
