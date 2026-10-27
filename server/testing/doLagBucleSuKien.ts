@@ -33,6 +33,8 @@ export interface PhuThuocDoLag {
   setTimeout(f: () => void, ms: number): unknown;
   /** Chu kỳ thật của `setInterval(buocMs)` lúc rảnh. */
   chuKyRanh(buocMs: number): Promise<number>;
+  /** (tuỳ chọn) đo LẠI chu kỳ rảnh ngay lúc `dung()` — độ phân giải hẹn giờ Windows đổi theo thời điểm (tiến trình khác nâng/hạ), số đo lúc nạp mô-đun có thể cũ. */
+  chuKyMoi?(buocMs: number): Promise<number>;
 }
 
 /** Phân vị 10 % của các khoảng nhịp đo được (đáy của phân phối = chu kỳ không tải). */
@@ -67,6 +69,7 @@ const depThat: PhuThuocDoLag = {
   setInterval: (f, ms) => setInterval(f, ms),
   clearInterval: (h) => clearInterval(h as NodeJS.Timeout),
   setTimeout: (f, ms) => setTimeout(f, ms),
+  chuKyMoi: (buocMs) => hieuChuanChuKy(depThat, buocMs, 10).catch(() => buocMs),
   chuKyRanh: (buocMs) => {
     let p = NHO_CHU_KY.get(buocMs);
     if (!p) {
@@ -96,7 +99,9 @@ export function batDauDoLag(buocMs = 5, dep: PhuThuocDoLag = depThat): DoLag {
       await new Promise<void>((xong) => dep.setTimeout(xong, buocMs * 3));
       dep.clearInterval(h);
       nhip();
-      const chuKy = await dep.chuKyRanh(buocMs);
+      // lấy SỐ LỚN HƠN của số đo lúc nạp và số đo ngay bây giờ: số đo cũ thấp (hẹn giờ 1 ms lúc nạp, 15,6 ms lúc chạy) làm nới quá tay (đo thật: ngủ 800 ms bị tính 425–551 ms);
+      // sai về phía chặt (trừ nhiều) chỉ làm nới ÍT đi — an toàn.
+      const chuKy = Math.max(await dep.chuKyRanh(buocMs), (await dep.chuKyMoi?.(buocMs)) ?? 0);
       let tong = 0;
       for (const m of mau) tong += Math.max(0, m.khoang - chuKy - m.cpuMs);
       return Math.min(tran, Math.round(tong));
