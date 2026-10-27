@@ -80,6 +80,13 @@ describe("ai.kiem-dinh-ngoai — chạy", () => {
     expect(nhan).toHaveLength(0);
   });
 
+  it("rà kiem-dinh D7 — truongRa sai tên LÚC CHẠY (a-b / rỗng / không phải chuỗi) ⇒ node lỗi, cổng KHÔNG được gọi", async () => {
+    for (const truongRa of ["a-b", "", 5, "__proto__x-"]) {
+      expect(await loiCua(NUT().chay({ ...TS, truongRa }, ngu([{ json: { hoi: "q", dap: "a" } }]))), String(truongRa)).toContain("truongRa");
+    }
+    expect(nhan).toHaveLength(0);
+  });
+
   it(`vượt ${TRAN_ITEM_KIEM_DINH} item ⇒ lỗi rõ, không gọi; traLoi rỗng ⇒ lỗi`, async () => {
     const nhieu = Array.from({ length: TRAN_ITEM_KIEM_DINH + 1 }, () => ({ json: { hoi: "q", dap: "a" } }));
     expect(await loiCua(NUT().chay(TS, ngu(nhieu)))).toContain(`tối đa ${TRAN_ITEM_KIEM_DINH}`);

@@ -37,7 +37,7 @@ function dat(o: { nhaMay?: number[] | null; nguon?: unknown; traVe?: Array<strin
       if (o.kiemTruoc) return o.kiemTruoc();
       return {
         db: { execute: async () => [{ khoa: "nha-may", tokenGiu: 100, tienGiuUsd: 0.5 }] },
-        cfg: { tranTokenNgay: 1000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
+        cfg: { tranTokenNgay: 100_000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
         model: { giaVaoUsdTrieu: 3, giaRaUsdTrieu: 15 },
         maxTokens: 4000,
       };
@@ -157,9 +157,26 @@ describe("xemTruoc", () => {
     expect(r.tokenUoc).toBeGreaterThan(4000);
     expect(r.chiPhiUocUsd).toBeGreaterThan(0.06);
     expect(r.kichThuocByte).toBeGreaterThan(100);
-    expect(r.conLaiTranNgay).toEqual({ nhaMay: { token: 900, usd: 1.5 }, nguoi: { token: null } });
+    // dieu-phoi Q2 — người thường: chỉ phần của mình + cờ đủ trần; KHÔNG có số tuyệt đối của nhà máy trong JSON
+    expect(r.conLaiTranNgay).toEqual({ nguoi: { token: null }, nhaMayDuChoLuotNay: true });
+    expect(r.conLaiTranNgay).not.toHaveProperty("nhaMay");
+    expect(JSON.stringify(r)).not.toMatch(/"token":99900|"usd":1.5/);
     expect(kiem).toHaveLength(1);
     expect(nhan).toHaveLength(0);
+  });
+
+  it("dieu-phoi Q2 — admin thấy số nhà máy; trần nhà máy / trần người KHÔNG đủ cho ước tính lượt này ⇒ duocPhep false + NGOAI_VUOT_TRAN", async () => {
+    dat();
+    const ad = await goi("admin").xemTruoc(INPUT);
+    expect(ad.conLaiTranNgay).toEqual({ nguoi: { token: null }, nhaMayDuChoLuotNay: true, nhaMay: { token: 99_900, usd: 1.5 } });
+    const thieu = (rows: unknown[], cfg: object) =>
+      dat({ kiemTruoc: async () => ({ db: { execute: async () => rows }, cfg, model: { giaVaoUsdTrieu: null, giaRaUsdTrieu: null }, maxTokens: 4000 }) });
+    thieu([{ khoa: "nha-may", tokenGiu: 900, tienGiuUsd: 0 }], { tranTokenNgay: 1000, tranTienNgayUsd: null, tranTokenNguoiNgay: null });
+    const r1 = await goi().xemTruoc(INPUT);
+    expect(r1).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nhaMayDuChoLuotNay: false } });
+    expect(r1.conLaiTranNgay).not.toHaveProperty("nhaMay");
+    thieu([{ khoa: "nguoi:7", tokenGiu: 9_990, tienGiuUsd: 0 }], { tranTokenNgay: null, tranTienNgayUsd: null, tranTokenNguoiNgay: 10_000 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nguoi: { token: 10 }, nhaMayDuChoLuotNay: true } });
   });
 
   it("cổng từ chối ở bước kiểm (vd dữ liệu vận hành chưa cho) ⇒ duocPhep false + lyDo, không ném", async () => {

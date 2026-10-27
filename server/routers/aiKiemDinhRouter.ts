@@ -122,19 +122,29 @@ export const aiKiemDinhRouter = router({
     let lyDo: MaLoiNgoai | undefined;
     let tokenUoc = uocTokenVao({ tinNhan }) + MAX_TOKENS_KIEM_DINH_MAC_DINH;
     let chiPhiUocUsd: number | null = null;
-    let conLaiTranNgay: Awaited<ReturnType<typeof docConLaiNgay>> = { nhaMay: { token: null, usd: null }, nguoi: { token: null } };
+    let conLai: Awaited<ReturnType<typeof docConLaiNgay>> = { nhaMay: { token: null, usd: null }, nguoi: { token: null } };
     try {
       const k = await dep.kiemTruoc(yc);
       tokenUoc = uocTokenVao({ tinNhan }) + k.maxTokens;
       if (k.model.giaVaoUsdTrieu !== null && k.model.giaRaUsdTrieu !== null) {
         chiPhiUocUsd = (uocTokenVao({ tinNhan }) * k.model.giaVaoUsdTrieu + k.maxTokens * k.model.giaRaUsdTrieu) / 1e6;
       }
-      conLaiTranNgay = await docConLaiNgay(k.db, c.F, ctx.user.id, k.cfg).catch(() => conLaiTranNgay);
+      conLai = await docConLaiNgay(k.db, c.F, ctx.user.id, k.cfg).catch(() => conLai);
     } catch (e) {
       if (!(e instanceof LoiNgoai)) throw e;
       duocPhep = false;
       lyDo = e.ma;
     }
+    // dieu-phoi Q2 (quyền tối thiểu): người KHÔNG phải admin chỉ thấy phần CỦA MÌNH + cờ "nhà máy đủ trần cho ước tính bi quan của lượt
+    // này"; số tuyệt đối token / USD của NHÀ MÁY chỉ trả cho admin (đã trong phạm vi nhà máy — quy tắc đúng MỘT nhà máy).
+    const du = (con: number | null, can: number | null) => con === null || can === null || con >= can;
+    const nhaMayDuChoLuotNay = du(conLai.nhaMay.token, tokenUoc) && du(conLai.nhaMay.usd, chiPhiUocUsd);
+    if (duocPhep && (!nhaMayDuChoLuotNay || !du(conLai.nguoi.token, tokenUoc))) {
+      duocPhep = false;
+      lyDo = "NGOAI_VUOT_TRAN";
+    }
+    const laAdmin = (ctx.user as { role?: string }).role === "admin";
+    const conLaiTranNgay = { nguoi: conLai.nguoi, nhaMayDuChoLuotNay, ...(laAdmin ? { nhaMay: conLai.nhaMay } : {}) };
     return {
       duocPhep,
       ...(lyDo ? { lyDo } : {}),
