@@ -23853,6 +23853,7 @@
       "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "khongQuyenKenh": "You don't have permission to view channel configuration — values and quality are still shown.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "All tags misconfigured — no read was sent to the device; fix the tag addresses"
       },

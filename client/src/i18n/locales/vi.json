@@ -23850,6 +23850,7 @@
       "dangTai": "Đang tải danh sách adapter…",
       "matKetNoi": "Mất kết nối",
       "edgeChuaCoSoLieu": "do edge {{edgeCode}} sở hữu — chưa có số liệu R0",
+      "khongQuyenKenh": "Không có quyền xem cấu hình kênh — giá trị và chất lượng vẫn hiện.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "Mọi tag sai cấu hình — chưa gửi yêu cầu đọc nào tới thiết bị; hãy sửa địa chỉ tag"
       },
