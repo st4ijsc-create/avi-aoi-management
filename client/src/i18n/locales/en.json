@@ -4095,7 +4095,8 @@
       "aiNgoaiDuyet": "approve flow using external AI",
       "taiAnhAi": "download image for AI analysis",
       "mayDungKhanCap": "load the emergency STOP machine list",
-      "aiKiemDinh": "external AI verification"
+      "aiKiemDinh": "external AI verification",
+      "aiNgoaiGhi": "save external AI configuration"
     },
     "field": {
       "stationId": "station",
@@ -4590,7 +4591,8 @@
       "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
       "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
       "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
-      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name"
+      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name",
+      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

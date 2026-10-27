@@ -71,6 +71,9 @@ async function khuon(bin, signal) {
   if (fs.existsSync(path.join(mau, "PG_VERSION"))) return mau;
   const tam = `${mau}-${process.pid}-${Date.now()}`;
   await chayCho(path.join(bin, `initdb${EXE}`), ["-D", tam, "-U", "eval", "-A", "trust", "-E", "UTF8", "--no-locale", "--no-sync"], 120000, signal);
+  // Khuôn CŨ hỏng (thiếu PG_VERSION — vd dọn %TEMP% xoá dở) mà vẫn còn thư mục ⇒ rename thất bại ⇒ trước đây im lặng dùng khuôn HỎNG
+  // ("is not a database cluster directory" ở MỌI bài PG — đo 2026-10-27, fake-ok api2 25/30). Thay khuôn hỏng bằng bản vừa initdb.
+  if (fs.existsSync(mau) && !fs.existsSync(path.join(mau, "PG_VERSION"))) fs.rmSync(mau, { recursive: true, force: true });
   try {
     fs.renameSync(tam, mau);
   } catch {

@@ -23,7 +23,7 @@ import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
-import { datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
+import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
 import { gemini } from "./nhaCungCap/gemini";
@@ -218,6 +218,8 @@ export interface KiemTruocNgoai {
   tinhTran: number;
   tap: number[];
   cfg: CauHinhNhaMay;
+  /** Trần dùng cho giữ chỗ: cấu hình nhà máy với `tranTokenLuot` = min(nhà máy, model). */
+  tran: CauHinhNhaMay;
   model: ModelNgoai;
   ncc: NhaCungCapAi;
   muc: MucDuLieu;
@@ -281,12 +283,17 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
   buoc("lap");
   // maxTokens KẸP (rà lô 2 mục 1): ≤ trần lượt của model, ≤ MAX cứng, ≥ 1 — người gọi không đặt được 10^9.
   const maxTokens = Math.max(1, Math.min(Math.floor(Number(yc.maxTokens) || 1), model.tranTokenLuot ?? MAX_TOKENS_CUNG, MAX_TOKENS_CUNG));
-  return { db, laLuong, tinhTran, tap, cfg: cauHinh.get(tinhTran)!, model, ncc, muc, maxTokens };
+  const cfg = cauHinh.get(tinhTran)!;
+  // Trần MỖI LƯỢT hiệu lực = nhỏ hơn của cấu hình nhà máy và của model.
+  const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
+  const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
+  return { db, laLuong, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens };
 }
 
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
-  const { db, tinhTran, tap, cfg, model, ncc, muc, maxTokens } = await kiemTruocNgoai(yc, dep);
+  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
+  let maxTokens = maxTokensYeuCau;
   const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");
@@ -300,9 +307,10 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   const noiDungDaChe = JSON.stringify(daChe);
   // (7)–(9) MỖI lần thử: giữ chỗ → sổ Ý ĐỊNH riêng → gọi (rà kiem-dinh lô 2 mục 5: mỗi lần thử có hàng ý định + kết quả của nó ⇒
   //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
-  const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
-  const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
   const tokenVaoUoc = uocTokenVao(daChe);
+  // ★ 10.4 — lời gọi ngoài lượt chạy: co maxTokens để vào + ra vừa trần MỖI LƯỢT (hàm dùng chung với xem trước).
+  maxTokens = chotTranLuot(tokenVaoUoc, maxTokens, tran.tranTokenLuot, yc.ngu.runId, raToiThieuCho(yc.mucDich));
+  daChe.maxTokens = maxTokens;
   const tienUoc =
     model.giaVaoUsdTrieu !== null && model.giaRaUsdTrieu !== null ? (tokenVaoUoc * model.giaVaoUsdTrieu + maxTokens * model.giaRaUsdTrieu) / 1e6 : null;
   const bam = bamNoiDung(noiDungDaChe);

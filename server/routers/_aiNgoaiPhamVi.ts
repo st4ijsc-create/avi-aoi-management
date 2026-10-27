@@ -58,3 +58,27 @@ export function cuoi4CuaBanMa(ma: string | null | undefined): string | null {
 export async function auditTrongGiaoDich(tx: { insert: (...a: any[]) => any }, ctx: Ctx, entry: AuditLogEntry): Promise<void> {
   await logCrudOperationInTx(tx, { userId: ctx.user.id, userName: ctx.user.name ?? null, source: "trpc" }, entry);
 }
+
+/** Mã lỗi PostgreSQL của lỗi ràng buộc (drizzle bọc lỗi postgres.js trong `cause`). */
+const MA_RANG_BUOC = new Set(["23514", "23505", "23503", "23502", "22001", "22003"]);
+export function maLoiPg(e: unknown): string | undefined {
+  for (let x: unknown = e, i = 0; x && i < 4; x = (x as { cause?: unknown }).cause, i++) {
+    const c = (x as { code?: unknown }).code;
+    if (typeof c === "string" && /^[0-9A-Z]{5}$/.test(c)) return c;
+  }
+  return undefined;
+}
+
+/**
+ * ★ 10.4 (luong-ui báo) — giao dịch ghi của thủ tục AI ngoài: lỗi RÀNG BUỘC CSDL (CHECK / UNIQUE / FK / NOT NULL / tràn độ dài) ⇒
+ * BAD_REQUEST sạch `du-lieu-vi-pham-rang-buoc` — KHÔNG để lỗi thô "Failed query: insert into …" (lộ câu SQL + tham số) tới client.
+ */
+export async function giaoDichNgoai<T>(db: Awaited<ReturnType<typeof dbHoacLoi>>, fn: Parameters<Awaited<ReturnType<typeof dbHoacLoi>>["transaction"]>[0] extends (tx: infer X) => unknown ? (tx: X) => Promise<T> : never): Promise<T> {
+  try {
+    return (await db.transaction(fn as never)) as T;
+  } catch (e) {
+    const ma = maLoiPg(e);
+    if (ma && MA_RANG_BUOC.has(ma)) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiNgoaiGhi", reason: "du-lieu-vi-pham-rang-buoc" }, `dữ liệu vi phạm ràng buộc (${ma})`);
+    throw e;
+  }
+}

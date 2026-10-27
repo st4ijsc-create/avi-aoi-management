@@ -178,3 +178,55 @@ export async function docConLaiNgay(
     nguoi: { token: userId === null ? null : conLai(tran.tranTokenNguoiNgay, ng?.tokenGiu) },
   };
 }
+
+/** Phần dành cho đầu ra tối thiểu khi trần LƯỢT phải co `maxTokens` lại — ít hơn ⇒ coi như vượt trần (không gọi để nhận câu cụt). */
+export const RA_TOI_THIEU_KHI_CO = 256;
+/**
+ * Rà kiem-dinh df9f4f66e (NÊN) — kết quả kiểm định là JSON có cấu trúc (thường 500–2000 token): co đầu ra về ~300 ⇒ bị cắt ⇒ sai schema
+ * ⇒ thử lại ⇒ TRẢ PHÍ HAI LẦN mà vẫn lỗi. Với `mucDich` kiểm định, thà từ chối SỚM (`NGOAI_VUOT_TRAN` "luot") còn hơn.
+ */
+export const RA_TOI_THIEU_KIEM_DINH = 1000;
+export function raToiThieuCho(mucDich: string): number {
+  return mucDich === "kiem-dinh" ? RA_TOI_THIEU_KIEM_DINH : RA_TOI_THIEU_KHI_CO;
+}
+
+/**
+ * ★ 10.4 (luong-ui / dieu-phoi) — trần MỖI LƯỢT (lời gọi không thuộc lượt chạy: `runId` null) áp cho TỔNG vào + ra. Trước đây cổng giữ
+ * nguyên `maxTokens` rồi `datTruoc` từ chối khi vào + maxTokens > trần ⇒ model khai `tranTokenLuot` = maxTokens mặc định KHÔNG BAO GIỜ
+ * gọi được. Nay: co `maxTokens` = min(maxTokens, trần − vào ước) — còn < `RA_TOI_THIEU_KHI_CO` ⇒ `NGOAI_VUOT_TRAN` "luot".
+ * Hàm THUẦN dùng chung cho cổng (\`goiAiNgoai\`, sau bộ che) và xem trước (\`aiKiemDinh.xemTruoc\`) ⇒ hai bên không thể lệch luật.
+ */
+export function chotTranLuot(
+  tokenVaoUoc: number,
+  maxTokens: number,
+  tranLuot: number | null,
+  runId: string | null,
+  raToiThieu: number = RA_TOI_THIEU_KHI_CO,
+): number {
+  if (runId !== null || tranLuot === null) return maxTokens;
+  const con = tranLuot - Math.ceil(tokenVaoUoc);
+  if (con < raToiThieu) throw new LoiNgoai("NGOAI_VUOT_TRAN", "luot");
+  return Math.min(maxTokens, con);
+}
+
+/**
+ * ★ 10.4 — XEM TRƯỚC trần NGÀY / PHÚT (chỉ ĐỌC, không giữ chỗ): CÙNG danh sách khoá (`cacKhoa`) + cùng phép so với \`datTruoc\`
+ * (đã giữ + ước ≤ trần) + số lần / phút. Trả lý do đầu tiên vượt (\`nha-may\` | \`nguoi\` | \`luong\` | \`luot\` | \`lan-phut\`) hoặc null.
+ * Tham khảo: giữa xem trước và gọi thật có thể có lượt khác giữ chỗ — \`datTruoc\` vẫn là rào nguyên tử.
+ */
+export async function xemTranNgay(db: DbDem, yc: YeuCauGiuCho, tran: TranNhaMay, bayGio = new Date()): Promise<string | null> {
+  const n = Math.max(0, Math.ceil(yc.tokenUoc));
+  const tien = Math.max(0, yc.tienUocUsd ?? 0);
+  if (yc.runId === null && tran.tranTokenLuot !== null && n > tran.tranTokenLuot) return "luot";
+  const ngay = ngayUtc7(bayGio);
+  for (const k of cacKhoa(yc, tran)) {
+    if (k.tranToken === null && k.tranTien === null) continue;
+    const [h] = hang(await db.execute(sql`SELECT "tokenGiu", "tienGiuUsd" FROM ai_ngoai_dem WHERE "factoryId" = ${yc.factoryId} AND ngay = ${ngay}::date AND khoa = ${k.khoa}`));
+    const daToken = Number(h?.tokenGiu ?? 0);
+    const daTien = Number(h?.tienGiuUsd ?? 0);
+    if ((k.tranToken !== null && daToken + n > k.tranToken) || (k.tranTien !== null && daTien + tien > k.tranTien)) return k.khoa.split(":")[0]!;
+  }
+  const [p] = hang(await db.execute(sql`SELECT so FROM ai_ngoai_dem_phut WHERE "factoryId" = ${yc.factoryId} AND phut = ${phutCua(bayGio)}::timestamptz`));
+  if (Number(p?.so ?? 0) + 1 > tran.tranLanPhut) return "lan-phut";
+  return null;
+}
