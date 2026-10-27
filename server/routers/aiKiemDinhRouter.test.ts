@@ -110,7 +110,8 @@ describe("chay", () => {
     const cho = new Promise<void>((r) => (mo = r));
     const { nhan } = dat({ cho });
     const p1 = goi().chay(INPUT);
-    await new Promise((r) => setTimeout(r, 20));
+    // chờ tới khi lượt 1 ĐÃ tới nhà cung cấp (trạng thái "đang chạy" chắc chắn đã đặt) — không chờ theo giờ (lật phật dưới tải)
+    for (let i = 0; i < 500 && nhan.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
     expect(await loi(goi().chay(INPUT))).toBe("CONFLICT:NGOAI_DANG_CHAY");
     mo();
     await p1;
