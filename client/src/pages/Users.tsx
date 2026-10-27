@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+import { NutMoKhoaTotp } from "@/components/users/NutMoKhoaTotp";
 
 type UserType = {
   id: number;
@@ -684,6 +685,10 @@ export default function Users() {
                                   <Key aria-hidden="true" className="h-4 w-4" />
                                 </Button>
                               </PermissionGate>
+                            )}
+                            {/* Mục 38 — chỉ admin (thủ tục là adminProcedure), không hiện ở hàng của chính mình (máy chủ cũng cấm) */}
+                            {currentUser?.role === "admin" && user.id !== currentUser.id && (
+                              <NutMoKhoaTotp userId={user.id} tenHienThi={user.name || user.username || `#${user.id}`} />
                             )}
                             <PermissionGate module="admin_users" action="canDelete">
                               <Button

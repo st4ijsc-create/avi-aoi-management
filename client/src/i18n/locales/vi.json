@@ -10226,6 +10226,19 @@
     "cpkKhongXacDinh": "Có điểm Cpk/Ppk không xác định (dữ liệu hằng — độ lệch chuẩn bằng 0): không vẽ thanh, KHÔNG phải 0."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Mở khoá xác thực hai lớp",
+        "tieuDe": "Mở khoá xác thực hai lớp của {{name}}",
+        "moTa": "Dùng khi người này bị khoá do nhập sai mã nhiều lần hoặc mất thiết bị. Mỗi lần mở khoá đều được ghi nhật ký kèm lý do; mỗi người chỉ được mở khoá một số lần giới hạn trong một giờ.",
+        "lyDo": "Lý do",
+        "lyDoGoiY": "Tối thiểu {{min}} ký tự.",
+        "gui": "Mở khoá",
+        "huy": "Huỷ",
+        "daMoKhoa": "Đã mở khoá xác thực hai lớp.",
+        "khongBiKhoa": "Người này không bị khoá (đã ghi nhật ký)."
+      }
+    },
     "assignUserToCorporateFactory": "Phân công Người dùng đến Tập đoàn Nhà máy",
     "selectUserAndCorporateCode": "Chọn Người dùng và Tập đoàn Mã",
     "removedCorporateAssignment": "Removed Tập đoàn Phân công",

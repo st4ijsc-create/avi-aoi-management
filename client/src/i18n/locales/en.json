@@ -10226,6 +10226,19 @@
     "cpkKhongXacDinh": "Some Cpk/Ppk points are undetermined (constant data — zero standard deviation): no bar is drawn; this is NOT zero."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Unlock two-factor authentication",
+        "tieuDe": "Unlock two-factor authentication for {{name}}",
+        "moTa": "Use this when the person is locked out after too many wrong codes or lost their device. Every unlock is logged with its reason; each person can be unlocked only a limited number of times per hour.",
+        "lyDo": "Reason",
+        "lyDoGoiY": "At least {{min}} characters.",
+        "gui": "Unlock",
+        "huy": "Cancel",
+        "daMoKhoa": "Two-factor authentication unlocked.",
+        "khongBiKhoa": "This person was not locked (the attempt was logged)."
+      }
+    },
     "userList": "User list",
     "userAssignments": "User assignments",
     "user": "User",
