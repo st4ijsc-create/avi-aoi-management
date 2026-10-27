@@ -4615,7 +4615,11 @@ async function startServer() {
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
-      process.exit(0);
+      // R1b-2b-2a T1 fix round 1 — chờ lượt xả hàng chờ ghi nền của đường STOP (bắt đầu ở stopOt, ≤ 2 s; hạn ép thoát 5 s bên dưới vẫn đứng)
+      import("../services/ot/ghiTreoCoTran")
+        .then((m) => m.xaHangChoKhiTat())
+        .catch(() => undefined)
+        .finally(() => process.exit(0));
     });
     // Force exit after 5s if server.close() hangs (e.g. WebSocket/MQTT connections)
     setTimeout(() => {

@@ -174,7 +174,7 @@ import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
-import { ghiCoTran } from "./ghiTreoCoTran"; // R1b-2b-2a T1 (mục 61) — one stuck-write cap for the STOP path
+import { ghiCoTran, themLucSuKien } from "./ghiTreoCoTran"; // R1b-2b-2a T1 (mục 61) — one stuck-write cap for the STOP path
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 // Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
@@ -1940,7 +1940,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
  * the override.
  * R1b-2b-2a T1 (mục 61, điều phối Q2) — runs as a THUNK under the STOP path's ONE stuck-write cap (`ghiCoTran`, `ghiTreoCoTran.ts`) for EVERY
  * pinned stop (one rule for every STOP source): the getDb() / import() / INSERT are issued only while fewer than TRAN_GHI_TREO_STOP background
- * writes are in flight; a full cap ⇒ the row content is logged (`dispatch_pinned_stop_audit_bo_qua_day`) + counted for posture, never retried.
+ * writes are in flight; a full cap ⇒ it is QUEUED (bounded FIFO, drained under the same cap, event time kept in after.lucSuKien); only overflow / age-out drops it (logged + counted + one summary audit row).
  */
 function auditPinnedStopOverride(
   input: DispatchInput,
@@ -1960,14 +1960,14 @@ function auditPinnedStopOverride(
     reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
   };
   void ghiCoTran(
-    async () => {
+    async (t) => {
       const db = await getDb();
       if (!db) {
         console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
         return;
       }
       const { recordAuditEvent } = await import("../audit/controlAuditService");
-      await recordAuditEvent(db, suKien);
+      await recordAuditEvent(db, themLucSuKien(suKien, t));
     },
     {
       nhan: "dispatch_pinned_stop_audit",

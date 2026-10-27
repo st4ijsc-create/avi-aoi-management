@@ -153,38 +153,74 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
     };
     timHelper(f.body!);
 
+    /** (A) — một biểu thức bị BỎ kết quả (câu lệnh-biểu-thức, hoặc thân gọn của arrow mà kết quả bị bỏ): phải là bọc / log / đồng bộ đã duyệt */
+    const xetNoi = (bieuThuc: ts.Expression, nut: ts.Node): void => {
+      let e = boNgoac(bieuThuc);
+      const coVoid = ts.isVoidExpression(e);
+      if (ts.isVoidExpression(e)) e = boNgoac(e.expression);
+      if (ts.isCallExpression(e)) {
+        // gốc của chuỗi `.then/.catch/.finally` = lời gọi phát ra promise
+        let goc: ts.Expression = e;
+        for (;;) {
+          if (!ts.isCallExpression(goc)) break;
+          const ce = boNgoac(goc.expression);
+          if (ts.isPropertyAccessExpression(ce) && ["then", "catch", "finally"].includes(ce.name.text)) goc = boNgoac(ce.expression);
+          else break;
+        }
+        let hopLe = false;
+        if (ts.isCallExpression(goc)) {
+          const tg = tenGoiHam(goc) ?? "";
+          const goiTen = ts.isIdentifier(boNgoac(goc.expression));
+          if (goiTen && hamBoc.has(tg)) {
+            hopLe = true;
+            ra.soBoc += 1;
+          } else if (laLog(goc)) {
+            hopLe = true;
+          } else if (!coVoid && goc === e && tg === "forEach" && !goiTen) {
+            // `xs.forEach(cb)` — vòng lặp ĐỒNG BỘ (trả void); thân gọn của `cb` được xét riêng (thanGonBiBo), thân khối bị quét như mọi nút
+            hopLe = true;
+          } else if (goiTen && goc === e && (dongBo.has(tg) || helperVoid.has(tg))) {
+            hopLe = true;
+          }
+        }
+        if (!hopLe) ra.viPhamNguoc.push(`${ten}:${dongCua(nut)}: ${ma1(nut)}`);
+      } else if (coVoid) {
+        // `void <biến promise>` — promise nổi không qua bọc
+        ra.viPhamNguoc.push(`${ten}:${dongCua(nut)}: ${ma1(nut)}`);
+      }
+    };
+    /** fix round 1 (review M-3) — thân GỌN của arrow mà kết quả bị bỏ: `(): void => …`, `() => void …`, đối số của `forEach` */
+    const thanGonBiBo = (f: ts.ArrowFunction): boolean => {
+      if (ts.isBlock(f.body)) return false;
+      if (ts.isVoidExpression(boNgoac(f.body))) return true;
+      if (f.type?.kind === ts.SyntaxKind.VoidKeyword) return true;
+      const cha = f.parent;
+      return !!cha && ts.isCallExpression(cha) && tenGoiHam(cha) === "forEach" && cha.arguments.includes(f);
+    };
+
     const di = (n: ts.Node): void => {
       // (A) vị từ NGƯỢC
-      if (ts.isExpressionStatement(n)) {
-        let e = boNgoac(n.expression);
-        const coVoid = ts.isVoidExpression(e);
-        if (ts.isVoidExpression(e)) e = boNgoac(e.expression);
-        if (ts.isCallExpression(e)) {
-          // gốc của chuỗi `.then/.catch/.finally` = lời gọi phát ra promise
-          let goc: ts.Expression = e;
-          for (;;) {
-            if (!ts.isCallExpression(goc)) break;
-            const ce = boNgoac(goc.expression);
-            if (ts.isPropertyAccessExpression(ce) && ["then", "catch", "finally"].includes(ce.name.text)) goc = boNgoac(ce.expression);
-            else break;
-          }
-          let hopLe = false;
-          if (ts.isCallExpression(goc)) {
-            const tg = tenGoiHam(goc) ?? "";
-            const goiTen = ts.isIdentifier(boNgoac(goc.expression));
-            if (goiTen && hamBoc.has(tg)) {
-              hopLe = true;
-              ra.soBoc += 1;
-            } else if (laLog(goc)) {
-              hopLe = true;
-            } else if (goiTen && goc === e && (dongBo.has(tg) || helperVoid.has(tg))) {
-              hopLe = true;
-            }
-          }
-          if (!hopLe) ra.viPhamNguoc.push(`${ten}:${dongCua(n)}: ${ma1(n)}`);
-        } else if (coVoid) {
-          // `void <biến promise>` — promise nổi không qua bọc
-          ra.viPhamNguoc.push(`${ten}:${dongCua(n)}: ${ma1(n)}`);
+      if (ts.isExpressionStatement(n)) xetNoi(n.expression, n);
+      if (ts.isArrowFunction(n) && thanGonBiBo(n)) xetNoi(n.body as ts.Expression, n);
+      // (B') fix round 1 (review M-3) — thunk của lời gọi bọc chỉ TRẢ một promise đã phát TRƯỚC (`const p = db.update(…); ghiCoTran(() => p, …)`):
+      // truy vấn chạy ngoài trần ⇒ ĐỎ. Thân gọn là định danh, hoặc thân khối có `return <định danh>`.
+      if (ts.isCallExpression(n) && (HAM_BOC_GOC as readonly string[]).includes(tenGoiHam(n) ?? "") && n.arguments[0]) {
+        const th = boNgoac(n.arguments[0]);
+        // định danh khai TRONG thunk (kết quả `await` cục bộ) không tính — chỉ định danh từ NGOÀI thunk (promise phát trước)
+        const traDinhDanh = (f: ts.ArrowFunction | ts.FunctionExpression): boolean => {
+          if (!ts.isBlock(f.body)) return ts.isIdentifier(boNgoac(f.body));
+          const cucBo = new Set<string>();
+          const traVe: string[] = [];
+          const tim = (x: ts.Node): void => {
+            if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name)) cucBo.add(x.name.text);
+            if (ts.isReturnStatement(x) && x.expression && ts.isIdentifier(boNgoac(x.expression))) traVe.push((boNgoac(x.expression) as ts.Identifier).text);
+            if (!laHam(x)) x.forEachChild(tim);
+          };
+          f.body.forEachChild(tim);
+          return traVe.some((t) => !cucBo.has(t));
+        };
+        if (ts.isIdentifier(th) || ((ts.isArrowFunction(th) || ts.isFunctionExpression(th)) && traDinhDanh(th))) {
+          ra.viPhamThuan.push(`${ten}:${dongCua(n)}: thunk trả promise đã phát trước — ${ma1(n)}`);
         }
       }
       // (B) vị từ THUẬN
@@ -272,6 +308,24 @@ describe("★ R1b-2b-2a T1 (mục 61, KD-A2) — mọi lượt ghi nền của �
       expect(ok.viPhamThuan).toHaveLength(1);
       expect(ok.soBoc).toBe(1);
       expect(ok.soGhiTrongThunk).toBe(1);
+    });
+    it("fix round 1 (review M-3) — thân GỌN bị bỏ kết quả ⇒ BẮT: `(): void => void db.insert(x)`, `xs.forEach((x) => db.insert(x))`, `() => void ghiThuLenh(…)`", () => {
+      expect(quet(`async function dungMayHmi(db: any) { const f = (): void => void db.insert(x); f(); }`).viPhamNguoc).toHaveLength(1);
+      expect(quet(`async function dungMayHmi(db: any, xs: any[]) { xs.forEach((x) => db.insert(x)); }`).viPhamNguoc).toHaveLength(1);
+      expect(quet(`async function dungMayHmi(d: any, xs: any[]) { xs.forEach((x) => void ghiThuLenh(d, x)); }`).viPhamNguoc).toHaveLength(1);
+      // đối chứng: thân gọn được TRẢ (người gọi await) hoặc bọc ⇒ hợp lệ
+      const ok = quet(`async function dungMayHmi(d: any, xs: any[]) { const g = (x: any) => ghiThuCoHan2(d, x); await g(1); xs.forEach((x) => void ghiCoTran(() => ghiThuLenh(d, x), { nhan: "a", requestId: "-" })); }`);
+      expect(ok.viPhamNguoc).toEqual([]);
+      expect(ok.soBoc).toBe(1);
+    });
+    it("fix round 1 (review M-3) — thunk TRẢ promise đã phát trước ⇒ BẮT (B'): `const p = db.update(…); void ghiCoTran(() => p, …)` và dạng khối / truyền thẳng", () => {
+      const r1 = quet(`async function dungMayHmi(db: any) { const p = db.update(x); void ghiCoTran(() => p, { nhan: "a", requestId: "-" }); }`);
+      expect(r1.viPhamThuan).toHaveLength(1);
+      expect(r1.viPhamThuan[0]).toContain("đã phát trước");
+      expect(quet(`async function dungMayHmi(db: any) { const p = db.update(x); void ghiCoTran(async () => { return p; }, { nhan: "a", requestId: "-" }); }`).viPhamThuan).toHaveLength(1);
+      expect(quet(`async function dungMayHmi(viec: any) { void ghiCoTran(viec, { nhan: "a", requestId: "-" }); }`).viPhamThuan).toHaveLength(1);
+      // đối chứng: thunk phát truy vấn BÊN TRONG ⇒ hợp lệ
+      expect(quet(`async function dungMayHmi(db: any) { void ghiCoTran(async () => { const r = await db.update(x); return r; }, { nhan: "a", requestId: "-" }); }`).viPhamThuan).toEqual([]);
     });
     it("hàm cấp tệp chỉ `return ghiSoCoHan(…)` ⇒ là bọc (suy ra); hàm bị đổi tên / mất ⇒ thieuHam", () => {
       const r = quetGhiNen(

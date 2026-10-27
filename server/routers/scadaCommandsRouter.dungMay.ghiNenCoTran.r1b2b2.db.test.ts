@@ -20,6 +20,9 @@
  * `DB_POOL_MAX` = 18 trong tiến trình (vi.hoisted): 18 − 1 kết nối giữ − 8 trần = 9 = `DU_TRU_POOL_CHO_DUNG_MAY` (cùng phần dự trữ của production
  * 25 − 8 khảo sát − 8 ghi treo). Bản cũ (đếm chỉ khi quá 500 ms, ghi nền bắn-rồi-quên ngoài bộ đếm) ⇒ > 8 backend chờ ⇒ ĐỎ.
  * `OT_CONTROL_ENABLED` / `SCADA_COMMANDS_ENABLED` / `SEC_PLATFORM` (false) CHỈ trong tiến trình. Cận đồng hồ tường (máy G2) dùng `batDauDoLag`.
+ * Fix round 1 (điều phối DUYỆT hàng chờ có trần thay "bỏ khi đầy"): đầy trần ⇒ lượt ghi XẾP HÀNG (`<nhan>_xep_hang`, warn), xả dưới CÙNG trần khi
+ * DB hết chậm, mang giờ SỰ KIỆN (audit `after.lucSuKien` + `tuHangCho`; attempts cột `at`). Chỉ TRÀN (256) mới bỏ ⇒ `_bo_tran` + `ghi_so_loi` (Q2) +
+ * đếm posture + MỘT dòng tóm tắt `ot_stop_ghi_nen_bo_roi`. Đối chiếu: đang chờ ở Postgres + còn trong hàng chờ = số nguồn × số lần bấm.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
@@ -155,7 +158,7 @@ import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
 import { DU_TRU_POOL_CHO_DUNG_MAY, soGhiSoTreoStopHmi, TRAN_GHI_SO_TREO_STOP_HMI } from "../services/scada/lenhHmi";
-import { demGhiBoQuaDay } from "../services/ot/ghiTreoCoTran";
+import { demGhiBoQuaDay, ghiCoTran, TRAN_HANG_CHO_GHI_NEN, trangThaiGhiTreo } from "../services/ot/ghiTreoCoTran";
 import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
 import { scadaCommandAttempts } from "../../drizzle/schema";
 import { batDauDoLag } from "../testing/doLagBucleSuKien";
@@ -273,9 +276,18 @@ function layMau(tx: Tx, khoas: ReadonlyArray<readonly [number, number]>) {
 }
 
 let loiLog: ReturnType<typeof vi.spyOn>;
+let canhLog: ReturnType<typeof vi.spyOn>;
 type BanLog = { cho?: string; noiDung?: any; requestId?: string };
-const logCo = (pred: (o: BanLog) => boolean) => loiLog.mock.calls.map((c) => c[0] as BanLog).filter((o) => typeof o?.cho === "string" && pred(o));
-const boQuaLog = () => logCo((o) => o.cho!.endsWith("_bo_qua_day"));
+const locLog = (spy: ReturnType<typeof vi.spyOn>, pred: (o: BanLog) => boolean) =>
+  spy.mock.calls.map((c) => c[0] as BanLog).filter((o) => typeof o?.cho === "string" && pred(o));
+const logCo = (pred: (o: BanLog) => boolean) => locLog(loiLog, pred);
+const logCanh = (pred: (o: BanLog) => boolean) => locLog(canhLog, pred);
+/** fix round 1 — lượt ghi nền BỊ BỎ (không bao giờ ghi): `_bo_tran` / `_bo_qua_tuoi` / `_bo_qua_lon` / `_bo_tat_may` (bản cũ: `_bo_qua_day`) */
+const boLog = () => logCo((o) => /_bo_(tran|qua_tuoi|qua_lon|tat_may|qua_day)$/.test(o.cho!));
+async function mocThu(): Promise<number> {
+  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+  return Number(r.m);
+}
 
 async function bamSongSong(machineId: number, n: number) {
   const t0 = Date.now();
@@ -375,15 +387,17 @@ afterAll(async () => {
 beforeEach(() => {
   H.chanInterlock = new Set([fx.aG]);
   loiLog = vi.spyOn(logger, "error");
+  canhLog = vi.spyOn(logger, "warn");
 });
 afterEach(async () => {
   H.chamAudit = false;
   H.chamThu = false;
   for (const g of dangGiu.splice(0)) await g.nha();
   // mọi lượt ghi bỏ rơi của ca này đã xong (bộ đếm của tiến trình sạch cho ca sau)
-  await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 15_000, interval: 50 });
+  // mọi lượt treo + hàng chờ + tóm tắt của ca này đã xả (trạng thái của tiến trình sạch cho ca sau)
+  await vi.waitFor(() => expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 }), { timeout: 20_000, interval: 50 });
   vi.restoreAllMocks();
-}, 30_000);
+}, 40_000);
 
 describe("R1b-2b-2a T1 — ngân sách pool của tiến trình test", () => {
   it("pool 18 − 1 kết nối giữ − trần 8 = 9 = DU_TRU_POOL_CHO_DUNG_MAY", () => {
@@ -393,12 +407,14 @@ describe("R1b-2b-2a T1 — ngân sách pool của tiến trình test", () => {
 });
 
 describe("★ Review Focus 1 (KD-A1) — 12 lần bấm SONG SONG khi CHỈ audit chậm", () => {
-  it("★ backend chờ khoá audit ≤ 8 NGAY và SUỐT; 12 × acked_verified; audit bỏ qua có nội dung + được ĐẾM; máy G2 vẫn dừng trong hạn", async () => {
+  it("★ backend chờ khoá audit ≤ 8 NGAY và SUỐT; 12 × acked_verified; audit XẾP HÀNG (0 bị bỏ); máy G2 vẫn dừng trong hạn KHI hàng chờ có mục; DB hết chậm ⇒ đủ 24 audit, lượt xếp hàng mang giờ sự kiện", async () => {
     const giu = await moGiu(H.khoaAudit);
     H.chamAudit = true;
-    const boQuaTruoc = demGhiBoQuaDay().theoBang.control_audit_log ?? 0;
+    const boTruoc = demGhiBoQuaDay().tong;
     const ghiTruoc = stubG.ghi.length;
     const dTu = H.dispatchInputs.length;
+    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const moc = Number(mc.m);
     const mau = layMau(giu.tx, [H.khoaAudit]);
     await cho(5);
     const { kq, phatTrong } = await bamSongSong(fx.mG, SO_BAM);
@@ -409,31 +425,24 @@ describe("★ Review Focus 1 (KD-A1) — 12 lần bấm SONG SONG khi CHỈ audi
     expect(H.dispatchInputs.slice(dTu).filter((x) => x.adapterId === fx.aG)).toHaveLength(SO_BAM);
     await cho(300); // "và SUỐT": lượt ghi nền phát sau câu trả lời (void) đã tới Postgres
     const m = await mau.dung();
-    console.info(`[r1b2b2t1] RF1: ${m.soMau} mẫu, max backend chờ audit ${m.maxPg}, max đếm JS ${m.maxJs}`);
+    console.info(`[r1b2b2t1] RF1: ${m.soMau} mẫu, max backend chờ audit ${m.maxPg}, max đếm JS ${m.maxJs}, hàng chờ ${trangThaiGhiTreo().hangCho}`);
     expect(m.soMau).toBeGreaterThan(5);
     expect(m.maxPg, "số backend NOT granted trên khoá audit — mọi mẫu").toBeLessThanOrEqual(TRAN);
     expect(m.maxJs).toBeLessThanOrEqual(TRAN);
     const choLuc = await demCho(giu.tx, [H.khoaAudit]);
     expect(choLuc).toBeLessThanOrEqual(TRAN);
     expect(choLuc, "audit chậm THẬT (lượt treo đã tới Postgres)").toBeGreaterThanOrEqual(1);
+    // 2 nguồn audit chậm mỗi lần bấm (HMI + dispatcher): đang chờ ở Postgres + CÒN trong hàng chờ = 24 — không lượt nào bị bỏ (một lượt xếp hàng
+    // có thể đã được xả rồi treo — nó nằm ở vế đầu)
+    const xepAudit = logCanh((o) => o.cho === "audit_hmi_stop_xep_hang" || o.cho === "dispatch_pinned_stop_audit_xep_hang");
+    expect(choLuc + (trangThaiGhiTreo().hangChoTheoBang.control_audit_log ?? 0)).toBe(2 * SO_BAM);
+    expect(xepAudit.filter((o) => o.cho === "audit_hmi_stop_xep_hang").length).toBeGreaterThanOrEqual(4);
+    expect(boLog()).toEqual([]);
+    expect(demGhiBoQuaDay().tong - boTruoc).toBe(0);
+    expect(trangThaiGhiTreo().hangCho).toBeGreaterThanOrEqual(xepAudit.length > 0 ? 1 : 0);
 
-    // 2 nguồn audit chậm mỗi lần bấm (HMI + dispatcher) ⇒ đang chờ + bị bỏ qua = 24 (không lượt nào biến mất im lặng)
-    const bqAudit = boQuaLog().filter((o) => o.noiDung?.bang === "control_audit_log");
-    expect(choLuc + bqAudit.length).toBe(2 * SO_BAM);
-    const bqHmi = bqAudit.filter((o) => o.cho === "audit_hmi_stop_bo_qua_day");
-    expect(bqHmi.length).toBeGreaterThanOrEqual(4);
-    for (const o of bqHmi) {
-      expect(o.noiDung.action).toBe("scada_hmi_stop");
-      expect(o.noiDung.after.ketCuc).toBe("DA_GUI");
-      expect(o.noiDung.after.adapters[0]).toMatchObject({ adapterId: fx.aG, status: "acked_verified" });
-    }
-    for (const o of bqAudit.filter((x) => x.cho === "dispatch_pinned_stop_audit_bo_qua_day")) {
-      expect(o.noiDung).toMatchObject({ bang: "control_audit_log", action: "stop_interlock_override", adapterId: fx.aG });
-    }
-    // KD-A3 — audit bị bỏ qua ĐƯỢC ĐẾM (posture), không chỉ log
-    expect((demGhiBoQuaDay().theoBang.control_audit_log ?? 0) - boQuaTruoc).toBe(bqAudit.length);
-
-    // máy KHÁC (G2) vẫn dừng trong hạn: pha trước-gửi còn kết nối (9 dự trữ)
+    // (c) điều phối — máy KHÁC (G2) vẫn dừng trong hạn KHI hàng chờ đang có mục và trần đầy (pha trước-gửi còn kết nối: 9 dự trữ)
+    expect(trangThaiGhiTreo().dangBay).toBe(TRAN);
     const ghi2 = stubG2.ghi.length;
     const lag = batDauDoLag();
     const batDau = Date.now();
@@ -449,18 +458,40 @@ describe("★ Review Focus 1 (KD-A1) — 12 lần bấm SONG SONG khi CHỈ audi
     expect(truocGui).toBeLessThan(1_000 + (await lag.dung(150)));
     // dispatch: cận chống treo của thiết bị đo (T0 b)
     expect(dongDispatch).toBeLessThan(2_500 + (await lag.dung(300)));
-    // sau dispatch: chốt dòng chờ + attempts nhanh (hoặc bỏ qua vì đầy); audit HMI là void
+    // sau dispatch: chốt dòng chờ + attempts XẾP HÀNG (trả ngay) — STOP không chờ hàng chờ
     expect(sauDispatch).toBeLessThan(500 + 400 + (await lag.dung(300)));
     expect(await demCho(giu.tx, [H.khoaAudit])).toBeLessThanOrEqual(TRAN);
+
+    // DB hết chậm ⇒ hàng chờ xả dưới CÙNG trần: đủ 12 audit HMI DA_GUI (+1 của G2) + 12 override; lượt xếp hàng mang giờ SỰ KIỆN (trước lúc nhả)
+    const lucNha = Date.now();
+    H.chamAudit = false;
+    await giu.nha();
+    let hmi: any[] = [];
+    let ovr: any[] = [];
+    await vi.waitFor(
+      async () => {
+        hmi = await dung(sql`SELECT "afterJson" FROM control_audit_log WHERE id > ${moc} AND action = 'scada_hmi_stop' AND "entityId" = ${String(fx.mG)}`);
+        ovr = await dung(sql`SELECT "afterJson" FROM control_audit_log WHERE id > ${moc} AND action = 'stop_interlock_override' AND "afterJson"->>'adapterId' = ${String(fx.aG)}`);
+        if (hmi.length < SO_BAM || ovr.length < SO_BAM) throw new Error(`chưa xả: hmi ${hmi.length} override ${ovr.length}`);
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+    expect(hmi).toHaveLength(SO_BAM);
+    expect(ovr).toHaveLength(SO_BAM);
+    const tuHang = [...hmi, ...ovr].filter((r) => r.afterJson?.tuHangCho === true);
+    expect(tuHang.length, "mọi audit đã xếp hàng mang dấu tuHangCho").toBe(xepAudit.length);
+    for (const r of tuHang) expect(Date.parse(r.afterJson.lucSuKien), "giờ sự kiện ≤ lúc DB hết chậm (không phải giờ xả)").toBeLessThanOrEqual(lucNha);
+    await vi.waitFor(() => expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 }), { timeout: 10_000, interval: 50 });
   }, 60_000);
 });
 
 describe("★ audit + attempts CÙNG chậm — 12 lần bấm song song", () => {
-  it("tổng backend chờ trên HAI khoá ≤ 8 ở mọi mẫu; 12 × acked_verified; đang chờ + bỏ qua = 3 nguồn × 12", async () => {
+  it("tổng backend chờ trên HAI khoá ≤ 8 ở mọi mẫu; 12 × acked_verified; 0 bị bỏ; DB hết chậm ⇒ 12 attempts, attempts xếp hàng mang `at` = giờ sự kiện", async () => {
     const gA = await moGiu(H.khoaAudit);
     const gT = await moGiu(H.khoaThu);
     H.chamAudit = true;
     H.chamThu = true;
+    const mThu = await mocThu();
     const mau = layMau(gA.tx, [H.khoaAudit, H.khoaThu]);
     await cho(5);
     const { kq, phatTrong } = await bamSongSong(fx.mG, SO_BAM);
@@ -468,15 +499,30 @@ describe("★ audit + attempts CÙNG chậm — 12 lần bấm song song", () =>
     kq.forEach((k, i) => expect(k.ketQua[0], `lần bấm ${i + 1}`).toMatchObject({ adapterId: fx.aG, status: "acked_verified", ok: true }));
     await cho(300);
     const m = await mau.dung();
-    console.info(`[r1b2b2t1] audit+attempts: ${m.soMau} mẫu, max backend chờ ${m.maxPg}, max đếm JS ${m.maxJs}`);
+    console.info(`[r1b2b2t1] audit+attempts: ${m.soMau} mẫu, max backend chờ ${m.maxPg}, max đếm JS ${m.maxJs}, hàng chờ ${trangThaiGhiTreo().hangCho}`);
     expect(m.maxPg).toBeLessThanOrEqual(TRAN);
     expect(m.maxJs).toBeLessThanOrEqual(TRAN);
-    const choLuc = await demCho(gA.tx, [H.khoaAudit, H.khoaThu]);
-    expect(choLuc).toBeLessThanOrEqual(TRAN);
-    const bq = boQuaLog().filter((o) => o.noiDung?.bang === "control_audit_log" || o.noiDung?.bang === "scada_command_attempts");
-    expect(choLuc + bq.length).toBe(3 * SO_BAM);
-    const bqThu = bq.filter((o) => o.cho === "attempts_hmi_stop_bo_qua_day");
-    for (const o of bqThu) expect(o.noiDung).toMatchObject({ bang: "scada_command_attempts", adapterId: fx.aG, outcome: "dispatched" });
+    expect(await demCho(gA.tx, [H.khoaAudit, H.khoaThu])).toBeLessThanOrEqual(TRAN);
+    expect(boLog()).toEqual([]);
+    const lucNha = Date.now();
+    H.chamAudit = false;
+    H.chamThu = false;
+    await gT.nha();
+    await gA.nha();
+    let rows: Array<{ at: Date; request_id: string }> = [];
+    await vi.waitFor(
+      async () => {
+        rows = (await dung(sql`SELECT at, request_id FROM scada_command_attempts WHERE id > ${mThu} AND user_id = ${op.id} AND adapter_id = ${fx.aG} AND outcome = 'dispatched'`)) as typeof rows;
+        if (rows.length < SO_BAM) throw new Error(`attempts chưa đủ ${rows.length}`);
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+    expect(rows).toHaveLength(SO_BAM);
+    const xepThu = logCanh((o) => o.cho === "attempts_hmi_stop_xep_hang");
+    // lượt attempts XẾP HÀNG: cột `at` = giờ sự kiện (TRƯỚC lúc nhả), không phải giờ xả
+    const truocNha = rows.filter((r) => new Date(r.at).getTime() <= lucNha);
+    expect(truocNha.length, `attempts có at ≤ lúc nhả (xếp hàng ${xepThu.length})`).toBe(SO_BAM);
+    await vi.waitFor(() => expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0 }), { timeout: 10_000, interval: 50 });
   }, 60_000);
 });
 
@@ -494,8 +540,17 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
     return kq.ok ? "ok" : kq.tuChoi.ma;
   };
   const thuQuaHan = async () =>
-    (await dung(sql`SELECT reason_code, adapter_id, requested_value FROM scada_command_attempts WHERE user_id = ${op.id} AND reason_code = 'STOP_QUA_HAN'
-      AND requested_value->>'buoc' = 'het_han_tong_truoc_handler' AND at > now() - interval '1 minute' ORDER BY id`)) as Array<{ requested_value: any }>;
+    (await dung(sql`SELECT reason_code, adapter_id, requested_value, at FROM scada_command_attempts WHERE user_id = ${op.id} AND reason_code = 'STOP_QUA_HAN'
+      AND requested_value->>'buoc' = 'het_han_tong_truoc_handler' AND at > now() - interval '1 minute' ORDER BY id`)) as Array<{ requested_value: any; at: Date }>;
+  /** bấm TUẦN TỰ máy G (mỗi lần: audit override + audit HMI, cả hai chậm) tới khi trần đầy */
+  const lamDayTran = async () => {
+    for (let i = 0; i < 2 * TRAN && soGhiSoTreoStopHmi() < TRAN; i++) {
+      const k = await op.caller.dungMay({ machineId: fx.mG, clientRequestId: uuid() });
+      expect(k.ketQua[0]).toMatchObject({ status: "acked_verified" });
+      await cho(20);
+    }
+    await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(TRAN), { timeout: 5_000, interval: 25 });
+  };
 
   it("trần CÒN chỗ: STOP_QUA_HAN; dòng attempts CÓ (attempts nhanh); bộ đếm khongGhiSo KHÔNG đổi; audit QUA_HAN đang chờ (chậm thật)", async () => {
     const giu = await moGiu(H.khoaAudit);
@@ -510,47 +565,94 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
       if ((await demCho(giu.tx, [H.khoaAudit])) < 1) throw new Error("audit QUA_HAN chưa tới Postgres");
     }, { timeout: 3_000, interval: 25 });
     expect(demStopQuaHanKhongGhiSo().tong).toBe(truoc);
-    expect(boQuaLog()).toEqual([]);
+    expect(boLog()).toEqual([]);
   }, 30_000);
 
-  it("★ trần ĐẦY (8 audit treo từ lần bấm máy G) ⇒ STOP_QUA_HAN vẫn trả; dòng attempts BỎ QUA có nội dung ⇒ ghi_so_loi +1; audit QUA_HAN bỏ qua ⇒ đếm posture", async () => {
+  it("★ trần ĐẦY ⇒ STOP_QUA_HAN vẫn trả NGAY; attempts + audit QUA_HAN XẾP HÀNG (ghi_so_loi KHÔNG đổi); DB hết chậm ⇒ dòng attempts có, `at` = giờ sự kiện; audit có lucSuKien", async () => {
     const giu = await moGiu(H.khoaAudit);
     H.chamAudit = true;
-    // bấm TUẦN TỰ máy G (mỗi lần: audit override của dispatcher + audit HMI, cả hai chậm) tới khi đầy trần
-    for (let i = 0; i < 2 * TRAN && soGhiSoTreoStopHmi() < TRAN; i++) {
-      const k = await op.caller.dungMay({ machineId: fx.mG, clientRequestId: uuid() });
-      expect(k.ketQua[0]).toMatchObject({ status: "acked_verified" });
-      await cho(20);
-    }
-    await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(TRAN), { timeout: 5_000, interval: 25 });
+    await lamDayTran();
+    const truoc = demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0;
+    const nTruoc = (await thuQuaHan()).length;
+    canhLog.mockClear();
+    const crid = uuid();
+    const lucBam = Date.now();
+    expect(await dungHetHan(crid)).toBe("STOP_QUA_HAN");
+    expect(logCanh((o) => o.cho === "attempts_hmi_stop_qua_han_xep_hang")).toHaveLength(1);
+    expect(logCanh((o) => o.cho === "audit_hmi_stop_qua_han_xep_hang")).toHaveLength(1);
+    expect(demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0).toBe(truoc);
+    await cho(300);
+    const lucNha = Date.now();
+    H.chamAudit = false;
+    await giu.nha();
+    let rows: Array<{ requested_value: any; at: Date }> = [];
     await vi.waitFor(async () => {
-      if ((await demCho(giu.tx, [H.khoaAudit])) < TRAN) throw new Error("chưa đủ 8 lượt treo ở Postgres");
-    }, { timeout: 5_000, interval: 25 });
+      rows = await thuQuaHan();
+      if (rows.length < nTruoc + 1) throw new Error("attempts chưa ghi");
+    }, { timeout: 10_000, interval: 25 });
+    const dong = rows.at(-1)!;
+    expect(dong.requested_value).toMatchObject({ buoc: "het_han_tong_truoc_handler", machineId: fx.mG });
+    expect(new Date(dong.at).getTime(), "at = giờ sự kiện (lúc bấm), không phải lúc xả").toBeLessThan(lucNha);
+    expect(new Date(dong.at).getTime()).toBeGreaterThanOrEqual(lucBam - 5);
+    let au: any[] = [];
+    await vi.waitFor(async () => {
+      au = (await dung(sql`SELECT "afterJson" FROM control_audit_log WHERE action = 'scada_hmi_stop' AND "afterJson"->>'clientRequestId' = ${crid}`)) as any[];
+      if (au.length < 1) throw new Error("audit QUA_HAN chưa ghi");
+    }, { timeout: 10_000, interval: 25 });
+    expect(au[0].afterJson).toMatchObject({ ketCuc: "QUA_HAN", tuHangCho: true });
+    expect(Date.parse(au[0].afterJson.lucSuKien)).toBeLessThan(lucNha);
+    expect(demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0).toBe(truoc);
+  }, 60_000);
+
+  it("★ hàng chờ TRÀN ⇒ attempts STOP_QUA_HAN BỊ BỎ có nội dung ⇒ ghi_so_loi +1 (Q2) + đếm posture; DB hết chậm ⇒ MỘT dòng tóm tắt ot_stop_ghi_nen_bo_roi chứa requestId", async () => {
+    const giu = await moGiu(H.khoaAudit);
+    H.chamAudit = true;
+    await lamDayTran();
+    // lấp hàng chờ bằng lượt nền giả (giải ở cuối) — tràn là trạng thái của tiến trình, không của nguồn nào
+    const nhaGia = (() => {
+      let r!: () => void;
+      const p = new Promise<void>((a) => (r = a));
+      return { p, r };
+    })();
+    while (trangThaiGhiTreo().hangCho < TRAN_HANG_CHO_GHI_NEN) void ghiCoTran(() => nhaGia.p, { nhan: "lap_hang_cho", requestId: "lap" });
     const truoc = demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0;
     const bqTruoc = demGhiBoQuaDay().theoBang;
     const nTruoc = (await thuQuaHan()).length;
+    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
     loiLog.mockClear();
     const crid = uuid();
     expect(await dungHetHan(crid)).toBe("STOP_QUA_HAN");
     expect(demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0).toBe(truoc + 1);
-    const bqThu = boQuaLog().filter((o) => o.cho === "attempts_hmi_stop_qua_han_bo_qua_day");
+    const bqThu = boLog().filter((o) => o.cho === "attempts_hmi_stop_qua_han_bo_tran");
     expect(bqThu).toHaveLength(1);
     expect(bqThu[0].noiDung).toMatchObject({ bang: "scada_command_attempts", reasonCode: "STOP_QUA_HAN", outcome: "rejected" });
     expect(bqThu[0].noiDung.requestedValue).toMatchObject({ buoc: "het_han_tong_truoc_handler", machineId: fx.mG });
-    const bqAu = boQuaLog().filter((o) => o.cho === "audit_hmi_stop_qua_han_bo_qua_day");
+    const bqAu = boLog().filter((o) => o.cho === "audit_hmi_stop_qua_han_bo_tran");
     expect(bqAu).toHaveLength(1);
     expect(bqAu[0].noiDung).toMatchObject({ bang: "control_audit_log", action: "scada_hmi_stop", after: { ketCuc: "QUA_HAN", clientRequestId: crid } });
     const bqSau = demGhiBoQuaDay().theoBang;
     expect((bqSau.scada_command_attempts ?? 0) - (bqTruoc.scada_command_attempts ?? 0)).toBe(1);
     expect((bqSau.control_audit_log ?? 0) - (bqTruoc.control_audit_log ?? 0)).toBe(1);
-    expect(await demCho(giu.tx, [H.khoaAudit])).toBe(TRAN);
+    // DB hết chậm + lượt giả xong ⇒ hàng chờ xả; MỘT dòng tóm tắt (SEC_PLATFORM tắt ở tệp này: INSERT thường)
+    H.chamAudit = false;
+    nhaGia.r();
+    await giu.nha();
+    let tt: any[] = [];
+    await vi.waitFor(async () => {
+      tt = (await dung(sql`SELECT "afterJson" FROM control_audit_log WHERE id > ${Number(mc.m)} AND action = 'ot_stop_ghi_nen_bo_roi'`)) as any[];
+      tt = tt.filter((r) => r.afterJson?.requestIds?.includes(crid));
+      if (tt.length < 1) throw new Error("chưa có tóm tắt");
+    }, { timeout: 15_000, interval: 50 });
+    expect(tt).toHaveLength(1);
+    expect(tt[0].afterJson).toMatchObject({ soLuong: 2, theoLyDo: { tran: 2 }, theoNhan: { attempts_hmi_stop_qua_han: 1, audit_hmi_stop_qua_han: 1 } });
     await cho(200);
-    expect((await thuQuaHan()).length).toBe(nTruoc); // không có dòng (chỉ log + đếm)
-  }, 30_000);
+    expect((await thuQuaHan()).length).toBe(nTruoc); // dòng bị bỏ: không có hàng (chỉ log + đếm + tóm tắt)
+    await vi.waitFor(() => expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 }), { timeout: 15_000, interval: 50 });
+  }, 90_000);
 });
 
-describe("đối chứng — DB nhanh: không lượt nào bị bỏ qua / chạm hạn; đúng 1 audit HMI + 1 audit override mỗi lần bấm", () => {
-  it("5 lần bấm tuần tự ⇒ 5 × acked_verified; 5 audit scada_hmi_stop (DA_GUI) + 5 stop_interlock_override; 0 `_bo_qua_day`, 0 `_qua_han`; đếm về 0", async () => {
+describe("đối chứng — DB nhanh: không lượt nào xếp hàng / bị bỏ / chạm hạn; đúng 1 audit HMI + 1 audit override mỗi lần bấm", () => {
+  it("5 lần bấm tuần tự ⇒ 5 × acked_verified; 5 audit scada_hmi_stop (DA_GUI) + 5 stop_interlock_override; 0 xếp hàng, 0 bỏ, 0 `_qua_han`; đếm về 0", async () => {
     const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
     const moc = Number(mc.m);
     const crids: string[] = [];
@@ -571,10 +673,11 @@ describe("đối chứng — DB nhanh: không lượt nào bị bỏ qua / chạ
       { timeout: 5_000, interval: 50 },
     );
     expect(hmi.map((r) => r.afterJson.clientRequestId).sort()).toEqual([...crids].sort());
-    expect(hmi.every((r) => r.afterJson.ketCuc === "DA_GUI")).toBe(true);
+    expect(hmi.every((r) => r.afterJson.ketCuc === "DA_GUI" && r.afterJson.tuHangCho === undefined)).toBe(true);
     expect(ovr).toHaveLength(5);
-    expect(boQuaLog()).toEqual([]);
-    expect(logCo((o) => o.cho!.endsWith("_qua_han"))).toEqual([]);
+    expect(boLog()).toEqual([]);
+    expect(logCanh((o) => o.cho!.endsWith("_xep_hang"))).toEqual([]);
+    expect([...logCo((o) => o.cho!.endsWith("_qua_han")), ...logCanh((o) => o.cho!.endsWith("_qua_han"))]).toEqual([]);
     expect(soGhiSoTreoStopHmi()).toBe(0);
   }, 30_000);
 });

@@ -1090,6 +1090,10 @@ async function startOtOnce(): Promise<boolean> {
 export async function stopOt(tuyChon?: { tatTienTrinh?: boolean }): Promise<void> {
   // R1b-2b-1 T8 — TRƯỚC mọi báo `disabled` (supervisor.stop() và baoLegacy bên dưới): tắt tiến trình không ghi DB.
   if (tuyChon?.tatTienTrinh) datCheDoTatTienTrinh(true);
+  // R1b-2b-2a T1 fix round 1 — tắt tiến trình: xả hàng chờ ghi nền của đường STOP (≤ 2 s, song song với hạ kết nối bên dưới; không ném)
+  const xaGhiNen = tuyChon?.tatTienTrinh
+    ? import("./ghiTreoCoTran").then((m) => m.xaHangChoKhiTat()).catch(() => undefined)
+    : Promise.resolve();
   epoch += 1;
   startInFlight = null;
   if (legacyTimer) {
@@ -1120,6 +1124,7 @@ export async function stopOt(tuyChon?: { tatTienTrinh?: boolean }): Promise<void
   otGatewayOn = false;
   otTriedAtStart.clear();
   xoaTatCaAdapter(); // SCADA R0 Task 7 - gateway tắt: bộ đệm giá trị hiện tại không còn adapter nào
+  await xaGhiNen;
 }
 
 export function isOtRunning(): boolean {

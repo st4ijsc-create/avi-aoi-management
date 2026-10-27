@@ -61,7 +61,7 @@ import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { BUOC_QUA_HAN_STOP_HMI, dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
 import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
-import { demGhiBoQuaDay } from "../services/ot/ghiTreoCoTran";
+import { demGhiBoQuaDay, trangThaiGhiTreo } from "../services/ot/ghiTreoCoTran";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
 // Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
@@ -573,19 +573,33 @@ export interface StopQuaHanPosture {
 }
 
 /**
- * R1b-2b-2a T1 (mục 61, kiem-dinh KD-A3) — lượt ghi nền của đường STOP (audit HMI / audit STOP ghim của dispatcher / attempts / chốt dòng chờ) bị
- * BỎ QUA vì đầy trần ghi đang bay (`ghiTreoCoTran.ts`) trong 24 h, theo bảng đích. Bộ nhớ tiến trình này (từ `batDauLuc`), không biết máy ⇒
- * CHỈ toàn quyền thấy (`null` cho người khác / phạm vi không phân giải được). STOP của các lượt ấy vẫn có dòng `command_log`.
+ * R1b-2b-2a T1 (mục 61, kiem-dinh KD-A3; fix round 1) — ghi nền của đường STOP (audit HMI / audit STOP ghim của dispatcher / attempts / chốt dòng
+ * chờ) qua trần ghi đang bay + hàng chờ có trần (`ghiTreoCoTran.ts`). Bộ nhớ tiến trình này (từ `batDauLuc`), không biết máy ⇒ CHỈ toàn quyền thấy
+ * (`null` cho người khác / phạm vi không phân giải được). Chỉ trường máy chủ — dòng giao diện ở Task 9.
+ *   · `count` / `theoBang` — lượt bị BỎ (không bao giờ ghi: tràn / quá tuổi / quá lớn / tắt máy) trong 24 h; mỗi đợt bỏ có MỘT dòng tóm tắt
+ *     `ot_stop_ghi_nen_bo_roi` trong `control_audit_log`. STOP của các lượt ấy vẫn có dòng `command_log`.
+ *   · tín hiệu SỐNG (review M-4): `dangBay` / `tran`, `dayTu` (ISO lúc trần đầy, null khi còn chỗ), `hangCho` / `tranHangCho`, `tomTatCho` (lượt bị
+ *     bỏ CHƯA vào dòng tóm tắt).
+ * ⚠ ĐẾM ĐÔI có chủ ý (review M-6): một dòng attempts STOP_QUA_HAN bị bỏ được đếm CẢ ở `stopQuaHan24h.khongGhiSo.theoBuoc.ghi_so_loi` (từ chối STOP
+ * không vào sổ) LẪN ở `ghiNenStopBoQua24h.theoBang.scada_command_attempts` (lượt ghi nền bị bỏ). Hai câu hỏi khác nhau — giao diện KHÔNG cộng chúng.
  */
 export interface GhiNenStopBoQuaPosture {
   count: number;
   theoBang: Record<string, number>;
   batDauLuc: string;
+  dangBay: number;
+  tran: number;
+  dayTu: string | null;
+  hangCho: number;
+  hangChoTheoBang: Record<string, number>;
+  tranHangCho: number;
+  tomTatCho: number;
 }
 function ghiNenStopBoQua(pv: PhamViPosture | null): GhiNenStopBoQuaPosture | null {
   if (!pv?.toanQuyen) return null;
   const m = demGhiBoQuaDay();
-  return { count: m.tong, theoBang: { ...m.theoBang } as Record<string, number>, batDauLuc: m.batDauLuc };
+  const t = trangThaiGhiTreo();
+  return { count: m.tong, theoBang: { ...m.theoBang } as Record<string, number>, batDauLuc: m.batDauLuc, ...t, hangChoTheoBang: { ...t.hangChoTheoBang } as Record<string, number> };
 }
 
 /**
@@ -796,7 +810,7 @@ export const oversightRouter = router({
         interlockRulesCauHinhHong: cauHinhHong.count,
         // R1b-2a T12 (ruling K7, Q4) — STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (theo phạm vi; bộ nhớ tiến trình chỉ toàn quyền).
         stopQuaHan24h,
-        // R1b-2b-2a T1 (KD-A3) — ghi nền của đường STOP bị bỏ qua vì đầy trần (bộ nhớ tiến trình; chỉ toàn quyền)
+        // R1b-2b-2a T1 (KD-A3, fix round 1) — ghi nền của đường STOP: bị bỏ 24 h + trạng thái sống trần / hàng chờ (bộ nhớ tiến trình; chỉ toàn quyền)
         ghiNenStopBoQua24h: ghiNenStopBoQua(pv),
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
