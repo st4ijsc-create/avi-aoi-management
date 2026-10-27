@@ -11,6 +11,7 @@ import { useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { lamSachMa } from "@shared/ai/kiemDinhNgoai";
 
 /** Tên miền của một URL http(s); khác ⇒ null (không hiển thị gì từ giao thức lạ). */
 export function tenMienCuaLienKet(href: unknown): string | null {
@@ -31,10 +32,11 @@ function chuCuaNut(node: unknown): string {
   return (n.children ?? []).map(chuCuaNut).join("");
 }
 
-function KhoiMa({ children, node }: { children?: ReactNode; node?: unknown }) {
+// Trojan Source: văn bản HIỂN THỊ và văn bản CHÉP là MỘT chuỗi đã bỏ bidi/zero-width/điều khiển — người dùng dán đúng cái nhìn thấy.
+function KhoiMa({ node }: { children?: ReactNode; node?: unknown }) {
   const { t } = useTranslation();
   const [daChep, setDaChep] = useState(false);
-  const chu = chuCuaNut(node);
+  const chu = lamSachMa(chuCuaNut(node));
   const chep = async () => {
     try {
       await navigator.clipboard.writeText(chu);
@@ -45,7 +47,7 @@ function KhoiMa({ children, node }: { children?: ReactNode; node?: unknown }) {
   };
   return (
     <div data-ngoai-khoi-ma className="my-2">
-      <pre className="overflow-auto whitespace-pre-wrap break-words rounded border bg-muted/40 p-2 text-xs">{children}</pre>
+      <pre className="overflow-auto whitespace-pre-wrap break-words rounded border bg-muted/40 p-2 text-xs">{chu}</pre>
       <div className="mt-0.5 flex items-center gap-2">
         <button type="button" data-ngoai-chep className="rounded border px-1.5 py-0.5 text-[11px]" onClick={() => void chep()}>
           {daChep ? t("kiemDinhNgoai.daChepNut", "Đã chép") : t("kiemDinhNgoai.chep", "Chép")}
@@ -79,7 +81,7 @@ export function NoiDungTraLoiNgoai({ noiDung }: { noiDung: string }) {
               {alt ? `: ${alt}` : ""}]
             </span>
           ),
-          pre: ({ children, node }) => <KhoiMa node={node}>{children}</KhoiMa>,
+          pre: ({ node }) => <KhoiMa node={node} />,
         }}
       >
         {noiDung}

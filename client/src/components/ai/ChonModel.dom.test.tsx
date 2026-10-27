@@ -3,7 +3,7 @@
 // Đợt 10.2 — ô chọn model dùng chung: nhóm + trạng thái + vô hiệu mục tắt + mã hết hiệu lực ⇒ auto + toast MỘT lần + lưu dính.
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 const h = vi.hoisted(() => ({
@@ -164,5 +164,36 @@ describe("ChonModel — nhãn ngoài + đồng ý theo phiên (10.4b L0b)", () =
     chon("vai-tro:code.software");
     expect(hoi).not.toHaveBeenCalled();
     expect(screen.getByTestId("gia-tri").textContent).toBe("vai-tro:code.software");
+  });
+});
+
+describe("ChonModel — đua hai lần chọn khi hộp đồng ý còn mở (10.4b)", () => {
+  it("lần chọn cũ đồng ý MUỘN sau khi đã chọn model khác ⇒ bỏ kết quả cũ", async () => {
+    const NA = { ma: "ngoai:openai_compat:gpt-x", loai: "ngoai", nhan: "GPT X", moTa: "", trangThai: "san-sang", nhaCungCap: "openai_compat", duocDungO: ["chat"] };
+    const NB = { ...NA, ma: "ngoai:anthropic:claude-x", nhan: "Claude X", nhaCungCap: "anthropic" };
+    h.data = [...DM, NA, NB];
+    sessionStorage.clear();
+    const dong: Array<(v: boolean) => void> = [];
+    const hoi = vi.fn(() => new Promise<boolean>((r) => dong.push(r)));
+    function B() {
+      const [v, setV] = useState("auto");
+      return (
+        <>
+          <ChonModel beMat="chat" giaTri={v} onDoi={setV} xacNhanNgoai={hoi} />
+          <span data-testid="gia-tri">{v}</span>
+        </>
+      );
+    }
+    render(<B />);
+    const sel = screen.getByTestId("chon-model-chat");
+    fireEvent.change(sel, { target: { value: NA.ma } });
+    fireEvent.change(sel, { target: { value: NB.ma } });
+    dong[1]!(true);
+    await vi.waitFor(() => expect(screen.getByTestId("gia-tri").textContent).toBe(NB.ma));
+    await act(async () => {
+      dong[0]!(true);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.getByTestId("gia-tri").textContent).toBe(NB.ma);
   });
 });

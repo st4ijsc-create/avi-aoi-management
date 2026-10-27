@@ -38,6 +38,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
   const { danhMuc, daTai } = useDanhMucModel();
   const nhom = nhomMuc(danhMuc, beMat);
   const daBao = useRef(false);
+  const lanChon = useRef(0);
 
   // Mã đã lưu mà danh mục không còn ⇒ về auto + toast MỘT lần (chỉ khi danh mục đã tải thật).
   useEffect(() => {
@@ -78,6 +79,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
       value={giaTri}
       onChange={(e) => {
         const ma = e.target.value;
+        const lan = ++lanChon.current; // chỉ lần chọn MỚI NHẤT được áp dụng (hộp đồng ý của lần cũ đóng muộn ⇒ bỏ)
         const ap = () => {
           onDoi(ma);
           if (nho) luuChon(beMat, ma);
@@ -85,7 +87,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
         if (xacNhanNgoai && tachMaNgoai(ma) && !daDongYNgoai(ma)) {
           // ô điều khiển từ ngoài: không gọi onDoi ⇒ lựa chọn tự trả về giá trị cũ
           void Promise.resolve(xacNhanNgoai(ma)).then((ok) => {
-            if (ok === true) {
+            if (ok === true && lan === lanChon.current) {
               datDongYNgoai(ma);
               ap();
             }

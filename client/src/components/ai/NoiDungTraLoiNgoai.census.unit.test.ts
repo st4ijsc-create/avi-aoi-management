@@ -27,6 +27,6 @@ describe("census — NoiDungTraLoiNgoai", () => {
   });
   it("chỉ import react-markdown (không bộ render nào khác)", () => {
     const imports = Array.from(ma.matchAll(/^import .* from "([^"]+)";/gm)).map((m) => m[1]);
-    for (const i of imports) expect(["react", "react-markdown", "react-i18next", "sonner"].includes(i), `import lạ: ${i}`).toBe(true);
+    for (const i of imports) expect(["react", "react-markdown", "react-i18next", "sonner", "@shared/ai/kiemDinhNgoai"].includes(i), `import lạ: ${i}`).toBe(true);
   });
 });

@@ -111,3 +111,15 @@ describe("NoiDungTraLoiNgoai — hành vi", () => {
     expect(container.querySelectorAll("li").length).toBe(2);
   });
 });
+
+describe("NoiDungTraLoiNgoai — Trojan Source (bidi/zero-width trong khối mã)", () => {
+  it("hiển thị VÀ chép đều không còn U+202E / U+2066 / U+200B; nội dung còn lại giữ nguyên", async () => {
+    const ghi = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText: ghi } });
+    const ma = "if (ok) {‮ return 1;⁦ } //​ end\n";
+    const { container } = render(<NoiDungTraLoiNgoai noiDung={"```js\n" + ma + "```"} />);
+    expect(container.textContent).not.toMatch(/[‪-‮⁦-⁩​-‏﻿]/);
+    fireEvent.click(container.querySelector("[data-ngoai-chep]")!);
+    await waitFor(() => expect(ghi).toHaveBeenCalledWith("if (ok) { return 1; } // end\n"));
+  });
+});
