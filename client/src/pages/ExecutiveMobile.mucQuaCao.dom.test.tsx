@@ -22,7 +22,9 @@ const H = vi.hoisted(() => ({ confirm: vi.fn(), toastError: vi.fn(), toastSucces
 vi.mock("sonner", () => ({ toast: { error: H.toastError, success: H.toastSuccess, warning: vi.fn() } }));
 vi.mock("wouter", () => ({ useLocation: () => ["/", () => undefined], Link: ({ children }: { children: unknown }) => <a>{children as never}</a> }));
 vi.mock("@/_core/hooks/usePermissions", () => ({ usePermissions: () => ({ hasPermission: () => true, isAdmin: true }) }));
-vi.mock("@/components/workspace/ContextDrawer", () => ({ ContextDrawer: () => null }));
+vi.mock("@/components/workspace/ContextDrawer", () => ({
+  ContextDrawer: ({ open, children }: { open: boolean; children: unknown }) => (open ? <div data-testid="drawer">{children as never}</div> : null),
+}));
 vi.mock("@/lib/trpc", () => {
   const q = (data?: unknown) => ({ useQuery: () => ({ data, isLoading: false, isFetching: false, isError: false, dataUpdatedAt: 0, refetch: async () => undefined }) });
   const mut = () => ({ useMutation: () => ({ isPending: false, mutate: () => undefined, mutateAsync: async () => ({ ok: true }) }) });
@@ -102,5 +104,29 @@ describe("ExecutiveMobile — MUC_QUA_CAO (SCADA_AI_LEVEL_TOO_HIGH)", () => {
     expect(H.toastError).not.toHaveBeenCalledWith(CAU);
     expect(String(H.toastError.mock.calls[0][0])).not.toContain("mức tác động 4");
     expect(H.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("U4: nút Duyệt TRONG ngăn kéo (drawer) cũng bị khoá sau SCADA_AI_LEVEL_TOO_HIGH; đối chứng: lỗi khác ⇒ còn bấm được", async () => {
+    H.confirm.mockRejectedValue(loi("SCADA_AI_LEVEL_TOO_HIGH", { ma: "X", level: 4 }));
+    await duyetTrongHop();
+    await waitFor(() => expect(H.toastError).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /^Xem: Đặt SP máy A$/ }));
+    const ngan = await screen.findByTestId("drawer");
+    const nutNgan = within(ngan).getByRole("button", { name: /^Duyệt$/ });
+    expect(nutNgan).toBeDisabled();
+    fireEvent.click(nutNgan);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(H.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("U4 đối chứng: lỗi khác ⇒ nút Duyệt trong ngăn kéo vẫn bấm được và mở lại hộp xác nhận", async () => {
+    H.confirm.mockRejectedValue(loi("SCADA_ROLE_FLOOR"));
+    await duyetTrongHop();
+    await waitFor(() => expect(H.toastError).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /^Xem: Đặt SP máy A$/ }));
+    const nutNgan = within(await screen.findByTestId("drawer")).getByRole("button", { name: /^Duyệt$/ });
+    expect(nutNgan).toBeEnabled();
+    fireEvent.click(nutNgan);
+    await screen.findByRole("alertdialog");
   });
 });
