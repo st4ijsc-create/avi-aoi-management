@@ -34,13 +34,16 @@ function dat(o: { nhaMay?: number[] | null; nguon?: unknown; traVe?: Array<strin
     },
     kiemTruoc: (async (yc: YeuCauGoiNgoai) => {
       kiem.push(yc);
-      if (o.kiemTruoc) return o.kiemTruoc();
-      return {
-        db: { execute: async () => [{ khoa: "nha-may", tokenGiu: 100, tienGiuUsd: 0.5 }] },
-        cfg: { tranTokenNgay: 100_000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
-        model: { giaVaoUsdTrieu: 3, giaRaUsdTrieu: 15 },
-        maxTokens: 4000,
-      };
+      const k = (o.kiemTruoc
+        ? await o.kiemTruoc()
+        : {
+            db: { execute: async () => [{ khoa: "nha-may", tokenGiu: 100, tienGiuUsd: 0.5 }] },
+            cfg: { tranTokenNgay: 100_000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
+            model: { giaVaoUsdTrieu: 3, giaRaUsdTrieu: 15 },
+            maxTokens: 4000,
+          }) as { cfg: Record<string, unknown>; model: Record<string, unknown>; tran?: Record<string, unknown> };
+      // trần dùng cho giữ chỗ (như kiemTruocNgoai): cấu hình + trần lượt hiệu lực + số lần / phút
+      return { ...k, model: { model: "claude-thu", ...k.model }, tran: k.tran ?? { tranTokenLuot: null, tranLanPhut: 1000, tranTokenLuongNgay: null, ...k.cfg } };
     }) as never,
   });
   return { nhan, kiem };
@@ -219,5 +222,25 @@ describe("xemTruoc", () => {
   it("cổng từ chối ở bước kiểm (vd dữ liệu vận hành chưa cho) ⇒ duocPhep false + lyDo, không ném", async () => {
     dat({ kiemTruoc: async () => Promise.reject(new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH")) });
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_DU_LIEU_VAN_HANH", chiPhiUocUsd: null });
+  });
+});
+
+describe("★ 10.4 (luong-ui / dieu-phoi) — xem trước tính CÙNG mọi trần mà chay tính", () => {
+  const voi = (tran: Record<string, unknown>, rows: unknown[] = [], maxTokens = 4000) =>
+    dat({ kiemTruoc: async () => ({ db: { execute: async () => rows }, cfg: tran, tran: { tranTokenNgay: null, tranTienNgayUsd: null, tranTokenNguoiNgay: null, tranTokenLuongNgay: null, tranTokenLuot: null, tranLanPhut: 1000, ...tran }, model: { giaVaoUsdTrieu: null, giaRaUsdTrieu: null }, maxTokens }) });
+  it("trần MỖI LƯỢT của model < vào + maxTokens: CO maxTokens (vẫn được phép, tokenUoc ≤ trần); còn < 256 cho đầu ra ⇒ duocPhep false, tranVuot 'luot'", async () => {
+    voi({});
+    const goc = await goi().xemTruoc(INPUT);
+    const vao = goc.tokenUoc - 4000;
+    voi({ tranTokenLuot: vao + 1000 });
+    const r = await goi().xemTruoc(INPUT);
+    expect(r).toMatchObject({ duocPhep: true });
+    expect(r.tokenUoc).toBe(vao + 1000);
+    voi({ tranTokenLuot: vao + 100 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "luot" });
+  });
+  it("số lần / phút đầy ⇒ duocPhep false, tranVuot 'lan-phut'; nhaMay.duTranChoLuotNay vẫn true (không phải trần ngày nhà máy)", async () => {
+    voi({ tranLanPhut: 3 }, [{ so: 3 }]);
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "lan-phut", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
   });
 });

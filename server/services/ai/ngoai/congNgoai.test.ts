@@ -299,6 +299,24 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
     expect((await tokenGiu(A)) - truoc).toBeLessThan(40_000);
   });
 
+  it("★ 10.4 — trần MỖI LƯỢT của model (lời gọi ngoài lượt chạy): CO maxTokens để vào + ra vừa trần (trước đây: luôn NGOAI_VUOT_TRAN khi trần = maxTokens); không còn chỗ cho đầu ra ⇒ VUOT_TRAN 'luot', nhà cung cấp không được gọi", async () => {
+    await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 4000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+    try {
+      const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      await goiAiNgoai(yc({ maxTokens: 4000 }), dep(g));
+      const m = g.nhan[0]!.yc.maxTokens;
+      expect(m).toBeLessThan(4000);
+      expect(m).toBeGreaterThanOrEqual(256);
+      const g2 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      const to = yc({ maxTokens: 4000 });
+      to.tinNhan = [{ vaiTro: "user", noiDung: "abc ".repeat(2000) }]; // ~4000 token vào (có khoảng trắng — chuỗi liền dài bị che) ⇒ không còn chỗ cho đầu ra
+      expect(await maLoi(goiAiNgoai(to, dep(g2)))).toBe("NGOAI_VUOT_TRAN");
+      expect(g2.nhan).toHaveLength(0);
+    } finally {
+      await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 5000000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+    }
+  });
+
   it("phản hồi > 256 KB ⇒ NGOAI_PHAN_HOI_QUA_LON, sổ kết quả 'tu-choi' (chi phí đã kết toán)", async () => {
     const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "x".repeat(257 * 1024) }]);
     expect(await maLoi(goiAiNgoai(yc(), dep(g)))).toBe("NGOAI_PHAN_HOI_QUA_LON");

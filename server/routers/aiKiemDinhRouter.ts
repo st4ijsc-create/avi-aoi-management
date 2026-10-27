@@ -109,7 +109,7 @@ export const aiKiemDinhRouter = router({
   /** THÔNG TIN trước khi gửi (không mạng, không giữ chỗ). `duocPhep` chỉ tham khảo — `chay` tự kiểm lại. */
   xemTruoc: thuTuc.input(INPUT).query(async ({ ctx, input }) => {
     const c = await nguonKiemDinhTrongPhamVi(ctx, input);
-    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }] = await Promise.all([
+    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay, chotTranLuot, xemTranNgay }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }] = await Promise.all([
       import("../services/ai/ngoai/kiemDinhNgoai"),
       import("../services/ai/ngoai/tranChiPhi"),
       import("../services/ai/ngoai/congNgoai"),
@@ -120,29 +120,35 @@ export const aiKiemDinhRouter = router({
     const kichThuocByte = Buffer.byteLength(JSON.stringify({ t: tinNhan, c: [] }), "utf8");
     let duocPhep = true;
     let lyDo: MaLoiNgoai | undefined;
+    /** Trần nào bị vượt (cho UI nói đúng): mỗi lượt / ngày nhà máy / ngày người / số lần phút. */
+    let tranVuot: string | undefined;
     let tokenUoc = uocTokenVao({ tinNhan }) + MAX_TOKENS_KIEM_DINH_MAC_DINH;
     let chiPhiUocUsd: number | null = null;
     let conLai: Awaited<ReturnType<typeof docConLaiNgay>> = { nhaMay: { token: null, usd: null }, nguoi: { token: null } };
     try {
+      // ★ 10.4 (luong-ui / dieu-phoi) — CÙNG mọi trần mà `chay` (cổng) tính, bằng CÙNG hàm: bước (1)–(5) (`kiemTruocNgoai`), trần MỖI
+      //   LƯỢT co maxTokens (`chotTranLuot`), trần NGÀY nhà máy / người + số lần / phút (`xemTranNgay` — cùng khoá với `datTruoc`).
       const k = await dep.kiemTruoc(yc);
-      tokenUoc = uocTokenVao({ tinNhan }) + k.maxTokens;
-      if (k.model.giaVaoUsdTrieu !== null && k.model.giaRaUsdTrieu !== null) {
-        chiPhiUocUsd = (uocTokenVao({ tinNhan }) * k.model.giaVaoUsdTrieu + k.maxTokens * k.model.giaRaUsdTrieu) / 1e6;
-      }
+      const vao = uocTokenVao({ model: k.model.model, tinNhan, maxTokens: k.maxTokens, nhietDo: 0.2 }); // cùng hình dạng cổng ước
+      const ra = chotTranLuot(vao, k.maxTokens, k.tran.tranTokenLuot, null);
+      tokenUoc = vao + ra;
+      if (k.model.giaVaoUsdTrieu !== null && k.model.giaRaUsdTrieu !== null) chiPhiUocUsd = (vao * k.model.giaVaoUsdTrieu + ra * k.model.giaRaUsdTrieu) / 1e6;
       conLai = await docConLaiNgay(k.db, c.F, ctx.user.id, k.cfg).catch(() => conLai);
+      const vuot = await xemTranNgay(k.db, { factoryId: c.F, userId: ctx.user.id, flowId: null, runId: null, tokenUoc, tienUocUsd: chiPhiUocUsd }, k.tran);
+      if (vuot) {
+        duocPhep = false;
+        lyDo = "NGOAI_VUOT_TRAN";
+        tranVuot = vuot;
+      }
     } catch (e) {
       if (!(e instanceof LoiNgoai)) throw e;
       duocPhep = false;
       lyDo = e.ma;
+      if (e.ma === "NGOAI_VUOT_TRAN" && e.chiTiet) tranVuot = e.chiTiet;
     }
     // dieu-phoi Q2 (quyền tối thiểu): người KHÔNG phải admin chỉ thấy phần CỦA MÌNH + cờ "nhà máy đủ trần cho ước tính bi quan của lượt
     // này"; số tuyệt đối token / USD của NHÀ MÁY chỉ trả cho admin (đã trong phạm vi nhà máy — quy tắc đúng MỘT nhà máy).
-    const du = (con: number | null, can: number | null) => con === null || can === null || con >= can;
-    const nhaMayDuChoLuotNay = du(conLai.nhaMay.token, tokenUoc) && du(conLai.nhaMay.usd, chiPhiUocUsd);
-    if (duocPhep && (!nhaMayDuChoLuotNay || !du(conLai.nguoi.token, tokenUoc))) {
-      duocPhep = false;
-      lyDo = "NGOAI_VUOT_TRAN";
-    }
+    const nhaMayDuChoLuotNay = tranVuot !== "nha-may";
     const laAdmin = (ctx.user as { role?: string }).role === "admin";
     // Hình dạng chốt với luong-ui (T4b): `nhaMay.duTranChoLuotNay` luôn có; `nhaMay.token` / `nhaMay.usd` CHỈ khi admin (vắng ⇒ client không hiện số).
     const conLaiTranNgay = { nguoi: conLai.nguoi, nhaMay: { duTranChoLuotNay: nhaMayDuChoLuotNay, ...(laAdmin ? conLai.nhaMay : {}) } };
@@ -158,6 +164,7 @@ export const aiKiemDinhRouter = router({
       kichThuocByte,
       tranByte: TRAN_YEU_CAU_BYTE,
       conLaiTranNgay,
+      ...(tranVuot ? { tranVuot } : {}),
     };
   }),
 
