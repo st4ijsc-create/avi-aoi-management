@@ -186,7 +186,9 @@ async function goiAiCoVet(y: Parameters<HamGoiAi>[0]): Promise<string> {
 }
 
 /** Chỉ lưới: thay cổng AI ngoài của node (null ⇒ cổng thật `goiAiNgoai`). */
-type HamGoiNgoai = (yc: YeuCauGoiNgoai) => Promise<{ noiDung: string; toolCalls: Array<{ ten: string; thamSo: unknown }>; tokenVao: number | null; tokenRa: number | null }>;
+type HamGoiNgoai = (
+  yc: YeuCauGoiNgoai,
+) => Promise<{ noiDung: string; toolCalls: Array<{ ten: string; thamSo: unknown }>; tokenVao: number | null; tokenRa: number | null; chiPhiUocUsd?: number | null; callId?: number }>;
 let goiNgoai: HamGoiNgoai | null = null;
 export function datHamGoiNgoaiNut(f: HamGoiNgoai | null): void {
   goiNgoai = f;

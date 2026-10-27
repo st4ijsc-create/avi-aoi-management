@@ -13,6 +13,7 @@ import { CHO_TOI_DA_GIAY, TRAN_THONG_DIEP_DUNG_LOI } from "./nut/cho";
 import { kiemDinhNghiaBieuMau } from "./nut/bieuMau";
 import { RE_TEN_MAY_CHU_MCP, RE_TEN_TOOL_MCP, TRAN_DOI_SO_MCP } from "./nut/mcpKhach";
 import { laHostAiNgoai } from "../ai/ngoai/hostAiNgoai";
+import { LOAI_KIEM_DINH_NGOAI, laChonModelNgoai } from "./nut/kiemDinhNgoai";
 import { HUONG_SAP_XEP, KIEU_SAP_XEP, TOAN_TU_LOC, TRAN_DIEU_KIEN_LOC } from "./nut/loc";
 
 const laBieuThuc = (v: unknown): boolean => typeof v === "string" && v.includes("{{");
@@ -48,6 +49,11 @@ export function kiemThamSoNutMoi(raw: unknown): string[] {
       if (p.duongDan !== undefined && p.duongDan !== "" && !laBieuThuc(p.duongDan) && safeInternalPath(p.duongDan) === null) loi.push(`node '${id}': duongDan phải là đường dẫn NỘI BỘ bắt đầu bằng một dấu '/' (không URL ngoài, không '//', không dấu gạch ngược)`);
       if (p.loai !== undefined && !laBieuThuc(p.loai) && !LOAI_TB.includes(String(p.loai))) loi.push(`node '${id}': loai phải là ${LOAI_TB.join(" | ")}`);
       if (p.uuTien !== undefined && !laBieuThuc(p.uuTien) && !UU_TIEN_TB.includes(String(p.uuTien))) loi.push(`node '${id}': uuTien phải là ${UU_TIEN_TB.join(" | ")}`);
+    } else if (n?.type === LOAI_KIEM_DINH_NGOAI) {
+      // ★ 10.4 — model ngoài CỐ ĐỊNH (không auto / model cục bộ / biểu thức). Rỗng chỉ chấp nhận như "việc phải điền" sau NHẬP luồng
+      //   (xuất đưa chonModel về "" — danh mục ngoài thuộc MỘT nhà máy); node rỗng không chạy được (lỗi lúc chạy).
+      if (p.chonModel !== "" && !laChonModelNgoai(p.chonModel)) loi.push(`node '${id}': chonModel phải là model ngoài cố định dạng 'ngoai:<nhà cung cấp>:<model>'`);
+      if (p.truongRa !== undefined && !laBieuThuc(p.truongRa) && (typeof p.truongRa !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(p.truongRa))) loi.push(`node '${id}': truongRa phải là tên trường (chữ, số, _; ≤ 48 ký tự)`);
     } else if (n?.type === "tich-hop.http-doc" || n?.type === "tich-hop.http-gui") {
       // Đợt 10.3 B4 — URL VIẾT THẲNG tới máy chủ AI ngoài ⇒ từ chối lúc lưu (biểu thức: node kiểm lúc chạy, cùng hàm + tập động).
       if (typeof p.url === "string" && !laBieuThuc(p.url)) {
