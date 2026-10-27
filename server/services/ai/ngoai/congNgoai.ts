@@ -23,7 +23,7 @@ import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
-import { chotTranLuot, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
+import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
 import { gemini } from "./nhaCungCap/gemini";
@@ -309,7 +309,7 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
   const tokenVaoUoc = uocTokenVao(daChe);
   // ★ 10.4 — lời gọi ngoài lượt chạy: co maxTokens để vào + ra vừa trần MỖI LƯỢT (hàm dùng chung với xem trước).
-  maxTokens = chotTranLuot(tokenVaoUoc, maxTokens, tran.tranTokenLuot, yc.ngu.runId);
+  maxTokens = chotTranLuot(tokenVaoUoc, maxTokens, tran.tranTokenLuot, yc.ngu.runId, raToiThieuCho(yc.mucDich));
   daChe.maxTokens = maxTokens;
   const tienUoc =
     model.giaVaoUsdTrieu !== null && model.giaRaUsdTrieu !== null ? (tokenVaoUoc * model.giaVaoUsdTrieu + maxTokens * model.giaRaUsdTrieu) / 1e6 : null;

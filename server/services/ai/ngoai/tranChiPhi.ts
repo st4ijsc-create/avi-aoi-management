@@ -181,6 +181,14 @@ export async function docConLaiNgay(
 
 /** Phần dành cho đầu ra tối thiểu khi trần LƯỢT phải co `maxTokens` lại — ít hơn ⇒ coi như vượt trần (không gọi để nhận câu cụt). */
 export const RA_TOI_THIEU_KHI_CO = 256;
+/**
+ * Rà kiem-dinh df9f4f66e (NÊN) — kết quả kiểm định là JSON có cấu trúc (thường 500–2000 token): co đầu ra về ~300 ⇒ bị cắt ⇒ sai schema
+ * ⇒ thử lại ⇒ TRẢ PHÍ HAI LẦN mà vẫn lỗi. Với `mucDich` kiểm định, thà từ chối SỚM (`NGOAI_VUOT_TRAN` "luot") còn hơn.
+ */
+export const RA_TOI_THIEU_KIEM_DINH = 1000;
+export function raToiThieuCho(mucDich: string): number {
+  return mucDich === "kiem-dinh" ? RA_TOI_THIEU_KIEM_DINH : RA_TOI_THIEU_KHI_CO;
+}
 
 /**
  * ★ 10.4 (luong-ui / dieu-phoi) — trần MỖI LƯỢT (lời gọi không thuộc lượt chạy: `runId` null) áp cho TỔNG vào + ra. Trước đây cổng giữ
@@ -188,10 +196,16 @@ export const RA_TOI_THIEU_KHI_CO = 256;
  * gọi được. Nay: co `maxTokens` = min(maxTokens, trần − vào ước) — còn < `RA_TOI_THIEU_KHI_CO` ⇒ `NGOAI_VUOT_TRAN` "luot".
  * Hàm THUẦN dùng chung cho cổng (\`goiAiNgoai\`, sau bộ che) và xem trước (\`aiKiemDinh.xemTruoc\`) ⇒ hai bên không thể lệch luật.
  */
-export function chotTranLuot(tokenVaoUoc: number, maxTokens: number, tranLuot: number | null, runId: string | null): number {
+export function chotTranLuot(
+  tokenVaoUoc: number,
+  maxTokens: number,
+  tranLuot: number | null,
+  runId: string | null,
+  raToiThieu: number = RA_TOI_THIEU_KHI_CO,
+): number {
   if (runId !== null || tranLuot === null) return maxTokens;
   const con = tranLuot - Math.ceil(tokenVaoUoc);
-  if (con < RA_TOI_THIEU_KHI_CO) throw new LoiNgoai("NGOAI_VUOT_TRAN", "luot");
+  if (con < raToiThieu) throw new LoiNgoai("NGOAI_VUOT_TRAN", "luot");
   return Math.min(maxTokens, con);
 }
 

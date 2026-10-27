@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { chotTranLuot, datTruoc, docConLaiNgay, donDemCu, xemTranNgay, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
+import { chotTranLuot, RA_TOI_THIEU_KIEM_DINH, raToiThieuCho, datTruoc, docConLaiNgay, donDemCu, xemTranNgay, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
 import { LoiNgoai } from "./loi";
 
 const NM = () => 900_000_000 + Math.floor(Math.random() * 99_000_000);
@@ -185,5 +185,16 @@ describe("★ 10.4 — xemTranNgay (ĐỌC, cùng khoá với datTruoc) + chotTr
     expect(() => chotTranLuot(3800, 4000, 4000, null)).toThrow(LoiNgoai);
     expect(chotTranLuot(3800, 4000, 4000, "run-1")).toBe(4000);
     expect(chotTranLuot(3800, 4000, null, null)).toBe(4000);
+    // rà kiem-dinh T4 — vào ước có phần lẻ làm TRÒN LÊN (1000,5 ⇒ 1001), không để vào + ra vượt trần 1 token
+    expect(chotTranLuot(1000.5, 4000, 4000, null)).toBe(2999);
+  });
+
+  it("rà kiem-dinh (NÊN) — kiểm định cần ≥ RA_TOI_THIEU_KIEM_DINH token đầu ra; mục đích khác giữ 256", () => {
+    expect(RA_TOI_THIEU_KIEM_DINH).toBe(1000);
+    expect(raToiThieuCho("kiem-dinh")).toBe(1000);
+    expect(raToiThieuCho("luong")).toBe(256);
+    expect(chotTranLuot(3000, 4000, 4000, null, raToiThieuCho("kiem-dinh"))).toBe(1000);
+    expect(() => chotTranLuot(3001, 4000, 4000, null, raToiThieuCho("kiem-dinh"))).toThrow(LoiNgoai);
+    expect(chotTranLuot(3001, 4000, 4000, null, raToiThieuCho("luong"))).toBe(999);
   });
 });

@@ -255,6 +255,9 @@ describe("★ 10.4 (luong-ui / dieu-phoi) — xem trước tính CÙNG mọi tr�
     expect(r.tokenUoc).toBe(vao + 1000);
     voi({ tranTokenLuot: vao + 100 });
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "luot" });
+    // rà kiem-dinh (NÊN) — kiểm định cần ≥ 1000 token đầu ra: còn 999 ⇒ từ chối sớm (cổng dùng CÙNG ngưỡng theo mucDich)
+    voi({ tranTokenLuot: vao + 999 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "luot" });
   });
   it("số lần / phút đầy ⇒ duocPhep false, tranVuot 'lan-phut'; nhaMay.duTranChoLuotNay vẫn true (không phải trần ngày nhà máy)", async () => {
     voi({ tranLanPhut: 3 }, [{ so: 3 }]);

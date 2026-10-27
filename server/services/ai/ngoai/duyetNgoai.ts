@@ -87,7 +87,7 @@ function thamChieuCua(t: Record<string, unknown>, che: (s: string) => string): s
   const duyet = (v: unknown, sau: number): void => {
     if (sau > 4 || ra.size >= 50) return;
     if (typeof v === "string") for (const m of v.matchAll(RE_THAM_CHIEU)) ra.add(che(m[0]).slice(0, 120));
-    else if (Array.isArray(v)) v.forEach((x) => duyet(x, sau + 1));
+    // mảng cũng đi nhánh này (Object.values của mảng = các phần tử)
     else if (v && typeof v === "object") Object.values(v).forEach((x) => duyet(x, sau + 1));
   };
   for (const [k, v] of Object.entries(t)) if (k !== "chonModel") duyet(v, 0);

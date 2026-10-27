@@ -312,6 +312,17 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
       to.tinNhan = [{ vaiTro: "user", noiDung: "abc ".repeat(2000) }]; // ~4000 token vào (có khoảng trắng — chuỗi liền dài bị che) ⇒ không còn chỗ cho đầu ra
       expect(await maLoi(goiAiNgoai(to, dep(g2)))).toBe("NGOAI_VUOT_TRAN");
       expect(g2.nhan).toHaveLength(0);
+      // rà kiem-dinh (NÊN) — còn 600 token cho đầu ra: kiểm định (cần ≥ 1000) ⇒ từ chối SỚM, không gọi; mục đích khác (≥ 256) ⇒ co về 600
+      const vao = 4000 - m;
+      await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = ${vao + 600} WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+      const g3 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      expect(await maLoi(goiAiNgoai(yc({ maxTokens: 4000 }), dep(g3)))).toBe("NGOAI_VUOT_TRAN");
+      expect(g3.nhan).toHaveLength(0);
+      const g4 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      await goiAiNgoai(yc({ maxTokens: 4000, mucDich: "luong" }), dep(g4));
+      const m4 = g4.nhan[0]!.yc.maxTokens; // ước vào lệch ±vài token theo yêu cầu (mucDich khác)
+      expect(m4).toBeGreaterThan(580);
+      expect(m4).toBeLessThan(620);
     } finally {
       await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 5000000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
     }

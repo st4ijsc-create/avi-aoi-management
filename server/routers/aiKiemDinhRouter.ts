@@ -112,7 +112,7 @@ export const aiKiemDinhRouter = router({
   /** THÔNG TIN trước khi gửi (không mạng, không giữ chỗ). `duocPhep` chỉ tham khảo — `chay` tự kiểm lại. */
   xemTruoc: thuTuc.input(INPUT).query(async ({ ctx, input }) => {
     const c = await nguonKiemDinhTrongPhamVi(ctx, input);
-    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay, chotTranLuot, xemTranNgay }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }, { cheChuoi }] = await Promise.all([
+    const [{ lapTinNhanKiemDinh, MAX_TOKENS_KIEM_DINH_MAC_DINH }, { uocTokenVao, docConLaiNgay, chotTranLuot, xemTranNgay, raToiThieuCho }, { TRAN_YEU_CAU_BYTE }, { LoiNgoai }, { cheChuoi }] = await Promise.all([
       import("../services/ai/ngoai/kiemDinhNgoai"),
       import("../services/ai/ngoai/tranChiPhi"),
       import("../services/ai/ngoai/congNgoai"),
@@ -134,7 +134,7 @@ export const aiKiemDinhRouter = router({
       //   LƯỢT co maxTokens (`chotTranLuot`), trần NGÀY nhà máy / người + số lần / phút (`xemTranNgay` — cùng khoá với `datTruoc`).
       const k = await dep.kiemTruoc(yc);
       const vao = uocTokenVao({ model: k.model.model, tinNhan, maxTokens: k.maxTokens, nhietDo: 0.2 }); // cùng hình dạng cổng ước
-      const ra = chotTranLuot(vao, k.maxTokens, k.tran.tranTokenLuot, null);
+      const ra = chotTranLuot(vao, k.maxTokens, k.tran.tranTokenLuot, null, raToiThieuCho(yc.mucDich));
       tokenUoc = vao + ra;
       if (k.model.giaVaoUsdTrieu !== null && k.model.giaRaUsdTrieu !== null) chiPhiUocUsd = (vao * k.model.giaVaoUsdTrieu + ra * k.model.giaRaUsdTrieu) / 1e6;
       conLai = await docConLaiNgay(k.db, c.F, ctx.user.id, k.cfg).catch(() => conLai);
