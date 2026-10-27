@@ -24355,7 +24355,8 @@
       "vaiTro": "Roles",
       "hoSo": "Local profiles",
       "ngoai": "External models"
-    }
+    },
+    "nhanNgoai": "external · sends data to"
   },
   "kiemDinhNgoai": {
     "khongHopLe": "The review result has an invalid format and is not shown.",
@@ -24450,6 +24451,36 @@
       "canhBaoTuDuyet": "You created this version: approving will be recorded as SELF-APPROVAL (high-level audit).",
       "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version.",
       "biCat": "… (truncated — only the beginning is shown; check ALL of the node's parameters in the config panel before approving)"
+    }
+  },
+  "noiDungNgoai": {
+    "nhan": "external",
+    "guiDuLieuRa": "sends data to",
+    "lienKetChan": "link blocked",
+    "anhChan": "image blocked",
+    "canhBaoMa": "Written by an external AI — check before running it or pasting it into a terminal or file."
+  },
+  "hopDongYNgoai": {
+    "tieuDe": "Use an external model",
+    "moTa": "Every question asked with this model sends content to an external provider (paid). Content is masked for sensitive data by pattern before it leaves the machine.",
+    "dangTai": "Checking conditions…",
+    "nguoiGoVanHanh": "What you type is treated as OPERATIONAL DATA (this is the operations assistant) — it can only be sent when the factory has allowed sending operational data out.",
+    "nhaMayCho": "The factory has allowed sending operational data out",
+    "co": "yes",
+    "chua": "not yet",
+    "khong": "no",
+    "tranNguoi": "Your remaining cap today",
+    "chuaDatTran": "no cap set",
+    "nhaMayDuTran": "Factory has enough cap for this request",
+    "chiDoc": "The external AI is read-only — write/run tools are off. Images/files cannot be attached.",
+    "chuaDuocPhep": "Not available",
+    "tuChoi": "No, keep the current model",
+    "dongY": "Agree, use this model",
+    "tranVuot": {
+      "luot": "the model's per-request cap",
+      "nha-may": "the factory's daily cap",
+      "nguoi": "your daily cap",
+      "phut": "too many requests per minute"
     }
   }
 }

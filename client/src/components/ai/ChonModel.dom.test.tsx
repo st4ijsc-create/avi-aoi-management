@@ -116,3 +116,53 @@ describe("ChonModel — mục ngoai theo duocDungO (10.4 T0)", () => {
     expect(h.toasts).toHaveLength(1);
   });
 });
+
+describe("ChonModel — nhãn ngoài + đồng ý theo phiên (10.4b L0b)", () => {
+  const NG = { ma: "ngoai:openai_compat:gpt-x", loai: "ngoai", nhan: "GPT X", moTa: "", trangThai: "san-sang", nhaCungCap: "openai_compat", duocDungO: ["chat"] };
+  const NG2 = { ...NG, ma: "ngoai:anthropic:claude-x", nhan: "Claude X", nhaCungCap: "anthropic" };
+  function BocH({ hoi }: { hoi?: (ma: string) => boolean | Promise<boolean> }) {
+    const [v, setV] = useState("auto");
+    return (
+      <>
+        <ChonModel beMat="chat" giaTri={v} onDoi={setV} xacNhanNgoai={hoi} />
+        <span data-testid="gia-tri">{v}</span>
+      </>
+    );
+  }
+  const chon = (ma: string) => fireEvent.change(screen.getByTestId("chon-model-chat"), { target: { value: ma } });
+  beforeEach(() => {
+    h.data = [...DM, NG, NG2];
+    sessionStorage.clear();
+  });
+  it("mục ngoài mang nhãn 'ngoài · gửi dữ liệu ra <ncc>'; mục Local thì không", () => {
+    render(<BocH />);
+    const opts = Array.from(screen.getByTestId("chon-model-chat").querySelectorAll("option"));
+    expect(opts.find((o) => o.value === NG.ma)!.textContent).toContain("ngoài · gửi dữ liệu ra openai_compat");
+    expect(opts.find((o) => o.value === "ho-so:p1")!.textContent).not.toContain("ngoài");
+  });
+  it("từ chối ⇒ KHÔNG đổi lựa chọn; đồng ý ⇒ đổi + nhớ trong phiên (lần sau không hỏi); đổi model ⇒ hỏi lại", async () => {
+    const hoi = vi.fn(async (ma: string) => ma === NG.ma);
+    render(<BocH hoi={hoi} />);
+    chon(NG2.ma);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(hoi).toHaveBeenCalledWith(NG2.ma);
+    expect(screen.getByTestId("gia-tri").textContent).toBe("auto");
+    chon(NG.ma);
+    await vi.waitFor(() => expect(screen.getByTestId("gia-tri").textContent).toBe(NG.ma));
+    chon("auto");
+    chon(NG.ma);
+    expect(hoi).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("gia-tri").textContent).toBe(NG.ma);
+    chon(NG2.ma);
+    await Promise.resolve();
+    expect(hoi).toHaveBeenCalledTimes(3);
+  });
+  it("mã không phải ngoài ⇒ không hỏi", () => {
+    const hoi = vi.fn(async () => false);
+    render(<BocH hoi={hoi} />);
+    chon("vai-tro:code.software");
+    expect(hoi).not.toHaveBeenCalled();
+    expect(screen.getByTestId("gia-tri").textContent).toBe("vai-tro:code.software");
+  });
+});

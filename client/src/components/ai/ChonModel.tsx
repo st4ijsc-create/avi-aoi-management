@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useDanhMucModel } from "@/hooks/useDanhMucModel";
+import { daDongYNgoai, datDongYNgoai, tachMaNgoai } from "@/lib/dongYNgoai";
 import { docChonDaLuu, hauToTrangThai, luuChon, mucHienThi, nhomMuc, xacThucChon, type BeMatChon, type MucModel } from "@/lib/chonModel";
 
 interface Props {
@@ -22,6 +23,8 @@ interface Props {
   tuVeAuto?: boolean;
   className?: string;
   testId?: string;
+  /** Đợt 10.4b: bề mặt SINH CHỮ truyền hàm hỏi đồng ý (hộp thoại) khi chọn model ngoài chưa đồng ý trong phiên; `false` ⇒ KHÔNG đổi lựa chọn. Vắng ⇒ không hỏi (node Luồng/kiểm định có hộp riêng). */
+  xacNhanNgoai?: (ma: string) => boolean | Promise<boolean>;
 }
 
 const NHAN_NHOM: Record<string, [string, string]> = {
@@ -30,7 +33,7 @@ const NHAN_NHOM: Record<string, [string, string]> = {
   ngoai: ["chonModel.nhom.ngoai", "Model ngoài"],
 };
 
-export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, tuVeAuto = true, className, testId }: Props) {
+export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, tuVeAuto = true, className, testId, xacNhanNgoai }: Props) {
   const { t } = useTranslation();
   const { danhMuc, daTai } = useDanhMucModel();
   const nhom = nhomMuc(danhMuc, beMat);
@@ -55,6 +58,7 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
     return (
       <option key={m.ma} value={m.ma} disabled={m.trangThai === "tat"} title={m.moTa}>
         {m.loai === "auto" ? t("chonModel.tuDong", "Tự động") : m.nhan}
+        {m.loai === "ngoai" ? ` · ${t("chonModel.nhanNgoai", "ngoài · gửi dữ liệu ra")} ${m.nhaCungCap ?? tachMaNgoai(m.ma)?.nhaCungCap ?? ""}` : ""}
         {hau ? ` — ${hau}` : ""}
       </option>
     );
@@ -73,8 +77,22 @@ export default function ChonModel({ beMat, giaTri, onDoi, compact, nho = true, t
       className={className ?? `rounded-md border border-input bg-background px-1.5 ${compact ? "h-[22px] text-[10px]" : "h-8 text-xs"}`}
       value={giaTri}
       onChange={(e) => {
-        onDoi(e.target.value);
-        if (nho) luuChon(beMat, e.target.value);
+        const ma = e.target.value;
+        const ap = () => {
+          onDoi(ma);
+          if (nho) luuChon(beMat, ma);
+        };
+        if (xacNhanNgoai && tachMaNgoai(ma) && !daDongYNgoai(ma)) {
+          // ô điều khiển từ ngoài: không gọi onDoi ⇒ lựa chọn tự trả về giá trị cũ
+          void Promise.resolve(xacNhanNgoai(ma)).then((ok) => {
+            if (ok === true) {
+              datDongYNgoai(ma);
+              ap();
+            }
+          });
+          return;
+        }
+        ap();
       }}
     >
       {mot(nhom.tuDong)}
