@@ -24416,6 +24416,31 @@
       "huy": "Close",
       "dangGui": "Reviewing…",
       "gui": "Send for review (paid)"
+    },
+    "duyet": {
+      "tieuDe": "Version that uses external AI",
+      "daDuyet": "Approved",
+      "chuaDuyet": "Not approved — cannot be enabled/run yet",
+      "mucVanHanh": "Whole-flow data level: operational",
+      "mucKyThuat": "Whole-flow data level: technical",
+      "taoBoi": "Created by user",
+      "duyetBoi": "Approved by",
+      "tuDuyetCo": "Self-approved (creator is also the approver)",
+      "nutDuyet": "Approve this version",
+      "dangDuyet": "Approving…",
+      "thanhCong": "Version using external AI approved.",
+      "daCoTruoc": "This version was already approved.",
+      "bang": {
+        "node": "Node",
+        "model": "Provider · model",
+        "muc": "Data level (static)",
+        "lenh": "Prompt sent (masked, first 200 characters)"
+      },
+      "toanHeThong": "A system-wide flow cannot use external AI (external data must belong to a factory).",
+      "nhoAdmin": "An administrator must approve this version (after reviewing the nodes above) before the flow can be enabled or run.",
+      "camTuDuyet": "You created this version and the flow carries operational data to an external AI — you may not approve it yourself. Ask another administrator.",
+      "canhBaoTuDuyet": "You created this version: approving will be recorded as SELF-APPROVAL (high-level audit).",
+      "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version."
     }
   }
 }

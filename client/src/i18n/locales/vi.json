@@ -24413,6 +24413,31 @@
       "huy": "Đóng",
       "dangGui": "Đang kiểm định…",
       "gui": "Gửi kiểm định (trả phí)"
+    },
+    "duyet": {
+      "tieuDe": "Phiên bản dùng AI ngoài",
+      "daDuyet": "Đã duyệt",
+      "chuaDuyet": "Chưa duyệt — chưa bật/chạy được",
+      "mucVanHanh": "Mức dữ liệu cả luồng: vận hành",
+      "mucKyThuat": "Mức dữ liệu cả luồng: kỹ thuật",
+      "taoBoi": "Tạo bởi người dùng",
+      "duyetBoi": "Duyệt bởi",
+      "tuDuyetCo": "Tự duyệt (người tạo cũng là người duyệt)",
+      "nutDuyet": "Duyệt phiên bản này",
+      "dangDuyet": "Đang duyệt…",
+      "thanhCong": "Đã duyệt phiên bản dùng AI ngoài.",
+      "daCoTruoc": "Phiên bản này đã được duyệt từ trước.",
+      "bang": {
+        "node": "Node",
+        "model": "Nhà cung cấp · model",
+        "muc": "Mức dữ liệu (tĩnh)",
+        "lenh": "Lệnh gửi đi (đã che, 200 ký tự đầu)"
+      },
+      "toanHeThong": "Luồng toàn hệ thống không dùng được AI ngoài (dữ liệu ngoài phải thuộc một nhà máy).",
+      "nhoAdmin": "Cần quản trị viên duyệt phiên bản này (sau khi xem các node ở trên) trước khi bật hoặc chạy luồng.",
+      "camTuDuyet": "Bạn là người tạo phiên bản này và luồng có dữ liệu vận hành gửi AI ngoài — không được tự duyệt. Nhờ một quản trị viên khác.",
+      "canhBaoTuDuyet": "Bạn là người tạo phiên bản này: duyệt sẽ được ghi nhận là TỰ DUYỆT (nhật ký mức cao).",
+      "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu."
     }
   }
 }
