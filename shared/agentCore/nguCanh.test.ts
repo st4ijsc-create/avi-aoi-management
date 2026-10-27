@@ -122,21 +122,24 @@ describe("★ Đợt 11.0 (rà kiem-dinh) — suy luận giữ trong lịch sử
     expect(uocLuongTinNhan(co, demKyTu) - uocLuongTinNhan(khong, demKyTu)).toBe(100);
   });
 
+  const luot = (i: number, nghi: string, kq: string): TinNhan[] => {
+    const [a, t] = luotTool(i, "read_file", `f${i}.ts`, kq);
+    return [{ ...a, reasoning_content: nghi }, t];
+  };
+  /** 4 lượt × (nghĩ 400 + kết quả tool 300); tổng ước (1 ký tự = 1 token) ≈ 2,97k. Chỉ số: assistant 2/4/6/8, tool 3/5/7/9. */
+  const bonLuot = (): TinNhan[] => [
+    { role: "system", content: "s" },
+    { role: "user", content: "hỏi" },
+    ...luot(1, "n".repeat(400), "k".repeat(300)),
+    ...luot(2, "m".repeat(400), "j".repeat(300)),
+    ...luot(3, "p".repeat(400), "q".repeat(300)),
+    ...luot(4, "r".repeat(400), "z".repeat(300)),
+  ];
+
   it("vượt ngưỡng ⇒ bỏ suy luận lượt CŨ (cũ nhất trước) TRƯỚC khi rút gọn kết quả tool; vùng giữ (2 lượt cuối) nguyên văn; không đột biến đầu vào", () => {
-    const luot = (i: number, nghi: string, kq: string): TinNhan[] => {
-      const [a, t] = luotTool(i, "read_file", `f${i}.ts`, kq);
-      return [{ ...a, reasoning_content: nghi }, t];
-    };
-    const ds: TinNhan[] = [
-      { role: "system", content: "s" },
-      { role: "user", content: "hỏi" },
-      ...luot(1, "n".repeat(400), "k".repeat(300)),
-      ...luot(2, "m".repeat(400), "j".repeat(300)),
-      ...luot(3, "p".repeat(400), "q".repeat(300)),
-      ...luot(4, "r".repeat(400), "z".repeat(300)),
-    ];
+    const ds = bonLuot();
     const truoc = JSON.stringify(ds);
-    // ngưỡng 70 % × 3500 = 2450; tổng 2966 ⇒ bỏ nghĩ lượt 1 (−400) + lượt 2 (−400) là đủ — KHÔNG đụng kết quả tool
+    // ngưỡng 70 % × 3500 = 2450; tổng ≈ 2,97k ⇒ bỏ nghĩ lượt 1 (−400) + lượt 2 (−400) là đủ — KHÔNG đụng kết quả tool
     const kq = nenLichSu(ds, { nganSachToken: 3500, uocLuong: demKyTu });
     expect(JSON.stringify(ds)).toBe(truoc);
     expect(kq.soNen).toBe(2);
@@ -147,5 +150,29 @@ describe("★ Đợt 11.0 (rà kiem-dinh) — suy luận giữ trong lịch sử
     expect(kq.tinNhan[8]!.reasoning_content).toBe("r".repeat(400));
     expect(kq.tokenSau).toBe(uocLuongTinNhan(kq.tinNhan, demKyTu));
     expect(kq.tokenSau).toBeLessThanOrEqual(2450);
+  });
+
+  it("rà kiem-dinh — vượt NHẸ ⇒ chỉ bỏ nghĩ của lượt CŨ NHẤT, dừng ngay khi dưới ngưỡng (lượt cũ khác còn nguyên)", () => {
+    // ngưỡng 70 % × 4000 = 2800; tổng ≈ 2,97k ⇒ bỏ nghĩ lượt 1 (−400) là đủ
+    const kq = nenLichSu(bonLuot(), { nganSachToken: 4000, uocLuong: demKyTu });
+    expect(kq.soNen).toBe(1);
+    expect(kq.tinNhan[2]).not.toHaveProperty("reasoning_content");
+    expect(kq.tinNhan[4]!.reasoning_content).toBe("m".repeat(400));
+    expect(kq.tokenSau).toBe(kq.tokenTruoc - 400);
+  });
+
+  it("rà kiem-dinh — vượt NẶNG (bỏ hết nghĩ cũ + rút gọn tool cũ vẫn chưa đủ) ⇒ VÙNG GIỮ 2 lượt cuối vẫn còn nghĩ + kết quả tool nguyên văn", () => {
+    // ngưỡng 70 % × 2000 = 1400 — không thể đạt nếu không đụng vùng giữ ⇒ phải dừng ở ranh giới, không lấn vào
+    const kq = nenLichSu(bonLuot(), { nganSachToken: 2000, uocLuong: demKyTu });
+    expect(kq.tokenSau).toBeGreaterThan(1400);
+    expect(kq.tinNhan[2]).not.toHaveProperty("reasoning_content");
+    expect(kq.tinNhan[4]).not.toHaveProperty("reasoning_content");
+    expect(kq.tinNhan[3]!.content.startsWith("[compacted:")).toBe(true);
+    expect(kq.tinNhan[5]!.content.startsWith("[compacted:")).toBe(true);
+    expect(kq.tinNhan[6]!.reasoning_content).toBe("p".repeat(400));
+    expect(kq.tinNhan[8]!.reasoning_content).toBe("r".repeat(400));
+    expect(kq.tinNhan[7]!.content).toBe("q".repeat(300));
+    expect(kq.tinNhan[9]!.content).toBe("z".repeat(300));
+    expect(kq.soNen).toBe(4);
   });
 });
