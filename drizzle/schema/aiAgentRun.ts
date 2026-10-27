@@ -6,7 +6,7 @@
  * ⚠ Phạm vi CHỦ LƯỢT CHẠY (`userId` trong mệnh đề WHERE — `server/db/aiAgentRuns.ts`), như `ai_coding_sessions`.
  * ⚠ CHECK ở `drizzle/0390_ai_agent_runs.sql`: projectId là ID (không đường dẫn), cheDo/trangThai trong tập, mảng jsonb.
  */
-import { pgTable, uuid, integer, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, integer, smallint, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 export const aiAgentRuns = pgTable(
@@ -34,6 +34,13 @@ export const aiAgentRuns = pgTable(
     checkpointIds: jsonb("checkpointIds").notNull().default([]),
     tomTat: text("tomTat"),
     sessionId: uuid("sessionId"),
+    /** (mig 0441, Đợt 11.8) lượt cha của agent con; khoá ngoại KÉP (cha, userId) ⇒ con luôn cùng chủ với cha. */
+    parentRunId: uuid("parentRunId"),
+    /** (mig 0441) 0 = gốc, 1–2 = con/cháu. */
+    depth: smallint("depth").notNull().default(0),
+    /** (mig 0441) tên agent con + nhãn nguồn bất biến (`dungSan` | `tuRepo`). */
+    agentName: varchar("agentName", { length: 32 }),
+    agentSource: varchar("agentSource", { length: 8 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },

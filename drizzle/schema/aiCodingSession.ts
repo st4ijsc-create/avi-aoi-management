@@ -52,7 +52,7 @@
  *     2. `jsonb_typeof(turns) = 'array'` — cầu chì chống một hàng `turns` là object/scalar làm
  *        `locLuot()` phải đoán.
  */
-import { pgTable, uuid, integer, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, integer, smallint, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 /**
@@ -89,6 +89,18 @@ export const aiCodingSessions = pgTable(
     turns: jsonb("turns").notNull().default([]),
     /** Đếm sẵn để danh sách không phải đọc cả `turns` của mọi phiên. */
     turnCount: integer("turnCount").notNull().default(0),
+    /** (mig 0440, Đợt 11.8) `chat` | `coding` | `agent` — hàng cũ là `coding`. MỌI truy vấn lọc `userId` + `kind`. */
+    kind: varchar("kind", { length: 16 }).notNull().default("coding"),
+    /** (mig 0440) `web` | `vscode` — phiên tạo từ đâu. */
+    source: varchar("source", { length: 16 }).notNull().default("web"),
+    /** (mig 0440) mảng uuid lượt chạy agent gắn vào phiên — tầng dữ liệu kiểm thuộc CHÍNH userId lúc ghi và lúc đọc. */
+    runIds: jsonb("runIds").notNull().default([]),
+    /** (mig 0440) phiên cha khi nhân bản / nối tiếp; khoá ngoại KÉP (cha, userId) ⇒ không liên kết sang phiên người khác. */
+    parentSessionId: uuid("parentSessionId"),
+    /** (mig 0440) % ngữ cảnh lúc ghi gần nhất. */
+    contextPct: smallint("contextPct"),
+    /** (mig 0440) khoá lạc quan cho appendTurns. */
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
