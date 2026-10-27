@@ -144,7 +144,8 @@ export const aiKiemDinhRouter = router({
       lyDo = "NGOAI_VUOT_TRAN";
     }
     const laAdmin = (ctx.user as { role?: string }).role === "admin";
-    const conLaiTranNgay = { nguoi: conLai.nguoi, nhaMayDuChoLuotNay, ...(laAdmin ? { nhaMay: conLai.nhaMay } : {}) };
+    // Hình dạng chốt với luong-ui (T4b): `nhaMay.duTranChoLuotNay` luôn có; `nhaMay.token` / `nhaMay.usd` CHỈ khi admin (vắng ⇒ client không hiện số).
+    const conLaiTranNgay = { nguoi: conLai.nguoi, nhaMay: { duTranChoLuotNay: nhaMayDuChoLuotNay, ...(laAdmin ? conLai.nhaMay : {}) } };
     return {
       duocPhep,
       ...(lyDo ? { lyDo } : {}),
