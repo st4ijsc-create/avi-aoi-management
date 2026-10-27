@@ -4093,7 +4093,8 @@
       "aiNgoaiDatModel": "设置外部AI模型",
       "aiNgoaiDuyet": "审批使用外部AI的流程",
       "taiAnhAi": "下载用于AI分析的图像",
-      "aiKiemDinh": "外部AI审核"
+      "aiKiemDinh": "外部AI审核",
+      "aiNgoaiGhi": "保存外部AI配置"
     },
     "field": {
       "stationId": "工位",
@@ -4587,7 +4588,8 @@
       "NGOAI_SO_HONG": "无法写入外部AI审计日志，请稍后重试",
       "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
       "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
-      "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效"
+      "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效",
+      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

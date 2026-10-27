@@ -4101,7 +4101,8 @@
       "aiNgoaiDatModel": "đặt model AI ngoài",
       "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
       "taiAnhAi": "tải ảnh cho phân tích AI",
-      "aiKiemDinh": "kiểm định bởi AI ngoài"
+      "aiKiemDinh": "kiểm định bởi AI ngoài",
+      "aiNgoaiGhi": "ghi cấu hình AI ngoài"
     },
     "field": {
       "stationId": "trạm",
@@ -4587,7 +4588,8 @@
       "NGOAI_SO_HONG": "sổ kiểm toán AI ngoài không ghi được — thử lại sau",
       "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
       "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
-      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ"
+      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ",
+      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
