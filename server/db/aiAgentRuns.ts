@@ -30,8 +30,11 @@ export async function taoHangLuotChay(h: {
   cheDo: string;
   cauHoi: string;
   sessionId?: string | null;
+  /** (Đợt 11.8) agent con: lượt cha (cùng chủ — khoá ngoại kép), độ sâu 1–2, tên + nguồn agent. */
+  con?: { parentRunId: string; depth: number; agentName: string; agentSource: "dungSan" | "tuRepo" };
 }): Promise<boolean> {
   if (!laUser(h.userId) || !RE_ID_LUOT_CHAY.test(h.id) || !RE_ID_DU_AN.test(h.projectId)) return false;
+  if (h.con && !RE_ID_LUOT_CHAY.test(h.con.parentRunId)) return false;
   const db = await getDb();
   if (!db) return false;
   try {
@@ -42,6 +45,9 @@ export async function taoHangLuotChay(h: {
       cheDo: h.cheDo,
       cauHoi: h.cauHoi,
       sessionId: h.sessionId && RE_ID_LUOT_CHAY.test(h.sessionId) ? h.sessionId : null,
+      ...(h.con
+        ? { parentRunId: h.con.parentRunId, depth: h.con.depth, agentName: h.con.agentName, agentSource: h.con.agentSource }
+        : {}),
     });
     return true;
   } catch (err) {

@@ -219,6 +219,8 @@ export interface CauHinhBoThucThi {
   coQuyenThucThi: boolean;
   checkpoint: CongCheckpoint | null;
   phuThuoc?: PhuThuocBoThucThi;
+  /** (Đợt 11.8) phơi tool `delegate` cho model? Do quản lý lượt chạy quyết (cờ AI_AGENT_GIAO_VIEC + model cục bộ). Mặc định TẮT. */
+  coGiaoViec?: boolean;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -1049,7 +1051,10 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   return {
     congCu(cheDo: CheDoAgent) {
       const an = congCuBiAn();
-      const ds = congCuTheoCheDo(cheDo, [...CONG_CU_TUY_CHON].filter((ten) => toolTuyChonBat(ten, process.env, gocDuAn)));
+      const ds = congCuTheoCheDo(
+        cheDo,
+        [...CONG_CU_TUY_CHON].filter((ten) => (ten === "delegate" ? cauHinh.coGiaoViec === true : toolTuyChonBat(ten, process.env, gocDuAn))),
+      );
       return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
@@ -1062,7 +1067,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   };
 
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
-    if (congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
+    // `delegate` do LÕI xử lý (vòng đệ quy) — KHÔNG BAO GIỜ tới bộ thực thi; nếu tới đây là lỗi/giả mạo ⇒ từ chối như tool ẩn.
+    if (goi.ten === "delegate" || congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
     }
     try {
