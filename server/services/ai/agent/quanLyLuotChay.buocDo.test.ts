@@ -148,6 +148,47 @@ describe("H1.1 công tắc AI_AGENT_NEN_MOC nối tới lõi", () => {
   }, 60_000);
 });
 
+describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực thi", () => {
+  const ghiTepChuaDoc = async (bat: boolean): Promise<{ thePhat: boolean; tuChoi: boolean }> => {
+    const cu = process.env.AI_AGENT_DOC_TRUOC_KHI_GHI;
+    if (bat) process.env.AI_AGENT_DOC_TRUOC_KHI_GHI = "1";
+    else delete process.env.AI_AGENT_DOC_TRUOC_KHI_GHI;
+    try {
+      let i = 0;
+      const goiModel: GoiModel = async function* (): AsyncGenerator<ManhModel> {
+        const k = i++;
+        yield {
+          loai: "xong",
+          toolCalls: k === 0 ? [{ id: "w0", type: "function", function: { name: "write_file", arguments: JSON.stringify({ path: "src/b.ts", content: "export const B = 2;\n" }) } }] : [],
+          usage: { vao: 1, ra: 5 },
+        } as ManhModel;
+      };
+      const ql = taoQuanLyLuotChay({ goiModel });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "x" }, cauHoi: "ghi", projectId: DU_AN, cheDo: "sua" });
+      if (!kq.ok) throw new Error(kq.ma);
+      const nghe: SuKienAgent[] = [];
+      const huy = ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien));
+      await new Promise((r) => setTimeout(r, 1500));
+      huy?.();
+      ql.huy(kq.luot.id, uid);
+      await kq.luot.xong;
+      return {
+        thePhat: nghe.some((e) => e.loai === "can-duyet"),
+        tuChoi: nghe.some((e) => e.loai === "ket-qua-tool" && e.ok === false && /read_file/.test(String(e.tomTat ?? ""))),
+      };
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_DOC_TRUOC_KHI_GHI;
+      else process.env.AI_AGENT_DOC_TRUOC_KHI_GHI = cu;
+    }
+  };
+  it("★ vắng cờ ⇒ ghi tệp chưa đọc đi tới thẻ duyệt như cũ; AI_AGENT_DOC_TRUOC_KHI_GHI=1 ⇒ bị từ chối, KHÔNG có thẻ", async () => {
+    const tat = await ghiTepChuaDoc(false);
+    expect(tat).toEqual({ thePhat: true, tuChoi: false });
+    const bat = await ghiTepChuaDoc(true);
+    expect(bat).toEqual({ thePhat: false, tuChoi: true });
+  }, 90_000);
+});
+
 describe("suKienDeLuu giữ buoc-do khi sổ quá trần", () => {
   const mucBuoc = (seq: number): MucDem => ({
     seq,
