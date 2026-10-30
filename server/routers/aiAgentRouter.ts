@@ -307,6 +307,9 @@ export const aiAgentRouter = router({
       (await thuTucLuotChay()).thuTucBoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
     ),
 
+  /** (Đợt 11.8, UX-D09) vị trí hàng chờ model: chỉ SỐ lượt đứng trước (null khi cổng ưu tiên tắt). Cùng bit `ai_repo_read` như các thủ tục lượt chạy. */
+  trangThaiHangCho: protectedProcedure.query(async ({ ctx }) => (await thuTucLuotChay()).thuTucTrangThaiHangCho(toAgentUser(ctx.user as any))),
+
   // ═══ Đợt 11.8 — ĐỊNH NGHĨA AGENT ĐẶT TÊN (.thoca/agents/*.md) ═══
   /** Dựng sẵn + tệp repo hợp lệ (kèm nội dung chữ thuần để ĐỌC trước khi xác nhận) + cờ tin cậy của CHÍNH người gọi. */
   dinhNghiaDanhSach: protectedProcedure

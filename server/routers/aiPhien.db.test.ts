@@ -148,6 +148,34 @@ describe("kho — hàng kind='chat' trong ai_coding_sessions KHÔNG thao tác đ
   });
 });
 
+describe("kho — cách ly theo DỰ ÁN trong phạm vi chủ (kiem-dinh K4)", () => {
+  it("★★★ cùng người, hai dự án ⇒ danh sách dự án A không chứa phiên dự án B và ngược lại", async () => {
+    if (!coDb) return;
+    const a = await kho.tao(idA, { projectId: "da-a-k4", kind: "coding", source: "web" });
+    const b = await kho.tao(idA, { projectId: "da-b-k4", kind: "agent", source: "web" });
+    if (!a.ok || !b.ok) throw new Error("tao");
+    const dsA = (await kho.danhSach(idA, { projectId: "da-a-k4" })).map((s) => s.id);
+    const dsB = (await kho.danhSach(idA, { projectId: "da-b-k4" })).map((s) => s.id);
+    expect(dsA).toEqual([a.id]);
+    expect(dsB).toEqual([b.id]);
+  });
+});
+
+describe("kho — nhãn tóm tắt trung tính + tiêu đề sạch (kiem-dinh T7 lưu ý 1, 3)", () => {
+  it("★ nopTomTat KHÔNG khẳng định 'người dùng đã xem'; tiêu đề bỏ bidi/zero-width/thẻ", async () => {
+    if (!coDb) return;
+    const a = await tao(idA, "coding", "ten‮gia​mao󠁁 ok");
+    const m0 = await kho.mo(idA, a.id);
+    expect(m0.ok && m0.phien.title).toBe("tengiamao ok");
+    const r = await kho.nopTomTat(idA, { sessionId: a.id, expectedVersion: 1, tomTat: "Đã làm X." });
+    if (!r.ok) throw new Error(r.ma);
+    const m = await kho.mo(idA, r.id);
+    const nd = m.ok ? m.phien.turns[0]!.content : "";
+    expect(nd.startsWith("[tóm tắt phiên trước — nội dung do client nộp, chưa xác minh]")).toBe(true);
+    expect(nd).not.toMatch(/người dùng đã xem/);
+  });
+});
+
 describe("kho — khoá lạc quan (expectedVersion)", () => {
   it("★★★ ghi đúng version ⇒ version+1; version cũ ⇒ CONFLICT kèm versionHienTai, KHÔNG ghi", async () => {
     if (!coDb) return;

@@ -550,13 +550,13 @@ describe("M4 — đua: con tạo thẻ SAU khi cha đã kết thúc", () => {
 
 // ─── T8: gắn lượt vào phiên + ngữ cảnh đầy ─────────────────────────────────────────────────────────────────────────
 
-function modelUsage(kb: Array<{ chu?: string; tool?: WireToolCall[]; vao: number }>, theo?: { tinNhan: TinNhan[][] }): GoiModel {
+function modelUsage(kb: Array<{ chu?: string; tool?: WireToolCall[]; vao?: number }>, theo?: { tinNhan: TinNhan[][] }): GoiModel {
   let i = 0;
   return async function* (vao): AsyncGenerator<ManhModel> {
     theo?.tinNhan.push(vao.tinNhan);
     const b = kb[Math.min(i++, kb.length - 1)]!;
     if (b.chu) yield { loai: "chu", noiDung: b.chu };
-    yield { loai: "xong", toolCalls: b.tool ?? [], usage: { vao: b.vao, ra: 10 } };
+    yield { loai: "xong", toolCalls: b.tool ?? [], ...(b.vao === undefined ? {} : { usage: { vao: b.vao, ra: 10 } }) };
   };
 }
 
@@ -613,6 +613,27 @@ describe("T8 — lượt agent gắn vào PHIÊN hợp nhất", () => {
     const m = await phienKho.mo(uid, p.id);
     expect(m.ok && m.phien.turns.map((t) => t.content)).toEqual(["một", "đáp một", "hai", "đáp hai"]);
     expect(m.ok && m.phien.runIds.length).toBe(2);
+  }, 60_000);
+});
+
+describe("T8 — % ngữ cảnh ghi vào phiên là của LƯỢT GỐC, không phải của con", () => {
+  it("★★★ con báo 92 % nhưng lượt gốc chỉ 0 % ⇒ contextPct của phiên = 0", async () => {
+    await xoaSo(uid);
+    const p = await phienKho.tao(uid, { projectId: DU_AN, kind: "agent", source: "web" });
+    if (!p.ok) throw new Error(p.ma);
+    const ql = taoQuanLyLuotChay({
+      goiModel: modelUsage([
+        { tool: [giao("kham-pha", "tim")], vao: 100 }, // cha t0: 0 %
+        { chu: "con xong", vao: 60_000 }, // con: ~92 %
+        { chu: "cha xong" }, // cha t1: không báo usage
+      ]),
+      giaoViec: BAT,
+    });
+    const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "sua", sessionId: p.id });
+    if (!kq.ok) throw new Error(kq.ma);
+    await kq.luot.xong;
+    const m = await phienKho.mo(uid, p.id);
+    expect(m.ok && m.phien.contextPct).toBe(0);
   }, 60_000);
 });
 

@@ -220,8 +220,12 @@ export async function mo(userId: number, sessionId: string): Promise<KetQuaPhien
 // ─── ghi ──────────────────────────────────────────────────────────────────────────────────────
 
 const lamSachTen = (t: unknown): string => {
-  // eslint-disable-next-line no-control-regex
-  const sach = String(t ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  // bỏ điều khiển C0/C1, định dạng (bidi, zero-width, thẻ), thay thế, dùng riêng, chưa gán; khoảng trắng lạ ⇒ dấu cách
+  const sach = String(t ?? "")
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}\p{Zs}]/gu, " ")
+    .replace(/[\p{Cf}\p{Cs}\p{Co}\p{Cn}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
   return sach.length <= GIOI_HAN_PHIEN.DAI_NHAN ? sach : sach.slice(0, GIOI_HAN_PHIEN.DAI_NHAN - 1) + "…";
 };
 
@@ -363,7 +367,7 @@ export async function nhanBan(userId: number, sessionId: string): Promise<KetQua
 export async function nopTomTat(userId: number, y: { sessionId: string; expectedVersion: number; tomTat: string }): Promise<KetQuaPhien<{ id: string }>> {
   if (!hopLeUser(userId) || !laIdPhienHopLe(y.sessionId) || !Number.isInteger(y.expectedVersion) || y.expectedVersion < 1) return { ok: false, ma: "THAM_SO_SAI" };
   if (typeof y.tomTat !== "string" || y.tomTat.trim() === "" || y.tomTat.length > TRAN_KY_TU_TOM_TAT_PHIEN) return { ok: false, ma: "THAM_SO_SAI" };
-  const turns = locLuot([{ role: "assistant", content: `Tóm tắt phiên trước (do trợ lý sinh, người dùng đã xem):\n${y.tomTat.trim()}` }]);
+  const turns = locLuot([{ role: "assistant", content: `[tóm tắt phiên trước — nội dung do client nộp, chưa xác minh]\n${y.tomTat.trim()}` }]);
   if (turns.length === 0) return { ok: false, ma: "THAM_SO_SAI" };
   const db = await getDb();
   if (!db) return { ok: false, ma: "LOI" };
