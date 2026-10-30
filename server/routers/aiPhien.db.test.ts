@@ -10,7 +10,8 @@ vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
 import { getDb } from "../db/connection";
-import { aiAgentRuns, aiCodingSessions, permissions, users } from "../../drizzle/schema";
+import { aiAgentRuns, aiCodingSessions, permissions } from "../../drizzle/schema";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import * as kho from "../db/aiPhien";
 import { KIND_PHIEN, NGUON_PHIEN } from "@shared/aiCodingSession";
 import { danhSachPhien as cuDanhSach, moPhien as cuMo } from "../db/aiCodingSessions";
@@ -29,11 +30,11 @@ const caller = (id: number, role = "engineer") => aiPhienRouter.createCaller({ u
 
 async function mkUser(tag: string, capQuyen: boolean): Promise<number> {
   const db = await getDb();
-  const [u] = await db!.insert(users).values({ openId: `${TAG}_${tag}`, username: `${TAG}_${tag}`, name: `phien ${tag}`, role: "engineer", loginMethod: "local" }).returning({ id: users.id });
+  const u = await taoNguoiDungTest(tag, "engineer", { tienTo: "aiph", ten: `phien ${tag}`, ts: TAG });
   if (capQuyen) {
-    await db!.insert(permissions).values({ userId: u!.id, category: "settings", moduleName: "ai_repo_read", canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false });
+    await db!.insert(permissions).values({ userId: u.id, category: "settings", moduleName: "ai_repo_read", canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false });
   }
-  return u!.id;
+  return u.id;
 }
 async function mkRun(userId: number, projectId = DU_AN): Promise<string> {
   const db = await getDb();
@@ -59,7 +60,6 @@ afterAll(async () => {
   await db.delete(aiAgentRuns).where(inArray(aiAgentRuns.userId, ids));
   await db.execute(sql`DELETE FROM ai_chat_conversations WHERE "userId" IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
   await db.delete(permissions).where(inArray(permissions.userId, ids));
-  await db.delete(users).where(inArray(users.id, ids));
 });
 
 const tao = async (u: number, kind: "coding" | "agent" = "coding", title = "") => {
