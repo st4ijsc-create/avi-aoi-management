@@ -26,6 +26,15 @@ KHÔNG vào `BE_MAT_NGOAI_DUOC_DUNG` cho tới khi L3b xong** + test ghim. `sear
 chưa có tìm theo tên có lọc `duongThuc`; thêm sau cùng lưới k1 nếu cần. Cổng `YeuCauGoiNgoai` không nhận `signal` ⇒ huỷ chặn TRƯỚC mỗi vòng
 (không gọi khi đã huỷ); một vòng đang bay chạy hết rồi lõi dừng `huy`.
 
+**Bước NỐI (`quanLyLuotChay.ts`, sau 11.8) — danh sách BẮT BUỘC trước khi gộp, mỗi mục kèm đột biến:**
+(n1) đường vào §1 (a–f) + `code`/`muc`/`tranVuot` (u1) + `tuRepo` ⇒ 400 (k2) + 428 cho lịch sử nạp từ phiên (k3);
+(n2) `delegate` hai chiều (d1); (n3) `nguonModel` ghi lúc INSERT (0419) + `coLuotNgoai` phiên (d2); (n4) k4 khởi động lại / TTL;
+(n5) k6 sự kiện lượt chạy người khác; (n6) test "agent CHƯA trong `BE_MAT_NGOAI_DUOC_DUNG`" (k7) + ánh xạ bề mặt `agent` (danh sách mở)
+⇒ `agent-turn` (nguồn mức ở cổng) đúng một chỗ; (n7) **huỷ khi đang bay**: `YeuCauGoiNgoai` CHƯA có `signal` ⇒ hôm nay bộ chuyển chỉ chặn
+TRƯỚC mỗi vòng, một cuộc gọi đang bay chạy hết (tốn phí, khoá bay nhả muộn) — L2 cùng giới hạn. Bước nối: thêm `signal` tới `goiAiNgoai`
+(huỷ fetch + nhả khoá bay + `huyGiuChuaGui`) HOẶC ghi rõ giới hạn trong báo cáo nghiệm thu; (n8) hồi quy `cheDo:"hoi"` + model cục bộ y cũ (u5).
+Trần vòng: bộ chuyển TỰ giữ `TRAN_VONG_AGENT_NGOAI = 6` (vòng 6 không chạy tool, lần 7 ⇒ `NGOAI_VUOT_TRAN`) — không phụ thuộc `gioiHan` nơi nối.
+
 **Đã làm (độc lập với 11.8):** `server/services/ai/ngoai/congCuDocNgoai.ts` (bộ đọc ngoài tách từ L2, L2 dùng lại) ·
 `server/services/ai/ngoai/vongAgentNgoai.ts` (cặp GoiModel + BoThucThi; nguồn gốc theo DANH TÍNH: system lõi bỏ, tool chỉ với id bộ chuyển
 đã phát, user chỉ = câu hỏi / lịch sử / câu nhắc tĩnh lõi, sàn mức van-hanh khi có lịch sử) + `vongAgentNgoai.test.ts` (12 ca, 12/12 đột

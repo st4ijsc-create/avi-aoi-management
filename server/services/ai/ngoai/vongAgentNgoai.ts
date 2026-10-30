@@ -138,6 +138,7 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
   const cong = (x: number | null, y: number | null) => (x === null && y === null ? null : (x ?? 0) + (y ?? 0));
   let tong = { tokenVao: null as number | null, tokenRa: null as number | null, chiPhiUocUsd: null as number | null };
   let dem = 0;
+  let soVong = 0;
 
   /** `TinNhan[]` của lõi ⇒ `TinGhep[]` có nguồn gốc — ném khi một tin không xác định được nguồn. */
   function phanLoai(tinNhan: readonly TinNhan[]): TinGhep[] {
@@ -172,6 +173,9 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
         yield { loai: "xong", toolCalls: [] };
         return;
       }
+      // Trần CỨNG số vòng do CHÍNH bộ chuyển giữ (không phụ thuộc `gioiHan` nơi nối): vượt ⇒ ném TRƯỚC khi gọi; vòng CUỐI không chạy tool.
+      if (soVong >= TRAN_VONG_AGENT_NGOAI) throw new LoiNgoai("NGOAI_VUOT_TRAN", "vong-agent");
+      const vongCuoi = ++soVong === TRAN_VONG_AGENT_NGOAI;
       const g = ghepPhan(phanLoai(vao.tinNhan));
       if (c.lichSu.length > 0 && g.muc !== "van-hanh") throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", "san-muc");
       const congCu = congCuQuangBa(vao.congCu);
@@ -202,8 +206,11 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
         idDaPhat.add(id);
         toolCalls.push({ id, type: "function", function: { name: t.ten, arguments: JSON.stringify(t.thamSo ?? {}) } });
       }
-      if (kq.noiDung) yield { loai: "chu", noiDung: String(kq.noiDung) };
-      yield { loai: "xong", toolCalls, ...(kq.tokenVao !== null || kq.tokenRa !== null ? { usage: { vao: kq.tokenVao ?? 0, ra: kq.tokenRa ?? 0 } } : {}) };
+      // vòng CUỐI mà model vẫn đòi tool ⇒ KHÔNG chạy (như L2: không còn vòng gọi để dùng kết quả) — lõi kết thúc lượt bằng chữ đã có.
+      const ra = vongCuoi ? [] : toolCalls;
+      const chu = String(kq.noiDung ?? "") || (vongCuoi && toolCalls.length ? (c.ngonNgu === "vi" ? "Đã hết số vòng đọc mã cho phép — hãy hỏi hẹp hơn." : "Read rounds exhausted — please ask a narrower question.") : "");
+      if (chu) yield { loai: "chu", noiDung: chu };
+      yield { loai: "xong", toolCalls: ra, ...(kq.tokenVao !== null || kq.tokenRa !== null ? { usage: { vao: kq.tokenVao ?? 0, ra: kq.tokenRa ?? 0 } } : {}) };
     })();
 
   const boThucThi: BoThucThi = {

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CONG_CU, chayVongAgent, type SuKienAgent, type TinNhan, type WireTool } from "@shared/agentCore";
 import type { KetQuaGoiNgoai, YeuCauGoiNgoai } from "./congNgoai";
 import { chayToolDocNgoai, type KetQuaTool, type TrongThaiDoc } from "./congCuDocNgoai";
-import { ANH_XA_TOOL_AGENT_NGOAI, taoCapAgentNgoai, type CauHinhAgentNgoai } from "./vongAgentNgoai";
+import { ANH_XA_TOOL_AGENT_NGOAI, TRAN_VONG_AGENT_NGOAI, taoCapAgentNgoai, type CauHinhAgentNgoai } from "./vongAgentNgoai";
 import { LoiNgoai } from "./loi";
 
 type TraLoiGia = { noiDung?: string; toolCalls?: Array<{ ten: string; thamSo: unknown }> };
@@ -82,6 +82,19 @@ describe("vòng agent ngoài — đường thường", () => {
     expect(than(d.yeuCau[1]!)).toContain("<<<KQ read_file");
     expect(d.yeuCau.every((y) => y.ngu.runId === "11111111-2222-3333-4444-555555555555" && y.ngu.nguonMuc.loai === "be-mat")).toBe(true);
     expect(d.yeuCau.map((y) => (y.ngu.nguonMuc as { beMat: string }).beMat)).toEqual(["agent-turn", "agent-turn"]);
+    // rà kiem-dinh v11/v12 — CẢ KHỐI `ngu` + mục đích / trần token / đích, MỌI vòng
+    for (const y of d.yeuCau) {
+      expect(y.ngu).toEqual({
+        userId: 7,
+        flowId: null,
+        runId: "11111111-2222-3333-4444-555555555555",
+        tuDong: false,
+        nhaMayNguoiGoi: [1],
+        nhaMayChuDuLieu: [1],
+        nguonMuc: { loai: "be-mat", beMat: "agent-turn", phanDaGhep: expect.any(Array) },
+      });
+      expect({ mucDich: y.mucDich, maxTokens: y.maxTokens, dich: y.dich, dinhKem: y.dinhKem }).toEqual({ mucDich: "agent", maxTokens: 4000, dich: { nhaCungCap: "anthropic", model: "claude-x" }, dinhKem: undefined });
+    }
     expect(d.cap.callIds()).toEqual([901, 902]);
     expect(d.cap.vet()).toEqual({ nhaCungCap: "anthropic", model: "claude-x", tokenVao: 200, tokenRa: 40, chiPhiUocUsd: 0.002 });
     expect(suKien.some((e) => e.loai === "can-duyet" || e.loai === "de-xuat-nho" || e.loai === "checkpoint")).toBe(false);
@@ -109,6 +122,38 @@ describe("vòng agent ngoài — đường thường", () => {
     expect(t).not.toContain("CANH-AGENTS-MD-7f3a");
     expect(t).toContain("CHỈ ĐỌC");
     expect(d.yeuCau[0]!.tinNhan.filter((m) => (m as { vaiTro: string }).vaiTro === "system")).toHaveLength(1);
+  });
+});
+
+describe("trần vòng do bộ chuyển giữ (rà kiem-dinh v25)", () => {
+  it("model LUÔN đòi tool, lõi cho tới 30 lượt ⇒ ĐÚNG 6 lần gọi cổng, vòng 6 KHÔNG chạy tool, lượt kết thúc bằng câu báo hết vòng", async () => {
+    // mỗi vòng một mẫu KHÁC (lõi dừng `lap-lai` khi lặp y hệt — không phải trần cần đo)
+    const d = dung(Array.from({ length: 10 }, (_, i) => ({ toolCalls: [{ ten: "grep", thamSo: { pattern: `mau${i}` } }] })));
+    const suKien: SuKienAgent[] = [];
+    const kq = await chayVongAgent({
+      cauHoi: "hàm xacMinh nằm ở đâu?",
+      cheDo: "hoi",
+      runId: "11111111-2222-3333-4444-555555555555",
+      nguCanhDuAn: "",
+      goiModel: d.cap.goiModel,
+      boThucThi: d.cap.boThucThi,
+      phat: (e) => suKien.push(e),
+      signal: new AbortController().signal,
+      gioiHan: { soLuotToiDa: 30 },
+    });
+    expect(d.goi).toHaveBeenCalledTimes(TRAN_VONG_AGENT_NGOAI);
+    expect(TRAN_VONG_AGENT_NGOAI).toBe(6);
+    expect(d.chayTool).toHaveBeenCalledTimes(TRAN_VONG_AGENT_NGOAI - 1);
+    expect(kq.lyDo).toBe("hoan-thanh");
+    expect(suKien.some((e) => e.loai === "chu" && e.noiDung.includes("hết số vòng"))).toBe(true);
+  });
+
+  it("gọi GoiModel lần thứ 7 trên cùng cặp ⇒ NGOAI_VUOT_TRAN TRƯỚC khi gọi cổng", async () => {
+    const d = dung([{ noiDung: "ok" }]);
+    const mot = () => vet(d.cap.goiModel({ tinNhan: [{ role: "user", content: "hàm xacMinh nằm ở đâu?" }], congCu: CONG_CU, signal: new AbortController().signal }));
+    for (let i = 0; i < TRAN_VONG_AGENT_NGOAI; i++) await mot();
+    expect(await loi(mot())).toBe("NGOAI_VUOT_TRAN:vong-agent");
+    expect(d.goi).toHaveBeenCalledTimes(TRAN_VONG_AGENT_NGOAI);
   });
 });
 
