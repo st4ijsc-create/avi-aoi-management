@@ -101,6 +101,7 @@ describe("★ lưới chung — cột Drizzle khai ⊆ cột có thật trên DB
     const khai = bangKhai();
     const b0 = khai[0];
     const khaiGia = [...khai.slice(1), { ten: b0.ten, cot: [...b0.cot, "__cot_gia__"] }, { ten: "__bang_gia__", cot: ["id"] }];
-    expect(tinhThieu(khaiGia, dbCot)).toEqual([`${b0.ten}.__cot_gia__`, "__bang_gia__.*"].sort());
+    const nen = new Set(tinhThieu(khai, dbCot)); // nợ thật (nếu có) không làm phép thử lệch
+    expect(tinhThieu(khaiGia, dbCot).filter((x) => !nen.has(x))).toEqual([`${b0.ten}.__cot_gia__`, "__bang_gia__.*"].sort());
   });
 });
