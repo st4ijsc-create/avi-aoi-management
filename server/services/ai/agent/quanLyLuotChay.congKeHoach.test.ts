@@ -177,7 +177,13 @@ describe("cổng BẬT — đầu–cuối", () => {
 
     const dang = await thuTucKeHoachDangCho(NGUOI(), luot.id);
     expect(dang).toMatchObject({ ok: true, trangThai: "cho", bam: cho.bam });
-    expect((await hang(luot.id)).trangThai).toBe("cho-duyet");
+    // trạng thái lượt được host ghi SAU sự kiện (luuNgay bất đồng bộ) ⇒ chờ tới khi thấy, không đọc ngay
+    let tt = "";
+    for (let i = 0; i < 100 && tt !== "cho-duyet"; i++) {
+      tt = (await hang(luot.id)).trangThai;
+      if (tt !== "cho-duyet") await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(tt).toBe("cho-duyet");
 
     // người khác: không thấy, không duyệt được
     expect(await thuTucKeHoachDangCho(NGUOI2(), luot.id)).toMatchObject({ ok: false, note: "NOT_FOUND" });
