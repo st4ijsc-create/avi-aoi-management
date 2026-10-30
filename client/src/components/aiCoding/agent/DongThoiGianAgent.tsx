@@ -50,6 +50,7 @@ import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
+import { TongQuanDuyet, neoTheDuyet } from "./TongQuanDuyet";
 import { canhBaoCuaDeXuat, idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
 import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
@@ -255,7 +256,7 @@ export function BangLenhKhoaCung() {
   );
 }
 
-function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
+function TheDuyetAgent({ m, agent, yeuCauBac }: { m: TheDuyetMuc; agent: HookAgent; yeuCauBac?: { id: string; n: number } | null }) {
   const { t } = useTranslation();
   const diff = useMemo(() => layDiffTuDeXuat(m.deXuat), [m.deXuat]);
   const [xemTruoc, setXemTruoc] = useState(diff?.args.modified ?? "");
@@ -263,6 +264,12 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   const [lyDo, setLyDo] = useState("");
   const busy = agent.dangGuiDuyet === idHanhDong(m);
   const conCho = m.trangThai === "cho";
+  // (Đợt 11.3-B) phím R ở vùng tổng quan: chỉ MỞ ô lý do của thẻ này (việc bác vẫn do thẻ gửi)
+  const nBac = yeuCauBac && yeuCauBac.id === m.id ? yeuCauBac.n : 0;
+  useEffect(() => {
+    if (nBac > 0 && conCho) setMoLyDo(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nBac]);
   // (Đợt 11.3-A) thẻ LỆNH: cảnh báo của máy chủ (thư mục chạy, quy tắc cài đặt…) + khoá cứng + phím tắt
   const laLenh = m.deXuat.ten === "run_command";
   const lenhChuoi = typeof m.deXuat.thamSo?.command === "string" ? (m.deXuat.thamSo.command as string) : "";
@@ -307,7 +314,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
 
   if (diff) {
     return (
-      <div data-testid="agent-the-duyet" data-loai="diff">
+      <div id={neoTheDuyet(m.id)} data-testid="agent-the-duyet" data-loai="diff">
         <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
         {m.deXuat.moTa && <p className="mb-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
         <TheDuyetDiff
@@ -328,6 +335,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
 
   return (
     <div
+      id={neoTheDuyet(m.id)}
       data-testid="agent-the-duyet"
       data-loai={m.deXuat.ten}
       // (Đợt 11.3-A) Enter = "Cho phép MỘT lần", Esc = Bác — CHỈ khi chính thẻ đang giữ tiêu điểm (không bao giờ khi đang gõ ở ô nhập khác / ô lý do) và không bị khoá cứng.
@@ -583,6 +591,7 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
   const s = agent.trangThai;
   const ds = s.dongThoiGian;
   const choPhanHoi = viTriTraLoiCuoi(s);
+  const [yeuCauBac, setYeuCauBac] = useState<{ id: string; n: number } | null>(null);
   const coGi = ds.length > 0 || !!agent.luotDangChayCu || agent.matKetNoi !== null;
   if (!coGi) return null;
 
@@ -602,6 +611,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
       )}
 
       <BangKeHoach viec={s.keHoach} />
+
+      <TongQuanDuyet agent={agent} onYeuCauBac={(id) => setYeuCauBac((p) => ({ id, n: (p?.n ?? 0) + 1 }))} />
 
       <DongModelBatDau m={s.modelBatDau} dangChay={s.dangChay} />
 
@@ -664,7 +675,7 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
           case "tool":
             return <DongTool key={`t-${m.id}-${i}`} m={m} />;
           case "duyet":
-            return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} />;
+            return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "nho":
             return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
           case "canh-bao":
