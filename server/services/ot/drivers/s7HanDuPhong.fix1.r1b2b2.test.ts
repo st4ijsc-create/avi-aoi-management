@@ -1,6 +1,8 @@
 /**
  * SCADA R1b-2b-2a T3 fix round 1 (kiem-dinh, sau T3 S7 @1ccef4218) — ghim các mutant còn sống của bộ hẹn dự phòng ghi S7 + hạn lệnh kẹp.
- *   • s4  — chỉ errCode NGUYÊN VĂN của hết hạn ghi thư viện mới là "không rõ"; errCode khác (số, "Malformed Packet…", tiền tố) ⇒ `failed`, không hạ phiên.
+ *   • s4  — chỉ errCode NGUYÊN VĂN của hết hạn ghi thư viện là "hết hạn" (`laQuaHanGhiS7`); errCode khác (số, tiền tố) không phải hết hạn.
+ *   • fix 2 (kiem-dinh I-1) — trả lời CỤT (item ĐÃ GỬI mang errCode chuỗi "Malformed Packet…" hoặc KHÔNG có writeResponse số) ⇒ KHÔNG RÕ
+ *     (`qua_han_driver`, `timeout`, không đọc lại, không hạ phiên); chỉ writeResponse SỐ ≠ 0xff (PLC nói "không áp", vd 0x0A) ⇒ `failed`.
  *   • s16 — bộ hẹn dự phòng hết ⇒ yêu cầu KHÁC đang bay trên CÙNG phiên reject `mat_lien_ket` NGAY (không đợi hạn riêng của nó).
  *   • s15 — phiên đã hạ không còn là phiên của driver: disconnect() / connect() sau đó KHÔNG đụng lại phiên cũ (dropConnection đúng một lần).
  *   • s17 — lời ghi THÀNH CÔNG không để lại bộ hẹn dự phòng treo.
@@ -9,7 +11,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
-import { laQuaHanGhiS7, S7_ERRCODE_QUA_HAN_GHI } from "./s7Driver";
+import { laQuaHanGhiS7, phanLoaiGhiHongS7, S7_ERRCODE_QUA_HAN_GHI } from "./s7Driver";
+import type { OtDriver } from "../otDriver";
+import { executeOtDeviceWrite, type ExecutedWrite } from "../otDeviceWrite";
 import { batDauDoLag } from "../../../testing/doLagBucleSuKien";
 import { __datLaiCanhBaoHanMsChoTest } from "../hanLenhOt";
 
@@ -43,6 +47,20 @@ function nodes7Gia(phanHoi: (conn: any, cb: (bad: boolean) => void) => void) {
   return ds;
 }
 
+/** Đường ghi THẬT (executeOtDeviceWrite), tuần tự hoá TẮT (khuôn quaHanDriver.drivers.r1b2b2.test.ts). */
+async function ghiQuaExecute(driver: OtDriver, writes: Array<{ tagKey: string; address: string; value: unknown; dataType: string }>): Promise<ExecutedWrite> {
+  return executeOtDeviceWrite({
+    input: { adapterId: 993_000 + Math.floor(Math.random() * 1000), machineId: null, commandType: "stop", idempotencyKey: `t3fix2-${Math.random()}`, writes: writes.map((w) => ({ tagKey: w.tagKey, value: w.value })) } as any,
+    driver,
+    resolved: writes.map((w) => ({ write: { tagKey: w.tagKey, value: w.value }, address: w.address, dataType: w.dataType as any })),
+    driverWrites: writes.map((w) => ({ tagKey: w.tagKey, address: w.address, value: w.value, dataType: w.dataType as any })),
+    timeoutMs: 2000,
+    stopTyped: true,
+    bumpStopEpoch: true,
+    ledger: { intentIds: [1], confirmedBy: 1 },
+  });
+}
+
 async function s7VoiGia(phanHoi: (conn: any, cb: (bad: boolean) => void) => void, timeoutMs = 300) {
   const ds = nodes7Gia(phanHoi);
   const M = await import("./s7Driver");
@@ -66,12 +84,42 @@ describe("T3 fix 1 — S7 (nodes7 giả): s4 / s15 / s16 / s17 / M-2", () => {
     expect(laQuaHanGhiS7(goi(S7_ERRCODE_QUA_HAN_GHI))).toBe(true);
   });
 
-  it("s4 — PLC trả lời NHANH với errCode khác (Malformed Packet) ⇒ 'bad write quality' (failed), KHÔNG ketCucKhongRo, KHÔNG hạ phiên", async () => {
+  it("fix 2 (I-1) — phanLoaiGhiHongS7: hết hạn (chuỗi nguyên văn) / trả lời CỤT (errCode chuỗi khác, hoặc không writeResponse số) ⇒ không rõ; writeResponse SỐ ≠ 0xff / gói chưa gửi ⇒ null (failed)", () => {
+    const goi = (itemList: Array<Record<string, unknown>>, timeoutError = false) => ({ writePacketArray: [{ timeoutError, itemList }] });
+    const MAL = "Malformed Packet - Less Than 1 Byte.  TDL 22 TP21 RL1";
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, errCode: S7_ERRCODE_QUA_HAN_GHI }, { valid: false }]))?.loai).toBe("qua_han");
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, writeResponse: 0xff }, { valid: false, errCode: MAL }]))).toEqual({ loai: "phan_hoi_hong", chiTiet: MAL });
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, writeResponse: 0xff }, { valid: false }]))?.loai).toBe("phan_hoi_hong"); // không mã trả về, không errCode
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, errCode: "Timeout error - zero length packet", writeResponse: 10 }]))?.loai).toBe("phan_hoi_hong"); // errCode chuỗi ⇒ không rõ
+    // PLC nói "không áp" bằng mã số ⇒ null (failed)
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, writeResponse: 10 }]))).toBeNull();
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, writeResponse: 0x0a }, { valid: false, writeResponse: 0x05 }]))).toBeNull();
+    // gói CHƯA gửi (timeoutError true) mang chuỗi hết hạn / không writeResponse ⇒ null (không byte nào rời máy)
+    expect(phanLoaiGhiHongS7(goi([{ valid: false, errCode: S7_ERRCODE_QUA_HAN_GHI }], true))).toBeNull();
+    expect(phanLoaiGhiHongS7(goi([{ valid: false }], true))).toBeNull();
+    // item valid === true (bản thư viện khác) bỏ qua; hình lạ ⇒ null, không ném
+    expect(phanLoaiGhiHongS7(goi([{ valid: true, errCode: MAL }, { valid: false, writeResponse: 5 }]))).toBeNull();
+    for (const x of [null, undefined, 5, {}, { writePacketArray: "x" }, { writePacketArray: [null, { itemList: "y" }, { itemList: [null, 3] }] }]) expect(phanLoaiGhiHongS7(x)).toBeNull();
+    expect(laQuaHanGhiS7(goi([{ valid: false, errCode: MAL }]))).toBe(false);
+  });
+
+  it("fix 2 (I-1) — trả lời CỤT (errCode Malformed Packet) ⇒ KHÔNG RÕ: mọi write ketCucKhongRo 'qua_han_driver'; qua executeOtDeviceWrite ⇒ 'timeout', không đọc lại; KHÔNG hạ phiên", async () => {
+    const MAL = "Malformed Packet - Less Than 1 Byte.  TDL 22 TP21 RL1";
     const { d, conn } = await s7VoiGia((c, cb) => {
-      c.writePacketArray = [{ timeoutError: false, itemList: [{ valid: false, errCode: "Malformed Packet - Less Than 1 Byte.  TDL 22 TP21 RL1" }, { valid: false, errCode: 10 }] }];
+      c.writePacketArray = [{ timeoutError: false, itemList: [{ valid: false, writeResponse: 0xff }, { valid: false, errCode: MAL }] }];
       cb(true);
     });
-    expect(await d.writeTags(STOP_S7)).toEqual([{ tagKey: "stop", ok: false, error: "bad write quality" }]);
+    const out = await d.writeTags([...STOP_S7, { tagKey: "sp", address: "DB1,INT2", value: 7, dataType: "int" }]);
+    expect(out.map((o) => ({ ok: o.ok, k: o.ketCucKhongRo }))).toEqual([{ ok: false, k: "qua_han_driver" }, { ok: false, k: "qua_han_driver" }]);
+    expect(String(out[0]!.error)).toContain(MAL);
+    expect(String(out[0]!.error)).toMatch(/outcome unknown/);
+    expect(conn.dropConnection).not.toHaveBeenCalled();
+    expect(conn.connectionCleanup).not.toHaveBeenCalled();
+    expect(d.isConnected()).toBe(true);
+    const o = await ghiQuaExecute(d, [{ tagKey: "stop", address: "DB1,X0.0", value: true, dataType: "bool" }]);
+    expect(o.timedOut).toBe(false);
+    expect(o.outcomes[0]).toMatchObject({ ok: false, status: "timeout" });
+    expect(o.outcomes[0]!.readBackValue).toBeNull();
     expect(conn.dropConnection).not.toHaveBeenCalled();
     expect(conn.connectionCleanup).not.toHaveBeenCalled();
     expect(d.isConnected()).toBe(true);
@@ -217,23 +265,10 @@ describe("T3 fix 1 — S7 (nodes7 THẬT + __s7commSim)", () => {
     expect(warn.mock.calls.filter((c) => String(c[0]).includes("OT_CONTROL_TIMEOUT_MS")).length).toBe(1);
   }, 15_000);
 
-  it("s4 (sim) — PLC trả mã lỗi 0x0A NHANH ⇒ 'bad write quality' (failed), không 'không rõ', KHÔNG hạ phiên; dưới hạn gói", async () => {
+  it("đối chứng (sim) — PLC trả mã lỗi 0x0A NHANH (writeResponse số ≠ 0xff) ⇒ 'bad write quality' (failed), KHÔNG 'không rõ', KHÔNG hạ phiên; qua executeOtDeviceWrite ⇒ 'failed'", async () => {
     const { sim, d } = await s7Sim("writeError", 2000);
     const lag = batDauDoLag();
     const t0 = performance.now();
-    const out = await d.writeTags(STOP_S7);
-    const ms = performance.now() - t0;
-    expect(out).toEqual([{ tagKey: "stop", ok: false, error: "bad write quality" }]);
-    expect(d.isConnected()).toBe(true);
-    expect(sim.stats().open).toBe(1);
-    expect(ms).toBeLessThan(500 + (await lag.dung(200)));
-  }, 15_000);
-
-  it("s4 (sim) — PLC trả lời NHANH nhưng CỤT (thiếu mã trả về của item: nodes7 đặt errCode 'Malformed Packet…', KHÁC chuỗi quá hạn) ⇒ failed, không 'không rõ', KHÔNG hạ phiên", async () => {
-    const { sim, d } = await s7Sim("writeShort", 2000);
-    const lag = batDauDoLag();
-    const t0 = performance.now();
-    // 2 item: 1 mã trả về cho item đầu, item thứ hai không có byte (1 item không dữ liệu = 21 byte < 22 ⇒ nodes7 đặt lại kết nối, không phải ca này)
     const out = await d.writeTags([...STOP_S7, { tagKey: "sp", address: "DB1,INT2", value: 7, dataType: "int" }]);
     const ms = performance.now() - t0;
     expect(out).toEqual([
@@ -243,6 +278,29 @@ describe("T3 fix 1 — S7 (nodes7 THẬT + __s7commSim)", () => {
     expect(d.isConnected()).toBe(true);
     expect(sim.stats().open).toBe(1);
     expect(ms).toBeLessThan(500 + (await lag.dung(200)));
+    const o = await ghiQuaExecute(d, [{ tagKey: "stop", address: "DB1,X0.0", value: true, dataType: "bool" }]);
+    expect(o.outcomes[0]).toMatchObject({ ok: false, status: "failed", errorText: "bad write quality" });
+  }, 15_000);
+
+  it("fix 2 (I-1, sim) — PLC trả lời NHANH nhưng CỤT (item thứ hai không có mã trả về: nodes7 đặt errCode 'Malformed Packet…') ⇒ KHÔNG RÕ (qua_han_driver), KHÔNG hạ phiên; qua executeOtDeviceWrite ⇒ 'timeout', không đọc lại", async () => {
+    const { sim, d } = await s7Sim("writeShort", 2000);
+    const lag = batDauDoLag();
+    const t0 = performance.now();
+    // 2 item: 1 mã trả về cho item đầu, item thứ hai không có byte (1 item không dữ liệu = 21 byte < 22 ⇒ nodes7 đặt lại kết nối, không phải ca này)
+    const out = await d.writeTags([...STOP_S7, { tagKey: "sp", address: "DB1,INT2", value: 7, dataType: "int" }]);
+    const ms = performance.now() - t0;
+    expect(out.map((o) => ({ ok: o.ok, k: o.ketCucKhongRo }))).toEqual([{ ok: false, k: "qua_han_driver" }, { ok: false, k: "qua_han_driver" }]);
+    expect(String(out[1]!.error)).toMatch(/Malformed Packet/);
+    expect(d.isConnected()).toBe(true);
+    expect(sim.stats().open).toBe(1);
+    expect(ms).toBeLessThan(500 + (await lag.dung(200)));
+    const o = await ghiQuaExecute(d, [...STOP_S7, { tagKey: "sp", address: "DB1,INT2", value: 7, dataType: "int" }]);
+    expect(o.timedOut).toBe(false);
+    for (const oc of o.outcomes) {
+      expect(oc).toMatchObject({ ok: false, status: "timeout" });
+      expect(oc.readBackValue).toBeNull();
+    }
+    expect(d.isConnected()).toBe(true);
   }, 15_000);
 
   it("thăm dò thư viện thật: 'writeShort' ⇒ item valid=false + errCode bắt đầu 'Malformed Packet' (≠ S7_ERRCODE_QUA_HAN_GHI), callback(true) nhanh", async () => {
@@ -269,5 +327,6 @@ describe("T3 fix 1 — S7 (nodes7 THẬT + __s7commSim)", () => {
     expect(items.some((i) => i.errCode === S7_ERRCODE_QUA_HAN_GHI)).toBe(false);
     expect(sim.stats().open).toBe(1); // không đặt lại kết nối
     expect(laQuaHanGhiS7(conn)).toBe(false);
+    expect(phanLoaiGhiHongS7(conn)?.loai).toBe("phan_hoi_hong");
   }, 15_000);
 });

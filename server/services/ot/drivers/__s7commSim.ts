@@ -82,7 +82,7 @@ export type SimFault =
   | null
   | "hangWrite" // (write var) never answer a write var job (R1b-2b-2a T3: the client's own write timeout); the job is still recorded in pdus
   | "writeError" // (write var) answer every write var item with return code 0x0A (object does not exist): the PLC ANSWERED with an error
-  | "writeShort" // (write var) answer at once with the item count but ONE return-code byte fewer than items (truncated data part) — T3 fix 1 s4: nodes7 0.3.18 marks the item without a byte valid=false with errCode "Malformed Packet - Less Than 1 Byte…" (an errCode that is NOT the library write timeout). Needs >= 2 items: a 1-item answer without data is 21 bytes, below the 22-byte minimum nodes7 accepts (it resets the connection instead)
+  | "writeShort" // (write var) answer at once with the item count but ONE return-code byte fewer than items (truncated data part) — T3 fix 1 s4: nodes7 0.3.18 marks the item without a byte valid=false with errCode "Malformed Packet - Less Than 1 Byte…" and NO writeResponse, and calls back at once with "bad". The PLC answered the job without a result for that item ⇒ the driver labels it outcome UNKNOWN (T3 fix 2, kiem-dinh I-1), not failed. Needs >= 2 items: a 1-item answer without data is 21 bytes, below the 22-byte minimum nodes7 accepts (it resets the connection instead)
   | "hang" // never answer a block-function request
   | "refuse" // parameter error code 0x8104 (function not supported) on every block function
   | "wrongNumber" // block info answers with another block number

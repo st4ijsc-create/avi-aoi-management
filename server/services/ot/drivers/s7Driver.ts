@@ -109,9 +109,25 @@ export const S7_ERRCODE_QUA_HAN_GHI = "We must have timed Out - we have no respo
  * chứng trực tiếp. Truy cập phòng thủ, không ném; cấu trúc không đọc được ⇒ false (`failed` như trước).
  */
 export function laQuaHanGhiS7(conn: unknown): boolean {
+  return phanLoaiGhiHongS7(conn)?.loai === "qua_han";
+}
+
+/**
+ * T3 fix 2 (kiem-dinh I-1, dieu-phoi chốt) — lời ghi VỪA XONG với callback(true): kết cục KHÔNG RÕ hay PLC đã nói "không áp"?
+ * nodes7 0.3.18 chỉ đặt HAI errCode cho item ghi: chuỗi hết hạn (`processS7WriteItem(undefined)`, :1732) và "Malformed Packet - Less Than 1 Byte…"
+ * (:1742 — trả lời CỤT: `onResponse` không so số item của tham số với itemList, `writeResponse` dừng ở item thiếu byte). Một "không áp" THẬT của PLC
+ * chỉ đặt `writeResponse` = mã SỐ ≠ 0xff (:1747-1753), không errCode. Nên, trên các gói ĐÃ GỬI (`timeoutError !== true`), item `valid === false`:
+ *   • errCode === S7_ERRCODE_QUA_HAN_GHI ⇒ `"qua_han"` (ưu tiên — thư viện tự hết hạn);
+ *   • errCode là chuỗi khác, hoặc KHÔNG có `writeResponse` số ⇒ `"phan_hoi_hong"` (PLC trả lời cả job nhưng không có kết quả cho item ⇒ có thể đã áp);
+ *   • còn lại (mọi item hỏng mang writeResponse số) ⇒ null ⇒ `failed`.
+ * Gói chưa gửi (`timeoutError === true`) bỏ qua (không byte nào rời máy ⇒ `failed`). Lô lẫn 0xff + 0x0A (áp MỘT PHAN) KHÔNG xét ở đây — Task 3E.
+ * Truy cập phòng thủ, không ném; cấu trúc không đọc được ⇒ null.
+ */
+export function phanLoaiGhiHongS7(conn: unknown): { loai: "qua_han" | "phan_hoi_hong"; chiTiet: string } | null {
   try {
     const arr = (conn as { writePacketArray?: unknown } | null)?.writePacketArray;
-    if (!Array.isArray(arr)) return false;
+    if (!Array.isArray(arr)) return null;
+    let hong: { loai: "phan_hoi_hong"; chiTiet: string } | null = null;
     for (const goi of arr) {
       if (!goi || typeof goi !== "object") continue;
       if ((goi as { timeoutError?: unknown }).timeoutError === true) continue; // không được gửi
@@ -120,12 +136,16 @@ export function laQuaHanGhiS7(conn: unknown): boolean {
       for (const it of ds) {
         if (!it || typeof it !== "object") continue;
         if ((it as { valid?: unknown }).valid !== false) continue;
-        if ((it as { errCode?: unknown }).errCode === S7_ERRCODE_QUA_HAN_GHI) return true;
+        const errCode = (it as { errCode?: unknown }).errCode;
+        if (errCode === S7_ERRCODE_QUA_HAN_GHI) return { loai: "qua_han", chiTiet: S7_ERRCODE_QUA_HAN_GHI };
+        if (hong) continue;
+        if (typeof errCode === "string") hong = { loai: "phan_hoi_hong", chiTiet: errCode };
+        else if (typeof (it as { writeResponse?: unknown }).writeResponse !== "number") hong = { loai: "phan_hoi_hong", chiTiet: "no return code for an item" };
       }
     }
-    return false;
+    return hong;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -662,7 +682,10 @@ export class S7Driver extends NotImplementedDriver {
             const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
               if (!anyBadQualities) return resolve();
               // T3 — callback(true) là CẢ "PLC trả lời lỗi" LẪN "gói ĐÃ GỬI hết hạn của thư viện": phân biệt bằng errCode item (thăm dò thật).
-              if (laQuaHanGhiS7(conn)) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`, "thu_vien"));
+              // T3 fix 2 (I-1) — trả lời CỤT (không kết quả cho một item) cũng KHÔNG RÕ; chỉ mã trả về số ≠ 0xff mới là `failed`.
+              const hong = phanLoaiGhiHongS7(conn);
+              if (hong?.loai === "qua_han") reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`, "thu_vien"));
+              else if (hong) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write reply without a result for an item: ${hong.chiTiet}`, "phan_hoi_hong"));
               else reject(new Error("bad write quality"));
             });
             if (rc === 1) reject(new Error("S7 write busy"));
@@ -672,7 +695,7 @@ export class S7Driver extends NotImplementedDriver {
         "s7 writeItems",
       ).catch((e: unknown) => {
         // T3 fix 1 (M-2) — theo cờ CÓ KIỂU, không so chữ của message.
-        if (laLoiQuaHanYeuCauDriver(e) && (e as { loai?: unknown }).loai === "du_phong") duPhongHet = true;
+        if (laLoiQuaHanYeuCauDriver(e) && e.loai === "du_phong") duPhongHet = true;
         throw e;
       });
     } catch (err) {

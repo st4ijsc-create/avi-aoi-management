@@ -94,6 +94,24 @@ describe("T3 fix 1 (M-4) — hanLenhOtMacDinhMs / hanMsTuEnv", () => {
     vi.stubEnv("OT_ADAPTER_START_TIMEOUT_MS", "1500");
     expect(adapterStartTimeoutMs()).toBe(1500);
   });
+
+  it("fix 2 (ruling 1) — OT_STORE_FORWARD_DRAIN_MS: hữu hạn > 2^31−1 ('3e9', '1e12') ⇒ mặc định 45 000 + MỘT cảnh báo (trước: qua isFinite rồi setInterval tràn về 1 ms); hợp lệ giữ, sàn 15 s", async () => {
+    const { storeForwardDrainIntervalMs } = await import("./storeForward");
+    for (const xau of ["3e9", "1e12", "3000000000"]) {
+      __datLaiCanhBaoHanMsChoTest();
+      warn.mockClear();
+      vi.stubEnv("OT_STORE_FORWARD_DRAIN_MS", xau);
+      expect(storeForwardDrainIntervalMs(), xau).toBe(45_000);
+      expect(storeForwardDrainIntervalMs(), xau).toBe(45_000);
+      expect(canhBaoCua(warn, "OT_STORE_FORWARD_DRAIN_MS"), xau).toHaveLength(1);
+    }
+    vi.stubEnv("OT_STORE_FORWARD_DRAIN_MS", "20000");
+    expect(storeForwardDrainIntervalMs()).toBe(20_000);
+    vi.stubEnv("OT_STORE_FORWARD_DRAIN_MS", "1000");
+    expect(storeForwardDrainIntervalMs()).toBe(15_000); // sàn giữ nguyên
+    vi.stubEnv("OT_STORE_FORWARD_DRAIN_MS", "");
+    expect(storeForwardDrainIntervalMs()).toBe(45_000);
+  });
 });
 
 // ─── census: không nơi nào trong server/ (trừ test / harness `__*.ts` / helper) đọc thẳng các biến hạn đã kẹp ─────────────────────────────
@@ -101,7 +119,8 @@ const GOC = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const rel = (p: string) => relative(GOC, p).split(sep).join("/");
 const HELPER = "server/services/ot/hanLenhOt.ts";
 /** Biến OT_*_MS đi vào setTimeout / setInterval, nay CHỈ đọc qua `hanMsTuEnv` / `hanLenhOtMacDinhMs`. */
-const BIEN_DA_KEP = ["OT_CONTROL_TIMEOUT_MS", "OT_ADAPTER_START_TIMEOUT_MS", "OT_LEGACY_RECONNECT_MS", "OT_CONN_HA_BACKOFF_MS", "OT_CONN_HA_BACKOFF_MAX_MS", "OT_CONN_HA_HEALTH_INTERVAL_MS"];
+const BIEN_MANAGER = ["OT_ADAPTER_START_TIMEOUT_MS", "OT_LEGACY_RECONNECT_MS", "OT_CONN_HA_BACKOFF_MS", "OT_CONN_HA_BACKOFF_MAX_MS", "OT_CONN_HA_HEALTH_INTERVAL_MS"];
+const BIEN_DA_KEP = ["OT_CONTROL_TIMEOUT_MS", ...BIEN_MANAGER, "OT_STORE_FORWARD_DRAIN_MS"];
 
 function moiTep(thuMuc: string, ra: string[] = []): string[] {
   for (const ten of readdirSync(thuMuc)) {
@@ -153,6 +172,8 @@ describe("T3 fix 1 (M-4) — census: biến hạn đã kẹp CHỈ đọc qua he
     expect(doc("server/services/ot/drivers/ethernetIpDriver.ts")).toMatch(/hanLenhOtMacDinhMs\(\)/);
     expect(doc("server/services/robot/deviceOwnershipService.ts")).toMatch(/hanLenhOtMacDinhMs\(\)/);
     const mgr = doc("server/services/ot/otManager.ts");
-    for (const b of BIEN_DA_KEP.slice(1)) expect(mgr, b).toMatch(new RegExp(`hanMsTuEnv\\(\\s*"${b}"`));
+    for (const b of BIEN_MANAGER) expect(mgr, b).toMatch(new RegExp(`hanMsTuEnv\\(\\s*"${b}"`));
+    expect(doc("server/services/ot/storeForward.ts")).toMatch(/hanMsTuEnv\(\s*"OT_STORE_FORWARD_DRAIN_MS"/);
+    expect(doc("server/_core/backgroundJobs.ts")).toMatch(/storeForwardDrainIntervalMs\(\)/);
   });
 });

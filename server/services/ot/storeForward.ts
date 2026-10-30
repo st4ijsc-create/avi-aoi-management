@@ -33,6 +33,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { InsertOtTelemetry } from "../../../drizzle/schema/ot";
 import { getTsDropStats, getTsSkewByDevice, isPgDataError, MIN_PG_TS_MS, warnGop, type TsSkewThietBi } from "./otGuards";
+import { hanMsTuEnv } from "./hanLenhOt";
 
 // ── flag ───────────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,14 @@ function walFile(): string {
 function maxEntries(): number {
   const n = parseInt(process.env.OT_STORE_FORWARD_MAX || "100000", 10);
   return Number.isFinite(n) && n > 0 ? n : 100000;
+}
+
+/**
+ * Chu kỳ timer XẢ độc lập (backgroundJobs, OT-F10): env OT_STORE_FORWARD_DRAIN_MS, mặc định 45 s, sàn 15 s. R1b-2b-2a T3 fix 2 — đọc qua `hanMsTuEnv`
+ * (giá trị không hợp lệ / hữu hạn > 2^31−1 ⇒ 45 s + cảnh báo một lần): "3e9" trước đây qua `Number.isFinite` rồi tràn setInterval về 1 ms.
+ */
+export function storeForwardDrainIntervalMs(): number {
+  return Math.max(15_000, hanMsTuEnv("OT_STORE_FORWARD_DRAIN_MS", 45_000));
 }
 
 /** Max age (ms) a buffered entry may live before it is dropped on the next sweep. */

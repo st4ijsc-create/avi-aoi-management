@@ -116,9 +116,11 @@ export const MA_QUA_HAN_YEU_CAU_DRIVER = "OT_DRIVER_REQUEST_TIMEOUT";
 /**
  * T3 fix 1 (kiem-dinh M-2) — AI hết hạn: `"thu_vien"` = hẹn giờ giao dịch / gói của CHÍNH thư viện (hoặc socket riêng của driver) đã trả lời "hết hạn"
  * (thư viện đã tự dọn yêu cầu); `"du_phong"` = bộ hẹn DỰ PHÒNG của driver hết trong khi thư viện CHƯA gọi lại (thư viện còn giữ yêu cầu ⇒ S7 hạ phiên).
+ * `"phan_hoi_hong"` (T3 fix 2, kiem-dinh I-1) = thiết bị TRẢ LỜI job nhưng lời đáp thiếu kết quả của một item (nodes7 "Malformed Packet") ⇒ cũng
+ * KHÔNG RÕ (có thể đã áp), thư viện đã tự dọn (không hạ phiên). Cùng mã / cùng nhãn `qua_han_driver` (đường T2 sẵn có), message riêng.
  * Quyết định dựa trên trường này, KHÔNG đọc chữ của message.
  */
-export type LoaiQuaHanDriver = "du_phong" | "thu_vien";
+export type LoaiQuaHanDriver = "du_phong" | "thu_vien" | "phan_hoi_hong";
 
 export class LoiQuaHanYeuCauDriver extends Error {
   readonly code = MA_QUA_HAN_YEU_CAU_DRIVER;
@@ -127,7 +129,11 @@ export class LoiQuaHanYeuCauDriver extends Error {
     readonly chiTiet: string,
     readonly loai: LoaiQuaHanDriver,
   ) {
-    super(`${giaoThuc} request timed out in the driver (${chiTiet}) — outcome unknown`);
+    super(
+      loai === "phan_hoi_hong"
+        ? `${giaoThuc} device reply incomplete in the driver (${chiTiet}) — outcome unknown`
+        : `${giaoThuc} request timed out in the driver (${chiTiet}) — outcome unknown`,
+    );
     this.name = "LoiQuaHanYeuCauDriver";
   }
 }
