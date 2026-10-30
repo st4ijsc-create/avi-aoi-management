@@ -30,9 +30,13 @@ export interface MucModel {
 const LOAI = new Set(["auto", "vai-tro", "ho-so", "ngoai"]);
 const TRANG_THAI = new Set(["san-sang", "can-doi-khe", "tat"]);
 
-/** Mục `ngoai:*` chỉ vào ô của extension khi máy chủ khai phục vụ CẢ Trợ lý (`chat`) lẫn Agent (`agent`) — ô là MỘT điều khiển cho cả hai đường (10.4 T0). */
+/**
+ * Mục `ngoai:*` vào ô của extension khi máy chủ khai phục vụ Trợ lý (`chat`) — đường HỎI (10.4b-E). Trước đây (10.4 T0) đòi thêm `agent`, nhưng máy chủ
+ * KHÔNG BAO GIỜ khai `agent` cho model ngoài (`BE_MAT_NGOAI_DUOC_DUNG` = luong/kiem-dinh/chat/coding) ⇒ ô extension không bao giờ có mục ngoài (LIVE 2026-10-31).
+ * Agent vẫn KHÔNG nhận mã `ngoai:` (bangChat đổi về "auto" cho agent) nên bỏ điều kiện `agent` không mở đường agent.
+ */
 export function duocDungOExtension(duocDungO: readonly string[] | undefined): boolean {
-  return Array.isArray(duocDungO) && duocDungO.includes("chat") && duocDungO.includes("agent");
+  return Array.isArray(duocDungO) && duocDungO.includes("chat");
 }
 
 /** Phản hồi tRPC (đã bóc superjson) → danh mục sạch. Phần tử sai hình dạng / mã ngoài regex / vai không sinh chữ bị BỎ; luôn có "auto" đứng đầu. */
