@@ -93,3 +93,10 @@ export type VetNgoaiLichSu = Omit<VetNgoai, "callId">;
 
 /** `ngoai:<nhà cung cấp>:<model>` khi tin trợ lý do model ngoài sinh (máy chủ đã xác minh), `null` = cục bộ. */
 export type NguonModel = string | null;
+
+/**
+ * Hình dạng `nguonModel` — MỘT nguồn cho mã ghi và CHECK `ai_chat_messages_nguon_model_chk` (migration 0417; lưới ghim chuỗi trong SQL).
+ * Rộng hơn `RE_CHON_MODEL_NGOAI` ở phần model: thêm `/` và `@` (id OpenAI-compatible `meta-llama/Llama-3.3-70B`, Vertex `claude-…@2025…`).
+ */
+export const MAU_NGUON_MODEL = "^ngoai:[a-z0-9_-]{1,32}:[A-Za-z0-9._:/@-]{1,96}$";
+export const RE_NGUON_MODEL = new RegExp(MAU_NGUON_MODEL);
