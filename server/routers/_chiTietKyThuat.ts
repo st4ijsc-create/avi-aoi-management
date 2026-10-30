@@ -32,9 +32,46 @@ export async function chiTietKyThuatCua(ctx: { user: { id: number; role: string 
 }
 
 /**
- * MÃ lý do của một `errorText` của `command_log` — tiền tố `MA:` mà dispatcher ghi (`${reason}: ${detail}`, commandDispatcher `writeAll`).
- * Cùng biểu thức với `scadaCommands.trangThai` (`lenhHmi.trangThaiYeuCauGhi`). Không có tiền tố ⇒ `null` (không bao giờ trả phần chi tiết).
+ * Mã DỰ PHÒNG khi `errorText` không có tiền tố `MA:` (fix round 1, review I1) — đó chính là các hàng mang VĂN BẢN THÔ của driver / edge:
+ *   • `TIMEOUT`              — status `timeout`, hoặc văn bản "outcome unknown … may have been applied" (`otDeviceWrite.ts` timeout / mất liên
+ *                              kết lúc đang bay). Gợi ý an toàn "không rõ máy đã nhận — đọc lại trước khi gửi lần nữa" sống qua lớp che (client
+ *                              đã có chữ `scada.lenh.cong.TIMEOUT`).
+ *   • `EDGE_REPORTED`        — `edge reported status "…"` / "the edge reported …" (`edgeReportsCentral.ts` hàng do edge báo).
+ *   • `READBACK_UNAVAILABLE` — `readback unavailable` (status acked_unverified: ghi xong, không đọc lại được).
+ *   • `READBACK_MISMATCH`    — `readback mismatch: …` / `readback not verified: …` (acked_unverified: đọc lại lệch / mẫu không good).
+ *   • `DRIVER_WRITE_FAILED`  — status `failed` với văn bản thô (vd `connect ECONNREFUSED 127.0.0.1:502`, `no result`, `write failed`).
+ *   • `TECHNICAL_ERROR`      — mọi văn bản thô khác.
+ * Đây là CHUỖI lý do (cùng họ `reason` của dispatch), không phải mã `appErrorCodes`.
  */
-export function maLoiCua(errorText: string | null | undefined): string | null {
-  return /^([A-Z][A-Z0-9_]*):/.exec(errorText ?? "")?.[1] ?? null;
+export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABLE", "READBACK_MISMATCH", "DRIVER_WRITE_FAILED", "TECHNICAL_ERROR"] as const;
+
+/**
+ * MÃ lý do của một `errorText` của `command_log`:
+ *   1. tiền tố `MA:` mà dispatcher ghi cho từ chối (`${reason}: ${detail}`, commandDispatcher `writeAll`) — cùng biểu thức với
+ *      `scadaCommands.trangThai`;
+ *   2. không tiền tố (văn bản thô driver / edge) ⇒ mã DỰ PHÒNG theo `status` + hình văn bản (`MA_LOI_DU_PHONG`).
+ * Không bao giờ trả phần chi tiết. `errorText` rỗng / null ⇒ `null`.
+ */
+export function maLoiCua(errorText: string | null | undefined, status?: string | null): string | null {
+  const t = (errorText ?? "").trim();
+  if (!t) return null;
+  const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
+  if (tienTo) return tienTo;
+  if (status === "timeout" || /outcome unknown|may have been applied/i.test(t)) return "TIMEOUT";
+  if (/^edge reported status|^the edge reported/i.test(t)) return "EDGE_REPORTED";
+  if (/^readback unavailable/i.test(t)) return "READBACK_UNAVAILABLE";
+  if (/^readback (mismatch|not verified)/i.test(t)) return "READBACK_MISMATCH";
+  if (status === "failed") return "DRIVER_WRITE_FAILED";
+  return "TECHNICAL_ERROR";
+}
+
+/**
+ * M1 (fix round 1) — `reasonCode` của lần thử: mã thuần (`^[A-Z][A-Z0-9_]*$`) giữ nguyên; văn bản thô (đường thử lại idempotent của dispatcher
+ * có thể đặt `kq.reason` = errorText đầy đủ — lenhHmi bước 9) ⇒ `maLoiCua` (tiền tố hoặc dự phòng). `null` ⇒ `null`.
+ */
+export function maLyDoThu(reasonCode: string | null | undefined): string | null {
+  const t = (reasonCode ?? "").trim();
+  if (!t) return null;
+  if (/^[A-Z][A-Z0-9_]*$/.test(t)) return t;
+  return maLoiCua(t, null);
 }

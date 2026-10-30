@@ -28,6 +28,7 @@ import {
 import { ScrollText, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { commandLedgerRole } from "@/lib/commandLedger";
+import { khoaMaLoi } from "@/lib/commandAuditMa";
 
 const STATUSES = ["simulated", "sent", "acked", "acked_verified", "acked_unverified", "failed", "timeout", "rejected"] as const;
 const TRIGGERS = ["hitl", "interlock"] as const;
@@ -57,7 +58,7 @@ function fmtValue(v: unknown): string {
  * standalone /command-audit route below.
  */
 export function CommandAuditLogContent() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [machineId, setMachineId] = useState("");
   const [adapterId, setAdapterId] = useState("");
   const [triggerKind, setTriggerKind] = useState<string>(ALL);
@@ -77,11 +78,17 @@ export function CommandAuditLogContent() {
 
   const rows = query.data ?? [];
 
-  // C1 — errorText bị máy chủ che (loiBiChe) ⇒ MÃ lỗi (maLoi) + nhãn "chi tiết kỹ thuật bị ẩn"; không lỗi ⇒ "—"
+  // C1 fix round 1 (M2) — MÃ lỗi ⇒ chữ đã dịch: mã cổng / dispatch đã có chữ (`scada.lenh.cong.<MÃ>`, cùng bảng của hộp thoại lệnh), mã DỰ PHÒNG của
+  // máy chủ (`commandAudit.maLoi.<MÃ>` — TIMEOUT / DRIVER_WRITE_FAILED / EDGE_REPORTED / READBACK_* / TECHNICAL_ERROR), mã lạ ⇒ mã thô
+  const dichMa = (ma: string): string => {
+    const k = khoaMaLoi(ma, (khoa) => i18n.exists(khoa));
+    return k ? t(k) : ma;
+  };
+  // C1 — errorText bị máy chủ che (loiBiChe) ⇒ chữ của MÃ lỗi (maLoi) + nhãn "chi tiết kỹ thuật bị ẩn"; không lỗi ⇒ "—"
   const loiCua = (r: (typeof rows)[number]): string => {
     if (r.errorText) return r.errorText;
     if (!r.loiBiChe) return "—";
-    return r.maLoi ? `${r.maLoi} · ${t('commandAudit.loiBiChe')}` : t('commandAudit.loiBiChe');
+    return r.maLoi ? `${dichMa(r.maLoi)} · ${t('commandAudit.loiBiChe')}` : t('commandAudit.loiBiChe');
   };
 
   // doc 81 Đợt 1B Task 6 fix round 1 — a real write is TWO rows (write-ahead intent + result);

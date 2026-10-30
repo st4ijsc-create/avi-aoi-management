@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
-import { duocXemChiTietKyThuat, maLoiCua } from "./_chiTietKyThuat";
+import { duocXemChiTietKyThuat, maLoiCua, maLyDoThu } from "./_chiTietKyThuat";
 import { giaiConTro, maHoaConTro, soThuTu } from "./commandLogRouter";
 
 const RUN = `nk${process.pid}${Date.now().toString(36)}`;
@@ -23,13 +23,18 @@ const dung = async (q: ReturnType<typeof sql>): Promise<any[]> => (await db.exec
 
 type Caller = any;
 const nguoi: Record<"kyA" | "viewerA" | "opA" | "nguoiB" | "admin" | "kyP", { id: number; c: Caller; ten: string }> = {} as never;
-const fx = { fA: "", fB: "", fP: "", mA: 0, mA2: 0, mB: 0, mP: 0, aA: 0, aA2: 0, aB: 0, aP: 0, aT: 0 };
-const lenh = { a1: 0, intent: 0, ketQua: 0, a2: 0, b: 0, mayNull: 0 };
-const thu = { a: 0, b: 0, nullVerA: 0, nullUnverA: 0, nullVerB: 0, nullKhongGiaTri: 0 };
+const fx = { fA: "", fB: "", fP: "", mA: 0, mA2: 0, mB: 0, mP: 0, aA: 0, aA2: 0, aB: 0, aP: 0, aT: 0, aD: 0 };
+const lenh = { a1: 0, intent: 0, ketQua: 0, a2: 0, b: 0, mayNull: 0, timeout: 0, edge: 0, rb: 0, intent2: 0, ketQua2: 0, d: 0 };
+const thu = { a: 0, b: 0, nullVerA: 0, nullUnverA: 0, nullVerB: 0, nullKhongGiaTri: 0, dispatchTho: 0, d: 0 };
 const pLenh: number[] = [];
 const pThu: number[] = [];
 const factories: string[] = [];
-const LOI_DRIVER = "DRIVER_ERROR: connect ECONNREFUSED 10.0.0.5:502";
+// fix round 1 (I1) — văn bản THẬT mà dispatcher ghi cho kết cục thiết bị (KHÔNG có tiền tố MÃ): `otDeviceWrite.ts` (lỗi driver thô / timeout /
+// read-back) qua `commandDispatcher.ts` (`errorText: o.errorText`), và `edgeReportsCentral.ts` (hàng edge báo). Tiền tố `MA:` chỉ có ở `writeAll`.
+const LOI_DRIVER = "connect ECONNREFUSED 127.0.0.1:502";
+const LOI_TIMEOUT = "write timeout after 2000ms — outcome unknown: the write may have been applied on the device";
+const LOI_EDGE = 'edge reported status "aborted"';
+const LOI_READBACK = "readback mismatch: expected=1 actual=0";
 
 async function seedNhaMay(ten: string): Promise<{ code: string; sid: number }> {
   const code = `${RUN}${ten}`;
@@ -112,6 +117,7 @@ beforeAll(async () => {
   fx.aB = await seedAdapter(fx.mB, "aB", "stub");
   fx.aP = await seedAdapter(fx.mP, "aP", "stub");
   fx.aT = await seedAdapter(fx.mP, "aT", "stub");
+  fx.aD = await seedAdapter(fx.mP, "aD", "stub");
 
   nguoi.kyA = await seedNguoi("kyA", "engineer", [A.code], true);
   nguoi.viewerA = await seedNguoi("viewerA", "viewer", [A.code], false);
@@ -127,7 +133,14 @@ beforeAll(async () => {
   lenh.a2 = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "simulated", by: nguoi.nguoiB.id });
   // lệnh của adapter máy A mà cột machineId NULL ⇒ vẫn thuộc A (qua adapter), lọc machineId vẫn thấy
   lenh.mayNull = await seedLenh({ adapterId: fx.aA, machineId: null, status: "rejected", by: nguoi.kyA.id, errorText: "TAG_NOT_WRITABLE: tag x" });
-  lenh.b = await seedLenh({ adapterId: fx.aB, machineId: fx.mB, status: "failed", by: nguoi.nguoiB.id, errorText: "DRIVER_ERROR: B" });
+  lenh.b = await seedLenh({ adapterId: fx.aB, machineId: fx.mB, status: "failed", by: nguoi.nguoiB.id, errorText: "connect ETIMEDOUT 10.9.9.9:102" });
+  // I1 — kết cục thiết bị thật (văn bản thô) trên adapter modbus của máy A2
+  lenh.timeout = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "timeout", by: nguoi.kyA.id, errorText: LOI_TIMEOUT });
+  lenh.edge = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "failed", by: nguoi.kyA.id, errorText: LOI_EDGE });
+  lenh.rb = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "acked_unverified", by: nguoi.kyA.id, errorText: LOI_READBACK });
+  // M5 — intentId CHUỖI số ⇒ intentId null (cùng luật client commandLedgerRole)
+  lenh.intent2 = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "sent", by: nguoi.kyA.id, ackValue: { ledger: "intent" } });
+  lenh.ketQua2 = await seedLenh({ adapterId: fx.aA2, machineId: fx.mA2, status: "acked", by: nguoi.kyA.id, ackValue: { ledger: "result", intentId: String(lenh.intent2) } });
 
   // ── lần thử ──
   thu.a = await seedThu({ adapterId: fx.aA, userId: nguoi.opA.id, reasonCode: "GIA_TRI_NGOAI_DAI", lyDo: "ly do A", requestedValue: 7 });
@@ -136,6 +149,12 @@ beforeAll(async () => {
   thu.nullUnverA = await seedThu({ adapterId: null, userId: nguoi.opA.id, reasonCode: "STOP_QUA_HAN", stage: "dispatch", requestedValue: { machineId: fx.mA, daXacMinhPhamVi: false, buoc: "pham_vi", hanMs: 2000 } });
   thu.nullVerB = await seedThu({ adapterId: null, userId: nguoi.nguoiB.id, reasonCode: "STOP_QUA_HAN", stage: "dispatch", requestedValue: { machineId: fx.mB, daXacMinhPhamVi: true, buoc: "vai_tro", hanMs: 2000 } });
   thu.nullKhongGiaTri = await seedThu({ adapterId: null, userId: nguoi.kyA.id, reasonCode: "NOT_FOUND" });
+  // M1 — dòng dispatch mang văn bản thô của driver (đường thử lại idempotent: kq.reason = errorText; lenhHmi bước 9)
+  thu.dispatchTho = await seedThu({ adapterId: fx.aA2, userId: nguoi.kyA.id, stage: "dispatch", outcome: "dispatched", reasonCode: LOI_DRIVER, lyDo: `Kết quả gửi: failed (${LOI_DRIVER})` });
+
+  // ── M8: một lệnh + một lần thử ở …05.654321 (den ms phải bao gồm trọn mili-giây) ──
+  lenh.d = await seedLenh({ adapterId: fx.aD, machineId: fx.mP, status: "simulated", by: nguoi.kyP.id, createdAt: "2026-10-27 05:06:07.654321" });
+  thu.d = await seedThu({ adapterId: fx.aD, userId: nguoi.kyP.id, reasonCode: "D", at: "2026-10-27 05:06:07.654321+00" });
 
   // ── P: 120 hàng CÙNG at (60 lệnh + 60 lần thử), id tự sinh của hai bảng ──
   const AT_P = "2026-10-28 03:04:05.654321";
@@ -147,7 +166,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!db) return;
-  const ad = [fx.aA, fx.aA2, fx.aB, fx.aP, fx.aT].filter(Boolean);
+  const ad = [fx.aA, fx.aA2, fx.aB, fx.aP, fx.aT, fx.aD].filter(Boolean);
   // avi_app không có DELETE trên command_log (0279) — thử (vai owner thì dọn được), lỗi quyền thì bỏ qua như lenhCongThucPhamVi
   if (ad.length) await dung(sql`DELETE FROM command_log WHERE "adapterId" IN (${sql.join(ad.map((x) => sql`${x}`), sql`, `)})`).catch(() => undefined);
   for (const k of Object.keys(nguoi) as Array<keyof typeof nguoi>) if (nguoi[k]) await dung(sql`DELETE FROM permissions WHERE "userId" = ${nguoi[k].id}`).catch(() => undefined);
@@ -178,9 +197,24 @@ describe("_chiTietKyThuat — bảng chân trị duocXemChiTietKyThuat", () => {
     expect(duocXemChiTietKyThuat({ user: { role: "engineer" } }, (m, a) => m === "machine_control" && a === "canView")).toBe(false);
   });
   it("maLoiCua lấy tiền tố MÃ, không bao giờ phần chi tiết", () => {
-    expect(maLoiCua(LOI_DRIVER)).toBe("DRIVER_ERROR");
-    expect(maLoiCua("connect ECONNREFUSED 10.0.0.5:502")).toBeNull();
-    expect(maLoiCua(null)).toBeNull();
+    expect(maLoiCua("TAG_NOT_WRITABLE: tag x", "rejected")).toBe("TAG_NOT_WRITABLE");
+    expect(maLoiCua(null, "failed")).toBeNull();
+    // I1 — văn bản THÔ không tiền tố ⇒ mã DỰ PHÒNG theo status / hình văn bản, không bao giờ null
+    expect(maLoiCua(LOI_DRIVER, "failed")).toBe("DRIVER_WRITE_FAILED");
+    expect(maLoiCua("no result", "failed")).toBe("DRIVER_WRITE_FAILED");
+    expect(maLoiCua(LOI_TIMEOUT, "timeout")).toBe("TIMEOUT");
+    expect(maLoiCua("link lost while the write was in flight (after 40ms) — outcome unknown: the write may have been applied on the device", "timeout")).toBe("TIMEOUT");
+    expect(maLoiCua(LOI_TIMEOUT, null)).toBe("TIMEOUT"); // gợi ý an toàn sống cả khi không biết status
+    expect(maLoiCua(LOI_EDGE, "failed")).toBe("EDGE_REPORTED");
+    expect(maLoiCua("the edge reported the re-sent STOP failed", "failed")).toBe("EDGE_REPORTED");
+    expect(maLoiCua("readback unavailable", "acked_unverified")).toBe("READBACK_UNAVAILABLE");
+    expect(maLoiCua(LOI_READBACK, "acked_unverified")).toBe("READBACK_MISMATCH");
+    expect(maLoiCua("readback not verified: sample quality=bad (expected=1 actual=0)", "acked_unverified")).toBe("READBACK_MISMATCH");
+    expect(maLoiCua("something odd", "rejected")).toBe("TECHNICAL_ERROR");
+    expect(maLyDoThu("STOP_QUA_HAN")).toBe("STOP_QUA_HAN");
+    expect(maLyDoThu(LOI_DRIVER)).toBe("TECHNICAL_ERROR");
+    expect(maLyDoThu(`TIMEOUT: x`)).toBe("TIMEOUT");
+    expect(maLyDoThu(null)).toBeNull();
   });
 });
 
@@ -190,10 +224,14 @@ describe("★★★ Review Focus 1 — phạm vi nhà máy (lenh + thu), ngoài 
     expect(kq.conTro).toBeNull();
     const ids = new Set(kq.hang.map((h: any) => h.id));
     expect([...ids].sort()).toEqual(
-      [`lenh:${lenh.a1}`, `lenh:${lenh.ketQua}`, `lenh:${lenh.a2}`, `lenh:${lenh.mayNull}`, `thu:${thu.a}`, `thu:${thu.nullVerA}`].sort(),
+      [
+        `lenh:${lenh.a1}`, `lenh:${lenh.ketQua}`, `lenh:${lenh.a2}`, `lenh:${lenh.mayNull}`, `lenh:${lenh.timeout}`, `lenh:${lenh.edge}`, `lenh:${lenh.rb}`,
+        `lenh:${lenh.ketQua2}`, `thu:${thu.a}`, `thu:${thu.nullVerA}`, `thu:${thu.dispatchTho}`,
+      ].sort(),
     );
     expect(kq.hang.filter((h: any) => h.machineId === fx.mB || h.adapterId === fx.aB)).toEqual([]);
     expect(ids.has(`lenh:${lenh.intent}`)).toBe(false);
+    expect(ids.has(`lenh:${lenh.intent2}`)).toBe(false);
     expect(ids.has(`thu:${thu.nullUnverA}`)).toBe(false); // Q4: chưa xác minh ⇒ chỉ toàn quyền
     expect(ids.has(`thu:${thu.nullKhongGiaTri}`)).toBe(false); // adapter NULL, không máy ⇒ chỉ toàn quyền
     // lần thử adapter NULL đã xác minh — máy suy từ requested_value (máy chủ ghi)
@@ -216,7 +254,9 @@ describe("★★★ Review Focus 1 — phạm vi nhà máy (lenh + thu), ngoài 
     expect(kq.hang.map((h: any) => h.id).sort()).toEqual([`lenh:${lenh.a1}`, `lenh:${lenh.ketQua}`, `lenh:${lenh.mayNull}`, `thu:${thu.a}`, `thu:${thu.nullVerA}`].sort());
     expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.mayNull}`).machineId).toBe(fx.mA);
     const ad = await nguoi.kyA.c.nhatKy({ adapterId: fx.aA2, gioiHan: 200 });
-    expect(ad.hang.map((h: any) => h.id)).toEqual([`lenh:${lenh.a2}`]);
+    expect(ad.hang.map((h: any) => h.id).sort()).toEqual(
+      [`lenh:${lenh.a2}`, `lenh:${lenh.timeout}`, `lenh:${lenh.edge}`, `lenh:${lenh.rb}`, `lenh:${lenh.ketQua2}`, `thu:${thu.dispatchTho}`].sort(),
+    );
   }, 30_000);
 
   it("★★★ KD-2bA 1.3 — lần thử adapter NULL: daXacMinhPhamVi true ⇒ kỹ sư A thấy; false ⇒ chỉ admin (lọc máy A); B đã xác minh ⇒ không với A", async () => {
@@ -245,10 +285,22 @@ describe("★★★ Review Focus 2 / KD-2bA 1.1 — chi tiết kỹ thuật theo
     const kq = await nguoi.viewerA.c.nhatKy({ gioiHan: 200 });
     expect(kq.hang.length).toBeGreaterThanOrEqual(6);
     for (const h of kq.hang) expect(h.loi).toBeNull();
-    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a1}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "DRIVER_ERROR" });
-    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a2}`)).toMatchObject({ loi: null, loiBiChe: false });
+    const h = (id: string) => kq.hang.find((x: any) => x.id === id);
+    // I1 — văn bản thô THẬT của driver / timeout / edge / read-back ⇒ MÃ (không null), không văn bản
+    expect(h(`lenh:${lenh.a1}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "DRIVER_WRITE_FAILED" });
+    expect(h(`lenh:${lenh.timeout}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "TIMEOUT", trangThai: "timeout" });
+    expect(h(`lenh:${lenh.edge}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "EDGE_REPORTED" });
+    expect(h(`lenh:${lenh.rb}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "READBACK_MISMATCH" });
+    expect(h(`lenh:${lenh.mayNull}`)).toMatchObject({ loi: null, loiBiChe: true, reasonCode: "TAG_NOT_WRITABLE" });
+    expect(h(`lenh:${lenh.a2}`)).toMatchObject({ loi: null, loiBiChe: false, reasonCode: null });
+    // M1 — dòng thử stage dispatch mang văn bản thô ⇒ reasonCode về MÃ, lyDo null; dòng request giữ lý do người dùng
+    expect(h(`thu:${thu.dispatchTho}`)).toMatchObject({ reasonCode: "TECHNICAL_ERROR", lyDo: null, loiBiChe: true });
+    expect(h(`thu:${thu.a}`)).toMatchObject({ lyDo: "ly do A", reasonCode: "GIA_TRI_NGOAI_DAI", loiBiChe: false });
+    expect(h(`thu:${thu.nullVerA}`)).toMatchObject({ reasonCode: "STOP_QUA_HAN", lyDo: null, loiBiChe: false });
     const json = JSON.stringify(kq);
-    for (const cam of ['"ackValue"', '"email"', '"endpoint"', "10.0.0.5", "ECONNREFUSED", "ACK-BI-MAT", "LOI-BI-MAT", "tcp://"]) expect(json, `lộ ${cam}`).not.toContain(cam);
+    for (const cam of ['"ackValue"', '"email"', '"endpoint"', "10.0.0.5", "127.0.0.1", "ECONNREFUSED", "may have been applied", "edge reported", "readback mismatch", "ACK-BI-MAT", "LOI-BI-MAT", "tcp://"]) {
+      expect(json, `lộ ${cam}`).not.toContain(cam);
+    }
   }, 30_000);
 
   it("★★★ operator A có canEdit (không phải kỹ sư) ⇒ cũng bị che", async () => {
@@ -258,7 +310,10 @@ describe("★★★ Review Focus 2 / KD-2bA 1.1 — chi tiết kỹ thuật theo
 
   it("★★★ kỹ sư A (engineer + canEdit) ⇒ loi = errorText đầy đủ; vẫn KHÔNG có ackValue", async () => {
     const kq = await nguoi.kyA.c.nhatKy({ machineId: fx.mA, nguon: "lenh" });
-    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a1}`)).toMatchObject({ loi: LOI_DRIVER, loiBiChe: false, reasonCode: "DRIVER_ERROR" });
+    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a1}`)).toMatchObject({ loi: LOI_DRIVER, loiBiChe: false, reasonCode: "DRIVER_WRITE_FAILED" });
+    const k2 = await nguoi.kyA.c.nhatKy({ adapterId: fx.aA2 });
+    expect(k2.hang.find((h: any) => h.id === `lenh:${lenh.timeout}`)).toMatchObject({ loi: LOI_TIMEOUT, reasonCode: "TIMEOUT" });
+    expect(k2.hang.find((h: any) => h.id === `thu:${thu.dispatchTho}`)).toMatchObject({ reasonCode: LOI_DRIVER, lyDo: `Kết quả gửi: failed (${LOI_DRIVER})`, loiBiChe: false });
     expect(JSON.stringify(kq)).not.toContain('"ackValue"');
     expect(JSON.stringify(kq)).not.toContain("ACK-BI-MAT");
   }, 30_000);
@@ -266,7 +321,7 @@ describe("★★★ Review Focus 2 / KD-2bA 1.1 — chi tiết kỹ thuật theo
   it("★★★ commandLog.list — viewer: errorText / ackValue null, ledger / intentId / maLoi / loiBiChe suy ra; kỹ sư: nguyên cột", async () => {
     const v = await nguoi.viewerA.c.list({ adapterId: fx.aA, limit: 500 });
     const vA1 = v.find((r: any) => r.id === lenh.a1);
-    expect(vA1).toMatchObject({ errorText: null, ackValue: null, maLoi: "DRIVER_ERROR", loiBiChe: true, ledger: null });
+    expect(vA1).toMatchObject({ errorText: null, ackValue: null, maLoi: "DRIVER_WRITE_FAILED", loiBiChe: true, ledger: null });
     const vKq = v.find((r: any) => r.id === lenh.ketQua);
     expect(vKq).toMatchObject({ ackValue: null, ledger: "result", intentId: lenh.intent, loiBiChe: false });
     expect(v.find((r: any) => r.id === lenh.intent)).toMatchObject({ ackValue: null, ledger: "intent" });
@@ -274,17 +329,24 @@ describe("★★★ Review Focus 2 / KD-2bA 1.1 — chi tiết kỹ thuật theo
       expect(r.errorText).toBeNull();
       expect(r.ackValue).toBeNull();
     }
-    expect(JSON.stringify(v)).not.toContain("10.0.0.5");
+    expect(JSON.stringify(v)).not.toContain("127.0.0.1");
+    const v2 = await nguoi.viewerA.c.list({ adapterId: fx.aA2, limit: 500 });
+    expect(v2.find((r: any) => r.id === lenh.timeout)).toMatchObject({ errorText: null, maLoi: "TIMEOUT", loiBiChe: true });
+    expect(v2.find((r: any) => r.id === lenh.edge)).toMatchObject({ errorText: null, maLoi: "EDGE_REPORTED", loiBiChe: true });
+    // M5 — intentId chuỗi số ⇒ null (ledger vẫn "result")
+    expect(v2.find((r: any) => r.id === lenh.ketQua2)).toMatchObject({ ledger: "result", intentId: null });
+    expect(JSON.stringify(v2)).not.toContain("may have been applied");
     expect(JSON.stringify(v)).not.toContain("ACK-BI-MAT");
     const op = await nguoi.opA.c.list({ adapterId: fx.aA, limit: 500 });
     expect(op.find((r: any) => r.id === lenh.a1)).toMatchObject({ errorText: null, loiBiChe: true });
     const k = await nguoi.kyA.c.list({ adapterId: fx.aA, limit: 500 });
-    expect(k.find((r: any) => r.id === lenh.a1)).toMatchObject({ errorText: LOI_DRIVER, maLoi: "DRIVER_ERROR", loiBiChe: false });
+    expect(k.find((r: any) => r.id === lenh.a1)).toMatchObject({ errorText: LOI_DRIVER, maLoi: "DRIVER_WRITE_FAILED", loiBiChe: false });
     expect(k.find((r: any) => r.id === lenh.ketQua).ackValue).toEqual({ ledger: "result", intentId: lenh.intent, raw: "ACK-BI-MAT" });
   }, 30_000);
 
   it("★★★ commandLog.get — viewer che, kỹ sư nguyên; ngoài phạm vi vẫn NOT_FOUND", async () => {
-    expect(await nguoi.viewerA.c.get({ id: lenh.a1 })).toMatchObject({ id: lenh.a1, errorText: null, ackValue: null, maLoi: "DRIVER_ERROR", loiBiChe: true });
+    expect(await nguoi.viewerA.c.get({ id: lenh.a1 })).toMatchObject({ id: lenh.a1, errorText: null, ackValue: null, maLoi: "DRIVER_WRITE_FAILED", loiBiChe: true });
+    expect(await nguoi.viewerA.c.get({ id: lenh.timeout })).toMatchObject({ errorText: null, maLoi: "TIMEOUT", loiBiChe: true });
     expect(await nguoi.viewerA.c.get({ id: lenh.ketQua })).toMatchObject({ ackValue: null, ledger: "result", intentId: lenh.intent });
     expect(await nguoi.kyA.c.get({ id: lenh.a1 })).toMatchObject({ errorText: LOI_DRIVER, loiBiChe: false });
     expect(await loiCua(nguoi.viewerA.c.get({ id: lenh.b }))).toMatchObject({ code: "NOT_FOUND" });
@@ -303,10 +365,11 @@ describe("★★ mục 10 + KD-2bA 1.4 — laStub, người (không email), ngư
     const kq = await nguoi.kyA.c.nhatKy({ gioiHan: 200 });
     expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a1}`).nguoi).toEqual({ id: nguoi.kyA.id, ten: nguoi.kyA.ten, ngoaiPhamVi: false });
     expect(kq.hang.find((h: any) => h.id === `thu:${thu.a}`).nguoi).toEqual({ id: nguoi.opA.id, ten: nguoi.opA.ten, ngoaiPhamVi: false });
-    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a2}`).nguoi).toEqual({ id: nguoi.nguoiB.id, ten: "quản trị", ngoaiPhamVi: true });
+    // M4 (fix round 1) — người ngoài phạm vi: id null (không lộ id người dùng nhà máy khác)
+    expect(kq.hang.find((h: any) => h.id === `lenh:${lenh.a2}`).nguoi).toEqual({ id: null, ten: "quản trị", ngoaiPhamVi: true });
     expect(JSON.stringify(kq)).not.toContain(nguoi.nguoiB.ten);
     const ad = await nguoi.admin.c.nhatKy({ adapterId: fx.aA2 });
-    expect(ad.hang[0].nguoi).toEqual({ id: nguoi.nguoiB.id, ten: nguoi.nguoiB.ten, ngoaiPhamVi: false });
+    expect(ad.hang.find((h: any) => h.id === `lenh:${lenh.a2}`).nguoi).toEqual({ id: nguoi.nguoiB.id, ten: nguoi.nguoiB.ten, ngoaiPhamVi: false });
   }, 30_000);
 });
 
@@ -378,9 +441,26 @@ describe("★★★ KD-2bA 1.2 — con trỏ tuyến tính (at µs, nguồn, id 
 
   it("★ lọc trạng thái: lenh theo status; thu chỉ khi có 'rejected'; mảng rỗng ⇒ 0 hàng", async () => {
     const f = await nguoi.kyA.c.nhatKy({ trangThai: ["failed"], gioiHan: 200 });
-    expect(f.hang.map((h: any) => h.id)).toEqual([`lenh:${lenh.a1}`]);
+    expect(f.hang.map((h: any) => h.id).sort()).toEqual([`lenh:${lenh.a1}`, `lenh:${lenh.edge}`].sort());
     const r = await nguoi.kyA.c.nhatKy({ trangThai: ["rejected"], gioiHan: 200 });
     expect(r.hang.map((h: any) => h.id).sort()).toEqual([`lenh:${lenh.mayNull}`, `thu:${thu.a}`, `thu:${thu.nullVerA}`].sort());
     expect((await nguoi.kyA.c.nhatKy({ trangThai: [] })).hang).toEqual([]);
   }, 30_000);
+
+  it("★★ M8 — den (ms) bao gồm trọn mili-giây cuối tới µs; tu bao gồm đầu; ngoài mili-giây ⇒ không", async () => {
+    const tat = (o: Record<string, unknown>) => nguoi.kyP.c.nhatKy({ adapterId: fx.aD, ...o }).then((k: any) => k.hang.map((h: any) => h.id).sort());
+    const ca = [`lenh:${lenh.d}`, `thu:${thu.d}`].sort();
+    expect(await tat({ den: "2026-10-27T05:06:07.654Z" })).toEqual(ca);
+    expect(await tat({ tu: "2026-10-27T05:06:07.654Z" })).toEqual(ca);
+    expect(await tat({ tu: "2026-10-27T05:06:07.654Z", den: "2026-10-27T05:06:07.654Z" })).toEqual(ca);
+    expect(await tat({ den: "2026-10-27T05:06:07.653Z" })).toEqual([]);
+    expect(await tat({ tu: "2026-10-27T05:06:07.655Z" })).toEqual([]);
+  }, 30_000);
+});
+
+describe("★ M3 — giả định múi giờ của cột command_log.createdAt (naive, coi là UTC)", () => {
+  it("phiên Postgres của _test chạy UTC (gộp lenh naive với thu timestamptz chỉ đúng khi TimeZone = UTC)", async () => {
+    const [r] = await dung(sql`SELECT current_setting('TimeZone') AS tz`);
+    expect(["UTC", "Etc/UTC"]).toContain(String(r.tz));
+  });
 });

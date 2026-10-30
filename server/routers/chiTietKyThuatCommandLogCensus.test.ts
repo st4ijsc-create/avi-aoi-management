@@ -1,24 +1,34 @@
 /**
- * ★★★ SCADA R1b-2b-2b A — C1 (KD-2bA 1.1 + 1.3; điều phối 2026-10-27) — CENSUS hai cột chi tiết kỹ thuật của `command_log`.
+ * ★★★ SCADA R1b-2b-2b A — C1 (KD-2bA 1.1 + 1.3; điều phối 2026-10-27; fix round 1 I2 — census ĐẢO CHIỀU) — CENSUS bảng `command_log`.
  *
  * Luật (điều phối): KHÔNG thủ tục nào dưới mức "admin / engineer có `machine_control.canEdit`" trả `errorText` / `ackValue` của
  * `command_log` (văn bản lỗi driver có thể mang host:port; ackValue là ledger nội bộ / payload ack thiết bị).
  *
- * Cách đo: quét AST MỌI tệp `.ts` của `server/` (trừ test / testkit / bộ dựng test `__*`) tìm MỌI chỗ ĐỌC hai cột:
- *   • `cot`          — truy cập thuộc tính `commandLog.errorText` / `commandLog.ackValue` (bảng drizzle);
- *   • `select_tat_ca`— `.select()` KHÔNG đối số rồi `.from(commandLog)` (đọc nguyên hàng ⇒ có cả hai cột);
- *   • `sql_tho`      — chuỗi / template SQL thô chứa `"errorText"` hoặc `"ackValue"`;
- *   • `query_api`    — `db.query.commandLog.*` (API quan hệ trả nguyên hàng).
- * Mỗi chỗ có khoá `tệp#hàm-bao#loại` và PHẢI có trong `SO_CAI` với số lần ĐÚNG và một PHÂN LOẠI:
- *   • `che`        — thủ tục canView trả hàng ra ngoài: qua `cheHangLenh` / `chiTietKyThuatCua` (`_chiTietKyThuat.ts`) — cấu trúc được
- *                    kiểm thêm ở §2 (thân thủ tục phải gọi bộ che); hành vi đo ở `commandLogRouter.nhatKy.r1b2b2b.db.test.ts`;
- *   • `vi_tu`      — chỉ trong WHERE / FILTER (không ra ngoài);
- *   • `suy_ra`     — đọc để SUY RA trường an toàn (`ma` = tiền tố mã, `ledger`, `intentId`) — không trả nguyên cột;
- *   • `ghi_canEdit`— đường ghi / dispatch trả kết quả cho NGƯỜI RA LỆNH (đã qua `machine_control.canEdit`);
- *   • `noi_bo`     — dịch vụ nội bộ, không trả về thủ tục đọc.
- * Chỗ đọc MỚI (khoá lạ hoặc số tăng) ⇒ ĐỎ: người thêm phải phân loại có lý do (và nếu là thủ tục canView: qua bộ che).
+ * ĐẢO CHIỀU (review I2): không đi tìm vài HÌNH đọc cột — đếm MỌI tham chiếu tới BẢNG `commandLog` (kể cả bí danh import `{ commandLog as cl }`,
+ * `import * as schema` ⇒ `schema.commandLog`, destructure `{ commandLog } = await import(…)`, `alias(commandLog, …)`) và MỌI chuỗi / template
+ * SQL thô có chữ `command_log`, ở MỌI tệp `.ts` của `server/` (trừ test / testkit / `__*`). Mỗi tham chiếu được gán LOẠI:
+ *   • `cot_an_toan`      — `T.<cột>` với cột ∉ {errorText, ackValue};
+ *   • `cot_ky_thuat`     — `T.errorText` / `T.ackValue`;
+ *   • `doc_chieu`        — `.from(T)` / `.*Join(T)` dưới `select({…})` chiếu TƯỜNG MINH (không spread / không cả bảng / không getTableColumns);
+ *   • `doc_nguyen_hang`  — `.select()` không đối số, `select({ ...getTableColumns(T) })`, `select({ row: T })`, join dưới các select ấy,
+ *                          `getTableColumns(T)`, `T` làm giá trị trong một object (`{ row: T }`), `db.query.commandLog`;
+ *   • `ghi`              — `.insert(T)` / `.update(T)` / `.delete(T)`;
+ *   • `bi_danh`          — `alias(T, …)` (bí danh được theo dõi tiếp);
+ *   • `bang_khac`        — `T` truyền đi chỗ khác (đối số hàm, `${T}` trong sql``, …) — luôn phải phân loại;
+ *   • `sql_tho`          — chuỗi / template SQL có `command_log`;
+ *   • `sql_tho_nhay_cam` — như trên VÀ có `SELECT *` / `x.*` / `row_to_json` / `to_json(b)` / `"errorText"` / `"ackValue"`.
+ * Khoá = `tệp#hàm-bao`; mỗi khoá PHẢI có trong `SO_CAI` với ĐÚNG số đếm từng loại và một PHÂN LOẠI:
+ *   • `chi_cot_an_toan` — chỉ được dùng khi các loại ⊆ {cot_an_toan, doc_chieu, ghi};
+ *   • `che`             — thủ tục canView trả hàng qua bộ che (`cheHangLenh` / `chiTietKyThuatCua`) — §2 kiểm thân thủ tục;
+ *   • `vi_tu`           — hai cột chỉ trong WHERE / FILTER / đếm;
+ *   • `suy_ra`          — chỉ suy ra trường an toàn (mã, ledger, intentId số);
+ *   • `ghi_canEdit`     — đường ghi / dispatch: kết quả về NGƯỜI RA LỆNH đã qua `machine_control.canEdit`;
+ *   • `noi_bo`          — nội bộ, không trả về thủ tục.
+ * §3 — thủ tục tRPC CHẠM (qua đồ thị gọi theo TÊN, ≤ 5 bậc) một hàm có loại rủi ro (`cot_ky_thuat` / `doc_nguyen_hang` / `bang_khac` /
+ * `sql_tho_nhay_cam`) phải có trong `THU_TUC_CHAM` kèm lý do (quyền của thủ tục / hàm che). Thủ tục mới gọi hàm có sẵn ⇒ khoá LẠ ⇒ đỏ.
+ * §4 — mỗi điểm mù review I2 (1–5) có một FIXTURE trên tệp ảo, đỏ đúng chỗ.
  *
- * §3 (KD-2bA 1.3) — chứng minh `requested_value.daXacMinhPhamVi` của lần thử `adapter_id` NULL do MÁY CHỦ đặt: mọi lời gọi ghi lần thử
+ * §5 (KD-2bA 1.3) — chứng minh `requested_value.daXacMinhPhamVi` của lần thử `adapter_id` NULL do MÁY CHỦ đặt: mọi lời gọi ghi lần thử
  * KHÔNG có adapter mà có `requestedValue` đều nằm ở MỘT chỗ (`tuChoiQuaHan`), cờ là biến cục bộ chỉ nhận literal `false` / `true`.
  */
 import { describe, expect, it } from "vitest";
@@ -29,8 +39,19 @@ import ts from "typescript";
 
 const GOC = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-type Loai = "cot" | "select_tat_ca" | "sql_tho" | "query_api";
-type PhanLoai = "che" | "vi_tu" | "suy_ra" | "ghi_canEdit" | "noi_bo";
+type Loai =
+  | "cot_an_toan"
+  | "cot_ky_thuat"
+  | "doc_chieu"
+  | "doc_nguyen_hang"
+  | "ghi"
+  | "bi_danh"
+  | "bang_khac"
+  | "sql_tho"
+  | "sql_tho_nhay_cam";
+type PhanLoai = "chi_cot_an_toan" | "che" | "vi_tu" | "suy_ra" | "ghi_canEdit" | "noi_bo";
+const LOAI_AN_TOAN: ReadonlySet<Loai> = new Set(["cot_an_toan", "doc_chieu", "ghi"]);
+const LOAI_RUI_RO: ReadonlySet<Loai> = new Set(["cot_ky_thuat", "doc_nguyen_hang", "bang_khac", "sql_tho_nhay_cam"]);
 
 function tepServer(): string[] {
   const ra: string[] = [];
@@ -57,119 +78,406 @@ function hamBao(n: ts.Node): string {
   return "<tep>";
 }
 
-const COT = new Set(["errorText", "ackValue"]);
+const COT_KY_THUAT = new Set(["errorText", "ackValue"]);
+const TEN_BANG = "commandLog";
 
-/** Quét MỘT nguồn (đường dẫn tương đối dùng làm khoá). Xuất ra cho §4 (đột biến trên tệp ảo). */
-export function quetNguon(rel: string, src: string): Map<string, number> {
+/** Toàn văn một literal chuỗi / template (phần chữ; `${…}` thay bằng `${}`). */
+function vanBan(n: ts.Node): string | null {
+  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
+  if (ts.isTemplateExpression(n)) return n.head.text + n.templateSpans.map((s) => "${}" + s.literal.text).join("");
+  return null;
+}
+
+/** Mọi tên cục bộ chỉ BẢNG commandLog trong một tệp + tên namespace import của schema. */
+function tenTheoDoi(sf: ts.SourceFile): { bang: Set<string>; khongGian: Set<string> } {
+  const bang = new Set<string>();
+  const khongGian = new Set<string>();
+  const tham = (n: ts.Node) => {
+    if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && /drizzle\/schema/.test(n.moduleSpecifier.text)) {
+      const nb = n.importClause?.namedBindings;
+      if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if ((e.propertyName ?? e.name).text === TEN_BANG) bang.add(e.name.text);
+      if (nb && ts.isNamespaceImport(nb)) khongGian.add(nb.name.text);
+    }
+    // destructure: const { commandLog } = …  /  const { commandLog: cl } = …
+    if (ts.isBindingElement(n) && ts.isIdentifier(n.name) && ((n.propertyName && n.propertyName.getText() === TEN_BANG) || (!n.propertyName && n.name.text === TEN_BANG))) bang.add(n.name.text);
+    ts.forEachChild(n, tham);
+  };
+  tham(sf);
+  // bí danh drizzle: const r = alias(<bảng>, "r") — lặp tới điểm bất động (bí danh của bí danh)
+  let doi = true;
+  while (doi) {
+    doi = false;
+    const t2 = (n: ts.Node) => {
+      if (
+        ts.isVariableDeclaration(n) &&
+        ts.isIdentifier(n.name) &&
+        n.initializer &&
+        ts.isCallExpression(n.initializer) &&
+        /(^|\.)alias$/.test(n.initializer.expression.getText()) &&
+        n.initializer.arguments[0] &&
+        laThamChieuBang(n.initializer.arguments[0], bang, khongGian) &&
+        !bang.has(n.name.text)
+      ) {
+        bang.add(n.name.text);
+        doi = true;
+      }
+      ts.forEachChild(n, t2);
+    };
+    t2(sf);
+  }
+  return { bang, khongGian };
+}
+
+function laThamChieuBang(e: ts.Node, bang: Set<string>, khongGian: Set<string>): boolean {
+  if (ts.isIdentifier(e)) return bang.has(e.text);
+  if (ts.isPropertyAccessExpression(e) && e.name.text === TEN_BANG) {
+    const x = e.expression;
+    return (ts.isIdentifier(x) && khongGian.has(x.text)) || (ts.isPropertyAccessExpression(x) && x.name.text === "query");
+  }
+  return false;
+}
+
+/** Identifier ở vị trí GIÁ TRỊ (không phải tên khai báo / tên thuộc tính / kiểu). */
+function viTriGiaTri(id: ts.Identifier): boolean {
+  const p = id.parent;
+  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return false;
+  if (ts.isBindingElement(p)) return false;
+  if ((ts.isVariableDeclaration(p) || ts.isFunctionDeclaration(p) || ts.isParameter(p)) && p.name === id) return false;
+  if (ts.isPropertyAssignment(p) && p.name === id) return false;
+  if ((ts.isPropertySignature(p) || ts.isPropertyDeclaration(p) || ts.isMethodSignature(p) || ts.isMethodDeclaration(p) || ts.isEnumMember(p)) && p.name === id) return false;
+  for (let q: ts.Node | undefined = p; q; q = q.parent) if (ts.isInterfaceDeclaration(q) || ts.isTypeAliasDeclaration(q)) return false;
+  if (ts.isPropertyAccessExpression(p) && p.name === id) return false;
+  if (ts.isQualifiedName(p) || ts.isTypeReferenceNode(p) || ts.isTypeQueryNode(p)) return false;
+  for (let q: ts.Node | undefined = p; q; q = q.parent) if (ts.isTypeNode(q)) return false;
+  return true;
+}
+
+/** Gọi select gốc của một chuỗi `.from(T)` / `.leftJoin(T, …)` (đi xuống qua các lời gọi xâu chuỗi). */
+function selectGoc(call: ts.CallExpression): ts.CallExpression | null {
+  let e: ts.Expression = (call.expression as ts.PropertyAccessExpression).expression;
+  for (let i = 0; i < 30; i++) {
+    if (ts.isCallExpression(e)) {
+      if (ts.isPropertyAccessExpression(e.expression) && /^select(Distinct)?(On)?$/.test(e.expression.name.text)) return e;
+      e = e.expression;
+    } else if (ts.isPropertyAccessExpression(e)) e = e.expression;
+    else if (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e)) e = e.expression;
+    else return null;
+  }
+  return null;
+}
+
+function loaiDoc(call: ts.CallExpression, bang: Set<string>, khongGian: Set<string>): Loai {
+  const s = selectGoc(call);
+  if (!s || s.arguments.length === 0) return "doc_nguyen_hang";
+  const a = s.arguments[0];
+  if (!ts.isObjectLiteralExpression(a)) return "doc_nguyen_hang";
+  for (const p of a.properties) {
+    if (ts.isSpreadAssignment(p)) return "doc_nguyen_hang";
+    if (ts.isShorthandPropertyAssignment(p) && bang.has(p.name.text)) return "doc_nguyen_hang";
+    if (ts.isPropertyAssignment(p) && (laThamChieuBang(p.initializer, bang, khongGian) || /getTableColumns\(/.test(p.initializer.getText()))) return "doc_nguyen_hang";
+  }
+  return "doc_chieu";
+}
+
+const JOIN = /^(from|leftJoin|innerJoin|rightJoin|fullJoin|crossJoin|leftJoinLateral|innerJoinLateral)$/;
+
+function loaiThamChieu(r: ts.Expression, bang: Set<string>, khongGian: Set<string>): Loai {
+  // db.query.commandLog.* — API quan hệ trả nguyên hàng
+  if (ts.isPropertyAccessExpression(r) && ts.isPropertyAccessExpression(r.expression) && r.expression.name.text === "query") return "doc_nguyen_hang";
+  const p = r.parent;
+  if (ts.isPropertyAccessExpression(p) && p.expression === r) return COT_KY_THUAT.has(p.name.text) ? "cot_ky_thuat" : "cot_an_toan";
+  if (ts.isElementAccessExpression(p) && p.expression === r) return "bang_khac";
+  if (ts.isCallExpression(p) && p.arguments.includes(r)) {
+    const ten = ts.isPropertyAccessExpression(p.expression) ? p.expression.name.text : ts.isIdentifier(p.expression) ? p.expression.text : "";
+    if (JOIN.test(ten)) return loaiDoc(p, bang, khongGian);
+    if (ten === "insert" || ten === "update" || ten === "delete") return "ghi";
+    if (ten === "alias") return "bi_danh";
+    if (ten === "getTableColumns" || ten === "getTableConfig") return "doc_nguyen_hang";
+    return "bang_khac";
+  }
+  if (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isSpreadAssignment(p)) return "doc_nguyen_hang";
+  return "bang_khac";
+}
+
+/** Quét MỘT nguồn ⇒ `tệp#hàm` → đếm theo loại. */
+export function quetNguon(rel: string, src: string): Map<string, Partial<Record<Loai, number>>> {
   const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const dem = new Map<string, number>();
+  const { bang, khongGian } = tenTheoDoi(sf);
+  const ra = new Map<string, Partial<Record<Loai, number>>>();
   const them = (n: ts.Node, loai: Loai) => {
-    const k = `${rel}#${hamBao(n)}#${loai}`;
-    dem.set(k, (dem.get(k) ?? 0) + 1);
+    const k = `${rel}#${hamBao(n)}`;
+    const m = ra.get(k) ?? {};
+    m[loai] = (m[loai] ?? 0) + 1;
+    ra.set(k, m);
   };
   const tham = (n: ts.Node) => {
-    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "commandLog" && COT.has(n.name.text)) them(n, "cot");
-    if (
-      ts.isCallExpression(n) &&
-      ts.isPropertyAccessExpression(n.expression) &&
-      n.expression.name.text === "from" &&
-      n.arguments.length === 1 &&
-      ts.isIdentifier(n.arguments[0]) &&
-      n.arguments[0].text === "commandLog"
-    ) {
-      const goc = n.expression.expression;
-      if (ts.isCallExpression(goc) && ts.isPropertyAccessExpression(goc.expression) && /^select(Distinct)?$/.test(goc.expression.name.text) && goc.arguments.length === 0) {
-        them(n, "select_tat_ca");
-      }
+    if (ts.isIdentifier(n) && bang.has(n.text) && viTriGiaTri(n)) them(n, loaiThamChieu(n, bang, khongGian));
+    else if (ts.isPropertyAccessExpression(n) && laThamChieuBang(n, bang, khongGian)) {
+      them(n, loaiThamChieu(n, bang, khongGian));
+      return; // không đếm lại phần trong
     }
-    if (ts.isPropertyAccessExpression(n) && n.name.text === "commandLog" && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "query") them(n, "query_api");
-    if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) {
-      const t = n.text;
-      if (t.includes('"errorText"') || t.includes('"ackValue"')) them(n, "sql_tho");
+    const t = vanBan(n);
+    if (t !== null && /command_log/i.test(t)) {
+      them(n, /select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(|"errorText"|"ackValue"/i.test(t) ? "sql_tho_nhay_cam" : "sql_tho");
+      if (ts.isTemplateExpression(n)) {
+        for (const sp of n.templateSpans) tham(sp.expression); // ${…} vẫn được quét (vd ${commandLog.errorText})
+        return;
+      }
     }
     ts.forEachChild(n, tham);
   };
   tham(sf);
-  return dem;
+  return ra;
 }
 
+// ─── đồ thị gọi theo TÊN (§3) ──────────────────────────────────────────────────────────────────────────────────────────────────
+interface ChiMuc {
+  /** tên hàm → các tên được gọi trong thân (gộp mọi định nghĩa trùng tên — xấp xỉ TRÊN) */
+  goi: Map<string, Set<string>>;
+  /** `tệp#thủ tục` (router tRPC) → các tên được gọi */
+  thuTuc: Map<string, Set<string>>;
+  /** `tệp#tên` của mọi hàm KHAI BÁO (function / const arrow / method) — hàm rủi ro phải là một hàm thật, không phải tên thủ tục */
+  khai: Set<string>;
+}
+function tenDuocGoi(goc: ts.Node): Set<string> {
+  const ra = new Set<string>();
+  const t = (n: ts.Node) => {
+    if (ts.isCallExpression(n)) {
+      if (ts.isIdentifier(n.expression)) ra.add(n.expression.text);
+      else if (ts.isPropertyAccessExpression(n.expression)) ra.add(n.expression.name.text);
+    }
+    ts.forEachChild(n, t);
+  };
+  t(goc);
+  return ra;
+}
+export function lapChiMuc(nguon: Array<{ rel: string; src: string }>): ChiMuc {
+  const goi = new Map<string, Set<string>>();
+  const thuTuc = new Map<string, Set<string>>();
+  const khai = new Set<string>();
+  const gop = (ten: string, s: Set<string>) => {
+    const c = goi.get(ten) ?? new Set<string>();
+    for (const x of s) c.add(x);
+    goi.set(ten, c);
+  };
+  for (const { rel, src } of nguon) {
+    const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const laRouter = rel.startsWith("server/routers/");
+    const t = (n: ts.Node) => {
+      if ((ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.name && n.body) {
+        gop(n.name.getText(), tenDuocGoi(n.body));
+        khai.add(`${rel}#${n.name.getText()}`);
+      }
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) {
+        gop(n.name.text, tenDuocGoi(n.initializer));
+        khai.add(`${rel}#${n.name.text}`);
+      }
+      if (laRouter && ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer) && /\.(query|mutation|subscription)\(/.test(n.initializer.getText())) {
+        thuTuc.set(`${rel}#${n.name.getText()}`, tenDuocGoi(n.initializer));
+      }
+      ts.forEachChild(n, t);
+    };
+    t(sf);
+  }
+  return { goi, thuTuc, khai };
+}
+/** Thủ tục → các hàm RỦI RO chạm tới (≤ `bac` bậc theo tên). */
+export function thuTucCham(cm: ChiMuc, ruiRo: ReadonlySet<string>, bac = 5): Map<string, string[]> {
+  const ra = new Map<string, string[]>();
+  for (const [k, goi] of cm.thuTuc) {
+    const gap = new Set<string>();
+    const da = new Set<string>();
+    let bien = [...goi];
+    for (let b = 0; b < bac && bien.length; b++) {
+      const sau: string[] = [];
+      for (const ten of bien) {
+        if (da.has(ten)) continue;
+        da.add(ten);
+        if (ruiRo.has(ten)) gap.add(ten);
+        for (const x of cm.goi.get(ten) ?? []) sau.push(x);
+      }
+      bien = sau;
+    }
+    if (gap.size) ra.set(k, [...gap].sort());
+  }
+  return ra;
+}
+
+type Dem = Partial<Record<Loai, number>>;
 /**
- * ★ SỔ CÁI — đo 2026-10-30 trên feat/scada-r1b2b2 (3819461fb + C1). Mỗi khoá: [số lần, phân loại, lý do].
+ * ★ SỔ CÁI — ĐO 2026-10-30 trên feat/scada-r1b2b2 (7435501a1 + fix round 1). `tệp#hàm` → [đếm theo loại, phân loại, lý do].
  */
-const SO_CAI: Record<string, [number, PhanLoai, string]> = {
-  // ── commandLogRouter (thủ tục canView) ──
-  "server/routers/commandLogRouter.ts#list#select_tat_ca": [1, "che", "rows.map(cheHangLenh(r, chiTietKyThuatCua(ctx)))"],
-  "server/routers/commandLogRouter.ts#get#select_tat_ca": [1, "che", "cheHangLenh(row, chiTietKyThuatCua(ctx))"],
-  "server/routers/commandLogRouter.ts#nhatKy#cot": [2, "che", "ackValue chỉ trong vị từ notIntent; errorText ⇒ loi chỉ khi duocXem, ngược lại reasonCode = maLoiCua"],
-  "server/routers/commandLogRouter.ts#stats#cot": [2, "vi_tu", "isIntent / notIntent trong WHERE + đếm"],
-  "server/routers/commandLogRouter.ts#stats#sql_tho": [1, "vi_tu", "count FILTER not exists r.\"ackValue\"->>'intentId' — chỉ đếm"],
-  // ── dispatcher (đường ghi — chỉ người ra lệnh đã qua canEdit nhận kết quả) ──
-  "server/services/ot/commandDispatcher.ts#dispatchCore#select_tat_ca": [2, "ghi_canEdit", "idempotency (probe + lệnh sau): cachedResult.reason = errorText trả cho NGƯỜI GỌI dispatch (scadaCommands.confirm / dungMay / AI tool — machine_control.canEdit)"],
-  "server/services/ot/commandDispatcher.ts#reserveRealWrite#select_tat_ca": [1, "ghi_canEdit", "prior trong tx: cachedResult cho người gọi dispatch (canEdit)"],
-  // ── lenhHmi.trangThai — chủ yêu cầu, chỉ trường SUY RA ──
-  "server/services/scada/lenhHmi.ts#trangThaiYeuCauGhi#cot": [2, "suy_ra", "ma = tiền tố mã của errorText; ledger = ackValue.ledger — không trả nguyên cột"],
-  // ── edge (nội bộ / vị từ / suy ra intentId; mutation canEdit) ──
-  "server/services/edge/edgeResolutionService.ts#listEdgeResolutionItems#sql_tho": [4, "suy_ra", "vị từ ledger + ackValue->>'intentId' / 'lateAfterResolutionId' (số) — không trả ackValue"],
-  "server/services/edge/edgeResolutionService.ts#resolveOrphanedIntent#sql_tho": [1, "vi_tu", "EXISTS ... ackValue->>'ledger' — vị từ"],
-  "server/services/edge/edgeResolutionService.ts#reviewLateResult#sql_tho": [1, "ghi_canEdit", "supervisorProcedure + canEdit; ackValue chỉ đọc ledger/intentId vào audit"],
+const SO_CAI: Record<string, [Dem, PhanLoai, string]> = {
+  // ── commandLogRouter ──
+  "server/routers/commandLogRouter.ts#<tep>": [{ cot_an_toan: 1 }, "chi_cot_an_toan", "AT_LENH = to_char(createdAt)"],
+  "server/routers/commandLogRouter.ts#list": [{ cot_an_toan: 6, doc_nguyen_hang: 1 }, "che", "select() nguyên hàng ⇒ rows.map(cheHangLenh(r, chiTietKyThuatCua(ctx)))"],
+  "server/routers/commandLogRouter.ts#get": [{ cot_an_toan: 1, doc_nguyen_hang: 1 }, "che", "cheHangLenh(row, chiTietKyThuatCua(ctx))"],
+  "server/routers/commandLogRouter.ts#nhatKy": [{ cot_an_toan: 20, cot_ky_thuat: 2, doc_chieu: 1 }, "che", "ackValue chỉ trong vị từ notIntent; errorText ⇒ loi chỉ khi duocXem, ngược lại reasonCode = maLoiCua (mã)"],
+  "server/routers/commandLogRouter.ts#stats": [{ cot_an_toan: 6, cot_ky_thuat: 2, doc_chieu: 3, sql_tho_nhay_cam: 1 }, "vi_tu", "isIntent / notIntent + count FILTER r.\"ackValue\"->>'intentId' — chỉ đếm"],
+  "server/routers/commandLogRouter.ts#avgDurations": [{ cot_an_toan: 10, doc_chieu: 1 }, "chi_cot_an_toan", "chiếu commandType + thời lượng"],
+  "server/routers/_adapterPhamVi.ts#dieuKienLenhTrongPhamVi": [{ cot_an_toan: 2 }, "chi_cot_an_toan", "vị từ phạm vi machineId / adapterId"],
+  // ── dispatcher (đường ghi — kết quả về người ra lệnh đã qua canEdit) ──
+  "server/services/ot/commandDispatcher.ts#dispatchCore": [{ cot_an_toan: 3, doc_nguyen_hang: 2, ghi: 1 }, "ghi_canEdit", "idempotency (probe + lệnh sau) select() ⇒ cachedResult.reason = errorText cho NGƯỜI GỌI dispatch"],
+  "server/services/ot/commandDispatcher.ts#reserveRealWrite": [{ cot_an_toan: 4, doc_chieu: 1, doc_nguyen_hang: 1, ghi: 1 }, "ghi_canEdit", "prior trong tx ⇒ cachedResult cho người gọi dispatch"],
+  "server/services/ot/commandDispatcher.ts#writeAll": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ từ chối"],
+  "server/services/ot/commandDispatcher.ts#writeSimulated": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ mô phỏng"],
+  "server/services/ot/commandDispatcher.ts#auditPinnedStopOverride": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],
+  "server/services/ot/commandDispatcher.ts#khiLoiAuditStopGhim": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],
+  "server/services/ot/ghiTreoCoTran.ts#bo": [{ sql_tho: 1 }, "noi_bo", "chuỗi log nhắc tên bảng"],
+  "server/services/ops/wormTableSizeMonitor.ts#<tep>": [{ sql_tho: 1 }, "noi_bo", "danh sách tên bảng WORM để đo kích thước"],
+  // ── lenhHmi ──
+  "server/services/scada/lenhHmi.ts#trangThaiYeuCauGhi": [{ cot_an_toan: 11, cot_ky_thuat: 2, doc_chieu: 1 }, "suy_ra", "chủ yêu cầu: ma = mã tiền tố errorText; ledger = ackValue.ledger — không trả nguyên cột"],
+  "server/services/scada/lenhHmi.ts#xacNhanGhiTag": [{ cot_an_toan: 2, doc_chieu: 1 }, "chi_cot_an_toan", "đọc readBackValue"],
+  // ── edge ──
+  "server/services/edge/edgeReportsCentral.ts#applyLedger": [{ ghi: 1 }, "chi_cot_an_toan", "insert kết quả edge"],
+  "server/services/edge/edgeReportsCentral.ts#applySweepStop": [{ ghi: 1 }, "chi_cot_an_toan", "insert STOP quét (eff.note ⇒ errorText; fan-out cảnh báo admin ở cùng hàm — ghi chú báo cáo M1)"],
+  "server/services/edge/edgeReportsCentral.ts#authUseEvidence": [{ cot_an_toan: 2, doc_chieu: 1, sql_tho: 1 }, "noi_bo", "chiếu id; chuỗi 'command_log' là nhãn bảng bằng chứng"],
+  "server/services/edge/edgeResolutionService.ts#listEdgeResolutionItems": [{ sql_tho_nhay_cam: 2 }, "suy_ra", "canView: vị từ ledger + ackValue->>'intentId' / 'lateAfterResolutionId' (số) — không trả ackValue / errorText"],
+  "server/services/edge/edgeResolutionService.ts#resolveOrphanedIntent": [{ sql_tho_nhay_cam: 1 }, "vi_tu", "EXISTS … ackValue->>'ledger' (supervisor + canEdit)"],
+  "server/services/edge/edgeResolutionService.ts#reviewLateResult": [{ sql_tho_nhay_cam: 1 }, "ghi_canEdit", "supervisor + canEdit; ackValue chỉ đọc ledger / intentId vào audit"],
 };
 
-function doCay(): Map<string, number> {
-  const tong = new Map<string, number>();
-  for (const p of tepServer()) {
-    const rel = relative(GOC, p).replace(/\\/g, "/");
-    const src = readFileSync(p, "utf8");
-    if (!src.includes("commandLog") && !src.includes("errorText") && !src.includes("ackValue")) continue;
-    for (const [k, v] of quetNguon(rel, src)) tong.set(k, (tong.get(k) ?? 0) + v);
+/**
+ * ★ THỦ TỤC CHẠM hàm rủi ro (§3) — ĐO 2026-10-30. `routerTệp#thủ tục` → [hàm rủi ro chạm tới, lý do].
+ */
+const THU_TUC_CHAM: Record<string, [string[], string]> = {
+  "server/routers/edgeResolutionRouter.ts#list": [["listEdgeResolutionItems"], "canView; hàm chỉ suy ra intentId số (suy_ra)"],
+  "server/routers/edgeResolutionRouter.ts#resolveIntent": [["resolveOrphanedIntent"], "supervisorProcedure + machine_control.canEdit"],
+  "server/routers/edgeResolutionRouter.ts#reviewLateResult": [["reviewLateResult"], "supervisorProcedure + machine_control.canEdit"],
+  "server/routers/programmingRouter.ts#approveDeployment": [["dispatchCore"], "đường ghi: deployProcedure (MOD_ENGINEERING) + machine_control.canCreate — kết quả dispatch về người ra lệnh"],
+  "server/routers/programmingRouter.ts#deployBuild": [["dispatchCore"], "đường ghi: deployProcedure (MOD_ENGINEERING) — kết quả dispatch về người ra lệnh"],
+  "server/routers/robotRouter.ts#actuate": [["dispatchCore"], "đường ghi: actuationProcedure + machine_control.canEdit"],
+  "server/routers/robotRouter.ts#consoleStop": [["dispatchCore"], "STOP: robotStopProcedure (canEdit / degraded auth) — kết quả về người bấm"],
+  "server/routers/scadaCommandsRouter.ts#confirm": [["dispatchCore", "reserveRealWrite"], "đường ghi: canEdit kiểm trong handler (kiemCongVaiTro) — kết quả về chủ yêu cầu"],
+  "server/routers/scadaCommandsRouter.ts#dungMay": [["dispatchCore", "reserveRealWrite"], "STOP: sàn vai mức 1 + canEdit trong handler — kết quả về người bấm"],
+  "server/routers/scadaCommandsRouter.ts#trangThai": [["trangThaiYeuCauGhi"], "chủ yêu cầu; hàm chỉ trả ma / ledger suy ra (suy_ra)"],
+};
+
+const NGUON = tepServer().map((p) => ({ rel: relative(GOC, p).replace(/\\/g, "/"), src: readFileSync(p, "utf8") }));
+
+function doCay(nguon = NGUON): Map<string, Dem> {
+  const tong = new Map<string, Dem>();
+  for (const { rel, src } of nguon) {
+    if (!/commandLog|command_log/i.test(src)) continue;
+    for (const [k, v] of quetNguon(rel, src)) {
+      const m = tong.get(k) ?? {};
+      for (const [l, n] of Object.entries(v) as Array<[Loai, number]>) m[l] = (m[l] ?? 0) + n;
+      tong.set(k, m);
+    }
   }
   return tong;
 }
+/** Tên các HÀM KHAI BÁO (trong chính tệp của nó) có loại rủi ro. */
+const ruiRoCua = (d: Map<string, Dem>, cm: ChiMuc): Set<string> =>
+  new Set([...d].filter(([k, v]) => cm.khai.has(k) && (Object.keys(v) as Loai[]).some((l) => LOAI_RUI_RO.has(l))).map(([k]) => k.split("#")[1]));
+const sapXep = (m: Dem): Dem => Object.fromEntries(Object.entries(m).sort(([a], [b]) => (a < b ? -1 : 1)));
 
-describe("★★★ census — errorText / ackValue của command_log không ra khỏi máy chủ dưới mức canEdit kỹ sư (KD-2bA 1.1)", () => {
+describe("★★★ census — bảng command_log: MỌI tham chiếu có phân loại; errorText / ackValue không ra dưới mức canEdit kỹ sư (KD-2bA 1.1, fix round 1 I2)", () => {
   const DO = doCay();
+  const CM = lapChiMuc(NGUON);
+  // hàm rủi ro = TÊN HÀM ĐÃ KHAI (function / const arrow / method) — thủ tục router (list/get/…) không phải "hàm được gọi"
+  const CHAM = thuTucCham(CM, ruiRoCua(DO, CM));
 
-  it("§0 thiết bị đo thấy dữ liệu: ≥ 1 chỗ mỗi loại cot / select_tat_ca / sql_tho", () => {
-    const loai = new Set([...DO.keys()].map((k) => k.split("#")[2]));
-    expect(loai.has("cot")).toBe(true);
-    expect(loai.has("select_tat_ca")).toBe(true);
-    expect(loai.has("sql_tho")).toBe(true);
+  it("§0 thiết bị đo thấy dữ liệu: ≥ 5 tệp, có cot_ky_thuat, doc_nguyen_hang, ghi, sql_tho", () => {
+    if (process.env.IN_SO_CAI === "1") {
+      console.log("SO_CAI=" + JSON.stringify(Object.fromEntries([...DO].sort().map(([k, v]) => [k, sapXep(v)]))));
+      console.log("CHAM=" + JSON.stringify(Object.fromEntries([...CHAM].sort())));
+    }
+    expect(new Set([...DO.keys()].map((k) => k.split("#")[0])).size).toBeGreaterThanOrEqual(5);
+    const loai = new Set([...DO.values()].flatMap((v) => Object.keys(v)));
+    for (const l of ["cot_ky_thuat", "doc_nguyen_hang", "ghi", "sql_tho"]) expect(loai.has(l), l).toBe(true);
   });
 
-  it("§1 MỌI chỗ đọc hai cột có trong sổ cái, ĐÚNG số lần (chỗ mới ⇒ phân loại trước)", () => {
-    const mong = new Map(Object.entries(SO_CAI).filter(([, v]) => v[0] > 0).map(([k, v]) => [k, v[0]]));
+  it("§1 MỌI hàm tham chiếu bảng có trong sổ cái với ĐÚNG số đếm từng loại (chỗ mới ⇒ phân loại trước)", () => {
     const lech: string[] = [];
-    for (const [k, n] of DO) if (mong.get(k) !== n) lech.push(`${k}: đo ${n}, sổ ${mong.get(k) ?? "—"}`);
-    for (const [k, n] of mong) if (!DO.has(k)) lech.push(`${k}: sổ ${n}, đo 0 (gỡ khỏi sổ)`);
-    expect(lech, "chỗ đọc errorText/ackValue của command_log lệch sổ cái").toEqual([]);
+    for (const [k, v] of DO) {
+      const so = SO_CAI[k];
+      if (!so) lech.push(`${k}: đo ${JSON.stringify(sapXep(v))}, không có trong sổ`);
+      else if (JSON.stringify(sapXep(so[0])) !== JSON.stringify(sapXep(v))) lech.push(`${k}: đo ${JSON.stringify(sapXep(v))}, sổ ${JSON.stringify(sapXep(so[0]))}`);
+    }
+    for (const k of Object.keys(SO_CAI)) if (!DO.has(k)) lech.push(`${k}: có trong sổ, đo không thấy (gỡ khỏi sổ)`);
+    expect(lech, "tham chiếu command_log lệch sổ cái").toEqual([]);
   });
 
-  it("§2 mọi thủ tục canView của commandLogRouter đọc nguyên hàng / errorText ĐỀU gọi bộ che trong thân (cheHangLenh | chiTietKyThuatCua)", () => {
+  it("§1b phân loại khớp loại: chi_cot_an_toan CHỈ khi mọi loại ⊆ {cot_an_toan, doc_chieu, ghi}; loại rủi ro ⇒ phân loại khác chi_cot_an_toan", () => {
+    const sai: string[] = [];
+    for (const [k, [dem, pl]] of Object.entries(SO_CAI)) {
+      const loai = Object.keys(dem) as Loai[];
+      const anToan = loai.every((l) => LOAI_AN_TOAN.has(l));
+      if (pl === "chi_cot_an_toan" && !anToan) sai.push(`${k}: chi_cot_an_toan nhưng có ${loai.filter((l) => !LOAI_AN_TOAN.has(l)).join(",")}`);
+      if (pl !== "chi_cot_an_toan" && anToan) sai.push(`${k}: chỉ loại an toàn — phân loại phải là chi_cot_an_toan (đang ${pl})`);
+    }
+    expect(sai).toEqual([]);
+  });
+
+  it("§2 mọi thủ tục của commandLogRouter đọc nguyên hàng / cột kỹ thuật ĐỀU gọi bộ che trong thân", () => {
     const rel = "server/routers/commandLogRouter.ts";
-    const src = readFileSync(join(GOC, rel), "utf8");
-    const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const thuTuc = new Map<string, string>();
+    const sf = ts.createSourceFile(rel, readFileSync(join(GOC, rel), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const than = new Map<string, string>();
     const tham = (n: ts.Node) => {
-      if (ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer) && /\.query\(/.test(n.initializer.getText())) thuTuc.set(n.name.getText(), n.initializer.getText());
+      if (ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer) && /\.query\(/.test(n.initializer.getText())) than.set(n.name.getText(), n.initializer.getText());
       ts.forEachChild(n, tham);
     };
     tham(sf);
-    expect([...thuTuc.keys()].sort()).toEqual(["avgDurations", "get", "list", "nhatKy", "stats"]);
-    const canChe = [...Object.keys(SO_CAI)].filter((k) => k.startsWith(rel) && SO_CAI[k][1] === "che" && SO_CAI[k][0] > 0).map((k) => k.split("#")[1]);
-    expect(canChe.sort()).toEqual(["get", "list", "nhatKy"]);
-    for (const t of canChe) expect(thuTuc.get(t), `thủ tục ${t} không gọi bộ che`).toMatch(/chiTietKyThuatCua\(ctx\)/);
-    for (const t of ["list", "get"]) expect(thuTuc.get(t), `thủ tục ${t} không qua cheHangLenh`).toMatch(/cheHangLenh\(/);
-    // nhatKy: errorText chỉ vào `loi` qua duocXem
-    expect(thuTuc.get("nhatKy")).toMatch(/loi: duocXem \? \(r\.errorText \?\? null\) : null/);
-    expect(thuTuc.get("nhatKy")).not.toMatch(/ackValue:/);
+    expect([...than.keys()].sort()).toEqual(["avgDurations", "get", "list", "nhatKy", "stats"]);
+    const canChe = Object.entries(SO_CAI).filter(([k, v]) => k.startsWith(rel + "#") && v[1] === "che").map(([k]) => k.split("#")[1]).sort();
+    expect(canChe).toEqual(["get", "list", "nhatKy"]);
+    for (const t of canChe) expect(than.get(t), `thủ tục ${t} không gọi chiTietKyThuatCua`).toMatch(/chiTietKyThuatCua\(ctx\)/);
+    for (const t of ["list", "get"]) expect(than.get(t), `thủ tục ${t} không qua cheHangLenh`).toMatch(/cheHangLenh\(/);
+    expect(than.get("nhatKy")).toMatch(/loi: duocXem \? \(r\.errorText \?\? null\) : null/);
+    expect(than.get("nhatKy")).not.toMatch(/ackValue:/);
   });
 
-  it("§4 ĐỘT BIẾN (tệp ảo) — thủ tục canView mới trả select() nguyên hàng ⇒ khoá LẠ (đỏ ở §1); select có chiếu không hai cột ⇒ không vào sổ", () => {
-    const ro = quetNguon(
-      "server/routers/xRo.ts",
-      `export const r = router({ moi: protectedProcedure.query(async () => db.select().from(commandLog)) , sach: protectedProcedure.query(async () => db.select({ id: commandLog.id }).from(commandLog)), tho: p.query(() => sql\`select "errorText" from command_log\`) });`,
-    );
-    expect(Object.fromEntries(ro)).toEqual({ "server/routers/xRo.ts#moi#select_tat_ca": 1, "server/routers/xRo.ts#tho#sql_tho": 1 });
-    for (const k of ro.keys()) expect(SO_CAI[k]).toBeUndefined();
+  it("§3 MỌI thủ tục tRPC chạm hàm rủi ro (đồ thị gọi theo tên ≤ 5 bậc) có trong THU_TUC_CHAM, đúng tập hàm", () => {
+    const lech: string[] = [];
+    for (const [k, v] of CHAM) {
+      const so = THU_TUC_CHAM[k];
+      if (!so) lech.push(`${k}: chạm ${v.join(",")}, không có trong sổ`);
+      else if (so[0].join(",") !== v.join(",")) lech.push(`${k}: chạm ${v.join(",")}, sổ ${so[0].join(",")}`);
+    }
+    for (const k of Object.keys(THU_TUC_CHAM)) if (!CHAM.has(k)) lech.push(`${k}: có trong sổ, đo không chạm (gỡ)`);
+    expect(lech).toEqual([]);
+  });
+
+  it("§4 ĐIỂM MÙ review I2 — mỗi hình có fixture tệp ảo, bị BẮT đúng loại và là khoá LẠ (đỏ ở §1)", () => {
+    const thu = (src: string) => Object.fromEntries([...quetNguon("server/routers/xAo.ts", src)].map(([k, v]) => [k.split("#")[1], sapXep(v)]));
+    const imp = `import { commandLog } from "../../drizzle/schema";\n`;
+    // (1) SQL thô không nêu cột: SELECT * / cl.* / row_to_json
+    expect(thu(`export const r = router({ a: p.query(() => db.execute(sql\`SELECT * FROM command_log\`)), b: p.query(() => db.execute(sql\`SELECT cl.* FROM command_log cl WHERE cl.id = \${1}\`)), c: p.query(() => db.execute(sql\`SELECT row_to_json(x) FROM command_log x\`)) });`)).toEqual({
+      a: { sql_tho_nhay_cam: 1 },
+      b: { sql_tho_nhay_cam: 1 },
+      c: { sql_tho_nhay_cam: 1 },
+    });
+    // (2) cả bảng trong phép chiếu
+    expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ ...getTableColumns(commandLog) }).from(commandLog)), b: p.query(() => db.select({ row: commandLog }).from(commandLog)) });`)).toEqual({
+      a: { doc_nguyen_hang: 2 },
+      b: { doc_nguyen_hang: 2 },
+    });
+    // (3) join (không phải from) dưới select() / select chiếu tường minh
+    expect(thu(imp + `export const r = router({ a: p.query(() => db.select().from(x).leftJoin(commandLog, eq(x.id, commandLog.id))), b: p.query(() => db.select({ id: x.id, s: commandLog.status }).from(x).innerJoin(commandLog, eq(x.id, commandLog.id))) });`)).toEqual({
+      a: { cot_an_toan: 1, doc_nguyen_hang: 1 },
+      b: { cot_an_toan: 2, doc_chieu: 1 },
+    });
+    // (4) bí danh: alias(...) và import đổi tên, namespace import, destructure động
+    expect(thu(imp + `const r2 = alias(commandLog, "r");\nexport const r = router({ a: p.query(() => db.select({ e: r2.errorText }).from(r2)) });`)).toEqual({
+      "<tep>": { bi_danh: 1 },
+      a: { cot_ky_thuat: 1, doc_chieu: 1 },
+    });
+    expect(thu(`import { commandLog as cl } from "../../drizzle/schema";\nexport const r = router({ a: p.query(() => db.select({ e: cl.ackValue }).from(cl)) });`)).toEqual({ a: { cot_ky_thuat: 1, doc_chieu: 1 } });
+    expect(thu(`import * as s from "../../drizzle/schema";\nexport const r = router({ a: p.query(() => db.select().from(s.commandLog)) });`)).toEqual({ a: { doc_nguyen_hang: 1 } });
+    expect(thu(`export const r = router({ a: p.query(async () => { const { commandLog: t } = await import("../../drizzle/schema"); return db.select().from(t); }), b: p.query(() => db.query.commandLog.findMany()) });`)).toEqual({
+      a: { doc_nguyen_hang: 1 },
+      b: { doc_nguyen_hang: 1 },
+    });
+    // đối chứng: chiếu cột an toàn ⇒ chỉ loại an toàn
+    expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ id: commandLog.id }).from(commandLog)) });`)).toEqual({ a: { cot_an_toan: 1, doc_chieu: 1 } });
+    // (5) thủ tục MỚI chỉ gọi một hàm rủi ro CÓ SẴN (không tham chiếu bảng) ⇒ §3 bắt (khoá lạ)
+    const cm = lapChiMuc([...NGUON, { rel: "server/routers/xAo.ts", src: `export const r = router({ moi: p.query(({ ctx }) => trangThaiYeuCauGhi(ctx, {})) });` }]);
+    const cham = thuTucCham(cm, ruiRoCua(DO, cm));
+    expect(cham.get("server/routers/xAo.ts#moi")).toContain("trangThaiYeuCauGhi");
+    expect(THU_TUC_CHAM["server/routers/xAo.ts#moi"]).toBeUndefined();
+    // mọi khoá fixture đều LẠ với sổ cái
+    for (const k of Object.keys(SO_CAI)) expect(k.startsWith("server/routers/xAo.ts")).toBe(false);
   });
 });
 

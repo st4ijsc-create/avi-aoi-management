@@ -19,13 +19,13 @@
  */
 import { z } from "zod";
 import { appError } from "../_core/appError";
-import { and, eq, gte, lte, desc, sql, isNotNull, isNull, inArray, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, desc, sql, isNotNull, isNull, inArray, or, type SQL } from "drizzle-orm";
 import { router, protectedProcedure, moduleGate } from "../_core/trpc";
 import { requirePermission, getUserAssignmentCodes } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
 import { commandLog, deviceAdapters, scadaCommandAttempts, userFactoryAssignments, users, type CommandLog } from "../../drizzle/schema";
-import { adapterTrongPhamVi, dieuKienLenhTrongPhamVi, idsMayTrongPhamVi, mayTrongPhamVi } from "./_adapterPhamVi";
-import { chiTietKyThuatCua, maLoiCua } from "./_chiTietKyThuat";
+import { adapterTrongPhamVi, dieuKienLenhTrongPhamVi, idsMayTrongPhamVi, khongThayMay, mayTrongPhamVi } from "./_adapterPhamVi";
+import { chiTietKyThuatCua, maLoiCua, maLyDoThu } from "./_chiTietKyThuat";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -43,9 +43,9 @@ const statusEnum = z.enum([
 export type HangLenhDaChe = CommandLog & {
   /** `ackValue.ledger` ("intent" | "result" | "late_result" …) — vai của hàng trong sổ ghi trước; null = không đánh dấu */
   ledger: string | null;
-  /** `ackValue.intentId` (số) — kết quả của intent nào; null = không có */
+  /** `ackValue.intentId` — CHỈ khi là số nguyên (cùng luật client `commandLedgerRole`; chuỗi số ⇒ null — fix round 1 M5) */
   intentId: number | null;
-  /** MÃ lý do (tiền tố `MA:` của errorText) — có cả khi errorText bị che */
+  /** MÃ lý do: tiền tố `MA:` của errorText, hoặc mã DỰ PHÒNG theo status / hình văn bản (`MA_LOI_DU_PHONG`) — có cả khi errorText bị che */
   maLoi: string | null;
   /** true ⇔ errorText CÓ nhưng bị che (người xem không phải admin / engineer có canEdit) — giao diện hiện mã + "chi tiết bị ẩn" */
   loiBiChe: boolean;
@@ -56,14 +56,14 @@ export function cheHangLenh(row: CommandLog, duocXem: boolean): HangLenhDaChe {
   const ack = (row.ackValue && typeof row.ackValue === "object" && !Array.isArray(row.ackValue) ? row.ackValue : null) as { ledger?: unknown; intentId?: unknown } | null;
   const ledger = typeof ack?.ledger === "string" ? ack.ledger : null;
   const iid = ack?.intentId;
-  const intentId = typeof iid === "number" && Number.isSafeInteger(iid) ? iid : typeof iid === "string" && /^[0-9]{1,15}$/.test(iid) ? Number(iid) : null;
+  const intentId = typeof iid === "number" && Number.isSafeInteger(iid) ? iid : null;
   return {
     ...row,
     ackValue: duocXem ? row.ackValue : null,
     errorText: duocXem ? row.errorText : null,
     ledger,
     intentId,
-    maLoi: maLoiCua(row.errorText),
+    maLoi: maLoiCua(row.errorText, row.status),
     loiBiChe: !duocXem && row.errorText != null,
   };
 }
@@ -138,6 +138,13 @@ function sauConTro(c: ConTro | null, hang: number, cotAt: SQL | typeof commandLo
   return sql`(${cotAt} < ${ts(c)} OR (${cotAt} = ${ts(c)} AND ${cotId} < ${c.id}))`;
 }
 const tsNaive = (c: ConTro): SQL => sql`${atSangTs(c.at)}::timestamp`;
+/**
+ * M8 (fix round 1) — `den` là Date (độ phân giải ms) so với cột µs: BAO GỒM trọn mili-giây cuối (+ 999 µs), vd `den = …05.654Z` lấy cả hàng
+ * `…05.654999`. `tu` giữ nguyên (`>= …05.654000`).
+ */
+const denTs = (d: Date): string => `${d.toISOString().slice(0, 23).replace("T", " ")}999`;
+const denNaive = (d: Date): SQL => sql`${denTs(d)}::timestamp`;
+const denUtc = (d: Date): SQL => sql`(${denTs(d)}::timestamp AT TIME ZONE 'UTC')`;
 const tsUtc = (c: ConTro): SQL => sql`(${atSangTs(c.at)}::timestamp AT TIME ZONE 'UTC')`;
 
 /** So hai hàng theo thứ tự GIẢM DẦN (at, hạng nguồn, id số): âm ⇒ a đứng trước. */
@@ -168,8 +175,8 @@ export interface HangNhatKy {
   reasonCode: string | null;
   /** thu: ly_do · lenh: null */
   lyDo: string | null;
-  /** KHÔNG email. Người ngoài phạm vi người xem ⇒ ten "quản trị", ngoaiPhamVi true (KD-2bA 1.4) */
-  nguoi: { id: number; ten: string | null; ngoaiPhamVi: boolean } | null;
+  /** KHÔNG email. Người ngoài phạm vi người xem ⇒ id null, ten "quản trị", ngoaiPhamVi true (KD-2bA 1.4; fix round 1 M4 — không lộ id) */
+  nguoi: { id: number | null; ten: string | null; ngoaiPhamVi: boolean } | null;
   triggerKind: "hitl" | "interlock" | null;
   /** lenh: requestedValue · thu: requested_value */
   giaTri: unknown | null;
@@ -299,9 +306,10 @@ export const commandLogRouter = router({
     .query(async ({ input, ctx }): Promise<KetQuaNhatKy> => {
       const conTro = input.conTro != null ? giaiConTro(input.conTro) : null;
       // phạm vi — id client gửi kiểm trước (ngoài phạm vi ≡ không tồn tại)
-      if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
-      if (input.adapterId != null) await adapterTrongPhamVi(ctx, input.adapterId);
+      // fix round 1 M9 — phạm vi phân giải MỘT lần; máy: cùng luật `mayTrongPhamVi` (ngoài tập ⇒ NOT_FOUND machine); adapter: tái dùng tập
       const idsMay = await idsMayTrongPhamVi(ctx);
+      if (input.machineId != null && idsMay !== null && !idsMay.includes(input.machineId)) throw khongThayMay();
+      if (input.adapterId != null) await adapterTrongPhamVi(ctx, input.adapterId, idsMay);
       const db = await getDb();
       const gioiHan = input.gioiHan;
       const duocXem = await chiTietKyThuatCua(ctx);
@@ -337,7 +345,7 @@ export const commandLogRouter = router({
               input.adapterId != null ? eq(commandLog.adapterId, input.adapterId) : undefined,
               input.trangThai != null ? inArray(commandLog.status, input.trangThai) : undefined,
               input.tu != null ? gte(commandLog.createdAt, input.tu) : undefined,
-              input.den != null ? lte(commandLog.createdAt, input.den) : undefined,
+              input.den != null ? sql`${commandLog.createdAt} <= ${denNaive(input.den)}` : undefined,
               sauConTro(conTro, HANG_NGUON.lenh, commandLog.createdAt, commandLog.id, tsNaive),
             ),
           )
@@ -358,7 +366,7 @@ export const commandLogRouter = router({
               tagKey: r.tagKey ?? null,
               commandType: r.commandType ?? null,
               trangThai: r.status,
-              reasonCode: maLoiCua(r.errorText),
+              reasonCode: maLoiCua(r.errorText, r.status),
               lyDo: null,
               triggerKind: r.triggerKind ?? null,
               giaTri: r.requestedValue ?? null,
@@ -401,7 +409,7 @@ export const commandLogRouter = router({
               input.adapterId != null ? eq(a.adapterId, input.adapterId) : undefined,
               input.trangThai != null ? eq(a.outcome, "rejected") : undefined,
               input.tu != null ? gte(a.at, input.tu) : undefined,
-              input.den != null ? lte(a.at, input.den) : undefined,
+              input.den != null ? sql`${a.at} <= ${denUtc(input.den)}` : undefined,
               sauConTro(conTro, HANG_NGUON.thu, a.at, a.id, tsUtc),
             ),
           )
@@ -409,6 +417,7 @@ export const commandLogRouter = router({
           .limit(gioiHan + 1);
         for (const r of rows) {
           const idSo = Number(r.id);
+          const cheThu = !duocXem && r.stage === "dispatch";
           tam.push({
             nguon: "thu",
             at: r.at,
@@ -423,14 +432,16 @@ export const commandLogRouter = router({
               tagKey: r.tagKey ?? null,
               commandType: null,
               trangThai: `${r.stage}:${r.outcome}`,
-              reasonCode: r.reasonCode ?? null,
-              lyDo: r.lyDo ?? null,
+              // M1 (fix round 1) — dòng `dispatch` có thể mang văn bản thô của driver (lenhHmi bước 9: reasonCode = kq.reason, lyDo
+              // "Kết quả gửi: … (kq.reason)") ⇒ người không được xem chi tiết kỹ thuật: reasonCode về MÃ, lyDo null (+ loiBiChe)
+              reasonCode: cheThu ? maLyDoThu(r.reasonCode) : (r.reasonCode ?? null),
+              lyDo: cheThu ? null : (r.lyDo ?? null),
               triggerKind: null,
               giaTri: r.requestedValue ?? null,
               commandLogIds: (r.commandLogIds ?? []).map(Number),
               requestId: r.requestId ?? null,
               loi: null,
-              loiBiChe: false,
+              loiBiChe: cheThu && (r.lyDo != null || (r.reasonCode ?? null) !== maLyDoThu(r.reasonCode)),
             },
           });
         }
@@ -480,7 +491,7 @@ export const commandLogRouter = router({
             ? null
             : thayDuoc === null || thayDuoc.has(t.userId)
               ? { id: t.userId, ten: ten.get(t.userId) ?? null, ngoaiPhamVi: false }
-              : { id: t.userId, ten: TEN_NGUOI_NGOAI_PHAM_VI, ngoaiPhamVi: true };
+              : { id: null, ten: TEN_NGUOI_NGOAI_PHAM_VI, ngoaiPhamVi: true };
         return {
           ...t.ra,
           machineId: t.machineIdCot ?? ad?.machineId ?? null,
