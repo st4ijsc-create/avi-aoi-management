@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
-import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
+import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucAgentCon, type MucDongThoiGian } from "./trangThaiAgent";
 import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
@@ -506,6 +506,85 @@ export function DongModelBatDau({ m, dangChay }: { m: ThongTinModelBatDau | null
   );
 }
 
+/**
+ * (Đợt 11.8, UX-C06) banner "ngữ cảnh gần đầy" — máy chủ phát `ngu-canh-day` ĐÚNG MỘT lần khi lượt model xong mà ngữ cảnh ≥ 80 %.
+ * Chỉ NHẮC: việc tóm tắt vào NOTES.md vẫn do agent làm qua `write_file` + thẻ duyệt của NGƯỜI (diff đầy đủ); mở phiên mới là việc của người dùng.
+ */
+export function BannerNguCanhDay({ phanTram }: { phanTram: number | null }) {
+  const { t } = useTranslation();
+  if (phanTram === null) return null;
+  return (
+    <div data-testid="agent-ngu-canh-day" role="status" className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">
+        {t("repoWs.agent.nguCanhDay", "Ngữ cảnh đã dùng {{p}}% — nên nhờ agent tóm tắt tiến độ vào NOTES.md (bạn duyệt như mọi lần ghi tệp) rồi mở phiên mới.", { p: Math.round(phanTram) })}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * (Đợt 11.8) khối AGENT CON. `nhiemVu` / `tomTat` / chữ của con là chuỗi do MODEL viết ⇒ vẽ CHỮ THUẦN (text node, không markdown, không liên kết).
+ * Thẻ duyệt của con dùng CHÍNH `TheDuyetAgent` (duyệt bằng `aiAgent.duyet {actionId}` như thẻ thường — máy chủ định tuyến theo actionId).
+ * Nhãn "từ repo" (`tuRepo`) cạnh tên agent: người đọc biết định nghĩa này do tệp trong repo, không phải dựng sẵn.
+ */
+export function KhoiAgentCon({ m, agent }: { m: MucAgentCon; agent: HookAgent }) {
+  const { t } = useTranslation();
+  const ds = m.tt.dongThoiGian;
+  return (
+    <div data-testid="agent-con" data-run-id-con={m.runIdCon} data-trang-thai={m.trangThai} className="ml-3 space-y-1.5 border-l-2 border-primary/40 pl-2">
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+        <span data-testid="agent-con-ten" className="font-medium">
+          {t("repoWs.agent.con.tieuDe", "Agent con")}: {m.agent}
+        </span>
+        {m.nguon === "tuRepo" && (
+          <span data-testid="agent-con-tu-repo" className="rounded border border-sky-300 bg-sky-50 px-1 text-[11px] text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+            {t("repoWs.agent.con.tuRepo", "từ repo")}
+          </span>
+        )}
+        <span className="rounded border px-1 text-[11px] text-muted-foreground">{m.cheDo === "sua" ? t("repoWs.agent.con.sua", "sửa") : t("repoWs.agent.con.hoi", "hỏi")}</span>
+        {m.trangThai === "chay" ? (
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            {t("repoWs.agent.con.dangChay", "đang chạy")}
+          </span>
+        ) : (
+          <span data-testid="agent-con-ket-thuc" className="text-[11px] text-muted-foreground">
+            {m.lyDo ? cauLyDoDung(t, m.lyDo) : ""}
+          </span>
+        )}
+      </div>
+      <p data-testid="agent-con-nhiem-vu" className="whitespace-pre-wrap break-words text-[12px] text-muted-foreground">{m.nhiemVu}</p>
+      {ds.map((x, i) => {
+        switch (x.kieu) {
+          case "chu":
+            return (
+              <div key={i} data-testid="agent-con-chu" className="whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 text-[12px]">
+                {x.noiDung}
+              </div>
+            );
+          case "tool":
+            return <DongTool key={`t-${x.id}-${i}`} m={x} />;
+          case "duyet":
+            return <TheDuyetAgent key={`d-${x.id}-${i}`} m={x} agent={agent} />;
+          case "loi":
+            return (
+              <p key={i} data-testid="agent-con-loi" className="break-words text-[12px] text-red-700 dark:text-red-300">
+                {x.thongDiep}
+              </p>
+            );
+          default:
+            return null;
+        }
+      })}
+      {m.trangThai === "xong" && m.tomTat && (
+        <p data-testid="agent-con-tom-tat" className="whitespace-pre-wrap break-words rounded border px-2 py-1 text-[12px]">{m.tomTat}</p>
+      )}
+    </div>
+  );
+}
+
 export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTep: (path: string) => void }) {
   const { t } = useTranslation();
   const s = agent.trangThai;
@@ -530,6 +609,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
       )}
 
       <BangKeHoach viec={s.keHoach} />
+
+      <BannerNguCanhDay phanTram={s.nguCanhDay} />
 
       <DongModelBatDau m={s.modelBatDau} dangChay={s.dangChay} />
 
@@ -593,6 +674,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
             return <DongTool key={`t-${m.id}-${i}`} m={m} />;
           case "duyet":
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} />;
+          case "con":
+            return <KhoiAgentCon key={`c-${m.runIdCon}-${i}`} m={m} agent={agent} />;
           case "nho":
             return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
           case "canh-bao":

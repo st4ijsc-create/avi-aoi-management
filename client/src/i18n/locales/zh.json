@@ -21620,6 +21620,14 @@
         "duAnPhanMem": "（软件项目）",
         "macDinh": "引擎默认模型",
         "duPhong": "备用 — 槽位正占用另一个模型"
+      },
+      "nguCanhDay": "上下文已使用 {{p}}% —— 建议让智能体把进度总结写入 NOTES.md（和其他文件写入一样由您审批），然后开启新会话。",
+      "con": {
+        "tieuDe": "子智能体",
+        "tuRepo": "来自仓库",
+        "sua": "编辑",
+        "hoi": "提问",
+        "dangChay": "运行中"
       }
     },
     "duanCaNhan": {

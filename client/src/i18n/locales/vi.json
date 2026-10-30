@@ -21620,6 +21620,14 @@
         "duAnPhanMem": " (dự án phần mềm)",
         "macDinh": "model mặc định của engine",
         "duPhong": "dự phòng — khe đang giữ model khác"
+      },
+      "nguCanhDay": "Ngữ cảnh đã dùng {{p}}% — nên nhờ agent tóm tắt tiến độ vào NOTES.md (bạn duyệt như mọi lần ghi tệp) rồi mở phiên mới.",
+      "con": {
+        "tieuDe": "Agent con",
+        "tuRepo": "từ repo",
+        "sua": "sửa",
+        "hoi": "hỏi",
+        "dangChay": "đang chạy"
       }
     },
     "duanCaNhan": {

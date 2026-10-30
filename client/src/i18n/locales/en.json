@@ -21620,6 +21620,14 @@
         "duAnPhanMem": " (software project)",
         "macDinh": "the engine's default model",
         "duPhong": "fallback — the slot is holding another model"
+      },
+      "nguCanhDay": "Context is {{p}}% full — ask the agent to summarise progress into NOTES.md (you approve it like any file write), then start a new session.",
+      "con": {
+        "tieuDe": "Sub-agent",
+        "tuRepo": "from repo",
+        "sua": "edit",
+        "hoi": "ask",
+        "dangChay": "running"
       }
     },
     "duanCaNhan": {

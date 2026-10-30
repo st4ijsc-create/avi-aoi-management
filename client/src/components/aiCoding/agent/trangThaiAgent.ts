@@ -15,6 +15,11 @@
  *     (`capNhatDeXuatNho` theo kết quả THẬT của tRPC) — máy chủ không phát sự kiện cho lượt bấm, nên `xong` KHÔNG làm
  *     thẻ hết hiệu lực: đề xuất còn duyệt được sau khi lượt chạy kết thúc (máy chủ giữ 30 phút).
  *   • (2026-10-17) `canh-bao-du-lieu` / `ha-tu-tri` ⇒ mục `canh-bao` (lượt KHÔNG dừng); `ha-tu-tri` bật `daHaTuTri`.
+ *   • (Đợt 11.8) `ngu-canh-day` ⇒ `nguCanhDay` (% ngữ cảnh; phát ĐÚNG MỘT lần mỗi lượt chạy ⇒ banner).
+ *   • (Đợt 11.8) AGENT CON: `con-bat-dau` ⇒ mục `con` mới; `su-kien-con` ⇒ áp CHÍNH bộ giảm này lên TRẠNG THÁI RIÊNG của con
+ *     (`con.tt`) — sự kiện của con KHÔNG BAO GIỜ chạm `dangChay`/`ketThuc`/`keHoach`/`usage`/`runId` của cha (con không giả được `xong`/
+ *     `da-duyet`/`ke-hoach` của cha); `con-xong` đóng mục con. `choDuyet` của cha = cha còn thẻ chờ HOẶC có con còn thẻ chờ.
+ *     `nhiemVu`/`tomTat` là chuỗi do MODEL viết ⇒ lưu nguyên, UI vẽ CHỮ THUẦN.
  */
 import type {
   CheDoAgent,
@@ -47,7 +52,31 @@ export type MucDongThoiGian =
   | { kieu: "nho"; id: string; note: string; scope: PhamViNho; trangThai: TrangThaiTheNho; maLoi?: string }
   /** (2026-10-17) nội dung đáng ngờ: `du-lieu` = cảnh báo (lượt KHÔNG dừng) · `ha-tu-tri` = tu-dong bị hạ (ghi/lệnh cần duyệt). */
   | { kieu: "canh-bao"; loaiCanhBao: "du-lieu" | "ha-tu-tri"; nguon: string; mau: string[] }
-  | { kieu: "loi"; ma: string; thongDiep: string };
+  | { kieu: "loi"; ma: string; thongDiep: string }
+  /** (Đợt 11.8) một agent con: tiêu đề + trạng thái riêng của nó (dòng thời gian lồng). */
+  | MucAgentCon;
+
+/** (Đợt 11.8) trần số agent con giữ trong trạng thái (chống phình khi máy chủ/dữ liệu bất thường). */
+export const TRAN_AGENT_CON = 32;
+/** (Đợt 11.8) trần độ sâu lồng `su-kien-con` (con của con…): quá sâu ⇒ bỏ sự kiện, không đệ quy vô hạn. */
+const TRAN_DO_SAU_CON = 3;
+
+export interface MucAgentCon {
+  kieu: "con";
+  runIdCon: string;
+  agent: string;
+  nguon: "dungSan" | "tuRepo";
+  sau: number;
+  cheDo: CheDoAgent;
+  /** Chuỗi do MODEL viết — vẽ CHỮ THUẦN. */
+  nhiemVu: string;
+  trangThai: "chay" | "xong";
+  lyDo?: LyDoDung;
+  /** Chuỗi do MODEL viết — vẽ CHỮ THUẦN. */
+  tomTat?: string;
+  /** Trạng thái RIÊNG của con (cùng bộ giảm). */
+  tt: TrangThaiAgent;
+}
 
 export interface UsageGop {
   vao: number;
@@ -75,6 +104,8 @@ export interface TrangThaiAgent {
   daHaTuTri: boolean;
   /** ★ Đợt 9 — model + vai trò THỰC của lượt (sự kiện `bat-dau.model`; CHỈ có khi server bật `AI_AGENT_THEO_VAI_TRO`). `null` ⇒ không hiện gì. */
   modelBatDau: ThongTinModelBatDau | null;
+  /** (Đợt 11.8, UX-C06) % ngữ cảnh khi `ngu-canh-day` (≥ 80 %); null = chưa đầy. */
+  nguCanhDay: number | null;
 }
 
 export const TRANG_THAI_RONG: TrangThaiAgent = {
@@ -92,6 +123,7 @@ export const TRANG_THAI_RONG: TrangThaiAgent = {
   ketThuc: null,
   daHaTuTri: false,
   modelBatDau: null,
+  nguCanhDay: null,
 };
 
 /** Trạng thái lúc người dùng vừa gửi câu hỏi (chưa có `bat-dau`). */
@@ -158,7 +190,16 @@ function noiChu(ds: MucDongThoiGian[], kieu: "chu" | "nghi", noiDung: string): M
   return [...ds, { kieu, noiDung }];
 }
 
-export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
+/** `xong` của cha: mọi thẻ còn chờ (của cha lẫn của con) hết hiệu lực. */
+function hetHieuLucTheCho(m: MucDongThoiGian): MucDongThoiGian {
+  if (m.kieu === "duyet" && m.trangThai === "cho") return { ...m, trangThai: "het-hieu-luc" };
+  if (m.kieu === "con") return { ...m, tt: { ...m.tt, choDuyet: false, dongThoiGian: m.tt.dongThoiGian.map(hetHieuLucTheCho) } };
+  return m;
+}
+
+const conChoDuyet = (ds: MucDongThoiGian[]): boolean => ds.some((m) => (m.kieu === "duyet" && m.trangThai === "cho") || (m.kieu === "con" && m.tt.choDuyet));
+
+export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangThaiAgent {
   const n: TrangThaiAgent = { ...s, soSuKien: s.soSuKien + 1 };
   switch (e?.loai) {
     case "bat-dau":
@@ -194,8 +235,7 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
           ? { ...m, trangThai: (e.loai === "da-duyet" ? "da-duyet" : "bi-bac") as TrangThaiTheDuyet, lyDo: e.lyDo ?? m.lyDo }
           : m,
       );
-      const conCho = dt.some((m) => m.kieu === "duyet" && m.trangThai === "cho");
-      return { ...n, dongThoiGian: dt, choDuyet: conCho };
+      return { ...n, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };
     }
     case "ke-hoach":
       return { ...n, keHoach: Array.isArray(e.viec) ? e.viec : [] };
@@ -231,6 +271,38 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
     }
     case "dang-cho-model":
       return { ...n, phiaTruoc: e.phiaTruoc };
+    case "ngu-canh-day":
+      return typeof e.phanTram === "number" && Number.isFinite(e.phanTram) ? { ...n, nguCanhDay: e.phanTram } : n;
+    case "con-bat-dau": {
+      if (typeof e.runIdCon !== "string" || !e.runIdCon) return n;
+      if (n.dongThoiGian.some((m) => m.kieu === "con" && m.runIdCon === e.runIdCon)) return n; // phát lại sau nối lại: không nhân đôi
+      if (n.dongThoiGian.filter((m) => m.kieu === "con").length >= TRAN_AGENT_CON) return n;
+      const con: MucAgentCon = {
+        kieu: "con",
+        runIdCon: e.runIdCon,
+        agent: String(e.agent ?? ""),
+        nguon: e.nguon === "tuRepo" ? "tuRepo" : "dungSan",
+        sau: typeof e.sau === "number" ? e.sau : 1,
+        cheDo: e.cheDo,
+        nhiemVu: String(e.nhiemVu ?? ""),
+        trangThai: "chay",
+        tt: { ...TRANG_THAI_RONG, cheDo: e.cheDo, dangChay: true },
+      };
+      return { ...n, dongThoiGian: [...n.dongThoiGian, con] };
+    }
+    case "con-xong": {
+      const dt = n.dongThoiGian.map((m) =>
+        m.kieu === "con" && m.runIdCon === e.runIdCon
+          ? { ...m, trangThai: "xong" as const, lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}), tt: { ...m.tt, dangChay: false, choDuyet: false } }
+          : m,
+      );
+      return { ...n, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };
+    }
+    case "su-kien-con": {
+      if (doSau >= TRAN_DO_SAU_CON || !e.suKien) return n;
+      const dt = n.dongThoiGian.map((m) => (m.kieu === "con" && m.runIdCon === e.runIdCon ? { ...m, tt: giamSuKien(m.tt, e.suKien, doSau + 1) } : m));
+      return { ...n, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };
+    }
     case "loi":
       return { ...n, dongThoiGian: [...n.dongThoiGian, { kieu: "loi", ma: e.ma, thongDiep: e.thongDiep }] };
     case "xong":
@@ -240,7 +312,7 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent): TrangThaiAgent {
         choDuyet: false,
         phiaTruoc: null,
         ketThuc: { lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}) },
-        dongThoiGian: n.dongThoiGian.map((m) => (m.kieu === "duyet" && m.trangThai === "cho" ? { ...m, trangThai: "het-hieu-luc" } : m)),
+        dongThoiGian: n.dongThoiGian.map((m) => hetHieuLucTheCho(m)),
       };
     default:
       return n;
