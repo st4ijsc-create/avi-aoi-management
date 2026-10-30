@@ -4599,7 +4599,9 @@
       "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)",
       "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài.",
       "NGOAI_THIEU_HOI_THOAI": "thiếu hội thoại đã lưu — hãy mở hoặc tạo hội thoại rồi gửi lại",
-      "modelNgoaiChuaCaiDat": "model AI ngoài chưa dùng được ở màn này"
+      "modelNgoaiChuaCaiDat": "model AI ngoài chưa dùng được ở màn này",
+      "NGOAI_CHI_HOI": "model ngoài chỉ trả lời ở chế độ Hỏi (chỉ đọc) — không sửa tệp, không dùng đầu ra lệnh",
+      "NGOAI_TOOL_KHONG_CAP": "model ngoài đòi dùng một công cụ không được cấp — lượt đã dừng"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -21881,6 +21883,11 @@
       "xemBanDau": "Xem bản đầu (trước khi sửa)",
       "conLoi": "Mã ST còn {{n}} lỗi biên dịch (RuSTy) sau {{v}} vòng tự sửa:",
       "khongKiemDuoc": "Chưa kiểm biên dịch được ({{lyDo}})."
+    },
+    "ngoai": {
+      "daDoc": "Đã đọc {{p}}",
+      "biTuChoi": "Bị từ chối ({{ma}}): {{p}}",
+      "chiHoi": "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa)."
     }
   },
   "masterDataCol": {
@@ -24510,7 +24517,8 @@
       "luong": "trần ngày của luồng",
       "lan-phut": "quá nhiều lượt mỗi phút"
     },
-    "khongTai": "Không tải được điều kiện dùng model này — thử lại sau."
+    "khongTai": "Không tải được điều kiện dùng model này — thử lại sau.",
+    "codingLuotHai": "Màn lập trình: lượt ĐẦU chỉ gửi câu hỏi bạn gõ và mã bạn cho đọc; từ lượt hai, lịch sử hội thoại được coi là dữ liệu vận hành (cần nhà máy cho phép, hỏi xác nhận một lần mỗi phiên)."
   },
   "xacNhanVanHanh": {
     "tieuDe": "Gửi câu hỏi ra AI ngoài?",

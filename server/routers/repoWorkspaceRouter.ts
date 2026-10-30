@@ -41,6 +41,7 @@
  * ⇒ Client ẩn nút chỉ là phép LỊCH SỰ; đây mới là hàng rào.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { stripThinking } from "../services/ai/thinkingStrip";
 import { router, moduleProcedure, adminProcedure, moduleGate } from "../_core/trpc";
 import {
@@ -977,6 +978,8 @@ export const repoWorkspaceRouter = router({
               .strict(),
           )
           .max(GIOI_HAN_PHIEN.SO_LUOT),
+        // ★ 10.4b L2 — callId các lượt model NGOÀI của phiên (`done.ngoaiCallIds`); máy chủ XÁC MINH (đúng người + ok + băm khớp một turn).
+        ngoaiCallIds: z.array(z.number().int().positive()).max(50).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -985,11 +988,31 @@ export const repoWorkspaceRouter = router({
       if (!phanGiaiGoc(input.projectId, nguoiGoiTuCtx(ctx)).ok) {
         return { ok: false, note: "PROJECT_NOT_FOUND", id: null, title: "", turnCount: 0 };
       }
+      // ★ 10.4b L2 — dấu nguồn phiên: xác minh TRƯỚC khi lưu (lệch ⇒ BAD_REQUEST, không lưu gì); không id ⇒ tự dò theo băm 24 h.
+      const [{ getDb: layDb }, { xacMinhPhienCoLuotNgoai }] = await Promise.all([import("../db/connection"), import("../services/ai/ngoai/dauNguon")]);
+      const dbDau = await layDb();
+      let coLuotNgoai = false;
+      if (dbDau) {
+        try {
+          coLuotNgoai = await xacMinhPhienCoLuotNgoai(dbDau as never, {
+            userId: cong.userId,
+            traLoi: input.turns.filter((t) => t.role === "assistant").map((t) => t.content),
+            ngoaiCallIds: input.ngoaiCallIds ?? null,
+          });
+        } catch (e) {
+          if ((e as { ma?: unknown })?.ma === "NGOAI_KHONG_TON_TAI") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiChatLuu", reason: "dau-nguon-lech" }, "dấu nguồn không khớp");
+          throw e;
+        }
+      }
       const r = await dbLuuPhien(cong.userId, {
         projectId: input.projectId,
         sessionId: input.sessionId ?? null,
         turns: input.turns,
       });
+      if (r.ok && r.id && coLuotNgoai && dbDau) {
+        const [{ aiCodingSessions }, { and, eq }] = await Promise.all([import("../../drizzle/schema/aiCodingSession"), import("drizzle-orm")]);
+        await dbDau.update(aiCodingSessions).set({ coLuotNgoai: true }).where(and(eq(aiCodingSessions.id, r.id), eq(aiCodingSessions.userId, cong.userId)));
+      }
       return { ...r, note: r.ok ? null : "SAVE_FAILED" };
     }),
 

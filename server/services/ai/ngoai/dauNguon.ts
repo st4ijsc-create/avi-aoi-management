@@ -91,3 +91,38 @@ export async function vetNgoaiTheoCall(
     ra.set(Number(r.id), { nhaCungCap: String(r.nhaCungCap), model: String(r.model), tokenVao: so(r.tokenVao), tokenRa: so(r.tokenRa), chiPhiUocUsd: so(r.chiPhiUocUsd) });
   return ra;
 }
+
+/**
+ * ★ Đợt 10.4b L2 — dấu nguồn PHIÊN lập trình (`repoWorkspace.luuPhien`, turns do CLIENT ghi): `ngoaiCallIds` client gửi phải MỌI id là lượt
+ * của CHÍNH người lưu, ketCuc ok, và băm câu trả lời khớp NGUYÊN VĂN một turn assistant trong `traLoi` ⇒ lệch một id ⇒ ném
+ * `NGOAI_KHONG_TON_TAI` "dau-nguon-lech". Không gửi id ⇒ vẫn TỰ DÒ: có turn nào trùng băm lượt ngoài của chính người đó trong 24 h.
+ * Trả `true` khi phiên có lượt ngoài (đặt `coLuotNgoai`).
+ */
+export async function xacMinhPhienCoLuotNgoai(db: DbDauNguon, y: { userId: number; traLoi: readonly string[]; ngoaiCallIds?: readonly number[] | null }): Promise<boolean> {
+  const bam = [...new Set(y.traLoi.map((t) => bamCauTraLoi(t)))];
+  const ids = [...new Set((y.ngoaiCallIds ?? []).filter((x) => Number.isInteger(x) && x > 0))];
+  if (ids.length) {
+    const rows = hang(
+      await db.execute(sql`
+        SELECT yd.id, yd."userId", kq."ketCuc", kq."bamTraLoi"
+        FROM ai_external_calls yd JOIN ai_external_calls kq ON kq."yDinhId" = yd.id AND kq.loai = 'ket-qua'
+        WHERE yd.loai = 'y-dinh' AND yd.id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`),
+    );
+    const theoId = new Map(rows.map((r) => [Number(r.id), r]));
+    for (const id of ids) {
+      const r = theoId.get(id);
+      if (!r || Number(r.userId) !== y.userId || r.ketCuc !== "ok" || !bam.includes(String(r.bamTraLoi ?? ""))) throw new LoiNgoai("NGOAI_KHONG_TON_TAI", "dau-nguon-lech");
+    }
+    return true;
+  }
+  if (!bam.length) return false;
+  const [r] = hang(
+    await db.execute(sql`
+      SELECT 1 AS co FROM ai_external_calls kq
+      WHERE kq.loai = 'ket-qua' AND kq."ketCuc" = 'ok' AND kq."userId" = ${y.userId}
+        AND kq."taoLuc" > now() - make_interval(hours => ${GIO_TU_DO_DAU_NGUON})
+        AND kq."bamTraLoi" IN (${sql.join(bam.map((b) => sql`${b}`), sql`, `)})
+      LIMIT 1`),
+  );
+  return Boolean(r);
+}

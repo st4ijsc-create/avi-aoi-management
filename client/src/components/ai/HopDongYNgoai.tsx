@@ -64,6 +64,11 @@ export function HopDongYNgoai({ ma, beMat, thongTin: x, dangTai, loi, onDongY, o
               {t("hopDongYNgoai.nguoiGoVanHanh", "Câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH (đây là trợ lý vận hành) — chỉ gửi được khi nhà máy đã cho phép gửi dữ liệu vận hành ra ngoài.")}
             </p>
           )}
+          {beMat === "coding" && (
+            <p data-testid="hdy-coding" className="rounded border border-sky-400/60 bg-sky-500/10 p-2 text-xs">
+              {t("hopDongYNgoai.codingLuotHai", "Màn lập trình: lượt ĐẦU chỉ gửi câu hỏi bạn gõ và mã bạn cho đọc; từ lượt hai, lịch sử hội thoại được coi là dữ liệu vận hành (cần nhà máy cho phép, hỏi xác nhận một lần mỗi phiên).")}
+            </p>
+          )}
           {x && (
             <div className="space-y-1 text-xs" data-testid="hdy-chi-tiet">
               <p data-testid="hdy-nha-may-cho">

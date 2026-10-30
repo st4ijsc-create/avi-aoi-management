@@ -4599,7 +4599,9 @@
       "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)",
       "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI.",
       "NGOAI_THIEU_HOI_THOAI": "no saved conversation — open or create one and send again",
-      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen"
+      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen",
+      "NGOAI_CHI_HOI": "the external model only answers in Ask (read-only) mode — no file edits, no command output",
+      "NGOAI_TOOL_KHONG_CAP": "the external model asked for a tool that is not granted — the turn was stopped"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -21881,6 +21883,11 @@
       "xemBanDau": "View the first draft (before the fix)",
       "conLoi": "The ST code still has {{n}} compile error(s) (RuSTy) after {{v}} auto-fix round(s):",
       "khongKiemDuoc": "Couldn't check compilation ({{lyDo}})."
+    },
+    "ngoai": {
+      "daDoc": "Read {{p}}",
+      "biTuChoi": "Denied ({{ma}}): {{p}}",
+      "chiHoi": "External model: Ask mode only · read-only (no file writes, no commands, no auto-fix loop)."
     }
   },
   "masterDataCol": {
@@ -24513,7 +24520,8 @@
       "luong": "the flow's daily cap",
       "lan-phut": "too many requests per minute"
     },
-    "khongTai": "Could not load the conditions for this model — try again later."
+    "khongTai": "Could not load the conditions for this model — try again later.",
+    "codingLuotHai": "Coding screen: the FIRST turn sends only what you type and the code you allow to be read; from the second turn the conversation history counts as operational data (the factory must allow it; confirmed once per session)."
   },
   "xacNhanVanHanh": {
     "tieuDe": "Send your question to an external AI?",

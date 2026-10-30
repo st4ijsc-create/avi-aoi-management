@@ -48,6 +48,8 @@ export interface TomTatPhien {
   title: string;
   turnCount: number;
   updatedAt: string;
+  /** ★ 10.4b L2 — phiên có lượt model NGOÀI (máy chủ đặt) ⇒ client vẽ MỌI lượt assistant bằng bộ render an toàn. */
+  coLuotNgoai: boolean;
 }
 
 /** Một phiên đã mở — `turns` ĐÃ QUA `locLuot()` (xem khối phép chiếu ở đầu file). */
@@ -81,6 +83,7 @@ export async function danhSachPhien(
         title: aiCodingSessions.title,
         turnCount: aiCodingSessions.turnCount,
         updatedAt: aiCodingSessions.updatedAt,
+        coLuotNgoai: aiCodingSessions.coLuotNgoai,
       })
       .from(aiCodingSessions)
       .where(
@@ -96,6 +99,7 @@ export async function danhSachPhien(
       title: r.title ?? "",
       turnCount: r.turnCount ?? 0,
       updatedAt: (r.updatedAt instanceof Date ? r.updatedAt : new Date(r.updatedAt)).toISOString(),
+      coLuotNgoai: r.coLuotNgoai === true,
     }));
   } catch (err) {
     canhBao("danhSachPhien", err);
@@ -135,6 +139,7 @@ export async function moPhien(userId: number, sessionId: string): Promise<PhienD
       turnCount: turns.length,
       turns,
       updatedAt: (row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt)).toISOString(),
+      coLuotNgoai: (row as { coLuotNgoai?: unknown }).coLuotNgoai === true,
     };
   } catch (err) {
     canhBao("moPhien", err);

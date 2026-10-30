@@ -199,6 +199,8 @@ export interface KbStreamResult {
   vet?: VetNgoai | null;
   /** ★ Đợt 10.4b — MÁY CHỦ đã tự lưu cả hai tin của lượt ngoài (khung `done.daLuu`); có ⇒ client KHÔNG gọi `saveStreamedMessage` (sẽ trùng tin). Vắng (lưu lỗi) ⇒ đường cũ kèm `ngoaiCallId`. */
   daLuu?: { tinNguoiDungId: number; tinTraLoiId: number };
+  /** ★ Đợt 10.4b L2 — mọi callId của lượt Hỏi ngoài (khung `done.ngoaiCallIds`, đã kiểm kiểu ≤ 50); client chuyển vào `luuPhien.ngoaiCallIds`. */
+  ngoaiCallIds?: number[];
 }
 
 export interface KbStreamContext {
@@ -236,6 +238,8 @@ export interface KbStreamContext {
   xacNhanVanHanh?: boolean;
   /** ★ Đợt 10.4b — id hội thoại đã lưu (`aiChat.createConversation`); BẮT BUỘC khi `chonModel` là model ngoài (máy chủ gắn vết/nguồn vào hội thoại). Chỉ đi khi số nguyên dương. */
   conversationId?: number;
+  /** ★ Đợt 10.4b L2 — id phiên lập trình ĐÃ LƯU (uuid, của chính mình); vắng ở lượt đầu chưa lưu. Máy chủ kiểm chủ phiên (404 nếu không phải) và đánh dấu `coLuotNgoai`. */
+  phienId?: string;
 }
 
 export interface KbStreamRequest {
@@ -279,6 +283,8 @@ export interface KbStreamCallbacks {
   onReasoning?: (text: string) => void;
   /** ★★ Đợt 9 — vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST; tắt ⇒ không bao giờ gọi). Thuần hiển thị. */
   onKiemBienDich?: (k: KbKiemBienDich) => void;
+  /** ★ Đợt 10.4b L2 — một công cụ ĐỌC của model ngoài đã chạy (sự kiện SSE `tool` dạng {name, path?, ok, maTuChoi?} — khác dạng `toolResult` của đường cục bộ). Thuần hiển thị. */
+  onDocTepNgoai?: (d: { name: string; path?: string; ok: boolean; maTuChoi?: string }) => void;
   /** ★ F6 — gọi đúng một lần khi có `done`: `degraded` = server đã TỪ CHỐI/THOÁI HOÁ và thay câu trả lời. */
   onDone?: (info: { degraded: boolean }) => void;
 }
@@ -373,6 +379,7 @@ export function dungNguCanhKb(c: KbStreamContext): Record<string, unknown> {
   if (c.chonModel && c.chonModel !== "auto") out.chonModel = c.chonModel;
   if (c.xacNhanVanHanh === true) out.xacNhanVanHanh = true;
   if (typeof c.conversationId === "number" && Number.isInteger(c.conversationId) && c.conversationId > 0) out.conversationId = c.conversationId;
+  if (typeof c.phienId === "string" && c.phienId.length > 0 && c.phienId.length <= 64) out.phienId = c.phienId;
   return out;
 }
 
@@ -430,6 +437,7 @@ export function useKbChatStream() {
       let ngoai: { nhaCungCap: string; model: string } | undefined;
       let vet: VetNgoai | null = null;
       let daLuu: { tinNguoiDungId: number; tinTraLoiId: number } | undefined;
+      let ngoaiCallIds: number[] | undefined;
       let accumulated = "";
       // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
       let suyLuanTichLuy = "";
@@ -510,6 +518,10 @@ export function useKbChatStream() {
                 provider?: string;
                 cached?: boolean;
                 ok?: boolean;
+                name?: unknown;
+                path?: unknown;
+                maTuChoi?: unknown;
+                ngoaiCallIds?: unknown;
                 visionText?: string | null;
                 reason?: string | null;
                 // ★★★ doc 81 · VIỆC 2 — tiến độ vòng lặp tool. Server phát sự kiện này TỪ TRƯỚC
@@ -555,6 +567,18 @@ export function useKbChatStream() {
                 if (payload.ngoai && typeof payload.ngoai.nhaCungCap === "string" && typeof payload.ngoai.model === "string") {
                   ngoai = { nhaCungCap: payload.ngoai.nhaCungCap.slice(0, 64), model: payload.ngoai.model.slice(0, 160) };
                 }
+              } else if (payload.type === "tool" && !payload.toolResult && typeof payload.name === "string") {
+                // ★ Đợt 10.4b L2 — tiến độ đọc của model ngoài (khác dạng `toolResult`). Chuỗi cắt độ dài; consumer ném không được giết lượt.
+                try {
+                  callbacks?.onDocTepNgoai?.({
+                    name: payload.name.slice(0, 40),
+                    ...(typeof payload.path === "string" ? { path: payload.path.slice(0, 300) } : {}),
+                    ok: payload.ok === true,
+                    ...(typeof payload.maTuChoi === "string" ? { maTuChoi: payload.maTuChoi.slice(0, 40) } : {}),
+                  });
+                } catch {
+                  /* kênh hiển thị, không phải kênh quyết định */
+                }
               } else if (payload.type === "tool" && payload.toolResult) {
                 toolResult = payload.toolResult;
                 toolName = payload.toolName ?? null;
@@ -597,6 +621,10 @@ export function useKbChatStream() {
                 provider = payload.provider;
                 cached = payload.cached;
                 if (payload.vet !== undefined) vet = bocVetNgoai(payload.vet);
+                if (Array.isArray(payload.ngoaiCallIds)) {
+                  const ids = payload.ngoaiCallIds.filter((x): x is number => typeof x === "number" && Number.isInteger(x) && x > 0).slice(0, 50);
+                  if (ids.length > 0) ngoaiCallIds = ids;
+                }
                 {
                   const dl = (payload as { daLuu?: { tinNguoiDungId?: unknown; tinTraLoiId?: unknown } }).daLuu;
                   if (dl && Number.isInteger(dl.tinNguoiDungId) && Number.isInteger(dl.tinTraLoiId) && (dl.tinNguoiDungId as number) > 0 && (dl.tinTraLoiId as number) > 0) {
@@ -654,6 +682,7 @@ export function useKbChatStream() {
           ...(ngoai ? { ngoai } : {}),
           ...(vet ? { vet } : {}),
           ...(daLuu ? { daLuu } : {}),
+          ...(ngoaiCallIds ? { ngoaiCallIds } : {}),
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {
