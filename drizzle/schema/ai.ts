@@ -1,5 +1,5 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -1403,6 +1403,8 @@ export const aiChatConversations = pgTable("ai_chat_conversations", {
   lastMessageAt: timestamp("lastMessageAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  /** ★ 10.4b L0a' (0417) — MÁY CHỦ đặt khi hội thoại có lượt model NGOÀI ⇒ lịch sử bọc UNTRUSTED + loại khỏi học / ingest. */
+  coLuotNgoai: boolean("coLuotNgoai").default(false).notNull(),
 }, (table) => [
   index("idx_chat_conv_user").on(table.userId),
   index("idx_chat_conv_updated").on(table.updatedAt),
@@ -1421,6 +1423,10 @@ export const aiChatMessages = pgTable("ai_chat_messages", {
   toolResults: json("toolResults"),
   tokensUsed: integer("tokensUsed"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** ★ 10.4b L0a' (0417) — `ngoai:<ncc>:<model>` khi MÁY CHỦ xác minh (callId đúng người + ok + băm khớp); NULL = cục bộ. Client KHÔNG khai. */
+  nguonModel: varchar("nguonModel", { length: 140 }),
+  /** ★ 0417 — hàng sổ cổng đã xác minh (JOIN ⇒ token / chi phí lịch sử). */
+  ngoaiCallId: bigint("ngoaiCallId", { mode: "number" }),
 }, (table) => [
   index("idx_chat_msg_conversation").on(table.conversationId),
   index("idx_chat_msg_role").on(table.role),

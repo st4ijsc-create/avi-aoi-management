@@ -77,7 +77,7 @@ describe("HopDongYNgoai", () => {
     expect(onDongY).not.toHaveBeenCalled();
   });
   it("tranVuot ⇒ nói đúng trần nào (lượt / nhà máy / người / phút)", () => {
-    for (const [tv, chu] of [["luot", "model"], ["nha-may", "nhà máy"], ["nguoi", "của bạn"], ["phut", "mỗi phút"]] as const) {
+    for (const [tv, chu] of [["luot", "model"], ["nha-may", "nhà máy"], ["nguoi", "của bạn"], ["luong", "luồng"], ["lan-phut", "mỗi phút"]] as const) {
       dung(TT({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: tv, conLaiTranNgay: { nguoi: { token: 0 }, nhaMay: { duTranChoLuotNay: tv !== "nha-may" } } }));
       expect(screen.getByTestId("hdy-tran-vuot").textContent).toContain(chu);
       cleanup();

@@ -4097,6 +4097,7 @@
       "taiAnhAi": "download image for AI analysis",
       "mayDungKhanCap": "load the emergency STOP machine list",
       "aiKiemDinh": "external AI verification",
+      "aiChatLuu": "saving the AI chat message",
       "aiNgoaiGhi": "save external AI configuration"
     },
     "field": {
@@ -4579,6 +4580,7 @@
       "anh-qua-lon": "the image exceeds 20 MB",
       "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
       "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "dau-nguon-lech": "the saved answer does not match the external AI turn it claims",
       "NGOAI_TAT": "external AI is turned off",
       "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
       "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",
@@ -4594,7 +4596,10 @@
       "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
       "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
       "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name",
-      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)"
+      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)",
+      "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI.",
+      "NGOAI_THIEU_HOI_THOAI": "no saved conversation — open or create one and send again",
+      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -24505,7 +24510,15 @@
       "luot": "the model's per-request cap",
       "nha-may": "the factory's daily cap",
       "nguoi": "your daily cap",
-      "phut": "too many requests per minute"
-    }
+      "luong": "the flow's daily cap",
+      "lan-phut": "too many requests per minute"
+    },
+    "khongTai": "Could not load the conditions for this model — try again later."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Send your question to an external AI?",
+    "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
+    "tuChoi": "Don't send",
+    "dongY": "Agree, send"
   }
 }

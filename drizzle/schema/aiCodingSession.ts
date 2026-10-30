@@ -52,7 +52,7 @@
  *     2. `jsonb_typeof(turns) = 'array'` — cầu chì chống một hàng `turns` là object/scalar làm
  *        `locLuot()` phải đoán.
  */
-import { pgTable, uuid, integer, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, integer, varchar, jsonb, timestamp, index, boolean } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 /**
@@ -91,6 +91,8 @@ export const aiCodingSessions = pgTable(
     turnCount: integer("turnCount").notNull().default(0),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    /** ★ 10.4b L0a' (0417) — MÁY CHỦ đặt khi phiên có lượt model NGOÀI ⇒ lịch sử bọc UNTRUSTED + loại khỏi học / ingest. */
+    coLuotNgoai: boolean("coLuotNgoai").notNull().default(false),
   },
   (table) => [
     // Đúng hình dạng câu truy vấn danh sách: (chủ phiên × dự án) sắp theo lần sửa gần nhất.

@@ -4097,6 +4097,7 @@
       "taiAnhAi": "下载用于AI分析的图像",
       "mayDungKhanCap": "加载紧急停机设备列表",
       "aiKiemDinh": "外部AI审核",
+      "aiChatLuu": "保存 AI 对话消息",
       "aiNgoaiGhi": "保存外部AI配置"
     },
     "field": {
@@ -4579,6 +4580,7 @@
       "anh-qua-lon": "图像超过20 MB",
       "kiem-dinh-khong-co-nguon": "未找到要审核的轮次（或账户属于多个工厂——暂不可用外部审核）",
       "kiem-dinh-tra-loi-rong": "该轮次没有可审核的回答",
+      "dau-nguon-lech": "保存的回答与其声称的外部 AI 轮次不符",
       "NGOAI_TAT": "外部AI已关闭",
       "NGOAI_KHONG_TON_TAI": "该工厂未启用此外部AI模型",
       "NGOAI_DU_LIEU_VAN_HANH": "工厂未允许向外部AI发送运营数据",
@@ -4594,7 +4596,10 @@
       "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
       "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
       "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效",
-      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）"
+      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）",
+      "CAN_XAC_NHAN_VAN_HANH": "需要确认：发送给外部 AI 时，您输入的内容视为运营数据。",
+      "NGOAI_THIEU_HOI_THOAI": "缺少已保存的会话——请打开或新建会话后重新发送",
+      "modelNgoaiChuaCaiDat": "该界面暂不可使用外部 AI 模型"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -24502,7 +24507,15 @@
       "luot": "模型的单次请求上限",
       "nha-may": "工厂的每日上限",
       "nguoi": "您的每日上限",
-      "phut": "每分钟请求过多"
-    }
+      "luong": "流程的每日上限",
+      "lan-phut": "每分钟请求过多"
+    },
+    "khongTai": "无法加载该模型的使用条件，请稍后再试。"
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "将问题发送给外部 AI？",
+    "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
+    "tuChoi": "不发送",
+    "dongY": "同意并发送"
   }
 }

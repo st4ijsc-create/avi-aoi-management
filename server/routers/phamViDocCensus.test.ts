@@ -987,7 +987,10 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // 2026-10-26 do-model gộp main 84a308ee6: soModelGoGan D +1 với Đợt 10.3 ⇒ đo trên cây gộp.
 // ★★ 2026-10-26 · scada-master GỘP main a03700211 vào feat/scada-r1b2b — ĐO trên cây gộp: main {A 35, B 8, C 453, D 1212, S 717, tong 2425} + nhánh S +1 (`scadaCommands.mayDungKhanCap`) ⇒ S 718, tong 2426.
 // 2026-10-27 Đợt 10.4 (do-model): aiKiemDinh.chay (D, nguonKiemDinhTrongPhamVi) + aiKiemDinh.xemTruoc (S) ⇒ D 1213, S 718, tong 2427.
-const GHIM = { A: 35, B: 8, C: 453, D: 1213, S: 719, tong: 2428 } as const;
+// 2026-10-30 Đợt 10.4b L0a' (do-model): +1 C aiChonModel.thongTinNgoai (thông tin cổng ngoài của CHÍNH người gọi — nhà máy từ resolveTenantFactoryScope,
+//   không đọc hàng tenant theo id người gọi khai) ⇒ C 454, tong 2429. aiChat.getMessages đọc thêm vết `ai_external_calls` nhưng LỌC theo
+//   userId phiên + nhà máy từ bộ phân giải (vetNgoaiTheoCall) ⇒ nhóm không đổi. Đo trên nhánh (đặt ghim cũ, đọc số nhận được).
+const GHIM = { A: 35, B: 8, C: 454, D: 1213, S: 719, tong: 2429 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
