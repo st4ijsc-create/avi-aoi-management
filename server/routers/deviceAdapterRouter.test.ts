@@ -145,6 +145,39 @@ describe("tag CRUD + unique", () => {
   });
 });
 
+describe("SCADA R1b-2b-2a T3C — địa chỉ bit S7 ∉ 0..7 bị từ chối LÚC LƯU (OT_S7_BIT_NGOAI_DAI)", () => {
+  it("create trên adapter S7: DB1,X0.9 / M0.8 ⇒ BAD_REQUEST INVALID_VALUE tagAddress/s7BitNgoaiDai, KHÔNG lưu; DB1,X0.7 lưu được; adapter khác giao thức không đổi", async () => {
+    const s7 = await caller.create({ code: "S7A", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    for (const address of ["DB1,X0.9", "M0.8"]) {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address, dataType: "bool" }).then(
+        () => null,
+        (e: any) => e,
+      );
+      expect(loi?.code, address).toBe("BAD_REQUEST");
+      expect(String(loi?.message), address).toMatch(/^OT_S7_BIT_NGOAI_DAI: /);
+      expect(loi?.cause, address).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7BitNgoaiDai" } });
+    }
+    expect(await caller.tags.listByAdapter({ adapterId: s7.id })).toHaveLength(0);
+    await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.7", dataType: "bool" });
+    const mb = await caller.create({ code: "MB-T3C", name: "mb", protocol: "modbus", endpoint: "tcp://h:502" });
+    await caller.tags.create({ adapterId: mb.id, tagKey: "x", address: "M0.9", dataType: "bool" }); // không phải địa chỉ S7 ⇒ không kiểm lớp này
+  });
+
+  it("update: đổi địa chỉ thành DB1,X0.9 / chuyển tag sang adapter S7 với M0.8 ⇒ từ chối, hàng không đổi; sửa cột khác của tag cũ hỏng (tắt) ⇒ được", async () => {
+    const s7 = await caller.create({ code: "S7B", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const st = await caller.create({ code: "ST-T3C", name: "st", protocol: "stub", endpoint: "s://x" });
+    const t = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.0", dataType: "bool" });
+    await expect(caller.tags.update({ id: t.id, address: "DB1,X0.9" })).rejects.toThrow(/^OT_S7_BIT_NGOAI_DAI: /);
+    const u = await caller.tags.create({ adapterId: st.id, tagKey: "m", address: "M0.8", dataType: "bool" }); // stub: không kiểm
+    await expect(caller.tags.update({ id: u.id, adapterId: s7.id })).rejects.toThrow(/^OT_S7_BIT_NGOAI_DAI: /);
+    const rows = await caller.tags.listByAdapter({ adapterId: s7.id });
+    expect(rows.map((r) => [r.tagKey, r.address])).toEqual([["stop", "DB1,X0.0"]]);
+    // tag S7 hỏng có sẵn (lưu trước bản vá) — tắt nó KHÔNG bị chặn
+    const [cu] = await fake.insert(deviceTags).values({ adapterId: s7.id, tagKey: "cu", address: "DB1,X0.9", dataType: "bool", writable: true, isEnabled: true } as any).returning();
+    expect((await caller.tags.update({ id: cu.id, isEnabled: false })).isEnabled).toBe(false);
+  });
+});
+
 describe("testConnection (read-only probe, NO write)", () => {
   it("stub protocol → ok with latency", async () => {
     const res = await caller.testConnection({ protocol: "stub", endpoint: "stub://probe" });

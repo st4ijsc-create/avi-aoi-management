@@ -538,6 +538,30 @@ describe("scadaDiag.danhSach — T3B-0 fix 1 (I1): adapter MC tạm khoá GHI hi
   });
 });
 
+describe("scadaDiag.danhSach — R1b-2b-2a T3C mục 5: adapter S7 có tag ĐÃ LƯU với bit ∉ 0..7 hiện mã trong cột 'Lỗi gần nhất'", () => {
+  it("hàng S7 (tag DB1,X0.9 lưu từ trước, đang tắt) ⇒ `loi` bắt đầu OT_S7_BIT_NGOAI_DAI + tagKey=địa chỉ, kể cả viewer; không host/cổng; sửa địa chỉ ⇒ hết", async () => {
+    const code = `${RUN}-s7`;
+    const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
+      VALUES (${A.mid}, ${code}, ${code}, 's7', '10.9.8.6:102', 500, false, 'disabled') RETURNING id`);
+    const id = Number(r.id);
+    try {
+      await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", "isEnabled") VALUES (${id}, 'ok', 'DB1,X0.7', 'bool', true)`);
+      await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", "isEnabled") VALUES (${id}, 'stop', 'DB1,X0.9', 'bool', false)`);
+      for (const c of [viewerA, engA, admin]) {
+        const h = (await dongCua(c, id))!;
+        expect(h.loi ?? "", "viewer / dưới canEdit cũng phải thấy").toMatch(/^OT_S7_BIT_NGOAI_DAI: 1 tag\(s\) name a bit outside 0\.\.7 \(stop=DB1,X0\.9\)/);
+        expect(h.loi).not.toMatch(/10\.9\.8\.6/);
+      }
+      expect((await dongCua(viewerA, ad.a))?.loi ?? "").not.toContain("OT_S7_BIT_NGOAI_DAI"); // adapter khác: không đổi
+      await dung(sql`UPDATE device_tags SET address = 'DB1,X1.1' WHERE "adapterId" = ${id} AND "tagKey" = 'stop'`);
+      expect((await dongCua(viewerA, id))?.loi ?? "").not.toContain("OT_S7_BIT_NGOAI_DAI");
+    } finally {
+      await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
+      await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
+    }
+  });
+});
+
 describe("scadaDiag.danhSach — T3B-0 polish (m13): adapter MC do EDGE phục vụ", () => {
   it("hàng MC có edgeNodeId ⇒ `loi` KHÔNG mang OT_MC_TAM_KHOA (trung tâm không bảo chứng cho bản build của edge)", async () => {
     const code = `${RUN}-mce`;

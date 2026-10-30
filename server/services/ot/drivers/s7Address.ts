@@ -36,6 +36,67 @@ export interface ParsedS7Address {
 const DB_TYPES = ["X", "BYTE", "B", "CHAR", "C", "WORD", "W", "INT", "DWORD", "DW", "DINT", "DI", "REAL", "LREAL"] as const;
 
 /**
+ * SCADA R1b-2b-2a T3C (backlog 87, AN TOÀN) — địa chỉ BIT có số bit ∉ 0..7 (một byte chỉ có bit 0..7). nodes7 0.3.18 với địa chỉ ấy:
+ *   • "DB<n>,X<o>.<b>", b > 7 ⇒ `stringToS7Addr` trả undefined (nodeS7.js:2361-2364) ⇒ `writeItems` lặng lẽ BỎ item (:483-488); bỏ HẾT ⇒
+ *     `prepareWritePacket` trả sớm (:673-676) trước khi xoá `writePacketArray` (:750-751) ⇒ GỬI LẠI gói ghi trước + báo ok (đo: s7BitNgoaiDai.r1b2b2.test.ts);
+ *   • vùng M / I / Q ("M0.8") ⇒ KHÔNG kiểm (:2589-2596) ⇒ con trỏ offset*8+bit (:1621) = ghi SAI bit (M0.8 ⇒ M1.0).
+ * Từ chối ở `parseS7Address` (lúc ghi, lúc đọc) VÀ lúc lưu cấu hình tag (`loiBitNgoaiDaiS7`); `writeTags` từ chối CẢ lô chứa địa chỉ ấy.
+ */
+export const MA_S7_BIT_NGOAI_DAI = "OT_S7_BIT_NGOAI_DAI";
+
+/**
+ * T3C (phòng thủ hai) — địa chỉ mà CHÍNH bộ phân tích của nodes7 0.3.18 sẽ BỎ hoặc hiểu KHÁC lời ghi được yêu cầu (vd "MX0.1": `parseS7Address`
+ * nhận nhưng nodes7 không có vùng "MX"; "DB1,INT2.5" = mảng 5 INT), hoặc danh sách nodes7 dựng trong phiên khác danh sách yêu cầu (kể cả rỗng ⇒
+ * phát lại gói cũ). s7Driver từ chối CẢ lô, không gói nào. Hằng ở đây (tệp nằm trong nguồn suy của maLoiDaBietCensus).
+ */
+export const MA_S7_DIA_CHI_THU_VIEN_BO = "OT_S7_DIA_CHI_THU_VIEN_BO";
+
+export class LoiS7BitNgoaiDai extends Error {
+  readonly ma = MA_S7_BIT_NGOAI_DAI;
+  constructor(
+    readonly diaChi: string,
+    readonly bit: number,
+  ) {
+    super(`${MA_S7_BIT_NGOAI_DAI}: S7 bit address "${diaChi}" names bit ${bit} - a byte has bits 0..7 only; nothing sent`);
+    this.name = "LoiS7BitNgoaiDai";
+  }
+}
+
+export function laLoiS7BitNgoaiDai(e: unknown): e is LoiS7BitNgoaiDai {
+  return e instanceof LoiS7BitNgoaiDai;
+}
+
+function kiemBit(address: string, isBit: boolean, bitStr: string | undefined): void {
+  if (!isBit || bitStr === undefined) return;
+  const bit = Number(bitStr);
+  if (!(bit >= 0 && bit <= 7)) throw new LoiS7BitNgoaiDai(address, bit);
+}
+
+/**
+ * T3C — lỗi "bit ngoài 0..7" của một địa chỉ S7 (dùng lúc LƯU cấu hình / đọc cấu hình), null nếu không phải lớp lỗi này. CHỈ lớp này: địa chỉ sai
+ * dạng khác giữ hành vi cũ (không chặn lúc lưu; driver từ chối lúc ghi / đọc).
+ */
+export function loiBitNgoaiDaiS7(address: string): LoiS7BitNgoaiDai | null {
+  try {
+    parseS7Address(address);
+    return null;
+  } catch (e) {
+    return laLoiS7BitNgoaiDai(e) ? e : null;
+  }
+}
+
+/**
+ * T3C mục 5 — lý do NGẮN (không host / cổng) khi cấu hình đã lưu có tag S7 bit ∉ 0..7: "OT_S7_BIT_NGOAI_DAI: 2 tag(s) … : stop=DB1,X0.9, …".
+ * null khi không có. Dùng ở health().lastError của driver (lúc subscribe = khởi động) và cột "Lỗi gần nhất" của scadaDiag (đọc cấu hình).
+ */
+export function lyDoCauHinhBitNgoaiDaiS7(tags: ReadonlyArray<{ tagKey: string; address: string | null | undefined }>): string | null {
+  const hong = tags.filter((t) => loiBitNgoaiDaiS7(String(t.address ?? "")) !== null);
+  if (hong.length === 0) return null;
+  const ds = hong.slice(0, 5).map((t) => `${t.tagKey}=${String(t.address).trim()}`).join(", ");
+  return `${MA_S7_BIT_NGOAI_DAI}: ${hong.length} tag(s) name a bit outside 0..7 (${ds}${hong.length > 5 ? ", ..." : ""}) - writes to them are refused, reads fail as an invalid address`;
+}
+
+/**
  * Parse + validate địa chỉ S7 theo cú pháp NodeS7.
  *   - "DB1,REAL0"   → data block real
  *   - "DB1,X14.0"   → data block bit
@@ -61,6 +122,7 @@ export function parseS7Address(address: string): ParsedS7Address {
     if (isBit && db[4] === undefined) {
       throw new Error(`S7 DB bit address requires .<bit>: ${address}`);
     }
+    kiemBit(a, isBit, db[4]); // T3C
     // Data blocks are always writable.
     return { s7: up, isBit, isReadOnly: false };
   }
@@ -78,6 +140,7 @@ export function parseS7Address(address: string): ParsedS7Address {
       (modifier === "X") || (modifier === "" && hasBit);
     // Process INPUTS là read-only: I/E (digital input), PI (peripheral input).
     const isReadOnly = area === "I" || area === "E" || area === "PI";
+    kiemBit(a, isBit, mem[4]); // T3C
     return { s7: up, isBit, isReadOnly };
   }
 

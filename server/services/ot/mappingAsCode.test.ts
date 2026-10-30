@@ -308,6 +308,21 @@ describe("G1.13 — importMapping", () => {
     expect(res.requiresAdapterRestart).toBe(false);
   });
 
+  it("SCADA R1b-2b-2a T3C — adapter S7 + tag bit ∉ 0..7 ⇒ MappingValidationError OT_S7_BIT_NGOAI_DAI (cả dry-run), 0 giao dịch; adapter khác giao thức không đổi", async () => {
+    const s7 = { ...ADAPTER, protocol: "s7" };
+    const tagsBit = [{ ...DB_TAGS[0], tagKey: "stop", address: "DB1,X0.9", dataType: "bool" }, { ...DB_TAGS[1], address: "DB1,X0.7", dataType: "bool" }];
+    const y = mappingFileToYaml(buildMappingFile(s7, null, tagsBit as TagRowInput[], [], 2));
+    for (const dryRun of [true, false]) {
+      queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+      const loi = await importMapping(y, { dryRun }).then(() => null, (e: unknown) => e);
+      expect(loi).toBeInstanceOf(MappingValidationError);
+      expect((loi as MappingValidationError).issues).toEqual([expect.stringMatching(/^tag "stop": OT_S7_BIT_NGOAI_DAI: S7 bit address "DB1,X0.9" names bit 9 /)]);
+    }
+    expect(fake.state.txCount).toBe(0);
+    queueImportSelects(); // modbus: cùng địa chỉ không phải S7 ⇒ không kiểm lớp này
+    await expect(importMapping(mappingFileToYaml(buildMappingFile(ADAPTER, null, tagsBit as TagRowInput[], [], 2)), { dryRun: true })).resolves.toMatchObject({ dryRun: true });
+  });
+
   it("fails ADAPTER_NOT_FOUND when the adapter code is unknown", async () => {
     fake.state.selectResults = [[]]; // no adapter row
     await expect(importMapping(yamlV(1), { dryRun: true })).rejects.toMatchObject({ code: "ADAPTER_NOT_FOUND" });

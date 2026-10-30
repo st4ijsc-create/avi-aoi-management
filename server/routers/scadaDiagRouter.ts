@@ -39,6 +39,7 @@ import { layBoDem } from "../services/ot/boDemTruyenThong";
 import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
 import { lyDoMcTamKhoaNgan } from "../services/ot/drivers/mitsubishiMcDriver";
+import { lyDoCauHinhBitNgoaiDaiS7 } from "../services/ot/drivers/s7Address";
 import { detachOtAdapter, getOtAdapterStatus, resetAdapterSession } from "../services/ot/otManager";
 import type { RuntimeAdapter } from "../services/ot/deviceAdapter";
 // SCADA R1b-1 Task 9 fix round 3 (N1) — cổng ADAPTER dùng chung (tắt adapter có tag được bảo vệ) + TOTP tươi mức 5
@@ -186,6 +187,13 @@ function nhanLoiMcKhoa(protocol: string, edge: boolean, loi: string | null): str
   return loi && !loi.includes(khoa) ? `${khoa} | ${loi}` : khoa;
 }
 
+/** SCADA R1b-2b-2a T3C mục 5 — cấu hình S7 lỗi (tag bit ∉ 0..7): lý do có mã, không host / cổng (chỉ tagKey=địa chỉ), ghép trước lỗi sẵn có. */
+function nhanLoiS7BitNgoaiDai(protocol: string, tags: ReadonlyArray<{ tagKey: string; address: string }>, loi: string | null): string | null {
+  const ly = protocol === "s7" ? lyDoCauHinhBitNgoaiDaiS7(tags) : null;
+  if (!ly) return loi;
+  return loi && !loi.includes(ly) ? `${ly} | ${loi}` : ly;
+}
+
 const adapterIdInput = z.number().int().positive();
 const lyDoInput = z.string().trim().min(5).max(300);
 const loiStubInput = z
@@ -213,11 +221,16 @@ export const scadaDiagRouter = router({
     const ids = rows.map((r) => r.id);
     // chỉ tag BẬT mới được đếm chất lượng
     const tagBat = await db
-      .select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey, isEnabled: deviceTags.isEnabled })
+      .select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey, isEnabled: deviceTags.isEnabled, address: deviceTags.address })
       .from(deviceTags)
       .where(inArray(deviceTags.adapterId, ids));
     const tagBatTheoAdapter = new Map<number, string[]>();
+    // T3C mục 5 — mọi tag ĐÃ LƯU (bật hay tắt) theo adapter, để đánh dấu cấu hình S7 có bit ∉ 0..7.
+    const tagTheoAdapter = new Map<number, Array<{ tagKey: string; address: string }>>();
     for (const t of tagBat) {
+      const tt = tagTheoAdapter.get(t.adapterId) ?? [];
+      tt.push({ tagKey: t.tagKey, address: t.address });
+      tagTheoAdapter.set(t.adapterId, tt);
       if (!t.isEnabled) continue;
       const ds = tagBatTheoAdapter.get(t.adapterId) ?? [];
       ds.push(t.tagKey);
@@ -245,7 +258,8 @@ export const scadaDiagRouter = router({
         tu: st.tu,
         // I1 (T3B-0 fix 1) — adapter MC (trung tâm) đang tạm khoá GHI ⇒ cột "Lỗi gần nhất" mang mã khoá kể cả khi đang connected, mọi người xem
         // (không che dưới canEdit: người vận hành cần biết STOP qua MC không đi được). Huy hiệu đầy đủ = C2 mục 2.2.
-        loi: nhanLoiMcKhoa(r.protocol, !!e, st.loi),
+        // T3C mục 5 — adapter S7 có tag đã lưu với bit ∉ 0..7 ⇒ mã OT_S7_BIT_NGOAI_DAI đứng đầu (đọc cấu hình, không cần driver chạy; trung tâm hay edge).
+        loi: nhanLoiS7BitNgoaiDai(r.protocol, tagTheoAdapter.get(r.id) ?? [], nhanLoiMcKhoa(r.protocol, !!e, st.loi)),
         lyDo: st.lyDo, // R1b-2b-1 T5 — lý do có mã của trạng thái (RAM), M10 hiện bằng i18n
         soLanMat: st.soLanMat,
         pollMs: thongTinAdapter(r.id)?.pollMs ?? r.pollIntervalMs,

@@ -44,6 +44,7 @@ import {
   REDACTED_SECRET,
 } from "../services/ot/connectionSecrets";
 import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
+import { loiBitNgoaiDaiS7 } from "../services/ot/drivers/s7Address";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
@@ -175,6 +176,18 @@ function assertOpcuaSecurityOnSave(options: Record<string, unknown> | null | und
       (e as Error)?.message || "invalid OPC UA security configuration",
     );
   }
+}
+
+/**
+ * SCADA R1b-2b-2a T3C (backlog 87) — kiểm địa chỉ tag LÚC LƯU: adapter S7 + địa chỉ bit ∉ 0..7 ⇒ từ chối (nodes7 0.3.18 bỏ item ⇒ phát lại gói ghi
+ * trước + báo ok, hoặc ghi SAI bit với M / I / Q — s7Address.ts `MA_S7_BIT_NGOAI_DAI`). Chỉ lớp lỗi này (địa chỉ sai dạng khác giữ hành vi cũ).
+ * Đọc protocol trong CÙNG giao dịch, sau khi adapter đã khoá (khoaAdapterTx). Chi tiết (mã + địa chỉ) đi trong message, câu dịch qua reason.
+ */
+async function kiemDiaChiTagLuuTx(tx: Pick<Awaited<ReturnType<typeof getDb>>, "select">, adapterId: number, address: string): Promise<void> {
+  const [a] = await tx.select({ protocol: deviceAdapters.protocol }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
+  if (a?.protocol !== "s7") return;
+  const loi = loiBitNgoaiDaiS7(address);
+  if (loi) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "tagAddress", reason: "s7BitNgoaiDai" }, loi.message);
 }
 
 async function getDb() {
@@ -624,6 +637,7 @@ export const deviceAdapterRouter = router({
             // biến mất giữa chừng ⇒ cùng NOT_FOUND của kiểm-trước, thay cho lỗi FK của INSERT).
             const khoa = (await khoaAdapterTx(tx, [v.adapterId])).get(v.adapterId);
             kiemPhamViDuoiKhoa(khoa?.machineId, idsMay, khongThayAdapter);
+            await kiemDiaChiTagLuuTx(tx, v.adapterId, v.address); // T3C — trước TOTP (lỗi hợp lệ không tiêu mã)
             const may = khoa?.machineId ?? null;
             const luat = await khoaLuatNhamCapTx(tx, cap);
             const nguon = await khoaLuatNguonTx(tx, may, v.tagKey);
@@ -726,6 +740,8 @@ export const deviceAdapterRouter = router({
             const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
             const kenhCheDoMoi = doiDanhTinh ? await kenhCheDoCuaTagTx(tx, capMoi) : [];
             if (doiDanhTinh && (await trungKhoaTagTx(tx, { ...capMoi, boQuaId: id }))) throw loiTrungKhoaTag(); // M3 — trước mã
+            // T3C — đổi địa chỉ hoặc chuyển adapter ⇒ kiểm (protocol của adapter ĐÍCH, địa chỉ sau sửa); sửa cột khác của tag cũ hỏng (vd tắt) vẫn được.
+            if (rest.address !== undefined || capMoi.adapterId !== tag0.adapterId) await kiemDiaChiTagLuuTx(tx, capMoi.adapterId, rest.address ?? existing.address);
             const kq = kiemSuaTag({
               cu: existing,
               patch,
