@@ -151,7 +151,7 @@ export async function danhSach(
 }
 
 /** Phép CHIẾU CHỈ-ĐỌC các cuộc chat web của chính người này (`ai_chat_conversations`) — id có tiền tố `chat:`; KHÔNG ghi gì. */
-export async function danhSachChat(userId: number, gioiHan = GIOI_HAN_PHIEN.SO_PHIEN_LIET_KE): Promise<TomTatPhien[]> {
+export async function danhSachChat(userId: number, gioiHan: number = GIOI_HAN_PHIEN.SO_PHIEN_LIET_KE): Promise<TomTatPhien[]> {
   if (!hopLeUser(userId)) return [];
   const db = await getDb();
   if (!db) return [];
@@ -330,7 +330,7 @@ export async function doiTen(userId: number, y: { sessionId: string; title: unkn
 }
 
 /** Xoá phiên CỦA CHÍNH MÌNH. KHÔNG đụng `ai_agent_runs`. */
-export async function xoa(userId: number, sessionId: string): Promise<KetQuaPhien<Record<string, never>>> {
+export async function xoa(userId: number, sessionId: string): Promise<KetQuaPhien<unknown>> {
   if (!hopLeUser(userId) || !laIdPhienHopLe(sessionId)) return { ok: false, ma: "NOT_FOUND" };
   const db = await getDb();
   if (!db) return { ok: false, ma: "LOI" };
