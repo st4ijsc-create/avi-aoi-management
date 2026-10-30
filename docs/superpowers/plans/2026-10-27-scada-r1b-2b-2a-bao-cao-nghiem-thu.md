@@ -98,6 +98,18 @@ _(Task 11)_
   (vi/en/zh — "STOP HMI KHÔNG tới được adapter {{list}} — dùng E-STOP cứng tại máy"; KHÔNG dùng chữ `khong_ro`: "không tới" ≠ "không rõ"). Trước:
   STOP `failed` chỉ có dòng đỏ trong hàng, không băng cố định. Ưu tiên khi trộn: `qua_han_mot_phan` > `khong_dat` > `khong_ro`, mỗi danh sách giữ.
   Hàng edge / trung tâm dự phòng không tính. STOP thành công trọn vẹn sau đó vẫn gỡ băng (M-1).
+- **Fix round 2 (kiem-dinh M1/M2/M4/M5/M6 + dự phòng 6500):**
+  - trần chờ phiên mới tính THEO TỪNG lời ghi (≤ 2000 ms và ≤ phần còn lại của `OT_CONTROL_TIMEOUT_MS` từ đầu lời gọi) — lời ghi thứ hai của STOP nhiều
+    tag không còn `failed` ngay khi lời ghi đầu hết hạn > 2000 ms;
+  - tên tag so KHÔNG phân biệt hoa thường (như Logix), ghi bằng tên CHUẨN của PLC (`stop` ⇒ `Stop`); hai tag chỉ khác hoa thường ⇒ `failed`
+    `EIP_TAG_NAME_AMBIGUOUS`, 0 gói;
+  - phần tử mảng BOOL (CIP BIT_STRING 0xD3) ⇒ `failed` `EIP_BIT_ARRAY_UNSUPPORTED`, 0 gói (trước: chuỗi giá trị có thể ghi đè 32 BOOL);
+  - phiên nhiễm bị hạ NGAY: xả hàng đợi task-easy của thư viện + huỷ socket (không forwardClose chờ `timeout_sp`) ⇒ lời ghi đang xếp hàng không bao
+    giờ ra socket cũ; nhãn không đổi (`timeout` không rõ);
+  - bộ hẹn DỰ PHÒNG 6500 (hạn lệnh / `deadlineMs` > ~5,5 s) cũng làm phiên nhiễm ⇒ hạ ngay ⇒ thư viện không còn giữ / gửi lệnh cũ; STOP kế chạy trên phiên
+    mới, không chồng (đo: lệnh cũ đúng 1 gói trên kết nối 1, STOP chỉ trên kết nối 2);
+  - thông điệp `failed` nói ĐÚNG lý do: quá trần (`within the Nms wait bound`), mở lại hỏng (kèm nguyên nhân), bị thay (connect/disconnect — người chờ
+    được giải NGAY).
 
 ## 6. Giới hạn đã biết
 
@@ -159,6 +171,12 @@ _(Task 11)_
 - (T3A) **`isConnected()` giữ `true` trong lúc mở phiên mới sau phiên nhiễm** (≤ `cfg.timeoutMs`) — có chủ ý để STOP được chờ có trần thay vì
   `ADAPTER_OFFLINE`; `health().lastError` ghi "session contaminated …". Mở phiên mới hỏng ⇒ `connected=false`, supervisor lo.
 - (T3A) **`disconnect()` lúc đang mở phiên mới**: lần nối đó vẫn chạy xong rồi bị hạ ngay (chốt thế hệ) ⇒ PLC thấy MỘT kết nối thừa ngắn (≤ `cfg.timeoutMs`).
+- (T3A) **M3 — thời gian nối lại (danh sách tag + định nghĩa struct) phải được ĐO lúc commissioning so với trần chờ STOP 2000 ms.**
+- (T3A, M5 phần dư) Hết hạn của CHÍNH thư viện: task-easy chạy lời ghi xếp hàng kế (C) ĐỒNG BỘ trong cùng lượt hết hạn, TRƯỚC khi driver kịp hạ phiên ⇒ C
+  có thể ra socket cũ; nhãn của C là `timeout` không rõ (đúng: có thể đã áp), không bao giờ `ok`. Phiên bị hạ vì lý do khác (đọc hết hạn, dự phòng
+  6500): hàng đợi được xả ⇒ C không ra dây.
+- (T3A) Trần theo ngân sách lệnh dùng `OT_CONTROL_TIMEOUT_MS` toàn cục; `deadlineMs` riêng của một lệnh driver không biết (lệnh có `deadlineMs` ngắn hơn
+  ⇒ hạn của dispatcher thắng ⇒ `timeout`).
 
 ## 7. Bảng số đo
 

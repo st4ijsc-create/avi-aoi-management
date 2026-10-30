@@ -16,7 +16,8 @@ import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { batDauDoLag } from "../../../testing/doLagBucleSuKien";
 import { ketCucKhongRoCua } from "./dangBay";
-import { HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, MA_KIEU_TAG_EIP_KHONG_RO } from "./ethernetIpDriver";
+import { HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, MA_KIEU_TAG_EIP_KHONG_RO, MA_MANG_BIT_EIP_KHONG_HO_TRO, MA_TEN_TAG_EIP_MO_HO } from "./ethernetIpDriver";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { executeOtDeviceWrite } from "../otDeviceWrite";
 
 const require_ = createRequire(import.meta.url);
@@ -34,6 +35,10 @@ interface TuyChonThietBi {
   onYeuCau: (req: YeuCau, traLoi: TraLoi) => void;
   /** Kết nối thứ `n` (1-based) KHÔNG được trả lời RegisterSession (phiên mới treo). */
   giuRegister?: (n: number) => boolean;
+  /** Kết nối thứ `n`: trả RegisterSession sau `ms` (phiên mới mở CHẬM). */
+  treRegister?: (n: number) => number;
+  /** Kết nối thứ `n`: trả RegisterSession với mã trạng thái LỖI (thư viện: "Failed to Register Session with Controller" ngay). */
+  loiRegister?: (n: number) => boolean;
   /** false ⇒ không trả ForwardClose (socket cũ còn mở tới khi thư viện tự hết hạn) — ack muộn TỚI ĐƯỢC Controller cũ. */
   traLoiForwardClose?: boolean;
   /** Danh sách tag (tên, mã kiểu CIP) trả cho Get Instance Attribute List. */
@@ -47,6 +52,8 @@ const TAG_MAC_DINH: Array<[string, number]> = [
   ["TagB", DINT],
   ["TagC", DINT],
   ["Arr", 0x2000 | DINT], // mảng DINT 1 chiều (bit 13-14 = số chiều)
+  ["Stop2", BOOL],
+  ["Flags", 0x2000 | 0xd3], // BOOL[] của Logix = mảng BIT_STRING (DWORD)
 ];
 
 /** Thiết bị ENIP giả trong tiến trình (Logix tối giản, nhắn tin CÓ KẾT NỐI như `new Controller()` mặc định). */
@@ -92,7 +99,11 @@ async function dungThietBi(tc: TuyChonThietBi) {
     const data = goi.subarray(24);
     if (cmd === 0x65) {
       if (tc.giuRegister?.(ketNoi)) return;
-      s.write(enip.encapsulation.header.build(0x65, session, Buffer.from([1, 0, 0, 0])));
+      const goiReg = enip.encapsulation.header.build(0x65, session, Buffer.from([1, 0, 0, 0]));
+      if (tc.loiRegister?.(ketNoi)) goiReg.writeUInt32LE(0x0001, 8); // trạng thái encapsulation ≠ 0
+      const tre = tc.treRegister?.(ketNoi) ?? 0;
+      if (tre > 0) setTimeout(() => !s.destroyed && s.write(goiReg), tre);
+      else s.write(goiReg);
       return;
     }
     if (cmd === 0x66) return;
@@ -186,7 +197,7 @@ async function moDriver(tc: TuyChonThietBi, timeoutMs = 300) {
   don.push(async () => {
     // phiên MỚI đang mở ở nền (sau một hết hạn cuối ca) đọc cổng TOÀN CỤC của thư viện lúc nối ⇒ chờ nó xong trên thiết bị CỦA CA NÀY
     // (thế hệ chốt ⇒ nó bị hạ ngay) trước khi ca sau đổi cổng.
-    const dangMo: Promise<unknown> | null = (d as any).noiLaiSauNhiem;
+    const dangMo: Promise<unknown> | null = (d as any).moDangChay;
     await d.disconnect();
     await dangMo;
   });
@@ -287,7 +298,7 @@ describe("R1b-2b-2a T3A — ack MUỘN của lời ghi đã hết hạn không b
     const troi = Date.now() - t0;
     expect(o.outcomes[0]).toMatchObject({ ok: false, status: "failed" }); // ★ thấy được, không ok, không "timeout"
     expect(o.outcomes[0].errorText).toBe(
-      `ethernet-ip: not connected — no fresh session within ${HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS}ms after a contaminated session — nothing sent`,
+      `ethernet-ip: not connected — no fresh session within the ${HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS}ms wait bound after a contaminated session — nothing sent`,
     );
     expect(tb.ghi().map((x) => x.ten)).toEqual(["Speed"]); // ★ STOP KHÔNG ra dây
     expect(troi).toBeGreaterThanOrEqual(HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS - 50); // chờ phiên mới thật (đã có trần, không bỏ cuộc sớm)
@@ -474,4 +485,178 @@ describe("R1b-2b-2a T3A commit 2 (D1) — kiểu CIP từ danh sách tag đã n�
     expect(o.outcomes[0].ok).toBe(true);
     expect(o.outcomes[0].status).not.toBe("failed");
   }, 10_000);
+});
+
+describe("R1b-2b-2a T3A fix round 2 (kiem-dinh M1/M2/M4/M5/M6/M7 + dự phòng 6500)", () => {
+  const ghiStop2 = { tagKey: "stop2", address: "Stop2", value: true, dataType: "bool" } as any;
+  const cuHanLenh = process.env.OT_CONTROL_TIMEOUT_MS;
+  afterEach(() => {
+    if (cuHanLenh === undefined) delete process.env.OT_CONTROL_TIMEOUT_MS;
+    else process.env.OT_CONTROL_TIMEOUT_MS = cuHanLenh;
+  });
+
+  it("★ M1 — STOP hai tag: lời ghi 1 hết hạn sau 2200 ms (> 2000) ⇒ lời ghi 2 VẪN được chờ có trần, gửi trên phiên mới ⇒ ok (trước: failed ngay)", async () => {
+    let n = 0;
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => (++n >= 2 ? tl(0) : undefined) }, 2600);
+    (d as any).plc.timeout_sp = 2200;
+    const r = await d.writeTags([ghiStop, ghiStop2]);
+    expect(r[0]).toMatchObject({ tagKey: "stop", ok: false, ketCucKhongRo: "qua_han_driver" });
+    expect(r[1]).toEqual({ tagKey: "stop2", ok: true });
+    expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([
+      ["Stop", 1],
+      ["Stop2", 2],
+    ]);
+  }, 15_000);
+
+  it("★ M1 — trần lời ghi 2 cũng ≤ phần CÒN LẠI của ngân sách hạn lệnh (OT_CONTROL_TIMEOUT_MS 2500, lời ghi 1 ăn 2200) ⇒ failed trong trần (batDauDoLag)", async () => {
+    process.env.OT_CONTROL_TIMEOUT_MS = "2500";
+    const { tb, d } = await moDriver({ giuRegister: (n) => n >= 2, onYeuCau: () => undefined }, 2600);
+    (d as any).plc.timeout_sp = 2200;
+    const lag = batDauDoLag();
+    const t0 = Date.now();
+    const r = await d.writeTags([ghiStop, ghiStop2]);
+    const troi = Date.now() - t0;
+    expect(r[0]).toMatchObject({ ok: false, ketCucKhongRo: "qua_han_driver" });
+    expect(r[1].ok).toBe(false);
+    const tran = Number(/within the (\d+)ms wait bound/.exec(String(r[1].error))?.[1]);
+    expect(tran).toBeGreaterThan(0);
+    expect(tran).toBeLessThanOrEqual(300); // 2500 − ~2200
+    expect(tb.ghi().map((x) => x.ten)).toEqual(["Stop"]); // Stop2 không ra dây
+    expect(troi).toBeLessThan(2500 + 300 + (await lag.dung(200))); // không trần ngân sách ⇒ ~4200
+  }, 15_000);
+
+  it("★ M2 — cấu hình `stop` × PLC `Stop` (Logix không phân biệt hoa thường) ⇒ ok, gói mang tên CHUẨN của PLC", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => tl(0) });
+    expect(await d.writeTags([{ tagKey: "stop", address: "stop", value: true, dataType: "bool" } as any])).toEqual([{ tagKey: "stop", ok: true }]);
+    expect(await d.writeTags([{ tagKey: "a", address: "arr[1]", value: 4, dataType: "int" } as any])).toEqual([{ tagKey: "a", ok: true }]);
+    expect(tb.ghi().map((x) => x.ten)).toEqual(["Stop", "Arr"]);
+  }, 10_000);
+
+  it("★ M2 — hai tag chỉ khác hoa thường (Stop / STOP) ⇒ failed EIP_TAG_NAME_AMBIGUOUS, 0 gói (fail closed)", async () => {
+    const { tb, d } = await moDriver({ tags: [["Stop", BOOL], ["STOP", BOOL]], onYeuCau: (_r, tl) => tl(0) });
+    const r = await d.writeTags([{ tagKey: "stop", address: "stop", value: true, dataType: "bool" } as any]);
+    expect(r).toEqual([
+      { tagKey: "stop", ok: false, error: `${MA_TEN_TAG_EIP_MO_HO}: tag "stop" matches 2 controller tags that differ only by case (Stop, STOP) — nothing sent` },
+    ]);
+    expect(tb.ghi()).toHaveLength(0);
+  }, 10_000);
+
+  it("★ M4 — phần tử mảng BOOL (BIT_STRING 0xD3) ⇒ failed EIP_BIT_ARRAY_UNSUPPORTED trước khi gửi (kể cả giá trị chuỗi), 0 gói — không bao giờ ghi word 32 bit", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => tl(0) });
+    const r = await d.writeTags([
+      { tagKey: "f3", address: "Flags[3]", value: true, dataType: "bool" } as any,
+      { tagKey: "f1", address: "Flags[1]", value: "5", dataType: "string" } as any,
+    ]);
+    expect(r.map((x) => [x.tagKey, x.ok])).toEqual([
+      ["f3", false],
+      ["f1", false],
+    ]);
+    for (const x of r) expect(x.error).toMatch(new RegExp(`^${MA_MANG_BIT_EIP_KHONG_HO_TRO}: tag "Flags\\[\\d\\]" is a BOOL array \\(CIP BIT_STRING 0xD3\\)`));
+    expect(tb.ghi()).toHaveLength(0);
+  }, 10_000);
+
+  it("★ M5 — lời ghi C XẾP HÀNG trong thư viện sau A lúc phiên bị hạ (đọc hết hạn) ⇒ C KHÔNG BAO GIỜ ra socket cũ (0 gói), hàng đợi thư viện cũ được xả; nhãn không rõ giữ", async () => {
+    const { tb, d } = await moDriver({ traLoiForwardClose: false, onYeuCau: () => undefined });
+    const cu = (d as any).plc;
+    const pDoc = d.readTags([{ tagKey: "a", address: "TagA", dataType: "int" } as any]); // hết hạn ~300 ⇒ nhiễm
+    await new Promise((r) => setTimeout(r, 50));
+    const pA = d.writeTags([ghiSpeed]).then(() => null, (e: unknown) => e); // đang bay
+    await new Promise((r) => setTimeout(r, 10));
+    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]).then(() => null, (e: unknown) => e); // xếp hàng sau A
+    const [loiA, loiC] = await Promise.all([pA, pC]);
+    await pDoc;
+    expect(cu.workers.write.tasks).toHaveLength(0); // xả NGAY lúc hạ (A của thư viện còn treo tới ~350 — C lẽ ra còn xếp hàng)
+    await new Promise((r) => setTimeout(r, 450)); // quá hạn RIÊNG của A (~350) — lúc thư viện cũ lẽ ra chạy tiếp C
+    expect(laLoiMatLienKetKhiDangGui(loiA)).toBe(true);
+    expect(laLoiMatLienKetKhiDangGui(loiC)).toBe(true); // nhãn giữ: không rõ (timeout), không ok
+    expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([["Speed", 1]]); // ★ 0 gói cho C
+    expect(cu.workers.write.tasks).toHaveLength(0);
+  }, 10_000);
+
+  it("★ M6 — mở lại HỎNG nhanh ⇒ STOP failed nêu ĐÚNG lý do (mở lại hỏng + nguyên nhân), không phải 'quá trần'", async () => {
+    const { tb, d } = await moDriver({ loiRegister: (n) => n >= 2, onYeuCau: () => undefined });
+    await d.writeTags([ghiSpeed]);
+    const t0 = Date.now();
+    const r = await d.writeTags([ghiStop]);
+    expect(r).toEqual([
+      {
+        tagKey: "stop",
+        ok: false,
+        error: "ethernet-ip: not connected — reopening the session after a contaminated session failed (Failed to Register Session with Controller) — nothing sent",
+      },
+    ]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(tb.ghi().map((x) => x.ten)).toEqual(["Speed"]);
+  }, 10_000);
+
+  it("★ M6 — disconnect() trong lúc STOP chờ phiên mới ⇒ STOP failed 'superseded' NGAY (không chờ lần mở cũ)", async () => {
+    const { tb, d } = await moDriver({ treRegister: (n) => (n >= 2 ? 1500 : 0), onYeuCau: () => undefined }, 2600);
+    (d as any).plc.timeout_sp = 300;
+    await d.writeTags([ghiSpeed]);
+    const pStop = d.writeTags([ghiStop]);
+    await new Promise((r) => setTimeout(r, 100));
+    const t0 = Date.now();
+    void d.disconnect();
+    const r = await pStop;
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(r).toEqual([
+      { tagKey: "stop", ok: false, error: "ethernet-ip: not connected — the session reopen after a contaminated session was superseded (connect/disconnect) — nothing sent" },
+    ]);
+    expect(tb.ghi().map((x) => x.ten)).toEqual(["Speed"]);
+  }, 10_000);
+
+  it("★ M7a — hai writeTags ĐỒNG THỜI (serialize TẮT): C xếp hàng sau A; A hết hạn, ack MUỘN của A tới khi C tới ⇒ C KHÔNG BAO GIỜ ok", async () => {
+    const cho: Array<{ tl: TraLoi }> = [];
+    const { tb, d } = await moDriver({
+      traLoiForwardClose: false,
+      onYeuCau: (_r, tl) => {
+        cho.push({ tl });
+        if (cho.length === 2) setTimeout(() => cho[0].tl(0), 5); // ack muộn của A; C không được trả lời
+      },
+    });
+    const pA = d.writeTags([ghiSpeed]);
+    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]).then((v) => v, (e: unknown) => e);
+    const [rA, kqC] = await Promise.all([pA, pC]);
+    expect(rA[0]).toMatchObject({ ok: false, ketCucKhongRo: "qua_han_driver" });
+    expect(Array.isArray(kqC) && (kqC as any)[0]?.ok === true).toBe(false); // ★ không ok
+    expect(laLoiMatLienKetKhiDangGui(kqC)).toBe(true); // C đã giao cho thư viện cùng lượt ⇒ không rõ
+    expect(tb.ghi().every((x) => x.ketNoi === 1)).toBe(true);
+  }, 10_000);
+
+  it("★ M7b — STOP chờ phiên mới ~1500 ms rồi GỬI và được ack ok trên phiên mới — trong trần (batDauDoLag)", async () => {
+    let n = 0;
+    const { tb, d } = await moDriver({ treRegister: (k) => (k >= 2 ? 1500 : 0), onYeuCau: (_r, tl) => (++n >= 2 ? tl(0) : undefined) }, 2600);
+    (d as any).plc.timeout_sp = 300; // lời ghi hết hạn 300; hạn kết nối 2600 > 1500 của phiên mới chậm
+    await d.writeTags([ghiSpeed]); // hết hạn 300 ⇒ nhiễm, mở lại chậm 1500
+    const lag = batDauDoLag();
+    const t0 = Date.now();
+    const r = await d.writeTags([ghiStop]);
+    const troi = Date.now() - t0;
+    expect(r).toEqual([{ tagKey: "stop", ok: true }]);
+    expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([
+      ["Speed", 1],
+      ["Stop", 2],
+    ]);
+    expect(troi).toBeGreaterThanOrEqual(1400); // thật sự đã chờ phiên mới
+    expect(troi).toBeLessThan(1500 + 300 + (await lag.dung(200)));
+  }, 10_000);
+
+  it("★ kiem-dinh — hạn lệnh 8000 > dự phòng 6500: lời ghi treo (thiết bị im) ⇒ dự phòng bắn ⇒ phiên HẠ (socket huỷ) ⇒ STOP kế chạy trên phiên MỚI, KHÔNG chồng; lệnh cũ không phát lại", async () => {
+    expect(HAN_DU_PHONG_GHI_DRIVER_MS).toBe(6500);
+    let n = 0;
+    const { tb, d } = await moDriver({ traLoiForwardClose: false, onYeuCau: (_r, tl) => (++n >= 2 ? tl(0) : undefined) }, 8000); // timeout_sp 8000 > 6500
+    const t0 = Date.now();
+    const rA = await d.writeTags([ghiSpeed]);
+    const troiA = Date.now() - t0;
+    expect(rA[0]).toMatchObject({ ok: false, ketCucKhongRo: "qua_han_driver" });
+    expect(rA[0].error).toMatch(/eip writeTag timeout after 6500ms/);
+    expect(troiA).toBeGreaterThanOrEqual(6400);
+    expect(troiA).toBeLessThan(7500);
+    const o = await stopQuaExecute(d, 5000);
+    expect(o.outcomes[0].ok).toBe(true);
+    expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([
+      ["Speed", 1], // đúng MỘT lần — không phát lại
+      ["Stop", 2], // STOP CHỈ trên phiên mới
+    ]);
+  }, 20_000);
 });

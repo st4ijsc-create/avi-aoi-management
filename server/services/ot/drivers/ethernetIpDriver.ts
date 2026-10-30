@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
-import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
@@ -145,30 +145,133 @@ export class LoiKieuTagEipKhongRo extends Error {
   }
 }
 
+/** T3A fix round 2 (M2) — tên tag khớp KHÔNG phân biệt hoa thường (như Logix) với ≥ 2 tag của danh sách ⇒ không chọn (fail closed). */
+export const MA_TEN_TAG_EIP_MO_HO = "EIP_TAG_NAME_AMBIGUOUS";
+/** T3A fix round 2 (M4) — phần tử mảng BOOL (CIP BIT_STRING 0xD3): thư viện sẽ dựng lời ghi WORD 32 bit ⇒ từ chối trước khi gửi. */
+export const MA_MANG_BIT_EIP_KHONG_HO_TRO = "EIP_BIT_ARRAY_UNSUPPORTED";
+const CIP_BIT_STRING = 0xd3;
+
+/** Lời ghi EIP bị từ chối TRƯỚC khi gửi, mã ổn định ở `code` (đầu thông điệp). */
+export class LoiTagEipKhongGhi extends Error {
+  constructor(
+    readonly code: string,
+    chiTiet: string,
+  ) {
+    super(`${code}: ${chiTiet} — nothing sent`);
+    this.name = "LoiTagEipKhongGhi";
+  }
+}
+
 /** Tên ghi được hỗ trợ: `Ten`, `Ten[i]` / `Ten[i,j]` (phần tử mảng), `Ten.N` / `Ten[i].N` (bit). Thành viên UDT (`A.B`) ⇒ không hỗ trợ (không đoán). */
 const TEN_GHI_HO_TRO = /^([A-Za-z_][A-Za-z0-9_]*)(\[[0-9]+(?:,[0-9]+)*\])?(?:\.([0-9]{1,2}))?$/;
 
+export type KetQuaTraTagEip = { ok: true; code: number; ten: string; chuongTrinh: string | null } | { ok: false; loi: Error };
+
+const thuong = (x: unknown) => String(x ?? "").toLowerCase();
+
 /**
- * T3A commit 2 — kiểu CIP của tag ghi từ danh sách tag của CHÍNH Controller (nạp lúc connect; không thêm vòng nào trước STOP). null ⇒ không rõ.
+ * T3A commit 2 — kiểu CIP của tag ghi từ danh sách tag của CHÍNH Controller (nạp lúc connect; không thêm vòng nào trước STOP).
  *   • tag gốc phải có trong danh sách (đúng phạm vi chương trình), kiểu nguyên tử (không phải cấu trúc);
  *   • `Ten[i]` chỉ khi tag gốc là mảng; `Ten` (không chỉ số) chỉ khi tag gốc KHÔNG là mảng.
+ * Fix round 2: (M2) so tên / chương trình KHÔNG phân biệt hoa thường như Logix, trả tên CHUẨN của PLC để ghi; ≥ 2 tag chỉ khác hoa thường ⇒
+ * `EIP_TAG_NAME_AMBIGUOUS`. (M4) mảng BOOL (BIT_STRING 0xD3) ⇒ `EIP_BIT_ARRAY_UNSUPPORTED` (không bao giờ dựng lời ghi word 32 bit).
  */
-export function kieuCipTuDanhSachTag(plc: any, ten: string, chuongTrinh: string | null): number | null {
+export function traKieuCipTuDanhSachTag(plc: any, ten: string, chuongTrinh: string | null): KetQuaTraTagEip {
+  const khongRo: KetQuaTraTagEip = { ok: false, loi: new LoiKieuTagEipKhongRo(ten, chuongTrinh) };
   const ds = plc?.state?.tagList;
-  if (!ds || typeof ds.getTag !== "function") return null;
+  if (!ds) return khongRo;
   const m = TEN_GHI_HO_TRO.exec(ten);
-  if (!m) return null;
+  if (!m) return khongRo;
+  const goc = m[1];
   let t: any;
-  try {
-    t = ds.getTag(m[1], chuongTrinh);
-  } catch {
-    return null;
+  if (Array.isArray(ds.tags)) {
+    const khop = ds.tags.filter(
+      (x: any) =>
+        x &&
+        typeof x.name === "string" &&
+        thuong(x.name) === thuong(goc) &&
+        (chuongTrinh == null ? x.program == null : x.program != null && thuong(x.program) === thuong(chuongTrinh)),
+    );
+    if (khop.length > 1) {
+      return {
+        ok: false,
+        loi: new LoiTagEipKhongGhi(
+          MA_TEN_TAG_EIP_MO_HO,
+          `tag "${ten}" matches ${khop.length} controller tags that differ only by case (${khop.map((x: any) => x.name).join(", ")})`,
+        ),
+      };
+    }
+    t = khop[0];
+  } else if (typeof ds.getTag === "function") {
+    try {
+      t = ds.getTag(goc, chuongTrinh);
+    } catch {
+      return khongRo;
+    }
   }
   const kieu = t?.type;
-  if (!kieu || kieu.structure === true || typeof kieu.code !== "number" || !Number.isInteger(kieu.code)) return null;
+  if (!kieu || kieu.structure === true || typeof kieu.code !== "number" || !Number.isInteger(kieu.code)) return khongRo;
+  if (kieu.code === CIP_BIT_STRING) {
+    return {
+      ok: false,
+      loi: new LoiTagEipKhongGhi(
+        MA_MANG_BIT_EIP_KHONG_HO_TRO,
+        `tag "${ten}" is a BOOL array (CIP BIT_STRING 0xD3); element writes are not supported (the library would write a 32-bit word)`,
+      ),
+    };
+  }
   const laMang = typeof kieu.arrayDims === "number" && kieu.arrayDims > 0;
-  if (Boolean(m[2]) !== laMang) return null;
-  return kieu.code;
+  if (Boolean(m[2]) !== laMang) return khongRo;
+  const tenChuan = typeof t.name === "string" ? t.name : goc;
+  const ctChuan = typeof t.program === "string" ? t.program : chuongTrinh;
+  return { ok: true, code: kieu.code, ten: tenChuan + ten.slice(goc.length), chuongTrinh: ctChuan };
+}
+
+/** Kết cục của lần mở phiên mới sau phiên nhiễm (để thông điệp nói ĐÚNG lý do — fix round 2 M6). */
+type KetQuaMoLai = { loai: "da_cai" } | { loai: "mo_lai_loi"; nguyen: string } | { loai: "bi_thay" };
+
+/** Mã + thông điệp gọn của lỗi mở lại (vd. "ECONNREFUSED: …", "SOCKET error"). */
+function nguyenLoi(err: unknown): string {
+  const ma = (err as { code?: unknown } | null | undefined)?.code;
+  const tin = (err as Error)?.message || String(err);
+  return typeof ma === "string" && ma && !tin.startsWith(ma) ? `${ma}: ${tin}` : tin;
+}
+
+/**
+ * T3A fix round 2 (M1) — ngân sách hạn lệnh của dispatcher cho MỘT lời gọi writeTags: cùng mặc định với `effectiveTimeoutMs` (commandDispatcher.ts —
+ * `OT_CONTROL_TIMEOUT_MS`, 5000). `deadlineMs` riêng của một lệnh driver không biết (đã ghi trong báo cáo).
+ */
+function nganSachLenhOtMs(): number {
+  return Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+}
+
+/**
+ * T3A fix round 2 (M5) — hạ NGAY Controller nhiễm: xả hàng đợi task-easy của thư viện (yêu cầu đang XẾP HÀNG không bao giờ ra socket cũ) rồi huỷ
+ * socket ngay (không forwardClose chờ `timeout_sp`). Nhãn không đổi: người gọi đã nhận `mat_lien_ket` qua `dangBay.huy`.
+ */
+function haNgayController(plc: any, loi: Error): void {
+  if (!plc) return;
+  try {
+    for (const w of Object.values(plc.workers ?? {})) {
+      const hang = (w as { tasks?: unknown } | null)?.tasks;
+      if (!Array.isArray(hang)) continue;
+      for (const job of hang.splice(0)) {
+        try {
+          job?.reject?.(loi);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof plc.destroy === "function") plc.destroy();
+    else haController(plc);
+  } catch {
+    // ignore
+  }
 }
 
 /** Hạ một Controller không còn dùng (không chờ): forwardClose lịch sự, hỏng / quá hạn ⇒ huỷ socket. */
@@ -222,7 +325,20 @@ export class EthernetIpDriver extends NotImplementedDriver {
   /** T3A — thế hệ phiên: connect() / disconnect() tăng ⇒ một lần nối lại sau nhiễm đã lỗi thời không bao giờ cài Controller của nó. */
   private theHe = 0;
   /** T3A — lần mở phiên MỚI đang chạy sau phiên nhiễm (true = đã cài). `connected` giữ true trong lúc này; thất bại ⇒ connected=false (supervisor lo). */
-  private noiLaiSauNhiem: Promise<boolean> | null = null;
+  private noiLaiSauNhiem: Promise<KetQuaMoLai> | null = null;
+  /** Fix round 2 (M6) — giải NGAY mọi người đang chờ phiên mới khi connect() / disconnect() thay phiên ("bi_thay"), không chờ lần mở cũ xong. */
+  private giaiNoiLai: ((k: KetQuaMoLai) => void) | null = null;
+  /** Lần mở Controller mới THÔ đang chạy (kể cả khi người chờ đã được giải) — cho dọn dẹp (test) biết khi nào nó thật sự xong. */
+  private moDangChay: Promise<unknown> | null = null;
+
+  /** Fix round 2 (M6) — connect() / disconnect() thay phiên: lần mở lại sau nhiễm (nếu có) lỗi thời; người chờ nhận "bi_thay" ngay. */
+  private boNoiLai(): void {
+    this.theHe += 1;
+    this.noiLaiSauNhiem = null;
+    const g = this.giaiNoiLai;
+    this.giaiNoiLai = null;
+    g?.({ loai: "bi_thay" });
+  }
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -236,8 +352,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     // T12b fix round 1 — connect lại trên CÙNG driver: hạ Controller cũ trước (capture-and-null như disconnect; không chờ), không rò
     // socket. Listener mất-kết-nối của Controller cũ đã có chốt danh tính (`this.plc === plc`); mỗi Controller giữ giao dịch riêng.
     const cu = this.plc;
-    this.theHe += 1; // T3A — lần nối lại sau nhiễm đang chạy (nếu có) thành lỗi thời
-    this.noiLaiSauNhiem = null;
+    this.boNoiLai(); // T3A — lần nối lại sau nhiễm đang chạy (nếu có) thành lỗi thời; người chờ được giải ngay
     this.cfg = cfg;
     if (cu) {
       this.plc = null;
@@ -303,58 +418,79 @@ export class EthernetIpDriver extends NotImplementedDriver {
     this.plc = null;
     this.lastError = `ethernet-ip session contaminated (${lyDo}) — torn down, reconnecting on a fresh session`;
     this.dangBay.huy(plc, `session contaminated: ${lyDo}`);
-    haController(plc);
+    haNgayController(plc, new LoiMatLienKetKhiDangGui("ethernet-ip", `session contaminated: ${lyDo}`)); // fix round 2 (M5)
     const cfg = this.cfg;
     if (!cfg || !this.connected) return;
     const theHe = this.theHe;
-    const p: Promise<boolean> = (async () => {
+    let giai!: (k: KetQuaMoLai) => void;
+    const p = new Promise<KetQuaMoLai>((r) => (giai = r));
+    const tho = (async () => {
       const mod: any = await this.loadPackage();
       const Controller = mod?.Controller ?? mod?.default?.Controller ?? mod?.default;
       if (typeof Controller !== "function") throw new DeviceUnreachableError("ethernet-ip", "st-ethernet-ip not installed");
       return this.moController(Controller, cfg);
-    })().then(
+    })();
+    this.moDangChay = tho.then(
+      () => undefined,
+      () => undefined,
+    );
+    tho.then(
       (moi) => {
         if (this.theHe !== theHe || this.noiLaiSauNhiem !== p || !this.connected) {
           haController(moi);
-          return false;
+          return { loai: "bi_thay" } as KetQuaMoLai;
         }
         this.plc = moi;
         this.noiLaiSauNhiem = null;
         this.connectedAt = new Date();
         this.lastError = undefined;
-        return true;
+        return { loai: "da_cai" } as KetQuaMoLai;
       },
       (err) => {
         if (this.theHe === theHe && this.noiLaiSauNhiem === p) {
           this.noiLaiSauNhiem = null;
           this.connected = false; // supervisor nối lại / chuyển dự phòng
-          this.lastError = `ethernet-ip reconnect after a contaminated session failed: ${(err as Error)?.message || String(err)}`;
+          this.lastError = `ethernet-ip reconnect after a contaminated session failed: ${nguyenLoi(err)}`;
+          return { loai: "mo_lai_loi", nguyen: nguyenLoi(err) } as KetQuaMoLai;
         }
-        return false;
+        return { loai: "bi_thay" } as KetQuaMoLai;
       },
-    );
+    ).then((k) => {
+      if (this.giaiNoiLai === giai) this.giaiNoiLai = null;
+      giai(k);
+    });
+    this.giaiNoiLai = giai;
     this.noiLaiSauNhiem = p;
   }
 
   /**
-   * T3A — Controller dùng được cho thao tác này: phiên hiện tại, hoặc chờ phiên MỚI sau nhiễm tới `hetHanLuc` (trần HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS,
-   * tính từ đầu lời gọi). Không có / quá trần ⇒ `DeviceUnreachableError` TRƯỚC khi gửi bất cứ gì.
+   * T3A — Controller dùng được cho thao tác này: phiên hiện tại, hoặc chờ phiên MỚI sau nhiễm tới `hetHanLuc` (`tranMs` = trần của lần chờ này, ≤
+   * HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS). Không có / quá trần / mở lại hỏng / bị thay ⇒ `DeviceUnreachableError` (thông điệp nêu ĐÚNG lý do — fix round 2 M6)
+   * TRƯỚC khi gửi bất cứ gì. Phiên mới do connect() khác cài trong lúc chờ cũng dùng được (phiên sạch).
    */
-  private async layPhien(hetHanLuc: number): Promise<any> {
+  private async layPhien(hetHanLuc: number, tranMs: number): Promise<any> {
     if (this.plc) return this.plc;
     const p = this.noiLaiSauNhiem;
     if (!p || !this.connected) throw new DeviceUnreachableError("ethernet-ip");
     const conLai = hetHanLuc - Date.now();
     let t: ReturnType<typeof setTimeout> | undefined;
-    const daCai =
+    const kq: KetQuaMoLai | { loai: "qua_tran" } =
       conLai > 0
-        ? await Promise.race([p, new Promise<false>((r) => (t = setTimeout(() => r(false), conLai)))]).finally(() => clearTimeout(t))
-        : false;
-    if (daCai && this.plc) return this.plc;
-    throw new DeviceUnreachableError(
-      "ethernet-ip",
-      `no fresh session within ${HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS}ms after a contaminated session — nothing sent`,
-    );
+        ? await Promise.race([p, new Promise<{ loai: "qua_tran" }>((r) => (t = setTimeout(() => r({ loai: "qua_tran" }), conLai)))]).finally(() =>
+            clearTimeout(t),
+          )
+        : { loai: "qua_tran" };
+    if (this.plc) return this.plc;
+    const tran = Math.max(0, Math.round(tranMs));
+    const lyDo =
+      kq.loai === "qua_tran"
+        ? `no fresh session within the ${tran}ms wait bound after a contaminated session`
+        : kq.loai === "mo_lai_loi"
+          ? `reopening the session after a contaminated session failed (${kq.nguyen})`
+          : kq.loai === "bi_thay"
+            ? "the session reopen after a contaminated session was superseded (connect/disconnect)"
+            : "the fresh session after a contaminated session was lost again before use";
+    throw new DeviceUnreachableError("ethernet-ip", `${lyDo} — nothing sent`);
   }
 
   /** T3A — có phiên hiện tại hoặc đang mở phiên mới sau nhiễm. */
@@ -368,8 +504,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const plc = this.plc;
     this.plc = null;
     this.connected = false;
-    this.theHe += 1; // T3A — lần nối lại sau nhiễm đang chạy (nếu có) không bao giờ cài
-    this.noiLaiSauNhiem = null;
+    this.boNoiLai(); // T3A — lần nối lại sau nhiễm đang chạy (nếu có) không bao giờ cài; người chờ được giải ngay
     this.dangBay.huy(plc, "session torn down (disconnect)"); // R1b-2b-1 (ii)
     if (plc && typeof plc.disconnect === "function") {
       try {
@@ -417,12 +552,12 @@ export class EthernetIpDriver extends NotImplementedDriver {
    * R1b-2a T13 fix round 2 (m2) — `v2` do người gọi truyền: đường poll = ảnh chụp cờ lúc subscribe (cùng giá trị với huỷ tick và loạt mẫu
    * xấu của vòng poll), readTags công khai = đọc MỘT lần mỗi lời gọi. Không đọc cờ theo từng mẫu ⇒ một phiên không trộn hai hình dạng mẫu.
    */
-  private async readOne(tag: OtTagAddress, abortOnCommLost: boolean, v2: boolean, hetHanLuc: number): Promise<OtSample> {
+  private async readOne(tag: OtTagAddress, abortOnCommLost: boolean, v2: boolean, hetHanLuc: number, tranMs: number): Promise<OtSample> {
     const now = () => new Date();
     let plc: any = null;
     try {
       const { name, program } = parseEipTag(tag.address);
-      plc = await this.layPhien(hetHanLuc); // T3A — phiên nhiễm ⇒ chỉ đọc trên phiên MỚI (có trần)
+      plc = await this.layPhien(hetHanLuc, tranMs); // T3A — phiên nhiễm ⇒ chỉ đọc trên phiên MỚI (có trần)
       const eipTag = plc.newTag(name, program ?? null);
       // T3A — qua sổ đang bay: phiên bị hạ vì nhiễm ⇒ reject NGAY, trả lời muộn trên Controller cũ không bao giờ thành mẫu "good".
       await this.dangBay.bay(plc, plc.readTag(eipTag));
@@ -489,7 +624,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     const hetHanLuc = t0 + HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS; // T3A — một trần cho cả lô
     const out: OtSample[] = [];
     for (const tag of tags) {
-      out.push(await this.readOne(tag, abortOnCommLost, v2, hetHanLuc));
+      out.push(await this.readOne(tag, abortOnCommLost, v2, hetHanLuc, HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS));
     }
     this.lastLatencyMs = Date.now() - t0;
     return out;
@@ -527,7 +662,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
   }
 
   /** Ghi một write; trả OtCommandResult (không throw). */
-  private async writeOne(w: OtWrite, hetHanLuc: number): Promise<OtCommandResult> {
+  private async writeOne(w: OtWrite, hetHanLuc: number, tranMs: number): Promise<OtCommandResult> {
     let plc: any = null;
     try {
       const { name, program } = parseEipTag(w.address);
@@ -536,12 +671,13 @@ export class EthernetIpDriver extends NotImplementedDriver {
       const value = coerceEipWrite(raw, dataType, w.dungGhim);
 
       // T3A — phiên nhiễm ⇒ chờ phiên MỚI có trần; quá trần ⇒ DeviceUnreachableError TRƯỚC khi gửi (`failed`, không bao giờ `ok`).
-      plc = await this.layPhien(hetHanLuc);
+      plc = await this.layPhien(hetHanLuc, tranMs);
       // T3A commit 2 (D1) — kiểu CIP THẬT từ danh sách tag đã nạp lúc connect; không có ⇒ ném TRƯỚC newTag / gửi (`failed`, 0 gói).
-      const kieuCip = kieuCipTuDanhSachTag(plc, name, program ?? null);
-      if (kieuCip == null) throw new LoiKieuTagEipKhongRo(name, program ?? null);
-      const eipTag = plc.newTag(name, program ?? null);
-      eipTag.type = kieuCip;
+      // Fix round 2 (M2) — ghi bằng tên CHUẨN của PLC (khớp không phân biệt hoa thường); (M4) mảng BOOL ⇒ từ chối.
+      const tra = traKieuCipTuDanhSachTag(plc, name, program ?? null);
+      if (!tra.ok) throw tra.loi;
+      const eipTag = plc.newTag(tra.ten, tra.chuongTrinh);
+      eipTag.type = tra.code;
       // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).
       eipTag.value = value;
       // R1b-2b-1 — qua sổ đang bay: liên kết mất / phiên bị hạ ⇒ reject NGAY (kết cục không rõ), không chờ hạn rồi báo 'failed'.
@@ -579,10 +715,15 @@ export class EthernetIpDriver extends NotImplementedDriver {
     }
     if (writes.length === 0) return [];
 
-    const hetHanLuc = Date.now() + HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS; // T3A — một trần cho cả lô
+    // T3A fix round 2 (M1) — trần chờ phiên mới TÍNH THEO TỪNG lời ghi: ≤ HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS và ≤ phần còn lại của ngân sách hạn lệnh
+    // (tính từ đầu lời gọi) ⇒ lời ghi thứ hai của một STOP nhiều tag vẫn được chờ có trần sau khi lời ghi đầu hết hạn > 2000 ms.
+    const batDau = Date.now();
+    const nganSach = nganSachLenhOtMs();
     const out: OtCommandResult[] = [];
     for (const w of writes) {
-      out.push(await this.writeOne(w, hetHanLuc));
+      const bayGio = Date.now();
+      const tran = Math.max(0, Math.min(HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, batDau + nganSach - bayGio));
+      out.push(await this.writeOne(w, bayGio + tran, tran));
     }
     return out;
   }
