@@ -8,9 +8,10 @@ import { chuyenMessageLenDay } from "../../aiLlamaServerClient";
 import type { GgufChatOptions } from "../../aiGgufEngine";
 import type { TinNhan } from "@shared/agentCore";
 
-async function goiVoi(tinNhan: TinNhan[]) {
+async function goiVoi(tinNhan: TinNhan[], them: { nghi?: boolean } = {}) {
   let nhan: GgufChatOptions | null = null;
   const goi = taoGoiModelMayChu({
+    ...them,
     khongGhiDauVet: true,
     chatStream: async function* (o) {
       nhan = o;
@@ -38,6 +39,11 @@ describe("goiModelMayChu — preserveThinking", () => {
     const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }]);
     expect(o.preserveThinking).toBe(true);
     expect(o.messages[1]).toMatchObject({ role: "assistant", nghiTruoc: "nghĩ" });
+  });
+  it("rà kiem-dinh (g13) — lượt này TẮT nghĩ (disableThinking) mà lịch sử còn reasoning_content ⇒ KHÔNG preserveThinking", async () => {
+    const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }], { nghi: false });
+    expect(o.disableThinking).toBe(true);
+    expect(o).not.toHaveProperty("preserveThinking");
   });
   it("lên dây llama-server: assistant mang reasoning_content; user không", () => {
     expect(chuyenMessageLenDay({ role: "assistant", content: "đáp", nghiTruoc: "nghĩ" })).toMatchObject({ reasoning_content: "nghĩ" });
