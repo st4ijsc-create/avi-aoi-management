@@ -19,7 +19,8 @@
  *     mang `muc` (`ky-thuat` | `van-hanh` | `luong`);
  *   • `dau-ra-model` — đầu ra của model trong CÙNG chuỗi yêu cầu (thử lại) ⇒ không thêm mức (bắt nguồn từ các phần trước);
  *   • `du-lieu-luong` — nội dung node luồng (biểu thức đã đánh giá, item) ⇒ mức do động cơ luồng (`nguonMuc.loai = "luong"`);
- *   • `tin-v1-client` — tin nhắn `/v1` (token cá nhân, extension) không phải kết quả tool ⇒ `ky-thuat` (HIỆN TRẠNG 10.3; lô E xét lại);
+ *   • `tin-v1-client` — tin nhắn `/v1` (token cá nhân, extension: câu người gõ + lịch sử + ngữ cảnh do CLIENT ghép, không chứng minh được là
+ *     kỹ thuật) ⇒ `van-hanh` (L0a-b, rà kiem-dinh — trước đây ky-thuat = hiện trạng 10.3);
  *   • `ngu-canh-client` — `context.nguCanh` do client gửi (trang / thực thể / máy đang chọn) ⇒ BỊ BỎ, không bao giờ gửi đi.
  * Đính kèm (ảnh / tệp) KHÔNG có loại — cấm khi model ngoài (cổng `NGOAI_CAM_DINH_KEM`).
  */
@@ -54,7 +55,7 @@ export const MUC_THEO_LOAI: Readonly<Record<LoaiPhan, MucDuLieu | null | "bo" | 
   "nguon-kiem-dinh": "theo-phan",
   "dau-ra-model": null,
   "du-lieu-luong": null,
-  "tin-v1-client": "ky-thuat",
+  "tin-v1-client": "van-hanh",
   "ngu-canh-client": "bo",
 });
 

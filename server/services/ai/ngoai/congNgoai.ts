@@ -23,7 +23,8 @@ import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { mucCuaGhep } from "./ghepPhan";
-import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
+import { bamCauTraLoi, bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
+import { giuLuotBay, thaLuotBay } from "./luotBay";
 import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
@@ -88,6 +89,8 @@ export interface PhuThuocCong {
   soLanThu: number;
   /** Lưới: nhật ký thứ tự bước. */
   ghiBuoc?: (buoc: string) => void;
+  /** ★ 10.4b L0a' (D10-ii) — một lượt ngoài đang bay mỗi người (mặc định: bảng `ai_ngoai_dang_bay`, `luotBay.ts`). */
+  luotBay?: { giu: (db: DbCong, userId: number, factoryId: number) => Promise<string>; tha: (db: DbCong, userId: number, token: string) => Promise<void> };
 }
 
 export const TRAN_CHUOI_BYTE = 256 * 1024;
@@ -115,6 +118,7 @@ export const phuThuocMacDinh: PhuThuocCong = {
   layEndpoint: (db, keyId) => layEndpointKhoa(db, keyId),
   mang: (db, factoryId) => mangChoNhaMay(db, factoryId),
   soLanThu: 2,
+  luotBay: { giu: (db, userId, factoryId) => giuLuotBay(db, userId, factoryId), tha: (db, userId, token) => thaLuotBay(db, userId, token) },
 };
 
 /** Nhà máy TÍNH TRẦN: chủ dữ liệu nhỏ nhất (tất định); không có ⇒ nhà máy DUY NHẤT của người gọi; còn lại ⇒ null. */
@@ -294,10 +298,24 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
 }
 
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
-  const buoc = (b: string) => dep.ghiBuoc?.(b);
   // ★ 10.4b L0a — đường DUY NHẤT dựng yêu cầu: chỉ `tinNhan` mang dấu của `ghepPhan` mới được gửi (TRƯỚC mọi bước — không giữ chỗ, không sổ).
   if (mucCuaGhep(yc.tinNhan) === undefined) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP");
-  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
+  const k = await kiemTruocNgoai(yc, dep);
+  // ★ 10.4b L0a' (D10-ii) — bề mặt người dùng (không phải luồng tự động): MỘT lượt ngoài đang bay mỗi người, giữ suốt mọi lần thử,
+  //   thả ở finally (lỗi / huỷ cũng thả; tiến trình chết ⇒ TTL). Luồng có trần riêng (lượt chạy / luồng).
+  const userId = yc.ngu.userId;
+  const canKhoa = userId !== null && !yc.ngu.tuDong && yc.ngu.nguonMuc.loai === "be-mat" && dep.luotBay !== undefined;
+  const token = canKhoa ? await dep.luotBay!.giu(k.db, userId!, k.tinhTran) : null;
+  try {
+    return await goiSauKiemTruoc(yc, dep, k);
+  } finally {
+    if (token !== null) await dep.luotBay!.tha(k.db, userId!, token).catch(() => undefined);
+  }
+}
+
+async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTruocNgoai): Promise<KetQuaGoiNgoai> {
+  const buoc = (b: string) => dep.ghiBuoc?.(b);
+  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = k;
   let maxTokens = maxTokensYeuCau;
   // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent
   //   khi bật giữ nghĩ, `nghiTruoc`, dấu nội bộ) ⇒ chỉ vai trò + nội dung + tên tool đi tiếp tới bộ che và nhà cung cấp.
@@ -398,7 +416,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   }
   // (12)
   buoc("so-ket-qua");
-  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" });
+  // ★ 10.4b L0a' — băm câu trả lời (hàng ket-qua, WORM) ⇒ máy chủ xác minh dấu nguồn khi client lưu tin (`aiChat.saveStreamedMessage`).
+  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok", bamTraLoi: bamCauTraLoi(kq.noiDung ?? "") });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
   return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, callId: yDinhId };
 }

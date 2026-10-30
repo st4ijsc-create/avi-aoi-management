@@ -210,3 +210,20 @@ describe("duyệt ngoài (tRPC + CSDL)", () => {
     expect(await soAudit()).toBe(2);
   });
 });
+
+describe("★ 10.4b L0a' — ghiCauHinh nhận 4 trần RUN trong khoảng CHECK; ngoài khoảng ⇒ BAD_REQUEST có kiểu (zod), không ghi", () => {
+  it("hợp lệ ⇒ ghi + layCauHinhNhaMay đọc lại; vắng ⇒ giữ giá trị cũ; 0 / quá trần ⇒ BAD_REQUEST", async () => {
+    const goi = aiNgoaiRouter.createCaller(admin());
+    const cfg = { factoryId: A, batNgoai: true, choDuLieuVanHanh: false, luuNguyenVan: false, hanGiuNgay: 30, tranTokenNgay: 1000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null, tranTokenLuongNgay: null, tranTokenLuot: null, tranLanPhut: 20 };
+    await goi.ghiCauHinh({ ...cfg, tranTienLuotUsd: 0.4, tranVongLuot: 7, tranByteDocLuot: 65536, tranTepDocLuot: 9 });
+    const doc = async () => (await import("./cauHinhNgoai")).layCauHinhNhaMay((await getDb()) as never, A);
+    expect(await doc()).toMatchObject({ tranTienLuotUsd: 0.4, tranVongLuot: 7, tranByteDocLuot: 65536, tranTepDocLuot: 9 });
+    await goi.ghiCauHinh(cfg); // vắng ⇒ không đổi
+    expect(await doc()).toMatchObject({ tranTienLuotUsd: 0.4, tranVongLuot: 7 });
+    for (const sai of [{ tranVongLuot: 0 }, { tranVongLuot: 201 }, { tranTienLuotUsd: 0 }, { tranByteDocLuot: 100 }, { tranTepDocLuot: 501 }]) {
+      const e = await goi.ghiCauHinh({ ...cfg, ...sai } as never).catch((x: unknown) => x);
+      expect((e as { code?: string }).code, JSON.stringify(sai)).toBe("BAD_REQUEST");
+    }
+    expect(await doc()).toMatchObject({ tranVongLuot: 7 });
+  });
+});

@@ -6,7 +6,7 @@
  * ⚠ Phạm vi CHỦ LƯỢT CHẠY (`userId` trong mệnh đề WHERE — `server/db/aiAgentRuns.ts`), như `ai_coding_sessions`.
  * ⚠ CHECK ở `drizzle/0390_ai_agent_runs.sql`: projectId là ID (không đường dẫn), cheDo/trangThai trong tập, mảng jsonb.
  */
-import { pgTable, uuid, integer, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, integer, smallint, varchar, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 export const aiAgentRuns = pgTable(
@@ -34,6 +34,25 @@ export const aiAgentRuns = pgTable(
     checkpointIds: jsonb("checkpointIds").notNull().default([]),
     tomTat: text("tomTat"),
     sessionId: uuid("sessionId"),
+    /**
+     * ★ 10.4b L3 (mig 0419) — `ngoai:<ncc>:<model>` khi lượt chạy bằng model NGOÀI (chỉ chế độ `hoi`); NULL = cục bộ. Máy chủ ghi lúc
+     * TẠO hàng; trigger chặn đổi sau INSERT. Mẫu = `MAU_NGUON_MODEL` (shared/ai/sinhChuNgoai.ts).
+     */
+    nguonModel: varchar("nguonModel", { length: 140 }),
+    /** (mig 0441, Đợt 11.8) lượt cha của agent con; khoá ngoại KÉP (cha, userId) ⇒ con luôn cùng chủ với cha. */
+    parentRunId: uuid("parentRunId"),
+    /** (mig 0441) 0 = gốc, 1–2 = con/cháu. */
+    depth: smallint("depth").notNull().default(0),
+    /** (mig 0441) tên agent con + nhãn nguồn bất biến (`dungSan` | `tuRepo`). */
+    agentName: varchar("agentName", { length: 32 }),
+    agentSource: varchar("agentSource", { length: 8 }),
+    /** (mig 0444, Đợt 11.3-C) cổng duyệt kế hoạch: băm SHA-256 + bước + trạng thái cho|duyet|bac|het-gio + giờ nộp/duyệt + người duyệt. */
+    keHoachBam: varchar("keHoachBam", { length: 64 }),
+    keHoachViec: jsonb("keHoachViec"),
+    keHoachTrangThai: varchar("keHoachTrangThai", { length: 12 }),
+    keHoachNopLuc: timestamp("keHoachNopLuc", { withTimezone: true }),
+    keHoachDuyetLuc: timestamp("keHoachDuyetLuc", { withTimezone: true }),
+    keHoachDuyetBoi: integer("keHoachDuyetBoi").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },

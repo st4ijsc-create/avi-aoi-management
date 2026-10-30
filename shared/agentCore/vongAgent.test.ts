@@ -741,7 +741,7 @@ describe("chayVongAgent — nén ngữ cảnh", () => {
   });
 });
 
-describe("★ Đợt 11.0 (CHỈ ĐO) — giuNghiTrongLichSu", () => {
+describe("★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — giuNghiTrongLichSu", () => {
   const kichBan = (): LuotGia[] => [
     { nghi: "cần đọc a.ts trước", chu: "Đọc tệp.", tool: [{ ten: "read_file", args: { path: "a.ts" } }] },
     { nghi: "đã thấy lỗi", chu: "Xong." },

@@ -18,7 +18,7 @@ describe("bảng mức theo loại (kế hoạch v2.1 §2 D2)", () => {
     ["lich-su-client", "van-hanh"],
     ["ket-qua-tool-van-hanh", "van-hanh"],
     ["ghi-chu-du-an", "van-hanh"],
-    ["tin-v1-client", "ky-thuat"],
+    ["tin-v1-client", "van-hanh"],
   ] as const)("%s ⇒ %s", (loai, muc) => {
     const r = mot(loai);
     expect(r.muc).toBe(muc);
@@ -124,6 +124,14 @@ describe("census — mọi điểm gọi cổng AI ngoài dựng `tinNhan` qua `
     "server/services/ai/ngoai/kiemDinhNgoai.ts": /\bghepPhan\(/,
     "server/routers/aiKiemDinhRouter.ts": /\blapTinNhanKiemDinh\(/,
     "server/services/flow/nut/kiemDinhNgoai.ts": /\bkiemDinhNgoai\(/,
+    // ★ 10.4b L0a' — thông tin (chỉ kiemTruoc, không gọi cổng): yêu cầu kiểm trước vẫn dựng qua bộ dựng
+    "server/routers/aiChonModelRouter.ts": /\bghepPhan\(/,
+    // ★ 10.4b L1 — KB / chat với model ngoài
+    "server/routes/kbNgoai.ts": /\bghepPhan\(/,
+    // ★ 10.4b L2 — màn lập trình chế độ Hỏi (vòng tool ĐỌC)
+    "server/routes/codingNgoai.ts": /\bghepPhan\(/,
+    // ★ 10.4b L3 — bộ chuyển GoiModel của agent máy chủ: MỖI vòng dựng lại qua bộ dựng
+    "server/services/ai/ngoai/vongAgentNgoai.ts": /\bghepPhan\(/,
   };
   const duyet = (d: string, ra: string[]) => {
     for (const ten of readdirSync(d)) {
@@ -146,5 +154,14 @@ describe("census — mọi điểm gọi cổng AI ngoài dựng `tinNhan` qua `
     }
     expect(thay.sort()).toEqual(Object.keys(DIEM_GOI).sort());
     for (const [rel, dau] of Object.entries(DIEM_GOI)) expect(readFileSync(join(GOC, rel), "utf8"), rel).toMatch(dau);
+  });
+
+  it("rà kiem-dinh k5 — bộ đọc ngoài có ĐÚNG MỘT bản: chỉ `congCuDocNgoai.ts` gọi bộ giải đường / lọc kết quả của deny-list", () => {
+    const thay: string[] = [];
+    for (const p of duyet(join(GOC, "server"), [])) {
+      const s = readFileSync(p, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      if (/\b(giaiTepNgoai|giaiThuMucNgoai|locKetQuaTimNgoaiThuc|locKetQuaTimNgoai)\s*\(/.test(s)) thay.push(relative(GOC, p).replace(/\\/g, "/"));
+    }
+    expect(thay).toEqual(["server/services/ai/ngoai/congCuDocNgoai.ts"]);
   });
 });

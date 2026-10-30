@@ -67,6 +67,14 @@ import ChonModel from "@/components/ai/ChonModel";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
 import { chiSoLuotPhien } from "@/lib/chiSoLuotPhien";
 import { docChonLapTrinh } from "@/lib/chonModel";
+import { NoiDungTraLoiNgoai } from "@/components/ai/NoiDungTraLoiNgoai";
+import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
+import { useXacNhanNgoai } from "@/hooks/useXacNhanNgoai";
+import { daXacNhanVanHanh, tachMaNgoai } from "@/lib/dongYNgoai";
+import { layThongTinNgoai } from "@/lib/thongTinNgoaiClient";
+import { callIdCuaLuot, congDonCallId, loaiCallIdDaLuu } from "@/lib/soCallIdNgoai";
+import { thongDiepLoiNgoai } from "@/lib/loiNgoai";
+import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 import { docCheDoNghi, luuCheDoNghi } from "@/lib/cheDoNghi";
 import { GhiChuCheDoNghi } from "@/components/aiCoding/GhiChuCheDoNghi";
 import { BangDangNghi } from "@/components/aiCoding/BangDangNghi";
@@ -154,6 +162,9 @@ import { KhungChayUngDung } from "@/components/ai/KhungChayUngDung";
 import { KhungGit } from "@/components/ai/KhungGit";
 import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
 import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
+import { BangAgentTuRepo } from "@/components/ai/BangAgentTuRepo";
+import { LichSuAgent } from "@/components/ai/LichSuAgent";
+import { ChiBaoHangCho } from "@/components/aiCoding/agent/ChiBaoHangCho";
 import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
 import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
@@ -453,7 +464,13 @@ function VongTuDongCard({ vong, onDung, laAdmin }: { vong: TrangThaiVong; onDung
  * nhãn "đầu ra lệnh do máy chủ chạy thật" (`KhoiMaCoNhan.tinDauRaLenh`). Không lưu vào phiên (mở lại
  * ⇒ nhãn mặc định "model viết": an toàn) và KHÔNG gửi lên server (lịch sử chỉ mang role + content).
  */
-type ChatTurn = { role: "user" | "assistant"; content: string; nguon?: "dau-ra-lenh" };
+type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+  nguon?: "dau-ra-lenh";
+  /** ★ Đợt 10.4b L2 — lượt do model NGOÀI sinh (máy chủ báo qua `meta.ngoai`): vẽ bằng bộ render an toàn + huy hiệu. KHÔNG vào phiên lưu (`locLuot` chỉ giữ role/content). */
+  ngoai?: { nhaCungCap: string; model: string; vet?: VetNgoai };
+};
 
 /**
  * ★★★ 2026-08-23 — CHIỀU CAO KHUNG ĐO ĐƯỢC, THAY CHO HẰNG `calc(100vh-8.5rem)` ĐOÁN SAI.
@@ -963,7 +980,7 @@ export default function AICodingWorkspace() {
   const viTriNeo = useMemo(() => viTriCauTraLoiCungLuot(transcript), [transcript]);
 
   const {
-    streamingText, streamingReasoning, isStreaming, error: streamError, abortedRef, startKbStream, stopKbStream,
+    streamingText, streamingReasoning, isStreaming, error: streamError, abortedRef, loiNgoaiRef, startKbStream, stopKbStream,
   } = useKbChatStream();
   /** ★ F2 — số đo lượt model GẦN NHẤT (sự kiện SSE `usage`) cho thanh trạng thái: nghĩ/sinh · ctx đã dùng. */
   const [dungLuotCuoi, setDungLuotCuoi] = useState<KbUsageLuot | null>(null);
@@ -1374,6 +1391,15 @@ export default function AICodingWorkspace() {
    */
   // ★ Đợt 10.2 — thay `tangModel` (auto|code → `modelTask`) bằng mã chọn model chung (`context.chonModel`); khoá cũ được di trú (docChonLapTrinh).
   const [chonModel, datChonModel] = useState<string>(() => docChonLapTrinh());
+  // ★★★ Đợt 10.4b L2 — MODEL NGOÀI ở màn lập trình: CHỈ chế độ HỎI (chỉ đọc). Chọn model ngoài ⇒ khoá chế độ ở Hỏi, tắt vòng tự sửa test, không ghim tệp sửa,
+  //   không gửi đầu ra lệnh; chữ trả lời vẽ bằng bộ render an toàn duy nhất (liên kết/ảnh chặn, mã chỉ Chép).
+  const laNgoai = chonModel !== "auto" && tachMaNgoai(chonModel) !== null;
+  const cheDoChatHL: CheDoChat = laNgoai ? "hoi" : cheDoChat;
+  const [luotNgoai, setLuotNgoai] = useState(false);
+  const [phienCoNgoai, setPhienCoNgoai] = useState(false);
+  const [tienDoDoc, setTienDoDoc] = useState<Array<{ name: string; path?: string; ok: boolean; maTuChoi?: string }>>([]);
+  const ngoaiCallIdsRef = useRef<number[]>([]);
+  const { xacNhanNgoai, hoiVanHanh, hopThoai } = useXacNhanNgoai({ beMat: "coding", layThongTin: layThongTinNgoai(utils, "coding") });
   /**
    * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
    * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
@@ -1463,10 +1489,15 @@ export default function AICodingWorkspace() {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
     // ★ Đợt 1 · T5 — chế độ Agent: câu người gõ đi API agent (vòng tự động cũ `tuVong` giữ đường Hỏi).
-    if (cheDoChat !== "hoi" && !tuVong) {
+    if (!laNgoai && cheDoChat !== "hoi" && !tuVong) {
       if (agentDangChay) return;
       setInput("");
       void agentGui(text, cheDoChat);
+      return;
+    }
+    // ★ Đợt 10.4b L2 — model ngoài KHÔNG nhận ghim tệp sửa / đầu ra máy (vòng tự sửa test): chặn ở client (máy chủ cũng 400 NGOAI_CHI_HOI).
+    if (laNgoai && tuVong) {
+      dungVong("nguoi_tu_choi");
       return;
     }
     setInput("");
@@ -1477,7 +1508,7 @@ export default function AICodingWorkspace() {
     }
     // ★ Đợt 0.5 — đầu ra lệnh trong lịch sử mang nhãn fence riêng (nhãn tin cậy ở UI); bỏ nhãn ấy
     //   trước khi gửi model để model không thấy mà bắt chước (xem `KhoiMaCoNhan` · khoiDauRaLenh).
-    const history = transcript.slice(-10).map((x) => ({ role: x.role, content: boNhanDauRaLenhChoModel(x.content) }));
+    const history = transcript.filter((x) => !(laNgoai && x.nguon === "dau-ra-lenh")).slice(-10).map((x) => ({ role: x.role, content: boNhanDauRaLenhChoModel(x.content) }));
     setTranscript((prev) => [...prev, { role: "user", content: text }]);
     setStreamTool(null);
     setStreamTools([]);
@@ -1489,7 +1520,9 @@ export default function AICodingWorkspace() {
     // Ô nhập vừa bị xoá ⇒ trả chiều cao về một dòng (nếu không nó giữ nguyên chiều cao cũ).
     requestAnimationFrame(() => tuGianChieuCao(oNhapRef.current));
 
-    const res = await startKbStream(
+    setLuotNgoai(laNgoai);
+    setTienDoDoc([]);
+    const goiStream = (xacNhanVH: boolean) => startKbStream(
       {
         question: text,
         topK: 5,
@@ -1507,9 +1540,12 @@ export default function AICodingWorkspace() {
           ...(tuVong ? { codingEditPath: tuVong.tep } : {}),
           // ★★★ 2026-08-23 — ĐẦU RA MÁY đi Ô RIÊNG, KHÔNG nối vào `question`. Xem `TuVongSend`.
           ...(tuVong?.dauRaMay ? { dauRaKhongTinCay: tuVong.dauRaMay } : {}),
+          // ★ Đợt 10.4b L2 — phiên đã lưu (máy chủ kiểm chủ phiên + đánh dấu coLuotNgoai); cờ xác nhận vận hành chỉ khi người dùng đã đồng ý.
+          ...(laNgoai ? { ...(sessionIdRef.current ? { phienId: sessionIdRef.current } : {}), ...(xacNhanVH ? { xacNhanVanHanh: true } : {}) } : {}),
         },
       },
       {
+        onDocTepNgoai: (d) => setTienDoDoc((prev) => [...prev, d].slice(-50)),
         // ★ LÔ 3 — đóng dấu MỐC-NHẬN cùng nhịp với thẻ, để chip bằng chứng và chip đối chiếu nói
         // cùng một `luc`. Đây là mốc client nhận SSE, không phải mốc server đọc đĩa (đã khai).
         onToolResult: (tr) => { setStreamTool(tr); setLucNhanTool(dinhDangLucNhan(new Date())); },
@@ -1563,15 +1599,39 @@ export default function AICodingWorkspace() {
         },
       },
     );
+    const khoaPhien = () => sessionIdRef.current ?? "moi";
+    let res = await goiStream(laNgoai && daXacNhanVanHanh(khoaPhien(), chonModel));
+    // ★ Đợt 10.4b L2 — 428: lượt 2+ (lịch sử client = dữ liệu vận hành) hỏi MỘT lần mỗi phiên rồi gửi lại ĐÚNG MỘT lần; từ chối ⇒ dừng, trả câu về ô nhập.
+    if (!res && laNgoai && loiNgoaiRef.current?.canXacNhanVanHanh) {
+      if (await hoiVanHanh(khoaPhien(), chonModel)) {
+        res = await goiStream(true);
+      } else {
+        setTranscript((prev) => prev.slice(0, -1));
+        setInput(text);
+        return;
+      }
+    }
 
     if (res) {
       const answer = res.fullText.trim() || t("repoWs.chat.noAnswer", "(không có nội dung trả lời)");
-      setTranscript((prev) => [...prev, { role: "assistant", content: answer }]);
+      // ★ Đợt 10.4b L2 — callId các lượt ngoài chuyển vào lần lưu phiên kế (máy chủ XÁC MINH); đặt TRƯỚC khi thêm lượt (hiệu ứng lưu chạy theo transcript).
+      if (res.ngoai) {
+        ngoaiCallIdsRef.current = congDonCallId(ngoaiCallIdsRef.current, callIdCuaLuot(res));
+        setPhienCoNgoai(true);
+      }
+      setTranscript((prev) => [...prev, { role: "assistant", content: answer, ...(res.ngoai ? { ngoai: { ...res.ngoai, ...(res.vet ? { vet: res.vet } : {}) } } : {}) }]);
+    } else if (laNgoai && !abortedRef.current) {
+      // ★ Đợt 10.4b L2 — model ngoài hỏng: KHÔNG lặng lẽ thành lượt "luồng lỗi" trong phiên; bỏ lượt người dùng vừa thêm, trả câu về ô nhập, nói đúng lý do.
+      const l = loiNgoaiRef.current;
+      setTranscript((prev) => prev.slice(0, -1));
+      setInput(text);
+      toast.error(l ? thongDiepLoiNgoai(l.code, l.tranVuot) : t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại."));
+      setThongKe((tk) => congTuChoi(tk));
     } else if (!abortedRef.current) {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
       setThongKe((tk) => congTuChoi(tk)); // ★ F6 — luồng lỗi cũng là một lượt không trả được
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);
   handleSendRef.current = handleSend;
 
   // ★★★ 2026-08-27 · CURSOR-PARITY — GỬI lệnh sửa-đoạn-chọn (Cmd+K): DỰNG câu hỏi có bối cảnh (đoạn đã bôi
@@ -1916,6 +1976,8 @@ export default function AICodingWorkspace() {
     setPending(null);
     setDiffPreview("");
     setTranscript([]);
+    setPhienCoNgoai(false);
+    ngoaiCallIdsRef.current = [];
     setThongKe(thongKeRong()); // ★ F6 — phiên mới, chỉ số mới
     // Vòng bám một dự án cụ thể (lệnh kiểm chứng + tệp đang sửa đều thuộc gốc cũ) ⇒ đổi dự án là
     // kết thúc vòng, không phải mang nó sang.
@@ -1950,15 +2012,23 @@ export default function AICodingWorkspace() {
         // ⚠ ĐỌC REF, KHÔNG đọc `sessionId` của bao đóng — xem khối ⚠⚠ ở `sessionIdRef`. Đọc ở ĐÂY
         //   (trong thân đã nối tiếp) chứ không ở ngoài, để lượt này thấy id lượt trước vừa tạo.
         const idHienTai = sessionIdRef.current;
-        const r = await luuPhienM.mutateAsync({ projectId, sessionId: idHienTai, turns: sach });
+        const ids = congDonCallId(ngoaiCallIdsRef.current, []);
+        const r = await luuPhienM.mutateAsync({ projectId, sessionId: idHienTai, turns: sach, ...(ids.length > 0 ? { ngoaiCallIds: ids } : {}) });
         if (r.ok && r.id) {
+          if (ids.length > 0) ngoaiCallIdsRef.current = loaiCallIdDaLuu(ngoaiCallIdsRef.current, ids);
           if (!idHienTai) datSessionId(r.id);
           void utils.repoWorkspace.danhSachPhien.invalidate();
         }
       })
-      .catch(() => {
+      .catch((e) => {
         // Lưu hỏng ⇒ cho phép thử lại ở lượt sau (nếu giữ băm thì mạch này không bao giờ được lưu).
         bamDaLuuRef.current = "";
+        // ★ Đợt 10.4b L2 — lưu hỏng KHI có id chờ (dấu nguồn bị máy chủ từ chối `dau-nguon-lech`, hoặc lỗi mạng/khác) ⇒ nói rõ và BỎ các id (không thử lại vô hạn);
+        //   đã khai: lỗi mạng cũng bỏ id — máy chủ vẫn tự dò theo băm lượt trả lời trong 24 h nên dấu nguồn không mất.
+        if (ngoaiCallIdsRef.current.length > 0) {
+          ngoaiCallIdsRef.current = [];
+          toast.error(mapTrpcError(e));
+        }
       });
   }, [projectId, luuPhienM, utils, datSessionId]);
 
@@ -2015,6 +2085,9 @@ export default function AICodingWorkspace() {
     dangKhoiPhucRef.current = true;
     bamDaLuuRef.current = bamChuoi(JSON.stringify(r.session.turns));
     setTranscript(r.session.turns.map((x) => ({ role: x.role, content: x.content })));
+    // ★ Đợt 10.4b L2 — phiên từng có lượt ngoài (máy chủ đánh dấu) ⇒ MỌI lượt assistant vẽ bằng bộ an toàn (không biết lượt nào do model ngoài sinh).
+    setPhienCoNgoai(r.session.coLuotNgoai === true);
+    ngoaiCallIdsRef.current = [];
     // ★ Đợt 3b — khôi phục nhật ký Terminal/Vấn đề của phiên NẾU trình duyệt này còn giữ (chỉ chữ để xem: không thẻ
     //   duyệt, không vòng). Địa điểm lỗi tính LẠI từ đầu ra bằng bộ đọc duy nhất của trang.
     const nk = docNhatKyLenh(
@@ -2047,6 +2120,8 @@ export default function AICodingWorkspace() {
     dangKhoiPhucRef.current = true;
     bamDaLuuRef.current = "";
     setTranscript([]);
+    setPhienCoNgoai(false);
+    ngoaiCallIdsRef.current = [];
     setThongKe(thongKeRong()); // ★ F6
   }, [isStreaming, datSessionId]);
 
@@ -2439,7 +2514,7 @@ export default function AICodingWorkspace() {
                 `context.modelTask`, server lọc bằng danh sách TRẮNG và nó KHÔNG nới quyền gì. */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <span><ChonModel beMat="lap-trinh" giaTri={chonModel} onDoi={datChonModel} compact /></span>
+                <span><ChonModel beMat="lap-trinh" giaTri={chonModel} onDoi={datChonModel} compact xacNhanNgoai={xacNhanNgoai} />{hopThoai}</span>
               </TooltipTrigger>
               <TooltipContent className="max-w-[320px] text-xs">
                 {t(
@@ -3260,6 +3335,8 @@ export default function AICodingWorkspace() {
               {/* ★ Đợt 3b — màn QUẢN LÝ TRÍ NHỚ (bài học của tôi × dự án này). */}
               <div className="ml-auto flex items-center">
                 {projectId && <QuanLyTriNho projectId={projectId} />}
+                {projectId && <BangAgentTuRepo projectId={projectId} />}
+                {projectId && <LichSuAgent projectId={projectId} />}
               </div>
               <BoChonPhien
                 phien={phienQ.data?.sessions ?? []}
@@ -3346,7 +3423,14 @@ export default function AICodingWorkspace() {
                            lưu phiên/gửi server không đổi một byte. */
                         /* ★ LÔ 3 — nhãn khối mã: câu CÙNG LƯỢT với thẻ đọc nhận bộ CÓ neo (tầng 2
                            so được), mọi câu cũ hơn nhận bộ KHÔNG neo — xem docblock `viTriNeo`. */
+                        (m.role === "assistant" && (m.ngoai || phienCoNgoai)) ? (
+                          <>
+                            <NoiDungTraLoiNgoai noiDung={m.content} />
+                            {m.ngoai?.vet && (<div className="mt-1.5"><HuyHieuNgoai vet={m.ngoai.vet} /></div>)}
+                          </>
+                        ) : (
                         <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="static" components={m.nguon === "dau-ra-lenh" ? boKhoiDauRaLenh : i === viTriNeo ? boKhoiCoNeo : boKhoiKhongNeo}>{lamSachMocChoHienThi(m.content)}</Streamdown></div>
+                        )
                       )}
                       {/* ★★★ 2026-09-03 · ĐỢT F2 — NHẢY `tệp:dòng` TỪ CHAT (CẢ HAI VAI). Stack trace/lỗi build
                           thường nằm NGAY TRONG hội thoại (người dùng dán vào, hoặc model chép lại),
@@ -3428,9 +3512,21 @@ export default function AICodingWorkspace() {
                           mở khi chưa có chữ, tự gấp khi mã bắt đầu; không nối vào câu trả lời, không lưu phiên. */}
                       <BangDangNghi vanBan={streamingReasoning} dangStream={isStreaming} daCoChu={Boolean(streamingText)} />
                       {/* ★ LÔ 3 — văn bản đang stream LUÔN cùng lượt với thẻ đang giữ ⇒ bộ CÓ neo. */}
-                      {streamingText && <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming" components={boKhoiCoNeo}>{lamSachMocChoHienThi(streamingText)}</Streamdown></div>}
+                      {streamingText && (luotNgoai ? <NoiDungTraLoiNgoai noiDung={streamingText} /> : <div className="prose prose-sm dark:prose-invert min-w-0 max-w-none break-words text-[13px] leading-relaxed"><Streamdown mode="streaming" components={boKhoiCoNeo}>{lamSachMocChoHienThi(streamingText)}</Streamdown></div>)}
                     </div>
                   </div>
+                )}
+                {/* ★ Đợt 10.4b L2 — tiến độ ĐỌC của model ngoài (tệp nào đã đọc / bị từ chối vì sao): CHỮ THUẦN. */}
+                {luotNgoai && isStreaming && tienDoDoc.length > 0 && (
+                  <ul data-testid="ngoai-tien-do-doc" className="space-y-0.5 pl-8 text-[11px] text-muted-foreground">
+                    {tienDoDoc.map((d, k) => (
+                      <li key={k} data-ok={d.ok ? "1" : "0"} className="break-words">
+                        {d.ok
+                          ? t("repoWs.ngoai.daDoc", "Đã đọc {{p}}", { p: d.path ?? d.name })
+                          : t("repoWs.ngoai.biTuChoi", "Bị từ chối ({{ma}}): {{p}}", { ma: d.maTuChoi ?? "?", p: d.path ?? d.name })}
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {/* ★★★ doc 81 · VIỆC 2 — VÒNG LẶP TOOL: đang ở vòng mấy / trần bao nhiêu / vì sao dừng. */}
                 {vongTool && isStreaming && vongTool.phase !== "dung" && (
@@ -3565,7 +3661,14 @@ export default function AICodingWorkspace() {
                   <GoiYTep dsKhop={dsKhop} chiSoChon={chiSoChon} onChon={chenMention} />
                 </div>
               )}
-              <BoChonCheDoChat giaTri={cheDoChat} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming} />
+              <BoChonCheDoChat giaTri={cheDoChatHL} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming || laNgoai} />
+              {laNgoai && (
+                <p data-testid="ngoai-chi-hoi" className="mb-1 text-[10px] text-amber-700 dark:text-amber-300">
+                  {t("repoWs.ngoai.chiHoi", "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa).")}
+                </p>
+              )}
+              {/* ★ Đợt 11.8 (UX-D09) — chỉ báo hàng chờ model TRƯỚC khi gửi: chỉ ở chế độ agent, chưa có lượt chạy, tab đang hiện. */}
+              <ChiBaoHangCho bat={cheDoChatHL !== "hoi" && !agentDangChay && !isStreaming && !!projectId} />
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}

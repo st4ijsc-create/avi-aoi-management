@@ -2,6 +2,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ChonModel from "@/components/ai/ChonModel";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
 import { docChonDaLuu } from "@/lib/chonModel";
+import { NoiDungTraLoiNgoai } from "@/components/ai/NoiDungTraLoiNgoai";
+import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
+import { useXacNhanNgoai } from "@/hooks/useXacNhanNgoai";
+import { daXacNhanVanHanh, tachMaNgoai } from "@/lib/dongYNgoai";
+import { layThongTinNgoai } from "@/lib/thongTinNgoaiClient";
+import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 import { useTranslation } from "react-i18next";
 import { useSearch, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -164,10 +170,16 @@ export default function AIChatPage() {
     isStreaming: kbIsStreaming,
     error: kbStreamError,
     abortedRef: kbAbortedRef,
+    loiNgoaiRef,
     startKbStream,
     stopKbStream,
   } = useKbChatStream();
   const [optimisticUserMsg, setOptimisticUserMsg] = useState<string | null>(null);
+  // ★ Đợt 10.4b — lượt đang chạy là model NGOÀI (render bằng bộ an toàn duy nhất) + vết của lượt LỖI (huy hiệu đỏ — N5).
+  const [luotNgoai, setLuotNgoai] = useState(false);
+  const [vetLoi, setVetLoi] = useState<VetNgoai | null>(null);
+  const utils = trpc.useUtils();
+  const { xacNhanNgoai, hoiVanHanh, hopThoai } = useXacNhanNgoai({ beMat: "chat", layThongTin: layThongTinNgoai(utils, "chat") });
 
   // Conversations list
   const { data: conversations, isLoading: loadingConvs, refetch: refetchConvs } =
@@ -275,6 +287,12 @@ export default function AIChatPage() {
         : inputMessage.trim() ||
           (image ? t("aiChat.imageDefaultPrompt", "Ảnh này cho thấy gì? Hãy giải thích.") : "");
     if (!source.trim()) return;
+    // ★ Đợt 10.4b — model ngoài KHÔNG nhận ảnh/tệp (máy chủ cũng từ chối 400 NGOAI_CAM_DINH_KEM): chặn sớm, giữ nguyên ô nhập.
+    const laNgoai = chonModel !== "auto" && tachMaNgoai(chonModel) !== null;
+    if (laNgoai && image) {
+      toast.error(t("errors.reason.NGOAI_CAM_DINH_KEM", "không gửi tệp đính kèm tới AI ngoài"));
+      return;
+    }
     // Seed machine context: prefer an explicit override (deep-link), else the
     // active chip. We prepend a short scope line so the local model answers about
     // that machine. The chip the user sees stays the displayed message.
@@ -313,6 +331,8 @@ export default function AIChatPage() {
     // the auth-derived AI role, and the page context (route + UI lang + machine).
     // Reset per-turn extras (citations/tool/structured/followups/pending) so a
     // new answer never shows the previous turn's cards.
+    setLuotNgoai(laNgoai);
+    setVetLoi(null);
     setLastExtras(null);
     setStreamToolResult(null);
     setStreamVision(null);
@@ -321,7 +341,10 @@ export default function AIChatPage() {
     setActionState("pending");
     setActionMessage(null);
 
-    const kbResult = await startKbStream(
+    // Đã xác nhận "người gõ = dữ liệu vận hành" cho hội thoại này? (UX; máy chủ vẫn là bên quyết — 428 nếu thiếu.)
+    let daXacNhanVH = laNgoai && daXacNhanVanHanh(String(convId), chonModel);
+    const goiStream = () =>
+      startKbStream(
       {
         question: userMsg,
         topK: 5,
@@ -333,6 +356,8 @@ export default function AIChatPage() {
           selectedMachineCode:
             scopeCode ?? selection.selectedMachineCode ?? undefined,
           ...(chonModel !== "auto" ? { chonModel } : {}),
+          // ★ Đợt 10.4b — model ngoài BẮT BUỘC có id hội thoại đã lưu (máy chủ gắn vết/nguồn vào hội thoại).
+          ...(laNgoai ? { conversationId: convId!, ...(daXacNhanVH ? { xacNhanVanHanh: true } : {}) } : {}),
         },
         // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
         image: image?.dataUrl,
@@ -359,6 +384,18 @@ export default function AIChatPage() {
         },
       },
     );
+    let kbResult = await goiStream();
+    // ★ Đợt 10.4b — 428: hỏi MỘT lần (mỗi hội thoại) rồi gửi lại với cờ xác nhận. Từ chối ⇒ dừng, trả câu về ô nhập.
+    if (!kbResult && laNgoai && loiNgoaiRef.current?.canXacNhanVanHanh) {
+      if (await hoiVanHanh(String(convId), chonModel)) {
+        daXacNhanVH = true;
+        kbResult = await goiStream();
+      } else {
+        setOptimisticUserMsg(null);
+        setInputMessage(source);
+        return;
+      }
+    }
 
     if (kbResult) {
       setOptimisticUserMsg(null);
@@ -387,15 +424,29 @@ export default function AIChatPage() {
           "aiChat.noAnswer",
           "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
         );
-      saveStreamedMsg.mutate({
-        conversationId: convId!,
-        userMessage: userMsg,
-        assistantMessage: assistantText,
-      });
+      if (kbResult.daLuu) {
+        // ★ Đợt 10.4b — máy chủ ĐÃ lưu cả hai tin của lượt ngoài (nguồn model do máy chủ ghi): chỉ nạp lại, KHÔNG nộp lại (sẽ trùng tin).
+        void refetchConv();
+      } else {
+        saveStreamedMsg.mutate({
+          conversationId: convId!,
+          userMessage: userMsg,
+          assistantMessage: assistantText,
+          // ★ Đợt 10.4b — máy chủ tự kiểm băm callId với sổ cổng và GHI nguồn model; client chỉ chuyển số.
+          ...(kbResult.vet ? { ngoaiCallId: kbResult.vet.callId } : {}),
+        });
+      }
     } else if (kbAbortedRef.current) {
       // User cancelled — just drop the optimistic message, persist nothing.
       setOptimisticUserMsg(null);
       setStreamToolResult(null);
+    } else if (laNgoai) {
+      // ★ Đợt 10.4b — model ngoài hỏng: KHÔNG lặng lẽ chuyển sang trả lời cục bộ (người dùng đã chọn ngoài, và lượt cục bộ không mang nhãn). Hiện lỗi (toast từ kbStreamError),
+      // huy hiệu lượt lỗi nếu máy chủ trả vết, trả câu hỏi về ô nhập để thử lại/đổi model.
+      setOptimisticUserMsg(null);
+      setStreamToolResult(null);
+      setVetLoi(loiNgoaiRef.current?.vet ?? null);
+      setInputMessage(source);
     } else {
       // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
       // (doc 11): that mutation now routes through the SAME RAG/KB backend
@@ -902,9 +953,21 @@ export default function AIChatPage() {
                         {msg.role === "user" ? (
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                         ) : (
-                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
-                            <Markdown>{msg.content}</Markdown>
-                          </div>
+                          msg.nguonModel ? (
+                            // ★ Đợt 10.4b — tin do model NGOÀI sinh (nguồn do MÁY CHỦ ghi): bộ render an toàn duy nhất + huy hiệu vết.
+                            <>
+                              <NoiDungTraLoiNgoai noiDung={msg.content} />
+                              {msg.vetNgoai && (
+                                <div className="mt-1.5">
+                                  <HuyHieuNgoai vet={msg.vetNgoai} />
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                              <Markdown>{msg.content}</Markdown>
+                            </div>
+                          )
                         )}
                         {msg.toolCalls && (
                           <Badge variant="outline" className="mt-1.5 text-xs">
@@ -958,11 +1021,14 @@ export default function AIChatPage() {
                             <AIToolResultCard toolResult={streamToolResult.toolResult} />
                           </div>
                         )}
-                        {kbStreamingText && (
-                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
-                            <Markdown>{kbStreamingText}</Markdown>
-                          </div>
-                        )}
+                        {kbStreamingText &&
+                          (luotNgoai ? (
+                            <NoiDungTraLoiNgoai noiDung={kbStreamingText} />
+                          ) : (
+                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                              <Markdown>{kbStreamingText}</Markdown>
+                            </div>
+                          ))}
                         <Badge variant="outline" className="mt-1.5 text-xs">
                           <Zap className="h-3 w-3 mr-1" />
                           {t("aiChat.streaming", "Đang stream...")}
@@ -980,6 +1046,11 @@ export default function AIChatPage() {
                       <div className="bg-muted rounded-lg px-4 py-3">
                         <Loader2 className="h-4 w-4 animate-spin" />
                       </div>
+                    </div>
+                  )}
+                  {vetLoi && !kbIsStreaming && (
+                    <div className="pl-11">
+                      <HuyHieuNgoai vet={vetLoi} loi />
                     </div>
                   )}
                   <div ref={messagesEndRef} />
@@ -1128,7 +1199,8 @@ export default function AIChatPage() {
                 >
                   <ImagePlus className="h-4 w-4" />
                 </Button>
-                <ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} />
+                <ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} xacNhanNgoai={xacNhanNgoai} />
+                {hopThoai}
                 <Input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}

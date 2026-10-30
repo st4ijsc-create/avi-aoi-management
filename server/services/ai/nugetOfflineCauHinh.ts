@@ -17,7 +17,7 @@ import path from "node:path";
 
 export const NOI_DUNG_NUGET_OFFLINE =
   '<?xml version="1.0" encoding="utf-8"?>\n' +
-  "<!-- Sinh bởi máy chủ AI Local (nugetOfflineCauHinh.ts) — restore OFFLINE: không nguồn nào ngoài tham số source của máy chủ. -->\n" +
+  "<!-- Sinh bởi máy chủ Thợ Cả (nugetOfflineCauHinh.ts) — restore OFFLINE: không nguồn nào ngoài tham số source của máy chủ. -->\n" +
   "<configuration>\n" +
   "  <packageSources>\n    <clear />\n  </packageSources>\n" +
   "  <fallbackPackageFolders>\n    <clear />\n  </fallbackPackageFolders>\n" +
