@@ -660,3 +660,31 @@ describe("R1b-2b-2a T3A fix round 2 (kiem-dinh M1/M2/M4/M5/M6/M7 + dự phòng 6
     ]);
   }, 20_000);
 });
+
+describe("R1b-2b-2a T3A polish (kiem-dinh n13 / n8)", () => {
+  it("★ n13 — đọc ĐANG BAY khi một lời ghi KHÁC làm phiên nhiễm ⇒ đọc bị trả lời NGAY (bad, không bao giờ good), trước hạn riêng của nó (batDauDoLag)", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: () => undefined }); // thiết bị im: cả ghi lẫn đọc
+    const pA = d.writeTags([ghiSpeed]); // hết hạn ~300 ⇒ nhiễm
+    await new Promise((r) => setTimeout(r, 200));
+    const lag = batDauDoLag();
+    const t0 = Date.now();
+    const rB = await d.readTags([{ tagKey: "b", address: "TagB", dataType: "int" } as any]); // đang bay lúc phiên bị hạ (~100 ms sau)
+    const troi = Date.now() - t0;
+    expect((await pA)[0]).toMatchObject({ ok: false, ketCucKhongRo: "qua_han_driver" });
+    expect(rB.map((x) => [x.tagKey, x.quality, x.value])).toEqual([["b", "bad", null]]);
+    expect(tb.yeuCau.map((x) => [x.ten, x.ketNoi])).toEqual([
+      ["Speed", 1],
+      ["TagB", 1],
+    ]);
+    expect(troi).toBeLessThan(200 + (await lag.dung(100))); // hạn riêng của lần đọc = 300 ⇒ không bọc sổ đang bay ⇒ ~300
+  }, 10_000);
+
+  it("★ n8 — tag là STRUCT/UDT (type.structure, mã là handle số) ⇒ failed EIP_TAG_TYPE_UNKNOWN, 0 gói", async () => {
+    const { tb, d } = await moDriver({ tags: [["Motor", 0x8000 | 0x0fce]], onYeuCau: (_r, tl) => tl(0) });
+    const r = await d.writeTags([{ tagKey: "m", address: "Motor", value: 1, dataType: "int" } as any]);
+    expect(r).toEqual([
+      { tagKey: "m", ok: false, error: `${MA_KIEU_TAG_EIP_KHONG_RO}: tag "Motor" has no atomic CIP type in the controller tag list loaded at connect — nothing sent` },
+    ]);
+    expect(tb.ghi()).toHaveLength(0);
+  }, 10_000);
+});
