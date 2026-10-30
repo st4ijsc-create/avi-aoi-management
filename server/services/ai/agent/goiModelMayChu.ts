@@ -138,7 +138,7 @@ async function* luongModelMayChu(
       repeatPenalty: 1.05,
       ...(vao.congCu.length ? { tools: vao.congCu, toolChoice: "auto" as const } : {}),
       ...(nghi ? {} : { disableThinking: true }),
-      // ★ Đợt 11.0 (CHỈ ĐO) — lịch sử mang suy luận ⇒ bảo template GIỮ nó (`preserve_thinking`); vắng ⇒ thân yêu cầu như cũ.
+      // ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — lịch sử mang suy luận ⇒ bảo template GIỮ nó (`preserve_thinking`); vắng ⇒ thân yêu cầu như cũ.
       ...(nghi && vao.tinNhan.some((m) => m.role === "assistant" && m.reasoning_content?.trim()) ? { preserveThinking: true } : {}),
     };
     // ★ Đợt 9 — DẤU VẾT: đường agent đi NGOÀI cổng (gọi thẳng engine, không `planInference`) ⇒ không quota / safety / license và KHÔNG

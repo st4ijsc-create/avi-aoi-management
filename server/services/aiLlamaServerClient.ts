@@ -222,7 +222,7 @@ export function phanDinhCauTraLoiRong(
  */
 /**
  * ĐIỂM GHI DUY NHẤT của `chat_template_kwargs` (lưới §5 của `aiLlamaServerClient.suyLuan.test.ts`).
- * ★ Đợt 11.0 (CHỈ ĐO) — `giuNghi` ⇒ `preserve_thinking: true`: template Qwen3.6 giữ suy luận của các lượt assistant TRƯỚC trong prompt
+ * ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — `giuNghi` ⇒ `preserve_thinking: true`: template Qwen3.6 giữ suy luận của các lượt assistant TRƯỚC trong prompt
  * (đọc `/props.chat_template` 2026-10-27). Cả hai cờ vắng ⇒ không chạm thân (thân y hệt trước 11.0).
  */
 export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined, giuNghi?: boolean): void {
@@ -308,7 +308,7 @@ export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown>
       : m.content,
   };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
-  // ★ Đợt 11.0 (CHỈ ĐO) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
+  // ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
   //   Tên NỘI BỘ `nghiTruoc` ≠ tên trên dây. ĐIỂM GHI DUY NHẤT trên dây — lưới §5 (suyLuan.test) khai báo DƯƠNG: đúng 1, trong hàm này.
   if (m.role === "assistant" && m.nghiTruoc) Object.assign(ra, { reasoning_content: m.nghiTruoc });
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent

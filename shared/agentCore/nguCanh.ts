@@ -6,7 +6,7 @@
  *   lượt gần nhất) bằng một dòng `[compacted: <tool> <đường> — <n> chars]`, chỉ tới khi xuống dưới ngưỡng.
  *   Bất biến: KHÔNG bỏ/sửa system và câu hỏi gốc (mọi tin không phải `tool`); KHÔNG xoá tin (tool_call_id luôn khớp);
  *   2 lượt (assistant + kết quả tool của nó) gần nhất giữ nguyên văn; không đột biến đầu vào.
- *   ★ Đợt 11.0 (rà kiem-dinh, cờ đo `AI_AGENT_GIU_NGHI`) — suy luận giữ trong lịch sử (`reasoning_content`, tới ~12k token/lượt) được
+ *   ★ Đợt 11.0 (rà kiem-dinh, công tắc `AI_AGENT_GIU_NGHI` — mặc định bật ở server) — suy luận giữ trong lịch sử (`reasoning_content`, tới ~12k token/lượt) được
  *   TÍNH vào ước lượng, và khi vượt ngưỡng thì BỎ suy luận của lượt CŨ (cũ nhất trước, ngoài vùng giữ) TRƯỚC khi rút gọn kết quả tool.
  * - Ước lượng token được TIÊM (server truyền `uocLuongSoToken` của aiLlamaServerClient); mặc định cùng công thức
  *   2,8 ký tự/token để lõi tự đứng được ở extension VSCode.

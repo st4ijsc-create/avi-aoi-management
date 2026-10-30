@@ -157,7 +157,7 @@ export interface GgufChatMessage {
   tool_call_id?: string;
   /** G2-B — chỉ trên `role:"assistant"`: các lượt gọi model đã phát ra ở lượt trước. */
   tool_calls?: NativeToolCall[];
-  /** ★ Đợt 11.0 (CHỈ ĐO) — suy luận của lượt assistant trước (chỉ llama-server; lên dây thành `reasoning_content`; template đọc khi `preserveThinking`). */
+  /** ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — suy luận của lượt assistant trước (chỉ llama-server; lên dây thành `reasoning_content`; template đọc khi `preserveThinking`). */
   nghiTruoc?: string;
   /**
    * ★ Đợt 9 (2026-10-24) — ẢNH đính kèm (data URL `data:image/<png|jpeg|webp>;base64,…`), CHỈ trên vai `user`. `content` VẪN là
@@ -202,7 +202,7 @@ export interface GgufChatOptions {
   jsonMode?: boolean;
   /** G5-D — xem `GgufGenerateOptions.disableThinking`. */
   disableThinking?: boolean;
-  /** ★ Đợt 11.0 (CHỈ ĐO) — `chat_template_kwargs.preserve_thinking=true` (giữ `reasoning_content` của lịch sử trong prompt). */
+  /** ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — `chat_template_kwargs.preserve_thinking=true` (giữ `reasoning_content` của lịch sử trong prompt). */
   preserveThinking?: boolean;
   /** ★ F3 — xem `GgufGenerateOptions.thinkingBudgetTokens`. */
   thinkingBudgetTokens?: number;

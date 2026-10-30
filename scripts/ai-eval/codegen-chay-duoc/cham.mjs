@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { CO_BIEN_DOI_TS, nodeCoBienDoiTs, bienDoiTs } from "../lib/tsChay.mjs";
 
 const BENCH = path.dirname(fileURLToPath(import.meta.url));
 
@@ -83,7 +84,20 @@ async function runTs(t, code, dir, signal) {
   chepKem(t, dir);
   // api2: `thoatCuong` ⇒ --test-force-exit (lời giải RÒ kết nối OT không treo tới trần 60 s — bài kiểm tự đo rò bằng số phiên
   //   phía máy chủ giả); `pg` ⇒ cụm PostgreSQL DÙNG-XONG-VỨT, URL qua PG_URL. Bài cũ không khai ⇒ lệnh y hệt trước.
-  const co = ["--experimental-transform-types", "--test", ...(t.thoatCuong ? ["--test-force-exit"] : []), "t.test.ts"];
+  const ep = t.thoatCuong ? ["--test-force-exit"] : [];
+  // node v26 gỡ cờ biến đổi kiểu (xem lib/tsChay.mjs) ⇒ esbuild ra .mjs, import `./sol.ts` của bài kiểm trỏ sang `./sol.mjs`.
+  if (nodeCoBienDoiTs()) {
+    const co = [CO_BIEN_DOI_TS, "--test", ...ep, "t.test.ts"];
+    return voiPg(t, dir, signal, (env) => chay(process.execPath, co, dir, t.tranMs ?? 60000, signal, false, env));
+  }
+  try {
+    fs.writeFileSync(`${dir}/sol.mjs`, await bienDoiTs(code));
+    const kiem = t.test.replace(/(["'])\.\/sol\.(?:ts|mjs)\1/g, "$1./sol.mjs$1");
+    fs.writeFileSync(`${dir}/t.test.mjs`, await bienDoiTs(kiem));
+  } catch (e) {
+    return { ok: false, out: `esbuild: ${String(e?.message || e).slice(0, 1200)}` };
+  }
+  const co = ["--test", ...ep, "t.test.mjs"];
   return voiPg(t, dir, signal, (env) => chay(process.execPath, co, dir, t.tranMs ?? 60000, signal, false, env));
 }
 async function runPy(t, code, dir, signal) {

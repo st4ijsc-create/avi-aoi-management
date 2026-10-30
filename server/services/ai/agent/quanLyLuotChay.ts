@@ -31,6 +31,7 @@ import { randomUUID } from "node:crypto";
 import {
   chayVongAgent,
   kiemDacTaBat,
+  giuNghiBat,
   dungKhoiNguCanhDuAn,
   type CauHinhGiaoViec,
   type CheDoAgent,
@@ -822,8 +823,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0
             kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
-            // ★ Đợt 11.0 (CHỈ ĐO, mặc định TẮT) — giữ suy luận trong lịch sử + preserve_thinking (xem goiModelMayChu).
-            ...(process.env.AI_AGENT_GIU_NGHI === "1" ? { giuNghiTrongLichSu: true } : {}),
+            // ★ Đợt 11.0 — giữ suy luận trong lịch sử + preserve_thinking (xem goiModelMayChu). Mặc định BẬT, tắt bằng AI_AGENT_GIU_NGHI=0
+            ...(giuNghiBat(process.env.AI_AGENT_GIU_NGHI) ? { giuNghiTrongLichSu: true } : {}),
             // (Đợt 11.8, UX-C06) nhắc tóm tắt NOTES.md ở ≥ 80 % ngữ cảnh — MẶC ĐỊNH TẮT (AI_AGENT_TOM_TAT_80=1 để bật)
             ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
           });
