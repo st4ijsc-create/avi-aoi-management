@@ -107,3 +107,10 @@ rỗng. Ranh giới an toàn THẬT là **cửa duyệt ghi/lệnh**, không ph�
     (DB, fail-closed, sống qua khởi động lại); cha kết thúc ⇒ đóng thẻ `proposed` của cả cây.
 32. **UX-C06**: sự kiện `ngu-canh-day {phanTram}` MỘT lần khi ≥ `NGUONG_NGU_CANH_DAY_PHAN_TRAM` (80); nhắc tóm tắt NOTES.md (`cauNhacTomTatNguCanh`) chỉ khi host bật `nhacTomTatKhiDay`
     (`AI_AGENT_TOM_TAT_80=1`, mặc định TẮT; không ở `hoi`). Ghi NOTES.md đi đường ghi thường + thẻ duyệt.
+33. **Cổng duyệt kế hoạch (11.3-C, UX-D02)** — `keHoach.ts` (thuần) + `congKeHoach` của `DauVaoVongAgent` (host: `AI_AGENT_CONG_KE_HOACH=1`, MẶC ĐỊNH TẮT ⇒ byte-identical; chỉ `sua`/`tu-dong`).
+    Tool loại `ghi`/`lenh` và `delegate` chỉ chạy khi KẾ HOẠCH hiện tại (`todo_write` gần nhất) đã được NGƯỜI duyệt; chưa có kế hoạch ⇒ `PLAN_REQUIRED` (không chờ); đổi NỘI DUNG bước ⇒
+    băm đổi ⇒ duyệt lại (đổi trạng thái bước thì không). Băm = SHA-256 của JSON mảng nội dung ĐÃ LÀM SẠCH (NFC, bỏ ký tự ẩn/bidi, gộp khoảng trắng; trần 30 bước × 200 ký tự — vượt ⇒ LỖI cho model,
+    không cắt) — MỘT hàm cho lõi và máy chủ. Sự kiện `ke-hoach-cho-duyet {viec, bam}` (phát khi móc báo `daSanSang`, tức sổ đã lưu), `ke-hoach-da-duyet {bam, luc}`, `ke-hoach-khong-duyet {bam, lyDo}`
+    (bác ⇒ dừng `huy`; hết giờ ⇒ `het-gio`). Móc ném / kết quả lạ ⇒ BÁC (fail-closed). Thời gian chờ không ăn ngân sách giờ của lượt. Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh. Vòng con không có cổng riêng.
+34. **Host (11.3-C)**: móc `taoChoDuyetKeHoach` nộp kế hoạch vào `ai_agent_runs.keHoach*` (mig 0444; máy chủ tính băm LẠI) rồi hỏi sổ mỗi nhịp tới khi tRPC `aiAgent.duyetKeHoach` (chủ lượt, băm đã xem,
+    MỘT câu UPDATE có điều kiện) quyết; chỉ nhận "duyệt" khi sổ nói đúng (băm khớp · có giờ · người duyệt là chủ lượt); trần chờ 15 phút; huỷ lượt/kết thúc ⇒ chốt `bac` có điều kiện.

@@ -43,6 +43,8 @@ import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } fro
 const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
 // Đợt 11.8 — định nghĩa agent đặt tên (.thoca/agents): xem / xác nhận (tin-lần-đầu theo băm) / gỡ tin cậy. CHỈ người gọi, qua phiên.
 const thuTucDinhNghia = () => import("../services/ai/agent/thuTucDinhNghiaAgent");
+// Đợt 11.3-C — cổng duyệt kế hoạch (UX-D02): xem kế hoạch đang chờ / duyệt|bác. CHỈ chủ lượt chạy; duyệt kế hoạch KHÔNG duyệt thẻ.
+const thuTucKeHoach = () => import("../services/ai/agent/thuTucKeHoach");
 // ★ Đợt 5.1 (2026-10-17) — PHẢN HỒI 👍/👎 + bộ dữ liệu "chỉ dẫn → diff được duyệt". Thân ở
 //   `services/ai/phanHoi/thuTucPhanHoi.ts` (nhập ĐỘNG như trên). Quyền `ai_repo_read/canView` trong thân; tổng hợp + xuất
 //   MỌI người đòi admin (sàn `adminPhanHoiProcedure` + kiểm lại trong thân).
@@ -309,6 +311,17 @@ export const aiAgentRouter = router({
 
   /** (Đợt 11.8, UX-D09) vị trí hàng chờ model: chỉ SỐ lượt đứng trước (null khi cổng ưu tiên tắt). Cùng bit `ai_repo_read` như các thủ tục lượt chạy. */
   trangThaiHangCho: protectedProcedure.query(async ({ ctx }) => (await thuTucLuotChay()).thuTucTrangThaiHangCho(toAgentUser(ctx.user as any))),
+
+  // ═══ Đợt 11.3-C — CỔNG DUYỆT KẾ HOẠCH (UX-D02) ═══
+  /** Kế hoạch (chữ thuần + băm máy chủ) của lượt CỦA MÌNH và trạng thái cho|duyet|bac|het-gio. Lỗi trong thân (`note`). */
+  keHoachDangCho: protectedProcedure
+    .input(z.object({ runId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => (await thuTucKeHoach()).thuTucKeHoachDangCho(toAgentUser(ctx.user as any), input.runId)),
+
+  /** Duyệt/bác kế hoạch: gửi kèm BĂM ĐÃ HIỂN THỊ — lệch băm máy chủ ⇒ `CONFLICT`. Chỉ một quyết định thắng (`DA_QUYET`). */
+  duyetKeHoach: protectedProcedure
+    .input(z.object({ runId: z.string().uuid(), bam: z.string().regex(/^[0-9a-f]{64}$/), quyetDinh: z.enum(["duyet", "bac"]) }).strict())
+    .mutation(async ({ input, ctx }) => (await thuTucKeHoach()).thuTucDuyetKeHoach(toAgentUser(ctx.user as any), input)),
 
   // ═══ Đợt 11.8 — ĐỊNH NGHĨA AGENT ĐẶT TÊN (.thoca/agents/*.md) ═══
   /** Dựng sẵn + tệp repo hợp lệ (kèm nội dung chữ thuần để ĐỌC trước khi xác nhận) + cờ tin cậy của CHÍNH người gọi. */

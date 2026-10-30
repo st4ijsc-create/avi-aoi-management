@@ -46,6 +46,13 @@ export const aiAgentRuns = pgTable(
     /** (mig 0441) tên agent con + nhãn nguồn bất biến (`dungSan` | `tuRepo`). */
     agentName: varchar("agentName", { length: 32 }),
     agentSource: varchar("agentSource", { length: 8 }),
+    /** (mig 0444, Đợt 11.3-C) cổng duyệt kế hoạch: băm SHA-256 + bước + trạng thái cho|duyet|bac|het-gio + giờ nộp/duyệt + người duyệt. */
+    keHoachBam: varchar("keHoachBam", { length: 64 }),
+    keHoachViec: jsonb("keHoachViec"),
+    keHoachTrangThai: varchar("keHoachTrangThai", { length: 12 }),
+    keHoachNopLuc: timestamp("keHoachNopLuc", { withTimezone: true }),
+    keHoachDuyetLuc: timestamp("keHoachDuyetLuc", { withTimezone: true }),
+    keHoachDuyetBoi: integer("keHoachDuyetBoi").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },

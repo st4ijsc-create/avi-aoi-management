@@ -570,7 +570,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-30 Đợt 10.4b L0a' (do-model): +1 aiChonModel.thongTinNgoai (moduleProcedure MOD_AI) ⇒ 2429 / 456 / 394 (đo trên nhánh, gốc main 01bc510fb + mayDungKhanCap đã gộp).
 // ★★ 2026-10-30 · scada-master GỘP main 3b4a9693b — ĐO trên cây gộp: main 2429/456/394 + nhánh C1 commandLog.nhatKy +1 (ngoài bề mặt AI) ⇒ tong 2430.
 // ★ 2026-10-31 dieu-phoi GỘP 11.8 (tho-ca-agent) vào main 0cb46fa5b: +12 thủ tục AI có cổng MOD_AI (aiPhien ×8 + aiAgent dinhNghiaDanhSach/xacNhanDinhNghia/goTinCayDinhNghia/trangThaiHangCho) ⇒ beMatAi 456→468, aiCoCong 394→406, tong 2430→2442 (= phamViDocCensus tong). ĐO trên cây gộp.
-const GHIM = { tong: 2442, beMatAi: 468, aiCoCong: 406, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★ 2026-10-31 Đợt 11.3-C (tho-ca-agent): +2 thủ tục AI có cổng MOD_AI (aiAgent.keHoachDangCho + duyetKeHoach) ⇒ beMatAi 468→470, aiCoCong 406→408, tong 2442→2444 (= phamViDocCensus tong). ĐO trên nhánh.
+const GHIM = { tong: 2444, beMatAi: 470, aiCoCong: 408, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
 //   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc

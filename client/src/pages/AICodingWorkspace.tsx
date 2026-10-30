@@ -162,6 +162,9 @@ import { KhungChayUngDung } from "@/components/ai/KhungChayUngDung";
 import { KhungGit } from "@/components/ai/KhungGit";
 import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
 import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
+import { BangAgentTuRepo } from "@/components/ai/BangAgentTuRepo";
+import { LichSuAgent } from "@/components/ai/LichSuAgent";
+import { ChiBaoHangCho } from "@/components/aiCoding/agent/ChiBaoHangCho";
 import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
 import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
@@ -3332,6 +3335,8 @@ export default function AICodingWorkspace() {
               {/* ★ Đợt 3b — màn QUẢN LÝ TRÍ NHỚ (bài học của tôi × dự án này). */}
               <div className="ml-auto flex items-center">
                 {projectId && <QuanLyTriNho projectId={projectId} />}
+                {projectId && <BangAgentTuRepo projectId={projectId} />}
+                {projectId && <LichSuAgent projectId={projectId} />}
               </div>
               <BoChonPhien
                 phien={phienQ.data?.sessions ?? []}
@@ -3662,6 +3667,8 @@ export default function AICodingWorkspace() {
                   {t("repoWs.ngoai.chiHoi", "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa).")}
                 </p>
               )}
+              {/* ★ Đợt 11.8 (UX-D09) — chỉ báo hàng chờ model TRƯỚC khi gửi: chỉ ở chế độ agent, chưa có lượt chạy, tab đang hiện. */}
+              <ChiBaoHangCho bat={cheDoChatHL !== "hoi" && !agentDangChay && !isStreaming && !!projectId} />
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}
