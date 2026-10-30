@@ -8,6 +8,9 @@
  *   2 lượt (assistant + kết quả tool của nó) gần nhất giữ nguyên văn; không đột biến đầu vào.
  *   ★ Đợt 11.0 (rà kiem-dinh, công tắc `AI_AGENT_GIU_NGHI` — mặc định bật ở server) — suy luận giữ trong lịch sử (`reasoning_content`, tới ~12k token/lượt) được
  *   TÍNH vào ước lượng, và khi vượt ngưỡng thì BỎ suy luận của lượt CŨ (cũ nhất trước, ngoài vùng giữ) TRƯỚC khi rút gọn kết quả tool.
+ * H0.3 · MODEL THẤY / CACHE: rút gọn kết quả tool CŨ (và bỏ suy luận cũ) SỬA GIỮA lịch sử ⇒ cache mất từ tin đầu bị sửa trở đi
+ *   (`prompt_n` tăng bằng phần đuôi sau điểm sửa, một lần); các lượt sau chỉ-nối-thêm lại trúng cache. Số liệu mỗi lần nén nằm ở
+ *   `buoc-do.nen` ({soNen, tokenTruoc, tokenSau}) — H1.1 (nén xuống mốc thấp) dựa vào đó để so trước/sau.
  * - Ước lượng token được TIÊM (server truyền `uocLuongSoToken` của aiLlamaServerClient); mặc định cùng công thức
  *   2,8 ký tự/token để lõi tự đứng được ở extension VSCode.
  */

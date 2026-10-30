@@ -107,6 +107,11 @@ const GIU_SAU_KHI_XONG_MS = 30 * 60_000;
 /** Sự kiện lưu vào sổ: trần số mục + trần chữ mỗi mục gộp. */
 export const TRAN_SU_KIEN_LUU = 3_000;
 const TRAN_CHU_MOI_MUC_LUU = 20_000;
+/**
+ * (Đợt 12 · H0.2) `buoc-do` (1 mục/lượt model) được MIỄN cắt "giữa" khi sổ quá `TRAN_SU_KIEN_LUU`: đo trước/sau cần ĐỦ bước.
+ * Trần riêng 400 bước (mới nhất giữ; vượt ⇒ bỏ bước cũ nhất của khoảng bị cắt — lượt thật hiếm khi tới 400 lượt model).
+ */
+export const TRAN_BUOC_DO_LUU = 400;
 /** Nhịp ghi sổ cho sự kiện thường (sự kiện đổi trạng thái ghi NGAY). */
 const NHIP_LUU_MS = 5_000;
 
@@ -133,7 +138,7 @@ export interface MucSuKien {
   suKien: SuKienAgent;
 }
 
-interface MucDem {
+export interface MucDem {
   seq: number;
   suKien: SuKienAgent;
   /** Chỉ cho mục `chu`/`nghi` đã gộp: [seq của mảnh, độ dài cộng dồn SAU mảnh]. */
@@ -365,7 +370,15 @@ export function suKienDeLuu(dem: readonly MucDem[]): MucSuKien[] {
   };
   if (dem.length <= TRAN_SU_KIEN_LUU) return dem.map(cat);
   const dau = Math.floor(TRAN_SU_KIEN_LUU / 4);
-  return [...dem.slice(0, dau), ...dem.slice(dem.length - (TRAN_SU_KIEN_LUU - dau))].map(cat);
+  const giuDau = dem.slice(0, dau);
+  const giuDuoi = dem.slice(dem.length - (TRAN_SU_KIEN_LUU - dau));
+  // (H0.2) `buoc-do` nằm trong khoảng bị cắt ⇒ giữ lại (mới nhất trước), theo thứ tự seq, trong trần riêng.
+  const trongDuoi = giuDuoi.filter((m) => m.suKien.loai === "buoc-do").length;
+  const trongDau = giuDau.filter((m) => m.suKien.loai === "buoc-do").length;
+  const conChoDuoc = Math.max(0, TRAN_BUOC_DO_LUU - trongDau - trongDuoi);
+  const giua = dem.slice(dau, dem.length - giuDuoi.length).filter((m) => m.suKien.loai === "buoc-do");
+  const giuGiua = conChoDuoc > 0 ? giua.slice(-conChoDuoc) : [];
+  return [...giuDau, ...giuGiua, ...giuDuoi].map(cat);
 }
 
 function gocTuongDoiChoPrompt(goc: string): string {

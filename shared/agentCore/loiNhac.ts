@@ -40,6 +40,8 @@ export const QUY_TAC_DELEGATE =
 
 /**
  * Đợt 11.3-C — quy tắc khi CỔNG DUYỆT KẾ HOẠCH bật: CHỈ chèn khi host bật cổng (và chế độ có tool ghi). Vắng ⇒ lời nhắc GIỐNG TỪNG BYTE.
+ * H0.3 · MODEL THẤY: một dòng quy tắc trong SYSTEM (đầu hội thoại; `bamHeThong` của `buoc-do` đổi khi bật/tắt cổng). TOKEN: ~127.
+ *   CACHE: nằm ở TIỀN TỐ ⇒ đổi cờ giữa chừng làm mất cả cache của lượt chạy; cờ cố định suốt lượt ⇒ không ảnh hưởng.
  */
 export const QUY_TAC_CONG_KE_HOACH =
   "15. Before your first write or command, write a short plan with todo_write (at most 30 steps, each under 200 characters, plain text). " +
@@ -83,6 +85,10 @@ export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu; con
 /**
  * (Đợt 11.8, UX-C06) Nhắc MỘT lần khi ngữ cảnh ≥ 80 % (host bật bằng `AI_AGENT_TOM_TAT_80=1`; mặc định TẮT ⇒ hành vi như cũ từng byte).
  * Model tóm tắt vào NOTES.md bằng công cụ ghi THƯỜNG — người dùng thấy diff đầy đủ và duyệt; không có đường ghi riêng.
+ *
+ * H0.3 · MODEL THẤY: một tin `user` chèn ở ĐUÔI lịch sử ngay trước lượt model kế (mã `tom-tat-ngu-canh`).
+ *   TOKEN: ~136 (ước 2,8 ký tự/token). CACHE: chỉ-nối-thêm ở đuôi ⇒ KHÔNG làm mất tiền tố cache; chỉ `prompt_n` tăng ~136 một lần,
+ *   rồi tin ở lại trong lịch sử (tái dùng như mọi tin cũ). Nhắc tối đa MỘT lần mỗi lượt chạy.
  */
 export function cauNhacTomTatNguCanh(phanTram: number): string {
   return (
@@ -92,6 +98,10 @@ export function cauNhacTomTatNguCanh(phanTram: number): string {
   );
 }
 
+/**
+ * H0.3 · MODEL THẤY: tin `user` ở đuôi lịch sử (mã `kiem-dac-ta`). TOKEN: ~211. CACHE: nối thêm ở đuôi ⇒ giữ tiền tố; `prompt_n` +~211
+ *   một lần. Tối đa MỘT lần mỗi lượt chạy, chỉ khi còn chỗ cho vòng kiểm (xem vongAgent).
+ */
 export const CAU_NHAC_KIEM_DAC_TA =
   "[check before finishing: the visible tests passed, but hidden tests also check the specification. Before you finish, " +
   "go through every requirement of the task's spec against your code — edge inputs, errors/exceptions it must raise, exact " +
@@ -99,12 +109,20 @@ export const CAU_NHAC_KIEM_DAC_TA =
   "edge cases the visible tests do not cover (run them, then delete them or keep them in a separate new test file — do not " +
   "modify the existing test files), fix any mismatch, run the tests again, and only then finish with a short summary.]";
 
-/** (2) Lượt bị cắt ở trần token ra mà KHÔNG có tool call — chưa xong. */
+/**
+ * (2) Lượt bị cắt ở trần token ra mà KHÔNG có tool call — chưa xong.
+ * H0.3 · MODEL THẤY: tin `user` ở đuôi (mã `cat-khong-tool`). TOKEN: ~68. CACHE: nối thêm ở đuôi ⇒ giữ tiền tố; `prompt_n` +~68 mỗi lần nhắc
+ *   (tối đa `TRAN_NHAC_CAT_KHONG_TOOL` lần).
+ */
 export const CAU_NHAC_LUOT_CAT_KHONG_TOOL =
   "[your last reply was cut off at the output token limit, so the task is NOT finished. Stop the long reasoning: call " +
   "the next tool now (for example run the tests), or give a short conclusion.]";
 
-/** (3) Hai lần ghi tệp liên tiếp chưa chạy test/build — nối vào quan sát của lần ghi thứ hai (một lần mỗi chuỗi). */
+/**
+ * (3) Hai lần ghi tệp liên tiếp chưa chạy test/build — nối vào quan sát của lần ghi thứ hai (một lần mỗi chuỗi).
+ * H0.3 · MODEL THẤY: đuôi của KẾT QUẢ TOOL (không phải tin riêng; mã `ghi-chua-test`). TOKEN: ~83 (+ độ dài lệnh test). CACHE: là phần cuối
+ *   của tin tool mới nối ⇒ giữ tiền tố; `prompt_n` +~83 một lần. Nén ngữ cảnh sau này có thể rút gọn cả tin tool này (kể cả lời nhắc).
+ */
 export function cauNhacGhiChuaTest(lenhTest: string): string {
   return (
     `[note: you have written files twice without running the tests. If the files the tests need are in place, run the tests ` +

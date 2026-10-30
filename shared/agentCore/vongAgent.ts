@@ -32,8 +32,9 @@ import {
   tinhTapCongCuCon,
   type CauHinhGiaoViec,
 } from "./giaoViec";
+import { bamNgan, soDoDuoc, type MaKhoiChen, type NenBuocDo } from "./buocDo";
 import { bamKeHoach, chuanHoaKeHoach, type CongKeHoach } from "./keHoach";
-import { catDauDuoi, nenLichSu, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
+import { catDauDuoi, nenLichSu, uocLuongTinNhan, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
 import {
   GIOI_HAN_MAC_DINH,
   MA_MENH_LENH_TRONG_DU_LIEU,
@@ -150,7 +151,11 @@ export function coManhToolCallHongKhuon(chu: string): boolean {
   return RE_THE_TOOL_CALL.test(ngoaiMa);
 }
 
-/** Quan sát cho model khi chữ mang mảnh thẻ tool call không gom được (tiếng Anh như prompt/tool). */
+/**
+ * Quan sát cho model khi chữ mang mảnh thẻ tool call không gom được (tiếng Anh như prompt/tool).
+ * H0.3 · MODEL THẤY: tin `user` ở đuôi (mã `tool-call-hong`). TOKEN: ~173. CACHE: nối thêm ở đuôi ⇒ giữ tiền tố; `prompt_n` +~173 mỗi lần
+ *   (chuỗi hỏng liên tiếp bị chặn bởi `TRAN_THAM_SO_HONG_LIEN_TIEP`).
+ */
 export const CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON =
   "[tool call malformed: your last message contains tool-call markup (e.g. <tool_call>, </tool_call>, <function=…>) " +
   "but no complete tool call could be read from it, so nothing was executed and the task is NOT finished. " +
@@ -607,6 +612,18 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
     }
   };
 
+  /**
+   * (Đợt 12 · H0.2) MỌI khối vòng agent chèn thêm vào hội thoại (role `user` hoặc đuôi kết quả tool) có MÃ chung
+   * (`MA_KHOI_CHEN`) và được ghi vào `buoc-do` của lượt model kế. Đẩy tin y như trước — không đổi byte gửi model.
+   */
+  let nhacCho: MaKhoiChen[] = [];
+  const chenNhac = (ma: MaKhoiChen, noiDung: string) => {
+    nhacCho.push(ma);
+    tinNhan.push({ role: "user", content: noiDung });
+  };
+  const bamHeThong = bamNgan(`${tinNhan[0]?.content ?? ""}\u0000${JSON.stringify(congCu)}`);
+  const tokenCongCuUoc = uoc(JSON.stringify(congCu));
+
   let luot = 0;
   let tokenRa = 0;
   /** (Đợt 11.8) số con đã khởi tạo trong lượt chạy này · số lần giao trong lượt model hiện tại */
@@ -649,10 +666,17 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       giaoTrongLuotModel = 0;
 
       if (canNhacTomTat !== null) {
-        tinNhan.push({ role: "user", content: cauNhacTomTatNguCanh(canNhacTomTat) });
+        chenNhac("tom-tat-ngu-canh", cauNhacTomTatNguCanh(canNhacTomTat));
         canNhacTomTat = null;
       }
-      tinNhan = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc }).tinNhan;
+      const kqNen = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc });
+      tinNhan = kqNen.tinNhan;
+      // (H0.2) chụp trạng thái LÚC GỌI model — các biến này đổi sau lượt.
+      const nenDo: NenBuocDo | null = kqNen.soNen > 0 ? { soNen: kqNen.soNen, tokenTruoc: kqNen.tokenTruoc, tokenSau: kqNen.tokenSau } : null;
+      const soTinLucGoi = tinNhan.length;
+      const tokenUocLucGoi = uocLuongTinNhan(tinNhan, uoc) + tokenCongCuUoc;
+      const nhacDaChen = nhacCho;
+      nhacCho = [];
 
       // gọi model, thử lại tối đa 1 lần cho lỗi tạm thời (mỗi lượt)
       let kq: Extract<KetQuaLuotModel, { loai: "ok" }> | undefined;
@@ -695,6 +719,19 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       } else {
         tokenRa += uoc(kq.chu + kq.nghi);
       }
+      const uBuoc = kq.usage as { vao?: unknown; cacheN?: unknown; promptN?: unknown } | undefined;
+      phat({
+        loai: "buoc-do",
+        luot,
+        bamHeThong,
+        soTin: soTinLucGoi,
+        tokenUoc: tokenUocLucGoi,
+        ...(soDoDuoc(uBuoc?.vao) !== undefined ? { vaoThat: uBuoc!.vao as number } : {}),
+        ...(soDoDuoc(uBuoc?.cacheN) !== undefined ? { cacheN: uBuoc!.cacheN as number } : {}),
+        ...(soDoDuoc(uBuoc?.promptN) !== undefined ? { promptN: uBuoc!.promptN as number } : {}),
+        nen: nenDo,
+        nhacDaChen,
+      });
 
       const calls = kq.toolCalls;
       // ★★★ Kiểm tham số TRƯỚC khi ghi lịch sử: tin `assistant.tool_calls` gửi lại model chỉ mang object JSON chặt
@@ -722,7 +759,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
             lyDo = "lap-lai";
             break;
           }
-          tinNhan.push({ role: "user", content: CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON });
+          chenNhac("tool-call-hong", CAU_QUAN_SAT_TOOL_CALL_HONG_KHUON);
           continue;
         }
         // ★★★ (2026-10-19) Lượt bị CẮT ở trần token ra mà KHÔNG có tool call (nghĩ hết ngân sách, suy luận tràn `content`)
@@ -750,7 +787,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
             lyDo = "lap-lai";
             break;
           }
-          tinNhan.push({ role: "user", content: CAU_NHAC_LUOT_CAT_KHONG_TOOL });
+          chenNhac("cat-khong-tool", CAU_NHAC_LUOT_CAT_KHONG_TOOL);
           continue;
         }
         // ★★★ (2026-10-19) Kiểm đặc tả MỘT lần: test/build đã xanh trong lượt chạy và model định kết thúc ⇒ nhắc đối
@@ -764,7 +801,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           tokenRa < gh.tokenRaToiDa * 0.8
         ) {
           daNhacKiemDacTa = true;
-          tinNhan.push({ role: "user", content: CAU_NHAC_KIEM_DAC_TA });
+          chenNhac("kiem-dac-ta", CAU_NHAC_KIEM_DAC_TA);
           continue;
         }
         lyDo = "hoan-thanh";
@@ -912,6 +949,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           if (demGhiChuaTest >= 2 && !daNhacChuoiGhi && lenhTestBiet && y.cheDo !== "hoi") {
             daNhacChuoiGhi = true;
             vanChoModel = `${vanChoModel}\n${cauNhacGhiChuaTest(lenhTestBiet)}`;
+            nhacCho.push("ghi-chua-test");
           }
         }
         if (dangNgo) {

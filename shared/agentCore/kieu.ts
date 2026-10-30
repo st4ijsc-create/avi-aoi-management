@@ -5,6 +5,8 @@
  * Lưới `thuan.test.ts` canh bất biến đó.
  */
 
+import type { MaKhoiChen, NenBuocDo } from "./buocDo";
+
 // ─── Khuôn dây OpenAI (tool-calling gốc) ──────────────────────────────────────────────────────
 //
 // ⚠ PHẢI TƯƠNG THÍCH khuôn dây của `server/services/ai/nativeToolCalls.ts` (`WireToolCall`/`WireTool`).
@@ -157,6 +159,23 @@ export type SuKienAgent =
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
+  /**
+   * (Đợt 12 · H0.2) BẢN GHI ĐO của MỖI lượt gọi model (phát ngay sau `usage` của lượt đó): băm system+tools, số tin, token ƯỚC LƯỢNG
+   * lúc gọi vs token THẬT (`vaoThat`), cache_n/prompt_n (vắng = không đo được, KHÔNG BIẾT ≠ 0), hành động nén, mã khối đã chèn.
+   * Chỉ số + mã — không nội dung. Không đổi byte gửi model. Của lượt GỐC; vòng con không phát ra ngoài (host lọc).
+   */
+  | {
+      loai: "buoc-do";
+      luot: number;
+      bamHeThong: string;
+      soTin: number;
+      tokenUoc: number;
+      vaoThat?: number;
+      cacheN?: number;
+      promptN?: number;
+      nen: NenBuocDo | null;
+      nhacDaChen: MaKhoiChen[];
+    }
   /**
    * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
    * chạy. UI hiện banner "tóm tắt sang NOTES.md + mở phiên mới"; ghi NOTES.md vẫn qua `write_file`/`edit_file` + thẻ duyệt của NGƯỜI.
