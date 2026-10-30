@@ -24,7 +24,10 @@ function dung(g: Gia) {
       nhat.nop++;
       return g.nopTra === undefined ? { bam: BAM, viec: VIEC } : g.nopTra;
     },
-    doc: async () => g.doc[Math.min(i++, g.doc.length - 1)] ?? null,
+    doc: async () => {
+      if (i > 200) throw new Error("vòng chờ không dừng (mất kiểm hạn?)"); // lỗi ra ĐỎ sạch thay vì treo
+      return g.doc[Math.min(i++, g.doc.length - 1)] ?? null;
+    },
     chot: async (_u, _r, _b, thanh) => {
       nhat.chot.push(thanh);
       return true;
