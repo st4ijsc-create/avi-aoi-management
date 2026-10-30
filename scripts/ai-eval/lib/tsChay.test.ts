@@ -3,7 +3,7 @@
  * cờ biến đổi kiểu (CO_BIEN_DOI_TS) ⇒ ts 0/3 mọi lượt, H lẫn M, là hiện vật công cụ). Thước: lời giải đúng dùng cú
  * pháp chỉ BIẾN ĐỔI mới chạy được (enum, thuộc tính tham số) ⇒ PHẢI ĐẠT; sai / không biên dịch được ⇒ PHẢI TRƯỢT.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -91,4 +91,90 @@ describe("duan.mjs — cờ --experimental-strip-types node đang cài còn nh�
       execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", "0"], { stdio: "pipe" }),
     ).not.toThrow();
   });
+});
+
+// ── rà kiem-dinh d55d30115 (a8 · a3 · a10 · a1/a11) ─────────────────────────────────────────────────────────────────────────
+describe("rà kiem-dinh — các nhánh còn hở", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("(a8) bài `thoatCuong`: lời giải RÒ handle (setInterval) ⇒ vẫn ĐẠT và KHÔNG treo tới trần (--test-force-exit trên nhánh esbuild)", async () => {
+    const ro = "```ts\nexport const giuSong = setInterval(() => {}, 1000);\nexport function cong(a: number, b: number): number { return a + b; }\n```";
+    const t = {
+      id: "T-ts-ro",
+      lang: "ts",
+      thoatCuong: true,
+      tranMs: 20_000,
+      test: "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { cong } from './sol.mjs';\ntest('cong', () => assert.equal(cong(2, 3), 5));",
+    };
+    const t0 = Date.now();
+    const k = await chamBai({ t, text: ro, dir: thuMuc() });
+    expect(k.loi).toBeNull();
+    expect(k.dat).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(12_000);
+  }, 40_000);
+
+  it("(a3) tệp KIỂM mang cú pháp TS (chú thích kiểu, `as`, generic) ⇒ esbuild biến đổi, KHÔNG trượt oan (rủi ro Eval mã Studio)", async () => {
+    const t = {
+      id: "T-ts-kiem-ts",
+      lang: "ts",
+      test: [
+        "import test from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { Kho, Mau } from './sol.ts';",
+        "const k: Kho = new Kho('a', 3) as Kho;",
+        "function dau<T>(xs: T[]): T | undefined { return xs[0]; }",
+        "test('kho', () => { assert.equal(k.nhan() as string, 'a:6'); assert.equal(dau<number>([Mau.Xanh]), 2); });",
+      ].join("\n"),
+    };
+    const k = await chamBai({ t, text: DUNG, dir: thuMuc() });
+    expect(k.loi).toBeNull();
+    expect(k.dat).toBe(true);
+  }, 60_000);
+
+  it("(a10) multipl-e: chương trình trộn `import … from` + `require` ⇒ ĐẠT chỉ khi biến đổi ra CommonJS (esm ⇒ require không tồn tại)", async () => {
+    const prog = [
+      "import { strictEqual } from 'node:assert';",
+      "const assert = require('node:assert');",
+      "enum Mau { Do = 1, Xanh = 2 }",
+      "strictEqual(Mau.Xanh, 2);",
+      "assert.strictEqual(Mau.Do + Mau.Xanh, 3);",
+    ].join("\n");
+    const kq = await chayLo("ts", [{ khoa: "tron", prog }], { goc: thuMuc(), duLieu: thuMuc(), songSong: 1 });
+    expect(kq.get("tron").duoiRa).not.toMatch(/bad option/);
+    expect(kq.get("tron").dat).toBe(true);
+  }, 60_000);
+
+  // (a1/a11) nhánh node CŨ còn cờ: giả bảng cờ ⇒ chứng minh rẽ đúng nhánh (lệnh mang cờ + tệp .ts gốc). Trên node đang cài không
+  //   có cờ (v26) thì chính node trả "bad option: <cờ>" — bằng chứng lệnh ĐÃ mang cờ; node còn cờ ⇒ chạy thật và ĐẠT.
+  const coThat = process.allowedNodeEnvironmentFlags.has(CO_BIEN_DOI_TS);
+  // bảng cờ của node bị ĐÓNG BĂNG (không spy được `has`) ⇒ thay cả bảng qua getter cấu hình được của `process`
+  const giaCo = () => {
+    const bang = new Set<string>([...process.allowedNodeEnvironmentFlags, CO_BIEN_DOI_TS]);
+    vi.spyOn(process, "allowedNodeEnvironmentFlags", "get").mockReturnValue(bang as never);
+  };
+
+  it("(a1) cham.mjs: node CÓ cờ ⇒ nhánh cờ (node --experimental-transform-types --test t.test.ts), KHÔNG qua esbuild", async () => {
+    giaCo();
+    expect(nodeCoBienDoiTs()).toBe(true);
+    const dir = thuMuc();
+    const k = await chamBai({ t: bai("'./sol.ts'"), text: DUNG, dir });
+    expect(fs.existsSync(path.join(dir, "t.test.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "sol.mjs"))).toBe(false); // không có sản phẩm esbuild
+    if (coThat) expect(k.dat).toBe(true);
+    else expect(String(k.loi)).toContain(`bad option: ${CO_BIEN_DOI_TS}`);
+  }, 60_000);
+
+  it("(a11) multipl-e: node CÓ cờ ⇒ nhánh cờ (node <cờ> --no-warnings prog.ts), KHÔNG qua esbuild", async () => {
+    giaCo();
+    const goc = thuMuc();
+    const kq = await chayLo("ts", [{ khoa: "co", prog: "const assert = require('node:assert');\nconst x: number = 1;\nassert.strictEqual(x, 1);" }], {
+      goc,
+      duLieu: thuMuc(),
+      songSong: 1,
+    });
+    expect(fs.existsSync(path.join(goc, "co", "prog.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(goc, "co", "prog.js"))).toBe(false);
+    if (coThat) expect(kq.get("co").dat).toBe(true);
+    else expect(kq.get("co").duoiRa).toContain(`bad option: ${CO_BIEN_DOI_TS}`);
+  }, 60_000);
 });
