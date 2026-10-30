@@ -124,6 +124,7 @@ describe("R1b-2b-2a T2 — Modbus (modbus-serial THẬT): hết hạn giao dịc
     expect(o.outcomes[0]).toMatchObject({ ok: false, status: "timeout" });
     expect(o.outcomes[0].errorText).toMatch(/outcome unknown/);
     expect(o.outcomes[0].errorText).toMatch(/^Timed out — outcome unknown: the write may have been applied on the device$/);
+    expect(String(o.outcomes[0].errorText).match(/outcome unknown/g)).toHaveLength(1); // fix round 1 (M-1)
     expect(o.outcomes[0].readBackValue).toBeNull();
     expect(o.timedOut).toBe(false); // hạn của LỆNH chưa hết — "không rõ" là của TỪNG write
     expect(troi).toBeGreaterThanOrEqual(290);
@@ -200,6 +201,9 @@ describe("R1b-2b-2a T2 — SLMP (socket riêng THẬT): giao dịch quá cfg.tim
     const o = await ghiQuaExecute({ driver: d, timeoutMs: 2000, writes: [{ tagKey: "stop", address: "M100", value: true }] });
     expect(o.outcomes[0]).toMatchObject({ ok: false, status: "timeout" });
     expect(o.outcomes[0].errorText).toMatch(/outcome unknown: the write may have been applied on the device$/);
+    // fix round 1 (M-1) — thông điệp của driver đã mang "outcome unknown" ⇒ không lặp
+    expect(o.outcomes[0].errorText).toBe("slmp request timed out in the driver (transaction timeout after 300ms) — outcome unknown: the write may have been applied on the device");
+    expect(String(o.outcomes[0].errorText).match(/outcome unknown/g)).toHaveLength(1);
   }, 15_000);
 });
 
@@ -255,6 +259,31 @@ describe("R1b-2b-2a T2 — EtherNet/IP (st-ethernet-ip giả, chuỗi lỗi th�
     ]);
     vi.useRealTimers();
     await d2.disconnect();
+
+    // fix round 1 (M-1) — cùng bộ hẹn dự phòng qua đường ghi THẬT (hạn lệnh 10 s > 6500): 'timeout', "outcome unknown" ĐÚNG một lần
+    vi.resetModules();
+    const d3 = await eipVoi(() => new Promise(() => undefined));
+    const { executeOtDeviceWrite: exec3 } = await import("../otDeviceWrite");
+    vi.useFakeTimers();
+    let ex3: ExecutedWrite | null = null;
+    const p3 = exec3({
+      input: { adapterId: 993_001, machineId: null, commandType: "stop", idempotencyKey: `quahan-eip-${Math.random()}`, writes: [{ tagKey: "stop", value: true }] } as any,
+      driver: d3,
+      resolved: [{ write: { tagKey: "stop", value: true }, address: "StopCmd", dataType: "bool" }] as any,
+      driverWrites: [{ tagKey: "stop", address: "StopCmd", value: true, dataType: "bool" as any }],
+      timeoutMs: 10_000,
+      stopTyped: true,
+      bumpStopEpoch: true,
+      ledger: { intentIds: [1], confirmedBy: 1 },
+    }).then((v) => (ex3 = v));
+    await vi.advanceTimersByTimeAsync(HAN_DU_PHONG_GHI_DRIVER_MS);
+    await p3;
+    vi.useRealTimers();
+    expect(ex3!.timedOut).toBe(false);
+    expect(ex3!.outcomes[0]).toMatchObject({ ok: false, status: "timeout" });
+    expect(ex3!.outcomes[0].errorText).toBe("ethernet-ip request timed out in the driver (eip writeTag timeout after 6500ms) — outcome unknown: the write may have been applied on the device");
+    expect(String(ex3!.outcomes[0].errorText).match(/outcome unknown/g)).toHaveLength(1);
+    await d3.disconnect();
   });
 
   it("EIP: thiết bị trả lỗi CIP (đã trả lời) ⇒ không mang ketCucKhongRo ('failed' như cũ)", async () => {

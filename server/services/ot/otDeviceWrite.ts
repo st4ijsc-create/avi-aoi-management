@@ -1376,11 +1376,16 @@ export async function executeOtDeviceWrite(a: {
     if (!ok && wr.ketCucKhongRo != null) {
       // R1b-2b-2a T2 (mục 66) — driver tự hết hạn khi yêu cầu ĐÃ giao cho thư viện / thiết bị: kết cục KHÔNG RÕ của RIÊNG write này ⇒ cùng nhãn
       // `timeout` với T17 / B3 (không đọc lại: chỉ write `acked` được đọc lại), không bao giờ `failed`. Các write khác của lô giữ kết quả riêng.
+      // Fix round 1 (review M-1) — thông điệp của driver ĐÃ mang "outcome unknown" (`LoiQuaHanYeuCauDriver`: SLMP, dự phòng EIP) ⇒ chỉ nối phần
+      // giải thích, cụm "outcome unknown" xuất hiện ĐÚNG một lần trong errorText.
+      const loi = wr.error ?? "driver request timed out";
       return {
         idx: i,
         ok: false,
         status: "timeout",
-        errorText: `${wr.error ?? "driver request timed out"} — outcome unknown: the write may have been applied on the device`,
+        errorText: /outcome unknown/i.test(loi)
+          ? `${loi}: the write may have been applied on the device`
+          : `${loi} — outcome unknown: the write may have been applied on the device`,
         readBackValue: null,
       };
     }

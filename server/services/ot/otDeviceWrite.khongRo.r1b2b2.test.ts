@@ -94,6 +94,7 @@ vi.mock("./otManager", () => ({
 import { dispatch, _resetAdapterCommandQueuesForTests, _stopWatchCountForTests, _sweepStaleWriteRiskForTests } from "./commandDispatcher";
 import { executeOtDeviceWrite, _staleWriteRiskIntentIdsForTests, type ExecutedWrite } from "./otDeviceWrite";
 import { adapterTargetFingerprint } from "./adapterTarget";
+import { batDauDoLag } from "../../testing/doLagBucleSuKien";
 
 const ADAPTER = 10;
 const sau = <T>(ms: number, f: () => T | Promise<T>) => new Promise<T>((res, rej) => setTimeout(() => Promise.resolve().then(f).then(res, rej), ms));
@@ -207,6 +208,15 @@ describe("R1b-2b-2a T2 — write không rõ kết cục THEO TỪNG write ⇒ 't
     expect(r.results[0].error).toBe("x");
   });
 
+  it("fix round 1 (M-1): lỗi driver ĐÃ mang 'outcome unknown' (LoiQuaHanYeuCauDriver) ⇒ cụm này xuất hiện ĐÚNG một lần trong errorText", async () => {
+    const msg = "ethernet-ip request timed out in the driver (eip writeTag timeout after 6500ms) — outcome unknown";
+    D.kichBan = async () => [{ tagKey: "cmd_a", ok: false, error: msg, ketCucKhongRo: "qua_han_driver" }, KHONG_RO("cmd_b")];
+    const ex = await ghi({ tagKeys: ["cmd_a", "cmd_b"], intentIds: [5, 6] });
+    expect(ex.outcomes[0].errorText).toBe(`${msg}: the write may have been applied on the device`);
+    expect(ex.outcomes[1].errorText).toBe("Timed out — outcome unknown: the write may have been applied on the device");
+    for (const o of ex.outcomes) expect(String(o.errorText).match(/outcome unknown/g)).toHaveLength(1);
+  });
+
   it("đối chứng: lô [failed thường] ⇒ 'failed' (không đổi)", async () => {
     D.kichBan = async () => [{ tagKey: "cmd_a", ok: false, error: "Modbus exception 2: Illegal data address (register not supported by device)" }];
     const r = await dispatch(input([{ tagKey: "cmd_a", value: true }]));
@@ -260,8 +270,14 @@ describe("R1b-2b-2a T2 — ân hạn B3: reject / kết quả không rõ TRONG �
     process.env.OT_CMD_SERIALIZE_ENABLED = "true";
   });
 
-  async function quaHanLenhRoi(kichBan: () => Promise<unknown>, intentIds: number[]) {
+  /**
+   * Fix round 1 (review I-1) — cận đồng hồ tường cộng phần máy KHÔNG chạy tiến trình test (`batDauDoLag`, kẹp 200 ms) ⇒ cận ≤ 1100 ms < 1200 ms
+   * (hạn lệnh 200 + ân hạn 1000): đường "hết ân hạn" / đặt lại phiên vẫn KHÔNG thể lọt; tự chặn đồng bộ / chờ thật trong mã vẫn đỏ.
+   */
+  const TRAN_LAG_AN_HAN_MS = 200;
+  async function quaHanLenhRoi(kichBan: () => Promise<unknown>, intentIds: number[]): Promise<{ ms: number; lagMs: number }> {
     D.kichBan = () => sau(600, kichBan); // TRONG ân hạn 1000 ms sau hạn lệnh 200 ms
+    const lag = batDauDoLag();
     const t0 = performance.now();
     const ex = await ghi({ tagKeys: ["cmd_a"], timeoutMs: 200, intentIds });
     expect(ex.timedOut).toBe(true);
@@ -269,28 +285,29 @@ describe("R1b-2b-2a T2 — ân hạn B3: reject / kết quả không rõ TRONG �
     expect(ex.slotHold).toBeDefined();
     expect(_staleWriteRiskIntentIdsForTests(ADAPTER)).toBeNull(); // chưa có gì trước khi lời ghi cũ xong
     await ex.slotHold;
-    return performance.now() - t0;
+    const ms = performance.now() - t0;
+    return { ms, lagMs: await lag.dung(TRAN_LAG_AN_HAN_MS) };
   }
 
   it("driver reject new Error('bad write quality') ở 600 ms ⇒ slotHold xong < 900 ms, rủi ro được ghi, không đặt lại phiên", async () => {
-    const ms = await quaHanLenhRoi(async () => {
+    const { ms, lagMs } = await quaHanLenhRoi(async () => {
       throw new Error("bad write quality");
     }, [81]);
-    expect(ms).toBeLessThan(900);
+    expect(ms, `slotHold sau ${Math.round(ms)} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(900 + lagMs);
     expect(_staleWriteRiskIntentIdsForTests(ADAPTER)).toEqual([81]);
     expect(D.reset.calls).toBe(0);
   });
 
   it("driver resolve [{ok:false, ketCucKhongRo:'qua_han_driver'}] trong ân hạn ⇒ như trên", async () => {
-    const ms = await quaHanLenhRoi(async () => [KHONG_RO("cmd_a")], [82]);
-    expect(ms).toBeLessThan(900);
+    const { ms, lagMs } = await quaHanLenhRoi(async () => [KHONG_RO("cmd_a")], [82]);
+    expect(ms, `slotHold sau ${Math.round(ms)} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(900 + lagMs);
     expect(_staleWriteRiskIntentIdsForTests(ADAPTER)).toEqual([82]);
     expect(D.reset.calls).toBe(0);
   });
 
   it("đối chứng: driver resolve [{ok:true}] trong ân hạn ⇒ KHÔNG rủi ro, không đặt lại phiên", async () => {
-    const ms = await quaHanLenhRoi(async () => [{ tagKey: "cmd_a", ok: true }], [83]);
-    expect(ms).toBeLessThan(900);
+    const { ms, lagMs } = await quaHanLenhRoi(async () => [{ tagKey: "cmd_a", ok: true }], [83]);
+    expect(ms, `slotHold sau ${Math.round(ms)} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(900 + lagMs);
     expect(_staleWriteRiskIntentIdsForTests(ADAPTER)).toBeNull();
     expect(D.reset.calls).toBe(0);
   });
