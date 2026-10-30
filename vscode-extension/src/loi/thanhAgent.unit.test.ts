@@ -19,6 +19,8 @@ describe("thanhAgent", () => {
     expect(nhanModelNgan("ho-so:abc")).toBe("abc");
     expect(nhanModelNgan("chat")).toBe("chat");
     expect(nhanModelNgan("x".repeat(40))).toBe(`${"x".repeat(27)}…`);
+    expect(nhanModelNgan("x".repeat(28))).toBe("x".repeat(28));
+    expect(nhanModelNgan("x".repeat(29))).toBe(`${"x".repeat(27)}…`);
   });
   it("dinhDangThanh: trống ⇒ chỉ tên; đủ số ⇒ model · % · tok/s; ước lượng có «~»; đang chạy có spinner", () => {
     expect(dinhDangThanh(THANH_RONG).text).toBe("$(hubot) Thợ Cả");
