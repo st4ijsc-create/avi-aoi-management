@@ -18,7 +18,7 @@
 import * as vscode from "vscode";
 import { modelChoAgent } from "../loi/chonModel";
 import { tinhTokPerS } from "../loi/thanhAgent";
-import { baoThanhAgent } from "./thanhAgent";
+import { baoChoDuyet, baoThanhAgent } from "./thanhAgent";
 import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import {
@@ -489,6 +489,7 @@ export class PhienAgent {
     }
     return new Promise<QuyetDinhDuyet>((res) => {
       this.choDuyet.set(yc.id, res);
+      baoChoDuyet(this, this.choDuyet.size);
       this.yeuCauDuyet.set(yc.id, yc);
       this.pt.gui({
         loai: "ag_the_duyet",
@@ -520,6 +521,7 @@ export class PhienAgent {
     const res = this.choDuyet.get(id);
     if (!res) return;
     this.choDuyet.delete(id);
+    baoChoDuyet(this, this.choDuyet.size);
     this.yeuCauDuyet.delete(id);
     this.pt.khoDeXuat.quen(`ag-${id}`);
     this.pt.gui({ loai: "ag_an_the_duyet", id, ketQua: qd.duyet ? "duyet" : "bac" });

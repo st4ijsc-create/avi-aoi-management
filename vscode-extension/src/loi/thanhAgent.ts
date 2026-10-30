@@ -16,6 +16,8 @@ export interface TrangThaiThanh {
   uocLuong: boolean;
   tokPerS?: number;
   dangChay: boolean;
+  /** (mục 2) số thẻ duyệt đang CHỜ người dùng, cộng mọi khung đang mở. */
+  soChoDuyet?: number;
 }
 
 export const THANH_RONG: TrangThaiThanh = { model: "", uocLuong: false, dangChay: false };
@@ -44,11 +46,14 @@ export function dinhDangThanh(t: TrangThaiThanh): { text: string; tooltip: strin
   const coCtx = typeof t.ctxPhanTram === "number" && Number.isFinite(t.ctxPhanTram);
   if (coCtx) phan.push(`${t.uocLuong ? "~" : ""}${Math.max(0, Math.round(t.ctxPhanTram as number))}% ngữ cảnh`);
   if (t.tokPerS !== undefined) phan.push(`${t.tokPerS} tok/s`);
-  const canhBao = coCtx && (t.ctxPhanTram as number) >= TRAN_CANH_BAO_NGU_CANH;
+  const choDuyet = Number.isFinite(t.soChoDuyet) ? Math.max(0, Math.floor(t.soChoDuyet as number)) : 0;
+  if (choDuyet > 0) phan.push(`${choDuyet} chờ duyệt`);
+  const canhBao = (coCtx && (t.ctxPhanTram as number) >= TRAN_CANH_BAO_NGU_CANH) || choDuyet > 0;
   const dong = [
     t.model ? `Model: ${t.model}` : "Model: theo cấu hình",
     coCtx ? `Ngữ cảnh: ${t.ctxPhanTram}% ngân sách${t.uocLuong ? " (ước lượng, chưa có số thật từ máy chủ)" : ""}${canhBao ? " — sắp đầy, nên mở chat mới" : ""}` : "Ngữ cảnh: chưa có lượt nào",
     t.tokPerS !== undefined ? `Tốc độ hiệu dụng: ${t.tokPerS} token/giây (gồm thời gian chờ khe model)` : "Tốc độ: chưa đo",
+    choDuyet > 0 ? `${choDuyet} thẻ duyệt đang chờ bạn — agent dừng cho tới khi bạn quyết.` : "Không có thẻ duyệt nào đang chờ.",
     t.dangChay ? "Đang chạy một lượt…" : "Bấm để mở khung chat.",
   ];
   return { text: `${t.dangChay ? "$(sync~spin) " : "$(hubot) "}${phan.join(" · ")}`, tooltip: dong.join("\n"), canhBao };
@@ -57,4 +62,18 @@ export function dinhDangThanh(t: TrangThaiThanh): { text: string; tooltip: strin
 /** Bộ giảm: một gói cập nhật từng phần vào trạng thái. */
 export function capNhatThanh(cu: TrangThaiThanh, c: Partial<TrangThaiThanh>): TrangThaiThanh {
   return { ...cu, ...c };
+}
+
+/** Huy hiệu số trên icon view: 0/hỏng ⇒ undefined (xoá huy hiệu). */
+export function huyHieuDuyet(n: number): { value: number; tooltip: string } | undefined {
+  if (!Number.isFinite(n) || n < 1) return undefined;
+  const v = Math.floor(n);
+  return { value: v, tooltip: `${v} thẻ duyệt đang chờ bạn` };
+}
+
+/** Tổng số chờ duyệt của nhiều khung (mỗi khung báo số tuyệt đối của riêng nó). */
+export function tongChoDuyet(theoNguon: ReadonlyMap<unknown, number>): number {
+  let t = 0;
+  for (const n of theoNguon.values()) if (Number.isFinite(n) && n > 0) t += Math.floor(n);
+  return t;
 }

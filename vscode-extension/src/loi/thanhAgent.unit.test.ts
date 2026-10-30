@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { THANH_RONG, TRAN_CANH_BAO_NGU_CANH, capNhatThanh, dinhDangThanh, nhanModelNgan, tinhTokPerS } from "./thanhAgent";
+import { THANH_RONG, TRAN_CANH_BAO_NGU_CANH, capNhatThanh, dinhDangThanh, huyHieuDuyet, nhanModelNgan, tinhTokPerS, tongChoDuyet } from "./thanhAgent";
 
 describe("thanhAgent", () => {
   it("tinhTokPerS: làm tròn; ra<=0, quá ngắn (<300ms) hoặc số hỏng ⇒ undefined", () => {
@@ -44,5 +44,31 @@ describe("thanhAgent", () => {
     expect(pa).toContain("baoThanhAgent({ ctxPhanTram: e.ctxPhanTram, uocLuong: false, tokPerS: tinhTokPerS(e.ra, Date.now() - this.batDauGoiMs) });");
     expect(pa).toContain("baoThanhAgent({ dangChay: false });");
     expect(readFileSync(join(__dirname, "..", "extension.ts"), "utf8")).toContain("dangKyThanhAgent(context);");
+  });
+});
+
+describe("mục 2 — huy hiệu chờ duyệt", () => {
+  it("huyHieuDuyet: <1 / hỏng ⇒ undefined; số nguyên + tooltip", () => {
+    expect(huyHieuDuyet(0)).toBeUndefined();
+    expect(huyHieuDuyet(Number.NaN)).toBeUndefined();
+    expect(huyHieuDuyet(-2)).toBeUndefined();
+    expect(huyHieuDuyet(1)).toEqual({ value: 1, tooltip: "1 thẻ duyệt đang chờ bạn" });
+    expect(huyHieuDuyet(2.9)!.value).toBe(2);
+  });
+  it("tongChoDuyet: cộng các khung, bỏ số âm/NaN", () => {
+    expect(tongChoDuyet(new Map<unknown, number>([[{}, 2], [{}, 3], [{}, -4], [{}, Number.NaN]]))).toBe(5);
+    expect(tongChoDuyet(new Map())).toBe(0);
+  });
+  it("dinhDangThanh: có thẻ chờ ⇒ chữ «N chờ duyệt» + cảnh báo + tooltip; không có ⇒ không chữ", () => {
+    const d = dinhDangThanh({ ...THANH_RONG, soChoDuyet: 3 });
+    expect(d.text).toBe("$(hubot) Thợ Cả · 3 chờ duyệt");
+    expect(d.canhBao).toBe(true);
+    expect(d.tooltip).toContain("3 thẻ duyệt đang chờ bạn");
+    expect(dinhDangThanh({ ...THANH_RONG, soChoDuyet: 0 })).toMatchObject({ text: "$(hubot) Thợ Cả", canhBao: false });
+  });
+  it("ghim văn bản: PhienAgent báo số chờ khi thêm VÀ khi quyết; view thanh bên nhận huy hiệu", () => {
+    const pa = readFileSync(join(__dirname, "..", "ui", "phienAgent.ts"), "utf8");
+    expect(pa.match(/baoChoDuyet\(this, this\.choDuyet\.size\);/g)).toHaveLength(2);
+    expect(readFileSync(join(__dirname, "..", "ui", "bangChatView.ts"), "utf8")).toContain("ganViewHuyHieu(webviewView);");
   });
 });
