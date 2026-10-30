@@ -153,7 +153,7 @@ describe("rà kiem-dinh — các nhánh còn hở", () => {
     vi.spyOn(process, "allowedNodeEnvironmentFlags", "get").mockReturnValue(bang as never);
   };
 
-  it("(a1) cham.mjs: node CÓ cờ ⇒ nhánh cờ (node --experimental-transform-types --test t.test.ts), KHÔNG qua esbuild", async () => {
+  it("(a1) cham.mjs: node CÓ cờ ⇒ nhánh cờ (node <cờ> --test t.test.ts), KHÔNG qua esbuild", async () => {
     giaCo();
     expect(nodeCoBienDoiTs()).toBe(true);
     const dir = thuMuc();
