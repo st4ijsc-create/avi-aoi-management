@@ -854,7 +854,7 @@ describe("webview — 'khoi_phuc_hoi_thoai' vẽ lại ĐÚNG bong bóng đã c�
     expect(w.nut("hoi-thoai").con.find((x) => x.id === "rong-lan-dau")?.hidden).toBe(true);
     // Mỗi bong bóng (`d` trong `themLuot`) có ĐÚNG hai con: nhãn (`t`) rồi tới nội dung (`c`).
     expect(bongBongThat[0]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi từ phiên trước"]);
-    expect(bongBongThat[1]!.con.map((x) => x.textContent)).toEqual(["AI Local", "Trả lời từ phiên trước"]);
+    expect(bongBongThat[1]!.con.map((x) => x.textContent)).toEqual(["Thợ Cả", "Trả lời từ phiên trước"]);
     expect(bongBongThat[2]!.con.map((x) => x.textContent)).toEqual(["Bạn", "Câu hỏi thứ hai"]);
   });
 
@@ -880,7 +880,7 @@ describe("webview — 'khoi_phuc_hoi_thoai' vẽ lại ĐÚNG bong bóng đã c�
 describe("webview — ĐỢT F / TASK 3 / B3: tin 'chat_moi' xoá SẠCH khung", () => {
   it("★★★ có bong bóng + thẻ duyệt đang mở + nút Dừng đang hiện + câu gõ dở ⇒ 'chat_moi' xoá HẾT", () => {
     const w = chayWebview();
-    // Dựng một "phiên đang sống": một lượt hỏi đã gửi (2 bong bóng: Bạn + AI Local rỗng), nút Dừng
+    // Dựng một "phiên đang sống": một lượt hỏi đã gửi (2 bong bóng: Bạn + Thợ Cả rỗng), nút Dừng
     // đang hiện (gui() bật nó), rồi một thẻ duyệt đang mở.
     w.nut("o-nhap").value = "câu hỏi cũ";
     w.nut("nut-gui").bam();
@@ -961,7 +961,7 @@ describe("webview — ĐỢT F / TASK 3 / B4: 'khoi_phuc_hoi_thoai' THAY THẾ n
     expect(bongBong).toHaveLength(2);
     expect(bongBong.map((b) => b.con.map((x) => x.textContent))).toEqual([
       ["Bạn", "Câu hỏi của phiên B"],
-      ["AI Local", "Trả lời của phiên B"],
+      ["Thợ Cả", "Trả lời của phiên B"],
     ]);
     // Không còn dấu vết nào của phiên A trong khung.
     expect(bongBong.some((b) => b.con.some((x) => x.textContent === "Câu hỏi của phiên A"))).toBe(false);
@@ -1359,7 +1359,7 @@ describe("webview — phân biệt câu hỏi/trả lời bằng VAI (class + nh
     // Nhãn (con đầu của mỗi bong bóng) vẫn đúng chữ cũ — B1 đổi CƠ CHẾ truyền vai, KHÔNG đổi chữ
     // người dùng thấy.
     expect(bongBong[0]!.con[0]!.textContent).toBe("Bạn");
-    expect(bongBong[1]!.con[0]!.textContent).toBe("AI Local");
+    expect(bongBong[1]!.con[0]!.textContent).toBe("Thợ Cả");
   });
 
   it("★★★ B5 (streaming) — token đổ về từng mảnh vẫn nối vào ĐÚNG bong bóng AI, lớp KHÔNG đổi", () => {
@@ -1433,7 +1433,7 @@ describe("webview — phân biệt câu hỏi/trả lời bằng VAI (class + nh
  */
 describe("webview — ĐỢT I / TASK I-1: chỉ báo ĐANG CHẠY trong bong bóng AI", () => {
   /** Bong bóng AI của lượt vừa gửi — `con[1]` là `c` (nội dung), `con[1].con[1]` là chỉ báo (sau
-   *  nhãn "AI Local" ở `con[0]`, chỉ báo là con THỨ HAI của `c`, đứng sau `t`... — thực ra chỉ báo
+   *  nhãn "Thợ Cả" ở `con[0]`, chỉ báo là con THỨ HAI của `c`, đứng sau `t`... — thực ra chỉ báo
    *  là con của `c` chứ không phải của `d`; xem `khoiTraLoi.appendChild(choAiHienTai)` trong
    *  htmlBang.ts). `c` chính là `bongBongAi.con[1]` (d.appendChild(t) rồi d.appendChild(c)). */
   function choAiCuaBongBongAi(w: ReturnType<typeof chayWebview>) {

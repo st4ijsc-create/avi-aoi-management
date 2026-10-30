@@ -22,6 +22,7 @@
 import * as vscode from "vscode";
 import { BangChat } from "./bangChat";
 import type { KhoDeXuat } from "./diffDeXuat";
+import { ganViewHuyHieu } from "./thanhAgent";
 
 export const MA_VIEW_THANH_BEN = "aviAiLocal.bangChat";
 /** ★★★ ĐỢT F / TASK 4 — view id của bản "CHÍNH" (thanh bên phụ / secondarySidebar). Phải KHỚP
@@ -40,5 +41,6 @@ export class BangChatViewProvider implements vscode.WebviewViewProvider {
     // chạy (webview trống, không lỗi nào báo ra ngoài).
     webviewView.webview.options = { enableScripts: true };
     BangChat.choView(webviewView, this.context, this.khoDeXuat);
+    ganViewHuyHieu(webviewView); // (Đợt 11.4) huy hiệu số thẻ duyệt đang chờ
   }
 }

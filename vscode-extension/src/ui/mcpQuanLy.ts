@@ -39,7 +39,7 @@ function nhanTrangThai(pt: PhuThuocDieuPhoiMcp, cfg: CauHinhMcpServer): string {
 
 async function chayLamMoi(pt: PhuThuocDieuPhoiMcp): Promise<void> {
   const ds = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "AI Local: đang kết nối MCP server ngoài…" },
+    { location: vscode.ProgressLocation.Notification, title: "Thợ Cả: đang kết nối MCP server ngoài…" },
     () => layDanhSachToolMcpNgoai(pt),
   );
   datDsToolMcpDangCoSan(ds);
@@ -50,7 +50,7 @@ async function chayLamMoi(pt: PhuThuocDieuPhoiMcp): Promise<void> {
     .map((t) => `${t.server}: ${t.loi}`)
     .join("\n");
   const chonSauKhiBao = await vscode.window.showInformationMessage(
-    `AI Local: đã làm mới — ${soTool} tool sẵn sàng cho vòng tác nhân` +
+    `Thợ Cả: đã làm mới — ${soTool} tool sẵn sàng cho vòng tác nhân` +
       (soLoi > 0 ? `, ${soLoi} server lỗi.` : "."),
     ...(soLoi > 0 ? (["Xem lỗi"] as const) : []),
   );
@@ -60,7 +60,7 @@ async function chayLamMoi(pt: PhuThuocDieuPhoiMcp): Promise<void> {
 async function chayBatTat(pt: PhuThuocDieuPhoiMcp, cfg: CauHinhMcpServer): Promise<void> {
   const dangTat = biTat(pt.docTrangThai(), cfg.ten);
   await datBatTatMcpNgoai(pt, cfg.ten, !dangTat);
-  void vscode.window.showInformationMessage(`AI Local: server "${cfg.ten}" đã ${dangTat ? "BẬT" : "TẮT"}.`);
+  void vscode.window.showInformationMessage(`Thợ Cả: server "${cfg.ten}" đã ${dangTat ? "BẬT" : "TẮT"}.`);
 }
 
 /**
@@ -71,7 +71,7 @@ export async function chayQuanLyMcpNgoai(context: vscode.ExtensionContext): Prom
   const cauHinh = pt.docCauHinh();
   if (cauHinh.length === 0) {
     void vscode.window.showInformationMessage(
-      "AI Local: chưa có MCP server ngoài nào trong cấu hình máy — thêm vào " +
+      "Thợ Cả: chưa có MCP server ngoài nào trong cấu hình máy — thêm vào " +
         '"aviAiLocal.mcpServers" (User Settings, phạm vi Máy) theo khuôn mcpServers quen thuộc: ' +
         '{ "tên-server": { "command": "npx", "args": ["-y", "..."] } }.',
     );
@@ -103,7 +103,7 @@ export async function chayQuanLyMcpNgoai(context: vscode.ExtensionContext): Prom
   ];
 
   const chon = await vscode.window.showQuickPick(items, {
-    placeHolder: "AI Local — MCP server ngoài: chọn một server để bật/tắt, hoặc làm mới danh sách tool",
+    placeHolder: "Thợ Cả — MCP server ngoài: chọn một server để bật/tắt, hoặc làm mới danh sách tool",
   });
   if (!chon) return;
 
