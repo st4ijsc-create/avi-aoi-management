@@ -35,6 +35,8 @@ const NHOM_GHI: Nhom[] = [
   ["annotationRouters.ts", ["annotationTemplateRouter.delete"], T(R + "phamViGhiDoW17a.db.test.ts", "annotationTemplate.delete")],
   // ── Đợt 11.8 (2026-10-30): định nghĩa agent đặt tên + phiên hợp nhất — sở hữu theo NGƯỜI DÙNG ──
   ["aiAgentRouter.ts", ["aiAgentRouter.xacNhanDinhNghia", "aiAgentRouter.goTinCayDinhNghia"], T("server/services/ai/agent/thuTucDinhNghiaAgent.test.ts", "xác nhận ghi cho CHÍNH người gọi")],
+  // ── Đợt 11.3-C (2026-10-31): kế hoạch của lượt agent (ai_agent_runs.keHoach*) — sở hữu theo NGƯỜI DÙNG ──
+  ["aiAgentRouter.ts", ["aiAgentRouter.duyetKeHoach"], T("server/db/aiAgentKeHoach.db.test.ts", "phạm vi chủ: người khác không nộp/đọc được lượt của A")],
   ["aiPhienRouter.ts", ["aiPhienRouter.tao", "aiPhienRouter.themLuot", "aiPhienRouter.doiTen", "aiPhienRouter.nhanBan", "aiPhienRouter.xoa", "aiPhienRouter.nopTomTat"], T(R + "aiPhien.db.test.ts", "A tạo ⇒ B không thấy ở danh sách")],
   ["aiAgentRouter.ts", ["aiAgentRouter.approvePlan", "aiAgentRouter.confirmStep", "aiAgentRouter.cancelSession"], T(R + "phamViGhiDoW17a.db.test.ts", "aiAgent: B approvePlan")],
   ["reportBuilderRouter.ts", ["reportBuilderRouter.duplicate"], T(R + "phamViGhiDoW14.db.test.ts", "reportBuilder.duplicate báo cáo RIÊNG của người khác")],
