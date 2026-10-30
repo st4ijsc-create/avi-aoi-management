@@ -988,7 +988,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-26 · scada-master GỘP main a03700211 vào feat/scada-r1b2b — ĐO trên cây gộp: main {A 35, B 8, C 453, D 1212, S 717, tong 2425} + nhánh S +1 (`scadaCommands.mayDungKhanCap`) ⇒ S 718, tong 2426.
 // 2026-10-27 Đợt 10.4 (do-model): aiKiemDinh.chay (D, nguonKiemDinhTrongPhamVi) + aiKiemDinh.xemTruoc (S) ⇒ D 1213, S 718, tong 2427.
 // Đợt 11.8 (2026-10-30): aiAgent.dinhNghiaDanhSach (query, ai_agent_def_trust theo userId ⇒ C) + xacNhanDinhNghia / goTinCayDinhNghia (mutation, OWNER ⇒ D) ⇒ C 454 · D 1215 · tong 2431.
-const GHIM = { A: 35, B: 8, C: 454, D: 1215, S: 719, tong: 2431 } as const;
+// Đợt 11.8 T7 (2026-10-30): aiPhien.danhSach + aiPhien.mo (query, ai_coding_sessions theo userId ⇒ C) + 6 mutation (OWNER ⇒ D) ⇒ C 456 · D 1221 · tong 2439.
+const GHIM = { A: 35, B: 8, C: 456, D: 1221, S: 719, tong: 2439 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
