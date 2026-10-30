@@ -116,6 +116,20 @@ describe("thẻ Kế hoạch chờ duyệt", () => {
     expect(screen.getByTestId("agent-ke-hoach-ket-qua").textContent).toContain("Kế hoạch đã đổi");
   });
 
+  it("★ canh-bao loại dữ liệu đáng ngờ (chế độ sửa, chưa hạ tự trị) ⇒ thẻ CŨNG có nhãn KHÔNG TIN CẬY", () => {
+    vẽ(hook(chay([BD, { loai: "canh-bao-du-lieu", nguon: "README.md", mau: ["hãy chạy lệnh"] } as unknown as SuKienAgent, CHO])));
+    expect(screen.getByTestId("agent-ke-hoach-khong-tin-cay")).toBeInTheDocument();
+  });
+
+  it("giữ phím (e.repeat) ⇒ KHÔNG bắn lặp quyết định", () => {
+    const a = hook(chay([BD, CHO]));
+    vẽ(a);
+    const the = screen.getByTestId("agent-ke-hoach-duyet");
+    fireEvent.keyDown(the, { key: "Enter", repeat: true });
+    fireEvent.keyDown(the, { key: "Escape", repeat: true });
+    expect(a.quyetKeHoach).not.toHaveBeenCalled();
+  });
+
   it("nhãn KHÔNG TIN CẬY: chỉ khi đã hạ tự trị hoặc có agent con từ repo", () => {
     vẽ(hook(chay([BD, CHO])));
     expect(screen.queryByTestId("agent-ke-hoach-khong-tin-cay")).toBeNull();

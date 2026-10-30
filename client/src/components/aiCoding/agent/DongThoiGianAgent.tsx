@@ -655,7 +655,8 @@ function TheKeHoachChoDuyet({ m, agent, khongTinCay }: { m: TheKeHoachMuc; agent
       tabIndex={cho ? 0 : -1}
       aria-label={t("repoWs.agent.keHoachDuyet.tieuDe", "Kế hoạch chờ duyệt")}
       onKeyDown={(e) => {
-        if (!cho || dangGui || e.target !== e.currentTarget) return;
+        // `e.repeat`: giữ phím Enter/Esc không được bắn lặp (mỗi lần lặp là một lượt gửi với thẻ cũ ⇒ tiếng ồn lỗi DA_QUYET).
+        if (!cho || dangGui || e.repeat || e.target !== e.currentTarget) return;
         if (e.key === "Enter") {
           e.preventDefault();
           void agent.quyetKeHoach(m, "duyet");
@@ -868,7 +869,7 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
           case "duyet":
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "ke-hoach-duyet":
-            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => x.kieu === "con" && x.nguon === "tuRepo")} />;
+            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => x.kieu === "canh-bao" || (x.kieu === "con" && x.nguon === "tuRepo"))} />;
           case "con":
             return <KhoiAgentCon key={`c-${m.runIdCon}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "nho":

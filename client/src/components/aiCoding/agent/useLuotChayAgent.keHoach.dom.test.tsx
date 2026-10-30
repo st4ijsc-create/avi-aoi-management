@@ -121,7 +121,57 @@ describe("useLuotChayAgent — quyetKeHoach", () => {
     expect(the(r)[0]!.trangThai).toBe("dang-gui");
   });
 
-  it("thẻ không ở 'cho' ⇒ không gửi gì; lamMoiKeHoach lỗi/ném ⇒ im lặng, thẻ giữ nguyên", async () => {
+  it("★ CONFLICT rồi keHoachDangCho NÉM (mất mạng) ⇒ thẻ vẫn da-doi, KHÔNG kẹt dang-gui (nút không khoá mãi)", async () => {
+    h.duyetKeHoach.mockResolvedValue({ ok: false, ma: "CONFLICT", trangThai: null, luc: null });
+    h.keHoachDangCho.mockRejectedValue(new Error("mạng"));
+    const r = await dung();
+    await act(async () => {
+      await r.current.quyetKeHoach(the(r)[0]!, "duyet");
+    });
+    expect(the(r)[0]!.trangThai).toBe("da-doi");
+  });
+
+  it("★ thẻ đang dang-gui (hoặc đã quyết) ⇒ quyetKeHoach KHÔNG gọi mạng (giữ phím không gửi lặp)", async () => {
+    let xong!: (v: unknown) => void;
+    h.duyetKeHoach.mockReturnValue(new Promise((ok) => (xong = ok)));
+    const r = await dung();
+    const cu = the(r)[0]!;
+    let p!: Promise<void>;
+    act(() => {
+      p = r.current.quyetKeHoach(cu, "duyet");
+    });
+    expect(the(r)[0]!.trangThai).toBe("dang-gui");
+    await act(async () => {
+      await r.current.quyetKeHoach(the(r)[0]!, "duyet");
+    });
+    expect(h.duyetKeHoach).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      xong({ ok: true, ma: null, trangThai: "duyet", luc: null });
+      await p;
+    });
+  });
+
+  it("★ đổi lượt giữa lúc hỏi sổ ⇒ kết quả muộn KHÔNG áp lên trạng thái mới", async () => {
+    h.suKien = [{ loai: "bat-dau", runId: "r1", cheDo: "sua" }, { loai: "ke-hoach-cho-duyet", viec: VIEC, bam: B1 }, { loai: "xong", lyDo: "hoan-thanh" }] as SuKienAgent[];
+    const { result } = renderHook(() => useLuotChayAgent({ projectId: "p1" }));
+    await act(async () => {
+      await result.current.gui("làm", "sua");
+    });
+    let giai!: (v: unknown) => void;
+    h.keHoachDangCho.mockReturnValue(new Promise((ok) => (giai = ok)));
+    let p!: Promise<void>;
+    act(() => {
+      p = result.current.lamMoiKeHoach();
+    });
+    act(() => result.current.datLai());
+    await act(async () => {
+      giai({ ok: true, ma: null, bam: B2, trangThai: "cho", viec: VIEC });
+      await p;
+    });
+    expect(result.current.trangThai.dongThoiGian.filter((m) => m.kieu === "ke-hoach-duyet")).toHaveLength(0);
+  });
+
+  it("thẻ không ở cho ⇒ không gửi gì; lamMoiKeHoach lỗi/ném ⇒ im lặng, thẻ giữ nguyên", async () => {
     const r = await dung();
     h.keHoachDangCho.mockRejectedValue(new Error("mạng"));
     await act(async () => {
