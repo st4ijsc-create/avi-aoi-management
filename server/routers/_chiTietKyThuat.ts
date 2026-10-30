@@ -51,7 +51,7 @@ export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABL
  * Viết TƯỜNG MINH vì không có hằng runtime chung (mã dispatcher là literal ở điểm gọi; `MaTuChoiYeuCau` / `MaCongKenh` chỉ là KIỂU; tệp nguồn
  * thuộc 2a / client cấm sửa). `server/routers/maLoiDaBietCensus.test.ts` SUY tập nguồn bằng AST lúc test (reason dispatcher, union mã, hằng `MA_*`,
  * reasonCode của lenhHmi, status viết hoa, `CONG_BIET` client, `MA_LOI_DU_PHONG`) và ĐỎ (nêu tên) khi một mã nguồn chưa có ở đây.
- * Đo 2026-10-30: 76 mã. + `OT_MC_TAM_KHOA` (R1b-2b-2a T3B-0: tiền tố errorText của driver MC khi ghi tạm khoá — hằng ở mitsubishiMcDriver.ts, ngoài tập census).
+ * Đo 2026-10-30: 76 mã. + `OT_MC_TAM_KHOA` (R1b-2b-2a T3B-0: tiền tố errorText của driver MC khi ghi tạm khoá — hằng ở mitsubishiMcDriver.ts; từ fix round 1 của T3B-0 tệp driver MC NẰM trong nguồn suy của census).
  */
 export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
