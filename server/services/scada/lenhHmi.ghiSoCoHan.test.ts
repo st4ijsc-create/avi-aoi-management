@@ -6,7 +6,7 @@
  * `ghiLoiChot`).
  * Fix round 1:
  *   · I1 — trần `TRAN_GHI_SO_TREO_STOP_HMI` lượt bỏ rơi còn treo: đầy ⇒ thunk KHÔNG được gọi, log `<nhan>_bo_qua_day` + nội dung; một lượt
- *     xong ⇒ có chỗ lại. Đột biến bắt buộc: bỏ kiểm trần ⇒ ĐỎ.
+ *     xong ⇒ có chỗ lại. Đột biến bắt buộc: bỏ kiểm trần ⇒ ĐỎ. R1b-2b-2a T1 fix round 1: đầy ⇒ XẾP HÀNG (`<nhan>_xep_hang`, hàng chờ có trần — `ghiTreoCoTran.ts`), không còn `_bo_qua_day`.
  *   · M1 — đồng hồ GIẢ (chỉ setTimeout/clearTimeout/Date; setImmediate thật để Node kịp phát unhandledRejection): thời gian tất định,
  *     không còn cận trên đồng hồ tường.
  *   · M5 — xong muộn ⇒ một dòng info `<nhan>_muon_xong`.
@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../../logger";
 import { ghiSoCoHan, HAN_GHI_SO_STOP_HMI_MS, soGhiSoTreoStopHmi, TRAN_GHI_SO_TREO_STOP_HMI } from "./lenhHmi";
+import { _datLaiGhiTreoChoTest } from "../ot/ghiTreoCoTran";
 
 /** vài vòng sự kiện THẬT (setImmediate không bị giả) — microtask + unhandledRejection của Node kịp chạy */
 const nhuong = async (n = 3) => {
@@ -37,6 +38,7 @@ let infoLog: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  _datLaiGhiTreoChoTest(); // R1b-2b-2a T1 fix round 1 — bộ đếm + hàng chờ của tiến trình sạch mỗi ca
   khongXuLy = [];
   process.on("unhandledRejection", nghe);
   loiLog = vi.spyOn(logger, "error").mockImplementation(() => undefined as never);
@@ -141,7 +143,8 @@ describe("R1b-2b-1 T9 — ghiSoCoHan", () => {
 });
 
 describe("★ R1b-2b-1 T9 fix round 1 (I1) — trần lượt ghi sổ treo", () => {
-  it("đủ trần lượt bỏ rơi còn treo ⇒ thunk kế KHÔNG được gọi, log `_bo_qua_day` + nội dung dòng, trả NGAY; một lượt xong ⇒ thunk kế được gọi lại", async () => {
+  it("đủ trần lượt bỏ rơi còn treo ⇒ thunk kế KHÔNG được gọi NGAY, XẾP HÀNG (R1b-2b-2a T1 fix round 1: thay `_bo_qua_day`), trả NGAY; một lượt xong ⇒ thunk xếp hàng được gọi (daXepHang), rồi thunk kế", async () => {
+    const canhLog = vi.spyOn(logger, "warn").mockImplementation(() => undefined as never);
     const treo = Array.from({ length: TRAN_GHI_SO_TREO_STOP_HMI }, () => hoan());
     const goi: number[] = [];
     // TRAN lượt treo, mỗi lượt quá hạn ⇒ bỏ rơi (đếm treo tăng dần)
@@ -167,23 +170,26 @@ describe("★ R1b-2b-1 T9 fix round 1 (I1) — trần lượt ghi sổ treo", ()
     await nhuong();
     expect(o).toEqual({ xong: true, luc: 0 });
     expect(thunkDay).not.toHaveBeenCalled();
-    const boQua = nhan(loiLog).filter((x) => x.cho === "attempts_hmi_stop_chua_ghim_bo_qua_day");
-    expect(boQua).toHaveLength(1);
-    expect(boQua[0].noiDung).toEqual(noiDung);
+    expect(nhan(canhLog).filter((x) => x.cho === "attempts_hmi_stop_chua_ghim_xep_hang")).toHaveLength(1);
+    expect(nhan(loiLog).filter((x) => /_bo_/.test(x.cho ?? ""))).toEqual([]);
     expect(soGhiSoTreoStopHmi()).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
 
-    // một lượt treo xong (muộn) ⇒ có chỗ ⇒ thunk kế ĐƯỢC gọi
+    // một lượt treo xong (muộn) ⇒ có chỗ ⇒ thunk XẾP HÀNG được phát (giữ thứ tự), thunk kế phát ngay khi còn chỗ
     treo[0].giai();
     await nhuong();
-    expect(soGhiSoTreoStopHmi()).toBe(TRAN_GHI_SO_TREO_STOP_HMI - 1);
+    expect(thunkDay).toHaveBeenCalledTimes(1);
+    expect((thunkDay.mock.calls[0] as unknown[])[0]).toMatchObject({ daXepHang: true });
+    expect(soGhiSoTreoStopHmi()).toBe(TRAN_GHI_SO_TREO_STOP_HMI); // thunkDay treo mãi giữ chỗ vừa trống
+    treo[1].giai();
+    await nhuong();
     const thunkSau = vi.fn(async () => undefined);
     await ghiSoCoHan(thunkSau, "attempts_hmi_stop", "sau");
     expect(thunkSau).toHaveBeenCalledTimes(1);
 
-    // dọn: mọi lượt treo xong ⇒ đếm về 0 (trạng thái mô-đun sạch cho ca khác)
-    for (const t of treo.slice(1)) t.giai();
+    // dọn: mọi lượt treo (trừ thunkDay — treo mãi) xong ⇒ đếm còn đúng 1
+    for (const t of treo.slice(2)) t.giai();
     await nhuong();
-    expect(soGhiSoTreoStopHmi()).toBe(0);
+    expect(soGhiSoTreoStopHmi()).toBe(1);
   });
 
   it("DB nhanh không bao giờ bị bỏ qua: 3 × TRAN lượt xong trong hạn liên tiếp ⇒ mọi thunk được gọi, 0 log", async () => {

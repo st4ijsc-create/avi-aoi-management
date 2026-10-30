@@ -1209,12 +1209,13 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
     }, 30_000);
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    it("L2 (T9 fix round, I1) — CHỈ bảng attempts chậm + bấm STOP TRẦN+4 lần ⇒ lượt ghi sổ treo ≤ TRẦN (8) (Postgres xác nhận), 4 lượt bỏ qua có nội dung; máy KHÁC vẫn acked_verified < 1,7 s", async () => {
+    it("L2 (T9 fix round, I1) — CHỈ bảng attempts chậm + bấm STOP TRẦN+4 lần ⇒ lượt ghi sổ treo ≤ TRẦN (8) (Postgres xác nhận), 4 lượt XẾP HÀNG (R1b-2b-2a T1 fix round 1, thay 'bỏ qua'); máy KHÁC vẫn acked_verified < 1,7 s", async () => {
       const CAN = 1_700;
       expect(TRAN_GHI_SO_TREO_STOP_HMI).toBe(8);
       expect(resolvePoolMax()).toBeGreaterThanOrEqual(TRAN_GHI_SO_TREO_STOP_HMI + 3);
       await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 10_000, interval: 50 });
       loiLog = vi.spyOn(logger, "error");
+      const canhLog = vi.spyOn(logger, "warn");
       giuThu = await moGiuKhoa(H.khoaThu[0], H.khoaThu[1], 0, 60_000);
       H.chamThu = true;
       const SO_BAM = TRAN_GHI_SO_TREO_STOP_HMI + 4;
@@ -1229,11 +1230,11 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
       await choDuChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1], TRAN_GHI_SO_TREO_STOP_HMI, "lượt treo chưa tới Postgres");
       await cho(200);
       expect(await demChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1])).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
-      const boQua = (loiLog.mock.calls as unknown[][])
-        .map((c) => c[0] as { cho?: string; noiDung?: Record<string, unknown> })
-        .filter((o) => o?.cho === "attempts_hmi_stop_bo_qua_day");
-      expect(boQua).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
-      expect(boQua[0].noiDung).toMatchObject({ bang: "scada_command_attempts", adapterId: AD.G, outcome: "dispatched" });
+      // R1b-2b-2a T1 fix round 1 — đầy trần ⇒ XẾP HÀNG (hàng chờ có trần, xả dưới cùng trần), không bỏ
+      const xepHang = (canhLog.mock.calls as unknown[][])
+        .map((c) => c[0] as { cho?: string })
+        .filter((o) => o?.cho === "attempts_hmi_stop_xep_hang");
+      expect(xepHang).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
 
       const ghiTruoc = stub.G2.ghi.length;
       const lag = batDauDoLag();

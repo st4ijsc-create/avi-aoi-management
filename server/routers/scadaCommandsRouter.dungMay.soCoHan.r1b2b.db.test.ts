@@ -24,6 +24,9 @@
  * chứng minh sổ chậm THẬT chạm hạn. Phần nới bị CHẶN TRÊN bằng chính cận (`lag.dung(CAN)`): ĐO 2026-10-26 trên máy Windows này
  * `setInterval(5)` chỉ bắn 64 lần/s (độ phân giải hẹn giờ ~15,6 ms) ⇒ bộ đo ghi ~68 % thời gian NGỦ thành "máy không chạy ta" (ngủ 1000 ms ⇒
  * nới 688 ms; ngủ 3000 ⇒ 2052) — không chặn thì cận 1700 ms nới tới ~5,3 s và đột biến "bỏ hạn" (chờ 5 s) chỉ đỏ với dư 14 ms. Thêm oracle: log `ghiLoiChot` nhãn `<nhan>_qua_han` (đếm lượt chạm hạn); đối chứng DB nhanh ⇒ 0 lượt.
+ * R1b-2b-2a T0 b (điều phối, 2026-10-27) — ca "máy CÓ ghim" cắt đồng hồ tường ở `preDispatch` (ĐO: dispatch() thật một mình 250–1500 ms tuỳ tải máy dùng chung;
+ * đoạn trước-gửi a+b+c 30–700 ms; ledger sau dispatch ≈ 2 × 500 ms). Bảo đảm của SẢN PHẨM ở đây là CẬN 500 ms MỖI LƯỢT GHI SỔ — KHÔNG phải tổng 1700 ms đầu-cuối
+ * (tổng đó chứa dispatch, không phải bảo đảm của sản phẩm) ⇒ ba oracle riêng: trước-gửi · dispatch (cận chống treo, THIẾT BỊ ĐO) · ledger sau dispatch.
  * `OT_CONTROL_ENABLED=true` CHỈ trong tiến trình (D9).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,6 +44,9 @@ const H = vi.hoisted(() => {
   dispatchInputs: [] as Array<{ adapterId: number; actionId: string }>,
   /** chạy SAU dispatch() thật, trước khi trả về lenhHmi (rào: STOP đã gửi, dòng chờ đã chèn) */
   sauDispatch: null as null | (() => Promise<unknown>),
+  /** mốc đồng hồ tường: dispatch() thật bắt đầu / trả về (R1b-2b-2a T0 b) */
+  lucVaoDispatch: 0,
+  lucRaDispatch: 0,
   /** chạy SAU loadStopPinsHmi thật (rào: mọi lượt đọc trước-gửi đã xong) — theo adapterId */
   sauGhim: null as null | ((adapterId: number) => Promise<unknown> | undefined),
   /** fix round 1 (I1) — true ⇒ INSERT scada_command_attempts chạy trong giao dịch chờ khoá advisory `khoaThu` (CHỈ bảng sổ chậm) */
@@ -104,7 +110,9 @@ vi.mock("../services/ot/commandDispatcher", async (importOriginal) => {
     dispatch: async (...a: Parameters<typeof real.dispatch>) => {
       const inp = a[0] as { adapterId: number; triggeredBy?: { actionId?: string } };
       H.dispatchInputs.push({ adapterId: inp.adapterId, actionId: String(inp.triggeredBy?.actionId ?? "") });
+      H.lucVaoDispatch = Date.now();
       const kq = await real.dispatch(...a);
+      H.lucRaDispatch = Date.now();
       if (H.sauDispatch) await H.sauDispatch();
       return kq;
     },
@@ -322,6 +330,15 @@ let loiLog: ReturnType<typeof vi.spyOn>;
 const nhanGhiLoiChot = () =>
   loiLog.mock.calls.map((c) => (c[0] as { cho?: unknown })?.cho).filter((x): x is string => typeof x === "string");
 
+/**
+ * R1b-2b-2a T1 (mục 61) — chỉ nhãn của lượt ghi SỔ (attempts / chốt dòng chờ) trên đường trả lời. Audit HMI nay cũng đi qua `ghiSoCoHan` (trần
+ * ghi nền chung) ⇒ khi pool bão hoà nó có thể log `audit_hmi_stop_qua_han` (fix round 1: mức WARN, không vào bộ lọc error này) / `_muon_xong` 500 ms
+ * SAU câu trả lời; có hay chưa tuỳ đồng hồ lúc đọc. Fix round 1 (review M-7): lọc ĐÚNG hai nhãn phụ thuộc đồng hồ ấy — mọi nhãn audit khác
+ * (vd. `audit_hmi_stop_bo_tran`) vẫn hiện ra ở đây.
+ */
+const NHAN_AUDIT_THEO_DONG_HO = new Set(["audit_hmi_stop_qua_han", "audit_hmi_stop_muon_xong"]);
+const nhanSo = () => nhanGhiLoiChot().filter((x) => !NHAN_AUDIT_THEO_DONG_HO.has(x));
+
 beforeAll(async () => {
   vi.stubEnv("SCADA_COMMANDS_ENABLED", "true");
   vi.stubEnv("SCADA_LIVE_CACHE_ENABLED", "true");
@@ -469,7 +486,7 @@ describe("★ R1b-2b-1 T9 (mục 44) — sổ chậm THẬT: câu trả lời ST
     // cận dưới thô: lượt sổ ĐÃ chạm hạn (không phải DB nhanh tình cờ)
     expect(troi).toBeGreaterThanOrEqual(HAN_GHI_SO_STOP_HMI_MS - 5);
     expect(troi).toBeLessThan(CAN_CHUA_GHIM_MS + phanNoi);
-    expect(nhanGhiLoiChot()).toEqual(["attempts_hmi_stop_chua_ghim_qua_han"]);
+    expect(nhanSo()).toEqual(["attempts_hmi_stop_chua_ghim_qua_han"]);
     expect(H.dispatchInputs.length - dTu).toBe(0);
     // pool còn bão hoà ⇒ đọc qua kết nối giữ: dòng attempts CHƯA vào sổ
     const luc = (await baoHoa!.tx.execute(cauThu(m))) as unknown as DongThu[];
@@ -498,9 +515,13 @@ describe("★ R1b-2b-1 T9 (mục 44) — sổ chậm THẬT: câu trả lời ST
     const lag = batDauDoLag();
     const batDau = Date.now();
     const kq = await op.caller.dungMay({ machineId: fx.mG, clientRequestId: uuid() });
-    const troi = Date.now() - batDau;
-    const phanNoi = await lag.dung(CAN_CO_GHIM_MS);
-    console.info(`[r1b2bt9] trôi ${troi} ms, phần nới (máy không chạy ta) ${phanNoi} ms`);
+    const tra = Date.now();
+    const troi = tra - batDau;
+    const phanNoi = await lag.dung(300);
+    const truocGui = H.lucVaoDispatch - batDau;
+    const dongDispatch = H.lucRaDispatch - H.lucVaoDispatch;
+    const sauRao = tra - baoHoa!.lucBaoHoa;
+    console.info(`[r1b2bt9] trôi ${troi} ms; truocGui ${truocGui} · dispatch ${dongDispatch} · sauRao ${sauRao} ms; phần nới (máy không chạy ta) ${phanNoi} ms`);
     expect(kq.ketQua).toHaveLength(1);
     expect(kq.ketQua[0]).toMatchObject({ adapterId: fx.aG, status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }] });
     expect(kq.ketQua[0].commandLogIds).toHaveLength(1);
@@ -511,9 +532,14 @@ describe("★ R1b-2b-1 T9 (mục 44) — sổ chậm THẬT: câu trả lời ST
     const actionId = goi[0].actionId;
     expect(baoHoa, "rào đã dựng (sổ chậm thật)").not.toBeNull();
     // cận dưới thô: HAI lượt sổ (chốt dòng chờ + attempts) đều chạm hạn
-    expect(troi).toBeGreaterThanOrEqual(2 * HAN_GHI_SO_STOP_HMI_MS - 10);
-    expect(troi).toBeLessThan(CAN_CO_GHIM_MS + phanNoi);
-    expect(nhanGhiLoiChot()).toEqual(["hmi_stop_sau_dispatch_qua_han", "attempts_hmi_stop_qua_han"]);
+    expect(sauRao).toBeGreaterThanOrEqual(2 * HAN_GHI_SO_STOP_HMI_MS - 10); // đo từ lúc rào dựng xong tới lúc trả lời
+    // (1) trước-gửi (xác thực + phạm vi + vai trò + ghim + dòng chờ): bảo đảm của sản phẩm — trễ không chặn / vòng bận ở đầu dungMayHmi ⇒ đỏ
+    expect(truocGui).toBeLessThan(1_000 + (await lag.dung(150)));
+    // (2) dispatch() thật tới khi stub trả: cận CHỐNG TREO của THIẾT BỊ ĐO, không phải bảo đảm sản phẩm (dispatch một mình 250–1500 ms tuỳ tải máy)
+    expect(dongDispatch).toBeLessThan(2_500 + (await lag.dung(300)));
+    // (3) ledger sau dispatch: hai lượt × 500 ms (chạm hạn) + dư; bỏ hẹn giờ 500 ms ⇒ chờ cả 5 s ⇒ đỏ
+    expect(sauRao).toBeLessThan(1_000 + 400 + (await lag.dung(300)));
+    expect(nhanSo()).toEqual(["hmi_stop_sau_dispatch_qua_han", "attempts_hmi_stop_qua_han"]);
     // pool còn bão hoà ⇒ đọc qua kết nối giữ. Dòng chờ ĐÃ 'executed' — do dispatcher (đặt chỗ CAS confirmed→executed TRONG dispatch, trước rào);
     // lượt chốt của lenhHmi (CAS confirmed→…, ở đây khớp 0 hàng) còn xếp hàng — bằng chứng nó chạm hạn là log hmi_stop_sau_dispatch_qua_han ở trên.
     const [choLuc] = (await baoHoa!.tx.execute(cauCho(actionId))) as unknown as Array<{ status: string }>;
@@ -579,7 +605,8 @@ describe("đối chứng — DB nhanh: thứ tự + nội dung sổ như trướ
 
 // ═════════ fix round 1 (review I1) — trần lượt ghi sổ treo: bấm STOP liên tục khi CHỈ bảng sổ chậm KHÔNG vắt cạn pool ═════════
 describe("★ R1b-2b-1 T9 fix round 1 (I1) — sổ attempts chậm + bấm liên tục ⇒ lượt treo ≤ trần, máy KHÁC vẫn dừng trong hạn", () => {
-  it("★ TRAN + 4 lần bấm máy G (mọi lần acked_verified) ⇒ đúng TRAN lượt treo ở Postgres, 4 lượt bỏ qua có nội dung; máy G2 vẫn acked_verified < 1700 ms", async () => {
+  it("★ TRAN + 4 lần bấm máy G (mọi lần acked_verified) ⇒ đúng TRAN lượt treo ở Postgres, 4 lượt attempts XẾP HÀNG (R1b-2b-2a T1 fix round 1); máy G2 vẫn acked_verified < 1700 ms; DB hết chậm ⇒ đủ TRAN + 4 dòng", async () => {
+    const canhLog = vi.spyOn(logger, "warn");
     // pool phải lớn hơn trần (không thì không đo được trần giữ kết nối cho lượt đọc)
     expect(resolvePoolMax()).toBeGreaterThanOrEqual(TRAN_GHI_SO_TREO_STOP_HMI + 3);
     const m = await moc();
@@ -599,14 +626,12 @@ describe("★ R1b-2b-1 T9 fix round 1 (I1) — sổ attempts chậm + bấm liê
     await choDuChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1], TRAN_GHI_SO_TREO_STOP_HMI, "lượt treo chưa tới Postgres");
     await cho(200);
     expect(await demChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1])).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
-    const boQua = loiLog.mock.calls
-      .map((c) => c[0] as { cho?: string; noiDung?: Record<string, unknown> })
-      .filter((o) => o?.cho === "attempts_hmi_stop_bo_qua_day");
-    expect(boQua).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
-    // nội dung dòng đủ để dựng lại từ log
-    expect(boQua[0].noiDung).toMatchObject({ bang: "scada_command_attempts", adapterId: fx.aG, stage: "dispatch", outcome: "dispatched", reasonCode: null });
-    expect(boQua[0].noiDung?.requestId).toEqual(expect.any(String));
-    expect(boQua[0].noiDung?.commandLogIds).toHaveLength(1);
+    // R1b-2b-2a T1 fix round 1 — đầy trần ⇒ XẾP HÀNG (không bỏ): 4 lượt attempts chờ, 0 lượt bị bỏ
+    const xepHang = canhLog.mock.calls
+      .map((c) => c[0] as { cho?: string })
+      .filter((o) => o?.cho === "attempts_hmi_stop_xep_hang");
+    expect(xepHang).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
+    expect(nhanGhiLoiChot().filter((x) => /_bo_(tran|qua_tuoi|qua_lon|tat_may)$/.test(x))).toEqual([]);
 
     // máy KHÁC: lượt đọc trước-gửi + dòng chờ + dispatch còn kết nối ⇒ STOP đi, trong hạn
     const ghiTruoc = stubG2.ghi.length;
@@ -620,12 +645,19 @@ describe("★ R1b-2b-1 T9 fix round 1 (I1) — sổ attempts chậm + bấm liê
     expect(stubG2.ghi.length - ghiTruoc).toBe(1);
     expect(troi).toBeLessThan(CAN_CO_GHIM_MS + phanNoi);
 
-    // DB hết chậm ⇒ TRAN lượt treo ghi xong (dòng có thật), đếm về 0; lượt bị bỏ qua KHÔNG có dòng (chỉ ở log)
+    // DB hết chậm ⇒ TRAN lượt treo ghi xong + 4 lượt xếp hàng được xả (dòng có thật), đếm về 0
     H.chamThu = false;
     await giuThu.nha();
     giuThu = null;
     await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 10_000, interval: 50 });
-    const rows = (await dung(cauThu(m))) as DongThu[];
-    expect(rows.filter((r) => r.adapter_id === fx.aG && r.outcome === "dispatched")).toHaveLength(TRAN_GHI_SO_TREO_STOP_HMI);
+    let rows: DongThu[] = [];
+    await vi.waitFor(
+      async () => {
+        rows = ((await dung(cauThu(m))) as DongThu[]).filter((r) => r.adapter_id === fx.aG && r.outcome === "dispatched");
+        if (rows.length < SO_BAM) throw new Error(`attempts chưa đủ ${rows.length}`);
+      },
+      { timeout: 10_000, interval: 50 },
+    );
+    expect(rows).toHaveLength(SO_BAM);
   }, 90_000);
 });
