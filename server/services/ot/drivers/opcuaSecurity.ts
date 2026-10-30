@@ -400,7 +400,9 @@ export function chungChiDaTinTrenDia(root: string, thumbprintHex: string): boole
  * Nối lỗi BadCertificateUntrusted bằng `cm`: nếu chứng chỉ bị từ chối ĐÃ nằm trong trusted/certs trên đĩa ⇒ quét lại trust-list của `cm`
  * (reloadCertificates) và trả true (caller thử nối lại ĐÚNG MỘT lần với client mới). Ngược lại false, không đổi gì.
  */
-export async function quetLaiTrustListNeuDaTinTrenDia(root: string, cm: any): Promise<boolean> {
+export async function quetLaiTrustListNeuDaTinTrenDia(root: string, cm: any, trustOnFirstUse: boolean): Promise<boolean> {
+  // Gốc TOFU vốn tự tin cậy: quét lại vô ích và mở cửa sổ chỉ mục rỗng (cert đã bị người vận hành TỪ CHỐI ở rejected/ có thể bị TOFU nhận).
+  if (trustOnFirstUse || cm?.automaticallyAcceptUnknownCertificate === true) return false;
   const thumb = chungChiBiTuChoiCuoi.get(cm);
   if (!thumb || typeof cm?.reloadCertificates !== "function" || !chungChiDaTinTrenDia(root, thumb)) return false;
   chungChiBiTuChoiCuoi.delete(cm);

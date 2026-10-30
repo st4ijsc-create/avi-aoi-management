@@ -7,7 +7,7 @@
  * Đếm "số lần nối" bằng sự kiện `newChannel` của server giả (bắn ở HEL/ACK, trước khi client kiểm chứng chỉ server).
  * Chạy được trên cả Node 24 (watcher tự lành, 0 lần dựng lại) lẫn Node 26 (dựng lại đúng 1 lần).
  */
-import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -221,6 +221,114 @@ describe("vá PKI Node 26 — tự lành đúng một lần, không bao giờ t�
       for (const st of kq.slice(1)) expect(String(st)).toMatch(/BadCertificateUntrusted/);
     }
     expect(demTep(path.join(pki, "trusted", "certs"))).toBe(0); // verify/reload không bao giờ tự tin cậy
+  });
+
+  it("★ (1) gốc TOFU: KHÔNG quét lại (reload 0 lần) dù cert nằm trong trusted/ trên đĩa; verify song song không bao giờ Good; rejected/ không bị TOFU nhận", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    const cm = await sec.getOpcuaClientCertificateManager(req("node-opcua"), pki, true); // gốc <pki>/tofu
+    const root = sec.opcuaPkiRoot(pki, true);
+    let reloads = 0;
+    const reload0 = cm.reloadCertificates.bind(cm);
+    cm.reloadCertificates = async () => {
+      reloads++;
+      return reload0();
+    };
+    const cert = req("node-opcua-crypto").readCertificateChain(server.certificateFile)[0];
+    // Người vận hành đã TỪ CHỐI cert này (nằm ở rejected/) và verifyCertificate ghi nhớ nó là BadCertificateUntrusted.
+    fs.mkdirSync(path.join(root, "rejected"), { recursive: true });
+    fs.writeFileSync(path.join(root, "rejected", "tu-choi.pem"), fs.readFileSync(server.certificateFile));
+    await cm.reloadCertificates();
+    reloads = 0;
+    expect(String(await cm.verifyCertificate(cert))).toMatch(/BadCertificateUntrusted/);
+    // cả hai thư mục cùng chứa nó ⇒ điều kiện "đã tin trên đĩa" đúng — nhưng gốc TOFU thì vẫn KHÔNG quét
+    fs.mkdirSync(path.join(root, "trusted", "certs"), { recursive: true });
+    fs.copyFileSync(server.certificateFile, path.join(root, "trusted", "certs", "x.pem"));
+    const kq = await Promise.all([sec.quetLaiTrustListNeuDaTinTrenDia(root, cm, true), cm.verifyCertificate(cert), cm.verifyCertificate(cert)]);
+    expect(kq[0]).toBe(false);
+    for (const st of kq.slice(1)) expect(String(st)).not.toMatch(/^Good/);
+    expect(reloads).toBe(0);
+    expect(fs.existsSync(path.join(root, "rejected", "tu-choi.pem"))).toBe(true); // vẫn ở rejected/, TOFU không nhận
+  });
+
+  it("★ (2) hai connect ĐỒNG THỜI cùng gốc PKI ⇒ reloadCertificates đúng 1 lần", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/);
+    const cm = await sec.getOpcuaClientCertificateManager(req("node-opcua"), pki, false);
+    let reloads = 0;
+    const reload0 = cm.reloadCertificates.bind(cm);
+    cm.reloadCertificates = async () => {
+      reloads++;
+      await new Promise((r) => setTimeout(r, 150)); // quét chậm ⇒ hai nối chắc chắn chồng lấn
+      return reload0();
+    };
+    const trustedDir = path.join(pki, "trusted", "certs");
+    fs.mkdirSync(trustedDir, { recursive: true });
+    for (const f of fs.readdirSync(path.join(pki, "rejected"))) fs.copyFileSync(path.join(pki, "rejected", f), path.join(trustedDir, f)); // rejected thắng ⇒ cả hai nối lỗi
+    const [a, b] = await Promise.all([thuNoi(), thuNoi()]);
+    expect(a.err?.message).toMatch(/BadCertificateUntrusted/);
+    expect(b.err?.message).toMatch(/BadCertificateUntrusted/);
+    expect(reloads).toBe(1);
+  });
+
+  it("★ (2b) cùng gốc, nối thứ hai đến TRONG LÚC lần quét thứ nhất còn chạy (thumbprint đã được ghi lại lần nữa) ⇒ bị trần chặn, reload đúng 1 lần", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    const cm = await sec.getOpcuaClientCertificateManager(req("node-opcua"), pki, false);
+    const cert = req("node-opcua-crypto").readCertificateChain(server.certificateFile)[0];
+    expect(String(await cm.verifyCertificate(cert))).toMatch(/BadCertificateUntrusted/);
+    const trustedDir = path.join(pki, "trusted", "certs");
+    fs.mkdirSync(trustedDir, { recursive: true });
+    fs.copyFileSync(server.certificateFile, path.join(trustedDir, "da-tin.pem")); // người vận hành đã đặt cert vào trusted/
+    let reloads = 0;
+    const reload0 = cm.reloadCertificates.bind(cm);
+    cm.reloadCertificates = async () => {
+      reloads++;
+      await new Promise((r) => setTimeout(r, 400)); // quét chậm
+      return reload0();
+    };
+    expect(String(await cm.verifyCertificate(cert))).toMatch(/BadCertificateUntrusted/); // ghi thumbprint (lần nối thứ nhất)
+    const p1 = sec.quetLaiTrustListNeuDaTinTrenDia(pki, cm, false);
+    expect(String(await cm.verifyCertificate(cert))).toMatch(/BadCertificateUntrusted/); // lần nối thứ hai ghi lại thumbprint trong lúc quét
+    const p2 = sec.quetLaiTrustListNeuDaTinTrenDia(pki, cm, false);
+    expect(await p2).toBe(false); // trần chặn
+    expect(await p1).toBe(true);
+    expect(reloads).toBe(1);
+  });
+
+  it("★ (3) client CŨ được disconnect TRƯỚC khi tạo client mới (không rò client khi thử lại)", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/);
+    const trustedDir = path.join(pki, "trusted", "certs");
+    fs.mkdirSync(trustedDir, { recursive: true });
+    for (const f of fs.readdirSync(path.join(pki, "rejected"))) fs.copyFileSync(path.join(pki, "rejected", f), path.join(trustedDir, f));
+    const o = req("node-opcua");
+    const nhatKy: string[] = [];
+    let soClient = 0;
+    const create0 = o.OPCUAClient.create.bind(o.OPCUAClient);
+    const spy = vi.spyOn(o.OPCUAClient, "create").mockImplementation((...a: unknown[]) => {
+      const id = ++soClient;
+      nhatKy.push(`create#${id}`);
+      const c = create0(...a);
+      const dis0 = c.disconnect.bind(c);
+      c.disconnect = (...x: unknown[]) => {
+        nhatKy.push(`disconnect#${id}`);
+        return dis0(...x);
+      };
+      return c;
+    });
+    try {
+      const { err } = await thuNoi();
+      expect(err?.message).toMatch(/BadCertificateUntrusted/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(sec.opcuaPkiThongKe.quetLai).toBeGreaterThan(0);
+    expect(nhatKy.indexOf("disconnect#1")).toBeGreaterThanOrEqual(0);
+    expect(nhatKy.indexOf("disconnect#1")).toBeLessThan(nhatKy.indexOf("create#2")); // thứ tự: disconnect cũ → create mới
+    expect(nhatKy.filter((e) => e.startsWith("create")).length).toBe(2); // đúng một lần thử lại
   });
 
   it("chungChiDaTinTrenDia: so theo NỘI DUNG, không theo tên tệp; tệp rác bị bỏ qua", async () => {

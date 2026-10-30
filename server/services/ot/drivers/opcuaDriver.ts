@@ -308,7 +308,7 @@ export class OpcuaDriver extends NotImplementedDriver {
         // Chứng chỉ ĐÃ nằm trong trusted/ trên đĩa ⇒ quét lại trust-list rồi thử nối lại ĐÚNG MỘT lần; còn lại giữ nguyên lỗi (không tự tin cậy).
         const cm = createOpts.clientCertificateManager;
         if (!pkiDir || !cm || !/BadCertificateUntrusted|certificate verification fail/i.test((err as Error)?.message ?? "")) throw err;
-        if (!(await quetLaiTrustListNeuDaTinTrenDia(pkiDir, cm))) throw err;
+        if (!(await quetLaiTrustListNeuDaTinTrenDia(pkiDir, cm, security.trustOnFirstUse))) throw err;
         await settleWithin(() => client.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect (thử lại sau khi quét lại PKI)");
         client = OPCUAClient.create(createOpts);
         await withDeadline(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
