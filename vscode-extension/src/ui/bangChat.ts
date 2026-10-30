@@ -60,6 +60,8 @@ import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../lo
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
+import { canhBaoLoiMoi, loiMoiSauSua } from "../loi/linterSauSua";
+import { docChanDoan, dopChanDoanSauSua } from "./linterSauSua";
 // ★★★ ĐỢT 4B — phiên agent chạy LÕI AGENT DÙNG CHUNG (chế độ Hỏi / Agent duyệt từng bước / Agent tự động).
 import { PhienAgent } from "./phienAgent";
 // ★★★ ĐỢT D / TASK 3 — vòng lặp tác nhân: model tự đọc mã (ba tool CHỈ ĐỌC của Task 2) TRƯỚC khi
@@ -2233,7 +2235,11 @@ export class BangChat {
     }
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
     let thongDiep: string;
+    let canhBaoLinter: Promise<string | null> | undefined;
     try {
+      // (Đợt 11.4) linter: chụp Problems của tệp TRƯỚC khi áp để sau đó chỉ báo lỗi do lần sửa này đặt thêm.
+      const uriSua = vscode.Uri.file(cb.duongTuyetDoi);
+      const chanDoanTruoc = docChanDoan(uriSua);
       const kq = await apBanVa({
         deXuat: cb.deXuat,
         duongTuyetDoi: cb.duongTuyetDoi,
@@ -2249,12 +2255,17 @@ export class BangChat {
         mucQuyen: this.mucQuyenHienTai,
       });
       thongDiep = kq.thongDiep;
+      // Kết quả ghi báo NGAY; lỗi mới (nếu có) báo bằng tin thứ hai khi server ngôn ngữ chẩn đoán xong — không làm chậm/đổi kết quả ghi.
+      if (kq.ok) canhBaoLinter = dopChanDoanSauSua(uriSua).then((sau) => canhBaoLoiMoi(cb.duongTuongDoi, loiMoiSauSua(chanDoanTruoc, sau)));
     } catch (e) {
       // `apBanVa` đã bọc mọi bước có thể ném; tới đây là lỗi ngoài dự tính. Không đoán kết cục.
       thongDiep = `Lỗi ngoài dự tính khi ghi "${cb.duongTuongDoi}": ${(e as Error).message}. Hãy KIỂM TRA LẠI tệp trước khi hỏi tiếp.`;
     }
     this.quenDeXuat();
     void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+    void canhBaoLinter
+      ?.then((cb2) => (cb2 ? this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: cb2 }) : undefined))
+      .catch(() => undefined);
   }
 
   /**

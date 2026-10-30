@@ -20,6 +20,17 @@ describe("terminalDoc", () => {
     expect(kq).toContain("đã cắt bớt");
     expect(dinhDangLanChay("x", 0, "y".repeat(TRAN_KY_TU_MOT_LAN_GHI))).not.toContain("đã cắt bớt");
   });
+  it("★ ghim trần = 20000 (không chỉ theo hằng)", () => {
+    expect(TRAN_KY_TU_MOT_LAN_GHI).toBe(20_000);
+  });
+  it("★ dòng lệnh cũng bị làm sạch ESC/CSI (header không điều khiển được terminal)", () => {
+    expect(dinhDangLanChay("npm\u001b[2J run", 0, "ok")).toBe("$ npm run\r\nok\r\n[exit 0]\r\n\r\n");
+  });
+  it("★ mã điều khiển C1 8-bit (xterm.js xử lý) bị bỏ: CSI \u009b, OSC \u009d…\u009c", () => {
+    expect(lamSachChoTerminal("a\u009b31mb")).toBe("a31mb");
+    expect(lamSachChoTerminal("a\u009d0;x\u009cb")).toBe("a0;xb");
+    expect(lamSachChoTerminal("x\u007fy\u0085z")).toBe("xyz");
+  });
   it("nối dây: BoThucThiVscode ghi terminal sau lệnh; extension đăng ký; manifest có lệnh mở", () => {
     expect(readFileSync(join(__dirname, "..", "ui", "boThucThiVscode.ts"), "utf8")).toContain("ghiLanChayAgent(xet.lenh.hienThi, kq.exitCode, vanBan);");
     expect(readFileSync(join(__dirname, "..", "extension.ts"), "utf8")).toContain("dangKyTerminalDoc(context);");
