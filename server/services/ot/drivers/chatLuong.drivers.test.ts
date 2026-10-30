@@ -9,6 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ServerTCP } from "modbus-serial";
 import type { OtSample, OtTagAddress, SuKienDoc } from "../otDriver";
 import { laDocTot, laTickHong, SO_TICK_HONG_DE_MAT, taoBatDocTot, taoDemTickHong } from "../reconnectNhanh";
+import { beforeAll as __truocHetMc, afterAll as __sauCungMc } from "vitest";
+import { __moKhoaGhiMcChoTest } from "./mitsubishiMcDriver";
+
+// R1b-2b-2a T3B-0 — ghi MC TẠM KHOÁ trong sản xuất (OT_MC_TAM_KHOA, mcTamKhoa.r1b2b2.test.ts). Các ca ghi MC của tệp này kiểm logic ghi
+// sẽ dùng lại ở 3B (backlog 84) ⇒ mở khoá CHỈ trong tệp test này (cờ chỉ-vitest), khôi phục sau tệp.
+__truocHetMc(() => {
+  __moKhoaGhiMcChoTest(true);
+});
+__sauCungMc(() => {
+  __moKhoaGhiMcChoTest(false);
+});
 
 const FLAG = "OT_CHAT_LUONG_V2_ENABLED";
 

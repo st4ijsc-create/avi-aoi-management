@@ -14,7 +14,7 @@ import type { CheDoAgent, LoiGoiTool, WireTool } from "./kieu";
  * `de-xuat` (Đợt 2): tool KHÔNG tác dụng phụ nào ngoài một ĐỀ XUẤT cho người (`remember` ⇒ sự kiện `de-xuat-nho`).
  * Tách khỏi `ghi` vì nó phải có ở MỌI chế độ (kể cả `hoi`): chỉ người bấm "Nhớ" mới ghi — kể cả ở `tu-dong`.
  */
-export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat";
+export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat" | "giao";
 
 export const TEN_CONG_CU = [
   "read_file",
@@ -36,6 +36,8 @@ export const TEN_CONG_CU = [
   "lookup_api",
   // ── Đợt 9 (2026-10-21): biên dịch THỬ Structured Text (RuSTy, docker cách ly) — CHỈ máy chủ, sau cờ ──
   "compile_st",
+  // ── Đợt 11.8: giao việc cho agent con (xử lý TRONG lõi, sau cờ máy chủ AI_AGENT_GIAO_VIEC) ──
+  "delegate",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -56,6 +58,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   remember: "de-xuat",
   lookup_api: "doc",
   compile_st: "doc",
+  delegate: "giao",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -78,7 +81,13 @@ export const TRAN_MA_ST = 64 * 1024;
  * (`compile_st` ⇐ cờ `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all`, trình biên dịch chỉ có ở máy chủ). Tắt ⇒ bộ tool và lời
  * nhắc hệ thống GIỐNG TỪNG BYTE bản trước (A/B sạch).
  */
-export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st"]);
+export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate"]);
+
+/** Đợt 11.8 — trần tham số `delegate` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
+export const TRAN_NHIEM_VU_GIAO = 4_000;
+export const TRAN_SO_CONG_CU_GIAO = 16;
+export const TRAN_KY_TU_TEN_CONG_CU_GIAO = 40;
+const RE_TEN_AGENT_GIAO = /^[a-z][a-z0-9-]{0,31}$/;
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -262,6 +271,24 @@ export const CONG_CU: WireTool[] = [
     },
     [],
   ),
+  tool(
+    "delegate",
+    "Delegate a self-contained sub-task to a named sub-agent (for example an explorer, a reviewer or a test writer). The " +
+      "sub-agent works on its own with a limited set of tools and returns ONLY a short summary; its working notes never enter " +
+      "your context. It cannot approve anything: any file change or command it requests still needs the user's approval. " +
+      "Sub-agents run one after another, never in parallel. Use it to keep your context small on long tasks; do not use it " +
+      "for a step you can do with one or two tool calls.",
+    {
+      agent: chuoi("Name of the sub-agent (lowercase letters, digits and '-')."),
+      task: chuoi(`The complete task for the sub-agent, with all the context it needs (it cannot see your conversation), at most ${TRAN_NHIEM_VU_GIAO} characters.`),
+      tools: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional: restrict the sub-agent to these tool names (it can only be narrowed, never widened).",
+      },
+    },
+    ["agent", "task"],
+  ),
 ];
 
 /**
@@ -279,7 +306,7 @@ export function congCuTheoCheDo(cheDo: CheDoAgent, them: readonly TenCongCu[] = 
     cheDo === "hoi"
       ? coMat.filter((t) => {
           const loai = LOAI_CONG_CU[t.function.name as TenCongCu];
-          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat";
+          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat" || loai === "giao";
         })
       : coMat;
   return structuredClone(chon);
@@ -291,7 +318,7 @@ export const CONG_CU_TODO_WRITE: WireTool = CONG_CU.find((t) => t.function.name 
 
 export type KetQuaKiemThamSo = { ok: true; thamSo: Record<string, unknown> } | { ok: false; loiChoModel: string };
 
-type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum";
+type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum" | "tenAgent" | "dsTen";
 /** `giaTri`: tập hợp lệ của `enum` · `toiDa`: trần ký tự (`chuoi`) hoặc trần giá trị (`so`). */
 type MotDacTa = { kieu: KieuTruong; batBuoc: boolean; giaTri?: readonly string[]; toiDa?: number };
 type DacTa = Record<string, MotDacTa>;
@@ -316,6 +343,7 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
   lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
   compile_st: { path: T("duong"), code: T("chuoi", { toiDa: TRAN_MA_ST }) },
+  delegate: { agent: B("tenAgent"), task: B("chuoi", { toiDa: TRAN_NHIEM_VU_GIAO }), tools: T("dsTen") },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -335,6 +363,7 @@ const VI_DU: Record<TenCongCu, string> = {
   remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
   lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
   compile_st: '{"path":"src/FB_Motor.st"}',
+  delegate: '{"agent":"kham-pha","task":"Find where HTTP requests are retried and report the file paths."}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -380,6 +409,25 @@ function kiemTruong(dt: MotDacTa, v: unknown, ten: string): unknown {
       const ds = dt.giaTri ?? [];
       if (typeof v !== "string" || !ds.includes(v.trim())) throw new LoiThamSo(`"${ten}" must be one of: ${ds.join(", ")}`);
       return v.trim();
+    }
+    case "tenAgent":
+      if (typeof v !== "string" || !RE_TEN_AGENT_GIAO.test(v.trim()))
+        throw new LoiThamSo(`"${ten}" must be a sub-agent name: lowercase letters, digits and '-', starting with a letter, at most 32 characters`);
+      return v.trim();
+    case "dsTen": {
+      let ds = v;
+      if (typeof ds === "string") {
+        const p = docJson(ds);
+        if (!p.ok) throw new LoiThamSo(`"${ten}" must be an array of tool names`);
+        ds = p.v;
+      }
+      if (!Array.isArray(ds) || ds.length === 0 || ds.length > TRAN_SO_CONG_CU_GIAO)
+        throw new LoiThamSo(`"${ten}" must be a non-empty array of at most ${TRAN_SO_CONG_CU_GIAO} tool names`);
+      return ds.map((e, i) => {
+        if (typeof e !== "string" || e.trim() === "" || e.trim().length > TRAN_KY_TU_TEN_CONG_CU_GIAO)
+          throw new LoiThamSo(`"${ten}[${i}]" must be a tool name string`);
+        return e.trim();
+      });
     }
     case "chuoiRong":
       if (typeof v !== "string") throw new LoiThamSo(`"${ten}" must be a string`);

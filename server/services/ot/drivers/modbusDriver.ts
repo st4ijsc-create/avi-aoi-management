@@ -41,7 +41,18 @@ import { boolChoGhi } from "./boolNghiem";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui, ketCucKhongRoCua } from "./dangBay";
+
+/**
+ * SCADA R1b-2b-2a T2 (mục 66) — hết hạn GIAO DỊCH của chính modbus-serial 8.0.25 (`client.setTimeout(cfg.timeoutMs)`): `_startTimeout` gọi lại bằng
+ * `new TransactionTimedOutError()` (index.js:65-69, :380-394) — KHÔNG phải `instanceof Error`; `name` "TransactionTimedOutError", `message` "Timed out",
+ * `errno` "ETIMEDOUT" là CHUỖI (index.js:33-34; lỗi hệ điều hành của Node mang errno SỐ). Yêu cầu đã lên dây, thiết bị chưa trả lời ⇒ kết cục không rõ.
+ */
+export function laQuaHanModbusSerial(err: unknown): boolean {
+  if (err == null || typeof err !== "object") return false;
+  const e = err as { name?: unknown; errno?: unknown };
+  return e.name === "TransactionTimedOutError" || e.errno === "ETIMEDOUT";
+}
 
 /**
  * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
@@ -358,6 +369,10 @@ export class ModbusDriver extends NotImplementedDriver {
       // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (writeTags reject) để dispatcher trả 'timeout'
       // NGAY — không gộp vào ok:false ('failed' nói sai: lệnh có thể đã tới PLC). Các write sau trong lô không được gửi (liên kết đã mất).
       if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH modbus-serial: lệnh đã lên dây, thiết bị chưa trả lời ⇒ kết cục KHÔNG RÕ của write này
+      // (dispatcher ⇒ 'timeout'), không 'failed'. Exception Modbus (thiết bị ĐÃ trả lời) / lỗi trước khi gửi ⇒ 'failed' như cũ.
+      const ketCucKhongRo = ketCucKhongRoCua(err) ?? (laQuaHanModbusSerial(err) ? "qua_han_driver" : null);
+      if (ketCucKhongRo) return { tagKey: w.tagKey, ok: false, error: msg, ketCucKhongRo };
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

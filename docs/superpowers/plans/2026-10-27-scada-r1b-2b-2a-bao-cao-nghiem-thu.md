@@ -7,6 +7,8 @@
 
 _(Task 11)_
 
+**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2.
+
 ## 1. Ma trận ô — `server/services/scada/r1b2b2aNghiemThu.db.test.ts`
 
 _(Task 11)_
@@ -79,6 +81,36 @@ _(Task 11)_
   (6 audit override + 6 chốt dòng chờ + 6 attempts) ở 3/3 lượt chạy. Bản hàng chờ: 0 lượt bị bỏ, đủ mọi dòng.
 - Không khoá i18n mới.
 
+### Task 3A (backlog 79) — EtherNet/IP: ack muộn không bao giờ tính cho lời ghi kế; kiểu CIP từ danh sách tag (fix round 1: băng `khong_dat`)
+
+- **Lời ghi EIP nay THẬT SỰ tới PLC.** Trước (đo bằng thiết bị ENIP giả + st-ethernet-ip 2.7.5 thật): `newTag` không mang kiểu CIP ⇒ thư viện ném
+  "Tag … has not been initialized" TRƯỚC khi gửi ⇒ MỌI lời ghi EIP, kể cả STOP, `failed` tại chỗ, 0 gói. Nay kiểu CIP lấy từ danh sách tag thư viện nạp
+  lúc connect (`state.tagList`) ⇒ gói Write Tag ra dây. ⚠ **Lời ghi EIP thật đầu tiên trên một bộ điều khiển cần kiểm tra chạy thử (commissioning)**
+  — trước đây không lời ghi EIP nào từng tới thiết bị (DEV: 3 adapter ethernet-ip là SIM, tắt, chưa từng nối).
+- Tag không có trong danh sách / không có kiểu nguyên tử (thành viên UDT, ghi cả mảng, chỉ số trên tag không phải mảng, kiểu cấu trúc) ⇒ `failed` mã
+  `EIP_TAG_TYPE_UNKNOWN`, KHÔNG gửi gì, không bao giờ đoán kiểu.
+- **Phiên nhiễm.** Bất kỳ hết hạn của thư viện (đọc / ghi) ⇒ phiên bị hạ và mở phiên MỚI; ack / trả lời muộn của yêu cầu cũ không bao giờ thành `ok`
+  của lời ghi kế (STOP) hay mẫu `good` của lần đọc kế (trước: STOP báo ok từ ack của lời ghi cũ; đọc TagB "good" mang giá trị TagA). Lời ghi đang bay
+  trên phiên bị hạ ⇒ `timeout` không rõ (băng `khong_ro`).
+- **STOP quá trần chờ phiên mới (2000 ms) ⇒ KHÔNG gửi, `failed`** (`ethernet-ip: not connected — no fresh session within 2000ms after a contaminated
+  session — nothing sent`).
+- **Băng E-STOP CỨNG cho STOP `failed` / `rejected`** (HMI, `DungMay.tsx`): `loai: "khong_dat"`, khoá i18n mới `scada.dungMay.bangEstop.khongDat`
+  (vi/en/zh — "STOP HMI KHÔNG tới được adapter {{list}} — dùng E-STOP cứng tại máy"; KHÔNG dùng chữ `khong_ro`: "không tới" ≠ "không rõ"). Trước:
+  STOP `failed` chỉ có dòng đỏ trong hàng, không băng cố định. Ưu tiên khi trộn: `qua_han_mot_phan` > `khong_dat` > `khong_ro`, mỗi danh sách giữ.
+  Hàng edge / trung tâm dự phòng không tính. STOP thành công trọn vẹn sau đó vẫn gỡ băng (M-1).
+- **Fix round 2 (kiem-dinh M1/M2/M4/M5/M6 + dự phòng 6500):**
+  - trần chờ phiên mới tính THEO TỪNG lời ghi (≤ 2000 ms và ≤ phần còn lại của `OT_CONTROL_TIMEOUT_MS` từ đầu lời gọi) — lời ghi thứ hai của STOP nhiều
+    tag không còn `failed` ngay khi lời ghi đầu hết hạn > 2000 ms;
+  - tên tag so KHÔNG phân biệt hoa thường (như Logix), ghi bằng tên CHUẨN của PLC (`stop` ⇒ `Stop`); hai tag chỉ khác hoa thường ⇒ `failed`
+    `EIP_TAG_NAME_AMBIGUOUS`, 0 gói;
+  - phần tử mảng BOOL (CIP BIT_STRING 0xD3) ⇒ `failed` `EIP_BIT_ARRAY_UNSUPPORTED`, 0 gói (trước: chuỗi giá trị có thể ghi đè 32 BOOL);
+  - phiên nhiễm bị hạ NGAY: xả hàng đợi task-easy của thư viện + huỷ socket (không forwardClose chờ `timeout_sp`) ⇒ lời ghi đang xếp hàng không bao
+    giờ ra socket cũ; nhãn không đổi (`timeout` không rõ);
+  - bộ hẹn DỰ PHÒNG 6500 (hạn lệnh / `deadlineMs` > ~5,5 s) cũng làm phiên nhiễm ⇒ hạ ngay ⇒ thư viện không còn giữ / gửi lệnh cũ; STOP kế chạy trên phiên
+    mới, không chồng (đo: lệnh cũ đúng 1 gói trên kết nối 1, STOP chỉ trên kết nối 2);
+  - thông điệp `failed` nói ĐÚNG lý do: quá trần (`within the Nms wait bound`), mở lại hỏng (kèm nguyên nhân), bị thay (connect/disconnect — người chờ
+    được giải NGAY).
+
 ## 6. Giới hạn đã biết
 
 ### LOGIC
@@ -118,6 +150,14 @@ _(Task 11)_
   - fix round 1 đã phủ thêm: thân gọn của arrow bị bỏ kết quả (`(): void => …`, `() => void …`, đối số `forEach`) và thunk trả một promise phát TRƯỚC
     (định danh từ ngoài thunk); vẫn hở: promise phát trước rồi truyền qua nhiều lớp biến / hàm trung gian.
 
+- (T3A) **Trần chờ phiên MỚI sau phiên nhiễm EIP = 2000 ms** (`HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS`), tính từ đầu lời gọi `writeTags` / `readTags`
+  (một trần cho cả lô). Vì sao: hạn lệnh của dispatcher (`OT_CONTROL_TIMEOUT_MS`, mặc định 5000) đua từ lúc gọi `writeTags` ⇒ 2000 còn ≥ 3000 ms cho
+  chính lời ghi STOP trên phiên mới; nối lại = TCP + RegisterSession + ForwardOpen + identity + danh sách tag (~5–10 vòng CIP, vài chục ms trên LAN). Đo:
+  STOP quá trần trả lời ở 2001–2012 ms, độ trễ vòng lặp 70–82 ms. Nếu `OT_CONTROL_TIMEOUT_MS` bị đặt ≤ 2000, hạn của dispatcher thắng (`timeout`).
+- (T3A) **`OtWrite.dataType` không được đối chiếu với kiểu CIP của PLC.** Kiểu của PLC thắng (D1); thư viện tự ép: bool ⇒ DINT 1, 5 ⇒ BOOL 1,
+  **1.5 ⇒ DINT 1 (cắt im lặng)**, **"abc" ⇒ DINT 0 (im lặng)**, bool ⇒ STRING ⇒ lỗi tại chỗ (không gửi). OPC UA (tiền lệ) ép về kiểu THIẾT BỊ có kiểm
+  (`coerceOpcuaWriteValue`: chuỗi không phải số / số lẻ cho kiểu nguyên / ngoài miền ⇒ từ chối) — EIP chưa có bộ ép tương đương (danh sách R1b-2b-2b).
+
 ### DỮ LIỆU
 
 _(Task 11)_
@@ -126,6 +166,20 @@ _(Task 11)_
 
 - (T1) Bộ đếm `demGhiBoQuaDay`, hàng chờ ghi nền và tóm tắt chưa ghi đều mất khi khởi động lại tiến trình. `batDauLuc` cho biết bộ đếm đếm từ khi nào.
 - (T1) Tắt êm: `server.close` chờ lượt xả (≤ 2 s); hạn ép thoát 5 s của `gracefulShutdown` vẫn đứng trên cùng.
+- (T3A) **Bộ điều khiển không liệt kê tag thì không điều khiển EIP được.** Get Instance Attribute List lỗi ⇒ `connect()` hỏng (như trước); danh sách
+  rỗng / thiếu tag ⇒ mọi lời ghi tag đó `failed EIP_TAG_TYPE_UNKNOWN`, 0 gói. Thực tế: chỉ họ Logix.
+- (T3A) **`isConnected()` giữ `true` trong lúc mở phiên mới sau phiên nhiễm** (≤ `cfg.timeoutMs`) — có chủ ý để STOP được chờ có trần thay vì
+  `ADAPTER_OFFLINE`; `health().lastError` ghi "session contaminated …". Mở phiên mới hỏng ⇒ `connected=false`, supervisor lo.
+- (T3A) **`disconnect()` lúc đang mở phiên mới**: lần nối đó vẫn chạy xong rồi bị hạ ngay (chốt thế hệ) ⇒ PLC thấy MỘT kết nối thừa ngắn (≤ `cfg.timeoutMs`).
+- (T3A) **M3 — thời gian nối lại (danh sách tag + định nghĩa struct) phải được ĐO lúc commissioning so với trần chờ STOP 2000 ms.**
+- (T3A) **Danh mục commissioning EIP:** lời ghi EIP đầu tiên THẬT SỰ tới một PLC thật; thời gian nối lại so với trần chờ STOP 2000 ms; ngân sách kết nối mồ côi (kết nối thừa ngắn khi disconnect trong lúc mở phiên mới / phiên bị hạ chưa kịp forwardClose).
+- (T3A, rà lại N2) Mỗi lần phiên ENIP bị đánh dấu nhiễm, socket bị huỷ NGAY (không forwardClose lịch sự) ⇒ PLC có thể giữ MỘT kết nối mồ côi ~15 s. Ngân sách kết nối CompactLogix nhỏ ⇒ nhiều lần nhiễm liên tiếp có thể làm cạn; theo dõi lúc commissioning.
+- (T3A, rà lại N1) STOP đang XẾP HÀNG trong thư viện bị xả khi phiên nhiễm thì CHƯA được gửi nhưng vẫn mang nhãn "không rõ" (băng E-STOP cứng khong_ro), không phải "không tới", và không được gửi lại trên phiên mới — backlog 83 (xét ở Task 6 nhãn theo từng write).
+- (T3A, M5 phần dư) Hết hạn của CHÍNH thư viện: task-easy chạy lời ghi xếp hàng kế (C) ĐỒNG BỘ trong cùng lượt hết hạn, TRƯỚC khi driver kịp hạ phiên ⇒ C
+  có thể ra socket cũ; nhãn của C là `timeout` không rõ (đúng: có thể đã áp), không bao giờ `ok`. Phiên bị hạ vì lý do khác (đọc hết hạn, dự phòng
+  6500): hàng đợi được xả ⇒ C không ra dây.
+- (T3A) Trần theo ngân sách lệnh dùng `OT_CONTROL_TIMEOUT_MS` toàn cục; `deadlineMs` riêng của một lệnh driver không biết (lệnh có `deadlineMs` ngắn hơn
+  ⇒ hạn của dispatcher thắng ⇒ `timeout`).
 
 ## 7. Bảng số đo
 

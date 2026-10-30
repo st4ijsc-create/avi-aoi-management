@@ -125,6 +125,8 @@ import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
+const RE_UUID_LUOT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
 
 /** Trần ký tự một kết quả đọc đưa model khi không chỉ định vùng dòng (lõi còn cắt đầu+đuôi ở 12k). */
@@ -219,6 +221,8 @@ export interface CauHinhBoThucThi {
   coQuyenThucThi: boolean;
   checkpoint: CongCheckpoint | null;
   phuThuoc?: PhuThuocBoThucThi;
+  /** (Đợt 11.8) phơi tool `delegate` cho model? Do quản lý lượt chạy quyết (cờ AI_AGENT_GIAO_VIEC + model cục bộ). Mặc định TẮT. */
+  coGiaoViec?: boolean;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -859,7 +863,12 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     }
 
     // ĐỀ XUẤT — đúng cửa HITL (RBAC lần 1, preview, hàng ai_pending_actions, audit PROPOSED).
-    const out = await executeDecision({ tool, args }, execCtx);
+    // ★ M4/S7 — lượt đề xuất đi vào CHÍNH câu INSERT thẻ (ctx.agentRunId → proposeAction): không có khe thẻ chưa gắn lượt. runId không
+    //   phải UUID (không thể gắn) ⇒ TỪ CHỐI trước khi đề xuất (fail-closed; production luôn là randomUUID).
+    if (!RE_UUID_LUOT.test(ctx.runId)) {
+      return { ok: false, ma: "LOI_DE_XUAT", choModel: "Could not identify the run that proposes this change, so nothing was proposed. Nothing was changed." };
+    }
+    const out = await executeDecision({ tool, args }, { ...execCtx, agentRunId: ctx.runId });
     if (out.denied) {
       return { ok: false, ma: "TU_CHOI_QUYEN", choModel: `Permission denied: ${out.denied.message || out.denied.reason || "refused"}. Nothing was changed.` };
     }
@@ -1049,7 +1058,10 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   return {
     congCu(cheDo: CheDoAgent) {
       const an = congCuBiAn();
-      const ds = congCuTheoCheDo(cheDo, [...CONG_CU_TUY_CHON].filter((ten) => toolTuyChonBat(ten, process.env, gocDuAn)));
+      const ds = congCuTheoCheDo(
+        cheDo,
+        [...CONG_CU_TUY_CHON].filter((ten) => (ten === "delegate" ? cauHinh.coGiaoViec === true : toolTuyChonBat(ten, process.env, gocDuAn))),
+      );
       return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
@@ -1062,7 +1074,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   };
 
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
-    if (congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
+    // `delegate` do LÕI xử lý (vòng đệ quy) — KHÔNG BAO GIỜ tới bộ thực thi; nếu tới đây là lỗi/giả mạo ⇒ từ chối như tool ẩn.
+    if (goi.ten === "delegate" || congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
     }
     try {

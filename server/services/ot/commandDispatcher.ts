@@ -1911,12 +1911,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
-  //   any failed → 'failed'; timeout → 'timeout'; all verified → 'acked_verified';
-  //   else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
+  //   timeout (the command's, or ≥1 write whose outcome is unknown) → 'timeout'; else any failed → 'failed';
+  //   all verified → 'acked_verified'; else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
+  // R1b-2b-2a T2 (mục 66) — không rõ THẮNG thất bại (chiều an toàn: người vận hành phải đọc lại trước khi gửi lần nữa).
   const allOk = results.length > 0 && results.every((x) => x.ok);
   let overall: DispatchStatus;
   if (!allOk) {
-    overall = timedOut ? "timeout" : "failed";
+    overall = timedOut || outcomes.some((o) => o.status === "timeout") ? "timeout" : "failed";
   } else if (outcomes.every((o) => o.status === "acked_verified")) {
     overall = "acked_verified";
   } else if (outcomes.some((o) => o.status === "acked_unverified")) {

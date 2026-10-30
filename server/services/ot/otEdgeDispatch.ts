@@ -217,7 +217,8 @@ async function runDeviceStage(
 
 function rollUp(executed: ExecutedWrite): { ok: boolean; status: DispatchStatus } {
   const allOk = executed.outcomes.length > 0 && executed.outcomes.every((o) => o.ok);
-  if (!allOk) return { ok: false, status: executed.timedOut ? "timeout" : "failed" };
+  // R1b-2b-2a T2 (mục 66) — như dispatcher trung tâm: ≥ 1 write không rõ kết cục ⇒ 'timeout' (không rõ thắng thất bại).
+  if (!allOk) return { ok: false, status: executed.timedOut || executed.outcomes.some((o) => o.status === "timeout") ? "timeout" : "failed" };
   if (executed.outcomes.every((o) => o.status === "acked_verified")) return { ok: true, status: "acked_verified" };
   if (executed.outcomes.some((o) => o.status === "acked_unverified")) return { ok: true, status: "acked_unverified" };
   return { ok: true, status: "acked" };

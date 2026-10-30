@@ -35,7 +35,7 @@ import { inverseScale } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
@@ -68,6 +68,14 @@ const OPCUA_CLOSE_STEP_MS = 1000;
 /** Mã trạng thái theo OPC UA Part 4 §7.34 (gõ tay — dùng khi lỗi phát hiện TRƯỚC khi gửi). */
 const STATUS_BAD_NODEID_INVALID = "BadNodeIdInvalid (0x80330000)";
 const STATUS_BAD_NODEID_UNKNOWN = "BadNodeIdUnknown (0x80340000)";
+
+/**
+ * SCADA R1b-2b-2a T2 (mục 66) — tiền tố lỗi hết hạn GIAO DỊCH của chính node-opcua 2.174 (`ClientSecureChannelLayer#_make_timeout_callback`:
+ * `new Error(`Transaction has timed out ( timeout = ${timeout} ms , request = ${request.constructor.name})`)`,
+ * node-opcua-secure-channel dist/source/client/client_secure_channel_layer.js:1147; ClientSession chuyển nguyên lỗi lên). WriteRequest đã gửi, máy chủ
+ * chưa trả lời ⇒ kết cục KHÔNG RÕ cho mọi node của lô.
+ */
+export const OPCUA_TIEN_TO_QUA_HAN = "Transaction has timed out";
 
 type ResolvedAddress = { nodeId: string } | { error: string; statusCode: string };
 
@@ -951,12 +959,17 @@ export class OpcuaDriver extends NotImplementedDriver {
         this.lastError = msg;
         // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
         if (laLoiMatLienKetKhiDangGui(err)) throw err;
+        // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH node-opcua (WriteRequest đã gửi, máy chủ chưa trả lời) ⇒ MỌI node đã gửi mang
+        // "không rõ kết cục" (dispatcher ⇒ 'timeout'), không 'failed'. Lỗi ép kiểu / phân giải cục bộ (không gửi) giữ 'failed'.
+        const ketCucKhongRo = ketCucKhongRoCua(err) ?? (msg.startsWith(OPCUA_TIEN_TO_QUA_HAN) ? "qua_han_driver" : null);
         // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
-        return prepared.map((p) => ({
-          tagKey: p.tagKey,
-          ok: false,
-          error: p.error ?? msg,
-        }));
+        return prepared.map((p) =>
+          p.error
+            ? { tagKey: p.tagKey, ok: false, error: p.error }
+            : ketCucKhongRo
+              ? { tagKey: p.tagKey, ok: false, error: msg, ketCucKhongRo }
+              : { tagKey: p.tagKey, ok: false, error: msg },
+        );
       }
     }
 

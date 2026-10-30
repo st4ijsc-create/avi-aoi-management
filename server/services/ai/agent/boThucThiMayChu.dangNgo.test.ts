@@ -84,7 +84,7 @@ function dung() {
     if (!kt.ok) throw new Error(kt.loiChoModel);
     return bo.chay(
       { id: `c${++n}`, ten, thamSo: kt.thamSo },
-      { cheDo, runId: "run-1", luot: 1, signal: new AbortController().signal, phat: (e) => suKien.push(e), ...them },
+      { cheDo, runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: (e) => suKien.push(e), ...them },
     );
   };
   return { bo, chay, suKien, confirmAction, executeDecision };
@@ -173,7 +173,7 @@ describe("qua LÕI VÒNG thật + bộ thực thi máy chủ", () => {
     const kq = await chayVongAgent({
       cauHoi: "x.md làm gì?",
       cheDo: "hoi",
-      runId: "r",
+      runId: "11111111-1111-4111-8111-111111111111",
       nguCanhDuAn: "",
       goiModel: modelGia([{ ten: "read_file", args: { path: "docs/x.md" } }, { chu: "Tệp khai báo x." }]),
       boThucThi: d.bo,
@@ -191,7 +191,7 @@ describe("qua LÕI VÒNG thật + bộ thực thi máy chủ", () => {
     await chayVongAgent({
       cauHoi: "sửa a",
       cheDo: "tu-dong",
-      runId: "r",
+      runId: "11111111-1111-4111-8111-111111111111",
       nguCanhDuAn: "",
       goiModel: modelGia([{ ten: "read_file", args: { path: "docs/x.md" } }, { ten: "edit_file", args: SUA_A }, { chu: "xong" }]),
       boThucThi: d.bo,

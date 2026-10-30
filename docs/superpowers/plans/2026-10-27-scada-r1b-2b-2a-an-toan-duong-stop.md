@@ -278,6 +278,88 @@ it("HAN_DU_PHONG_GHI_DRIVER_MS > hạn mặc định + ân hạn B3", () => {
   - Hoàn tác tất cả.
 - [ ] **Step 6: Commit** `fix(ot): het han cua chinh driver (modbus-serial, SLMP, EIP, OPC UA) => timeout khong ro ket cuc theo tung write, khong bao gio failed; reject trong an han B3 ghi rui ro lenh ghi cu (R1b-2b-2a T2, muc 66)`.
 
+### Task 2B: FOE không gửi lại lệnh `timeout` (không rõ kết cục) cho bước không phải STOP (backlog 78 — dieu-phoi chốt 2026-10-30)
+
+**Quyết định (một đoạn):** vòng thử lại của `foeEngine` (`runStep`, khoảng `:799-811`, có từ `cd98d9655`) gửi lại MỌI kết quả `failed` tới `maxAttempts`. Trong đó có cả lệnh mà dispatcher trả `timeout`, tức là không rõ máy đã nhận hay chưa. Gửi lại một lệnh không idempotent sau kết cục không rõ có thể làm thiết bị chạy hai lần. Theo tiền lệ `outcomeUnknownOf` (lệnh edge không rõ kết cục ⇒ KHÔNG BAO GIỜ gửi lại): bước `command` KHÔNG phải STOP có kết quả dispatch `timeout` ⇒ dừng vòng thử lại ngay ở lượt đó và báo `failed` với mã máy đọc được `FOE_OUTCOME_UNKNOWN`, kèm lời "không gửi lại; kiểm tra thiết bị". Bù trừ (compensation), nếu có, vẫn chạy như mọi lỗi. Bước STOP giữ nguyên: STOP luôn được gửi lại, không bao giờ bị giữ lại vì "không rõ" (R-10-ao N2). `failed` thật, tức thiết bị đã trả lời lỗi, vẫn được thử lại như hôm nay.
+
+**Files:**
+- Modify `server/services/orchestration/foe/foeEngine.ts`: vòng thử lại trong `runStep` và nơi `execCommand` biến kết quả dispatch thành `StepOutcome`. Cần mang được "dispatch status = timeout" ra ngoài, ví dụ `StepOutcome` `failed` thêm `outcomeUnknown?: true`. Không đổi hình `StepOutcome` cho các bên tiêu thụ khác.
+- Test: mới `server/services/orchestration/foe/foeKhongGuiLaiKhiKhongRo.r1b2b2.test.ts`, theo khuôn engine trong bộ nhớ của các test `foe*.test.ts` hiện có.
+
+Chốt:
+- Bước command không-STOP, `maxAttempts: 3`, dispatcher trả `timeout` ⇒ dispatcher bị gọi ĐÚNG 1 lần. Bước `failed` với `error` mang `FOE_OUTCOME_UNKNOWN`; compensation (nếu có) chạy một lần.
+- Cùng bước, dispatcher trả `failed` (thiết bị trả lời lỗi) ⇒ thử lại đủ 3 lần (đối chứng, hành vi cũ).
+- Bước STOP, dispatcher trả `timeout` ⇒ vẫn thử lại tới `maxAttempts` (hành vi cũ).
+- Trước khi cài: liệt kê mọi chỗ trong FOE và `server/services/orchestration` phân biệt kết quả dispatch (`grep -rn '"timeout"\|"failed"' server/services/orchestration`). Bảng "bên đọc → hành vi" đặt trong commit.
+
+- [ ] **Step 1: Test đỏ.** Ba ca trên. Ca thứ nhất đỏ hôm nay (dispatcher bị gọi 3 lần).
+- [ ] **Step 2: Cài.**
+- [ ] **Step 3: Chạy lại** `server/services/orchestration` + census / gate / guard. Mong đợi: xanh.
+- [ ] **Step 4: Đột biến:** bỏ nhánh "timeout ⇒ dừng thử lại" ⇒ ca 1 đỏ; áp nhánh đó cho cả STOP ⇒ ca 3 đỏ. Hoàn tác.
+- [ ] **Step 5: Commit** `fix(foe): khong gui lai lenh khong ro ket cuc (dispatch timeout) cho buoc khong phai STOP - theo tien le outcomeUnknownOf; STOP van gui lai (R1b-2b-2a T2B, backlog 78)`. kiem-dinh rà.
+
+### Task 3A: EtherNet/IP — ack MUỘN của lời ghi đã hết hạn không bao giờ được tính cho lời ghi KẾ TIẾP (backlog 79, AN TOÀN — dieu-phoi chốt 2026-10-30, làm TRƯỚC Task 3 phần S7/MC và trước Task 6)
+
+**Phát hiện (rà Task 2):** khi một lời ghi hết hạn, st-ethernet-ip để lại listener "Write Tag" (`node_modules/st-ethernet-ip/dist/controller/index.js:814-831`). Phản hồi MUỘN của lời ghi cũ đó có thể khớp lời ghi kế tiếp, kể cả STOP, và làm nó báo ok = ack GIẢ.
+
+**Bất biến (cứng):** KHÔNG BAO GIỜ báo `ok` từ một ack có thể là của lời ghi cũ. Cách cài do người thực hiện chọn SAU thăm dò.
+
+Hướng gợi ý của dieu-phoi:
+- Lời ghi ENIP hết hạn ⇒ phiên bị đánh dấu "nhiễm" ⇒ gỡ listener hoặc huỷ phiên, nối lại trước lời ghi kế.
+- Nếu STOP phải đi trên phiên nhiễm (không chờ nối lại): vẫn GỬI, nhưng kết cục = không rõ (`ketCucKhongRo` ⇒ `timeout`, băng E-STOP cứng `khong_ro` như T17), tuyệt đối không ok.
+- STOP không bao giờ bị chặn hoặc chờ vô hạn vì nối lại; mọi chờ nối lại đều có trần.
+
+**Files:**
+- Modify `server/services/ot/drivers/ethernetIpDriver.ts` (lời ghi, `withTimeout`, vòng đời phiên).
+- Test: mới `server/services/ot/drivers/enipAckMuon.thuVienThat.r1b2b2.test.ts`.
+
+- [ ] **Step 0: Thăm dò thư viện thật (cổng).** Dựng thiết bị ENIP giả trong tiến trình, có điều khiển được thời điểm trả ack (theo khuôn của test EIP hiện có, nếu có), dùng st-ethernet-ip THẬT.
+  - Tái hiện: lời ghi A hết hạn (thiết bị im), rồi lời ghi B được gửi. Thiết bị trả ack của A MUỘN, rồi ack của B (hoặc không trả B).
+  - Ghi lại B được báo thế nào hôm nay, và listener / phiên ở trạng thái nào.
+  - Không tái hiện được ⇒ DỪNG, báo bộ điều khiển kèm số đo. Không vá theo phỏng đoán.
+- [ ] **Step 1: Test đỏ:**
+  - (a) Ack muộn của A tới trước khi B được trả lời ⇒ B KHÔNG `ok`.
+  - (b) STOP là B, phiên nhiễm ⇒ STOP vẫn được GỬI, kết cục `ketCucKhongRo` (không ok), có trần thời gian (`batDauDoLag`).
+  - (c) Sau khi nối lại sạch, lời ghi C được ack đúng ⇒ `ok` (đối chứng).
+  - (d) Không hết hạn ⇒ hành vi không đổi.
+- [ ] **Step 2: Cài.**
+- [ ] **Step 3: Chạy lại** `server/services/ot/drivers` + `server/services/ot/otDeviceWrite*` + `client/src/components/scada` + census / gate / guard.
+- [ ] **Step 4: Đột biến:** bỏ đánh dấu "nhiễm" ⇒ (a) đỏ; cho STOP trên phiên nhiễm báo ok ⇒ (b) đỏ; nối lại không có trần ⇒ (b) đỏ theo trần. Hoàn tác.
+- [ ] **Step 5: Commit** `fix(ot): ENIP - ack muon cua loi ghi da het han khong bao gio tinh cho loi ghi ke (phien nhiem => noi lai; STOP tren phien nhiem => khong ro ket cuc, khong ok) - tham do st-ethernet-ip that (R1b-2b-2a T3A, backlog 79)`. kiem-dinh rà.
+
+**Thứ tự chạy 2a sau chốt 2026-10-30:** T2 → T2B → T3A → T3 (S7 / MC) → T4 …
+
+### Task 3B-0: Mitsubishi MC — KHOÁ AN TOÀN (fail-closed) tới khi có 3B (backlog 84 — dieu-phoi chốt 2026-10-30, làm TRƯỚC Task 3)
+
+**Phát hiện (thăm dò T3, mcprotocol 0.1.2 thật qua `MitsubishiMcDriver`, máy chủ 1E giả):**
+- Thư viện đọc end code 1E ở byte 9 thay vì byte 1. Vì thế PLC trả ack ĐÚNG 2 byte (`83 00`) ⇒ `ERR_OUT_OF_RANGE` ném trong handler socket ⇒ uncaughtException ⇒ tiến trình trung tâm (`index.ts` handler) và edge gateway THOÁT mã 1. Nghĩa là: MỘT lời ghi MC THÀNH CÔNG làm sập toàn bộ server.
+- Phản hồi lỗi ≥ 10 byte ⇒ `{ok:true}`, tức ACK GIẢ.
+- 1E không có số thứ tự ⇒ ack muộn có thể hoàn tất lời ghi kế.
+- Nhánh "MC write busy" là mã chết.
+
+**Quyết định (dieu-phoi):** MC FAIL-CLOSED. Đây là thay đổi hành vi theo hướng an toàn. 3B đầy đủ (parse 1E đúng, cô lập ngoại lệ, hạ phiên, không ok từ phản hồi lỗi, busy) để ở backlog 84, làm sau T3 / T3A.
+
+**Yêu cầu:**
+1. **GHI.** Mọi lời ghi MC ⇒ từ chối TRƯỚC khi gửi, bằng mã ổn định `OT_MC_TAM_KHOA`. Có i18n vi/en/zh với lý do "thư viện mcprotocol lỗi phân tích phản hồi — chờ 3B". KHÔNG gửi gói nào. STOP qua adapter MC ⇒ `failed`, hiện băng E-STOP cứng (`khong_dat`), không bao giờ ok.
+2. **ĐỌC.** Thăm dò xem đường đọc có chạm cùng đường phân tích / ném trong handler socket không.
+   - Có ⇒ đọc cũng khoá: chất lượng bad kèm lý do `OT_MC_TAM_KHOA`.
+   - Không ⇒ giữ đọc, nhưng bọc cô lập ngoại lệ để không bao giờ làm sập tiến trình.
+   - Bằng chứng thăm dò ghi vào báo cáo.
+3. **KẾT NỐI.** Khi khoá: KHÔNG mở socket MC, để handler không thể ném từ dữ liệu không mời. Nếu ở mục 2 đọc được giữ thì kết nối mở cho đọc, và handler phải được cô lập.
+4. **UI / posture.** Adapter MC hiện trạng thái "tạm khoá" có lý do, qua health / lastError / posture sẵn có của adapter. Không sửa tệp client cấm của Part B khi chưa báo bộ điều khiển.
+5. **Test** (máy chủ 1E giả gửi ack 2 byte):
+   - tiến trình test KHÔNG nhận uncaughtException (hôm nay có);
+   - lời ghi bị từ chối trước khi gửi (đếm gói = 0);
+   - STOP qua MC ⇒ `failed` + `OT_MC_TAM_KHOA`;
+   - đọc theo kết luận mục 2.
+
+   Mỗi ca có đột biến đỏ.
+
+- Files: `server/services/ot/drivers/mitsubishiMcDriver.ts` (+ nơi đăng ký mã / i18n / posture nếu cần). Test mới `server/services/ot/drivers/mcTamKhoa.r1b2b2.test.ts`.
+- Commit: `fix(ot): MC fail-closed - moi loi ghi MC bi tu choi truoc khi gui (OT_MC_TAM_KHOA), khong mo socket khi khoa; mcprotocol 0.1.2 doc end code 1E sai byte => ack DUNG lam sap tien trinh, phan hoi loi >= 10 byte => ok gia (R1b-2b-2a T3B-0, backlog 84)`. kiem-dinh rà.
+
+**Thứ tự chạy 2a cập nhật 2026-10-30 tối:** … T3A → **T3B-0** → T3 (S7) → T4 … ; 3B đầy đủ = backlog 84.
+
 ### Task 3: Hết hạn của CHÍNH driver ⇒ `timeout` — S7 / MC qua thăm dò thư viện thật (mục 66, phần 2)
 
 **Quyết định (một đoạn):** nodes7 và mcprotocol báo hết hạn ghi KHÔNG bằng lỗi mà bằng `writeDoneCallback(anyBadQualities = true)` — y hệt lúc PLC trả lỗi ghi. Phân biệt bằng `errCode` của item (cách T4 R1b-2b-1 làm cho MC đọc), chỉ sau khi thăm dò thư viện thật. Bộ hẹn dự phòng `withTimeout(…, 5000)` của hai driver nâng lên `HAN_DU_PHONG_GHI_DRIVER_MS` (cùng lý do Task 2).
@@ -300,6 +382,7 @@ it("HAN_DU_PHONG_GHI_DRIVER_MS > hạn mặc định + ân hạn B3", () => {
 Chốt:
 - `anyBadQualities === true` + `laQuaHanGhi*(conn)` ⇒ mọi write của lô mang `"qua_han_driver"`; `anyBadQualities` mà không phải quá hạn ⇒ `failed` (PLC đã trả lời lỗi). Bộ hẹn dự phòng hết ⇒ `LoiQuaHanYeuCauDriver` ⇒ `"qua_han_driver"`.
 - Ghi chú đầu hai hàm: bản thư viện (nodes7 0.3.x, mcprotocol 0.1.2), dòng nguồn, và vì sao không dò thời gian.
+- (Rà T2 M-3, 2026-10-30) `HAN_DU_PHONG_GHI_DRIVER_MS` = 6500 là HẰNG: lệnh có hạn riêng > 6500 ms mà thư viện cũng giữ yêu cầu > 6500 ms ⇒ bộ hẹn dự phòng tới TRƯỚC hạn dispatcher ⇒ B3 không chạy. Đo cấu hình hạn lệnh thật; nếu có hạn > 5000 ⇒ bộ hẹn dự phòng = max(6500, hạn lệnh + ân hạn B3 + 500) theo từng lệnh, có test.
 
 - [ ] **Step 1: Thăm dò thư viện thật (cổng).** `quaHanGhi.thuVienThat.r1b2b2.test.ts`:
   - nodes7 thật trỏ `startS7commSim()` với `setFault("hangWrite")`, `timeout` kết nối 300 ms: `writeItems` ⇒ callback `true`; in và ghim cấu trúc item (đường dẫn mảng, `valid`, `errCode`);

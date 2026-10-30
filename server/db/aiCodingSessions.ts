@@ -88,7 +88,7 @@ export async function danhSachPhien(
       .from(aiCodingSessions)
       .where(
         and(
-          eq(aiCodingSessions.userId, userId),
+          eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding"),
           eq(aiCodingSessions.projectId, projectId),
         ),
       )
@@ -125,7 +125,7 @@ export async function moPhien(userId: number, sessionId: string): Promise<PhienD
       .where(
         and(
           eq(aiCodingSessions.id, sessionId),
-          eq(aiCodingSessions.userId, userId),
+          eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding"),
         ),
       )
       .limit(1);
@@ -198,7 +198,7 @@ export async function luuPhien(
         .where(
           and(
             eq(aiCodingSessions.id, input.sessionId),
-            eq(aiCodingSessions.userId, userId),
+            eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding"),
             // Phiên bám MỘT dự án suốt đời: một lượt lưu mang projectId khác là một lỗi lập trình
             // ở client (đổi dự án phải MỞ phiên khác), không phải một lượt "di chuyển phiên".
             eq(aiCodingSessions.projectId, input.projectId),
@@ -251,7 +251,7 @@ export async function doiTenPhien(userId: number, sessionId: string, tenMoi: unk
       const [row] = await db
         .select({ turns: aiCodingSessions.turns })
         .from(aiCodingSessions)
-        .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId)))
+        .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding")))
         .limit(1);
       if (!row) return { ok: false, title: "" };
       title = nhanTuLuot(locLuot(row.turns));
@@ -259,7 +259,7 @@ export async function doiTenPhien(userId: number, sessionId: string, tenMoi: unk
     const ra = await db
       .update(aiCodingSessions)
       .set({ title })
-      .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId)))
+      .where(and(eq(aiCodingSessions.id, sessionId), eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding")))
       .returning({ id: aiCodingSessions.id });
     return ra.length > 0 ? { ok: true, title } : { ok: false, title: "" };
   } catch (err) {
@@ -280,7 +280,7 @@ export async function xoaPhien(userId: number, sessionId: string): Promise<{ ok:
       .where(
         and(
           eq(aiCodingSessions.id, sessionId),
-          eq(aiCodingSessions.userId, userId),
+          eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding"),
         ),
       )
       .returning({ id: aiCodingSessions.id });
@@ -304,7 +304,7 @@ export async function demPhienCuaToi(userId: number, projectId: string): Promise
       .from(aiCodingSessions)
       .where(
         and(
-          eq(aiCodingSessions.userId, userId),
+          eq(aiCodingSessions.userId, userId), eq(aiCodingSessions.kind, "coding"),
           eq(aiCodingSessions.projectId, projectId),
         ),
       );
