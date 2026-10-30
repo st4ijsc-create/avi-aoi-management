@@ -35,7 +35,7 @@ const dev = () => deviceAdapterRouter.createCaller(admin());
 const ghim = (adapterId: number, tagKey: string, stopValue: unknown) =>
   dev().tags.setStopPin({ adapterId, tagKey, stopValue, reason: `C3 ghim ${tagKey}` });
 const auditCuoi = async (tagId: number) =>
-  Number((await sql<{ id: number }[]>`SELECT max(id)::int AS id FROM control_audit_log WHERE "entityType" = 'device_tag_stop_pin' AND "entityId" = ${String(tagId)}`)[0].id);
+  Number((await sql<{ id: number }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0))::int AS id FROM control_audit_log WHERE "entityType" = 'device_tag_stop_pin' AND "entityId" = ${String(tagId)}`)[0].id);
 /** Bảo đảm createdAt của bước sau lớn hơn hẳn bước trước (cùng mili-giây hiếm nhưng có thể). */
 const nghi = () => new Promise((r) => setTimeout(r, 15));
 

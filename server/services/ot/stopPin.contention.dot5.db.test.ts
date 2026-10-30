@@ -181,8 +181,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
 
   beforeEach(async () => {
     await sql`UPDATE device_tags SET stop_value = NULL, stop_pinned_by = NULL, stop_pinned_at = NULL WHERE id = ${tagId}`;
-    startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM control_audit_log`)[0].m ?? 0;
-    startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM audit_logs`)[0].m ?? 0;
+    startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)) AS m FROM control_audit_log`)[0].m ?? 0;
+    startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('audit_logs', 'id')::regclass), 0)) AS m FROM audit_logs`)[0].m ?? 0;
   });
 
   afterAll(async () => {
@@ -221,8 +221,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
 
   it("set vs clear at the same moment (pin 1 ⇒ {set 9, clear}) ⇒ either order, both audited against the real prior pin", async () => {
     await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 1, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null, kiemCuoi: KHONG_MA });
-    startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM control_audit_log`)[0].m ?? 0;
-    startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM audit_logs`)[0].m ?? 0;
+    startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)) AS m FROM control_audit_log`)[0].m ?? 0;
+    startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('audit_logs', 'id')::regclass), 0)) AS m FROM audit_logs`)[0].m ?? 0;
 
     const results = await underHeldLock<unknown>([
       () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 9, reason: "G4 set 9", nguoiSua: nguoiSua(1), phamViMay: null, kiemCuoi: KHONG_MA }),
@@ -244,8 +244,8 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 5 G4 �
     const db = (await getDb())!;
     for (const order of ["pin-first", "clear-first", "pin-first", "clear-first", "pin-first", "clear-first"] as const) {
       await datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 2, reason: "G4 seed pin", nguoiSua: nguoiSua(0), phamViMay: null, kiemCuoi: KHONG_MA });
-      startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM control_audit_log`)[0].m ?? 0;
-      startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) AS m FROM audit_logs`)[0].m ?? 0;
+      startAuditId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)) AS m FROM control_audit_log`)[0].m ?? 0;
+      startAuditLogId = (await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('audit_logs', 'id')::regclass), 0)) AS m FROM audit_logs`)[0].m ?? 0;
       const pin = () => datStopPin({ adapterId, tagKey: "stop_sp", stopValue: 7, reason: "G4 set 7", nguoiSua: nguoiSua(1), phamViMay: null, kiemCuoi: KHONG_MA });
       const clear = () =>
         db.transaction((tx) =>
