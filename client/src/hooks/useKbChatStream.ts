@@ -384,6 +384,8 @@ export function useKbChatStream() {
   const [error, setError] = useState<string | null>(null);
   /** ★ Đợt 10.4b — lỗi CÓ KIỂU của đường model ngoài (428 ⇒ `canXacNhanVanHanh`; còn lại ⇒ `code`/`tranVuot`/`vet`); null khi lỗi khác / không lỗi. */
   const [loiNgoai, setLoiNgoai] = useState<LoiSinhChuNgoai | null>(null);
+  /** Bản ĐỒNG BỘ của `loiNgoai` — bề mặt đọc ngay sau `await startKbStream` (state chưa kịp cập nhật). */
+  const loiNgoaiRef = useRef<LoiSinhChuNgoai | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Synchronous "was the last run aborted?" flag — the caller reads this right
   // after the await (state updates are async, so it can't trust `error` for
@@ -400,6 +402,7 @@ export function useKbChatStream() {
       setStreamingReasoning("");
       setError(null);
       setLoiNgoai(null);
+      loiNgoaiRef.current = null;
       abortedRef.current = false;
 
       const controller = new AbortController();
@@ -646,6 +649,7 @@ export function useKbChatStream() {
         if (err?.name === "AbortError") {
           abortedRef.current = true;
         } else if (err instanceof LoiSinhChuNgoai) {
+          loiNgoaiRef.current = err;
           setLoiNgoai(err);
           setError(err.message);
         } else {
@@ -664,5 +668,5 @@ export function useKbChatStream() {
     setIsStreaming(false);
   }, []);
 
-  return { streamingText, streamingReasoning, isStreaming, error, loiNgoai, abortedRef, startKbStream, stopKbStream };
+  return { streamingText, streamingReasoning, isStreaming, error, loiNgoai, loiNgoaiRef, abortedRef, startKbStream, stopKbStream };
 }
