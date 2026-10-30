@@ -155,7 +155,8 @@ export type SuKienAgent =
   /** `tu-dong` bị HẠ tự trị cho phần còn lại của lượt (mọi ghi/lệnh sau đó cần người duyệt). Phát MỘT lần mỗi lượt. */
   | { loai: "ha-tu-tri"; lyDo: "noi-dung-dang-ngo"; nguon: string; mau: string[] }
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
-  | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
+  /** (Đợt 12 H0.1) `cacheN` / `promptN` = phần của `vao` TÁI DÙNG từ prefix-cache / XỬ LÝ LẠI — chỉ khi host đo được (luôn đi cặp). */
+  | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number; cacheN?: number; promptN?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
   /**
    * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
@@ -189,7 +190,8 @@ export type ManhModel =
   | {
       loai: "xong";
       toolCalls: WireToolCall[];
-      usage?: { vao: number; ra: number; nghi?: number };
+      /** (Đợt 12 H0.1) `cacheN`/`promptN`: tách `vao` thành tái dùng prefix-cache / xử lý lại — vắng = không đo được. */
+      usage?: { vao: number; ra: number; nghi?: number; cacheN?: number; promptN?: number };
       /**
        * Lượt bị CẮT ở trần token ra (engine báo `finish_reason:"length"`). Có tool call ⇒ tham số có thể DỞ dù trông hợp
        * lệ (JSON đủ ngoặc nhưng nội dung tệp cụt) ⇒ lõi KHÔNG thực thi lời gọi nào của lượt đó. Vắng = không bị cắt.

@@ -235,7 +235,7 @@ type KetQuaLuotModel =
       chu: string;
       nghi: string;
       toolCalls: WireToolCall[];
-      usage?: { vao: number; ra: number; nghi?: number };
+      usage?: { vao: number; ra: number; nghi?: number; cacheN?: number; promptN?: number };
       /** lượt bị cắt ở trần token ra (`ManhModel.xong.biCat`) */
       biCat?: boolean;
     }
@@ -684,6 +684,8 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           ra: u.ra,
           ...(u.nghi !== undefined ? { nghi: u.nghi } : {}),
           ctxPhanTram: Math.round((u.vao * 100) / gh.nganSachNguCanhToken),
+          // (Đợt 12 H0.1) chỉ khi host đo được CẢ HAI — vắng ⇒ sự kiện như cũ từng byte.
+          ...(typeof u.cacheN === "number" && typeof u.promptN === "number" ? { cacheN: u.cacheN, promptN: u.promptN } : {}),
         });
         const pct = Math.round((u.vao * 100) / gh.nganSachNguCanhToken);
         if (!daBaoNguCanhDay && pct >= NGUONG_NGU_CANH_DAY_PHAN_TRAM) {

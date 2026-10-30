@@ -1887,6 +1887,13 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
    */
   requestId: varchar("requestId", { length: 64 }),
   luotPhu: varchar("luotPhu", { length: 32 }),
+  /**
+   * ★ Đợt 12 H0.1 (2026-10-31, migration 0445) — token prompt TÁI DÙNG từ prefix-cache (`timings.cache_n`) và XỬ LÝ LẠI
+   * (`timings.prompt_n`). Nullable, không default: NULL = không đo được (in-process / không-stream / hàng cũ). `tokensIn` giữ nghĩa
+   * cũ (tổng). CHECK ≥ 0 (`chk_ai_gateway_metrics_cache_prompt`).
+   */
+  cacheTokens: integer("cacheTokens"),
+  promptEvalTokens: integer("promptEvalTokens"),
   // Who triggered it (best-effort; null for system/cron callers).
   userId: integer("userId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

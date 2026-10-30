@@ -775,6 +775,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                   tokensIn: l.vao ?? undefined,
                   tokensOut: l.ra ?? undefined,
                   reasoningTokens: l.nghi,
+                  cacheTokens: l.cacheN,
+                  promptEvalTokens: l.promptN,
                   latencyMs: l.ms,
                   outcome: "ok",
                 }),

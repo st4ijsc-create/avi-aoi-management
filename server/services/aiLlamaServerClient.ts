@@ -1055,6 +1055,12 @@ export class LoiStreamServer extends Error {
   }
 }
 
+/** ★ Đợt 12 H0.1 — số đếm token server khai: số (hoặc chuỗi số) hữu hạn ≥ 0 ⇒ phần nguyên; còn lại ⇒ `undefined` (không biết). */
+function soDemToken(x: unknown): number | undefined {
+  const n = typeof x === "number" ? x : typeof x === "string" && x.trim() !== "" ? Number(x) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
+}
+
 /** `true` ⇔ lỗi này xảy ra SAU khi ít nhất một mảnh chữ đã rời khỏi generator. */
 export function daPhatChuTruocKhiHong(err: unknown): boolean {
   return (err as any)?.daPhatChu === true;
@@ -1274,6 +1280,12 @@ async function* streamChatCompletionTrucTiep(
     let soDeltaSuyLuan = 0;
     let ttftMs: number | undefined;
     let tokensPrompt = 0;
+    // ★ Đợt 12 H0.1 — `timings.cache_n` / `timings.prompt_n` (ưu tiên) và dự phòng từ `usage.prompt_tokens_details.cached_tokens`.
+    //   `undefined` = server không khai ⇒ chunk `done` KHÔNG mang trường (không biết ≠ 0).
+    let cacheN: number | undefined;
+    let promptN: number | undefined;
+    let usageCacheN: number | undefined;
+    let usagePromptN: number | undefined;
     let tokensGenerated = 0;
     let soManh = 0;
     let xong = false;
@@ -1305,6 +1317,12 @@ async function* streamChatCompletionTrucTiep(
         if (u) {
           tokensPrompt = Number(u.prompt_tokens ?? tokensPrompt) || tokensPrompt;
           tokensGenerated = Number(u.completion_tokens ?? tokensGenerated) || tokensGenerated;
+          const daCache = soDemToken(u.prompt_tokens_details?.cached_tokens);
+          const tongVao = soDemToken(u.prompt_tokens);
+          if (daCache !== undefined && tongVao !== undefined && tongVao >= daCache) {
+            usageCacheN = daCache;
+            usagePromptN = tongVao - daCache;
+          }
         }
         const t = json?.timings;
         if (t) {
@@ -1312,6 +1330,13 @@ async function* streamChatCompletionTrucTiep(
           const tong = Number(t.cache_n ?? 0) + Number(t.prompt_n ?? 0);
           if (tong > 0) tokensPrompt = tong;
           if (Number(t.predicted_n ?? 0) > 0) tokensGenerated = Number(t.predicted_n);
+          // ★ Đợt 12 H0.1 — GIỮ RIÊNG hai số (tổng ở trên mất tỉ lệ trúng cache). Chỉ nhận khi CẢ HAI là số đếm hợp lệ.
+          const c = soDemToken(t.cache_n);
+          const p = soDemToken(t.prompt_n);
+          if (c !== undefined && p !== undefined) {
+            cacheN = c;
+            promptN = p;
+          }
         }
         // Gom suy luận TRƯỚC `continue` — nếu để sau, một sự kiện chỉ mang `reasoning_content`
         // (rất phổ biến ở model lai: hàng trăm sự kiện suy luận rồi mới tới chữ) sẽ rơi khỏi phép
@@ -1417,6 +1442,11 @@ async function* streamChatCompletionTrucTiep(
       finishReason: finishReasonRa(finishReason, toolCalls.length > 0),
       tokensGenerated,
       tokensPrompt,
+      ...(cacheN !== undefined && promptN !== undefined
+        ? { cacheN, promptN }
+        : usageCacheN !== undefined && usagePromptN !== undefined
+          ? { cacheN: usageCacheN, promptN: usagePromptN }
+          : {}),
       totalTimeMs,
       ttftMs,
       tokensPerSecond:
