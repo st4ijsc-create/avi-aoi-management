@@ -21644,6 +21644,15 @@
         "duAnPhanMem": " (software project)",
         "macDinh": "the engine's default model",
         "duPhong": "fallback — the slot is holding another model"
+      },
+      "khoa": {
+        "tieuDe": "Hard-locked commands (the agent can never run these)",
+        "biKhoa": "This command is HARD-LOCKED ({{lenh}}) — it cannot be approved to run.",
+        "phim": "While this card is focused: Enter = Allow once · Esc = Reject",
+        "moTa": {
+          "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
+          "csdl-that": "Write to the REAL database"
+        }
       }
     },
     "duanCaNhan": {
