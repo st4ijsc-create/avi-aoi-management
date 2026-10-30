@@ -537,3 +537,21 @@ describe("scadaDiag.danhSach — T3B-0 fix 1 (I1): adapter MC tạm khoá GHI hi
     }
   });
 });
+
+describe("scadaDiag.danhSach — T3B-0 polish (m13): adapter MC do EDGE phục vụ", () => {
+  it("hàng MC có edgeNodeId ⇒ `loi` KHÔNG mang OT_MC_TAM_KHOA (trung tâm không bảo chứng cho bản build của edge)", async () => {
+    const code = `${RUN}-mce`;
+    const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status, "edgeNodeId")
+      VALUES (${A.mid}, ${code}, ${code}, 'mitsubishi-mc', '10.9.8.7:5007', 500, false, 'disabled', ${edgeNodeId}) RETURNING id`);
+    const id = Number(r.id);
+    try {
+      for (const c of [viewerA, admin]) {
+        const h = (await dongCua(c, id))!;
+        expect(h.soHuu.loai).toBe("edge");
+        expect(h.loi ?? "").not.toContain("OT_MC_TAM_KHOA");
+      }
+    } finally {
+      await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
+    }
+  });
+});
