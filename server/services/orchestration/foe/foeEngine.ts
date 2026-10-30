@@ -556,12 +556,16 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   edgeDetached?: boolean;
 }
 
+/** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
+export const FOE_OUTCOME_UNKNOWN = "FOE_OUTCOME_UNKNOWN";
+
 /** Outcome of executing a step subtree. */
 type StepOutcome =
   | { kind: "ok" }
   | { kind: "skipped" }
   | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
-  | { kind: "failed"; error: string }
+  /** outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown). */
+  | { kind: "failed"; error: string; outcomeUnknown?: true }
   | { kind: "aborted"; error: string }
   /**
    * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
@@ -807,6 +811,12 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   else while (true) {
     attempt += 1;
     outcome = await runStepBody(rc, step, attempt, stop);
+    // R1b-2b-2a T2B (backlog 78) — a NON-STOP command whose dispatch timed out (sent, outcome unknown) is NEVER sent again
+    // (precedent: outcomeUnknownOf). A STOP keeps the old retry (never held back as "unknown"); a real "failed" is retried.
+    if (outcome.kind === "failed" && outcome.outcomeUnknown && !stop) {
+      outcome = { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
+      break;
+    }
     if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
   }
 
@@ -1827,7 +1837,8 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   );
 
   if (!result.ok) {
-    return { kind: "failed", error: result.error ?? `Command "${step.command}" rejected (${result.status}).` };
+    const error = result.error ?? `Command "${step.command}" rejected (${result.status}).`;
+    return result.status === "timeout" ? { kind: "failed", error, outcomeUnknown: true } : { kind: "failed", error };
   }
   return { kind: "ok" };
 }

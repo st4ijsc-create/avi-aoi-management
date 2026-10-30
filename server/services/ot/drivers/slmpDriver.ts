@@ -24,7 +24,7 @@
  */
 import net from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
-import { LoiMatLienKetKhiDangGui, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import type {
   OtProtocol,
   OtDriver,
@@ -263,7 +263,9 @@ export class SlmpDriver implements OtDriver {
             // flip connected=false → supervisor reconnect sạch (link-loss path).
             this.connected = false;
             this.socket?.destroy();
-            reject(new Error(`slmp transaction timeout after ${this.timeoutMs}ms`));
+            // R1b-2b-2a T2 (mục 66) — yêu cầu ĐÃ ghi lên socket, thiết bị chưa trả lời ⇒ lỗi có kiểu "không rõ kết cục" (lời ghi ⇒ 'timeout', không
+            // 'failed'). Đường ĐỌC không đổi: thông điệp vẫn "timed out" ⇒ laLoiTimeout / chatLuongLoiChung ⇒ timeout / comm_lost như cũ.
+            reject(new LoiQuaHanYeuCauDriver("slmp", `transaction timeout after ${this.timeoutMs}ms`));
           }
         }, this.timeoutMs);
         const p = { resolve, reject, timer, serialMongDoi };
@@ -445,6 +447,9 @@ export class SlmpDriver implements OtDriver {
       this.lastError = msg;
       // R1b-2b-1 — lệnh ĐÃ ghi lên socket khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
       if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-2a T2 (mục 66) — hẹn giờ giao dịch của driver hết khi khung đã gửi ⇒ kết cục KHÔNG RÕ của write này (dispatcher ⇒ 'timeout').
+      const ketCucKhongRo = ketCucKhongRoCua(err);
+      if (ketCucKhongRo) return { tagKey: w.tagKey, ok: false, error: msg, ketCucKhongRo };
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

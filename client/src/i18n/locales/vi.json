@@ -19121,7 +19121,16 @@
     "ledger": "Sổ ghi",
     "ledgerIntent": "Ghi trước (ý định)",
     "ledgerResult": "Kết quả",
-    "ledgerResultOf": "Kết quả của #{{id}}"
+    "ledgerResultOf": "Kết quả của #{{id}}",
+    "loiBiChe": "Chi tiết kỹ thuật bị ẩn (cần quyền kỹ sư)",
+    "maLoi": {
+      "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
+      "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
+      "EDGE_REPORTED": "Edge báo lệnh không thành công",
+      "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
+      "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",
+      "TECHNICAL_ERROR": "Lỗi kỹ thuật"
+    }
   },
   "license": {
     "title": "Quản lý giấy phép",

@@ -19495,7 +19495,16 @@
     "ledger": "账本",
     "ledgerIntent": "预写意图",
     "ledgerResult": "结果",
-    "ledgerResultOf": "#{{id}} 的结果"
+    "ledgerResultOf": "#{{id}} 的结果",
+    "loiBiChe": "技术细节已隐藏（需要工程师权限）",
+    "maLoi": {
+      "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
+      "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
+      "EDGE_REPORTED": "边缘节点报告命令未成功",
+      "READBACK_UNAVAILABLE": "已写入但无法回读 — 请在设备处检查",
+      "READBACK_MISMATCH": "已写入但回读值不一致 — 请在设备处检查",
+      "TECHNICAL_ERROR": "技术错误"
+    }
   },
   "license": {
     "title": "许可管理",

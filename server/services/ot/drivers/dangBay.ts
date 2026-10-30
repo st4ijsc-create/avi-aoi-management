@@ -104,3 +104,43 @@ export class SoYeuCauDangBay {
     return n;
   }
 }
+
+/**
+ * SCADA R1b-2b-2a T2 (mục 66, phần 1) — yêu cầu đã giao cho thư viện / thiết bị mà HẾT HẠN CỦA CHÍNH DRIVER (hẹn giờ giao dịch của thư viện:
+ * modbus-serial `setTimeout(cfg.timeoutMs)`, SLMP `cfg.timeoutMs`, st-ethernet-ip `timeout_sp`, node-opcua timeoutHint; hoặc bộ hẹn DỰ PHÒNG của
+ * driver `HAN_DU_PHONG_GHI_DRIVER_MS`) trước khi thiết bị trả lời ⇒ kết cục KHÔNG RÕ (lệnh có thể đã được áp). Dispatcher ánh xạ sang `timeout`
+ * theo TỪNG write — cùng nhánh nhãn / bỏ đọc lại / ghi rủi ro "lệnh ghi cũ" với `LoiMatLienKetKhiDangGui` (T17), không bao giờ `failed`.
+ */
+export const MA_QUA_HAN_YEU_CAU_DRIVER = "OT_DRIVER_REQUEST_TIMEOUT";
+
+export class LoiQuaHanYeuCauDriver extends Error {
+  readonly code = MA_QUA_HAN_YEU_CAU_DRIVER;
+  constructor(
+    readonly giaoThuc: string,
+    readonly chiTiet: string,
+  ) {
+    super(`${giaoThuc} request timed out in the driver (${chiTiet}) — outcome unknown`);
+    this.name = "LoiQuaHanYeuCauDriver";
+  }
+}
+
+export function laLoiQuaHanYeuCauDriver(err: unknown): err is LoiQuaHanYeuCauDriver {
+  return err instanceof LoiQuaHanYeuCauDriver || (err as { code?: unknown } | null | undefined)?.code === MA_QUA_HAN_YEU_CAU_DRIVER;
+}
+
+/** Vì sao một write `ok: false` KHÔNG RÕ kết cục (đã giao cho thư viện / thiết bị): liên kết mất khi đang bay · driver tự hết hạn. */
+export type KetCucKhongRo = "mat_lien_ket" | "qua_han_driver";
+
+/** Lỗi có kiểu ⇒ loại "không rõ"; lỗi khác (thiết bị đã trả lời, chưa gửi, ép kiểu cục bộ) ⇒ null (`failed` như cũ). */
+export function ketCucKhongRoCua(err: unknown): KetCucKhongRo | null {
+  if (laLoiMatLienKetKhiDangGui(err)) return "mat_lien_ket";
+  if (laLoiQuaHanYeuCauDriver(err)) return "qua_han_driver";
+  return null;
+}
+
+/**
+ * Bộ hẹn DỰ PHÒNG cho một lời ghi của driver (EIP ở T2; S7 / MC ở T3) — chỉ chặn một promise thư viện không bao giờ xong. Lớn hơn hạn lệnh mặc định
+ * (OT_CONTROL_TIMEOUT_MS 5000) + ân hạn B3 (OT_TIMED_OUT_WRITE_GRACE_MS 1000) ⇒ trong cấu hình mặc định hạn của DISPATCHER thắng và B3 (giữ chỗ +
+ * đặt lại phiên) luôn chạy khi thư viện còn giữ yêu cầu.
+ */
+export const HAN_DU_PHONG_GHI_DRIVER_MS = 6500;

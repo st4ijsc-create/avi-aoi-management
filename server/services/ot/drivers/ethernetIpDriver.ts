@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
@@ -59,6 +59,13 @@ function coerceEipWrite(raw: unknown, dataType: string, dungGhim?: boolean): num
   }
 }
 
+/**
+ * SCADA R1b-2b-2a T2 (mục 66) — tiền tố lỗi hết hạn ghi của CHÍNH st-ethernet-ip 2.7.5: `_writeTag` / `_writeTagFragmented` dựng
+ * `new Error(`TIMEOUT occurred while writing Writing Tag: ${tag.name}.`)` rồi `promiseTimeout(…, timeout_sp, writeTagErr)` (dist/controller/index.js:812,
+ * :855) — gói CIP đã `write_cip` ⇒ kết cục không rõ.
+ */
+export const EIP_TIEN_TO_QUA_HAN_GHI = "TIMEOUT occurred while writing Writing Tag:";
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p,
@@ -66,6 +73,27 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
       setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms),
     ),
   ]);
+}
+
+/**
+ * R1b-2b-2a T2 (mục 66) — bộ hẹn DỰ PHÒNG của MỘT lời ghi: `HAN_DU_PHONG_GHI_DRIVER_MS` (6500 > hạn lệnh mặc định 5000 + ân hạn B3 1000 ⇒ trong cấu hình
+ * mặc định hạn của dispatcher thắng và B3 giữ chỗ + đặt lại phiên khi thư viện còn giữ yêu cầu). Hết hạn ⇒ `LoiQuaHanYeuCauDriver` (gói CIP đã gửi ⇒
+ * kết cục không rõ). Hẹn giờ được huỷ khi lời ghi xong (không treo 6,5 s).
+ */
+function withHanGhiDuPhong<T>(p: Promise<T>, label: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("ethernet-ip", `${label} timeout after ${HAN_DU_PHONG_GHI_DRIVER_MS}ms`)), HAN_DU_PHONG_GHI_DRIVER_MS);
+    }),
+  ]).finally(() => clearTimeout(t));
+}
+
+/** R1b-2b-2a T2 — hết hạn ghi của CHÍNH st-ethernet-ip (`timeout_sp`, chuỗi `EIP_TIEN_TO_QUA_HAN_GHI`). */
+function laQuaHanGhiEip(err: unknown): boolean {
+  const m = (err as { message?: unknown } | null | undefined)?.message;
+  return typeof m === "string" && m.startsWith(EIP_TIEN_TO_QUA_HAN_GHI);
 }
 
 /** Tách host (bỏ tcp:// và :port nếu có) — EtherNet/IP nối IP cố định cổng 44818. */
@@ -322,7 +350,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
       // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).
       eipTag.value = value;
       // R1b-2b-1 — qua sổ đang bay: liên kết mất / phiên bị hạ ⇒ reject NGAY (kết cục không rõ), không chờ hạn rồi báo 'failed'.
-      await withTimeout(this.dangBay.bay(plc, plc.writeTag(eipTag, value)), 5000, "eip writeTag");
+      // R1b-2b-2a T2 — bộ hẹn dự phòng 6500 ms (trước: 5000 = đúng hạn lệnh ⇒ đua với dispatcher, B3 có thể không chạy).
+      await withHanGhiDuPhong(this.dangBay.bay(plc, plc.writeTag(eipTag, value)), "eip writeTag");
 
       this.lastOkAt = new Date();
       return { tagKey: w.tagKey, ok: true };
@@ -331,6 +360,10 @@ export class EthernetIpDriver extends NotImplementedDriver {
       this.lastError = msg;
       // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
       if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-2a T2 (mục 66) — hết hạn của thư viện (`timeout_sp`) hoặc bộ hẹn dự phòng của driver khi gói đã gửi ⇒ kết cục KHÔNG RÕ của write này
+      // (dispatcher ⇒ 'timeout'), không 'failed'. Lỗi CIP (PLC đã trả lời) / ép kiểu cục bộ ⇒ 'failed' như cũ.
+      const ketCucKhongRo = ketCucKhongRoCua(err) ?? (laQuaHanGhiEip(err) ? "qua_han_driver" : null);
+      if (ketCucKhongRo) return { tagKey: w.tagKey, ok: false, error: msg, ketCucKhongRo };
       return { tagKey: w.tagKey, ok: false, error: msg };
     }
   }

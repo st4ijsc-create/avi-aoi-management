@@ -19121,7 +19121,16 @@
     "ledger": "Ledger",
     "ledgerIntent": "Write-ahead intent",
     "ledgerResult": "Result",
-    "ledgerResultOf": "Result of #{{id}}"
+    "ledgerResultOf": "Result of #{{id}}",
+    "loiBiChe": "Technical detail hidden (engineer access required)",
+    "maLoi": {
+      "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
+      "EDGE_REPORTED": "The edge reported the command as not successful",
+      "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
+      "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
+      "TECHNICAL_ERROR": "Technical error"
+    }
   },
   "license": {
     "title": "License management",
