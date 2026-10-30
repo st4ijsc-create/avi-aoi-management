@@ -21867,6 +21867,36 @@
       "xemBanDau": "查看初稿（修复前）",
       "conLoi": "经 {{v}} 轮自动修复后，ST 代码仍有 {{n}} 个编译错误（RuSTy）：",
       "khongKiemDuoc": "无法检查编译（{{lyDo}}）。"
+    },
+    "agentTuRepo": {
+      "tieuDe": "仓库中的智能体",
+      "moTaMan": "阅读并确认项目 {{duAn}} 中的智能体定义。",
+      "luuY": "仓库智能体由项目中的文件定义——在您阅读内容并确认之前不被信任。若文件在您阅读后发生变化，确认将被拒绝。",
+      "tuRepo": "来自仓库",
+      "rong": "该项目没有有效的智能体定义文件。",
+      "daTin": "已信任此版本",
+      "chuaTin": "未信任",
+      "thongSo": "模型：{{model}} · 最多 {{luot}} 轮 · 工具：{{cc}}",
+      "an": "隐藏内容",
+      "doc": "阅读文件内容",
+      "tinCay": "信任此版本",
+      "canDoc": "请先阅读内容再信任。",
+      "goTin": "取消信任",
+      "biBo": "被跳过的文件",
+      "dungSan": "内置",
+      "biTuChoi": "您无权查看该项目的智能体定义。",
+      "dangTai": "加载中…",
+      "daXacNhan": "已信任智能体“{{ten}}”。",
+      "daGo": "已取消对“{{ten}}”的信任。",
+      "note": {
+        "PERMISSION_DENIED": "您无权执行此操作。",
+        "PROJECT_NOT_FOUND": "未找到项目。",
+        "KHONG_CO": "仓库中已不存在该定义。",
+        "BAM_LECH": "文件在您阅读后已变化——请阅读新版本后再确认。",
+        "LOI_LUU": "无法保存确认，请稍后重试。",
+        "THAM_SO_SAI": "参数无效。",
+        "khac": "无法完成（{{ma}}）。"
+      }
     }
   },
   "masterDataCol": {

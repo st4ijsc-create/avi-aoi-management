@@ -21867,6 +21867,36 @@
       "xemBanDau": "Xem bản đầu (trước khi sửa)",
       "conLoi": "Mã ST còn {{n}} lỗi biên dịch (RuSTy) sau {{v}} vòng tự sửa:",
       "khongKiemDuoc": "Chưa kiểm biên dịch được ({{lyDo}})."
+    },
+    "agentTuRepo": {
+      "tieuDe": "Agent từ repo",
+      "moTaMan": "Đọc và xác nhận định nghĩa agent nằm trong dự án {{duAn}}.",
+      "luuY": "Agent từ repo do tệp trong dự án định nghĩa — chưa được tin cho tới khi bạn đọc nội dung và xác nhận. Nếu tệp đổi sau khi bạn đọc, xác nhận bị từ chối.",
+      "tuRepo": "Từ repo",
+      "rong": "Dự án này chưa có tệp định nghĩa agent hợp lệ.",
+      "daTin": "đã tin cậy bản này",
+      "chuaTin": "chưa tin cậy",
+      "thongSo": "Model: {{model}} · tối đa {{luot}} lượt · công cụ: {{cc}}",
+      "an": "Ẩn nội dung",
+      "doc": "Đọc nội dung tệp",
+      "tinCay": "Tin cậy bản này",
+      "canDoc": "Hãy đọc nội dung trước khi tin cậy.",
+      "goTin": "Gỡ tin cậy",
+      "biBo": "Tệp bị bỏ qua",
+      "dungSan": "Dựng sẵn",
+      "biTuChoi": "Bạn không có quyền xem định nghĩa agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "daXacNhan": "Đã tin cậy agent “{{ten}}”.",
+      "daGo": "Đã gỡ tin cậy “{{ten}}”.",
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "KHONG_CO": "Không còn định nghĩa này trong repo.",
+        "BAM_LECH": "Tệp đã đổi sau khi bạn đọc — hãy đọc lại bản mới rồi xác nhận.",
+        "LOI_LUU": "Không lưu được xác nhận — thử lại sau.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
     }
   },
   "masterDataCol": {

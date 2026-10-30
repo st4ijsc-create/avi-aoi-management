@@ -154,6 +154,7 @@ import { KhungChayUngDung } from "@/components/ai/KhungChayUngDung";
 import { KhungGit } from "@/components/ai/KhungGit";
 import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
 import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
+import { BangAgentTuRepo } from "@/components/ai/BangAgentTuRepo";
 import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
 import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
@@ -3260,6 +3261,7 @@ export default function AICodingWorkspace() {
               {/* ★ Đợt 3b — màn QUẢN LÝ TRÍ NHỚ (bài học của tôi × dự án này). */}
               <div className="ml-auto flex items-center">
                 {projectId && <QuanLyTriNho projectId={projectId} />}
+                {projectId && <BangAgentTuRepo projectId={projectId} />}
               </div>
               <BoChonPhien
                 phien={phienQ.data?.sessions ?? []}
