@@ -59,6 +59,11 @@ describe("HopDongYNgoai", () => {
   it("màn lập trình ⇒ KHÔNG có dòng 'người gõ = vận hành'", () => {
     dung(TT({ mucDuLieu: "ky-thuat" }), { beMat: "coding" });
     expect(screen.queryByTestId("hdy-nguoi-go")).toBeNull();
+    expect(screen.getByTestId("hdy-coding").textContent).toContain("lượt hai"); // lượt đầu ky-thuat / từ lượt hai van-hanh được nói rõ
+  });
+  it("chat/KB ⇒ KHÔNG có dòng riêng của màn lập trình", () => {
+    dung(TT());
+    expect(screen.queryByTestId("hdy-coding")).toBeNull();
   });
   it("người thường: KHÔNG thấy số token/USD của nhà máy; admin (khoá có) ⇒ thấy", () => {
     dung(TT());
