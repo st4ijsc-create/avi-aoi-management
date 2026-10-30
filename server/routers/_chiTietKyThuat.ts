@@ -46,8 +46,31 @@ export async function chiTietKyThuatCua(ctx: { user: { id: number; role: string 
 export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABLE", "READBACK_MISMATCH", "DRIVER_WRITE_FAILED", "TECHNICAL_ERROR"] as const;
 
 /**
+ * Polish round 2 (điều phối: phương án A) — danh sách MÃ ĐÃ BIẾT. `maLoiCua` chỉ nhận tiền tố `MA:` (và `maLyDoThu` chỉ nhận mã thuần) khi mã nằm
+ * ở đây — văn bản driver thô bắt đầu bằng nhãn kiểu tên máy ("PLC01_LINE3: connect …") KHÔNG được lộ nhãn ấy như "mã" cho người bị che.
+ * Viết TƯỜNG MINH vì không có hằng runtime chung (mã dispatcher là literal ở điểm gọi; `MaTuChoiYeuCau` / `MaCongKenh` chỉ là KIỂU; tệp nguồn
+ * thuộc 2a / client cấm sửa). `server/routers/maLoiDaBietCensus.test.ts` SUY tập nguồn bằng AST lúc test (reason dispatcher, union mã, hằng `MA_*`,
+ * reasonCode của lenhHmi, status viết hoa, `CONG_BIET` client, `MA_LOI_DU_PHONG`) và ĐỎ (nêu tên) khi một mã nguồn chưa có ở đây.
+ * Đo 2026-10-30: 76 mã.
+ */
+export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
+  "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
+  "CHANNEL_READ_ONLY", "CHUA_GHIM_STOP", "DANG_DUOC_CHON", "DA_XU_LY", "DB_UNAVAILABLE", "DIEU_TIET", "DISPATCH_LOI", "DRIVER_WRITE_FAILED",
+  "DUPLICATE_IN_FLIGHT", "EDGE_CHUA_HO_TRO", "EDGE_REPORTED", "EDGE_STOP_NOT_PINNED", "FAILED", "FEATURE_DISABLED", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
+  "HET_HAN", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
+  "INTERLOCK_EVENT_INVALID", "INTERLOCK_NOT_APPROVED", "INTERLOCK_REQUIRES_HUMAN_CONFIRM", "INTERLOCK_RULE_DISABLED", "INTERLOCK_RULE_NOT_FOUND",
+  "INTERLOCK_TAG_MISMATCH", "INTERLOCK_TARGET_MISMATCH", "INTERLOCK_VALUE_MISMATCH", "INTERLOCK_WRITES_MISMATCH", "KHOA_CHON_LOI", "KHOA_MAT",
+  "LEDGER_INTENT_FAILED", "MAY_DA_DOI", "MODE_LOCAL", "NOT_CONFIRMED", "NOT_FOUND", "OFF_STEP", "OUT_OF_RANGE", "PERMISSION_DENIED",
+  "POLICY_APPROVAL_REQUIRED", "POLICY_DENIED", "PRECONDITION_FAILED", "QUEUE_EXPIRED", "READBACK_MISMATCH", "READBACK_UNAVAILABLE", "REJECTED",
+  "ROLE_FLOOR", "SAFETY_BLOCKED", "SAFETY_SIM_ONLY", "SAFETY_UNKNOWN", "SENT", "SIMULATED", "STOPPED_BEFORE_WRITE", "STOP_QUA_HAN",
+  "STOP_UNVERIFIED_QUEUE_FULL", "SUPERSEDED_BY_STOP", "TAG_NOT_FOUND", "TAG_NOT_WRITABLE", "TECHNICAL_ERROR", "THIEU_MIGRATION", "TIMEOUT",
+  "TOTP_CAN", "TOTP_CHUA_DANG_KY", "TOTP_KHONG_KIEM_DUOC", "TOTP_SAI", "TOTP_TAM_KHOA", "TYPE_MISMATCH",
+]);
+const MA_LOI_DA_BIET_SET: ReadonlySet<string> = new Set(MA_LOI_DA_BIET);
+
+/**
  * MÃ lý do của một `errorText` của `command_log`:
- *   1. tiền tố `MA:` mà dispatcher ghi cho từ chối (`${reason}: ${detail}`, commandDispatcher `writeAll`) — cùng biểu thức với
+ *   1. tiền tố `MA:` ĐÃ BIẾT (`MA_LOI_DA_BIET`) mà dispatcher ghi cho từ chối (`${reason}: ${detail}`, commandDispatcher `writeAll`) — cùng biểu thức với
  *      `scadaCommands.trangThai`;
  *   2. không tiền tố (văn bản thô driver / edge) ⇒ mã DỰ PHÒNG theo `status` + hình văn bản (`MA_LOI_DU_PHONG`).
  * Không bao giờ trả phần chi tiết. `errorText` rỗng / null ⇒ `null`.
@@ -56,7 +79,8 @@ export function maLoiCua(errorText: string | null | undefined, status?: string |
   const t = (errorText ?? "").trim();
   if (!t) return null;
   const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
-  if (tienTo) return tienTo;
+  // polish round 2 — CHỈ mã đã biết; tiền tố lạ (nhãn host / thiết bị viết HOA ở đầu văn bản driver) ⇒ rơi xuống mã dự phòng
+  if (tienTo && MA_LOI_DA_BIET_SET.has(tienTo)) return tienTo;
   if (status === "timeout" || /outcome unknown|may have been applied/i.test(t)) return "TIMEOUT";
   if (/^edge reported status|^the edge reported/i.test(t)) return "EDGE_REPORTED";
   if (/^readback unavailable/i.test(t)) return "READBACK_UNAVAILABLE";
@@ -66,12 +90,12 @@ export function maLoiCua(errorText: string | null | undefined, status?: string |
 }
 
 /**
- * M1 (fix round 1) — `reasonCode` của lần thử: mã thuần (`^[A-Z][A-Z0-9_]*$`) giữ nguyên; văn bản thô (đường thử lại idempotent của dispatcher
+ * M1 (fix round 1) — `reasonCode` của lần thử: mã thuần (`^[A-Z][A-Z0-9_]*$`) ĐÃ BIẾT (`MA_LOI_DA_BIET`) giữ nguyên, lạ ⇒ `TECHNICAL_ERROR`; văn bản thô (đường thử lại idempotent của dispatcher
  * có thể đặt `kq.reason` = errorText đầy đủ — lenhHmi bước 9) ⇒ `maLoiCua` (tiền tố hoặc dự phòng). `null` ⇒ `null`.
  */
 export function maLyDoThu(reasonCode: string | null | undefined): string | null {
   const t = (reasonCode ?? "").trim();
   if (!t) return null;
-  if (/^[A-Z][A-Z0-9_]*$/.test(t)) return t;
+  if (/^[A-Z][A-Z0-9_]*$/.test(t)) return MA_LOI_DA_BIET_SET.has(t) ? t : "TECHNICAL_ERROR"; // polish round 2 — mã thuần lạ ⇒ dự phòng
   return maLoiCua(t, null);
 }
