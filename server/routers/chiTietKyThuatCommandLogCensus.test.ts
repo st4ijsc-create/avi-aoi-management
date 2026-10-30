@@ -211,7 +211,8 @@ export function quetNguon(rel: string, src: string): Map<string, Partial<Record<
   const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const { bang, khongGian } = tenTheoDoi(sf);
   const ra = new Map<string, Partial<Record<Loai, number>>>();
-  const coThamChieu = bang.size > 0 || /\.commandLog\b|\["commandLog"\]/.test(src);
+  // polish (re-review R1) — cả tệp chỉ chạm bảng bằng SQL thô (`command_log` trong chuỗi, vd edgeResolutionService) cũng bật kiểm cột trần
+  const coThamChieu = bang.size > 0 || /\.commandLog\b|\["commandLog"\]|command_log/i.test(src);
   const them = (n: ts.Node, loai: Loai) => {
     const k = `${rel}#${hamBao(n)}`;
     const m = ra.get(k) ?? {};
@@ -490,6 +491,11 @@ describe("★★★ census — bảng command_log: MỌI tham chiếu có phân 
     // fix round 2 N3 — cột kỹ thuật TRẦN trong sql`` của phép chiếu ⇒ nhạy cảm (không thể là chi_cot_an_toan)
     expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ e: sql\`"errorText"\`, id: commandLog.id }).from(commandLog)) });`)).toEqual({
       a: { cot_an_toan: 1, doc_chieu: 1, sql_tho_nhay_cam: 1 },
+    });
+    // polish (R1) — tệp chỉ chạm bảng bằng SQL thô: cột trần ở một template KHÁC (không nhắc command_log) vẫn nhạy cảm
+    expect(thu(`const q0 = sql\`SELECT id FROM command_log\`;\nexport const r = router({ b: p.query(() => db.execute(sql\`SELECT "errorText" FROM t\`)) });`)).toEqual({
+      "<tep>": { sql_tho: 1 },
+      b: { sql_tho_nhay_cam: 1 },
     });
     // đối chứng: chiếu cột an toàn ⇒ chỉ loại an toàn
     expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ id: commandLog.id }).from(commandLog)) });`)).toEqual({ a: { cot_an_toan: 1, doc_chieu: 1 } });

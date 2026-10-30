@@ -13,7 +13,7 @@
  *   • `sql_cot_dong`  — danh sách cột có `${…}` (cột dựng động — đúng hình của sự cố: `${sql.raw("id, ")}`);
  *   • `sql_khong_cot` — `INSERT INTO <bảng> VALUES / SELECT` không danh sách cột (mọi cột, kể cả id);
  *   • `drizzle_id`    — `.insert(<bảng>).values({ id: … })` / `values([{ id: … }])` (theo cả tên import đổi tên / namespace).
- * Vi phạm hiện có (của phiên khác) được GHIM theo `tệp:dòng` (ratchet) — không sửa test của phiên khác.
+ * Vi phạm hiện có (của phiên khác) được GHIM theo NỘI DUNG `tệp hình chi tiết` + số lần (ratchet) — không sửa test của phiên khác.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -119,11 +119,10 @@ export function quetTest(rel: string, src: string, worm: ReadonlyMap<string, str
       if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) ten.set(e.name.text, (e.propertyName ?? e.name).text);
       if (nb && ts.isNamespaceImport(nb)) khongGian.add(nb.name.text);
     }
-    if (ts.isVariableDeclaration(n) && laImportDong(n.initializer)) {
-      if (ts.isIdentifier(n.name)) khongGian.add(n.name.text);
-      else if (ts.isObjectBindingPattern(n.name))
-        for (const e of n.name.elements) if (ts.isIdentifier(e.name)) ten.set(e.name.text, e.propertyName ? e.propertyName.getText() : e.name.text);
-    }
+    if (ts.isVariableDeclaration(n) && laImportDong(n.initializer) && ts.isIdentifier(n.name)) khongGian.add(n.name.text);
+    // destructure (đổi tên) từ BẤT KỲ object — `await import(…)`, `schema`, `s.edge`… (polish R2): `const { x: t } = o` ⇒ t → x
+    if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name))
+      for (const e of n.name.elements) if (ts.isIdentifier(e.name)) ten.set(e.name.text, e.propertyName ? e.propertyName.getText() : e.name.text);
     ts.forEachChild(n, nhat);
   };
   nhat(sf);
@@ -203,11 +202,19 @@ const DRIZZLE = bangDrizzle();
 /**
  * ★ RATCHET — vi phạm CÓ SẴN (đo 2026-10-30, feat/scada-r1b2b2), của phiên khác: GHIM, không sửa. Số chỉ được GIẢM.
  */
-const GHIM: readonly string[] = [
-  // fix round 2 (N5) — bảng nội suy `INSERT INTO ${sql.raw(bang)} (code, name, "factoryCode")`: helper `hang()` gọi với bảng cấu hình theo nhà máy
-  // (không WORM); danh sách cột KHÔNG có id. Không phân giải tĩnh được tên bảng ⇒ ghim (đo 2026-10-30).
-  "server/routers/phamViGhiDoW7.db.test.ts:34 sql_bang_dong sql.raw(bang)",
-];
+const GHIM: Readonly<Record<string, number>> = {
+  // fix round 2 (N5), polish — ghim theo NỘI DUNG (tệp + hình + biểu thức nội suy đã chuẩn hoá) kèm SỐ LẦN, không theo dòng: sửa phía trên không đỏ,
+  // thêm một chỗ thứ hai ⇒ đỏ. Bảng nội suy `INSERT INTO ${sql.raw(bang)} (code, name, "factoryCode")`: helper `hang()` gọi với bảng cấu hình theo
+  // nhà máy (không WORM); danh sách cột KHÔNG có id (đo 2026-10-30).
+  "server/routers/phamViGhiDoW7.db.test.ts sql_bang_dong sql.raw(bang)": 1,
+};
+/** `tệp:dòng hình chi tiết` ⇒ khoá NỘI DUNG `tệp hình chi tiết` (bỏ số dòng, chuẩn hoá khoảng trắng). */
+const khoaNoiDung = (v: string): string => v.replace(/^([^:\s]+):\d+ /, "$1 ").replace(/\s+/g, " ").trim();
+export function demTheoNoiDung(vp: readonly string[]): Record<string, number> {
+  const ra: Record<string, number> = {};
+  for (const v of vp) ra[khoaNoiDung(v)] = (ra[khoaNoiDung(v)] ?? 0) + 1;
+  return ra;
+}
 
 /**
  * Bảng WORM / không-xoá-được KHÔNG có định nghĩa drizzle (`pgTable`) ở đâu trong drizzle/ · server/ · shared/ (đo 2026-10-30) — chỉ ghi / đọc bằng
@@ -267,7 +274,8 @@ describe("★★★ census — test không chèn id TƯỜNG MINH vào bảng WO
   });
 
   it("§1 vi phạm đo được ĐÚNG BẰNG ratchet (mới ⇒ đỏ; đã sửa ⇒ gỡ khỏi ghim)", () => {
-    expect([...vp].sort()).toEqual([...GHIM].sort());
+    const dem = demTheoNoiDung(vp);
+    expect(Object.fromEntries(Object.entries(dem).sort()), `vi phạm (tệp:dòng): ${JSON.stringify(vp)}`).toEqual(Object.fromEntries(Object.entries(GHIM).sort()));
   });
 
   it("§2 ĐỘT BIẾN — mỗi hình bị bắt (tệp ảo), kể cả import đổi tên / namespace; đối chứng không id ⇒ sạch", () => {
@@ -294,7 +302,27 @@ describe("★★★ census — test không chèn id TƯỜNG MINH vào bảng WO
     expect(q('import { factories } from "../drizzle/schema";\nsql`INSERT INTO ${factories} (id, code) VALUES (1, 2)`;')).toEqual([]); // phân giải được, không WORM
     expect(q("sql`INSERT INTO ${sql.raw(bang)} (code) VALUES (1)`;")).toEqual(["sql_bang_dong sql.raw(bang)"]);
     expect(q('import { commandLog } from "../drizzle/schema";\nawait db.insert(commandLog).values(hang);')).toEqual(["drizzle_bien command_log"]);
+    // polish R2 — destructure ĐỔI TÊN từ object thường (không phải import)
+    expect(q('import * as schema from "../drizzle/schema";\nconst { commandLog: t } = schema;\nawait db.insert(t).values({ id: 1 });')).toEqual(["drizzle_id command_log"]);
+    expect(q('const { edgeNodeReportRecords: r } = bo.edge;\nawait db.insert(r).values([{ id: 1 }]);')).toEqual(["drizzle_id edge_node_report_records"]);
     expect(q('import { commandLog } from "../drizzle/schema";\nawait db.insert(commandLog).values({ ...mau, adapterId: 1 });')).toEqual(["drizzle_bien command_log"]);
+  });
+
+  it("§2b ĐỘT BIẾN — ghim theo NỘI DUNG: dời dòng không đổi khoá; chỗ thứ HAI cùng nội dung tăng số đếm (⇒ §1 đỏ)", () => {
+    const k = "server/routers/phamViGhiDoW7.db.test.ts sql_bang_dong sql.raw(bang)";
+    expect(demTheoNoiDung(["server/routers/phamViGhiDoW7.db.test.ts:34 sql_bang_dong sql.raw(bang)"])).toEqual({ [k]: 1 });
+    expect(demTheoNoiDung(["server/routers/phamViGhiDoW7.db.test.ts:90 sql_bang_dong sql.raw(bang)"])).toEqual(GHIM);
+    const hai = demTheoNoiDung(["server/routers/phamViGhiDoW7.db.test.ts:34 sql_bang_dong sql.raw(bang)", "server/routers/phamViGhiDoW7.db.test.ts:60 sql_bang_dong sql.raw(bang)"]);
+    expect(hai[k]).toBe(2);
+    expect(hai).not.toEqual(GHIM);
+    // quét thật một tệp ảo có HAI chỗ ⇒ đếm 2
+    const vp2 = quetTest(
+      "server/routers/phamViGhiDoW7.db.test.ts",
+      "const a = sql`INSERT INTO ${sql.raw(bang)} (code) VALUES (1)`;\nconst b = sql`INSERT INTO ${sql.raw(bang)} (code) VALUES (2)`;",
+      WORM,
+      DRIZZLE,
+    );
+    expect(demTheoNoiDung(vp2)).toEqual({ [k]: 2 });
   });
 
   it("§3 ĐỘT BIẾN — tập bảng thật sự SUY từ migration: trigger worm mới / REVOKE DELETE mới ⇒ bảng mới; chú thích bị bỏ qua", () => {
