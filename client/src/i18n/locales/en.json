@@ -21673,6 +21673,27 @@
           "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
           "csdl-that": "Write to the REAL database"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "Change overview",
+        "agentCon": "sub-agent",
+        "tienDo": "{{daQuyet}}/{{tong}} decided",
+        "conCho": "{{n}} waiting for you",
+        "kiemChung": "Latest verification",
+        "hetGio": "timed out",
+        "xanh": "GREEN",
+        "do": "RED",
+        "soDo": "failed",
+        "soXanh": "passed",
+        "truocSua": "— ran BEFORE the latest approved change",
+        "khongDuong": "(path unknown)",
+        "daXem": "viewed",
+        "chuaXem": "not viewed",
+        "hetHan": "expired",
+        "cho": "waiting",
+        "duyetA": "Approve (A)",
+        "bacR": "Reject (R)",
+        "phim": "While this area is focused: J/K = next/previous file · A = approve · R = reject (A only after the file was viewed)"
       }
     },
     "duanCaNhan": {

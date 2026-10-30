@@ -21673,6 +21673,27 @@
           "ngoai-du-an": "在项目文件夹之外删除/写入文件",
           "csdl-that": "写入真实数据库"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "变更概览",
+        "agentCon": "子代理",
+        "tienDo": "已决定 {{daQuyet}}/{{tong}}",
+        "conCho": "{{n}} 项等待您处理",
+        "kiemChung": "最近一次验证",
+        "hetGio": "超时",
+        "xanh": "通过",
+        "do": "失败",
+        "soDo": "失败",
+        "soXanh": "通过",
+        "truocSua": "——运行于最近一次已批准变更之前",
+        "khongDuong": "（路径未知）",
+        "daXem": "已查看",
+        "chuaXem": "未查看",
+        "hetHan": "已失效",
+        "cho": "等待中",
+        "duyetA": "批准 (A)",
+        "bacR": "拒绝 (R)",
+        "phim": "此区域获得焦点时：J/K = 下一个/上一个文件 · A = 批准 · R = 拒绝（须先查看文件才可按 A）"
       }
     },
     "duanCaNhan": {

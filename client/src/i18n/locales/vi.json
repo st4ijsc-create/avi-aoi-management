@@ -21673,6 +21673,27 @@
           "ngoai-du-an": "Xoá / ghi tệp NGOÀI thư mục dự án",
           "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "Tổng quan thay đổi",
+        "agentCon": "agent con",
+        "tienDo": "{{daQuyet}}/{{tong}} đã quyết",
+        "conCho": "{{n}} đang chờ bạn",
+        "kiemChung": "Kiểm chứng gần nhất",
+        "hetGio": "hết giờ",
+        "xanh": "XANH",
+        "do": "ĐỎ",
+        "soDo": "đỏ",
+        "soXanh": "xanh",
+        "truocSua": "— chạy TRƯỚC thay đổi đã duyệt gần nhất",
+        "khongDuong": "(không rõ đường)",
+        "daXem": "đã xem",
+        "chuaXem": "chưa xem",
+        "hetHan": "hết hiệu lực",
+        "cho": "đang chờ",
+        "duyetA": "Duyệt (A)",
+        "bacR": "Bác (R)",
+        "phim": "Khi vùng này được chọn: J/K = tệp kế/trước · A = duyệt · R = bác (A chỉ sau khi đã xem tệp)"
       }
     },
     "duanCaNhan": {
