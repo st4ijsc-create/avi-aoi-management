@@ -16,7 +16,10 @@ của lượt CŨ trước tiên (trước khi rút gọn kết quả tool).
 | vắng / rỗng / `1` / giá trị khác | **BẬT** (mặc định) |
 | `0` · `false` · `off` · `no` (không phân biệt hoa thường, bỏ khoảng trắng) | TẮT — lịch sử gửi model như trước Đợt 11.0, từng byte |
 
-Chỉ có hiệu lực ở tác nhân phía MÁY CHỦ; extension VSCode tự đứng không đọc biến này (lõi mặc định TẮT).
+Chỉ có hiệu lực ở lượt chạy GỐC của tác nhân phía MÁY CHỦ; extension VSCode tự đứng không đọc biến này (lõi mặc định TẮT).
+**Agent CON (Đợt 11.8, `delegate`) KHÔNG đi qua công tắc**: vòng con gọi `chayVongAgent` bên trong lõi (`shared/agentCore/vongAgent.ts`, khối
+giao việc) mà không truyền `giuNghiTrongLichSu` ⇒ con giữ hành vi cũ (bỏ suy luận khỏi lịch sử) bất kể giá trị env. Cố ý (dieu-phoi chốt với
+tho-ca-agent 2026-10-31): bật cho con chỉ sau khi đo riêng.
 
 ## Số đo dẫn tới mặc định BẬT (2026-10-30, cùng dist 1ca7ab9ad, cùng :8091, ×3 mỗi phía)
 
