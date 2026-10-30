@@ -82,6 +82,7 @@ export type SimFault =
   | null
   | "hangWrite" // (write var) never answer a write var job (R1b-2b-2a T3: the client's own write timeout); the job is still recorded in pdus
   | "writeError" // (write var) answer every write var item with return code 0x0A (object does not exist): the PLC ANSWERED with an error
+  | "writeShort" // (write var) answer at once with the item count but ONE return-code byte fewer than items (truncated data part) — T3 fix 1 s4: nodes7 0.3.18 marks the item without a byte valid=false with errCode "Malformed Packet - Less Than 1 Byte…" (an errCode that is NOT the library write timeout). Needs >= 2 items: a 1-item answer without data is 21 bytes, below the 22-byte minimum nodes7 accepts (it resets the connection instead)
   | "hang" // never answer a block-function request
   | "refuse" // parameter error code 0x8104 (function not supported) on every block function
   | "wrongNumber" // block info answers with another block number
@@ -288,7 +289,7 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         if (fault === "hangWrite") return; // R1b-2b-2a T3 — no answer, connection kept open
         writes++;
         const items = param[1] ?? 1;
-        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(items, fault === "writeError" ? 0x0a : 0xff));
+        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(fault === "writeShort" ? Math.max(0, items - 1) : items, fault === "writeError" ? 0x0a : 0xff));
         return;
       }
       if (rosctr !== 0x07 || param[0] !== 0x00 || param[1] !== 0x01 || param[2] !== 0x12) return; // not handled: no answer

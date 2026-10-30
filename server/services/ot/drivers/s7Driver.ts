@@ -58,6 +58,7 @@ import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
 import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
+import { hanLenhOtMacDinhMs } from "../hanLenhOt";
 import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
 
@@ -212,7 +213,7 @@ export const DEM_SAU_AN_HAN_B3_MS = 500;
  * driver (`OtWrite` không mang hạn) ⇒ lệnh có hạn riêng dài hơn được che bởi việc HẠ PHIÊN khi bộ hẹn hết (`haPhienSauDuPhong`).
  */
 export function hanDuPhongGhiS7Ms(): number {
-  const hanLenh = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  const hanLenh = hanLenhOtMacDinhMs(); // T3 fix 1 (M-4) — kẹp ≤ TRAN_HEN_GIO_MS (lề cho + 1500) ⇒ setTimeout không bao giờ tràn về 1 ms
   return Math.max(HAN_DU_PHONG_GHI_DRIVER_MS, hanLenh + AN_HAN_B3_CHO_DRIVER_MS + DEM_SAU_AN_HAN_B3_MS);
 }
 
@@ -221,7 +222,7 @@ function withHanGhiDuPhong<T>(p: Promise<T>, ms: number, label: string): Promise
   return Promise.race([
     p,
     new Promise<T>((_, reject) => {
-      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("s7", `${label} backup timeout after ${ms}ms`)), ms);
+      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("s7", `${label} backup timeout after ${ms}ms`, "du_phong")), ms);
     }),
   ]).finally(() => clearTimeout(t));
 }
@@ -661,7 +662,7 @@ export class S7Driver extends NotImplementedDriver {
             const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
               if (!anyBadQualities) return resolve();
               // T3 — callback(true) là CẢ "PLC trả lời lỗi" LẪN "gói ĐÃ GỬI hết hạn của thư viện": phân biệt bằng errCode item (thăm dò thật).
-              if (laQuaHanGhiS7(conn)) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`));
+              if (laQuaHanGhiS7(conn)) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`, "thu_vien"));
               else reject(new Error("bad write quality"));
             });
             if (rc === 1) reject(new Error("S7 write busy"));
@@ -670,7 +671,8 @@ export class S7Driver extends NotImplementedDriver {
         hanDuPhongMs,
         "s7 writeItems",
       ).catch((e: unknown) => {
-        if (laLoiQuaHanYeuCauDriver(e) && String((e as Error)?.message).includes("backup timeout after")) duPhongHet = true;
+        // T3 fix 1 (M-2) — theo cờ CÓ KIỂU, không so chữ của message.
+        if (laLoiQuaHanYeuCauDriver(e) && (e as { loai?: unknown }).loai === "du_phong") duPhongHet = true;
         throw e;
       });
     } catch (err) {

@@ -420,13 +420,14 @@ async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: 
   const { getActiveDriver } = await import("../ot/otManager");
   const { executeOtDeviceWrite } = await import("../ot/otDeviceWrite");
   const { NO_CONFIRMER } = await import("../ot/commandDispatcher");
+  const { hanLenhOtMacDinhMs } = await import("../ot/hanLenhOt");
   const write = (driver: Parameters<typeof executeOtDeviceWrite>[0]["driver"]) =>
     executeOtDeviceWrite({
       input: { adapterId, machineId: null, commandType: "stop", writes: resolved.map((r) => r.write), triggeredBy: { kind: "hitl", requestedBy: NO_CONFIRMER }, idempotencyKey: `owner-transfer-stop:${adapterId}:${Date.now()}` },
       driver,
       resolved,
       driverWrites: resolved.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value, dataType: r.dataType as never, scale: r.scale, offset: r.offset })),
-      timeoutMs: Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000,
+      timeoutMs: hanLenhOtMacDinhMs(), // R1b-2b-2a T3 fix 1 (M-4) — cùng helper kẹp với dispatcher
       stopTyped: true,
       ledger: { intentIds: [], confirmedBy: NO_CONFIRMER },
     });

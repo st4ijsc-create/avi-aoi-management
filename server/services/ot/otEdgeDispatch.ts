@@ -42,6 +42,7 @@ import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 import { stopPinsFromTagRows } from "./stopPin";
 import { isOtSafetyPreflightEnabled, safetyPreflightReason } from "./safetyPreflightPolicy";
 import { withDeadline } from "./drivers/boundedClose";
+import { hanLenhOtMacDinhMs } from "./hanLenhOt";
 import { edgeAuthorizationStillValid, verifyEdgeStepAuthorization, type EdgeStepAuthorization } from "../edge/edgeAuthorizationVerifier";
 import { edgeDeviceRuntime, envOtControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
 import type { EdgeConfigSnapshot } from "../edge/edgeProtocol";
@@ -82,7 +83,7 @@ type SnapshotAdapter = EdgeConfigSnapshot["adapters"][number];
 type Resolved = { write: { tagKey: string; value: unknown }; address: string; dataType?: string; scale?: number; offset?: number };
 
 function commandTimeoutMs(deadlineMs?: number): number {
-  const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  const envDefault = hanLenhOtMacDinhMs(); // R1b-2b-2a T3 fix 1 (M-4) — cùng helper kẹp với dispatcher
   if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
   const maxRaw = Number(process.env.OT_CONTROL_TIMEOUT_MAX_MS);
   return Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.trunc(deadlineMs), maxRaw) : Math.trunc(deadlineMs);

@@ -365,7 +365,7 @@ describe("R1b-2b-2a T2 — lõi: lỗi có kiểu + hằng", () => {
   });
 
   it("ketCucKhongRoCua: mất liên kết ⇒ 'mat_lien_ket'; quá hạn driver ⇒ 'qua_han_driver' (instanceof hoặc code); lỗi khác ⇒ null", () => {
-    const e = new LoiQuaHanYeuCauDriver("slmp", "transaction timeout after 300ms");
+    const e = new LoiQuaHanYeuCauDriver("slmp", "transaction timeout after 300ms", "thu_vien");
     expect(e.message).toBe("slmp request timed out in the driver (transaction timeout after 300ms) — outcome unknown");
     expect(e.code).toBe("OT_DRIVER_REQUEST_TIMEOUT");
     expect(laLoiQuaHanYeuCauDriver(e)).toBe(true);

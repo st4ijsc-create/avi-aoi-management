@@ -113,11 +113,19 @@ export class SoYeuCauDangBay {
  */
 export const MA_QUA_HAN_YEU_CAU_DRIVER = "OT_DRIVER_REQUEST_TIMEOUT";
 
+/**
+ * T3 fix 1 (kiem-dinh M-2) — AI hết hạn: `"thu_vien"` = hẹn giờ giao dịch / gói của CHÍNH thư viện (hoặc socket riêng của driver) đã trả lời "hết hạn"
+ * (thư viện đã tự dọn yêu cầu); `"du_phong"` = bộ hẹn DỰ PHÒNG của driver hết trong khi thư viện CHƯA gọi lại (thư viện còn giữ yêu cầu ⇒ S7 hạ phiên).
+ * Quyết định dựa trên trường này, KHÔNG đọc chữ của message.
+ */
+export type LoaiQuaHanDriver = "du_phong" | "thu_vien";
+
 export class LoiQuaHanYeuCauDriver extends Error {
   readonly code = MA_QUA_HAN_YEU_CAU_DRIVER;
   constructor(
     readonly giaoThuc: string,
     readonly chiTiet: string,
+    readonly loai: LoaiQuaHanDriver,
   ) {
     super(`${giaoThuc} request timed out in the driver (${chiTiet}) — outcome unknown`);
     this.name = "LoiQuaHanYeuCauDriver";
