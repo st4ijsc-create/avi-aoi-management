@@ -306,6 +306,14 @@ describe("otEdgeDispatch — ★ a PINNED OT STOP never asks (L-7)", () => {
     expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "w1", jti: null, stop: true, ownerEpoch: 2 /* R-10-bn */, status: "acked" }]);
   });
 
+  it("R1b-2b-2a T2 (mục 66) — the driver's OWN request timed out (write carries ketCucKhongRo) ⇒ edge rolls up 'timeout' (outcome unknown), never 'failed'", async () => {
+    const j = journal();
+    H.driver!.writeTags = async (w) => w.map((x) => ({ tagKey: x.tagKey, ok: false, error: "Timed out", ketCucKhongRo: "qua_han_driver" }));
+    const r = await dispatchOtOnEdge({ ...STOP, run }, runtime(j));
+    expect(r).toMatchObject({ ok: false, stop: true, pinnedStop: true, status: "timeout" });
+    expect(j.runs).toMatchObject([{ kind: "ledger", stepId: "w1", stop: true, status: "timeout" }]);
+  });
+
   it("a console STOP (central command, no run) is journaled on the events stream", async () => {
     const j = journal();
     const r = await dispatchOtOnEdge({ ...STOP, source: "command", requestId: 44 }, runtime(j));

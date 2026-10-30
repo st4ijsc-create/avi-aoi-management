@@ -7,6 +7,8 @@
  * mới chỉ khai báo — thực thi ở F4.
  */
 
+import type { KetCucKhongRo } from "./drivers/dangBay";
+
 export type OtProtocol = "opcua" | "modbus" | "s7" | "mitsubishi-mc" | "ethernet-ip" | "slmp" | "stub";
 
 export type OtDataType = "bool" | "int" | "float" | "string" | "json";
@@ -136,6 +138,12 @@ export interface OtCommandResult {
   tagKey: string;
   ok: boolean;
   error?: string;
+  /**
+   * SCADA R1b-2b-2a T2 (mục 66) — CHỈ trên write `ok: false` ĐÃ giao cho thư viện / thiết bị mà kết cục KHÔNG RÕ (driver tự hết hạn trước khi thiết bị
+   * trả lời): lệnh có thể đã được áp ⇒ executeOtDeviceWrite báo `timeout` "outcome unknown" (không đọc lại, ghi rủi ro "lệnh ghi cũ"), không `failed`.
+   * Vắng ⇒ thiết bị đã trả lời / chưa gửi ⇒ `failed` như cũ.
+   */
+  ketCucKhongRo?: KetCucKhongRo;
 }
 
 /**
