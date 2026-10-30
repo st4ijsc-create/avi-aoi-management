@@ -18,7 +18,7 @@ describe("bảng mức theo loại (kế hoạch v2.1 §2 D2)", () => {
     ["lich-su-client", "van-hanh"],
     ["ket-qua-tool-van-hanh", "van-hanh"],
     ["ghi-chu-du-an", "van-hanh"],
-    ["tin-v1-client", "ky-thuat"],
+    ["tin-v1-client", "van-hanh"],
   ] as const)("%s ⇒ %s", (loai, muc) => {
     const r = mot(loai);
     expect(r.muc).toBe(muc);
