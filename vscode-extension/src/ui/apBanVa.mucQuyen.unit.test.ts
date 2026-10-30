@@ -107,6 +107,7 @@ vi.mock("../mang/duyetGhi", () => ({
 }));
 
 import { apBanVa } from "./apBanVa";
+import { datNguonTinCay } from "../loi/tinCayWorkspace";
 
 beforeEach(() => {
   may.duongDangMo = "";
@@ -327,5 +328,53 @@ describe("apBanVa — ĐỢT G / TASK G3 / B3: mức 'tu_ghi' vẫn đi ĐỦ h�
     expect(may.batDau[0]).toMatchObject({ path: "c.ts", sha256Truoc: bam(OK_ND), sha256Sau: bam(MOI) });
     expect(may.chot).toHaveLength(1);
     expect(may.chot[0]).toMatchObject({ thanhCong: true, sha256SauThat: bam(MOI) });
+  });
+});
+
+// ★★★ ĐỢT 11.4 / MỤC 3 — Workspace Trust chặn TẠI apBanVa (điểm ghi duy nhất), đo trên đĩa THẬT.
+describe("apBanVa — Workspace Trust: workspace chưa tin cậy ⇒ KHÔNG ghi, kể cả mức 'tu_ghi'", () => {
+  const GOC_ND = "dong 1\ndong 2\n";
+  const MOI_ND = "dong 1\nDONG 2\n";
+  let goc: string;
+  let ws: string;
+  let tep: string;
+  beforeEach(() => {
+    goc = realpathSync(mkdtempSync(join(tmpdir(), "apbanva-tincay-")));
+    ws = join(goc, "ws");
+    mkdirSync(ws);
+    tep = join(ws, "a.ts");
+    ghiTepThat(tep, GOC_ND);
+  });
+  afterEach(() => {
+    datNguonTinCay(() => true);
+    rmSync(goc, { recursive: true, force: true });
+  });
+  const dv = (): Parameters<typeof apBanVa>[0] => ({
+    deXuat: { loai: "toanVan", path: "a.ts", modified: MOI_ND },
+    duongTuyetDoi: tep,
+    duongTuongDoi: "a.ts",
+    bamGoc: bam(GOC_ND),
+    thuMucWorkspace: [ws],
+    nhanWorkspace: "ws",
+    serverUrl: "x",
+    cookie: "y",
+    mucQuyen: "tu_ghi",
+  });
+
+  it("★★★ chưa tin cậy + tu_ghi ⇒ ok:false, đĩa không đổi, KHÔNG mở sổ kiểm toán/tài liệu", async () => {
+    datNguonTinCay(() => false);
+    const kq = await apBanVa(dv());
+    expect(kq.ok).toBe(false);
+    expect(kq.thongDiep).toContain("chưa được tin cậy");
+    expect(readFileSync(tep, "utf8")).toBe(GOC_ND);
+    expect(may.batDau).toHaveLength(0);
+    expect(may.duongDangMo).toBe("");
+  });
+
+  it("★ NHÁNH KIA — cùng lượt khi ĐÃ tin cậy ⇒ ghi được (ca trên chặn vì tin cậy, không phải vì hàng rào khác)", async () => {
+    datNguonTinCay(() => true);
+    const kq = await apBanVa(dv());
+    expect(kq.ok).toBe(true);
+    expect(readFileSync(tep, "utf8")).toBe(MOI_ND);
   });
 });

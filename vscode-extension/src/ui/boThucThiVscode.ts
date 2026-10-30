@@ -53,6 +53,7 @@ import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
 import { LOAI_TRU, gocDaGiai, locUngVien, nhanGon, quyVeDuongThat } from "../mang/toolCucBo";
 import { dinhDangChanDoan, dinhDangDocFile, grepTrenTep, type MucChanDoan, type TepQuet } from "../loi/congCuDoc";
 import type { SoCheckpoint } from "../loi/checkpoint";
+import { TOOL_CAN_TIN_CAY, chanKhiKhongTinCay, workspaceTinCay } from "../loi/tinCayWorkspace";
 // Bộ quét THUẦN (không import gì) — CHÍNH bộ máy chủ dùng (aiSafety xuất lại) ⇒ hai bộ thực thi đánh giá "đáng ngờ" như nhau.
 import { scanUntrustedContent } from "../../../shared/quetMenhLenh";
 
@@ -159,7 +160,8 @@ export class BoThucThiVscode implements BoThucThi {
   }
 
   congCu(cheDo: CheDoAgent): WireTool[] {
-    return [...congCuTheoCheDo(cheDo).filter((t) => !KHONG_BAY.has(t.function.name)), structuredClone(CONG_CU_CHAN_DOAN)];
+    const tinCay = workspaceTinCay();
+    return [...congCuTheoCheDo(cheDo).filter((t) => !KHONG_BAY.has(t.function.name) && !(!tinCay && TOOL_CAN_TIN_CAY.has(t.function.name))), structuredClone(CONG_CU_CHAN_DOAN)];
   }
 
   async chay(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
@@ -175,6 +177,9 @@ export class BoThucThiVscode implements BoThucThi {
   private async chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
     const gocThat = gocDaGiai(this.pt.goc());
     if (gocThat.length === 0) return loiModel("No workspace folder is open — no file can be read or written.", "KHONG_WORKSPACE");
+    // (Đợt 11.4) Workspace Trust: model vẫn gọi tool ghi/lệnh dù đã bị ẩn ⇒ từ chối kèm lời giải thích.
+    const chan = chanKhiKhongTinCay(goi.ten, workspaceTinCay());
+    if (chan) return loiModel(chan.choModel, chan.ma);
     const t = goi.thamSo;
     try {
       switch (goi.ten) {
