@@ -4,6 +4,8 @@
  */
 export * from "./kieu";
 export * from "./congCu";
+export * from "./dinhNghiaAgent";
+export * from "./giaoViec";
 export * from "./loiNhac";
 export * from "./nguCanh";
 export * from "./vongAgent";
