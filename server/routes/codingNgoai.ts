@@ -346,6 +346,8 @@ export async function xuLyCodingNgoai(
         answer = String(kq.noiDung ?? "");
         break;
       }
+      // vòng CUỐI mà model vẫn đòi tool ⇒ KHÔNG chạy (không còn vòng gọi để dùng kết quả — tránh tốn byte / tệp vô ích)
+      if (vong === TRAN_VONG_HOI_NGOAI) break;
       const dung = goiTool.slice(0, TRAN_TOOL_MOI_VONG);
       ds.push({
         vaiTro: "assistant",
