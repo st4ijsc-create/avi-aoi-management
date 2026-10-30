@@ -1352,7 +1352,7 @@ export class BangChat {
     this.quenLenhCucBo();
     const cookie = await this.context.secrets.get(KHOA_COOKIE);
     if (!cookie) {
-      void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập'." });
+      void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập'." });
       return;
     }
     const notices: string[] = [];
@@ -1422,12 +1422,12 @@ export class BangChat {
         huyHieu: nhan,
         ...this.thongKeHoiThoaiHienTai(),
       });
-      void this.luuHoiThoaiHienTai().catch((e: unknown) => console.error("AI Local: lưu hội thoại bền thất bại", e));
+      void this.luuHoiThoaiHienTai().catch((e: unknown) => console.error("Thợ Cả: lưu hội thoại bền thất bại", e));
     } catch (e) {
       if (dieuKhien.signal.aborted) return;
       if (laLoi401(e)) {
         await this.context.secrets.delete(KHOA_COOKIE);
-        void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại." });
+        void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'Thợ Cả: Đăng nhập' để vào lại." });
         void this.guiTrangThaiDangNhap();
         return;
       }
