@@ -84,6 +84,8 @@ import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAg
 import { docTepQuyUoc } from "./tepQuyUocAgent";
 import { taoTraDinhNghia } from "./dinhNghiaAgentMayChu";
 import { dongTheCuaCay } from "../../../db/aiAgentTheDuyet";
+import { chotMoiKeHoachDangCho } from "../../../db/aiAgentKeHoach";
+import { taoChoDuyetKeHoach } from "./choDuyetKeHoach";
 import type { TimTaiLieu } from "./timTaiLieuAgent";
 import {
   chotSauGhi,
@@ -252,6 +254,8 @@ export interface PhuThuocQuanLy {
   vaiTro?: Partial<PhuThuocVaiTro>;
   /** (Đợt 11.8) giao việc cho agent con. `bat` vắng ⇒ đọc cờ AI_AGENT_GIAO_VIEC=1 (MẶC ĐỊNH TẮT); `tra` thay bộ tra định nghĩa (lưới). */
   giaoViec?: { bat?: boolean; doSauToiDa?: number; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
+  /** (Đợt 11.3-C) cổng duyệt kế hoạch. `bat` vắng ⇒ đọc cờ AI_AGENT_CONG_KE_HOACH=1 (MẶC ĐỊNH TẮT); `choDuyet` thay móc chờ người (lưới). */
+  congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
   /** (Đợt 10.1) phụ thuộc danh mục cho `chonModel` (lưới thay; mặc định `layPhuThuocDanhMucMacDinh`). */
   danhMucModel?: () => Promise<PhuThuocDanhMuc>;
 }
@@ -482,6 +486,15 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           doiTrangThai = true;
         }
         break;
+      // (Đợt 11.3-C) chờ NGƯỜI duyệt kế hoạch: lượt hiện "cho-duyet" (vẫn `luotConSong` ⇒ thẻ của lượt còn hiệu lực), xong ⇒ chạy tiếp
+      case "ke-hoach-cho-duyet":
+        if (l.trangThai === "dang-chay") {
+          l.trangThai = "cho-duyet";
+          doiTrangThai = true;
+        }
+        break;
+      case "ke-hoach-da-duyet":
+      case "ke-hoach-khong-duyet":
       case "da-duyet":
       case "bi-bac":
         if (l.trangThai === "cho-duyet") {
@@ -730,6 +743,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         ...(phuThuoc.phuThuocBoThucThi ?? {}),
       };
       // (Đợt 11.8) giao việc: cờ máy chủ (mặc định TẮT) VÀ model của cha KHÔNG phải model ngoài (M1: cha ngoài ⇒ không phơi `delegate`).
+      const congKeHoachBat = phuThuoc.congKeHoach?.bat ?? process.env.AI_AGENT_CONG_KE_HOACH === "1";
       const coGiaoViec = choPhepGiaoViec({ bat: phuThuoc.giaoViec?.bat, chonModel: y.chonModel });
       const boThucThi = taoBoThucThiMayChu({
         execCtx,
@@ -806,6 +820,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             : undefined;
           const kq = await chayVongAgent({
             ...(giaoViec ? { giaoViec } : {}),
+            // (Đợt 11.3-C) cổng duyệt kế hoạch — chỉ khi cờ bật VÀ chế độ có tool ghi; móc chờ người đọc/ghi SỔ (fail-closed).
+            ...(congKeHoachBat && cheDo !== "hoi" ? { congKeHoach: { choDuyet: (phuThuoc.congKeHoach?.choDuyet ?? taoChoDuyetKeHoach)({ userId: user.id, runId: id }) } } : {}),
             // ★ Đợt 9 — theo vai trò: model nhận câu hỏi ĐÃ CHE của aiGateway (`safeText`: bí mật/PII); sổ vẫn giữ câu gốc của chính người dùng.
             cauHoi: plan ? plan.safeText : cauHoi,
             lichSu,
@@ -849,6 +865,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           // bên dưới) để `confirmAction` cũng từ chối bằng trạng thái lượt; đóng thẻ ở đây là lớp thứ hai.
           await luuNgay(s);
           await dongTheCuaCay(id).catch(() => 0);
+          await chotMoiKeHoachDangCho(user.id, id); // (Đợt 11.3-C) không để kế hoạch 'cho' treo trên lượt đã chết
           if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
           if (sessionId) {
             await luuPhienNeuCo({ userId: user.id, projectId, sessionId, runId: id, cauHoi, traLoi: traLoi.slice(0, 20_000), ctxPhanTram: s.ctxPhanTramCuoi });

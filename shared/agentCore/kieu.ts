@@ -163,6 +163,14 @@ export type SuKienAgent =
    */
   | { loai: "ngu-canh-day"; phanTram: number }
   /**
+   * (Đợt 11.3-C, UX-D02) CỔNG DUYỆT KẾ HOẠCH (cờ host `AI_AGENT_CONG_KE_HOACH`, mặc định TẮT ⇒ các sự kiện này không bao giờ phát):
+   * tool ghi/lệnh/delegate sắp chạy mà kế hoạch hiện tại (`bam`) chưa được người duyệt ⇒ phát `ke-hoach-cho-duyet` rồi DỪNG chờ.
+   * `viec` là chữ thuần đã làm sạch (≤30 bước × 200 ký tự). Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh — thẻ vẫn qua người.
+   */
+  | { loai: "ke-hoach-cho-duyet"; viec: ViecKeHoach[]; bam: string }
+  | { loai: "ke-hoach-da-duyet"; bam: string; luc: string }
+  | { loai: "ke-hoach-khong-duyet"; bam: string; lyDo: "bac" | "het-gio" }
+  /**
    * (Đợt 11.8) AGENT CON. Mọi sự kiện của vòng con đi qua `su-kien-con` (BỌC, không bao giờ phát thẳng) ⇒ con không giả
    * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
    */
