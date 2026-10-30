@@ -68,6 +68,21 @@ describe("saveStreamedMessage + getMessages — dấu nguồn máy chủ xác mi
     expect(ds.find((m) => m.role === "assistant")!.nguonModel).toBe("ngoai:anthropic:claude-x");
   });
 
+  it("rà kiem-dinh (A4/A5) — tự dò CHỈ lượt của CHÍNH người lưu và trong 24 h: cùng băm với lượt ngoài của NGƯỜI KHÁC ⇒ không nhận dấu (không thành oracle); lượt cũ > 24 h ⇒ không tự dò", async () => {
+    const c = await hoiThoai(U);
+    const cuaV = `Trả lời ngoài của V ${Date.now()}`;
+    await luotNgoai(V, cuaV);
+    await goi(U).saveStreamedMessage({ conversationId: c.id, userMessage: "h", assistantMessage: cuaV });
+    const cu = `Trả lời ngoài CŨ ${Date.now()}`;
+    const [y] = await exec(sql`INSERT INTO ai_external_calls ("factoryId", loai, "userId", "tuDong", "nhaCungCap", model, "mucDich", "bamNoiDung", "taoLuc")
+      VALUES (1, 'y-dinh', ${U}, false, 'anthropic', 'claude-x', 'chat', ${"b".repeat(64)}, now() - interval '25 hours') RETURNING id`);
+    await exec(sql`INSERT INTO ai_external_calls ("factoryId", loai, "yDinhId", "userId", "tuDong", "nhaCungCap", model, "mucDich", "ketCuc", "bamTraLoi", "taoLuc")
+      VALUES (1, 'ket-qua', ${y!.id}, ${U}, false, 'anthropic', 'claude-x', 'chat', 'ok', ${bamCauTraLoi(cu)}, now() - interval '25 hours')`);
+    await goi(U).saveStreamedMessage({ conversationId: c.id, userMessage: "h", assistantMessage: cu });
+    const ds = (await goi(U).getMessages({ conversationId: c.id })) as Array<Record<string, unknown>>;
+    expect(ds.filter((m) => m.role === "assistant").map((m) => m.nguonModel)).toEqual([null, null]);
+  });
+
   it("callId của NGƯỜI KHÁC / băm lệch / kết cục lỗi ⇒ BAD_REQUEST dau-nguon-lech, KHÔNG lưu gì", async () => {
     const c = await hoiThoai(U);
     const cuaV = await luotNgoai(V, "trả lời của V");

@@ -126,6 +126,8 @@ describe("census — mọi điểm gọi cổng AI ngoài dựng `tinNhan` qua `
     "server/services/flow/nut/kiemDinhNgoai.ts": /\bkiemDinhNgoai\(/,
     // ★ 10.4b L0a' — thông tin (chỉ kiemTruoc, không gọi cổng): yêu cầu kiểm trước vẫn dựng qua bộ dựng
     "server/routers/aiChonModelRouter.ts": /\bghepPhan\(/,
+    // ★ 10.4b L1 — KB / chat với model ngoài
+    "server/routes/kbNgoai.ts": /\bghepPhan\(/,
   };
   const duyet = (d: string, ra: string[]) => {
     for (const ten of readdirSync(d)) {
