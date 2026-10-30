@@ -44,7 +44,7 @@ import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
 import { readS7ProgramChecksum, clampS7Deadline, S7_CHECKSUM_SOURCE, type S7ChecksumTarget } from "./s7BlockChecksum";
@@ -73,6 +73,72 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
       setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms),
     ),
   ]);
+}
+
+/**
+ * SCADA R1b-2b-2a T3 (mục 66, phần 2) — chuỗi errCode NGUYÊN VĂN mà nodes7 0.3.18 gắn cho item ghi khi gói ghi HẾT HẠN của thư viện
+ * (`nodeS7.js:1729-1735` `processS7WriteItem(undefined)`, gọi từ `packetTimeout("write")` :277-284 ⇒ `writeResponse(undefined, …)`). Thăm dò thật
+ * (quaHanGhi.thuVienThat.r1b2b2.test.ts, sim `hangWrite`): callback(true) sau ~globalTimeout, item ĐẦU của gói mang chuỗi này (`writeResponse` dừng
+ * ở item đầu trả 0, :1299-1305); PLC trả mã lỗi (0x0A) ⇒ callback(true) NHANH, KHÔNG item nào mang chuỗi này (chỉ `writeResponse` = mã PLC).
+ */
+export const S7_ERRCODE_QUA_HAN_GHI = "We must have timed Out - we have no response to process";
+
+/**
+ * T3 — lần ghi VỪA XONG (callback `anyBadQualities === true`) có phải HẾT HẠN của thư viện với gói ĐÃ GỬI (⇒ kết cục không rõ)?
+ * Bản thư viện: nodes7 0.3.18. Đọc `conn.writePacketArray[*].itemList[*]` (dựng lại MỖI lần writeItems — prepareWritePacket :665-751, item là bản
+ * clone mới ⇒ không mang errCode của lần ghi trước). Đúng khi ≥ 1 item `valid === false && errCode === S7_ERRCODE_QUA_HAN_GHI` thuộc một gói
+ * `timeoutError !== true`.
+ *   • `timeoutError === true` ⇒ gói KHÔNG được gửi: `sendWritePacket` (:1103-1121) thấy isoConnectionState ≠ 4 ⇒ không `isoclient.write`, chỉ hẹn
+ *     `packetTimeout("write")` sau 0 ms ⇒ CÙNG chuỗi errCode mà không byte nào rời máy (thăm dò S7-d: 0 PDU ghi tới sim) ⇒ không đếm ⇒ `failed`
+ *     (chưa gửi). Gói đã gửi luôn mang `timeoutError = false` (:1097); thư viện không chỗ nào khác đổi cờ này.
+ *   • Chỉ xét `valid === false` (0.3.18 không bao giờ đặt `valid = true` cho item ghi; bản khác có thể — item tốt mang errCode cũ ⇒ bỏ qua).
+ * Vì sao KHÔNG dò thời gian: PLC trả lời chậm sát globalTimeout không phân biệt được bằng đồng hồ; errCode do chính bộ hẹn của thư viện gắn là bằng
+ * chứng trực tiếp. Truy cập phòng thủ, không ném; cấu trúc không đọc được ⇒ false (`failed` như trước).
+ */
+export function laQuaHanGhiS7(conn: unknown): boolean {
+  try {
+    const arr = (conn as { writePacketArray?: unknown } | null)?.writePacketArray;
+    if (!Array.isArray(arr)) return false;
+    for (const goi of arr) {
+      if (!goi || typeof goi !== "object") continue;
+      if ((goi as { timeoutError?: unknown }).timeoutError === true) continue; // không được gửi
+      const ds = (goi as { itemList?: unknown }).itemList;
+      if (!Array.isArray(ds)) continue;
+      for (const it of ds) {
+        if (!it || typeof it !== "object") continue;
+        if ((it as { valid?: unknown }).valid !== false) continue;
+        if ((it as { errCode?: unknown }).errCode === S7_ERRCODE_QUA_HAN_GHI) return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** T3 — ân hạn B3 của dispatcher (`otDeviceWrite.OT_TIMED_OUT_WRITE_GRACE_MS`; test ghim bằng nhau — driver không import otDeviceWrite) + đệm. */
+export const AN_HAN_B3_CHO_DRIVER_MS = 1000;
+export const DEM_SAU_AN_HAN_B3_MS = 500;
+
+/**
+ * T3 (rà T2 M-3 + kiem-dinh) — bộ hẹn DỰ PHÒNG của MỘT lời ghi S7 = max(HAN_DU_PHONG_GHI_DRIVER_MS, hạn lệnh + ân hạn B3 + 500). Hạn lệnh = hạn
+ * MẶC ĐỊNH của dispatcher (`OT_CONTROL_TIMEOUT_MS`, cùng cách đọc với `commandDispatcher.effectiveTimeoutMs`), đọc LÚC GHI ⇒ với lệnh không có hạn
+ * riêng, hạn dispatcher + B3 (giữ chỗ + đặt lại phiên) luôn tới TRƯỚC bộ hẹn này. GIỚI HẠN đã biết (như EIP): `deadlineMs` riêng của một lệnh không tới
+ * driver (`OtWrite` không mang hạn) ⇒ lệnh có hạn riêng dài hơn được che bởi việc HẠ PHIÊN khi bộ hẹn hết (`haPhienSauDuPhong`).
+ */
+export function hanDuPhongGhiS7Ms(): number {
+  const hanLenh = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  return Math.max(HAN_DU_PHONG_GHI_DRIVER_MS, hanLenh + AN_HAN_B3_CHO_DRIVER_MS + DEM_SAU_AN_HAN_B3_MS);
+}
+
+function withHanGhiDuPhong<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("s7", `${label} backup timeout after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(t));
 }
 
 /** Parse host/port từ endpoint. "tcp://host:port" | "host:port" | "host". */
@@ -221,6 +287,31 @@ export class S7Driver extends NotImplementedDriver {
       } catch {
         // ignore
       }
+    }
+  }
+
+  /**
+   * T3 — bộ hẹn DỰ PHÒNG hết mà thư viện CHƯA gọi lại ⇒ thư viện còn giữ (và có thể còn gửi / tự nối lại cho) yêu cầu cũ. Coi như hạn dispatcher + đặt
+   * lại phiên B3: hạ phiên NGAY, TRƯỚC khi trả kết quả — yêu cầu đang bay khác của phiên ⇒ `mat_lien_ket`; `dropConnection` (huỷ hẹn giờ nối lại /
+   * đọc lại) rồi `connectionCleanup` (huỷ socket NGAY, xoá hẹn giờ gói ghi ⇒ không còn `writeResponse` / `connectNow` nào từ yêu cầu cũ; không chờ
+   * 'close' tới 2,5 s như dropConnection một mình). connected=false ⇒ supervisor nối lại bằng đường sẵn có; lệnh kế (STOP) trước khi nối lại ⇒
+   * DeviceUnreachableError (không gửi gì, `failed` — băng E-STOP cứng `khong_dat`), không bao giờ chồng lên yêu cầu cũ.
+   */
+  private haPhienSauDuPhong(conn: any, lyDo: string): void {
+    if (!conn || this.conn !== conn) return;
+    this.conn = null;
+    this.connected = false;
+    this.lastError = `s7 session torn down (${lyDo}) — the library still held the write; reconnect via the supervisor`;
+    this.dangBay.huy(conn, `session torn down: ${lyDo}`);
+    try {
+      if (typeof conn.dropConnection === "function") conn.dropConnection(() => undefined);
+    } catch {
+      // ignore
+    }
+    try {
+      if (typeof conn.connectionCleanup === "function") conn.connectionCleanup();
+    } catch {
+      // ignore
     }
   }
 
@@ -418,36 +509,50 @@ export class S7Driver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    let ketCucKhongRo: OtCommandResult["ketCucKhongRo"] | null = null;
     const conn = this.conn;
+    // T3 — bộ hẹn dự phòng theo hạn lệnh mặc định HIỆN HÀNH (đọc lúc ghi); trước: hằng 5000 = đúng hạn lệnh (đua với dispatcher, B3 có thể không chạy).
+    const hanDuPhongMs = hanDuPhongGhiS7Ms();
+    /** T3 — bộ hẹn dự phòng hết (thư viện chưa gọi lại) — khác hết hạn của CHÍNH thư viện (callback(true) + errCode). */
+    let duPhongHet = false;
     try {
-      await withTimeout(
-        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / liên kết mất ⇒ reject NGAY (không chờ hạn 5000 ms rồi báo 'failed').
+      await withHanGhiDuPhong(
+        // R1b-2b-1 — qua sổ đang bay: phiên bị hạ / liên kết mất ⇒ reject NGAY (không chờ hạn rồi báo 'failed').
         this.dangBay.bay(
           conn,
           new Promise<void>((resolve, reject) => {
             // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
             const rc = conn.writeItems(keys, values, (anyBadQualities: boolean) => {
-              if (anyBadQualities) reject(new Error("bad write quality"));
-              else resolve();
+              if (!anyBadQualities) return resolve();
+              // T3 — callback(true) là CẢ "PLC trả lời lỗi" LẪN "gói ĐÃ GỬI hết hạn của thư viện": phân biệt bằng errCode item (thăm dò thật).
+              if (laQuaHanGhiS7(conn)) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`));
+              else reject(new Error("bad write quality"));
             });
             if (rc === 1) reject(new Error("S7 write busy"));
           }),
         ),
-        5000,
+        hanDuPhongMs,
         "s7 writeItems",
-      );
+      ).catch((e: unknown) => {
+        if (laLoiQuaHanYeuCauDriver(e) && String((e as Error)?.message).includes("backup timeout after")) duPhongHet = true;
+        throw e;
+      });
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
       // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
       if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // T3 — hết hạn của thư viện (gói ĐÃ gửi) hoặc bộ hẹn dự phòng ⇒ kết cục KHÔNG RÕ cho MỌI write của lô ('timeout'), không 'failed'.
+      ketCucKhongRo = ketCucKhongRoCua(err);
+      // T3 — bộ hẹn dự phòng hết = thư viện CHƯA trả lời ⇒ còn giữ yêu cầu ⇒ hạ phiên TRƯỚC khi trả (lệnh kế — STOP — không chồng lên yêu cầu cũ).
+      if (duPhongHet) this.haPhienSauDuPhong(conn, batchError);
     }
 
     if (!batchError) this.lastOkAt = new Date();
 
     return prepared.map((p) => {
       if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
-      if (batchError) return { tagKey: p.tagKey, ok: false, error: batchError };
+      if (batchError) return ketCucKhongRo ? { tagKey: p.tagKey, ok: false, error: batchError, ketCucKhongRo } : { tagKey: p.tagKey, ok: false, error: batchError };
       return { tagKey: p.tagKey, ok: true };
     });
   }

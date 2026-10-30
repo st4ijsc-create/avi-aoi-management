@@ -73,9 +73,14 @@ export interface SimIdentity {
   firmware?: [number, number, number];
 }
 
-/** Fault modes (all affect block-function userdata only; the COTP / setup / write path keeps answering). */
+/**
+ * Fault modes. All affect block-function userdata only (the COTP / setup / write path keeps answering), except the two write-var
+ * faults marked "(write var)".
+ */
 export type SimFault =
   | null
+  | "hangWrite" // (write var) never answer a write var job (R1b-2b-2a T3: the client's own write timeout); the job is still recorded in pdus
+  | "writeError" // (write var) answer every write var item with return code 0x0A (object does not exist): the PLC ANSWERED with an error
   | "hang" // never answer a block-function request
   | "refuse" // parameter error code 0x8104 (function not supported) on every block function
   | "wrongNumber" // block info answers with another block number
@@ -256,9 +261,10 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         return;
       }
       if (rosctr === 0x01 && param[0] === 0x05) {
+        if (fault === "hangWrite") return; // R1b-2b-2a T3 — no answer, connection kept open
         writes++;
         const items = param[1] ?? 1;
-        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(items, 0xff));
+        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(items, fault === "writeError" ? 0x0a : 0xff));
         return;
       }
       if (rosctr !== 0x07 || param[0] !== 0x00 || param[1] !== 0x01 || param[2] !== 0x12) return; // not handled: no answer
