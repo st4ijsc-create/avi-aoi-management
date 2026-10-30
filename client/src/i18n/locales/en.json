@@ -15970,7 +15970,7 @@
       "webIngestDisabled": "URL ingest is disabled (set WEB_INGEST_ENABLED=true on the server).",
       "guidance": {
         "title": "Guide to ingesting documents yourself",
-        "subtitle": "Four steps to get documents into AI Local yourself — follow the order, the system handles the rest.",
+        "subtitle": "Four steps to get documents into ThoCa yourself — follow the order, the system handles the rest.",
         "step1Title": "1. Pick the RIGHT domain corpus",
         "step1Body": "Why domains matter: measured — mixing multiple domains into ONE corpus makes a question about the web pull in PLC documents (5 citations scoring 0.85–0.91 from off-topic material). Noise in a corpus makes answers WORSE, not neutral — the more off-topic documents a corpus holds, the more answers get pulled in the wrong direction.",
         "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",

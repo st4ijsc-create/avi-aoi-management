@@ -516,7 +516,7 @@ export class BoThucThiVscode implements BoThucThi {
       if (!token) {
         return loiModel(
           "Write not performed: every file change must be recorded in the server audit log, which needs the user's personal API token. " +
-            'Ask the user to run "AI Local: Đăng nhập AI Local (device flow)" and then retry.',
+            'Ask the user to run "Thợ Cả: Đăng nhập Thợ Cả (device flow)" and then retry.',
           "CHUA_CO_TOKEN_GHI_SO",
         );
       }
@@ -579,7 +579,7 @@ export class BoThucThiVscode implements BoThucThi {
         ma: kq.ma,
         choModel:
           `Not applied (${nhanThaoTac} ${v.rel}): the user's API token lacks the 'apply' scope needed to record file changes in the server audit log, ` +
-          'so no file can be written in this run. Do not retry any write. Tell the user to run "AI Local: Đăng nhập AI Local (device flow)" to sign in again, then ask again.',
+          'so no file can be written in this run. Do not retry any write. Tell the user to run "Thợ Cả: Đăng nhập Thợ Cả (device flow)" to sign in again, then ask again.',
         hienThi: { thongDiep: kq.thongDiep },
       };
     }

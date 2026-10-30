@@ -1,6 +1,6 @@
 {
   "name": "avi-ai-local",
-  "displayName": "AI Local (ST4I)",
+  "displayName": "Thợ Cả (ST4I)",
   "description": "Trợ lý lập trình AI chạy nội bộ — agent sửa trực tiếp dự án qua lõi agent dùng chung, mọi lượt ghi qua một điểm ghi có kiểm toán.",
   "version": "0.4.1",
   "publisher": "st4i",
@@ -22,7 +22,7 @@
       "activitybar": [
         {
           "id": "aviAiLocalThanhBen",
-          "title": "AI Local",
+          "title": "Thợ Cả",
           "icon": "media/thanh-ben.svg",
           "when": "aviAiLocal:khongHoTroThanhBenPhu"
         }
@@ -30,7 +30,7 @@
       "secondarySidebar": [
         {
           "id": "aviAiLocalThanhBenPhu",
-          "title": "AI Local",
+          "title": "Thợ Cả",
           "icon": "media/thanh-ben.svg",
           "when": "!aviAiLocal:khongHoTroThanhBenPhu"
         }
@@ -40,7 +40,7 @@
       "aviAiLocalThanhBen": [
         {
           "id": "aviAiLocal.bangChat",
-          "name": "AI Local",
+          "name": "Thợ Cả",
           "type": "webview",
           "when": "aviAiLocal:khongHoTroThanhBenPhu"
         }
@@ -48,7 +48,7 @@
       "aviAiLocalThanhBenPhu": [
         {
           "id": "aviAiLocal.bangChatPhu",
-          "name": "AI Local",
+          "name": "Thợ Cả",
           "type": "webview",
           "when": "!aviAiLocal:khongHoTroThanhBenPhu"
         }
@@ -57,59 +57,59 @@
     "commands": [
       {
         "command": "aviAiLocal.moBangChat",
-        "title": "AI Local: Mở bảng trò chuyện"
+        "title": "Thợ Cả: Mở bảng trò chuyện"
       },
       {
         "command": "aviAiLocal.dangNhapThietBi",
-        "title": "AI Local: Đăng nhập AI Local (device flow)"
+        "title": "Thợ Cả: Đăng nhập Thợ Cả (device flow)"
       },
       {
         "command": "aviAiLocal.dangNhap",
-        "title": "AI Local: Đăng nhập phiên (mật khẩu)"
+        "title": "Thợ Cả: Đăng nhập phiên (mật khẩu)"
       },
       {
         "command": "aviAiLocal.dangXuat",
-        "title": "AI Local: Đăng xuất"
+        "title": "Thợ Cả: Đăng xuất"
       },
       {
         "command": "aviAiLocal.suaDoanChon",
-        "title": "AI Local: Sửa đoạn đang chọn (hỏi AI)"
+        "title": "Thợ Cả: Sửa đoạn đang chọn (hỏi AI)"
       },
       {
         "command": "aviAiLocal.chatMoi",
-        "title": "AI Local: Chat mới",
+        "title": "Thợ Cả: Chat mới",
         "icon": "$(add)"
       },
       {
         "command": "aviAiLocal.lichSu",
-        "title": "AI Local: Lịch sử",
+        "title": "Thợ Cả: Lịch sử",
         "icon": "$(history)"
       },
       {
         "command": "aviAiLocal.mcpServers",
-        "title": "AI Local: Quản lý MCP server ngoài"
+        "title": "Thợ Cả: Quản lý MCP server ngoài"
       },
       {
         "command": "aviAiLocal.nhoDieuNay",
-        "title": "AI Local: Nhớ điều này"
+        "title": "Thợ Cả: Nhớ điều này"
       },
       {
         "command": "aviAiLocal.boNho",
-        "title": "AI Local: Bộ nhớ dài hạn",
+        "title": "Thợ Cả: Bộ nhớ dài hạn",
         "icon": "$(book)"
       },
       {
         "command": "aviAiLocal.doiMayChu",
-        "title": "AI Local: Đổi địa chỉ máy chủ"
+        "title": "Thợ Cả: Đổi địa chỉ máy chủ"
       },
       {
         "command": "aviAiLocal.hoanTacLuotChay",
-        "title": "AI Local: Hoàn tác lượt chạy agent",
+        "title": "Thợ Cả: Hoàn tác lượt chạy agent",
         "icon": "$(discard)"
       },
       {
         "command": "aviAiLocal.batTatGhostText",
-        "title": "AI Local: Bật/tắt gợi ý chữ mờ (ghost-text)"
+        "title": "Thợ Cả: Bật/tắt gợi ý chữ mờ (ghost-text)"
       }
     ],
     "keybindings": [
@@ -224,13 +224,13 @@
       ]
     },
     "configuration": {
-      "title": "AI Local",
+      "title": "Thợ Cả",
       "properties": {
         "aviAiLocal.serverUrl": {
           "type": "string",
           "scope": "machine",
           "default": "http://localhost:3000",
-          "description": "Địa chỉ máy chủ AI Local (box chạy model)."
+          "description": "Địa chỉ máy chủ Thợ Cả (box chạy model)."
         },
         "aviAiLocal.anhChoTroLy": {
           "type": "boolean",
@@ -256,7 +256,7 @@
           "type": "object",
           "scope": "machine",
           "default": {},
-          "description": "MCP server ngoài mà AI Local được phép gọi ra (khuôn mcpServers quen thuộc). Mỗi khoá là tên server, giá trị mang command/args/cwd/env. KHÔNG cho workspace ghi đè (bài học Đợt A: aviAiLocal.serverUrl thiếu scope từng để một repo thù địch chiếm đường dữ liệu qua .vscode/settings.json) — sửa ở User Settings, phạm vi Máy. Mỗi server phải được người dùng DUYỆT lần đầu (hộp thoại xác nhận trước khi tiến trình được chạy)."
+          "description": "MCP server ngoài mà Thợ Cả được phép gọi ra (khuôn mcpServers quen thuộc). Mỗi khoá là tên server, giá trị mang command/args/cwd/env. KHÔNG cho workspace ghi đè (bài học Đợt A: aviAiLocal.serverUrl thiếu scope từng để một repo thù địch chiếm đường dữ liệu qua .vscode/settings.json) — sửa ở User Settings, phạm vi Máy. Mỗi server phải được người dùng DUYỆT lần đầu (hộp thoại xác nhận trước khi tiến trình được chạy)."
         },
         "aviAiLocal.agentModel": {
           "type": "string",
