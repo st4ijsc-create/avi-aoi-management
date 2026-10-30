@@ -7,6 +7,8 @@
 
 _(Task 11)_
 
+**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2.
+
 ## 1. Ma trận ô — `server/services/scada/r1b2b2aNghiemThu.db.test.ts`
 
 _(Task 11)_
