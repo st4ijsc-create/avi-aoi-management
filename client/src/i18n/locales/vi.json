@@ -19114,7 +19114,8 @@
     "ledger": "Sổ ghi",
     "ledgerIntent": "Ghi trước (ý định)",
     "ledgerResult": "Kết quả",
-    "ledgerResultOf": "Kết quả của #{{id}}"
+    "ledgerResultOf": "Kết quả của #{{id}}",
+    "loiBiChe": "Chi tiết kỹ thuật bị ẩn (cần quyền kỹ sư)"
   },
   "license": {
     "title": "Quản lý giấy phép",

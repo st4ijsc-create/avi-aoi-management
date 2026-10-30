@@ -4,6 +4,10 @@
  * Surfaces the append-only command_log: every machine command the dispatcher
  * handled (rejected/failed/simulated/sent/acked/...), across HITL + interlock
  * triggers. No mutations — purely an audit view. RBAC: machine_control / canView.
+ *
+ * SCADA R1b-2b-2b A — C1 (KD-2bA 1.1, điều phối 2026-10-27): máy chủ che `ackValue` / `errorText` cho người không phải admin / engineer
+ * có `machine_control.canEdit`. Trang dùng các trường máy chủ SUY RA (`ledger` / `intentId` cho cột Sổ ghi; `maLoi` + `loiBiChe` cho cột
+ * Lỗi) ⇒ người bị che thấy MÃ lỗi + "chi tiết kỹ thuật bị ẩn", không bao giờ ô trống im lặng.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -72,6 +76,13 @@ export function CommandAuditLogContent() {
   );
 
   const rows = query.data ?? [];
+
+  // C1 — errorText bị máy chủ che (loiBiChe) ⇒ MÃ lỗi (maLoi) + nhãn "chi tiết kỹ thuật bị ẩn"; không lỗi ⇒ "—"
+  const loiCua = (r: (typeof rows)[number]): string => {
+    if (r.errorText) return r.errorText;
+    if (!r.loiBiChe) return "—";
+    return r.maLoi ? `${r.maLoi} · ${t('commandAudit.loiBiChe')}` : t('commandAudit.loiBiChe');
+  };
 
   // doc 81 Đợt 1B Task 6 fix round 1 — a real write is TWO rows (write-ahead intent + result);
   // label them so an intent is never read as a second command.
@@ -170,12 +181,12 @@ export function CommandAuditLogContent() {
                 <TableCell>{r.commandType ?? "—"}</TableCell>
                 <TableCell className="max-w-[140px] truncate" title={fmtValue(r.requestedValue)}>{fmtValue(r.requestedValue)}</TableCell>
                 <TableCell><StatusBadge status={r.status} map={STATUS_MAP} /></TableCell>
-                <TableCell>{renderLedger(commandLedgerRole(r.ackValue))}</TableCell>
+                <TableCell>{renderLedger(commandLedgerRole({ ledger: r.ledger, intentId: r.intentId }))}</TableCell>
                 <TableCell><StatusBadge status={r.triggerKind} variant={r.triggerKind === "interlock" ? "destructive" : "secondary"} /></TableCell>
                 <TableCell>{r.confirmedBy ?? "—"}</TableCell>
                 <TableCell>{r.approvedBy ?? "—"}</TableCell>
                 <TableCell className="max-w-[120px] truncate" title={fmtValue(r.readBackValue)}>{fmtValue(r.readBackValue)}</TableCell>
-                <TableCell className="max-w-[160px] truncate text-destructive" title={r.errorText ?? ""}>{r.errorText ?? "—"}</TableCell>
+                <TableCell className="max-w-[160px] truncate text-destructive" title={loiCua(r)}>{loiCua(r)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

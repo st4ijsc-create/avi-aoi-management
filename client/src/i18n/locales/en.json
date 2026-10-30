@@ -19114,7 +19114,8 @@
     "ledger": "Ledger",
     "ledgerIntent": "Write-ahead intent",
     "ledgerResult": "Result",
-    "ledgerResultOf": "Result of #{{id}}"
+    "ledgerResultOf": "Result of #{{id}}",
+    "loiBiChe": "Technical detail hidden (engineer access required)"
   },
   "license": {
     "title": "License management",

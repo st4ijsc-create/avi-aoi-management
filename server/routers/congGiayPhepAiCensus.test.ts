@@ -567,8 +567,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // 2026-10-26 Đợt 10.3 lô sau nghiệm thu (dieu-phoi e): annotation.analyzeImage vào bề mặt AI (THU_TUC_AI_TUONG_MINH) + sau MOD_AI ⇒ beMatAi 452→453, aiCoCong 390→391; tong không đổi.
 // ★★ 2026-10-26 · scada-master GỘP main 107e49111 (T14 Step 0) — ĐO trên cây gộp: main 2425/453/391 + nhánh mayDungKhanCap +1 (ngoài bề mặt AI) ⇒ tong 2426.
 // 2026-10-27 Đợt 10.4 (do-model): +2 aiKiemDinh.xemTruoc|chay (moduleProcedure MOD_AI) ⇒ 2427 / 455 / 393.
-const GHIM = { tong: 2428, beMatAi: 455, aiCoCong: 393, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+const GHIM = { tong: 2429, beMatAi: 455, aiCoCong: 393, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
+// ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
+//   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc
+//   3819461fb) đỏ ĐÚNG +1. `tong` 2429 trùng `phamViDocCensus.test.ts#GHIM.tong`.
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".
@@ -626,7 +629,10 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-10-26 · R1b-2b-1 scadaCommands.mayDungKhanCap +1 (SCADA R1b-2b-1 Task 1, mục 59) — 128 → 129: query `scadaCommands.mayDungKhanCap`
   //   (khối DỪNG khẩn cấp trên trang buộc đổi mật khẩu) trên `moduleProcedure("MOD_OT_CONTROL")` như `dungMay` (sàn vai mức 1 +
   //   `machine_control.canEdit` kiểm TRONG service; không đạt ⇒ rỗng). Đo: ghim cũ (gốc f891c93f7) đỏ ĐÚNG +1. Không thủ tục cũ nào đổi cổng.
-  MOD_OT_CONTROL: 129,
+  // ★ 2026-10-30 · R1b-2b-2b A — C1 commandLog.nhatKy +1 — 129 → 130: query `commandLog.nhatKy` trên
+  //   `protectedProcedure.use(moduleGate("MOD_OT_CONTROL"))` (+ `machine_control.canView`) — điều phối Q3: nhật ký lệnh sau MOD_OT_CONTROL như
+  //   mọi bề mặt OT. `commandLog.list|get|stats|avgDurations` KHÔNG thêm cổng (moduleAccessMap không đổi). Đo: ghim cũ đỏ ĐÚNG +1.
+  MOD_OT_CONTROL: 130,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
