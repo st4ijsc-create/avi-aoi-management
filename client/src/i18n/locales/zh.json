@@ -24364,6 +24364,7 @@
         "quaHanMotPhan": "服务器响应缓慢 — HMI STOP 未发送到适配器 {{list}}。",
         "gioiHan": "服务器因请求过多而拒绝（HTTP 429）— HMI STOP 未发送。",
         "khongRo": "无法确认适配器 {{list}} 是否已收到 STOP — 设备可能尚未停止。",
+        "khongDat": "HMI STOP 未送达适配器 {{list}} — 请在设备处使用硬接线急停（E-STOP）。",
         "nutBo": "知道了"
       },
       "khanCap": {

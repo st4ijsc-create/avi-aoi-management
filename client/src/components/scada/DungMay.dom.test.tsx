@@ -817,7 +817,66 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
     // R1b-2b-1 T17 fix round 1 — timeout (không rõ) ⇒ khong_ro; cùng lần có STOP_QUA_HAN ⇒ qua_han_mot_phan + khongRo; acked / failed thường ⇒ không
     expect(bangEstopTuKetQua([{ code: "A", status: "timeout" }, { code: "B", status: "acked_verified" }])).toEqual({ loai: "khong_ro", list: "A" });
     expect(bangEstopTuKetQua([{ code: "A", status: "failed", reason: "STOP_QUA_HAN" }, { code: "B", status: "timeout" }])).toEqual({ loai: "qua_han_mot_phan", list: "A", khongRo: "B" });
-    expect(bangEstopTuKetQua([{ code: "A", status: "acked_verified" }, { code: "B", status: "failed", reason: "SAFETY_BLOCKED" }])).toBeNull();
+    // R1b-2b-2a T3A fix round 1 (dieu-phoi) — trước: failed thường ⇒ KHÔNG băng (đã ghim ở đây). Nay STOP KHÔNG TỚI (failed / rejected) ⇒ băng cứng khong_dat.
+    expect(bangEstopTuKetQua([{ code: "A", status: "acked_verified" }, { code: "B", status: "failed", reason: "SAFETY_BLOCKED" }])).toEqual({ loai: "khong_dat", list: "B" });
+    expect(bangEstopTuKetQua([{ code: "A", status: "rejected" }])).toEqual({ loai: "khong_dat", list: "A" });
+    // ưu tiên: qua_han_mot_phan > khong_dat > khong_ro, giữ mỗi danh sách
+    expect(bangEstopTuKetQua([{ code: "A", status: "failed" }, { code: "B", status: "timeout" }])).toEqual({ loai: "khong_dat", list: "A", khongRo: "B" });
+    expect(bangEstopTuKetQua([{ code: "Q", reason: "STOP_QUA_HAN", status: "failed" }, { code: "A", status: "failed" }, { code: "B", status: "timeout" }])).toEqual({
+      loai: "qua_han_mot_phan",
+      list: "Q",
+      khongDat: "A",
+      khongRo: "B",
+    });
+    // edge / trung tâm dự phòng: đã gửi qua đường khác ⇒ không phải "không tới"
+    expect(bangEstopTuKetQua([{ code: "E", status: "failed", edgeStopRequest: true }, { code: "F", status: "failed", centralFallbackSent: true }])).toBeNull();
+  });
+
+  it("★ R1b-2b-2a T3A fix round 1 — STOP 'failed' (EIP quá trần chờ phiên mới ⇒ không gửi) + một adapter đạt ⇒ băng CỨNG khong_dat nêu adapter đó; dòng đỏ GIỮ", async () => {
+    veHop({ soAdapter: 2 });
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "EIP-A", status: "failed", ok: false, simulated: false, reason: "DEVICE_UNREACHABLE", writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [8] },
+        { adapterId: 2, code: "PLC-B", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [9] },
+      ],
+    });
+    expect(bang()).toHaveAttribute("role", "alert");
+    expect(bang()).toHaveAttribute("data-loai", "khong_dat");
+    expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.tieuDe"));
+    expect(bang()).toHaveTextContent(S("scada.dungMay.bangEstop.khongDat", { list: "EIP-A" }));
+    expect(bang()).not.toHaveTextContent(S("scada.dungMay.bangEstop.khongRo", { list: "EIP-A" }));
+    expect(bang()).not.toHaveTextContent("PLC-B");
+    expect(within(screen.getByTestId("ket-qua-dung-1")).getByTestId("dung-estop")).toBeInTheDocument();
+    expect(screen.getByTestId("ket-qua-dung-2")).toHaveAttribute("data-loai", "dat");
+  });
+
+  it("★ T3A fix round 1 — trộn failed + timeout ⇒ khong_dat VÀ dòng khong_ro trong CÙNG băng; NutDungMay: băng Ở LẠI sau khi đóng hộp, STOP đạt trọn vẹn sau đó GỠ băng (M-1)", async () => {
+    render(<NutDungMay machineId={10} tenMay="RF-2" soAdapter={2} />);
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "EIP-A", status: "failed", ok: false, simulated: false, writes: [], commandLogIds: [8] },
+        { adapterId: 2, code: "PLC-B", status: "timeout", ok: false, simulated: false, writes: [], commandLogIds: [9] },
+      ],
+    });
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") }));
+    const b = within(screen.getByTestId("khoi-dung-may")).getByTestId("bang-estop-cung");
+    expect(b).toHaveAttribute("data-loai", "khong_dat");
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.khongDat", { list: "EIP-A" }));
+    expect(b).toHaveTextContent(S("scada.dungMay.bangEstop.khongRo", { list: "PLC-B" }));
+    // lần bấm sau: mọi adapter acked_verified ⇒ băng của lần trước bị gỡ
+    fireEvent.click(screen.getByTestId("nut-dung-may"));
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "EIP-A", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [10] },
+        { adapterId: 2, code: "PLC-B", status: "acked_verified", ok: true, simulated: false, writes: [{ tagKey: "stop_cmd", value: true }], commandLogIds: [11] },
+      ],
+    });
+    fireEvent.click(within(hop()).getByRole("button", { name: S("scada.dungMay.nutDong") })); // băng trang chỉ hiện khi hộp ĐÓNG
+    expect(screen.queryByTestId("bang-estop-cung")).toBeNull();
   });
 
   it("chữ mới ở en không có chữ Việt; vi/en/zh đều có khoá", () => {
@@ -827,6 +886,7 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
       "scada.dungMay.bangEstop.quaHanMotPhan",
       "scada.dungMay.bangEstop.gioiHan",
       "scada.dungMay.bangEstop.khongRo",
+      "scada.dungMay.bangEstop.khongDat",
       "scada.dungMay.bangEstop.nutBo",
       "scada.lenh.loi.STOP_QUA_HAN",
       "errors.SCADA_STOP_PRECHECK_TIMEOUT",

@@ -24367,6 +24367,7 @@
         "quaHanMotPhan": "Server is slow — the HMI STOP was NOT sent to adapter {{list}}.",
         "gioiHan": "The server refused: too many requests (HTTP 429) — the HMI STOP was NOT sent.",
         "khongRo": "Unknown whether adapter {{list}} received the STOP — the machine may NOT have stopped.",
+        "khongDat": "The HMI STOP was NOT delivered to adapter {{list}} — use the hardwired E-STOP at the machine.",
         "nutBo": "Understood"
       },
       "khanCap": {
