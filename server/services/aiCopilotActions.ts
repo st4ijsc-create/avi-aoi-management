@@ -381,6 +381,8 @@ export async function proposeAction(
     status: "proposed",
     idempotencyKey,
     expiresAt,
+    // ★ Đợt 11.8 · M4/S7 — gắn lượt agent TRONG CHÍNH câu INSERT (không UPDATE sau).
+    ...(typeof ctx.agentRunId === "string" && ctx.agentRunId !== "" ? { agentRunId: ctx.agentRunId } : {}),
   });
 
   // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload

@@ -119,6 +119,12 @@ export interface ToolExecContext {
    */
   actionId?: string;
   /**
+   * ★★★ Đợt 11.8 · M4/S7 — lượt AGENT đang đề xuất thẻ (UUID của `ai_agent_runs`), do BỘ THỰC THI MÁY CHỦ đặt (không bao giờ từ client).
+   * `proposeAction` ghi nó vào CHÍNH câu INSERT thẻ ⇒ không có khe "thẻ đã nằm trong DB mà chưa gắn lượt"; `confirmAction` (mọi đường
+   * duyệt) đòi lượt + tổ tiên còn sống. Vắng ⇒ thẻ trợ lý cũ (không đổi).
+   */
+  agentRunId?: string;
+  /**
    * ★★★ doc 79 · TRỤC 2 — GỐC hộp cát của DỰ ÁN đang chọn, đã phân giải **SERVER-SIDE** từ một
    * `projectId` trong danh sách TRẮNG (`repoProjects.gocTheoId`). Đường TUYỆT ĐỐI, KHÔNG BAO GIỜ đến
    * từ client (client chỉ gửi id). VẮNG ⇒ hộp cát dùng `gocHopCat()` (dự án mặc định — đường cũ).

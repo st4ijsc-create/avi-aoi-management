@@ -13,21 +13,19 @@ vi.mock("./connection", () => ({
   },
 }));
 
-import { dongTheCuaCay, ganTheChoLuot, luotConSong } from "./aiAgentTheDuyet";
+import { dongTheCuaCay, luotConSong } from "./aiAgentTheDuyet";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 
 describe("aiAgentTheDuyet fail-closed", () => {
-  it("DB ném ⇒ luotConSong=false, ganThe=false, dongThe=0 — không ném", async () => {
+  it("DB ném ⇒ luotConSong=false, dongThe=0 — không ném", async () => {
     trang.db = "nem";
     expect(await luotConSong(RUN, 1)).toBe(false);
-    expect(await ganTheChoLuot("a", RUN, 1)).toBe(false);
     expect(await dongTheCuaCay(RUN)).toBe(0);
   });
   it("DB vắng ⇒ như trên", async () => {
     trang.db = "vang";
     expect(await luotConSong(RUN, 1)).toBe(false);
-    expect(await ganTheChoLuot("a", RUN, 1)).toBe(false);
   });
   it("tham số méo ⇒ false/0", async () => {
     expect(await luotConSong("khong-phai-uuid", 1)).toBe(false);

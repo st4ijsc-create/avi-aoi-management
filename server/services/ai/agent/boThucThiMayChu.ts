@@ -125,7 +125,7 @@ import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
-import { ganTheChoLuot as ganTheChoLuotThat } from "../../../db/aiAgentTheDuyet";
+const RE_UUID_LUOT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const LY_DO_AGENT_TU_DONG = "AI_AGENT_TU_DONG" as const;
 
@@ -207,8 +207,6 @@ export interface PhuThuocBoThucThi {
   timTaiLieu?: TimTaiLieu;
   /** (2026-10-18) tra ký hiệu API của `lookup_api` (mặc định `traApiMacDinh` — chỉ mục `knowledge/api-ref/ky-hieu/`). */
   traApi?: TraApi;
-  /** (Đợt 11.8, M4/S7) gắn thẻ vào lượt agent — mặc định = hàm CSDL thật (`server/db/aiAgentTheDuyet.ts`); lưới thay. */
-  ganTheChoLuot?: (actionId: string, runId: string, userId: number) => Promise<boolean>;
 }
 
 export interface CauHinhBoThucThi {
@@ -865,19 +863,17 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     }
 
     // ĐỀ XUẤT — đúng cửa HITL (RBAC lần 1, preview, hàng ai_pending_actions, audit PROPOSED).
-    const out = await executeDecision({ tool, args }, execCtx);
+    // ★ M4/S7 — lượt đề xuất đi vào CHÍNH câu INSERT thẻ (ctx.agentRunId → proposeAction): không có khe thẻ chưa gắn lượt. runId không
+    //   phải UUID (không thể gắn) ⇒ TỪ CHỐI trước khi đề xuất (fail-closed; production luôn là randomUUID).
+    if (!RE_UUID_LUOT.test(ctx.runId)) {
+      return { ok: false, ma: "LOI_DE_XUAT", choModel: "Could not identify the run that proposes this change, so nothing was proposed. Nothing was changed." };
+    }
+    const out = await executeDecision({ tool, args }, { ...execCtx, agentRunId: ctx.runId });
     if (out.denied) {
       return { ok: false, ma: "TU_CHOI_QUYEN", choModel: `Permission denied: ${out.denied.message || out.denied.reason || "refused"}. Nothing was changed.` };
     }
     if (!out.pendingAction) return { ok: false, ma: "LOI_DE_XUAT", choModel: `Could not propose the change (${out.error ?? "unknown error"}). Nothing was changed.` };
     const pa = out.pendingAction;
-
-    // ★ M4/S7 — gắn thẻ vào LƯỢT (cột agentRunId) TRƯỚC mọi thứ khác: `confirmAction` (mọi đường duyệt) đòi lượt + tổ tiên còn sống.
-    //   Gắn hỏng ⇒ huỷ đề xuất, KHÔNG phát thẻ (fail-closed — thẻ không gắn sẽ duyệt được dù lượt đã chết).
-    if (!(await (cauHinh.phuThuoc?.ganTheChoLuot ?? ganTheChoLuotThat)(pa.actionId, ctx.runId, user.id))) {
-      await cancelAction(pa.actionId, user).catch(() => undefined);
-      return { ok: false, ma: "LOI_DE_XUAT", choModel: "Could not record which run proposed this change, so it was cancelled. Nothing was changed." };
-    }
 
     // CHECKPOINT — trước bất kỳ byte nào (cả HITL lẫn tự động). Hỏng ⇒ huỷ đề xuất, KHÔNG ghi.
     let checkpointId: string | null = null;

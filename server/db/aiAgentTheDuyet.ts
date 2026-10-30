@@ -1,6 +1,8 @@
 /**
  * ★★★ Đợt 11.8 · M4/S7 — thẻ duyệt GẮN LƯỢT AGENT (cột `ai_pending_actions."agentRunId"`, mig 0442) và cổng CHUNG của `confirmAction`.
  *
+ * ⚠ Thẻ được gắn lượt NGAY TRONG câu INSERT của `proposeAction` (ctx.agentRunId) — KHÔNG có bước UPDATE gắn sau (khe fail-open).
+ *
  * Bất biến: thẻ có `agentRunId` chỉ duyệt được khi lượt đó và MỌI tổ tiên (`ai_agent_runs.parentRunId`) còn `dang-chay`/`cho-duyet`,
  * cùng chủ với người duyệt. Không thấy hàng sổ / lỗi CSDL ⇒ KHÔNG hoạt động (fail-closed). Không phụ thuộc bộ nhớ tiến trình.
  */
@@ -8,22 +10,6 @@ import { sql } from "drizzle-orm";
 import { getDb } from "./connection";
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Gắn thẻ vào lượt agent (chỉ khi thẻ còn `proposed` và cùng chủ). Trả true khi đã gắn. */
-export async function ganTheChoLuot(actionId: string, runId: string, userId: number): Promise<boolean> {
-  if (!actionId || !RE_UUID.test(runId) || !Number.isInteger(userId) || userId <= 0) return false;
-  const db = await getDb();
-  if (!db) return false;
-  try {
-    const r = await db.execute(
-      sql`UPDATE ai_pending_actions SET "agentRunId" = ${runId}::uuid WHERE id = ${actionId} AND "userId" = ${userId} AND status = 'proposed' RETURNING id`,
-    );
-    return (r as unknown as unknown[]).length > 0;
-  } catch (err) {
-    console.warn("[aiAgentTheDuyet] ganTheChoLuot hỏng (fail-closed):", err);
-    return false;
-  }
-}
 
 /** Lượt + mọi tổ tiên còn sống và cùng chủ? Hàng thiếu / lỗi ⇒ false. */
 export async function luotConSong(runId: string, userId: number): Promise<boolean> {

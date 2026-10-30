@@ -13,7 +13,7 @@ import { aiAgentRuns, aiPendingActions } from "../../drizzle/schema";
 import { users, userSecrets } from "../../drizzle/schema/auth";
 import { createLocalUser } from "../db/auth";
 import { confirmAction } from "./aiCopilotActions";
-import { dongTheCuaCay, ganTheChoLuot, luotConSong } from "../db/aiAgentTheDuyet";
+import { dongTheCuaCay, luotConSong } from "../db/aiAgentTheDuyet";
 
 let uid = 0;
 let uid2 = 0;
@@ -141,17 +141,6 @@ describe("aiAgentTheDuyet — gắn thẻ, đóng thẻ của cả cây", () => 
     expect(await luotConSong(randomUUID(), uid)).toBe(false);
     expect(await luotConSong("khong-phai-uuid", uid)).toBe(false);
   });
-  it("ganTheChoLuot chỉ gắn thẻ 'proposed' của CHÍNH chủ", async () => {
-    const run = await mkRun(uid, "dang-chay");
-    const the = await mkThe({});
-    expect(await ganTheChoLuot(the, run, uid2)).toBe(false);
-    expect(await ganTheChoLuot(the, run, uid)).toBe(true);
-    const db = await getDb();
-    const [h] = await db!.select({ r: aiPendingActions.agentRunId }).from(aiPendingActions).where(eq(aiPendingActions.id, the));
-    expect(h!.r).toBe(run);
-    await db!.update(aiPendingActions).set({ status: "cancelled" }).where(eq(aiPendingActions.id, the));
-    expect(await ganTheChoLuot(the, run, uid)).toBe(false);
-  });
   it("★★★ dongTheCuaCay: huỷ thẻ 'proposed' của gốc + con + cháu, KHÔNG đụng thẻ của cây khác", async () => {
     const goc = await mkRun(uid, "dang-chay");
     const con = await mkRun(uid, "dang-chay", goc);
@@ -164,6 +153,68 @@ describe("aiAgentTheDuyet — gắn thẻ, đóng thẻ của cả cây", () => 
     expect(await dongTheCuaCay(goc)).toBe(3);
     for (const t of [tGoc, tCon, tChau]) expect(await trangThaiThe(t)).toBe("cancelled");
     expect(await trangThaiThe(tKhac)).toBe("proposed");
+  });
+});
+
+describe("dongTheCuaCay — chỉ thẻ 'proposed'", () => {
+  it("★★★ thẻ đã executed / confirmed / denied / cancelled của cây KHÔNG bị đổi trạng thái", async () => {
+    const goc = await mkRun(uid, "dang-chay");
+    const con = await mkRun(uid, "dang-chay", goc);
+    const db = await getDb();
+    const the: Record<string, string> = {};
+    for (const st of ["executed", "confirmed", "denied", "cancelled", "proposed"]) {
+      const id = await mkThe({ runId: st === "proposed" ? goc : con });
+      await db!.update(aiPendingActions).set({ status: st as never }).where(eq(aiPendingActions.id, id));
+      the[st] = id;
+    }
+    expect(await dongTheCuaCay(goc)).toBe(1);
+    for (const st of ["executed", "confirmed", "denied", "cancelled"]) expect(await trangThaiThe(the[st]!), st).toBe(st);
+    expect(await trangThaiThe(the.proposed!)).toBe("cancelled");
+  });
+});
+
+describe("CENSUS — mọi INSERT thẻ do bộ thực thi agent tạo đều mang agentRunId (không UPDATE gắn sau)", () => {
+  const doc = (rel: string) => fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+  it("proposeAction: câu INSERT 'proposed' chứa agentRunId; không còn hàm/UPDATE gắn lượt sau khi chèn", () => {
+    const nd = doc("aiCopilotActions.ts");
+    const i = nd.indexOf('status: "proposed",');
+    expect(i).toBeGreaterThan(0);
+    const khoi = nd.slice(i, i + 700);
+    expect(khoi).toMatch(/agentRunId/);
+    expect(doc("../db/aiAgentTheDuyet.ts")).not.toMatch(/SET "agentRunId"/);
+  });
+  it("bộ thực thi agent: MỌI executeDecision của đường ghi truyền agentRunId; runId không phải UUID ⇒ từ chối TRƯỚC khi đề xuất", () => {
+    const nd = doc("ai/agent/boThucThiMayChu.ts");
+    expect(nd).toMatch(/executeDecision\(\{ tool, args \}, \{ \.\.\.execCtx, agentRunId: ctx\.runId \}\)/);
+    const iUuid = nd.indexOf("RE_UUID_LUOT.test(ctx.runId)");
+    const iDe = nd.indexOf("agentRunId: ctx.runId");
+    expect(iUuid).toBeGreaterThan(0);
+    expect(iUuid).toBeLessThan(iDe);
+  });
+  it("các file khác chèn ai_pending_actions là luồng KHÔNG phải agent lập trình (ghim danh sách; file mới ⇒ đỏ)", () => {
+    const goc = path.resolve(__dirname, "..");
+    const co: string[] = [];
+    const duyet = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules") duyet(p);
+        } else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) {
+          if (/insert\(aiPendingActions\)/.test(fs.readFileSync(p, "utf8"))) co.push(path.relative(goc, p).replace(/\\/g, "/"));
+        }
+      }
+    };
+    duyet(goc);
+    expect(co.sort()).toEqual(
+      [
+        "services/aiCopilotActions.ts", // proposeAction (mang agentRunId) + batDauApDungOClient (áp ở client, không phải agent)
+        "services/edge/edgeAuthorizeCentral.ts",
+        "services/orchestration/foe/foeRunStore.ts",
+        "services/programming/programmingService.ts",
+        "services/robot/robotAutomationAction.ts",
+        "services/scada/lenhHmi.ts",
+      ].sort(),
+    );
   });
 });
 

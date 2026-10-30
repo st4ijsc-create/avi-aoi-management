@@ -15,10 +15,13 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { capNhatHangLuotChay, taoHangLuotChay } from "../../../db/aiAgentRuns";
 
 import { bamNoiDung, type GoiModel, type ManhModel, type SuKienAgent, type TinNhan, type WireToolCall } from "@shared/agentCore";
 import { choPhepGiaoViec, giaoViecBat, taoQuanLyLuotChay } from "./quanLyLuotChay";
 import { taoBoThucThiMayChu } from "./boThucThiMayChu";
+import { congCheckpointThat } from "./quanLyLuotChay";
 import { confirmAction } from "../../aiCopilotActions";
 import { thuTucDuyet } from "./thuTucLuotChay";
 import { _xoaSoBamHITL } from "../../aiLocalTools/writeHandlers/applyDiff";
@@ -460,34 +463,86 @@ describe("S5 — delegate KHÔNG BAO GIỜ tới bộ thực thi", () => {
   });
 });
 
-describe("S7 — gắn thẻ vào lượt hỏng ⇒ huỷ đề xuất, KHÔNG phát thẻ", () => {
-  it("ganTheChoLuot=false ⇒ cancelAction được gọi, kết quả LOI_DE_XUAT, không can-duyet", async () => {
-    const nguoi = { id: 1, role: "admin", name: "x" };
-    const huy: string[] = [];
-    const phat: string[] = [];
-    const bo = taoBoThucThiMayChu({
+describe("S7 — lượt đề xuất đi vào CHÍNH câu INSERT thẻ", () => {
+  const nguoi = { id: 1, role: "admin", name: "x" };
+  const dung = (executeDecision: unknown) =>
+    taoBoThucThiMayChu({
       execCtx: { user: nguoi, lang: "vi", projectRoot: REPO },
       gocDuAn: REPO,
       projectId: DU_AN,
       user: nguoi,
       coQuyenThucThi: false,
       checkpoint: { chupTruocGhi: async () => ({ id: "cp" }), chotSauGhi: async () => undefined },
-      phuThuoc: {
-        executeDecision: (async () => ({ pendingAction: { actionId: "act-1", token: "act-1", summary: "s", expiresAt: new Date(Date.now() + 60_000).toISOString() } })) as never,
-        cancelAction: (async (id: string) => {
-          huy.push(id);
-          return { ok: true, status: "cancelled" };
-        }) as never,
-        ganTheChoLuot: async () => false,
-        kiemKillSwitch: async () => false,
-      },
+      phuThuoc: { executeDecision: executeDecision as never, kiemKillSwitch: async () => false },
     });
-    const r = await bo.chay(
-      { id: "w", ten: "write_file", thamSo: { path: "src/x.ts", content: "x\n" } },
-      { cheDo: "sua", runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: (e) => phat.push(e.loai) },
-    );
-    expect(r).toMatchObject({ ok: false, ma: "LOI_DE_XUAT" });
-    expect(huy).toEqual(["act-1"]);
-    expect(phat).not.toContain("can-duyet");
+  const ctx = (runId: string) => ({ cheDo: "sua" as const, runId, luot: 1, signal: new AbortController().signal, phat: () => undefined });
+
+  it("★★★ executeDecision nhận execCtx.agentRunId = runId của lượt (cha hay con)", async () => {
+    const thay: Array<string | undefined> = [];
+    const bo = dung(async (_d: unknown, c: { agentRunId?: string }) => {
+      thay.push(c.agentRunId);
+      return { error: "dung o day" };
+    });
+    const run = "11111111-1111-4111-8111-111111111111";
+    await bo.chay({ id: "w", ten: "write_file", thamSo: { path: "src/x.ts", content: "x\n" } }, ctx(run));
+    await bo.chay({ id: "r", ten: "run_command", thamSo: { command: "node --version" } }, ctx("22222222-2222-4222-8222-222222222222"));
+    expect(thay).toEqual([run, "22222222-2222-4222-8222-222222222222"]);
   });
+  it("★★★ runId không phải UUID ⇒ TỪ CHỐI trước khi đề xuất (executeDecision không được gọi)", async () => {
+    let goi = 0;
+    const bo = dung(async () => {
+      goi++;
+      return { error: "x" };
+    });
+    const r = await bo.chay({ id: "w", ten: "write_file", thamSo: { path: "src/x.ts", content: "x\n" } }, ctx("khong-phai-uuid"));
+    expect(r).toMatchObject({ ok: false, ma: "LOI_DE_XUAT" });
+    expect(goi).toBe(0);
+  });
+});
+
+describe("M4 — đua: con tạo thẻ SAU khi cha đã kết thúc", () => {
+  it("★★★ cha 'huy' + con còn thức tạo thẻ thật ⇒ thẻ mang agentRunId của con và KHÔNG duyệt được (AGENT_RUN_NOT_ACTIVE), tệp không ghi", async () => {
+    await xoaSo(uid);
+    const cha = randomUUID();
+    const con = randomUUID();
+    expect(await taoHangLuotChay({ id: cha, userId: uid, projectId: DU_AN, cheDo: "sua", cauHoi: "cha" })).toBe(true);
+    expect(await taoHangLuotChay({ id: con, userId: uid, projectId: DU_AN, cheDo: "sua", cauHoi: "con", con: { parentRunId: cha, depth: 1, agentName: "viet-test", agentSource: "dungSan" } })).toBe(true);
+    await capNhatHangLuotChay(uid, cha, { trangThai: "huy", lyDoDung: "huy" }); // cha đã kết thúc; con "ngủ muộn" vẫn dang-chay
+
+    const nguoi = { id: uid, role: "admin", name: "x" };
+    const bo = taoBoThucThiMayChu({
+      execCtx: { user: nguoi, lang: "vi", projectRoot: REPO },
+      gocDuAn: REPO,
+      projectId: DU_AN,
+      user: nguoi,
+      coQuyenThucThi: true,
+      checkpoint: congCheckpointThat(uid),
+      phuThuoc: { nhipKiemMs: 50 },
+    });
+    const ac = new AbortController();
+    let actionId = "";
+    const chay = bo.chay(
+      { id: "w", ten: "write_file", thamSo: { path: "src/dua.ts", content: "export const D = 1;\n" } },
+      {
+        cheDo: "sua",
+        runId: con,
+        luot: 1,
+        signal: ac.signal,
+        phat: (e) => {
+          if (e.loai === "can-duyet") actionId = String(e.deXuat.pendingActionId);
+        },
+      },
+    );
+    for (let i = 0; i < 100 && actionId === ""; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(actionId).not.toBe("");
+    const db = await getDb();
+    const [h] = await db!.select({ r: aiPendingActions.agentRunId }).from(aiPendingActions).where(eq(aiPendingActions.id, actionId));
+    expect(h!.r).toBe(con);
+    const r = await confirmAction(actionId, actionId, nguoi, "vi");
+    expect(r.ok).toBe(false);
+    expect(r.message ?? "").toMatch(/AGENT_RUN_NOT_ACTIVE/);
+    ac.abort();
+    await chay;
+    expect(fs.existsSync(path.join(REPO, "src", "dua.ts"))).toBe(false);
+  }, 60_000);
 });
