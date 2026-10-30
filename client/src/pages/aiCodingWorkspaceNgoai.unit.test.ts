@@ -55,6 +55,32 @@ describe("AICodingWorkspace — model ngoài chỉ ở chế độ HỎI", () =>
     expect(demLanXuatHien("ngoaiCallIdsRef.current = [];")).toBeGreaterThanOrEqual(3);
   });
 
+  it("★ CHỐT 'người dùng đã đồng ý': lần gọi ĐẦU chỉ mang xacNhanVanHanh khi người dùng ĐÃ xác nhận phiên này (không phải luôn true)", () => {
+    expect(ma).toContain("let res = await goiStream(laNgoai && daXacNhanVanHanh(khoaPhien(), chonModel));");
+    expect(ma).toContain("if (await hoiVanHanh(khoaPhien(), chonModel)) {");
+    expect(ma).toContain("res = await goiStream(true);");
+  });
+
+  it("★ handleSend phụ thuộc laNgoai / chonModel / hoiVanHanh / loiNgoaiRef (không đóng gói cũ: đổi sang model ngoài mà vẫn chạy đường agent)", () => {
+    expect(ma).toContain("projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);");
+  });
+
+  it("★ đường render KHÔNG an toàn bị đóng: lượt ngoài đặt luotNgoai TRƯỚC khi stream, đặt phienCoNgoai sau lượt ngoài; tiến độ đọc có trần 50", () => {
+    expect(ma).toContain("setLuotNgoai(laNgoai);");
+    expect(ma).toContain("setPhienCoNgoai(true);");
+    expect(ma).toContain("setTienDoDoc((prev) => [...prev, d].slice(-50))");
+    expect(ma.indexOf("setLuotNgoai(laNgoai);")).toBeLessThan(ma.indexOf("const goiStream = (xacNhanVH: boolean)"));
+  });
+
+  it("★ sổ callId dùng phép thuần (cộng dồn / loại đúng id đã lưu / id của lượt); lưu hỏng khi có id ⇒ bỏ id + báo lỗi", () => {
+    expect(ma).toContain("ngoaiCallIdsRef.current = congDonCallId(ngoaiCallIdsRef.current, callIdCuaLuot(res));");
+    expect(ma).toContain("const ids = congDonCallId(ngoaiCallIdsRef.current, []);");
+    expect(ma).toContain("ngoaiCallIdsRef.current = loaiCallIdDaLuu(ngoaiCallIdsRef.current, ids);");
+    expect(ma).toMatch(/if \(ngoaiCallIdsRef\.current\.length > 0\) \{\s*ngoaiCallIdsRef\.current = \[\];\s*toast\.error\(mapTrpcError\(e\)\);/);
+    // setPhienCoNgoai(true) đứng TRƯỚC khi thêm lượt assistant vào transcript (hiệu ứng lưu chạy theo transcript)
+    expect(ma.indexOf("setPhienCoNgoai(true);")).toBeLessThan(ma.indexOf('{ role: "assistant", content: answer, ...(res.ngoai'));
+  });
+
   it("ô chọn model có hook đồng ý (hộp) và hộp được vẽ", () => {
     expect(ma).toContain("xacNhanNgoai={xacNhanNgoai}");
     expect(ma).toContain("{hopThoai}");

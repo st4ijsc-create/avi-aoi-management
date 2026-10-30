@@ -165,6 +165,26 @@ describe("useKbChatStream — model ngoài", () => {
     expect(kq!.ngoaiCallIds).toEqual([3, 9]);
   });
 
+  it("L2: sự kiện tool CỤC BỘ (có toolResult) ⇒ onToolResult, KHÔNG vào nhánh ngoài (dù có trường name); path dài bị cắt 300", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      sse(
+        data({ type: "tool", name: "read_file", toolName: "read_file", toolResult: { type: "x" } }),
+        data({ type: "tool", name: "read_file", path: "p".repeat(400), ok: true }),
+        data({ type: "token", token: "a" }),
+        data({ type: "done" }),
+      ),
+    );
+    const h = renderHook(() => useKbChatStream());
+    const doc: Array<Record<string, unknown>> = [];
+    const kq: unknown[] = [];
+    await act(async () => {
+      await h.result.current.startKbStream(REQ(), { onDocTepNgoai: (d) => doc.push(d), onToolResult: (r) => kq.push(r) });
+    });
+    expect(kq).toHaveLength(1);
+    expect(doc).toHaveLength(1);
+    expect(String(doc[0]!.path).length).toBe(300);
+  });
+
   it("L2: consumer onDocTepNgoai ném ⇒ KHÔNG giết lượt; ngoaiCallIds hỏng/rỗng ⇒ vắng", async () => {
     fetchSpy.mockResolvedValueOnce(sse(data({ type: "tool", name: "grep_repo", ok: true }), data({ type: "token", token: "a" }), data({ type: "done", ngoaiCallIds: [] })));
     const h = renderHook(() => useKbChatStream());

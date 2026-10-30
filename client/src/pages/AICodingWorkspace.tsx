@@ -72,6 +72,7 @@ import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
 import { useXacNhanNgoai } from "@/hooks/useXacNhanNgoai";
 import { daXacNhanVanHanh, tachMaNgoai } from "@/lib/dongYNgoai";
 import { layThongTinNgoai } from "@/lib/thongTinNgoaiClient";
+import { callIdCuaLuot, congDonCallId, loaiCallIdDaLuu } from "@/lib/soCallIdNgoai";
 import { thongDiepLoiNgoai } from "@/lib/loiNgoai";
 import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 import { docCheDoNghi, luuCheDoNghi } from "@/lib/cheDoNghi";
@@ -1612,8 +1613,7 @@ export default function AICodingWorkspace() {
       const answer = res.fullText.trim() || t("repoWs.chat.noAnswer", "(không có nội dung trả lời)");
       // ★ Đợt 10.4b L2 — callId các lượt ngoài chuyển vào lần lưu phiên kế (máy chủ XÁC MINH); đặt TRƯỚC khi thêm lượt (hiệu ứng lưu chạy theo transcript).
       if (res.ngoai) {
-        const ids = res.ngoaiCallIds ?? (res.vet ? [res.vet.callId] : []);
-        ngoaiCallIdsRef.current = [...ngoaiCallIdsRef.current, ...ids].slice(-50);
+        ngoaiCallIdsRef.current = congDonCallId(ngoaiCallIdsRef.current, callIdCuaLuot(res));
         setPhienCoNgoai(true);
       }
       setTranscript((prev) => [...prev, { role: "assistant", content: answer, ...(res.ngoai ? { ngoai: { ...res.ngoai, ...(res.vet ? { vet: res.vet } : {}) } } : {}) }]);
@@ -2009,10 +2009,10 @@ export default function AICodingWorkspace() {
         // ⚠ ĐỌC REF, KHÔNG đọc `sessionId` của bao đóng — xem khối ⚠⚠ ở `sessionIdRef`. Đọc ở ĐÂY
         //   (trong thân đã nối tiếp) chứ không ở ngoài, để lượt này thấy id lượt trước vừa tạo.
         const idHienTai = sessionIdRef.current;
-        const ids = ngoaiCallIdsRef.current.slice(-50);
+        const ids = congDonCallId(ngoaiCallIdsRef.current, []);
         const r = await luuPhienM.mutateAsync({ projectId, sessionId: idHienTai, turns: sach, ...(ids.length > 0 ? { ngoaiCallIds: ids } : {}) });
         if (r.ok && r.id) {
-          if (ids.length > 0) ngoaiCallIdsRef.current = ngoaiCallIdsRef.current.filter((x) => !ids.includes(x));
+          if (ids.length > 0) ngoaiCallIdsRef.current = loaiCallIdDaLuu(ngoaiCallIdsRef.current, ids);
           if (!idHienTai) datSessionId(r.id);
           void utils.repoWorkspace.danhSachPhien.invalidate();
         }
@@ -2020,7 +2020,8 @@ export default function AICodingWorkspace() {
       .catch((e) => {
         // Lưu hỏng ⇒ cho phép thử lại ở lượt sau (nếu giữ băm thì mạch này không bao giờ được lưu).
         bamDaLuuRef.current = "";
-        // ★ Đợt 10.4b L2 — dấu nguồn bị máy chủ từ chối (`dau-nguon-lech`) ⇒ nói rõ, bỏ các id (không thử lại vô hạn; máy chủ vẫn tự dò theo băm 24 h).
+        // ★ Đợt 10.4b L2 — lưu hỏng KHI có id chờ (dấu nguồn bị máy chủ từ chối `dau-nguon-lech`, hoặc lỗi mạng/khác) ⇒ nói rõ và BỎ các id (không thử lại vô hạn);
+        //   đã khai: lỗi mạng cũng bỏ id — máy chủ vẫn tự dò theo băm lượt trả lời trong 24 h nên dấu nguồn không mất.
         if (ngoaiCallIdsRef.current.length > 0) {
           ngoaiCallIdsRef.current = [];
           toast.error(mapTrpcError(e));
