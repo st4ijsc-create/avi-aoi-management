@@ -21898,6 +21898,42 @@
         "THAM_SO_SAI": "Tham số không hợp lệ.",
         "khac": "Không thực hiện được ({{ma}})."
       }
+    },
+    "lichSuAgent": {
+      "tieuDe": "Lịch sử agent",
+      "moTaMan": "Các phiên agent của bạn trong dự án {{duAn}} (web, VS Code, dòng lệnh).",
+      "biTuChoi": "Bạn không có quyền xem lịch sử agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "rong": "Chưa có phiên agent nào trong dự án này.",
+      "quayLai": "Quay lại",
+      "soLuotChay": "{{n}} lượt chạy gắn với phiên này.",
+      "ban": "Bạn",
+      "agent": "Agent",
+      "coNgoai": "đã dùng AI ngoài",
+      "soLuot": "{{n}} lượt",
+      "mo": "Xem",
+      "luuTen": "Lưu tên",
+      "doiTen": "Đổi tên",
+      "xoa": "Xoá phiên",
+      "hoiXoa": "Xoá phiên “{{ten}}”? Việc này không hoàn tác được.",
+      "nhatKy": "Xoá phiên KHÔNG xoá nhật ký các lượt chạy (sổ kiểm toán trên máy chủ vẫn giữ).",
+      "xacNhanXoa": "Xoá phiên",
+      "huy": "Huỷ",
+      "daXoa": "Đã xoá phiên.",
+      "nguon": {
+        "web": "web",
+        "vscode": "VS Code",
+        "cli": "dòng lệnh"
+      },
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "NOT_FOUND": "Không tìm thấy phiên (đã bị xoá?).",
+        "CONFLICT": "Phiên đã được cập nhật ở nơi khác — danh sách đã tải lại, hãy thử lại.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "LOI": "Không thực hiện được — thử lại sau.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
     }
   },
   "masterDataCol": {

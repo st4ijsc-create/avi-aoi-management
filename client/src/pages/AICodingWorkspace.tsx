@@ -155,6 +155,7 @@ import { KhungGit } from "@/components/ai/KhungGit";
 import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
 import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
 import { BangAgentTuRepo } from "@/components/ai/BangAgentTuRepo";
+import { LichSuAgent } from "@/components/ai/LichSuAgent";
 import { ChiBaoHangCho } from "@/components/aiCoding/agent/ChiBaoHangCho";
 import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
 import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
@@ -3263,6 +3264,7 @@ export default function AICodingWorkspace() {
               <div className="ml-auto flex items-center">
                 {projectId && <QuanLyTriNho projectId={projectId} />}
                 {projectId && <BangAgentTuRepo projectId={projectId} />}
+                {projectId && <LichSuAgent projectId={projectId} />}
               </div>
               <BoChonPhien
                 phien={phienQ.data?.sessions ?? []}

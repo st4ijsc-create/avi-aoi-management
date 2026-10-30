@@ -21898,6 +21898,42 @@
         "THAM_SO_SAI": "参数无效。",
         "khac": "无法完成（{{ma}}）。"
       }
+    },
+    "lichSuAgent": {
+      "tieuDe": "智能体历史",
+      "moTaMan": "您在项目 {{duAn}} 中的智能体会话（网页、VS Code、命令行）。",
+      "biTuChoi": "您无权查看该项目的智能体历史。",
+      "dangTai": "加载中…",
+      "rong": "该项目还没有智能体会话。",
+      "quayLai": "返回",
+      "soLuotChay": "此会话关联 {{n}} 次运行。",
+      "ban": "您",
+      "agent": "智能体",
+      "coNgoai": "已使用外部 AI",
+      "soLuot": "{{n}} 轮",
+      "mo": "查看",
+      "luuTen": "保存名称",
+      "doiTen": "重命名",
+      "xoa": "删除会话",
+      "hoiXoa": "删除会话“{{ten}}”？此操作无法撤销。",
+      "nhatKy": "删除会话不会删除运行日志（服务器审计账本仍保留）。",
+      "xacNhanXoa": "删除会话",
+      "huy": "取消",
+      "daXoa": "会话已删除。",
+      "nguon": {
+        "web": "网页",
+        "vscode": "VS Code",
+        "cli": "命令行"
+      },
+      "note": {
+        "PERMISSION_DENIED": "您无权执行此操作。",
+        "PROJECT_NOT_FOUND": "未找到项目。",
+        "NOT_FOUND": "未找到会话（已删除？）。",
+        "CONFLICT": "会话已在别处更新——列表已重新加载，请重试。",
+        "THAM_SO_SAI": "参数无效。",
+        "LOI": "无法完成，请稍后重试。",
+        "khac": "无法完成（{{ma}}）。"
+      }
     }
   },
   "masterDataCol": {
