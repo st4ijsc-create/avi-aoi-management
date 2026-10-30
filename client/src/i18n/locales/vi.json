@@ -4597,7 +4597,9 @@
       "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
       "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ",
       "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)",
-      "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài."
+      "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài.",
+      "NGOAI_THIEU_HOI_THOAI": "thiếu hội thoại đã lưu — hãy mở hoặc tạo hội thoại rồi gửi lại",
+      "modelNgoaiChuaCaiDat": "model AI ngoài chưa dùng được ở màn này"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

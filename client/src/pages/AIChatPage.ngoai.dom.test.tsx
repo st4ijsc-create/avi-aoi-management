@@ -21,6 +21,7 @@ const H = vi.hoisted(() => ({
   chat: vi.fn(),
   loi: { current: null as unknown },
   tinNhan: [] as unknown[],
+  refetch: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
@@ -56,7 +57,7 @@ vi.mock("@/lib/trpc", () => {
       useUtils: () => ({}),
       aiChat: {
         listConversations: q([]),
-        getConversation: { useQuery: () => ({ data: { id: 7, messages: H.tinNhan }, isLoading: false, refetch: () => undefined }) },
+        getConversation: { useQuery: () => ({ data: { id: 7, messages: H.tinNhan }, isLoading: false, refetch: () => H.refetch() }) },
         tools: q({ tools: [] }),
         createConversation: { useMutation: (o?: { onSuccess?: (d: { id: number }) => void }) => ({ isPending: false, mutate: () => undefined, mutateAsync: async () => { o?.onSuccess?.({ id: 7 }); return { id: 7 }; } }) },
         deleteConversation: mut(),
@@ -98,6 +99,7 @@ beforeEach(() => {
   H.start.mockReset();
   H.save.mockReset();
   H.chat.mockReset();
+  H.refetch.mockReset();
   H.loi.current = null;
   H.tinNhan = [];
   localStorage.clear();
@@ -126,6 +128,18 @@ describe("AIChatPage — model ngoài", () => {
     expect(H.start).toHaveBeenCalledTimes(2);
     expect(ngu(1)).toMatchObject({ chonModel: MA, conversationId: 7, xacNhanVanHanh: true });
     expect(H.save.mock.calls[0]![0]).toMatchObject({ conversationId: 7, ngoaiCallId: 5 });
+    expect(H.chat).not.toHaveBeenCalled();
+  });
+
+  it("done.daLuu ⇒ máy chủ đã lưu: client KHÔNG gọi saveStreamedMessage (tránh trùng tin) mà nạp lại hội thoại; không có daLuu ⇒ đường cũ kèm ngoaiCallId", async () => {
+    localStorage.setItem("aiChon.chat", MA);
+    sessionStorage.setItem("aiNgoai.xacNhanVanHanh", JSON.stringify(["7|anthropic:claude-x"]));
+    H.start.mockImplementationOnce(async () => KET_QUA({ vet: VET, daLuu: { tinNguoiDungId: 11, tinTraLoiId: 12 } }));
+    render(<AIChatPage />);
+    await waitFor(() => expect(H.start).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(H.save).not.toHaveBeenCalled();
+    expect(H.refetch).toHaveBeenCalled();
     expect(H.chat).not.toHaveBeenCalled();
   });
 

@@ -424,13 +424,18 @@ export default function AIChatPage() {
           "aiChat.noAnswer",
           "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
         );
-      saveStreamedMsg.mutate({
-        conversationId: convId!,
-        userMessage: userMsg,
-        assistantMessage: assistantText,
-        // ★ Đợt 10.4b — máy chủ tự kiểm băm callId với sổ cổng và GHI nguồn model; client chỉ chuyển số.
-        ...(kbResult.vet ? { ngoaiCallId: kbResult.vet.callId } : {}),
-      });
+      if (kbResult.daLuu) {
+        // ★ Đợt 10.4b — máy chủ ĐÃ lưu cả hai tin của lượt ngoài (nguồn model do máy chủ ghi): chỉ nạp lại, KHÔNG nộp lại (sẽ trùng tin).
+        void refetchConv();
+      } else {
+        saveStreamedMsg.mutate({
+          conversationId: convId!,
+          userMessage: userMsg,
+          assistantMessage: assistantText,
+          // ★ Đợt 10.4b — máy chủ tự kiểm băm callId với sổ cổng và GHI nguồn model; client chỉ chuyển số.
+          ...(kbResult.vet ? { ngoaiCallId: kbResult.vet.callId } : {}),
+        });
+      }
     } else if (kbAbortedRef.current) {
       // User cancelled — just drop the optimistic message, persist nothing.
       setOptimisticUserMsg(null);

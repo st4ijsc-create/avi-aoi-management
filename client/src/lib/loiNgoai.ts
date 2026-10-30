@@ -11,9 +11,9 @@ import { HTTP_LOI_TRUOC_SSE, MA_CAN_XAC_NHAN_VAN_HANH, MUC_DU_LIEU, TRAN_VUOT, t
 const laTranVuot = (v: unknown): v is TranVuot => typeof v === "string" && (TRAN_VUOT as readonly string[]).includes(v);
 const laMuc = (v: unknown): v is MucDuLieuChung => typeof v === "string" && (MUC_DU_LIEU as readonly string[]).includes(v);
 
-/** Mã lỗi thuộc đường ngoài: bảng HTTP trước-SSE, hoặc tiền tố `NGOAI_`. */
+/** Mã lỗi thuộc đường ngoài: bảng HTTP trước-SSE, tiền tố `NGOAI_`, hoặc `modelNgoaiChuaCaiDat` (bề mặt đóng — 404 của KB). */
 export function laMaLoiNgoai(code: unknown): code is string {
-  return typeof code === "string" && (Object.prototype.hasOwnProperty.call(HTTP_LOI_TRUOC_SSE, code) || code.startsWith("NGOAI_"));
+  return typeof code === "string" && (Object.prototype.hasOwnProperty.call(HTTP_LOI_TRUOC_SSE, code) || code.startsWith("NGOAI_") || code === "modelNgoaiChuaCaiDat");
 }
 
 const so = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);

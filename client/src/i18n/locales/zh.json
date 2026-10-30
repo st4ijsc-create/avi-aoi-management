@@ -4597,7 +4597,9 @@
       "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
       "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效",
       "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）",
-      "CAN_XAC_NHAN_VAN_HANH": "需要确认：发送给外部 AI 时，您输入的内容视为运营数据。"
+      "CAN_XAC_NHAN_VAN_HANH": "需要确认：发送给外部 AI 时，您输入的内容视为运营数据。",
+      "NGOAI_THIEU_HOI_THOAI": "缺少已保存的会话——请打开或新建会话后重新发送",
+      "modelNgoaiChuaCaiDat": "该界面暂不可使用外部 AI 模型"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

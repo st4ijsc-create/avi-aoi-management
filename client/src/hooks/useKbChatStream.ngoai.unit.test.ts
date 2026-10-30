@@ -53,6 +53,8 @@ describe("loiNgoai — đọc hợp đồng", () => {
     expect(e!.muc).toBe("van-hanh");
     expect(docLoiTruocSse(401, { code: "AUTH_REQUIRED" })).toBeNull();
     expect(docLoiTruocSse(500, null)).toBeNull();
+    expect(docLoiTruocSse(404, { code: "modelNgoaiChuaCaiDat" })!.status).toBe(404);
+    expect(docLoiTruocSse(400, { code: "NGOAI_THIEU_HOI_THOAI" })!.canXacNhanVanHanh).toBe(false);
     // mã NGOAI_* ngoài bảng HTTP trước-SSE (lỗi nhà cung cấp…) vẫn là lỗi ngoài
     expect(docLoiTruocSse(502, { code: "NGOAI_NHA_CUNG_CAP_LOI" })!.code).toBe("NGOAI_NHA_CUNG_CAP_LOI");
     expect(docLoiTruocSse(500, { code: "constructor" })).toBeNull();
@@ -123,6 +125,17 @@ describe("useKbChatStream — model ngoài", () => {
     expect(kq!.fullText).toBe("Xin chào");
     expect(kq!.ngoai).toEqual({ nhaCungCap: "anthropic", model: "claude-x" });
     expect(kq!.vet).toEqual(VET);
+  });
+
+  it("done.daLuu hợp lệ (hai id nguyên dương) ⇒ vào kết quả; thiếu/không hợp lệ ⇒ vắng (đường lưu cũ)", async () => {
+    fetchSpy.mockResolvedValueOnce(sse(data({ type: "token", token: "a" }), data({ type: "done", vet: VET, daLuu: { tinNguoiDungId: 11, tinTraLoiId: 12 } })));
+    const a = await chay(REQ());
+    expect(a.kq!.daLuu).toEqual({ tinNguoiDungId: 11, tinTraLoiId: 12 });
+    for (const dl of [{ tinNguoiDungId: 0, tinTraLoiId: 12 }, { tinNguoiDungId: 1.5, tinTraLoiId: 2 }, { tinNguoiDungId: "1", tinTraLoiId: 2 }, { tinNguoiDungId: 1 }, null]) {
+      fetchSpy.mockResolvedValueOnce(sse(data({ type: "token", token: "a" }), data({ type: "done", vet: VET, daLuu: dl })));
+      const b = await chay(REQ());
+      expect(b.kq).not.toHaveProperty("daLuu");
+    }
   });
 
   it("lượt cục bộ: KHÔNG có ngoai/vet trong kết quả; vet hỏng ⇒ không dựng huy hiệu", async () => {

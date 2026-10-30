@@ -197,6 +197,8 @@ export interface KbStreamResult {
   ngoai?: { nhaCungCap: string; model: string };
   /** ★ Đợt 10.4b — vết lượt ngoài (khung `done.vet`, đã kiểm kiểu); `callId` đi vào `saveStreamedMessage.ngoaiCallId`. */
   vet?: VetNgoai | null;
+  /** ★ Đợt 10.4b — MÁY CHỦ đã tự lưu cả hai tin của lượt ngoài (khung `done.daLuu`); có ⇒ client KHÔNG gọi `saveStreamedMessage` (sẽ trùng tin). Vắng (lưu lỗi) ⇒ đường cũ kèm `ngoaiCallId`. */
+  daLuu?: { tinNguoiDungId: number; tinTraLoiId: number };
 }
 
 export interface KbStreamContext {
@@ -427,6 +429,7 @@ export function useKbChatStream() {
       let clientAction: KbClientAction | null = null;
       let ngoai: { nhaCungCap: string; model: string } | undefined;
       let vet: VetNgoai | null = null;
+      let daLuu: { tinNguoiDungId: number; tinTraLoiId: number } | undefined;
       let accumulated = "";
       // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
       let suyLuanTichLuy = "";
@@ -594,6 +597,12 @@ export function useKbChatStream() {
                 provider = payload.provider;
                 cached = payload.cached;
                 if (payload.vet !== undefined) vet = bocVetNgoai(payload.vet);
+                {
+                  const dl = (payload as { daLuu?: { tinNguoiDungId?: unknown; tinTraLoiId?: unknown } }).daLuu;
+                  if (dl && Number.isInteger(dl.tinNguoiDungId) && Number.isInteger(dl.tinTraLoiId) && (dl.tinNguoiDungId as number) > 0 && (dl.tinTraLoiId as number) > 0) {
+                    daLuu = { tinNguoiDungId: dl.tinNguoiDungId as number, tinTraLoiId: dl.tinTraLoiId as number };
+                  }
+                }
                 const doneAnswer = (payload as any).answer;
                 callbacks?.onDone?.({ degraded: (payload as any).degraded === true }); // ★ F6
                 // FE-W0.3 (doc 46 §2.3) — the backend flagged the streamed LLM
@@ -644,6 +653,7 @@ export function useKbChatStream() {
           clientAction,
           ...(ngoai ? { ngoai } : {}),
           ...(vet ? { vet } : {}),
+          ...(daLuu ? { daLuu } : {}),
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {

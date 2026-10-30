@@ -4597,7 +4597,9 @@
       "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
       "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name",
       "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)",
-      "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI."
+      "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI.",
+      "NGOAI_THIEU_HOI_THOAI": "no saved conversation — open or create one and send again",
+      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
