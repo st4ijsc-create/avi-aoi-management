@@ -23,6 +23,7 @@ import { Streamdown } from "streamdown";
 import {
   AlertTriangle,
   Bot,
+  Lock,
   Check,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import type { LyDoDung, ThongTinModelBatDau, ViecKeHoach } from "@shared/agentCore/kieu";
+import { LENH_KHOA_CUNG, timLenhKhoaCung } from "@shared/agentCore/lenhKhoaCung";
 import { Button } from "@/components/ui/button";
 import { TheDuyetDiff } from "@/components/ai/TheDuyetDiff";
 import type { ActionState } from "@/components/ConfirmActionCard";
@@ -48,7 +50,7 @@ import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
-import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
+import { canhBaoCuaDeXuat, idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
 import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
@@ -229,6 +231,30 @@ function DongDangNgo({ nguon }: { nguon: string[] | undefined }) {
   );
 }
 
+/**
+ * (Đợt 11.3-A, UX-S02) bảng "lệnh bị KHOÁ CỨNG": hiện ở thẻ duyệt lệnh để người duyệt biết agent KHÔNG BAO GIỜ làm được các việc này dù bấm Duyệt.
+ * Danh sách lấy từ MỘT hằng chung với máy chủ (`shared/agentCore/lenhKhoaCung`) — không chép tay.
+ */
+export function BangLenhKhoaCung() {
+  const { t } = useTranslation();
+  return (
+    <details data-testid="agent-lenh-khoa-cung" className="mt-1 text-[12px]">
+      <summary className="flex cursor-pointer items-center gap-1 text-muted-foreground">
+        <Lock className="h-3 w-3" aria-hidden />
+        {t("repoWs.agent.khoa.tieuDe", "Lệnh bị khoá cứng (agent không bao giờ chạy được)")}
+      </summary>
+      <ul className="mt-1 space-y-0.5 pl-4">
+        {LENH_KHOA_CUNG.map((k) => (
+          <li key={k.id} data-khoa-id={k.id} className="flex items-center gap-1">
+            <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+            {k.loai === "argv" ? <code className="font-mono">{k.hienThi}</code> : <span>{t(`repoWs.agent.khoa.moTa.${k.id}`, k.hienThi)}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   const { t } = useTranslation();
   const diff = useMemo(() => layDiffTuDeXuat(m.deXuat), [m.deXuat]);
@@ -237,6 +263,11 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   const [lyDo, setLyDo] = useState("");
   const busy = agent.dangGuiDuyet === idHanhDong(m);
   const conCho = m.trangThai === "cho";
+  // (Đợt 11.3-A) thẻ LỆNH: cảnh báo của máy chủ (thư mục chạy, quy tắc cài đặt…) + khoá cứng + phím tắt
+  const laLenh = m.deXuat.ten === "run_command";
+  const lenhChuoi = typeof m.deXuat.thamSo?.command === "string" ? (m.deXuat.thamSo.command as string) : "";
+  const khoaCung = laLenh ? timLenhKhoaCung(lenhChuoi.trim().split(/\s+/)) : null;
+  const canhBaoLenh = useMemo(() => (laLenh ? canhBaoCuaDeXuat(m.deXuat) : []), [laLenh, m.deXuat]);
 
   const oBac = moLyDo && conCho && (
     <div data-testid="agent-o-ly-do" className="mt-2 space-y-1.5 rounded-md border border-amber-300 bg-amber-50/60 p-2 dark:border-amber-800 dark:bg-amber-950/20">
@@ -296,7 +327,27 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   }
 
   return (
-    <div data-testid="agent-the-duyet" data-loai={m.deXuat.ten} className="rounded-lg border-2 border-amber-300 bg-amber-50/40 p-2 text-[13px] dark:border-amber-800 dark:bg-amber-950/20">
+    <div
+      data-testid="agent-the-duyet"
+      data-loai={m.deXuat.ten}
+      // (Đợt 11.3-A) Enter = "Cho phép MỘT lần", Esc = Bác — CHỈ khi chính thẻ đang giữ tiêu điểm (không bao giờ khi đang gõ ở ô nhập khác / ô lý do) và không bị khoá cứng.
+      tabIndex={laLenh && conCho ? 0 : undefined}
+      onKeyDown={
+        laLenh
+          ? (e) => {
+              if (e.target !== e.currentTarget || !conCho || moLyDo || busy) return;
+              if (e.key === "Enter" && !khoaCung) {
+                e.preventDefault();
+                void agent.duyet(m);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setMoLyDo(true);
+              }
+            }
+          : undefined
+      }
+      className="rounded-lg border-2 border-amber-300 bg-amber-50/40 p-2 text-[13px] dark:border-amber-800 dark:bg-amber-950/20"
+    >
       <div className="mb-1 flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
         <span>{t("repoWs.agent.canDuyet", "Cần bạn duyệt")}</span>
@@ -304,9 +355,30 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
       <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
       <MoTaGon m={m} />
       {m.deXuat.moTa && <p className="mt-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
+      {laLenh && canhBaoLenh.length > 0 && (
+        <ul data-testid="agent-canh-bao-lenh" className="mt-1 space-y-0.5 text-[12px] text-muted-foreground">
+          {canhBaoLenh.map((w, i) => (
+            <li key={i} className="break-words">
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+      {laLenh && khoaCung && (
+        <p data-testid="agent-lenh-bi-khoa" role="alert" className="mt-1 flex items-start gap-1 text-[12px] font-medium text-red-700 dark:text-red-300">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">{t("repoWs.agent.khoa.biKhoa", "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.", { lenh: khoaCung.hienThi })}</span>
+        </p>
+      )}
+      {laLenh && conCho && !moLyDo && !khoaCung && (
+        <p data-testid="agent-goi-y-phim" className="mt-1 text-[11px] text-muted-foreground">
+          {t("repoWs.agent.khoa.phim", "Khi thẻ này đang được chọn: Enter = Cho phép một lần · Esc = Bác")}
+        </p>
+      )}
+      {laLenh && <BangLenhKhoaCung />}
       {conCho && !moLyDo && (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Button size="sm" disabled={busy} onClick={() => void agent.duyet(m)}>
+          <Button size="sm" disabled={busy || !!khoaCung} onClick={() => void agent.duyet(m)}>
             {t("repoWs.agent.nutDuyet", "Duyệt")}
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => setMoLyDo(true)}>

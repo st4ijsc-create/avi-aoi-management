@@ -21644,6 +21644,15 @@
         "duAnPhanMem": " (dự án phần mềm)",
         "macDinh": "model mặc định của engine",
         "duPhong": "dự phòng — khe đang giữ model khác"
+      },
+      "khoa": {
+        "tieuDe": "Lệnh bị khoá cứng (agent không bao giờ chạy được)",
+        "biKhoa": "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.",
+        "phim": "Khi thẻ này đang được chọn: Enter = Cho phép một lần · Esc = Bác",
+        "moTa": {
+          "ngoai-du-an": "Xoá / ghi tệp NGOÀI thư mục dự án",
+          "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
+        }
       }
     },
     "duanCaNhan": {
