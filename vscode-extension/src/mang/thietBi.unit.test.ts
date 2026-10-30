@@ -246,6 +246,6 @@ describe("tự thu hồi token — thongDiepDangXuat (thuần)", () => {
     expect(tb).toContain("Không nối được máy chủ");
   });
   it("★★ không có token ⇒ chỉ 'đã đăng xuất'", () => {
-    expect(thongDiepDangXuat(false, undefined)).toBe("AI Local: đã đăng xuất.");
+    expect(thongDiepDangXuat(false, undefined)).toBe("Thợ Cả: đã đăng xuất.");
   });
 });

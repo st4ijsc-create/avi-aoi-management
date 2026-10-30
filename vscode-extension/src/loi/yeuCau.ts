@@ -25,7 +25,7 @@ import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "./dayGiaoThucDoc";
 import { dungVanBanDayMcpNgoai, type MoTaToolMcp } from "./dayMcpDoc";
 // ★★★ ĐỢT H / TASK H3 — hiện bộ nhớ dài hạn ĐÃ CÓ + dạy giao thức đề xuất nhớ thêm, CÙNG điều kiện
 // chèn với MCP ở trên. `dungVanBanDayBoNho([])` trả CHUỖI RỖNG (xem docblock ở đó) — workspace chưa
-// từng dùng lệnh "AI Local: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
+// từng dùng lệnh "Thợ Cả: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
 import { dungVanBanDayBoNho } from "./dayBoNhoDoc";
 import type { MucBoNho } from "./khoBoNho";
 // ★★★ ĐỢT M — dạy giao thức `chay_lenh`, CÙNG điều kiện chèn (LOCAL, không Cmd+K) với MCP/bộ nhớ ở
@@ -76,7 +76,7 @@ export function dungYeuCauStream(dv: {
    */
   laCmdK?: boolean;
   /**
-   * ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (qua lệnh "AI Local: Quản lý MCP server ngoài",
+   * ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (qua lệnh "Thợ Cả: Quản lý MCP server ngoài",
    * `mang/mcpDieuPhoi.ts::dsToolMcpDangCoSan`). `undefined`/rỗng ⇒ KHÔNG chèn gì (xem
    * `dayMcpDoc.ts`) — người dùng chưa từng chạm H2 thấy `question` giống hệt trước khi H2 tồn tại.
    */

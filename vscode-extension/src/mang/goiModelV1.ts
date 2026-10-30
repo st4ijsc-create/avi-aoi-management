@@ -80,7 +80,7 @@ async function* motLuot(
   const token = await ch.layToken();
   if (!token) {
     throw new LoiModel(
-      'Chưa có token cổng /v1. Chạy lệnh "AI Local: Đăng nhập AI Local (device flow)" để đăng nhập bằng device flow.',
+      'Chưa có token cổng /v1. Chạy lệnh "Thợ Cả: Đăng nhập Thợ Cả (device flow)" để đăng nhập bằng device flow.',
       { ma: "CHUA_CO_TOKEN" },
     );
   }

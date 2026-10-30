@@ -1,5 +1,5 @@
 /**
- * Bảng trò chuyện AI Local.
+ * Bảng trò chuyện Thợ Cả.
  *
  * ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy chủ đề xuất sửa tệp, người
  * dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. ĐỢT C: mở đường ghi CỤC BỘ cho chế độ LOCAL
@@ -357,7 +357,7 @@ export class BangChat {
       },
       ghiLuot: (cauHoi, traLoi) => {
         this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
-        void this.luuHoiThoaiHienTai().catch((e) => console.error("AI Local: lưu hội thoại (agent) thất bại", e));
+        void this.luuHoiThoaiHienTai().catch((e) => console.error("Thợ Cả: lưu hội thoại (agent) thất bại", e));
         void this.panel.webview.postMessage({ loai: "ag_thong_ke", ...this.thongKeHoiThoaiHienTai() });
       },
     });
@@ -767,7 +767,7 @@ export class BangChat {
     const ds = await this.napDsTepMentionNeuChua();
     if (ds.length === 0) {
       void vscode.window.showInformationMessage(
-        "AI Local: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
+        "Thợ Cả: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
       );
       return;
     }
@@ -801,7 +801,7 @@ export class BangChat {
     }
     const panel = vscode.window.createWebviewPanel(
       "aviAiLocalChat",
-      "AI Local",
+      "Thợ Cả",
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -1233,7 +1233,7 @@ export class BangChat {
     } catch (e) {
       // Lỗi LƯU không được chặn việc mở phiên mới — cùng nguyên tắc "lỗi lưu không làm rớt câu trả
       // lời" đã áp ở cuối `hoi()`.
-      console.error("AI Local: lưu hội thoại bền thất bại (Chat mới)", e);
+      console.error("Thợ Cả: lưu hội thoại bền thất bại (Chat mới)", e);
     }
     this.lichSu = [];
     this.maHoiThoaiHienTai = undefined;
@@ -1272,7 +1272,7 @@ export class BangChat {
   public async moLichSu(): Promise<void> {
     const ds = docDanhSachHoiThoai(this.khoHoiThoaiTho());
     if (ds.length === 0) {
-      void vscode.window.showInformationMessage("AI Local: chưa có hội thoại nào được lưu.");
+      void vscode.window.showInformationMessage("Thợ Cả: chưa có hội thoại nào được lưu.");
       return;
     }
     const muc = await vscode.window.showQuickPick<MucLichSu>(
@@ -1341,7 +1341,7 @@ export class BangChat {
     if (!cookie) {
       void this.panel.webview.postMessage({
         loai: "loi",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập'.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập'.",
       });
       return;
     }
@@ -1485,7 +1485,7 @@ export class BangChat {
           vaiTro: "engineer",
           cheDo,
           laCmdK,
-          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "AI Local:
+          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "Thợ Cả:
           // Quản lý MCP server ngoài" — xem docblock `dsToolMcpDangCoSan`). Rỗng ⇒ `question` không
           // đổi (đã kiểm ở `yeuCau.unit.test.ts`).
           dsToolMcp: dsToolMcpDangCoSan(),
@@ -1731,7 +1731,7 @@ export class BangChat {
       // nhận — bắt riêng, chỉ NÓI RA, không ném lại cho `catch` ngoài biến một lỗi lưu thành một lỗi
       // "hỏi thất bại".
       void this.luuHoiThoaiHienTai().catch((e: unknown) => {
-        console.error("AI Local: lưu hội thoại bền thất bại", e);
+        console.error("Thợ Cả: lưu hội thoại bền thất bại", e);
       });
       // ★★★ ĐỢT C — đường ghi CỤC BỘ, dựa trên câu trả lời CUỐI của vòng lặp (sau khi đã đọc xong
       // mọi yêu cầu ĐỌC của model, nếu có). Đề xuất GHI KHÔNG được xử lý bên trong vòng lặp Task 3
@@ -1816,7 +1816,7 @@ export class BangChat {
         await this.context.secrets.delete(KHOA_COOKIE);
         void this.panel.webview.postMessage({
           loai: "loi",
-          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại.",
+          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'Thợ Cả: Đăng nhập' để vào lại.",
         });
         // ★★★ ĐỢT F / TASK 1 — cookie vừa bị xoá Ở TRÊN nhưng vùng tài khoản trong khung (nút "Đăng
         // xuất"/tên tài khoản) vẫn đứng yên nếu không ai báo lại: người dùng thấy khung trông như
@@ -2164,14 +2164,14 @@ export class BangChat {
     const d = ds[0]!;
 
     const chon = await vscode.window.showInformationMessage(
-      `AI Local đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
+      `Thợ Cả đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
       "Nhớ",
       "Bỏ qua",
     );
     if (chon !== "Nhớ") return; // Esc / "Bỏ qua" / bấm ra ngoài — KHÔNG ghi gì cả (nhánh kia của B5)
 
     await themMucBoNho(this.khoHoiThoaiTho(), randomUUID(), d.noiDung, "ai_de_xuat_duyet");
-    void vscode.window.showInformationMessage("AI Local: đã nhớ.");
+    void vscode.window.showInformationMessage("Thợ Cả: đã nhớ.");
   }
 
   private async xemDiff(): Promise<void> {
@@ -2227,7 +2227,7 @@ export class BangChat {
       void this.panel.webview.postMessage({
         loai: "thong_bao",
         thongDiep:
-          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'AI Local: Đăng nhập' rồi bấm lại.",
+          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm lại.",
       });
       return;
     }
@@ -2352,7 +2352,7 @@ export class BangChat {
       // Duyệt lại mà không phải hỏi lại câu cũ.
       void this.panel.webview.postMessage({
         loai: "thong_bao",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Duyệt lại.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm Duyệt lại.",
       });
       return;
     }
@@ -2437,7 +2437,7 @@ export class BangChat {
     if (!cookie) {
       void this.panel.webview.postMessage({
         loai: "thong_bao",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Huỷ lại.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm Huỷ lại.",
       });
       return;
     }
