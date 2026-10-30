@@ -1,5 +1,5 @@
 /**
- * ★ Đợt 11.0 (CHỈ ĐO) — `preserve_thinking`: chỉ khi lịch sử MANG `reasoning_content` (host bật `AI_AGENT_GIU_NGHI=1`) thì yêu cầu engine có
+ * ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — `preserve_thinking`: chỉ khi lịch sử MANG `reasoning_content` (host server: mặc định bật, tắt `AI_AGENT_GIU_NGHI=0`) thì yêu cầu engine có
  * `preserveThinking` + tin assistant mang suy luận; vắng ⇒ tùy chọn như cũ. Đường dây llama-server: gộp vào `chat_template_kwargs`.
  */
 import { describe, expect, it } from "vitest";
