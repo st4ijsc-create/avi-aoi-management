@@ -168,7 +168,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.4.1.vsix
+code --install-extension avi-ai-local-0.5.0.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -178,7 +178,28 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.4.1.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.4.1+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.5.0.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.5.0+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+
+## Ghi chú phát hành
+
+### 0.5.0
+
+Mới
+- **Workspace Trust**: thư mục chưa tin cậy (chế độ hạn chế của VSCode) ⇒ Thợ Cả chỉ ĐỌC — không chạy lệnh, không ghi tệp; tool ghi/lệnh của agent bị ẩn và bị từ chối. Cấp tin cậy giữa chừng có hiệu lực ở lượt kế.
+- **Thanh trạng thái**: model · % ngữ cảnh (dấu `~` khi mới là ước lượng; đổi màu từ 85 %) · tok/s hiệu dụng (gồm thời gian chờ khe model).
+- **Huy hiệu chờ duyệt**: số thẻ duyệt đang chờ trên icon khung chat và trên thanh trạng thái (cộng mọi khung đang mở).
+- **Terminal chỉ đọc "Thợ Cả (chỉ đọc)"**: hiện các lệnh agent đã chạy (đầu ra đã che bí mật, bỏ mã điều khiển); lệnh `Thợ Cả: Mở terminal chỉ đọc`.
+- **Sửa trực tiếp có linter** (đề xuất cục bộ ở chế độ *Chat cũ*): sau khi áp, báo riêng các lỗi (Problems) do chính lần sửa đặt thêm; sửa sạch ⇒ không báo gì.
+- **Model ngoài ở Hỏi đáp** (chỉ khi máy chủ mở cho extension): chọn `ngoai:…` ở ô model ⇒ chỉ Hỏi đáp (không agent / Cmd+K / @mention / đính kèm); hỏi đồng ý MỘT lần mỗi cuộc trò chuyện + model; huy hiệu nguồn «Model ngoài · nhà cung cấp/model»; liên kết hiển thị thành chữ + tên miền; lượt được máy chủ tự lưu.
+- Đổi tên hiển thị **Thợ Cả** (mã định danh giữ nguyên).
+
+Không đổi / giới hạn
+- **Agent KHÔNG dùng model ngoài trong extension** (chưa có bằng chứng live trên host).
+- MCP server vẫn do cấu hình mức máy + duyệt lần đầu; không bị chặn bởi Workspace Trust (cấu hình `scope: machine`).
+
+Kiểm chứng (VSCode 1.144 thật, máy chủ :3049 production + nhà cung cấp model giả; 2026-10-31)
+- Pha thường 35/35 · pha Workspace Trust trên VS Code bình thường (không cờ test) 5/5.
+- **Cấp tin cậy giữa chừng: kiểm GIẢ LẬP** (getter `isTrusted` trong test-electron) — chưa kiểm trên host thật vì cần thao tác người.
 
 ## Giới hạn đã biết
 
