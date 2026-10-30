@@ -29,6 +29,7 @@ import { dangKyGhostText } from "./ui/ghostText";
 import { hostname } from "node:os";
 // ★★★ ĐỢT 11.4 / MỤC 1 — thanh trạng thái Thợ Cả (model · %ngữ cảnh · tok/s).
 import { dangKyThanhAgent } from "./ui/thanhAgent";
+import { dangKyTerminalDoc } from "./ui/terminalDoc";
 // ★★★ ĐỢT 11.4 / MỤC 3 — Workspace Trust: chưa tin cậy ⇒ chỉ ĐỌC (xem `loi/tinCayWorkspace.ts`).
 import { LOI_KHONG_TIN_CAY_NGUOI, datNguonTinCay, laTinCay } from "./loi/tinCayWorkspace";
 
@@ -376,6 +377,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Mặc định TẮT (`aviAiLocal.ghostText.enabled`); provider không gửi byte nào khi tắt.
   dangKyGhostText(context);
   dangKyThanhAgent(context);
+  dangKyTerminalDoc(context);
 }
 
 export function deactivate(): void {

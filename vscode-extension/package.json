@@ -105,6 +105,10 @@
         "icon": "$(book)"
       },
       {
+        "command": "aviAiLocal.moTerminalDoc",
+        "title": "Thợ Cả: Mở terminal chỉ đọc (lệnh agent đã chạy)"
+      },
+      {
         "command": "aviAiLocal.doiMayChu",
         "title": "AI Local: Đổi địa chỉ máy chủ"
       },

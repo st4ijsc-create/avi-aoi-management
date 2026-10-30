@@ -53,6 +53,7 @@ import { chayLenhCucBo as chayLenhCucBoThat } from "../mang/chayLenhCucBo";
 import { LOAI_TRU, gocDaGiai, locUngVien, nhanGon, quyVeDuongThat } from "../mang/toolCucBo";
 import { dinhDangChanDoan, dinhDangDocFile, grepTrenTep, type MucChanDoan, type TepQuet } from "../loi/congCuDoc";
 import type { SoCheckpoint } from "../loi/checkpoint";
+import { ghiLanChayAgent } from "./terminalDoc";
 import { TOOL_CAN_TIN_CAY, chanKhiKhongTinCay, workspaceTinCay } from "../loi/tinCayWorkspace";
 // Bộ quét THUẦN (không import gì) — CHÍNH bộ máy chủ dùng (aiSafety xuất lại) ⇒ hai bộ thực thi đánh giá "đáng ngờ" như nhau.
 import { scanUntrustedContent } from "../../../shared/quetMenhLenh";
@@ -676,6 +677,7 @@ export class BoThucThiVscode implements BoThucThi {
       timedOut: kq.timedOut,
       daCatSomODongChay: kq.daCatSom,
     });
+    ghiLanChayAgent(xet.lenh.hienThi, kq.exitCode, vanBan); // (Đợt 11.4) terminal chỉ đọc — đầu ra ĐÃ che + cắt
     return {
       ok: kq.ok,
       ...(kq.ok ? {} : { ma: kq.timedOut ? "HET_GIO" : "EXIT_KHAC_0" }),
