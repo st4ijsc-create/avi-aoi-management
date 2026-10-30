@@ -4233,7 +4233,8 @@
       "assigneeUserId": "người được giao",
       "writable": "cho phép ghi (writable)",
       "dataType": "kiểu dữ liệu (dataType)",
-      "inspectionId": "lần kiểm tra"
+      "inspectionId": "lần kiểm tra",
+      "conTro": "con trỏ phân trang"
     },
     "feature": {
       "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",

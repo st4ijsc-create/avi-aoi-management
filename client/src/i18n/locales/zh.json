@@ -4225,7 +4225,8 @@
       "assigneeUserId": "被分配人",
       "writable": "可写（writable）",
       "dataType": "数据类型（dataType）",
-      "inspectionId": "检验"
+      "inspectionId": "检验",
+      "conTro": "分页游标"
     },
     "feature": {
       "apiKeyHolder": "API 密钥持有人记录（数据库迁移 0369）",

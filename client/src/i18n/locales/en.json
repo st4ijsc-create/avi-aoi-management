@@ -4225,7 +4225,8 @@
       "assigneeUserId": "assignee",
       "writable": "writable",
       "dataType": "data type (dataType)",
-      "inspectionId": "inspection"
+      "inspectionId": "inspection",
+      "conTro": "pagination cursor"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
