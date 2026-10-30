@@ -9,7 +9,7 @@ import { bamNgan, MA_KHOI_CHEN } from "./buocDo";
 import { CAU_NHAC_LUOT_CAT_KHONG_TOOL, cauNhacTomTatNguCanh, dungLoiNhacHeThong } from "./loiNhac";
 import type { BoThucThi, CheDoAgent, GoiModel, ManhModel, SuKienAgent, TinNhan } from "./kieu";
 
-type Buoc = { toolCall?: string; ghi?: string; biCat?: boolean; vao?: number; cacheN?: number; promptN?: number; ketQuaDai?: boolean };
+type Buoc = { vaoVang?: boolean; toolCall?: string; ghi?: string; biCat?: boolean; vao?: number; cacheN?: number; promptN?: number; ketQuaDai?: boolean };
 
 function chay(o: { cauHoi?: string; congCuBot?: boolean; buoc: Buoc[]; cheDo?: CheDoAgent; nhac?: boolean; nganSach?: number; chiTool?: (n: number) => string }) {
   const suKien: SuKienAgent[] = [];
@@ -29,7 +29,7 @@ function chay(o: { cauHoi?: string; congCuBot?: boolean; buoc: Buoc[]; cheDo?: C
             ? [{ id: `c${k}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: b.toolCall }) } }]
             : [],
         ...(b.biCat ? { biCat: true } : {}),
-        usage: { vao: b.vao ?? 10, ra: 5, ...(b.cacheN !== undefined ? { cacheN: b.cacheN } : {}), ...(b.promptN !== undefined ? { promptN: b.promptN } : {}) },
+        usage: { ...(b.vaoVang ? {} : { vao: b.vao ?? 10 }), ra: 5, ...(b.cacheN !== undefined ? { cacheN: b.cacheN } : {}), ...(b.promptN !== undefined ? { promptN: b.promptN } : {}) },
       } as ManhModel;
     })();
   };
@@ -91,6 +91,14 @@ describe("buoc-do", () => {
     const a = buocDo((await chay({ buoc: [{}] })).suKien)[0]!.bamHeThong;
     const b = buocDo((await chay({ buoc: [{}], congCuBot: true })).suKien)[0]!.bamHeThong;
     expect(a).not.toBe(b);
+  });
+
+  it("★ usage thiếu vao (hoặc vao = 0) ⇒ buoc-do KHÔNG có vaoThat (không 0 giả); vao thật được giữ", async () => {
+    const { suKien } = await chay({ buoc: [{ toolCall: "a", vao: 0 }, { toolCall: "b", vao: 77 }, { toolCall: "c", vaoVang: true }, {}] });
+    const [a0, b0, c0] = buocDo(suKien);
+    expect("vaoThat" in a0!).toBe(false);
+    expect(b0!.vaoThat).toBe(77);
+    expect("vaoThat" in c0!).toBe(false);
   });
 
   it("cacheN/promptN chỉ có khi nguồn báo SỐ; vắng ⇒ không có khoá (KHÔNG BIẾT ≠ 0)", async () => {

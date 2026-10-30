@@ -742,7 +742,8 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         bamHeThong,
         soTin: soTinLucGoi,
         tokenUoc: tokenUocLucGoi,
-        ...(soDoDuoc(uBuoc?.vao) !== undefined ? { vaoThat: uBuoc!.vao as number } : {}),
+        // vắng `vao` (nguồn chỉ báo token ra) hoặc 0 ⇒ KHÔNG BIẾT, không ghi 0 giả (một yêu cầu thật luôn có token vào > 0)
+        ...((soDoDuoc(uBuoc?.vao) ?? 0) > 0 ? { vaoThat: uBuoc!.vao as number } : {}),
         ...(soDoDuoc(uBuoc?.cacheN) !== undefined ? { cacheN: uBuoc!.cacheN as number } : {}),
         ...(soDoDuoc(uBuoc?.promptN) !== undefined ? { promptN: uBuoc!.promptN as number } : {}),
         nen: nenDo,
