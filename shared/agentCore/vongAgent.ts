@@ -19,7 +19,7 @@
  *   bộ thực thi THI HÀNH (không tự áp ghi/lệnh nữa). Lõi không bao giờ nâng lại.
  */
 import { CONG_CU_TODO_WRITE, chuanHoaThamSo, kiemThamSo, laThamSoObjectJson, nhanNguonGoi, thamSoChoLichSu } from "./congCu";
-import { CAU_NHAC_KIEM_DAC_TA, CAU_NHAC_LUOT_CAT_KHONG_TOOL, cauNhacGhiChuaTest, dungLoiNhacHeThong } from "./loiNhac";
+import { CAU_NHAC_KIEM_DAC_TA, CAU_NHAC_LUOT_CAT_KHONG_TOOL, cauNhacGhiChuaTest, cauNhacTomTatNguCanh, dungLoiNhacHeThong } from "./loiNhac";
 import {
   DO_SAU_TOI_DA_CUNG,
   TRAN_CON_MOI_LUOT_CHAY,
@@ -36,6 +36,7 @@ import { catDauDuoi, nenLichSu, uocLuongTokenMacDinh, type UocLuongToken } from 
 import {
   GIOI_HAN_MAC_DINH,
   MA_MENH_LENH_TRONG_DU_LIEU,
+  NGUONG_NGU_CANH_DAY_PHAN_TRAM,
   laLoiTamThoi,
   type BoThucThi,
   type CheDoAgent,
@@ -78,6 +79,11 @@ export interface DauVaoVongAgent {
   kiemDacTa?: boolean;
   /** (Đợt 9) model host đã chọn theo vai trò — gắn vào `bat-dau`. Vắng ⇒ `bat-dau` như cũ. */
   thongTinModel?: ThongTinModelBatDau;
+  /**
+   * (Đợt 11.8, UX-C06) `true` ⇒ khi ngữ cảnh ≥ 80 % lõi nhắc model MỘT lần tóm tắt vào NOTES.md (chỉ `sua`/`tu-dong`: có công cụ ghi).
+   * Mặc định TẮT. Sự kiện `ngu-canh-day` luôn phát (không đổi hành vi model).
+   */
+  nhacTomTatKhiDay?: boolean;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -528,6 +534,9 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
   const choPhepKiemDacTa = y.kiemDacTa !== false && (y.cheDo === "sua" || y.cheDo === "tu-dong");
   let daXanhLenhKiem = false;
   let daNhacKiemDacTa = false;
+  /** (Đợt 11.8) đã báo "ngữ cảnh đầy" · còn nợ lời nhắc tóm tắt cho lượt model kế */
+  let daBaoNguCanhDay = false;
+  let canNhacTomTat: number | null = null;
   let demCatKhongTool = 0;
   /** lệnh test đã biết: nêu trong câu hỏi, hoặc lệnh kiểm model đã chạy gần nhất trong lượt này */
   let lenhTestBiet = timLenhTestTrongCauHoi(y.cauHoi);
@@ -554,6 +563,10 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       luot++;
       giaoTrongLuotModel = 0;
 
+      if (canNhacTomTat !== null) {
+        tinNhan.push({ role: "user", content: cauNhacTomTatNguCanh(canNhacTomTat) });
+        canNhacTomTat = null;
+      }
       tinNhan = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc }).tinNhan;
 
       // gọi model, thử lại tối đa 1 lần cho lỗi tạm thời (mỗi lượt)
@@ -587,6 +600,12 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           ...(u.nghi !== undefined ? { nghi: u.nghi } : {}),
           ctxPhanTram: Math.round((u.vao * 100) / gh.nganSachNguCanhToken),
         });
+        const pct = Math.round((u.vao * 100) / gh.nganSachNguCanhToken);
+        if (!daBaoNguCanhDay && pct >= NGUONG_NGU_CANH_DAY_PHAN_TRAM) {
+          daBaoNguCanhDay = true;
+          phat({ loai: "ngu-canh-day", phanTram: pct });
+          if (y.nhacTomTatKhiDay === true && y.cheDo !== "hoi") canNhacTomTat = pct;
+        }
         tokenRa += u.ra;
       } else {
         tokenRa += uoc(kq.chu + kq.nghi);

@@ -153,6 +153,11 @@ export type SuKienAgent =
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
   /**
+   * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
+   * chạy. UI hiện banner "tóm tắt sang NOTES.md + mở phiên mới"; ghi NOTES.md vẫn qua `write_file`/`edit_file` + thẻ duyệt của NGƯỜI.
+   */
+  | { loai: "ngu-canh-day"; phanTram: number }
+  /**
    * (Đợt 11.8) AGENT CON. Mọi sự kiện của vòng con đi qua `su-kien-con` (BỌC, không bao giờ phát thẳng) ⇒ con không giả
    * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
    */
@@ -215,6 +220,9 @@ export interface GioiHanVong {
   /** (mở rộng so với spec) ngân sách ngữ cảnh tính bằng token — nén khi > 70 %. Mặc định 65 536 (Q5: 1 × 64k). */
   nganSachNguCanhToken: number;
 }
+
+/** (Đợt 11.8, UX-C06) ngưỡng "ngữ cảnh đầy" thống nhất (trước đây UI dùng 85 %). Dùng chung cho lõi, web và extension. */
+export const NGUONG_NGU_CANH_DAY_PHAN_TRAM = 80;
 
 export const GIOI_HAN_MAC_DINH: GioiHanVong = {
   soLuotToiDa: 30,

@@ -71,6 +71,18 @@ export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu; con
  */
 
 /** (1) Sau lần test/build XANH đầu, khi model định kết thúc — MỘT lần mỗi lượt chạy (`AI_AGENT_KIEM_DAC_TA=0` tắt). */
+/**
+ * (Đợt 11.8, UX-C06) Nhắc MỘT lần khi ngữ cảnh ≥ 80 % (host bật bằng `AI_AGENT_TOM_TAT_80=1`; mặc định TẮT ⇒ hành vi như cũ từng byte).
+ * Model tóm tắt vào NOTES.md bằng công cụ ghi THƯỜNG — người dùng thấy diff đầy đủ và duyệt; không có đường ghi riêng.
+ */
+export function cauNhacTomTatNguCanh(phanTram: number): string {
+  return (
+    `Note: the conversation context is about ${phanTram}% full. Finish only the step you are on. Then write a concise progress summary (` +
+    `what is done, what remains, the key file paths and any decisions) to NOTES.md with write_file or edit_file — the user reviews and ` +
+    `approves that change — and end with a one-paragraph summary so the user can continue in a fresh session. Do not start new work.`
+  );
+}
+
 export const CAU_NHAC_KIEM_DAC_TA =
   "[check before finishing: the visible tests passed, but hidden tests also check the specification. Before you finish, " +
   "go through every requirement of the task's spec against your code — edge inputs, errors/exceptions it must raise, exact " +
