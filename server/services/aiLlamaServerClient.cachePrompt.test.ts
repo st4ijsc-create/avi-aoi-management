@@ -86,6 +86,17 @@ describe("H0.1 — cacheN / promptN trên chunk done", () => {
     expect(d.tokensPrompt).toBe(14);
   });
 
+  it("(kiem-dinh i5) số dạng chuỗi \"123\" vẫn đọc được", async () => {
+    const d = await done(cuoi({ timings: { cache_n: "12", prompt_n: "2" } }));
+    expect([d.cacheN, d.promptN]).toEqual([12, 2]);
+  });
+
+  it("(kiem-dinh i1) chunk đủ cặp rồi chunk sau chỉ MỘT nửa ⇒ giữ cặp cũ, không ghép nửa mới", async () => {
+    const motNua = `data: ${JSON.stringify({ choices: [{ index: 0, delta: {} }], timings: { cache_n: 99 } })}\n\n`;
+    const d = await done(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {} }], timings: { cache_n: 12, prompt_n: 2 } })}\n\n` + motNua + cuoi({}));
+    expect([d.cacheN, d.promptN]).toEqual([12, 2]);
+  });
+
   it("rác / âm / chỉ một nửa ⇒ không nhận (luôn đi cặp)", async () => {
     for (const t of [{ cache_n: -1, prompt_n: 2 }, { cache_n: "x", prompt_n: 2 }, { cache_n: 12 }, { prompt_n: 2 }]) {
       const d = await done(cuoi({ timings: t }));
