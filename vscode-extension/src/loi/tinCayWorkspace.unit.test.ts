@@ -39,6 +39,12 @@ describe("tinCayWorkspace", () => {
     expect(kq.durationMs).toBe(0); // 0 = không đi tới nhánh spawn (nhánh spawn lỗi luôn có thời gian > 0 hoặc thông điệp khác)
     expect(kq.output).not.toContain("không khởi động được");
   });
+  it("★ activate đặt nguồn tin cậy từ vscode.workspace.isTrusted TRƯỚC khi đăng ký lệnh (ghim văn bản)", () => {
+    const src = readFileSync(join(__dirname, "..", "extension.ts"), "utf8");
+    const viTriNguon = src.indexOf("datNguonTinCay(() => laTinCay(vscode.workspace.isTrusted));");
+    expect(viTriNguon).toBeGreaterThan(0);
+    expect(viTriNguon).toBeLessThan(src.indexOf("registerCommand("));
+  });
   it("manifest khai capabilities.untrustedWorkspaces = limited + mô tả", () => {
     const m = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
     expect(m.capabilities.untrustedWorkspaces.supported).toBe("limited");
