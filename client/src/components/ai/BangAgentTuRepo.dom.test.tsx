@@ -80,6 +80,13 @@ describe("NoiDungBangAgentTuRepo", () => {
     expect(onGoTinCay).toHaveBeenCalledWith("reviewer");
   });
 
+  it("★ nội dung KHÔNG có (null) ⇒ không có nút Đọc, và 'Tin cậy' vẫn KHOÁ (không tin cậy khi chưa đọc được gì)", () => {
+    vẽ([MUC({ noiDungHienThi: null })]);
+    expect(screen.queryByTestId("atr-doc")).toBeNull();
+    expect(screen.getByTestId("atr-tin-cay")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("atr-tin-cay"));
+  });
+
   it("đang gửi ⇒ nút khoá (không bấm đúp)", () => {
     vẽ([MUC({ daTinCay: true })], { dangGui: "reviewer" });
     expect(screen.getByTestId("atr-go-tin")).toBeDisabled();
