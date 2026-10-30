@@ -14,7 +14,7 @@ import { z } from "zod";
 import { router, moduleProcedure } from "../_core/trpc";
 import { checkPermission } from "../_core/accessControl";
 import { phanGiaiGoc, type NguoiGoiDuAn } from "../services/aiLocalTools/repoProjects";
-import { GIOI_HAN_PHIEN } from "@shared/aiCodingSession";
+import { GIOI_HAN_PHIEN, KIND_PHIEN, NGUON_PHIEN } from "@shared/aiCodingSession";
 import * as kho from "../db/aiPhien";
 
 const base = moduleProcedure("MOD_AI");
@@ -83,8 +83,8 @@ export const aiPhienRouter = router({
     .input(
       z.object({
         projectId: z.string().regex(RE_ID_DU_AN),
-        kind: z.enum(["coding", "agent"]),
-        source: z.enum(["web", "vscode", "cli"]),
+        kind: z.enum(KIND_PHIEN),
+        source: z.enum(NGUON_PHIEN),
         title: z.string().max(200).optional(),
       }),
     )

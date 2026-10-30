@@ -12,6 +12,7 @@ vi.hoisted(() => {
 import { getDb } from "../db/connection";
 import { aiAgentRuns, aiCodingSessions, permissions, users } from "../../drizzle/schema";
 import * as kho from "../db/aiPhien";
+import { KIND_PHIEN, NGUON_PHIEN } from "@shared/aiCodingSession";
 import { danhSachPhien as cuDanhSach, moPhien as cuMo } from "../db/aiCodingSessions";
 import { aiPhienRouter } from "./aiPhienRouter";
 import { randomUUID } from "node:crypto";
@@ -66,6 +67,21 @@ const tao = async (u: number, kind: "coding" | "agent" = "coding", title = "") =
   if (!r.ok) throw new Error(r.ma);
   return r;
 };
+
+describe("hằng chung KIND_PHIEN / NGUON_PHIEN khớp CHECK của CSDL", () => {
+  it("★★★ mọi giá trị CHECK ⇔ hằng chung (thêm một bên mà quên bên kia ⇒ đỏ)", async () => {
+    if (!coDb) return;
+    const db = await getDb();
+    const ddl = async (ten: string) =>
+      String(
+        ((await db!.execute(sql`SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = ${ten} AND conrelid = 'public.ai_coding_sessions'::regclass`)) as unknown as Array<{ d: string }>)[0]?.d ?? "",
+      );
+    const giaTri = (d: string) => [...d.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!).sort();
+    expect(giaTri(await ddl("chk_ai_coding_sessions_source"))).toEqual([...NGUON_PHIEN].sort());
+    // CHECK của kind còn có 'chat' (kho chat không dùng ở đây) — hằng chung là TẬP CON đúng bằng kind mà kho này thao tác
+    expect(giaTri(await ddl("chk_ai_coding_sessions_kind"))).toEqual([...KIND_PHIEN, "chat"].sort());
+  });
+});
 
 describe("kho — phạm vi CHỦ SỞ HỮU (mọi hàm)", () => {
   it("★★★ A tạo ⇒ B không thấy ở danh sách, không mở/ghi/đổi tên/nhân bản/nộp tóm tắt/xoá được (cùng NOT_FOUND); A vẫn nguyên", async () => {

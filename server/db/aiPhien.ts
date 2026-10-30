@@ -16,17 +16,27 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./connection";
 import { aiCodingSessions } from "../../drizzle/schema";
 import { isMissingTable } from "../_core/dbErrors";
-import { GIOI_HAN_PHIEN, laIdDuAnHopLe, laIdPhienHopLe, locLuot, nhanTuLuot, type LuotPhien } from "@shared/aiCodingSession";
+import {
+  GIOI_HAN_PHIEN,
+  KIND_PHIEN,
+  NGUON_PHIEN,
+  laIdDuAnHopLe,
+  laIdPhienHopLe,
+  locLuot,
+  nhanTuLuot,
+  type KindPhien,
+  type LuotPhien,
+  type NguonPhien,
+} from "@shared/aiCodingSession";
 
 export const TRAN_PHIEN_MOI_NGUOI = 500;
 export const TRAN_LUOT_MOI_LAN_GHI = 40;
 export const TRAN_KY_TU_TOM_TAT_PHIEN = 4_000;
 export const TRAN_LUOT_CHAY_MOI_PHIEN = 50;
 
-export type KindPhien = "coding" | "agent";
-export type NguonPhien = "web" | "vscode" | "cli";
-const KIND: readonly string[] = ["coding", "agent"];
-const NGUON: readonly string[] = ["web", "vscode", "cli"];
+export type { KindPhien, NguonPhien };
+const KIND: readonly string[] = KIND_PHIEN;
+const NGUON: readonly string[] = NGUON_PHIEN;
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type MaLoiPhien = "NOT_FOUND" | "CONFLICT" | "QUA_TRAN_PHIEN" | "THAM_SO_SAI" | "LOI";
