@@ -4097,6 +4097,7 @@
       "taiAnhAi": "下载用于AI分析的图像",
       "mayDungKhanCap": "加载紧急停机设备列表",
       "aiKiemDinh": "外部AI审核",
+      "aiChatLuu": "保存 AI 对话消息",
       "aiNgoaiGhi": "保存外部AI配置"
     },
     "field": {
@@ -4579,6 +4580,7 @@
       "anh-qua-lon": "图像超过20 MB",
       "kiem-dinh-khong-co-nguon": "未找到要审核的轮次（或账户属于多个工厂——暂不可用外部审核）",
       "kiem-dinh-tra-loi-rong": "该轮次没有可审核的回答",
+      "dau-nguon-lech": "保存的回答与其声称的外部 AI 轮次不符",
       "NGOAI_TAT": "外部AI已关闭",
       "NGOAI_KHONG_TON_TAI": "该工厂未启用此外部AI模型",
       "NGOAI_DU_LIEU_VAN_HANH": "工厂未允许向外部AI发送运营数据",

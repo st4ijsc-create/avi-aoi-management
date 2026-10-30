@@ -4105,6 +4105,7 @@
       "taiAnhAi": "tải ảnh cho phân tích AI",
       "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp",
       "aiKiemDinh": "kiểm định bởi AI ngoài",
+      "aiChatLuu": "lưu tin nhắn trò chuyện AI",
       "aiNgoaiGhi": "ghi cấu hình AI ngoài"
     },
     "field": {
@@ -4579,6 +4580,7 @@
       "anh-qua-lon": "ảnh vượt 20 MB",
       "kiem-dinh-khong-co-nguon": "không tìm thấy lượt cần kiểm định (hoặc tài khoản thuộc nhiều nhà máy — chưa dùng được kiểm định ngoài)",
       "kiem-dinh-tra-loi-rong": "lượt không có câu trả lời để kiểm định",
+      "dau-nguon-lech": "câu trả lời đem lưu không khớp dấu nguồn của lượt AI ngoài",
       "NGOAI_TAT": "AI ngoài đang tắt",
       "NGOAI_KHONG_TON_TAI": "model AI ngoài chưa được bật cho nhà máy",
       "NGOAI_DU_LIEU_VAN_HANH": "nhà máy chưa cho phép gửi dữ liệu vận hành ra AI ngoài",

@@ -4097,6 +4097,7 @@
       "taiAnhAi": "download image for AI analysis",
       "mayDungKhanCap": "load the emergency STOP machine list",
       "aiKiemDinh": "external AI verification",
+      "aiChatLuu": "saving the AI chat message",
       "aiNgoaiGhi": "save external AI configuration"
     },
     "field": {
@@ -4579,6 +4580,7 @@
       "anh-qua-lon": "the image exceeds 20 MB",
       "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
       "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "dau-nguon-lech": "the saved answer does not match the external AI turn it claims",
       "NGOAI_TAT": "external AI is turned off",
       "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
       "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",

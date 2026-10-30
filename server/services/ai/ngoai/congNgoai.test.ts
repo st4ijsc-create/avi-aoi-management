@@ -17,6 +17,8 @@ import { TU_DIEN_RONG } from "./cheDuLieu";
 import { taoNhaCungCapGia, type KichBanGia, type NhaCungCapGia } from "./nhaCungCap/gia";
 import { VECTOR_CHE, KHOA_GIA } from "./vectorChe";
 import { bamDinhNghia } from "./duyetNgoai";
+import { taoNguoiDungTest } from "../../../testing/nguoiDungTest";
+import { bamCauTraLoi } from "./soNgoai";
 import { ghepPhan, type LoaiPhan } from "./ghepPhan";
 import type { TinNhanNgoai } from "./nhaCungCap/kieu";
 
@@ -29,6 +31,8 @@ const TAG = `cn${Date.now().toString(36)}`;
 const LUONG = `${TAG}-luong`;
 let A = 0;
 let B = 0;
+/** ★ 10.4b L0a' — người gọi THẬT (khoá lượt bay `ai_ngoai_dang_bay` có FK tới users). */
+let U = 0;
 const KHOA_THAT = "sk-ant-api03-" + "Q".repeat(95);
 
 async function exec(q: ReturnType<typeof sql>) {
@@ -36,6 +40,7 @@ async function exec(q: ReturnType<typeof sql>) {
 }
 
 beforeAll(async () => {
+  U = (await taoNguoiDungTest(`${TAG}u`, "user")).id;
   [A, B] = await Promise.all(
     ["a", "b"].map(async (x) => Number((await exec(sql`INSERT INTO factories (code, name) VALUES (${`${TAG}${x}`}, ${`NM thu ${x}`}) RETURNING id`))[0]!.id)),
   );
@@ -89,7 +94,7 @@ const yc = (o: Partial<YeuCauGoiNgoai> = {}, ngu: Partial<YeuCauGoiNgoai["ngu"]>
   maxTokens: 200,
   mucDich: "kiem-dinh",
   ...o,
-  ngu: { userId: 7, flowId: null, runId: null, tuDong: false, nhaMayNguoiGoi: [A, B], nhaMayChuDuLieu: [A], nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: [] }, ...ngu },
+  ngu: { userId: U, flowId: null, runId: null, tuDong: false, nhaMayNguoiGoi: [A, B], nhaMayChuDuLieu: [A], nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: [] }, ...ngu },
 });
 
 const maLoi = async (p: Promise<unknown>) => {
@@ -133,6 +138,50 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
     expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: ["van-hanh"] } }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "luong" }, flowId: LUONG, phienBan: 1 }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(g.nhan).toHaveLength(0);
+  });
+
+  it("★ 10.4b L0a' — MỘT lượt bay mỗi người: lượt 2 cùng người khi lượt 1 đang ở nhà cung cấp ⇒ NGOAI_DANG_CHAY (không gọi); xong ⇒ thả; lỗi cũng thả; luồng tự động không khoá", async () => {
+    let mo!: () => void;
+    const cho = new Promise<void>((r) => (mo = r));
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }, { kieu: "tra", noiDung: "ok" }]);
+    const goiCham: typeof g.goi = async (...a) => {
+      await cho;
+      return g.goi(...a);
+    };
+    const gCham = { ...g, goi: goiCham };
+    const p1 = goiAiNgoai(yc(), dep(gCham as never));
+    for (let i = 0; i < 300; i++) {
+      const [r] = await exec(sql`SELECT count(*)::int AS n FROM ai_ngoai_dang_bay WHERE "userId" = ${U}`);
+      if (Number(r!.n) === 1) break;
+      await new Promise((x) => setTimeout(x, 10));
+    }
+    const g2 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    expect(await maLoi(goiAiNgoai(yc(), dep(g2)))).toBe("NGOAI_DANG_CHAY");
+    expect(g2.nhan).toHaveLength(0);
+    mo();
+    await p1;
+    expect((await exec(sql`SELECT count(*)::int AS n FROM ai_ngoai_dang_bay WHERE "userId" = ${U}`))[0]!.n).toBe(0);
+    // lỗi nhà cung cấp ⇒ vẫn thả
+    const gLoi = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "x" }]);
+    await maLoi(goiAiNgoai(yc(), dep(gLoi, { soLanThu: 1 })));
+    expect((await exec(sql`SELECT count(*)::int AS n FROM ai_ngoai_dang_bay WHERE "userId" = ${U}`))[0]!.n).toBe(0);
+    // hàng HẾT HẠN của tiến trình đã chết không chặn người dùng
+    await exec(sql`INSERT INTO ai_ngoai_dang_bay ("userId", "factoryId", token, "batDau", "hetHan") VALUES (${U}, ${A}, 'chet', now() - interval '10 minutes', now() - interval '1 second')`);
+    const g3 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    await goiAiNgoai(yc(), dep(g3));
+    expect(g3.nhan).toHaveLength(1);
+    // luồng tự động (tuDong) ⇒ không dùng khoá người
+    const giu: string[] = [];
+    await goiAiNgoai(yc({}, { tuDong: true }), dep(taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]), { luotBay: { giu: async () => (giu.push("x"), "t"), tha: async () => undefined } }));
+    expect(giu).toHaveLength(0);
+  });
+
+  it("★ 10.4b L0a' — hàng KẾT QUẢ ok mang bamTraLoi = bamCauTraLoi(câu trả lời) (đối chiếu dấu nguồn khi lưu tin)", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "  Câu trả lời từ AI ngoài  " }]);
+    const kq = await goiAiNgoai(yc(), dep(g));
+    const [r] = await exec(sql`SELECT "bamTraLoi" AS b FROM ai_external_calls WHERE "yDinhId" = ${kq.callId} AND loai = 'ket-qua'`);
+    expect(r!.b).toBe(bamCauTraLoi("Câu trả lời từ AI ngoài"));
+    expect(bamCauTraLoi(" a ")).toBe(bamCauTraLoi("a"));
   });
 
   it("★ 10.4b L0a — tinNhan KHÔNG do bộ dựng tạo (tự dựng / chép mảng đã ghép) ⇒ NGOAI_KHONG_QUA_BO_GHEP TRƯỚC mọi bước (không gọi, không giữ chỗ)", async () => {

@@ -176,11 +176,24 @@ export const aiChatRouter = router({
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
       if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
-      return db.select().from(aiChatMessages)
+      const rows = await db.select().from(aiChatMessages)
         .where(eq(aiChatMessages.conversationId, input.conversationId))
         .orderBy(aiChatMessages.createdAt)
         .limit(input.limit)
         .offset(input.offset);
+      // ★ 10.4b L0a' — dấu nguồn do MÁY CHỦ ghi (`nguonModel`) + vết JOIN sổ cổng (`vetNgoai`); `ngoaiCallId` KHÔNG ra client.
+      const [{ vetNgoaiTheoCall }, { resolveTenantFactoryScope }, { phamViCua }] = await Promise.all([
+        import("../services/ai/ngoai/dauNguon"),
+        import("../db/reportAggregators"),
+        import("./_phamViNguoiXem"),
+      ]);
+      const { factoryIds } = await resolveTenantFactoryScope(phamViCua(ctx));
+      const vet = await vetNgoaiTheoCall(db as never, ctx.user.id, factoryIds ?? null, rows.map((r) => r.ngoaiCallId).filter((x): x is number => typeof x === "number")).catch(() => new Map());
+      return rows.map(({ ngoaiCallId, ...r }) => ({
+        ...r,
+        nguonModel: r.nguonModel ?? null,
+        vetNgoai: (ngoaiCallId !== null && ngoaiCallId !== undefined ? vet.get(ngoaiCallId) : undefined) ?? null,
+      }));
     }),
 
   /** Delete a single message */
@@ -321,6 +334,8 @@ export const aiChatRouter = router({
       userMessage: z.string().min(1).max(5000),
       assistantMessage: z.string().min(1),
       tokensUsed: z.number().optional(),
+      // ★ 10.4b L0a' — callId lượt ngoài (`done.vet.callId`) để máy chủ XÁC MINH dấu nguồn. Client KHÔNG khai `nguonModel` (khoá lạ bị bỏ).
+      ngoaiCallId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -330,6 +345,15 @@ export const aiChatRouter = router({
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
       if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
+      // ★ 10.4b L0a' — dấu nguồn: máy chủ tự xác minh (callId đúng người + ok + băm khớp; không gửi ⇒ tự dò theo băm 24 h). Lệch ⇒ BAD_REQUEST.
+      const { xacMinhDauNguon } = await import("../services/ai/ngoai/dauNguon");
+      let dau: Awaited<ReturnType<typeof xacMinhDauNguon>>;
+      try {
+        dau = await xacMinhDauNguon(db as never, { userId: ctx.user.id, traLoi: input.assistantMessage, ngoaiCallId: input.ngoaiCallId ?? null });
+      } catch (e) {
+        if ((e as { ma?: unknown })?.ma === "NGOAI_KHONG_TON_TAI") throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiChatLuu", reason: "dau-nguon-lech" }, "dấu nguồn không khớp");
+        throw e;
+      }
       // Save user message
       await db.insert(aiChatMessages).values({
         conversationId: input.conversationId,
@@ -342,7 +366,9 @@ export const aiChatRouter = router({
         role: "assistant",
         content: input.assistantMessage,
         tokensUsed: input.tokensUsed,
+        ...(dau ? { nguonModel: dau.nguonModel, ngoaiCallId: dau.callId } : {}),
       });
+      if (dau) await db.update(aiChatConversations).set({ coLuotNgoai: true }).where(eq(aiChatConversations.id, input.conversationId));
       // Update conversation stats
       await db.update(aiChatConversations)
         .set({

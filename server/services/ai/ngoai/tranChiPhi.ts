@@ -21,6 +21,16 @@ export interface TranNhaMay {
   tranTokenLuongNgay: number | null;
   tranTokenLuot: number | null;
   tranLanPhut: number;
+  /** ★ 10.4b L0a' (0418) — trần TỔNG CHI PHÍ mỗi run (khoá `luot:<runId>`); vắng / NULL ⇒ 1/4 `tranTienNgayUsd` (NULL cả hai ⇒ không trần tiền/run). */
+  tranTienLuotUsd?: number | null;
+  /** ★ 0418 — số lần gọi ngoài tối đa mỗi run (khoá `luot:<runId>`); vắng ⇒ không trần số vòng. */
+  tranVongLuot?: number | null;
+}
+
+/** Trần tiền mỗi run hiệu lực: cấu hình riêng, hoặc 1/4 trần tiền ngày nhà máy (do-model chốt, kế hoạch 10.4b D10). */
+export function tranTienLuotHieuLuc(tran: TranNhaMay): number | null {
+  if (tran.tranTienLuotUsd !== undefined && tran.tranTienLuotUsd !== null) return tran.tranTienLuotUsd;
+  return tran.tranTienNgayUsd !== null ? tran.tranTienNgayUsd / 4 : null;
 }
 
 export interface YeuCauGiuCho {
@@ -69,13 +79,14 @@ export function uocTokenVao(yc: unknown): number {
   return Math.ceil(Buffer.byteLength(JSON.stringify(yc) ?? "", "utf8") / 2);
 }
 
-function cacKhoa(yc: YeuCauGiuCho, tran: TranNhaMay): Array<{ khoa: string; tranToken: number | null; tranTien: number | null }> {
-  const ds: Array<{ khoa: string; tranToken: number | null; tranTien: number | null }> = [
-    { khoa: "nha-may", tranToken: tran.tranTokenNgay, tranTien: tran.tranTienNgayUsd },
-  ];
-  if (yc.userId !== null) ds.push({ khoa: `nguoi:${yc.userId}`, tranToken: tran.tranTokenNguoiNgay, tranTien: null });
-  if (yc.flowId !== null) ds.push({ khoa: `luong:${yc.flowId}`.slice(0, 80), tranToken: tran.tranTokenLuongNgay, tranTien: null });
-  if (yc.runId !== null) ds.push({ khoa: `luot:${yc.runId}`.slice(0, 80), tranToken: tran.tranTokenLuot, tranTien: null });
+type Khoa = { khoa: string; tranToken: number | null; tranTien: number | null; tranLan: number | null };
+function cacKhoa(yc: YeuCauGiuCho, tran: TranNhaMay): Khoa[] {
+  const ds: Khoa[] = [{ khoa: "nha-may", tranToken: tran.tranTokenNgay, tranTien: tran.tranTienNgayUsd, tranLan: null }];
+  if (yc.userId !== null) ds.push({ khoa: `nguoi:${yc.userId}`, tranToken: tran.tranTokenNguoiNgay, tranTien: null, tranLan: null });
+  if (yc.flowId !== null) ds.push({ khoa: `luong:${yc.flowId}`.slice(0, 80), tranToken: tran.tranTokenLuongNgay, tranTien: null, tranLan: null });
+  // ★ 10.4b L0a' (D10-i) — mỗi RUN: trần token (cũ) + trần TỔNG CHI PHÍ + trần SỐ VÒNG, giữ chỗ NGUYÊN TỬ cộng dồn (không chỉ kiểm cuối run)
+  if (yc.runId !== null)
+    ds.push({ khoa: `luot:${yc.runId}`.slice(0, 80), tranToken: tran.tranTokenLuot, tranTien: tranTienLuotHieuLuc(tran), tranLan: tran.tranVongLuot ?? null });
   return ds;
 }
 
@@ -92,15 +103,18 @@ export async function datTruoc(db: DbDem, yc: YeuCauGiuCho, tran: TranNhaMay, ba
     await db.transaction(async (tx) => {
       for (const k of khoa) {
         const r = await tx.execute(sql`
-          INSERT INTO ai_ngoai_dem ("factoryId", ngay, khoa, "tokenGiu", "tienGiuUsd")
-          SELECT ${yc.factoryId}, ${ngay}::date, ${k.khoa}, ${n}, ${tien}
+          INSERT INTO ai_ngoai_dem ("factoryId", ngay, khoa, "tokenGiu", "tienGiuUsd", "soLan")
+          SELECT ${yc.factoryId}, ${ngay}::date, ${k.khoa}, ${n}, ${tien}, 1
           WHERE (${k.tranToken}::bigint IS NULL OR ${n} <= ${k.tranToken}::bigint)
             AND (${k.tranTien}::numeric IS NULL OR ${tien} <= ${k.tranTien}::numeric)
+            AND (${k.tranLan}::int IS NULL OR 1 <= ${k.tranLan}::int)
           ON CONFLICT ("factoryId", ngay, khoa) DO UPDATE
             SET "tokenGiu" = ai_ngoai_dem."tokenGiu" + EXCLUDED."tokenGiu",
-                "tienGiuUsd" = ai_ngoai_dem."tienGiuUsd" + EXCLUDED."tienGiuUsd"
+                "tienGiuUsd" = ai_ngoai_dem."tienGiuUsd" + EXCLUDED."tienGiuUsd",
+                "soLan" = ai_ngoai_dem."soLan" + 1
             WHERE (${k.tranToken}::bigint IS NULL OR ai_ngoai_dem."tokenGiu" + EXCLUDED."tokenGiu" <= ${k.tranToken}::bigint)
               AND (${k.tranTien}::numeric IS NULL OR ai_ngoai_dem."tienGiuUsd" + EXCLUDED."tienGiuUsd" <= ${k.tranTien}::numeric)
+              AND (${k.tranLan}::int IS NULL OR ai_ngoai_dem."soLan" + 1 <= ${k.tranLan}::int)
           RETURNING khoa`);
         if (hang(r).length !== 1) throw new LoiNgoai("NGOAI_VUOT_TRAN", k.khoa.split(":")[0]);
       }
@@ -118,11 +132,12 @@ export async function datTruoc(db: DbDem, yc: YeuCauGiuCho, tran: TranNhaMay, ba
   return { id: randomUUID(), factoryId: yc.factoryId, ngay, phut, khoa: khoa.map((k) => k.khoa), tokenUoc: n, tienUocUsd: tien };
 }
 
-async function congVao(db: DbDem, phieu: PhieuGiu, deltaToken: number, deltaTien: number): Promise<void> {
+async function congVao(db: DbDem, phieu: PhieuGiu, deltaToken: number, deltaTien: number, deltaLan = 0): Promise<void> {
   // ≤ 4 khoá ⇒ mỗi khoá một câu (không dựng mảng tham số — bài học Drizzle ANY-array).
   for (const khoa of phieu.khoa) {
     await db.execute(sql`
-      UPDATE ai_ngoai_dem SET "tokenGiu" = GREATEST(0, "tokenGiu" + ${deltaToken}), "tienGiuUsd" = GREATEST(0, "tienGiuUsd" + ${deltaTien})
+      UPDATE ai_ngoai_dem SET "tokenGiu" = GREATEST(0, "tokenGiu" + ${deltaToken}), "tienGiuUsd" = GREATEST(0, "tienGiuUsd" + ${deltaTien}),
+        "soLan" = GREATEST(0, "soLan" + ${deltaLan})
       WHERE "factoryId" = ${phieu.factoryId} AND ngay = ${phieu.ngay}::date AND khoa = ${khoa}`);
   }
 }
@@ -140,7 +155,7 @@ export async function ketToan(db: DbDem, phieu: PhieuGiu, thuc: { tokenVao: numb
 
 /** Hoàn TOÀN BỘ chỗ đã giữ — CHỈ khi chắc chắn yêu cầu chưa rời máy (lỗi trước `fetch`, sổ ý định lỗi, URL bị từ chối). */
 export async function huyGiuChuaGui(db: DbDem, phieu: PhieuGiu): Promise<void> {
-  await congVao(db, phieu, -phieu.tokenUoc, -phieu.tienUocUsd);
+  await congVao(db, phieu, -phieu.tokenUoc, -phieu.tienUocUsd, -1);
   await db.execute(sql`UPDATE ai_ngoai_dem_phut SET so = GREATEST(0, so - 1) WHERE "factoryId" = ${phieu.factoryId} AND phut = ${phieu.phut}::timestamptz`);
 }
 
