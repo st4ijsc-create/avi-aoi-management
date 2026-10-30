@@ -395,6 +395,32 @@ Chốt:
 - [ ] **Step 6: Đột biến:** `laQuaHanGhiS7` luôn false ⇒ ca S7 quá hạn đỏ; `laQuaHanGhiMc` không lọc `valid === false` ⇒ ca `errCode` cũ đỏ. Hoàn tác.
 - [ ] **Step 7: Commit** `fix(ot): S7/MC phan biet het han ghi cua thu vien voi PLC tra loi loi bang errCode (tham do nodes7/mcprotocol that) => timeout; bo hen du phong 6500 de han dispatcher thang (R1b-2b-2a T3, muc 66)`.
 
+### Task 3C: S7 — địa chỉ bit ∉ 0..7 không bao giờ tới nodes7; nodes7 không bao giờ phát lại gói cũ (backlog 87, AN TOÀN — dieu-phoi chốt 2026-10-30, làm sáng 31/10 TRƯỚC T4)
+
+**Phát hiện (rà Task 3):**
+- `parseS7Address` (`s7Address.ts:54`, `:71`) nhận số bit > 7 (`DB1,X0.9`, `M0.8`).
+- nodes7 0.3.18 lặng lẽ BỎ item đó.
+- Khi MỌI item bị bỏ: nodes7 trả sớm (`nodeS7.js:675`) trước khi xoá danh sách gói (`:751`) ⇒ GỬI LẠI GÓI GHI TRƯỚC rồi báo thành công.
+- Hệ quả: ok GIẢ cho STOP, và lệnh trước (start / setpoint) bị áp LẠI. Tái hiện bằng nodes7 thật + `__s7commSim`: gói giống từng byte lời ghi `DB1,INT2=1234` trước đó.
+- DEV: 0 tag S7 có bit ≥ 8.
+
+**Yêu cầu (dieu-phoi):**
+1. **Phân tích địa chỉ.** `parseS7Address` từ chối bit ∉ 0..7 bằng mã ổn định, ở CẢ lúc lưu cấu hình tag (router / validator) LẪN lúc ghi. Từ chối ⇒ không gửi gì.
+2. **Phòng thủ hai trong driver.** Từ chối khi BẤT KỲ item nào sẽ bị nodes7 bỏ, không chỉ khi bỏ hết, vì ghi một phần cũng là kết cục sai. Kiểm bằng chính bộ phân tích địa chỉ của nodes7 (hoặc đối chiếu số item trước / sau) TRƯỚC `writeItems`. Không bao giờ gọi `writeItems` với danh sách hiệu lực khác danh sách yêu cầu.
+3. **Test.** nodes7 thật + `__s7commSim` so gói:
+   - 0 gói, không phát lại gói cũ;
+   - ghi một phần (một item hỏng trong lô) ⇒ cả lô bị từ chối, 0 gói;
+   - đối chứng: địa chỉ hợp lệ vẫn ghi.
+
+   Mỗi ca có đột biến đỏ.
+4. **Các đường "gửi lại gói cũ" khác.** Liệt kê từ nguồn nodes7 mọi đường trả sớm mà danh sách gói không bị xoá. Chặn cùng lớp và ghi vào báo cáo.
+5. **Khởi động / đọc cấu hình.** Tag S7 đã lưu có bit ∉ 0..7 ⇒ đánh dấu cấu hình lỗi: không ghi được, có lý do rõ ở health / posture / lastError. Không im lặng.
+
+- Files: `server/services/ot/drivers/s7Address.ts`, `s7Driver.ts`, nơi kiểm cấu hình tag (tìm validator địa chỉ theo giao thức), test mới `server/services/ot/drivers/s7BitNgoaiDai.r1b2b2.test.ts`.
+- Commit: `fix(ot): S7 - dia chi bit ngoai 0..7 bi tu choi (luu cau hinh + ghi), driver tu choi khi nodes7 se bo BAT KY item nao; nodes7 0.3.18 tra som khong xoa danh sach goi => phat lai goi ghi truoc + bao ok (R1b-2b-2a T3C, backlog 87)`. kiem-dinh rà.
+
+**Thứ tự 2a sáng 31/10:** dieu-phoi gộp T3A + 3B-0 → **T3C** → (kiem-dinh T3 S7) → bàn giao lô T3 + 3B-0 đánh bóng + T3C → T4 …
+
 ### Task 4: `interlock.resolveEvent` dưới khoá ADAPTER → LUẬT (mục 62)
 
 **Files:**
