@@ -193,6 +193,8 @@ import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 f
 import { kiemGiaTriDiaChiBit, lopDiaChiBit } from "./drivers/diaChiBit"; // R1b-2b-1 T2 fix round 1 (I1) — bit-address rule of the early gate
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
 import { hanLenhOtMacDinhMs } from "./hanLenhOt"; // R1b-2b-2a T3 fix 1 (M-4) — MỘT nơi đọc + kẹp OT_CONTROL_TIMEOUT_MS
+import { ketCucLo, MA_MOT_PHAN, moTaMotPhan, motPhanCua, type MotPhan } from "./motPhan"; // R1b-2b-2a T3E (backlog 90) — lô áp MỘT PHẦN
+import { ghiNhanMotPhan } from "./boDemTruyenThong"; // T3E — scadaDiag: lô áp một phần gần nhất của adapter (RAM, cửa sổ 1 h)
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -525,6 +527,12 @@ export interface DispatchResult {
    * its fallback STOP of the adapter's pinned values (R-10-ay): `sent` ⇔ that fallback reported sent. Absent everywhere else.
    */
   centralFallbackStop?: { sent: boolean; detail: string };
+  /**
+   * SCADA R1b-2b-2a T3E (backlog 90, AN TOÀN) — CHỈ khi lô áp MỘT PHẦN: ≥ 1 write áp (`ok`), ≥ 1 write thiết bị đã trả lời "không áp" (`failed`),
+   * KHÔNG write nào không rõ (T2: không rõ ⇒ `timeout`, thắng). `status` vẫn `failed`, `reason` = `MOT_PHAN`; danh sách tagKey. Lưu bền trong
+   * `command_log.ackValue.motPhan` của MỌI hàng kết quả của lô (đường thử lại idempotent đọc lại ⇒ vẫn MOT_PHAN, không gửi lại). Vắng ở mọi kết cục khác.
+   */
+  motPhan?: MotPhan;
 }
 
 /**
@@ -1877,11 +1885,24 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
   const { sentAt, timedOut, outcomes } = executed;
 
+  // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
+  //   timeout (the command's, or ≥1 write whose outcome is unknown) → 'timeout'; else any failed → 'failed';
+  //   all verified → 'acked_verified'; else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
+  // R1b-2b-2a T2 (mục 66) — không rõ THẮNG thất bại (chiều an toàn: người vận hành phải đọc lại trước khi gửi lần nữa).
+  // R1b-2b-2a T3E (backlog 90) — CÙNG luật với edge (`ketCucLo`); 'failed' mà ≥ 1 write ĐÃ áp ⇒ MOT_PHAN + motPhan, tính TRƯỚC khi ghi hàng kết quả
+  // (motPhan đi vào ackValue của MỌI hàng của lô; hàng KHÔNG áp mang tiền tố mã `MOT_PHAN: ` trong errorText).
+  const lo = ketCucLo(
+    outcomes.map((o) => ({ tagKey: resolved[o.idx].write.tagKey, ok: o.ok, status: o.status })),
+    timedOut,
+  );
+  const motPhan = lo.motPhan;
+
   // Insert one commandLog row per write (append-only — single insert per write).
   const ctx = commandContext(input); // G1.7 — correlation_id + deadline_ms
   const results: DispatchPerWrite[] = [];
   for (const o of outcomes) {
     const r = resolved[o.idx];
+    const errorText = motPhan && !o.ok ? `${MA_MOT_PHAN}: ${o.errorText ?? "write failed"} — ${moTaMotPhan(motPhan)}` : o.errorText;
     const [row] = await db
       .insert(commandLog)
       .values({
@@ -1898,40 +1919,30 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         ...trig,
         ...ctx,
         readBackValue: o.readBackValue as any,
-        errorText: o.errorText,
+        errorText,
         // Task 6 — RESULT row linked to its write-ahead intent (by id; the key pair
-        // '<k>' / 'intent:<k>' links them too).
-        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra } as any,
+        // '<k>' / 'intent:<k>' links them too). T3E — + `motPhan` (lô áp một phần) trên MỌI hàng của lô.
+        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra, ...(motPhan ? { motPhan } : {}) } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,
       })
       .returning({ id: commandLog.id });
     commandLogIds.push(row.id);
-    results.push({ tagKey: r.write.tagKey, address: r.address, ok: o.ok, status: o.status, error: o.errorText ?? undefined });
+    results.push({ tagKey: r.write.tagKey, address: r.address, ok: o.ok, status: o.status, error: errorText ?? undefined });
   }
 
-  // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
-  //   timeout (the command's, or ≥1 write whose outcome is unknown) → 'timeout'; else any failed → 'failed';
-  //   all verified → 'acked_verified'; else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
-  // R1b-2b-2a T2 (mục 66) — không rõ THẮNG thất bại (chiều an toàn: người vận hành phải đọc lại trước khi gửi lần nữa).
-  const allOk = results.length > 0 && results.every((x) => x.ok);
-  let overall: DispatchStatus;
-  if (!allOk) {
-    overall = timedOut || outcomes.some((o) => o.status === "timeout") ? "timeout" : "failed";
-  } else if (outcomes.every((o) => o.status === "acked_verified")) {
-    overall = "acked_verified";
-  } else if (outcomes.some((o) => o.status === "acked_unverified")) {
-    overall = "acked_unverified";
-  } else {
-    overall = "acked";
-  }
+  const allOk = lo.ok;
+  const overall = lo.status as DispatchStatus;
+  // T3E — reason MOT_PHAN + danh sách + câu tiếng Anh cho bên gọi API / log; scadaDiag thấy lô gần nhất (RAM).
+  const motPhanExtra = motPhan ? { reason: MA_MOT_PHAN, motPhan, message: `Command "${input.commandType}": ${moTaMotPhan(motPhan)}.` } : {};
+  if (motPhan) ghiNhanMotPhan(input.adapterId, { ...motPhan, commandLogIds: [...commandLogIds] });
   if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
   if (stopCls.pinnedStop) {
     for (const [kind, override] of Object.entries(stopOverrides)) auditPinnedStopOverride(input, commandLogIds[0], kind, override, ledgerConfirmer);
-    return { ok: allOk, simulated: false, status: overall, results, commandLogIds, pinnedStop: true };
+    return { ok: allOk, simulated: false, status: overall, results, commandLogIds, pinnedStop: true, ...motPhanExtra };
   }
-  return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+  return { ok: allOk, simulated: false, status: overall, results, commandLogIds, ...motPhanExtra };
 }
 
 /**
@@ -2010,6 +2021,26 @@ function khiLoiAuditStopGhim(action: string, resultId: number | undefined): (err
 function cachedResult(input: DispatchInput, existing: CommandLog): DispatchResult {
   // fix round 1 (R-1D-h) — a replayed PINNED stop still says so (its ledger row carries ackValue.pinnedStop).
   const replayedPinnedStop = (existing.ackValue as { pinnedStop?: unknown } | null | undefined)?.pinnedStop === true;
+  // R1b-2b-2a T3E (backlog 90) — a batch applied PARTLY: every result row of it carries ackValue.motPhan ⇒ the replay (a FOE re-walk after a
+  // restart re-sends the same key) is the SAME partial outcome, whichever row is read (the first may be an applied, `acked` one): never ok,
+  // never resent. Read from the ledger only (no memory).
+  const motPhan = motPhanCua((existing.ackValue as { motPhan?: unknown } | null | undefined)?.motPhan);
+  if (motPhan) {
+    return {
+      ok: false,
+      simulated: false,
+      status: "failed",
+      reason: MA_MOT_PHAN,
+      results: input.writes.map((w) => {
+        const ap = motPhan.daAp.includes(w.tagKey);
+        return { tagKey: w.tagKey, ok: ap, status: ap ? ("acked" as const) : ("failed" as const), ...(ap ? {} : { error: MA_MOT_PHAN }) };
+      }),
+      commandLogIds: [existing.id],
+      motPhan,
+      message: `Command "${input.commandType}" (replayed from the ledger): ${moTaMotPhan(motPhan)}.`,
+      ...(replayedPinnedStop ? { pinnedStop: true } : {}),
+    };
+  }
   const cachedOk =
     existing.status === "simulated" ||
     existing.status === "acked" ||

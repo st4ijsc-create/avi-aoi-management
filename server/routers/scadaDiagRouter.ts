@@ -35,7 +35,9 @@ import { kiemPhamViDuoiKhoa } from "./_adapterPhamVi";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { baoTrangThaiAdapter, layTrangThaiAdapter, type LyDoTrangThaiKetNoi } from "../services/ot/trangThaiAdapter";
-import { layBoDem } from "../services/ot/boDemTruyenThong";
+import { layBoDem, layMotPhanGanNhat, type MotPhanGanNhat } from "../services/ot/boDemTruyenThong";
+import { MA_MOT_PHAN } from "../services/ot/motPhan";
+import { chiTietKyThuatCua } from "./_chiTietKyThuat";
 import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
 import { lyDoMcTamKhoaNgan } from "../services/ot/drivers/mitsubishiMcDriver";
@@ -168,6 +170,27 @@ export function trangThaiHienThi(
   }
 }
 
+/**
+ * SCADA R1b-2b-2a T3E (backlog 90) — lô ghi áp MỘT PHẦN gần nhất của adapter (1 h, RAM của dispatcher trung tâm) cho M10. MÃ + số item luôn hiện
+ * (người xem `machine_monitoring.canView`); DANH SÁCH tagKey (lấy từ cùng nội dung với `command_log.ackValue.motPhan` — chi tiết kỹ thuật C1) chỉ khi
+ * `duocXemChiTiet`, còn lại `null` (giao diện vẫn có mã + số — không bao giờ trống im lặng).
+ */
+export function motPhanHienThi(
+  m: MotPhanGanNhat | null,
+  duocXemChiTiet: boolean,
+): { ma: typeof MA_MOT_PHAN; luc: string; soDaAp: number; soKhongAp: number; daAp: string[] | null; khongAp: string[] | null; commandLogIds: number[] } | null {
+  if (!m) return null;
+  return {
+    ma: MA_MOT_PHAN,
+    luc: new Date(m.luc).toISOString(),
+    soDaAp: m.daAp.length,
+    soKhongAp: m.khongAp.length,
+    daAp: duocXemChiTiet ? [...m.daAp] : null,
+    khongAp: duocXemChiTiet ? [...m.khongAp] : null,
+    commandLogIds: [...m.commandLogIds],
+  };
+}
+
 /** Đếm tag BẬT theo giá trị hiện tại: xấu = q bad; nghi ngờ = q uncertain HOẶC cũ (stale); tốt = good + tươi. Chưa có giá trị ⇒ không đếm. */
 function demTag(adapterId: number, tagKeys: string[], now: number): { tot: number; nghiNgo: number; xau: number } {
   const kq = { tot: 0, nghiNgo: 0, xau: 0 };
@@ -251,6 +274,9 @@ export const scadaDiagRouter = router({
     const now = Date.now();
     // Task 11 — M10 chỉ hiện khối "Lab: đặt lỗi stub" khi API báo có (cùng điều kiện datLoiStub kiểm); không thêm thủ tục.
     const labBat = process.env.SCADA_LAB_ENABLED === "true";
+    // T3E — lô áp một phần gần nhất; quyền xem danh sách chỉ hỏi khi có ít nhất một mục (không thêm lượt DB cho trường hợp thường)
+    const motPhanTheoAdapter = new Map(ids.map((id) => [id, layMotPhanGanNhat(id, undefined, now)] as const));
+    const xemChiTiet = [...motPhanTheoAdapter.values()].some(Boolean) ? await chiTietKyThuatCua(ctx) : false;
     return rows.map((r) => {
       const e = edge.get(r.id);
       const st = trangThaiHienThi(r, !!e, layTrangThaiAdapter(r.id));
@@ -278,6 +304,8 @@ export const scadaDiagRouter = router({
         // R1b-1 T4 — chong (tick bỏ vì chồng) + ingestTreo (lượt phát mẫu/ghi DB quá hạn): M10 hiện ở R1b-2.
         boDem1h: { request: bd.request, loi: bd.loi, timeout: bd.timeout, lenh: bd.lenh, lenhLoi: bd.lenhLoi, chong: bd.chong, ingestTreo: bd.ingestTreo },
         tag: demTag(r.id, tagBatTheoAdapter.get(r.id) ?? [], now),
+        // R1b-2b-2a T3E — lô ghi áp MỘT PHẦN gần nhất (1 h) hoặc null; danh sách tagKey che theo luật C1
+        motPhanGanNhat: motPhanHienThi(motPhanTheoAdapter.get(r.id) ?? null, xemChiTiet),
       };
     });
   }),

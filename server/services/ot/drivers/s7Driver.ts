@@ -150,6 +150,60 @@ export function phanLoaiGhiHongS7(conn: unknown): { loai: "qua_han" | "phan_hoi_
 }
 
 /**
+ * SCADA R1b-2b-2a T3E (backlog 90) — kết quả THEO ITEM của lời ghi vừa xong với callback(true) mà `phanLoaiGhiHongS7` KHÔNG thấy gì không rõ (mọi item
+ * đã gửi đều mang `writeResponse` SỐ). nodes7 0.3.18 đặt `writeResponse` = mã trả về của PLC cho từng item (`processS7WriteItem` :1747-1753); `0xFF` =
+ * áp, khác = KHÔNG áp. Item được nhận ra qua `useraddr` (= khoá của `writeItems` — `stringToS7Addr` :2715-2718; bản clone mang theo). Một item lớn
+ * có thể bị chia nhiều phần (`parts`, mỗi phần một request) ⇒ áp ⇔ MỌI phần 0xFF; không áp ⇔ MỌI phần ≠ 0xFF / gói chưa gửi (`timeoutError === true`:
+ * không byte nào rời máy); trộn ⇒ `"khong_ro"` (item áp dở dang). Khoá yêu cầu không thấy trong gói nào / cấu trúc không đọc được ⇒ `null` (không
+ * phân biệt được theo item ⇒ hành vi cũ: cả lô `failed`). Truy cập phòng thủ, không ném.
+ */
+export function ketQuaGhiTheoItemS7(conn: unknown, keys: readonly string[]): Map<string, "ap" | "khong_ap" | "khong_ro"> | null {
+  try {
+    const arr = (conn as { writePacketArray?: unknown } | null)?.writePacketArray;
+    if (!Array.isArray(arr)) return null;
+    const can = new Set(keys);
+    const phan = new Map<string, Array<"ap" | "khong_ap" | "khong_ro">>();
+    for (const goi of arr) {
+      if (!goi || typeof goi !== "object") continue;
+      const chuaGui = (goi as { timeoutError?: unknown }).timeoutError === true;
+      const ds = (goi as { itemList?: unknown }).itemList;
+      if (!Array.isArray(ds)) continue;
+      for (const it of ds) {
+        if (!it || typeof it !== "object") continue;
+        const k = (it as { useraddr?: unknown }).useraddr;
+        if (typeof k !== "string" || !can.has(k)) continue;
+        const wr = (it as { writeResponse?: unknown }).writeResponse;
+        const p = chuaGui ? "khong_ap" : typeof wr === "number" ? (wr === 0xff ? "ap" : "khong_ap") : "khong_ro";
+        phan.set(k, [...(phan.get(k) ?? []), p]);
+      }
+    }
+    const ra = new Map<string, "ap" | "khong_ap" | "khong_ro">();
+    for (const k of keys) {
+      const p = phan.get(k);
+      if (!p || p.length === 0) return null;
+      ra.set(k, p.every((x) => x === "ap") ? "ap" : p.every((x) => x === "khong_ap") ? "khong_ap" : "khong_ro");
+    }
+    return ra;
+  } catch {
+    return null;
+  }
+}
+
+/** T3E — mã trả về PLC của item (dạng 0x0A) cho văn bản lỗi; không đọc được ⇒ "". */
+function maTraVeS7(conn: unknown, key: string): string {
+  try {
+    for (const goi of ((conn as { writePacketArray?: unknown[] }).writePacketArray ?? []) as Array<{ itemList?: unknown[] }>) {
+      for (const it of (goi?.itemList ?? []) as Array<{ useraddr?: unknown; writeResponse?: unknown }>) {
+        if (it?.useraddr === key && typeof it.writeResponse === "number" && it.writeResponse !== 0xff) return ` (S7 return code 0x${it.writeResponse.toString(16).padStart(2, "0").toUpperCase()})`;
+      }
+    }
+  } catch {
+    /* văn bản phụ */
+  }
+  return "";
+}
+
+/**
  * T3C (phòng thủ ba, TRONG phiên) — chốt trên INSTANCE nodes7 (thuộc tính riêng che prototype; thư viện gọi `self.prepareWritePacket()`):
  *   • `writeItems`: khoá / giá trị nodes7 không nhận một-đối-một (không phải mảng chuỗi cùng độ dài, rỗng) ⇒ ném NGAY — nodes7 sẽ dựng danh
  *     sách rỗng / thiếu (:465-480) mà không báo;
@@ -599,7 +653,7 @@ export class S7Driver extends NotImplementedDriver {
    * ok:false isolate); inverse scale/offset (int/float) → coerce theo dataType;
    * setTranslationCB ánh xạ tagKey→địa chỉ; writeItems(keys[],values[],cb(anyBad)).
    * writeItems trả 1 (busy, đồng bộ) → ok:false "S7 write busy" (không chờ cb);
-   * cb(anyBadQualities=true) → ok:false "bad write quality" cả batch;
+   * cb(anyBadQualities=true) → ok:false "bad write quality" cả batch — TRỪ khi PLC trả kết quả TRỘN theo item (T3E: ≥ 1 item 0xFF) ⇒ kết quả theo item;
    * anyBadQualities=false → ok:true cả batch. Lỗi parse từng write được cô lập.
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
@@ -667,6 +721,8 @@ export class S7Driver extends NotImplementedDriver {
 
     let batchError: string | null = null;
     let ketCucKhongRo: OtCommandResult["ketCucKhongRo"] | null = null;
+    /** T3E — PLC trả lời lô với kết quả TRỘN theo item (≥ 1 áp, ≥ 1 không áp): kết quả theo item thay cho một lỗi chung của cả lô. */
+    let theoItem: Map<string, "ap" | "khong_ap" | "khong_ro"> | null = null;
     const conn = this.conn;
     // T3 — bộ hẹn dự phòng theo hạn lệnh mặc định HIỆN HÀNH (đọc lúc ghi); trước: hằng 5000 = đúng hạn lệnh (đua với dispatcher, B3 có thể không chạy).
     const hanDuPhongMs = hanDuPhongGhiS7Ms();
@@ -686,7 +742,15 @@ export class S7Driver extends NotImplementedDriver {
               const hong = phanLoaiGhiHongS7(conn);
               if (hong?.loai === "qua_han") reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write packet timeout: ${S7_ERRCODE_QUA_HAN_GHI}`, "thu_vien"));
               else if (hong) reject(new LoiQuaHanYeuCauDriver("s7", `nodes7 write reply without a result for an item: ${hong.chiTiet}`, "phan_hoi_hong"));
-              else reject(new Error("bad write quality"));
+              else {
+                // T3E (backlog 90) — mọi item có mã trả về SỐ: ≥ 1 item 0xFF (áp) ⇒ kết quả THEO ITEM (lô áp MỘT PHẦN — dispatcher suy MOT_PHAN), không
+                // gộp cả lô thành "bad write quality" (FOE sẽ gửi lại cả item đã áp). Không item nào áp / không phân biệt được ⇒ như cũ.
+                const m = ketQuaGhiTheoItemS7(conn, keys);
+                if (m && [...m.values()].some((v) => v !== "khong_ap")) {
+                  theoItem = m;
+                  resolve();
+                } else reject(new Error("bad write quality"));
+              }
             });
             if (rc === 1) reject(new Error("S7 write busy"));
           }),
@@ -710,10 +774,16 @@ export class S7Driver extends NotImplementedDriver {
     }
 
     if (!batchError) this.lastOkAt = new Date();
+    const motPhanItem = theoItem as Map<string, "ap" | "khong_ap" | "khong_ro"> | null; // gán trong callback: TS không theo dõi
+    if (motPhanItem) this.lastError = `bad write quality on ${[...motPhanItem.values()].filter((v) => v !== "ap").length} of ${motPhanItem.size} items (batch applied partly)`;
 
     return prepared.map((p) => {
       if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
       if (batchError) return ketCucKhongRo ? { tagKey: p.tagKey, ok: false, error: batchError, ketCucKhongRo } : { tagKey: p.tagKey, ok: false, error: batchError };
+      const v = motPhanItem?.get(p.tagKey);
+      // T3E — item KHÔNG áp (PLC trả mã ≠ 0xFF): `failed` của riêng nó; item áp dở dang (một phần 0xFF): KHÔNG RÕ (như trả lời cụt — T3 fix 2).
+      if (v === "khong_ap") return { tagKey: p.tagKey, ok: false, error: `bad write quality${maTraVeS7(conn, p.tagKey)}` };
+      if (v === "khong_ro") return { tagKey: p.tagKey, ok: false, error: "s7 device reply incomplete in the driver (item applied only in part) — outcome unknown", ketCucKhongRo: "qua_han_driver" };
       return { tagKey: p.tagKey, ok: true };
     });
   }

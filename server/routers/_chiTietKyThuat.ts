@@ -55,6 +55,8 @@ export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABL
  * + `OT_S7_BIT_NGOAI_DAI`, `OT_S7_DIA_CHI_THU_VIEN_BO` (R1b-2b-2a T3C: tiền tố errorText của driver S7 khi từ chối lô — địa chỉ bit ∉ 0..7 / địa chỉ nodes7 sẽ bỏ; hằng ở
  *   s7Address.ts, tệp nằm trong nguồn suy của census).
  * + `OT_S7_THU_VIEN_KHONG_KIEM_DUOC` (T3C fix 1, M1: bộ phân tích / nội tại nodes7 không dùng được ⇒ từ chối fail-closed; hằng ở s7Address.ts).
+ * + `MOT_PHAN` (R1b-2b-2a T3E, backlog 90: lô ghi thiết bị áp MỘT PHẦN — `reason` của dispatch + tiền tố errorText của hàng KHÔNG áp; status vẫn `failed`;
+ *   hằng `MA_MOT_PHAN` ở server/services/ot/motPhan.ts, tệp nằm trong nguồn suy của census). Danh sách item đi trong `ackValue.motPhan` (chi tiết kỹ thuật).
  */
 export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
@@ -63,7 +65,7 @@ export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "HET_HAN", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
   "INTERLOCK_EVENT_INVALID", "INTERLOCK_NOT_APPROVED", "INTERLOCK_REQUIRES_HUMAN_CONFIRM", "INTERLOCK_RULE_DISABLED", "INTERLOCK_RULE_NOT_FOUND",
   "INTERLOCK_TAG_MISMATCH", "INTERLOCK_TARGET_MISMATCH", "INTERLOCK_VALUE_MISMATCH", "INTERLOCK_WRITES_MISMATCH", "KHOA_CHON_LOI", "KHOA_MAT",
-  "LEDGER_INTENT_FAILED", "MAY_DA_DOI", "MODE_LOCAL", "NOT_CONFIRMED", "NOT_FOUND", "OFF_STEP", "OT_MC_TAM_KHOA", "OT_S7_BIT_NGOAI_DAI",
+  "LEDGER_INTENT_FAILED", "MAY_DA_DOI", "MODE_LOCAL", "MOT_PHAN", "NOT_CONFIRMED", "NOT_FOUND", "OFF_STEP", "OT_MC_TAM_KHOA", "OT_S7_BIT_NGOAI_DAI",
   "OT_S7_DIA_CHI_THU_VIEN_BO", "OT_S7_THU_VIEN_KHONG_KIEM_DUOC", "OUT_OF_RANGE", "PERMISSION_DENIED",
   "POLICY_APPROVAL_REQUIRED", "POLICY_DENIED", "PRECONDITION_FAILED", "QUEUE_EXPIRED", "READBACK_MISMATCH", "READBACK_UNAVAILABLE", "REJECTED",
   "ROLE_FLOOR", "SAFETY_BLOCKED", "SAFETY_SIM_ONLY", "SAFETY_UNKNOWN", "SENT", "SIMULATED", "STOPPED_BEFORE_WRITE", "STOP_QUA_HAN",

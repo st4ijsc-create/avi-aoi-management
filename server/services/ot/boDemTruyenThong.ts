@@ -166,6 +166,32 @@ export function ghiNhanLenh(adapterId: number, tagKey: string, ok: boolean, now:
   }
 }
 
+/**
+ * SCADA R1b-2b-2a T3E (backlog 90) — lô ghi áp MỘT PHẦN GẦN NHẤT của adapter (dispatcher trung tâm ghi, scadaDiag đọc). Một mục mỗi adapter (mới
+ * đè cũ), trong bộ nhớ như mọi bộ đếm ở đây; hết cửa sổ ⇒ không hiện. Sổ bền là command_log (ackValue.motPhan + tiền tố `MOT_PHAN:`), không phải mục này.
+ */
+export interface MotPhanGanNhat {
+  luc: number;
+  daAp: string[];
+  khongAp: string[];
+  commandLogIds: number[];
+}
+const motPhanGanNhat = new Map<number, MotPhanGanNhat>();
+
+export function ghiNhanMotPhan(adapterId: number, m: { daAp: string[]; khongAp: string[]; commandLogIds: number[] }, now: number = Date.now()): void {
+  try {
+    motPhanGanNhat.set(adapterId, { luc: now, daAp: [...m.daAp], khongAp: [...m.khongAp], commandLogIds: [...m.commandLogIds] });
+  } catch {
+    // nuốt
+  }
+}
+
+/** Lô áp một phần gần nhất trong cửa sổ (mặc định 1 h); không có ⇒ null. */
+export function layMotPhanGanNhat(adapterId: number, cuaSoMs: number = CUA_SO_MAC_DINH_MS, now: number = Date.now()): MotPhanGanNhat | null {
+  const m = motPhanGanNhat.get(adapterId);
+  return m && m.luc > now - cuaSoMs ? { ...m, daAp: [...m.daAp], khongAp: [...m.khongAp], commandLogIds: [...m.commandLogIds] } : null;
+}
+
 /** Phân vị theo hạng gần nhất (nearest-rank) trên mảng ĐÃ SẮP XẾP tăng dần. */
 function phanVi(daSapXep: number[], p: number): number | null {
   if (daSapXep.length === 0) return null;
@@ -226,4 +252,5 @@ export function layBoDem(adapterId: number, cuaSoMs: number = CUA_SO_MAC_DINH_MS
 /** Chỉ cho test: xoá toàn bộ số liệu. */
 export function __datLaiBoDem(): void {
   kho.clear();
+  motPhanGanNhat.clear();
 }

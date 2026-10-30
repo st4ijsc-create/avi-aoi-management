@@ -19128,6 +19128,7 @@
       "OT_S7_BIT_NGOAI_DAI": "Địa chỉ bit S7 nằm ngoài 0..7 (cấu hình tag sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Sửa địa chỉ tag (vd DB1,X1.0 thay cho DB1,X0.8); cần dừng máy ngay thì dùng E-STOP cứng tại máy",
       "OT_S7_DIA_CHI_THU_VIEN_BO": "Thư viện S7 (nodes7) không ghi được đúng địa chỉ này (sẽ bỏ hoặc hiểu sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Kiểm tra địa chỉ tag; cần dừng máy ngay thì dùng E-STOP cứng tại máy",
       "OT_S7_THU_VIEN_KHONG_KIEM_DUOC": "Không kiểm được địa chỉ S7 bằng thư viện nodes7 (thư viện thiếu hoặc bị thay) — lệnh KHÔNG được gửi. Cài lại đúng bản nodes7 đã ghim; cần dừng máy ngay thì dùng E-STOP cứng tại máy",
+      "MOT_PHAN": "Lệnh chỉ được áp MỘT PHẦN: một số giá trị đã ghi vào máy, số khác máy báo KHÔNG nhận — lệnh KHÔNG được tự gửi lại. Kiểm tra tại máy rồi chỉ gửi lại phần chưa áp nếu vẫn cần",
       "EDGE_REPORTED": "Edge báo lệnh không thành công",
       "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
       "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",

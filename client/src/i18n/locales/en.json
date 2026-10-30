@@ -19128,6 +19128,7 @@
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",
       "OT_S7_DIA_CHI_THU_VIEN_BO": "The S7 library (nodes7) cannot write this address as given (it would drop or misread it) — the command was NOT sent and the whole batch was refused. Check the tag address; to stop the machine now use the hardwired E-STOP at the machine",
       "OT_S7_THU_VIEN_KHONG_KIEM_DUOC": "The S7 address could not be checked with the nodes7 library (library missing or replaced) — the command was NOT sent. Reinstall the pinned nodes7 version; to stop the machine now use the hardwired E-STOP at the machine",
+      "MOT_PHAN": "The command was applied only PARTLY: some values were written to the machine, the machine refused the others — it is NOT resent automatically. Check at the machine, then resend only the part not applied if still needed",
       "EDGE_REPORTED": "The edge reported the command as not successful",
       "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
       "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
