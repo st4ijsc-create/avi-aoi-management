@@ -8,6 +8,7 @@ import "./ma";
 import "./sinhMa";
 import "./luong";
 import "./agent";
+import "./kiemDinhNgoai";
 import "./ot";
 import "./soLieu";
 import "./thongBao";

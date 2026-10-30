@@ -17,6 +17,12 @@ import { TU_DIEN_RONG } from "./cheDuLieu";
 import { taoNhaCungCapGia, type KichBanGia, type NhaCungCapGia } from "./nhaCungCap/gia";
 import { VECTOR_CHE, KHOA_GIA } from "./vectorChe";
 import { bamDinhNghia } from "./duyetNgoai";
+import { ghepPhan, type LoaiPhan } from "./ghepPhan";
+import type { TinNhanNgoai } from "./nhaCungCap/kieu";
+
+/** ★ 10.4b L0a — cổng chỉ nhận `tinNhan` do bộ dựng tạo: lưới dựng qua `ghepPhan` (mặc định loại ky-thuat — giữ ngữ nghĩa cũ `phanDaGhep: []`). */
+const ghep = (ds: TinNhanNgoai[], loai: Exclude<LoaiPhan, "truy-hoi-kb" | "nguon-kiem-dinh"> = "cau-go-lap-trinh") =>
+  ghepPhan(ds.map((m) => ({ vaiTro: m.vaiTro, phan: [{ loai, noiDung: m.noiDung }], ...(m.tenTool !== undefined ? { tenTool: m.tenTool } : {}) }))).tinNhan;
 
 const hang = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
 const TAG = `cn${Date.now().toString(36)}`;
@@ -76,10 +82,10 @@ function dep(gia: NhaCungCapGia, o: Partial<PhuThuocCong> = {}): PhuThuocCong & 
 
 const yc = (o: Partial<YeuCauGoiNgoai> = {}, ngu: Partial<YeuCauGoiNgoai["ngu"]> = {}): YeuCauGoiNgoai => ({
   dich: { nhaCungCap: "anthropic", model: "claude-thu" },
-  tinNhan: [
+  tinNhan: ghep([
     { vaiTro: "system", noiDung: "Bạn là người rà mã." },
     { vaiTro: "user", noiDung: "Rà giúp hàm này" },
-  ],
+  ]),
   maxTokens: 200,
   mucDich: "kiem-dinh",
   ...o,
@@ -118,7 +124,7 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
   it("đính kèm ⇒ NGOAI_CAM_DINH_KEM; chuỗi 257 KB ⇒ NGOAI_QUA_LON", async () => {
     const g = taoNhaCungCapGia();
     expect(await maLoi(goiAiNgoai(yc({ dinhKem: [{}] }), dep(g)))).toBe("NGOAI_CAM_DINH_KEM");
-    expect(await maLoi(goiAiNgoai(yc({ tinNhan: [{ vaiTro: "user", noiDung: "x".repeat(257 * 1024) }] }), dep(g)))).toBe("NGOAI_QUA_LON");
+    expect(await maLoi(goiAiNgoai(yc({ tinNhan: ghep([{ vaiTro: "user", noiDung: "x".repeat(257 * 1024) }]) }), dep(g)))).toBe("NGOAI_QUA_LON");
     expect(g.nhan).toHaveLength(0);
   });
 
@@ -126,6 +132,22 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
     const g = taoNhaCungCapGia();
     expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: ["van-hanh"] } }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(await maLoi(goiAiNgoai(yc({}, { nguonMuc: { loai: "luong" }, flowId: LUONG, phienBan: 1 }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
+    expect(g.nhan).toHaveLength(0);
+  });
+
+  it("★ 10.4b L0a — tinNhan KHÔNG do bộ dựng tạo (tự dựng / chép mảng đã ghép) ⇒ NGOAI_KHONG_QUA_BO_GHEP TRƯỚC mọi bước (không gọi, không giữ chỗ)", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const truoc = await tokenGiu(A);
+    expect(await maLoi(goiAiNgoai(yc({ tinNhan: [{ vaiTro: "user", noiDung: "tự dựng" }] }), dep(g)))).toBe("NGOAI_KHONG_QUA_BO_GHEP");
+    expect(await maLoi(goiAiNgoai(yc({ tinNhan: [...ghep([{ vaiTro: "user", noiDung: "chép" }])] }), dep(g)))).toBe("NGOAI_KHONG_QUA_BO_GHEP");
+    expect(g.nhan).toHaveLength(0);
+    expect(await tokenGiu(A)).toBe(truoc);
+  });
+
+  it("★ 10.4b L0a — mức = MAX(nguồn khai, BỘ DỰNG): phần `cau-go-van-hanh` + nguồn khai `phanDaGhep: []` ⇒ vẫn NGOAI_DU_LIEU_VAN_HANH", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const tin = ghep([{ vaiTro: "user", noiDung: "máy L3 dừng mấy lần hôm nay?" }], "cau-go-van-hanh");
+    expect(await maLoi(goiAiNgoai(yc({ tinNhan: tin }, { nguonMuc: { loai: "be-mat", beMat: "chat", phanDaGhep: [] } }), dep(g)))).toBe("NGOAI_DU_LIEU_VAN_HANH");
     expect(g.nhan).toHaveLength(0);
   });
 
@@ -159,12 +181,12 @@ describe("cổng AI ngoài — gọi", () => {
       const s = typeof v.dauVao === "string" ? v.dauVao : JSON.stringify(v.dauVao);
       await goiAiNgoai(
         yc({
-          tinNhan: [
+          tinNhan: ghep([
             { vaiTro: "system", noiDung: `Hệ thống. ${s}` },
             { vaiTro: "user", noiDung: s },
             { vaiTro: "assistant", noiDung: `đã đọc ${s}` },
             { vaiTro: "tool", noiDung: s, tenTool: "tra_tai_lieu" },
-          ],
+          ]),
           congCu: [{ ten: "tra_tai_lieu", moTa: `tra cứu ${s}`, schema: { type: "object", properties: { q: { type: "string", description: s } }, required: ["q"], additionalProperties: false } }],
         }),
         dep(g),
@@ -297,6 +319,50 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
     await goiAiNgoai(yc({ maxTokens: 1e9 }), dep(g));
     expect(g.nhan[0]!.yc.maxTokens).toBe(32_000);
     expect((await tokenGiu(A)) - truoc).toBeLessThan(40_000);
+  });
+
+  it("★ 11.0 (rà kiem-dinh) — trường THỪA trên tin nhắn / phần (vd reasoning_content của lõi agent khi giữ nghĩ) KHÔNG tới nhà cung cấp", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const to = yc();
+    to.tinNhan = ghepPhan([
+      { vaiTro: "user", phan: [{ loai: "cau-go-lap-trinh", noiDung: "hỏi" }] },
+      { vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: "đáp", reasoning_content: "NỘI-TÂM-BÍ-MẬT" } as never], nghiTruoc: "NGHĨ-CŨ" } as never,
+      { vaiTro: "tool", phan: [{ loai: "ma-repo", noiDung: "kq" }], tenTool: "read_file" },
+    ]).tinNhan;
+    await goiAiNgoai(to, dep(g));
+    const gui = g.nhan[0]!.yc.tinNhan;
+    expect(gui[1]).toEqual({ vaiTro: "assistant", noiDung: "đáp" });
+    expect(gui[2]).toEqual({ vaiTro: "tool", noiDung: "kq", tenTool: "read_file" });
+    expect(JSON.stringify(g.nhan[0]!.yc)).not.toMatch(/NỘI-TÂM-BÍ-MẬT|NGHĨ-CŨ|reasoning_content|nghiTruoc/);
+  });
+
+  it("★ 10.4 — trần MỖI LƯỢT của model (lời gọi ngoài lượt chạy): CO maxTokens để vào + ra vừa trần (trước đây: luôn NGOAI_VUOT_TRAN khi trần = maxTokens); không còn chỗ cho đầu ra ⇒ VUOT_TRAN 'luot', nhà cung cấp không được gọi", async () => {
+    await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 4000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+    try {
+      const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      await goiAiNgoai(yc({ maxTokens: 4000 }), dep(g));
+      const m = g.nhan[0]!.yc.maxTokens;
+      expect(m).toBeLessThan(4000);
+      expect(m).toBeGreaterThanOrEqual(256);
+      const g2 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      const to = yc({ maxTokens: 4000 });
+      to.tinNhan = ghep([{ vaiTro: "user", noiDung: "abc ".repeat(2000) }]); // ~4000 token vào (có khoảng trắng — chuỗi liền dài bị che) ⇒ không còn chỗ cho đầu ra
+      expect(await maLoi(goiAiNgoai(to, dep(g2)))).toBe("NGOAI_VUOT_TRAN");
+      expect(g2.nhan).toHaveLength(0);
+      // rà kiem-dinh (NÊN) — còn 600 token cho đầu ra: kiểm định (cần ≥ 1000) ⇒ từ chối SỚM, không gọi; mục đích khác (≥ 256) ⇒ co về 600
+      const vao = 4000 - m;
+      await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = ${vao + 600} WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+      const g3 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      expect(await maLoi(goiAiNgoai(yc({ maxTokens: 4000 }), dep(g3)))).toBe("NGOAI_VUOT_TRAN");
+      expect(g3.nhan).toHaveLength(0);
+      const g4 = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+      await goiAiNgoai(yc({ maxTokens: 4000, mucDich: "luong" }), dep(g4));
+      const m4 = g4.nhan[0]!.yc.maxTokens; // ước vào lệch ±vài token theo yêu cầu (mucDich khác)
+      expect(m4).toBeGreaterThan(580);
+      expect(m4).toBeLessThan(620);
+    } finally {
+      await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 5000000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
+    }
   });
 
   it("phản hồi > 256 KB ⇒ NGOAI_PHAN_HOI_QUA_LON, sổ kết quả 'tu-choi' (chi phí đã kết toán)", async () => {

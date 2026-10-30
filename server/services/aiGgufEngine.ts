@@ -157,6 +157,8 @@ export interface GgufChatMessage {
   tool_call_id?: string;
   /** G2-B — chỉ trên `role:"assistant"`: các lượt gọi model đã phát ra ở lượt trước. */
   tool_calls?: NativeToolCall[];
+  /** ★ Đợt 11.0 (CHỈ ĐO) — suy luận của lượt assistant trước (chỉ llama-server; lên dây thành `reasoning_content`; template đọc khi `preserveThinking`). */
+  nghiTruoc?: string;
   /**
    * ★ Đợt 9 (2026-10-24) — ẢNH đính kèm (data URL `data:image/<png|jpeg|webp>;base64,…`), CHỈ trên vai `user`. `content` VẪN là
    * chuỗi (mọi đường cũ không đổi); `aiLlamaServerClient.chuyenMessageLenDay` dựng mảng phần OpenAI khi có ảnh. Chỉ llama-server
@@ -200,6 +202,8 @@ export interface GgufChatOptions {
   jsonMode?: boolean;
   /** G5-D — xem `GgufGenerateOptions.disableThinking`. */
   disableThinking?: boolean;
+  /** ★ Đợt 11.0 (CHỈ ĐO) — `chat_template_kwargs.preserve_thinking=true` (giữ `reasoning_content` của lịch sử trong prompt). */
+  preserveThinking?: boolean;
   /** ★ F3 — xem `GgufGenerateOptions.thinkingBudgetTokens`. */
   thinkingBudgetTokens?: number;
   /** B0.2 — Per-task KV-cache sizing hint (n_ctx on first load). See GgufGenerateOptions.contextSize. */

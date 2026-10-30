@@ -230,3 +230,12 @@ export function dinhDangGiaTriChinhXac(v: unknown, dd: DinhDangKenh, locale: str
   }
   return dinhDangGiaTri(v, dd.kieu === "so" ? { kieu: "so", soLe: null } : dd, locale, nhanBool);
 }
+
+const boDau = (x: string): string => x.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+
+/** Ô tìm bảng kênh: khớp chuỗi con trên tagKey hoặc displayName, KHÔNG phân biệt hoa thường và dấu tiếng Việt; q rỗng / chỉ khoảng trắng ⇒ true. */
+export function khopTimKiem(hang: { tagKey: string; displayName: string | null }, q: string): boolean {
+  const khoa = boDau(q.trim());
+  if (khoa === "") return true;
+  return boDau(hang.tagKey).includes(khoa) || boDau(hang.displayName ?? "").includes(khoa);
+}

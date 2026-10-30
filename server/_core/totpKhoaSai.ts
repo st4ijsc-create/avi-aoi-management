@@ -36,7 +36,8 @@
  *   · KHÔNG LỘ ĐẾM: không hàm nào trả "còn N lần" ra ngoài lớp này; người gọi chỉ nhận "đang khoá + còn bao lâu".
  *   · AUDIT (`recordAuditEvent` → `control_audit_log`): ĐÚNG MỘT dòng cho lượt bắt đầu khoá (`<loai>.tam_khoa`); từ chối khi đang
  *     khoá: NHIỀU NHẤT 1 dòng / (người, loại) / phút (`<loai>.tu_choi_dang_khoa`, mang `soLanTuChoiTrongKhoa`) để lô tRPC không xả
- *     ngập sổ hash-chain; admin mở khoá (`totp.mo_khoa`, kèm lý do, CÙNG giao dịch với lượt xoá cả hai hàng). Không bao giờ ghi mã.
+ *     ngập sổ hash-chain; admin mở khoá (`totp.mo_khoa`, kèm lý do, CÙNG giao dịch với lượt xoá cả hai hàng); vượt trần mở khoá theo
+ *     người đích (`totp.mo_khoa_vuot_tran`, ≤ 1 dòng / người đích / phút — C6, xem `MO_KHOA_TOI_DA_MOI_GIO`). Không bao giờ ghi mã.
  *
  * ⚠ Mọi câu dùng `sql` thô cho mệnh đề WHERE (không `eq()`/`and()`): `server/routers/totpReplay.test.ts` mock `eq`/`and` của
  *   `drizzle-orm` — bài học đã trả giá ở `donSo` (totpOnce.ts). Một mảnh `sql` thô không phụ thuộc file test nào mock gì.
@@ -405,14 +406,71 @@ export async function ghiTuChoiDangKhoa(userId: number, loai: LoaiBoDem, conLaiM
 }
 
 /**
+ * ★ R1b-2b-2b C6 (kiem-dinh KD-2bA) — TRẦN ADMIN MỞ KHOÁ THEO NGƯỜI ĐÍCH: tối đa `MO_KHOA_TOI_DA_MOI_GIO` lượt mở khoá cho MỘT người
+ * trong `MO_KHOA_CUA_SO_MS` (cửa sổ trượt, đồng hồ Postgres), tính trên MỌI admin cộng lại (nhiều phiên admin không nhân trần lên).
+ *
+ * Vì sao: mỗi lượt mở khoá xoá CẢ HAI bộ đếm (TOTP 5/5 phút và mã dự phòng 10/60 phút). Không trần ⇒ kẻ cầm phiên admin xen kẽ
+ * "đoán 4 mã → mở khoá → đoán 4 mã → …" và bộ đếm của nạn nhân KHÔNG BAO GIỜ tới ngưỡng — riêng mã dự phòng thành không giới hạn.
+ * Vì sao 3: khoá TOTP TỰ hết sau 5 phút (người thật luôn có lối ra không cần admin), nên người dùng thật cần > 3 lần mở khoá tay trong
+ * một giờ là chính một tín hiệu bị tấn công; trần 3 giới hạn phần đoán THÊM nhờ mở khoá ở 3 × (5 TOTP + 10 dự phòng) mỗi giờ.
+ *
+ * Nguồn đếm = chính các dòng audit `totp.mo_khoa` (sổ WORM, ghi CÙNG giao dịch với lượt xoá) ⇒ KHÔNG bảng mới / migration, không RAM
+ * (cùng chốt "CHỈ DB" của file này: sống qua khởi động lại, nhất quán giữa các tiến trình). Đếm + xoá + audit tuần tự hoá theo người đích
+ * bằng `pg_advisory_xact_lock` ⇒ N lượt đồng thời không cùng thấy "còn 1 chỗ". Lượt mở khoá không có hàng nào (`daMoKhoa:false`) VẪN
+ * tính: xoá bộ đếm đang ở 4/5 chính là đòn tấn công.
+ */
+export const MO_KHOA_TOI_DA_MOI_GIO = 3;
+export const MO_KHOA_CUA_SO_MS = 3_600_000;
+/** Audit "từ chối vì vượt trần mở khoá": nhiều nhất một dòng mỗi khoảng này cho mỗi người đích (cùng khuôn `AUDIT_TU_CHOI_MOI_MS`). */
+export const AUDIT_VUOT_TRAN_MO_KHOA_MOI_MS = 60_000;
+
+/**
  * Admin mở khoá: xoá CẢ HAI hàng (`totp` + `backup`) của `userId` + một dòng audit `totp.mo_khoa` (kèm `lyDo`) trong CÙNG giao dịch
  * — audit hỏng ⇒ lượt xoá hoàn tác. Trả `daMoKhoa` = có hàng nào bị xoá (không lộ đếm).
+ * C6: đã đủ `MO_KHOA_TOI_DA_MOI_GIO` lượt trong cửa sổ ⇒ KHÔNG xoá gì, trả `vuotTran: true` (+ ≤ 1 dòng audit `totp.mo_khoa_vuot_tran`
+ * / người đích / phút, cam kết cùng giao dịch); người gọi ném `RATE_LIMITED`.
  */
-export async function moKhoaTotpCuaNguoiDung(args: { userId: number; actorId: number; lyDo: string }): Promise<{ daMoKhoa: boolean }> {
+export async function moKhoaTotpCuaNguoiDung(args: {
+  userId: number;
+  actorId: number;
+  lyDo: string;
+}): Promise<{ daMoKhoa: boolean; vuotTran: boolean }> {
   const db = await layDbBatBuoc();
   const t = await bang();
+  const { controlAuditLog: a } = await import("../../drizzle/schema/controlAudit");
   const { recordAuditEvent } = await import("../services/audit/controlAuditService");
   return db.transaction(async (tx) => {
+    // ★ C6 fix round 1 — MÚI GIỜ. `control_audit_log."createdAt"` là `timestamp` NAIVE, `DEFAULT now()` (mig 0166): giá trị lưu = giờ tường
+    //   theo `TimeZone` của PHIÊN GHI. Quy ước của repo cho cột naive là GIỜ TƯỜNG UTC (drizzle typed đọc/ghi theo UTC — xem
+    //   `db/andonBoard.ts`, `db/lechGioTruyVanTho.db.test.ts`). Nếu chỉ so `LOCALTIMESTAMP` (giờ tường phiên ĐỌC): phiên ghi UTC + phiên đọc
+    //   Asia/Ho_Chi_Minh ⇒ mọi dòng trông "già" 7 h ⇒ trần TẮT (fail-open). Nếu chỉ so `now() AT TIME ZONE 'UTC'`: DB cài theo múi hệ điều
+    //   hành ⇒ dòng ghi bằng giờ tường +07 trông "ở tương lai" 7 h ⇒ trần kẹt 8 h. Nên GHIM CẢ HAI ĐẦU vào UTC: `SET LOCAL` (chỉ giao dịch
+    //   này) làm dòng audit `totp.mo_khoa` / `…_vuot_tran` — CHỈ hàm này ghi chúng — mang giờ tường UTC bất kể cấu hình phiên/máy chủ, và
+    //   phép so dùng `now() AT TIME ZONE 'UTC'` tường minh. Không giá trị giờ nào đi qua JS (lớp lỗi postgres.js −7 h không chạm tới đây).
+    //   `totp_khoa_sai` dùng `timestamptz` ⇒ không bị `SET LOCAL` ảnh hưởng.
+    await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`totp.mo_khoa:${args.userId}`}))`);
+    const demTrong = async (action: string, ms: number) => {
+      const [r] = await tx
+        .select({ n: sql<number>`count(*)::int`.mapWith(Number) })
+        .from(a)
+        .where(sql`${a.entityType} = 'user' AND ${a.entityId} = ${String(args.userId)} AND ${a.action} = ${action}
+          AND ${a.createdAt} > (now() AT TIME ZONE 'UTC') - make_interval(secs => ${ms / 1000})`);
+      return Number(r?.n ?? 0);
+    };
+    if ((await demTrong("totp.mo_khoa", MO_KHOA_CUA_SO_MS)) >= MO_KHOA_TOI_DA_MOI_GIO) {
+      if ((await demTrong("totp.mo_khoa_vuot_tran", AUDIT_VUOT_TRAN_MO_KHOA_MOI_MS)) === 0) {
+        await recordAuditEvent(tx, {
+          entityType: "user",
+          entityId: args.userId,
+          action: "totp.mo_khoa_vuot_tran",
+          actorId: args.actorId,
+          after: { tranMoiGio: MO_KHOA_TOI_DA_MOI_GIO, cuaSoMs: MO_KHOA_CUA_SO_MS, gopMoiMs: AUDIT_VUOT_TRAN_MO_KHOA_MOI_MS },
+          reason: args.lyDo,
+        });
+      }
+      return { daMoKhoa: false, vuotTran: true };
+    }
     const xoa = await tx
       .delete(t)
       .where(sql`${t.userId} = ${args.userId}`)
@@ -427,7 +485,7 @@ export async function moKhoaTotpCuaNguoiDung(args: { userId: number; actorId: nu
       after: { boDem: {} },
       reason: args.lyDo,
     });
-    return { daMoKhoa: xoa.length > 0 };
+    return { daMoKhoa: xoa.length > 0, vuotTran: false };
   });
 }
 

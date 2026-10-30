@@ -740,3 +740,25 @@ describe("chayVongAgent — nén ngữ cảnh", () => {
     expect(tools[2].content).toMatch(/compacted/);
   });
 });
+
+describe("★ Đợt 11.0 (CHỈ ĐO) — giuNghiTrongLichSu", () => {
+  const kichBan = (): LuotGia[] => [
+    { nghi: "cần đọc a.ts trước", chu: "Đọc tệp.", tool: [{ ten: "read_file", args: { path: "a.ts" } }] },
+    { nghi: "đã thấy lỗi", chu: "Xong." },
+  ];
+  it("MẶC ĐỊNH tắt ⇒ lịch sử gửi lượt 2 KHÔNG có reasoning_content (như cũ từng byte)", async () => {
+    const { goiModel, vao } = modelGia(kichBan());
+    const { bo } = boThucThiGia();
+    await chay({ goiModel, boThucThi: bo }).p;
+    const lichSu2 = vao[1]!.tinNhan;
+    expect(lichSu2.some((m) => "reasoning_content" in m)).toBe(false);
+  });
+  it("bật ⇒ assistant của lượt trước mang reasoning_content = suy luận lượt đó; tin khác không có", async () => {
+    const { goiModel, vao } = modelGia(kichBan());
+    const { bo } = boThucThiGia();
+    await chay({ goiModel, boThucThi: bo, giuNghiTrongLichSu: true }).p;
+    const asst = vao[1]!.tinNhan.filter((m) => m.role === "assistant");
+    expect(asst.at(-1)).toMatchObject({ reasoning_content: "cần đọc a.ts trước", content: "Đọc tệp." });
+    expect(vao[1]!.tinNhan.filter((m) => m.role !== "assistant").every((m) => !("reasoning_content" in m))).toBe(true);
+  });
+});

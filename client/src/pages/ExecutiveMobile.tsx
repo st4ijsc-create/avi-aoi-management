@@ -40,7 +40,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
+import { laTuChoiAiMucCao, tuChoiTuLoiXacNhan } from "@/lib/loiXacNhanAi";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent } from "@/components/ui/card";
@@ -525,6 +525,8 @@ export default function ExecutiveMobile(): React.JSX.Element {
   const confirmM = trpc.aiCopilot.confirmAction.useMutation({ onError: () => undefined });
   const dismissM = trpc.aiInbox.dismiss.useMutation();
   const aiActionBusy = confirmM.isPending || dismissM.isPending;
+  // AI mức >= 4 bị từ chối vĩnh viễn (máy chủ giữ nguyên hàng) ⇒ khoá nút Duyệt của đề xuất đó.
+  const [daTuChoi, setDaTuChoi] = useState<ReadonlySet<string>>(new Set());
   const [confirmTarget, setConfirmTarget] = useState<{
     actionId: string;
     token: string;
@@ -555,6 +557,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
     } catch (err) {
       // R1b-1 T10 fix round 1 (I-2) — AI mức ≥ 4 bị từ chối vĩnh viễn: hiện CÂU ĐÃ DỊCH của máy chủ; lỗi khác dùng câu đã dịch chung của mapTrpcError.
       toast.error(tuChoiTuLoiXacNhan(err)?.message ?? mapTrpcError(err));
+      if (laTuChoiAiMucCao(err)) setDaTuChoi((p) => new Set(p).add(target.actionId));
     } finally {
       invalidateAiInbox();
     }
@@ -952,7 +955,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                             <div className="flex gap-2 border-t bg-muted/30 px-3 py-2">
                               <Button
                                 className="h-11 flex-1"
-                                disabled={aiActionBusy}
+                                disabled={aiActionBusy || daTuChoi.has(it.proposal.actionId)}
                                 onClick={() =>
                                   setConfirmTarget({ ...it.proposal!, label: it.label })
                                 }
@@ -1227,7 +1230,7 @@ export default function ExecutiveMobile(): React.JSX.Element {
                   <div className="flex gap-2">
                     <Button
                       className="h-11 flex-1"
-                      disabled={aiActionBusy}
+                      disabled={aiActionBusy || daTuChoi.has(approvalDrawer.proposal!.actionId)}
                       onClick={() => {
                         const p = approvalDrawer.proposal!;
                         const label = approvalDrawer.label;

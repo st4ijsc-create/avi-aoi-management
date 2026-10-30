@@ -18,12 +18,13 @@
  * Kết quả LUÔN mang `khongTinCay: true` — người gọi bọc như dữ liệu không tin cậy trước khi đưa sang bước sau.
  */
 import { cheChuoi, cheGiaTri, cheSchemaTool, layTuDienNhay, type TuDienNhay } from "./cheDuLieu";
-import { layCauHinhNhaMay, layModelNgoai, ngoaiBatTheoEnv, type CauHinhNhaMay, type DbDoc } from "./cauHinhNgoai";
+import { layCauHinhNhaMay, layModelNgoai, ngoaiBatTheoEnv, type CauHinhNhaMay, type DbDoc, type ModelNgoai } from "./cauHinhNgoai";
 import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
+import { mucCuaGhep } from "./ghepPhan";
 import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
-import { datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
+import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
 import { gemini } from "./nhaCungCap/gemini";
@@ -35,7 +36,8 @@ export type NguonMuc =
 
 export interface YeuCauGoiNgoai {
   dich: { nhaCungCap: string; model: string };
-  tinNhan: TinNhanNgoai[];
+  /** ★ 10.4b L0a — PHẢI do `ghepPhan` tạo (cổng kiểm dấu; mảng chép / tự dựng ⇒ `NGOAI_KHONG_QUA_BO_GHEP`). */
+  tinNhan: readonly TinNhanNgoai[];
   dinhKem?: unknown[];
   congCu?: CongCuNgoai[];
   maxTokens: number;
@@ -66,6 +68,10 @@ export interface KetQuaGoiNgoai {
   khongTinCay: true;
   tokenVao: number | null;
   tokenRa: number | null;
+  /** ★ 10.4 — chi phí ước theo bảng giá model (null ⇒ model không có giá / nhà cung cấp không báo usage). */
+  chiPhiUocUsd: number | null;
+  /** ★ 10.4 — id hàng Ý ĐỊNH trong sổ `ai_external_calls` (đối chiếu / `aiNgoai.xemNoiDung`). */
+  callId: number;
 }
 
 export type DbCong = DbDem & DbSo & DbDoc;
@@ -207,7 +213,26 @@ async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: numbe
   kiemDuyetNgoaiTruocKhiBat({ definition: h.definition, ngoaiDuyetLuc: h.ngoaiDuyetLuc, ngoaiBamDuyet: h.ngoaiBamDuyet }, h.factoryId);
 }
 
-export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
+/** Kết quả các bước (1)–(5) của cổng — KHÔNG giữ chỗ trần, KHÔNG gọi mạng (dùng chung cho `goiAiNgoai` và xem trước của kiểm định). */
+export interface KiemTruocNgoai {
+  db: DbCong;
+  laLuong: boolean;
+  tinhTran: number;
+  tap: number[];
+  cfg: CauHinhNhaMay;
+  /** Trần dùng cho giữ chỗ: cấu hình nhà máy với `tranTokenLuot` = min(nhà máy, model). */
+  tran: CauHinhNhaMay;
+  model: ModelNgoai;
+  ncc: NhaCungCapAi;
+  muc: MucDuLieu;
+  maxTokens: number;
+}
+
+/**
+ * ★ Đợt 10.4 — bước (1)–(5) của cổng tách thành hàm: `goiAiNgoai` gọi nó TRƯỚC giữ chỗ; `aiKiemDinh.xemTruoc` gọi nó để báo trước
+ * "được phép không / vì sao" mà không tiêu tiền. Cùng một mã ⇒ xem trước và gọi thật không thể lệch luật.
+ */
+export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KiemTruocNgoai> {
   const buoc = (b: string) => dep.ghiBuoc?.(b);
   // (1)
   buoc("co-env");
@@ -239,7 +264,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   kiemKichThuoc(yc);
   // (4)
   buoc("muc-du-lieu");
-  const muc = await mucCuaYeuCau(yc.ngu.nguonMuc);
+  // ★ 10.4b L0a — MAX giữa mức nguồn khai và mức BỘ DỰNG tính (`ghepPhan`): người gọi không hạ được mức của phần đã ghép.
+  const muc = gopMuc(await mucCuaYeuCau(yc.ngu.nguonMuc), mucCuaGhep(yc.tinNhan) ?? "ky-thuat");
   if (muc === "van-hanh" && yc.ngu.nhaMayKhiVanHanh) {
     let them: number[];
     try {
@@ -260,7 +286,23 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   buoc("lap");
   // maxTokens KẸP (rà lô 2 mục 1): ≤ trần lượt của model, ≤ MAX cứng, ≥ 1 — người gọi không đặt được 10^9.
   const maxTokens = Math.max(1, Math.min(Math.floor(Number(yc.maxTokens) || 1), model.tranTokenLuot ?? MAX_TOKENS_CUNG, MAX_TOKENS_CUNG));
-  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
+  const cfg = cauHinh.get(tinhTran)!;
+  // Trần MỖI LƯỢT hiệu lực = nhỏ hơn của cấu hình nhà máy và của model.
+  const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
+  const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
+  return { db, laLuong, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens };
+}
+
+export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
+  const buoc = (b: string) => dep.ghiBuoc?.(b);
+  // ★ 10.4b L0a — đường DUY NHẤT dựng yêu cầu: chỉ `tinNhan` mang dấu của `ghepPhan` mới được gửi (TRƯỚC mọi bước — không giữ chỗ, không sổ).
+  if (mucCuaGhep(yc.tinNhan) === undefined) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP");
+  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
+  let maxTokens = maxTokensYeuCau;
+  // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent
+  //   khi bật giữ nghĩ, `nghiTruoc`, dấu nội bộ) ⇒ chỉ vai trò + nội dung + tên tool đi tiếp tới bộ che và nhà cung cấp.
+  const tinNhanSach: TinNhanNgoai[] = yc.tinNhan.map(({ vaiTro, noiDung, tenTool }) => ({ vaiTro, noiDung, ...(tenTool !== undefined ? { tenTool } : {}) }));
+  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: tinNhanSach, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");
   let tu: TuDienNhay;
@@ -273,10 +315,10 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   const noiDungDaChe = JSON.stringify(daChe);
   // (7)–(9) MỖI lần thử: giữ chỗ → sổ Ý ĐỊNH riêng → gọi (rà kiem-dinh lô 2 mục 5: mỗi lần thử có hàng ý định + kết quả của nó ⇒
   //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
-  const cfg = cauHinh.get(tinhTran)!;
-  const tranLuot = [cfg.tranTokenLuot, model.tranTokenLuot].filter((x): x is number => x !== null);
-  const tran = { ...cfg, tranTokenLuot: tranLuot.length ? Math.min(...tranLuot) : null };
   const tokenVaoUoc = uocTokenVao(daChe);
+  // ★ 10.4 — lời gọi ngoài lượt chạy: co maxTokens để vào + ra vừa trần MỖI LƯỢT (hàm dùng chung với xem trước).
+  maxTokens = chotTranLuot(tokenVaoUoc, maxTokens, tran.tranTokenLuot, yc.ngu.runId, raToiThieuCho(yc.mucDich));
+  daChe.maxTokens = maxTokens;
   const tienUoc =
     model.giaVaoUsdTrieu !== null && model.giaRaUsdTrieu !== null ? (tokenVaoUoc * model.giaVaoUsdTrieu + maxTokens * model.giaRaUsdTrieu) / 1e6 : null;
   const bam = bamNoiDung(noiDungDaChe);
@@ -358,5 +400,5 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   buoc("so-ket-qua");
   await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
-  return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa };
+  return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, callId: yDinhId };
 }

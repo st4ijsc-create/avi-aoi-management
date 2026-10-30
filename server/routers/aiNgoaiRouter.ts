@@ -19,7 +19,7 @@ import { encryptSecret } from "../services/security/secretBox";
 import { NHA_CUNG_CAP_NGOAI } from "../services/ai/chonModel/kieu";
 import { kiemEndpointLuu } from "../services/ai/ngoai/urlNgoai";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
-import { auditTrongGiaoDich, cuoi4AnToan, cuoi4CuaBanMa, dbHoacLoi, khoaApiTrongPhamVi, khongCoKhoa, nhaMayNgoaiTrongPhamVi } from "./_aiNgoaiPhamVi";
+import { auditTrongGiaoDich, cuoi4AnToan, cuoi4CuaBanMa, dbHoacLoi, giaoDichNgoai, khoaApiTrongPhamVi, khongCoKhoa, nhaMayNgoaiTrongPhamVi } from "./_aiNgoaiPhamVi";
 
 const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 const KHOA_DANG = z.string().min(8).max(4096);
@@ -81,7 +81,7 @@ export const aiNgoaiRouter = router({
       const ma = encryptSecret(input.khoa);
       if (!ma) throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "encryptApiKey" }, "encrypt failed");
       const c4 = cuoi4AnToan(input.khoa);
-      const id = await db.transaction(async (tx) => {
+      const id = await giaoDichNgoai(db, async (tx) => {
         const [r] = await tx
           .insert(aiApiKeys)
           .values({ name: input.ten, provider: input.nhaCungCap, encryptedKey: ma, endpoint, status: "active", createdBy: ctx.user.id, factoryId: input.factoryId })
@@ -106,7 +106,7 @@ export const aiNgoaiRouter = router({
     const ma = encryptSecret(input.khoa);
     if (!ma) throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "encryptApiKey" }, "encrypt failed");
     const c4 = cuoi4AnToan(input.khoa);
-    await db.transaction(async (tx) => {
+    await giaoDichNgoai(db, async (tx) => {
       await tx.update(aiApiKeys).set({ encryptedKey: ma, updatedAt: new Date() }).where(eq(aiApiKeys.id, input.id));
       await auditTrongGiaoDich(tx, ctx, {
         action: "update",
@@ -124,7 +124,7 @@ export const aiNgoaiRouter = router({
   thuHoiKhoa: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const { db, k } = await khoaApiTrongPhamVi(ctx, input.id);
     if (k.factoryId === null) throw khongCoKhoa();
-    await db.transaction(async (tx) => {
+    await giaoDichNgoai(db, async (tx) => {
       await tx.update(aiApiKeys).set({ status: "inactive", updatedAt: new Date() }).where(eq(aiApiKeys.id, input.id));
       await auditTrongGiaoDich(tx, ctx, {
         action: "update",
@@ -161,7 +161,7 @@ export const aiNgoaiRouter = router({
     if (!(await nhaMayNgoaiTrongPhamVi(ctx, input.factoryId))) throw khongCoKhoa();
     const db = await dbHoacLoi();
     const moi = { ...input, tranTienNgayUsd: input.tranTienNgayUsd === null ? null : String(input.tranTienNgayUsd), capNhatBoi: ctx.user.id, capNhatLuc: new Date() };
-    await db.transaction(async (tx) => {
+    await giaoDichNgoai(db, async (tx) => {
       const [cu] = await tx.select().from(aiNgoaiNhaMay).where(eq(aiNgoaiNhaMay.factoryId, input.factoryId));
       await tx.insert(aiNgoaiNhaMay).values(moi).onConflictDoUpdate({ target: aiNgoaiNhaMay.factoryId, set: moi });
       await auditTrongGiaoDich(tx, ctx, {
@@ -214,7 +214,7 @@ export const aiNgoaiRouter = router({
         capNhatBoi: ctx.user.id,
         capNhatLuc: new Date(),
       };
-      await db.transaction(async (tx) => {
+      await giaoDichNgoai(db, async (tx) => {
         const [cu] = await tx
           .select()
           .from(aiNgoaiModel)
@@ -245,7 +245,7 @@ export const aiNgoaiRouter = router({
       if (!(await nhaMayNgoaiTrongPhamVi(ctx, input.factoryId))) throw khongCoKhoa();
       const db = await dbHoacLoi();
       const hostCong = input.hostCong.toLowerCase().replace(/\.(?=:)/, "");
-      await db.transaction(async (tx) => {
+      await giaoDichNgoai(db, async (tx) => {
         if (input.xoa) await tx.delete(aiNgoaiHostNoiBo).where(and(eq(aiNgoaiHostNoiBo.factoryId, input.factoryId), eq(aiNgoaiHostNoiBo.hostCong, hostCong)));
         else await tx.insert(aiNgoaiHostNoiBo).values({ factoryId: input.factoryId, hostCong, taoBoi: ctx.user.id }).onConflictDoNothing();
         await auditTrongGiaoDich(tx, ctx, {
@@ -270,7 +270,7 @@ export const aiNgoaiRouter = router({
     }>;
     const h = Array.isArray(r) ? r[0] : undefined;
     if (!h || !(await nhaMayNgoaiTrongPhamVi(ctx, Number(h.factoryId)))) throw khongCoKhoa();
-    await db.transaction(async (tx) => {
+    await giaoDichNgoai(db, async (tx) => {
       await auditTrongGiaoDich(tx, ctx, { action: "read", entityType: "ai_external_call_noi_dung", entityId: input.callId, details: { operation: "XEM_NOI_DUNG" }, status: "success" });
     });
     return { callId: input.callId, noiDungDaChe: h.noiDungDaChe, hetHanLuc: h.hetHanLuc };
@@ -300,7 +300,7 @@ export const aiNgoaiRouter = router({
       });
       if (muc === "van-hanh") throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "aiNgoaiDuyet", reason: "NGOAI_TU_DUYET_VAN_HANH" }, "Không tự duyệt luồng có dữ liệu vận hành gửi AI ngoài.");
     }
-    const ghi = await db.transaction(async (tx) => {
+    const ghi = await giaoDichNgoai(db, async (tx) => {
       // Điều kiện trong CÙNG câu UPDATE: hai người duyệt đồng thời ⇒ người sau không ghi đè (0 dòng ⇒ không audit).
       const doi = await tx
         .update(aiFlowVersions)

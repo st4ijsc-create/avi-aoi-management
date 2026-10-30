@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { datTruoc, donDemCu, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
+import { chotTranLuot, RA_TOI_THIEU_KIEM_DINH, raToiThieuCho, datTruoc, docConLaiNgay, donDemCu, xemTranNgay, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
 import { LoiNgoai } from "./loi";
 
 const NM = () => 900_000_000 + Math.floor(Math.random() * 99_000_000);
@@ -146,5 +146,55 @@ describe("kết toán / hoàn / dọn", () => {
     await donDemCu(d, 90, bayGio);
     expect(await giu(f, "k89")).not.toBeNull();
     expect(await giu(f, "k91")).toBeNull();
+  });
+});
+
+describe("★ 10.4 — docConLaiNgay (đọc, không giữ chỗ)", () => {
+  it("trần nhà máy token + USD và trần người: còn lại = trần − đã giữ; trần null ⇒ null; KHÔNG ghi hàng nào", async () => {
+    const f = nm();
+    const tran = { ...TRAN, tranTokenNgay: 1000, tranTienNgayUsd: 2, tranTokenNguoiNgay: 500 };
+    expect(await docConLaiNgay(await db(), f, 7, tran)).toEqual({ nhaMay: { token: 1000, usd: 2 }, nguoi: { token: 500 } });
+    expect(await giu(f)).toBeNull();
+    await datTruoc(await db(), yc(f, 300, { userId: 7, tienUocUsd: 0.5 }), tran);
+    const c = await docConLaiNgay(await db(), f, 7, tran);
+    expect(c.nhaMay.token).toBe(700);
+    expect(c.nhaMay.usd).toBeCloseTo(1.5);
+    expect(c.nguoi.token).toBe(200);
+    expect(await docConLaiNgay(await db(), f, 8, tran)).toMatchObject({ nguoi: { token: 500 } });
+    expect(await docConLaiNgay(await db(), f, null, { ...tran, tranTokenNgay: null, tranTienNgayUsd: null })).toEqual({ nhaMay: { token: null, usd: null }, nguoi: { token: null } });
+  });
+});
+
+describe("★ 10.4 — xemTranNgay (ĐỌC, cùng khoá với datTruoc) + chotTranLuot", () => {
+  it("lượt / nhà máy / người / phút — lý do đầu tiên vượt; không ghi hàng nào; vừa khít ⇒ null", async () => {
+    const f = nm();
+    const tran = { ...TRAN, tranTokenNgay: 1000, tranTokenNguoiNgay: 500, tranLanPhut: 2 };
+    expect(await xemTranNgay(await db(), yc(f, 500, { userId: 7 }), tran)).toBeNull();
+    expect(await giu(f)).toBeNull();
+    expect(await xemTranNgay(await db(), yc(f, 501, { userId: 7 }), tran)).toBe("nguoi");
+    await datTruoc(await db(), yc(f, 600), tran);
+    expect(await xemTranNgay(await db(), yc(f, 401), tran)).toBe("nha-may");
+    expect(await xemTranNgay(await db(), yc(f, 400), tran)).toBeNull();
+    await datTruoc(await db(), yc(f, 10), tran); // phút thứ 2
+    expect(await xemTranNgay(await db(), yc(f, 1), tran)).toBe("lan-phut");
+    expect(await xemTranNgay(await db(), yc(f, 501), { ...tran, tranTokenLuot: 500, tranLanPhut: 100 })).toBe("luot");
+  });
+  it("chotTranLuot: co maxTokens vừa trần; còn < 256 ⇒ NGOAI_VUOT_TRAN 'luot'; trong lượt chạy / không trần ⇒ giữ nguyên", () => {
+    expect(chotTranLuot(1000, 4000, 4000, null)).toBe(3000);
+    expect(chotTranLuot(1000, 2000, 4000, null)).toBe(2000);
+    expect(() => chotTranLuot(3800, 4000, 4000, null)).toThrow(LoiNgoai);
+    expect(chotTranLuot(3800, 4000, 4000, "run-1")).toBe(4000);
+    expect(chotTranLuot(3800, 4000, null, null)).toBe(4000);
+    // rà kiem-dinh T4 — vào ước có phần lẻ làm TRÒN LÊN (1000,5 ⇒ 1001), không để vào + ra vượt trần 1 token
+    expect(chotTranLuot(1000.5, 4000, 4000, null)).toBe(2999);
+  });
+
+  it("rà kiem-dinh (NÊN) — kiểm định cần ≥ RA_TOI_THIEU_KIEM_DINH token đầu ra; mục đích khác giữ 256", () => {
+    expect(RA_TOI_THIEU_KIEM_DINH).toBe(1000);
+    expect(raToiThieuCho("kiem-dinh")).toBe(1000);
+    expect(raToiThieuCho("luong")).toBe(256);
+    expect(chotTranLuot(3000, 4000, 4000, null, raToiThieuCho("kiem-dinh"))).toBe(1000);
+    expect(() => chotTranLuot(3001, 4000, 4000, null, raToiThieuCho("kiem-dinh"))).toThrow(LoiNgoai);
+    expect(chotTranLuot(3001, 4000, 4000, null, raToiThieuCho("luong"))).toBe(999);
   });
 });

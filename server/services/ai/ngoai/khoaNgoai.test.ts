@@ -34,6 +34,9 @@ import { goiAiNgoai, phuThuocMacDinh, type PhuThuocCong } from "./congNgoai";
 import { TU_DIEN_RONG } from "./cheDuLieu";
 import { taoNhaCungCapGia } from "./nhaCungCap/gia";
 import { LoiNgoai } from "./loi";
+import { ghepPhan } from "./ghepPhan";
+
+const TIN_X = ghepPhan([{ vaiTro: "user", phan: [{ loai: "cau-go-lap-trinh", noiDung: "x" }] }]).tinNhan;
 
 const hang = (r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
 const exec = async (q: ReturnType<typeof sql>) => hang(await ((await getDb()) as unknown as { execute(q: unknown): Promise<unknown> }).execute(q));
@@ -117,7 +120,7 @@ describe("khoaKhongLo — khoá không xuất hiện ở bất kỳ đường ra
       // lượt 1: thành công (nhà cung cấp nhận khoá qua thunk); lượt 2: lỗi NHẮC LẠI khoá + khoá trong cause/stack
       const gia = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
       const ngu = { userId: 7, flowId: null, runId: null, tuDong: false, nhaMayNguoiGoi: null, nhaMayChuDuLieu: [B], nguonMuc: { loai: "be-mat" as const, beMat: "chat" as const, phanDaGhep: [] } };
-      ra.push(await goiAiNgoai({ dich: { nhaCungCap: "anthropic", model: "m" }, tinNhan: [{ vaiTro: "user", noiDung: "x" }], maxTokens: 10, mucDich: "t", ngu }, dep));
+      ra.push(await goiAiNgoai({ dich: { nhaCungCap: "anthropic", model: "m" }, tinNhan: TIN_X, maxTokens: 10, mucDich: "t", ngu }, dep));
       expect(gia.nhan[0]!.khoa).toBe(KHOA);
       const giaLoi = {
         ...gia,
@@ -130,7 +133,7 @@ describe("khoaKhongLo — khoá không xuất hiện ở bất kỳ đường ra
       };
       let loi: unknown;
       try {
-        await goiAiNgoai({ dich: { nhaCungCap: "anthropic", model: "m" }, tinNhan: [{ vaiTro: "user", noiDung: "x" }], maxTokens: 10, mucDich: "t", ngu }, { ...dep, layNhaCungCap: () => giaLoi as never });
+        await goiAiNgoai({ dich: { nhaCungCap: "anthropic", model: "m" }, tinNhan: TIN_X, maxTokens: 10, mucDich: "t", ngu }, { ...dep, layNhaCungCap: () => giaLoi as never });
       } catch (e) {
         loi = e;
       }

@@ -19,7 +19,16 @@ export interface MucModel {
   /** Chỉ có khi `can-doi-khe` VÀ đã đo được (trung vị sự kiện `doi_khe`); vắng ⇒ UI ghi "chưa đo", không bịa số. */
   uocTinhDoiKheGiay?: number;
   nhaCungCap?: string;
+  /**
+   * ★ Đợt 10.4 (D7) — CHỈ mục `ngoai`: các bề mặt mà máy chủ cho dùng model ngoài này. Client lọc theo bề mặt; thiếu ⇒ [] (ẩn).
+   * 10.4 = `BE_MAT_NGOAI_DUOC_DUNG` (luồng + kiểm định); 10.4b mở thêm chat / coding / agent bằng cách đổi hằng này.
+   */
+  duocDungO?: BeMatNgoai[];
 }
+
+export type BeMatNgoai = "luong" | "kiem-dinh" | "chat" | "coding" | "agent";
+/** Bề mặt dùng được model ngoài ở 10.4 — nguồn DUY NHẤT (danh mục + thủ tục kiểm định đọc cùng hằng). */
+export const BE_MAT_NGOAI_DUOC_DUNG: readonly BeMatNgoai[] = ["luong", "kiem-dinh"];
 
 /** 10.3 thay bằng `cauHinhNgoai.layModelDaBat`; 10.1 mặc định rỗng. */
 export interface NguonModelNgoai {
