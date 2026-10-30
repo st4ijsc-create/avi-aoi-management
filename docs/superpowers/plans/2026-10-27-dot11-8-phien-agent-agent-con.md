@@ -94,3 +94,29 @@ Không chạm :8091/GPU; không push; không full suite; không sửa `.env`; kh
 **NÊN (nhận hết):** N1 dải 0440–0442 (đã cấp). N2 id sự kiện con có tiền tố `con:<runIdCon>:`; con KHÔNG phát được `xong`/`da-duyet`/`ke-hoach` cho cha (lõi bọc `phat` của con, lọc loại sự kiện); token con cộng vào cha. N3 NOTES.md: tóm tắt do model sinh sau khi đọc dữ liệu không tin ⇒ quét + diff đầy đủ cho người duyệt + khi nạp lại làm `tepQuyUoc` gắn nhãn không tin. N4 `trangThaiHangCho` chỉ trả số, kiểm quyền người gọi, không id/người khác. N5 đột biến cha `hoi` mà con `sua`; con `tu-dong` khi cha đã `haTuTri`. N6 cờ đọc ở máy chủ, client không ghi được; tắt ⇒ không phơi, không nêu trong lời nhắc, `kiemThamSo` từ chối. N7 extension: host lọc 17 công cụ, không thực thi tool lạ (phơi `delegate` ở extension = lô luong-ui sau).
 **Đột biến bổ sung vào §4:** nhiễm ngược con→cha · huỷ cha không đóng thẻ con · duyệt sau huỷ vẫn chạy · `ngoai:` trong định nghĩa/`delegate` · thiếu `approval` ⇒ không phải `hoi` · repo trùng tên dựng sẵn · tên `..`/symlink · YAML alias · vượt trần số con · tool ngoài bộ con được thực thi · `delegate` khi cờ tắt · ghim run/phiên cha của người khác · truy vấn thiếu `kind` · appendTurns không kiểm phiên bản · token con không cộng cha · con giả `xong` của cha · định nghĩa chưa tin vẫn chạy · băm đổi không hỏi lại.
 **Tác động thứ tự:** T1 gồm M1–M3 (bộ phân tích + băm + tên); thêm T1b (bảng tin-cậy + xác nhận) sau T5. Tên migration: 0440 phiên hợp nhất, 0441 cha–con + `ai_agent_def_trust`, 0442 (T12, cắt được).
+
+## 8. HỢP ĐỒNG tRPC PHIÊN HỢP NHẤT (D5) — BẢN ĐỀ XUẤT gửi dieu-phoi + luong-ui (2026-10-30), chốt trước khi viết T7
+
+Router mới `aiPhien` (tệp riêng; các thủ tục cũ `repoWorkspace.{danhSachPhien,moPhien,luuPhien,xoaPhien,doiTenPhien}` GIỮ NGUYÊN chữ ký, chỉ thêm lọc `kind='coding'` ở tầng dữ liệu để không lẫn phiên chat/agent — M8a). Nền: bảng `ai_coding_sessions` (mig 0440).
+
+Quy ước chung
+- `userId` luôn từ `ctx.user.id`; MỌI truy vấn mang `eq(userId)` + `eq(kind)` (+ `eq(projectId)` với `coding`/`agent`). Không có/của người khác/sai kind ⇒ cùng kết quả `NOT_FOUND` (không oracle).
+- `projectId` là ID danh sách trắng (không đường dẫn). Phiên chat dùng `projectId = "_chat"` (khớp CHECK `^[A-Za-z0-9_-]{1,64}$`).
+- Quyền: `coding`/`agent` ⇒ `ai_repo_read/canView` (như hiện nay); `chat` ⇒ CÂU HỎI CHO luong-ui: bit nào đang canh chat web (để không đòi quyền đọc mã cho người chỉ chat).
+- `turns` chỉ vai `user|assistant` (qua `locLuot`, chiếu ở cả ghi lẫn đọc); KHÔNG BAO GIỜ nhận kết quả công cụ/thẻ duyệt từ client (M9). Trần: giữ `GIOI_HAN_PHIEN` (200 lượt, 20 KB/lượt, 400 KB/phiên).
+- Khoá lạc quan: mọi ghi nhận `expectedVersion`; lệch ⇒ `{ ok:false, note:"CONFLICT", versionHienTai }`, KHÔNG ghi.
+
+Thủ tục (kiểu vào → ra)
+1. `aiPhien.danhSach` (query) `{ projectId, kind?: "chat"|"coding"|"agent"|"all" = "all", gioiHan?: ≤50 }` → `{ ok, sessions:[{ id, kind, source, title, turnCount, contextPct|null, parentSessionId|null, updatedAt, version }] }` (KHÔNG kèm turns).
+2. `aiPhien.mo` (query) `{ sessionId }` → `{ ok, session:{ …như trên, projectId, turns:[{role,content}], runIds:[uuid] } }` — `runIds` chỉ gồm lượt của CHÍNH người gọi (lọc lúc đọc, M8b).
+3. `aiPhien.tao` (mutation) `{ projectId, kind, source:"web"|"vscode", title?: ≤200 }` → `{ ok, id, version:1 }`.
+4. `aiPhien.themLuot` (mutation) `{ sessionId, expectedVersion, luot:[{role,content}] ≤ 40, contextPct?: 0..200 }` → `{ ok, version }` | CONFLICT. (Thay cho `luuPhien` ghi đè cả mạch; `luuPhien` cũ vẫn dùng được cho coding.)
+5. `aiPhien.doiTen` (mutation) `{ sessionId, title, expectedVersion? }` → `{ ok, title }`.
+6. `aiPhien.nhanBan` (mutation) `{ sessionId }` → `{ ok, id }` (sao `turns`, `kind`, `projectId`; `parentSessionId = gốc` — FK kép cùng chủ; tên "<tên> (bản sao)").
+7. `aiPhien.xoa` (mutation) `{ sessionId }` → `{ ok }` — KHÔNG đụng `ai_agent_runs` (sổ kiểm toán; chỉ gỡ liên kết).
+8. `aiPhien.nopTomTat` (mutation, UX-C06) `{ sessionId, expectedVersion, tomTat: ≤4000 ký tự }` → `{ ok, id }`: tạo phiên MỚI cùng `kind/projectId`, `parentSessionId = sessionId`, lượt mở đầu = tóm tắt (vai `assistant`, nhãn "Tóm tắt phiên trước"). Ghi NOTES.md do agent làm qua `write_file` + thẻ duyệt thường (diff đầy đủ cho NGƯỜI), KHÔNG qua thủ tục này.
+9. `aiAgent.trangThaiHangCho` (query, UX-D09) `{}` → `{ ok, phiaTruoc: number|null }` — chỉ số, không id/người khác; SSE vẫn phát `dang-cho-model {phiaTruoc}` như nay.
+
+Gắn lượt agent ↔ phiên (server tự làm, client không gọi): khi `aiAgent` tạo lượt có `sessionId`, host kiểm phiên thuộc CHÍNH người + cùng dự án rồi thêm `runId` vào `runIds` (tối đa 50) khi lượt kết thúc.
+
+Hợp đồng sự kiện (cho UI agent con): `con-bat-dau {runIdCon, agent, nguon:"dungSan"|"tuRepo", sau, cheDo, nhiemVu}`, `con-xong {runIdCon, lyDo, tomTat?}`, `su-kien-con {runIdCon, suKien}` (BỌC mọi sự kiện của con, kể cả `can-duyet` — thẻ duyệt của con vẫn duyệt bằng `aiAgent.duyet {actionId}` như thẻ thường). `nhiemVu`/`tomTat` là chuỗi do model viết ⇒ hiển thị CHỮ THUẦN. Nhãn nguồn `tuRepo` hiện cạnh tên agent. Thủ tục định nghĩa: `aiAgent.dinhNghiaDanhSach`, `xacNhanDinhNghia {ten, bam}`, `goTinCayDinhNghia {ten}` (đã có ở nhánh).
