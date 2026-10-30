@@ -576,7 +576,8 @@ export interface StopQuaHanPosture {
  * R1b-2b-2a T1 (mục 61, kiem-dinh KD-A3; fix round 1) — ghi nền của đường STOP (audit HMI / audit STOP ghim của dispatcher / attempts / chốt dòng
  * chờ) qua trần ghi đang bay + hàng chờ có trần (`ghiTreoCoTran.ts`). Bộ nhớ tiến trình này (từ `batDauLuc`), không biết máy ⇒ CHỈ toàn quyền thấy
  * (`null` cho người khác / phạm vi không phân giải được). Chỉ trường máy chủ — dòng giao diện ở Task 9.
- *   · `count` / `theoBang` — lượt bị BỎ (không bao giờ ghi: tràn / quá tuổi / quá lớn / tắt máy) trong 24 h; mỗi đợt bỏ có MỘT dòng tóm tắt
+ *   · `count` / `theoBang` — lượt KHÔNG vào sổ trong 24 h: bị BỎ (tràn / quá tuổi / quá lớn / tắt máy) HOẶC audit tới DB rồi ghi HỎNG (loi_ghi,
+ *     fix round 2); lượt KHÔNG RÕ lúc tắt (dang_bay_khi_tat) chỉ vào dòng tóm tắt, không đếm ở đây. Mỗi đợt có MỘT dòng tóm tắt
  *     `ot_stop_ghi_nen_bo_roi` trong `control_audit_log`. STOP của các lượt ấy vẫn có dòng `command_log`.
  *   · tín hiệu SỐNG (review M-4): `dangBay` / `tran`, `dayTu` (ISO lúc trần đầy, null khi còn chỗ), `hangCho` / `tranHangCho`, `tomTatCho` (lượt bị
  *     bỏ CHƯA vào dòng tóm tắt).
@@ -584,7 +585,8 @@ export interface StopQuaHanPosture {
  * không vào sổ) LẪN ở `ghiNenStopBoQua24h.theoBang.scada_command_attempts` (lượt ghi nền bị bỏ). Hai câu hỏi khác nhau — giao diện KHÔNG cộng chúng.
  * ⚠ ĐẾM THIẾU tạm thời (re-review m6): dòng attempts STOP_QUA_HAN đang XẾP HÀNG chưa ở DB cũng chưa ở bộ đếm trong bộ nhớ ⇒ `stopQuaHan24h` thiếu
  * chúng tới khi xả (≤ 10 phút); `hangChoTheoBang.scada_command_attempts` cho thấy số đang chờ.
- * fix round 2: `count` gồm cả audit tới DB rồi ghi HỎNG (lyDo loi_ghi); lượt KHÔNG RÕ lúc tắt (dang_bay_khi_tat) chỉ vào dòng tóm tắt, không đếm ở đây.
+ * fix round 3 (kiem-dinh) — `slotGiaiPhong`: số lần VAN XẢ trả chỗ của một lượt treo quá `HAN_GIAI_PHONG_SLOT_MS` (kết nối có thể vẫn bị giữ ⇒
+ * trần 8 không còn chặn trên số kết nối thật trong lúc đó) — khác 0 là dấu hiệu kết nối DB treo không có statement_timeout.
  */
 export interface GhiNenStopBoQuaPosture {
   count: number;
@@ -597,6 +599,7 @@ export interface GhiNenStopBoQuaPosture {
   hangChoTheoBang: Record<string, number>;
   tranHangCho: number;
   tomTatCho: number;
+  slotGiaiPhong: number;
 }
 function ghiNenStopBoQua(pv: PhamViPosture | null): GhiNenStopBoQuaPosture | null {
   if (!pv?.toanQuyen) return null;

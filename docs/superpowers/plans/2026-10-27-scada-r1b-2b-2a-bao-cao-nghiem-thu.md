@@ -31,8 +31,13 @@ _(Task 11)_
   Truy vấn chỉ được phát khi trần còn chỗ. Trước, `recordAuditEvent` được gọi trước mọi kiểm tra.
 - **Đầy trần ⇒ XẾP HÀNG, không bỏ (fix round 1, điều phối DUYỆT 2026-10-27; thay "bỏ khi đầy" của bản đầu T1).**
   - MỘT FIFO, ≤ 256 mục HOẶC 10 phút (cái nào tới trước), mỗi mục ≤ 16 KB (JSON nội dung). Nội dung giữ cho log / tóm tắt bị cắt.
-  - Mục QUÁ 16 KB (fix round 2): audit được CẮT cho vừa (`after.daCat: true`) và ghi bằng người ghi từ nội dung (thunk gốc bị thả); attempts / chốt
-    dòng chờ quá lớn (không có người ghi từ nội dung) và mục cắt rồi vẫn không vừa ⇒ bỏ (`qua_lon`). Đường nhanh (không xếp hàng) ghi nguyên.
+  - Mục QUÁ 16 KB (fix round 2, sửa ở fix round 3): audit được CẮT cho vừa — CHỈ `before` / `after`; ĐỊNH DANH (`entityType`, `entityId`, `action`,
+    `actorId`, `reason`) chép NGUYÊN VĂN. Mọi hàng cắt mang DẤU CẮT trong `after` (phần được băm): `daCat: true` + `catGoc.<before|after>` =
+    `doDaiGocByteUtf8` (số BYTE UTF-8) + `sha256Goc` của `canonicalize(bản gốc)` (JSON khoá sắp xếp — `services/security/auditChain.ts`) cho MỖI
+    trường thực sự bị cắt ⇒ chuỗi băm chứng nhận đúng thứ được lưu, không trình hàng cắt như hàng đủ; ai có bản gốc kiểm lại được. Chỗ cho dấu cắt
+    được dành trước. Riêng định danh (+ dấu cắt) quá trần ⇒ TỪ CHỐI hàng (KHÔNG cắt định danh), lý do riêng `dinh_danh_qua_lon` trong tóm tắt.
+    Ghi bằng người ghi từ nội dung dựng ở phạm vi riêng (không giữ tải gốc). Attempts / chốt dòng chờ quá lớn và mục cắt rồi vẫn không vừa ⇒ bỏ
+    (`qua_lon`). Đường nhanh ghi nguyên.
   - Xả dưới CÙNG trần 8 (kể cả dòng tóm tắt): ngân sách pool 8 + 8 ≤ 25 − 9 không đổi. Lượt mới không vượt lượt đang chờ (không đói).
   - STOP không bao giờ chờ hàng chờ: lượt xếp hàng trả người gọi NGAY.
   - **Giờ SỰ KIỆN được giữ:**
@@ -52,10 +57,17 @@ _(Task 11)_
   - hàng chờ còn lại ⇒ MỘT dòng log `ot_stop_ghi_nen_tat_may_con_lai`, các lượt ấy bị bỏ (lyDo `tat_may`);
   - lượt VẪN ĐANG BAY ở hạn ⇒ MỘT dòng log `ot_stop_ghi_nen_tat_may_dang_bay` LIỆT KÊ chúng (≤ 32: nhãn, requestId, bảng, giờ sự kiện; `ketCuc: khong_ro`)
     và vào tóm tắt (lyDo `dang_bay_khi_tat`, `khongRoDaGhi` — có thể đã hoặc chưa commit);
-  - rồi ghi tóm tắt cuối trong phần hạn còn lại; sau đó `xa` không phát lại tóm tắt (chống ghi đôi).
+  - thôi chờ ở hạn − 500 ms (`HAN_DU_TRU_TOM_TAT_KHI_TAT_MS`, fix round 3): ≥ 500 ms cuối DÀNH cho lượt ghi tóm tắt (trước: còn 1 ms ⇒ không bao
+    giờ commit); sau đó `xa` không phát lại tóm tắt (chống ghi đôi).
+  - ⚠ Không bảo đảm commit: dưới SEC_PLATFORM, nếu chính các lượt treo đang GIỮ khoá chuỗi băm (hoặc DB treo), dòng tóm tắt vẫn có thể không commit
+    trong 500 ms — khi đó dấu vết duy nhất là các dòng log (`ot_stop_ghi_nen_tat_may_dang_bay`, `ot_stop_ghi_nen_tat_may_tom_tat_loi` mang nội dung
+    tóm tắt).
+- **Van xả chỗ rò** (fix round 3, kiem-dinh): lượt ghi nền đang bay quá `HAN_GIAI_PHONG_SLOT_MS` = 120 s (> statement_timeout 30 s + dư) coi như RÒ —
+  log error `<nhan>_giai_phong_slot`, trả chỗ của nó MỘT lần, posture `slotGiaiPhong`; lượt thật xong sau không trừ lần hai. Trong lúc ấy kết nối có
+  thể vẫn bị giữ (trần 8 không còn là chặn trên số kết nối thật).
 - **Posture** `oversight.posture.ghiNenStopBoQua24h` (chỉ toàn quyền; chỉ trường máy chủ — dòng giao diện ở Task 9):
   - `count` / `theoBang`: lượt bị bỏ trong 24 h;
-  - tín hiệu sống: `dangBay` / `tran`, `dayTu` (lúc trần đầy), `hangCho` / `hangChoTheoBang` / `tranHangCho`, `tomTatCho`.
+  - tín hiệu sống: `dangBay` / `tran`, `dayTu` (lúc trần đầy), `hangCho` / `hangChoTheoBang` / `tranHangCho`, `tomTatCho`, `slotGiaiPhong`.
   - **Đếm đôi có chủ ý:** một attempts STOP_QUA_HAN bị bỏ có mặt ở cả `ghi_so_loi` lẫn `theoBang.scada_command_attempts` — giao diện không cộng hai số này.
 - **Log mới / đổi.**
   - Audit của `dungMay` quá 500 ms ⇒ `audit_hmi_stop_qua_han` ở mức **warn** (trước: một dòng error "ghi audit lỗi hoặc quá hạn" sau 10 s). Sổ trên
@@ -80,8 +92,9 @@ _(Task 11)_
   - `createdAt` / `hashTs` là giờ GHI; giờ sự kiện nằm trong `after.lucSuKien`;
   - thứ tự id của chuỗi băm theo thứ tự GHI, không theo thứ tự sự kiện;
   - dòng tóm tắt có thể nằm giữa các dòng của cùng một đợt.
-- (T1) **"Hố đen mạng"** (không có `statement_timeout` nào bắn): 8 lượt treo giữ trần mãi ⇒ hàng chờ không xả, các mục quá tuổi bị bỏ sau 10 phút.
-  Posture `dayTu` cho thấy trần đã đầy từ khi nào.
+- (T1) **"Hố đen mạng"** (không có `statement_timeout` nào bắn): lượt treo giữ chỗ tới van xả (120 s) rồi chỗ được trả — hàng chờ xả 8 lượt / 120 s
+  khi mọi lượt đều treo, mục cuối có thể quá tuổi (10 phút) và bị bỏ (có tóm tắt). Kết nối thật của lượt "rò" có thể vẫn bị giữ ⇒ số kết nối pool
+  thật có thể vượt 8 trong lúc ấy; posture `slotGiaiPhong` / `dayTu` là tín hiệu.
 - (T1) **Trần theo TIẾN TRÌNH.** N bản API cho N × 8 kết nối và N hàng chờ.
 - (T1) **Chặn đầu hàng (head-of-line):** dưới tranh chấp khoá chuỗi băm, sổ (attempts, chốt dòng chờ) xếp sau audit chậm trong MỘT FIFO — cái giá của
   luật "không đói" của điều phối.

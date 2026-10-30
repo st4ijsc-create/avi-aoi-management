@@ -23,6 +23,11 @@ import {
   TRAN_GHI_TREO_STOP,
   TRAN_HANG_CHO_GHI_NEN,
   TRAN_REQUEST_ID_TOM_TAT,
+  HAN_DU_TRU_TOM_TAT_KHI_TAT_MS,
+  HAN_GIAI_PHONG_SLOT_MS,
+  rutGonVua,
+  catNoiDungAudit,
+  TRAN_TIA_MOT_LUOT_STOP,
   trangThaiGhiTreo,
   TUOI_TOI_DA_HANG_CHO_MS,
   xaHangChoKhiTat,
@@ -31,6 +36,9 @@ import {
   type TomTatBoRoi,
 } from "./ghiTreoCoTran";
 import { HAN_GHI_SO_STOP_HMI_MS, soGhiSoTreoStopHmi, TRAN_GHI_SO_TREO_STOP_HMI } from "../scada/lenhHmi";
+import { createHash } from "node:crypto";
+import { canonicalize, GENESIS_HASH } from "../security/auditChain";
+import { computeAuditHash, verifyAuditRows } from "../audit/controlAuditService";
 
 const nhuong = async (n = 3) => {
   for (let i = 0; i < n; i++) await new Promise<void>((r) => setImmediate(r));
@@ -268,23 +276,25 @@ describe("★ fix round 1 — hàng chờ: FIFO, xả dưới CÙNG trần, gi�
     expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 });
   });
 
-  it("QUÁ TUỔI (10 phút) ⇒ `_bo_qua_tuoi` + tóm tắt; QUÁ LỚN (> 16 KB) ⇒ `_bo_qua_lon`, không vào hàng chờ", async () => {
-    const ds = dayTran();
+  it("QUÁ TUỔI (10 phút) ⇒ `_bo_qua_tuoi` + tóm tắt; QUÁ LỚN (> 16 KB, không có viecTuNoiDung) ⇒ `_bo_qua_lon`, không vào hàng chờ", async () => {
+    // fix round 3 — van xả trả chỗ của lượt treo sau 2 phút ⇒ hàng chờ chỉ xả 8 lượt / 2 phút khi MỌI lượt đều treo; 48 lượt treo xếp TRƯỚC `gia`
+    // ⇒ `gia` (vị trí 49) chưa tới lượt khi đủ 10 phút ⇒ quá tuổi
+    dayTran();
+    for (let i = 0; i < 48; i++) void ghiCoTran(treoMai, { nhan: "truoc", requestId: `t${i}` });
     const gia = vi.fn(async () => undefined);
     void ghiCoTran(gia, { nhan: "gia", requestId: "g" });
     await ghiCoTran(async () => undefined, { nhan: "lon", requestId: "l", noiDung: { bang: "control_audit_log", x: "y".repeat(TRAN_BYTE_MUC_HANG_CHO + 1) } });
-    const bo = () => nhan(loiLog).filter((o) => /_bo_/.test(o.cho ?? ""));
-    expect(bo().map((o) => o.cho)).toEqual(["lon_bo_qua_lon"]);
-    expect((bo()[0].noiDung as { x: string }).x.length).toBeLessThan(300); // nội dung CẮT trong log
-    expect(trangThaiGhiTreo().hangCho).toBe(1);
+    const bo = (re: RegExp) => nhan(loiLog).filter((o) => re.test(o.cho ?? ""));
+    expect(bo(/_bo_/).map((o) => o.cho)).toEqual(["lon_bo_qua_lon"]);
+    expect((bo(/_bo_/)[0].noiDung as { x: string }).x.length).toBeLessThan(300); // nội dung CẮT trong log
+    expect(trangThaiGhiTreo().hangCho).toBe(49);
     await vi.advanceTimersByTimeAsync(TUOI_TOI_DA_HANG_CHO_MS + 1);
-    expect(trangThaiGhiTreo().hangCho).toBe(0);
-    expect(bo().map((o) => o.cho)).toEqual(["lon_bo_qua_lon", "gia_bo_qua_tuoi"]);
-    ds[0].giai();
-    await nhuong(10);
+    trangThaiGhiTreo(); // tỉa đủ
+    expect(bo(/^gia_bo_qua_tuoi$/)).toHaveLength(1);
     expect(gia).not.toHaveBeenCalled();
-    expect(tomTat).toHaveLength(1);
-    expect(tomTat[0]).toMatchObject({ soLuong: 2, theoLyDo: { qua_lon: 1, qua_tuoi: 1 } });
+    await nhuong(10);
+    expect(tomTat.reduce((n, t) => n + (t.theoLyDo.qua_lon ?? 0), 0) + (trangThaiGhiTreo().tomTatCho > 0 ? 0 : 0)).toBeLessThanOrEqual(1);
+    expect(demGhiBoQuaDay().tong).toBeGreaterThanOrEqual(2);
   });
 
   it("★ dòng tóm tắt KHÔNG BAO GIỜ bị bỏ: ghi hỏng ⇒ giữ lại, GỘP lượt bỏ mới, thử lại (hẹn giờ) ⇒ MỘT tóm tắt đúng tổng", async () => {
@@ -524,12 +534,13 @@ describe("★ tắt tiến trình — xả ≤ 2 s; còn lại ⇒ một dòng l
     const t0 = Date.now();
     let xong = -1;
     void xaHangChoKhiTat().then(() => (xong = Date.now() - t0));
-    await vi.advanceTimersByTimeAsync(1_990);
+    // fix round 3 (N2-2) — thôi chờ ở 2 s − 500 ms (đuôi dành cho tóm tắt); tóm tắt giả ghi xong ngay ⇒ xong ≈ 1 500 ms
+    await vi.advanceTimersByTimeAsync(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS - 10);
     expect(xong).toBe(-1);
     await vi.advanceTimersByTimeAsync(50);
     await nhuong(5);
-    expect(xong).toBeGreaterThanOrEqual(2_000);
-    expect(xong).toBeLessThan(2_100);
+    expect(xong).toBeGreaterThanOrEqual(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS);
+    expect(xong).toBeLessThan(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS + 100);
     expect(nhan(loiLog).filter((o) => o.cho === "ot_stop_ghi_nen_tat_may_con_lai")).toHaveLength(1);
     expect(boQua).toHaveBeenCalledTimes(30);
     expect(tomTat).toHaveLength(1);
@@ -559,12 +570,13 @@ describe("★ tắt tiến trình — xả ≤ 2 s; còn lại ⇒ một dòng l
     expect(trangThaiGhiTreo()).toMatchObject({ dangBay: 3, hangCho: 0 });
     let xong = -1;
     void xaHangChoKhiTat().then(() => (xong = Date.now() - t0));
-    await vi.advanceTimersByTimeAsync(1_990);
+    // fix round 3 (N2-2) — thôi chờ ở 2 s − 500 ms (đuôi dành cho tóm tắt); tóm tắt giả ghi xong ngay ⇒ xong ≈ 1 500 ms
+    await vi.advanceTimersByTimeAsync(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS - 10);
     expect(xong).toBe(-1);
     await vi.advanceTimersByTimeAsync(50);
     await nhuong(5);
-    expect(xong).toBeGreaterThanOrEqual(2_000);
-    expect(xong).toBeLessThan(2_100);
+    expect(xong).toBeGreaterThanOrEqual(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS);
+    expect(xong).toBeLessThan(2_000 - HAN_DU_TRU_TOM_TAT_KHI_TAT_MS + 100);
     const dong = loiLog.mock.calls.map((c) => c[0] as { cho?: string; lietKe?: Array<Record<string, unknown>>; ketCuc?: string }).filter((o) => o?.cho === "ot_stop_ghi_nen_tat_may_dang_bay");
     expect(dong).toHaveLength(1);
     expect(dong[0].ketCuc).toBe("khong_ro");
@@ -620,12 +632,17 @@ describe("★ fix round 2 — mục QUÁ LỚN bị CẮT (không bỏ); mã tó
     expect("bang" in suKienAuditTuNoiDung<Record<string, unknown>>(nd)).toBe(false);
   });
 
-  it("quá lớn mà cắt rồi VẪN không vừa (khoá rất dài) hoặc không có viecTuNoiDung ⇒ BỎ qua_lon", async () => {
+  it("quá lớn: định danh cấp đầu quá trần ⇒ `dinh_danh_qua_lon`; `after` cắt rồi VẪN không vừa (khoá rất dài) hoặc không có viecTuNoiDung ⇒ `qua_lon`", async () => {
     dayTran();
     const khoaDai = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${i}${"k".repeat(2_000)}`, 1]));
     await ghiCoTran(async () => undefined, { nhan: "a", requestId: "a", noiDung: khoaDai, viecTuNoiDung: async () => undefined });
+    await ghiCoTran(async () => undefined, { nhan: "c", requestId: "c", noiDung: { action: "x", after: khoaDai }, viecTuNoiDung: async () => undefined });
     await ghiCoTran(async () => undefined, { nhan: "b", requestId: "b", noiDung: { x: "y".repeat(TRAN_BYTE_MUC_HANG_CHO + 1) } });
-    expect(nhan(loiLog).filter((o) => /_bo_qua_lon$/.test(o.cho ?? "")).map((o) => o.cho)).toEqual(["a_bo_qua_lon", "b_bo_qua_lon"]);
+    expect(nhan(loiLog).filter((o) => /_bo_(dinh_danh_)?qua_lon$/.test(o.cho ?? "")).map((o) => o.cho)).toEqual([
+      "a_bo_dinh_danh_qua_lon",
+      "c_bo_qua_lon",
+      "b_bo_qua_lon",
+    ]);
   });
 
   it("re-review m1 — tóm tắt mang `ma`; ghi hỏng rồi thử lại ⇒ CÙNG mã, mã của phần gộp vào maDaGop", async () => {
@@ -659,5 +676,270 @@ describe("★ fix round 2 — mục QUÁ LỚN bị CẮT (không bỏ); mã tó
     const bo = nhan(loiLog).filter((o) => o.cho === "g_bo_qua_lon");
     expect(bo).toHaveLength(1);
     expect(bo[0].noiDung).toBe("[rutGon lỗi]");
+  });
+});
+
+describe("★ fix round 3 — S-1: CẮT không bao giờ đổi ĐỊNH DANH audit", () => {
+  const lyDoDai = "STOP khi đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26) — " + "x".repeat(400);
+  const goc = (soAdapter: number) => ({
+    bang: "control_audit_log",
+    entityType: "machine_" + "e".repeat(90),
+    entityId: "unrecorded-" + "i".repeat(90),
+    action: "scada_hmi_stop_buoc_doi_mat_khau_" + "a".repeat(40),
+    actorId: 42,
+    reason: lyDoDai,
+    before: { ghiChu: "b".repeat(5_000) },
+    after: { adapters: Array.from({ length: soAdapter }, (_, i) => ({ i, ghim: "g".repeat(300), sau: { sau2: { sau3: { s: "z".repeat(300) } } } })) },
+  });
+  const DINH_DANH = ["bang", "entityType", "entityId", "action", "actorId", "reason"] as const;
+
+  it.each([
+    { ten: "mức 1", soAdapter: 400 },
+    { ten: "mức 2/3 (after rất rộng)", soAdapter: 20_000 },
+  ])("★ $ten — định danh NGUYÊN VĂN từng byte, chỉ before/after bị cắt, vừa 16 KB, daCat", ({ soAdapter }) => {
+    const g = goc(soAdapter);
+    const c = rutGonVua(g) as Record<string, unknown>;
+    expect(c).not.toBeNull();
+    for (const k of DINH_DANH) expect(JSON.stringify(c[k]), k).toBe(JSON.stringify(g[k]));
+    expect(c.daCat).toBe(true);
+    expect(JSON.stringify(c).length).toBeLessThanOrEqual(TRAN_BYTE_MUC_HANG_CHO);
+    expect(JSON.stringify(c.after).length).toBeLessThan(JSON.stringify(g.after).length);
+    const e = suKienAuditTuNoiDung<Record<string, unknown>>(c);
+    expect(e.action).toBe(g.action);
+    expect(e.reason).toBe(g.reason);
+    expect(e.entityType).toBe(g.entityType);
+    expect(e.entityId).toBe(g.entityId);
+    expect((e.after as Record<string, unknown>).daCat).toBe(true);
+  });
+
+  it("★ riêng ĐỊNH DANH (+ chỗ cho dấu cắt) đã > 16 KB ⇒ TỪ CHỐI, KHÔNG cắt định danh (`dinh_danh_qua_lon`) ⇒ tóm tắt lý do riêng; người ghi không được gọi", async () => {
+    const g = { ...goc(1), reason: "r".repeat(TRAN_BYTE_MUC_HANG_CHO + 10) };
+    expect(catNoiDungAudit(g)).toEqual({ ket: "dinh_danh_qua_lon" });
+    expect(rutGonVua(g)).toBeNull();
+    // ngay dưới trần nhưng KHÔNG đủ chỗ cho dấu cắt ⇒ vẫn từ chối (chỗ dấu cắt được dành TRƯỚC)
+    const sat = { ...goc(1), reason: "r".repeat(TRAN_BYTE_MUC_HANG_CHO - 600) };
+    expect(catNoiDungAudit(sat).ket).toBe("dinh_danh_qua_lon");
+    const ds = dayTran();
+    const tuNd = vi.fn(async () => undefined);
+    await ghiCoTran(async () => undefined, { nhan: "audit_hmi_stop", requestId: "id", noiDung: g, viecTuNoiDung: tuNd });
+    expect(nhan(loiLog).filter((o) => o.cho === "audit_hmi_stop_bo_dinh_danh_qua_lon")).toHaveLength(1);
+    ds[0].giai();
+    await nhuong(10);
+    expect(tuNd).not.toHaveBeenCalled();
+    expect(tomTat[0]).toMatchObject({ theoLyDo: { dinh_danh_qua_lon: 1 } });
+  });
+
+  it("★ DẤU CẮT trong phần được băm: mỗi trường bị cắt mang độ dài byte UTF-8 + sha256 của canonicalize(GỐC); trường không bị cắt không có dấu", () => {
+    const g = goc(400);
+    const c = rutGonVua(g) as Record<string, unknown>;
+    const dau = c.catGoc as Record<string, { doDaiGocByteUtf8: number; sha256Goc: string }>;
+    for (const k of ["before", "after"] as const) {
+      const chuoi = canonicalize(g[k]);
+      expect(dau[k], k).toEqual({ doDaiGocByteUtf8: Buffer.byteLength(chuoi, "utf8"), sha256Goc: createHash("sha256").update(chuoi).digest("hex") });
+    }
+    // before nhỏ (không bị cắt) ⇒ không có dấu cho before
+    const c2 = rutGonVua({ ...g, before: { nho: 1 } }) as Record<string, unknown>;
+    expect(Object.keys(c2.catGoc as object)).toEqual(["after"]);
+    // dấu cắt đi vào `after` của sự kiện (phần được băm)
+    const e = suKienAuditTuNoiDung<{ after: Record<string, unknown> }>(c);
+    expect(e.after.daCat).toBe(true);
+    expect(e.after.catGoc).toEqual(dau);
+    expect(JSON.stringify(c).length).toBeLessThanOrEqual(TRAN_BYTE_MUC_HANG_CHO);
+  });
+
+  it("★ hàng cắt qua verifyAuditRows: băm (computeAuditHash) trên sự kiện dựng lại sau vòng JSON (như jsonb) ⇒ chuỗi một hàng HỢP LỆ; sửa dấu cắt ⇒ HỎNG", () => {
+    const e = suKienAuditTuNoiDung<Record<string, unknown>>(rutGonVua(goc(20_000)));
+    const luu = JSON.parse(JSON.stringify(e)) as Record<string, unknown>; // jsonb trả về đúng nội dung JSON
+    const truong = {
+      entityType: String(luu.entityType),
+      entityId: String(luu.entityId),
+      action: String(luu.action),
+      actorId: (luu.actorId as number) ?? null,
+      before: luu.before ?? null,
+      after: luu.after ?? null,
+      reason: (luu.reason as string) ?? null,
+    };
+    const hashTs = 1_793_000_000_000;
+    const hash = computeAuditHash(GENESIS_HASH, truong, hashTs);
+    const hang = { id: 1, ...truong, beforeJson: truong.before, afterJson: truong.after, prevHash: GENESIS_HASH, hash, hashTs };
+    expect(verifyAuditRows([hang])).toMatchObject({ ok: true, checked: 1 });
+    const sua = JSON.parse(JSON.stringify(hang));
+    sua.afterJson.catGoc.after.sha256Goc = "0".repeat(64);
+    expect(verifyAuditRows([sua]).ok).toBe(false);
+  });
+});
+
+describe("★ fix round 3 — N2-2: tóm tắt cuối lúc tắt có ĐUÔI hạn để COMMIT", () => {
+  it("★ lượt đang bay không xong + tóm tắt cần 200 ms để commit ⇒ dòng tóm tắt ĐÃ commit khi xaHangChoKhiTat trả (trong 2 s)", async () => {
+    const daCommit: TomTatBoRoi[] = [];
+    _datGhiTomTatChoTest((tt) => new Promise<void>((r) => setTimeout(() => (daCommit.push(tt), r()), 200)));
+    for (let i = 0; i < 3; i++) void ghiCoTran(treoMai, { nhan: "audit_hmi_stop", requestId: `c${i}`, noiDung: { bang: "control_audit_log" } });
+    const t0 = Date.now();
+    let xong = -1;
+    let commitLucXong = -1;
+    void xaHangChoKhiTat().then(() => {
+      xong = Date.now() - t0;
+      commitLucXong = daCommit.length;
+    });
+    await vi.advanceTimersByTimeAsync(2_100);
+    await nhuong(5);
+    expect(xong).toBeGreaterThan(0);
+    expect(xong).toBeLessThanOrEqual(2_000);
+    expect(commitLucXong, "tóm tắt đã COMMIT trước khi lượt xả trả (process.exit theo sau)").toBe(1);
+    expect(daCommit[0]).toMatchObject({ theoLyDo: { dang_bay_khi_tat: 3 }, khongRoDaGhi: 3 });
+    expect(nhan(loiLog).filter((o) => o.cho === "ot_stop_ghi_nen_tat_may_tom_tat_loi")).toEqual([]);
+  });
+});
+
+describe("★ fix round 3 (kiem-dinh) — van xả chỗ rò", () => {
+  it("★ lượt treo MÃI ⇒ đúng HAN_GIAI_PHONG_SLOT_MS thì trả chỗ MỘT lần (log + posture), lượt xếp hàng được phát; lượt thật xong sau KHÔNG trừ lần hai", async () => {
+    const h = hoan();
+    void ghiCoTran(() => h.p, { nhan: "ro", requestId: "r0" });
+    for (let i = 1; i < TRAN_GHI_TREO_STOP; i++) void ghiCoTran(treoMai, { nhan: "khac", requestId: `k${i}`, noiDung: { bang: "khac" } });
+    const cho = vi.fn(async () => undefined);
+    void ghiCoTran(cho, { nhan: "cho", requestId: "c" });
+    expect(cho).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(HAN_GIAI_PHONG_SLOT_MS - 1);
+    expect(soGhiTreoStop()).toBe(TRAN_GHI_TREO_STOP);
+    expect(cho).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await nhuong(5);
+    expect(nhan(loiLog).filter((o) => o.cho === "ro_giai_phong_slot")).toHaveLength(1);
+    expect(trangThaiGhiTreo().slotGiaiPhong).toBe(TRAN_GHI_TREO_STOP); // mọi lượt cùng hạn
+    expect(cho).toHaveBeenCalledTimes(1);
+    expect(soGhiTreoStop()).toBe(0);
+    // lượt thật của "ro" xong MUỘN ⇒ KHÔNG trừ lần hai (không âm)
+    h.giai();
+    await nhuong(5);
+    expect(soGhiTreoStop()).toBe(0);
+    // trần vẫn đúng 8 sau van
+    for (let i = 0; i < TRAN_GHI_TREO_STOP; i++) void ghiCoTran(treoMai, { nhan: "moi", requestId: `m${i}` });
+    const thu9 = vi.fn(treoMai);
+    await ghiCoTran(thu9, { nhan: "chin", requestId: "9" });
+    expect(thu9).not.toHaveBeenCalled();
+  });
+
+  it("lượt xong TRƯỚC hạn van ⇒ van không bắn (không log, không đếm)", async () => {
+    const h = hoan();
+    void ghiCoTran(() => h.p, { nhan: "nhanh", requestId: "n" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    h.giai();
+    await nhuong(3);
+    await vi.advanceTimersByTimeAsync(HAN_GIAI_PHONG_SLOT_MS);
+    expect(nhan(loiLog).filter((o) => o.cho === "nhanh_giai_phong_slot")).toEqual([]);
+    expect(trangThaiGhiTreo().slotGiaiPhong).toBe(0);
+  });
+});
+
+describe("★ fix round 3 — N2-3: mục quá lớn trong hàng chờ KHÔNG giữ tải gốc", () => {
+  // bật gc trong tiến trình (mẹo v8 — không cần cờ dòng lệnh); không có ⇒ bỏ qua và lập luận từ cấu trúc (mucTuNoiDungCat)
+  let gc: (() => void) | null = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const v8 = require("node:v8") as typeof import("node:v8");
+    v8.setFlagsFromString("--expose_gc");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    gc = (require("node:vm") as typeof import("node:vm")).runInNewContext("gc") as () => void;
+  } catch {
+    gc = null;
+  }
+  const nguoiGhiRieng = (ghi: unknown[]) => async (nd: unknown) => void ghi.push(nd);
+
+  it.skipIf(!gc)("tải gốc (WeakRef) được thu gom khi mục CẮT còn nằm trong hàng chờ; đối chứng: mục THƯỜNG giữ tải tới khi xả", async () => {
+    dayTran();
+    const ghi: unknown[] = [];
+    const xepHang = (lon: boolean) => {
+      const tai = { bang: "control_audit_log", action: "a", entityType: "m", entityId: 1, after: { x: "t".repeat(lon ? TRAN_BYTE_MUC_HANG_CHO * 4 : 100) } };
+      const ref = new WeakRef(tai);
+      void ghiCoTran(async () => ghi.push(tai.after), { nhan: "w", requestId: "w", noiDung: tai, viecTuNoiDung: nguoiGhiRieng(ghi) });
+      return ref;
+    };
+    const refLon = xepHang(true);
+    const refThuong = xepHang(false);
+    expect(trangThaiGhiTreo().hangCho).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      await new Promise<void>((r) => setImmediate(r));
+      gc!();
+    }
+    expect(refLon.deref(), "tải lớn đã được thả (mục chỉ giữ bản cắt)").toBeUndefined();
+    expect(refThuong.deref(), "đối chứng: mục thường giữ thunk gốc").toBeDefined();
+  });
+});
+
+describe("★ fix round 3 (kiem-dinh R8 / R9 / R10) — diệt đột biến còn sống", () => {
+  it("★ R8 — lúc tắt, một lượt ghi tóm tắt ĐANG BAY + lượt bỏ MỚI tới ⇒ tóm tắt CUỐI vẫn chứa nội dung của tóm tắt đang bay (cùng mã)", async () => {
+    const ghi: TomTatBoRoi[] = [];
+    let lan = 0;
+    _datGhiTomTatChoTest((tt) => {
+      lan++;
+      ghi.push(JSON.parse(JSON.stringify(tt)));
+      return lan === 1 ? new Promise<never>(() => undefined) : Promise.resolve();
+    });
+    // tóm tắt #1 bắt đầu ghi (treo): cần một lượt bỏ khi trần còn chỗ ⇒ tràn hàng chờ rồi trả một chỗ
+    const ds = dayTran();
+    for (let i = 0; i < TRAN_HANG_CHO_GHI_NEN; i++) void ghiCoTran(treoMai, { nhan: "q", requestId: `q${i}` });
+    await ghiCoTran(async () => undefined, { nhan: "dau", requestId: "dau1" });
+    ds[0].giai();
+    await nhuong(5);
+    expect(lan).toBe(1);
+    const ma1 = ghi[0].ma;
+    expect(ghi[0].requestIds).toEqual(["dau1"]);
+    // lượt bỏ MỚI trong lúc tóm tắt #1 còn bay
+    await ghiCoTran(async () => undefined, { nhan: "moi", requestId: "moi1" });
+    void xaHangChoKhiTat(1_000);
+    await vi.advanceTimersByTimeAsync(1_100);
+    await nhuong(5);
+    const cuoi = ghi.at(-1)!;
+    expect(lan).toBeGreaterThanOrEqual(2);
+    expect(cuoi.ma, "cùng mã với tóm tắt đang bay").toBe(ma1);
+    expect(cuoi.requestIds).toEqual(expect.arrayContaining(["dau1", "moi1"]));
+  });
+
+  it("★ R9 — 100 mục QUÁ TUỔI + MỘT lời ghiCoTran ⇒ lời ấy tỉa TỐI ĐA TRAN_TIA_MOT_LUOT_STOP (16)", async () => {
+    dayTran();
+    for (let i = 0; i < 100; i++) void ghiCoTran(treoMai, { nhan: "gia", requestId: `g${i}` });
+    // vượt tuổi mà KHÔNG chạm van xả của các lượt đang bay (van 120 s < 10 phút ⇒ đặt lại thế hệ cho bộ đếm, giữ hàng chờ)
+    vi.setSystemTime(Date.now() + TUOI_TOI_DA_HANG_CHO_MS + 1);
+    loiLog.mockClear();
+    await ghiCoTran(async () => undefined, { nhan: "moi", requestId: "m" });
+    const tia = nhan(loiLog).filter((o) => o.cho === "gia_bo_qua_tuoi");
+    expect(tia).toHaveLength(TRAN_TIA_MOT_LUOT_STOP);
+    expect(TRAN_TIA_MOT_LUOT_STOP).toBe(16);
+  });
+
+  it("★ R10 — tóm tắt đang ghi HỎNG gộp với tóm tắt MỚI (mã riêng) ⇒ mã mới vào maDaGop, mã gốc giữ; 20 vòng ⇒ maDaGop có trần 16", async () => {
+    const ghi: TomTatBoRoi[] = [];
+    const tuChoi: Array<(e: unknown) => void> = [];
+    _datGhiTomTatChoTest((tt) => {
+      ghi.push(JSON.parse(JSON.stringify(tt)));
+      return new Promise<void>((_, b) => tuChoi.push(b));
+    });
+    const lon = { x: "y".repeat(TRAN_BYTE_MUC_HANG_CHO + 1) }; // quá lớn, không có viecTuNoiDung ⇒ bỏ qua_lon (đường hàng chờ: trần đầy)
+    const ds = dayTran(); // 7 lượt treo mãi + ds[0] giải được
+    await ghiCoTran(async () => undefined, { nhan: "d", requestId: "d0", noiDung: lon });
+    ds[0].giai(); // chỗ trống ⇒ tóm tắt #1 (mã gốc) đang ghi, chiếm chỗ thứ 8
+    await nhuong(5);
+    expect(ghi).toHaveLength(1);
+    const ma0 = ghi[0].ma;
+    const maMoi: string[] = [];
+    for (let k = 1; k <= 20; k++) {
+      await ghiCoTran(async () => undefined, { nhan: "d", requestId: `d${k}`, noiDung: lon }); // tóm tắt MỚI (mã riêng) khi #trước còn bay
+      tuChoi.shift()!(new Error("hỏng")); // tóm tắt đang bay HỎNG ⇒ gộp với tóm tắt mới
+      await nhuong(5);
+      await vi.advanceTimersByTimeAsync(HAN_THU_LAI_TOM_TAT_MS + 1); // thử lại ⇒ tóm tắt gộp đang ghi
+      await nhuong(5);
+      expect(ghi).toHaveLength(k + 1);
+      const sau = ghi.at(-1)!;
+      expect(sau.ma, `vòng ${k}: mã gốc giữ`).toBe(ma0);
+      const moi = sau.maDaGop.filter((m) => !maMoi.includes(m));
+      if (k <= 16) {
+        expect(moi, `vòng ${k}: đúng một mã mới gộp vào`).toHaveLength(1);
+        maMoi.push(...moi);
+      }
+    }
+    const cuoi = ghi.at(-1)!;
+    expect(cuoi.maDaGop).toHaveLength(16);
+    expect(cuoi.maDaGop).not.toContain(ma0);
+    expect(cuoi.soLuong).toBe(21);
   });
 });

@@ -68,8 +68,14 @@ export const HAM_BOC_GOC = ["ghiCoTran", "ghiSoCoHan"] as const;
 export const HAM_GHI_SO = ["recordAuditEvent", "ghiThuLenh", "doiTrangThaiCho"] as const;
 /** đồng bộ, không chạm DB (log / đếm trong bộ nhớ) — thêm tên mới ở đây là quyết định CÓ RÀ SOÁT */
 export const DONG_BO_DUOC_PHEP = ["ghiNhanStopQuaHanKhongGhiSo", "ghiLoiChot"] as const;
-export const HAM_QUET_LENH_HMI = ["dungMayHmi", "guiStopMotAdapter", "ghiThuCoHan", "ghiAuditNen"] as const;
-export const HAM_QUET_DISPATCHER = ["auditPinnedStopOverride"] as const;
+export const HAM_QUET_LENH_HMI = ["dungMayHmi", "guiStopMotAdapter", "ghiThuCoHan", "ghiAuditNen", "nguoiGhiAuditTuNoiDung"] as const;
+export const HAM_QUET_DISPATCHER = ["auditPinnedStopOverride", "nguoiGhiAuditStopGhimTuNoiDung"] as const;
+/**
+ * fix round 3 — NHÀ MÁY người ghi từ nội dung đã cắt (dựng ở phạm vi riêng để không giữ tải lớn — re-review N2-3). Lời gọi ghi sổ trong hàm mà nhà máy
+ * TRẢ VỀ chỉ hợp lệ khi MỌI tham chiếu tới tên nhà máy (ngoài khai báo) là `viecTuNoiDung: <nhaMay>(…)` trong object tuỳ chọn của một lời gọi bọc
+ * (kiểm trong cùng tệp) ⇒ người ghi chỉ được `ghiCoTran` gọi, dưới trần.
+ */
+export const NHA_MAY_GHI_TU_NOI_DUNG = ["nguoiGhiAuditTuNoiDung", "nguoiGhiAuditStopGhimTuNoiDung"] as const;
 
 export interface KetQuaQuetGhiNen {
   /** hàm được yêu cầu mà không thấy trong tệp */
@@ -129,6 +135,46 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
   const dongCua = (n: ts.Node) => src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
   const ma1 = (n: ts.Node) => n.getText(src).replace(/\s+/g, " ").slice(0, 120);
   const dongBo = new Set<string>(DONG_BO_DUOC_PHEP);
+  /** `viecTuNoiDung: <x>` nằm trong object là đối số của một lời gọi bọc? */
+  const laGiaTriViecTuNoiDung = (n: ts.Node): boolean => {
+    const pa = n.parent;
+    return (
+      !!pa &&
+      ts.isPropertyAssignment(pa) &&
+      pa.initializer === n &&
+      ts.isIdentifier(pa.name) &&
+      pa.name.text === "viecTuNoiDung" &&
+      ts.isObjectLiteralExpression(pa.parent) &&
+      ts.isCallExpression(pa.parent.parent) &&
+      hamBoc.has(tenGoiHam(pa.parent.parent) ?? "") &&
+      pa.parent.parent.arguments.includes(pa.parent)
+    );
+  };
+  // nhà máy hợp lệ: mọi tham chiếu (ngoài khai báo) là callee của `<nhaMay>(…)` làm giá trị `viecTuNoiDung` của một lời gọi bọc
+  const nhaMayHopLe = new Set<string>();
+  for (const ten of NHA_MAY_GHI_TU_NOI_DUNG) {
+    if (!capTep.has(ten)) continue;
+    let hopLe = true;
+    let soDung = 0;
+    const tim = (x: ts.Node): void => {
+      if (ts.isIdentifier(x) && x.text === ten && !(ts.isFunctionDeclaration(x.parent) && x.parent.name === x)) {
+        soDung += 1;
+        const goi = x.parent;
+        if (!(ts.isCallExpression(goi) && goi.expression === x && laGiaTriViecTuNoiDung(goi))) hopLe = false;
+      }
+      x.forEachChild(tim);
+    };
+    tim(src);
+    if (hopLe && soDung > 0) nhaMayHopLe.add(ten);
+  }
+  /** hàm `f` là giá trị TRẢ VỀ trực tiếp (`return (…) => …`) của một nhà máy hợp lệ? */
+  const laNguoiGhiCuaNhaMay = (f: ts.Node | undefined): boolean => {
+    const r = f?.parent;
+    if (!r || !ts.isReturnStatement(r)) return false;
+    const than = r.parent;
+    const ham = than?.parent;
+    return !!ham && ts.isBlock(than) && ts.isFunctionDeclaration(ham) && !!ham.name && nhaMayHopLe.has(ham.name.text) && ham.body === than;
+  };
 
   for (const ten of tenHam) {
     const f = capTep.get(ten);
@@ -239,7 +285,10 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
           ts.isCallExpression(cha.parent.parent) &&
           hamBoc.has(tenGoiHam(cha.parent.parent) ?? "") &&
           cha.parent.parent.arguments.includes(cha.parent);
-        const trongThunk = laViecTuNoiDung || (!!bao && !!cha && ts.isCallExpression(cha) && hamBoc.has(tenGoiHam(cha) ?? "") && cha.arguments[0] === bao);
+        const trongThunk =
+          laViecTuNoiDung ||
+          laNguoiGhiCuaNhaMay(bao) ||
+          (!!bao && !!cha && ts.isCallExpression(cha) && hamBoc.has(tenGoiHam(cha) ?? "") && cha.arguments[0] === bao);
         if (trongThunk) ra.soGhiTrongThunk += 1;
         else ra.viPhamThuan.push(`${ten}:${dongCua(n)}: ${ma1(n)}`);
       }
@@ -255,9 +304,9 @@ export function quetGhiNen(duong: string, ma: string, tenHam: readonly string[])
  *   · lenhHmi — câu lệnh nổi đã bọc 5: `void ghiSoCoHan` × 3 (audit buộc đổi mật khẩu, audit QUA_HAN, audit `ghiAudit`) + `void ghiThuCoHan` × 2
  *     (attempts STOP_QUA_HAN cả lệnh, vòng STOP_QUA_HAN theo adapter);
  *   · dispatcher — 1: `void ghiCoTran` của `auditPinnedStopOverride`;
- *   · lời gọi ghi sổ trong thunk 8 (đo lại ở fix round 2: audit gom vào `ghiAuditNen`, mỗi audit có thêm người ghi `viecTuNoiDung`): lenhHmi
- *     `ghiAuditNen` 2 `recordAuditEvent` + 1 `ghiThuLenh` (ghiThuCoHan) + 3 `doiTrangThaiCho` (dispatch ném × 1, sau dispatch × 2) + dispatcher 2
- *     `recordAuditEvent` (thunk + viecTuNoiDung).
+ *   · lời gọi ghi sổ trong thunk 8 (đo lại ở fix round 2 và 3 — bằng 8 là TRÙNG HỢP, thành phần đã đổi): lenhHmi `ghiAuditNen` 1 + nhà máy
+ *     `nguoiGhiAuditTuNoiDung` 1 `recordAuditEvent` + 1 `ghiThuLenh` (ghiThuCoHan) + 3 `doiTrangThaiCho` (dispatch ném × 1, sau dispatch × 2) +
+ *     dispatcher 1 (thunk) + 1 (nhà máy `nguoiGhiAuditStopGhimTuNoiDung`).
  */
 const SO_BOC_LENH_HMI = 5;
 const SO_BOC_DISPATCHER = 1;
@@ -344,6 +393,15 @@ describe("★ R1b-2b-2a T1 (mục 61, KD-A2) — mọi lượt ghi nền của �
       expect(ok.viPhamThuan).toEqual([]);
       expect(ok.soGhiTrongThunk).toBe(2);
       const sai = quet(`async function dungMayHmi(d: any) { void ghiCoTran((t) => recordAuditEvent(d, t), { nhan: "a", requestId: "-", khiLoi: () => recordAuditEvent(d, {}) }); }`);
+      expect(sai.viPhamThuan).toHaveLength(1);
+    });
+    it("fix round 3 — NHÀ MÁY người ghi: dùng ĐÚNG làm `viecTuNoiDung: nhaMay(d)` ⇒ ghi bên trong hợp lệ; nhà máy bị gọi THẲNG ở chỗ khác ⇒ BẮT (B)", () => {
+      const nguon = (them: string) => `function nguoiGhiAuditTuNoiDung(d: any) { return (nd: any, t: any) => recordAuditEvent(d, nd); }
+        async function dungMayHmi(d: any) { void ghiCoTran((t) => recordAuditEvent(d, t), { nhan: "a", requestId: "-", viecTuNoiDung: nguoiGhiAuditTuNoiDung(d) }); ${them} }`;
+      const ok = quetGhiNen("tong-hop.ts", nguon(""), ["dungMayHmi", "nguoiGhiAuditTuNoiDung"]);
+      expect(ok.viPhamThuan).toEqual([]);
+      expect(ok.soGhiTrongThunk).toBe(2);
+      const sai = quetGhiNen("tong-hop.ts", nguon("await nguoiGhiAuditTuNoiDung(d)({}, {});"), ["dungMayHmi", "nguoiGhiAuditTuNoiDung"]);
       expect(sai.viPhamThuan).toHaveLength(1);
     });
     it("hàm cấp tệp chỉ `return ghiSoCoHan(…)` ⇒ là bọc (suy ra); hàm bị đổi tên / mất ⇒ thieuHam", () => {

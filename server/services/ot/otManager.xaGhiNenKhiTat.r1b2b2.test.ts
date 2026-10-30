@@ -26,11 +26,13 @@ afterEach(() => {
 });
 
 describe("R1b-2b-2a T1 fix round 1 — stopOt({ tatTienTrinh }) xả hàng chờ ghi nền đường STOP", () => {
-  it("tatTienTrinh ⇒ gọi xaHangChoKhiTat MỘT lần và CHỜ nó xong", async () => {
+  it("tatTienTrinh ⇒ gọi xaHangChoKhiTat MỘT lần và CHỜ nó xong", { timeout: 30_000 }, async () => {
     let xong = false;
     const p = stopOt({ tatTienTrinh: true }).then(() => (xong = true));
-    await vi.waitFor(() => expect(H.goi).toBe(1));
-    await new Promise((r) => setTimeout(r, 30));
+    // fix round 3 (kiem-dinh: đỏ một lần trên worktree lạnh) — `import("./ghiTreoCoTran")` động trong stopOt có thể mất > 1 s lúc biến đổi lạnh:
+    // chờ theo SỰ KIỆN (lượt gọi tới) với hạn rộng, không theo đồng hồ; "stopOt chờ" chứng minh bằng việc nó CHƯA xong khi lượt xả chưa giải
+    await vi.waitFor(() => expect(H.goi).toBe(1), { timeout: 20_000, interval: 10 });
+    for (let i = 0; i < 20; i++) await new Promise<void>((r) => setImmediate(r));
     expect(xong, "stopOt chờ lượt xả").toBe(false);
     H.giai?.();
     await p;

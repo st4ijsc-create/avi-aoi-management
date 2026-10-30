@@ -1454,16 +1454,29 @@ export function ghiSoCoHan(
 
 /** Một dòng attempts trên đường trả lời của STOP HMI qua `ghiSoCoHan` (nội dung dòng đi kèm để dựng lại khi bị bỏ). */
 /**
+ * fix round 3 (re-review N2-3) — người ghi audit TỪ NỘI DUNG ĐÃ CẮT, dựng trong phạm vi RIÊNG chỉ có `d` (V8 giữ chung một ngữ cảnh cho mọi closure
+ * của một phạm vi — tạo nó trong `ghiAuditNen` sẽ giữ cả `suKien` lớn sống trong hàng chờ).
+ */
+function nguoiGhiAuditTuNoiDung(d: DbHoacTx): (nd: unknown, t: BoiCanhGhi) => Promise<unknown> {
+  return (nd, t) => recordAuditEvent(d, themLucSuKien(suKienAuditTuNoiDung<AuditEventInput>(nd), t));
+}
+/** fix round 3 — `khiLoi` của audit nền, phạm vi riêng (chỉ nhãn + requestId). */
+function khiLoiAuditNen(nhan: string, requestId: string): (e: unknown, muon: boolean) => void {
+  return (e, muon) => ghiLoiChot(e, requestId, muon ? `${nhan}_muon` : nhan);
+}
+
+/**
  * R1b-2b-2a T1 fix round 2 — MỘT audit nền của đường STOP HMI qua trần chung (như `ghiSoCoHan`, không có `khiKhongVaoSo`): ghi xếp hàng mang giờ sự
- * kiện (`themLucSuKien`); mục QUÁ LỚN trong hàng chờ được CẮT (`daCat`) và ghi bằng `viecTuNoiDung` — chỉ bắt `d`, không bắt nội dung gốc.
+ * kiện (`themLucSuKien`); mục QUÁ LỚN trong hàng chờ: CHỈ `before` / `after` bị CẮT (`daCat`, định danh nguyên văn — fix round 3 S-1), ghi bằng
+ * `viecTuNoiDung` dựng ngoài phạm vi này (không giữ nội dung gốc).
  */
 function ghiAuditNen(d: DbHoacTx, suKien: AuditEventInput, nhan: string, requestId: string): Promise<void> {
   return ghiCoTran((t) => recordAuditEvent(d, themLucSuKien(suKien, t)), {
     nhan,
     requestId,
     noiDung: { bang: "control_audit_log", ...suKien },
-    khiLoi: (e, muon) => ghiLoiChot(e, requestId, muon ? `${nhan}_muon` : nhan),
-    viecTuNoiDung: (nd, t) => recordAuditEvent(d, themLucSuKien(suKienAuditTuNoiDung<AuditEventInput>(nd), t)),
+    khiLoi: khiLoiAuditNen(nhan, requestId),
+    viecTuNoiDung: nguoiGhiAuditTuNoiDung(d),
   });
 }
 

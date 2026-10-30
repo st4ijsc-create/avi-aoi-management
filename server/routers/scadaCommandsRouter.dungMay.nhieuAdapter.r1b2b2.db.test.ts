@@ -355,3 +355,112 @@ describe("★ (b) DB chậm + tràn hàng chờ ⇒ ĐÚNG MỘT dòng tóm tắ
     await vi.waitFor(() => expect(bk.trangThaiGhiTreo()).toMatchObject({ dangBay: 0, hangCho: 0, tomTatCho: 0 }), { timeout: 10_000, interval: 50 });
   }, 90_000);
 });
+
+// ═════════ fix round 3 (re-review N2-2) — tắt tiến trình với lượt ĐANG BAY: dòng tóm tắt COMMIT vào control_audit_log (chuỗi băm thật) ═════════
+describe("★ N2-2 — xaHangChoKhiTat khi 3 audit đang treo: tóm tắt dang_bay_khi_tat ĐÃ COMMIT (hàng thật, có băm) lúc lượt xả trả", () => {
+  it("3 audit treo trên khoá của tệp (KHÔNG giữ khoá chuỗi) ⇒ ≤ 2 s; ngay khi trả: đúng 1 dòng ot_stop_ghi_nen_bo_roi (dang_bay_khi_tat 3, khongRoDaGhi 3, hash có)", async () => {
+    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const giu = await moGiu(H.khoaAudit);
+    H.chamAudit = true;
+    const { recordAuditEvent } = await import("../services/audit/controlAuditService");
+    const rq = (i: number) => `td${i}-${RUN}`.slice(0, 60);
+    for (let i = 0; i < 3; i++) {
+      void ghiTreo.ghiCoTran((t) => recordAuditEvent(db, ghiTreo.themLucSuKien({ entityType: "r1b2b2t1k", entityId: i, action: `r1b2b2t1k_tat_${i}`, actorId: null, after: { i } }, t)), {
+        nhan: "tat_dang_bay",
+        requestId: rq(i),
+        noiDung: { bang: "control_audit_log" },
+      });
+    }
+    await vi.waitFor(async () => {
+      const [r] = (await giu.tx.execute(
+        sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND classid::bigint = ${H.khoaAudit[0]} AND objid::bigint = ${H.khoaAudit[1]} AND objsubid = 2 AND NOT granted`,
+      )) as unknown as Array<{ n: number }>;
+      if (r.n < 3) throw new Error(`mới ${r.n} lượt treo`);
+    }, { timeout: 5_000, interval: 25 });
+    H.chamAudit = false; // dòng tóm tắt đi thẳng bản thật (khoá chuỗi băm thật, không bị lượt treo giữ)
+    const t0 = Date.now();
+    await ghiTreo.xaHangChoKhiTat();
+    const troi = Date.now() - t0;
+    // NGAY khi lượt xả trả (process.exit theo sau ở sản phẩm): hàng tóm tắt phải ĐÃ commit
+    const rows = (await dung(sql`SELECT "afterJson", hash FROM control_audit_log WHERE id > ${Number(mc.m)} AND action = 'ot_stop_ghi_nen_bo_roi'`)) as any[];
+    const cua = rows.filter((r) => (r.afterJson?.requestIds ?? []).includes(rq(0)));
+    console.info(`[r1b2b2t1k] N2-2: xả khi tắt ${troi} ms, tóm tắt đã commit ${cua.length}`);
+    expect(troi).toBeLessThanOrEqual(2_000 + 200);
+    expect(cua).toHaveLength(1);
+    expect(cua[0].afterJson).toMatchObject({ theoLyDo: { dang_bay_khi_tat: 3 }, khongRoDaGhi: 3 });
+    expect(cua[0].hash, "nằm trong chuỗi băm (SEC_PLATFORM)").toEqual(expect.any(String));
+    await giu.nha();
+    ghiTreo._datLaiGhiTreoChoTest(); // lượt xả khi tắt được ghi nhớ một lần / tiến trình — đặt lại cho afterEach
+  }, 30_000);
+});
+
+// ═════════ fix round 3 (S-1 + yêu cầu điều phối) — hàng audit CẮT thật trong chuỗi băm: định danh nguyên văn + DẤU CẮT (độ dài + sha256 bản gốc) ═════════
+describe("★ S-1 — audit QUÁ LỚN xếp hàng ⇒ hàng CẮT được lưu: định danh nguyên văn, after.daCat + catGoc khớp bản GỐC, băm hàng kiểm lại được", () => {
+  it("8 audit treo + 1 audit 60 KB xếp hàng ⇒ DB hết chậm ⇒ hàng cắt: action/reason/entityType/entityId nguyên văn; catGoc.after = len+sha256 canonicalize(gốc); computeAuditHash khớp + nối prevHash", async () => {
+    const { canonicalize } = await import("../services/security/auditChain");
+    const { createHash } = await import("node:crypto");
+    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const giu = await moGiu(H.khoaAudit);
+    H.chamAudit = true;
+    const { recordAuditEvent } = await import("../services/audit/controlAuditService");
+    for (let i = 0; i < ghiTreo.TRAN_GHI_TREO_STOP; i++) {
+      void ghiTreo.ghiCoTran((t) => recordAuditEvent(db, ghiTreo.themLucSuKien({ entityType: "r1b2b2t1k", entityId: i, action: `r1b2b2t1k_cat_treo`, actorId: null, after: { i } }, t)), {
+        nhan: "cat_treo",
+        requestId: `ct${i}`,
+        noiDung: { bang: "control_audit_log" },
+      });
+    }
+    const action = `r1b2b2t1k_cat_${RUN}`.slice(0, 60);
+    const goc = {
+      entityType: "machine",
+      entityId: `may-${RUN}`,
+      action,
+      actorId: op.id,
+      reason: "STOP khi đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26) — " + "lý do dài ".repeat(20),
+      before: null,
+      after: { ketCuc: "DA_GUI", adapters: Array.from({ length: 200 }, (_, i) => ({ adapterId: i, ghimDaGui: [{ tagKey: `stop_${i}`, value: true }], ghiChu: "g".repeat(250) })) },
+    };
+    expect(JSON.stringify(goc).length).toBeGreaterThan(ghiTreo.TRAN_BYTE_MUC_HANG_CHO);
+    // người ghi từ nội dung — cùng khuôn `nguoiGhiAuditTuNoiDung` của lenhHmi (phạm vi riêng, chỉ bắt db)
+    const nguoiGhi = ((d: typeof db) => (nd: unknown, t: Parameters<Parameters<typeof ghiTreo.ghiCoTran>[0]>[0]) =>
+      recordAuditEvent(d, ghiTreo.themLucSuKien(ghiTreo.suKienAuditTuNoiDung<Parameters<typeof recordAuditEvent>[1]>(nd), t)))(db);
+    await ghiTreo.ghiCoTran((t) => recordAuditEvent(db, ghiTreo.themLucSuKien(goc, t)), {
+      nhan: "audit_cat",
+      requestId: "cat1",
+      noiDung: { bang: "control_audit_log", ...goc },
+      viecTuNoiDung: nguoiGhi,
+    });
+    H.chamAudit = false;
+    await giu.nha();
+    let hang: any;
+    await vi.waitFor(async () => {
+      [hang] = (await dung(sql`SELECT id, "entityType", "entityId", action, "actorId", "beforeJson", "afterJson", reason, "prevHash", hash, "hashTs" FROM control_audit_log
+        WHERE id > ${Number(mc.m)} AND action = ${action}`)) as any[];
+      if (!hang) throw new Error("hàng cắt chưa ghi");
+    }, { timeout: 15_000, interval: 50 });
+    // định danh NGUYÊN VĂN
+    expect(hang.action).toBe(goc.action);
+    expect(hang.reason).toBe(goc.reason);
+    expect(hang.entityType).toBe(goc.entityType);
+    expect(hang.entityId).toBe(goc.entityId);
+    expect(hang.actorId).toBe(goc.actorId);
+    // DẤU CẮT trong phần được băm, khớp bản GỐC
+    const chuoi = canonicalize(goc.after);
+    expect(hang.afterJson.daCat).toBe(true);
+    expect(hang.afterJson.tuHangCho).toBe(true);
+    expect(hang.afterJson.catGoc.after).toEqual({ doDaiGocByteUtf8: Buffer.byteLength(chuoi, "utf8"), sha256Goc: createHash("sha256").update(chuoi).digest("hex") });
+    expect(hang.afterJson.catGoc.before).toBeUndefined(); // before null — không bị cắt
+    expect(JSON.stringify(hang.afterJson).length).toBeLessThan(JSON.stringify(goc.after).length);
+    // băm của hàng ĐÃ LƯU kiểm lại được (cùng hàm verifyAuditRows dùng) + nối hàng băm ngay trước — verifyAuditRows bắt đầu ở GENESIS nên không
+    // chạy được giữa chuỗi `_test` dùng chung; bản một hàng của verifyAuditRows chạy ở test đơn vị
+    const [truoc] = (await dung(sql`SELECT hash FROM control_audit_log WHERE hash IS NOT NULL AND id < ${hang.id} ORDER BY id DESC LIMIT 1`)) as any[];
+    expect(hang.prevHash).toBe(truoc.hash);
+    expect(
+      computeAuditHash(
+        hang.prevHash,
+        { entityType: hang.entityType, entityId: hang.entityId, action: hang.action, actorId: hang.actorId, before: hang.beforeJson ?? null, after: hang.afterJson ?? null, reason: hang.reason },
+        Number(hang.hashTs),
+      ),
+    ).toBe(hang.hash);
+  }, 60_000);
+});
