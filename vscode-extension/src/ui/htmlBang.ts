@@ -91,6 +91,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   /* 2026-10-24 — NHÃN VAI của một lượt hội thoại (khác .nhan dùng cho nhãn thẻ): 12 px ĐẬM, không in hoa, không mờ, kèm chữ cái đầu trong vòng tròn — "Bạn" / "Thợ Cả" không còn là thứ
      nhỏ và xám nhất trên màn hình. Chữ cái là CSS thuần (::before) nên cấu trúc DOM của lượt (nhãn + nội dung) không đổi. */
   .luot > .nhan { display: flex; align-items: center; gap: 6px; opacity: 1; font-size: 12px; font-weight: 600; text-transform: none; margin-bottom: 2px; }
+  /* Đợt 10.4b-E — huy hiệu NGUỒN của lượt do model NGOÀI sinh (chữ thuần, không bấm được). */
+  .huy-hieu-nguon { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; opacity: .9; }
   .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
                           background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   .luot-nguoi-dung > .nhan::before { content: "B"; }
@@ -536,6 +538,19 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     rongLanDau = d;
   }
   if (rongLanDau) dungNoiDungRong(rongLanDau);
+  // Đợt 10.4b-E — gắn/cập nhật huy hiệu nguồn (model ngoài) lên nhãn của lượt chứa khối nội dung khung. Chỉ textContent.
+  function datHuyHieuNguon(khung, chu) {
+    const luot = khung && khung.parentElement;
+    if (!luot) return;
+    let h = luot.querySelector(".huy-hieu-nguon");
+    if (!h) {
+      h = document.createElement("span");
+      h.className = "huy-hieu-nguon";
+      h.setAttribute("data-nguon", "ngoai");
+      (luot.querySelector(".nhan") || luot).appendChild(h);
+    }
+    h.textContent = String(chu || "").slice(0, 160);
+  }
   function themLuot(vai, chu, moSettings, nhanTuyChon) {
     anRongLanDau();
     const d = document.createElement("div");
@@ -1632,7 +1647,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       themNutThuLai(c);
       nutDung.hidden = true;
     }
+    else if (m.loai === "nguon_ngoai") {
+      if (khoiTraLoi) datHuyHieuNguon(khoiTraLoi, m.huyHieu);
+    }
     else if (m.loai === "hoan_tat") {
+      if (m.huyHieu && khoiTraLoi) datHuyHieuNguon(khoiTraLoi, m.huyHieu);
       // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA: XONG lẫn DỪNG đều đi qua \`hoan_tat\` (xem docblock
       // \`bangChat.ts\`) — chỉ báo phải biến mất ở CẢ HAI, không chỉ đường "xong bình thường". Xoá
       // TRƯỚC khi (có thể) ghi \`vanBanCuoi\` — cùng lý do với nhánh "token" ở trên.
@@ -1846,6 +1865,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
         const khung = themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
         // trả lời của AI trong lịch sử cũng dựng markdown (host gửi kèm cây); khối mã chưa đăng ký chỉ số ⇒ không hiện nút hành động
         if (l.vaiTro !== "user" && Array.isArray(l.cay)) veLaiKhoiMd(khung, l.cay, 0, true);
+        if (l.huyHieu) datHuyHieuNguon(khung, l.huyHieu);
       }
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).

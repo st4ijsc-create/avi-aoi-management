@@ -27,6 +27,11 @@ import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi, thongDiepDangXuat
 // ★★★ ĐỢT 4C — ghost-text (InlineCompletionItemProvider) gọi /v1/completions bằng token cá nhân.
 import { dangKyGhostText } from "./ui/ghostText";
 import { hostname } from "node:os";
+// ★★★ ĐỢT 11.4 / MỤC 1 — thanh trạng thái Thợ Cả (model · %ngữ cảnh · tok/s).
+import { dangKyThanhAgent } from "./ui/thanhAgent";
+import { dangKyTerminalDoc } from "./ui/terminalDoc";
+// ★★★ ĐỢT 11.4 / MỤC 3 — Workspace Trust: chưa tin cậy ⇒ chỉ ĐỌC (xem `loi/tinCayWorkspace.ts`).
+import { LOI_KHONG_TIN_CAY_NGUOI, datNguonTinCay, laTinCay } from "./loi/tinCayWorkspace";
 
 /**
  * ★★★ ĐỢT 4B — "Đăng nhập Thợ Cả (device flow)": device flow (RFC 8628 rút gọn, `server/routes/aiGatewayTokenThietBi.ts`).
@@ -229,6 +234,9 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Nguồn trạng thái tin cậy ĐẶT TRƯỚC mọi thứ khác — đọc lại mỗi lần dùng nên cấp tin cậy giữa chừng có hiệu lực ngay.
+  datNguonTinCay(() => laTinCay(vscode.workspace.isTrusted));
+  if (!laTinCay(vscode.workspace.isTrusted)) void vscode.window.showInformationMessage(`Thợ Cả: ${LOI_KHONG_TIN_CAY_NGUOI}`);
   // Kho đề xuất ghi (chế độ SERVER): giữ nội dung diff ẢO trong bộ nhớ, KHÔNG ghi đĩa. Đợt B chưa
   // nối nút "Xem diff" — chỉ dựng đường dây để Task 4 dùng.
   const khoDeXuat = new KhoDeXuat();
@@ -368,6 +376,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // ★★★ ĐỢT 4C — ghost-text: provider + lệnh bật/tắt + nút thanh trạng thái + kênh nhật ký (xem `ui/ghostText.ts`).
   // Mặc định TẮT (`aviAiLocal.ghostText.enabled`); provider không gửi byte nào khi tắt.
   dangKyGhostText(context);
+  dangKyThanhAgent(context);
+  dangKyTerminalDoc(context);
 }
 
 export function deactivate(): void {

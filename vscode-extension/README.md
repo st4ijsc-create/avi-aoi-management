@@ -114,6 +114,7 @@ Mở **Command Palette** (`Ctrl+Shift+P`), gõ "Thợ Cả":
 | **Thợ Cả: Nhớ điều này** | Lưu một ghi chú vào bộ nhớ dài hạn (bí mật được che trước khi lưu). |
 | **Thợ Cả: Bộ nhớ dài hạn** | Xem và xoá từng mục nhớ. |
 | **Thợ Cả: Đổi địa chỉ máy chủ** | Mở Settings lọc sẵn ô `aviAiLocal.serverUrl`. |
+| **Thợ Cả: Mở terminal chỉ đọc (lệnh agent đã chạy)** | Terminal không nhận phím, chỉ hiện lệnh agent đã chạy (đầu ra đã che bí mật). Workspace chưa tin cậy thì không chạy lệnh nào. |
 | **Thợ Cả: Bật/tắt gợi ý chữ mờ (ghost-text)** | Bật/tắt gợi ý mã khi gõ (cũng là nút `AI gợi ý` ở thanh trạng thái). |
 
 ## Gợi ý chữ mờ khi gõ (ghost-text)

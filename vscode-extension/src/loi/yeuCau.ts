@@ -38,7 +38,8 @@ export type CheDoDuAn =
   | { loai: "local"; nhan: string }
   | { loai: "server"; projectId: string; nhan: string };
 
-export type LuotChat = { role: "user" | "assistant"; content: string };
+/** `nguon` (Đợt 10.4b-E): nhãn «Model ngoài · ncc/model» của lượt do model NGOÀI sinh; vắng ⇒ lượt cục bộ. Không bao giờ gửi lên máy chủ. */
+export type LuotChat = { role: "user" | "assistant"; content: string; nguon?: string };
 
 /**
  * Nhãn nguồn cho khối ngữ cảnh đính kèm. Ngữ cảnh LUÔN đọc từ editor trên máy DEV
@@ -153,5 +154,5 @@ export function dungYeuCauStream(dv: {
   const than = nguCanhCoNhan.trim().length > 0 ? `${nguCanhCoNhan}\n${dv.cauHoi}` : dv.cauHoi;
   const question = `${phanDayGiaoThuc}${phanDayMcp}${phanDayBoNho}${phanDayLenh}${than}${phanNhacLaiCuoi}`;
 
-  return { question, history: dv.lichSu, userRole: dv.vaiTro, context };
+  return { question, history: dv.lichSu.map((l) => ({ role: l.role, content: l.content })), userRole: dv.vaiTro, context };
 }
