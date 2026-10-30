@@ -43,9 +43,22 @@ describe("canhBaoLoiMoi", () => {
     expect(t).toContain(`${"z".repeat(199)}…`);
     expect(t).not.toContain("z".repeat(200));
   });
+  it("★ ghim trần hiển thị = 5 và dòng «và N lỗi nữa» với 8 lỗi", () => {
+    expect(TRAN_LOI_MOI_HIEN).toBe(5);
+    const t = canhBaoLoiMoi("a", Array.from({ length: 8 }, (_, i) => e(`l${i}`, i + 1)))!;
+    expect(t.match(/dòng [0-9]+:/g)).toHaveLength(5);
+    expect(t).toContain("và 3 lỗi nữa");
+  });
+  it("★ mã lỗi cũng được che bí mật", () => {
+    const t = canhBaoLoiMoi("a", [e("x", 1, `ghp_${"b".repeat(36)}`)])!;
+    expect(t).not.toContain("ghp_bbbb");
+  });
   it("nối dây: bangChat báo SAU kết quả ghi (tin riêng), chỉ khi ghi ok; chụp Problems trước khi áp", () => {
     const s = readFileSync(join(__dirname, "..", "ui", "bangChat.ts"), "utf8");
     expect(s).toContain("if (kq.ok) canhBaoLinter = dopChanDoanSauSua(uriSua)");
-    expect(s.indexOf("const chanDoanTruoc = docChanDoan(uriSua);")).toBeLessThan(s.indexOf("const kq = await apBanVa({"));
+    const viTriChup = s.indexOf("const chanDoanTruoc = docChanDoan(uriSua);");
+    expect(viTriChup).toBeGreaterThan(0);
+    expect(viTriChup).toBeLessThan(s.indexOf("const kq = await apBanVa({"));
+    expect(s).toContain("loiMoiSauSua(chanDoanTruoc, sau)");
   });
 });
