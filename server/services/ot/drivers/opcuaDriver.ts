@@ -45,6 +45,7 @@ import {
   warnInsecureDefaultOnce,
   getOpcuaClientCertificateManager,
   explainOpcuaConnectError,
+  quetLaiTrustListNeuDaTinTrenDia,
   assertTrustOnFirstUseAllowed,
   warnSecurityPostureOnce,
   opcuaPkiRoot,
@@ -297,10 +298,21 @@ export class OpcuaDriver extends NotImplementedDriver {
       // R20 — None ĐẶT TƯỜNG MINH: WARN một lần cho endpoint này.
       warnSecurityPostureOnce("none", cfg.endpoint);
     }
-    const client = OPCUAClient.create(createOpts);
+    let client = OPCUAClient.create(createOpts);
 
     try {
-      await withDeadline(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
+      try {
+        await withDeadline(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
+      } catch (err) {
+        // Node 26: chỉ mục "rejected" của manager đang sống bị cũ sau khi người vận hành chuyển chứng chỉ sang trusted/ (xem opcuaSecurity.ts).
+        // Chứng chỉ ĐÃ nằm trong trusted/ trên đĩa ⇒ quét lại trust-list rồi thử nối lại ĐÚNG MỘT lần; còn lại giữ nguyên lỗi (không tự tin cậy).
+        const cm = createOpts.clientCertificateManager;
+        if (!pkiDir || !cm || !/BadCertificateUntrusted|certificate verification fail/i.test((err as Error)?.message ?? "")) throw err;
+        if (!(await quetLaiTrustListNeuDaTinTrenDia(pkiDir, cm))) throw err;
+        await settleWithin(() => client.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect (thử lại sau khi quét lại PKI)");
+        client = OPCUAClient.create(createOpts);
+        await withDeadline(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
+      }
 
       const session =
         userName && password
