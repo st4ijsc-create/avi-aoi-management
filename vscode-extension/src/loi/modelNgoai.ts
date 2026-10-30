@@ -10,7 +10,7 @@
  *   · Huy hiệu NGUỒN (`meta.ngoai`, `done.vet`) và bộ render KHÔNG TIN CẬY: liên kết thành chữ + tên miền, mã điều khiển hai chiều bị bỏ.
  */
 import { CHON_MODEL_RE } from "./chonModel";
-import type { NutMd } from "./markdownAnToan";
+import { phanTichMarkdown, type NutMd } from "./markdownAnToan";
 import type { LuotChat } from "./yeuCau";
 
 export const MA_CAN_XAC_NHAN_VAN_HANH = "CAN_XAC_NHAN_VAN_HANH";
@@ -137,4 +137,19 @@ export function lamKhongTinCay(cay: NutMd[]): NutMd[] {
       return [n];
     });
   return di(cay);
+}
+
+/**
+ * Lượt hội thoại → tin cho webview khi khôi phục. Lượt do model NGOÀI (có `nguon`) đi qua bộ render KHÔNG TIN CẬY (liên kết thành chữ + miền,
+ * bỏ mã điều khiển hai chiều) và mang huy hiệu nguồn — kể cả hội thoại đã lưu từ phiên trước.
+ */
+export function luotChoWebview(l: { role: "user" | "assistant"; content: string; nguon?: string }): Record<string, unknown> {
+  const ngoai = typeof l.nguon === "string" && l.nguon.length > 0;
+  const noiDung = ngoai ? lamSachVanBanNgoai(l.content) : l.content;
+  return {
+    vaiTro: l.role,
+    noiDung,
+    ...(l.role === "assistant" ? { cay: ngoai ? lamKhongTinCay(phanTichMarkdown(noiDung)) : phanTichMarkdown(noiDung) } : {}),
+    ...(ngoai ? { huyHieu: l.nguon!.slice(0, 160) } : {}),
+  };
 }
