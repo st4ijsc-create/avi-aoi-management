@@ -7,7 +7,7 @@
  * bao giờ có thể làm các việc này dù bấm duyệt).
  *
  * Luật so khớp (cố ý RỘNG — nhiều từ chối hơn, không ít hơn): tên chương trình lấy phần cuối đường dẫn, bỏ `.exe/.cmd/.bat`, không phân biệt HOA/thường;
- * mục `git` khoá khi BẤT KỲ phần tử argv nào bằng đúng tiểu lệnh (bắt cả `git -C x push`); các mục khác khoá khi argv bắt đầu bằng đúng chuỗi (không phân biệt HOA/thường).
+ * mục `git` khoá khi BẤT KỲ phần tử argv nào bằng đúng tiểu lệnh (bắt cả `git -C x push`; hệ quả đã chấp nhận: `git log stash`, `git diff -- push`, `git log reset` — tên nhánh/tệp trùng tiểu lệnh — cũng bị từ chối dù là lệnh trắng); các mục khác khoá khi argv bắt đầu bằng đúng chuỗi (không phân biệt HOA/thường).
  * Mục `loai: "mo-ta"` là việc bị chặn bằng cơ chế KHÁC (hộp cát đường dẫn, vai trò CSDL chỉ đọc) — chỉ để người duyệt đọc, không dùng so khớp argv.
  *
  * ⚠ Muốn BỚT một mục: không được. Muốn thêm: thêm vào đây (test ghim danh sách cũ là tập con; test đối chiếu mọi mục argv phải bị `phanQuyetLenh` từ chối thật).

@@ -335,7 +335,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
       onKeyDown={
         laLenh
           ? (e) => {
-              if (e.target !== e.currentTarget || !conCho || moLyDo || busy) return;
+              if (e.target !== e.currentTarget || e.repeat || !conCho || moLyDo || busy) return; // giữ phím ⇒ keydown lặp: bỏ
               if (e.key === "Enter" && !khoaCung) {
                 e.preventDefault();
                 void agent.duyet(m);

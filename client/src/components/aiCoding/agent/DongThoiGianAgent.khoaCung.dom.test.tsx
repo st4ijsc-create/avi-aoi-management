@@ -102,6 +102,15 @@ describe("thẻ duyệt lệnh — cảnh báo máy chủ + khoá cứng", () =>
     expect(b.duyet).not.toHaveBeenCalled();
   });
 
+  it("★ giữ phím Enter (keydown lặp, e.repeat) KHÔNG duyệt", () => {
+    const a = hook([BAT_DAU, CU_LENH("npm run check")]);
+    vẽ(a);
+    fireEvent.keyDown(the(), { key: "Enter", repeat: true });
+    expect(a.duyet).not.toHaveBeenCalled();
+    fireEvent.keyDown(the(), { key: "Enter" });
+    expect(a.duyet).toHaveBeenCalledTimes(1);
+  });
+
   it("đang gửi duyệt (busy) hoặc đã quyết ⇒ Enter không làm gì; thẻ đã quyết không còn tiêu điểm", () => {
     const a = hook([BAT_DAU, CU_LENH("npm run check")], { dangGuiDuyet: "act-1" });
     vẽ(a);
