@@ -127,7 +127,8 @@ const CO_MO_KHOA_CHO_TEST = Symbol.for("scada.ot.mc.moKhoaGhiChoTest");
 
 /** T3B-0 — ghi MC đang tạm khoá? (một chỗ; 3B mở lại bằng cách đổi hàm này cùng bản vá thư viện). Sản xuất: luôn true. */
 export function mcGhiTamKhoa(): boolean {
-  return (globalThis as Record<symbol, unknown>)[CO_MO_KHOA_CHO_TEST] !== true;
+  // m2 — người ĐỌC cũng đòi VITEST: mã trong tiến trình ngoài vitest không bao giờ mở khoá được bằng cách đặt cờ toàn cục.
+  return !(process.env.VITEST && (globalThis as Record<symbol, unknown>)[CO_MO_KHOA_CHO_TEST] === true);
 }
 
 /**
@@ -236,7 +237,7 @@ interface McHardening {
  * lỗi ném ra ⇒ `onLoiXuLy` (driver hạ phiên), không bao giờ lan ra. `onResponse` = handler 'data' (mcprotocol.js:200-202, `self.onResponse.apply`);
  * `packetTimeout` = hẹn giờ gói (:175-190).
  */
-export const HAM_MC_CO_LAP = ["onResponse", "packetTimeout"] as const;
+export const HAM_MC_CO_LAP = ["onResponse", "packetTimeout", "readAllItems"] as const;
 
 function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void, onLoiXuLy: (ham: string, err: unknown) => void = () => undefined): McHardening {
   const state: McHardening = {
@@ -763,6 +764,11 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
 function hopLyDoTamKhoa(loi: string | undefined): string {
   const khoa = `${MA_MC_TAM_KHOA}: ${LY_DO_MC_TAM_KHOA}`;
   return !loi || loi === khoa ? khoa : `${khoa} | last error: ${loi}`;
+}
+
+/** I1 — lý do khoá NGẮN, đã làm sạch (không host / cổng) cho cột "Lỗi gần nhất" của bảng truyền thông; null khi không khoá. */
+export function lyDoMcTamKhoaNgan(): string | null {
+  return mcGhiTamKhoa() ? `${MA_MC_TAM_KHOA}: MC writes locked (fail-closed) - use the hardwired E-STOP` : null;
 }
 
 export function createMitsubishiMcDriver(): OtDriver {

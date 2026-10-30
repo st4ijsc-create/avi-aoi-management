@@ -41,6 +41,7 @@ const TEP_HANG = [
   "server/services/ot/otAdapterOwnerGate.ts",
   "server/services/scada/lenhHmi.ts",
   "server/services/scada/dieuTietThuLenh.ts",
+  "server/services/ot/drivers/mitsubishiMcDriver.ts", // T3B-0 fix m3: OT_MC_TAM_KHOA
 ];
 
 const doc = (rel: string) => ts.createSourceFile(rel, readFileSync(join(GOC, rel), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -147,7 +148,7 @@ function nguonDo(): Record<Nguon, { ma: Set<string>; thuong: number }> {
 const SAN: Record<Nguon, number> = {
   dispatcher_reason: 34,
   union: 28,
-  hang_ma: 6,
+  hang_ma: 7,
   lenhHmi_reasonCode: 6,
   status_viet_hoa: 8,
   cong_biet_client: 28,

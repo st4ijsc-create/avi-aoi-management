@@ -23,7 +23,7 @@ interface May1E {
   close: () => Promise<void>;
 }
 
-async function startMay1E(): Promise<May1E> {
+async function startMay1E(chamDocMs = 0): Promise<May1E> {
   const socks = new Set<net.Socket>();
   let ghi = 0;
   let doc = 0;
@@ -38,7 +38,9 @@ async function startMay1E(): Promise<May1E> {
         s.write(Buffer.from([sub | 0x80, 0x00])); // ack 1E ĐÚNG (2 byte) — làm mcprotocol 0.1.2 ném
       } else if (sub === 0x01) {
         doc += 1;
-        s.write(Buffer.from([0x81, 0x00, 0x2a, 0x00]));
+        const tl = Buffer.from([0x81, 0x00, 0x2a, 0x00]);
+        if (chamDocMs > 0) setTimeout(() => !s.destroyed && s.write(tl), chamDocMs);
+        else s.write(tl);
       } else if (sub === 0x00) {
         doc += 1;
         s.write(Buffer.from([0x80, 0x00, 0x10]));
@@ -73,8 +75,8 @@ afterEach(async () => {
 
 const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function mcTren(): Promise<{ may: May1E; d: MitsubishiMcDriver }> {
-  const may = await startMay1E();
+async function mcTren(chamDocMs = 0): Promise<{ may: May1E; d: MitsubishiMcDriver }> {
+  const may = await startMay1E(chamDocMs);
   const d = new MitsubishiMcDriver();
   dong.push(() => may.close(), () => d.disconnect());
   await d.connect({ endpoint: `127.0.0.1:${may.port}`, timeoutMs: 2000 });
@@ -186,6 +188,50 @@ describe("T3B-0 — ĐỌC được giữ; handler của thư viện được C�
     expect(h.lastError).toContain(MA_MC_TAM_KHOA);
     expect(h.lastError).toMatch(/library onResponse threw.*ERR_OUT_OF_RANGE/);
   }, 15_000);
+});
+
+describe("T3B-0 fix 1 (m1) — vòng thử lại 100 ms của readAllItems cũng được cô lập", () => {
+  it("★ hai lượt đọc chồng nhau, bản dịch tag thiếu khoá ⇒ readAllItems ném TypeError TRONG hẹn giờ thư viện ⇒ bị bắt: không uncaughtException, phiên bị hạ, đọc kế ⇒ unreachable (bad)", async () => {
+    const { d } = await mcTren(400); // PLC trả lời đọc chậm 400 ms ⇒ lượt A còn bay khi lượt B xếp hàng
+    const conn = (d as any).conn;
+    const A = d.readTags([{ tagKey: "sp", address: "D100", dataType: "int" }]).then(
+      () => "xong",
+      (e: unknown) => String((e as Error)?.message ?? e),
+    ); // lượt A đang bay bị hạ cùng phiên (mất liên kết khi đang gửi) — không được treo, không rơi ra ngoài
+    await cho(80);
+    // lượt B: bản dịch không ánh xạ khoá "zz" ⇒ addItemsNow ném TypeError (split của undefined) khi hẹn giờ 100 ms chạy
+    conn.setTranslationCB(() => undefined);
+    conn.removeItems();
+    conn.addItems(["zz"]);
+    conn.readAllItems(() => undefined);
+    await cho(700);
+    expect(await A).toMatch(/link lost|xong/);
+    expect(loiTienTrinh).toEqual([]); // bỏ bọc ⇒ TypeError uncaughtException ⇒ tiến trình thoát
+    expect(d.isConnected()).toBe(false); // phiên bị hạ
+    const h = await d.health();
+    expect(h.lastError).toMatch(/library readAllItems threw/);
+    // đọc kế: phiên đã hạ ⇒ driver ném unreachable (vòng poll ghi mẫu bad) — không bao giờ trả giá trị tốt
+    await expect(d.readTags([{ tagKey: "sp", address: "D100", dataType: "int" }])).rejects.toThrow(/unreachable|not connected|mitsubishi-mc/i);
+  }, 20_000);
+});
+
+describe("T3B-0 fix 1 (m2) — người đọc mcGhiTamKhoa đòi VITEST", () => {
+  it("cờ toàn cục đặt tay (ngoài vitest) KHÔNG mở khoá; trong vitest thì có", () => {
+    const g = globalThis as Record<symbol, unknown>;
+    const co = Symbol.for("scada.ot.mc.moKhoaGhiChoTest");
+    const cu = process.env.VITEST;
+    g[co] = true;
+    try {
+      delete process.env.VITEST;
+      expect(mcGhiTamKhoa()).toBe(true);
+      process.env.VITEST = cu ?? "true";
+      expect(mcGhiTamKhoa()).toBe(false);
+    } finally {
+      delete g[co];
+      if (cu !== undefined) process.env.VITEST = cu;
+    }
+    expect(mcGhiTamKhoa()).toBe(true);
+  });
 });
 
 describe("T3B-0 — i18n vi/en/zh cho mã khoá (sổ lệnh che chi tiết: commandAudit.maLoi.<MÃ>)", () => {
