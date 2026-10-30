@@ -26,6 +26,8 @@
  * docblock ở đó).
  */
 import { spawn } from "node:child_process";
+import { moiTruongDaLocChoTienTrinhCon } from "../loi/moiTruongAnToan";
+import { gietCayThenLopHai } from "./gietCay";
 import type { CauHinhMcpServer } from "../loi/mcpCauHinh";
 import { tachDongJsonRpc, dungDongYeuCauJsonRpc, dungDongThongBaoJsonRpc, type TraLoiJsonRpcMcp } from "../loi/mcpKhungDong";
 
@@ -177,7 +179,8 @@ export function taoTienTrinhMcpNgoai(cfg: CauHinhMcpServer): KenhTienTrinhMcp {
   try {
     const cp = spawn(cfg.lenh, cfg.doi, {
       cwd: cfg.thuMuc,
-      env: { ...process.env, ...cfg.moi },
+      // ★ Đợt 12/H2 — môi trường nền ĐÃ LỌC bí mật; biến RIÊNG người dùng khai cho server này (`cfg.moi`) đặt SAU khi lọc (chủ định của họ).
+      env: { ...moiTruongDaLocChoTienTrinhCon(process.env), ...cfg.moi },
       stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
     });
@@ -196,11 +199,9 @@ export function taoTienTrinhMcpNgoai(cfg: CauHinhMcpServer): KenhTienTrinhMcp {
       },
       dongDoc: cp.stdout,
       dong: () => {
-        try {
-          cp.kill();
-        } catch {
-          // đã chết sẵn — vô hại
-        }
+        // Cả CÂY (một MCP server thường là `npx`/`node` bọc tiến trình thật; Windows: taskkill /T), rồi `cp.kill()` làm lớp thứ hai.
+        // POSIX: KHÔNG `detached` (server sống lâu — host chết thì nó phải chết theo, không mồ côi) ⇒ chỉ giết được đúng pid.
+        gietCayThenLopHai(cp);
       },
     };
   } catch {

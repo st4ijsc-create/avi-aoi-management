@@ -70,6 +70,8 @@ const GOC = join(__dirname, "..");
 const TEP_NGOAI_CAY_VAO_BUNDLE = [
   join(GOC, "..", "..", "shared", "quetMenhLenh.ts"),
   join(GOC, "..", "..", "shared", "mauBiMat.ts"),
+  // Đợt 12/H2 — bộ đệm đầu ra ĐẦU+CUỐI + quyết định giết cả cây (THUẦN, không import gì, hiệu ứng do nơi gọi tiêm); vào bundle ⇒ census quét.
+  join(GOC, "..", "..", "shared", "tienTrinhAnToan.ts"),
   join(GOC, "..", "..", "shared", "aiCodingLoop.ts"),
   // Đợt 5.1 VSCode — `traLoiCuoiTuSuKien` + trần độ dài phiếu 👍/👎 (một chủ cho extension ⇄ máy chủ); chỉ nhập KIỂU từ
   // `agentCore/kieu` (đã có dưới). Quét: không từ nào trong CAM_TU (đo lúc thêm).
