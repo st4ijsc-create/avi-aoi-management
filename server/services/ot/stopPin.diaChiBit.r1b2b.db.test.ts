@@ -64,6 +64,8 @@ const TAG: Array<[string, string, string, string]> = [
   ["s7", "xBit9", "DB1,X0.9", "bool"],
   ["s7", "mx", "MX0.1", "bool"],
   ["s7", "arr", "DB1,INT2.5", "int"],
+  // fix 2 (N1) — mảng CHAR kiểu string: ĐỌC được, nhưng ghim (= lời ghi) vẫn bị từ chối
+  ["s7", "chuoi", "DB1,CHAR10.20", "string"],
 ];
 
 beforeAll(async () => {
@@ -117,11 +119,11 @@ afterAll(async () => {
 
 describe("R1b-2b-2a T3C fix 1 (M4) — ghim STOP lên tag S7 mà nodes7 không ghi được đúng như yêu cầu ⇒ từ chối", () => {
   it("DB1,X0.9 / MX0.1 / DB1,INT2.5 ⇒ INVALID_VALUE { field: stopValue, reason: stopPinS7DiaChi }, message mang mã, không ghi, không audit; gỡ ghim (null) vẫn được; DB1,X0.0 ⇒ OK", async () => {
-    for (const [k, ma] of [["xBit9", "OT_S7_BIT_NGOAI_DAI"], ["mx", "OT_S7_DIA_CHI_THU_VIEN_BO"], ["arr", "OT_S7_DIA_CHI_THU_VIEN_BO"]] as const) {
+    for (const [k, ma] of [["xBit9", "OT_S7_BIT_NGOAI_DAI"], ["mx", "OT_S7_DIA_CHI_THU_VIEN_BO"], ["arr", "OT_S7_DIA_CHI_THU_VIEN_BO"], ["chuoi", "OT_S7_DIA_CHI_THU_VIEN_BO"]] as const) {
       const ld = lyDo(`s7dc-${k}`);
       let msg = "";
       const e = await loiCua(
-        ghim("s7", k, k === "arr" ? 0 : true, ld).catch((x: unknown) => {
+        ghim("s7", k, k === "arr" ? 0 : k === "chuoi" ? "ABC" : true, ld).catch((x: unknown) => {
           msg = String((x as Error)?.message);
           throw x;
         }),

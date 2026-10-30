@@ -193,8 +193,17 @@ describe("T3C lớp 1 — parseS7Address: bit ∉ 0..7 ⇒ LoiS7BitNgoaiDai (mã
       expect(l?.lyDo.startsWith(`${MA_S7_DIA_CHI_THU_VIEN_BO}: `), a).toBe(true);
     }
     for (const a of ["DB1,FOO0", "", "DB1,X0"]) expect(kiemDiaChiS7(a)?.ma, a).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
-    expect(kiemDiaChiS7("DB1,X0.0", "_COMMERR")?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO); // nodes7 bỏ riêng khoá này
-    expect(kiemDiaChiS7("DB1,INT2.5", "arr", true)).toBeNull(); // chế độ ĐỌC của driver: mảng json vẫn đọc
+    expect(kiemDiaChiS7("DB1,X0.0", { khoa: "_COMMERR" })?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO); // nodes7 bỏ riêng khoá này
+    // fix 2 (N1) — chế độ "doc": mảng json / mảng CHAR kiểu string ĐỌC được; kiểu vô hướng ⇒ từ chối; chế độ "ghi" (mặc định) ⇒ mảng luôn bị từ chối
+    expect(kiemDiaChiS7("DB1,INT2.5", { khoa: "arr", cheDo: "doc", dataType: "json" })).toBeNull();
+    expect(kiemDiaChiS7("DB1,CHAR10.20", { khoa: "ten", cheDo: "doc", dataType: "string" })).toBeNull();
+    expect(kiemDiaChiS7("DB1,INT2.5", { khoa: "arr", cheDo: "doc", dataType: "int" })?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+    expect(kiemDiaChiS7("DB1,INT2.5", { khoa: "arr", cheDo: "doc", dataType: "string" })?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO); // chuỗi chỉ từ mảng CHAR
+    for (const dt of ["json", "string"]) expect(kiemDiaChiS7("DB1,CHAR10.20", { khoa: "ten", cheDo: "ghi", dataType: dt })?.ma, dt).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+    expect(kiemDiaChiS7("DB1,CHAR10.20", { khoa: "ten" })?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+    // bit ngoài dải / vùng không có ⇒ từ chối ở CẢ chế độ đọc
+    expect(kiemDiaChiS7("DB1,X0.9", { cheDo: "doc", dataType: "json" })?.ma).toBe(MA_S7_BIT_NGOAI_DAI);
+    expect(kiemDiaChiS7("MX0.1", { cheDo: "doc", dataType: "json" })?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
   });
 
   it("lyDoCauHinhDiaChiS7: chỉ tag hỏng, mã đứng đầu (toàn bit ⇒ BIT_NGOAI_DAI; có vùng không hỗ trợ ⇒ DIA_CHI_THU_VIEN_BO), nêu tagKey=địa chỉ; sạch ⇒ null", () => {
@@ -204,12 +213,29 @@ describe("T3C lớp 1 — parseS7Address: bit ∉ 0..7 ⇒ LoiS7BitNgoaiDai (mã
       { tagKey: "stop", address: "DB1,X0.9" },
       { tagKey: "m", address: "M2.8" },
     ]);
-    expect(ly?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 2 tag(s) have an S7 address the S7 library cannot write as given (stop=DB1,X0.9 [bit outside 0..7], m=M2.8 [bit outside 0..7]) - writes`), String(ly)).toBe(true);
+    expect(ly?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 2 tag(s) have an S7 address the S7 library cannot use as configured (stop=DB1,X0.9 [bit outside 0..7], m=M2.8 [bit outside 0..7]) - writes`), String(ly)).toBe(true);
     const ly2 = lyDoCauHinhDiaChiS7([
       { tagKey: "stop", address: "MX0.1" },
       { tagKey: "b", address: "DB1,X0.9" },
     ]);
-    expect(ly2?.startsWith(`${MA_S7_DIA_CHI_THU_VIEN_BO}: 2 tag(s) have an S7 address the S7 library cannot write as given (stop=MX0.1 [not writable as given by nodes7], b=DB1,X0.9 [bit outside 0..7])`), String(ly2)).toBe(true);
+    expect(ly2?.startsWith(`${MA_S7_DIA_CHI_THU_VIEN_BO}: 2 tag(s) have an S7 address the S7 library cannot use as configured (stop=MX0.1 [not supported by nodes7 as given], b=DB1,X0.9 [bit outside 0..7])`), String(ly2)).toBe(true);
+    // fix 2 (N1) — mảng ĐỌC được (json / CHAR kiểu string, chỉ-đọc) KHÔNG bị cờ; cùng địa chỉ trên tag writable ⇒ cờ, nhãn "reads work"; mảng kiểu int ⇒ cờ
+    expect(
+      lyDoCauHinhDiaChiS7([
+        { tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string", writable: false },
+        { tagKey: "arr", address: "DB1,INT2.5", dataType: "json" },
+      ]),
+    ).toBeNull();
+    const ly3 = lyDoCauHinhDiaChiS7([
+      { tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string", writable: true },
+      { tagKey: "n", address: "DB1,INT2.5", dataType: "int", writable: false },
+    ]);
+    expect(
+      ly3?.startsWith(
+        `${MA_S7_DIA_CHI_THU_VIEN_BO}: 2 tag(s) have an S7 address the S7 library cannot use as configured (ten=DB1,CHAR10.20 [writable tag nodes7 cannot write as given; reads work], n=DB1,INT2.5 [not supported by nodes7 as given]) - writes to them are refused; reads fail unless marked "reads work"`,
+      ),
+      String(ly3),
+    ).toBe(true);
   });
 });
 
@@ -227,7 +253,7 @@ describe("T3C mục 5 — khởi động / nạp cấu hình: tag S7 đã lưu c
     );
     await h1.close();
     const sk1 = await d.health();
-    expect(sk1.lastError?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 1 tag(s) have an S7 address the S7 library cannot write as given (stop=DB1,X0.9 [bit outside 0..7])`), String(sk1.lastError)).toBe(true);
+    expect(sk1.lastError?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 1 tag(s) have an S7 address the S7 library cannot use as configured (stop=DB1,X0.9 [bit outside 0..7])`), String(sk1.lastError)).toBe(true);
     expect(sk1.connected).toBe(true);
     await d.connect({ endpoint: `127.0.0.1:${sim.port}`, timeoutMs: 1000 }); // supervisor nối lại: connect() xoá lastError — cấu hình vẫn sai
     expect((await d.health()).lastError).toMatch(new RegExp(`^${MA_S7_BIT_NGOAI_DAI}: `));
@@ -369,7 +395,7 @@ describe("T3C fix 1 (M1) — fail-CLOSED khi nội tại nodes7 mà các chốt 
     const goc = Lop.prototype!.addItemsNow;
     Lop.prototype!.addItemsNow = undefined;
     try {
-      expect(kiemDiaChiS7("DB1,X0.1", "fc1")?.ma).toBe(MA_S7_THU_VIEN_KHONG_KIEM_DUOC);
+      expect(kiemDiaChiS7("DB1,X0.1", { khoa: "fc1" })?.ma).toBe(MA_S7_THU_VIEN_KHONG_KIEM_DUOC);
       const o = await stopQuaExecute(d, [{ tagKey: "stop", address: "DB1,X0.1", value: true }]);
       expect(o.outcomes[0]).toMatchObject({ ok: false, status: "failed" });
       expect(String(o.outcomes[0].errorText)).toMatch(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
@@ -416,4 +442,53 @@ describe("T3C fix 1 (M4) — lopDiaChiBit không biến địa chỉ S7 bit sai 
     expect(lopDiaChiBit("s7", "DB1,FOO0", "int")).toBeNull();
     expect(kiemGiaTriDiaChiBit("s7", "DB1,X0.9", "int", 2)).toMatchObject({ ok: false, lopBit: "s7_bit" });
   });
+});
+
+describe("T3C fix 2 (N1) — mảng ĐỌC hợp lệ (CHAR kiểu string, json) đọc được và không bị cờ; GHI / ghim vẫn chặt", () => {
+  const cuV2 = process.env.OT_CHAT_LUONG_V2_ENABLED;
+  afterEach(() => {
+    if (cuV2 === undefined) delete process.env.OT_CHAT_LUONG_V2_ENABLED;
+    else process.env.OT_CHAT_LUONG_V2_ENABLED = cuV2;
+  });
+
+  it("★ đọc DB1,CHAR10.20 (string) ⇒ 'ABC' good, DB1,INT2.2 (json) ⇒ '[7,9]' good, DB1,INT2.2 (int) ⇒ config_error; subscribe cấu hình chỉ-đọc ⇒ KHÔNG cờ", async () => {
+    process.env.OT_CHAT_LUONG_V2_ENABLED = "true";
+    const { sim, d } = await s7Sim();
+    sim.setBytes(0x84, 1, 10, [0x41, 0x42, 0x43]);
+    sim.setBytes(0x84, 1, 2, [0x00, 0x07, 0x00, 0x09]);
+    const s = await d.readTags([
+      { tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string" },
+      { tagKey: "arr", address: "DB1,INT2.2", dataType: "json" },
+      { tagKey: "n", address: "DB1,INT2.2", dataType: "int" },
+    ]);
+    expect(s[0]).toMatchObject({ tagKey: "ten", quality: "good" });
+    expect(String(s[0].value).replace(/ +$/, "")).toBe("ABC");
+    expect(s[1]).toMatchObject({ tagKey: "arr", quality: "good", value: "[7,9]" });
+    expect(s[2]).toMatchObject({ tagKey: "n", quality: "bad", reason: "config_error" });
+    const h = await d.subscribe(
+      [
+        { tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string", writable: false },
+        { tagKey: "arr", address: "DB1,INT2.2", dataType: "json" },
+      ],
+      () => undefined,
+      60_000,
+    );
+    await h.close();
+    expect((await d.health()).lastError ?? "").not.toMatch(/OT_S7_/);
+  }, 15_000);
+
+  it("★ GHI chuỗi 'ABC' vào DB1,CHAR10.20 (string) và json vào DB1,INT2.3 ⇒ 'failed' OT_S7_DIA_CHI_THU_VIEN_BO, 0 PDU (thăm dò: nodes7 cắt lặng chuỗi dài / ghi rác json + báo ok)", async () => {
+    const { d, pduGhi } = await s7Sim();
+    for (const w of [
+      { tagKey: "ten", address: "DB1,CHAR10.20", value: "ABC", dataType: "string" as const },
+      { tagKey: "arr", address: "DB1,INT2.3", value: "[1,2,3]", dataType: "json" as const },
+    ]) {
+      const out = await d.writeTags([w]);
+      expect(out[0], w.address).toMatchObject({ tagKey: w.tagKey, ok: false });
+      expect(out[0].ketCucKhongRo).toBeUndefined();
+      expect(String(out[0].error), w.address).toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: .*array of .*writes single values only.* - batch refused; nothing sent$/); // lớp 2 (vị từ, chế độ ghi), không phải chốt trong phiên
+    }
+    await cho(150);
+    expect(pduGhi()).toHaveLength(0);
+  }, 15_000);
 });

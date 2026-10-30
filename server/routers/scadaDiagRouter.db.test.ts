@@ -547,19 +547,25 @@ describe("scadaDiag.danhSach — R1b-2b-2a T3C mục 5: adapter S7 có tag ĐÃ 
     try {
       await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", "isEnabled") VALUES (${id}, 'ok', 'DB1,X0.7', 'bool', true)`);
       await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", "isEnabled") VALUES (${id}, 'stop', 'DB1,X0.9', 'bool', false)`);
+      // fix 2 (N1) — mảng ĐỌC hợp lệ, chỉ-đọc: KHÔNG được cờ (kiểm cuối test: sửa stop xong ⇒ không còn OT_S7_ nào)
+      await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${id}, 'ten', 'DB1,CHAR10.20', 'string', false)`);
+      await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${id}, 'arr', 'DB1,INT2.5', 'json', false)`);
       for (const c of [viewerA, engA, admin]) {
         const h = (await dongCua(c, id))!;
         expect(h.loi ?? "", "viewer / dưới canEdit cũng phải thấy").toMatch(
-          /^OT_S7_BIT_NGOAI_DAI: 1 tag\(s\) have an S7 address the S7 library cannot write as given \(stop=DB1,X0\.9 \[bit outside 0\.\.7\]\)/,
+          /^OT_S7_BIT_NGOAI_DAI: 1 tag\(s\) have an S7 address the S7 library cannot use as configured \(stop=DB1,X0\.9 \[bit outside 0\.\.7\]\)/,
         );
         expect(h.loi).not.toMatch(/10\.9\.8\.6/);
       }
       expect((await dongCua(viewerA, ad.a))?.loi ?? "").not.toContain("OT_S7_BIT_NGOAI_DAI"); // adapter khác: không đổi
       // T3C fix 1 (I2) — tag STOP chỉ-ghi ở địa chỉ nodes7 không có ("MX0.1") cũng được đánh dấu, không im lặng tới lúc bấm STOP
       await dung(sql`UPDATE device_tags SET address = 'MX0.1' WHERE "adapterId" = ${id} AND "tagKey" = 'stop'`);
-      expect((await dongCua(viewerA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(stop=MX0\.1 \[not writable as given by nodes7\]\)/);
+      expect((await dongCua(viewerA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(stop=MX0\.1 \[not supported by nodes7 as given\]\)/);
       await dung(sql`UPDATE device_tags SET address = 'DB1,X1.1' WHERE "adapterId" = ${id} AND "tagKey" = 'stop'`);
       expect((await dongCua(viewerA, id))?.loi ?? "").not.toMatch(/OT_S7_/);
+      // cùng địa chỉ mảng trên tag GHI được ⇒ cờ, nhãn đúng phần hỏng ("reads work")
+      await dung(sql`UPDATE device_tags SET writable = true WHERE "adapterId" = ${id} AND "tagKey" = 'ten'`);
+      expect((await dongCua(viewerA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(ten=DB1,CHAR10\.20 \[writable tag nodes7 cannot write as given; reads work\]\)/);
     } finally {
       await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);

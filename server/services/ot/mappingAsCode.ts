@@ -710,7 +710,7 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
   // (`kiemDiaChiS7`, cùng vị từ với deviceAdapter.tags.* / khởi động / driver) ⇒ file không hợp lệ (cả dry-run), không ghi gì.
   if (adapter.protocol === "s7") {
     const loiBit = file.tags.flatMap((t) => {
-      const loi = kiemDiaChiS7(t.address, t.name);
+      const loi = kiemDiaChiS7(t.address, { khoa: t.name, cheDo: t.writable ? "ghi" : "doc", dataType: t.datatype }); // fix 2 (N1) — như deviceAdapter.tags.*
       return loi ? [`tag "${t.name}": ${loi.lyDo}`] : [];
     });
     if (loiBit.length > 0) throw new MappingValidationError(loiBit);

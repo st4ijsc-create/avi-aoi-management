@@ -211,6 +211,28 @@ describe("SCADA R1b-2b-2a T3C fix 1 (I2 + M1) — địa chỉ nodes7 không ghi
   });
 });
 
+describe("SCADA R1b-2b-2a T3C fix 2 (N1) — mảng ĐỌC hợp lệ được lưu; tag GHI được thì chặt", () => {
+  it("adapter S7: DB1,CHAR10.20 string (chỉ-đọc) / DB1,INT2.5 json ⇒ lưu được; DB1,INT2.5 int ⇒ từ chối; CHAR10.20 writable ⇒ từ chối; update sang writable / sang int ⇒ từ chối", async () => {
+    const s7 = await caller.create({ code: "S7N1", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const ten = await caller.tags.create({ adapterId: s7.id, tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string" });
+    const arr = await caller.tags.create({ adapterId: s7.id, tagKey: "arr", address: "DB1,INT2.5", dataType: "json", writable: false });
+    expect([ten.address, arr.address]).toEqual(["DB1,CHAR10.20", "DB1,INT2.5"]);
+    const loiInt = await caller.tags.create({ adapterId: s7.id, tagKey: "n", address: "DB1,INT2.5", dataType: "int" }).then(() => null, (e: any) => e);
+    expect(loiInt?.cause).toMatchObject({ appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    expect(String(loiInt?.message)).toMatch(/arrays read only as json, or CHAR arrays as string/);
+    const loiGhi = await caller.tags.create({ adapterId: s7.id, tagKey: "ten2", address: "DB1,CHAR10.20", dataType: "string", writable: true }).then(() => null, (e: any) => e);
+    expect(loiGhi?.cause).toMatchObject({ appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    expect(String(loiGhi?.message)).toMatch(/writes single values only/);
+    await expect(caller.tags.update({ id: ten.id, writable: true })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: .*writes single values only/);
+    await expect(caller.tags.update({ id: arr.id, dataType: "int" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    expect((await caller.tags.update({ id: ten.id, unit: "txt" })).unit).toBe("txt"); // sửa cột khác của tag hợp lệ: được
+    expect((await caller.tags.listByAdapter({ adapterId: s7.id })).map((t) => [t.tagKey, t.dataType, t.writable]).sort()).toEqual([
+      ["arr", "json", false],
+      ["ten", "string", false],
+    ]);
+  });
+});
+
 describe("testConnection (read-only probe, NO write)", () => {
   it("stub protocol → ok with latency", async () => {
     const res = await caller.testConnection({ protocol: "stub", endpoint: "stub://probe" });

@@ -454,9 +454,11 @@ export class S7Driver extends NotImplementedDriver {
     // T3C mục 4 — phía ĐỌC cùng lớp: khoá nodes7 sẽ BỎ ⇒ như địa chỉ sai, không tới addItems (bỏ HẾT ⇒ nodes7 gửi lại gói đọc cũ và trả giá trị
     // địa chỉ CŨ dưới khoá cũ — đo: s7BitNgoaiDai.r1b2b2.test.ts). Địa chỉ mảng vẫn đọc (json).
     // Cờ V2: config_error có lý do; cờ tắt: bad trần như khi nodes7 tự bỏ item trước đây (không ném cả lô — tag khác vẫn đọc).
-    // T3C fix 1 — CÙNG vị từ với lưu / khởi động / ghi (`kiemDiaChiS7`, chế độ đọc: mảng json vẫn đọc); không kiểm được ⇒ ném (fail-closed).
+    // T3C fix 1 — CÙNG vị từ với lưu / khởi động / ghi (`kiemDiaChiS7`, chế độ "doc" theo dataType: mảng json / mảng CHAR kiểu string vẫn đọc);
+    // không kiểm được ⇒ ném (fail-closed).
+    const kieuCua = new Map(tags.map((t) => [t.tagKey, t.dataType] as const));
     for (const [k, diaChi] of [...addrByKey]) {
-      const l = kiemDiaChiS7(diaChi, k, true);
+      const l = kiemDiaChiS7(diaChi, { khoa: k, cheDo: "doc", dataType: kieuCua.get(k) });
       if (!l) continue;
       if (l.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC) throw new LoiS7KhongKiemDuoc(l.lyDo);
       addrByKey.delete(k);
@@ -625,8 +627,9 @@ export class S7Driver extends NotImplementedDriver {
     // T3C lớp 2 — TRƯỚC writeItems: khoá nào nodes7 sẽ bỏ / hiểu khác ⇒ CẢ lô bị từ chối, không gói nào (không bao giờ gọi writeItems với danh sách
     // hiệu lực khác danh sách yêu cầu).
     // T3C fix 1 — CÙNG vị từ với lưu / khởi động (`kiemDiaChiS7`, bộ phân tích THẬT của nodes7); không kiểm được ⇒ fail-closed, mã riêng.
+    const kieuGhi = new Map(writes.map((w) => [w.tagKey, w.dataType ?? null] as const));
     const thuVienBo = new Map(writable.flatMap((p) => {
-      const l = kiemDiaChiS7(p.addr!, p.tagKey);
+      const l = kiemDiaChiS7(p.addr!, { khoa: p.tagKey, cheDo: "ghi", dataType: kieuGhi.get(p.tagKey) }); // "ghi" bỏ qua dataType (chặt)
       return l ? [[p.tagKey, l] as const] : [];
     }));
     if (thuVienBo.size > 0) {

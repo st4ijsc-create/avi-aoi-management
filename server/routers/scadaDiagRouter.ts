@@ -188,7 +188,11 @@ function nhanLoiMcKhoa(protocol: string, edge: boolean, loi: string | null): str
 }
 
 /** SCADA R1b-2b-2a T3C mục 5 + fix 1 (I2) — cấu hình S7 lỗi (tag mà `kiemDiaChiS7` từ chối): lý do có mã, không host / cổng (chỉ tagKey=địa chỉ), ghép trước lỗi sẵn có. */
-function nhanLoiS7BitNgoaiDai(protocol: string, tags: ReadonlyArray<{ tagKey: string; address: string }>, loi: string | null): string | null {
+function nhanLoiS7BitNgoaiDai(
+  protocol: string,
+  tags: ReadonlyArray<{ tagKey: string; address: string; dataType: string; writable: boolean }>,
+  loi: string | null,
+): string | null {
   const ly = protocol === "s7" ? lyDoCauHinhDiaChiS7(tags) : null;
   if (!ly) return loi;
   return loi && !loi.includes(ly) ? `${ly} | ${loi}` : ly;
@@ -221,15 +225,22 @@ export const scadaDiagRouter = router({
     const ids = rows.map((r) => r.id);
     // chỉ tag BẬT mới được đếm chất lượng
     const tagBat = await db
-      .select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey, isEnabled: deviceTags.isEnabled, address: deviceTags.address })
+      .select({
+        adapterId: deviceTags.adapterId,
+        tagKey: deviceTags.tagKey,
+        isEnabled: deviceTags.isEnabled,
+        address: deviceTags.address,
+        dataType: deviceTags.dataType,
+        writable: deviceTags.writable,
+      })
       .from(deviceTags)
       .where(inArray(deviceTags.adapterId, ids));
     const tagBatTheoAdapter = new Map<number, string[]>();
     // T3C mục 5 — mọi tag ĐÃ LƯU (bật hay tắt) theo adapter, để đánh dấu cấu hình S7 có bit ∉ 0..7.
-    const tagTheoAdapter = new Map<number, Array<{ tagKey: string; address: string }>>();
+    const tagTheoAdapter = new Map<number, Array<{ tagKey: string; address: string; dataType: string; writable: boolean }>>();
     for (const t of tagBat) {
       const tt = tagTheoAdapter.get(t.adapterId) ?? [];
-      tt.push({ tagKey: t.tagKey, address: t.address });
+      tt.push({ tagKey: t.tagKey, address: t.address, dataType: t.dataType, writable: t.writable });
       tagTheoAdapter.set(t.adapterId, tt);
       if (!t.isEnabled) continue;
       const ds = tagBatTheoAdapter.get(t.adapterId) ?? [];

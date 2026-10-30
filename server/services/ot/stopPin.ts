@@ -445,7 +445,7 @@ async function datStopPinTx(
       // SCADA R1b-2b-2a T3C fix 1 (M4) — ghim STOP lên tag S7 mà nodes7 không ghi được đúng như yêu cầu (`kiemDiaChiS7`: bit ∉ 0..7, vùng không có,
       // mảng; không kiểm được ⇒ fail-closed) ⇒ từ chối: một ghim như thế hứa một STOP mà driver sẽ không bao giờ gửi. Gỡ ghim (null) vẫn được.
       if (adapter.protocol === "s7") {
-        const l = kiemDiaChiS7(String(tag.address), tag.tagKey);
+        const l = kiemDiaChiS7(String(tag.address), { khoa: tag.tagKey, cheDo: "ghi", dataType: String(tag.dataType) }); // ghim = lời ghi ⇒ chặt (fix 2)
         if (l) throw new StopPinLoi("dia_chi_s7", { tagKey: tag.tagKey, address: tag.address, ma: l.ma, lyDo: l.lyDo });
       }
       const v = validateStopValue(String(tag.dataType), input.stopValue);

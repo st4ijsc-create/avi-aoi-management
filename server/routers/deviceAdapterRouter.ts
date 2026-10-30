@@ -187,10 +187,15 @@ function assertOpcuaSecurityOnSave(options: Record<string, unknown> | null | und
  * dạng sai ⇒ từ chối; bộ phân tích nodes7 không dùng được ⇒ từ chối (fail-closed). Tag STOP chỉ-ghi không còn im lặng tới lúc bấm STOP.
  * Đọc protocol trong CÙNG giao dịch, sau khi adapter đã khoá (khoaAdapterTx). Chi tiết (mã + địa chỉ) đi trong message, câu dịch qua reason.
  */
-async function kiemDiaChiTagLuuTx(tx: Pick<Awaited<ReturnType<typeof getDb>>, "select">, adapterId: number, address: string, tagKey: string): Promise<void> {
+async function kiemDiaChiTagLuuTx(
+  tx: Pick<Awaited<ReturnType<typeof getDb>>, "select">,
+  adapterId: number,
+  t: { address: string; tagKey: string; dataType: string; writable: boolean },
+): Promise<void> {
   const [a] = await tx.select({ protocol: deviceAdapters.protocol }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
   if (a?.protocol !== "s7") return;
-  const loi = kiemDiaChiS7(address, tagKey);
+  // fix 2 (N1) — tag ghi được ⇒ chế độ "ghi" (chặt: driver sẽ từ chối mọi lời ghi tới địa chỉ mảng); chỉ-đọc ⇒ "doc" theo dataType.
+  const loi = kiemDiaChiS7(t.address, { khoa: t.tagKey, cheDo: t.writable ? "ghi" : "doc", dataType: t.dataType });
   if (!loi) return;
   const reason = loi.ma === MA_S7_BIT_NGOAI_DAI ? "s7BitNgoaiDai" : loi.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC ? "s7ThuVienKhongKiemDuoc" : "s7DiaChiThuVienBo";
   throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "tagAddress", reason }, loi.lyDo);
@@ -643,7 +648,7 @@ export const deviceAdapterRouter = router({
             // biến mất giữa chừng ⇒ cùng NOT_FOUND của kiểm-trước, thay cho lỗi FK của INSERT).
             const khoa = (await khoaAdapterTx(tx, [v.adapterId])).get(v.adapterId);
             kiemPhamViDuoiKhoa(khoa?.machineId, idsMay, khongThayAdapter);
-            await kiemDiaChiTagLuuTx(tx, v.adapterId, v.address, v.tagKey); // T3C — trước TOTP (lỗi hợp lệ không tiêu mã)
+            await kiemDiaChiTagLuuTx(tx, v.adapterId, v); // T3C — trước TOTP (lỗi hợp lệ không tiêu mã) // T3C — trước TOTP (lỗi hợp lệ không tiêu mã)
             const may = khoa?.machineId ?? null;
             const luat = await khoaLuatNhamCapTx(tx, cap);
             const nguon = await khoaLuatNguonTx(tx, may, v.tagKey);
@@ -746,8 +751,16 @@ export const deviceAdapterRouter = router({
             const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
             const kenhCheDoMoi = doiDanhTinh ? await kenhCheDoCuaTagTx(tx, capMoi) : [];
             if (doiDanhTinh && (await trungKhoaTagTx(tx, { ...capMoi, boQuaId: id }))) throw loiTrungKhoaTag(); // M3 — trước mã
-            // T3C — đổi địa chỉ / khoá hoặc chuyển adapter ⇒ kiểm (protocol của adapter ĐÍCH, địa chỉ sau sửa); sửa cột khác của tag cũ hỏng (vd tắt) vẫn được.
-            if (rest.address !== undefined || doiDanhTinh) await kiemDiaChiTagLuuTx(tx, capMoi.adapterId, rest.address ?? existing.address, capMoi.tagKey);
+            // T3C — đổi địa chỉ / khoá / kiểu / writable hoặc chuyển adapter ⇒ kiểm (protocol của adapter ĐÍCH, giá trị SAU sửa); sửa cột khác của tag cũ
+            // hỏng (vd tắt) vẫn được.
+            if (rest.address !== undefined || doiDanhTinh || rest.dataType !== undefined || rest.writable !== undefined) {
+              await kiemDiaChiTagLuuTx(tx, capMoi.adapterId, {
+                address: rest.address ?? existing.address,
+                tagKey: capMoi.tagKey,
+                dataType: rest.dataType ?? existing.dataType,
+                writable: rest.writable ?? existing.writable,
+              });
+            }
             const kq = kiemSuaTag({
               cu: existing,
               patch,
