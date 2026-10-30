@@ -37,7 +37,8 @@ function dungMayGia(): Promise<void> {
       req.on("end", () => {
         const j = JSON.parse(b || "{}") as Record<string, any>;
         nhan.goi.push(j);
-        const daCoKetQuaTool = (j.messages ?? []).some((m: any) => m?.role === "tool");
+        // máy chủ đưa kết quả công cụ vào danh sách tin (không dùng role "tool" của nhà cung cấp): đã có lượt đọc `package.json` trong ngữ cảnh ⇒ trả lời
+        const daCoKetQuaTool = JSON.stringify(j.messages ?? []).includes("package.json");
         const message =
           Array.isArray(j.tools) && j.tools.length > 0 && !daCoKetQuaTool
             ? { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: "package.json" }) } }] }
@@ -97,7 +98,7 @@ test.beforeAll(async () => {
   await dungMayGia();
   // kỹ sư `mot` cần quyền đọc repo (như mig 0330/0331 cấp cho kỹ sư)
   await withTestDb(async (sql) => {
-    await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${fx.mot.id}, 'machine_monitoring', 'ai_repo_read', true, false, false, false)`;
+    await sql`INSERT INTO permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete") VALUES (${fx.mot.id}, 'machine_monitoring', 'ai_repo_read', true, false, false, false) ON CONFLICT DO NOTHING`;
   });
   const ctx = await pwRequest.newContext();
   try {
