@@ -34,6 +34,11 @@ export const aiAgentRuns = pgTable(
     checkpointIds: jsonb("checkpointIds").notNull().default([]),
     tomTat: text("tomTat"),
     sessionId: uuid("sessionId"),
+    /**
+     * ★ 10.4b L3 (mig 0419) — `ngoai:<ncc>:<model>` khi lượt chạy bằng model NGOÀI (chỉ chế độ `hoi`); NULL = cục bộ. Máy chủ ghi lúc
+     * TẠO hàng; trigger chặn đổi sau INSERT. Mẫu = `MAU_NGUON_MODEL` (shared/ai/sinhChuNgoai.ts).
+     */
+    nguonModel: varchar("nguonModel", { length: 140 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
