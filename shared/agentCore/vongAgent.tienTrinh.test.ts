@@ -7,7 +7,7 @@
  *   (d) viết lại tệp liên tục không chạy test ⇒ hai lần ghi liên tiếp (khi lệnh test đã biết) ⇒ quan sát kèm nhắc.
  */
 import { describe, expect, it } from "vitest";
-import { chayVongAgent, kiemDacTaBat, laKetQuaLenhXanh, laLenhKiem, timLenhTestTrongCauHoi } from "./vongAgent";
+import { chayVongAgent, giuNghiBat, kiemDacTaBat, laKetQuaLenhXanh, laLenhKiem, timLenhTestTrongCauHoi } from "./vongAgent";
 import { congCuTheoCheDo } from "./congCu";
 import { CAU_NHAC_KIEM_DAC_TA, CAU_NHAC_LUOT_CAT_KHONG_TOOL } from "./loiNhac";
 import type { BoThucThi, CheDoAgent, GoiModel, KetQuaTool, LoiGoiTool, ManhModel, SuKienAgent, TinNhan, WireToolCall } from "./kieu";
@@ -270,5 +270,12 @@ describe("công tắc AI_AGENT_KIEM_DAC_TA (host đọc env, lõi chỉ diễn g
   it.each([[undefined, true], ["", true], ["1", true], ["0", false], ["off", false], [" FALSE ", false], ["no", false]])(
     "%j ⇒ %s",
     (v, ky) => expect(kiemDacTaBat(v as string | undefined)).toBe(ky),
+  );
+});
+
+describe("công tắc AI_AGENT_GIU_NGHI (mặc định BẬT từ 2026-10-30; host đọc env, lõi chỉ diễn giải)", () => {
+  it.each([[undefined, true], ["", true], ["1", true], ["yes", true], ["0", false], [" 0 ", false], ["off", false], [" FALSE ", false], ["No", false]])(
+    "%j ⇒ %s",
+    (v, ky) => expect(giuNghiBat(v as string | undefined)).toBe(ky),
   );
 });

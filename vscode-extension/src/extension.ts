@@ -1,5 +1,5 @@
 /**
- * Điểm vào extension "AI Local". Đường ghi DUY NHẤT: `ui/apBanVa.ts` (census canh). ĐỢT 4B: lõi agent dùng chung
+ * Điểm vào extension "Thợ Cả". Đường ghi DUY NHẤT: `ui/apBanVa.ts` (census canh). ĐỢT 4B: lõi agent dùng chung
  * (`ui/phienAgent.ts`) + đăng nhập device flow cho cổng `/v1`.
  */
 import * as vscode from "vscode";
@@ -34,7 +34,7 @@ import { dangKyTerminalDoc } from "./ui/terminalDoc";
 import { LOI_KHONG_TIN_CAY_NGUOI, datNguonTinCay, laTinCay } from "./loi/tinCayWorkspace";
 
 /**
- * ★★★ ĐỢT 4B — "Đăng nhập AI Local (device flow)": device flow (RFC 8628 rút gọn, `server/routes/aiGatewayTokenThietBi.ts`).
+ * ★★★ ĐỢT 4B — "Đăng nhập Thợ Cả (device flow)": device flow (RFC 8628 rút gọn, `server/routes/aiGatewayTokenThietBi.ts`).
  * Mở trình duyệt tới trang xác nhận của CHÍNH máy chủ đang cấu hình (phiên web đã qua 2FA nếu bật — đây là đường đăng
  * nhập DUY NHẤT dùng được cho tài khoản 2FA), chờ người bấm Cho phép, lưu token `avgw_…` vào SecretStorage.
  * ⚠ Token KHÔNG bao giờ vào settings/globalState/log; globalState chỉ giữ TIỀN TỐ hiển thị + hạn.
@@ -43,7 +43,7 @@ async function chayDangNhapThietBi(context: vscode.ExtensionContext): Promise<vo
   const serverUrl = vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000");
   const phienBan = String((context as { extension?: { packageJSON?: { version?: string } } }).extension?.packageJSON?.version ?? "");
   const kq = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "AI Local — đăng nhập bằng trình duyệt", cancellable: true },
+    { location: vscode.ProgressLocation.Notification, title: "Thợ Cả — đăng nhập bằng trình duyệt", cancellable: true },
     async (tienDo, huy) => {
       const ac = new AbortController();
       huy.onCancellationRequested(() => ac.abort());
@@ -56,7 +56,7 @@ async function chayDangNhapThietBi(context: vscode.ExtensionContext): Promise<vo
           //   mã do CHÍNH VSCode của mình hiện; không bao giờ gõ mã ai đó gửi tới.
           tienDo.report({ message: `Gõ mã ${ma.maNguoiDung} trên trang vừa mở, rồi bấm Cho phép (mã sống ${Math.round(ma.hetHanGiay / 60)} phút).` });
           void vscode.window
-            .showInformationMessage(`AI Local: mã thiết bị của bạn là ${ma.maNguoiDung} — gõ mã này trên trang ${url}.`, "Chép mã")
+            .showInformationMessage(`Thợ Cả: mã thiết bị của bạn là ${ma.maNguoiDung} — gõ mã này trên trang ${url}.`, "Chép mã")
             .then((chon) => (chon === "Chép mã" ? vscode.env.clipboard.writeText(ma.maNguoiDung) : undefined));
           return await vscode.env.openExternal(vscode.Uri.parse(url));
         },
@@ -69,10 +69,10 @@ async function chayDangNhapThietBi(context: vscode.ExtensionContext): Promise<vo
   );
   if (kq.ok) {
     void vscode.window.showInformationMessage(
-      `AI Local: đã đăng nhập bằng thiết bị${kq.tienTo ? ` (token ${kq.tienTo}…)` : ""}${kq.hetHanLuc ? `, hết hạn ${kq.hetHanLuc}` : ""}.`,
+      `Thợ Cả: đã đăng nhập bằng thiết bị${kq.tienTo ? ` (token ${kq.tienTo}…)` : ""}${kq.hetHanLuc ? `, hết hạn ${kq.hetHanLuc}` : ""}.`,
     );
   } else if (kq.ly !== "huy") {
-    void vscode.window.showErrorMessage(`AI Local: ${kq.lyDo}`);
+    void vscode.window.showErrorMessage(`Thợ Cả: ${kq.lyDo}`);
   }
 }
 
@@ -93,7 +93,7 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
       return;
     }
     if (ket.loai === "loi") {
-      void vscode.window.showErrorMessage(`AI Local: ${ket.thongDiep}`);
+      void vscode.window.showErrorMessage(`Thợ Cả: ${ket.thongDiep}`);
       return;
     }
     if (!cookie) {
@@ -105,7 +105,7 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
     // mật, chỉ để khung chat HIỂN THỊ (xem `bangChat.ts#trangThaiDangNhap`). Ghi CÙNG LÚC với cookie
     // ở trên để hai giá trị không bao giờ lệch nhau (một cái có, một cái không).
     await context.globalState.update(KHOA_TEN_TAI_KHOAN, ket.ten || ten);
-    void vscode.window.showInformationMessage(`AI Local: đã đăng nhập (${ket.ten || ten}).`);
+    void vscode.window.showInformationMessage(`Thợ Cả: đã đăng nhập (${ket.ten || ten}).`);
   } catch (e) {
     /**
      * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA. Bản cũ khai NGUYÊN VĂN "Không nối được máy
@@ -130,7 +130,7 @@ async function chayDangNhap(context: vscode.ExtensionContext): Promise<void> {
     // NHÁNH KIA — không phải lỗi mạng: KHÔNG gợi ý đổi địa chỉ (gợi ý sai chỗ còn tệ hơn không gợi
     // ý). Hiện nguyên văn lỗi để còn báo cáo được, không bịa "không nối được máy chủ" khi chưa chắc.
     void vscode.window.showErrorMessage(
-      `AI Local: lỗi ngoài dự tính khi đăng nhập — ${e instanceof Error ? e.message : String(e)}`,
+      `Thợ Cả: lỗi ngoài dự tính khi đăng nhập — ${e instanceof Error ? e.message : String(e)}`,
     );
   }
 }
@@ -156,7 +156,7 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
     // KHÔNG im lặng: không có editor hoặc không có đoạn chọn phải báo RÀNH MẠCH, không phải một
     // lệnh bấm-mà-không-thấy-gì-xảy-ra.
     void vscode.window.showInformationMessage(
-      "AI Local: hãy chọn (bôi đen) một đoạn mã trong trình soạn thảo trước khi dùng lệnh 'Sửa đoạn đang chọn'.",
+      "Thợ Cả: hãy chọn (bôi đen) một đoạn mã trong trình soạn thảo trước khi dùng lệnh 'Sửa đoạn đang chọn'.",
     );
     return;
   }
@@ -178,7 +178,7 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
    */
   if (!duocPhepRoiMay(ed.document.uri.fsPath)) {
     void vscode.window.showInformationMessage(
-      "AI Local: tệp này là tệp nhạy cảm (.env / khoá riêng / .git) — KHÔNG gửi nội dung đi, và " +
+      "Thợ Cả: tệp này là tệp nhạy cảm (.env / khoá riêng / .git) — KHÔNG gửi nội dung đi, và " +
         "extension cũng không được phép ghi vào nó. Hãy dùng lệnh này trên một tệp khác.",
     );
     return;
@@ -210,7 +210,7 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
     // Tệp ngoài mọi thư mục workspace: `apBanVa` sẽ từ chối ở luật 2 dù model có trả lời gì đi nữa.
     // Nói ngay còn hơn để người dùng đợi hết một lượt hỏi rồi mới nhận một câu từ chối.
     void vscode.window.showInformationMessage(
-      "AI Local: tệp đang mở KHÔNG nằm trong thư mục workspace nào — extension chỉ sửa được tệp trong workspace đang mở.",
+      "Thợ Cả: tệp đang mở KHÔNG nằm trong thư mục workspace nào — extension chỉ sửa được tệp trong workspace đang mở.",
     );
     return;
   }
@@ -225,7 +225,7 @@ async function chaySuaDoanChon(context: vscode.ExtensionContext, khoDeXuat: KhoD
   try {
     cauHoi = dungCauHoiSuaChon({ duongTuongDoi, dongDau, dongCuoi, doanChon, yeuCau });
   } catch (e) {
-    void vscode.window.showInformationMessage(`AI Local: ${(e as Error).message}`);
+    void vscode.window.showInformationMessage(`Thợ Cả: ${(e as Error).message}`);
     return;
   }
 
@@ -279,7 +279,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("aviAiLocal.hoanTacLuotChay", async () => {
       const bang = BangChat.dangMoBatKy();
       if (!bang) {
-        void vscode.window.showInformationMessage("AI Local: hãy mở khung trò chuyện — hoàn tác áp cho lượt agent gần nhất của khung.");
+        void vscode.window.showInformationMessage("Thợ Cả: hãy mở khung trò chuyện — hoàn tác áp cho lượt agent gần nhất của khung.");
         return;
       }
       await bang.hoanTacAgent();
@@ -330,7 +330,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   /**
-   * ★★★ ĐỢT F / TASK 4 / B2 — context key TA tự đặt, quyết định người dùng thấy AI Local ở THANH
+   * ★★★ ĐỢT F / TASK 4 / B2 — context key TA tự đặt, quyết định người dùng thấy Thợ Cả ở THANH
    * BÊN PHỤ (secondarySidebar, chỗ họ để Claude Code — xem `package.json`
    * `viewsContainers.secondarySidebar[0].when: "!${KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU}"`)
    * hay LÙI về thanh hoạt động (activitybar, `when` KHÔNG có "!" — hai biểu thức PHỦ ĐỊNH của

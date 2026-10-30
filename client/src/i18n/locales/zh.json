@@ -16620,7 +16620,7 @@
       "webIngestDisabled": "网址导入功能已关闭（请在服务器上设置 WEB_INGEST_ENABLED=true）。",
       "guidance": {
         "title": "自助导入文档指南",
-        "subtitle": "四个步骤即可自行把文档导入 AI Local——按顺序操作，其余交给系统处理。",
+        "subtitle": "四个步骤即可自行把文档导入 Thợ Cả（本地 AI 助手）——按顺序操作，其余交给系统处理。",
         "step1Title": "1. 选择正确领域的语料库",
         "step1Body": "为什么要区分领域：已实测——把多个领域混进同一个语料库，会导致询问网页相关问题时却拉出 PLC 文档（5 条评分 0.85–0.91 的引用来自跑题文档）。语料库里的噪音会让回答变差，而不是中性——语料库里跑题文档越多，回答被带偏的情况就越多。",
         "fillCorpusAria": "将建议的语料库名称「{{corpus}}」填入语料库名称栏",
@@ -19501,6 +19501,7 @@
     "maLoi": {
       "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
       "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
+      "OT_MC_TAM_KHOA": "三菱 MC 控制已临时锁定：mcprotocol 库错误解析 PLC 回复 — 命令未发送。等待修复 3B；如需停机请使用设备上的硬接线急停",
       "EDGE_REPORTED": "边缘节点报告命令未成功",
       "READBACK_UNAVAILABLE": "已写入但无法回读 — 请在设备处检查",
       "READBACK_MISMATCH": "已写入但回读值不一致 — 请在设备处检查",
@@ -21655,6 +21656,15 @@
         "macDinh": "引擎默认模型",
         "duPhong": "备用 — 槽位正占用另一个模型"
       },
+      "nguCanhDay": "上下文已使用 {{p}}% —— 建议让智能体把进度总结写入 NOTES.md（和其他文件写入一样由您审批），然后开启新会话。",
+      "con": {
+        "tieuDe": "子智能体",
+        "tuRepo": "来自仓库",
+        "sua": "编辑",
+        "hoi": "提问",
+        "dangChay": "运行中"
+      },
+      "hangCho": "模型队列：您前面还有 {{n}} 个请求",
       "khoa": {
         "tieuDe": "被硬性锁定的命令（智能体永远无法运行）",
         "biKhoa": "该命令被硬性锁定（{{lenh}}）——无法批准运行。",
@@ -21663,6 +21673,27 @@
           "ngoai-du-an": "在项目文件夹之外删除/写入文件",
           "csdl-that": "写入真实数据库"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "变更概览",
+        "agentCon": "子代理",
+        "tienDo": "已决定 {{daQuyet}}/{{tong}}",
+        "conCho": "{{n}} 项等待您处理",
+        "kiemChung": "最近一次验证",
+        "hetGio": "超时",
+        "xanh": "通过",
+        "do": "失败",
+        "soDo": "失败",
+        "soXanh": "通过",
+        "truocSua": "——运行于最近一次已批准变更之前",
+        "khongDuong": "（路径未知）",
+        "daXem": "已查看",
+        "chuaXem": "未查看",
+        "hetHan": "已失效",
+        "cho": "等待中",
+        "duyetA": "批准 (A)",
+        "bacR": "拒绝 (R)",
+        "phim": "此区域获得焦点时：J/K = 下一个/上一个文件 · A = 批准 · R = 拒绝（须先查看文件才可按 A）"
       }
     },
     "duanCaNhan": {
@@ -21902,6 +21933,72 @@
       "xemBanDau": "查看初稿（修复前）",
       "conLoi": "经 {{v}} 轮自动修复后，ST 代码仍有 {{n}} 个编译错误（RuSTy）：",
       "khongKiemDuoc": "无法检查编译（{{lyDo}}）。"
+    },
+    "agentTuRepo": {
+      "tieuDe": "仓库中的智能体",
+      "moTaMan": "阅读并确认项目 {{duAn}} 中的智能体定义。",
+      "luuY": "仓库智能体由项目中的文件定义——在您阅读内容并确认之前不被信任。若文件在您阅读后发生变化，确认将被拒绝。",
+      "tuRepo": "来自仓库",
+      "rong": "该项目没有有效的智能体定义文件。",
+      "daTin": "已信任此版本",
+      "chuaTin": "未信任",
+      "thongSo": "模型：{{model}} · 最多 {{luot}} 轮 · 工具：{{cc}}",
+      "an": "隐藏内容",
+      "doc": "阅读文件内容",
+      "tinCay": "信任此版本",
+      "canDoc": "请先阅读内容再信任。",
+      "goTin": "取消信任",
+      "biBo": "被跳过的文件",
+      "dungSan": "内置",
+      "biTuChoi": "您无权查看该项目的智能体定义。",
+      "dangTai": "加载中…",
+      "daXacNhan": "已信任智能体“{{ten}}”。",
+      "daGo": "已取消对“{{ten}}”的信任。",
+      "note": {
+        "PERMISSION_DENIED": "您无权执行此操作。",
+        "PROJECT_NOT_FOUND": "未找到项目。",
+        "KHONG_CO": "仓库中已不存在该定义。",
+        "BAM_LECH": "文件在您阅读后已变化——请阅读新版本后再确认。",
+        "LOI_LUU": "无法保存确认，请稍后重试。",
+        "THAM_SO_SAI": "参数无效。",
+        "khac": "无法完成（{{ma}}）。"
+      }
+    },
+    "lichSuAgent": {
+      "tieuDe": "智能体历史",
+      "moTaMan": "您在项目 {{duAn}} 中的智能体会话（网页、VS Code、命令行）。",
+      "biTuChoi": "您无权查看该项目的智能体历史。",
+      "dangTai": "加载中…",
+      "rong": "该项目还没有智能体会话。",
+      "quayLai": "返回",
+      "soLuotChay": "此会话关联 {{n}} 次运行。",
+      "ban": "您",
+      "agent": "智能体",
+      "coNgoai": "已使用外部 AI",
+      "soLuot": "{{n}} 轮",
+      "mo": "查看",
+      "luuTen": "保存名称",
+      "doiTen": "重命名",
+      "xoa": "删除会话",
+      "hoiXoa": "删除会话“{{ten}}”？此操作无法撤销。",
+      "nhatKy": "删除会话不会删除运行日志（服务器审计账本仍保留）。",
+      "xacNhanXoa": "删除会话",
+      "huy": "取消",
+      "daXoa": "会话已删除。",
+      "nguon": {
+        "web": "网页",
+        "vscode": "VS Code",
+        "cli": "命令行"
+      },
+      "note": {
+        "PERMISSION_DENIED": "您无权执行此操作。",
+        "PROJECT_NOT_FOUND": "未找到项目。",
+        "NOT_FOUND": "未找到会话（已删除？）。",
+        "CONFLICT": "会话已在别处更新——列表已重新加载，请重试。",
+        "THAM_SO_SAI": "参数无效。",
+        "LOI": "无法完成，请稍后重试。",
+        "khac": "无法完成（{{ma}}）。"
+      }
     },
     "ngoai": {
       "daDoc": "已读取 {{p}}",
@@ -24386,6 +24483,7 @@
         "quaHanMotPhan": "服务器响应缓慢 — HMI STOP 未发送到适配器 {{list}}。",
         "gioiHan": "服务器因请求过多而拒绝（HTTP 429）— HMI STOP 未发送。",
         "khongRo": "无法确认适配器 {{list}} 是否已收到 STOP — 设备可能尚未停止。",
+        "khongDat": "HMI STOP 未送达适配器 {{list}} — 请在设备处使用硬接线急停（E-STOP）。",
         "nutBo": "知道了"
       },
       "khanCap": {

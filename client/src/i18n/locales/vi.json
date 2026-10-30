@@ -15973,7 +15973,7 @@
       "webIngestDisabled": "Nạp URL đang tắt (đặt WEB_INGEST_ENABLED=true trên server).",
       "guidance": {
         "title": "Hướng dẫn tự nạp tài liệu",
-        "subtitle": "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+        "subtitle": "Bốn bước để tự đưa tài liệu vào Thợ Cả — làm đúng thứ tự, hệ thống lo phần còn lại.",
         "step1Title": "1. Chọn corpus theo ĐÚNG miền",
         "step1Body": "Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc đề, càng nhiều câu trả lời bị kéo sai hướng.",
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
@@ -19127,6 +19127,7 @@
     "maLoi": {
       "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
       "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
+      "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
       "EDGE_REPORTED": "Edge báo lệnh không thành công",
       "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
       "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",
@@ -21655,6 +21656,15 @@
         "macDinh": "model mặc định của engine",
         "duPhong": "dự phòng — khe đang giữ model khác"
       },
+      "nguCanhDay": "Ngữ cảnh đã dùng {{p}}% — nên nhờ agent tóm tắt tiến độ vào NOTES.md (bạn duyệt như mọi lần ghi tệp) rồi mở phiên mới.",
+      "con": {
+        "tieuDe": "Agent con",
+        "tuRepo": "từ repo",
+        "sua": "sửa",
+        "hoi": "hỏi",
+        "dangChay": "đang chạy"
+      },
+      "hangCho": "Hàng chờ model: {{n}} lượt đứng trước bạn",
       "khoa": {
         "tieuDe": "Lệnh bị khoá cứng (agent không bao giờ chạy được)",
         "biKhoa": "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.",
@@ -21663,6 +21673,27 @@
           "ngoai-du-an": "Xoá / ghi tệp NGOÀI thư mục dự án",
           "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "Tổng quan thay đổi",
+        "agentCon": "agent con",
+        "tienDo": "{{daQuyet}}/{{tong}} đã quyết",
+        "conCho": "{{n}} đang chờ bạn",
+        "kiemChung": "Kiểm chứng gần nhất",
+        "hetGio": "hết giờ",
+        "xanh": "XANH",
+        "do": "ĐỎ",
+        "soDo": "đỏ",
+        "soXanh": "xanh",
+        "truocSua": "— chạy TRƯỚC thay đổi đã duyệt gần nhất",
+        "khongDuong": "(không rõ đường)",
+        "daXem": "đã xem",
+        "chuaXem": "chưa xem",
+        "hetHan": "hết hiệu lực",
+        "cho": "đang chờ",
+        "duyetA": "Duyệt (A)",
+        "bacR": "Bác (R)",
+        "phim": "Khi vùng này được chọn: J/K = tệp kế/trước · A = duyệt · R = bác (A chỉ sau khi đã xem tệp)"
       }
     },
     "duanCaNhan": {
@@ -21902,6 +21933,72 @@
       "xemBanDau": "Xem bản đầu (trước khi sửa)",
       "conLoi": "Mã ST còn {{n}} lỗi biên dịch (RuSTy) sau {{v}} vòng tự sửa:",
       "khongKiemDuoc": "Chưa kiểm biên dịch được ({{lyDo}})."
+    },
+    "agentTuRepo": {
+      "tieuDe": "Agent từ repo",
+      "moTaMan": "Đọc và xác nhận định nghĩa agent nằm trong dự án {{duAn}}.",
+      "luuY": "Agent từ repo do tệp trong dự án định nghĩa — chưa được tin cho tới khi bạn đọc nội dung và xác nhận. Nếu tệp đổi sau khi bạn đọc, xác nhận bị từ chối.",
+      "tuRepo": "Từ repo",
+      "rong": "Dự án này chưa có tệp định nghĩa agent hợp lệ.",
+      "daTin": "đã tin cậy bản này",
+      "chuaTin": "chưa tin cậy",
+      "thongSo": "Model: {{model}} · tối đa {{luot}} lượt · công cụ: {{cc}}",
+      "an": "Ẩn nội dung",
+      "doc": "Đọc nội dung tệp",
+      "tinCay": "Tin cậy bản này",
+      "canDoc": "Hãy đọc nội dung trước khi tin cậy.",
+      "goTin": "Gỡ tin cậy",
+      "biBo": "Tệp bị bỏ qua",
+      "dungSan": "Dựng sẵn",
+      "biTuChoi": "Bạn không có quyền xem định nghĩa agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "daXacNhan": "Đã tin cậy agent “{{ten}}”.",
+      "daGo": "Đã gỡ tin cậy “{{ten}}”.",
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "KHONG_CO": "Không còn định nghĩa này trong repo.",
+        "BAM_LECH": "Tệp đã đổi sau khi bạn đọc — hãy đọc lại bản mới rồi xác nhận.",
+        "LOI_LUU": "Không lưu được xác nhận — thử lại sau.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
+    },
+    "lichSuAgent": {
+      "tieuDe": "Lịch sử agent",
+      "moTaMan": "Các phiên agent của bạn trong dự án {{duAn}} (web, VS Code, dòng lệnh).",
+      "biTuChoi": "Bạn không có quyền xem lịch sử agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "rong": "Chưa có phiên agent nào trong dự án này.",
+      "quayLai": "Quay lại",
+      "soLuotChay": "{{n}} lượt chạy gắn với phiên này.",
+      "ban": "Bạn",
+      "agent": "Agent",
+      "coNgoai": "đã dùng AI ngoài",
+      "soLuot": "{{n}} lượt",
+      "mo": "Xem",
+      "luuTen": "Lưu tên",
+      "doiTen": "Đổi tên",
+      "xoa": "Xoá phiên",
+      "hoiXoa": "Xoá phiên “{{ten}}”? Việc này không hoàn tác được.",
+      "nhatKy": "Xoá phiên KHÔNG xoá nhật ký các lượt chạy (sổ kiểm toán trên máy chủ vẫn giữ).",
+      "xacNhanXoa": "Xoá phiên",
+      "huy": "Huỷ",
+      "daXoa": "Đã xoá phiên.",
+      "nguon": {
+        "web": "web",
+        "vscode": "VS Code",
+        "cli": "dòng lệnh"
+      },
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "NOT_FOUND": "Không tìm thấy phiên (đã bị xoá?).",
+        "CONFLICT": "Phiên đã được cập nhật ở nơi khác — danh sách đã tải lại, hãy thử lại.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "LOI": "Không thực hiện được — thử lại sau.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
     },
     "ngoai": {
       "daDoc": "Đã đọc {{p}}",
@@ -24386,6 +24483,7 @@
         "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
         "khongRo": "Không rõ adapter {{list}} đã nhận STOP hay chưa — máy có thể CHƯA dừng.",
+        "khongDat": "STOP HMI KHÔNG tới được adapter {{list}} — dùng E-STOP cứng tại máy.",
         "nutBo": "Đã hiểu"
       },
       "khanCap": {

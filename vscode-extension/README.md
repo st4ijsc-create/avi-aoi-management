@@ -1,9 +1,9 @@
-# AI Local (ST4I) — extension VSCode
+# Thợ Cả (ST4I) — extension VSCode
 
 Trợ lý lập trình AI chạy **nội bộ, offline**, làm việc như một *agent*: bạn giao việc trong khung trò chuyện,
 AI tự đọc/tìm mã trong workspace, lập kế hoạch, **sửa nhiều tệp** (sửa · tạo · xoá · đổi tên), chạy lệnh kiểm chứng
 (build/test) và đọc kết quả rồi sửa tiếp — mọi lượt ghi đi qua **một điểm ghi duy nhất có kiểm toán** và (mặc định)
-qua **thẻ duyệt từng tệp** có diff. Model chạy trên máy chủ AI Local trong mạng nhà máy (mặc định
+qua **thẻ duyệt từng tệp** có diff. Model chạy trên máy chủ Thợ Cả trong mạng nhà máy (mặc định
 `http://localhost:3000`), không gửi gì ra Internet.
 
 Từ bản 0.2, extension chạy **lõi agent dùng chung** (`shared/agentCore` — cùng lõi máy chủ chạy cho trình duyệt), gọi
@@ -13,17 +13,17 @@ model qua `/v1/chat/completions` (stream + tool-calling gốc) bằng **token th
 
 | Lệnh | Dùng cho | Cất ở đâu |
 |---|---|---|
-| **AI Local: Đăng nhập AI Local (device flow)** | Gọi model của agent (`/v1`). Mở trình duyệt tới trang `/ai-thiet-bi` của máy chủ (phiên web đã đăng nhập, **kể cả tài khoản 2FA**), **gõ mã thiết bị đang hiện trong VSCode của bạn** (trang không điền sẵn mã — chống lừa đảo mã), bấm *Cho phép*; extension chờ và nhận token `avgw_…`. | SecretStorage của hệ điều hành (không bao giờ ở settings) |
-| **AI Local: Đăng nhập phiên (mật khẩu)** | Sổ kiểm toán ghi tệp (`batDauApDungOClient`/`chotApDungOClient` hiện chỉ nhận cookie phiên) và chế độ **Chat cũ**. Tài khoản 2FA chưa dùng được đường này. | SecretStorage (cookie phiên; mật khẩu không lưu) |
-| **AI Local: Đăng xuất** | Xoá cookie phiên **và** token `/v1` khỏi máy này. Token vẫn còn hiệu lực trên máy chủ tới khi hết hạn — thu hồi hẳn ở trang `/ai-thiet-bi`. | — |
+| **Thợ Cả: Đăng nhập Thợ Cả (device flow)** | Gọi model của agent (`/v1`). Mở trình duyệt tới trang `/ai-thiet-bi` của máy chủ (phiên web đã đăng nhập, **kể cả tài khoản 2FA**), **gõ mã thiết bị đang hiện trong VSCode của bạn** (trang không điền sẵn mã — chống lừa đảo mã), bấm *Cho phép*; extension chờ và nhận token `avgw_…`. | SecretStorage của hệ điều hành (không bao giờ ở settings) |
+| **Thợ Cả: Đăng nhập phiên (mật khẩu)** | Sổ kiểm toán ghi tệp (`batDauApDungOClient`/`chotApDungOClient` hiện chỉ nhận cookie phiên) và chế độ **Chat cũ**. Tài khoản 2FA chưa dùng được đường này. | SecretStorage (cookie phiên; mật khẩu không lưu) |
+| **Thợ Cả: Đăng xuất** | Xoá cookie phiên **và** token `/v1` khỏi máy này. Token vẫn còn hiệu lực trên máy chủ tới khi hết hạn — thu hồi hẳn ở trang `/ai-thiet-bi`. | — |
 
 Thiếu token ⇒ agent báo lỗi kèm nút đăng nhập; thiếu cookie phiên ⇒ agent vẫn đọc/tìm được nhưng **không ghi** (không
 mở được sổ kiểm toán thì không ghi — thà không ghi còn hơn ghi mà không có vết).
 
 ## Khung trò chuyện
 
-- Mở bằng biểu tượng **AI Local** ở thanh bên phụ (VSCode cũ ⇒ thanh hoạt động bên trái), hoặc lệnh
-  **AI Local: Mở bảng trò chuyện**.
+- Mở bằng biểu tượng **Thợ Cả** ở thanh bên phụ (VSCode cũ ⇒ thanh hoạt động bên trái), hoặc lệnh
+  **Thợ Cả: Mở bảng trò chuyện**.
 - **Chế độ** (ô chọn trên hàng nhập):
   - **Agent — duyệt từng bước** *(mặc định)*: mọi thay đổi tệp và mọi lệnh hiện thành **thẻ duyệt riêng cho từng
     tệp** — *Xem diff* (diff native của VSCode), *Duyệt*, *Bác* kèm lý do (AI đọc lý do và đổi cách làm).
@@ -98,38 +98,38 @@ Chỉ các lệnh trong danh sách trắng cố định được chạy: `git st
 
 ## Các lệnh
 
-Mở **Command Palette** (`Ctrl+Shift+P`), gõ "AI Local":
+Mở **Command Palette** (`Ctrl+Shift+P`), gõ "Thợ Cả":
 
 | Lệnh | Việc |
 |---|---|
-| **AI Local: Mở bảng trò chuyện** | Mở khung trò chuyện / agent. |
-| **AI Local: Đăng nhập AI Local (device flow)** | Device flow lấy token `/v1` cho agent (xem *Đăng nhập*). |
-| **AI Local: Đăng nhập phiên (mật khẩu)** | Cookie phiên cho sổ kiểm toán ghi tệp và Chat cũ. |
-| **AI Local: Đăng xuất** | Xoá cookie phiên, tên tài khoản và token `/v1` cục bộ. |
-| **AI Local: Sửa đoạn đang chọn (hỏi AI)** — `Ctrl+Alt+K` | Bôi đen một đoạn, mô tả cần sửa gì; kết quả về dạng đề xuất phải duyệt (đường Chat cũ). |
-| **AI Local: Chat mới** | Bắt đầu hội thoại mới (nút `+` ở đầu khung). |
-| **AI Local: Lịch sử** | Mở lại hội thoại cũ của workspace này. |
-| **AI Local: Hoàn tác lượt chạy agent** | Đưa các tệp lượt agent gần nhất đã chạm về bản gốc (từ chối nếu có xung đột). |
-| **AI Local: Quản lý MCP server ngoài** | Xem, bật/tắt từng MCP server ngoài mà AI được phép gọi (Chat cũ). |
-| **AI Local: Nhớ điều này** | Lưu một ghi chú vào bộ nhớ dài hạn (bí mật được che trước khi lưu). |
-| **AI Local: Bộ nhớ dài hạn** | Xem và xoá từng mục nhớ. |
-| **AI Local: Đổi địa chỉ máy chủ** | Mở Settings lọc sẵn ô `aviAiLocal.serverUrl`. |
+| **Thợ Cả: Mở bảng trò chuyện** | Mở khung trò chuyện / agent. |
+| **Thợ Cả: Đăng nhập Thợ Cả (device flow)** | Device flow lấy token `/v1` cho agent (xem *Đăng nhập*). |
+| **Thợ Cả: Đăng nhập phiên (mật khẩu)** | Cookie phiên cho sổ kiểm toán ghi tệp và Chat cũ. |
+| **Thợ Cả: Đăng xuất** | Xoá cookie phiên, tên tài khoản và token `/v1` cục bộ. |
+| **Thợ Cả: Sửa đoạn đang chọn (hỏi AI)** — `Ctrl+Alt+K` | Bôi đen một đoạn, mô tả cần sửa gì; kết quả về dạng đề xuất phải duyệt (đường Chat cũ). |
+| **Thợ Cả: Chat mới** | Bắt đầu hội thoại mới (nút `+` ở đầu khung). |
+| **Thợ Cả: Lịch sử** | Mở lại hội thoại cũ của workspace này. |
+| **Thợ Cả: Hoàn tác lượt chạy agent** | Đưa các tệp lượt agent gần nhất đã chạm về bản gốc (từ chối nếu có xung đột). |
+| **Thợ Cả: Quản lý MCP server ngoài** | Xem, bật/tắt từng MCP server ngoài mà AI được phép gọi (Chat cũ). |
+| **Thợ Cả: Nhớ điều này** | Lưu một ghi chú vào bộ nhớ dài hạn (bí mật được che trước khi lưu). |
+| **Thợ Cả: Bộ nhớ dài hạn** | Xem và xoá từng mục nhớ. |
+| **Thợ Cả: Đổi địa chỉ máy chủ** | Mở Settings lọc sẵn ô `aviAiLocal.serverUrl`. |
 | **Thợ Cả: Mở terminal chỉ đọc (lệnh agent đã chạy)** | Terminal không nhận phím, chỉ hiện lệnh agent đã chạy (đầu ra đã che bí mật). Workspace chưa tin cậy thì không chạy lệnh nào. |
-| **AI Local: Bật/tắt gợi ý chữ mờ (ghost-text)** | Bật/tắt gợi ý mã khi gõ (cũng là nút `AI gợi ý` ở thanh trạng thái). |
+| **Thợ Cả: Bật/tắt gợi ý chữ mờ (ghost-text)** | Bật/tắt gợi ý mã khi gõ (cũng là nút `AI gợi ý` ở thanh trạng thái). |
 
 ## Gợi ý chữ mờ khi gõ (ghost-text)
 
-Gõ mã trong một tệp của workspace ⇒ sau ~250 ms ngừng gõ, AI Local gợi ý phần tiếp theo dạng chữ mờ; **Tab** để nhận,
+Gõ mã trong một tệp của workspace ⇒ sau ~250 ms ngừng gõ, Thợ Cả gợi ý phần tiếp theo dạng chữ mờ; **Tab** để nhận,
 gõ tiếp để bỏ (`Alt+\` gọi gợi ý ngay). Giữa một dòng đã có chữ ⇒ gợi ý tới hết dòng; trên một dòng trống ⇒ có thể gợi
 ý cả khối (tối đa 8 dòng).
 
 - **Mặc định TẮT** — bật bằng nút `AI gợi ý` ở thanh trạng thái hoặc `aviAiLocal.ghostText.enabled`.
-- Cần **token `/v1`** (lệnh *Đăng nhập AI Local (device flow)*, phạm vi `fim`). Gọi `POST /v1/completions` với model
+- Cần **token `/v1`** (lệnh *Đăng nhập Thợ Cả (device flow)*, phạm vi `fim`). Gọi `POST /v1/completions` với model
   logic `fim` (model nhỏ chạy trong tiến trình máy chủ, không chiếm slot của model chính).
 - Chỉ gửi ~2.000 ký tự trước và ~800 ký tự sau con trỏ, **đã che bí mật**. Không gợi ý (không gửi byte nào) cho
   `.env`, khoá riêng, `.git/`, tệp ngoài workspace, tệp không phải trên đĩa, tệp quá 1 triệu ký tự.
 - Gợi ý chứa dấu che (model chỉ thấy bản đã che) bị bỏ — không chèn rác vào mã thật.
-- Lỗi **không bao giờ bật hộp thoại**: chỉ ghi vào kênh Output **"AI Local — Ghost text"** (kèm độ trễ từng lượt, không
+- Lỗi **không bao giờ bật hộp thoại**: chỉ ghi vào kênh Output **"Thợ Cả — Ghost text"** (kèm độ trễ từng lượt, không
   ghi mã) và đổi biểu tượng thanh trạng thái; lỗi mạng ⇒ nghỉ 30 s, token hỏng ⇒ nghỉ tới khi đăng nhập lại.
 - Nhận gợi ý là VSCode chèn vào bộ đệm (Ctrl+Z hoàn tác) — không phải một đường ghi đĩa của extension.
 
@@ -148,11 +148,11 @@ của agent.
 
 ## Cấu hình
 
-`Ctrl+,` rồi tìm "AI Local", hoặc sửa `settings.json` của User:
+`Ctrl+,` rồi tìm "Thợ Cả", hoặc sửa `settings.json` của User:
 
 | Khoá | Mặc định | Ý nghĩa |
 |---|---|---|
-| `aviAiLocal.serverUrl` | `http://localhost:3000` | Địa chỉ máy chủ AI Local. Phạm vi **Máy**. |
+| `aviAiLocal.serverUrl` | `http://localhost:3000` | Địa chỉ máy chủ Thợ Cả. Phạm vi **Máy**. |
 | `aviAiLocal.uiLanguage` | `vi` | Ngôn ngữ trả lời (`vi` / `en` / `zh`). |
 | `aviAiLocal.anhChoTroLy` | `true` | Cho phép đính ảnh (dán/kéo/chọn) khi hỏi Trợ lý (đường Chat/KB). Mặc định BẬT từ 0.3.3; tắt nếu máy chủ không có thị giác — ảnh khi đó bị bỏ kèm thông báo. Đường Agent (`/v1`) không phụ thuộc cài đặt này. |
 | `aviAiLocal.nganSachNguCanh` | `24000` | Trần số ký tự mã gửi kèm mỗi lượt hỏi ở Chat cũ. |
@@ -168,7 +168,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.4.1.vsix
+code --install-extension avi-ai-local-0.5.0.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -178,7 +178,28 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.4.1.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.4.1+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.5.0.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.5.0+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+
+## Ghi chú phát hành
+
+### 0.5.0
+
+Mới
+- **Workspace Trust**: thư mục chưa tin cậy (chế độ hạn chế của VSCode) ⇒ Thợ Cả chỉ ĐỌC — không chạy lệnh, không ghi tệp; tool ghi/lệnh của agent bị ẩn và bị từ chối. Cấp tin cậy giữa chừng có hiệu lực ở lượt kế.
+- **Thanh trạng thái**: model · % ngữ cảnh (dấu `~` khi mới là ước lượng; đổi màu từ 85 %) · tok/s hiệu dụng (gồm thời gian chờ khe model).
+- **Huy hiệu chờ duyệt**: số thẻ duyệt đang chờ trên icon khung chat và trên thanh trạng thái (cộng mọi khung đang mở).
+- **Terminal chỉ đọc "Thợ Cả (chỉ đọc)"**: hiện các lệnh agent đã chạy (đầu ra đã che bí mật, bỏ mã điều khiển); lệnh `Thợ Cả: Mở terminal chỉ đọc`.
+- **Sửa trực tiếp có linter** (đề xuất cục bộ ở chế độ *Chat cũ*): sau khi áp, báo riêng các lỗi (Problems) do chính lần sửa đặt thêm; sửa sạch ⇒ không báo gì.
+- **Model ngoài ở Hỏi đáp** (chỉ khi máy chủ mở cho extension): chọn `ngoai:…` ở ô model ⇒ chỉ Hỏi đáp (không agent / Cmd+K / @mention / đính kèm); hỏi đồng ý MỘT lần mỗi cuộc trò chuyện + model; huy hiệu nguồn «Model ngoài · nhà cung cấp/model»; liên kết hiển thị thành chữ + tên miền; lượt được máy chủ tự lưu.
+- Đổi tên hiển thị **Thợ Cả** (mã định danh giữ nguyên).
+
+Không đổi / giới hạn
+- **Agent KHÔNG dùng model ngoài trong extension** (chưa có bằng chứng live trên host).
+- MCP server vẫn do cấu hình mức máy + duyệt lần đầu; không bị chặn bởi Workspace Trust (cấu hình `scope: machine`).
+
+Kiểm chứng (VSCode 1.144 thật, máy chủ :3049 production + nhà cung cấp model giả; 2026-10-31)
+- Pha thường 35/35 · pha Workspace Trust trên VS Code bình thường (không cờ test) 5/5.
+- **Cấp tin cậy giữa chừng: kiểm GIẢ LẬP** (getter `isTrusted` trong test-electron) — chưa kiểm trên host thật vì cần thao tác người.
 
 ## Giới hạn đã biết
 

@@ -138,6 +138,7 @@ import { repoWorkspaceRouter } from "./routers/repoWorkspaceRouter"; // doc 78 P
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
 import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
+import { aiPhienRouter } from "./routers/aiPhienRouter"; // Đợt 11.8: phiên hợp nhất coding+agent (web/VS Code/CLI), phạm vi chủ sở hữu
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
 import { aiAgentCenterRouter } from "./routers/aiAgentCenterRouter"; // doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
 import { aiGatewayTokenRouter } from "./routers/aiGatewayTokenRouter"; // Đợt 4A: token THEO NGƯỜI DÙNG cho cổng /v1 (extension VSCode) + bước duyệt device flow
@@ -797,6 +798,7 @@ export const appRouter = router({
   aiSetupAdvisor: aiSetupAdvisorRouter,
   // AI Agent — GĐ3b multi-step agentic orchestrator (on top of HITL)
   aiAgent: aiAgentRouter,
+  aiPhien: aiPhienRouter,
   // AI Agent Command Center — doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
   aiAgentCenter: aiAgentCenterRouter,
   // AI Gateway Token — Đợt 4A: token cá nhân cho cổng OpenAI /v1 (chỉ lưu băm, phạm vi, hết hạn, thu hồi) + duyệt thiết bị

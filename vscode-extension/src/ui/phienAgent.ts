@@ -80,7 +80,7 @@ export interface PhuThuocPhienAgent {
   chayLenh?: typeof chayLenhCucBoThat;
   /** (Đợt 5.1) gửi phiếu — mặc định `guiPhanHoiAgent` (REST Bearer). */
   guiPhanHoi?: (serverUrl: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi>;
-  /** (Đợt 5.1) một dòng nhật ký — mặc định kênh Output "AI Local — Phản hồi" (tạo lười). */
+  /** (Đợt 5.1) một dòng nhật ký — mặc định kênh Output "Thợ Cả — Phản hồi" (tạo lười). */
   ghiNhatKy?: (dong: string) => void;
 }
 
@@ -90,10 +90,10 @@ const SO_LUOT_CHO_PHAN_HOI = 20;
 let kenhPhanHoi: vscode.OutputChannel | undefined;
 function nhatKyMacDinh(dong: string): void {
   try {
-    kenhPhanHoi ??= vscode.window.createOutputChannel("AI Local — Phản hồi");
+    kenhPhanHoi ??= vscode.window.createOutputChannel("Thợ Cả — Phản hồi");
     kenhPhanHoi.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${dong}`);
   } catch {
-    console.warn("[AI Local] phản hồi:", dong);
+    console.warn("[Thợ Cả] phản hồi:", dong);
   }
 }
 
@@ -537,7 +537,7 @@ export class PhienAgent {
       original: yc.goc ?? "",
       modified: yc.moi ?? "",
     });
-    await vscode.commands.executeCommand("vscode.diff", cu, moi, `AI Local — ${yc.tomTat} (đề xuất, chưa ghi)`);
+    await vscode.commands.executeCommand("vscode.diff", cu, moi, `Thợ Cả — ${yc.tomTat} (đề xuất, chưa ghi)`);
   }
 
   // ─── HOÀN TÁC / NHỚ ──────────────────────────────────────────────────────────────────────────

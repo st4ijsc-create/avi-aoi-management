@@ -85,3 +85,32 @@ rỗng. Ranh giới an toàn THẬT là **cửa duyệt ghi/lệnh**, không ph�
     không phụ thuộc lõi) ⇒ ghi/lệnh đi đường `sua` (thẻ duyệt, chờ người). Extension quét bằng `shared/quetMenhLenh.ts` —
     CHÍNH bộ quét của máy chủ (tách nguyên văn khỏi `aiSafety.ts`, thuần). Lưới: `vongAgent.test.ts`,
     `boThucThiMayChu.dangNgo.test.ts`, `boThucThiVscode.unit.test.ts` (mỗi nguồn hạ có ca riêng ⇒ đột biến bỏ một nguồn đỏ).
+
+## Đợt 11.8 — Thợ Cả: agent đặt tên · agent con · phiên (kế hoạch `docs/superpowers/plans/2026-10-27-dot11-8-phien-agent-agent-con.md`)
+
+27. **`dinhNghiaAgent.ts`** (THUẦN): đọc `.thoca/agents/<tên>.md` — YAML tự viết, giới hạn (không alias/anchor/thẻ/khối/lồng/khoá lạ/lặp). Tệp repo là KHÔNG TIN
+    CẬY nên CHỈ THU HẸP quyền: `approval` ∈ {hoi, sua} (thiếu ⇒ hoi, không `tu-dong`), `tools` ⊆ `TEN_CONG_CU` trừ `remember`/`delegate`, `model` ∈
+    {auto, vai-tro:, ho-so:} (`ngoai:` cấm), tên = tên tệp `^[a-z][a-z0-9-]{0,31}$`, ≤ 8 KB, `description` ≤ 200, thân ≤ 6 000. Ký tự ẩn/điều khiển bị TỪ CHỐI
+    (`coKyTuAn`: nhóm Unicode Cc/Cf/Cs/Co/Cn/Zl/Zp/Zs + bảng điểm phụ; quét cả khối trong test). Băm SHA-256 thuần (`bamNoiDung`, chuẩn hoá BOM/EOL) là khoá tin-lần-đầu.
+    4 agent dựng sẵn: `kham-pha`, `viet-test`, `review`, `plc` (nguồn `dungSan`, không bị tệp repo đè).
+28. **Tool `delegate`** (thứ 17, `CONG_CU_TUY_CHON`, loại `giao`): tắt ⇒ bộ tool + lời nhắc GIỐNG TỪNG BYTE. Host chỉ phơi khi `AI_AGENT_GIAO_VIEC=1` (mặc định TẮT)
+    VÀ model của cha không phải model ngoài. Lõi xử lý TRONG vòng (như `todo_write`), KHÔNG bao giờ tới bộ thực thi.
+29. **Agent con = `chayVongAgent` đệ quy** (`giaoViec.ts` + `xuLyGiaoViec`): công cụ con ⊆ cha ĐANG phơi (ép cả lúc thực thi — `taoBoThucThiCon`), chế độ con =
+    min(cha, trần định nghĩa) và KHÔNG BAO GIỜ `tu-dong`, dùng CHÍNH bộ thực thi của cha ⇒ ghi/lệnh vẫn qua duyệt NGƯỜI (không có đường tự duyệt), huỷ cha ⇒ huỷ con,
+    con chạy TUẦN TỰ, chỉ trả TÓM TẮT (≤ 1 500 ký tự, nhãn UNTRUSTED CỐ ĐỊNH, đường tệp làm sạch). Trần: 4 con/lượt chạy, 2 lần giao/lượt model, độ sâu 1 (cấu hình ≤ 2),
+    ngân sách con = phần CÒN LẠI của cha (≤ 12 lượt, 1/3 token ra, ≤ 80 % thời gian và cha còn ≥ 30 s). Chỉ thị nhúng con gặp lan LÊN cha (hạ tự trị).
+30. **Sự kiện con** luôn BỌC: `con-bat-dau`, `con-xong`, `su-kien-con {runIdCon, suKien}` ⇒ con không giả được `xong`/`da-duyet`/`ke-hoach` của cha. `KetQuaVongAgent` có thêm
+    `soLuot`/`tokenRa`/`nguonDangNgo` (cha cộng/hợp lại).
+31. **Host** (máy chủ): `cfg.tra` = định nghĩa dựng sẵn, hoặc tệp repo mà băm TÍNH LẠI mỗi lần khớp `ai_agent_def_trust` của CHÍNH người chạy (xác nhận chỉ qua tRPC của người;
+    nhận (tên, băm đã xem) và đọc lại tệp — TOCTOU); `batDauCon` ghi hàng sổ cha–con (`ai_agent_runs.parentRunId/depth/agentName/agentSource`, FK kép cùng chủ) TRƯỚC khi chạy;
+    con chỉ dùng model `auto` (= model cha) ở v1. Thẻ duyệt agent mang `agentRunId` ngay trong INSERT; `confirmAction` (mọi đường duyệt) đòi lượt + mọi tổ tiên còn `dang-chay|cho-duyet`
+    (DB, fail-closed, sống qua khởi động lại); cha kết thúc ⇒ đóng thẻ `proposed` của cả cây.
+32. **UX-C06**: sự kiện `ngu-canh-day {phanTram}` MỘT lần khi ≥ `NGUONG_NGU_CANH_DAY_PHAN_TRAM` (80); nhắc tóm tắt NOTES.md (`cauNhacTomTatNguCanh`) chỉ khi host bật `nhacTomTatKhiDay`
+    (`AI_AGENT_TOM_TAT_80=1`, mặc định TẮT; không ở `hoi`). Ghi NOTES.md đi đường ghi thường + thẻ duyệt.
+33. **Cổng duyệt kế hoạch (11.3-C, UX-D02)** — `keHoach.ts` (thuần) + `congKeHoach` của `DauVaoVongAgent` (host: `AI_AGENT_CONG_KE_HOACH=1`, MẶC ĐỊNH TẮT ⇒ byte-identical; chỉ `sua`/`tu-dong`).
+    Tool loại `ghi`/`lenh` và `delegate` chỉ chạy khi KẾ HOẠCH hiện tại (`todo_write` gần nhất) đã được NGƯỜI duyệt; chưa có kế hoạch ⇒ `PLAN_REQUIRED` (không chờ); đổi NỘI DUNG bước ⇒
+    băm đổi ⇒ duyệt lại (đổi trạng thái bước thì không). Băm = SHA-256 của JSON mảng nội dung ĐÃ LÀM SẠCH (NFC, bỏ ký tự ẩn/bidi, gộp khoảng trắng; trần 30 bước × 200 ký tự — vượt ⇒ LỖI cho model,
+    không cắt) — MỘT hàm cho lõi và máy chủ. Sự kiện `ke-hoach-cho-duyet {viec, bam}` (phát khi móc báo `daSanSang`, tức sổ đã lưu), `ke-hoach-da-duyet {bam, luc}`, `ke-hoach-khong-duyet {bam, lyDo}`
+    (bác ⇒ dừng `huy`; hết giờ ⇒ `het-gio`). Móc ném / kết quả lạ ⇒ BÁC (fail-closed). Thời gian chờ không ăn ngân sách giờ của lượt. Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh. Vòng con không có cổng riêng.
+34. **Host (11.3-C)**: móc `taoChoDuyetKeHoach` nộp kế hoạch vào `ai_agent_runs.keHoach*` (mig 0444; máy chủ tính băm LẠI) rồi hỏi sổ mỗi nhịp tới khi tRPC `aiAgent.duyetKeHoach` (chủ lượt, băm đã xem,
+    MỘT câu UPDATE có điều kiện) quyết; chỉ nhận "duyệt" khi sổ nói đúng (băm khớp · có giờ · người duyệt là chủ lượt); trần chờ 15 phút; huỷ lượt/kết thúc ⇒ chốt `bac` có điều kiện.

@@ -44,8 +44,8 @@ export interface TinNhan {
   tool_call_id?: string;
   name?: string;
   /**
-   * ★ Đợt 11.0 (CHỈ ĐO, mặc định không dùng) — suy luận ĐÃ CHE của lượt assistant trước, giữ trong lịch sử khi host bật
-   * `giuNghiTrongLichSu` (env `AI_AGENT_GIU_NGHI=1`). Template Qwen3.6 đọc `message.reasoning_content` + `preserve_thinking`.
+   * ★ Đợt 11.0 — suy luận ĐÃ CHE của lượt assistant trước, giữ trong lịch sử khi host bật `giuNghiTrongLichSu` (server: mặc định
+   * BẬT, tắt bằng env `AI_AGENT_GIU_NGHI=0`). Template Qwen3.6 đọc `message.reasoning_content` + `preserve_thinking`.
    */
   reasoning_content?: string;
 }
@@ -157,6 +157,26 @@ export type SuKienAgent =
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
+  /**
+   * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
+   * chạy. UI hiện banner "tóm tắt sang NOTES.md + mở phiên mới"; ghi NOTES.md vẫn qua `write_file`/`edit_file` + thẻ duyệt của NGƯỜI.
+   */
+  | { loai: "ngu-canh-day"; phanTram: number }
+  /**
+   * (Đợt 11.3-C, UX-D02) CỔNG DUYỆT KẾ HOẠCH (cờ host `AI_AGENT_CONG_KE_HOACH`, mặc định TẮT ⇒ các sự kiện này không bao giờ phát):
+   * tool ghi/lệnh/delegate sắp chạy mà kế hoạch hiện tại (`bam`) chưa được người duyệt ⇒ phát `ke-hoach-cho-duyet` rồi DỪNG chờ.
+   * `viec` là chữ thuần đã làm sạch (≤30 bước × 200 ký tự). Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh — thẻ vẫn qua người.
+   */
+  | { loai: "ke-hoach-cho-duyet"; viec: ViecKeHoach[]; bam: string }
+  | { loai: "ke-hoach-da-duyet"; bam: string; luc: string }
+  | { loai: "ke-hoach-khong-duyet"; bam: string; lyDo: "bac" | "het-gio" }
+  /**
+   * (Đợt 11.8) AGENT CON. Mọi sự kiện của vòng con đi qua `su-kien-con` (BỌC, không bao giờ phát thẳng) ⇒ con không giả
+   * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
+   */
+  | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string }
+  | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
   | { loai: "xong"; lyDo: LyDoDung; tomTat?: string }
   | { loai: "loi"; ma: string; thongDiep: string };
 
@@ -213,6 +233,9 @@ export interface GioiHanVong {
   /** (mở rộng so với spec) ngân sách ngữ cảnh tính bằng token — nén khi > 70 %. Mặc định 65 536 (Q5: 1 × 64k). */
   nganSachNguCanhToken: number;
 }
+
+/** (Đợt 11.8, UX-C06) ngưỡng "ngữ cảnh đầy" thống nhất (trước đây UI dùng 85 %). Dùng chung cho lõi, web và extension. */
+export const NGUONG_NGU_CANH_DAY_PHAN_TRAM = 80;
 
 export const GIOI_HAN_MAC_DINH: GioiHanVong = {
   soLuotToiDa: 30,

@@ -1,5 +1,5 @@
 /**
- * Diễn giải một đáp ứng HTTP không-ok từ máy chủ AI Local. THUẦN: nhận (status, thân đã thử phân
+ * Diễn giải một đáp ứng HTTP không-ok từ máy chủ Thợ Cả. THUẦN: nhận (status, thân đã thử phân
  * giải JSON hoặc `null`) — không đụng mạng, đo được không cần server thật.
  *
  * ⚠ 401 và 403 KHÔNG PHẢI CÙNG MỘT CHUYỆN, dù cả hai đều "không cho vào". Máy chủ phân biệt rành
