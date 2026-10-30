@@ -9,7 +9,7 @@
  */
 import { getDb } from "../../db/connection";
 import { adapterSessionResetBoundMs, getActiveConnectionFingerprint, getActiveDriver, listActiveAdapters, resetAdapterSession } from "./otManager";
-import type { OtDriver, OtTagAddress } from "./otDriver";
+import type { OtCommandResult, OtDriver, OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
 import { lopDiaChiBit } from "./drivers/diaChiBit";
 import { canonicalOtValue } from "./otActionBinding";
@@ -844,6 +844,11 @@ export function tryEnqueueAdapterCommand<T>(
 }
 
 
+/** R1b-2b-2a T2 — kết quả của `driver.writeTags` có ≥ 1 write KHÔNG rõ kết cục (`OtCommandResult.ketCucKhongRo`). */
+function mangKetCucKhongRo(v: unknown): boolean {
+  return Array.isArray(v) && v.some((r) => r != null && typeof r === "object" && (r as { ketCucKhongRo?: unknown }).ketCucKhongRo != null);
+}
+
 /**
  * doc 81 Đợt 4 Task B3 (QĐ-4b) — the queue-slot hold of a write that TIMED OUT. Before: the slot was released at the
  * timeout while the write could still be running on the driver's session, so a STOP queued behind it ran at the same
@@ -875,18 +880,22 @@ async function holdSlotAfterTimedOutWrite(
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const first = await Promise.race([
       write.then(
-        () => "settled" as const,
-        // R1b-2b-1 T17 fix round 2 (New-1) — huỷ vì mất liên kết / hạ phiên TRONG ân hạn (vòng canh S7/MC disconnect(), resetSession HA,
-        // connect() của supervisor) KHÔNG phải "đã xong": kết cục vẫn không rõ và byte đã vào socket còn có thể tới PLC ⇒ kết quả riêng.
-        (e: unknown) => (laLoiMatLienKetKhiDangGui(e) ? ("huy_mat_lien_ket" as const) : ("settled" as const)),
+        // R1b-2b-2a T2 (Q5) — chỉ kết quả KHÔNG mang `ketCucKhongRo` mới là "đã xong": driver tự hết hạn trong ân hạn (write mang
+        // `ketCucKhongRo`) ⇒ kết cục vẫn không rõ.
+        (v: unknown) => (mangKetCucKhongRo(v) ? ("khong_ro" as const) : ("settled" as const)),
+        // R1b-2b-1 T17 fix round 2 (New-1) + R1b-2b-2a T2 (Q5) — MỌI reject của lời ghi đã quá hạn lệnh, TRONG ân hạn (huỷ vì mất liên kết / hạ
+        // phiên: vòng canh S7/MC disconnect(), resetSession HA, connect() của supervisor; hết hạn của chính thư viện; lỗi bất kỳ) KHÔNG phải "đã
+        // xong": yêu cầu đã giao cho thư viện ⇒ kết cục vẫn không rõ và byte đã vào socket còn có thể tới PLC.
+        () => "khong_ro" as const,
       ),
       new Promise<"grace">((resolve) => {
         graceTimer = setTimeout(() => resolve("grace"), OT_TIMED_OUT_WRITE_GRACE_MS);
       }),
     ]);
     clearTimeout(graceTimer);
-    if (first === "huy_mat_lien_ket") {
-      // ghi rủi ro "lệnh ghi cũ" (gộp, không làm yếu) để STOP acked kế tiếp có canh chỉ-báo-động; KHÔNG đặt lại phiên (phiên đã hạ); nhả chỗ ngay.
+    if (first === "khong_ro") {
+      // ghi rủi ro "lệnh ghi cũ" (gộp, không làm yếu) để STOP acked kế tiếp có canh chỉ-báo-động; KHÔNG đặt lại phiên (thư viện đã thôi giữ
+      // yêu cầu / phiên đã hạ); nhả chỗ ngay.
       ghiRuiRoGhiCu(input, ledger, "cua_so");
       return;
     }
@@ -1337,8 +1346,11 @@ export async function executeOtDeviceWrite(a: {
   // phiên (phiên đã hạ), nhưng kết cục KHÔNG RÕ và byte đã vào socket vẫn có thể TỚI thiết bị SAU (ta tự hạ một socket còn sống — reset HA lúc
   // mạng phân mảnh, connect() lại sau khi trạng thái iso rớt: kernel vẫn gửi nốt, PLC xử lý phần đã nhận) ⇒ ghi rủi ro "lệnh ghi cũ" như B3 để
   // STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch). Chỉ khi tuần tự hoá bật — cùng phạm vi với B3.
-  if (matLienKetSauMs !== null && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
+  // R1b-2b-2a T2 (mục 66) — CÙNG nhánh cho write mà driver tự hết hạn (`ketCucKhongRo`): yêu cầu đã giao cho thư viện, thư viện đã thôi giữ nó (không
+  // giữ chỗ, không đặt lại phiên) nhưng lệnh có thể đã / sẽ được áp ⇒ ghi rủi ro MỘT lần mỗi lệnh.
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
+  const coWriteKhongRo = !timedOut && !threwError && resultsArr.some((x) => x.ok !== true && x.ketCucKhongRo != null);
+  if ((matLienKetSauMs !== null || coWriteKhongRo) && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
 
   const outcomes: Outcome[] = resolved.map((r, i) => {
     if (timedOut) {
@@ -1357,10 +1369,26 @@ export async function executeOtDeviceWrite(a: {
     if (threwError) {
       return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
     }
-    const wr =
+    const wr: OtCommandResult =
       resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
       { tagKey: r.write.tagKey, ok: false, error: "no result" };
     const ok = wr.ok === true;
+    if (!ok && wr.ketCucKhongRo != null) {
+      // R1b-2b-2a T2 (mục 66) — driver tự hết hạn khi yêu cầu ĐÃ giao cho thư viện / thiết bị: kết cục KHÔNG RÕ của RIÊNG write này ⇒ cùng nhãn
+      // `timeout` với T17 / B3 (không đọc lại: chỉ write `acked` được đọc lại), không bao giờ `failed`. Các write khác của lô giữ kết quả riêng.
+      // Fix round 1 (review M-1) — thông điệp của driver ĐÃ mang "outcome unknown" (`LoiQuaHanYeuCauDriver`: SLMP, dự phòng EIP) ⇒ chỉ nối phần
+      // giải thích, cụm "outcome unknown" xuất hiện ĐÚNG một lần trong errorText.
+      const loi = wr.error ?? "driver request timed out";
+      return {
+        idx: i,
+        ok: false,
+        status: "timeout",
+        errorText: /outcome unknown/i.test(loi)
+          ? `${loi}: the write may have been applied on the device`
+          : `${loi} — outcome unknown: the write may have been applied on the device`,
+        readBackValue: null,
+      };
+    }
     return {
       idx: i,
       ok,

@@ -3638,6 +3638,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Two-factor authentication is not enabled for this account. {{reason}}",
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
+    "TRPC_GIOI_HAN_THU_TUC": "Too many attempts at a sensitive action — try again in {{retryAfterGiay}} seconds.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
     "MUST_CHANGE_PASSWORD": "You must change your password before you can continue using the system.",
@@ -4095,7 +4096,9 @@
       "aiNgoaiDuyet": "approve flow using external AI",
       "taiAnhAi": "download image for AI analysis",
       "mayDungKhanCap": "load the emergency STOP machine list",
-      "aiKiemDinh": "external AI verification"
+      "aiKiemDinh": "external AI verification",
+      "aiChatLuu": "saving the AI chat message",
+      "aiNgoaiGhi": "save external AI configuration"
     },
     "field": {
       "stationId": "station",
@@ -4222,7 +4225,8 @@
       "assigneeUserId": "assignee",
       "writable": "writable",
       "dataType": "data type (dataType)",
-      "inspectionId": "inspection"
+      "inspectionId": "inspection",
+      "conTro": "pagination cursor"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4577,6 +4581,7 @@
       "anh-qua-lon": "the image exceeds 20 MB",
       "kiem-dinh-khong-co-nguon": "the turn to verify was not found (or the account belongs to several factories — external verification is not available)",
       "kiem-dinh-tra-loi-rong": "the turn has no answer to verify",
+      "dau-nguon-lech": "the saved answer does not match the external AI turn it claims",
       "NGOAI_TAT": "external AI is turned off",
       "NGOAI_KHONG_TON_TAI": "the external AI model is not enabled for this factory",
       "NGOAI_DU_LIEU_VAN_HANH": "the factory has not allowed operational data to be sent to external AI",
@@ -4586,11 +4591,18 @@
       "NGOAI_PHAN_HOI_QUA_LON": "the external AI response is too large",
       "NGOAI_SAI_SCHEMA": "the verification result has an invalid format",
       "NGOAI_DANG_CHAY": "this verification request is already running",
+      "NGOAI_KHONG_QUA_BO_GHEP": "external AI request was not built by the server request builder (system error)",
       "NGOAI_DEM_HONG": "the cost counter is unavailable — try again later",
       "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
       "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
       "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
-      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name"
+      "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name",
+      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)",
+      "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI.",
+      "NGOAI_THIEU_HOI_THOAI": "no saved conversation — open or create one and send again",
+      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen",
+      "NGOAI_CHI_HOI": "the external model only answers in Ask (read-only) mode — no file edits, no command output",
+      "NGOAI_TOOL_KHONG_CAP": "the external model asked for a tool that is not granted — the turn was stopped"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -10242,6 +10254,19 @@
     "cpkKhongXacDinh": "Some Cpk/Ppk points are undetermined (constant data — zero standard deviation): no bar is drawn; this is NOT zero."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Unlock two-factor authentication",
+        "tieuDe": "Unlock two-factor authentication for {{name}}",
+        "moTa": "Use this when the person is locked out after too many wrong codes or lost their device. Every unlock is logged with its reason; each person can be unlocked only a limited number of times per hour.",
+        "lyDo": "Reason",
+        "lyDoGoiY": "At least {{min}} characters.",
+        "gui": "Unlock",
+        "huy": "Cancel",
+        "daMoKhoa": "Two-factor authentication unlocked.",
+        "khongBiKhoa": "This person was not locked (the attempt was logged)."
+      }
+    },
     "userList": "User list",
     "userAssignments": "User assignments",
     "user": "User",
@@ -19097,7 +19122,17 @@
     "ledger": "Ledger",
     "ledgerIntent": "Write-ahead intent",
     "ledgerResult": "Result",
-    "ledgerResultOf": "Result of #{{id}}"
+    "ledgerResultOf": "Result of #{{id}}",
+    "loiBiChe": "Technical detail hidden (engineer access required)",
+    "maLoi": {
+      "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
+      "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
+      "EDGE_REPORTED": "The edge reported the command as not successful",
+      "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
+      "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
+      "TECHNICAL_ERROR": "Technical error"
+    }
   },
   "license": {
     "title": "License management",
@@ -21629,7 +21664,16 @@
         "hoi": "ask",
         "dangChay": "running"
       },
-      "hangCho": "Model queue: {{n}} request(s) ahead of you"
+      "hangCho": "Model queue: {{n}} request(s) ahead of you",
+      "khoa": {
+        "tieuDe": "Hard-locked commands (the agent can never run these)",
+        "biKhoa": "This command is HARD-LOCKED ({{lenh}}) — it cannot be approved to run.",
+        "phim": "While this card is focused: Enter = Allow once · Esc = Reject",
+        "moTa": {
+          "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
+          "csdl-that": "Write to the REAL database"
+        }
+      }
     },
     "duanCaNhan": {
       "err": {
@@ -21934,6 +21978,11 @@
         "LOI": "Could not complete — try again later.",
         "khac": "Could not complete ({{ma}})."
       }
+    },
+    "ngoai": {
+      "daDoc": "Read {{p}}",
+      "biTuChoi": "Denied ({{ma}}): {{p}}",
+      "chiHoi": "External model: Ask mode only · read-only (no file writes, no commands, no auto-fix loop)."
     }
   },
   "masterDataCol": {
@@ -23961,6 +24010,7 @@
       "dangTai": "Loading adapters…",
       "matKetNoi": "Connection lost",
       "edgeChuaCoSoLieu": "owned by edge {{edgeCode}} — no R0 data yet",
+      "khongQuyenKenh": "You don't have permission to view channel configuration — values and quality are still shown.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "All tags misconfigured — no read was sent to the device; fix the tag addresses"
       },
@@ -24056,6 +24106,12 @@
     },
     "kenh": {
       "title": "Channels & limits",
+      "timKiem": {
+        "nhan": "Search channels",
+        "goiY": "Tag or display name (accents ignored)",
+        "hien": "Showing {{n}} / {{m}}",
+        "khongCo": "No channel matches."
+      },
       "subtitle": "Declare each tag's channel kind, range, step and actuation level, and each machine's mode channel. Every change is audited with a reason.",
       "adapter": "Adapter",
       "khongCoAdapter": "There are no adapters in your scope.",
@@ -24150,6 +24206,7 @@
         "giaTriRemote": "REMOTE value",
         "giaTriSai": "The REMOTE value does not match the tag's data type.",
         "khongCoAdapterMay": "This machine has no adapter in your scope.",
+        "chonAdapter": "Choose an adapter…",
         "goTieuDe": "Unlink mode channel — machine {{code}}",
         "goMoTa": "The machine will be treated as LOCAL (not declared) until a channel is declared again.",
         "soLoi": "Invalid number (half-typed?) — use a decimal point, or empty the field to clear the declaration."
@@ -24408,6 +24465,7 @@
         "quaHanMotPhan": "Server is slow — the HMI STOP was NOT sent to adapter {{list}}.",
         "gioiHan": "The server refused: too many requests (HTTP 429) — the HMI STOP was NOT sent.",
         "khongRo": "Unknown whether adapter {{list}} received the STOP — the machine may NOT have stopped.",
+        "khongDat": "The HMI STOP was NOT delivered to adapter {{list}} — use the hardwired E-STOP at the machine.",
         "nutBo": "Understood"
       },
       "khanCap": {
@@ -24430,7 +24488,8 @@
       "vaiTro": "Roles",
       "hoSo": "Local profiles",
       "ngoai": "External models"
-    }
+    },
+    "nhanNgoai": "external · sends data to"
   },
   "kiemDinhNgoai": {
     "khongHopLe": "The review result has an invalid format and is not shown.",
@@ -24526,5 +24585,44 @@
       "chuaLuu": "There are unsaved changes — save first, then approve; approval applies only to the saved version.",
       "biCat": "… (truncated — only the beginning is shown; check ALL of the node's parameters in the config panel before approving)"
     }
+  },
+  "noiDungNgoai": {
+    "nhan": "external",
+    "guiDuLieuRa": "sends data to",
+    "lienKetChan": "link blocked",
+    "anhChan": "image blocked",
+    "canhBaoMa": "Written by an external AI — check before running it or pasting it into a terminal or file."
+  },
+  "hopDongYNgoai": {
+    "tieuDe": "Use an external model",
+    "moTa": "Every question asked with this model sends content to an external provider (paid). Content is masked for sensitive data by pattern before it leaves the machine.",
+    "dangTai": "Checking conditions…",
+    "nguoiGoVanHanh": "What you type is treated as OPERATIONAL DATA (this is the operations assistant) — it can only be sent when the factory has allowed sending operational data out.",
+    "nhaMayCho": "The factory has allowed sending operational data out",
+    "co": "yes",
+    "chua": "not yet",
+    "khong": "no",
+    "tranNguoi": "Your remaining cap today",
+    "chuaDatTran": "no cap set",
+    "nhaMayDuTran": "Factory has enough cap for this request",
+    "chiDoc": "The external AI is read-only — write/run tools are off. Images/files cannot be attached.",
+    "chuaDuocPhep": "Not available",
+    "tuChoi": "No, keep the current model",
+    "dongY": "Agree, use this model",
+    "tranVuot": {
+      "luot": "the model's per-request cap",
+      "nha-may": "the factory's daily cap",
+      "nguoi": "your daily cap",
+      "luong": "the flow's daily cap",
+      "lan-phut": "too many requests per minute"
+    },
+    "khongTai": "Could not load the conditions for this model — try again later.",
+    "codingLuotHai": "Coding screen: the FIRST turn sends only what you type and the code you allow to be read; from the second turn the conversation history counts as operational data (the factory must allow it; confirmed once per session)."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Send your question to an external AI?",
+    "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
+    "tuChoi": "Don't send",
+    "dongY": "Agree, send"
   }
 }

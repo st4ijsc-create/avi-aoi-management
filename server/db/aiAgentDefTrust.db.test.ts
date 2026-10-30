@@ -4,7 +4,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inArray } from "drizzle-orm";
 import { getDb } from "./connection";
-import { aiAgentDefTrust, users } from "../../drizzle/schema";
+import { aiAgentDefTrust } from "../../drizzle/schema";
+import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { daTinCay, danhSachTinCay, goTinCay, xacNhanTinCay } from "./aiAgentDefTrust";
 
 const TAG = `adt_${Date.now()}`;
@@ -15,12 +16,8 @@ let idB = 0;
 let coDb = false;
 
 async function mkUser(tag: string): Promise<number> {
-  const db = await getDb();
-  const [u] = await db!
-    .insert(users)
-    .values({ openId: `${TAG}_${tag}`, username: `${TAG}_${tag}`, name: `tin cay ${tag}`, role: "engineer", loginMethod: "local" })
-    .returning({ id: users.id });
-  return u!.id;
+  const u = await taoNguoiDungTest(tag, "engineer", { tienTo: "adt", ten: `tin cay ${tag}`, ts: TAG });
+  return u.id;
 }
 
 beforeAll(async () => {
@@ -35,7 +32,6 @@ afterAll(async () => {
   const db = await getDb();
   if (!db || !coDb) return;
   await db.delete(aiAgentDefTrust).where(inArray(aiAgentDefTrust.userId, [idA, idB]));
-  await db.delete(users).where(inArray(users.id, [idA, idB]));
 });
 
 describe("aiAgentDefTrust — phạm vi CHỦ (hai tài khoản)", () => {

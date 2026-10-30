@@ -57,8 +57,17 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const cuaMay = adapters.filter((a) => a.machineId === may.machineId);
-  const [adapterId, setAdapterId] = useState<number | null>(may.kenh?.adapterId ?? cuaMay[0]?.adapterId ?? null);
-  const [tagKey, setTagKey] = useState(may.kenh?.tagKey ?? "");
+  // Adapter hiệu lực = lựa chọn tay nếu có, ngược lại mặc định TÍNH LẠI mỗi lần render (danh sách adapter có thể tới sau lần mở hộp):
+  // kênh hiện có nằm trong danh sách ⇒ adapter đó; kênh hiện có không nằm trong danh sách / kênh ẩn ⇒ KHÔNG chọn sẵn; chưa có kênh ⇒ phần tử đầu.
+  const [chonAdapter, setChonAdapter] = useState<number | null | undefined>(undefined);
+  const macDinhAdapter = may.kenh
+    ? (cuaMay.some((a) => a.adapterId === may.kenh!.adapterId) ? may.kenh.adapterId : null)
+    : may.kenhAn
+      ? null
+      : (cuaMay[0]?.adapterId ?? null);
+  const adapterId = chonAdapter !== undefined ? chonAdapter : macDinhAdapter;
+  const [chonTag, setChonTag] = useState<string | undefined>(undefined);
+  const tagKey = chonTag ?? (may.kenh && adapterId === may.kenh.adapterId ? may.kenh.tagKey : "");
   const [gia, setGia] = useState(may.kenh ? String(may.kenh.giaTriRemote) : "");
   const [lyDo, setLyDo] = useState("");
   const [maTotp, setMaTotp] = useState(""); // kiem-dinh P1-2 — mã TOTP 6 số mỗi lần lưu
@@ -112,11 +121,16 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
                 className={LOP_O_CHON}
                 value={adapterId === null ? "" : String(adapterId)}
                 onChange={(e) => {
-                  setAdapterId(e.target.value === "" ? null : Number(e.target.value));
-                  setTagKey("");
+                  setChonAdapter(e.target.value === "" ? null : Number(e.target.value));
+                  setChonTag("");
                   setGia("");
                 }}
               >
+                {adapterId === null && (
+                  <option value="" disabled>
+                    {t("scada.kenh.dialog.chonAdapter")}
+                  </option>
+                )}
                 {cuaMay.map((a) => (
                   <option key={a.adapterId} value={String(a.adapterId)}>
                     {a.code}
@@ -126,7 +140,7 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
             </div>
             <div className="space-y-1">
               <Label htmlFor="scada-kenh-dat-tag">{t("scada.kenh.dialog.tag")}</Label>
-              <select id="scada-kenh-dat-tag" className={LOP_O_CHON} value={tagKey} onChange={(e) => setTagKey(e.target.value)}>
+              <select id="scada-kenh-dat-tag" className={LOP_O_CHON} value={tagKey} onChange={(e) => setChonTag(e.target.value)}>
                 <option value="" />
                 {tags.map((x) => (
                   <option key={x.tagKey} value={x.tagKey}>

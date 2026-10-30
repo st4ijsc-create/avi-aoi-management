@@ -174,6 +174,7 @@ import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
+import { ghiCoTran, suKienAuditTuNoiDung, themLucSuKien, type BoiCanhGhi } from "./ghiTreoCoTran"; // R1b-2b-2a T1 (mục 61) — one stuck-write cap for the STOP path
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 // Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
@@ -1910,12 +1911,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
-  //   any failed → 'failed'; timeout → 'timeout'; all verified → 'acked_verified';
-  //   else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
+  //   timeout (the command's, or ≥1 write whose outcome is unknown) → 'timeout'; else any failed → 'failed';
+  //   all verified → 'acked_verified'; else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
+  // R1b-2b-2a T2 (mục 66) — không rõ THẮNG thất bại (chiều an toàn: người vận hành phải đọc lại trước khi gửi lần nữa).
   const allOk = results.length > 0 && results.every((x) => x.ok);
   let overall: DispatchStatus;
   if (!allOk) {
-    overall = timedOut ? "timeout" : "failed";
+    overall = timedOut || outcomes.some((o) => o.status === "timeout") ? "timeout" : "failed";
   } else if (outcomes.every((o) => o.status === "acked_verified")) {
     overall = "acked_verified";
   } else if (outcomes.some((o) => o.status === "acked_unverified")) {
@@ -1937,6 +1939,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
  * reason as the robot M1 fix: under SEC_PLATFORM the hash-chain lock has no timeout and must not hold the stop's
  * answer). Its failure is logged (no secrets), never surfaced as a stop failure; the ledger row already carries
  * the override.
+ * R1b-2b-2a T1 (mục 61, điều phối Q2) — runs as a THUNK under the STOP path's ONE stuck-write cap (`ghiCoTran`, `ghiTreoCoTran.ts`) for EVERY
+ * pinned stop (one rule for every STOP source): the getDb() / import() / INSERT are issued only while fewer than TRAN_GHI_TREO_STOP background
+ * writes are in flight; a full cap ⇒ it is QUEUED (bounded FIFO, drained under the same cap, event time kept in after.lucSuKien); only overflow / age-out drops it (logged + counted + one summary audit row).
  */
 function auditPinnedStopOverride(
   input: DispatchInput,
@@ -1947,25 +1952,57 @@ function auditPinnedStopOverride(
   confirmer: number,
 ): void {
   const action = kind === "policyOverride" ? "stop_policy_override" : "stop_interlock_override";
-  const work = (async () => {
+  const suKien = {
+    entityType: "ot_command",
+    entityId: resultId ?? "unrecorded",
+    action,
+    actorId: confirmer,
+    after: { adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, ...override },
+    reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
+  };
+  void ghiCoTran(
+    async (t) => {
+      const db = await getDb();
+      if (!db) {
+        console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
+        return;
+      }
+      const { recordAuditEvent } = await import("../audit/controlAuditService");
+      await recordAuditEvent(db, themLucSuKien(suKien, t));
+    },
+    {
+      nhan: "dispatch_pinned_stop_audit",
+      requestId: input.idempotencyKey ?? "-",
+      noiDung: { bang: "control_audit_log", ...suKien, resultId: resultId ?? null, adapterId: input.adapterId },
+      // fix round 2/3 — mục quá lớn trong hàng chờ: ghi bản CẮT (chỉ before/after, định danh nguyên văn) từ nội dung; người ghi dựng ở phạm vi riêng
+      viecTuNoiDung: nguoiGhiAuditStopGhimTuNoiDung(action),
+      khiLoi: khiLoiAuditStopGhim(action, resultId),
+    },
+  );
+}
+
+/**
+ * R1b-2b-2a T1 fix round 3 (re-review N2-3) — writers / error handler for the pinned-stop audit built in their OWN scope (only `action` / `resultId`),
+ * so a queued oversize entry does not keep the override payload alive (V8 shares one context per scope).
+ */
+function nguoiGhiAuditStopGhimTuNoiDung(action: string): (nd: unknown, t: BoiCanhGhi) => Promise<void> {
+  return async (nd, t) => {
     const db = await getDb();
     if (!db) {
-      console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
+      console.error(`[Dispatch] audit ${action} (truncated) skipped — no DB (the pinned stop was sent)`);
       return;
     }
+    // khoá phụ của nội dung (resultId, adapterId) không phải cột audit — `recordAuditEvent` chỉ đọc các trường của AuditEventInput
     const { recordAuditEvent } = await import("../audit/controlAuditService");
-    await recordAuditEvent(db, {
-      entityType: "ot_command",
-      entityId: resultId ?? "unrecorded",
-      action,
-      actorId: confirmer,
-      after: { adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, ...override },
-      reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
-    });
-  })();
-  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, `pinned-stop ${action} audit`).catch((err) => {
-    console.error(`[Dispatch] audit ${action} failed or is stuck for command_log #${resultId ?? "?"} (the pinned stop was sent):`, (err as Error)?.message || err);
-  });
+    await recordAuditEvent(db, themLucSuKien(suKienAuditTuNoiDung<Parameters<typeof recordAuditEvent>[1]>(nd), t));
+  };
+}
+function khiLoiAuditStopGhim(action: string, resultId: number | undefined): (err: unknown, muon: boolean) => void {
+  return (err, muon) =>
+    console.error(
+      `[Dispatch] audit ${action} failed${muon ? " (late, after the background-write deadline)" : ""} for command_log #${resultId ?? "?"} (the pinned stop was sent):`,
+      (err as Error)?.message || err,
+    );
 }
 
 /** The cached (idempotent replay) result of a prior terminal ledger row for this key. */

@@ -182,7 +182,8 @@ export function CanhBaoChuaGhimStop() {
  */
 export type BangEstop =
   | { loai: "qua_han" }
-  | { loai: "qua_han_mot_phan"; list: string; khongRo?: string }
+  | { loai: "qua_han_mot_phan"; list: string; khongDat?: string; khongRo?: string }
+  | { loai: "khong_dat"; list: string; khongRo?: string }
   | { loai: "khong_ro"; list: string }
   | { loai: "gioi_han" };
 
@@ -202,11 +203,22 @@ export function bangEstopTuLoi(e: unknown): BangEstop | null {
 /**
  * Kết quả theo adapter có adapter bị bỏ vì hạn trước-gửi (reason STOP_QUA_HAN) ⇒ băng đỏ nêu các adapter đó. R1b-2b-1 T17 fix round 1 — adapter kết thúc
  * `timeout` (không rõ kết cục, vd. liên kết mất khi STOP đang bay) ⇒ cũng băng đỏ (`khong_ro`), giữ dòng đỏ trong hàng.
+ * R1b-2b-2a T3A fix round 1 (dieu-phoi) — adapter mà STOP KHÔNG TỚI (`failed` / `rejected`: vd. EIP quá trần chờ phiên mới ⇒ không gửi gì) ⇒ băng đỏ
+ * `khong_dat` ("KHÔNG tới" ≠ "không rõ"). Trừ hàng đã thuộc STOP_QUA_HAN và hàng edge / trung tâm dự phòng (đã gửi qua đường khác — "chưa xác minh").
+ * Ưu tiên khi trộn: qua_han_mot_phan > khong_dat > khong_ro; mỗi danh sách được giữ.
  */
-export function bangEstopTuKetQua(ketQua: Array<{ code: string; reason?: string; status?: string }>): BangEstop | null {
+export function bangEstopTuKetQua(
+  ketQua: Array<{ code: string; reason?: string; status?: string; edgeStopRequest?: boolean; centralFallbackSent?: boolean }>,
+): BangEstop | null {
   const ds = ketQua.filter((r) => r.reason === "STOP_QUA_HAN").map((r) => r.code);
+  const khongDat = ketQua
+    .filter((r) => (r.status === "failed" || r.status === "rejected") && r.reason !== "STOP_QUA_HAN" && !r.edgeStopRequest && !r.centralFallbackSent)
+    .map((r) => r.code);
   const khongRo = ketQua.filter((r) => r.status === "timeout" && r.reason !== "STOP_QUA_HAN").map((r) => r.code);
-  if (ds.length > 0) return { loai: "qua_han_mot_phan", list: ds.join(", "), ...(khongRo.length > 0 ? { khongRo: khongRo.join(", ") } : {}) };
+  const kd = khongDat.length > 0 ? { khongDat: khongDat.join(", ") } : {};
+  const kr = khongRo.length > 0 ? { khongRo: khongRo.join(", ") } : {};
+  if (ds.length > 0) return { loai: "qua_han_mot_phan", list: ds.join(", "), ...kd, ...kr };
+  if (khongDat.length > 0) return { loai: "khong_dat", list: khongDat.join(", "), ...kr };
   return khongRo.length > 0 ? { loai: "khong_ro", list: khongRo.join(", ") } : null;
 }
 
@@ -218,10 +230,14 @@ export function BangEstopCung({ bang, onBo }: { bang: BangEstop; onBo?: () => vo
       ? t("scada.dungMay.bangEstop.quaHan")
       : bang.loai === "qua_han_mot_phan"
         ? t("scada.dungMay.bangEstop.quaHanMotPhan", { list: bang.list })
-        : bang.loai === "khong_ro"
-          ? t("scada.dungMay.bangEstop.khongRo", { list: bang.list })
-          : t("scada.dungMay.bangEstop.gioiHan");
-  const lyThem = bang.loai === "qua_han_mot_phan" && bang.khongRo ? t("scada.dungMay.bangEstop.khongRo", { list: bang.khongRo }) : null;
+        : bang.loai === "khong_dat"
+          ? t("scada.dungMay.bangEstop.khongDat", { list: bang.list })
+          : bang.loai === "khong_ro"
+            ? t("scada.dungMay.bangEstop.khongRo", { list: bang.list })
+            : t("scada.dungMay.bangEstop.gioiHan");
+  const lyThem: string[] = [];
+  if (bang.loai === "qua_han_mot_phan" && bang.khongDat) lyThem.push(t("scada.dungMay.bangEstop.khongDat", { list: bang.khongDat }));
+  if ((bang.loai === "qua_han_mot_phan" || bang.loai === "khong_dat") && bang.khongRo) lyThem.push(t("scada.dungMay.bangEstop.khongRo", { list: bang.khongRo }));
   return (
     <div
       role="alert"
@@ -233,7 +249,11 @@ export function BangEstopCung({ bang, onBo }: { bang: BangEstop; onBo?: () => vo
       <div className="flex-1 space-y-0.5">
         <p className="text-base font-bold tracking-wide">{t("scada.dungMay.bangEstop.tieuDe")}</p>
         <p className="text-sm font-medium">{ly}</p>
-        {lyThem && <p className="text-sm font-medium">{lyThem}</p>}
+        {lyThem.map((dong) => (
+          <p key={dong} className="text-sm font-medium">
+            {dong}
+          </p>
+        ))}
       </div>
       {onBo && (
         <Button

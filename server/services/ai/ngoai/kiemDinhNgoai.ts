@@ -11,6 +11,8 @@
 import { MO_TA_DINH_DANG_KIEM_DINH, parseKetQuaKiemDinh, type KetQuaKiemDinh } from "../../../../shared/ai/kiemDinhNgoai";
 import { LoiNgoai } from "./loi";
 import type { KetQuaGoiNgoai, YeuCauGoiNgoai } from "./congNgoai";
+import { ghepPhan, type PhanGhep, type TinGhep } from "./ghepPhan";
+import { gopMuc, type MucDuLieu } from "./phanLoai";
 
 export interface YeuCauKiemDinh {
   dich: { nhaCungCap: string; model: string };
@@ -42,19 +44,37 @@ const HUONG_DAN = [
 /** Rào: khối dữ liệu không thể tự "đóng rào" (chuỗi rào bị thay nếu xuất hiện trong nội dung). */
 const rao = (nhan: string, s: string) => `<<<${nhan}\n${s.replace(/<<<|>>>/g, "‹‹‹")}\n>>>`;
 
-export function lapTinNhanKiemDinh(yc: Pick<YeuCauKiemDinh, "cauHoi" | "traLoi" | "tieuChi">): YeuCauGoiNgoai["tinNhan"] {
-  const phan = [rao("CAU_HOI", yc.cauHoi), rao("CAU_TRA_LOI_CAN_KIEM_DINH", yc.traLoi)];
-  if (yc.tieuChi?.trim()) phan.push(rao("TIEU_CHI", yc.tieuChi.trim()));
-  return [
-    { vaiTro: "system", noiDung: `${HUONG_DAN}\n\n${MO_TA_DINH_DANG_KIEM_DINH}` },
-    { vaiTro: "user", noiDung: phan.join("\n\n") },
+/**
+ * ★ 10.4b L0a — mức của câu hỏi / câu trả lời / tiêu chí = mức NGUỒN do máy chủ suy (`nguonMuc`): bề mặt ⇒ MAX `phanDaGhep`; luồng ⇒ do
+ * động cơ luồng. Tiêu chí người gõ ở nút kiểm định đi CÙNG mức nguồn (không hạ).
+ */
+function mucNguonCua(ngu: YeuCauGoiNgoai["ngu"]): MucDuLieu | "luong" {
+  return ngu.nguonMuc.loai === "luong" ? "luong" : gopMuc(...ngu.nguonMuc.phanDaGhep);
+}
+
+/** Danh sách PHẦN của yêu cầu kiểm định (đi qua `ghepPhan`). */
+export function lapTinGhepKiemDinh(yc: Pick<YeuCauKiemDinh, "cauHoi" | "traLoi" | "tieuChi" | "ngu">): TinGhep[] {
+  const muc = mucNguonCua(yc.ngu);
+  const phan: PhanGhep[] = [
+    { loai: "nguon-kiem-dinh", muc, noiDung: rao("CAU_HOI", yc.cauHoi) },
+    { loai: "nguon-kiem-dinh", muc, noiDung: rao("CAU_TRA_LOI_CAN_KIEM_DINH", yc.traLoi) },
   ];
+  if (yc.tieuChi?.trim()) phan.push({ loai: "nguon-kiem-dinh", muc, noiDung: rao("TIEU_CHI", yc.tieuChi.trim()) });
+  return [
+    { vaiTro: "system", phan: [{ loai: "huong-dan-tinh", noiDung: `${HUONG_DAN}\n\n${MO_TA_DINH_DANG_KIEM_DINH}` }] },
+    { vaiTro: "user", phan },
+  ];
+}
+
+export function lapTinNhanKiemDinh(yc: Pick<YeuCauKiemDinh, "cauHoi" | "traLoi" | "tieuChi" | "ngu">): YeuCauGoiNgoai["tinNhan"] {
+  return ghepPhan(lapTinGhepKiemDinh(yc)).tinNhan;
 }
 
 const cong = (a: number | null, b: number | null) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
 
 export async function kiemDinhNgoai(yc: YeuCauKiemDinh, goi: HamGoiCong): Promise<KetQuaKiemDinhNgoai> {
-  const tinNhan = lapTinNhanKiemDinh(yc);
+  const tinGhep = lapTinGhepKiemDinh(yc);
+  const tinNhan = ghepPhan(tinGhep).tinNhan;
   const goiMot = (ds: YeuCauGoiNgoai["tinNhan"]) =>
     goi({ dich: yc.dich, tinNhan: ds, maxTokens: yc.maxTokens ?? MAX_TOKENS_KIEM_DINH_MAC_DINH, mucDich: "kiem-dinh", ngu: yc.ngu });
   const lan1 = await goiMot(tinNhan);
@@ -62,11 +82,21 @@ export async function kiemDinhNgoai(yc: YeuCauKiemDinh, goi: HamGoiCong): Promis
   const vet1 = { tokenVao: lan1.tokenVao, tokenRa: lan1.tokenRa, chiPhiUocUsd: lan1.chiPhiUocUsd };
   if (p1.ok) return { ketQua: p1.data, vet: { ...yc.dich, ...vet1, soLanGoi: 1 }, callId: lan1.callId };
   // Thử lại MỘT lần: đưa lại câu trả lời sai + lỗi cụ thể (lỗi là chuỗi do shared sinh, ≤ 600 ký tự — không phải nội dung của model).
-  const lan2 = await goiMot([
-    ...tinNhan,
-    { vaiTro: "assistant", noiDung: String(lan1.noiDung ?? "").slice(0, 20_000) },
-    { vaiTro: "user", noiDung: `Kết quả trên KHÔNG hợp lệ: ${p1.loi}\nTrả lại ĐÚNG MỘT đối tượng JSON theo định dạng đã nêu; nếu vượt trần độ dài thì viết NGẮN hơn.` },
-  ]);
+  const lan2 = await goiMot(
+    ghepPhan([
+      ...tinGhep,
+      { vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: String(lan1.noiDung ?? "").slice(0, 20_000) }] },
+      {
+        vaiTro: "user",
+        phan: [
+          {
+            loai: "huong-dan-tinh",
+            noiDung: `Kết quả trên KHÔNG hợp lệ: ${p1.loi}\nTrả lại ĐÚNG MỘT đối tượng JSON theo định dạng đã nêu; nếu vượt trần độ dài thì viết NGẮN hơn.`,
+          },
+        ],
+      },
+    ]).tinNhan,
+  );
   const p2 = parseKetQuaKiemDinh(lan2.noiDung);
   const vet = {
     ...yc.dich,

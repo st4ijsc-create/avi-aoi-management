@@ -26,6 +26,8 @@ import { chotLuot, ghiChu, ghiNghi, taoDongHo } from "./dongHoHaiPha";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
 import { thongDiepLoiRest } from "@/lib/restAuthError";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { bocVetNgoai, docLoiTruocSse, laMaLoiNgoai, LoiSinhChuNgoai, thongDiepLoiNgoai } from "@/lib/loiNgoai";
+import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 
 // ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
 // Kept here (AIChatPage already imports this hook) so BOTH chat surfaces share one
@@ -191,6 +193,14 @@ export interface KbStreamResult {
   // aggregated here too so callers that only read the final result — not the
   // live callback — can still render the "ask→do" button after the turn ends).
   clientAction: KbClientAction | null;
+  /** ★ Đợt 10.4b — lượt do model NGOÀI sinh: nhà cung cấp/model (khung `meta.ngoai`); vắng ⇒ cục bộ. */
+  ngoai?: { nhaCungCap: string; model: string };
+  /** ★ Đợt 10.4b — vết lượt ngoài (khung `done.vet`, đã kiểm kiểu); `callId` đi vào `saveStreamedMessage.ngoaiCallId`. */
+  vet?: VetNgoai | null;
+  /** ★ Đợt 10.4b — MÁY CHỦ đã tự lưu cả hai tin của lượt ngoài (khung `done.daLuu`); có ⇒ client KHÔNG gọi `saveStreamedMessage` (sẽ trùng tin). Vắng (lưu lỗi) ⇒ đường cũ kèm `ngoaiCallId`. */
+  daLuu?: { tinNguoiDungId: number; tinTraLoiId: number };
+  /** ★ Đợt 10.4b L2 — mọi callId của lượt Hỏi ngoài (khung `done.ngoaiCallIds`, đã kiểm kiểu ≤ 50); client chuyển vào `luuPhien.ngoaiCallIds`. */
+  ngoaiCallIds?: number[];
 }
 
 export interface KbStreamContext {
@@ -224,6 +234,12 @@ export interface KbStreamContext {
   cheDoNghi?: string;
   /** ★ Đợt 10.2 — model người dùng chọn cho lượt (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:<ncc>:<model>`); `auto`/vắng ⇒ KHÔNG gửi. Máy chủ kiểm lại bằng `CHON_MODEL_RE` + danh mục. */
   chonModel?: string;
+  /** ★ Đợt 10.4b — đã xác nhận "người gõ = dữ liệu vận hành" cho hội thoại này (gửi ở MỌI lượt sau khi người dùng đồng ý; máy chủ không giữ trạng thái, cờ chỉ là UX). Chỉ đi khi TRUE. */
+  xacNhanVanHanh?: boolean;
+  /** ★ Đợt 10.4b — id hội thoại đã lưu (`aiChat.createConversation`); BẮT BUỘC khi `chonModel` là model ngoài (máy chủ gắn vết/nguồn vào hội thoại). Chỉ đi khi số nguyên dương. */
+  conversationId?: number;
+  /** ★ Đợt 10.4b L2 — id phiên lập trình ĐÃ LƯU (uuid, của chính mình); vắng ở lượt đầu chưa lưu. Máy chủ kiểm chủ phiên (404 nếu không phải) và đánh dấu `coLuotNgoai`. */
+  phienId?: string;
 }
 
 export interface KbStreamRequest {
@@ -267,6 +283,8 @@ export interface KbStreamCallbacks {
   onReasoning?: (text: string) => void;
   /** ★★ Đợt 9 — vòng kiểm biên dịch ST (cờ AI_KIEM_BIEN_DICH_ST; tắt ⇒ không bao giờ gọi). Thuần hiển thị. */
   onKiemBienDich?: (k: KbKiemBienDich) => void;
+  /** ★ Đợt 10.4b L2 — một công cụ ĐỌC của model ngoài đã chạy (sự kiện SSE `tool` dạng {name, path?, ok, maTuChoi?} — khác dạng `toolResult` của đường cục bộ). Thuần hiển thị. */
+  onDocTepNgoai?: (d: { name: string; path?: string; ok: boolean; maTuChoi?: string }) => void;
   /** ★ F6 — gọi đúng một lần khi có `done`: `degraded` = server đã TỪ CHỐI/THOÁI HOÁ và thay câu trả lời. */
   onDone?: (info: { degraded: boolean }) => void;
 }
@@ -359,6 +377,9 @@ export function dungNguCanhKb(c: KbStreamContext): Record<string, unknown> {
   if (c.modelTask && c.modelTask !== "auto") out.modelTask = c.modelTask;
   if (c.cheDoNghi) out.cheDoNghi = c.cheDoNghi;
   if (c.chonModel && c.chonModel !== "auto") out.chonModel = c.chonModel;
+  if (c.xacNhanVanHanh === true) out.xacNhanVanHanh = true;
+  if (typeof c.conversationId === "number" && Number.isInteger(c.conversationId) && c.conversationId > 0) out.conversationId = c.conversationId;
+  if (typeof c.phienId === "string" && c.phienId.length > 0 && c.phienId.length <= 64) out.phienId = c.phienId;
   return out;
 }
 
@@ -370,6 +391,10 @@ export function useKbChatStream() {
   const [streamingReasoning, setStreamingReasoning] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** ★ Đợt 10.4b — lỗi CÓ KIỂU của đường model ngoài (428 ⇒ `canXacNhanVanHanh`; còn lại ⇒ `code`/`tranVuot`/`vet`); null khi lỗi khác / không lỗi. */
+  const [loiNgoai, setLoiNgoai] = useState<LoiSinhChuNgoai | null>(null);
+  /** Bản ĐỒNG BỘ của `loiNgoai` — bề mặt đọc ngay sau `await startKbStream` (state chưa kịp cập nhật). */
+  const loiNgoaiRef = useRef<LoiSinhChuNgoai | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Synchronous "was the last run aborted?" flag — the caller reads this right
   // after the await (state updates are async, so it can't trust `error` for
@@ -385,6 +410,8 @@ export function useKbChatStream() {
       setStreamingText("");
       setStreamingReasoning("");
       setError(null);
+      setLoiNgoai(null);
+      loiNgoaiRef.current = null;
       abortedRef.current = false;
 
       const controller = new AbortController();
@@ -407,6 +434,10 @@ export function useKbChatStream() {
       let pendingAction: KbPendingAction | null = null;
       let vision: KbVisionNote | null = null;
       let clientAction: KbClientAction | null = null;
+      let ngoai: { nhaCungCap: string; model: string } | undefined;
+      let vet: VetNgoai | null = null;
+      let daLuu: { tinNguoiDungId: number; tinTraLoiId: number } | undefined;
+      let ngoaiCallIds: number[] | undefined;
       let accumulated = "";
       // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
       let suyLuanTichLuy = "";
@@ -432,6 +463,9 @@ export function useKbChatStream() {
 
         if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({}));
+          // ★ Đợt 10.4b — lỗi TRƯỚC SSE của đường ngoài (428/403/404/429/409/400/413) ⇒ lỗi có kiểu để bề mặt phân biệt.
+          const loiN = docLoiTruocSse(res.status, errBody);
+          if (loiN) throw loiN;
           // ★ M-4 — mã máy-đọc-được (`code`) → câu BẢN ĐỊA; không hiển thị chuỗi tiếng Anh cứng.
           throw new Error(thongDiepLoiRest(errBody, `Stream failed (${res.status})`));
         }
@@ -465,6 +499,10 @@ export function useKbChatStream() {
                 pendingAction?: KbPendingAction;
                 clientAction?: KbClientAction;
                 error?: string;
+                code?: string;
+                tranVuot?: string;
+                vet?: unknown;
+                ngoai?: { nhaCungCap?: unknown; model?: unknown };
                 // ★ F2 — các ô của sự kiện `usage` (xem `KbUsageLuot`); bóc bằng `bocUsage()`.
                 luot?: string;
                 modelId?: string;
@@ -480,6 +518,10 @@ export function useKbChatStream() {
                 provider?: string;
                 cached?: boolean;
                 ok?: boolean;
+                name?: unknown;
+                path?: unknown;
+                maTuChoi?: unknown;
+                ngoaiCallIds?: unknown;
                 visionText?: string | null;
                 reason?: string | null;
                 // ★★★ doc 81 · VIỆC 2 — tiến độ vòng lặp tool. Server phát sự kiện này TỪ TRƯỚC
@@ -522,6 +564,21 @@ export function useKbChatStream() {
                 intent = payload.intent ?? "general";
                 language = payload.language ?? "vi";
                 citations = payload.citations ?? [];
+                if (payload.ngoai && typeof payload.ngoai.nhaCungCap === "string" && typeof payload.ngoai.model === "string") {
+                  ngoai = { nhaCungCap: payload.ngoai.nhaCungCap.slice(0, 64), model: payload.ngoai.model.slice(0, 160) };
+                }
+              } else if (payload.type === "tool" && !payload.toolResult && typeof payload.name === "string") {
+                // ★ Đợt 10.4b L2 — tiến độ đọc của model ngoài (khác dạng `toolResult`). Chuỗi cắt độ dài; consumer ném không được giết lượt.
+                try {
+                  callbacks?.onDocTepNgoai?.({
+                    name: payload.name.slice(0, 40),
+                    ...(typeof payload.path === "string" ? { path: payload.path.slice(0, 300) } : {}),
+                    ok: payload.ok === true,
+                    ...(typeof payload.maTuChoi === "string" ? { maTuChoi: payload.maTuChoi.slice(0, 40) } : {}),
+                  });
+                } catch {
+                  /* kênh hiển thị, không phải kênh quyết định */
+                }
               } else if (payload.type === "tool" && payload.toolResult) {
                 toolResult = payload.toolResult;
                 toolName = payload.toolName ?? null;
@@ -563,6 +620,17 @@ export function useKbChatStream() {
                 followUpSuggestions = payload.followUpSuggestions;
                 provider = payload.provider;
                 cached = payload.cached;
+                if (payload.vet !== undefined) vet = bocVetNgoai(payload.vet);
+                if (Array.isArray(payload.ngoaiCallIds)) {
+                  const ids = payload.ngoaiCallIds.filter((x): x is number => typeof x === "number" && Number.isInteger(x) && x > 0).slice(0, 50);
+                  if (ids.length > 0) ngoaiCallIds = ids;
+                }
+                {
+                  const dl = (payload as { daLuu?: { tinNguoiDungId?: unknown; tinTraLoiId?: unknown } }).daLuu;
+                  if (dl && Number.isInteger(dl.tinNguoiDungId) && Number.isInteger(dl.tinTraLoiId) && (dl.tinNguoiDungId as number) > 0 && (dl.tinTraLoiId as number) > 0) {
+                    daLuu = { tinNguoiDungId: dl.tinNguoiDungId as number, tinTraLoiId: dl.tinTraLoiId as number };
+                  }
+                }
                 const doneAnswer = (payload as any).answer;
                 callbacks?.onDone?.({ degraded: (payload as any).degraded === true }); // ★ F6
                 // FE-W0.3 (doc 46 §2.3) — the backend flagged the streamed LLM
@@ -582,6 +650,8 @@ export function useKbChatStream() {
                   callbacks?.onText?.(accumulated);
                 }
               } else if (payload.type === "error") {
+                // ★ Đợt 10.4b — khung `error` của lượt ngoài mang `code`/`tranVuot`/`vet` ⇒ lỗi có kiểu (huy hiệu lượt lỗi vẫn hiện — N5).
+                if (laMaLoiNgoai(payload.code)) throw new LoiSinhChuNgoai({ status: 0, code: payload.code, error: payload.error, tranVuot: payload.tranVuot, vet: payload.vet });
                 throw new Error(payload.error ?? "Stream error");
               }
             } catch (parseErr: any) {
@@ -609,10 +679,18 @@ export function useKbChatStream() {
           pendingAction,
           vision,
           clientAction,
+          ...(ngoai ? { ngoai } : {}),
+          ...(vet ? { vet } : {}),
+          ...(daLuu ? { daLuu } : {}),
+          ...(ngoaiCallIds ? { ngoaiCallIds } : {}),
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {
           abortedRef.current = true;
+        } else if (err instanceof LoiSinhChuNgoai) {
+          loiNgoaiRef.current = err;
+          setLoiNgoai(err);
+          setError(thongDiepLoiNgoai(err.code, err.tranVuot));
         } else {
           setError(mapTrpcError(err));
         }
@@ -629,5 +707,5 @@ export function useKbChatStream() {
     setIsStreaming(false);
   }, []);
 
-  return { streamingText, streamingReasoning, isStreaming, error, abortedRef, startKbStream, stopKbStream };
+  return { streamingText, streamingReasoning, isStreaming, error, loiNgoai, loiNgoaiRef, abortedRef, startKbStream, stopKbStream };
 }

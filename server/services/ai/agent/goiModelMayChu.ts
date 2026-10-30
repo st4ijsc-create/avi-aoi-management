@@ -84,6 +84,7 @@ function sangTinNhanGguf(ds: TinNhan[]): GgufChatMessage[] {
     const ra: GgufChatMessage = { role: m.role, content: m.content ?? "" };
     if (m.role === "assistant" && m.tool_calls?.length) ra.tool_calls = m.tool_calls;
     if (m.role === "tool" && m.tool_call_id) ra.tool_call_id = m.tool_call_id;
+    if (m.role === "assistant" && m.reasoning_content?.trim()) ra.nghiTruoc = m.reasoning_content; // ★ 11.0 — chỉ có khi host bật giữ nghĩ
     return ra;
   });
 }
@@ -137,6 +138,8 @@ async function* luongModelMayChu(
       repeatPenalty: 1.05,
       ...(vao.congCu.length ? { tools: vao.congCu, toolChoice: "auto" as const } : {}),
       ...(nghi ? {} : { disableThinking: true }),
+      // ★ Đợt 11.0 (CHỈ ĐO) — lịch sử mang suy luận ⇒ bảo template GIỮ nó (`preserve_thinking`); vắng ⇒ thân yêu cầu như cũ.
+      ...(nghi && vao.tinNhan.some((m) => m.role === "assistant" && m.reasoning_content?.trim()) ? { preserveThinking: true } : {}),
     };
     // ★ Đợt 9 — DẤU VẾT: đường agent đi NGOÀI cổng (gọi thẳng engine, không `planInference`) ⇒ không quota / safety / license và KHÔNG
     //   định tuyến theo vai trò (gốc của lỗ "tác nhân luôn dùng model mặc định"). Chưa đưa qua cổng thật (việc riêng); trong lúc đó mỗi lượt

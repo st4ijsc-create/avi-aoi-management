@@ -33,6 +33,7 @@ import { kiemGoiLuongCon } from "./luong";
 import type { TimTaiLieu } from "../../ai/agent/timTaiLieuAgent";
 // Module LÁ — chữ cuối của agent thành dữ liệu luồng; chuỗi suy luận KHÔNG BAO GIỜ đi theo (và không bao giờ thành lệnh).
 import { stripThinking } from "../../ai/thinkingStrip";
+import { ghepPhan } from "../../ai/ngoai/ghepPhan";
 
 export type HamGoiAgent = (y: {
   vaiTro: string;
@@ -216,14 +217,22 @@ async function goiAgentNgoai(
   ngu: NguCanhChay,
   mucTool: () => readonly ("ky-thuat" | "van-hanh")[],
 ): Promise<{ chu: string; toolCalls: WireToolCall[] }> {
-  const ds = tinNhan.map((m) => ({
-    vaiTro: m.role as "system" | "user" | "assistant" | "tool",
-    noiDung:
-      m.role === "assistant" && m.tool_calls?.length
-        ? `${m.content ?? ""}${m.content ? "\n" : ""}${m.tool_calls.map((c) => `[gọi công cụ ${c.function.name} ${c.function.arguments ?? "{}"}]`).join("\n")}`
-        : String(m.content ?? ""),
-    ...(m.role === "tool" && m.name ? { tenTool: m.name } : {}),
-  }));
+  // ★ 10.4b L0a — qua bộ dựng: mọi tin của vòng agent luồng = `du-lieu-luong` (mức = lượt chạy ∪ kết quả tool — `nguNgoaiTuLuot(ngu, mucTool)`)
+  const ds = ghepPhan(
+    tinNhan.map((m) => ({
+      vaiTro: m.role as "system" | "user" | "assistant" | "tool",
+      phan: [
+        {
+          loai: "du-lieu-luong" as const,
+          noiDung:
+            m.role === "assistant" && m.tool_calls?.length
+              ? `${m.content ?? ""}${m.content ? "\n" : ""}${m.tool_calls.map((c) => `[gọi công cụ ${c.function.name} ${c.function.arguments ?? "{}"}]`).join("\n")}`
+              : String(m.content ?? ""),
+        },
+      ],
+      ...(m.role === "tool" && m.name ? { tenTool: m.name } : {}),
+    })),
+  ).tinNhan;
   let kq;
   try {
     kq = await goiCongNgoaiHienHanh({

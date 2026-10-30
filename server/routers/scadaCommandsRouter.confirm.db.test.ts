@@ -285,7 +285,7 @@ async function lyDoCua(requestId: string): Promise<Array<string | null>> {
   return ((await dung(sql`SELECT ly_do FROM scada_command_attempts WHERE request_id = ${requestId} ORDER BY id`)) as Array<{ ly_do: string | null }>).map((r) => r.ly_do);
 }
 async function moc(): Promise<number> {
-  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+  const [r] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
   return Number(r.m);
 }
 async function thuSau(m: number, userId: number): Promise<DongThu[]> {

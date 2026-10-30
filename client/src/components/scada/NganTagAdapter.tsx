@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -237,7 +238,11 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
   const tags = q.data ?? [];
   // R1a T14 — tag nào ghi được (cùng điều kiện cổng 3 của request: writable + kênh ra + bật; máy chủ vẫn kiểm lại)
   const coBang = !!hang && hang.trangThai !== "edge_chua_co_so_lieu";
-  const kenhQ = trpc.scadaKenh.danhSach.useQuery({ adapterId }, { enabled: coBang });
+  // `scadaKenh.danhSach` đòi machine_control.canView, còn trang M10 chỉ đòi machine_monitoring.canView ⇒ thiếu quyền thì KHÔNG gọi
+  // (tránh FORBIDDEN đỏ); giá trị + chất lượng vẫn hiện, chỉ mất nút Faceplate. Tiện lợi giao diện — máy chủ vẫn là ranh giới.
+  const { hasPermission } = usePermissions();
+  const coQuyenKenh = hasPermission("machine_control", "canView");
+  const kenhQ = trpc.scadaKenh.danhSach.useQuery({ adapterId }, { enabled: coBang && coQuyenKenh });
   const ghiDuoc = new Set(
     ((kenhQ.data ?? []) as HangKenh[]).filter((k) => k.writable && k.isEnabled && laLoaiKenhGhi(k.loaiKenh)).map((k) => k.tagKey),
   );
@@ -260,6 +265,12 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
               {hang.trangThai === "edge_chua_co_so_lieu" ? (
                 <p className="text-sm text-muted-foreground">{t("scada.diag.edgeChuaCoSoLieu", { edgeCode: tenEdge(hang) ?? "" })}</p>
               ) : (
+                <>
+                {!coQuyenKenh && (
+                  <p className="mb-2 text-xs text-muted-foreground" data-testid="khong-quyen-kenh">
+                    {t("scada.diag.khongQuyenKenh")}
+                  </p>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -315,6 +326,7 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
                     })}
                   </TableBody>
                 </Table>
+                </>
               )}
               {mauDangXem && <MauTho adapterId={mauDangXem.adapterId} tagKey={mauDangXem.tagKey} />}
               {canAct && hang.labStub && <KhoiLab adapterId={hang.adapterId} code={hang.code} />}

@@ -47,7 +47,7 @@
  */
 import path from "node:path";
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 import { decryptSecret, isEncrypted } from "../../security/secretBox";
 
 /**
@@ -312,6 +312,7 @@ export function getOpcuaClientCertificateManager(pkg: any, pkiDir: string, trust
           );
         };
       }
+      ghiNhoChungChiBiTuChoi(cm);
       cm.referenceCounter = (cm.referenceCounter ?? 0) + 1;
       return cm;
     });
@@ -322,6 +323,96 @@ export function getOpcuaClientCertificateManager(pkg: any, pkiDir: string, trust
     if (managers.get(key) === p) managers.delete(key);
   });
   return p;
+}
+
+// ── Tự lành khi chỉ mục "rejected" trong bộ nhớ của node-opcua-pki bị cũ (Node 26) ─────────────────
+// Trên Node 26.13 watcher của <pki>/rejected không phát add/unlink (Node 24 có) ⇒ sau khi người vận hành CHUYỂN chứng chỉ sang
+// <pki>/trusted/certs, manager đang sống (sản phẩm giữ MỘT manager mỗi gốc PKI suốt đời tiến trình) vẫn coi nó là "rejected" (rejected thắng
+// trusted) tới khi tiến trình khởi động lại; đọc lại đĩa thì đúng. node-opcua-pki có sẵn `reloadCertificates()` (đóng watcher, xoá chỉ mục, quét lại
+// đĩa) — dùng nó, KHÔNG dựng manager mới (manager dùng chung giữa nhiều adapter, không dispose giữa chừng).
+// Bất biến: KHÔNG BAO GIỜ tự tin cậy — chỉ quét lại khi thumbprint của chứng chỉ server vừa bị từ chối ĐÃ nằm trong <pki>/trusted/certs trên đĩa
+// (so thumbprint SHA-1 của NỘI DUNG tệp, không theo tên tệp); caller thử nối lại đúng MỘT lần. Không ghi gì vào trusted/.
+const chungChiBiTuChoiCuoi = new WeakMap<object, string>();
+/** Số lần quét lại trust-list vì chỉ mục cũ (quan sát được từ test / chẩn đoán). */
+export const opcuaPkiThongKe = { quetLai: 0 };
+/** Trần tần suất: tối đa MỘT lần quét lại / gốc PKI / 30 s — vòng nối lại của adapter (hoặc cert nằm cả trusted lẫn rejected) không được quét đĩa liên tục. */
+export const OPCUA_PKI_QUET_LAI_TOI_THIEU_MS = 30_000;
+const quetLaiLanCuoi = new Map<string, number>();
+/** Chỉ cho test: xoá bộ nhớ trần tần suất. */
+export function __datLaiTranQuetLaiPkiChoTest(): void {
+  quetLaiLanCuoi.clear();
+}
+
+/** DER của chứng chỉ ĐẦU trong một chuỗi DER nối nhau (verifyCertificate nhận Buffer.concat(chain)). */
+function derDau(buf: Buffer): Buffer {
+  if (buf.length > 4 && buf[0] === 0x30) {
+    const l1 = buf[1];
+    if (l1 < 0x80) return buf.subarray(0, 2 + l1);
+    const nBytes = l1 & 0x7f;
+    let len = 0;
+    for (let i = 0; i < nBytes; i++) len = len * 256 + buf[2 + i];
+    if (2 + nBytes + len <= buf.length) return buf.subarray(0, 2 + nBytes + len);
+  }
+  return buf;
+}
+
+function sha1CuaChungChi(cert: unknown): string {
+  const first = Array.isArray(cert) ? cert[0] : cert;
+  try {
+    return createHash("sha1").update(derDau(first as Buffer)).digest("hex");
+  } catch {
+    return sha1Hex(first);
+  }
+}
+
+/** Ghi thumbprint chứng chỉ mà manager vừa trả BadCertificateUntrusted (bọc verifyCertificate; kết quả không đổi). */
+function ghiNhoChungChiBiTuChoi(cm: any): void {
+  const orig = cm?.verifyCertificate;
+  if (typeof orig !== "function") return;
+  cm.verifyCertificate = async (...args: unknown[]) => {
+    const kq = await orig.apply(cm, args);
+    if (/BadCertificateUntrusted/.test(String(kq))) chungChiBiTuChoiCuoi.set(cm, sha1CuaChungChi(args[0]));
+    return kq;
+  };
+}
+
+/** Thumbprint (theo NỘI DUNG tệp) có trong <root>/trusted/certs trên đĩa không. */
+export function chungChiDaTinTrenDia(root: string, thumbprintHex: string): boolean {
+  const dir = path.join(root, "trusted", "certs");
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return false;
+  }
+  for (const name of files) {
+    try {
+      const x = new X509Certificate(fs.readFileSync(path.join(dir, name)));
+      if (createHash("sha1").update(x.raw).digest("hex") === thumbprintHex.toLowerCase()) return true;
+    } catch {
+      // không phải chứng chỉ — bỏ qua
+    }
+  }
+  return false;
+}
+
+/**
+ * Nối lỗi BadCertificateUntrusted bằng `cm`: nếu chứng chỉ bị từ chối ĐÃ nằm trong trusted/certs trên đĩa ⇒ quét lại trust-list của `cm`
+ * (reloadCertificates) và trả true (caller thử nối lại ĐÚNG MỘT lần với client mới). Ngược lại false, không đổi gì.
+ */
+export async function quetLaiTrustListNeuDaTinTrenDia(root: string, cm: any, trustOnFirstUse: boolean): Promise<boolean> {
+  // Gốc TOFU vốn tự tin cậy: quét lại vô ích và mở cửa sổ chỉ mục rỗng (cert đã bị người vận hành TỪ CHỐI ở rejected/ có thể bị TOFU nhận).
+  if (trustOnFirstUse || cm?.automaticallyAcceptUnknownCertificate === true) return false;
+  const thumb = chungChiBiTuChoiCuoi.get(cm);
+  if (!thumb || typeof cm?.reloadCertificates !== "function" || !chungChiDaTinTrenDia(root, thumb)) return false;
+  chungChiBiTuChoiCuoi.delete(cm);
+  const bay = Date.now();
+  const lanCuoi = quetLaiLanCuoi.get(root);
+  if (lanCuoi !== undefined && bay - lanCuoi < OPCUA_PKI_QUET_LAI_TOI_THIEU_MS) return false; // trong thời gian chờ ⇒ giữ nguyên lỗi cũ, không quét
+  quetLaiLanCuoi.set(root, bay); // đặt TRƯỚC khi quét: hai nối đồng thời cùng gốc chỉ một bên quét
+  await cm.reloadCertificates();
+  opcuaPkiThongKe.quetLai++;
+  return true;
 }
 
 /** Chỉ cho test: huỷ mọi manager đã tạo (dừng watcher) để tiến trình test thoát sạch. */

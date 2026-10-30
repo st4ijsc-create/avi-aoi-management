@@ -105,6 +105,48 @@ function coerceMcWrite(raw: unknown, dataType: string, dungGhim?: boolean): numb
 const withTimeout = withDeadline;
 
 /**
+ * SCADA R1b-2b-2a T3B-0 (backlog 84, dieu-phoi 2026-10-30) — MC TẠM KHOÁ GHI (fail-closed) tới khi có 3B.
+ * Thăm dò thật (T3, quaHanGhi.thuVienThat.r1b2b2.test.ts + mcTamKhoa.r1b2b2.test.ts; mcprotocol 0.1.2, khung 1E mặc định — driver không truyền `frame`):
+ *   • `processMBWriteItem` (mcprotocol.js:1336-1365) đọc end code 1E ở byte 9 (`theData.readUInt8(9)`) thay vì byte 1 ⇒ PLC trả ack ĐÚNG 2 byte
+ *     (`83 00`) ⇒ `ERR_OUT_OF_RANGE` ném trong handler 'data' của socket (onResponse, :200-202, không ai bắt) ⇒ uncaughtException ⇒ tiến trình trung
+ *     tâm (`_core/index.ts` handler) / edge gateway THOÁT mã 1 sau 1 s. MỘT lời ghi MC thành công làm sập server.
+ *   • phản hồi lỗi ≥ 10 byte (end code 0x5B ở byte 1, byte 9 = 0) ⇒ callback(false) = ACK GIẢ.
+ *   • 1E không có số thứ tự (:980-994) ⇒ ack muộn có thể hoàn tất lời ghi kế. Nhánh "MC write busy" (rc === 1) là mã chết (writeItems trả undefined).
+ * Quyết định: MỌI lời ghi MC bị từ chối TRƯỚC khi gửi (`OT_MC_TAM_KHOA`, không gói nào) — STOP qua MC ⇒ `failed` (băng E-STOP cứng `khong_dat`),
+ * không bao giờ ok. ĐỌC được GIỮ: đường đọc (`readResponse` / `processMBPacket` :1240-1310) kiểm độ dài trước khi đọc byte, thăm dò 11 hình phản hồi
+ * (đúng, end code lỗi, 1 byte, ack ghi 2 byte lạc, subheader sai, quá dài, độ dài lẻ, hai khung dính, rác) KHÔNG ném; khi ghi khoá `isWriting()` không
+ * bao giờ đúng ⇒ `processMBWriteItem` không bao giờ chạy. Handler vẫn được CÔ LẬP (`hardenMcInstance`: lỗi ném ra ⇒ phiên bị hạ, không bao giờ tới
+ * tiến trình). 3B đầy đủ (parse 1E đúng, hạ phiên khi hết hạn, không ok từ phản hồi lỗi, busy) = backlog 84.
+ */
+export const MA_MC_TAM_KHOA = "OT_MC_TAM_KHOA";
+export const LY_DO_MC_TAM_KHOA =
+  "Mitsubishi MC writes are locked (fail-closed): the mcprotocol 0.1.2 library misparses 1E write replies (a correct ack crashes the process, an error reply can read as ok) — waiting for fix 3B; nothing sent";
+
+/** T3B-0 — cờ mở khoá CHỈ cho test, trên `globalThis` (sống qua `vi.resetModules` / nhiều bản module trong một tệp test). */
+const CO_MO_KHOA_CHO_TEST = Symbol.for("scada.ot.mc.moKhoaGhiChoTest");
+
+/** T3B-0 — ghi MC đang tạm khoá? (một chỗ; 3B mở lại bằng cách đổi hàm này cùng bản vá thư viện). Sản xuất: luôn true. */
+export function mcGhiTamKhoa(): boolean {
+  // m2 — người ĐỌC cũng đòi VITEST: mã trong tiến trình ngoài vitest không bao giờ mở khoá được bằng cách đặt cờ toàn cục.
+  return !(process.env.VITEST && (globalThis as Record<symbol, unknown>)[CO_MO_KHOA_CHO_TEST] === true);
+}
+
+/**
+ * T3B-0 — CHỈ cho test (vitest): mở khoá ghi để các test có sẵn của logic ghi MC (ép bool, inverse scale, sổ đang bay, busy…) vẫn chạy trên mã sẽ
+ * dùng lại ở 3B. Ngoài vitest (`process.env.VITEST` vắng) ⇒ KHÔNG làm gì (khoá giữ nguyên), ghi lỗi, trả false. Không bao giờ dùng trong mã sản xuất.
+ */
+export function __moKhoaGhiMcChoTest(mo: boolean): boolean {
+  if (!process.env.VITEST) {
+    console.error(`[OT] __moKhoaGhiMcChoTest ignored outside vitest — ${MA_MC_TAM_KHOA} stays in force`);
+    return false;
+  }
+  const g = globalThis as Record<symbol, unknown>;
+  if (mo) g[CO_MO_KHOA_CHO_TEST] = true;
+  else delete g[CO_MO_KHOA_CHO_TEST];
+  return true;
+}
+
+/**
  * R1b-2a final-fix I-1 — hạn gói đọc của mcprotocol 0.1.2: `self.globalTimeout = 4500` (mcprotocol.js, constructor) — hẹn
  * `packetTimeout("read")` cho từng gói. Driver không ghi đè giá trị này; đọc từ instance nếu có (để không lệch nếu lib đổi), lui về 4500.
  */
@@ -190,7 +232,14 @@ interface McHardening {
   guard: (sock: any) => void;
 }
 
-function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void): McHardening {
+/**
+ * T3B-0 — các hàm của mcprotocol chạy từ handler socket / hẹn giờ (không ai bắt lỗi ném ra ⇒ uncaughtException ⇒ tiến trình thoát): bọc trên INSTANCE,
+ * lỗi ném ra ⇒ `onLoiXuLy` (driver hạ phiên), không bao giờ lan ra. `onResponse` = handler 'data' (mcprotocol.js:200-202, `self.onResponse.apply`);
+ * `packetTimeout` = hẹn giờ gói (:175-190).
+ */
+export const HAM_MC_CO_LAP = ["onResponse", "packetTimeout", "readAllItems"] as const;
+
+function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void, onLoiXuLy: (ham: string, err: unknown) => void = () => undefined): McHardening {
   const state: McHardening = {
     dropped: false,
     guard: () => undefined,
@@ -248,7 +297,26 @@ function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void): McH
     const orig = conn[name];
     conn[name] = function (this: any, ...args: unknown[]) {
       if (state.dropped) return undefined; // (3) vòng thử lại 100 ms của lib dừng ở đây
+      // T3B-0 — phòng thủ thứ hai: ghi MC tạm khoá ⇒ thư viện KHÔNG BAO GIỜ nhận một lời ghi (kể cả gọi thẳng instance, bỏ qua writeTags).
+      if (name === "writeItems" && mcGhiTamKhoa()) return undefined;
       return orig.apply(this, args);
+    };
+  }
+  // (4) T3B-0 — cô lập lỗi ném ra từ handler / hẹn giờ của thư viện.
+  for (const name of HAM_MC_CO_LAP) {
+    if (typeof conn[name] !== "function") continue;
+    const orig = conn[name];
+    conn[name] = function (this: any, ...args: unknown[]) {
+      try {
+        return orig.apply(this, args);
+      } catch (err) {
+        try {
+          onLoiXuLy(name, err);
+        } catch {
+          // listener cuối cùng — không bao giờ ném
+        }
+        return undefined;
+      }
     };
   }
   return state;
@@ -334,9 +402,15 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       await dropMcBounded(prev, prevHardening);
     }
     const conn = new MC();
-    const hardening = hardenMcInstance(conn, (err) => {
-      if (this.conn === conn) this.markLinkLost("error", err, conn);
-    });
+    const hardening = hardenMcInstance(
+      conn,
+      (err) => {
+        if (this.conn === conn) this.markLinkLost("error", err, conn);
+      },
+      // T3B-0 — thư viện ném trong handler / hẹn giờ ⇒ trạng thái nội bộ của nó không còn tin được (gói không bao giờ 'rcvd') ⇒ hạ phiên: yêu cầu
+      // đang bay ⇒ `mat_lien_ket`, connected=false ⇒ supervisor nối lại. Không bao giờ tới uncaughtException.
+      (ham, err) => this.loiXuLyThuVien(conn, hardening, ham, err),
+    );
 
     const opts = cfg.options ?? {};
     const defaultPort = typeof opts.port === "number" ? opts.port : 1281;
@@ -362,6 +436,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
+      if (mcGhiTamKhoa()) console.warn(`[OT] mitsubishi-mc ${host}:${port} connected for READS only — ${MA_MC_TAM_KHOA}: ${LY_DO_MC_TAM_KHOA}`);
       // doc 40 OT-F1 — mcprotocol là fork của NodeS7 (callback-based, cùng API), KHÔNG
       // có event channel ổn định. Gắn 'error'/'close' phòng hờ; đường phát hiện CHÍNH là
       // isConnected()/health() đọc `isoConnectionState` thật + fallback đếm-lỗi ở supervisor.
@@ -411,6 +486,18 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
         // ignore
       }
     }
+  }
+
+  /** T3B-0 — lỗi ném ra từ mã thư viện chạy trong handler socket / hẹn giờ (đã cô lập): hạ phiên ngay, ghi lý do. */
+  private loiXuLyThuVien(conn: any, hardening: McHardening, ham: string, err: unknown): void {
+    const ma = (err as { code?: unknown } | null)?.code;
+    const chiTiet = `${typeof ma === "string" ? `${ma}: ` : ""}${(err as Error)?.message ?? String(err)}`;
+    console.error(`[OT] mitsubishi-mc: mcprotocol threw inside ${ham} (isolated, session torn down): ${chiTiet}`);
+    if (this.conn !== conn) return;
+    this.markLinkLost(`library ${ham} threw`, chiTiet, conn);
+    this.conn = null;
+    this.hardening = null;
+    void dropMcBounded(conn, hardening);
   }
 
   /** Lật cờ mất kết nối (idempotent — chỉ tác động khi đang connected). */
@@ -586,6 +673,13 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
    * else ok:true cả batch. Lỗi parse từng write được cô lập.
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
+    // T3B-0 (backlog 84) — TẠM KHOÁ: từ chối MỌI lời ghi TRƯỚC khi chạm thư viện / socket (kể cả STOP — `failed`, không bao giờ ok; không gói nào).
+    // Trước cả kiểm kết nối: lý do người vận hành thấy luôn là khoá, không phải "unreachable".
+    if (mcGhiTamKhoa()) {
+      const loi = `${MA_MC_TAM_KHOA}: ${LY_DO_MC_TAM_KHOA}`;
+      if (writes.length > 0) this.lastError = loi;
+      return writes.map((w) => ({ tagKey: w.tagKey, ok: false, error: loi }));
+    }
     if (!this.connected || !this.conn) {
       throw new DeviceUnreachableError("mitsubishi-mc");
     }
@@ -660,10 +754,21 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       // doc 40 OT-F1 — báo trạng thái THẬT (đọc isoConnectionState), không phải cờ nội bộ.
       connected: this.isConnected(),
       lastOkAt: this.lastOkAt ?? this.connectedAt ?? undefined,
-      lastError: this.lastError,
+      // T3B-0 — tạm khoá ghi luôn hiện (trạng thái của adapter), kèm lỗi đọc gần nhất nếu có.
+      lastError: mcGhiTamKhoa() ? hopLyDoTamKhoa(this.lastError) : this.lastError,
       latencyMs: this.lastLatencyMs,
     };
   }
+}
+
+function hopLyDoTamKhoa(loi: string | undefined): string {
+  const khoa = `${MA_MC_TAM_KHOA}: ${LY_DO_MC_TAM_KHOA}`;
+  return !loi || loi === khoa ? khoa : `${khoa} | last error: ${loi}`;
+}
+
+/** I1 — lý do khoá NGẮN, đã làm sạch (không host / cổng) cho cột "Lỗi gần nhất" của bảng truyền thông; null khi không khoá. */
+export function lyDoMcTamKhoaNgan(): string | null {
+  return mcGhiTamKhoa() ? `${MA_MC_TAM_KHOA}: MC writes locked (fail-closed) - use the hardwired E-STOP` : null;
 }
 
 export function createMitsubishiMcDriver(): OtDriver {

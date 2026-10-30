@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
 import { afterEach, describe, expect, it } from "vitest";
-import { aiKiemDinhRouter, __datPhuThuocKiemDinhChoTest } from "./aiKiemDinhRouter";
+import { aiKiemDinhRouter, __datPhuThuocKiemDinhChoTest, TRAN_TRICH_TRA_LOI } from "./aiKiemDinhRouter";
 import { readAppErrorMeta } from "../_core/appError";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
 import type { YeuCauGoiNgoai } from "../services/ai/ngoai/congNgoai";
@@ -34,13 +34,16 @@ function dat(o: { nhaMay?: number[] | null; nguon?: unknown; traVe?: Array<strin
     },
     kiemTruoc: (async (yc: YeuCauGoiNgoai) => {
       kiem.push(yc);
-      if (o.kiemTruoc) return o.kiemTruoc();
-      return {
-        db: { execute: async () => [{ khoa: "nha-may", tokenGiu: 100, tienGiuUsd: 0.5 }] },
-        cfg: { tranTokenNgay: 100_000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
-        model: { giaVaoUsdTrieu: 3, giaRaUsdTrieu: 15 },
-        maxTokens: 4000,
-      };
+      const k = (o.kiemTruoc
+        ? await o.kiemTruoc()
+        : {
+            db: { execute: async () => [{ khoa: "nha-may", tokenGiu: 100, tienGiuUsd: 0.5 }] },
+            cfg: { tranTokenNgay: 100_000, tranTienNgayUsd: 2, tranTokenNguoiNgay: null },
+            model: { giaVaoUsdTrieu: 3, giaRaUsdTrieu: 15 },
+            maxTokens: 4000,
+          }) as { cfg: Record<string, unknown>; model: Record<string, unknown>; tran?: Record<string, unknown> };
+      // trần dùng cho giữ chỗ (như kiemTruocNgoai): cấu hình + trần lượt hiệu lực + số lần / phút
+      return { ...k, model: { model: "claude-thu", ...k.model }, tran: k.tran ?? { tranTokenLuot: null, tranLanPhut: 1000, tranTokenLuongNgay: null, ...k.cfg } };
     }) as never,
   });
   return { nhan, kiem };
@@ -167,6 +170,23 @@ describe("xemTruoc", () => {
     expect(nhan).toHaveLength(0);
   });
 
+  it("rà client luong-ui — trích câu trả lời nguồn ĐÃ CHE (≤ TRAN_TRICH_TRA_LOI) + độ dài gốc; bí mật nằm VẮT qua mốc cắt cũng không lọt", async () => {
+    // bí mật bắt đầu ở ký tự 190 — cắt TRƯỚC rồi mới che sẽ để lọt "password=Hunt…" (không đủ hình dạng để bộ che nhận ra)
+    const traLoi = "a ".repeat(95) + "password=Hunter2xyz99 " + "đuôi ".repeat(100);
+    dat({ nguon: { cauHoi: "hỏi", traLoi, muc: "ky-thuat", beMat: "chat" } });
+    const r = await goi().xemTruoc(INPUT);
+    expect(TRAN_TRICH_TRA_LOI).toBe(200);
+    expect(r.doDaiTraLoi).toBe(traLoi.length);
+    expect(r.trichTraLoi.length).toBeLessThanOrEqual(TRAN_TRICH_TRA_LOI);
+    expect(r.trichTraLoi.startsWith("a a a")).toBe(true);
+    expect(r.trichTraLoi).not.toMatch(/Hunt/);
+    expect(JSON.stringify(r)).not.toContain("đuôi đuôi đuôi đuôi");
+    dat({ nguon: { cauHoi: "hỏi", traLoi: "khoá: password=Hunter2xyz99 xong", muc: "ky-thuat", beMat: "chat" } });
+    const r2 = await goi().xemTruoc(INPUT);
+    expect(r2.trichTraLoi).toContain("khoá:");
+    expect(r2.trichTraLoi).not.toContain("Hunter2xyz99");
+  });
+
   it("dieu-phoi Q2 — admin thấy số nhà máy; trần nhà máy / trần người KHÔNG đủ cho ước tính lượt này ⇒ duocPhep false + NGOAI_VUOT_TRAN", async () => {
     dat();
     const ad = await goi("admin").xemTruoc(INPUT);
@@ -181,8 +201,66 @@ describe("xemTruoc", () => {
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nguoi: { token: 10 }, nhaMay: { duTranChoLuotNay: true } } });
   });
 
+  it("rà kiem-dinh Q8/Q9/Q11/Q3 — biên trần: còn lại ĐÚNG bằng ước ⇒ được, thiếu 1 ⇒ không; hết USD (token đủ) ⇒ không; giá chưa khai (chi phí null) ⇒ không so USD; vai khác admin không thấy số nhà máy", async () => {
+    const cauHinh = (cfg: object, rows: unknown[] = [], gia: [number | null, number | null] = [3, 15]) =>
+      dat({ kiemTruoc: async () => ({ db: { execute: async () => rows }, cfg, model: { giaVaoUsdTrieu: gia[0], giaRaUsdTrieu: gia[1] }, maxTokens: 4000 }) });
+    const VO_HAN = { tranTokenNgay: null, tranTienNgayUsd: null, tranTokenNguoiNgay: null };
+    cauHinh(VO_HAN);
+    const goc = await goi().xemTruoc(INPUT);
+    const uoc = goc.tokenUoc;
+    const chiPhi = goc.chiPhiUocUsd!;
+    // Q8: biên token
+    cauHinh({ ...VO_HAN, tranTokenNgay: uoc });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true, conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
+    cauHinh({ ...VO_HAN, tranTokenNgay: uoc - 1 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: false } } });
+    cauHinh({ ...VO_HAN, tranTokenNguoiNgay: uoc });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true });
+    cauHinh({ ...VO_HAN, tranTokenNguoiNgay: uoc - 1 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN" });
+    // Q9: hết USD, token đủ ⇒ không; USD còn đúng bằng chi phí ước ⇒ được
+    cauHinh({ ...VO_HAN, tranTokenNgay: 10 * uoc, tranTienNgayUsd: chiPhi / 2 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: false } } });
+    cauHinh({ ...VO_HAN, tranTienNgayUsd: chiPhi });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true });
+    // Q11: model chưa khai giá (chi phí ước null) + trần USD hữu hạn rất nhỏ ⇒ KHÔNG so USD ⇒ được
+    cauHinh({ ...VO_HAN, tranTienNgayUsd: 0.000001 }, [], [null, null]);
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: true, chiPhiUocUsd: null, conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
+    // Q3: vai KHÁC admin (kể cả vai cao) không thấy số nhà máy
+    cauHinh({ ...VO_HAN, tranTokenNgay: 10 * uoc });
+    for (const vai of ["engineer", "manager", "supervisor", "user"]) {
+      const r = await goi(vai).xemTruoc(INPUT);
+      expect(r.conLaiTranNgay.nhaMay, vai).not.toHaveProperty("token");
+      expect(r.conLaiTranNgay.nhaMay, vai).not.toHaveProperty("usd");
+    }
+    expect((await goi("admin").xemTruoc(INPUT)).conLaiTranNgay.nhaMay).toHaveProperty("token", 10 * uoc);
+  });
+
   it("cổng từ chối ở bước kiểm (vd dữ liệu vận hành chưa cho) ⇒ duocPhep false + lyDo, không ném", async () => {
     dat({ kiemTruoc: async () => Promise.reject(new LoiNgoai("NGOAI_DU_LIEU_VAN_HANH")) });
     expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_DU_LIEU_VAN_HANH", chiPhiUocUsd: null });
+  });
+});
+
+describe("★ 10.4 (luong-ui / dieu-phoi) — xem trước tính CÙNG mọi trần mà chay tính", () => {
+  const voi = (tran: Record<string, unknown>, rows: unknown[] = [], maxTokens = 4000) =>
+    dat({ kiemTruoc: async () => ({ db: { execute: async () => rows }, cfg: tran, tran: { tranTokenNgay: null, tranTienNgayUsd: null, tranTokenNguoiNgay: null, tranTokenLuongNgay: null, tranTokenLuot: null, tranLanPhut: 1000, ...tran }, model: { giaVaoUsdTrieu: null, giaRaUsdTrieu: null }, maxTokens }) });
+  it("trần MỖI LƯỢT của model < vào + maxTokens: CO maxTokens (vẫn được phép, tokenUoc ≤ trần); còn < 256 cho đầu ra ⇒ duocPhep false, tranVuot 'luot'", async () => {
+    voi({});
+    const goc = await goi().xemTruoc(INPUT);
+    const vao = goc.tokenUoc - 4000;
+    voi({ tranTokenLuot: vao + 1000 });
+    const r = await goi().xemTruoc(INPUT);
+    expect(r).toMatchObject({ duocPhep: true });
+    expect(r.tokenUoc).toBe(vao + 1000);
+    voi({ tranTokenLuot: vao + 100 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "luot" });
+    // rà kiem-dinh (NÊN) — kiểm định cần ≥ 1000 token đầu ra: còn 999 ⇒ từ chối sớm (cổng dùng CÙNG ngưỡng theo mucDich)
+    voi({ tranTokenLuot: vao + 999 });
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "luot" });
+  });
+  it("số lần / phút đầy ⇒ duocPhep false, tranVuot 'lan-phut'; nhaMay.duTranChoLuotNay vẫn true (không phải trần ngày nhà máy)", async () => {
+    voi({ tranLanPhut: 3 }, [{ so: 3 }]);
+    expect(await goi().xemTruoc(INPUT)).toMatchObject({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: "lan-phut", conLaiTranNgay: { nhaMay: { duTranChoLuotNay: true } } });
   });
 });

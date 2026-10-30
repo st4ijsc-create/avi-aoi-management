@@ -6,6 +6,8 @@
  *   lượt gần nhất) bằng một dòng `[compacted: <tool> <đường> — <n> chars]`, chỉ tới khi xuống dưới ngưỡng.
  *   Bất biến: KHÔNG bỏ/sửa system và câu hỏi gốc (mọi tin không phải `tool`); KHÔNG xoá tin (tool_call_id luôn khớp);
  *   2 lượt (assistant + kết quả tool của nó) gần nhất giữ nguyên văn; không đột biến đầu vào.
+ *   ★ Đợt 11.0 (rà kiem-dinh, cờ đo `AI_AGENT_GIU_NGHI`) — suy luận giữ trong lịch sử (`reasoning_content`, tới ~12k token/lượt) được
+ *   TÍNH vào ước lượng, và khi vượt ngưỡng thì BỎ suy luận của lượt CŨ (cũ nhất trước, ngoài vùng giữ) TRƯỚC khi rút gọn kết quả tool.
  * - Ước lượng token được TIÊM (server truyền `uocLuongSoToken` của aiLlamaServerClient); mặc định cùng công thức
  *   2,8 ký tự/token để lõi tự đứng được ở extension VSCode.
  */
@@ -25,7 +27,7 @@ const PHU_PHI_MOI_TIN = 4;
 export function uocLuongTinNhan(ds: TinNhan[], uocLuong: UocLuongToken = uocLuongTokenMacDinh): number {
   let tong = 0;
   for (const m of ds) {
-    tong += PHU_PHI_MOI_TIN + uocLuong(m.content ?? "");
+    tong += PHU_PHI_MOI_TIN + uocLuong(m.content ?? "") + uocLuong(m.reasoning_content ?? "");
     for (const t of m.tool_calls ?? []) tong += uocLuong(t.function.name) + uocLuong(t.function.arguments);
   }
   return tong;
@@ -84,6 +86,16 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   const ra = tinNhan.slice();
   let tong = tokenTruoc;
   let soNen = 0;
+  // (1) bỏ suy luận giữ lại của lượt CŨ trước — rẻ nhất để mất (model đã dùng nó để ra câu trả lời đang nằm trong `content`)
+  for (let i = 0; i < ranhGioi && tong > nguong; i++) {
+    const m = ra[i];
+    if (m.role !== "assistant" || !m.reasoning_content) continue;
+    tong -= uoc(m.reasoning_content);
+    const { reasoning_content: _bo, ...conLai } = m;
+    ra[i] = conLai;
+    soNen++;
+  }
+  // (2) rồi mới rút gọn kết quả tool cũ
   for (let i = 0; i < ranhGioi && tong > nguong; i++) {
     const m = ra[i];
     if (m.role !== "tool" || m.content.startsWith("[compacted:")) continue;

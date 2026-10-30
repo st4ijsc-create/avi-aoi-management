@@ -123,7 +123,7 @@ async function seedAssignment(
 describe.skipIf(!DB_URL)("Đợt 3b Task 1 — ca trên phân công + lọc ca phía server (CSDL THẬT _test)", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    auditLogsStartId = ((await sql`SELECT COALESCE(MAX(id), 0)::int AS m FROM audit_logs`) as unknown as Array<{ m: number }>)[0].m;
+    auditLogsStartId = ((await sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('audit_logs', 'id')::regclass), 0)), 0)::int AS m FROM audit_logs`) as unknown as Array<{ m: number }>)[0].m;
     const facInCode = `${DAU}-IN`;
     const facIn = await one(sql`INSERT INTO factories (code, name) VALUES (${facInCode}, ${`${DAU} trong`}) RETURNING id`);
     const facOut = await one(sql`INSERT INTO factories (code, name) VALUES (${`${DAU}-OUT`}, ${`${DAU} ngoai`}) RETURNING id`);

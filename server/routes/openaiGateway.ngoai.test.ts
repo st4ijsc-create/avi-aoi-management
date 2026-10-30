@@ -46,6 +46,7 @@ vi.mock("../services/ai/ngoai/congNgoai", async (goc) => ({
 
 import { createOpenAiGatewayRouter } from "./openaiGateway";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
+import { mucCuaGhep } from "../services/ai/ngoai/ghepPhan";
 import type { KetQuaXacThucToken } from "../db/aiGatewayTokens";
 
 const T1 = "avgw_" + "A".repeat(43);
@@ -91,7 +92,7 @@ describe("/v1 model ngoài", () => {
     expect(j.choices[0].message.content).toBe("TU NGOAI");
     expect(j.model).toBe("ngoai:anthropic:claude-thu");
     expect(h.goi).toHaveLength(1);
-    expect(h.goi[0]).toMatchObject({ dich: { nhaCungCap: "anthropic", model: "claude-thu" }, ngu: { userId: 501, nhaMayNguoiGoi: [7], nhaMayChuDuLieu: [], nguonMuc: { loai: "be-mat", beMat: "v1" } } });
+    expect(h.goi[0]).toMatchObject({ dich: { nhaCungCap: "anthropic", model: "claude-thu" }, ngu: { userId: 501, nhaMayNguoiGoi: [7], nhaMayChuDuLieu: [7], nguonMuc: { loai: "be-mat", beMat: "v1" } } });
   });
 
   it("key chung / người nhiều nhà máy / model khớp regex mà chưa bật ⇒ 404 model_not_found, cổng không được gọi", async () => {
@@ -103,7 +104,7 @@ describe("/v1 model ngoài", () => {
     expect(h.goi).toHaveLength(0);
   });
 
-  it("rà Task 8 B — lượt mang kết quả tool (role tool / function / assistant.tool_calls) ⇒ phanDaGhep van-hanh + chủ dữ liệu = nhà máy chủ token; lời thường ⇒ []", async () => {
+  it("rà Task 8 B — lượt mang kết quả tool (role tool / function / assistant.tool_calls) ⇒ phanDaGhep van-hanh + chủ dữ liệu = nhà máy chủ token; lời thường CŨNG van-hanh (L0a-b)", async () => {
     const lots = [
       [{ role: "user", content: "hi" }, { role: "tool", tool_call_id: "x", content: "nhiệt độ lò 231" }],
       [{ role: "user", content: "hi" }, { role: "function", name: "f", content: "OEE 81" }],
@@ -112,9 +113,13 @@ describe("/v1 model ngoài", () => {
     for (const messages of lots) expect((await chat(T1, { messages })).status).toBe(200);
     expect(h.goi).toHaveLength(3);
     for (const g of h.goi) expect(g).toMatchObject({ ngu: { nhaMayChuDuLieu: [7], nguonMuc: { loai: "be-mat", beMat: "v1", phanDaGhep: ["van-hanh"] } } });
+    // ★ 10.4b L0a — yêu cầu dựng qua bộ dựng; mức BỘ DỰNG tính cũng là van-hanh (cổng lấy MAX — hai nguồn độc lập cùng đóng)
+    for (const g of h.goi) expect(mucCuaGhep((g as { tinNhan: unknown }).tinNhan)).toBe("van-hanh");
     h.goi = [];
+    // L0a-b (rà kiem-dinh) — lời thường /v1 CŨNG là van-hanh (câu gõ + lịch sử do client ghép không chứng minh được là kỹ thuật)
     await chat(T1, { messages: [{ role: "system", content: "s" }, { role: "assistant", content: "a" }, { role: "user", content: "u" }] });
-    expect(h.goi[0]).toMatchObject({ ngu: { nhaMayChuDuLieu: [], nguonMuc: { phanDaGhep: [] } } });
+    expect(h.goi[0]).toMatchObject({ ngu: { nhaMayChuDuLieu: [7], nguonMuc: { phanDaGhep: ["van-hanh"] } } });
+    expect(mucCuaGhep((h.goi[0] as { tinNhan: unknown }).tinNhan)).toBe("van-hanh");
   });
 
   it("rà Task 8 F — max_tokens rác / âm / 0 / 1e12 / chuỗi ⇒ kẹp ở biên trong [1, 32000]", async () => {

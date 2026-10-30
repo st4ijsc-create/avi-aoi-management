@@ -351,7 +351,7 @@ describe("★★★ T11 — khaiHangLoat: MỘT UPDATE FROM VALUES + MỘT INSER
 
   it("SEC_PLATFORM bật — TẤT-CẢ-HOẶC-KHÔNG: INSERT audit hỏng giữa lô (phần tử #150) ⇒ lỗi; 0 tag đổi, 0 dòng audit, chuỗi vẫn liền (lượt đơn kế tiếp nối đúng)", async () => {
     vi.stubEnv("SEC_PLATFORM", "true");
-    const [dau] = await dung(sql`SELECT coalesce(max(id), 0) AS id FROM control_audit_log`);
+    const [dau] = await dung(sql`SELECT coalesce(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0) AS id FROM control_audit_log`);
     S.suaEs = (es) => {
       es[150] = { ...es[150], entityType: "x".repeat(65) }; // varchar(64) ⇒ 22001 trên INSERT nhiều hàng
       return es;

@@ -66,10 +66,33 @@ export type TomTatNgoaiPhienBan =
       taoBoi: number | null;
       /** Mức tĩnh của CẢ luồng (gồm luồng con ghim) — `van-hanh` ⇒ tự duyệt bị cấm. */
       mucTinhLuong: "ky-thuat" | "van-hanh";
-      nodes: Array<{ nodeId: string; nhaCungCap: string; model: string; mucTinh: "ky-thuat" | "van-hanh" | "ke-thua"; tomTatLenh: string }>;
+      nodes: Array<{
+        nodeId: string;
+        nhaCungCap: string;
+        model: string;
+        mucTinh: "ky-thuat" | "van-hanh" | "ke-thua";
+        /** Lời nhắc / tiêu chí ĐÃ CHE, tối đa `TRAN_TOM_TAT_LENH` ký tự (đủ để người duyệt đọc hết biểu thức). */
+        tomTatLenh: string;
+        /** Mọi tham chiếu dữ liệu (`$json…`, `$node(…)`, `$input…`) trong MỌI tham số chuỗi của node — thứ sẽ được ghép vào lời nhắc. */
+        thamChieu: string[];
+      }>;
     };
 
 const THAM_SO_LENH = ["loiNhac", "tieuChi", "lenh", "prompt", "cauHoi", "moTa"] as const;
+export const TRAN_TOM_TAT_LENH = 4000;
+/** Biến của ngôn ngữ biểu thức (`shared/flow/bieuThuc.ts`): `$json` · `$input` · `$env` · `$run` · `$node("…")`, kèm chuỗi truy cập theo sau. */
+const RE_THAM_CHIEU = /\$(?:(?:json|input|env|run)(?![\w$])|node\s*\(\s*["'][^"'\n]{1,80}["']\s*\))(?:\.[A-Za-z_$][\w$]*|\[[^\]\n]{1,80}\])*/g;
+function thamChieuCua(t: Record<string, unknown>, che: (s: string) => string): string[] {
+  const ra = new Set<string>();
+  const duyet = (v: unknown, sau: number): void => {
+    if (sau > 4 || ra.size >= 50) return;
+    if (typeof v === "string") for (const m of v.matchAll(RE_THAM_CHIEU)) ra.add(che(m[0]).slice(0, 120));
+    // mảng cũng đi nhánh này (Object.values của mảng = các phần tử)
+    else if (v && typeof v === "object") Object.values(v).forEach((x) => duyet(x, sau + 1));
+  };
+  for (const [k, v] of Object.entries(t)) if (k !== "chonModel") duyet(v, 0);
+  return [...ra];
+}
 
 export async function tomTatNgoaiPhienBan(
   v: { definition: unknown; ngoaiDuyetLuc: Date | string | null; ngoaiBamDuyet: string | null; ngoaiDuyetBoi: number | null; ngoaiTuDuyet: boolean; createdBy: number | null },
@@ -86,7 +109,14 @@ export async function tomTatNgoaiPhienBan(
       const [, nhaCungCap = "", ...m] = String(t.chonModel).split(":");
       const lenh = THAM_SO_LENH.map((k) => t[k]).find((x): x is string => typeof x === "string" && x.trim().length > 0) ?? "";
       // tóm tắt SAU bộ che — màn duyệt không bao giờ hiện khoá / mật khẩu viết trong lời nhắc
-      return { nodeId: n.id, nhaCungCap, model: m.join(":"), mucTinh: mucNguonNut(n.type), tomTatLenh: String(cheChuoi(lenh).giaTri).slice(0, 200) };
+      return {
+        nodeId: n.id,
+        nhaCungCap,
+        model: m.join(":"),
+        mucTinh: mucNguonNut(n.type),
+        tomTatLenh: String(cheChuoi(lenh).giaTri).slice(0, TRAN_TOM_TAT_LENH),
+        thamChieu: thamChieuCua(t, (s) => String(cheChuoi(s).giaTri)),
+      };
     });
   let mucTinhLuong: "ky-thuat" | "van-hanh";
   try {

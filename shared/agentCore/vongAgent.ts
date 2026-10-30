@@ -80,6 +80,11 @@ export interface DauVaoVongAgent {
   /** (Đợt 9) model host đã chọn theo vai trò — gắn vào `bat-dau`. Vắng ⇒ `bat-dau` như cũ. */
   thongTinModel?: ThongTinModelBatDau;
   /**
+   * ★ Đợt 11.0 (CHỈ ĐO) — giữ suy luận (đã che) của mỗi lượt assistant trong lịch sử gửi lại model (`reasoning_content`). Mặc định
+   * TẮT ⇒ lịch sử như cũ từng byte. Host bật bằng `AI_AGENT_GIU_NGHI=1` (lõi thuần không đọc env).
+   */
+  giuNghiTrongLichSu?: boolean;
+  /**
    * (Đợt 11.8, UX-C06) `true` ⇒ khi ngữ cảnh ≥ 80 % lõi nhắc model MỘT lần tóm tắt vào NOTES.md (chỉ `sua`/`tu-dong`: có công cụ ghi).
    * Mặc định TẮT. Sự kiện `ngu-canh-day` luôn phát (không đổi hành vi model).
    */
@@ -619,8 +624,9 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         const a = thamSoChoLichSu(tc.function.arguments, kts[k]);
         return a === tc.function.arguments ? tc : { ...tc, function: { ...tc.function, arguments: a } };
       });
+      const nghiGiu = y.giuNghiTrongLichSu && kq.nghi.trim() ? { reasoning_content: kq.nghi } : {};
       tinNhan.push(
-        calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu } : { role: "assistant", content: kq.chu },
+        calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu, ...nghiGiu } : { role: "assistant", content: kq.chu, ...nghiGiu },
       );
       if (calls.length === 0) {
         // ★★★ Mảnh thẻ tool call không gom được ⇒ KHÔNG phải câu trả lời cuối (xem `coManhToolCallHongKhuon`). Không vớt,

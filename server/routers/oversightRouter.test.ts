@@ -381,6 +381,34 @@ describe("oversightRouter.posture (ILK-06)", () => {
     expect(_internal.dieuKienLuatTrongPhamVi(hep)).toBeDefined();
     expect(_internal.dieuKienStopQuaHanTrongPhamVi(hep)).toBeDefined();
   });
+
+  it("★ R1b-2b-2a T1 (KD-A3, fix round 1) — ghiNenStopBoQua24h: lượt bị BỎ (tràn hàng chờ) ĐƯỢC ĐẾM + tín hiệu sống (đang bay, đầy từ, hàng chờ); chỉ toàn quyền thấy", async () => {
+    const g = await import("../services/ot/ghiTreoCoTran");
+    g._datLaiGhiTreoChoTest();
+    g._datGhiTomTatChoTest(() => new Promise<never>(() => undefined));
+    const treo = () => new Promise<never>(() => undefined);
+    for (let i = 0; i < g.TRAN_GHI_TREO_STOP + g.TRAN_HANG_CHO_GHI_NEN; i++) void g.ghiCoTran(treo, { nhan: `t${i}`, requestId: "r" });
+    await g.ghiCoTran(treo, { nhan: "audit_hmi_stop", requestId: "r", noiDung: { bang: "control_audit_log" } });
+    await g.ghiCoTran(treo, { nhan: "attempts_hmi_stop", requestId: "r", noiDung: { bang: "scada_command_attempts" } });
+    try {
+      mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);
+      const r = await oversightRouter.createCaller(admin()).posture();
+      expect(r.ghiNenStopBoQua24h).toMatchObject({
+        count: 2,
+        theoBang: { control_audit_log: 1, scada_command_attempts: 1 },
+        dangBay: g.TRAN_GHI_TREO_STOP,
+        tran: g.TRAN_GHI_TREO_STOP,
+        dayTu: expect.any(String),
+        hangCho: g.TRAN_HANG_CHO_GHI_NEN,
+        tomTatCho: 2,
+      });
+      expect(_internal.ghiNenStopBoQua({ toanQuyen: false, dong: [1], tram: [2], may: [3], adapter: [4] })).toBeNull();
+      expect(_internal.ghiNenStopBoQua(null)).toBeNull();
+    } finally {
+      g._datLaiGhiTreoChoTest();
+      g._datGhiTomTatChoTest(null);
+    }
+  });
 });
 
 // Doc 80 Đợt 1 final wave (item 5) — bảng tư thế KHÔNG tự parse env: mỗi ô == đúng vị từ của cổng thật.

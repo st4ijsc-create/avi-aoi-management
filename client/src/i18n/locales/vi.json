@@ -3646,6 +3646,7 @@
     "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
     "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Tài khoản này chưa bật xác thực 2 lớp. {{reason}}",
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+    "TRPC_GIOI_HAN_THU_TUC": "Quá nhiều lần thử thao tác nhạy cảm — thử lại sau {{retryAfterGiay}} giây.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
     "MUST_CHANGE_PASSWORD": "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
@@ -4103,7 +4104,9 @@
       "aiNgoaiDuyet": "duyệt luồng dùng AI ngoài",
       "taiAnhAi": "tải ảnh cho phân tích AI",
       "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp",
-      "aiKiemDinh": "kiểm định bởi AI ngoài"
+      "aiKiemDinh": "kiểm định bởi AI ngoài",
+      "aiChatLuu": "lưu tin nhắn trò chuyện AI",
+      "aiNgoaiGhi": "ghi cấu hình AI ngoài"
     },
     "field": {
       "stationId": "trạm",
@@ -4230,7 +4233,8 @@
       "assigneeUserId": "người được giao",
       "writable": "cho phép ghi (writable)",
       "dataType": "kiểu dữ liệu (dataType)",
-      "inspectionId": "lần kiểm tra"
+      "inspectionId": "lần kiểm tra",
+      "conTro": "con trỏ phân trang"
     },
     "feature": {
       "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",
@@ -4577,6 +4581,7 @@
       "anh-qua-lon": "ảnh vượt 20 MB",
       "kiem-dinh-khong-co-nguon": "không tìm thấy lượt cần kiểm định (hoặc tài khoản thuộc nhiều nhà máy — chưa dùng được kiểm định ngoài)",
       "kiem-dinh-tra-loi-rong": "lượt không có câu trả lời để kiểm định",
+      "dau-nguon-lech": "câu trả lời đem lưu không khớp dấu nguồn của lượt AI ngoài",
       "NGOAI_TAT": "AI ngoài đang tắt",
       "NGOAI_KHONG_TON_TAI": "model AI ngoài chưa được bật cho nhà máy",
       "NGOAI_DU_LIEU_VAN_HANH": "nhà máy chưa cho phép gửi dữ liệu vận hành ra AI ngoài",
@@ -4586,11 +4591,18 @@
       "NGOAI_PHAN_HOI_QUA_LON": "phản hồi của AI ngoài quá lớn",
       "NGOAI_SAI_SCHEMA": "kết quả kiểm định sai định dạng",
       "NGOAI_DANG_CHAY": "yêu cầu kiểm định này đang chạy",
+      "NGOAI_KHONG_QUA_BO_GHEP": "yêu cầu AI ngoài không được dựng qua bộ dựng của máy chủ (lỗi hệ thống)",
       "NGOAI_DEM_HONG": "bộ đếm chi phí không sẵn sàng — thử lại sau",
       "NGOAI_SO_HONG": "sổ kiểm toán AI ngoài không ghi được — thử lại sau",
       "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
       "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
-      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ"
+      "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ",
+      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)",
+      "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài.",
+      "NGOAI_THIEU_HOI_THOAI": "thiếu hội thoại đã lưu — hãy mở hoặc tạo hội thoại rồi gửi lại",
+      "modelNgoaiChuaCaiDat": "model AI ngoài chưa dùng được ở màn này",
+      "NGOAI_CHI_HOI": "model ngoài chỉ trả lời ở chế độ Hỏi (chỉ đọc) — không sửa tệp, không dùng đầu ra lệnh",
+      "NGOAI_TOOL_KHONG_CAP": "model ngoài đòi dùng một công cụ không được cấp — lượt đã dừng"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -10242,6 +10254,19 @@
     "cpkKhongXacDinh": "Có điểm Cpk/Ppk không xác định (dữ liệu hằng — độ lệch chuẩn bằng 0): không vẽ thanh, KHÔNG phải 0."
   },
   "users": {
+    "totp": {
+      "moKhoa": {
+        "nut": "Mở khoá xác thực hai lớp",
+        "tieuDe": "Mở khoá xác thực hai lớp của {{name}}",
+        "moTa": "Dùng khi người này bị khoá do nhập sai mã nhiều lần hoặc mất thiết bị. Mỗi lần mở khoá đều được ghi nhật ký kèm lý do; mỗi người chỉ được mở khoá một số lần giới hạn trong một giờ.",
+        "lyDo": "Lý do",
+        "lyDoGoiY": "Tối thiểu {{min}} ký tự.",
+        "gui": "Mở khoá",
+        "huy": "Huỷ",
+        "daMoKhoa": "Đã mở khoá xác thực hai lớp.",
+        "khongBiKhoa": "Người này không bị khoá (đã ghi nhật ký)."
+      }
+    },
     "assignUserToCorporateFactory": "Phân công Người dùng đến Tập đoàn Nhà máy",
     "selectUserAndCorporateCode": "Chọn Người dùng và Tập đoàn Mã",
     "removedCorporateAssignment": "Removed Tập đoàn Phân công",
@@ -19097,7 +19122,17 @@
     "ledger": "Sổ ghi",
     "ledgerIntent": "Ghi trước (ý định)",
     "ledgerResult": "Kết quả",
-    "ledgerResultOf": "Kết quả của #{{id}}"
+    "ledgerResultOf": "Kết quả của #{{id}}",
+    "loiBiChe": "Chi tiết kỹ thuật bị ẩn (cần quyền kỹ sư)",
+    "maLoi": {
+      "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
+      "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
+      "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
+      "EDGE_REPORTED": "Edge báo lệnh không thành công",
+      "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
+      "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",
+      "TECHNICAL_ERROR": "Lỗi kỹ thuật"
+    }
   },
   "license": {
     "title": "Quản lý giấy phép",
@@ -21629,7 +21664,16 @@
         "hoi": "hỏi",
         "dangChay": "đang chạy"
       },
-      "hangCho": "Hàng chờ model: {{n}} lượt đứng trước bạn"
+      "hangCho": "Hàng chờ model: {{n}} lượt đứng trước bạn",
+      "khoa": {
+        "tieuDe": "Lệnh bị khoá cứng (agent không bao giờ chạy được)",
+        "biKhoa": "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.",
+        "phim": "Khi thẻ này đang được chọn: Enter = Cho phép một lần · Esc = Bác",
+        "moTa": {
+          "ngoai-du-an": "Xoá / ghi tệp NGOÀI thư mục dự án",
+          "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
+        }
+      }
     },
     "duanCaNhan": {
       "err": {
@@ -21934,6 +21978,11 @@
         "LOI": "Không thực hiện được — thử lại sau.",
         "khac": "Không thực hiện được ({{ma}})."
       }
+    },
+    "ngoai": {
+      "daDoc": "Đã đọc {{p}}",
+      "biTuChoi": "Bị từ chối ({{ma}}): {{p}}",
+      "chiHoi": "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa)."
     }
   },
   "masterDataCol": {
@@ -23958,6 +24007,7 @@
       "dangTai": "Đang tải danh sách adapter…",
       "matKetNoi": "Mất kết nối",
       "edgeChuaCoSoLieu": "do edge {{edgeCode}} sở hữu — chưa có số liệu R0",
+      "khongQuyenKenh": "Không có quyền xem cấu hình kênh — giá trị và chất lượng vẫn hiện.",
       "lyDo": {
         "moi_tag_sai_cau_hinh": "Mọi tag sai cấu hình — chưa gửi yêu cầu đọc nào tới thiết bị; hãy sửa địa chỉ tag"
       },
@@ -24053,6 +24103,12 @@
     },
     "kenh": {
       "title": "Kênh & giới hạn",
+      "timKiem": {
+        "nhan": "Tìm kênh",
+        "goiY": "Tag hoặc tên hiển thị (không cần dấu)",
+        "hien": "Hiện {{n}} / {{m}}",
+        "khongCo": "Không có kênh nào khớp."
+      },
       "subtitle": "Khai báo loại kênh, dải, bước, mức tác động của từng tag và kênh chế độ của từng máy. Mọi thay đổi ghi audit kèm lý do.",
       "adapter": "Adapter",
       "khongCoAdapter": "Chưa có adapter nào trong phạm vi của bạn.",
@@ -24147,6 +24203,7 @@
         "giaTriRemote": "Giá trị REMOTE",
         "giaTriSai": "Giá trị REMOTE không đúng kiểu của tag.",
         "khongCoAdapterMay": "Máy này chưa có adapter nào trong phạm vi của bạn.",
+        "chonAdapter": "Chọn adapter…",
         "goTieuDe": "Gỡ kênh chế độ — máy {{code}}",
         "goMoTa": "Máy sẽ được coi là LOCAL (chưa khai) cho tới khi khai lại kênh.",
         "soLoi": "Giá trị số không hợp lệ (đang gõ dở?) — dùng dấu chấm thập phân, hoặc xoá trắng ô để bỏ khai báo."
@@ -24405,6 +24462,7 @@
         "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
         "khongRo": "Không rõ adapter {{list}} đã nhận STOP hay chưa — máy có thể CHƯA dừng.",
+        "khongDat": "STOP HMI KHÔNG tới được adapter {{list}} — dùng E-STOP cứng tại máy.",
         "nutBo": "Đã hiểu"
       },
       "khanCap": {
@@ -24427,7 +24485,8 @@
       "vaiTro": "Vai trò",
       "hoSo": "Hồ sơ Local",
       "ngoai": "Model ngoài"
-    }
+    },
+    "nhanNgoai": "ngoài · gửi dữ liệu ra"
   },
   "kiemDinhNgoai": {
     "khongHopLe": "Kết quả kiểm định không đúng định dạng nên không hiển thị.",
@@ -24523,5 +24582,44 @@
       "chuaLuu": "Có thay đổi chưa lưu — lưu rồi duyệt; duyệt chỉ áp cho phiên bản đã lưu.",
       "biCat": "… (đã cắt — chỉ thấy phần đầu; kiểm tra TOÀN BỘ tham số của node trong bảng cấu hình trước khi duyệt)"
     }
+  },
+  "noiDungNgoai": {
+    "nhan": "ngoài",
+    "guiDuLieuRa": "gửi dữ liệu ra",
+    "lienKetChan": "liên kết bị chặn",
+    "anhChan": "ảnh bị chặn",
+    "canhBaoMa": "Do AI ngoài viết — kiểm tra trước khi chạy/dán vào terminal hoặc tệp."
+  },
+  "hopDongYNgoai": {
+    "tieuDe": "Dùng model bên ngoài",
+    "moTa": "Mỗi lượt hỏi bằng model này gửi nội dung ra nhà cung cấp bên ngoài (trả phí). Nội dung được che dữ liệu nhạy cảm theo mẫu trước khi rời máy.",
+    "dangTai": "Đang kiểm tra điều kiện…",
+    "nguoiGoVanHanh": "Câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH (đây là trợ lý vận hành) — chỉ gửi được khi nhà máy đã cho phép gửi dữ liệu vận hành ra ngoài.",
+    "nhaMayCho": "Nhà máy đã cho phép gửi dữ liệu vận hành ra ngoài",
+    "co": "có",
+    "chua": "chưa",
+    "khong": "không",
+    "tranNguoi": "Trần còn lại của bạn hôm nay",
+    "chuaDatTran": "chưa đặt trần",
+    "nhaMayDuTran": "Nhà máy còn đủ trần cho lượt này",
+    "chiDoc": "AI ngoài chỉ đọc — công cụ ghi/chạy lệnh bị tắt. Không đính kèm được ảnh/tệp.",
+    "chuaDuocPhep": "Chưa dùng được",
+    "tuChoi": "Không, giữ model hiện tại",
+    "dongY": "Đồng ý, dùng model này",
+    "tranVuot": {
+      "luot": "trần mỗi lượt của model",
+      "nha-may": "trần ngày của nhà máy",
+      "nguoi": "trần ngày của bạn",
+      "luong": "trần ngày của luồng",
+      "lan-phut": "quá nhiều lượt mỗi phút"
+    },
+    "khongTai": "Không tải được điều kiện dùng model này — thử lại sau.",
+    "codingLuotHai": "Màn lập trình: lượt ĐẦU chỉ gửi câu hỏi bạn gõ và mã bạn cho đọc; từ lượt hai, lịch sử hội thoại được coi là dữ liệu vận hành (cần nhà máy cho phép, hỏi xác nhận một lần mỗi phiên)."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Gửi câu hỏi ra AI ngoài?",
+    "moTa": "Đây là trợ lý vận hành: câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH. Gửi tới model bên ngoài (trả phí) sau khi che dữ liệu nhạy cảm theo mẫu. Hỏi một lần cho cuộc trò chuyện này.",
+    "tuChoi": "Không gửi",
+    "dongY": "Đồng ý, gửi"
   }
 }

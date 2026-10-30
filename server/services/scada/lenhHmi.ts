@@ -62,7 +62,7 @@ import { adapterOwnedByEdge } from "../ot/otAdapterOwnerGate";
 import { boDemDangBat, layGiaTri } from "./boDemHienTai";
 import { cheDoMay, TOOL_HMI_GHI_TAG, TOOL_HMI_STOP, type LyDoCheDo } from "./cheDoMay";
 import { loadStopPinsHmi, MUC_TOI_DA_STOP_HMI, type GhimBoQuaHmi } from "../ot/stopPin";
-import { recordAuditEvent } from "../audit/controlAuditService";
+import { recordAuditEvent, type AuditEventInput } from "../audit/controlAuditService";
 import { OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS } from "../ot/otDeviceWrite";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { kiemGiaTriGhi, laKenhGhi, mucTacDongKenh } from "./kenhScada";
@@ -70,6 +70,7 @@ import { giaHanKhoaChon, giuKhoaChon, LoiKhoaChonTranhChap, nhaKhoaChon } from "
 import { batXaTongKet, laMaOn, nenGhiThuLenh, type TongKetHetHan } from "./dieuTietThuLenh";
 import { appError } from "../../_core/appError";
 import { ghiNhanStopQuaHanKhongGhiSo, type PhaQuaHanStopHmi } from "../../_core/hanStopHmi";
+import { ghiCoTran, HAN_GHI_TREO_MS, soGhiTreoStop, suKienAuditTuNoiDung, themLucSuKien, TRAN_GHI_TREO_STOP, type BoiCanhGhi } from "../ot/ghiTreoCoTran";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -297,6 +298,8 @@ export async function ghiThuLenh(
     reasonCode?: string | null;
     lyDo?: string | null;
     commandLogIds?: number[] | null;
+    /** R1b-2b-2a T1 fix round 1 — giờ SỰ KIỆN khi dòng được ghi từ hàng chờ ghi nền; vắng ⇒ mặc định cột (now()) */
+    at?: Date;
   },
 ): Promise<void> {
   let tongKet = 0;
@@ -336,6 +339,7 @@ export async function ghiThuLenh(
     outcome: dong.outcome,
     reasonCode: dong.reasonCode ?? null,
     commandLogIds: dong.commandLogIds ?? null,
+    ...(dong.at ? { at: dong.at } : {}),
   });
 }
 
@@ -1342,7 +1346,7 @@ export async function trangThaiYeuCauGhi(
 //        (+ resultJson) như QĐ T9-4 — không để lại uỷ quyền 'confirmed' còn hạn; đã qua đặt chỗ mà `rejected` ⇒ executed→bi_tu_choi_ghi.
 //   QĐ D-4 attempts: stage 'dispatch' (CHECK của mig 0431 không có stage riêng), tag_key NULL (nhiều tag), requested_value = các ghim đã gửi;
 //        outcome 'dispatched' + reason_code như QĐ T9-5; dispatch ném ⇒ 'rejected' DISPATCH_LOI. `ly_do` thêm ở Task 7 (ruling R-1).
-//   QĐ D-5 Audit ghi SAU khi gửi, FIRE-AND-FORGET dưới hạn HMI_STOP_AUDIT_DEADLINE_MS (fix round 1): STOP không chờ sổ; lỗi / quá hạn
+//   QĐ D-5 Audit ghi SAU khi gửi, FIRE-AND-FORGET (fix round 1; R1b-2b-2a T1: THUNK qua trần ghi nền chung `ghiSoCoHan`): STOP không chờ sổ; lỗi / quá hạn
 //        chỉ log — không che kết quả STOP đã gửi khỏi người vận hành.
 //   QĐ D-6 Cờ `SCADA_COMMANDS_ENABLED` vẫn là công tắc tắt hẳn của mọi lệnh HMI (cùng request/confirm); tắt ⇒ dùng E-STOP cứng.
 //   QĐ D-7 (R1b-2a Task 4, M-1; ruling K5/K6/K7, điều phối Q4) — HẠN THẬT cho pha TRƯỚC-GỬI: MỘT ngân sách `HAN_TRUOC_GUI_STOP_HMI_MS`
@@ -1370,106 +1374,115 @@ export async function trangThaiYeuCauGhi(
 export const COMMAND_TYPE_HMI_STOP = "stop";
 /** TTL của dòng chờ `hmi.stop` (chỉ để dispatcher xác minh ràng buộc — dòng được tạo đã 'confirmed' rồi gửi ngay). */
 export const HMI_STOP_TTL_MS = 30_000;
-/** fix round 1 — hạn của audit fire-and-forget (cùng hạn audit override STOP ghim của dispatcher). */
-export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
-
 /**
- * fix round 2 (trivial 7) — hạn có hẹn giờ `unref`: một audit treo không giữ tiến trình sống tới hết hạn. Rà soát cuối M-5: bản sao riêng đã
- * gộp vào `withDeadline(…, { unref: true })` (drivers/boundedClose — một helper cho cả vongPoll).
+ * fix round 1 — hạn của audit fire-and-forget (cùng hạn audit override STOP ghim của dispatcher). R1b-2b-2a T1 (mục 61): audit của `dungMay` nay
+ * đi qua `ghiSoCoHan` (trần ghi nền chung, hạn `HAN_GHI_SO_STOP_HMI_MS`); hằng giữ cho tên công khai đang có.
  */
-const voiHanUnref = <T>(p: Promise<T>, ms: number, nhan: string): Promise<T> => withDeadline(p, ms, nhan, { unref: true });
+export const HMI_STOP_AUDIT_DEADLINE_MS = OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS;
 export { TOOL_HMI_STOP };
 
 /**
  * R1b-2b-1 T9 (mục 44) — trần của MỖI lượt ghi sổ (scada_command_attempts / chốt dòng chờ ai_pending_actions) mà `dungMay` chờ trên đường
  * TRẢ LỜI: lượt từ chối trước-gửi (tuChoiMay, GHIM_LOI_DOC, GHIM_MUC_CAO, CHUA_GHIM_STOP) và lượt sau dispatch (chốt dòng chờ, attempts).
+ * R1b-2b-2a T1 — tái xuất `HAN_GHI_TREO_MS` (`services/ot/ghiTreoCoTran.ts`, một nguồn).
  */
-export const HAN_GHI_SO_STOP_HMI_MS = 500;
+export const HAN_GHI_SO_STOP_HMI_MS = HAN_GHI_TREO_MS;
 
 /**
- * R1b-2b-1 T9 fix round 1 (review I1) — TRẦN số lượt ghi sổ ĐÃ BỊ BỎ RƠI (quá hạn) mà CHƯA xong, toàn tiến trình. Mỗi lượt bỏ rơi giữ một kết nối
- * pool tới khi DB trả lời (tối đa statement_timeout 30 s); câu trả lời STOP nay về sau ~1–1,5 s ⇒ người vận hành bấm lại mỗi 2–3 s ⇒ không trần
- * thì vài người bấm liên tục khi CHỈ bảng sổ chậm sẽ VẮT CẠN pool (25) ⇒ lượt đọc trước-gửi của MỌI máy xếp hàng ⇒ STOP_QUA_HAN toàn nhà máy
- * (phá "STOP không bao giờ bị chặn"). Đầy trần ⇒ lượt ghi KHÔNG được phát (log `<nhan>_bo_qua_day` mang nội dung dòng để dựng lại từ log;
- * `command_log` của dispatch vẫn ghi STOP). Chỉ đếm lượt ĐÃ quá hạn ⇒ DB nhanh không bao giờ bị bỏ qua. 8 ≈ 1/3 pool mặc định.
+ * R1b-2b-1 T9 fix round 1 (review I1) → R1b-2b-2a T1 (mục 61, kiem-dinh KD-A1) — TRẦN số lượt ghi nền của đường STOP ĐANG BAY, toàn tiến trình:
+ * sổ (attempts, chốt dòng chờ), audit HMI (`scada_hmi_stop`, buộc đổi mật khẩu, QUA_HAN) VÀ audit STOP ghim của dispatcher
+ * (`auditPinnedStopOverride`) — MỘT bộ đếm (`ghiTreoCoTran.ts`), không phải 8 + 8. Mỗi lượt treo giữ một kết nối pool tới khi DB trả lời (tối đa
+ * statement_timeout 30 s); không trần thì vài người bấm STOP liên tục khi CHỈ bảng sổ / audit chậm sẽ VẮT CẠN pool (25) ⇒ lượt đọc trước-gửi
+ * của MỌI máy xếp hàng ⇒ STOP_QUA_HAN toàn nhà máy (phá "STOP không bao giờ bị chặn").
+ *   · Đếm IN-FLIGHT: +1 lúc PHÁT, −1 lúc XONG (kể cả lượt bỏ rơi); trần áp từ lượt ĐẦU (trước: chỉ đếm lượt đã quá 500 ms — 3N truy vấn có thể
+ *     cùng treo trong 500 ms đầu). DB nhanh: lượt xong trong vài ms ⇒ không chạm trần.
+ *   · Đầy trần ⇒ lượt ghi XẾP HÀNG (fix round 1, điều phối duyệt: MỘT FIFO ≤ 256 mục / 10 phút, xả dưới CÙNG trần, giữ giờ sự kiện);
+ *     người gọi trả NGAY. Chỉ tràn / quá tuổi / quá lớn / tắt máy mới BỎ (log `<nhan>_bo_<lyDo>` mang nội dung hàng; ĐẾM vào `demGhiBoQuaDay` —
+ *     posture; dòng attempts STOP_QUA_HAN còn đếm `ghi_so_loi`; MỘT dòng tóm tắt `ot_stop_ghi_nen_bo_roi` vào `control_audit_log`);
+ *     `command_log` của dispatch vẫn ghi STOP. Kết quả STOP không bao giờ đổi.
  * final fix (rà soát cuối I-1): trần này CHUNG NGÂN SÁCH pool với khe khảo sát của khối DỪNG khẩn cấp (`DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP`,
  * `mayDungKhanCap.ts`): tổng hai trần ≤ pool mặc định − `DU_TRU_POOL_CHO_DUNG_MAY` (`nganSachPoolStop.test.ts`).
  */
-export const TRAN_GHI_SO_TREO_STOP_HMI = 8;
+export const TRAN_GHI_SO_TREO_STOP_HMI = TRAN_GHI_TREO_STOP;
 
 /**
  * final fix (rà soát cuối I-1, 2026-10-27) — số kết nối của pool DB chính (`resolvePoolMax()`, mặc định 25) DÀNH cho lượt đọc trước-gửi của
- * `dungMay` khi DB chậm: tổng các trần "truy vấn bị bỏ rơi" của tiến trình (khe khảo sát `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` + lượt sổ treo
- * `TRAN_GHI_SO_TREO_STOP_HMI`) phải ≤ pool − DU_TRU. 9 > 8 trần sổ treo: một lượt dungMay cần vài lượt đọc nối nhau + vài máy bấm cùng lúc.
+ * `dungMay` khi DB chậm: tổng các trần "truy vấn bị bỏ rơi" của tiến trình (khe khảo sát `DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP` + lượt ghi nền
+ * đang bay của đường STOP `TRAN_GHI_SO_TREO_STOP_HMI` — sổ + audit + audit STOP ghim của dispatcher, MỘT trần, R1b-2b-2a T1) phải ≤ pool − DU_TRU.
+ * 9 > 8 trần ghi nền: một lượt dungMay cần vài lượt đọc nối nhau + vài máy bấm cùng lúc.
  * Không phải cổng (không gì chặn STOP theo số này) — chỉ là ngân sách được ghim bằng test.
  * ⚠ "Dự trữ" là một BẤT ĐẲNG THỨC giữa các trần, KHÔNG phải kết nối được giữ riêng (kiem-dinh R1b-2b-1 ghi chú a): không có pool / khe đặt trước
- * cho `dungMay`; truy vấn khác (thủ tục thường, bộ đọc, lượt ghi bắn-rồi-quên — mục 61) vẫn dùng được 9 kết nối ấy. Nó chỉ bảo đảm hai đường có trần
+ * cho `dungMay`; truy vấn khác (thủ tục thường, bộ đọc) vẫn dùng được 9 kết nối ấy. Lượt ghi bắn-rồi-quên của đường STOP (mục 61) nay
+ * nằm TRONG trần 8 (R1b-2b-2a T1), không còn ăn vào 9 kết nối này. Nó chỉ bảo đảm hai đường có trần
  * ở trên không tự mình chiếm quá pool − DU_TRU.
  */
 export const DU_TRU_POOL_CHO_DUNG_MAY = 9;
-let ghiSoTreo = 0;
-/** Số lượt ghi sổ STOP HMI đã quá hạn mà còn treo (đọc cho test / chẩn đoán). */
+/** Số lượt ghi nền của đường STOP đang bay (đã phát, chưa xong) — CÙNG bộ đếm `soGhiTreoStop` (đọc cho test / chẩn đoán). */
 export function soGhiSoTreoStopHmi(): number {
-  return ghiSoTreo;
+  return soGhiTreoStop();
 }
 
 /**
- * R1b-2b-1 T9 (mục 44) — chờ một lượt ghi sổ tối đa `HAN_GHI_SO_STOP_HMI_MS`; KHÔNG BAO GIỜ ném, không bao giờ đổi kết quả STOP.
- *   · `viec` là THUNK (fix round 1, I1): trần `TRAN_GHI_SO_TREO_STOP_HMI` được kiểm TRƯỚC khi truy vấn được phát; đầy ⇒ không gọi `viec`,
- *     log `<nhan>_bo_qua_day` + `noiDung` (nội dung dòng), trả ngay;
+ * R1b-2b-1 T9 (mục 44) → R1b-2b-2a T1 — MỘT lượt ghi nền của đường STOP HMI qua bộ đếm chung `ghiCoTran` (ngữ nghĩa ở `ghiTreoCoTran.ts`);
+ * KHÔNG BAO GIỜ ném, không bao giờ đổi kết quả STOP.
+ *   · `viec` là THUNK (nhận `BoiCanhGhi`): trần được kiểm TRƯỚC khi truy vấn được phát; đầy ⇒ XẾP HÀNG, trả ngay (lượt xả từ hàng chờ nhận
+ *     `daXepHang` + giờ sự kiện); bị BỎ (tràn / quá tuổi / quá lớn / tắt máy) ⇒ log `<nhan>_bo_<lyDo>` + `noiDung`, gọi `khiKhongVaoSo` (vd. đếm
+ *     `ghi_so_loi` cho dòng STOP_QUA_HAN);
  *   · xong trong hạn ⇒ trả đúng lúc lượt ghi xong (DB nhanh: thứ tự + nội dung sổ y như trước — cùng chuỗi `await`);
- *   · lỗi trong hạn ⇒ `ghiLoiChot` (như `.catch(ghiLoiChot)` cũ);
- *   · quá hạn ⇒ `ghiLoiChot` (nhãn `<nhan>_qua_han`), đếm vào `ghiSoTreo`, trả — lượt ghi BỎ RƠI vẫn chạy nền (không huỷ được truy vấn đã
- *     gửi); khi nó xong: giảm đếm + log `<nhan>_muon_xong` (info, fix round 1 M5) hoặc `<nhan>_muon` (lỗi) — dấu vết đủ hai chiều.
- * Điều kiện điều phối C3: handler gắn THẲNG vào promise của lượt ghi (cả nhánh lỗi) ⇒ ném MUỘN vẫn được log, KHÔNG thành `unhandledRejection`
- * (mặc định Node: sập tiến trình). Không dùng `withDeadline` vì lỗi muộn của nó bị nuốt im. Hẹn giờ `unref`. Xuất cho test.
+ *   · lỗi ⇒ `ghiLoiChot` (nhãn `<nhan>`, hoặc `<nhan>_muon` khi tới sau hạn) + `khiKhongVaoSo`;
+ *   · quá hạn ⇒ log `<nhan>_qua_han`, trả — lượt ghi BỎ RƠI vẫn chạy nền VÀ vẫn tính vào trần tới khi xong (`<nhan>_muon_xong` / `_muon`).
+ * Handler gắn THẲNG vào promise của lượt ghi ⇒ ném MUỘN không thành `unhandledRejection`. Xuất cho test.
  */
-export function ghiSoCoHan(viec: () => Promise<unknown>, nhan: string, requestId: string, noiDung?: unknown): Promise<void> {
-  if (ghiSoTreo >= TRAN_GHI_SO_TREO_STOP_HMI) {
-    logger.error(
-      { cho: `${nhan}_bo_qua_day`, requestId, ghiSoTreo, tran: TRAN_GHI_SO_TREO_STOP_HMI, noiDung },
-      "[SCADA] STOP HMI: BỎ QUA ghi sổ — đã đủ trần lượt ghi sổ treo (DB chậm); nội dung dòng ở trường noiDung, STOP vẫn có trong command_log",
-    );
-    return Promise.resolve();
-  }
-  let p: Promise<unknown>;
-  try {
-    p = Promise.resolve(viec());
-  } catch (e) {
-    ghiLoiChot(e, requestId, nhan);
-    return Promise.resolve();
-  }
-  return new Promise<void>((xong) => {
-    let quaHan = false;
-    const t = setTimeout(() => {
-      quaHan = true;
-      ghiSoTreo += 1;
-      ghiLoiChot(`ghi sổ STOP HMI quá ${HAN_GHI_SO_STOP_HMI_MS} ms — trả lời không chờ nữa, lượt ghi chạy nền`, requestId, `${nhan}_qua_han`);
-      xong();
-    }, HAN_GHI_SO_STOP_HMI_MS);
-    (t as { unref?: () => void }).unref?.();
-    const ketThuc = () => {
-      clearTimeout(t);
-      if (quaHan) ghiSoTreo -= 1;
-    };
-    p.then(
-      () => {
-        ketThuc();
-        if (quaHan) logger.info({ cho: `${nhan}_muon_xong`, requestId }, "[SCADA] STOP HMI: lượt ghi sổ bị bỏ rơi đã ghi xong (muộn)");
-        xong();
-      },
-      (e) => {
-        ketThuc();
-        ghiLoiChot(e, requestId, quaHan ? `${nhan}_muon` : nhan);
-        xong();
-      },
-    );
+export function ghiSoCoHan(
+  viec: (t: BoiCanhGhi) => Promise<unknown>,
+  nhan: string,
+  requestId: string,
+  noiDung?: unknown,
+  khiKhongVaoSo?: () => void,
+): Promise<void> {
+  return ghiCoTran(viec, {
+    nhan,
+    requestId,
+    noiDung,
+    khiLoi: (e, muon) => {
+      ghiLoiChot(e, requestId, muon ? `${nhan}_muon` : nhan);
+      khiKhongVaoSo?.();
+    },
+    khiBoQua: khiKhongVaoSo,
   });
 }
 
-/** Một dòng attempts trên đường trả lời của STOP HMI qua `ghiSoCoHan` (nội dung dòng đi kèm để dựng lại khi bị bỏ qua vì đầy trần). */
-function ghiThuCoHan(d: DbHoacTx, dong: Parameters<typeof ghiThuLenh>[1], nhan: string, requestId: string): Promise<void> {
-  return ghiSoCoHan(() => ghiThuLenh(d, dong), nhan, requestId, { bang: "scada_command_attempts", ...dong });
+/** Một dòng attempts trên đường trả lời của STOP HMI qua `ghiSoCoHan` (nội dung dòng đi kèm để dựng lại khi bị bỏ). */
+/**
+ * fix round 3 (re-review N2-3) — người ghi audit TỪ NỘI DUNG ĐÃ CẮT, dựng trong phạm vi RIÊNG chỉ có `d` (V8 giữ chung một ngữ cảnh cho mọi closure
+ * của một phạm vi — tạo nó trong `ghiAuditNen` sẽ giữ cả `suKien` lớn sống trong hàng chờ).
+ */
+function nguoiGhiAuditTuNoiDung(d: DbHoacTx): (nd: unknown, t: BoiCanhGhi) => Promise<unknown> {
+  return (nd, t) => recordAuditEvent(d, themLucSuKien(suKienAuditTuNoiDung<AuditEventInput>(nd), t));
+}
+/** fix round 3 — `khiLoi` của audit nền, phạm vi riêng (chỉ nhãn + requestId). */
+function khiLoiAuditNen(nhan: string, requestId: string): (e: unknown, muon: boolean) => void {
+  return (e, muon) => ghiLoiChot(e, requestId, muon ? `${nhan}_muon` : nhan);
+}
+
+/**
+ * R1b-2b-2a T1 fix round 2 — MỘT audit nền của đường STOP HMI qua trần chung (như `ghiSoCoHan`, không có `khiKhongVaoSo`): ghi xếp hàng mang giờ sự
+ * kiện (`themLucSuKien`); mục QUÁ LỚN trong hàng chờ: CHỈ `before` / `after` bị CẮT (`daCat`, định danh nguyên văn — fix round 3 S-1), ghi bằng
+ * `viecTuNoiDung` dựng ngoài phạm vi này (không giữ nội dung gốc).
+ */
+function ghiAuditNen(d: DbHoacTx, suKien: AuditEventInput, nhan: string, requestId: string): Promise<void> {
+  return ghiCoTran((t) => recordAuditEvent(d, themLucSuKien(suKien, t)), {
+    nhan,
+    requestId,
+    noiDung: { bang: "control_audit_log", ...suKien },
+    khiLoi: khiLoiAuditNen(nhan, requestId),
+    viecTuNoiDung: nguoiGhiAuditTuNoiDung(d),
+  });
+}
+
+function ghiThuCoHan(d: DbHoacTx, dong: Parameters<typeof ghiThuLenh>[1], nhan: string, requestId: string, khiKhongVaoSo?: () => void): Promise<void> {
+  // fix round 1 — lượt ghi từ hàng chờ mang giờ SỰ KIỆN vào cột `at` (không phải giờ xả)
+  return ghiSoCoHan((t) => ghiThuLenh(d, t.daXepHang ? { ...dong, at: t.lucSuKien } : dong), nhan, requestId, { bang: "scada_command_attempts", ...dong }, khiKhongVaoSo);
 }
 
 /** R1b-2a T4 (QĐ D-7) — ngân sách CHUNG của pha trước-gửi của STOP HMI (từ đầu `dungMayHmi`, sau kiểm cờ). */
@@ -1680,9 +1693,10 @@ async function guiStopMotAdapter(
   // R1b-2b-1 T9 (mục 44) — STOP ĐÃ gửi: chốt dòng chờ là MỘT lượt sổ (cả hai CAS) tối đa HAN_GHI_SO_STOP_HMI_MS; quá hạn ⇒ chạy nền, kết quả
   // của adapter (`kq.status` / `kq.ok`) không đổi. DB nhanh ⇒ cùng thứ tự (chốt xong rồi mới attempts).
   await ghiSoCoHan(
-    async () => {
+    async (t) => {
+      // fix round 1 — giờ SỰ KIỆN (lúc gọi), không phải lúc lượt được xả từ hàng chờ
       const doi = await doiTrangThaiCho(db, actionId, userId, "confirmed", daRa ? "executed" : "bi_tu_choi_ghi", {
-        ...(daRa ? { executedAt: new Date() } : {}),
+        ...(daRa ? { executedAt: t.lucSuKien } : {}),
         ...ketCuc,
       });
       if (!doi && !daRa && kq.status === "rejected") await doiTrangThaiCho(db, actionId, userId, "executed", "bi_tu_choi_ghi", ketCuc);
@@ -1746,15 +1760,16 @@ export async function dungMayHmi(
 
   /**
    * final-fix (điều phối 2026-10-26) — người gọi ĐANG bị buộc đổi mật khẩu mà vẫn dừng máy (cổng miễn riêng dungMay). ĐÚNG MỘT dòng audit
-   * "STOP khi đang bị buộc đổi mật khẩu" (người bấm + máy), FIRE-AND-FORGET dưới hạn (không bao giờ giữ STOP). Cột thực thể là máy CHỈ khi máy
+   * "STOP khi đang bị buộc đổi mật khẩu" (người bấm + máy), FIRE-AND-FORGET (không bao giờ giữ STOP). Cột thực thể là máy CHỈ khi máy
    * đã qua kiểm phạm vi (cùng luật M-3); chưa xác minh ⇒ gắn người bấm, machineId chỉ trong payload.
+   * R1b-2b-2a T1 (mục 61) — THUNK qua `ghiSoCoHan` (trần ghi nền chung): truy vấn chỉ được phát khi trần còn chỗ; đầy ⇒ log nội dung + đếm.
    */
   let daGhiAuditBuocDoi = false;
   const ghiAuditBuocDoiMatKhau = (d: DbHoacTx, daXacMinh: boolean, machineCode: string | null, ketCuc: string): void => {
     if (!opts.dangBiBuocDoiMatKhau || daGhiAuditBuocDoi) return;
     daGhiAuditBuocDoi = true;
     logger.warn({ userId, machineId: input.machineId, daXacMinh, ketCuc }, "[SCADA] STOP HMI khi người bấm đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26)");
-    const viec = recordAuditEvent(d, {
+    const suKien: AuditEventInput = {
       ...(daXacMinh ? { entityType: "machine", entityId: input.machineId } : { entityType: "user", entityId: userId }),
       action: "scada_hmi_stop_buoc_doi_mat_khau",
       actorId: userId,
@@ -1769,15 +1784,14 @@ export async function dungMayHmi(
         clientRequestId: input.clientRequestId,
       },
       reason: "STOP khi đang bị buộc đổi mật khẩu (miễn cổng — điều phối 2026-10-26)",
-    });
-    void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit buộc đổi mật khẩu").catch((err) =>
-      logger.error({ err: (err as Error)?.message ?? String(err), userId }, "[SCADA] STOP HMI: ghi audit 'buộc đổi mật khẩu' lỗi hoặc quá hạn"),
-    );
+    };
+    void ghiAuditNen(d, suKien, "audit_hmi_stop_buoc_doi_mat_khau", input.clientRequestId);
   };
 
   /**
    * R1b-2a T4 — từ chối CẢ lệnh vì hạn trước-gửi (chưa adapter nào vào dispatch). ĐÚNG MỘT dòng attempts (adapter_id NULL) + audit
-   * `QUA_HAN`, cả hai fire-and-forget: DB đang chậm, sổ không được giữ câu "dùng E-STOP cứng" lại. `machineCode` chỉ có khi máy đã đọc được
+   * `QUA_HAN`, cả hai fire-and-forget: DB đang chậm, sổ không được giữ câu "dùng E-STOP cứng" lại. R1b-2b-2a T1 (mục 61) — cả hai là THUNK qua
+   * `ghiSoCoHan` (trần ghi nền chung); dòng attempts không vào sổ (lỗi HOẶC bị bỏ khỏi hàng chờ) ⇒ đếm `ghi_so_loi` (điều phối Q2). `machineCode` chỉ có khi máy đã đọc được
    * (hết hạn có thể rơi TRƯỚC kiểm phạm vi ⇒ machineId là thứ client gửi — chỉ vào sổ phía máy chủ, không trả về).
    */
   const tuChoiQuaHan = (buoc: BuocQuaHanStopHmi, machineCode: string | null, adapterQuaHan: KetQuaDungMayAdapter[] = []): KetQuaDungMay => {
@@ -1796,25 +1810,28 @@ export async function dungMayHmi(
     } else {
       const d = db;
       ghiAuditBuocDoiMatKhau(d, false, machineCode, MA_STOP_QUA_HAN); // no-op nếu đã ghi sau kiểm phạm vi
-      void ghiThuLenh(d, {
-        userId,
-        stage: "dispatch",
-        outcome: "rejected",
-        reasonCode: MA_STOP_QUA_HAN,
-        requestedValue: { machineId: input.machineId, daXacMinhPhamVi, buoc, hanMs, ...(maAdapter.length > 0 ? { adapters: maAdapter } : {}) },
-        lyDo: lyDo ?? chiTiet,
-      }).catch((e) => {
-        // final-fix M-1 — dòng từ chối không vào sổ ⇒ đếm trong bộ nhớ (posture không đếm thiếu)
-        ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi");
-        ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han");
-      });
+      // final-fix M-1 + R1b-2b-2a T1 (Q2) — dòng từ chối không vào sổ (lỗi / bị bỏ khỏi hàng chờ) ⇒ đếm trong bộ nhớ (posture không đếm thiếu)
+      void ghiThuCoHan(
+        d,
+        {
+          userId,
+          stage: "dispatch",
+          outcome: "rejected",
+          reasonCode: MA_STOP_QUA_HAN,
+          requestedValue: { machineId: input.machineId, daXacMinhPhamVi, buoc, hanMs, ...(maAdapter.length > 0 ? { adapters: maAdapter } : {}) },
+          lyDo: lyDo ?? chiTiet,
+        },
+        "attempts_hmi_stop_qua_han",
+        "-",
+        () => ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi"),
+      );
       // final-fix M-3 — cột thực thể của audit CHỈ là máy khi máy ĐÃ qua kiểm phạm vi. Chưa xác minh ⇒ machineId là lời client gửi (có thể
       // là máy nhà máy khác): dòng gắn vào NGƯỜI BẤM (entityType "user" — cùng khuôn totpKhoaSai), machineId chỉ nằm trong payload dưới tên
       // `machineIdChuaXacMinh` + daXacMinhPhamVi=false. Không bộ đọc audit theo máy nào thấy dòng này (chỉ admin đọc thẳng sổ).
       const thucThe = daXacMinhPhamVi
         ? { entityType: "machine", entityId: input.machineId }
         : { entityType: "user", entityId: userId };
-      const viec = recordAuditEvent(d, {
+      const suKien: AuditEventInput = {
         ...thucThe,
         action: "scada_hmi_stop",
         actorId: userId,
@@ -1833,10 +1850,8 @@ export async function dungMayHmi(
           adapters: adapterQuaHan.map((k) => ({ adapterId: k.adapterId, code: k.code, status: k.status, reason: k.reason ?? null })),
         },
         reason: lyDo ?? "HMI DỪNG MÁY — quá hạn trước-gửi",
-      });
-      void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
-        logger.error({ err: (err as Error)?.message ?? String(err), machineId: input.machineId }, "[SCADA] STOP HMI: ghi audit QUA_HAN lỗi hoặc quá hạn"),
-      );
+      };
+      void ghiAuditNen(d, suKien, "audit_hmi_stop_qua_han", input.clientRequestId);
     }
     return { ok: false, tuChoi: { ma: MA_STOP_QUA_HAN, pha: "truoc_gui", chiTiet } };
   };
@@ -1943,12 +1958,14 @@ export async function dungMayHmi(
   if (quaHan.length > 0 && !coDispatch) return tuChoiQuaHan("adapter", mayDa.code, quaHan);
 
   /**
-   * fix round 1 (important 2) — FIRE-AND-FORGET dưới hạn (khuôn `auditPinnedStopOverride` của dispatcher): với SEC_PLATFORM bật,
+   * fix round 1 (important 2) — FIRE-AND-FORGET (khuôn `auditPinnedStopOverride` của dispatcher): với SEC_PLATFORM bật,
    * `recordAuditEvent` chờ khoá advisory của chuỗi băm KHÔNG có hạn — kết quả STOP của người vận hành không được treo theo sổ. Lỗi / quá hạn
    * ⇒ log (không bí mật); kết quả trả ngay.
+   * R1b-2b-2a T1 (mục 61) — THUNK qua `ghiSoCoHan` (trần ghi nền chung): `recordAuditEvent` KHÔNG còn được gọi trước khi kiểm trần; đầy ⇒
+   * xếp hàng (FIFO có trần, giữ giờ sự kiện trong `after.lucSuKien`); chỉ bị bỏ khi tràn / quá tuổi ⇒ log nội dung + đếm posture + dòng tóm tắt (KD-A3).
    */
   const ghiAudit = (ketQua: KetQuaDungMayAdapter[], ketCuc: "DA_GUI" | "CHUA_GHIM_STOP" | "GHIM_MUC_CAO"): void => {
-    const viec = recordAuditEvent(dbx, {
+    const suKien: AuditEventInput = {
       entityType: "machine",
       entityId: mayDa.id,
       action: "scada_hmi_stop",
@@ -1976,11 +1993,9 @@ export async function dungMayHmi(
         ghimBoQua: boQua.map((b) => ({ adapterId: b.adapterId, code: b.code, tagKey: b.tagKey, ly_do: b.ly_do, muc: b.muc })),
       },
       reason: lyDo ?? "HMI DỪNG MÁY",
-    });
+    };
     // QĐ D-5 — STOP đã gửi; sổ hỏng / treo không được che kết quả khỏi người vận hành
-    void voiHanUnref(viec, HMI_STOP_AUDIT_DEADLINE_MS, "HMI STOP audit").catch((err) =>
-      logger.error({ err: (err as Error)?.message ?? String(err), machineId: mayDa.id }, "[SCADA] STOP HMI: ghi audit lỗi hoặc quá hạn (STOP đã gửi)"),
-    );
+    void ghiAuditNen(dbx, suKien, "audit_hmi_stop", input.clientRequestId);
   };
 
   if (daGui.length === 0 && loiDoc.length === 0 && boQua.length > 0) {
@@ -2031,9 +2046,10 @@ export async function dungMayHmi(
     };
   }
 
-  // R1b-2a T4 — adapter bị bỏ vì hạn trong khi adapter khác đã vào dispatch: MỘT dòng attempts mỗi adapter (adapter_id có), fire-and-forget
+  // R1b-2a T4 — adapter bị bỏ vì hạn trong khi adapter khác đã vào dispatch: MỘT dòng attempts mỗi adapter (adapter_id có), fire-and-forget.
+  // R1b-2b-2a T1 (mục 61) — THUNK qua trần ghi nền chung; không vào sổ (lỗi / bị bỏ khỏi hàng chờ) ⇒ đếm `ghi_so_loi` (final-fix M-1, Q2)
   for (const k of quaHan) {
-    void ghiThuLenh(dbx, {
+    void ghiThuCoHan(dbx, {
       userId,
       adapterId: k.adapterId,
       tagKey: null,
@@ -2043,11 +2059,7 @@ export async function dungMayHmi(
       outcome: "rejected",
       reasonCode: MA_STOP_QUA_HAN,
       lyDo: lyDo ?? `STOP: máy chủ chậm — adapter ${k.code} CHƯA được gửi (quá hạn ${hanMs} ms trước-gửi); dùng E-STOP cứng.`,
-    }).catch((e) => {
-      // final-fix M-1 — dòng từ chối theo adapter không vào sổ ⇒ đếm trong bộ nhớ (posture không đếm thiếu)
-      ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi");
-      ghiLoiChot(e, "-", "attempts_hmi_stop_qua_han_adapter");
-    });
+    }, "attempts_hmi_stop_qua_han_adapter", "-", () => ghiNhanStopQuaHanKhongGhiSo("ghi_so_loi"));
   }
 
   // 6. audit — gửi đã xong trong từng đường ống (lỗi một adapter không chặn adapter khác)
