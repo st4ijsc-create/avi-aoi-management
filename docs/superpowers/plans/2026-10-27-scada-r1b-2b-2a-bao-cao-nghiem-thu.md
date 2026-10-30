@@ -180,6 +180,15 @@ _(Task 11)_
   6500): hàng đợi được xả ⇒ C không ra dây.
 - (T3A) Trần theo ngân sách lệnh dùng `OT_CONTROL_TIMEOUT_MS` toàn cục; `deadlineMs` riêng của một lệnh driver không biết (lệnh có `deadlineMs` ngắn hơn
   ⇒ hạn của dispatcher thắng ⇒ `timeout`).
+- (T3 fix 1) **Phân loại kết cục ghi dựa trên chi tiết bên trong thư viện giao thức.** Các thăm dò T2 / T3 / T3A / 3B-0 / T3C chạy trên thư viện thật và đọc
+  cấu trúc nội bộ của nó: chuỗi errCode và `writePacketArray` / `timeoutError` của nodes7, chuỗi lỗi hết hạn của st-ethernet-ip / node-opcua /
+  modbus-serial, hàng đợi task-easy, bộ phân tích địa chỉ nodes7, hành vi ack của mcprotocol. Ở T3D (7b936a6df, 544164ef3) các thư viện đã được ghim
+  ĐÚNG phiên bản; census `ghimPhienBanThuVienOt` sẽ đỏ nếu bản ghim bị đổi. **Muốn nâng bản thì phải chạy lại các thăm dò thư viện thật đó**
+  (`*.thuVienThat*.test.ts`, `quaHanDriver.drivers.r1b2b2`, `s7HanDuPhong.fix1.r1b2b2`, `s7BitNgoaiDai.r1b2b2`, …) trước khi sửa phiên bản ghim.
+- (T3 fix 1) Các hạn OT đọc từ env và đi vào `setTimeout` được kẹp qua MỘT helper (`server/services/ot/hanLenhOt.ts`): `OT_CONTROL_TIMEOUT_MS`
+  cùng các biến `OT_ADAPTER_START_TIMEOUT_MS`, `OT_LEGACY_RECONNECT_MS`, `OT_CONN_HA_BACKOFF_MS`, `OT_CONN_HA_BACKOFF_MAX_MS` và
+  `OT_CONN_HA_HEALTH_INTERVAL_MS`. Giá trị không hữu hạn, ≤ 0 hoặc > 2^31−1 − 10 000 thì dùng giá trị mặc định, và log in `[OT] env … is not a valid timeout`
+  một lần cho mỗi cặp (biến, giá trị). Thấy dòng log này thì phải sửa env, vì giá trị đó không có hiệu lực.
 
 ## 7. Bảng số đo
 
