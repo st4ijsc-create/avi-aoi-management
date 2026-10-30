@@ -19,7 +19,7 @@ export interface CongCuNgoai {
 
 export interface YeuCauNhaCungCap {
   model: string;
-  tinNhan: TinNhanNgoai[];
+  tinNhan: readonly TinNhanNgoai[];
   congCu?: CongCuNgoai[];
   maxTokens: number;
   nhietDo: number;

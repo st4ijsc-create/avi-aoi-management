@@ -119,7 +119,7 @@ export const aiKiemDinhRouter = router({
       import("../services/ai/ngoai/loi"),
       import("../services/ai/ngoai/cheDuLieu"),
     ]);
-    const tinNhan = lapTinNhanKiemDinh({ cauHoi: c.nguon.cauHoi, traLoi: c.nguon.traLoi, ...(input.tieuChi ? { tieuChi: input.tieuChi } : {}) });
+    const tinNhan = lapTinNhanKiemDinh({ cauHoi: c.nguon.cauHoi, traLoi: c.nguon.traLoi, ngu: c.ngu, ...(input.tieuChi ? { tieuChi: input.tieuChi } : {}) });
     const yc: YeuCauGoiNgoai = { dich: c.dich, tinNhan, maxTokens: MAX_TOKENS_KIEM_DINH_MAC_DINH, mucDich: "kiem-dinh", ngu: c.ngu };
     const kichThuocByte = Buffer.byteLength(JSON.stringify({ t: tinNhan, c: [] }), "utf8");
     let duocPhep = true;

@@ -24,7 +24,9 @@ export type MaLoiNgoai =
   /** ★ 10.4 — kết quả kiểm định của model ngoài sai định dạng (sau MỘT lần thử lại). */
   | "NGOAI_SAI_SCHEMA"
   /** ★ 10.4 — cùng một yêu cầu kiểm định đang chạy (chống bấm đúp — mỗi lần gọi là tiền thật). */
-  | "NGOAI_DANG_CHAY";
+  | "NGOAI_DANG_CHAY"
+  /** ★ 10.4b L0a — `tinNhan` không do bộ dựng `ghepPhan` tạo (lỗi LẬP TRÌNH phía máy chủ — không bao giờ do người dùng). */
+  | "NGOAI_KHONG_QUA_BO_GHEP";
 
 export class LoiNgoai extends Error {
   /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
@@ -56,6 +58,7 @@ export function maTrpcCua(ma: MaLoiNgoai): "NOT_FOUND" | "BAD_REQUEST" | "FORBID
     case "NGOAI_DEM_HONG":
     case "NGOAI_SO_HONG":
     case "NGOAI_CHE_HONG":
+    case "NGOAI_KHONG_QUA_BO_GHEP":
       return "SERVICE_UNAVAILABLE";
     case "NGOAI_NHA_CUNG_CAP_LOI":
     case "NGOAI_PHAN_HOI_QUA_LON":

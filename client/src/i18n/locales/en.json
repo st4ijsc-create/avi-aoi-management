@@ -4588,6 +4588,7 @@
       "NGOAI_PHAN_HOI_QUA_LON": "the external AI response is too large",
       "NGOAI_SAI_SCHEMA": "the verification result has an invalid format",
       "NGOAI_DANG_CHAY": "this verification request is already running",
+      "NGOAI_KHONG_QUA_BO_GHEP": "external AI request was not built by the server request builder (system error)",
       "NGOAI_DEM_HONG": "the cost counter is unavailable — try again later",
       "NGOAI_SO_HONG": "the external AI audit log could not be written — try again later",
       "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
