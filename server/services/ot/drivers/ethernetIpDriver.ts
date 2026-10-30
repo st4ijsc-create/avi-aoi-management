@@ -124,6 +124,53 @@ function laQuaHanThuVienEip(err: unknown): boolean {
  */
 export const HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS = 2000;
 
+/**
+ * SCADA R1b-2b-2a T3A commit 2 (dieu-phoi D1) — mã lỗi ỔN ĐỊNH khi tag ghi KHÔNG có kiểu CIP lấy được từ danh sách tag mà st-ethernet-ip đã nạp lúc
+ * connect (`Controller.connect(…, SETUP=true)` ⇒ `getControllerTagList` ⇒ `state.tagList`). Trước đây `newTag` không mang kiểu ⇒ thư viện ném
+ * "has not been initialized" ở `generateWriteMessageRequest` (tag/index.js:582-583) TRƯỚC `write_cip` ⇒ MỌI lời ghi EIP (kể cả STOP) `failed`, 0 gói.
+ * Nay: kiểu = kiểu THẬT của PLC trong danh sách; không có / không phải kiểu nguyên tử ⇒ `failed` với mã này, KHÔNG gửi gì, không bao giờ đoán.
+ */
+export const MA_KIEU_TAG_EIP_KHONG_RO = "EIP_TAG_TYPE_UNKNOWN";
+
+export class LoiKieuTagEipKhongRo extends Error {
+  readonly code = MA_KIEU_TAG_EIP_KHONG_RO;
+  constructor(
+    readonly tenTag: string,
+    readonly chuongTrinh: string | null,
+  ) {
+    super(
+      `${MA_KIEU_TAG_EIP_KHONG_RO}: tag "${tenTag}"${chuongTrinh ? ` (program ${chuongTrinh})` : ""} has no atomic CIP type in the controller tag list loaded at connect — nothing sent`,
+    );
+    this.name = "LoiKieuTagEipKhongRo";
+  }
+}
+
+/** Tên ghi được hỗ trợ: `Ten`, `Ten[i]` / `Ten[i,j]` (phần tử mảng), `Ten.N` / `Ten[i].N` (bit). Thành viên UDT (`A.B`) ⇒ không hỗ trợ (không đoán). */
+const TEN_GHI_HO_TRO = /^([A-Za-z_][A-Za-z0-9_]*)(\[[0-9]+(?:,[0-9]+)*\])?(?:\.([0-9]{1,2}))?$/;
+
+/**
+ * T3A commit 2 — kiểu CIP của tag ghi từ danh sách tag của CHÍNH Controller (nạp lúc connect; không thêm vòng nào trước STOP). null ⇒ không rõ.
+ *   • tag gốc phải có trong danh sách (đúng phạm vi chương trình), kiểu nguyên tử (không phải cấu trúc);
+ *   • `Ten[i]` chỉ khi tag gốc là mảng; `Ten` (không chỉ số) chỉ khi tag gốc KHÔNG là mảng.
+ */
+export function kieuCipTuDanhSachTag(plc: any, ten: string, chuongTrinh: string | null): number | null {
+  const ds = plc?.state?.tagList;
+  if (!ds || typeof ds.getTag !== "function") return null;
+  const m = TEN_GHI_HO_TRO.exec(ten);
+  if (!m) return null;
+  let t: any;
+  try {
+    t = ds.getTag(m[1], chuongTrinh);
+  } catch {
+    return null;
+  }
+  const kieu = t?.type;
+  if (!kieu || kieu.structure === true || typeof kieu.code !== "number" || !Number.isInteger(kieu.code)) return null;
+  const laMang = typeof kieu.arrayDims === "number" && kieu.arrayDims > 0;
+  if (Boolean(m[2]) !== laMang) return null;
+  return kieu.code;
+}
+
 /** Hạ một Controller không còn dùng (không chờ): forwardClose lịch sự, hỏng / quá hạn ⇒ huỷ socket. */
 function haController(plc: any): void {
   if (!plc) return;
@@ -490,7 +537,11 @@ export class EthernetIpDriver extends NotImplementedDriver {
 
       // T3A — phiên nhiễm ⇒ chờ phiên MỚI có trần; quá trần ⇒ DeviceUnreachableError TRƯỚC khi gửi (`failed`, không bao giờ `ok`).
       plc = await this.layPhien(hetHanLuc);
+      // T3A commit 2 (D1) — kiểu CIP THẬT từ danh sách tag đã nạp lúc connect; không có ⇒ ném TRƯỚC newTag / gửi (`failed`, 0 gói).
+      const kieuCip = kieuCipTuDanhSachTag(plc, name, program ?? null);
+      if (kieuCip == null) throw new LoiKieuTagEipKhongRo(name, program ?? null);
       const eipTag = plc.newTag(name, program ?? null);
+      eipTag.type = kieuCip;
       // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).
       eipTag.value = value;
       // R1b-2b-1 — qua sổ đang bay: liên kết mất / phiên bị hạ ⇒ reject NGAY (kết cục không rõ), không chờ hạn rồi báo 'failed'.

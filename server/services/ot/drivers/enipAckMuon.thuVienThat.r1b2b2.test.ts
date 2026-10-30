@@ -8,14 +8,15 @@
  * trả lời MUỘN của đọc TagA ⇒ đọc TagB "good" = 111 (giá trị TagA). Vá (dieu-phoi D2/D3): BẤT KỲ hết hạn của thư viện ⇒ phiên NHIỄM ⇒ hạ + phiên MỚI;
  * thao tác kế chờ phiên mới có trần HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS; quá trần ⇒ không gửi, `failed`.
  *
- * Commit 1 (phiên nhiễm): kiểu CIP của tag được GÁN TRONG TEST (`ganKieuTrongTest`) — driver hôm nay chưa đặt kiểu (P1, sửa ở commit 2).
+ * Commit 1 (phiên nhiễm) chạy với kiểu CIP GÁN TRONG TEST (driver khi đó chưa đặt kiểu — P1). Commit 2 (D1): driver lấy kiểu CIP THẬT từ danh sách tag mà
+ * thư viện nạp lúc connect ⇒ bỏ phần gán trong test; mọi ca dưới chạy trên driver như sản phẩm. Ca "P1 / D1" ĐẾM gói Write Tag tới thiết bị (0 trước, ≥ 1 sau).
  */
 import net from "node:net";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { batDauDoLag } from "../../../testing/doLagBucleSuKien";
 import { ketCucKhongRoCua } from "./dangBay";
-import { HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS } from "./ethernetIpDriver";
+import { HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, MA_KIEU_TAG_EIP_KHONG_RO } from "./ethernetIpDriver";
 import { executeOtDeviceWrite } from "../otDeviceWrite";
 
 const require_ = createRequire(import.meta.url);
@@ -45,6 +46,7 @@ const TAG_MAC_DINH: Array<[string, number]> = [
   ["TagA", DINT],
   ["TagB", DINT],
   ["TagC", DINT],
+  ["Arr", 0x2000 | DINT], // mảng DINT 1 chiều (bit 13-14 = số chiều)
 ];
 
 /** Thiết bị ENIP giả trong tiến trình (Logix tối giản, nhắn tin CÓ KẾT NỐI như `new Controller()` mặc định). */
@@ -175,26 +177,10 @@ afterEach(async () => {
   else process.env.OT_CMD_SERIALIZE_ENABLED = cuSerialize;
 });
 
-/** Commit 1 — driver chưa đặt kiểu CIP (P1): gán kiểu theo danh sách tag của thiết bị giả, TRONG TEST. */
-function ganKieuTrongTest() {
-  const { Controller } = require_("st-ethernet-ip");
-  const goc = Controller.prototype.newTag;
-  const bang = new Map(TAG_MAC_DINH);
-  Controller.prototype.newTag = function (this: unknown, ...a: any[]) {
-    const t = goc.apply(this, a);
-    if (bang.has(a[0])) t.type = bang.get(a[0]);
-    return t;
-  };
-  don.push(() => {
-    Controller.prototype.newTag = goc;
-  });
-}
-
 async function moDriver(tc: TuyChonThietBi, timeoutMs = 300) {
   const tb = await dungThietBi(tc);
   don.push(tb.dong);
   cauHinhThuVien.EIP_PORT = tb.port;
-  ganKieuTrongTest();
   const { EthernetIpDriver } = await import("./ethernetIpDriver");
   const d = new EthernetIpDriver();
   don.push(async () => {
@@ -432,17 +418,60 @@ describe("R1b-2b-2a T3A (D3) — ĐỌC sau phiên nhiễm không bao giờ tr�
   }, 15_000);
 });
 
-describe("P1 (thăm dò) — driver hôm nay không đặt kiểu CIP ⇒ lời ghi không ra dây", () => {
-  it("không gán kiểu trong test ⇒ write failed 'has not been initialized', 0 gói Write Tag", async () => {
-    const tb = await dungThietBi({ onYeuCau: (_r, tl) => tl(0) });
-    don.push(tb.dong);
-    cauHinhThuVien.EIP_PORT = tb.port;
-    const { EthernetIpDriver } = await import("./ethernetIpDriver");
-    const d = new EthernetIpDriver();
-    don.push(() => d.disconnect());
-    await d.connect({ endpoint: "127.0.0.1", timeoutMs: 300 } as any);
-    const r = await d.writeTags([ghiStop]);
-    expect(r).toEqual([{ tagKey: "stop", ok: false, error: expect.stringMatching(/^Tag Stop has not been initialized/) }]);
+describe("R1b-2b-2a T3A commit 2 (D1) — kiểu CIP từ danh sách tag đã nạp lúc connect: lời ghi RA DÂY (đếm gói)", () => {
+  it("★ P1 → D1: STOP ra dây — đúng 1 gói Write Tag tới thiết bị, kiểu BOOL 0xC1, giá trị 1 ⇒ ok (trước: 0 gói, 'has not been initialized')", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => tl(0) });
     expect(tb.ghi()).toHaveLength(0);
+    const r = await d.writeTags([ghiStop]);
+    expect(r).toEqual([{ tagKey: "stop", ok: true }]);
+    expect(tb.ghi()).toHaveLength(1); // ★ gói THẬT tới thiết bị
+    const g = tb.ghi()[0];
+    expect([g.ten, g.duLieu.readUInt16LE(0), g.duLieu.readUInt16LE(2), g.duLieu.readUInt8(4)]).toEqual(["Stop", BOOL, 1, 1]);
+  }, 10_000);
+
+  it("DINT: Speed = 5 ⇒ gói mang kiểu 0xC4 và giá trị 5; phần tử mảng Arr[2] ⇒ ra dây", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => tl(0) });
+    expect(await d.writeTags([ghiSpeed, { tagKey: "arr2", address: "Arr[2]", value: 9, dataType: "int" } as any])).toEqual([
+      { tagKey: "speed", ok: true },
+      { tagKey: "arr2", ok: true },
+    ]);
+    expect(tb.ghi().map((g) => [g.ten, g.duLieu.readUInt16LE(0), g.duLieu.readInt32LE(4)])).toEqual([
+      ["Speed", DINT, 5],
+      ["Arr", DINT, 9],
+    ]);
+  }, 10_000);
+
+  it("★ tag KHÔNG có trong danh sách / không có kiểu nguyên tử ⇒ `failed` mã EIP_TAG_TYPE_UNKNOWN, 0 gói (không bao giờ đoán)", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (_r, tl) => tl(0) });
+    const r = await d.writeTags([
+      { tagKey: "x", address: "KhongCo", value: 1, dataType: "int" } as any,
+      { tagKey: "mem", address: "Speed.Member", value: 1, dataType: "int" } as any, // thành viên UDT
+      { tagKey: "khongMang", address: "Speed[3]", value: 1, dataType: "int" } as any, // chỉ số trên tag không phải mảng
+      { tagKey: "caMang", address: "Arr", value: 1, dataType: "int" } as any, // ghi cả mảng
+    ]);
+    expect(r.map((x) => [x.tagKey, x.ok, x.ketCucKhongRo])).toEqual([
+      ["x", false, undefined],
+      ["mem", false, undefined],
+      ["khongMang", false, undefined],
+      ["caMang", false, undefined],
+    ]);
+    expect(r[0].error).toBe(`${MA_KIEU_TAG_EIP_KHONG_RO}: tag "KhongCo" has no atomic CIP type in the controller tag list loaded at connect — nothing sent`);
+    for (const x of r) expect(x.error).toMatch(new RegExp(`^${MA_KIEU_TAG_EIP_KHONG_RO}: `));
+    expect(tb.ghi()).toHaveLength(0); // ★ không gói nào
+  }, 10_000);
+
+  it("danh sách tag RỖNG (bộ điều khiển không liệt kê symbol) ⇒ mọi lời ghi `failed` EIP_TAG_TYPE_UNKNOWN, 0 gói", async () => {
+    const { tb, d } = await moDriver({ tags: [], onYeuCau: (_r, tl) => tl(0) });
+    const r = await d.writeTags([ghiStop]);
+    expect(r).toEqual([{ tagKey: "stop", ok: false, error: `${MA_KIEU_TAG_EIP_KHONG_RO}: tag "Stop" has no atomic CIP type in the controller tag list loaded at connect — nothing sent` }]);
+    expect(tb.ghi()).toHaveLength(0);
+  }, 10_000);
+
+  it("STOP qua executeOtDeviceWrite trên phiên sạch ⇒ ra dây (1 gói), không 'failed'", async () => {
+    const { tb, d } = await moDriver({ onYeuCau: (req, tl) => (req.service === 0x4c ? tl(0, Buffer.from([BOOL, 0, 1])) : tl(0)) });
+    const o = await stopQuaExecute(d);
+    expect(tb.ghi().map((g) => g.ten)).toEqual(["Stop"]);
+    expect(o.outcomes[0].ok).toBe(true);
+    expect(o.outcomes[0].status).not.toBe("failed");
   }, 10_000);
 });

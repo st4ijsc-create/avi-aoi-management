@@ -270,6 +270,8 @@ describe("EtherNet/IP — ghi bool một luật", () => {
     const plc = {
       connect: vi.fn(async () => {}),
       newTag: vi.fn((name: string) => ({ name, value: undefined as unknown })),
+      // T3A commit 2 (D1) — driver lấy kiểu CIP từ danh sách tag mà thư viện nạp lúc connect (state.tagList)
+      state: { tagList: { getTag: (n: string) => ({ name: n, type: { code: 0xc4, structure: false, arrayDims: 0 } }) } },
       readTag: vi.fn(async () => {}),
       writeTag: vi.fn(async () => {}),
       disconnect: vi.fn(async () => {}),

@@ -216,6 +216,8 @@ describe("R1b-2b-1 EtherNet/IP (st-ethernet-ip) — lệnh ghi đang bay ⇒ 'ti
           Object.assign(plc, {
             connect: vi.fn(async () => {}),
             newTag: vi.fn((name: string) => ({ name, value: undefined })),
+            // T3A commit 2 (D1) — driver lấy kiểu CIP từ danh sách tag mà thư viện nạp lúc connect (state.tagList)
+            state: { tagList: { getTag: (n: string) => ({ name: n, type: { code: 0xc4, structure: false, arrayDims: 0 } }) } },
             soGhi: 0,
             // st-ethernet-ip 2.7.5: disconnect() hạ socket nhưng lệnh ghi đang chờ chỉ xong ở promiseTimeout(timeout_sp) — ở đây: không bao giờ
             writeTag: vi.fn(() => {
