@@ -539,16 +539,22 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
     const bam = bamKeHoach(keHoachHienTai);
     if (bam === bamDaDuyet) return null;
     const viec = keHoachHienTai.map((v) => ({ ...v }));
-    phat({ loai: "ke-hoach-cho-duyet", viec, bam });
+    let daPhatCho = false;
+    const phatCho = () => {
+      if (daPhatCho) return;
+      daPhatCho = true;
+      phat({ loai: "ke-hoach-cho-duyet", viec: viec.map((v) => ({ ...v })), bam });
+    };
     const t0 = dongHo();
     let r: Awaited<ReturnType<CongKeHoach["choDuyet"]>> | typeof HUY;
     try {
-      r = await Promise.race([congKeHoach.choDuyet({ bam, viec, signal: trong.signal }), choHuy]);
+      r = await Promise.race([congKeHoach.choDuyet({ bam, viec: viec.map((v) => ({ ...v })), signal: trong.signal, daSanSang: phatCho }), choHuy]);
     } catch {
       r = { ketQua: "bac" };
     }
     batDau += Math.max(0, dongHo() - t0);
     if (r === HUY) return "huy";
+    phatCho(); // host không báo sớm ⇒ sự kiện chờ vẫn đi TRƯỚC sự kiện quyết định
     if (r.ketQua === "duyet" && typeof r.luc === "string") {
       bamDaDuyet = bam;
       phat({ loai: "ke-hoach-da-duyet", bam, luc: r.luc });

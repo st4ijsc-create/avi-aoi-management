@@ -18,10 +18,13 @@ interface Tuy {
   signal?: AbortSignal;
   dongHo?: () => number;
   msToiDa?: number;
+  /** lộ mảng sự kiện đang tích luỹ cho test */
+  lo?: (ds: SuKienAgent[]) => void;
 }
 
 async function chay(o: Tuy) {
   const suKien: SuKienAgent[] = [];
+  o.lo?.(suKien);
   const daChay: string[] = [];
   const lichSu: TinNhan[][] = [];
   let i = 0;
@@ -236,6 +239,29 @@ describe("cổng duyệt kế hoạch — lõi", () => {
     const r = await chay({ cheDo: "hoi", luot: [[todo("t", ...nhieu)], []] });
     expect(ketQuaTool(r.suKien, "t")?.ok).toBe(true);
     expect((loai(r.suKien, "ke-hoach")[0] as Extract<SuKienAgent, { loai: "ke-hoach" }>).viec).toHaveLength(TRAN_SO_BUOC_KE_HOACH + 5);
+  });
+
+  it("★★★ sự kiện chờ-duyệt phát đúng lúc móc báo sẵn sàng (không sớm hơn); móc không báo ⇒ vẫn phát TRƯỚC sự kiện quyết định", async () => {
+    const dem: number[] = [];
+    let suKienRef: SuKienAgent[] = [];
+    // móc đếm số sự kiện cho-duyet đã có trước/sau daSanSang — dùng chay() với ref tới mảng sự kiện qua phat của lõi
+    const r1 = await chay({
+      luot: [[todo("t", "a"), ghi("w")], []],
+      choDuyet: async (yc) => {
+        dem.push(suKienRef.filter((e) => e.loai === "ke-hoach-cho-duyet").length);
+        yc.daSanSang();
+        dem.push(suKienRef.filter((e) => e.loai === "ke-hoach-cho-duyet").length);
+        yc.daSanSang(); // gọi lại không phát lần hai
+        return { ketQua: "duyet", luc: "t" };
+      },
+      lo: (ds) => (suKienRef = ds),
+    });
+    expect(dem).toEqual([0, 1]);
+    expect(loai(r1.suKien, "ke-hoach-cho-duyet")).toHaveLength(1);
+    const r2 = await chay({ luot: [[todo("t", "a"), ghi("w")], []] }); // móc mặc định KHÔNG gọi daSanSang
+    const i = (l: string) => r2.suKien.findIndex((e) => e.loai === l);
+    expect(i("ke-hoach-cho-duyet")).toBeGreaterThanOrEqual(0);
+    expect(i("ke-hoach-cho-duyet")).toBeLessThan(i("ke-hoach-da-duyet"));
   });
 
   it("host sửa bản sao viec của sự kiện/móc KHÔNG làm đổi kế hoạch của lõi (không hỏi lại vô cớ)", async () => {

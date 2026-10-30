@@ -63,5 +63,10 @@ export type KetQuaChoDuyetKeHoach = { ketQua: "duyet"; luc: string } | { ketQua:
  * Móc ném lỗi ⇒ lõi coi là BÁC (fail-closed). Lõi đua móc với huỷ; `signal` abort khi lượt bị huỷ để host dọn hàng chờ.
  */
 export interface CongKeHoach {
-  choDuyet(yc: { bam: string; viec: ViecKeHoach[]; signal: AbortSignal }): Promise<KetQuaChoDuyetKeHoach>;
+  /**
+   * `daSanSang()`: host gọi khi đã LƯU kế hoạch chờ (sổ) và người CÓ THỂ quyết ngay — lõi chỉ phát `ke-hoach-cho-duyet` lúc đó, để UI không
+   * bao giờ thấy thẻ mà thủ tục duyệt chưa tìm thấy kế hoạch. Host không gọi (hoặc quyết định trả về trước) ⇒ lõi phát sự kiện ngay trước
+   * sự kiện quyết định.
+   */
+  choDuyet(yc: { bam: string; viec: ViecKeHoach[]; signal: AbortSignal; daSanSang: () => void }): Promise<KetQuaChoDuyetKeHoach>;
 }
