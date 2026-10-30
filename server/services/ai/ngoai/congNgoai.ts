@@ -294,7 +294,10 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   const buoc = (b: string) => dep.ghiBuoc?.(b);
   const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
   let maxTokens = maxTokensYeuCau;
-  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: yc.tinNhan, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
+  // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent
+  //   khi bật giữ nghĩ, `nghiTruoc`, dấu nội bộ) ⇒ chỉ vai trò + nội dung + tên tool đi tiếp tới bộ che và nhà cung cấp.
+  const tinNhanSach: TinNhanNgoai[] = yc.tinNhan.map(({ vaiTro, noiDung, tenTool }) => ({ vaiTro, noiDung, ...(tenTool !== undefined ? { tenTool } : {}) }));
+  const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: tinNhanSach, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");
   let tu: TuDienNhay;

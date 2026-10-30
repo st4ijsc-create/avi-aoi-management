@@ -299,6 +299,21 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
     expect((await tokenGiu(A)) - truoc).toBeLessThan(40_000);
   });
 
+  it("★ 11.0 (rà kiem-dinh) — trường THỪA trên tin nhắn (vd reasoning_content của lõi agent khi giữ nghĩ) KHÔNG tới nhà cung cấp", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const to = yc();
+    to.tinNhan = [
+      { vaiTro: "user", noiDung: "hỏi" },
+      { vaiTro: "assistant", noiDung: "đáp", reasoning_content: "NỘI-TÂM-BÍ-MẬT", nghiTruoc: "NGHĨ-CŨ" } as never,
+      { vaiTro: "tool", noiDung: "kq", tenTool: "read_file" },
+    ];
+    await goiAiNgoai(to, dep(g));
+    const gui = g.nhan[0]!.yc.tinNhan;
+    expect(gui[1]).toEqual({ vaiTro: "assistant", noiDung: "đáp" });
+    expect(gui[2]).toEqual({ vaiTro: "tool", noiDung: "kq", tenTool: "read_file" });
+    expect(JSON.stringify(g.nhan[0]!.yc)).not.toMatch(/NỘI-TÂM-BÍ-MẬT|NGHĨ-CŨ|reasoning_content|nghiTruoc/);
+  });
+
   it("★ 10.4 — trần MỖI LƯỢT của model (lời gọi ngoài lượt chạy): CO maxTokens để vào + ra vừa trần (trước đây: luôn NGOAI_VUOT_TRAN khi trần = maxTokens); không còn chỗ cho đầu ra ⇒ VUOT_TRAN 'luot', nhà cung cấp không được gọi", async () => {
     await exec(sql`UPDATE ai_ngoai_model SET "tranTokenLuot" = 4000 WHERE "factoryId" = ${A} AND model = 'claude-thu'`);
     try {
