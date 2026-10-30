@@ -23,7 +23,11 @@ const dung = async (q: ReturnType<typeof sql>): Promise<any[]> => (await db.exec
 
 type Caller = any;
 const nguoi: Record<"kyA" | "viewerA" | "opA" | "nguoiB" | "admin" | "kyP", { id: number; c: Caller; ten: string }> = {} as never;
-const fx = { fA: "", fB: "", fP: "", mA: 0, mA2: 0, mB: 0, mP: 0, aA: 0, aA2: 0, aB: 0, aP: 0, aT: 0, aD: 0 };
+const fx = { fA: "", fB: "", fP: "", mA: 0, mA2: 0, mB: 0, mP: 0, aA: 0, aA2: 0, aB: 0, aP: 0, aT: 0, aD: 0, aG: 0 };
+/** polish 2 (c18) — ĐÚNG gioiHan + 1 hàng MỖI nguồn trên adapter riêng */
+const GIOI_HAN_G = 3;
+const gLenh: number[] = [];
+const gThu: number[] = [];
 const lenh = { a1: 0, intent: 0, ketQua: 0, a2: 0, b: 0, mayNull: 0, timeout: 0, edge: 0, rb: 0, intent2: 0, ketQua2: 0, d: 0 };
 const thu = { a: 0, b: 0, nullVerA: 0, nullUnverA: 0, nullVerB: 0, nullKhongGiaTri: 0, dispatchTho: 0, d: 0 };
 const pLenh: number[] = [];
@@ -118,6 +122,7 @@ beforeAll(async () => {
   fx.aP = await seedAdapter(fx.mP, "aP", "stub");
   fx.aT = await seedAdapter(fx.mP, "aT", "stub");
   fx.aD = await seedAdapter(fx.mP, "aD", "stub");
+  fx.aG = await seedAdapter(fx.mP, "aG", "stub");
 
   nguoi.kyA = await seedNguoi("kyA", "engineer", [A.code], true);
   nguoi.viewerA = await seedNguoi("viewerA", "viewer", [A.code], false);
@@ -155,6 +160,11 @@ beforeAll(async () => {
   // ── M8: một lệnh + một lần thử ở …05.654321 (den ms phải bao gồm trọn mili-giây) ──
   lenh.d = await seedLenh({ adapterId: fx.aD, machineId: fx.mP, status: "simulated", by: nguoi.kyP.id, createdAt: "2026-10-27 05:06:07.654321" });
   thu.d = await seedThu({ adapterId: fx.aD, userId: nguoi.kyP.id, reasonCode: "D", at: "2026-10-27 05:06:07.654321+00" });
+  // polish 2 (c18): gioiHan + 1 hàng mỗi nguồn (id tự sinh — KHÔNG id tường minh), at tách nhau 1 s
+  for (let i = 0; i <= GIOI_HAN_G; i++) {
+    gLenh.push(await seedLenh({ adapterId: fx.aG, machineId: fx.mP, status: "simulated", by: nguoi.kyP.id, createdAt: `2026-10-26 01:00:0${i}.000000` }));
+    gThu.push(await seedThu({ adapterId: fx.aG, userId: nguoi.kyP.id, reasonCode: "G", at: `2026-10-26 01:00:0${i}.000000+00` }));
+  }
 
   // ── P: 120 hàng CÙNG at (60 lệnh + 60 lần thử), id tự sinh của hai bảng ──
   const AT_P = "2026-10-28 03:04:05.654321";
@@ -166,7 +176,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!db) return;
-  const ad = [fx.aA, fx.aA2, fx.aB, fx.aP, fx.aT, fx.aD].filter(Boolean);
+  const ad = [fx.aA, fx.aA2, fx.aB, fx.aP, fx.aT, fx.aD, fx.aG].filter(Boolean);
   // avi_app không có DELETE trên command_log (0279) — thử (vai owner thì dọn được), lỗi quyền thì bỏ qua như lenhCongThucPhamVi
   if (ad.length) await dung(sql`DELETE FROM command_log WHERE "adapterId" IN (${sql.join(ad.map((x) => sql`${x}`), sql`, `)})`).catch(() => undefined);
   for (const k of Object.keys(nguoi) as Array<keyof typeof nguoi>) if (nguoi[k]) await dung(sql`DELETE FROM permissions WHERE "userId" = ${nguoi[k].id}`).catch(() => undefined);
@@ -445,6 +455,17 @@ describe("★★★ KD-2bA 1.2 — con trỏ tuyến tính (at µs, nguồn, id 
     const r = await nguoi.kyA.c.nhatKy({ trangThai: ["rejected"], gioiHan: 200 });
     expect(r.hang.map((h: any) => h.id).sort()).toEqual([`lenh:${lenh.mayNull}`, `thu:${thu.a}`, `thu:${thu.nullVerA}`].sort());
     expect((await nguoi.kyA.c.nhatKy({ trangThai: [] })).hang).toEqual([]);
+  }, 30_000);
+
+  it(`★★★ polish 2 (c18) — MỘT nguồn có ĐÚNG gioiHan + 1 = ${GIOI_HAN_G + 1} hàng ⇒ trang 1 đủ gioiHan + conTro KHÁC null; trang 2 đúng 1 hàng + conTro null (lenh rồi thu)`, async () => {
+    for (const [nguon, ids] of [["lenh", gLenh], ["thu", gThu]] as const) {
+      const t1 = await nguoi.kyP.c.nhatKy({ adapterId: fx.aG, nguon, gioiHan: GIOI_HAN_G });
+      expect(t1.hang.map((h: any) => h.id), nguon).toEqual([...ids].reverse().slice(0, GIOI_HAN_G).map((x) => `${nguon}:${x}`));
+      expect(t1.conTro, `${nguon}: còn 1 hàng ⇒ phải có con trỏ`).not.toBeNull();
+      const t2 = await nguoi.kyP.c.nhatKy({ adapterId: fx.aG, nguon, gioiHan: GIOI_HAN_G, conTro: t1.conTro });
+      expect(t2.hang.map((h: any) => h.id), nguon).toEqual([`${nguon}:${ids[0]}`]);
+      expect(t2.conTro, nguon).toBeNull();
+    }
   }, 30_000);
 
   it("★★ M8 — den (ms) bao gồm trọn mili-giây cuối tới µs; tu bao gồm đầu; ngoài mili-giây ⇒ không", async () => {

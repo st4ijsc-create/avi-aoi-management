@@ -60,6 +60,10 @@ _(Task 16)_
 
 ### LOGIC
 
+- C1 — `commandLog.list` / `get` VẪN trả (quyết định hiển thị 2026-10-30): `address` (tag / thanh ghi / nodeId từ cấu hình tag, KHÔNG phải endpoint —
+  người vận hành cần nó), `readBackValue` (giá trị quá trình, cũng hiện trên HMI), `correlationId` / `idempotencyKey` / `deadlineMs` (nội bộ, vô hại).
+  `endpoint` / `lastError` được che ở C2.
+
 - C1 — kết quả dispatch (`reason` = `errorText`) vẫn trả cho NGƯỜI RA LỆNH đã qua `machine_control.canEdit` kể cả vai operator (đường ghi
   `commandDispatcher` / `lenhHmi`, ngoài phạm vi C1 — xem báo cáo task C1 "lo ngại").
 - C1 — văn bản driver còn được CHÉP lúc ghi sang `scada_command_attempts` (lenhHmi bước 9, đường thử lại idempotent) và sang cảnh báo STOP
@@ -80,7 +84,9 @@ _(Task 16)_
 
 ### VẬN HÀNH
 
-_(Task 16)_
+- C1 — TimeZone của Postgres PHẢI là `Etc/UTC` (cột naive `command_log.createdAt` được đọc như UTC khi gộp với `scada_command_attempts.at`);
+  mới chỉ khẳng định trong phiên `_test` (ca DB của C1) — kiểm lúc khởi động máy chủ là việc tồn (backlog).
+- _(Task 16 — các mục khác)_
 
 ## 7. Bảng số đo
 
