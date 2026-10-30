@@ -29,7 +29,8 @@ export interface MucModel {
 export type BeMatNgoai = "luong" | "kiem-dinh" | "chat" | "coding" | "agent";
 /** Bề mặt dùng được model ngoài ở 10.4 — nguồn DUY NHẤT (danh mục + thủ tục kiểm định đọc cùng hằng). */
 // ★ 10.4b L1 — mở "chat" (/ai-chat + KB qua `routes/kbNgoai.ts`; chỉ nhà máy đã cho dữ liệu vận hành — Q-A chủ dự án). Rollback = bỏ "chat".
-export const BE_MAT_NGOAI_DUOC_DUNG: readonly BeMatNgoai[] = ["luong", "kiem-dinh", "chat"];
+// ★ 10.4b L2 — mở "coding" (màn lập trình, chế độ HỎI — `routes/codingNgoai.ts`; client L2 khoá "Hỏi · chỉ đọc"). Rollback = bỏ "coding".
+export const BE_MAT_NGOAI_DUOC_DUNG: readonly BeMatNgoai[] = ["luong", "kiem-dinh", "chat", "coding"];
 
 /** 10.3 thay bằng `cauHinhNgoai.layModelDaBat`; 10.1 mặc định rỗng. */
 export interface NguonModelNgoai {

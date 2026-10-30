@@ -93,7 +93,7 @@ describe("layDanhMucModel (A1)", () => {
       ma: "ngoai:anthropic:claude-opus-5-5",
       nhaCungCap: "anthropic",
       trangThai: "san-sang",
-      duocDungO: ["luong", "kiem-dinh", "chat"], // ★ 10.4 D7 + 10.4b L1 mở chat; coding/agent CHƯA (L2/L3)
+      duocDungO: ["luong", "kiem-dinh", "chat", "coding"], // ★ 10.4 D7 + 10.4b L1 chat + L2 coding (Hỏi); agent CHƯA (L3)
     });
     expect((await layDanhMucModel(1, dep())).some((m) => m.loai === "ngoai")).toBe(false);
     // mục không phải ngoai KHÔNG mang duocDungO
