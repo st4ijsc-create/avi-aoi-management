@@ -244,7 +244,7 @@ describe("★ I-1 — DB KHOẺ, nhiều adapter, SEC_PLATFORM bật, bấm đú
   ])("★ K = $K adapter, override = $coOverride, 2 lần bấm song song ⇒ mọi adapter acked; 0 lượt bị bỏ; đủ audit HMI + override + attempts", async ({ K, coOverride }) => {
     if (!coOverride) H.chanInterlock = new Set();
     const machineId = K === 5 ? fx.m5 : fx.m9;
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const moc = Number(mc.m);
     let maxDem = 0;
     const tLay = setInterval(() => (maxDem = Math.max(maxDem, soGhiSoTreoStopHmi())), 1);
@@ -296,7 +296,7 @@ describe("★ (b) DB chậm + tràn hàng chờ ⇒ ĐÚNG MỘT dòng tóm tắ
     const bk = ghiTreo as unknown as Record<string, any>;
     expect(typeof bk.TRAN_HANG_CHO_GHI_NEN, "bản có hàng chờ").toBe("number");
     const TRAN_HC: number = bk.TRAN_HANG_CHO_GHI_NEN;
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const moc = Number(mc.m);
     const giu = await moGiu(H.khoaAudit);
     H.chamAudit = true;
@@ -340,7 +340,7 @@ describe("★ (b) DB chậm + tràn hàng chờ ⇒ ĐÚNG MỘT dòng tóm tắ
     const dau = Math.min(thu[0].id, tomTat[0].id);
     const cuoi = Math.max(thu.at(-1).id, tomTat[0].id);
     const doan = (await dung(sql`SELECT id, "entityType", "entityId", action, "actorId", "beforeJson", "afterJson", reason, "prevHash", hash, "hashTs" FROM control_audit_log
-      WHERE hash IS NOT NULL AND id >= (SELECT max(id) FROM control_audit_log WHERE hash IS NOT NULL AND id < ${dau}) AND id <= ${cuoi} ORDER BY id`)) as any[];
+      WHERE hash IS NOT NULL AND id >= (SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)) FROM control_audit_log WHERE hash IS NOT NULL AND id < ${dau}) AND id <= ${cuoi} ORDER BY id`)) as any[];
     expect(doan.length).toBeGreaterThanOrEqual(TRAN + TRAN_HC + 2);
     for (let i = 1; i < doan.length; i++) {
       const r = doan[i];
@@ -359,7 +359,7 @@ describe("★ (b) DB chậm + tràn hàng chờ ⇒ ĐÚNG MỘT dòng tóm tắ
 // ═════════ fix round 3 (re-review N2-2) — tắt tiến trình với lượt ĐANG BAY: dòng tóm tắt COMMIT vào control_audit_log (chuỗi băm thật) ═════════
 describe("★ N2-2 — xaHangChoKhiTat khi 3 audit đang treo: tóm tắt dang_bay_khi_tat ĐÃ COMMIT (hàng thật, có băm) lúc lượt xả trả", () => {
   it("3 audit treo trên khoá của tệp (KHÔNG giữ khoá chuỗi) ⇒ ≤ 2 s; ngay khi trả: đúng 1 dòng ot_stop_ghi_nen_bo_roi (dang_bay_khi_tat 3, khongRoDaGhi 3, hash có)", async () => {
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const giu = await moGiu(H.khoaAudit);
     H.chamAudit = true;
     const { recordAuditEvent } = await import("../services/audit/controlAuditService");
@@ -399,7 +399,7 @@ describe("★ S-1 — audit QUÁ LỚN xếp hàng ⇒ hàng CẮT được lưu
   it("8 audit treo + 1 audit 60 KB xếp hàng ⇒ DB hết chậm ⇒ hàng cắt: action/reason/entityType/entityId nguyên văn; catGoc.after = len+sha256 canonicalize(gốc); computeAuditHash khớp + nối prevHash", async () => {
     const { canonicalize } = await import("../services/security/auditChain");
     const { createHash } = await import("node:crypto");
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const giu = await moGiu(H.khoaAudit);
     H.chamAudit = true;
     const { recordAuditEvent } = await import("../services/audit/controlAuditService");

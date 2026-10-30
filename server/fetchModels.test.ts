@@ -154,6 +154,25 @@ describe("fetchEntry (mocked network)", () => {
     expect(fs.existsSync(path.join(dir, "tiny.bin.part"))).toBe(false); // poisoned part removed
   });
 
+  it("size guard: mở .part CHẬM (60 ms) — sau khi lỗi, .part KHÔNG được tạo lại sau lúc dọn (đua open ↔ rm; chập chờn cổng 2026-10-30)", async () => {
+    writeManifest([{ name: "tiny", file: "tiny.bin", url: "https://x/y", maxBytes: 8 }]);
+    const entry = fm.loadManifest(manifestPath).models[0];
+    const fetchImpl = vi.fn(async () => respOk(GOOD, 200, 4));
+    const moGoc = fs.open;
+    // làm `fs.open` (createWriteStream mở tệp bằng nó) trả lời muộn: tất định hoá cửa sổ đua thay vì chờ máy tải
+    const spy = vi.spyOn(fs, "open").mockImplementation(((...a: unknown[]) => {
+      const cb = a[a.length - 1] as (...x: unknown[]) => void;
+      setTimeout(() => (moGoc as (...x: unknown[]) => void)(...a.slice(0, -1), cb), 60);
+    }) as never);
+    try {
+      await expect(fm.fetchEntry(entry, { manifestPath, env: {}, fetchImpl, log: () => {} })).rejects.toThrow(/size guard/);
+    } finally {
+      spy.mockRestore();
+    }
+    await new Promise((r) => setTimeout(r, 250)); // đủ để một lần mở muộn (nếu còn) hoàn tất
+    expect(fs.existsSync(path.join(dir, "tiny.bin.part"))).toBe(false);
+  });
+
   it("unpinned hash: pins into manifest.lock.json on first download (trust-on-first-use)", async () => {
     writeManifest([{ name: "tiny", file: "tiny.bin", url: "https://x/y", maxBytes: 1024 }]);
     const entry = fm.loadManifest(manifestPath).models[0];

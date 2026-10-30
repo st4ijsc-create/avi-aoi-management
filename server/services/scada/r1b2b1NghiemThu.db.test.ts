@@ -816,7 +816,7 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
         expect(ds.may.find((m) => m.machineId === may.P)).toMatchObject({ coDung: true, soAdapter: 1, tongHop: "du" });
         expect(JSON.stringify(ds)).not.toMatch(/endpoint|lastError|stopValue|stop_cmd|tagKey/);
 
-        const am = Number((await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`))[0].m);
+        const am = Number((await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`))[0].m);
         const crid = uuid();
         const ghiTruoc = stub.P.ghi.length;
         const kq = await goc.op.scadaCommands.dungMay({ machineId: may.P, clientRequestId: crid });
@@ -1188,7 +1188,7 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
               baoHoa = g;
             })
           : undefined;
-      const [mm] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+      const [mm] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
       const dTu = H.dispatchInputs.length;
       const lag = batDauDoLag();
       const batDau = Date.now();
