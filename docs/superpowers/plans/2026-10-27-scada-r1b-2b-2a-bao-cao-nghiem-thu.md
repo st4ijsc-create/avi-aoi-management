@@ -172,6 +172,8 @@ _(Task 11)_
   `ADAPTER_OFFLINE`; `health().lastError` ghi "session contaminated …". Mở phiên mới hỏng ⇒ `connected=false`, supervisor lo.
 - (T3A) **`disconnect()` lúc đang mở phiên mới**: lần nối đó vẫn chạy xong rồi bị hạ ngay (chốt thế hệ) ⇒ PLC thấy MỘT kết nối thừa ngắn (≤ `cfg.timeoutMs`).
 - (T3A) **M3 — thời gian nối lại (danh sách tag + định nghĩa struct) phải được ĐO lúc commissioning so với trần chờ STOP 2000 ms.**
+- (T3A, rà lại N2) Mỗi lần phiên ENIP bị đánh dấu nhiễm, socket bị huỷ NGAY (không forwardClose lịch sự) ⇒ PLC có thể giữ MỘT kết nối mồ côi ~15 s. Ngân sách kết nối CompactLogix nhỏ ⇒ nhiều lần nhiễm liên tiếp có thể làm cạn; theo dõi lúc commissioning.
+- (T3A, rà lại N1) STOP đang XẾP HÀNG trong thư viện bị xả khi phiên nhiễm thì CHƯA được gửi nhưng vẫn mang nhãn "không rõ" (băng E-STOP cứng khong_ro), không phải "không tới", và không được gửi lại trên phiên mới — backlog 83 (xét ở Task 6 nhãn theo từng write).
 - (T3A, M5 phần dư) Hết hạn của CHÍNH thư viện: task-easy chạy lời ghi xếp hàng kế (C) ĐỒNG BỘ trong cùng lượt hết hạn, TRƯỚC khi driver kịp hạ phiên ⇒ C
   có thể ra socket cũ; nhãn của C là `timeout` không rõ (đúng: có thể đã áp), không bao giờ `ok`. Phiên bị hạ vì lý do khác (đọc hết hạn, dự phòng
   6500): hàng đợi được xả ⇒ C không ra dây.
