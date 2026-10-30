@@ -285,7 +285,7 @@ const logCanh = (pred: (o: BanLog) => boolean) => locLog(canhLog, pred);
 /** fix round 1 — lượt ghi nền BỊ BỎ (không bao giờ ghi): `_bo_tran` / `_bo_qua_tuoi` / `_bo_qua_lon` / `_bo_tat_may` (bản cũ: `_bo_qua_day`) */
 const boLog = () => logCo((o) => /_bo_(tran|qua_tuoi|qua_lon|tat_may|qua_day)$/.test(o.cho!));
 async function mocThu(): Promise<number> {
-  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+  const [r] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
   return Number(r.m);
 }
 
@@ -413,7 +413,7 @@ describe("★ Review Focus 1 (KD-A1) — 12 lần bấm SONG SONG khi CHỈ audi
     const boTruoc = demGhiBoQuaDay().tong;
     const ghiTruoc = stubG.ghi.length;
     const dTu = H.dispatchInputs.length;
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const moc = Number(mc.m);
     const mau = layMau(giu.tx, [H.khoaAudit]);
     await cho(5);
@@ -618,7 +618,7 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
     const truoc = demStopQuaHanKhongGhiSo().theoBuoc.ghi_so_loi ?? 0;
     const bqTruoc = demGhiBoQuaDay().theoBang;
     const nTruoc = (await thuQuaHan()).length;
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     loiLog.mockClear();
     const crid = uuid();
     expect(await dungHetHan(crid)).toBe("STOP_QUA_HAN");
@@ -668,7 +668,7 @@ describe("★ STOP_QUA_HAN (hạn tổng đã cạn) dưới audit chậm", () =
 
 describe("đối chứng — DB nhanh: không lượt nào xếp hàng / bị bỏ / chạm hạn; đúng 1 audit HMI + 1 audit override mỗi lần bấm", () => {
   it("5 lần bấm tuần tự ⇒ 5 × acked_verified; 5 audit scada_hmi_stop (DA_GUI) + 5 stop_interlock_override; 0 xếp hàng, 0 bỏ, 0 `_qua_han`; đếm về 0", async () => {
-    const [mc] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+    const [mc] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
     const moc = Number(mc.m);
     const crids: string[] = [];
     for (let i = 0; i < 5; i++) {

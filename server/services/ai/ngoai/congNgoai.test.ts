@@ -374,7 +374,7 @@ describe("cổng AI ngoài — rà kiem-dinh lô 2 (kẹp / trần đầu ra / s
 
   it("thử lại: MỖI lần thử một hàng ý định + kết quả (lần 1 'loi', lần 2 'ok') — đối soát chi phí khớp bộ đếm", async () => {
     const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "503", thuLai: true }, { kieu: "tra", noiDung: "ok" }]);
-    const moc = Number((await exec(sql`SELECT COALESCE(max(id),0)::bigint AS m FROM ai_external_calls`))[0]!.m);
+    const moc = Number((await exec(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('ai_external_calls', 'id')::regclass), 0)),0)::bigint AS m FROM ai_external_calls`))[0]!.m);
     await goiAiNgoai(yc(), dep(g));
     const hangMoi = await exec(sql`SELECT loai, "ketCuc" FROM ai_external_calls WHERE "factoryId" = ${A} AND id > ${moc} ORDER BY id`);
     expect(hangMoi).toEqual([

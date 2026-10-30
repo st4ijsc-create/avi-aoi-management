@@ -318,7 +318,7 @@ async function loiCua(p: Promise<unknown>): Promise<Loi> {
 }
 const uuid = () => crypto.randomUUID();
 async function moc(): Promise<number> {
-  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+  const [r] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
   return Number(r.m);
 }
 type DongThu = { request_id: string | null; adapter_id: number | null; stage: string; outcome: string; reason_code: string | null; command_log_ids: number[] | null; ly_do: string | null; at: Date };
