@@ -108,6 +108,46 @@ describe("đầu–cuối", () => {
   });
 });
 
+describe("H1.1 công tắc AI_AGENT_NEN_MOC nối tới lõi", () => {
+  /** SỐ LẦN nén ghi trong buoc-do của một lượt đọc tệp ~9000 ký tự 20 lần, ngân sách 40000 token. */
+  const chayNen = async (moc: string | undefined): Promise<number> => {
+    for (let k = 0; k < 20; k++) fs.writeFileSync(path.join(REPO, "src", `lon${k}.ts`), `${k}`.repeat(9000));
+    const cu = process.env.AI_AGENT_NEN_MOC;
+    if (moc === undefined) delete process.env.AI_AGENT_NEN_MOC;
+    else process.env.AI_AGENT_NEN_MOC = moc;
+    try {
+      let i = 0;
+      const goiModel: GoiModel = async function* (): AsyncGenerator<ManhModel> {
+        const k = i++;
+        yield {
+          loai: "xong",
+          toolCalls: k >= 19 ? [] : [{ id: `n${k}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: `src/lon${k}.ts` }) } }],
+          usage: { vao: 1, ra: 5 },
+        } as ManhModel;
+      };
+      const ql = taoQuanLyLuotChay({ goiModel, gioiHan: { nganSachNguCanhToken: 40_000, soLuotToiDa: 30 } });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "x" }, cauHoi: "doc", projectId: DU_AN, cheDo: "hoi" });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+      const nghe: SuKienAgent[] = [];
+      ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien))?.();
+      const lanNen = nghe.filter((e) => e.loai === "buoc-do" && e.nen).length;
+      expect(lanNen).toBeGreaterThan(0);
+      return lanNen;
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_NEN_MOC;
+      else process.env.AI_AGENT_NEN_MOC = cu;
+    }
+  };
+  it("★ đặt AI_AGENT_NEN_MOC=0.5 ⇒ nén sâu hơn hẳn mặc định (vắng ⇒ như cũ); giá trị rác ⇒ như cũ", async () => {
+    const macDinh = await chayNen(undefined);
+    const sau = await chayNen("0.5");
+    const rac = await chayNen("abc");
+    expect(sau).toBeLessThan(macDinh); // nén sâu hơn ⇒ ít lần nén hơn
+    expect(rac).toBe(macDinh);
+  }, 60_000);
+});
+
 describe("suKienDeLuu giữ buoc-do khi sổ quá trần", () => {
   const mucBuoc = (seq: number): MucDem => ({
     seq,

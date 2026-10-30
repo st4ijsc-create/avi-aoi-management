@@ -32,6 +32,7 @@ import {
   chayVongAgent,
   kiemDacTaBat,
   giuNghiBat,
+  nenMocDich,
   dungKhoiNguCanhDuAn,
   type CauHinhGiaoViec,
   type CheDoAgent,
@@ -856,6 +857,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ...(giuNghiBat(process.env.AI_AGENT_GIU_NGHI) ? { giuNghiTrongLichSu: true } : {}),
             // (Đợt 11.8, UX-C06) nhắc tóm tắt NOTES.md ở ≥ 80 % ngữ cảnh — MẶC ĐỊNH TẮT (AI_AGENT_TOM_TAT_80=1 để bật)
             ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
+            // (Đợt 12 · H1.1) nén tới mốc thấp (vd AI_AGENT_NEN_MOC=0.5) — MẶC ĐỊNH TẮT tới khi có A/B GPU
+            ...(nenMocDich(process.env.AI_AGENT_NEN_MOC) !== undefined ? { mucDichNen: nenMocDich(process.env.AI_AGENT_NEN_MOC) } : {}),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {

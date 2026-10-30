@@ -50,6 +50,12 @@ export interface TuyChonNen {
   uocLuong?: UocLuongToken;
   /** tỉ lệ ngân sách kích hoạt nén (mặc định 0,7) */
   nguong?: number;
+  /**
+   * (Đợt 12 · H1.1) tỉ lệ ngân sách nén TỚI khi đã kích hoạt (mặc định = `nguong`: nén vừa đủ dưới ngưỡng, như cũ từng byte).
+   * Đặt thấp hơn (~0,45–0,5) ⇒ mỗi lần nén đi sâu một lần, rồi lịch sử CHỈ-NỐI-THÊM vài chục bước mới chạm ngưỡng lại — thay vì nén ở
+   * gần như MỌI bước (mỗi lần sửa giữa lịch sử = mất cache tiền tố từ chỗ sửa). Bị kẹp ≤ `nguong`.
+   */
+  mucDich?: number;
   /** số lượt assistant gần nhất giữ nguyên (mặc định 2) */
   soLuotGiu?: number;
 }
@@ -74,6 +80,7 @@ function duongTuThamSo(args: string): string {
 export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   const uoc = tc.uocLuong ?? uocLuongTokenMacDinh;
   const nguong = Math.floor(tc.nganSachToken * (tc.nguong ?? 0.7));
+  const dich = Math.min(nguong, Math.floor(tc.nganSachToken * (tc.mucDich ?? tc.nguong ?? 0.7)));
   const soLuotGiu = tc.soLuotGiu ?? 2;
   const tokenTruoc = uocLuongTinNhan(tinNhan, uoc);
   if (tokenTruoc <= nguong) return { tinNhan: tinNhan.slice(), soNen: 0, tokenTruoc, tokenSau: tokenTruoc };
@@ -90,7 +97,7 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   let tong = tokenTruoc;
   let soNen = 0;
   // (1) bỏ suy luận giữ lại của lượt CŨ trước — rẻ nhất để mất (model đã dùng nó để ra câu trả lời đang nằm trong `content`)
-  for (let i = 0; i < ranhGioi && tong > nguong; i++) {
+  for (let i = 0; i < ranhGioi && tong > dich; i++) {
     const m = ra[i];
     if (m.role !== "assistant" || !m.reasoning_content) continue;
     tong -= uoc(m.reasoning_content);
@@ -99,7 +106,7 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
     soNen++;
   }
   // (2) rồi mới rút gọn kết quả tool cũ
-  for (let i = 0; i < ranhGioi && tong > nguong; i++) {
+  for (let i = 0; i < ranhGioi && tong > dich; i++) {
     const m = ra[i];
     if (m.role !== "tool" || m.content.startsWith("[compacted:")) continue;
     const goi = m.tool_call_id ? goiTheoId.get(m.tool_call_id) : undefined;

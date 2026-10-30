@@ -91,6 +91,11 @@ export interface DauVaoVongAgent {
    * Mặc định TẮT. Sự kiện `ngu-canh-day` luôn phát (không đổi hành vi model).
    */
   nhacTomTatKhiDay?: boolean;
+  /**
+   * (Đợt 12 · H1.1) tỉ lệ ngân sách ngữ cảnh mà mỗi lần nén đi TỚI (xem `TuyChonNen.mucDich`). Vắng ⇒ nén vừa đủ dưới 70 % như cũ từng byte.
+   * Host server đọc `AI_AGENT_NEN_MOC` qua `nenMocDich`.
+   */
+  mucDichNen?: number;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -218,6 +223,17 @@ function congTacMacDinhBat(giaTri: string | undefined): boolean {
  */
 export function giuNghiBat(giaTri: string | undefined): boolean {
   return congTacMacDinhBat(giaTri);
+}
+
+/**
+ * (Đợt 12 · H1.1) Giá trị công tắc `AI_AGENT_NEN_MOC` ⇒ `mucDichNen`: số thực trong [0,30 ; 0,65] (tỉ lệ ngân sách nén TỚI); vắng/ngoài khoảng/không
+ * phải số ⇒ `undefined` (hành vi cũ). Mặc định TẮT cho tới khi có A/B cửa sổ GPU (cache_n/prompt_n thật + agent-f/G6 không tụt).
+ */
+export function nenMocDich(giaTri: string | undefined): number | undefined {
+  const s = String(giaTri ?? "").trim();
+  if (!/^\d*\.?\d+$/.test(s)) return undefined;
+  const v = Number(s);
+  return Number.isFinite(v) && v >= 0.3 && v <= 0.65 ? v : undefined;
 }
 
 /** Tool GHI tệp nội dung (đếm chuỗi ghi chưa chạy test). Xoá/đổi tên không phải "viết lại". */
@@ -669,7 +685,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         chenNhac("tom-tat-ngu-canh", cauNhacTomTatNguCanh(canNhacTomTat));
         canNhacTomTat = null;
       }
-      const kqNen = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc });
+      const kqNen = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc, ...(y.mucDichNen !== undefined ? { mucDich: y.mucDichNen } : {}) });
       tinNhan = kqNen.tinNhan;
       // (H0.2) chụp trạng thái LÚC GỌI model — các biến này đổi sau lượt.
       const nenDo: NenBuocDo | null = kqNen.soNen > 0 ? { soNen: kqNen.soNen, tokenTruoc: kqNen.tokenTruoc, tokenSau: kqNen.tokenSau } : null;

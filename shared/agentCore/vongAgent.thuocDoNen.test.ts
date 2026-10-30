@@ -13,10 +13,10 @@ import { congCuTheoCheDo } from "./congCu";
 import { uocLuongTinNhan } from "./nguCanh";
 import type { BoThucThi, GoiModel, ManhModel, SuKienAgent, TinNhan } from "./kieu";
 
-const SO_BUOC = 60;
+const SO_BUOC = 80;
 const TOKEN_NGHI = 1500;
 const KY_TU_KET_QUA = 7000;
-const NGAN_SACH = 24_000;
+const NGAN_SACH = 65_536;
 
 export interface SoDoNen {
   soBuoc: number;
@@ -31,7 +31,7 @@ export interface SoDoNen {
   viTriSuaSom: Array<number | null>;
 }
 
-export async function doNen(): Promise<SoDoNen> {
+export async function doNen(mucDichNen?: number): Promise<SoDoNen> {
   const yeuCau: TinNhan[][] = [];
   const suKien: SuKienAgent[] = [];
   let i = 0;
@@ -63,6 +63,7 @@ export async function doNen(): Promise<SoDoNen> {
     signal: new AbortController().signal,
     gioiHan: { nganSachNguCanhToken: NGAN_SACH, soLuotToiDa: SO_BUOC + 5, tokenRaToiDa: 10_000_000 },
     giuNghiTrongLichSu: true,
+    ...(mucDichNen !== undefined ? { mucDichNen } : {}),
   });
 
   const viTri: Array<number | null> = [];
@@ -107,7 +108,20 @@ describe("thước đo nén ngữ cảnh (đường nền)", () => {
         `soBuocMatCache=${r.soBuocMatCache} (${Math.round((100 * r.tongTokenXuLyLai) / r.tongTokenYeuCau)}% phải xử lý lại)`,
     );
     expect(r.soBuoc).toBe(SO_BUOC);
-    // ĐƯỜNG NỀN đo 2026-10-31 trên c78ae27cd+H0.2: nén ở 56/60 bước, 83 % token phải xử lý lại.
-    expect(r).toMatchObject({ soLanNen: 56, tongTokenYeuCau: 897755, tongTokenXuLyLai: 741769, soBuocMatCache: 56 });
+    // ĐƯỜNG NỀN đo 2026-10-31 (64k, 80 bước): nén ở 68/80 bước, 86 % token phải xử lý lại.
+    expect(r).toMatchObject({ soLanNen: 68, tongTokenYeuCau: 3317565, tongTokenXuLyLai: 2836663, soBuocMatCache: 68 });
+  });
+});
+
+describe("H1.1 nén xuống mốc thấp (mucDichNen)", () => {
+  it("★ mốc 0,5: ít lần nén hơn nhiều và ít token phải xử lý lại hơn đường nền", async () => {
+    const nen = await doNen();
+    const thap = await doNen(0.5);
+    console.log(
+      `THUOC-NEN-MOC0.5 soLanNen=${thap.soLanNen} tongTokenXuLyLai=${thap.tongTokenXuLyLai} soBuocMatCache=${thap.soBuocMatCache} (${Math.round((100 * thap.tongTokenXuLyLai) / thap.tongTokenYeuCau)}% phải xử lý lại; nền ${Math.round((100 * nen.tongTokenXuLyLai) / nen.tongTokenYeuCau)}%)`,
+    );
+    // mốc 0,5 đo 2026-10-31: nén 17/80 bước (nền 68), 26 % token phải xử lý lại (nền 86 %).
+    expect(thap).toMatchObject({ soLanNen: 17, tongTokenXuLyLai: 745597, soBuocMatCache: 17 });
+    expect(thap.tongTokenXuLyLai).toBeLessThan(nen.tongTokenXuLyLai * 0.3);
   });
 });
