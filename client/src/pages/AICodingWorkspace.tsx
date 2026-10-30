@@ -155,6 +155,7 @@ import { KhungGit } from "@/components/ai/KhungGit";
 import { ThaoTacTep } from "@/components/ai/ThaoTacTep";
 import { QuanLyTriNho } from "@/components/ai/QuanLyTriNho";
 import { BangAgentTuRepo } from "@/components/ai/BangAgentTuRepo";
+import { ChiBaoHangCho } from "@/components/aiCoding/agent/ChiBaoHangCho";
 import { docNhatKyLenh, khoaNhatKyLenh, luuNhatKyLenh, xoaNhatKyLenh } from "@/lib/nhatKyLenhPhien";
 import { chenVaoO, docBase64, khoiChuOcr, kiemAnhLoi, layAnhTuDuLieu } from "@/lib/anhLoiChat";
 import { TheDuyetDiffLo } from "@/components/ai/TheDuyetDiffLo";
@@ -3568,6 +3569,8 @@ export default function AICodingWorkspace() {
                 </div>
               )}
               <BoChonCheDoChat giaTri={cheDoChat} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming} />
+              {/* ★ Đợt 11.8 (UX-D09) — chỉ báo hàng chờ model TRƯỚC khi gửi: chỉ ở chế độ agent, chưa có lượt chạy, tab đang hiện. */}
+              <ChiBaoHangCho bat={cheDoChat !== "hoi" && !agentDangChay && !isStreaming && !!projectId} />
               <div className="flex items-end gap-2">
                 <textarea
                   ref={oNhapRef}

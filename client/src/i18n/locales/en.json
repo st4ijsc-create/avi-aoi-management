@@ -21628,7 +21628,8 @@
         "sua": "edit",
         "hoi": "ask",
         "dangChay": "running"
-      }
+      },
+      "hangCho": "Model queue: {{n}} request(s) ahead of you"
     },
     "duanCaNhan": {
       "err": {
