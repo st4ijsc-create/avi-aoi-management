@@ -4225,7 +4225,8 @@
       "assigneeUserId": "被分配人",
       "writable": "可写（writable）",
       "dataType": "数据类型（dataType）",
-      "inspectionId": "检验"
+      "inspectionId": "检验",
+      "conTro": "分页游标"
     },
     "feature": {
       "apiKeyHolder": "API 密钥持有人记录（数据库迁移 0369）",
@@ -4596,7 +4597,12 @@
       "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
       "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
       "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效",
-      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）"
+      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）",
+      "CAN_XAC_NHAN_VAN_HANH": "需要确认：发送给外部 AI 时，您输入的内容视为运营数据。",
+      "NGOAI_THIEU_HOI_THOAI": "缺少已保存的会话——请打开或新建会话后重新发送",
+      "modelNgoaiChuaCaiDat": "该界面暂不可使用外部 AI 模型",
+      "NGOAI_CHI_HOI": "外部模型仅在“提问”（只读）模式下回答——不能修改文件，也不能使用命令输出",
+      "NGOAI_TOOL_KHONG_CAP": "外部模型请求了未授权的工具——本轮已停止"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -19490,7 +19496,17 @@
     "ledger": "账本",
     "ledgerIntent": "预写意图",
     "ledgerResult": "结果",
-    "ledgerResultOf": "#{{id}} 的结果"
+    "ledgerResultOf": "#{{id}} 的结果",
+    "loiBiChe": "技术细节已隐藏（需要工程师权限）",
+    "maLoi": {
+      "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
+      "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
+      "OT_MC_TAM_KHOA": "三菱 MC 控制已临时锁定：mcprotocol 库错误解析 PLC 回复 — 命令未发送。等待修复 3B；如需停机请使用设备上的硬接线急停",
+      "EDGE_REPORTED": "边缘节点报告命令未成功",
+      "READBACK_UNAVAILABLE": "已写入但无法回读 — 请在设备处检查",
+      "READBACK_MISMATCH": "已写入但回读值不一致 — 请在设备处检查",
+      "TECHNICAL_ERROR": "技术错误"
+    }
   },
   "license": {
     "title": "许可管理",
@@ -21639,6 +21655,15 @@
         "duAnPhanMem": "（软件项目）",
         "macDinh": "引擎默认模型",
         "duPhong": "备用 — 槽位正占用另一个模型"
+      },
+      "khoa": {
+        "tieuDe": "被硬性锁定的命令（智能体永远无法运行）",
+        "biKhoa": "该命令被硬性锁定（{{lenh}}）——无法批准运行。",
+        "phim": "当此卡片获得焦点时：Enter = 允许一次 · Esc = 拒绝",
+        "moTa": {
+          "ngoai-du-an": "在项目文件夹之外删除/写入文件",
+          "csdl-that": "写入真实数据库"
+        }
       }
     },
     "duanCaNhan": {
@@ -21878,6 +21903,11 @@
       "xemBanDau": "查看初稿（修复前）",
       "conLoi": "经 {{v}} 轮自动修复后，ST 代码仍有 {{n}} 个编译错误（RuSTy）：",
       "khongKiemDuoc": "无法检查编译（{{lyDo}}）。"
+    },
+    "ngoai": {
+      "daDoc": "已读取 {{p}}",
+      "biTuChoi": "被拒绝（{{ma}}）：{{p}}",
+      "chiHoi": "外部模型：仅“提问”模式 · 只读（不写文件、不运行命令、无自动修复循环）。"
     }
   },
   "masterDataCol": {
@@ -24357,6 +24387,7 @@
         "quaHanMotPhan": "服务器响应缓慢 — HMI STOP 未发送到适配器 {{list}}。",
         "gioiHan": "服务器因请求过多而拒绝（HTTP 429）— HMI STOP 未发送。",
         "khongRo": "无法确认适配器 {{list}} 是否已收到 STOP — 设备可能尚未停止。",
+        "khongDat": "HMI STOP 未送达适配器 {{list}} — 请在设备处使用硬接线急停（E-STOP）。",
         "nutBo": "知道了"
       },
       "khanCap": {
@@ -24504,7 +24535,16 @@
       "luot": "模型的单次请求上限",
       "nha-may": "工厂的每日上限",
       "nguoi": "您的每日上限",
-      "phut": "每分钟请求过多"
-    }
+      "luong": "流程的每日上限",
+      "lan-phut": "每分钟请求过多"
+    },
+    "khongTai": "无法加载该模型的使用条件，请稍后再试。",
+    "codingLuotHai": "编程界面：第一轮只发送您输入的问题和允许读取的代码；从第二轮起，对话历史视为运营数据（需工厂允许，每个会话确认一次）。"
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "将问题发送给外部 AI？",
+    "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
+    "tuChoi": "不发送",
+    "dongY": "同意并发送"
   }
 }

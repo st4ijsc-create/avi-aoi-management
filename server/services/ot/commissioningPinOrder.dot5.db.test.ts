@@ -90,7 +90,7 @@ const xactStartOf = async (tagAuditAfter: number) =>
     SELECT "createdAt", "afterJson" FROM control_audit_log
      WHERE "entityType" = 'device_tag_stop_pin' AND "entityId" = ${String(fx.tag)} AND id > ${tagAuditAfter} ORDER BY id`);
 const maxAuditId = async () =>
-  Number((await sql<{ m: number | null }[]>`SELECT max(id)::int AS m FROM control_audit_log`)[0].m ?? 0);
+  Number((await sql<{ m: number | null }[]>`SELECT max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0))::int AS m FROM control_audit_log`)[0].m ?? 0);
 
 describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("Đợt 5 F7 — signature vs stop-pin change are strictly ordered (DB _test)", () => {
   // The parked transactions here are deliberate: their lock waits cross the query monitor's slow threshold. Those

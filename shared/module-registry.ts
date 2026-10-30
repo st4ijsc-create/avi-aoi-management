@@ -426,6 +426,10 @@ const SEED_MODULES: SystemModule[] = [
       "/production/shifts", "/engineering/production-shifts",
       "/factory-floor-editor", "/control-plane", "/robot-control",
       "/rf-test-cell", "/cell-twin",
+      // SCADA R1b-2b-2b A — C1 (M9; điều phối Q3 2026-10-27): nhật ký lệnh `/scada/journal` (`commandLog.nhatKy` đứng sau MOD_OT_CONTROL) —
+      // route CÙNG giấy phép với thủ tục của nó. Mục điều hướng (B-T8, nhóm "devices" / mục "connect") bị ẩn khi khách không có
+      // MOD_OT_CONTROL nhờ `isRouteAllowed(href)` của `filterNavGroupsByLicense` (không cần `licenseModule`).
+      "/scada/journal",
     ],
     permissionCategories: ["machine_control", "andon", "interlock", "mes_bom"],
     features: [

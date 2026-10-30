@@ -82,6 +82,7 @@ export * from "./kbStudio"; // doc69 Giai đoạn 5/Wave E3 (E3-1) — multi-cor
 export * from "./vram"; // 2026-08-02 VRAM Pha 1 Task 2 — nhật ký chỉ-ghi-thêm điều phối VRAM, migration 0310
 export * from "./aiCodingSession"; // doc 79 DANH SÁCH PHIÊN — mạch hội thoại tác nhân lập trình, phạm vi CHỦ SỞ HỮU, migration 0333
 export * from "./aiCodingLesson"; // doc 82 BỘ NHỚ XUYÊN PHIÊN — bài học người dùng tự khai, phạm vi CHỦ SỞ HỮU, migration 0336
+export * from "./aiAgentDefTrust"; // Đợt 11.8 T5 2026-10-27 — tin-lần-đầu theo băm cho định nghĩa agent, phạm vi CHỦ, migration 0441
 export * from "./aiAgentRun"; // Đợt 1 T4 2026-10-17 — sổ LƯỢT CHẠY vòng agent máy chủ, phạm vi CHỦ LƯỢT CHẠY, migration 0390
 export * from "./aiModelRegistry"; // Đợt 7.0 2026-10-20 — SỔ MODEL (artifact · hồ sơ · vai trò · gán · lượt đo), migration 0400
 export * from "./aiNgoai"; // Đợt 10.3 2026-10-26 — cổng AI NGOÀI (cấu hình / danh mục / host theo nhà máy, sổ WORM, bộ đếm trần), mig 0414–0415

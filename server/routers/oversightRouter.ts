@@ -61,6 +61,7 @@ import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { BUOC_QUA_HAN_STOP_HMI, dieuKienThuStopQuaHan } from "../services/scada/lenhHmi";
 import { demStopQuaHanKhongGhiSo } from "../_core/hanStopHmi";
+import { demGhiBoQuaDay, trangThaiGhiTreo } from "../services/ot/ghiTreoCoTran";
 import { detectDeadlocks } from "../services/fleet/trafficManager";
 // Fix round 1 (doc 80 Đợt 1 Task 2) — ILK-06: dùng ĐÚNG cùng allowlist action mà cổng
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
@@ -572,6 +573,42 @@ export interface StopQuaHanPosture {
 }
 
 /**
+ * R1b-2b-2a T1 (mục 61, kiem-dinh KD-A3; fix round 1) — ghi nền của đường STOP (audit HMI / audit STOP ghim của dispatcher / attempts / chốt dòng
+ * chờ) qua trần ghi đang bay + hàng chờ có trần (`ghiTreoCoTran.ts`). Bộ nhớ tiến trình này (từ `batDauLuc`), không biết máy ⇒ CHỈ toàn quyền thấy
+ * (`null` cho người khác / phạm vi không phân giải được). Chỉ trường máy chủ — dòng giao diện ở Task 9.
+ *   · `count` / `theoBang` — lượt KHÔNG vào sổ trong 24 h: bị BỎ (tràn / quá tuổi / quá lớn / tắt máy) HOẶC audit tới DB rồi ghi HỎNG (loi_ghi,
+ *     fix round 2); lượt KHÔNG RÕ lúc tắt (dang_bay_khi_tat) chỉ vào dòng tóm tắt, không đếm ở đây. Mỗi đợt có MỘT dòng tóm tắt
+ *     `ot_stop_ghi_nen_bo_roi` trong `control_audit_log`. STOP của các lượt ấy vẫn có dòng `command_log`.
+ *   · tín hiệu SỐNG (review M-4): `dangBay` / `tran`, `dayTu` (ISO lúc trần đầy, null khi còn chỗ), `hangCho` / `tranHangCho`, `tomTatCho` (lượt bị
+ *     bỏ CHƯA vào dòng tóm tắt).
+ * ⚠ ĐẾM ĐÔI có chủ ý (review M-6): một dòng attempts STOP_QUA_HAN bị bỏ được đếm CẢ ở `stopQuaHan24h.khongGhiSo.theoBuoc.ghi_so_loi` (từ chối STOP
+ * không vào sổ) LẪN ở `ghiNenStopBoQua24h.theoBang.scada_command_attempts` (lượt ghi nền bị bỏ). Hai câu hỏi khác nhau — giao diện KHÔNG cộng chúng.
+ * ⚠ ĐẾM THIẾU tạm thời (re-review m6): dòng attempts STOP_QUA_HAN đang XẾP HÀNG chưa ở DB cũng chưa ở bộ đếm trong bộ nhớ ⇒ `stopQuaHan24h` thiếu
+ * chúng tới khi xả (≤ 10 phút); `hangChoTheoBang.scada_command_attempts` cho thấy số đang chờ.
+ * fix round 3 (kiem-dinh) — `slotGiaiPhong`: số lần VAN XẢ trả chỗ của một lượt treo quá `HAN_GIAI_PHONG_SLOT_MS` (kết nối có thể vẫn bị giữ ⇒
+ * trần 8 không còn chặn trên số kết nối thật trong lúc đó) — khác 0 là dấu hiệu kết nối DB treo không có statement_timeout.
+ */
+export interface GhiNenStopBoQuaPosture {
+  count: number;
+  theoBang: Record<string, number>;
+  batDauLuc: string;
+  dangBay: number;
+  tran: number;
+  dayTu: string | null;
+  hangCho: number;
+  hangChoTheoBang: Record<string, number>;
+  tranHangCho: number;
+  tomTatCho: number;
+  slotGiaiPhong: number;
+}
+function ghiNenStopBoQua(pv: PhamViPosture | null): GhiNenStopBoQuaPosture | null {
+  if (!pv?.toanQuyen) return null;
+  const m = demGhiBoQuaDay();
+  const t = trangThaiGhiTreo();
+  return { count: m.tong, theoBang: { ...m.theoBang } as Record<string, number>, batDauLuc: m.batDauLuc, ...t, hangChoTheoBang: { ...t.hangChoTheoBang } as Record<string, number> };
+}
+
+/**
  * R1b-2a T12 (ruling K7) — số STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (`MA_STOP_QUA_HAN` / `dieuKienThuStopQuaHan()` của T4), theo bước.
  * `pv` null = phạm vi không phân giải được ⇒ degraded. `them` (chỉ test) = điều kiện thêm trên `scada_command_attempts`.
  */
@@ -779,6 +816,8 @@ export const oversightRouter = router({
         interlockRulesCauHinhHong: cauHinhHong.count,
         // R1b-2a T12 (ruling K7, Q4) — STOP HMI bị từ chối vì hạn trước-gửi trong 24 h (theo phạm vi; bộ nhớ tiến trình chỉ toàn quyền).
         stopQuaHan24h,
+        // R1b-2b-2a T1 (KD-A3, fix round 1) — ghi nền của đường STOP: bị bỏ 24 h + trạng thái sống trần / hàng chờ (bộ nhớ tiến trình; chỉ toàn quyền)
+        ghiNenStopBoQua24h: ghiNenStopBoQua(pv),
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         // Đợt 10.3 (§12) — dịch vụ forge (sinh ảnh / chuyển giọng nói… ra ngoài KHÔNG qua cổng AI ngoài) đang cấu hình?
@@ -790,6 +829,7 @@ export const oversightRouter = router({
 
 // Xuất riêng cho test đơn vị (không đi qua tRPC caller) — mỗi nhánh + đường degraded.
 export const _internal = {
+  ghiNenStopBoQua,
   fetchRecipesDraftPending,
   fetchRecipesActiveUnapproved,
   fetchInterlockRulesPending,

@@ -19,6 +19,7 @@ import type { ToolExecContext } from "../../aiLocalTools";
 import { baoQuyetDinhDuyet, boLyDoBac, ghiLyDoBacTruoc } from "./busDuyetAgent";
 import { quanLyLuotChay, type QuanLyLuotChay } from "./quanLyLuotChay";
 import { ghiQuyetDinhTuCuaDuyet } from "../phanHoi/thuTucPhanHoi";
+import { thongKeHangDoiLlm, type ThongKeCong } from "../hangDoiUuTienLlm";
 
 /**
  * ★ Đợt 5.1 — quyết định duyệt/bác THẬT vào sổ phản hồi (`ai_agent_feedback`) để thành bộ dữ liệu "chỉ dẫn → diff được
@@ -48,6 +49,24 @@ const copilot = (u: NguoiPhien): CopilotUser => ({ id: u.id, role: String(u.role
 export async function thuTucDanhSach(u: NguoiPhien, projectId?: string | null, ql: QuanLyLuotChay = quanLyLuotChay()) {
   if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, runs: [] };
   return { ok: true as const, note: null, runs: await ql.danhSach(u.id, projectId ?? null) };
+}
+
+/**
+ * (Đợt 11.8, UX-D09) số lượt model đứng TRƯỚC một lượt agent mới nếu vào hàng bây giờ = đang chạy + đang chờ ở mức `tuong-tac` và `agent`
+ * (mức `nen` đi sau). Cổng ưu tiên TẮT ⇒ `null` (không có hàng chờ để nói). THUẦN; chỉ là SỐ — không id, không thông tin người khác.
+ */
+export function tinhPhiaTruocHangCho(tk: Pick<ThongKeCong, "dangChay" | "dangCho"> & { batCong: boolean }): number | null {
+  if (!tk.batCong) return null;
+  return Math.max(0, tk.dangChay) + Math.max(0, tk.dangCho["tuong-tac"] ?? 0) + Math.max(0, tk.dangCho.agent ?? 0);
+}
+
+export async function thuTucTrangThaiHangCho(u: NguoiPhien, doc: () => ReturnType<typeof thongKeHangDoiLlm> = thongKeHangDoiLlm) {
+  if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, phiaTruoc: null };
+  try {
+    return { ok: true as const, note: null, phiaTruoc: tinhPhiaTruocHangCho(doc()) };
+  } catch {
+    return { ok: true as const, note: null, phiaTruoc: null };
+  }
 }
 
 export async function thuTucChiTiet(u: NguoiPhien, runId: string, ql: QuanLyLuotChay = quanLyLuotChay()) {

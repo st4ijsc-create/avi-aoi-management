@@ -226,11 +226,11 @@ async function loiCua(p: Promise<unknown>): Promise<Loi> {
 }
 const uuid = () => crypto.randomUUID();
 async function moc(): Promise<number> {
-  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+  const [r] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
   return Number(r.m);
 }
 async function mocAudit(): Promise<number> {
-  const [r] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`);
+  const [r] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`);
   return Number(r.m);
 }
 type DongThu = { adapter_id: number | null; stage: string; outcome: string; reason_code: string | null; requested_value: any; ly_do: string | null };
@@ -717,7 +717,8 @@ describe("★ fix round 1 I-1 — MỘT hạn TỔNG 2,5 s cho cả request (cre
     const batDau = Date.now();
     const kq = await dungMayHmi({ user: { id: op.id, role: "operator", twoFactorEnabled: false } }, { userId: op.id, userRole: "operator" }, { machineId: fx.m1, clientRequestId: uuid() }, { hanChotYeuCau: Date.now() - 1 });
     const troi = Date.now() - batDau;
-    expect(troi).toBeLessThan(800 + (await lag.dung(800)));
+    // R1b-2b-2a T0 a (2026-10-27) — thao tác thật ~7 ms; trần nới 150 < 300 ⇒ trễ 800 ms (không chặn) và vòng bận 900 ms đều đỏ
+    expect(troi).toBeLessThan(300 + (await lag.dung(150)));
     expect(kq).toMatchObject({ ok: false, tuChoi: { ma: "STOP_QUA_HAN", pha: "truoc_gui" } });
     expect(H.dispatchInputs.length - dTu).toBe(0);
     const rows = await choThuQuaHan(m, 1);

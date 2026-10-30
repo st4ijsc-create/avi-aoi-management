@@ -248,7 +248,7 @@ import { logger } from "../../logger";
 import { StubDriver, createStubDriver } from "../ot/drivers/stubDriver";
 import { ModbusDriver } from "../ot/drivers/modbusDriver";
 import { S7Driver } from "../ot/drivers/s7Driver";
-import { MitsubishiMcDriver, MC_ERRCODE_QUA_HAN_GOI } from "../ot/drivers/mitsubishiMcDriver";
+import { MitsubishiMcDriver, MC_ERRCODE_QUA_HAN_GOI, __moKhoaGhiMcChoTest } from "../ot/drivers/mitsubishiMcDriver";
 import { EthernetIpDriver } from "../ot/drivers/ethernetIpDriver";
 import { SlmpDriver } from "../ot/drivers/slmpDriver";
 import type { OtDriver, OtProtocol, OtTagAddress, SuKienDoc } from "../ot/otDriver";
@@ -816,7 +816,7 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
         expect(ds.may.find((m) => m.machineId === may.P)).toMatchObject({ coDung: true, soAdapter: 1, tongHop: "du" });
         expect(JSON.stringify(ds)).not.toMatch(/endpoint|lastError|stopValue|stop_cmd|tagKey/);
 
-        const am = Number((await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM control_audit_log`))[0].m);
+        const am = Number((await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('control_audit_log', 'id')::regclass), 0)), 0)::bigint AS m FROM control_audit_log`))[0].m);
         const crid = uuid();
         const ghiTruoc = stub.P.ghi.length;
         const kq = await goc.op.scadaCommands.dungMay({ machineId: may.P, clientRequestId: crid });
@@ -987,9 +987,21 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
         expect(laDocTot(ticks[0])).toBe(true);
         expect(laTickHong(ticks[0])).toBe(false);
         expect(d.isConnected()).toBe(true);
-        const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
-        expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
-        expect(writeItems).toHaveBeenCalledTimes(1);
+        // R1b-2b-2a T3B-0 (backlog 84) — sản xuất: ghi MC TẠM KHOÁ ⇒ STOP `ok:false` OT_MC_TAM_KHOA, KHÔNG vào thư viện (mcTamKhoa.r1b2b2.test.ts).
+        const khoa = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
+        expect(khoa).toHaveLength(1);
+        expect(khoa[0].ok).toBe(false);
+        expect(String(khoa[0].error)).toMatch(/^OT_MC_TAM_KHOA: /);
+        expect(writeItems).not.toHaveBeenCalled();
+        // Thuộc tính của T4 (phiên GIỮ sau lỗi đọc nhanh ⇒ STOP vào thư viện) giữ cho logic ghi 3B dùng lại — cờ mở khoá CHỈ-test.
+        __moKhoaGhiMcChoTest(true);
+        try {
+          const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
+          expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
+          expect(writeItems).toHaveBeenCalledTimes(1);
+        } finally {
+          __moKhoaGhiMcChoTest(false);
+        }
       } finally {
         await d.disconnect();
       }
@@ -1188,7 +1200,7 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
               baoHoa = g;
             })
           : undefined;
-      const [mm] = await dung(sql`SELECT COALESCE(max(id), 0)::bigint AS m FROM scada_command_attempts`);
+      const [mm] = await dung(sql`SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint AS m FROM scada_command_attempts`);
       const dTu = H.dispatchInputs.length;
       const lag = batDauDoLag();
       const batDau = Date.now();
@@ -1209,12 +1221,13 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
     }, 30_000);
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    it("L2 (T9 fix round, I1) — CHỈ bảng attempts chậm + bấm STOP TRẦN+4 lần ⇒ lượt ghi sổ treo ≤ TRẦN (8) (Postgres xác nhận), 4 lượt bỏ qua có nội dung; máy KHÁC vẫn acked_verified < 1,7 s", async () => {
+    it("L2 (T9 fix round, I1) — CHỈ bảng attempts chậm + bấm STOP TRẦN+4 lần ⇒ lượt ghi sổ treo ≤ TRẦN (8) (Postgres xác nhận), 4 lượt XẾP HÀNG (R1b-2b-2a T1 fix round 1, thay 'bỏ qua'); máy KHÁC vẫn acked_verified < 1,7 s", async () => {
       const CAN = 1_700;
       expect(TRAN_GHI_SO_TREO_STOP_HMI).toBe(8);
       expect(resolvePoolMax()).toBeGreaterThanOrEqual(TRAN_GHI_SO_TREO_STOP_HMI + 3);
       await vi.waitFor(() => expect(soGhiSoTreoStopHmi()).toBe(0), { timeout: 10_000, interval: 50 });
       loiLog = vi.spyOn(logger, "error");
+      const canhLog = vi.spyOn(logger, "warn");
       giuThu = await moGiuKhoa(H.khoaThu[0], H.khoaThu[1], 0, 60_000);
       H.chamThu = true;
       const SO_BAM = TRAN_GHI_SO_TREO_STOP_HMI + 4;
@@ -1229,11 +1242,11 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
       await choDuChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1], TRAN_GHI_SO_TREO_STOP_HMI, "lượt treo chưa tới Postgres");
       await cho(200);
       expect(await demChoKhoa(giuThu.tx, H.khoaThu[0], H.khoaThu[1])).toBe(TRAN_GHI_SO_TREO_STOP_HMI);
-      const boQua = (loiLog.mock.calls as unknown[][])
-        .map((c) => c[0] as { cho?: string; noiDung?: Record<string, unknown> })
-        .filter((o) => o?.cho === "attempts_hmi_stop_bo_qua_day");
-      expect(boQua).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
-      expect(boQua[0].noiDung).toMatchObject({ bang: "scada_command_attempts", adapterId: AD.G, outcome: "dispatched" });
+      // R1b-2b-2a T1 fix round 1 — đầy trần ⇒ XẾP HÀNG (hàng chờ có trần, xả dưới cùng trần), không bỏ
+      const xepHang = (canhLog.mock.calls as unknown[][])
+        .map((c) => c[0] as { cho?: string })
+        .filter((o) => o?.cho === "attempts_hmi_stop_xep_hang");
+      expect(xepHang).toHaveLength(SO_BAM - TRAN_GHI_SO_TREO_STOP_HMI);
 
       const ghiTruoc = stub.G2.ghi.length;
       const lag = batDauDoLag();

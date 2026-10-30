@@ -337,6 +337,24 @@ export function layDiffTuDeXuat(deXuat: DeXuatDuyet, bayGio: () => number = Date
   return null;
 }
 
+/**
+ * (Đợt 11.3-A) cảnh báo của máy chủ gắn vào thẻ duyệt (`preview.warnings` — vd "Thư mục chạy: …", cảnh báo cài đặt) — CHỮ THUẦN, giữ nguyên thứ tự.
+ * Nhận cùng ba hình dạng `xemTruoc` như `layDiffTuDeXuat`; không có ⇒ []. Chuỗi cắt 400 ký tự, tối đa 12 dòng (chống phình).
+ */
+export function canhBaoCuaDeXuat(deXuat: DeXuatDuyet): string[] {
+  const xt = deXuat?.xemTruoc as Record<string, unknown> | undefined;
+  if (!xt || typeof xt !== "object") return [];
+  const ung: Array<Record<string, unknown>> = [];
+  if (xt.pendingAction && typeof xt.pendingAction === "object") ung.push(xt.pendingAction as Record<string, unknown>);
+  ung.push(xt);
+  for (const u of ung) {
+    const pv = u.preview as { warnings?: unknown } | undefined;
+    const ds = Array.isArray(pv?.warnings) ? pv!.warnings : Array.isArray(u.warnings) ? u.warnings : null;
+    if (ds) return (ds as unknown[]).filter((w): w is string => typeof w === "string").map((w) => w.slice(0, 400)).slice(0, 12);
+  }
+  return [];
+}
+
 /** id gửi cho `aiAgent.duyet/bac`: id hàng `ai_pending_actions` nếu server gửi, không thì id sự kiện. */
 export function idHanhDong(m: { id: string; deXuat: DeXuatDuyet }): string {
   const p = m.deXuat?.pendingActionId;

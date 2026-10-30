@@ -516,3 +516,24 @@ describe("scadaDiag.tamTat", () => {
     expect(tt.layTrangThaiAdapter(ad.a)?.tt).not.toBe("disabled");
   });
 });
+
+describe("scadaDiag.danhSach — T3B-0 fix 1 (I1): adapter MC tạm khoá GHI hiện mã trong cột 'Lỗi gần nhất'", () => {
+  it("hàng MC đang connected (RAM) mang OT_MC_TAM_KHOA trong `loi` — kể cả viewer dưới canEdit; không host/cổng; hàng stub không bị đụng", async () => {
+    const code = `${RUN}-mc`;
+    const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
+      VALUES (${A.mid}, ${code}, ${code}, 'mitsubishi-mc', '10.9.8.7:5007', 500, false, 'disabled') RETURNING id`);
+    const id = Number(r.id);
+    try {
+      tt.baoTrangThaiAdapter({ adapterId: id, code, machineId: A.mid, protocol: "mitsubishi-mc", tags: [] } as never, "connected", null);
+      for (const c of [viewerA, operatorA, engA, admin]) {
+        const h = (await dongCua(c, id))!;
+        expect(h.trangThai).toBe("connected");
+        expect(h.loi, "viewer / dưới canEdit cũng phải thấy").toContain("OT_MC_TAM_KHOA");
+        expect(h.loi).not.toMatch(/10\.9\.8\.7|5007/);
+      }
+      expect((await dongCua(viewerA, ad.a))?.loi ?? "").not.toContain("OT_MC_TAM_KHOA"); // adapter khác giao thức: không đổi
+    } finally {
+      await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
+    }
+  });
+});

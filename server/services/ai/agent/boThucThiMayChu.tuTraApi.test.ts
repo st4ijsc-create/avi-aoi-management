@@ -57,7 +57,7 @@ function taoBo(traApi: TraApi, dauRa: { exitCode: number; output: string }) {
     },
   });
 }
-const ctx = () => ({ cheDo: "sua" as const, runId: "r1", luot: 1, signal: new AbortController().signal, phat: () => undefined });
+const ctx = () => ({ cheDo: "sua" as const, runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: () => undefined });
 const goiLenh = { id: "c1", ten: "run_command", thamSo: { command: "dotnet build a.csproj" } };
 
 afterEach(() => vi.unstubAllEnvs());

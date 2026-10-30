@@ -48,7 +48,7 @@ async function chayHet() {
  * song song/cùng lúc trong lưới đầy đủ và chèn hàng vào đó, nên "đếm toàn bảng rồi đòi không đổi" đỏ ngẫu nhiên (đo: 44→45, 52→57).
  */
 const mocFoe = async () =>
-  ((await (await db()).execute(sql`SELECT coalesce(max(id), 0)::int AS m FROM orchestration_runs`)) as unknown as { m: number }[])[0].m;
+  ((await (await db()).execute(sql`SELECT coalesce(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('orchestration_runs', 'id')::regclass), 0)), 0)::int AS m FROM orchestration_runs`)) as unknown as { m: number }[])[0].m;
 const demFoeCuaTest = async (moc: number, runIds: readonly string[]) => {
   const nhan = [...runIds, TT];
   const dk = nhan.map((n) => sql`("paramsJson"::text LIKE ${"%" + n + "%"} OR "contextJson"::text LIKE ${"%" + n + "%"})`);
@@ -61,7 +61,7 @@ const demFoeCuaTest = async (moc: number, runIds: readonly string[]) => {
  * dispatcher chạy song song chèn hàng liên tục (đo 2026-10-26: chạy chung với commandDispatcher.* thì 3/3 lượt ĐỎ, lệch 300 hàng). Mô phỏng ⇒ phải bằng 0.
  */
 const mocLenh = async () =>
-  ((await (await db()).execute(sql`SELECT coalesce(max(id), 0)::int AS m FROM command_log`)) as unknown as { m: number }[])[0].m;
+  ((await (await db()).execute(sql`SELECT coalesce(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('command_log', 'id')::regclass), 0)), 0)::int AS m FROM command_log`)) as unknown as { m: number }[])[0].m;
 const demLenhCuaTest = async (moc: number, runIds: readonly string[]) => {
   const nhan = [...runIds, TT];
   const dk = nhan.map(

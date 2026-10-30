@@ -10,8 +10,8 @@ const THU_MUC = import.meta.dirname;
 const tepLoi = readdirSync(THU_MUC).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
 
 describe("agentCore thuần", () => {
-  it("có đủ 6 tệp lõi", () => {
-    expect(tepLoi.sort()).toEqual(["congCu.ts", "index.ts", "kieu.ts", "loiNhac.ts", "nguCanh.ts", "vongAgent.ts"]);
+  it("có đủ 9 tệp lõi", () => {
+    expect(tepLoi.sort()).toEqual(["congCu.ts", "dinhNghiaAgent.ts", "giaoViec.ts", "index.ts", "kieu.ts", "lenhKhoaCung.ts", "loiNhac.ts", "nguCanh.ts", "vongAgent.ts"]);
   });
 
   for (const tep of tepLoi) {

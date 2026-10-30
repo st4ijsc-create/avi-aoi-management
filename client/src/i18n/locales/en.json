@@ -4225,7 +4225,8 @@
       "assigneeUserId": "assignee",
       "writable": "writable",
       "dataType": "data type (dataType)",
-      "inspectionId": "inspection"
+      "inspectionId": "inspection",
+      "conTro": "pagination cursor"
     },
     "feature": {
       "apiKeyHolder": "API key holder record (database migration 0369)",
@@ -4596,7 +4597,12 @@
       "NGOAI_CHE_HONG": "the data masking step is unavailable — try again later",
       "NGOAI_CAM_DINH_KEM": "attachments cannot be sent to external AI",
       "NGOAI_MODEL_KHONG_HOP_LE": "invalid external AI model name",
-      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)"
+      "du-lieu-vi-pham-rang-buoc": "the data violates a system constraint (invalid or duplicate value)",
+      "CAN_XAC_NHAN_VAN_HANH": "Confirmation needed: what you type counts as operational data when sent to an external AI.",
+      "NGOAI_THIEU_HOI_THOAI": "no saved conversation — open or create one and send again",
+      "modelNgoaiChuaCaiDat": "external AI model is not available on this screen",
+      "NGOAI_CHI_HOI": "the external model only answers in Ask (read-only) mode — no file edits, no command output",
+      "NGOAI_TOOL_KHONG_CAP": "the external model asked for a tool that is not granted — the turn was stopped"
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -19116,7 +19122,17 @@
     "ledger": "Ledger",
     "ledgerIntent": "Write-ahead intent",
     "ledgerResult": "Result",
-    "ledgerResultOf": "Result of #{{id}}"
+    "ledgerResultOf": "Result of #{{id}}",
+    "loiBiChe": "Technical detail hidden (engineer access required)",
+    "maLoi": {
+      "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
+      "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
+      "EDGE_REPORTED": "The edge reported the command as not successful",
+      "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
+      "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
+      "TECHNICAL_ERROR": "Technical error"
+    }
   },
   "license": {
     "title": "License management",
@@ -21639,6 +21655,15 @@
         "duAnPhanMem": " (software project)",
         "macDinh": "the engine's default model",
         "duPhong": "fallback — the slot is holding another model"
+      },
+      "khoa": {
+        "tieuDe": "Hard-locked commands (the agent can never run these)",
+        "biKhoa": "This command is HARD-LOCKED ({{lenh}}) — it cannot be approved to run.",
+        "phim": "While this card is focused: Enter = Allow once · Esc = Reject",
+        "moTa": {
+          "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
+          "csdl-that": "Write to the REAL database"
+        }
       }
     },
     "duanCaNhan": {
@@ -21878,6 +21903,11 @@
       "xemBanDau": "View the first draft (before the fix)",
       "conLoi": "The ST code still has {{n}} compile error(s) (RuSTy) after {{v}} auto-fix round(s):",
       "khongKiemDuoc": "Couldn't check compilation ({{lyDo}})."
+    },
+    "ngoai": {
+      "daDoc": "Read {{p}}",
+      "biTuChoi": "Denied ({{ma}}): {{p}}",
+      "chiHoi": "External model: Ask mode only · read-only (no file writes, no commands, no auto-fix loop)."
     }
   },
   "masterDataCol": {
@@ -24360,6 +24390,7 @@
         "quaHanMotPhan": "Server is slow — the HMI STOP was NOT sent to adapter {{list}}.",
         "gioiHan": "The server refused: too many requests (HTTP 429) — the HMI STOP was NOT sent.",
         "khongRo": "Unknown whether adapter {{list}} received the STOP — the machine may NOT have stopped.",
+        "khongDat": "The HMI STOP was NOT delivered to adapter {{list}} — use the hardwired E-STOP at the machine.",
         "nutBo": "Understood"
       },
       "khanCap": {
@@ -24507,7 +24538,16 @@
       "luot": "the model's per-request cap",
       "nha-may": "the factory's daily cap",
       "nguoi": "your daily cap",
-      "phut": "too many requests per minute"
-    }
+      "luong": "the flow's daily cap",
+      "lan-phut": "too many requests per minute"
+    },
+    "khongTai": "Could not load the conditions for this model — try again later.",
+    "codingLuotHai": "Coding screen: the FIRST turn sends only what you type and the code you allow to be read; from the second turn the conversation history counts as operational data (the factory must allow it; confirmed once per session)."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Send your question to an external AI?",
+    "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
+    "tuChoi": "Don't send",
+    "dongY": "Agree, send"
   }
 }

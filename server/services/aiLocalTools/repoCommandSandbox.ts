@@ -126,6 +126,7 @@ import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
 import { MA_TU_CHOI_HOP_CAT, gocHopCat, phanQuyetDuongDan } from "./repoSandbox";
+import { timLenhKhoaCung } from "../../../shared/agentCore/lenhKhoaCung";
 // ★ Đợt 3c — khai báo dự án `.ai-chay.json` (mở script cài npm CÓ LÝ DO). Tệp tên cố định dưới gốc, lstat tệp thường.
 import { docCauHinhChay } from "../ai/chayUngDung/cauHinhChayDuAn";
 import { damBaoCauHinhNugetOffline } from "../ai/nugetOfflineCauHinh";
@@ -1485,6 +1486,12 @@ export function phanQuyetLenh(argv: readonly string[], goc = gocHopCat()): KetQu
   }
   if (argv.length > TRAN_PHAN_TU_ARGV) {
     return { ok: false, ma: MA_TU_CHOI_LENH.CMD_NOT_ALLOWED, chiTiet: `${argv.length} phần tử argv, trần ${TRAN_PHAN_TU_ARGV}` };
+  }
+  // ★ Đợt 11.3-A — VÀNH ĐAI THỨ HAI: lệnh KHOÁ CỨNG (`shared/agentCore/lenhKhoaCung`, cũng là nguồn của biểu tượng khoá trên thẻ duyệt) bị từ chối TRƯỚC danh sách trắng.
+  //   Chỉ THÊM từ chối: một mục trắng khai nhầm cũng không mở được chúng; không mục trắng hợp lệ nào khớp (test đối chiếu).
+  const khoaCung = timLenhKhoaCung(argv);
+  if (khoaCung) {
+    return { ok: false, ma: MA_TU_CHOI_LENH.CMD_NOT_ALLOWED, chiTiet: `lệnh bị KHOÁ CỨNG (${khoaCung.hienThi}) — không có đường duyệt để chạy lệnh này` };
   }
   for (const muc of DANH_SACH_TRANG) {
     if (!khopKhuon(muc.khuon, argv, muc.duoi)) continue;
