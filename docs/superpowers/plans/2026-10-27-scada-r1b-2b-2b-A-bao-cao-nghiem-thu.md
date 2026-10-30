@@ -65,7 +65,9 @@ _(Task 16)_
 - C1 — văn bản driver còn được CHÉP lúc ghi sang `scada_command_attempts` (lenhHmi bước 9, đường thử lại idempotent) và sang cảnh báo STOP
   quét của edge (`edgeReportsCentral.ts` `applySweepStop` ⇒ `raiseCriticalStopAlert` tới admin + người chạy). `nhatKy` che phía ĐỌC; sửa phía ghi
   thuộc A2 (lenhHmi là tệp của 2a).
-- C1 — đồ thị gọi của census §3 theo TÊN (≤ 5 bậc): bỏ sót đường gọi qua import động / registry tool AI, và xấp xỉ trên khi trùng tên.
+- C1 — đồ thị gọi của census §3 theo TÊN (≤ 5 bậc): chỉ đi thủ tục tRPC dưới `server/routers/`; bỏ sót REST (`server/routes/*`, `server/api/**`),
+  registry tool AI, import động và hàm là thuộc tính object (`export const svc = { doc: async () => … }`); xấp xỉ trên khi trùng tên. Tham chiếu
+  TRỰC TIẾP tới bảng ở mọi tệp `server/` vẫn bị §1 bắt (kể cả `schema.commandLog` qua import động — fix round 2).
 
 ### DỮ LIỆU
 

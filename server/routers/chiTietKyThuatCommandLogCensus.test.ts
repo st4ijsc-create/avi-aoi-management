@@ -26,7 +26,10 @@
  *   • `noi_bo`          — nội bộ, không trả về thủ tục.
  * §3 — thủ tục tRPC CHẠM (qua đồ thị gọi theo TÊN, ≤ 5 bậc) một hàm có loại rủi ro (`cot_ky_thuat` / `doc_nguyen_hang` / `bang_khac` /
  * `sql_tho_nhay_cam`) phải có trong `THU_TUC_CHAM` kèm lý do (quyền của thủ tục / hàm che). Thủ tục mới gọi hàm có sẵn ⇒ khoá LẠ ⇒ đỏ.
- * §4 — mỗi điểm mù review I2 (1–5) có một FIXTURE trên tệp ảo, đỏ đúng chỗ.
+ * §4 — mỗi điểm mù review I2 (1–5) có một FIXTURE trên tệp ảo, đỏ đúng chỗ; fix round 2: import động namespace (N1) + cột trần trong sql (N3).
+ * ⚠ GIỚI HẠN ĐÃ BIẾT (re-review N4): đồ thị §3 chỉ đi từ thủ tục tRPC dưới `server/routers/` — KHÔNG đi REST (`server/routes/*`, `server/api/**`),
+ *   registry tool AI, hay import động; `khai` không gồm hàm là thuộc tính object (`export const svc = { doc: async () => … }`) nên hàm rủi ro kiểu ấy
+ *   không thành "rủi ro" cho §3. Tham chiếu TRỰC TIẾP ở các chỗ ấy vẫn bị §1 bắt (quét mọi tệp server/).
  *
  * §5 (KD-2bA 1.3) — chứng minh `requested_value.daXacMinhPhamVi` của lần thử `adapter_id` NULL do MÁY CHỦ đặt: mọi lời gọi ghi lần thử
  * KHÔNG có adapter mà có `requestedValue` đều nằm ở MỘT chỗ (`tuChoiQuaHan`), cờ là biến cục bộ chỉ nhận literal `false` / `true`.
@@ -79,6 +82,7 @@ function hamBao(n: ts.Node): string {
 }
 
 const COT_KY_THUAT = new Set(["errorText", "ackValue"]);
+const COT_THO = /"errorText"|"ackValue"|\berror_text\b|\back_value\b/;
 const TEN_BANG = "commandLog";
 
 /** Toàn văn một literal chuỗi / template (phần chữ; `${…}` thay bằng `${}`). */
@@ -128,12 +132,15 @@ function tenTheoDoi(sf: ts.SourceFile): { bang: Set<string>; khongGian: Set<stri
   return { bang, khongGian };
 }
 
-function laThamChieuBang(e: ts.Node, bang: Set<string>, khongGian: Set<string>): boolean {
+/**
+ * fix round 2 (N1) — MỌI truy cập `<bất kỳ>.commandLog` / `<bất kỳ>["commandLog"]` là tham chiếu bảng, BẤT KỂ bên nhận (`schema` từ
+ * `const schema = await import(…)`, `(await import(…)).commandLog`, `db.query.commandLog`, namespace import…) — xấp xỉ TRÊN, chống mù idiom import
+ * động của repo. (`khongGian` giữ cho tương thích — không còn cần cho quyết định.)
+ */
+function laThamChieuBang(e: ts.Node, bang: Set<string>, _khongGian: Set<string>): boolean {
   if (ts.isIdentifier(e)) return bang.has(e.text);
-  if (ts.isPropertyAccessExpression(e) && e.name.text === TEN_BANG) {
-    const x = e.expression;
-    return (ts.isIdentifier(x) && khongGian.has(x.text)) || (ts.isPropertyAccessExpression(x) && x.name.text === "query");
-  }
+  if (ts.isPropertyAccessExpression(e) && e.name.text === TEN_BANG) return true;
+  if (ts.isElementAccessExpression(e) && ts.isStringLiteralLike(e.argumentExpression) && e.argumentExpression.text === TEN_BANG) return true;
   return false;
 }
 
@@ -204,6 +211,7 @@ export function quetNguon(rel: string, src: string): Map<string, Partial<Record<
   const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const { bang, khongGian } = tenTheoDoi(sf);
   const ra = new Map<string, Partial<Record<Loai, number>>>();
+  const coThamChieu = bang.size > 0 || /\.commandLog\b|\["commandLog"\]/.test(src);
   const them = (n: ts.Node, loai: Loai) => {
     const k = `${rel}#${hamBao(n)}`;
     const m = ra.get(k) ?? {};
@@ -212,11 +220,14 @@ export function quetNguon(rel: string, src: string): Map<string, Partial<Record<
   };
   const tham = (n: ts.Node) => {
     if (ts.isIdentifier(n) && bang.has(n.text) && viTriGiaTri(n)) them(n, loaiThamChieu(n, bang, khongGian));
-    else if (ts.isPropertyAccessExpression(n) && laThamChieuBang(n, bang, khongGian)) {
+    else if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && laThamChieuBang(n, bang, khongGian)) {
       them(n, loaiThamChieu(n, bang, khongGian));
       return; // không đếm lại phần trong
     }
     const t = vanBan(n);
+    // fix round 2 (N3) — chuỗi SQL có tên cột kỹ thuật trần ("errorText" / "ackValue" / error_text / ack_value) trong tệp có tham chiếu bảng
+    // ⇒ nhạy cảm, KHÔNG BAO GIỜ là đọc an toàn (vd `select({ e: sql\`"errorText"\` }).from(commandLog)`)
+    if (t !== null && !/command_log/i.test(t) && coThamChieu && COT_THO.test(t)) them(n, "sql_tho_nhay_cam");
     if (t !== null && /command_log/i.test(t)) {
       them(n, /select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(|"errorText"|"ackValue"/i.test(t) ? "sql_tho_nhay_cam" : "sql_tho");
       if (ts.isTemplateExpression(n)) {
@@ -468,6 +479,17 @@ describe("★★★ census — bảng command_log: MỌI tham chiếu có phân 
     expect(thu(`export const r = router({ a: p.query(async () => { const { commandLog: t } = await import("../../drizzle/schema"); return db.select().from(t); }), b: p.query(() => db.query.commandLog.findMany()) });`)).toEqual({
       a: { doc_nguyen_hang: 1 },
       b: { doc_nguyen_hang: 1 },
+    });
+    // fix round 2 N1 — import động namespace (idiom của repo) / truy cập ngay kết quả await import / phần tử ["commandLog"] / destructure từ object bất kỳ
+    expect(thu(`export const r = router({ a: p.query(async () => { const schema = await import("../../drizzle/schema"); return db.select().from(schema.commandLog); }) });`)).toEqual({
+      a: { doc_nguyen_hang: 1 },
+    });
+    expect(thu(`export const r = router({ a: p.query(async () => db.select({ e: (await import("../../drizzle/schema")).commandLog.errorText }).from(x)) });`)).toEqual({ a: { cot_ky_thuat: 1 } });
+    expect(thu(`export const r = router({ a: p.query(async () => db.select().from(s2["commandLog"])) });`)).toEqual({ a: { doc_nguyen_hang: 1 } });
+    expect(thu(`export const r = router({ a: p.query(async () => { const { commandLog: t } = bangMoi; return db.select({ k: t.ackValue }).from(t); }) });`)).toEqual({ a: { cot_ky_thuat: 1, doc_chieu: 1 } });
+    // fix round 2 N3 — cột kỹ thuật TRẦN trong sql`` của phép chiếu ⇒ nhạy cảm (không thể là chi_cot_an_toan)
+    expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ e: sql\`"errorText"\`, id: commandLog.id }).from(commandLog)) });`)).toEqual({
+      a: { cot_an_toan: 1, doc_chieu: 1, sql_tho_nhay_cam: 1 },
     });
     // đối chứng: chiếu cột an toàn ⇒ chỉ loại an toàn
     expect(thu(imp + `export const r = router({ a: p.query(() => db.select({ id: commandLog.id }).from(commandLog)) });`)).toEqual({ a: { cot_an_toan: 1, doc_chieu: 1 } });
