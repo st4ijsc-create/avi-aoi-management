@@ -85,6 +85,8 @@ export default defineConfig({
     hookTimeout: 30_000,
     // ★ Trần số worker (2026-10-23): mặc định vitest = số lõi − 1 (≈23 trên máy này) ⇒ ĐỈNH 85–96 kết nối PG (cụm CHUNG với DEV, trần dùng được 97) ⇒ "remaining connection slots…".
     // Mỗi worker giữ pool app + client riêng của từng tệp DB; 10 worker cho ĐỈNH thấp hơn nhiều (xem ghi chú đo ở docs/superpowers/audits/2026-10-23-socket-phat-theo-nha-may.md, Cập nhật 8).
-    poolOptions: { forks: { minForks: 1, maxForks: Number(process.env.VITEST_MAX_FORKS) || 10 } },
+    // ★ Node ≥ 25 bật Web Storage mặc định (máy tự nâng lên v26.13.0 lúc 2026-10-30 06:10): `globalThis.localStorage` của Node là getter
+    // trả undefined khi thiếu --localstorage-file và CHE localStorage của jsdom ⇒ 32 tệp *.dom.test đỏ "reading 'clear'". Tắt cho worker.
+    poolOptions: { forks: { minForks: 1, maxForks: Number(process.env.VITEST_MAX_FORKS) || 10, execArgv: ["--no-experimental-webstorage"] } },
   },
 });
