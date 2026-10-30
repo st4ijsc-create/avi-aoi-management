@@ -1,5 +1,5 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -1714,6 +1714,8 @@ export const aiPendingActions = pgTable("ai_pending_actions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   executedAt: timestamp("executedAt"),
   resultJson: json("resultJson").$type<Record<string, unknown>>(),
+  /** (mig 0442, Đợt 11.8) lượt agent đề xuất thẻ — `confirmAction` đòi lượt + mọi tổ tiên còn sống (fail-closed). Không FK có chủ ý. */
+  agentRunId: uuid("agentRunId"),
 }, (table) => [
   index("idx_ai_pending_actions_user").on(table.userId),
   index("idx_ai_pending_actions_status").on(table.status),

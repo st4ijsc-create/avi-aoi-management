@@ -29,6 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, lt, notLike } from "drizzle-orm";
 import { getDb } from "../db/connection";
+import { luotConSong } from "../db/aiAgentTheDuyet";
 import { aiPendingActions } from "../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
@@ -913,6 +914,18 @@ export async function confirmAction(
   if (token !== row.id || row.userId !== user.id) {
     await auditConfirmFailure(user, req, row.tool, actionId, "TOKEN_OR_OWNER_MISMATCH");
     return { ok: false, status: "invalid", message: "Token hoặc người dùng không khớp." };
+  }
+
+  /**
+   * ★★★ Đợt 11.8 · M4/S7 — ĐIỂM CHẶN CHUNG cho thẻ do AGENT đề xuất (kể cả agent CON): mọi đường duyệt (tRPC aiAgent.duyet, hộp thư
+   * aiCopilot.confirmAction, CLI, MCP, tự động) đều qua đây. Thẻ gắn `agentRunId` ⇒ lượt đó VÀ mọi tổ tiên phải còn `dang-chay`/`cho-duyet`
+   * và cùng chủ; lượt đã huỷ/xong/gián đoạn/không còn hàng sổ ⇒ TỪ CHỐI (fail-closed, không phụ thuộc bộ nhớ ⇒ sống qua khởi động lại).
+   * Thẻ không gắn lượt (luồng trợ lý cũ) ⇒ không đổi. Đặt TRƯỚC nhánh cache-return/CAS: thẻ `proposed` bị từ chối giữ nguyên trạng thái.
+   */
+  const agentRunId = (row as { agentRunId?: string | null }).agentRunId;
+  if (agentRunId && !(await luotConSong(agentRunId, user.id))) {
+    await auditConfirmFailure(user, req, row.tool, actionId, "AGENT_RUN_NOT_ACTIVE");
+    return { ok: false, status: "invalid", message: "AGENT_RUN_NOT_ACTIVE: lượt agent đề xuất thẻ này (hoặc lượt cha) đã kết thúc/bị huỷ." };
   }
 
   // Idempotency: đã có KẾT CỤC CHUNG CUỘC (dù ghi được hay bị TỪ CHỐI ghi) → trả kết quả ĐÃ LƯU,

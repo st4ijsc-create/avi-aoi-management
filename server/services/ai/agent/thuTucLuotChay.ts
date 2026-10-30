@@ -60,12 +60,8 @@ export async function thuTucChiTiet(u: NguoiPhien, runId: string, ql: QuanLyLuot
 export async function thuTucDuyet(
   u: NguoiPhien,
   y: { actionId: string; selectedHunkIds?: number[]; lang: NgonNgu; req?: ToolExecContext["req"] },
-  ql: QuanLyLuotChay = quanLyLuotChay(),
 ) {
   if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, status: null, daGhi: false, maTuChoi: null };
-  // (Đợt 11.8, M4) thẻ của agent con: lượt con + tổ tiên phải còn sống và thuộc chính người duyệt — duyệt sau huỷ ⇒ từ chối, KHÔNG ghi/chạy.
-  const khoa = ql.kiemTheDuyet(u.id, y.actionId);
-  if (!khoa.ok) return { ok: false as const, note: khoa.ma, status: null, daGhi: false, maTuChoi: null };
   const kq = await confirmAction(y.actionId, y.actionId, copilot(u), y.lang, y.req, {}, undefined, y.selectedHunkIds);
   // Đánh thức lượt chạy (nếu có) với KẾT QUẢ THẬT — kể cả khi bị từ chối, để vòng không chờ tới hết hạn.
   if (kq.ok || kq.status === "denied" || kq.status === "expired") baoQuyetDinhDuyet(y.actionId, { loai: "duyet", ketQua: kq });

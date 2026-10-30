@@ -41,6 +41,8 @@ import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } fro
 //   (`services/ai/agent/thuTucLuotChay.ts`), nhập ĐỘNG trong từng thủ tục: đồ thị nhập tĩnh của router này (và mọi
 //   lưới đang mock tầng dữ liệu của nó) không đổi. SSE tạo/nối lại/huỷ lượt chạy ở `server/routes/aiAgentApi.ts`.
 const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
+// Đợt 11.8 — định nghĩa agent đặt tên (.thoca/agents): xem / xác nhận (tin-lần-đầu theo băm) / gỡ tin cậy. CHỈ người gọi, qua phiên.
+const thuTucDinhNghia = () => import("../services/ai/agent/thuTucDinhNghiaAgent");
 // ★ Đợt 5.1 (2026-10-17) — PHẢN HỒI 👍/👎 + bộ dữ liệu "chỉ dẫn → diff được duyệt". Thân ở
 //   `services/ai/phanHoi/thuTucPhanHoi.ts` (nhập ĐỘNG như trên). Quyền `ai_repo_read/canView` trong thân; tổng hợp + xuất
 //   MỌI người đòi admin (sàn `adminPhanHoiProcedure` + kiểm lại trong thân).
@@ -303,6 +305,32 @@ export const aiAgentRouter = router({
     .input(z.object({ runId: uuidSchema, id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }))
     .mutation(async ({ input, ctx }) =>
       (await thuTucLuotChay()).thuTucBoDeXuat(toAgentUser(ctx.user as any), { runId: input.runId, id: input.id }),
+    ),
+
+  // ═══ Đợt 11.8 — ĐỊNH NGHĨA AGENT ĐẶT TÊN (.thoca/agents/*.md) ═══
+  /** Dựng sẵn + tệp repo hợp lệ (kèm nội dung chữ thuần để ĐỌC trước khi xác nhận) + cờ tin cậy của CHÍNH người gọi. */
+  dinhNghiaDanhSach: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional() }).optional())
+    .query(async ({ input, ctx }) => (await thuTucDinhNghia()).thuTucXemDinhNghia(toAgentUser(ctx.user as any), input?.projectId ?? null)),
+
+  /** Xác nhận định nghĩa từ repo: nhận (tên, BĂM ĐÃ XEM); máy chủ đọc lại tệp và so băm — lệch ⇒ BAM_LECH, không ghi. */
+  xacNhanDinhNghia: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+        ten: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
+        bam: z.string().regex(/^[0-9a-f]{64}$/),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucDinhNghia()).thuTucXacNhanDinhNghia(toAgentUser(ctx.user as any), { projectId: input.projectId ?? null, ten: input.ten, bam: input.bam }),
+    ),
+
+  /** Gỡ MỌI tin cậy của MÌNH cho một định nghĩa (agent sẽ cần xác nhận lại). */
+  goTinCayDinhNghia: protectedProcedure
+    .input(z.object({ projectId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(), ten: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/) }))
+    .mutation(async ({ input, ctx }) =>
+      (await thuTucDinhNghia()).thuTucGoTinCayDinhNghia(toAgentUser(ctx.user as any), { projectId: input.projectId ?? null, ten: input.ten }),
     ),
 
   // ═══ Đợt 5.1 — PHẢN HỒI 👍/👎 (câu trả lời của lượt chạy · diff đã duyệt/bác) + bộ dữ liệu ═══

@@ -2,7 +2,14 @@
  * ★★★ Đợt 11.8 · T6 — GIAO VIỆC CHO AGENT CON, đầu–cuối phía server: model giả ⇒ lõi THẬT ⇒ bộ thực thi THẬT ⇒ sổ cha–con THẬT
  * (`ai_agent_runs` mig 0441) ⇒ tin-lần-đầu THẬT (`ai_agent_def_trust`) ⇒ cửa duyệt THẬT (M4).
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+/** Công tắc giả lỗi ghi sổ CON (chỉ hàng có `con`); mặc định gọi hàm thật. */
+const gia = vi.hoisted(() => ({ soConLoi: false }));
+vi.mock("../../../db/aiAgentRuns", async (goc) => {
+  const that = await goc<typeof import("../../../db/aiAgentRuns")>();
+  return { ...that, taoHangLuotChay: (h: Parameters<typeof that.taoHangLuotChay>[0]) => (gia.soConLoi && h.con ? Promise.resolve(false) : that.taoHangLuotChay(h)) };
+});
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +17,9 @@ import { execFileSync } from "node:child_process";
 import { eq, inArray } from "drizzle-orm";
 
 import { bamNoiDung, type GoiModel, type ManhModel, type SuKienAgent, type TinNhan, type WireToolCall } from "@shared/agentCore";
-import { giaoViecBat, taoQuanLyLuotChay } from "./quanLyLuotChay";
+import { choPhepGiaoViec, giaoViecBat, taoQuanLyLuotChay } from "./quanLyLuotChay";
+import { taoBoThucThiMayChu } from "./boThucThiMayChu";
+import { confirmAction } from "../../aiCopilotActions";
 import { thuTucDuyet } from "./thuTucLuotChay";
 import { _xoaSoBamHITL } from "../../aiLocalTools/writeHandlers/applyDiff";
 import { xoaSoNganSach } from "../../aiLocalTools/repoSandbox";
@@ -249,6 +258,28 @@ describe("tin-lần-đầu theo băm (định nghĩa từ repo)", () => {
   }, 90_000);
 });
 
+describe("sổ kiểm toán cha–con", () => {
+  it("★★★ KHÔNG ghi được hàng sổ của con ⇒ con KHÔNG chạy (SO_CON_LOI), cha vẫn kết thúc bình thường", async () => {
+    await xoaSo(uid);
+    gia.soConLoi = true;
+    try {
+      const theo = { congCu: [] as string[][], tinNhan: [] as TinNhan[][] };
+      const ev: SuKienAgent[] = [];
+      const ql = taoQuanLyLuotChay({ goiModel: modelKichBan([{ tool: [giao("kham-pha", "t")] }, { chu: "xong" }], theo), giaoViec: BAT });
+      const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "sua" });
+      if (!kq.ok) throw new Error(kq.ma);
+      ql.nghe(kq.luot.id, uid, 0, (m) => ev.push(m.suKien));
+      await kq.luot.xong;
+      expect(kq.luot.trangThai).toBe("xong");
+      expect(theo.tinNhan[1]!.find((m) => m.role === "tool" && m.name === "delegate")!.content).toMatch(/SO_CON_LOI/);
+      expect(ev.some((e) => e.loai === "con-bat-dau" || e.loai === "su-kien-con")).toBe(false);
+      expect(theo.congCu.length).toBe(2); // chỉ model của cha được gọi, không có lượt model nào của con
+    } finally {
+      gia.soConLoi = false;
+    }
+  }, 60_000);
+});
+
 describe("model của con", () => {
   it("định nghĩa đã tin cậy nhưng xin model khác 'auto' ⇒ MODEL_CON_CHUA_HO_TRO, không hàng sổ con", async () => {
     await xoaSo(uid);
@@ -270,13 +301,8 @@ describe("model của con", () => {
   }, 60_000);
 });
 
-describe("M4 — thẻ duyệt của agent con", () => {
-  it("thuTucDuyet TỪ CHỐI khi kiemTheDuyet không hợp lệ — KHÔNG chạm confirmAction", async () => {
-    const ql = { kiemTheDuyet: () => ({ ok: false as const, ma: "THE_CON_KHONG_HOP_LE" as const }) } as never;
-    const r = await thuTucDuyet(NGUOI(), { actionId: "00000000-0000-4000-8000-000000000001", lang: "vi" }, ql);
-    expect(r).toMatchObject({ ok: false, note: "THE_CON_KHONG_HOP_LE", status: null, daGhi: false });
-  });
-  it("★★★ con ghi tệp ⇒ thẻ cần NGƯỜI; kiemTheDuyet đúng chủ + còn sống; duyệt ⇒ tệp đổi", async () => {
+describe("M4/S7 — thẻ duyệt của agent con đi qua cổng CHUNG của confirmAction", () => {
+  it("★★★ con ghi tệp ⇒ thẻ GẮN lượt con (cột agentRunId) và cần NGƯỜI; duyệt ⇒ tệp đổi", async () => {
     await xoaSo(uid);
     const ql = taoQuanLyLuotChay({
       goiModel: modelKichBan([
@@ -291,23 +317,28 @@ describe("M4 — thẻ duyệt của agent con", () => {
     const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "viet test", projectId: DU_AN, cheDo: "sua" });
     if (!kq.ok) throw new Error(kq.ma);
     let khiCho = "";
-    let khongPhaiChu: unknown;
+    let gan: string | null | undefined;
     ql.nghe(kq.luot.id, uid, 0, (m) => {
       const e = m.suKien;
       if (e.loai === "su-kien-con" && e.suKien.loai === "can-duyet") {
         const id = String(e.suKien.deXuat.pendingActionId);
         khiCho = kq.luot.trangThai;
-        khongPhaiChu = ql.kiemTheDuyet(uid2, id);
-        void thuTucDuyet(NGUOI(), { actionId: id, lang: "vi" }, ql);
+        void (async () => {
+          const db = await getDb();
+          const [h] = await db!.select({ r: aiPendingActions.agentRunId }).from(aiPendingActions).where(eq(aiPendingActions.id, id));
+          gan = h?.r;
+          await thuTucDuyet(NGUOI(), { actionId: id, lang: "vi" });
+        })();
       }
     });
     await kq.luot.xong;
     expect(khiCho).toBe("cho-duyet");
-    expect(khongPhaiChu).toEqual({ ok: false, ma: "THE_CON_KHONG_HOP_LE" });
+    const con = (await hangSo(uid)).find((h) => h.parentRunId === kq.luot.id)!;
+    expect(gan).toBe(con.id);
     expect(doc("src/moi.test.ts")).toBe("export const T = 1;\n");
   }, 60_000);
 
-  it("★★★ huỷ cha trong lúc con chờ duyệt ⇒ duyệt SAU huỷ bị từ chối, tệp KHÔNG ghi, con 'huy'", async () => {
+  it("★★★ huỷ cha trong lúc con chờ duyệt ⇒ thẻ bị đóng; MỞ LẠI thẻ (đua) rồi duyệt qua BẤT KỲ đường nào ⇒ AGENT_RUN_NOT_ACTIVE, tệp KHÔNG ghi", async () => {
     await xoaSo(uid);
     const ql = taoQuanLyLuotChay({
       goiModel: modelKichBan([
@@ -327,16 +358,104 @@ describe("M4 — thẻ duyệt của agent con", () => {
     });
     for (let i = 0; i < 100 && actionId === ""; i++) await new Promise((r) => setTimeout(r, 50));
     expect(actionId).not.toBe("");
-    expect(ql.kiemTheDuyet(uid, actionId)).toEqual({ ok: true });
     ql.huy(kq.luot.id, uid);
     await kq.luot.xong;
     expect(kq.luot.trangThai).toBe("huy");
-    // duyệt sau huỷ
-    const r = await thuTucDuyet(NGUOI(), { actionId, lang: "vi" }, ql);
-    expect(r.ok).toBe(false);
+    const db = await getDb();
+    const trangThai = async () => String((await db!.select({ s: aiPendingActions.status }).from(aiPendingActions).where(eq(aiPendingActions.id, actionId)))[0]?.s);
+    expect(await trangThai()).toBe("cancelled"); // đã bị đóng khi cha kết thúc
+    // mở lại thẻ như một cuộc đua (thẻ còn 'proposed' sau khi lượt chết) — cổng CHUNG phải chặn
+    await db!.update(aiPendingActions).set({ status: "proposed" }).where(eq(aiPendingActions.id, actionId));
+    const r1 = await thuTucDuyet(NGUOI(), { actionId, lang: "vi" });
+    expect(r1.ok).toBe(false);
+    expect(r1.message ?? "").toMatch(/AGENT_RUN_NOT_ACTIVE/);
+    const r2 = await confirmAction(actionId, actionId, { id: uid, role: "admin", name: "x" }, "vi"); // đường hộp thư (aiCopilot.confirmAction)
+    expect(r2.ok).toBe(false);
+    expect(r2.message ?? "").toMatch(/AGENT_RUN_NOT_ACTIVE/);
+    expect(await trangThai()).toBe("proposed");
     expect(fs.existsSync(path.join(REPO, "src", "khong-duoc.ts"))).toBe(false);
-    expect(ql.kiemTheDuyet(uid, actionId)).toEqual({ ok: false, ma: "THE_CON_KHONG_HOP_LE" });
     const con = (await hangSo(uid)).find((h) => h.parentRunId === kq.luot.id);
     expect(con?.trangThai).toBe("huy");
   }, 60_000);
+
+  it("★★★ 'khởi động lại' (bộ quản lý MỚI, bộ nhớ rỗng): thẻ con của cha đã huỷ vẫn bị từ chối", async () => {
+    await xoaSo(uid);
+    const qlCu = taoQuanLyLuotChay({
+      goiModel: modelKichBan([{ tool: [giao("viet-test", "t")] }, { tool: [tc("w3", "write_file", { path: "src/sau-restart.ts", content: "x\n" })] }, { chu: "x" }]),
+      giaoViec: BAT,
+      phuThuocBoThucThi: { nhipKiemMs: 50 },
+    });
+    const kq = await qlCu.taoLuotChay({ user: NGUOI(), cauHoi: "v", projectId: DU_AN, cheDo: "sua" });
+    if (!kq.ok) throw new Error(kq.ma);
+    let actionId = "";
+    qlCu.nghe(kq.luot.id, uid, 0, (m) => {
+      const e = m.suKien;
+      if (e.loai === "su-kien-con" && e.suKien.loai === "can-duyet") actionId = String(e.suKien.deXuat.pendingActionId);
+    });
+    for (let i = 0; i < 100 && actionId === ""; i++) await new Promise((r) => setTimeout(r, 50));
+    qlCu.huy(kq.luot.id, uid);
+    await kq.luot.xong;
+    const db = await getDb();
+    await db!.update(aiPendingActions).set({ status: "proposed" }).where(eq(aiPendingActions.id, actionId));
+    taoQuanLyLuotChay({ giaoViec: BAT }); // bộ quản lý mới: không giữ gì trong bộ nhớ
+    const r = await confirmAction(actionId, actionId, { id: uid, role: "admin", name: "x" }, "vi");
+    expect(r.message ?? "").toMatch(/AGENT_RUN_NOT_ACTIVE/);
+    expect(fs.existsSync(path.join(REPO, "src", "sau-restart.ts"))).toBe(false);
+  }, 60_000);
+});
+
+describe("M1 — cha dùng model ngoài thì KHÔNG phơi delegate", () => {
+  it("choPhepGiaoViec: ngoai: (mọi kiểu hoa-thường/khoảng trắng) ⇒ false dù cờ bật; cục bộ/auto ⇒ theo cờ", () => {
+    for (const m of ["ngoai:openai:gpt", " NGOAI:x:y", "Ngoai:a:b"]) expect(choPhepGiaoViec({ bat: true, chonModel: m }), m).toBe(false);
+    for (const m of [undefined, "auto", "vai-tro:code.software", "ho-so:qwen"]) expect(choPhepGiaoViec({ bat: true, chonModel: m }), String(m)).toBe(true);
+    expect(choPhepGiaoViec({ bat: false, chonModel: "auto" })).toBe(false);
+    expect(choPhepGiaoViec({ chonModel: "auto" }, {} as NodeJS.ProcessEnv)).toBe(false);
+    expect(choPhepGiaoViec({ chonModel: "auto" }, { AI_AGENT_GIAO_VIEC: "1" } as NodeJS.ProcessEnv)).toBe(true);
+  });
+});
+
+describe("N2 — sự kiện của con KHÔNG đổi trạng thái cha", () => {
+  it("con gọi 3 công cụ: soLuot của cha chỉ đếm lượt CỦA CHA; sổ con ghi đúng số lượt của con", async () => {
+    await xoaSo(uid);
+    const ql = taoQuanLyLuotChay({
+      goiModel: modelKichBan([
+        { tool: [giao("kham-pha", "tim")] }, // cha lượt 1
+        { tool: [tc("r1", "read_file", { path: "src/b.ts" })] }, // con 1
+        { tool: [tc("r2", "list_dir", { path: "src" })] }, // con 2
+        { tool: [tc("r3", "grep", { pattern: "B" })] }, // con 3
+        { chu: "xong con" }, // con 4
+        { chu: "xong cha" }, // cha lượt 2
+      ]),
+      giaoViec: BAT,
+    });
+    const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "sua" });
+    if (!kq.ok) throw new Error(kq.ma);
+    await kq.luot.xong;
+    expect(kq.luot.soLuot).toBe(1); // cha chỉ có 1 lượt gọi-tool (delegate); con có 3
+    const hang = await hangSo(uid);
+    expect(hang.find((h) => h.parentRunId === kq.luot.id)!.soLuot).toBe(4);
+  }, 60_000);
+});
+
+describe("S5 — delegate KHÔNG BAO GIỜ tới bộ thực thi", () => {
+  it("bộ thực thi nhận delegate (kể cả khi cờ phơi bật) ⇒ CONG_CU_BI_AN, không chạm gì", async () => {
+    const nguoi = { id: 1, role: "admin", name: "x" };
+    for (const coGiaoViec of [true, false]) {
+      const bo = taoBoThucThiMayChu({
+        execCtx: { user: nguoi, lang: "vi", projectRoot: REPO },
+        gocDuAn: REPO,
+        projectId: DU_AN,
+        user: nguoi,
+        coQuyenThucThi: false,
+        checkpoint: null,
+        coGiaoViec,
+        phuThuoc: { executeDecision: (async () => ({ error: "khong" })) as never, kiemKillSwitch: async () => false },
+      });
+      const r = await bo.chay(
+        { id: "d", ten: "delegate", thamSo: { agent: "kham-pha", task: "t" } },
+        { cheDo: "sua", runId: "r", luot: 1, signal: new AbortController().signal, phat: () => undefined },
+      );
+      expect(r).toMatchObject({ ok: false, ma: "CONG_CU_BI_AN" });
+    }
+  });
 });
