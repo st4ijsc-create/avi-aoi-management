@@ -3,7 +3,14 @@
 // R1b-2b-2b B-T8 — Nhật ký lệnh `/scada/journal` (`commandLog.nhatKy`, Phần A C1).
 // Component THẬT + bundle vi/en/zh THẬT; chỉ mock hợp đồng mạng, khung trang, sonner.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import i18n from "i18next";
@@ -13,7 +20,12 @@ import zh_ from "@/i18n/locales/zh.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 
 const S = (k: string, o?: Record<string, string | number>): string => {
-  const v = k.split(".").reduce<unknown>((x, p) => (x as Record<string, unknown> | undefined)?.[p], vi_);
+  const v = k
+    .split(".")
+    .reduce<unknown>(
+      (x, p) => (x as Record<string, unknown> | undefined)?.[p],
+      vi_
+    );
   if (typeof v !== "string") throw new Error(`thiếu khoá vi: ${k}`);
   return o ? v.replace(/\{\{(\w+)\}\}/g, (_, n) => String(o[n])) : v;
 };
@@ -24,9 +36,18 @@ const H = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), info: vi.fn(), error: H.toastError, warning: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    info: vi.fn(),
+    error: H.toastError,
+    warning: vi.fn(),
+  },
+}));
 vi.mock("@/components/DashboardLayout", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <main>{children}</main>
+  ),
 }));
 vi.mock("@/lib/trpc", () => ({
   trpc: {
@@ -86,7 +107,13 @@ const hang = (o: Hang): Hang => ({
 
 const TRANG1 = {
   hang: [
-    hang({ id: "lenh:12", adapterCode: "SIM-1", laStub: true, trangThai: "simulated", tagKey: "stub_tag" }),
+    hang({
+      id: "lenh:12",
+      adapterCode: "SIM-1",
+      laStub: true,
+      trangThai: "simulated",
+      tagKey: "stub_tag",
+    }),
     hang({ id: "lenh:11", adapterCode: "PLC-7", laStub: false }),
     hang({
       nguon: "thu",
@@ -142,67 +169,127 @@ describe("ScadaNhatKy — /scada/journal (B-T8)", () => {
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:12");
     expect(H.calls[0]).not.toHaveProperty("conTro");
-    fireEvent.click(screen.getByRole("button", { name: S("scada.nhatKy.taiThem") }));
+    fireEvent.click(
+      screen.getByRole("button", { name: S("scada.nhatKy.taiThem") })
+    );
     await screen.findByTestId("hang-lenh:9");
     expect(H.calls).toHaveLength(2);
     expect(H.calls[1]).toMatchObject({ conTro: "CON-TRO-1" });
     expect(screen.getAllByTestId(/^hang-lenh:11$/)).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: S("scada.nhatKy.taiThem") })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: S("scada.nhatKy.taiThem") })
+    ).toBeNull();
   });
 
   it("lọc máy ⇒ vars.machineId và về trang đầu (không conTro); lọc nguồn / trạng thái đi vào vars", async () => {
     H.tra.mockResolvedValue(TRANG1);
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:12");
-    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.may")), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.may")), {
+      target: { value: "8" },
+    });
     await waitFor(() => expect(H.calls.at(-1)).toMatchObject({ machineId: 8 }));
     expect(H.calls.at(-1)).not.toHaveProperty("conTro");
-    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.nguon")), { target: { value: "thu" } });
-    await waitFor(() => expect(H.calls.at(-1)).toMatchObject({ machineId: 8, nguon: "thu" }));
+    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.nguon")), {
+      target: { value: "thu" },
+    });
+    await waitFor(() =>
+      expect(H.calls.at(-1)).toMatchObject({ machineId: 8, nguon: "thu" })
+    );
     fireEvent.click(screen.getByLabelText(S("scada.nhatKy.trangThai.failed")));
-    await waitFor(() => expect(H.calls.at(-1)).toMatchObject({ trangThai: ["failed"] }));
+    await waitFor(() =>
+      expect(H.calls.at(-1)).toMatchObject({ trangThai: ["failed"] })
+    );
   });
 
   it("đổi bộ lọc SAU khi đã tải thêm ⇒ về trang đầu: hàng cũ biến mất, không conTro", async () => {
-    H.tra.mockResolvedValueOnce(TRANG1).mockResolvedValueOnce({ hang: [hang({ id: "lenh:9" })], conTro: null });
+    H.tra
+      .mockResolvedValueOnce(TRANG1)
+      .mockResolvedValueOnce({ hang: [hang({ id: "lenh:9" })], conTro: null });
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:12");
-    fireEvent.click(screen.getByRole("button", { name: S("scada.nhatKy.taiThem") }));
+    fireEvent.click(
+      screen.getByRole("button", { name: S("scada.nhatKy.taiThem") })
+    );
     await screen.findByTestId("hang-lenh:9");
-    H.tra.mockResolvedValueOnce({ hang: [hang({ id: "lenh:77" })], conTro: null });
-    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.nguon")), { target: { value: "lenh" } });
+    H.tra.mockResolvedValueOnce({
+      hang: [hang({ id: "lenh:77" })],
+      conTro: null,
+    });
+    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.nguon")), {
+      target: { value: "lenh" },
+    });
     await screen.findByTestId("hang-lenh:77");
     expect(screen.queryByTestId("hang-lenh:9")).toBeNull();
     expect(H.calls.at(-1)).not.toHaveProperty("conTro");
   });
 
   it("★ NOT_FOUND khi lọc máy ⇒ báo lỗi và XOÁ bộ lọc máy (tải lại không còn machineId)", async () => {
-    const loi = Object.assign(new Error("x"), { data: { code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "machine" } } });
-    H.tra.mockImplementation((v: Record<string, unknown>) => (v.machineId === 8 ? Promise.reject(loi) : Promise.resolve(TRANG1)));
+    const loi = Object.assign(new Error("x"), {
+      data: {
+        code: "NOT_FOUND",
+        appCode: "ENTITY_NOT_FOUND",
+        appParams: { entity: "machine" },
+      },
+    });
+    H.tra.mockImplementation((v: Record<string, unknown>) =>
+      v.machineId === 8 ? Promise.reject(loi) : Promise.resolve(TRANG1)
+    );
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:12");
-    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.may")), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.may")), {
+      target: { value: "8" },
+    });
     await waitFor(() => expect(H.toastError).toHaveBeenCalledTimes(1));
     expect(H.toastError.mock.calls[0][0]).not.toMatch(/undefined|null|\{\{/);
-    await waitFor(() => expect((screen.getByLabelText(S("scada.nhatKy.loc.may")) as HTMLSelectElement).value).toBe(""));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText(S("scada.nhatKy.loc.may")) as HTMLSelectElement)
+          .value
+      ).toBe("")
+    );
     await waitFor(() => expect(H.calls.at(-1)).not.toHaveProperty("machineId"));
   });
 
   it("★ người xem không phải kỹ sư: lệnh bị che ⇒ mã đã dịch + 'chi tiết bị ẩn'; lần thử dispatch bị che lyDo ⇒ 'chi tiết bị ẩn', KHÔNG '—' (N6)", async () => {
     H.tra.mockResolvedValue({
       hang: [
-        hang({ id: "lenh:20", trangThai: "failed", reasonCode: "DRIVER_WRITE_FAILED", loi: null, loiBiChe: true }),
-        hang({ nguon: "thu", id: "thu:21", trangThai: "dispatch:rejected", reasonCode: "STOP_QUA_HAN", lyDo: null, loiBiChe: true }),
-        hang({ nguon: "thu", id: "thu:22", trangThai: "request:rejected", reasonCode: "MA_LA_XYZ", lyDo: "gõ tay", loiBiChe: false }),
+        hang({
+          id: "lenh:20",
+          trangThai: "failed",
+          reasonCode: "DRIVER_WRITE_FAILED",
+          loi: null,
+          loiBiChe: true,
+        }),
+        hang({
+          nguon: "thu",
+          id: "thu:21",
+          trangThai: "dispatch:rejected",
+          reasonCode: "STOP_QUA_HAN",
+          lyDo: null,
+          loiBiChe: true,
+        }),
+        hang({
+          nguon: "thu",
+          id: "thu:22",
+          trangThai: "request:rejected",
+          reasonCode: "MA_LA_XYZ",
+          lyDo: "gõ tay",
+          loiBiChe: false,
+        }),
       ],
       conTro: null,
     });
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:20");
     const an = S("commandAudit.loiBiChe");
-    expect(hangCua("lenh:20")).toHaveTextContent(S("commandAudit.maLoi.DRIVER_WRITE_FAILED"));
+    expect(hangCua("lenh:20")).toHaveTextContent(
+      S("commandAudit.maLoi.DRIVER_WRITE_FAILED")
+    );
     expect(hangCua("lenh:20")).toHaveTextContent(an);
-    expect(hangCua("thu:21")).toHaveTextContent(S("scada.lenh.loi.STOP_QUA_HAN"));
+    expect(hangCua("thu:21")).toHaveTextContent(
+      S("scada.lenh.loi.STOP_QUA_HAN")
+    );
     expect(hangCua("thu:21")).toHaveTextContent(an);
     // mã lạ ⇒ mã thô (không trống); lý do người gõ hiện nguyên
     expect(hangCua("thu:22")).toHaveTextContent("MA_LA_XYZ");
@@ -213,15 +300,31 @@ describe("ScadaNhatKy — /scada/journal (B-T8)", () => {
   it("kỹ sư: loi hiện nguyên; loi null và không bị che ⇒ '—'; người ngoài phạm vi ⇒ 'quản trị' đã dịch, không id", async () => {
     H.tra.mockResolvedValue({
       hang: [
-        hang({ id: "lenh:30", trangThai: "failed", reasonCode: "DRIVER_WRITE_FAILED", loi: "connect ECONNREFUSED 127.0.0.1:502", nguoi: { id: null, ten: "quản trị", ngoaiPhamVi: true } }),
-        hang({ id: "lenh:31", nguoi: null, adapterCode: null, machineId: null, tagKey: null }),
+        hang({
+          id: "lenh:30",
+          trangThai: "failed",
+          reasonCode: "DRIVER_WRITE_FAILED",
+          loi: "connect ECONNREFUSED 127.0.0.1:502",
+          nguoi: { id: null, ten: "quản trị", ngoaiPhamVi: true },
+        }),
+        hang({
+          id: "lenh:31",
+          nguoi: null,
+          adapterCode: null,
+          machineId: null,
+          tagKey: null,
+        }),
       ],
       conTro: null,
     });
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-lenh:30");
-    expect(hangCua("lenh:30")).toHaveTextContent("connect ECONNREFUSED 127.0.0.1:502");
-    expect(hangCua("lenh:30")).toHaveTextContent(S("scada.nhatKy.nguoiNgoaiPhamVi"));
+    expect(hangCua("lenh:30")).toHaveTextContent(
+      "connect ECONNREFUSED 127.0.0.1:502"
+    );
+    expect(hangCua("lenh:30")).toHaveTextContent(
+      S("scada.nhatKy.nguoiNgoaiPhamVi")
+    );
     expect(hangCua("lenh:31").textContent).not.toMatch(/null|undefined/);
   });
 
@@ -230,7 +333,10 @@ describe("ScadaNhatKy — /scada/journal (B-T8)", () => {
     render(<ScadaNhatKy />);
     await screen.findByTestId("hang-thu:5");
     const o = within(hangCua("thu:5"));
-    expect(o.getByText("#11").closest("a")).toHaveAttribute("href", "#nhatky-lenh-11");
+    expect(o.getByText("#11").closest("a")).toHaveAttribute(
+      "href",
+      "#nhatky-lenh-11"
+    );
     expect(o.getByText("#99").closest("a")).toBeNull();
   });
 
@@ -239,30 +345,121 @@ describe("ScadaNhatKy — /scada/journal (B-T8)", () => {
     const { unmount } = render(<ScadaNhatKy />);
     await screen.findByText(S("scada.nhatKy.trong"));
     unmount();
-    H.tra.mockRejectedValueOnce(Object.assign(new Error("x"), { data: { code: "INTERNAL_SERVER_ERROR" } }));
+    H.tra.mockRejectedValueOnce(
+      Object.assign(new Error("x"), { data: { code: "INTERNAL_SERVER_ERROR" } })
+    );
     render(<ScadaNhatKy />);
     await screen.findByText(S("scada.nhatKy.loiTai"));
   });
 
+  it("★ phản hồi CŨ tới sau khi đổi bộ lọc ⇒ không chèn vào danh sách (lượt mới nhất thắng)", async () => {
+    let xongCu: (v: unknown) => void = () => {};
+    H.tra.mockImplementationOnce(() => new Promise(r => (xongCu = r))); // lượt 1 (bộ lọc rỗng) còn bay
+    H.tra.mockResolvedValueOnce({
+      hang: [hang({ id: "lenh:77", tagKey: "moi" })],
+      conTro: null,
+    }); // lượt 2 (máy 8)
+    render(<ScadaNhatKy />);
+    fireEvent.change(screen.getByLabelText(S("scada.nhatKy.loc.may")), {
+      target: { value: "8" },
+    });
+    await screen.findByTestId("hang-lenh:77");
+    xongCu({
+      hang: [hang({ id: "lenh:66", tagKey: "cu" })],
+      conTro: "CON-TRO-CU",
+    });
+    await new Promise(r => setTimeout(r, 30));
+    expect(screen.queryByTestId("hang-lenh:66")).toBeNull();
+    expect(screen.getByTestId("hang-lenh:77")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: S("scada.nhatKy.taiThem") })
+    ).toBeNull(); // conTro cũ cũng không rò vào
+  });
+
+  it("★ người ngoài phạm vi: chữ DỊCH của giao diện, không phải `ten` máy chủ; không đoán theo id", async () => {
+    H.tra.mockResolvedValue({
+      hang: [
+        hang({
+          id: "lenh:40",
+          nguoi: { id: null, ten: "TEN-MAY-CHU-LA", ngoaiPhamVi: true },
+        }),
+      ],
+      conTro: null,
+    });
+    render(<ScadaNhatKy />);
+    await screen.findByTestId("hang-lenh:40");
+    expect(hangCua("lenh:40")).toHaveTextContent(
+      S("scada.nhatKy.nguoiNgoaiPhamVi")
+    );
+    expect(hangCua("lenh:40")).not.toHaveTextContent("TEN-MAY-CHU-LA");
+  });
+
+  it("★ mã có chữ chứa {{…}} (GHIM_MUC_CAO) ⇒ mã thô, không lộ chỗ trống; khoá UI không phải mã (lienKet2FA) ⇒ mã thô", async () => {
+    H.tra.mockResolvedValue({
+      hang: [
+        hang({
+          nguon: "thu",
+          id: "thu:50",
+          trangThai: "dispatch:rejected",
+          reasonCode: "GHIM_MUC_CAO",
+        }),
+        hang({
+          nguon: "thu",
+          id: "thu:51",
+          trangThai: "request:rejected",
+          reasonCode: "lienKet2FA",
+        }),
+      ],
+      conTro: null,
+    });
+    render(<ScadaNhatKy />);
+    await screen.findByTestId("hang-thu:50");
+    expect(hangCua("thu:50")).toHaveTextContent("GHIM_MUC_CAO");
+    expect(hangCua("thu:50").textContent).not.toMatch(/{{/);
+    expect(hangCua("thu:51")).toHaveTextContent("lienKet2FA");
+    expect(hangCua("thu:51")).not.toHaveTextContent(
+      S("scada.lenh.loi.lienKet2FA")
+    );
+  });
+
   it("en / zh: nhãn và mã dịch sang ngôn ngữ thật, không còn tiếng Việt", async () => {
     H.tra.mockResolvedValue(TRANG1);
-    i18n.addResourceBundle("en", "translation", en_ as Record<string, unknown>, true, true);
-    i18n.addResourceBundle("zh", "translation", zh_ as Record<string, unknown>, true, true);
+    i18n.addResourceBundle(
+      "en",
+      "translation",
+      en_ as Record<string, unknown>,
+      true,
+      true
+    );
+    i18n.addResourceBundle(
+      "zh",
+      "translation",
+      zh_ as Record<string, unknown>,
+      true,
+      true
+    );
     for (const lng of ["en", "zh"]) {
       await i18n.changeLanguage(lng);
       const { unmount } = render(<ScadaNhatKy />);
       await screen.findByTestId("hang-lenh:12");
       const txt = hangCua("thu:5").textContent ?? "";
       expect(txt).not.toMatch(/Máy chưa ghim|bị từ chối/);
-      expect(within(hangCua("lenh:12")).getByTestId("nhan-sim").textContent).toBe(i18n.t("scada.nhatKy.sim"));
+      expect(
+        within(hangCua("lenh:12")).getByTestId("nhan-sim").textContent
+      ).toBe(i18n.t("scada.nhatKy.sim"));
       expect(document.body.textContent).not.toMatch(/scada\.nhatKy|\{\{/);
       unmount();
     }
   });
 
   it("mục điều hướng /scada/journal có mặt, cần machine_control, không riêng cho kỹ sư", () => {
-    const muc = navItems.find((i) => i.href === "/scada/journal");
+    const muc = navItems.find(i => i.href === "/scada/journal");
     expect(muc).toBeTruthy();
-    expect(muc).toMatchObject({ requiredPermission: "machine_control", permissionCategory: "machine_control", section: "connect", engineerOriented: false });
+    expect(muc).toMatchObject({
+      requiredPermission: "machine_control",
+      permissionCategory: "machine_control",
+      section: "connect",
+      engineerOriented: false,
+    });
   });
 });

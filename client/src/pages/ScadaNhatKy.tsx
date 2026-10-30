@@ -180,6 +180,8 @@ export default function ScadaNhatKy() {
 
   /** Mã từ chối: chữ đã dịch nếu có và KHÔNG còn chỗ trống `{{…}}`; ngược lại mã thô (không bao giờ trống). */
   const chuMa = (ma: string): string => {
+    // chỉ MÃ (HOA_SO_GACH): khoá UI như `khac` / `lienKet2FA` của cùng nhánh khoá không được coi là mã
+    if (!/^[A-Z0-9_]+$/.test(ma)) return ma;
     // thứ tự: cổng / dự phòng (khoaMaLoi) → mã từ chối của lenhHmi (`scada.lenh.loi.*`: CHUA_GHIM_STOP, STOP_QUA_HAN…) → mã thô
     const khoa =
       khoaMaLoi(ma, k => i18n.exists(k)) ??
