@@ -459,3 +459,35 @@ describe("S5 — delegate KHÔNG BAO GIỜ tới bộ thực thi", () => {
     }
   });
 });
+
+describe("S7 — gắn thẻ vào lượt hỏng ⇒ huỷ đề xuất, KHÔNG phát thẻ", () => {
+  it("ganTheChoLuot=false ⇒ cancelAction được gọi, kết quả LOI_DE_XUAT, không can-duyet", async () => {
+    const nguoi = { id: 1, role: "admin", name: "x" };
+    const huy: string[] = [];
+    const phat: string[] = [];
+    const bo = taoBoThucThiMayChu({
+      execCtx: { user: nguoi, lang: "vi", projectRoot: REPO },
+      gocDuAn: REPO,
+      projectId: DU_AN,
+      user: nguoi,
+      coQuyenThucThi: false,
+      checkpoint: { chupTruocGhi: async () => ({ id: "cp" }), chotSauGhi: async () => undefined },
+      phuThuoc: {
+        executeDecision: (async () => ({ pendingAction: { actionId: "act-1", token: "act-1", summary: "s", expiresAt: new Date(Date.now() + 60_000).toISOString() } })) as never,
+        cancelAction: (async (id: string) => {
+          huy.push(id);
+          return { ok: true, status: "cancelled" };
+        }) as never,
+        ganTheChoLuot: async () => false,
+        kiemKillSwitch: async () => false,
+      },
+    });
+    const r = await bo.chay(
+      { id: "w", ten: "write_file", thamSo: { path: "src/x.ts", content: "x\n" } },
+      { cheDo: "sua", runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: (e) => phat.push(e.loai) },
+    );
+    expect(r).toMatchObject({ ok: false, ma: "LOI_DE_XUAT" });
+    expect(huy).toEqual(["act-1"]);
+    expect(phat).not.toContain("can-duyet");
+  });
+});
