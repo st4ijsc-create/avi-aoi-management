@@ -45,6 +45,7 @@ import { kiemLenhInterlockTrenKenh } from "../scada/nhatQuanKenh";
 // SCADA R1b-2b-1 T2 (điều kiện 1b) — ghim MỚI trên địa chỉ coil / bit phải thuộc tập bool hợp lệ
 import { boolTuGiaTri } from "./drivers/boolNghiem";
 import { lopDiaChiBit } from "./drivers/diaChiBit";
+import { kiemDiaChiS7 } from "./drivers/s7Address";
 // doc 81 Đợt 12 final fix wave residual (R-12-f item 1) — the cached "adapter has any pin" answer: seeded here, invalidated on a change
 import { invalidateStopPinPresence, rememberStopPinPresence, stopPinChanged, stopPinReadToken } from "./stopPinPresence";
 
@@ -258,7 +259,7 @@ export interface NguoiSuaStopPin {
 /** Lỗi nghiệp vụ của `datStopPin` — router đổi sang appError có mã. */
 export class StopPinLoi extends Error {
   constructor(
-    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch" | "ngoai_dai" | "dia_chi_bit",
+    readonly loai: "adapter_not_found" | "tag_not_found" | "tag_not_writable" | "type_mismatch" | "ngoai_dai" | "dia_chi_bit" | "dia_chi_s7",
     readonly chiTiet: Record<string, unknown> = {},
   ) {
     super(loai);
@@ -440,6 +441,12 @@ async function datStopPinTx(
     if (input.stopValue !== null) {
       if (tag.writable !== true || tag.isEnabled !== true) {
         throw new StopPinLoi("tag_not_writable", { tagKey: tag.tagKey, writable: tag.writable, isEnabled: tag.isEnabled });
+      }
+      // SCADA R1b-2b-2a T3C fix 1 (M4) — ghim STOP lên tag S7 mà nodes7 không ghi được đúng như yêu cầu (`kiemDiaChiS7`: bit ∉ 0..7, vùng không có,
+      // mảng; không kiểm được ⇒ fail-closed) ⇒ từ chối: một ghim như thế hứa một STOP mà driver sẽ không bao giờ gửi. Gỡ ghim (null) vẫn được.
+      if (adapter.protocol === "s7") {
+        const l = kiemDiaChiS7(String(tag.address), tag.tagKey);
+        if (l) throw new StopPinLoi("dia_chi_s7", { tagKey: tag.tagKey, address: tag.address, ma: l.ma, lyDo: l.lyDo });
       }
       const v = validateStopValue(String(tag.dataType), input.stopValue);
       if (!v.ok) throw new StopPinLoi("type_mismatch", { tagKey: tag.tagKey, dataType: tag.dataType, detail: v.reason });

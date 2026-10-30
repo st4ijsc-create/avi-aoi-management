@@ -67,6 +67,7 @@ vi.mock("../_core/accessControl", () => ({
 }));
 
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
+import { lopNodes7That } from "../services/ot/drivers/s7Address";
 
 const ctx = { user: { id: 9, role: "supervisor", name: "Sup" } } as any;
 const caller = deviceAdapterRouter.createCaller(ctx);
@@ -175,6 +176,38 @@ describe("SCADA R1b-2b-2a T3C — địa chỉ bit S7 ∉ 0..7 bị từ chối 
     // tag S7 hỏng có sẵn (lưu trước bản vá) — tắt nó KHÔNG bị chặn
     const [cu] = await fake.insert(deviceTags).values({ adapterId: s7.id, tagKey: "cu", address: "DB1,X0.9", dataType: "bool", writable: true, isEnabled: true } as any).returning();
     expect((await caller.tags.update({ id: cu.id, isEnabled: false })).isEnabled).toBe(false);
+  });
+});
+
+describe("SCADA R1b-2b-2a T3C fix 1 (I2 + M1) — địa chỉ nodes7 không ghi được đúng như yêu cầu bị từ chối LÚC LƯU; fail-closed", () => {
+  it("create trên adapter S7: MX0.1 / PQ0 / PI0 / DB1,INT2.5 / MW0.3 / DB1,FOO0 ⇒ INVALID_VALUE tagAddress/s7DiaChiThuVienBo, message OT_S7_DIA_CHI_THU_VIEN_BO; khoá _COMMERR cũng vậy; không lưu", async () => {
+    const s7 = await caller.create({ code: "S7C", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    for (const address of ["MX0.1", "PQ0", "PI0", "DB1,INT2.5", "MW0.3", "DB1,FOO0"]) {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address, dataType: "bool" }).then(() => null, (e: any) => e);
+      expect(loi?.code, address).toBe("BAD_REQUEST");
+      expect(String(loi?.message), address).toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+      expect(loi?.cause, address).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    }
+    await expect(caller.tags.create({ adapterId: s7.id, tagKey: "_COMMERR", address: "DB1,X0.0", dataType: "bool" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    expect(await caller.tags.listByAdapter({ adapterId: s7.id })).toHaveLength(0);
+    const t = await caller.tags.create({ adapterId: s7.id, tagKey: "ok", address: "M0.1", dataType: "bool" });
+    await expect(caller.tags.update({ id: t.id, address: "MX0.1" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    await expect(caller.tags.update({ id: t.id, tagKey: "_COMMERR" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+  });
+
+  it("M1 fail-closed: bộ phân tích nodes7 (NodeS7.prototype.addItemsNow) bị gỡ ⇒ lưu tag S7 bị từ chối s7ThuVienKhongKiemDuoc (kể cả địa chỉ hợp lệ); trả lại ⇒ lưu được", async () => {
+    const s7 = await caller.create({ code: "S7D", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const Lop = lopNodes7That()!;
+    const goc = Lop.prototype!.addItemsNow;
+    Lop.prototype!.addItemsNow = undefined;
+    try {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.1", dataType: "bool" }).then(() => null, (e: any) => e);
+      expect(String(loi?.message)).toMatch(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+      expect(loi?.cause).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7ThuVienKhongKiemDuoc" } });
+    } finally {
+      Lop.prototype!.addItemsNow = goc;
+    }
+    await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.1", dataType: "bool" });
   });
 });
 

@@ -39,7 +39,19 @@ import type {
   TuyChonVongPoll,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
-import { parseS7Address, coerceS7Value, laLoiS7BitNgoaiDai, lyDoCauHinhBitNgoaiDaiS7, MA_S7_BIT_NGOAI_DAI, MA_S7_DIA_CHI_THU_VIEN_BO } from "./s7Address";
+import {
+  parseS7Address,
+  coerceS7Value,
+  laLoiS7BitNgoaiDai,
+  kiemDiaChiS7,
+  loiItemNodes7,
+  LoiS7KhongKiemDuoc,
+  lopNodes7That,
+  lyDoCauHinhDiaChiS7,
+  MA_S7_BIT_NGOAI_DAI,
+  MA_S7_DIA_CHI_THU_VIEN_BO,
+  MA_S7_THU_VIEN_KHONG_KIEM_DUOC,
+} from "./s7Address";
 import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -117,68 +129,6 @@ export function laQuaHanGhiS7(conn: unknown): boolean {
 }
 
 /**
- * SCADA R1b-2b-2a T3C (backlog 87) — item nodes7 dựng cho MỘT lời ghi có đúng là một giá trị đơn tại địa chỉ yêu cầu? Lý do sai, hoặc null.
- * Bản thư viện: nodes7 0.3.18 (`stringToS7Addr` nodeS7.js:2315-2731): undefined = BỎ; `arrayLength` ≠ 1 = ghi MẢNG ("DB1,INT2.5", "MW0.3");
- * bit X ngoài 0..7 = ghi SAI bit (vùng M / I / Q không kiểm, :2589-2596; con trỏ offset*8+bit :1621).
- */
-function loiItemNodes7(item: unknown, choMang = false): string | null {
-  if (!item || typeof item !== "object") return "dropped by the nodes7 address parser";
-  const it = item as { datatype?: unknown; bitOffset?: unknown; arrayLength?: unknown };
-  if (!choMang && it.arrayLength !== 1) return `read by the nodes7 address parser as an array of ${String(it.arrayLength)}`;
-  if (it.datatype === "X" && !(typeof it.bitOffset === "number" && Number.isInteger(it.bitOffset) && it.bitOffset >= 0 && it.bitOffset <= 7)) {
-    return `read by the nodes7 address parser as bit ${String(it.bitOffset)}`;
-  }
-  return null;
-}
-
-/**
- * T3C (phòng thủ hai, TRƯỚC `writeItems`) — dò từng khoá bằng CHÍNH bộ phân tích địa chỉ của nodes7: `addItemsNow` của prototype (gọi
- * `stringToS7Addr(translationCB(k), k, connectionParams)` rồi bỏ item undefined — cùng hàm, cùng đối số với `writeItems` :467-488) chạy trên một
- * đối tượng TÁCH RỜI (không chạm danh sách đọc / ghi của phiên). Trả Map tagKey → lý do cho khoá nodes7 sẽ bỏ / hiểu khác; `null` khi thư viện
- * không có hàm này (mock của test đơn vị — chốt trong phiên `ganChotGhiNodes7` cũng không gắn được, hành vi như cũ).
- * `choMang` (phía ĐỌC): địa chỉ mảng ("DB1,INT2.5" đọc json) là đọc hợp lệ — chỉ từ chối item bị BỎ / bit sai.
- */
-export function doDiaChiQuaNodes7(
-  conn: unknown,
-  keys: readonly string[],
-  dich: (k: string) => string | undefined,
-  choMang = false,
-  boNho?: Map<string, string | null>,
-): Map<string, string> | null {
-  const proto = conn && typeof conn === "object" ? (Object.getPrototypeOf(conn) as { addItemsNow?: unknown } | null) : null;
-  const addItemsNow = proto?.addItemsNow;
-  if (typeof addItemsNow !== "function") return null;
-  const loi = new Map<string, string>();
-  for (const k of keys) {
-    // `boNho` (vòng poll đọc): kết quả chỉ phụ thuộc (khoá, địa chỉ, chế độ) ⇒ dò MỘT lần mỗi cặp (addItemsNow ghi log mỗi lần gọi).
-    const khoaNho = JSON.stringify([choMang, k, dich(k) ?? null]);
-    const daNho = boNho?.get(khoaNho);
-    if (daNho !== undefined) {
-      if (daNho) loi.set(k, daNho);
-      continue;
-    }
-    const tach: { polledReadBlockList: unknown[]; translationCB: (k: string) => string | undefined; connectionParams: unknown; connectionID: string; readPacketValid: boolean } = {
-      polledReadBlockList: [],
-      translationCB: dich,
-      connectionParams: (conn as { connectionParams?: unknown }).connectionParams,
-      connectionID: "t3c-probe",
-      readPacketValid: false,
-    };
-    try {
-      addItemsNow.call(tach, [k]);
-    } catch (e) {
-      loi.set(k, `the nodes7 address parser threw (${(e as Error)?.message ?? String(e)})`);
-      continue;
-    }
-    const ds = tach.polledReadBlockList;
-    const ly = ds.length !== 1 ? "dropped by the nodes7 address parser" : (ds[0] as { useraddr?: unknown }).useraddr !== k ? "renamed by the nodes7 address parser" : loiItemNodes7(ds[0], choMang);
-    boNho?.set(khoaNho, ly);
-    if (ly) loi.set(k, ly);
-  }
-  return loi;
-}
-
-/**
  * T3C (phòng thủ ba, TRONG phiên) — chốt trên INSTANCE nodes7 (thuộc tính riêng che prototype; thư viện gọi `self.prepareWritePacket()`):
  *   • `writeItems`: khoá / giá trị nodes7 không nhận một-đối-một (không phải mảng chuỗi cùng độ dài, rỗng) ⇒ ném NGAY — nodes7 sẽ dựng danh
  *     sách rỗng / thiếu (:465-480) mà không báo;
@@ -186,10 +136,21 @@ export function doDiaChiQuaNodes7(
  *     từng item với danh sách yêu cầu (cùng số, cùng thứ tự, `loiItemNodes7` sạch). RỖNG ⇒ bản gốc trả sớm (:673-676) giữ `writePacketArray` cũ ⇒
  *     `sendWritePacket` (:491 ngay, hoặc :1463 khi xếp hàng sau lượt đọc) GỬI LẠI gói ghi trước — chốt ném ⇒ không gì được gửi.
  * Ném = writeItems ném (không gói, `writeInQueue` không đặt; `writePacketArray` cũ đều `sent=false` ⇒ lời ghi kế dựng lại bình thường).
- * Gọi thẳng instance (bỏ qua writeTags) cũng qua chốt. Thư viện không có hai hàm này (mock) ⇒ không gắn.
+ * Gọi thẳng instance (bỏ qua writeTags) cũng qua chốt.
+ *
+ * T3C fix 1 (M1, fail-CLOSED): phiên là nodes7 THẬT (`instanceof lopNodes7That()`) mà `writeItems` / `prepareWritePacket` / `prepareReadPacket` vắng
+ * hoặc không phải hàm ⇒ KHÔNG gắn được chốt ⇒ trả lý do `OT_S7_THU_VIEN_KHONG_KIEM_DUOC`; driver từ chối MỌI lời ghi / đọc của phiên đó.
+ * Phiên KHÔNG phải nodes7 thật chỉ có ở test đơn vị (`vi.doMock("nodes7")`, thư viện giả không có nội tại nào) ⇒ gắn những gì có; lớp 2
+ * (`kiemDiaChiS7`) vẫn chạy trên bộ phân tích THẬT cho mọi lời ghi.
  */
-function ganChotGhiNodes7(conn: any): void {
-  if (!conn || typeof conn.writeItems !== "function" || typeof conn.prepareWritePacket !== "function") return;
+function ganChotGhiNodes7(conn: any): string | undefined {
+  const lop = lopNodes7That() as (new (...a: unknown[]) => unknown) | undefined;
+  const that = typeof lop === "function" && conn instanceof lop;
+  const thieu = ["writeItems", "prepareWritePacket", "prepareReadPacket"].filter((h) => typeof conn?.[h] !== "function");
+  if (that && thieu.length > 0) {
+    return `${MA_S7_THU_VIEN_KHONG_KIEM_DUOC}: nodes7 session is missing ${thieu.join(", ")} - the replay latch cannot be installed; S7 writes and reads refused`;
+  }
+  if (!conn || typeof conn.writeItems !== "function" || typeof conn.prepareWritePacket !== "function") return undefined;
   const gocWriteItems = conn.writeItems;
   const gocPrepare = conn.prepareWritePacket;
   let yeuCau: readonly string[] | null = null;
@@ -237,6 +198,7 @@ function ganChotGhiNodes7(conn: any): void {
       return gocPrepareRead.apply(this, args);
     };
   }
+  return undefined;
 }
 
 /** T3 — ân hạn B3 của dispatcher (`otDeviceWrite.OT_TIMED_OUT_WRITE_GRACE_MS`; test ghim bằng nhau — driver không import otDeviceWrite) + đệm. */
@@ -302,8 +264,8 @@ export class S7Driver extends NotImplementedDriver {
    * xoá lastError, không xoá thứ này — cấu hình vẫn sai sau khi nối lại). Ghi tới tag ấy luôn bị từ chối (parseS7Address), đọc ⇒ config_error.
    */
   private loiCauHinhTag: string | undefined;
-  /** T3C mục 4 — kết quả dò địa chỉ phía ĐỌC (khoá, địa chỉ) ⇒ lý do | null; vòng poll không dò lại mỗi tick. Có trần (xoá khi quá 4096 mục). */
-  private readonly daDoDiaChiDoc = new Map<string, string | null>();
+  /** T3C fix 1 (M1) — phiên nodes7 thật thiếu nội tại chốt cần ⇒ lý do có mã; mọi ghi / đọc của phiên bị từ chối (fail-closed). */
+  private loiThuVien: string | undefined;
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const mod: any = await this.loadPackage();
@@ -326,7 +288,7 @@ export class S7Driver extends NotImplementedDriver {
       }
     }
     const conn = new NodeS7();
-    ganChotGhiNodes7(conn); // T3C — chốt trong phiên: nodes7 không bao giờ gửi lại gói cũ / ghi một phần
+    const loiChot = ganChotGhiNodes7(conn); // T3C — chốt trong phiên: nodes7 không bao giờ gửi lại gói cũ / ghi một phần
 
     const opts = cfg.options ?? {};
     const defaultPort = typeof opts.port === "number" ? opts.port : 102;
@@ -355,6 +317,7 @@ export class S7Driver extends NotImplementedDriver {
       this.conn = conn;
       this.connected = true;
       this.connectedAt = new Date();
+      this.loiThuVien = loiChot; // T3C fix 1 (M1) — fail-closed theo phiên
       this.checksumTarget = { host, port, rack, slot };
       this.lastError = undefined;
       // doc 40 OT-F1 — NodeS7 là callback-based, KHÔNG có event channel ổn định. Gắn
@@ -461,6 +424,7 @@ export class S7Driver extends NotImplementedDriver {
       throw new DeviceUnreachableError("s7");
     }
     if (tags.length === 0) return [];
+    if (this.loiThuVien) throw new LoiS7KhongKiemDuoc(this.loiThuVien); // T3C fix 1 (M1) — fail-closed
 
     // Ánh xạ tagKey → địa chỉ S7 đã validate (translation callback của NodeS7).
     // SCADA R0 (C2) — sau cờ: địa chỉ sai của MỘT tag ⇒ chỉ tag đó bad/config_error, tag khác vẫn đọc.
@@ -482,16 +446,19 @@ export class S7Driver extends NotImplementedDriver {
       try {
         addrByKey.set(t.tagKey, parseS7Address(t.address).s7);
       } catch (e) {
-        if (!v2) throw e;
-        loiDiaChi.set(t.tagKey, mauLoiDiaChi(t.tagKey));
+        // T3C fix 1 (I1) — bit ∉ 0..7 (cấu hình cũ) KHÔNG làm mù cả adapter khi cờ V2 tắt: chỉ tag đó bad (trần), tag khác vẫn đọc.
+        if (!v2 && !laLoiS7BitNgoaiDai(e)) throw e;
+        if (v2) loiDiaChi.set(t.tagKey, mauLoiDiaChi(t.tagKey));
       }
     }
-    if (this.daDoDiaChiDoc.size > 4096) this.daDoDiaChiDoc.clear();
     // T3C mục 4 — phía ĐỌC cùng lớp: khoá nodes7 sẽ BỎ ⇒ như địa chỉ sai, không tới addItems (bỏ HẾT ⇒ nodes7 gửi lại gói đọc cũ và trả giá trị
     // địa chỉ CŨ dưới khoá cũ — đo: s7BitNgoaiDai.r1b2b2.test.ts). Địa chỉ mảng vẫn đọc (json).
-    const boDoc = doDiaChiQuaNodes7(this.conn, [...addrByKey.keys()], (k) => addrByKey.get(k), true, this.daDoDiaChiDoc);
     // Cờ V2: config_error có lý do; cờ tắt: bad trần như khi nodes7 tự bỏ item trước đây (không ném cả lô — tag khác vẫn đọc).
-    for (const k of boDoc?.keys() ?? []) {
+    // T3C fix 1 — CÙNG vị từ với lưu / khởi động / ghi (`kiemDiaChiS7`, chế độ đọc: mảng json vẫn đọc); không kiểm được ⇒ ném (fail-closed).
+    for (const [k, diaChi] of [...addrByKey]) {
+      const l = kiemDiaChiS7(diaChi, k, true);
+      if (!l) continue;
+      if (l.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC) throw new LoiS7KhongKiemDuoc(l.lyDo);
       addrByKey.delete(k);
       if (v2) loiDiaChi.set(k, mauLoiDiaChi(k));
     }
@@ -578,7 +545,7 @@ export class S7Driver extends NotImplementedDriver {
     tuyChon?: TuyChonVongPoll,
   ): Promise<OtSubscriptionHandle> {
     if (!this.connected) throw new DeviceUnreachableError("s7");
-    this.loiCauHinhTag = lyDoCauHinhBitNgoaiDaiS7(tags) ?? undefined; // T3C mục 5 — không im lặng
+    this.loiCauHinhTag = lyDoCauHinhDiaChiS7(tags) ?? undefined; // T3C mục 5 + fix 1 (I2) — không im lặng
 
     // SCADA R0 — vòng poll DÙNG CHUNG (chống chồng tick, hạn đọc, mẫu xấu một lần khi mất liên lạc sau cờ).
     return taoVongPoll({
@@ -617,6 +584,8 @@ export class S7Driver extends NotImplementedDriver {
       throw new DeviceUnreachableError("s7");
     }
     if (writes.length === 0) return [];
+    // T3C fix 1 (M1) — phiên nodes7 thật thiếu nội tại chốt ⇒ không gì tới thư viện (`failed`, mã ổn định).
+    if (this.loiThuVien) return this.tuChoiCaLo(writes, this.loiThuVien);
 
     // Chuẩn bị từng write; cô lập lỗi parse / read-only (không kéo sập batch).
     const prepared: Array<{ tagKey: string; addr?: string; value?: unknown; error?: string; huyLo?: boolean }> =
@@ -655,11 +624,16 @@ export class S7Driver extends NotImplementedDriver {
 
     // T3C lớp 2 — TRƯỚC writeItems: khoá nào nodes7 sẽ bỏ / hiểu khác ⇒ CẢ lô bị từ chối, không gói nào (không bao giờ gọi writeItems với danh sách
     // hiệu lực khác danh sách yêu cầu).
-    const thuVienBo = doDiaChiQuaNodes7(this.conn, writable.map((p) => p.tagKey), (k) => addrByKey.get(k));
-    if (thuVienBo && thuVienBo.size > 0) {
-      const [k, ly] = [...thuVienBo][0]!;
-      const loiRieng = new Map([...thuVienBo].map(([kk, l]) => [kk, `${MA_S7_DIA_CHI_THU_VIEN_BO}: address "${addrByKey.get(kk)}" ${l} - batch refused; nothing sent`]));
-      return this.tuChoiCaLo(prepared, `${MA_S7_DIA_CHI_THU_VIEN_BO}: batch refused - address "${addrByKey.get(k)}" of tag "${k}" ${ly} (nodes7 address parser); nothing sent`, loiRieng);
+    // T3C fix 1 — CÙNG vị từ với lưu / khởi động (`kiemDiaChiS7`, bộ phân tích THẬT của nodes7); không kiểm được ⇒ fail-closed, mã riêng.
+    const thuVienBo = new Map(writable.flatMap((p) => {
+      const l = kiemDiaChiS7(p.addr!, p.tagKey);
+      return l ? [[p.tagKey, l] as const] : [];
+    }));
+    if (thuVienBo.size > 0) {
+      const dau = [...thuVienBo].find(([, l]) => l.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC) ?? [...thuVienBo][0]!;
+      const [k, l] = dau;
+      const loiRieng = new Map([...thuVienBo].map(([kk, ll]) => [kk, `${ll.lyDo} - batch refused; nothing sent`]));
+      return this.tuChoiCaLo(prepared, `${l.ma}: batch refused - tag "${k}": ${l.lyDo.slice(l.ma.length + 2)} (nodes7 address parser); nothing sent`, loiRieng);
     }
 
     this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));

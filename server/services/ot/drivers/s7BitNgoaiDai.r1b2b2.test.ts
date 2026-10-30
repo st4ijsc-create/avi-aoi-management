@@ -18,7 +18,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startS7commSim } from "./__s7commSim";
 import { S7Driver } from "./s7Driver";
 import { executeOtDeviceWrite } from "../otDeviceWrite";
-import { LoiS7BitNgoaiDai, MA_S7_BIT_NGOAI_DAI, laLoiS7BitNgoaiDai, loiBitNgoaiDaiS7, lyDoCauHinhBitNgoaiDaiS7, parseS7Address } from "./s7Address";
+import {
+  LoiS7BitNgoaiDai,
+  MA_S7_BIT_NGOAI_DAI,
+  MA_S7_DIA_CHI_THU_VIEN_BO,
+  MA_S7_THU_VIEN_KHONG_KIEM_DUOC,
+  kiemDiaChiS7,
+  laLoiS7BitNgoaiDai,
+  lopNodes7That,
+  lyDoCauHinhDiaChiS7,
+  parseS7Address,
+} from "./s7Address";
+import { kiemGiaTriDiaChiBit, lopDiaChiBit } from "./diaChiBit";
 
 const dong: Array<() => unknown> = [];
 afterEach(async () => {
@@ -168,29 +179,37 @@ describe("T3C lớp 1 — parseS7Address: bit ∉ 0..7 ⇒ LoiS7BitNgoaiDai (mã
       expect(laLoiS7BitNgoaiDai(loi), a).toBe(true);
       expect((loi as LoiS7BitNgoaiDai).bit, a).toBe(bit);
       expect(String((loi as Error).message), a).toMatch(new RegExp(`^${MA_S7_BIT_NGOAI_DAI}: S7 bit address ".*" names bit ${bit} `));
-      expect(loiBitNgoaiDaiS7(a), a).not.toBeNull();
+      expect(kiemDiaChiS7(a)?.ma, a).toBe(MA_S7_BIT_NGOAI_DAI);
     }
   });
 
-  it("nhận bit 0..7 (DB / M / MX / Q / I) và địa chỉ không phải bit (DB1,INT2, MW0); lỗi dạng khác KHÔNG phải lớp bit ngoài dải", () => {
-    for (const a of ["DB1,X0.0", "DB1,X14.7", "M0.7", "MX3.1", "Q0.0", "I1.7", "DB1,INT2", "MW0", "MD4"]) {
+  it("★ fix 1 (I2) — MỘT vị từ kiemDiaChiS7 (nodes7 THẬT): nhận địa chỉ nodes7 ghi đúng; từ chối vùng không có / mảng / dạng sai / khoá _COMMERR", () => {
+    for (const a of ["DB1,X0.0", "DB1,X14.7", "M0.7", "Q0.0", "I1.7", "DB1,INT2", "DB1,REAL4", "MW0", "MD4", "MR4", "MB0"]) expect(kiemDiaChiS7(a), a).toBeNull();
+    // parseS7Address nhận nhưng nodes7 bỏ (không có vùng) / ghi mảng ⇒ OT_S7_DIA_CHI_THU_VIEN_BO
+    for (const a of ["MX0.1", "MX3.1", "QX0.0", "PQ0", "PI0", "DB1,INT2.5", "MW0.3"]) {
       expect(() => parseS7Address(a), a).not.toThrow();
-      expect(loiBitNgoaiDaiS7(a), a).toBeNull();
+      const l = kiemDiaChiS7(a);
+      expect(l?.ma, a).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+      expect(l?.lyDo.startsWith(`${MA_S7_DIA_CHI_THU_VIEN_BO}: `), a).toBe(true);
     }
-    for (const a of ["DB1,FOO0", "", "DB1,X0"]) {
-      expect(() => parseS7Address(a), a).toThrow();
-      expect(loiBitNgoaiDaiS7(a), a).toBeNull();
-    }
+    for (const a of ["DB1,FOO0", "", "DB1,X0"]) expect(kiemDiaChiS7(a)?.ma, a).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+    expect(kiemDiaChiS7("DB1,X0.0", "_COMMERR")?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO); // nodes7 bỏ riêng khoá này
+    expect(kiemDiaChiS7("DB1,INT2.5", "arr", true)).toBeNull(); // chế độ ĐỌC của driver: mảng json vẫn đọc
   });
 
-  it("lyDoCauHinhBitNgoaiDaiS7: chỉ tag hỏng, có mã, nêu tagKey=địa chỉ; sạch ⇒ null", () => {
-    expect(lyDoCauHinhBitNgoaiDaiS7([{ tagKey: "a", address: "DB1,X0.0" }])).toBeNull();
-    const ly = lyDoCauHinhBitNgoaiDaiS7([
+  it("lyDoCauHinhDiaChiS7: chỉ tag hỏng, mã đứng đầu (toàn bit ⇒ BIT_NGOAI_DAI; có vùng không hỗ trợ ⇒ DIA_CHI_THU_VIEN_BO), nêu tagKey=địa chỉ; sạch ⇒ null", () => {
+    expect(lyDoCauHinhDiaChiS7([{ tagKey: "a", address: "DB1,X0.0" }])).toBeNull();
+    const ly = lyDoCauHinhDiaChiS7([
       { tagKey: "a", address: "DB1,X0.0" },
       { tagKey: "stop", address: "DB1,X0.9" },
       { tagKey: "m", address: "M2.8" },
     ]);
-    expect(ly?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 2 tag(s) name a bit outside 0..7 (stop=DB1,X0.9, m=M2.8) - writes`), String(ly)).toBe(true);
+    expect(ly?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 2 tag(s) have an S7 address the S7 library cannot write as given (stop=DB1,X0.9 [bit outside 0..7], m=M2.8 [bit outside 0..7]) - writes`), String(ly)).toBe(true);
+    const ly2 = lyDoCauHinhDiaChiS7([
+      { tagKey: "stop", address: "MX0.1" },
+      { tagKey: "b", address: "DB1,X0.9" },
+    ]);
+    expect(ly2?.startsWith(`${MA_S7_DIA_CHI_THU_VIEN_BO}: 2 tag(s) have an S7 address the S7 library cannot write as given (stop=MX0.1 [not writable as given by nodes7], b=DB1,X0.9 [bit outside 0..7])`), String(ly2)).toBe(true);
   });
 });
 
@@ -208,7 +227,7 @@ describe("T3C mục 5 — khởi động / nạp cấu hình: tag S7 đã lưu c
     );
     await h1.close();
     const sk1 = await d.health();
-    expect(sk1.lastError?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 1 tag(s) name a bit outside 0..7 (stop=DB1,X0.9)`), String(sk1.lastError)).toBe(true);
+    expect(sk1.lastError?.startsWith(`${MA_S7_BIT_NGOAI_DAI}: 1 tag(s) have an S7 address the S7 library cannot write as given (stop=DB1,X0.9 [bit outside 0..7])`), String(sk1.lastError)).toBe(true);
     expect(sk1.connected).toBe(true);
     await d.connect({ endpoint: `127.0.0.1:${sim.port}`, timeoutMs: 1000 }); // supervisor nối lại: connect() xoá lastError — cấu hình vẫn sai
     expect((await d.health()).lastError).toMatch(new RegExp(`^${MA_S7_BIT_NGOAI_DAI}: `));
@@ -266,9 +285,9 @@ describe("T3C mục 4 — cùng lớp phía ĐỌC: prepareReadPacket trả sớ
       return goc.apply(this, a);
     };
     try {
-      for (let i = 0; i < 3; i++) await d.readTags([{ tagKey: "sp", address: "DB1,INT2", dataType: "int" }]);
+      for (let i = 0; i < 3; i++) await d.readTags([{ tagKey: "sp_nho", address: "DB1,INT2", dataType: "int" }]);
       expect(lanDo).toBe(1);
-      await d.readTags([{ tagKey: "sp", address: "DB1,INT4", dataType: "int" }]);
+      await d.readTags([{ tagKey: "sp_nho", address: "DB1,INT4", dataType: "int" }]);
       expect(lanDo).toBe(2);
     } finally {
       proto.addItemsNow = goc;
@@ -309,4 +328,92 @@ describe("T3C mục 4 — cùng lớp phía ĐỌC: prepareReadPacket trả sớ
     expect(pduDoc(), "không gửi lại gói đọc cũ").toBe(1);
     expect(goiLai).toEqual([[false, {}]]); // không có giá trị nào — trước bản vá gói đọc DB1,INT2 được gửi lại (2 PDU đọc, đột biến M13)
   }, 15_000);
+});
+
+describe("T3C fix 1 (I1) — cờ V2 TẮT (mặc định): MỘT tag bit ∉ 0..7 đã lưu KHÔNG làm mù cả adapter", () => {
+  const cuV2 = process.env.OT_CHAT_LUONG_V2_ENABLED;
+  afterEach(() => {
+    if (cuV2 === undefined) delete process.env.OT_CHAT_LUONG_V2_ENABLED;
+    else process.env.OT_CHAT_LUONG_V2_ENABLED = cuV2;
+  });
+
+  for (const v2 of [false, true]) {
+    it(`★ cờ V2 ${v2 ? "BẬT" : "TẮT"}: [sp DB1,INT2 ; stop DB1,X0.9 ; m M0.8] ⇒ không ném, sp good 1234, stop / m bad null${v2 ? " config_error" : ""}; chỉ MỘT gói đọc (cho sp)`, async () => {
+      if (v2) process.env.OT_CHAT_LUONG_V2_ENABLED = "true";
+      else delete process.env.OT_CHAT_LUONG_V2_ENABLED;
+      const { sim, d } = await s7Sim();
+      sim.setBytes(0x84, 1, 2, [0x04, 0xd2]);
+      const pduDoc = () => sim.pdus.filter((p) => p.bytes[1] === 0x01 && p.bytes[10] === 0x04);
+      const s = await d.readTags([
+        { tagKey: "sp", address: "DB1,INT2", dataType: "int" },
+        { tagKey: "stop", address: "DB1,X0.9", dataType: "bool" },
+        { tagKey: "m", address: "M0.8", dataType: "bool" },
+      ]);
+      expect(s.map((x) => [x.tagKey, x.quality, x.value])).toEqual([
+        ["sp", "good", 1234],
+        ["stop", "bad", null],
+        ["m", "bad", null],
+      ]);
+      if (v2) for (const x of s.slice(1)) expect(x).toMatchObject({ statusCode: "invalid_address", reason: "config_error" });
+      expect(pduDoc()).toHaveLength(1);
+      expect(pduDoc()[0].bytes[11]).toBe(1); // read var (tham số: 04 <số item>) mang đúng MỘT item (sp)
+    }, 15_000);
+  }
+});
+
+describe("T3C fix 1 (M1) — fail-CLOSED khi nội tại nodes7 mà các chốt cần vắng / không phải hàm", () => {
+  it("★ bộ phân tích (NodeS7.prototype.addItemsNow) bị gỡ ⇒ kiemDiaChiS7 OT_S7_THU_VIEN_KHONG_KIEM_DUOC; ghi 'failed' cùng mã, 0 PDU; đọc ném cùng mã; trả lại ⇒ bình thường", async () => {
+    const { sim, d, pduGhi } = await s7Sim();
+    const Lop = lopNodes7That()!;
+    expect((d as any).conn instanceof (Lop as any), "phiên của driver là nodes7 THẬT (cùng lớp với vị từ)").toBe(true);
+    const goc = Lop.prototype!.addItemsNow;
+    Lop.prototype!.addItemsNow = undefined;
+    try {
+      expect(kiemDiaChiS7("DB1,X0.1", "fc1")?.ma).toBe(MA_S7_THU_VIEN_KHONG_KIEM_DUOC);
+      const o = await stopQuaExecute(d, [{ tagKey: "stop", address: "DB1,X0.1", value: true }]);
+      expect(o.outcomes[0]).toMatchObject({ ok: false, status: "failed" });
+      expect(String(o.outcomes[0].errorText)).toMatch(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+      await expect(d.readTags([{ tagKey: "sp", address: "DB1,INT2", dataType: "int" }])).rejects.toThrow(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+      expect(lyDoCauHinhDiaChiS7([{ tagKey: "stop", address: "DB1,X0.1" }])).toMatch(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+    } finally {
+      Lop.prototype!.addItemsNow = goc;
+    }
+    await cho(150);
+    expect(pduGhi()).toHaveLength(0);
+    expect(sim.pdus.filter((p) => p.bytes[1] === 0x01 && p.bytes[10] === 0x04)).toHaveLength(0);
+    expect(await d.writeTags([{ tagKey: "n", address: "DB1,INT4", value: 5, dataType: "int" }])).toEqual([{ tagKey: "n", ok: true }]);
+  }, 15_000);
+
+  for (const ham of ["prepareWritePacket", "prepareReadPacket", "writeItems"]) {
+    it(`★ phiên nodes7 thật thiếu ${ham} (chốt trong phiên không gắn được) ⇒ ghi 'failed' OT_S7_THU_VIEN_KHONG_KIEM_DUOC, đọc ném, 0 PDU`, async () => {
+      const Lop = lopNodes7That()!;
+      const goc = Lop.prototype![ham];
+      Lop.prototype![ham] = undefined;
+      try {
+        const { sim, d, pduGhi } = await s7Sim();
+        const out = await d.writeTags([{ tagKey: "stop", address: "DB1,X0.1", value: true, dataType: "bool" }]);
+        expect(out).toHaveLength(1);
+        expect(out[0]).toMatchObject({ tagKey: "stop", ok: false });
+        expect(out[0].ketCucKhongRo).toBeUndefined();
+        expect(String(out[0].error)).toMatch(new RegExp(`^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: nodes7 session is missing ${ham}`));
+        await expect(d.readTags([{ tagKey: "sp", address: "DB1,INT2", dataType: "int" }])).rejects.toThrow(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+        await cho(150);
+        expect(pduGhi()).toHaveLength(0);
+        expect(sim.pdus.filter((p) => p.bytes[1] === 0x01 && p.bytes[10] === 0x04)).toHaveLength(0);
+      } finally {
+        Lop.prototype![ham] = goc;
+      }
+    }, 15_000);
+  }
+});
+
+describe("T3C fix 1 (M4) — lopDiaChiBit không biến địa chỉ S7 bit sai thành 'không phải bit'", () => {
+  it("DB1,X0.9 / M0.8 ⇒ s7_bit (trước: null); DB1,INT2 ⇒ null; dạng sai ⇒ null", () => {
+    expect(lopDiaChiBit("s7", "DB1,X0.9", "int")).toBe("s7_bit");
+    expect(lopDiaChiBit("s7", "M0.8", "bool")).toBe("s7_bit");
+    expect(lopDiaChiBit("s7", "DB1,X0.1", "int")).toBe("s7_bit");
+    expect(lopDiaChiBit("s7", "DB1,INT2", "int")).toBeNull();
+    expect(lopDiaChiBit("s7", "DB1,FOO0", "int")).toBeNull();
+    expect(kiemGiaTriDiaChiBit("s7", "DB1,X0.9", "int", 2)).toMatchObject({ ok: false, lopBit: "s7_bit" });
+  });
 });

@@ -319,6 +319,14 @@ describe("G1.13 — importMapping", () => {
       expect((loi as MappingValidationError).issues).toEqual([expect.stringMatching(/^tag "stop": OT_S7_BIT_NGOAI_DAI: S7 bit address "DB1,X0.9" names bit 9 /)]);
     }
     expect(fake.state.txCount).toBe(0);
+    // T3C fix 1 (I2) — CÙNG vị từ: địa chỉ nodes7 không có ("MX0.1") / mảng ("DB1,INT2.5") ⇒ OT_S7_DIA_CHI_THU_VIEN_BO
+    const tagsVung = [{ ...DB_TAGS[0], tagKey: "stop", address: "MX0.1", dataType: "bool" }, { ...DB_TAGS[1], address: "DB1,INT2.5", dataType: "int" }];
+    queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+    const loiVung = await importMapping(mappingFileToYaml(buildMappingFile(s7, null, tagsVung as TagRowInput[], [], 2)), { dryRun: true }).then(() => null, (e: unknown) => e);
+    expect((loiVung as MappingValidationError).issues).toEqual([
+      expect.stringMatching(/^tag "run": OT_S7_DIA_CHI_THU_VIEN_BO: address "DB1,INT2.5" read by the nodes7 address parser as an array of 5/),
+      expect.stringMatching(/^tag "stop": OT_S7_DIA_CHI_THU_VIEN_BO: address "MX0.1" dropped by the nodes7 address parser/),
+    ]);
     queueImportSelects(); // modbus: cùng địa chỉ không phải S7 ⇒ không kiểm lớp này
     await expect(importMapping(mappingFileToYaml(buildMappingFile(ADAPTER, null, tagsBit as TagRowInput[], [], 2)), { dryRun: true })).resolves.toMatchObject({ dryRun: true });
   });
