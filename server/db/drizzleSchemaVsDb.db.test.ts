@@ -17,8 +17,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { is } from "drizzle-orm";
-import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
+import { bangKhaiTuModule, gomCotDb, tinhThieu } from "./schemaCotDiff";
+import { NGUON_SCHEMA_RUNTIME } from "./kiemSchemaChung";
 // MỌI tệp trong drizzle/schema (không chỉ barrel index — có tệp không export qua barrel)
 const tatCa = import.meta.glob("../../drizzle/schema/*.ts", { eager: true }) as Record<string, Record<string, unknown>>;
 
@@ -30,34 +30,13 @@ const DB_URL = process.env.DATABASE_URL;
 let sql: ReturnType<typeof postgres>;
 let dbCot: Map<string, Set<string>>;
 
-function bangKhai(): { ten: string; cot: string[] }[] {
-  const ra = new Map<string, string[]>();
-  for (const v of Object.values(tatCa).flatMap((m) => Object.values(m))) {
-    if (!is(v, PgTable)) continue;
-    const cfg = getTableConfig(v as PgTable);
-    if ((cfg.schema ?? "public") !== "public") continue;
-    ra.set(cfg.name, cfg.columns.map((c) => c.name));
-  }
-  return [...ra].map(([ten, cot]) => ({ ten, cot })).sort((a, b) => a.ten.localeCompare(b.ten));
-}
-
-/** Tập cột thiếu: "bang.cot" hoặc "bang.*" khi cả bảng vắng. */
-export function tinhThieu(khai: { ten: string; cot: string[] }[], db: Map<string, Set<string>>): string[] {
-  const thieu: string[] = [];
-  for (const b of khai) {
-    const co = db.get(b.ten);
-    if (!co) { thieu.push(`${b.ten}.*`); continue; }
-    for (const c of b.cot) if (!co.has(c)) thieu.push(`${b.ten}.${c}`);
-  }
-  return thieu.sort();
-}
+const bangKhai = () => bangKhaiTuModule(Object.values(tatCa));
 
 beforeAll(async () => {
   sql = postgres(DB_URL!, { max: 1 });
   const rows = await sql<{ t: string; c: string }[]>`
     SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public'`;
-  dbCot = new Map();
-  for (const r of rows) (dbCot.get(r.t) ?? dbCot.set(r.t, new Set()).get(r.t)!).add(r.c);
+  dbCot = gomCotDb(rows);
 });
 afterAll(async () => { await sql?.end({ timeout: 5 }); });
 
@@ -75,6 +54,11 @@ describe("★ lưới chung — cột Drizzle khai ⊆ cột có thật trên DB
     }
     const duocDuyet = new Set(khai.map((b) => b.ten));
     expect([...trongMa].filter((t) => !duocDuyet.has(t)).sort(), "bảng khai trong mã nhưng test không nạp được").toEqual([]);
+  });
+
+  it("★ nguồn schema của server lúc chạy (NGUON_SCHEMA_RUNTIME) phủ MỌI bảng tìm thấy qua glob", () => {
+    const runtime = new Set(bangKhaiTuModule(NGUON_SCHEMA_RUNTIME).map((b) => b.ten));
+    expect(bangKhai().map((b) => b.ten).filter((t) => !runtime.has(t)), "tệp schema mới chưa thêm vào NGUON_SCHEMA_RUNTIME ⇒ kiểm lúc khởi động mù bảng đó").toEqual([]);
   });
 
   it("★ mọi cột khai tồn tại trên DB (trừ mục MIEN_TRU có ngày + lý do + bằng chứng)", () => {
