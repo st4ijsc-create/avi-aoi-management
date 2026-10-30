@@ -1,4 +1,35 @@
-# Đợt 10.4b L3 — Agent máy chủ với model NGOÀI: hợp đồng (DỰ THẢO, chờ luong-ui + dieu-phoi + kiem-dinh)
+# Đợt 10.4b L3 — Agent máy chủ với model NGOÀI: hợp đồng (v2 — đã nhận ý kiến luong-ui + dieu-phoi + kiem-dinh, 2026-10-30)
+
+## 0. Bổ sung v2 (GHI ĐÈ các mục dưới khi khác)
+
+**dieu-phoi:** (Q2) dùng **0419** cho `ai_agent_runs."nguonModel"`, CHECK dùng CHUNG hằng mẫu với 0417 (`RE_NGUON_MODEL`); SQL gửi trước DEV.
+(Q3) **L3b tách** ngay sau L3. Thêm: (d1) lượt ngoài KHÔNG có `delegate` (giao việc 11.8) dù `AI_AGENT_GIAO_VIEC` bật; agent con của lượt
+cục bộ KHÔNG chọn được `ngoai:` — test cả hai chiều. (d2) lượt ngoài gắn phiên ⇒ máy chủ đặt `coLuotNgoai = true`. (d3) phần chạm
+`quanLyLuotChay.ts` viết SAU khi 11.8 lên main; trước đó chỉ phần độc lập. (d4) "không thẻ duyệt" = hai lớp — tool ghi KHÔNG có trong danh
+sách quảng bá VÀ bộ thực thi từ chối, đột biến từng lớp.
+
+**luong-ui:** (u1) lỗi ngoài trước SSE trả THÊM `code` (= `ma`) + `muc` / `tranVuot` đúng `LoiTruocSse`; lỗi cũ giữ `{ ma, thongDiep }`.
+(u2) `ThongTinModelBatDau` (shared/agentCore/kieu.ts) mở thành union có nhánh `{ nguon: "ngoai", model, muc }`. (u3) `xong.vetNgoai:
+VetNgoaiLichSu` (không callId). (u4) `dang-cho-model.phiaTruoc = 0`. (u5) UI web cho L3 do dieu-phoi quyết; thêm ca hồi quy `cheDo:"hoi"` +
+`chonModel` cục bộ chạy y như cũ.
+
+**kiem-dinh:** (k1) lưới THEO TỪNG tool: đường đã giải cho tham số, kết quả list/grep lọc theo đường thật, nhị phân, trần byte/tệp cộng dồn;
+lớp ánh xạ tên lõi ↔ bộ đọc là bề mặt mới (đột biến ánh xạ nhầm / đường thô ⇒ đỏ). (k2) `delegate` + mọi tool lõi khác không quảng bá, gọi ⇒
+không thực thi; định nghĩa agent từ repo (`.thoca/agents`, `tuRepo`) không bao giờ vào thân gửi ra — `tuRepo` + `ngoai:` ⇒ **400**
+`NGOAI_CHI_HOI` (không âm thầm bỏ định nghĩa). (k3) lịch sử nạp phía MÁY CHỦ (resume cùng `sessionId`) cũng là van-hanh ⇒ 428 nếu thiếu
+xác nhận — mục 1e áp cho MỌI nguồn lịch sử. (k4) khởi động lại / cắt giữa lúc gọi: khoá bay hết theo TTL, giữ chỗ chưa gửi được hoàn, ý định
+không mồ côi vĩnh viễn. (k5) census điểm gọi `ghepPhan` / `goiAiNgoai` thêm điểm mới; census import: không có bản sao thứ hai của bộ đọc
+ngoài. (k6) sự kiện lượt chạy (kể cả `ket-qua-tool.tomTat` chứa trích nội dung tệp) của người khác không đọc được. (k7) **bề mặt `agent`
+KHÔNG vào `BE_MAT_NGOAI_DUOC_DUNG` cho tới khi L3b xong** + test ghim. `search_docs` ⇒ **L3c** riêng.
+
+**do-model:** tập tool quảng bá = `read_file` · `list_dir` · `grep` (+ `todo_write` lõi tự xử lý). **Bỏ `find_files`** — bộ đọc ngoài chung
+chưa có tìm theo tên có lọc `duongThuc`; thêm sau cùng lưới k1 nếu cần. Cổng `YeuCauGoiNgoai` không nhận `signal` ⇒ huỷ chặn TRƯỚC mỗi vòng
+(không gọi khi đã huỷ); một vòng đang bay chạy hết rồi lõi dừng `huy`.
+
+**Đã làm (độc lập với 11.8):** `server/services/ai/ngoai/congCuDocNgoai.ts` (bộ đọc ngoài tách từ L2, L2 dùng lại) ·
+`server/services/ai/ngoai/vongAgentNgoai.ts` (cặp GoiModel + BoThucThi; nguồn gốc theo DANH TÍNH: system lõi bỏ, tool chỉ với id bộ chuyển
+đã phát, user chỉ = câu hỏi / lịch sử / câu nhắc tĩnh lõi, sàn mức van-hanh khi có lịch sử) + `vongAgentNgoai.test.ts` (12 ca, 12/12 đột
+biến đỏ).
 
 Nguồn: kế hoạch `2026-10-27-dot10-4b-sinh-chu-model-ngoai.md` D1 (L3 = "Agent máy chủ, `sua`/`tu-dong` khoá với model ngoài; thẻ duyệt
 không xuất hiện"), D9 (dấu nguồn), Q-B (`ai_agent_runs.nguonModel`), dòng 69 (hạ tự trị sau lượt ngoài). L2 (`codingNgoai.ts`) đã chứng
