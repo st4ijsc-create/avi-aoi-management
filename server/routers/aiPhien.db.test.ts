@@ -111,6 +111,27 @@ describe("kho — tách kind (M8a)", () => {
   });
 });
 
+describe("kho — hàng kind='chat' trong ai_coding_sessions KHÔNG thao tác được (chat có kho riêng)", () => {
+  it("★★★ một hàng kind='chat' (dù của chính mình) ⇒ mo/themLuot/doiTen/nhanBan/nopTomTat/xoa đều NOT_FOUND và hàng còn nguyên", async () => {
+    if (!coDb) return;
+    const db = await getDb();
+    const r = (await db!.execute(
+      sql`INSERT INTO ai_coding_sessions ("userId", "projectId", kind, source) VALUES (${idA}, ${DU_AN}, 'chat', 'web') RETURNING id`,
+    )) as unknown as Array<{ id: string }>;
+    const id = String(r[0]!.id);
+    expect(await kho.mo(idA, id)).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await kho.themLuot(idA, { sessionId: id, expectedVersion: 1, luot: [{ role: "user", content: "x" }] })).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await kho.doiTen(idA, { sessionId: id, title: "x" })).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await kho.nhanBan(idA, id)).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await kho.nopTomTat(idA, { sessionId: id, expectedVersion: 1, tomTat: "x" })).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await kho.xoa(idA, id)).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect((await kho.danhSach(idA, { projectId: DU_AN, kind: "all" })).map((s) => s.id)).not.toContain(id);
+    const con = (await db!.execute(sql`SELECT count(*)::int AS n FROM ai_coding_sessions WHERE id = ${id}::uuid`)) as unknown as Array<{ n: number }>;
+    expect(con[0]!.n).toBe(1);
+    await db!.execute(sql`DELETE FROM ai_coding_sessions WHERE id = ${id}::uuid`); // dọn: test khác đếm hàng kind=chat
+  });
+});
+
 describe("kho — khoá lạc quan (expectedVersion)", () => {
   it("★★★ ghi đúng version ⇒ version+1; version cũ ⇒ CONFLICT kèm versionHienTai, KHÔNG ghi", async () => {
     if (!coDb) return;
@@ -130,6 +151,19 @@ describe("kho — khoá lạc quan (expectedVersion)", () => {
       kho.themLuot(idA, { sessionId: a.id, expectedVersion: 1, luot: [{ role: "user", content: "Y" }] }),
     ]);
     expect([x.ok, y.ok].filter(Boolean).length).toBe(1);
+    const m = await kho.mo(idA, a.id);
+    expect(m.ok && m.phien.turns.length).toBe(1);
+    expect(m.ok && m.phien.version).toBe(2);
+  });
+  it("★★★ MƯỜI ghi song song cùng version ⇒ đúng MỘT thắng, 9 CONFLICT, mạch chỉ có lượt của người thắng", async () => {
+    if (!coDb) return;
+    const a = await tao(idA);
+    const kq = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => kho.themLuot(idA, { sessionId: a.id, expectedVersion: 1, luot: [{ role: "user", content: `L${i}` }] })),
+    );
+    const thang = kq.filter((r) => r.ok);
+    expect(thang.length).toBe(1);
+    expect(kq.filter((r) => !r.ok && r.ma === "CONFLICT").length).toBe(9);
     const m = await kho.mo(idA, a.id);
     expect(m.ok && m.phien.turns.length).toBe(1);
     expect(m.ok && m.phien.version).toBe(2);
