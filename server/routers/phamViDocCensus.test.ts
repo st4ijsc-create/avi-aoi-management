@@ -998,7 +998,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // Đợt 11.8 T7 (2026-10-30): aiPhien.danhSach + aiPhien.mo (query, ai_coding_sessions theo userId ⇒ C) + 6 mutation (OWNER ⇒ D) ⇒ C 456 · D 1221 · tong 2439.
 // Đợt 11.8 UX-D09 (2026-10-30): aiAgent.trangThaiHangCho (query, chỉ số lượt chờ của cổng ưu tiên, không dữ liệu nhà máy/người khác ⇒ C) ⇒ C 457 · tong 2440.
 // ★★ 2026-10-31 dieu-phoi GỘP 11.8 vào main 0cb46fa5b — ĐO trên cây gộp (main C 454/D 1213/S 720 + 11.8 C +4/D +8).
-const GHIM = { A: 35, B: 8, C: 458, D: 1221, S: 720, tong: 2442 } as const;
+// Đợt 11.3-C (2026-10-31): aiAgent.keHoachDangCho (query, ai_agent_runs theo userId ⇒ C) + duyetKeHoach (mutation, OWNER ⇒ D) ⇒ C 459 · D 1222 · tong 2444. ĐO trên nhánh.
+const GHIM = { A: 35, B: 8, C: 459, D: 1222, S: 720, tong: 2444 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
