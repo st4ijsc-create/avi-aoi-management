@@ -990,7 +990,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **S 719 → 720 · tong 2428 → 2429 · A/B/C/D KHÔNG đổi.** Query MỚI `commandLog.nhatKy`
 //   (nhật ký /scada/journal: lệnh + lần thử) — đọc có phạm vi (`mayTrongPhamVi` / `adapterTrongPhamVi` / `idsMayTrongPhamVi`) ⇒ nhóm S. Đo: ghim cũ
 //   (gốc 3819461fb) đỏ ĐÚNG +1 S / +1 tong. `tong` 2429 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 453, D: 1213, S: 720, tong: 2429 } as const;
+// 2026-10-30 Đợt 10.4b L0a' (do-model): +1 C aiChonModel.thongTinNgoai (thông tin cổng ngoài của CHÍNH người gọi — nhà máy từ resolveTenantFactoryScope,
+//   không đọc hàng tenant theo id người gọi khai) ⇒ C 454, tong 2429. aiChat.getMessages đọc thêm vết `ai_external_calls` nhưng LỌC theo
+//   userId phiên + nhà máy từ bộ phân giải (vetNgoaiTheoCall) ⇒ nhóm không đổi. Đo trên nhánh (đặt ghim cũ, đọc số nhận được).
+// ★★ 2026-10-30 · scada-master GỘP main 3b4a9693b (bàn giao C1+T2+T2B) — ĐO trên cây gộp: nhánh S +1 (commandLog.nhatKy) + main C +1 (aiChonModel.thongTinNgoai) ⇒ C 454, S 720, tong 2430.
+const GHIM = { A: 35, B: 8, C: 454, D: 1213, S: 720, tong: 2430 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

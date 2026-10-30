@@ -59,6 +59,11 @@ describe("HopDongYNgoai", () => {
   it("màn lập trình ⇒ KHÔNG có dòng 'người gõ = vận hành'", () => {
     dung(TT({ mucDuLieu: "ky-thuat" }), { beMat: "coding" });
     expect(screen.queryByTestId("hdy-nguoi-go")).toBeNull();
+    expect(screen.getByTestId("hdy-coding").textContent).toContain("lượt hai"); // lượt đầu ky-thuat / từ lượt hai van-hanh được nói rõ
+  });
+  it("chat/KB ⇒ KHÔNG có dòng riêng của màn lập trình", () => {
+    dung(TT());
+    expect(screen.queryByTestId("hdy-coding")).toBeNull();
   });
   it("người thường: KHÔNG thấy số token/USD của nhà máy; admin (khoá có) ⇒ thấy", () => {
     dung(TT());
@@ -77,7 +82,7 @@ describe("HopDongYNgoai", () => {
     expect(onDongY).not.toHaveBeenCalled();
   });
   it("tranVuot ⇒ nói đúng trần nào (lượt / nhà máy / người / phút)", () => {
-    for (const [tv, chu] of [["luot", "model"], ["nha-may", "nhà máy"], ["nguoi", "của bạn"], ["phut", "mỗi phút"]] as const) {
+    for (const [tv, chu] of [["luot", "model"], ["nha-may", "nhà máy"], ["nguoi", "của bạn"], ["luong", "luồng"], ["lan-phut", "mỗi phút"]] as const) {
       dung(TT({ duocPhep: false, lyDo: "NGOAI_VUOT_TRAN", tranVuot: tv, conLaiTranNgay: { nguoi: { token: 0 }, nhaMay: { duTranChoLuotNay: tv !== "nha-may" } } }));
       expect(screen.getByTestId("hdy-tran-vuot").textContent).toContain(chu);
       cleanup();

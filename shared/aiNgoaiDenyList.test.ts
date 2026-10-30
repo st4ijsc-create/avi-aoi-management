@@ -14,6 +14,9 @@ import {
   locKetQuaTimNgoai,
   phanQuyetTepNgoai,
   phanQuyetTepNgoaiThuc,
+  giaiTepNgoai,
+  giaiThuMucNgoai,
+  locKetQuaTimNgoaiThuc,
   phanQuyetThuMucNgoai,
 } from "./aiNgoaiDenyList";
 import * as hopCat from "../server/services/aiLocalTools/repoSandbox";
@@ -202,5 +205,56 @@ describe("thư mục + kết quả tìm", () => {
   it("laNoiDungNhiPhan: NUL trong 8000 ký tự đầu", () => {
     expect(laNoiDungNhiPhan("abc\u0000def")).toBe(true);
     expect(laNoiDungNhiPhan("văn bản thường")).toBe(false);
+  });
+});
+
+describe("★ L0a-b (rà kiem-dinh) — tên gợi bí mật lọt danh sách trắng .json / .txt / .ini", () => {
+  it.each([
+    "keys.json",
+    "config/key.txt",
+    "gcp-service_account.json",
+    "firebase-admin-sdk.json",
+    "private.ini",
+    "openai_api_key.txt",
+    "apikey.json",
+    "vault.json",
+    "wallet.txt",
+  ])("%s ⇒ DENIED_SECRET", (p) => {
+    expect(phanQuyetTepNgoai(p)).toBe("DENIED_SECRET");
+  });
+  it("không chặn nhầm tên mã thường có chữ cái trùng (monkey, keyboard, privacy-không)", () => {
+    for (const p of ["src/monkey.ts", "src/keyboard.ts", "docs/hotkeys.md"]) expect(phanQuyetTepNgoai(p), p).toBeNull();
+  });
+});
+
+describe("★ L0a-b — TOCTOU: giải trả đường dẫn THẬT; thư mục / tìm đệ quy qua symlink thư mục", () => {
+  const GOC = "/w/repo";
+  const fsGia = (bang: Record<string, string>) => async (p: string) => {
+    if (p in bang) return bang[p]!;
+    if (p === GOC) return GOC;
+    throw new Error("ENOENT");
+  };
+  it("giaiTepNgoai trả duongThuc = đường SAU symlink (tool đọc đúng đường đó)", async () => {
+    const realpath = fsGia({ "/w/repo/src/a.ts": "/w/repo/src/that/a.ts" });
+    expect(await giaiTepNgoai("src/a.ts", { goc: GOC, realpath })).toEqual({ ok: true, duongThuc: "/w/repo/src/that/a.ts" });
+    expect(await giaiTepNgoai(".env", { goc: GOC, realpath })).toEqual({ ok: false, ma: "DENIED_SECRET" });
+  });
+  it("giaiThuMucNgoai: gốc được; symlink thư mục trỏ vào uploads / ra ngoài gốc ⇒ chặn; thư mục thường ⇒ duongThuc", async () => {
+    const realpath = fsGia({ "/w/repo/src/lien-ket": "/w/repo/uploads", "/w/repo/src/ra-ngoai": "/home/u/.ssh", "/w/repo/src/lib": "/w/repo/src/lib" });
+    expect(await giaiThuMucNgoai("", { goc: GOC, realpath })).toEqual({ ok: true, duongThuc: GOC });
+    expect(await giaiThuMucNgoai("src/lien-ket", { goc: GOC, realpath })).toEqual({ ok: false, ma: "DENIED_DIR" });
+    expect(await giaiThuMucNgoai("src/ra-ngoai", { goc: GOC, realpath })).toEqual({ ok: false, ma: "PATH_REJECTED" });
+    expect(await giaiThuMucNgoai("src/lib", { goc: GOC, realpath })).toEqual({ ok: true, duongThuc: "/w/repo/src/lib" });
+  });
+  it("locKetQuaTimNgoaiThuc: kết quả tìm đệ quy đi qua symlink thư mục tới uploads / ngoài gốc bị bỏ dù đường hiển thị vô hại", async () => {
+    const realpath = fsGia({
+      "/w/repo/src/a.ts": "/w/repo/src/a.ts",
+      "/w/repo/src/lien-ket/u.ts": "/w/repo/uploads/u.ts",
+      "/w/repo/src/ra-ngoai/x.ts": "/home/u/x.ts",
+    });
+    const ds = [{ tep: "src/a.ts" }, { tep: "src/lien-ket/u.ts" }, { tep: "src/ra-ngoai/x.ts" }];
+    const r = await locKetQuaTimNgoaiThuc(ds, (d) => d.tep, { goc: GOC, realpath });
+    expect(r.giu.map((d) => d.tep)).toEqual(["src/a.ts"]);
+    expect(r.soBoDi).toBe(2);
   });
 });

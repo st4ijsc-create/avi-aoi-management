@@ -37,6 +37,16 @@ export interface HangKetQua {
   chiPhiUocUsd: number | null;
   ketCuc: "ok" | "loi" | "tu-choi" | "khong-ro";
   maLoi?: string;
+  /** ★ 10.4b L0a' (0417) — `bamCauTraLoi(noiDung)` của câu trả lời nhà cung cấp (chỉ hàng ok). */
+  bamTraLoi?: string;
+}
+
+/**
+ * ★ 10.4b L0a' — băm CÂU TRẢ LỜI để đối chiếu dấu nguồn: sha256 hex của chuỗi đã chuẩn hoá NFC + bỏ khoảng trắng đầu/cuối (client lưu
+ * đúng chữ máy chủ phát; lệch chỉ ở khoảng trắng biên / dạng Unicode không làm mất dấu). Cùng hàm ở cổng (ghi) và khi lưu tin (so).
+ */
+export function bamCauTraLoi(s: string): string {
+  return createHash("sha256").update(String(s ?? "").normalize("NFC").trim(), "utf8").digest("hex");
 }
 
 /** sha256 hex của bản ĐÃ che. */
@@ -65,9 +75,9 @@ export async function ghiYDinh(db: DbSo, h: HangYDinh): Promise<number> {
 export async function ghiKetQua(db: DbSo, yDinhId: number, h: HangKetQua): Promise<void> {
   await db.execute(sql`
     INSERT INTO ai_external_calls ("factoryId", "nhaMayDuLieu", loai, "yDinhId", "userId", "flowId", "runId", "tuDong", "nhaCungCap", model, "mucDich",
-      "tokenVao", "tokenRa", "chiPhiUocUsd", "ketCuc", "maLoi")
+      "tokenVao", "tokenRa", "chiPhiUocUsd", "ketCuc", "maLoi", "bamTraLoi")
     SELECT "factoryId", "nhaMayDuLieu", 'ket-qua', id, "userId", "flowId", "runId", "tuDong", "nhaCungCap", model, "mucDich",
-      ${h.tokenVao}, ${h.tokenRa}, ${h.chiPhiUocUsd}, ${h.ketCuc}, ${cat(h.maLoi, 48)}
+      ${h.tokenVao}, ${h.tokenRa}, ${h.chiPhiUocUsd}, ${h.ketCuc}, ${cat(h.maLoi, 48)}, ${h.bamTraLoi ?? null}
     FROM ai_external_calls WHERE id = ${yDinhId} AND loai = 'y-dinh'
     ON CONFLICT ("yDinhId") WHERE loai = 'ket-qua' DO NOTHING`);
 }

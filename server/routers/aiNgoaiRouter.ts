@@ -47,6 +47,11 @@ const CAU_HINH = z.object({
   tranTokenLuongNgay: z.number().int().positive().nullable(),
   tranTokenLuot: z.number().int().positive().nullable(),
   tranLanPhut: z.number().int().min(1).max(600),
+  // ★ 10.4b L0a' (0418) — trần mỗi RUN; khoảng = CHECK `ai_ngoai_nha_may_tran_run_chk` (vắng ⇒ giữ giá trị đang có / mặc định cột)
+  tranTienLuotUsd: z.number().positive().nullable().optional(),
+  tranVongLuot: z.number().int().min(1).max(200).optional(),
+  tranByteDocLuot: z.number().int().min(1024).max(4_194_304).optional(),
+  tranTepDocLuot: z.number().int().min(1).max(500).optional(),
 });
 
 function loiUrl(e: unknown): never {
@@ -160,7 +165,12 @@ export const aiNgoaiRouter = router({
   ghiCauHinh: adminProcedure.input(CAU_HINH).mutation(async ({ ctx, input }) => {
     if (!(await nhaMayNgoaiTrongPhamVi(ctx, input.factoryId))) throw khongCoKhoa();
     const db = await dbHoacLoi();
-    const moi = { ...input, tranTienNgayUsd: input.tranTienNgayUsd === null ? null : String(input.tranTienNgayUsd), capNhatBoi: ctx.user.id, capNhatLuc: new Date() };
+    const { tranTienLuotUsd, ...conLai } = input;
+    const moi = {
+      ...conLai,
+      tranTienNgayUsd: input.tranTienNgayUsd === null ? null : String(input.tranTienNgayUsd),
+      ...(tranTienLuotUsd !== undefined ? { tranTienLuotUsd: tranTienLuotUsd === null ? null : String(tranTienLuotUsd) } : {}),
+      capNhatBoi: ctx.user.id, capNhatLuc: new Date() };
     await giaoDichNgoai(db, async (tx) => {
       const [cu] = await tx.select().from(aiNgoaiNhaMay).where(eq(aiNgoaiNhaMay.factoryId, input.factoryId));
       await tx.insert(aiNgoaiNhaMay).values(moi).onConflictDoUpdate({ target: aiNgoaiNhaMay.factoryId, set: moi });
