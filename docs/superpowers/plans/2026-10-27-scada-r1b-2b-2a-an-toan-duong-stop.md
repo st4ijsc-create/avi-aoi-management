@@ -329,6 +329,37 @@ Hướng gợi ý của dieu-phoi:
 
 **Thứ tự chạy 2a sau chốt 2026-10-30:** T2 → T2B → T3A → T3 (S7 / MC) → T4 …
 
+### Task 3B-0: Mitsubishi MC — KHOÁ AN TOÀN (fail-closed) tới khi có 3B (backlog 84 — dieu-phoi chốt 2026-10-30, làm TRƯỚC Task 3)
+
+**Phát hiện (thăm dò T3, mcprotocol 0.1.2 thật qua `MitsubishiMcDriver`, máy chủ 1E giả):**
+- Thư viện đọc end code 1E ở byte 9 thay vì byte 1. Vì thế PLC trả ack ĐÚNG 2 byte (`83 00`) ⇒ `ERR_OUT_OF_RANGE` ném trong handler socket ⇒ uncaughtException ⇒ tiến trình trung tâm (`index.ts` handler) và edge gateway THOÁT mã 1. Nghĩa là: MỘT lời ghi MC THÀNH CÔNG làm sập toàn bộ server.
+- Phản hồi lỗi ≥ 10 byte ⇒ `{ok:true}`, tức ACK GIẢ.
+- 1E không có số thứ tự ⇒ ack muộn có thể hoàn tất lời ghi kế.
+- Nhánh "MC write busy" là mã chết.
+
+**Quyết định (dieu-phoi):** MC FAIL-CLOSED. Đây là thay đổi hành vi theo hướng an toàn. 3B đầy đủ (parse 1E đúng, cô lập ngoại lệ, hạ phiên, không ok từ phản hồi lỗi, busy) để ở backlog 84, làm sau T3 / T3A.
+
+**Yêu cầu:**
+1. **GHI.** Mọi lời ghi MC ⇒ từ chối TRƯỚC khi gửi, bằng mã ổn định `OT_MC_TAM_KHOA`. Có i18n vi/en/zh với lý do "thư viện mcprotocol lỗi phân tích phản hồi — chờ 3B". KHÔNG gửi gói nào. STOP qua adapter MC ⇒ `failed`, hiện băng E-STOP cứng (`khong_dat`), không bao giờ ok.
+2. **ĐỌC.** Thăm dò xem đường đọc có chạm cùng đường phân tích / ném trong handler socket không.
+   - Có ⇒ đọc cũng khoá: chất lượng bad kèm lý do `OT_MC_TAM_KHOA`.
+   - Không ⇒ giữ đọc, nhưng bọc cô lập ngoại lệ để không bao giờ làm sập tiến trình.
+   - Bằng chứng thăm dò ghi vào báo cáo.
+3. **KẾT NỐI.** Khi khoá: KHÔNG mở socket MC, để handler không thể ném từ dữ liệu không mời. Nếu ở mục 2 đọc được giữ thì kết nối mở cho đọc, và handler phải được cô lập.
+4. **UI / posture.** Adapter MC hiện trạng thái "tạm khoá" có lý do, qua health / lastError / posture sẵn có của adapter. Không sửa tệp client cấm của Part B khi chưa báo bộ điều khiển.
+5. **Test** (máy chủ 1E giả gửi ack 2 byte):
+   - tiến trình test KHÔNG nhận uncaughtException (hôm nay có);
+   - lời ghi bị từ chối trước khi gửi (đếm gói = 0);
+   - STOP qua MC ⇒ `failed` + `OT_MC_TAM_KHOA`;
+   - đọc theo kết luận mục 2.
+
+   Mỗi ca có đột biến đỏ.
+
+- Files: `server/services/ot/drivers/mitsubishiMcDriver.ts` (+ nơi đăng ký mã / i18n / posture nếu cần). Test mới `server/services/ot/drivers/mcTamKhoa.r1b2b2.test.ts`.
+- Commit: `fix(ot): MC fail-closed - moi loi ghi MC bi tu choi truoc khi gui (OT_MC_TAM_KHOA), khong mo socket khi khoa; mcprotocol 0.1.2 doc end code 1E sai byte => ack DUNG lam sap tien trinh, phan hoi loi >= 10 byte => ok gia (R1b-2b-2a T3B-0, backlog 84)`. kiem-dinh rà.
+
+**Thứ tự chạy 2a cập nhật 2026-10-30 tối:** … T3A → **T3B-0** → T3 (S7) → T4 … ; 3B đầy đủ = backlog 84.
+
 ### Task 3: Hết hạn của CHÍNH driver ⇒ `timeout` — S7 / MC qua thăm dò thư viện thật (mục 66, phần 2)
 
 **Quyết định (một đoạn):** nodes7 và mcprotocol báo hết hạn ghi KHÔNG bằng lỗi mà bằng `writeDoneCallback(anyBadQualities = true)` — y hệt lúc PLC trả lỗi ghi. Phân biệt bằng `errCode` của item (cách T4 R1b-2b-1 làm cho MC đọc), chỉ sau khi thăm dò thư viện thật. Bộ hẹn dự phòng `withTimeout(…, 5000)` của hai driver nâng lên `HAN_DU_PHONG_GHI_DRIVER_MS` (cùng lý do Task 2).

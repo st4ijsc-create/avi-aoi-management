@@ -6,6 +6,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OtWrite } from "../otDriver";
+import { beforeAll as __truocHetMc, afterAll as __sauCungMc } from "vitest";
+import { __moKhoaGhiMcChoTest } from "./mitsubishiMcDriver";
+
+// R1b-2b-2a T3B-0 — ghi MC TẠM KHOÁ trong sản xuất (OT_MC_TAM_KHOA, mcTamKhoa.r1b2b2.test.ts). Các ca ghi MC của tệp này kiểm logic ghi
+// sẽ dùng lại ở 3B (backlog 84) ⇒ mở khoá CHỈ trong tệp test này (cờ chỉ-vitest), khôi phục sau tệp.
+__truocHetMc(() => {
+  __moKhoaGhiMcChoTest(true);
+});
+__sauCungMc(() => {
+  __moKhoaGhiMcChoTest(false);
+});
 
 beforeEach(() => {
   vi.resetModules();
@@ -270,6 +281,8 @@ describe("EtherNet/IP — ghi bool một luật", () => {
     const plc = {
       connect: vi.fn(async () => {}),
       newTag: vi.fn((name: string) => ({ name, value: undefined as unknown })),
+      // T3A commit 2 (D1) — driver lấy kiểu CIP từ danh sách tag mà thư viện nạp lúc connect (state.tagList)
+      state: { tagList: { getTag: (n: string) => ({ name: n, type: { code: 0xc4, structure: false, arrayDims: 0 } }) } },
       readTag: vi.fn(async () => {}),
       writeTag: vi.fn(async () => {}),
       disconnect: vi.fn(async () => {}),

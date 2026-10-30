@@ -19,6 +19,17 @@ import { EventEmitter } from "node:events";
 import net from "node:net";
 import type { OtDriver } from "../otDriver";
 import { batDauDoLag, hieuChuanChuKy, type PhuThuocDoLag } from "../../../testing/doLagBucleSuKien";
+import { beforeAll as __truocHetMc, afterAll as __sauCungMc } from "vitest";
+import { __moKhoaGhiMcChoTest } from "./mitsubishiMcDriver";
+
+// R1b-2b-2a T3B-0 — ghi MC TẠM KHOÁ trong sản xuất (OT_MC_TAM_KHOA, mcTamKhoa.r1b2b2.test.ts). Các ca ghi MC của tệp này kiểm logic ghi
+// sẽ dùng lại ở 3B (backlog 84) ⇒ mở khoá CHỈ trong tệp test này (cờ chỉ-vitest), khôi phục sau tệp.
+__truocHetMc(() => {
+  __moKhoaGhiMcChoTest(true);
+});
+__sauCungMc(() => {
+  __moKhoaGhiMcChoTest(false);
+});
 
 // T17 fix round 1 (review Minor 5) — 500 ms: vẫn nhỏ hơn lỗi 5000 ms một bậc, bớt chập chờn trên máy tải nặng.
 const HAN_NHANH_MS = 500;
@@ -216,6 +227,8 @@ describe("R1b-2b-1 EtherNet/IP (st-ethernet-ip) — lệnh ghi đang bay ⇒ 'ti
           Object.assign(plc, {
             connect: vi.fn(async () => {}),
             newTag: vi.fn((name: string) => ({ name, value: undefined })),
+            // T3A commit 2 (D1) — driver lấy kiểu CIP từ danh sách tag mà thư viện nạp lúc connect (state.tagList)
+            state: { tagList: { getTag: (n: string) => ({ name: n, type: { code: 0xc4, structure: false, arrayDims: 0 } }) } },
             soGhi: 0,
             // st-ethernet-ip 2.7.5: disconnect() hạ socket nhưng lệnh ghi đang chờ chỉ xong ở promiseTimeout(timeout_sp) — ở đây: không bao giờ
             writeTag: vi.fn(() => {

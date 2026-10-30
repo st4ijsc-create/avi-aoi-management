@@ -19127,6 +19127,7 @@
     "maLoi": {
       "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
       "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
+      "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
       "EDGE_REPORTED": "Edge báo lệnh không thành công",
       "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
       "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",
@@ -24386,6 +24387,7 @@
         "quaHanMotPhan": "Máy chủ chậm — STOP HMI CHƯA được gửi tới adapter {{list}}.",
         "gioiHan": "Máy chủ từ chối vì quá nhiều yêu cầu (HTTP 429) — STOP HMI CHƯA được gửi.",
         "khongRo": "Không rõ adapter {{list}} đã nhận STOP hay chưa — máy có thể CHƯA dừng.",
+        "khongDat": "STOP HMI KHÔNG tới được adapter {{list}} — dùng E-STOP cứng tại máy.",
         "nutBo": "Đã hiểu"
       },
       "khanCap": {

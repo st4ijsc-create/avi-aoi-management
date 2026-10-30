@@ -19501,6 +19501,7 @@
     "maLoi": {
       "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
       "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
+      "OT_MC_TAM_KHOA": "三菱 MC 控制已临时锁定：mcprotocol 库错误解析 PLC 回复 — 命令未发送。等待修复 3B；如需停机请使用设备上的硬接线急停",
       "EDGE_REPORTED": "边缘节点报告命令未成功",
       "READBACK_UNAVAILABLE": "已写入但无法回读 — 请在设备处检查",
       "READBACK_MISMATCH": "已写入但回读值不一致 — 请在设备处检查",
@@ -24386,6 +24387,7 @@
         "quaHanMotPhan": "服务器响应缓慢 — HMI STOP 未发送到适配器 {{list}}。",
         "gioiHan": "服务器因请求过多而拒绝（HTTP 429）— HMI STOP 未发送。",
         "khongRo": "无法确认适配器 {{list}} 是否已收到 STOP — 设备可能尚未停止。",
+        "khongDat": "HMI STOP 未送达适配器 {{list}} — 请在设备处使用硬接线急停（E-STOP）。",
         "nutBo": "知道了"
       },
       "khanCap": {

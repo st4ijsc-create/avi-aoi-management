@@ -248,7 +248,7 @@ import { logger } from "../../logger";
 import { StubDriver, createStubDriver } from "../ot/drivers/stubDriver";
 import { ModbusDriver } from "../ot/drivers/modbusDriver";
 import { S7Driver } from "../ot/drivers/s7Driver";
-import { MitsubishiMcDriver, MC_ERRCODE_QUA_HAN_GOI } from "../ot/drivers/mitsubishiMcDriver";
+import { MitsubishiMcDriver, MC_ERRCODE_QUA_HAN_GOI, __moKhoaGhiMcChoTest } from "../ot/drivers/mitsubishiMcDriver";
 import { EthernetIpDriver } from "../ot/drivers/ethernetIpDriver";
 import { SlmpDriver } from "../ot/drivers/slmpDriver";
 import type { OtDriver, OtProtocol, OtTagAddress, SuKienDoc } from "../ot/otDriver";
@@ -987,9 +987,21 @@ describe.skipIf(!CHAY_NGHIEM_THU)(
         expect(laDocTot(ticks[0])).toBe(true);
         expect(laTickHong(ticks[0])).toBe(false);
         expect(d.isConnected()).toBe(true);
-        const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
-        expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
-        expect(writeItems).toHaveBeenCalledTimes(1);
+        // R1b-2b-2a T3B-0 (backlog 84) — sản xuất: ghi MC TẠM KHOÁ ⇒ STOP `ok:false` OT_MC_TAM_KHOA, KHÔNG vào thư viện (mcTamKhoa.r1b2b2.test.ts).
+        const khoa = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
+        expect(khoa).toHaveLength(1);
+        expect(khoa[0].ok).toBe(false);
+        expect(String(khoa[0].error)).toMatch(/^OT_MC_TAM_KHOA: /);
+        expect(writeItems).not.toHaveBeenCalled();
+        // Thuộc tính của T4 (phiên GIỮ sau lỗi đọc nhanh ⇒ STOP vào thư viện) giữ cho logic ghi 3B dùng lại — cờ mở khoá CHỈ-test.
+        __moKhoaGhiMcChoTest(true);
+        try {
+          const kq = await d.writeTags([{ tagKey: "stop_pin", address: "M200", value: true, dataType: "bool", dungGhim: true } as never]);
+          expect(kq).toEqual([{ tagKey: "stop_pin", ok: true }]);
+          expect(writeItems).toHaveBeenCalledTimes(1);
+        } finally {
+          __moKhoaGhiMcChoTest(false);
+        }
       } finally {
         await d.disconnect();
       }
