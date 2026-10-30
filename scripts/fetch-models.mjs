@@ -261,7 +261,13 @@ export async function fetchEntry(entry, {
     await pipeline(body, guard, sink);
   } catch (err) {
     // keep .part for resume unless the size guard rejected it
-    if (String(err?.message ?? err).includes("size guard")) await fsp.rm(partPath, { force: true });
+    if (String(err?.message ?? err).includes("size guard")) {
+      // pipeline() đã huỷ `sink`, nhưng `createWriteStream` mở tệp BẤT ĐỒNG BỘ: nếu lỗi tới trước khi mở xong, tệp vẫn được tạo SAU lệnh rm
+      // (đua; thấy khi máy tải) ⇒ chờ sink đóng hẳn rồi mới dọn.
+      sink.destroy();
+      if (!sink.closed) await new Promise((xong) => sink.once("close", xong));
+      await fsp.rm(partPath, { force: true });
+    }
     throw err;
   }
 
