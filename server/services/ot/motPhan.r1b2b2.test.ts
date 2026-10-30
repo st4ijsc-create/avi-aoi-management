@@ -35,7 +35,7 @@ vi.mock("./adapterFacade", () => ({
 }));
 
 import { startS7commSim, type S7commSim } from "./drivers/__s7commSim";
-import { S7Driver } from "./drivers/s7Driver";
+import { S7Driver, ketQuaGhiTheoItemS7 } from "./drivers/s7Driver";
 import { executeOtDeviceWrite, _resetAdapterCommandQueuesForTests } from "./otDeviceWrite";
 import { ketCucLo, motPhanCua, motPhanTuKetQua, MA_MOT_PHAN } from "./motPhan";
 import { dispatchOtOnEdge } from "./otEdgeDispatch";
@@ -138,6 +138,39 @@ describe("T3E — S7 (nodes7 0.3.18 THẬT + __s7commSim): kết quả theo item
     expect(ex.outcomes.every((o) => o.status === "timeout")).toBe(true);
     expect(ketCucLo(theoTag(ex), ex.timedOut)).toEqual({ ok: false, status: "timeout", motPhan: null });
   }, 15_000);
+});
+
+// T3E fix 1 (review M-1) — các nhánh an toàn của phân loại theo item, trên `writePacketArray` GIẢ đúng hình nodes7 0.3.18 (gói: timeoutError + itemList;
+// item: useraddr + writeResponse). Không PLC, không item > PDU.
+describe("T3E fix 1 — ketQuaGhiTheoItemS7: nhánh an toàn (gói giả)", () => {
+  const goi = (items: Array<{ useraddr: string; writeResponse?: number }>, timeoutError: boolean | undefined = false) => ({ timeoutError, itemList: items.map((i) => ({ valid: false, ...i })) });
+
+  it("(a) item bị CHIA qua hai gói, mã trộn (0xFF + 0x0A) ⇒ 'khong_ro' (không rõ — không phải một phần); item kia 0xFF ⇒ 'ap'", () => {
+    const conn = { writePacketArray: [goi([{ useraddr: "x", writeResponse: 0xff }, { useraddr: "y", writeResponse: 0xff }]), goi([{ useraddr: "x", writeResponse: 0x0a }])] };
+    const m = ketQuaGhiTheoItemS7(conn, ["x", "y"]);
+    expect(m && Object.fromEntries(m)).toEqual({ x: "khong_ro", y: "ap" });
+  });
+
+  it("(a') item chia hai gói, cả hai phần 0xFF ⇒ 'ap'; cả hai phần 0x0A ⇒ 'khong_ap'", () => {
+    expect(Object.fromEntries(ketQuaGhiTheoItemS7({ writePacketArray: [goi([{ useraddr: "x", writeResponse: 0xff }]), goi([{ useraddr: "x", writeResponse: 0xff }])] }, ["x"])!)).toEqual({ x: "ap" });
+    expect(Object.fromEntries(ketQuaGhiTheoItemS7({ writePacketArray: [goi([{ useraddr: "x", writeResponse: 0x0a }]), goi([{ useraddr: "x", writeResponse: 0x05 }])] }, ["x"])!)).toEqual({ x: "khong_ap" });
+  });
+
+  it("(b) gói CHƯA GỬI (timeoutError === true) ⇒ item của nó 'khong_ap' (không byte nào rời máy), dù mang mã cũ 0xFF; gói đã gửi 0xFF ⇒ 'ap'", () => {
+    const conn = { writePacketArray: [goi([{ useraddr: "a", writeResponse: 0xff }]), goi([{ useraddr: "b", writeResponse: 0xff }], true)] };
+    expect(Object.fromEntries(ketQuaGhiTheoItemS7(conn, ["a", "b"])!)).toEqual({ a: "ap", b: "khong_ap" });
+  });
+
+  it("(c) khoá yêu cầu KHÔNG có trong gói nào ⇒ null (không phân biệt được theo item ⇒ hành vi cũ: cả lô 'bad write quality')", () => {
+    const conn = { writePacketArray: [goi([{ useraddr: "a", writeResponse: 0xff }])] };
+    expect(ketQuaGhiTheoItemS7(conn, ["a", "b"])).toBeNull();
+  });
+
+  it("(d) cấu trúc không đọc được ⇒ null, không ném", () => {
+    expect(ketQuaGhiTheoItemS7(null, ["a"])).toBeNull();
+    expect(ketQuaGhiTheoItemS7({ writePacketArray: "x" }, ["a"])).toBeNull();
+    expect(ketQuaGhiTheoItemS7({ get writePacketArray() { throw new Error("boom"); } }, ["a"])).toBeNull();
+  });
 });
 
 describe("T3E — motPhanTuKetQua / motPhanCua (một nơi suy)", () => {
