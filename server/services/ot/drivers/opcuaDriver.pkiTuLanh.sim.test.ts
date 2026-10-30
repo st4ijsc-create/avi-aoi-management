@@ -7,7 +7,7 @@
  * Đếm "số lần nối" bằng sự kiện `newChannel` của server giả (bắn ở HEL/ACK, trước khi client kiểm chứng chỉ server).
  * Chạy được trên cả Node 24 (watcher tự lành, 0 lần dựng lại) lẫn Node 26 (dựng lại đúng 1 lần).
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -113,7 +113,14 @@ const sha1 = (pemOrDer: Buffer) => createHash("sha1").update(new X509Certificate
 const serverCertThumb = () => sha1(fs.readFileSync(server.certificateFile));
 const demTep = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).length : 0);
 
+function beforeEachResetTran() {
+  beforeEach(async () => {
+    (await import("./opcuaSecurity")).__datLaiTranQuetLaiPkiChoTest();
+  });
+}
+
 describe("vá PKI Node 26 — tự lành đúng một lần, không bao giờ tự tin cậy", () => {
+  beforeEachResetTran();
   it("cầu chì: thumbprint theo NỘI DUNG khớp tệp chứng chỉ của server giả", () => {
     expect(serverCertThumb()).toMatch(/^[0-9a-f]{40}$/);
   });
@@ -183,6 +190,37 @@ describe("vá PKI Node 26 — tự lành đúng một lần, không bao giờ t�
     expect(err?.message).toMatch(/BadCertificateUntrusted/);
     expect(sec.opcuaPkiThongKe.quetLai - quetLai0).toBe(1);
     expect(channels).toBe(2); // 1 nối + ĐÚNG 1 lần thử lại, không lặp
+  });
+
+  it("★ TRẦN tần suất: hai lần connect lỗi liền nhau trên cùng gốc PKI ⇒ quét lại đúng 1 lần; hết thời gian chờ ⇒ quét được lại", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/);
+    const rejectedDir = path.join(pki, "rejected");
+    const trustedDir = path.join(pki, "trusted", "certs");
+    fs.mkdirSync(trustedDir, { recursive: true });
+    for (const f of fs.readdirSync(rejectedDir)) fs.copyFileSync(path.join(rejectedDir, f), path.join(trustedDir, f)); // rejected thắng ⇒ mọi lần nối đều lỗi
+    const quetLai0 = sec.opcuaPkiThongKe.quetLai;
+    channels = 0;
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/); // lần 1: quét + thử lại ⇒ 2 kênh
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/); // lần 2 trong thời gian chờ: KHÔNG quét ⇒ 1 kênh
+    expect(sec.opcuaPkiThongKe.quetLai - quetLai0).toBe(1);
+    expect(channels).toBe(3);
+    sec.__datLaiTranQuetLaiPkiChoTest(); // mô phỏng hết 30 s
+    expect((await thuNoi()).err?.message).toMatch(/BadCertificateUntrusted/);
+    expect(sec.opcuaPkiThongKe.quetLai - quetLai0).toBe(2);
+  });
+
+  it("★ fail-closed: verify ĐỒNG THỜI với reloadCertificates chỉ có thể ra từ chối cho chứng chỉ chưa được tin — không bao giờ Good", async () => {
+    const pki = pkiMoi();
+    const sec = await import("./opcuaSecurity");
+    const cm = await sec.getOpcuaClientCertificateManager(req("node-opcua"), pki, false);
+    const cert = req("node-opcua-crypto").readCertificateChain(server.certificateFile)[0];
+    for (let i = 0; i < 10; i++) {
+      const kq = await Promise.all([cm.reloadCertificates(), cm.verifyCertificate(cert), cm.verifyCertificate(cert), cm.verifyCertificate(cert)]);
+      for (const st of kq.slice(1)) expect(String(st)).toMatch(/BadCertificateUntrusted/);
+    }
+    expect(demTep(path.join(pki, "trusted", "certs"))).toBe(0); // verify/reload không bao giờ tự tin cậy
   });
 
   it("chungChiDaTinTrenDia: so theo NỘI DUNG, không theo tên tệp; tệp rác bị bỏ qua", async () => {

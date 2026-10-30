@@ -335,6 +335,13 @@ export function getOpcuaClientCertificateManager(pkg: any, pkiDir: string, trust
 const chungChiBiTuChoiCuoi = new WeakMap<object, string>();
 /** Số lần quét lại trust-list vì chỉ mục cũ (quan sát được từ test / chẩn đoán). */
 export const opcuaPkiThongKe = { quetLai: 0 };
+/** Trần tần suất: tối đa MỘT lần quét lại / gốc PKI / 30 s — vòng nối lại của adapter (hoặc cert nằm cả trusted lẫn rejected) không được quét đĩa liên tục. */
+export const OPCUA_PKI_QUET_LAI_TOI_THIEU_MS = 30_000;
+const quetLaiLanCuoi = new Map<string, number>();
+/** Chỉ cho test: xoá bộ nhớ trần tần suất. */
+export function __datLaiTranQuetLaiPkiChoTest(): void {
+  quetLaiLanCuoi.clear();
+}
 
 /** DER của chứng chỉ ĐẦU trong một chuỗi DER nối nhau (verifyCertificate nhận Buffer.concat(chain)). */
 function derDau(buf: Buffer): Buffer {
@@ -397,6 +404,10 @@ export async function quetLaiTrustListNeuDaTinTrenDia(root: string, cm: any): Pr
   const thumb = chungChiBiTuChoiCuoi.get(cm);
   if (!thumb || typeof cm?.reloadCertificates !== "function" || !chungChiDaTinTrenDia(root, thumb)) return false;
   chungChiBiTuChoiCuoi.delete(cm);
+  const bay = Date.now();
+  const lanCuoi = quetLaiLanCuoi.get(root);
+  if (lanCuoi !== undefined && bay - lanCuoi < OPCUA_PKI_QUET_LAI_TOI_THIEU_MS) return false; // trong thời gian chờ ⇒ giữ nguyên lỗi cũ, không quét
+  quetLaiLanCuoi.set(root, bay); // đặt TRƯỚC khi quét: hai nối đồng thời cùng gốc chỉ một bên quét
   await cm.reloadCertificates();
   opcuaPkiThongKe.quetLai++;
   return true;
