@@ -53,7 +53,7 @@ import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
 import { TongQuanDuyet, neoTheDuyet } from "./TongQuanDuyet";
 import { khoaTheCon } from "./tongQuanThayDoi";
 import { canhBaoCuaDeXuat, idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucAgentCon, type MucDongThoiGian } from "./trangThaiAgent";
-import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
+import type { HookAgent, TheDuyetMuc, TheKeHoachMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
 
@@ -610,6 +610,115 @@ export function BannerNguCanhDay({ phanTram }: { phanTram: number | null }) {
  * Thẻ duyệt của con dùng CHÍNH `TheDuyetAgent` (duyệt bằng `aiAgent.duyet {actionId}` như thẻ thường — máy chủ định tuyến theo actionId).
  * Nhãn "từ repo" (`tuRepo`) cạnh tên agent: người đọc biết định nghĩa này do tệp trong repo, không phải dựng sẵn.
  */
+function cauLoiKeHoach(t: T, ma: string): string {
+  switch (ma) {
+    case "NOT_FOUND":
+      return t("repoWs.agent.keHoachDuyet.loi.notFound", "Không tìm thấy kế hoạch của lượt này (có thể lượt đã kết thúc).");
+    case "DA_QUYET":
+      return t("repoWs.agent.keHoachDuyet.loi.daQuyet", "Kế hoạch này đã có quyết định.");
+    case "PERMISSION_DENIED":
+      return t("repoWs.agent.keHoachDuyet.loi.quyen", "Bạn không có quyền duyệt kế hoạch này.");
+    case "LOI_CSDL":
+      return t("repoWs.agent.keHoachDuyet.loi.csdl", "Máy chủ chưa ghi được quyết định — thử lại.");
+    default:
+      // mã máy-đọc-được lạ ⇒ câu chung; chuỗi đã dịch (từ mapTrpcError) ⇒ hiện nguyên
+      return /^[A-Z][A-Z_]+$/.test(ma) ? t("repoWs.agent.keHoachDuyet.loi.chung", "Chưa gửi được quyết định — thử lại.") : ma;
+  }
+}
+
+/**
+ * (Đợt 11.3-C, UX-D02) thẻ "Kế hoạch chờ duyệt": người duyệt MỘT kế hoạch cụ thể (nhận diện bằng băm máy chủ) trước khi agent
+ * chạy tool ghi/lệnh kế tiếp. Các bước là chữ MODEL viết ⇒ text node trơn (không markdown). Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh.
+ * Enter = Duyệt, Esc = Bác — CHỈ khi chính thẻ đang giữ tiêu điểm (không ăn phím của ô nhập/nút khác).
+ */
+function TheKeHoachChoDuyet({ m, agent, khongTinCay }: { m: TheKeHoachMuc; agent: HookAgent; khongTinCay: boolean }) {
+  const { t } = useTranslation();
+  const dangGui = m.trangThai === "dang-gui";
+  const cho = m.trangThai === "cho" || dangGui;
+  // mở lại trang / nối lại: hỏi sổ một lần cho mỗi thẻ đang chờ (băm) — thẻ có thể đã được quyết ở nơi khác
+  useEffect(() => {
+    if (m.trangThai === "cho") void agent.lamMoiKeHoach();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.bam]);
+  const nhan: Record<string, string> = {
+    "da-duyet": t("repoWs.agent.keHoachDuyet.daDuyet", "Đã duyệt kế hoạch."),
+    bac: t("repoWs.agent.keHoachDuyet.bac", "Đã bác kế hoạch — agent sẽ không chạy tiếp tool ghi/lệnh theo kế hoạch này."),
+    "het-gio": t("repoWs.agent.keHoachDuyet.hetGio", "Hết thời gian chờ duyệt — kế hoạch bị bác."),
+    "da-doi": t("repoWs.agent.keHoachDuyet.daDoi", "Kế hoạch đã đổi — thẻ này không còn đúng."),
+    "het-hieu-luc": t("repoWs.agent.keHoachDuyet.hetHieuLuc", "Lượt đã kết thúc — không còn chờ duyệt."),
+  };
+  return (
+    <div
+      data-testid="agent-ke-hoach-duyet"
+      data-trang-thai={m.trangThai}
+      data-bam={m.bam}
+      tabIndex={cho ? 0 : -1}
+      aria-label={t("repoWs.agent.keHoachDuyet.tieuDe", "Kế hoạch chờ duyệt")}
+      onKeyDown={(e) => {
+        if (!cho || dangGui || e.target !== e.currentTarget) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void agent.quyetKeHoach(m, "duyet");
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          void agent.quyetKeHoach(m, "bac");
+        }
+      }}
+      className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-amber-800 dark:bg-amber-950/20"
+    >
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-medium text-amber-900 dark:text-amber-200">
+        <ListTodo className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>{t("repoWs.agent.keHoachDuyet.tieuDe", "Kế hoạch chờ duyệt")}</span>
+        <span className="tabular-nums text-[11px] font-normal text-muted-foreground">{t("repoWs.agent.keHoachDuyet.soBuoc", "{{n}} bước", { n: m.viec.length })}</span>
+      </div>
+      {khongTinCay && (
+        <p data-testid="agent-ke-hoach-khong-tin-cay" className="mb-1 flex items-start gap-1 rounded border border-red-300 bg-red-50 px-1.5 py-1 text-[11px] text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+          <span>
+            {t("repoWs.agent.keHoachDuyet.khongTinCay", "KHÔNG TIN CẬY: lượt này đã đọc nội dung đáng ngờ hoặc dùng agent từ repo — kế hoạch có thể bị nội dung đó dẫn dắt. Đọc kỹ từng bước trước khi duyệt.")}
+          </span>
+        </p>
+      )}
+      <ol className="list-decimal space-y-0.5 pl-5">
+        {m.viec.map((v, i) => (
+          <li key={i} className="min-w-0 whitespace-pre-wrap break-words">
+            {v.noiDung}
+          </li>
+        ))}
+      </ol>
+      {cho && (
+        <>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {t("repoWs.agent.keHoachDuyet.giaiThich", "Duyệt kế hoạch chưa duyệt từng thẻ ghi/lệnh — mỗi thẻ vẫn cần bạn duyệt riêng.")}
+          </p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Button size="sm" disabled={dangGui} data-testid="agent-ke-hoach-duyet-nut-duyet" onClick={() => void agent.quyetKeHoach(m, "duyet")}>
+              {dangGui ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+              {t("repoWs.agent.keHoachDuyet.nutDuyet", "Duyệt kế hoạch")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={dangGui} data-testid="agent-ke-hoach-duyet-nut-bac" onClick={() => void agent.quyetKeHoach(m, "bac")}>
+              {t("repoWs.agent.keHoachDuyet.nutBac", "Bác kế hoạch")}
+            </Button>
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">{t("repoWs.agent.keHoachDuyet.phim", "Khi thẻ này đang được chọn: Enter = duyệt · Esc = bác.")}</p>
+        </>
+      )}
+      {m.trangThai === "da-duyet" && (
+        <p data-testid="agent-ke-hoach-ket-qua" className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+          <Check className="h-3 w-3" aria-hidden />
+          {nhan["da-duyet"]}
+        </p>
+      )}
+      {m.trangThai !== "da-duyet" && !cho && (
+        <p data-testid="agent-ke-hoach-ket-qua" className="mt-1 text-[11px] text-muted-foreground">{nhan[m.trangThai] ?? ""}</p>
+      )}
+      {m.maLoi && cho && (
+        <p data-testid="agent-ke-hoach-loi" role="alert" className="mt-1 text-[11px] text-red-700 dark:text-red-300">{cauLoiKeHoach(t, m.maLoi)}</p>
+      )}
+    </div>
+  );
+}
+
 export function KhoiAgentCon({ m, agent, yeuCauBac }: { m: MucAgentCon; agent: HookAgent; yeuCauBac?: { id: string; n: number } | null }) {
   const { t } = useTranslation();
   const ds = m.tt.dongThoiGian;
@@ -758,6 +867,8 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
             return <DongTool key={`t-${m.id}-${i}`} m={m} />;
           case "duyet":
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
+          case "ke-hoach-duyet":
+            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => x.kieu === "con" && x.nguon === "tuRepo")} />;
           case "con":
             return <KhoiAgentCon key={`c-${m.runIdCon}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "nho":

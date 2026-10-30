@@ -279,6 +279,14 @@ export const agentTrpc = {
   async boDeXuat(runId: string, id: string): Promise<KetQuaDeXuatNho> {
     return chuanHoaKetQuaDeXuat(await dotBien<unknown>("boDeXuat", { runId, id }));
   },
+  /** (Đợt 11.3-C) kế hoạch + trạng thái của lượt CỦA MÌNH (mở lại trang / nối lại). Lỗi nằm trong THÂN, không ném. */
+  async keHoachDangCho(runId: string): Promise<KetQuaKeHoachDangCho> {
+    return chuanHoaKeHoachDangCho(await truyVan<unknown>("keHoachDangCho", { runId }));
+  },
+  /** (Đợt 11.3-C) duyệt/bác kế hoạch — gửi đúng BĂM ĐANG HIỂN THỊ. Lệch băm ⇒ note "CONFLICT"; đã có quyết định ⇒ "DA_QUYET". */
+  async duyetKeHoach(runId: string, bam: string, quyetDinh: "duyet" | "bac"): Promise<KetQuaDuyetKeHoach> {
+    return chuanHoaDuyetKeHoach(await dotBien<unknown>("duyetKeHoach", { runId, bam, quyetDinh }));
+  },
   /** (Đợt 5.1) bỏ / sửa / gỡ phiếu 👍/👎 — chỉ định danh + phiếu + lý do; máy chủ tự lấy văn bản từ sổ của nó. */
   async phanHoi(vao: DauVaoPhanHoi): Promise<KetQuaPhanHoi> {
     return chuanHoaKetQuaPhanHoi(await dotBien<unknown>("phanHoi", vao));
@@ -346,6 +354,49 @@ export function chuanHoaKetQuaPhanHoi(o: unknown): KetQuaPhanHoi {
     ma: typeof r.note === "string" ? r.note : r.ok === true ? null : "LOI",
     danhGia: r.ok === true && (dg === 1 || dg === -1) ? dg : null,
   };
+}
+
+/** (Đợt 11.3-C) trạng thái kế hoạch phía máy chủ. Giá trị lạ ⇒ coi là "cho" (không bao giờ tự suy ra đã duyệt). */
+export type TrangThaiKeHoachMayChu = "cho" | "duyet" | "bac" | "het-gio";
+
+export interface KetQuaKeHoachDangCho {
+  ok: boolean;
+  ma: string | null;
+  bam: string | null;
+  trangThai: TrangThaiKeHoachMayChu | null;
+  viec: Array<{ noiDung: string; trangThai: "cho" | "dang-lam" | "xong" }>;
+}
+
+export function chuanHoaKeHoachDangCho(o: unknown): KetQuaKeHoachDangCho {
+  const hong: KetQuaKeHoachDangCho = { ok: false, ma: "LOI", bam: null, trangThai: null, viec: [] };
+  if (!o || typeof o !== "object") return hong;
+  const r = o as { ok?: unknown; note?: unknown; bam?: unknown; trangThai?: unknown; viec?: unknown };
+  if (r.ok !== true) return { ...hong, ma: typeof r.note === "string" ? r.note : "LOI" };
+  const bam = typeof r.bam === "string" && /^[0-9a-f]{64}$/.test(r.bam) ? r.bam : null;
+  const tt: TrangThaiKeHoachMayChu = r.trangThai === "duyet" || r.trangThai === "bac" || r.trangThai === "het-gio" ? r.trangThai : "cho";
+  const viec = Array.isArray(r.viec)
+    ? r.viec
+        .filter((v): v is { noiDung: string; trangThai?: unknown } => !!v && typeof v === "object" && typeof (v as { noiDung?: unknown }).noiDung === "string")
+        .map((v) => ({ noiDung: v.noiDung, trangThai: (v.trangThai === "dang-lam" || v.trangThai === "xong" ? v.trangThai : "cho") as "cho" | "dang-lam" | "xong" }))
+    : [];
+  return { ok: true, ma: null, bam, trangThai: tt, viec };
+}
+
+export interface KetQuaDuyetKeHoach {
+  ok: boolean;
+  /** `CONFLICT` (băm lệch) · `DA_QUYET` · `NOT_FOUND` · `LOI_CSDL` · `PERMISSION_DENIED` · `LOI`. */
+  ma: string | null;
+  trangThai: TrangThaiKeHoachMayChu | null;
+  luc: string | null;
+}
+
+export function chuanHoaDuyetKeHoach(o: unknown): KetQuaDuyetKeHoach {
+  if (!o || typeof o !== "object") return { ok: false, ma: "LOI", trangThai: null, luc: null };
+  const r = o as { ok?: unknown; note?: unknown; trangThai?: unknown; luc?: unknown };
+  if (r.ok !== true) return { ok: false, ma: typeof r.note === "string" ? r.note : "LOI", trangThai: null, luc: null };
+  const tt: TrangThaiKeHoachMayChu | null = r.trangThai === "duyet" || r.trangThai === "bac" || r.trangThai === "het-gio" ? r.trangThai : null;
+  // ok mà không nói rõ quyết định ⇒ KHÔNG coi là đã duyệt (thẻ đổi theo sự kiện / hỏi lại)
+  return { ok: true, ma: null, trangThai: tt, luc: typeof r.luc === "string" ? r.luc : null };
 }
 
 /** (Đợt 2) kết quả Nhớ / Bỏ qua: `ok` THẬT của máy chủ + mã từ chối (`NOT_FOUND`, `DA_XU_LY`, `PERMISSION_DENIED`, …). */
