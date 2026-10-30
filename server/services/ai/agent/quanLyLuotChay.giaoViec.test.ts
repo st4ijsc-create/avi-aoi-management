@@ -16,6 +16,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import * as phienKho from "../../../db/aiPhien";
 import { capNhatHangLuotChay, taoHangLuotChay } from "../../../db/aiAgentRuns";
 
 import { bamNoiDung, type GoiModel, type ManhModel, type SuKienAgent, type TinNhan, type WireToolCall } from "@shared/agentCore";
@@ -544,5 +545,103 @@ describe("M4 — đua: con tạo thẻ SAU khi cha đã kết thúc", () => {
     ac.abort();
     await chay;
     expect(fs.existsSync(path.join(REPO, "src", "dua.ts"))).toBe(false);
+  }, 60_000);
+});
+
+// ─── T8: gắn lượt vào phiên + ngữ cảnh đầy ─────────────────────────────────────────────────────────────────────────
+
+function modelUsage(kb: Array<{ chu?: string; tool?: WireToolCall[]; vao: number }>, theo?: { tinNhan: TinNhan[][] }): GoiModel {
+  let i = 0;
+  return async function* (vao): AsyncGenerator<ManhModel> {
+    theo?.tinNhan.push(vao.tinNhan);
+    const b = kb[Math.min(i++, kb.length - 1)]!;
+    if (b.chu) yield { loai: "chu", noiDung: b.chu };
+    yield { loai: "xong", toolCalls: b.tool ?? [], usage: { vao: b.vao, ra: 10 } };
+  };
+}
+
+describe("T8 — lượt agent gắn vào PHIÊN hợp nhất", () => {
+  it("★★★ phiên agent của CHÍNH MÌNH: nối (hỏi, đáp), ghi % ngữ cảnh, gắn runId; phiên cũ version tăng", async () => {
+    await xoaSo(uid);
+    const p = await phienKho.tao(uid, { projectId: DU_AN, kind: "agent", source: "web" });
+    if (!p.ok) throw new Error(p.ma);
+    const ql = taoQuanLyLuotChay({ goiModel: modelUsage([{ chu: "Câu trả lời cuối.", vao: 32768 }]) });
+    const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "Làm gì đó", projectId: DU_AN, cheDo: "hoi", sessionId: p.id });
+    if (!kq.ok) throw new Error(kq.ma);
+    await kq.luot.xong;
+    const m = await phienKho.mo(uid, p.id);
+    if (!m.ok) throw new Error(m.ma);
+    expect(m.phien.turns).toEqual([
+      { role: "user", content: "Làm gì đó" },
+      { role: "assistant", content: "Câu trả lời cuối." },
+    ]);
+    expect(m.phien.contextPct).toBe(50);
+    expect(m.phien.runIds).toEqual([kq.luot.id]);
+    expect(m.phien.version).toBe(2);
+    expect(m.phien.title).toBe("Làm gì đó");
+  }, 60_000);
+
+  it("★★★ phiên của NGƯỜI KHÁC / khác dự án / phiên không tồn tại ⇒ KHÔNG ghi gì, lượt vẫn xong", async () => {
+    await xoaSo(uid);
+    const cuaB = await phienKho.tao(uid2, { projectId: DU_AN, kind: "agent", source: "web" });
+    const khacDa = await phienKho.tao(uid, { projectId: "du-an-khac", kind: "agent", source: "web" });
+    if (!cuaB.ok || !khacDa.ok) throw new Error("tao");
+    for (const sid of [cuaB.id, khacDa.id, randomUUID()]) {
+      const ql = taoQuanLyLuotChay({ goiModel: modelUsage([{ chu: "Xong", vao: 100 }]) });
+      const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "hoi", sessionId: sid });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+      expect(kq.luot.trangThai).toBe("xong");
+    }
+    const b = await phienKho.mo(uid2, cuaB.id);
+    expect(b.ok && b.phien.turns).toEqual([]);
+    expect(b.ok && b.phien.runIds).toEqual([]);
+    const k = await phienKho.mo(uid, khacDa.id);
+    expect(k.ok && k.phien.turns).toEqual([]);
+  }, 60_000);
+
+  it("hai lượt liên tiếp vào cùng phiên ⇒ turns nối đủ 4, runIds 2 (khoá lạc quan không làm mất lượt)", async () => {
+    await xoaSo(uid);
+    const p = await phienKho.tao(uid, { projectId: DU_AN, kind: "coding", source: "vscode" });
+    if (!p.ok) throw new Error(p.ma);
+    for (const q of ["một", "hai"]) {
+      const ql = taoQuanLyLuotChay({ goiModel: modelUsage([{ chu: `đáp ${q}`, vao: 100 }]) });
+      const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: q, projectId: DU_AN, cheDo: "hoi", sessionId: p.id });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+    }
+    const m = await phienKho.mo(uid, p.id);
+    expect(m.ok && m.phien.turns.map((t) => t.content)).toEqual(["một", "đáp một", "hai", "đáp hai"]);
+    expect(m.ok && m.phien.runIds.length).toBe(2);
+  }, 60_000);
+});
+
+describe("UX-C06 — ngữ cảnh đầy qua máy chủ", () => {
+  it("★★★ ≥ 80 %: SSE có `ngu-canh-day` (một lần); mặc định KHÔNG nhắc model; AI_AGENT_TOM_TAT_80=1 ⇒ nhắc NOTES.md ở lượt kế", async () => {
+    await xoaSo(uid);
+    const chay1 = async (batNhac: boolean) => {
+      const theo = { tinNhan: [] as TinNhan[][] };
+      if (batNhac) process.env.AI_AGENT_TOM_TAT_80 = "1";
+      else delete process.env.AI_AGENT_TOM_TAT_80;
+      try {
+        const ql = taoQuanLyLuotChay({
+          goiModel: modelUsage([{ tool: [tc("r1", "read_file", { path: "src/b.ts" })], vao: 60_000 }, { chu: "Xong", vao: 61_000 }], theo),
+        });
+        const kq = await ql.taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "sua" });
+        if (!kq.ok) throw new Error(kq.ma);
+        const ev: SuKienAgent[] = [];
+        ql.nghe(kq.luot.id, uid, 0, (m) => ev.push(m.suKien));
+        await kq.luot.xong;
+        return { ev, theo };
+      } finally {
+        delete process.env.AI_AGENT_TOM_TAT_80;
+      }
+    };
+    const tat = await chay1(false);
+    expect(tat.ev.filter((e) => e.loai === "ngu-canh-day").length).toBe(1);
+    expect(JSON.stringify(tat.theo.tinNhan)).not.toContain("NOTES.md");
+    const bat = await chay1(true);
+    expect(bat.ev.filter((e) => e.loai === "ngu-canh-day").length).toBe(1);
+    expect(JSON.stringify(bat.theo.tinNhan[1])).toContain("NOTES.md");
   }, 60_000);
 });

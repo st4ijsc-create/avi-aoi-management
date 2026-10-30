@@ -50,7 +50,7 @@ import { autonomyGhiTuTriBat } from "../autonomyPolicy";
 import { uocLuongSoToken } from "../../aiLlamaServerClient";
 import { baiHocEnabled, khoiBaiHocChoPrompt, lamSachBaiHoc } from "../codingLessonContext";
 import { danhSachBaiHoc, luuBaiHoc } from "../../../db/aiCodingLessons";
-import { moPhien, luuPhien } from "../../../db/aiCodingSessions";
+import * as phienKho from "../../../db/aiPhien";
 import {
   capNhatHangLuotChay,
   danhSachHangLuotChay,
@@ -176,6 +176,8 @@ interface TrangThaiNoi {
   seqCuoi: number;
   nguoiNghe: Set<(m: MucSuKien) => void>;
   henLuu: ReturnType<typeof setTimeout> | null;
+  /** % ngữ cảnh của lượt model gần nhất CỦA LƯỢT GỐC (sự kiện `usage` của con không tính) — ghi vào phiên (UX-C05/C06). */
+  ctxPhanTramCuoi: number | null;
   /** Chuỗi ghi sổ TUẦN TỰ — một lượt ghi cũ về muộn không được đè trạng thái mới hơn. */
   chuoiLuu: Promise<void>;
 }
@@ -498,6 +500,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         break;
       case "usage":
         if (hieu.loai === "usage") {
+          if (!laCon && typeof hieu.ctxPhanTram === "number") s.ctxPhanTramCuoi = hieu.ctxPhanTram;
           l.token.vao += Math.max(0, Math.floor(hieu.vao || 0));
           l.token.ra += Math.max(0, Math.floor(hieu.ra || 0));
           l.token.nghi += Math.max(0, Math.floor(hieu.nghi || 0));
@@ -569,15 +572,36 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
     return khoi;
   }
 
-  async function luuPhienNeuCo(userId: number, projectId: string, sessionId: string, cauHoi: string, traLoi: string): Promise<void> {
+  /**
+   * Gắn lượt vào PHIÊN (nếu client gửi `sessionId`) khi lượt kết thúc: nối cặp (câu hỏi, câu trả lời) bằng `aiPhien.themLuot` (khoá lạc quan,
+   * thử lại 1 lần khi CONFLICT) + ghi % ngữ cảnh cuối, rồi `ganLuotChay` (kiểm lượt+phiên cùng chủ, cùng dự án). Phiên phải thuộc CHÍNH người
+   * này và cùng dự án; phiên chat không được (kho riêng). Mọi lỗi nuốt — phiên là phần thêm.
+   */
+  async function luuPhienNeuCo(y: {
+    userId: number;
+    projectId: string;
+    sessionId: string;
+    runId: string;
+    cauHoi: string;
+    traLoi: string;
+    ctxPhanTram: number | null;
+  }): Promise<void> {
     try {
-      const p = await moPhien(userId, sessionId);
-      if (!p || p.projectId !== projectId) return;
-      await luuPhien(userId, {
-        projectId,
-        sessionId,
-        turns: [...p.turns, { role: "user", content: cauHoi }, { role: "assistant", content: traLoi || "(no answer)" }],
-      });
+      for (let thu = 0; thu < 2; thu++) {
+        const m = await phienKho.mo(y.userId, y.sessionId);
+        if (!m.ok || m.phien.projectId !== y.projectId) return;
+        const r = await phienKho.themLuot(y.userId, {
+          sessionId: y.sessionId,
+          expectedVersion: m.phien.version,
+          luot: [
+            { role: "user", content: y.cauHoi },
+            { role: "assistant", content: y.traLoi || "(no answer)" },
+          ],
+          ...(y.ctxPhanTram !== null && y.ctxPhanTram >= 0 && y.ctxPhanTram <= 200 ? { contextPct: y.ctxPhanTram } : {}),
+        });
+        if (r.ok || r.ma !== "CONFLICT") break;
+      }
+      await phienKho.ganLuotChay(y.userId, { sessionId: y.sessionId, runId: y.runId });
     } catch {
       /* phiên là phần thêm */
     }
@@ -655,6 +679,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         seqCuoi: 0,
         nguoiNghe: new Set(),
         henLuu: null,
+        ctxPhanTramCuoi: null,
         chuoiLuu: Promise.resolve(),
       };
       // Giữ chỗ NGAY (đồng bộ) — hai POST cùng lúc không lọt được cả hai.
@@ -797,6 +822,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0
             kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
+            // (Đợt 11.8, UX-C06) nhắc tóm tắt NOTES.md ở ≥ 80 % ngữ cảnh — MẶC ĐỊNH TẮT (AI_AGENT_TOM_TAT_80=1 để bật)
+            ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {
@@ -820,7 +847,9 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           await luuNgay(s);
           await dongTheCuaCay(id).catch(() => 0);
           if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
-          if (sessionId) await luuPhienNeuCo(user.id, projectId, sessionId, cauHoi, traLoi.slice(0, 20_000));
+          if (sessionId) {
+            await luuPhienNeuCo({ userId: user.id, projectId, sessionId, runId: id, cauHoi, traLoi: traLoi.slice(0, 20_000), ctxPhanTram: s.ctxPhanTramCuoi });
+          }
           const t = setTimeout(() => {
             theoId.delete(id);
             s.nguoiNghe.clear();
