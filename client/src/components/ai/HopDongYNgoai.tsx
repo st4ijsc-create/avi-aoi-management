@@ -8,18 +8,9 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { tachMaNgoai } from "@/lib/dongYNgoai";
+import type { ThongTinNgoai } from "@shared/ai/sinhChuNgoai";
 
-export interface ThongTinNgoai {
-  nhaCungCap: string;
-  model: string;
-  duocPhep: boolean;
-  lyDo?: string;
-  tranVuot?: "luot" | "nha-may" | "nguoi" | "phut";
-  mucDuLieu: "ky-thuat" | "van-hanh";
-  choDuLieuVanHanh: boolean;
-  conLaiTranNgay: { nguoi: { token: number | null }; nhaMay: { duTranChoLuotNay: boolean; token?: number | null; usd?: number | null } };
-  dinhKemBiCam: boolean;
-}
+export type { ThongTinNgoai };
 
 interface Props {
   ma: string;
@@ -43,9 +34,11 @@ export function HopDongYNgoai({ ma, beMat, thongTin: x, dangTai, loi, onDongY, o
         ? t("hopDongYNgoai.tranVuot.nha-may", "trần ngày của nhà máy")
         : k === "nguoi"
           ? t("hopDongYNgoai.tranVuot.nguoi", "trần ngày của bạn")
-          : k === "phut"
-            ? t("hopDongYNgoai.tranVuot.phut", "quá nhiều lượt mỗi phút")
-            : k;
+          : k === "luong"
+            ? t("hopDongYNgoai.tranVuot.luong", "trần ngày của luồng")
+            : k === "lan-phut"
+              ? t("hopDongYNgoai.tranVuot.lan-phut", "quá nhiều lượt mỗi phút")
+              : k;
   const khoa = !x || !x.duocPhep || !!dangTai;
   return (
     <Dialog open onOpenChange={(v) => (!v ? onTuChoi() : undefined)}>

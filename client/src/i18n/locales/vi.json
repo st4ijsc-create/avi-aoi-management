@@ -4596,7 +4596,8 @@
       "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
       "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
       "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ",
-      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)"
+      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)",
+      "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -24504,7 +24505,15 @@
       "luot": "trần mỗi lượt của model",
       "nha-may": "trần ngày của nhà máy",
       "nguoi": "trần ngày của bạn",
-      "phut": "quá nhiều lượt mỗi phút"
-    }
+      "luong": "trần ngày của luồng",
+      "lan-phut": "quá nhiều lượt mỗi phút"
+    },
+    "khongTai": "Không tải được điều kiện dùng model này — thử lại sau."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Gửi câu hỏi ra AI ngoài?",
+    "moTa": "Đây là trợ lý vận hành: câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH. Gửi tới model bên ngoài (trả phí) sau khi che dữ liệu nhạy cảm theo mẫu. Hỏi một lần cho cuộc trò chuyện này.",
+    "tuChoi": "Không gửi",
+    "dongY": "Đồng ý, gửi"
   }
 }

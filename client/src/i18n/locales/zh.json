@@ -4596,7 +4596,8 @@
       "NGOAI_CHE_HONG": "数据脱敏不可用，请稍后重试",
       "NGOAI_CAM_DINH_KEM": "不能向外部AI发送附件",
       "NGOAI_MODEL_KHONG_HOP_LE": "外部AI模型名称无效",
-      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）"
+      "du-lieu-vi-pham-rang-buoc": "数据违反系统约束（无效或重复的值）",
+      "CAN_XAC_NHAN_VAN_HANH": "需要确认：发送给外部 AI 时，您输入的内容视为运营数据。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -24504,7 +24505,15 @@
       "luot": "模型的单次请求上限",
       "nha-may": "工厂的每日上限",
       "nguoi": "您的每日上限",
-      "phut": "每分钟请求过多"
-    }
+      "luong": "流程的每日上限",
+      "lan-phut": "每分钟请求过多"
+    },
+    "khongTai": "无法加载该模型的使用条件，请稍后再试。"
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "将问题发送给外部 AI？",
+    "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
+    "tuChoi": "不发送",
+    "dongY": "同意并发送"
   }
 }
