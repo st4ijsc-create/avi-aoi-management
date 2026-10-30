@@ -16,6 +16,8 @@ export class LoiHttp extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Thân JSON đã thử phân giải của đáp ứng lỗi (đường model ngoài đọc `code` ở đây); `null` khi vắng/không phải JSON. */
+    public readonly thanLoi: unknown = null,
   ) {
     super(message);
     this.name = "LoiHttp";
