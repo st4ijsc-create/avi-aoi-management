@@ -96,6 +96,8 @@ export interface PhuThuocKbNgoai {
   ghepPhan: (ds: readonly TinGhep[]) => { tinNhan: YeuCauGoiNgoai["tinNhan"]; phanDaGhep: readonly ("ky-thuat" | "van-hanh")[]; muc: "ky-thuat" | "van-hanh" };
   laLoiNgoai: (e: unknown) => e is { ma: string; chiTiet?: string };
   nhipSongMs?: number;
+  /** Lưới: phụ thuộc của nhánh màn lập trình (`codingNgoai.ts`); vắng ⇒ thật. */
+  coding?: import("./codingNgoai").PhuThuocCodingNgoai;
 }
 
 export const phuThuocKbNgoaiThat: PhuThuocKbNgoai = {
@@ -162,8 +164,14 @@ export async function xuLyKbNgoai(
   a: { user: { id: number; role?: string | null }; question: string; history: Array<{ role: "user" | "assistant"; content: string }>; topK: number; chonModel: string; context: Record<string, unknown> },
   dep: PhuThuocKbNgoai = phuThuocKbNgoaiThat,
 ): Promise<void> {
+  // ★ 10.4b L2 — màn lập trình (chế độ HỎI) có nhánh riêng: `codingNgoai.ts` (bề mặt "coding", vòng tool ĐỌC qua deny-list)
+  if (a.context.codingMode === true) {
+    const { xuLyCodingNgoai } = await import("./codingNgoai");
+    await xuLyCodingNgoai(req, res, { user: a.user, question: a.question, history: a.history, chonModel: a.chonModel, context: a.context }, dep.coding);
+    return;
+  }
   // (1)
-  if (!(await dep.beMatMo()).includes("chat") || a.context.codingMode === true) {
+  if (!(await dep.beMatMo()).includes("chat")) {
     res.status(404).json({ success: false, error: "model ngoài chưa được cài đặt", code: "modelNgoaiChuaCaiDat" });
     return;
   }
