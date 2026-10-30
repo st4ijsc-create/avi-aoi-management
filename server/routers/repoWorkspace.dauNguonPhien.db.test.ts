@@ -55,6 +55,13 @@ describe("luuPhien — dấu nguồn phiên lập trình", () => {
     const r = await goi(U).luuPhien({ projectId: "repo", turns: [{ role: "user", content: "hỏi" }, { role: "assistant", content: tl }], ngoaiCallIds: [id] });
     expect(r.ok).toBe(true);
     expect(await co(r.id!)).toBe(true);
+    // luong-ui (render an toàn khi tải lại) — moPhien + danhSachPhien trả coLuotNgoai
+    const mo = await goi(U).moPhien({ sessionId: r.id! });
+    expect(mo.session).toMatchObject({ coLuotNgoai: true });
+    const ds = await goi(U).danhSachPhien({ projectId: "repo" });
+    expect(ds.sessions.find((s) => s.id === r.id)).toMatchObject({ coLuotNgoai: true });
+    const cucBo = await goi(U).luuPhien({ projectId: "repo", turns: [{ role: "user", content: "h" }, { role: "assistant", content: `cb ${Date.now()}` }] });
+    expect((await goi(U).moPhien({ sessionId: cucBo.id! })).session).toMatchObject({ coLuotNgoai: false });
   });
   it("id của NGƯỜI KHÁC / turn đã SỬA (băm lệch) ⇒ BAD_REQUEST dau-nguon-lech, KHÔNG tạo phiên", async () => {
     const truoc = Number((await exec(sql`SELECT count(*)::int AS n FROM ai_coding_sessions WHERE "userId" = ${U}`))[0]!.n);
