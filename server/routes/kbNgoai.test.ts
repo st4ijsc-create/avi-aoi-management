@@ -99,7 +99,9 @@ const chay = async (a = A(), o: Partial<PhuThuocKbNgoai> = {}) => {
 describe("kbNgoai — lỗi TRƯỚC SSE (JSON, hợp đồng LoiTruocSse)", () => {
   it("bề mặt chat chưa mở / codingMode ⇒ 404 modelNgoaiChuaCaiDat", async () => {
     expect((await chay(A(), { beMatMo: async () => ["luong"] })).r).toMatchObject({ code: 404, body: { code: "modelNgoaiChuaCaiDat" } });
-    expect((await chay(A({ codingMode: true }))).r).toMatchObject({ code: 404, body: { code: "modelNgoaiChuaCaiDat" } });
+    // codingMode ⇒ RẼ sang nhánh màn lập trình (codingNgoai.ts) — bề mặt "coding" đóng ở phụ thuộc giả ⇒ 404 của nhánh ấy
+    const coding = { beMatMo: async () => ["chat"] } as never;
+    expect((await chay(A({ codingMode: true }), { coding })).r).toMatchObject({ code: 404, body: { code: "modelNgoaiChuaCaiDat" } });
   });
   it("thiếu conversationId ⇒ 400; hội thoại không của mình / nhiều nhà máy / model ngoài danh mục ⇒ 404 NGOAI_KHONG_TON_TAI; không gọi", async () => {
     const a = A();
