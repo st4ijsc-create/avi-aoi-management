@@ -27,6 +27,8 @@ import { KHOA_THONG_TIN_TOKEN, KHOA_TOKEN_GATEWAY, tenThietBi, thongDiepDangXuat
 // ★★★ ĐỢT 4C — ghost-text (InlineCompletionItemProvider) gọi /v1/completions bằng token cá nhân.
 import { dangKyGhostText } from "./ui/ghostText";
 import { hostname } from "node:os";
+// ★★★ ĐỢT 11.4 / MỤC 1 — thanh trạng thái Thợ Cả (model · %ngữ cảnh · tok/s).
+import { dangKyThanhAgent } from "./ui/thanhAgent";
 // ★★★ ĐỢT 11.4 / MỤC 3 — Workspace Trust: chưa tin cậy ⇒ chỉ ĐỌC (xem `loi/tinCayWorkspace.ts`).
 import { LOI_KHONG_TIN_CAY_NGUOI, datNguonTinCay, laTinCay } from "./loi/tinCayWorkspace";
 
@@ -373,6 +375,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // ★★★ ĐỢT 4C — ghost-text: provider + lệnh bật/tắt + nút thanh trạng thái + kênh nhật ký (xem `ui/ghostText.ts`).
   // Mặc định TẮT (`aviAiLocal.ghostText.enabled`); provider không gửi byte nào khi tắt.
   dangKyGhostText(context);
+  dangKyThanhAgent(context);
 }
 
 export function deactivate(): void {

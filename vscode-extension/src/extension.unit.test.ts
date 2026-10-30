@@ -162,6 +162,8 @@ vi.mock("./ui/ghostText", () => ({
     may.dangKyGhostText.push(ctx);
   },
 }));
+// (Đợt 11.4) thanh trạng thái Thợ Cả có lưới riêng (`loi/thanhAgent.unit.test.ts`) — ở đây chỉ chặn chạm `createStatusBarItem`.
+vi.mock("./ui/thanhAgent", () => ({ dangKyThanhAgent: () => undefined, baoThanhAgent: () => undefined }));
 vi.mock("./ui/diffDeXuat", () => ({
   SCHEME: "avi-de-xuat",
   KhoDeXuat: class {

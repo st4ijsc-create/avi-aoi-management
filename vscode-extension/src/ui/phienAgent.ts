@@ -17,6 +17,8 @@
  */
 import * as vscode from "vscode";
 import { modelChoAgent } from "../loi/chonModel";
+import { tinhTokPerS } from "../loi/thanhAgent";
+import { baoThanhAgent } from "./thanhAgent";
 import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import {
@@ -138,6 +140,8 @@ export class PhienAgent {
   private lichSu: TinNhan[] = [];
   private huy: AbortController | undefined;
   private soCuoi: SoCheckpoint | undefined;
+  /** (Đợt 11.4) mốc bắt đầu lượt gọi model gần nhất — để đo tok/s hiệu dụng cho thanh trạng thái. */
+  private batDauGoiMs = Date.now();
   private readonly choDuyet = new Map<string, (qd: QuyetDinhDuyet) => void>();
   private readonly yeuCauDuyet = new Map<string, YeuCauDuyet>();
   /** ★ 2026-10-24 — người dùng đã bấm "Duyệt & tự duyệt các lần sửa tiếp trong lượt này": hết hiệu lực khi lượt kết thúc/bị dừng. */
@@ -315,18 +319,20 @@ export class PhienAgent {
       if (!daBaoXong) this.pt.gui({ loai: "ag_xong", lyDo: "khong-chay", coHoanTac: !!this.soCuoi && !this.soCuoi.rong });
       for (const id of [...this.choDuyet.keys()]) this.quyet(id, { duyet: false, lyDo: "the run ended" });
       this.dangChay = false;
+      baoThanhAgent({ dangChay: false });
       this.duyetHetLuot = false;
       if (this.huy === ac) this.huy = undefined;
     }
   }
 
   private goiModelCoDongHo(anh: DinhKemNgoai[] = [], soTinNhanLichSu = 0): GoiModel {
+    const maModel = modelChoAgent(this.pt.chonModel?.(), this.cfg().get<string>("agentModel", "chat"));
     const ch: CauHinhGoiModelV1 = {
       anhLuotNay: anh.map((a) => ({ kieu: a.kieu, noiDung: a.noiDung })),
       soTinNhanLichSu,
       serverUrl: this.serverUrl(),
       layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
-      model: modelChoAgent(this.pt.chonModel?.(), this.cfg().get<string>("agentModel", "chat")),
+      model: maModel,
       maxTokens: this.cfg().get<number>("agentMaxTokens", TRAN_TOKEN_MOT_LUOT_MAC_DINH),
       khi401: () => this.pt.gui({ loai: "ag_token", coToken: false, hong: true }),
     };
@@ -335,6 +341,8 @@ export class PhienAgent {
       // Đồng hồ ƯỚC LƯỢNG (khai rõ) TRƯỚC mỗi lượt gọi; máy chủ có `stream_options.include_usage` (126de672b) thì lõi phát
       // sự kiện `usage` THẬT sau lượt ⇒ `ag_usage` với `uocLuong:false` ghi đè số ước lượng (`xuLySuKien`).
       const uoc = uocLuongTinNhan(vao.tinNhan) + uocLuongTokenMacDinh(JSON.stringify(vao.congCu));
+      this.batDauGoiMs = Date.now();
+      baoThanhAgent({ model: maModel, ctxPhanTram: Math.round((uoc * 100) / GIOI_HAN_MAC_DINH.nganSachNguCanhToken), uocLuong: true, dangChay: true });
       this.pt.gui({
         loai: "ag_usage",
         vao: uoc,
@@ -376,6 +384,7 @@ export class PhienAgent {
         this.pt.gui({ loai: "ag_checkpoint", soTep: e.tep.length });
         break;
       case "usage":
+        baoThanhAgent({ ctxPhanTram: e.ctxPhanTram, uocLuong: false, tokPerS: tinhTokPerS(e.ra, Date.now() - this.batDauGoiMs) });
         this.pt.gui({ loai: "ag_usage", vao: e.vao, ra: e.ra, ctxPhanTram: e.ctxPhanTram, uocLuong: false });
         break;
       case "dang-cho-model":
