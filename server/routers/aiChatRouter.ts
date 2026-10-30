@@ -11,6 +11,31 @@ import { router, moduleProcedure } from "../_core/trpc";
 // ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
 //   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
 const protectedProcedure = moduleProcedure("MOD_AI");
+
+/**
+ * ★ 10.4b L0a' — MỌI đường trả tin chat cho client (`getConversation`, `getMessages`) đi qua đây: dấu nguồn do MÁY CHỦ ghi (`nguonModel`) + vết
+ * JOIN sổ cổng (`vetNgoai`, lọc userId phiên + nhà máy từ bộ phân giải); `ngoaiCallId` KHÔNG ra client (luong-ui e2e phát hiện getConversation lộ).
+ */
+async function tinChoClient<T extends { ngoaiCallId: number | null; nguonModel: string | null }>(
+  ctx: { user: { id: number; role?: string | null } },
+  db: unknown,
+  rows: T[],
+): Promise<Array<Omit<T, "ngoaiCallId"> & { nguonModel: string | null; vetNgoai: import("../../shared/ai/sinhChuNgoai").VetNgoaiLichSu | null }>> {
+  const [{ vetNgoaiTheoCall }, { resolveTenantFactoryScope }, { phamViCua }] = await Promise.all([
+    import("../services/ai/ngoai/dauNguon"),
+    import("../db/reportAggregators"),
+    import("./_phamViNguoiXem"),
+  ]);
+  const ids = rows.map((r) => r.ngoaiCallId).filter((x): x is number => typeof x === "number");
+  const vet = ids.length
+    ? await vetNgoaiTheoCall(db as never, ctx.user.id, (await resolveTenantFactoryScope(phamViCua(ctx as never))).factoryIds ?? null, ids).catch(() => new Map())
+    : new Map();
+  return rows.map(({ ngoaiCallId, ...r }) => ({
+    ...r,
+    nguonModel: r.nguonModel ?? null,
+    vetNgoai: (ngoaiCallId !== null ? vet.get(ngoaiCallId) : undefined) ?? null,
+  }));
+}
 // P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
 // routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
 // RAG retrieval → LLM → extractive fallback), NOT the inferior no-RAG
@@ -102,7 +127,7 @@ export const aiChatRouter = router({
         .orderBy(aiChatMessages.createdAt)
         .limit(input.messageLimit)
         .offset(input.messageOffset);
-      return { ...conv, messages };
+      return { ...conv, messages: await tinChoClient(ctx, db, messages) };
     }),
 
   /** Create a new conversation */
@@ -181,19 +206,7 @@ export const aiChatRouter = router({
         .orderBy(aiChatMessages.createdAt)
         .limit(input.limit)
         .offset(input.offset);
-      // ★ 10.4b L0a' — dấu nguồn do MÁY CHỦ ghi (`nguonModel`) + vết JOIN sổ cổng (`vetNgoai`); `ngoaiCallId` KHÔNG ra client.
-      const [{ vetNgoaiTheoCall }, { resolveTenantFactoryScope }, { phamViCua }] = await Promise.all([
-        import("../services/ai/ngoai/dauNguon"),
-        import("../db/reportAggregators"),
-        import("./_phamViNguoiXem"),
-      ]);
-      const { factoryIds } = await resolveTenantFactoryScope(phamViCua(ctx));
-      const vet = await vetNgoaiTheoCall(db as never, ctx.user.id, factoryIds ?? null, rows.map((r) => r.ngoaiCallId).filter((x): x is number => typeof x === "number")).catch(() => new Map());
-      return rows.map(({ ngoaiCallId, ...r }) => ({
-        ...r,
-        nguonModel: r.nguonModel ?? null,
-        vetNgoai: (ngoaiCallId !== null && ngoaiCallId !== undefined ? vet.get(ngoaiCallId) : undefined) ?? null,
-      }));
+      return tinChoClient(ctx, db, rows);
     }),
 
   /** Delete a single message */

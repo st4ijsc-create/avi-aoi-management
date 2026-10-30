@@ -56,6 +56,11 @@ describe("saveStreamedMessage + getMessages — dấu nguồn máy chủ xác mi
     expect(tl.vetNgoai).toEqual({ nhaCungCap: "anthropic", model: "claude-x", tokenVao: 120, tokenRa: 45, chiPhiUocUsd: 0.0021 });
     expect(tl).not.toHaveProperty("ngoaiCallId");
     expect(ds.find((m) => m.role === "user")!.nguonModel).toBeNull();
+    // luong-ui e2e — getConversation (đường /ai-chat đọc) CŨNG trả nguonModel + vetNgoai và KHÔNG lộ ngoaiCallId
+    const hd = (await goi(U).getConversation({ id: c.id })) as { messages: Array<Record<string, unknown>> };
+    const tl2 = hd.messages.find((m) => m.role === "assistant")!;
+    expect(tl2).toMatchObject({ nguonModel: "ngoai:anthropic:claude-x", vetNgoai: { nhaCungCap: "anthropic", tokenVao: 120 } });
+    expect(hd.messages.every((m) => !("ngoaiCallId" in m))).toBe(true);
     expect((await exec(sql`SELECT "coLuotNgoai" AS c FROM ai_chat_conversations WHERE id = ${c.id}`))[0]!.c).toBe(true);
   });
 

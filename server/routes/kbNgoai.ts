@@ -24,7 +24,7 @@ import { ghepPhan, type PhanGhep, type TinGhep } from "../services/ai/ngoai/ghep
 import { LoiNgoai } from "../services/ai/ngoai/loi";
 
 /** loại nguồn (`sourceType` của kho KB) ⇒ loại kho cho `ghepPhan` — CHỈ tài liệu kỹ thuật chung của sản phẩm được gửi ra ngoài. */
-export const LOAI_KHO_THEO_NGUON: Readonly<Record<string, "api" | "vendor">> = Object.freeze({
+export const LOAI_KHO_THEO_NGUON: Readonly<Record<string, "api">> = Object.freeze({
   doc: "api",
   service: "api",
   type: "api",
@@ -36,8 +36,28 @@ export const LOAI_KHO_THEO_NGUON: Readonly<Record<string, "api" | "vendor">> = O
   module: "api",
   nav: "api",
   pattern: "api",
-  vendor_manual: "vendor",
 });
+
+/**
+ * ★ rà kiem-dinh L1 (4) — khoá THỨ HAI: `sourceType` có thể do bên ghi vào kho khai (`ingestKnowledgeRecord`), nên chunk còn phải nằm dưới
+ * một thư mục TÀI LIỆU SẢN PHẨM đã biết (đo trên knowledge/chunks.jsonl 2026-10-30). `ingest/…`, `knowledge/operational*`, studio, mọi đường
+ * khác ⇒ BỎ. Cả hai khoá phải cùng qua.
+ */
+export const TIEN_TO_TAI_LIEU_SAN_PHAM: readonly string[] = [
+  "docs/",
+  "apidocs/",
+  "server/",
+  "client/src/",
+  "drizzle/schema/",
+  "shared/",
+  "knowledge/domain/",
+  "knowledge/features/",
+];
+export function laTaiLieuSanPham(t: { sourceType: string; sourcePath?: string | null }): boolean {
+  const p = String(t.sourcePath ?? "").replace(/\\/g, "/");
+  if (!(t.sourceType in LOAI_KHO_THEO_NGUON) || p.includes("..")) return false;
+  return TIEN_TO_TAI_LIEU_SAN_PHAM.some((tt) => p.startsWith(tt));
+}
 
 export const NHIP_SONG_MS = 15_000;
 export const MAX_TOKENS_KB_NGOAI = 2000;
@@ -70,7 +90,7 @@ export interface PhuThuocKbNgoai {
   datCoLuotNgoai: (conversationId: number) => Promise<void>;
   /** ★ rà kiem-dinh (L1 a) — MÁY CHỦ tự lưu lượt ngoài (tin người gõ + tin trả lời NGUYÊN VĂN + dấu nguồn); client không nộp lại. */
   luuLuot: (y: { conversationId: number; cauHoi: string; traLoi: string; nguonModel: string; callId: number; tokens: number | null }) => Promise<{ tinNguoiDungId: number; tinTraLoiId: number }>;
-  truyHoi: (question: string, topK: number, lang: "vi" | "en" | "zh") => Promise<Array<{ sourceType: string; title: string; text: string }>>;
+  truyHoi: (question: string, topK: number, lang: "vi" | "en" | "zh") => Promise<Array<{ sourceType: string; sourcePath: string; title: string; text: string }>>;
   kiemTruoc: (yc: YeuCauGoiNgoai) => Promise<KiemTruocNgoai>;
   goi: (yc: YeuCauGoiNgoai) => Promise<KetQuaGoiNgoai>;
   ghepPhan: (ds: readonly TinGhep[]) => { tinNhan: YeuCauGoiNgoai["tinNhan"]; phanDaGhep: readonly ("ky-thuat" | "van-hanh")[]; muc: "ky-thuat" | "van-hanh" };
@@ -122,7 +142,7 @@ export const phuThuocKbNgoaiThat: PhuThuocKbNgoai = {
   truyHoi: async (q, k, lang) => {
     const { retrieveKnowledge } = await import("../services/aiLocalKnowledgeService");
     const r = await retrieveKnowledge(q, k, { uiLanguage: lang } as never);
-    return r.citations.map((c, i) => ({ sourceType: c.sourceType, title: c.title, text: r.contexts[i] ?? "" }));
+    return r.citations.map((c, i) => ({ sourceType: c.sourceType, sourcePath: c.sourcePath, title: c.title, text: r.contexts[i] ?? "" }));
   },
   kiemTruoc: async (yc) => (await import("../services/ai/ngoai/congNgoai")).kiemTruocNgoai(yc),
   goi: async (yc) => (await import("../services/ai/ngoai/congNgoai")).goiAiNgoai(yc),
@@ -162,7 +182,7 @@ export async function xuLyKbNgoai(
   if (!dich) return loiTruoc(res, "NGOAI_KHONG_TON_TAI");
   // (4)
   const lang = a.context.uiLanguage === "en" || a.context.uiLanguage === "zh" ? a.context.uiLanguage : "vi";
-  const taiLieu = (await dep.truyHoi(a.question, Math.min(Math.max(1, a.topK || 5), 8), lang).catch(() => [])).filter((t) => t.sourceType in LOAI_KHO_THEO_NGUON);
+  const taiLieu = (await dep.truyHoi(a.question, Math.min(Math.max(1, a.topK || 5), 8), lang).catch(() => [])).filter(laTaiLieuSanPham);
   const phanTaiLieu: PhanGhep[] = taiLieu.map((t) => ({
     loai: "truy-hoi-kb",
     loaiKho: LOAI_KHO_THEO_NGUON[t.sourceType],
