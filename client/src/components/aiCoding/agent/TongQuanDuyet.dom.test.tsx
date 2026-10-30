@@ -19,6 +19,7 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), warning: vi.fn(), success: v
 vi.mock("@/lib/trpc", () => ({ trpc: { aiChonModel: { danhMuc: { useQuery: () => ({ data: undefined }) } } } }));
 
 import { DongThoiGianAgent } from "./DongThoiGianAgent";
+import { TongQuanDuyet } from "./TongQuanDuyet";
 import { giamSuKien, TRANG_THAI_RONG } from "./trangThaiAgent";
 import type { HookAgent } from "./useLuotChayAgent";
 
@@ -168,5 +169,27 @@ describe("TongQuanDuyet", () => {
   it("không có thẻ ghi nào ⇒ không vẽ vùng tổng quan", () => {
     vẽ(hook([BD, { loai: "chu", noiDung: "xin chào" } as SuKienAgent]));
     expect(screen.queryByTestId("agent-tong-quan-duyet")).toBeNull();
+  });
+});
+
+describe("TongQuanDuyet — ghim phòng thủ (kiem-dinh m11/m19)", () => {
+  it("★ thẻ DIFF có neo cuộn agent-the-<id> (bấm dòng cuộn tới đúng thẻ)", () => {
+    const xt = { pendingAction: { tool: "apply_diff", args: { path: "lib/z.cs", original: "a", modified: "b" }, preview: { warnings: [] } } };
+    vẽ(hook([BD, { loai: "can-duyet", id: "dd", deXuat: { ten: "edit_file", thamSo: {}, xemTruoc: xt } } as SuKienAgent]));
+    const the = screen.getByTestId("agent-the-duyet");
+    expect(the.getAttribute("data-loai")).toBe("diff");
+    expect(the.id).toBe("agent-the-dd");
+  });
+
+  it("★ R trên thẻ ĐÃ QUYẾT không gọi onYeuCauBac (guard riêng của tổng quan, không dựa vào guard của thẻ)", () => {
+    const onYeuCauBac = vi.fn();
+    render(<TongQuanDuyet agent={hook([...BA_THE, { loai: "da-duyet", id: "a" } as SuKienAgent])} onYeuCauBac={onYeuCauBac} />);
+    const v = screen.getByTestId("agent-tong-quan-duyet");
+    fireEvent.keyDown(v, { key: "j" }); // a (đã duyệt)
+    fireEvent.keyDown(v, { key: "r" });
+    expect(onYeuCauBac).not.toHaveBeenCalled();
+    fireEvent.keyDown(v, { key: "j" }); // b (đang chờ)
+    fireEvent.keyDown(v, { key: "r" });
+    expect(onYeuCauBac).toHaveBeenCalledWith("b");
   });
 });
