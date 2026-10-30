@@ -23,6 +23,9 @@ describe("hợp đồng sinh chữ model ngoài (shared)", () => {
   it("MAU_NGUON_MODEL: CHECK của migration 0417 dùng ĐÚNG chuỗi này; id có `/` và `@` hợp lệ", () => {
     const sql = readFileSync(join(__dirname, "../../drizzle/0417_ai_ngoai_dau_nguon.sql"), "utf8");
     expect(sql).toContain(`"nguonModel" ~ '${MAU_NGUON_MODEL}'`);
+    // ★ 10.4b L3 — dấu nguồn lượt agent (0419) dùng CHUNG mẫu (dieu-phoi Q2) + chỉ chế độ hoi
+    const sql0419 = readFileSync(join(__dirname, "../../drizzle/0419_ai_agent_runs_nguon_model.sql"), "utf8");
+    expect(sql0419).toContain(`"nguonModel" ~ '${MAU_NGUON_MODEL}' AND "cheDo" = 'hoi'`);
     for (const s of ["ngoai:anthropic:claude-x", "ngoai:openai-compat:meta-llama/Llama-3.3-70B", "ngoai:gemini:claude-3@2025-01-01"]) expect(RE_NGUON_MODEL.test(s), s).toBe(true);
     for (const s of ["local:x", "ngoai:a", "ngoai:a:b c", "ngoai:A:b"]) expect(RE_NGUON_MODEL.test(s), s).toBe(false);
   });

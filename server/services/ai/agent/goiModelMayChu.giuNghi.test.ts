@@ -1,5 +1,5 @@
 /**
- * ★ Đợt 11.0 (CHỈ ĐO) — `preserve_thinking`: chỉ khi lịch sử MANG `reasoning_content` (host bật `AI_AGENT_GIU_NGHI=1`) thì yêu cầu engine có
+ * ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — `preserve_thinking`: chỉ khi lịch sử MANG `reasoning_content` (host server: mặc định bật, tắt `AI_AGENT_GIU_NGHI=0`) thì yêu cầu engine có
  * `preserveThinking` + tin assistant mang suy luận; vắng ⇒ tùy chọn như cũ. Đường dây llama-server: gộp vào `chat_template_kwargs`.
  */
 import { describe, expect, it } from "vitest";
@@ -8,9 +8,10 @@ import { chuyenMessageLenDay } from "../../aiLlamaServerClient";
 import type { GgufChatOptions } from "../../aiGgufEngine";
 import type { TinNhan } from "@shared/agentCore";
 
-async function goiVoi(tinNhan: TinNhan[]) {
+async function goiVoi(tinNhan: TinNhan[], them: { nghi?: boolean } = {}) {
   let nhan: GgufChatOptions | null = null;
   const goi = taoGoiModelMayChu({
+    ...them,
     khongGhiDauVet: true,
     chatStream: async function* (o) {
       nhan = o;
@@ -38,6 +39,11 @@ describe("goiModelMayChu — preserveThinking", () => {
     const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }]);
     expect(o.preserveThinking).toBe(true);
     expect(o.messages[1]).toMatchObject({ role: "assistant", nghiTruoc: "nghĩ" });
+  });
+  it("rà kiem-dinh (g13) — lượt này TẮT nghĩ (disableThinking) mà lịch sử còn reasoning_content ⇒ KHÔNG preserveThinking", async () => {
+    const o = await goiVoi([{ role: "user", content: "hỏi" }, { role: "assistant", content: "đáp", reasoning_content: "nghĩ" }], { nghi: false });
+    expect(o.disableThinking).toBe(true);
+    expect(o).not.toHaveProperty("preserveThinking");
   });
   it("lên dây llama-server: assistant mang reasoning_content; user không", () => {
     expect(chuyenMessageLenDay({ role: "assistant", content: "đáp", nghiTruoc: "nghĩ" })).toMatchObject({ reasoning_content: "nghĩ" });

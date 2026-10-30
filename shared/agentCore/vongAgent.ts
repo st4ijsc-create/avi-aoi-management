@@ -81,8 +81,8 @@ export interface DauVaoVongAgent {
   /** (Đợt 9) model host đã chọn theo vai trò — gắn vào `bat-dau`. Vắng ⇒ `bat-dau` như cũ. */
   thongTinModel?: ThongTinModelBatDau;
   /**
-   * ★ Đợt 11.0 (CHỈ ĐO) — giữ suy luận (đã che) của mỗi lượt assistant trong lịch sử gửi lại model (`reasoning_content`). Mặc định
-   * TẮT ⇒ lịch sử như cũ từng byte. Host bật bằng `AI_AGENT_GIU_NGHI=1` (lõi thuần không đọc env).
+   * ★ Đợt 11.0 — giữ suy luận (đã che) của mỗi lượt assistant trong lịch sử gửi lại model (`reasoning_content`). Vắng ở LÕI ⇒
+   * TẮT ⇒ lịch sử như cũ từng byte (extension tự đứng). Host server BẬT mặc định, tắt bằng `AI_AGENT_GIU_NGHI=0` (`giuNghiBat`).
    */
   giuNghiTrongLichSu?: boolean;
   /**
@@ -198,7 +198,21 @@ export function timLenhTestTrongCauHoi(cauHoi: string): string | null {
  * `0`/`false`/`off`/`no` ⇒ tắt.
  */
 export function kiemDacTaBat(giaTri: string | undefined): boolean {
+  return congTacMacDinhBat(giaTri);
+}
+
+/** Công tắc mặc-định-BẬT của host: vắng / rỗng / giá trị khác ⇒ bật; `0`/`false`/`off`/`no` (không phân biệt hoa thường) ⇒ tắt. */
+function congTacMacDinhBat(giaTri: string | undefined): boolean {
   return !["0", "false", "off", "no"].includes(String(giaTri ?? "").trim().toLowerCase());
+}
+
+/**
+ * Giá trị công tắc `AI_AGENT_GIU_NGHI` (host đọc env — lõi thuần không đọc env) ⇒ `giuNghiTrongLichSu`. Mặc định BẬT từ
+ * 2026-10-30 (đo cửa sổ GPU #2: agent-f 14 → 15/18, G6 6/6 = 6/6, token ra −55 %, thời gian model −56 %); cùng ngữ nghĩa
+ * `kiemDacTaBat`: `0`/`false`/`off`/`no` (không phân biệt hoa thường) ⇒ tắt.
+ */
+export function giuNghiBat(giaTri: string | undefined): boolean {
+  return congTacMacDinhBat(giaTri);
 }
 
 /** Tool GHI tệp nội dung (đếm chuỗi ghi chưa chạy test). Xoá/đổi tên không phải "viết lại". */
