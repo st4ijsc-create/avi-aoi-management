@@ -21656,6 +21656,15 @@
         "macDinh": "the engine's default model",
         "duPhong": "fallback — the slot is holding another model"
       },
+      "nguCanhDay": "Context is {{p}}% full — ask the agent to summarise progress into NOTES.md (you approve it like any file write), then start a new session.",
+      "con": {
+        "tieuDe": "Sub-agent",
+        "tuRepo": "from repo",
+        "sua": "edit",
+        "hoi": "ask",
+        "dangChay": "running"
+      },
+      "hangCho": "Model queue: {{n}} request(s) ahead of you",
       "khoa": {
         "tieuDe": "Hard-locked commands (the agent can never run these)",
         "biKhoa": "This command is HARD-LOCKED ({{lenh}}) — it cannot be approved to run.",
@@ -21664,6 +21673,27 @@
           "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
           "csdl-that": "Write to the REAL database"
         }
+      },
+      "tongQuan": {
+        "tieuDe": "Change overview",
+        "agentCon": "sub-agent",
+        "tienDo": "{{daQuyet}}/{{tong}} decided",
+        "conCho": "{{n}} waiting for you",
+        "kiemChung": "Latest verification",
+        "hetGio": "timed out",
+        "xanh": "GREEN",
+        "do": "RED",
+        "soDo": "failed",
+        "soXanh": "passed",
+        "truocSua": "— ran BEFORE the latest approved change",
+        "khongDuong": "(path unknown)",
+        "daXem": "viewed",
+        "chuaXem": "not viewed",
+        "hetHan": "expired",
+        "cho": "waiting",
+        "duyetA": "Approve (A)",
+        "bacR": "Reject (R)",
+        "phim": "While this area is focused: J/K = next/previous file · A = approve · R = reject (A only after the file was viewed)"
       }
     },
     "duanCaNhan": {
@@ -21903,6 +21933,72 @@
       "xemBanDau": "View the first draft (before the fix)",
       "conLoi": "The ST code still has {{n}} compile error(s) (RuSTy) after {{v}} auto-fix round(s):",
       "khongKiemDuoc": "Couldn't check compilation ({{lyDo}})."
+    },
+    "agentTuRepo": {
+      "tieuDe": "Agents from repo",
+      "moTaMan": "Read and confirm agent definitions that live in project {{duAn}}.",
+      "luuY": "Repo agents are defined by files in the project — they are not trusted until you read the content and confirm. If the file changes after you read it, the confirmation is rejected.",
+      "tuRepo": "From repo",
+      "rong": "This project has no valid agent definition files.",
+      "daTin": "this version is trusted",
+      "chuaTin": "not trusted",
+      "thongSo": "Model: {{model}} · up to {{luot}} turns · tools: {{cc}}",
+      "an": "Hide content",
+      "doc": "Read file content",
+      "tinCay": "Trust this version",
+      "canDoc": "Read the content before trusting.",
+      "goTin": "Remove trust",
+      "biBo": "Skipped files",
+      "dungSan": "Built-in",
+      "biTuChoi": "You do not have permission to view this project's agent definitions.",
+      "dangTai": "Loading…",
+      "daXacNhan": "Trusted agent “{{ten}}”.",
+      "daGo": "Removed trust for “{{ten}}”.",
+      "note": {
+        "PERMISSION_DENIED": "You do not have permission for this action.",
+        "PROJECT_NOT_FOUND": "Project not found.",
+        "KHONG_CO": "This definition no longer exists in the repo.",
+        "BAM_LECH": "The file changed after you read it — read the new version, then confirm.",
+        "LOI_LUU": "Could not save the confirmation — try again later.",
+        "THAM_SO_SAI": "Invalid parameters.",
+        "khac": "Could not complete ({{ma}})."
+      }
+    },
+    "lichSuAgent": {
+      "tieuDe": "Agent history",
+      "moTaMan": "Your agent sessions in project {{duAn}} (web, VS Code, command line).",
+      "biTuChoi": "You do not have permission to view the agent history of this project.",
+      "dangTai": "Loading…",
+      "rong": "No agent sessions in this project yet.",
+      "quayLai": "Back",
+      "soLuotChay": "{{n}} run(s) linked to this session.",
+      "ban": "You",
+      "agent": "Agent",
+      "coNgoai": "used external AI",
+      "soLuot": "{{n}} turns",
+      "mo": "View",
+      "luuTen": "Save name",
+      "doiTen": "Rename",
+      "xoa": "Delete session",
+      "hoiXoa": "Delete session “{{ten}}”? This cannot be undone.",
+      "nhatKy": "Deleting a session does NOT delete the run logs (the server audit ledger keeps them).",
+      "xacNhanXoa": "Delete session",
+      "huy": "Cancel",
+      "daXoa": "Session deleted.",
+      "nguon": {
+        "web": "web",
+        "vscode": "VS Code",
+        "cli": "command line"
+      },
+      "note": {
+        "PERMISSION_DENIED": "You do not have permission for this action.",
+        "PROJECT_NOT_FOUND": "Project not found.",
+        "NOT_FOUND": "Session not found (deleted?).",
+        "CONFLICT": "The session was updated elsewhere — the list was reloaded, try again.",
+        "THAM_SO_SAI": "Invalid parameters.",
+        "LOI": "Could not complete — try again later.",
+        "khac": "Could not complete ({{ma}})."
+      }
     },
     "ngoai": {
       "daDoc": "Read {{p}}",
