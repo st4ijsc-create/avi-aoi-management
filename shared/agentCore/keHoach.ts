@@ -26,6 +26,7 @@ export function lamSachBuoc(s: unknown): string {
   let ra = "";
   for (const ch of goc) {
     if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") ra += " ";
+    else if (ch === String.fromCodePoint(0xfeff)) continue; // coKyTuAn bỏ BOM ĐẦU chuỗi nên với MỘT ký tự U+FEFF nó coi là rỗng — loại tường minh
     else if (!coKyTuAn(ch)) ra += ch;
   }
   return ra.replace(/ +/g, " ").trim();

@@ -80,6 +80,8 @@ describe("keHoach — làm sạch + băm (thuần)", () => {
     expect(bamKeHoach([{ noiDung: "é" }])).toBe(bamKeHoach([{ noiDung: "é" }]));
   });
   it("ký tự ẩn/bidi/zero-width bị BỎ khỏi bước (chữ thuần)", () => {
+    expect(lamSachBuoc(`a${String.fromCodePoint(0xfeff)}b`)).toBe("ab"); // BOM GIỮA chuỗi (kiem-dinh)
+    expect(bamKeHoach([{ noiDung: `a${String.fromCodePoint(0xfeff)}b` }])).toBe(bamKeHoach([{ noiDung: "ab" }]));
     expect(lamSachBuoc(`a${String.fromCodePoint(0x202e)}b${String.fromCodePoint(0x200b)}c`)).toBe("abc");
     expect(lamSachBuoc(`x${String.fromCodePoint(0x00a0)}y`)).toBe("xy");
   });
@@ -90,6 +92,15 @@ describe("keHoach — làm sạch + băm (thuần)", () => {
     expect(chuanHoaKeHoach([{ noiDung: "x".repeat(TRAN_KY_TU_BUOC_KE_HOACH) }]).ok).toBe(true);
     expect(chuanHoaKeHoach([{ noiDung: "  " }])).toMatchObject({ ok: false, ma: "KE_HOACH_BUOC_RONG" });
     expect(chuanHoaKeHoach([])).toMatchObject({ ok: false, ma: "KE_HOACH_RONG" });
+  });
+  it("biên ĐÚNG: 30 bước/200 ký tự qua, 31 bước/201 ký tự bị chặn; trần là 30 và 200", () => {
+    expect(TRAN_SO_BUOC_KE_HOACH).toBe(30);
+    expect(TRAN_KY_TU_BUOC_KE_HOACH).toBe(200);
+    const n = (k: number) => Array.from({ length: k }, (_, i) => ({ noiDung: `b${i}` }));
+    expect(chuanHoaKeHoach(n(30)).ok).toBe(true);
+    expect(chuanHoaKeHoach(n(31))).toMatchObject({ ok: false, ma: "KE_HOACH_QUA_NHIEU_BUOC" });
+    expect(chuanHoaKeHoach([{ noiDung: "x".repeat(200) }]).ok).toBe(true);
+    expect(chuanHoaKeHoach([{ noiDung: "x".repeat(201) }])).toMatchObject({ ok: false, ma: "KE_HOACH_BUOC_QUA_DAI" });
   });
   it("trạng thái lạ ⇒ cho", () => {
     const ch = chuanHoaKeHoach([{ noiDung: "a", trangThai: "bay-bay" }]);

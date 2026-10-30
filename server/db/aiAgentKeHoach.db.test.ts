@@ -146,6 +146,14 @@ describe("chốt của host", () => {
     await chotMoiKeHoachDangCho(idA, id);
     expect((await docKeHoach(idA, id))?.trangThai).toBe("duyet");
   });
+  it("★★★ chốt kế hoạch CŨ (băm khác) KHÔNG đè kế hoạch mới đang chờ", async () => {
+    if (!coDb) return;
+    const id = await mkRun(idA);
+    await nopKeHoach(idA, id, VIEC);
+    const moi = await nopKeHoach(idA, id, [{ noiDung: "kế hoạch mới" }]);
+    expect(await chotKeHoachDangCho(idA, id, BAM, "bac")).toBe(false);
+    expect(await docKeHoach(idA, id)).toMatchObject({ bam: moi?.bam, trangThai: "cho" });
+  });
   it("còn 'cho' ⇒ chốt được (het-gio) và dọn cuối lượt ⇒ 'bac'", async () => {
     if (!coDb) return;
     const a = await mkRun(idA);
