@@ -26,7 +26,7 @@ import { chotLuot, ghiChu, ghiNghi, taoDongHo } from "./dongHoHaiPha";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
 import { thongDiepLoiRest } from "@/lib/restAuthError";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { bocVetNgoai, docLoiTruocSse, laMaLoiNgoai, LoiSinhChuNgoai } from "@/lib/loiNgoai";
+import { bocVetNgoai, docLoiTruocSse, laMaLoiNgoai, LoiSinhChuNgoai, thongDiepLoiNgoai } from "@/lib/loiNgoai";
 import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 
 // ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
@@ -661,7 +661,7 @@ export function useKbChatStream() {
         } else if (err instanceof LoiSinhChuNgoai) {
           loiNgoaiRef.current = err;
           setLoiNgoai(err);
-          setError(err.message);
+          setError(thongDiepLoiNgoai(err.code, err.tranVuot));
         } else {
           setError(mapTrpcError(err));
         }
