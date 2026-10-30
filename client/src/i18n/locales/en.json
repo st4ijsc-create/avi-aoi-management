@@ -19119,6 +19119,7 @@
     "maLoi": {
       "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
       "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
+      "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
       "EDGE_REPORTED": "The edge reported the command as not successful",
       "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
       "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
