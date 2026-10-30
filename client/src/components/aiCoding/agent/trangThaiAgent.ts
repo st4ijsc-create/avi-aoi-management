@@ -190,7 +190,7 @@ function noiChu(ds: MucDongThoiGian[], kieu: "chu" | "nghi", noiDung: string): M
   return [...ds, { kieu, noiDung }];
 }
 
-/** `xong` của cha: mọi thẻ còn chờ (của cha lẫn của con) hết hiệu lực. */
+/** `xong` của cha, hoặc `con-xong` của một con: mọi thẻ còn chờ (của cha lẫn của con) hết hiệu lực. */
 function hetHieuLucTheCho(m: MucDongThoiGian): MucDongThoiGian {
   if (m.kieu === "duyet" && m.trangThai === "cho") return { ...m, trangThai: "het-hieu-luc" };
   if (m.kieu === "con") return { ...m, tt: { ...m.tt, choDuyet: false, dongThoiGian: m.tt.dongThoiGian.map(hetHieuLucTheCho) } };
@@ -293,7 +293,7 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangT
     case "con-xong": {
       const dt = n.dongThoiGian.map((m) =>
         m.kieu === "con" && m.runIdCon === e.runIdCon
-          ? { ...m, trangThai: "xong" as const, lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}), tt: { ...m.tt, dangChay: false, choDuyet: false } }
+          ? { ...m, trangThai: "xong" as const, lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}), tt: { ...m.tt, dangChay: false, choDuyet: false, dongThoiGian: m.tt.dongThoiGian.map(hetHieuLucTheCho) } }
           : m,
       );
       return { ...n, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };

@@ -99,6 +99,29 @@ describe("agent con", () => {
     expect(() => chay([CON, e])).not.toThrow();
   });
 
+  it("★ con-xong: thẻ duyệt còn 'cho' của CON hết hiệu lực (UI không được nói dối là còn bấm được); thẻ cha không đụng", () => {
+    const CHA: SuKienAgent = { loai: "can-duyet", id: "cha-1", deXuat: { ten: "delete_file", thamSo: { path: "p" } } } as SuKienAgent;
+    const s = chay([BAT_DAU, CHA, CON, DUYET_CON, { loai: "con-xong", runIdCon: "c1", lyDo: "hoan-thanh" }]);
+    expect(con(s).tt.dongThoiGian[0]).toMatchObject({ kieu: "duyet", id: "act-9", trangThai: "het-hieu-luc" });
+    expect(s.dongThoiGian.find((m) => m.kieu === "duyet")).toMatchObject({ id: "cha-1", trangThai: "cho" });
+    expect(s.choDuyet).toBe(true); // thẻ của cha vẫn chờ
+  });
+
+  it("★ trần độ sâu TRAN_DO_SAU_CON=3: sự kiện ở tầng lồng thứ 4 bị bỏ (chuỗi con lồng tối đa 4 mức)", () => {
+    const boc = (k: number, e: SuKienAgent): SuKienAgent => {
+      let x = e;
+      for (let i = 0; i < k; i++) x = { loai: "su-kien-con", runIdCon: "c1", suKien: x };
+      return x;
+    };
+    let s = chay([BAT_DAU, CON]);
+    for (let k = 1; k <= 5; k++) s = giamSuKien(s, boc(k, CON));
+    const sau = (t: TrangThaiAgent): number => {
+      const c = t.dongThoiGian.find((m): m is MucAgentCon => m.kieu === "con");
+      return c ? 1 + sau(c.tt) : 0;
+    };
+    expect(sau(s)).toBe(4);
+  });
+
   it("phát lại cùng chuỗi ⇒ cùng trạng thái (nối lại luồng)", () => {
     const es: SuKienAgent[] = [BAT_DAU, CON, DUYET_CON, { loai: "con-xong", runIdCon: "c1", lyDo: "hoan-thanh" }, { loai: "ngu-canh-day", phanTram: 81 }];
     expect(chay(es)).toEqual(chay(es));

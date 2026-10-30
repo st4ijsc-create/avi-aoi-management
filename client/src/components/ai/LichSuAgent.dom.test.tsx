@@ -40,6 +40,19 @@ describe("NoiDungLichSuAgent", () => {
     expect(onXoa).toHaveBeenCalledWith("p1");
   });
 
+  it("Enter với tên rỗng ⇒ không gửi, ô vẫn mở; sau khi xác nhận xoá, bước xác nhận đóng", () => {
+    const { onDoiTen } = vẽ([P()]);
+    fireEvent.click(screen.getByTestId("lsa-sua"));
+    fireEvent.change(screen.getByTestId("lsa-o-ten"), { target: { value: "   " } });
+    fireEvent.keyDown(screen.getByTestId("lsa-o-ten"), { key: "Enter" });
+    expect(onDoiTen).not.toHaveBeenCalled();
+    expect(screen.getByTestId("lsa-o-ten")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId("lsa-o-ten"), { key: "Escape" });
+    fireEvent.click(screen.getByTestId("lsa-xoa"));
+    fireEvent.click(screen.getByTestId("lsa-xac-nhan"));
+    expect(screen.queryByTestId("lsa-xac-nhan-xoa")).toBeNull();
+  });
+
   it("★ không dùng window.confirm", () => {
     const c = vi.spyOn(window, "confirm");
     vẽ([P()]);

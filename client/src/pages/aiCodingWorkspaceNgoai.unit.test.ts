@@ -18,6 +18,8 @@ describe("AICodingWorkspace — model ngoài chỉ ở chế độ HỎI", () =>
     expect(ma).toContain('const cheDoChatHL: CheDoChat = laNgoai ? "hoi" : cheDoChat;');
     expect(ma).toContain("giaTri={cheDoChatHL}");
     expect(ma).toContain("khoa={agentDangChay || isStreaming || laNgoai}");
+    // (11.8) chỉ báo hàng chờ model theo chế độ HIỆU LỰC: model ngoài (chỉ Hỏi) ⇒ tắt; chỉ ở chế độ agent, chưa có lượt chạy, không đang stream
+    expect(ma).toContain('<ChiBaoHangCho bat={cheDoChatHL !== "hoi" && !agentDangChay && !isStreaming && !!projectId} />');
   });
 
   it("đường AGENT không bao giờ chạy khi chọn model ngoài; vòng tự sửa test / ghim tệp sửa bị chặn", () => {
