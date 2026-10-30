@@ -7,6 +7,7 @@
  * Đồng hồ GIẢ (setTimeout / clearTimeout / Date; setImmediate thật để Node kịp phát unhandledRejection) — tất định.
  * Đột biến bắt buộc (ghi trong báo cáo task): đếm chỉ khi quá hạn · kiểm trần sau `viec` · bỏ `giam()` · bỏ dòng tóm tắt · xả vượt trần · mất giờ
  * sự kiện · bỏ tóm tắt khi ghi hỏng.
+ * Biến môi trường: `YEU_CAU_GC=1` ⇒ ca WeakRef (N2-3) ĐỎ thay vì bỏ qua khi không bật được gc trong tiến trình.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../../logger";
@@ -293,8 +294,20 @@ describe("★ fix round 1 — hàng chờ: FIFO, xả dưới CÙNG trần, gi�
     expect(bo(/^gia_bo_qua_tuoi$/)).toHaveLength(1);
     expect(gia).not.toHaveBeenCalled();
     await nhuong(10);
-    expect(tomTat.reduce((n, t) => n + (t.theoLyDo.qua_lon ?? 0), 0) + (trangThaiGhiTreo().tomTatCho > 0 ? 0 : 0)).toBeLessThanOrEqual(1);
-    expect(demGhiBoQuaDay().tong).toBeGreaterThanOrEqual(2);
+    // N3-5 — điều gì bị bỏ / tóm tắt: `lon` (qua_lon) vào tóm tắt được ghi ở lần van xả đầu (2 phút); các lượt quá tuổi (gồm `gia`) đang CHỜ tóm tắt
+    const tong = (k: string) => tomTat.reduce((n, t) => n + ((t.theoLyDo as Record<string, number>)[k] ?? 0), 0);
+    const soQuaTuoi = bo(/_bo_qua_tuoi$/).length;
+    expect(soQuaTuoi).toBeGreaterThanOrEqual(1);
+    expect(tong("qua_lon")).toBe(1);
+    expect(tomTat.some((t) => t.requestIds.includes("l"))).toBe(true);
+    expect(trangThaiGhiTreo().tomTatCho, "lượt quá tuổi chờ tóm tắt (trần đầy)").toBe(soQuaTuoi);
+    expect(demGhiBoQuaDay().tong).toBe(1 + soQuaTuoi);
+    // lần van xả kế tiếp ⇒ tóm tắt các lượt quá tuổi được ghi: đúng số, có nhãn `gia`
+    await vi.advanceTimersByTimeAsync(HAN_GIAI_PHONG_SLOT_MS);
+    await nhuong(10);
+    expect(tong("qua_tuoi")).toBe(soQuaTuoi);
+    expect(tomTat.reduce((n, t) => n + (t.theoNhan.gia ?? 0), 0)).toBe(1);
+    expect(gia).not.toHaveBeenCalled();
   });
 
   it("★ dòng tóm tắt KHÔNG BAO GIỜ bị bỏ: ghi hỏng ⇒ giữ lại, GỘP lượt bỏ mới, thử lại (hẹn giờ) ⇒ MỘT tóm tắt đúng tổng", async () => {
@@ -693,22 +706,38 @@ describe("★ fix round 3 — S-1: CẮT không bao giờ đổi ĐỊNH DANH au
   });
   const DINH_DANH = ["bang", "entityType", "entityId", "action", "actorId", "reason"] as const;
 
+  /**
+   * N3-3 — mức cắt suy từ HÌNH của kết quả (không đổi sản phẩm): chuỗi lá dài nhất của `after` đã cắt = trần chuỗi của mức + "…" (201 / 61 / 21).
+   * Mảng bị cắt theo SỐ PHẦN TỬ ⇒ payload nhiều adapter dừng ở mức 1; payload ÉP mức 2 / 3 là object RỘNG (nhiều khoá) với chuỗi DÀI, ít mảng.
+   */
+  const mucCat = (after: unknown): 1 | 2 | 3 => {
+    let max = 0;
+    const di = (v: unknown): void => {
+      if (typeof v === "string") max = Math.max(max, v.length);
+      else if (v && typeof v === "object") Object.values(v as Record<string, unknown>).forEach(di);
+    };
+    di(after);
+    return max > 61 ? 1 : max > 21 ? 2 : 3;
+  };
+  const rong = (soKhoa: number, soKhoaCon: number) =>
+    Object.fromEntries(Array.from({ length: soKhoa }, (_, i) => [`k${i}`, Object.fromEntries(Array.from({ length: soKhoaCon }, (_, j) => [`c${j}`, "v".repeat(3_000)]))]));
+  const goiAfter = (after: unknown) => ({ ...goc(1), before: { ghiChu: "b".repeat(5_000) }, after });
+
   it.each([
-    { ten: "mức 1", soAdapter: 400 },
-    { ten: "mức 2/3 (after rất rộng)", soAdapter: 20_000 },
-  ])("★ $ten — định danh NGUYÊN VĂN từng byte, chỉ before/after bị cắt, vừa 16 KB, daCat", ({ soAdapter }) => {
-    const g = goc(soAdapter);
+    { ten: "mức 1 (400 adapter — mảng cắt theo số phần tử)", g: () => goc(400), muc: 1 },
+    { ten: "mức 2 (32 khoá × 8 chuỗi 3 KB)", g: () => goiAfter(rong(32, 8)), muc: 2 },
+    { ten: "mức 3 (32 khoá × 32 chuỗi 3 KB)", g: () => goiAfter(rong(32, 32)), muc: 3 },
+  ])("★ $ten — ĐÚNG mức đó; định danh NGUYÊN VĂN từng byte, chỉ before/after bị cắt, vừa 16 KB, daCat", ({ g: taoGoc, muc }) => {
+    const g = taoGoc();
     const c = rutGonVua(g) as Record<string, unknown>;
     expect(c).not.toBeNull();
-    for (const k of DINH_DANH) expect(JSON.stringify(c[k]), k).toBe(JSON.stringify(g[k]));
+    expect(mucCat(c.after), "mức cắt đạt được").toBe(muc);
+    for (const k of DINH_DANH) expect(JSON.stringify(c[k]), k).toBe(JSON.stringify((g as Record<string, unknown>)[k]));
     expect(c.daCat).toBe(true);
     expect(JSON.stringify(c).length).toBeLessThanOrEqual(TRAN_BYTE_MUC_HANG_CHO);
     expect(JSON.stringify(c.after).length).toBeLessThan(JSON.stringify(g.after).length);
     const e = suKienAuditTuNoiDung<Record<string, unknown>>(c);
-    expect(e.action).toBe(g.action);
-    expect(e.reason).toBe(g.reason);
-    expect(e.entityType).toBe(g.entityType);
-    expect(e.entityId).toBe(g.entityId);
+    for (const k of ["action", "reason", "entityType", "entityId", "actorId"] as const) expect(e[k], k).toBe((g as Record<string, unknown>)[k]);
     expect((e.after as Record<string, unknown>).daCat).toBe(true);
   });
 
@@ -832,7 +861,9 @@ describe("★ fix round 3 (kiem-dinh) — van xả chỗ rò", () => {
 });
 
 describe("★ fix round 3 — N2-3: mục quá lớn trong hàng chờ KHÔNG giữ tải gốc", () => {
-  // bật gc trong tiến trình (mẹo v8 — không cần cờ dòng lệnh); không có ⇒ bỏ qua và lập luận từ cấu trúc (mucTuNoiDungCat)
+  // bật gc trong tiến trình (mẹo v8 — không cần cờ dòng lệnh); không có ⇒ bỏ qua và lập luận từ cấu trúc (mucTuNoiDungCat).
+  // `YEU_CAU_GC=1` (môi trường của tiến trình test) ⇒ KHÔNG bỏ qua: thiếu gc là ĐỎ (dùng ở lưới nghiệm thu / CI để không xanh-nhờ-bỏ-qua).
+  const yeuCauGc = process.env.YEU_CAU_GC === "1";
   let gc: (() => void) | null = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -845,7 +876,8 @@ describe("★ fix round 3 — N2-3: mục quá lớn trong hàng chờ KHÔNG gi
   }
   const nguoiGhiRieng = (ghi: unknown[]) => async (nd: unknown) => void ghi.push(nd);
 
-  it.skipIf(!gc)("tải gốc (WeakRef) được thu gom khi mục CẮT còn nằm trong hàng chờ; đối chứng: mục THƯỜNG giữ tải tới khi xả", async () => {
+  it.skipIf(!gc && !yeuCauGc)("tải gốc (WeakRef) được thu gom khi mục CẮT còn nằm trong hàng chờ; đối chứng: mục THƯỜNG giữ tải tới khi xả", async () => {
+    expect(gc, "YEU_CAU_GC=1 nhưng không bật được gc trong tiến trình").not.toBeNull();
     dayTran();
     const ghi: unknown[] = [];
     const xepHang = (lon: boolean) => {
