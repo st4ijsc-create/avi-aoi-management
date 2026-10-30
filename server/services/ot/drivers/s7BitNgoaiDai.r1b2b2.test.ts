@@ -25,6 +25,7 @@ import {
   MA_S7_THU_VIEN_KHONG_KIEM_DUOC,
   kiemDiaChiS7,
   laLoiS7BitNgoaiDai,
+  loiItemNodes7,
   lopNodes7That,
   lyDoCauHinhDiaChiS7,
   parseS7Address,
@@ -491,4 +492,130 @@ describe("T3C fix 2 (N1) — mảng ĐỌC hợp lệ (CHAR kiểu string, json)
     await cho(150);
     expect(pduGhi()).toHaveLength(0);
   }, 15_000);
+});
+
+describe("T3C polish (kiem-dinh d8–d13) — chốt trong phiên, gọi THẲNG conn.writeItems của phiên nodes7 THẬT (bỏ qua writeTags): MỖI kiểm có lý do riêng, 0 gói", () => {
+  /** Gọi thẳng instance; trả thông điệp lỗi ném ra (hoặc "KHÔNG NÉM"); callback của thư viện không bao giờ được gọi. */
+  async function goiThang(phien: Awaited<ReturnType<typeof s7Sim>>, dich: Record<string, string>, keys: unknown, values: unknown) {
+    const conn = (phien.d as any).conn;
+    conn.setTranslationCB((t: string) => dich[t]);
+    let goiLai = false;
+    let loi = "KHÔNG NÉM";
+    try {
+      conn.writeItems(keys, values, () => (goiLai = true));
+    } catch (e) {
+      loi = String((e as Error)?.message ?? e);
+    }
+    await cho(150);
+    expect(goiLai, "callback của thư viện không được gọi").toBe(false);
+    return loi;
+  }
+  const TIEN_TO = "OT_S7_DIA_CHI_THU_VIEN_BO: ";
+  const DUOI = " - refused before sending (nodes7 would resend the previous write packet or write part of the batch); nothing sent";
+
+  it("★ (a) danh sách RỖNG ⇒ bọc writeItems ném 'writeItems called with an empty list' (d13), không tới nodes7; sau lời ghi trước ⇒ KHÔNG phát lại", async () => {
+    const p = await s7Sim();
+    await ghiTruoc(p.d, p.pduGhi);
+    expect(await goiThang(p, {}, [], [])).toBe(`${TIEN_TO}writeItems called with an empty list${DUOI}`);
+    expect(p.pduGhi()).toHaveLength(1);
+  }, 15_000);
+
+  it("★ (a') mọi khoá bị nodes7 BỎ (DB1,X0.9) ⇒ prepareWritePacket ném 'nodes7 built an empty write list' (d8), 0 gói mới", async () => {
+    const p = await s7Sim();
+    await ghiTruoc(p.d, p.pduGhi);
+    expect(await goiThang(p, { x: "DB1,X0.9" }, ["x"], [true])).toBe(`${TIEN_TO}nodes7 built an empty write list${DUOI}`);
+    expect(p.pduGhi()).toHaveLength(1);
+  }, 15_000);
+
+  it("★ (b) [DB1,X0.9 ; DB1,INT4] — nodes7 bỏ MỘT item ⇒ 'nodes7 built 1 of 2 write items' (d9), 0 gói (INT4 KHÔNG được ghi một mình)", async () => {
+    const p = await s7Sim();
+    expect(await goiThang(p, { x: "DB1,X0.9", n: "DB1,INT4" }, ["x", "n"], [true, 5])).toBe(`${TIEN_TO}nodes7 built 1 of 2 write items${DUOI}`);
+    expect(p.pduGhi()).toHaveLength(0);
+  }, 15_000);
+
+  it("★ (c) khoá / giá trị khác độ dài ⇒ bọc writeItems ném 'not one-to-one' (d12), 0 gói", async () => {
+    const p = await s7Sim();
+    const motMot = `${TIEN_TO}writeItems called with keys / values nodes7 does not take one-to-one${DUOI}`;
+    expect(await goiThang(p, { n: "DB1,INT4" }, ["n"], [5, 6])).toBe(motMot);
+    expect(await goiThang(p, { n: "DB1,INT4" }, ["n", "n"], [5])).toBe(motMot);
+    expect(p.pduGhi()).toHaveLength(0);
+  }, 15_000);
+
+  it("★ (d) item nodes7 KHÔNG bỏ nhưng hiểu sai: M0.8 (bit 8) / DB1,INT2.3 (mảng) ⇒ loiItemNodes7 trong chốt ném (d11), 0 gói (không có chốt: M1.0 bị ghi)", async () => {
+    const p = await s7Sim();
+    expect(await goiThang(p, { m: "M0.8" }, ["m"], [true])).toBe(`${TIEN_TO}write item "m" read by the nodes7 address parser as bit 8${DUOI}`);
+    expect(await goiThang(p, { a: "DB1,INT2.3" }, ["a"], [[1, 2, 3]])).toBe(
+      `${TIEN_TO}write item "a" read by the nodes7 address parser as an array of 3 (the driver writes single values only)${DUOI}`,
+    );
+    expect(p.pduGhi()).toHaveLength(0);
+  }, 15_000);
+
+  it("★ (e) danh sách nodes7 dựng ĐỔI THỨ TỰ / KHOÁ (writeItems gốc thay bằng bản dựng [b, a]) ⇒ 'dropped or reordered' (d10), không tới prepareWritePacket gốc, 0 gói", async () => {
+    const Lop = lopNodes7That()! as { prototype: Record<string, any> };
+    const gocWriteItems = Lop.prototype.writeItems;
+    const gocPrepare = Lop.prototype.prepareWritePacket;
+    let toiGoc = 0;
+    Lop.prototype.prepareWritePacket = function (this: unknown, ...a: unknown[]) {
+      toiGoc += 1;
+      return gocPrepare.apply(this, a);
+    };
+    // writeItems "gốc" giả: dựng đúng SỐ item nhưng hoán đổi khoá, rồi gọi prepareWritePacket như nodes7 (:489) — chốt phải bắt thứ tự sai.
+    Lop.prototype.writeItems = function (this: any, arg: string[]) {
+      this.instantWriteBlockList = [...arg].reverse().map((k) => ({ useraddr: k, datatype: "INT", arrayLength: 1, bitOffset: 0 }));
+      this.prepareWritePacket();
+      return 0;
+    };
+    try {
+      const p = await s7Sim(); // phiên MỚI: chốt bọc writeItems / prepareWritePacket giả ở trên
+      expect(await goiThang(p, { a: "DB1,INT2", b: "DB1,INT4" }, ["a", "b"], [1, 2])).toBe(`${TIEN_TO}write item "a" dropped or reordered${DUOI}`);
+      expect(toiGoc, "không tới prepareWritePacket gốc").toBe(0);
+      expect(p.pduGhi()).toHaveLength(0);
+    } finally {
+      Lop.prototype.writeItems = gocWriteItems;
+      Lop.prototype.prepareWritePacket = gocPrepare;
+    }
+  }, 15_000);
+
+  it("đối chứng: sau các lần chốt ném, phiên vẫn ghi được (một PDU, ok)", async () => {
+    const p = await s7Sim();
+    await goiThang(p, {}, [], []);
+    await goiThang(p, { x: "DB1,X0.9", n: "DB1,INT4" }, ["x", "n"], [true, 5]);
+    expect(await p.d.writeTags([{ tagKey: "n", address: "DB1,INT4", value: 5, dataType: "int" }])).toEqual([{ tagKey: "n", ok: true }]);
+    expect(p.pduGhi()).toHaveLength(1);
+  }, 15_000);
+});
+
+describe("T3C polish (kiem-dinh b11–b13) — vị từ: mặc định CHẶT, loiItemNodes7, kiểm đổi khoá", () => {
+  it("★ b13 — mặc định cheDo = 'ghi': không tuỳ chọn ⇒ mảng bị từ chối; CÓ dataType mà không cheDo ⇒ vẫn chặt (mặc định 'doc' sẽ nhận CHAR string / json)", () => {
+    expect(kiemDiaChiS7("DB1,INT2.5")?.ma).toBe(MA_S7_DIA_CHI_THU_VIEN_BO);
+    expect(kiemDiaChiS7("DB1,CHAR10.20", { khoa: "b13s", dataType: "string" })?.lyDo).toMatch(/writes single values only/);
+    expect(kiemDiaChiS7("DB1,INT2.5", { khoa: "b13j", dataType: "json" })?.lyDo).toMatch(/writes single values only/);
+  });
+
+  it("★ b11 — loiItemNodes7 gọi thẳng: bit 9 / 8 / -1 / 1.5 / vắng ⇒ từ chối (cả chế độ doc + json); bit 7 ⇒ null; mảng theo chế độ", () => {
+    for (const bitOffset of [9, 8, -1, 1.5, undefined]) {
+      for (const tc of [{}, { cheDo: "doc" as const, dataType: "json" }]) {
+        expect(loiItemNodes7({ datatype: "X", bitOffset, arrayLength: 1 }, tc), String(bitOffset)).toBe(`read by the nodes7 address parser as bit ${String(bitOffset)}`);
+      }
+    }
+    expect(loiItemNodes7({ datatype: "X", bitOffset: 7, arrayLength: 1 })).toBeNull();
+    expect(loiItemNodes7(undefined)).toBe("dropped by the nodes7 address parser");
+    expect(loiItemNodes7({ datatype: "INT", arrayLength: 5 })).toMatch(/array of 5 \(the driver writes single values only\)/);
+    expect(loiItemNodes7({ datatype: "INT", arrayLength: 5 }, { cheDo: "doc", dataType: "json" })).toBeNull();
+    expect(loiItemNodes7({ datatype: "CHAR", arrayLength: 20 }, { cheDo: "doc", dataType: "string" })).toBeNull();
+    expect(loiItemNodes7({ datatype: "INT", arrayLength: 5 }, { cheDo: "doc", dataType: "string" })).toMatch(/arrays read only as json, or CHAR arrays as string/);
+  });
+
+  it("★ b12 — bộ phân tích nodes7 trả item mang khoá KHÁC ⇒ kiemDiaChiS7 'renamed by the nodes7 address parser'", () => {
+    const Lop = lopNodes7That()! as { prototype: Record<string, any> };
+    const goc = Lop.prototype.addItemsNow;
+    Lop.prototype.addItemsNow = function (this: { polledReadBlockList: unknown[] }) {
+      this.polledReadBlockList.push({ useraddr: "khac", datatype: "INT", arrayLength: 1, bitOffset: 0 });
+    };
+    try {
+      expect(kiemDiaChiS7("DB1,INT6", { khoa: "b12_doi_khoa" })?.lyDo).toBe(`${MA_S7_DIA_CHI_THU_VIEN_BO}: address "DB1,INT6" renamed by the nodes7 address parser`);
+    } finally {
+      Lop.prototype.addItemsNow = goc;
+    }
+  });
 });
