@@ -421,6 +421,66 @@ Chốt:
 
 **Thứ tự 2a sáng 31/10:** dieu-phoi gộp T3A + 3B-0 → **T3C** → (kiem-dinh T3 S7) → bàn giao lô T3 + 3B-0 đánh bóng + T3C → T4 …
 
+### Task 3E: Lô ghi áp MỘT PHẦN ⇒ kết cục riêng "một phần", FOE KHÔNG gửi lại (backlog 90, AN TOÀN — dieu-phoi chốt 2026-10-31, làm NGAY SAU T3, TRƯỚC T4)
+
+**Phát hiện (rà T3 vòng 1).** PLC trả một lô ghi S7 trộn: item A `0xff` (đã áp), item B `0x0A` (không áp). Hôm nay driver và dispatcher gộp cả lô thành `failed`. Với lệnh không phải STOP, FOE (T2B) thử lại `failed` ⇒ item A đã áp bị áp LẦN NỮA. Đây là cùng bất biến với T2B: không bao giờ gửi lại lệnh có thể đã áp.
+
+**Thiết kế (dieu-phoi chọn (B) cho 2a; enum riêng (A) để backlog 2b):**
+- **Trạng thái DB / enum.** Không đổi. `status` vẫn là `failed`, `commandstatusenum` không thêm giá trị, KHÔNG migration.
+- **Lý do máy đọc được** `MOT_PHAN`.
+  - Đưa vào `MA_LOI_DA_BIET` (`server/routers/_chiTietKyThuat.ts`), kèm i18n vi/en/zh.
+  - Đặt ở `reason` của DispatchResult và ở tiền tố mã của `errorText` hàng command_log, theo đúng quy ước mã hiện có.
+- **Trường có kiểu** `motPhan?: { daAp: string[]; khongAp: string[] }` (danh sách tagKey) trên `DispatchResult`.
+  - Chỉ có khi lô có ÍT NHẤT một item `ok` VÀ ít nhất một item `ok:false` mà thiết bị đã trả lời. Item có `ketCucKhongRo` ⇒ toàn lô theo luật T2: `timeout`, không phải một phần.
+- **LƯU BỀN (điều kiện 1).**
+  - `motPhan` phải được ghi vào hàng `command_log`, vào cột jsonb sẵn có (ưu tiên `ackValue`; người thực hiện xác nhận cột hợp lý nhất và nêu lý do). KHÔNG migration.
+  - Mọi bên đọc lại SAU khởi động lại hoặc qua edge (`otEdgeDispatch`, FOE dựng lại từ sổ) vẫn thấy "một phần" và không gửi lại, không chỉ dựa vào bộ nhớ.
+  - Đường edge: kết quả edge báo về phải mang được `motPhan` (hoặc kết quả theo item để trung tâm suy ra). Edge cũ không mang ⇒ hành vi hôm nay, ghi rõ trong báo cáo.
+- **FOE.** Bước command không phải STOP nhận một phần (từ DispatchResult HOẶC từ sổ khi dựng lại) ⇒ KHÔNG gửi lại (như `timeout`).
+  - Báo `failed` với mã `FOE_OUTCOME_PARTIAL` (hoặc tái dùng khuôn `FOE_OUTCOME_UNKNOWN`; chọn và nêu lý do), có danh sách item đã áp / không áp.
+  - Compensation chạy như mọi lỗi.
+  - STOP giữ nguyên: STOP vẫn được gửi lại, vì dừng là idempotent.
+- **Driver.**
+  - S7 trước: phân biệt theo item từ `writeResponse` (`0xff` = áp; khác = không áp; thiếu / `Malformed` = KHÔNG RÕ ⇒ T3 vòng 2).
+  - Driver khác (Modbus / SLMP / EIP / OPC UA / MC):
+    - nếu đã trả `ok` theo item đúng nghĩa ⇒ dispatcher tự suy một phần;
+    - nếu driver không phân biệt được theo item (ví dụ ghi cả lô một gói, lỗi chung cho cả lô) ⇒ giữ nguyên hành vi.
+  - Lập bảng "driver → phân biệt theo item? bằng chứng (file:line)" trong báo cáo.
+- **Hiển thị.**
+  - Máy chủ: scadaDiag và bộ ghi lần thử HMI mang `MOT_PHAN` + danh sách item, che theo quyền như mã khác (luật C1).
+  - Phần client (HMI / DungMay / ketQuaLenh) là Part B ⇒ scada-ui làm nếu cần. Phiên này KHÔNG sửa tệp client; báo hợp đồng dữ liệu cho scada-ui.
+
+**Census quyết định gửi lại (điều kiện 2).**
+- Quét theo AST hoặc quét nguồn, KHÔNG viết tay danh sách: liệt kê TOÀN BỘ chỗ trong `server/` đọc status / kết cục `failed` của lệnh rồi rẽ nhánh thử lại hoặc gửi lại. Phạm vi gồm FOE runStep, recipe deploy, changeover, robot, edge redrive, store-and-forward, và mọi chỗ quét được.
+- Mỗi chỗ phải xét `motPhan` / `MOT_PHAN`, hoặc nằm trong danh sách miễn có lý do.
+- Đột biến bỏ phần xét ở một chỗ ⇒ đỏ, nêu tên chỗ.
+
+**Test** (nodes7 thật + `__s7commSim` nếu được; nếu không thì PLC giả trong tiến trình):
+1. Lô 2 item trộn (`0xff` + `0x0A`) ⇒ DispatchResult `failed` + `MOT_PHAN` + `motPhan` đúng.
+2. FOE bước không phải STOP, `maxAttempts: 3` ⇒ dispatcher bị gọi ĐÚNG 1 lần (sim đếm gói: không có gói ghi thứ hai). Compensation chạy 1 lần.
+3. Dựng lại FOE từ sổ (command_log) sau lệnh một phần ⇒ không gửi lại. Test DB, TEST DB, giao dịch ROLLBACK của chính test, không id tường minh trong bảng WORM.
+4. Bước STOP với lô trộn ⇒ vẫn thử lại như cũ (đối chứng).
+5. Lô toàn `0x0A` ⇒ `failed` thường, FOE thử lại như cũ (đối chứng). Lô toàn `0xff` ⇒ ok.
+6. Đột biến:
+   - gộp một phần về `failed` thường ⇒ (2) đỏ;
+   - bỏ lưu `motPhan` vào sổ ⇒ (3) đỏ;
+   - áp "không gửi lại" cho cả STOP ⇒ (4) đỏ;
+   - bỏ xét ở một chỗ census ⇒ census đỏ.
+
+**Liên quan.** Task 6 (mất liên kết giữa lô ⇒ nhãn theo TỪNG write) đọc cùng kết quả theo item. 3E KHÔNG làm Task 6, nhưng không được làm khó Task 6: ghi chú điểm nối trong báo cáo.
+
+**Files:**
+- `server/services/ot/commandDispatcher.ts`, `otDeviceWrite.ts`, `otEdgeDispatch.ts`;
+- `server/services/ot/drivers/s7Driver.ts`;
+- `server/services/orchestration/foe/foeEngine.ts`;
+- `server/routers/_chiTietKyThuat.ts`, `scadaDiagRouter.ts`;
+- locales;
+- test mới `server/services/ot/motPhan.r1b2b2.test.ts` (+ `.db.test.ts` cho dựng lại từ sổ) + census `server/services/ot/guiLaiXetMotPhanCensus.test.ts`.
+
+**Commit:** `fix(ot): lo ghi ap MOT PHAN => ket cuc rieng MOT_PHAN (status failed + motPhan {daAp,khongAp} luu vao command_log), FOE khong gui lai (STOP van gui lai), census moi cho gui lai phai xet motPhan (R1b-2b-2a T3E, backlog 90)`. kiem-dinh rà.
+
+**Thứ tự 2a cập nhật 2026-10-31:** … T3 (vòng 2) → **T3E** → T4 …
+
 ### Task 4: `interlock.resolveEvent` dưới khoá ADAPTER → LUẬT (mục 62)
 
 **Files:**
