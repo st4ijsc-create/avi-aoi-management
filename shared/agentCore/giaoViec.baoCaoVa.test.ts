@@ -49,3 +49,20 @@ describe("dungKhoiBaoCao — đường vô hình bị loại + đếm; nhãn", (
     expect(co.khoi).not.toContain("no evidence");
   });
 });
+
+describe("kiem-dinh r7/r8 — mỗi lớp ký tự phải có ca riêng (đường bị loại · văn bản bị đổi thành khoảng trắng)", () => {
+  const LOP = [0x200b, 0x200f, 0x2066, 0x2069, 0x202a, 0x202e, 0xfeff, 0x2060, 0x00ad, 0x0085];
+  it("★ đường chứa MỘT ký tự của từng lớp (đầu/cuối dải) ⇒ null", () => {
+    for (const m of LOP) expect(chuanDuongBaoCao(`src/a${kt(m)}b.ts`), m.toString(16)).toBeNull();
+  });
+  it("★ summary/note/quote chứa ký tự của từng lớp ⇒ khối KHÔNG còn ký tự đó (đổi thành khoảng trắng, từ không dính nhau)", () => {
+    for (const m of LOP.filter((x) => x !== 0x2060 && x !== 0x00ad && x !== 0x0085)) {
+      const c = kt(m);
+      const r = dungKhoiBaoCao(bc({ summary: `aa${c}bb`, findings: [{ note: `cc${c}dd` }], evidence: [{ path: "src/x.ts", quote: `ee${c}ff` }] }), new Set(), 0);
+      expect(r.khoi, m.toString(16)).not.toContain(c);
+      expect(r.khoi, m.toString(16)).toContain("aa bb");
+      expect(r.khoi, m.toString(16)).toContain("cc dd");
+      expect(r.khoi, m.toString(16)).toContain('"ee ff"');
+    }
+  });
+});

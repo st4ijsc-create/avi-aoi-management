@@ -193,7 +193,7 @@ export const TRAN_KY_TU_KHOI_BAO_CAO = 4_000;
 
 const RE_DIEU_KHIEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 /** ký tự vô hình/đảo chiều (bidi · rộng-không · U+2028/9): một ĐƯỜNG chứa chúng bị LOẠI (khác `RE_DIEU_KHIEN` chỉ đổi thành khoảng trắng trong văn bản) */
-const RE_DIEU_KHIEN_AN = /[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
+const RE_DIEU_KHIEN_AN = /[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff\u2060\u00ad\u0085]/;
 const motDong = (s: string): string => s.replace(RE_DIEU_KHIEN, " ").replace(/\s+/g, " ").trim();
 
 /**

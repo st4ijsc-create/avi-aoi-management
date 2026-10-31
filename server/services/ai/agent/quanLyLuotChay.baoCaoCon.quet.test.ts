@@ -143,6 +143,13 @@ describe("H5.1 vá — quetTomTat nối trong cấu hình MẶC ĐỊNH", () => 
     }
   }, 150_000);
 
+  it("★★★ (kiem-dinh r2) báo cáo SẠCH nhưng nhắc 'system prompt' / 'act as a' (rủi ro THẤP) ⇒ KHÔNG cảnh báo — chỉ mức 'high' mới bật", async () => {
+    const bc = { status: "done", summary: "I updated the system prompt builder; the helper must act as a thin wrapper", findings: [{ note: "see the system prompt text" }] };
+    const r = await chay({ baoCao: true, kb: [{ tool: [giao] }, { tool: [tc("p1", "report", bc)] }, { chu: "ok" }] });
+    expect(canhBao(r.ev).filter((e) => (e.mau ?? []).some((m) => !m.startsWith("read untrusted content")))).toHaveLength(0);
+    expect(toolDelegate(r.tinNhan)).not.toContain("command-like text");
+  }, 90_000);
+
   it("báo cáo SẠCH ⇒ KHÔNG cảnh báo (không báo động giả)", async () => {
     const r = await chay({ baoCao: true, kb: [{ tool: [giao] }, { tool: [tc("p1", "report", BC)] }, { chu: "ok" }] });
     expect(canhBao(r.ev).filter((e) => (e.mau ?? []).some((m) => !m.startsWith("read untrusted content")))).toHaveLength(0);
