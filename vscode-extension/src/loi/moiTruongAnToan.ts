@@ -37,6 +37,10 @@ const MANH_TEN_BI_MAT: readonly string[] = [
   "BEARER",
   "SIGNATURE",
   "PASSPHRASE",
+  "_PWD", // MYSQL_PWD (KHÔNG khớp `PWD` trần — đó là thư mục hiện tại)
+  "_PASS", // SMTP_PASS, DB_PASS (cả `_PASSWORD`)
+  "WEBHOOK", // URL webhook Slack/Discord là bí mật
+  "SALT",
 ];
 
 /** Tiền tố tên của dịch vụ đám mây / nhà cung cấp AI: cả nhóm biến bị loại (kể cả biến vô hại như `AWS_REGION` — chấp nhận loại thừa). */
@@ -67,7 +71,7 @@ const TIEN_TO_DICH_VU: readonly string[] = [
 
 /**
  * NGOẠI LỆ (thắng cả mảnh-tên lẫn tiền-tố lẫn kiểm giá trị): cấu hình công cụ, không phải bí mật.
- * Proxy: giá trị CÓ THỂ mang `user:pass@proxy` — chủ định giữ (công cụ cần để ra mạng nội bộ); đó là cấu hình của chính người dùng cho CHÍNH
+ * Proxy: giá trị CÓ THỂ mang `user:pass@proxy` (⚠ bí mật proxy VẪN tới tiến trình con — đã ghi nhận, đánh đổi chấp nhận) — chủ định giữ (công cụ cần để ra mạng nội bộ); đó là cấu hình của chính người dùng cho CHÍNH
  * công cụ, và đã nằm trong môi trường mà họ chạy lệnh bằng tay.
  */
 const NGOAI_LE: ReadonlySet<string> = new Set([
@@ -90,9 +94,12 @@ const NGOAI_LE: ReadonlySet<string> = new Set([
   "CURL_CA_BUNDLE",
 ]);
 
-const RE_URL_CO_MAT_KHAU = /\/\/[^/\s:@]+:[^@\s]+@/;
+// user có thể RỖNG (`redis://:matkhau@host`); phần mật khẩu không chứa `/` để đường dẫn kiểu `http://reg:4873/@scope/pkg` không bị coi là mật khẩu.
+const RE_URL_CO_MAT_KHAU = /\/\/[^/\s:@]*:[^@\s/]+@/;
+/** Khối khoá riêng PEM và JWT ba đoạn đặt trong một biến tên vô hại. */
+const RE_GIA_TRI_KHOA = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/;
 
-export type LyDoLoaiBien = "ten" | "tien-to" | "gia-tri-token" | "gia-tri-url";
+export type LyDoLoaiBien = "ten" | "tien-to" | "gia-tri-token" | "gia-tri-url" | "gia-tri-khoa";
 
 /** Lý do loại một biến, hoặc `null` nếu giữ. Thuần; KHÔNG trả giá trị (chỉ dùng cho đo/nhật ký). */
 export function lyDoLoaiBien(ten: string, giaTri: string): LyDoLoaiBien | null {
@@ -100,9 +107,12 @@ export function lyDoLoaiBien(ten: string, giaTri: string): LyDoLoaiBien | null {
   if (NGOAI_LE.has(T)) return null;
   // `HTTP_PROXY` viết thường (`http_proxy`) đã gom nhờ `toUpperCase`.
   if (TIEN_TO_DICH_VU.some((p) => T.startsWith(p))) return "tien-to";
-  if (MANH_TEN_BI_MAT.some((m) => T.includes(m))) return "ten";
+  // `AUTHOR` (GIT_AUTHOR_NAME/EMAIL — `git commit` của lệnh test cần chúng) không phải `AUTH`: bỏ đoạn AUTHOR trước khi so mảnh.
+  const tenSoManh = T.replace(/AUTHOR/g, "");
+  if (MANH_TEN_BI_MAT.some((m) => tenSoManh.includes(m))) return "ten";
   if (new RegExp(RE_TOKEN_CO_TIEN_TO.source).test(giaTri)) return "gia-tri-token";
   if (RE_URL_CO_MAT_KHAU.test(giaTri)) return "gia-tri-url";
+  if (RE_GIA_TRI_KHOA.test(giaTri)) return "gia-tri-khoa";
   return null;
 }
 

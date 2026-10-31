@@ -27,7 +27,7 @@
  */
 import { spawn } from "node:child_process";
 import { moiTruongDaLocChoTienTrinhCon } from "../loi/moiTruongAnToan";
-import { gietCayThenLopHai } from "./gietCay";
+import { dongTienTrinhSongLau } from "./gietCay";
 import type { CauHinhMcpServer } from "../loi/mcpCauHinh";
 import { tachDongJsonRpc, dungDongYeuCauJsonRpc, dungDongThongBaoJsonRpc, type TraLoiJsonRpcMcp } from "../loi/mcpKhungDong";
 
@@ -199,9 +199,9 @@ export function taoTienTrinhMcpNgoai(cfg: CauHinhMcpServer): KenhTienTrinhMcp {
       },
       dongDoc: cp.stdout,
       dong: () => {
-        // Cả CÂY (một MCP server thường là `npx`/`node` bọc tiến trình thật; Windows: taskkill /T), rồi `cp.kill()` làm lớp thứ hai.
-        // POSIX: KHÔNG `detached` (server sống lâu — host chết thì nó phải chết theo, không mồ côi) ⇒ chỉ giết được đúng pid.
-        gietCayThenLopHai(cp);
+        // Cả CÂY (một MCP server thường là `npx`/`node` bọc tiến trình thật; Windows: taskkill /T).
+        // POSIX: KHÔNG `detached` (server sống lâu — host chết thì nó phải chết theo, không mồ côi) ⇒ SIGTERM trước rồi SIGKILL cả cây sau ân hạn.
+        dongTienTrinhSongLau(cp);
       },
     };
   } catch {

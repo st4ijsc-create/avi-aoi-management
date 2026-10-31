@@ -41,3 +41,40 @@ export function gietCayThenLopHai(cp: { pid?: number; kill: () => boolean }, anH
   else lopHai();
 }
 
+
+/** Hiệu ứng tiêm được (cho lưới đo nhánh POSIX trên máy Windows mà không giết nhầm tiến trình thật). */
+export interface MoDongMem {
+  windows: boolean;
+  gietCay: (pid: number | undefined | null) => KetQuaGiet;
+}
+
+/**
+ * ★ Đợt 12/H2 (theo kiem-dinh) — ĐÓNG MỘT TIẾN TRÌNH SỐNG LÂU, KHÔNG detached (MCP server).
+ * Windows: như `gietCayThenLopHai` (`taskkill /T /F` đủ cây). POSIX: pid KHÔNG phải thủ lĩnh nhóm ⇒ `kill(-pid)` hụt rồi rơi về SIGKILL
+ * thẳng vào `npx`/`node` đầu ⇒ cháu do `npx` sinh mồ côi. Nên POSIX gửi SIGTERM TRƯỚC (npx/npm chuyển tín hiệu cho cháu, server dọn dẹp
+ * êm), rồi SIGKILL cả cây sau ân hạn nếu còn sống.
+ */
+export function dongTienTrinhSongLau(
+  cp: { pid?: number; kill: (tinHieu?: NodeJS.Signals) => boolean; exitCode: number | null; signalCode: NodeJS.Signals | null },
+  anHanMs = 2_000,
+  mo: MoDongMem = { windows: process.platform === "win32", gietCay: gietCayTienTrinh },
+): void {
+  if (mo.windows) {
+    gietCayThenLopHai(cp as { pid?: number; kill: () => boolean }, 1_500);
+    return;
+  }
+  try {
+    cp.kill("SIGTERM");
+  } catch {
+    // đã chết sẵn — vô hại
+  }
+  setTimeout(() => {
+    if (cp.exitCode !== null || cp.signalCode !== null) return; // đã thoát êm
+    mo.gietCay(cp.pid);
+    try {
+      cp.kill("SIGKILL");
+    } catch {
+      // vô hại
+    }
+  }, anHanMs).unref();
+}
