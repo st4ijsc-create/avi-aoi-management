@@ -192,6 +192,7 @@ import { giaTriLenhInterlock } from "../interlock/giaTriLenh"; // R1a T12 fix 1 
 import { cachedStopPinPresence } from "./stopPinPresence"; // doc 81 Đợt 12 final fix wave residual (R-12-f item 1)
 import { kiemGiaTriDiaChiBit, lopDiaChiBit } from "./drivers/diaChiBit"; // R1b-2b-1 T2 fix round 1 (I1) — bit-address rule of the early gate
 import { otStopEpochSyncSeesPeers } from "./otStopEpochSync"; // R-12-f item 1
+import { hanLenhOtMacDinhMs } from "./hanLenhOt"; // R1b-2b-2a T3 fix 1 (M-4) — MỘT nơi đọc + kẹp OT_CONTROL_TIMEOUT_MS
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -419,7 +420,7 @@ export function ackTimeoutMacDinhMs(): number {
 }
 
 function effectiveTimeoutMs(deadlineMs?: number): number {
-  const envDefault = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  const envDefault = hanLenhOtMacDinhMs(); // R1b-2b-2a T3 fix 1 (M-4) — MỘT helper kẹp (Infinity / NaN / âm / quá trần setTimeout ⇒ 5000 + cảnh báo một lần)
   if (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs <= 0) return envDefault;
   const maxRaw = Number(process.env.OT_CONTROL_TIMEOUT_MAX_MS);
   const max = Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : null;

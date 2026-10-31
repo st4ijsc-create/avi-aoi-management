@@ -308,6 +308,41 @@ describe("G1.13 — importMapping", () => {
     expect(res.requiresAdapterRestart).toBe(false);
   });
 
+  it("SCADA R1b-2b-2a T3C — adapter S7 + tag bit ∉ 0..7 ⇒ MappingValidationError OT_S7_BIT_NGOAI_DAI (cả dry-run), 0 giao dịch; adapter khác giao thức không đổi", async () => {
+    const s7 = { ...ADAPTER, protocol: "s7" };
+    const tagsBit = [{ ...DB_TAGS[0], tagKey: "stop", address: "DB1,X0.9", dataType: "bool" }, { ...DB_TAGS[1], address: "DB1,X0.7", dataType: "bool" }];
+    const y = mappingFileToYaml(buildMappingFile(s7, null, tagsBit as TagRowInput[], [], 2));
+    for (const dryRun of [true, false]) {
+      queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+      const loi = await importMapping(y, { dryRun }).then(() => null, (e: unknown) => e);
+      expect(loi).toBeInstanceOf(MappingValidationError);
+      expect((loi as MappingValidationError).issues).toEqual([expect.stringMatching(/^tag "stop": OT_S7_BIT_NGOAI_DAI: S7 bit address "DB1,X0.9" names bit 9 /)]);
+    }
+    expect(fake.state.txCount).toBe(0);
+    // T3C fix 1 (I2) — CÙNG vị từ: địa chỉ nodes7 không có ("MX0.1") / mảng ("DB1,INT2.5") ⇒ OT_S7_DIA_CHI_THU_VIEN_BO
+    const tagsVung = [{ ...DB_TAGS[0], tagKey: "stop", address: "MX0.1", dataType: "bool" }, { ...DB_TAGS[1], address: "DB1,INT2.5", dataType: "int" }];
+    queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+    const loiVung = await importMapping(mappingFileToYaml(buildMappingFile(s7, null, tagsVung as TagRowInput[], [], 2)), { dryRun: true }).then(() => null, (e: unknown) => e);
+    expect((loiVung as MappingValidationError).issues).toEqual([
+      expect.stringMatching(/^tag "run": OT_S7_DIA_CHI_THU_VIEN_BO: address "DB1,INT2.5" read by the nodes7 address parser as an array of 5/),
+      expect.stringMatching(/^tag "stop": OT_S7_DIA_CHI_THU_VIEN_BO: address "MX0.1" dropped by the nodes7 address parser/),
+    ]);
+    // fix 2 (N1) — tệp có tag chuỗi DB1,CHAR10.20 + json DB1,INT2.5 (chỉ-đọc) ⇒ import lại ĐƯỢC (dry-run và apply); CHAR10.20 writable ⇒ từ chối
+    const tagsDoc = [
+      { ...DB_TAGS[0], tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string", writable: false },
+      { ...DB_TAGS[1], tagKey: "arr", address: "DB1,INT2.5", dataType: "json", writable: false },
+    ];
+    const yDoc = mappingFileToYaml(buildMappingFile(s7, null, tagsDoc as TagRowInput[], [], 2));
+    queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+    await expect(importMapping(yDoc, { dryRun: true })).resolves.toMatchObject({ dryRun: true });
+    const tagsGhi = [{ ...DB_TAGS[0], tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string", writable: true }];
+    queueImportSelects({ adapter: { id: s7.id, code: s7.code, protocol: "s7", machineId: null } });
+    const loiGhi = await importMapping(mappingFileToYaml(buildMappingFile(s7, null, tagsGhi as TagRowInput[], [], 2)), { dryRun: true }).then(() => null, (e: unknown) => e);
+    expect((loiGhi as MappingValidationError).issues).toEqual([expect.stringMatching(/^tag "ten": OT_S7_DIA_CHI_THU_VIEN_BO: .*writes single values only/)]);
+    queueImportSelects(); // modbus: cùng địa chỉ không phải S7 ⇒ không kiểm lớp này
+    await expect(importMapping(mappingFileToYaml(buildMappingFile(ADAPTER, null, tagsBit as TagRowInput[], [], 2)), { dryRun: true })).resolves.toMatchObject({ dryRun: true });
+  });
+
   it("fails ADAPTER_NOT_FOUND when the adapter code is unknown", async () => {
     fake.state.selectResults = [[]]; // no adapter row
     await expect(importMapping(yamlV(1), { dryRun: true })).rejects.toMatchObject({ code: "ADAPTER_NOT_FOUND" });

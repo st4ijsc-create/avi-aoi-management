@@ -7,7 +7,8 @@
  *   • RFC 1006 TPKT (03 00 <len>), ISO 8073 / X.224 class 0 COTP: CR 0xE0 → CC 0xD0 (parameters echoed: 0xC0 TPDU size,
  *     0xC1 calling TSAP, 0xC2 called TSAP), DT 0xF0 + EOT 0x80;
  *   • Wireshark packet-s7comm.c / .h (field definitions): S7 header 0x32, ROSCTR job 1 / ack_data 3 (+ error class /
- *     code) / userdata 7; setup communication 0xF0; write var 0x05 (ack_data: function, item count; data: one return
+ *     code) / userdata 7; setup communication 0xF0; read var 0x04 (R1b-2b-2a T3C: per item FF 04 <bit length> <bytes>, see setBytes);
+ *     write var 0x05 (ack_data: function, item count; data: one return
  *     code 0xFF per item); userdata parameter 00 01 12 <len> <syntax> <type|group> <subfunction> <seq>
  *     [<data unit ref> <last data unit> <error code>]; block functions (group 3): list blocks 0x01, list blocks of type
  *     0x02 (fragmented answers: "last data unit" 0x01 = more follow), get block info 0x03 (78-byte answer);
@@ -73,9 +74,15 @@ export interface SimIdentity {
   firmware?: [number, number, number];
 }
 
-/** Fault modes (all affect block-function userdata only; the COTP / setup / write path keeps answering). */
+/**
+ * Fault modes. All affect block-function userdata only (the COTP / setup / write path keeps answering), except the two write-var
+ * faults marked "(write var)".
+ */
 export type SimFault =
   | null
+  | "hangWrite" // (write var) never answer a write var job (R1b-2b-2a T3: the client's own write timeout); the job is still recorded in pdus
+  | "writeError" // (write var) answer every write var item with return code 0x0A (object does not exist): the PLC ANSWERED with an error
+  | "writeShort" // (write var) answer at once with the item count but ONE return-code byte fewer than items (truncated data part) — T3 fix 1 s4: nodes7 0.3.18 marks the item without a byte valid=false with errCode "Malformed Packet - Less Than 1 Byte…" and NO writeResponse, and calls back at once with "bad". The PLC answered the job without a result for that item ⇒ the driver labels it outcome UNKNOWN (T3 fix 2, kiem-dinh I-1), not failed. Needs >= 2 items: a 1-item answer without data is 21 bytes, below the 22-byte minimum nodes7 accepts (it resets the connection instead)
   | "hang" // never answer a block-function request
   | "refuse" // parameter error code 0x8104 (function not supported) on every block function
   | "wrongNumber" // block info answers with another block number
@@ -112,6 +119,8 @@ export interface S7commSim {
   setListChunk(n: number): void;
   /** The order in which the list-all answer names the block types (tests that the client does not depend on it). */
   setListAllOrder(codes: number[]): void;
+  /** R1b-2b-2a T3C — bytes answered by read var (area code 0x84 DB / 0x83 M / 0x82 Q / 0x81 I; db 0 outside DB). Unset bytes read 0. */
+  setBytes(area: number, db: number, byteOffset: number, bytes: number[]): void;
   /** Every S7 PDU received (from the 0x32 byte on), with the connection index. */
   readonly pdus: Array<{ conn: number; bytes: Buffer }>;
   /** Raw COTP connection requests (TPKT included). */
@@ -140,6 +149,14 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
   let accepted = 0;
   let writes = 0;
   let blockRequests = 0;
+  /** R1b-2b-2a T3C — memory answered by read var, per "<area>:<db>". */
+  const memory = new Map<string, Buffer>();
+  const memBytes = (area: number, db: number, off: number, len: number) => {
+    const m = memory.get(`${area}:${db}`) ?? Buffer.alloc(0);
+    const out = Buffer.alloc(len);
+    m.copy(out, 0, Math.min(off, m.length), Math.min(off + len, m.length));
+    return out;
+  };
   const expectedTsapLow = (opts.rack ?? 0) * 0x20 + (opts.slot ?? 1);
 
   const server = net.createServer((sock) => {
@@ -255,10 +272,24 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
         sendS7(0x03, ref, Buffer.from([0xf0, 0x00, 0x00, 0x01, 0x00, 0x01, pdu >> 8, pdu & 0xff]), Buffer.alloc(0));
         return;
       }
+      if (rosctr === 0x01 && param[0] === 0x04) {
+        // R1b-2b-2a T3C — read var: item = 12 0a 10 <ts> <len16> <db16> <area> <bit address 24>; answer per item FF 04 <len in bits> <bytes> [fill].
+        const n = param[1] ?? 0;
+        const parts: Buffer[] = [];
+        for (let i = 0; i < n; i++) {
+          const it = param.subarray(2 + i * 12, 14 + i * 12);
+          const len = it.readUInt16BE(4);
+          parts.push(Buffer.from([0xff, 0x04, (len * 8) >> 8, (len * 8) & 0xff]), memBytes(it[8]!, it.readUInt16BE(6), it.readUIntBE(9, 3) >> 3, len));
+          if (i < n - 1 && len % 2) parts.push(Buffer.alloc(1));
+        }
+        sendS7(0x03, ref, Buffer.from([0x04, n]), Buffer.concat(parts));
+        return;
+      }
       if (rosctr === 0x01 && param[0] === 0x05) {
+        if (fault === "hangWrite") return; // R1b-2b-2a T3 — no answer, connection kept open
         writes++;
         const items = param[1] ?? 1;
-        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(items, 0xff));
+        sendS7(0x03, ref, Buffer.from([0x05, items]), Buffer.alloc(fault === "writeShort" ? Math.max(0, items - 1) : items, fault === "writeError" ? 0x0a : 0xff));
         return;
       }
       if (rosctr !== 0x07 || param[0] !== 0x00 || param[1] !== 0x01 || param[2] !== 0x12) return; // not handled: no answer
@@ -399,6 +430,14 @@ export async function startS7commSim(opts: { program?: SimBlock[]; rack?: number
     },
     setListAllOrder: (codes) => {
       listAllOrder = codes.slice();
+    },
+    setBytes: (area, db, byteOffset, bytes) => {
+      const k = `${area}:${db}`;
+      const cu = memory.get(k) ?? Buffer.alloc(0);
+      const m = Buffer.alloc(Math.max(cu.length, byteOffset + bytes.length));
+      cu.copy(m);
+      Buffer.from(bytes).copy(m, byteOffset);
+      memory.set(k, m);
     },
     pdus,
     connectRequests,

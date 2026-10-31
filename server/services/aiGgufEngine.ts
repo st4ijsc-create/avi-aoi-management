@@ -311,6 +311,13 @@ export interface GgufStreamChunk {
   fullText?: string;
   tokensGenerated?: number;
   tokensPrompt?: number;
+  /**
+   * ★ Đợt 12 H0.1 — chỉ ở chunk "done", chỉ đường llama-server: `cacheN` = token prompt TÁI DÙNG từ prefix-cache
+   * (`timings.cache_n`), `promptN` = token prompt XỬ LÝ LẠI (`timings.prompt_n`); dự phòng `usage.prompt_tokens_details.cached_tokens`
+   * khi thiếu `timings`. Luôn đi CẶP; vắng = không đo được (in-process / không-stream) — KHÔNG BIẾT ≠ 0. `tokensPrompt` vẫn là tổng.
+   */
+  cacheN?: number;
+  promptN?: number;
   totalTimeMs?: number;
   /**
    * G1 — TTFT (time-to-first-token) ĐO ĐƯỢC của lượt này, ms: từ lúc bắt đầu gửi tới mảnh chữ ĐẦU

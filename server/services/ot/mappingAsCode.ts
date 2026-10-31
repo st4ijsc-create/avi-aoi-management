@@ -50,6 +50,7 @@ import { deviceAdapters, deviceTags, unsTagMappings, configSnapshots, machines, 
 import type { ConfigSnapshotEntityType } from "../../../drizzle/schema/assetRegistry";
 import type { UnsTagTransform } from "../../../drizzle/schema/ot";
 import { lyDoGoStopPinKhiSuaTag, ghiAuditGoStopPinTx, GO_STOP_PIN_PATCH, type NguoiSuaStopPin } from "./stopPin";
+import { kiemDiaChiS7 } from "./drivers/s7Address";
 // SCADA R1b-1 Task 9 — lô import đụng tag ĐƯỢC BẢO VỆ (trỏ lại / tạo lên khoá mồ côi / prune): MỘT TOTP cho cả lô + trần + kiểm từng tag
 import {
   AUDIT_TAO_KHOA_MO_COI,
@@ -704,6 +705,15 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
       "ADAPTER_NOT_FOUND",
       `Adapter "${file.adapter}" không tồn tại — import không tạo adapter (file không mang endpoint/credentials). Tạo adapter trước qua deviceAdapter.create.`,
     );
+  }
+  // SCADA R1b-2b-2a T3C (backlog 87) + fix 1 (I2) — đường LƯU tag thứ hai: adapter S7 + địa chỉ nodes7 không ghi được đúng như yêu cầu
+  // (`kiemDiaChiS7`, cùng vị từ với deviceAdapter.tags.* / khởi động / driver) ⇒ file không hợp lệ (cả dry-run), không ghi gì.
+  if (adapter.protocol === "s7") {
+    const loiBit = file.tags.flatMap((t) => {
+      const loi = kiemDiaChiS7(t.address, { khoa: t.name, cheDo: t.writable ? "ghi" : "doc", dataType: t.datatype }); // fix 2 (N1) — như deviceAdapter.tags.*
+      return loi ? [`tag "${t.name}": ${loi.lyDo}`] : [];
+    });
+    if (loiBit.length > 0) throw new MappingValidationError(loiBit);
   }
   const machineCode = await loadMachineCode(d, adapter.machineId);
   const current = await loadCurrentState(d, adapter.id);

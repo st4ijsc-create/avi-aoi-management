@@ -303,6 +303,29 @@ describe("model của con", () => {
     expect(theo.tinNhan[1]!.find((m) => m.role === "tool" && m.name === "delegate")!.content).toMatch(/MODEL_CON_CHUA_HO_TRO/);
     expect((await hangSo(uid)).filter((h) => h.parentRunId !== null)).toEqual([]);
   }, 60_000);
+
+  it("(10.4b L3 d1, chiều ngược) agent con của lượt CỤC BỘ xin `ngoai:` ⇒ không chạy con, không hàng sổ con, không gọi model ngoài", async () => {
+    await xoaSo(uid);
+    const dn = ["---", "name: m-ngoai", "description: d", "tools: [read_file]", "model: ngoai:openai:gpt-test", "---", "body", ""].join("\n");
+    fs.mkdirSync(path.join(REPO, ".thoca", "agents"), { recursive: true });
+    fs.writeFileSync(path.join(REPO, ".thoca", "agents", "m-ngoai.md"), dn);
+    await xacNhanTinCay(uid, DU_AN, "m-ngoai", bamNoiDung(dn));
+    const theo = { congCu: [] as string[][], tinNhan: [] as TinNhan[][] };
+    const goiNgoai: unknown[] = [];
+    const kq = await taoQuanLyLuotChay({
+      goiModel: modelKichBan([{ tool: [giao("m-ngoai", "t")] }, { chu: "xong" }], theo),
+      giaoViec: BAT,
+      ngoai: new Proxy({} as never, { get: (_t, k) => (...a: unknown[]) => (goiNgoai.push([k, a]), Promise.reject(new Error("không được gọi"))) }),
+    }).taoLuotChay({ user: NGUOI(), cauHoi: "q", projectId: DU_AN, cheDo: "sua" });
+    if (!kq.ok) throw new Error(kq.ma);
+    await kq.luot.xong;
+    const ketQua = theo.tinNhan[1]!.find((m) => m.role === "tool" && m.name === "delegate")!.content;
+    // định nghĩa xin `ngoai:` bị bộ đọc định nghĩa loại (AGENT_KHONG_CO) — hoặc, nếu sau này đọc được, bị batDauCon chặn (MODEL_CON_CHUA_HO_TRO)
+    expect(ketQua).toMatch(/AGENT_KHONG_CO|MODEL_CON_CHUA_HO_TRO/);
+    expect((await hangSo(uid)).filter((h) => h.parentRunId !== null)).toEqual([]);
+    expect(goiNgoai).toEqual([]);
+    expect(theo.congCu.length).toBe(2); // chỉ model của cha
+  }, 60_000);
 });
 
 describe("M4/S7 — thẻ duyệt của agent con đi qua cổng CHUNG của confirmAction", () => {

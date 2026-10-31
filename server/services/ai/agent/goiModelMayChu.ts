@@ -46,6 +46,11 @@ export interface CauHinhGoiModel {
   userId?: number;
   /** `true` ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã được đếm ở nơi khác, vd. qua cổng khi `AI_AGENT_THEO_VAI_TRO` bật). */
   khongGhiDauVet?: boolean;
+  /**
+   * (Đợt 12 H4.2) lượt chạy chủ của các lượt model này — CHỈ để bộ ghi (`AI_GHI_LUOT_DIR`, cửa sổ đo) đặt tên tệp `<runId>.jsonl`.
+   * Vắng hoặc biến môi trường vắng ⇒ không ghi gì.
+   */
+  runId?: string;
 }
 
 const moTaLoi = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -66,9 +71,24 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
   return ten.length ? "kb-agent-luot cong-cu=" + ten.join(",") : undefined;
 }
 
+/** `httpStatus` của lỗi hoặc của một `cause` (tối đa 4 tầng). */
+function trangThaiHttp(e: unknown): number | undefined {
+  let x: unknown = e;
+  for (let i = 0; i < 4 && x && typeof x === "object"; i++) {
+    const st = (x as { httpStatus?: unknown }).httpStatus;
+    if (typeof st === "number") return st;
+    x = (x as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 /** Lỗi engine ⇒ `LoiModel` có cờ tạm thời đúng nghĩa. */
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
+  // ★ Đợt 12 H3.1 — mã ổn định theo HTTP của llama-server (tìm cả trong chuỗi `cause` — engine có thể bọc lại lỗi).
+  const st = trangThaiHttp(e);
+  if (st === 503) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "MODEL_DANG_NAP" });
+  if (st === 429) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "RATE_LIMIT" });
   const code = (e as { code?: unknown } | null)?.code;
   // mã LLAMA_SERVER_DOWN xét TRƯỚC chữ tràn: lỗi nạp model có thể chứa "n_ctx" mà vẫn là lỗi TẠM THỜI (được thử lại)
   if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
@@ -126,8 +146,12 @@ async function* luongModelMayChu(
 
   /** Máy bơm: chạy TRỌN trong `chayVoiUuTien` (xem đầu tệp). Bộ cắt suy luận + bộ che ở ngay trên. */
   async function bomLuongModelMayChu(epTatNghi = false): Promise<void> {
+    const streamGoc: HamChatStream = cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+    // ★ Đợt 12 H4.2 — bộ GHI lượt (phát lại không GPU): CHỈ tiến trình đo đặt AI_GHI_LUOT_DIR (thư mục tuyệt đối, ngoài repo); điểm đọc
+    //   biến DUY NHẤT (census). Vắng ⇒ engine y nguyên. Bộ ghi chuyển nguyên từng mảnh, ghi hỏng không làm hỏng lượt.
+    const thuMucGhi = (process.env.AI_GHI_LUOT_DIR ?? "").trim();
     const chatCompletionStream: HamChatStream =
-      cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+      thuMucGhi && cauHinh.runId ? (await import("./ghiLuotModel")).bocGhiLuot(streamGoc, { thuMuc: thuMucGhi, runId: cauHinh.runId }) : streamGoc;
     let modelId = cauHinh.modelId;
     if (modelId === undefined && process.env.AI_CODING_MODEL_TASK === "code") {
       modelId = (await import("../../aiGgufEngine")).codeModelBasename();
@@ -189,6 +213,8 @@ async function* luongModelMayChu(
                   // `ra` = MỌI token sinh (gồm nghĩ) — trần `tokenRaToiDa` của lõi phải đo chi phí THẬT.
                   ra: Number(c.tokensGenerated ?? 0),
                   ...(typeof c.tokensReasoning === "number" ? { nghi: c.tokensReasoning } : {}),
+                  // ★ Đợt 12 H0.1 — tái dùng prefix-cache / xử lý lại (chỉ đường llama-server, luôn đi cặp).
+                  ...(typeof c.cacheN === "number" && typeof c.promptN === "number" ? { cacheN: c.cacheN, promptN: c.promptN } : {}),
                 },
               }
             : {}),
@@ -205,6 +231,8 @@ async function* luongModelMayChu(
         tokensIn: ketThuc?.tokensPrompt,
         tokensOut: ketThuc?.tokensGenerated,
         reasoningTokens: typeof ketThuc?.tokensReasoning === "number" ? ketThuc.tokensReasoning : null,
+        cacheTokens: typeof ketThuc?.cacheN === "number" ? ketThuc.cacheN : null,
+        promptEvalTokens: typeof ketThuc?.promptN === "number" ? ketThuc.promptN : null,
         thinking: nghi ? null : false,
         latencyMs: Date.now() - t0,
         outcome: hoanTat ? "ok" : "error",

@@ -6,7 +6,10 @@
  *   • `modbus_holding_bool`  — Modbus: holding với dataType bool — `encodeModbus("bool")` ghi 1 / 0;
  *   • `slmp_bit`             — SLMP: bit-device (`parseSlmpDevice(..).isBit`) — slmpDriver ghi bit khi `dev.isBit` BẤT KỂ dataType;
  *   • `mc_bit`               — MELSEC MC: bit-device hoặc "<word>.<bit>" (`parseMcAddress(..).isBit`);
- *   • `s7_bit`               — Siemens S7: "DB<n>,X<o>.<b>", "M0.0", "MX3.1"… (`parseS7Address(..).isBit`).
+ *   • `s7_bit`               — Siemens S7: "DB<n>,X<o>.<b>", "M0.0"… (`parseS7Address(..).isBit`). R1b-2b-2a T3C fix 1 (M4): lớp theo HÌNH địa chỉ — bit ∉ 0..7
+ *                              ("DB1,X0.9") vẫn là `s7_bit` (trước: lỗi parse ⇒ null = "không phải bit"). Địa chỉ có hình bit mà nodes7 không ghi được
+ *                              ("MX3.1": nodes7 không có vùng "MX") vẫn `s7_bit` ở đây; có ghi được hay không là việc của `kiemDiaChiS7` (s7Address.ts) —
+ *                              lưu tag và ghim STOP từ chối, driver không gửi.
  * Fix round 1 (M1 + lo ngại 4): MC và S7 nay cũng ghi MỘT BIT bất kể dataType trên các địa chỉ này (`boolChoGhi`), như coil Modbus / bit SLMP.
  * Địa chỉ không phân tích được ⇒ null (driver từ chối mọi write tới nó). EtherNet/IP / OPC UA: địa chỉ là TÊN, driver ghi theo `dataType` ⇒ null
  * (tag bool của chúng đã chỉ mang true/false — `validateStopValue`).
@@ -18,7 +21,7 @@
 import { parseModbusAddress } from "./modbusDecode";
 import { parseSlmpDevice } from "./slmpEncoder";
 import { parseMcAddress } from "./mcAddress";
-import { parseS7Address } from "./s7Address";
+import { laLoiS7BitNgoaiDai, parseS7Address } from "./s7Address";
 import { boolTuGiaTri } from "./boolNghiem";
 
 export type LopDiaChiBit = "modbus_coil" | "modbus_holding_bool" | "slmp_bit" | "mc_bit" | "s7_bit";
@@ -37,7 +40,13 @@ export function lopDiaChiBit(protocol: string | null | undefined, address: strin
       case "mitsubishi-mc":
         return parseMcAddress(address).isBit ? "mc_bit" : null;
       case "s7":
-        return parseS7Address(address).isBit ? "s7_bit" : null;
+        try {
+          return parseS7Address(address).isBit ? "s7_bit" : null;
+        } catch (e) {
+          // T3C fix 1 (M4) — bit ∉ 0..7 KHÔNG thành "không phải bit": vẫn là địa chỉ bit (sai), luật bool theo địa chỉ vẫn áp.
+          if (laLoiS7BitNgoaiDai(e)) return "s7_bit";
+          throw e;
+        }
       default:
         return null;
     }

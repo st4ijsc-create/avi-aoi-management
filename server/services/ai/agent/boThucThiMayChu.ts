@@ -239,6 +239,11 @@ export interface CauHinhBoThucThi {
   hanGioTool?: Readonly<Record<string, number>>;
   /** (Đợt 12 · H5.3) kho đầu ra dài ⇒ phơi `read_output`. Vắng ⇒ tool KHÔNG có (cờ AI_AGENT_DAU_RA_DAI tắt). */
   khoDauRaDai?: KhoDauRaDai;
+  /**
+   * (Đợt 10.4b L3b) HẠ tự trị từ ĐẦU lượt (phiên đã có lượt model ngoài): `tu-dong` ⇒ mọi ghi / lệnh qua người duyệt. Lớp HAI — thi hành ở
+   * đây không phụ thuộc lõi gửi `ctx.haTuTri` (lõi nhận `haTuTriDau` là lớp một).
+   */
+  haTuTri?: boolean;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -524,7 +529,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const nguonDangNgoCua = (ctx: NguCanhThucThi): string[] => [...new Set([...(ctx.nguonDangNgo ?? []), ...nguonDangNgoNoiBo])];
   /** `tu-dong` CÒN tự trị? (chưa bị hạ bởi lõi lẫn chốt nội bộ). Đây là nơi THI HÀNH hạ tự trị. */
   const conTuTri = (ctx: NguCanhThucThi): boolean =>
-    ctx.cheDo === "tu-dong" && ctx.haTuTri !== true && nguonDangNgoNoiBo.length === 0;
+    ctx.cheDo === "tu-dong" && ctx.haTuTri !== true && cauHinh.haTuTri !== true && nguonDangNgoNoiBo.length === 0;
 
   // ── ĐỌC ────────────────────────────────────────────────────────────────────────────────────
   async function chayDoc(tool: string, args: Record<string, unknown>): Promise<{ result: ToolResult | null; loi: string | null }> {

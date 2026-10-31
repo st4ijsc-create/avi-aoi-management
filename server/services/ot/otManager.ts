@@ -41,6 +41,7 @@ import {
 import { ghiNhanDoc, ghiNhanPhien } from "./boDemTruyenThong";
 import type { SuKienDoc, TuyChonVongPoll } from "./otDriver";
 import { datThongTinAdapter, xoaAdapter, xoaTatCaAdapter } from "../scada/boDemHienTai";
+import { hanMsTuEnv } from "./hanLenhOt"; // R1b-2b-2a T3 fix 1 (M-4) — hạn ms vào setTimeout: kẹp ≤ TRAN_HEN_GIO_MS (parseInt cũ để 3e9 tràn về 1 ms)
 
 /** SCADA R0 Task 7 — báo cho bộ đệm giá trị hiện tại nhịp poll / deadband / máy / mã của adapter (tính stale). Chiều phụ thuộc otManager → scada. */
 export function baoThongTinChoBoDem(adapter: RuntimeAdapter): void {
@@ -107,7 +108,7 @@ export const OT_LEGACY_RECONNECT_MAX_MS = 60_000;
 
 /** Hạn khởi động một adapter (env OT_ADAPTER_START_TIMEOUT_MS, đọc lúc gọi). */
 export function adapterStartTimeoutMs(): number {
-  return intEnv(process.env.OT_ADAPTER_START_TIMEOUT_MS, DEFAULT_OT_ADAPTER_START_TIMEOUT_MS);
+  return hanMsTuEnv("OT_ADAPTER_START_TIMEOUT_MS", DEFAULT_OT_ADAPTER_START_TIMEOUT_MS);
 }
 /**
  * doc 81 Đợt 1B Task 2 (Fix round 1) — hạn HIỆU LỰC cho một adapter/endpoint: không bao giờ
@@ -128,7 +129,7 @@ function adapterStartConcurrency(): number {
   return intEnv(process.env.OT_ADAPTER_START_CONCURRENCY, DEFAULT_OT_ADAPTER_START_CONCURRENCY);
 }
 function legacyReconnectMs(): number {
-  return intEnv(process.env.OT_LEGACY_RECONNECT_MS, DEFAULT_OT_LEGACY_RECONNECT_MS);
+  return hanMsTuEnv("OT_LEGACY_RECONNECT_MS", DEFAULT_OT_LEGACY_RECONNECT_MS);
 }
 
 /** Trạng thái vận hành của một adapter (cả hai nhánh). */
@@ -595,8 +596,8 @@ function haBackoffFromEnv(): BackoffConfig {
   const jRaw = Number(process.env.OT_CONN_HA_BACKOFF_JITTER);
   const jitter = Number.isFinite(jRaw) && jRaw >= 0 && jRaw <= 1 ? jRaw : 0.5;
   return {
-    initialMs: intEnv(process.env.OT_CONN_HA_BACKOFF_MS, 500),
-    maxMs: intEnv(process.env.OT_CONN_HA_BACKOFF_MAX_MS, 30_000),
+    initialMs: hanMsTuEnv("OT_CONN_HA_BACKOFF_MS", 500),
+    maxMs: hanMsTuEnv("OT_CONN_HA_BACKOFF_MAX_MS", 30_000),
     factor: numEnv(process.env.OT_CONN_HA_BACKOFF_FACTOR, 2),
     jitter,
   };
@@ -604,7 +605,7 @@ function haBackoffFromEnv(): BackoffConfig {
 
 /** Health-poll interval: <= pollInterval so a drop is detected within one cycle. */
 function haHealthIntervalMs(pollIntervalMs: number): number {
-  const def = intEnv(process.env.OT_CONN_HA_HEALTH_INTERVAL_MS, 2000);
+  const def = hanMsTuEnv("OT_CONN_HA_HEALTH_INTERVAL_MS", 2000);
   const poll = pollIntervalMs > 0 ? pollIntervalMs : def;
   return Math.max(50, Math.min(poll, def));
 }

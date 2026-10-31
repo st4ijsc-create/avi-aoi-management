@@ -101,4 +101,15 @@ describe("lỗi HTTP", () => {
       expect((e as LoiNgoai).chiTiet).toContain(String(status));
     }
   });
+
+  it("(H3.1) cả ba bản cài: 429 quota ⇒ QUOTA không thử lại; 429 thường ⇒ RATE_LIMIT mang Retry-After (choMs) của tầng mạng", async () => {
+    for (const n of [anthropic, openai, gemini]) {
+      traVe = { status: 429, json: { error: { message: "You exceeded your current quota", code: "insufficient_quota" } }, retryAfterMs: 4000 } as never;
+      const q = (await goi(n).catch((x: unknown) => x)) as LoiNgoai;
+      expect([q.phanLoai, q.thuLai], n.ma).toEqual(["QUOTA", false]);
+      traVe = { status: 429, json: { error: { message: "slow down" } }, retryAfterMs: 4000 } as never;
+      const r = (await goi(n).catch((x: unknown) => x)) as LoiNgoai;
+      expect([r.phanLoai, r.thuLai, r.choMs], n.ma).toEqual(["RATE_LIMIT", true, 4000]);
+    }
+  });
 });

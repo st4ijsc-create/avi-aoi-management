@@ -237,7 +237,18 @@ interface McHardening {
  * lỗi ném ra ⇒ `onLoiXuLy` (driver hạ phiên), không bao giờ lan ra. `onResponse` = handler 'data' (mcprotocol.js:200-202, `self.onResponse.apply`);
  * `packetTimeout` = hẹn giờ gói (:175-190).
  */
-export const HAM_MC_CO_LAP = ["onResponse", "packetTimeout", "readAllItems"] as const;
+export const HAM_MC_CO_LAP = [
+  "onResponse",
+  "packetTimeout",
+  "readAllItems",
+  // polish (kiem-dinh m7/hardening) — còn lại các callback thư viện chạy từ sự kiện socket / hẹn giờ: onTCPConnect (:142), connectError (:148),
+  // readWriteError (:204), resetNow (hẹn giờ 1500 ms :1189), connectNow (hẹn giờ 0 ms :841/:919).
+  "onTCPConnect",
+  "connectError",
+  "readWriteError",
+  "resetNow",
+  "connectNow",
+] as const;
 
 function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void, onLoiXuLy: (ham: string, err: unknown) => void = () => undefined): McHardening {
   const state: McHardening = {
@@ -493,7 +504,10 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     const ma = (err as { code?: unknown } | null)?.code;
     const chiTiet = `${typeof ma === "string" ? `${ma}: ` : ""}${(err as Error)?.message ?? String(err)}`;
     console.error(`[OT] mitsubishi-mc: mcprotocol threw inside ${ham} (isolated, session torn down): ${chiTiet}`);
-    if (this.conn !== conn) return;
+    if (this.conn !== conn) {
+      void dropMcBounded(conn, hardening); // phiên chưa/không còn là phiên hiện tại (đang nối, đã thay) — vẫn dọn socket + hẹn giờ, không rò
+      return;
+    }
     this.markLinkLost(`library ${ham} threw`, chiTiet, conn);
     this.conn = null;
     this.hardening = null;

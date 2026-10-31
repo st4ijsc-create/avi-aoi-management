@@ -171,6 +171,18 @@ describe("useLuotChayAgent — quyetKeHoach", () => {
     expect(result.current.trangThai.dongThoiGian.filter((m) => m.kieu === "ke-hoach-duyet")).toHaveLength(0);
   });
 
+  it("★ gọi TRỰC TIẾP quyetKeHoach với thẻ ở dang-gui / da-duyet / bac / het-gio / da-doi / het-hieu-luc ⇒ KHÔNG gọi mạng (guard ở hook, không chỉ nút bị khoá)", async () => {
+    const r = await dung();
+    const cho = the(r)[0]!;
+    for (const trangThai of ["dang-gui", "da-duyet", "bac", "het-gio", "da-doi", "het-hieu-luc"] as const) {
+      await act(async () => {
+        await r.current.quyetKeHoach({ ...cho, trangThai }, "duyet");
+      });
+    }
+    expect(h.duyetKeHoach).not.toHaveBeenCalled();
+    expect(the(r)[0]!.trangThai).toBe("cho"); // trạng thái thật của thẻ không bị đụng
+  });
+
   it("thẻ không ở cho ⇒ không gửi gì; lamMoiKeHoach lỗi/ném ⇒ im lặng, thẻ giữ nguyên", async () => {
     const r = await dung();
     h.keHoachDangCho.mockRejectedValue(new Error("mạng"));

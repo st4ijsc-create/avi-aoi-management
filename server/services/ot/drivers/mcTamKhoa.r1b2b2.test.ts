@@ -215,6 +215,93 @@ describe("T3B-0 fix 1 (m1) — vòng thử lại 100 ms của readAllItems cũng
   }, 20_000);
 });
 
+describe("T3B-0 polish — packetTimeout / dọn phiên / callback thư viện còn lại", () => {
+  it("★ m7: hẹn giờ gói của thư viện (packetTimeout) ném ⇒ bị bắt: không uncaughtException, phiên bị hạ", async () => {
+    const { d } = await mcTren(5000); // PLC im ⇒ hẹn giờ gói tự nổ
+    const conn = (d as any).conn;
+    conn.globalTimeout = 250; // hẹn giờ gói đọc 250 ms (đọc tại lúc gửi)
+    conn.readResponse = () => {
+      throw new TypeError("giả: readResponse ném trong hẹn giờ gói");
+    };
+    const A = d.readTags([{ tagKey: "sp", address: "D100", dataType: "int" }]).then(
+      () => "xong",
+      (e: unknown) => String((e as Error)?.message ?? e),
+    );
+    await cho(700);
+    expect(loiTienTrinh).toEqual([]); // bỏ packetTimeout khỏi HAM_MC_CO_LAP ⇒ TypeError uncaughtException
+    expect(d.isConnected()).toBe(false);
+    expect((await d.health()).lastError).toMatch(/library packetTimeout threw/);
+    expect(await A).toMatch(/link lost/);
+  }, 20_000);
+
+  it("★ m10: sau lỗi handler thư viện, kết nối cũ được DỌN HẲN — socket bị huỷ, không còn hẹn giờ gói / reset treo", async () => {
+    const { d } = await mcTren(400);
+    const conn = (d as any).conn;
+    const sock = conn.isoclient;
+    conn.readResponse = () => {
+      throw new TypeError("giả: readResponse ném trong handler data");
+    };
+    const A = d.readTags([{ tagKey: "sp", address: "D100", dataType: "int" }]).then(
+      () => "xong",
+      () => "loi",
+    );
+    await cho(60);
+    const hen = (conn.readPacketArray as Array<{ timeout?: { _destroyed?: boolean } }>).map((p) => p.timeout).filter(Boolean);
+    expect(hen.length).toBeGreaterThan(0); // có hẹn giờ gói đọc đang treo (4,5 s) TRƯỚC lỗi
+    expect(hen.some((t) => t!._destroyed === false)).toBe(true);
+    await cho(700);
+    await A;
+    expect(loiTienTrinh).toEqual([]);
+    expect(sock.destroyed).toBe(true); // bỏ `void dropMcBounded` ⇒ socket sống
+    for (const t of hen) expect(t!._destroyed, "hẹn giờ gói đọc phải bị xoá").toBe(true);
+    expect(conn.resetTimeout === undefined || conn.resetTimeout._destroyed === true).toBe(true);
+  }, 20_000);
+
+  it("hardening: mỗi callback thư viện còn lại (onTCPConnect, connectError, readWriteError, resetNow, connectNow) ném ⇒ bị bắt, không uncaughtException, phiên bị hạ", async () => {
+    const gay: Record<string, (conn: any) => void> = {
+      onTCPConnect: (c) => {
+        c.connectCBIssued = false;
+        c.connectCallback = () => {
+          throw new Error("giả: connectCallback ném");
+        };
+      },
+      connectError: (c) => {
+        c.connectCBIssued = false;
+        c.connectCallback = () => {
+          throw new Error("giả: connectCallback ném");
+        };
+      },
+      readWriteError: (c) => {
+        c.connectionReset = () => {
+          throw new Error("giả: connectionReset ném");
+        };
+      },
+      resetNow: (c) => {
+        const end = c.isoclient.end.bind(c.isoclient);
+        let lan = 0;
+        c.isoclient.end = (...a: unknown[]) => {
+          if (lan++ === 0) throw new Error("giả: isoclient.end ném");
+          return end(...a);
+        };
+      },
+      connectNow: (c) => {
+        c.isoConnectionState = 0; // cho phép đi tiếp; net.connect(undefined) ném
+      },
+    };
+    for (const [ten, chuanBi] of Object.entries(gay)) {
+      const { d } = await mcTren();
+      const conn = (d as any).conn;
+      chuanBi(conn);
+      const arg = ten === "onTCPConnect" ? [] : ten === "connectNow" ? [undefined] : ten === "resetNow" ? [] : [{ code: "GIA" }];
+      expect(() => conn[ten](...arg), ten).not.toThrow(); // bỏ tên khỏi HAM_MC_CO_LAP ⇒ ném ra ngoài
+      await cho(150);
+      expect(loiTienTrinh, ten).toEqual([]);
+      expect(d.isConnected(), ten).toBe(false);
+      expect((await d.health()).lastError, ten).toContain(`library ${ten} threw`);
+    }
+  }, 30_000);
+});
+
 describe("T3B-0 fix 1 (m2) — người đọc mcGhiTamKhoa đòi VITEST", () => {
   it("cờ toàn cục đặt tay (ngoài vitest) KHÔNG mở khoá; trong vitest thì có", () => {
     const g = globalThis as Record<symbol, unknown>;

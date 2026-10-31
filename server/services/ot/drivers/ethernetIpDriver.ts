@@ -40,6 +40,7 @@ import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
+import { hanLenhOtMacDinhMs } from "../hanLenhOt";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
@@ -85,7 +86,7 @@ function withHanGhiDuPhong<T>(p: Promise<T>, label: string): Promise<T> {
   return Promise.race([
     p,
     new Promise<T>((_, reject) => {
-      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("ethernet-ip", `${label} timeout after ${HAN_DU_PHONG_GHI_DRIVER_MS}ms`)), HAN_DU_PHONG_GHI_DRIVER_MS);
+      t = setTimeout(() => reject(new LoiQuaHanYeuCauDriver("ethernet-ip", `${label} timeout after ${HAN_DU_PHONG_GHI_DRIVER_MS}ms`, "du_phong")), HAN_DU_PHONG_GHI_DRIVER_MS);
     }),
   ]).finally(() => clearTimeout(t));
 }
@@ -242,7 +243,7 @@ function nguyenLoi(err: unknown): string {
  * `OT_CONTROL_TIMEOUT_MS`, 5000). `deadlineMs` riêng của một lệnh driver không biết (đã ghi trong báo cáo).
  */
 function nganSachLenhOtMs(): number {
-  return Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  return hanLenhOtMacDinhMs(); // T3 fix 1 (M-4) — MỘT helper kẹp (Infinity / NaN / âm / quá trần setTimeout ⇒ 5000 + cảnh báo một lần)
 }
 
 /**

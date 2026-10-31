@@ -292,6 +292,35 @@ describe("cổng AI ngoài — gọi", () => {
     expect(tang).toBeGreaterThanOrEqual(2 * motLan - 10);
   });
 
+  it("(H3.1) QUOTA (429 insufficient_quota) ⇒ KHÔNG thử lại: một lần gọi, một lần giữ chỗ, loại lỗi tới người gọi", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "429 quota", thuLai: false, phanLoai: "QUOTA" }, { kieu: "tra", noiDung: "ok" }]);
+    const d = dep(g, { ngu: async () => undefined });
+    const e = await goiAiNgoai(yc(), d).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(LoiNgoai);
+    expect((e as LoiNgoai).phanLoai).toBe("QUOTA");
+    expect(g.nhan).toHaveLength(1);
+    expect(d.buoc.filter((b) => b === "dat-truoc")).toHaveLength(1);
+    expect(d.buoc).not.toContain("cho-thu-lai");
+  });
+
+  it("(H3.1) RATE_LIMIT có Retry-After 1500 ms ⇒ chờ ≥ 1500 ms (backoff + jitter) rồi thử lại", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "429", thuLai: true, phanLoai: "RATE_LIMIT", choMs: 1500 }, { kieu: "tra", noiDung: "ok" }]);
+    const cho: number[] = [];
+    const d = dep(g, { ngu: async (ms) => void cho.push(ms), ngauNhien: () => 0.5 });
+    await goiAiNgoai(yc(), d);
+    expect(g.nhan).toHaveLength(2);
+    expect(cho).toEqual([1500 + 125]);
+    expect(d.buoc.indexOf("cho-thu-lai")).toBeLessThan(d.buoc.lastIndexOf("dat-truoc"));
+  });
+
+  it("(H3.1) nhà cung cấp xin chờ quá trần (Retry-After 60 s) ⇒ KHÔNG ngủ, KHÔNG thử lại", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: "429", thuLai: true, phanLoai: "RATE_LIMIT", choMs: 60_000 }, { kieu: "tra", noiDung: "ok" }]);
+    const cho: number[] = [];
+    const e = await goiAiNgoai(yc(), dep(g, { ngu: async (ms) => void cho.push(ms) })).catch((x: unknown) => x);
+    expect((e as LoiNgoai).phanLoai).toBe("RATE_LIMIT");
+    expect([g.nhan.length, cho.length]).toEqual([1, 0]);
+  });
+
   it("nha-may-cheo: người {A,B}, A bật / B tắt — dữ liệu B ⇒ NOT_FOUND; dữ liệu A ⇒ qua, đếm vào A không vào B", async () => {
     await exec(sql`UPDATE ai_ngoai_nha_may SET "batNgoai" = false WHERE "factoryId" = ${B}`);
     try {

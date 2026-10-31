@@ -22,7 +22,7 @@ export const anthropic: NhaCungCapAi = {
       headers: { "content-type": "application/json", "x-api-key": khoa, "anthropic-version": "2023-06-01" },
       body: JSON.stringify(body),
     });
-    if (r.status >= 400) throw loiHttp(r.status, r.json);
+    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs);
     const j = r.json as { content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
     const khoi = Array.isArray(j?.content) ? j.content : [];
     return {

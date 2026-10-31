@@ -44,6 +44,7 @@ import {
   REDACTED_SECRET,
 } from "../services/ot/connectionSecrets";
 import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
+import { kiemDiaChiS7, MA_S7_BIT_NGOAI_DAI, MA_S7_THU_VIEN_KHONG_KIEM_DUOC } from "../services/ot/drivers/s7Address";
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
@@ -124,6 +125,9 @@ function loiStopPin(e: StopPinLoi): never {
         { field: "stopValue", reason: "stopPinBitAddress" },
         `Stop pin refused: the tag address ${String(e.chiTiet.address ?? "")} is written as a single bit, so the stop value must be true/false, 1/0, "1"/"0" or "true"/"false".`,
       );
+    case "dia_chi_s7":
+      // SCADA R1b-2b-2a T3C fix 1 (M4) — tag S7 mà nodes7 không ghi được đúng như yêu cầu (kiemDiaChiS7): ghim STOP bị từ chối; mã + địa chỉ trong message.
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "stopValue", reason: "stopPinS7DiaChi" }, `Stop pin refused: ${String(e.chiTiet.lyDo ?? "")}`);
     case "ngoai_dai": {
       // SCADA R1a Task 12 — ghim không ghi được trên kênh theo khai báo kênh hiện tại (cùng mã với scadaKenh.capNhat).
       // R1b-2a T2 (m4, phán quyết K17) — step = lưới vừa trượt (`buoc`: writeStep hoặc |scale| của lưới thô trên tag CHƯA khai) ?? writeStep,
@@ -175,6 +179,26 @@ function assertOpcuaSecurityOnSave(options: Record<string, unknown> | null | und
       (e as Error)?.message || "invalid OPC UA security configuration",
     );
   }
+}
+
+/**
+ * SCADA R1b-2b-2a T3C (backlog 87) + fix 1 (I2) — kiểm địa chỉ tag LÚC LƯU: adapter S7 + địa chỉ mà nodes7 0.3.18 không ghi được ĐÚNG như yêu cầu
+ * (`kiemDiaChiS7` — CÙNG vị từ với khởi động / scadaDiag / driver): bit ∉ 0..7, vùng nodes7 không có ("MX0.1", "PQ0", "PI0"), mảng ("DB1,INT2.5"),
+ * dạng sai ⇒ từ chối; bộ phân tích nodes7 không dùng được ⇒ từ chối (fail-closed). Tag STOP chỉ-ghi không còn im lặng tới lúc bấm STOP.
+ * Đọc protocol trong CÙNG giao dịch, sau khi adapter đã khoá (khoaAdapterTx). Chi tiết (mã + địa chỉ) đi trong message, câu dịch qua reason.
+ */
+async function kiemDiaChiTagLuuTx(
+  tx: Pick<Awaited<ReturnType<typeof getDb>>, "select">,
+  adapterId: number,
+  t: { address: string; tagKey: string; dataType: string; writable: boolean },
+): Promise<void> {
+  const [a] = await tx.select({ protocol: deviceAdapters.protocol }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
+  if (a?.protocol !== "s7") return;
+  // fix 2 (N1) — tag ghi được ⇒ chế độ "ghi" (chặt: driver sẽ từ chối mọi lời ghi tới địa chỉ mảng); chỉ-đọc ⇒ "doc" theo dataType.
+  const loi = kiemDiaChiS7(t.address, { khoa: t.tagKey, cheDo: t.writable ? "ghi" : "doc", dataType: t.dataType });
+  if (!loi) return;
+  const reason = loi.ma === MA_S7_BIT_NGOAI_DAI ? "s7BitNgoaiDai" : loi.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC ? "s7ThuVienKhongKiemDuoc" : "s7DiaChiThuVienBo";
+  throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "tagAddress", reason }, loi.lyDo);
 }
 
 async function getDb() {
@@ -624,6 +648,7 @@ export const deviceAdapterRouter = router({
             // biến mất giữa chừng ⇒ cùng NOT_FOUND của kiểm-trước, thay cho lỗi FK của INSERT).
             const khoa = (await khoaAdapterTx(tx, [v.adapterId])).get(v.adapterId);
             kiemPhamViDuoiKhoa(khoa?.machineId, idsMay, khongThayAdapter);
+            await kiemDiaChiTagLuuTx(tx, v.adapterId, v); // T3C — trước TOTP (lỗi hợp lệ không tiêu mã) // T3C — trước TOTP (lỗi hợp lệ không tiêu mã)
             const may = khoa?.machineId ?? null;
             const luat = await khoaLuatNhamCapTx(tx, cap);
             const nguon = await khoaLuatNguonTx(tx, may, v.tagKey);
@@ -726,6 +751,16 @@ export const deviceAdapterRouter = router({
             const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
             const kenhCheDoMoi = doiDanhTinh ? await kenhCheDoCuaTagTx(tx, capMoi) : [];
             if (doiDanhTinh && (await trungKhoaTagTx(tx, { ...capMoi, boQuaId: id }))) throw loiTrungKhoaTag(); // M3 — trước mã
+            // T3C — đổi địa chỉ / khoá / kiểu / writable hoặc chuyển adapter ⇒ kiểm (protocol của adapter ĐÍCH, giá trị SAU sửa); sửa cột khác của tag cũ
+            // hỏng (vd tắt) vẫn được.
+            if (rest.address !== undefined || doiDanhTinh || rest.dataType !== undefined || rest.writable !== undefined) {
+              await kiemDiaChiTagLuuTx(tx, capMoi.adapterId, {
+                address: rest.address ?? existing.address,
+                tagKey: capMoi.tagKey,
+                dataType: rest.dataType ?? existing.dataType,
+                writable: rest.writable ?? existing.writable,
+              });
+            }
             const kq = kiemSuaTag({
               cu: existing,
               patch,

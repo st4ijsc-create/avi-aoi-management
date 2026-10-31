@@ -4129,6 +4129,7 @@
       "modelCardGovernanceFields": "模型卡治理字段",
       "annotationIdOrImageUrl": "标注ID或图片URL",
       "opcuaSecurity": "OPC UA 安全设置",
+      "tagAddress": "标签地址",
       "idOrPackageId": "ID或包ID",
       "decommissionReason": "停用原因",
       "licenseKey": "许可证密钥",
@@ -4425,6 +4426,10 @@
       "mqttDeviceRejected": "该设备已被拒绝，无法绑定到机器。请先批准该设备。",
       "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
       "opcuaSecurityInvalid": "securityMode/securityPolicy 无效或相互矛盾（例如 None 搭配 Basic256Sha256，或 SignAndEncrypt 搭配 None）。请使用 None/None，或 Sign/SignAndEncrypt 搭配 Basic256Sha256 等策略。",
+      "s7BitNgoaiDai": "S7 位地址只有第 0..7 位（例如 DB1,X0.7、M0.7）。第 8 位及以上不存在：S7 库会丢弃该命令并重发上一条写入，或写错位。请改用下一个字节（例如用 DB1,X1.0 代替 DB1,X0.8）。",
+      "s7DiaChiThuVienBo": "S7 库（nodes7）无法按输入写入此地址（不支持的区域如 MX/PQ/PI、数组地址或格式错误）。请使用 nodes7 支持的形式，例如 M0.1、DB1,X0.1、DB1,INT2、MW0。",
+      "s7ThuVienKhongKiemDuoc": "由于 nodes7 库缺失或被替换，无法检查 S7 地址 — 未保存。请重新安装锁定版本的 nodes7。",
+      "stopPinS7DiaChi": "无法设置停止固定值：该标签的 S7 地址是 S7 库无法按输入写入的地址（位超出 0..7、不支持的区域、数组）— 停止命令将永远不会发送。请先修正标签地址。",
       "shiftInactive": "该班次已停用——请选择一个启用中的班次，或不选择班次。",
       "shiftFactoryMismatch": "该班次与所选产线/工位不属于同一工厂——请选择该工厂的班次（或全系统班次），或不选择班次。",
       "factoryRequired": "您属于多个工厂——请为此分配选择产线、工位或工厂（否则连您自己也无法再看到它）。",
@@ -7376,7 +7381,9 @@
     "aiFlows": "AI 流程",
     "aiFlowsDesc": "带 AI 与人工审批节点的 n8n 风格自动化",
     "scadaKenh": "SCADA 通道与限值",
-    "scadaKenhDesc": "各设备的通道类型、范围、步长、作用等级和模式通道（工程师）"
+    "scadaKenhDesc": "各设备的通道类型、范围、步长、作用等级和模式通道（工程师）",
+    "scadaNhatKy": "SCADA 指令日志",
+    "scadaNhatKyDesc": "已发送的指令和被拒绝的尝试——按设备、时间和状态查看"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -19502,6 +19509,9 @@
       "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
       "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
       "OT_MC_TAM_KHOA": "三菱 MC 控制已临时锁定：mcprotocol 库错误解析 PLC 回复 — 命令未发送。等待修复 3B；如需停机请使用设备上的硬接线急停",
+      "OT_S7_BIT_NGOAI_DAI": "S7 位地址超出 0..7（标签配置错误）— 命令未发送，整批被拒绝。请修正标签地址（例如用 DB1,X1.0 代替 DB1,X0.8）；如需立即停机请使用设备上的硬接线急停",
+      "OT_S7_DIA_CHI_THU_VIEN_BO": "S7 库（nodes7）无法按原样写入此地址（会丢弃或误读）— 命令未发送，整批被拒绝。请检查标签地址；如需立即停机请使用设备上的硬接线急停",
+      "OT_S7_THU_VIEN_KHONG_KIEM_DUOC": "无法用 nodes7 库检查 S7 地址（库缺失或被替换）— 命令未发送。请重新安装锁定版本的 nodes7；如需立即停机请使用设备上的硬接线急停",
       "EDGE_REPORTED": "边缘节点报告命令未成功",
       "READBACK_UNAVAILABLE": "已写入但无法回读 — 请在设备处检查",
       "READBACK_MISMATCH": "已写入但回读值不一致 — 请在设备处检查",
@@ -24039,6 +24049,79 @@
     }
   },
   "scada": {
+    "nhatKy": {
+      "title": "指令日志",
+      "subtitle": "已发送的指令以及在成为指令之前被拒绝的尝试——最新在前。技术细节仅对工程师显示。",
+      "dangTai": "正在加载日志…",
+      "loiTai": "无法加载指令日志。",
+      "trong": "没有符合筛选条件的记录。",
+      "danhSach": "记录（{{count}}）",
+      "taiThem": "加载更多",
+      "dangTaiThem": "加载中…",
+      "sim": "模拟",
+      "simGiaiThich": "模拟适配器——指令不会到达真实设备",
+      "nguoiNgoaiPhamVi": "管理员",
+      "loc": {
+        "tieuDe": "筛选",
+        "may": "设备",
+        "tatCaMay": "所有设备",
+        "nguon": "来源",
+        "tu": "起始",
+        "den": "截止",
+        "trangThai": "指令状态",
+        "xoa": "清除筛选",
+        "nguonGiaTri": {
+          "tat_ca": "全部",
+          "lenh": "指令",
+          "thu": "尝试"
+        }
+      },
+      "nguon": {
+        "lenh": "指令",
+        "thu": "尝试"
+      },
+      "col": {
+        "thoiGian": "时间",
+        "nguon": "来源",
+        "may": "设备 / 适配器",
+        "tag": "标签",
+        "trangThai": "状态",
+        "ma": "代码",
+        "lyDo": "原因",
+        "loi": "错误",
+        "nguoi": "用户",
+        "lienKet": "相关指令"
+      },
+      "trangThai": {
+        "simulated": "模拟",
+        "sent": "已发送",
+        "acked": "设备已接收",
+        "acked_verified": "回读一致",
+        "acked_unverified": "回读不一致",
+        "failed": "失败",
+        "timeout": "超时",
+        "rejected": "已拒绝"
+      },
+      "thu": {
+        "request": {
+          "proposed": "请求：已提出",
+          "rejected": "请求：被拒绝"
+        },
+        "confirm": {
+          "confirmed": "确认：已批准",
+          "rejected": "确认：被拒绝",
+          "expired": "确认：已过期"
+        },
+        "dispatch": {
+          "dispatched": "下发：已发送",
+          "rejected": "下发：被拒绝"
+        },
+        "huy": {
+          "cancelled": "取消：已取消",
+          "rejected": "取消：被拒绝"
+        }
+      }
+    },
     "diag": {
       "title": "通信诊断",
       "subtitle": "每个 OT 适配器的真实连接状态、1 小时计数器和标签质量 —— 每 2 秒刷新。",
