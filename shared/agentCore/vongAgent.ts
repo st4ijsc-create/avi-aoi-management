@@ -118,6 +118,12 @@ export interface DauVaoVongAgent {
    * `KetQuaVongAgent.baoCao` mang báo cáo. Vắng ⇒ như cũ từng byte; vòng GỐC không bao giờ có `report` (kể cả khi host bật cờ).
    */
   baoCaoCon?: boolean;
+  /**
+   * (Đợt 12 · H5.3) móc LƯU đầu ra dài: khi chữ cho model vượt `kyTuQuanSatToiDa`, lõi gọi móc với CHÍNH chuỗi đó (đã làm sạch/che bởi bộ thực thi) và,
+   * nếu có mã tham chiếu, nối "[full output saved as <ref> …]" sau đoạn đầu+đuôi đã cắt. Móc ném / trả null ⇒ "(could not be saved)". Vắng ⇒ như cũ từng byte.
+   * Host đồng thời phơi `read_output`. Vòng con dùng chung móc (khoá theo `runId` truyền vào).
+   */
+  luuDauRaDai?: (y: { id: string; ten: string; runId: string; noiDung: string }) => string | null;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -261,6 +267,9 @@ export function nenMocDich(giaTri: string | undefined): number | undefined {
   const v = Number(s);
   return Number.isFinite(v) && v >= 0.3 && v <= 0.65 ? v : undefined;
 }
+
+/** (H5.3) tool KHÔNG lưu đầu ra dài: read_file (phân trang riêng) · read_output (đã tự giới hạn) · todo_write · report. */
+const KHONG_LUU_DAU_RA_DAI = new Set(["read_file", "read_output", "todo_write", "report"]);
 
 /** Tool GHI tệp nội dung (đếm chuỗi ghi chưa chạy test). Xoá/đổi tên không phải "viết lại". */
 const TOOL_GHI_NOI_DUNG = new Set(["write_file", "edit_file"]);
@@ -514,6 +523,8 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       choPhepGiao: cfg.doSauHienTai + 2 <= doSauToiDa,
     });
     if (tap.length === 0) return tuChoi("GIAO_VIEC_KHONG_CONG_CU", "the sub-agent would have no usable tools.");
+    // (H5.3) con đọc lại được đầu ra dài của CHÍNH con: cha đang phơi read_output ⇒ thêm vào tập của con (khoá theo runId ở kho)
+    if (y.luuDauRaDai && tenDuocPhep.has("read_output") && !tap.includes("read_output")) tap.push("read_output");
     const gh2 = tinhGioiHanCon({ gh, luotChaDaDung: luotHienTai, tokenRaChaDaDung: tokenRa, msChaDaDung: dongHo() - batDau, dn });
     if (!gh2.ok) return tuChoi(gh2.ma, gh2.thongDiep);
 
@@ -550,6 +561,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       thongTinModel: bd.thongTinModel,
       giaoViec: cfg.doSauHienTai + 2 <= doSauToiDa ? { ...cfg, doSauHienTai: cfg.doSauHienTai + 1 } : undefined,
       ...(cfg.baoCao === true ? { baoCaoCon: true } : {}),
+      ...(y.luuDauRaDai ? { luuDauRaDai: y.luuDauRaDai } : {}),
       nguonDangNgoDau: nguonDangNgo,
       haTuTriDau: haTuTri,
     });
@@ -1098,7 +1110,19 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           }
         }
 
-        const choModel = catDauDuoi(vanChoModel, gh.kyTuQuanSatToiDa);
+        let choModel = catDauDuoi(vanChoModel, gh.kyTuQuanSatToiDa);
+        // (H5.3) đầu ra dài: lưu bản ĐẦY ĐỦ (đã che) ở host, model chỉ nhận đầu+đuôi + mã tham chiếu để đọc lại bằng read_output
+        if (y.luuDauRaDai && vanChoModel.length > gh.kyTuQuanSatToiDa && !KHONG_LUU_DAU_RA_DAI.has(ten)) {
+          let ma: string | null = null;
+          try {
+            ma = y.luuDauRaDai({ id: tc.id, ten, runId: y.runId, noiDung: vanChoModel });
+          } catch {
+            ma = null;
+          }
+          choModel += ma
+            ? `\n[full output saved as ${ma}; read it with read_output (start_line/end_line or grep)]`
+            : "\n[full output could not be saved]";
+        }
         tinNhan.push({ role: "tool", tool_call_id: tc.id, name: ten, content: choModel });
         phat({
           loai: "ket-qua-tool",

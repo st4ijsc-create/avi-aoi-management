@@ -99,7 +99,8 @@ const CA: Array<{ ten: string; thamSo: Record<string, unknown>; co: boolean; nha
 ];
 // todo_write: lõi tự xử lý, không qua bộ thực thi. run_command: mọi lượt đi THẺ DUYỆT (chờ người — lưới treo tới hết hạn); chữ của nó
 // là đầu ra tiến trình (DỮ LIỆU) + câu từ chối cố định — đã chấm thật bằng bộ quét ở rà 2026-10-22 (risk none).
-const LOI = new Set(["todo_write", "run_command", "delegate", "report"]);
+// read_output (H5.3): đọc lại đầu ra ĐÃ làm sạch của chính lượt, cần kho tiêm ⇒ chấm ở boThucThiMayChu.dauRaDai.test.ts (dangNgo vắng với đầu vào sạch).
+const LOI = new Set(["todo_write", "run_command", "delegate", "report", "read_output"]);
 
 beforeAll(() => {
   REPO = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "census-co-")));

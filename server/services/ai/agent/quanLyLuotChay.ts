@@ -63,6 +63,7 @@ import {
   type TrangThaiLuotChay,
 } from "../../../db/aiAgentRuns";
 import type { CopilotUser } from "../../aiCopilotActions";
+import { dauRaDaiBat, taoKhoDauRaDai, type KhoDauRaDai } from "./khoDauRaDai";
 import { docTruocKhiGhiBat, hanGioToolBat, taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
 import { giaiChonModel } from "../chonModel/giaiChonModel";
@@ -259,6 +260,8 @@ export interface PhuThuocQuanLy {
   /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
   vaiTro?: Partial<PhuThuocVaiTro>;
   /** (Đợt 11.8) giao việc cho agent con. `bat` vắng ⇒ đọc cờ AI_AGENT_GIAO_VIEC=1 (MẶC ĐỊNH TẮT); `tra` thay bộ tra định nghĩa (lưới). */
+  /** (Đợt 12 · H5.3) kho đầu ra dài thay thế (lưới). Vắng ⇒ đọc cờ AI_AGENT_DAU_RA_DAI=1 (MẶC ĐỊNH TẮT) và dùng kho dùng chung của tiến trình; `null` ⇒ tắt. */
+  khoDauRaDai?: KhoDauRaDai | null;
   giaoViec?: { bat?: boolean; doSauToiDa?: number; baoCao?: boolean; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
   /** (Đợt 11.3-C) cổng duyệt kế hoạch. `bat` vắng ⇒ đọc cờ AI_AGENT_CONG_KE_HOACH=1 (MẶC ĐỊNH TẮT); `choDuyet` thay móc chờ người (lưới). */
   congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
@@ -432,6 +435,16 @@ export interface ChiTietLuotChay extends TomTatLuotChay {
   suKien: MucSuKien[];
   checkpointIds: string[];
   checkpoints: Array<Pick<Checkpoint, "id" | "seq" | "taoLuc"> & { tep: string[] }>;
+}
+
+/** Kho dùng chung của tiến trình (lười); đóng khi tiến trình thoát (xoá thư mục kho của chính mình). */
+let khoMacDinh: KhoDauRaDai | null = null;
+function khoDungChung(): KhoDauRaDai {
+  if (!khoMacDinh) {
+    khoMacDinh = taoKhoDauRaDai();
+    process.once("exit", () => khoMacDinh?.dongKho());
+  }
+  return khoMacDinh;
 }
 
 export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay {
@@ -759,7 +772,11 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       // (Đợt 11.8) giao việc: cờ máy chủ (mặc định TẮT) VÀ model của cha KHÔNG phải model ngoài (M1: cha ngoài ⇒ không phơi `delegate`).
       const congKeHoachBat = phuThuoc.congKeHoach?.bat ?? process.env.AI_AGENT_CONG_KE_HOACH === "1";
       const coGiaoViec = choPhepGiaoViec({ bat: phuThuoc.giaoViec?.bat, chonModel: y.chonModel });
+      // (Đợt 12 · H5.3) kho đầu ra dài: cờ BẬT (hoặc tiêm) VÀ kho không chồng gốc dự án của lượt này
+      const khoUng = phuThuoc.khoDauRaDai !== undefined ? phuThuoc.khoDauRaDai : dauRaDaiBat(process.env.AI_AGENT_DAU_RA_DAI) ? khoDungChung() : null;
+      const khoLuot = khoUng && khoUng.hopLeVoiGoc(goc) ? khoUng : null;
       const boThucThi = taoBoThucThiMayChu({
+        ...(khoLuot ? { khoDauRaDai: khoLuot } : {}),
         execCtx,
         gocDuAn: goc,
         projectId,
@@ -835,6 +852,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                       });
                       // (H5.1) con kết thúc bằng báo cáo ⇒ thẻ duyệt do CHÍNH con đề xuất mà chưa quyết bị đóng (khối gửi cha đã nói "đã huỷ")
                       if (r.baoCao) await dongTheCuaCay(idCon).catch(() => 0);
+                      khoLuot?.donLuot(idCon); // (H5.3) tệp của CON dọn ngay khi con xong
                     },
                   };
                 },
@@ -842,6 +860,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             : undefined;
           const kq = await chayVongAgent({
             ...(giaoViec ? { giaoViec } : {}),
+            ...(khoLuot ? { luuDauRaDai: (y2: { runId: string; ten: string; noiDung: string }) => khoLuot.luu({ runId: y2.runId, ten: y2.ten, noiDung: y2.noiDung }) } : {}),
             // (Đợt 11.3-C) cổng duyệt kế hoạch — chỉ khi cờ bật VÀ chế độ có tool ghi; móc chờ người đọc/ghi SỔ (fail-closed).
             ...(congKeHoachBat && cheDo !== "hoi" ? { congKeHoach: { choDuyet: (phuThuoc.congKeHoach?.choDuyet ?? taoChoDuyetKeHoach)({ userId: user.id, runId: id }) } } : {}),
             // ★ Đợt 9 — theo vai trò: model nhận câu hỏi ĐÃ CHE của aiGateway (`safeText`: bí mật/PII); sổ vẫn giữ câu gốc của chính người dùng.
@@ -878,6 +897,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           phat(s, { loai: "loi", ma: "LOI_NOI_BO", thongDiep: moTaLoi(e) });
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: boHuy.signal.aborted ? "huy" : "loi-model" });
         } finally {
+          khoLuot?.donLuot(id); // (H5.3) xoá đầu ra dài đã lưu của lượt
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: "loi-model" });
           // ★ Đợt 9 — hàng CHÍNH của lượt chạy (cùng `requestId` với các hàng `agent-luot`): tổng token + kết cục.
           plan?.record({

@@ -40,6 +40,8 @@ export const TEN_CONG_CU = [
   "delegate",
   // ── Đợt 12 · H5.1: báo cáo CÓ CẤU TRÚC của agent con (xử lý TRONG lõi, CHỈ trong vòng con, sau cờ máy chủ AI_AGENT_CON_BAO_CAO) ──
   "report",
+  // ── Đợt 12 · H5.3: đọc lại đầu ra dài đã lưu (xử lý ở bộ thực thi máy chủ, sau cờ AI_AGENT_DAU_RA_DAI) ──
+  "read_output",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -62,6 +64,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   compile_st: "doc",
   delegate: "giao",
   report: "bao-cao",
+  read_output: "doc",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -84,7 +87,11 @@ export const TRAN_MA_ST = 64 * 1024;
  * (`compile_st` ⇐ cờ `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all`, trình biên dịch chỉ có ở máy chủ). Tắt ⇒ bộ tool và lời
  * nhắc hệ thống GIỐNG TỪNG BYTE bản trước (A/B sạch).
  */
-export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate", "report"]);
+export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate", "report", "read_output"]);
+
+/** Đợt 12 · H5.3 — trần tham số `read_output`. */
+export const TRAN_MA_DAU_RA = 32;
+export const TRAN_GREP_DAU_RA = 200;
 
 /** Đợt 12 · H5.1 — trần tham số `report` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
 export const TRAN_BC_TOM_TAT = 1_500;
@@ -186,6 +193,19 @@ export const CONG_CU: WireTool[] = [
       "host may allow fewer); there is no shell.",
     { command: chuoi("The command line, exactly one allowed form, e.g. 'go test ./...'. Paths are relative to the project root.") },
     ["command"],
+  ),
+  tool(
+    "read_output",
+    "Read part of a long tool output that was saved because it was too long to show in full. Use the ref from the note '[full output saved as <ref>]'. " +
+      "Give start_line/end_line to read a range (up to ~200 lines per call), or grep to list the lines containing a text (case-insensitive). " +
+      "Only refs from this run work. Use it instead of running the command again.",
+    {
+      ref: chuoi("The ref from the note, e.g. out-1a2b3c4d."),
+      start_line: soNguyen("First line to read (1-based)."),
+      end_line: soNguyen("Last line to read."),
+      grep: chuoi("List the lines that contain this text instead of reading a range."),
+    },
+    ["ref"],
   ),
   tool(
     "report",
@@ -387,6 +407,7 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
   compile_st: { path: T("duong"), code: T("chuoi", { toiDa: TRAN_MA_ST }) },
   delegate: { agent: B("tenAgent"), task: B("chuoi", { toiDa: TRAN_NHIEM_VU_GIAO }), tools: T("dsTen") },
+  read_output: { ref: B("chuoi", { toiDa: TRAN_MA_DAU_RA }), start_line: T("so"), end_line: T("so"), grep: T("chuoi", { toiDa: TRAN_GREP_DAU_RA }) },
   report: {
     status: B("enum", { giaTri: TRANG_THAI_BAO_CAO }),
     summary: B("chuoi", { toiDa: TRAN_BC_TOM_TAT }),
@@ -414,6 +435,7 @@ const VI_DU: Record<TenCongCu, string> = {
   lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
   compile_st: '{"path":"src/FB_Motor.st"}',
   delegate: '{"agent":"kham-pha","task":"Find where HTTP requests are retried and report the file paths."}',
+  read_output: '{"ref":"out-1a2b3c4d","grep":"error"}',
   report:
     '{"status":"done","summary":"Retries live in src/http/retry.ts.","findings":[{"note":"Retries 3 times with backoff","path":"src/http/retry.ts","line":12}],"files":["src/http/retry.ts"],"evidence":[{"path":"src/http/retry.ts","line":12,"quote":"maxRetries = 3"}]}',
 };
