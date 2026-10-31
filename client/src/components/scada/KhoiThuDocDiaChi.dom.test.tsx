@@ -170,3 +170,35 @@ describe("KhoiThuDocDiaChi", () => {
     }
   });
 });
+
+describe("KhoiThuDocDiaChi — ghim mutant sống của kiem-dinh (b6, b12, b13)", () => {
+  it.each(["bool", "float", "string"])("★ b6: chọn kiểu %s ⇒ payload mang đúng kiểu đã chọn (không mặc định 'int')", (kieu) => {
+    render(<KhoiThuDocDiaChi adapterId={7} />);
+    fireEvent.change(oDiaChi(), { target: { value: "40001" } });
+    fireEvent.change(oKieu(), { target: { value: kieu } });
+    nhapLyDo("kiểm tra");
+    fireEvent.click(nutDoc());
+    expect((srv.calls.at(-1)!.vars as { dataType: string }).dataType).toBe(kieu);
+  });
+
+  it("★ b13: chất lượng hiện ĐÚNG nhãn — bad ⇒ 'Xấu', uncertain ⇒ 'Nghi ngờ', good ⇒ 'Tốt' (không bao giờ bad hiện như tốt)", () => {
+    render(<KhoiThuDocDiaChi adapterId={7} />);
+    const nhan = vi_.scada.diag.chatLuong;
+    act(() => srv.opts!.onSuccess!({ quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "timeout", ms: 3000 }));
+    expect(screen.getByTestId("thu-doc-ket-qua")).toHaveTextContent(nhan.xau);
+    expect(screen.getByTestId("thu-doc-ket-qua")).not.toHaveTextContent(new RegExp(`^${nhan.tot}`));
+    act(() => srv.opts!.onSuccess!({ quality: "uncertain", raw: 1, giaTri: 1, statusCode: null, reason: null, ms: 5 }));
+    expect(screen.getByTestId("thu-doc-ket-qua")).toHaveTextContent(nhan.nghi_ngo);
+    act(() => srv.opts!.onSuccess!({ quality: "good", raw: 1, giaTri: 1, statusCode: null, reason: null, ms: 5 }));
+    expect(screen.getByTestId("thu-doc-ket-qua")).toHaveTextContent(nhan.tot);
+    expect(screen.getByTestId("thu-doc-ket-qua")).not.toHaveTextContent(nhan.xau);
+  });
+
+  it("★ b12: reason 'no_sample' ⇒ câu dịch (không mã thô)", () => {
+    render(<KhoiThuDocDiaChi adapterId={7} />);
+    act(() => srv.opts!.onSuccess!({ quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "no_sample", ms: 10 }));
+    const kq = screen.getByTestId("thu-doc-ket-qua");
+    expect(kq).toHaveTextContent(V.scada.lab.thuDoc.reasonNoSample);
+    expect(kq.textContent).not.toContain("no_sample");
+  });
+});
