@@ -222,7 +222,7 @@ export type SuKienAgent =
    * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
    */
   | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
-  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string; baoCao?: DemBaoCao }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string; baoCao?: DemBaoCao; trangThaiBaoCao?: DemBaoCao["status"] }
   | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
   /** `vetNgoai` (L3): chỉ lượt model ngoài, do HOST gắn (lõi không phát). */
   | { loai: "xong"; lyDo: LyDoDung; tomTat?: string; vetNgoai?: VetNgoaiLuot }
