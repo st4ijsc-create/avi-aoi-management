@@ -7601,7 +7601,9 @@
     "aiFlows": "AI Flows",
     "aiFlowsDesc": "n8n-style automation with AI and human-approval nodes",
     "scadaKenh": "SCADA channels & limits",
-    "scadaKenhDesc": "Channel kind, range, step, actuation level and per-machine mode channel (engineers)"
+    "scadaKenhDesc": "Channel kind, range, step, actuation level and per-machine mode channel (engineers)",
+    "scadaNhatKy": "SCADA command journal",
+    "scadaNhatKyDesc": "Sent commands and rejected attempts — by machine, time and status"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -24042,6 +24044,79 @@
     }
   },
   "scada": {
+    "nhatKy": {
+      "title": "Command journal",
+      "subtitle": "Commands sent plus the attempts rejected before they became commands — newest first. Technical detail is shown to engineers only.",
+      "dangTai": "Loading journal…",
+      "loiTai": "Could not load the command journal.",
+      "trong": "No records match the filter.",
+      "danhSach": "Records ({{count}})",
+      "taiThem": "Load more",
+      "dangTaiThem": "Loading…",
+      "sim": "sim",
+      "simGiaiThich": "Simulated adapter — the command does not reach a real device",
+      "nguoiNgoaiPhamVi": "administrator",
+      "loc": {
+        "tieuDe": "Filters",
+        "may": "Machine",
+        "tatCaMay": "All machines",
+        "nguon": "Source",
+        "tu": "From",
+        "den": "To",
+        "trangThai": "Command status",
+        "xoa": "Clear filters",
+        "nguonGiaTri": {
+          "tat_ca": "All",
+          "lenh": "Commands",
+          "thu": "Attempts"
+        }
+      },
+      "nguon": {
+        "lenh": "Command",
+        "thu": "Attempt"
+      },
+      "col": {
+        "thoiGian": "Time",
+        "nguon": "Source",
+        "may": "Machine / adapter",
+        "tag": "Tag",
+        "trangThai": "Status",
+        "ma": "Code",
+        "lyDo": "Reason",
+        "loi": "Error",
+        "nguoi": "User",
+        "lienKet": "Related command"
+      },
+      "trangThai": {
+        "simulated": "Simulated",
+        "sent": "Sent",
+        "acked": "Acknowledged",
+        "acked_verified": "Read back OK",
+        "acked_unverified": "Read-back mismatch",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "rejected": "Rejected"
+      },
+      "thu": {
+        "request": {
+          "proposed": "Request: proposed",
+          "rejected": "Request: rejected"
+        },
+        "confirm": {
+          "confirmed": "Confirm: approved",
+          "rejected": "Confirm: rejected",
+          "expired": "Confirm: expired"
+        },
+        "dispatch": {
+          "dispatched": "Dispatch: sent",
+          "rejected": "Dispatch: rejected"
+        },
+        "huy": {
+          "cancelled": "Cancel: cancelled",
+          "rejected": "Cancel: rejected"
+        }
+      }
+    },
     "diag": {
       "title": "Communications diagnostics",
       "subtitle": "Real connection state of every OT adapter, 1-hour counters and tag quality — refreshed every 2 seconds.",

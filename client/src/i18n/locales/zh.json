@@ -7376,7 +7376,9 @@
     "aiFlows": "AI 流程",
     "aiFlowsDesc": "带 AI 与人工审批节点的 n8n 风格自动化",
     "scadaKenh": "SCADA 通道与限值",
-    "scadaKenhDesc": "各设备的通道类型、范围、步长、作用等级和模式通道（工程师）"
+    "scadaKenhDesc": "各设备的通道类型、范围、步长、作用等级和模式通道（工程师）",
+    "scadaNhatKy": "SCADA 指令日志",
+    "scadaNhatKyDesc": "已发送的指令和被拒绝的尝试——按设备、时间和状态查看"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -24039,6 +24041,79 @@
     }
   },
   "scada": {
+    "nhatKy": {
+      "title": "指令日志",
+      "subtitle": "已发送的指令以及在成为指令之前被拒绝的尝试——最新在前。技术细节仅对工程师显示。",
+      "dangTai": "正在加载日志…",
+      "loiTai": "无法加载指令日志。",
+      "trong": "没有符合筛选条件的记录。",
+      "danhSach": "记录（{{count}}）",
+      "taiThem": "加载更多",
+      "dangTaiThem": "加载中…",
+      "sim": "模拟",
+      "simGiaiThich": "模拟适配器——指令不会到达真实设备",
+      "nguoiNgoaiPhamVi": "管理员",
+      "loc": {
+        "tieuDe": "筛选",
+        "may": "设备",
+        "tatCaMay": "所有设备",
+        "nguon": "来源",
+        "tu": "起始",
+        "den": "截止",
+        "trangThai": "指令状态",
+        "xoa": "清除筛选",
+        "nguonGiaTri": {
+          "tat_ca": "全部",
+          "lenh": "指令",
+          "thu": "尝试"
+        }
+      },
+      "nguon": {
+        "lenh": "指令",
+        "thu": "尝试"
+      },
+      "col": {
+        "thoiGian": "时间",
+        "nguon": "来源",
+        "may": "设备 / 适配器",
+        "tag": "标签",
+        "trangThai": "状态",
+        "ma": "代码",
+        "lyDo": "原因",
+        "loi": "错误",
+        "nguoi": "用户",
+        "lienKet": "相关指令"
+      },
+      "trangThai": {
+        "simulated": "模拟",
+        "sent": "已发送",
+        "acked": "设备已接收",
+        "acked_verified": "回读一致",
+        "acked_unverified": "回读不一致",
+        "failed": "失败",
+        "timeout": "超时",
+        "rejected": "已拒绝"
+      },
+      "thu": {
+        "request": {
+          "proposed": "请求：已提出",
+          "rejected": "请求：被拒绝"
+        },
+        "confirm": {
+          "confirmed": "确认：已批准",
+          "rejected": "确认：被拒绝",
+          "expired": "确认：已过期"
+        },
+        "dispatch": {
+          "dispatched": "下发：已发送",
+          "rejected": "下发：被拒绝"
+        },
+        "huy": {
+          "cancelled": "取消：已取消",
+          "rejected": "取消：被拒绝"
+        }
+      }
+    },
     "diag": {
       "title": "通信诊断",
       "subtitle": "每个 OT 适配器的真实连接状态、1 小时计数器和标签质量 —— 每 2 秒刷新。",

@@ -7601,7 +7601,9 @@
     "aiFlows": "Luồng AI",
     "aiFlowsDesc": "Tự động hoá kiểu n8n với node AI, duyệt người",
     "scadaKenh": "Kênh & giới hạn SCADA",
-    "scadaKenhDesc": "Loại kênh, dải, bước, mức tác động và kênh chế độ của từng máy (kỹ sư)"
+    "scadaKenhDesc": "Loại kênh, dải, bước, mức tác động và kênh chế độ của từng máy (kỹ sư)",
+    "scadaNhatKy": "Nhật ký lệnh SCADA",
+    "scadaNhatKyDesc": "Lệnh đã gửi và các lần thử bị từ chối — theo máy, thời gian, trạng thái"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -24039,6 +24041,79 @@
     }
   },
   "scada": {
+    "nhatKy": {
+      "title": "Nhật ký lệnh",
+      "subtitle": "Lệnh đã gửi và cả các lần thử bị từ chối trước khi thành lệnh — mới nhất ở trên. Chi tiết kỹ thuật chỉ hiện với kỹ sư.",
+      "dangTai": "Đang tải nhật ký…",
+      "loiTai": "Không tải được nhật ký lệnh.",
+      "trong": "Không có bản ghi nào khớp bộ lọc.",
+      "danhSach": "Bản ghi ({{count}})",
+      "taiThem": "Tải thêm",
+      "dangTaiThem": "Đang tải…",
+      "sim": "sim",
+      "simGiaiThich": "Adapter mô phỏng — lệnh không tới thiết bị thật",
+      "nguoiNgoaiPhamVi": "quản trị",
+      "loc": {
+        "tieuDe": "Bộ lọc",
+        "may": "Máy",
+        "tatCaMay": "Tất cả máy",
+        "nguon": "Nguồn",
+        "tu": "Từ",
+        "den": "Đến",
+        "trangThai": "Trạng thái lệnh",
+        "xoa": "Xoá bộ lọc",
+        "nguonGiaTri": {
+          "tat_ca": "Tất cả",
+          "lenh": "Lệnh",
+          "thu": "Lần thử"
+        }
+      },
+      "nguon": {
+        "lenh": "Lệnh",
+        "thu": "Lần thử"
+      },
+      "col": {
+        "thoiGian": "Thời gian",
+        "nguon": "Nguồn",
+        "may": "Máy / adapter",
+        "tag": "Tag",
+        "trangThai": "Trạng thái",
+        "ma": "Mã",
+        "lyDo": "Lý do",
+        "loi": "Lỗi",
+        "nguoi": "Người",
+        "lienKet": "Lệnh liên quan"
+      },
+      "trangThai": {
+        "simulated": "Mô phỏng",
+        "sent": "Đã gửi",
+        "acked": "Máy đã nhận",
+        "acked_verified": "Đã đọc lại khớp",
+        "acked_unverified": "Đọc lại không khớp",
+        "failed": "Lỗi",
+        "timeout": "Hết thời gian",
+        "rejected": "Bị từ chối"
+      },
+      "thu": {
+        "request": {
+          "proposed": "Yêu cầu: đã đề xuất",
+          "rejected": "Yêu cầu: bị từ chối"
+        },
+        "confirm": {
+          "confirmed": "Xác nhận: đã duyệt",
+          "rejected": "Xác nhận: bị từ chối",
+          "expired": "Xác nhận: hết hạn"
+        },
+        "dispatch": {
+          "dispatched": "Gửi: đã gửi",
+          "rejected": "Gửi: bị từ chối"
+        },
+        "huy": {
+          "cancelled": "Huỷ: đã huỷ",
+          "rejected": "Huỷ: bị từ chối"
+        }
+      }
+    },
     "diag": {
       "title": "Chẩn đoán truyền thông",
       "subtitle": "Trạng thái kết nối thật của từng adapter OT, bộ đếm 1 giờ và chất lượng tag — làm mới mỗi 2 giây.",
