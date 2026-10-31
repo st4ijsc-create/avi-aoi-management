@@ -24229,7 +24229,8 @@
         "dialogApDungTieuDe": "为 {{code}} 设置 stub 故障？",
         "dialogXoaLoiTieuDe": "清除 {{code}} 的 stub 故障？",
         "dialogMoTa": "对模拟适配器的 Lab 操作。原因将记录到审计日志。"
-      }
+      },
+      "tamKhoa": "临时锁定"
     },
     "kenh": {
       "title": "通道与限值",
@@ -24601,6 +24602,13 @@
         "loiTai": "无法加载设备列表 — 请在设备处使用硬接线急停（E-STOP）",
         "biCat": "列表可能不完整 — 请使用硬接线急停（E-STOP）",
         "khongToiMoi": "可能无法到达所有设备 — 请同时使用硬接线急停（E-STOP）"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "通信 {{ketNoi}}/{{tong}}",
+        "coEdge": "通信 {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "重连中 {{dangNoi}} · 已断开 {{mat}} · 其他 {{khac}} — 点击打开通信诊断"
       }
     }
   },

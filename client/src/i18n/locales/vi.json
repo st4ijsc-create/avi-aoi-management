@@ -24229,7 +24229,8 @@
         "dialogApDungTieuDe": "Đặt lỗi stub cho {{code}}?",
         "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
         "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
-      }
+      },
+      "tamKhoa": "Tạm khoá"
     },
     "kenh": {
       "title": "Kênh & giới hạn",
@@ -24601,6 +24602,13 @@
         "loiTai": "Không tải được danh sách máy — dùng E-STOP cứng tại máy",
         "biCat": "Danh sách có thể chưa đủ — dùng E-STOP cứng",
         "khongToiMoi": "Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "Truyền thông {{ketNoi}}/{{tong}}",
+        "coEdge": "Truyền thông {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "Đang nối lại {{dangNoi}} · mất kết nối {{mat}} · khác {{khac}} — bấm để mở chẩn đoán truyền thông"
       }
     }
   },

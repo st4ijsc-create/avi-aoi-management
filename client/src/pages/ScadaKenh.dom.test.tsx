@@ -55,6 +55,8 @@ vi.mock("sonner", () => ({ toast: { success: toastSuccess, error: toastError, wa
 
 type Row = Record<string, unknown>;
 const srv = vi.hoisted(() => ({
+  /** B-T7 — scadaDiag.tomTatTruyenThong (chip n/m); undefined ⇒ chip ẩn */
+  tomTat: undefined as unknown,
   adapters: [] as Record<string, unknown>[],
   kenh: {} as Record<number, Record<string, unknown>[]>,
   kenhInputs: [] as unknown[],
@@ -81,6 +83,7 @@ vi.mock("@/lib/trpc", () => {
     trpc: {
       useUtils: () => ({ scadaKenh: { danhSach: inv("kenh.danhSach"), cheDo: { danhSach: inv("cheDo.danhSach") } } }),
       scadaDiag: {
+        tomTatTruyenThong: { useQuery: () => ({ data: srv.tomTat, isLoading: false, isError: false }) },
         danhSach: {
           useQuery: () => ({ data: srv.loading ? undefined : srv.adapters, isLoading: srv.loading, isError: false }),
         },
@@ -210,6 +213,7 @@ beforeEach(() => {
   srv.mutOpts = {};
   srv.invalidated = [];
   srv.loading = false;
+  srv.tomTat = undefined;
   toastSuccess.mockReset();
   toastError.mockReset();
 });
@@ -1099,5 +1103,18 @@ describe("ScadaKenh — ngôn ngữ", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(document.body.textContent ?? "").not.toMatch(CHU_VIET);
     expect(document.body.textContent ?? "").not.toMatch(/scada\.kenh\./);
+  });
+});
+
+describe("ScadaKenh — chip Truyền thông n/m (B-T7)", () => {
+  it("có tóm tắt ⇒ chip ở đầu trang trỏ /scada/diag; chưa có ⇒ không chip", () => {
+    const { unmount } = render(<ScadaKenh />);
+    expect(screen.queryByTestId("chip-truyen-thong")).toBeNull();
+    unmount();
+    srv.tomTat = { ketNoi: 2, dangNoi: 0, mat: 1, khac: 0, tong: 3, edge: 0, tinhLuc: "2026-10-31T00:00:00.000Z" };
+    render(<ScadaKenh />);
+    const chip = screen.getByTestId("chip-truyen-thong");
+    expect(chip).toHaveTextContent("Truyền thông 2/3");
+    expect(chip).toHaveAttribute("href", "/scada/diag");
   });
 });

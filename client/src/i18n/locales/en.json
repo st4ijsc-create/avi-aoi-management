@@ -24232,7 +24232,8 @@
         "dialogApDungTieuDe": "Apply stub fault to {{code}}?",
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
-      }
+      },
+      "tamKhoa": "Temporarily locked"
     },
     "kenh": {
       "title": "Channels & limits",
@@ -24604,6 +24605,13 @@
         "loiTai": "Could not load the machine list — use the hardwired E-STOP at the machine",
         "biCat": "The list may be incomplete — use the hardwired E-STOP",
         "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "Communication {{ketNoi}}/{{tong}}",
+        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
       }
     }
   },

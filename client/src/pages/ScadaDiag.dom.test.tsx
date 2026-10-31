@@ -48,6 +48,8 @@ vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError, mapTrpcError: (e: unknown) 
 
 type Row = Record<string, unknown>;
 const srv = vi.hoisted(() => ({
+  /** B-T7 — scadaDiag.tomTatTruyenThong (chip n/m); undefined ⇒ chip ẩn */
+  tomTat: undefined as unknown,
   rows: [] as Record<string, unknown>[],
   tags: {} as Record<number, Record<string, unknown>[]>,
   kenh: {} as Record<number, Record<string, unknown>[]>,
@@ -102,6 +104,7 @@ vi.mock("@/lib/trpc", () => {
         },
       },
       scadaDiag: {
+        tomTatTruyenThong: { useQuery: () => ({ data: srv.tomTat, isLoading: false, isError: false }) },
         danhSach: {
           useQuery: (_i: unknown, o: Record<string, unknown>) => {
             srv.danhSachOpts = o;
@@ -198,6 +201,7 @@ beforeEach(() => {
   srv.mauInput = undefined;
   srv.may = [];
   srv.diagLoi = false;
+  srv.tomTat = undefined;
   srv.mayLoi = false;
   toastSuccess.mockReset();
   toastTrpcError.mockReset();
@@ -705,5 +709,18 @@ describe("ScadaDiag — R1b-1 T2 fix round 3: hàng DỪNG MÁY khi danh sách a
       srv.mutOpts.dungMay.onError?.({ message: "x", data: { appCode: "SCADA_MACHINE_NOT_REMOTE", appParams: { ma: "MODE_LOCAL", lyDo: "chua_co_mau" } } });
     });
     expect(within(screen.getByTestId("hop-dung-may")).getByTestId("loi-lenh")).toHaveTextContent(S("scada.lenh.local.chuaCoMauEdge"));
+  });
+});
+
+describe("ScadaDiag — chip Truyền thông n/m (B-T7)", () => {
+  it("có tóm tắt ⇒ chip ở đầu trang trỏ /scada/diag; chưa có ⇒ không chip", () => {
+    const { unmount } = render(<ScadaDiag />);
+    expect(screen.queryByTestId("chip-truyen-thong")).toBeNull();
+    unmount();
+    srv.tomTat = { ketNoi: 2, dangNoi: 0, mat: 1, khac: 0, tong: 3, edge: 0, tinhLuc: "2026-10-31T00:00:00.000Z" };
+    render(<ScadaDiag />);
+    const chip = screen.getByTestId("chip-truyen-thong");
+    expect(chip).toHaveTextContent("Truyền thông 2/3");
+    expect(chip).toHaveAttribute("href", "/scada/diag");
   });
 });
