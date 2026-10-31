@@ -16,8 +16,13 @@
  *   • đối thủ theo ĐÚNG thứ tự dự án: ADAPTER FOR UPDATE → (thủ tục bị chặn ở ADAPTER) → LUẬT FOR UPDATE. Thủ tục khoá luật TRƯỚC adapter (đột
  *     biến) ⇒ đang giữ luật FOR SHARE khi chờ adapter ⇒ vòng chờ chắc chắn ⇒ Postgres huỷ một bên 40P01. (Khuôn `khuonCongAdapter` của S1 khoá
  *     luật FOR SHARE ở bước 2 — tương thích với FOR SHARE của `resolveEvent` ⇒ KHÔNG lộ thứ tự ở đây; nên đối thủ khoá luật FOR UPDATE.)
+ *     ★ Đối thủ này là TỔNG HỢP (review T4 minor 2): hôm nay KHÔNG đường mã nào giữ adapter FOR UPDATE rồi khoá GHI một luật (`congAdapterTx` khoá
+ *     luật FOR SHARE; các đường ghi luật khoá adapter FOR SHARE rồi luật FOR UPDATE). Ca này GHIM BẤT BIẾN thứ tự ADAPTER → LUẬT của dự án (T5 sẽ
+ *     ghim nó ở census), không tái hiện một vòng chờ có thể xảy ra hôm nay với riêng chế độ FOR SHARE của `resolveEvent`.
  *   • luật bị XOÁ / đổi adapter đích giữa lượt đọc KHÔNG khoá (`khoaDichLuatTx` bước 1) và lượt khoá luật ⇒ NOT_FOUND interlockEvent / CONFLICT
  *     `scadaKenhThuLai` đúng.
+ * T4 polish (review minor 1): CONFLICT `scadaKenhThuLai` ⇒ `resolveEvent` chạy lại CẢ giao dịch đúng MỘT lần — đổi đích một lần ⇒ lần hai
+ * `resolved`; đổi đích hai lần liên tiếp (tất định, hai đối thủ) ⇒ CONFLICT; giao dịch bị ép xung đột mãi (`H.epXungDot`) ⇒ đúng 2 giao dịch.
  *
  * Lệch so với chữ của brief (đo trên `_test`): (1) `interlock_events."ruleId"` là NOT NULL (không FK) ⇒ không có "sự kiện ruleId NULL" thật; ca
  * tương đương = sự kiện mồ côi (luật của nó đã xoá): kỹ sư có phạm vi ⇒ NOT_FOUND, admin ⇒ `resolved` (như hôm nay). (2) Không có trạng thái
@@ -42,18 +47,30 @@ const H = vi.hoisted(() => ({
   /** tổng lượt gọi getDb đã bọc */
   goiTong: 0,
   getDbThat: null as null | (() => Promise<unknown>),
+  /** tổng số giao dịch mở qua getDb ĐÃ BỌC (chỉ thủ tục; đối thủ / test dùng getDb thật) */
+  soGd: 0,
+  /** > 0 ⇒ giao dịch mở qua bản bọc bị TỪ CHỐI ngay bằng CONFLICT `scadaKenhThuLai` (giảm 1 mỗi lần) — "luôn xung đột", có trần để không treo */
+  epXungDot: 0,
 }));
 
 vi.mock("../db/connection", async (importOriginal) => {
   const real = await importOriginal<typeof import("../db/connection")>();
   H.getDbThat = real.getDb as never;
+  const { appError } = await import("../_core/appError");
   const boc = (d: any) =>
     d &&
     new Proxy(d, {
       get(t, p) {
         if (p === "transaction") {
-          return (cb: (tx: unknown) => Promise<unknown>, cfg?: unknown) =>
-            t.transaction(async (tx: unknown) => {
+          return (cb: (tx: unknown) => Promise<unknown>, cfg?: unknown) => {
+            H.soGd++;
+            if (H.epXungDot > 0) {
+              H.epXungDot--;
+              return Promise.reject(
+                appError("CONFLICT", "OPERATION_FAILED", { operation: "interlockRule", reason: "scadaKenhThuLai" }, "ép xung đột (test)"),
+              );
+            }
+            return t.transaction(async (tx: unknown) => {
               H.trongGd++;
               try {
                 return await cb(tx);
@@ -61,6 +78,7 @@ vi.mock("../db/connection", async (importOriginal) => {
                 H.trongGd--;
               }
             }, cfg);
+          };
         }
         const v = Reflect.get(t, p, t);
         return typeof v === "function" && p !== "constructor" ? v.bind(t) : v;
@@ -319,6 +337,8 @@ describe("★★★ không gọi pool trong giao dịch", () => {
 });
 
 describe("★★★ KD-C1 — giữ chéo TẤT ĐỊNH: đối thủ theo thứ tự ADAPTER (FOR UPDATE) → LUẬT (FOR UPDATE)", () => {
+  // Đối thủ TỔNG HỢP (review T4 minor 2): không đường mã hiện tại nào giữ adapter FOR UPDATE rồi khoá GHI luật. Ca này ghim BẤT BIẾN thứ tự
+  // ADAPTER → LUẬT (đột biến "luật trước adapter" ⇒ 40P01 chắc chắn), không tái hiện vòng chờ có thể xảy ra hôm nay.
   it("resolveEvent chờ ở hàng ADAPTER (chưa giữ luật) ⇒ đối thủ lấy được luật, cả hai thành công, 0 lỗi 40P01", async () => {
     const x = await seedAdapter(A.mid);
     const id = await seedLuat(x);
@@ -341,17 +361,89 @@ describe("★★ KD-C1 — luật đổi giữa lượt đọc KHÔNG khoá và 
   const luatDoiGiuaDocVaKhoa = <T>(doi: (tx: Db) => Promise<unknown>, goi: () => Promise<T>) =>
     doiThuGiuRoiDoi(doi, async () => undefined, goi, "resolveEvent phải BỊ CHẶN ở lượt khoá luật (đã đọc đích cũ, đã khoá adapter)");
 
-  it("đích đổi sang adapter CÙNG nhà máy A ⇒ CONFLICT scadaKenhThuLai đi nguyên, sự kiện vẫn mở", async () => {
+  it("đích đổi MỘT lần sang adapter CÙNG nhà máy A ⇒ lần một CONFLICT scadaKenhThuLai, chạy lại CẢ giao dịch ⇒ resolved + đúng 1 audit", async () => {
     const x1 = await seedAdapter(A.mid);
     const x2 = await seedAdapter(A.mid);
     const id = await seedLuat(x1);
     const ev = await seedSuKien(id);
+    const gd0 = H.soGd;
     const { thuTuc, doiThu } = await luatDoiGiuaDocVaKhoa(
       (tx) => tx.execute(sql`UPDATE interlock_rules SET "targetAdapterId" = ${x2} WHERE id = ${id}`),
       () => engA.ilk.resolveEvent({ id: ev, reason: "dich doi cung nha may" }),
     );
     expect(doiThu.loi).toBeNull();
-    expect(moTa(thuTuc.loi)).toMatchObject(CONFLICT_THU_LAI);
+    expect(moTa(thuTuc.loi)).toBeNull();
+    expect(H.soGd - gd0, "lần một xung đột + lần hai thành công = 2 giao dịch").toBe(2);
+    await daDong(ev);
+  }, 30_000);
+
+  it("đích đổi HAI lần liên tiếp (lần một chặn ở LUẬT, lần hai chặn ở ADAPTER mới) ⇒ CONFLICT scadaKenhThuLai đi nguyên, sự kiện vẫn mở", async () => {
+    const x1 = await seedAdapter(A.mid);
+    const x2 = await seedAdapter(A.mid);
+    const x3 = await seedAdapter(A.mid);
+    const id = await seedLuat(x1);
+    const ev = await seedSuKien(id);
+    const gd0 = H.soGd;
+    const moi = <T = void>() => {
+      let r!: (v: T) => void;
+      const p = new Promise<T>((x) => (r = x));
+      return { p, r };
+    };
+    // Đối thủ 2: giữ adapter x2 FOR UPDATE (thứ tự ADAPTER → LUẬT); sau khi lần hai bị chặn ở x2 mới đổi đích luật x2 → x3 rồi COMMIT.
+    const pid2 = moi<number>();
+    const di2 = moi();
+    const doiThu2 = thuGoi(
+      db.transaction(async (tx) => {
+        const [p] = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{ pid: number }>;
+        await tx.execute(sql`SELECT id FROM device_adapters WHERE id = ${x2} FOR UPDATE`);
+        pid2.r(Number(p.pid));
+        await di2.p;
+        await tx.execute(sql`UPDATE interlock_rules SET "targetAdapterId" = ${x3} WHERE id = ${id}`);
+      }),
+    );
+    // Đối thủ 1: đổi đích x1 → x2 (giữ hàng luật, chưa commit).
+    const pid1 = moi<number>();
+    const di1 = moi();
+    const doiThu1 = thuGoi(
+      db.transaction(async (tx) => {
+        const [p] = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{ pid: number }>;
+        await tx.execute(sql`UPDATE interlock_rules SET "targetAdapterId" = ${x2} WHERE id = ${id}`);
+        pid1.r(Number(p.pid));
+        await di1.p;
+      }),
+    );
+    const [p1, p2] = [await pid1.p, await pid2.p];
+    const thuTuc = thuGoi(engA.ilk.resolveEvent({ id: ev, reason: "dich doi hai lan" }));
+    try {
+      await choBiChan(p1, "lần một phải BỊ CHẶN ở lượt khoá luật (đối thủ 1 giữ hàng luật)");
+      di1.r();
+      expect((await doiThu1).loi).toBeNull();
+      await choBiChan(p2, "lần hai (giao dịch MỚI, đọc đích x2) phải BỊ CHẶN ở lượt khoá adapter x2 (đối thủ 2)");
+    } finally {
+      di1.r();
+      di2.r();
+    }
+    expect((await doiThu2).loi).toBeNull();
+    const kq = await thuTuc;
+    expect(moTa(kq.loi)).toMatchObject(CONFLICT_THU_LAI);
+    expect(H.soGd - gd0, "đúng 2 giao dịch (không lần ba)").toBe(2);
+    expect((await dung(sql`SELECT "targetAdapterId" FROM interlock_rules WHERE id = ${id}`))[0].targetAdapterId).toBe(x3);
+    await chuaDong(ev);
+  }, 60_000);
+
+  it("giao dịch luôn xung đột (ép qua bản bọc, trần 20) ⇒ đúng 2 giao dịch rồi CONFLICT; không lặp không trần", async () => {
+    const x = await seedAdapter(A.mid);
+    const ev = await seedSuKien(await seedLuat(x));
+    const gd0 = H.soGd;
+    H.epXungDot = 20;
+    let kq: KetQua<unknown>;
+    try {
+      kq = await thuGoi(engA.ilk.resolveEvent({ id: ev, reason: "luon xung dot" }));
+    } finally {
+      H.epXungDot = 0;
+    }
+    expect(moTa(kq.loi)).toMatchObject(CONFLICT_THU_LAI);
+    expect(H.soGd - gd0, "chạy lại đúng MỘT lần").toBe(2);
     await chuaDong(ev);
   }, 30_000);
 
@@ -360,12 +452,14 @@ describe("★★ KD-C1 — luật đổi giữa lượt đọc KHÔNG khoá và 
     const xb = await seedAdapter(B.mid);
     const id = await seedLuat(x1);
     const ev = await seedSuKien(id);
+    const gd0 = H.soGd;
     const { thuTuc, doiThu } = await luatDoiGiuaDocVaKhoa(
       (tx) => tx.execute(sql`UPDATE interlock_rules SET "targetAdapterId" = ${xb} WHERE id = ${id}`),
       () => engA.ilk.resolveEvent({ id: ev, reason: "dich doi sang B" }),
     );
     expect(doiThu.loi).toBeNull();
     expect(moTa(thuTuc.loi)).toMatchObject(NF_SU_KIEN);
+    expect(H.soGd - gd0, "NOT_FOUND không được chạy lại").toBe(1);
     await chuaDong(ev);
   }, 30_000);
 
