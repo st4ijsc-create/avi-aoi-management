@@ -16,6 +16,7 @@
 import superjson from "superjson";
 import type { CheDoAgent, NgonNgu, SuKienAgent, TinNhan } from "@shared/agentCore/kieu";
 import { thongDiepLoiRest } from "./restAuthError";
+import { docLoiTruocSse } from "./loiNgoai";
 
 export const DUONG_API_AGENT = "/api/ai/agent/runs";
 /** ⚠ Phụ thuộc T4: tên router tRPC chứa các thủ tục lượt chạy. */
@@ -30,6 +31,8 @@ export interface ThanTaoLuotChay {
   ngonNgu?: NgonNgu;
   /** ★ Đợt 10.2 — model người dùng chọn (`vai-tro:<id>` | `ho-so:<id>` | `ngoai:…`); vắng/auto ⇒ KHÔNG gửi. Máy chủ kiểm hình dạng + danh mục (400/404 trước khi mở lượt). */
   chonModel?: string;
+  /** ★ Đợt 10.4b L4 — người dùng ĐÃ xác nhận "câu gõ = dữ liệu vận hành" cho model ngoài (chỉ gửi `true`; vắng = chưa). Máy chủ không tin cờ này để hạ mức. */
+  xacNhanVanHanh?: true;
 }
 
 // ─── SSE thuần ─────────────────────────────────────────────────────────────────────────────────
@@ -98,6 +101,9 @@ export interface TuyChonLuong {
 async function docLuong(res: Response, opts: TuyChonLuong): Promise<void> {
   if (!res.ok || !res.body) {
     const than = await res.json().catch(() => ({}));
+    // ★ Đợt 10.4b L4 — lỗi TRƯỚC SSE của lượt model ngoài (428/400/403/404/409/429…) ⇒ lỗi có kiểu để hook PHÂN BIỆT 428; chuỗi hiện chỉ từ khoá i18n theo `code`.
+    const loiNgoai = docLoiTruocSse(res.status, than);
+    if (loiNgoai) throw loiNgoai;
     throw new Error(thongDiepLoiRest(than as { error?: unknown; code?: unknown }, `Agent stream failed (${res.status})`));
   }
   const reader = res.body.getReader();

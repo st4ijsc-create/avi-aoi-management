@@ -4686,7 +4686,8 @@
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, nâng mức tác động lên trên 1 (STOP HMI chỉ gửi ghim của tag mức 1), tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
-    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ."
+    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ.",
+    "CHON_MODEL_KHONG_CO": "Model đã chọn không dùng được ở màn này (chưa mở hoặc đã bị gỡ) — hãy chọn model khác."
   },
   "export": {
     "reportMenu": {
@@ -21704,6 +21705,20 @@
           "csdl": "Máy chủ chưa ghi được quyết định — thử lại.",
           "chung": "Chưa gửi được quyết định — thử lại."
         }
+      },
+      "modelNgoai": {
+        "huyHieu": "Model ngoài",
+        "dangChay": "Đang chạy {{model}} ({{ncc}})",
+        "daChay": "Đã chạy {{model}} ({{ncc}})",
+        "khongRo": "Model của nhà cung cấp bên ngoài",
+        "mucKyThuat": "dữ liệu kỹ thuật",
+        "mucVanHanh": "dữ liệu vận hành",
+        "dung": "Nút Dừng chỉ có tác dụng trước vòng kế tiếp: vòng đang gọi model ngoài vẫn chạy cho hết và vẫn tính phí. Dừng không dừng cuộc gọi đang bay."
+      },
+      "vetNgoai": "Model ngoài {{model}} ({{ncc}}) · token vào {{vao}} · ra {{ra}} · chi phí ước {{usd}}",
+      "haTuTriPhienNgoai": "Phiên này đã có lượt dùng model ngoài — mọi ghi/lệnh (kể cả chế độ tự động) cần bạn duyệt từng bước.",
+      "ngoai": {
+        "bat": "Agent đọc nhiều bước (chỉ đọc) với model ngoài — đọc/tìm tệp qua máy chủ, không ghi, không chạy lệnh, không giao việc cho agent con."
       },
       "tongQuan": {
         "tieuDe": "Tổng quan thay đổi",

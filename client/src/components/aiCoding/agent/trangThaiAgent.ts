@@ -28,8 +28,10 @@ import type {
   PhamViNho,
   SuKienAgent,
   ThongTinModelBatDau,
+  VetNgoaiLuot,
   ViecKeHoach,
 } from "@shared/agentCore/kieu";
+import { bocVetNgoaiLuot } from "@/lib/loiNgoai";
 
 export type TrangThaiTheDuyet = "cho" | "da-duyet" | "bi-bac" | "het-hieu-luc";
 
@@ -51,7 +53,7 @@ export type MucDongThoiGian =
   | { kieu: "duyet"; id: string; deXuat: DeXuatDuyet; trangThai: TrangThaiTheDuyet; lyDo?: string }
   | { kieu: "nho"; id: string; note: string; scope: PhamViNho; trangThai: TrangThaiTheNho; maLoi?: string }
   /** (2026-10-17) nội dung đáng ngờ: `du-lieu` = cảnh báo (lượt KHÔNG dừng) · `ha-tu-tri` = tu-dong bị hạ (ghi/lệnh cần duyệt). */
-  | { kieu: "canh-bao"; loaiCanhBao: "du-lieu" | "ha-tu-tri"; nguon: string; mau: string[] }
+  | { kieu: "canh-bao"; loaiCanhBao: "du-lieu" | "ha-tu-tri"; nguon: string; mau: string[]; lyDo?: "phien-co-luot-ngoai" }
   | { kieu: "loi"; ma: string; thongDiep: string }
   /** (Đợt 11.3-C, UX-D02) thẻ "Kế hoạch chờ duyệt": kế hoạch `bam` của lượt chờ người quyết trước tool ghi/lệnh kế tiếp. */
   | MucKeHoachDuyet
@@ -119,7 +121,7 @@ export interface TrangThaiAgent {
   usage: UsageGop | null;
   checkpoints: Array<{ checkpointId: string; tep: string[] }>;
   tepDaDoi: string[];
-  ketThuc: { lyDo: LyDoDung; tomTat?: string } | null;
+  ketThuc: { lyDo: LyDoDung; tomTat?: string; vetNgoai?: VetNgoaiLuot } | null;
   /** (2026-10-17) tu-dong đã bị hạ tự trị trong lượt này (`ha-tu-tri`) — một chiều. */
   daHaTuTri: boolean;
   /** ★ Đợt 9 — model + vai trò THỰC của lượt (sự kiện `bat-dau.model`; CHỈ có khi server bật `AI_AGENT_THEO_VAI_TRO`). `null` ⇒ không hiện gì. */
@@ -294,13 +296,16 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangT
     }
     case "canh-bao-du-lieu":
     case "ha-tu-tri": {
+      // (Đợt 10.4b L3b/L4) `ha-tu-tri` do PHIÊN đã có lượt model ngoài KHÔNG phải "nội dung đáng ngờ": dòng nói đúng lý do và KHÔNG bật `daHaTuTri` (cờ ấy dựng biển "không tin cậy").
+      const doPhien = e.loai === "ha-tu-tri" && e.lyDo === "phien-co-luot-ngoai";
       const muc: MucDongThoiGian = {
         kieu: "canh-bao",
         loaiCanhBao: e.loai === "ha-tu-tri" ? "ha-tu-tri" : "du-lieu",
         nguon: String(e.nguon ?? ""),
         mau: Array.isArray(e.mau) ? e.mau.filter((x): x is string => typeof x === "string") : [],
+        ...(doPhien ? { lyDo: "phien-co-luot-ngoai" as const } : {}),
       };
-      return { ...n, dongThoiGian: [...n.dongThoiGian, muc], ...(e.loai === "ha-tu-tri" ? { daHaTuTri: true } : {}) };
+      return { ...n, dongThoiGian: [...n.dongThoiGian, muc], ...(e.loai === "ha-tu-tri" && !doPhien ? { daHaTuTri: true } : {}) };
     }
     case "checkpoint":
       return { ...n, checkpoints: [...n.checkpoints, { checkpointId: e.checkpointId, tep: Array.isArray(e.tep) ? e.tep : [] }] };
@@ -353,15 +358,17 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangT
     }
     case "loi":
       return { ...n, dongThoiGian: [...n.dongThoiGian, { kieu: "loi", ma: e.ma, thongDiep: e.thongDiep }] };
-    case "xong":
+    case "xong": {
+      const vetNgoai = bocVetNgoaiLuot(e.vetNgoai);
       return {
         ...n,
         dangChay: false,
         choDuyet: false,
         phiaTruoc: null,
-        ketThuc: { lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}) },
+        ketThuc: { lyDo: e.lyDo, ...(e.tomTat ? { tomTat: e.tomTat } : {}), ...(vetNgoai ? { vetNgoai } : {}) },
         dongThoiGian: n.dongThoiGian.map((m) => hetHieuLucTheCho(m)),
       };
+    }
     default:
       return n;
   }

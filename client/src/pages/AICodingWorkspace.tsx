@@ -70,6 +70,8 @@ import { docChonLapTrinh } from "@/lib/chonModel";
 import { NoiDungTraLoiNgoai } from "@/components/ai/NoiDungTraLoiNgoai";
 import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
 import { useXacNhanNgoai } from "@/hooks/useXacNhanNgoai";
+import { useDanhMucModel } from "@/hooks/useDanhMucModel";
+import { agentNgoaiMo, dungAgentNgoai } from "@/lib/agentNgoai";
 import { daXacNhanVanHanh, tachMaNgoai } from "@/lib/dongYNgoai";
 import { layThongTinNgoai } from "@/lib/thongTinNgoaiClient";
 import { callIdCuaLuot, congDonCallId, loaiCallIdDaLuu } from "@/lib/soCallIdNgoai";
@@ -1400,6 +1402,11 @@ export default function AICodingWorkspace() {
   const [tienDoDoc, setTienDoDoc] = useState<Array<{ name: string; path?: string; ok: boolean; maTuChoi?: string }>>([]);
   const ngoaiCallIdsRef = useRef<number[]>([]);
   const { xacNhanNgoai, hoiVanHanh, hopThoai } = useXacNhanNgoai({ beMat: "coding", layThongTin: layThongTinNgoai(utils, "coding") });
+  // ★ Đợt 10.4b L4 — AGENT (nhiều bước, chỉ đọc) bằng model ngoài: công tắc CHỈ bày khi máy chủ khai bề mặt `agent` mở cho model này (danh mục `duocDungO`).
+  const { danhMuc: danhMucModel } = useDanhMucModel();
+  const [batAgentNgoai, setBatAgentNgoai] = useState(false);
+  const agentNgoaiBay = laNgoai && agentNgoaiMo(danhMucModel, chonModel);
+  const duongAgentNgoai = dungAgentNgoai(batAgentNgoai, danhMucModel, chonModel);
   /**
    * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
    * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
@@ -1476,6 +1483,7 @@ export default function AICodingWorkspace() {
   const agent = useLuotChayAgent({
     projectId,
     chonModel, // ★ Đợt 10.2 — cùng ô chọn model với chế độ Hỏi
+    hoiVanHanh, // ★ Đợt 10.4b L4 — 428 của lượt agent model ngoài: hỏi MỘT lần, gửi lại ĐÚNG một lần
     ngonNgu: i18n.language?.startsWith("en") ? "en" : i18n.language?.startsWith("zh") ? "zh" : "vi",
     onTepDaDoi: (tep) => {
       void utils.repoWorkspace.listFiles.invalidate();
@@ -1488,6 +1496,15 @@ export default function AICodingWorkspace() {
   const handleSend = useCallback(async (override?: string, tuVong?: TuVongSend) => {
     const text = (override ?? input).trim();
     if (!text || isStreaming) return;
+    // ★ Đợt 10.4b L4 — agent chỉ-đọc bằng model ngoài: luôn `cheDo: "hoi"` (máy chủ 400 NGOAI_CHI_HOI với chế độ khác); người dùng từ chối xác nhận vận hành ⇒ trả câu về ô nhập.
+    if (duongAgentNgoai && !tuVong) {
+      if (agentDangChay) return;
+      setInput("");
+      void agentGui(text, "hoi").then((kq) => {
+        if (kq === "tu-choi") setInput(text);
+      });
+      return;
+    }
     // ★ Đợt 1 · T5 — chế độ Agent: câu người gõ đi API agent (vòng tự động cũ `tuVong` giữ đường Hỏi).
     if (!laNgoai && cheDoChat !== "hoi" && !tuVong) {
       if (agentDangChay) return;
@@ -1631,7 +1648,7 @@ export default function AICodingWorkspace() {
       setTranscript((prev) => [...prev, { role: "assistant", content: t("repoWs.chat.streamFailed", "Luồng bị lỗi — thử lại.") }]);
       setThongKe((tk) => congTuChoi(tk)); // ★ F6 — luồng lỗi cũng là một lượt không trả được
     }
-  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);
+  }, [input, isStreaming, transcript, startKbStream, user?.role, i18n.language, abortedRef, t, projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, duongAgentNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);
   handleSendRef.current = handleSend;
 
   // ★★★ 2026-08-27 · CURSOR-PARITY — GỬI lệnh sửa-đoạn-chọn (Cmd+K): DỰNG câu hỏi có bối cảnh (đoạn đã bôi
@@ -3662,6 +3679,18 @@ export default function AICodingWorkspace() {
                 </div>
               )}
               <BoChonCheDoChat giaTri={cheDoChatHL} onDoi={doiCheDoChat} coQuyenTuDong={canExec} khoa={agentDangChay || isStreaming || laNgoai} />
+              {agentNgoaiBay && (
+                <label data-testid="bat-agent-ngoai" className="mb-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={batAgentNgoai}
+                    disabled={agentDangChay || isStreaming}
+                    onChange={(e) => setBatAgentNgoai(e.target.checked)}
+                  />
+                  <span>{t("repoWs.agent.ngoai.bat", "Agent đọc nhiều bước (chỉ đọc) với model ngoài — đọc/tìm tệp qua máy chủ, không ghi, không chạy lệnh, không giao việc cho agent con.")}</span>
+                </label>
+              )}
               {laNgoai && (
                 <p data-testid="ngoai-chi-hoi" className="mb-1 text-[10px] text-amber-700 dark:text-amber-300">
                   {t("repoWs.ngoai.chiHoi", "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa).")}

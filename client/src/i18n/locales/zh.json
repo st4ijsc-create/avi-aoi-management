@@ -4686,7 +4686,8 @@
     "STOP_PIN_GO_TRUOC": "通道 {{tagKey}} 已固定停止值（{{stopValue}}）——修改其地址、类型、比例、偏移、可写标志或适配器，将动作等级提高到 1 以上（HMI 停止只发送等级 1 标签的固定值），或停用、删除该标签，都会失去 STOP。请先解除固定（软件停止标签，需填写原因），然后重试。",
     "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。",
     "SCADA_STOP_PRECHECK_TIMEOUT": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
-    "SCADA_SCHEMA_MISSING": "数据库缺少迁移 {{migration}} — HMI 命令暂不可用；请管理员应用迁移并重启服务器。"
+    "SCADA_SCHEMA_MISSING": "数据库缺少迁移 {{migration}} — HMI 命令暂不可用；请管理员应用迁移并重启服务器。",
+    "CHON_MODEL_KHONG_CO": "所选模型无法在此界面使用（未启用或已移除）——请选择其他模型。"
   },
   "export": {
     "reportMenu": {
@@ -21704,6 +21705,20 @@
           "csdl": "服务器暂时无法记录决定——请重试。",
           "chung": "决定未能发送——请重试。"
         }
+      },
+      "modelNgoai": {
+        "huyHieu": "外部模型",
+        "dangChay": "正在运行 {{model}}（{{ncc}}）",
+        "daChay": "已运行 {{model}}（{{ncc}}）",
+        "khongRo": "外部提供商的模型",
+        "mucKyThuat": "技术数据",
+        "mucVanHanh": "运营数据",
+        "dung": "“停止”仅在下一轮之前生效：正在调用外部模型的这一轮会运行完毕并仍会计费。停止不会取消已发出的调用。"
+      },
+      "vetNgoai": "外部模型 {{model}}（{{ncc}}）· 输入令牌 {{vao}} · 输出 {{ra}} · 预估费用 {{usd}}",
+      "haTuTriPhienNgoai": "此会话已使用过外部模型——所有写入/命令（包括自动模式）都需要您逐步批准。",
+      "ngoai": {
+        "bat": "使用外部模型的多步只读智能体——通过服务器读取/搜索文件，不写入、不执行命令、不委派子智能体。"
       },
       "tongQuan": {
         "tieuDe": "变更概览",
