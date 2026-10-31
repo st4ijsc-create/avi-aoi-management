@@ -168,7 +168,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.5.0.vsix
+code --install-extension avi-ai-local-0.5.1.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -178,9 +178,16 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.5.0.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.5.0+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.5.1.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.5.1+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
 
 ## Ghi chú phát hành
+
+### 0.5.1
+
+Sửa (bảo mật · độ bền — không đổi tính năng)
+- **Lọc môi trường cho tiến trình con** (MCP, lệnh agent): bỏ biến theo mảnh tên (TOKEN/SECRET/PASSWORD/COOKIE/AUTHORIZATION/…), tiền tố dịch vụ và mẫu giá trị; ngoại lệ có tên (`GOFLAGS`, bộ `*_PROXY`, `GIT_AUTHOR_*`). `AUTHORIZATION`/`HTTP_AUTHORIZATION` nay bị lọc đúng. `lenh.env` áp SAU lọc nên danh sách cho phép của chính extension luôn thắng biến cùng tên của máy dev.
+- **Dừng sạch cây tiến trình**: Windows `taskkill /T` trước `kill()`; POSIX gửi SIGTERM rồi SIGKILL sau thời gian ân hạn. Bộ đệm đầu ra dùng chung.
+- Giới hạn đã biết: MCP POSIX không tách nhóm tiến trình ⇒ cháu cứng đầu có thể mồ côi nếu cha thoát sạch.
 
 ### 0.5.0
 

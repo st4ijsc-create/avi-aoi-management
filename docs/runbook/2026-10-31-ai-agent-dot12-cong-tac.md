@@ -57,7 +57,7 @@
 - **Số đo:** test thật; chưa có số GPU.
 
 ### 6. `AI_AGENT_CON_BAO_CAO` (H5.1) — cần `AI_AGENT_GIAO_VIEC=1`
-- **Làm gì:** agent con kết thúc bằng công cụ `report` {status, summary, findings, files, evidence}; cha nhận **khối văn bản dựng từ báo cáo đã kiểm** (nhãn `[UNTRUSTED …]` cố định, không JSON thô, ≤ ~4000 ký tự). Mục ngoài tập đường con thực sự chạm ⇒ `[unverified]`; `done` mà 0 bằng chứng đã kiểm ⇒ `done (no verified evidence)`; đường `..`/tuyệt đối bị loại; thẻ duyệt còn chờ của con bị đóng. `report` **không bao giờ** ở lượt gốc.
+- **Làm gì:** agent con kết thúc bằng công cụ `report` {status, summary, findings, files, evidence}; cha nhận **khối văn bản dựng từ báo cáo đã kiểm** (nhãn `[UNTRUSTED …]` cố định, không JSON thô, ≤ ~4000 ký tự). Mục ngoài tập đường con thực sự chạm ⇒ `[not touched by sub-agent]` (chỉ nghĩa "con không chạm tệp đó" — KHÔNG khẳng định trích dẫn đã được kiểm; kiểm trích dẫn thật còn trong backlog); `done` mà 0 bằng chứng từ tệp con chạm ⇒ `done (no evidence from files the sub-agent touched)`; đường có ký tự vô hình/đảo chiều bị loại; mọi chuỗi (kể cả đường) được quét câu dạng mệnh lệnh; `con-xong.trangThaiBaoCao` = done/partial/blocked (lyDo vẫn `hoan-thanh`). Byte model thấy đổi ⇒ chỉ khi cờ BẬT (mặc định TẮT); đường `..`/tuyệt đối bị loại; thẻ duyệt còn chờ của con bị đóng. `report` **không bao giờ** ở lượt gốc.
 - **Khi nào bật:** khi đã dùng `delegate` và muốn cha nhận kết quả có cấu trúc thay chữ tự do 1500 ký tự.
 - **Kiểm:** sự kiện `con-xong` có trường `baoCao` (SQL `so_con_bao_cao`); con không gọi `report` ⇒ cha thấy "(no structured report …)".
 - **Số đo:** đột biến lõi/host; chưa có số GPU.

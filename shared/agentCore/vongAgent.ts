@@ -361,7 +361,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
   /** `phat` đưa bộ thực thi: thẻ duyệt sau một lượt đọc đáng ngờ LUÔN mang cờ nguồn (bổ sung nếu bộ thực thi quên). */
   /** (H5.1) thẻ duyệt do vòng này đề xuất mà chưa được quyết (can-duyet chưa có da-duyet/bi-bac) — đếm lúc con gọi `report`. */
   const theChoDuyet = new Set<string>();
-  /** (H5.1) tập đường (đã chuẩn hoá) mà các lời gọi tool THÀNH CÔNG của vòng này thực sự chạm — để gắn [unverified] cho đường báo cáo khai ngoài tập. */
+  /** (H5.1) tập đường (đã chuẩn hoá) mà các lời gọi tool THÀNH CÔNG của vòng này thực sự chạm — để gắn [not touched by sub-agent] cho đường báo cáo khai ngoài tập. */
   const chamDuong = new Set<string>();
   let baoCaoNhan: BaoCaoCon | null = null;
   const phatChoBoThucThi = (e: SuKienAgent) => {
@@ -600,7 +600,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       runIdCon: bd.runId,
       lyDo: kq.lyDo,
       ...(tomTatTho ? { tomTat: rutGon(tomTatTho, 500) } : {}),
-      ...(dungBaoCao ? { baoCao: dungBaoCao.dem as DemBaoCao } : {}),
+      ...(dungBaoCao ? { baoCao: dungBaoCao.dem as DemBaoCao, trangThaiBaoCao: dungBaoCao.dem.status } : {}),
     });
 
     // Nhiễm LÊN cha: nguồn đáng ngờ con đã gặp hợp vào cha (cha tu-dong bị hạ tự trị qua đường dangNgo chung).
