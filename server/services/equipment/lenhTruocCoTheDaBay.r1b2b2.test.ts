@@ -125,4 +125,11 @@ describe("T3F — lớp 'lệnh trước có thể đã bay' ⇒ không rõ kế
     // kết quả ok không bao giờ thuộc lớp
     expect(coTheDaBayCua({ ok: true, detail: { reason: "DUPLICATE_IN_FLIGHT" } })).toBeNull();
   });
+
+  it("kiem-dinh t14 — lưới dự phòng dạng \"MÃ: chi tiết\" (chỉ có chuỗi error, không detail.reason) ⇒ vẫn nhận đúng mã; tiền tố lạ / mã giữa chuỗi ⇒ null", () => {
+    expect(coTheDaBayCua({ ok: false, error: "DUPLICATE_IN_FLIGHT: an earlier attempt holds the intent" })).toBe("DUPLICATE_IN_FLIGHT");
+    expect(coTheDaBayCua({ ok: false, detail: {}, error: "IDEMPOTENT_JOB_IN_PROGRESS: job 42 still running" })).toBe("IDEMPOTENT_JOB_IN_PROGRESS");
+    expect(coTheDaBayCua({ ok: false, error: "BUSY: DUPLICATE_IN_FLIGHT later" })).toBeNull();
+    expect(coTheDaBayCua({ ok: false, error: ": DUPLICATE_IN_FLIGHT" })).toBeNull();
+  });
 });
