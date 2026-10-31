@@ -200,6 +200,15 @@ describe("L3 n1 — đường vào: mọi từ chối TRƯỚC giữ chỗ / hà
     expect(g.goi.length).toBe(0);
   });
 
+  it("(rà kiem-dinh n9) xác nhận van-hanh CHỈ boolean true — \"true\" / \"false\" / 1 / \"yes\" / {} vẫn 428", async () => {
+    const lichSu = [{ role: "user", content: "trước" }];
+    for (const x of ["true", "false", 1, "yes", {}]) {
+      const kq = await taoQuanLyLuotChay({ ngoai: depGia(g) }).taoLuotChay(yc({ lichSu, xacNhanVanHanh: x }));
+      expect(kq, JSON.stringify(x)).toMatchObject({ ok: false, ma: "CAN_XAC_NHAN_VAN_HANH", http: 428 });
+    }
+    expect(g.goi.length).toBe(0);
+  });
+
   it("(f) đã có lượt chạy ⇒ 409 DANG_CO_LUOT_CHAY (sau mọi kiểm ngoài)", async () => {
     let tha!: () => void;
     const cho = new Promise<void>((r) => (tha = r));
@@ -350,6 +359,61 @@ describe("L3 n8 + n6 — hồi quy đường cục bộ, bề mặt chưa mở, 
       expect(bd.model?.muc).toBeUndefined();
     }
     expect([g.kiemTruoc.length, g.goi.length]).toEqual([0, 0]);
+  });
+
+  it("(rà kiem-dinh n17) cờ AI_AGENT_THEO_VAI_TRO BẬT: lượt ngoài KHÔNG qua chọn model theo vai trò (không planInference, không khe GPU)", async () => {
+    const cu = process.env.AI_AGENT_THEO_VAI_TRO;
+    process.env.AI_AGENT_THEO_VAI_TRO = "1";
+    const goiVaiTro: string[] = [];
+    const spy = (ten: string) => () => {
+      goiVaiTro.push(ten);
+      throw new Error(`vai trò không được gọi: ${ten}`);
+    };
+    try {
+      const kq = await taoQuanLyLuotChay({
+        ngoai: depGia(g),
+        vaiTro: { planInference: spy("planInference") as never, layAnh: spy("layAnh") as never, nguCanhKhe: spy("nguCanhKhe") as never, laDuAnPlc: spy("laDuAnPlc") as never },
+      }).taoLuotChay(yc());
+      expect(kq.ok).toBe(true);
+      if (kq.ok) await kq.luot.xong;
+      expect(goiVaiTro).toEqual([]);
+      expect(g.goi.length).toBe(2);
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_THEO_VAI_TRO;
+      else process.env.AI_AGENT_THEO_VAI_TRO = cu;
+    }
+  });
+
+  it("(rà kiem-dinh n16) lượt ngoài không dựng chỉ mục mã nền (đối chứng: lượt cục bộ có chạm chỉ mục)", async () => {
+    const cham: string[] = [];
+    const chiMuc = new Proxy({} as never, {
+      get: (_t, k) => (typeof k === "string" && k !== "then" ? async () => (cham.push(k), undefined) : undefined),
+    });
+    const kq = await taoQuanLyLuotChay({ ngoai: depGia(g), chiMucMa: chiMuc }).taoLuotChay(yc());
+    if (kq.ok) await kq.luot.xong;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cham).toEqual([]);
+    const cb = await taoQuanLyLuotChay({ goiModel: modelCucBo({ n: 0 }), chiMucMa: chiMuc }).taoLuotChay(yc({ chonModel: undefined }));
+    if (cb.ok) await cb.luot.xong;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cham.length).toBeGreaterThan(0);
+  });
+
+  it("(rà kiem-dinh n24) taoHangLuotChay: nguonModel sai hình dạng ⇒ KHÔNG tạo hàng (trước cả CHECK 0419)", async () => {
+    const { taoHangLuotChay } = await import("../../../db/aiAgentRuns");
+    const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    // lớp mã chặn TRƯỚC khi chạm CSDL (CHECK 0419 là lớp sau): không có câu INSERT hỏng ⇒ không có cảnh báo degrade của sổ
+    const canhBao = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      for (const sai of ["openai:gpt", "ngoai:OPENAI:x", "ngoai:openai:", "ngoai:openai:a b"]) {
+        expect(await taoHangLuotChay({ id, userId: uid, projectId: DU_AN, cheDo: "hoi", cauHoi: "q", nguonModel: sai }), sai).toBe(false);
+      }
+      expect(canhBao.mock.calls.filter((c) => String(c[0]).includes("taoHangLuotChay"))).toEqual([]);
+    } finally {
+      canhBao.mockRestore();
+    }
+    const db = await getDb();
+    expect((await db!.select({ id: aiAgentRuns.id }).from(aiAgentRuns).where(eq(aiAgentRuns.id, id))).length).toBe(0);
   });
 
   it("n6 (k7) — \"agent\" CHƯA nằm trong BE_MAT_NGOAI_DUOC_DUNG (mở sau L3b)", () => {

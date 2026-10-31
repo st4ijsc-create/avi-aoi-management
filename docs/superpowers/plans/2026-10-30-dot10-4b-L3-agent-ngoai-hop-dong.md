@@ -54,7 +54,7 @@ biến đỏ).
 | n4 (k4) | không mã mới: khoá bay TTL (`luotBay`), `huyGiuChuaGui` khi chưa gửi, đối soát ý định `khong-ro` (cổng chung L1/L2, lưới `luotBay.db` / `tranChiPhi.db`); boot ⇒ hàng `dang-chay` thành `gian-doan` (sẵn có) |
 | n5 (k6) | người khác: `nghe` / `layLuotChay` / `chiTiet` / `huy` đều từ chối (lưới) |
 | n6 (k7) | `"agent"` CHƯA trong `BE_MAT_NGOAI_DUOC_DUNG` (lưới ghim) ⇒ hôm nay mọi lượt ngoài = 404 như trước; ánh xạ bề mặt `agent` ⇒ `agent-turn` = MỘT hằng `NGUON_MUC_LUOT_AGENT` (`chonModel/kieu.ts`), census chữ `"agent-turn"` ghim số theo tệp |
-| n7 | GHI GIỚI HẠN (không thêm `signal`): huỷ chặn TRƯỚC mỗi vòng; cuộc gọi đang bay chạy hết (tính phí, khoá bay nhả ở `finally` cổng) rồi lượt dừng `huy` — lưới "không có vòng gọi tiếp" |
+| n7 | GHI GIỚI HẠN (không thêm `signal`): huỷ chặn TRƯỚC mỗi vòng; cuộc gọi đang bay chạy hết (tính phí, khoá bay nhả ở `finally` cổng) rồi lượt dừng `huy` — lưới "không có vòng gọi tiếp". kiem-dinh chấp nhận; KHI MỞ bề mặt (L3b) phải ghi vào hướng dẫn người dùng: "Dừng" không dừng được cuộc gọi đang bay tới model ngoài (dữ liệu đã rời máy, phí vòng đó vẫn tính) |
 | n8 | `hoi` + cục bộ (vắng / `auto`): không chạm phụ thuộc ngoài, `nguonModel` null, `bat-dau.model` không phải nhánh ngoài |
 | u2/u3 | `ThongTinModelBatDau` = `ThongTinModelCucBo \| ThongTinModelNgoai` (`{ nguon:"ngoai", model, muc }`, `vaiTro?/bangChung?: undefined` để UI cũ biên dịch); `xong.vetNgoai` (không callId) do host gắn |
 
