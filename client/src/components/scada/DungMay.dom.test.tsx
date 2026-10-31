@@ -922,6 +922,7 @@ describe("kết quả STOP áp MỘT PHẦN (T3E) — STOP được gửi lại"
     expect(a).not.toHaveTextContent(S("scada.lenh.cong.MOT_PHAN"));
     expect(a.textContent).not.toMatch(/KHÔNG được tự gửi lại/);
     expect(screen.getByTestId("mot-phan-dung-1")).toHaveTextContent("speed_sp, valve");
+    expect(screen.getByTestId("mot-phan-dem-1")).toHaveTextContent(S("scada.lenh.motPhan.dem", { daAp: 1, khongAp: 2 })); // kiem-dinh w8
     expect(within(a).getByTestId("dung-estop")).toBeInTheDocument();
   });
 
@@ -933,5 +934,20 @@ describe("kết quả STOP áp MỘT PHẦN (T3E) — STOP được gửi lại"
     });
     expect(screen.getByTestId("ket-qua-dung-1")).toHaveTextContent(S("scada.lenh.ketQua.failed", { ma: "DRIVER_WRITE_FAILED" }));
     expect(screen.queryByTestId("mot-phan-dung-1")).toBeNull();
+  });
+});
+
+describe("STOP áp MỘT PHẦN qua đường edge / dự phòng (kiem-dinh w9)", () => {
+  it.each([["edgeStopRequest"], ["centralFallbackSent"]])("★ %s đồng thời có motPhan ⇒ KHÔNG hiện dòng 'không áp' (kết cục thật là 'đã gửi tới edge / dự phòng')", async (co) => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "PLC-A", status: "failed", ok: false, simulated: false, reason: "MOT_PHAN", [co]: true, motPhan: { daAp: ["a"], khongAp: ["b"] }, writes: [], commandLogIds: [5] },
+      ],
+    });
+    expect(screen.getByTestId("ket-qua-dung-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("mot-phan-dung-1")).toBeNull();
+    expect(screen.queryByTestId("mot-phan-dem-1")).toBeNull();
   });
 });

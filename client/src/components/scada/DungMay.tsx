@@ -483,9 +483,12 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                           : t(nhan.khoa, nhan.thamSo)}
                     </p>
                     {r.motPhan && !r.edgeStopRequest && !r.centralFallbackSent && (
-                      <p data-testid={`mot-phan-dung-${r.adapterId}`} className="text-xs">
-                        {t("scada.lenh.motPhan.khongAp", { ds: r.motPhan.khongAp.join(", ") })}
-                      </p>
+                      <div className="space-y-0.5 text-xs">
+                        <p data-testid={`mot-phan-dem-${r.adapterId}`} className="font-medium">
+                          {t("scada.lenh.motPhan.dem", { daAp: r.motPhan.daAp.length, khongAp: r.motPhan.khongAp.length })}
+                        </p>
+                        <p data-testid={`mot-phan-dung-${r.adapterId}`}>{t("scada.lenh.motPhan.khongAp", { ds: r.motPhan.khongAp.join(", ") })}</p>
+                      </div>
                     )}
                     {(r.status === "rejected" || r.status === "failed") && !r.edgeStopRequest && !r.centralFallbackSent && (
                       <p className="text-xs text-muted-foreground">{t("scada.lenh.ketQua.ma", { ma: nhan.thamSo.ma ?? r.reason ?? "—" })}</p>
