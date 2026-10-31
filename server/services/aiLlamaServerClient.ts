@@ -1050,12 +1050,26 @@ export class LoiStreamServer extends Error {
   readonly daPhatChu: boolean;
   /** (Đợt 12 H3.1) mã HTTP khi server trả lỗi TRƯỚC luồng (503 đang nạp model, 429…) — tầng trên phân loại theo số, không theo chữ. */
   readonly httpStatus?: number;
-  constructor(message: string, daPhatChu: boolean, options?: { cause?: unknown; httpStatus?: number }) {
+  /** (Đợt 12 H3.1b) mã lỗi CÓ CẤU TRÚC trong thân lỗi kiểu OpenAI (`error.code`, lùi `error.type`) — vd. `insufficient_quota` ⇒ QUOTA. */
+  readonly maNhaCungCap?: string;
+  constructor(message: string, daPhatChu: boolean, options?: { cause?: unknown; httpStatus?: number; maNhaCungCap?: string }) {
     super(message, options as any);
     this.name = "LoiStreamServer";
     this.daPhatChu = daPhatChu;
     if (typeof options?.httpStatus === "number") this.httpStatus = options.httpStatus;
+    if (options?.maNhaCungCap) this.maNhaCungCap = options.maNhaCungCap;
   }
+}
+
+/** (H3.1b) `error.code` / `error.type` của thân lỗi JSON (OpenAI-tương-thích); không phải JSON / không có / ký tự lạ ⇒ `undefined`. */
+export function maLoiTrongThan(than: string): string | undefined {
+  try {
+    const loi = (JSON.parse(than) as { error?: { code?: unknown; type?: unknown } } | null)?.error;
+    for (const x of [loi?.code, loi?.type]) if (typeof x === "string" && /^[a-z0-9_.-]{1,64}$/i.test(x)) return x.toLowerCase();
+  } catch {
+    /* thân không phải JSON */
+  }
+  return undefined;
 }
 
 /**
@@ -1316,7 +1330,11 @@ async function* streamChatCompletionTrucTiep(
       const detail = await res.text().catch(() => "");
       // ⚠ Giữ NGUYÊN VĂN thông điệp của server trong câu lỗi: `laLoiTranNguCanh()` đọc chính chuỗi
       // này để nói đúng nguyên nhân ("vượt ngữ cảnh") cho người dùng thay vì một mã HTTP trần trụi.
-      throw new LoiStreamServer(`[llamaServer] stream HTTP ${res.status}: ${detail.slice(0, 300)}`, false, { httpStatus: res.status });
+      const maNcc = maLoiTrongThan(detail);
+      throw new LoiStreamServer(`[llamaServer] stream HTTP ${res.status}: ${detail.slice(0, 300)}`, false, {
+        httpStatus: res.status,
+        ...(maNcc ? { maNhaCungCap: maNcc } : {}),
+      });
     }
     const than: any = (res as any).body;
     if (!than || typeof than.getReader !== "function") {

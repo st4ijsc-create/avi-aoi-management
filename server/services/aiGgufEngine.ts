@@ -2321,7 +2321,9 @@ function quyetDinhSauLoiServer(
       `tiến trình đó bị giết giữa lượt hoặc mạng loopback bị ngắt.`;
     console.error(msg);
     ghiSuKienChanNapTrung("stream_dut_giua_chung", ten4Log, ten, { loiServer: chiTiet, daPhatChu: true });
-    throw new Error(msg);
+    // ★ Đợt 12 H3.1b — giữ lỗi gốc ở `cause` (httpStatus / code để tầng agent phân loại) + bit `daPhatChu` ở NGOÀI: đã có chữ ra người
+    //   dùng ⇒ tầng trên KHÔNG được coi là lỗi mạng thử-lại-được dù trong `cause` là ECONNRESET.
+    throw Object.assign(new Error(msg, { cause: e }), { daPhatChu: true });
   }
 
   /**
@@ -2345,7 +2347,9 @@ function quyetDinhSauLoiServer(
       loiServer: chiTiet,
       tranNguCanh: srv.laLoiTranNguCanh(e),
     });
-    throw new Error(msg);
+    // ★ Đợt 12 H3.1b (lỗ L1, kiem-dinh H4.1) — cấu hình SẢN XUẤT (STRICT tắt) đi qua đây: bọc trần làm mất httpStatus/cause ⇒ 429/503
+    //   thành MODEL_LOI không-tạm-thời. Giữ lỗi gốc ở `cause` (chuyenLoiModel tìm theo chuỗi cause); chữ thông điệp giữ nguyên.
+    throw new Error(msg, { cause: e });
   }
 
   console.warn(`[aiGgufEngine] llama-server ${ten} failed, falling back in-process: ${chiTiet}`);

@@ -344,6 +344,23 @@ describe("★★★ câu 3: đứt SAU khi đã phát chữ ⇒ TUYỆT ĐỐI k
     warnSpy.mockRestore();
     errSpy.mockRestore();
   });
+
+  it("(Đợt 12 H3.1b) lỗi đứt KHÔNG mang bit daPhatChu (đến từ nơi khác) mà engine đã thấy chữ ra ⇒ lớp bọc giữ `cause` + gắn daPhatChu ⇒ tầng agent KHÔNG thử lại dù dưới đáy là ECONNRESET", async () => {
+    serverChatCompletionStreamMock.mockImplementation(async function* () {
+      yield { type: "token", token: "half" } as GgufStreamChunk;
+      throw new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const eng = await freshEngine();
+    const { loi } = await gom(eng.chatCompletionStream({ messages: [{ role: "user", content: "hi" }] }));
+    expect(loi?.message).toMatch(/ĐỨT GIỮA CHỪNG/);
+    expect((loi as { cause?: unknown } | null)?.cause).toBeInstanceOf(TypeError);
+    const { chuyenLoiModel } = await import("./ai/agent/goiModelMayChu");
+    expect(chuyenLoiModel(loi)).toMatchObject({ tamThoi: false, ma: "ECONNRESET" });
+    warnSpy.mockRestore();
+    errSpy.mockRestore();
+  });
 });
 
 // ═══ CÂU 4 — ĐƯỜNG KHÔNG ĐƯỢC PHÁ ════════════════════════════════════════════════════════════
