@@ -67,6 +67,7 @@ vi.mock("../_core/accessControl", () => ({
 }));
 
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
+import { lopNodes7That } from "../services/ot/drivers/s7Address";
 
 const ctx = { user: { id: 9, role: "supervisor", name: "Sup" } } as any;
 const caller = deviceAdapterRouter.createCaller(ctx);
@@ -142,6 +143,93 @@ describe("tag CRUD + unique", () => {
     const del = await caller.tags.delete({ id: tag.id });
     expect(del).toEqual({ success: true });
     expect(await caller.tags.listByAdapter({ adapterId: a.id })).toHaveLength(0);
+  });
+});
+
+describe("SCADA R1b-2b-2a T3C — địa chỉ bit S7 ∉ 0..7 bị từ chối LÚC LƯU (OT_S7_BIT_NGOAI_DAI)", () => {
+  it("create trên adapter S7: DB1,X0.9 / M0.8 ⇒ BAD_REQUEST INVALID_VALUE tagAddress/s7BitNgoaiDai, KHÔNG lưu; DB1,X0.7 lưu được; adapter khác giao thức không đổi", async () => {
+    const s7 = await caller.create({ code: "S7A", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    for (const address of ["DB1,X0.9", "M0.8"]) {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address, dataType: "bool" }).then(
+        () => null,
+        (e: any) => e,
+      );
+      expect(loi?.code, address).toBe("BAD_REQUEST");
+      expect(String(loi?.message), address).toMatch(/^OT_S7_BIT_NGOAI_DAI: /);
+      expect(loi?.cause, address).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7BitNgoaiDai" } });
+    }
+    expect(await caller.tags.listByAdapter({ adapterId: s7.id })).toHaveLength(0);
+    await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.7", dataType: "bool" });
+    const mb = await caller.create({ code: "MB-T3C", name: "mb", protocol: "modbus", endpoint: "tcp://h:502" });
+    await caller.tags.create({ adapterId: mb.id, tagKey: "x", address: "M0.9", dataType: "bool" }); // không phải địa chỉ S7 ⇒ không kiểm lớp này
+  });
+
+  it("update: đổi địa chỉ thành DB1,X0.9 / chuyển tag sang adapter S7 với M0.8 ⇒ từ chối, hàng không đổi; sửa cột khác của tag cũ hỏng (tắt) ⇒ được", async () => {
+    const s7 = await caller.create({ code: "S7B", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const st = await caller.create({ code: "ST-T3C", name: "st", protocol: "stub", endpoint: "s://x" });
+    const t = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.0", dataType: "bool" });
+    await expect(caller.tags.update({ id: t.id, address: "DB1,X0.9" })).rejects.toThrow(/^OT_S7_BIT_NGOAI_DAI: /);
+    const u = await caller.tags.create({ adapterId: st.id, tagKey: "m", address: "M0.8", dataType: "bool" }); // stub: không kiểm
+    await expect(caller.tags.update({ id: u.id, adapterId: s7.id })).rejects.toThrow(/^OT_S7_BIT_NGOAI_DAI: /);
+    const rows = await caller.tags.listByAdapter({ adapterId: s7.id });
+    expect(rows.map((r) => [r.tagKey, r.address])).toEqual([["stop", "DB1,X0.0"]]);
+    // tag S7 hỏng có sẵn (lưu trước bản vá) — tắt nó KHÔNG bị chặn
+    const [cu] = await fake.insert(deviceTags).values({ adapterId: s7.id, tagKey: "cu", address: "DB1,X0.9", dataType: "bool", writable: true, isEnabled: true } as any).returning();
+    expect((await caller.tags.update({ id: cu.id, isEnabled: false })).isEnabled).toBe(false);
+  });
+});
+
+describe("SCADA R1b-2b-2a T3C fix 1 (I2 + M1) — địa chỉ nodes7 không ghi được đúng như yêu cầu bị từ chối LÚC LƯU; fail-closed", () => {
+  it("create trên adapter S7: MX0.1 / PQ0 / PI0 / DB1,INT2.5 / MW0.3 / DB1,FOO0 ⇒ INVALID_VALUE tagAddress/s7DiaChiThuVienBo, message OT_S7_DIA_CHI_THU_VIEN_BO; khoá _COMMERR cũng vậy; không lưu", async () => {
+    const s7 = await caller.create({ code: "S7C", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    for (const address of ["MX0.1", "PQ0", "PI0", "DB1,INT2.5", "MW0.3", "DB1,FOO0"]) {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address, dataType: "bool" }).then(() => null, (e: any) => e);
+      expect(loi?.code, address).toBe("BAD_REQUEST");
+      expect(String(loi?.message), address).toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+      expect(loi?.cause, address).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    }
+    await expect(caller.tags.create({ adapterId: s7.id, tagKey: "_COMMERR", address: "DB1,X0.0", dataType: "bool" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    expect(await caller.tags.listByAdapter({ adapterId: s7.id })).toHaveLength(0);
+    const t = await caller.tags.create({ adapterId: s7.id, tagKey: "ok", address: "M0.1", dataType: "bool" });
+    await expect(caller.tags.update({ id: t.id, address: "MX0.1" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    await expect(caller.tags.update({ id: t.id, tagKey: "_COMMERR" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+  });
+
+  it("M1 fail-closed: bộ phân tích nodes7 (NodeS7.prototype.addItemsNow) bị gỡ ⇒ lưu tag S7 bị từ chối s7ThuVienKhongKiemDuoc (kể cả địa chỉ hợp lệ); trả lại ⇒ lưu được", async () => {
+    const s7 = await caller.create({ code: "S7D", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const Lop = lopNodes7That()!;
+    const goc = Lop.prototype!.addItemsNow;
+    Lop.prototype!.addItemsNow = undefined;
+    try {
+      const loi = await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.1", dataType: "bool" }).then(() => null, (e: any) => e);
+      expect(String(loi?.message)).toMatch(/^OT_S7_THU_VIEN_KHONG_KIEM_DUOC: /);
+      expect(loi?.cause).toMatchObject({ appCode: "INVALID_VALUE", appParams: { field: "tagAddress", reason: "s7ThuVienKhongKiemDuoc" } });
+    } finally {
+      Lop.prototype!.addItemsNow = goc;
+    }
+    await caller.tags.create({ adapterId: s7.id, tagKey: "stop", address: "DB1,X0.1", dataType: "bool" });
+  });
+});
+
+describe("SCADA R1b-2b-2a T3C fix 2 (N1) — mảng ĐỌC hợp lệ được lưu; tag GHI được thì chặt", () => {
+  it("adapter S7: DB1,CHAR10.20 string (chỉ-đọc) / DB1,INT2.5 json ⇒ lưu được; DB1,INT2.5 int ⇒ từ chối; CHAR10.20 writable ⇒ từ chối; update sang writable / sang int ⇒ từ chối", async () => {
+    const s7 = await caller.create({ code: "S7N1", name: "s7", protocol: "s7", endpoint: "10.0.0.1:102" });
+    const ten = await caller.tags.create({ adapterId: s7.id, tagKey: "ten", address: "DB1,CHAR10.20", dataType: "string" });
+    const arr = await caller.tags.create({ adapterId: s7.id, tagKey: "arr", address: "DB1,INT2.5", dataType: "json", writable: false });
+    expect([ten.address, arr.address]).toEqual(["DB1,CHAR10.20", "DB1,INT2.5"]);
+    const loiInt = await caller.tags.create({ adapterId: s7.id, tagKey: "n", address: "DB1,INT2.5", dataType: "int" }).then(() => null, (e: any) => e);
+    expect(loiInt?.cause).toMatchObject({ appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    expect(String(loiInt?.message)).toMatch(/arrays read only as json, or CHAR arrays as string/);
+    const loiGhi = await caller.tags.create({ adapterId: s7.id, tagKey: "ten2", address: "DB1,CHAR10.20", dataType: "string", writable: true }).then(() => null, (e: any) => e);
+    expect(loiGhi?.cause).toMatchObject({ appParams: { field: "tagAddress", reason: "s7DiaChiThuVienBo" } });
+    expect(String(loiGhi?.message)).toMatch(/writes single values only/);
+    await expect(caller.tags.update({ id: ten.id, writable: true })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: .*writes single values only/);
+    await expect(caller.tags.update({ id: arr.id, dataType: "int" })).rejects.toThrow(/^OT_S7_DIA_CHI_THU_VIEN_BO: /);
+    expect((await caller.tags.update({ id: ten.id, unit: "txt" })).unit).toBe("txt"); // sửa cột khác của tag hợp lệ: được
+    expect((await caller.tags.listByAdapter({ adapterId: s7.id })).map((t) => [t.tagKey, t.dataType, t.writable]).sort()).toEqual([
+      ["arr", "json", false],
+      ["ten", "string", false],
+    ]);
   });
 });
 

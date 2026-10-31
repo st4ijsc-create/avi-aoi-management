@@ -265,7 +265,7 @@ export class SlmpDriver implements OtDriver {
             this.socket?.destroy();
             // R1b-2b-2a T2 (mục 66) — yêu cầu ĐÃ ghi lên socket, thiết bị chưa trả lời ⇒ lỗi có kiểu "không rõ kết cục" (lời ghi ⇒ 'timeout', không
             // 'failed'). Đường ĐỌC không đổi: thông điệp vẫn "timed out" ⇒ laLoiTimeout / chatLuongLoiChung ⇒ timeout / comm_lost như cũ.
-            reject(new LoiQuaHanYeuCauDriver("slmp", `transaction timeout after ${this.timeoutMs}ms`));
+            reject(new LoiQuaHanYeuCauDriver("slmp", `transaction timeout after ${this.timeoutMs}ms`, "thu_vien"));
           }
         }, this.timeoutMs);
         const p = { resolve, reject, timer, serialMongDoi };

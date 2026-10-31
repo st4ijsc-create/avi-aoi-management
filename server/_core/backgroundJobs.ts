@@ -582,8 +582,10 @@ export async function startBackgroundSchedulers(): Promise<void> {
   // wireStoreForward() bơm lại insert fn (đề phòng WAL restore trên boot mà chưa có ingest
   // nào wire) trước khi backfill.
   try {
-    const rawDrainMs = Number(process.env.OT_STORE_FORWARD_DRAIN_MS);
-    const intervalMs = Math.max(15_000, Number.isFinite(rawDrainMs) ? rawDrainMs : 45_000); // guard NaN (QA-5): env phi-số → 45s
+    // guard NaN (QA-5): env phi-số → 45s. R1b-2b-2a T3 fix 2 — kẹp qua helper hạn OT (storeForwardDrainIntervalMs): giá trị hữu hạn > 2^31−1
+    // (vd "3e9") trước đây tràn setInterval về 1 ms.
+    const { storeForwardDrainIntervalMs } = await import("../services/ot/storeForward");
+    const intervalMs = storeForwardDrainIntervalMs();
     let draining = false;
     storeForwardDrainTimer = setInterval(async () => {
       if (draining) return; // no overlap

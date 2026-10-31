@@ -42,6 +42,7 @@ const TEP_HANG = [
   "server/services/scada/lenhHmi.ts",
   "server/services/scada/dieuTietThuLenh.ts",
   "server/services/ot/drivers/mitsubishiMcDriver.ts", // T3B-0 fix m3: OT_MC_TAM_KHOA
+  "server/services/ot/drivers/s7Address.ts", // R1b-2b-2a T3C: OT_S7_BIT_NGOAI_DAI, OT_S7_DIA_CHI_THU_VIEN_BO
 ];
 
 const doc = (rel: string) => ts.createSourceFile(rel, readFileSync(join(GOC, rel), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

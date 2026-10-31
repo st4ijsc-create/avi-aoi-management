@@ -13,7 +13,11 @@
  *   - Memory/IO bit/word:  "M32.2" (bit), "MR4" (real MD4), "MD4", "MW0", "I0.0", "Q0.0"...
  * Helper này CHỈ validate dạng & suy ra dataType gợi ý; địa chỉ gốc giữ nguyên để
  * truyền thẳng cho NodeS7 (lib tự parse). Nhờ vậy ta không phải tự encode lại S7.
+ *
+ * NGOẠI LỆ (R1b-2b-2a T3C fix 1, I2 / M1): `kiemDiaChiS7` — MỘT vị từ "địa chỉ S7 ghi được đúng như yêu cầu" cho lúc LƯU, ghim STOP, lúc KHỞI
+ * ĐỘNG / đọc cấu hình (scadaDiag) và driver — nạp bộ phân tích của CHÍNH nodes7 (createRequire, lười). Không nạp được / thiếu hàm ⇒ fail-closed.
  */
+import { createRequire } from "node:module";
 import type { OtDataType } from "../otDriver";
 import { laMauBadThuVien } from "../chatLuong";
 import { giaiMaBoolDoc } from "./boolNghiem";
@@ -34,6 +38,224 @@ export interface ParsedS7Address {
 
 // Các tiền tố TYPE NodeS7 hợp lệ trong data block.
 const DB_TYPES = ["X", "BYTE", "B", "CHAR", "C", "WORD", "W", "INT", "DWORD", "DW", "DINT", "DI", "REAL", "LREAL"] as const;
+
+/**
+ * SCADA R1b-2b-2a T3C (backlog 87, AN TOÀN) — địa chỉ BIT có số bit ∉ 0..7 (một byte chỉ có bit 0..7). nodes7 0.3.18 với địa chỉ ấy:
+ *   • "DB<n>,X<o>.<b>", b > 7 ⇒ `stringToS7Addr` trả undefined (nodeS7.js:2361-2364) ⇒ `writeItems` lặng lẽ BỎ item (:483-488); bỏ HẾT ⇒
+ *     `prepareWritePacket` trả sớm (:673-676) trước khi xoá `writePacketArray` (:750-751) ⇒ GỬI LẠI gói ghi trước + báo ok (đo: s7BitNgoaiDai.r1b2b2.test.ts);
+ *   • vùng M / I / Q ("M0.8") ⇒ KHÔNG kiểm (:2589-2596) ⇒ con trỏ offset*8+bit (:1621) = ghi SAI bit (M0.8 ⇒ M1.0).
+ * Từ chối ở `parseS7Address` (lúc ghi, lúc đọc) VÀ lúc lưu cấu hình tag / khởi động (`kiemDiaChiS7`); `writeTags` từ chối CẢ lô chứa địa chỉ ấy.
+ */
+export const MA_S7_BIT_NGOAI_DAI = "OT_S7_BIT_NGOAI_DAI";
+
+/**
+ * T3C (phòng thủ hai) — địa chỉ mà CHÍNH bộ phân tích của nodes7 0.3.18 sẽ BỎ hoặc hiểu KHÁC lời ghi được yêu cầu (vd "MX0.1": `parseS7Address`
+ * nhận nhưng nodes7 không có vùng "MX"; "DB1,INT2.5" = mảng 5 INT), hoặc danh sách nodes7 dựng trong phiên khác danh sách yêu cầu (kể cả rỗng ⇒
+ * phát lại gói cũ). s7Driver từ chối CẢ lô, không gói nào. Hằng ở đây (tệp nằm trong nguồn suy của maLoiDaBietCensus).
+ */
+export const MA_S7_DIA_CHI_THU_VIEN_BO = "OT_S7_DIA_CHI_THU_VIEN_BO";
+
+/**
+ * T3C fix 1 (M1, fail-CLOSED) — không kiểm được địa chỉ bằng nodes7: thư viện không nạp được, hoặc hàm nội bộ mà các chốt cần
+ * (`NodeS7.prototype.addItemsNow`; trong phiên: `writeItems`, `prepareWritePacket`, `prepareReadPacket`) vắng / không phải hàm. Ghi, đọc, lưu cấu
+ * hình, ghim STOP ⇒ từ chối với mã này (không bao giờ bỏ qua kiểm). nodes7 ghim CHÍNH XÁC 0.3.18 (T3D) — mã này chỉ xuất hiện khi gói bị thay.
+ */
+export const MA_S7_THU_VIEN_KHONG_KIEM_DUOC = "OT_S7_THU_VIEN_KHONG_KIEM_DUOC";
+
+/** T3C fix 1 (M1) — lỗi có kiểu của lượt ĐỌC bị từ chối fail-closed (message bắt đầu bằng mã). */
+export class LoiS7KhongKiemDuoc extends Error {
+  readonly ma = MA_S7_THU_VIEN_KHONG_KIEM_DUOC;
+  constructor(lyDo: string) {
+    super(lyDo);
+    this.name = "LoiS7KhongKiemDuoc";
+  }
+}
+
+export class LoiS7BitNgoaiDai extends Error {
+  readonly ma = MA_S7_BIT_NGOAI_DAI;
+  constructor(
+    readonly diaChi: string,
+    readonly bit: number,
+  ) {
+    super(`${MA_S7_BIT_NGOAI_DAI}: S7 bit address "${diaChi}" names bit ${bit} - a byte has bits 0..7 only; nothing sent`);
+    this.name = "LoiS7BitNgoaiDai";
+  }
+}
+
+export function laLoiS7BitNgoaiDai(e: unknown): e is LoiS7BitNgoaiDai {
+  return e instanceof LoiS7BitNgoaiDai;
+}
+
+function kiemBit(address: string, isBit: boolean, bitStr: string | undefined): void {
+  if (!isBit || bitStr === undefined) return;
+  const bit = Number(bitStr);
+  if (!(bit >= 0 && bit <= 7)) throw new LoiS7BitNgoaiDai(address, bit);
+}
+
+/**
+ * T3C fix 2 (N1) — chế độ của vị từ:
+ *   • "ghi": lời ghi của driver, ghim STOP, tag LƯU với `writable = true` — MỘT giá trị đơn tại đúng địa chỉ; MẢNG luôn bị từ chối. Thăm dò thật
+ *     (nodes7 0.3.18 + __s7commSim, fix 2): chuỗi "ABC" vào DB1,CHAR10.20 ⇒ 20 byte "ABC" + 17 byte 0 (charCodeAt ngoài chuỗi = NaN ⇒ 0), chuỗi
+ *     25 ký tự ⇒ CẮT lặng còn 20 + callback ok; json "[1,2,3]" vào DB1,INT2.3 ⇒ ghi ký tự "[","1","," thành 0,1,0 + ok (rác); số vào CHAR ⇒ ném.
+ *     Đường ghi của driver không hỗ trợ mảng ⇒ từ chối (mã sẵn có).
+ *   • "doc": đọc của driver, LƯU / import tag chỉ-đọc (`writable` ≠ true), cờ khởi động / scadaDiag — nhận mảng ĐÚNG như driver đọc: dataType
+ *     "json" ⇒ mảng bất kỳ (JSON.stringify), "string" ⇒ mảng CHAR (nodes7 ghép thành MỘT chuỗi, nodeS7.js:1996-2000 — cách DUY NHẤT driver đọc chữ:
+ *     DB_TYPES không có S/STRING); kiểu khác ⇒ mảng bị từ chối (đọc ra mảng ⇒ ép int/float/bool sai).
+ * Bit ∉ 0..7, vùng nodes7 không có, khoá "_COMMERR", dạng sai ⇒ từ chối ở CẢ hai chế độ.
+ */
+export type CheDoKiemS7 = "doc" | "ghi";
+export interface TuyChonKiemS7 {
+  /** tagKey (nodes7 bỏ riêng "_COMMERR"); mặc định "tag". */
+  khoa?: string;
+  /** mặc định "ghi" (chặt). */
+  cheDo?: CheDoKiemS7;
+  /** dataType của tag — chỉ dùng ở chế độ "doc". */
+  dataType?: string | null;
+}
+
+/**
+ * T3C — item nodes7 dựng cho địa chỉ có đúng là thứ được yêu cầu? Lý do sai, hoặc null. Bản thư viện: nodes7 0.3.18 (`stringToS7Addr`
+ * nodeS7.js:2315-2731): undefined = BỎ; `arrayLength` ≠ 1 = MẢNG ("DB1,INT2.5", "MW0.3", "DB1,CHAR10.20"); bit X ngoài 0..7 = SAI bit (vùng M / I / Q
+ * không kiểm, :2589-2596; con trỏ offset*8+bit :1621). Mảng: theo chế độ (xem `CheDoKiemS7`).
+ */
+export function loiItemNodes7(item: unknown, tuyChon: Pick<TuyChonKiemS7, "cheDo" | "dataType"> = {}): string | null {
+  if (!item || typeof item !== "object") return "dropped by the nodes7 address parser";
+  const it = item as { datatype?: unknown; bitOffset?: unknown; arrayLength?: unknown };
+  if (it.datatype === "X" && !(typeof it.bitOffset === "number" && Number.isInteger(it.bitOffset) && it.bitOffset >= 0 && it.bitOffset <= 7)) {
+    return `read by the nodes7 address parser as bit ${String(it.bitOffset)}`;
+  }
+  if (it.arrayLength !== 1) {
+    const docMang =
+      tuyChon.cheDo === "doc" && (tuyChon.dataType === "json" || (tuyChon.dataType === "string" && (it.datatype === "CHAR" || it.datatype === "C")));
+    if (!docMang) {
+      return tuyChon.cheDo === "doc"
+        ? `read by the nodes7 address parser as an array of ${String(it.arrayLength)} (arrays read only as json, or CHAR arrays as string)`
+        : `read by the nodes7 address parser as an array of ${String(it.arrayLength)} (the driver writes single values only)`;
+    }
+  }
+  return null;
+}
+
+export type MaLoiDiaChiS7 = typeof MA_S7_BIT_NGOAI_DAI | typeof MA_S7_DIA_CHI_THU_VIEN_BO | typeof MA_S7_THU_VIEN_KHONG_KIEM_DUOC;
+/** `lyDo` luôn bắt đầu bằng `<ma>: ` (tiền tố errorText mà maLoiCua nhận). */
+export interface LoiDiaChiS7 {
+  ma: MaLoiDiaChiS7;
+  lyDo: string;
+}
+
+const require_ = createRequire(import.meta.url);
+
+/**
+ * Lớp NodeS7 THẬT (gói ghim) — nạp bằng require, KHÔNG qua `vi.doMock` của test: vị từ luôn là bộ phân tích thật. undefined = không nạp được.
+ * Driver dùng nó để biết phiên có phải thư viện thật (khi đó chốt trong phiên là BẮT BUỘC).
+ */
+export function lopNodes7That(): { prototype?: Record<string, unknown> } | undefined {
+  try {
+    const m = require_("nodes7") as { prototype?: Record<string, unknown>; default?: { prototype?: Record<string, unknown> } };
+    return m?.prototype ? m : m?.default;
+  } catch {
+    return undefined;
+  }
+}
+
+const boNhoKiem = new Map<string, LoiDiaChiS7 | null>();
+
+/**
+ * ★ T3C fix 1 (I2 + M1) — MỘT vị từ: nodes7 0.3.18 có ghi địa chỉ S7 này ĐÚNG như yêu cầu không? null = có; ngược lại mã + lý do:
+ *   1. `parseS7Address`: bit ∉ 0..7 ⇒ `OT_S7_BIT_NGOAI_DAI`; dạng sai khác ⇒ `OT_S7_DIA_CHI_THU_VIEN_BO`;
+ *   2. bộ phân tích CỦA nodes7: `NodeS7.prototype.addItemsNow` (gọi `stringToS7Addr(translationCB(k), k, connectionParams)` rồi bỏ item undefined —
+ *      cùng hàm, cùng đối số với `writeItems` :467-488) trên đối tượng TÁCH RỜI (không chạm phiên nào). Item bị BỎ ("MX0.1", "PQ0", "PI0", khoá
+ *      "_COMMERR"…), đổi khoá, MẢNG ("DB1,INT2.5"), bit sai ⇒ `OT_S7_DIA_CHI_THU_VIEN_BO`;
+ *   3. nodes7 không nạp được / `addItemsNow` không phải hàm ⇒ `OT_S7_THU_VIEN_KHONG_KIEM_DUOC` (fail-closed; kiểm MỖI lần gọi, trước bộ nhớ).
+ * Dùng ở: lưu tag (deviceAdapter.tags.*, importMapping), ghim STOP, khởi động / scadaDiag (`lyDoCauHinhDiaChiS7`), driver ghi (lớp 2) và đọc.
+ * fix 2 (N1): `cheDo` 'ghi' (mặc định, chặt: driver ghi, ghim STOP, tag lưu writable) | 'doc' (đọc, tag lưu chỉ-đọc, cờ cấu hình: mảng json /
+ * mảng CHAR kiểu string được nhận) — xem `CheDoKiemS7`. Kết quả nhớ theo (chế độ, dataType, khoá, địa chỉ) — trần 4096.
+ */
+export function kiemDiaChiS7(address: string, tuyChon: TuyChonKiemS7 = {}): LoiDiaChiS7 | null {
+  const khoa = tuyChon.khoa ?? "tag";
+  const cheDo: CheDoKiemS7 = tuyChon.cheDo ?? "ghi";
+  const dataType = cheDo === "doc" ? (tuyChon.dataType ?? null) : null;
+  let s7: string;
+  try {
+    s7 = parseS7Address(address).s7;
+  } catch (e) {
+    if (laLoiS7BitNgoaiDai(e)) return { ma: MA_S7_BIT_NGOAI_DAI, lyDo: e.message };
+    return { ma: MA_S7_DIA_CHI_THU_VIEN_BO, lyDo: `${MA_S7_DIA_CHI_THU_VIEN_BO}: ${(e as Error)?.message ?? String(e)} - not an S7 address nodes7 can write` };
+  }
+  const addItemsNow = lopNodes7That()?.prototype?.addItemsNow;
+  if (typeof addItemsNow !== "function") {
+    return {
+      ma: MA_S7_THU_VIEN_KHONG_KIEM_DUOC,
+      lyDo: `${MA_S7_THU_VIEN_KHONG_KIEM_DUOC}: the nodes7 address parser (NodeS7.prototype.addItemsNow) is unavailable - address "${s7}" cannot be checked; refused`,
+    };
+  }
+  const khoaNho = JSON.stringify([cheDo, dataType, khoa, s7]);
+  const daNho = boNhoKiem.get(khoaNho);
+  if (daNho !== undefined) return daNho;
+  const tach = {
+    polledReadBlockList: [] as unknown[],
+    translationCB: (k: string) => (k === khoa ? s7 : undefined),
+    connectionParams: {},
+    connectionID: "t3c-probe",
+    readPacketValid: false,
+  };
+  let ly: string | null;
+  try {
+    addItemsNow.call(tach, [khoa]);
+    const ds = tach.polledReadBlockList;
+    ly =
+      ds.length !== 1
+        ? "dropped by the nodes7 address parser"
+        : (ds[0] as { useraddr?: unknown }).useraddr !== khoa
+          ? "renamed by the nodes7 address parser"
+          : loiItemNodes7(ds[0], { cheDo, dataType });
+  } catch (e) {
+    ly = `the nodes7 address parser threw (${(e as Error)?.message ?? String(e)})`;
+  }
+  const kq: LoiDiaChiS7 | null = ly ? { ma: MA_S7_DIA_CHI_THU_VIEN_BO, lyDo: `${MA_S7_DIA_CHI_THU_VIEN_BO}: address "${s7}" ${ly}` } : null;
+  if (boNhoKiem.size > 4096) boNhoKiem.clear();
+  boNhoKiem.set(khoaNho, kq);
+  return kq;
+}
+
+/**
+ * T3C mục 5 + fix 1 (I2) + fix 2 (N1) — lý do NGẮN (không host / cổng) khi cấu hình đã lưu có tag S7 mà `kiemDiaChiS7` từ chối ở chế độ của CHÍNH
+ * tag đó: `writable === true` ⇒ "ghi" (phải ghi được), ngược lại "doc" với dataType (mảng json / mảng CHAR kiểu string đọc được ⇒ KHÔNG bị cờ).
+ * null khi không có. Mã đứng đầu: `OT_S7_THU_VIEN_KHONG_KIEM_DUOC` nếu có, `OT_S7_BIT_NGOAI_DAI` nếu MỌI tag hỏng là bit ngoài dải, ngược lại
+ * `OT_S7_DIA_CHI_THU_VIEN_BO`. Nhãn từng tag nói đúng phần hỏng: tag ghi được đọc được nhưng không ghi được ⇒ "reads work".
+ * Bề mặt người dùng thấy: cột "Lỗi gần nhất" của scadaDiag (đọc cấu hình). Driver cũng gắn vào health().lastError lúc subscribe (chưa ai đọc ở
+ * sản xuất — M3).
+ */
+export function lyDoCauHinhDiaChiS7(
+  tags: ReadonlyArray<{ tagKey: string; address: string | null | undefined; dataType?: string | null; writable?: boolean | null }>,
+): string | null {
+  const hong = tags.flatMap((t) => {
+    const diaChi = String(t.address ?? "");
+    const l = kiemDiaChiS7(diaChi, { khoa: t.tagKey, cheDo: t.writable === true ? "ghi" : "doc", dataType: t.dataType });
+    if (!l) return [];
+    const docDuoc = t.writable === true && l.ma === MA_S7_DIA_CHI_THU_VIEN_BO && kiemDiaChiS7(diaChi, { khoa: t.tagKey, cheDo: "doc", dataType: t.dataType }) === null;
+    return [{ t, l, docDuoc }];
+  });
+  if (hong.length === 0) return null;
+  const ma: MaLoiDiaChiS7 = hong.some((h) => h.l.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC)
+    ? MA_S7_THU_VIEN_KHONG_KIEM_DUOC
+    : hong.every((h) => h.l.ma === MA_S7_BIT_NGOAI_DAI)
+      ? MA_S7_BIT_NGOAI_DAI
+      : MA_S7_DIA_CHI_THU_VIEN_BO;
+  const nhan = (h: (typeof hong)[number]) =>
+    h.l.ma === MA_S7_BIT_NGOAI_DAI
+      ? "bit outside 0..7"
+      : h.l.ma === MA_S7_THU_VIEN_KHONG_KIEM_DUOC
+        ? "cannot be checked"
+        : h.docDuoc
+          ? "writable tag nodes7 cannot write as given; reads work"
+          : "not supported by nodes7 as given";
+  const ds = hong
+    .slice(0, 5)
+    .map((h) => `${h.t.tagKey}=${String(h.t.address).trim()} [${nhan(h)}]`)
+    .join(", ");
+  return `${ma}: ${hong.length} tag(s) have an S7 address the S7 library cannot use as configured (${ds}${hong.length > 5 ? ", ..." : ""}) - writes to them are refused; reads fail unless marked "reads work"`;
+}
 
 /**
  * Parse + validate địa chỉ S7 theo cú pháp NodeS7.
@@ -61,6 +283,7 @@ export function parseS7Address(address: string): ParsedS7Address {
     if (isBit && db[4] === undefined) {
       throw new Error(`S7 DB bit address requires .<bit>: ${address}`);
     }
+    kiemBit(a, isBit, db[4]); // T3C
     // Data blocks are always writable.
     return { s7: up, isBit, isReadOnly: false };
   }
@@ -78,6 +301,7 @@ export function parseS7Address(address: string): ParsedS7Address {
       (modifier === "X") || (modifier === "" && hasBit);
     // Process INPUTS là read-only: I/E (digital input), PI (peripheral input).
     const isReadOnly = area === "I" || area === "E" || area === "PI";
+    kiemBit(a, isBit, mem[4]); // T3C
     return { s7: up, isBit, isReadOnly };
   }
 
