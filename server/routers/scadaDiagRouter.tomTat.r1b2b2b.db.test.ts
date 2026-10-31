@@ -11,6 +11,12 @@ import { sql } from "drizzle-orm";
 
 const RUN = `c2tt${process.pid}${Date.now().toString(36)}`;
 const SPY = vi.hoisted(() => ({ bat: false, bang: [] as string[], sqlTho: [] as string[] }));
+/** C2 fix 1 — supervisor HA giả (systemHealth.connectionSupervisors); phần còn lại của otManager là thật. */
+const SUP = vi.hoisted(() => ({ ds: [] as Array<Record<string, unknown>> }));
+vi.mock("../services/ot/otManager", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/otManager")>();
+  return { ...real, listSupervisorStatuses: () => SUP.ds as never };
+});
 
 vi.mock("../db", async (importOriginal) => {
   const real = await importOriginal<typeof import("../db")>();
@@ -76,7 +82,8 @@ const ad = { conn: 0, cing: 0, lost: 0, tat: 0, edge: 0, bConn: 0, bLost: 0 };
 const HOST_BI_MAT = "10.77.66.55";
 const LOI_THO = `connect ECONNREFUSED ${HOST_BI_MAT}:502`;
 
-type Nguoi = { diag: DiagCaller; ad: AdCaller };
+type ShCaller = ReturnType<typeof import("./systemHealthRouter").systemHealthRouter.createCaller>;
+type Nguoi = { diag: DiagCaller; ad: AdCaller; sh: ShCaller };
 let viewerA!: Nguoi; // machine_monitoring.canView + machine_control.canView (không canEdit)
 let operatorA!: Nguoi; // vai operator, CÓ machine_control.canEdit — vẫn bị che (vai ngoài admin/engineer)
 let kySuKhongSuaA!: Nguoi; // vai engineer, machine_control.canView KHÔNG canEdit — vẫn bị che (thiếu canEdit)
@@ -142,7 +149,8 @@ async function seedNguoi(
   const ctx = { user: { id: u.id, role, name: u.name, twoFactorEnabled: true } } as never;
   const { scadaDiagRouter } = await import("./scadaDiagRouter");
   const { deviceAdapterRouter } = await import("./deviceAdapterRouter");
-  return { diag: scadaDiagRouter.createCaller(ctx), ad: deviceAdapterRouter.createCaller(ctx) };
+  const { systemHealthRouter } = await import("./systemHealthRouter");
+  return { diag: scadaDiagRouter.createCaller(ctx), ad: deviceAdapterRouter.createCaller(ctx), sh: systemHealthRouter.createCaller(ctx) };
 }
 
 const boTinhLuc = <T extends { tinhLuc: string }>(t: T) => {
@@ -339,6 +347,76 @@ describe("tamKhoa (2.2) — posture MC tạm khoá: hiện với MỌI vai, kể
     } finally {
       await xoaAdapter(mc);
       await xoaAdapter(mcEdge);
+    }
+  });
+});
+
+async function loiCua(p: Promise<unknown>): Promise<{ code?: string; appCode?: string; appParams?: unknown }> {
+  try {
+    await p;
+  } catch (e) {
+    const x = e as { code?: string; cause?: { appCode?: string; appParams?: unknown } };
+    return { code: x.code, appCode: x.cause?.appCode, appParams: x.cause?.appParams };
+  }
+  throw new Error("mong đợi lỗi nhưng thủ tục thành công");
+}
+
+describe("C2 fix 1 — deviceAdapter.update: chốt mất dữ liệu (người bị che không ghi endpoint / connectionOptions)", () => {
+  it("operator CÓ canEdit (bị che): sửa tên / bật adapter ⇒ thành công (không hồi quy); gửi endpoint hoặc connectionOptions ⇒ FORBIDDEN chiTietKyThuatBiChe, hàng KHÔNG đổi", async () => {
+    const id = await seedAdapter("upd", A.mid, { isEnabled: false, status: "disabled", protocol: "modbus", ha: true });
+    const hang = async () => (await dung(sql`SELECT name, endpoint, "connectionOptions"::text AS co, "isEnabled", "updatedAt" FROM device_adapters WHERE id = ${id}`))[0];
+    try {
+      // không hồi quy: trường người bị che vẫn được sửa
+      const r1 = await operatorA.ad.update({ id, name: `${RUN}-ten-moi` });
+      expect(r1.name).toBe(`${RUN}-ten-moi`);
+      expect(r1.endpoint).toBeNull(); // hàng trả về vẫn che
+      const r2 = await operatorA.ad.update({ id, isEnabled: true, pollIntervalMs: 30000 });
+      expect(r2.isEnabled).toBe(true);
+      const truoc = await hang();
+      expect(truoc.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+      // chốt: endpoint (kể cả cùng giá trị đã lưu) / connectionOptions (kể cả null) ⇒ FORBIDDEN trước mọi lượt ghi
+      for (const patch of [{ endpoint: "x" }, { endpoint: `tcp://${HOST_BI_MAT}:5007` }, { connectionOptions: null }, { connectionOptions: {} }, { name: "kem", endpoint: "tcp://h:1" }]) {
+        const e = await loiCua(operatorA.ad.update({ id, ...patch } as never));
+        expect(e, JSON.stringify(patch)).toEqual({
+          code: "FORBIDDEN",
+          appCode: "OPERATION_FAILED",
+          appParams: { operation: "deviceAdapterUpdate", reason: "chiTietKyThuatBiChe" },
+        });
+      }
+      expect(await hang()).toEqual(truoc); // không đổi gì — kể cả name / updatedAt của lượt có "kem"
+      // đối chứng: kỹ sư canEdit đổi endpoint được
+      const r3 = await engA.ad.update({ id, endpoint: `tcp://${HOST_BI_MAT}:5017` });
+      expect(r3.endpoint).toBe(`tcp://${HOST_BI_MAT}:5017`);
+    } finally {
+      await xoaAdapter(id);
+    }
+  });
+});
+
+describe("C2 fix 1 — systemHealth.connectionSupervisors: che activeEndpoint / lastError cùng luật", () => {
+  it("người dưới canEdit ⇒ activeEndpoint null + lastError = MÃ; kỹ sư canEdit / admin ⇒ thật", async () => {
+    const goc = { code: "x", protocol: "modbus", activeLabel: "primary", endpointCount: 2, reconnects: 1, failovers: 0, attempts: 3, consecutiveFailures: 1, samplesForwarded: 0, lastConnectedAt: null, lastStateChangeAt: null };
+    SUP.ds = [
+      { ...goc, adapterId: ad.lost, state: "reconnecting", connected: false, activeEndpoint: `tcp://${HOST_BI_MAT}:5007`, lastError: LOI_THO },
+      { ...goc, adapterId: ad.conn, state: "connected", connected: true, activeEndpoint: `tcp://${HOST_BI_MAT}:5008`, lastError: null },
+    ];
+    try {
+      for (const [ten, n] of [["viewer", viewerA], ["operator canEdit", operatorA], ["engineer không canEdit", kySuKhongSuaA]] as const) {
+        const r = await n.sh.connectionSupervisors();
+        expect(r.supervisors.map((x) => x.adapterId).sort(), ten).toEqual([ad.lost, ad.conn].sort());
+        for (const x of r.supervisors) expect(x.activeEndpoint, ten).toBeNull();
+        expect(r.supervisors.find((x) => x.adapterId === ad.lost)?.lastError, ten).toBe("ADAPTER_OFFLINE");
+        expect(r.supervisors.find((x) => x.adapterId === ad.conn)?.lastError, ten).toBeNull();
+        expect(JSON.stringify(r), ten).not.toContain(HOST_BI_MAT);
+      }
+      for (const n of [engA, admin]) {
+        const r = await n.sh.connectionSupervisors();
+        const lost = r.supervisors.find((x) => x.adapterId === ad.lost)!;
+        expect(lost.activeEndpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+        expect(lost.lastError).toBe(LOI_THO);
+      }
+    } finally {
+      SUP.ds = [];
     }
   });
 });

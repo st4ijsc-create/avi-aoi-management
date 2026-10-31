@@ -21,6 +21,7 @@
  * SCADA R1b-2b-2b A C2 (KD-2bA 2.1 / 2.2): hàng adapter trả ra (list/get/create/update — `hangAnToan` → `redactAdapterRow`) mang `endpoint`,
  *   `connectionOptions` và văn bản `lastError` CHỈ cho kỹ sư canEdit (`chiTietKyThuatCua`: vai admin|engineer + machine_control.canEdit); người khác
  *   nhận `null` + `lastError` = MÃ đã làm sạch (`maLoi`). `maLoi` + posture `tamKhoa` (MC tạm khoá) hiện với MỌI người xem.
+ *   C2 fix 1: `update` mang `endpoint` / `connectionOptions` từ người bị che ⇒ FORBIDDEN OPERATION_FAILED {deviceAdapterUpdate, chiTietKyThuatBiChe}, không ghi.
  * SCADA R1b-1 Task 9 (+ fix round 1–3): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts:
  *   đã khai / kênh chế độ / ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) hoặc một khoá mồ côi ⇒ TOTP tươi
  *   mức 5 + kiểm lại nhất quán; update (đổi đích / tắt / đổi máy) và delete của adapter có tag được bảo vệ / kênh chế độ ⇒ TOTP (cổng chung
@@ -393,6 +394,17 @@ export const deviceAdapterRouter = router({
       const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá (không gọi pool trong tx)
       await adapterTrongPhamVi(ctx, id, idsMay);
       if (rest.machineId !== undefined) await maySuDungTrongPhamVi(ctx, rest.machineId);
+      // SCADA R1b-2b-2b A — C2 fix 1 (dieu-phoi 2026-10-31) — CHỐT MẤT DỮ LIỆU: người không được xem chi tiết kỹ thuật nhận endpoint / connectionOptions
+      // ĐÃ CHE (null) ⇒ không được GHI hai trường đó (form gửi lại ô trống / null sẽ xoá endpoint hay cấu hình đã lưu). Từ chối TRƯỚC mọi lượt ghi
+      // (trước giao dịch, trước kiểm TOTP — mã không bị tiêu). Trường khác (tên, bật/tắt, chu kỳ, máy…) vẫn sửa được như cũ.
+      if ((rest.endpoint !== undefined || rest.connectionOptions !== undefined) && !(await chiTietKyThuatCua(ctx))) {
+        throw appError(
+          "FORBIDDEN",
+          "OPERATION_FAILED",
+          { operation: "deviceAdapterUpdate", reason: "chiTietKyThuatBiChe" },
+          "Endpoint / connection options are technical details you cannot view — only an engineer/admin with machine_control.canEdit may change them.",
+        );
+      }
       try {
         // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
         // adapter khoá bằng SELECT … FOR UPDATE (ràng buộc chung 6: không migration, dùng khoá hàng).

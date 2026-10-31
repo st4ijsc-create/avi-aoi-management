@@ -86,6 +86,11 @@ interface AdapterForm {
   pollIntervalMs: number;
   machineId: string;
   isEnabled: boolean;
+  /**
+   * SCADA R1b-2b-2b A C2 fix 1 — hàng adapter máy chủ đã CHE chi tiết kỹ thuật (`endpoint === null`: người xem không phải admin/engineer có
+   * machine_control.canEdit). Hộp sửa ẩn endpoint / cấu hình kết nối / nút kiểm tra kết nối và KHÔNG gửi `endpoint` (máy chủ cũng từ chối).
+   */
+  biChe?: boolean;
 }
 
 interface TagForm {
@@ -613,8 +618,9 @@ export default function DeviceAdapterManagement() {
   };
   const openEditAdapter = (a: any) => {
     setAdapterForm({
-      id: a.id, code: a.code, name: a.name, protocol: a.protocol, endpoint: a.endpoint,
+      id: a.id, code: a.code, name: a.name, protocol: a.protocol, endpoint: a.endpoint ?? "",
       pollIntervalMs: a.pollIntervalMs, machineId: a.machineId != null ? String(a.machineId) : "", isEnabled: a.isEnabled,
+      biChe: a.endpoint === null, // C2 fix 1 — endpoint là cột NOT NULL: null chỉ có nghĩa "máy chủ che"
     });
     // Best-effort: seed defaults (endpoint is preserved — we never clobber a saved endpoint).
     setConnectorConfig(configForProtocol(a.protocol));
@@ -652,8 +658,12 @@ export default function DeviceAdapterManagement() {
       machineId,
       isEnabled: adapterForm.isEnabled,
     };
-    if (adapterForm.id != null) updateAdapter.mutate({ id: adapterForm.id, ...base });
-    else createAdapter.mutate(base);
+    if (adapterForm.id != null) {
+      // C2 fix 1 — hàng bị che: KHÔNG gửi endpoint (ô trống sẽ bị máy chủ từ chối / không bao giờ được ghi đè giá trị đã lưu)
+      const capNhat: Parameters<typeof updateAdapter.mutate>[0] = { id: adapterForm.id, ...base };
+      if (adapterForm.biChe) delete capNhat.endpoint;
+      updateAdapter.mutate(capNhat);
+    } else createAdapter.mutate(base);
   };
 
   const adapters = adaptersQuery.data ?? [];
@@ -717,7 +727,7 @@ export default function DeviceAdapterManagement() {
                   <TableCell className="font-medium">{a.code}</TableCell>
                   <TableCell>{a.name}</TableCell>
                   <TableCell><Badge variant="outline">{a.protocol}</Badge></TableCell>
-                  <TableCell className="max-w-[200px] truncate" title={a.endpoint}>{a.endpoint}</TableCell>
+                  <TableCell className="max-w-[200px] truncate" title={a.endpoint ?? undefined}>{a.endpoint ?? "—"}</TableCell>
                   <TableCell><StatusBadge status={a.status} tone={a.status === "connected" ? "success" : "default"} /></TableCell>
                   <TableCell>
                     <Switch
@@ -785,7 +795,7 @@ export default function DeviceAdapterManagement() {
                   variant="ghost"
                 />
               </div>
-              <Select value={adapterForm.protocol} onValueChange={(v) => handleProtocolChange(v as Protocol)}>
+              <Select value={adapterForm.protocol} disabled={!!adapterForm.biChe} onValueChange={(v) => handleProtocolChange(v as Protocol)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PROTOCOLS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
@@ -794,7 +804,13 @@ export default function DeviceAdapterManagement() {
             </div>
 
             {/* doc 37 B1: manifest-driven auto-form (host/port/…). host+port compose the endpoint. */}
+            {adapterForm.biChe && (
+              <p className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground" data-testid="adapter-bi-che">
+                {t("deviceAdapter.chiTietBiChe", "Endpoint và cấu hình kết nối chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới xem và đổi được.")}
+              </p>
+            )}
             {(() => {
+              if (adapterForm.biChe) return null; // C2 fix 1 — cấu hình kết nối (host / cổng → endpoint) là chi tiết kỹ thuật
               const schema = manifestForProtocol(adapterForm.protocol)?.configSchema;
               if (!schema) return null;
               return (
@@ -807,6 +823,7 @@ export default function DeviceAdapterManagement() {
               );
             })()}
 
+            {!adapterForm.biChe && (
             <div>
               <Label>{t("deviceAdapter.col.endpoint", "Endpoint")}</Label>
               <Input value={adapterForm.endpoint} placeholder="opc.tcp://… / tcp://host:port / stub://x"
@@ -818,6 +835,7 @@ export default function DeviceAdapterManagement() {
                 })}
               </p>
             </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t("deviceAdapter.pollMs", "Poll (ms)")}</Label>
@@ -836,11 +854,13 @@ export default function DeviceAdapterManagement() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline"
-              disabled={testConnection.isPending || !adapterForm.endpoint.trim()}
-              onClick={() => testConnection.mutate({ protocol: adapterForm.protocol, endpoint: adapterForm.endpoint.trim() })}>
-              {t("deviceAdapter.testConn", "Kiểm tra kết nối")}
-            </Button>
+            {!adapterForm.biChe && (
+              <Button variant="outline"
+                disabled={testConnection.isPending || !adapterForm.endpoint.trim()}
+                onClick={() => testConnection.mutate({ protocol: adapterForm.protocol, endpoint: adapterForm.endpoint.trim() })}>
+                {t("deviceAdapter.testConn", "Kiểm tra kết nối")}
+              </Button>
+            )}
             <Button onClick={submitAdapter} disabled={createAdapter.isPending || updateAdapter.isPending}>{t("common.save", "Lưu")}</Button>
           </DialogFooter>
         </DialogContent>

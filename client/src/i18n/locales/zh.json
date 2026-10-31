@@ -4083,6 +4083,7 @@
       "flowTaoTuMoTa": "根据描述创建 AI 流程草稿",
       "flowChayThu": "试运行 AI 流程的一个节点",
       "scadaReconnectAdapter": "重新连接适配器",
+      "deviceAdapterUpdate": "更新适配器",
       "scadaDisableAdapter": "暂停适配器",
       "scadaSetStubFault": "为模拟器设置故障",
       "scadaSelectTag": "选择要下达命令的通道",
@@ -4552,6 +4553,7 @@
       "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。",
       "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
       "otMcTamKhoa": "Mitsubishi MC 控制已临时锁定（安全）：在修复 3B 之前不会向设备发送写入——如需停机请使用现场硬接线急停（E-STOP）。",
+      "chiTietKyThuatBiChe": "端点和连接配置属于您无权查看的技术细节——只有具备设备控制编辑权限的工程师/管理员才能修改。其他字段仍可编辑。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",
       "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。",
       "scadaSelectionLockBusy": "该通道正被争用——请稍后重试。",
@@ -17266,6 +17268,7 @@
     "manualHelp": "手册",
     "autoForm": "根据清单自动生成的配置——主机 + 端口将构成下方的端点",
     "defaultPortHint": "{{protocol}} 默认端口：{{port}}",
+    "chiTietBiChe": "只有具备设备控制编辑权限的工程师/管理员才能查看和修改端点及连接配置——此处只能编辑名称、轮询周期、设备和启用状态。",
     "troLai": {
       "title": "需要双因素验证码",
       "body": "此操作涉及受保护的标签，或带有此类标签的适配器（重新指向、更改采样周期 / 死区 / 单位、在仍被引用的键上创建、停用或删除）。受保护的标签是：已声明的通道、机器的模式通道，或已启用或已批准的联锁规则的目标或数据源。需要新的 TOTP 验证码。",

@@ -4091,6 +4091,7 @@
       "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả",
       "flowChayThu": "chạy thử một node của Luồng AI",
       "scadaReconnectAdapter": "kết nối lại adapter",
+      "deviceAdapterUpdate": "cập nhật adapter",
       "scadaDisableAdapter": "tạm tắt adapter",
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
@@ -4552,6 +4553,7 @@
       "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
       "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
+      "chiTietKyThuatBiChe": "Endpoint và cấu hình kết nối là chi tiết kỹ thuật bạn không được xem — chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới đổi được. Các trường khác vẫn sửa được.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
       "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước.",
       "scadaSelectionLockBusy": "Kênh đang bị tranh chấp — thử lại sau giây lát.",
@@ -16619,6 +16621,7 @@
     "manualHelp": "Sổ tay",
     "autoForm": "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới",
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
+    "chiTietBiChe": "Endpoint và cấu hình kết nối chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới xem và đổi được — ở đây chỉ sửa được tên, chu kỳ, máy và trạng thái bật.",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
       "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, đổi chu kỳ lấy mẫu / deadband / đơn vị, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",

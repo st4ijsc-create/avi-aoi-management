@@ -4083,6 +4083,7 @@
       "flowTaoTuMoTa": "create an AI flow draft from a description",
       "flowChayThu": "test-run a node of an AI flow",
       "scadaReconnectAdapter": "reconnect the adapter",
+      "deviceAdapterUpdate": "update the adapter",
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
       "scadaSelectTag": "select a channel to command",
@@ -4552,6 +4553,7 @@
       "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
       "otMcTamKhoa": "Mitsubishi MC control is LOCKED (safety): writes are not sent to the device until fix 3B — to stop the machine use the hardwired E-STOP.",
+      "chiTietKyThuatBiChe": "The endpoint and connection settings are technical details you cannot view — only an engineer/admin with machine-control edit rights can change them. Other fields can still be edited.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
       "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first.",
       "scadaSelectionLockBusy": "The channel is contended — try again in a moment.",
@@ -16619,6 +16621,7 @@
     "manualHelp": "Manual",
     "autoForm": "Configuration from the manifest (auto-generated) — host + port build the endpoint below",
     "defaultPortHint": "Default {{protocol}} port: {{port}}",
+    "chiTietBiChe": "Only an engineer/admin with machine-control edit rights can see and change the endpoint and connection settings — here you can edit the name, poll interval, machine and enabled state.",
     "troLai": {
       "title": "Two-factor code required",
       "body": "This action touches a protected tag, or an adapter that carries one (re-pointing it, changing its sampling interval / deadband / unit, creating it on a key that is still referenced, disabling or deleting it). A protected tag is a declared channel, a machine's mode channel, or the target or source of an interlock rule that is enabled or approved. A fresh TOTP code is required.",
