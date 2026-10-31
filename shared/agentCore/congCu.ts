@@ -14,7 +14,7 @@ import type { CheDoAgent, LoiGoiTool, WireTool } from "./kieu";
  * `de-xuat` (Đợt 2): tool KHÔNG tác dụng phụ nào ngoài một ĐỀ XUẤT cho người (`remember` ⇒ sự kiện `de-xuat-nho`).
  * Tách khỏi `ghi` vì nó phải có ở MỌI chế độ (kể cả `hoi`): chỉ người bấm "Nhớ" mới ghi — kể cả ở `tu-dong`.
  */
-export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat" | "giao";
+export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat" | "giao" | "bao-cao";
 
 export const TEN_CONG_CU = [
   "read_file",
@@ -38,6 +38,8 @@ export const TEN_CONG_CU = [
   "compile_st",
   // ── Đợt 11.8: giao việc cho agent con (xử lý TRONG lõi, sau cờ máy chủ AI_AGENT_GIAO_VIEC) ──
   "delegate",
+  // ── Đợt 12 · H5.1: báo cáo CÓ CẤU TRÚC của agent con (xử lý TRONG lõi, CHỈ trong vòng con, sau cờ máy chủ AI_AGENT_CON_BAO_CAO) ──
+  "report",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -59,6 +61,7 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   lookup_api: "doc",
   compile_st: "doc",
   delegate: "giao",
+  report: "bao-cao",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -81,7 +84,17 @@ export const TRAN_MA_ST = 64 * 1024;
  * (`compile_st` ⇐ cờ `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all`, trình biên dịch chỉ có ở máy chủ). Tắt ⇒ bộ tool và lời
  * nhắc hệ thống GIỐNG TỪNG BYTE bản trước (A/B sạch).
  */
-export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate"]);
+export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate", "report"]);
+
+/** Đợt 12 · H5.1 — trần tham số `report` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
+export const TRAN_BC_TOM_TAT = 1_500;
+export const TRAN_BC_SO_PHAT_HIEN = 10;
+export const TRAN_BC_KY_TU_PHAT_HIEN = 300;
+export const TRAN_BC_SO_TEP = 20;
+export const TRAN_BC_KY_TU_DUONG = 200;
+export const TRAN_BC_SO_BANG_CHUNG = 10;
+export const TRAN_BC_KY_TU_TRICH = 300;
+export const TRANG_THAI_BAO_CAO = ["done", "partial", "blocked"] as const;
 
 /** Đợt 11.8 — trần tham số `delegate` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
 export const TRAN_NHIEM_VU_GIAO = 4_000;
@@ -173,6 +186,34 @@ export const CONG_CU: WireTool[] = [
       "host may allow fewer); there is no shell.",
     { command: chuoi("The command line, exactly one allowed form, e.g. 'go test ./...'. Paths are relative to the project root.") },
     ["command"],
+  ),
+  tool(
+    "report",
+    "Sub-agents only: finish your run by sending a structured report to the parent agent. Call it ONCE when you are done (or cannot continue); " +
+      "it ends your run. 'done' needs evidence: list the files you actually read or changed in 'files' and cite where in 'evidence'. " +
+      "Say 'partial' or 'blocked' honestly instead of claiming 'done'.",
+    {
+      status: { type: "string", enum: ["done", "partial", "blocked"], description: "done = the task is finished; partial = some of it; blocked = you could not proceed." },
+      summary: chuoi("What you did and found, in a few sentences (at most 1500 characters)."),
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { note: chuoi("One finding, one sentence."), path: chuoi("Optional file path the finding is about."), line: soNguyen("Optional line number.") },
+          required: ["note"],
+        },
+      },
+      files: { type: "array", items: { type: "string" }, description: "Paths of the files you read or changed that matter for the parent." },
+      evidence: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { path: chuoi("File path."), line: soNguyen("Optional line number."), quote: chuoi("Optional short quote from that place.") },
+          required: ["path"],
+        },
+      },
+    },
+    ["status", "summary"],
   ),
   tool(
     "todo_write",
@@ -306,19 +347,21 @@ export function congCuTheoCheDo(cheDo: CheDoAgent, them: readonly TenCongCu[] = 
     cheDo === "hoi"
       ? coMat.filter((t) => {
           const loai = LOAI_CONG_CU[t.function.name as TenCongCu];
-          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat" || loai === "giao";
+          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat" || loai === "giao" || loai === "bao-cao";
         })
       : coMat;
   return structuredClone(chon);
 }
 
 export const CONG_CU_TODO_WRITE: WireTool = CONG_CU.find((t) => t.function.name === "todo_write")!;
+/** (Đợt 12 · H5.1) `report` — lõi tự thêm vào bộ tool của vòng CON khi `baoCaoCon`; vòng gốc không bao giờ. */
+export const CONG_CU_REPORT: WireTool = CONG_CU.find((t) => t.function.name === "report")!;
 
 // ─── Kiểm / chuẩn hoá tham số ─────────────────────────────────────────────────────────────────
 
 export type KetQuaKiemThamSo = { ok: true; thamSo: Record<string, unknown> } | { ok: false; loiChoModel: string };
 
-type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum" | "tenAgent" | "dsTen";
+type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum" | "tenAgent" | "dsTen" | "phatHien" | "dsDuong" | "bangChung";
 /** `giaTri`: tập hợp lệ của `enum` · `toiDa`: trần ký tự (`chuoi`) hoặc trần giá trị (`so`). */
 type MotDacTa = { kieu: KieuTruong; batBuoc: boolean; giaTri?: readonly string[]; toiDa?: number };
 type DacTa = Record<string, MotDacTa>;
@@ -344,6 +387,13 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
   compile_st: { path: T("duong"), code: T("chuoi", { toiDa: TRAN_MA_ST }) },
   delegate: { agent: B("tenAgent"), task: B("chuoi", { toiDa: TRAN_NHIEM_VU_GIAO }), tools: T("dsTen") },
+  report: {
+    status: B("enum", { giaTri: TRANG_THAI_BAO_CAO }),
+    summary: B("chuoi", { toiDa: TRAN_BC_TOM_TAT }),
+    findings: T("phatHien"),
+    files: T("dsDuong"),
+    evidence: T("bangChung"),
+  },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -364,6 +414,8 @@ const VI_DU: Record<TenCongCu, string> = {
   lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
   compile_st: '{"path":"src/FB_Motor.st"}',
   delegate: '{"agent":"kham-pha","task":"Find where HTTP requests are retried and report the file paths."}',
+  report:
+    '{"status":"done","summary":"Retries live in src/http/retry.ts.","findings":[{"note":"Retries 3 times with backoff","path":"src/http/retry.ts","line":12}],"files":["src/http/retry.ts"],"evidence":[{"path":"src/http/retry.ts","line":12,"quote":"maxRetries = 3"}]}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -383,6 +435,34 @@ function docJson(s: string): { ok: true; v: unknown } | { ok: false; loi: string
 }
 
 class LoiThamSo extends Error {}
+
+/** Mảng (hoặc chuỗi JSON của mảng) cho các trường báo cáo. */
+function docMang(v: unknown, ten: string, toiDa: number): unknown[] {
+  let ds = v;
+  if (typeof ds === "string") {
+    const p = docJson(ds);
+    if (!p.ok) throw new LoiThamSo(`"${ten}" must be an array`);
+    ds = p.v;
+  }
+  if (!Array.isArray(ds)) throw new LoiThamSo(`"${ten}" must be an array`);
+  if (ds.length > toiDa) throw new LoiThamSo(`"${ten}" must have at most ${toiDa} items (got ${ds.length}); keep the most important ones`);
+  return ds;
+}
+function chuoiBaoCao(v: unknown, k: string, toiDa: number, batBuoc: boolean): string | undefined {
+  if (v === undefined || v === null) {
+    if (batBuoc) throw new LoiThamSo(`"${k}" is required`);
+    return undefined;
+  }
+  if (typeof v !== "string" || v.trim() === "") throw new LoiThamSo(`"${k}" must be a non-empty string`);
+  if (v.trim().length > toiDa) throw new LoiThamSo(`"${k}" must be at most ${toiDa} characters (got ${v.trim().length}); shorten it`);
+  return v.trim();
+}
+function dongBaoCao(v: unknown, k: string): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = typeof v === "string" && /^\s*\d+\s*$/.test(v) ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1) throw new LoiThamSo(`"${k}" must be a positive integer`);
+  return n;
+}
 
 function epBool(v: unknown, ten: string): boolean | undefined {
   if (v === undefined || v === null) return undefined;
@@ -458,6 +538,30 @@ function kiemTruong(dt: MotDacTa, v: unknown, ten: string): unknown {
         return ra;
       });
     }
+    case "phatHien":
+      return docMang(v, ten, TRAN_BC_SO_PHAT_HIEN).map((e, i) => {
+        const k = `${ten}[${i}]`;
+        if (!laObject(e)) throw new LoiThamSo(`"${k}" must be an object {note, path?, line?}`);
+        const ra: Record<string, unknown> = { note: chuoiBaoCao(e.note, `${k}.note`, TRAN_BC_KY_TU_PHAT_HIEN, true) };
+        const p = chuoiBaoCao(e.path, `${k}.path`, TRAN_BC_KY_TU_DUONG, false);
+        if (p !== undefined) ra.path = p;
+        const l = dongBaoCao(e.line, `${k}.line`);
+        if (l !== undefined) ra.line = l;
+        return ra;
+      });
+    case "dsDuong":
+      return docMang(v, ten, TRAN_BC_SO_TEP).map((e, i) => chuoiBaoCao(e, `${ten}[${i}]`, TRAN_BC_KY_TU_DUONG, true) as string);
+    case "bangChung":
+      return docMang(v, ten, TRAN_BC_SO_BANG_CHUNG).map((e, i) => {
+        const k = `${ten}[${i}]`;
+        if (!laObject(e)) throw new LoiThamSo(`"${k}" must be an object {path, line?, quote?}`);
+        const ra: Record<string, unknown> = { path: chuoiBaoCao(e.path, `${k}.path`, TRAN_BC_KY_TU_DUONG, true) };
+        const l = dongBaoCao(e.line, `${k}.line`);
+        if (l !== undefined) ra.line = l;
+        const q = chuoiBaoCao(e.quote, `${k}.quote`, TRAN_BC_KY_TU_TRICH, false);
+        if (q !== undefined) ra.quote = q;
+        return ra;
+      });
     case "todos": {
       let ds = v;
       if (typeof ds === "string") {

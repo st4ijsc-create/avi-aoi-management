@@ -6,6 +6,7 @@
  */
 
 import type { MaKhoiChen, NenBuocDo } from "./buocDo";
+import type { DemBaoCao } from "./giaoViec";
 
 // ─── Khuôn dây OpenAI (tool-calling gốc) ──────────────────────────────────────────────────────
 //
@@ -196,7 +197,7 @@ export type SuKienAgent =
    * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
    */
   | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
-  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string; baoCao?: DemBaoCao }
   | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
   | { loai: "xong"; lyDo: LyDoDung; tomTat?: string }
   | { loai: "loi"; ma: string; thongDiep: string };

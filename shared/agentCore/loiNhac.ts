@@ -43,6 +43,16 @@ export const QUY_TAC_DELEGATE =
  * H0.3 · MODEL THẤY: một dòng quy tắc trong SYSTEM (đầu hội thoại; `bamHeThong` của `buoc-do` đổi khi bật/tắt cổng). TOKEN: ~127.
  *   CACHE: nằm ở TIỀN TỐ ⇒ đổi cờ giữa chừng làm mất cả cache của lượt chạy; cờ cố định suốt lượt ⇒ không ảnh hưởng.
  */
+/**
+ * Đợt 12 · H5.1 — quy tắc của vòng CON khi `report` có mặt (cờ host AI_AGENT_CON_BAO_CAO). Vắng ⇒ lời nhắc GIỐNG TỪNG BYTE.
+ * H0.3 · MODEL THẤY: một dòng quy tắc trong SYSTEM của CON (không phải của cha). TOKEN: ~110. CACHE: nằm ở TIỀN TỐ nhưng cố định suốt lượt con
+ *   (cờ không đổi giữa chừng) ⇒ không ảnh hưởng cache các lượt sau của con.
+ */
+export const QUY_TAC_BAO_CAO =
+  "16. You are a sub-agent. When your task is finished (or you cannot continue), end your run by calling report ONCE: status done/partial/blocked, " +
+  "a short summary, findings, the files you actually read or changed, and evidence (file, line, short quote). Do not claim done without evidence; " +
+  "say partial or blocked honestly. The parent only receives this report, and anything not backed by a file you really touched is shown as unverified.";
+
 export const QUY_TAC_CONG_KE_HOACH =
   "15. Before your first write or command, write a short plan with todo_write (at most 30 steps, each under 200 characters, plain text). " +
   "A person must approve the plan before any file is changed or command is run; if you add, remove or reword steps later, " +
@@ -70,6 +80,7 @@ export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu; con
     "12. When a build, test or type check reports an unknown type, member, namespace or symbol (C# CS0246, CS0103, CS1061, CS0234, CS0117; TypeScript TS2304, TS2339, TS2305, TS2724, TS2307; Java 'cannot find symbol' / 'package does not exist'; Python NameError, AttributeError, ImportError), call lookup_api with that exact name before you guess or change the code: use the namespace/import, member names and signature it returns. If lookup_api does not find it, do not invent an API — choose another approach or tell the user.",
     ...(y.congCu?.includes("compile_st") ? [QUY_TAC_COMPILE_ST] : []),
     ...(y.congCu?.includes("delegate") ? [QUY_TAC_DELEGATE] : []),
+    ...(y.congCu?.includes("report") ? [QUY_TAC_BAO_CAO] : []),
     ...(y.congKeHoach === true && y.cheDo !== "hoi" ? [QUY_TAC_CONG_KE_HOACH] : []),
     "",
     `Respond in ${TEN_NGON_NGU[y.ngonNgu]} (the user's language) in your messages to the user; keep code, identifiers, file paths and tool arguments as they are.`,

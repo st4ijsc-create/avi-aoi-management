@@ -259,7 +259,7 @@ export interface PhuThuocQuanLy {
   /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
   vaiTro?: Partial<PhuThuocVaiTro>;
   /** (Đợt 11.8) giao việc cho agent con. `bat` vắng ⇒ đọc cờ AI_AGENT_GIAO_VIEC=1 (MẶC ĐỊNH TẮT); `tra` thay bộ tra định nghĩa (lưới). */
-  giaoViec?: { bat?: boolean; doSauToiDa?: number; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
+  giaoViec?: { bat?: boolean; doSauToiDa?: number; baoCao?: boolean; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
   /** (Đợt 11.3-C) cổng duyệt kế hoạch. `bat` vắng ⇒ đọc cờ AI_AGENT_CONG_KE_HOACH=1 (MẶC ĐỊNH TẮT); `choDuyet` thay móc chờ người (lưới). */
   congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
   /** (Đợt 10.1) phụ thuộc danh mục cho `chonModel` (lưới thay; mặc định `layPhuThuocDanhMucMacDinh`). */
@@ -802,6 +802,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ? {
                 doSauHienTai: 0,
                 doSauToiDa: phuThuoc.giaoViec?.doSauToiDa ?? 1,
+                // (Đợt 12 · H5.1) con kết thúc bằng `report` có cấu trúc — MẶC ĐỊNH TẮT (AI_AGENT_CON_BAO_CAO=1)
+                ...((phuThuoc.giaoViec?.baoCao ?? process.env.AI_AGENT_CON_BAO_CAO === "1") ? { baoCao: true } : {}),
                 tra: (phuThuoc.giaoViec?.tra ?? ((v) => taoTraDinhNghia(v)))({ userId: user.id, projectId, gocDuAn: goc }),
                 batDauCon: async (yc) => {
                   // v1: con dùng CHÍNH model của cha (cục bộ — cha ngoài đã bị loại ở trên). `vai-tro:`/`ho-so:` chưa hỗ trợ.
@@ -831,6 +833,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                         tokenRa: r.tokenRa,
                         tomTat: r.tomTat.slice(0, 2_000) || null,
                       });
+                      // (H5.1) con kết thúc bằng báo cáo ⇒ thẻ duyệt do CHÍNH con đề xuất mà chưa quyết bị đóng (khối gửi cha đã nói "đã huỷ")
+                      if (r.baoCao) await dongTheCuaCay(idCon).catch(() => 0);
                     },
                   };
                 },
