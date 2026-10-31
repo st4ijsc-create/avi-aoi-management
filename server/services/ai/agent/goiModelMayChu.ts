@@ -46,6 +46,11 @@ export interface CauHinhGoiModel {
   userId?: number;
   /** `true` ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã được đếm ở nơi khác, vd. qua cổng khi `AI_AGENT_THEO_VAI_TRO` bật). */
   khongGhiDauVet?: boolean;
+  /**
+   * (Đợt 12 H4.2) lượt chạy chủ của các lượt model này — CHỈ để bộ ghi (`AI_GHI_LUOT_DIR`, cửa sổ đo) đặt tên tệp `<runId>.jsonl`.
+   * Vắng hoặc biến môi trường vắng ⇒ không ghi gì.
+   */
+  runId?: string;
 }
 
 const moTaLoi = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -123,8 +128,12 @@ async function* luongModelMayChu(
 
   /** Máy bơm: chạy TRỌN trong `chayVoiUuTien` (xem đầu tệp). Bộ cắt suy luận + bộ che ở ngay trên. */
   async function bomLuongModelMayChu(epTatNghi = false): Promise<void> {
+    const streamGoc: HamChatStream = cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+    // ★ Đợt 12 H4.2 — bộ GHI lượt (phát lại không GPU): CHỈ tiến trình đo đặt AI_GHI_LUOT_DIR (thư mục tuyệt đối, ngoài repo); điểm đọc
+    //   biến DUY NHẤT (census). Vắng ⇒ engine y nguyên. Bộ ghi chuyển nguyên từng mảnh, ghi hỏng không làm hỏng lượt.
+    const thuMucGhi = (process.env.AI_GHI_LUOT_DIR ?? "").trim();
     const chatCompletionStream: HamChatStream =
-      cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+      thuMucGhi && cauHinh.runId ? (await import("./ghiLuotModel")).bocGhiLuot(streamGoc, { thuMuc: thuMucGhi, runId: cauHinh.runId }) : streamGoc;
     let modelId = cauHinh.modelId;
     if (modelId === undefined && process.env.AI_CODING_MODEL_TASK === "code") {
       modelId = (await import("../../aiGgufEngine")).codeModelBasename();

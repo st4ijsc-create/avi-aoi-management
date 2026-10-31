@@ -842,7 +842,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           const goiModelLuot: GoiModel = capNgoai
             ? capNgoai.goiModel
             : theoVaiTro
-            ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true }), (l) =>
+            ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true, runId: id }), (l) =>
                 plan?.recordPhu?.({
                   luotPhu: "agent-luot",
                   requestId: id,
@@ -856,7 +856,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                   outcome: "ok",
                 }),
               )
-            : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id, ...(modelChon ? { modelId: modelChon.modelId } : {}) }));
+            : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id, runId: id, ...(modelChon ? { modelId: modelChon.modelId } : {}) }));
           const giaoViec: CauHinhGiaoViec | undefined = coGiaoViec
             ? {
                 doSauHienTai: 0,
