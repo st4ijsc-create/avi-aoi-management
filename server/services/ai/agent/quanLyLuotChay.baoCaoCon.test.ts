@@ -123,7 +123,7 @@ describe("H5.1 đầu–cuối", () => {
     const t = toolDelegate(r.tinNhan);
     expect(t).toMatch(/^\[UNTRUSTED sub-agent result/);
     expect(t).toContain("Structured report — status: done");
-    expect(t).not.toContain("[unverified]"); // read_file THẬT chạm src/b.ts
+    expect(t).not.toContain("[not touched by sub-agent]"); // read_file THẬT chạm src/b.ts
     expect(t).not.toContain('"status"');
     expect(r.con).toMatchObject({ trangThai: "xong", lyDoDung: "hoan-thanh", agentName: "kham-pha" });
     expect(r.con!.tomTat).toContain("Structured report — status: done");
