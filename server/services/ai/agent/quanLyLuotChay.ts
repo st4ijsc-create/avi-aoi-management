@@ -42,6 +42,8 @@ import {
   type NgonNgu,
   type SuKienAgent,
   type TinNhan,
+  CAU_TIEP_TUC,
+  chuanHoaLichSuTiepTuc,
 } from "@shared/agentCore";
 import { checkPermission } from "../../../_core/accessControl";
 import { executeDecision, type ToolExecContext } from "../../aiLocalTools";
@@ -63,6 +65,9 @@ import {
   type TrangThaiLuotChay,
 } from "../../../db/aiAgentRuns";
 import type { CopilotUser } from "../../aiCopilotActions";
+import { dauRaDaiBat, taoKhoDauRaDai, type KhoDauRaDai } from "./khoDauRaDai";
+import { chuanBiBanLuu, tiepTucBat } from "./khoLichSuLuot";
+import { danhDauTiepTuc, docLichSu, donLichSuCu, goDauTiepTuc, luuLichSu, xoaLichSu } from "../../../db/aiAgentLichSu";
 import { docTruocKhiGhiBat, hanGioToolBat, taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
 import { giaiChonModel } from "../chonModel/giaiChonModel";
@@ -268,6 +273,10 @@ export interface PhuThuocQuanLy {
   /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
   vaiTro?: Partial<PhuThuocVaiTro>;
   /** (Đợt 11.8) giao việc cho agent con. `bat` vắng ⇒ đọc cờ AI_AGENT_GIAO_VIEC=1 (MẶC ĐỊNH TẮT); `tra` thay bộ tra định nghĩa (lưới). */
+  /** (Đợt 12 · H5.3) kho đầu ra dài thay thế (lưới). Vắng ⇒ đọc cờ AI_AGENT_DAU_RA_DAI=1 (MẶC ĐỊNH TẮT) và dùng kho dùng chung của tiến trình; `null` ⇒ tắt. */
+  khoDauRaDai?: KhoDauRaDai | null;
+  /** (Đợt 12 · H5.4) lưu lịch sử + tiếp tục lượt. `bat` vắng ⇒ đọc AI_AGENT_TIEP_TUC=1 (MẶC ĐỊNH TẮT). */
+  tiepTuc?: { bat?: boolean };
   giaoViec?: { bat?: boolean; doSauToiDa?: number; baoCao?: boolean; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
   /** (Đợt 11.3-C) cổng duyệt kế hoạch. `bat` vắng ⇒ đọc cờ AI_AGENT_CONG_KE_HOACH=1 (MẶC ĐỊNH TẮT); `choDuyet` thay móc chờ người (lưới). */
   congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
@@ -414,8 +423,25 @@ export function congCheckpointThat(userId: number): CongCheckpoint {
 
 // ─── quản lý ──────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * (Đợt 12 · H5.4) tham số NỘI BỘ MÁY CHỦ của `taoLuotChay` — KHÔNG nằm trong `YeuCauTaoLuotChay` (nơi route/tRPC copy trường từ client): lịch sử model đã
+ * lưu và id định sẵn chỉ do `tiepTucLuot` truyền, nên client không có đường nào đưa lịch sử vào.
+ */
+export interface NoiBoTaoLuot {
+  idCoSan?: string;
+  lichSuTinNhan?: TinNhan[];
+}
+
+export type MaTuChoiTiepTuc = "TIEP_TUC_TAT" | "NOT_FOUND" | "KHONG_TIEP_TUC_DUOC" | "KHONG_CO_LICH_SU" | "DA_TIEP_TUC" | MaTuChoiTao;
+export type KetQuaTiepTuc = { ok: true; luot: LuotChay } | { ok: false; ma: MaTuChoiTiepTuc };
+
 export interface QuanLyLuotChay {
-  taoLuotChay(y: YeuCauTaoLuotChay): Promise<KetQuaTaoLuotChay>;
+  taoLuotChay(y: YeuCauTaoLuotChay, noiBo?: NoiBoTaoLuot): Promise<KetQuaTaoLuotChay>;
+  /**
+   * (Đợt 12 · H5.4) TIẾP TỤC lượt gián đoạn của CHÍNH người này thành lượt MỚI từ lịch sử máy chủ đã lưu. Cờ AI_AGENT_TIEP_TUC=1 (MẶC ĐỊNH TẮT).
+   * Chỉ lượt GỐC ở trạng thái gian-doan | loi | huy, còn bản lưu, và chỉ MỘT lần/nguồn (UPDATE có điều kiện).
+   */
+  tiepTucLuot(y: { user: { id: number; role: string; name?: string | null }; runId: string; req?: ToolExecContext["req"] }): Promise<KetQuaTiepTuc>;
   /** Lượt chạy TRONG BỘ NHỚ của đúng người này (người khác / không có ⇒ null). */
   layLuotChay(runId: string, userId: number): LuotChay | null;
   /** Phát lại từ `tu` rồi nghe tiếp; trả hàm huỷ nghe (lượt đã xong ⇒ chỉ phát lại). null ⇔ không có/của người khác. */
@@ -443,6 +469,16 @@ export interface ChiTietLuotChay extends TomTatLuotChay {
   suKien: MucSuKien[];
   checkpointIds: string[];
   checkpoints: Array<Pick<Checkpoint, "id" | "seq" | "taoLuc"> & { tep: string[] }>;
+}
+
+/** Kho dùng chung của tiến trình (lười); đóng khi tiến trình thoát (xoá thư mục kho của chính mình). */
+let khoMacDinh: KhoDauRaDai | null = null;
+function khoDungChung(): KhoDauRaDai {
+  if (!khoMacDinh) {
+    khoMacDinh = taoKhoDauRaDai();
+    process.once("exit", () => khoMacDinh?.dongKho());
+  }
+  return khoMacDinh;
 }
 
 export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay {
@@ -646,8 +682,15 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
     }
   }
 
-  return {
-    async taoLuotChay(y) {
+  /** (H5.4) lượt gốc chỉ tiếp tục được khi đã DỪNG theo kiểu chưa xong việc. */
+const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi", "huy"]);
+
+/** (H5.4) cờ đọc TẠI CHỖ GỌI (lưới đổi env theo ca). */
+  const tiepTucDangBat = (): boolean => phuThuoc.tiepTuc?.bat ?? tiepTucBat(process.env.AI_AGENT_TIEP_TUC);
+  let lanDonLichSuCuoi = 0;
+
+  const quanLy: QuanLyLuotChay = {
+    async taoLuotChay(y, noiBo) {
       const user = y.user;
       const cauHoi = typeof y.cauHoi === "string" ? y.cauHoi.trim() : "";
       if (cauHoi === "") return { ok: false, ma: "CAU_HOI_RONG", http: HTTP_CUA_MA.CAU_HOI_RONG };
@@ -721,7 +764,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
 
       const lang = locNgonNgu(y.ngonNgu);
       const sessionId = typeof y.sessionId === "string" && y.sessionId !== "" ? y.sessionId : null;
-      const id = randomUUID();
+      const id = noiBo?.idCoSan ?? randomUUID();
       const boHuy = new AbortController();
       const luot: LuotChay = {
         id,
@@ -812,7 +855,11 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       // (Đợt 11.8) giao việc: cờ máy chủ (mặc định TẮT) VÀ model của cha KHÔNG phải model ngoài (M1: cha ngoài ⇒ không phơi `delegate`).
       const congKeHoachBat = phuThuoc.congKeHoach?.bat ?? process.env.AI_AGENT_CONG_KE_HOACH === "1";
       const coGiaoViec = choPhepGiaoViec({ bat: phuThuoc.giaoViec?.bat, chonModel: y.chonModel });
+      // (Đợt 12 · H5.3) kho đầu ra dài: cờ BẬT (hoặc tiêm) VÀ kho không chồng gốc dự án của lượt này
+      const khoUng = phuThuoc.khoDauRaDai !== undefined ? phuThuoc.khoDauRaDai : dauRaDaiBat(process.env.AI_AGENT_DAU_RA_DAI) ? khoDungChung() : null;
+      const khoLuot = khoUng && khoUng.hopLeVoiGoc(goc) ? khoUng : null;
       const boThucThi = taoBoThucThiMayChu({
+        ...(khoLuot ? { khoDauRaDai: khoLuot } : {}),
         execCtx,
         gocDuAn: goc,
         projectId,
@@ -833,7 +880,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           .catch(() => undefined);
       }
       const ten = danhSachDuAn().find((d) => d.id === projectId)?.ten ?? projectId;
-      const lichSu = locLichSu(y.lichSu);
+      const lichSu = noiBo?.lichSuTinNhan ?? locLichSu(y.lichSu); // (H5.4) lượt tiếp tục: lịch sử MÁY CHỦ đã lưu, không qua bộ lọc của lịch sử client
       // (L3) cặp bộ chuyển model ngoài: GoiModel qua `ghepPhan` + cổng, BoThucThi chỉ bộ đọc ngoài (read_file · list_dir · grep).
       const capNgoai: CapAgentNgoai | null =
         ngoai && depNgoai
@@ -851,6 +898,11 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
               chayTool: depNgoai.chayTool,
             })
           : null;
+      const luuLich = tiepTucDangBat();
+      if (luuLich && Date.now() - lanDonLichSuCuoi > 60 * 60_000) {
+        lanDonLichSuCuoi = Date.now();
+        void donLichSuCu(7).catch(() => -1); // bản lưu > 7 ngày (bảo trì, nhiều nhất mỗi giờ)
+      }
 
       luot.xong = (async () => {
         let traLoi = "";
@@ -912,6 +964,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                       });
                       // (H5.1) con kết thúc bằng báo cáo ⇒ thẻ duyệt do CHÍNH con đề xuất mà chưa quyết bị đóng (khối gửi cha đã nói "đã huỷ")
                       if (r.baoCao) await dongTheCuaCay(idCon).catch(() => 0);
+                      khoLuot?.donLuot(idCon); // (H5.3) tệp của CON dọn ngay khi con xong
                     },
                   };
                 },
@@ -919,6 +972,17 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             : undefined;
           const kq = await chayVongAgent({
             ...(giaoViec ? { giaoViec } : {}),
+            // (Đợt 12 · H5.4) chụp lịch sử ở ranh giới an toàn (cờ AI_AGENT_TIEP_TUC) — che bí mật + trần ở `chuanBiBanLuu`; vượt trần ⇒ XOÁ bản lưu
+            ...(luuLich
+              ? {
+                  luuLichSu: async (b: { runId: string; buoc: number; tinNhan: TinNhan[] }) => {
+                    const ban = chuanBiBanLuu(b.tinNhan);
+                    if (!ban.ok) await xoaLichSu(user.id, b.runId);
+                    else await luuLichSu(user.id, b.runId, ban.tinNhan, b.buoc);
+                  },
+                }
+              : {}),
+            ...(khoLuot ? { luuDauRaDai: (y2: { runId: string; ten: string; noiDung: string }) => khoLuot.luu({ runId: y2.runId, ten: y2.ten, noiDung: y2.noiDung }) } : {}),
             // (Đợt 11.3-C) cổng duyệt kế hoạch — chỉ khi cờ bật VÀ chế độ có tool ghi; móc chờ người đọc/ghi SỔ (fail-closed).
             ...(congKeHoachBat && cheDo !== "hoi" ? { congKeHoach: { choDuyet: (phuThuoc.congKeHoach?.choDuyet ?? taoChoDuyetKeHoach)({ userId: user.id, runId: id }) } } : {}),
             // ★ Đợt 9 — theo vai trò: model nhận câu hỏi ĐÃ CHE của aiGateway (`safeText`: bí mật/PII); sổ vẫn giữ câu gốc của chính người dùng.
@@ -962,6 +1026,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           phat(s, { loai: "loi", ma: "LOI_NOI_BO", thongDiep: moTaLoi(e) });
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: boHuy.signal.aborted ? "huy" : "loi-model" });
         } finally {
+          khoLuot?.donLuot(id); // (H5.3) xoá đầu ra dài đã lưu của lượt
           if (luot.ketThuc === null) phat(s, { loai: "xong", lyDo: "loi-model" });
           // ★ Đợt 9 — hàng CHÍNH của lượt chạy (cùng `requestId` với các hàng `agent-luot`): tổng token + kết cục.
           plan?.record({
@@ -976,6 +1041,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           // (Đợt 11.8, M4) lượt cha kết thúc ⇒ đóng MỌI thẻ `proposed` của lượt này và hậu duệ (DB). Hàng sổ cha phải 'xong/huy' TRƯỚC (luuNgay
           // bên dưới) để `confirmAction` cũng từ chối bằng trạng thái lượt; đóng thẻ ở đây là lớp thứ hai.
           await luuNgay(s);
+          if (luuLich && luot.trangThai === "xong") await xoaLichSu(user.id, id); // (H5.4) xong ⇒ không cần tiếp tục; gián đoạn/lỗi/huỷ ⇒ giữ
           await dongTheCuaCay(id).catch(() => 0);
           await chotMoiKeHoachDangCho(user.id, id); // (Đợt 11.3-C) không để kế hoạch 'cho' treo trên lượt đã chết
           if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
@@ -990,6 +1056,41 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         }
       })();
       return { ok: true, luot };
+    },
+
+    async tiepTucLuot(y) {
+      if (!tiepTucDangBat()) return { ok: false, ma: "TIEP_TUC_TAT" };
+      const nguon = await docHangLuotChay(y.user.id, y.runId); // người khác / méo / không có ⇒ null (cùng giá trị)
+      if (!nguon) return { ok: false, ma: "NOT_FOUND" };
+      const dangSong = theoId.get(nguon.id);
+      if (nguon.parentRunId !== null || !TRANG_THAI_TIEP_TUC_DUOC.has(nguon.trangThai) || (dangSong && dangSong.luot.ketThuc === null)) {
+        return { ok: false, ma: "KHONG_TIEP_TUC_DUOC" };
+      }
+      const ban = await docLichSu(y.user.id, nguon.id);
+      if (!ban) return { ok: false, ma: "KHONG_CO_LICH_SU" };
+      if (ban.daTiepTucBoi) return { ok: false, ma: "DA_TIEP_TUC" };
+      const lichSu = chuanHoaLichSuTiepTuc(ban.tinNhan);
+      if (lichSu.length === 0) return { ok: false, ma: "KHONG_CO_LICH_SU" };
+      const moi = randomUUID();
+      // MỘT câu UPDATE có điều kiện: hai lần bấm đồng thời chỉ MỘT thắng
+      if (!(await danhDauTiepTuc(y.user.id, nguon.id, moi))) return { ok: false, ma: "DA_TIEP_TUC" };
+      const cauHoi = `${CAU_TIEP_TUC}\n\nOriginal task: ${nguon.cauHoi.slice(0, 500)}`;
+      const kq = await quanLy.taoLuotChay(
+        {
+          user: y.user,
+          cauHoi,
+          projectId: nguon.projectId,
+          cheDo: nguon.cheDo,
+          ...(nguon.sessionId ? { sessionId: nguon.sessionId } : {}),
+          ...(y.req ? { req: y.req } : {}),
+        },
+        { idCoSan: moi, lichSuTinNhan: lichSu },
+      );
+      if (!kq.ok) {
+        await goDauTiepTuc(y.user.id, nguon.id, moi); // lượt mới không tạo được ⇒ nguồn vẫn tiếp tục được
+        return { ok: false, ma: kq.ma };
+      }
+      return { ok: true, luot: kq.luot };
     },
 
     layLuotChay(runId, userId) {
@@ -1138,6 +1239,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       return [...theoId.values()].filter((s) => s.luot.ketThuc === null).length;
     },
   };
+  return quanLy;
 }
 
 let _macDinh: QuanLyLuotChay | null = null;

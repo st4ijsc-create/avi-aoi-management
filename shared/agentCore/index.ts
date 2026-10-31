@@ -10,4 +10,5 @@ export * from "./giaoViec";
 export * from "./keHoach";
 export * from "./loiNhac";
 export * from "./nguCanh";
+export * from "./tiepTuc";
 export * from "./vongAgent";

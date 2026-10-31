@@ -70,9 +70,10 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
   const code = (e as { code?: unknown } | null)?.code;
+  // mã LLAMA_SERVER_DOWN xét TRƯỚC chữ tràn: lỗi nạp model có thể chứa "n_ctx" mà vẫn là lỗi TẠM THỜI (được thử lại)
+  if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
   // (Đợt 12 · H1.3) tràn cửa sổ ngữ cảnh: mã riêng, KHÔNG tạm thời (gọi lại y nguyên vẫn tràn) — lõi nén mạnh rồi thử một lần
   if (laLoiTranNguCanh(e)) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
-  if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
   if (typeof code === "string" && code.startsWith("LLM_QUEUE_")) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: code });
   if (code === "tool_calls_unsupported_path") return new LoiModel(moTaLoi(e), { tamThoi: false, ma: "TOOL_CALL_KHONG_HO_TRO" });
   if (typeof code === "string" && /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_SOCKET)$/.test(code)) {

@@ -123,6 +123,7 @@ import { timTaiLieuMacDinh, type KhoTaiLieu, type TimTaiLieu } from "./timTaiLie
 import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "../apiRef/traApi";
 import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
+import type { KhoDauRaDai } from "./khoDauRaDai";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
@@ -236,6 +237,8 @@ export interface CauHinhBoThucThi {
    * Host: `AI_AGENT_TOOL_TIMEOUT=1`.
    */
   hanGioTool?: Readonly<Record<string, number>>;
+  /** (Đợt 12 · H5.3) kho đầu ra dài ⇒ phơi `read_output`. Vắng ⇒ tool KHÔNG có (cờ AI_AGENT_DAU_RA_DAI tắt). */
+  khoDauRaDai?: KhoDauRaDai;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -569,6 +572,24 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     }
     return null;
   };
+
+  /** (H5.3) đọc lại đầu ra dài đã lưu — CHỈ của chính lượt (`ctx.runId`); mã lạ / của lượt khác ⇒ cùng một câu "không tồn tại". */
+  function docDauRa(t: Record<string, unknown>, ctx: NguCanhThucThi): KetQuaTool {
+    const kho = cauHinh.khoDauRaDai;
+    const khongCo: KetQuaTool = {
+      ok: false,
+      ma: "OUTPUT_KHONG_CO",
+      choModel: "No saved output with that ref in this run (it may have expired). Run the command again if you still need it.",
+    };
+    if (!kho) return khongCo;
+    const r = kho.doc(ctx.runId, String(t.ref ?? ""), {
+      ...(typeof t.start_line === "number" ? { startLine: t.start_line } : {}),
+      ...(typeof t.end_line === "number" ? { endLine: t.end_line } : {}),
+      ...(typeof t.grep === "string" ? { grep: t.grep } : {}),
+    });
+    if (!r.ok) return khongCo;
+    return lamSachChoModel(r.text, { ok: true, hienThi: { tool: "read_output", ref: String(t.ref) } });
+  }
 
   async function docTep(t: Record<string, unknown>): Promise<KetQuaTool> {
     const duong = String(t.path);
@@ -1150,7 +1171,9 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       const an = congCuBiAn();
       const ds = congCuTheoCheDo(
         cheDo,
-        [...CONG_CU_TUY_CHON].filter((ten) => (ten === "delegate" ? cauHinh.coGiaoViec === true : toolTuyChonBat(ten, process.env, gocDuAn))),
+        [...CONG_CU_TUY_CHON].filter((ten) =>
+          ten === "delegate" ? cauHinh.coGiaoViec === true : ten === "read_output" ? cauHinh.khoDauRaDai !== undefined : toolTuyChonBat(ten, process.env, gocDuAn),
+        ),
       );
       return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
     },
@@ -1202,7 +1225,11 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
 
   async function chayMotKhongHan(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
     // `delegate` do LÕI xử lý (vòng đệ quy) — KHÔNG BAO GIỜ tới bộ thực thi; nếu tới đây là lỗi/giả mạo ⇒ từ chối như tool ẩn.
-    if (goi.ten === "delegate" || congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
+    if (
+      goi.ten === "delegate" ||
+      congCuBiAn().has(goi.ten) ||
+      (CONG_CU_TUY_CHON.has(goi.ten as never) && !(goi.ten === "read_output" ? cauHinh.khoDauRaDai !== undefined : toolTuyChonBat(goi.ten, process.env, gocDuAn)))
+    ) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
     }
     try {
@@ -1242,6 +1269,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return deXuatNho(t, ctx);
         case "lookup_api":
           return await traApiCho(t);
+        case "read_output":
+          return docDauRa(t, ctx);
         case "compile_st":
           return await bienDichStCho(t);
         default:

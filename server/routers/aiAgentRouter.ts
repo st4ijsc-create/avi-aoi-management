@@ -45,6 +45,8 @@ const thuTucLuotChay = () => import("../services/ai/agent/thuTucLuotChay");
 const thuTucDinhNghia = () => import("../services/ai/agent/thuTucDinhNghiaAgent");
 // Đợt 11.3-C — cổng duyệt kế hoạch (UX-D02): xem kế hoạch đang chờ / duyệt|bác. CHỈ chủ lượt chạy; duyệt kế hoạch KHÔNG duyệt thẻ.
 const thuTucKeHoach = () => import("../services/ai/agent/thuTucKeHoach");
+// ★ Đợt 12 · H5.4 — TIẾP TỤC lượt gián đoạn (lịch sử máy chủ đã lưu; cờ AI_AGENT_TIEP_TUC, MẶC ĐỊNH TẮT). Thân ở thuTucTiepTuc.ts.
+const thuTucTiepTuc = () => import("../services/ai/agent/thuTucTiepTuc");
 // ★ Đợt 5.1 (2026-10-17) — PHẢN HỒI 👍/👎 + bộ dữ liệu "chỉ dẫn → diff được duyệt". Thân ở
 //   `services/ai/phanHoi/thuTucPhanHoi.ts` (nhập ĐỘNG như trên). Quyền `ai_repo_read/canView` trong thân; tổng hợp + xuất
 //   MỌI người đòi admin (sàn `adminPhanHoiProcedure` + kiểm lại trong thân).
@@ -322,6 +324,13 @@ export const aiAgentRouter = router({
   duyetKeHoach: protectedProcedure
     .input(z.object({ runId: z.string().uuid(), bam: z.string().regex(/^[0-9a-f]{64}$/), quyetDinh: z.enum(["duyet", "bac"]) }).strict())
     .mutation(async ({ input, ctx }) => (await thuTucKeHoach()).thuTucDuyetKeHoach(toAgentUser(ctx.user as any), input)),
+
+  /**
+   * (Đợt 12 · H5.4) Tiếp tục lượt gián đoạn CỦA MÌNH thành lượt MỚI. Chỉ nhận `runId` — lịch sử lấy từ CSDL máy chủ, không bao giờ từ client. Lỗi trong thân (`note`).
+   */
+  tiepTucLuot: protectedProcedure
+    .input(z.object({ runId: z.string().uuid() }).strict())
+    .mutation(async ({ input, ctx }) => (await thuTucTiepTuc()).thuTucTiepTucLuot(toAgentUser(ctx.user as any), input)),
 
   // ═══ Đợt 11.8 — ĐỊNH NGHĨA AGENT ĐẶT TÊN (.thoca/agents/*.md) ═══
   /** Dựng sẵn + tệp repo hợp lệ (kèm nội dung chữ thuần để ĐỌC trước khi xác nhận) + cờ tin cậy của CHÍNH người gọi. */

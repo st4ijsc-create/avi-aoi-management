@@ -267,6 +267,14 @@ describe("★★★ Đợt 12 · H1.3 — tràn cửa sổ ngữ cảnh ⇒ mã 
     }
   });
 
+  it("★ LLAMA_SERVER_DOWN mà thông điệp có chữ 'n_ctx' / 'context size' vẫn là lỗi TẠM THỜI (không bị nuốt thành tràn ⇒ giữ lần thử lại)", () => {
+    for (const msg of ["failed to load model: n_ctx too large for the available VRAM", "server down while allocating context size 65536"]) {
+      const l = chuyenLoiModel(Object.assign(new Error(msg), { code: "LLAMA_SERVER_DOWN" }));
+      expect(l.ma, msg).toBe("LLAMA_SERVER_DOWN");
+      expect(laLoiTamThoi(l)).toBe(true);
+    }
+  });
+
   it("lỗi KHÁC giữ phân loại cũ (không bị nuốt thành tràn)", () => {
     expect(chuyenLoiModel(new Error("boom")).ma).toBe("MODEL_LOI");
     expect(chuyenLoiModel(Object.assign(new Error("down"), { code: "LLAMA_SERVER_DOWN" })).ma).toBe("LLAMA_SERVER_DOWN");

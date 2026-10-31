@@ -53,6 +53,14 @@ export const QUY_TAC_BAO_CAO =
   "a short summary, findings, the files you actually read or changed, and evidence (file, line, short quote). Do not claim done without evidence; " +
   "say partial or blocked honestly. The parent only receives this report, and anything not backed by a file you really touched is shown as unverified.";
 
+/**
+ * Đợt 12 · H5.3 — quy tắc khi `read_output` có mặt (cờ host AI_AGENT_DAU_RA_DAI). Vắng ⇒ lời nhắc GIỐNG TỪNG BYTE.
+ * H0.3 · MODEL THẤY: một dòng quy tắc trong SYSTEM. TOKEN: ~70. CACHE: nằm ở TIỀN TỐ nhưng cố định suốt lượt (cờ không đổi giữa chừng).
+ */
+export const QUY_TAC_DAU_RA_DAI =
+  "17. When a tool result ends with '[full output saved as <ref>]', the visible part is only the beginning and the end. Do not run the command again to see the rest: " +
+  "call read_output with that ref (start_line/end_line, or grep for a word such as 'error' or 'FAILED').";
+
 export const QUY_TAC_CONG_KE_HOACH =
   "15. Before your first write or command, write a short plan with todo_write (at most 30 steps, each under 200 characters, plain text). " +
   "A person must approve the plan before any file is changed or command is run; if you add, remove or reword steps later, " +
@@ -81,6 +89,7 @@ export function dungLoiNhacHeThong(y: { cheDo: CheDoAgent; ngonNgu: NgonNgu; con
     ...(y.congCu?.includes("compile_st") ? [QUY_TAC_COMPILE_ST] : []),
     ...(y.congCu?.includes("delegate") ? [QUY_TAC_DELEGATE] : []),
     ...(y.congCu?.includes("report") ? [QUY_TAC_BAO_CAO] : []),
+    ...(y.congCu?.includes("read_output") ? [QUY_TAC_DAU_RA_DAI] : []),
     ...(y.congKeHoach === true && y.cheDo !== "hoi" ? [QUY_TAC_CONG_KE_HOACH] : []),
     "",
     `Respond in ${TEN_NGON_NGU[y.ngonNgu]} (the user's language) in your messages to the user; keep code, identifiers, file paths and tool arguments as they are.`,

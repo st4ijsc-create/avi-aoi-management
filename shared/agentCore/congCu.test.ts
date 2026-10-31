@@ -19,7 +19,7 @@ describe("congCu — schema 15 tool (10 của Đợt 1 + 4 của Đợt 2 + look
   it("có đúng 15 tool (spec Đợt 1 §3 + Đợt 2 §2 + lookup_api 2026-10-18), tên tiếng Anh, có mô tả + parameters object", () => {
     // ★ Đợt 9 — `compile_st` là tool TUỲ CHỌN (sổ `CONG_CU_TUY_CHON`): có schema ở đây, nhưng KHÔNG thuộc bộ 15 phơi mặc định
     //   (xem `congCu.compileSt.test.ts`). Bộ 15 dưới đây là phần CHUẨN.
-    expect([...CONG_CU_TUY_CHON]).toEqual(["compile_st", "delegate", "report"]);
+    expect([...CONG_CU_TUY_CHON]).toEqual(["compile_st", "delegate", "report", "read_output"]);
     expect([...TEN_CONG_CU].filter((t) => !CONG_CU_TUY_CHON.has(t)).sort()).toEqual(
       [
         "delete_file",
