@@ -71,9 +71,24 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
   return ten.length ? "kb-agent-luot cong-cu=" + ten.join(",") : undefined;
 }
 
+/** `httpStatus` của lỗi hoặc của một `cause` (tối đa 4 tầng). */
+function trangThaiHttp(e: unknown): number | undefined {
+  let x: unknown = e;
+  for (let i = 0; i < 4 && x && typeof x === "object"; i++) {
+    const st = (x as { httpStatus?: unknown }).httpStatus;
+    if (typeof st === "number") return st;
+    x = (x as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 /** Lỗi engine ⇒ `LoiModel` có cờ tạm thời đúng nghĩa. */
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
+  // ★ Đợt 12 H3.1 — mã ổn định theo HTTP của llama-server (tìm cả trong chuỗi `cause` — engine có thể bọc lại lỗi).
+  const st = trangThaiHttp(e);
+  if (st === 503) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "MODEL_DANG_NAP" });
+  if (st === 429) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "RATE_LIMIT" });
   const code = (e as { code?: unknown } | null)?.code;
   if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
   if (typeof code === "string" && code.startsWith("LLM_QUEUE_")) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: code });
