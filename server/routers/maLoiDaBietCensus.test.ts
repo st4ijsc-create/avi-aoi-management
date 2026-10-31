@@ -44,6 +44,8 @@ const TEP_HANG = [
   "server/services/ot/drivers/mitsubishiMcDriver.ts", // T3B-0 fix m3: OT_MC_TAM_KHOA
   "server/services/ot/drivers/s7Address.ts", // R1b-2b-2a T3C: OT_S7_BIT_NGOAI_DAI, OT_S7_DIA_CHI_THU_VIEN_BO
   "server/services/ot/motPhan.ts", // R1b-2b-2a T3E: MA_MOT_PHAN (reason của dispatch / tiền tố errorText khi lô áp một phần)
+  "server/services/orchestration/foe/foeEngine.ts", // C2 fix 4: FOE_OUTCOME_UNKNOWN / FOE_OUTCOME_PARTIAL (tiền tố lỗi bước orchestration)
+  "server/services/orchestration/foe/foeRunStore.ts", // C2 fix 4: FOE_GATE_REQUIRED (tiền tố lỗi bước — gateRequiredError)
 ];
 
 const doc = (rel: string) => ts.createSourceFile(rel, readFileSync(join(GOC, rel), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

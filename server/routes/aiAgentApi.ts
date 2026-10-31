@@ -94,6 +94,7 @@ export function registerAiAgentRoutes(app: express.Express, ql: QuanLyLuotChay =
       sessionId: b.sessionId,
       ngonNgu: b.ngonNgu,
       chonModel: b.chonModel,
+      xacNhanVanHanh: b.xacNhanVanHanh,
       req: reqChoAudit(req),
     });
     if (!kq.ok) {
@@ -102,6 +103,9 @@ export function registerAiAgentRoutes(app: express.Express, ql: QuanLyLuotChay =
         code: kq.ma,
         ...(kq.runId ? { runId: kq.runId } : {}),
         ...(kq.thongDiep ? { message: kq.thongDiep } : {}),
+        // (Đợt 10.4b L3, u1) lỗi ngoài trước SSE: mức (428) / trần bị vượt (429) — đúng hình `LoiTruocSse`
+        ...(kq.muc ? { muc: kq.muc } : {}),
+        ...(kq.tranVuot ? { tranVuot: kq.tranVuot } : {}),
       });
       return;
     }

@@ -8,7 +8,7 @@
  * ★★★ RỖNG KHI CHƯA CÓ MỤC NHỚ NÀO — cùng bất biến "vá xong kiểm nhánh kia" mà Task H2 đã đặt cho
  * MCP: một workspace MỚI (chưa ai bảo AI nhớ gì) ⇒ `dungVanBanDayBoNho([])` trả CHUỖI RỖNG, và
  * `dungYeuCauStream` (`yeuCau.ts`) không chèn thêm một ký tự nào vào `question` — hành vi của MỌI
- * người dùng chưa từng dùng "AI Local: Nhớ điều này" giữ NGUYÊN VẸN. Mục nhớ ĐẦU TIÊN luôn tới qua
+ * người dùng chưa từng dùng "Thợ Cả: Nhớ điều này" giữ NGUYÊN VẸN. Mục nhớ ĐẦU TIÊN luôn tới qua
  * lệnh người dùng chủ động gọi (nhánh B5 thứ nhất — "người dùng bảo nhớ"), không qua văn bản này;
  * chỉ SAU KHI đã có ít nhất một mục, model mới được cho biết nó CÓ THỂ đề xuất thêm.
  *

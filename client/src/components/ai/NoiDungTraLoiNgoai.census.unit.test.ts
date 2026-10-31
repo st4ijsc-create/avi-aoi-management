@@ -30,3 +30,14 @@ describe("census — NoiDungTraLoiNgoai", () => {
     for (const i of imports) expect(["react", "react-markdown", "react-i18next", "sonner", "@shared/ai/kiemDinhNgoai"].includes(i), `import lạ: ${i}`).toBe(true);
   });
 });
+
+// Bề mặt hiển thị câu trả lời model ngoài PHẢI dùng bộ render này (thêm bề mặt mới ⇒ thêm vào danh sách + đột biến: bỏ import ⇒ đỏ).
+describe("census — bề mặt dùng NoiDungTraLoiNgoai", () => {
+  for (const tep of ["client/src/pages/AIChatPage.tsx"]) {
+    it(tep, () => {
+      const ma = bo(readFileSync(join(GOC, tep), "utf8"));
+      expect(ma.includes('from "@/components/ai/NoiDungTraLoiNgoai"'), "thiếu import bộ render an toàn").toBe(true);
+      expect(/<NoiDungTraLoiNgoai\b/.test(ma), "không dùng <NoiDungTraLoiNgoai>").toBe(true);
+    });
+  }
+});

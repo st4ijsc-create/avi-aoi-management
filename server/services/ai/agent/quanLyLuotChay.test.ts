@@ -334,7 +334,7 @@ describe("§6 — thân thủ tục tRPC aiAgent.{danhSach, chiTiet, hoanTac}: q
     expect(ds.runs.map((r) => r.id)).toContain(kq.luot.id);
     const ct = await thuTucChiTiet(NGUOI(), kq.luot.id, ql);
     expect(ct.ok).toBe(true);
-    expect(ct.run?.suKien.map((m) => m.suKien.loai)).toEqual(["bat-dau", "chu", "usage", "xong"]);
+    expect(ct.run?.suKien.map((m) => m.suKien.loai)).toEqual(["bat-dau", "chu", "usage", "buoc-do", "xong"]);
     // admin KHÁC (đủ quyền) vẫn không thấy lượt của người khác — CÙNG mã với "không tồn tại"
     const admin2 = await createLocalUser({ username: `t4-e2e-a2-${Date.now()}`, passwordHash: "x", name: "A2", role: "admin" });
     try {

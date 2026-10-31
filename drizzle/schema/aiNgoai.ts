@@ -23,6 +23,31 @@ export const aiNgoaiNhaMay = pgTable("ai_ngoai_nha_may", {
   tranLanPhut: integer("tranLanPhut").notNull().default(20),
   capNhatBoi: integer("capNhatBoi"),
   capNhatLuc: tz("capNhatLuc").notNull().defaultNow(),
+  /** ★ 10.4b L0a' (0418) — trần TỔNG CHI PHÍ mỗi run; NULL ⇒ 1/4 `tranTienNgayUsd`. */
+  tranTienLuotUsd: numeric("tranTienLuotUsd", { precision: 12, scale: 4 }),
+  /** ★ 0418 — số lần gọi ngoài tối đa mỗi run. */
+  tranVongLuot: integer("tranVongLuot").notNull().default(20),
+  /** ★ 0418 — tổng byte KẾT QUẢ TOOL gửi ra ngoài mỗi run. */
+  tranByteDocLuot: integer("tranByteDocLuot").notNull().default(262144),
+  /** ★ 0418 — số tệp đọc gửi ra ngoài mỗi run. */
+  tranTepDocLuot: integer("tranTepDocLuot").notNull().default(50),
+});
+
+/** ★ 10.4b L0a' (0418) — cờ "model ngoài được dùng tool GHI/CHẠY": bảng RIÊNG, `avi_app` CHỈ ĐỌC (không thủ tục / UI nào bật); vắng hàng ⇒ false. */
+export const aiNgoaiCongCuGhi = pgTable("ai_ngoai_cong_cu_ghi", {
+  factoryId: integer("factoryId").primaryKey().references(() => factories.id, { onDelete: "cascade" }),
+  choPhep: boolean("choPhep").notNull().default(false),
+  ghiChu: varchar("ghiChu", { length: 200 }),
+  capNhatLuc: tz("capNhatLuc").notNull().defaultNow(),
+});
+
+/** ★ 10.4b L0a' (0418) — MỘT lượt ngoài đang bay mỗi người (TTL; giữ = INSERT … ON CONFLICT … WHERE hết hạn; thả = DELETE đúng token). */
+export const aiNgoaiDangBay = pgTable("ai_ngoai_dang_bay", {
+  userId: integer("userId").primaryKey(),
+  factoryId: integer("factoryId").notNull(),
+  token: varchar("token", { length: 64 }).notNull(),
+  batDau: tz("batDau").notNull().defaultNow(),
+  hetHan: tz("hetHan").notNull(),
 });
 
 export const aiNgoaiModel = pgTable(
@@ -81,6 +106,8 @@ export const aiExternalCalls = pgTable("ai_external_calls", {
   ketCuc: varchar("ketCuc", { length: 12 }),
   maLoi: varchar("maLoi", { length: 48 }),
   taoLuc: tz("taoLuc").notNull().defaultNow(),
+  /** ★ 10.4b L0a' (0417) — sha256 nội dung TRẢ VỀ (hàng `ket-qua`) — đối chiếu dấu nguồn tin chat do client lưu. */
+  bamTraLoi: char("bamTraLoi", { length: 64 }),
 });
 
 /** Nội dung ĐÃ CHE (chỉ khi nhà máy bật `luuNguyenVan`), xoá khi hết hạn. */
@@ -100,6 +127,8 @@ export const aiNgoaiDem = pgTable(
     khoa: varchar("khoa", { length: 80 }).notNull(),
     tokenGiu: bigint("tokenGiu", { mode: "number" }).notNull().default(0),
     tienGiuUsd: numeric("tienGiuUsd", { precision: 14, scale: 6 }).notNull().default("0"),
+    /** ★ 10.4b L0a' (0418) — số lần gọi đã giữ chỗ (khoá `luot:<runId>` ⇒ trần số vòng mỗi run). */
+    soLan: integer("soLan").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.factoryId, t.ngay, t.khoa] })],
 );

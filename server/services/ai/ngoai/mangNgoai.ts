@@ -9,6 +9,7 @@
  * Lỗi trước khi kết nối được (URL, DNS, TLS, từ chối kết nối) ⇒ `chuaGui` (cổng hoàn chỗ); lỗi sau đó ⇒ `thuLai` (cổng thử lại).
  */
 import { fetchGhim, kiemDichDen, docThanCoTran } from "../../flow/nut/mangAnToan";
+import { docRetryAfter } from "./nhaCungCap/chung";
 import { LoiNgoai } from "./loi";
 import type { MangNgoai } from "./nhaCungCap/kieu";
 import { kiemEndpointLuu, laLinkLocalHoacMetadata } from "./urlNgoai";
@@ -30,9 +31,17 @@ const LOI_CHUA_KET_NOI = new Set([
 ]);
 
 /** Lưới: thay phần GỬI (sau mọi kiểm URL / DNS) bằng máy chủ giả trong tiến trình. */
-let fetchChoTest: ((url: string, init: { method: "POST"; headers: Record<string, string>; body: string }) => Promise<{ status: number; json: unknown }>) | null = null;
+let fetchChoTest: ((url: string, init: { method: "POST"; headers: Record<string, string>; body: string }) => Promise<{ status: number; json: unknown; retryAfterMs?: number }>) | null = null;
 export function datFetchNgoaiChoTest(f: typeof fetchChoTest): void {
   fetchChoTest = f;
+}
+
+/** (H3.1) lỗi fetch là HẾT GIỜ (`AbortSignal.timeout` ⇒ TimeoutError, undici headers/body timeout) — tách khỏi đứt kết nối (TRANSPORT). Thuần. */
+export function laLoiHetGioMang(e: unknown): boolean {
+  const x = e as { name?: unknown; code?: unknown; cause?: { name?: unknown; code?: unknown } } | null;
+  const ten = [x?.name, x?.cause?.name];
+  const ma = [x?.code, x?.cause?.code].map((v) => String(v ?? ""));
+  return ten.includes("TimeoutError") || ma.some((m) => m === "UND_ERR_HEADERS_TIMEOUT" || m === "UND_ERR_BODY_TIMEOUT" || m === "UND_ERR_CONNECT_TIMEOUT");
 }
 
 export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): MangNgoai {
@@ -58,8 +67,10 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
         r = await fetchGhim(u, { method: init.method, headers: init.headers, body: init.body, signal: AbortSignal.timeout(HAN_GOI_MS) }, dich);
       } catch (e) {
         const code = String((e as { code?: unknown }).code ?? "");
-        if (LOI_CHUA_KET_NOI.has(code)) throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `ket-noi: ${code}`, { chuaGui: true });
-        throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `mang: ${code || "loi"}`, { thuLai: true });
+        if (LOI_CHUA_KET_NOI.has(code)) throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `ket-noi: ${code}`, { chuaGui: true, phanLoai: "TRANSPORT" });
+        // (H3.1) hết hạn `HAN_GOI_MS` (AbortSignal.timeout ⇒ TimeoutError) tách khỏi đứt kết nối — cả hai thử lại được
+        const hetGio = laLoiHetGioMang(e);
+        throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `mang: ${hetGio ? "het-gio" : code || "loi"}`, { thuLai: true, phanLoai: hetGio ? "TIMEOUT" : "TRANSPORT" });
       }
       if (r.status >= 300 && r.status < 400) {
         await r.body?.cancel().catch(() => undefined);
@@ -77,7 +88,8 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
       } catch {
         json = { raw: than.slice(0, 500) };
       }
-      return { status: r.status, json };
+      const cho = r.status === 429 || r.status === 503 ? docRetryAfter(r.headers.get("retry-after")) : undefined;
+      return { status: r.status, json, ...(cho !== undefined ? { retryAfterMs: cho } : {}) };
     },
   };
 }

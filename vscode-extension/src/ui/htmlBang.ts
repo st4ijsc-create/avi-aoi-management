@@ -88,9 +88,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
   .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
   .nhan { opacity: .7; font-size: 11px; text-transform: uppercase; }
-  /* 2026-10-24 — NHÃN VAI của một lượt hội thoại (khác .nhan dùng cho nhãn thẻ): 12 px ĐẬM, không in hoa, không mờ, kèm chữ cái đầu trong vòng tròn — "Bạn" / "AI Local" không còn là thứ
+  /* 2026-10-24 — NHÃN VAI của một lượt hội thoại (khác .nhan dùng cho nhãn thẻ): 12 px ĐẬM, không in hoa, không mờ, kèm chữ cái đầu trong vòng tròn — "Bạn" / "Thợ Cả" không còn là thứ
      nhỏ và xám nhất trên màn hình. Chữ cái là CSS thuần (::before) nên cấu trúc DOM của lượt (nhãn + nội dung) không đổi. */
   .luot > .nhan { display: flex; align-items: center; gap: 6px; opacity: 1; font-size: 12px; font-weight: 600; text-transform: none; margin-bottom: 2px; }
+  /* Đợt 10.4b-E — huy hiệu NGUỒN của lượt do model NGOÀI sinh (chữ thuần, không bấm được). */
+  .huy-hieu-nguon { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; opacity: .9; }
   .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
                           background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   .luot-nguoi-dung > .nhan::before { content: "B"; }
@@ -296,7 +298,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      trong #o-nhap không bị mất khi trạng thái đăng nhập đổi (B4, xem xử lý tin trang_thai_dang_nhap). -->
 <div id="vung-tai-khoan">
   <span class="ten">AI LOCAL</span>
-  <span id="ma-build" title="Bản AI Local đang chạy (phiên bản+commit). Báo mã này khi báo lỗi; -dirty = build từ cây chưa commit."${maBuild ? "" : " hidden"}>${maBuild}</span>
+  <span id="ma-build" title="Bản Thợ Cả đang chạy (phiên bản+commit). Báo mã này khi báo lỗi; -dirty = build từ cây chưa commit."${maBuild ? "" : " hidden"}>${maBuild}</span>
   <!-- ★★★ ĐỢT G / TASK G3 / B4 — Ô CHỌN MỨC QUYỀN (chế độ tự trị). ⚠⚠⚠ ĐÂY LÀ MỘT CỔNG THÊM,
        KHÔNG PHẢI HÀNG RÀO: webview CHỈ báo Ý ĐỊNH đổi mức (\`dat_muc_quyen\`) và HIỂN THỊ mức đang áp
        (\`muc_quyen\`, do extension gửi lại sau khi tự kiểm bằng \`laMucQuyenHopLe\`) — đúng nguyên tắc
@@ -370,7 +372,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      thuộc tính selected: lưới G3/B4 đòi đúng MỘT thuộc tính chọn sẵn trong cả markup, dành cho mức quyền an toàn). "Chat cũ" giữ
      đường hỏi-đáp cũ qua máy chủ. Tự động chỉ bỏ bước duyệt khi mức quyền là "Tự ghi" (extension kiểm, không phải ô này). -->
 <div id="vung-agent">
-  <button id="nut-token" class="nut-phu" hidden title="Lấy token cổng /v1 bằng trình duyệt (device flow)">Đăng nhập AI Local</button>
+  <button id="nut-token" class="nut-phu" hidden title="Lấy token cổng /v1 bằng trình duyệt (device flow)">Đăng nhập Thợ Cả</button>
   <button id="nut-hoan-tac" class="nut-phu" hidden>Hoàn tác lượt chạy</button>
 </div>
 <button id="pill-moi" type="button" hidden>↓ Tin mới</button>
@@ -386,7 +388,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   </div>
   <!-- Chip đính kèm (tên · kích thước · ảnh thu nhỏ) nằm TRONG hộp soạn, phía trên ô nhập. -->
   <div id="ds-dinh-kem" hidden></div>
-  <textarea id="o-nhap" rows="1" placeholder="Hỏi AI Local… (Enter gửi, @ chèn tệp)"></textarea>
+  <textarea id="o-nhap" rows="1" placeholder="Hỏi Thợ Cả… (Enter gửi, @ chèn tệp)"></textarea>
   <div class="soan-thanh">
     <button id="nut-dinh-kem" class="nut-icon" aria-haspopup="menu" aria-expanded="false" title="Đính kèm: tệp trong dự án, tệp hoặc ảnh từ máy. Cũng có thể dán ảnh (Ctrl+V) hoặc kéo tệp vào khung." aria-label="Đính kèm tệp hoặc ảnh để gửi kèm câu hỏi">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true" focusable="false">
@@ -454,7 +456,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
    * B1 (không phình đầu khung): nút chỉ xuất hiện ĐÚNG lúc cần (đang có lỗi mạng), biến mất theo
    * đúng vòng đời của bong bóng đó, không chiếm chỗ vĩnh viễn.
    */
-  const NHAN_THEO_VAI = { nguoi_dung: "Bạn", ai: "AI Local", he_thong: "Hệ thống" };
+  const NHAN_THEO_VAI = { nguoi_dung: "Bạn", ai: "Thợ Cả", he_thong: "Hệ thống" };
   // ★★★ ĐỢT I / TASK I-5a — hướng dẫn lần đầu mở chỉ có Ý NGHĨA khi khung THẬT SỰ chưa có lượt nào.
   // Ẩn Ở ĐÂY (điểm DUY NHẤT mọi bong bóng thật đi qua — kể cả lượt đầu do người dùng gõ VÀ lượt đầu
   // của một hội thoại vừa khôi phục) thay vì rải rác nhiều nơi tự đoán "đây có phải lần đầu không".
@@ -536,6 +538,19 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     rongLanDau = d;
   }
   if (rongLanDau) dungNoiDungRong(rongLanDau);
+  // Đợt 10.4b-E — gắn/cập nhật huy hiệu nguồn (model ngoài) lên nhãn của lượt chứa khối nội dung khung. Chỉ textContent.
+  function datHuyHieuNguon(khung, chu) {
+    const luot = khung && khung.parentElement;
+    if (!luot) return;
+    let h = luot.querySelector(".huy-hieu-nguon");
+    if (!h) {
+      h = document.createElement("span");
+      h.className = "huy-hieu-nguon";
+      h.setAttribute("data-nguon", "ngoai");
+      (luot.querySelector(".nhan") || luot).appendChild(h);
+    }
+    h.textContent = String(chu || "").slice(0, 160);
+  }
   function themLuot(vai, chu, moSettings, nhanTuyChon) {
     anRongLanDau();
     const d = document.createElement("div");
@@ -1413,7 +1428,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     }
     if (m.loai === "ag_phan_hoi_kq") {
       const p = agPhanHoi[m.luotId];
-      if (p) p.trangThai.textContent = m.ok ? "Đã ghi phản hồi." : "Chưa gửi được phản hồi (chi tiết ở Output › AI Local — Phản hồi).";
+      if (p) p.trangThai.textContent = m.ok ? "Đã ghi phản hồi." : "Chưa gửi được phản hồi (chi tiết ở Output › Thợ Cả — Phản hồi).";
       return;
     }
     if (m.loai === "ag_loi") {
@@ -1422,7 +1437,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       if (m.ma !== "DANG_CHAY" && m.ma !== "KHONG_WORKSPACE") themNutThuLai(c);
       if (m.ma === "IMAGE_KHONG_HO_TRO") themNutGuiLaiKhongAnh(c);
       if (MA_CAN_TOKEN[m.ma]) {
-        const b = taoPhan("button", "nut-mo-settings", "Đăng nhập AI Local (device flow)");
+        const b = taoPhan("button", "nut-mo-settings", "Đăng nhập Thợ Cả (device flow)");
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_dang_nhap_thiet_bi" }));
         c.appendChild(b);
         nutToken.hidden = false;
@@ -1628,11 +1643,15 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     else if (m.loai === "loi") {
       xoaChiBaoChoAi();
       const c = themLuot("he_thong", m.thongDiep, m.moSettings === true, "Lỗi");
-      if (m.moSettings === true) c.appendChild(taoPhan("div", "loi-goi-y", "Kiểm tra máy chủ AI Local đang chạy, rồi bấm Thử lại."));
+      if (m.moSettings === true) c.appendChild(taoPhan("div", "loi-goi-y", "Kiểm tra máy chủ Thợ Cả đang chạy, rồi bấm Thử lại."));
       themNutThuLai(c);
       nutDung.hidden = true;
     }
+    else if (m.loai === "nguon_ngoai") {
+      if (khoiTraLoi) datHuyHieuNguon(khoiTraLoi, m.huyHieu);
+    }
     else if (m.loai === "hoan_tat") {
+      if (m.huyHieu && khoiTraLoi) datHuyHieuNguon(khoiTraLoi, m.huyHieu);
       // ★★★ ĐỢT I / TASK I-1b — NHÁNH KIA: XONG lẫn DỪNG đều đi qua \`hoan_tat\` (xem docblock
       // \`bangChat.ts\`) — chỉ báo phải biến mất ở CẢ HAI, không chỉ đường "xong bình thường". Xoá
       // TRƯỚC khi (có thể) ghi \`vanBanCuoi\` — cùng lý do với nhánh "token" ở trên.
@@ -1846,6 +1865,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
         const khung = themLuot(l.vaiTro === "user" ? "nguoi_dung" : "ai", l.noiDung);
         // trả lời của AI trong lịch sử cũng dựng markdown (host gửi kèm cây); khối mã chưa đăng ký chỉ số ⇒ không hiện nút hành động
         if (l.vaiTro !== "user" && Array.isArray(l.cay)) veLaiKhoiMd(khung, l.cay, 0, true);
+        if (l.huyHieu) datHuyHieuNguon(khung, l.huyHieu);
       }
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).

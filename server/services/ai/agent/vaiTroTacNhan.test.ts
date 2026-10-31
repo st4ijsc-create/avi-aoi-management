@@ -178,6 +178,15 @@ describe("(iii) gating aiGateway — MỘT planInference, đổi lỗi ra mã", 
 });
 
 describe("boDemLuotModel", () => {
+  it("(Đợt 12 H0.1) báo cacheN/promptN của usage (mig 0445: cacheTokens/promptEvalTokens)", async () => {
+    const goc: GoiModel = async function* (): AsyncGenerator<ManhModel> {
+      yield { loai: "xong", toolCalls: [], usage: { vao: 14, ra: 3, cacheN: 12, promptN: 2 } };
+    };
+    const bao: Array<Record<string, unknown>> = [];
+    for await (const _ of boDemLuotModel(goc, (l) => bao.push(l), () => 0)({ tinNhan: [], congCu: [], signal: new AbortController().signal })) void _;
+    expect(bao).toEqual([{ vao: 14, ra: 3, nghi: null, ms: 0, cacheN: 12, promptN: 2 }]);
+  });
+
   it("báo MỖI lượt có `xong` (usage + ms), chuyển nguyên mảnh; lượt ném ⇒ không báo; bộ báo ném ⇒ lượt vẫn chạy", async () => {
     let t = 0;
     const goc: GoiModel = async function* (): AsyncGenerator<ManhModel> {
@@ -192,7 +201,7 @@ describe("boDemLuotModel", () => {
     const manh: ManhModel[] = [];
     for await (const m of g(vao)) manh.push(m);
     expect(manh.map((m) => m.loai)).toEqual(["chu", "xong"]);
-    expect(bao).toEqual([{ vao: 10, ra: 3, nghi: 1, ms: 350 }]);
+    expect(bao).toEqual([{ vao: 10, ra: 3, nghi: 1, ms: 350, cacheN: null, promptN: null }]);
 
     const hong: GoiModel = async function* (): AsyncGenerator<ManhModel> {
       yield { loai: "chu", noiDung: "a" };

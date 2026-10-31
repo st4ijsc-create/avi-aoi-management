@@ -73,7 +73,7 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
   const [maTotp, setMaTotp] = useState(""); // kiem-dinh P1-2 — mã TOTP 6 số mỗi lần lưu
 
   const tagQ = trpc.scadaKenh.danhSach.useQuery({ adapterId: adapterId ?? 0 }, { enabled: adapterId !== null });
-  const tags = ((tagQ.data ?? []) as Array<{ tagKey: string; dataType: string; isEnabled: boolean }>).filter((x) => x.isEnabled);
+  const tags = ((tagQ.data ?? []) as Array<{ tagKey: string; dataType: string; isEnabled: boolean; canhBaoNguon?: CanhBaoNguon }>).filter((x) => x.isEnabled);
   const tag = tags.find((x) => x.tagKey === tagKey) ?? null;
   const ep = tag ? epGiaTriRemote(tag.dataType, gia) : ({ ok: false } as const);
 
@@ -90,10 +90,11 @@ function HopDatKenhCheDo({ may, adapters, onDong }: { may: HangCheDo; adapters: 
     },
   });
 
-  // Cảnh báo nguồn: kênh đang chọn trùng kênh hiện có (máy chủ đã tính cờ) HOẶC adapter đang chọn do edge sở hữu.
+  // Cảnh báo nguồn (C3): tag ĐANG CHỌN dùng cảnh báo của CHÍNH nó (máy chủ tính từng tag, cùng luật `canhBaoCua`) — hiện TRƯỚC khi lưu;
+  // chưa chọn tag nào / tag sạch ⇒ giữ luật cũ: kênh trùng kênh hiện có (cờ của máy) HOẶC adapter đang chọn do edge sở hữu.
   const dangChon = cuaMay.find((a) => a.adapterId === adapterId) ?? null;
   const trungKenhHienCo = !!may.kenh && may.kenh.adapterId === adapterId && may.kenh.tagKey === tagKey;
-  const canhBao: CanhBaoNguon = trungKenhHienCo && may.canhBaoNguon ? may.canhBaoNguon : dangChon?.edge ? "edge" : null;
+  const canhBao: CanhBaoNguon = tag?.canhBaoNguon ?? (trungKenhHienCo && may.canhBaoNguon ? may.canhBaoNguon : dangChon?.edge ? "edge" : null);
 
   const lyDoDu = lyDoDuDai(lyDo);
   const dangGui = datKenh.isPending;

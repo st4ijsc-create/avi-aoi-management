@@ -60,7 +60,7 @@ export async function moDongSse(dv: {
     } catch {
       than = null;
     }
-    throw new LoiHttp(res.status, moTaLoiHttp(res.status, than));
+    throw new LoiHttp(res.status, moTaLoiHttp(res.status, than), than);
   }
   if (!res.body) throw new Error("Máy chủ không trả luồng dữ liệu.");
   return docLuongSse(res.body, dv.nhan);

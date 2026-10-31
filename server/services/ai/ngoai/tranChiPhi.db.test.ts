@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
-import { chotTranLuot, RA_TOI_THIEU_KIEM_DINH, raToiThieuCho, datTruoc, docConLaiNgay, donDemCu, xemTranNgay, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
+import { chotTranLuot, RA_TOI_THIEU_KIEM_DINH, raToiThieuCho, tranTienLuotHieuLuc, datTruoc, docConLaiNgay, donDemCu, xemTranNgay, huyGiuChuaGui, ketToan, ngayUtc7, uocTokenVao, type DbDem, type TranNhaMay, type YeuCauGiuCho } from "./tranChiPhi";
 import { LoiNgoai } from "./loi";
 
 const NM = () => 900_000_000 + Math.floor(Math.random() * 99_000_000);
@@ -41,6 +41,39 @@ afterEach(async () => {
     await d.execute(sql`DELETE FROM ai_ngoai_dem_phut WHERE "factoryId" = ${f}`);
   }
   daDung.clear();
+});
+
+describe("★ 10.4b L0a' (D10-i) — trần MỖI RUN: số vòng + tổng chi phí, giữ chỗ nguyên tử cộng dồn", () => {
+  const soLan = async (f: number, khoa: string) =>
+    Number(hang(await (await db()).execute(sql`SELECT "soLan"::int AS n FROM ai_ngoai_dem WHERE "factoryId" = ${f} AND khoa = ${khoa}`))[0]?.n ?? 0);
+  it("tranVongLuot 2: lần 1, 2 ⇒ ok (soLan 2); lần 3 ⇒ NGOAI_VUOT_TRAN 'luot', không tăng; hoàn chỗ chưa gửi ⇒ soLan giảm ⇒ lần sau được", async () => {
+    const f = nm();
+    const tran = { ...TRAN, tranTokenNgay: null, tranVongLuot: 2 };
+    const p1 = await datTruoc(await db(), yc(f, 10, { runId: "r1" }), tran);
+    await datTruoc(await db(), yc(f, 10, { runId: "r1" }), tran);
+    expect(await soLan(f, "luot:r1")).toBe(2);
+    const e = await datTruoc(await db(), yc(f, 10, { runId: "r1" }), tran).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(LoiNgoai);
+    expect((e as LoiNgoai).ma).toBe("NGOAI_VUOT_TRAN");
+    expect((e as LoiNgoai).chiTiet).toBe("luot");
+    expect(await soLan(f, "luot:r1")).toBe(2);
+    await huyGiuChuaGui(await db(), p1);
+    expect(await soLan(f, "luot:r1")).toBe(1);
+    await datTruoc(await db(), yc(f, 10, { runId: "r1" }), tran);
+    // run KHÁC có bộ đếm riêng
+    await datTruoc(await db(), yc(f, 10, { runId: "r2" }), tran);
+    expect(await soLan(f, "luot:r2")).toBe(1);
+  });
+  it("tranTienLuotUsd vắng ⇒ 1/4 trần tiền ngày; đặt riêng ⇒ dùng số riêng; ngày null + run null ⇒ không trần tiền/run", async () => {
+    expect(tranTienLuotHieuLuc({ ...TRAN, tranTienNgayUsd: 2 })).toBe(0.5);
+    expect(tranTienLuotHieuLuc({ ...TRAN, tranTienNgayUsd: 2, tranTienLuotUsd: 1.2 })).toBe(1.2);
+    expect(tranTienLuotHieuLuc({ ...TRAN, tranTienNgayUsd: null })).toBeNull();
+    const f = nm();
+    const tran = { ...TRAN, tranTokenNgay: null, tranTienNgayUsd: 2 };
+    await datTruoc(await db(), yc(f, 10, { runId: "r1", tienUocUsd: 0.3 }), tran);
+    expect(await maLoi(datTruoc(await db(), yc(f, 10, { runId: "r1", tienUocUsd: 0.3 }), tran))).toBe("NGOAI_VUOT_TRAN"); // 0,6 > 0,5
+    await datTruoc(await db(), yc(f, 10, { runId: "r2", tienUocUsd: 0.3 }), tran); // run khác vẫn được
+  });
 });
 
 describe("datTruoc — trần nguyên tử", () => {

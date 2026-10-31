@@ -56,6 +56,7 @@ async function foeSchemaGuard({ ctx, next }: { ctx: unknown; next: Function }) {
 }
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import { summarizeRunDispatch } from "../../shared/provenance";
+import { chiTietKyThuatCua, cheHangRun, cheRunView } from "./_chiTietKyThuat"; // C2 fix 4 — lỗi bước / run (văn bản driver) chỉ cho kỹ sư canEdit
 import {
   deployWorkflow,
   rollbackWorkflow,
@@ -314,7 +315,10 @@ export const orchestrationRouter = router({
         if (list) list.push(s.resultJson);
         else byRun.set(s.runId, [s.resultJson]);
       }
-      return runs.map((r) => ({ ...r, dispatch: summarizeRunDispatch(byRun.get(r.id) ?? []) }));
+      // SCADA R1b-2b-2b A — C2 fix 4 (điều phối 2026-11-01): `error` / `contextJson` của run có thể mang văn bản driver (host:port) ⇒ người không được xem
+      // chi tiết kỹ thuật nhận MÃ (`cheHangRun`, cùng `maLoiCua` của C1). `dispatch` chỉ là tóm tắt suy ra (simulated / sent) — không đổi.
+      const xemChiTiet = runs.length > 0 ? await chiTietKyThuatCua(ctx) : false;
+      return runs.map((r) => ({ ...cheHangRun(r, xemChiTiet), dispatch: summarizeRunDispatch(byRun.get(r.id) ?? []) }));
     }),
 
   /**
@@ -352,7 +356,9 @@ export const orchestrationRouter = router({
       if (!view) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       }
-      return view;
+      // SCADA R1b-2b-2b A — C2 fix 4 (điều phối 2026-11-01): steps[*].error / result.detail / run.error có thể mang văn bản driver (host:port) ⇒ chỉ kỹ sư
+      // canEdit thấy nguyên văn; người khác nhận MÃ (`cheRunView` — một bộ che cho tRPC + REST).
+      return cheRunView(view, await chiTietKyThuatCua(ctx));
     }),
 
   /** Start a run of a deployed workflow (by ref). Flag-gated. */

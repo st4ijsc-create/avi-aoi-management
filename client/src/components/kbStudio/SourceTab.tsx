@@ -171,7 +171,7 @@ function IngestGuidanceCard({
           {moHuongDan
             ? t(
                 "kbStudio.source.guidance.subtitle",
-                "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+                "Bốn bước để tự đưa tài liệu vào Thợ Cả — làm đúng thứ tự, hệ thống lo phần còn lại.",
               )
             : t(
                 "kbStudio.source.guidance.subtitleCollapsed",

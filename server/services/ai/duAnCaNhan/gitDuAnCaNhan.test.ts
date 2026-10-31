@@ -168,6 +168,8 @@ describe("§4 — git init + commit đầu", () => {
     expect(git(["status", "--porcelain"], d)).toBe("");
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], d)).toBe("main");
     expect(git(["log", "-1", "--format=%s"], d)).toBe("Khởi tạo dự án: Dự án thử");
+    // tên hiển thị "Thợ Cả" (2026-10-27) — tác giả commit đúng dấu tiếng Việt; email (định danh) giữ nguyên
+    expect(git(["log", "-1", "--format=%an <%ae>"], d)).toBe("Thợ Cả <ai-local@localhost>");
   });
 
   it("★★ dự án RỖNG ⇒ vẫn có commit đầu (--allow-empty) — checkpoint/hoàn tác cần một HEAD", async () => {

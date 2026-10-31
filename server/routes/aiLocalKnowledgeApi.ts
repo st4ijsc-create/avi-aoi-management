@@ -655,6 +655,14 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const history = parseHistory(req.body?.history);
     if (tuChoiQuaDaiKb(res, question, history)) return;
     const userRole = parseUserRole(req.body?.userRole);
+    // ★ Đợt 10.4b L1 — `chonModel = "ngoai:…"` ⇒ nhánh RIÊNG (`kbNgoai.ts`): bộ dựng `ghepPhan`, 428 xác nhận vận hành, một khối bọc SSE.
+    //   Đọc `context` THÔ (conversationId / xacNhanVanHanh / nguCanh) — nhánh cục bộ phía dưới không đổi một byte.
+    const ctxTho = req.body?.context && typeof req.body.context === "object" ? (req.body.context as Record<string, unknown>) : {};
+    if (typeof ctxTho.chonModel === "string" && ctxTho.chonModel.startsWith("ngoai:")) {
+      const { xuLyKbNgoai } = await import("./kbNgoai");
+      await xuLyKbNgoai(req, res, { user: { id: Number((user as { id: number }).id), role: (user as { role?: string }).role ?? null }, question, history, topK, chonModel: ctxTho.chonModel, context: ctxTho });
+      return;
+    }
     // ★ Đợt 10.1 — `chonModel` lạ ⇒ 400/404 TRƯỚC khi mở SSE.
     const chon = await apChonModelKb(parseContext(req.body?.context));
     if (!chon.ok) {

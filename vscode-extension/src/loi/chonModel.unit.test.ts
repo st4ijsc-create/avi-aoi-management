@@ -39,15 +39,15 @@ describe("chuanHoaDanhMuc", () => {
   });
 });
 
-describe("★ 10.4 T0 — mục ngoai trong ô extension chỉ khi máy chủ khai phục vụ CẢ chat lẫn agent", () => {
+describe("★ 10.4b-E — mục ngoai trong ô extension khi máy chủ khai phục vụ chat (agent KHÔNG cần: model ngoài chỉ Hỏi)", () => {
   const e = (duocDungO?: string[]) => ({ ma: "ngoai:openai_compat:gpt-x", loai: "ngoai", nhan: "X", moTa: "", trangThai: "san-sang", ...(duocDungO ? { duocDungO } : {}) });
-  it("thiếu / rỗng / chỉ một đường / chỉ luong+kiem-dinh ⇒ BỎ; đủ chat+agent ⇒ giữ", () => {
-    for (const du of [undefined, [], ["chat"], ["agent"], ["luong", "kiem-dinh"], ["coding"]]) expect(chuanHoaDanhMuc([e(du)]).map((m) => m.ma), JSON.stringify(du)).toEqual(["auto"]);
-    expect(chuanHoaDanhMuc([e(["chat", "agent", "coding"])]).map((m) => m.ma)).toEqual(["auto", "ngoai:openai_compat:gpt-x"]);
+  it("thiếu / rỗng / không có chat (agent, luong, kiem-dinh, coding) ⇒ BỎ; có chat ⇒ giữ (khớp BE_MAT_NGOAI_DUOC_DUNG thật của máy chủ)", () => {
+    for (const du of [undefined, [], ["agent"], ["luong", "kiem-dinh"], ["coding"]]) expect(chuanHoaDanhMuc([e(du)]).map((m) => m.ma), JSON.stringify(du)).toEqual(["auto"]);
+    for (const du of [["chat"], ["chat", "agent", "coding"], ["luong", "kiem-dinh", "chat", "coding"]]) expect(chuanHoaDanhMuc([e(du)]).map((m) => m.ma), JSON.stringify(du)).toEqual(["auto", "ngoai:openai_compat:gpt-x"]);
   });
   it("hàm vị từ", () => {
-    expect(duocDungOExtension(["chat", "agent"])).toBe(true);
-    expect(duocDungOExtension(["chat"])).toBe(false);
+    expect(duocDungOExtension(["chat"])).toBe(true);
+    expect(duocDungOExtension(["agent"])).toBe(false);
     expect(duocDungOExtension(undefined)).toBe(false);
   });
 });

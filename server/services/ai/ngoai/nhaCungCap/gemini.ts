@@ -32,7 +32,7 @@ export const gemini: NhaCungCapAi = {
       ...(yc.congCu?.length ? { tools: [{ functionDeclarations: yc.congCu.map((c) => ({ name: c.ten, description: c.moTa, parameters: schemaGemini(c.schema) })) }] } : {}),
     };
     const r = await mang.goiJson(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": await layKhoa() }, body: JSON.stringify(body) });
-    if (r.status >= 400) throw loiHttp(r.status, r.json);
+    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs);
     const j = r.json as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name?: unknown; args?: unknown } }> } }>; usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown } };
     const parts = j?.candidates?.[0]?.content?.parts ?? [];
     return {

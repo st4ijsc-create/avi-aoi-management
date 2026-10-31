@@ -204,7 +204,7 @@ describe("GoiModel /v1 — lỗi HTTP có thông điệp rõ", () => {
     const f = (async () => dapLoi(401, { error: { message: "API token expired.", code: "token_expired" } })) as unknown as typeof fetch;
     const p = gom(taoGoiModelV1({ serverUrl: "http://m", layToken: async () => "avgw_x", fetch: f, khi401: () => void bao++ })(vaoMau()));
     await expect(p).rejects.toMatchObject({ ma: "TOKEN_401", tamThoi: false });
-    await expect(p).rejects.toThrow(/Đăng nhập AI Local \(device flow\)/);
+    await expect(p).rejects.toThrow(/Đăng nhập Thợ Cả \(device flow\)/);
     expect(bao).toBe(1);
   });
   it("★★ 403 thiếu phạm vi ⇒ nói thiếu 'chat'", async () => {

@@ -15,7 +15,7 @@ import { viTriHopLe, congTramGhi } from "./_cauHinhPhamVi";
 // doc 42 Đợt 4B (H2 — "Gán máy vào trạm") — bảng nối workstation ↔ machine
 // (migration 0244). Định nghĩa tại đây (không thuộc lãnh thổ schema chung của Đợt 4B)
 // để router truy vấn drizzle type-safe; DDL nằm trong drizzle/0244_workstation_machines.sql.
-const workstationMachines = pgTable("workstation_machines", {
+export const workstationMachines = pgTable("workstation_machines", {
   id: serial("id").primaryKey(),
   workstationId: integer("workstationId").notNull(),
   machineId: integer("machineId").notNull(),

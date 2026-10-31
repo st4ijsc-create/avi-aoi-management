@@ -4435,6 +4435,13 @@ async function startServer() {
       } catch (err) {
         console.error("[SCADA] kiểm cấu hình lệnh HMI lỗi:", (err as Error)?.message || err);
       }
+      // Kiểm schema CHUNG (Drizzle ⊆ information_schema, CHỈ ĐỌC, một lần): thiếu cột ⇒ log ERROR tên bảng.cột + /readyz schema:"thieu-cot". Nền, không chặn.
+      void import("../db/kiemSchemaChung")
+        .then(async (m) => {
+          const d = await (await import("../db/connection")).getDb().catch(() => null);
+          await m.kiemSchemaChungKhiKhoiDong({ chay: d ? async (q) => (await d.execute(q)) as unknown as Array<Record<string, unknown>> : null });
+        })
+        .catch((err) => console.error("[Schema] kiểm schema chung lỗi:", (err as Error)?.message || err));
       // SCADA R1b-1 rà soát cuối I-1 — luật interlock ĐANG BẬT mà lệnh bảo vệ sẽ bị dispatch từ chối (T13: lệch lưới thô của tag int có
       // scale/offset) ⇒ khối lỗi MỘT lần (cũng đếm ở posture). KHÔNG chờ, không chặn khởi động; tự bắt mọi lỗi.
       void import("../services/scada/lenhInterlockLechLuoi")

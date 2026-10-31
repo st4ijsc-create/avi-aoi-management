@@ -17,6 +17,8 @@
  */
 import * as vscode from "vscode";
 import { modelChoAgent } from "../loi/chonModel";
+import { tinhTokPerS } from "../loi/thanhAgent";
+import { baoChoDuyet, baoThanhAgent } from "./thanhAgent";
 import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import {
@@ -78,7 +80,7 @@ export interface PhuThuocPhienAgent {
   chayLenh?: typeof chayLenhCucBoThat;
   /** (Đợt 5.1) gửi phiếu — mặc định `guiPhanHoiAgent` (REST Bearer). */
   guiPhanHoi?: (serverUrl: string, token: string, p: PhieuPhanHoi) => Promise<KetQuaGuiPhanHoi>;
-  /** (Đợt 5.1) một dòng nhật ký — mặc định kênh Output "AI Local — Phản hồi" (tạo lười). */
+  /** (Đợt 5.1) một dòng nhật ký — mặc định kênh Output "Thợ Cả — Phản hồi" (tạo lười). */
   ghiNhatKy?: (dong: string) => void;
 }
 
@@ -88,10 +90,10 @@ const SO_LUOT_CHO_PHAN_HOI = 20;
 let kenhPhanHoi: vscode.OutputChannel | undefined;
 function nhatKyMacDinh(dong: string): void {
   try {
-    kenhPhanHoi ??= vscode.window.createOutputChannel("AI Local — Phản hồi");
+    kenhPhanHoi ??= vscode.window.createOutputChannel("Thợ Cả — Phản hồi");
     kenhPhanHoi.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${dong}`);
   } catch {
-    console.warn("[AI Local] phản hồi:", dong);
+    console.warn("[Thợ Cả] phản hồi:", dong);
   }
 }
 
@@ -138,6 +140,8 @@ export class PhienAgent {
   private lichSu: TinNhan[] = [];
   private huy: AbortController | undefined;
   private soCuoi: SoCheckpoint | undefined;
+  /** (Đợt 11.4) mốc bắt đầu lượt gọi model gần nhất — để đo tok/s hiệu dụng cho thanh trạng thái. */
+  private batDauGoiMs = Date.now();
   private readonly choDuyet = new Map<string, (qd: QuyetDinhDuyet) => void>();
   private readonly yeuCauDuyet = new Map<string, YeuCauDuyet>();
   /** ★ 2026-10-24 — người dùng đã bấm "Duyệt & tự duyệt các lần sửa tiếp trong lượt này": hết hiệu lực khi lượt kết thúc/bị dừng. */
@@ -315,18 +319,20 @@ export class PhienAgent {
       if (!daBaoXong) this.pt.gui({ loai: "ag_xong", lyDo: "khong-chay", coHoanTac: !!this.soCuoi && !this.soCuoi.rong });
       for (const id of [...this.choDuyet.keys()]) this.quyet(id, { duyet: false, lyDo: "the run ended" });
       this.dangChay = false;
+      baoThanhAgent({ dangChay: false });
       this.duyetHetLuot = false;
       if (this.huy === ac) this.huy = undefined;
     }
   }
 
   private goiModelCoDongHo(anh: DinhKemNgoai[] = [], soTinNhanLichSu = 0): GoiModel {
+    const maModel = modelChoAgent(this.pt.chonModel?.(), this.cfg().get<string>("agentModel", "chat"));
     const ch: CauHinhGoiModelV1 = {
       anhLuotNay: anh.map((a) => ({ kieu: a.kieu, noiDung: a.noiDung })),
       soTinNhanLichSu,
       serverUrl: this.serverUrl(),
       layToken: async () => this.pt.context.secrets.get(KHOA_TOKEN_GATEWAY),
-      model: modelChoAgent(this.pt.chonModel?.(), this.cfg().get<string>("agentModel", "chat")),
+      model: maModel,
       maxTokens: this.cfg().get<number>("agentMaxTokens", TRAN_TOKEN_MOT_LUOT_MAC_DINH),
       khi401: () => this.pt.gui({ loai: "ag_token", coToken: false, hong: true }),
     };
@@ -335,6 +341,8 @@ export class PhienAgent {
       // Đồng hồ ƯỚC LƯỢNG (khai rõ) TRƯỚC mỗi lượt gọi; máy chủ có `stream_options.include_usage` (126de672b) thì lõi phát
       // sự kiện `usage` THẬT sau lượt ⇒ `ag_usage` với `uocLuong:false` ghi đè số ước lượng (`xuLySuKien`).
       const uoc = uocLuongTinNhan(vao.tinNhan) + uocLuongTokenMacDinh(JSON.stringify(vao.congCu));
+      this.batDauGoiMs = Date.now();
+      baoThanhAgent({ model: maModel, ctxPhanTram: Math.round((uoc * 100) / GIOI_HAN_MAC_DINH.nganSachNguCanhToken), uocLuong: true, dangChay: true });
       this.pt.gui({
         loai: "ag_usage",
         vao: uoc,
@@ -376,6 +384,7 @@ export class PhienAgent {
         this.pt.gui({ loai: "ag_checkpoint", soTep: e.tep.length });
         break;
       case "usage":
+        baoThanhAgent({ ctxPhanTram: e.ctxPhanTram, uocLuong: false, tokPerS: tinhTokPerS(e.ra, Date.now() - this.batDauGoiMs) });
         this.pt.gui({ loai: "ag_usage", vao: e.vao, ra: e.ra, ctxPhanTram: e.ctxPhanTram, uocLuong: false });
         break;
       case "dang-cho-model":
@@ -480,6 +489,7 @@ export class PhienAgent {
     }
     return new Promise<QuyetDinhDuyet>((res) => {
       this.choDuyet.set(yc.id, res);
+      baoChoDuyet(this, this.choDuyet.size);
       this.yeuCauDuyet.set(yc.id, yc);
       this.pt.gui({
         loai: "ag_the_duyet",
@@ -511,6 +521,7 @@ export class PhienAgent {
     const res = this.choDuyet.get(id);
     if (!res) return;
     this.choDuyet.delete(id);
+    baoChoDuyet(this, this.choDuyet.size);
     this.yeuCauDuyet.delete(id);
     this.pt.khoDeXuat.quen(`ag-${id}`);
     this.pt.gui({ loai: "ag_an_the_duyet", id, ketQua: qd.duyet ? "duyet" : "bac" });
@@ -526,7 +537,7 @@ export class PhienAgent {
       original: yc.goc ?? "",
       modified: yc.moi ?? "",
     });
-    await vscode.commands.executeCommand("vscode.diff", cu, moi, `AI Local — ${yc.tomTat} (đề xuất, chưa ghi)`);
+    await vscode.commands.executeCommand("vscode.diff", cu, moi, `Thợ Cả — ${yc.tomTat} (đề xuất, chưa ghi)`);
   }
 
   // ─── HOÀN TÁC / NHỚ ──────────────────────────────────────────────────────────────────────────

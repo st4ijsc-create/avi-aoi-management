@@ -123,7 +123,7 @@ export function coGitAnToan(thuMucKhongHook: string): string[] {
     "-c", "protocol.ext.allow=never",
     "-c", "submodule.recurse=false",
     "-c", "commit.gpgsign=false",
-    "-c", "user.name=AI Local",
+    "-c", "user.name=Thợ Cả",
     "-c", "user.email=ai-local@localhost",
   ];
 }

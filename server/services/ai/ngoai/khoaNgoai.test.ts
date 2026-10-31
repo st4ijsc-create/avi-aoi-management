@@ -35,6 +35,7 @@ import { TU_DIEN_RONG } from "./cheDuLieu";
 import { taoNhaCungCapGia } from "./nhaCungCap/gia";
 import { LoiNgoai } from "./loi";
 import { ghepPhan } from "./ghepPhan";
+import { taoNguoiDungTest } from "../../../testing/nguoiDungTest";
 
 const TIN_X = ghepPhan([{ vaiTro: "user", phan: [{ loai: "cau-go-lap-trinh", noiDung: "x" }] }]).tinNhan;
 
@@ -119,7 +120,9 @@ describe("khoaKhongLo — khoá không xuất hiện ở bất kỳ đường ra
       };
       // lượt 1: thành công (nhà cung cấp nhận khoá qua thunk); lượt 2: lỗi NHẮC LẠI khoá + khoá trong cause/stack
       const gia = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
-      const ngu = { userId: 7, flowId: null, runId: null, tuDong: false, nhaMayNguoiGoi: null, nhaMayChuDuLieu: [B], nguonMuc: { loai: "be-mat" as const, beMat: "chat" as const, phanDaGhep: [] } };
+      // ★ 10.4b L0a' — người gọi THẬT (khoá lượt bay có FK tới users)
+      const nguoi = await taoNguoiDungTest("knu", "user");
+      const ngu = { userId: nguoi.id, flowId: null, runId: null, tuDong: false, nhaMayNguoiGoi: null, nhaMayChuDuLieu: [B], nguonMuc: { loai: "be-mat" as const, beMat: "chat" as const, phanDaGhep: [] } };
       ra.push(await goiAiNgoai({ dich: { nhaCungCap: "anthropic", model: "m" }, tinNhan: TIN_X, maxTokens: 10, mucDich: "t", ngu }, dep));
       expect(gia.nhan[0]!.khoa).toBe(KHOA);
       const giaLoi = {

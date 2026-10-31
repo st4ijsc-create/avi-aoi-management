@@ -233,6 +233,14 @@ export const KHUON_TEN_CAM_NGOAI: readonly RegExp[] = [
   /^docker-compose.*\.ya?ml$/i,
   /\.local\./i,
   /\.prod\./i,
+  // ★ L0a-b (rà kiem-dinh) — tên gợi bí mật lọt qua danh sách trắng .json / .txt / .ini
+  /(^|[._-])keys?([._-]|$)/i,
+  /service.?account/i,
+  /admin.?sdk/i,
+  /private/i,
+  /api.?key/i,
+  /vault/i,
+  /wallet/i,
 ];
 
 /** Đuôi cấm cho AI ngoài: dữ liệu / bản dump / sao lưu / nhật ký (`.sql` có trong danh sách trắng CƠ SỞ — ở đây bị gỡ). */
@@ -331,27 +339,53 @@ export function phanQuyetThuMucNgoai(input: unknown, goc?: string): MaTuChoiNgoa
   return phanQuyetDoan(c.doan, false);
 }
 
-/**
- * Phán quyết có CHẠM ĐĨA qua `realpath` do người gọi TIÊM (máy chủ: `fs.promises.realpath`; extension host: `vscode.workspace.fs`
- * hoặc `fs`): đường dẫn phải qua phép thuần VÀ đường dẫn THẬT (sau symlink / junction) phải còn trong gốc thật và cũng qua phép thuần —
- * `src/cauhinh.ts` là symlink tới `../.env` ⇒ bị chặn ở lần phán thứ hai. Lỗi realpath (không tồn tại, không quyền) ⇒ PATH_REJECTED.
- */
-export async function phanQuyetTepNgoaiThuc(
-  input: unknown,
-  o: { goc: string; realpath: (p: string) => Promise<string> },
-): Promise<MaTuChoiNgoai | null> {
-  const ma = phanQuyetTepNgoai(input, o.goc);
-  if (ma) return ma;
+export interface ChamDia {
+  /** Thư mục workspace (gốc). */
+  goc: string;
+  /** `realpath` do người gọi TIÊM (máy chủ: `fs.promises.realpath`; extension host: `fs.promises.realpath`). */
+  realpath: (p: string) => Promise<string>;
+}
+
+/** Kết quả phán có chạm đĩa: được ⇒ `duongThuc` = đường dẫn ĐÃ GIẢI (sau symlink / junction) mà tool PHẢI mở — không mở lại đường gốc. */
+export type KetQuaGiai = { ok: true; duongThuc: string } | { ok: false; ma: MaTuChoiNgoai };
+
+async function giaiNgoai(input: unknown, o: ChamDia, laTep: boolean): Promise<KetQuaGiai> {
+  const phan = laTep ? phanQuyetTepNgoai : phanQuyetThuMucNgoai;
+  const ma = phan(input, o.goc);
+  if (ma) return { ok: false, ma };
   // realpath nhận đường dẫn GIỮ NGUYÊN hoa-thường (hệ tệp phân biệt hoa-thường) — đã qua phép thuần nên không còn `..`/ADS/8.3
   const tho = String(input).trim();
   const goc = o.goc.replace(/[\\/]+$/, "");
-  const duong = laTuyetDoi(tho.replace(/\\/g, "/")) || /^[\\/]{2}[?.][\\/]/.test(tho) ? tho : `${goc}/${tho}`;
+  const duong = laTuyetDoi(tho.replace(/\\/g, "/")) || /^[\\/]{2}[?.][\\/]/.test(tho) ? tho : tho === "" || tho === "." ? goc : `${goc}/${tho}`;
   try {
     const [thuc, gocThuc] = await Promise.all([o.realpath(duong), o.realpath(goc)]);
-    return phanQuyetTepNgoai(thuc, gocThuc);
+    const ma2 = phan(thuc, gocThuc);
+    return ma2 ? { ok: false, ma: ma2 } : { ok: true, duongThuc: thuc };
   } catch {
-    return MA_TU_CHOI_NGOAI.PATH_REJECTED;
+    return { ok: false, ma: MA_TU_CHOI_NGOAI.PATH_REJECTED };
   }
+}
+
+/**
+ * Phán quyết TỆP có CHẠM ĐĨA: đường dẫn phải qua phép thuần VÀ đường dẫn THẬT (sau symlink / junction) phải còn trong gốc thật và cũng
+ * qua phép thuần — `src/cauhinh.ts` là symlink tới `../.env` ⇒ bị chặn ở lần phán thứ hai. Lỗi realpath ⇒ PATH_REJECTED.
+ * ★ L0a-b (rà kiem-dinh, TOCTOU) — trả `duongThuc`: tool ĐỌC ĐÚNG đường đã giải (đổi symlink sau lúc phán không đổi được tệp bị đọc).
+ *   Giới hạn đã khai: một THƯ MỤC trung gian bị thay bằng symlink giữa lúc giải và lúc mở vẫn là cửa sổ đua — người gọi nên mở với cờ
+ *   không theo symlink khi hệ điều hành có (máy chủ: `readConfined` của hộp cát kiểm `nlink`/fd); module thuần không đóng được cửa này.
+ */
+export function giaiTepNgoai(input: unknown, o: ChamDia): Promise<KetQuaGiai> {
+  return giaiNgoai(input, o, true);
+}
+
+/** ★ L0a-b — như `giaiTepNgoai` cho THƯ MỤC (liệt kê / gốc tìm đệ quy): symlink thư mục trỏ ra ngoài gốc hoặc vào thư mục cấm ⇒ chặn. */
+export function giaiThuMucNgoai(input: unknown, o: ChamDia): Promise<KetQuaGiai> {
+  return giaiNgoai(input, o, false);
+}
+
+/** Dạng rút gọn của `giaiTepNgoai`: chỉ mã (`null` = được). */
+export async function phanQuyetTepNgoaiThuc(input: unknown, o: ChamDia): Promise<MaTuChoiNgoai | null> {
+  const r = await giaiTepNgoai(input, o);
+  return r.ok ? null : r.ma;
 }
 
 /**
@@ -360,6 +394,16 @@ export async function phanQuyetTepNgoaiThuc(
  */
 export function locKetQuaTimNgoai<T>(ds: readonly T[], layDuong: (t: T) => string, goc?: string): { giu: T[]; soBoDi: number } {
   const giu = ds.filter((t) => phanQuyetTepNgoai(layDuong(t), goc) === null);
+  return { giu, soBoDi: ds.length - giu.length };
+}
+
+/**
+ * ★ L0a-b — như `locKetQuaTimNgoai` nhưng giải `realpath` TỪNG mục: tìm đệ quy đi qua symlink thư mục (`src/lien-ket → ../uploads`) ⇒
+ * mục có đường THẬT bị cấm / ra ngoài gốc bị bỏ dù đường hiển thị trông vô hại.
+ */
+export async function locKetQuaTimNgoaiThuc<T>(ds: readonly T[], layDuong: (t: T) => string, o: ChamDia): Promise<{ giu: T[]; soBoDi: number }> {
+  const ok = await Promise.all(ds.map(async (t) => (await giaiTepNgoai(layDuong(t), o)).ok));
+  const giu = ds.filter((_, i) => ok[i]);
   return { giu, soBoDi: ds.length - giu.length };
 }
 

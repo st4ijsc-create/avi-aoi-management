@@ -169,7 +169,7 @@ export async function chuanBiLuotChayTheoVaiTro(
  */
 export function boDemLuotModel(
   goc: GoiModel,
-  baoLuot: (l: { vao: number | null; ra: number | null; nghi: number | null; ms: number }) => void,
+  baoLuot: (l: { vao: number | null; ra: number | null; nghi: number | null; ms: number; cacheN: number | null; promptN: number | null }) => void,
   dongHo: () => number = Date.now,
 ): GoiModel {
   return (vao) =>
@@ -178,7 +178,15 @@ export function boDemLuotModel(
       for await (const m of goc(vao)) {
         if (m.loai === "xong") {
           try {
-            baoLuot({ vao: m.usage?.vao ?? null, ra: m.usage?.ra ?? null, nghi: m.usage?.nghi ?? null, ms: dongHo() - t0 });
+            baoLuot({
+              vao: m.usage?.vao ?? null,
+              ra: m.usage?.ra ?? null,
+              nghi: m.usage?.nghi ?? null,
+              ms: dongHo() - t0,
+              // (Đợt 12 H0.1) mig 0445 — tái dùng prefix-cache / xử lý lại; vắng ⇒ null (cột NULL).
+              cacheN: m.usage?.cacheN ?? null,
+              promptN: m.usage?.promptN ?? null,
+            });
           } catch {
             /* đo lường không bao giờ làm hỏng lượt chạy */
           }

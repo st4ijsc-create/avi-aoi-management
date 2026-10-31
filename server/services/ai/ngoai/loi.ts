@@ -28,20 +28,35 @@ export type MaLoiNgoai =
   /** ★ 10.4b L0a — `tinNhan` không do bộ dựng `ghepPhan` tạo (lỗi LẬP TRÌNH phía máy chủ — không bao giờ do người dùng). */
   | "NGOAI_KHONG_QUA_BO_GHEP";
 
+/**
+ * ★ Đợt 12 H3.1 — loại lỗi của NHÀ CUNG CẤP (ổn định, không phụ thuộc chữ thông điệp) — quyết định thử lại và cho UI nói đúng:
+ *   QUOTA (hết hạn mức / tín dụng — KHÔNG thử lại: thử lại chỉ giữ chỗ ngân sách lần nữa) · RATE_LIMIT (tạm — thử lại sau `Retry-After`) ·
+ *   EMPTY_RESPONSE · TIMEOUT · TRANSPORT (đứt sau khi đã kết nối) · CONTEXT_WINDOW_EXCEEDED (KHÔNG thử lại — cùng yêu cầu sẽ lại tràn) ·
+ *   AUTH (khoá sai / bị thu hồi — không thử lại) · SERVER (5xx / quá tải) · CLIENT (4xx khác — không thử lại).
+ */
+export const PHAN_LOAI_LOI_NGOAI = ["QUOTA", "RATE_LIMIT", "EMPTY_RESPONSE", "TIMEOUT", "TRANSPORT", "CONTEXT_WINDOW_EXCEEDED", "AUTH", "SERVER", "CLIENT"] as const;
+export type PhanLoaiLoiNgoai = (typeof PHAN_LOAI_LOI_NGOAI)[number];
+
 export class LoiNgoai extends Error {
   /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
   readonly chuaGui: boolean;
   /** Lỗi tạm (429 / 5xx / mạng) ⇒ cổng được thử lại (mỗi lần thử giữ chỗ lại). */
   readonly thuLai: boolean;
+  /** (H3.1) loại lỗi nhà cung cấp — vắng với lỗi của chính cổng (trần, mức, sổ…). */
+  readonly phanLoai?: PhanLoaiLoiNgoai;
+  /** (H3.1) nhà cung cấp xin chờ (`Retry-After`, ms) trước lần thử sau. */
+  readonly choMs?: number;
   constructor(
     readonly ma: MaLoiNgoai,
     readonly chiTiet?: string,
-    co: { chuaGui?: boolean; thuLai?: boolean } = {},
+    co: { chuaGui?: boolean; thuLai?: boolean; phanLoai?: PhanLoaiLoiNgoai; choMs?: number } = {},
   ) {
     super(chiTiet ? `${ma}: ${chiTiet}` : ma);
     this.name = "LoiNgoai";
     this.chuaGui = co.chuaGui === true;
     this.thuLai = co.thuLai === true;
+    if (co.phanLoai) this.phanLoai = co.phanLoai;
+    if (typeof co.choMs === "number" && Number.isFinite(co.choMs) && co.choMs >= 0) this.choMs = Math.trunc(co.choMs);
   }
 }
 

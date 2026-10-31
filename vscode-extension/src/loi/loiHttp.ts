@@ -1,5 +1,5 @@
 /**
- * Diễn giải một đáp ứng HTTP không-ok từ máy chủ AI Local. THUẦN: nhận (status, thân đã thử phân
+ * Diễn giải một đáp ứng HTTP không-ok từ máy chủ Thợ Cả. THUẦN: nhận (status, thân đã thử phân
  * giải JSON hoặc `null`) — không đụng mạng, đo được không cần server thật.
  *
  * ⚠ 401 và 403 KHÔNG PHẢI CÙNG MỘT CHUYỆN, dù cả hai đều "không cho vào". Máy chủ phân biệt rành
@@ -16,6 +16,8 @@ export class LoiHttp extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Thân JSON đã thử phân giải của đáp ứng lỗi (đường model ngoài đọc `code` ở đây); `null` khi vắng/không phải JSON. */
+    public readonly thanLoi: unknown = null,
   ) {
     super(message);
     this.name = "LoiHttp";

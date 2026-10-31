@@ -19,10 +19,14 @@ import {
   type TuyChonLuong,
 } from "@/lib/agentApi";
 import { mapTrpcError } from "@/lib/trpcErrors";
+import { daXacNhanVanHanh, tachMaNgoai } from "@/lib/dongYNgoai";
+import { LoiSinhChuNgoai, thongDiepLoiNgoai } from "@/lib/loiNgoai";
 import {
   TRANG_THAI_RONG,
   batDauGui,
   capNhatDeXuatNho,
+  capNhatKeHoachDuyet,
+  dongBoKeHoachMayChu,
   giamSuKien,
   idHanhDong,
   vanBanTraLoiCuoi,
@@ -38,12 +42,18 @@ export interface DauVaoHookAgent {
   ngonNgu?: NgonNgu;
   /** ★ Đợt 10.2 — model người dùng chọn cho lượt agent (auto/vắng ⇒ không gửi). */
   chonModel?: string;
+  /**
+   * ★ Đợt 10.4b L4 — hỏi người dùng MỘT lần khi máy chủ trả 428 `CAN_XAC_NHAN_VAN_HANH` cho lượt model ngoài (`useXacNhanNgoai().hoiVanHanh`);
+   * đồng ý ⇒ gửi lại ĐÚNG MỘT lần với `xacNhanVanHanh: true`; từ chối / thiếu hàm ⇒ KHÔNG gửi lại. Không bao giờ tự đồng ý.
+   */
+  hoiVanHanh?: (convKey: string, ma: string) => Promise<boolean>;
   /** Gọi khi tập tệp đã đổi lớn thêm (hoặc sau hoàn tác) — trang làm mới cây/tab. */
   onTepDaDoi?: (tep: string[]) => void;
 }
 
 export type TheDuyetMuc = Extract<MucDongThoiGian, { kieu: "duyet" }>;
 export type TheNhoMuc = Extract<MucDongThoiGian, { kieu: "nho" }>;
+export type TheKeHoachMuc = Extract<MucDongThoiGian, { kieu: "ke-hoach-duyet" }>;
 
 export interface HookAgent {
   trangThai: TrangThaiAgent;
@@ -56,7 +66,8 @@ export interface HookAgent {
   ketQuaHoanTac: KetQuaHoanTac | null;
   /** Lượt chạy còn sống của người dùng tìm thấy khi vào trang (dang-chay | cho-duyet). */
   luotDangChayCu: TomTatLuotChay | null;
-  gui: (cauHoi: string, cheDo: Exclude<CheDoAgent, "hoi">) => Promise<void>;
+  /** `cheDo: "hoi"` CHỈ cho model ngoài (L4). Trả `"tu-choi"` khi người dùng từ chối hộp xác nhận vận hành — trang trả câu về ô nhập. */
+  gui: (cauHoi: string, cheDo: CheDoAgent) => Promise<void | "tu-choi">;
   dung: () => Promise<void>;
   noiLai: (runId?: string) => Promise<void>;
   duyet: (m: TheDuyetMuc, chonKhoi?: number[]) => Promise<void>;
@@ -64,10 +75,17 @@ export interface HookAgent {
   hoanTac: () => Promise<void>;
   /** (Đợt 2) "Nhớ" / "Bỏ qua" một đề xuất nhớ — thẻ đổi theo kết quả THẬT của máy chủ (không lạc quan). */
   quyetDeXuatNho: (m: TheNhoMuc, nho: boolean) => Promise<void>;
+  /** (Đợt 11.3-C) Duyệt / Bác kế hoạch — gửi đúng băm của thẻ đang hiển thị; thẻ đổi theo câu trả lời THẬT của máy chủ. */
+  quyetKeHoach: (m: TheKeHoachMuc, quyetDinh: "duyet" | "bac") => Promise<void>;
+  /** (Đợt 11.3-C) hỏi lại máy chủ trạng thái kế hoạch của lượt (mở lại trang / sau CONFLICT). Lỗi ⇒ im lặng, thẻ giữ nguyên. */
+  lamMoiKeHoach: () => Promise<void>;
   datLai: () => void;
 }
 
-export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: DauVaoHookAgent): HookAgent {
+/** Câu hiển thị của một lỗi luồng: lỗi ngoài có kiểu ⇒ khoá i18n theo `code` (KHÔNG `err.message`); còn lại đường cũ. */
+const thongDiepLoiLuong = (e: unknown): string => (e instanceof LoiSinhChuNgoai ? thongDiepLoiNgoai(e.code, e.tranVuot) : mapTrpcError(e));
+
+export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel, hoiVanHanh }: DauVaoHookAgent): HookAgent {
   const sRef = useRef<TrangThaiAgent>(TRANG_THAI_RONG);
   const [trangThai, setTrangThai] = useState<TrangThaiAgent>(TRANG_THAI_RONG);
   const [matKetNoi, setMatKetNoi] = useState<string | null>(null);
@@ -81,6 +99,8 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
   const soTepDaBaoRef = useRef(0);
   const onTepRef = useRef(onTepDaDoi);
   onTepRef.current = onTepDaDoi;
+  const hoiVanHanhRef = useRef(hoiVanHanh);
+  hoiVanHanhRef.current = hoiVanHanh;
 
   const datTrangThai = useCallback((s: TrangThaiAgent) => {
     sRef.current = s;
@@ -99,7 +119,7 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
 
   /** Đọc một luồng; luồng đóng mà lượt chưa `xong` (và không phải ta tự ngắt) ⇒ báo mất kết nối. */
   const docLuong = useCallback(
-    async (chay: (o: TuyChonLuong) => Promise<void>) => {
+    async (chay: (o: TuyChonLuong) => Promise<void>, nhanLoi?: (e: unknown) => boolean) => {
       docRef.current?.abort();
       const ac = new AbortController();
       docRef.current = ac;
@@ -109,7 +129,9 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
         if (!ac.signal.aborted && sRef.current.dangChay) setMatKetNoi("");
       } catch (e) {
         if (ac.signal.aborted) return;
-        setMatKetNoi(mapTrpcError(e));
+        // ★ L4 — lỗi mà người gọi TỰ xử (428 xác nhận vận hành): không đụng trạng thái, không báo mất kết nối.
+        if (nhanLoi?.(e)) return;
+        setMatKetNoi(thongDiepLoiLuong(e));
         // Chưa từng có `bat-dau` ⇒ không có gì để nối lại: kết thúc cục bộ, giữ câu hỏi + lỗi trên dòng thời gian.
         if (!sRef.current.runId) {
           datTrangThai({ ...sRef.current, dangChay: false, choDuyet: false });
@@ -128,11 +150,37 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
       setLoiThaoTac(null);
       setKetQuaHoanTac(null);
       soTepDaBaoRef.current = 0;
+      const truoc = sRef.current;
       datTrangThai(batDauGui(cau, cheDo));
       const lichSu = lichSuRef.current.slice(-TRAN_LICH_SU);
-      await docLuong((o) =>
-        moLuotChay({ cauHoi: cau, projectId, cheDo, ...(lichSu.length ? { lichSu } : {}), ...(ngonNgu ? { ngonNgu } : {}), ...(chonModel && chonModel !== "auto" ? { chonModel } : {}) }, o),
+      const laNgoai = !!chonModel && chonModel !== "auto" && tachMaNgoai(chonModel) !== null;
+      const khoaHoiThoai = `agent|${projectId}`;
+      const than = (xacNhan: boolean) => ({
+        cauHoi: cau,
+        projectId,
+        cheDo,
+        ...(lichSu.length ? { lichSu } : {}),
+        ...(ngonNgu ? { ngonNgu } : {}),
+        ...(chonModel && chonModel !== "auto" ? { chonModel } : {}),
+        ...(laNgoai && xacNhan ? { xacNhanVanHanh: true as const } : {}),
+      });
+      // (Cờ chỉ rời client khi `laNgoai`: chốt DUY NHẤT ở `than()`; `daXacNhanVanHanh` trả true cho model cục bộ nên KHÔNG được tin riêng.)
+      // Đã xác nhận trong hội thoại này (nhớ ở `dongYNgoai`) ⇒ gửi cờ ngay từ đầu; chưa ⇒ để MÁY CHỦ nói có cần (428) — máy chủ tính cả lịch sử phía nó (k3).
+      const lan = { can428: false };
+      await docLuong(
+        (o) => moLuotChay(than(!!chonModel && daXacNhanVanHanh(khoaHoiThoai, chonModel)), o),
+        (e) => (lan.can428 = laNgoai && e instanceof LoiSinhChuNgoai && e.canXacNhanVanHanh),
       );
+      if (lan.can428) {
+        const dongY = chonModel && hoiVanHanhRef.current ? await hoiVanHanhRef.current(khoaHoiThoai, chonModel) : false;
+        if (!dongY) {
+          datTrangThai(truoc);
+          return "tu-choi";
+        }
+        if (!sRef.current.dangChay) return; // người dùng bấm Dừng trong lúc hộp đang mở
+        // ĐÚNG MỘT lần gửi lại: không truyền `nhanLoi` ⇒ 428 lần hai hiện như mọi lỗi, không có vòng lặp.
+        await docLuong((o) => moLuotChay(than(true), o));
+      }
       const s = sRef.current;
       if (s.ketThuc) {
         const traLoi = vanBanTraLoiCuoi(s);
@@ -239,6 +287,50 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
     [datTrangThai],
   );
 
+  const lamMoiKeHoach = useCallback<HookAgent["lamMoiKeHoach"]>(async () => {
+    const runId = sRef.current.runId;
+    if (!runId) return;
+    try {
+      const kq = await agentTrpc.keHoachDangCho(runId);
+      if (kq.ok && runId === sRef.current.runId) datTrangThai(dongBoKeHoachMayChu(sRef.current, kq));
+    } catch {
+      /* mất mạng / thủ tục chưa có — thẻ giữ nguyên, người dùng vẫn bấm được (máy chủ so băm) */
+    }
+  }, [datTrangThai]);
+
+  const quyetKeHoach = useCallback<HookAgent["quyetKeHoach"]>(
+    async (m, quyetDinh) => {
+      const runId = sRef.current.runId;
+      if (!runId || m.trangThai !== "cho") return;
+      datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: "dang-gui" }));
+      try {
+        const kq = await agentTrpc.duyetKeHoach(runId, m.bam, quyetDinh);
+        if (kq.ok) {
+          // theo câu trả lời THẬT; thiếu quyết định ⇒ hỏi lại sổ (không tự đoán "đã duyệt")
+          const dich = kq.trangThai === "duyet" ? "da-duyet" : kq.trangThai === "bac" ? "bac" : kq.trangThai === "het-gio" ? "het-gio" : null;
+          if (dich) datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: dich, ...(kq.luc ? { luc: kq.luc } : {}) }));
+          else await lamMoiKeHoach();
+          return;
+        }
+        if (kq.ma === "CONFLICT") {
+          // băm lệch: kế hoạch đã đổi dưới tay người dùng ⇒ thẻ này hết đúng; nạp kế hoạch mới (nếu có)
+          datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: "da-doi" }));
+          await lamMoiKeHoach();
+          return;
+        }
+        if (kq.ma === "DA_QUYET") {
+          datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: "cho", maLoi: "DA_QUYET" }));
+          await lamMoiKeHoach();
+          return;
+        }
+        datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: "cho", maLoi: kq.ma ?? "LOI" }));
+      } catch (e) {
+        datTrangThai(capNhatKeHoachDuyet(sRef.current, m.bam, { trangThai: "cho", maLoi: mapTrpcError(e) }));
+      }
+    },
+    [datTrangThai, lamMoiKeHoach],
+  );
+
   const datLai = useCallback(() => {
     if (sRef.current.dangChay) return;
     soTepDaBaoRef.current = 0;
@@ -286,6 +378,8 @@ export function useLuotChayAgent({ projectId, ngonNgu, onTepDaDoi, chonModel }: 
     bac,
     hoanTac,
     quyetDeXuatNho,
+    quyetKeHoach,
+    lamMoiKeHoach,
     datLai,
   };
 }

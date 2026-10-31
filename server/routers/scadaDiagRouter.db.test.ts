@@ -249,8 +249,10 @@ describe("scadaDiag.danhSach — phạm vi nhà máy", () => {
     // mọi dòng (kể cả hàng của suite khác) phải thuộc máy của A — không dòng machineId null nào lọt
     for (const r of ds) expect(r.machineId).toBe(A.mid);
     const a = ds.find((r) => r.adapterId === ad.a)!;
-    expect(a).toMatchObject({ code: ma.a, protocol: "stub", endpoint: `stub://${ma.a}`, soHuu: { loai: "trung_tam" }, trangThai: "connected", pollMs: 500 });
+    // R1b-2b-2b A C2 (mục 6) — viewer dưới canEdit: endpoint che (null); kỹ sư canEdit thấy
+    expect(a).toMatchObject({ code: ma.a, protocol: "stub", endpoint: null, soHuu: { loai: "trung_tam" }, trangThai: "connected", pollMs: 500 });
     expect(a.tu).toEqual(expect.any(String));
+    expect((await dongCua(engA, ad.a))?.endpoint).toBe(`stub://${ma.a}`);
   });
 
   it("admin (phạm vi toàn quyền) thấy cả năm, gồm adapter KHÔNG gắn máy", async () => {
@@ -379,7 +381,10 @@ describe("scadaDiag.datLoiStub (Lab)", () => {
       expect(Date.now() - t0).toBeLessThanOrEqual(5_000);
       const r = (await dongCua(viewerA, ad.a))!;
       expect(r.soLanMat).toBeGreaterThanOrEqual(1);
-      expect(r.loi).toEqual(expect.any(String));
+      // R1b-2b-2b A C2 — viewer: văn bản lỗi che (null) + mã nhóm "mất kết nối"; kỹ sư canEdit: văn bản
+      expect(r.loi).toBeNull();
+      expect(r.maLoi).toBe("ADAPTER_OFFLINE");
+      expect((await dongCua(engA, ad.a))?.loi).toEqual(expect.any(String));
       await vi.waitFor(async () => expect((await dongCua(viewerA, ad.a))?.tag).toMatchObject({ xau: 2, tot: 0 }), { timeout: 5_000, interval: 100 });
       // adapter B không bị đụng
       expect((await dongCua(admin, ad.b))?.trangThai).toBe("connected");
@@ -518,20 +523,29 @@ describe("scadaDiag.tamTat", () => {
 });
 
 describe("scadaDiag.danhSach — T3B-0 fix 1 (I1): adapter MC tạm khoá GHI hiện mã trong cột 'Lỗi gần nhất'", () => {
-  it("hàng MC đang connected (RAM) mang OT_MC_TAM_KHOA trong `loi` — kể cả viewer dưới canEdit; không host/cổng; hàng stub không bị đụng", async () => {
+  it("hàng MC đang connected (RAM): kỹ sư thấy OT_MC_TAM_KHOA trong `loi`; viewer / operator dưới canEdit thấy khoá qua `tamKhoa` (C2 2.2, `loi` null); không host/cổng; hàng stub không bị đụng", async () => {
     const code = `${RUN}-mc`;
     const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
       VALUES (${A.mid}, ${code}, ${code}, 'mitsubishi-mc', '10.9.8.7:5007', 500, false, 'disabled') RETURNING id`);
     const id = Number(r.id);
     try {
       tt.baoTrangThaiAdapter({ adapterId: id, code, machineId: A.mid, protocol: "mitsubishi-mc", tags: [] } as never, "connected", null);
+      const khoa = { ma: "OT_MC_TAM_KHOA", lyDo: "errors.reason.otMcTamKhoa" };
       for (const c of [viewerA, operatorA, engA, admin]) {
         const h = (await dongCua(c, id))!;
         expect(h.trangThai).toBe("connected");
-        expect(h.loi, "viewer / dưới canEdit cũng phải thấy").toContain("OT_MC_TAM_KHOA");
-        expect(h.loi).not.toMatch(/10\.9\.8\.7|5007/);
+        expect(h.tamKhoa, "viewer / dưới canEdit cũng phải thấy (posture không bao giờ che)").toEqual(khoa);
+        expect(h.loi ?? "").not.toMatch(/10\.9\.8\.7|5007/);
       }
-      expect((await dongCua(viewerA, ad.a))?.loi ?? "").not.toContain("OT_MC_TAM_KHOA"); // adapter khác giao thức: không đổi
+      for (const c of [engA, admin]) expect((await dongCua(c, id))?.loi).toContain("OT_MC_TAM_KHOA");
+      for (const c of [viewerA, operatorA]) {
+        const h = (await dongCua(c, id))!;
+        expect(h.loi).toBeNull();
+        expect(h.endpoint).toBeNull();
+        expect(JSON.stringify(h)).not.toMatch(/10\.9\.8\.7/);
+      }
+      expect((await dongCua(viewerA, ad.a))?.tamKhoa).toBeNull(); // adapter khác giao thức: không đổi
+      expect((await dongCua(engA, ad.a))?.loi ?? "").not.toContain("OT_MC_TAM_KHOA");
     } finally {
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
     }
@@ -539,7 +553,7 @@ describe("scadaDiag.danhSach — T3B-0 fix 1 (I1): adapter MC tạm khoá GHI hi
 });
 
 describe("scadaDiag.danhSach — R1b-2b-2a T3C mục 5: adapter S7 có tag ĐÃ LƯU với bit ∉ 0..7 hiện mã trong cột 'Lỗi gần nhất'", () => {
-  it("hàng S7 (tag DB1,X0.9 lưu từ trước, đang tắt) ⇒ `loi` bắt đầu OT_S7_BIT_NGOAI_DAI + tagKey=địa chỉ, kể cả viewer; không host/cổng; sửa địa chỉ ⇒ hết", async () => {
+  it("hàng S7 (tag DB1,X0.9 lưu từ trước, đang tắt) ⇒ kỹ sư: `loi` bắt đầu OT_S7_BIT_NGOAI_DAI + tagKey=địa chỉ; viewer: `maLoi` mã đó (C2, `loi` null); không host/cổng; sửa địa chỉ ⇒ hết", async () => {
     const code = `${RUN}-s7`;
     const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
       VALUES (${A.mid}, ${code}, ${code}, 's7', '10.9.8.6:102', 500, false, 'disabled') RETURNING id`);
@@ -550,22 +564,30 @@ describe("scadaDiag.danhSach — R1b-2b-2a T3C mục 5: adapter S7 có tag ĐÃ 
       // fix 2 (N1) — mảng ĐỌC hợp lệ, chỉ-đọc: KHÔNG được cờ (kiểm cuối test: sửa stop xong ⇒ không còn OT_S7_ nào)
       await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${id}, 'ten', 'DB1,CHAR10.20', 'string', false)`);
       await dung(sql`INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", writable) VALUES (${id}, 'arr', 'DB1,INT2.5', 'json', false)`);
-      for (const c of [viewerA, engA, admin]) {
+      for (const c of [engA, admin]) {
         const h = (await dongCua(c, id))!;
-        expect(h.loi ?? "", "viewer / dưới canEdit cũng phải thấy").toMatch(
+        expect(h.loi ?? "").toMatch(
           /^OT_S7_BIT_NGOAI_DAI: 1 tag\(s\) have an S7 address the S7 library cannot use as configured \(stop=DB1,X0\.9 \[bit outside 0\.\.7\]\)/,
         );
         expect(h.loi).not.toMatch(/10\.9\.8\.6/);
+        expect(h.maLoi).toBe("OT_S7_BIT_NGOAI_DAI");
       }
-      expect((await dongCua(viewerA, ad.a))?.loi ?? "").not.toContain("OT_S7_BIT_NGOAI_DAI"); // adapter khác: không đổi
+      // R1b-2b-2b A C2 — viewer dưới canEdit: văn bản (tagKey=địa chỉ) che, MÃ "sai cấu hình" vẫn hiện
+      const hv = (await dongCua(viewerA, id))!;
+      expect(hv.loi).toBeNull();
+      expect(hv.maLoi, "viewer / dưới canEdit vẫn phải biết sai cấu hình").toBe("OT_S7_BIT_NGOAI_DAI");
+      expect(JSON.stringify(hv)).not.toMatch(/10\.9\.8\.6/);
+      expect((await dongCua(viewerA, ad.a))?.maLoi ?? "").not.toContain("OT_S7_BIT_NGOAI_DAI"); // adapter khác: không đổi
       // T3C fix 1 (I2) — tag STOP chỉ-ghi ở địa chỉ nodes7 không có ("MX0.1") cũng được đánh dấu, không im lặng tới lúc bấm STOP
       await dung(sql`UPDATE device_tags SET address = 'MX0.1' WHERE "adapterId" = ${id} AND "tagKey" = 'stop'`);
-      expect((await dongCua(viewerA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(stop=MX0\.1 \[not supported by nodes7 as given\]\)/);
+      expect((await dongCua(engA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(stop=MX0\.1 \[not supported by nodes7 as given\]\)/);
+      expect((await dongCua(viewerA, id))?.maLoi).toBe("OT_S7_DIA_CHI_THU_VIEN_BO");
       await dung(sql`UPDATE device_tags SET address = 'DB1,X1.1' WHERE "adapterId" = ${id} AND "tagKey" = 'stop'`);
-      expect((await dongCua(viewerA, id))?.loi ?? "").not.toMatch(/OT_S7_/);
+      expect((await dongCua(engA, id))?.loi ?? "").not.toMatch(/OT_S7_/);
+      expect((await dongCua(viewerA, id))?.maLoi).toBeNull();
       // cùng địa chỉ mảng trên tag GHI được ⇒ cờ, nhãn đúng phần hỏng ("reads work")
       await dung(sql`UPDATE device_tags SET writable = true WHERE "adapterId" = ${id} AND "tagKey" = 'ten'`);
-      expect((await dongCua(viewerA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(ten=DB1,CHAR10\.20 \[writable tag nodes7 cannot write as given; reads work\]\)/);
+      expect((await dongCua(engA, id))?.loi ?? "").toMatch(/^OT_S7_DIA_CHI_THU_VIEN_BO: 1 tag\(s\) .*\(ten=DB1,CHAR10\.20 \[writable tag nodes7 cannot write as given; reads work\]\)/);
     } finally {
       await dung(sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`);
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);
@@ -584,6 +606,7 @@ describe("scadaDiag.danhSach — T3B-0 polish (m13): adapter MC do EDGE phục v
         const h = (await dongCua(c, id))!;
         expect(h.soHuu.loai).toBe("edge");
         expect(h.loi ?? "").not.toContain("OT_MC_TAM_KHOA");
+        expect(h.tamKhoa).toBeNull(); // C2 2.2 — cùng luật cho huy hiệu
       }
     } finally {
       await dung(sql`DELETE FROM device_adapters WHERE id = ${id}`);

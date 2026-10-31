@@ -221,7 +221,7 @@ describe("thanh bên — ĐỢT F / TASK 3: view/title (Chat mới + Lịch sử
  *      dùng để `setContext`.
  *   7. `extension.ts` THẬT SỰ `registerWebviewViewProvider(...)` cho CẢ HAI view id (không chỉ
  *      view id activitybar cũ) — lệch ⇒ container hợp lệ mà VSCode báo lỗi "no view registered".
- *   8. hai biểu thức `when` của `viewsContainers` là PHỦ ĐỊNH CỦA NHAU — lệch ⇒ HAI icon AI Local
+ *   8. hai biểu thức `when` của `viewsContainers` là PHỦ ĐỊNH CỦA NHAU — lệch ⇒ HAI icon Thợ Cả
  *      cùng hiện (khi cả hai context cùng đúng) hoặc KHÔNG icon nào hiện (khi cả hai cùng sai).
  */
 describe("thanh bên — ĐỢT F / TASK 4: cặp vùng chứa (secondarySidebar CHÍNH + activitybar LÙI)", () => {

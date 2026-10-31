@@ -30,7 +30,7 @@ export class BoNhoQuanLy {
     this.kho = dungKhoWorkspaceState(context);
     this.panel = vscode.window.createWebviewPanel(
       "aviAiLocal.boNho",
-      "AI Local — Bộ nhớ dài hạn",
+      "Thợ Cả — Bộ nhớ dài hạn",
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -73,7 +73,7 @@ export class BoNhoQuanLy {
 }
 
 /**
- * ★★★ LỆNH "AI Local: Nhớ điều này" — nhánh B5 THỨ NHẤT (người dùng CHỦ ĐỘNG bảo nhớ). Độc lập với
+ * ★★★ LỆNH "Thợ Cả: Nhớ điều này" — nhánh B5 THỨ NHẤT (người dùng CHỦ ĐỘNG bảo nhớ). Độc lập với
  * bảng chat (không cần `BangChat` đang mở) — hỏi trực tiếp qua `showInputBox`, ghi qua ĐÚNG
  * `themMucBoNho` (che bí mật + cắt trần TRƯỚC khi ghi, xem `khoBoNho.ts`).
  *
@@ -83,11 +83,11 @@ export class BoNhoQuanLy {
  */
 export async function chayNhoDieuNay(context: vscode.ExtensionContext): Promise<void> {
   const noiDung = await vscode.window.showInputBox({
-    prompt: "AI Local sẽ nhớ điều gì? (quyết định kiến trúc, quy ước dự án, sở thích của bạn…)",
+    prompt: "Thợ Cả sẽ nhớ điều gì? (quyết định kiến trúc, quy ước dự án, sở thích của bạn…)",
     ignoreFocusOut: true,
   });
   if (!noiDung || noiDung.trim().length === 0) return;
 
   await themMucBoNho(dungKhoWorkspaceState(context), randomUUID(), noiDung, "nguoi_dung_bao_nho");
-  void vscode.window.showInformationMessage("AI Local: đã nhớ.");
+  void vscode.window.showInformationMessage("Thợ Cả: đã nhớ.");
 }

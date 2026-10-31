@@ -30,6 +30,24 @@ export const TRAN_KY_TU_TRA_LOI_CLIENT = 100_000;
 /** Trần lý do (cột `lyDo varchar(2000)`). */
 export const TRAN_KY_TU_LY_DO = 2_000;
 
+/**
+ * Các loại sự kiện LÊN dòng thời gian của client (mỗi cái thêm một mục không-phải-`chu`) ⇒ CẮT khối trả lời. MỘT hằng chung:
+ * `khoiTraLoiTuSuKien` dùng nó, và lưới chéo `client/.../phanHoiKhoi.unit.test.ts` đòi mọi loại làm reducer client thêm mục phải nằm ở đây
+ * (lỗi 2026-10-31: `canh-bao-du-lieu`/`ha-tu-tri`/`con-bat-dau` thiếu ở đây ⇒ client 2 khối / máy chủ 1 khối ⇒ 👍/👎 gắn sai văn bản).
+ * `ke-hoach-cho-duyet`: thẻ kế hoạch chờ duyệt (Đợt 11.3-C) — luong-ui thêm mục tương ứng ở reducer client.
+ */
+export const LOAI_CAT_KHOI_TRA_LOI: ReadonlySet<SuKienAgent["loai"]> = new Set<SuKienAgent["loai"]>([
+  "nghi",
+  "goi-tool",
+  "can-duyet",
+  "de-xuat-nho",
+  "loi",
+  "canh-bao-du-lieu",
+  "ha-tu-tri",
+  "con-bat-dau",
+  "ke-hoach-cho-duyet",
+]);
+
 type MucVao = SuKienAgent | { suKien?: unknown } | null | undefined;
 
 function laSuKien(x: unknown): x is SuKienAgent {
@@ -53,15 +71,9 @@ export function khoiTraLoiTuSuKien(ds: ReadonlyArray<MucVao>): string[] {
         }
         break;
       }
-      case "nghi":
-      case "goi-tool":
-      case "can-duyet":
-      case "de-xuat-nho":
-      case "loi":
-        mo = false;
-        break;
       default:
-        break; // không lên dòng thời gian ⇒ không cắt khối
+        if (LOAI_CAT_KHOI_TRA_LOI.has(e.loai)) mo = false; // lên dòng thời gian ⇒ cắt khối; còn lại không cắt
+        break;
     }
   }
   return khoi;

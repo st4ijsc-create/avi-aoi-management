@@ -5,27 +5,42 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SuKienAgent } from "@shared/agentCore/kieu";
-import { khoiTraLoiTuSuKien } from "@shared/phanHoiAgent";
+import { LOAI_CAT_KHOI_TRA_LOI, khoiTraLoiTuSuKien } from "@shared/phanHoiAgent";
 import { chuanHoaKetQuaPhanHoi, chuanHoaPhanHoiCuaToi, phieuTraLoiCuaToi } from "@/lib/agentApi";
 import { TRANG_THAI_RONG, batDauGui, giamNhieu, viTriTraLoiCuoi } from "./trangThaiAgent";
 
-const MOI_LOAI: SuKienAgent[] = [
-  { loai: "bat-dau", runId: "r", cheDo: "sua" },
-  { loai: "chu", noiDung: "a" },
-  { loai: "nghi", noiDung: "n" },
-  { loai: "goi-tool", goi: { id: "g1", ten: "read_file", thamSo: {} }, luot: 1 },
-  { loai: "ket-qua-tool", id: "g1", ten: "read_file", ok: true, tomTat: "ok" },
-  { loai: "can-duyet", id: "d1", deXuat: { ten: "edit_file", thamSo: {} } },
-  { loai: "da-duyet", id: "d1" },
-  { loai: "bi-bac", id: "d1", lyDo: "x" },
-  { loai: "ke-hoach", viec: [] },
-  { loai: "de-xuat-nho", id: "n1", note: "x", scope: "project" },
-  { loai: "checkpoint", checkpointId: "c", tep: [] },
-  { loai: "usage", vao: 1, ra: 1 },
-  { loai: "dang-cho-model", phiaTruoc: 1 },
-  { loai: "loi", ma: "E", thongDiep: "e" },
-  { loai: "xong", lyDo: "hoan-thanh" },
-];
+/**
+ * MỘT mẫu cho MỖI loại sự kiện — kiểu `Record` ép đầy đủ lúc biên dịch: thêm loại mới vào `SuKienAgent` mà quên mẫu ⇒ tsc đỏ.
+ * (Trước 2026-10-31 danh sách viết tay bỏ sót canh-bao-du-lieu / ha-tu-tri / con-bat-dau — đúng ba loại làm hai bên lệch khối.)
+ */
+const MAU: Record<SuKienAgent["loai"], SuKienAgent> = {
+  "bat-dau": { loai: "bat-dau", runId: "r", cheDo: "sua" },
+  chu: { loai: "chu", noiDung: "a" },
+  nghi: { loai: "nghi", noiDung: "n" },
+  "goi-tool": { loai: "goi-tool", goi: { id: "g1", ten: "read_file", thamSo: {} }, luot: 1 },
+  "ket-qua-tool": { loai: "ket-qua-tool", id: "g1", ten: "read_file", ok: true, tomTat: "ok" },
+  "can-duyet": { loai: "can-duyet", id: "d1", deXuat: { ten: "edit_file", thamSo: {} } },
+  "da-duyet": { loai: "da-duyet", id: "d1" },
+  "bi-bac": { loai: "bi-bac", id: "d1", lyDo: "x" },
+  "ke-hoach": { loai: "ke-hoach", viec: [] },
+  "de-xuat-nho": { loai: "de-xuat-nho", id: "n1", note: "x", scope: "project" },
+  "canh-bao-du-lieu": { loai: "canh-bao-du-lieu", id: "c1", ten: "read_file", nguon: "a.md", mau: ["ignore_instructions"] },
+  "ha-tu-tri": { loai: "ha-tu-tri", lyDo: "noi-dung-dang-ngo", nguon: "a.md", mau: ["x"] },
+  checkpoint: { loai: "checkpoint", checkpointId: "c", tep: [] },
+  usage: { loai: "usage", vao: 1, ra: 1 },
+  "buoc-do": { loai: "buoc-do", luot: 1, bamHeThong: "00000000", soTin: 2, tokenUoc: 1, nen: null, nhacDaChen: [] },
+  "dang-cho-model": { loai: "dang-cho-model", phiaTruoc: 1 },
+  "ngu-canh-day": { loai: "ngu-canh-day", phanTram: 81 },
+  "ke-hoach-cho-duyet": { loai: "ke-hoach-cho-duyet", viec: [], bam: "a".repeat(64) },
+  "ke-hoach-da-duyet": { loai: "ke-hoach-da-duyet", bam: "b", luc: "2026-10-31T00:00:00Z" },
+  "ke-hoach-khong-duyet": { loai: "ke-hoach-khong-duyet", bam: "b", lyDo: "bac" },
+  "con-bat-dau": { loai: "con-bat-dau", runIdCon: "k1", agent: "a", nguon: "dungSan", sau: 1, cheDo: "hoi", nhiemVu: "n" },
+  "con-xong": { loai: "con-xong", runIdCon: "k1", lyDo: "hoan-thanh" },
+  "su-kien-con": { loai: "su-kien-con", runIdCon: "k1", suKien: { loai: "chu", noiDung: "con" } },
+  xong: { loai: "xong", lyDo: "hoan-thanh" },
+  loi: { loai: "loi", ma: "E", thongDiep: "e" },
+};
+const MOI_LOAI: SuKienAgent[] = Object.values(MAU);
 
 function khoiClient(es: SuKienAgent[]): string[] {
   return giamNhieu(TRANG_THAI_RONG, es)
@@ -60,6 +75,26 @@ describe("khối trả lời: client ⇄ máy chủ cùng luật gộp", () => {
       }
       expect(khoiTraLoiTuSuKien(es)).toEqual(khoiClient(es));
     }
+  });
+});
+
+describe("★★★ census: loại nào làm reducer client THÊM mục dòng thời gian (ngoài chu) thì máy chủ PHẢI cắt khối", () => {
+  const themMuc = (e: SuKienAgent): boolean => {
+    const truoc = giamNhieu(TRANG_THAI_RONG, [{ loai: "chu", noiDung: "X" }]);
+    const sau = giamNhieu(truoc, [e]);
+    return sau.dongThoiGian.length > truoc.dongThoiGian.length;
+  };
+  it("client thêm mục ⇒ có trong LOAI_CAT_KHOI_TRA_LOI (suy từ MỘT hằng chung, không danh sách viết tay)", () => {
+    for (const e of MOI_LOAI) {
+      if (e.loai === "chu" || !themMuc(e)) continue;
+      expect(LOAI_CAT_KHOI_TRA_LOI.has(e.loai), `client thêm mục cho '${e.loai}' nhưng máy chủ không cắt khối`).toBe(true);
+    }
+  });
+  it("chiều ngược: loại máy chủ cắt khối mà client KHÔNG thêm mục ⇒ hai bên lệch (đỏ)", () => {
+    for (const loai of LOAI_CAT_KHOI_TRA_LOI) expect(themMuc(MAU[loai]), `máy chủ cắt '${loai}' mà client không thêm mục`).toBe(true);
+  });
+  it("mọi loại trong hằng chung là loại sự kiện có thật", () => {
+    for (const loai of LOAI_CAT_KHOI_TRA_LOI) expect(Object.keys(MAU)).toContain(loai);
   });
 });
 

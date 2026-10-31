@@ -2,13 +2,63 @@
  * ★ Đợt 10.3 — phần dùng chung của các bản cài nhà cung cấp: lỗi HTTP ⇒ `LoiNgoai` (thông điệp THÔ — cổng che bằng `cheChuoi` trước
  * khi ném / ghi), số token, lịch sử chữ (công cụ cũ đã là dòng chữ — giới hạn đã ghi: model ngoài KHÔNG thấy tool_use gốc).
  */
-import { LoiNgoai } from "../loi";
+import { LoiNgoai, type PhanLoaiLoiNgoai } from "../loi";
 import type { TinNhanNgoai } from "./kieu";
 
-export function loiHttp(status: number, json: unknown): LoiNgoai {
-  const j = json as { error?: { message?: unknown; type?: unknown } | string; message?: unknown } | null;
-  const thongDiep = typeof j?.error === "string" ? j.error : String((j?.error as { message?: unknown })?.message ?? j?.message ?? "");
-  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `${status} ${thongDiep}`.slice(0, 800), { thuLai: status === 429 || status >= 500 });
+/** Trường lỗi của ba họ API (OpenAI `error.code/type`, Anthropic `error.type`, Gemini `error.status`) gộp thành chữ thường để so khớp. */
+function dauHieu(json: unknown): { thongDiep: string; ma: string } {
+  const j = json as { error?: { message?: unknown; type?: unknown; code?: unknown; status?: unknown } | string; message?: unknown; type?: unknown } | null;
+  const e = j?.error;
+  const thongDiep = typeof e === "string" ? e : String(e?.message ?? j?.message ?? "");
+  const ma = typeof e === "object" && e ? [e.code, e.type, e.status].filter((x) => typeof x === "string").join(" ") : String(j?.type ?? "");
+  return { thongDiep, ma: ma.toLowerCase() };
+}
+
+/**
+ * Chữ chỉ dùng khi MÃ không nói rõ. ⚠ Không có `billing` đứng riêng: 429 RPM/TPM THẬT của OpenAI (code `rate_limit_exceeded`) kết thúc bằng
+ * "…adding a payment method … /account/billing" (rà kiem-dinh H3.1) — đó là RATE_LIMIT.
+ */
+const RE_QUOTA = /credit balance is too low|exceeded your current quota/i;
+/** Gemini `RESOURCE_EXHAUSTED` dùng chung cho hạn mức NGÀY (QUOTA) và theo PHÚT / tầng miễn phí (RATE_LIMIT). */
+const RE_GEMINI_NGAY = /per ?day|perday|requests_per_day|_daily/i;
+const RE_TRAN_NGU_CANH = /context_length_exceeded|context length|context window|prompt is too long|maximum context|too many tokens|exceeds the maximum number of tokens|input is too long/i;
+
+/**
+ * ★ Đợt 12 H3.1 — phân loại lỗi HTTP của nhà cung cấp (thuần, ổn định theo MÃ trước, chữ sau). Chỉ RATE_LIMIT / SERVER được thử lại;
+ * 429 `insufficient_quota` là QUOTA (KHÔNG thử lại — trước H3.1 ta thử lại và giữ chỗ ngân sách thêm một lần).
+ */
+export function phanLoaiHttp(status: number, json: unknown): PhanLoaiLoiNgoai {
+  const { thongDiep, ma } = dauHieu(json);
+  const chu = `${ma} ${thongDiep}`;
+  // MÃ trước: hết hạn mức tường minh ⇒ QUOTA; giới hạn tốc độ tường minh ⇒ RATE_LIMIT (dù thông điệp nhắc billing / quota)
+  if (ma.includes("insufficient_quota")) return "QUOTA";
+  if (ma.includes("rate_limit")) return status >= 500 ? "SERVER" : "RATE_LIMIT";
+  if (ma.includes("resource_exhausted")) return RE_GEMINI_NGAY.test(thongDiep) ? "QUOTA" : "RATE_LIMIT";
+  if (RE_QUOTA.test(chu)) return "QUOTA";
+  if ((status === 400 || status === 413 || status === 422) && RE_TRAN_NGU_CANH.test(chu)) return "CONTEXT_WINDOW_EXCEEDED";
+  if (status === 401 || status === 403) return "AUTH";
+  if (status === 429) return "RATE_LIMIT";
+  if (status === 408) return "TIMEOUT";
+  if (status >= 500) return "SERVER";
+  return "CLIENT";
+}
+
+export function loiHttp(status: number, json: unknown, choMs?: number): LoiNgoai {
+  const { thongDiep } = dauHieu(json);
+  const phanLoai = phanLoaiHttp(status, json);
+  const thuLai = phanLoai === "RATE_LIMIT" || phanLoai === "SERVER" || phanLoai === "TIMEOUT";
+  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `${status} ${thongDiep}`.slice(0, 800), { thuLai, phanLoai, ...(choMs !== undefined ? { choMs } : {}) });
+}
+
+/** `Retry-After` (giây hoặc ngày HTTP) ⇒ ms; rác / âm / quá khứ ⇒ `undefined`. `bayGio` để lưới cố định đồng hồ. */
+export function docRetryAfter(giaTri: string | null | undefined, bayGio: number = Date.now()): number | undefined {
+  if (typeof giaTri !== "string" || giaTri.trim() === "") return undefined;
+  const s = giaTri.trim();
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.round(Number(s) * 1000);
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return undefined;
+  const ms = t - bayGio;
+  return ms > 0 ? ms : undefined;
 }
 
 export const so = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);

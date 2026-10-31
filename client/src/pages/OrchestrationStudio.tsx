@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { LoiBuocTheoMa } from "@/components/scada/LoiBuocTheoMa"; // C2 — lỗi bước dạng MÃ (người không phải kỹ sư) ⇒ câu dịch
 import { translateAppError } from "@/lib/errorCodes"; // doc 81 Đợt 4 fix round 3 (R-4-n) — step detail.appError
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -3121,6 +3122,7 @@ function RunRow({
                     {translateAppError(stepAppError(s)!.appCode, stepAppError(s)!.appParams, s.error ?? "")}
                   </p>
                 )}
+                {!gateRequired && !stepAppError(s) && <LoiBuocTheoMa error={s.error} />}
                 {gateRequired && (
                   <p data-testid="step-gate-required" data-reason={gateRequired} className="pb-1 pl-2 text-[11px] text-amber-700 dark:text-amber-300">
                     {gateRequiredText(gateRequired, t)}

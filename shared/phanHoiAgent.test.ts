@@ -7,6 +7,7 @@ import {
   apDiffHopNhat,
   diffHopNhat,
   khoiTraLoiTuSuKien,
+  LOAI_CAT_KHOI_TRA_LOI,
   mauBoDuLieuTuHang,
   traLoiCuoiTuSuKien,
   TRAN_DONG_DIFF,
@@ -160,5 +161,20 @@ describe("(Đợt 5.1 VSCode) traLoiCuoiTuSuKien + trần độ dài dùng chung
     expect(TRAN_KY_TU_CAU_HOI_CLIENT).toBeLessThanOrEqual(TRAN_KY_TU_TRA_LOI_CLIENT);
     expect(TRAN_KY_TU_TRA_LOI_CLIENT).toBeLessThanOrEqual(200_000);
     expect(TRAN_KY_TU_LY_DO).toBe(2000);
+  });
+});
+
+describe("LOAI_CAT_KHOI_TRA_LOI (Đợt 12 — vá lệch khối client ⇄ máy chủ)", () => {
+  it("cắt khối ở cảnh báo dữ liệu, hạ tự trị, agent con và thẻ kế hoạch chờ duyệt", () => {
+    for (const loai of ["canh-bao-du-lieu", "ha-tu-tri", "con-bat-dau", "ke-hoach-cho-duyet"] as const) {
+      expect(LOAI_CAT_KHOI_TRA_LOI.has(loai), loai).toBe(true);
+    }
+    const mau = { "canh-bao-du-lieu": { loai: "canh-bao-du-lieu", id: "c", ten: "t", nguon: "n", mau: [] } } as const;
+    expect(khoiTraLoiTuSuKien([{ loai: "chu", noiDung: "A" }, mau["canh-bao-du-lieu"], { loai: "chu", noiDung: "B" }] as never)).toEqual(["A", "B"]);
+  });
+  it("loại không lên dòng thời gian KHÔNG cắt", () => {
+    for (const loai of ["chu", "usage", "buoc-do", "dang-cho-model", "checkpoint", "ke-hoach", "ngu-canh-day", "xong"] as const) {
+      expect(LOAI_CAT_KHOI_TRA_LOI.has(loai), loai).toBe(false);
+    }
   });
 });

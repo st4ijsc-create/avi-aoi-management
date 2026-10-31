@@ -34,6 +34,7 @@
 import type { Request, Response } from "express";
 import { sql } from "drizzle-orm";
 import { edgeDbRefused } from "../db/edgeDbTrap";
+import { schemaChoReadyz } from "../db/kiemSchemaChung";
 import { lyDoChuaKiemDuocR1a, lyDoDangKiemR1a, lyDoSchemaR1a, type SchemaR1aHealth } from "./kiemSchemaR1a";
 
 /** Hạn một lượt `SELECT 1` (brief T11: "vd 1500 ms"; nghiệm thu: 503 trong ≤ 2 s). */
@@ -320,6 +321,8 @@ export interface ProbeHandlerDeps {
   schemaR1aChuaKiem?: () => Extract<SchemaR1aHealth, { trangThai: "chua_kiem_duoc" }> | null; // lyDo = LỚP NGẮN (không văn bản lỗi: /health không xác thực)
   /** R1b-2a T12 — lần kiểm schema khởi động CHƯA chạy xong; mặc định `kiemSchemaR1a.lyDoDangKiemR1a`. */
   schemaR1aDangKiem?: () => Extract<SchemaR1aHealth, { trangThai: "dang_kiem" }> | null;
+  /** Kiểm schema CHUNG lúc khởi động (Drizzle ⊆ DB): "thieu-cot" ⇒ `/readyz` mang `schema`; mặc định `kiemSchemaChung.schemaChoReadyz`. */
+  schemaChung?: () => "thieu-cot" | null;
 }
 
 /**
@@ -333,7 +336,9 @@ export function createReadyzHandler(deps: ProbeHandlerDeps = {}) {
     try {
       const result = await readinessProbe({ checkDb, checkBroker: deps.checkBroker });
       res.setHeader("Cache-Control", "no-store");
-      res.status(result.ready ? 200 : 503).json(result);
+      // Chỉ CỜ (không tên bảng/cột: /readyz không xác thực). KHÔNG đổi mã HTTP — migration thiếu không chữa được bằng cách gỡ pod khỏi traffic.
+      const schema = (deps.schemaChung ?? schemaChoReadyz)();
+      res.status(result.ready ? 200 : 503).json(schema ? { ...result, schema } : result);
     } catch {
       res.status(503).json({ status: "not_ready", ready: false, db: "down", ts: new Date().toISOString() });
     }

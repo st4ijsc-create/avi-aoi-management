@@ -14,7 +14,7 @@ import type { CheDoAgent, LoiGoiTool, WireTool } from "./kieu";
  * `de-xuat` (Đợt 2): tool KHÔNG tác dụng phụ nào ngoài một ĐỀ XUẤT cho người (`remember` ⇒ sự kiện `de-xuat-nho`).
  * Tách khỏi `ghi` vì nó phải có ở MỌI chế độ (kể cả `hoi`): chỉ người bấm "Nhớ" mới ghi — kể cả ở `tu-dong`.
  */
-export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat";
+export type LoaiCongCu = "doc" | "ghi" | "lenh" | "ke-hoach" | "de-xuat" | "giao" | "bao-cao";
 
 export const TEN_CONG_CU = [
   "read_file",
@@ -36,6 +36,12 @@ export const TEN_CONG_CU = [
   "lookup_api",
   // ── Đợt 9 (2026-10-21): biên dịch THỬ Structured Text (RuSTy, docker cách ly) — CHỈ máy chủ, sau cờ ──
   "compile_st",
+  // ── Đợt 11.8: giao việc cho agent con (xử lý TRONG lõi, sau cờ máy chủ AI_AGENT_GIAO_VIEC) ──
+  "delegate",
+  // ── Đợt 12 · H5.1: báo cáo CÓ CẤU TRÚC của agent con (xử lý TRONG lõi, CHỈ trong vòng con, sau cờ máy chủ AI_AGENT_CON_BAO_CAO) ──
+  "report",
+  // ── Đợt 12 · H5.3: đọc lại đầu ra dài đã lưu (xử lý ở bộ thực thi máy chủ, sau cờ AI_AGENT_DAU_RA_DAI) ──
+  "read_output",
 ] as const;
 export type TenCongCu = (typeof TEN_CONG_CU)[number];
 
@@ -56,6 +62,9 @@ export const LOAI_CONG_CU: Record<TenCongCu, LoaiCongCu> = {
   remember: "de-xuat",
   lookup_api: "doc",
   compile_st: "doc",
+  delegate: "giao",
+  report: "bao-cao",
+  read_output: "doc",
 };
 
 /** Loại ký hiệu `find_symbol` nhận (enum — model chọn sai ⇒ lỗi liệt kê giá trị đúng). */
@@ -78,7 +87,27 @@ export const TRAN_MA_ST = 64 * 1024;
  * (`compile_st` ⇐ cờ `AI_KIEM_BIEN_DICH_ST` chứa `agent`/`all`, trình biên dịch chỉ có ở máy chủ). Tắt ⇒ bộ tool và lời
  * nhắc hệ thống GIỐNG TỪNG BYTE bản trước (A/B sạch).
  */
-export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st"]);
+export const CONG_CU_TUY_CHON: ReadonlySet<TenCongCu> = new Set<TenCongCu>(["compile_st", "delegate", "report", "read_output"]);
+
+/** Đợt 12 · H5.3 — trần tham số `read_output`. */
+export const TRAN_MA_DAU_RA = 32;
+export const TRAN_GREP_DAU_RA = 200;
+
+/** Đợt 12 · H5.1 — trần tham số `report` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
+export const TRAN_BC_TOM_TAT = 1_500;
+export const TRAN_BC_SO_PHAT_HIEN = 10;
+export const TRAN_BC_KY_TU_PHAT_HIEN = 300;
+export const TRAN_BC_SO_TEP = 20;
+export const TRAN_BC_KY_TU_DUONG = 200;
+export const TRAN_BC_SO_BANG_CHUNG = 10;
+export const TRAN_BC_KY_TU_TRICH = 300;
+export const TRANG_THAI_BAO_CAO = ["done", "partial", "blocked"] as const;
+
+/** Đợt 11.8 — trần tham số `delegate` (kiểm ở `kiemThamSo`, KHÔNG ở schema vì grammar llama.cpp cấm maxLength/pattern). */
+export const TRAN_NHIEM_VU_GIAO = 4_000;
+export const TRAN_SO_CONG_CU_GIAO = 16;
+export const TRAN_KY_TU_TEN_CONG_CU_GIAO = 40;
+const RE_TEN_AGENT_GIAO = /^[a-z][a-z0-9-]{0,31}$/;
 
 const chuoi = (description: string) => ({ type: "string", description });
 const soNguyen = (description: string) => ({ type: "integer", minimum: 1, description });
@@ -164,6 +193,47 @@ export const CONG_CU: WireTool[] = [
       "host may allow fewer); there is no shell.",
     { command: chuoi("The command line, exactly one allowed form, e.g. 'go test ./...'. Paths are relative to the project root.") },
     ["command"],
+  ),
+  tool(
+    "read_output",
+    "Read part of a long tool output that was saved because it was too long to show in full. Use the ref from the note '[full output saved as <ref>]'. " +
+      "Give start_line/end_line to read a range (up to ~200 lines per call), or grep to list the lines containing a text (case-insensitive). " +
+      "Only refs from this run work. Use it instead of running the command again.",
+    {
+      ref: chuoi("The ref from the note, e.g. out-1a2b3c4d."),
+      start_line: soNguyen("First line to read (1-based)."),
+      end_line: soNguyen("Last line to read."),
+      grep: chuoi("List the lines that contain this text instead of reading a range."),
+    },
+    ["ref"],
+  ),
+  tool(
+    "report",
+    "Sub-agents only: finish your run by sending a structured report to the parent agent. Call it ONCE when you are done (or cannot continue); " +
+      "it ends your run. 'done' needs evidence: list the files you actually read or changed in 'files' and cite where in 'evidence'. " +
+      "Say 'partial' or 'blocked' honestly instead of claiming 'done'.",
+    {
+      status: { type: "string", enum: ["done", "partial", "blocked"], description: "done = the task is finished; partial = some of it; blocked = you could not proceed." },
+      summary: chuoi("What you did and found, in a few sentences (at most 1500 characters)."),
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { note: chuoi("One finding, one sentence."), path: chuoi("Optional file path the finding is about."), line: soNguyen("Optional line number.") },
+          required: ["note"],
+        },
+      },
+      files: { type: "array", items: { type: "string" }, description: "Paths of the files you read or changed that matter for the parent." },
+      evidence: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { path: chuoi("File path."), line: soNguyen("Optional line number."), quote: chuoi("Optional short quote from that place.") },
+          required: ["path"],
+        },
+      },
+    },
+    ["status", "summary"],
   ),
   tool(
     "todo_write",
@@ -262,6 +332,24 @@ export const CONG_CU: WireTool[] = [
     },
     [],
   ),
+  tool(
+    "delegate",
+    "Delegate a self-contained sub-task to a named sub-agent (for example an explorer, a reviewer or a test writer). The " +
+      "sub-agent works on its own with a limited set of tools and returns ONLY a short summary; its working notes never enter " +
+      "your context. It cannot approve anything: any file change or command it requests still needs the user's approval. " +
+      "Sub-agents run one after another, never in parallel. Use it to keep your context small on long tasks; do not use it " +
+      "for a step you can do with one or two tool calls.",
+    {
+      agent: chuoi("Name of the sub-agent (lowercase letters, digits and '-')."),
+      task: chuoi(`The complete task for the sub-agent, with all the context it needs (it cannot see your conversation), at most ${TRAN_NHIEM_VU_GIAO} characters.`),
+      tools: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional: restrict the sub-agent to these tool names (it can only be narrowed, never widened).",
+      },
+    },
+    ["agent", "task"],
+  ),
 ];
 
 /**
@@ -279,19 +367,21 @@ export function congCuTheoCheDo(cheDo: CheDoAgent, them: readonly TenCongCu[] = 
     cheDo === "hoi"
       ? coMat.filter((t) => {
           const loai = LOAI_CONG_CU[t.function.name as TenCongCu];
-          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat";
+          return loai === "doc" || loai === "ke-hoach" || loai === "de-xuat" || loai === "giao" || loai === "bao-cao";
         })
       : coMat;
   return structuredClone(chon);
 }
 
 export const CONG_CU_TODO_WRITE: WireTool = CONG_CU.find((t) => t.function.name === "todo_write")!;
+/** (Đợt 12 · H5.1) `report` — lõi tự thêm vào bộ tool của vòng CON khi `baoCaoCon`; vòng gốc không bao giờ. */
+export const CONG_CU_REPORT: WireTool = CONG_CU.find((t) => t.function.name === "report")!;
 
 // ─── Kiểm / chuẩn hoá tham số ─────────────────────────────────────────────────────────────────
 
 export type KetQuaKiemThamSo = { ok: true; thamSo: Record<string, unknown> } | { ok: false; loiChoModel: string };
 
-type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum";
+type KieuTruong = "duong" | "chuoi" | "chuoiRong" | "so" | "edits" | "todos" | "enum" | "tenAgent" | "dsTen" | "phatHien" | "dsDuong" | "bangChung";
 /** `giaTri`: tập hợp lệ của `enum` · `toiDa`: trần ký tự (`chuoi`) hoặc trần giá trị (`so`). */
 type MotDacTa = { kieu: KieuTruong; batBuoc: boolean; giaTri?: readonly string[]; toiDa?: number };
 type DacTa = Record<string, MotDacTa>;
@@ -316,6 +406,15 @@ const DAC_TA: Record<TenCongCu, DacTa> = {
   remember: { note: B("chuoi", { toiDa: TRAN_KY_TU_NHO }), scope: T("enum", { giaTri: PHAM_VI_NHO }) },
   lookup_api: { name: B("chuoi", { toiDa: TRAN_TEN_API }), language: T("enum", { giaTri: NGON_NGU_API }) },
   compile_st: { path: T("duong"), code: T("chuoi", { toiDa: TRAN_MA_ST }) },
+  delegate: { agent: B("tenAgent"), task: B("chuoi", { toiDa: TRAN_NHIEM_VU_GIAO }), tools: T("dsTen") },
+  read_output: { ref: B("chuoi", { toiDa: TRAN_MA_DAU_RA }), start_line: T("so"), end_line: T("so"), grep: T("chuoi", { toiDa: TRAN_GREP_DAU_RA }) },
+  report: {
+    status: B("enum", { giaTri: TRANG_THAI_BAO_CAO }),
+    summary: B("chuoi", { toiDa: TRAN_BC_TOM_TAT }),
+    findings: T("phatHien"),
+    files: T("dsDuong"),
+    evidence: T("bangChung"),
+  },
 };
 
 const VI_DU: Record<TenCongCu, string> = {
@@ -335,6 +434,10 @@ const VI_DU: Record<TenCongCu, string> = {
   remember: '{"note":"This project uses pnpm, not npm.","scope":"project"}',
   lookup_api: '{"name":"SqlBulkCopyOptions","language":"csharp"}',
   compile_st: '{"path":"src/FB_Motor.st"}',
+  delegate: '{"agent":"kham-pha","task":"Find where HTTP requests are retried and report the file paths."}',
+  read_output: '{"ref":"out-1a2b3c4d","grep":"error"}',
+  report:
+    '{"status":"done","summary":"Retries live in src/http/retry.ts.","findings":[{"note":"Retries 3 times with backoff","path":"src/http/retry.ts","line":12}],"files":["src/http/retry.ts"],"evidence":[{"path":"src/http/retry.ts","line":12,"quote":"maxRetries = 3"}]}',
 };
 
 const TRANG_THAI_TODO = ["pending", "in_progress", "completed"] as const;
@@ -354,6 +457,34 @@ function docJson(s: string): { ok: true; v: unknown } | { ok: false; loi: string
 }
 
 class LoiThamSo extends Error {}
+
+/** Mảng (hoặc chuỗi JSON của mảng) cho các trường báo cáo. */
+function docMang(v: unknown, ten: string, toiDa: number): unknown[] {
+  let ds = v;
+  if (typeof ds === "string") {
+    const p = docJson(ds);
+    if (!p.ok) throw new LoiThamSo(`"${ten}" must be an array`);
+    ds = p.v;
+  }
+  if (!Array.isArray(ds)) throw new LoiThamSo(`"${ten}" must be an array`);
+  if (ds.length > toiDa) throw new LoiThamSo(`"${ten}" must have at most ${toiDa} items (got ${ds.length}); keep the most important ones`);
+  return ds;
+}
+function chuoiBaoCao(v: unknown, k: string, toiDa: number, batBuoc: boolean): string | undefined {
+  if (v === undefined || v === null) {
+    if (batBuoc) throw new LoiThamSo(`"${k}" is required`);
+    return undefined;
+  }
+  if (typeof v !== "string" || v.trim() === "") throw new LoiThamSo(`"${k}" must be a non-empty string`);
+  if (v.trim().length > toiDa) throw new LoiThamSo(`"${k}" must be at most ${toiDa} characters (got ${v.trim().length}); shorten it`);
+  return v.trim();
+}
+function dongBaoCao(v: unknown, k: string): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = typeof v === "string" && /^\s*\d+\s*$/.test(v) ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1) throw new LoiThamSo(`"${k}" must be a positive integer`);
+  return n;
+}
 
 function epBool(v: unknown, ten: string): boolean | undefined {
   if (v === undefined || v === null) return undefined;
@@ -380,6 +511,25 @@ function kiemTruong(dt: MotDacTa, v: unknown, ten: string): unknown {
       const ds = dt.giaTri ?? [];
       if (typeof v !== "string" || !ds.includes(v.trim())) throw new LoiThamSo(`"${ten}" must be one of: ${ds.join(", ")}`);
       return v.trim();
+    }
+    case "tenAgent":
+      if (typeof v !== "string" || !RE_TEN_AGENT_GIAO.test(v.trim()))
+        throw new LoiThamSo(`"${ten}" must be a sub-agent name: lowercase letters, digits and '-', starting with a letter, at most 32 characters`);
+      return v.trim();
+    case "dsTen": {
+      let ds = v;
+      if (typeof ds === "string") {
+        const p = docJson(ds);
+        if (!p.ok) throw new LoiThamSo(`"${ten}" must be an array of tool names`);
+        ds = p.v;
+      }
+      if (!Array.isArray(ds) || ds.length === 0 || ds.length > TRAN_SO_CONG_CU_GIAO)
+        throw new LoiThamSo(`"${ten}" must be a non-empty array of at most ${TRAN_SO_CONG_CU_GIAO} tool names`);
+      return ds.map((e, i) => {
+        if (typeof e !== "string" || e.trim() === "" || e.trim().length > TRAN_KY_TU_TEN_CONG_CU_GIAO)
+          throw new LoiThamSo(`"${ten}[${i}]" must be a tool name string`);
+        return e.trim();
+      });
     }
     case "chuoiRong":
       if (typeof v !== "string") throw new LoiThamSo(`"${ten}" must be a string`);
@@ -410,6 +560,30 @@ function kiemTruong(dt: MotDacTa, v: unknown, ten: string): unknown {
         return ra;
       });
     }
+    case "phatHien":
+      return docMang(v, ten, TRAN_BC_SO_PHAT_HIEN).map((e, i) => {
+        const k = `${ten}[${i}]`;
+        if (!laObject(e)) throw new LoiThamSo(`"${k}" must be an object {note, path?, line?}`);
+        const ra: Record<string, unknown> = { note: chuoiBaoCao(e.note, `${k}.note`, TRAN_BC_KY_TU_PHAT_HIEN, true) };
+        const p = chuoiBaoCao(e.path, `${k}.path`, TRAN_BC_KY_TU_DUONG, false);
+        if (p !== undefined) ra.path = p;
+        const l = dongBaoCao(e.line, `${k}.line`);
+        if (l !== undefined) ra.line = l;
+        return ra;
+      });
+    case "dsDuong":
+      return docMang(v, ten, TRAN_BC_SO_TEP).map((e, i) => chuoiBaoCao(e, `${ten}[${i}]`, TRAN_BC_KY_TU_DUONG, true) as string);
+    case "bangChung":
+      return docMang(v, ten, TRAN_BC_SO_BANG_CHUNG).map((e, i) => {
+        const k = `${ten}[${i}]`;
+        if (!laObject(e)) throw new LoiThamSo(`"${k}" must be an object {path, line?, quote?}`);
+        const ra: Record<string, unknown> = { path: chuoiBaoCao(e.path, `${k}.path`, TRAN_BC_KY_TU_DUONG, true) };
+        const l = dongBaoCao(e.line, `${k}.line`);
+        if (l !== undefined) ra.line = l;
+        const q = chuoiBaoCao(e.quote, `${k}.quote`, TRAN_BC_KY_TU_TRICH, false);
+        if (q !== undefined) ra.quote = q;
+        return ra;
+      });
     case "todos": {
       let ds = v;
       if (typeof ds === "string") {

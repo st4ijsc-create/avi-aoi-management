@@ -18,6 +18,9 @@ export interface CauHinhNhaMay extends TranNhaMay {
   choDuLieuVanHanh: boolean;
   luuNguyenVan: boolean;
   hanGiuNgay: number;
+  /** ★ 0418 — trần byte KẾT QUẢ TOOL / số tệp đọc gửi ra ngoài mỗi run (vòng tool L3 dùng). */
+  tranByteDocLuot?: number;
+  tranTepDocLuot?: number;
 }
 
 export interface ModelNgoai {
@@ -53,6 +56,11 @@ export async function layCauHinhNhaMay(db: DbDoc, factoryId: number): Promise<Ca
     tranTokenLuongNgay: soHoacNull(r.tranTokenLuongNgay),
     tranTokenLuot: soHoacNull(r.tranTokenLuot),
     tranLanPhut: Number(r.tranLanPhut),
+    // ★ 10.4b L0a' (0418) — trần mỗi RUN
+    tranTienLuotUsd: soHoacNull(r.tranTienLuotUsd),
+    tranVongLuot: r.tranVongLuot === undefined || r.tranVongLuot === null ? null : Number(r.tranVongLuot),
+    tranByteDocLuot: Number(r.tranByteDocLuot ?? 262_144),
+    tranTepDocLuot: Number(r.tranTepDocLuot ?? 50),
   };
 }
 

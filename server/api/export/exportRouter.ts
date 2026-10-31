@@ -451,6 +451,15 @@ export function resolveExportOutcome(p: {
 }
 
 /**
+ * ⚠ ĐỪNG ghi CHUỖI có ký tự đa byte (tiếng Việt) vào `res.write()` rồi chờ `drain`: trên Node 24.22 và 26.13 (đo 2026-10-30; Node 22.23 không bị)
+ * `ServerResponse.write(string)` trả `false` mà sự kiện `drain` KHÔNG BAO GIỜ tới (writableNeedDrain kẹt true, socket đã rỗng) — vòng lặp `awaitDrain`
+ * treo vĩnh viễn, client chờ mãi. Chuỗi thuần ASCII và `Buffer` không bị. Mọi byte xuất ra đi qua đây dưới dạng Buffer UTF-8.
+ */
+export function toWireBuffer(chunk: string): Buffer {
+  return Buffer.from(chunk, "utf8");
+}
+
+/**
  * Sổ kế toán của một luồng xuất: đếm hàng ĐÃ GHI, tôn trọng backpressure, và biết khi nào
  * client đã bỏ đi.
  *
@@ -476,14 +485,14 @@ export class ExportStreamAccountant {
   /** Ghi một mẩu KHÔNG phải hàng dữ liệu (header CSV, mở/đóng JSON, dòng chứng nhận). */
   async writeRaw(chunk: string): Promise<boolean> {
     if (!this.open) return false;
-    if (!this.res.write(chunk)) await this.awaitDrain();
+    if (!this.res.write(toWireBuffer(chunk))) await this.awaitDrain();
     return this.open;
   }
 
   /** Ghi MỘT hàng dữ liệu và tính nó vào sổ. */
   async writeRow(chunk: string): Promise<boolean> {
     if (!this.open) return false;
-    const flushed = this.res.write(chunk);
+    const flushed = this.res.write(toWireBuffer(chunk));
     this.written += 1; // đã giao cho socket ⇒ tính; `flushed=false` chỉ nghĩa là còn nằm đệm
     if (!flushed) await this.awaitDrain();
     return this.open;

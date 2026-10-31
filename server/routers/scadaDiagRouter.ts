@@ -14,15 +14,16 @@
  *   "Ngoài phạm vi" và "không tồn tại" trả CÙNG một lỗi NOT_FOUND (không lộ sự tồn tại).
  *
  * QUYỀN:
- *   danhSach / tagCuaAdapter / mauTho → MOD_OT_CONTROL + `machine_monitoring.canView`
+ *   danhSach / tomTatTruyenThong / tagCuaAdapter / mauTho → MOD_OT_CONTROL + `machine_monitoring.canView`
+ *   (R1b-2b-2b A C2 — `danhSach`: `endpoint` / `loi` chỉ cho kỹ sư canEdit (`chiTietKyThuatCua`), người khác `null` + `maLoi`; `tamKhoa` mọi người)
  *   ketNoiLai / tamTat / datLoiStub   → vai admin|engineer + 2FA + MOD_OT_CONTROL + `machine_control.canEdit`
  *   datLoiStub thêm: cờ SCADA_LAB_ENABLED, protocol `stub`.
  *
- * ĐỂ R1 (không làm ở đây): "Thử đọc một địa chỉ (Lab)" và chỉ báo "Truyền thông n/m" trên thanh trên.
+ * ĐỂ R1 (không làm ở đây): "Thử đọc một địa chỉ (Lab)". Chỉ báo "Truyền thông n/m": hợp đồng `tomTatTruyenThong` (R1b-2b-2b A C2).
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, roleProcedure, require2FA } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
@@ -37,7 +38,8 @@ import { isEdgeControlSchemaMissing } from "../services/edge/edgeControlSchema";
 import { baoTrangThaiAdapter, layTrangThaiAdapter, type LyDoTrangThaiKetNoi } from "../services/ot/trangThaiAdapter";
 import { layBoDem, layMotPhanGanNhat, type MotPhanGanNhat } from "../services/ot/boDemTruyenThong";
 import { MA_MOT_PHAN } from "../services/ot/motPhan";
-import { chiTietKyThuatCua } from "./_chiTietKyThuat";
+import { chiTietKyThuatCua, maLoiAdapterCua } from "./_chiTietKyThuat";
+import { tamKhoaAdapter, type TamKhoaAdapter } from "./_tamKhoaAdapter";
 import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
 import { lyDoMcTamKhoaNgan } from "../services/ot/drivers/mitsubishiMcDriver";
@@ -237,6 +239,54 @@ function adapterBao(a: HangAdapter): Pick<RuntimeAdapter, "adapterId" | "code" |
   return { adapterId: a.id, code: a.code, machineId: a.machineId, protocol: a.protocol as RuntimeAdapter["protocol"], tags: [] };
 }
 
+/** Kết quả chip "Truyền thông n/m" (HỢP ĐỒNG B-T7 — R1b-2b-2b A C2). */
+export type TomTatTruyenThong = { ketNoi: number; dangNoi: number; mat: number; khac: number; tong: number; edge: number; tinhLuc: string };
+
+/**
+ * R1b-2b-2b A C2 — đếm adapter BẬT trong phạm vi theo CÙNG `trangThaiHienThi` với `danhSach` (một luật trạng thái). Edge tách riêng (`edge`, không vào
+ * `tong`). Chỉ đọc `device_adapters` (MỘT câu, cột `"edgeNodeId"` cùng câu) + RAM — KHÔNG đọc `device_tags`, không đếm chất lượng tag (chip hỏi mỗi 15 s).
+ */
+async function tomTatTheoPhamVi(idsMay: number[] | null): Promise<TomTatTruyenThong> {
+  const db = await getDb();
+  const dk = [eq(deviceAdapters.isEnabled, true)];
+  // inArray trên machineId tự loại adapter KHÔNG gắn máy (NULL) ⇒ chỉ phạm vi toàn quyền đếm chúng (như danhSach)
+  if (idsMay !== null) dk.push(inArray(deviceAdapters.machineId, idsMay.length > 0 ? idsMay : [-1]));
+  const cot = {
+    id: deviceAdapters.id,
+    status: deviceAdapters.status,
+    isEnabled: deviceAdapters.isEnabled,
+    lastConnectedAt: deviceAdapters.lastConnectedAt,
+    lastErrorAt: deviceAdapters.lastErrorAt,
+    lastError: deviceAdapters.lastError,
+  };
+  type Hang = { id: number; status: string; isEnabled: boolean; lastConnectedAt: Date | null; lastErrorAt: Date | null; lastError: string | null; edgeNodeId: number | null };
+  let rows: Hang[];
+  try {
+    rows = (await db
+      .select({ ...cot, edgeNodeId: sql<number | null>`${deviceAdapters}."edgeNodeId"` })
+      .from(deviceAdapters)
+      .where(and(...dk))) as Hang[];
+  } catch (err) {
+    // thiếu mig 0374 (cột edgeNodeId) ⇒ mọi adapter là trung tâm, như soHuuEdge; lỗi khác ⇒ ném
+    if (!isEdgeControlSchemaMissing(err)) throw err;
+    rows = ((await db.select(cot).from(deviceAdapters).where(and(...dk))) as Omit<Hang, "edgeNodeId">[]).map((r) => ({ ...r, edgeNodeId: null }));
+  }
+  const kq = { ketNoi: 0, dangNoi: 0, mat: 0, khac: 0, edge: 0 };
+  for (const r of rows) {
+    const laEdge = r.edgeNodeId !== null && r.edgeNodeId !== undefined;
+    if (laEdge) {
+      kq.edge += 1;
+      continue;
+    }
+    const st = trangThaiHienThi(r, false, layTrangThaiAdapter(r.id));
+    if (st.trangThai === "connected") kq.ketNoi += 1;
+    else if (st.trangThai === "connecting") kq.dangNoi += 1;
+    else if (st.trangThai === "lost") kq.mat += 1;
+    else kq.khac += 1;
+  }
+  return { ...kq, tong: kq.ketNoi + kq.dangNoi + kq.mat + kq.khac, tinhLuc: new Date().toISOString() };
+}
+
 export const scadaDiagRouter = router({
   danhSach: protectedProcedure.use(requirePermission("machine_monitoring", "canView")).query(async ({ ctx }) => {
     const db = await getDb();
@@ -274,29 +324,36 @@ export const scadaDiagRouter = router({
     const now = Date.now();
     // Task 11 — M10 chỉ hiện khối "Lab: đặt lỗi stub" khi API báo có (cùng điều kiện datLoiStub kiểm); không thêm thủ tục.
     const labBat = process.env.SCADA_LAB_ENABLED === "true";
-    // T3E — lô áp một phần gần nhất; quyền xem danh sách chỉ hỏi khi có ít nhất một mục (không thêm lượt DB cho trường hợp thường)
+    // T3E — lô áp một phần gần nhất
     const motPhanTheoAdapter = new Map(ids.map((id) => [id, layMotPhanGanNhat(id, undefined, now)] as const));
-    const xemChiTiet = [...motPhanTheoAdapter.values()].some(Boolean) ? await chiTietKyThuatCua(ctx) : false;
+    // R1b-2b-2b A C2 (mục 6, KD-2bA 2.1) — MỘT luật chi tiết kỹ thuật (C1) cho endpoint / loi / danh sách MOT_PHAN; vai ngoài admin/engineer không chạm DB
+    const xemChiTiet = await chiTietKyThuatCua(ctx);
     return rows.map((r) => {
       const e = edge.get(r.id);
       const st = trangThaiHienThi(r, !!e, layTrangThaiAdapter(r.id));
       const bd = layBoDem(r.id, undefined, now);
       const soHuu: SoHuuAdapter = e ? { loai: "edge", edgeNodeId: e.edgeNodeId, edgeCode: e.edgeCode } : { loai: "trung_tam" };
+      const tagS7 = tagTheoAdapter.get(r.id) ?? [];
       return {
         adapterId: r.id,
         code: r.code,
         ten: r.name,
         protocol: r.protocol,
-        endpoint: r.endpoint,
+        // C2 (mục 6) — chỉ kỹ sư canEdit; người khác null (M10 hiện "—")
+        endpoint: xemChiTiet ? r.endpoint : null,
         machineId: r.machineId,
         labStub: r.protocol === "stub" && labBat,
         soHuu,
         trangThai: st.trangThai,
         tu: st.tu,
-        // I1 (T3B-0 fix 1) — adapter MC (trung tâm) đang tạm khoá GHI ⇒ cột "Lỗi gần nhất" mang mã khoá kể cả khi đang connected, mọi người xem
-        // (không che dưới canEdit: người vận hành cần biết STOP qua MC không đi được). Huy hiệu đầy đủ = C2 mục 2.2.
+        // I1 (T3B-0 fix 1) — adapter MC (trung tâm) đang tạm khoá GHI ⇒ cột "Lỗi gần nhất" mang mã khoá kể cả khi đang connected. Từ C2 (2.2) người
+        // dưới canEdit nhận khoá qua `tamKhoa` (KHÔNG BAO GIỜ che — STOP qua MC không đi được), `loi` của họ là null như mọi chi tiết kỹ thuật.
         // T3C mục 5 + fix 1 — adapter S7 có tag đã lưu mà `kiemDiaChiS7` từ chối ⇒ mã đứng đầu (đọc cấu hình, không cần driver chạy; trung tâm hay edge).
-        loi: nhanLoiS7BitNgoaiDai(r.protocol, tagTheoAdapter.get(r.id) ?? [], nhanLoiMcKhoa(r.protocol, !!e, st.loi)),
+        // C2 (mục 6, KD-2bA 2.1) — văn bản đầy đủ (có thể mang host:port của driver) CHỈ cho kỹ sư canEdit, người khác null. Người vận hành vẫn biết
+        // "mất kết nối / sai cấu hình" qua `maLoi` (mã đã làm sạch, mọi người) và "thiết bị đang khoá" qua `tamKhoa` (2.2, không bao giờ che).
+        loi: xemChiTiet ? nhanLoiS7BitNgoaiDai(r.protocol, tagS7, nhanLoiMcKhoa(r.protocol, !!e, st.loi)) : null,
+        maLoi: maLoiAdapterCua(nhanLoiS7BitNgoaiDai(r.protocol, tagS7, st.loi), st.trangThai === "lost"),
+        tamKhoa: tamKhoaAdapter(r.protocol, !!e) satisfies TamKhoaAdapter | null,
         lyDo: st.lyDo, // R1b-2b-1 T5 — lý do có mã của trạng thái (RAM), M10 hiện bằng i18n
         soLanMat: st.soLanMat,
         pollMs: thongTinAdapter(r.id)?.pollMs ?? r.pollIntervalMs,
@@ -308,6 +365,14 @@ export const scadaDiagRouter = router({
         motPhanGanNhat: motPhanHienThi(motPhanTheoAdapter.get(r.id) ?? null, xemChiTiet),
       };
     });
+  }),
+
+  /**
+   * R1b-2b-2b A C2 — HỢP ĐỒNG chip "Truyền thông n/m" (B-T7): đếm adapter BẬT trong phạm vi người xem; không input; rẻ (một câu `device_adapters` + RAM).
+   */
+  tomTatTruyenThong: protectedProcedure.use(requirePermission("machine_monitoring", "canView")).query(async ({ ctx }): Promise<TomTatTruyenThong> => {
+    const idsMay = await idsTrongPhamVi("machine", phamViCua(ctx), { strict: true });
+    return tomTatTheoPhamVi(idsMay);
   }),
 
   tagCuaAdapter: protectedProcedure

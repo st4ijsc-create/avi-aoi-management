@@ -1,0 +1,281 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · giu-nghi 1`] = `
+{
+  "chat_template_kwargs": {
+    "preserve_thinking": true,
+  },
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+    {
+      "content": "đã đọc",
+      "reasoning_content": "cần đọc a.ts",
+      "role": "assistant",
+    },
+    {
+      "content": "tiếp",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · ngan-sach-nghi 1`] = `
+{
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "thinking_budget_tokens": 4000,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · ngan-sach-nghi+tat-nghi 1`] = `
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+  },
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · sampling-b2 1`] = `
+{
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "min_p": 0,
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "presence_penalty": 0,
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · tat-nghi 1`] = `
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+  },
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · tat-nghi+giu-nghi 1`] = `
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+    "preserve_thinking": true,
+  },
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · thuong 1`] = `
+{
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.2,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > chat stream · tools 1`] = `
+{
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "function": {
+        "description": "đọc tệp",
+        "name": "read_file",
+        "parameters": {
+          "properties": {
+            "path": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "path",
+          ],
+          "type": "object",
+        },
+      },
+      "type": "function",
+    },
+  ],
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > model lạ (không có mô tả) · tat-nghi+giu-nghi+ngan-sach ⇒ như hôm nay 1`] = `
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+    "preserve_thinking": true,
+  },
+  "max_tokens": 100,
+  "messages": [
+    {
+      "content": "Bạn là tác nhân lập trình.",
+      "role": "system",
+    },
+    {
+      "content": "sửa a.ts",
+      "role": "user",
+    },
+  ],
+  "model": "model-la-xyz",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;
+
+exports[`H3.2 — ảnh chụp thân yêu cầu llama-server (Qwen3.6-35B-A3B) > text stream · tat-nghi 1`] = `
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+  },
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "content": "hi",
+      "role": "user",
+    },
+  ],
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true,
+  },
+  "temperature": 0.7,
+  "top_p": 0.9,
+}
+`;

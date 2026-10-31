@@ -222,7 +222,7 @@ export function phanDinhCauTraLoiRong(
  */
 /**
  * ĐIỂM GHI DUY NHẤT của `chat_template_kwargs` (lưới §5 của `aiLlamaServerClient.suyLuan.test.ts`).
- * ★ Đợt 11.0 (CHỈ ĐO) — `giuNghi` ⇒ `preserve_thinking: true`: template Qwen3.6 giữ suy luận của các lượt assistant TRƯỚC trong prompt
+ * ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — `giuNghi` ⇒ `preserve_thinking: true`: template Qwen3.6 giữ suy luận của các lượt assistant TRƯỚC trong prompt
  * (đọc `/props.chat_template` 2026-10-27). Cả hai cờ vắng ⇒ không chạm thân (thân y hệt trước 11.0).
  */
 export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined, giuNghi?: boolean): void {
@@ -308,7 +308,7 @@ export function chuyenMessageLenDay(m: GgufChatMessage): Record<string, unknown>
       : m.content,
   };
   if (m.tool_call_id) ra.tool_call_id = m.tool_call_id;
-  // ★ Đợt 11.0 (CHỈ ĐO) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
+  // ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — suy luận lượt trước (chỉ assistant; chỉ có khi host bật giữ nghĩ) ⇒ template dựng lại khối <think>.
   //   Tên NỘI BỘ `nghiTruoc` ≠ tên trên dây. ĐIỂM GHI DUY NHẤT trên dây — lưới §5 (suyLuan.test) khai báo DƯƠNG: đúng 1, trong hàm này.
   if (m.role === "assistant" && m.nghiTruoc) Object.assign(ra, { reasoning_content: m.nghiTruoc });
   // ★★★ V-dot4-2 — `arguments` hỏng trong lịch sử ⇒ llama.cpp 500 ở MỌI lượt sau. Chốt chặn CUỐI cho mọi đường (agent
@@ -1048,11 +1048,62 @@ export async function serverGenerateJSON<T = unknown>(
  */
 export class LoiStreamServer extends Error {
   readonly daPhatChu: boolean;
-  constructor(message: string, daPhatChu: boolean, options?: { cause?: unknown }) {
+  /** (Đợt 12 H3.1) mã HTTP khi server trả lỗi TRƯỚC luồng (503 đang nạp model, 429…) — tầng trên phân loại theo số, không theo chữ. */
+  readonly httpStatus?: number;
+  constructor(message: string, daPhatChu: boolean, options?: { cause?: unknown; httpStatus?: number }) {
     super(message, options as any);
     this.name = "LoiStreamServer";
     this.daPhatChu = daPhatChu;
+    if (typeof options?.httpStatus === "number") this.httpStatus = options.httpStatus;
   }
+}
+
+/**
+ * ★ Đợt 12 H3.1 (đường CỤC BỘ) — llama-server trả 503 khi ĐANG NẠP model (khởi động lại :8091, đổi khe) ⇒ CHỜ rồi thử lại TRƯỚC khi
+ * có byte nào ra (an toàn: chưa phát chữ). Chờ = max(`Retry-After`, gốc·2^(lần−1)) + jitter ½; một lần chờ > trần ⇒ không chờ, ném ngay.
+ * Hết `SO_LAN_THU_NAP` lần ⇒ ném `LoiStreamServer` mang `httpStatus: 503` (tầng agent: MODEL_DANG_NAP, tạm thời).
+ */
+export const SO_LAN_THU_NAP = 4;
+export const CHO_NAP_GOC_MS = 1_000;
+export const TRAN_CHO_NAP_MS = 15_000;
+
+export function choTruocLanThuNap(lan: number, retryAfterMs: number | undefined, ngauNhien: () => number = Math.random): number | null {
+  const mu = CHO_NAP_GOC_MS * 2 ** Math.max(0, lan - 1);
+  const ms = Math.max(retryAfterMs ?? 0, mu) + Math.floor(Math.min(0.999, Math.max(0, ngauNhien())) * (mu / 2));
+  return ms > TRAN_CHO_NAP_MS ? null : ms;
+}
+
+let nguNapChoTest: ((ms: number) => Promise<void>) | null = null;
+/** Lưới: thay hàm chờ giữa các lần thử 503 (không ngủ thật). `null` ⇒ `setTimeout`. */
+export function _datNguNapChoTest(f: ((ms: number) => Promise<void>) | null): void {
+  nguNapChoTest = f;
+}
+
+function nguCoHuy(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (nguNapChoTest) return nguNapChoTest(ms);
+  return new Promise((ok, loi) => {
+    if (signal?.aborted) return loi(new LoiStreamServer("[llamaServer] stream bị huỷ khi chờ model nạp", false));
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", huy);
+      ok();
+    }, ms);
+    const huy = () => {
+      clearTimeout(t);
+      loi(new LoiStreamServer("[llamaServer] stream bị huỷ khi chờ model nạp", false));
+    };
+    signal?.addEventListener("abort", huy, { once: true });
+  });
+}
+
+function docRetryAfterLlama(v: string | null | undefined): number | undefined {
+  if (typeof v !== "string" || !/^\d+(\.\d+)?$/.test(v.trim())) return undefined;
+  return Math.round(Number(v.trim()) * 1000);
+}
+
+/** ★ Đợt 12 H0.1 — số đếm token server khai: số (hoặc chuỗi số) hữu hạn ≥ 0 ⇒ phần nguyên; còn lại ⇒ `undefined` (không biết). */
+function soDemToken(x: unknown): number | undefined {
+  const n = typeof x === "number" ? x : typeof x === "string" && x.trim() !== "" ? Number(x) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
 }
 
 /** `true` ⇔ lỗi này xảy ra SAU khi ít nhất một mảnh chữ đã rời khỏi generator. */
@@ -1235,23 +1286,37 @@ async function* streamChatCompletionTrucTiep(
     if (signal) signal.addEventListener("abort", huyTheoNgoai, { once: true });
     datLaiDongHo();
 
-    let res: Response;
-    try {
-      res = await fetch(`${url}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders() },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-    } catch (e) {
-      throw boc(e);
+    let res!: Response;
+    for (let lan = 1; ; lan++) {
+      try {
+        res = await fetch(`${url}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders() },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+      } catch (e) {
+        throw boc(e);
+      }
+      // ★ Đợt 12 H3.1 — 503 (đang nạp model) TRƯỚC luồng ⇒ chờ có backoff rồi thử lại; chưa phát byte nào nên an toàn.
+      if (res.status === 503 && lan < SO_LAN_THU_NAP) {
+        const cho = choTruocLanThuNap(lan, docRetryAfterLlama((res as { headers?: { get?: (k: string) => string | null } }).headers?.get?.("retry-after")));
+        if (cho !== null) {
+          await res.text().catch(() => "");
+          if (dongHo) clearTimeout(dongHo);
+          await nguCoHuy(cho, signal);
+          datLaiDongHo();
+          continue;
+        }
+      }
+      break;
     }
 
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       // ⚠ Giữ NGUYÊN VĂN thông điệp của server trong câu lỗi: `laLoiTranNguCanh()` đọc chính chuỗi
       // này để nói đúng nguyên nhân ("vượt ngữ cảnh") cho người dùng thay vì một mã HTTP trần trụi.
-      throw new LoiStreamServer(`[llamaServer] stream HTTP ${res.status}: ${detail.slice(0, 300)}`, false);
+      throw new LoiStreamServer(`[llamaServer] stream HTTP ${res.status}: ${detail.slice(0, 300)}`, false, { httpStatus: res.status });
     }
     const than: any = (res as any).body;
     if (!than || typeof than.getReader !== "function") {
@@ -1274,6 +1339,12 @@ async function* streamChatCompletionTrucTiep(
     let soDeltaSuyLuan = 0;
     let ttftMs: number | undefined;
     let tokensPrompt = 0;
+    // ★ Đợt 12 H0.1 — `timings.cache_n` / `timings.prompt_n` (ưu tiên) và dự phòng từ `usage.prompt_tokens_details.cached_tokens`.
+    //   `undefined` = server không khai ⇒ chunk `done` KHÔNG mang trường (không biết ≠ 0).
+    let cacheN: number | undefined;
+    let promptN: number | undefined;
+    let usageCacheN: number | undefined;
+    let usagePromptN: number | undefined;
     let tokensGenerated = 0;
     let soManh = 0;
     let xong = false;
@@ -1305,6 +1376,12 @@ async function* streamChatCompletionTrucTiep(
         if (u) {
           tokensPrompt = Number(u.prompt_tokens ?? tokensPrompt) || tokensPrompt;
           tokensGenerated = Number(u.completion_tokens ?? tokensGenerated) || tokensGenerated;
+          const daCache = soDemToken(u.prompt_tokens_details?.cached_tokens);
+          const tongVao = soDemToken(u.prompt_tokens);
+          if (daCache !== undefined && tongVao !== undefined && tongVao >= daCache) {
+            usageCacheN = daCache;
+            usagePromptN = tongVao - daCache;
+          }
         }
         const t = json?.timings;
         if (t) {
@@ -1312,6 +1389,13 @@ async function* streamChatCompletionTrucTiep(
           const tong = Number(t.cache_n ?? 0) + Number(t.prompt_n ?? 0);
           if (tong > 0) tokensPrompt = tong;
           if (Number(t.predicted_n ?? 0) > 0) tokensGenerated = Number(t.predicted_n);
+          // ★ Đợt 12 H0.1 — GIỮ RIÊNG hai số (tổng ở trên mất tỉ lệ trúng cache). Chỉ nhận khi CẢ HAI là số đếm hợp lệ.
+          const c = soDemToken(t.cache_n);
+          const p = soDemToken(t.prompt_n);
+          if (c !== undefined && p !== undefined) {
+            cacheN = c;
+            promptN = p;
+          }
         }
         // Gom suy luận TRƯỚC `continue` — nếu để sau, một sự kiện chỉ mang `reasoning_content`
         // (rất phổ biến ở model lai: hàng trăm sự kiện suy luận rồi mới tới chữ) sẽ rơi khỏi phép
@@ -1417,6 +1501,11 @@ async function* streamChatCompletionTrucTiep(
       finishReason: finishReasonRa(finishReason, toolCalls.length > 0),
       tokensGenerated,
       tokensPrompt,
+      ...(cacheN !== undefined && promptN !== undefined
+        ? { cacheN, promptN }
+        : usageCacheN !== undefined && usagePromptN !== undefined
+          ? { cacheN: usageCacheN, promptN: usagePromptN }
+          : {}),
       totalTimeMs,
       ttftMs,
       tokensPerSecond:

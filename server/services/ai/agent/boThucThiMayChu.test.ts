@@ -26,7 +26,8 @@ import { gocRepoChinh } from "../../aiCodingTuTriGhi";
 import { _xoaSoBamHITL } from "../../aiLocalTools/writeHandlers/applyDiff";
 import { xoaSoNganSach } from "../../aiLocalTools/repoSandbox";
 import { getDb } from "../../../db/connection";
-import { aiPendingActions } from "../../../../drizzle/schema";
+import { aiAgentRuns, aiPendingActions } from "../../../../drizzle/schema";
+import { taoHangLuotChay } from "../../../db/aiAgentRuns";
 import { users, userSecrets } from "../../../../drizzle/schema/auth";
 import { createLocalUser } from "../../../db/auth";
 
@@ -74,11 +75,14 @@ async function chay(
   if (!kt.ok) throw new Error(kt.loiChoModel);
   const suKien: SuKienAgent[] = [];
   const ac = o.ac ?? new AbortController();
+  // Đợt 11.8 (M4/S7): thẻ agent gắn lượt; `confirmAction` đòi hàng sổ lượt còn sống ⇒ mỗi lượt giả cần một hàng sổ thật.
+  const runId = o.runId ?? randomUUID();
+  await taoHangLuotChay({ id: runId, userId: uid, projectId: "t4bo", cheDo, cauHoi: "luoi" });
   const kq = await bo.chay(
     { id: `call_${++demGoi}`, ten, thamSo: kt.thamSo },
     {
       cheDo,
-      runId: o.runId ?? randomUUID(),
+      runId,
       luot: 1,
       signal: ac.signal,
       phat: (e) => {
@@ -138,6 +142,7 @@ afterAll(async () => {
   const db = await getDb();
   if (db && uid > 0) {
     await db.delete(aiPendingActions).where(eq(aiPendingActions.userId, uid));
+    await db.delete(aiAgentRuns).where(eq(aiAgentRuns.userId, uid));
     await db.delete(userSecrets).where(eq(userSecrets.userId, uid));
     await db.delete(users).where(eq(users.id, uid));
   }

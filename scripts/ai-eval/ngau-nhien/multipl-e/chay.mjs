@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { PYTHON, CMAKE, GO, RUSTC, MOI_TRUONG } from "../lib/moiTruong.mjs";
+import { CO_BIEN_DOI_TS, nodeCoBienDoiTs, bienDoiTs } from "../../lib/tsChay.mjs";
 
 function chay(file, args, cwd, giay) {
   return new Promise((resolve) => {
@@ -117,9 +118,18 @@ async function chayMot(lang, prog, dir, duLieu) {
     case "js":
     case "ts": {
       fs.writeFileSync(`${dir}/package.json`, '{"type":"commonjs"}\n');
+      if (lang === "ts" && !nodeCoBienDoiTs()) {
+        // node v26 gỡ cờ biến đổi kiểu (lib/tsChay.mjs) ⇒ esbuild ra CommonJS; lỗi cú pháp = TRƯỢT (như node từ chối .ts)
+        try {
+          fs.writeFileSync(`${dir}/prog.js`, await bienDoiTs(prog, "cjs"));
+        } catch (e) {
+          return ketQua({ ma: 1, out: `esbuild: ${String(e?.message || e).slice(0, 1200)}`, hetGio: false });
+        }
+        return ketQua(await chay(process.execPath, ["prog.js"], dir, 30));
+      }
       const tep = lang === "js" ? "prog.js" : "prog.ts";
       fs.writeFileSync(`${dir}/${tep}`, prog);
-      return ketQua(await chay(process.execPath, lang === "ts" ? ["--experimental-transform-types", "--no-warnings", tep] : [tep], dir, 30));
+      return ketQua(await chay(process.execPath, lang === "ts" ? [CO_BIEN_DOI_TS, "--no-warnings", tep] : [tep], dir, 30));
     }
     case "go":
       fs.writeFileSync(`${dir}/go.mod`, "module mpe\n\ngo 1.24\n");

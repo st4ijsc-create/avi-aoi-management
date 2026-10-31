@@ -1,5 +1,5 @@
 /**
- * ★★★ ĐỢT F / TASK 4 — logic THUẦN (không import `vscode`) quyết định AI Local đặt được ở THANH
+ * ★★★ ĐỢT F / TASK 4 — logic THUẦN (không import `vscode`) quyết định Thợ Cả đặt được ở THANH
  * BÊN PHỤ (`secondarySidebar`, chỗ người dùng để Claude Code) hay phải LÙI về thanh hoạt động
  * (`activitybar`, khuôn cũ). `extension.ts` gọi `hoTroThanhBenPhu(vscode.version)` trong
  * `activate()` rồi `setContext(KHOA_NGU_CANH_KHONG_HO_TRO_THANH_BEN_PHU, !ket_qua)` — hai

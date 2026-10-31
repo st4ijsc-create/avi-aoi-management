@@ -35,7 +35,7 @@ vi.mock("./goiModelMayChu", () => ({
       h.cauNguoiDung.push(vao.tinNhan.filter((m) => m.role === "user").at(-1)?.content ?? "");
       const b = h.kichBan[Math.min(i++, h.kichBan.length - 1)]!;
       if (b.chu) yield { loai: "chu", noiDung: b.chu };
-      yield { loai: "xong", toolCalls: (b.toolCalls ?? []) as WireToolCall[], usage: { vao: 1000, ra: 40, nghi: 5 } };
+      yield { loai: "xong", toolCalls: (b.toolCalls ?? []) as WireToolCall[], usage: { vao: 1000, ra: 40, nghi: 5, cacheN: 900, promptN: 100 } };
     } as GoiModel;
   },
 }));
@@ -221,7 +221,8 @@ describe("cờ BẬT", () => {
     expect(h.soLuotGoi).toBe(3);
     expect(ghi.phu).toHaveLength(3);
     for (const r of ghi.phu) {
-      expect(r).toMatchObject({ luotPhu: "agent-luot", requestId: kq.luot.id, model: M35, tokensIn: 1000, tokensOut: 40, reasoningTokens: 5 });
+      // (Đợt 12 H0.1, kiem-dinh i10) cột cache đi qua đường recordPhu agent-luot của quanLyLuotChay
+      expect(r).toMatchObject({ luotPhu: "agent-luot", requestId: kq.luot.id, model: M35, tokensIn: 1000, tokensOut: 40, reasoningTokens: 5, cacheTokens: 900, promptEvalTokens: 100 });
       expect(typeof r.latencyMs).toBe("number");
     }
     expect(ghi.record).toHaveLength(1);

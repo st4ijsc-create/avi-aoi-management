@@ -20,8 +20,8 @@
  * xem khối VRAM ở `aiCodingAgent.ts`: model khác model server đang giữ thì đường tool-calling KHÔNG có).
  * Lỗi `LLAMA_SERVER_DOWN` / mảnh `error` giữa luồng ⇒ `LoiModel` TẠM THỜI (lõi thử lại 1 lần).
  */
-import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../../aiLlamaServerClient";
-import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
+import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan, laLoiTranNguCanh } from "../../aiLlamaServerClient";
+import { LoiModel, MA_LOI_TRAN_NGU_CANH, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
 import { StreamingThinkingStripper, thinkingStartsOpen } from "../../ai/thinkingStrip";
 import { StreamingSecretRedactor } from "../aiSafety";
 import { chayVoiNgheCho, chayVoiUuTien, type MucUuTien } from "../hangDoiUuTienLlm";
@@ -46,6 +46,11 @@ export interface CauHinhGoiModel {
   userId?: number;
   /** `true` ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã được đếm ở nơi khác, vd. qua cổng khi `AI_AGENT_THEO_VAI_TRO` bật). */
   khongGhiDauVet?: boolean;
+  /**
+   * (Đợt 12 H4.2) lượt chạy chủ của các lượt model này — CHỈ để bộ ghi (`AI_GHI_LUOT_DIR`, cửa sổ đo) đặt tên tệp `<runId>.jsonl`.
+   * Vắng hoặc biến môi trường vắng ⇒ không ghi gì.
+   */
+  runId?: string;
 }
 
 const moTaLoi = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -66,11 +71,29 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
   return ten.length ? "kb-agent-luot cong-cu=" + ten.join(",") : undefined;
 }
 
+/** `httpStatus` của lỗi hoặc của một `cause` (tối đa 4 tầng). */
+function trangThaiHttp(e: unknown): number | undefined {
+  let x: unknown = e;
+  for (let i = 0; i < 4 && x && typeof x === "object"; i++) {
+    const st = (x as { httpStatus?: unknown }).httpStatus;
+    if (typeof st === "number") return st;
+    x = (x as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 /** Lỗi engine ⇒ `LoiModel` có cờ tạm thời đúng nghĩa. */
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
+  // ★ Đợt 12 H3.1 — mã ổn định theo HTTP của llama-server (tìm cả trong chuỗi `cause` — engine có thể bọc lại lỗi).
+  const st = trangThaiHttp(e);
+  if (st === 503) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "MODEL_DANG_NAP" });
+  if (st === 429) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "RATE_LIMIT" });
   const code = (e as { code?: unknown } | null)?.code;
+  // mã LLAMA_SERVER_DOWN xét TRƯỚC chữ tràn: lỗi nạp model có thể chứa "n_ctx" mà vẫn là lỗi TẠM THỜI (được thử lại)
   if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
+  // (Đợt 12 · H1.3) tràn cửa sổ ngữ cảnh: mã riêng, KHÔNG tạm thời (gọi lại y nguyên vẫn tràn) — lõi nén mạnh rồi thử một lần
+  if (laLoiTranNguCanh(e)) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
   if (typeof code === "string" && code.startsWith("LLM_QUEUE_")) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: code });
   if (code === "tool_calls_unsupported_path") return new LoiModel(moTaLoi(e), { tamThoi: false, ma: "TOOL_CALL_KHONG_HO_TRO" });
   if (typeof code === "string" && /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_SOCKET)$/.test(code)) {
@@ -123,8 +146,12 @@ async function* luongModelMayChu(
 
   /** Máy bơm: chạy TRỌN trong `chayVoiUuTien` (xem đầu tệp). Bộ cắt suy luận + bộ che ở ngay trên. */
   async function bomLuongModelMayChu(epTatNghi = false): Promise<void> {
+    const streamGoc: HamChatStream = cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+    // ★ Đợt 12 H4.2 — bộ GHI lượt (phát lại không GPU): CHỈ tiến trình đo đặt AI_GHI_LUOT_DIR (thư mục tuyệt đối, ngoài repo); điểm đọc
+    //   biến DUY NHẤT (census). Vắng ⇒ engine y nguyên. Bộ ghi chuyển nguyên từng mảnh, ghi hỏng không làm hỏng lượt.
+    const thuMucGhi = (process.env.AI_GHI_LUOT_DIR ?? "").trim();
     const chatCompletionStream: HamChatStream =
-      cauHinh.chatStream ?? (await import("../../aiGgufEngine")).chatCompletionStream;
+      thuMucGhi && cauHinh.runId ? (await import("./ghiLuotModel")).bocGhiLuot(streamGoc, { thuMuc: thuMucGhi, runId: cauHinh.runId }) : streamGoc;
     let modelId = cauHinh.modelId;
     if (modelId === undefined && process.env.AI_CODING_MODEL_TASK === "code") {
       modelId = (await import("../../aiGgufEngine")).codeModelBasename();
@@ -138,7 +165,7 @@ async function* luongModelMayChu(
       repeatPenalty: 1.05,
       ...(vao.congCu.length ? { tools: vao.congCu, toolChoice: "auto" as const } : {}),
       ...(nghi ? {} : { disableThinking: true }),
-      // ★ Đợt 11.0 (CHỈ ĐO) — lịch sử mang suy luận ⇒ bảo template GIỮ nó (`preserve_thinking`); vắng ⇒ thân yêu cầu như cũ.
+      // ★ Đợt 11.0 (preserve_thinking — agent server mặc định BẬT) — lịch sử mang suy luận ⇒ bảo template GIỮ nó (`preserve_thinking`); vắng ⇒ thân yêu cầu như cũ.
       ...(nghi && vao.tinNhan.some((m) => m.role === "assistant" && m.reasoning_content?.trim()) ? { preserveThinking: true } : {}),
     };
     // ★ Đợt 9 — DẤU VẾT: đường agent đi NGOÀI cổng (gọi thẳng engine, không `planInference`) ⇒ không quota / safety / license và KHÔNG
@@ -161,6 +188,7 @@ async function* luongModelMayChu(
         const an = cheNghi.push(c.token);
         if (an) day({ loai: "nghi", noiDung: an });
       } else if (c.type === "error") {
+        if (laLoiTranNguCanh(c.error)) throw new LoiModel(`model stream error: ${c.error}`, { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
         throw new LoiModel(`model stream error: ${c.error ?? "unknown"}`, { tamThoi: true, ma: "MODEL_LOI_LUONG" });
       } else if (c.type === "done") {
         const conChu = cheChu.push(catSuyLuan.flush()) + cheChu.flush();
@@ -185,6 +213,8 @@ async function* luongModelMayChu(
                   // `ra` = MỌI token sinh (gồm nghĩ) — trần `tokenRaToiDa` của lõi phải đo chi phí THẬT.
                   ra: Number(c.tokensGenerated ?? 0),
                   ...(typeof c.tokensReasoning === "number" ? { nghi: c.tokensReasoning } : {}),
+                  // ★ Đợt 12 H0.1 — tái dùng prefix-cache / xử lý lại (chỉ đường llama-server, luôn đi cặp).
+                  ...(typeof c.cacheN === "number" && typeof c.promptN === "number" ? { cacheN: c.cacheN, promptN: c.promptN } : {}),
                 },
               }
             : {}),
@@ -201,6 +231,8 @@ async function* luongModelMayChu(
         tokensIn: ketThuc?.tokensPrompt,
         tokensOut: ketThuc?.tokensGenerated,
         reasoningTokens: typeof ketThuc?.tokensReasoning === "number" ? ketThuc.tokensReasoning : null,
+        cacheTokens: typeof ketThuc?.cacheN === "number" ? ketThuc.cacheN : null,
+        promptEvalTokens: typeof ketThuc?.promptN === "number" ? ketThuc.promptN : null,
         thinking: nghi ? null : false,
         latencyMs: Date.now() - t0,
         outcome: hoanTat ? "ok" : "error",

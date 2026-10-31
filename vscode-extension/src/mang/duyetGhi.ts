@@ -242,7 +242,7 @@ export class LoiSoKiemToan extends Error {
   }
 }
 
-const LENH_DANG_NHAP_THIET_BI = '"AI Local: Đăng nhập AI Local (device flow)"';
+const LENH_DANG_NHAP_THIET_BI = '"Thợ Cả: Đăng nhập Thợ Cả (device flow)"';
 
 /** Diễn dịch THUẦN khung lỗi `{error:{code,message}}` của các tuyến REST Bearer ⇒ mã + câu tiếng Việt chỉ việc phải làm. */
 export function moTaLoiSoKiemToan(status: number, than: unknown, retryAfter?: string | null): { ma: MaLoiSoKiemToan; thongDiep: string } {

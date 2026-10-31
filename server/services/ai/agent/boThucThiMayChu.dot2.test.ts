@@ -22,7 +22,8 @@ import { _xoaSoBamHITL } from "../../aiLocalTools/writeHandlers/applyDiff";
 import { xoaSoNganSach } from "../../aiLocalTools/repoSandbox";
 import { danhSachBaiHoc } from "../../../db/aiCodingLessons";
 import { getDb } from "../../../db/connection";
-import { aiCodingLessons, aiPendingActions } from "../../../../drizzle/schema";
+import { aiAgentRuns, aiCodingLessons, aiPendingActions } from "../../../../drizzle/schema";
+import { taoHangLuotChay } from "../../../db/aiAgentRuns";
 import { users, userSecrets } from "../../../../drizzle/schema/auth";
 import { createLocalUser } from "../../../db/auth";
 
@@ -78,9 +79,12 @@ async function chay(bo: ReturnType<typeof taoBo>, ten: string, thamSoTho: unknow
   const kt = kiemThamSo(ten, thamSoTho);
   if (!kt.ok) throw new Error(kt.loiChoModel);
   const suKien: SuKienAgent[] = [];
+  // Đợt 11.8 (M4/S7): thẻ agent gắn lượt ⇒ cần hàng sổ lượt còn sống để `confirmAction` cho qua.
+  const runId = randomUUID();
+  await taoHangLuotChay({ id: runId, userId: uid, projectId: "t4dot2", cheDo, cauHoi: "luoi" });
   const kq = await bo.chay(
     { id: `call_${++demGoi}`, ten, thamSo: kt.thamSo },
-    { cheDo, runId: randomUUID(), luot: 1, signal: new AbortController().signal, phat: (e) => suKien.push(e) },
+    { cheDo, runId, luot: 1, signal: new AbortController().signal, phat: (e) => suKien.push(e) },
   );
   return { kq, suKien };
 }
@@ -125,6 +129,7 @@ afterAll(async () => {
   if (db && uid > 0) {
     await db.delete(aiCodingLessons).where(eq(aiCodingLessons.userId, uid));
     await db.delete(aiPendingActions).where(eq(aiPendingActions.userId, uid));
+    await db.delete(aiAgentRuns).where(eq(aiAgentRuns.userId, uid));
     await db.delete(userSecrets).where(eq(userSecrets.userId, uid));
     await db.delete(users).where(eq(users.id, uid));
   }

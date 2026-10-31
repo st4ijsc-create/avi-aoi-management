@@ -44,7 +44,7 @@ export async function xinPhepNeuCan(
 ): Promise<{ ok: true } | { ok: false; lyDo: string }> {
   const kho = pt.docTrangThai();
   if (biTat(kho, cfg.ten)) {
-    return { ok: false, lyDo: `server "${cfg.ten}" đang TẮT — bật lại ở lệnh "AI Local: Quản lý MCP server ngoài"` };
+    return { ok: false, lyDo: `server "${cfg.ten}" đang TẮT — bật lại ở lệnh "Thợ Cả: Quản lý MCP server ngoài"` };
   }
   if (daDuocDuyet(kho, cfg)) return { ok: true };
 
@@ -129,7 +129,7 @@ export async function datBatTatMcpNgoai(pt: PhuThuocDieuPhoiMcp, ten: string, ta
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // BỘ NHỚ ĐỆM "ĐÃ KẾT NỐI" — nguồn cho văn bản dạy giao thức (`bangChat.ts#hoi`).
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// ★★★ KHÔNG tự động nạp khi mở khung chat — chỉ B5 ("AI Local: Quản lý MCP server ngoài", nơi
+// ★★★ KHÔNG tự động nạp khi mở khung chat — chỉ B5 ("Thợ Cả: Quản lý MCP server ngoài", nơi
 // người dùng CHỦ Ý bấm "Kết nối/làm mới") mới gọi `datDsToolMcpDangCoSan`. Xem lý do ở docblock
 // `loi/dayMcpDoc.ts`: nạp ngầm mỗi câu hỏi sẽ vừa chậm (spawn tiến trình) vừa có thể bất ngờ bật
 // hộp thoại duyệt giữa một câu hỏi không liên quan tới MCP.
@@ -156,7 +156,7 @@ export function phuThuocThat(context: vscode.ExtensionContext): PhuThuocDieuPhoi
     },
     hoiDuyet: async (cfg) => {
       const chon = await vscode.window.showWarningMessage(
-        `AI Local muốn chạy tiến trình MCP server ngoài "${cfg.ten}": ${cfg.lenh} ${cfg.doi.join(" ")}` +
+        `Thợ Cả muốn chạy tiến trình MCP server ngoài "${cfg.ten}": ${cfg.lenh} ${cfg.doi.join(" ")}` +
           `${cfg.thuMuc ? ` (thư mục: ${cfg.thuMuc})` : ""}. Đây là mã KHÔNG do ST4I kiểm soát — chỉ ` +
           `đồng ý nếu bạn tin nguồn cấu hình này (aviAiLocal.mcpServers). Quyết định được nhớ theo MÁY này.`,
         { modal: true },

@@ -215,7 +215,7 @@ true**; số còn lại chưa đặt (mặc định off).
 
 | # | Cờ | Điều kiện trước | Verify | Rollback |
 |---|----|-----------------|--------|----------|
-| 1 | `OBSERVABILITY=true` | không | `curl localhost:3000/health` OK; `curl localhost:3000/api/observability/health` trả JSON store-forward/supervisor; log có SLO evaluator; trang `/control-readiness` hiện cờ xanh | set `false` + restart |
+| 1 | `OBSERVABILITY=true` | không | `curl localhost:3000/health` OK; `/api/observability/health` (cần phiên đăng nhập admin/supervisor — curl không phiên ⇒ 401, xem ghi chú dưới bảng) trả JSON store-forward/supervisor; log có SLO evaluator; trang `/control-readiness` hiện cờ xanh | set `false` + restart |
 | 2 | `METRICS_ENABLED=true` *(đã true)* | package `prom-client` có trong node_modules (nếu thiếu, log in "bỏ qua Prometheus metrics" — cài khi được phép) | `curl localhost:3000/metrics` có metric tiền tố `avi_aoi_`; Prometheus (monitoring/) scrape xanh | set `false` |
 | 3 | `UNS_BRIDGE_ENABLED` / `UNS_SPARKPLUG_ENABLED` *(đã true)* — **xác nhận broker** | container `emqx` chạy (`docker compose ps emqx` healthy) và `UNS_BROKER_URL=mqtt://localhost:1884` đúng cổng | Dashboard EMQX `http://localhost:18083` → Clients thấy app nối; topic UNS có message | tắt 2 cờ |
 | 4 | `TELEMETRY_BATCH_ENABLED=true` | ingest đang chạy ổn định (quan sát 1 ngày sau cờ 3) | log báo batch/coalesce; `SELECT count(*) FROM ot_telemetry WHERE ts > now()-interval '5 min'` vẫn tăng; latency ingest không xấu đi | set `false` (đường ghi cũ trở lại NGAY) |
@@ -225,6 +225,8 @@ true**; số còn lại chưa đặt (mặc định off).
 | 8 | `TENANT_RLS_ENABLED` *(đã true)* | sau mục a, re-apply 0125 thành công | `SELECT count(*) FROM pg_policies WHERE policyname LIKE '%tenant%';` > 0; smoke đọc/ghi bình thường | set `false` |
 | 9 | `CONTRACT_REGISTRY_PERSIST_ENABLED=true` | 0248 đã áp (mục b) | `SELECT count(*) FROM contract_schemas;` — seed/persist tăng khi registry đăng ký schema; log không lỗi | set `false` (registry về in-memory) |
 | 10 | `CFX_ENABLED` / `UNS_CMD_ACK_ENABLED` | **CHỈ khi có endpoint thật** (máy nói CFX / consumer cmd_ack) | CFX: log kết nối AMQP; cmd_ack: topic `syn/<enterprise>/cmd_ack/adapter/<id>` có message khi phát lệnh | tắt cờ |
+
+> **Ghi chú `/api/observability/health` (C2, 2026-11-01):** tuyến đòi PHIÊN đăng nhập vai admin / super_admin / supervisor — `curl` không kèm cookie phiên nhận **401** (mở trên trình duyệt đã đăng nhập, hoặc `curl -b '<cookie phiên>'`). activeEndpoint/lastError bị che (null / mã) khi người gọi không có engineer|admin + machine_control.canEdit (C2, 2026-11-01).
 
 ---
 
@@ -404,7 +406,7 @@ hoặc bao-agent template; rotation theo lịch. Đến lúc đó `.env` chỉ c
 | Migration 0246-0250 | 5 khối SQL ở mục b | đủ cột/bảng/index; `ot_telemetry_idempotency`='ok' |
 | WORM enforced | `UPDATE audit_logs ...` bằng avi_app | denied / 0 row |
 | App chạy bằng avi_app | log boot + `SELECT current_user` qua app | `avi_app` |
-| SLO evaluator | `curl localhost:3000/api/observability/health` | JSON trạng thái, không 404 |
+| SLO evaluator | `/api/observability/health` bằng phiên admin/supervisor (curl không phiên ⇒ 401) | JSON trạng thái, không 404; activeEndpoint/lastError bị che (null / mã) khi người gọi không có engineer|admin + machine_control.canEdit (C2, 2026-11-01) |
 | Metrics | `curl localhost:3000/metrics \| grep avi_aoi_` | có metric |
 | Cờ readiness | mở `/control-readiness` | các cờ đã bật hiện xanh, không cờ "ma" |
 | NATS | `curl localhost:8222/healthz` | `{"status":"ok"}` |
