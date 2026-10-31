@@ -107,8 +107,8 @@ export function lyDoLoaiBien(ten: string, giaTri: string): LyDoLoaiBien | null {
   if (NGOAI_LE.has(T)) return null;
   // `HTTP_PROXY` viết thường (`http_proxy`) đã gom nhờ `toUpperCase`.
   if (TIEN_TO_DICH_VU.some((p) => T.startsWith(p))) return "tien-to";
-  // `AUTHOR` (GIT_AUTHOR_NAME/EMAIL — `git commit` của lệnh test cần chúng) không phải `AUTH`: bỏ đoạn AUTHOR trước khi so mảnh.
-  const tenSoManh = T.replace(/AUTHOR/g, "");
+  // `AUTHOR` (GIT_AUTHOR_NAME/EMAIL — `git commit` của lệnh test cần chúng) không phải `AUTH`: bỏ đoạn AUTHOR trước khi so mảnh — TRỪ `AUTHORIZATION` (đó là AUTH thật).
+  const tenSoManh = T.replace(/AUTHOR(?!IZ)/g, ""); // AUTHORIZATION KHÔNG được bỏ (còn "IZATION" thì lọt)
   if (MANH_TEN_BI_MAT.some((m) => tenSoManh.includes(m))) return "ten";
   if (new RegExp(RE_TOKEN_CO_TIEN_TO.source).test(giaTri)) return "gia-tri-token";
   if (RE_URL_CO_MAT_KHAU.test(giaTri)) return "gia-tri-url";

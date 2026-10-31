@@ -52,7 +52,8 @@ export interface MoDongMem {
  * ★ Đợt 12/H2 (theo kiem-dinh) — ĐÓNG MỘT TIẾN TRÌNH SỐNG LÂU, KHÔNG detached (MCP server).
  * Windows: như `gietCayThenLopHai` (`taskkill /T /F` đủ cây). POSIX: pid KHÔNG phải thủ lĩnh nhóm ⇒ `kill(-pid)` hụt rồi rơi về SIGKILL
  * thẳng vào `npx`/`node` đầu ⇒ cháu do `npx` sinh mồ côi. Nên POSIX gửi SIGTERM TRƯỚC (npx/npm chuyển tín hiệu cho cháu, server dọn dẹp
- * êm), rồi SIGKILL cả cây sau ân hạn nếu còn sống.
+ * êm), rồi sau ân hạn nếu cha còn sống thì SIGKILL ĐÚNG pid cha (KHÔNG phải cả cây: tiến trình không detached nên `kill(-pid)` hụt).
+ * ⚠ GIỚI HẠN ĐÃ BIẾT: cây chỉ chết nếu cha chuyển SIGTERM cho cháu (npx/npm có); cha thoát êm mà cháu cứng đầu ⇒ cháu mồ côi.
  */
 export function dongTienTrinhSongLau(
   cp: { pid?: number; kill: (tinHieu?: NodeJS.Signals) => boolean; exitCode: number | null; signalCode: NodeJS.Signals | null },

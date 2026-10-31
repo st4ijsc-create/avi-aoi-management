@@ -16,6 +16,13 @@ describe("cấm QUÁ RỘNG đã bớt", () => {
     expect(lyDoLoaiBien("AUTH_HEADER", "x")).not.toBeNull();
     expect(lyDoLoaiBien("GIT_AUTHOR_TOKEN", "x")).not.toBeNull();
   });
+  it("★ AUTHORIZATION / HTTP_AUTHORIZATION (giá trị Bearer/Basic) bị LOẠI — bỏ AUTHOR không được biến chúng thành 'IZATION'; GIT_AUTHOR_* vẫn giữ", () => {
+    for (const ten of ["AUTHORIZATION", "HTTP_AUTHORIZATION", "authorization", "PROXY_AUTHORIZATION"]) {
+      expect(lyDoLoaiBien(ten, "Bearer abc"), ten).not.toBeNull();
+      expect(lyDoLoaiBien(ten, "Basic dTpw"), ten).not.toBeNull();
+    }
+    expect(lyDoLoaiBien("GIT_AUTHOR_NAME", "Nguyen Van A")).toBeNull();
+  });
 });
 
 describe("cấm QUÁ HẸP đã bịt", () => {

@@ -42,6 +42,13 @@ describe("chayLenhCucBo — môi trường (thật)", () => {
     expect(ten.some((k) => k === "PATH")).toBe(true);
     expect(env.GOFLAGS_THU).toBe("-mod=mod");
   }, 40_000);
+
+  it("★ `lenh.env` (hằng khoá mạng của allowlist) THẮNG biến cùng tên của dev: GOFLAGS dev=-mod=mod, allowlist=-mod=readonly ⇒ tiến trình con thấy readonly", async () => {
+    datEnv("GOFLAGS", "-mod=mod"); // GOFLAGS nằm trong NGOAI_LE ⇒ qua bộ lọc, nên chỉ thứ tự trộn quyết định
+    const kq = await chayLenhCucBo({ lenh: lenhNode("console.log(process.env.GOFLAGS)", { GOFLAGS: "-mod=readonly" }), cwd: tmpdir(), tranMs: 20_000 });
+    expect(kq.ok).toBe(true);
+    expect(kq.output.trim()).toBe("-mod=readonly");
+  }, 40_000);
 });
 
 describe("chayLenhCucBo — đầu ra ĐẦU + CUỐI (thật)", () => {
