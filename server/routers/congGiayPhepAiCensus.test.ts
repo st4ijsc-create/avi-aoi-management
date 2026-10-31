@@ -573,7 +573,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // ★ 2026-10-31 Đợt 11.3-C (tho-ca-agent): +2 thủ tục AI có cổng MOD_AI (aiAgent.keHoachDangCho + duyetKeHoach) ⇒ beMatAi 468→470, aiCoCong 406→408, tong 2442→2444 (= phamViDocCensus tong). ĐO trên nhánh.
 // ★ 2026-10-31 Đợt 12 H5.4 (tho-ca-agent): +1 thủ tục AI có cổng MOD_AI (aiAgent.tiepTucLuot) ⇒ beMatAi 470→471, aiCoCong 408→409, tong 2444→2445. ĐO trên nhánh.
 // ★★ 2026-10-31 · scada-master GỘP main 499954cb2 vào feat/scada-2bA-hop-dong (C2) — ĐO trên cây gộp: main + nhánh C2 scadaDiag.tomTatTruyenThong +1 (ngoài bề mặt AI) ⇒ tong 2446.
-const GHIM = { tong: 2446, beMatAi: 471, aiCoCong: 409, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-11-01 · SCADA R1b-2b-2b A — C4: +1 mutation `scadaDiag.thuDocDiaChi` (ngoài bề mặt AI, sau MOD_OT_CONTROL) ⇒ tong 2446→2447 (= phamViDocCensus tong). Đo: ghim cũ đỏ ĐÚNG +1.
+const GHIM = { tong: 2447, beMatAi: 471, aiCoCong: 409, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
 //   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc
@@ -643,7 +644,10 @@ const GHIM_MODULE_KHAC = {
   //   mọi bề mặt OT. `commandLog.list|get|stats|avgDurations` KHÔNG thêm cổng (moduleAccessMap không đổi). Đo: ghim cũ đỏ ĐÚNG +1.
   // ★ 2026-10-31 · R1b-2b-2b A — C2 scadaDiag.tomTatTruyenThong +1 — 130 → 131: query trên `moduleProcedure("MOD_OT_CONTROL")` của scadaDiagRouter
   //   (+ `machine_monitoring.canView`) như `danhSach`. Không thủ tục cũ nào đổi cổng. Đo: ghim cũ đỏ (SKU khác đổi) ĐÚNG +1.
-  MOD_OT_CONTROL: 131,
+  // ★ 2026-11-01 · R1b-2b-2b A — C4 scadaDiag.thuDocDiaChi +1 — 131 → 132: mutation trên `roleProcedure("admin","engineer").use(moduleGate("MOD_OT_CONTROL"))`
+  //   (+ `machine_control.canEdit`) — KHÔNG `require2FA` (điều phối Q1 / KD-2bA 4.1: "2FA không tiên quyết" cho Kỹ thuật & Điều khiển). Cùng cổng giấy
+  //   phép với scadaDiag anh em. Không thủ tục cũ nào đổi cổng. Đo: ghim cũ đỏ (SKU khác đổi) ĐÚNG +1.
+  MOD_OT_CONTROL: 132,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
