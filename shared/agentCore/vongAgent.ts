@@ -34,9 +34,10 @@ import {
 } from "./giaoViec";
 import { bamNgan, soDoDuoc, type MaKhoiChen, type NenBuocDo } from "./buocDo";
 import { bamKeHoach, chuanHoaKeHoach, type CongKeHoach } from "./keHoach";
-import { catDauDuoi, nenLichSu, uocLuongTinNhan, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
+import { catDauDuoi, nenLichSu, nenManh, uocLuongTinNhan, uocLuongTokenMacDinh, type UocLuongToken } from "./nguCanh";
 import {
   GIOI_HAN_MAC_DINH,
+  MA_LOI_TRAN_NGU_CANH,
   MA_MENH_LENH_TRONG_DU_LIEU,
   NGUONG_NGU_CANH_DAY_PHAN_TRAM,
   laLoiTamThoi,
@@ -101,6 +102,12 @@ export interface DauVaoVongAgent {
    * thuần mọi tin. Vắng ⇒ như cũ từng byte. Host server: `AI_AGENT_NEN_SO_THAT=1` (mặc định TẮT cho tới khi có A/B).
    */
   demNguCanhSoThat?: boolean;
+  /**
+   * (Đợt 12 · H1.3) lượt model bị từ chối vì TRÀN ngữ cảnh (`LoiModel.ma === "CONTEXT_OVERFLOW"`) ⇒ nén MẠNH (`nenManh`) rồi gọi lại MỘT lần mỗi lượt,
+   * chỉ khi ước lượng thực sự giảm; không giảm / đã cứu rồi ⇒ dừng `loi-model` như cũ. Vắng ⇒ như cũ (lỗi tràn dừng lượt). Host server: mặc định BẬT,
+   * `AI_AGENT_CUU_TRAN=0` tắt.
+   */
+  cuuTranNguCanh?: boolean;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -701,12 +708,23 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       tinNhan = kqNen.tinNhan;
       // (không cần chỉnh `neoSoThat` sau nén: lượt model ngay sau đó báo `usage` mới và neo lại)
       // (H0.2) chụp trạng thái LÚC GỌI model — các biến này đổi sau lượt.
-      const nenDo: NenBuocDo | null = kqNen.soNen > 0 ? { soNen: kqNen.soNen, tokenTruoc: kqNen.tokenTruoc, tokenSau: kqNen.tokenSau } : null;
+      let nenDo: NenBuocDo | null = kqNen.soNen > 0 ? { soNen: kqNen.soNen, tokenTruoc: kqNen.tokenTruoc, tokenSau: kqNen.tokenSau } : null;
       const soTinLucGoi = tinNhan.length;
-      const tokenUocLucGoi = uocLuongTinNhan(tinNhan, uoc) + tokenCongCuUoc;
+      let tokenUocLucGoi = uocLuongTinNhan(tinNhan, uoc) + tokenCongCuUoc;
+      let cuuTran = false;
       const nhacDaChen = nhacCho;
       nhacCho = [];
 
+      /** (H1.3) nén mạnh `tinNhan`; `true` ⇒ đã giảm (cập nhật số đo của `buoc-do`). */
+      const cuuDuocTran = (): boolean => {
+        const m = nenManh(tinNhan, { uocLuong: uoc });
+        if (!(m.tokenSau < m.tokenTruoc)) return false;
+        tinNhan = m.tinNhan;
+        nenDo = { soNen: m.soNen, tokenTruoc: m.tokenTruoc, tokenSau: m.tokenSau };
+        tokenUocLucGoi = m.tokenSau + tokenCongCuUoc;
+        neoSoThat = null;
+        return true;
+      };
       // gọi model, thử lại tối đa 1 lần cho lỗi tạm thời (mỗi lượt)
       let kq: Extract<KetQuaLuotModel, { loai: "ok" }> | undefined;
       for (let thu = 0; !kq; thu++) {
@@ -719,6 +737,10 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           if (r.chu) tinNhan.push({ role: "assistant", content: r.chu });
           lyDo = "het-gio";
           break vong;
+        } else if (y.cuuTranNguCanh === true && !cuuTran && (r.loi as { ma?: unknown })?.ma === MA_LOI_TRAN_NGU_CANH && cuuDuocTran()) {
+          // (H1.3) tràn cửa sổ: `cuuDuocTran` đã nén mạnh `tinNhan` tại chỗ (ước lượng thực sự giảm) ⇒ gọi lại ngay, không tính vào lần thử lại tạm thời
+          cuuTran = true;
+          phat({ loai: "loi", ma: MA_LOI_TRAN_NGU_CANH, thongDiep: `${thongDiepLoi(r.loi)} — compressing the context and retrying` });
         } else if (laLoiTamThoi(r.loi) && thu === 0) {
           phat({ loai: "loi", ma: "MODEL_TAM_THOI", thongDiep: `${thongDiepLoi(r.loi)} — retrying` });
         } else {
@@ -768,6 +790,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         ...(soDoDuoc(uBuoc?.promptN) !== undefined ? { promptN: uBuoc!.promptN as number } : {}),
         nen: nenDo,
         nhacDaChen,
+        ...(cuuTran ? { cuuTran: true as const } : {}),
       });
 
       const calls = kq.toolCalls;

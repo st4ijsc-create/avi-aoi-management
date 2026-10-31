@@ -865,6 +865,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ...(nenMocDich(process.env.AI_AGENT_NEN_MOC) !== undefined ? { mucDichNen: nenMocDich(process.env.AI_AGENT_NEN_MOC) } : {}),
             // (Đợt 12 · H1.2) đếm ngữ cảnh bằng số thật của lượt trước — MẶC ĐỊNH TẮT
             ...(process.env.AI_AGENT_NEN_SO_THAT === "1" ? { demNguCanhSoThat: true } : {}),
+            // (Đợt 12 · H1.3) cứu MỘT lần khi model báo tràn ngữ cảnh — chỉ chạm đường LỖI (trước: dừng lượt) ⇒ mặc định BẬT, AI_AGENT_CUU_TRAN=0 tắt
+            ...(giuNghiBat(process.env.AI_AGENT_CUU_TRAN) ? { cuuTranNguCanh: true } : {}),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {

@@ -175,6 +175,8 @@ export type SuKienAgent =
       promptN?: number;
       nen: NenBuocDo | null;
       nhacDaChen: MaKhoiChen[];
+      /** (H1.3) lượt này đã tràn ngữ cảnh, lõi nén mạnh rồi gọi lại — `nen` là lần nén mạnh. */
+      cuuTran?: true;
     }
   /**
    * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
@@ -278,6 +280,9 @@ export class LoiModel extends Error {
     this.ma = opts.ma ?? (this.tamThoi ? "MODEL_TAM_THOI" : "MODEL_LOI");
   }
 }
+
+/** (Đợt 12 · H1.3) mã lỗi model "yêu cầu vượt cửa sổ ngữ cảnh" — host phân loại (`chuyenLoiModel`), lõi cứu một lần (`cuuTranNguCanh`). */
+export const MA_LOI_TRAN_NGU_CANH = "CONTEXT_OVERFLOW";
 
 export function laLoiTamThoi(e: unknown): boolean {
   return !!e && typeof e === "object" && (e as { tamThoi?: unknown }).tamThoi === true;

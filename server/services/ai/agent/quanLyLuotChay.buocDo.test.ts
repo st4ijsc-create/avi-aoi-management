@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { eq, inArray } from "drizzle-orm";
-import type { GoiModel, ManhModel, SuKienAgent } from "@shared/agentCore";
+import { LoiModel, type GoiModel, type ManhModel, type SuKienAgent } from "@shared/agentCore";
 import { khoiTraLoiTuSuKien } from "@shared/phanHoiAgent";
 import { TRAN_BUOC_DO_LUU, TRAN_SU_KIEN_LUU, suKienDeLuu, taoQuanLyLuotChay, type MucDem } from "./quanLyLuotChay";
 import { xoaSoNganSach } from "../../aiLocalTools/repoSandbox";
@@ -251,6 +251,48 @@ describe("H1.2 công tắc AI_AGENT_NEN_SO_THAT nối tới lõi", () => {
     expect(await soLanNen(false)).toBe(0);
     expect(await soLanNen(true)).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe("H1.3 cứu tràn ngữ cảnh ở lượt chạy máy chủ", () => {
+  const chayTran = async (env: string | undefined): Promise<{ trangThai: string; lyDo: string | null; soGoi: number; cuu: number }> => {
+    for (let k = 0; k < 6; k++) fs.writeFileSync(path.join(REPO, "src", `tr${k}.ts`), `${k}`.repeat(2000));
+    const cu = process.env.AI_AGENT_CUU_TRAN;
+    if (env === undefined) delete process.env.AI_AGENT_CUU_TRAN;
+    else process.env.AI_AGENT_CUU_TRAN = env;
+    try {
+      let goi = 0;
+      const goiModel: GoiModel = () => {
+        const lan = goi++;
+        return (async function* (): AsyncGenerator<ManhModel> {
+          if (lan === 3) throw new LoiModel("request exceeds the available context size", { tamThoi: false, ma: "CONTEXT_OVERFLOW" });
+          yield {
+            loai: "xong",
+            toolCalls: lan >= 5 ? [] : [{ id: `t${lan}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: `src/tr${lan}.ts` }) } }],
+            usage: { vao: 100, ra: 5 },
+          } as ManhModel;
+        })();
+      };
+      const ql = taoQuanLyLuotChay({ goiModel });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "x" }, cauHoi: "doc", projectId: DU_AN, cheDo: "hoi" });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+      const hang = (await (await getDb())!.select().from(aiAgentRuns).where(eq(aiAgentRuns.id, kq.luot.id)))[0]!;
+      const nghe: SuKienAgent[] = [];
+      ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien))?.();
+      return { trangThai: hang.trangThai, lyDo: hang.lyDoDung, soGoi: goi, cuu: nghe.filter((e) => e.loai === "buoc-do" && e.cuuTran).length };
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_CUU_TRAN;
+      else process.env.AI_AGENT_CUU_TRAN = cu;
+    }
+  };
+  it("★★★ mặc định BẬT: tràn ở lượt gọi thứ 4 ⇒ nén mạnh + gọi lại ⇒ lượt chạy XONG; AI_AGENT_CUU_TRAN=0 ⇒ như cũ: lỗi", async () => {
+    const bat = await chayTran(undefined);
+    expect(bat).toMatchObject({ trangThai: "xong", lyDo: "hoan-thanh", cuu: 1 });
+    expect(bat.soGoi).toBe(6);
+    const tat = await chayTran("0");
+    expect(tat).toMatchObject({ trangThai: "loi", lyDo: "loi-model", cuu: 0 });
+    expect(tat.soGoi).toBe(4);
+  }, 90_000);
 });
 
 describe("suKienDeLuu giữ buoc-do khi sổ quá trần", () => {

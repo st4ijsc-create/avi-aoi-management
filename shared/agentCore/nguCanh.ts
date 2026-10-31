@@ -83,6 +83,44 @@ function duongTuThamSo(args: string): string {
   }
 }
 
+/**
+ * (Đợt 12 · H1.3) NÉN MẠNH để cứu một yêu cầu bị từ chối vì TRÀN cửa sổ ngữ cảnh: bỏ MỌI suy luận cũ và rút MỌI kết quả tool trước "bước cuối"
+ * (= tin assistant cuối cùng và các tin sau nó, giữ nguyên văn). Bất biến như `nenLichSu`: giữ system + mọi tin không phải `tool`, không xoá tin
+ * (tool_call_id luôn khớp), không đột biến đầu vào. Gọi lại CHỈ khi `tokenSau < tokenTruoc` (host/lõi tự kiểm).
+ */
+export function nenManh(tinNhan: TinNhan[], tc: { uocLuong?: UocLuongToken } = {}): KetQuaNen {
+  const uoc = tc.uocLuong ?? uocLuongTokenMacDinh;
+  const tokenTruoc = uocLuongTinNhan(tinNhan, uoc);
+  let cuoi = -1;
+  for (let i = tinNhan.length - 1; i >= 0; i--) {
+    if (tinNhan[i]!.role === "assistant") {
+      cuoi = i;
+      break;
+    }
+  }
+  const goiTheoId = new Map<string, { ten: string; duong: string }>();
+  for (const m of tinNhan)
+    for (const t of m.tool_calls ?? []) goiTheoId.set(t.id, { ten: t.function.name, duong: duongTuThamSo(t.function.arguments) });
+  const ra = tinNhan.slice();
+  let soNen = 0;
+  for (let i = 0; i < cuoi; i++) {
+    const m = ra[i]!;
+    if (m.role === "assistant" && m.reasoning_content) {
+      const { reasoning_content: _bo, ...conLai } = m;
+      ra[i] = conLai;
+      soNen++;
+    } else if (m.role === "tool" && !m.content.startsWith("[compacted:")) {
+      const goi = m.tool_call_id ? goiTheoId.get(m.tool_call_id) : undefined;
+      const ten = goi?.ten ?? m.name ?? "tool";
+      const nhan = `[compacted: ${ten}${goi?.duong ? ` ${goi.duong}` : ""} — ${m.content.length} chars; call the tool again if you need it]`;
+      if (nhan.length >= m.content.length) continue;
+      ra[i] = { ...m, content: nhan };
+      soNen++;
+    }
+  }
+  return { tinNhan: ra, soNen, tokenTruoc, tokenSau: uocLuongTinNhan(ra, uoc) };
+}
+
 export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   const uoc = tc.uocLuong ?? uocLuongTokenMacDinh;
   const nguong = Math.floor(tc.nganSachToken * (tc.nguong ?? 0.7));

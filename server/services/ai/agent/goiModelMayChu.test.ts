@@ -255,3 +255,37 @@ describe("★★★ lượt bị cắt ở trần token ⇒ mảnh `xong` mang `
     }
   });
 });
+
+describe("★★★ Đợt 12 · H1.3 — tràn cửa sổ ngữ cảnh ⇒ mã CONTEXT_OVERFLOW (không tạm thời)", () => {
+  const CAU_TRAN = "request (80000 tokens) exceeds the available context size (65536 tokens), try increasing it";
+
+  it("chuyenLoiModel: câu llama.cpp / OpenAI-compatible ⇒ CONTEXT_OVERFLOW, tamThoi=false", () => {
+    for (const msg of [CAU_TRAN, "exceed_context_size_error", "This model's maximum context length is 32768 tokens", "prompt is too long"]) {
+      const l = chuyenLoiModel(new Error(msg));
+      expect(l.ma, msg).toBe("CONTEXT_OVERFLOW");
+      expect(laLoiTamThoi(l)).toBe(false);
+    }
+  });
+
+  it("lỗi KHÁC giữ phân loại cũ (không bị nuốt thành tràn)", () => {
+    expect(chuyenLoiModel(new Error("boom")).ma).toBe("MODEL_LOI");
+    expect(chuyenLoiModel(Object.assign(new Error("down"), { code: "LLAMA_SERVER_DOWN" })).ma).toBe("LLAMA_SERVER_DOWN");
+    expect(chuyenLoiModel(Object.assign(new Error("reset"), { code: "ECONNRESET" })).ma).toBe("ECONNRESET");
+  });
+
+  it("ngoại lệ tràn ném từ engine ⇒ luồng của adapter ném LoiModel CONTEXT_OVERFLOW", async () => {
+    const goi = taoGoiModelMayChu({
+      chatStream: async function* () {
+        throw new Error(CAU_TRAN);
+      },
+    });
+    await expect(gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }))).rejects.toMatchObject({ ma: "CONTEXT_OVERFLOW", tamThoi: false });
+  });
+
+  it("chunk lỗi (type:'error') mang câu tràn ⇒ CONTEXT_OVERFLOW; chunk lỗi khác ⇒ MODEL_LOI_LUONG tạm thời như cũ", async () => {
+    const tran = taoGoiModelMayChu({ chatStream: engineGia([{ type: "error", error: CAU_TRAN }]) });
+    await expect(gom(tran({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }))).rejects.toMatchObject({ ma: "CONTEXT_OVERFLOW", tamThoi: false });
+    const khac = taoGoiModelMayChu({ chatStream: engineGia([{ type: "error", error: "stream reset" }]) });
+    await expect(gom(khac({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }))).rejects.toMatchObject({ ma: "MODEL_LOI_LUONG", tamThoi: true });
+  });
+});
