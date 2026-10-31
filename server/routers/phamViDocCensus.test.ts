@@ -990,7 +990,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **S 719 → 720 · tong 2428 → 2429 · A/B/C/D KHÔNG đổi.** Query MỚI `commandLog.nhatKy`
 //   (nhật ký /scada/journal: lệnh + lần thử) — đọc có phạm vi (`mayTrongPhamVi` / `adapterTrongPhamVi` / `idsMayTrongPhamVi`) ⇒ nhóm S. Đo: ghim cũ
 //   (gốc 3819461fb) đỏ ĐÚNG +1 S / +1 tong. `tong` 2429 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 453, D: 1213, S: 720, tong: 2429 } as const;
+// ★★ 2026-10-31 · SCADA R1b-2b-2b A — C2 (chip n/m) — **S 720 → 721 · tong 2429 → 2430 · A/B/C/D KHÔNG đổi.** Query MỚI `scadaDiag.tomTatTruyenThong`
+//   (đếm adapter BẬT theo trạng thái cho chip "Truyền thông n/m") — `idsTrongPhamVi("machine", phamViCua(ctx))` như `danhSach` ⇒ nhóm S. `danhSach` /
+//   `deviceAdapter.list|get|create|update` chỉ đổi HÌNH ra (che endpoint / lastError, thêm maLoi / tamKhoa), không đổi dân số. Đo: ghim cũ (gốc 501df9598)
+//   đỏ ĐÚNG +1 tong. `tong` 2430 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 35, B: 8, C: 453, D: 1213, S: 721, tong: 2430 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

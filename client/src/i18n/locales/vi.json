@@ -4551,6 +4551,7 @@
       "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
       "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
+      "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
       "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước.",
       "scadaSelectionLockBusy": "Kênh đang bị tranh chấp — thử lại sau giây lát.",

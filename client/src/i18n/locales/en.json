@@ -4551,6 +4551,7 @@
       "flowDuyetTrungNguoiBat": "You enabled this flow version — the approver must be someone else.",
       "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
+      "otMcTamKhoa": "Mitsubishi MC control is LOCKED (safety): writes are not sent to the device until fix 3B — to stop the machine use the hardwired E-STOP.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
       "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first.",
       "scadaSelectionLockBusy": "The channel is contended — try again in a moment.",

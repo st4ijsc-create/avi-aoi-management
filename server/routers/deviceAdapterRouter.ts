@@ -18,6 +18,9 @@
  *   list/get/testConnection/tags.listByAdapter → canView
  *   create/tags.create → canCreate ; update/tags.update → canEdit
  *   delete/tags.delete → canDelete
+ * SCADA R1b-2b-2b A C2 (KD-2bA 2.1 / 2.2): hàng adapter trả ra (list/get/create/update — `hangAnToan` → `redactAdapterRow`) mang `endpoint`,
+ *   `connectionOptions` và văn bản `lastError` CHỈ cho kỹ sư canEdit (`chiTietKyThuatCua`: vai admin|engineer + machine_control.canEdit); người khác
+ *   nhận `null` + `lastError` = MÃ đã làm sạch (`maLoi`). `maLoi` + posture `tamKhoa` (MC tạm khoá) hiện với MỌI người xem.
  * SCADA R1b-1 Task 9 (+ fix round 1–3): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts:
  *   đã khai / kênh chế độ / ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) hoặc một khoá mồ côi ⇒ TOTP tươi
  *   mức 5 + kiểm lại nhất quán; update (đổi đích / tắt / đổi máy) và delete của adapter có tag được bảo vệ / kênh chế độ ⇒ TOTP (cổng chung
@@ -39,6 +42,7 @@ import { probeOtConnection } from "../services/ot/probeConnection";
 import {
   sealConnectionOptionSecrets,
   redactAdapterRow,
+  type HangAdapterAnToan,
   restoreRedactedSecrets,
   secretReentryRequired,
   REDACTED_SECRET,
@@ -89,6 +93,9 @@ import {
 import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 import { thamSoNgoaiDaiStopPin } from "../services/scada/nhatQuanKenh"; // R1b-2a T2 (K17) — tham số STOP_PIN_NGOAI_DAI dùng chung
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+// SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 / 2.2): che endpoint / lastError dưới kỹ sư canEdit (một luật với C1) + posture tạm khoá không bao giờ che
+import { chiTietKyThuatCua, maLoiAdapterCua } from "./_chiTietKyThuat";
+import { canTraEdgeChoTamKhoa, idsAdapterDoEdge, tamKhoaAdapter } from "./_tamKhoaAdapter";
 
 /** doc 81 Đợt 1D Task 1 — người sửa (id/tên/IP/UA) lấy từ ctx, KHÔNG từ input (khuôn mqttOeeRouters). */
 function nguoiSuaTu(ctx: Parameters<typeof createAuditContext>[0]): NguoiSuaStopPin {
@@ -207,6 +214,27 @@ async function getDb() {
   return db;
 }
 
+/**
+ * SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 / 2.2) — MỌI hàng adapter rời router này đi qua đây: quyền xem chi tiết kỹ thuật hỏi MỘT lần cho cả lô
+ * (`chiTietKyThuatCua` — vai ngoài admin/engineer không chạm DB), sở hữu edge chỉ tra khi có hàng MC đang khoá, rồi `redactAdapterRow` (bí mật luôn che;
+ * `endpoint` / `connectionOptions` / văn bản `lastError` chỉ cho kỹ sư canEdit; `maLoi` + `tamKhoa` cho mọi người).
+ */
+async function hangAnToan<T extends typeof deviceAdapters.$inferSelect>(
+  ctx: Parameters<typeof chiTietKyThuatCua>[0],
+  rows: T[],
+): Promise<Array<HangAdapterAnToan<T>>> {
+  if (rows.length === 0) return [];
+  const chiTietKyThuat = await chiTietKyThuatCua(ctx);
+  const edge = canTraEdgeChoTamKhoa(rows) ? await idsAdapterDoEdge(await getDb(), rows.map((r) => r.id)) : new Set<number>();
+  return rows.map((r) =>
+    redactAdapterRow(r, {
+      chiTietKyThuat,
+      tamKhoa: tamKhoaAdapter(r.protocol, edge.has(r.id)),
+      maLoi: maLoiAdapterCua(r.lastError, r.status === "error"),
+    }),
+  );
+}
+
 // doc 54 P1.5 — add "slmp" (Mitsubishi SLMP 3E/4E): the runtime driver (slmpDriver.ts)
 // + the DB protocol enum already support it; the CRUD zod enum was the only thing blocking
 // FX5U/iQ-R SLMP adapters from being created via the UI/API.
@@ -296,7 +324,7 @@ export const deviceAdapterRouter = router({
         .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(deviceAdapters.createdAt));
       // doc 81 Đợt 1B Task 12 fix round 1 — bí mật (ciphertext lẫn plaintext cũ) không rời server.
-      return rows.map(redactAdapterRow);
+      return hangAnToan(ctx, rows);
     }),
 
   get: protectedProcedure
@@ -312,7 +340,8 @@ export const deviceAdapterRouter = router({
         .from(deviceTags)
         .where(eq(deviceTags.adapterId, input.id))
         .orderBy(deviceTags.tagKey);
-      return { ...redactAdapterRow(adapter), tags };
+      const [an] = await hangAnToan(ctx, [adapter]);
+      return { ...an, tags };
     }),
 
   create: protectedProcedure
@@ -344,7 +373,8 @@ export const deviceAdapterRouter = router({
             createdBy: ctx.user.id,
           })
           .returning();
-        return redactAdapterRow(row);
+        const [an] = await hangAnToan(ctx, [row]);
+        return an;
       } catch (err) {
         if (isUniqueViolation(err)) {
           throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter "${input.code}" đã tồn tại.`);
@@ -469,7 +499,8 @@ export const deviceAdapterRouter = router({
           }
           return { updated, stopPinsCleared };
         });
-        return { ...redactAdapterRow(row.updated), stopPinsCleared: row.stopPinsCleared };
+        const [an] = await hangAnToan(ctx, [row.updated]);
+        return { ...an, stopPinsCleared: row.stopPinsCleared };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {

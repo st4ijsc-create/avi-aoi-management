@@ -4551,6 +4551,7 @@
       "flowDuyetTrungNguoiBat": "您启用了此流程版本 — 审批人必须是其他人。",
       "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。",
       "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
+      "otMcTamKhoa": "Mitsubishi MC 控制已临时锁定（安全）：在修复 3B 之前不会向设备发送写入——如需停机请使用现场硬接线急停（E-STOP）。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",
       "stubEndpointShared": "多个 stub 适配器共用此端点——请先为每个适配器设置独立端点。",
       "scadaSelectionLockBusy": "该通道正被争用——请稍后重试。",

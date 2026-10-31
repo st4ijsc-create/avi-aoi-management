@@ -6,7 +6,8 @@
  * Được xem ⇔ vai `admin` | `engineer` VÀ `machine_control.canEdit` (cùng nguồn quyền với `requirePermission` — `checkPermission`).
  * Người khác nhận `null` + MÃ lý do (`maLoiCua`) để giao diện không bao giờ trống im lặng.
  *
- * Dùng: `commandLog.list|get|nhatKy` (C1). C2 (`scadaDiag.danhSach`, `redactAdapterRow`) dùng lại `duocXemChiTietKyThuat`.
+ * Dùng: `commandLog.list|get|nhatKy` (C1); C2: `scadaDiag.danhSach` + `deviceAdapter.list|get|create|update` (`redactAdapterRow`) dùng lại
+ *   `chiTietKyThuatCua` / `duocXemChiTietKyThuat` và `maLoiAdapterCua` (mã thay `lastError`).
  */
 import { checkPermission } from "../_core/accessControl";
 
@@ -104,4 +105,22 @@ export function maLyDoThu(reasonCode: string | null | undefined): string | null 
   if (!t) return null;
   if (/^[A-Z][A-Z0-9_]*$/.test(t)) return MA_LOI_DA_BIET_SET.has(t) ? t : "TECHNICAL_ERROR"; // polish round 2 — mã thuần lạ ⇒ dự phòng
   return maLoiCua(t, null);
+}
+
+/**
+ * SCADA R1b-2b-2b Phần A — C2 (KD-2bA 2.1, điều phối 2026-10-27) — MÃ / nhóm lỗi đã làm sạch của lỗi KẾT NỐI adapter (`device_adapters.lastError`,
+ * `loi` RAM của M10, lý do cấu hình S7 ghép đầu). Cùng cơ chế với `maLoiCua` (một danh sách `MA_LOI_DA_BIET`), khác phần dự phòng: lỗi adapter
+ * không phải kết cục lệnh nên KHÔNG dùng `DRIVER_WRITE_FAILED` / `TIMEOUT`…:
+ *   1. tiền tố `MA:` ĐÃ BIẾT (vd `OT_S7_BIT_NGOAI_DAI`, `OT_MC_TAM_KHOA`) ⇒ chính mã đó;
+ *   2. văn bản thô của driver (có thể mang host:port, vd `connect ECONNREFUSED 10.0.0.5:502`) ⇒ `ADAPTER_OFFLINE` khi adapter đang mất kết nối
+ *      (`matKetNoi` — M10 `lost` / DB `status='error'`), còn lại `TECHNICAL_ERROR`.
+ * Không bao giờ trả phần chi tiết. Rỗng / null ⇒ `null`. Người vận hành nhờ mã này vẫn biết "mất kết nối / sai cấu hình" khi `endpoint` / `lastError`
+ * bị che (giao diện dịch qua khoá i18n của mã — `scada.lenh.cong.ADAPTER_OFFLINE`, `commandAudit.maLoi.*` đã có).
+ */
+export function maLoiAdapterCua(loi: string | null | undefined, matKetNoi: boolean): string | null {
+  const t = (loi ?? "").trim();
+  if (!t) return null;
+  const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
+  if (tienTo && MA_LOI_DA_BIET_SET.has(tienTo)) return tienTo;
+  return matKetNoi ? "ADAPTER_OFFLINE" : "TECHNICAL_ERROR";
 }
