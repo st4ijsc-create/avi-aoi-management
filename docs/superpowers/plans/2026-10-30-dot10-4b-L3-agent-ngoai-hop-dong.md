@@ -40,6 +40,24 @@ Trần vòng: bộ chuyển TỰ giữ `TRAN_VONG_AGENT_NGOAI = 6` (vòng 6 khô
 đã phát, user chỉ = câu hỏi / lịch sử / câu nhắc tĩnh lõi, sàn mức van-hanh khi có lịch sử) + `vongAgentNgoai.test.ts` (12 ca, 12/12 đột
 biến đỏ).
 
+**Bước NỐI — đã làm 2026-10-31 (do-model, feat/ai-do-model, sau khi 11.8 + 11.3-C lên main):** đường vào
+`server/services/ai/agent/luotChayNgoai.ts` (§1 a–e, TRƯỚC giữ chỗ) + nối trong `quanLyLuotChay.ts` + `aiAgentApi.ts` (`xacNhanVanHanh` vào;
+`muc` / `tranVuot` ra). Lưới `quanLyLuotChay.ngoai.test.ts` (19 ca, lõi + bộ chuyển THẬT, cổng giả trong tiến trình) + 1 ca
+`quanLyLuotChay.giaoViec.test.ts` (d1 chiều ngược); đột biến bước nối 17/17 đỏ (L16 "ngữ cảnh dự án ra ngoài" sống ở lần đầu vì lớp 1 che lớp
+2 ⇒ thêm ca đối chứng đọc tệp quy ước ⇒ đỏ).
+
+| Mục | Trạng thái |
+|---|---|
+| n1 | a 404 `CHON_MODEL_KHONG_CO` · b 400 `NGOAI_CHI_HOI` · c 404 `NGOAI_KHONG_TON_TAI` (nhà máy ≠ 1, ngoài danh mục, phiên người khác / khác dự án) · d mã cổng + `tranVuot` · e 428 + `muc`, sàn mức PHIÊN đã có lượt (k3: khai `van-hanh` với cổng dù client không gửi lịch sử) · f 409. `tuRepo` (k2): yêu cầu tạo lượt KHÔNG có trường chọn agent, định nghĩa repo chỉ vào qua `delegate` mà lượt ngoài không có ⇒ không có đường 400 nào để trả; lưới ghim "không delegate". |
+| n2 | lượt ngoài: công cụ quảng bá đúng `read_file · list_dir · grep · todo_write` dù cờ giao việc BẬT; chiều ngược: định nghĩa con xin `ngoai:` ⇒ `AGENT_KHONG_CO` (bộ đọc định nghĩa loại), không hàng sổ con, không chạm phụ thuộc ngoài |
+| n3 | `nguonModel` ghi lúc INSERT (`taoHangLuotChay` kiểm `RE_NGUON_MODEL`, sai ⇒ không tạo hàng) + trả ở danh sách / chi tiết; `coLuotNgoai` đặt (lọc userId) TRƯỚC hàng sổ — hỏng ⇒ 503 `NGOAI_SO_HONG`, nhả chỗ |
+| n4 (k4) | không mã mới: khoá bay TTL (`luotBay`), `huyGiuChuaGui` khi chưa gửi, đối soát ý định `khong-ro` (cổng chung L1/L2, lưới `luotBay.db` / `tranChiPhi.db`); boot ⇒ hàng `dang-chay` thành `gian-doan` (sẵn có) |
+| n5 (k6) | người khác: `nghe` / `layLuotChay` / `chiTiet` / `huy` đều từ chối (lưới) |
+| n6 (k7) | `"agent"` CHƯA trong `BE_MAT_NGOAI_DUOC_DUNG` (lưới ghim) ⇒ hôm nay mọi lượt ngoài = 404 như trước; ánh xạ bề mặt `agent` ⇒ `agent-turn` = MỘT hằng `NGUON_MUC_LUOT_AGENT` (`chonModel/kieu.ts`), census chữ `"agent-turn"` ghim số theo tệp |
+| n7 | GHI GIỚI HẠN (không thêm `signal`): huỷ chặn TRƯỚC mỗi vòng; cuộc gọi đang bay chạy hết (tính phí, khoá bay nhả ở `finally` cổng) rồi lượt dừng `huy` — lưới "không có vòng gọi tiếp". kiem-dinh chấp nhận; KHI MỞ bề mặt (L3b) phải ghi vào hướng dẫn người dùng: "Dừng" không dừng được cuộc gọi đang bay tới model ngoài (dữ liệu đã rời máy, phí vòng đó vẫn tính) |
+| n8 | `hoi` + cục bộ (vắng / `auto`): không chạm phụ thuộc ngoài, `nguonModel` null, `bat-dau.model` không phải nhánh ngoài |
+| u2/u3 | `ThongTinModelBatDau` = `ThongTinModelCucBo \| ThongTinModelNgoai` (`{ nguon:"ngoai", model, muc }`, `vaiTro?/bangChung?: undefined` để UI cũ biên dịch); `xong.vetNgoai` (không callId) do host gắn |
+
 Nguồn: kế hoạch `2026-10-27-dot10-4b-sinh-chu-model-ngoai.md` D1 (L3 = "Agent máy chủ, `sua`/`tu-dong` khoá với model ngoài; thẻ duyệt
 không xuất hiện"), D9 (dấu nguồn), Q-B (`ai_agent_runs.nguonModel`), dòng 69 (hạ tự trị sau lượt ngoài). L2 (`codingNgoai.ts`) đã chứng
 minh vòng tool đọc + deny-list `duongThuc` + trần run; L3 dùng lại ĐÚNG bộ đó, không viết bộ thứ hai.

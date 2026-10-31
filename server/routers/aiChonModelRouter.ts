@@ -30,7 +30,7 @@ export const aiChonModelRouter = router({
   }),
 
   thongTinNgoai: protectedProcedure.input(thongTinNgoaiInput).query(async ({ ctx, input }): Promise<ThongTinNgoai> => {
-    const [{ resolveTenantFactoryScope }, cong, tc, { LoiNgoai }, { ghepPhan }, { BE_MAT_NGOAI_DUOC_DUNG }, { layCauHinhNhaMay }] = await Promise.all([
+    const [{ resolveTenantFactoryScope }, cong, tc, { LoiNgoai }, { ghepPhan }, { BE_MAT_NGOAI_DUOC_DUNG, NGUON_MUC_LUOT_AGENT }, { layCauHinhNhaMay }] = await Promise.all([
       import("../db/reportAggregators"),
       import("../services/ai/ngoai/congNgoai"),
       import("../services/ai/ngoai/tranChiPhi"),
@@ -70,7 +70,7 @@ export const aiChonModelRouter = router({
         tuDong: false,
         nhaMayNguoiGoi: [F],
         nhaMayChuDuLieu: [F],
-        nguonMuc: { loai: "be-mat" as const, beMat: input.beMat === "agent" ? ("agent-turn" as const) : input.beMat, phanDaGhep: [muc] },
+        nguonMuc: { loai: "be-mat" as const, beMat: input.beMat === "agent" ? NGUON_MUC_LUOT_AGENT : input.beMat, phanDaGhep: [muc] },
       },
     };
     let tranVuot: TranVuot | undefined;

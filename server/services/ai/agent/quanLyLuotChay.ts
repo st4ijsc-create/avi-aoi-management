@@ -87,6 +87,8 @@ import { dongTheCuaCay } from "../../../db/aiAgentTheDuyet";
 import { chotMoiKeHoachDangCho } from "../../../db/aiAgentKeHoach";
 import { taoChoDuyetKeHoach } from "./choDuyetKeHoach";
 import type { TimTaiLieu } from "./timTaiLieuAgent";
+import { chuanBiLuotNgoai, laChonModelNgoai, phuThuocLuotNgoaiThat, type LuotNgoaiSanSang, type PhuThuocLuotNgoai } from "./luotChayNgoai";
+import { taoCapAgentNgoai, TRAN_VONG_AGENT_NGOAI, type CapAgentNgoai } from "../ngoai/vongAgentNgoai";
 import {
   chotSauGhi,
   chupTruocGhi,
@@ -156,6 +158,8 @@ export interface LuotChay {
   tomTat: string | null;
   /** Gốc tuyệt đối của dự án (server-side; KHÔNG BAO GIỜ ra client). */
   readonly gocDuAn: string;
+  /** (Đợt 10.4b L3) `ngoai:<ncc>:<model>` khi lượt chạy model ngoài, `null` = cục bộ — cùng giá trị cột sổ `nguonModel`. */
+  readonly nguonModel: string | null;
   readonly boHuy: AbortController;
   /** Hứa hẹn kết thúc (cho lưới/đóng tiến trình). */
   xong: Promise<void>;
@@ -200,9 +204,12 @@ export type MaTuChoiTao =
   /** (Đợt 10.1) `chonModel` là model ngoài không có / ngoài phạm vi (10.1: chưa cài cổng ngoài). */
   | "CHON_MODEL_KHONG_CO"
   /** (Đợt 9, chỉ khi `AI_AGENT_THEO_VAI_TRO`) từ chối ở bước chọn model / gating aiGateway — TRƯỚC mọi token. */
-  | MaTuChoiVaiTro;
+  | MaTuChoiVaiTro
+  /** (Đợt 10.4b L3) đường vào model ngoài: mã cổng (`NGOAI_*`, HTTP theo `HTTP_LOI_TRUOC_SSE`) + 428 xác nhận mức van-hanh. */
+  | `NGOAI_${string}`
+  | "CAN_XAC_NHAN_VAN_HANH";
 
-const HTTP_CUA_MA: Record<MaTuChoiTao, number> = {
+const HTTP_CUA_MA: Record<Exclude<MaTuChoiTao, `NGOAI_${string}` | "CAN_XAC_NHAN_VAN_HANH">, number> = {
   CAU_HOI_RONG: 400,
   CAU_HOI_QUA_DAI: 400,
   CHE_DO_SAI: 400,
@@ -231,11 +238,13 @@ export interface YeuCauTaoLuotChay {
   req?: ToolExecContext["req"];
   /** ★ Đợt 10.1 A2 — model chọn tường minh (`vai-tro:` / `ho-so:` / `ngoai:`); vắng / `auto` ⇒ đường cũ y nguyên. */
   chonModel?: unknown;
+  /** (Đợt 10.4b L3) người dùng đã xác nhận gửi dữ liệu mức van-hanh ra model ngoài (chỉ UX — không hạ được mức). */
+  xacNhanVanHanh?: unknown;
 }
 
 export type KetQuaTaoLuotChay =
   | { ok: true; luot: LuotChay }
-  | { ok: false; ma: MaTuChoiTao; http: number; runId?: string; thongDiep?: string };
+  | { ok: false; ma: MaTuChoiTao; http: number; runId?: string; thongDiep?: string; muc?: string; tranVuot?: string };
 
 export interface PhuThuocQuanLy {
   /** Model (mặc định `taoGoiModelMayChu()`). */
@@ -258,6 +267,8 @@ export interface PhuThuocQuanLy {
   congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
   /** (Đợt 10.1) phụ thuộc danh mục cho `chonModel` (lưới thay; mặc định `layPhuThuocDanhMucMacDinh`). */
   danhMucModel?: () => Promise<PhuThuocDanhMuc>;
+  /** (Đợt 10.4b L3) phụ thuộc đường model ngoài (lưới thay TOÀN BỘ; vắng ⇒ bộ thật nạp lười chỉ khi chọn `ngoai:`). */
+  ngoai?: PhuThuocLuotNgoai;
 }
 
 // ─── ★ Đợt 10.1 — model chọn tường minh ───────────────────────────────────────────────────────
@@ -657,7 +668,37 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       }
 
       // ★ Đợt 10.1 A2 — model chọn tường minh: giải TRƯỚC khi giữ chỗ (từ chối không phải nhả gì). Lạ ⇒ 400/404, không rơi mặc định.
-      const chon = await giaiChonModelLuotChay(y.chonModel, projectId, phuThuoc.danhMucModel);
+      // ★ Đợt 10.4b L3 — model NGOÀI: đường vào riêng (a)–(e) TRƯỚC giữ chỗ (luotChayNgoai.ts); không qua giải chọn model cục bộ / vai trò.
+      let ngoai: LuotNgoaiSanSang | null = null;
+      let depNgoai: PhuThuocLuotNgoai | null = null;
+      if (laChonModelNgoai(y.chonModel)) {
+        depNgoai = phuThuoc.ngoai ?? (await phuThuocLuotNgoaiThat());
+        const cb = await chuanBiLuotNgoai(
+          {
+            user: { id: user.id, role: user.role },
+            chonModel: y.chonModel.trim(),
+            cheDo,
+            projectId,
+            sessionId: typeof y.sessionId === "string" && y.sessionId !== "" ? y.sessionId : null,
+            cauHoi,
+            lichSu: locLichSu(y.lichSu),
+            xacNhanVanHanh: y.xacNhanVanHanh,
+          },
+          depNgoai,
+        );
+        if (!cb.ok) {
+          return {
+            ok: false,
+            ma: cb.ma as MaTuChoiTao,
+            http: cb.http,
+            ...(cb.thongDiep ? { thongDiep: cb.thongDiep } : {}),
+            ...(cb.muc ? { muc: cb.muc } : {}),
+            ...(cb.tranVuot ? { tranVuot: cb.tranVuot } : {}),
+          };
+        }
+        ngoai = cb;
+      }
+      const chon: KetQuaChonLuotChay = ngoai ? { ok: true, modelChon: null } : await giaiChonModelLuotChay(y.chonModel, projectId, phuThuoc.danhMucModel);
       if (!chon.ok) return { ok: false, ma: chon.ma, http: HTTP_CUA_MA[chon.ma], thongDiep: chon.thongDiep };
       const modelChon = chon.modelChon;
 
@@ -683,6 +724,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         checkpointIds: [],
         tomTat: null,
         gocDuAn: goc,
+        nguonModel: ngoai?.chonModel ?? null,
         boHuy,
         xong: Promise.resolve(),
       };
@@ -703,7 +745,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       // ★ Đợt 9 — (cờ `AI_AGENT_THEO_VAI_TRO`) chọn model theo vai trò + MỘT `planInference` cho cả lượt chạy, SAU giữ chỗ (await
       //   không mở khe đua) và TRƯỚC hàng sổ / token / checkpoint. Từ chối ⇒ nhả chỗ, trả mã + lời nói thật; không có hàng sổ.
       let theoVaiTro: Extract<Awaited<ReturnType<typeof chuanBiLuotChayTheoVaiTro>>, { ok: true }> | null = null;
-      if (tacNhanTheoVaiTroBat()) {
+      if (tacNhanTheoVaiTroBat() && !ngoai) {
         const nhaCho = () => {
           theoId.delete(id);
           if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
@@ -732,7 +774,18 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
       }
       const plan: GatewayPlan | null = theoVaiTro?.plan ?? null;
       // Hàng sổ được tạo TRƯỚC mọi lượt cập nhật (chuỗi ghi bắt đầu từ đây).
-      s.chuoiLuu = taoHangLuotChay({ id, userId: user.id, projectId, cheDo, cauHoi, sessionId }).then(() => undefined);
+      // (L3, d2) lượt ngoài gắn phiên ⇒ máy chủ đặt `coLuotNgoai` TRƯỚC khi chạy (L3b hạ tự trị dựa vào cờ này ⇒ không đặt được = không chạy).
+      if (ngoai && depNgoai && sessionId) {
+        try {
+          await depNgoai.datCoPhien(user.id, sessionId);
+        } catch {
+          theoId.delete(id);
+          if (dangChayCuaNguoi.get(user.id) === id) dangChayCuaNguoi.delete(user.id);
+          return { ok: false, ma: "NGOAI_SO_HONG", http: 503 };
+        }
+      }
+      // (L3, n3) `nguonModel` chỉ MÁY CHỦ ghi, lúc INSERT.
+      s.chuoiLuu = taoHangLuotChay({ id, userId: user.id, projectId, cheDo, cauHoi, sessionId, ...(ngoai ? { nguonModel: ngoai.chonModel } : {}) }).then(() => undefined);
       await s.chuoiLuu;
 
       const copilotUser: CopilotUser = { id: user.id, role: user.role, name: user.name ?? null };
@@ -756,17 +809,39 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         coGiaoViec,
       });
       // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
-      void phanGiaiChiMuc(phuThuocBo.chiMucMa)()
-        .then((c) => (c ? damBaoChiMucNen(c, { gocDuAn: goc, projectId }) : null))
-        .catch(() => undefined);
+      if (!ngoai) {
+        void phanGiaiChiMuc(phuThuocBo.chiMucMa)()
+          .then((c) => (c ? damBaoChiMucNen(c, { gocDuAn: goc, projectId }) : null))
+          .catch(() => undefined);
+      }
       const ten = danhSachDuAn().find((d) => d.id === projectId)?.ten ?? projectId;
       const lichSu = locLichSu(y.lichSu);
+      // (L3) cặp bộ chuyển model ngoài: GoiModel qua `ghepPhan` + cổng, BoThucThi chỉ bộ đọc ngoài (read_file · list_dir · grep).
+      const capNgoai: CapAgentNgoai | null =
+        ngoai && depNgoai
+          ? taoCapAgentNgoai({
+              dich: ngoai.dich,
+              runId: id,
+              user: { id: user.id, role: user.role },
+              nhaMay: ngoai.nhaMay,
+              cauHoi,
+              lichSu,
+              ngonNgu: lang,
+              goc,
+              doc: ngoai.doc,
+              goi: depNgoai.goi,
+              chayTool: depNgoai.chayTool,
+            })
+          : null;
 
       luot.xong = (async () => {
         let traLoi = "";
         try {
-          const nguCanhDuAn = await dungNguCanh({ ten, goc, projectId, execCtx, userId: user.id, cauHoi, lang });
-          const goiModelLuot: GoiModel = theoVaiTro
+          // (L3) lượt ngoài: KHÔNG ngữ cảnh dự án (tệp quy ước, bài học, cây) — bộ chuyển còn bỏ system lõi, đây là lớp thứ hai.
+          const nguCanhDuAn = capNgoai ? "" : await dungNguCanh({ ten, goc, projectId, execCtx, userId: user.id, cauHoi, lang });
+          const goiModelLuot: GoiModel = capNgoai
+            ? capNgoai.goiModel
+            : theoVaiTro
             ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true }), (l) =>
                 plan?.recordPhu?.({
                   luotPhu: "agent-luot",
@@ -775,6 +850,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                   tokensIn: l.vao ?? undefined,
                   tokensOut: l.ra ?? undefined,
                   reasoningTokens: l.nghi,
+                  cacheTokens: l.cacheN,
+                  promptEvalTokens: l.promptN,
                   latencyMs: l.ms,
                   outcome: "ok",
                 }),
@@ -830,17 +907,24 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             nguCanhDuAn,
             // Cờ AI_AGENT_THEO_VAI_TRO BẬT ⇒ lượt model đã được đếm qua cổng (recordPhu agent-luot) ⇒ tắt dấu vết chỉ-ghi của goiModelMayChu (tránh hai hàng/lượt); TẮT ⇒ dấu vết chỉ-ghi mang người chạy.
             goiModel: goiModelLuot,
-            ...(theoVaiTro ? { thongTinModel: theoVaiTro.thongTin } : modelChon ? { thongTinModel: modelChon.thongTin } : {}),
-            boThucThi,
-            phat: (e) => phat(s, e),
+            ...(ngoai
+              ? { thongTinModel: { nguon: "ngoai" as const, model: ngoai.chonModel, muc: ngoai.muc } }
+              : theoVaiTro
+                ? { thongTinModel: theoVaiTro.thongTin }
+                : modelChon
+                  ? { thongTinModel: modelChon.thongTin }
+                  : {}),
+            boThucThi: capNgoai ? capNgoai.boThucThi : boThucThi,
+            // (L3, u3) `xong` của lượt ngoài mang vết cộng dồn mọi vòng (không callId).
+            phat: (e) => phat(s, capNgoai && e.loai === "xong" ? { ...e, vetNgoai: capNgoai.vet() } : e),
             signal: boHuy.signal,
-            gioiHan: phuThuoc.gioiHan,
+            gioiHan: capNgoai ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI } : phuThuoc.gioiHan,
             ngonNgu: lang,
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0
             kiemDacTa: kiemDacTaBat(process.env.AI_AGENT_KIEM_DAC_TA),
             // ★ Đợt 11.0 — giữ suy luận trong lịch sử + preserve_thinking (xem goiModelMayChu). Mặc định BẬT, tắt bằng AI_AGENT_GIU_NGHI=0
-            ...(giuNghiBat(process.env.AI_AGENT_GIU_NGHI) ? { giuNghiTrongLichSu: true } : {}),
+            ...(!capNgoai && giuNghiBat(process.env.AI_AGENT_GIU_NGHI) ? { giuNghiTrongLichSu: true } : {}),
             // (Đợt 11.8, UX-C06) nhắc tóm tắt NOTES.md ở ≥ 80 % ngữ cảnh — MẶC ĐỊNH TẮT (AI_AGENT_TOM_TAT_80=1 để bật)
             ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
           });
@@ -929,6 +1013,7 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
           tokenNghi: l.token.nghi,
           soCheckpoint: l.checkpointIds.length,
           tomTat: l.tomTat,
+          nguonModel: l.nguonModel,
           createdAt: new Date(l.batDau).toISOString(),
           updatedAt: new Date(l.ketThuc ?? Date.now()).toISOString(),
           dangSong: l.ketThuc === null,

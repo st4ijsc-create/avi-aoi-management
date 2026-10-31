@@ -104,6 +104,12 @@ export interface InferenceOutcome {
   thinking?: boolean | null;
   /** Tên hồ sơ sampling đã dùng (`hien-tai` | `chinh-hang`, xem `ai/hoSoSampling.ts`). */
   samplingProfile?: string | null;
+  /**
+   * ★ Đợt 12 H0.1 (mig 0445) — token prompt TÁI DÙNG từ prefix-cache (`timings.cache_n`) / XỬ LÝ LẠI (`timings.prompt_n`).
+   * Vắng / `null` = không đo được ⇒ NULL. `tokensIn` vẫn là TỔNG.
+   */
+  cacheTokens?: number | null;
+  promptEvalTokens?: number | null;
   tokensIn?: number;
   tokensOut?: number;
   latencyMs?: number;
@@ -601,6 +607,9 @@ interface MetricRow {
   /** ★ Đợt 9 (mig 0406) — xem `InferenceOutcome.requestId` / `InferenceOutcomePhu.luotPhu`. */
   requestId: string | null;
   luotPhu: string | null;
+  /** ★ Đợt 12 H0.1 (mig 0445) — xem `InferenceOutcome.cacheTokens`. `null` = không đo được. */
+  cacheTokens: number | null;
+  promptEvalTokens: number | null;
 }
 
 const buffer: MetricRow[] = [];
@@ -673,6 +682,9 @@ export async function flush(): Promise<void> {
         // ★ Đợt 9 — hai cột nullable (migration 0406).
         requestId: r.requestId,
         luotPhu: r.luotPhu,
+        // ★ Đợt 12 H0.1 — hai cột nullable (migration 0445).
+        cacheTokens: r.cacheTokens,
+        promptEvalTokens: r.promptEvalTokens,
       })),
     );
   } catch (err) {
@@ -1031,7 +1043,15 @@ function toRow(
     requestId: typeof o.requestId === "string" && o.requestId ? o.requestId.slice(0, 64) : null,
     // CHECK của 0406 là hình dạng `^[a-z0-9-]{1,32}$` — chuẩn hoá ở đây để một nhãn sai không làm hỏng CẢ lô xả.
     luotPhu: luotPhu ? luotPhu.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 32) || null : null,
+    // ★ Đợt 12 H0.1 — như reasoningTokens: âm / không hữu hạn / vắng ⇒ NULL (CHECK ≥ 0 của 0445 không làm hỏng lô xả).
+    cacheTokens: soDemHopLe(o.cacheTokens),
+    promptEvalTokens: soDemHopLe(o.promptEvalTokens),
   };
+}
+
+/** Số đếm token đo được: số hữu hạn ≥ 0 ⇒ phần nguyên; còn lại ⇒ NULL (không biết ≠ 0). */
+function soDemHopLe(x: unknown): number | null {
+  return typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.trunc(x) : null;
 }
 
 // ─── Stats readers (DB-backed with hot-cache fallback) ─────────
@@ -1209,6 +1229,9 @@ export interface LuotNgoaiCong {
   reasoningTokens?: number | null;
   thinking?: boolean | null;
   samplingProfile?: string | null;
+  /** ★ Đợt 12 H0.1 — xem `InferenceOutcome.cacheTokens`. */
+  cacheTokens?: number | null;
+  promptEvalTokens?: number | null;
   /** Chữ prompt / câu trả lời — được che (aiSafety) rồi CHỈ BĂM ở `ai_llm_audit`; không lưu. */
   promptText?: string;
   responseText?: string;
@@ -1248,6 +1271,8 @@ export function ghiLuotNgoaiCong(o: LuotNgoaiCong): void {
           reasoningTokens: o.reasoningTokens,
           thinking: o.thinking,
           samplingProfile: o.samplingProfile,
+          cacheTokens: o.cacheTokens,
+          promptEvalTokens: o.promptEvalTokens,
           ...(model ? { model } : {}),
         }),
       );

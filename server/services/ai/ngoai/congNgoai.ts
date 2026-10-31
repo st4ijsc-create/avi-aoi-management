@@ -87,6 +87,9 @@ export interface PhuThuocCong {
   /** Mạng ra ngoài với chính sách host nội bộ của NHÀ MÁY tính trần. */
   mang: (db: DbCong, factoryId: number) => Promise<MangNgoai>;
   soLanThu: number;
+  /** (H3.1) chờ giữa hai lần thử (mặc định `setTimeout`) + nguồn ngẫu nhiên cho jitter (mặc định `Math.random`) — lưới thay để không ngủ thật. */
+  ngu?: (ms: number) => Promise<void>;
+  ngauNhien?: () => number;
   /** Lưới: nhật ký thứ tự bước. */
   ghiBuoc?: (buoc: string) => void;
   /** ★ 10.4b L0a' (D10-ii) — một lượt ngoài đang bay mỗi người (mặc định: bảng `ai_ngoai_dang_bay`, `luotBay.ts`). */
@@ -97,6 +100,19 @@ export const TRAN_CHUOI_BYTE = 256 * 1024;
 export const TRAN_YEU_CAU_BYTE = 1024 * 1024;
 /** Trần cứng token RA mỗi lời gọi (dù model / nhà máy không đặt trần). */
 export const MAX_TOKENS_CUNG = 32_000;
+/** (H3.1) chờ gốc giữa hai lần thử (nhân đôi mỗi lần) + trần chờ: nhà cung cấp xin chờ lâu hơn trần ⇒ KHÔNG thử lại (trả lỗi ngay). */
+export const CHO_THU_LAI_GOC_MS = 500;
+export const TRAN_CHO_THU_LAI_MS = 10_000;
+
+/**
+ * (H3.1) thời gian chờ trước lần thử thứ `lan + 1`: max(`Retry-After`, gốc·2^(lan−1)) + jitter [0, ½ gốc·2^(lan−1)). Vượt trần ⇒ `null`
+ * (không thử lại). Thuần.
+ */
+export function choTruocLanThu(lan: number, choMs: number | undefined, ngauNhien: () => number = Math.random): number | null {
+  const mu = CHO_THU_LAI_GOC_MS * 2 ** Math.max(0, lan - 1);
+  const ms = Math.max(choMs ?? 0, mu) + Math.floor(Math.min(0.999, Math.max(0, ngauNhien())) * (mu / 2));
+  return ms > TRAN_CHO_THU_LAI_MS ? null : ms;
+}
 
 /** Bản cài THẬT (Task 9) — tĩnh: chỉ phụ thuộc lỗi / kiểu, không mạng lúc nạp. */
 const cacNhaCungCap = new Map<string, NhaCungCapAi>([anthropic, openai, openaiTuongThich, gemini].map((n) => [n.ma, n]));
@@ -297,6 +313,8 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
   return { db, laLuong, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens };
 }
 
+const nguThat = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.());
+
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
   // ★ 10.4b L0a — đường DUY NHẤT dựng yêu cầu: chỉ `tinNhan` mang dấu của `ghepPhan` mới được gửi (TRƯỚC mọi bước — không giữ chỗ, không sổ).
   if (mucCuaGhep(yc.tinNhan) === undefined) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP");
@@ -354,7 +372,8 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
   const cheLoi = (e: unknown): LoiNgoai =>
     e instanceof LoiNgoai
       ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-        ? new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500))
+        ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che
+          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
         : e
       : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
   let kq: KetQuaNhaCungCap | null = null;
@@ -395,6 +414,11 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
       const loiDaChe = cheLoi(e);
       await ghiKq(yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: loiDaChe.ma });
       if (!loi?.thuLai || lan >= dep.soLanThu) throw loiDaChe;
+      // (H3.1) backoff + jitter, tôn trọng `Retry-After`; nhà cung cấp xin chờ quá trần ⇒ dừng thử (không giữ chỗ lần nữa)
+      const cho = choTruocLanThu(lan, loi.choMs, dep.ngauNhien);
+      if (cho === null) throw loiDaChe;
+      buoc("cho-thu-lai");
+      await (dep.ngu ?? nguThat)(cho);
     }
   }
   // (10)

@@ -119,6 +119,23 @@ describe("máy chủ thật trong tiến trình (localhost đã khai)", () => {
     }
   });
 
+  it("(H3.1) 429 / 503 mang Retry-After ⇒ retryAfterMs; 200 có tiêu đề ấy ⇒ bỏ qua", async () => {
+    const { s, cong } = await moMayChu((req, res) => {
+      const ma = req.url?.startsWith("/429") ? 429 : req.url?.startsWith("/503") ? 503 : 200;
+      res.writeHead(ma, { "content-type": "application/json", "retry-after": req.url?.startsWith("/503") ? "1.5" : "2" });
+      res.end('{"error":{"message":"slow"}}');
+    });
+    try {
+      dns.localhost = "127.0.0.1";
+      const mang = taoMangNgoai({ hostNoiBo: new Set([`localhost:${cong}`]) });
+      expect((await mang.goiJson(`http://localhost:${cong}/429`, INIT)).retryAfterMs).toBe(2000);
+      expect((await mang.goiJson(`http://localhost:${cong}/503`, INIT)).retryAfterMs).toBe(1500);
+      expect(await mang.goiJson(`http://localhost:${cong}/200`, INIT)).not.toHaveProperty("retryAfterMs");
+    } finally {
+      s.close();
+    }
+  });
+
   let coOpenssl = true;
   try {
     execFileSync("openssl", ["version"], { stdio: "ignore" });

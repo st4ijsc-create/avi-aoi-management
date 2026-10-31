@@ -23,7 +23,7 @@ interface LuotGia {
   chu?: string;
   nghi?: string;
   tool?: Array<{ ten: string; args: string | Record<string, unknown>; id?: string }>;
-  usage?: { vao: number; ra: number; nghi?: number };
+  usage?: { vao: number; ra: number; nghi?: number; cacheN?: number; promptN?: number };
   /** ném lỗi này thay vì trả */
   loi?: unknown;
   /** treo mãi, KHÔNG nghe signal (kiểm lõi tự ngắt được) */
@@ -220,6 +220,22 @@ describe("chayVongAgent — luồng chính", () => {
     const u = suKien.filter((e) => e.loai === "usage");
     expect(u).toEqual([{ loai: "usage", vao: 6554, ra: 10, nghi: 3, ctxPhanTram: 10 }]);
     expect(suKien).toContainEqual({ loai: "dang-cho-model", phiaTruoc: 2 });
+  });
+
+  it("(Đợt 12 H0.1) usage mang cacheN/promptN khi host đo được CẢ HAI; thiếu một ⇒ sự kiện như cũ từng byte", async () => {
+    const { goiModel } = modelGia([
+      { tool: [{ ten: "list_dir", args: { path: "." } }], usage: { vao: 6554, ra: 10, cacheN: 6000, promptN: 554 } },
+      { tool: [{ ten: "list_dir", args: { path: "." } }], usage: { vao: 6554, ra: 10, cacheN: 6000 } },
+      { chu: "x", usage: { vao: 0, ra: 1, cacheN: 0, promptN: 0 } },
+    ]);
+    const { bo } = boThucThiGia();
+    const { p, suKien } = chay({ goiModel, boThucThi: bo });
+    await p;
+    expect(suKien.filter((e) => e.loai === "usage")).toEqual([
+      { loai: "usage", vao: 6554, ra: 10, ctxPhanTram: 10, cacheN: 6000, promptN: 554 },
+      { loai: "usage", vao: 6554, ra: 10, ctxPhanTram: 10 },
+      { loai: "usage", vao: 0, ra: 1, ctxPhanTram: 0, cacheN: 0, promptN: 0 },
+    ]);
   });
 
   it("tool call thiếu id ⇒ lõi sinh id và tool_call_id khớp", async () => {

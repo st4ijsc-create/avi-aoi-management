@@ -185,6 +185,8 @@ async function* luongModelMayChu(
                   // `ra` = MỌI token sinh (gồm nghĩ) — trần `tokenRaToiDa` của lõi phải đo chi phí THẬT.
                   ra: Number(c.tokensGenerated ?? 0),
                   ...(typeof c.tokensReasoning === "number" ? { nghi: c.tokensReasoning } : {}),
+                  // ★ Đợt 12 H0.1 — tái dùng prefix-cache / xử lý lại (chỉ đường llama-server, luôn đi cặp).
+                  ...(typeof c.cacheN === "number" && typeof c.promptN === "number" ? { cacheN: c.cacheN, promptN: c.promptN } : {}),
                 },
               }
             : {}),
@@ -201,6 +203,8 @@ async function* luongModelMayChu(
         tokensIn: ketThuc?.tokensPrompt,
         tokensOut: ketThuc?.tokensGenerated,
         reasoningTokens: typeof ketThuc?.tokensReasoning === "number" ? ketThuc.tokensReasoning : null,
+        cacheTokens: typeof ketThuc?.cacheN === "number" ? ketThuc.cacheN : null,
+        promptEvalTokens: typeof ketThuc?.promptN === "number" ? ketThuc.promptN : null,
         thinking: nghi ? null : false,
         latencyMs: Date.now() - t0,
         outcome: hoanTat ? "ok" : "error",
