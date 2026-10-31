@@ -52,6 +52,7 @@ import { danhSachDuAn, duAnMacDinh, phanGiaiGoc } from "../../aiLocalTools/repoP
 import { DANH_SACH_TRANG } from "../../aiLocalTools/repoCommandSandbox";
 import { gocRepoChinh } from "../../aiCodingTuTriGhi";
 import { autonomyGhiTuTriBat } from "../autonomyPolicy";
+import { scanUntrustedContent } from "../aiSafety";
 import { uocLuongSoToken } from "../../aiLlamaServerClient";
 import { baiHocEnabled, khoiBaiHocChoPrompt, lamSachBaiHoc } from "../codingLessonContext";
 import { danhSachBaiHoc, luuBaiHoc } from "../../../db/aiCodingLessons";
@@ -970,6 +971,11 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
                 // (Đợt 12 · H5.1) con kết thúc bằng `report` có cấu trúc — MẶC ĐỊNH TẮT (AI_AGENT_CON_BAO_CAO=1)
                 ...((phuThuoc.giaoViec?.baoCao ?? process.env.AI_AGENT_CON_BAO_CAO === "1") ? { baoCao: true } : {}),
                 tra: (phuThuoc.giaoViec?.tra ?? ((v) => taoTraDinhNghia(v)))({ userId: user.id, projectId, gocDuAn: goc }),
+                // (Đợt 12 · H5.1 vá) quét câu dạng MỆNH LỆNH trong tóm tắt/báo cáo của con — thiếu khoá này từ 11.8 ⇒ cảnh báo + hạ tự trị cha không bao giờ chạy
+                quetTomTat: (t) => {
+                  const r = scanUntrustedContent(t);
+                  return r.risk === "high" ? r.matched : null;
+                },
                 batDauCon: async (yc) => {
                   // v1: con dùng CHÍNH model của cha (cục bộ — cha ngoài đã bị loại ở trên). `vai-tro:`/`ho-so:` chưa hỗ trợ.
                   if (yc.dn.model !== "auto") {
