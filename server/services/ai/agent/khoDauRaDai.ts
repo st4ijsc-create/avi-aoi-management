@@ -102,6 +102,17 @@ export function taoKhoDauRaDai(dep: PhuThuocKho = {}): KhoDauRaDai {
 
   const gocKho = (): string => path.join(dep.tmp ?? os.tmpdir(), TEN_GOC);
 
+  /** Thư mục vừa tạo không hợp lệ ⇒ xoá, tắt kho hẳn (không thử lại), trả null. */
+  function huyKho(dir: string): null {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+    tat = true;
+    return null;
+  }
+
   /** Tạo thư mục kho của tiến trình (lười). Kiểm: dưới tmp thật, NGOÀI gốc dự án. */
   function baoDamThuMuc(): string | null {
     if (tat) return null;
@@ -113,10 +124,10 @@ export function taoKhoDauRaDai(dep: PhuThuocKho = {}): KhoDauRaDai {
       fs.mkdirSync(dir, { mode: 0o700 });
       const thuc = thucPath(dir);
       const tmpThuc = thucPath(dep.tmp ?? os.tmpdir());
-      if (!thuc || !tmpThuc || !namTrong(thuc, tmpThuc)) throw new Error("kho ngoài tmp");
+      if (!thuc || !tmpThuc || !namTrong(thuc, tmpThuc)) return huyKho(dir); // kho ngoài tmp
       if (dep.gocDuAn) {
         const du = thucPath(dep.gocDuAn);
-        if (du && (namTrong(thuc, du) || namTrong(du, thuc))) throw new Error("kho chồng gốc dự án");
+        if (du && (namTrong(thuc, du) || namTrong(du, thuc))) return huyKho(dir); // kho chồng gốc dự án
       }
       fs.writeFileSync(path.join(dir, ".nhip"), String(bayGio()), { mode: 0o600 });
       thuMuc = dir;
