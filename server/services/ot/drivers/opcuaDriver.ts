@@ -490,6 +490,21 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docNode(tags, true);
+  }
+
+  /**
+   * SCADA R1b-2b-2b A C4 (mục 5, KD-2bA 4.2/4.3) — Lab "thử đọc một địa chỉ" trên phiên ĐANG CHẠY, song song với vòng poll / lời ghi.
+   * An toàn đồng thời đã ĐO bằng node-opcua 2.174.0 THẬT (máy chủ trong tiến trình, trả lời chậm / đảo thứ tự / im lặng —
+   * docDongThoi.drivers.r1b2b2b.test.ts): mỗi ReadRequest mang `requestHandle` riêng và được giải theo nó; client không xếp hàng giao dịch ⇒ một
+   * ReadRequest treo không trì hoãn WriteRequest (STOP); hết hạn giao dịch của thư viện chỉ trả lỗi cho đúng yêu cầu đó (không hạ kênh).
+   * Không ghi `lastOkAt` / `lastLatencyMs` (trạng thái dùng chung của `health()`).
+   */
+  async docLab(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docNode(tags, false);
+  }
+
+  private async docNode(tags: OtTagAddress[], capNhatTrangThai: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.session) {
       throw new DeviceUnreachableError("opcua");
     }
@@ -511,8 +526,10 @@ export class OpcuaDriver extends NotImplementedDriver {
       const t0 = Date.now();
       // SCADA R0 (C5) — đọc CÓ HẠN (không cờ, sửa lỗi treo), giống S7: hạn không huỷ được yêu cầu đang bay nhưng không giữ vòng mãi mãi.
       const results = await withDeadline(Promise.resolve(session.read(nodesToRead)), this.timeoutMs + 1000, "opcua read");
-      this.lastLatencyMs = Date.now() - t0;
-      this.lastOkAt = new Date();
+      if (capNhatTrangThai) {
+        this.lastLatencyMs = Date.now() - t0;
+        this.lastOkAt = new Date();
+      }
       arr = Array.isArray(results) ? results : [results];
     }
 
