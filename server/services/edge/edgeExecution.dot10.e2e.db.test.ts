@@ -193,7 +193,13 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
       });
       try {
         await c.approveAtGate(id);
-        await waitFor(`run ${id} ended on the edge`, async () => ["failed", "held", "aborted"].includes((await c.run(id)).status) && (await c.assignment(id)).claimTokenHash === null, 60_000);
+        // a motion reaching the robot ENDS the wait at once (the assertion below then names the real cause: "motion sent despite e-stop"), instead of
+        // waiting 60 s for a run that, with a broken preflight, never ends
+        await waitFor(
+          `run ${id} ended on the edge`,
+          async () => motionsOf(edge, c.ids.robotA).length > before || (["failed", "held", "aborted"].includes((await c.run(id)).status) && (await c.assignment(id)).claimTokenHash === null),
+          60_000,
+        );
       } catch (err) {
         console.log("DIAG", signed, JSON.stringify(await c.run(id)), JSON.stringify(await c.stepRows(id)), JSON.stringify(c.front.captured.filter((x) => x.path.includes(String(id))).map((x) => [x.path, x.status, JSON.stringify(x.answer).slice(0, 300), JSON.stringify(x.body).slice(0, 600)])));
         throw err;
@@ -202,7 +208,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
         c.plc.coils.set(0, false);
       }
       // SAFETY INVARIANTS hold in EVERY attempt, measured or not: never reached the robot, at most one authorisation row
-      expect(motionsOf(edge, c.ids.robotA).length, "attempt " + attempt + ": a motion reached the robot").toBe(before);
+      expect(motionsOf(edge, c.ids.robotA).length, "attempt " + attempt + ": motion sent despite e-stop").toBe(before);
       expect(await robotJobs(id)).not.toContain("custom:done:1");
       const rows = Number((await c.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${id}`)[0].n);
       expect(rows, "attempt " + attempt + ": authorisation rows").toBeLessThanOrEqual(1);
