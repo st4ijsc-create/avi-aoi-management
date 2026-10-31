@@ -23,6 +23,9 @@ describe("chuyenLoiModel — chuỗi cause", () => {
     expect(chuyenLoiModel(client)).toMatchObject({ tamThoi: false, ma: "UND_ERR_SOCKET" });
     const engine = Object.assign(new Error("[aiGgufEngine] TỪ CHỐI TRUNG THỰC (G1, …)", { cause: new LoiStreamServer("x", false, { cause: socket("ECONNRESET") }) }), { daPhatChu: true });
     expect(chuyenLoiModel(engine)).toMatchObject({ tamThoi: false, ma: "ECONNRESET" });
+    // (rà kiem-dinh h4) bit CHỈ ở tầng trong (LoiStreamServer đã phát, bọc bởi một Error không mang bit) ⇒ vẫn không tạm thời
+    const trong = new Error("bọc không bit", { cause: new LoiStreamServer("[llamaServer] stream lỗi: terminated", true, { cause: socket("ECONNRESET") }) });
+    expect(chuyenLoiModel(trong)).toMatchObject({ tamThoi: false, ma: "ECONNRESET" });
   });
   it("429 insufficient_quota ⇒ QUOTA không tạm thời; 429 khác ⇒ RATE_LIMIT tạm thời; 503 bọc ⇒ MODEL_DANG_NAP", () => {
     const q = new LoiStreamServer("[llamaServer] stream HTTP 429: …", false, { httpStatus: 429, maNhaCungCap: "insufficient_quota" });

@@ -168,8 +168,12 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   · `LoiDiaChiUngDung`. Message GIỮ NGUYÊN VĂN. ĐO sau vá ra **462** — 469 − 7 = 462, không nới, không dư.
  * 462 → **461** (2026-10-26, Đợt 10.3 lô sau nghiệm thu — dieu-phoi e): `_core/llm.ts` bỏ `throw new Error("Failed to fetch image_url…")`
  *   cùng nhánh `fetch` thô (ảnh nay qua `_core/taiAnhAnToan.ts` — lỗi `appError` có mã `taiAnhAi`). ĐO sau vá ra **461**, không dư.
+ * 461 → **460** (2026-11-01, Đợt 12 H3.1b, do-model — rà kiem-dinh): `services/aiGgufEngine.quyetDinhSauLoiServer` nhánh G1 (đứt sau
+ *   khi đã phát chữ) đổi `throw new Error(msg)` ⇒ `throw Object.assign(new Error(msg, { cause: e }), { daPhatChu: true })` (giữ lỗi gốc
+ *   + bit đã-phát cho tầng agent). Message GIỮ NGUYÊN VĂN. ĐO trên nhánh (đã gộp H4.1 6a99cc1ef — llmGia.ts dùng assert.fail, 0 điểm) ra
+ *   **460**, không dư.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 461;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 460;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.
