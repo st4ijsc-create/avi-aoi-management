@@ -63,8 +63,8 @@ describe("AICodingWorkspace — model ngoài chỉ ở chế độ HỎI", () =>
     expect(ma).toContain("res = await goiStream(true);");
   });
 
-  it("★ handleSend phụ thuộc laNgoai / chonModel / hoiVanHanh / loiNgoaiRef (không đóng gói cũ: đổi sang model ngoài mà vẫn chạy đường agent)", () => {
-    expect(ma).toContain("projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);");
+  it("★ handleSend phụ thuộc laNgoai / duongAgentNgoai (L4) / chonModel / hoiVanHanh / loiNgoaiRef (không đóng gói cũ: đổi sang model ngoài mà vẫn chạy đường agent)", () => {
+    expect(ma).toContain("projectId, dungVong, cheDoChat, agentDangChay, agentGui, laNgoai, duongAgentNgoai, chonModel, hoiVanHanh, loiNgoaiRef]);");
   });
 
   it("★ đường render KHÔNG an toàn bị đóng: lượt ngoài đặt luotNgoai TRƯỚC khi stream, đặt phienCoNgoai sau lượt ngoài; tiến độ đọc có trần 50", () => {

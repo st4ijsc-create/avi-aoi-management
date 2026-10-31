@@ -93,6 +93,7 @@ import {
 import { asPackmlState } from "../../equipment/packml";
 import { STOP_DB_STEP_DEADLINE_MS, isStopJob } from "../../robot/stopJob"; // final wave F5 — the STOP DB deadline; Đợt 6 — the robot stop classifier
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
+import { moTaMotPhan, motPhanCua, type MotPhan } from "../../ot/motPhan"; // R1b-2b-2a T3E (backlog 90) — lô áp MỘT PHẦN: không gửi lại
 import {
   computeBindingDetail,
   programChecksRecord,
@@ -558,14 +559,24 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
 export const FOE_OUTCOME_UNKNOWN = "FOE_OUTCOME_UNKNOWN";
+/**
+ * R1b-2b-2a T3E (backlog 90) — machine-readable code of a non-STOP command step whose batch the device applied only PARTLY (dispatch `failed` +
+ * `motPhan`, live or replayed from command_log): NOT retried. A code of its own (not FOE_OUTCOME_UNKNOWN): the outcome IS known item by item — the
+ * step error names what was applied and what was not, so the operator acts on exactly those (no blind read-back of everything).
+ */
+export const FOE_OUTCOME_PARTIAL = "FOE_OUTCOME_PARTIAL";
 
 /** Outcome of executing a step subtree. */
 type StepOutcome =
   | { kind: "ok" }
   | { kind: "skipped" }
   | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
-  /** outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown). */
-  | { kind: "failed"; error: string; outcomeUnknown?: true }
+  /**
+   * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown).
+   * motPhan (R1b-2b-2a T3E): set ONLY by execCommand when the dispatch was `failed` with a partial batch (detail.motPhan). Both are read only by
+   * execStep's retry loop, which rewrites the outcome (flag dropped) before it leaves.
+   */
+  | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan }
   | { kind: "aborted"; error: string }
   /**
    * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
@@ -817,6 +828,13 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
       outcome = { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
       break;
     }
+    // R1b-2b-2a T3E (backlog 90) — a NON-STOP command whose batch was applied PARTLY is NEVER sent again (the applied items would be applied twice);
+    // a STOP keeps the old retry (stopping is idempotent).
+    const motPhanChot = khongGuiLaiMotPhan(outcome, stop);
+    if (motPhanChot) {
+      outcome = motPhanChot;
+      break;
+    }
     if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
   }
 
@@ -879,6 +897,27 @@ function outcomeUnknownOf(rc: RunContext, stepId: string): string | null {
   const l = rc.context[OUTCOME_UNKNOWN_CTX_KEY];
   // data-raw-ok: the step error is a machine-readable code (EDGE_OUTCOME_UNKNOWN) — never re-sent
   return Array.isArray(l) && l.includes(stepId) ? `EDGE_OUTCOME_UNKNOWN: command step "${stepId}" was sent by the edge node but its result was not recorded — it is NOT sent again; check the equipment.` : null;
+}
+
+/**
+ * R1b-2b-2a T3E — the outcome a NON-STOP step ends on after an attempt whose batch was applied PARTLY (`failed` + motPhan): FOE_OUTCOME_PARTIAL,
+ * no further attempt; null otherwise (a STOP, or not partial ⇒ the retry loop decides as before). Pure (exported for the ledger-replay DB test).
+ */
+export function khongGuiLaiMotPhan(outcome: StepOutcome, stop: boolean): StepOutcome | null {
+  if (stop || outcome.kind !== "failed" || !outcome.motPhan) return null;
+  return { kind: "failed", error: `${FOE_OUTCOME_PARTIAL}: ${moTaMotPhan(outcome.motPhan)}.` };
+}
+
+/**
+ * The StepOutcome of a command a dispatcher answered (the end of execCommand; pure, exported for the ledger-replay DB test):
+ * ok ⇒ ok; `timeout` ⇒ failed + outcomeUnknown (T2B: T2's rule wins over partial); `failed` + detail.motPhan ⇒ failed + motPhan (T3E); else failed.
+ */
+export function ketCucLenhFoe(result: EquipmentCommandResult, command: string): StepOutcome {
+  if (result.ok) return { kind: "ok" };
+  const error = result.error ?? `Command "${command}" rejected (${result.status}).`;
+  if (result.status === "timeout") return { kind: "failed", error, outcomeUnknown: true };
+  const motPhan = motPhanCua(result.detail?.motPhan);
+  return motPhan ? { kind: "failed", error, motPhan } : { kind: "failed", error };
 }
 
 /** Run the inner logic of a single step (after precondition + status=running). */
@@ -1836,11 +1875,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     }),
   );
 
-  if (!result.ok) {
-    const error = result.error ?? `Command "${step.command}" rejected (${result.status}).`;
-    return result.status === "timeout" ? { kind: "failed", error, outcomeUnknown: true } : { kind: "failed", error };
-  }
-  return { kind: "ok" };
+  return ketCucLenhFoe(result, step.command);
 }
 
 async function execSequence(rc: RunContext, steps: WorkflowStep[]): Promise<StepOutcome> {

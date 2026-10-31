@@ -481,6 +481,47 @@ Chốt:
 
 **Thứ tự 2a cập nhật 2026-10-31:** … T3 (vòng 2) → **T3E** → T4 …
 
+### Task 3F: Sau khi dựng lại, `DUPLICATE_IN_FLIGHT` ⇒ KHÔNG RÕ kết cục, FOE KHÔNG gửi lại với attempt key mới (backlog 91, AN TOÀN — dieu-phoi chốt 2026-10-31, làm NGAY SAU T3E, TRƯỚC T4)
+
+**Phát hiện (rà T3E, có từ trước).** Trình tự lỗi:
+1. Tiến trình sập GIỮA lúc "đã ghi xuống thiết bị" và lúc "ghi hàng kết quả".
+2. FOE dựng lại, phát lại dispatcher ⇒ nhận `rejected` / `DUPLICATE_IN_FLIGHT` (`commandDispatcher.ts:~2226`).
+3. FOE coi đó là lỗi thường, thử lại với attempt key MỚI ⇒ lệnh có thể đã áp bị gửi lại THẬT.
+
+Cùng bất biến T2B: không bao giờ gửi lại lệnh có thể đã áp.
+
+**Quyết định (dieu-phoi):**
+- Sau khi dựng lại, `DUPLICATE_IN_FLIGHT` và MỌI lý do từ chối mang nghĩa "lệnh trước có thể đang bay hoặc đã bay" ⇒ kết cục KHÔNG RÕ, như `timeout` theo tiền lệ `outcomeUnknownOf` / `FOE_OUTCOME_UNKNOWN`. Khi đó:
+  - không gửi lại;
+  - compensation chạy;
+  - người vận hành thấy rõ "không rõ kết cục — kiểm tra thiết bị".
+- Bước không phải STOP: KHÔNG dùng attempt key mới.
+- STOP giữ hành vi gửi lại.
+- Liệt kê từ mã nguồn mọi lý do từ chối thuộc lớp "có thể đã bay" (ví dụ `DUPLICATE_IN_FLIGHT`, `BUSY` trên cùng ý định / attempt, …). Bảng "lý do → thuộc lớp? bằng chứng file:line" đặt trong báo cáo. Lý do từ chối CHẮC CHẮN chưa gửi gì (PRECONDITION_FAILED, TAG_NOT_WRITABLE, …) giữ nguyên hành vi.
+- Census gửi lại của T3E (`guiLaiXetMotPhanCensus`, quét): mở rộng để các chỗ rẽ nhánh thử lại cũng phải xét lớp "có thể đã bay", hoặc thêm census anh em cùng cơ chế quét. Đột biến bỏ phần xét ⇒ đỏ.
+
+**Test:**
+1. Giả lập sập giữa "đã ghi thiết bị" và "ghi hàng kết quả". Thiết bị giả hoặc sim đếm gói; dùng chỗ cắt sẵn có của dispatcher nếu có, không thì hook test-only có cổng VITEST. FOE dựng lại từ sổ (TEST DB, ROLLBACK của chính test, không id tường minh trong bảng WORM) ⇒ bước không phải STOP:
+   - 0 gói gửi lại (đếm gói);
+   - kết cục `failed` + `FOE_OUTCOME_UNKNOWN` (hoặc mã riêng đã nêu lý do);
+   - compensation chạy 1 lần.
+2. Cùng kịch bản với bước STOP ⇒ vẫn gửi lại (đối chứng).
+3. Từ chối "chắc chưa gửi" (ví dụ PRECONDITION_FAILED) ⇒ hành vi cũ (đối chứng).
+4. Đột biến:
+   - coi `rejected` / `DUPLICATE_IN_FLIGHT` là lỗi thường ⇒ (1) đỏ;
+   - áp cho STOP ⇒ (2) đỏ;
+   - attempt key mới cho bước không phải STOP ⇒ (1) đỏ.
+
+**Files:**
+- `server/services/orchestration/foe/foeEngine.ts` (runStep / execCommand / outcomeUnknownOf);
+- `server/services/ot/commandDispatcher.ts` (chỉ nếu cần mang cờ máy đọc được);
+- census T3E;
+- test mới `server/services/orchestration/foe/foeDuplicateInFlight.r1b2b2.db.test.ts` (+ unit nếu cần).
+
+**Commit:** `fix(foe): sau dung lai DUPLICATE_IN_FLIGHT (va moi tu choi "lenh truoc co the da bay") => khong ro ket cuc, khong gui lai, khong attempt key moi cho buoc khong phai STOP; STOP van gui lai (R1b-2b-2a T3F, backlog 91)`. kiem-dinh rà.
+
+**Thứ tự 2a cập nhật 2026-10-31:** … T3E → **T3F** → T4 …
+
 ### Task 4: `interlock.resolveEvent` dưới khoá ADAPTER → LUẬT (mục 62)
 
 **Files:**

@@ -40,13 +40,14 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import type { LyDoDung, ThongTinModelBatDau, ViecKeHoach } from "@shared/agentCore/kieu";
+import type { LyDoDung, ThongTinModelBatDau, VetNgoaiLuot, ViecKeHoach } from "@shared/agentCore/kieu";
 import { LENH_KHOA_CUNG, timLenhKhoaCung } from "@shared/agentCore/lenhKhoaCung";
 import { Button } from "@/components/ui/button";
 import { TheDuyetDiff } from "@/components/ai/TheDuyetDiff";
 import type { ActionState } from "@/components/ConfirmActionCard";
 import { agentTrpc, phieuTraLoiCuaToi } from "@/lib/agentApi";
 import { cn } from "@/lib/utils";
+import { tachMaNgoai } from "@/lib/dongYNgoai";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
@@ -511,6 +512,7 @@ function KetThuc({ agent, onMoTep }: { agent: HookAgent; onMoTep: (p: string) =>
     <div data-testid="agent-ket-thuc" className={cn("space-y-2 rounded-md border p-2 text-[12px]", s.ketThuc.lyDo === "hoan-thanh" ? "border-emerald-300" : "border-amber-300")}>
       <p className="font-medium">{cauLyDoDung(t, s.ketThuc.lyDo)}</p>
       {s.ketThuc.tomTat && <p className="whitespace-pre-wrap break-words text-muted-foreground">{s.ketThuc.tomTat}</p>}
+      {s.ketThuc.vetNgoai && <DongVetNgoai vet={s.ketThuc.vetNgoai} />}
       {s.tepDaDoi.length > 0 && (
         <div>
           <p className="mb-0.5 font-medium">{t("repoWs.agent.tepDaDoi", "Tệp đã đổi ({{n}})", { n: s.tepDaDoi.length })}</p>
@@ -559,9 +561,61 @@ function KetThuc({ agent, onMoTep }: { agent: HookAgent; onMoTep: (p: string) =>
  * `AI_AGENT_THEO_VAI_TRO`; `null` ⇒ KHÔNG vẽ gì — DOM y như cũ). `nguon = "du-phong"` ⇒ nhãn "dự phòng"; `bangChung` (chuỗi giải
  * thích của máy chủ) nằm ở tooltip.
  */
+/**
+ * (Đợt 10.4b L4) lượt chạy bằng model NGOÀI: huy hiệu «Model ngoài» + `nhà cung cấp · model` + mức dữ liệu máy chủ đã chốt. Mọi chuỗi vẽ CHỮ THUẦN;
+ * mã model không đúng hình `ngoai:<ncc>:<model>` ⇒ hiện nhãn chung (không dựng từ chuỗi lạ). `muc` lạ ⇒ coi như kỹ thuật KHÔNG (không nói bớt): hiện "vận hành".
+ */
+function DongModelNgoai({ m, dangChay }: { m: Extract<ThongTinModelBatDau, { muc: unknown }>; dangChay: boolean }) {
+  const { t } = useTranslation();
+  const tach = typeof m.model === "string" ? tachMaNgoai(m.model) : null;
+  const kyThuat = m.muc === "ky-thuat";
+  return (
+    <div
+      data-testid="agent-model-bat-dau"
+      data-nguon="ngoai"
+      data-muc={kyThuat ? "ky-thuat" : "van-hanh"}
+      className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] text-muted-foreground"
+    >
+      <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span data-testid="agent-model-ngoai-huy-hieu" className="rounded border border-sky-300 bg-sky-50 px-1 font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+        {t("repoWs.agent.modelNgoai.huyHieu", "Model ngoài")}
+      </span>
+      <span className="min-w-0 break-words" data-testid="agent-model-ngoai-ten">
+        {tach
+          ? dangChay
+            ? t("repoWs.agent.modelNgoai.dangChay", "Đang chạy {{model}} ({{ncc}})", { model: tach.model, ncc: tach.nhaCungCap })
+            : t("repoWs.agent.modelNgoai.daChay", "Đã chạy {{model}} ({{ncc}})", { model: tach.model, ncc: tach.nhaCungCap })
+          : t("repoWs.agent.modelNgoai.khongRo", "Model của nhà cung cấp bên ngoài")}
+      </span>
+      <span data-testid="agent-model-ngoai-muc" className="rounded border px-1">
+        {kyThuat ? t("repoWs.agent.modelNgoai.mucKyThuat", "dữ liệu kỹ thuật") : t("repoWs.agent.modelNgoai.mucVanHanh", "dữ liệu vận hành")}
+      </span>
+    </div>
+  );
+}
+
+/** (Đợt 10.4b L4) dòng vết cộng dồn mọi vòng của lượt model ngoài — số liệu do máy chủ báo, kiểm kiểu ở reducer; `chiPhiUocUsd` là ƯỚC. */
+function DongVetNgoai({ vet }: { vet: VetNgoaiLuot }) {
+  const { t } = useTranslation();
+  const so = (n: number | null) => (n === null ? "—" : n.toLocaleString());
+  return (
+    <p data-testid="agent-vet-ngoai" className="text-[11px] text-muted-foreground">
+      {t("repoWs.agent.vetNgoai", "Model ngoài {{model}} ({{ncc}}) · token vào {{vao}} · ra {{ra}} · chi phí ước {{usd}}", {
+        model: vet.model,
+        ncc: vet.nhaCungCap,
+        vao: so(vet.tokenVao),
+        ra: so(vet.tokenRa),
+        usd: vet.chiPhiUocUsd === null ? "—" : `$${vet.chiPhiUocUsd.toFixed(4)}`,
+      })}
+    </p>
+  );
+}
+
 export function DongModelBatDau({ m, dangChay }: { m: ThongTinModelBatDau | null; dangChay: boolean }) {
   const { t } = useTranslation();
   if (!m) return null;
+  // `ThongTinModelCucBo.nguon` là string ⇒ TS không thu hẹp theo "ngoai"; nhánh ngoài đọc `muc`/`model` có kiểm kiểu bên trong.
+  if (m.nguon === "ngoai") return <DongModelNgoai m={m as Extract<ThongTinModelBatDau, { muc: unknown }>} dangChay={dangChay} />;
   const duAn = m.vaiTro === "code.plc" ? t("repoWs.agent.modelBatDau.duAnPlc", " (dự án PLC)") : m.vaiTro === "code.software" ? t("repoWs.agent.modelBatDau.duAnPhanMem", " (dự án phần mềm)") : "";
   const model = m.model ?? t("repoWs.agent.modelBatDau.macDinh", "model mặc định của engine");
   return (
@@ -808,6 +862,15 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
 
       <DongModelBatDau m={s.modelBatDau} dangChay={s.dangChay} />
 
+      {s.dangChay && s.modelBatDau?.nguon === "ngoai" && (
+        <p data-testid="agent-ngoai-dung" className="flex items-start gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">
+            {t("repoWs.agent.modelNgoai.dung", "Nút Dừng chỉ có tác dụng trước vòng kế tiếp: vòng đang gọi model ngoài vẫn chạy cho hết và vẫn tính phí. Dừng không dừng cuộc gọi đang bay.")}
+          </span>
+        </p>
+      )}
+
       {s.dangChay && (
         <div data-testid="agent-trang-thai" aria-live="polite" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-1 text-[11px] text-muted-foreground">
           {s.choDuyet ? (
@@ -869,8 +932,10 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
           case "duyet":
             return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "ke-hoach-duyet":
-            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => x.kieu === "canh-bao" || (x.kieu === "con" && x.nguon === "tuRepo"))} />;
+            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => (x.kieu === "canh-bao" && x.lyDo !== "phien-co-luot-ngoai") || (x.kieu === "con" && x.nguon === "tuRepo"))} />;
           case "con":
+            // (L4, d1) lượt model NGOÀI không có agent con (không `delegate`): nếu sự kiện lạ tới, KHÔNG vẽ thẻ con (thẻ ấy có nút ghi/duyệt riêng).
+            if (s.modelBatDau?.nguon === "ngoai") return null;
             return <KhoiAgentCon key={`c-${m.runIdCon}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "nho":
             return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
@@ -884,7 +949,9 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
               >
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0 break-words">
-                  {m.loaiCanhBao === "ha-tu-tri"
+                  {m.lyDo === "phien-co-luot-ngoai"
+                    ? t("repoWs.agent.haTuTriPhienNgoai", "Phiên này đã có lượt dùng model ngoài — mọi ghi/lệnh (kể cả chế độ tự động) cần bạn duyệt từng bước.")
+                    : m.loaiCanhBao === "ha-tu-tri"
                     ? t("repoWs.agent.haTuTri", "Đã hạ tự trị: lượt này đã đọc nội dung đáng ngờ ({{nguon}}) — mọi ghi/lệnh sau đó cần bạn duyệt.", { nguon: m.nguon })
                     : t("repoWs.agent.canhBaoDuLieu", "Nội dung đọc từ {{nguon}} chứa câu dạng mệnh lệnh — agent coi là dữ liệu, không làm theo.", { nguon: m.nguon })}
                 </span>

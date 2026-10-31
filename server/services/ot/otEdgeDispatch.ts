@@ -47,6 +47,7 @@ import { edgeAuthorizationStillValid, verifyEdgeStepAuthorization, type EdgeStep
 import { edgeDeviceRuntime, envOtControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
 import type { EdgeConfigSnapshot } from "../edge/edgeProtocol";
 import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
+import { ketCucLo, MA_MOT_PHAN, type MotPhan } from "./motPhan";
 
 /** Same bound as central's OT safety preflight (commandDispatcher.OT_SAFETY_PREFLIGHT_DEADLINE_MS). */
 const EDGE_OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
@@ -77,6 +78,11 @@ export interface EdgeOtDispatchResult {
   pinnedStop?: boolean;
   jti?: string;
   results: Array<{ tagKey: string; ok: boolean; status: DispatchStatus; error?: string }>;
+  /**
+   * R1b-2b-2a T3E (backlog 90) — CHỈ khi lô áp MỘT PHẦN (≥ 1 write áp, ≥ 1 write thiết bị nói không áp, không write nào không rõ): status `failed`,
+   * `reason` = MOT_PHAN, danh sách tagKey. Đi vào bản ghi sổ (`result.motPhan`) ⇒ trung tâm lưu vào command_log.ackValue. Vắng ở mọi kết cục khác.
+   */
+  motPhan?: MotPhan;
 }
 
 type SnapshotAdapter = EdgeConfigSnapshot["adapters"][number];
@@ -216,13 +222,16 @@ async function runDeviceStage(
   return { kind: "done", executed: queued as ExecutedWrite };
 }
 
-function rollUp(executed: ExecutedWrite): { ok: boolean; status: DispatchStatus } {
-  const allOk = executed.outcomes.length > 0 && executed.outcomes.every((o) => o.ok);
-  // R1b-2b-2a T2 (mục 66) — như dispatcher trung tâm: ≥ 1 write không rõ kết cục ⇒ 'timeout' (không rõ thắng thất bại).
-  if (!allOk) return { ok: false, status: executed.timedOut || executed.outcomes.some((o) => o.status === "timeout") ? "timeout" : "failed" };
-  if (executed.outcomes.every((o) => o.status === "acked_verified")) return { ok: true, status: "acked_verified" };
-  if (executed.outcomes.some((o) => o.status === "acked_unverified")) return { ok: true, status: "acked_unverified" };
-  return { ok: true, status: "acked" };
+/**
+ * R1b-2b-2a T2 (mục 66) — như dispatcher trung tâm: ≥ 1 write không rõ kết cục ⇒ 'timeout' (không rõ thắng thất bại). T3E — CÙNG luật với trung tâm
+ * (`ketCucLo`, motPhan.ts): lô áp MỘT PHẦN ⇒ `failed` + reason MOT_PHAN + motPhan.
+ */
+function rollUp(executed: ExecutedWrite, resolved: ReadonlyArray<Resolved>): { ok: boolean; status: DispatchStatus; reason?: string; motPhan?: MotPhan } {
+  const k = ketCucLo(
+    executed.outcomes.map((o) => ({ tagKey: resolved[o.idx]!.write.tagKey, ok: o.ok, status: o.status })),
+    executed.timedOut,
+  );
+  return { ok: k.ok, status: k.status as DispatchStatus, ...(k.motPhan ? { reason: MA_MOT_PHAN, motPhan: k.motPhan } : {}) };
 }
 
 /** R-10-bn — `{ ownerEpoch }` of the adapter in the verified config (absent when the config does not name it — central then refuses) */
@@ -252,7 +261,9 @@ async function report(rt: EdgeDeviceRuntime | null, input: EdgeOtDispatchInput, 
           ...ownerEpochOf(rt, input.adapterId),
           target: { adapterId: input.adapterId, commandType: input.commandType },
           status: res.status,
-          result: { reason: res.reason ?? null, pinnedStop: res.pinnedStop ?? false, results: res.results },
+          // T3E — `motPhan` (lô áp một phần) theo cùng bản ghi: trung tâm ghi `result` nguyên vẹn vào command_log.ackValue (edgeReportsCentral.applyLedger,
+          // không đổi) ⇒ ackValue.motPhan. Edge cũ không mang ⇒ hàng chỉ có `results` theo item (hành vi hôm nay; motPhanTuKetQua suy được nếu cần).
+          result: { reason: res.reason ?? null, pinnedStop: res.pinnedStop ?? false, results: res.results, ...(res.motPhan ? { motPhan: res.motPhan } : {}) },
           at,
         },
         { stop },
@@ -302,7 +313,7 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
         // unreachable for a pinned stop (never BUSY, never superseded) — kept total, reported honestly
         res = { ok: false, status: "rejected", reason: stage.kind === "busy" ? "BUSY" : stage.kind === "stopped" ? "STOPPED_BEFORE_WRITE" : "SUPERSEDED_BY_STOP", stop: true, pinnedStop: true, results: [] };
       } else {
-        const roll = rollUp(stage.executed);
+        const roll = rollUp(stage.executed, stopCls.resolved);
         res = {
           ...roll,
           stop: true,
@@ -413,7 +424,7 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
     else if (stage.kind === "superseded") res = { ...refusal(input, "SUPERSEDED_BY_STOP"), jti };
     else if (stage.kind === "stopped") res = { ...refusal(input, "STOPPED_BEFORE_WRITE", { detail: stage.detail }), jti }; // K-fix R-11-d
     else {
-      const roll = rollUp(stage.executed);
+      const roll = rollUp(stage.executed, resolved);
       res = {
         ...roll,
         stop: false,

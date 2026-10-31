@@ -4083,6 +4083,7 @@
       "flowTaoTuMoTa": "create an AI flow draft from a description",
       "flowChayThu": "test-run a node of an AI flow",
       "scadaReconnectAdapter": "reconnect the adapter",
+      "deviceAdapterUpdate": "update the adapter",
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
       "scadaSelectTag": "select a channel to command",
@@ -4553,6 +4554,8 @@
       "flowDuyetTrungNguoiBat": "You enabled this flow version — the approver must be someone else.",
       "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
+      "otMcTamKhoa": "Mitsubishi MC control is LOCKED (safety): writes are not sent to the device until fix 3B — to stop the machine use the hardwired E-STOP.",
+      "chiTietKyThuatBiChe": "The endpoint and connection settings are technical details you cannot view — only an engineer/admin with machine-control edit rights can change them. Other fields can still be edited.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
       "stubEndpointShared": "Several stub adapters share this endpoint — give each adapter its own endpoint first.",
       "scadaSelectionLockBusy": "The channel is contended — try again in a moment.",
@@ -4686,7 +4689,9 @@
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, raising its actuation level above 1 (HMI STOP only sends pins of level-1 tags), disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine.",
-    "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server."
+    "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server.",
+    "CHON_MODEL_KHONG_CO": "The selected model can't be used on this screen (not enabled or removed) — pick another model.",
+    "CHON_MODEL_SAI": "The model selection is invalid — pick the model again."
   },
   "export": {
     "reportMenu": {
@@ -16628,6 +16633,7 @@
     "manualHelp": "Manual",
     "autoForm": "Configuration from the manifest (auto-generated) — host + port build the endpoint below",
     "defaultPortHint": "Default {{protocol}} port: {{port}}",
+    "chiTietBiChe": "Only an engineer/admin with machine-control edit rights can see and change the endpoint and connection settings — here you can edit the name, poll interval, machine and enabled state.",
     "troLai": {
       "title": "Two-factor code required",
       "body": "This action touches a protected tag, or an adapter that carries one (re-pointing it, changing its sampling interval / deadband / unit, creating it on a key that is still referenced, disabling or deleting it). A protected tag is a declared channel, a machine's mode channel, or the target or source of an interlock rule that is enabled or approved. A fresh TOTP code is required.",
@@ -19138,6 +19144,7 @@
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",
       "OT_S7_DIA_CHI_THU_VIEN_BO": "The S7 library (nodes7) cannot write this address as given (it would drop or misread it) — the command was NOT sent and the whole batch was refused. Check the tag address; to stop the machine now use the hardwired E-STOP at the machine",
       "OT_S7_THU_VIEN_KHONG_KIEM_DUOC": "The S7 address could not be checked with the nodes7 library (library missing or replaced) — the command was NOT sent. Reinstall the pinned nodes7 version; to stop the machine now use the hardwired E-STOP at the machine",
+      "MOT_PHAN": "The command was applied only PARTLY: some values were written to the machine, the machine refused the others — it is NOT resent automatically. Check at the machine, then resend only the part not applied if still needed",
       "EDGE_REPORTED": "The edge reported the command as not successful",
       "READBACK_UNAVAILABLE": "Written but could not be read back — check at the machine",
       "READBACK_MISMATCH": "Written but the read-back value does not match — check at the machine",
@@ -21705,6 +21712,20 @@
           "chung": "The decision could not be sent — try again."
         }
       },
+      "modelNgoai": {
+        "huyHieu": "External model",
+        "dangChay": "Running {{model}} ({{ncc}})",
+        "daChay": "Ran {{model}} ({{ncc}})",
+        "khongRo": "A model from an external provider",
+        "mucKyThuat": "technical data",
+        "mucVanHanh": "operational data",
+        "dung": "Stop only takes effect before the next round: a round already calling the external model runs to the end and is still billed. Stop does not cancel a call in flight."
+      },
+      "vetNgoai": "External model {{model}} ({{ncc}}) · tokens in {{vao}} · out {{ra}} · estimated cost {{usd}}",
+      "haTuTriPhienNgoai": "This session already used an external model — every write/command (even in automatic mode) needs your approval step by step.",
+      "ngoai": {
+        "bat": "Multi-step read-only agent with an external model — reads/searches files through the server, no writes, no commands, no sub-agents."
+      },
       "tongQuan": {
         "tieuDe": "Change overview",
         "agentCon": "sub-agent",
@@ -24227,7 +24248,8 @@
         "dialogApDungTieuDe": "Apply stub fault to {{code}}?",
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
-      }
+      },
+      "tamKhoa": "Temporarily locked"
     },
     "kenh": {
       "title": "Channels & limits",
@@ -24599,6 +24621,22 @@
         "loiTai": "Could not load the machine list — use the hardwired E-STOP at the machine",
         "biCat": "The list may be incomplete — use the hardwired E-STOP",
         "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "Communication {{ketNoi}}/{{tong}}",
+        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
+      }
+    },
+    "orchestration": {
+      "maLoi": {
+        "FOE_OUTCOME_UNKNOWN": "Outcome unknown: the command may have been applied to the device — check the device before running again; do NOT resend automatically.",
+        "FOE_OUTCOME_PARTIAL": "Partially applied: some commands reached the device and some did not — check the device; do NOT resend the whole batch.",
+        "EDGE_OUTCOME_UNKNOWN": "Outcome unknown on the edge: the edge node may have applied the command — check the device before running again.",
+        "REJECTED": "The command was rejected — nothing was written to the device.",
+        "PRECONDITION_FAILED": "The step's precondition (interlock) was not met — nothing was written to the device."
       }
     }
   },

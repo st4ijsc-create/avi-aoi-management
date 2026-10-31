@@ -64,13 +64,18 @@ vi.mock("../_core/accessControl", () => ({
       }
       return next({ ctx });
     },
+  // SCADA R1b-2b-2b A C2 — `chiTietKyThuatCua` (vai admin/engineer) hỏi machine_control.canEdit qua checkPermission: cùng cổng giả `perm.allow`
+  checkPermission: vi.fn(async () => perm.allow),
 }));
 
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
 import { lopNodes7That } from "../services/ot/drivers/s7Address";
 
-const ctx = { user: { id: 9, role: "supervisor", name: "Sup" } } as any;
+// SCADA R1b-2b-2b A C2 — người gọi chính là KỸ SƯ canEdit (thấy endpoint / connectionOptions / lastError — các ca bí mật dưới đây đọc lại chúng);
+// người giám sát (vai ngoài admin/engineer, dù có canEdit) nhận hàng đã che — ca riêng "C2" cuối tệp (hành vi thật trên CSDL: scadaDiagRouter.tomTat.r1b2b2b.db.test.ts).
+const ctx = { user: { id: 9, role: "engineer", name: "Eng", twoFactorEnabled: true } } as any;
 const caller = deviceAdapterRouter.createCaller(ctx);
+const giamSat = deviceAdapterRouter.createCaller({ user: { id: 10, role: "supervisor", name: "Sup" } } as any);
 
 beforeEach(() => {
   fake.store.clear();
@@ -485,5 +490,24 @@ describe("connectionOptions.password is sealed at rest (Task 12)", () => {
     expect(a.connectionOptions).toEqual({ securityMode: "None" });
     const b = await caller.create({ code: "UA3", name: "n", protocol: "stub", endpoint: "s://x" });
     expect(b.connectionOptions).toBeNull();
+  });
+});
+
+describe("SCADA R1b-2b-2b A C2 — redactAdapterRow theo người xem (KD-2bA 2.1)", () => {
+  it("giám sát (vai ngoài admin/engineer) ⇒ endpoint / connectionOptions null, lastError = mã; kỹ sư ⇒ thật; mật khẩu không bao giờ rời server", async () => {
+    process.env.SECRET_ENCRYPTION_KEY = process.env.SECRET_ENCRYPTION_KEY || "task12-router-test-key";
+    const a = await caller.create({
+      code: "C2R", name: "c2", protocol: "opcua", endpoint: "opc.tcp://10.0.0.9:4840",
+      connectionOptions: { password: "C2-Pw", ha: { secondaryEndpoint: "opc.tcp://10.0.0.10:4840" } },
+    });
+    const g = await giamSat.get({ id: a.id });
+    expect(g.endpoint).toBeNull();
+    expect(g.connectionOptions).toBeNull();
+    expect(g.tamKhoa).toBeNull();
+    expect(JSON.stringify(await giamSat.list())).not.toMatch(/10.0.0.(9|10)|C2-Pw/);
+    const k = await caller.get({ id: a.id });
+    expect(k.endpoint).toBe("opc.tcp://10.0.0.9:4840");
+    expect((k.connectionOptions as any).ha.secondaryEndpoint).toBe("opc.tcp://10.0.0.10:4840");
+    expect(JSON.stringify(k)).not.toContain("C2-Pw");
   });
 });

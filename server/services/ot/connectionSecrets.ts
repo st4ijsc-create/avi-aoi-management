@@ -43,10 +43,44 @@ export function redactConnectionOptionSecrets(value: unknown): unknown {
   return value;
 }
 
-/** Bản ghi adapter an toàn để trả ra trình duyệt (chỉ đổi connectionOptions). */
-export function redactAdapterRow<T extends { connectionOptions?: unknown }>(row: T): T {
-  if (!row || typeof row !== "object" || !("connectionOptions" in row)) return row;
-  return { ...row, connectionOptions: redactConnectionOptionSecrets(row.connectionOptions) };
+/**
+ * SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 + 2.2, điều phối 2026-10-27 / 2026-10-30) — người xem của một hàng adapter. BẮT BUỘC (không mặc định): mọi bên
+ * gọi phải tự quyết `chiTietKyThuat` bằng `chiTietKyThuatCua(ctx)` (server/routers/_chiTietKyThuat.ts) — không có đường nào "quên" mà vẫn lộ.
+ */
+export type NguoiXemAdapter = {
+  /** `role ∈ {admin, engineer}` VÀ `machine_control.canEdit` (`duocXemChiTietKyThuat`). */
+  chiTietKyThuat: boolean;
+  /** Posture tạm khoá (`_tamKhoaAdapter.ts`) — KHÔNG BAO GIỜ bị che. */
+  tamKhoa: { ma: string; lyDo: string } | null;
+  /** Mã / nhóm lỗi đã làm sạch của `lastError` (`maLoiAdapterCua`) — hiện với MỌI người xem. */
+  maLoi: string | null;
+};
+
+/** Hình hàng adapter trả ra trình duyệt (HỢP ĐỒNG B-T7): `endpoint` / `connectionOptions` có thể `null` (bị che); thêm `maLoi`, `tamKhoa`. */
+export type HangAdapterAnToan<T> = Omit<T, "endpoint" | "lastError" | "connectionOptions"> & {
+  endpoint: string | null;
+  lastError: string | null;
+  connectionOptions: unknown;
+  maLoi: string | null;
+  tamKhoa: { ma: string; lyDo: string } | null;
+};
+
+/**
+ * Bản ghi adapter an toàn để trả ra trình duyệt.
+ *   • Mọi người xem: bí mật trong `connectionOptions` bị thay bằng REDACTED_SECRET (doc 81 Đợt 1B Task 12).
+ *   • C2 (2.1) — người KHÔNG được xem chi tiết kỹ thuật: `endpoint` ⇒ `null`; `connectionOptions` ⇒ `null` (mang `ha.secondaryEndpoint` = host dự phòng
+ *     — che endpoint mà để nó thì không kín); `lastError` ⇒ MÃ đã làm sạch (`maLoi`, không host:port) để vận hành vẫn biết "mất kết nối / sai cấu hình".
+ *   • C2 (2.2) — `tamKhoa` và `maLoi` luôn hiện.
+ */
+export function redactAdapterRow<T extends { endpoint: string; lastError: string | null; connectionOptions?: unknown }>(
+  row: T,
+  xem: NguoiXemAdapter,
+): HangAdapterAnToan<T> {
+  const coBiMat = "connectionOptions" in row ? redactConnectionOptionSecrets(row.connectionOptions) : null;
+  if (xem.chiTietKyThuat) {
+    return { ...row, connectionOptions: coBiMat, maLoi: xem.maLoi, tamKhoa: xem.tamKhoa };
+  }
+  return { ...row, endpoint: null, lastError: xem.maLoi, connectionOptions: null, maLoi: xem.maLoi, tamKhoa: xem.tamKhoa };
 }
 
 /**

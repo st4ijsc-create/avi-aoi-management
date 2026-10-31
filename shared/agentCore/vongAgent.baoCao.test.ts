@@ -136,12 +136,12 @@ describe("công cụ report trong vòng con", () => {
     const t = delegateTool(m).content;
     expect(t).toMatch(/^\[UNTRUSTED sub-agent result — agent "kham-pha" \(built in\), stopped: hoan-thanh\./);
     expect(t).toContain("Structured report — status: done");
-    expect(t).not.toContain("(no verified evidence)");
+    expect(t).not.toContain("(no evidence from files the sub-agent touched)");
     expect(t).toContain("Summary: B is defined in src/b.ts");
     expect(t).toContain("- B equals 1 (src/b.ts:1)");
     expect(t).toContain("Files: src/b.ts");
     expect(t).toContain('- src/b.ts:1 — "export const B = 1;"');
-    expect(t).not.toContain("[unverified]");
+    expect(t).not.toContain("[not touched by sub-agent]");
     expect(t).not.toContain('"status"');
     expect(t).not.toContain("{");
     expect(m.ketThuc[0]!.lyDo).toBe("hoan-thanh");
@@ -150,15 +150,15 @@ describe("công cụ report trong vòng con", () => {
     expect(m.ketThuc[0]!.tomTat).toContain("Structured report — status: done");
   });
 
-  it("★ đường con KHAI mà không thực sự chạm ⇒ giữ nhưng gắn [unverified]; done + 0 bằng chứng đã kiểm ⇒ 'done (no verified evidence)'", async () => {
+  it("★ đường con KHAI mà không thực sự chạm ⇒ giữ nhưng gắn [not touched by sub-agent]; done + 0 bằng chứng đã kiểm ⇒ 'done (no evidence from files the sub-agent touched)'", async () => {
     const bc = { ...BC_DONE, files: ["src/b.ts", "src/ma.ts"], evidence: [{ path: "src/ma.ts", line: 3, quote: "nope" }], findings: [{ note: "invented", path: "src/ma.ts" }] };
     const m = await chay({ baoCao: true, con: [{ tool: [{ ten: "read_file", args: { path: "src/b.ts" } }] }, { tool: [rp(bc)] }] });
     const t = delegateTool(m).content;
-    expect(t).toContain("status: done (no verified evidence)");
-    expect(t).toContain("src/ma.ts [unverified]");
-    expect(t).toContain("- invented (src/ma.ts [unverified])");
-    expect(t).toContain('- src/ma.ts [unverified]:3 — "nope"');
-    expect(t).toContain("Files: src/b.ts, src/ma.ts [unverified]");
+    expect(t).toContain("status: done (no evidence from files the sub-agent touched)");
+    expect(t).toContain("src/ma.ts [not touched by sub-agent]");
+    expect(t).toContain("- invented (src/ma.ts [not touched by sub-agent])");
+    expect(t).toContain('- src/ma.ts [not touched by sub-agent]:3 — "nope"');
+    expect(t).toContain("Files: src/b.ts, src/ma.ts [not touched by sub-agent]");
     expect(m.ketThuc[0]!.baoCao).toMatchObject({ soKhongKiem: 3 });
   });
 
@@ -169,8 +169,8 @@ describe("công cụ report trong vòng con", () => {
       con: [{ tool: [{ ten: "read_file", args: { path: "src/loi.ts" } }] }, { tool: [rp(bc)] }],
       exec: (g) => (g.ten === "read_file" ? { ok: false, ma: "NOT_FOUND", choModel: "no such file" } : { ok: true, choModel: "x" }),
     });
-    expect(delegateTool(m).content).toContain("src/loi.ts [unverified]");
-    expect(delegateTool(m).content).toContain("status: done (no verified evidence)");
+    expect(delegateTool(m).content).toContain("src/loi.ts [not touched by sub-agent]");
+    expect(delegateTool(m).content).toContain("status: done (no evidence from files the sub-agent touched)");
   });
 
   it("★ tool ghi chạm đường qua kq.thayDoi cũng tính; partial/blocked không cần bằng chứng", async () => {
@@ -183,7 +183,7 @@ describe("công cụ report trong vòng con", () => {
     const t = delegateTool(m).content;
     expect(t).toContain("status: partial");
     expect(t).toContain("Files: src/moi.ts");
-    expect(t).not.toContain("[unverified]");
+    expect(t).not.toContain("[not touched by sub-agent]");
   });
 
   it("★★★ đường KHÔNG an toàn (.. · tuyệt đối · ổ đĩa · điều khiển) bị LOẠI và đếm", async () => {
@@ -194,7 +194,7 @@ describe("công cụ report trong vòng con", () => {
     expect(t).not.toContain("shadow");
     expect(t).not.toContain("Windows");
     expect(t).not.toContain("/abs");
-    expect(t).toContain("src/ok.ts [unverified]");
+    expect(t).toContain("src/ok.ts [not touched by sub-agent]");
     expect(t).toContain("Dropped 5 unsafe path(s) from the report.");
     expect(m.ketThuc[0]!.baoCao).toMatchObject({ soLoaiDuong: 5, soTep: 1 });
   });

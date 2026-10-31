@@ -1000,7 +1000,12 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-10-31 dieu-phoi GỘP 11.8 vào main 0cb46fa5b — ĐO trên cây gộp (main C 454/D 1213/S 720 + 11.8 C +4/D +8).
 // Đợt 11.3-C (2026-10-31): aiAgent.keHoachDangCho (query, ai_agent_runs theo userId ⇒ C) + duyetKeHoach (mutation, OWNER ⇒ D) ⇒ C 459 · D 1222 · tong 2444. ĐO trên nhánh.
 // Đợt 12 H5.4 (2026-10-31): aiAgent.tiepTucLuot (mutation, OWNER ⇒ D) ⇒ D 1223 · tong 2445. ĐO trên nhánh.
-const GHIM = { A: 35, B: 8, C: 459, D: 1223, S: 720, tong: 2445 } as const;
+// ★★ 2026-10-31 · SCADA R1b-2b-2b A — C2 (chip n/m) — **S 720 → 721 · tong 2429 → 2430 · A/B/C/D KHÔNG đổi.** Query MỚI `scadaDiag.tomTatTruyenThong`
+//   (đếm adapter BẬT theo trạng thái cho chip "Truyền thông n/m") — `idsTrongPhamVi("machine", phamViCua(ctx))` như `danhSach` ⇒ nhóm S. `danhSach` /
+//   `deviceAdapter.list|get|create|update` chỉ đổi HÌNH ra (che endpoint / lastError, thêm maLoi / tamKhoa), không đổi dân số. Đo: ghim cũ (gốc 501df9598)
+//   đỏ ĐÚNG +1 tong. `tong` 2430 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+// ★★ 2026-10-31 · scada-master GỘP main 499954cb2 vào feat/scada-2bA-hop-dong (C2) — ĐO trên cây gộp: main + nhánh C2 scadaDiag.tomTatTruyenThong +1 (S) ⇒ S 721 · tong 2446.
+const GHIM = { A: 35, B: 8, C: 459, D: 1223, S: 721, tong: 2446 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

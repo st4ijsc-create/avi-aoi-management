@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
+import { ChipTruyenThong } from "@/components/scada/ChipTruyenThong";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
 import { laLoiCanMaTotp } from "@/components/scada/HopMaTotpTroLai";
 import { TruongTotp, maTotpDu } from "@/components/scada/TruongLyDo";
@@ -136,9 +137,12 @@ export default function ScadaDiag() {
           title={t("scada.diag.title")}
           description={t("scada.diag.subtitle")}
           actions={
-            <Button variant="outline" size="sm" onClick={() => q.refetch()}>
-              <RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> {t("common.refresh")}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <ChipTruyenThong />
+              <Button variant="outline" size="sm" onClick={() => q.refetch()}>
+                <RefreshCw className="mr-1 h-4 w-4" aria-hidden="true" /> {t("common.refresh")}
+              </Button>
+            </div>
           }
         />
         <SectionCard

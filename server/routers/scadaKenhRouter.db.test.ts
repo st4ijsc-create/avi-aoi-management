@@ -552,6 +552,67 @@ describe("scadaKenh.cheDo — kênh chế độ máy", () => {
     await engA.cheDo.go({ machineId: A.mid, lyDo: lyDo("cb-go") });
   });
 
+  it("R1b-2b-2b C3 — danhSach trả canhBaoNguon cho TỪNG tag (cùng luật canhBaoCua với cheDo.danhSach); không lộ deadband/samplingMs thô; ngoài phạm vi ⇒ NOT_FOUND", async () => {
+    const cuaTag = async (c: Caller, adapterId: number, tagKey: string) => (await c.danhSach({ adapterId })).find((x) => x.tagKey === tagKey)!;
+    await engA.cheDo.dat({ machineId: A.mid, adapterId: ad.a, tagKey: "mode", giaTriRemote: 1, lyDo: lyDo("c3") });
+    try {
+      vi.stubEnv("OT_TAG_DEADBAND_ENABLED", "true");
+      vi.stubEnv("OT_OPCUA_MONITORED_ITEMS", "true");
+      // tag poll thường ⇒ null; tag khác của cùng adapter không bị lây
+      expect((await cuaTag(viewerA, ad.a, "out1")).canhBaoNguon).toBeNull();
+      expect((await cuaTag(viewerA, ad.a, "mode")).canhBaoNguon).toBeNull();
+      // deadband 0,5 chỉ trên MỘT tag ⇒ chỉ tag đó
+      await dung(sql`UPDATE device_tags SET deadband = 0.5 WHERE id = ${tg.out1}`);
+      expect((await cuaTag(viewerA, ad.a, "out1")).canhBaoNguon).toBe("deadband");
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBeNull();
+      // tag là kênh chế độ ⇒ khớp cheDo.danhSach
+      await dung(sql`UPDATE device_tags SET deadband = 0.5 WHERE id = ${tg.mode}`);
+      const cd = (await viewerA.cheDo.danhSach()).find((x) => x.machineId === A.mid)!;
+      expect(cd.canhBaoNguon).toBe("deadband");
+      expect((await cuaTag(viewerA, ad.a, "mode")).canhBaoNguon).toBe(cd.canhBaoNguon);
+      // không lộ giá trị thô
+      for (const r of await viewerA.danhSach({ adapterId: ad.a })) {
+        expect(r).not.toHaveProperty("deadband");
+        expect(r).not.toHaveProperty("samplingMs");
+      }
+      // poll chậm: poll 10001 ms ⇒ tag thường (txt, không deadband) là "poll_cham"; poll 10000 ⇒ null (ghim đúng pollMs của adapter)
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10000 WHERE id = ${ad.a}`);
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBeNull();
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 10001 WHERE id = ${ad.a}`);
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBe("poll_cham");
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+      // samplingMs của TAG: poll 500 ⇒ ngưỡng 1500 (cờ deadband bật); 1500 ⇒ null, 1501 ⇒ "deadband" (ghim samplingMs của tag)
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 1500 WHERE id = ${tg.txt}`);
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBeNull();
+      await dung(sql`UPDATE device_tags SET "samplingMs" = 1501 WHERE id = ${tg.txt}`);
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBe("deadband");
+      await dung(sql`UPDATE device_tags SET "samplingMs" = NULL WHERE id = ${tg.txt}`);
+      // OPC UA ⇒ bao_khi_doi
+      await dung(sql`UPDATE device_adapters SET protocol = 'opcua' WHERE id = ${ad.a}`);
+      expect((await cuaTag(viewerA, ad.a, "out1")).canhBaoNguon).toBe("bao_khi_doi");
+      expect((await cuaTag(viewerA, ad.a, "mode")).canhBaoNguon).toBe((await viewerA.cheDo.danhSach()).find((x) => x.machineId === A.mid)!.canhBaoNguon);
+      await dung(sql`UPDATE device_adapters SET protocol = 'stub' WHERE id = ${ad.a}`);
+      // edge nặng nhất
+      await dung(sql`UPDATE device_adapters SET "edgeNodeId" = ${edgeNodeId} WHERE id = ${ad.a}`);
+      expect((await cuaTag(viewerA, ad.a, "out1")).canhBaoNguon).toBe("edge");
+      expect((await cuaTag(viewerA, ad.a, "txt")).canhBaoNguon).toBe("edge");
+      expect((await cuaTag(viewerA, ad.a, "mode")).canhBaoNguon).toBe("edge");
+      expect((await cuaTag(viewerA, ad.a, "mode")).canhBaoNguon).toBe((await viewerA.cheDo.danhSach()).find((x) => x.machineId === A.mid)!.canhBaoNguon);
+      // ngoài phạm vi vẫn NOT_FOUND, cùng lỗi với adapter không tồn tại
+      const ngoai = await loiCua(viewerB.danhSach({ adapterId: ad.a }));
+      const khong = await loiCua(viewerB.danhSach({ adapterId: 2_000_000_000 }));
+      expect(ngoai.code).toBe("NOT_FOUND");
+      expect({ ...ngoai }).toEqual({ ...khong });
+    } finally {
+      await dung(sql`UPDATE device_adapters SET protocol = 'stub', "edgeNodeId" = NULL WHERE id = ${ad.a}`);
+      await dung(sql`UPDATE device_tags SET deadband = NULL WHERE id IN (${tg.out1}, ${tg.mode})`);
+      await dung(sql`UPDATE device_tags SET "samplingMs" = NULL WHERE id = ${tg.txt}`);
+      await dung(sql`UPDATE device_adapters SET "pollIntervalMs" = 500 WHERE id = ${ad.a}`);
+      vi.unstubAllEnvs();
+      await engA.cheDo.go({ machineId: A.mid, lyDo: lyDo("c3-go") });
+    }
+  });
+
   it("danhSach CHE chi tiết kênh khi adapter của kênh người xem không thấy, hoặc kênh sai máy — chỉ giữ chế độ + lyDo", async () => {
     // A.mid2 ← adapter của máy B (ngoài phạm vi viewer A); A.mid ← adapter của A.mid2 (thấy, nhưng sai máy)
     await dung(sql`INSERT INTO scada_kenh_che_do (machine_id, adapter_id, tag_key, gia_tri_remote, updated_by)

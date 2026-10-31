@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { chiTietAdapter, lyDoThuKetNoi } from "@/lib/deviceMonitorHienThi";
 
 /** Wire shape received on telemetry:sample (mirrors server TelemetryBroadcastSample). */
 interface TelemetrySample {
@@ -244,7 +245,7 @@ export function UnifiedDeviceMonitorContent() {
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => {
       if (res.ok) toast.success(t("deviceMonitor.testOk", "Kết nối OK") + ` (${res.latencyMs}ms)`);
-      else toast.error(t("deviceMonitor.testFail", "Kết nối thất bại") + `: ${res.error ?? "unknown"}`);
+      else toast.error(t("deviceMonitor.testFail", "Kết nối thất bại") + `: ${lyDoThuKetNoi(res)}`);
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -369,7 +370,7 @@ export function UnifiedDeviceMonitorContent() {
         machineId: a.machineId ?? null,
         adapterId: a.id,
         deviceClass: null,
-        detail: a.endpoint,
+        detail: chiTietAdapter(a.endpoint),
       });
     }
 

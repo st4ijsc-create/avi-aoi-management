@@ -50,6 +50,7 @@ import { edgeCanonicalJson } from "./edgeSigning";
 import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
+import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
 
 export class StreamAnswer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -427,7 +428,11 @@ async function stepRegression(tx: Db, runId: number, stepId: string, attempt: nu
   return null;
 }
 
-async function applyLedger(
+/**
+ * Write ONE edge ledger record (robot_jobs / command_log). Exported only so the T3E fix-1 DB test can call it inside its own ROLLBACK
+ * transaction (motPhan.edgeSo.r1b2b2.db.test.ts); the product path is reportForNode → applyStream → here.
+ */
+export async function applyLedger(
   tx: Db,
   node: EdgeNodePrincipal,
   runId: number,
@@ -501,6 +506,10 @@ async function applyLedger(
       .onConflictDoNothing();
   } else {
     const status = stopNote ? "failed" : OT_COMMAND_STATUSES.has(rec.status) ? rec.status : "failed";
+    // R1b-2b-2a T3E fix 1 (review I-1) — an edge batch the device applied only PARTLY (`result.motPhan`, new edge): the SAME code prefix as the
+    // central path (`MOT_PHAN: …`), so the command audit (maLoi / reasonCode) says "partly applied" instead of a bare `failed` — the operator must
+    // not resend it by hand. The lists stay in ackValue (C1-hidden); the code is visible to everyone. Old edge (no motPhan) ⇒ as before.
+    const motPhan = status === "failed" ? motPhanCua((rec.result as { motPhan?: unknown } | null)?.motPhan) : null;
     await tx
       .insert(commandLog)
       .values({
@@ -514,7 +523,13 @@ async function applyLedger(
         triggerKind: "hitl",
         approvedBy: approval?.approvedBy ?? null,
         ackValue: result,
-        errorText: stopNote ?? (status === "failed" && rec.status !== "failed" ? `edge reported status "${rec.status}"` : null),
+        errorText:
+          stopNote ??
+          (motPhan
+            ? `${MA_MOT_PHAN}: the edge reported ${moTaMotPhan(motPhan)}`
+            : status === "failed" && rec.status !== "failed"
+              ? `edge reported status "${rec.status}"`
+              : null),
         idempotencyKey: key,
         sentAt: at,
         ackedAt: at,

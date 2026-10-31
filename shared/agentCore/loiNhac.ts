@@ -51,7 +51,7 @@ export const QUY_TAC_DELEGATE =
 export const QUY_TAC_BAO_CAO =
   "16. You are a sub-agent. When your task is finished (or you cannot continue), end your run by calling report ONCE: status done/partial/blocked, " +
   "a short summary, findings, the files you actually read or changed, and evidence (file, line, short quote). Do not claim done without evidence; " +
-  "say partial or blocked honestly. The parent only receives this report, and anything not backed by a file you really touched is shown as unverified.";
+  "say partial or blocked honestly. The parent only receives this report, and anything not backed by a file you really touched is marked [not touched by sub-agent].";
 
 /**
  * Đợt 12 · H5.3 — quy tắc khi `read_output` có mặt (cờ host AI_AGENT_DAU_RA_DAI). Vắng ⇒ lời nhắc GIỐNG TỪNG BYTE.

@@ -4091,6 +4091,7 @@
       "flowTaoTuMoTa": "tạo bản nháp Luồng AI từ mô tả",
       "flowChayThu": "chạy thử một node của Luồng AI",
       "scadaReconnectAdapter": "kết nối lại adapter",
+      "deviceAdapterUpdate": "cập nhật adapter",
       "scadaDisableAdapter": "tạm tắt adapter",
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaSelectTag": "chọn kênh để ra lệnh",
@@ -4553,6 +4554,8 @@
       "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
       "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
+      "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
+      "chiTietKyThuatBiChe": "Endpoint và cấu hình kết nối là chi tiết kỹ thuật bạn không được xem — chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới đổi được. Các trường khác vẫn sửa được.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
       "stubEndpointShared": "Nhiều adapter stub dùng chung endpoint này — đổi endpoint cho riêng từng adapter trước.",
       "scadaSelectionLockBusy": "Kênh đang bị tranh chấp — thử lại sau giây lát.",
@@ -4686,7 +4689,9 @@
     "STOP_PIN_GO_TRUOC": "Kênh {{tagKey}} đang ghim giá trị DỪNG ({{stopValue}}) — đổi địa chỉ / kiểu / scale / offset / cho phép ghi / adapter, nâng mức tác động lên trên 1 (STOP HMI chỉ gửi ghim của tag mức 1), tắt hoặc xoá tag sẽ làm mất STOP. Gỡ ghim trước (mục Tag dừng phần mềm, có lý do), rồi làm lại.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
-    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ."
+    "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ.",
+    "CHON_MODEL_KHONG_CO": "Model đã chọn không dùng được ở màn này (chưa mở hoặc đã bị gỡ) — hãy chọn model khác.",
+    "CHON_MODEL_SAI": "Lựa chọn model không hợp lệ — hãy chọn lại model trong ô chọn model."
   },
   "export": {
     "reportMenu": {
@@ -16628,6 +16633,7 @@
     "manualHelp": "Sổ tay",
     "autoForm": "Cấu hình theo manifest (tự sinh) — host + cổng sẽ tạo endpoint bên dưới",
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}",
+    "chiTietBiChe": "Endpoint và cấu hình kết nối chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới xem và đổi được — ở đây chỉ sửa được tên, chu kỳ, máy và trạng thái bật.",
     "troLai": {
       "title": "Cần mã xác thực hai lớp",
       "body": "Thao tác này đụng một tag được bảo vệ hoặc một adapter mang tag như thế (trỏ lại, đổi chu kỳ lấy mẫu / deadband / đơn vị, tạo lên khoá đang được tham chiếu, tắt hoặc xoá). Tag được bảo vệ: đã khai kênh, là kênh chế độ của máy, hoặc là đích / nguồn của một luật interlock đang bật hoặc đã duyệt. Cần mã TOTP mới.",
@@ -19138,6 +19144,7 @@
       "OT_S7_BIT_NGOAI_DAI": "Địa chỉ bit S7 nằm ngoài 0..7 (cấu hình tag sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Sửa địa chỉ tag (vd DB1,X1.0 thay cho DB1,X0.8); cần dừng máy ngay thì dùng E-STOP cứng tại máy",
       "OT_S7_DIA_CHI_THU_VIEN_BO": "Thư viện S7 (nodes7) không ghi được đúng địa chỉ này (sẽ bỏ hoặc hiểu sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Kiểm tra địa chỉ tag; cần dừng máy ngay thì dùng E-STOP cứng tại máy",
       "OT_S7_THU_VIEN_KHONG_KIEM_DUOC": "Không kiểm được địa chỉ S7 bằng thư viện nodes7 (thư viện thiếu hoặc bị thay) — lệnh KHÔNG được gửi. Cài lại đúng bản nodes7 đã ghim; cần dừng máy ngay thì dùng E-STOP cứng tại máy",
+      "MOT_PHAN": "Lệnh chỉ được áp MỘT PHẦN: một số giá trị đã ghi vào máy, số khác máy báo KHÔNG nhận — lệnh KHÔNG được tự gửi lại. Kiểm tra tại máy rồi chỉ gửi lại phần chưa áp nếu vẫn cần",
       "EDGE_REPORTED": "Edge báo lệnh không thành công",
       "READBACK_UNAVAILABLE": "Đã ghi nhưng không đọc lại được — kiểm tra tại máy",
       "READBACK_MISMATCH": "Đã ghi nhưng giá trị đọc lại không khớp — kiểm tra tại máy",
@@ -21705,6 +21712,20 @@
           "chung": "Chưa gửi được quyết định — thử lại."
         }
       },
+      "modelNgoai": {
+        "huyHieu": "Model ngoài",
+        "dangChay": "Đang chạy {{model}} ({{ncc}})",
+        "daChay": "Đã chạy {{model}} ({{ncc}})",
+        "khongRo": "Model của nhà cung cấp bên ngoài",
+        "mucKyThuat": "dữ liệu kỹ thuật",
+        "mucVanHanh": "dữ liệu vận hành",
+        "dung": "Nút Dừng chỉ có tác dụng trước vòng kế tiếp: vòng đang gọi model ngoài vẫn chạy cho hết và vẫn tính phí. Dừng không dừng cuộc gọi đang bay."
+      },
+      "vetNgoai": "Model ngoài {{model}} ({{ncc}}) · token vào {{vao}} · ra {{ra}} · chi phí ước {{usd}}",
+      "haTuTriPhienNgoai": "Phiên này đã có lượt dùng model ngoài — mọi ghi/lệnh (kể cả chế độ tự động) cần bạn duyệt từng bước.",
+      "ngoai": {
+        "bat": "Agent đọc nhiều bước (chỉ đọc) với model ngoài — đọc/tìm tệp qua máy chủ, không ghi, không chạy lệnh, không giao việc cho agent con."
+      },
       "tongQuan": {
         "tieuDe": "Tổng quan thay đổi",
         "agentCon": "agent con",
@@ -24224,7 +24245,8 @@
         "dialogApDungTieuDe": "Đặt lỗi stub cho {{code}}?",
         "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
         "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
-      }
+      },
+      "tamKhoa": "Tạm khoá"
     },
     "kenh": {
       "title": "Kênh & giới hạn",
@@ -24596,6 +24618,22 @@
         "loiTai": "Không tải được danh sách máy — dùng E-STOP cứng tại máy",
         "biCat": "Danh sách có thể chưa đủ — dùng E-STOP cứng",
         "khongToiMoi": "Có thể không tới mọi thiết bị — dùng thêm E-STOP cứng"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "Truyền thông {{ketNoi}}/{{tong}}",
+        "coEdge": "Truyền thông {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "Đang nối lại {{dangNoi}} · mất kết nối {{mat}} · khác {{khac}} — bấm để mở chẩn đoán truyền thông"
+      }
+    },
+    "orchestration": {
+      "maLoi": {
+        "FOE_OUTCOME_UNKNOWN": "Chưa rõ kết quả: lệnh có thể đã được áp xuống thiết bị — kiểm tra thiết bị trước khi chạy lại; KHÔNG tự gửi lại.",
+        "FOE_OUTCOME_PARTIAL": "Áp một phần: một số lệnh đã tới thiết bị, một số thì không — kiểm tra thiết bị; KHÔNG gửi lại cả lô.",
+        "EDGE_OUTCOME_UNKNOWN": "Chưa rõ kết quả trên edge: node edge có thể đã áp lệnh — kiểm tra thiết bị trước khi chạy lại.",
+        "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
+        "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."
       }
     }
   },

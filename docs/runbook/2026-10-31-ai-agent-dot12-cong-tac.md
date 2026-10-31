@@ -57,7 +57,7 @@
 - **Số đo:** test thật; chưa có số GPU.
 
 ### 6. `AI_AGENT_CON_BAO_CAO` (H5.1) — cần `AI_AGENT_GIAO_VIEC=1`
-- **Làm gì:** agent con kết thúc bằng công cụ `report` {status, summary, findings, files, evidence}; cha nhận **khối văn bản dựng từ báo cáo đã kiểm** (nhãn `[UNTRUSTED …]` cố định, không JSON thô, ≤ ~4000 ký tự). Mục ngoài tập đường con thực sự chạm ⇒ `[unverified]`; `done` mà 0 bằng chứng đã kiểm ⇒ `done (no verified evidence)`; đường `..`/tuyệt đối bị loại; thẻ duyệt còn chờ của con bị đóng. `report` **không bao giờ** ở lượt gốc.
+- **Làm gì:** agent con kết thúc bằng công cụ `report` {status, summary, findings, files, evidence}; cha nhận **khối văn bản dựng từ báo cáo đã kiểm** (nhãn `[UNTRUSTED …]` cố định, không JSON thô, ≤ ~4000 ký tự). Mục ngoài tập đường con thực sự chạm ⇒ `[not touched by sub-agent]` (chỉ nghĩa "con không chạm tệp đó" — KHÔNG khẳng định trích dẫn đã được kiểm; kiểm trích dẫn thật còn trong backlog); `done` mà 0 bằng chứng từ tệp con chạm ⇒ `done (no evidence from files the sub-agent touched)`; đường có ký tự vô hình/đảo chiều bị loại; mọi chuỗi (kể cả đường) được quét câu dạng mệnh lệnh; `con-xong.trangThaiBaoCao` = done/partial/blocked (lyDo vẫn `hoan-thanh`). Byte model thấy đổi ⇒ chỉ khi cờ BẬT (mặc định TẮT); đường `..`/tuyệt đối bị loại; thẻ duyệt còn chờ của con bị đóng. `report` **không bao giờ** ở lượt gốc.
 - **Khi nào bật:** khi đã dùng `delegate` và muốn cha nhận kết quả có cấu trúc thay chữ tự do 1500 ký tự.
 - **Kiểm:** sự kiện `con-xong` có trường `baoCao` (SQL `so_con_bao_cao`); con không gọi `report` ⇒ cha thấy "(no structured report …)".
 - **Số đo:** đột biến lõi/host; chưa có số GPU.
@@ -71,6 +71,7 @@
 
 ### 8. `AI_AGENT_TIEP_TUC` (H5.4) — cần migration 0450 (đã áp)
 - **Làm gì:** lượt GỐC lưu lịch sử gửi model (bỏ system, đã che bí mật, ≤ 400 tin/400 KB — vượt ⇒ xoá bản lưu) vào `ai_agent_run_lich_su` ở ranh giới an toàn (trước và sau tool). Thủ tục `aiAgent.tiepTucLuot({runId})` cho **chủ lượt** tạo lượt MỚI từ bản lưu của lượt `gian-doan`/`loi`/`huy`: tool dở nhận `[outcome unknown …]` (không tự chạy lại), kế hoạch đã duyệt và thẻ cũ KHÔNG mang sang, mỗi nguồn tiếp tục **một lần**. Lượt `xong` ⇒ xoá bản lưu; bản > 7 ngày bị dọn (tối đa mỗi giờ). Cột `tinNhan` bị ẩn khỏi vai MCP chỉ-đọc.
+- **⚠ CHỈ bật SAU lô vá an toàn "không thừa hưởng tự trị" (đã có trong nhánh này):** lượt tiếp tục LUÔN chạy ở `sua` khi nguồn là `tu-dong` (mọi ghi/lệnh qua người duyệt; thủ tục trả `haTuDong:true` để UI nói rõ), và nhiễm của nguồn (sự kiện `ha-tu-tri`/`canh-bao-du-lieu` trong sổ ∪ cảnh báo nằm trong lịch sử đã lưu) được truyền vào lõi ⇒ nhãn "nguồn đáng ngờ" còn sống trên mọi thẻ duyệt. Không bật bản cũ hơn.
 - **Khi nào bật:** muốn khôi phục lượt dài bị khởi động lại máy chủ/huỷ nhầm. **Lưu ý:** bản lưu chứa mã/câu hỏi người dùng (đã che bí mật) — cân nhắc chính sách lưu trữ.
 - **Kiểm:** `SELECT count(*) FROM ai_agent_run_lich_su` tăng khi có lượt chạy; sau lượt `xong` hàng biến mất.
 - **Số đo:** test DB thật (đua 8 lần bấm ⇒ 1 thắng, phạm vi chủ) + đột biến.

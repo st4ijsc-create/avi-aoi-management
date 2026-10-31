@@ -18,6 +18,10 @@
  *   list/get/testConnection/tags.listByAdapter → canView
  *   create/tags.create → canCreate ; update/tags.update → canEdit
  *   delete/tags.delete → canDelete
+ * SCADA R1b-2b-2b A C2 (KD-2bA 2.1 / 2.2): hàng adapter trả ra (list/get/create/update — `hangAnToan` → `redactAdapterRow`) mang `endpoint`,
+ *   `connectionOptions` và văn bản `lastError` CHỈ cho kỹ sư canEdit (`chiTietKyThuatCua`: vai admin|engineer + machine_control.canEdit); người khác
+ *   nhận `null` + `lastError` = MÃ đã làm sạch (`maLoi`). `maLoi` + posture `tamKhoa` (MC tạm khoá) hiện với MỌI người xem.
+ *   C2 fix 1: `update` mang `endpoint` / `connectionOptions` từ người bị che ⇒ FORBIDDEN OPERATION_FAILED {deviceAdapterUpdate, chiTietKyThuatBiChe}, không ghi.
  * SCADA R1b-1 Task 9 (+ fix round 1–3): tags.create/update/delete đụng một tag ĐƯỢC BẢO VỆ (định nghĩa T9 r3, services/scada/troLaiKenh.ts:
  *   đã khai / kênh chế độ / ĐÍCH hoặc NGUỒN telemetry của luật interlock không-alert ĐANG BẬT HOẶC ĐÃ DUYỆT) hoặc một khoá mồ côi ⇒ TOTP tươi
  *   mức 5 + kiểm lại nhất quán; update (đổi đích / tắt / đổi máy) và delete của adapter có tag được bảo vệ / kênh chế độ ⇒ TOTP (cổng chung
@@ -39,6 +43,7 @@ import { probeOtConnection } from "../services/ot/probeConnection";
 import {
   sealConnectionOptionSecrets,
   redactAdapterRow,
+  type HangAdapterAnToan,
   restoreRedactedSecrets,
   secretReentryRequired,
   REDACTED_SECRET,
@@ -89,6 +94,9 @@ import {
 import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 import { thamSoNgoaiDaiStopPin } from "../services/scada/nhatQuanKenh"; // R1b-2a T2 (K17) — tham số STOP_PIN_NGOAI_DAI dùng chung
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+// SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 / 2.2): che endpoint / lastError dưới kỹ sư canEdit (một luật với C1) + posture tạm khoá không bao giờ che
+import { chiTietKyThuatCua, maLoiAdapterCua } from "./_chiTietKyThuat";
+import { canTraEdgeChoTamKhoa, idsAdapterDoEdge, tamKhoaAdapter } from "./_tamKhoaAdapter";
 
 /** doc 81 Đợt 1D Task 1 — người sửa (id/tên/IP/UA) lấy từ ctx, KHÔNG từ input (khuôn mqttOeeRouters). */
 function nguoiSuaTu(ctx: Parameters<typeof createAuditContext>[0]): NguoiSuaStopPin {
@@ -207,6 +215,27 @@ async function getDb() {
   return db;
 }
 
+/**
+ * SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 / 2.2) — MỌI hàng adapter rời router này đi qua đây: quyền xem chi tiết kỹ thuật hỏi MỘT lần cho cả lô
+ * (`chiTietKyThuatCua` — vai ngoài admin/engineer không chạm DB), sở hữu edge chỉ tra khi có hàng MC đang khoá, rồi `redactAdapterRow` (bí mật luôn che;
+ * `endpoint` / `connectionOptions` / văn bản `lastError` chỉ cho kỹ sư canEdit; `maLoi` + `tamKhoa` cho mọi người).
+ */
+async function hangAnToan<T extends typeof deviceAdapters.$inferSelect>(
+  ctx: Parameters<typeof chiTietKyThuatCua>[0],
+  rows: T[],
+): Promise<Array<HangAdapterAnToan<T>>> {
+  if (rows.length === 0) return [];
+  const chiTietKyThuat = await chiTietKyThuatCua(ctx);
+  const edge = canTraEdgeChoTamKhoa(rows) ? await idsAdapterDoEdge(await getDb(), rows.map((r) => r.id)) : new Set<number>();
+  return rows.map((r) =>
+    redactAdapterRow(r, {
+      chiTietKyThuat,
+      tamKhoa: tamKhoaAdapter(r.protocol, edge.has(r.id)),
+      maLoi: maLoiAdapterCua(r.lastError, r.status === "error"),
+    }),
+  );
+}
+
 // doc 54 P1.5 — add "slmp" (Mitsubishi SLMP 3E/4E): the runtime driver (slmpDriver.ts)
 // + the DB protocol enum already support it; the CRUD zod enum was the only thing blocking
 // FX5U/iQ-R SLMP adapters from being created via the UI/API.
@@ -267,6 +296,18 @@ const tagUpdateInput = tagFields.partial().extend({ id: z.number().int().positiv
 const DEFAULT_TEST_TIMEOUT_MS = 8000;
 
 /** Friendly message for a unique-constraint violation. */
+/**
+ * Kết quả `testConnection` (HỢP ĐỒNG — DeviceAdapterManagement / DeviceOnboardingWizard / UnifiedDeviceMonitor dùng chung). `error` = văn bản driver
+ * NGUYÊN VĂN (kỹ sư); C2 fix 2: dò theo id bởi người không được xem chi tiết kỹ thuật ⇒ khoá `error` VẮNG, chỉ còn `errorCode` / `errorParams`.
+ */
+export type KetQuaDoKetNoi = {
+  ok: boolean;
+  latencyMs: number;
+  errorCode?: "DEVICE_PROTOCOL_UNSUPPORTED" | "DEVICE_UNREACHABLE";
+  errorParams?: { entity: OtProtocol };
+  error?: string;
+};
+
 function isUniqueViolation(err: unknown): boolean {
   const e = err as { code?: string; cause?: { code?: string }; message?: string };
   return e?.code === "23505" || e?.cause?.code === "23505" || /duplicate key|unique constraint/i.test(e?.message ?? "");
@@ -296,7 +337,7 @@ export const deviceAdapterRouter = router({
         .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(deviceAdapters.createdAt));
       // doc 81 Đợt 1B Task 12 fix round 1 — bí mật (ciphertext lẫn plaintext cũ) không rời server.
-      return rows.map(redactAdapterRow);
+      return hangAnToan(ctx, rows);
     }),
 
   get: protectedProcedure
@@ -312,7 +353,8 @@ export const deviceAdapterRouter = router({
         .from(deviceTags)
         .where(eq(deviceTags.adapterId, input.id))
         .orderBy(deviceTags.tagKey);
-      return { ...redactAdapterRow(adapter), tags };
+      const [an] = await hangAnToan(ctx, [adapter]);
+      return { ...an, tags };
     }),
 
   create: protectedProcedure
@@ -344,7 +386,8 @@ export const deviceAdapterRouter = router({
             createdBy: ctx.user.id,
           })
           .returning();
-        return redactAdapterRow(row);
+        const [an] = await hangAnToan(ctx, [row]);
+        return an;
       } catch (err) {
         if (isUniqueViolation(err)) {
           throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter "${input.code}" đã tồn tại.`);
@@ -363,6 +406,18 @@ export const deviceAdapterRouter = router({
       const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá (không gọi pool trong tx)
       await adapterTrongPhamVi(ctx, id, idsMay);
       if (rest.machineId !== undefined) await maySuDungTrongPhamVi(ctx, rest.machineId);
+      // SCADA R1b-2b-2b A — C2 fix 1 (dieu-phoi 2026-10-31) — CHỐT MẤT DỮ LIỆU: người không được xem chi tiết kỹ thuật nhận endpoint / connectionOptions
+      // ĐÃ CHE (null) ⇒ không được GHI hai trường đó (form gửi lại ô trống / null sẽ xoá endpoint hay cấu hình đã lưu). Từ chối TRƯỚC mọi lượt ghi
+      // (trước giao dịch, trước kiểm TOTP — mã không bị tiêu). Trường khác (tên, bật/tắt, chu kỳ, máy…) vẫn sửa được như cũ.
+      // C2 fix 2 (review m3) — `protocol` cũng vậy: đổi giao thức là đổi NGHĨA của kết nối (endpoint cũ đọc theo giao thức khác) mà người bị che không thấy.
+      if ((rest.endpoint !== undefined || rest.connectionOptions !== undefined || rest.protocol !== undefined) && !(await chiTietKyThuatCua(ctx))) {
+        throw appError(
+          "FORBIDDEN",
+          "OPERATION_FAILED",
+          { operation: "deviceAdapterUpdate", reason: "chiTietKyThuatBiChe" },
+          "Endpoint / protocol / connection options are technical details you cannot view — only an engineer/admin with machine_control.canEdit may change them.",
+        );
+      }
       try {
         // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
         // adapter khoá bằng SELECT … FOR UPDATE (ràng buộc chung 6: không migration, dùng khoá hàng).
@@ -469,7 +524,8 @@ export const deviceAdapterRouter = router({
           }
           return { updated, stopPinsCleared };
         });
-        return { ...redactAdapterRow(row.updated), stopPinsCleared: row.stopPinsCleared };
+        const [an] = await hangAnToan(ctx, [row.updated]);
+        return { ...an, stopPinsCleared: row.stopPinsCleared };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {
@@ -549,13 +605,19 @@ export const deviceAdapterRouter = router({
         connectionOptions: z.record(z.string(), z.unknown()).nullable().optional(),
       }),
     ]))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }): Promise<KetQuaDoKetNoi> => {
       let protocol: OtProtocol;
       let endpoint: string;
       let options: Record<string, unknown> | undefined;
 
+      // SCADA R1b-2b-2b A — C2 fix 2 (review Important #1, dieu-phoi 2026-10-31): dò THEO ID dùng endpoint ĐÃ LƯU ⇒ văn bản lỗi driver (vd
+      // "connect ECONNREFUSED 10.0.0.5:502") là chi tiết kỹ thuật của adapter: người không phải (admin|engineer + machine_control.canEdit) nhận
+      // KHÔNG có `error` — chỉ `errorCode` / `errorParams` (mã appError có câu dịch vi/en/zh). Nhánh {protocol, endpoint}: người gọi TỰ gõ endpoint
+      // ⇒ văn bản thô không lộ gì họ chưa biết ⇒ giữ nguyên.
+      let xemChiTiet = true;
       if ("id" in input) {
         await adapterTrongPhamVi(ctx, input.id); // dò adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
+        xemChiTiet = await chiTietKyThuatCua(ctx);
         const db = await getDb();
         const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
         if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -568,6 +630,13 @@ export const deviceAdapterRouter = router({
         options = input.connectionOptions ?? undefined;
       }
 
+      /** C2 fix 2 — kết quả hỏng theo người xem: bị che ⇒ KHÔNG có khoá `error` (không host:port), `errorCode` / `errorParams` giữ nguyên. */
+      const theoNguoiXem = (kq: KetQuaDoKetNoi): KetQuaDoKetNoi => {
+        if (xemChiTiet) return kq;
+        const ra = { ...kq };
+        delete ra.error;
+        return ra;
+      };
       const startedAt = Date.now();
       let driver;
       // ── F14 (2026-08-22) — LỖI ĐI RA BẰNG CỬA "THÀNH CÔNG" ──────────────────────
@@ -585,7 +654,7 @@ export const deviceAdapterRouter = router({
       } catch (err) {
         // Không dựng được driver ⇒ bản dựng này không có giao thức đó. Cách gỡ NGƯỢC với
         // "không tới được": phải đổi cấu hình/nâng cấp, không phải đi kiểm dây.
-        return {
+        return theoNguoiXem({
           ok: false,
           latencyMs: 0,
           errorCode: "DEVICE_PROTOCOL_UNSUPPORTED" as const,
@@ -593,7 +662,7 @@ export const deviceAdapterRouter = router({
           // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
           // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
           error: err instanceof Error ? err.message : String(err),
-        };
+        });
       }
 
       try {
@@ -601,7 +670,7 @@ export const deviceAdapterRouter = router({
         await probeOtConnection(driver, { endpoint, options, timeoutMs: DEFAULT_TEST_TIMEOUT_MS });
         return { ok: true, latencyMs: Date.now() - startedAt };
       } catch (err) {
-        return {
+        return theoNguoiXem({
           ok: false,
           latencyMs: Date.now() - startedAt,
           errorCode: "DEVICE_UNREACHABLE" as const,
@@ -609,7 +678,7 @@ export const deviceAdapterRouter = router({
           // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
           // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
           error: err instanceof Error ? err.message : String(err),
-        };
+        });
       }
     }),
 

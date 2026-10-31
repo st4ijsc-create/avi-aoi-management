@@ -20,8 +20,9 @@ async function coQuyenDoc(u: NguoiPhien): Promise<boolean> {
 }
 
 export async function thuTucTiepTucLuot(u: NguoiPhien, y: { runId: string; req?: Parameters<QuanLyLuotChay["tiepTucLuot"]>[0]["req"] }, ql: QuanLyLuotChay = quanLyLuotChay()) {
-  if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, runId: null };
+  if (!(await coQuyenDoc(u))) return { ok: false as const, note: "PERMISSION_DENIED" as const, runId: null, haTuDong: false };
   const kq = await ql.tiepTucLuot({ user: { id: u.id, role: String(u.role), name: u.name ?? null }, runId: y.runId, ...(y.req ? { req: y.req } : {}) });
-  if (!kq.ok) return { ok: false as const, note: kq.ma as MaTuChoiTiepTuc, runId: null };
-  return { ok: true as const, note: null, runId: kq.luot.id };
+  if (!kq.ok) return { ok: false as const, note: kq.ma as MaTuChoiTiepTuc, runId: null, haTuDong: false };
+  // `haTuDong`: nguồn chạy tu-dong ⇒ lượt tiếp tục chạy ở sua (mọi ghi/lệnh cần người duyệt) — UI nên nói rõ cho người bấm
+  return { ok: true as const, note: null, runId: kq.luot.id, haTuDong: kq.haTuDong };
 }

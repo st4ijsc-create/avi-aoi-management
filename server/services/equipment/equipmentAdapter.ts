@@ -248,7 +248,8 @@ class OtEquipmentAdapter implements EquipmentAdapter {
         ok: r.ok,
         status: r.status,
         routedTo: "ot-dispatcher",
-        detail: { edge: true, stop: r.stop, pinnedStop: r.pinnedStop ?? false, reason: r.reason, ...(r.detail ? { refusal: r.detail } : {}), ...(r.jti ? { jti: r.jti } : {}), results: r.results },
+        // R1b-2b-2a T3E — `motPhan` (lô áp một phần) tới FOE của edge: bước không phải STOP không gửi lại
+        detail: { edge: true, stop: r.stop, pinnedStop: r.pinnedStop ?? false, reason: r.reason, ...(r.detail ? { refusal: r.detail } : {}), ...(r.jti ? { jti: r.jti } : {}), results: r.results, ...(r.motPhan ? { motPhan: r.motPhan } : {}) },
         ...(r.ok ? {} : { error: r.reason }),
       };
     }
@@ -276,7 +277,8 @@ class OtEquipmentAdapter implements EquipmentAdapter {
       routedTo: "ot-dispatcher",
       // doc 81 Đợt 1C final wave 4 (R-1C-g) — a refused stop/e_stop carries a plain sentence (use the hardware
       // E-STOP) + its localisable appError; absent for every other result (byte-identical).
-      detail: { simulated: res.simulated, commandLogIds: res.commandLogIds, reason: res.reason, ...(res.appError ? { appError: res.appError } : {}) },
+      // R1b-2b-2a T3E — `motPhan` (lô áp một phần, reason MOT_PHAN) tới FOE: bước không phải STOP không gửi lại; vắng ở mọi kết cục khác.
+      detail: { simulated: res.simulated, commandLogIds: res.commandLogIds, reason: res.reason, ...(res.appError ? { appError: res.appError } : {}), ...(res.motPhan ? { motPhan: res.motPhan } : {}) },
       ...(res.message ? { error: res.message } : {}),
     };
   }

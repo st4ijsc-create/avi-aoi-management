@@ -732,3 +732,39 @@ describe("OrchestrationStudio — doc 81 Đợt 9 final wave: latch warning in t
     expect(rowOf(62).textContent).toMatch(/server restart/);
   });
 });
+
+describe("OrchestrationStudio — C2: lỗi bước dạng MÃ (người không phải kỹ sư) hiện câu dịch", () => {
+  it("★ bước failed có error là mã ⇒ dòng step-error-code dịch; bước cổng / bước có appError ⇒ KHÔNG thêm dòng này", async () => {
+    const i18next = (await import("i18next")).default;
+    const vi_ = (await import("@/i18n/locales/vi.json")).default as unknown as { scada: { orchestration: { maLoi: Record<string, string> } } };
+    const truoc = i18next.language;
+    i18next.addResourceBundle("vi", "translation", vi_, true, true);
+    await i18next.changeLanguage("vi");
+    try {
+      setQueryOverride(
+        "orchestration.getRun",
+        makeQuery({
+          data: {
+            run: RUNS[2],
+            steps: [
+              { stepId: "c1", stepType: "command", status: "failed", attempt: 1, result: null, error: "FOE_OUTCOME_UNKNOWN" },
+              { stepId: "c2", stepType: "command", status: "failed", attempt: 1, result: null, error: "FOE_GATE_REQUIRED(noGate)" },
+              { stepId: "c3", stepType: "command", status: "failed", attempt: 1, error: "REJECTED", result: { detail: { appError: { appCode: "INVALID_VALUE", appParams: { field: "robotId", reason: "robotIdRequired" } } } } },
+              { stepId: "c4", stepType: "command", status: "completed", attempt: 1, result: null, error: null },
+            ],
+          },
+        }),
+      );
+      render(<OrchestrationStudio />);
+      const { default: userEvent } = await import("@testing-library/user-event");
+      await userEvent.setup().click(screen.getByText(/run #20 ·/));
+      const notes = Array.from(rowOf(20).querySelectorAll('[data-testid="step-error-code"]'));
+      expect(notes.map((n) => n.getAttribute("data-code"))).toEqual(["FOE_OUTCOME_UNKNOWN"]);
+      expect(notes[0].textContent).toBe(vi_.scada.orchestration.maLoi.FOE_OUTCOME_UNKNOWN);
+      expect(rowOf(20).querySelectorAll('[data-testid="step-gate-required"]')).toHaveLength(1);
+      expect(rowOf(20).querySelectorAll('[data-testid="step-app-error"]')).toHaveLength(1);
+    } finally {
+      await i18next.changeLanguage(truoc);
+    }
+  });
+});

@@ -89,3 +89,21 @@ describe("NganTagAdapter — quyền xem kênh (mục 39)", () => {
     expect(screen.queryByText(vi_.scada.diag.khongQuyenKenh)).not.toBeInTheDocument();
   });
 });
+
+describe("NganTagAdapter — chi tiết bị che (C2, kiem-dinh u17/u18)", () => {
+  const moVoi = (over: Record<string, unknown>) =>
+    render(<NganTagAdapter hang={{ ...HANG, ...over } as unknown as HangDiag} now={Date.now()} canAct={false} onDong={() => undefined} />);
+
+  it("★ endpoint null ⇒ '—' ở đầu ngăn (không 'null'); tamKhoa vẫn hiện huy hiệu", () => {
+    moVoi({ endpoint: null, tamKhoa: { ma: "OT_MC_TAM_KHOA", lyDo: "errors.reason.otMcTamKhoa" } });
+    expect(screen.getByTestId("endpoint-ngan-tag")).toHaveTextContent(/^—$/);
+    expect(screen.getByTestId("tam-khoa-adapter-7")).toHaveTextContent(vi_.scada.diag.tamKhoa);
+    expect(document.body.textContent).not.toMatch(/null|undefined/);
+  });
+
+  it("kỹ sư: endpoint thật hiện nguyên văn; tamKhoa null ⇒ không huy hiệu", () => {
+    moVoi({ tamKhoa: null });
+    expect(screen.getByTestId("endpoint-ngan-tag")).toHaveTextContent("10.0.0.7:502");
+    expect(screen.queryByTestId("tam-khoa-adapter-7")).toBeNull();
+  });
+});

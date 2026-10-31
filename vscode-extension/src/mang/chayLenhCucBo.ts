@@ -45,12 +45,20 @@
  * ngoài chính việc spawn, nên không cố nhét thêm quyết định vào đây.
  */
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { LenhDaDuyet } from "../loi/lenhChoPhep";
+import { moiTruongDaLocChoTienTrinhCon } from "../loi/moiTruongAnToan";
+import { BoDemDauRa } from "../../../shared/tienTrinhAnToan";
+import { gietCayThenLopHai } from "./gietCay";
 import { LOI_KHONG_TIN_CAY_NGUOI, workspaceTinCay } from "../loi/tinCayWorkspace";
 
-/** Trần KÍCH THƯỚC streaming cho MỘT lượt chạy lệnh — cùng bậc với `TRAN_BYTE_DOC_MCP`
- *  (`mang/mcpClient.ts`): kiểm NGAY sau mỗi chunk, không đợi tiến trình tự kết thúc. */
-export const TRAN_BYTE_CHAY_LENH = 2 * 1024 * 1024;
+/**
+ * Đầu ra giữ ĐẦU + CUỐI trong bộ nhớ hằng số (Đợt 12/H2; trước đó: giữ 2 MB ĐẦU rồi GIẾT tiến trình — lỗi build/test nằm ở CUỐI nên bị mất,
+ * và một lệnh đang chạy tốt bị giết chỉ vì nói nhiều). Tổng 18 000 ký tự < `TRAN_KY_TU_KET_QUA_LENH` (20 000, `loi/dinhDangKetQuaLenh.ts`) ⇒ bước
+ * hiển thị KHÔNG cắt thêm đuôi; phần giữa bị bỏ được khai ngay trong chuỗi ("ĐÃ CẮT … Ở GIỮA"). Trần THỜI GIAN vẫn giết lệnh chạy vô hạn.
+ */
+export const TRAN_DAU_DAU_RA_LENH = 6_000;
+export const TRAN_CUOI_DAU_RA_LENH = 12_000;
 
 export interface KetQuaChayLenh {
   ok: boolean;
@@ -117,9 +125,13 @@ export function chayLenhCucBo(dv: { lenh: LenhDaDuyet; cwd: string; tranMs: numb
       const cp = spawn(chuongTrinh, doi, {
         cwd: dv.cwd,
         // ★ 2026-10-18 — `lenh.env` là HẰNG của allowlist (khoá mạng go/cargo), không bao giờ từ chuỗi người gõ.
-        env: dv.lenh.env ? { ...process.env, ...dv.lenh.env } : process.env,
+        // ★ Đợt 12/H2 — KHÔNG truyền nguyên `process.env`: token/khoá đám mây của dev không được lọt vào tiến trình chạy mã model viết.
+        //   `lenh.env` (hằng của allowlist) đặt SAU khi lọc.
+        env: { ...moiTruongDaLocChoTienTrinhCon(process.env), ...(dv.lenh.env ?? {}) },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        // POSIX: pid thành thủ lĩnh nhóm ⇒ `gietCayTienTrinh` giết được cả nhóm (Windows dùng `taskkill /T`).
+        detached: process.platform !== "win32",
       });
       chayTiepSauKhiSpawn(cp, dv.tranMs, batDau, resolveP);
     } catch (e) {
@@ -151,18 +163,14 @@ function chayTiepSauKhiSpawn(
   resolveP: (kq: KetQuaChayLenh) => void,
 ): void {
   let daXongMotLan = false;
-  let output = "";
-  let tongByte = 0;
-  let daCatSom = false;
+  const bo = new BoDemDauRa(TRAN_DAU_DAU_RA_LENH, TRAN_CUOI_DAU_RA_LENH);
+  let loiKhoiDong = "";
   let timedOut = false;
 
   const hetHan = setTimeout(() => {
     timedOut = true;
-    try {
-      cp.kill();
-    } catch {
-      // đã chết sẵn — vô hại
-    }
+    // Cả CÂY (npm → cmd → node…), rồi `cp.kill()` làm lớp thứ hai (taskkill vắng mặt / pid đã chết).
+    gietCayThenLopHai(cp);
   }, tranMs);
 
   const doanXong = (thanhCong: boolean, exitCode: number | null, signal: NodeJS.Signals | null) => {
@@ -171,36 +179,24 @@ function chayTiepSauKhiSpawn(
     clearTimeout(hetHan);
     resolveP({
       ok: thanhCong,
-      output,
+      output: loiKhoiDong || bo.ket().text,
       exitCode,
       signal,
       timedOut,
-      daCatSom,
+      daCatSom: bo.catBot,
       durationMs: Date.now() - batDau,
     });
   };
 
-  const nhanChunk = (buf: Buffer) => {
-    if (daCatSom) return; // đã cắt rồi — không ghép thêm, tránh chuỗi phình vô hạn trong bộ nhớ.
-    tongByte += buf.length;
-    if (tongByte > TRAN_BYTE_CHAY_LENH) {
-      daCatSom = true;
-      try {
-        cp.kill();
-      } catch {
-        // vô hại
-      }
-      return;
-    }
-    output += buf.toString("utf8");
-  };
-
-  cp.stdout.on("data", nhanChunk);
-  cp.stderr.on("data", nhanChunk);
+  // Mỗi luồng một bộ giải mã: một ký tự UTF-8 nhiều byte bị chia đôi giữa hai chunk không hoá thành "�".
+  const giaiMaOut = new StringDecoder("utf8");
+  const giaiMaErr = new StringDecoder("utf8");
+  cp.stdout.on("data", (buf: Buffer) => bo.them(giaiMaOut.write(buf)));
+  cp.stderr.on("data", (buf: Buffer) => bo.them(giaiMaErr.write(buf)));
   // ENOENT (chương trình không tồn tại) bắn sự kiện KHÔNG ĐỒNG BỘ này — xem bài học H4.
   cp.on("error", (e) => {
-    if (output.length === 0) output = `lỗi tiến trình: ${e.message}`;
+    if (bo.byteThat === 0) loiKhoiDong = `lỗi tiến trình: ${e.message}`;
     doanXong(false, null, null);
   });
-  cp.on("close", (code, signal) => doanXong(!timedOut && !daCatSom && code === 0, code, signal));
+  cp.on("close", (code, signal) => doanXong(!timedOut && code === 0, code, signal));
 }

@@ -71,6 +71,7 @@ import { batXaTongKet, laMaOn, nenGhiThuLenh, type TongKetHetHan } from "./dieuT
 import { appError } from "../../_core/appError";
 import { ghiNhanStopQuaHanKhongGhiSo, type PhaQuaHanStopHmi } from "../../_core/hanStopHmi";
 import { ghiCoTran, HAN_GHI_TREO_MS, soGhiTreoStop, suKienAuditTuNoiDung, themLucSuKien, TRAN_GHI_TREO_STOP, type BoiCanhGhi } from "../ot/ghiTreoCoTran";
+import { motPhanCua, type MotPhan } from "../ot/motPhan"; // R1b-2b-2a T3E (backlog 90) — lô áp MỘT PHẦN: mã + danh sách item tới người gửi
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -559,7 +560,7 @@ async function tenNguoi(db: Db, userId: number): Promise<string> {
 
 async function phatScadaCmd(
   userId: number,
-  payload: { requestId: string; status: string; at: string; reason?: string; readBackValue?: unknown },
+  payload: { requestId: string; status: string; at: string; reason?: string; readBackValue?: unknown; motPhan?: MotPhan },
 ): Promise<void> {
   try {
     const { getIO } = await import("../../_core/socket");
@@ -868,6 +869,14 @@ export interface KetQuaXacNhan {
   reason?: string;
   commandLogIds: number[];
   readBackValue?: unknown;
+  /** R1b-2b-2a T3E — CHỈ khi lô áp MỘT PHẦN (`reason` = MOT_PHAN, status `failed`): tagKey đã áp / không áp. Vắng ở mọi kết cục khác. */
+  motPhan?: MotPhan;
+}
+
+/** R1b-2b-2a T3E — đuôi câu của dòng attempts khi lô áp một phần (mã ở `reasonCode`; danh sách tagKey ở đây — tagKey không phải chi tiết kỹ thuật C1). */
+export function duoiMotPhan(kq: { motPhan?: unknown }): string {
+  const m = motPhanCua(kq.motPhan);
+  return m ? ` — đã áp: ${m.daAp.join(", ")}; không áp: ${m.khongAp.join(", ")}` : "";
 }
 
 export type KetQuaXacNhanGhi = { ok: true; ketQua: KetQuaXacNhan } | { ok: false; tuChoi: TuChoiYeuCau };
@@ -930,13 +939,14 @@ export async function xacNhanGhiTag(
       lyDo,
       commandLogIds: commandLogIds ?? null,
     });
-  const phat = (p: { status: string; reason?: string; readBackValue?: unknown }) =>
+  const phat = (p: { status: string; reason?: string; readBackValue?: unknown; motPhan?: MotPhan }) =>
     phatScadaCmd(userId, {
       requestId,
       status: p.status,
       at: luc().toISOString(),
       ...(p.reason ? { reason: p.reason } : {}),
       ...("readBackValue" in p ? { readBackValue: p.readBackValue } : {}),
+      ...(p.motPhan ? { motPhan: p.motPhan } : {}), // R1b-2b-2a T3E — lô áp một phần
     });
   /** Nhả khoá sau dispatch — lỗi nhả chỉ ghi log (khoá tự hết hạn theo QĐ T9-1), không che kết quả/lỗi của dispatch. */
   const nhaAnToan = async () => {
@@ -1137,10 +1147,10 @@ export async function xacNhanGhiTag(
     "dispatched",
     kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
     kq.commandLogIds,
-    `Kết quả gửi: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+    `Kết quả gửi: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}${duoiMotPhan(kq)}`,
   );
   // 10. socket
-  await phat({ status: kq.status, ...(kq.reason ? { reason: kq.reason } : {}), ...(readBackValue !== undefined ? { readBackValue } : {}) });
+  await phat({ status: kq.status, ...(kq.reason ? { reason: kq.reason } : {}), ...(readBackValue !== undefined ? { readBackValue } : {}), ...(kq.motPhan ? { motPhan: kq.motPhan } : {}) });
 
   return {
     ok: true,
@@ -1151,6 +1161,7 @@ export async function xacNhanGhiTag(
       ...(kq.reason ? { reason: kq.reason } : {}),
       commandLogIds: kq.commandLogIds,
       ...(readBackValue !== undefined ? { readBackValue } : {}),
+      ...(kq.motPhan ? { motPhan: kq.motPhan } : {}),
     },
   };
 }
@@ -1561,6 +1572,8 @@ export interface KetQuaDungMayAdapter {
   /** các giá trị ghim của lệnh STOP tới adapter này (đúng thứ truyền cho dispatch; rỗng khi đọc ghim lỗi) — kết quả thật ở `status` */
   writes: Array<{ tagKey: string; value: unknown }>;
   commandLogIds: number[];
+  /** R1b-2b-2a T3E — CHỈ khi STOP tới adapter này áp MỘT PHẦN (`reason` = MOT_PHAN, status `failed`): tagKey ghim đã áp / không áp. */
+  motPhan?: MotPhan;
 }
 
 /** kiem-dinh R1b-1 H1 (b) — một ghim hợp lệ mà lần bấm này KHÔNG gửi (tag mức tác động > 1; mức NULL đã suy thành 5). */
@@ -1711,7 +1724,7 @@ async function guiStopMotAdapter(
     "dispatched",
     kq.reason ?? (kq.ok ? null : String(kq.status).toUpperCase()),
     kq.commandLogIds,
-    `STOP: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}`,
+    `STOP: ${kq.status}${kq.reason ? ` (${kq.reason})` : ""}${duoiMotPhan(kq)}`,
   );
 
   return {
@@ -1724,6 +1737,7 @@ async function guiStopMotAdapter(
       ...(edge ? { edgeStopRequest: true } : {}),
       ...(duPhong ? { centralFallbackSent: true } : {}),
       commandLogIds: kq.commandLogIds,
+      ...(kq.motPhan ? { motPhan: kq.motPhan } : {}),
     },
     daGoiDispatch: true,
   };
