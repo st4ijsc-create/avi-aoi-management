@@ -8,13 +8,14 @@ import { moTaCho } from "../../../../shared/ai/moTaModel";
 let daCanhBaoLech = false;
 
 export interface PhuThuocNganSach {
-  nCtxKhe: () => Promise<number | null>;
+  /** `tenModel` = model lượt này định dùng (khoá đệm — đổi model ⇒ hỏi lại khe). */
+  nCtxKhe: (tenModel: string) => Promise<number | null>;
   tenModelMacDinh: () => string;
 }
 
 const phuThuocThat = async (): Promise<PhuThuocNganSach> => {
   const c = await import("../../aiLlamaServerClient");
-  return { nCtxKhe: () => c.nCtxKheServer(), tenModelMacDinh: () => c.tenModelKheMacDinh() };
+  return { nCtxKhe: (ten) => c.nCtxKheServer(1500, Date.now(), ten), tenModelMacDinh: () => c.tenModelKheMacDinh() };
 };
 
 export async function nganSachNguCanhCho(modelId: string | undefined, dep?: PhuThuocNganSach): Promise<number> {
@@ -23,7 +24,7 @@ export async function nganSachNguCanhCho(modelId: string | undefined, dep?: PhuT
   const moTa = moTaCho(ten).nguCanh.macDinh;
   let khe: number | null = null;
   try {
-    khe = await d.nCtxKhe();
+    khe = await d.nCtxKhe(ten);
   } catch {
     khe = null;
   }

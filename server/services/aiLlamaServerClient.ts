@@ -724,15 +724,20 @@ export function __xoaDemThiGiac(): void {
 
 /**
  * ★ Đợt 12 H3.2b — ngữ cảnh THẬT của khe llama-server: `GET /props` ⇒ `default_generation_settings.n_ctx` (đo 2026-10-31 trên :8091:
- * 65 536 với `-c 65536 -np 1`). Đệm 10 phút theo URL (một GET lúc đầu — không hỏi mỗi lượt; đổi `-c` trong cửa sổ đo vẫn được thấy).
- * Không đọc được / số rác ⇒ `null` (người gọi dùng mô tả model — fail-open về hành vi hôm nay).
+ * 65 536 với `-c 65536 -np 1`) — ctx MỖI KHE (tổng / n_parallel), đúng thứ một lượt agent dùng được. Người gọi hỏi MỘT lần mỗi lượt chạy.
+ * Đệm (rà kiem-dinh): khoá = URL + model người gọi định dùng (đổi model ⇒ hỏi lại); số đọc được giữ 60 s (khe nặng hoán đổi 35B↔27B cùng
+ * URL ⇒ số cũ không sống quá một phút); `null` (lỗi / 503 đang nạp / rác) chỉ giữ 15 s — không để một lần hỏng tắt việc kiểm 10 phút.
+ * Không đọc được ⇒ `null` (người gọi dùng mô tả model — fail-open về hành vi hôm nay).
  */
-let demNCtx: { luc: number; url: string; nCtx: number | null } | null = null;
-export async function nCtxKheServer(timeoutMs = 1500, bayGio = Date.now()): Promise<number | null> {
+export const DEM_NCTX_SO_MS = 60_000;
+export const DEM_NCTX_NULL_MS = 15_000;
+let demNCtx: { luc: number; khoa: string; nCtx: number | null } | null = null;
+export async function nCtxKheServer(timeoutMs = 1500, bayGio = Date.now(), tenModel = ""): Promise<number | null> {
   if (!llamaServerEnabled()) return null;
   const url = baseUrl();
   if (!url) return null;
-  if (demNCtx && demNCtx.url === url && bayGio - demNCtx.luc < 600_000) return demNCtx.nCtx;
+  const khoa = `${url}\u0000${tenModel.toLowerCase()}`;
+  if (demNCtx && demNCtx.khoa === khoa && bayGio - demNCtx.luc < (demNCtx.nCtx === null ? DEM_NCTX_NULL_MS : DEM_NCTX_SO_MS)) return demNCtx.nCtx;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   let nCtx: number | null = null;
@@ -747,7 +752,7 @@ export async function nCtxKheServer(timeoutMs = 1500, bayGio = Date.now()): Prom
   } finally {
     clearTimeout(t);
   }
-  demNCtx = { luc: bayGio, url, nCtx };
+  demNCtx = { luc: bayGio, khoa, nCtx };
   return nCtx;
 }
 export function __xoaDemNCtx(): void {
