@@ -367,6 +367,8 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
       // SCADA R1a Task 11 (K10 / D8) — `POST /api/v1/equipment/{id}/commands` is deliberately NOT published here. The route still runs
       // (robot STOP callers) but every non-STOP command is refused by the dispatcher without a confirmed HITL action; see
       // server/api/v1/equipmentCommands.r1a.db.test.ts for the measured behaviour.
+      // C2 polish (2026-11-01): if it is ever published, document `detail` / `error` as MASKED for every API key — `error` is a sanitised CODE
+      // (never driver text), `detail` is the whitelist of cheKetQuaLenh (server/routers/_chiTietKyThuat.ts); use the code.
       "/api/v1/ingest/inspection": {
         post: {
           tags: ["Ingest"],

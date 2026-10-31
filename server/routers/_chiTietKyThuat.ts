@@ -144,9 +144,14 @@ export function maLoiAdapterCua(loi: string | null | undefined, matKetNoi: boole
  * {appCode, appParams}, `edge`, `stop`, `pinnedStop`) + `reason` qua `maLyDoThu` (mã) + `motPhan` chỉ còn số đếm; khoá khác bị bỏ.
  * Các trường khác của `result` (nhánh, prompt / approverRoles / note của cổng, reachedState…) không phải chi tiết kỹ thuật ⇒ giữ.
  */
-const DETAIL_AN_TOAN = ["simulated", "commandLogIds", "appError", "edge", "stop", "pinnedStop"] as const;
+// C2 polish (điều phối 2026-11-01) — thêm `jobId` (id job robot, REST lệnh thiết bị cần để theo dõi) và `outcomeUnknown` (cờ "không rõ kết cục").
+const DETAIL_AN_TOAN = ["simulated", "commandLogIds", "appError", "edge", "stop", "pinnedStop", "jobId", "outcomeUnknown"] as const;
 
-function cheDetailLenh(detail: unknown): unknown {
+/**
+ * `detail` của một `EquipmentCommandResult` cho người KHÔNG được xem chi tiết kỹ thuật — MỘT danh sách trắng dùng chung cho bước orchestration
+ * (`cheKetQuaBuoc`) và REST `POST /api/v1/equipment/:id/commands` (C2 polish).
+ */
+export function cheDetailLenh(detail: unknown): unknown {
   if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return detail === undefined ? undefined : null;
   const d = detail as Record<string, unknown>;
   const ra: Record<string, unknown> = {};
@@ -173,7 +178,7 @@ function cheNguCanhRun(ctx: unknown): unknown {
   if (!rs || typeof rs !== "object" || Array.isArray(rs)) return ctx;
   const ra: Record<string, unknown> = {};
   for (const [id, v] of Object.entries(rs as Record<string, unknown>)) {
-    ra[id] = v && typeof v === "object" && !Array.isArray(v) ? { ...(v as object), error: maLoiCua((v as { error?: string | null }).error, "failed") } : v;
+    ra[id] = v && typeof v === "object" && !Array.isArray(v) ? { ...(v as object), error: maLoiBuocFoe((v as { error?: string | null }).error, "failed") } : v;
   }
   return { ...c, foeResumeState: ra };
 }
@@ -181,7 +186,7 @@ function cheNguCanhRun(ctx: unknown): unknown {
 /** Hàng run (`orchestration_runs`) theo người xem: bị che ⇒ `error` = mã, `contextJson` che lỗi trạng thái tiếp tục. */
 export function cheHangRun<R extends { error: string | null; status: string; contextJson?: unknown }>(run: R, chiTietKyThuat: boolean): R {
   if (chiTietKyThuat) return run;
-  return { ...run, error: maLoiCua(run.error, run.status), ...("contextJson" in run ? { contextJson: cheNguCanhRun(run.contextJson) } : {}) };
+  return { ...run, error: maLoiBuocFoe(run.error, run.status), ...("contextJson" in run ? { contextJson: cheNguCanhRun(run.contextJson) } : {}) };
 }
 
 /**
@@ -189,16 +194,67 @@ export function cheHangRun<R extends { error: string | null; status: string; con
  * giữ nguyên DẠNG MÃ `FOE_GATE_REQUIRED(<lý do>)` để Studio vẫn hiện câu dịch đúng lý do (`gateRequiredReasonOf`, OrchestrationStudio.tsx); mọi
  * trường hợp khác ⇒ `maLoiCua` (tiền tố đã biết hoặc mã dự phòng theo status bước).
  */
-export function maLoiBuocFoe(error: string | null | undefined, status?: string | null): string | null {
-  const m = /^(FOE_GATE_REQUIRED)\(([a-zA-Z]{1,40})\)(?=:|\s|$)/.exec((error ?? "").trim());
+export function maLoiBuocFoe(error: string | null | undefined, status?: string | null, loaiBuoc?: string | null): string | null {
+  const t = (error ?? "").trim();
+  if (!t) return null;
+  const m = RE_CONG_TRONG_CHUOI.exec(t);
   if (m) return `${m[1]}(${m[2]})`;
-  return maLoiCua(error, status);
+  // C2 polish m1 — mã ĐÃ BIẾT ĐẦU TIÊN ở BẤT KỲ đâu (không chỉ tiền tố): "Edge node X held run N (…): EDGE_OUTCOME_UNKNOWN(a,b): …",
+  // "failed on edge node X: FOE_OUTCOME_UNKNOWN: …", "Parallel branch failed: FOE_OUTCOME_UNKNOWN: …" — người gọi REST vẫn thấy tín hiệu "kiểm thiết bị".
+  const ma = maDaBietDauTien(t);
+  if (ma) return ma;
+  return maDuPhongBuoc(t, status, loaiBuoc);
 }
 
-/** Một bước của run theo người xem: bị che ⇒ `error` = mã (`maLoiBuocFoe`), `result.detail` theo danh sách trắng. */
-export function cheBuocRun<S extends { error: string | null; status: string; result: Record<string, unknown> | null }>(s: S, chiTietKyThuat: boolean): S {
+/**
+ * C2 polish m1 — mã ĐÃ BIẾT (`MA_LOI_DA_BIET`) đầu tiên xuất hiện như một TỪ RIÊNG trong chuỗi. Biên chặt hơn `\b`: bên trái phải là đầu chuỗi /
+ * khoảng trắng / `(` `[` `,` `;` nháy; bên phải phải là cuối chuỗi / khoảng trắng / `:` `(` `)` `,` `;` `]` nháy / dấu chấm cuối câu — ⇒ chuỗi giống mã nằm
+ * TRONG tên máy / đường dẫn (`plc-TIMEOUT.local`, `/x/BUSY/y`, `host_TIMEOUT`) KHÔNG khớp. Chỉ trả mã thuộc tập đã biết (không bao giờ trả văn bản).
+ */
+const BIEN_TRAI = String.raw`(?<=^|[\s(\[,;"'])`;
+const BIEN_PHAI = String.raw`(?=$|[\s:(),;\]"']|\.(?:\s|$))`;
+const RE_MA_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}([A-Z][A-Z0-9_]*)${BIEN_PHAI}`, "g");
+const RE_CONG_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}(FOE_GATE_REQUIRED)\\(([a-zA-Z]{1,40})\\)${BIEN_PHAI}`);
+export function maDaBietDauTien(text: string | null | undefined): string | null {
+  for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) if (MA_LOI_DA_BIET_SET.has(m[1])) return m[1];
+  return null;
+}
+
+/**
+ * C2 polish m4 (điều phối 2026-11-01) — mã DỰ PHÒNG theo LOẠI bước (không chỉ theo status), CHỈ dùng mã ĐÃ CÓ trong `MA_LOI_DA_BIET`:
+ *   • điều kiện trước / interlock (văn bản máy chủ soạn `Precondition (interlock) failed for step …` / `Precondition failed for step …`, foeEngine) ⇒
+ *     `PRECONDITION_FAILED` — có thể ở bất kỳ loại bước nào, KHÔNG có gì được ghi;
+ *   • `command` ⇒ status `timeout` / văn bản "outcome unknown" ⇒ `TIMEOUT`; `rejected` ⇒ `REJECTED`; còn lại ⇒ `DRIVER_WRITE_FAILED`;
+ *   • `wait_state` / `wait_telemetry` (hết hạn chờ) ⇒ `TIMEOUT`;
+ *   • loại bước khác (delay, branch, sequence, parallel, hitl_gate, …) ⇒ `TECHNICAL_ERROR` (mã dự phòng chung ĐÃ CÓ — không cần mã mới `STEP_FAILED`);
+ *   • không biết loại bước (lỗi mức RUN) ⇒ như `maLoiCua` (theo status run).
+ */
+export function maDuPhongBuoc(text: string, status?: string | null, loaiBuoc?: string | null): string {
+  if (/^Precondition (\(interlock\) )?failed for step\b/.test(text)) return "PRECONDITION_FAILED";
+  if (loaiBuoc === "command") {
+    if (status === "timeout" || /outcome unknown|may have been applied/i.test(text)) return "TIMEOUT";
+    if (status === "rejected") return "REJECTED";
+    return "DRIVER_WRITE_FAILED";
+  }
+  if (loaiBuoc === "wait_state" || loaiBuoc === "wait_telemetry") return "TIMEOUT";
+  if (loaiBuoc) return "TECHNICAL_ERROR";
+  return maLoiCua(text, status) ?? "TECHNICAL_ERROR";
+}
+
+/** Một bước của run theo người xem: bị che ⇒ `error` = mã (`maLoiBuocFoe`, dự phòng theo LOẠI bước), `result.detail` theo danh sách trắng. */
+export function cheBuocRun<S extends { error: string | null; status: string; result: Record<string, unknown> | null; stepType?: string }>(s: S, chiTietKyThuat: boolean): S {
   if (chiTietKyThuat) return s;
-  return { ...s, error: maLoiBuocFoe(s.error, s.status), result: cheKetQuaBuoc(s.result) };
+  return { ...s, error: maLoiBuocFoe(s.error, s.status, s.stepType ?? null), result: cheKetQuaBuoc(s.result) };
+}
+
+/**
+ * C2 polish — kết quả lệnh thiết bị (`EquipmentCommandResult`) của REST `POST /api/v1/equipment/:id/commands` cho khoá API (không bao giờ là người xem
+ * chi tiết kỹ thuật): `detail` qua CÙNG danh sách trắng với bước orchestration, `error` ⇒ MÃ (cùng `maLoiBuocFoe`, loại `command`). ok / status / routedTo
+ * do bên gọi tự giữ.
+ */
+export function cheKetQuaLenh(r: { detail?: Record<string, unknown> | null; error?: string | null; status: string }, chiTietKyThuat: boolean): { detail: unknown; error: string | null } {
+  if (chiTietKyThuat) return { detail: r.detail ?? null, error: r.error ?? null };
+  return { detail: r.detail ? cheDetailLenh(r.detail) : null, error: r.error ? maLoiBuocFoe(r.error, r.status, "command") : null };
 }
 
 /**

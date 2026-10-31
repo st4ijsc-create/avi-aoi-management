@@ -14,6 +14,7 @@
  *   • `sql_tho`      — chuỗi / template có `device_adapters` VÀ (`endpoint` | `lastError` | `last_error` | `connectionOptions` |
  *                      `connection_options` | `SELECT *` | `x.*` | `row_to_json`);
  *   • `ram`          — gọi nguồn RAM mang các trường ấy (`NGUON_RAM`: supervisor / trạng thái adapter / RuntimeAdapter của otManager);
+ *   • `ket_qua_lenh` — (C2 polish) `<adapter>.sendCommand(…)`: kết quả lệnh thiết bị mang `error` / `detail` (thông điệp driver / controller);
  *   • `dich_vu`      — gọi một hàm XUẤT của `server/services/**` mà thân có điểm chạm DB / RAM (một bậc), qua MỌI hình import (C2 fix 4, review I1 +
  *                      phụ lục điều phối): tên import tĩnh (kể cả `import { fn as g }`), destructure `const { fn } = await import(…)` / `{ fn: g }`,
  *                      không gian `import * as svc` / `const svc = await import(…)` ⇒ `svc.fn()`, gọi thẳng `(await import(…)).fn()`, hàm cục bộ trả
@@ -37,7 +38,7 @@ import ts from "typescript";
 const GOC = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GOC_BE_MAT = ["server/api", "server/routes", "server/routers", "server/_core"] as const;
 
-type Loai = "cot_ky_thuat" | "nguyen_hang" | "sql_tho" | "ram" | "dich_vu" | "ham_cuc_bo";
+type Loai = "cot_ky_thuat" | "nguyen_hang" | "sql_tho" | "ram" | "dich_vu" | "ham_cuc_bo" | "ket_qua_lenh";
 type Muc = { dem: Partial<Record<Loai, number>> } & ({ phanLoai: "che"; qua: string[]; lyDo?: string } | { phanLoai: "mien_tru"; lyDo: string });
 
 const SQL_NHAY_CAM = /\bendpoint\b|"lastError"|\blast_error\b|"connectionOptions"|\bconnection_options\b|select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(/i;
@@ -63,6 +64,12 @@ const NGUON_RAM = new Set([
   "getActiveAdapter",
   "listActiveAdapters",
 ]);
+
+/**
+ * C2 polish (điều phối 2026-11-01) — nguồn KẾT QUẢ LỆNH thiết bị: `EquipmentCommandResult.error` / `.detail` (thông điệp driver / controller robot,
+ * có thể mang host:port) — mọi lời gọi `<adapter>.sendCommand(…)` là điểm chạm `ket_qua_lenh`.
+ */
+const NGUON_LENH = new Set(["sendCommand"]);
 
 function tepDuoi(goc: string): string[] {
   const ra: string[] = [];
@@ -420,6 +427,7 @@ export function quetNguon(r: string, src: string, dichVu: ReadonlySet<string>, c
       const t = tenGoi(n);
       const g = tenDichVuGoi(n, bi);
       if (NGUON_RAM.has(t) || (g !== null && NGUON_RAM.has(g))) them(n, "ram");
+      else if (NGUON_LENH.has(t) && ts.isPropertyAccessExpression(n.expression)) them(n, "ket_qua_lenh");
       else if ((dichVu.has(t) && imp.has(t)) || (g !== null && dichVu.has(g))) them(n, "dich_vu");
     }
     const t = vanBan(n);
@@ -444,7 +452,7 @@ function nguonDichVu(): Map<string, string[]> {
   const ra = new Map<string, string[]>();
   for (const p of tepDuoi("server/services")) {
     const src = readFileSync(p, "utf8");
-    if (!/deviceAdapters|device_adapters|orchestrationRuns|orchestrationRunSteps|orchestration_run|listSupervisorStatuses|getSupervisorStatus|OtAdapterStatus|layTrangThaiAdapter|getActiveAdapter|listActiveAdapters/.test(src)) continue;
+    if (!/deviceAdapters|device_adapters|orchestrationRuns|orchestrationRunSteps|orchestration_run|\.sendCommand\(|listSupervisorStatuses|getSupervisorStatus|OtAdapterStatus|layTrangThaiAdapter|getActiveAdapter|listActiveAdapters/.test(src)) continue;
     const r = rel(p);
     const { dem } = quetNguon(r, src, new Set(), false);
     const sf = ts.createSourceFile(r, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -530,6 +538,12 @@ export const SO_CAI: Record<string, Muc> = {
     phanLoai: "che",
     qua: ["cheRunView"],
     lyDo: "C2 fix 4 — steps[*].error / result.detail / run.error ⇒ mã cho khoá API (cheRunView(view, false)); adapter chỉ dùng nội bộ cho digest (" + MT_FOE + ")",
+  },
+  "server/api/v1/router.ts#POST /equipment/:id/commands": {
+    dem: { ket_qua_lenh: 1 },
+    phanLoai: "che",
+    qua: ["cheKetQuaLenh"],
+    lyDo: "C2 polish — result.error ⇒ mã, result.detail ⇒ danh sách trắng chung với bước orchestration (cheKetQuaLenh(result, false)); khoá API không bao giờ là người xem",
   },
   "server/api/v1/router.ts#POST /orchestration/runs": { dem: { dich_vu: 1, ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: "trả { runId, status, accepted }; webhook mang { runId, workflowRef, status } — " + MT_START_RUN },
   "server/api/v1/router.ts#orchestrationRunWebhookAudience": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "vị từ người nhận webhook — " + MT_VISIBLE },
@@ -660,8 +674,10 @@ export const SO_CAI: Record<string, Muc> = {
  *   • fix 4 (đo 2026-11-01): { khoa 70, diemCham 102, che 14, mienTru 56 } — +27 khoá: 10 tuyến edgeNodeRoutes (I1: hình `(await import(…)).fn()` /
  *     `(await svc()).fn()` nay thấy được), bảng orchestration_runs / orchestration_run_steps vào tập quét (+15 khoá foe / edge / oversight / giao việc);
  *     che +5 (getRun, listRuns, REST runs/:id, nodeStatus, fleet status — fleet chuyển từ miễn trừ), miễn trừ +22.
+ *   • polish (đo 2026-11-01): { khoa 71, diemCham 103, che 15, mienTru 56 } — +1 khoá che: REST `POST /equipment/:id/commands` (loại mới `ket_qua_lenh`:
+ *     `<adapter>.sendCommand(…)` — EquipmentCommandResult.error / .detail).
  */
-const GHIM = { khoa: 70, diemCham: 102, che: 14, mienTru: 56 };
+const GHIM = { khoa: 71, diemCham: 103, che: 15, mienTru: 56 };
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;
@@ -712,7 +728,7 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
     for (const g of GOC_BE_MAT) expect(DO.soTep[g], `số tệp quét dưới ${g}`).toBeGreaterThanOrEqual(SAN_TEP[g]);
     expect(DO.dichVu.size, "số hàm dịch vụ nguồn").toBeGreaterThanOrEqual(SAN_NGUON_DICH_VU);
     const loai = new Set([...DO.dem.values()].flatMap((v) => Object.keys(v)));
-    for (const l of ["cot_ky_thuat", "nguyen_hang", "sql_tho", "ram", "dich_vu", "ham_cuc_bo"]) expect(loai.has(l), `loại ${l}`).toBe(true);
+    for (const l of ["cot_ky_thuat", "nguyen_hang", "sql_tho", "ram", "dich_vu", "ham_cuc_bo", "ket_qua_lenh"]) expect(loai.has(l), `loại ${l}`).toBe(true);
     expect(DO.dem.size).toBeGreaterThan(0);
   });
 
@@ -766,7 +782,7 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
           )
             dung++;
         }
-        if (ts.isCallExpression(x) && ["cheRunView", "cheHangRun", "cheBuocRun"].includes(tenGoi(x))) {
+        if (ts.isCallExpression(x) && ["cheRunView", "cheHangRun", "cheBuocRun", "cheKetQuaLenh"].includes(tenGoi(x))) {
           thay++;
           if (x.arguments[1]?.kind === ts.SyntaxKind.FalseKeyword) dung++;
         }

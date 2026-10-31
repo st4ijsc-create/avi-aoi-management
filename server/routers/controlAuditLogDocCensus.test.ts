@@ -14,8 +14,9 @@
  *   • `sql_bi_mat`  — chuỗi / template có `control_audit_log` VÀ (`"beforeJson"` | `"afterJson"` | `before_json` | `after_json` | `SELECT *` | `x.*` |
  *                     `row_to_json` | `to_json`).
  * Tham chiếu AN TOÀN (chiếu cột khác, ghi không returning, đếm) được đếm riêng cho bảo vệ "đi rỗng". Khoá = `tệp#hàm`.
- * Bất biến phụ: ở các gốc bề mặt (`server/api`, `server/routes`, `server/routers`, `server/_core`), kết quả `recordAuditEvent(…)` (hàng vừa ghi, có
- * beforeJson / afterJson) luôn bị BỎ (câu lệnh biểu thức / `void`) — không trả về client.
+ * Bất biến phụ: ở các gốc bề mặt (`server/api`, `server/routes`, `server/routers`, `server/_core`), kết quả `recordAuditEvent(…)` / `recordAuditEvents(…)`
+ * (hàng vừa ghi, có beforeJson / afterJson) luôn bị BỎ (câu lệnh biểu thức / `void`) — không trả về client (C2 polish m3: thêm `recordAuditEvents`).
+ * C2 polish m3: `verifyControlAuditChain` ghim thêm theo HÌNH TRẢ VỀ (§4 — chỉ { ok, checked, brokenAtId, reason } rời hàm).
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -207,7 +208,7 @@ export const CHO_PHEP: Record<string, { dem: Partial<Record<Loai, number>>; lyDo
   },
   "server/services/audit/controlAuditService.ts#recordAuditEvents": {
     dem: { nguyen_hang: 2 },
-    lyDo: "NGƯỜI GHI theo lô: như recordAuditEvent (returning) — bên gọi chỉ là dịch vụ nội bộ",
+    lyDo: "NGƯỜI GHI theo lô: như recordAuditEvent (returning). C2 polish m3: CÓ bên gọi ở bề mặt — server/routers/scadaKenhRouter.ts:606 (scadaKenh cập nhật kênh) — §2 ghim mọi bề mặt BỎ kết quả (cả recordAuditEvents)",
   },
   "server/services/ot/commissioningService.ts#latestCommissioningRecheck": {
     dem: { cot_bi_mat: 5 },
@@ -228,6 +229,48 @@ export const CHO_PHEP: Record<string, { dem: Partial<Record<Loai, number>>; lyDo
  * Sao lưu (backupRouter / backupService, adminProcedure) chỉ pg_dump toàn DB qua tiến trình ngoài — không đọc bảng bằng drizzle / SQL ở server/.
  */
 const GHIM = { khoaRuiRo: 6, diemRuiRo: 12 };
+
+const GHI_AUDIT: ReadonlySet<string> = new Set(["recordAuditEvent", "recordAuditEvents"]);
+const HINH_VERIFY: ReadonlySet<string> = new Set(["ok", "checked", "brokenAtId", "reason"]);
+
+/**
+ * C2 polish m3 — hình trả về của `verifyControlAuditChain` (đọc NGUYÊN hàng audit): mọi `return` của nó phải là `verifyAuditRows(rows)`, và mọi `return`
+ * của `verifyAuditRows` phải là object literal chỉ mang khoá ⊆ { ok, checked, brokenAtId, reason } ⇒ không hàng / beforeJson nào rời hàm.
+ */
+export function viPhamHinhTraVeVerify(src: string): string[] {
+  const sf = ts.createSourceFile("c.ts", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const ham = new Map<string, ts.FunctionDeclaration>();
+  for (const st of sf.statements) if (ts.isFunctionDeclaration(st) && st.name) ham.set(st.name.text, st);
+  const tra = (f: ts.FunctionDeclaration | undefined) => {
+    const ra: ts.ReturnStatement[] = [];
+    const t = (x: ts.Node) => {
+      if (x !== f && (ts.isFunctionDeclaration(x) || ts.isArrowFunction(x) || ts.isFunctionExpression(x))) return;
+      if (ts.isReturnStatement(x)) ra.push(x);
+      ts.forEachChild(x, t);
+    };
+    if (f?.body) t(f.body);
+    return ra;
+  };
+  const sai: string[] = [];
+  const v = ham.get("verifyControlAuditChain");
+  const r = ham.get("verifyAuditRows");
+  if (!v || !r) return ["thiếu verifyControlAuditChain / verifyAuditRows"];
+  const tv = tra(v);
+  if (tv.length === 0) sai.push("verifyControlAuditChain không có return");
+  for (const x of tv) if (!x.expression || x.expression.getText() !== "verifyAuditRows(rows)") sai.push(`verifyControlAuditChain trả thứ khác verifyAuditRows(rows): ${x.expression?.getText() ?? ""}`);
+  const tr = tra(r);
+  if (tr.length === 0) sai.push("verifyAuditRows không có return");
+  for (const x of tr) {
+    const e = x.expression;
+    if (!e || !ts.isObjectLiteralExpression(e)) {
+      sai.push(`verifyAuditRows trả không phải object literal: ${e?.getText() ?? ""}`);
+      continue;
+    }
+    const ngoai = e.properties.map((p) => (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) ? p.name.getText() : "...")).filter((k) => !HINH_VERIFY.has(k));
+    if (ngoai.length) sai.push(`verifyAuditRows trả khoá ngoài hình: ${ngoai.join(", ")}`);
+  }
+  return sai;
+}
 
 /** Vi phạm của một phép đo so với danh sách cho phép (thuần — dùng cả ở §1 lẫn đột biến §3). */
 export function viPham(ruiRo: Map<string, Record<string, unknown>>, choPhep: Record<string, { dem: Partial<Record<Loai, number>> }>): string[] {
@@ -261,18 +304,21 @@ describe("★★★ census BẤT BIẾN — không người đọc control_audit
     expect({ khoaRuiRo: ruiRo.size, diemRuiRo: [...ruiRo.values()].reduce((a, v) => a + Object.values(v).reduce((x, y) => x + (y as number), 0), 0) }).toEqual(GHIM);
   });
 
-  it("§2 bề mặt: kết quả recordAuditEvent(…) (hàng vừa ghi) luôn bị BỎ — câu lệnh biểu thức / void, không return / gán / truyền tiếp", () => {
+  it("§2 bề mặt: kết quả recordAuditEvent(…) / recordAuditEvents(…) (hàng vừa ghi) luôn bị BỎ — câu lệnh biểu thức / void, không return / gán / truyền tiếp", () => {
     const sai: string[] = [];
     let soGoi = 0;
+    const theoTen = new Map<string, number>();
     for (const p of tep) {
       const r = rel(p);
       if (!GOC_BE_MAT.some((g) => r.startsWith(g))) continue;
       const src = readFileSync(p, "utf8");
-      if (!src.includes("recordAuditEvent(")) continue;
+      if (!/recordAuditEvents?\(/.test(src)) continue;
       const sf = ts.createSourceFile(r, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
       const t = (x: ts.Node) => {
-        if (ts.isCallExpression(x) && ((ts.isIdentifier(x.expression) && x.expression.text === "recordAuditEvent") || (ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === "recordAuditEvent"))) {
+        const ten = ts.isCallExpression(x) ? (ts.isIdentifier(x.expression) ? x.expression.text : ts.isPropertyAccessExpression(x.expression) ? x.expression.name.text : "") : "";
+        if (ts.isCallExpression(x) && GHI_AUDIT.has(ten)) {
           soGoi++;
+          theoTen.set(ten, (theoTen.get(ten) ?? 0) + 1);
           let q: ts.Node = x;
           while (q.parent && (ts.isAwaitExpression(q.parent) || ts.isParenthesizedExpression(q.parent) || ts.isVoidExpression(q.parent))) q = q.parent;
           if (!q.parent || !ts.isExpressionStatement(q.parent)) sai.push(`${r}:${sf.getLineAndCharacterOfPosition(x.getStart()).line + 1}`);
@@ -281,8 +327,19 @@ describe("★★★ census BẤT BIẾN — không người đọc control_audit
       };
       t(sf);
     }
-    expect(soGoi, "số lời gọi recordAuditEvent ở bề mặt (đi rỗng ⇒ đỏ)").toBeGreaterThanOrEqual(20);
+    expect(soGoi, "số lời gọi recordAuditEvent(s) ở bề mặt (đi rỗng ⇒ đỏ)").toBeGreaterThanOrEqual(20);
+    expect(theoTen.get("recordAuditEvents") ?? 0, "recordAuditEvents có bên gọi ở bề mặt (scadaKenhRouter) — thiết bị đo phải thấy").toBeGreaterThanOrEqual(1);
     expect(sai).toEqual([]);
+  });
+
+  it("§4 C2 polish m3 — verifyControlAuditChain ghim theo HÌNH TRẢ VỀ: chỉ { ok, checked, brokenAtId, reason } rời hàm (không chỉ theo số đếm)", () => {
+    expect(viPhamHinhTraVeVerify(readFileSync(join(GOC, "server/services/audit/controlAuditService.ts"), "utf8"))).toEqual([]);
+    // đột biến trong bộ nhớ: trả thêm `rows` / trả thẳng mảng hàng ⇒ vi phạm nêu đúng chỗ
+    const goc = readFileSync(join(GOC, "server/services/audit/controlAuditService.ts"), "utf8");
+    expect(viPhamHinhTraVeVerify(goc.replace("return { ok: true, checked, brokenAtId: null };", "return { ok: true, checked, brokenAtId: null, rows };"))).toEqual([
+      "verifyAuditRows trả khoá ngoài hình: rows",
+    ]);
+    expect(viPhamHinhTraVeVerify(goc.replace("return verifyAuditRows(rows);", "return rows as never;"))).toEqual(["verifyControlAuditChain trả thứ khác verifyAuditRows(rows): rows as never"]);
   });
 
   it("§3 FIXTURE / ĐỘT BIẾN — người đọc giả trong tệp ảo bị BẮT (khoá lạ ⇒ §1 đỏ); bỏ mục verifyControlAuditChain ⇒ khoá ấy thành NGƯỜI ĐỌC MỚI", () => {

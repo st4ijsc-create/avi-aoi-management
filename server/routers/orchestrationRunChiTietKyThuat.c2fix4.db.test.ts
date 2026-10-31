@@ -54,6 +54,12 @@ describe.skipIf(!DB_URL)("C2 fix 4 — orchestration steps[*].error / run.error 
       VALUES (${ids.wf}, ${`${DAU}-wf`}, 'failed',
         ${sql.json({ foeResumeState: { c1: { state: "doneFailed", error: `connect ECONNREFUSED 10.9.8.7:5020 ${SENT}` } }, "branch:x": "then" })},
         ${ids.node}, ${`failed on edge node ${DAU}-edge: ${SENT} connect ECONNREFUSED 10.9.8.7:5020`}, now()) RETURNING id`);
+    // C2 polish m1 — run 2: edge giữ run, lỗi mức run nhúng mã SAU tiền tố (foeRunStore `held`) ⇒ người gọi REST vẫn phải thấy EDGE_OUTCOME_UNKNOWN;
+    // run 3: "Parallel branch failed: FOE_OUTCOME_UNKNOWN: …" (foeEngine) ⇒ FOE_OUTCOME_UNKNOWN
+    ids.run2 = await one(sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, error)
+      VALUES (${ids.wf}, ${`${DAU}-wf`}, 'held', ${`Edge node ${DAU}-edge held run 1 (journalFull): EDGE_OUTCOME_UNKNOWN(c1): ${SENT} — nothing further was sent; Continue to resume it.`}) RETURNING id`);
+    ids.run3 = await one(sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, error, "finishedAt")
+      VALUES (${ids.wf}, ${`${DAU}-wf`}, 'failed', ${`Parallel branch failed: FOE_OUTCOME_UNKNOWN: ${SENT} connect ECONNREFUSED 10.9.8.7:5020 — not sent again; check the device.`}, now()) RETURNING id`);
     // c1: lệnh OT hỏng với văn bản driver thô; c2: tiền tố mã đã biết + văn bản; c3: cổng duyệt (văn bản máy chủ soạn)
     await sql`INSERT INTO orchestration_run_steps ("runId", "stepId", "stepType", status, attempt, "resultJson", error) VALUES
       (${ids.run}, 'c1', 'command', 'failed', 1,
@@ -77,7 +83,7 @@ describe.skipIf(!DB_URL)("C2 fix 4 — orchestration steps[*].error / run.error 
     if (!sql) return;
     try {
       if (ids.run) await sql`DELETE FROM orchestration_run_steps WHERE "runId" = ${ids.run}`;
-      if (ids.run) await sql`DELETE FROM orchestration_runs WHERE id = ${ids.run}`;
+      if (ids.run) await sql`DELETE FROM orchestration_runs WHERE id IN ${sql([ids.run, ids.run2 ?? -1, ids.run3 ?? -1])}`;
       if (ids.wf) await sql`DELETE FROM orchestration_workflow_versions WHERE "workflowId" = ${ids.wf}`;
       if (ids.wf) await sql`DELETE FROM orchestration_workflows WHERE id = ${ids.wf}`;
       await sql`DELETE FROM api_keys WHERE name LIKE ${DAU + "%"}`;
@@ -136,11 +142,11 @@ describe.skipIf(!DB_URL)("C2 fix 4 — orchestration steps[*].error / run.error 
 
   it("★★★ tRPC listRuns (census tìm ra) — supervisor: hàng run không rò; kỹ sư: nguyên văn", async () => {
     const ds = await (await orch(ids.sup, "supervisor")).listRuns({ workflowId: ids.wf });
-    expect(ds.map((r) => r.id)).toEqual([ids.run]);
+    expect(ds.map((r) => r.id).sort()).toEqual([ids.run, ids.run2, ids.run3].sort());
     expect(coLo(JSON.stringify(ds))).toBe(false);
-    expect(ds[0].error).toBe("DRIVER_WRITE_FAILED");
+    expect(Object.fromEntries(ds.map((r) => [r.id, r.error]))).toEqual({ [ids.run]: "DRIVER_WRITE_FAILED", [ids.run2]: "EDGE_OUTCOME_UNKNOWN", [ids.run3]: "FOE_OUTCOME_UNKNOWN" });
     const dsK = await (await orch(ids.eng, "engineer")).listRuns({ workflowId: ids.wf });
-    expect(dsK[0].error).toContain(SENT);
+    expect(dsK.find((r) => r.id === ids.run)!.error).toContain(SENT);
   });
 
   it("★★★ tRPC edgeRuntime.nodeStatus (census tìm ra) — supervisor: hàng run của nút không rò", async () => {
@@ -162,6 +168,19 @@ describe.skipIf(!DB_URL)("C2 fix 4 — orchestration steps[*].error / run.error 
     const st = Object.fromEntries((body.data.steps as any[]).map((s) => [s.stepId, s]));
     expect([st.c1.error, st.c2.error, st.c3.error]).toEqual(["DRIVER_WRITE_FAILED", "FOE_OUTCOME_UNKNOWN", "FOE_GATE_REQUIRED(approvedByOwner)"]);
     expect(st.c1.result.detail.reason).toBe("TECHNICAL_ERROR");
+  });
+
+  it("★★★ C2 polish m1 — REST khoá API: mã outcome NHÚNG SAU tiền tố ở mức run vẫn hiện (EDGE_OUTCOME_UNKNOWN / FOE_OUTCOME_UNKNOWN), không rò", async () => {
+    for (const [run, ma] of [
+      [ids.run2, "EDGE_OUTCOME_UNKNOWN"],
+      [ids.run3, "FOE_OUTCOME_UNKNOWN"],
+    ] as const) {
+      const r = await fetch(`${base}/api/v1/orchestration/runs/${run}`, { headers: { authorization: `Bearer ${KHOA_THO}` } });
+      const text = await r.text();
+      expect(r.status, text).toBe(200);
+      expect(coLo(text), text).toBe(false);
+      expect(JSON.parse(text).data.run.error).toBe(ma);
+    }
   });
 
   it("đối chứng cổng REST: không khoá ⇒ 401", async () => {

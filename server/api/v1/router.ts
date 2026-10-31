@@ -398,6 +398,12 @@ export function createV1Router(): Router {
         simulated: result.detail?.simulated ?? undefined,
       });
 
+      // SCADA R1b-2b-2b A — C2 polish (điều phối 2026-11-01): `result.error` / `result.detail` có thể mang văn bản driver / controller robot
+      // (host:port). Khoá API KHÔNG BAO GIỜ là người xem chi tiết kỹ thuật ⇒ CÙNG bộ che với bước orchestration (`cheKetQuaLenh`, người xem `false`
+      // TƯỜNG MINH): `error` ⇒ MÃ, `detail` ⇒ danh sách trắng (simulated / commandLogIds / appError / edge / stop / pinnedStop / jobId / outcomeUnknown,
+      // reason ⇒ mã, motPhan ⇒ số đếm). ok / status / routedTo / accepted giữ nguyên.
+      const { cheKetQuaLenh } = await import("../../routers/_chiTietKyThuat");
+      const an = cheKetQuaLenh(result, false);
       sendOk(res, {
         machineId: m.id,
         command: commandName,
@@ -405,8 +411,8 @@ export function createV1Router(): Router {
         routedTo: result.routedTo,
         status: result.status,
         accepted: result.ok,
-        detail: result.detail ?? null,
-        error: result.error ?? null,
+        detail: an.detail,
+        error: an.error,
       });
     }),
   );
