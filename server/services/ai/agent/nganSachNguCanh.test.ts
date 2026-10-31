@@ -99,6 +99,31 @@ describe("nCtxKheServer — một GET /props, đệm 10 phút", () => {
     expect(f).toHaveBeenCalledTimes(2);
     c.__xoaDemNCtx();
   });
+  it("(rà kiem-dinh n8) n_ctx 0 / âm / thập phân / vô hạn ⇒ null (người gọi dùng mô tả) — KHÔNG để ngân sách thành 0", async () => {
+    const { c, st } = await khach({});
+    let t = 1_000;
+    for (const sai of [0, -1, 1.5, "Infinity", 65_536.5]) {
+      st.traVe = { default_generation_settings: { n_ctx: sai } };
+      t += 20_000; // quá hạn đệm null 15 s ⇒ mỗi vòng GET lại
+      expect(await c.nCtxKheServer(1500, t, M)).toBeNull();
+    }
+    c.__xoaDemNCtx();
+  });
+  it("(rà kiem-dinh n8) đầu cuối: /props n_ctx 0 ⇒ ngân sách = mô tả 65 536, không phải 0", async () => {
+    const { c } = await khach({ default_generation_settings: { n_ctx: 0 } });
+    expect(await nganSachNguCanhCho(M, { nCtxKhe: (ten) => c.nCtxKheServer(1500, 1_000, ten), tenModelMacDinh: () => M })).toBe(65_536);
+    c.__xoaDemNCtx();
+  });
+  it("(rà kiem-dinh n10) cờ llama TẮT nhưng CÓ URL ⇒ null, KHÔNG GET /props", async () => {
+    process.env.LLAMA_SERVER_ENABLED = "false";
+    process.env.LLAMA_SERVER_URL = "http://127.0.0.1:8091";
+    vi.resetModules();
+    const c = await import("../../aiLlamaServerClient");
+    const f = vi.fn(async () => ({ ok: true, json: async () => ({ default_generation_settings: { n_ctx: 65_536 } }) }) as unknown as Response);
+    vi.stubGlobal("fetch", f);
+    expect(await c.nCtxKheServer(1500, 1_000, M)).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+  });
   it("llama-server tắt ⇒ null, không GET", async () => {
     process.env.LLAMA_SERVER_ENABLED = "false";
     vi.resetModules();

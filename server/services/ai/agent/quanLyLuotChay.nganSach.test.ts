@@ -2,7 +2,7 @@
  * ★ Đợt 12 H3.2b — host truyền ngân sách ngữ cảnh theo model vào lõi (đo qua `usage.ctxPhanTram` = vao / ngân sách). Người gọi tự đặt
  * `gioiHan.nganSachNguCanhToken` ⇒ thắng (không hỏi). Lượt model ngoài ⇒ không hỏi.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +14,11 @@ import { taoQuanLyLuotChay } from "./quanLyLuotChay";
 import { getDb } from "../../../db/connection";
 import { aiAgentRuns } from "../../../../drizzle/schema";
 import { taoNguoiDungTest } from "../../../testing/nguoiDungTest";
+
+// (rà kiem-dinh n15) bộ hỏi THẬT bị thay bằng gián điệp: lưới tiêm goiModel mà KHÔNG tiêm nganSachNguCanh thì không được chạm nó
+// (không GET /props :8091 thật). Trả 32 768 để nếu bị gọi thì ctxPhanTram lệch khỏi 25 % (thấy được).
+const { hoiThat } = vi.hoisted(() => ({ hoiThat: vi.fn(async () => 32_768) }));
+vi.mock("./nganSachNguCanh", () => ({ nganSachNguCanhCho: hoiThat, _datLaiCanhBaoNganSach: () => undefined }));
 
 const DU_AN = "ngansach";
 let uid = 0;
@@ -60,6 +65,11 @@ describe("H3.2b — ngân sách ngữ cảnh tới lõi", () => {
     let hoi = 0;
     expect(await ctxPhanTram({ goiModel: model, gioiHan: { nganSachNguCanhToken: 65_536 }, nganSachNguCanh: async () => (hoi++, 32_768) })).toBe(25);
     expect(hoi).toBe(0);
+  });
+  it("(rà kiem-dinh n15) tiêm goiModel mà KHÔNG tiêm nganSachNguCanh ⇒ không gọi bộ hỏi thật (lưới không chạm :8091), lõi dùng 65 536", async () => {
+    hoiThat.mockClear();
+    expect(await ctxPhanTram({ goiModel: model })).toBe(25);
+    expect(hoiThat).not.toHaveBeenCalled();
   });
   it("hỏi ngân sách lỗi ⇒ lõi dùng mặc định 65 536 (= hôm nay)", async () => {
     expect(await ctxPhanTram({ goiModel: model, nganSachNguCanh: async () => Promise.reject(new Error("x")) })).toBe(25);
