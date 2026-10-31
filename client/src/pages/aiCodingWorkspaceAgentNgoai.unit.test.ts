@@ -32,6 +32,9 @@ describe("AICodingWorkspace — agent bằng model ngoài", () => {
     expect(nguon).toMatch(/const agent = useLuotChayAgent\(\{[^}]*?\n\s*hoiVanHanh,/s);
     expect(nguon).toMatch(/agentGui, laNgoai, duongAgentNgoai,/);
   });
+  it("đổi model ⇒ công tắc agent-ngoài về tắt (effect phụ thuộc chonModel)", () => {
+    expect(nguon).toMatch(/useEffect\(\(\) => \{\s*setBatAgentNgoai\(false\);\s*\}, \[chonModel\]\);/);
+  });
   it("ô chọn chế độ vẫn bị khoá khi chọn model ngoài (chỉ-hỏi)", () => {
     expect(nguon).toMatch(/khoa=\{agentDangChay \|\| isStreaming \|\| laNgoai\}/);
   });

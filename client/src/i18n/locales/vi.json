@@ -4687,7 +4687,8 @@
     "SCADA_STOP_PINS_HIGH_LEVEL": "Mọi ghim STOP của máy nằm trên tag mức tác động > 1 ({{tagKeys}}) — nút DỪNG MÁY không gửi tới tag mức cao; kỹ sư khai mức tác động 1 cho tag dừng ở /scada/config/channels; dừng bằng E-STOP cứng.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Máy chủ chậm — STOP HMI CHƯA được gửi. Dùng E-STOP cứng tại máy.",
     "SCADA_SCHEMA_MISSING": "Thiếu migration {{migration}} của cơ sở dữ liệu — lệnh HMI tạm không dùng được; quản trị áp migration rồi khởi động lại máy chủ.",
-    "CHON_MODEL_KHONG_CO": "Model đã chọn không dùng được ở màn này (chưa mở hoặc đã bị gỡ) — hãy chọn model khác."
+    "CHON_MODEL_KHONG_CO": "Model đã chọn không dùng được ở màn này (chưa mở hoặc đã bị gỡ) — hãy chọn model khác.",
+    "CHON_MODEL_SAI": "Lựa chọn model không hợp lệ — hãy chọn lại model trong ô chọn model."
   },
   "export": {
     "reportMenu": {

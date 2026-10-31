@@ -4687,7 +4687,8 @@
     "SCADA_STOP_PINS_HIGH_LEVEL": "此设备的所有 STOP 固定值都位于执行等级 > 1 的标签上（{{tagKeys}}）—“停机”按钮不会发送到高等级标签；请工程师在 /scada/config/channels 将停机标签的执行等级声明为 1；请使用硬接线急停（E-STOP）停机。",
     "SCADA_STOP_PRECHECK_TIMEOUT": "服务器响应缓慢 — HMI STOP 未发送。请在设备处使用硬接线急停（E-STOP）。",
     "SCADA_SCHEMA_MISSING": "数据库缺少迁移 {{migration}} — HMI 命令暂不可用；请管理员应用迁移并重启服务器。",
-    "CHON_MODEL_KHONG_CO": "所选模型无法在此界面使用（未启用或已移除）——请选择其他模型。"
+    "CHON_MODEL_KHONG_CO": "所选模型无法在此界面使用（未启用或已移除）——请选择其他模型。",
+    "CHON_MODEL_SAI": "模型选择无效——请重新选择模型。"
   },
   "export": {
     "reportMenu": {

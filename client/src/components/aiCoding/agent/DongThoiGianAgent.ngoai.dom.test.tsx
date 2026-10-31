@@ -127,6 +127,18 @@ describe("L4 — hạ tự trị do phiên có lượt ngoài", () => {
     expect(cb.textContent).not.toContain("đáng ngờ");
     expect(screen.getByTestId("agent-ke-hoach-duyet").textContent).not.toContain("KHÔNG TIN CẬY");
   });
+  it("★ chiều ngược: cảnh báo DỮ LIỆU đáng ngờ (chưa hạ tự trị) VẪN bật nhãn KHÔNG TIN CẬY; cùng cảnh báo do PHIÊN thì tắt", () => {
+    const VIEC = [{ noiDung: "đọc a.ts", trangThai: "cho" as const }];
+    const KH = { loai: "ke-hoach-cho-duyet", viec: VIEC, bam: "e".repeat(64) } as SuKienAgent;
+    const dl = chay([{ loai: "bat-dau", runId: "r1", cheDo: "sua" } as SuKienAgent, { loai: "canh-bao-du-lieu", nguon: "web", mau: ["x"] } as unknown as SuKienAgent, KH]);
+    expect(dl.daHaTuTri).toBe(false);
+    vẽ(dl);
+    expect(screen.getByTestId("agent-ke-hoach-duyet").textContent).toContain("KHÔNG TIN CẬY");
+    cleanup();
+    const ph = chay([{ loai: "bat-dau", runId: "r1", cheDo: "sua" } as SuKienAgent, { loai: "ha-tu-tri", lyDo: "phien-co-luot-ngoai", nguon: "phien", mau: [] } as SuKienAgent, KH]);
+    vẽ(ph);
+    expect(screen.getByTestId("agent-ke-hoach-duyet").textContent).not.toContain("KHÔNG TIN CẬY");
+  });
   it("hồi quy: ha-tu-tri do nội dung đáng ngờ vẫn bật daHaTuTri + lời cũ", () => {
     const tt = chay([{ loai: "bat-dau", runId: "r1", cheDo: "tu-dong" } as SuKienAgent, { loai: "ha-tu-tri", lyDo: "noi-dung-dang-ngo", nguon: "web", mau: ["x"] } as SuKienAgent]);
     expect(tt.daHaTuTri).toBe(true);

@@ -22,6 +22,7 @@ vi.mock("@/lib/agentApi", () => ({
 }));
 vi.mock("@/lib/trpcErrors", () => ({ mapTrpcError: () => "loi-thuong" }));
 
+import "@/i18n"; // i18n THẬT: khoá thiếu ⇒ trả defaultValue (không khởi tạo thì mọi câu đều "undefined" và phép so sánh vô nghĩa)
 import { LoiSinhChuNgoai, thongDiepLoiNgoai } from "@/lib/loiNgoai";
 import { datXacNhanVanHanh } from "@/lib/dongYNgoai";
 import { useLuotChayAgent } from "./useLuotChayAgent";
@@ -153,6 +154,17 @@ describe("lỗi khác — không đi vào hộp xác nhận", () => {
     expect(hoi).not.toHaveBeenCalled();
     expect(result.current.matKetNoi).toBe(thongDiepLoiNgoai("NGOAI_CHI_HOI"));
     expect(result.current.matKetNoi).not.toContain(RAW);
+  });
+  it("★ mã ngoài KHÔNG có khoá i18n ⇒ hiện mã/câu chung, TUYỆT ĐỐI không `error` thô của máy chủ (LoiSinhChuNgoai.message dùng `error` làm dự phòng)", async () => {
+    const { result } = dung(MA, vi.fn(async () => true));
+    h.kich.push(nem(new LoiSinhChuNgoai({ status: 403, code: "NGOAI_MA_CHUA_CO_KHOA_XYZ", error: RAW })));
+    await act(async () => {
+      await result.current.gui("x", "hoi");
+    });
+    expect(result.current.matKetNoi).toBe(thongDiepLoiNgoai("NGOAI_MA_CHUA_CO_KHOA_XYZ"));
+    expect(result.current.matKetNoi).not.toContain(RAW);
+    expect(result.current.matKetNoi).not.toBe("");
+    expect(result.current.matKetNoi).toBe("NGOAI_MA_CHUA_CO_KHOA_XYZ"); // khoá thiếu ⇒ chính mã, không phải chữ thô
   });
   it("429 NGOAI_VUOT_TRAN kèm tranVuot ⇒ câu nêu trần nào bị vượt", async () => {
     const { result } = dung(MA, vi.fn(async () => true));

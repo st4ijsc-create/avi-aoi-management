@@ -4687,7 +4687,8 @@
     "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine.",
     "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server.",
-    "CHON_MODEL_KHONG_CO": "The selected model can't be used on this screen (not enabled or removed) — pick another model."
+    "CHON_MODEL_KHONG_CO": "The selected model can't be used on this screen (not enabled or removed) — pick another model.",
+    "CHON_MODEL_SAI": "The model selection is invalid — pick the model again."
   },
   "export": {
     "reportMenu": {

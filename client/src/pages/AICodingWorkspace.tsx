@@ -1407,6 +1407,10 @@ export default function AICodingWorkspace() {
   const [batAgentNgoai, setBatAgentNgoai] = useState(false);
   const agentNgoaiBay = laNgoai && agentNgoaiMo(danhMucModel, chonModel);
   const duongAgentNgoai = dungAgentNgoai(batAgentNgoai, danhMucModel, chonModel);
+  // Đổi model ⇒ công tắc về TẮT (không "tích sẵn" khi quay lại một model ngoài khác): người dùng bật lại có chủ ý.
+  useEffect(() => {
+    setBatAgentNgoai(false);
+  }, [chonModel]);
   /**
    * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ theo lượt: `can-bang` (quy tắc lớp lượt: sinh/sửa mã NGHĨ, lượt phụ
    * không) hay `nhanh` (tắt nghĩ mọi lượt — đo được nhanh 5–15×, đúng ít hơn ~10–15 điểm). Đi theo TỪNG
