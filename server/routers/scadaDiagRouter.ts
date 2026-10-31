@@ -59,6 +59,8 @@ import {
   lamSachLyDoDriver,
 } from "../services/ot/thuDocDiaChi";
 import type { OtSample } from "../services/ot/otDriver";
+import { laLoiTimeout } from "../services/ot/chatLuong";
+import { runningConnectionMatchesAdapterRow } from "../services/ot/commandDispatcher";
 import type { RuntimeAdapter } from "../services/ot/deviceAdapter";
 // SCADA R1b-1 Task 9 fix round 3 (N1) — cổng ADAPTER dùng chung (tắt adapter có tag được bảo vệ) + TOTP tươi mức 5
 import { congAdapterTx } from "../services/scada/troLaiKenh";
@@ -287,15 +289,20 @@ export type KetQuaThuDocDiaChi = {
 
 class LoiQuaHanThuDoc extends Error {}
 
-/** Mẫu của driver ⇒ kết quả hợp đồng. Mẫu vắng (driver trả mảng rỗng) ⇒ bad. */
+/**
+ * Mẫu của driver ⇒ kết quả hợp đồng. Mẫu vắng (driver trả mảng rỗng) ⇒ bad.
+ * C4 fix 1 (review M2) — MỘT giá trị hết hạn trong hợp đồng: mẫu bad mà driver phân loại là hết hạn giao dịch (`statusCode` "timeout" — modbus-serial
+ * TransactionTimedOutError, stub treo) ⇒ `reason: "timeout"` như khi hạn 3 s của thủ tục bắn (statusCode giữ "timeout").
+ */
 function ketQuaTuMau(m: OtSample | undefined, ms: number): KetQuaThuDocDiaChi {
   if (!m) return { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "no_sample", ms };
+  const hetHan = m.quality !== "good" && m.statusCode === "timeout";
   return {
     quality: m.quality,
     raw: chuanHoaGiaTriThuDoc(m.raw),
     giaTri: chuanHoaGiaTriThuDoc(m.value),
     statusCode: lamSachLyDoDriver(m.statusCode),
-    reason: m.quality === "good" ? null : (m.reason ?? null),
+    reason: m.quality === "good" ? null : hetHan ? "timeout" : (m.reason ?? null),
     ms,
   };
 }
@@ -628,7 +635,7 @@ export const scadaDiagRouter = router({
    * `connect` / `resetAdapterSession`, không mở phiên mới, không chạm trạng thái dùng chung của driver / adapter (đường `docLab`, KD-2bA 4.3).
    * Thứ tự cổng (KD-2bA 4.7): phạm vi (ngoài phạm vi = không tồn tại ⇒ NOT_FOUND `adapter`) → edge (`adapterOwnedByEdge`) → giao thức trong
    * `GIAO_THUC_THU_DOC` (`protocolNotSupported`) → trần (`rateLimited` 10 / phút / người — chỉ lượt được NHẬN mới đếm; `scadaLabDangBan` — 1 lượt đang
-   * bay / adapter, KD-2bA 4.4) → driver đang chạy (`adapterNotRunning`) → audit Ý ĐỊNH `scada_thu_doc_dia_chi` (có `lyDo`) GHI TRƯỚC lượt đọc — hỏng ⇒
+   * bay / adapter, KD-2bA 4.4) → driver đang chạy (hàng tắt / không driver ⇒ `adapterNotRunning`; phiên cũ hơn cấu hình ⇒ `scadaLabPhienCu`, fix 1 I1) → audit Ý ĐỊNH `scada_thu_doc_dia_chi` (có `lyDo`) GHI TRƯỚC lượt đọc — hỏng ⇒
    * ném, KHÔNG đọc → `docLab` có hạn `HAN_THU_DOC_DIA_CHI_MS` (quá hạn ⇒ `{quality:"bad", reason:"timeout"}`, không ném) → audit KẾT QUẢ
    * `scada_thu_doc_dia_chi_ket_qua` (quality, ms, mã / lý do đã làm sạch — KHÔNG giá trị) qua bộ ghi nền có trần (KD-2bA 4.5; lỗi ghi không đổi kết quả).
    * Người gọi là kỹ sư / admin có `machine_control.canEdit` (= người được xem chi tiết kỹ thuật, C1) ⇒ kết quả không che; `reason` / `statusCode` của
@@ -652,13 +659,21 @@ export const scadaDiagRouter = router({
       }
       let daNhan = false;
       try {
-        const driver = getActiveDriver(a.id); // 5. driver đang chạy (phiên hiện có — không mở mới)
+        // 5. driver đang chạy (phiên hiện có — không mở mới). C4 fix 1 (review I1) — KHÔNG tin phiên cũ: sửa / tắt adapter qua đường cấu hình thường
+        // KHÔNG nối lại / gỡ driver (otManager getActiveConnectionFingerprint) ⇒ (a) hàng DB tắt ⇒ adapterNotRunning dù driver còn chạy; (b) dấu vân tay
+        // phiên đang chạy ≠ hàng DB hiện tại (cùng helper với STOP ghim) ⇒ TỪ CHỐI `scadaLabPhienCu` — giá trị của thiết bị CŨ không bao giờ trả về như "good".
+        // Mọi từ chối ở bước này đứng TRƯỚC audit ý định ⇒ 0 dòng audit (như phạm vi / edge / giao thức / trần) và trả chỗ (`huy()` ở finally).
+        if (!a.isEnabled) throw tuChoiLab("PRECONDITION_FAILED", "adapterNotRunning", "Adapter đang tắt trong cấu hình.");
+        const driver = getActiveDriver(a.id);
         if (!driver) throw tuChoiLab("PRECONDITION_FAILED", "adapterNotRunning", "Adapter không chạy ở trung tâm.");
         if (typeof driver.docLab !== "function") {
           throw tuChoiLab("BAD_REQUEST", "protocolNotSupported", "Driver đang chạy không có đường đọc thử đã chứng minh.");
         }
         const docLab = driver.docLab.bind(driver);
         const db = await getDb();
+        if (!(await runningConnectionMatchesAdapterRow(db, a.id))) {
+          throw tuChoiLab("CONFLICT", "scadaLabPhienCu", "Phiên đang chạy cũ hơn cấu hình adapter — kết nối lại / khởi động lại OT trước.");
+        }
         // 6. audit Ý ĐỊNH — TRƯỚC lượt đọc; ném ⇒ không đọc (lượt không được nhận ⇒ không đếm vào trần). `maLuot` nối dòng ý định với dòng kết quả
         // (kết quả của recordAuditEvent — hàng vừa ghi — luôn bị BỎ ở bề mặt: controlAuditLogDocCensus §2).
         const maLuot = randomUUID();
@@ -684,7 +699,9 @@ export const scadaDiagRouter = router({
         } catch (e) {
           const ms = Math.round(performance.now() - t0);
           kq =
-            e instanceof LoiQuaHanThuDoc
+            // C4 fix 1 (M2) — hạn của chính driver / thư viện bắn trước 3 s (vd OPC UA "opcua read timeout after 2000ms", "Transaction has timed out")
+            // ⇒ cùng `reason: "timeout"`
+            e instanceof LoiQuaHanThuDoc || laLoiTimeout(e)
               ? { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "timeout", ms }
               : { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: lamSachLyDoDriver((e as Error)?.message ?? e) ?? "driver_error", ms };
         }

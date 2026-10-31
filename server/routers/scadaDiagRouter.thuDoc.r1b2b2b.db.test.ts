@@ -15,6 +15,8 @@ const RUN = `c4lab${process.pid}${Date.now().toString(36)}`;
 const H = vi.hoisted(() => ({
   log: [] as string[],
   drivers: new Map<number, unknown>(),
+  /** C4 fix 1 — dấu vân tay kết nối của PHIÊN đang chạy (như otManager ghi lúc nối), tính từ hàng DB lúc "nối" */
+  fingerprints: new Map<number, string>(),
   nemAudit: null as string | null,
 }));
 
@@ -22,6 +24,7 @@ vi.mock("../services/ot/otManager", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/ot/otManager")>();
   return {
     ...real,
+    getActiveConnectionFingerprint: (adapterId: number) => H.fingerprints.get(adapterId),
     getActiveDriver: (adapterId: number) => {
       H.log.push(`getActiveDriver:${adapterId}`);
       return H.drivers.get(adapterId) as ReturnType<typeof real.getActiveDriver>;
@@ -48,6 +51,7 @@ vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
 });
 
 import { getDb } from "../db/connection";
+import { adapterTargetFingerprint } from "../services/ot/adapterTarget";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { StubDriver } from "../services/ot/drivers/stubDriver";
 import { batDauDoLag } from "../testing/doLagBucleSuKien";
@@ -71,7 +75,7 @@ interface NhaMay {
 }
 let A!: NhaMay;
 let B!: NhaMay;
-const ad = { a: 0, b: 0, off: 0, e: 0, s7a: 0, s7b: 0, s7e: 0, h: 0, n: 0, x: 0 };
+const ad = { a: 0, b: 0, off: 0, e: 0, s7a: 0, s7b: 0, s7e: 0, h: 0, n: 0, x: 0, dis: 0, pc: 0 };
 let edgeNodeId = 0;
 const factories: string[] = [];
 const stubs = new Map<number, StubDriver>();
@@ -100,11 +104,11 @@ async function seedNhaMay(ten: string): Promise<NhaMay> {
   return { fid: Number(f.id), mid: Number(m.id), code };
 }
 
-async function seedAdapter(ten: string, machineId: number | null, protocol = "stub"): Promise<number> {
+async function seedAdapter(ten: string, machineId: number | null, protocol = "stub", isEnabled = true): Promise<number> {
   const code = `${RUN}-${ten}`;
   const endpoint = protocol === "stub" ? `stub://${code}` : "10.0.0.5:102";
   const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
-    VALUES (${machineId}, ${code}, ${code}, ${protocol}, ${endpoint}, 500, true, 'connected') RETURNING id`);
+    VALUES (${machineId}, ${code}, ${code}, ${protocol}, ${endpoint}, 500, ${isEnabled}, 'connected') RETURNING id`);
   return Number(r.id);
 }
 
@@ -124,6 +128,12 @@ async function seedNguoi(
     );
   }
   return scadaDiagRouter.createCaller({ user: { id: u.id, role, name: u.name, twoFactorEnabled } } as never);
+}
+
+/** C4 fix 1 — "nối" phiên: dấu vân tay tính từ hàng DB HIỆN TẠI (như otManager lúc connect). */
+async function ghiDauPhien(id: number): Promise<void> {
+  const [r] = await dung(sql`SELECT protocol, endpoint, "machineId", "connectionOptions" FROM device_adapters WHERE id = ${id}`);
+  H.fingerprints.set(id, adapterTargetFingerprint({ protocol: r.protocol, endpoint: r.endpoint, machineId: r.machineId ?? null, connectionOptions: r.connectionOptions ?? null }));
 }
 
 /** StubDriver THẬT đã connect, bọc spy: mọi lời gọi I/O ghi vào H.log theo thứ tự. */
@@ -188,12 +198,17 @@ beforeAll(async () => {
   ad.h = await seedAdapter("h", A.mid); // driver treo / ném
   ad.n = await seedAdapter("n", null); // không gắn máy
   ad.x = await seedAdapter("x", A.mid); // riêng cho ca 4.3 / trần
+  ad.dis = await seedAdapter("dis", A.mid, "stub", false); // C4 fix 1 — hàng TẮT mà driver vẫn chạy
+  ad.pc = await seedAdapter("pc", A.mid); // C4 fix 1 — endpoint sửa SAU khi phiên đã nối
   const [n] = await dung(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${RUN + "-en"}, 'c4 edge', 'offline') RETURNING id`);
   edgeNodeId = Number(n.id);
   await dung(sql`UPDATE device_adapters SET "edgeNodeId" = ${edgeNodeId} WHERE id IN (${ad.e}, ${ad.s7e})`);
   for (const id of [ad.a, ad.b, ad.e, ad.n, ad.x]) await driverSpy(id);
   // edge / s7 không bao giờ tới bước driver — vẫn cắm driver để cổng SAI THỨ TỰ lộ ra (đọc được ⇒ test đỏ)
   for (const id of [ad.s7a, ad.s7b, ad.s7e]) await driverSpy(id);
+  for (const id of [ad.dis, ad.pc]) await driverSpy(id);
+  // dấu vân tay phiên = hàng DB lúc "nối" (mọi adapter của tệp)
+  for (const id of Object.values(ad).filter(Boolean)) await ghiDauPhien(id);
 
   engA = await seedNguoi("ea", "engineer", [A.code], true);
   engA2 = await seedNguoi("ea2", "engineer", [A.code], true);
@@ -281,6 +296,70 @@ describe("Review Focus 3 — kỹ sư đọc một địa chỉ qua phiên ĐANG
     expect(dem("docLab:")).toBe(0);
     const a1 = (await soAudit(ad.e, "scada_thu_doc_dia_chi")) + (await soAudit(ad.off, "scada_thu_doc_dia_chi")) + (await soAudit(ad.s7a, "scada_thu_doc_dia_chi"));
     expect(a1).toBe(a0);
+  });
+});
+
+describe("C4 fix 1 (review I1) — Lab KHÔNG tin phiên cũ", () => {
+  it("★ hàng adapter TẮT (isEnabled=false) mà driver VẪN chạy ⇒ adapterNotRunning; docLab / readTags 0; 0 audit; chỗ được trả", async () => {
+    H.log.length = 0;
+    const truoc = await soAudit(ad.dis, "scada_thu_doc_dia_chi");
+    expect(H.drivers.get(ad.dis)).toBeDefined();
+    expect(await loiCua(goi(engA, ad.dis))).toMatchObject({ code: "PRECONDITION_FAILED", appCode: "OPERATION_FAILED", params: { operation: "scadaLabRead", reason: "adapterNotRunning" } });
+    expect(dem("docLab:")).toBe(0);
+    expect(dem("readTags:")).toBe(0);
+    expect(await soAudit(ad.dis, "scada_thu_doc_dia_chi")).toBe(truoc);
+    expect(td.trangThaiThuDoc().adapterDangDoc).not.toContain(ad.dis);
+  });
+
+  it("★ endpoint SỬA trong DB khi phiên đang chạy trên endpoint CŨ ⇒ CONFLICT scadaLabPhienCu; docLab 0; 0 audit; chỗ được trả + lượt không đếm; nối lại ⇒ đọc được", async () => {
+    H.log.length = 0;
+    const truoc = await soAudit(ad.pc, "scada_thu_doc_dia_chi");
+    await dung(sql`UPDATE device_adapters SET endpoint = ${"stub://" + RUN + "-pc-moi"} WHERE id = ${ad.pc}`);
+    try {
+      for (let i = 0; i < 12; i++) {
+        expect(await loiCua(goi(engA, ad.pc))).toMatchObject({ code: "CONFLICT", appCode: "OPERATION_FAILED", params: { operation: "scadaLabRead", reason: "scadaLabPhienCu" } });
+      }
+      expect(dem("docLab:")).toBe(0);
+      expect(await soAudit(ad.pc, "scada_thu_doc_dia_chi")).toBe(truoc);
+      expect(td.trangThaiThuDoc().adapterDangDoc).not.toContain(ad.pc);
+      // phiên nối lại theo hàng mới ⇒ đọc được; 12 lượt bị từ chối không ăn trần (10 lượt thật vẫn qua)
+      await ghiDauPhien(ad.pc);
+      for (let i = 0; i < 10; i++) await expect(goi(engA, ad.pc)).resolves.toMatchObject({ quality: "good", giaTri: 42 });
+    } finally {
+      await dung(sql`UPDATE device_adapters SET endpoint = ${"stub://" + RUN + "-pc"} WHERE id = ${ad.pc}`);
+      await ghiDauPhien(ad.pc);
+    }
+  });
+});
+
+describe("C4 fix 1 (review M2) — MỘT giá trị hết hạn: reason \"timeout\" dù hạn nào bắn trước", () => {
+  it("★ hạn của driver bắn trước 3 s (ném 'opcua read timeout after 2000ms') ⇒ {bad, reason: timeout}", async () => {
+    H.drivers.set(ad.h, {
+      protocol: "stub",
+      isConnected: () => true,
+      docLab: async () => {
+        throw new Error("opcua read timeout after 2000ms");
+      },
+    });
+    expect(await goi(engA, ad.h)).toMatchObject({ quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "timeout" });
+  });
+  it("★ thư viện trả mẫu bad đã phân loại hết hạn (statusCode timeout, reason comm_lost) ⇒ reason timeout, statusCode giữ", async () => {
+    H.drivers.set(ad.h, {
+      protocol: "stub",
+      isConnected: () => true,
+      docLab: async (tags: OtTagAddress[]) =>
+        tags.map((t) => ({ tagKey: t.tagKey, raw: null, value: null, quality: "bad" as const, timestamp: new Date(), statusCode: "timeout", reason: "comm_lost" as const })),
+    });
+    expect(await goi(engA, ad.h)).toMatchObject({ quality: "bad", statusCode: "timeout", reason: "timeout" });
+  });
+  it("đối chứng: mẫu bad KHÔNG hết hạn giữ lý do chất lượng (config_error)", async () => {
+    H.drivers.set(ad.h, {
+      protocol: "stub",
+      isConnected: () => true,
+      docLab: async (tags: OtTagAddress[]) =>
+        tags.map((t) => ({ tagKey: t.tagKey, raw: null, value: null, quality: "bad" as const, timestamp: new Date(), statusCode: "modbus_exc_02", reason: "config_error" as const })),
+    });
+    expect(await goi(engA, ad.h)).toMatchObject({ quality: "bad", statusCode: "modbus_exc_02", reason: "config_error" });
   });
 });
 

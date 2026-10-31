@@ -4559,6 +4559,7 @@
       "protocolNotSupported": "该适配器的协议尚未被证明可与轮询并行安全试读——Lab 无法读取（仅支持 Modbus TCP、OPC UA 和 stub）。",
       "rateLimited": "一分钟内试读超过 10 次——请稍候再试。",
       "scadaLabDangBan": "该适配器仍有一次试读未完成——请等待其完成后再试。",
+      "scadaLabPhienCu": "正在运行的连接会话早于适配器配置（连接后端点/选项已修改）——请重新连接适配器或重启 OT 后再试读。",
       "otMcTamKhoa": "Mitsubishi MC 控制已临时锁定（安全）：在修复 3B 之前不会向设备发送写入——如需停机请使用现场硬接线急停（E-STOP）。",
       "chiTietKyThuatBiChe": "端点和连接配置属于您无权查看的技术细节——只有具备设备控制编辑权限的工程师/管理员才能修改。其他字段仍可编辑。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",

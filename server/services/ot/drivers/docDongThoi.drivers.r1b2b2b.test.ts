@@ -57,7 +57,9 @@ const hinhHealth = async (d: OtDriver) => {
 };
 
 /** Số cặp (i<j) mà yêu cầu i gửi TRƯỚC j nhưng trả lời SAU j — > 0 ⇒ thật sự có đảo thứ tự (phép đo không rỗng). */
-function soCapDao(guiTheoThuTu: number[], traTheoThuTu: number[]): number {
+function soCapDao(guiTheoThuTu: ReadonlyArray<number | string>, traTheoThuTu: ReadonlyArray<number | string>): number {
+  // C4 fix 1 (review M1) — khoá phải DUY NHẤT (Map giữ vị trí CUỐI của khoá lặp ⇒ khoá lặp làm phép đo rỗng)
+  if (new Set(guiTheoThuTu).size !== guiTheoThuTu.length || new Set(traTheoThuTu).size !== traTheoThuTu.length) throw new Error("soCapDao: khoá không duy nhất");
   const viTri = new Map(traTheoThuTu.map((id, i) => [id, i] as const));
   let n = 0;
   for (let i = 0; i < guiTheoThuTu.length; i++) {
@@ -423,16 +425,34 @@ describe("OPC UA (node-opcua 2.174.0 THẬT) — ĐẠT ⇒ trong GIAO_THUC_THU_
     await h.close();
     const sai = mauPoll.filter((s) => s.quality !== "good" || s.value !== ua.giaTri(`P${s.tagKey.slice(1)}`));
     const saiLab = kqLab.filter(({ ten, s }) => s.length !== 1 || s[0].quality !== "good" || s[0].value !== ua.giaTri(ten));
-    const dao = soCapDao(
-      ua.thuTuGui.map((t, i) => i),
-      ua.thuTuTra.map((t) => ua.thuTuGui.indexOf(t)),
-    );
+    // C4 fix 1 (review M1) — đếm đảo CHỈ trên tên node Lab DUY NHẤT (L10..L29); node poll lặp mỗi tick không vào phép đếm
+    const laLab = (t: string) => /^L[12]\d$/.test(t);
+    const dao = soCapDao(ua.thuTuGui.filter(laLab), ua.thuTuTra.filter(laLab));
     // eslint-disable-next-line no-console
-    console.log("[C4 opcua a/b]", JSON.stringify({ mauPoll: mauPoll.length, sai: sai.length, lab: kqLab.length, saiLab: saiLab.length, capDaoXapXi: dao }));
+    console.log("[C4 opcua a/b]", JSON.stringify({ mauPoll: mauPoll.length, sai: sai.length, lab: kqLab.length, saiLab: saiLab.length, capDaoLab: dao }));
     expect(dao, "phép đo phải thật sự có trả lời đảo thứ tự").toBeGreaterThan(0);
     expect(mauPoll.length).toBeGreaterThanOrEqual(9);
     expect(sai).toEqual([]);
     expect(saiLab).toEqual([]);
+  }, 20_000);
+
+  it("thiết bị đo đảo thứ tự (M1): trễ TĂNG theo thứ tự gửi ⇒ 0 cặp đảo; trễ GIẢM theo thứ tự gửi ⇒ đảo — phép đếm có thể đỏ", async () => {
+    const d = await moUa();
+    const ten = Array.from({ length: 20 }, (_, i) => `L${10 + i}`);
+    const doMot = async (tre: (i: number) => number) => {
+      ua.thuTuGui.length = 0;
+      ua.thuTuTra.length = 0;
+      ten.forEach((t, i) => (ua.tre[t] = tre(i)));
+      const kq = await Promise.all(ten.map((t, i) => d.docLab([uaTag(`l${i}`, t)])));
+      expect(kq.every((x, i) => x[0].quality === "good" && x[0].value === ua.giaTri(ten[i]))).toBe(true);
+      return soCapDao(ua.thuTuGui.filter((t) => ten.includes(t)), ua.thuTuTra.filter((t) => ten.includes(t)));
+    };
+    const tang = await doMot((i) => 5 + i * 8);
+    const giam = await doMot((i) => 5 + (19 - i) * 8);
+    // eslint-disable-next-line no-console
+    console.log("[C4 opcua M1 thiet bi do]", JSON.stringify({ treTang: tang, treGiam: giam }));
+    expect(tang).toBe(0);
+    expect(giam).toBeGreaterThan(100);
   }, 20_000);
 
   it("★ (c) lượt Lab TREO (node im lặng) ⇒ STOP (WriteRequest) vẫn ok ≤ ngưỡng; hết hạn của thư viện KHÔNG hạ kênh; trả lời MUỘN bị bỏ; poll đọc tiếp đúng", async () => {
@@ -480,6 +500,25 @@ describe("OPC UA (node-opcua 2.174.0 THẬT) — ĐẠT ⇒ trong GIAO_THUC_THU_
     await d.readTags([uaTag("p1", "P1")]);
     expect((await hinhHealth(d)).lastOkAt, "đối chứng: phép đo thấy được thay đổi").not.toBe(truoc.lastOkAt);
   }, 20_000);
+});
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// STUB — luôn trong tập; C4 fix 1 (review M3): lượt Lab HỎNG không ghi trạng thái dùng chung
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("Stub — trong GIAO_THUC_THU_DOC (luôn)", () => {
+  it("★ (4.3) Lab đọc HỎNG (treo ⇒ hết hạn) ⇒ mẫu bad/timeout nhưng health().lastError KHÔNG đổi; đối chứng: readTags thường có ghi lastError", async () => {
+    const { StubDriver } = await import("./stubDriver");
+    const d = new StubDriver();
+    don.push(() => d.disconnect());
+    await d.connect({ endpoint: `stub://c4-gate-${process.pid}`, timeoutMs: 30 } as any);
+    d.simDatLoi({ treo: true });
+    const truoc = await hinhHealth(d);
+    const lab = await d.docLab([{ tagKey: "lab", address: "x", dataType: "int" }]);
+    expect([lab[0].quality, lab[0].statusCode]).toEqual(["bad", "timeout"]);
+    expect(await hinhHealth(d)).toEqual(truoc);
+    await d.readTags([{ tagKey: "p", address: "x", dataType: "int" }]);
+    expect((await hinhHealth(d)).lastError, "đối chứng: phép đo thấy được thay đổi").not.toBe(truoc.lastError);
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════

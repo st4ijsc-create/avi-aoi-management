@@ -4559,6 +4559,7 @@
       "protocolNotSupported": "Giao thức của adapter này chưa được chứng minh đọc thử an toàn song song với vòng poll — Lab không đọc được (chỉ Modbus TCP, OPC UA và stub).",
       "rateLimited": "Quá 10 lượt đọc thử trong một phút — chờ một lát rồi thử lại.",
       "scadaLabDangBan": "Adapter này đang có một lượt đọc thử chưa xong — chờ lượt đó xong rồi thử lại.",
+      "scadaLabPhienCu": "Phiên kết nối đang chạy cũ hơn cấu hình adapter (endpoint / tuỳ chọn đã sửa sau khi kết nối) — kết nối lại adapter hoặc khởi động lại OT rồi đọc thử lại.",
       "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
       "chiTietKyThuatBiChe": "Endpoint và cấu hình kết nối là chi tiết kỹ thuật bạn không được xem — chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới đổi được. Các trường khác vẫn sửa được.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
