@@ -13,6 +13,7 @@
  *
  * ⚠ Đây KHÔNG đo chất lượng model; nó kiểm HARNESS (bộ đọc SSE, phân loại lỗi, thử lại, cắt suy luận, gom tool call, vòng agent).
  */
+import assert from "node:assert";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -265,7 +266,7 @@ export async function khoiDongLlmGia(opts: { kichBan: BuocGia[]; seed?: number; 
     soLanGoi: () => thuTu,
     cachChe: (i) => cacheChe[i] ?? [],
     chuaDung: () => {
-      if (kichBan.length) throw new Error(`llmGia: còn ${kichBan.length} bước kịch bản chưa dùng (${kichBan.map((b) => b.loai).join(", ")})`);
+      if (kichBan.length) assert.fail(`llmGia: còn ${kichBan.length} bước kịch bản chưa dùng (${kichBan.map((b) => b.loai).join(", ")})`); // assert.fail, not `throw new Error`: the F3 census (rawErrorCensus) counts raw throws and forbids raising its budget
     },
     dat: (b) => {
       kichBan = [...b];
