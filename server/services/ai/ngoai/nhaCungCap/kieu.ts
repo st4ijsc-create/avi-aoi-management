@@ -35,7 +35,8 @@ export interface KetQuaNhaCungCap {
 
 /** Mạng ra ngoài DUY NHẤT của nhà cung cấp (bản thật ở `mangNgoai.ts`, Task 9). */
 export interface MangNgoai {
-  goiJson(url: string, init: { method: "POST"; headers: Record<string, string>; body: string }): Promise<{ status: number; json: unknown }>;
+  /** `retryAfterMs` (H3.1): tiêu đề `Retry-After` đã đổi ra ms khi nhà cung cấp gửi. */
+  goiJson(url: string, init: { method: "POST"; headers: Record<string, string>; body: string }): Promise<{ status: number; json: unknown; retryAfterMs?: number }>;
 }
 
 export interface NhaCungCapAi {
