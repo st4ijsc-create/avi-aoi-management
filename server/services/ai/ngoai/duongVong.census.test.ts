@@ -72,6 +72,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/routers/webhookRouter.ts": { so: 1, lyDo: "⚠ đích do QUẢN TRỊ cấu hình NGOÀI Luồng (webhook / ERP / SIEM / cảnh báo / giao báo cáo) — không phải đường của Luồng; rủi ro còn lại: quản trị trỏ tới máy chủ AI — báo dieu-phoi" },
   "server/routes/edgeDownload.ts": { so: 1, lyDo: "proxy tải bản dựng edge từ kho tệp nội bộ" },
   "server/routes/reportArtifactRoutes.ts": { so: 1, lyDo: "proxy tải tệp báo cáo từ kho tệp nội bộ" },
+  "server/testing/llmGia.ts": { so: 1, lyDo: "2026-11-01 kiem-dinh: test-only in-process mock server (máy chủ LLM GIẢ của lưới H4.1) — chỉ lắng nghe 127.0.0.1 cổng tạm (http.createServer), không gọi ra ngoài; chỉ tệp kiểm thử nạp" },
   "server/services/ai/chayUngDung/capCong.ts": { so: 1, lyDo: "cấp cổng TCP cục bộ cho ứng dụng xem trước (127.0.0.1)" },
   "server/services/ai/chayUngDung/cungSite.ts": { so: 1, lyDo: "kiểm cổng cục bộ cùng site (127.0.0.1)" },
   "server/services/ai/chayUngDung/proxyXemTruoc.ts": { so: 2, lyDo: "proxy xem trước ứng dụng chạy CỤC BỘ (127.0.0.1)" },
@@ -120,7 +121,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
 };
 /** GHIM: số tệp miễn trừ + tổng điểm — đổi ⇒ đo lại + ghi lý do (ratchet). */
 // 2026-10-26 (dieu-phoi e): _core/llm.ts hết fetch thô (ảnh qua taiAnhAnToan → fetchGhim) ⇒ 64→63 tệp, 97→96 điểm.
-const GHIM = { tep: 63, diem: 96 } as const;
+const GHIM = { tep: 64, diem: 97 } as const;
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};
