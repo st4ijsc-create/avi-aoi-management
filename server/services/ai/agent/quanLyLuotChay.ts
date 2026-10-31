@@ -63,7 +63,7 @@ import {
   type TrangThaiLuotChay,
 } from "../../../db/aiAgentRuns";
 import type { CopilotUser } from "../../aiCopilotActions";
-import { docTruocKhiGhiBat, taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
+import { docTruocKhiGhiBat, hanGioToolBat, taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
 import { giaiChonModel } from "../chonModel/giaiChonModel";
 import { layPhuThuocDanhMucMacDinh } from "../chonModel/danhMuc";
@@ -770,6 +770,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         coGiaoViec,
         // (Đợt 12 · H1.4) không ghi đè tệp chưa đọc / đã đổi từ lúc đọc — MẶC ĐỊNH TẮT tới khi có A/B GPU
         ...(docTruocKhiGhiBat(process.env.AI_AGENT_DOC_TRUOC_KHI_GHI) ? { docTruocKhiGhi: true } : {}),
+        // (Đợt 12 · H1.5) hạn giờ theo công cụ đọc/tìm — MẶC ĐỊNH TẮT
+        ...(hanGioToolBat(process.env.AI_AGENT_TOOL_TIMEOUT) ? { hanGioTool: {} } : {}),
       });
       // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
       void phanGiaiChiMuc(phuThuocBo.chiMucMa)()

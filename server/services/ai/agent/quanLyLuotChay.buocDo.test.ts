@@ -189,6 +189,35 @@ describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực th
   }, 90_000);
 });
 
+describe("H1.5 công tắc AI_AGENT_TOOL_TIMEOUT nối tới bộ thực thi", () => {
+  it("★ AI_AGENT_TOOL_TIMEOUT=1 ⇒ search_docs treo bị cắt TOOL_TIMEOUT theo hạn mặc định (30 s)", async () => {
+    const cu = process.env.AI_AGENT_TOOL_TIMEOUT;
+    process.env.AI_AGENT_TOOL_TIMEOUT = "1";
+    try {
+      let i = 0;
+      const goiModel: GoiModel = async function* (): AsyncGenerator<ManhModel> {
+        const k = i++;
+        yield {
+          loai: "xong",
+          toolCalls: k === 0 ? [{ id: "s0", type: "function", function: { name: "search_docs", arguments: JSON.stringify({ query: "x" }) } }] : [],
+          usage: { vao: 1, ra: 5 },
+        } as ManhModel;
+      };
+      const ql = taoQuanLyLuotChay({ goiModel, phuThuocBoThucThi: { timTaiLieu: () => new Promise(() => undefined) } });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "x" }, cauHoi: "tim", projectId: DU_AN, cheDo: "hoi" });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+      const nghe: SuKienAgent[] = [];
+      ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien))?.();
+      const kqTool = nghe.find((e) => e.loai === "ket-qua-tool" && e.ten === "search_docs");
+      expect(kqTool).toMatchObject({ ok: false, ma: "TOOL_TIMEOUT" });
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_TOOL_TIMEOUT;
+      else process.env.AI_AGENT_TOOL_TIMEOUT = cu;
+    }
+  }, 90_000);
+});
+
 describe("suKienDeLuu giữ buoc-do khi sổ quá trần", () => {
   const mucBuoc = (seq: number): MucDem => ({
     seq,

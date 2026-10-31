@@ -230,6 +230,12 @@ export interface CauHinhBoThucThi {
    * (host: `AI_AGENT_DOC_TRUOC_KHI_GHI=1`) cho tới khi có A/B GPU (agent-f/G6 không tụt).
    */
   docTruocKhiGhi?: boolean;
+  /**
+   * (Đợt 12 · H1.5) hạn giờ THEO CÔNG CỤ ĐỌC/TÌM (ms; mặc định `HAN_GIO_TOOL_MAC_DINH_MS`). `undefined` = TẮT (hành vi cũ). Truyền `{}` = dùng mặc định;
+   * truyền `{ search_docs: 50 }` ghi đè từng tool. Tool ghi / lệnh / bản dịch ST KHÔNG có hạn ở đây (chờ người duyệt không tính; lệnh có hạn riêng).
+   * Host: `AI_AGENT_TOOL_TIMEOUT=1`.
+   */
+  hanGioTool?: Readonly<Record<string, number>>;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -459,6 +465,26 @@ export function duongTuongDoiTrongGoc(goc: string, duong: unknown): string | nul
   const posix = rel.split(path.sep).join("/").replace(/\\/g, "/").replace(/^\.\//, "");
   if (posix === "" || posix.startsWith("../") || posix === ".." || path.isAbsolute(posix) || /^[a-zA-Z]:/.test(posix)) return null;
   return posix;
+}
+
+/**
+ * (Đợt 12 · H1.5) Hạn giờ mặc định (ms) của công cụ ĐỌC/TÌM. Rộng cố ý: chỉ để một lời gọi TREO (chỉ mục đang dựng, truy hồi kẹt) không ăn hết
+ * đồng hồ của cả lượt — không để cắt một tìm kiếm chậm-nhưng-sống. Lượt hết hạn ⇒ `TOOL_TIMEOUT` có cấu trúc, model tự thu hẹp truy vấn.
+ */
+export const HAN_GIO_TOOL_MAC_DINH_MS: Readonly<Record<string, number>> = {
+  read_file: 15_000,
+  list_dir: 10_000,
+  find_files: 15_000,
+  grep: 30_000,
+  find_symbol: 15_000,
+  search_code: 60_000,
+  search_docs: 30_000,
+  lookup_api: 15_000,
+};
+
+/** Công tắc `AI_AGENT_TOOL_TIMEOUT`: chỉ `1` bật (mặc định TẮT cho tới khi có số đo). */
+export function hanGioToolBat(giaTri: string | undefined): boolean {
+  return giaTri === "1";
 }
 
 /** Băm nội dung đĩa (so sánh "đổi từ lúc đọc"; không rời tiến trình). */
@@ -1137,7 +1163,44 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     },
   };
 
+  /**
+   * (H1.5) Chạy tool đọc/tìm dưới hạn giờ. Quá hạn ⇒ `TOOL_TIMEOUT` (ok:false); hủy lượt thì thôi (kết quả do lõi xử lý). Tín hiệu huỷ truyền
+   * xuống tool là HỢP của huỷ lượt và hạn giờ ⇒ tool biết dừng; tool không nhìn tín hiệu vẫn bị bỏ rơi (kết quả muộn bị bỏ; lỗi muộn đã có bộ xử lý của `Promise.race` nên không rò unhandled rejection).
+   */
+  async function chayVoiHanGio(goi: LoiGoiTool, ctx: NguCanhThucThi, hanMs: number): Promise<KetQuaTool> {
+    const hetHan = new AbortController();
+    const tin = AbortSignal.any([ctx.signal, hetHan.signal]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const quaHan = new Promise<"het-han">((ok) => {
+      timer = setTimeout(() => {
+        hetHan.abort();
+        ok("het-han");
+      }, hanMs);
+    });
+    const that = chayMotKhongHan(goi, { ...ctx, signal: tin });
+    try {
+      const r = await Promise.race([that, quaHan]);
+      if (r === "het-han") {
+        return {
+          ok: false,
+          ma: "TOOL_TIMEOUT",
+          choModel: `Tool ${goi.ten} timed out after ${Math.round(hanMs / 1000) || hanMs / 1000}s and was stopped. Try a narrower query or a smaller path, or use a different tool.`,
+        };
+      }
+      return r;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
+    const bang = cauHinh.hanGioTool;
+    const han = bang === undefined ? undefined : (bang[goi.ten] ?? HAN_GIO_TOOL_MAC_DINH_MS[goi.ten]);
+    if (han === undefined || !(han > 0)) return chayMotKhongHan(goi, ctx);
+    return chayVoiHanGio(goi, ctx, han);
+  }
+
+  async function chayMotKhongHan(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
     // `delegate` do LÕI xử lý (vòng đệ quy) — KHÔNG BAO GIỜ tới bộ thực thi; nếu tới đây là lỗi/giả mạo ⇒ từ chối như tool ẩn.
     if (goi.ten === "delegate" || congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
