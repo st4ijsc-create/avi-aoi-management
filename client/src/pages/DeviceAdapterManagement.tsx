@@ -42,6 +42,7 @@ import {
 import { Plug, Plus, Pencil, Trash2, Tags as TagsIcon, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { translateAppError } from "@/lib/errorCodes";
 import ManualHelp from "@/components/ManualHelp";
 import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
 import { lyDoGoStopPinKhiSuaTag, type TagChoLuatGoGhim } from "@shared/stopPinTagRule";
@@ -562,7 +563,11 @@ export default function DeviceAdapterManagement() {
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => {
       if (res.ok) toast.success(t("deviceAdapter.toast.connOk", "Kết nối OK ({{ms}}ms)", { ms: res.latencyMs }));
-      else toast.error(t("deviceAdapter.toast.connFail", "Kết nối thất bại: {{err}}", { err: res.error ?? "unknown" }));
+      // C2 fix 2 — người bị che nhận kết quả KHÔNG có `error` (máy chủ bỏ văn bản driver có host:port) ⇒ hiện câu DỊCH của errorCode
+      else {
+        const err = res.error ?? (res.errorCode ? translateAppError(res.errorCode, res.errorParams, "unknown") : "unknown");
+        toast.error(t("deviceAdapter.toast.connFail", "Kết nối thất bại: {{err}}", { err }));
+      }
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -661,7 +666,10 @@ export default function DeviceAdapterManagement() {
     if (adapterForm.id != null) {
       // C2 fix 1 — hàng bị che: KHÔNG gửi endpoint (ô trống sẽ bị máy chủ từ chối / không bao giờ được ghi đè giá trị đã lưu)
       const capNhat: Parameters<typeof updateAdapter.mutate>[0] = { id: adapterForm.id, ...base };
-      if (adapterForm.biChe) delete capNhat.endpoint;
+      if (adapterForm.biChe) {
+        delete capNhat.endpoint;
+        delete capNhat.protocol; // C2 fix 2 — máy chủ cũng từ chối protocol từ người bị che (ô chọn đã khoá)
+      }
       updateAdapter.mutate(capNhat);
     } else createAdapter.mutate(base);
   };
@@ -747,7 +755,7 @@ export default function DeviceAdapterManagement() {
                       <TagsIcon className="h-4 w-4" />
                     </Button>
                     {canEdit && (
-                      <Button size="sm" variant="outline" onClick={() => openEditAdapter(a)}>
+                      <Button size="sm" variant="outline" aria-label={t("deviceAdapter.editAdapter", "Sửa adapter")} onClick={() => openEditAdapter(a)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}

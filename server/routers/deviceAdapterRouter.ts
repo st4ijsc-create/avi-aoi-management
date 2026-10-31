@@ -296,6 +296,18 @@ const tagUpdateInput = tagFields.partial().extend({ id: z.number().int().positiv
 const DEFAULT_TEST_TIMEOUT_MS = 8000;
 
 /** Friendly message for a unique-constraint violation. */
+/**
+ * Kết quả `testConnection` (HỢP ĐỒNG — DeviceAdapterManagement / DeviceOnboardingWizard / UnifiedDeviceMonitor dùng chung). `error` = văn bản driver
+ * NGUYÊN VĂN (kỹ sư); C2 fix 2: dò theo id bởi người không được xem chi tiết kỹ thuật ⇒ khoá `error` VẮNG, chỉ còn `errorCode` / `errorParams`.
+ */
+export type KetQuaDoKetNoi = {
+  ok: boolean;
+  latencyMs: number;
+  errorCode?: "DEVICE_PROTOCOL_UNSUPPORTED" | "DEVICE_UNREACHABLE";
+  errorParams?: { entity: OtProtocol };
+  error?: string;
+};
+
 function isUniqueViolation(err: unknown): boolean {
   const e = err as { code?: string; cause?: { code?: string }; message?: string };
   return e?.code === "23505" || e?.cause?.code === "23505" || /duplicate key|unique constraint/i.test(e?.message ?? "");
@@ -397,12 +409,13 @@ export const deviceAdapterRouter = router({
       // SCADA R1b-2b-2b A — C2 fix 1 (dieu-phoi 2026-10-31) — CHỐT MẤT DỮ LIỆU: người không được xem chi tiết kỹ thuật nhận endpoint / connectionOptions
       // ĐÃ CHE (null) ⇒ không được GHI hai trường đó (form gửi lại ô trống / null sẽ xoá endpoint hay cấu hình đã lưu). Từ chối TRƯỚC mọi lượt ghi
       // (trước giao dịch, trước kiểm TOTP — mã không bị tiêu). Trường khác (tên, bật/tắt, chu kỳ, máy…) vẫn sửa được như cũ.
-      if ((rest.endpoint !== undefined || rest.connectionOptions !== undefined) && !(await chiTietKyThuatCua(ctx))) {
+      // C2 fix 2 (review m3) — `protocol` cũng vậy: đổi giao thức là đổi NGHĨA của kết nối (endpoint cũ đọc theo giao thức khác) mà người bị che không thấy.
+      if ((rest.endpoint !== undefined || rest.connectionOptions !== undefined || rest.protocol !== undefined) && !(await chiTietKyThuatCua(ctx))) {
         throw appError(
           "FORBIDDEN",
           "OPERATION_FAILED",
           { operation: "deviceAdapterUpdate", reason: "chiTietKyThuatBiChe" },
-          "Endpoint / connection options are technical details you cannot view — only an engineer/admin with machine_control.canEdit may change them.",
+          "Endpoint / protocol / connection options are technical details you cannot view — only an engineer/admin with machine_control.canEdit may change them.",
         );
       }
       try {
@@ -592,13 +605,19 @@ export const deviceAdapterRouter = router({
         connectionOptions: z.record(z.string(), z.unknown()).nullable().optional(),
       }),
     ]))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input, ctx }): Promise<KetQuaDoKetNoi> => {
       let protocol: OtProtocol;
       let endpoint: string;
       let options: Record<string, unknown> | undefined;
 
+      // SCADA R1b-2b-2b A — C2 fix 2 (review Important #1, dieu-phoi 2026-10-31): dò THEO ID dùng endpoint ĐÃ LƯU ⇒ văn bản lỗi driver (vd
+      // "connect ECONNREFUSED 10.0.0.5:502") là chi tiết kỹ thuật của adapter: người không phải (admin|engineer + machine_control.canEdit) nhận
+      // KHÔNG có `error` — chỉ `errorCode` / `errorParams` (mã appError có câu dịch vi/en/zh). Nhánh {protocol, endpoint}: người gọi TỰ gõ endpoint
+      // ⇒ văn bản thô không lộ gì họ chưa biết ⇒ giữ nguyên.
+      let xemChiTiet = true;
       if ("id" in input) {
         await adapterTrongPhamVi(ctx, input.id); // dò adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24)
+        xemChiTiet = await chiTietKyThuatCua(ctx);
         const db = await getDb();
         const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
         if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -611,6 +630,13 @@ export const deviceAdapterRouter = router({
         options = input.connectionOptions ?? undefined;
       }
 
+      /** C2 fix 2 — kết quả hỏng theo người xem: bị che ⇒ KHÔNG có khoá `error` (không host:port), `errorCode` / `errorParams` giữ nguyên. */
+      const theoNguoiXem = (kq: KetQuaDoKetNoi): KetQuaDoKetNoi => {
+        if (xemChiTiet) return kq;
+        const ra = { ...kq };
+        delete ra.error;
+        return ra;
+      };
       const startedAt = Date.now();
       let driver;
       // ── F14 (2026-08-22) — LỖI ĐI RA BẰNG CỬA "THÀNH CÔNG" ──────────────────────
@@ -628,7 +654,7 @@ export const deviceAdapterRouter = router({
       } catch (err) {
         // Không dựng được driver ⇒ bản dựng này không có giao thức đó. Cách gỡ NGƯỢC với
         // "không tới được": phải đổi cấu hình/nâng cấp, không phải đi kiểm dây.
-        return {
+        return theoNguoiXem({
           ok: false,
           latencyMs: 0,
           errorCode: "DEVICE_PROTOCOL_UNSUPPORTED" as const,
@@ -636,7 +662,7 @@ export const deviceAdapterRouter = router({
           // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
           // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
           error: err instanceof Error ? err.message : String(err),
-        };
+        });
       }
 
       try {
@@ -644,7 +670,7 @@ export const deviceAdapterRouter = router({
         await probeOtConnection(driver, { endpoint, options, timeoutMs: DEFAULT_TEST_TIMEOUT_MS });
         return { ok: true, latencyMs: Date.now() - startedAt };
       } catch (err) {
-        return {
+        return theoNguoiXem({
           ok: false,
           latencyMs: Date.now() - startedAt,
           errorCode: "DEVICE_UNREACHABLE" as const,
@@ -652,7 +678,7 @@ export const deviceAdapterRouter = router({
           // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
           // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
           error: err instanceof Error ? err.message : String(err),
-        };
+        });
       }
     }),
 

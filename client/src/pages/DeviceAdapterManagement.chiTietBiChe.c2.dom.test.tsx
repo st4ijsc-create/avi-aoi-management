@@ -5,7 +5,7 @@
 // không bao giờ gọi `.trim()` trên null, và lượt lưu KHÔNG mang `endpoint` / `connectionOptions` (máy chủ cũng từ chối — chốt mất dữ liệu).
 // Đối chứng: hàng không che giữ nguyên hành vi cũ. Khuôn mock của DeviceAdapterManagement.troLaiTotp.dom.test.tsx (chỉ mock hợp đồng mạng).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,6 +18,8 @@ const H = vi.hoisted(() => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
   calls: {} as Record<string, unknown[]>,
   adapters: [] as unknown[],
+  /** C2 fix 2 — câu trả lời của deviceAdapter.testConnection (null ⇒ ok) */
+  traLoiDo: null as Record<string, unknown> | null,
 }));
 
 vi.mock("sonner", () => ({ toast: H.toast }));
@@ -37,7 +39,8 @@ vi.mock("@/lib/trpc", () => {
       isPending: false,
       mutate: (input: unknown) => {
         (H.calls[path] ??= []).push(input);
-        queueMicrotask(() => opts.onSuccess?.({ ...(input as object), ok: true, latencyMs: 1 }));
+        const kq = path === "deviceAdapter.testConnection" && H.traLoiDo ? H.traLoiDo : { ...(input as object), ok: true, latencyMs: 1 };
+        queueMicrotask(() => opts.onSuccess?.(kq));
       },
     }),
   });
@@ -77,16 +80,16 @@ const hangGoc = { id: 7, code: "PLC-7", name: "PLC 7", protocol: "modbus", statu
 beforeEach(async () => {
   for (const f of Object.values(H.toast)) f.mockReset();
   H.calls = {};
+  H.traLoiDo = null;
   await i18n.changeLanguage("vi");
 });
 afterEach(() => cleanup());
 
-/** Mở hộp sửa của PLC-7 (nút [kiểm tra, tag, sửa, xoá] — bỏ công tắc). */
+/** Mở hộp sửa của PLC-7 — nút tìm theo vai + tên truy cập (C2 fix 2, review m7), không theo vị trí. */
 function moSua() {
   render(<DeviceAdapterManagement />);
   const row = screen.getByText("PLC-7").closest("tr")!;
-  const buttons = [...row.querySelectorAll("button")].filter((b) => b.getAttribute("role") !== "switch");
-  fireEvent.click(buttons[2]);
+  fireEvent.click(within(row).getByRole("button", { name: i18n.t("deviceAdapter.editAdapter") }));
   return row;
 }
 const oEndpoint = () => screen.queryByPlaceholderText("opc.tcp://… / tcp://host:port / stub://x");
@@ -110,6 +113,7 @@ describe("C2 fix 1 — Device Adapter: hàng bị che (endpoint / connectionOpti
     expect(gui).toMatchObject({ id: 7, name: "PLC 7 mới", isEnabled: false, pollIntervalMs: 5000, machineId: 3 });
     expect("endpoint" in gui).toBe(false);
     expect("connectionOptions" in gui).toBe(false);
+    expect("protocol" in gui).toBe(false); // C2 fix 2 — máy chủ từ chối protocol từ người bị che
     expect(H.calls["deviceAdapter.testConnection"]).toBeUndefined();
   });
 
@@ -123,5 +127,29 @@ describe("C2 fix 1 — Device Adapter: hàng bị che (endpoint / connectionOpti
     fireEvent.click(screen.getByRole("button", { name: i18n.t("common.save") }));
     await waitFor(() => expect(H.calls["deviceAdapter.update"]).toHaveLength(1));
     expect(H.calls["deviceAdapter.update"][0]).toMatchObject({ id: 7, endpoint: "tcp://10.0.0.7:502" });
+  });
+});
+
+describe("C2 fix 2 — nút 'Kiểm tra' của hàng: máy chủ bỏ văn bản driver (không có error) ⇒ toast hiện câu DỊCH của errorCode", () => {
+  it("không có error + errorCode DEVICE_UNREACHABLE ⇒ toast lỗi mang câu đã dịch (không 'unknown'); có văn bản ⇒ hiện văn bản (kỹ sư)", async () => {
+    H.adapters = [{ ...hangGoc, endpoint: null, connectionOptions: null, lastError: null, maLoi: null, tamKhoa: null }];
+    H.traLoiDo = { ok: false, latencyMs: 3, errorCode: "DEVICE_UNREACHABLE", errorParams: { entity: "modbus" } }; // không có khoá error (bị che)
+    render(<DeviceAdapterManagement />);
+    const row = screen.getByText("PLC-7").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: i18n.t("deviceAdapter.test") }));
+    await waitFor(() => expect(H.toast.error).toHaveBeenCalledTimes(1));
+    expect(H.calls["deviceAdapter.testConnection"]).toEqual([{ id: 7 }]);
+    const dich = i18n.t("errors.DEVICE_UNREACHABLE", { entity: "modbus" });
+    expect(dich).not.toBe("errors.DEVICE_UNREACHABLE");
+    const cau = String(H.toast.error.mock.calls[0][0]);
+    expect(cau).not.toContain("unknown");
+    expect(cau).toContain(dich.slice(0, 12));
+    cleanup();
+    H.toast.error.mockReset();
+    H.traLoiDo = { ok: false, latencyMs: 3, errorCode: "DEVICE_UNREACHABLE", errorParams: { entity: "modbus" }, error: "connect ECONNREFUSED 10.0.0.5:502" };
+    render(<DeviceAdapterManagement />);
+    fireEvent.click(within(screen.getByText("PLC-7").closest("tr")!).getByRole("button", { name: i18n.t("deviceAdapter.test") }));
+    await waitFor(() => expect(H.toast.error).toHaveBeenCalledTimes(1));
+    expect(String(H.toast.error.mock.calls[0][0])).toContain("ECONNREFUSED 10.0.0.5:502");
   });
 });

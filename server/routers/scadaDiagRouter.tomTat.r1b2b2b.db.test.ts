@@ -13,6 +13,21 @@ const RUN = `c2tt${process.pid}${Date.now().toString(36)}`;
 const SPY = vi.hoisted(() => ({ bat: false, bang: [] as string[], sqlTho: [] as string[] }));
 /** C2 fix 1 — supervisor HA giả (systemHealth.connectionSupervisors); phần còn lại của otManager là thật. */
 const SUP = vi.hoisted(() => ({ ds: [] as Array<Record<string, unknown>> }));
+/** C2 fix 2 — driver dò giả: `connect` ném lỗi socket mang host:port (như ECONNREFUSED thật) — chỉ cho giao thức modbus khi bật. */
+const DO = vi.hoisted(() => ({ loi: null as string | null }));
+vi.mock("../services/ot/driverRegistry", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/ot/driverRegistry")>();
+  return {
+    ...real,
+    createDriver: (p: string) => {
+      if (p === "modbus" && DO.loi) {
+        const loi = DO.loi;
+        return { protocol: "modbus", isConnected: () => false, connect: async () => { throw new Error(loi); }, disconnect: async () => undefined } as never;
+      }
+      return real.createDriver(p as never);
+    },
+  };
+});
 vi.mock("../services/ot/otManager", async (importOriginal) => {
   const real = await importOriginal<typeof import("../services/ot/otManager")>();
   return { ...real, listSupervisorStatuses: () => SUP.ds as never };
@@ -364,7 +379,7 @@ async function loiCua(p: Promise<unknown>): Promise<{ code?: string; appCode?: s
 describe("C2 fix 1 — deviceAdapter.update: chốt mất dữ liệu (người bị che không ghi endpoint / connectionOptions)", () => {
   it("operator CÓ canEdit (bị che): sửa tên / bật adapter ⇒ thành công (không hồi quy); gửi endpoint hoặc connectionOptions ⇒ FORBIDDEN chiTietKyThuatBiChe, hàng KHÔNG đổi", async () => {
     const id = await seedAdapter("upd", A.mid, { isEnabled: false, status: "disabled", protocol: "modbus", ha: true });
-    const hang = async () => (await dung(sql`SELECT name, endpoint, "connectionOptions"::text AS co, "isEnabled", "updatedAt" FROM device_adapters WHERE id = ${id}`))[0];
+    const hang = async () => (await dung(sql`SELECT name, protocol, endpoint, "connectionOptions"::text AS co, "isEnabled", "updatedAt" FROM device_adapters WHERE id = ${id}`))[0];
     try {
       // không hồi quy: trường người bị che vẫn được sửa
       const r1 = await operatorA.ad.update({ id, name: `${RUN}-ten-moi` });
@@ -375,7 +390,16 @@ describe("C2 fix 1 — deviceAdapter.update: chốt mất dữ liệu (người 
       const truoc = await hang();
       expect(truoc.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
       // chốt: endpoint (kể cả cùng giá trị đã lưu) / connectionOptions (kể cả null) ⇒ FORBIDDEN trước mọi lượt ghi
-      for (const patch of [{ endpoint: "x" }, { endpoint: `tcp://${HOST_BI_MAT}:5007` }, { connectionOptions: null }, { connectionOptions: {} }, { name: "kem", endpoint: "tcp://h:1" }]) {
+      for (const patch of [
+        { endpoint: "x" },
+        { endpoint: `tcp://${HOST_BI_MAT}:5007` },
+        { connectionOptions: null },
+        { connectionOptions: {} },
+        { name: "kem", endpoint: "tcp://h:1" },
+        { protocol: "s7" }, // C2 fix 2 (review m3)
+        { protocol: "modbus" }, // kể cả cùng giá trị đã lưu
+        { name: "kem2", protocol: "opcua" },
+      ]) {
         const e = await loiCua(operatorA.ad.update({ id, ...patch } as never));
         expect(e, JSON.stringify(patch)).toEqual({
           code: "FORBIDDEN",
@@ -417,6 +441,33 @@ describe("C2 fix 1 — systemHealth.connectionSupervisors: che activeEndpoint / 
       }
     } finally {
       SUP.ds = [];
+    }
+  });
+});
+
+describe("C2 fix 2 — deviceAdapter.testConnection({id}): văn bản lỗi driver (host:port) chỉ cho kỹ sư canEdit", () => {
+  it("người dưới canEdit ⇒ ok:false + errorCode/errorParams, KHÔNG có khoá error, KHÔNG có '10.0.0.5' / ':502' ở đâu; kỹ sư canEdit / admin ⇒ văn bản đầy đủ; nhánh {protocol, endpoint} giữ văn bản", async () => {
+    const LOI = "connect ECONNREFUSED 10.0.0.5:502";
+    const id = await seedAdapter("probe", A.mid, { isEnabled: false, status: "disabled", protocol: "modbus" });
+    DO.loi = LOI;
+    try {
+      for (const [ten, n] of [["viewer", viewerA], ["operator canEdit", operatorA], ["engineer không canEdit", kySuKhongSuaA]] as const) {
+        const r = await n.ad.testConnection({ id });
+        expect(r, ten).toMatchObject({ ok: false, errorCode: "DEVICE_UNREACHABLE", errorParams: { entity: "modbus" } });
+        expect("error" in r, ten).toBe(false); // khoá vắng hẳn (không phải chuỗi rỗng / null)
+        const j = JSON.stringify(r);
+        expect(j, ten).not.toContain("10.0.0.5");
+        expect(j, ten).not.toContain(":502");
+        expect(j, ten).not.toContain(HOST_BI_MAT);
+      }
+      for (const n of [engA, admin]) {
+        expect(await n.ad.testConnection({ id })).toMatchObject({ ok: false, errorCode: "DEVICE_UNREACHABLE", error: LOI });
+      }
+      // nhánh tự gõ: người gọi đã biết endpoint ⇒ văn bản thô được giữ (kể cả viewer)
+      expect(await viewerA.ad.testConnection({ protocol: "modbus", endpoint: "tcp://10.0.0.5:502" })).toMatchObject({ ok: false, error: LOI });
+    } finally {
+      DO.loi = null;
+      await xoaAdapter(id);
     }
   });
 });
