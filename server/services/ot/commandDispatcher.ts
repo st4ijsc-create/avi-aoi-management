@@ -768,7 +768,7 @@ function emitCmdAck(input: DispatchInput, result: DispatchResult): void {
 
 /** R1b-2b-2a T3F — global slot of the test-only cut point (symbol: not reachable by name from outside). */
 const CAT_SAU_GHI_CHO_TEST = Symbol.for("avi.ot.dispatch.catSauGhiThietBiChoTest");
-function catSauGhiThietBiChoTest(): ((input: DispatchInput) => Promise<void>) | null {
+export function catSauGhiThietBiChoTest(): ((input: DispatchInput) => Promise<void>) | null { // exported for the gate test
   // the READER requires vitest too: code outside vitest never reaches the hook by setting the global
   if (!process.env.VITEST) return null;
   const f = (globalThis as Record<symbol, unknown>)[CAT_SAU_GHI_CHO_TEST];
