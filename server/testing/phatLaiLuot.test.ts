@@ -101,13 +101,14 @@ afterAll(async () => {
 }, 60_000);
 
 describe("H4.2 — ghi ⇒ đóng gói ⇒ phát lại", () => {
-  it("bản ghi thật có đủ 3 lượt; fixture không còn đường gốc / mẫu cấm; ghi đã tạo src/b.ts", () => {
+  it("bản ghi thật có đủ 3 lượt; fixture không còn đường gốc / mẫu cấm; ghi đã tạo src/b.ts", async () => {
     expect(fx.luot.map((l) => l.n)).toEqual([1, 2, 3]);
     // phiên bản 2: lượt sau chỉ mang phần MỚI của lịch sử (chỉ-nối-thêm) ⇒ tinChung tăng, tinMoi ngắn
     expect(fx.phienBan).toBe(2);
     expect(fx.luot.map((l) => l.yeuCau.tinChung)).toEqual([0, 1, 3]);
     expect(fx.luot.map((l) => l.yeuCau.tinMoi.map((m) => m.role))).toEqual([["user"], ["assistant", "tool"], ["assistant", "tool"]]);
-    expect(kiemMauCam(JSON.stringify(fx))).toEqual([]);
+    const { kiemMauCamGiaTri } = await import("./phatLaiLuot");
+    expect(kiemMauCamGiaTri(fx)).toEqual([]);
     expect(JSON.stringify(fx)).not.toContain(os.tmpdir());
     expect(Object.keys(cayGhi)).toEqual(["a.ts", "b.ts"]);
     expect(fx.ky.lyDo).toBe("hoan-thanh");
@@ -176,5 +177,55 @@ describe("H4.2 — đơn vị (thay đường, lượt thừa, cờ nghĩ, đổ
       for await (const _ of p.stream(o)) void _;
     })()).rejects.toBeInstanceOf(LoiLechPhatLai);
     expect(p.lech).toEqual([{ n: 2, truong: "thua-luot", ghi: 1, thuc: 2 }]);
+  });
+
+  const yc = (tin: Array<{ role: string; content: string }>) => ({ heThong: "x", congCu: { ten: [], bam: "b" }, co: { disableThinking: false, preserveThinking: false }, tin });
+  it("(rà kiem-dinh p3) lần phát gửi THÊM tin ở cuối / THIẾU tin ⇒ lệch 'tin.length' (cả hai chiều)", () => {
+    const ba = [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }];
+    expect(soYeuCau(yc(ba), yc([...ba, { role: "user", content: "d" }]))).toMatchObject({ truong: "tin.length", ghi: 3, thuc: 4 });
+    expect(soYeuCau(yc(ba), yc(ba.slice(0, 2)))).toMatchObject({ truong: "tin.length", ghi: 3, thuc: 2 });
+  });
+
+  it("(rà kiem-dinh p14) lượt ghi có `loi` giữa luồng ⇒ phát hết mảnh đã ghi RỒI ném đúng thông điệp (token gốc ⇒ đường lần phát)", async () => {
+    const fx2 = {
+      phienBan: 2,
+      dau: { ngay: "", node: "", nguon: "t" },
+      lenh: { cauHoi: "q", cheDo: "hoi", duAnTuongDoi: "." },
+      luot: [{ n: 1, yeuCau: { heThong: "", congCu: { ten: [], bam: "" }, co: { disableThinking: false, preserveThinking: false }, tinChung: 0, tinMoi: [{ role: "user", content: "q" }] }, manh: [{ type: "token", token: "nửa" }], loi: `đứt ở ${TOKEN_GOC}/x` }],
+      ky: { suKien: [], lyDo: null },
+    } as never;
+    const p = taoStreamPhatLai(fx2, { goc: "E:/phat" });
+    const ra: unknown[] = [];
+    await expect((async () => {
+      for await (const c of p.stream({ messages: [{ role: "user", content: "q" }] })) ra.push(c);
+    })()).rejects.toThrow("đứt ở E:/phat/x");
+    expect(ra).toEqual([{ type: "token", token: "nửa" }]);
+    expect(p.lech).toEqual([]);
+  });
+
+  it("(rà kiem-dinh p10) mảnh model chứa đường gốc ⇒ fixture mang TOKEN_GOC, không còn đường thật (không phải NÉM)", () => {
+    const tho = [
+      { loai: "dau", ngay: "n", node: "v" },
+      { loai: "luot", n: 1, options: { messages: [{ role: "user", content: "q" }] }, manh: [{ type: "token", token: "mở D:/goc/x/src/a.ts" }, { type: "done", fullText: "mở D:\\goc\\x\\src\\a.ts" }] },
+    ];
+    const fx3 = dongGoi(tho, { goc: "D:/goc/x", duAnTuongDoi: ".", cauHoi: "q", cheDo: "hoi", suKien: [], lyDo: null, nguoi: {} });
+    const chu = JSON.stringify(fx3.luot[0]!.manh);
+    expect(chu).toContain(TOKEN_GOC);
+    expect(chu).not.toMatch(/goc[\\/]x/);
+  });
+
+  it("(rà kiem-dinh p7) dang-cho-model bị bỏ: hai lần chạy khác vị trí hàng chờ ⇒ cùng chuỗi chuẩn hoá", () => {
+    const a = [{ loai: "bat-dau", runId: "11111111-1111-4111-8111-111111111111" }, { loai: "dang-cho-model", phiaTruoc: 2 }, { loai: "chu", noiDung: "x" }];
+    const b = [{ loai: "bat-dau", runId: "22222222-2222-4222-8222-222222222222" }, { loai: "chu", noiDung: "x" }, { loai: "dang-cho-model", phiaTruoc: 0 }];
+    expect(chuanHoaSuKien(a)).toEqual(chuanHoaSuKien(b));
+    expect(chuanHoaSuKien(a)).toEqual([{ loai: "bat-dau", runId: "<ID#1>" }, { loai: "chu", noiDung: "x" }]);
+  });
+
+  it("(rà kiem-dinh) mẫu cấm mới: Bearer / chuỗi kết nối có mật khẩu / mật khẩu gán / khoá Slack", () => {
+    expect(kiemMauCam("Authorization: Bearer abcdefghijklmnop1234")).toContain("bearer");
+    expect(kiemMauCam("postgres://aoi:matkhau@127.0.0.1:5434/db")).toContain("chuoi-ket-noi");
+    expect(kiemMauCam('password = "hunter22"')).toContain("mat-khau");
+    expect(kiemMauCam("xoxb-1234567890-abcdef")).toContain("khoa-slack");
+    expect(kiemMauCam("src/maGiamGia.ts dùng https://example.com/a")).toEqual([]);
   });
 });

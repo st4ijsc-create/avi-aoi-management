@@ -64,6 +64,16 @@ describe("bocGhiLuot", () => {
     expect(luot).toMatchObject({ manh: MANH.slice(0, 2), loi: "đứt giữa luồng" });
   });
 
+  it("(rà kiem-dinh) thư mục ghi nằm TRONG thư mục làm việc (gốc repo) ⇒ trả hàm gốc, không ghi; ngoài ⇒ hợp lệ", async () => {
+    const { thuMucGhiHopLe } = await import("./ghiLuotModel");
+    const g = gocGia(MANH);
+    expect(bocGhiLuot(g, { thuMuc: path.join(process.cwd(), "tmp", "ghi-luot"), runId: RUN })).toBe(g);
+    expect(bocGhiLuot(g, { thuMuc: process.cwd(), runId: RUN })).toBe(g);
+    expect(thuMucGhiHopLe(path.join(os.tmpdir(), "x"), "D:/SOURCES/du-an")).toBe(true);
+    expect(thuMucGhiHopLe("D:/SOURCES/du-an/tmp", "D:/SOURCES/du-an")).toBe(false);
+    expect(thuMucGhiHopLe("D:/SOURCES/du-an-khac", "D:/SOURCES/du-an")).toBe(true);
+  });
+
   it("runId không phải UUID / thư mục tương đối ⇒ trả lại đúng hàm gốc (không ghi)", () => {
     const g = gocGia(MANH);
     expect(bocGhiLuot(g, { thuMuc: thuMuc(), runId: "../../etc" })).toBe(g);

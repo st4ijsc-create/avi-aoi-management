@@ -35,8 +35,28 @@ function ghiDong(tep: string, o: unknown): void {
  * Bọc `goc` để ghi mỗi lượt. `thuMuc` tuyệt đối (do người đo đặt), `runId` phải là UUID (tên tệp) — sai ⇒ trả `goc` nguyên (không ghi).
  * Thứ tự mảnh giữ đúng như engine phát; lỗi giữa luồng được ghi (`loi`) rồi NÉM LẠI nguyên vẹn.
  */
+/** (rà kiem-dinh) thư mục ghi nằm TRONG thư mục làm việc của tiến trình (gốc repo khi chạy :3000) ⇒ dễ commit nhầm bản thô ⇒ từ chối. */
+export function thuMucGhiHopLe(thuMuc: string, cwd: string = process.cwd()): boolean {
+  if (!path.isAbsolute(thuMuc)) return false;
+  const rel = path.relative(path.resolve(cwd), path.resolve(thuMuc));
+  const trong = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  return !trong;
+}
+
+let daBaoBat = false;
+
 export function bocGhiLuot(goc: HamStream, o: { thuMuc: string; runId: string }): HamStream {
-  if (!path.isAbsolute(o.thuMuc) || !RE_RUN.test(o.runId)) return goc;
+  if (!RE_RUN.test(o.runId) || !thuMucGhiHopLe(o.thuMuc)) {
+    if (!daCanhBao && o.thuMuc) {
+      daCanhBao = true;
+      console.warn(`[ghiLuotModel] thư mục ghi lượt bị BỎ QUA (phải là thư mục tuyệt đối NGOÀI thư mục làm việc của tiến trình): ${o.thuMuc}`);
+    }
+    return goc;
+  }
+  if (!daBaoBat) {
+    daBaoBat = true;
+    console.warn(`[ghiLuotModel] ⚠ ĐANG GHI NGUYÊN VĂN lượt model của tác nhân (prompt, kết quả tool, suy luận) ra ${o.thuMuc} — CHỈ dùng trong cửa sổ đo; khởi động lại KHÔNG có biến ghi lượt khi xong.`);
+  }
   const tep = path.join(o.thuMuc, `${o.runId.toLowerCase()}.jsonl`);
   return async function* (options, modelId, signal) {
     const n = (soLuotTheoRun.get(o.runId) ?? 0) + 1;
@@ -62,4 +82,5 @@ export function bocGhiLuot(goc: HamStream, o: { thuMuc: string; runId: string })
 export function _datLaiGhiLuot(): void {
   soLuotTheoRun.clear();
   daCanhBao = false;
+  daBaoBat = false;
 }

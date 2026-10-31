@@ -165,10 +165,30 @@ const MAU_CAM: ReadonlyArray<[string, RegExp]> = [
   ["khoa-github", /\bgh[pousr]_[A-Za-z0-9]{30,}/],
   ["khoa-rieng", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
+  // (rà kiem-dinh) thêm cho fixture từ dự án không phải mẫu
+  ["bearer", /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/],
+  ["mat-khau", /\b(password|passwd|pwd)\s*[=:]\s*["']?[^\s"'&;]{4,}/i],
+  ["chuoi-ket-noi", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@"']+:[^\s@/"']+@/i],
+  ["khoa-slack", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
 ];
 
 export function kiemMauCam(s: string): string[] {
   return MAU_CAM.filter(([, re]) => re.test(s)).map(([ten]) => ten);
+}
+
+/**
+ * Kiểm MỌI chuỗi trong một giá trị (không kiểm văn bản JSON: `JSON.stringify` nhân đôi `\` ⇒ đường tương đối Windows `src\a.ts` trông
+ * như UNC `\\…` — báo động giả, rà kiem-dinh p10).
+ */
+export function kiemMauCamGiaTri(v: unknown): string[] {
+  const thay = new Set<string>();
+  const duyet = (x: unknown): void => {
+    if (typeof x === "string") for (const t of kiemMauCam(x)) thay.add(t);
+    else if (Array.isArray(x)) x.forEach(duyet);
+    else if (x && typeof x === "object") Object.entries(x).forEach(([k, y]) => (duyet(k), duyet(y)));
+  };
+  duyet(v);
+  return [...thay];
 }
 
 /**
@@ -205,8 +225,7 @@ export function dongGoi(
     ),
     ky: { suKien: chuanHoaSuKien(y.suKien, thay), lyDo: y.lyDo, ...(y.dat !== undefined ? { dat: y.dat } : {}) },
   };
-  const s = JSON.stringify(fx);
-  const cam = kiemMauCam(s);
+  const cam = kiemMauCamGiaTri(fx);
   if (cam.length) throw new Error(`fixture còn mẫu cấm sau khi thay: ${cam.join(", ")} — xem bản thô, không commit`);
   return fx;
 }

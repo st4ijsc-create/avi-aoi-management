@@ -3,6 +3,7 @@
  *
  *   npx tsx scripts/ai-eval/phat-lai/dongGoi.ts --tho <thư mục thô> --run <runId> --goc <thư mục dự án lúc ghi> --bai <id bài>
  *       [--du-an-tuong-doi sandbox-projects/agent-f/<bai>] [--commit <sha>] [--dist <sha>] [--dat 1|0] [--ra server/testing/fixtures/phat-lai]
+ *       [--env <tệp .env có DATABASE_URL>]
  *
  * Đọc hàng `ai_agent_runs` của runId (CHỈ ĐỌC — câu hỏi, chế độ, sự kiện đã lưu, lý do dừng) bằng DATABASE_URL của `.env` cây chính
  * (đọc theo regex, không source). Thay đường gốc / thư mục người dùng bằng token, NÉM khi còn đường ổ đĩa / mẫu khoá (không tự xoá —
@@ -35,7 +36,11 @@ async function main() {
   if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("runId không hợp lệ");
   const dong = fs.readFileSync(path.join(tho, `${runId}.jsonl`), "utf8").trim().split("\n").map((d) => JSON.parse(d) as Record<string, unknown>);
 
-  const env = fs.readFileSync("D:/SOURCES/avi-aoi-management/.env", "utf8");
+  // (rà kiem-dinh) --env <tệp> ; vắng ⇒ .env của thư mục chạy, rồi cây chính D:/SOURCES/avi-aoi-management/.env
+  const ungVien = [arg("--env"), path.resolve(".env"), "D:/SOURCES/avi-aoi-management/.env"].filter((x): x is string => !!x);
+  const tepEnv = ungVien.find((p) => fs.existsSync(p) && /^DATABASE_URL=/m.test(fs.readFileSync(p, "utf8")));
+  if (!tepEnv) throw new Error("không tìm thấy .env có DATABASE_URL (dùng --env)");
+  const env = fs.readFileSync(tepEnv, "utf8");
   const url = (env.match(/^DATABASE_URL=(.*)$/m) || [])[1]?.trim().replace(/^["']|["']$/g, "");
   if (!url) throw new Error("không đọc được DATABASE_URL");
   const postgres = (await import("postgres")).default;
