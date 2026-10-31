@@ -283,6 +283,52 @@ describe("★★★ VÁ AN TOÀN: lượt tiếp tục KHÔNG thừa hưởng t�
     }
   }, 120_000);
 
+  /** Nguồn SẠCH (lịch sử không mang cảnh báo nào) rồi GHI ĐÈ sổ sự kiện bằng `suKien` — để khoá riêng nhánh "đọc từ SỔ" (dự phòng khi lịch sử đã bị nén/cắt mất cảnh báo). */
+  async function nguonSachVoiSo(suKien: unknown[], cheDo: "hoi" | "sua" = "hoi"): Promise<string> {
+    const ql = taoQl([treoTool]);
+    const kq = await ql.taoLuotChay({ user: NA(), cauHoi: "sạch nhưng sổ có sự kiện", projectId: DU_AN, cheDo });
+    if (!kq.ok) throw new Error(kq.ma);
+    await choDen(async () => (await banLuu(kq.luot.id)) !== null);
+    ql.huy(kq.luot.id, uA);
+    await kq.luot.xong;
+    expect(JSON.stringify((await banLuu(kq.luot.id))!.tinNhan)).not.toContain("[warning:"); // tiền đề: lịch sử SẠCH
+    await (await getDb())!.update(aiAgentRuns).set({ suKien }).where(eq(aiAgentRuns.id, kq.luot.id));
+    return kq.luot.id;
+  }
+  /** Tiếp tục và CHỤP tham số nội bộ `nhiem` mà `tiepTucLuot` đưa cho `taoLuotChay`. */
+  async function nhiemTruyenXuong(nguonId: string) {
+    const qlMoi = taoQl([() => ({ chu: "ok" })]);
+    const goc = qlMoi.taoLuotChay.bind(qlMoi);
+    let bat: { nguonDangNgo: string[]; haTuTri: boolean } | undefined;
+    qlMoi.taoLuotChay = (y, noiBo) => {
+      bat = noiBo?.nhiem;
+      return goc(y, noiBo);
+    };
+    const kq = await thuTucTiepTucLuot(NA(), { runId: nguonId }, qlMoi);
+    expect(kq).toMatchObject({ ok: true });
+    await qlMoi.layLuotChay(kq.runId!, uA)!.xong;
+    return bat;
+  }
+
+  it("★★★ GHIM 1: sổ CHỈ có `ha-tu-tri` (không có nguon) + lịch sử SẠCH ⇒ lượt mới nhận haTuTri=true (nhiễm từ sổ là dự phòng khi lịch sử mất cảnh báo)", async () => {
+    const nguon = await nguonSachVoiSo([{ seq: 1, suKien: { loai: "ha-tu-tri", lyDo: "noi-dung-dang-ngo", mau: [] } }]);
+    const nhiem = await nhiemTruyenXuong(nguon);
+    expect(nhiem).toEqual({ nguonDangNgo: [], haTuTri: true });
+  }, 120_000);
+
+  it("★★★ GHIM 2: sổ có `canh-bao-du-lieu` nguon=\"x\" + lịch sử SẠCH ⇒ nguonDangNgoDau chứa \"x\" (và nhãn sống trên thẻ duyệt)", async () => {
+    const nguon = await nguonSachVoiSo([{ seq: 1, suKien: { loai: "canh-bao-du-lieu", id: "c1", ten: "read_file", nguon: "x", mau: [] } }]);
+    const nhiem = await nhiemTruyenXuong(nguon);
+    expect(nhiem?.nguonDangNgo).toContain("x");
+    // `canh-bao-du-lieu` đơn lẻ (không `ha-tu-tri`) KHÔNG tự bật cờ haTuTri — chỉ nhãn nguồn
+    expect(nhiem?.haTuTri).toBe(false);
+    // và nhãn thực sự tới thẻ duyệt của lượt mới
+    const nguon2 = await nguonSachVoiSo([{ seq: 1, suKien: { loai: "canh-bao-du-lieu", id: "c1", ten: "read_file", nguon: "x", mau: [] } }], "sua");
+    const r = await tiepTucRoiThuGhi(nguon2);
+    const the = r.ev.find((e) => e.loai === "can-duyet") as Extract<SuKienAgent, { loai: "can-duyet" }> | undefined;
+    expect(the?.deXuat.nguonDangNgo).toContain("x");
+  }, 120_000);
+
   it("sổ sự kiện quá dài: sự kiện NHIỄM ở giữa không bị cắt (suKienDeLuu)", () => {
     const mk = (seq: number, loai: string): never =>
       ({ seq, suKien: loai === "ha-tu-tri" ? { loai, lyDo: "noi-dung-dang-ngo", nguon: "x.md", mau: [] } : { loai: "goi-tool", goi: { id: String(seq), ten: "t", thamSo: {} }, luot: 1 } }) as never;
