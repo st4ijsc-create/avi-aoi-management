@@ -127,6 +127,7 @@ import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
 import { MA_TU_CHOI_HOP_CAT, gocHopCat, phanQuyetDuongDan } from "./repoSandbox";
 import { timLenhKhoaCung } from "../../../shared/agentCore/lenhKhoaCung";
+import { BoDemDauRa as BoDemDauRaChung, gietCayTienTrinhChung, type KetQuaGiet as KetQuaGietChung } from "../../../shared/tienTrinhAnToan";
 // ★ Đợt 3c — khai báo dự án `.ai-chay.json` (mở script cài npm CÓ LÝ DO). Tệp tên cố định dưới gốc, lstat tệp thường.
 import { docCauHinhChay } from "../ai/chayUngDung/cauHinhChayDuAn";
 import { damBaoCauHinhNugetOffline } from "../ai/nugetOfflineCauHinh";
@@ -1694,75 +1695,35 @@ export function moiTruongDaLoc(nguon: NodeJS.ProcessEnv = process.env): NodeJS.P
  * `console.log` trong một ca test) sẽ làm **tiến trình máy chủ** hết bộ nhớ nếu ta gom hết rồi mới
  * cắt. Trần đầu ra phải chặn ở chỗ **nhận**, không ở chỗ **trả**.
  */
-export class BoDemDauRa {
-  private dau = "";
-  private duoi = "";
-  private tong = 0;
-
-  constructor(
-    private readonly tranDau = TRAN_DAU_RA_DAU,
-    private readonly tranCuoi = TRAN_DAU_RA_CUOI,
-  ) {}
-
-  them(s: string): void {
-    if (s === "") return;
-    this.tong += s.length;
-    if (this.dau.length < this.tranDau) this.dau += s.slice(0, this.tranDau - this.dau.length);
-    this.duoi = (this.duoi + s).slice(-this.tranCuoi);
-  }
-
-  get byteThat(): number {
-    return this.tong;
-  }
-
-  get catBot(): boolean {
-    return this.tong > this.dau.length + Math.min(this.tong - this.dau.length, this.duoi.length);
-  }
-
-  /** Ghép ĐẦU + (khai số byte bỏ giữa) + CUỐI. */
-  ket(): { text: string; boQua: number } {
-    if (this.tong <= this.dau.length) return { text: this.dau, boQua: 0 };
-    const conLai = this.tong - this.dau.length;
-    const soCuoi = Math.min(conLai, this.duoi.length);
-    const phanCuoi = this.duoi.slice(this.duoi.length - soCuoi);
-    const boQua = conLai - soCuoi;
-    if (boQua <= 0) return { text: this.dau + phanCuoi, boQua: 0 };
-    return { text: `${this.dau}\n…[ĐÃ CẮT ${boQua} byte Ở GIỮA — đầu ${this.dau.length}, cuối ${soCuoi}]…\n${phanCuoi}`, boQua };
+export class BoDemDauRa extends BoDemDauRaChung {
+  // Hằng đầu/cuối của máy chủ giữ ở đây; thân bộ đệm là MỘT chủ dùng chung với extension (`shared/tienTrinhAnToan.ts`, Đợt 12/H2).
+  constructor(tranDau: number = TRAN_DAU_RA_DAU, tranCuoi: number = TRAN_DAU_RA_CUOI) {
+    super(tranDau, tranCuoi);
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // GIẾT **CẢ CÂY** TIẾN TRÌNH
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-export type KetQuaGiet = "khong-can" | "khong-co-pid" | "da-ra-lenh" | "loi";
+export type KetQuaGiet = KetQuaGietChung;
 
 export function gietCayTienTrinh(pid: number | undefined | null): KetQuaGiet {
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return "khong-co-pid";
-  if (process.platform === "win32") {
-    try {
+  // Quyết định (pid hợp lệ? Windows hay POSIX? thử nhóm rồi thử đúng pid) là của `shared/tienTrinhAnToan.ts`; hiệu ứng sinh `taskkill`
+  // vẫn nằm ĐÚNG ở đây (một điểm sinh tiến trình của tệp này — census `vramAllocationSites` không đổi).
+  return gietCayTienTrinhChung(pid, {
+    windows: process.platform === "win32",
+    chayTaskkill: (p) => {
       // `/T` = cả cây con, `/F` = cưỡng bức. Đây là cách DUY NHẤT trên Windows giết được cháu/chắt.
-      const tk = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      const tk = spawn("taskkill", ["/PID", String(p), "/T", "/F"], { stdio: "ignore", windowsHide: true });
       tk.on("error", () => {
         /* taskkill vắng mặt là chuyện của môi trường; đã có ân hạn + khai báo ở tầng trên */
       });
       tk.unref();
-      return "da-ra-lenh";
-    } catch {
-      return "loi";
-    }
-  }
-  // POSIX: `detached: true` lúc sinh ⇒ pid là THỦ LĨNH NHÓM ⇒ pid âm giết cả nhóm.
-  try {
-    process.kill(-pid, "SIGKILL");
-    return "da-ra-lenh";
-  } catch {
-    try {
-      process.kill(pid, "SIGKILL");
-      return "da-ra-lenh";
-    } catch {
-      return "loi";
-    }
-  }
+    },
+    guiTinHieu: (p, tinHieu) => {
+      process.kill(p, tinHieu);
+    },
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
