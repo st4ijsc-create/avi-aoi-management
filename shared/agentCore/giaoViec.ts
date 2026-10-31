@@ -192,6 +192,8 @@ function cat(s: string, tran: number): string {
 export const TRAN_KY_TU_KHOI_BAO_CAO = 4_000;
 
 const RE_DIEU_KHIEN = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+/** ký tự vô hình/đảo chiều (bidi · rộng-không · U+2028/9): một ĐƯỜNG chứa chúng bị LOẠI (khác `RE_DIEU_KHIEN` chỉ đổi thành khoảng trắng trong văn bản) */
+const RE_DIEU_KHIEN_AN = /[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
 const motDong = (s: string): string => s.replace(RE_DIEU_KHIEN, " ").replace(/\s+/g, " ").trim();
 
 /**
@@ -200,7 +202,7 @@ const motDong = (s: string): string => s.replace(RE_DIEU_KHIEN, " ").replace(/\s
  */
 export function chuanDuongBaoCao(p: unknown): string | null {
   if (typeof p !== "string") return null;
-  if (/[\u0000-\u001f\u007f]/.test(p)) return null;
+  if (/[\u0000-\u001f\u007f]/.test(p) || RE_DIEU_KHIEN_AN.test(p)) return null;
   const t = p.trim().replace(/\\/g, "/");
   if (t === "" || t.length > 200 || t.startsWith("/") || /^[a-zA-Z]:/.test(t)) return null;
   const doan = t.replace(/^(\.\/)+/, "").split("/");
@@ -211,8 +213,8 @@ export function chuanDuongBaoCao(p: unknown): string | null {
 
 /**
  * (H5.1) Dựng KHỐI VĂN BẢN cho cha từ báo cáo ĐÃ KIỂM (không bao giờ đưa JSON thô). `cham` = tập đường (đã chuẩn hoá) con THỰC SỰ chạm bằng
- * công cụ; mục ngoài tập vẫn hiện nhưng gắn `[unverified]`; đường không an toàn bị loại + đếm. "done" mà 0 bằng chứng đã kiểm ⇒ nhãn
- * `done (no verified evidence)`. `theChoDuyet` > 0 ⇒ dòng "N proposed change(s) were not approved — cancelled". `vanQuet` = mọi chuỗi
+ * công cụ; mục ngoài tập vẫn hiện nhưng gắn `[not touched by sub-agent]` (nghĩa là "con không chạm tệp đó" — KHÔNG khẳng định trích dẫn đã được kiểm); đường không an toàn bị loại + đếm. "done" mà 0 bằng chứng đã kiểm ⇒ nhãn
+ * `done (no evidence from files the sub-agent touched)`. `theChoDuyet` > 0 ⇒ dòng "N proposed change(s) were not approved — cancelled". `vanQuet` = mọi chuỗi
  * của báo cáo nối lại (cho `quetTomTat` tìm câu dạng mệnh lệnh).
  */
 export function dungKhoiBaoCao(b: BaoCaoCon, cham: ReadonlySet<string>, theChoDuyet: number): { khoi: string; dem: DemBaoCao; vanQuet: string } {
@@ -226,7 +228,7 @@ export function dungKhoiBaoCao(b: BaoCaoCon, cham: ReadonlySet<string>, theChoDu
     }
     const kiem = cham.has(c);
     if (!kiem) soKhongKiem++;
-    return { hien: kiem ? c : `${c} [unverified]`, ok: kiem };
+    return { hien: kiem ? c : `${c} [not touched by sub-agent]`, ok: kiem };
   };
   const dongPhatHien = b.findings.map((f) => {
     const g = f.path !== undefined ? gan(f.path) : null;
@@ -245,14 +247,15 @@ export function dungKhoiBaoCao(b: BaoCaoCon, cham: ReadonlySet<string>, theChoDu
     const trich = e.quote !== undefined ? ` — "${motDong(e.quote)}"` : "";
     return [`- ${g.hien}${e.line !== undefined ? `:${e.line}` : ""}${trich}`];
   });
-  const nhanTrangThai = b.status === "done" && daKiem === 0 ? "done (no verified evidence)" : b.status;
+  const nhanTrangThai = b.status === "done" && daKiem === 0 ? "done (no evidence from files the sub-agent touched)" : b.status;
   const dong: string[] = [`Structured report — status: ${nhanTrangThai}`, `Summary: ${motDong(b.summary)}`];
   if (dongPhatHien.length > 0) dong.push(`Findings (${dongPhatHien.length}):`, ...dongPhatHien);
   if (dongTep.length > 0) dong.push(`Files: ${dongTep.join(", ")}`);
   if (dongBangChung.length > 0) dong.push(`Evidence (${dongBangChung.length}):`, ...dongBangChung);
   if (soLoaiDuong > 0) dong.push(`Dropped ${soLoaiDuong} unsafe path(s) from the report.`);
   if (theChoDuyet > 0) dong.push(`${theChoDuyet} proposed change(s) were not approved — cancelled.`);
-  const vanQuet = [b.summary, ...b.findings.map((f) => f.note), ...b.evidence.map((e) => e.quote ?? "")].join("\n");
+  // MỌI chuỗi thô của báo cáo — kể cả ĐƯỜNG (tệp · phát hiện · bằng chứng): một đường cũng có thể mang câu mệnh lệnh
+  const vanQuet = [b.summary, ...b.findings.flatMap((f) => [f.note, f.path ?? ""]), ...b.files, ...b.evidence.flatMap((e) => [e.path, e.quote ?? ""])].join("\n");
   return {
     khoi: cat(dong.join("\n"), TRAN_KY_TU_KHOI_BAO_CAO),
     dem: { status: b.status, soPhatHien: dongPhatHien.length, soTep: dongTep.length, soBangChung: dongBangChung.length, soKhongKiem, soLoaiDuong, theChoDuyet },
