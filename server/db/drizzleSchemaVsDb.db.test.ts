@@ -102,7 +102,7 @@ describe("★ lưới chung — cột Drizzle khai ⊆ cột có thật trên DB
     const bGia = khac.table("bang_schema_khac", { id: serialGia("id") });
     const a = pgTableGia("bang_chieu", { id: serialGia("id") });
     const b = pgTableGia("bang_chieu", { id: serialGia("id"), them: serialGia("them") });
-    const kq = bangKhaiTuModule([{ bGia, a }, { b }]);
+    const kq = bangKhaiTuModule([{ bGia, b }, { a }]); // bản đầy đủ TRƯỚC, bản chiếu một phần SAU: giữ-bản-cuối sẽ mất cột "them"
     expect(kq.map((x) => x.ten)).toEqual(["bang_chieu"]);
     expect(kq[0].cot.sort()).toEqual(["id", "them"]);
   });
