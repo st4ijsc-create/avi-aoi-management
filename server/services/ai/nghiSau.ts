@@ -41,7 +41,8 @@
 import { luotDuocNghi, type CheDoNghi, type LoaiLuot } from "./loaiLuot";
 
 /** Tên trường llama-server ĐỌC theo yêu cầu (đã xác minh bằng nguồn + đo sống; xem đầu tệp). */
-export const TRUONG_NGAN_SACH_NGHI = "thinking_budget_tokens";
+// ★ Đợt 12 H3.2 — một nguồn: mô tả model (shared/ai/moTaModel.ts).
+export { TRUONG_NGAN_SACH_NGHI_B9814 as TRUONG_NGAN_SACH_NGHI } from "../../../shared/ai/moTaModel";
 
 export const NGAN_SACH_NGHI_SAU = 24_000;
 export const TRAN_SINH_NGHI_SAU = 32_000;

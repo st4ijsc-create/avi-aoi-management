@@ -72,6 +72,7 @@ import {
 //   `node:async_hooks`) ⇒ import TĨNH. Cắm ở ĐÚNG ba chỗ chạm mạng: `postChatCompletion`,
 //   `streamChatCompletion`, `postInfill` — mọi hàm `server*` công khai đi qua một trong ba.
 import { chuanHoaLogprobDau } from "./ai/logprobDau";
+import { moTaCho } from "../../shared/ai/moTaModel";
 import { quaCongUuTien, quaCongUuTienLuong } from "./ai/hangDoiUuTienLlm";
 import { layAnhSoModel } from "./ai/soModel/anhSoModel";
 import { laModelHoSoKheNang, laModelKheNangPhu } from "./ai/soModel/tapKheNang";
@@ -148,7 +149,7 @@ export class LoiTokenCanKietVaoSuyLuan extends Error {
         (args.finishReason ? ` (finish_reason="${args.finishReason}")` : "") +
         `. Đây KHÔNG phải "model không trả lời" — model chạy đúng, HẠN MỨC TOKEN SAI. ` +
         `CÁCH SỬA, theo thứ tự rẻ→đắt: (1) lượt này không cần suy luận ⇒ đặt \`disableThinking: true\` ` +
-        `(gửi \`chat_template_kwargs.enable_thinking=false\`); (2) nâng \`maxTokens\` lên trên độ dài ` +
+        `(gửi cờ tắt nghĩ của template qua \`chat_template_kwargs\`); (2) nâng \`maxTokens\` lên trên độ dài ` +
         `khối suy luận (đo 2026-08-17 trên chính :8091: một lượt suy luận cho tác vụ chọn tool tốn ` +
         `396–1082 token); (3) rút ngắn câu hỏi. ` +
         `TRÍCH SUY LUẬN: ${args.suyLuan.slice(0, 300)}`,
@@ -227,7 +228,11 @@ export function phanDinhCauTraLoiRong(
  */
 export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | undefined, giuNghi?: boolean): void {
   if (!tat && !giuNghi) return;
-  body.chat_template_kwargs = { ...(tat ? { enable_thinking: false } : {}), ...(giuNghi ? { preserve_thinking: true } : {}) };
+  // ★ Đợt 12 H3.2 — khoá cờ lấy từ MÔ TẢ của model trong thân (`shared/ai/moTaModel.ts`); model không có kênh nghĩ ⇒ không gửi gì.
+  const nghi = moTaCho(typeof body.model === "string" ? body.model : null).nghi;
+  if (nghi.kieu !== "kwargs") return;
+  const kw = { ...(tat ? nghi.tat : {}), ...(giuNghi && nghi.giu ? nghi.giu : {}) };
+  if (Object.keys(kw).length) body.chat_template_kwargs = kw;
 }
 
 /**
@@ -238,9 +243,12 @@ export function lapCoTatSuyLuan(body: Record<string, unknown>, tat: boolean | un
 export function lapNganSachNghi(body: Record<string, unknown>, n: number | undefined, tatNghi: boolean | undefined): void {
   if (tatNghi) return;
   if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return;
-  body.thinking_budget_tokens = Math.floor(n);
+  // ★ Đợt 12 H3.2 — tên trường do MÔ TẢ model khai (b9814 đọc đúng một tên); model không khai ⇒ không gửi.
+  const nghi = moTaCho(typeof body.model === "string" ? body.model : null).nghi;
+  if (nghi.kieu !== "kwargs" || !nghi.truongNganSach) return;
+  body[nghi.truongNganSach] = Math.floor(n);
   // Chỉ chế độ "Nghĩ sâu" đặt trường này ⇒ một dòng mỗi lượt sâu, không ồn ở chế độ mặc định.
-  console.info(`[llama-server] thinking_budget_tokens=${body.thinking_budget_tokens} (ngân sách nghĩ theo yêu cầu)`);
+  console.info(`[llama-server] ${nghi.truongNganSach}=${body[nghi.truongNganSach]} (ngân sách nghĩ theo yêu cầu)`);
 }
 
 /**

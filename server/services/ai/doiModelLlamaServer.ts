@@ -75,6 +75,13 @@ import {
   modelEnvGoc,
   tenModelGoc,
 } from "./luaChonModelLlamaServer";
+import { MO_TA_MAC_DINH } from "../../../shared/ai/moTaModel";
+
+/** Thân tắt nghĩ của lượt khởi động (chưa biết model nào vừa nạp ⇒ mô tả mặc định = họ Qwen3.x như trước H3.2). */
+function thanTatNghiMacDinh(): Record<string, unknown> {
+  const n = MO_TA_MAC_DINH.nghi;
+  return n.kieu === "kwargs" ? { chat_template_kwargs: { ...n.tat } } : {};
+}
 
 const GiB = 1024 ** 3;
 
@@ -218,12 +225,13 @@ export async function sinhThuNgan(
       const res = await fetchFn(`${url.replace(/\/+$/, "")}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", ...tieuDe(env) },
+        // ★ Đợt 12 H3.2 — cờ tắt nghĩ lấy từ MÔ TẢ model (mô tả mặc định khi chưa biết basename: thân y hệt trước).
         body: JSON.stringify({
           messages: [{ role: "user", content: "Reply with exactly one word: OK" }],
           max_tokens: 16,
           temperature: 0,
           stream: false,
-          chat_template_kwargs: { enable_thinking: false },
+          ...thanTatNghiMacDinh(),
         }),
         signal,
       });
