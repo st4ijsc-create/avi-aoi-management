@@ -74,6 +74,40 @@ describe("bocGhiLuot", () => {
     expect(thuMucGhiHopLe("D:/SOURCES/du-an-khac", "D:/SOURCES/du-an")).toBe(true);
   });
 
+  it("(rà an toàn dieu-phoi) TRONG bất kỳ gốc dự án đã khai ⇒ từ chối; junction / symlink trỏ vào gốc cấm ⇒ vẫn từ chối (so realpath)", async () => {
+    const { thuMucGhiHopLe } = await import("./ghiLuotModel");
+    const goc = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ghi-goc-du-an-")));
+    const ngoai = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ghi-ngoai-")));
+    expect(thuMucGhiHopLe(path.join(goc, "con", "chua-co"), "Z:/khac", [goc])).toBe(false);
+    expect(thuMucGhiHopLe(goc, "Z:/khac", [goc])).toBe(false);
+    expect(thuMucGhiHopLe(path.join(ngoai, "ghi"), "Z:/khac", [goc])).toBe(true);
+    // lối tắt (junction trên Windows, symlink nơi khác) nằm NGOÀI nhưng trỏ VÀO gốc dự án
+    const loiTat = path.join(ngoai, "loi-tat");
+    fs.symlinkSync(goc, loiTat, process.platform === "win32" ? "junction" : "dir");
+    expect(thuMucGhiHopLe(path.join(loiTat, "ghi"), "Z:/khac", [goc])).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("(rà an toàn dieu-phoi) POSIX: thư mục 0700, tệp thô 0600 (Windows: quyền = ACL thư mục — bỏ qua)", async () => {
+    const d = path.join(thuMuc(), "moi");
+    const boc = bocGhiLuot(gocGia(MANH), { thuMuc: d, runId: RUN });
+    await gom(boc(OPT));
+    expect(fs.statSync(d).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(path.join(d, `${RUN}.jsonl`)).mode & 0o777).toBe(0o600);
+  });
+
+  it("(rà an toàn dieu-phoi) bocGhiLuot đọc gốc dự án đã khai (AI_REPO_SANDBOX_ROOTS) ⇒ thư mục trong dự án bị bỏ qua", () => {
+    const goc = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ghi-env-du-an-")));
+    const cu = process.env.AI_REPO_SANDBOX_ROOTS;
+    process.env.AI_REPO_SANDBOX_ROOTS = `ghienv=Ghi env|${goc}`;
+    try {
+      const g = gocGia(MANH);
+      expect(bocGhiLuot(g, { thuMuc: path.join(goc, "ghi-luot"), runId: RUN })).toBe(g);
+    } finally {
+      if (cu === undefined) delete process.env.AI_REPO_SANDBOX_ROOTS;
+      else process.env.AI_REPO_SANDBOX_ROOTS = cu;
+    }
+  });
+
   it("runId không phải UUID / thư mục tương đối ⇒ trả lại đúng hàm gốc (không ghi)", () => {
     const g = gocGia(MANH);
     expect(bocGhiLuot(g, { thuMuc: thuMuc(), runId: "../../etc" })).toBe(g);

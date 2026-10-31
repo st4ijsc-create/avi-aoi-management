@@ -10,6 +10,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { GgufChatOptions, GgufStreamChunk } from "../../aiGgufEngine";
+// Tĩnh (không require — repo là ESM): mô-đun này chỉ được nạp (import động ở goiModelMayChu) khi đang ghi.
+import { danhSachDuAn } from "../../aiLocalTools/repoProjects";
 
 export const PHIEN_BAN_GHI_LUOT = 1;
 const RE_RUN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,8 +23,10 @@ const soLuotTheoRun = new Map<string, number>();
 
 function ghiDong(tep: string, o: unknown): void {
   try {
-    fs.mkdirSync(path.dirname(tep), { recursive: true });
-    fs.appendFileSync(tep, `${JSON.stringify(o)}\n`, "utf8");
+    // (rà an toàn dieu-phoi) bản thô có system prompt / kết quả tool / suy luận ⇒ chỉ chủ tiến trình đọc được (POSIX 0700/0600; Windows:
+    //   quyền thật là ACL của thư mục — thư mục ghi NGOÀI repo, chỉ tài khoản chạy máy chủ).
+    fs.mkdirSync(path.dirname(tep), { recursive: true, mode: 0o700 });
+    fs.appendFileSync(tep, `${JSON.stringify(o)}\n`, { encoding: "utf8", mode: 0o600 });
   } catch (e) {
     if (!daCanhBao) {
       daCanhBao = true;
@@ -35,18 +39,51 @@ function ghiDong(tep: string, o: unknown): void {
  * Bọc `goc` để ghi mỗi lượt. `thuMuc` tuyệt đối (do người đo đặt), `runId` phải là UUID (tên tệp) — sai ⇒ trả `goc` nguyên (không ghi).
  * Thứ tự mảnh giữ đúng như engine phát; lỗi giữa luồng được ghi (`loi`) rồi NÉM LẠI nguyên vẹn.
  */
-/** (rà kiem-dinh) thư mục ghi nằm TRONG thư mục làm việc của tiến trình (gốc repo khi chạy :3000) ⇒ dễ commit nhầm bản thô ⇒ từ chối. */
-export function thuMucGhiHopLe(thuMuc: string, cwd: string = process.cwd()): boolean {
+/** Đường THẬT (theo symlink / junction) của p, hoặc của tổ tiên gần nhất đang tồn tại + phần đuôi chưa có. */
+function duongThat(p: string): string {
+  let dau = path.resolve(p);
+  const duoi: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(dau), ...duoi.reverse());
+    } catch {
+      const cha = path.dirname(dau);
+      if (cha === dau) return path.resolve(p);
+      duoi.push(path.basename(dau));
+      dau = cha;
+    }
+  }
+}
+
+const trongHoacBang = (con: string, cha: string): boolean => {
+  const rel = path.relative(cha, con);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+};
+
+/**
+ * (rà kiem-dinh + rà an toàn dieu-phoi) thư mục ghi phải TUYỆT ĐỐI và — so bằng đường THẬT (realpath: junction / symlink không lách được) —
+ * KHÔNG nằm trong thư mục làm việc của tiến trình (gốc repo khi chạy :3000) hay trong BẤT KỲ gốc dự án nào đã khai (`gocCam`): bản thô
+ * trong cây mã ⇒ dễ commit nhầm / bị chính tác nhân đọc lại.
+ */
+export function thuMucGhiHopLe(thuMuc: string, cwd: string = process.cwd(), gocCam: readonly string[] = []): boolean {
   if (!path.isAbsolute(thuMuc)) return false;
-  const rel = path.relative(path.resolve(cwd), path.resolve(thuMuc));
-  const trong = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-  return !trong;
+  const that = duongThat(thuMuc);
+  return ![cwd, ...gocCam].some((g) => trongHoacBang(that, duongThat(g)));
+}
+
+/** Gốc mọi dự án hộp cát đang khai (env + DB) — lỗi ⇒ [] (cwd vẫn được kiểm). */
+function gocDuAnDaKhai(): string[] {
+  try {
+    return danhSachDuAn().map((d) => d.goc);
+  } catch {
+    return [];
+  }
 }
 
 let daBaoBat = false;
 
 export function bocGhiLuot(goc: HamStream, o: { thuMuc: string; runId: string }): HamStream {
-  if (!RE_RUN.test(o.runId) || !thuMucGhiHopLe(o.thuMuc)) {
+  if (!RE_RUN.test(o.runId) || !thuMucGhiHopLe(o.thuMuc, process.cwd(), gocDuAnDaKhai())) {
     if (!daCanhBao && o.thuMuc) {
       daCanhBao = true;
       console.warn(`[ghiLuotModel] thư mục ghi lượt bị BỎ QUA (phải là thư mục tuyệt đối NGOÀI thư mục làm việc của tiến trình): ${o.thuMuc}`);
