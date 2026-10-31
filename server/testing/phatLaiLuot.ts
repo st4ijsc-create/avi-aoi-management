@@ -107,7 +107,10 @@ export function chuanHoaSuKien(ds: readonly unknown[], thay: (s: string) => stri
   for (const m of ds) {
     const e = (m && typeof m === "object" && "suKien" in m ? (m as { suKien: unknown }).suKien : m) as { loai?: string } | null;
     if (!e || BO_LOAI.has(String(e.loai))) continue;
-    ra.push(thayMoiChuoi(e, (s) => doiId(thay(s))));
+    // `buoc-do` (Đợt 12 H0.2): bamHeThong/tokenUoc tính từ system THÔ (có đường dẫn dự án) ⇒ khác giữa đường ghi và đường phát lại.
+    //   System đã được so riêng ở chuanHoaYeuCau (sau khi thay đường) ⇒ bỏ hai trường này khỏi phép so sự kiện.
+    const e2 = e.loai === "buoc-do" ? (({ bamHeThong: _b, tokenUoc: _t, ...r }) => r)(e as Record<string, unknown>) : e;
+    ra.push(thayMoiChuoi(e2, (s) => doiId(thay(s))));
   }
   return ra;
 }
