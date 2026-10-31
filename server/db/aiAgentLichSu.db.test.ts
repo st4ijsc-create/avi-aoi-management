@@ -124,6 +124,17 @@ describe("aiAgentLichSu", () => {
     expect(await dem(run)).toBe(0);
   });
 
+  it("★ CA BIÊN ở CSDL: 400 tin ghi được, 401 tin bị CHECK chặn (luuLichSu trả false, hàng cũ còn nguyên)", async () => {
+    const run = await tao(uA);
+    const mk = (n: number): TinNhan[] => Array.from({ length: n }, (_v, i) => ({ role: "user" as const, content: "m" + i }));
+    expect(await luuLichSu(uA, run, mk(400), 1)).toBe(true);
+    expect((await docLichSu(uA, run))!.tinNhan).toHaveLength(400);
+    expect(await luuLichSu(uA, run, mk(401), 2)).toBe(false);
+    const ban = await docLichSu(uA, run);
+    expect(ban!.tinNhan).toHaveLength(400);
+    expect(ban!.buoc).toBe(1);
+  });
+
   it("bản lưu không phải mảng ⇒ đọc trả null (không đưa rác cho host)", async () => {
     const run = await tao(uA);
     await luuLichSu(uA, run, TIN, 1);

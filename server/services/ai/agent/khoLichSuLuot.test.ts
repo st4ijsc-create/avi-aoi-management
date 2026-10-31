@@ -66,6 +66,22 @@ describe("chuanBiBanLuu", () => {
     expect(chuanBiBanLuu(vao)).toEqual({ ok: false, ly: "qua-lon" });
   });
 
+  it("★ CA BIÊN byte: đúng TRAN_BYTE_BAN_LUU ⇒ nhận; thừa 1 byte ⇒ từ chối (qua-lon)", () => {
+    const tin = (n: number): TinNhan[] => [{ role: "user", content: "a".repeat(n) }];
+    const co = Buffer.byteLength(JSON.stringify(tin(0)), "utf8");
+    const vuaDu = chuanBiBanLuu(tin(TRAN_BYTE_BAN_LUU - co));
+    expect(vuaDu.ok).toBe(true);
+    if (vuaDu.ok) expect(vuaDu.soByte).toBe(TRAN_BYTE_BAN_LUU);
+    expect(chuanBiBanLuu(tin(TRAN_BYTE_BAN_LUU - co + 1))).toEqual({ ok: false, ly: "qua-lon" });
+  });
+
+  it("★ CA BIÊN số tin: 400 ⇒ nhận, 401 ⇒ từ chối (qua-nhieu-tin); system KHÔNG tính vào số tin", () => {
+    const mk = (n: number): TinNhan[] => Array.from({ length: n }, (_v, i) => ({ role: "user" as const, content: "m" + i }));
+    expect(chuanBiBanLuu(mk(TRAN_TIN_BAN_LUU)).ok).toBe(true);
+    expect(chuanBiBanLuu(mk(TRAN_TIN_BAN_LUU + 1))).toEqual({ ok: false, ly: "qua-nhieu-tin" });
+    expect(chuanBiBanLuu([{ role: "system", content: "s" }, ...mk(TRAN_TIN_BAN_LUU)]).ok).toBe(true); // system bị bỏ trước khi đếm
+  });
+
   it("đếm byte theo UTF-8 thật (tiếng Việt/ký tự rộng không lọt trần)", () => {
     const vao: TinNhan[] = [{ role: "user", content: "ệ".repeat(Math.floor(TRAN_BYTE_BAN_LUU / 2)) }];
     expect(chuanBiBanLuu(vao).ok).toBe(false); // ~3 byte/ký tự ⇒ vượt trần dù ít ký tự hơn trần

@@ -71,6 +71,7 @@
 
 ### 8. `AI_AGENT_TIEP_TUC` (H5.4) — cần migration 0450 (đã áp)
 - **Làm gì:** lượt GỐC lưu lịch sử gửi model (bỏ system, đã che bí mật, ≤ 400 tin/400 KB — vượt ⇒ xoá bản lưu) vào `ai_agent_run_lich_su` ở ranh giới an toàn (trước và sau tool). Thủ tục `aiAgent.tiepTucLuot({runId})` cho **chủ lượt** tạo lượt MỚI từ bản lưu của lượt `gian-doan`/`loi`/`huy`: tool dở nhận `[outcome unknown …]` (không tự chạy lại), kế hoạch đã duyệt và thẻ cũ KHÔNG mang sang, mỗi nguồn tiếp tục **một lần**. Lượt `xong` ⇒ xoá bản lưu; bản > 7 ngày bị dọn (tối đa mỗi giờ). Cột `tinNhan` bị ẩn khỏi vai MCP chỉ-đọc.
+- **⚠ CHỈ bật SAU lô vá an toàn "không thừa hưởng tự trị" (đã có trong nhánh này):** lượt tiếp tục LUÔN chạy ở `sua` khi nguồn là `tu-dong` (mọi ghi/lệnh qua người duyệt; thủ tục trả `haTuDong:true` để UI nói rõ), và nhiễm của nguồn (sự kiện `ha-tu-tri`/`canh-bao-du-lieu` trong sổ ∪ cảnh báo nằm trong lịch sử đã lưu) được truyền vào lõi ⇒ nhãn "nguồn đáng ngờ" còn sống trên mọi thẻ duyệt. Không bật bản cũ hơn.
 - **Khi nào bật:** muốn khôi phục lượt dài bị khởi động lại máy chủ/huỷ nhầm. **Lưu ý:** bản lưu chứa mã/câu hỏi người dùng (đã che bí mật) — cân nhắc chính sách lưu trữ.
 - **Kiểm:** `SELECT count(*) FROM ai_agent_run_lich_su` tăng khi có lượt chạy; sau lượt `xong` hàng biến mất.
 - **Số đo:** test DB thật (đua 8 lần bấm ⇒ 1 thắng, phạm vi chủ) + đột biến.
