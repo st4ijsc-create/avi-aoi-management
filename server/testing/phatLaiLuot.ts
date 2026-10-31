@@ -15,7 +15,8 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import type { GgufChatOptions, GgufStreamChunk } from "../services/aiGgufEngine";
 
-export const PHIEN_BAN_FIXTURE = 1;
+/** 2 = tin của mỗi lượt lưu dạng HIỆU so với lượt trước (`tinChung` + `tinMoi`) — lịch sử chỉ-nối-thêm ⇒ fixture O(n) thay vì O(n²). */
+export const PHIEN_BAN_FIXTURE = 2;
 export const TOKEN_GOC = "<<GOC_DU_AN>>";
 export const TOKEN_NGUOI = "<<NGUOI_DUNG>>";
 
@@ -113,9 +114,12 @@ export function chuanHoaSuKien(ds: readonly unknown[], thay: (s: string) => stri
 
 // ─── fixture ───────────────────────────────────────────────────────────────────────────────────
 
+/** Yêu cầu một lượt trong fixture: như `YeuCauChuanHoa` nhưng `tin` = `tinChung` tin đầu của lượt TRƯỚC + `tinMoi`. */
+export type YeuCauHieu = Omit<YeuCauChuanHoa, "tin"> & { tinChung: number; tinMoi: TinChuanHoa[] };
+
 export interface LuotFixture {
   n: number;
-  yeuCau: YeuCauChuanHoa;
+  yeuCau: YeuCauHieu;
   manh: GgufStreamChunk[];
   loi?: string;
 }
@@ -125,6 +129,29 @@ export interface FixturePhatLai {
   lenh: { cauHoi: string; cheDo: string; duAnTuongDoi: string; commit?: string };
   luot: LuotFixture[];
   ky: { suKien: unknown[]; lyDo: string | null; dat?: boolean | null };
+}
+
+/** Đầy đủ ⇒ hiệu: mỗi lượt giữ số tin đầu TRÙNG lượt trước + phần mới. */
+function thanhHieu(ds: Array<Omit<LuotFixture, "yeuCau"> & { yeuCau: YeuCauChuanHoa }>): LuotFixture[] {
+  let truoc: TinChuanHoa[] = [];
+  return ds.map((l) => {
+    const { tin, ...con } = l.yeuCau;
+    let k = 0;
+    while (k < tin.length && k < truoc.length && JSON.stringify(tin[k]) === JSON.stringify(truoc[k])) k++;
+    truoc = tin;
+    return { ...l, yeuCau: { ...con, tinChung: k, tinMoi: tin.slice(k) } };
+  });
+}
+
+/** Hiệu ⇒ đầy đủ (theo thứ tự lượt). */
+export function moRongYeuCau(fx: FixturePhatLai): YeuCauChuanHoa[] {
+  let truoc: TinChuanHoa[] = [];
+  return fx.luot.map((l) => {
+    const { tinChung, tinMoi, ...con } = l.yeuCau;
+    const tin = [...truoc.slice(0, tinChung), ...tinMoi];
+    truoc = tin;
+    return { ...con, tin };
+  });
 }
 
 /** Mẫu không được còn trong fixture sau khi thay (fail-closed). */
@@ -171,9 +198,11 @@ export function dongGoi(
     phienBan: PHIEN_BAN_FIXTURE,
     dau: { ngay: String(dau?.ngay ?? ""), node: String(dau?.node ?? ""), nguon: "ghiLuotModel", ...(y.bai ? { bai: y.bai } : {}), ...(y.dist ? { dist: y.dist } : {}), model: luotTho[0]?.modelId ?? null },
     lenh: { cauHoi: thay(y.cauHoi), cheDo: y.cheDo, duAnTuongDoi: y.duAnTuongDoi, ...(y.commit ? { commit: y.commit } : {}) },
-    luot: luotTho
-      .sort((a, b) => a.n - b.n)
-      .map((l) => ({ n: l.n, yeuCau: chuanHoaYeuCau(l.options, thay), manh: thayMoiChuoi(l.manh, thay), ...(l.loi ? { loi: thay(l.loi) } : {}) })),
+    luot: thanhHieu(
+      luotTho
+        .sort((a, b) => a.n - b.n)
+        .map((l) => ({ n: l.n, yeuCau: chuanHoaYeuCau(l.options, thay), manh: thayMoiChuoi(l.manh, thay), ...(l.loi ? { loi: thay(l.loi) } : {}) })),
+    ),
     ky: { suKien: chuanHoaSuKien(y.suKien, thay), lyDo: y.lyDo, ...(y.dat !== undefined ? { dat: y.dat } : {}) },
   };
   const s = JSON.stringify(fx);
@@ -224,6 +253,7 @@ export function taoStreamPhatLai(fx: FixturePhatLai, o: { goc: string; chat?: bo
   const thay = taoBoThay(o.goc, o.nguoi);
   const veGoc = (s: string) => s.split(TOKEN_GOC).join(o.goc);
   const lech: LechPhatLai[] = [];
+  const day = moRongYeuCau(fx);
   let k = 0;
   const stream: HamStream = async function* (options) {
     const l = fx.luot[k++];
@@ -232,7 +262,7 @@ export function taoStreamPhatLai(fx: FixturePhatLai, o: { goc: string; chat?: bo
       lech.push(e);
       throw new LoiLechPhatLai(e);
     }
-    const d = soYeuCau(l.yeuCau, chuanHoaYeuCau(options, thay), o.soHeThong === true);
+    const d = soYeuCau(day[k - 1]!, chuanHoaYeuCau(options, thay), o.soHeThong === true);
     if (d) {
       d.n = l.n;
       lech.push(d);

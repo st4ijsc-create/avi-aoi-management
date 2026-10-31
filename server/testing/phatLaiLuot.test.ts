@@ -103,6 +103,10 @@ afterAll(async () => {
 describe("H4.2 — ghi ⇒ đóng gói ⇒ phát lại", () => {
   it("bản ghi thật có đủ 3 lượt; fixture không còn đường gốc / mẫu cấm; ghi đã tạo src/b.ts", () => {
     expect(fx.luot.map((l) => l.n)).toEqual([1, 2, 3]);
+    // phiên bản 2: lượt sau chỉ mang phần MỚI của lịch sử (chỉ-nối-thêm) ⇒ tinChung tăng, tinMoi ngắn
+    expect(fx.phienBan).toBe(2);
+    expect(fx.luot.map((l) => l.yeuCau.tinChung)).toEqual([0, 1, 3]);
+    expect(fx.luot.map((l) => l.yeuCau.tinMoi.map((m) => m.role))).toEqual([["user"], ["assistant", "tool"], ["assistant", "tool"]]);
     expect(kiemMauCam(JSON.stringify(fx))).toEqual([]);
     expect(JSON.stringify(fx)).not.toContain(os.tmpdir());
     expect(Object.keys(cayGhi)).toEqual(["a.ts", "b.ts"]);
@@ -160,7 +164,7 @@ describe("H4.2 — đơn vị (thay đường, lượt thừa, cờ nghĩ, đổ
       phienBan: 1,
       dau: { ngay: "", node: "", nguon: "t" },
       lenh: { cauHoi: "q", cheDo: "hoi", duAnTuongDoi: "." },
-      luot: [{ n: 1, yeuCau: { heThong: "", congCu: { ten: [], bam: "" }, co: { disableThinking: false, preserveThinking: false }, tin: [{ role: "user", content: "q" }] }, manh: [{ type: "token", token: `mở ${TOKEN_GOC}/a.ts` }] }],
+      luot: [{ n: 1, yeuCau: { heThong: "", congCu: { ten: [], bam: "" }, co: { disableThinking: false, preserveThinking: false }, tinChung: 0, tinMoi: [{ role: "user", content: "q" }] }, manh: [{ type: "token", token: `mở ${TOKEN_GOC}/a.ts` }] }],
       ky: { suKien: [], lyDo: null },
     } as never;
     const p = taoStreamPhatLai(fx1, { goc: "E:/phat" });
