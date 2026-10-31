@@ -330,7 +330,7 @@ export function registerAssetRoutes(r: Router): void {
         .limit(1);
 
       // Adapter link states (OT connectivity layer).
-      const adapters = await d
+      const hangAdapter = await d
         .select({
           id: deviceAdapters.id,
           code: deviceAdapters.code,
@@ -340,9 +340,28 @@ export function registerAssetRoutes(r: Router): void {
           lastConnectedAt: deviceAdapters.lastConnectedAt,
           lastErrorAt: deviceAdapters.lastErrorAt,
           lastError: deviceAdapters.lastError,
+          endpoint: deviceAdapters.endpoint,
         })
         .from(deviceAdapters)
         .where(eq(deviceAdapters.machineId, m.id));
+      // SCADA R1b-2b-2b A — C2 fix 3 (điều phối 2026-10-31, KD-2bA 2.1, "né đường vòng"): `lastError` là văn bản driver (có thể mang host:port).
+      // Khoá API KHÔNG BAO GIỜ là người xem chi tiết kỹ thuật (không có scope nào mở việc này — muốn mở là một quyết định riêng) ⇒ CÙNG bộ che với
+      // tRPC `deviceAdapter.list` (`redactAdapterRow`), người xem truyền TƯỜNG MINH `chiTietKyThuat: false`: `endpoint` / `connectionOptions` ⇒ null,
+      // `lastError` ⇒ MÃ đã làm sạch (`maLoiAdapterCua`), thêm `maLoi` + `tamKhoa` (posture tạm khoá, không bao giờ che).
+      // import động (cùng khuôn db/schema của tệp): các test unit mock drizzle-orm / db một phần không phải nạp accessControl lúc dựng router.
+      const [{ redactAdapterRow }, { maLoiAdapterCua }, { tamKhoaAdapter, canTraEdgeChoTamKhoa, idsAdapterDoEdge }] = await Promise.all([
+        import("../../services/ot/connectionSecrets"),
+        import("../../routers/_chiTietKyThuat"),
+        import("../../routers/_tamKhoaAdapter"),
+      ]);
+      const edgeSoHuu = canTraEdgeChoTamKhoa(hangAdapter) ? await idsAdapterDoEdge(d, hangAdapter.map((a) => a.id)) : new Set<number>();
+      const adapters = hangAdapter.map((a) =>
+        redactAdapterRow(a, {
+          chiTietKyThuat: false,
+          tamKhoa: tamKhoaAdapter(a.protocol, edgeSoHuu.has(a.id)),
+          maLoi: maLoiAdapterCua(a.lastError, a.status === "error"),
+        }),
+      );
 
       sendOk(res, {
         asset_id: m.urn ?? String(m.id),

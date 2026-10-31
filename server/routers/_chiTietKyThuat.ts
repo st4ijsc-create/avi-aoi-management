@@ -8,6 +8,9 @@
  *
  * Dùng: `commandLog.list|get|nhatKy` (C1); C2: `scadaDiag.danhSach` + `deviceAdapter.list|get|create|update` (`redactAdapterRow`) dùng lại
  *   `chiTietKyThuatCua` / `duocXemChiTietKyThuat` và `maLoiAdapterCua` (mã thay `lastError`).
+ * C2 fix 3 (né đường vòng): REST `GET /api/v1/assets/:id/health` (khoá API ⇒ `redactAdapterRow` với `chiTietKyThuat: false` — khoá API không bao giờ
+ *   là người xem) + `GET /api/observability/health` (cùng luật `systemHealth.connectionSupervisors`). MỌI bề mặt REST + tRPC chạm endpoint /
+ *   activeEndpoint / connectionOptions / lastError được kiểm kê ở `server/routers/chiTietKyThuatBeMatCensus.test.ts`.
  */
 import { checkPermission } from "../_core/accessControl";
 

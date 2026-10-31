@@ -1282,7 +1282,12 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Current asset health (presence + heartbeat + adapter link states)",
           description:
             "Requires scope `assets:read`. Read-only over REAL signals: machine_status_logs presence, machines.lastHeartbeat, " +
-            "device_adapters connection status. HONEST: presence is null when no record exists — never fabricated.",
+            "device_adapters connection status. HONEST: presence is null when no record exists — never fabricated. " +
+            "TECHNICAL DETAIL IS MASKED for every API key (an API key is never a technical-detail viewer; no scope grants it): " +
+            "each `adapters[]` row has `endpoint` = null, `connectionOptions` = null and `lastError` = a sanitised CODE " +
+            "(e.g. ADAPTER_OFFLINE, TECHNICAL_ERROR, OT_MC_TAM_KHOA), never the driver text (which may carry host:port). " +
+            "Always present: `maLoi` (the same sanitised code, nullable) and `tamKhoa` ({ma, lyDo} write-lock posture, nullable; " +
+            "`lyDo` is an i18n key).",
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Asset not found", content: jsonErr() } }) },
         },
