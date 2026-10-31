@@ -135,7 +135,7 @@ export function moTaLoiHttpV1(status: number, than: unknown, retryAfter?: string
       tamThoi: false,
       thongDiep:
         `Token cổng /v1 bị từ chối (401${chiTiet ? ` — ${chiTiet}` : ""}): chưa có, hết hạn hoặc đã thu hồi. ` +
-        `Chạy lệnh "AI Local: Đăng nhập AI Local (device flow)" để lấy token mới.`,
+        `Chạy lệnh "Thợ Cả: Đăng nhập Thợ Cả (device flow)" để lấy token mới.`,
     };
   }
   if (status === 403) {

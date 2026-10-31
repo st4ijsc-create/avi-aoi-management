@@ -25,7 +25,7 @@ import { dungVanBanDayGiaoThucDoc, nhacLaiCuoiCauHoi } from "./dayGiaoThucDoc";
 import { dungVanBanDayMcpNgoai, type MoTaToolMcp } from "./dayMcpDoc";
 // ★★★ ĐỢT H / TASK H3 — hiện bộ nhớ dài hạn ĐÃ CÓ + dạy giao thức đề xuất nhớ thêm, CÙNG điều kiện
 // chèn với MCP ở trên. `dungVanBanDayBoNho([])` trả CHUỖI RỖNG (xem docblock ở đó) — workspace chưa
-// từng dùng lệnh "AI Local: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
+// từng dùng lệnh "Thợ Cả: Nhớ điều này" thấy `question` không đổi một ký tự nào so với trước H3.
 import { dungVanBanDayBoNho } from "./dayBoNhoDoc";
 import type { MucBoNho } from "./khoBoNho";
 // ★★★ ĐỢT M — dạy giao thức `chay_lenh`, CÙNG điều kiện chèn (LOCAL, không Cmd+K) với MCP/bộ nhớ ở
@@ -38,7 +38,8 @@ export type CheDoDuAn =
   | { loai: "local"; nhan: string }
   | { loai: "server"; projectId: string; nhan: string };
 
-export type LuotChat = { role: "user" | "assistant"; content: string };
+/** `nguon` (Đợt 10.4b-E): nhãn «Model ngoài · ncc/model» của lượt do model NGOÀI sinh; vắng ⇒ lượt cục bộ. Không bao giờ gửi lên máy chủ. */
+export type LuotChat = { role: "user" | "assistant"; content: string; nguon?: string };
 
 /**
  * Nhãn nguồn cho khối ngữ cảnh đính kèm. Ngữ cảnh LUÔN đọc từ editor trên máy DEV
@@ -76,7 +77,7 @@ export function dungYeuCauStream(dv: {
    */
   laCmdK?: boolean;
   /**
-   * ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (qua lệnh "AI Local: Quản lý MCP server ngoài",
+   * ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (qua lệnh "Thợ Cả: Quản lý MCP server ngoài",
    * `mang/mcpDieuPhoi.ts::dsToolMcpDangCoSan`). `undefined`/rỗng ⇒ KHÔNG chèn gì (xem
    * `dayMcpDoc.ts`) — người dùng chưa từng chạm H2 thấy `question` giống hệt trước khi H2 tồn tại.
    */
@@ -153,5 +154,5 @@ export function dungYeuCauStream(dv: {
   const than = nguCanhCoNhan.trim().length > 0 ? `${nguCanhCoNhan}\n${dv.cauHoi}` : dv.cauHoi;
   const question = `${phanDayGiaoThuc}${phanDayMcp}${phanDayBoNho}${phanDayLenh}${than}${phanNhacLaiCuoi}`;
 
-  return { question, history: dv.lichSu, userRole: dv.vaiTro, context };
+  return { question, history: dv.lichSu.map((l) => ({ role: l.role, content: l.content })), userRole: dv.vaiTro, context };
 }

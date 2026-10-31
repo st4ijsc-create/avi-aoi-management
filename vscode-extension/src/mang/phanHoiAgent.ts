@@ -57,7 +57,7 @@ export type KetQuaGuiPhanHoi = { ok: true } | { ok: false; lyDo: string };
 
 /** Gửi một phiếu. KHÔNG BAO GIỜ ném. Token rỗng ⇒ không chạm mạng. */
 export async function guiPhanHoiAgent(serverUrl: string, token: string, p: PhieuPhanHoi): Promise<KetQuaGuiPhanHoi> {
-  if (!token) return { ok: false, lyDo: "chưa có token cá nhân (đăng nhập AI Local bằng device flow)" };
+  if (!token) return { ok: false, lyDo: "chưa có token cá nhân (đăng nhập Thợ Cả bằng device flow)" };
   const kt = kiemTraServerUrl(serverUrl);
   if (!kt.ok) return { ok: false, lyDo: kt.lyDo };
   try {

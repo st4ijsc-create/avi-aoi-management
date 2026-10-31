@@ -15973,7 +15973,7 @@
       "webIngestDisabled": "URL ingest is disabled (set WEB_INGEST_ENABLED=true on the server).",
       "guidance": {
         "title": "Guide to ingesting documents yourself",
-        "subtitle": "Four steps to get documents into AI Local yourself — follow the order, the system handles the rest.",
+        "subtitle": "Four steps to get documents into Thợ Cả (local AI assistant) yourself — follow the order, the system handles the rest.",
         "step1Title": "1. Pick the RIGHT domain corpus",
         "step1Body": "Why domains matter: measured — mixing multiple domains into ONE corpus makes a question about the web pull in PLC documents (5 citations scoring 0.85–0.91 from off-topic material). Noise in a corpus makes answers WORSE, not neutral — the more off-topic documents a corpus holds, the more answers get pulled in the wrong direction.",
         "fillCorpusAria": "Fill the suggested corpus name \"{{corpus}}\" into the Corpus name field",
@@ -21672,6 +21672,27 @@
         "moTa": {
           "ngoai-du-an": "Delete / write files OUTSIDE the project folder",
           "csdl-that": "Write to the REAL database"
+        }
+      },
+      "keHoachDuyet": {
+        "tieuDe": "Plan awaiting approval",
+        "soBuoc": "{{n}} steps",
+        "khongTinCay": "UNTRUSTED: this run read suspicious content or used a repo-defined agent — that content may have steered the plan. Read every step carefully before approving.",
+        "giaiThich": "Approving the plan does not approve individual write/command cards — each card still needs your own approval.",
+        "nutDuyet": "Approve plan",
+        "nutBac": "Reject plan",
+        "phim": "While this card is focused: Enter = approve · Esc = reject.",
+        "daDuyet": "Plan approved.",
+        "bac": "Plan rejected — the agent will not continue with write/command tools under this plan.",
+        "hetGio": "Approval timed out — the plan was rejected.",
+        "daDoi": "The plan has changed — this card is no longer accurate.",
+        "hetHieuLuc": "The run has ended — no longer awaiting approval.",
+        "loi": {
+          "notFound": "No plan found for this run (the run may have ended).",
+          "daQuyet": "This plan already has a decision.",
+          "quyen": "You do not have permission to approve this plan.",
+          "csdl": "The server could not record the decision yet — try again.",
+          "chung": "The decision could not be sent — try again."
         }
       },
       "tongQuan": {

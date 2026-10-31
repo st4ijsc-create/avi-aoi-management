@@ -105,7 +105,7 @@ export function docPhanHoiDoiMa(status: number, than: unknown): KetQuaDoiMa {
 
 /** Tên thiết bị gửi lên (máy chủ chuẩn hoá/cắt) — không chứa bí mật. */
 export function tenThietBi(may: string, phienBan: string): string {
-  return `VSCode AI Local ${phienBan} — ${may}`.slice(0, 80);
+  return `VSCode Thợ Cả ${phienBan} — ${may}`.slice(0, 80);
 }
 
 /**
@@ -140,15 +140,15 @@ export function docPhanHoiTuThuHoi(status: number, than: unknown): KetQuaTuThuHo
  * thẳng nó còn sống trên máy chủ tới khi hết hạn hoặc được thu hồi ở trang /ai-thiet-bi — không khai "đã thu hồi".
  */
 export function thongDiepDangXuat(coToken: boolean, kq: KetQuaTuThuHoi | undefined): string {
-  if (!coToken) return "AI Local: đã đăng xuất.";
+  if (!coToken) return "Thợ Cả: đã đăng xuất.";
   if (kq?.ok) {
     const tt = kq.tienTo ? ` ${kq.tienTo}…` : "";
     return kq.ketCuc === "khong-nhan-ra"
-      ? `AI Local: đã đăng xuất và xoá token${tt} khỏi máy này (máy chủ không còn nhận ra token này — nó không mở được cửa nào).`
-      : `AI Local: đã đăng xuất — token${tt} đã thu hồi trên máy chủ${kq.ketCuc === "da-thu-hoi-truoc" ? " (từ trước)" : ""} và đã xoá khỏi máy này.`;
+      ? `Thợ Cả: đã đăng xuất và xoá token${tt} khỏi máy này (máy chủ không còn nhận ra token này — nó không mở được cửa nào).`
+      : `Thợ Cả: đã đăng xuất — token${tt} đã thu hồi trên máy chủ${kq.ketCuc === "da-thu-hoi-truoc" ? " (từ trước)" : ""} và đã xoá khỏi máy này.`;
   }
   return (
-    `AI Local: đã đăng xuất và xoá token khỏi máy này, NHƯNG KHÔNG thu hồi được trên máy chủ (${kq?.lyDo ?? "không rõ lý do"}). ` +
+    `Thợ Cả: đã đăng xuất và xoá token khỏi máy này, NHƯNG KHÔNG thu hồi được trên máy chủ (${kq?.lyDo ?? "không rõ lý do"}). ` +
     `Token còn sống trên máy chủ tới khi hết hạn — thu hồi hẳn ở trang /ai-thiet-bi.`
   );
 }

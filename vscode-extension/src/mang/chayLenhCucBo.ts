@@ -46,6 +46,7 @@
  */
 import { spawn } from "node:child_process";
 import type { LenhDaDuyet } from "../loi/lenhChoPhep";
+import { LOI_KHONG_TIN_CAY_NGUOI, workspaceTinCay } from "../loi/tinCayWorkspace";
 
 /** Trần KÍCH THƯỚC streaming cho MỘT lượt chạy lệnh — cùng bậc với `TRAN_BYTE_DOC_MCP`
  *  (`mang/mcpClient.ts`): kiểm NGAY sau mỗi chunk, không đợi tiến trình tự kết thúc. */
@@ -98,6 +99,10 @@ function dungArgvThuc(argv: string[]): { chuongTrinh: string; doi: string[] } {
  */
 export function chayLenhCucBo(dv: { lenh: LenhDaDuyet; cwd: string; tranMs: number }): Promise<KetQuaChayLenh> {
   const batDau = Date.now();
+  // (Đợt 11.4) Workspace Trust: workspace chưa tin cậy ⇒ KHÔNG spawn gì (lệnh dự án = mã của repo lạ).
+  if (!workspaceTinCay()) {
+    return Promise.resolve({ ok: false, output: LOI_KHONG_TIN_CAY_NGUOI, exitCode: null, signal: null, timedOut: false, daCatSom: false, durationMs: 0 });
+  }
   const { chuongTrinh, doi } = dungArgvThuc(dv.lenh.argv);
 
   return new Promise((resolveP) => {
