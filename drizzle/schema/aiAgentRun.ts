@@ -59,5 +59,19 @@ export const aiAgentRuns = pgTable(
   (table) => [index("ai_agent_runs_owner_idx").on(table.userId, table.projectId, table.createdAt)],
 );
 
+/**
+ * ★ Đợt 12 · H5.4 (mig 0450) — lịch sử model của lượt GỐC ở ranh giới an toàn, để "tiếp tục" lượt gián đoạn thành lượt MỚI. Một hàng/lượt, FK KÉP
+ * ("runId","userId") ⇒ cùng chủ; chỉ máy chủ ghi/đọc; cột "tinNhan" ẨN khỏi vai MCP chỉ-đọc (danh sách tường minh ở scripts/mcp-cuc-bo-vai-tro.mjs).
+ */
+export const aiAgentRunLichSu = pgTable("ai_agent_run_lich_su", {
+  runId: uuid("runId").primaryKey(),
+  userId: integer("userId").notNull(),
+  tinNhan: jsonb("tinNhan").notNull(),
+  soTin: integer("soTin").notNull(),
+  buoc: integer("buoc").notNull().default(0),
+  capNhatLuc: timestamp("capNhatLuc", { withTimezone: true }).defaultNow().notNull(),
+  daTiepTucBoi: uuid("daTiepTucBoi"),
+});
+
 export type AiAgentRun = typeof aiAgentRuns.$inferSelect;
 export type InsertAiAgentRun = typeof aiAgentRuns.$inferInsert;

@@ -124,6 +124,12 @@ export interface DauVaoVongAgent {
    * Host đồng thời phơi `read_output`. Vòng con dùng chung móc (khoá theo `runId` truyền vào).
    */
   luuDauRaDai?: (y: { id: string; ten: string; runId: string; noiDung: string }) => string | null;
+  /**
+   * (Đợt 12 · H5.4) móc CHỤP lịch sử gửi model (BỎ system) ở ranh giới an toàn: (a) ngay sau khi tin assistant kèm tool_calls được thêm, TRƯỚC khi tool chạy;
+   * (b) sau khi mọi kết quả tool của lượt đã thêm. ĐƯỢC chờ (để bản (a) bền TRƯỚC tác dụng phụ) nhưng ném / lỗi bị nuốt. Chỉ vòng GỐC (con không truyền).
+   * Vắng ⇒ như cũ từng byte. Host dùng để "tiếp tục" lượt gián đoạn (`chuanHoaLichSuTiepTuc`).
+   */
+  luuLichSu?: (y: { runId: string; buoc: number; tinNhan: TinNhan[] }) => void | Promise<void>;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -711,6 +717,15 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
    */
   /** (H1.2) neo số thật: `soTin` tin đầu đã đếm = `token` — cập nhật sau mỗi lượt model có `usage.vao` > 0. */
   let neoSoThat: { soTin: number; token: number } | null = null;
+  /** (H5.4) chụp lịch sử (bỏ system) — chờ để bản trước-tool bền; lỗi nuốt. */
+  const chupLichSu = async (buoc: number): Promise<void> => {
+    if (!y.luuLichSu) return;
+    try {
+      await y.luuLichSu({ runId: y.runId, buoc, tinNhan: tinNhan.slice(1) });
+    } catch {
+      /* lưu lịch sử hỏng không được làm hỏng lượt */
+    }
+  };
   let nhacCho: MaKhoiChen[] = [];
   const chenNhac = (ma: MaKhoiChen, noiDung: string) => {
     nhacCho.push(ma);
@@ -870,6 +885,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
       tinNhan.push(
         calls.length ? { role: "assistant", content: kq.chu, tool_calls: callsLichSu, ...nghiGiu } : { role: "assistant", content: kq.chu, ...nghiGiu },
       );
+      if (calls.length > 0) await chupLichSu(luot); // (H5.4) (a) trước khi tool chạy
       if (calls.length === 0) {
         // ★★★ Mảnh thẻ tool call không gom được ⇒ KHÔNG phải câu trả lời cuối (xem `coManhToolCallHongKhuon`). Không vớt,
         //   không đoán: model nhận quan sát và gọi lại; tính CHUNG chuỗi hỏng liên tiếp với tham số JSON hỏng / lượt bị cắt.
@@ -1143,6 +1159,7 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
           break vong;
         }
       }
+      await chupLichSu(luot); // (H5.4) (b) mọi kết quả tool của lượt đã thêm
     }
   } finally {
     ngoai.removeEventListener("abort", khiHuyNgoai);
