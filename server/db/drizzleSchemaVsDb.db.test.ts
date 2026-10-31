@@ -18,7 +18,8 @@ import postgres from "postgres";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bangKhaiTuModule, gomCotDb, tinhThieu } from "./schemaCotDiff";
-import { NGUON_SCHEMA_RUNTIME } from "./kiemSchemaChung";
+import { NGUON_SCHEMA_RUNTIME } from "./nguonSchemaRuntime";
+import { pgSchema, pgTable as pgTableGia, serial as serialGia } from "drizzle-orm/pg-core";
 // MỌI tệp trong drizzle/schema (không chỉ barrel index — có tệp không export qua barrel)
 const tatCa = import.meta.glob("../../drizzle/schema/*.ts", { eager: true }) as Record<string, Record<string, unknown>>;
 
@@ -30,7 +31,26 @@ const DB_URL = process.env.DATABASE_URL;
 let sql: ReturnType<typeof postgres>;
 let dbCot: Map<string, Set<string>>;
 
-const bangKhai = () => bangKhaiTuModule(Object.values(tatCa));
+// Hợp glob drizzle/schema/*.ts và nguồn runtime (bảng khai ngoài drizzle/schema: hierarchy, edge, robot…).
+const bangKhai = () => bangKhaiTuModule([...Object.values(tatCa), ...NGUON_SCHEMA_RUNTIME]);
+
+/** Mọi tên `pgTable("tên"` trong mã nguồn không-test của drizzle/schema và server/** (bỏ chú thích). */
+function tenBangTrongMa(): Set<string> {
+  const ra = new Set<string>();
+  const duyet = (dir: string) => {
+    for (const f of readdirSync(dir, { withFileTypes: true })) {
+      if (f.name === "node_modules") continue;
+      const p = join(dir, f.name);
+      if (f.isDirectory()) { duyet(p); continue; }
+      if (!/\.tsx?$/.test(f.name) || /\.(test|spec)\./.test(f.name) || /\.d\.ts$/.test(f.name)) continue;
+      const src = readFileSync(p, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      for (const m of src.matchAll(/\bpgTable\(\s*["']([^"']+)["']/g)) ra.add(m[1]);
+    }
+  };
+  duyet(join(__dirname, "..", "..", "drizzle", "schema"));
+  duyet(join(__dirname, "..")); // server/
+  return ra;
+}
 
 beforeAll(async () => {
   sql = postgres(DB_URL!, { max: 1 });
@@ -41,24 +61,20 @@ beforeAll(async () => {
 afterAll(async () => { await sql?.end({ timeout: 5 }); });
 
 describe("★ lưới chung — cột Drizzle khai ⊆ cột có thật trên DB test", () => {
-  it("chống tự thoả: duyệt đủ nhiều bảng và không sót bảng nào khai trong mã nguồn schema (kể cả tệp không qua barrel)", () => {
+  it("chống tự thoả: duyệt đủ nhiều bảng và không sót bảng nào khai bằng pgTable trong drizzle/schema VÀ server/** (kể cả tệp không qua barrel, const không export)", () => {
     const khai = bangKhai();
     expect(khai.length).toBeGreaterThanOrEqual(300);
     expect(dbCot.size).toBeGreaterThanOrEqual(300);
-    const dir = join(__dirname, "..", "..", "drizzle", "schema");
-    const trongMa = new Set<string>();
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".ts")) continue;
-      const src = readFileSync(join(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-      for (const m of src.matchAll(/\bpgTable\(\s*["']([^"']+)["']/g)) trongMa.add(m[1]);
-    }
+    const trongMa = tenBangTrongMa();
+    expect(trongMa.size).toBeGreaterThanOrEqual(400);
     const duocDuyet = new Set(khai.map((b) => b.ten));
-    expect([...trongMa].filter((t) => !duocDuyet.has(t)).sort(), "bảng khai trong mã nhưng test không nạp được").toEqual([]);
+    expect([...trongMa].filter((t) => !duocDuyet.has(t)).sort(), "bảng khai trong mã nhưng không nạp được — export nó và thêm module vào nguonSchemaRuntime.ts").toEqual([]);
   });
 
-  it("★ nguồn schema của server lúc chạy (NGUON_SCHEMA_RUNTIME) phủ MỌI bảng tìm thấy qua glob", () => {
+  it("★ nguồn schema của server lúc chạy (NGUON_SCHEMA_RUNTIME) phủ MỌI bảng: glob drizzle/schema và mọi pgTable trong server/**", () => {
     const runtime = new Set(bangKhaiTuModule(NGUON_SCHEMA_RUNTIME).map((b) => b.ten));
-    expect(bangKhai().map((b) => b.ten).filter((t) => !runtime.has(t)), "tệp schema mới chưa thêm vào NGUON_SCHEMA_RUNTIME ⇒ kiểm lúc khởi động mù bảng đó").toEqual([]);
+    const can = new Set([...bangKhai().map((b) => b.ten), ...tenBangTrongMa()]);
+    expect([...can].filter((t) => !runtime.has(t)).sort(), "tệp schema mới chưa thêm vào NGUON_SCHEMA_RUNTIME ⇒ kiểm lúc khởi động mù bảng đó").toEqual([]);
   });
 
   it("★ mọi cột khai tồn tại trên DB (trừ mục MIEN_TRU có ngày + lý do + bằng chứng)", () => {
@@ -79,6 +95,16 @@ describe("★ lưới chung — cột Drizzle khai ⊆ cột có thật trên DB
       if (!con) hong.push(`${m.bang}.${m.cot}: DB đã đủ — gỡ mục miễn trừ`);
     }
     expect(hong).toEqual([]);
+  });
+
+  it("★ bảng thuộc schema KHÁC public bị loại (pgSchema giả); trùng tên bảng thì HỢP cột", () => {
+    const khac = pgSchema("khac_gia");
+    const bGia = khac.table("bang_schema_khac", { id: serialGia("id") });
+    const a = pgTableGia("bang_chieu", { id: serialGia("id") });
+    const b = pgTableGia("bang_chieu", { id: serialGia("id"), them: serialGia("them") });
+    const kq = bangKhaiTuModule([{ bGia, a }, { b }]);
+    expect(kq.map((x) => x.ten)).toEqual(["bang_chieu"]);
+    expect(kq[0].cot.sort()).toEqual(["id", "them"]);
   });
 
   it("tinhThieu bắt cột giả và bảng vắng (đột biến trong bộ nhớ)", () => {

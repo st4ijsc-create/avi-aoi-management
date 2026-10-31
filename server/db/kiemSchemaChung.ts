@@ -9,17 +9,11 @@
  * `/readyz` không xác thực ⇒ chỉ lộ cờ, KHÔNG lộ tên bảng/cột (nằm ở log).
  */
 import { sql, type SQL } from "drizzle-orm";
-import * as schemaBarrel from "../../drizzle/schema";
-import * as schemaSecurity from "../../drizzle/schema/security";
-import * as schemaSynapseObs from "../../drizzle/schema/synapseObservability";
 import { bangKhaiTuModule, gomCotDb, tinhThieu } from "./schemaCotDiff";
 import { isEdgeProcessRole } from "./edgeDbTrap";
 
-/**
- * Nguồn bảng của tiến trình chạy thật. Barrel `index.ts` KHÔNG export mọi tệp (security, synapseObservability nằm ngoài) — liệt kê thêm ở đây;
- * `drizzleSchemaVsDb.db.test.ts` canh: bảng nào tìm thấy qua glob mà không có trong danh sách này ⇒ đỏ (tệp schema mới quên thêm).
- */
-export const NGUON_SCHEMA_RUNTIME: ReadonlyArray<Record<string, unknown>> = [schemaBarrel, schemaSecurity, schemaSynapseObs];
+// ⚠ Danh sách module bảng nằm ở `nguonSchemaRuntime.ts` và được nạp ĐỘNG khi kiểm: tệp này được `healthProbes` import tĩnh nên phải nhẹ
+// (nguồn kéo cả hierarchy/router/edge).
 
 export type ChaySql = (q: SQL) => Promise<ReadonlyArray<Record<string, unknown>>>;
 
@@ -60,7 +54,8 @@ export async function kiemSchemaChungKhiKhoiDong(opts: {
   if (!opts.chay) return (trangThai = { kieu: "khong_kiem_duoc" });
   try {
     const rows = await opts.chay(sql`SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public'`);
-    const khai = bangKhaiTuModule(opts.modules ?? NGUON_SCHEMA_RUNTIME);
+    const modules = opts.modules ?? (await import("./nguonSchemaRuntime")).NGUON_SCHEMA_RUNTIME;
+    const khai = bangKhaiTuModule(modules);
     const thieu = tinhThieu(khai, gomCotDb(rows as ReadonlyArray<{ t: unknown; c: unknown }>));
     if (thieu.length === 0) return (trangThai = { kieu: "du", soBang: khai.length });
     trangThai = { kieu: "thieu_cot", thieu };
