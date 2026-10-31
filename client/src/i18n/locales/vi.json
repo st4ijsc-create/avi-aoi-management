@@ -24610,6 +24610,15 @@
         "coEdge": "Truyền thông {{ketNoi}}/{{tong}} · edge {{edge}}",
         "moTa": "Đang nối lại {{dangNoi}} · mất kết nối {{mat}} · khác {{khac}} — bấm để mở chẩn đoán truyền thông"
       }
+    },
+    "orchestration": {
+      "maLoi": {
+        "FOE_OUTCOME_UNKNOWN": "Chưa rõ kết quả: lệnh có thể đã được áp xuống thiết bị — kiểm tra thiết bị trước khi chạy lại; KHÔNG tự gửi lại.",
+        "FOE_OUTCOME_PARTIAL": "Áp một phần: một số lệnh đã tới thiết bị, một số thì không — kiểm tra thiết bị; KHÔNG gửi lại cả lô.",
+        "EDGE_OUTCOME_UNKNOWN": "Chưa rõ kết quả trên edge: node edge có thể đã áp lệnh — kiểm tra thiết bị trước khi chạy lại.",
+        "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
+        "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."
+      }
     }
   },
   "chonModel": {
