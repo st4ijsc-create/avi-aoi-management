@@ -168,6 +168,21 @@ describe("BangTruyenThong — endpoint / lỗi bị che", () => {
     expect(hh).toHaveAttribute("title", (vi_ as unknown as { errors: { reason: Record<string, string> } }).errors.reason.otMcTamKhoa);
   });
 
+  it("★ kỹ sư có CẢ loi và maLoi ⇒ hiện văn bản loi, KHÔNG thay bằng câu dịch (kiem-dinh u13)", () => {
+    bang({ loi: "ECONNREFUSED 10.0.0.5:502", maLoi: "ADAPTER_OFFLINE" });
+    expect(screen.getByTestId("loi-adapter-1")).toHaveTextContent("ECONNREFUSED 10.0.0.5:502");
+    expect(screen.getByTestId("loi-adapter-1").textContent).not.toBe(
+      (vi_ as unknown as { scada: { lenh: { cong: Record<string, string> } } }).scada.lenh.cong.ADAPTER_OFFLINE,
+    );
+  });
+
+  it("★ maLoi ADAPTER_OFFLINE (khoá ở scada.lenh.cong) ⇒ câu dịch, không mã trần (kiem-dinh u23)", () => {
+    bang({ maLoi: "ADAPTER_OFFLINE" });
+    expect(screen.getByTestId("loi-adapter-1").textContent).toBe(
+      (vi_ as unknown as { scada: { lenh: { cong: Record<string, string> } } }).scada.lenh.cong.ADAPTER_OFFLINE,
+    );
+  });
+
   it("tamKhoa null ⇒ không có huy hiệu", () => {
     bang({});
     expect(screen.queryByTestId("tam-khoa-adapter-1")).toBeNull();

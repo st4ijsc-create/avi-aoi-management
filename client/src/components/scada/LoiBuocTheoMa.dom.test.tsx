@@ -33,6 +33,9 @@ describe("maDauChuoiLoi", () => {
     expect(maDauChuoiLoi("EDGE_OUTCOME_UNKNOWN(a,b): chi tiết")).toBe("EDGE_OUTCOME_UNKNOWN");
     expect(maDauChuoiLoi("TIMEOUT: connect ECONNREFUSED 10.0.0.5:502")).toBe("TIMEOUT");
     expect(maDauChuoiLoi("robotId required for robot command")).toBeNull();
+    // mã GIỮA chuỗi không tính (kiem-dinh u26): chỉ mã đứng ĐẦU chuỗi lỗi
+    expect(maDauChuoiLoi("step failed: TIMEOUT")).toBeNull();
+    expect(maDauChuoiLoi("Parallel branch failed: FOE_OUTCOME_UNKNOWN: x")).toBeNull();
     expect(maDauChuoiLoi(null)).toBeNull();
     expect(maDauChuoiLoi(undefined)).toBeNull();
   });

@@ -259,7 +259,7 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
                 <ChipTrangThai hang={hang} now={now} />
                 <HuyHieuTamKhoa hang={hang} />
                 <span>{hang.protocol}</span>
-                <span className="break-all">{hang.endpoint ?? "—"}</span>
+                <span data-testid="endpoint-ngan-tag" className="break-all">{hang.endpoint ?? "—"}</span>
               </SheetDescription>
             </SheetHeader>
             <div className="px-4">

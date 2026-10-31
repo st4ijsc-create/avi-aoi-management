@@ -46,6 +46,15 @@ describe("lyDoThuKetNoi", () => {
     await i18n.changeLanguage("vi");
   });
 
+  it("★ errorParams được truyền cho câu dịch (kiem-dinh u33): tham số khác nhau ⇒ câu khác nhau", async () => {
+    await i18n.changeLanguage("vi");
+    const a = lyDoThuKetNoi({ errorCode: "DEVICE_UNREACHABLE", errorParams: { entity: "modbus" } });
+    const b = lyDoThuKetNoi({ errorCode: "DEVICE_UNREACHABLE", errorParams: { entity: "opcua" } });
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/modbus/i);
+    expect(b).toMatch(/opc/i);
+  });
+
   it("kỹ sư: có văn bản driver ⇒ hiện văn bản đó", () => {
     expect(lyDoThuKetNoi({ ...BI_CHE, error: "connect ECONNREFUSED 10.0.0.5:502" })).toBe("connect ECONNREFUSED 10.0.0.5:502");
   });
