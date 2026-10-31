@@ -57,7 +57,9 @@ function duongThat(p: string): string {
 
 const trongHoacBang = (con: string, cha: string): boolean => {
   const rel = path.relative(cha, con);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  // (rà kiem-dinh) KHÔNG dùng startsWith("..") trần: thư mục TÊN bắt đầu ".." (vd <gốc>/..ghi) nằm TRONG gốc
+  const raNgoai = rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+  return !raNgoai;
 };
 
 /**
@@ -71,22 +73,27 @@ export function thuMucGhiHopLe(thuMuc: string, cwd: string = process.cwd(), gocC
   return ![cwd, ...gocCam].some((g) => trongHoacBang(that, duongThat(g)));
 }
 
-/** Gốc mọi dự án hộp cát đang khai (env + DB) — lỗi ⇒ [] (cwd vẫn được kiểm). */
-function gocDuAnDaKhai(): string[] {
+/** Gốc mọi dự án hộp cát đang khai (env + DB). Không lấy được ⇒ `null` ⇒ TỪ CHỐI ghi (công cụ đo — fail-closed, rà dieu-phoi). */
+function gocDuAnDaKhai(): string[] | null {
   try {
     return danhSachDuAn().map((d) => d.goc);
   } catch {
-    return [];
+    return null;
   }
 }
 
 let daBaoBat = false;
 
 export function bocGhiLuot(goc: HamStream, o: { thuMuc: string; runId: string }): HamStream {
-  if (!RE_RUN.test(o.runId) || !thuMucGhiHopLe(o.thuMuc, process.cwd(), gocDuAnDaKhai())) {
+  const gocCam = gocDuAnDaKhai();
+  if (!RE_RUN.test(o.runId) || gocCam === null || !thuMucGhiHopLe(o.thuMuc, process.cwd(), gocCam)) {
     if (!daCanhBao && o.thuMuc) {
       daCanhBao = true;
-      console.warn(`[ghiLuotModel] thư mục ghi lượt bị BỎ QUA (phải là thư mục tuyệt đối NGOÀI thư mục làm việc của tiến trình): ${o.thuMuc}`);
+      console.warn(
+        gocCam === null
+          ? `[ghiLuotModel] KHÔNG GHI: không đọc được danh sách gốc dự án để kiểm thư mục ghi (fail-closed): ${o.thuMuc}`
+          : `[ghiLuotModel] thư mục ghi lượt bị BỎ QUA (phải là thư mục tuyệt đối NGOÀI thư mục làm việc và mọi gốc dự án): ${o.thuMuc}`,
+      );
     }
     return goc;
   }
