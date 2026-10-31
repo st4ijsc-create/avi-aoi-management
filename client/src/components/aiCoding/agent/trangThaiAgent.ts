@@ -53,8 +53,28 @@ export type MucDongThoiGian =
   /** (2026-10-17) nội dung đáng ngờ: `du-lieu` = cảnh báo (lượt KHÔNG dừng) · `ha-tu-tri` = tu-dong bị hạ (ghi/lệnh cần duyệt). */
   | { kieu: "canh-bao"; loaiCanhBao: "du-lieu" | "ha-tu-tri"; nguon: string; mau: string[] }
   | { kieu: "loi"; ma: string; thongDiep: string }
+  /** (Đợt 11.3-C, UX-D02) thẻ "Kế hoạch chờ duyệt": kế hoạch `bam` của lượt chờ người quyết trước tool ghi/lệnh kế tiếp. */
+  | MucKeHoachDuyet
   /** (Đợt 11.8) một agent con: tiêu đề + trạng thái riêng của nó (dòng thời gian lồng). */
   | MucAgentCon;
+
+/**
+ * Trạng thái thẻ kế hoạch. `cho` = chờ người; `dang-gui` = đã bấm, chờ máy chủ trả lời (không lạc quan: thẻ chỉ đổi khi máy chủ nói);
+ * `da-doi` = máy chủ báo băm lệch (CONFLICT) — kế hoạch đã đổi, thẻ không còn đúng nữa; `het-hieu-luc` = lượt đã kết thúc khi thẻ còn chờ.
+ */
+export type TrangThaiKeHoachDuyet = "cho" | "dang-gui" | "da-duyet" | "bac" | "het-gio" | "da-doi" | "het-hieu-luc";
+
+export interface MucKeHoachDuyet {
+  kieu: "ke-hoach-duyet";
+  /** Băm máy chủ của kế hoạch ĐANG HIỂN THỊ — nút gửi đúng băm này. */
+  bam: string;
+  /** Chữ do MODEL viết ⇒ UI vẽ CHỮ THUẦN. */
+  viec: ViecKeHoach[];
+  trangThai: TrangThaiKeHoachDuyet;
+  luc?: string;
+  /** Mã lỗi máy chủ khi quyết định thất bại (`NOT_FOUND`, `DA_QUYET`, `LOI_CSDL`, `PERMISSION_DENIED`, hoặc mã mạng). */
+  maLoi?: string;
+}
 
 /** (Đợt 11.8) trần số agent con giữ trong trạng thái (chống phình khi máy chủ/dữ liệu bất thường). */
 export const TRAN_AGENT_CON = 32;
@@ -193,11 +213,16 @@ function noiChu(ds: MucDongThoiGian[], kieu: "chu" | "nghi", noiDung: string): M
 /** `xong` của cha, hoặc `con-xong` của một con: mọi thẻ còn chờ (của cha lẫn của con) hết hiệu lực. */
 function hetHieuLucTheCho(m: MucDongThoiGian): MucDongThoiGian {
   if (m.kieu === "duyet" && m.trangThai === "cho") return { ...m, trangThai: "het-hieu-luc" };
+  if (m.kieu === "ke-hoach-duyet" && (m.trangThai === "cho" || m.trangThai === "dang-gui")) return { ...m, trangThai: "het-hieu-luc" };
   if (m.kieu === "con") return { ...m, tt: { ...m.tt, choDuyet: false, dongThoiGian: m.tt.dongThoiGian.map(hetHieuLucTheCho) } };
   return m;
 }
 
-const conChoDuyet = (ds: MucDongThoiGian[]): boolean => ds.some((m) => (m.kieu === "duyet" && m.trangThai === "cho") || (m.kieu === "con" && m.tt.choDuyet));
+const conChoDuyet = (ds: MucDongThoiGian[]): boolean =>
+  ds.some((m) => (m.kieu === "duyet" && m.trangThai === "cho") || (m.kieu === "ke-hoach-duyet" && (m.trangThai === "cho" || m.trangThai === "dang-gui")) || (m.kieu === "con" && m.tt.choDuyet));
+
+const DANG_CHO_KE_HOACH: ReadonlySet<TrangThaiKeHoachDuyet> = new Set(["cho", "dang-gui", "da-doi"]);
+const laBam = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
 
 export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangThaiAgent {
   const n: TrangThaiAgent = { ...s, soSuKien: s.soSuKien + 1 };
@@ -239,6 +264,29 @@ export function giamSuKien(s: TrangThaiAgent, e: SuKienAgent, doSau = 0): TrangT
     }
     case "ke-hoach":
       return { ...n, keHoach: Array.isArray(e.viec) ? e.viec : [] };
+    case "ke-hoach-cho-duyet": {
+      if (!laBam(e.bam) || !Array.isArray(e.viec)) return n;
+      // phát lại sau nối lại: cùng băm ⇒ KHÔNG nhân đôi (và không kéo thẻ đã quyết về "cho")
+      if (n.dongThoiGian.some((m) => m.kieu === "ke-hoach-duyet" && m.bam === e.bam)) return { ...n, choDuyet: conChoDuyet(n.dongThoiGian) };
+      // kế hoạch mới thay kế hoạch cũ còn chờ: thẻ cũ không còn là thứ máy chủ đang đợi
+      const dt: MucDongThoiGian[] = [
+        ...n.dongThoiGian.map((m): MucDongThoiGian => (m.kieu === "ke-hoach-duyet" && DANG_CHO_KE_HOACH.has(m.trangThai) ? { ...m, trangThai: "het-hieu-luc" } : m)),
+        { kieu: "ke-hoach-duyet", bam: e.bam, viec: e.viec, trangThai: "cho" },
+      ];
+      return { ...n, choDuyet: true, dongThoiGian: dt };
+    }
+    case "ke-hoach-da-duyet":
+    case "ke-hoach-khong-duyet": {
+      if (!laBam(e.bam)) return n;
+      const dich: TrangThaiKeHoachDuyet = e.loai === "ke-hoach-da-duyet" ? "da-duyet" : e.lyDo === "het-gio" ? "het-gio" : "bac";
+      const luc = e.loai === "ke-hoach-da-duyet" && typeof e.luc === "string" ? e.luc : undefined;
+      const dt = n.dongThoiGian.map((m): MucDongThoiGian => {
+        if (m.kieu !== "ke-hoach-duyet" || m.bam !== e.bam) return m;
+        const { maLoi: _bo, ...goc } = m;
+        return { ...goc, trangThai: dich, ...(luc ? { luc } : {}) };
+      });
+      return { ...n, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };
+    }
     case "de-xuat-nho": {
       if (typeof e.id !== "string" || n.dongThoiGian.some((m) => m.kieu === "nho" && m.id === e.id)) return n;
       const scope: PhamViNho = e.scope === "user" ? "user" : "project";
@@ -334,6 +382,47 @@ export function capNhatDeXuatNho(
       return vao.maLoi ? { ...goc, trangThai: vao.trangThai, maLoi: vao.maLoi } : { ...goc, trangThai: vao.trangThai };
     }),
   };
+}
+
+/**
+ * (Đợt 11.3-C) cập nhật thẻ kế hoạch theo `bam` sau khi bấm / sau khi hỏi lại máy chủ. `bam` lạ ⇒ trả NGUYÊN `s`.
+ * Thẻ ĐÃ QUYẾT (da-duyet / bac / het-gio) KHÔNG bị kéo ngược về trạng thái chờ bởi lời gọi muộn.
+ */
+export function capNhatKeHoachDuyet(
+  s: TrangThaiAgent,
+  bam: string,
+  vao: { trangThai: TrangThaiKeHoachDuyet; maLoi?: string; luc?: string },
+): TrangThaiAgent {
+  if (!s.dongThoiGian.some((m) => m.kieu === "ke-hoach-duyet" && m.bam === bam)) return s;
+  const dt = s.dongThoiGian.map((m): MucDongThoiGian => {
+    if (m.kieu !== "ke-hoach-duyet" || m.bam !== bam) return m;
+    if (m.trangThai === "da-duyet" || m.trangThai === "bac" || m.trangThai === "het-gio" || m.trangThai === "het-hieu-luc") return m;
+    const { maLoi: _bo, ...goc } = m;
+    return { ...goc, trangThai: vao.trangThai, ...(vao.maLoi ? { maLoi: vao.maLoi } : {}), ...(vao.luc ? { luc: vao.luc } : {}) };
+  });
+  return { ...s, dongThoiGian: dt, choDuyet: conChoDuyet(dt) };
+}
+
+const TT_MAY_CHU_SANG_THE: Record<string, TrangThaiKeHoachDuyet> = { cho: "cho", duyet: "da-duyet", bac: "bac", "het-gio": "het-gio" };
+
+/**
+ * (Đợt 11.3-C) đồng bộ thẻ kế hoạch với câu trả lời `aiAgent.keHoachDangCho` (mở lại trang / sau CONFLICT). KHÔNG đụng `soSuKien`
+ * (không phải sự kiện luồng — `?tu=n` phải giữ nguyên). Thẻ cùng băm: lấy trạng thái máy chủ (thẻ đã quyết không bị kéo ngược);
+ * băm chưa có thẻ và máy chủ còn đang chờ: thêm thẻ mới, thẻ cũ còn chờ thành `da-doi`. Trạng thái lạ ⇒ "cho".
+ */
+export function dongBoKeHoachMayChu(
+  s: TrangThaiAgent,
+  kq: { bam: string | null; trangThai: string | null; viec: ViecKeHoach[] },
+): TrangThaiAgent {
+  if (!kq.bam || !laBam(kq.bam)) return s;
+  const dich = TT_MAY_CHU_SANG_THE[kq.trangThai ?? "cho"] ?? "cho";
+  if (s.dongThoiGian.some((m) => m.kieu === "ke-hoach-duyet" && m.bam === kq.bam)) return dich === "cho" ? s : capNhatKeHoachDuyet(s, kq.bam, { trangThai: dich });
+  if (dich !== "cho") return s;
+  const dt: MucDongThoiGian[] = [
+    ...s.dongThoiGian.map((m): MucDongThoiGian => (m.kieu === "ke-hoach-duyet" && DANG_CHO_KE_HOACH.has(m.trangThai) ? { ...m, trangThai: "da-doi" } : m)),
+    { kieu: "ke-hoach-duyet", bam: kq.bam, viec: kq.viec, trangThai: "cho" },
+  ];
+  return { ...s, dongThoiGian: dt, choDuyet: true };
 }
 
 export function giamNhieu(s: TrangThaiAgent, es: SuKienAgent[]): TrangThaiAgent {

@@ -21674,6 +21674,27 @@
           "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
         }
       },
+      "keHoachDuyet": {
+        "tieuDe": "Kế hoạch chờ duyệt",
+        "soBuoc": "{{n}} bước",
+        "khongTinCay": "KHÔNG TIN CẬY: lượt này đã đọc nội dung đáng ngờ hoặc dùng agent từ repo — kế hoạch có thể bị nội dung đó dẫn dắt. Đọc kỹ từng bước trước khi duyệt.",
+        "giaiThich": "Duyệt kế hoạch chưa duyệt từng thẻ ghi/lệnh — mỗi thẻ vẫn cần bạn duyệt riêng.",
+        "nutDuyet": "Duyệt kế hoạch",
+        "nutBac": "Bác kế hoạch",
+        "phim": "Khi thẻ này đang được chọn: Enter = duyệt · Esc = bác.",
+        "daDuyet": "Đã duyệt kế hoạch.",
+        "bac": "Đã bác kế hoạch — agent sẽ không chạy tiếp tool ghi/lệnh theo kế hoạch này.",
+        "hetGio": "Hết thời gian chờ duyệt — kế hoạch bị bác.",
+        "daDoi": "Kế hoạch đã đổi — thẻ này không còn đúng.",
+        "hetHieuLuc": "Lượt đã kết thúc — không còn chờ duyệt.",
+        "loi": {
+          "notFound": "Không tìm thấy kế hoạch của lượt này (có thể lượt đã kết thúc).",
+          "daQuyet": "Kế hoạch này đã có quyết định.",
+          "quyen": "Bạn không có quyền duyệt kế hoạch này.",
+          "csdl": "Máy chủ chưa ghi được quyết định — thử lại.",
+          "chung": "Chưa gửi được quyết định — thử lại."
+        }
+      },
       "tongQuan": {
         "tieuDe": "Tổng quan thay đổi",
         "agentCon": "agent con",
