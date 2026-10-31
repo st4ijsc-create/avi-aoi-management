@@ -4689,7 +4689,9 @@
     "STOP_PIN_GO_TRUOC": "Channel {{tagKey}} has a pinned STOP value ({{stopValue}}) — changing its address, type, scale, offset, writable flag or adapter, raising its actuation level above 1 (HMI STOP only sends pins of level-1 tags), disabling or deleting it would lose STOP. Unpin it first (Software stop tag, with a reason), then try again.",
     "SCADA_STOP_PINS_HIGH_LEVEL": "Every STOP pin of this machine is on a tag with actuation level > 1 ({{tagKeys}}) — the STOP MACHINE button does not send to high-level tags; an engineer declares actuation level 1 for the stop tags at /scada/config/channels; stop it with the hardwired E-STOP.",
     "SCADA_STOP_PRECHECK_TIMEOUT": "Server is slow — the HMI STOP was NOT sent. Use the hardwired E-STOP at the machine.",
-    "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server."
+    "SCADA_SCHEMA_MISSING": "Database migration {{migration}} is missing — HMI commands are temporarily unavailable; an administrator applies the migration and restarts the server.",
+    "CHON_MODEL_KHONG_CO": "The selected model can't be used on this screen (not enabled or removed) — pick another model.",
+    "CHON_MODEL_SAI": "The model selection is invalid — pick the model again."
   },
   "export": {
     "reportMenu": {
@@ -21709,6 +21711,20 @@
           "csdl": "The server could not record the decision yet — try again.",
           "chung": "The decision could not be sent — try again."
         }
+      },
+      "modelNgoai": {
+        "huyHieu": "External model",
+        "dangChay": "Running {{model}} ({{ncc}})",
+        "daChay": "Ran {{model}} ({{ncc}})",
+        "khongRo": "A model from an external provider",
+        "mucKyThuat": "technical data",
+        "mucVanHanh": "operational data",
+        "dung": "Stop only takes effect before the next round: a round already calling the external model runs to the end and is still billed. Stop does not cancel a call in flight."
+      },
+      "vetNgoai": "External model {{model}} ({{ncc}}) · tokens in {{vao}} · out {{ra}} · estimated cost {{usd}}",
+      "haTuTriPhienNgoai": "This session already used an external model — every write/command (even in automatic mode) needs your approval step by step.",
+      "ngoai": {
+        "bat": "Multi-step read-only agent with an external model — reads/searches files through the server, no writes, no commands, no sub-agents."
       },
       "tongQuan": {
         "tieuDe": "Change overview",

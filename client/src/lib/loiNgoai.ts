@@ -64,3 +64,14 @@ export function docLoiTruocSse(status: number, body: unknown): LoiSinhChuNgoai |
   if (!laMaLoiNgoai(b.code)) return null;
   return new LoiSinhChuNgoai({ status, code: b.code, error: b.error, muc: b.muc, tranVuot: b.tranVuot });
 }
+
+/**
+ * (Đợt 10.4b L4) `xong.vetNgoai` của LƯỢT agent model ngoài (cộng dồn mọi vòng, KHÔNG callId — host gắn). Kiểm kiểu từng ô như `bocVetNgoai`;
+ * thiếu nhà cung cấp/model ⇒ null (không dựng dòng vết từ gói hỏng).
+ */
+export function bocVetNgoaiLuot(v: unknown): { nhaCungCap: string; model: string; tokenVao: number | null; tokenRa: number | null; chiPhiUocUsd: number | null } | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.nhaCungCap !== "string" || !o.nhaCungCap || typeof o.model !== "string" || !o.model) return null;
+  return { nhaCungCap: o.nhaCungCap.slice(0, 64), model: o.model.slice(0, 160), tokenVao: so(o.tokenVao), tokenRa: so(o.tokenRa), chiPhiUocUsd: so(o.chiPhiUocUsd) };
+}
