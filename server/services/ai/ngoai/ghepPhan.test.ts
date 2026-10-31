@@ -132,6 +132,8 @@ describe("census — mọi điểm gọi cổng AI ngoài dựng `tinNhan` qua `
     "server/routes/codingNgoai.ts": /\bghepPhan\(/,
     // ★ 10.4b L3 — bộ chuyển GoiModel của agent máy chủ: MỖI vòng dựng lại qua bộ dựng
     "server/services/ai/ngoai/vongAgentNgoai.ts": /\bghepPhan\(/,
+    // ★ 10.4b L3 — đường vào lượt agent ngoài (chỉ kiemTruoc trước giữ chỗ): yêu cầu kiểm trước dựng qua bộ dựng
+    "server/services/ai/agent/luotChayNgoai.ts": /\bghepPhan\(/,
   };
   const duyet = (d: string, ra: string[]) => {
     for (const ten of readdirSync(d)) {

@@ -10,6 +10,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "./connection";
 import { aiAgentRuns, type AiAgentRun } from "../../drizzle/schema";
 import { isMissingTable } from "../_core/dbErrors";
+import { RE_NGUON_MODEL } from "../../shared/ai/sinhChuNgoai";
 
 export const RE_ID_LUOT_CHAY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_ID_DU_AN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -32,9 +33,12 @@ export async function taoHangLuotChay(h: {
   sessionId?: string | null;
   /** (Đợt 11.8) agent con: lượt cha (cùng chủ — khoá ngoại kép), độ sâu 1–2, tên + nguồn agent. */
   con?: { parentRunId: string; depth: number; agentName: string; agentSource: "dungSan" | "tuRepo" };
+  /** (Đợt 10.4b L3, mig 0419) `ngoai:<ncc>:<model>` — CHỈ máy chủ đặt, lúc tạo hàng; sai hình dạng ⇒ KHÔNG tạo hàng (CHECK 0419 cùng mẫu). */
+  nguonModel?: string | null;
 }): Promise<boolean> {
   if (!laUser(h.userId) || !RE_ID_LUOT_CHAY.test(h.id) || !RE_ID_DU_AN.test(h.projectId)) return false;
   if (h.con && !RE_ID_LUOT_CHAY.test(h.con.parentRunId)) return false;
+  if (h.nguonModel !== undefined && h.nguonModel !== null && !RE_NGUON_MODEL.test(h.nguonModel)) return false;
   const db = await getDb();
   if (!db) return false;
   try {
@@ -45,6 +49,7 @@ export async function taoHangLuotChay(h: {
       cheDo: h.cheDo,
       cauHoi: h.cauHoi,
       sessionId: h.sessionId && RE_ID_LUOT_CHAY.test(h.sessionId) ? h.sessionId : null,
+      ...(h.nguonModel ? { nguonModel: h.nguonModel } : {}),
       ...(h.con
         ? { parentRunId: h.con.parentRunId, depth: h.con.depth, agentName: h.con.agentName, agentSource: h.con.agentSource }
         : {}),
@@ -118,6 +123,8 @@ export interface TomTatLuotChay {
   tomTat: string | null;
   createdAt: string;
   updatedAt: string;
+  /** (Đợt 10.4b L3) `ngoai:<ncc>:<model>` khi lượt chạy model ngoài; `null` = cục bộ. Máy chủ ghi, client không đặt được. */
+  nguonModel: string | null;
 }
 
 const iso = (d: unknown) => (d instanceof Date ? d : new Date(String(d))).toISOString();
@@ -136,6 +143,7 @@ export function tomTatTuHang(h: AiAgentRun): TomTatLuotChay {
     tokenNghi: h.tokenNghi,
     soCheckpoint: Array.isArray(h.checkpointIds) ? h.checkpointIds.length : 0,
     tomTat: h.tomTat ?? null,
+    nguonModel: h.nguonModel ?? null,
     createdAt: iso(h.createdAt),
     updatedAt: iso(h.updatedAt),
   };

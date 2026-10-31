@@ -34,6 +34,7 @@ import type { KetQuaGoiNgoai, YeuCauGoiNgoai } from "./congNgoai";
 import type { KetQuaTool, NguoiGoi, TrongThaiDoc } from "./congCuDocNgoai";
 import { ghepPhan, type TinGhep } from "./ghepPhan";
 import { LoiNgoai } from "./loi";
+import { NGUON_MUC_LUOT_AGENT } from "../chonModel/kieu";
 import type { CongCuNgoai } from "./nhaCungCap/kieu";
 
 /** Trần CỨNG số vòng gọi model mỗi lượt agent ngoài (ngoài trần `tranVongLuot` của nhà máy ở cổng) — bằng L2. */
@@ -192,7 +193,7 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
           tuDong: false,
           nhaMayNguoiGoi: [c.nhaMay],
           nhaMayChuDuLieu: [c.nhaMay],
-          nguonMuc: { loai: "be-mat", beMat: "agent-turn", phanDaGhep: [...g.phanDaGhep] },
+          nguonMuc: { loai: "be-mat", beMat: NGUON_MUC_LUOT_AGENT, phanDaGhep: [...g.phanDaGhep] },
         },
       });
       ids.push(kq.callId);

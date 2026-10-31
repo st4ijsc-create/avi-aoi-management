@@ -125,11 +125,34 @@ export type LyDoDung =
   | "loi-model";
 
 /** (Đợt 9) model của lượt chạy khi host chọn theo vai trò — để UI nói thật "đang chạy X vì Y". */
-export interface ThongTinModelBatDau {
+export interface ThongTinModelCucBo {
   vaiTro: string;
   model: string | null;
   nguon: string;
   bangChung: string;
+}
+
+/**
+ * (Đợt 10.4b L3, luong-ui u2) lượt agent máy chủ chạy model NGOÀI: `model` = `ngoai:<ncc>:<model>`, `muc` = mức dữ liệu máy chủ đã chốt ở
+ * đường vào (`van-hanh` khi có lịch sử). `vaiTro`/`bangChung` luôn vắng — khai `?: undefined` để mã đọc nhánh cục bộ vẫn biên dịch.
+ */
+export interface ThongTinModelNgoai {
+  nguon: "ngoai";
+  model: string;
+  muc: "ky-thuat" | "van-hanh";
+  vaiTro?: undefined;
+  bangChung?: undefined;
+}
+
+export type ThongTinModelBatDau = ThongTinModelCucBo | ThongTinModelNgoai;
+
+/** (Đợt 10.4b L3, luong-ui u3) vết cộng dồn mọi vòng của lượt model ngoài — cùng hình `VetNgoaiLichSu` (shared/ai/sinhChuNgoai.ts), không callId. */
+export interface VetNgoaiLuot {
+  nhaCungCap: string;
+  model: string;
+  tokenVao: number | null;
+  tokenRa: number | null;
+  chiPhiUocUsd: number | null;
 }
 
 /** Phạm vi một ghi chú trí nhớ (tool `remember`, Đợt 2). Bảng `ai_coding_lessons` khoá (người × dự án) — xem README. */
@@ -178,7 +201,8 @@ export type SuKienAgent =
   | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
   | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string }
   | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
-  | { loai: "xong"; lyDo: LyDoDung; tomTat?: string }
+  /** `vetNgoai` (L3): chỉ lượt model ngoài, do HOST gắn (lõi không phát). */
+  | { loai: "xong"; lyDo: LyDoDung; tomTat?: string; vetNgoai?: VetNgoaiLuot }
   | { loai: "loi"; ma: string; thongDiep: string };
 
 // ─── Hợp đồng với model và bộ thực thi ─────────────────────────────────────────────────────────
