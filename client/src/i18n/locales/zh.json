@@ -24651,6 +24651,24 @@
         "REJECTED": "命令被拒绝 — 未向设备写入任何内容。",
         "PRECONDITION_FAILED": "步骤前置条件（互锁）未满足 — 未向设备写入任何内容。"
       }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "试读一个地址（Lab）",
+        "chiDoc": "只读 — 不会向设备写入任何内容。",
+        "troGiup": "单次读取，限时 3 秒，每分钟最多 10 次。使用 Modbus 时，TCP→RTU 网关或单事务设备可能丢弃中途插入的 Lab 请求，导致一个轮询周期超时。原因会写入审计日志，读取的值不会保存。",
+        "diaChi": "地址",
+        "kieu": "数据类型",
+        "nutDoc": "读取",
+        "chatLuong": "质量",
+        "giaTriTho": "原始值",
+        "giaTri": "解码值",
+        "maTrangThai": "状态码",
+        "lyDoKetQua": "原因",
+        "thoiGian": "耗时",
+        "reasonTimeout": "超时 — 设备未及时应答",
+        "reasonNoSample": "此地址暂无样本"
+      }
     }
   },
   "chonModel": {

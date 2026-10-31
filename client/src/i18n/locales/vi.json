@@ -24651,6 +24651,24 @@
         "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
         "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."
       }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "Thử đọc một địa chỉ (Lab)",
+        "chiDoc": "Chỉ đọc — không ghi xuống thiết bị.",
+        "troGiup": "Đọc một lần, có hạn 3 giây, tối đa 10 lượt mỗi phút. Với Modbus, gateway TCP→RTU hoặc thiết bị chỉ xử lý một giao dịch có thể bỏ yêu cầu Lab chen vào, làm một nhịp poll hết hạn. Lý do được ghi vào audit, giá trị đọc không được lưu.",
+        "diaChi": "Địa chỉ",
+        "kieu": "Kiểu dữ liệu",
+        "nutDoc": "Đọc",
+        "chatLuong": "Chất lượng",
+        "giaTriTho": "Giá trị thô",
+        "giaTri": "Giá trị giải mã",
+        "maTrangThai": "Mã trạng thái",
+        "lyDoKetQua": "Lý do",
+        "thoiGian": "Thời gian",
+        "reasonTimeout": "Hết hạn — thiết bị không trả lời kịp",
+        "reasonNoSample": "Chưa có mẫu nào cho địa chỉ này"
+      }
     }
   },
   "chonModel": {

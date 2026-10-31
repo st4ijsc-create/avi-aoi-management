@@ -24654,6 +24654,24 @@
         "REJECTED": "The command was rejected — nothing was written to the device.",
         "PRECONDITION_FAILED": "The step's precondition (interlock) was not met — nothing was written to the device."
       }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "Try reading one address (Lab)",
+        "chiDoc": "Read-only — nothing is written to the device.",
+        "troGiup": "One read with a 3-second limit, at most 10 per minute. With Modbus, a TCP→RTU gateway or a single-transaction device may drop the Lab request squeezed in between, causing one poll cycle to time out. The reason is written to the audit log; the value read is not stored.",
+        "diaChi": "Address",
+        "kieu": "Data type",
+        "nutDoc": "Read",
+        "chatLuong": "Quality",
+        "giaTriTho": "Raw value",
+        "giaTri": "Decoded value",
+        "maTrangThai": "Status code",
+        "lyDoKetQua": "Reason",
+        "thoiGian": "Time",
+        "reasonTimeout": "Timed out — the device did not answer in time",
+        "reasonNoSample": "No sample yet for this address"
+      }
     }
   },
   "chonModel": {
