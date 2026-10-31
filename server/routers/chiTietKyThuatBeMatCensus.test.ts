@@ -14,7 +14,12 @@
  *   • `sql_tho`      — chuỗi / template có `device_adapters` VÀ (`endpoint` | `lastError` | `last_error` | `connectionOptions` |
  *                      `connection_options` | `SELECT *` | `x.*` | `row_to_json`);
  *   • `ram`          — gọi nguồn RAM mang các trường ấy (`NGUON_RAM`: supervisor / trạng thái adapter / RuntimeAdapter của otManager);
- *   • `dich_vu`      — gọi (theo TÊN, tên phải được import trong tệp) một hàm XUẤT của `server/services/**` mà thân có điểm chạm DB / RAM (một bậc).
+ *   • `dich_vu`      — gọi một hàm XUẤT của `server/services/**` mà thân có điểm chạm DB / RAM (một bậc), qua MỌI hình import (C2 fix 4, review I1 +
+ *                      phụ lục điều phối): tên import tĩnh (kể cả `import { fn as g }`), destructure `const { fn } = await import(…)` / `{ fn: g }`,
+ *                      không gian `import * as svc` / `const svc = await import(…)` ⇒ `svc.fn()`, gọi thẳng `(await import(…)).fn()`, hàm cục bộ trả
+ *                      import `const svc = () => import(…)` ⇒ `(await svc()).fn()`, tái xuất đổi tên `export { fn as g } from "…"` (gọi `g`).
+ *   C2 fix 4 (điều phối 2026-11-01): tập bảng quét thêm `orchestration_runs` (error / contextJson) và `orchestration_run_steps` (error / resultJson) —
+ *   lỗi bước / run của orchestration cùng họ với `command_log.errorText` (văn bản driver host:port).
  * Khoá = `tệp#đơn-vị`; đơn vị = route Express (`<x>.get|post|…("<đường>", …)` ⇒ `GET /đường`), thủ tục tRPC (`ten: ….query|mutation(…)`
  * ⇒ `proc:ten`), hoặc hàm có tên bao gần nhất. MỖI khoá phải có trong `SO_CAI` với ĐÚNG số đếm từng loại và MỘT phân loại:
  *   • `che`       — đơn vị trả hàng ra ngoài QUA bộ che: thân đơn vị PHẢI gọi mọi hàm trong `qua` (kiểm AST — gỡ lời gọi ⇒ đỏ, nêu tên khoá);
@@ -35,9 +40,19 @@ const GOC_BE_MAT = ["server/api", "server/routes", "server/routers", "server/_co
 type Loai = "cot_ky_thuat" | "nguyen_hang" | "sql_tho" | "ram" | "dich_vu" | "ham_cuc_bo";
 type Muc = { dem: Partial<Record<Loai, number>> } & ({ phanLoai: "che"; qua: string[]; lyDo?: string } | { phanLoai: "mien_tru"; lyDo: string });
 
-const TEN_BANG = "deviceAdapters";
-const COT_KY_THUAT = new Set(["endpoint", "lastError", "connectionOptions"]);
 const SQL_NHAY_CAM = /\bendpoint\b|"lastError"|\blast_error\b|"connectionOptions"|\bconnection_options\b|select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(/i;
+/**
+ * Bảng mang chi tiết kỹ thuật + cột kỹ thuật của từng bảng. C2 fix 4 (điều phối 2026-11-01): thêm `orchestration_runs.error` / `contextJson`
+ * (lỗi run + `foeResumeState[*].error`) và `orchestration_run_steps.error` / `resultJson` (lỗi bước + `detail` của EquipmentCommandResult).
+ */
+type BangSpec = { ten: string; cot: ReadonlySet<string>; sqlBang: RegExp; sqlNhay: RegExp };
+const SQL_NHAY_FOE_RUN = /"error"|\berror\b|"contextJson"|select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(/i;
+const SQL_NHAY_FOE_BUOC = /"error"|\berror\b|"resultJson"|select\s+\*|\b\w+\.\*|row_to_json|to_jsonb?\s*\(/i;
+const BANG: readonly BangSpec[] = [
+  { ten: "deviceAdapters", cot: new Set(["endpoint", "lastError", "connectionOptions"]), sqlBang: /device_adapters/i, sqlNhay: SQL_NHAY_CAM },
+  { ten: "orchestrationRuns", cot: new Set(["error", "contextJson"]), sqlBang: /orchestration_runs\b/i, sqlNhay: SQL_NHAY_FOE_RUN },
+  { ten: "orchestrationRunSteps", cot: new Set(["error", "resultJson"]), sqlBang: /orchestration_run_steps\b/i, sqlNhay: SQL_NHAY_FOE_BUOC },
+];
 /** Nguồn RAM (otManager / trangThaiAdapter) trả `activeEndpoint` / `lastError` / `loi` / `endpoint` / `connectionOptions`. */
 const NGUON_RAM = new Set([
   "listSupervisorStatuses",
@@ -103,8 +118,8 @@ function donVi(n: ts.Node): { ten: string; nut: ts.Node | null } {
   return { ten: "<tep>", nut: null };
 }
 
-/** Tên cục bộ chỉ bảng `deviceAdapters` (import / destructure / alias). */
-function tenBang(sf: ts.SourceFile): Set<string> {
+/** Tên cục bộ chỉ bảng `TEN_BANG` (import / destructure / alias). */
+function tenBang(sf: ts.SourceFile, TEN_BANG: string): Set<string> {
   const bang = new Set<string>();
   const tham = (n: ts.Node) => {
     if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && /drizzle\/schema/.test(n.moduleSpecifier.text)) {
@@ -127,7 +142,7 @@ function tenBang(sf: ts.SourceFile): Set<string> {
         ts.isCallExpression(n.initializer) &&
         /(^|\.)alias$/.test(n.initializer.expression.getText()) &&
         n.initializer.arguments[0] &&
-        laBang(n.initializer.arguments[0], bang) &&
+        laBang(n.initializer.arguments[0], bang, TEN_BANG) &&
         !bang.has(n.name.text)
       ) {
         bang.add(n.name.text);
@@ -140,7 +155,7 @@ function tenBang(sf: ts.SourceFile): Set<string> {
   return bang;
 }
 
-function laBang(e: ts.Node, bang: Set<string>): boolean {
+function laBang(e: ts.Node, bang: Set<string>, TEN_BANG: string): boolean {
   if (ts.isIdentifier(e)) return bang.has(e.text);
   if (ts.isPropertyAccessExpression(e) && e.name.text === TEN_BANG) return true;
   if (ts.isElementAccessExpression(e) && ts.isStringLiteralLike(e.argumentExpression) && e.argumentExpression.text === TEN_BANG) return true;
@@ -196,7 +211,8 @@ function traVeNguyenHang(goi: ts.CallExpression): boolean {
 }
 
 /** Loại của MỘT tham chiếu bảng `r` — `null` = an toàn (cột không kỹ thuật, select chiếu tường minh, ghi). */
-function loaiThamChieu(r: ts.Expression, bang: Set<string>): Loai | null {
+function loaiThamChieu(r: ts.Expression, bang: Set<string>, spec: BangSpec): Loai | null {
+  const COT_KY_THUAT = spec.cot;
   if (ts.isPropertyAccessExpression(r) && ts.isPropertyAccessExpression(r.expression) && r.expression.name.text === "query") return "nguyen_hang";
   const p = r.parent;
   if (ts.isPropertyAccessExpression(p) && p.expression === r) return COT_KY_THUAT.has(p.name.text) ? "cot_ky_thuat" : null;
@@ -211,7 +227,7 @@ function loaiThamChieu(r: ts.Expression, bang: Set<string>): Loai | null {
       for (const pr of a.properties) {
         if (ts.isSpreadAssignment(pr)) return "nguyen_hang";
         if (ts.isShorthandPropertyAssignment(pr) && bang.has(pr.name.text)) return "nguyen_hang";
-        if (ts.isPropertyAssignment(pr) && (laBang(pr.initializer, bang) || /getTableColumns\(/.test(pr.initializer.getText()))) return "nguyen_hang";
+        if (ts.isPropertyAssignment(pr) && (laBang(pr.initializer, bang, spec.ten) || /getTableColumns\(/.test(pr.initializer.getText()))) return "nguyen_hang";
       }
       return null; // chiếu tường minh — cột kỹ thuật (nếu có) bị đếm riêng ở cot_ky_thuat
     }
@@ -237,6 +253,91 @@ function tenImport(sf: ts.SourceFile): Set<string> {
     ts.forEachChild(n, tham);
   };
   tham(sf);
+  return ra;
+}
+
+/** Bỏ ngoặc / await. */
+function boBoc(e: ts.Expression): ts.Expression {
+  let x = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAwaitExpression(x)) x = x.expression;
+  return x;
+}
+/** `import(…)` hoặc lời gọi một hàm cục bộ chỉ TRẢ `import(…)` (`const svc = () => import(…)` ⇒ `(await svc()).fn()`). */
+const laImportDong = (e: ts.Expression, hamImport: ReadonlySet<string> = new Set()) => {
+  const x = boBoc(e);
+  return ts.isCallExpression(x) && (x.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(x.expression) && hamImport.has(x.expression.text)));
+};
+
+/**
+ * C2 fix 4 (review fix 3 I1 + phụ lục điều phối) — các HÌNH gọi dịch vụ qua import:
+ *   • `goc`: tên cục bộ → tên XUẤT gốc — `import { fn as g }`, `const { fn } = await import(…)`, `const { fn: g } = await import(…)` (đổi tên);
+ *   • `khongGian`: biến mang CẢ module — `import * as svc`, `const svc = await import(…)` / `= import(…)` ⇒ `svc.fn()`;
+ *   • lời gọi THẲNG trên import động `(await import(…)).fn()` được nhận ở `tenDichVuGoi`.
+ */
+type BangImport = { goc: Map<string, string>; khongGian: Set<string>; hamImport: Set<string> };
+function bangImport(sf: ts.SourceFile): BangImport {
+  const goc = new Map<string, string>();
+  const khongGian = new Set<string>();
+  const hamImport = new Set<string>();
+  // hàm cục bộ trả import động: `const svc = () => import(…)` / `async () => import(…)` / `function svc() { return import(…) }`
+  const traImport = (f: ts.Node): boolean => {
+    if ((ts.isArrowFunction(f) || ts.isFunctionExpression(f) || ts.isFunctionDeclaration(f)) && f.body) {
+      if (!ts.isBlock(f.body)) return laImportDong(f.body);
+      return f.body.statements.some((st) => ts.isReturnStatement(st) && !!st.expression && laImportDong(st.expression));
+    }
+    return false;
+  };
+  const thamHam = (n: ts.Node) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && traImport(n.initializer)) hamImport.add(n.name.text);
+    if (ts.isFunctionDeclaration(n) && n.name && traImport(n)) hamImport.add(n.name.text);
+    ts.forEachChild(n, thamHam);
+  };
+  thamHam(sf);
+  const tham = (n: ts.Node) => {
+    if (ts.isImportDeclaration(n)) {
+      const nb = n.importClause?.namedBindings;
+      if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) goc.set(e.name.text, (e.propertyName ?? e.name).text);
+      if (nb && ts.isNamespaceImport(nb)) khongGian.add(nb.name.text);
+    }
+    if (ts.isVariableDeclaration(n) && n.initializer && laImportDong(n.initializer, hamImport)) {
+      if (ts.isIdentifier(n.name)) khongGian.add(n.name.text);
+      else if (ts.isObjectBindingPattern(n.name))
+        for (const e of n.name.elements) if (ts.isIdentifier(e.name)) goc.set(e.name.text, e.propertyName ? e.propertyName.getText() : e.name.text);
+    }
+    ts.forEachChild(n, tham);
+  };
+  tham(sf);
+  return { goc, khongGian, hamImport };
+}
+
+/** Tên XUẤT gốc của một lời gọi đi qua import (tĩnh đổi tên / destructure / không gian / import động thẳng) — `null` nếu không phải hình ấy. */
+function tenDichVuGoi(c: ts.CallExpression, bi: BangImport): string | null {
+  const e = c.expression;
+  if (ts.isIdentifier(e)) return bi.goc.get(e.text) ?? null;
+  if (ts.isPropertyAccessExpression(e)) {
+    const obj = boBoc(e.expression);
+    if (laImportDong(obj, bi.hamImport)) return e.name.text;
+    if (ts.isIdentifier(obj) && bi.khongGian.has(obj.text)) return e.name.text;
+  }
+  return null;
+}
+
+/**
+ * Tái xuất (phụ lục điều phối): `export { fn as g } from "…"` ⇒ gọi `g` qua module tái xuất ≡ gọi `fn`; `export { fn } from` / `export * from` giữ TÊN
+ * (đã bắt theo tên khi import / destructure / không gian). Trả tên MỚI → tên gốc cho mọi tên gốc thuộc `dichVu`.
+ */
+export function biDanhTaiXuat(nguon: Iterable<[string, string]>, dichVu: ReadonlySet<string>): Map<string, string> {
+  const ra = new Map<string, string>();
+  for (const [r, src] of nguon) {
+    if (!/export\s*\{[^}]*\}\s*from/.test(src)) continue;
+    const sf = ts.createSourceFile(r, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    for (const st of sf.statements)
+      if (ts.isExportDeclaration(st) && st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause))
+        for (const e of st.exportClause.elements) {
+          const g = (e.propertyName ?? e.name).text;
+          if (dichVu.has(g) && e.name.text !== g) ra.set(e.name.text, g);
+        }
+  }
   return ra;
 }
 
@@ -291,8 +392,9 @@ type KetQuaQuet = { dem: Map<string, Partial<Record<Loai, number>>>; nut: Map<st
  */
 export function quetNguon(r: string, src: string, dichVu: ReadonlySet<string>, cucBo = true): KetQuaQuet {
   const sf = ts.createSourceFile(r, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const bang = tenBang(sf);
+  const bangs = BANG.map((spec) => ({ spec, ten: tenBang(sf, spec.ten) }));
   const imp = tenImport(sf);
+  const bi = bangImport(sf);
   const dem = new Map<string, Partial<Record<Loai, number>>>();
   const nut = new Map<string, ts.Node | null>();
   const them = (n: ts.Node, loai: Loai) => {
@@ -304,21 +406,24 @@ export function quetNguon(r: string, src: string, dichVu: ReadonlySet<string>, c
     nut.set(k, dv.nut);
   };
   const tham = (n: ts.Node) => {
-    if (ts.isIdentifier(n) && bang.has(n.text) && viTriGiaTri(n)) {
-      const l = loaiThamChieu(n, bang);
-      if (l) them(n, l);
-    } else if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && laBang(n, bang)) {
-      const l = loaiThamChieu(n, bang);
-      if (l) them(n, l);
-      return;
+    for (const { spec, ten: bang } of bangs) {
+      if (ts.isIdentifier(n) && bang.has(n.text) && viTriGiaTri(n)) {
+        const l = loaiThamChieu(n, bang, spec);
+        if (l) them(n, l);
+      } else if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && laBang(n, bang, spec.ten)) {
+        const l = loaiThamChieu(n, bang, spec);
+        if (l) them(n, l);
+        return;
+      }
     }
     if (ts.isCallExpression(n)) {
       const t = tenGoi(n);
-      if (NGUON_RAM.has(t)) them(n, "ram");
-      else if (dichVu.has(t) && imp.has(t)) them(n, "dich_vu");
+      const g = tenDichVuGoi(n, bi);
+      if (NGUON_RAM.has(t) || (g !== null && NGUON_RAM.has(g))) them(n, "ram");
+      else if ((dichVu.has(t) && imp.has(t)) || (g !== null && dichVu.has(g))) them(n, "dich_vu");
     }
     const t = vanBan(n);
-    if (t !== null && /device_adapters/i.test(t) && SQL_NHAY_CAM.test(t)) them(n, "sql_tho");
+    if (t !== null && bangs.some(({ spec }) => spec.sqlBang.test(t) && spec.sqlNhay.test(t))) them(n, "sql_tho");
     ts.forEachChild(n, tham);
   };
   tham(sf);
@@ -339,7 +444,7 @@ function nguonDichVu(): Map<string, string[]> {
   const ra = new Map<string, string[]>();
   for (const p of tepDuoi("server/services")) {
     const src = readFileSync(p, "utf8");
-    if (!/deviceAdapters|device_adapters|listSupervisorStatuses|getSupervisorStatus|OtAdapterStatus|layTrangThaiAdapter|getActiveAdapter|listActiveAdapters/.test(src)) continue;
+    if (!/deviceAdapters|device_adapters|orchestrationRuns|orchestrationRunSteps|orchestration_run|listSupervisorStatuses|getSupervisorStatus|OtAdapterStatus|layTrangThaiAdapter|getActiveAdapter|listActiveAdapters/.test(src)) continue;
     const r = rel(p);
     const { dem } = quetNguon(r, src, new Set(), false);
     const sf = ts.createSourceFile(r, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -357,9 +462,14 @@ function nguonDichVu(): Map<string, string[]> {
   return ra;
 }
 
-function doTatCa(): { dem: Map<string, Partial<Record<Loai, number>>>; soTep: Record<string, number>; dichVu: Map<string, string[]> } {
+function doTatCa(): { dem: Map<string, Partial<Record<Loai, number>>>; soTep: Record<string, number>; dichVu: Map<string, string[]>; taiXuat: Map<string, string> } {
   const dichVu = nguonDichVu();
-  const ten = new Set(dichVu.keys());
+  // tái xuất đổi tên (mọi tệp server/, tiền lọc bằng regex) ⇒ tên mới cũng là nguồn dịch vụ
+  const taiXuat = biDanhTaiXuat(
+    tepDuoi("server").map((p) => [rel(p), readFileSync(p, "utf8")] as [string, string]),
+    new Set(dichVu.keys()),
+  );
+  const ten = new Set([...dichVu.keys(), ...taiXuat.keys()]);
   const dem = new Map<string, Partial<Record<Loai, number>>>();
   const soTep: Record<string, number> = {};
   for (const g of GOC_BE_MAT) {
@@ -367,7 +477,7 @@ function doTatCa(): { dem: Map<string, Partial<Record<Loai, number>>>; soTep: Re
     soTep[g] = tep.length;
     for (const p of tep) for (const [k, v] of quetNguon(rel(p), readFileSync(p, "utf8"), ten).dem) dem.set(k, v);
   }
-  return { dem, soTep, dichVu };
+  return { dem, soTep, dichVu, taiXuat };
 }
 
 const sapXep = (o: Partial<Record<Loai, number>>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
@@ -387,6 +497,14 @@ const MT_MAPPING =
   "mappingAsCode: tệp mapping KHÔNG mang endpoint / credentials (đầu tệp mappingAsCode.ts, import không đổi endpoint); hàng adapter chỉ để lấy code / protocol / máy";
 const MT_KHOI_DONG = "khởi động / lịch nền (startOt, sweep, publisher) — không phải bề mặt trả dữ liệu cho người gọi";
 const MT_KY_SU = "thủ tục kySuProcedure (vai admin|engineer) + requirePermission(machine_control, canEdit) — đúng tập người xem chi tiết kỹ thuật";
+// C2 fix 4 (điều phối 2026-11-01)
+const MT_START_RUN =
+  "StartRunResult: ok / status / runId / message do MÁY CHỦ soạn (không chép lỗi bước / run) / reason mã / stepIds / abortStops (chỉ id bước) — không văn bản driver";
+const MT_VISIBLE = "chỉ dùng runIdVisibleTo / filterRunsVisibleTo / resolveVisiblePendingRunIds (boolean / id) — không trả error / contextJson / resultJson";
+const MT_EDGE =
+  "edge-node principal (edge token, requireEdgeNode) owns the adapter / run it executes; not an API key / user — nút cần đúng dữ liệu của chính nó để chạy (§2d ghim `auth` = requireEdgeNode())";
+const MT_EDGE_CONFIG =
+  "requires edge token + the node owns the adapter; if this route ever accepts an API key or a user session ⇒ re-decide (trả endpoint + connectionOptions ĐÃ GIẢI MÃ cho nút sở hữu — currentNodeConfig / buildNodeConfigContent; §2d ghim `auth` = requireEdgeNode())";
 
 export const SO_CAI: Record<string, Muc> = {
   // ── REST /api/v1 ──
@@ -407,7 +525,25 @@ export const SO_CAI: Record<string, Muc> = {
     phanLoai: "mien_tru",
     lyDo: "hàng adapter chỉ để kiểm phạm vi (machineId) + lấy code; trả adapterId / adapterCode / restarted (cờ V1_ADAPTER_RESTART_ENABLED mặc định TẮT)",
   },
-  "server/api/v1/router.ts#GET /orchestration/runs/:id": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_FOE },
+  "server/api/v1/router.ts#GET /orchestration/runs/:id": {
+    dem: { dich_vu: 1 },
+    phanLoai: "che",
+    qua: ["cheRunView"],
+    lyDo: "C2 fix 4 — steps[*].error / result.detail / run.error ⇒ mã cho khoá API (cheRunView(view, false)); adapter chỉ dùng nội bộ cho digest (" + MT_FOE + ")",
+  },
+  "server/api/v1/router.ts#POST /orchestration/runs": { dem: { dich_vu: 1, ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: "trả { runId, status, accepted }; webhook mang { runId, workflowRef, status } — " + MT_START_RUN },
+  "server/api/v1/router.ts#orchestrationRunWebhookAudience": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "vị từ người nhận webhook — " + MT_VISIBLE },
+  "server/api/v1/router.ts#POST /edge/sync": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: "khoá edge GHI kết quả run của chính nó (error do NÓ gửi lên); trả { runId, stepsApplied, abortRequested, stale } + message máy chủ" },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/config": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_EDGE_CONFIG },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/pull": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/claim": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/progress": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/complete": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/release": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/interrupted": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/authorize": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/runs/:runId/report": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
+  "server/api/v1/edgeNodeRoutes.ts#POST /edge/node/locks/events": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_EDGE },
   // ── REST ngoài /api/v1 ──
   "server/routes/observabilityRoutes.ts#GET /api/observability/health": {
     dem: { ram: 1 },
@@ -435,7 +571,26 @@ export const SO_CAI: Record<string, Muc> = {
     phanLoai: "mien_tru",
     lyDo: "hàng FOR UPDATE chỉ để kiểm (phạm vi dưới khoá / còn bật / cổng adapter); trả { success: true }",
   },
-  "server/routers/edgeDeploymentRouter.ts#proc:getUnifiedFleetStatus": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "adminProcedure (vai admin) — review C2 đã rà fleetStatusService" },
+  "server/routers/edgeDeploymentRouter.ts#proc:getUnifiedFleetStatus": {
+    dem: { dich_vu: 1, nguyen_hang: 1 },
+    phanLoai: "che",
+    qua: ["chiTietKyThuatCua", "redactAdapterRow", "maLoiAdapterCua", "tamKhoaAdapter"],
+    lyDo: "C2 fix 4 (review fix 3 M1) — admin KHÔNG canEdit bị che (luật hai điều kiện); nguyen_hang = `s.deviceAdapters` (thuộc tính kết quả, xấp xỉ trên)",
+  },
+  "server/routers/edgeRuntimeRouter.ts#proc:nodeStatus": { dem: { dich_vu: 1 }, phanLoai: "che", qua: ["chiTietKyThuatCua", "cheHangRun"], lyDo: "C2 fix 4 — hàng run nguyên (error / contextJson) của nút" },
+  "server/routers/edgeRuntimeRouter.ts#proc:deleteNode": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "trả { id } / message máy chủ — không hàng run / adapter" },
+  "server/routers/edgeRuntimeRouter.ts#proc:assignRun": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: "trả { runId, edgeNodeId } / message máy chủ; " + MT_VISIBLE },
+  "server/routers/edgeRuntimeRouter.ts#proc:syncRunResult": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: "người gọi GHI kết quả (error do chính họ gửi); trả { runId, stepsApplied, abortRequested, stale }" },
+  "server/routers/engineeringAssignmentRouter.ts#proc:assign": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
+  "server/routers/engineeringAssignmentRouter.ts#proc:unassign": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
+  "server/routers/engineeringAssignmentRouter.ts#proc:assignableUsers": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả danh sách người" },
+  "server/routers/orchestrationGovRouter.ts#proc:runEvents": {
+    dem: { dich_vu: 1 },
+    phanLoai: "mien_tru",
+    lyDo: "orchestration_run_events: mọi appendRunEvent chỉ mang { status } / { workflowRef, edgeNodeId } (foeEngine / foeRunStore) — không lỗi bước; " + MT_VISIBLE,
+  },
+  "server/routers/orchestrationGovRouter.ts#proc:replayRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "trạng thái suy từ cùng sổ sự kiện (không lỗi bước); " + MT_VISIBLE },
+  "server/routers/oversightRouter.ts#proc:pendingSummary": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "mẫu run chỉ { id, workflowRef, status, currentStepId } + đếm; " + MT_VISIBLE },
   "server/routers/edgeResolutionRouter.ts#proc:list": {
     dem: { dich_vu: 1 },
     phanLoai: "mien_tru",
@@ -447,9 +602,23 @@ export const SO_CAI: Record<string, Muc> = {
   "server/routers/mappingAsCodeRouter.ts#proc:exportOne": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_MAPPING },
   "server/routers/mappingAsCodeRouter.ts#proc:preview": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_MAPPING },
   "server/routers/mappingAsCodeRouter.ts#proc:applyImport": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_MAPPING },
-  "server/routers/orchestrationRouter.ts#proc:getRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_FOE },
-  "server/routers/orchestrationRouter.ts#proc:abortRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_FOE },
-  "server/routers/orchestrationRouter.ts#proc:resumeRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_FOE },
+  "server/routers/orchestrationRouter.ts#proc:getRun": {
+    dem: { dich_vu: 1 },
+    phanLoai: "che",
+    qua: ["chiTietKyThuatCua", "cheRunView"],
+    lyDo: "C2 fix 4 — steps[*].error / result.detail / run.error / foeResumeState ⇒ mã cho người không xem chi tiết kỹ thuật",
+  },
+  "server/routers/orchestrationRouter.ts#proc:listRuns": {
+    dem: { cot_ky_thuat: 1, dich_vu: 1 },
+    phanLoai: "che",
+    qua: ["chiTietKyThuatCua", "cheHangRun"],
+    lyDo: "C2 fix 4 — hàng run (error / contextJson) qua cheHangRun; resultJson chỉ vào summarizeRunDispatch (tóm tắt simulated / sent)",
+  },
+  "server/routers/orchestrationRouter.ts#proc:runListMeta": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "trả { truncated } (boolean)" },
+  "server/routers/orchestrationRouter.ts#proc:startRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_START_RUN },
+  "server/routers/orchestrationRouter.ts#proc:abortRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_START_RUN + "; " + MT_FOE },
+  "server/routers/orchestrationRouter.ts#proc:resumeRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_START_RUN + "; " + MT_FOE },
+  "server/routers/orchestrationRouter.ts#proc:deleteWorkflow": { dem: { nguyen_hang: 1 }, phanLoai: "mien_tru", lyDo: "hàng run chỉ để kiểm còn run chưa kết thúc + xoá; trả { ok, id, ref, removedRuns }" },
   "server/routers/programmingRouter.ts#proc:deployPreview": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "previewDeploy: hàng adapter chỉ để kiểm isEnabled; trả danh sách cổng (mã)" },
   "server/routers/scadaDiagRouter.ts#cotAdapter": {
     dem: { cot_ky_thuat: 2 },
@@ -485,11 +654,17 @@ export const SO_CAI: Record<string, Muc> = {
   "server/_core/index.ts#startServer": { dem: { dich_vu: 3 }, phanLoai: "mien_tru", lyDo: MT_KHOI_DONG },
 };
 
-/** GHIM (đo 2026-11-01): số khoá / điểm chạm / che / miễn trừ. Đổi ⇒ phân loại khoá mới trước, cập nhật cùng ngày + lý do. Không nới. */
-const GHIM = { khoa: 43, diemCham: 63, che: 9, mienTru: 34 };
-/** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 55 hàm). Ngưỡng dưới ~85 % số đo. */
+/**
+ * GHIM số khoá / điểm chạm / che / miễn trừ. Đổi ⇒ phân loại khoá mới trước, cập nhật cùng ngày + lý do. Không nới.
+ *   • fix 3 (đo 2026-11-01): { khoa 43, diemCham 63, che 9, mienTru 34 }.
+ *   • fix 4 (đo 2026-11-01): { khoa 70, diemCham 102, che 14, mienTru 56 } — +27 khoá: 10 tuyến edgeNodeRoutes (I1: hình `(await import(…)).fn()` /
+ *     `(await svc()).fn()` nay thấy được), bảng orchestration_runs / orchestration_run_steps vào tập quét (+15 khoá foe / edge / oversight / giao việc);
+ *     che +5 (getRun, listRuns, REST runs/:id, nodeStatus, fleet status — fleet chuyển từ miễn trừ), miễn trừ +22.
+ */
+const GHIM = { khoa: 70, diemCham: 102, che: 14, mienTru: 56 };
+/** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
-const SAN_NGUON_DICH_VU = 47;
+const SAN_NGUON_DICH_VU = 68;
 
 /** Hàm che GHÉP phải tự gọi bộ che nguyên thuỷ (tệp → hàm → phải gọi). */
 const HAM_CHE_GHEP: Record<string, { tep: string; phaiGoi: string[] }> = {
@@ -497,6 +672,36 @@ const HAM_CHE_GHEP: Record<string, { tep: string; phaiGoi: string[] }> = {
 };
 
 const docTep = (tep: string) => readFileSync(join(GOC, tep), "utf8");
+
+/**
+ * MIỄN TRỪ ĐÃ QUYẾT ngoài bề mặt REST / tRPC (C2 fix 4 mục 3a / 3b — điều phối QUYẾT 2026-11-01). Có NGÀY + BẰNG CHỨNG; §5 kiểm bằng chứng còn đúng.
+ */
+export const MIEN_TRU_DA_QUYET = [
+  {
+    ngay: "2026-11-01",
+    ma: "audit_before_endpoint",
+    noiDung: "scadaDiag.tamTat ghi before.endpoint (văn bản chi tiết kỹ thuật) vào control_audit_log — GIỮ trong audit, KHÔNG che",
+    bangChung: [
+      "recordAuditEvent (server/services/audit/controlAuditService.ts:113) chỉ ghi control_audit_log (beforeJson thô)",
+      "securityRouter.verifyAuditChain (securityRouter.ts:33-39, protectedProcedure) chỉ trả { ok, checked, brokenAtId, reason }",
+      "commissioningService.latestCommissioningRecheck (:197-250) nội bộ, chỉ hàng device_tag_stop_pin, trả bản rút gọn",
+      "interlockRouter (:521-555), safetyPlcTrust (:281-316), assignmentService (:64, :314), totpKhoaSai (:440-460), wormTableSizeMonitor (:28) chỉ chọn id / actorId / count",
+      "backupRouter / backupService (adminProcedure): pg_dump toàn DB; sao lưu theo nhóm không gồm bảng này",
+      "BẤT BIẾN được ghim tự động: server/routers/controlAuditLogDocCensus.test.ts (danh sách cho phép theo hàm, người đọc mới ⇒ đỏ)",
+    ],
+  },
+  {
+    ngay: "2026-11-01",
+    ma: "mcp_cuc_bo",
+    noiDung: "MCP local dev tool — known reader, outside app permissions",
+    bangChung: [
+      "vai mcp_chi_doc (scripts/mcp-cuc-bo.ts, server/services/mcpCucBo/dbChiDoc.ts, cấp bởi scripts/mcp-cuc-bo-vai-tro.mjs) SELECT mọi bảng, chỉ ẩn cột khớp RE_NHAY_CAM + COT_AN_TUONG_MINH ⇒ ĐỌC ĐƯỢC control_audit_log.beforeJson và device_adapters.endpoint / lastError",
+      "chỉ 127.0.0.1, bearer; công cụ của nhà phát triển trên chính máy, không phải kênh người dùng của ứng dụng",
+      "không tệp nào trong server/ import nó ngoài module của chính nó; bí mật trong connectionOptions đã niêm phong (sealConnectionOptionSecrets)",
+      "QUYẾT LẠI nếu MCP từng được mở ra ngoài loopback. KHÔNG đổi vai MCP trong lát này.",
+    ],
+  },
+] as const;
 
 describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activeEndpoint / connectionOptions / lastError) trên REST + tRPC (KD-2bA 2.1, C2 fix 3)", () => {
   const DO = doTatCa();
@@ -542,7 +747,7 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
     }
   });
 
-  it("§2c REST /api/v1: mọi khoá `che` gọi redactAdapterRow với người xem `chiTietKyThuat: false` TƯỜNG MINH (khoá API không bao giờ là người xem)", () => {
+  it("§2c REST /api/v1: mọi khoá `che` gọi bộ che với người xem `false` TƯỜNG MINH — redactAdapterRow({ chiTietKyThuat: false }) / cheRunView(v, false) (khoá API không bao giờ là người xem)", () => {
     const sai: string[] = [];
     for (const [k, m] of Object.entries(SO_CAI)) {
       if (m.phanLoai !== "che" || !k.startsWith("server/api/")) continue;
@@ -561,12 +766,35 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
           )
             dung++;
         }
+        if (ts.isCallExpression(x) && ["cheRunView", "cheHangRun", "cheBuocRun"].includes(tenGoi(x))) {
+          thay++;
+          if (x.arguments[1]?.kind === ts.SyntaxKind.FalseKeyword) dung++;
+        }
         ts.forEachChild(x, t);
       };
       if (nut) t(nut);
-      if (thay === 0 || dung !== thay) sai.push(`${k}: redactAdapterRow ${thay} lần, chiTietKyThuat:false ${dung}`);
+      if (thay === 0 || dung !== thay) sai.push(`${k}: lời gọi che ${thay} lần, người xem false ${dung}`);
     }
     expect(sai).toEqual([]);
+  });
+
+  it("§2d edgeNodeRoutes: MỌI khoá miễn trừ theo edge-node principal nằm sau `auth` = requireEdgeNode() (nhận khoá API / phiên người dùng ⇒ quyết lại)", () => {
+    const tep = "server/api/v1/edgeNodeRoutes.ts";
+    const sf = ts.createSourceFile(tep, docTep(tep), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let authLaEdge = false;
+    const tuyen = new Map<string, string>();
+    const t = (x: ts.Node) => {
+      if (ts.isVariableDeclaration(x) && x.name.getText() === "auth" && x.initializer && ts.isCallExpression(x.initializer) && tenGoi(x.initializer) === "requireEdgeNode")
+        authLaEdge = true;
+      if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && HTTP.test(x.expression.name.text) && x.arguments[0] && ts.isStringLiteralLike(x.arguments[0]))
+        tuyen.set(`${tep}#${x.expression.name.text.toUpperCase()} ${x.arguments[0].text}`, x.arguments[1]?.getText() ?? "");
+      ts.forEachChild(x, t);
+    };
+    t(sf);
+    expect(authLaEdge, "`const auth = requireEdgeNode()`").toBe(true);
+    const khoa = Object.keys(SO_CAI).filter((k) => k.startsWith(tep + "#"));
+    expect(khoa.length).toBe(10);
+    for (const k of khoa) expect(tuyen.get(k), k).toBe("auth");
   });
 
   it("§3 GHIM số khoá / điểm chạm / che / miễn trừ (đo 2026-11-01); miễn trừ nào cũng có lý do", () => {
@@ -616,5 +844,78 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
     const route = (sf.statements[0] as ts.ExpressionStatement).expression;
     expect(thieuLoiGoi(route, ["redactAdapterRow", "maLoiAdapterCua"])).toEqual(["redactAdapterRow", "maLoiAdapterCua"]);
     expect(thieuLoiGoi(undefined, ["redactAdapterRow"])).toEqual(["redactAdapterRow"]);
+  });
+
+  it("§5a miễn trừ ĐÃ QUYẾT audit before.endpoint (2026-11-01): còn đúng — tamTat vẫn ghi endpoint vào before; census bất biến người đọc audit tồn tại", () => {
+    const m = MIEN_TRU_DA_QUYET.find((x) => x.ma === "audit_before_endpoint")!;
+    expect(m.ngay).toBe("2026-11-01");
+    const sf = ts.createSourceFile("s.ts", docTep("server/routers/scadaDiagRouter.ts"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let coGhi = false;
+    const t = (x: ts.Node) => {
+      if (ts.isPropertyAssignment(x) && x.name.getText() === "tamTat" && /before:\s*\{[^}]*endpoint:\s*cu\.endpoint/.test(x.getText())) coGhi = true;
+      ts.forEachChild(x, t);
+    };
+    t(sf);
+    expect(coGhi, "nếu tamTat thôi ghi endpoint thì bỏ mục miễn trừ này").toBe(true);
+    expect(docTep("server/routers/controlAuditLogDocCensus.test.ts")).toContain("export const CHO_PHEP");
+  });
+
+  it("§5b miễn trừ ĐÃ QUYẾT MCP (2026-11-01): ĐÚNG câu chữ; chỉ loopback; không tệp server/ nào ngoài mcpCucBo import nó", () => {
+    const m = MIEN_TRU_DA_QUYET.find((x) => x.ma === "mcp_cuc_bo")!;
+    expect(m.noiDung).toBe("MCP local dev tool — known reader, outside app permissions");
+    expect(docTep("scripts/mcp-cuc-bo.ts")).toMatch(/\.listen\(\s*cong\s*,\s*"127\.0\.0\.1"/);
+    const ngoai = tepDuoi("server")
+      .map(rel)
+      .filter((r) => !r.startsWith("server/services/mcpCucBo/") && /["'][^"']*mcpCucBo[^"']*["']/.test(docTep(r)));
+    expect(ngoai).toEqual([]);
+    expect(docTep("server/routers/deviceAdapterRouter.ts")).toContain("sealConnectionOptionSecrets(");
+  });
+
+  it("§4b FIXTURE (C2 fix 4, review I1 + phụ lục điều phối) — MỖI hình gọi dịch vụ qua import là một khoá `dich_vu` LẠ, đúng đơn vị", () => {
+    const dv = new Set(["configForNode"]);
+    const thu = (src: string, them: ReadonlySet<string> = dv) =>
+      Object.fromEntries([...quetNguon("server/api/v1/xAo.ts", src, them).dem].map(([k, v]) => [k.split("#")[1], sapXep(v)]));
+    const ROUTE = (than: string) => `export function dang(r: any) {\n  r.post("/ro", async (req: any, res: any) => { ${than} });\n}`;
+    // (1) gọi thẳng trên import động
+    expect(thu(ROUTE(`res.json(await (await import("../../services/edge/edgeConfigCentral")).configForNode(1, {}, null));`))).toEqual({ "POST /ro": { dich_vu: 1 } });
+    // (2) destructure, (2b) destructure ĐỔI TÊN
+    expect(thu(ROUTE(`const { configForNode } = await import("../../services/edge/edgeConfigCentral"); res.json(await configForNode(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    expect(thu(ROUTE(`const { configForNode: g } = await import("../../services/edge/edgeConfigCentral"); res.json(await g(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    // (3) không gian: biến = await import(…), import * as, hàm cục bộ trả import
+    expect(thu(ROUTE(`const svc = await import("../../services/edge/edgeConfigCentral"); res.json(await svc.configForNode(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    expect(thu(`import * as svc from "../../services/edge/edgeConfigCentral";\n` + ROUTE(`res.json(await svc.configForNode(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    expect(thu(`const svc = () => import("../../services/edge/edgeConfigCentral");\n` + ROUTE(`res.json(await (await svc()).configForNode(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    // (3b) import tĩnh ĐỔI TÊN
+    expect(thu(`import { configForNode as cfg } from "../../services/edge/edgeConfigCentral";\n` + ROUTE(`res.json(await cfg(1, {}, null));`))).toEqual({
+      "POST /ro": { dich_vu: 1 },
+    });
+    // (4) tái xuất: `export { configForNode as layCauHinh } from "…services…"` ⇒ gọi `layCauHinh` qua module tái xuất ≡ nguồn; `export *` giữ tên
+    const tx = biDanhTaiXuat([["server/lib/taiXuat.ts", `export { configForNode as layCauHinh } from "../services/edge/edgeConfigCentral";\nexport * from "../services/edge/edgeCoordinator";`]], dv);
+    expect([...tx]).toEqual([["layCauHinh", "configForNode"]]);
+    const voiTaiXuat = new Set([...dv, ...tx.keys()]);
+    expect(thu(`import { layCauHinh } from "../../lib/taiXuat";\n` + ROUTE(`res.json(await layCauHinh(1, {}, null));`), voiTaiXuat)).toEqual({ "POST /ro": { dich_vu: 1 } });
+    expect(thu(`import { configForNode } from "../../lib/taiXuat";\n` + ROUTE(`res.json(await configForNode(1, {}, null));`))).toEqual({ "POST /ro": { dich_vu: 1 } }); // export *
+    // đối chứng: thiếu tái xuất trong tập ⇒ KHÔNG bắt (chứng minh bước tái xuất là cần)
+    expect(thu(`import { layCauHinh } from "../../lib/taiXuat";\n` + ROUTE(`res.json(await layCauHinh(1, {}, null));`))).toEqual({});
+    // (5) bảng orchestration: cột error / resultJson, hàng nguyên, SQL thô
+    const FOE = [
+      `import { orchestrationRunSteps, orchestrationRuns } from "../../../drizzle/schema";`,
+      `export function dang(r: any, d: any) {`,
+      `  r.get("/buoc", async (req: any, res: any) => res.json(await d.select({ e: orchestrationRunSteps.error }).from(orchestrationRunSteps)));`,
+      `  r.get("/run", async (req: any, res: any) => res.json(await d.select().from(orchestrationRuns)));`,
+      "  r.get(\"/tho\", async (req: any, res: any) => res.json(await d.execute(sql`SELECT s.\"error\" FROM orchestration_run_steps s`)));",
+      `}`,
+    ].join("\n");
+    expect(thu(FOE, new Set())).toEqual({ "GET /buoc": { cot_ky_thuat: 1 }, "GET /run": { nguyen_hang: 1 }, "GET /tho": { sql_tho: 1 } });
   });
 });

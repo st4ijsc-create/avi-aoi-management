@@ -742,18 +742,22 @@ export function createV1Router(): Router {
       // doc 81 Đợt 7 task I3 — by the definition versions the run executed
       const visible = await runVisibleTo(view?.run ?? { workflowId: -1, paramsJson: null }, orchestrationScopeOf(req.apiPrincipal?.tenantScope));
       if (!view || !visible) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
+      // SCADA R1b-2b-2b A — C2 fix 4 (điều phối 2026-11-01): khoá API KHÔNG BAO GIỜ là người xem chi tiết kỹ thuật ⇒ CÙNG bộ che với tRPC
+      // `orchestration.getRun` (`cheRunView`), người xem truyền TƯỜNG MINH `false`: run.error / steps[*].error ⇒ MÃ, result.detail ⇒ danh sách trắng.
+      const { cheRunView } = await import("../../routers/_chiTietKyThuat");
+      const an = cheRunView(view, false);
       sendOk(res, {
         run: {
-          id: view.run.id,
-          workflowId: view.run.workflowId,
-          workflowRef: view.run.workflowRef,
-          status: view.run.status,
-          currentStepId: view.run.currentStepId,
-          startedAt: view.run.startedAt,
-          finishedAt: view.run.finishedAt,
-          error: view.run.error,
+          id: an.run.id,
+          workflowId: an.run.workflowId,
+          workflowRef: an.run.workflowRef,
+          status: an.run.status,
+          currentStepId: an.run.currentStepId,
+          startedAt: an.run.startedAt,
+          finishedAt: an.run.finishedAt,
+          error: an.run.error,
         },
-        steps: view.steps,
+        steps: an.steps,
       });
     }),
   );

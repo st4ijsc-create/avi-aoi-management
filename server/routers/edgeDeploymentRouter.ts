@@ -136,9 +136,31 @@ export const edgeDeploymentRouter = router({
   // Doc 38 T-1 (P1) — UNIFIED fleet-status view: edge_deployments + edge_nodes +
   // device_adapters in one read-only overview (getFleetOverview only covers
   // deployments). Read-only aggregation; admin-only like the rest of this router.
-  getUnifiedFleetStatus: adminProcedure.query(async () => {
+  getUnifiedFleetStatus: adminProcedure.query(async ({ ctx }) => {
     const { getUnifiedFleetStatus } = await import("../services/fleetStatusService");
-    return getUnifiedFleetStatus();
+    const s = await getUnifiedFleetStatus();
+    // SCADA R1b-2b-2b A — C2 fix 4 (review fix 3 M1, điều phối 2026-11-01): luật HAI điều kiện (admin|engineer VÀ machine_control.canEdit) — admin
+    // KHÔNG có canEdit nhận endpoint = null, lastError = MÃ, như mọi bề mặt khác (CÙNG `redactAdapterRow` + `maLoiAdapterCua` + `tamKhoaAdapter`).
+    const [{ chiTietKyThuatCua, maLoiAdapterCua }, { redactAdapterRow }, { tamKhoaAdapter, canTraEdgeChoTamKhoa, idsAdapterDoEdge }, { getDb }] = await Promise.all([
+      import("./_chiTietKyThuat"),
+      import("../services/ot/connectionSecrets"),
+      import("./_tamKhoaAdapter"),
+      import("../db/connection"),
+    ]);
+    const hang = s.deviceAdapters.adapters;
+    const chiTietKyThuat = hang.length > 0 ? await chiTietKyThuatCua(ctx) : true;
+    if (chiTietKyThuat) return s;
+    const d = canTraEdgeChoTamKhoa(hang) ? await getDb() : null;
+    const edge = d ? await idsAdapterDoEdge(d, hang.map((a) => a.id)) : new Set<number>();
+    return {
+      ...s,
+      deviceAdapters: {
+        ...s.deviceAdapters,
+        adapters: hang.map((a) =>
+          redactAdapterRow(a, { chiTietKyThuat, tamKhoa: tamKhoaAdapter(a.protocol, edge.has(a.id)), maLoi: maLoiAdapterCua(a.lastError, a.status === "error") }),
+        ),
+      },
+    };
   }),
 
   // redeploy — re-package an existing deployment (e.g. after a failed/outdated

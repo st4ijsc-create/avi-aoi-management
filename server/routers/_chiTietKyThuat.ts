@@ -59,13 +59,16 @@ export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABL
  * + `OT_S7_BIT_NGOAI_DAI`, `OT_S7_DIA_CHI_THU_VIEN_BO` (R1b-2b-2a T3C: tiền tố errorText của driver S7 khi từ chối lô — địa chỉ bit ∉ 0..7 / địa chỉ nodes7 sẽ bỏ; hằng ở
  *   s7Address.ts, tệp nằm trong nguồn suy của census).
  * + `OT_S7_THU_VIEN_KHONG_KIEM_DUOC` (T3C fix 1, M1: bộ phân tích / nội tại nodes7 không dùng được ⇒ từ chối fail-closed; hằng ở s7Address.ts).
+ * + C2 fix 4 (điều phối 2026-11-01) — tiền tố lỗi BƯỚC / RUN của orchestration: `FOE_OUTCOME_UNKNOWN`, `FOE_OUTCOME_PARTIAL`, `FOE_GATE_REQUIRED`
+ *   (hằng ở foeEngine.ts / foeRunStore.ts, nằm trong nguồn suy của census) và `EDGE_OUTCOME_UNKNOWN` (literal ở foeRunStore.ts — trạng thái tiếp tục).
  * + `MOT_PHAN` (R1b-2b-2a T3E, backlog 90: lô ghi thiết bị áp MỘT PHẦN — `reason` của dispatch + tiền tố errorText của hàng KHÔNG áp; status vẫn `failed`;
  *   hằng `MA_MOT_PHAN` ở server/services/ot/motPhan.ts, tệp nằm trong nguồn suy của census). Danh sách item đi trong `ackValue.motPhan` (chi tiết kỹ thuật).
  */
 export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
   "CHANNEL_READ_ONLY", "CHUA_GHIM_STOP", "DANG_DUOC_CHON", "DA_XU_LY", "DB_UNAVAILABLE", "DIEU_TIET", "DISPATCH_LOI", "DRIVER_WRITE_FAILED",
-  "DUPLICATE_IN_FLIGHT", "EDGE_CHUA_HO_TRO", "EDGE_REPORTED", "EDGE_STOP_NOT_PINNED", "FAILED", "FEATURE_DISABLED", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
+  "DUPLICATE_IN_FLIGHT", "EDGE_CHUA_HO_TRO", "EDGE_OUTCOME_UNKNOWN", "EDGE_REPORTED", "EDGE_STOP_NOT_PINNED", "FAILED", "FEATURE_DISABLED",
+  "FOE_GATE_REQUIRED", "FOE_OUTCOME_PARTIAL", "FOE_OUTCOME_UNKNOWN", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
   "HET_HAN", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
   "INTERLOCK_EVENT_INVALID", "INTERLOCK_NOT_APPROVED", "INTERLOCK_REQUIRES_HUMAN_CONFIRM", "INTERLOCK_RULE_DISABLED", "INTERLOCK_RULE_NOT_FOUND",
   "INTERLOCK_TAG_MISMATCH", "INTERLOCK_TARGET_MISMATCH", "INTERLOCK_VALUE_MISMATCH", "INTERLOCK_WRITES_MISMATCH", "KHOA_CHON_LOI", "KHOA_MAT",
@@ -126,4 +129,86 @@ export function maLoiAdapterCua(loi: string | null | undefined, matKetNoi: boole
   const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
   if (tienTo && MA_LOI_DA_BIET_SET.has(tienTo)) return tienTo;
   return matKetNoi ? "ADAPTER_OFFLINE" : "TECHNICAL_ERROR";
+}
+
+/**
+ * SCADA R1b-2b-2b A — C2 fix 4 (điều phối 2026-11-01, KD-2bA 1.1 / 2.1) — lỗi BƯỚC / RUN của orchestration (`orchestration_run_steps.error`,
+ * `orchestration_runs.error`, lỗi trong trạng thái tiếp tục `contextJson.foeResumeState[*].error`) cùng họ với `command_log.errorText`: bước lệnh OT
+ * mang `EquipmentCommandResult.error` = thông điệp dispatcher / driver (có thể có host:port). Người KHÔNG được xem chi tiết kỹ thuật (`chiTietKyThuatCua`
+ * false; khoá API luôn false) nhận MÃ qua CHÍNH `maLoiCua` (tiền tố đã biết — `FOE_OUTCOME_UNKNOWN`, `FOE_OUTCOME_PARTIAL`, `DUPLICATE_IN_FLIGHT`,
+ * `MOT_PHAN`… — hoặc mã dự phòng theo status); kỹ sư giữ nguyên văn.
+ *
+ * `result` của bước lệnh (`{ routedTo, status, accepted, simulated, detail }`, cả hàng abort-STOP): `detail` là `EquipmentCommandResult.detail` —
+ * `reason` có thể là văn bản driver (đường thử lại idempotent của dispatcher), `results` / `refusal` của edge mang văn bản thiết bị, `motPhan` liệt kê
+ * tag (chi tiết kỹ thuật, như C1 `ackValue.motPhan`). Bị che ⇒ `detail` chỉ giữ DANH SÁCH TRẮNG an toàn (`simulated`, `commandLogIds`, `appError`
+ * {appCode, appParams}, `edge`, `stop`, `pinnedStop`) + `reason` qua `maLyDoThu` (mã) + `motPhan` chỉ còn số đếm; khoá khác bị bỏ.
+ * Các trường khác của `result` (nhánh, prompt / approverRoles / note của cổng, reachedState…) không phải chi tiết kỹ thuật ⇒ giữ.
+ */
+const DETAIL_AN_TOAN = ["simulated", "commandLogIds", "appError", "edge", "stop", "pinnedStop"] as const;
+
+function cheDetailLenh(detail: unknown): unknown {
+  if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return detail === undefined ? undefined : null;
+  const d = detail as Record<string, unknown>;
+  const ra: Record<string, unknown> = {};
+  for (const k of DETAIL_AN_TOAN) if (k in d) ra[k] = d[k];
+  if ("reason" in d) ra.reason = typeof d.reason === "string" ? maLyDoThu(d.reason) : null;
+  if (d.motPhan && typeof d.motPhan === "object") {
+    const mp = d.motPhan as { daAp?: unknown; khongAp?: unknown };
+    ra.motPhan = { soDaAp: Array.isArray(mp.daAp) ? mp.daAp.length : null, soKhongAp: Array.isArray(mp.khongAp) ? mp.khongAp.length : null };
+  }
+  return ra;
+}
+
+/** `result` của một bước, bị che (chỉ đụng `detail`). */
+export function cheKetQuaBuoc(result: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!result || typeof result !== "object" || !("detail" in result)) return result;
+  return { ...result, detail: cheDetailLenh(result.detail) };
+}
+
+/** `contextJson` của run, bị che: `foeResumeState[*].error` ⇒ mã (phần còn lại là sổ con trỏ / quyết định cổng / telemetry — không phải chi tiết kỹ thuật). */
+function cheNguCanhRun(ctx: unknown): unknown {
+  if (ctx === null || typeof ctx !== "object" || Array.isArray(ctx)) return ctx;
+  const c = ctx as Record<string, unknown>;
+  const rs = c.foeResumeState;
+  if (!rs || typeof rs !== "object" || Array.isArray(rs)) return ctx;
+  const ra: Record<string, unknown> = {};
+  for (const [id, v] of Object.entries(rs as Record<string, unknown>)) {
+    ra[id] = v && typeof v === "object" && !Array.isArray(v) ? { ...(v as object), error: maLoiCua((v as { error?: string | null }).error, "failed") } : v;
+  }
+  return { ...c, foeResumeState: ra };
+}
+
+/** Hàng run (`orchestration_runs`) theo người xem: bị che ⇒ `error` = mã, `contextJson` che lỗi trạng thái tiếp tục. */
+export function cheHangRun<R extends { error: string | null; status: string; contextJson?: unknown }>(run: R, chiTietKyThuat: boolean): R {
+  if (chiTietKyThuat) return run;
+  return { ...run, error: maLoiCua(run.error, run.status), ...("contextJson" in run ? { contextJson: cheNguCanhRun(run.contextJson) } : {}) };
+}
+
+/**
+ * MÃ của lỗi một BƯỚC orchestration: `FOE_GATE_REQUIRED(<lý do>): …` (văn bản do máy chủ soạn, `gateRequiredError` — không mang chi tiết kỹ thuật)
+ * giữ nguyên DẠNG MÃ `FOE_GATE_REQUIRED(<lý do>)` để Studio vẫn hiện câu dịch đúng lý do (`gateRequiredReasonOf`, OrchestrationStudio.tsx); mọi
+ * trường hợp khác ⇒ `maLoiCua` (tiền tố đã biết hoặc mã dự phòng theo status bước).
+ */
+export function maLoiBuocFoe(error: string | null | undefined, status?: string | null): string | null {
+  const m = /^(FOE_GATE_REQUIRED)\(([a-zA-Z]{1,40})\)(?=:|\s|$)/.exec((error ?? "").trim());
+  if (m) return `${m[1]}(${m[2]})`;
+  return maLoiCua(error, status);
+}
+
+/** Một bước của run theo người xem: bị che ⇒ `error` = mã (`maLoiBuocFoe`), `result.detail` theo danh sách trắng. */
+export function cheBuocRun<S extends { error: string | null; status: string; result: Record<string, unknown> | null }>(s: S, chiTietKyThuat: boolean): S {
+  if (chiTietKyThuat) return s;
+  return { ...s, error: maLoiBuocFoe(s.error, s.status), result: cheKetQuaBuoc(s.result) };
+}
+
+/**
+ * MỘT bộ che cho view của run (tRPC `orchestration.getRun`, REST `GET /api/v1/orchestration/runs/:id`). REST truyền `false` TƯỜNG MINH (khoá API không
+ * bao giờ là người xem chi tiết kỹ thuật); tRPC truyền `await chiTietKyThuatCua(ctx)`.
+ */
+export function cheRunView<V extends { run: { error: string | null; status: string; contextJson?: unknown }; steps: Array<{ error: string | null; status: string; result: Record<string, unknown> | null }> }>(
+  view: V,
+  chiTietKyThuat: boolean,
+): V {
+  if (chiTietKyThuat) return view;
+  return { ...view, run: cheHangRun(view.run, false), steps: view.steps.map((s) => cheBuocRun(s, false)) };
 }

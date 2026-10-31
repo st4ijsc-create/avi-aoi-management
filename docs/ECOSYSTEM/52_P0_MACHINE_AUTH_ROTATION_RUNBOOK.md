@@ -397,6 +397,7 @@ MACHINE_CODE_ONLY_ALLOWED=allow
   # 3. Xác nhận đã đệm xuống đĩa:
   wc -l ./data/inspection-store-forward.jsonl        # ≥1 dòng
   curl -s localhost:3000/api/observability/health    # thấy depth store-forward > 0
+  #    ↑ cần cookie phiên admin/supervisor (không phiên ⇒ 401). activeEndpoint/lastError bị che (null / mã) khi người gọi không có engineer|admin + machine_control.canEdit (C2, 2026-11-01)
   # 4. Dựng DB lại:
   docker compose start postgres
   # 5. Trong ~15-30s (INTERVAL_MS + backoff) worker replay → KỲ VỌNG:

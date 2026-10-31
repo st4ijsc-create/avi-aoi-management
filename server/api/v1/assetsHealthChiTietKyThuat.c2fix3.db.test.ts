@@ -81,21 +81,28 @@ describe.skipIf(!DB_URL)("C2 fix 3 — GET /api/v1/assets/:id/health che chi ti�
   afterAll(async () => {
     if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
     if (sql) {
-      const d = async (q: Promise<unknown>) => {
-        try {
-          await q;
-        } catch {
-          /* dọn best-effort */
-        }
-      };
-      await d(sql`DELETE FROM api_keys WHERE name LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM device_adapters WHERE code LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM machines WHERE code LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM stations WHERE code LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM production_lines WHERE code LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM workshops WHERE code LIKE ${DAU + "%"}`);
-      await d(sql`DELETE FROM factories WHERE code LIKE ${DAU + "%"}`);
-      await sql.end({ timeout: 5 });
+      // C2 fix 4 (review fix 3 M2) — dọn KHÔNG nuốt lỗi: mỗi câu DELETE chạy thật (lỗi ⇒ afterAll đỏ), rồi KHẲNG ĐỊNH không còn hàng `DAU%` nào trong
+      // từng bảng đã dựng (ROLLBACK không dùng được: đường HTTP thật đọc qua pool khác, phải thấy hàng đã COMMIT; các bảng này không phải WORM).
+      try {
+        await sql`DELETE FROM api_keys WHERE name LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM device_adapters WHERE code LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM machines WHERE code LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM stations WHERE code LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM production_lines WHERE code LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM workshops WHERE code LIKE ${DAU + "%"}`;
+        await sql`DELETE FROM factories WHERE code LIKE ${DAU + "%"}`;
+        const [con] = await sql`SELECT
+            (SELECT count(*)::int FROM api_keys WHERE name LIKE ${DAU + "%"}) AS api_keys,
+            (SELECT count(*)::int FROM device_adapters WHERE code LIKE ${DAU + "%"}) AS device_adapters,
+            (SELECT count(*)::int FROM machines WHERE code LIKE ${DAU + "%"}) AS machines,
+            (SELECT count(*)::int FROM stations WHERE code LIKE ${DAU + "%"}) AS stations,
+            (SELECT count(*)::int FROM production_lines WHERE code LIKE ${DAU + "%"}) AS production_lines,
+            (SELECT count(*)::int FROM workshops WHERE code LIKE ${DAU + "%"}) AS workshops,
+            (SELECT count(*)::int FROM factories WHERE code LIKE ${DAU + "%"}) AS factories`;
+        expect(con, "hàng fixture còn sót sau khi dọn").toEqual({ api_keys: 0, device_adapters: 0, machines: 0, stations: 0, production_lines: 0, workshops: 0, factories: 0 });
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
     }
   }, 60_000);
 
