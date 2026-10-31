@@ -31,7 +31,7 @@ const MAU: Record<SuKienAgent["loai"], SuKienAgent> = {
   "buoc-do": { loai: "buoc-do", luot: 1, bamHeThong: "00000000", soTin: 2, tokenUoc: 1, nen: null, nhacDaChen: [] },
   "dang-cho-model": { loai: "dang-cho-model", phiaTruoc: 1 },
   "ngu-canh-day": { loai: "ngu-canh-day", phanTram: 81 },
-  "ke-hoach-cho-duyet": { loai: "ke-hoach-cho-duyet", viec: [], bam: "b" },
+  "ke-hoach-cho-duyet": { loai: "ke-hoach-cho-duyet", viec: [], bam: "a".repeat(64) },
   "ke-hoach-da-duyet": { loai: "ke-hoach-da-duyet", bam: "b", luc: "2026-10-31T00:00:00Z" },
   "ke-hoach-khong-duyet": { loai: "ke-hoach-khong-duyet", bam: "b", lyDo: "bac" },
   "con-bat-dau": { loai: "con-bat-dau", runIdCon: "k1", agent: "a", nguon: "dungSan", sau: 1, cheDo: "hoi", nhiemVu: "n" },
@@ -41,12 +41,6 @@ const MAU: Record<SuKienAgent["loai"], SuKienAgent> = {
   loi: { loai: "loi", ma: "E", thongDiep: "e" },
 };
 const MOI_LOAI: SuKienAgent[] = Object.values(MAU);
-/**
- * Loại mà máy chủ ĐÃ cắt khối nhưng reducer client CHƯA thêm mục (luong-ui đang làm thẻ "Kế hoạch chờ duyệt", cổng kế hoạch mặc định TẮT ⇒ chưa
- * có sự kiện thật). Hai lưới "chen giữa" bên dưới bỏ qua chúng cho tới khi client có mục; lưới census (một chiều) vẫn canh phần còn lại.
- * Khi luong-ui xong: XOÁ phần tử khỏi mảng này — test "mảng chờ không chứa loại client đã xử lý" sẽ đỏ nếu quên.
- */
-const CHO_CLIENT: ReadonlyArray<SuKienAgent["loai"]> = ["ke-hoach-cho-duyet"];
 
 function khoiClient(es: SuKienAgent[]): string[] {
   return giamNhieu(TRANG_THAI_RONG, es)
@@ -63,7 +57,7 @@ function prng(hat: number) {
 describe("khối trả lời: client ⇄ máy chủ cùng luật gộp", () => {
   it("mỗi loại sự kiện chen giữa hai mảnh `chu`: hai bên cùng kết quả", () => {
     for (const e of MOI_LOAI) {
-      if (e.loai === "chu" || CHO_CLIENT.includes(e.loai)) continue;
+      if (e.loai === "chu") continue;
       const es: SuKienAgent[] = [{ loai: "chu", noiDung: "X" }, e, { loai: "chu", noiDung: "Y" }];
       expect(khoiTraLoiTuSuKien(es), `chen ${e.loai}`).toEqual(khoiClient(es));
     }
@@ -76,7 +70,6 @@ describe("khối trả lời: client ⇄ máy chủ cùng luật gộp", () => {
       const n = 1 + Math.floor(r() * 25);
       for (let i = 0; i < n; i++) {
         const mau = MOI_LOAI[Math.floor(r() * MOI_LOAI.length)]!;
-        if (CHO_CLIENT.includes(mau.loai)) continue;
         // id đề xuất nhớ phải MỚI mỗi lần, như máy chủ phát — client bỏ qua id trùng (không lên dòng thời gian).
         es.push(mau.loai === "chu" ? { loai: "chu", noiDung: String(i) } : mau.loai === "de-xuat-nho" ? { ...mau, id: `n${i}` } : mau);
       }
@@ -97,14 +90,8 @@ describe("★★★ census: loại nào làm reducer client THÊM mục dòng th
       expect(LOAI_CAT_KHOI_TRA_LOI.has(e.loai), `client thêm mục cho '${e.loai}' nhưng máy chủ không cắt khối`).toBe(true);
     }
   });
-  it("chiều ngược: loại máy chủ cắt mà client không thêm mục chỉ được nằm trong CHO_CLIENT (luong-ui sẽ làm)", () => {
-    for (const loai of LOAI_CAT_KHOI_TRA_LOI) {
-      if (themMuc(MAU[loai])) continue;
-      expect(CHO_CLIENT, `máy chủ cắt '${loai}' mà client không thêm mục`).toContain(loai);
-    }
-  });
-  it("mảng chờ không chứa loại client đã xử lý (quên xoá ⇒ đỏ)", () => {
-    for (const loai of CHO_CLIENT) expect(themMuc(MAU[loai]), `'${loai}' đã có mục ở client — xoá khỏi CHO_CLIENT`).toBe(false);
+  it("chiều ngược: loại máy chủ cắt khối mà client KHÔNG thêm mục ⇒ hai bên lệch (đỏ)", () => {
+    for (const loai of LOAI_CAT_KHOI_TRA_LOI) expect(themMuc(MAU[loai]), `máy chủ cắt '${loai}' mà client không thêm mục`).toBe(true);
   });
   it("mọi loại trong hằng chung là loại sự kiện có thật", () => {
     for (const loai of LOAI_CAT_KHOI_TRA_LOI) expect(Object.keys(MAU)).toContain(loai);
