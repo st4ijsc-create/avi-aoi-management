@@ -8,6 +8,8 @@
 import { describe, expect, it } from "vitest";
 import { docRetryAfter, loiHttp, phanLoaiHttp } from "./nhaCungCap/chung";
 import { choTruocLanThu, CHO_THU_LAI_GOC_MS, TRAN_CHO_THU_LAI_MS } from "./congNgoai";
+import { laLoiHetGioMang } from "./mangNgoai";
+import { LoiNgoai } from "./loi";
 
 describe("phanLoaiHttp — ba họ API", () => {
   it.each([
@@ -18,6 +20,28 @@ describe("phanLoaiHttp — ba họ API", () => {
     ["Anthropic 400 prompt is too long", 400, { type: "error", error: { type: "invalid_request_error", message: "prompt is too long: 210000 tokens > 200000 maximum" } }, "CONTEXT_WINDOW_EXCEEDED"],
     ["Anthropic 429 rate_limit_error", 429, { type: "error", error: { type: "rate_limit_error", message: "Number of request tokens has exceeded your per-minute rate limit" } }, "RATE_LIMIT"],
     ["Anthropic 529 overloaded_error", 529, { type: "error", error: { type: "overloaded_error", message: "Overloaded" } }, "SERVER"],
+    [
+      "(rà kiem-dinh) OpenAI 429 RPM THẬT có 'billing' trong lời mời thêm thẻ",
+      429,
+      { error: { message: "Rate limit reached for gpt-4o in organization org-x on requests per min (RPM): Limit 3, Used 3, Requested 1. Please try again in 20s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.", type: "requests", code: "rate_limit_exceeded" } },
+      "RATE_LIMIT",
+    ],
+    ["mã insufficient_quota thắng chữ lạ", 429, { error: { message: "Billing hard limit has been reached", code: "insufficient_quota" } }, "QUOTA"],
+    ["mã rate_limit thắng chữ 'exceeded your current quota'", 429, { error: { message: "You exceeded your current quota for this minute", code: "rate_limit_exceeded" } }, "RATE_LIMIT"],
+    ["429 không mã, chữ có 'billing' (liên kết gói) ⇒ vẫn RATE_LIMIT", 429, { error: { message: "Too many requests. See https://example.com/account/billing for plans." } }, "RATE_LIMIT"],
+    ["OpenAI 'exceeded your current quota' không mã", 429, { error: { message: "You exceeded your current quota, please check your plan and billing details." } }, "QUOTA"],
+    [
+      "(rà kiem-dinh) Gemini RESOURCE_EXHAUSTED theo PHÚT tầng miễn phí (chữ 'exceeded your current quota')",
+      429,
+      { error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "You exceeded your current quota, please check your plan and billing details. * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 15, model: gemini-2.0-flash (GenerateRequestsPerMinutePerProjectPerModel-FreeTier)" } },
+      "RATE_LIMIT",
+    ],
+    [
+      "Gemini RESOURCE_EXHAUSTED theo NGÀY",
+      429,
+      { error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "You exceeded your current quota. * Quota exceeded for metric: generate_content_free_tier_requests, limit: 1500 (GenerateRequestsPerDayPerProjectPerModel-FreeTier)" } },
+      "QUOTA",
+    ],
     ["Gemini 429 RESOURCE_EXHAUSTED (theo phút)", 429, { error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Resource has been exhausted (e.g. check quota)." } }, "RATE_LIMIT"],
     ["Gemini 400 vượt token", 400, { error: { code: 400, status: "INVALID_ARGUMENT", message: "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576)." } }, "CONTEXT_WINDOW_EXCEEDED"],
     ["401 khoá sai", 401, { error: { message: "Incorrect API key provided" } }, "AUTH"],
@@ -74,5 +98,27 @@ describe("choTruocLanThu — backoff + jitter + Retry-After + trần", () => {
   it("vượt trần ⇒ null (không thử lại)", () => {
     expect(choTruocLanThu(1, TRAN_CHO_THU_LAI_MS + 1, () => 0)).toBeNull();
     expect(choTruocLanThu(1, TRAN_CHO_THU_LAI_MS - 1, () => 0)).toBe(TRAN_CHO_THU_LAI_MS - 1);
+  });
+});
+
+describe("(rà kiem-dinh t3/t12/t16) biên", () => {
+  it("t3 — chờ ĐÚNG bằng trần vẫn thử; trên trần một ms thì không", () => {
+    expect(choTruocLanThu(1, TRAN_CHO_THU_LAI_MS, () => 0)).toBe(TRAN_CHO_THU_LAI_MS);
+    expect(choTruocLanThu(1, TRAN_CHO_THU_LAI_MS + 1, () => 0)).toBeNull();
+  });
+  it("t12 — hết giờ (TimeoutError / undici timeout, kể cả bọc trong cause) ⇒ TIMEOUT; đứt kết nối ⇒ không", () => {
+    const loiTen = (name: string) => Object.assign(new Error("x"), { name });
+    expect(laLoiHetGioMang(loiTen("TimeoutError"))).toBe(true);
+    expect(laLoiHetGioMang({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
+    expect(laLoiHetGioMang({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
+    expect(laLoiHetGioMang(Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } }))).toBe(true);
+    expect(laLoiHetGioMang(Object.assign(new TypeError("fetch failed"), { cause: loiTen("TimeoutError") }))).toBe(true);
+    for (const e of [{ code: "ECONNRESET" }, { code: "UND_ERR_SOCKET" }, loiTen("AbortError"), new Error("x"), null]) expect(laLoiHetGioMang(e)).toBe(false);
+  });
+  it("t16 — choMs âm / không hữu hạn bị bỏ; số lẻ ⇒ phần nguyên", () => {
+    expect(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "x", { choMs: -5 }).choMs).toBeUndefined();
+    expect(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "x", { choMs: Number.NaN }).choMs).toBeUndefined();
+    expect(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "x", { choMs: Number.POSITIVE_INFINITY }).choMs).toBeUndefined();
+    expect(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "x", { choMs: 1500.7 }).choMs).toBe(1500);
   });
 });

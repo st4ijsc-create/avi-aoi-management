@@ -36,6 +36,14 @@ export function datFetchNgoaiChoTest(f: typeof fetchChoTest): void {
   fetchChoTest = f;
 }
 
+/** (H3.1) lỗi fetch là HẾT GIỜ (`AbortSignal.timeout` ⇒ TimeoutError, undici headers/body timeout) — tách khỏi đứt kết nối (TRANSPORT). Thuần. */
+export function laLoiHetGioMang(e: unknown): boolean {
+  const x = e as { name?: unknown; code?: unknown; cause?: { name?: unknown; code?: unknown } } | null;
+  const ten = [x?.name, x?.cause?.name];
+  const ma = [x?.code, x?.cause?.code].map((v) => String(v ?? ""));
+  return ten.includes("TimeoutError") || ma.some((m) => m === "UND_ERR_HEADERS_TIMEOUT" || m === "UND_ERR_BODY_TIMEOUT" || m === "UND_ERR_CONNECT_TIMEOUT");
+}
+
 export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): MangNgoai {
   return {
     async goiJson(url, init) {
@@ -61,7 +69,7 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
         const code = String((e as { code?: unknown }).code ?? "");
         if (LOI_CHUA_KET_NOI.has(code)) throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `ket-noi: ${code}`, { chuaGui: true, phanLoai: "TRANSPORT" });
         // (H3.1) hết hạn `HAN_GOI_MS` (AbortSignal.timeout ⇒ TimeoutError) tách khỏi đứt kết nối — cả hai thử lại được
-        const hetGio = (e as { name?: unknown })?.name === "TimeoutError" || code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT";
+        const hetGio = laLoiHetGioMang(e);
         throw new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `mang: ${hetGio ? "het-gio" : code || "loi"}`, { thuLai: true, phanLoai: hetGio ? "TIMEOUT" : "TRANSPORT" });
       }
       if (r.status >= 300 && r.status < 400) {

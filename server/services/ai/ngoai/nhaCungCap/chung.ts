@@ -14,7 +14,13 @@ function dauHieu(json: unknown): { thongDiep: string; ma: string } {
   return { thongDiep, ma: ma.toLowerCase() };
 }
 
-const RE_QUOTA = /insufficient_quota|billing|credit balance|exceeded your current quota|quota.*(exhausted|exceeded).*(plan|billing)/i;
+/**
+ * Chữ chỉ dùng khi MÃ không nói rõ. ⚠ Không có `billing` đứng riêng: 429 RPM/TPM THẬT của OpenAI (code `rate_limit_exceeded`) kết thúc bằng
+ * "…adding a payment method … /account/billing" (rà kiem-dinh H3.1) — đó là RATE_LIMIT.
+ */
+const RE_QUOTA = /credit balance is too low|exceeded your current quota/i;
+/** Gemini `RESOURCE_EXHAUSTED` dùng chung cho hạn mức NGÀY (QUOTA) và theo PHÚT / tầng miễn phí (RATE_LIMIT). */
+const RE_GEMINI_NGAY = /per ?day|perday|requests_per_day|_daily/i;
 const RE_TRAN_NGU_CANH = /context_length_exceeded|context length|context window|prompt is too long|maximum context|too many tokens|exceeds the maximum number of tokens|input is too long/i;
 
 /**
@@ -24,6 +30,10 @@ const RE_TRAN_NGU_CANH = /context_length_exceeded|context length|context window|
 export function phanLoaiHttp(status: number, json: unknown): PhanLoaiLoiNgoai {
   const { thongDiep, ma } = dauHieu(json);
   const chu = `${ma} ${thongDiep}`;
+  // MÃ trước: hết hạn mức tường minh ⇒ QUOTA; giới hạn tốc độ tường minh ⇒ RATE_LIMIT (dù thông điệp nhắc billing / quota)
+  if (ma.includes("insufficient_quota")) return "QUOTA";
+  if (ma.includes("rate_limit")) return status >= 500 ? "SERVER" : "RATE_LIMIT";
+  if (ma.includes("resource_exhausted")) return RE_GEMINI_NGAY.test(thongDiep) ? "QUOTA" : "RATE_LIMIT";
   if (RE_QUOTA.test(chu)) return "QUOTA";
   if ((status === 400 || status === 413 || status === 422) && RE_TRAN_NGU_CANH.test(chu)) return "CONTEXT_WINDOW_EXCEEDED";
   if (status === 401 || status === 403) return "AUTH";
