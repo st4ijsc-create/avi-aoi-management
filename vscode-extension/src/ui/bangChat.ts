@@ -1,5 +1,5 @@
 /**
- * Bảng trò chuyện AI Local.
+ * Bảng trò chuyện Thợ Cả.
  *
  * ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy chủ đề xuất sửa tệp, người
  * dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. ĐỢT C: mở đường ghi CỤC BỘ cho chế độ LOCAL
@@ -19,13 +19,15 @@ import * as vscode from "vscode";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dungHtmlBang } from "./htmlBang";
-import { dungNguCanh } from "../loi/nguCanh";
+import { cheBiMat, dungNguCanh } from "../loi/nguCanh";
 import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
 import { KHOA_CHON_MODEL, chuanHoaChon, chuanHoaDanhMuc, xacThucChon, type MucModel } from "../loi/chonModel";
 import { moDongSse } from "../mang/dongSse";
 import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "../loi/dangNhap";
 import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
-import { goiTruyVanTrpc } from "../mang/trpc";
+import { goiThayDoiTrpc, goiTruyVanTrpc } from "../mang/trpc";
+import { chayHoiNgoai } from "./hoiNgoai";
+import { huyHieuNguon, khoaDongY, laChonNgoai, lamKhongTinCay, lamSachVanBanNgoai, luotChoWebview } from "../loi/modelNgoai";
 import { laLoi401 } from "../loi/loiHttp";
 // ★★★ ĐỢT G / TASK G4 / B3 — vị từ THUẦN phân loại "lỗi mạng, KHÔNG NỐI ĐƯỢC MÁY CHỦ" (đọc tín hiệu
 // `.cause.code` của undici, KHÔNG so hình dạng chuỗi `e.message` — xem docblock nguồn cho lý do và
@@ -60,6 +62,8 @@ import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../lo
 import { giaiDuongThat } from "../loi/duongThat";
 import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
 import { apBanVa } from "./apBanVa";
+import { canhBaoLoiMoi, loiMoiSauSua } from "../loi/linterSauSua";
+import { docChanDoan, dopChanDoanSauSua } from "./linterSauSua";
 // ★★★ ĐỢT 4B — phiên agent chạy LÕI AGENT DÙNG CHUNG (chế độ Hỏi / Agent duyệt từng bước / Agent tự động).
 import { PhienAgent } from "./phienAgent";
 // ★★★ ĐỢT D / TASK 3 — vòng lặp tác nhân: model tự đọc mã (ba tool CHỈ ĐỌC của Task 2) TRƯỚC khi
@@ -276,6 +280,9 @@ export class BangChat {
   private lichSu: LuotChat[] = [];
   // ★ Đợt 10.2 — model người dùng chọn (lưu theo workspace) + danh mục máy chủ trả (`aiChonModel.danhMuc`). `auto` ⇒ không gửi trường.
   private chonModelHienTai = "auto";
+  /** (Đợt 10.4b-E) id hội thoại phía MÁY CHỦ theo hội thoại cục bộ; và các khoá (hội thoại, model) đã đồng ý gửi dữ liệu vận hành ra ngoài. */
+  private readonly idHoiThoaiMayChu = new Map<string, number>();
+  private readonly daDongYNgoai = new Set<string>();
   private dsDanhMucModel: MucModel[] = [];
   // ★★★ ĐỢT F / TASK 2 — mã ĐỊNH DANH của hội thoại đang mở trong `workspaceState`. `undefined`
   // nghĩa là "chưa từng lưu lượt nào của hội thoại NÀY" — `luuHoiThoaiHienTai()` tự sinh một mã
@@ -349,7 +356,7 @@ export class BangChat {
       gui: (m) => void this.panel.webview.postMessage(m),
       khoDeXuat: this.khoDeXuat,
       mucQuyen: () => this.mucQuyenHienTai,
-      chonModel: () => this.chonModelHienTai,
+      chonModel: () => (laChonNgoai(this.chonModelHienTai) ? "auto" : this.chonModelHienTai),
       goc: () => {
         const goc = this.thuMucLocalDangChon();
         const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
@@ -357,7 +364,7 @@ export class BangChat {
       },
       ghiLuot: (cauHoi, traLoi) => {
         this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoi });
-        void this.luuHoiThoaiHienTai().catch((e) => console.error("AI Local: lưu hội thoại (agent) thất bại", e));
+        void this.luuHoiThoaiHienTai().catch((e) => console.error("Thợ Cả: lưu hội thoại (agent) thất bại", e));
         void this.panel.webview.postMessage({ loai: "ag_thong_ke", ...this.thongKeHoiThoaiHienTai() });
       },
     });
@@ -462,6 +469,11 @@ export class BangChat {
         for (const lyDo of ngoai.tuChoi) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Đính kèm bị bỏ — ${lyDo}` });
         // ★ 2026-10-24 — ĐỌC ẢNH cho TRỢ LÝ/Chat (đường /api/ai/local-kb) mặc định TẮT (nạp model thị giác tốn VRAM/độ trễ; do-model + chủ dự án duyệt mới bật). Tắt ⇒ ảnh bị bỏ và NÓI RÕ, tệp văn bản vẫn đi.
         // ★ 0.3.2 — ĐƯỜNG AGENT (/v1) gửi ảnh thẳng (ANH_QUA_V1) và KHÔNG chịu cài đặt này: nó đọc bằng chính model đang chạy, không nạp sidecar.
+        // ★★★ ĐỢT 10.4b-E — model NGOÀI đang chọn ⇒ CHỈ Hỏi đáp (không agent, không Cmd+K, không đọc tệp/đính kèm). Xem `loi/modelNgoai.ts`.
+        if (laChonNgoai(this.chonModelHienTai)) {
+          void this.hoiNgoai(m.cauHoi, tepMention.length + ngoai.ds.length > 0, cheDoAgent === "sua" || cheDoAgent === "tu-dong" || m.tuLenh === true);
+          return;
+        }
         const duongAgent = cheDoAgent !== undefined && m.tuLenh !== true && this.cheDoHienTai()?.loai !== "server";
         if (coAnh(ngoai.ds) && !(duongAgent && ANH_QUA_V1) && vscode.workspace.getConfiguration("aviAiLocal").get<boolean>("anhChoTroLy", true) !== true) {
           const kq = boAnh(ngoai.ds);
@@ -767,7 +779,7 @@ export class BangChat {
     const ds = await this.napDsTepMentionNeuChua();
     if (ds.length === 0) {
       void vscode.window.showInformationMessage(
-        "AI Local: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
+        "Thợ Cả: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
       );
       return;
     }
@@ -801,7 +813,7 @@ export class BangChat {
     }
     const panel = vscode.window.createWebviewPanel(
       "aviAiLocalChat",
-      "AI Local",
+      "Thợ Cả",
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -1121,7 +1133,7 @@ export class BangChat {
     if (ganNhat.luot.length > 0) {
       void this.panel.webview.postMessage({
         loai: "khoi_phuc_hoi_thoai",
-        luot: ganNhat.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content, ...(l.role === "assistant" ? { cay: phanTichMarkdown(l.content) } : {}) })),
+        luot: ganNhat.luot.map(luotChoWebview),
         // ★★★ ĐỢT G / TASK G2 / B3 — kèm THỐNG KÊ của ĐÚNG hội thoại vừa khôi phục, ngay trong tin
         // vẽ lại — xem `thongKeHoiThoaiHienTai()`.
         ...this.thongKeHoiThoaiHienTai(),
@@ -1233,7 +1245,7 @@ export class BangChat {
     } catch (e) {
       // Lỗi LƯU không được chặn việc mở phiên mới — cùng nguyên tắc "lỗi lưu không làm rớt câu trả
       // lời" đã áp ở cuối `hoi()`.
-      console.error("AI Local: lưu hội thoại bền thất bại (Chat mới)", e);
+      console.error("Thợ Cả: lưu hội thoại bền thất bại (Chat mới)", e);
     }
     this.lichSu = [];
     this.maHoiThoaiHienTai = undefined;
@@ -1272,7 +1284,7 @@ export class BangChat {
   public async moLichSu(): Promise<void> {
     const ds = docDanhSachHoiThoai(this.khoHoiThoaiTho());
     if (ds.length === 0) {
-      void vscode.window.showInformationMessage("AI Local: chưa có hội thoại nào được lưu.");
+      void vscode.window.showInformationMessage("Thợ Cả: chưa có hội thoại nào được lưu.");
       return;
     }
     const muc = await vscode.window.showQuickPick<MucLichSu>(
@@ -1291,7 +1303,7 @@ export class BangChat {
     this.quenLenhCucBo();
     void this.panel.webview.postMessage({
       loai: "khoi_phuc_hoi_thoai",
-      luot: muc.hoiThoai.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content, ...(l.role === "assistant" ? { cay: phanTichMarkdown(l.content) } : {}) })),
+      luot: muc.hoiThoai.luot.map(luotChoWebview),
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa chọn (`this.lichSu` vừa gán lại
       // ở trên), không phải của hội thoại vừa RỜI.
       ...this.thongKeHoiThoaiHienTai(),
@@ -1330,6 +1342,103 @@ export class BangChat {
    * một câu hỏi mang giao thức Cmd+K — hai giao thức cạnh tranh trong cùng một `question` khiến
    * model chọn đọc trước và nuốt mất chỉ dẫn `de_xuat_sua_doan`, Cmd+K im lặng không đẻ thẻ duyệt.
    */
+  /**
+   * ★★★ ĐỢT 10.4b-E — MỘT lượt Hỏi bằng model NGOÀI (xem `loi/modelNgoai.ts`, `ui/hoiNgoai.ts`). KHÔNG thu thập ngữ cảnh workspace, KHÔNG đọc
+   * tệp, KHÔNG vòng tool/MCP/bộ nhớ. Lịch sử gửi đi CHỈ gồm các lượt cũng do model ngoài sinh (lượt cục bộ có thể chứa mã/dữ liệu repo).
+   * Máy chủ tự lưu lượt vào hội thoại máy chủ; ở đây chỉ nối vào lịch sử cục bộ (kèm nhãn nguồn) để hiển thị/khôi phục.
+   */
+  private async hoiNgoai(cauHoi: string, coDinhKem: boolean, chiDoHoi: boolean): Promise<void> {
+    this.quenDeXuat();
+    this.quenLenhCucBo();
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập'." });
+      return;
+    }
+    const notices: string[] = [];
+    if (chiDoHoi) notices.push("Model ngoài chỉ dùng để Hỏi đáp: chế độ Sửa/Tự động và Cmd+K không chạy ở lượt này (chọn \"Tự động\" ở ô model để dùng agent).");
+    if (coDinhKem) notices.push("Model ngoài không nhận tệp @-mention hay đính kèm — các mục đó đã bị bỏ khỏi lượt này.");
+    for (const t of notices) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: t });
+    this.huy?.abort();
+    const dieuKhien = new AbortController();
+    this.huy = dieuKhien;
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    const chonModel = this.chonModelHienTai;
+    const maHT = (this.maHoiThoaiHienTai ??= randomUUID());
+    const khoa = khoaDongY(maHT, chonModel);
+    try {
+      const kq = await chayHoiNgoai({
+        cauHoi,
+        lichSu: this.lichSu.filter((l) => l.nguon),
+        ngonNgu: cfg.get<string>("uiLanguage", "vi"),
+        chonModel,
+        signal: dieuKhien.signal,
+        layIdHoiThoai: async () => {
+          const co = this.idHoiThoaiMayChu.get(maHT);
+          if (co !== undefined) return co;
+          const r = (await goiThayDoiTrpc(serverUrl, cookie, "aiChat.createConversation", { title: "VSCode" })) as { id?: unknown };
+          if (typeof r?.id !== "number") throw new Error("Máy chủ không tạo được hội thoại cho model ngoài.");
+          this.idHoiThoaiMayChu.set(maHT, r.id);
+          return r.id;
+        },
+        daDongY: () => this.daDongYNgoai.has(khoa),
+        ghiDongY: () => void this.daDongYNgoai.add(khoa),
+        hoiDongY: async () => {
+          const chon = await vscode.window.showWarningMessage(
+            "Gửi câu hỏi + lịch sử cuộc trò chuyện này tới MODEL NGOÀI (ngoài hệ thống của nhà máy)? Có thể chứa dữ liệu vận hành. Chỉ hỏi một lần cho cuộc trò chuyện + model này.",
+            { modal: true },
+            "Đồng ý gửi",
+          );
+          return chon === "Đồng ý gửi";
+        },
+        moDong: (dv) => moDongSse({ serverUrl, cookie, than: dv.than, tinHieu: dv.tinHieu, nhan: dv.nhan }),
+        gui: (msg) => {
+          if (msg.loai === "nguon_ngoai") {
+            void this.panel.webview.postMessage({ loai: "nguon_ngoai", huyHieu: huyHieuNguon(String(msg.nhaCungCap), String(msg.model)) });
+          } else void this.panel.webview.postMessage(msg);
+        },
+      });
+      if (kq.loai === "tu-choi-dong-y") {
+        void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: "Đã hủy: bạn không đồng ý gửi tới model ngoài. Chọn model nội bộ ở ô model để hỏi tiếp." });
+        void this.panel.webview.postMessage({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, ...this.thongKeHoiThoaiHienTai() });
+        return;
+      }
+      if (kq.loai === "loi") {
+        void this.panel.webview.postMessage({ loai: "loi", thongDiep: kq.thongDiep });
+        void this.panel.webview.postMessage({ loai: "hoan_tat", vanBanCuoi: null, canhBao: null, ...this.thongKeHoiThoaiHienTai() });
+        return;
+      }
+      const nhan = kq.ngoai ? huyHieuNguon(kq.ngoai.nhaCungCap, kq.ngoai.model, kq.vet) : "Model ngoài";
+      const traLoi = lamSachVanBanNgoai(kq.traLoi);
+      this.lichSu.push({ role: "user", content: cauHoi, nguon: nhan }, { role: "assistant", content: traLoi, nguon: nhan });
+      const cay = lamKhongTinCay(phanTichMarkdown(traLoi));
+      void this.panel.webview.postMessage({
+        loai: "hoan_tat",
+        vanBanCuoi: null,
+        cay,
+        chiSoMaDau: this.phienAgent.themKhoiMa(layKhoiMaMd(cay)),
+        canhBao: kq.canhBao,
+        huyHieu: nhan,
+        ...this.thongKeHoiThoaiHienTai(),
+      });
+      void this.luuHoiThoaiHienTai().catch((e: unknown) => console.error("Thợ Cả: lưu hội thoại bền thất bại", e));
+    } catch (e) {
+      if (dieuKhien.signal.aborted) return;
+      if (laLoi401(e)) {
+        await this.context.secrets.delete(KHOA_COOKIE);
+        void this.panel.webview.postMessage({ loai: "loi", thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'Thợ Cả: Đăng nhập' để vào lại." });
+        void this.guiTrangThaiDangNhap();
+        return;
+      }
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        void this.panel.webview.postMessage({ loai: "loi", thongDiep: moTaLoiKhongNoiDuocMayChu(serverUrl), moSettings: true });
+        return;
+      }
+      void this.panel.webview.postMessage({ loai: "loi", thongDiep: `Lỗi khi hỏi model ngoài: ${cheBiMat((e as Error)?.message ?? String(e))}` });
+    }
+  }
+
   private async hoi(cauHoi: string, tepMention: string[] = [], laCmdK = false, ngoai: DinhKemNgoai[] = []): Promise<void> {
     // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
     // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
@@ -1341,7 +1450,7 @@ export class BangChat {
     if (!cookie) {
       void this.panel.webview.postMessage({
         loai: "loi",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập'.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập'.",
       });
       return;
     }
@@ -1485,7 +1594,7 @@ export class BangChat {
           vaiTro: "engineer",
           cheDo,
           laCmdK,
-          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "AI Local:
+          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "Thợ Cả:
           // Quản lý MCP server ngoài" — xem docblock `dsToolMcpDangCoSan`). Rỗng ⇒ `question` không
           // đổi (đã kiểm ở `yeuCau.unit.test.ts`).
           dsToolMcp: dsToolMcpDangCoSan(),
@@ -1731,7 +1840,7 @@ export class BangChat {
       // nhận — bắt riêng, chỉ NÓI RA, không ném lại cho `catch` ngoài biến một lỗi lưu thành một lỗi
       // "hỏi thất bại".
       void this.luuHoiThoaiHienTai().catch((e: unknown) => {
-        console.error("AI Local: lưu hội thoại bền thất bại", e);
+        console.error("Thợ Cả: lưu hội thoại bền thất bại", e);
       });
       // ★★★ ĐỢT C — đường ghi CỤC BỘ, dựa trên câu trả lời CUỐI của vòng lặp (sau khi đã đọc xong
       // mọi yêu cầu ĐỌC của model, nếu có). Đề xuất GHI KHÔNG được xử lý bên trong vòng lặp Task 3
@@ -1816,7 +1925,7 @@ export class BangChat {
         await this.context.secrets.delete(KHOA_COOKIE);
         void this.panel.webview.postMessage({
           loai: "loi",
-          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại.",
+          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'Thợ Cả: Đăng nhập' để vào lại.",
         });
         // ★★★ ĐỢT F / TASK 1 — cookie vừa bị xoá Ở TRÊN nhưng vùng tài khoản trong khung (nút "Đăng
         // xuất"/tên tài khoản) vẫn đứng yên nếu không ai báo lại: người dùng thấy khung trông như
@@ -2164,14 +2273,14 @@ export class BangChat {
     const d = ds[0]!;
 
     const chon = await vscode.window.showInformationMessage(
-      `AI Local đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
+      `Thợ Cả đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
       "Nhớ",
       "Bỏ qua",
     );
     if (chon !== "Nhớ") return; // Esc / "Bỏ qua" / bấm ra ngoài — KHÔNG ghi gì cả (nhánh kia của B5)
 
     await themMucBoNho(this.khoHoiThoaiTho(), randomUUID(), d.noiDung, "ai_de_xuat_duyet");
-    void vscode.window.showInformationMessage("AI Local: đã nhớ.");
+    void vscode.window.showInformationMessage("Thợ Cả: đã nhớ.");
   }
 
   private async xemDiff(): Promise<void> {
@@ -2227,13 +2336,17 @@ export class BangChat {
       void this.panel.webview.postMessage({
         loai: "thong_bao",
         thongDiep:
-          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'AI Local: Đăng nhập' rồi bấm lại.",
+          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm lại.",
       });
       return;
     }
     const cfg = vscode.workspace.getConfiguration("aviAiLocal");
     let thongDiep: string;
+    let canhBaoLinter: Promise<string | null> | undefined;
     try {
+      // (Đợt 11.4) linter: chụp Problems của tệp TRƯỚC khi áp để sau đó chỉ báo lỗi do lần sửa này đặt thêm.
+      const uriSua = vscode.Uri.file(cb.duongTuyetDoi);
+      const chanDoanTruoc = docChanDoan(uriSua);
       const kq = await apBanVa({
         deXuat: cb.deXuat,
         duongTuyetDoi: cb.duongTuyetDoi,
@@ -2249,12 +2362,17 @@ export class BangChat {
         mucQuyen: this.mucQuyenHienTai,
       });
       thongDiep = kq.thongDiep;
+      // Kết quả ghi báo NGAY; lỗi mới (nếu có) báo bằng tin thứ hai khi server ngôn ngữ chẩn đoán xong — không làm chậm/đổi kết quả ghi.
+      if (kq.ok) canhBaoLinter = dopChanDoanSauSua(uriSua).then((sau) => canhBaoLoiMoi(cb.duongTuongDoi, loiMoiSauSua(chanDoanTruoc, sau)));
     } catch (e) {
       // `apBanVa` đã bọc mọi bước có thể ném; tới đây là lỗi ngoài dự tính. Không đoán kết cục.
       thongDiep = `Lỗi ngoài dự tính khi ghi "${cb.duongTuongDoi}": ${(e as Error).message}. Hãy KIỂM TRA LẠI tệp trước khi hỏi tiếp.`;
     }
     this.quenDeXuat();
     void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+    void canhBaoLinter
+      ?.then((cb2) => (cb2 ? this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: cb2 }) : undefined))
+      .catch(() => undefined);
   }
 
   /**
@@ -2352,7 +2470,7 @@ export class BangChat {
       // Duyệt lại mà không phải hỏi lại câu cũ.
       void this.panel.webview.postMessage({
         loai: "thong_bao",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Duyệt lại.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm Duyệt lại.",
       });
       return;
     }
@@ -2437,7 +2555,7 @@ export class BangChat {
     if (!cookie) {
       void this.panel.webview.postMessage({
         loai: "thong_bao",
-        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Huỷ lại.",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'Thợ Cả: Đăng nhập' rồi bấm Huỷ lại.",
       });
       return;
     }

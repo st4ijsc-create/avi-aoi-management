@@ -23,7 +23,8 @@ import { layEndpointKhoa, layKhoaChoNhaCungCap } from "./khoaNgoai";
 import { LoiNgoai } from "./loi";
 import { gopMuc, type MucDuLieu } from "./phanLoai";
 import { mucCuaGhep } from "./ghepPhan";
-import { bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
+import { bamCauTraLoi, bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
+import { giuLuotBay, thaLuotBay } from "./luotBay";
 import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
 import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
@@ -86,14 +87,32 @@ export interface PhuThuocCong {
   /** Mạng ra ngoài với chính sách host nội bộ của NHÀ MÁY tính trần. */
   mang: (db: DbCong, factoryId: number) => Promise<MangNgoai>;
   soLanThu: number;
+  /** (H3.1) chờ giữa hai lần thử (mặc định `setTimeout`) + nguồn ngẫu nhiên cho jitter (mặc định `Math.random`) — lưới thay để không ngủ thật. */
+  ngu?: (ms: number) => Promise<void>;
+  ngauNhien?: () => number;
   /** Lưới: nhật ký thứ tự bước. */
   ghiBuoc?: (buoc: string) => void;
+  /** ★ 10.4b L0a' (D10-ii) — một lượt ngoài đang bay mỗi người (mặc định: bảng `ai_ngoai_dang_bay`, `luotBay.ts`). */
+  luotBay?: { giu: (db: DbCong, userId: number, factoryId: number) => Promise<string>; tha: (db: DbCong, userId: number, token: string) => Promise<void> };
 }
 
 export const TRAN_CHUOI_BYTE = 256 * 1024;
 export const TRAN_YEU_CAU_BYTE = 1024 * 1024;
 /** Trần cứng token RA mỗi lời gọi (dù model / nhà máy không đặt trần). */
 export const MAX_TOKENS_CUNG = 32_000;
+/** (H3.1) chờ gốc giữa hai lần thử (nhân đôi mỗi lần) + trần chờ: nhà cung cấp xin chờ lâu hơn trần ⇒ KHÔNG thử lại (trả lỗi ngay). */
+export const CHO_THU_LAI_GOC_MS = 500;
+export const TRAN_CHO_THU_LAI_MS = 10_000;
+
+/**
+ * (H3.1) thời gian chờ trước lần thử thứ `lan + 1`: max(`Retry-After`, gốc·2^(lan−1)) + jitter [0, ½ gốc·2^(lan−1)). Vượt trần ⇒ `null`
+ * (không thử lại). Thuần.
+ */
+export function choTruocLanThu(lan: number, choMs: number | undefined, ngauNhien: () => number = Math.random): number | null {
+  const mu = CHO_THU_LAI_GOC_MS * 2 ** Math.max(0, lan - 1);
+  const ms = Math.max(choMs ?? 0, mu) + Math.floor(Math.min(0.999, Math.max(0, ngauNhien())) * (mu / 2));
+  return ms > TRAN_CHO_THU_LAI_MS ? null : ms;
+}
 
 /** Bản cài THẬT (Task 9) — tĩnh: chỉ phụ thuộc lỗi / kiểu, không mạng lúc nạp. */
 const cacNhaCungCap = new Map<string, NhaCungCapAi>([anthropic, openai, openaiTuongThich, gemini].map((n) => [n.ma, n]));
@@ -115,6 +134,7 @@ export const phuThuocMacDinh: PhuThuocCong = {
   layEndpoint: (db, keyId) => layEndpointKhoa(db, keyId),
   mang: (db, factoryId) => mangChoNhaMay(db, factoryId),
   soLanThu: 2,
+  luotBay: { giu: (db, userId, factoryId) => giuLuotBay(db, userId, factoryId), tha: (db, userId, token) => thaLuotBay(db, userId, token) },
 };
 
 /** Nhà máy TÍNH TRẦN: chủ dữ liệu nhỏ nhất (tất định); không có ⇒ nhà máy DUY NHẤT của người gọi; còn lại ⇒ null. */
@@ -293,11 +313,27 @@ export async function kiemTruocNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phu
   return { db, laLuong, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens };
 }
 
+const nguThat = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.());
+
 export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuocMacDinh): Promise<KetQuaGoiNgoai> {
-  const buoc = (b: string) => dep.ghiBuoc?.(b);
   // ★ 10.4b L0a — đường DUY NHẤT dựng yêu cầu: chỉ `tinNhan` mang dấu của `ghepPhan` mới được gửi (TRƯỚC mọi bước — không giữ chỗ, không sổ).
   if (mucCuaGhep(yc.tinNhan) === undefined) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP");
-  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = await kiemTruocNgoai(yc, dep);
+  const k = await kiemTruocNgoai(yc, dep);
+  // ★ 10.4b L0a' (D10-ii) — bề mặt người dùng (không phải luồng tự động): MỘT lượt ngoài đang bay mỗi người, giữ suốt mọi lần thử,
+  //   thả ở finally (lỗi / huỷ cũng thả; tiến trình chết ⇒ TTL). Luồng có trần riêng (lượt chạy / luồng).
+  const userId = yc.ngu.userId;
+  const canKhoa = userId !== null && !yc.ngu.tuDong && yc.ngu.nguonMuc.loai === "be-mat" && dep.luotBay !== undefined;
+  const token = canKhoa ? await dep.luotBay!.giu(k.db, userId!, k.tinhTran) : null;
+  try {
+    return await goiSauKiemTruoc(yc, dep, k);
+  } finally {
+    if (token !== null) await dep.luotBay!.tha(k.db, userId!, token).catch(() => undefined);
+  }
+}
+
+async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTruocNgoai): Promise<KetQuaGoiNgoai> {
+  const buoc = (b: string) => dep.ghiBuoc?.(b);
+  const { db, tinhTran, tap, cfg, tran, model, ncc, muc, maxTokens: maxTokensYeuCau } = k;
   let maxTokens = maxTokensYeuCau;
   // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent
   //   khi bật giữ nghĩ, `nghiTruoc`, dấu nội bộ) ⇒ chỉ vai trò + nội dung + tên tool đi tiếp tới bộ che và nhà cung cấp.
@@ -336,7 +372,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   const cheLoi = (e: unknown): LoiNgoai =>
     e instanceof LoiNgoai
       ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-        ? new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500))
+        ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che
+          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
         : e
       : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
   let kq: KetQuaNhaCungCap | null = null;
@@ -377,6 +414,11 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
       const loiDaChe = cheLoi(e);
       await ghiKq(yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: loiDaChe.ma });
       if (!loi?.thuLai || lan >= dep.soLanThu) throw loiDaChe;
+      // (H3.1) backoff + jitter, tôn trọng `Retry-After`; nhà cung cấp xin chờ quá trần ⇒ dừng thử (không giữ chỗ lần nữa)
+      const cho = choTruocLanThu(lan, loi.choMs, dep.ngauNhien);
+      if (cho === null) throw loiDaChe;
+      buoc("cho-thu-lai");
+      await (dep.ngu ?? nguThat)(cho);
     }
   }
   // (10)
@@ -398,7 +440,8 @@ export async function goiAiNgoai(yc: YeuCauGoiNgoai, dep: PhuThuocCong = phuThuo
   }
   // (12)
   buoc("so-ket-qua");
-  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok" });
+  // ★ 10.4b L0a' — băm câu trả lời (hàng ket-qua, WORM) ⇒ máy chủ xác minh dấu nguồn khi client lưu tin (`aiChat.saveStreamedMessage`).
+  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok", bamTraLoi: bamCauTraLoi(kq.noiDung ?? "") });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
   return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, callId: yDinhId };
 }

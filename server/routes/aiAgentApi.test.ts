@@ -171,7 +171,7 @@ describe("POST /api/ai/agent/runs + nối lại + huỷ", () => {
     void thaModelKhiSan();
     const sau = await docSse(r2);
     expect(sau[0]!.seq).toBe(3);
-    expect(sau.map((m) => m.suKien.loai)).toEqual(["chu", "xong"]);
+    expect(sau.map((m) => m.suKien.loai)).toEqual(["chu", "buoc-do", "xong"]);
     expect(sau[sau.length - 1]!.suKien).toMatchObject({ loai: "xong", lyDo: "hoan-thanh" });
     await l.xong;
   }, 30_000);

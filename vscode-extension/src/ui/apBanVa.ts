@@ -108,6 +108,7 @@ import { eolLanLon } from "../loi/eolLanLon";
 import { ghepBanVa } from "../loi/ghepBanVa";
 import { chuanHoaMucQuyen, duocPhepGhiTheoMucQuyen, type MucQuyen } from "../loi/mucQuyen";
 import { tomTatDiff } from "../loi/tomTatDiff";
+import { LOI_KHONG_TIN_CAY_NGUOI, workspaceTinCay } from "../loi/tinCayWorkspace";
 import { goiBatDauApClient, goiChotApClient, type XacThucSo } from "../mang/duyetGhi";
 
 /**
@@ -249,6 +250,8 @@ export async function apBanVa(dv: DauVaoApBanVa): Promise<KetQuaApBanVa> {
   const mucQuyen = chuanHoaMucQuyen(dv.mucQuyen);
   const quyenGhi = duocPhepGhiTheoMucQuyen(mucQuyen);
   if (!quyenGhi.ok) return { ok: false, thongDiep: `KHÔNG GHI — ${quyenGhi.lyDo}` };
+  // (Đợt 11.4) Workspace Trust: workspace chưa tin cậy ⇒ không ghi, bất kể mức quyền hay thẻ duyệt.
+  if (!workspaceTinCay()) return { ok: false, thongDiep: `KHÔNG GHI — ${LOI_KHONG_TIN_CAY_NGUOI}` };
 
   // ★★★ ĐỢT 4B — thao tác TỆP (tạo/xoá/đổi tên) có chuỗi bước riêng (cùng bất biến, xem docblock đầu tệp).
   const thaoTac = dv.thaoTac;

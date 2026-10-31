@@ -6,7 +6,7 @@
  * ngữ cảnh có trần + che bí mật (`catNguCanh`, `dungThanYeuCauFim`) ⇒ gọi mạng (`goiFim`, không bao giờ ném) ⇒ cắt gợi
  * ý (`catGoiY`) ⇒ trả MỘT `InlineCompletionItem` chèn tại con trỏ.
  *
- * ⚠⚠ KHÔNG HỘP THOẠI. Ghost-text chạy mỗi phím gõ — lỗi chỉ vào kênh "AI Local — Ghost text" + thanh trạng thái, và
+ * ⚠⚠ KHÔNG HỘP THOẠI. Ghost-text chạy mỗi phím gõ — lỗi chỉ vào kênh "Thợ Cả — Ghost text" + thanh trạng thái, và
  *    lớp `TrangThaiLoiGhost` cho nghỉ (lỗi mạng 30 s; 401/403 tới khi token/cấu hình đổi) để không dội máy chủ.
  * ⚠ Không phải đường ghi: chữ mờ chỉ vào bộ đệm khi NGƯỜI DÙNG bấm Tab — VSCode tự chèn (hoàn tác bằng Ctrl+Z), không
  *   có byte nào xuống đĩa từ đây. Census ghi đĩa (`loi/census.unit.test.ts`) vẫn canh tệp này như mọi tệp khác.
@@ -78,7 +78,7 @@ export class GhostTextProvider implements vscode.InlineCompletionItemProvider {
 
     const tok = await this.pt.layToken();
     if (!tok) {
-      this.pt.khiTrangThai({ loai: "chua-dang-nhap", chiTiet: 'Chạy "AI Local: Đăng nhập AI Local (device flow)" để bật ghost-text.' });
+      this.pt.khiTrangThai({ loai: "chua-dang-nhap", chiTiet: 'Chạy "Thợ Cả: Đăng nhập Thợ Cả (device flow)" để bật ghost-text.' });
       return undefined;
     }
     const { tienTo, hauTo } = catNguCanh(vanBan, doc.offsetAt(viTri));
@@ -120,7 +120,7 @@ function hienThanhTrangThai(
 ): void {
   if (!batTat) {
     item.text = "$(circle-slash) AI gợi ý: tắt";
-    item.tooltip = "AI Local ghost-text đang TẮT — bấm để bật (aviAiLocal.ghostText.enabled).";
+    item.tooltip = "Thợ Cả ghost-text đang TẮT — bấm để bật (aviAiLocal.ghostText.enabled).";
     return;
   }
   const loai = tt?.loai ?? "san-sang";
@@ -128,16 +128,16 @@ function hienThanhTrangThai(
     loai === "loi" ? "$(warning) AI gợi ý" : loai === "chua-dang-nhap" ? "$(key) AI gợi ý" : loai === "dang-goi" ? "$(sync~spin) AI gợi ý" : "$(sparkle) AI gợi ý";
   item.tooltip =
     (loai === "loi"
-      ? `AI Local ghost-text: lỗi gần nhất — ${tt?.chiTiet ?? ""} (chi tiết: kênh Output "AI Local — Ghost text"). `
+      ? `Thợ Cả ghost-text: lỗi gần nhất — ${tt?.chiTiet ?? ""} (chi tiết: kênh Output "Thợ Cả — Ghost text"). `
       : loai === "chua-dang-nhap"
-        ? `AI Local ghost-text: chưa có token /v1 hợp lệ — ${tt?.chiTiet ?? ""} `
-        : "AI Local ghost-text đang BẬT. ") + "Bấm để tắt.";
+        ? `Thợ Cả ghost-text: chưa có token /v1 hợp lệ — ${tt?.chiTiet ?? ""} `
+        : "Thợ Cả ghost-text đang BẬT. ") + "Bấm để tắt.";
 }
 
 /** Đăng ký provider + lệnh bật/tắt + nút thanh trạng thái + kênh nhật ký. Mọi thứ đẩy vào `context.subscriptions`. */
 export function dangKyGhostText(context: vscode.ExtensionContext): GhostTextProvider {
   const cfg = () => vscode.workspace.getConfiguration("aviAiLocal");
-  const kenh = vscode.window.createOutputChannel("AI Local — Ghost text");
+  const kenh = vscode.window.createOutputChannel("Thợ Cả — Ghost text");
   const thanh = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   thanh.command = LENH_BAT_TAT_GHOST_TEXT;
   const batTat = () => cfg().get<boolean>(KHOA_BAT_GHOST_TEXT, false) === true;

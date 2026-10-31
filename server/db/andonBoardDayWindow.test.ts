@@ -43,52 +43,71 @@
  * Bảng được truy vấn có `factoryId` để mọi phép đếm (kể cả `uphLastHour`, vốn không lọc máy khi
  * không truyền phạm vi) chỉ nhìn nhà máy riêng của file này.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import * as db from "../db";
 import { getAndonBoardData, startOfNextDayInZone } from "./andonBoard";
 import { getFactoryTimezone, startOfDayInZone } from "../utils/factoryTime";
 
 const ts = Date.now();
 const TZ = getFactoryTimezone();
-const now = new Date();
-const dayStart = startOfDayInZone(now, TZ);
-const dayEnd = startOfNextDayInZone(now, TZ);
+
+// ★ ĐỒNG HỒ CỐ ĐỊNH. Bản cũ dựng fixture theo `new Date()` thật (now−30′, now+2′) nên đỏ oan khi chạy 00:00–00:30
+// hoặc 23:58–24:00 giờ nhà máy (now−30′ rơi sang hôm qua, now+2′ sang ngày mai). Sản phẩm gọi `new Date()` ở
+// `getAndonBoardData` ⇒ chỉ giả `Date` (timer/IO của driver pg giữ nguyên) và đặt giờ giữa ngày cho các ca chính.
+const NGAY_MAU = new Date("2026-10-15T05:00:00Z"); // một ngày bất kỳ, chỉ để lấy nửa đêm theo giờ nhà máy
+const dayStart = startOfDayInZone(NGAY_MAU, TZ);
+const dayEnd = startOfNextDayInZone(NGAY_MAU, TZ);
+const now = new Date(dayStart.getTime() + 12 * 3_600_000); // 12:00 giờ nhà máy
+const PHUT = 60_000;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /** Sáu mốc quanh hai biên. */
 const AT = {
   yesterdayEdge: new Date(dayStart.getTime() - 1), // 23:59:59.999 HÔM QUA → ngoài
-  past: new Date(now.getTime() - 30 * 60 * 1000), // trong ngày + trong 60′ → trong
-  nearFuture: new Date(now.getTime() + 2 * 60 * 1000), // trong ngày, SAU `now` → trong ngày, NGOÀI 60′
+  past: new Date(now.getTime() - 30 * PHUT), // trong ngày + trong 60′ → trong
+  nearFuture: new Date(now.getTime() + 2 * PHUT), // trong ngày, SAU `now` → trong ngày, NGOÀI 60′
   todayEdge: new Date(dayEnd.getTime() - 1), // 23:59:59.999 HÔM NAY → trong
   atBoundary: new Date(dayEnd.getTime()), // 00:00:00 NGÀY MAI → ngoài (biên LOẠI TRỪ)
-  farFuture: new Date(dayEnd.getTime() + 12 * 60 * 60 * 1000), // trưa mai → ngoài
+  farFuture: new Date(dayEnd.getTime() + 12 * 3_600_000), // trưa mai → ngoài
 };
 
-let factoryId: number;
-let machineId: number;
-
-beforeAll(async () => {
-  factoryId = await db.createFactory({ code: `ADW_F_${ts}`, name: "Andon day-window fac" });
-  const workshopId = await db.createWorkshop({ factoryId, code: `ADW_W_${ts}`, name: "Andon day-window ws" });
-  const lineId = await db.createProductionLine({ workshopId, code: `ADW_L_${ts}`, name: "Andon day-window line" });
-  const stationId = await db.createStation({ lineId, code: `ADW_S_${ts}`, name: "Andon day-window st", orderIndex: 1 });
-  machineId = await db.createMachine({
+/** Nhà máy + máy RIÊNG cho mỗi kịch bản (mọi phép đếm kể cả UPH chỉ nhìn nhà máy này) và bản ghi ở các mốc cho trước. */
+async function dungMay(ky: string, mocs: Record<string, Date>): Promise<{ factoryId: number; machineId: number }> {
+  const factoryId = await db.createFactory({ code: `ADW_F${ky}_${ts}`, name: `Andon day-window fac ${ky}` });
+  const workshopId = await db.createWorkshop({ factoryId, code: `ADW_W${ky}_${ts}`, name: "Andon day-window ws" });
+  const lineId = await db.createProductionLine({ workshopId, code: `ADW_L${ky}_${ts}`, name: "Andon day-window line" });
+  const stationId = await db.createStation({ lineId, code: `ADW_S${ky}_${ts}`, name: "Andon day-window st", orderIndex: 1 });
+  const machineId = await db.createMachine({
     stationId,
-    code: `ADW_M_${ts}`,
+    code: `ADW_M${ky}_${ts}`,
     name: "Andon day-window machine",
     machineType: "AOI",
-    apiKey: `adw_${ts}`,
+    apiKey: `adw${ky}_${ts}`,
   });
-
-  for (const [tag, at] of Object.entries(AT)) {
+  for (const [tag, at] of Object.entries(mocs)) {
     await db.createProductInspection({
       machineId,
-      serialNumber: `SN_ADW_${tag}_${ts}`,
+      serialNumber: `SN_ADW${ky}_${tag}_${ts}`,
       overallResult: "OK",
       originalResult: "OK",
       inspectionTime: at,
     });
   }
+  return { factoryId, machineId };
+}
+
+let factoryId: number;
+let machineId: number;
+
+beforeAll(async () => {
+  ({ factoryId, machineId } = await dungMay("A", AT));
 });
 
 describe("★★★ getAndonBoardData — cửa sổ 'hôm nay' phải có BIÊN TRÊN", () => {
@@ -152,5 +171,54 @@ describe("★★★ getAndonBoardData — cửa sổ 'hôm nay' phải có BIÊN
 
     expect(b.kpis.total).toBe(3);
     expect(b.kpis.ok).toBe(3);
+  });
+});
+
+/**
+ * ★ HAI BIÊN NỬA ĐÊM — chính hai khung giờ làm bản cũ đỏ oan (00:05 và 23:59 giờ nhà máy) nay được GHIM làm ca có chủ đích,
+ * để một bản vá sai ở biên ngày không còn trốn được vào khe "chỉ lệch khi chạy lúc nửa đêm".
+ */
+describe("★★ getAndonBoardData — đồng hồ sát nửa đêm (00:05 và 23:59 giờ nhà máy)", () => {
+  const luc0005 = new Date(dayStart.getTime() + 5 * PHUT);
+  const luc2359 = new Date(dayEnd.getTime() - 1 * PHUT);
+  let sau: { factoryId: number; machineId: number };
+  let truoc: { factoryId: number; machineId: number };
+
+  beforeAll(async () => {
+    // 00:05: now−30′ đã là HÔM QUA (ngoài); dayStart đúng (gte) và now+2′ nằm trong
+    sau = await dungMay("B", {
+      yesterdayEdge: new Date(dayStart.getTime() - 1),
+      past: new Date(luc0005.getTime() - 30 * PHUT),
+      atDayStart: new Date(dayStart.getTime()),
+      nearFuture: new Date(luc0005.getTime() + 2 * PHUT),
+    });
+    // 23:59: now+2′ đã là NGÀY MAI (ngoài); now−30′ và 23:59:59.999 hôm nay trong
+    truoc = await dungMay("C", {
+      past: new Date(luc2359.getTime() - 30 * PHUT),
+      todayEdge: new Date(dayEnd.getTime() - 1),
+      nearFuture: new Date(luc2359.getTime() + 2 * PHUT),
+      atBoundary: new Date(dayEnd.getTime()),
+    });
+  });
+
+  async function dem(m: { factoryId: number; machineId: number }) {
+    const b = await getAndonBoardData({ factoryId: m.factoryId });
+    return { b, tile: b.lines.flatMap((l) => l.machines).find((x) => x.machineId === m.machineId) };
+  }
+
+  it("00:05: biên DƯỚI — now−30′ (hôm qua) và 23:59:59.999 hôm qua KHÔNG đếm; đúng 00:00:00 và now+2′ đếm", async () => {
+    vi.setSystemTime(luc0005);
+    const { b, tile } = await dem(sau);
+    expect(b.dayStart).toBe(dayStart.toISOString());
+    expect(tile!.total).toBe(2); // atDayStart + nearFuture
+    expect(b.kpis.uphLastHour).toBe(1); // atDayStart (nearFuture sau now bị loại)
+  });
+
+  it("23:59: biên TRÊN — now+2′ (đã sang ngày mai) và đúng 00:00:00 mai KHÔNG đếm; 23:59:59.999 nay đếm", async () => {
+    vi.setSystemTime(luc2359);
+    const { b, tile } = await dem(truoc);
+    expect(b.dayEnd).toBe(dayEnd.toISOString());
+    expect(tile!.total).toBe(2); // past + todayEdge
+    expect(b.kpis.uphLastHour).toBe(1); // past (todayEdge sau now bị loại)
   });
 });

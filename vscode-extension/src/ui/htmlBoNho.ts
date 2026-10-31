@@ -44,7 +44,7 @@ export function dungHtmlBoNho(dv: { nonce: string; ds: readonly MucBoNho[] }): s
   const soMuc = dv.ds.length;
   const noiDungDanhSach =
     soMuc === 0
-      ? '<p id="rong">Chưa có mục nhớ nào. Dùng lệnh "AI Local: Nhớ điều này", hoặc duyệt một đề xuất nhớ của AI trong bảng chat.</p>'
+      ? '<p id="rong">Chưa có mục nhớ nào. Dùng lệnh "Thợ Cả: Nhớ điều này", hoặc duyệt một đề xuất nhớ của AI trong bảng chat.</p>'
       : `<ul id="danh-sach">\n${dv.ds.map(dongMuc).join("\n")}\n</ul>`;
 
   return `<!DOCTYPE html>
@@ -75,7 +75,7 @@ export function dungHtmlBoNho(dv: { nonce: string; ds: readonly MucBoNho[] }): s
 <body>
 <div id="vung-tren">
   <div>
-    <h1>Bộ nhớ dài hạn của AI Local</h1>
+    <h1>Bộ nhớ dài hạn của Thợ Cả</h1>
     <p id="mo-ta">${soMuc} mục — dữ liệu tham khảo cho AI ở những lần hỏi sau, KHÔNG phải chỉ dẫn thực thi.</p>
   </div>
   <div>

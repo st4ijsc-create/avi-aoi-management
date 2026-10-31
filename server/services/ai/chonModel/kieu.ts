@@ -28,7 +28,16 @@ export interface MucModel {
 
 export type BeMatNgoai = "luong" | "kiem-dinh" | "chat" | "coding" | "agent";
 /** Bề mặt dùng được model ngoài ở 10.4 — nguồn DUY NHẤT (danh mục + thủ tục kiểm định đọc cùng hằng). */
-export const BE_MAT_NGOAI_DUOC_DUNG: readonly BeMatNgoai[] = ["luong", "kiem-dinh"];
+// ★ 10.4b L1 — mở "chat" (/ai-chat + KB qua `routes/kbNgoai.ts`; chỉ nhà máy đã cho dữ liệu vận hành — Q-A chủ dự án). Rollback = bỏ "chat".
+// ★ 10.4b L2 — mở "coding" (màn lập trình, chế độ HỎI — `routes/codingNgoai.ts`; client L2 khoá "Hỏi · chỉ đọc"). Rollback = bỏ "coding".
+export const BE_MAT_NGOAI_DUOC_DUNG: readonly BeMatNgoai[] = ["luong", "kiem-dinh", "chat", "coding"];
+// ⚠ 10.4b L3 (kiem-dinh k7): "agent" CHƯA vào danh sách cho tới khi L3b (hạ tự trị sau lượt ngoài) xong — lưới ghim ở quanLyLuotChay.ngoai.test.ts.
+
+/**
+ * (10.4b L3, n6) ÁNH XẠ DUY NHẤT bề mặt `agent` ⇒ nguồn mức ở cổng (`NguonMuc.beMat`) `agent-turn`. Mọi điểm dựng `nguonMuc` cho lượt agent
+ * (bộ chuyển `vongAgentNgoai`, đường vào `luotChayNgoai`, thông tin chọn model) dùng hằng này — census ghim chữ `"agent-turn"` chỉ ở đây.
+ */
+export const NGUON_MUC_LUOT_AGENT = "agent-turn" as const;
 
 /** 10.3 thay bằng `cauHinhNgoai.layModelDaBat`; 10.1 mặc định rỗng. */
 export interface NguonModelNgoai {

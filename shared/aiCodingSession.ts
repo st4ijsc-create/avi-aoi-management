@@ -34,6 +34,15 @@
 // GIỚI HẠN — mỗi con số là một quyết định, không phải một hằng số tuỳ ý
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Đợt 11.8 — MỘT hằng chung cho CHECK của `ai_coding_sessions` (mig 0440/0443): `kind` của phiên coding/agent (chat có kho riêng) và
+ * `source` (nơi tạo phiên). Kho (`server/db/aiPhien.ts`), router (`aiPhienRouter`) và test đối chiếu CHECK đều dùng hằng này.
+ */
+export const KIND_PHIEN = ["coding", "agent"] as const;
+export const NGUON_PHIEN = ["web", "vscode", "cli"] as const;
+export type KindPhien = (typeof KIND_PHIEN)[number];
+export type NguonPhien = (typeof NGUON_PHIEN)[number];
+
 export const GIOI_HAN_PHIEN = {
   /**
    * Số lượt tối đa GIỮ LẠI trong một phiên. Vượt thì giữ **N lượt CUỐI** — ngữ cảnh lập trình

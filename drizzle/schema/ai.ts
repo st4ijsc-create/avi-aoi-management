@@ -1,5 +1,5 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, uniqueIndex, customType, bigint, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -1403,6 +1403,8 @@ export const aiChatConversations = pgTable("ai_chat_conversations", {
   lastMessageAt: timestamp("lastMessageAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  /** ★ 10.4b L0a' (0417) — MÁY CHỦ đặt khi hội thoại có lượt model NGOÀI ⇒ lịch sử bọc UNTRUSTED + loại khỏi học / ingest. */
+  coLuotNgoai: boolean("coLuotNgoai").default(false).notNull(),
 }, (table) => [
   index("idx_chat_conv_user").on(table.userId),
   index("idx_chat_conv_updated").on(table.updatedAt),
@@ -1421,6 +1423,10 @@ export const aiChatMessages = pgTable("ai_chat_messages", {
   toolResults: json("toolResults"),
   tokensUsed: integer("tokensUsed"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** ★ 10.4b L0a' (0417) — `ngoai:<ncc>:<model>` khi MÁY CHỦ xác minh (callId đúng người + ok + băm khớp); NULL = cục bộ. Client KHÔNG khai. */
+  nguonModel: varchar("nguonModel", { length: 140 }),
+  /** ★ 0417 — hàng sổ cổng đã xác minh (JOIN ⇒ token / chi phí lịch sử). */
+  ngoaiCallId: bigint("ngoaiCallId", { mode: "number" }),
 }, (table) => [
   index("idx_chat_msg_conversation").on(table.conversationId),
   index("idx_chat_msg_role").on(table.role),
@@ -1714,6 +1720,8 @@ export const aiPendingActions = pgTable("ai_pending_actions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   executedAt: timestamp("executedAt"),
   resultJson: json("resultJson").$type<Record<string, unknown>>(),
+  /** (mig 0442, Đợt 11.8) lượt agent đề xuất thẻ — `confirmAction` đòi lượt + mọi tổ tiên còn sống (fail-closed). Không FK có chủ ý. */
+  agentRunId: uuid("agentRunId"),
 }, (table) => [
   index("idx_ai_pending_actions_user").on(table.userId),
   index("idx_ai_pending_actions_status").on(table.status),
@@ -1879,6 +1887,13 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
    */
   requestId: varchar("requestId", { length: 64 }),
   luotPhu: varchar("luotPhu", { length: 32 }),
+  /**
+   * ★ Đợt 12 H0.1 (2026-10-31, migration 0445) — token prompt TÁI DÙNG từ prefix-cache (`timings.cache_n`) và XỬ LÝ LẠI
+   * (`timings.prompt_n`). Nullable, không default: NULL = không đo được (in-process / không-stream / hàng cũ). `tokensIn` giữ nghĩa
+   * cũ (tổng). CHECK ≥ 0 (`chk_ai_gateway_metrics_cache_prompt`).
+   */
+  cacheTokens: integer("cacheTokens"),
+  promptEvalTokens: integer("promptEvalTokens"),
   // Who triggered it (best-effort; null for system/cron callers).
   userId: integer("userId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

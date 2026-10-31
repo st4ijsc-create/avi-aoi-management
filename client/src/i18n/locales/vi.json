@@ -4106,6 +4106,7 @@
       "taiAnhAi": "tải ảnh cho phân tích AI",
       "mayDungKhanCap": "tải danh sách máy DỪNG khẩn cấp",
       "aiKiemDinh": "kiểm định bởi AI ngoài",
+      "aiChatLuu": "lưu tin nhắn trò chuyện AI",
       "aiNgoaiGhi": "ghi cấu hình AI ngoài"
     },
     "field": {
@@ -4234,7 +4235,8 @@
       "assigneeUserId": "người được giao",
       "writable": "cho phép ghi (writable)",
       "dataType": "kiểu dữ liệu (dataType)",
-      "inspectionId": "lần kiểm tra"
+      "inspectionId": "lần kiểm tra",
+      "conTro": "con trỏ phân trang"
     },
     "feature": {
       "apiKeyHolder": "bản ghi người được cấp khoá API (migration CSDL 0369)",
@@ -4587,6 +4589,7 @@
       "anh-qua-lon": "ảnh vượt 20 MB",
       "kiem-dinh-khong-co-nguon": "không tìm thấy lượt cần kiểm định (hoặc tài khoản thuộc nhiều nhà máy — chưa dùng được kiểm định ngoài)",
       "kiem-dinh-tra-loi-rong": "lượt không có câu trả lời để kiểm định",
+      "dau-nguon-lech": "câu trả lời đem lưu không khớp dấu nguồn của lượt AI ngoài",
       "NGOAI_TAT": "AI ngoài đang tắt",
       "NGOAI_KHONG_TON_TAI": "model AI ngoài chưa được bật cho nhà máy",
       "NGOAI_DU_LIEU_VAN_HANH": "nhà máy chưa cho phép gửi dữ liệu vận hành ra AI ngoài",
@@ -4602,7 +4605,12 @@
       "NGOAI_CHE_HONG": "bộ che dữ liệu không sẵn sàng — thử lại sau",
       "NGOAI_CAM_DINH_KEM": "không gửi tệp đính kèm tới AI ngoài",
       "NGOAI_MODEL_KHONG_HOP_LE": "tên model AI ngoài không hợp lệ",
-      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)"
+      "du-lieu-vi-pham-rang-buoc": "dữ liệu vi phạm ràng buộc của hệ thống (giá trị không hợp lệ hoặc trùng)",
+      "CAN_XAC_NHAN_VAN_HANH": "Cần xác nhận: câu bạn gõ được coi là dữ liệu vận hành khi gửi ra AI ngoài.",
+      "NGOAI_THIEU_HOI_THOAI": "thiếu hội thoại đã lưu — hãy mở hoặc tạo hội thoại rồi gửi lại",
+      "modelNgoaiChuaCaiDat": "model AI ngoài chưa dùng được ở màn này",
+      "NGOAI_CHI_HOI": "model ngoài chỉ trả lời ở chế độ Hỏi (chỉ đọc) — không sửa tệp, không dùng đầu ra lệnh",
+      "NGOAI_TOOL_KHONG_CAP": "model ngoài đòi dùng một công cụ không được cấp — lượt đã dừng"
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -7601,7 +7609,9 @@
     "aiFlows": "Luồng AI",
     "aiFlowsDesc": "Tự động hoá kiểu n8n với node AI, duyệt người",
     "scadaKenh": "Kênh & giới hạn SCADA",
-    "scadaKenhDesc": "Loại kênh, dải, bước, mức tác động và kênh chế độ của từng máy (kỹ sư)"
+    "scadaKenhDesc": "Loại kênh, dải, bước, mức tác động và kênh chế độ của từng máy (kỹ sư)",
+    "scadaNhatKy": "Nhật ký lệnh SCADA",
+    "scadaNhatKyDesc": "Lệnh đã gửi và các lần thử bị từ chối — theo máy, thời gian, trạng thái"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -15973,7 +15983,7 @@
       "webIngestDisabled": "Nạp URL đang tắt (đặt WEB_INGEST_ENABLED=true trên server).",
       "guidance": {
         "title": "Hướng dẫn tự nạp tài liệu",
-        "subtitle": "Bốn bước để tự đưa tài liệu vào AI Local — làm đúng thứ tự, hệ thống lo phần còn lại.",
+        "subtitle": "Bốn bước để tự đưa tài liệu vào Thợ Cả — làm đúng thứ tự, hệ thống lo phần còn lại.",
         "step1Title": "1. Chọn corpus theo ĐÚNG miền",
         "step1Body": "Vì sao phải tách miền: đã đo được — trộn nhiều miền vào MỘT corpus khiến hỏi về web lại lôi ra tài liệu PLC (5 trích dẫn điểm 0,85–0,91 từ tài liệu lạc đề). Rác trong corpus làm câu trả lời TỆ ĐI, không phải trung tính — corpus càng nhiều tài liệu lạc đề, càng nhiều câu trả lời bị kéo sai hướng.",
         "fillCorpusAria": "Điền tên corpus gợi ý \"{{corpus}}\" vào ô Tên corpus",
@@ -21660,6 +21670,66 @@
         "duAnPhanMem": " (dự án phần mềm)",
         "macDinh": "model mặc định của engine",
         "duPhong": "dự phòng — khe đang giữ model khác"
+      },
+      "nguCanhDay": "Ngữ cảnh đã dùng {{p}}% — nên nhờ agent tóm tắt tiến độ vào NOTES.md (bạn duyệt như mọi lần ghi tệp) rồi mở phiên mới.",
+      "con": {
+        "tieuDe": "Agent con",
+        "tuRepo": "từ repo",
+        "sua": "sửa",
+        "hoi": "hỏi",
+        "dangChay": "đang chạy"
+      },
+      "hangCho": "Hàng chờ model: {{n}} lượt đứng trước bạn",
+      "khoa": {
+        "tieuDe": "Lệnh bị khoá cứng (agent không bao giờ chạy được)",
+        "biKhoa": "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.",
+        "phim": "Khi thẻ này đang được chọn: Enter = Cho phép một lần · Esc = Bác",
+        "moTa": {
+          "ngoai-du-an": "Xoá / ghi tệp NGOÀI thư mục dự án",
+          "csdl-that": "Ghi vào cơ sở dữ liệu THẬT"
+        }
+      },
+      "keHoachDuyet": {
+        "tieuDe": "Kế hoạch chờ duyệt",
+        "soBuoc": "{{n}} bước",
+        "khongTinCay": "KHÔNG TIN CẬY: lượt này đã đọc nội dung đáng ngờ hoặc dùng agent từ repo — kế hoạch có thể bị nội dung đó dẫn dắt. Đọc kỹ từng bước trước khi duyệt.",
+        "giaiThich": "Duyệt kế hoạch chưa duyệt từng thẻ ghi/lệnh — mỗi thẻ vẫn cần bạn duyệt riêng.",
+        "nutDuyet": "Duyệt kế hoạch",
+        "nutBac": "Bác kế hoạch",
+        "phim": "Khi thẻ này đang được chọn: Enter = duyệt · Esc = bác.",
+        "daDuyet": "Đã duyệt kế hoạch.",
+        "bac": "Đã bác kế hoạch — agent sẽ không chạy tiếp tool ghi/lệnh theo kế hoạch này.",
+        "hetGio": "Hết thời gian chờ duyệt — kế hoạch bị bác.",
+        "daDoi": "Kế hoạch đã đổi — thẻ này không còn đúng.",
+        "hetHieuLuc": "Lượt đã kết thúc — không còn chờ duyệt.",
+        "loi": {
+          "notFound": "Không tìm thấy kế hoạch của lượt này (có thể lượt đã kết thúc).",
+          "daQuyet": "Kế hoạch này đã có quyết định.",
+          "quyen": "Bạn không có quyền duyệt kế hoạch này.",
+          "csdl": "Máy chủ chưa ghi được quyết định — thử lại.",
+          "chung": "Chưa gửi được quyết định — thử lại."
+        }
+      },
+      "tongQuan": {
+        "tieuDe": "Tổng quan thay đổi",
+        "agentCon": "agent con",
+        "tienDo": "{{daQuyet}}/{{tong}} đã quyết",
+        "conCho": "{{n}} đang chờ bạn",
+        "kiemChung": "Kiểm chứng gần nhất",
+        "hetGio": "hết giờ",
+        "xanh": "XANH",
+        "do": "ĐỎ",
+        "soDo": "đỏ",
+        "soXanh": "xanh",
+        "truocSua": "— chạy TRƯỚC thay đổi đã duyệt gần nhất",
+        "khongDuong": "(không rõ đường)",
+        "daXem": "đã xem",
+        "chuaXem": "chưa xem",
+        "hetHan": "hết hiệu lực",
+        "cho": "đang chờ",
+        "duyetA": "Duyệt (A)",
+        "bacR": "Bác (R)",
+        "phim": "Khi vùng này được chọn: J/K = tệp kế/trước · A = duyệt · R = bác (A chỉ sau khi đã xem tệp)"
       }
     },
     "duanCaNhan": {
@@ -21899,6 +21969,77 @@
       "xemBanDau": "Xem bản đầu (trước khi sửa)",
       "conLoi": "Mã ST còn {{n}} lỗi biên dịch (RuSTy) sau {{v}} vòng tự sửa:",
       "khongKiemDuoc": "Chưa kiểm biên dịch được ({{lyDo}})."
+    },
+    "agentTuRepo": {
+      "tieuDe": "Agent từ repo",
+      "moTaMan": "Đọc và xác nhận định nghĩa agent nằm trong dự án {{duAn}}.",
+      "luuY": "Agent từ repo do tệp trong dự án định nghĩa — chưa được tin cho tới khi bạn đọc nội dung và xác nhận. Nếu tệp đổi sau khi bạn đọc, xác nhận bị từ chối.",
+      "tuRepo": "Từ repo",
+      "rong": "Dự án này chưa có tệp định nghĩa agent hợp lệ.",
+      "daTin": "đã tin cậy bản này",
+      "chuaTin": "chưa tin cậy",
+      "thongSo": "Model: {{model}} · tối đa {{luot}} lượt · công cụ: {{cc}}",
+      "an": "Ẩn nội dung",
+      "doc": "Đọc nội dung tệp",
+      "tinCay": "Tin cậy bản này",
+      "canDoc": "Hãy đọc nội dung trước khi tin cậy.",
+      "goTin": "Gỡ tin cậy",
+      "biBo": "Tệp bị bỏ qua",
+      "dungSan": "Dựng sẵn",
+      "biTuChoi": "Bạn không có quyền xem định nghĩa agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "daXacNhan": "Đã tin cậy agent “{{ten}}”.",
+      "daGo": "Đã gỡ tin cậy “{{ten}}”.",
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "KHONG_CO": "Không còn định nghĩa này trong repo.",
+        "BAM_LECH": "Tệp đã đổi sau khi bạn đọc — hãy đọc lại bản mới rồi xác nhận.",
+        "LOI_LUU": "Không lưu được xác nhận — thử lại sau.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
+    },
+    "lichSuAgent": {
+      "tieuDe": "Lịch sử agent",
+      "moTaMan": "Các phiên agent của bạn trong dự án {{duAn}} (web, VS Code, dòng lệnh).",
+      "biTuChoi": "Bạn không có quyền xem lịch sử agent của dự án này.",
+      "dangTai": "Đang tải…",
+      "rong": "Chưa có phiên agent nào trong dự án này.",
+      "quayLai": "Quay lại",
+      "soLuotChay": "{{n}} lượt chạy gắn với phiên này.",
+      "ban": "Bạn",
+      "agent": "Agent",
+      "coNgoai": "đã dùng AI ngoài",
+      "soLuot": "{{n}} lượt",
+      "mo": "Xem",
+      "luuTen": "Lưu tên",
+      "doiTen": "Đổi tên",
+      "xoa": "Xoá phiên",
+      "hoiXoa": "Xoá phiên “{{ten}}”? Việc này không hoàn tác được.",
+      "nhatKy": "Xoá phiên KHÔNG xoá nhật ký các lượt chạy (sổ kiểm toán trên máy chủ vẫn giữ).",
+      "xacNhanXoa": "Xoá phiên",
+      "huy": "Huỷ",
+      "daXoa": "Đã xoá phiên.",
+      "nguon": {
+        "web": "web",
+        "vscode": "VS Code",
+        "cli": "dòng lệnh"
+      },
+      "note": {
+        "PERMISSION_DENIED": "Bạn không có quyền với thao tác này.",
+        "PROJECT_NOT_FOUND": "Không tìm thấy dự án.",
+        "NOT_FOUND": "Không tìm thấy phiên (đã bị xoá?).",
+        "CONFLICT": "Phiên đã được cập nhật ở nơi khác — danh sách đã tải lại, hãy thử lại.",
+        "THAM_SO_SAI": "Tham số không hợp lệ.",
+        "LOI": "Không thực hiện được — thử lại sau.",
+        "khac": "Không thực hiện được ({{ma}})."
+      }
+    },
+    "ngoai": {
+      "daDoc": "Đã đọc {{p}}",
+      "biTuChoi": "Bị từ chối ({{ma}}): {{p}}",
+      "chiHoi": "Model ngoài: chỉ chế độ Hỏi · chỉ đọc (không ghi tệp, không chạy lệnh, không vòng tự sửa)."
     }
   },
   "masterDataCol": {
@@ -23913,6 +24054,79 @@
     }
   },
   "scada": {
+    "nhatKy": {
+      "title": "Nhật ký lệnh",
+      "subtitle": "Lệnh đã gửi và cả các lần thử bị từ chối trước khi thành lệnh — mới nhất ở trên. Chi tiết kỹ thuật chỉ hiện với kỹ sư.",
+      "dangTai": "Đang tải nhật ký…",
+      "loiTai": "Không tải được nhật ký lệnh.",
+      "trong": "Không có bản ghi nào khớp bộ lọc.",
+      "danhSach": "Bản ghi ({{count}})",
+      "taiThem": "Tải thêm",
+      "dangTaiThem": "Đang tải…",
+      "sim": "sim",
+      "simGiaiThich": "Adapter mô phỏng — lệnh không tới thiết bị thật",
+      "nguoiNgoaiPhamVi": "quản trị",
+      "loc": {
+        "tieuDe": "Bộ lọc",
+        "may": "Máy",
+        "tatCaMay": "Tất cả máy",
+        "nguon": "Nguồn",
+        "tu": "Từ",
+        "den": "Đến",
+        "trangThai": "Trạng thái lệnh",
+        "xoa": "Xoá bộ lọc",
+        "nguonGiaTri": {
+          "tat_ca": "Tất cả",
+          "lenh": "Lệnh",
+          "thu": "Lần thử"
+        }
+      },
+      "nguon": {
+        "lenh": "Lệnh",
+        "thu": "Lần thử"
+      },
+      "col": {
+        "thoiGian": "Thời gian",
+        "nguon": "Nguồn",
+        "may": "Máy / adapter",
+        "tag": "Tag",
+        "trangThai": "Trạng thái",
+        "ma": "Mã",
+        "lyDo": "Lý do",
+        "loi": "Lỗi",
+        "nguoi": "Người",
+        "lienKet": "Lệnh liên quan"
+      },
+      "trangThai": {
+        "simulated": "Mô phỏng",
+        "sent": "Đã gửi",
+        "acked": "Máy đã nhận",
+        "acked_verified": "Đã đọc lại khớp",
+        "acked_unverified": "Đọc lại không khớp",
+        "failed": "Lỗi",
+        "timeout": "Hết thời gian",
+        "rejected": "Bị từ chối"
+      },
+      "thu": {
+        "request": {
+          "proposed": "Yêu cầu: đã đề xuất",
+          "rejected": "Yêu cầu: bị từ chối"
+        },
+        "confirm": {
+          "confirmed": "Xác nhận: đã duyệt",
+          "rejected": "Xác nhận: bị từ chối",
+          "expired": "Xác nhận: hết hạn"
+        },
+        "dispatch": {
+          "dispatched": "Gửi: đã gửi",
+          "rejected": "Gửi: bị từ chối"
+        },
+        "huy": {
+          "cancelled": "Huỷ: đã huỷ",
+          "rejected": "Huỷ: bị từ chối"
+        }
+      }
+    },
     "diag": {
       "title": "Chẩn đoán truyền thông",
       "subtitle": "Trạng thái kết nối thật của từng adapter OT, bộ đếm 1 giờ và chất lượng tag — làm mới mỗi 2 giây.",
@@ -24526,7 +24740,16 @@
       "luot": "trần mỗi lượt của model",
       "nha-may": "trần ngày của nhà máy",
       "nguoi": "trần ngày của bạn",
-      "phut": "quá nhiều lượt mỗi phút"
-    }
+      "luong": "trần ngày của luồng",
+      "lan-phut": "quá nhiều lượt mỗi phút"
+    },
+    "khongTai": "Không tải được điều kiện dùng model này — thử lại sau.",
+    "codingLuotHai": "Màn lập trình: lượt ĐẦU chỉ gửi câu hỏi bạn gõ và mã bạn cho đọc; từ lượt hai, lịch sử hội thoại được coi là dữ liệu vận hành (cần nhà máy cho phép, hỏi xác nhận một lần mỗi phiên)."
+  },
+  "xacNhanVanHanh": {
+    "tieuDe": "Gửi câu hỏi ra AI ngoài?",
+    "moTa": "Đây là trợ lý vận hành: câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH. Gửi tới model bên ngoài (trả phí) sau khi che dữ liệu nhạy cảm theo mẫu. Hỏi một lần cho cuộc trò chuyện này.",
+    "tuChoi": "Không gửi",
+    "dongY": "Đồng ý, gửi"
   }
 }

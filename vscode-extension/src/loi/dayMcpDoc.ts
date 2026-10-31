@@ -6,7 +6,7 @@
  *
  * ★★★ RỖNG KHI KHÔNG CÓ TOOL NÀO SẴN SÀNG — bất biến "vá xong kiểm nhánh kia" của Task H2: người
  * dùng không cấu hình MCP server nào (mặc định `{}`), hoặc đã cấu hình nhưng CHƯA kết nối qua lệnh
- * "AI Local: Quản lý MCP server ngoài" (B5) ⇒ `dungVanBanDayMcpNgoai([])` trả CHUỖI RỖNG, và
+ * "Thợ Cả: Quản lý MCP server ngoài" (B5) ⇒ `dungVanBanDayMcpNgoai([])` trả CHUỖI RỖNG, và
  * `dungYeuCauStream` (`yeuCau.ts`) không chèn thêm một ký tự nào vào `question` — hành vi của mọi
  * người dùng CHƯA từng chạm H2 giữ NGUYÊN VẸN, không một khối lượt hỏi nào phình ra vì một tính
  * năng họ không dùng.

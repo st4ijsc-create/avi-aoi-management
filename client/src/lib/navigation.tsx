@@ -936,6 +936,17 @@ export const navGroups: NavGroup[] = [
         section: "connect",
         engineerOriented: true,
       },
+      {
+        // SCADA R1b-2b-2b B-T8 — nhật ký lệnh (lệnh + lần thử bị từ chối; chi tiết kỹ thuật theo quyền ở máy chủ)
+        href: "/scada/journal",
+        label: "nav.scadaNhatKy",
+        icon: <ScrollText className="h-4 w-4" />,
+        description: "nav.scadaNhatKyDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+        section: "connect",
+        engineerOriented: false,
+      },
       // doc 36 follow-up — /uns-mapping REMOVED: redirects into /connectivity (UNS tab).
       {
         // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion (CONFIG + status + dry-run)

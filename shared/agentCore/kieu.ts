@@ -5,6 +5,9 @@
  * Lưới `thuan.test.ts` canh bất biến đó.
  */
 
+import type { MaKhoiChen, NenBuocDo } from "./buocDo";
+import type { DemBaoCao } from "./giaoViec";
+
 // ─── Khuôn dây OpenAI (tool-calling gốc) ──────────────────────────────────────────────────────
 //
 // ⚠ PHẢI TƯƠNG THÍCH khuôn dây của `server/services/ai/nativeToolCalls.ts` (`WireToolCall`/`WireTool`).
@@ -44,8 +47,8 @@ export interface TinNhan {
   tool_call_id?: string;
   name?: string;
   /**
-   * ★ Đợt 11.0 (CHỈ ĐO, mặc định không dùng) — suy luận ĐÃ CHE của lượt assistant trước, giữ trong lịch sử khi host bật
-   * `giuNghiTrongLichSu` (env `AI_AGENT_GIU_NGHI=1`). Template Qwen3.6 đọc `message.reasoning_content` + `preserve_thinking`.
+   * ★ Đợt 11.0 — suy luận ĐÃ CHE của lượt assistant trước, giữ trong lịch sử khi host bật `giuNghiTrongLichSu` (server: mặc định
+   * BẬT, tắt bằng env `AI_AGENT_GIU_NGHI=0`). Template Qwen3.6 đọc `message.reasoning_content` + `preserve_thinking`.
    */
   reasoning_content?: string;
 }
@@ -125,11 +128,34 @@ export type LyDoDung =
   | "loi-model";
 
 /** (Đợt 9) model của lượt chạy khi host chọn theo vai trò — để UI nói thật "đang chạy X vì Y". */
-export interface ThongTinModelBatDau {
+export interface ThongTinModelCucBo {
   vaiTro: string;
   model: string | null;
   nguon: string;
   bangChung: string;
+}
+
+/**
+ * (Đợt 10.4b L3, luong-ui u2) lượt agent máy chủ chạy model NGOÀI: `model` = `ngoai:<ncc>:<model>`, `muc` = mức dữ liệu máy chủ đã chốt ở
+ * đường vào (`van-hanh` khi có lịch sử). `vaiTro`/`bangChung` luôn vắng — khai `?: undefined` để mã đọc nhánh cục bộ vẫn biên dịch.
+ */
+export interface ThongTinModelNgoai {
+  nguon: "ngoai";
+  model: string;
+  muc: "ky-thuat" | "van-hanh";
+  vaiTro?: undefined;
+  bangChung?: undefined;
+}
+
+export type ThongTinModelBatDau = ThongTinModelCucBo | ThongTinModelNgoai;
+
+/** (Đợt 10.4b L3, luong-ui u3) vết cộng dồn mọi vòng của lượt model ngoài — cùng hình `VetNgoaiLichSu` (shared/ai/sinhChuNgoai.ts), không callId. */
+export interface VetNgoaiLuot {
+  nhaCungCap: string;
+  model: string;
+  tokenVao: number | null;
+  tokenRa: number | null;
+  chiPhiUocUsd: number | null;
 }
 
 /** Phạm vi một ghi chú trí nhớ (tool `remember`, Đợt 2). Bảng `ai_coding_lessons` khoá (người × dự án) — xem README. */
@@ -153,11 +179,53 @@ export type SuKienAgent =
   /** Một kết quả tool chứa câu dạng mệnh lệnh — chỉ là DỮ LIỆU; vòng KHÔNG dừng (mọi chế độ). */
   | { loai: "canh-bao-du-lieu"; id: string; ten: string; nguon: string; mau: string[] }
   /** `tu-dong` bị HẠ tự trị cho phần còn lại của lượt (mọi ghi/lệnh sau đó cần người duyệt). Phát MỘT lần mỗi lượt. */
-  | { loai: "ha-tu-tri"; lyDo: "noi-dung-dang-ngo"; nguon: string; mau: string[] }
+  /** `phien-co-luot-ngoai` (Đợt 10.4b L3b): HOST hạ từ đầu lượt vì phiên đã có lượt model NGOÀI (`nguon` = "phien", `mau` rỗng). */
+  | { loai: "ha-tu-tri"; lyDo: "noi-dung-dang-ngo" | "phien-co-luot-ngoai"; nguon: string; mau: string[] }
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
-  | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number }
+  /** (Đợt 12 H0.1) `cacheN` / `promptN` = phần của `vao` TÁI DÙNG từ prefix-cache / XỬ LÝ LẠI — chỉ khi host đo được (luôn đi cặp). */
+  | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number; cacheN?: number; promptN?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
-  | { loai: "xong"; lyDo: LyDoDung; tomTat?: string }
+  /**
+   * (Đợt 12 · H0.2) BẢN GHI ĐO của MỖI lượt gọi model (phát ngay sau `usage` của lượt đó): băm system+tools, số tin, token ƯỚC LƯỢNG
+   * lúc gọi vs token THẬT (`vaoThat`), cache_n/prompt_n (vắng = không đo được, KHÔNG BIẾT ≠ 0), hành động nén, mã khối đã chèn.
+   * Chỉ số + mã — không nội dung. Không đổi byte gửi model. Của lượt GỐC; vòng con không phát ra ngoài (host lọc).
+   */
+  | {
+      loai: "buoc-do";
+      luot: number;
+      bamHeThong: string;
+      soTin: number;
+      tokenUoc: number;
+      vaoThat?: number;
+      cacheN?: number;
+      promptN?: number;
+      nen: NenBuocDo | null;
+      nhacDaChen: MaKhoiChen[];
+      /** (H1.3) lượt này đã tràn ngữ cảnh, lõi nén mạnh rồi gọi lại — `nen` là lần nén mạnh. */
+      cuuTran?: true;
+    }
+  /**
+   * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
+   * chạy. UI hiện banner "tóm tắt sang NOTES.md + mở phiên mới"; ghi NOTES.md vẫn qua `write_file`/`edit_file` + thẻ duyệt của NGƯỜI.
+   */
+  | { loai: "ngu-canh-day"; phanTram: number }
+  /**
+   * (Đợt 11.3-C, UX-D02) CỔNG DUYỆT KẾ HOẠCH (cờ host `AI_AGENT_CONG_KE_HOACH`, mặc định TẮT ⇒ các sự kiện này không bao giờ phát):
+   * tool ghi/lệnh/delegate sắp chạy mà kế hoạch hiện tại (`bam`) chưa được người duyệt ⇒ phát `ke-hoach-cho-duyet` rồi DỪNG chờ.
+   * `viec` là chữ thuần đã làm sạch (≤30 bước × 200 ký tự). Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh — thẻ vẫn qua người.
+   */
+  | { loai: "ke-hoach-cho-duyet"; viec: ViecKeHoach[]; bam: string }
+  | { loai: "ke-hoach-da-duyet"; bam: string; luc: string }
+  | { loai: "ke-hoach-khong-duyet"; bam: string; lyDo: "bac" | "het-gio" }
+  /**
+   * (Đợt 11.8) AGENT CON. Mọi sự kiện của vòng con đi qua `su-kien-con` (BỌC, không bao giờ phát thẳng) ⇒ con không giả
+   * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
+   */
+  | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string; baoCao?: DemBaoCao }
+  | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
+  /** `vetNgoai` (L3): chỉ lượt model ngoài, do HOST gắn (lõi không phát). */
+  | { loai: "xong"; lyDo: LyDoDung; tomTat?: string; vetNgoai?: VetNgoaiLuot }
   | { loai: "loi"; ma: string; thongDiep: string };
 
 // ─── Hợp đồng với model và bộ thực thi ─────────────────────────────────────────────────────────
@@ -169,7 +237,8 @@ export type ManhModel =
   | {
       loai: "xong";
       toolCalls: WireToolCall[];
-      usage?: { vao: number; ra: number; nghi?: number };
+      /** (Đợt 12 H0.1) `cacheN`/`promptN`: tách `vao` thành tái dùng prefix-cache / xử lý lại — vắng = không đo được. */
+      usage?: { vao: number; ra: number; nghi?: number; cacheN?: number; promptN?: number };
       /**
        * Lượt bị CẮT ở trần token ra (engine báo `finish_reason:"length"`). Có tool call ⇒ tham số có thể DỞ dù trông hợp
        * lệ (JSON đủ ngoặc nhưng nội dung tệp cụt) ⇒ lõi KHÔNG thực thi lời gọi nào của lượt đó. Vắng = không bị cắt.
@@ -214,6 +283,9 @@ export interface GioiHanVong {
   nganSachNguCanhToken: number;
 }
 
+/** (Đợt 11.8, UX-C06) ngưỡng "ngữ cảnh đầy" thống nhất (trước đây UI dùng 85 %). Dùng chung cho lõi, web và extension. */
+export const NGUONG_NGU_CANH_DAY_PHAN_TRAM = 80;
+
 export const GIOI_HAN_MAC_DINH: GioiHanVong = {
   soLuotToiDa: 30,
   msToiDa: 20 * 60 * 1000,
@@ -236,6 +308,9 @@ export class LoiModel extends Error {
     this.ma = opts.ma ?? (this.tamThoi ? "MODEL_TAM_THOI" : "MODEL_LOI");
   }
 }
+
+/** (Đợt 12 · H1.3) mã lỗi model "yêu cầu vượt cửa sổ ngữ cảnh" — host phân loại (`chuyenLoiModel`), lõi cứu một lần (`cuuTranNguCanh`). */
+export const MA_LOI_TRAN_NGU_CANH = "CONTEXT_OVERFLOW";
 
 export function laLoiTamThoi(e: unknown): boolean {
   return !!e && typeof e === "object" && (e as { tamThoi?: unknown }).tamThoi === true;

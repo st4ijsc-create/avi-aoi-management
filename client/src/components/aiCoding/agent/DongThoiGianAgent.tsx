@@ -23,6 +23,7 @@ import { Streamdown } from "streamdown";
 import {
   AlertTriangle,
   Bot,
+  Lock,
   Check,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import type { LyDoDung, ThongTinModelBatDau, ViecKeHoach } from "@shared/agentCore/kieu";
+import { LENH_KHOA_CUNG, timLenhKhoaCung } from "@shared/agentCore/lenhKhoaCung";
 import { Button } from "@/components/ui/button";
 import { TheDuyetDiff } from "@/components/ai/TheDuyetDiff";
 import type { ActionState } from "@/components/ConfirmActionCard";
@@ -48,8 +50,10 @@ import { cn } from "@/lib/utils";
 import { BangDangNghi } from "../BangDangNghi";
 import { NutPhanHoi } from "./NutPhanHoi";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
-import { idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucDongThoiGian } from "./trangThaiAgent";
-import type { HookAgent, TheDuyetMuc, TheNhoMuc } from "./useLuotChayAgent";
+import { TongQuanDuyet, neoTheDuyet } from "./TongQuanDuyet";
+import { khoaTheCon } from "./tongQuanThayDoi";
+import { canhBaoCuaDeXuat, idHanhDong, layDiffTuDeXuat, thamSoChinh, viTriTraLoiCuoi, type MucAgentCon, type MucDongThoiGian } from "./trangThaiAgent";
+import type { HookAgent, TheDuyetMuc, TheKeHoachMuc, TheNhoMuc } from "./useLuotChayAgent";
 
 type T = ReturnType<typeof useTranslation>["t"];
 
@@ -229,7 +233,31 @@ function DongDangNgo({ nguon }: { nguon: string[] | undefined }) {
   );
 }
 
-function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
+/**
+ * (Đợt 11.3-A, UX-S02) bảng "lệnh bị KHOÁ CỨNG": hiện ở thẻ duyệt lệnh để người duyệt biết agent KHÔNG BAO GIỜ làm được các việc này dù bấm Duyệt.
+ * Danh sách lấy từ MỘT hằng chung với máy chủ (`shared/agentCore/lenhKhoaCung`) — không chép tay.
+ */
+export function BangLenhKhoaCung() {
+  const { t } = useTranslation();
+  return (
+    <details data-testid="agent-lenh-khoa-cung" className="mt-1 text-[12px]">
+      <summary className="flex cursor-pointer items-center gap-1 text-muted-foreground">
+        <Lock className="h-3 w-3" aria-hidden />
+        {t("repoWs.agent.khoa.tieuDe", "Lệnh bị khoá cứng (agent không bao giờ chạy được)")}
+      </summary>
+      <ul className="mt-1 space-y-0.5 pl-4">
+        {LENH_KHOA_CUNG.map((k) => (
+          <li key={k.id} data-khoa-id={k.id} className="flex items-center gap-1">
+            <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+            {k.loai === "argv" ? <code className="font-mono">{k.hienThi}</code> : <span>{t(`repoWs.agent.khoa.moTa.${k.id}`, k.hienThi)}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function TheDuyetAgent({ m, agent, yeuCauBac, khoa }: { m: TheDuyetMuc; agent: HookAgent; yeuCauBac?: { id: string; n: number } | null; khoa?: string }) {
   const { t } = useTranslation();
   const diff = useMemo(() => layDiffTuDeXuat(m.deXuat), [m.deXuat]);
   const [xemTruoc, setXemTruoc] = useState(diff?.args.modified ?? "");
@@ -237,6 +265,18 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   const [lyDo, setLyDo] = useState("");
   const busy = agent.dangGuiDuyet === idHanhDong(m);
   const conCho = m.trangThai === "cho";
+  // (Đợt 11.3-B) phím R ở vùng tổng quan: chỉ MỞ ô lý do của thẻ này (việc bác vẫn do thẻ gửi)
+  const khoaThe = khoa ?? m.id;
+  const nBac = yeuCauBac && yeuCauBac.id === khoaThe ? yeuCauBac.n : 0;
+  useEffect(() => {
+    if (nBac > 0 && conCho) setMoLyDo(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nBac]);
+  // (Đợt 11.3-A) thẻ LỆNH: cảnh báo của máy chủ (thư mục chạy, quy tắc cài đặt…) + khoá cứng + phím tắt
+  const laLenh = m.deXuat.ten === "run_command";
+  const lenhChuoi = typeof m.deXuat.thamSo?.command === "string" ? (m.deXuat.thamSo.command as string) : "";
+  const khoaCung = laLenh ? timLenhKhoaCung(lenhChuoi.trim().split(/\s+/)) : null;
+  const canhBaoLenh = useMemo(() => (laLenh ? canhBaoCuaDeXuat(m.deXuat) : []), [laLenh, m.deXuat]);
 
   const oBac = moLyDo && conCho && (
     <div data-testid="agent-o-ly-do" className="mt-2 space-y-1.5 rounded-md border border-amber-300 bg-amber-50/60 p-2 dark:border-amber-800 dark:bg-amber-950/20">
@@ -276,7 +316,7 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
 
   if (diff) {
     return (
-      <div data-testid="agent-the-duyet" data-loai="diff">
+      <div id={neoTheDuyet(khoaThe)} data-testid="agent-the-duyet" data-loai="diff">
         <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
         {m.deXuat.moTa && <p className="mb-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
         <TheDuyetDiff
@@ -296,7 +336,28 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
   }
 
   return (
-    <div data-testid="agent-the-duyet" data-loai={m.deXuat.ten} className="rounded-lg border-2 border-amber-300 bg-amber-50/40 p-2 text-[13px] dark:border-amber-800 dark:bg-amber-950/20">
+    <div
+      id={neoTheDuyet(khoaThe)}
+      data-testid="agent-the-duyet"
+      data-loai={m.deXuat.ten}
+      // (Đợt 11.3-A) Enter = "Cho phép MỘT lần", Esc = Bác — CHỈ khi chính thẻ đang giữ tiêu điểm (không bao giờ khi đang gõ ở ô nhập khác / ô lý do) và không bị khoá cứng.
+      tabIndex={laLenh && conCho ? 0 : undefined}
+      onKeyDown={
+        laLenh
+          ? (e) => {
+              if (e.target !== e.currentTarget || e.repeat || !conCho || moLyDo || busy) return; // giữ phím ⇒ keydown lặp: bỏ
+              if (e.key === "Enter" && !khoaCung) {
+                e.preventDefault();
+                void agent.duyet(m);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setMoLyDo(true);
+              }
+            }
+          : undefined
+      }
+      className="rounded-lg border-2 border-amber-300 bg-amber-50/40 p-2 text-[13px] dark:border-amber-800 dark:bg-amber-950/20"
+    >
       <div className="mb-1 flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
         <span>{t("repoWs.agent.canDuyet", "Cần bạn duyệt")}</span>
@@ -304,9 +365,30 @@ function TheDuyetAgent({ m, agent }: { m: TheDuyetMuc; agent: HookAgent }) {
       <DongDangNgo nguon={m.deXuat.nguonDangNgo} />
       <MoTaGon m={m} />
       {m.deXuat.moTa && <p className="mt-1 text-[12px] text-muted-foreground">{m.deXuat.moTa}</p>}
+      {laLenh && canhBaoLenh.length > 0 && (
+        <ul data-testid="agent-canh-bao-lenh" className="mt-1 space-y-0.5 text-[12px] text-muted-foreground">
+          {canhBaoLenh.map((w, i) => (
+            <li key={i} className="break-words">
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+      {laLenh && khoaCung && (
+        <p data-testid="agent-lenh-bi-khoa" role="alert" className="mt-1 flex items-start gap-1 text-[12px] font-medium text-red-700 dark:text-red-300">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">{t("repoWs.agent.khoa.biKhoa", "Lệnh này bị KHOÁ CỨNG ({{lenh}}) — không thể duyệt để chạy.", { lenh: khoaCung.hienThi })}</span>
+        </p>
+      )}
+      {laLenh && conCho && !moLyDo && !khoaCung && (
+        <p data-testid="agent-goi-y-phim" className="mt-1 text-[11px] text-muted-foreground">
+          {t("repoWs.agent.khoa.phim", "Khi thẻ này đang được chọn: Enter = Cho phép một lần · Esc = Bác")}
+        </p>
+      )}
+      {laLenh && <BangLenhKhoaCung />}
       {conCho && !moLyDo && (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Button size="sm" disabled={busy} onClick={() => void agent.duyet(m)}>
+          <Button size="sm" disabled={busy || !!khoaCung} onClick={() => void agent.duyet(m)}>
             {t("repoWs.agent.nutDuyet", "Duyệt")}
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => setMoLyDo(true)}>
@@ -506,11 +588,201 @@ export function DongModelBatDau({ m, dangChay }: { m: ThongTinModelBatDau | null
   );
 }
 
+/**
+ * (Đợt 11.8, UX-C06) banner "ngữ cảnh gần đầy" — máy chủ phát `ngu-canh-day` ĐÚNG MỘT lần khi lượt model xong mà ngữ cảnh ≥ 80 %.
+ * Chỉ NHẮC: việc tóm tắt vào NOTES.md vẫn do agent làm qua `write_file` + thẻ duyệt của NGƯỜI (diff đầy đủ); mở phiên mới là việc của người dùng.
+ */
+export function BannerNguCanhDay({ phanTram }: { phanTram: number | null }) {
+  const { t } = useTranslation();
+  if (phanTram === null) return null;
+  return (
+    <div data-testid="agent-ngu-canh-day" role="status" className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">
+        {t("repoWs.agent.nguCanhDay", "Ngữ cảnh đã dùng {{p}}% — nên nhờ agent tóm tắt tiến độ vào NOTES.md (bạn duyệt như mọi lần ghi tệp) rồi mở phiên mới.", { p: Math.round(phanTram) })}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * (Đợt 11.8) khối AGENT CON. `nhiemVu` / `tomTat` / chữ của con là chuỗi do MODEL viết ⇒ vẽ CHỮ THUẦN (text node, không markdown, không liên kết).
+ * Thẻ duyệt của con dùng CHÍNH `TheDuyetAgent` (duyệt bằng `aiAgent.duyet {actionId}` như thẻ thường — máy chủ định tuyến theo actionId).
+ * Nhãn "từ repo" (`tuRepo`) cạnh tên agent: người đọc biết định nghĩa này do tệp trong repo, không phải dựng sẵn.
+ */
+function cauLoiKeHoach(t: T, ma: string): string {
+  switch (ma) {
+    case "NOT_FOUND":
+      return t("repoWs.agent.keHoachDuyet.loi.notFound", "Không tìm thấy kế hoạch của lượt này (có thể lượt đã kết thúc).");
+    case "DA_QUYET":
+      return t("repoWs.agent.keHoachDuyet.loi.daQuyet", "Kế hoạch này đã có quyết định.");
+    case "PERMISSION_DENIED":
+      return t("repoWs.agent.keHoachDuyet.loi.quyen", "Bạn không có quyền duyệt kế hoạch này.");
+    case "LOI_CSDL":
+      return t("repoWs.agent.keHoachDuyet.loi.csdl", "Máy chủ chưa ghi được quyết định — thử lại.");
+    default:
+      // mã máy-đọc-được lạ ⇒ câu chung; chuỗi đã dịch (từ mapTrpcError) ⇒ hiện nguyên
+      return /^[A-Z][A-Z_]+$/.test(ma) ? t("repoWs.agent.keHoachDuyet.loi.chung", "Chưa gửi được quyết định — thử lại.") : ma;
+  }
+}
+
+/**
+ * (Đợt 11.3-C, UX-D02) thẻ "Kế hoạch chờ duyệt": người duyệt MỘT kế hoạch cụ thể (nhận diện bằng băm máy chủ) trước khi agent
+ * chạy tool ghi/lệnh kế tiếp. Các bước là chữ MODEL viết ⇒ text node trơn (không markdown). Duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh.
+ * Enter = Duyệt, Esc = Bác — CHỈ khi chính thẻ đang giữ tiêu điểm (không ăn phím của ô nhập/nút khác).
+ */
+function TheKeHoachChoDuyet({ m, agent, khongTinCay }: { m: TheKeHoachMuc; agent: HookAgent; khongTinCay: boolean }) {
+  const { t } = useTranslation();
+  const dangGui = m.trangThai === "dang-gui";
+  const cho = m.trangThai === "cho" || dangGui;
+  // mở lại trang / nối lại: hỏi sổ một lần cho mỗi thẻ đang chờ (băm) — thẻ có thể đã được quyết ở nơi khác
+  useEffect(() => {
+    if (m.trangThai === "cho") void agent.lamMoiKeHoach();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m.bam]);
+  const nhan: Record<string, string> = {
+    "da-duyet": t("repoWs.agent.keHoachDuyet.daDuyet", "Đã duyệt kế hoạch."),
+    bac: t("repoWs.agent.keHoachDuyet.bac", "Đã bác kế hoạch — agent sẽ không chạy tiếp tool ghi/lệnh theo kế hoạch này."),
+    "het-gio": t("repoWs.agent.keHoachDuyet.hetGio", "Hết thời gian chờ duyệt — kế hoạch bị bác."),
+    "da-doi": t("repoWs.agent.keHoachDuyet.daDoi", "Kế hoạch đã đổi — thẻ này không còn đúng."),
+    "het-hieu-luc": t("repoWs.agent.keHoachDuyet.hetHieuLuc", "Lượt đã kết thúc — không còn chờ duyệt."),
+  };
+  return (
+    <div
+      data-testid="agent-ke-hoach-duyet"
+      data-trang-thai={m.trangThai}
+      data-bam={m.bam}
+      tabIndex={cho ? 0 : -1}
+      aria-label={t("repoWs.agent.keHoachDuyet.tieuDe", "Kế hoạch chờ duyệt")}
+      onKeyDown={(e) => {
+        // `e.repeat`: giữ phím Enter/Esc không được bắn lặp (mỗi lần lặp là một lượt gửi với thẻ cũ ⇒ tiếng ồn lỗi DA_QUYET).
+        if (!cho || dangGui || e.repeat || e.target !== e.currentTarget) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void agent.quyetKeHoach(m, "duyet");
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          void agent.quyetKeHoach(m, "bac");
+        }
+      }}
+      className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-amber-800 dark:bg-amber-950/20"
+    >
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-medium text-amber-900 dark:text-amber-200">
+        <ListTodo className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>{t("repoWs.agent.keHoachDuyet.tieuDe", "Kế hoạch chờ duyệt")}</span>
+        <span className="tabular-nums text-[11px] font-normal text-muted-foreground">{t("repoWs.agent.keHoachDuyet.soBuoc", "{{n}} bước", { n: m.viec.length })}</span>
+      </div>
+      {khongTinCay && (
+        <p data-testid="agent-ke-hoach-khong-tin-cay" className="mb-1 flex items-start gap-1 rounded border border-red-300 bg-red-50 px-1.5 py-1 text-[11px] text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+          <span>
+            {t("repoWs.agent.keHoachDuyet.khongTinCay", "KHÔNG TIN CẬY: lượt này đã đọc nội dung đáng ngờ hoặc dùng agent từ repo — kế hoạch có thể bị nội dung đó dẫn dắt. Đọc kỹ từng bước trước khi duyệt.")}
+          </span>
+        </p>
+      )}
+      <ol className="list-decimal space-y-0.5 pl-5">
+        {m.viec.map((v, i) => (
+          <li key={i} className="min-w-0 whitespace-pre-wrap break-words">
+            {v.noiDung}
+          </li>
+        ))}
+      </ol>
+      {cho && (
+        <>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {t("repoWs.agent.keHoachDuyet.giaiThich", "Duyệt kế hoạch chưa duyệt từng thẻ ghi/lệnh — mỗi thẻ vẫn cần bạn duyệt riêng.")}
+          </p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Button size="sm" disabled={dangGui} data-testid="agent-ke-hoach-duyet-nut-duyet" onClick={() => void agent.quyetKeHoach(m, "duyet")}>
+              {dangGui ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+              {t("repoWs.agent.keHoachDuyet.nutDuyet", "Duyệt kế hoạch")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={dangGui} data-testid="agent-ke-hoach-duyet-nut-bac" onClick={() => void agent.quyetKeHoach(m, "bac")}>
+              {t("repoWs.agent.keHoachDuyet.nutBac", "Bác kế hoạch")}
+            </Button>
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">{t("repoWs.agent.keHoachDuyet.phim", "Khi thẻ này đang được chọn: Enter = duyệt · Esc = bác.")}</p>
+        </>
+      )}
+      {m.trangThai === "da-duyet" && (
+        <p data-testid="agent-ke-hoach-ket-qua" className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+          <Check className="h-3 w-3" aria-hidden />
+          {nhan["da-duyet"]}
+        </p>
+      )}
+      {m.trangThai !== "da-duyet" && !cho && (
+        <p data-testid="agent-ke-hoach-ket-qua" className="mt-1 text-[11px] text-muted-foreground">{nhan[m.trangThai] ?? ""}</p>
+      )}
+      {m.maLoi && cho && (
+        <p data-testid="agent-ke-hoach-loi" role="alert" className="mt-1 text-[11px] text-red-700 dark:text-red-300">{cauLoiKeHoach(t, m.maLoi)}</p>
+      )}
+    </div>
+  );
+}
+
+export function KhoiAgentCon({ m, agent, yeuCauBac }: { m: MucAgentCon; agent: HookAgent; yeuCauBac?: { id: string; n: number } | null }) {
+  const { t } = useTranslation();
+  const ds = m.tt.dongThoiGian;
+  return (
+    <div data-testid="agent-con" data-run-id-con={m.runIdCon} data-trang-thai={m.trangThai} className="ml-3 space-y-1.5 border-l-2 border-primary/40 pl-2">
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+        <span data-testid="agent-con-ten" className="font-medium">
+          {t("repoWs.agent.con.tieuDe", "Agent con")}: {m.agent}
+        </span>
+        {m.nguon === "tuRepo" && (
+          <span data-testid="agent-con-tu-repo" className="rounded border border-sky-300 bg-sky-50 px-1 text-[11px] text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+            {t("repoWs.agent.con.tuRepo", "từ repo")}
+          </span>
+        )}
+        <span className="rounded border px-1 text-[11px] text-muted-foreground">{m.cheDo === "sua" ? t("repoWs.agent.con.sua", "sửa") : t("repoWs.agent.con.hoi", "hỏi")}</span>
+        {m.trangThai === "chay" ? (
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            {t("repoWs.agent.con.dangChay", "đang chạy")}
+          </span>
+        ) : (
+          <span data-testid="agent-con-ket-thuc" className="text-[11px] text-muted-foreground">
+            {m.lyDo ? cauLyDoDung(t, m.lyDo) : ""}
+          </span>
+        )}
+      </div>
+      <p data-testid="agent-con-nhiem-vu" className="whitespace-pre-wrap break-words text-[12px] text-muted-foreground">{m.nhiemVu}</p>
+      {ds.map((x, i) => {
+        switch (x.kieu) {
+          case "chu":
+            return (
+              <div key={i} data-testid="agent-con-chu" className="whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 text-[12px]">
+                {x.noiDung}
+              </div>
+            );
+          case "tool":
+            return <DongTool key={`t-${x.id}-${i}`} m={x} />;
+          case "duyet":
+            return <TheDuyetAgent key={`d-${x.id}-${i}`} m={x} agent={agent} yeuCauBac={yeuCauBac} khoa={khoaTheCon(m.runIdCon, x.id)} />;
+          case "loi":
+            return (
+              <p key={i} data-testid="agent-con-loi" className="break-words text-[12px] text-red-700 dark:text-red-300">
+                {x.thongDiep}
+              </p>
+            );
+          default:
+            return null;
+        }
+      })}
+      {m.trangThai === "xong" && m.tomTat && (
+        <p data-testid="agent-con-tom-tat" className="whitespace-pre-wrap break-words rounded border px-2 py-1 text-[12px]">{m.tomTat}</p>
+      )}
+    </div>
+  );
+}
+
 export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTep: (path: string) => void }) {
   const { t } = useTranslation();
   const s = agent.trangThai;
   const ds = s.dongThoiGian;
   const choPhanHoi = viTriTraLoiCuoi(s);
+  const [yeuCauBac, setYeuCauBac] = useState<{ id: string; n: number } | null>(null);
   const coGi = ds.length > 0 || !!agent.luotDangChayCu || agent.matKetNoi !== null;
   if (!coGi) return null;
 
@@ -530,6 +802,9 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
       )}
 
       <BangKeHoach viec={s.keHoach} />
+
+      <BannerNguCanhDay phanTram={s.nguCanhDay} />
+      <TongQuanDuyet agent={agent} onYeuCauBac={(id) => setYeuCauBac((p) => ({ id, n: (p?.n ?? 0) + 1 }))} />
 
       <DongModelBatDau m={s.modelBatDau} dangChay={s.dangChay} />
 
@@ -592,7 +867,11 @@ export function DongThoiGianAgent({ agent, onMoTep }: { agent: HookAgent; onMoTe
           case "tool":
             return <DongTool key={`t-${m.id}-${i}`} m={m} />;
           case "duyet":
-            return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} />;
+            return <TheDuyetAgent key={`d-${m.id}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
+          case "ke-hoach-duyet":
+            return <TheKeHoachChoDuyet key={`k-${m.bam}`} m={m} agent={agent} khongTinCay={s.daHaTuTri || ds.some((x) => x.kieu === "canh-bao" || (x.kieu === "con" && x.nguon === "tuRepo"))} />;
+          case "con":
+            return <KhoiAgentCon key={`c-${m.runIdCon}-${i}`} m={m} agent={agent} yeuCauBac={yeuCauBac} />;
           case "nho":
             return <TheDeXuatNho key={`n-${m.id}-${i}`} m={m} agent={agent} />;
           case "canh-bao":

@@ -224,10 +224,10 @@ describe("webview agent — hành vi", () => {
     expect(w.daGui.at(-1)).toEqual({ loai: "ag_hoan_tac" });
   });
 
-  it("★★ lỗi thiếu token ⇒ nút 'Đăng nhập AI Local (device flow)' gửi ag_dang_nhap_thiet_bi", () => {
+  it("★★ lỗi thiếu token ⇒ nút 'Đăng nhập Thợ Cả (device flow)' gửi ag_dang_nhap_thiet_bi", () => {
     const w = chay();
     w.banTin({ loai: "ag_loi", thongDiep: "Chưa có token", ma: "CHUA_CO_TOKEN" });
-    const nutDn = tatCa(w.nut("hoi-thoai")).find((p) => p.textContent === "Đăng nhập AI Local (device flow)")!;
+    const nutDn = tatCa(w.nut("hoi-thoai")).find((p) => p.textContent === "Đăng nhập Thợ Cả (device flow)")!;
     nutDn.bam();
     expect(w.daGui.at(-1)).toEqual({ loai: "ag_dang_nhap_thiet_bi" });
     expect(w.nut("nut-token").hidden).toBe(false);

@@ -65,7 +65,7 @@ import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknow
  * khoá số giữa robot và OT-adapter). Chỉ bản ghi status='active' + chưa hết hạn mới
  * commission một robot cho real-motion.
  */
-const robotCommissioningRecords = pgTable("robot_commissioning_records", {
+export const robotCommissioningRecords = pgTable("robot_commissioning_records", {
   id: serial("id").primaryKey(),
   robotId: integer("robotId").notNull(),
   status: varchar("status", { length: 16 }).default("active").notNull(),
