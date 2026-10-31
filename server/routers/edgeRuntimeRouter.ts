@@ -41,6 +41,7 @@ import {
 // exist for them here either (assign / sync are cross-factory mutations; nodeStatus lists only visible runs).
 import { filterRunsVisibleTo, runIdVisibleTo } from "../services/orchestration/foe/foeEngine";
 import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
+import { chiTietKyThuatCua, cheHangRun } from "./_chiTietKyThuat"; // C2 fix 4 — lỗi run (văn bản driver) chỉ cho kỹ sư canEdit
 
 const scopeOf = (user: { id: number; role: string }) => resolveUserFoeScope({ id: user.id, role: String(user.role) });
 /** The coordinator's own answer for a missing run (disabled first, as it does). */
@@ -81,7 +82,10 @@ export const edgeRuntimeRouter = router({
       const node = await getNode(input.code);
       if (!node) return { node: null, runs: [] };
       const runs = await filterRunsVisibleTo(await listRunsForNode(node.id), scopeOf(ctx.user)); // E2 fix (R-5-d)
-      return { node, runs };
+      // SCADA R1b-2b-2b A — C2 fix 4 (điều phối 2026-11-01; census bề mặt tìm ra): hàng run NGUYÊN (error / contextJson có thể mang văn bản driver,
+      // vd "failed on edge node X: connect ECONNREFUSED host:port") ⇒ người không được xem chi tiết kỹ thuật nhận MÃ (`cheHangRun`, cùng getRun).
+      const xemChiTiet = runs.length > 0 ? await chiTietKyThuatCua(ctx) : false;
+      return { node, runs: runs.map((r) => cheHangRun(r, xemChiTiet)) };
     }),
 
   /**

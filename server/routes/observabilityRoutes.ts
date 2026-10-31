@@ -39,12 +39,13 @@ export function registerObservabilityRoutes(app: express.Express): void {
     const auth = await requirePrivileged(req);
     if (!auth.ok) return res.status(auth.status).json({ success: false, message: auth.message });
     try {
-      const [{ getStatus: storeForwardStatus }, { listSupervisorStatuses }, sloMod, { decisionRingInfo }] =
+      const [{ getStatus: storeForwardStatus }, { listSupervisorStatuses }, sloMod, { decisionRingInfo }, { chiTietKyThuatCua, maLoiAdapterCua }] =
         await Promise.all([
           import("../services/ot/storeForward"),
           import("../services/ot/otManager"),
           import("../services/observability/sloAlerting"),
           import("../services/observability/decisionTrace"),
+          import("../routers/_chiTietKyThuat"), // C2 fix 3 — MỘT luật chi tiết kỹ thuật
         ]);
 
       const storeForward = storeForwardStatus();
@@ -53,6 +54,14 @@ export function registerObservabilityRoutes(app: express.Express): void {
       const ring = decisionRingInfo();
 
       const connectedSupervisors = supervisors.filter((s) => s.connected).length;
+      // SCADA R1b-2b-2b A — C2 fix 3 (điều phối 2026-10-31, KD-2bA 2.1, "né đường vòng"): CÙNG luật chi tiết kỹ thuật với tRPC
+      // `systemHealth.connectionSupervisors` — cổng này nhận cả vai `supervisor` (không phải người xem chi tiết kỹ thuật) ⇒ người không phải
+      // (admin|engineer + machine_control.canEdit) nhận `activeEndpoint` = null và `lastError` = MÃ đã làm sạch (`maLoiAdapterCua`, không host:port).
+      // Chỉ hỏi quyền khi có supervisor (HA tắt ⇒ danh sách rỗng, không thêm lượt DB); không có userId ⇒ bị che (fail-closed).
+      const xemChiTiet =
+        supervisors.length > 0 && auth.userId != null && auth.role
+          ? await chiTietKyThuatCua({ user: { id: auth.userId, role: auth.role } })
+          : false;
       // Overall status: worst of the contributing signals (best-effort rollup).
       const degraded =
         sloHealth.worstSeverity === "warning" ||
@@ -89,11 +98,11 @@ export function registerObservabilityRoutes(app: express.Express): void {
             protocol: s.protocol,
             state: s.state,
             connected: s.connected,
-            activeEndpoint: s.activeEndpoint,
+            activeEndpoint: xemChiTiet ? s.activeEndpoint : null,
             activeLabel: s.activeLabel,
             reconnects: s.reconnects,
             failovers: s.failovers,
-            lastError: s.lastError,
+            lastError: xemChiTiet ? s.lastError : maLoiAdapterCua(s.lastError, !s.connected),
             lastConnectedAt: s.lastConnectedAt,
           })),
         },

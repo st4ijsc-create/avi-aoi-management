@@ -184,7 +184,7 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               </TableCell>
               <TableCell>
                 <div className="text-sm">{h.protocol}</div>
-                <div className="max-w-[220px] truncate text-xs text-muted-foreground" title={h.endpoint}>
+                <div className="max-w-[220px] truncate text-xs text-muted-foreground" title={h.endpoint ?? undefined}>
                   {h.endpoint}
                 </div>
               </TableCell>

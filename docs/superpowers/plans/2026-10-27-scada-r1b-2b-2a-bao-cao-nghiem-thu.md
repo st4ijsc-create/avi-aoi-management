@@ -7,7 +7,7 @@
 
 _(Task 11)_
 
-**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2.
+**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2. C1 + T2 + T2B lên main `cde649dda`; T3A + 3B-0 (bàn giao `34491c975`) lên main; lô 3 — T3 + vòng sửa 1/2 + 3B-0 polish + T3C + polish + T3D (bàn giao `815ff1303`) — lên main `32f9cb607` (cổng dieu-phoi xanh toàn bộ, cùng B-T8 scada-ui `23d74adf2`).
 
 ## 1. Ma trận ô — `server/services/scada/r1b2b2aNghiemThu.db.test.ts`
 
@@ -189,6 +189,8 @@ _(Task 11)_
   cùng các biến `OT_ADAPTER_START_TIMEOUT_MS`, `OT_LEGACY_RECONNECT_MS`, `OT_CONN_HA_BACKOFF_MS`, `OT_CONN_HA_BACKOFF_MAX_MS` và
   `OT_CONN_HA_HEALTH_INTERVAL_MS`. Giá trị không hữu hạn, ≤ 0 hoặc > 2^31−1 − 10 000 thì dùng giá trị mặc định, và log in `[OT] env … is not a valid timeout`
   một lần cho mỗi cặp (biến, giá trị). Thấy dòng log này thì phải sửa env, vì giá trị đó không có hiệu lực.
+- (T3 fix 1, kiem-dinh) **Đọc env chặt hơn trước:** các biến trên trước đây đọc bằng `parseInt` ⇒ `"30s"` được hiểu là 30 ms, `"1500.7"` là 1500; nay đọc bằng `Number` ⇒ `"30s"` không hợp lệ (mặc định + cảnh báo), `"1500.7"` giữ nguyên, `"5e3"` = 5000. Vận hành nào đặt env có hậu tố đơn vị phải bỏ hậu tố.
+- (T3C) **Lưu tag S7 chặt hơn:** từ chối bit ngoài 0..7, vùng `MX` / `PQ` / `PI`, và tag `writable` trên địa chỉ mảng (ghi mảng qua nodes7 cắt lặng / ghi rác mà vẫn báo ok). Tag đã lưu như vậy được đánh dấu ở scadaDiag ("Lỗi gần nhất") lúc khởi động; ghi tới chúng bị từ chối, 0 gói. DEV 2026-10-31: 0 hàng bị ảnh hưởng (3 tag S7, đều `DB1,X0.0` chỉ đọc).
 
 ## 7. Bảng số đo
 

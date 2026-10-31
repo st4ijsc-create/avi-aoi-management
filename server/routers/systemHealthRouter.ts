@@ -28,6 +28,7 @@ import { sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { idsAdapterTrongPhamVi } from "./_adapterPhamVi";
+import { chiTietKyThuatCua, maLoiAdapterCua } from "./_chiTietKyThuat";
 import { getStatus as getStoreForwardStatus } from "../services/ot/storeForward";
 import { listSupervisorStatuses, isConnHaEnabled, isOtRunning } from "../services/ot/otManager";
 import { getDinov2ModelHealth } from "../services/aiImageEmbedding";
@@ -83,10 +84,21 @@ export const systemHealthRouter = router({
     .query(async ({ ctx }) => {
       // phạm vi người dùng (L6c 2026-10-25): chỉ adapter gắn máy trong phạm vi (đọc RAM, lọc mảng — không thêm truy vấn theo hàng)
       const adapters = await idsAdapterTrongPhamVi(ctx);
+      const supervisors = listSupervisorStatuses().filter((s) => adapters === null || adapters.has(s.adapterId));
+      // SCADA R1b-2b-2b A — C2 fix 1 (dieu-phoi 2026-10-31, KD-2bA 2.1): CÙNG luật chi tiết kỹ thuật với redactAdapterRow / scadaDiag.danhSach —
+      // người không phải (admin|engineer + machine_control.canEdit) nhận activeEndpoint = null và lastError = MÃ đã làm sạch (không host:port).
+      // Chỉ hỏi quyền khi có ít nhất một supervisor (HA tắt ⇒ danh sách rỗng, không thêm lượt DB).
+      const xemChiTiet = supervisors.length > 0 ? await chiTietKyThuatCua(ctx) : false;
       return {
         haEnabled: isConnHaEnabled(),
         otRunning: isOtRunning(),
-        supervisors: listSupervisorStatuses().filter((s) => adapters === null || adapters.has(s.adapterId)),
+        supervisors: xemChiTiet
+          ? supervisors
+          : supervisors.map((s) => ({
+              ...s,
+              activeEndpoint: null,
+              lastError: maLoiAdapterCua(s.lastError, !s.connected),
+            })),
       };
     }),
 
