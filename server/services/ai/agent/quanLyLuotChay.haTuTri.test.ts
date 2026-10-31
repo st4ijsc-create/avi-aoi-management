@@ -125,8 +125,10 @@ describe("L3b — hạ tự trị khi phiên có lượt model ngoài", () => {
 
   it("census — HAI lớp: lõi nhận haTuTriDau VÀ bộ thực thi nhận haTuTri, cùng từ cờ phiên", () => {
     const s = fs.readFileSync(path.join(__dirname, "quanLyLuotChay.ts"), "utf8");
-    expect(s).toMatch(/\.\.\.\(haTuTriPhien \? \{ haTuTriDau: true \} : \{\}\)/);
-    expect(s).toMatch(/\.\.\.\(haTuTriPhien \? \{ haTuTri: true \} : \{\}\)/);
+    // (Đợt 12 H5.4) MỘT cờ chung = cờ phiên (L3b) ∨ nhiễm thừa hưởng từ lượt nguồn (vá tiếp tục): cấp cho CẢ HAI lớp
+    expect(s).toMatch(/const haTuTriDauChung = haTuTriPhien \|\| /);
+    expect(s).toMatch(/\.\.\.\(haTuTriDauChung \? \{ haTuTriDau: true \} : \{\}\)/);
+    expect(s).toMatch(/\.\.\.\(haTuTriDauChung \? \{ haTuTri: true \} : \{\}\)/);
     const b = fs.readFileSync(path.join(__dirname, "boThucThiMayChu.ts"), "utf8");
     expect(b).toMatch(/cauHinh\.haTuTri !== true/);
   });
