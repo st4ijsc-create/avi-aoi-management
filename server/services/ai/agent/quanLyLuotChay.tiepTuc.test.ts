@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 let REPO = "";
 let KHO = "";
 let KHOA_CU: string | undefined;
+let VAI_TRO_CU: string | undefined;
 let uA = 0;
 let uB = 0;
 const DU_AN = "t12h54";
@@ -51,6 +52,9 @@ beforeAll(async () => {
   process.env.AI_CHECKPOINT_DIR = KHO;
   KHOA_CU = process.env.SECRET_ENCRYPTION_KEY;
   process.env.SECRET_ENCRYPTION_KEY = "luoi-checkpoint-khoa-thu-0123456789abcdef";
+  // lưới chạy hàng chục lượt của cùng một người trong vài giây: tắt cổng theo-vai-trò (có trần tần suất) để chỉ đo H5.4
+  VAI_TRO_CU = process.env.AI_AGENT_THEO_VAI_TRO;
+  process.env.AI_AGENT_THEO_VAI_TRO = "false";
   process.env.AI_REPO_SANDBOX_ROOTS = `${DU_AN}=T12H54|${REPO}`;
   const git = (...a: string[]) => execFileSync("git", ["-C", REPO, ...a], { encoding: "utf8" });
   git("init", "-q");
@@ -72,6 +76,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.AI_CHECKPOINT_DIR;
+  if (VAI_TRO_CU === undefined) delete process.env.AI_AGENT_THEO_VAI_TRO;
+  else process.env.AI_AGENT_THEO_VAI_TRO = VAI_TRO_CU;
   if (KHOA_CU === undefined) delete process.env.SECRET_ENCRYPTION_KEY;
   else process.env.SECRET_ENCRYPTION_KEY = KHOA_CU;
   delete process.env.AI_REPO_SANDBOX_ROOTS;
@@ -249,6 +255,32 @@ describe("★★★ VÁ AN TOÀN: lượt tiếp tục KHÔNG thừa hưởng t�
     const hang = (await (await getDb())!.select().from(aiAgentRuns).where(eq(aiAgentRuns.id, k.runId!)))[0]!;
     expect(hang.cheDo).toBe("hoi");
     await qlMoi.layLuotChay(k.runId!, uA)!.xong;
+  }, 120_000);
+
+  it("★★★ HAI LỚP hạ tự trị cho lượt có nhiễm thừa hưởng (đường nội bộ, chế độ tu-dong): ghi cần THẺ; ĐỐI CHỨNG không nhiễm ⇒ tu-dong tự áp ghi", async () => {
+    const cu = process.env.AI_CODING_TU_TRI_GHI;
+    process.env.AI_CODING_TU_TRI_GHI = "1";
+    const chayGhi = async (nhiem: { nguonDangNgo: string[]; haTuTri: boolean } | undefined) => {
+      const ql = taoQuanLyLuotChay({ goiModel: modelHam([() => ({ tool: [tc("w1", "write_file", { path: "src/hai-lop.txt", content: "x\n" })] }), () => ({ chu: "xong" })]) });
+      const kq = await ql.taoLuotChay({ user: NA(), cauHoi: "ghi thử", projectId: DU_AN, cheDo: "tu-dong" }, nhiem ? { nhiem } : undefined);
+      if (!kq.ok) throw new Error(kq.ma);
+      const ev: SuKienAgent[] = [];
+      ql.nghe(kq.luot.id, uA, 0, (m) => ev.push(m.suKien));
+      await choDen(async () => ev.some((e) => e.loai === "can-duyet") || ev.some((e) => e.loai === "xong"));
+      const daGhi = fs.existsSync(path.join(REPO, "src", "hai-lop.txt"));
+      const coThe = ev.some((e) => e.loai === "can-duyet");
+      ql.huy(kq.luot.id, uA);
+      await kq.luot.xong;
+      fs.rmSync(path.join(REPO, "src", "hai-lop.txt"), { force: true });
+      return { daGhi, coThe };
+    };
+    try {
+      expect(await chayGhi({ nguonDangNgo: ["src/doc-doc.md"], haTuTri: true })).toEqual({ daGhi: false, coThe: true });
+      expect(await chayGhi(undefined)).toEqual({ daGhi: true, coThe: false }); // đối chứng: không nhiễm ⇒ tự trị còn nguyên
+    } finally {
+      if (cu === undefined) delete process.env.AI_CODING_TU_TRI_GHI;
+      else process.env.AI_CODING_TU_TRI_GHI = cu;
+    }
   }, 120_000);
 
   it("sổ sự kiện quá dài: sự kiện NHIỄM ở giữa không bị cắt (suKienDeLuu)", () => {

@@ -790,6 +790,9 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
         const co = await (phuThuoc.phienCoLuotNgoai ?? phienCoLuotNgoaiThat)(user.id, y.sessionId).catch(() => null);
         haTuTriPhien = co !== false;
       }
+      // ★ MỘT cờ hạ tự trị từ ĐẦU lượt = phiên có lượt model ngoài (L3b) ∨ NHIỄM thừa hưởng từ lượt nguồn (vá tiếp tục H5.4): cấp cho cả lõi (`haTuTriDau`, lớp một) lẫn
+      //   bộ thực thi (`haTuTri`, lớp hai — thi hành không phụ thuộc lõi).
+      const haTuTriDauChung = haTuTriPhien || noiBo?.nhiem?.haTuTri === true;
 
       const dangCo = dangChayCuaNguoi.get(user.id);
       if (dangCo && theoId.has(dangCo)) return { ok: false, ma: "DANG_CO_LUOT_CHAY", http: HTTP_CUA_MA.DANG_CO_LUOT_CHAY, runId: dangCo };
@@ -904,7 +907,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
         ...(docTruocKhiGhiBat(process.env.AI_AGENT_DOC_TRUOC_KHI_GHI) ? { docTruocKhiGhi: true } : {}),
         // (Đợt 12 · H1.5) hạn giờ theo công cụ đọc/tìm — MẶC ĐỊNH TẮT
         ...(hanGioToolBat(process.env.AI_AGENT_TOOL_TIMEOUT) ? { hanGioTool: {} } : {}),
-        ...(haTuTriPhien ? { haTuTri: true } : {}),
+        ...(haTuTriDauChung ? { haTuTri: true } : {}),
       });
       // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
       if (!ngoai) {
@@ -1008,7 +1011,6 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
             // (Đợt 12 · H5.4) chụp lịch sử ở ranh giới an toàn (cờ AI_AGENT_TIEP_TUC) — che bí mật + trần ở `chuanBiBanLuu`; vượt trần ⇒ XOÁ bản lưu
             // (Vá an toàn H5.4) nhiễm thừa hưởng từ lượt nguồn (lượt tiếp tục)
             ...(noiBo?.nhiem && noiBo.nhiem.nguonDangNgo.length > 0 ? { nguonDangNgoDau: noiBo.nhiem.nguonDangNgo } : {}),
-            ...(noiBo?.nhiem?.haTuTri ? { haTuTriDau: true } : {}),
             ...(luuLich
               ? {
                   luuLichSu: async (b: { runId: string; buoc: number; tinNhan: TinNhan[] }) => {
@@ -1043,7 +1045,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
               // (L3b) nói thật ngay sau bat-dau: lượt này đã bị hạ tự trị vì phiên có lượt model ngoài
               if (haTuTriPhien && e.loai === "bat-dau") phat(s, { loai: "ha-tu-tri", lyDo: "phien-co-luot-ngoai", nguon: "phien", mau: [] });
             },
-            ...(haTuTriPhien ? { haTuTriDau: true } : {}),
+            ...(haTuTriDauChung ? { haTuTriDau: true } : {}),
             signal: boHuy.signal,
             gioiHan: capNgoai ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI } : phuThuoc.gioiHan,
             ngonNgu: lang,
