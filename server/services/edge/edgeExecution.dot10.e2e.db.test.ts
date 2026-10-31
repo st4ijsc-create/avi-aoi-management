@@ -170,37 +170,55 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
   });
 
   it("★ R-10-aq — the EDGE's OWN safety preflight (signed config, no DB): an e-stop raised after central's check and before the send ⇒ the motion is NOT sent", async () => {
+    // WHY NO DELAY: the old 600 ms hold of the authorize answer made the edge's own request time out under load and RE-ASK — the second
+    // answer came from central with the coil already raised (device_refused {safety}) or the run went HELD (centralUnreachable): three different
+    // outcomes, two of which proved nothing about the EDGE's preflight. Now the e-stop is raised INSIDE the tamper hook — i.e. after central has
+    // read the PLC clean and signed, BEFORE the answer is released to the edge (the answer is not sent until the hook returns). No sleep, no race.
+    // The test also knows whether it MEASURED anything: an attempt that ends held / centralUnreachable / without a central signature proved nothing ⇒
+    // retried (cap 2 extra attempts) and then FAILS with the reason — never green on "could not measure".
     const s = c.steps;
-    const before = motionsOf(edge, c.ids.robotA).length;
-    const id = await c.startRun("edgePreflight", [s.gate(), s.move("m1")]);
-    // the authorize answer is held 600 ms; while it is held (central has ALREADY read the PLC clean and signed) the e-stop is
-    // pressed — from then on only the EDGE's own preflight can see it
-    let authorized = 0;
-    c.front.delayMs.set(`^/runs/${id}/authorize$`, 600);
-    c.front.tamper.set(`^/runs/${id}/authorize$`, (answer) => {
-      if (answer?.ok === true) authorized++;
-      c.plc.coils.set(0, true); // coil:1 = e-stop ACTIVE
-      return undefined;
-    });
-    try {
-      await c.approveAtGate(id);
-      await waitFor(`run ${id} ended on the edge`, async () => ["failed", "held", "aborted"].includes((await c.run(id)).status) && (await c.assignment(id)).claimTokenHash === null, 60_000);
-    } catch (err) {
-      console.log("DIAG", authorized, JSON.stringify(await c.run(id)), JSON.stringify(await c.stepRows(id)), JSON.stringify(c.front.captured.filter((x) => x.path.includes(String(id))).map((x) => [x.path, x.status, JSON.stringify(x.answer).slice(0, 300), JSON.stringify(x.body).slice(0, 600)])));
-      throw err;
-    } finally {
-      c.front.delayMs.clear();
-      c.front.tamper.clear();
-      c.plc.coils.set(0, false);
+    const accepted = /^failed (SAFETY_BLOCKED|EDGE_DEVICE_REFUSED\(safety\))/; // both are the edge refusing for SAFETY before any send
+    const nao: string[] = [];
+    let proved = false;
+    for (let attempt = 1; attempt <= 3 && !proved; attempt++) {
+      const before = motionsOf(edge, c.ids.robotA).length;
+      const id = await c.startRun("edgePreflight" + attempt, [s.gate(), s.move("m1")]);
+      let signed = 0;
+      c.front.tamper.set(`^/runs/${id}/authorize$`, (answer) => {
+        if (answer?.ok === true) {
+          signed++;
+          c.plc.coils.set(0, true); // coil:1 = e-stop ACTIVE — only the EDGE's own preflight can see it from now on
+        }
+        return undefined;
+      });
+      try {
+        await c.approveAtGate(id);
+        await waitFor(`run ${id} ended on the edge`, async () => ["failed", "held", "aborted"].includes((await c.run(id)).status) && (await c.assignment(id)).claimTokenHash === null, 60_000);
+      } catch (err) {
+        console.log("DIAG", signed, JSON.stringify(await c.run(id)), JSON.stringify(await c.stepRows(id)), JSON.stringify(c.front.captured.filter((x) => x.path.includes(String(id))).map((x) => [x.path, x.status, JSON.stringify(x.answer).slice(0, 300), JSON.stringify(x.body).slice(0, 600)])));
+        throw err;
+      } finally {
+        c.front.tamper.clear();
+        c.plc.coils.set(0, false);
+      }
+      // SAFETY INVARIANTS hold in EVERY attempt, measured or not: never reached the robot, at most one authorisation row
+      expect(motionsOf(edge, c.ids.robotA).length, "attempt " + attempt + ": a motion reached the robot").toBe(before);
+      expect(await robotJobs(id)).not.toContain("custom:done:1");
+      const rows = Number((await c.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${id}`)[0].n);
+      expect(rows, "attempt " + attempt + ": authorisation rows").toBeLessThanOrEqual(1);
+      const m1 = (await c.stepRows(id)).find((r) => r.stepId === "m1");
+      const txt = `${m1?.status} ${m1?.error}`;
+      if (signed >= 1 && rows === 1 && accepted.test(txt)) {
+        // MEASURED: central's own check was clean (it signed) and the edge refused for SAFETY on its own. A 2nd /authorize is tolerated only because
+        // the row count above is exactly 1 (idempotent re-ask); it is logged so a real double-signing shows up.
+        if (signed > 1) console.log("[R-10-aq] edge re-asked /authorize " + signed + "x (1 authorisation row)");
+        proved = true;
+      } else {
+        nao.push(`attempt ${attempt}: signed=${signed} rows=${rows} m1="${txt.slice(0, 120)}"`);
+      }
     }
-    expect(authorized).toBe(1); // central's own preflight was clean: it signed
-    expect(motionsOf(edge, c.ids.robotA).length).toBe(before); // never reached the robot
-    const m1 = (await c.stepRows(id)).find((r) => r.stepId === "m1")!;
-    expect(`${m1.status} ${m1.error}`).toMatch(/SAFETY/);
-    // the authorisation WAS issued (central's view was clean) — and its result is the edge's refusal, never a send
-    expect(Number((await c.sql`SELECT count(*)::int AS n FROM edge_step_authorizations WHERE "runId" = ${id}`)[0].n)).toBe(1);
-    expect(await robotJobs(id)).not.toContain("custom:done:1");
-  }, 120_000);
+    expect(proved, "R-10-aq could not MEASURE the edge's own preflight in 3 attempts: " + nao.join(" | ")).toBe(true);
+  }, 240_000);
 
   it("★ central console MOTION on the edge-owned robot is refused (ROBOT_OWNED_BY_EDGE); nothing reaches the robot", async () => {
     const before = motionsOf(edge, c.ids.robotA).length;
