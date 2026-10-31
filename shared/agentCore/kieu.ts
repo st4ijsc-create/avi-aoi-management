@@ -5,6 +5,9 @@
  * Lưới `thuan.test.ts` canh bất biến đó.
  */
 
+import type { MaKhoiChen, NenBuocDo } from "./buocDo";
+import type { DemBaoCao } from "./giaoViec";
+
 // ─── Khuôn dây OpenAI (tool-calling gốc) ──────────────────────────────────────────────────────
 //
 // ⚠ PHẢI TƯƠNG THÍCH khuôn dây của `server/services/ai/nativeToolCalls.ts` (`WireToolCall`/`WireTool`).
@@ -182,6 +185,25 @@ export type SuKienAgent =
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number; cacheN?: number; promptN?: number }
   | { loai: "dang-cho-model"; phiaTruoc: number }
   /**
+   * (Đợt 12 · H0.2) BẢN GHI ĐO của MỖI lượt gọi model (phát ngay sau `usage` của lượt đó): băm system+tools, số tin, token ƯỚC LƯỢNG
+   * lúc gọi vs token THẬT (`vaoThat`), cache_n/prompt_n (vắng = không đo được, KHÔNG BIẾT ≠ 0), hành động nén, mã khối đã chèn.
+   * Chỉ số + mã — không nội dung. Không đổi byte gửi model. Của lượt GỐC; vòng con không phát ra ngoài (host lọc).
+   */
+  | {
+      loai: "buoc-do";
+      luot: number;
+      bamHeThong: string;
+      soTin: number;
+      tokenUoc: number;
+      vaoThat?: number;
+      cacheN?: number;
+      promptN?: number;
+      nen: NenBuocDo | null;
+      nhacDaChen: MaKhoiChen[];
+      /** (H1.3) lượt này đã tràn ngữ cảnh, lõi nén mạnh rồi gọi lại — `nen` là lần nén mạnh. */
+      cuuTran?: true;
+    }
+  /**
    * (Đợt 11.8, UX-C06) ngữ cảnh của lượt model vừa xong đã ≥ ngưỡng (`NGUONG_NGU_CANH_DAY_PHAN_TRAM`, 80 %): phát ĐÚNG MỘT lần mỗi lượt
    * chạy. UI hiện banner "tóm tắt sang NOTES.md + mở phiên mới"; ghi NOTES.md vẫn qua `write_file`/`edit_file` + thẻ duyệt của NGƯỜI.
    */
@@ -199,7 +221,7 @@ export type SuKienAgent =
    * được `xong`/`da-duyet`/`ke-hoach` của cha; `can-duyet` của con nằm trong `suKien` và mang `runIdCon` để host/UI định tuyến.
    */
   | { loai: "con-bat-dau"; runIdCon: string; agent: string; nguon: "dungSan" | "tuRepo"; sau: number; cheDo: CheDoAgent; nhiemVu: string }
-  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string }
+  | { loai: "con-xong"; runIdCon: string; lyDo: LyDoDung; tomTat?: string; baoCao?: DemBaoCao }
   | { loai: "su-kien-con"; runIdCon: string; suKien: SuKienAgent }
   /** `vetNgoai` (L3): chỉ lượt model ngoài, do HOST gắn (lõi không phát). */
   | { loai: "xong"; lyDo: LyDoDung; tomTat?: string; vetNgoai?: VetNgoaiLuot }
@@ -285,6 +307,9 @@ export class LoiModel extends Error {
     this.ma = opts.ma ?? (this.tamThoi ? "MODEL_TAM_THOI" : "MODEL_LOI");
   }
 }
+
+/** (Đợt 12 · H1.3) mã lỗi model "yêu cầu vượt cửa sổ ngữ cảnh" — host phân loại (`chuyenLoiModel`), lõi cứu một lần (`cuuTranNguCanh`). */
+export const MA_LOI_TRAN_NGU_CANH = "CONTEXT_OVERFLOW";
 
 export function laLoiTamThoi(e: unknown): boolean {
   return !!e && typeof e === "object" && (e as { tamThoi?: unknown }).tamThoi === true;

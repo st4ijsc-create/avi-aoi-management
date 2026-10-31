@@ -8,6 +8,9 @@
  *   2 lượt (assistant + kết quả tool của nó) gần nhất giữ nguyên văn; không đột biến đầu vào.
  *   ★ Đợt 11.0 (rà kiem-dinh, công tắc `AI_AGENT_GIU_NGHI` — mặc định bật ở server) — suy luận giữ trong lịch sử (`reasoning_content`, tới ~12k token/lượt) được
  *   TÍNH vào ước lượng, và khi vượt ngưỡng thì BỎ suy luận của lượt CŨ (cũ nhất trước, ngoài vùng giữ) TRƯỚC khi rút gọn kết quả tool.
+ * H0.3 · MODEL THẤY / CACHE: rút gọn kết quả tool CŨ (và bỏ suy luận cũ) SỬA GIỮA lịch sử ⇒ cache mất từ tin đầu bị sửa trở đi
+ *   (`prompt_n` tăng bằng phần đuôi sau điểm sửa, một lần); các lượt sau chỉ-nối-thêm lại trúng cache. Số liệu mỗi lần nén nằm ở
+ *   `buoc-do.nen` ({soNen, tokenTruoc, tokenSau}) — H1.1 (nén xuống mốc thấp) dựa vào đó để so trước/sau.
  * - Ước lượng token được TIÊM (server truyền `uocLuongSoToken` của aiLlamaServerClient); mặc định cùng công thức
  *   2,8 ký tự/token để lõi tự đứng được ở extension VSCode.
  */
@@ -47,6 +50,18 @@ export interface TuyChonNen {
   uocLuong?: UocLuongToken;
   /** tỉ lệ ngân sách kích hoạt nén (mặc định 0,7) */
   nguong?: number;
+  /**
+   * (Đợt 12 · H1.1) tỉ lệ ngân sách nén TỚI khi đã kích hoạt (mặc định = `nguong`: nén vừa đủ dưới ngưỡng, như cũ từng byte).
+   * Đặt thấp hơn (~0,45–0,5) ⇒ mỗi lần nén đi sâu một lần, rồi lịch sử CHỈ-NỐI-THÊM vài chục bước mới chạm ngưỡng lại — thay vì nén ở
+   * gần như MỌI bước (mỗi lần sửa giữa lịch sử = mất cache tiền tố từ chỗ sửa). Bị kẹp ≤ `nguong`.
+   */
+  mucDich?: number;
+  /**
+   * (Đợt 12 · H1.2) NEO bằng số THẬT: `soTin` tin đầu của `tinNhan` đã được model đếm — tổng `token` (= `vao` của lượt gọi trước + `ra` của tin assistant
+   * sinh ra). Ước lượng = `token` + ước lượng CHỈ phần tin phía sau. Bỏ ước lượng thuần 2,8 ký tự/token cho phần lớn lịch sử (sai số
+   * theo ngôn ngữ/mã/JSON, và nó không thấy system+schema công cụ). Vắng ⇒ như cũ từng byte.
+   */
+  neo?: { soTin: number; token: number };
   /** số lượt assistant gần nhất giữ nguyên (mặc định 2) */
   soLuotGiu?: number;
 }
@@ -68,11 +83,53 @@ function duongTuThamSo(args: string): string {
   }
 }
 
+/**
+ * (Đợt 12 · H1.3) NÉN MẠNH để cứu một yêu cầu bị từ chối vì TRÀN cửa sổ ngữ cảnh: bỏ MỌI suy luận cũ và rút MỌI kết quả tool trước "bước cuối"
+ * (= tin assistant cuối cùng và các tin sau nó, giữ nguyên văn). Bất biến như `nenLichSu`: giữ system + mọi tin không phải `tool`, không xoá tin
+ * (tool_call_id luôn khớp), không đột biến đầu vào. Gọi lại CHỈ khi `tokenSau < tokenTruoc` (host/lõi tự kiểm).
+ */
+export function nenManh(tinNhan: TinNhan[], tc: { uocLuong?: UocLuongToken } = {}): KetQuaNen {
+  const uoc = tc.uocLuong ?? uocLuongTokenMacDinh;
+  const tokenTruoc = uocLuongTinNhan(tinNhan, uoc);
+  let cuoi = -1;
+  for (let i = tinNhan.length - 1; i >= 0; i--) {
+    if (tinNhan[i]!.role === "assistant") {
+      cuoi = i;
+      break;
+    }
+  }
+  const goiTheoId = new Map<string, { ten: string; duong: string }>();
+  for (const m of tinNhan)
+    for (const t of m.tool_calls ?? []) goiTheoId.set(t.id, { ten: t.function.name, duong: duongTuThamSo(t.function.arguments) });
+  const ra = tinNhan.slice();
+  let soNen = 0;
+  for (let i = 0; i < cuoi; i++) {
+    const m = ra[i]!;
+    if (m.role === "assistant" && m.reasoning_content) {
+      const { reasoning_content: _bo, ...conLai } = m;
+      ra[i] = conLai;
+      soNen++;
+    } else if (m.role === "tool" && !m.content.startsWith("[compacted:")) {
+      const goi = m.tool_call_id ? goiTheoId.get(m.tool_call_id) : undefined;
+      const ten = goi?.ten ?? m.name ?? "tool";
+      const nhan = `[compacted: ${ten}${goi?.duong ? ` ${goi.duong}` : ""} — ${m.content.length} chars; call the tool again if you need it]`;
+      if (nhan.length >= m.content.length) continue;
+      ra[i] = { ...m, content: nhan };
+      soNen++;
+    }
+  }
+  return { tinNhan: ra, soNen, tokenTruoc, tokenSau: uocLuongTinNhan(ra, uoc) };
+}
+
 export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   const uoc = tc.uocLuong ?? uocLuongTokenMacDinh;
   const nguong = Math.floor(tc.nganSachToken * (tc.nguong ?? 0.7));
+  const dich = Math.min(nguong, Math.floor(tc.nganSachToken * (tc.mucDich ?? tc.nguong ?? 0.7)));
   const soLuotGiu = tc.soLuotGiu ?? 2;
-  const tokenTruoc = uocLuongTinNhan(tinNhan, uoc);
+  const tokenTruoc =
+    tc.neo && tc.neo.soTin > 0 && tc.neo.soTin <= tinNhan.length && Number.isFinite(tc.neo.token) && tc.neo.token > 0
+      ? Math.round(tc.neo.token) + uocLuongTinNhan(tinNhan.slice(tc.neo.soTin), uoc)
+      : uocLuongTinNhan(tinNhan, uoc);
   if (tokenTruoc <= nguong) return { tinNhan: tinNhan.slice(), soNen: 0, tokenTruoc, tokenSau: tokenTruoc };
 
   // ranh giới bảo vệ: chỉ số của assistant thứ `soLuotGiu` tính từ cuối — mọi tin từ đó trở đi giữ nguyên
@@ -87,7 +144,7 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   let tong = tokenTruoc;
   let soNen = 0;
   // (1) bỏ suy luận giữ lại của lượt CŨ trước — rẻ nhất để mất (model đã dùng nó để ra câu trả lời đang nằm trong `content`)
-  for (let i = 0; i < ranhGioi && tong > nguong; i++) {
+  for (let i = 0; i < ranhGioi && tong > dich; i++) {
     const m = ra[i];
     if (m.role !== "assistant" || !m.reasoning_content) continue;
     tong -= uoc(m.reasoning_content);
@@ -96,7 +153,7 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
     soNen++;
   }
   // (2) rồi mới rút gọn kết quả tool cũ
-  for (let i = 0; i < ranhGioi && tong > nguong; i++) {
+  for (let i = 0; i < ranhGioi && tong > dich; i++) {
     const m = ra[i];
     if (m.role !== "tool" || m.content.startsWith("[compacted:")) continue;
     const goi = m.tool_call_id ? goiTheoId.get(m.tool_call_id) : undefined;

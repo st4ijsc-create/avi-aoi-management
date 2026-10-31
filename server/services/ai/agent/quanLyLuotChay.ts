@@ -32,6 +32,7 @@ import {
   chayVongAgent,
   kiemDacTaBat,
   giuNghiBat,
+  nenMocDich,
   dungKhoiNguCanhDuAn,
   type CauHinhGiaoViec,
   type CheDoAgent,
@@ -62,7 +63,7 @@ import {
   type TrangThaiLuotChay,
 } from "../../../db/aiAgentRuns";
 import type { CopilotUser } from "../../aiCopilotActions";
-import { taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
+import { docTruocKhiGhiBat, hanGioToolBat, taoBoThucThiMayChu, type CongCheckpoint, type PhuThuocBoThucThi } from "./boThucThiMayChu";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
 import { giaiChonModel } from "../chonModel/giaiChonModel";
 import { layPhuThuocDanhMucMacDinh } from "../chonModel/danhMuc";
@@ -109,6 +110,11 @@ const GIU_SAU_KHI_XONG_MS = 30 * 60_000;
 /** Sự kiện lưu vào sổ: trần số mục + trần chữ mỗi mục gộp. */
 export const TRAN_SU_KIEN_LUU = 3_000;
 const TRAN_CHU_MOI_MUC_LUU = 20_000;
+/**
+ * (Đợt 12 · H0.2) `buoc-do` (1 mục/lượt model) được MIỄN cắt "giữa" khi sổ quá `TRAN_SU_KIEN_LUU`: đo trước/sau cần ĐỦ bước.
+ * Trần riêng 400 bước (mới nhất giữ; vượt ⇒ bỏ bước cũ nhất của khoảng bị cắt — lượt thật hiếm khi tới 400 lượt model).
+ */
+export const TRAN_BUOC_DO_LUU = 400;
 /** Nhịp ghi sổ cho sự kiện thường (sự kiện đổi trạng thái ghi NGAY). */
 const NHIP_LUU_MS = 5_000;
 
@@ -135,7 +141,7 @@ export interface MucSuKien {
   suKien: SuKienAgent;
 }
 
-interface MucDem {
+export interface MucDem {
   seq: number;
   suKien: SuKienAgent;
   /** Chỉ cho mục `chu`/`nghi` đã gộp: [seq của mảnh, độ dài cộng dồn SAU mảnh]. */
@@ -262,7 +268,7 @@ export interface PhuThuocQuanLy {
   /** (Đợt 9) phụ thuộc của chọn model theo vai trò + gating (lưới thay) — chỉ dùng khi `AI_AGENT_THEO_VAI_TRO` bật. */
   vaiTro?: Partial<PhuThuocVaiTro>;
   /** (Đợt 11.8) giao việc cho agent con. `bat` vắng ⇒ đọc cờ AI_AGENT_GIAO_VIEC=1 (MẶC ĐỊNH TẮT); `tra` thay bộ tra định nghĩa (lưới). */
-  giaoViec?: { bat?: boolean; doSauToiDa?: number; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
+  giaoViec?: { bat?: boolean; doSauToiDa?: number; baoCao?: boolean; tra?: (y: { userId: number; projectId: string; gocDuAn: string }) => CauHinhGiaoViec["tra"] };
   /** (Đợt 11.3-C) cổng duyệt kế hoạch. `bat` vắng ⇒ đọc cờ AI_AGENT_CONG_KE_HOACH=1 (MẶC ĐỊNH TẮT); `choDuyet` thay móc chờ người (lưới). */
   congKeHoach?: { bat?: boolean; choDuyet?: (y: { userId: number; runId: string }) => NonNullable<Parameters<typeof chayVongAgent>[0]["congKeHoach"]>["choDuyet"] };
   /** (Đợt 10.1) phụ thuộc danh mục cho `chonModel` (lưới thay; mặc định `layPhuThuocDanhMucMacDinh`). */
@@ -376,7 +382,15 @@ export function suKienDeLuu(dem: readonly MucDem[]): MucSuKien[] {
   };
   if (dem.length <= TRAN_SU_KIEN_LUU) return dem.map(cat);
   const dau = Math.floor(TRAN_SU_KIEN_LUU / 4);
-  return [...dem.slice(0, dau), ...dem.slice(dem.length - (TRAN_SU_KIEN_LUU - dau))].map(cat);
+  const giuDau = dem.slice(0, dau);
+  const giuDuoi = dem.slice(dem.length - (TRAN_SU_KIEN_LUU - dau));
+  // (H0.2) `buoc-do` nằm trong khoảng bị cắt ⇒ giữ lại (mới nhất trước), theo thứ tự seq, trong trần riêng.
+  const trongDuoi = giuDuoi.filter((m) => m.suKien.loai === "buoc-do").length;
+  const trongDau = giuDau.filter((m) => m.suKien.loai === "buoc-do").length;
+  const conChoDuoc = Math.max(0, TRAN_BUOC_DO_LUU - trongDau - trongDuoi);
+  const giua = dem.slice(dau, dem.length - giuDuoi.length).filter((m) => m.suKien.loai === "buoc-do");
+  const giuGiua = conChoDuoc > 0 ? giua.slice(-conChoDuoc) : [];
+  return [...giuDau, ...giuGiua, ...giuDuoi].map(cat);
 }
 
 function gocTuongDoiChoPrompt(goc: string): string {
@@ -807,6 +821,10 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
         checkpoint: congCheckpoint(user.id),
         phuThuoc: phuThuocBo,
         coGiaoViec,
+        // (Đợt 12 · H1.4) không ghi đè tệp chưa đọc / đã đổi từ lúc đọc — MẶC ĐỊNH TẮT tới khi có A/B GPU
+        ...(docTruocKhiGhiBat(process.env.AI_AGENT_DOC_TRUOC_KHI_GHI) ? { docTruocKhiGhi: true } : {}),
+        // (Đợt 12 · H1.5) hạn giờ theo công cụ đọc/tìm — MẶC ĐỊNH TẮT
+        ...(hanGioToolBat(process.env.AI_AGENT_TOOL_TIMEOUT) ? { hanGioTool: {} } : {}),
       });
       // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
       if (!ngoai) {
@@ -861,6 +879,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ? {
                 doSauHienTai: 0,
                 doSauToiDa: phuThuoc.giaoViec?.doSauToiDa ?? 1,
+                // (Đợt 12 · H5.1) con kết thúc bằng `report` có cấu trúc — MẶC ĐỊNH TẮT (AI_AGENT_CON_BAO_CAO=1)
+                ...((phuThuoc.giaoViec?.baoCao ?? process.env.AI_AGENT_CON_BAO_CAO === "1") ? { baoCao: true } : {}),
                 tra: (phuThuoc.giaoViec?.tra ?? ((v) => taoTraDinhNghia(v)))({ userId: user.id, projectId, gocDuAn: goc }),
                 batDauCon: async (yc) => {
                   // v1: con dùng CHÍNH model của cha (cục bộ — cha ngoài đã bị loại ở trên). `vai-tro:`/`ho-so:` chưa hỗ trợ.
@@ -890,6 +910,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
                         tokenRa: r.tokenRa,
                         tomTat: r.tomTat.slice(0, 2_000) || null,
                       });
+                      // (H5.1) con kết thúc bằng báo cáo ⇒ thẻ duyệt do CHÍNH con đề xuất mà chưa quyết bị đóng (khối gửi cha đã nói "đã huỷ")
+                      if (r.baoCao) await dongTheCuaCay(idCon).catch(() => 0);
                     },
                   };
                 },
@@ -927,6 +949,12 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ...(!capNgoai && giuNghiBat(process.env.AI_AGENT_GIU_NGHI) ? { giuNghiTrongLichSu: true } : {}),
             // (Đợt 11.8, UX-C06) nhắc tóm tắt NOTES.md ở ≥ 80 % ngữ cảnh — MẶC ĐỊNH TẮT (AI_AGENT_TOM_TAT_80=1 để bật)
             ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
+            // (Đợt 12 · H1.1) nén tới mốc thấp (vd AI_AGENT_NEN_MOC=0.5) — MẶC ĐỊNH TẮT tới khi có A/B GPU
+            ...(nenMocDich(process.env.AI_AGENT_NEN_MOC) !== undefined ? { mucDichNen: nenMocDich(process.env.AI_AGENT_NEN_MOC) } : {}),
+            // (Đợt 12 · H1.2) đếm ngữ cảnh bằng số thật của lượt trước — MẶC ĐỊNH TẮT
+            ...(process.env.AI_AGENT_NEN_SO_THAT === "1" ? { demNguCanhSoThat: true } : {}),
+            // (Đợt 12 · H1.3) cứu MỘT lần khi model báo tràn ngữ cảnh — chỉ chạm đường LỖI (trước: dừng lượt) ⇒ mặc định BẬT, AI_AGENT_CUU_TRAN=0 tắt
+            ...(giuNghiBat(process.env.AI_AGENT_CUU_TRAN) ? { cuuTranNguCanh: true } : {}),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {

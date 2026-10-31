@@ -20,8 +20,8 @@
  * xem khối VRAM ở `aiCodingAgent.ts`: model khác model server đang giữ thì đường tool-calling KHÔNG có).
  * Lỗi `LLAMA_SERVER_DOWN` / mảnh `error` giữa luồng ⇒ `LoiModel` TẠM THỜI (lõi thử lại 1 lần).
  */
-import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan } from "../../aiLlamaServerClient";
-import { LoiModel, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
+import { laLoiToolCallTrongSuyLuan, laLoiTokenCanKietVaoSuyLuan, laLoiTranNguCanh } from "../../aiLlamaServerClient";
+import { LoiModel, MA_LOI_TRAN_NGU_CANH, type GoiModel, type ManhModel, type TinNhan, type WireTool } from "@shared/agentCore";
 import { StreamingThinkingStripper, thinkingStartsOpen } from "../../ai/thinkingStrip";
 import { StreamingSecretRedactor } from "../aiSafety";
 import { chayVoiNgheCho, chayVoiUuTien, type MucUuTien } from "../hangDoiUuTienLlm";
@@ -70,6 +70,8 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
   const code = (e as { code?: unknown } | null)?.code;
+  // (Đợt 12 · H1.3) tràn cửa sổ ngữ cảnh: mã riêng, KHÔNG tạm thời (gọi lại y nguyên vẫn tràn) — lõi nén mạnh rồi thử một lần
+  if (laLoiTranNguCanh(e)) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
   if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
   if (typeof code === "string" && code.startsWith("LLM_QUEUE_")) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: code });
   if (code === "tool_calls_unsupported_path") return new LoiModel(moTaLoi(e), { tamThoi: false, ma: "TOOL_CALL_KHONG_HO_TRO" });
@@ -161,6 +163,7 @@ async function* luongModelMayChu(
         const an = cheNghi.push(c.token);
         if (an) day({ loai: "nghi", noiDung: an });
       } else if (c.type === "error") {
+        if (laLoiTranNguCanh(c.error)) throw new LoiModel(`model stream error: ${c.error}`, { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
         throw new LoiModel(`model stream error: ${c.error ?? "unknown"}`, { tamThoi: true, ma: "MODEL_LOI_LUONG" });
       } else if (c.type === "done") {
         const conChu = cheChu.push(catSuyLuan.flush()) + cheChu.flush();

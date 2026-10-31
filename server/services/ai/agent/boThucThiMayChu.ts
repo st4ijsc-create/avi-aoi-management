@@ -86,6 +86,7 @@
  *     `agent`/`all` (`toolTuyChonBat`); tắt ⇒ không phơi + gọi bừa bị từ chối (`CONG_CU_BI_AN`), lời nhắc không đổi byte nào.
  */
 import path from "node:path";
+import { createHash } from "node:crypto";
 import {
   apDungEdits,
   CONG_CU_TUY_CHON,
@@ -223,6 +224,18 @@ export interface CauHinhBoThucThi {
   phuThuoc?: PhuThuocBoThucThi;
   /** (Đợt 11.8) phơi tool `delegate` cho model? Do quản lý lượt chạy quyết (cờ AI_AGENT_GIAO_VIEC + model cục bộ). Mặc định TẮT. */
   coGiaoViec?: boolean;
+  /**
+   * (Đợt 12 · H1.4) `write_file`/`edit_file` lên tệp ĐÃ CÓ chỉ chạy khi lượt chạy đã `read_file` tệp đó VÀ nội dung đĩa không đổi kể từ lúc đọc
+   * (trừ bản do chính lượt này vừa đề xuất) — bảo vệ chỉnh tay của người trong IDE và chặn ghi đè tệp chưa từng xem. Mặc định TẮT
+   * (host: `AI_AGENT_DOC_TRUOC_KHI_GHI=1`) cho tới khi có A/B GPU (agent-f/G6 không tụt).
+   */
+  docTruocKhiGhi?: boolean;
+  /**
+   * (Đợt 12 · H1.5) hạn giờ THEO CÔNG CỤ ĐỌC/TÌM (ms; mặc định `HAN_GIO_TOOL_MAC_DINH_MS`). `undefined` = TẮT (hành vi cũ). Truyền `{}` = dùng mặc định;
+   * truyền `{ search_docs: 50 }` ghi đè từng tool. Tool ghi / lệnh / bản dịch ST KHÔNG có hạn ở đây (chờ người duyệt không tính; lệnh có hạn riêng).
+   * Host: `AI_AGENT_TOOL_TIMEOUT=1`.
+   */
+  hanGioTool?: Readonly<Record<string, number>>;
 }
 
 // ─── tiện ích thuần ───────────────────────────────────────────────────────────────────────────
@@ -454,6 +467,34 @@ export function duongTuongDoiTrongGoc(goc: string, duong: unknown): string | nul
   return posix;
 }
 
+/**
+ * (Đợt 12 · H1.5) Hạn giờ mặc định (ms) của công cụ ĐỌC/TÌM. Rộng cố ý: chỉ để một lời gọi TREO (chỉ mục đang dựng, truy hồi kẹt) không ăn hết
+ * đồng hồ của cả lượt — không để cắt một tìm kiếm chậm-nhưng-sống. Lượt hết hạn ⇒ `TOOL_TIMEOUT` có cấu trúc, model tự thu hẹp truy vấn.
+ */
+export const HAN_GIO_TOOL_MAC_DINH_MS: Readonly<Record<string, number>> = {
+  read_file: 15_000,
+  list_dir: 10_000,
+  find_files: 15_000,
+  grep: 30_000,
+  find_symbol: 15_000,
+  search_code: 60_000,
+  search_docs: 30_000,
+  lookup_api: 15_000,
+};
+
+/** Công tắc `AI_AGENT_TOOL_TIMEOUT`: chỉ `1` bật (mặc định TẮT cho tới khi có số đo). */
+export function hanGioToolBat(giaTri: string | undefined): boolean {
+  return giaTri === "1";
+}
+
+/** Băm nội dung đĩa (so sánh "đổi từ lúc đọc"; không rời tiến trình). */
+const bamNoiDung = (s: string): string => createHash("sha256").update(s).digest("hex");
+
+/** Công tắc `AI_AGENT_DOC_TRUOC_KHI_GHI`: chỉ `1` bật (mặc định TẮT — hành vi cũ từng byte). */
+export function docTruocKhiGhiBat(giaTri: string | undefined): boolean {
+  return giaTri === "1";
+}
+
 export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const p = cauHinh.phuThuoc ?? {};
   const layChiMuc = phanGiaiChiMuc(p.chiMucMa);
@@ -494,11 +535,50 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     return lamSachChoModel(`Error (${r.note}): ${vanBanChoModel(r)}`, { ok: false, ma: String(r.note) });
   }
 
+  /**
+   * (H1.4) Sổ "đã đọc": đường tương đối trong gốc → tập băm nội dung ĐĨA mà lượt chạy chấp nhận được (bản đã đọc + bản chính lượt này đề xuất
+   * ghi). Chung cho agent con (cùng bộ thực thi). Chỉ dùng khi `docTruocKhiGhi`.
+   */
+  const soDaDoc = new Map<string, Set<string>>();
+  const khoaSo = (duong: string): string | null => duongTuongDoiTrongGoc(gocDuAn, duong);
+  const ghiNhanBam = (duong: string, noiDung: string): void => {
+    if (cauHinh.docTruocKhiGhi !== true) return;
+    const k = khoaSo(duong);
+    if (!k) return;
+    const tap = soDaDoc.get(k) ?? new Set<string>();
+    tap.add(bamNoiDung(noiDung));
+    soDaDoc.set(k, tap);
+  };
+  /** `null` = cho ghi; ngược lại = kết quả từ chối cho model. */
+  const tuChoiNeuChuaDoc = (duong: string, noiDungDia: string): KetQuaTool | null => {
+    if (cauHinh.docTruocKhiGhi !== true) return null;
+    const tap = soDaDoc.get(khoaSo(duong) ?? "");
+    if (!tap) {
+      return {
+        ok: false,
+        ma: "CHUA_DOC_TEP",
+        choModel: `Refused: "${duong}" already exists and you have not read it in this run. Call read_file on it first, then write or edit it.`,
+      };
+    }
+    if (!tap.has(bamNoiDung(noiDungDia))) {
+      return {
+        ok: false,
+        ma: "TEP_DA_DOI",
+        choModel: `Refused: "${duong}" changed on disk since you read it (someone else may have edited it). Call read_file on it again, then redo your change.`,
+      };
+    }
+    return null;
+  };
+
   async function docTep(t: Record<string, unknown>): Promise<KetQuaTool> {
     const duong = String(t.path);
     const { result, loi } = await chayDoc("read_file", { path: duong });
     if (!result) return { ok: false, ma: "LOI_TOOL", choModel: loi ?? "read_file failed" };
     if (result.note) return ketQuaTuChoiDoc(result);
+    if (cauHinh.docTruocKhiGhi === true) {
+      const tho = docThoTrongHopCat(gocDuAn, duong);
+      if (tho.ok && tho.tonTai) ghiNhanBam(duong, tho.noiDung);
+    }
     const d = (result.data ?? {}) as { path?: string; bytes?: number; truncated?: boolean; redacted?: boolean; content?: string };
     const dau = typeof t.start_line === "number" ? t.start_line : undefined;
     const cuoi = typeof t.end_line === "number" ? t.end_line : undefined;
@@ -1017,6 +1097,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     const tho = docThoTrongHopCat(gocDuAn, duong);
     if (!tho.ok) return { ok: false, ma: tho.ma, choModel: cauLoiDuong(tho.ma, tho.chiTiet, duong) };
     if (!tho.tonTai) return { ok: false, ma: "NOT_FOUND", choModel: `"${duong}" does not exist. Use write_file to create a new file.` };
+    const chuaDoc = tuChoiNeuChuaDoc(duong, tho.noiDung);
+    if (chuaDoc) return chuaDoc;
     const edits = (goi.thamSo.edits as MotEdit[]) ?? [];
     if (!tho.noiDung.includes(CHUOI_CHE) && edits.some((e) => e.old_string.includes(CHUOI_CHE))) {
       return {
@@ -1036,7 +1118,9 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
         choModel: "Refused: the new content would write a [REDACTED_…] placeholder into the file. Never copy redacted placeholders into code.",
       };
     }
-    return ghi({ goi, ctx, tool: "apply_diff", args: { path: duong, original: tho.noiDung, modified: ap.noiDung }, duongs: [duong] });
+    const kqSua = await ghi({ goi, ctx, tool: "apply_diff", args: { path: duong, original: tho.noiDung, modified: ap.noiDung }, duongs: [duong] });
+    if (kqSua.ok) ghiNhanBam(duong, ap.noiDung);
+    return kqSua;
   }
 
   async function ghiTep(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
@@ -1052,7 +1136,13 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       };
     }
     if (tho.tonTai && tho.noiDung === noiDung) return { ok: true, choModel: `"${duong}" already has exactly this content; nothing to change.` };
-    return ghi({ goi, ctx, tool: "apply_diff", args: { path: duong, original: tho.noiDung, modified: noiDung }, duongs: [duong] });
+    if (tho.tonTai) {
+      const chuaDoc = tuChoiNeuChuaDoc(duong, tho.noiDung);
+      if (chuaDoc) return chuaDoc;
+    }
+    const kqGhi = await ghi({ goi, ctx, tool: "apply_diff", args: { path: duong, original: tho.noiDung, modified: noiDung }, duongs: [duong] });
+    if (kqGhi.ok) ghiNhanBam(duong, noiDung);
+    return kqGhi;
   }
 
   return {
@@ -1073,7 +1163,44 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     },
   };
 
+  /**
+   * (H1.5) Chạy tool đọc/tìm dưới hạn giờ. Quá hạn ⇒ `TOOL_TIMEOUT` (ok:false); hủy lượt thì thôi (kết quả do lõi xử lý). Tín hiệu huỷ truyền
+   * xuống tool là HỢP của huỷ lượt và hạn giờ ⇒ tool biết dừng; tool không nhìn tín hiệu vẫn bị bỏ rơi (kết quả muộn bị bỏ; lỗi muộn đã có bộ xử lý của `Promise.race` nên không rò unhandled rejection).
+   */
+  async function chayVoiHanGio(goi: LoiGoiTool, ctx: NguCanhThucThi, hanMs: number): Promise<KetQuaTool> {
+    const hetHan = new AbortController();
+    const tin = AbortSignal.any([ctx.signal, hetHan.signal]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const quaHan = new Promise<"het-han">((ok) => {
+      timer = setTimeout(() => {
+        hetHan.abort();
+        ok("het-han");
+      }, hanMs);
+    });
+    const that = chayMotKhongHan(goi, { ...ctx, signal: tin });
+    try {
+      const r = await Promise.race([that, quaHan]);
+      if (r === "het-han") {
+        return {
+          ok: false,
+          ma: "TOOL_TIMEOUT",
+          choModel: `Tool ${goi.ten} timed out after ${Math.round(hanMs / 1000) || hanMs / 1000}s and was stopped. Try a narrower query or a smaller path, or use a different tool.`,
+        };
+      }
+      return r;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function chayMot(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
+    const bang = cauHinh.hanGioTool;
+    const han = bang === undefined ? undefined : (bang[goi.ten] ?? HAN_GIO_TOOL_MAC_DINH_MS[goi.ten]);
+    if (han === undefined || !(han > 0)) return chayMotKhongHan(goi, ctx);
+    return chayVoiHanGio(goi, ctx, han);
+  }
+
+  async function chayMotKhongHan(goi: LoiGoiTool, ctx: NguCanhThucThi): Promise<KetQuaTool> {
     // `delegate` do LÕI xử lý (vòng đệ quy) — KHÔNG BAO GIỜ tới bộ thực thi; nếu tới đây là lỗi/giả mạo ⇒ từ chối như tool ẩn.
     if (goi.ten === "delegate" || congCuBiAn().has(goi.ten) || (CONG_CU_TUY_CHON.has(goi.ten as never) && !toolTuyChonBat(goi.ten, process.env, gocDuAn))) {
       return { ok: false, ma: "CONG_CU_BI_AN", choModel: `Tool "${goi.ten}" is not available in this run. Use the tools you were given.` };
