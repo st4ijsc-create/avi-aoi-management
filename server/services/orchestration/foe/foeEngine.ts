@@ -94,6 +94,7 @@ import { asPackmlState } from "../../equipment/packml";
 import { STOP_DB_STEP_DEADLINE_MS, isStopJob } from "../../robot/stopJob"; // final wave F5 — the STOP DB deadline; Đợt 6 — the robot stop classifier
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import { moTaMotPhan, motPhanCua, type MotPhan } from "../../ot/motPhan"; // R1b-2b-2a T3E (backlog 90) — lô áp MỘT PHẦN: không gửi lại
+import { coTheDaBayCua, moTaCoTheDaBay } from "../../equipment/lenhTruocCoTheDaBay"; // R1b-2b-2a T3F (backlog 91) — lệnh trước có thể đã bay: không gửi lại
 import {
   computeBindingDetail,
   programChecksRecord,
@@ -572,7 +573,8 @@ type StepOutcome =
   | { kind: "skipped" }
   | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
   /**
-   * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown).
+   * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown), or (T3F) the
+   * dispatcher refused because the previous command with the same key may be in flight or already applied (coTheDaBayCua).
    * motPhan (R1b-2b-2a T3E): set ONLY by execCommand when the dispatch was `failed` with a partial batch (detail.motPhan). Both are read only by
    * execStep's retry loop, which rewrites the outcome (flag dropped) before it leaves.
    */
@@ -824,8 +826,11 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     outcome = await runStepBody(rc, step, attempt, stop);
     // R1b-2b-2a T2B (backlog 78) — a NON-STOP command whose dispatch timed out (sent, outcome unknown) is NEVER sent again
     // (precedent: outcomeUnknownOf). A STOP keeps the old retry (never held back as "unknown"); a real "failed" is retried.
-    if (outcome.kind === "failed" && outcome.outcomeUnknown && !stop) {
-      outcome = { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
+    // R1b-2b-2a T3F (backlog 91) — the same for a refusal meaning "the previous command with this key may be in flight or already applied"
+    // (DUPLICATE_IN_FLIGHT after a crash + rebuild, …: ketCucLenhFoe sets outcomeUnknown): no further attempt, i.e. NO new attempt key.
+    const khongRoChot = khongGuiLaiKhongRo(outcome, stop);
+    if (khongRoChot) {
+      outcome = khongRoChot;
       break;
     }
     // R1b-2b-2a T3E (backlog 90) — a NON-STOP command whose batch was applied PARTLY is NEVER sent again (the applied items would be applied twice);
@@ -900,6 +905,17 @@ function outcomeUnknownOf(rc: RunContext, stepId: string): string | null {
 }
 
 /**
+ * R1b-2b-2a T2B / T3F — the outcome a NON-STOP step ends on after an attempt whose outcome is UNKNOWN (`outcomeUnknown`: the dispatch timed out,
+ * or the dispatcher refused because the previous command with the same key / authorisation may be in flight or already applied):
+ * FOE_OUTCOME_UNKNOWN, no further attempt (no new attempt key); null otherwise (a STOP keeps its retry; a plain failure ⇒ the loop decides as before).
+ * Pure (exported for the crash-rebuild DB test).
+ */
+export function khongGuiLaiKhongRo(outcome: StepOutcome, stop: boolean): StepOutcome | null {
+  if (stop || outcome.kind !== "failed" || !outcome.outcomeUnknown) return null;
+  return { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
+}
+
+/**
  * R1b-2b-2a T3E — the outcome a NON-STOP step ends on after an attempt whose batch was applied PARTLY (`failed` + motPhan): FOE_OUTCOME_PARTIAL,
  * no further attempt; null otherwise (a STOP, or not partial ⇒ the retry loop decides as before). Pure (exported for the ledger-replay DB test).
  */
@@ -910,12 +926,16 @@ export function khongGuiLaiMotPhan(outcome: StepOutcome, stop: boolean): StepOut
 
 /**
  * The StepOutcome of a command a dispatcher answered (the end of execCommand; pure, exported for the ledger-replay DB test):
- * ok ⇒ ok; `timeout` ⇒ failed + outcomeUnknown (T2B: T2's rule wins over partial); `failed` + detail.motPhan ⇒ failed + motPhan (T3E); else failed.
+ * ok ⇒ ok; `timeout` ⇒ failed + outcomeUnknown (T2B: T2's rule wins over partial); a "may be in flight / already applied" refusal
+ * (`coTheDaBayCua`: DUPLICATE_IN_FLIGHT, …) ⇒ failed + outcomeUnknown (T3F); `failed` + detail.motPhan ⇒ failed + motPhan (T3E); else failed.
  */
 export function ketCucLenhFoe(result: EquipmentCommandResult, command: string): StepOutcome {
   if (result.ok) return { kind: "ok" };
   const error = result.error ?? `Command "${command}" rejected (${result.status}).`;
   if (result.status === "timeout") return { kind: "failed", error, outcomeUnknown: true };
+  // R1b-2b-2a T3F (backlog 91) — "the previous command may be in flight or already applied" (DUPLICATE_IN_FLIGHT, …) ⇒ outcome UNKNOWN, like timeout
+  const daBay = coTheDaBayCua(result);
+  if (daBay) return { kind: "failed", error: moTaCoTheDaBay(daBay, command), outcomeUnknown: true };
   const motPhan = motPhanCua(result.detail?.motPhan);
   return motPhan ? { kind: "failed", error, motPhan } : { kind: "failed", error };
 }

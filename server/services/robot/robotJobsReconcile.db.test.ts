@@ -58,7 +58,7 @@ describe.skipIf(!DB_URL)("robot_jobs — quét 'running' mồ côi lúc khởi �
   });
 
   it("idempotency trên CSDL thật: khoá còn 'running' ⇒ rejected IDEMPOTENT_JOB_IN_PROGRESS; khoá đã quét ⇒ failed", async () => {
-    const { dispatchRobotJob } = await import("./robotCommandDispatcher");
+    const { dispatchRobotJob, PROCESS_RESTART_OUTCOME_UNKNOWN } = await import("./robotCommandDispatcher");
     const base = { robotId: PROBE_ROBOT, job: { jobType: "home" as const }, triggerKind: "hitl" as const, requestedBy: 1, confirmedBy: 1 };
     const running = await dispatchRobotJob({ ...base, idempotencyKey: KEY_FRESH });
     expect(running.status).toBe("rejected");
@@ -66,6 +66,8 @@ describe.skipIf(!DB_URL)("robot_jobs — quét 'running' mồ côi lúc khởi �
     const swept = await dispatchRobotJob({ ...base, idempotencyKey: KEY_OLD });
     expect(swept.status).toBe("failed");
     expect(swept.ok).toBe(false);
+    // R1b-2b-2a T3F (backlog 91) — the swept job replays WITH its machine-readable reason (robot may have moved): FOE never retries it under a new key
+    expect(swept.error).toBe(PROCESS_RESTART_OUTCOME_UNKNOWN);
   });
 
   it("startRobots() gọi quét (kể cả khi gateway tắt)", async () => {
