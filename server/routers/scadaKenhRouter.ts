@@ -421,7 +421,7 @@ export const scadaKenhRouter = router({
       const db = await getDb();
       const idsMay = await idsMayCua(ctx);
       const [a] = await db
-        .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId })
+        .select({ id: deviceAdapters.id, machineId: deviceAdapters.machineId, protocol: deviceAdapters.protocol, pollMs: deviceAdapters.pollIntervalMs })
         .from(deviceAdapters)
         .where(eq(deviceAdapters.id, input.adapterId))
         .limit(1);
@@ -430,6 +430,8 @@ export const scadaKenhRouter = router({
       const kenhCheDo = new Set(
         (await db.select({ tagKey: scadaKenhCheDo.tagKey }).from(scadaKenhCheDo).where(eq(scadaKenhCheDo.adapterId, a.id))).map((r) => r.tagKey),
       );
+      // R1b-2b-2b C3 (M12) — cảnh báo nguồn cho TỪNG tag, CHÍNH `canhBaoCua` của cheDo.danhSach (một luật cho kênh hiện có và tag ứng viên)
+      const edge = await adapterEdge([a.id]);
       return tags.map((t) => ({
         tagId: t.id,
         tagKey: t.tagKey,
@@ -450,6 +452,10 @@ export const scadaKenhRouter = router({
         stopValue: (t.stopValue ?? null) as boolean | number | string | null,
         laKenhCheDo: kenhCheDo.has(t.tagKey),
         canhBaoKenhDung: laKenhDungChuaKhai(t),
+        canhBaoNguon: canhBaoCua(
+          { adapterId: a.id, protocol: a.protocol ?? null, deadband: t.deadband ?? null, samplingMs: t.samplingMs ?? null, pollMs: a.pollMs ?? null },
+          edge,
+        ),
       }));
     }),
 
