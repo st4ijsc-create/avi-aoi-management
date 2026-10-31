@@ -58,7 +58,8 @@ export const MO_TA_MODEL: readonly MoTaModel[] = Object.freeze([
   }),
   Object.freeze({
     id: "qwen3-4b",
-    khop: /^Qwen3-4B/i,
+    // (rà kiem-dinh) khớp CHẶT: biến thể VL / bản khác có ngữ cảnh + kênh nghĩ khác ⇒ rơi về mặc định (và /props quyết số nhỏ hơn)
+    khop: /^Qwen3-4B-(Instruct|Thinking)-2507/i,
     nguCanh: Object.freeze({ macDinh: 32_768, toiDa: 32_768 }),
     nghi: NGHI_QWEN3,
     traLoiToiDa: 16_000,

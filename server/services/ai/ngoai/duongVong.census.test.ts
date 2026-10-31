@@ -83,7 +83,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/services/aiEdgeDeployment.ts": { so: 1, lyDo: "triển khai model tới thiết bị edge trong nhà máy (IP đã đăng ký)" },
   "server/services/aiEdgeEnhanced.ts": { so: 1, lyDo: "thiết bị edge trong nhà máy (IP đã đăng ký)" },
   "server/services/aiImageEmbedding.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài (embedding ảnh)" },
-  "server/services/aiLlamaServerClient.ts": { so: 7, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài" },
+  "server/services/aiLlamaServerClient.ts": { so: 8, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài; +1 Đợt 12 H3.2b GET /props n_ctx (đệm 10 phút)" },
   "server/services/aiLocalKnowledgeService.ts": { so: 4, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài (OLLAMA_BASE_URL)" },
   "server/services/aiLocalTools/intentClassifier.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài" },
   "server/services/aoiImageEmbeddingWorker.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài (embedding ảnh AOI)" },
@@ -120,7 +120,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
 };
 /** GHIM: số tệp miễn trừ + tổng điểm — đổi ⇒ đo lại + ghi lý do (ratchet). */
 // 2026-10-26 (dieu-phoi e): _core/llm.ts hết fetch thô (ảnh qua taiAnhAnToan → fetchGhim) ⇒ 64→63 tệp, 97→96 điểm.
-const GHIM = { tep: 63, diem: 96 } as const;
+const GHIM = { tep: 63, diem: 97 } as const; // +1 Đợt 12 H3.2b (aiLlamaServerClient GET /props n_ctx)
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};

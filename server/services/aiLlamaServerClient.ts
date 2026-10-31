@@ -722,6 +722,42 @@ export function __xoaDemThiGiac(): void {
   demThiGiac = null;
 }
 
+/**
+ * ★ Đợt 12 H3.2b — ngữ cảnh THẬT của khe llama-server: `GET /props` ⇒ `default_generation_settings.n_ctx` (đo 2026-10-31 trên :8091:
+ * 65 536 với `-c 65536 -np 1`). Đệm 10 phút theo URL (một GET lúc đầu — không hỏi mỗi lượt; đổi `-c` trong cửa sổ đo vẫn được thấy).
+ * Không đọc được / số rác ⇒ `null` (người gọi dùng mô tả model — fail-open về hành vi hôm nay).
+ */
+let demNCtx: { luc: number; url: string; nCtx: number | null } | null = null;
+export async function nCtxKheServer(timeoutMs = 1500, bayGio = Date.now()): Promise<number | null> {
+  if (!llamaServerEnabled()) return null;
+  const url = baseUrl();
+  if (!url) return null;
+  if (demNCtx && demNCtx.url === url && bayGio - demNCtx.luc < 600_000) return demNCtx.nCtx;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  let nCtx: number | null = null;
+  try {
+    const res = await fetch(`${url}/props`, { headers: authHeaders(), signal: ctrl.signal });
+    if (res.ok) {
+      const n = Number(((await res.json()) as { default_generation_settings?: { n_ctx?: unknown } })?.default_generation_settings?.n_ctx);
+      nCtx = Number.isInteger(n) && n > 0 ? n : null;
+    }
+  } catch {
+    nCtx = null;
+  } finally {
+    clearTimeout(t);
+  }
+  demNCtx = { luc: bayGio, url, nCtx };
+  return nCtx;
+}
+export function __xoaDemNCtx(): void {
+  demNCtx = null;
+}
+/** Basename model khe llama-server mặc định (cùng quy ước thân yêu cầu) — cho tầng trên tra mô tả model. */
+export function tenModelKheMacDinh(): string {
+  return serverModelBasename();
+}
+
 /** Short timeout (default 2s) for the PRE-generation preflight probe below — deliberately much
  *  shorter than LLAMA_SERVER_TIMEOUT_MS (generation timeout, default 120s) so a down/unresponsive
  *  server is detected in ~2s instead of only after a long hung POST. Configurable in case the

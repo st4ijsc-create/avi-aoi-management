@@ -14,6 +14,10 @@ describe("moTaCho", () => {
     expect(moTaCho("D:/SOURCES/16.AI/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf").id).toBe("qwen3.6-35b-a3b");
     expect(moTaCho("qwen3.6-35b-a3b-ud-q4_k_xl").id).toBe("qwen3.6-35b-a3b");
     expect(moTaCho("Qwen3-4B-Instruct-2507-Q4_K_M.gguf").id).toBe("qwen3-4b");
+    expect(moTaCho("Qwen3-4B-Thinking-2507-Q4_K_M.gguf").id).toBe("qwen3-4b");
+    // (rà kiem-dinh) biến thể khác (VL, bản gốc 2504) có ngữ cảnh / kênh nghĩ khác ⇒ KHÔNG nhận mô tả 4B
+    expect(moTaCho("Qwen3-4B-VL-Instruct.gguf").id).toBe("mac-dinh");
+    expect(moTaCho("Qwen3-4B-Q4_K_M.gguf").id).toBe("mac-dinh");
     expect(moTaCho("mxbai-embed-large-v1-f16.gguf").id).toBe("mxbai-embed");
   });
   it("không khớp / rỗng ⇒ MO_TA_MAC_DINH (= hành vi trước H3.2)", () => {
