@@ -56,6 +56,12 @@ export interface TuyChonNen {
    * gần như MỌI bước (mỗi lần sửa giữa lịch sử = mất cache tiền tố từ chỗ sửa). Bị kẹp ≤ `nguong`.
    */
   mucDich?: number;
+  /**
+   * (Đợt 12 · H1.2) NEO bằng số THẬT: `soTin` tin đầu của `tinNhan` đã được model đếm — tổng `token` (= `vao` của lượt gọi trước + `ra` của tin assistant
+   * sinh ra). Ước lượng = `token` + ước lượng CHỈ phần tin phía sau. Bỏ ước lượng thuần 2,8 ký tự/token cho phần lớn lịch sử (sai số
+   * theo ngôn ngữ/mã/JSON, và nó không thấy system+schema công cụ). Vắng ⇒ như cũ từng byte.
+   */
+  neo?: { soTin: number; token: number };
   /** số lượt assistant gần nhất giữ nguyên (mặc định 2) */
   soLuotGiu?: number;
 }
@@ -82,7 +88,10 @@ export function nenLichSu(tinNhan: TinNhan[], tc: TuyChonNen): KetQuaNen {
   const nguong = Math.floor(tc.nganSachToken * (tc.nguong ?? 0.7));
   const dich = Math.min(nguong, Math.floor(tc.nganSachToken * (tc.mucDich ?? tc.nguong ?? 0.7)));
   const soLuotGiu = tc.soLuotGiu ?? 2;
-  const tokenTruoc = uocLuongTinNhan(tinNhan, uoc);
+  const tokenTruoc =
+    tc.neo && tc.neo.soTin > 0 && tc.neo.soTin <= tinNhan.length && Number.isFinite(tc.neo.token) && tc.neo.token > 0
+      ? Math.round(tc.neo.token) + uocLuongTinNhan(tinNhan.slice(tc.neo.soTin), uoc)
+      : uocLuongTinNhan(tinNhan, uoc);
   if (tokenTruoc <= nguong) return { tinNhan: tinNhan.slice(), soNen: 0, tokenTruoc, tokenSau: tokenTruoc };
 
   // ranh giới bảo vệ: chỉ số của assistant thứ `soLuotGiu` tính từ cuối — mọi tin từ đó trở đi giữ nguyên

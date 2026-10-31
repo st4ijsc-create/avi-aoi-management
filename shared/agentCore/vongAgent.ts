@@ -96,6 +96,11 @@ export interface DauVaoVongAgent {
    * Host server đọc `AI_AGENT_NEN_MOC` qua `nenMocDich`.
    */
   mucDichNen?: number;
+  /**
+   * (Đợt 12 · H1.2) đếm ngữ cảnh khi quyết định nén bằng SỐ THẬT của lượt gọi trước (`usage.vao + ra`) + ước lượng phần thêm, thay vì ước lượng
+   * thuần mọi tin. Vắng ⇒ như cũ từng byte. Host server: `AI_AGENT_NEN_SO_THAT=1` (mặc định TẮT cho tới khi có A/B).
+   */
+  demNguCanhSoThat?: boolean;
   /** (Đợt 11.8) giao việc cho agent con. Vắng ⇒ `delegate` luôn bị từ chối (`GIAO_VIEC_TAT`), hành vi như cũ từng byte. */
   giaoViec?: CauHinhGiaoViec;
   /** (Đợt 11.8, chỉ dùng cho vòng CON) trạng thái nội dung đáng ngờ thừa hưởng từ cha. */
@@ -632,6 +637,8 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
    * (Đợt 12 · H0.2) MỌI khối vòng agent chèn thêm vào hội thoại (role `user` hoặc đuôi kết quả tool) có MÃ chung
    * (`MA_KHOI_CHEN`) và được ghi vào `buoc-do` của lượt model kế. Đẩy tin y như trước — không đổi byte gửi model.
    */
+  /** (H1.2) neo số thật: `soTin` tin đầu đã đếm = `token` — cập nhật sau mỗi lượt model có `usage.vao` > 0. */
+  let neoSoThat: { soTin: number; token: number } | null = null;
   let nhacCho: MaKhoiChen[] = [];
   const chenNhac = (ma: MaKhoiChen, noiDung: string) => {
     nhacCho.push(ma);
@@ -685,8 +692,14 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         chenNhac("tom-tat-ngu-canh", cauNhacTomTatNguCanh(canNhacTomTat));
         canNhacTomTat = null;
       }
-      const kqNen = nenLichSu(tinNhan, { nganSachToken: gh.nganSachNguCanhToken, uocLuong: uoc, ...(y.mucDichNen !== undefined ? { mucDich: y.mucDichNen } : {}) });
+      const kqNen = nenLichSu(tinNhan, {
+        nganSachToken: gh.nganSachNguCanhToken,
+        uocLuong: uoc,
+        ...(y.mucDichNen !== undefined ? { mucDich: y.mucDichNen } : {}),
+        ...(y.demNguCanhSoThat === true && neoSoThat ? { neo: neoSoThat } : {}),
+      });
       tinNhan = kqNen.tinNhan;
+      // (không cần chỉnh `neoSoThat` sau nén: lượt model ngay sau đó báo `usage` mới và neo lại)
       // (H0.2) chụp trạng thái LÚC GỌI model — các biến này đổi sau lượt.
       const nenDo: NenBuocDo | null = kqNen.soNen > 0 ? { soNen: kqNen.soNen, tokenTruoc: kqNen.tokenTruoc, tokenSau: kqNen.tokenSau } : null;
       const soTinLucGoi = tinNhan.length;
@@ -734,6 +747,13 @@ export async function chayVongAgent(y: DauVaoVongAgent): Promise<KetQuaVongAgent
         tokenRa += u.ra;
       } else {
         tokenRa += uoc(kq.chu + kq.nghi);
+      }
+      // (H1.2) neo cho lần nén kế: lịch sử lúc gọi (`soTinLucGoi`) = `vao`; tin assistant sắp thêm = `ra` (trừ suy luận nếu KHÔNG giữ trong lịch sử)
+      if (kq.usage && Number.isFinite(kq.usage.vao) && kq.usage.vao > 0) {
+        const raGiu = kq.usage.ra - (y.giuNghiTrongLichSu ? 0 : (kq.usage.nghi ?? 0));
+        neoSoThat = { soTin: soTinLucGoi + 1, token: kq.usage.vao + Math.max(0, raGiu) };
+      } else {
+        neoSoThat = null;
       }
       const uBuoc = kq.usage as { vao?: unknown; cacheN?: unknown; promptN?: unknown } | undefined;
       phat({

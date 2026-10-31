@@ -218,6 +218,41 @@ describe("H1.5 công tắc AI_AGENT_TOOL_TIMEOUT nối tới bộ thực thi", (
   }, 90_000);
 });
 
+describe("H1.2 công tắc AI_AGENT_NEN_SO_THAT nối tới lõi", () => {
+  const soLanNen = async (bat: boolean): Promise<number> => {
+    for (let k = 0; k < 6; k++) fs.writeFileSync(path.join(REPO, "src", `be${k}.ts`), `${k}`.repeat(300));
+    const cu = process.env.AI_AGENT_NEN_SO_THAT;
+    if (bat) process.env.AI_AGENT_NEN_SO_THAT = "1";
+    else delete process.env.AI_AGENT_NEN_SO_THAT;
+    try {
+      let i = 0;
+      const goiModel: GoiModel = async function* (): AsyncGenerator<ManhModel> {
+        const k = i++;
+        // số THẬT báo rất cao (35k/40k) trong khi nội dung nhỏ: ước lượng thuần không bao giờ thấy áp lực
+        yield {
+          loai: "xong",
+          toolCalls: k >= 5 ? [] : [{ id: `t${k}`, type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: `src/be${k}.ts` }) } }],
+          usage: { vao: 35_000, ra: 100 },
+        } as ManhModel;
+      };
+      const ql = taoQuanLyLuotChay({ goiModel, gioiHan: { nganSachNguCanhToken: 40_000, soLuotToiDa: 20 } });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin", name: "x" }, cauHoi: "doc", projectId: DU_AN, cheDo: "hoi" });
+      if (!kq.ok) throw new Error(kq.ma);
+      await kq.luot.xong;
+      const nghe: SuKienAgent[] = [];
+      ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien))?.();
+      return nghe.filter((e) => e.loai === "buoc-do" && e.nen).length;
+    } finally {
+      if (cu === undefined) delete process.env.AI_AGENT_NEN_SO_THAT;
+      else process.env.AI_AGENT_NEN_SO_THAT = cu;
+    }
+  };
+  it("★ vắng cờ ⇒ ước lượng thuần (không nén); AI_AGENT_NEN_SO_THAT=1 ⇒ số thật 35k/40k kích hoạt nén", async () => {
+    expect(await soLanNen(false)).toBe(0);
+    expect(await soLanNen(true)).toBeGreaterThan(0);
+  }, 60_000);
+});
+
 describe("suKienDeLuu giữ buoc-do khi sổ quá trần", () => {
   const mucBuoc = (seq: number): MucDem => ({
     seq,

@@ -863,6 +863,8 @@ export function taoQuanLyLuotChay(phuThuoc: PhuThuocQuanLy = {}): QuanLyLuotChay
             ...(process.env.AI_AGENT_TOM_TAT_80 === "1" ? { nhacTomTatKhiDay: true } : {}),
             // (Đợt 12 · H1.1) nén tới mốc thấp (vd AI_AGENT_NEN_MOC=0.5) — MẶC ĐỊNH TẮT tới khi có A/B GPU
             ...(nenMocDich(process.env.AI_AGENT_NEN_MOC) !== undefined ? { mucDichNen: nenMocDich(process.env.AI_AGENT_NEN_MOC) } : {}),
+            // (Đợt 12 · H1.2) đếm ngữ cảnh bằng số thật của lượt trước — MẶC ĐỊNH TẮT
+            ...(process.env.AI_AGENT_NEN_SO_THAT === "1" ? { demNguCanhSoThat: true } : {}),
           });
           traLoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
         } catch (e) {
