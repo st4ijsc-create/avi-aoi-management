@@ -16,8 +16,9 @@ import { Plug, Power } from "lucide-react";
 import type { AppRouter } from "../../../../server/routers";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BIEN_MAU_TONE, nhanTrangThai, type DonViThoiGian } from "./chatLuongHienThi";
+import { BIEN_MAU_GACH_TIM, BIEN_MAU_TONE, nhanTrangThai, type DonViThoiGian } from "./chatLuongHienThi";
 import { NutDungMay, type KhaNangDung } from "./DungMay";
+import { nhanMaLoi } from "./nhanMaLoi";
 
 export type HangDiag = inferRouterOutputs<AppRouter>["scadaDiag"]["danhSach"][number];
 
@@ -73,6 +74,25 @@ export function ChipTrangThai({ hang, now }: { hang: HangDiag; now: number }) {
           </span>
         )}
       </span>
+    </span>
+  );
+}
+
+/**
+ * C2 — adapter đang TẠM KHOÁ an toàn (MC: lệnh ghi không tới thiết bị). Máy chủ KHÔNG BAO GIỜ che trường này (mọi vai), nên huy hiệu
+ * hiện cả khi endpoint / lỗi bị che. `lyDo` là khoá i18n do máy chủ cấp (`errors.reason.*`).
+ */
+export function HuyHieuTamKhoa({ hang }: { hang: HangDiag }) {
+  const { t } = useTranslation();
+  if (!hang.tamKhoa) return null;
+  return (
+    <span
+      data-testid={`tam-khoa-adapter-${hang.adapterId}`}
+      className="mt-0.5 block w-fit rounded border px-1.5 py-0.5 text-xs font-medium"
+      style={{ color: `var(${BIEN_MAU_GACH_TIM})`, borderColor: `var(${BIEN_MAU_GACH_TIM})` }}
+      title={t(hang.tamKhoa.lyDo, { defaultValue: hang.tamKhoa.ma })}
+    >
+      {t("scada.diag.tamKhoa")}
     </span>
   );
 }
@@ -165,6 +185,8 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
           ...g.hangs.map((h) => {
           const edge = tenEdge(h);
           const hanhDong = canAct && h.soHuu.loai !== "edge";
+          // C2: kỹ sư thấy văn bản lỗi; người khác chỉ có MÃ đã làm sạch (`maLoi`) ⇒ câu dịch; không có gì ⇒ "—"
+          const loiHienThi = h.loi ?? (h.maLoi ? nhanMaLoi(t, h.maLoi) : null);
           return (
             <TableRow
               key={h.adapterId}
@@ -184,8 +206,12 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               </TableCell>
               <TableCell>
                 <div className="text-sm">{h.protocol}</div>
-                <div className="max-w-[220px] truncate text-xs text-muted-foreground" title={h.endpoint ?? undefined}>
-                  {h.endpoint}
+                <div
+                  data-testid={`endpoint-adapter-${h.adapterId}`}
+                  className="max-w-[220px] truncate text-xs text-muted-foreground"
+                  title={h.endpoint ?? undefined}
+                >
+                  {h.endpoint ?? "—"}
                 </div>
               </TableCell>
               <TableCell className="whitespace-nowrap text-sm">
@@ -193,6 +219,7 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               </TableCell>
               <TableCell className="whitespace-nowrap">
                 <ChipTrangThai hang={h} now={now} />
+                <HuyHieuTamKhoa hang={h} />
               </TableCell>
               <TableCell className="whitespace-nowrap text-sm tabular-nums">
                 {edge ? "—" : `${h.pollMs} ms / ${h.p95Ms === null || h.p95Ms === undefined ? "—" : `${h.p95Ms} ms`}`}
@@ -203,8 +230,8 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               <TableCell className="whitespace-nowrap text-sm tabular-nums">
                 {edge ? "—" : `${h.tag.tot} / ${h.tag.nghiNgo} / ${h.tag.xau}`}
               </TableCell>
-              <TableCell className="max-w-[240px] truncate text-sm" title={h.loi ?? ""}>
-                {h.loi ?? "—"}
+              <TableCell data-testid={`loi-adapter-${h.adapterId}`} className="max-w-[240px] truncate text-sm" title={loiHienThi ?? ""}>
+                {loiHienThi ?? "—"}
               </TableCell>
               {canAct && (
                 <TableCell onClick={(e) => e.stopPropagation()}>

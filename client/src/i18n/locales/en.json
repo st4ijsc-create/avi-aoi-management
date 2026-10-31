@@ -24248,7 +24248,8 @@
         "dialogApDungTieuDe": "Apply stub fault to {{code}}?",
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
-      }
+      },
+      "tamKhoa": "Temporarily locked"
     },
     "kenh": {
       "title": "Channels & limits",
@@ -24620,6 +24621,22 @@
         "loiTai": "Could not load the machine list — use the hardwired E-STOP at the machine",
         "biCat": "The list may be incomplete — use the hardwired E-STOP",
         "khongToiMoi": "May not reach every device — also use the hardwired E-STOP"
+      }
+    },
+    "truyenThong": {
+      "chip": {
+        "nhan": "Communication {{ketNoi}}/{{tong}}",
+        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
+        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
+      }
+    },
+    "orchestration": {
+      "maLoi": {
+        "FOE_OUTCOME_UNKNOWN": "Outcome unknown: the command may have been applied to the device — check the device before running again; do NOT resend automatically.",
+        "FOE_OUTCOME_PARTIAL": "Partially applied: some commands reached the device and some did not — check the device; do NOT resend the whole batch.",
+        "EDGE_OUTCOME_UNKNOWN": "Outcome unknown on the edge: the edge node may have applied the command — check the device before running again.",
+        "REJECTED": "The command was rejected — nothing was written to the device.",
+        "PRECONDITION_FAILED": "The step's precondition (interlock) was not met — nothing was written to the device."
       }
     }
   },
