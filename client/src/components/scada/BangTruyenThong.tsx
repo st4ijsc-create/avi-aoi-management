@@ -97,6 +97,27 @@ export function HuyHieuTamKhoa({ hang }: { hang: HangDiag }) {
   );
 }
 
+/**
+ * T3E — lô ghi áp MỘT PHẦN gần nhất của adapter (1 h, RAM dispatcher). MÃ + số item luôn hiện; DANH SÁCH tagKey chỉ khi máy chủ cấp (kỹ sư có
+ * quyền sửa) — người khác thấy mã + số, không bao giờ trống im lặng. Mang ý nghĩa "đừng gửi lại cả lô; kiểm tra tại máy".
+ */
+export function HuyHieuMotPhan({ hang }: { hang: HangDiag }) {
+  const { t } = useTranslation();
+  const m = hang.motPhanGanNhat;
+  if (!m) return null;
+  const chiTiet = m.daAp && m.khongAp ? ` — ${t("scada.lenh.motPhan.daAp", { ds: m.daAp.join(", ") })}; ${t("scada.lenh.motPhan.khongAp", { ds: m.khongAp.join(", ") })}` : "";
+  return (
+    <span
+      data-testid={`mot-phan-adapter-${hang.adapterId}`}
+      className="mt-0.5 block w-fit rounded border px-1.5 py-0.5 text-xs font-medium"
+      style={{ color: `var(${BIEN_MAU_TONE.warn})`, borderColor: `var(${BIEN_MAU_TONE.warn})` }}
+      title={`${t("scada.lenh.cong.MOT_PHAN")}${chiTiet}`}
+    >
+      {t("scada.diag.motPhanGanNhat", { daAp: m.soDaAp, khongAp: m.soKhongAp })}
+    </span>
+  );
+}
+
 /** Hàng máy cho nhóm + nút DỪNG MÁY (tập con của `scadaKenh.cheDo.danhSach`). */
 export interface MayDung {
   machineId: number;
@@ -220,6 +241,7 @@ export function BangTruyenThong({ rows, now, canAct, onChon, onKetNoiLai, onTamT
               <TableCell className="whitespace-nowrap">
                 <ChipTrangThai hang={h} now={now} />
                 <HuyHieuTamKhoa hang={h} />
+                <HuyHieuMotPhan hang={h} />
               </TableCell>
               <TableCell className="whitespace-nowrap text-sm tabular-nums">
                 {edge ? "—" : `${h.pollMs} ms / ${h.p95Ms === null || h.p95Ms === undefined ? "—" : `${h.p95Ms} ms`}`}

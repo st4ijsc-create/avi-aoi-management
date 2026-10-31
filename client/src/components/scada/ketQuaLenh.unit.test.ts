@@ -22,6 +22,7 @@ import {
   khoaGoiYStop,
   khoaLyDoLocal,
   laLoiGioiHanTanSuat,
+  khoaCong,
   phanLoaiKetQuaDung,
   moTaLoiLenh,
   nhanKetQua,
@@ -404,5 +405,54 @@ describe("R1b-1 Task 2 — STOP HMI: phân loại kết quả theo adapter + ch�
       for (const k of ["scada.lenh.loi.CHUA_GHIM_STOP", "scada.lenh.loi.goiYStop", "scada.lenh.loi.goiYStopKhongGhim", "scada.dungMay.canhBaoChuaGhim"])
         expect(CHU_VIET.test(String(lay(l, k))), `${l}:${k}`).toBe(false);
     }
+  });
+});
+
+describe("R1b-2b-2b B — MOT_PHAN (T3E): lô ghi áp MỘT PHẦN có câu riêng", () => {
+  it("★ khoaCong('MOT_PHAN') ⇒ khoá riêng scada.lenh.cong.MOT_PHAN (không rơi vào 'khac'); có ở vi/en/zh, không chữ Việt ở en/zh, và là câu KHÔNG gửi lại", () => {
+    expect(CONG_BIET).toContain("MOT_PHAN");
+    expect(khoaCong("MOT_PHAN")).toEqual({ khoa: "scada.lenh.cong.MOT_PHAN", ma: "MOT_PHAN" });
+    const cau = (l: string) => lay(l, "scada.lenh.cong.MOT_PHAN") as string;
+    for (const l of ["vi", "en", "zh"]) expect(typeof cau(l), l).toBe("string");
+    expect(new Set(["vi", "en", "zh"].map(cau)).size).toBe(3);
+    expect(CHU_VIET.test(cau("en"))).toBe(false);
+    expect(CHU_VIET.test(cau("zh"))).toBe(false);
+    expect(cau("vi")).toMatch(/KHÔNG/);
+  });
+});
+
+describe("R1b-2b-2b B — nhanKetQua('failed') với MOT_PHAN", () => {
+  const MP = { daAp: ["a", "b"], khongAp: ["c"] };
+  it("★ failed + MOT_PHAN ⇒ câu MOT_PHAN (KHÔNG phải 'Gửi lỗi — đọc lại rồi gửi lần nữa'), đếm 2 / 1, không tự đóng", () => {
+    const r = nhanKetQua("failed", { reason: "MOT_PHAN", motPhan: MP, requested: 1 });
+    expect(r.khoa).toBe("scada.lenh.cong.MOT_PHAN");
+    expect(r.khoa).not.toBe("scada.lenh.ketQua.failed");
+    expect(r.thamSo).toEqual({ ma: "MOT_PHAN", soDaAp: "2", soKhongAp: "1" });
+    expect(r.tuDongDongMs).toBeNull();
+  });
+  it("★ STOP (laStop) ⇒ khoá STOP riêng: nói nhấn DỪNG MÁY lần nữa là an toàn, KHÔNG nói 'không gửi lại'; lệnh thường thì ngược lại", () => {
+    expect(nhanKetQua("failed", { reason: "MOT_PHAN", motPhan: MP, requested: null, laStop: true }).khoa).toBe("scada.lenh.cong.MOT_PHAN_STOP");
+    const cau = (l: string, k: string) => lay(l, k) as string;
+    expect(cau("vi", "scada.lenh.cong.MOT_PHAN_STOP")).toMatch(/lần nữa là an toàn/);
+    expect(cau("vi", "scada.lenh.cong.MOT_PHAN_STOP")).not.toMatch(/KHÔNG được tự gửi lại/);
+    expect(cau("vi", "scada.lenh.cong.MOT_PHAN")).toMatch(/KHÔNG được tự gửi lại/);
+    for (const l of ["en", "zh"]) {
+      expect(CHU_VIET.test(cau(l, "scada.lenh.cong.MOT_PHAN_STOP")), l).toBe(false);
+      expect(cau(l, "scada.lenh.cong.MOT_PHAN_STOP")).not.toBe(cau("vi", "scada.lenh.cong.MOT_PHAN_STOP"));
+    }
+  });
+  it("MOT_PHAN không kèm motPhan ⇒ vẫn câu MOT_PHAN, không có đếm", () => {
+    const r = nhanKetQua("failed", { reason: "MOT_PHAN", requested: 1 });
+    expect(r.khoa).toBe("scada.lenh.cong.MOT_PHAN");
+    expect(r.thamSo).toEqual({ ma: "MOT_PHAN" });
+  });
+  it("failed với lý do khác ⇒ hành vi cũ (byte-for-byte); status khác không bị ảnh hưởng bởi motPhan", () => {
+    expect(nhanKetQua("failed", { reason: "DRIVER_WRITE_FAILED", motPhan: MP, requested: 1 })).toEqual({
+      khoa: "scada.lenh.ketQua.failed",
+      tuDongDongMs: null,
+      thamSo: { ma: "DRIVER_WRITE_FAILED" },
+    });
+    expect(nhanKetQua("failed", { requested: 1 }).thamSo).toEqual({ ma: "—" });
+    expect(nhanKetQua("acked", { reason: "MOT_PHAN", motPhan: MP, requested: 1 }).khoa).toBe("scada.lenh.ketQua.acked");
   });
 });

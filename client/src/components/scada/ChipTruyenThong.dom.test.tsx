@@ -188,3 +188,22 @@ describe("BangTruyenThong — endpoint / lỗi bị che", () => {
     expect(screen.queryByTestId("tam-khoa-adapter-1")).toBeNull();
   });
 });
+
+describe("BangTruyenThong — lô áp MỘT PHẦN gần nhất (T3E, motPhanGanNhat)", () => {
+  const MP = { ma: "MOT_PHAN", luc: "2026-11-01T00:00:00.000Z", soDaAp: 2, soKhongAp: 1, commandLogIds: [1, 2, 3] };
+  it("★ có motPhanGanNhat ⇒ huy hiệu với số đếm (mã + số luôn hiện); danh sách null (người xem thường) ⇒ title chỉ có câu, không 'null'", () => {
+    bang({ motPhanGanNhat: { ...MP, daAp: null, khongAp: null } } as Partial<HangDiag>);
+    const hh = screen.getByTestId("mot-phan-adapter-1");
+    expect(hh).toHaveTextContent("đã áp 2 · không áp 1");
+    expect(hh.getAttribute("title")).toContain((vi_ as unknown as { scada: { lenh: { cong: Record<string, string> } } }).scada.lenh.cong.MOT_PHAN);
+    expect(hh.getAttribute("title")).not.toMatch(/null|undefined/);
+  });
+  it("kỹ sư (danh sách có) ⇒ title nêu tagKey đã áp / không áp", () => {
+    bang({ motPhanGanNhat: { ...MP, daAp: ["a", "b"], khongAp: ["c"] } } as Partial<HangDiag>);
+    expect(screen.getByTestId("mot-phan-adapter-1").getAttribute("title")).toMatch(/a, b.*c/);
+  });
+  it("không có lô áp một phần ⇒ không huy hiệu", () => {
+    bang({ motPhanGanNhat: null } as Partial<HangDiag>);
+    expect(screen.queryByTestId("mot-phan-adapter-1")).toBeNull();
+  });
+});

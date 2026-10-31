@@ -107,3 +107,20 @@ describe("NganTagAdapter — chi tiết bị che (C2, kiem-dinh u17/u18)", () =>
     expect(screen.queryByTestId("tam-khoa-adapter-7")).toBeNull();
   });
 });
+
+describe("NganTagAdapter — lô áp MỘT PHẦN gần nhất (T3E, kiem-dinh w17)", () => {
+  it("★ hàng có motPhanGanNhat ⇒ huy hiệu với số đếm ở đầu ngăn; không có ⇒ không huy hiệu", () => {
+    const { unmount } = render(
+      <NganTagAdapter
+        hang={{ ...HANG, motPhanGanNhat: { ma: "MOT_PHAN", luc: "2026-11-01T00:00:00.000Z", soDaAp: 3, soKhongAp: 1, daAp: null, khongAp: null, commandLogIds: [1] } } as unknown as HangDiag}
+        now={Date.now()}
+        canAct={false}
+        onDong={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId("mot-phan-adapter-7")).toHaveTextContent("đã áp 3 · không áp 1");
+    unmount();
+    render(<NganTagAdapter hang={HANG} now={Date.now()} canAct={false} onDong={() => undefined} />);
+    expect(screen.queryByTestId("mot-phan-adapter-7")).toBeNull();
+  });
+});
