@@ -24233,7 +24233,8 @@
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
       },
-      "tamKhoa": "Temporarily locked"
+      "tamKhoa": "Temporarily locked",
+      "motPhanGanNhat": "Recently applied only partly: applied {{daAp}} · not applied {{khongAp}}"
     },
     "kenh": {
       "title": "Channels & limits",
@@ -24486,7 +24487,9 @@
         "HET_HAN": "Not sent — the request expired; create a new request",
         "KHOA_MAT": "Not sent — you no longer hold the channel; create a new request",
         "MAY_DA_DOI": "Not sent — the device was reassigned to another machine; create a new request",
-        "khac": "Not sent — rejected at gate {{ma}}; see the command log or ask an engineer"
+        "khac": "Not sent — rejected at gate {{ma}}; see the command log or ask an engineer",
+        "MOT_PHAN": "The command was applied only PARTLY: some values were written to the machine, the machine refused the others. It is NOT resent automatically — check at the machine, then resend only the part not applied if still needed.",
+        "MOT_PHAN_STOP": "The STOP was applied only PARTLY on this adapter: some stop pins were written, the machine refused the others. Pressing STOP MACHINE again is safe (STOP is resent) — if it still does not stop, use the hard E-STOP at the machine."
       },
       "loi": {
         "FEATURE_DISABLED": "SCADA HMI commands are turned off on the server — ask an administrator to enable them (SCADA_COMMANDS_ENABLED).",
@@ -24538,6 +24541,11 @@
         "loiDoc": "error reading the mode channel — treated as LOCAL",
         "kenhSaiMay": "the mode channel does not belong to this machine's adapter — treated as LOCAL",
         "khongRo": "mode could not be determined ({{lyDo}}) — treated as LOCAL"
+      },
+      "motPhan": {
+        "dem": "Applied {{daAp}} · not applied {{khongAp}}",
+        "daAp": "Applied: {{ds}}",
+        "khongAp": "Not applied: {{ds}}"
       }
     },
     "dungMay": {

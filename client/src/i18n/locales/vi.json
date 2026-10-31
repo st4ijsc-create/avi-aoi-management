@@ -24230,7 +24230,8 @@
         "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
         "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
       },
-      "tamKhoa": "Tạm khoá"
+      "tamKhoa": "Tạm khoá",
+      "motPhanGanNhat": "Áp một phần gần đây: đã áp {{daAp}} · không áp {{khongAp}}"
     },
     "kenh": {
       "title": "Kênh & giới hạn",
@@ -24483,7 +24484,9 @@
         "HET_HAN": "Không gửi — yêu cầu đã hết hạn; tạo yêu cầu mới",
         "KHOA_MAT": "Không gửi — bạn không còn giữ kênh; tạo yêu cầu mới",
         "MAY_DA_DOI": "Không gửi — thiết bị đã được gán sang máy khác; tạo yêu cầu mới",
-        "khac": "Không gửi — bị từ chối ở cổng {{ma}}; xem nhật ký lệnh hoặc hỏi kỹ sư"
+        "khac": "Không gửi — bị từ chối ở cổng {{ma}}; xem nhật ký lệnh hoặc hỏi kỹ sư",
+        "MOT_PHAN": "Lệnh chỉ được áp MỘT PHẦN: một số giá trị đã ghi vào máy, số khác máy báo KHÔNG nhận. Lệnh KHÔNG được tự gửi lại — kiểm tra tại máy rồi chỉ gửi lại phần chưa áp nếu vẫn cần.",
+        "MOT_PHAN_STOP": "STOP chỉ được áp MỘT PHẦN trên adapter này: một số ghim dừng đã ghi, số khác máy báo KHÔNG nhận. Nhấn DỪNG MÁY lần nữa là an toàn (STOP được gửi lại) — nếu vẫn không dừng, dùng E-STOP cứng tại máy."
       },
       "loi": {
         "FEATURE_DISABLED": "Lệnh HMI SCADA đang tắt trên máy chủ — nhờ quản trị bật (SCADA_COMMANDS_ENABLED).",
@@ -24535,6 +24538,11 @@
         "loiDoc": "lỗi đọc kênh chế độ — coi như LOCAL",
         "kenhSaiMay": "kênh chế độ không thuộc adapter của máy này — coi như LOCAL",
         "khongRo": "không xác định được chế độ ({{lyDo}}) — coi như LOCAL"
+      },
+      "motPhan": {
+        "dem": "Đã áp {{daAp}} · không áp {{khongAp}}",
+        "daAp": "Đã áp: {{ds}}",
+        "khongAp": "Không áp: {{ds}}"
       }
     },
     "dungMay": {

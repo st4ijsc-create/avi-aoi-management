@@ -27,7 +27,7 @@ import { mapTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ThongBaoLoiLenh } from "./HopThoaiLenh";
-import { laTrangThaiKetQua, moTaLoiLenh, nhanKetQua, phanLoaiKetQuaDung, type LoaiKetQuaDung, type MoTaLoi } from "./ketQuaLenh";
+import { laTrangThaiKetQua, moTaLoiLenh, nhanKetQua, phanLoaiKetQuaDung, type LoaiKetQuaDung, type MoTaLoi, type MotPhanLenh } from "./ketQuaLenh";
 
 /** Token trạng thái DỪNG (PackML stopping/aborted — `stateVocabulary`): nền nút + viền/chữ dòng "dùng E-STOP". Không dùng màu cảnh báo. */
 export const BIEN_MAU_DUNG = "--packml-abort";
@@ -144,6 +144,8 @@ type HangKetQua = {
   edgeStopRequest?: boolean;
   centralFallbackSent?: boolean;
   writes: Array<{ tagKey: string; value: unknown }>;
+  /** T3E — STOP tới adapter này áp MỘT PHẦN (`reason` = MOT_PHAN): tagKey ghim đã áp / không áp. Vắng ở mọi kết cục khác. */
+  motPhan?: MotPhanLenh;
 };
 
 /** UUID v4 cho `clientRequestId` (mỗi lần bấm một mã — bấm lại là một STOP mới, máy chủ gửi cả hai). */
@@ -452,6 +454,8 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                 const loai = phanLoaiKetQuaDung(r);
                 const nhan = nhanKetQua(laTrangThaiKetQua(r.status) ? r.status : "failed", {
                   reason: r.reason,
+                  motPhan: r.motPhan,
+                  laStop: true, // T3E — STOP được gửi lại (idempotent) ⇒ câu MOT_PHAN_STOP, không phải 'không gửi lại'
                   // đạt ⇔ đọc lại khớp ĐÚNG các ghim đã gửi ⇒ "đã đọc lại" = các ghim
                   readBack: loai === "dat" ? chuoiGhim(r.writes) : undefined,
                   requested: null,
@@ -478,6 +482,11 @@ export function HopDungMay({ machineId, tenMay, soAdapter, laEdge, khaNang, onDo
                           ? t("scada.dungMay.daGuiDuPhong")
                           : t(nhan.khoa, nhan.thamSo)}
                     </p>
+                    {r.motPhan && !r.edgeStopRequest && !r.centralFallbackSent && (
+                      <p data-testid={`mot-phan-dung-${r.adapterId}`} className="text-xs">
+                        {t("scada.lenh.motPhan.khongAp", { ds: r.motPhan.khongAp.join(", ") })}
+                      </p>
+                    )}
                     {(r.status === "rejected" || r.status === "failed") && !r.edgeStopRequest && !r.centralFallbackSent && (
                       <p className="text-xs text-muted-foreground">{t("scada.lenh.ketQua.ma", { ma: nhan.thamSo.ma ?? r.reason ?? "—" })}</p>
                     )}

@@ -24230,7 +24230,8 @@
         "dialogXoaLoiTieuDe": "清除 {{code}} 的 stub 故障？",
         "dialogMoTa": "对模拟适配器的 Lab 操作。原因将记录到审计日志。"
       },
-      "tamKhoa": "临时锁定"
+      "tamKhoa": "临时锁定",
+      "motPhanGanNhat": "近期仅部分执行：已执行 {{daAp}} · 未执行 {{khongAp}}"
     },
     "kenh": {
       "title": "通道与限值",
@@ -24483,7 +24484,9 @@
         "HET_HAN": "未发送 — 请求已过期；请创建新请求",
         "KHOA_MAT": "未发送 — 您已不再持有该通道；请创建新请求",
         "MAY_DA_DOI": "未发送 — 该设备已被分配给其他机器；请创建新请求",
-        "khac": "未发送 — 在关卡 {{ma}} 被拒绝；请查看命令日志或询问工程师"
+        "khac": "未发送 — 在关卡 {{ma}} 被拒绝；请查看命令日志或询问工程师",
+        "MOT_PHAN": "命令仅被部分执行：部分数值已写入设备，其余被设备拒绝。系统不会自动重发——请在设备处检查，如仍需要，仅重发未执行的部分。",
+        "MOT_PHAN_STOP": "此适配器上的 STOP 仅被部分执行：部分停止引脚已写入，其余被设备拒绝。再次按下“停机”是安全的（STOP 会重发）——如仍未停止，请使用设备处的硬 E-STOP。"
       },
       "loi": {
         "FEATURE_DISABLED": "服务器上的 SCADA HMI 命令已关闭 — 请管理员启用（SCADA_COMMANDS_ENABLED）。",
@@ -24535,6 +24538,11 @@
         "loiDoc": "读取模式通道出错 — 视为 LOCAL",
         "kenhSaiMay": "模式通道不属于此设备的适配器 — 视为 LOCAL",
         "khongRo": "无法确定模式（{{lyDo}}）— 视为 LOCAL"
+      },
+      "motPhan": {
+        "dem": "已执行 {{daAp}} · 未执行 {{khongAp}}",
+        "daAp": "已执行：{{ds}}",
+        "khongAp": "未执行：{{ds}}"
       }
     },
     "dungMay": {
