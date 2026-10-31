@@ -6,7 +6,7 @@
  *   • REST lệnh thiết bị: `cheKetQuaLenh` (cùng danh sách trắng `detail` với bước orchestration).
  */
 import { describe, expect, it } from "vitest";
-import { MA_LOI_DA_BIET, cheBuocRun, cheHangRun, cheKetQuaLenh, maDaBietDauTien, maLoiBuocFoe } from "./_chiTietKyThuat";
+import { MA_LOI_DA_BIET, cheBuocRun, cheHangRun, cheDetailLenh, cheKetQuaLenh, maDaBietDauTien, maLoiAdapterCua, maLoiBuocFoe } from "./_chiTietKyThuat";
 
 describe("C2 polish m1 — mã đã biết ĐẦU TIÊN ở bất kỳ đâu (không chỉ tiền tố)", () => {
   it("mỗi hình lỗi mức run của review ⇒ đúng mã outcome (không còn TECHNICAL_ERROR / DRIVER_WRITE_FAILED chung)", () => {
@@ -75,5 +75,32 @@ describe("C2 polish — cheKetQuaLenh (REST lệnh thiết bị)", () => {
     expect(cheKetQuaLenh({ ...r, status: "rejected" }, false).error).toBe("REJECTED");
     expect(cheKetQuaLenh({ ...r, status: "timeout" }, false).error).toBe("TIMEOUT");
     expect(cheKetQuaLenh(r, true)).toEqual({ detail: r.detail, error: r.error });
+  });
+});
+
+describe("C2 polish kiem-dinh 2026-11-01 (a/b/c)", () => {
+  it("(a) m25 tiền tố lạ của lỗi adapter ⇒ không lộ tiền tố / host:port", () => {
+    const t = "PLC01_LINE3: connect ECONNREFUSED 10.0.0.5:502";
+    expect(maLoiAdapterCua(t, true)).toBe("ADAPTER_OFFLINE");
+    expect(maLoiAdapterCua(t, false)).toBe("TECHNICAL_ERROR");
+    for (const mat of [true, false]) {
+      const r = String(maLoiAdapterCua(t, mat));
+      expect(r).not.toContain("PLC01_LINE3");
+      expect(r).not.toContain("10.0.0.5");
+      expect(r).not.toContain(":502");
+    }
+    expect(maLoiAdapterCua("OT_S7_BIT_NGOAI_DAI: x", false)).toBe("OT_S7_BIT_NGOAI_DAI"); // tiền tố đã biết vẫn giữ
+  });
+
+  it("(b) m9 outcomeUnknown nằm trong danh sách trắng detail; refusal / jti bị bỏ", () => {
+    expect(cheDetailLenh({ outcomeUnknown: true, refusal: "x", jti: "y" })).toEqual({ outcomeUnknown: true });
+  });
+
+  it("(c) nhiều mã đã biết ⇒ nhóm an toàn thắng, trong nhóm xuất hiện đầu tiên, ngoài nhóm giữ đầu tiên", () => {
+    expect(maLoiBuocFoe("Step REJECTED earlier; then FOE_OUTCOME_UNKNOWN: timed out", "failed")).toBe("FOE_OUTCOME_UNKNOWN");
+    expect(maLoiBuocFoe("BUSY then retry; FOE_OUTCOME_PARTIAL: 1 applied", "failed")).toBe("FOE_OUTCOME_PARTIAL");
+    expect(maDaBietDauTien("MOT_PHAN then TIMEOUT.")).toBe("MOT_PHAN");
+    expect(maDaBietDauTien("TIMEOUT then MOT_PHAN.")).toBe("TIMEOUT");
+    expect(maDaBietDauTien("REJECTED then BUSY, x")).toBe("REJECTED");
   });
 });
