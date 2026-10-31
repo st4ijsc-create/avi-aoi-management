@@ -179,7 +179,8 @@ export type SuKienAgent =
   /** Một kết quả tool chứa câu dạng mệnh lệnh — chỉ là DỮ LIỆU; vòng KHÔNG dừng (mọi chế độ). */
   | { loai: "canh-bao-du-lieu"; id: string; ten: string; nguon: string; mau: string[] }
   /** `tu-dong` bị HẠ tự trị cho phần còn lại của lượt (mọi ghi/lệnh sau đó cần người duyệt). Phát MỘT lần mỗi lượt. */
-  | { loai: "ha-tu-tri"; lyDo: "noi-dung-dang-ngo"; nguon: string; mau: string[] }
+  /** `phien-co-luot-ngoai` (Đợt 10.4b L3b): HOST hạ từ đầu lượt vì phiên đã có lượt model NGOÀI (`nguon` = "phien", `mau` rỗng). */
+  | { loai: "ha-tu-tri"; lyDo: "noi-dung-dang-ngo" | "phien-co-luot-ngoai"; nguon: string; mau: string[] }
   | { loai: "checkpoint"; checkpointId: string; tep: string[] }
   /** (Đợt 12 H0.1) `cacheN` / `promptN` = phần của `vao` TÁI DÙNG từ prefix-cache / XỬ LÝ LẠI — chỉ khi host đo được (luôn đi cặp). */
   | { loai: "usage"; vao: number; ra: number; nghi?: number; ctxPhanTram?: number; cacheN?: number; promptN?: number }

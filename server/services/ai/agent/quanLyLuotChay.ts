@@ -284,6 +284,13 @@ export interface PhuThuocQuanLy {
   danhMucModel?: () => Promise<PhuThuocDanhMuc>;
   /** (Đợt 10.4b L3) phụ thuộc đường model ngoài (lưới thay TOÀN BỘ; vắng ⇒ bộ thật nạp lười chỉ khi chọn `ngoai:`). */
   ngoai?: PhuThuocLuotNgoai;
+  /** (Đợt 10.4b L3b) phiên đã có lượt model ngoài? `null` = không đọc được (⇒ hạ tự trị, fail-closed). Mặc định đọc `ai_coding_sessions` (lọc chủ). */
+  phienCoLuotNgoai?: (userId: number, sessionId: string) => Promise<boolean | null>;
+}
+
+async function phienCoLuotNgoaiThat(userId: number, sessionId: string): Promise<boolean | null> {
+  const m = await phienKho.mo(userId, sessionId);
+  return m.ok ? m.phien.coLuotNgoai === true : null;
 }
 
 // ─── ★ Đợt 10.1 — model chọn tường minh ───────────────────────────────────────────────────────
@@ -759,6 +766,14 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
       if (!chon.ok) return { ok: false, ma: chon.ma, http: HTTP_CUA_MA[chon.ma], thongDiep: chon.thongDiep };
       const modelChon = chon.modelChon;
 
+      // ★ Đợt 10.4b L3b — lượt CỤC BỘ `tu-dong` trong phiên ĐÃ có lượt model ngoài ⇒ HẠ tự trị từ đầu (mọi ghi / lệnh qua người duyệt):
+      //   đầu ra model ngoài nằm trong lịch sử phiên là dữ liệu không tin cậy. Không đọc được cờ phiên ⇒ hạ (fail-closed).
+      let haTuTriPhien = false;
+      if (!ngoai && cheDo === "tu-dong" && typeof y.sessionId === "string" && y.sessionId !== "") {
+        const co = await (phuThuoc.phienCoLuotNgoai ?? phienCoLuotNgoaiThat)(user.id, y.sessionId).catch(() => null);
+        haTuTriPhien = co !== false;
+      }
+
       const dangCo = dangChayCuaNguoi.get(user.id);
       if (dangCo && theoId.has(dangCo)) return { ok: false, ma: "DANG_CO_LUOT_CHAY", http: HTTP_CUA_MA.DANG_CO_LUOT_CHAY, runId: dangCo };
 
@@ -872,6 +887,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
         ...(docTruocKhiGhiBat(process.env.AI_AGENT_DOC_TRUOC_KHI_GHI) ? { docTruocKhiGhi: true } : {}),
         // (Đợt 12 · H1.5) hạn giờ theo công cụ đọc/tìm — MẶC ĐỊNH TẮT
         ...(hanGioToolBat(process.env.AI_AGENT_TOOL_TIMEOUT) ? { hanGioTool: {} } : {}),
+        ...(haTuTriPhien ? { haTuTri: true } : {}),
       });
       // Chỉ mục mã của dự án: dựng NỀN nếu chưa có (không chờ, không ném — `damBaoChiMucNen` tự nuốt lỗi).
       if (!ngoai) {
@@ -912,7 +928,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
           const goiModelLuot: GoiModel = capNgoai
             ? capNgoai.goiModel
             : theoVaiTro
-            ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true }), (l) =>
+            ? boDemLuotModel(phuThuoc.goiModel ?? taoGoiModelMayChu({ modelId: theoVaiTro.modelId, khongGhiDauVet: true, runId: id }), (l) =>
                 plan?.recordPhu?.({
                   luotPhu: "agent-luot",
                   requestId: id,
@@ -926,7 +942,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
                   outcome: "ok",
                 }),
               )
-            : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id, ...(modelChon ? { modelId: modelChon.modelId } : {}) }));
+            : (phuThuoc.goiModel ?? taoGoiModelMayChu({ userId: user.id, runId: id, ...(modelChon ? { modelId: modelChon.modelId } : {}) }));
           const giaoViec: CauHinhGiaoViec | undefined = coGiaoViec
             ? {
                 doSauHienTai: 0,
@@ -1002,7 +1018,12 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
                   : {}),
             boThucThi: capNgoai ? capNgoai.boThucThi : boThucThi,
             // (L3, u3) `xong` của lượt ngoài mang vết cộng dồn mọi vòng (không callId).
-            phat: (e) => phat(s, capNgoai && e.loai === "xong" ? { ...e, vetNgoai: capNgoai.vet() } : e),
+            phat: (e) => {
+              phat(s, capNgoai && e.loai === "xong" ? { ...e, vetNgoai: capNgoai.vet() } : e);
+              // (L3b) nói thật ngay sau bat-dau: lượt này đã bị hạ tự trị vì phiên có lượt model ngoài
+              if (haTuTriPhien && e.loai === "bat-dau") phat(s, { loai: "ha-tu-tri", lyDo: "phien-co-luot-ngoai", nguon: "phien", mau: [] });
+            },
+            ...(haTuTriPhien ? { haTuTriDau: true } : {}),
             signal: boHuy.signal,
             gioiHan: capNgoai ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI } : phuThuoc.gioiHan,
             ngonNgu: lang,
