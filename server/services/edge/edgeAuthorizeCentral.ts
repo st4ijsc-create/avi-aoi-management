@@ -289,14 +289,20 @@ export const EDGE_RESUMED_BY_CTX_KEY = "edgeResumedBy";
  * F-B2-1 — whose role central's engine policy (foeEngine.execCommand: `role: rc.user.role`) would use for this attempt:
  *   • the gate path (the newest resume is the gate approval) ⇒ the APPROVER;
  *   • a held / interrupted resume AFTER the newest approval ⇒ the RESUMER (recorded under EDGE_RESUMED_BY_CTX_KEY);
- *   • the run was held and continued but who continued it is not recorded ⇒ unknown (the caller refuses: fail closed).
+ *   • the run was held and continued but who continued it is not recorded ⇒ unknown (the caller refuses: fail closed);
+ *   • A2 test — the recorded resume and the newest approval carry the SAME millisecond ⇒ which came last cannot be known ⇒
+ *     unknown too (same refusal path, "who continued it is not recorded"): never guess a person. Earlier code fell to the approver.
  */
 export function edgeEngineActorOf(contextJson: unknown, newestApproval: { approvedBy: number; at: number }): { userId: number; path: "gate" | "held" } | { unknown: true } {
   const ctx = (contextJson && typeof contextJson === "object" ? contextJson : {}) as Record<string, unknown>;
   const r = ctx[EDGE_RESUMED_BY_CTX_KEY] as { userId?: unknown; at?: unknown } | undefined;
   const userId = r && typeof r.userId === "number" && Number.isInteger(r.userId) && r.userId > 0 ? r.userId : null;
   const at = r && typeof r.at === "number" && Number.isFinite(r.at) ? r.at : null;
-  if (userId !== null && at !== null) return at > newestApproval.at ? { userId, path: "held" } : { userId: newestApproval.approvedBy, path: "gate" };
+  if (userId !== null && at !== null) {
+    if (at > newestApproval.at) return { userId, path: "held" };
+    if (at < newestApproval.at) return { userId: newestApproval.approvedBy, path: "gate" };
+    return { unknown: true }; // same millisecond: order unknown ⇒ fail closed
+  }
   if (ctx.interruptedEarlier === true) return { unknown: true };
   return { userId: newestApproval.approvedBy, path: "gate" };
 }
