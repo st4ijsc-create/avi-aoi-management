@@ -22,6 +22,12 @@ describe("T6b polish — maLoiCua('readback skipped: …')", () => {
     expect(maLoiCua("link lost while the write was in flight (after 40ms) — outcome unknown: the write may have been applied on the device", "timeout")).toBe("TIMEOUT");
   });
 
+  for (const cau of [LY_DO_BO_DOC_LAI_MAT_LIEN_KET, LY_DO_BO_DOC_LAI_QUA_HAN, LY_DO_BO_DOC_LAI_KHONG_RO]) {
+    it(`kiem-dinh c2: "${cau}" + status timeout ⇒ TIMEOUT (không phải READBACK_UNAVAILABLE — write ấy không rõ kết cục, không phải 'đã ghi')`, () => {
+      expect(maLoiCua(cau, "timeout")).toBe("TIMEOUT");
+    });
+  }
+
   it("'readback unavailable' cũ không đổi ⇒ READBACK_UNAVAILABLE", () => {
     expect(maLoiCua("readback unavailable", "acked_unverified")).toBe("READBACK_UNAVAILABLE");
   });

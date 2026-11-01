@@ -200,6 +200,50 @@ describe("T6 OPC UA — lô một lần gửi", () => {
     expect(ex.outcomes[1].errorText).toMatch(LINK_LOST_T17);
     await d.disconnect();
   }, 15_000);
+
+  it("kiem-dinh a14: lỗi chuẩn bị CHUỖI RỖNG trong lô mà session.write THÀNH CÔNG ⇒ write ấy 'failed' (không gửi), write đã gửi nhận ĐÚNG statusCode của nó (nhánh ghép kết quả kiểm `!== undefined`)", async () => {
+    const dsClient: any[] = [];
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: {
+        create: vi.fn(() => {
+          const client: any = new EventEmitter();
+          const session = {
+            read: vi.fn(async () => []),
+            // máy chủ trả MỘT statusCode Good cho MỘT node đã gửi
+            write: vi.fn(async (nodes: unknown[]) => nodes.map(() => ({ value: 0, name: "Good" }))),
+            close: vi.fn(async () => {}),
+          };
+          Object.assign(client, { session, connect: vi.fn(async () => {}), createSession: vi.fn(async () => session), disconnect: vi.fn(async () => {}) });
+          dsClient.push(client);
+          return client;
+        }),
+      },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {
+        constructor(public o: any) {}
+      },
+    }));
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const goc = (d as any).resolveAddress.bind(d);
+    (d as any).resolveAddress = async (addr: string) => {
+      if (addr === "ns=2;s=A") throw Object.assign(Object.create(null), { message: "", toString: () => "" });
+      return goc(addr);
+    };
+    const c0 = dsClient[0];
+    const ex = await ghiLo(d, [
+      { tagKey: "a", address: "ns=2;s=A", dataType: "int", value: 1 },
+      { tagKey: "b", address: "ns=2;s=B", dataType: "int", value: 2 },
+    ]);
+    expect(c0.session.write).toHaveBeenCalledTimes(1);
+    expect(c0.session.write.mock.calls[0][0]).toHaveLength(1); // chỉ b được gửi
+    expect(ex.timedOut).toBe(false);
+    expect(ex.outcomes.map((x) => x.status)).toEqual(["failed", "acked"]);
+    expect(ex.outcomes.map((x) => x.ok)).toEqual([false, true]);
+    await d.disconnect();
+  }, 15_000);
 });
 
 // ───────────────────────── S7 / MC (một lần gửi: writeItems) ─────────────────────────
@@ -519,6 +563,27 @@ describe("T6 — kết cục chung / rủi ro lệnh ghi cũ / nhánh ném cả 
     } finally {
       m._sweepStaleWriteRiskForTests(Number.POSITIVE_INFINITY);
     }
+  });
+
+  it("kiem-dinh b3: số <ms> trong câu 'link lost … (after <ms>ms)' = thời gian THẬT từ sentAt tới lúc driver trả lời (driver trả sau ~150 ms)", async () => {
+    const TRE_MS = 150;
+    const d = {
+      protocol: "modbus",
+      writeTags: async () => {
+        await new Promise<void>((r) => setTimeout(r, TRE_MS));
+        return driverTheoWrite().writeTags([]);
+      },
+      readTags: async () => [],
+    } as unknown as OtDriver;
+    await import("../otDeviceWrite"); // nạp trước: thời gian nạp lạnh không nằm trong cửa sổ đo
+    const t0 = Date.now();
+    const ex = await ghiLo(d, W3);
+    const tong = Date.now() - t0;
+    laBaNhanTuanTu(ex);
+    const ms = Number(/\(after (\d+)ms\)/.exec(ex.outcomes[1].errorText ?? "")?.[1]);
+    // cận dưới: hẹn giờ có thể bắn sớm ≤ vài ms; cận trên: không quá thời gian cả lời gọi (sentAt nằm TRONG cửa sổ t0..t0+tong)
+    expect(ms, `after ${ms}ms, cả lời gọi ${tong} ms`).toBeGreaterThanOrEqual(TRE_MS - 5);
+    expect(ms).toBeLessThanOrEqual(tong + 2);
   });
 
   it("nhánh `catch` GIỮ y T17: driver (plugin / phòng thủ) NÉM LoiMatLienKetKhiDangGui cho cả lô ⇒ mọi write 'timeout' câu T17, timedOut true", async () => {
