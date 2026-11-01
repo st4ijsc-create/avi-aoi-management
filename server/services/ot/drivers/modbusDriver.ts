@@ -41,7 +41,7 @@ import { boolChoGhi } from "./boolNghiem";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui, ketCucKhongRoCua } from "./dangBay";
+import { SoYeuCauDangBay, ghiTuanTuDungKhiMatLienKet, ketCucKhongRoCua } from "./dangBay";
 
 /**
  * SCADA R1b-2b-2a T2 (mục 66) — hết hạn GIAO DỊCH của chính modbus-serial 8.0.25 (`client.setTimeout(cfg.timeoutMs)`): `_startTimeout` gọi lại bằng
@@ -384,9 +384,9 @@ export class ModbusDriver extends NotImplementedDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (writeTags reject) để dispatcher trả 'timeout'
-      // NGAY — không gộp vào ok:false ('failed' nói sai: lệnh có thể đã tới PLC). Các write sau trong lô không được gửi (liên kết đã mất).
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ dispatcher trả 'timeout' NGAY ('failed' nói sai: lệnh có thể đã
+      // tới PLC). R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: write NÀY mang `ketCucKhongRo: "mat_lien_ket"` (ketCucKhongRoCua dưới); write TRƯỚC
+      // giữ kết quả thật; write SAU không gửi (`ghiTuanTuDungKhiMatLienKet` trong writeTags ⇒ LOI_CHUA_GUI_MAT_LIEN_KET, 'failed').
       // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH modbus-serial: lệnh đã lên dây, thiết bị chưa trả lời ⇒ kết cục KHÔNG RÕ của write này
       // (dispatcher ⇒ 'timeout'), không 'failed'. Exception Modbus (thiết bị ĐÃ trả lời) / lỗi trước khi gửi ⇒ 'failed' như cũ.
       const ketCucKhongRo = ketCucKhongRoCua(err) ?? (laQuaHanModbusSerial(err) ? "qua_han_driver" : null);
@@ -408,10 +408,8 @@ export class ModbusDriver extends NotImplementedDriver {
     }
     if (writes.length === 0) return [];
 
-    const out: OtCommandResult[] = [];
-    for (const w of writes) {
-      out.push(await this.writeOne(w));
-    }
+    // T6 — tuần tự; mất liên kết ở một write ⇒ các write SAU không tới thư viện (kết quả theo từng write, không ném cả lô).
+    const out: OtCommandResult[] = await ghiTuanTuDungKhiMatLienKet(writes, (w) => this.writeOne(w));
     if (out.every((r) => r.ok)) this.lastOkAt = new Date();
     return out;
   }

@@ -844,6 +844,36 @@ export function tryEnqueueAdapterCommand<T>(
 }
 
 
+/** T6b — câu errorText của write acked khi đọc lại bị bỏ (theo loại "không rõ" của lô). Mọi câu bắt đầu "readback skipped: " (maLoiCua ⇒ READBACK_UNAVAILABLE). */
+export const LY_DO_BO_DOC_LAI_MAT_LIEN_KET = "readback skipped: link lost in this batch";
+/** T6b polish (review m1) — câu RIÊNG cho `qua_han_driver`. */
+export const LY_DO_BO_DOC_LAI_QUA_HAN = "readback skipped: driver request timed out in this batch";
+/** T6b polish (review m1) — câu CHUNG cho mọi `ketCucKhongRo` khác (driver plugin đưa giá trị riêng qua cầu nối, không kiểm). */
+export const LY_DO_BO_DOC_LAI_KHONG_RO = "readback skipped: outcome unknown in this batch";
+
+/**
+ * SCADA R1b-2b-2a T6 fix 1 + T6b (dieu-phoi 2026-11-01) — MỘT nơi quyết "bỏ đọc lại CẢ lô": kết quả "không rõ" của STOP KHÔNG BAO GIỜ chờ đọc lại.
+ * Lô (kết quả `driver.writeTags`) có ≥ 1 write `ok:false` mang `ketCucKhongRo` KHÁC null ⇒ trả câu lý do (write acked của lô ⇒ `acked_unverified`
+ * với câu này, không `readTags`); ngược lại `null` (đọc lại như thường). T6b polish (review m1) — CÙNG vị từ với bộ gắn nhãn của `executeOtDeviceWrite`
+ * (`!ok && wr.ketCucKhongRo != null` ⇒ `timeout`): mọi write bị gắn `timeout` theo từng write đều bỏ đọc lại, kể cả giá trị lạ của driver plugin
+ * (`pluginDriverBridge` chuyển kết quả sidecar nguyên trạng).
+ *   • `mat_lien_ket` (liên kết mất giữa lô, T6) ⇒ LY_DO_BO_DOC_LAI_MAT_LIEN_KET (ưu tiên cao nhất: nói rõ liên kết đã gãy);
+ *   • `qua_han_driver` (driver / thư viện tự hết hạn, thiết bị trả lời cụt — T2 / T3) ⇒ LY_DO_BO_DOC_LAI_QUA_HAN;
+ *   • giá trị khác (không null) ⇒ LY_DO_BO_DOC_LAI_KHONG_RO.
+ * Một write `timeout` của dispatcher không có `ketCucKhongRo` chỉ xảy ra khi CẢ lệnh quá hạn (`timedOut`) ⇒ không có write acked nào, không cần xét.
+ * Hàm thuần (không I/O) — xuất cho test.
+ */
+export function lyDoBoDocLai(ketQua: ReadonlyArray<{ ok?: boolean; ketCucKhongRo?: unknown }>): string | null {
+  let lyDo: string | null = null;
+  for (const r of ketQua) {
+    if (r == null || r.ok === true || r.ketCucKhongRo == null) continue;
+    if (r.ketCucKhongRo === "mat_lien_ket") return LY_DO_BO_DOC_LAI_MAT_LIEN_KET;
+    if (r.ketCucKhongRo === "qua_han_driver") lyDo = LY_DO_BO_DOC_LAI_QUA_HAN;
+    else if (lyDo === null) lyDo = LY_DO_BO_DOC_LAI_KHONG_RO;
+  }
+  return lyDo;
+}
+
 /** R1b-2b-2a T2 — kết quả của `driver.writeTags` có ≥ 1 write KHÔNG rõ kết cục (`OtCommandResult.ketCucKhongRo`). */
 function mangKetCucKhongRo(v: unknown): boolean {
   return Array.isArray(v) && v.some((r) => r != null && typeof r === "object" && (r as { ketCucKhongRo?: unknown }).ketCucKhongRo != null);
@@ -1307,6 +1337,8 @@ export async function executeOtDeviceWrite(a: {
   // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
   let writePromise: Promise<unknown> | undefined;
   let writeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** T6 — ms từ `sentAt` tới lúc driver trả lời (hoặc hạn lệnh) — cho câu "link lost … (after <ms>ms)" của write `mat_lien_ket`. */
+  let traLoiSauMs = 0;
   try {
     // B3 fix scan 3 (a) — this write is DISPATCHED now: a running STOP watch gives up exactly these tags (the newer
     // intent for them wins); watches on other tags keep running.
@@ -1321,10 +1353,12 @@ export async function executeOtDeviceWrite(a: {
       }),
     ]);
   } catch (err) {
+    // T6 — nhánh này GIỮ (driver plugin / phòng thủ vẫn có thể ném cả lô): như T17, cả lô `timeout`. Driver có sẵn trả theo từng write.
     if (laLoiMatLienKetKhiDangGui(err)) matLienKetSauMs = Date.now() - sentAt.getTime();
     else threwError = (err as Error)?.message || String(err);
     writeResults = [];
   } finally {
+    traLoiSauMs = Date.now() - sentAt.getTime();
     clearTimeout(writeTimer);
     try {
       a.onWriteAnswered?.();
@@ -1348,6 +1382,7 @@ export async function executeOtDeviceWrite(a: {
   // STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch). Chỉ khi tuần tự hoá bật — cùng phạm vi với B3.
   // R1b-2b-2a T2 (mục 66) — CÙNG nhánh cho write mà driver tự hết hạn (`ketCucKhongRo`): yêu cầu đã giao cho thư viện, thư viện đã thôi giữ nó (không
   // giữ chỗ, không đặt lại phiên) nhưng lệnh có thể đã / sẽ được áp ⇒ ghi rủi ro MỘT lần mỗi lệnh.
+  // R1b-2b-2a T6 (mục 69) — write `ketCucKhongRo: "mat_lien_ket"` (driver trả theo từng write khi liên kết mất giữa lô) đi CÙNG nhánh này.
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
   const coWriteKhongRo = !timedOut && !threwError && resultsArr.some((x) => x.ok !== true && x.ketCucKhongRo != null);
   if ((matLienKetSauMs !== null || coWriteKhongRo) && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
@@ -1373,6 +1408,18 @@ export async function executeOtDeviceWrite(a: {
       resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
       { tagKey: r.write.tagKey, ok: false, error: "no result" };
     const ok = wr.ok === true;
+    if (!ok && wr.ketCucKhongRo === "mat_lien_ket") {
+      // R1b-2b-2a T6 (mục 69) — driver trả kết quả THEO TỪNG write khi liên kết mất giữa lô (không ném cả lô nữa): write ĐÃ giao cho thư viện ⇒
+      // `timeout`, ĐÚNG câu T17 (ms tính từ `sentAt` tới lúc driver trả lời); write chưa giao (lỗi chuẩn bị cục bộ / sau điểm rớt —
+      // LOI_CHUA_GUI_MAT_LIEN_KET) không mang `ketCucKhongRo` ⇒ `failed` bên dưới; write đã acked trước điểm rớt giữ `acked` (đọc lại như thường).
+      return {
+        idx: i,
+        ok: false,
+        status: "timeout",
+        errorText: `link lost while the write was in flight (after ${traLoiSauMs}ms) — outcome unknown: the write may have been applied on the device`,
+        readBackValue: null,
+      };
+    }
     if (!ok && wr.ketCucKhongRo != null) {
       // R1b-2b-2a T2 (mục 66) — driver tự hết hạn khi yêu cầu ĐÃ giao cho thư viện / thiết bị: kết cục KHÔNG RÕ của RIÊNG write này ⇒ cùng nhãn
       // `timeout` với T17 / B3 (không đọc lại: chỉ write `acked` được đọc lại), không bao giờ `failed`. Các write khác của lô giữ kết quả riêng.
@@ -1406,7 +1453,22 @@ export async function executeOtDeviceWrite(a: {
   //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
   //    SCADA R1a Task 5 (K7) — `input.docLai === "bat_buoc"` (the HMI path) forces this read-back even with OT_READBACK_ENABLED off;
   //    the comparison below is the same (readbackMatches + quality "good"). Absent ⇒ the flag alone decides, as before.
-  if ((isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked")) {
+  //    R1b-2b-2a T6 fix 1 (review I1) — lô có ≥ 1 write `ketCucKhongRo: "mat_lien_ket"` (liên kết mất GIỮA lô): KHÔNG đọc lại CẢ lô, mọi lệnh (không
+  //    chỉ STOP) — đọc trên liên kết đã gãy không thêm gì, và với EIP phiên nhiễm `readTags` chờ phiên mới (≤ 2 s) rồi đọc (≤ timeoutMs) ⇒ câu trả lời
+  //    "không rõ" của STOP chậm hơn T17. Write acked ⇒ `acked_unverified` "readback skipped: link lost in this batch" (lô vẫn `timeout` theo T2).
+  //    Chỉ áp khi đọc lại SẼ chạy (cờ / `bat_buoc`).
+  //    R1b-2b-2a T6b (dieu-phoi 2026-11-01) — mở rộng cho MỌI write "không rõ" (`qua_han_driver` nữa): kết quả "không rõ" của STOP KHÔNG BAO GIỜ chờ
+  //    đọc lại. MỘT nơi quyết: `lyDoBoDocLai` (hàm thuần).
+  const docLaiSeChay = (isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked");
+  const lyDoBo = docLaiSeChay ? lyDoBoDocLai(resultsArr) : null;
+  if (lyDoBo) {
+    for (const o of outcomes) {
+      if (o.status !== "acked") continue;
+      o.status = "acked_unverified";
+      o.errorText = lyDoBo;
+    }
+  }
+  if (docLaiSeChay && !lyDoBo) {
     const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
     const readTags: OtTagAddress[] = ackedIdx.map((i) => {
       const r = resolved[i];

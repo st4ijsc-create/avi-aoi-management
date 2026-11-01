@@ -729,6 +729,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     const values = writable.map((p) => p.value);
 
     let batchError: string | null = null;
+    let matLienKet = false;
     const conn = this.conn;
     try {
       await withTimeout(
@@ -749,15 +750,17 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
-      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: write đã vào writeItems ⇒ `ketCucKhongRo: "mat_lien_ket"`; write hỏng chuẩn bị cục bộ giữ
+      // lỗi riêng ⇒ 'failed'. (Mã này nằm SAU khoá T3B-0 — chỉ chạy khi khoá được gỡ ở 3B / test mở khoá; phần MC còn lại: backlog 84.)
+      if (laLoiMatLienKetKhiDangGui(err)) matLienKet = true;
     }
 
     if (!batchError) this.lastOkAt = new Date();
 
     return prepared.map((p) => {
       if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
-      if (batchError) return { tagKey: p.tagKey, ok: false, error: batchError };
+      if (batchError) return matLienKet ? { tagKey: p.tagKey, ok: false, error: batchError, ketCucKhongRo: "mat_lien_ket" as const } : { tagKey: p.tagKey, ok: false, error: batchError };
       return { tagKey: p.tagKey, ok: true };
     });
   }
