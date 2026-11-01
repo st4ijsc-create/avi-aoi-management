@@ -30,6 +30,19 @@ describe("T6b — lyDoBoDocLai (MỘT nơi quyết, hàm thuần)", () => {
     expect(lyDoBoDocLai([{ ok: false, ketCucKhongRo: "khac" }, { ok: false, ketCucKhongRo: "qua_han_driver" }])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN);
     expect(lyDoBoDocLai([{ ok: false, ketCucKhongRo: "khac" }, { ok: false, ketCucKhongRo: "mat_lien_ket" }])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
   });
+  it("kiem-dinh b9: luật chọn câu KHÔNG phụ thuộc thứ tự — câu của loại ĐÃ BIẾT thắng câu chung: qua_han rồi lạ, lạ rồi qua_han ⇒ đều câu qua_han; lạ ở bất kỳ đâu không ghi đè mat_lien_ket", () => {
+    const QH = { ok: false, ketCucKhongRo: "qua_han_driver" };
+    const LA = { ok: false, ketCucKhongRo: "khac" };
+    const LA2 = { ok: false, ketCucKhongRo: "plugin_rieng" };
+    const ML = { ok: false, ketCucKhongRo: "mat_lien_ket" };
+    expect(lyDoBoDocLai([QH, LA])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN); // qua_han TRƯỚC lạ (đột biến b9 ⇒ câu chung)
+    expect(lyDoBoDocLai([LA, QH])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN); // lạ TRƯỚC qua_han
+    expect(lyDoBoDocLai([{ ok: true }, QH, LA, LA2])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN);
+    expect(lyDoBoDocLai([LA, QH, LA2])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN);
+    expect(lyDoBoDocLai([ML, LA])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
+    expect(lyDoBoDocLai([QH, LA, ML])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
+    expect(lyDoBoDocLai([LA, LA2])).toBe(LY_DO_BO_DOC_LAI_KHONG_RO); // chỉ loại lạ ⇒ câu chung
+  });
   it("lô RÕ (acked + failed, hoặc toàn acked, hoặc rỗng) ⇒ null — đọc lại như thường", () => {
     expect(lyDoBoDocLai([{ ok: true }, { ok: false }])).toBeNull();
     expect(lyDoBoDocLai([{ ok: true }, { ok: true }])).toBeNull();
