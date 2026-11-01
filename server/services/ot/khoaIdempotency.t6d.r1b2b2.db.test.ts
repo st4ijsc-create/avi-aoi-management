@@ -67,7 +67,7 @@ vi.mock("./otManager", async (importOriginal) => {
 
 import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
-import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { boundedKey, FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import { dispatch, perWriteKey, bamLenhOt, quyetDinhKhoa, MA_KHOA_DUNG_LAI, type DispatchResult, type DispatchInput, type HangTheoKhoa } from "./commandDispatcher";
 import type { OtCommandResult, OtWrite } from "./otDriver";
@@ -1161,4 +1161,31 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(H.bay).toBe(0);
     }, 30_000);
   }
+  it("★ KK-6 (kiem-dinh n3b) khoá có KHOẢNG TRẮNG đầu + cuối được giữ NGUYÊN TỪNG BYTE: hàng ý định + kết quả mang đúng perWriteKey(\"  K  \") / intent:<nó>; lệnh cùng payload với khoá ĐÃ CẮT \"K\" KHÔNG phải phát lại (hàng riêng, gói riêng)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const goc = `K-ws-${randomUUID().slice(0, 8)}`;
+      const coTrang = `  ${goc}  `;
+      const writes = [{ tagKey: "t", value: 1 }];
+      const a = await gui(tx, ad, writes, coTrang);
+      expect(a).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      const kq = perWriteKey(coTrang, "t", 0);
+      expect(kq).toBe(`v2:${coTrang.length}:${coTrang}:1:t:0`); // khoảng trắng nằm TRONG khoá
+      const yd = boundedKey(`intent:${kq}`); // = intentKeyFor (không xuất)
+      const hangA = await tx.select().from(commandLog).where(inArray(commandLog.idempotencyKey, [kq, yd]));
+      expect(hangA.map((h) => h.idempotencyKey).sort()).toEqual([kq, yd].sort());
+      expect(hangA.find((h) => h.idempotencyKey === kq)!.id).toBe(a.commandLogIds[0]);
+      expect((hangA.find((h) => h.idempotencyKey === yd)!.ackValue as { ledger?: string }).ledger).toBe("intent");
+
+      const b = await gui(tx, ad, writes, goc);
+      expect(b).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(2); // gói RIÊNG — không phát lại lệnh khoá có khoảng trắng
+      expect(b.commandLogIds.some((id) => a.commandLogIds.includes(id))).toBe(false);
+      const hangB = await tx.select().from(commandLog).where(inArray(commandLog.id, b.commandLogIds));
+      expect(hangB.map((h) => h.idempotencyKey)).toEqual([perWriteKey(goc, "t", 0)]);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
 });
