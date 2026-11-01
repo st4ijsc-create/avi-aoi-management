@@ -67,7 +67,7 @@ vi.mock("./otManager", async (importOriginal) => {
 
 import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
-import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import { dispatch, perWriteKey, bamLenhOt, quyetDinhKhoa, MA_KHOA_DUNG_LAI, type DispatchResult, type DispatchInput, type HangTheoKhoa } from "./commandDispatcher";
 import type { OtCommandResult, OtWrite } from "./otDriver";
@@ -888,6 +888,119 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(d.soGhi).toBe(1);
       const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s.commandLogIds));
       expect((hang[0]!.ackValue as { lanTruoc?: { lyDo?: string } }).lanTruoc?.lyDo).toBe("khong_chac");
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  /** KD2: HITL action gắn lệnh với công cụ tuỳ chọn (FOE_ENGINE_TOOL = hành động engine KHÔNG có duyệt cổng tách biệt). */
+  async function taoHanhDongCongCu(tx: Tx, adapterId: number, writes: Array<{ tagKey: string; value: unknown }>, commandType: string, tool: string): Promise<string> {
+    const actionId = `${DAU}-actx-${Math.random().toString(36).slice(2, 10)}`;
+    await tx.insert(aiPendingActions).values({
+      id: actionId,
+      tool,
+      argsJson: {},
+      userId: OWNER,
+      userRole: "engineer",
+      summary: `${DAU} test action`,
+      previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool, adapterId, machineId: MACHINE, commandType, writes })),
+      status: "confirmed",
+      idempotencyKey: `${actionId}-idem`,
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    return actionId;
+  }
+
+  /** Đặt adapter dưới quyền một node edge (giao dịch ROLLBACK) — driver trung tâm vẫn còn ⇒ chỉ cổng chủ ở bước giữ chỗ chặn. */
+  async function giaoChoEdge(tx: Tx, adapterId: number): Promise<void> {
+    const r = (await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${`${DAU}-n-${Math.random().toString(36).slice(2, 7)}`}, 'n', 'offline') RETURNING id`)) as unknown as Array<{ id: number }>;
+    await tx.execute(sql`UPDATE device_adapters SET "edgeNodeId" = ${r[0]!.id} WHERE id = ${adapterId}`);
+  }
+
+  it("★ KD-8 (m17b) hàng CŨ (không băm) mang giá trị ĐỐI TƯỢNG {a:1}, lệnh mới cùng khoá/adapter/tag/loại lệnh với {a:2} ⇒ KHÔNG phát lại (hai đối tượng cùng chuỗi `[object Object]` không phải khớp chắc chắn): khong_chac ⇒ DUPLICATE_IN_FLIGHT, 0 gói", async () => {
+    const input = { adapterId: 1, commandType: "set_param", writes: [{ tagKey: "t", value: { a: 2 } }], idempotencyKey: "K", triggeredBy: { kind: "hitl", requestedBy: 7 } } as unknown as DispatchInput;
+    const hangO = (v: unknown) => ({ id: 1, adapterId: 1, tagKey: "t", commandType: "set_param", requestedValue: v, ackValue: { ledger: "result" }, status: "acked", requestedBy: 7, triggerKind: "hitl" }) as never;
+    const h = (o: Partial<HangTheoKhoa>): HangTheoKhoa => ({ ketQuaMoi: [undefined], ketQuaCu: [undefined], yDinhMoi: [undefined], yDinhCu: [undefined], ...o });
+    expect(quyetDinhKhoa(input, bamLenhOt(input), { requestedBy: 7 }, h({ ketQuaCu: [hangO({ a: 1 })] })).loai).toBe("khong_chac");
+    expect(quyetDinhKhoa(input, bamLenhOt(input), { requestedBy: 7 }, h({ ketQuaCu: [hangO({ a: 2 })] })).loai).toBe("phat_lai");
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      await chenHangCu(tx, ad, K, "t", { a: 1 });
+      const r = await gui(tx, ad, [{ tagKey: "t", value: { a: 2 } }], K);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toBe("DUPLICATE_IN_FLIGHT");
+      expect(d.soGhi).toBe(0);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-9 (m29) STOP lần trước chỉ MÔ PHỎNG (ok, simulated:true) ⇒ chưa tới thiết bị ⇒ STOP cùng khoá chạy đường THẬT phải ra thiết bị dưới khoá mới (lan_truoc_khong_ok), +1 gói", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      process.env.OT_CONTROL_ENABLED = "false";
+      const s1 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, "stop");
+      expect(s1).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+      expect(d.soGhi).toBe(0);
+      process.env.OT_CONTROL_ENABLED = "true";
+      const s2 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, "stop");
+      expect(s2).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s2.commandLogIds));
+      const av = hang[0]!.ackValue as { lanTruoc?: { idempotencyKey?: string; lyDo?: string } };
+      expect(av.lanTruoc).toMatchObject({ idempotencyKey: K, lyDo: "lan_truoc_khong_ok" });
+      expect(hang[0]!.idempotencyKey).toContain("#stop-");
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-10 (m40) STOP GHIM theo LOẠI LỆNH gửi lại dưới khoá mới (lan_truoc_khong_ok) trên adapter đã giao cho EDGE ⇒ VẪN ra thiết bị (cổng chủ không chặn STOP ghim); đối chứng: lệnh thường cùng adapter bị ADAPTER_OWNED_BY_EDGE", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia(HONG);
+      const ad = await taoAdapter(tx, d);
+      await giaoChoEdge(tx, ad);
+      const K = khoaMoi();
+      const s1 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, "stop");
+      expect(s1.reason).not.toBe("ADAPTER_OWNED_BY_EDGE");
+      expect(s1.ok).toBe(false);
+      expect(d.soGhi).toBe(1);
+      d.kb = ACK;
+      const s2 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, "stop");
+      expect(s2).toMatchObject({ ok: true, status: "acked", pinnedStop: true });
+      expect(d.soGhi).toBe(2);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s2.commandLogIds));
+      expect((hang[0]!.ackValue as { lanTruoc?: { lyDo?: string } }).lanTruoc?.lyDo).toBe("lan_truoc_khong_ok");
+      const thuong = await gui(tx, ad, [{ tagKey: "t", value: 1 }], khoaMoi());
+      expect(thuong).toMatchObject({ ok: false, reason: "ADAPTER_OWNED_BY_EDGE" });
+      expect(d.soGhi).toBe(2);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-11 (m41) STOP GHIM gửi lại dưới khoá mới với hành động của ENGINE (FOE) KHÔNG có duyệt cổng tách biệt ⇒ VẪN ra thiết bị (STOP ghim được miễn tự-duyệt FOE ở giữ chỗ); đối chứng: lệnh thường cùng loại hành động bị NOT_CONFIRMED", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia(HONG);
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      const writes = [{ tagKey: "a", value: 0 }];
+      const goiFoe = async (key: string, commandType: string, ws: Array<{ tagKey: string; value: unknown }>) => {
+        const actionId = await taoHanhDongCongCu(tx, ad, ws, commandType, FOE_ENGINE_TOOL);
+        return dispatch({ adapterId: ad, machineId: MACHINE, commandType, writes: ws, triggeredBy: { kind: "hitl", actionId, tool: FOE_ENGINE_TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: key });
+      };
+      const s1 = await goiFoe(K, "stop", writes);
+      expect(s1.reason).not.toBe("NOT_CONFIRMED");
+      expect(d.soGhi).toBe(1);
+      d.kb = ACK;
+      const s2 = await goiFoe(K, "stop", writes);
+      expect(s2).toMatchObject({ ok: true, status: "acked", pinnedStop: true });
+      expect(d.soGhi).toBe(2);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s2.commandLogIds));
+      expect((hang[0]!.ackValue as { lanTruoc?: { lyDo?: string } }).lanTruoc?.lyDo).toBe("lan_truoc_khong_ok");
+      const thuong = await goiFoe(khoaMoi(), "set_param", [{ tagKey: "t", value: 1 }]);
+      expect(thuong).toMatchObject({ ok: false, reason: "NOT_CONFIRMED" });
+      expect(d.soGhi).toBe(2);
     });
     expect(H.bay).toBe(0);
   }, 30_000);
