@@ -82,7 +82,7 @@ function callerAs(user: any) {
 }
 
 /** Minimal OtDriver whose connect() records the endpoint it was called with. */
-function fakeDriver(opts: { onConnect?: (endpoint: string) => void; values?: Record<string, unknown> } = {}): OtDriver {
+function fakeDriver(opts: { onConnect?: (endpoint: string) => void; values?: Record<string, OtSample["value"]> } = {}): OtDriver {
   const { onConnect, values = {} } = opts;
   return {
     protocol: "opcua",

@@ -138,7 +138,7 @@ describe.skipIf(!onTest)("motion-lock authority (mig 0374, _test, rolled back)",
     await inRolledBackTx(async (tx) => {
       const { node, robot } = await nodeAndRobot(tx, "c");
       const epoch = await own(tx, robot, node);
-      const g = Number((await lockRow(tx, robot)).generation);
+      const g = Number((await lockRow(tx, robot))!.generation);
       expect(await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: epoch, generation: g - 1 })).toBe(0); // older generation
       expect(await clearEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: epoch - 1, generation: g })).toBe(0); // stale epoch
       expect(await codeOf(tx, () => applyEdgeMotionLock(tx, { robotId: robot, nodeId: node, ownerEpoch: epoch - 1, generation: g + 1, reasonCode: "late" }))).toBe("23514");
@@ -165,7 +165,7 @@ describe.skipIf(!onTest)("motion-lock authority (mig 0374, _test, rolled back)",
 
       const e2 = await own(tx, robot, null);
       expect(e2).toBe(e1 + 1);
-      const row = await lockRow(tx, robot);
+      const row = (await lockRow(tx, robot))!; // null ⇒ toMatchObject ngay dưới đỏ như trước
       expect(row).toMatchObject({ authority: "central", reasonCode: "ownerChanged", ownerEpoch: e2 });
       const refused = await dispatchRobotJob(MOTION(robot));
       expect(refused).toMatchObject({ ok: false, status: "rejected", error: "MOTION_LOCKED" });

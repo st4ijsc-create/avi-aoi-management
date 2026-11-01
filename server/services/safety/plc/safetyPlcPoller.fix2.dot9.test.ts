@@ -33,7 +33,7 @@ interface Fake extends QueuedSubscriptionDriver {
   subscribes: number;
 }
 function fakeDriver(o: { noRead?: boolean } = {}): Fake {
-  const d: Fake = {
+  const d: Omit<Fake, "readTags"> & Partial<Pick<Fake, "readTags">> = {
     sink: null,
     subscribes: 0,
     verifySample: (t) => good(t.tagKey, t.tagKey === "zoneOccupied"),
@@ -52,9 +52,9 @@ function fakeDriver(o: { noRead?: boolean } = {}): Fake {
         close: async () => undefined,
       } satisfies OpcuaQueuedSubscription;
     },
-  } as Fake;
+  };
   if (!o.noRead) d.readTags = async (tags: OtTagAddress[]) => tags.map((t) => d.verifySample(t));
-  return d;
+  return d as Fake; // noRead: driver cố ý THIẾU readTags (đo nhánh fail-closed "driver cannot verify")
 }
 
 let quiet: Array<ReturnType<typeof vi.spyOn>> = [];

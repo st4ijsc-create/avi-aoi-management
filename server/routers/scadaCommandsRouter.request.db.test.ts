@@ -732,7 +732,7 @@ describe("R1b-2a T9 — canh 0433 đầu request", () => {
     const truoc = trangThaiSchemaR1a();
     const u = nguoi.opA2;
     const dem = async () => Number((await dung(sql`SELECT count(*)::int AS n FROM scada_khoa_chon WHERE adapter_id = ${ad.a}`))[0].n);
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
     try {
       const m = await moc();
       const khoaTruoc = await dem();

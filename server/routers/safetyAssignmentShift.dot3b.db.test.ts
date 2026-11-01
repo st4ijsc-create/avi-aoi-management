@@ -77,7 +77,7 @@ interface Fx {
 }
 let fx: Fx;
 
-const one = async (q: Promise<unknown[]>) => Number(((await q)[0] as { id: number | string }).id);
+const one = async (q: PromiseLike<readonly unknown[]>) => Number(((await q)[0] as { id: number | string }).id);
 
 async function errOf(p: Promise<unknown>): Promise<{ code?: string; appCode?: string; appParams?: Record<string, unknown> } | null> {
   try {

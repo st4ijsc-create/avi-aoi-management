@@ -342,8 +342,8 @@ async function seedNguoi(
     id: u.id,
     role,
     openId: u.openId,
-    name: u.name,
-    username: u.username,
+    name: u.name ?? "",
+    username: u.username ?? "",
   };
 }
 

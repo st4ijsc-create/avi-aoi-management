@@ -191,7 +191,7 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
     }
     expect(stable, "bảng cấu hình không đứng yên trong 5 lần đo").not.toBeNull();
     const { a, u } = stable!;
-    expect(u.safetyPlc.configs.find((c) => c.code === PLC_CODE)).toBeUndefined();
+    expect(u.safetyPlc.configs.find((c: { code: string }) => c.code === PLC_CODE)).toBeUndefined();
     expect(u.safetyPlc.hiddenConfigs).toBeGreaterThanOrEqual(1);
     expect(u.safetyPlc.enabledConfigs).toBe(a);
   });

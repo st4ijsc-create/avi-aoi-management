@@ -180,7 +180,7 @@ describe("O2 — the binding digest includes the controller program checksum (si
   for (const [what, breakIt] of [
     ["the read fails (error)", () => sim.simSetProgramReadFault("error")],
     ["the controller does not answer (hang)", () => sim.simSetProgramReadFault("hang")],
-    ["the adapter is disconnected", () => live.drivers.delete(501)],
+    ["the adapter is disconnected", () => { live.drivers.delete(501); }],
   ] as const) {
     it(`★ O4 FAIL CLOSED: ${what} after the approval ⇒ engine refuses (programUnreadable), dispatcher layer refuses — bounded`, async () => {
       const r = await scenario(twoGates(`rf-${what.length}`, OT_W), breakIt);

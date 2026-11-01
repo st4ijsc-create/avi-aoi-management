@@ -55,7 +55,7 @@ vi.mock("../ot/adapterFacade", async (orig) => {
       return {
         ...f,
         getSafetyStatus: async (o?: unknown) => {
-          sw.plcReads.push({ ...(ctx as Record<string, unknown>), opts: o });
+          sw.plcReads.push({ ...ctx, opts: o });
           if (sw.plc === "real") return f.getSafetyStatus(o as never);
           if (sw.plc === "throw") throw new Error("safety read crashed");
           if (sw.plc === "SIM_ONLY") return { state: "UNKNOWN", basis: "sim_only", source: "sim" } as never;
