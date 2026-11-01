@@ -186,11 +186,13 @@ function khongAckGia(ex: ExecutedWrite, coil: number): void {
 
 /** "Không rõ kết cục" của dispatcher: status 'timeout', ok=false, KHÔNG 'failed', câu "outcome unknown". */
 function laKhongRoKetCuc(ex: ExecutedWrite): void {
-  expect(ex.timedOut).toBe(true);
+  // R1b-2b-2a T6 (mục 69) — mọi ca dùng hàm này là mất liên kết lúc FC5 đang bay (trước hạn lệnh): driver không ném cả lô nữa ⇒ nhãn `timeout`
+  // THEO TỪNG write (`ketCucKhongRo: "mat_lien_ket"`, cùng câu T17), `timedOut` của lệnh = false (trước T6: true). Cận thời gian giữ nguyên.
+  expect(ex.timedOut).toBe(false);
   expect(ex.outcomes).toHaveLength(1);
   expect(ex.outcomes[0].ok).toBe(false);
   expect(ex.outcomes[0].status).toBe("timeout");
-  expect(String(ex.outcomes[0].errorText)).toMatch(/outcome unknown: the write may have been applied/);
+  expect(String(ex.outcomes[0].errorText)).toMatch(/^link lost while the write was in flight \(after \d+ms\) — outcome unknown: the write may have been applied/);
 }
 
 let cleanup: Array<() => Promise<void> | void> = [];

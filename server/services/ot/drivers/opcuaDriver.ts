@@ -35,7 +35,7 @@ import { inverseScale } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
-import { SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { SoYeuCauDangBay, ketCucKhongRoCua } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
@@ -957,8 +957,9 @@ export class OpcuaDriver extends NotImplementedDriver {
       } catch (err) {
         const msg = (err as Error)?.message || String(err);
         this.lastError = msg;
-        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-        if (laLoiMatLienKetKhiDangGui(err)) throw err;
+        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+        // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: kết quả THEO TỪNG write — node đã đưa vào session.write ⇒ `ketCucKhongRo: "mat_lien_ket"`
+        // (ketCucKhongRoCua bên dưới); write hỏng chuẩn bị cục bộ (ép kiểu / phân giải — không bao giờ gửi) giữ lỗi riêng ⇒ 'failed'.
         // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH node-opcua (WriteRequest đã gửi, máy chủ chưa trả lời) ⇒ MỌI node đã gửi mang
         // "không rõ kết cục" (dispatcher ⇒ 'timeout'), không 'failed'. Lỗi ép kiểu / phân giải cục bộ (không gửi) giữ 'failed'.
         const ketCucKhongRo = ketCucKhongRoCua(err) ?? (msg.startsWith(OPCUA_TIEN_TO_QUA_HAN) ? "qua_han_driver" : null);

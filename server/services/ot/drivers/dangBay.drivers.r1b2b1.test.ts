@@ -77,7 +77,9 @@ async function guiStop(driver: OtDriver, write: { tagKey: string; address: strin
 }
 
 function laKhongRoKetCuc(ex: Ex): void {
-  expect(ex.timedOut).toBe(true);
+  // R1b-2b-2a T6 (mục 69) — driver không NÉM cả lô nữa: write đã giao cho thư viện mang `ketCucKhongRo: "mat_lien_ket"` ⇒ nhãn `timeout` THEO
+  // TỪNG write (cùng câu T17), `timedOut` của lệnh = false (trước T6: driver ném ⇒ cả lô ⇒ true). Thời gian trả lời GIỮ nguyên cận.
+  expect(ex.timedOut).toBe(false);
   expect(ex.outcomes).toHaveLength(1);
   expect(ex.outcomes[0].ok).toBe(false);
   expect(ex.outcomes[0].status).toBe("timeout");

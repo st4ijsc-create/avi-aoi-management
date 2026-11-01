@@ -1307,6 +1307,8 @@ export async function executeOtDeviceWrite(a: {
   // doc 81 Đợt 4 Task B3 — keep the write promise: after a timeout it may still be running on the session.
   let writePromise: Promise<unknown> | undefined;
   let writeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** T6 — ms từ `sentAt` tới lúc driver trả lời (hoặc hạn lệnh) — cho câu "link lost … (after <ms>ms)" của write `mat_lien_ket`. */
+  let traLoiSauMs = 0;
   try {
     // B3 fix scan 3 (a) — this write is DISPATCHED now: a running STOP watch gives up exactly these tags (the newer
     // intent for them wins); watches on other tags keep running.
@@ -1321,10 +1323,12 @@ export async function executeOtDeviceWrite(a: {
       }),
     ]);
   } catch (err) {
+    // T6 — nhánh này GIỮ (driver plugin / phòng thủ vẫn có thể ném cả lô): như T17, cả lô `timeout`. Driver có sẵn trả theo từng write.
     if (laLoiMatLienKetKhiDangGui(err)) matLienKetSauMs = Date.now() - sentAt.getTime();
     else threwError = (err as Error)?.message || String(err);
     writeResults = [];
   } finally {
+    traLoiSauMs = Date.now() - sentAt.getTime();
     clearTimeout(writeTimer);
     try {
       a.onWriteAnswered?.();
@@ -1348,6 +1352,7 @@ export async function executeOtDeviceWrite(a: {
   // STOP acked kế tiếp có canh chỉ-báo-động (startStopWatch). Chỉ khi tuần tự hoá bật — cùng phạm vi với B3.
   // R1b-2b-2a T2 (mục 66) — CÙNG nhánh cho write mà driver tự hết hạn (`ketCucKhongRo`): yêu cầu đã giao cho thư viện, thư viện đã thôi giữ nó (không
   // giữ chỗ, không đặt lại phiên) nhưng lệnh có thể đã / sẽ được áp ⇒ ghi rủi ro MỘT lần mỗi lệnh.
+  // R1b-2b-2a T6 (mục 69) — write `ketCucKhongRo: "mat_lien_ket"` (driver trả theo từng write khi liên kết mất giữa lô) đi CÙNG nhánh này.
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
   const coWriteKhongRo = !timedOut && !threwError && resultsArr.some((x) => x.ok !== true && x.ketCucKhongRo != null);
   if ((matLienKetSauMs !== null || coWriteKhongRo) && isCmdSerializeEnabled()) ghiRuiRoGhiCu(input, { intentIds, confirmedBy: ledgerConfirmer }, "cua_so");
@@ -1373,6 +1378,18 @@ export async function executeOtDeviceWrite(a: {
       resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
       { tagKey: r.write.tagKey, ok: false, error: "no result" };
     const ok = wr.ok === true;
+    if (!ok && wr.ketCucKhongRo === "mat_lien_ket") {
+      // R1b-2b-2a T6 (mục 69) — driver trả kết quả THEO TỪNG write khi liên kết mất giữa lô (không ném cả lô nữa): write ĐÃ giao cho thư viện ⇒
+      // `timeout`, ĐÚNG câu T17 (ms tính từ `sentAt` tới lúc driver trả lời); write chưa giao (lỗi chuẩn bị cục bộ / sau điểm rớt —
+      // LOI_CHUA_GUI_MAT_LIEN_KET) không mang `ketCucKhongRo` ⇒ `failed` bên dưới; write đã acked trước điểm rớt giữ `acked` (đọc lại như thường).
+      return {
+        idx: i,
+        ok: false,
+        status: "timeout",
+        errorText: `link lost while the write was in flight (after ${traLoiSauMs}ms) — outcome unknown: the write may have been applied on the device`,
+        readBackValue: null,
+      };
+    }
     if (!ok && wr.ketCucKhongRo != null) {
       // R1b-2b-2a T2 (mục 66) — driver tự hết hạn khi yêu cầu ĐÃ giao cho thư viện / thiết bị: kết cục KHÔNG RÕ của RIÊNG write này ⇒ cùng nhãn
       // `timeout` với T17 / B3 (không đọc lại: chỉ write `acked` được đọc lại), không bao giờ `failed`. Các write khác của lô giữ kết quả riêng.

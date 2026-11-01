@@ -15,9 +15,8 @@ import net from "node:net";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { batDauDoLag } from "../../../testing/doLagBucleSuKien";
-import { ketCucKhongRoCua } from "./dangBay";
 import { HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, MA_KIEU_TAG_EIP_KHONG_RO, MA_MANG_BIT_EIP_KHONG_HO_TRO, MA_TEN_TAG_EIP_MO_HO } from "./ethernetIpDriver";
-import { HAN_DU_PHONG_GHI_DRIVER_MS, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS } from "./dangBay";
 import { executeOtDeviceWrite } from "../otDeviceWrite";
 
 const require_ = createRequire(import.meta.url);
@@ -340,12 +339,14 @@ describe("R1b-2b-2a T3A — ack MUỘN của lời ghi đã hết hạn không b
     const pDoc = d.readTags([{ tagKey: "a", address: "TagA", dataType: "int" } as any]); // hết hạn ở ~300 ms ⇒ nhiễm
     await new Promise((r) => setTimeout(r, 120));
     const t0 = Date.now();
-    // driver NÉM LoiMatLienKetKhiDangGui (R1b-2b-1 T17) ⇒ ketCucKhongRoCua = "mat_lien_ket" ⇒ executeOtDeviceWrite: `timeout` không rõ
-    const loi = await d.writeTags([ghiStop]).then(() => null, (e: unknown) => e);
+    // R1b-2b-2a T6 (mục 69) — driver KHÔNG ném cả lô nữa: write đang bay mang `ketCucKhongRo: "mat_lien_ket"` (trước T6: NÉM LoiMatLienKetKhiDangGui)
+    // ⇒ executeOtDeviceWrite: `timeout` không rõ theo từng write.
+    const kq = await d.writeTags([ghiStop]);
     const troi = Date.now() - t0;
     await pDoc;
-    expect(ketCucKhongRoCua(loi)).toBe("mat_lien_ket");
-    expect((loi as Error).message).toMatch(/^ethernet-ip link lost while a request was in flight \(session contaminated: TIMEOUT occurred while writing Reading Tag: TagA\.\)/);
+    expect(kq).toHaveLength(1);
+    expect(kq[0]).toMatchObject({ tagKey: "stop", ok: false, ketCucKhongRo: "mat_lien_ket" });
+    expect(kq[0].error).toMatch(/^ethernet-ip link lost while a request was in flight \(session contaminated: TIMEOUT occurred while writing Reading Tag: TagA\.\)/);
     expect(troi).toBeLessThan(280); // trả lời lúc phiên bị hạ (~180 ms), trước hạn 300 của chính nó
     expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([["Stop", 1]]);
   }, 10_000);
@@ -560,15 +561,16 @@ describe("R1b-2b-2a T3A fix round 2 (kiem-dinh M1/M2/M4/M5/M6/M7 + dự phòng 6
     const cu = (d as any).plc;
     const pDoc = d.readTags([{ tagKey: "a", address: "TagA", dataType: "int" } as any]); // hết hạn ~300 ⇒ nhiễm
     await new Promise((r) => setTimeout(r, 50));
-    const pA = d.writeTags([ghiSpeed]).then(() => null, (e: unknown) => e); // đang bay
+    const pA = d.writeTags([ghiSpeed]); // đang bay
     await new Promise((r) => setTimeout(r, 10));
-    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]).then(() => null, (e: unknown) => e); // xếp hàng sau A
-    const [loiA, loiC] = await Promise.all([pA, pC]);
+    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]); // xếp hàng sau A
+    const [kqA, kqC] = await Promise.all([pA, pC]);
     await pDoc;
     expect(cu.workers.write.tasks).toHaveLength(0); // xả NGAY lúc hạ (A của thư viện còn treo tới ~350 — C lẽ ra còn xếp hàng)
     await new Promise((r) => setTimeout(r, 450)); // quá hạn RIÊNG của A (~350) — lúc thư viện cũ lẽ ra chạy tiếp C
-    expect(laLoiMatLienKetKhiDangGui(loiA)).toBe(true);
-    expect(laLoiMatLienKetKhiDangGui(loiC)).toBe(true); // nhãn giữ: không rõ (timeout), không ok
+    // R1b-2b-2a T6 (mục 69) — kết quả THEO TỪNG write (trước T6: writeTags NÉM LoiMatLienKetKhiDangGui cho cả lô).
+    expect(kqA).toMatchObject([{ tagKey: "speed", ok: false, ketCucKhongRo: "mat_lien_ket" }]);
+    expect(kqC).toMatchObject([{ tagKey: "c", ok: false, ketCucKhongRo: "mat_lien_ket" }]); // nhãn giữ: không rõ (timeout), không ok
     expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([["Speed", 1]]); // ★ 0 gói cho C
     expect(cu.workers.write.tasks).toHaveLength(0);
   }, 10_000);
@@ -615,11 +617,12 @@ describe("R1b-2b-2a T3A fix round 2 (kiem-dinh M1/M2/M4/M5/M6/M7 + dự phòng 6
       },
     });
     const pA = d.writeTags([ghiSpeed]);
-    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]).then((v) => v, (e: unknown) => e);
+    const pC = d.writeTags([{ tagKey: "c", address: "TagC", value: 7, dataType: "int" } as any]);
     const [rA, kqC] = await Promise.all([pA, pC]);
     expect(rA[0]).toMatchObject({ ok: false, ketCucKhongRo: "qua_han_driver" });
-    expect(Array.isArray(kqC) && (kqC as any)[0]?.ok === true).toBe(false); // ★ không ok
-    expect(laLoiMatLienKetKhiDangGui(kqC)).toBe(true); // C đã giao cho thư viện cùng lượt ⇒ không rõ
+    expect(kqC[0]?.ok === true).toBe(false); // ★ không ok
+    // R1b-2b-2a T6 — C đã giao cho thư viện cùng lượt ⇒ không rõ, THEO TỪNG write (trước T6: writeTags NÉM LoiMatLienKetKhiDangGui)
+    expect(kqC).toMatchObject([{ tagKey: "c", ok: false, ketCucKhongRo: "mat_lien_ket" }]);
     expect(tb.ghi().every((x) => x.ketNoi === 1)).toBe(true);
   }, 10_000);
 

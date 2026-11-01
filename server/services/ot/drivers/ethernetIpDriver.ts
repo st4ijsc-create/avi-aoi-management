@@ -38,7 +38,7 @@ import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
-import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ghiTuanTuDungKhiMatLienKet, ketCucKhongRoCua, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { hanLenhOtMacDinhMs } from "../hanLenhOt";
 import { chatLuongLoiChung, chatLuongV2Bat, laLoiHuyTickPoll, MAU_GIA_TRI_HONG } from "../chatLuong";
@@ -693,8 +693,9 @@ export class EthernetIpDriver extends NotImplementedDriver {
       // này không bao giờ tới được lời ghi kế (STOP). Kết cục của CHÍNH lời ghi này vẫn `qua_han_driver` (T2).
       if (laQuaHanThuVienEip(err)) this.nhiemPhien(plc, msg);
       this.lastError = msg;
-      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: write NÀY mang `ketCucKhongRo: "mat_lien_ket"` (ketCucKhongRoCua dưới); write TRƯỚC giữ kết quả
+      // thật; write SAU không gửi (`ghiTuanTuDungKhiMatLienKet` trong writeTags ⇒ LOI_CHUA_GUI_MAT_LIEN_KET, 'failed').
       // R1b-2b-2a T2 (mục 66) — hết hạn của thư viện (`timeout_sp`) hoặc bộ hẹn dự phòng của driver khi gói đã gửi ⇒ kết cục KHÔNG RÕ của write này
       // (dispatcher ⇒ 'timeout'), không 'failed'. Lỗi CIP (PLC đã trả lời) / ép kiểu cục bộ ⇒ 'failed' như cũ.
       const ketCucKhongRo = ketCucKhongRoCua(err) ?? (laQuaHanGhiEip(err) ? "qua_han_driver" : null);
@@ -720,13 +721,12 @@ export class EthernetIpDriver extends NotImplementedDriver {
     // (tính từ đầu lời gọi) ⇒ lời ghi thứ hai của một STOP nhiều tag vẫn được chờ có trần sau khi lời ghi đầu hết hạn > 2000 ms.
     const batDau = Date.now();
     const nganSach = nganSachLenhOtMs();
-    const out: OtCommandResult[] = [];
-    for (const w of writes) {
+    // T6 — mất liên kết ở một write ⇒ các write SAU không tới thư viện (kết quả theo từng write, không ném cả lô).
+    return ghiTuanTuDungKhiMatLienKet(writes, (w) => {
       const bayGio = Date.now();
       const tran = Math.max(0, Math.min(HAN_CHO_PHIEN_MOI_SAU_NHIEM_MS, batDau + nganSach - bayGio));
-      out.push(await this.writeOne(w, bayGio + tran, tran));
-    }
-    return out;
+      return this.writeOne(w, bayGio + tran, tran);
+    });
   }
 
   override async health(): Promise<OtHealth> {
