@@ -29,7 +29,7 @@ import speakeasy from "speakeasy";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { batDauDoLag } from "../testing/doLagBucleSuKien";
 import { setup2FA, enable2FA } from "../db/auth";
-import { resolvePoolMax } from "../db/connection";
+import { getDb, resolvePoolMax } from "../db/connection";
 import { interlockRouter } from "./interlockRouter";
 import { deviceAdapterRouter } from "./deviceAdapterRouter";
 
@@ -169,8 +169,16 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2b-2a T5B — TOT
     await sql.end({ timeout: 5 });
   }, 60_000);
 
-  it("cầu chì: pool của ứng dụng trong tiến trình này đúng 1 kết nối", () => {
+  it("cầu chì: pool của ứng dụng trong tiến trình này đúng 1 kết nối — cấu hình VÀ pool SỐNG (3 truy vấn song song bị xếp hàng)", async () => {
     expect(resolvePoolMax()).toBe(1);
+    // review m2 — đo trên pool SỐNG, không chỉ biến môi trường: client postgres.js không lộ `max` qua API công khai ⇒ đo HÀNH VI. 3 lượt
+    // `pg_sleep(0.25)` đồng thời qua `getDb()`: pool 1 ⇒ xếp hàng ≥ 3 × 250 ms; pool ≥ 3 ⇒ ≈ 250 ms. Cận DƯỚI (không bao giờ xong sớm) ⇒ không
+    // đỏ oan dưới tải; 700 ms chừa trượt hẹn giờ.
+    const { sql: s } = await import("drizzle-orm");
+    const d = (await getDb())!;
+    const t0 = Date.now();
+    await trongHan(Promise.all([0, 1, 2].map(() => d.execute(s`SELECT pg_sleep(0.25)`))), "pool song");
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(700);
   });
 
   describe("★ pool = 1 — lượt ghi có TOTP đi qua, không chờ tới hạn", () => {

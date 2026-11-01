@@ -1,7 +1,7 @@
 /**
- * SCADA R1b-2a T5 (kiem-dinh M7, điều phối Q5) — `kiemTotpCauHinh` có HẠN: lượt kiểm TOTP chạy trên kết nối THỨ HAI (bộ đếm sai phải commit kể
- * cả khi giao dịch cấu hình rollback — xem đầu `totpCauHinh.ts`), nên pool cạn không được làm giao dịch cấu hình (đang giữ khoá) treo vô hạn:
- * quá `HAN_TOTP_CAU_HINH_MS` ⇒ CONFLICT "thử lại". Đồng hồ GIẢ (phán quyết K15) — không chờ thời gian thật.
+ * SCADA R1b-2a T5 (kiem-dinh M7, điều phối Q5) — `kiemTotpCauHinh` có HẠN: quá `HAN_TOTP_CAU_HINH_MS` ⇒ CONFLICT "thử lại". Đồng hồ GIẢ (phán quyết
+ * K15) — không chờ thời gian thật. Từ R1b-2b-2a T5B lượt kiểm chạy NGOÀI mọi giao dịch (`chayGiaoDichTotpNgoai`, cuối tệp) — không còn là "kết nối
+ * thứ hai trong giao dịch giữ khoá"; hạn giữ để trần độ trễ + mã lỗi như cũ.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -35,7 +35,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("kiemTotpCauHinh — hạn cho lượt kiểm trên kết nối thứ hai (Q5)", () => {
+describe("kiemTotpCauHinh — hạn của lượt kiểm TOTP (Q5; từ T5B chạy ngoài giao dịch)", () => {
   it("hằng hạn = 3000 ms (điều phối Q5)", () => {
     expect(HAN_TOTP_CAU_HINH_MS).toBe(3000);
   });
@@ -182,5 +182,71 @@ describe("chayGiaoDichTotpNgoai — kiểm TOTP ngoài giao dịch, hai lượt 
       appParams: { operation: "scadaTotpCauHinh" },
     });
     expect(xacMinh).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── T5B fix 1 — điều kiện dieu-phoi ───
+
+  it("★ điều kiện 1: lượt 1 CẦN mã, lượt 2 (tính lại dưới khoá mới) KHÔNG cần ⇒ vẫn ghi; xác minh ĐÚNG MỘT lần; chỉ lượt 1 gọi cửa", async () => {
+    const nhatKy: string[] = [];
+    const goiCua: number[] = [];
+    let luot = 0;
+    const chay = async (cuaTotp: () => void) => {
+      luot++;
+      nhatKy.push(`mo-tx-${luot}`);
+      try {
+        const canMa = luot === 1; // dữ liệu đổi giữa hai lượt: luật thành nháp ⇒ không còn bảo vệ
+        if (canMa) {
+          goiCua.push(luot);
+          cuaTotp();
+        }
+        nhatKy.push(`ghi-${luot}`);
+        return `kq-${luot}`;
+      } finally {
+        nhatKy.push(`dong-tx-${luot}`);
+      }
+    };
+    const xacMinh = vi.fn(async () => {
+      nhatKy.push("xac-minh-ngoai-tx");
+    });
+    expect(await chayGiaoDichTotpNgoai(chay, xacMinh)).toBe("kq-2");
+    expect(xacMinh).toHaveBeenCalledTimes(1);
+    expect(goiCua).toEqual([1]);
+    expect(nhatKy).toEqual(["mo-tx-1", "dong-tx-1", "xac-minh-ngoai-tx", "mo-tx-2", "ghi-2", "dong-tx-2"]);
+  });
+
+  it("★ điều kiện 1 (chiều ngược): lượt 1 KHÔNG cần mã ⇒ không có lượt 2, không xác minh, lỗi lượt 1 giữ NGUYÊN (chưa tiêu mã)", async () => {
+    const xacMinh = vi.fn(async () => undefined);
+    let luot = 0;
+    expect(await chayGiaoDichTotpNgoai(async () => ++luot, xacMinh)).toBe(1);
+    const goc = new Error("lỗi lượt 1 không cần mã");
+    await expect(chayGiaoDichTotpNgoai(async () => Promise.reject(goc), xacMinh)).rejects.toBe(goc);
+    expect(xacMinh).not.toHaveBeenCalled();
+  });
+
+  it("★ điều kiện 4: lượt 2 hỏng SAU khi mã đã tiêu ⇒ CONFLICT OPERATION_FAILED {scadaConfigTotp, scadaTotpDaDungDuLieuDoi, maGoc} — không bao giờ lỗi gốc / 'mã sai'", async () => {
+    const { appError } = await import("../../_core/appError");
+    const tests: Array<[unknown, string]> = [
+      [appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "x"), "ENTITY_NOT_FOUND"],
+      [appError("BAD_REQUEST", "INVALID_VALUE", { field: "f", reason: "stopPinTagNotWritable" }, "x"), "stopPinTagNotWritable"],
+      [Object.assign(new Error("tag_not_writable"), { name: "StopPinLoi", loai: "tag_not_writable" }), "tag_not_writable"],
+      [Object.assign(new Error("deadlock"), { code: "40P01" }), "40P01"],
+      ["chuỗi thô", "UNKNOWN"],
+    ];
+    for (const [goc, maGoc] of tests) {
+      const xacMinh = vi.fn(async () => undefined);
+      let luot = 0;
+      const chay = async (cuaTotp: () => void) => {
+        luot++;
+        if (luot === 1) cuaTotp();
+        throw goc;
+      };
+      expect(await loiCua(chayGiaoDichTotpNgoai(chay, xacMinh)), maGoc).toEqual({
+        code: "CONFLICT",
+        appCode: "OPERATION_FAILED",
+        appParams: { operation: "scadaConfigTotp", reason: "scadaTotpDaDungDuLieuDoi", maGoc },
+      });
+      expect(xacMinh).toHaveBeenCalledTimes(1);
+      expect(luot).toBe(2);
+    }
   });
 });
