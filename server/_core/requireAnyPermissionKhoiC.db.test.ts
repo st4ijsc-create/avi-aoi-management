@@ -30,7 +30,9 @@ const TAG = `L6M1_${Date.now().toString(36).toUpperCase()}`;
 
 // Router test tối giản — KHÔNG tái dùng trpc.ts thật (tránh kéo theo mọi middleware phiên/CSRF
 // không liên quan tới phép đo này); chỉ cần .use() nhận đúng { ctx, next } như trpc.ts thật.
-const t = initTRPC.context<TrpcContext>().create();
+// ctx có `user` (đường thật đã qua middleware đăng nhập trước requireAnyPermission) — khớp kiểu middleware của requireAnyPermission
+type CtxCoUser = TrpcContext & { user: NonNullable<TrpcContext["user"]> };
+const t = initTRPC.context<CtxCoUser>().create();
 const testRouter = t.router({
   needsEither: t.procedure
     .use(requireAnyPermission([
@@ -40,12 +42,12 @@ const testRouter = t.router({
     .mutation(() => ({ ok: true })),
 });
 
-function ctxFor(userId: number, role: string): TrpcContext {
+function ctxFor(userId: number, role: string): CtxCoUser {
   return {
     user: { id: userId, role, name: `${TAG}-${userId}` } as TrpcContext["user"],
     req: { headers: {} } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
-  } as TrpcContext;
+  } as CtxCoUser;
 }
 const caller = (userId: number, role = "operator") => testRouter.createCaller(ctxFor(userId, role));
 
@@ -55,7 +57,7 @@ let idChiThuHai = 0; // operator, CHỈ settings_factory.canEdit=true
 let idKhongGi = 0; // operator, không có hàng permissions nào
 let idAdmin = 0; // admin thật (role:'admin'), KHÔNG seed permissions — đo bypass sẵn có
 
-async function mkUser(tag: string, role: string): Promise<number> {
+async function mkUser(tag: string, role: NonNullable<typeof users.$inferInsert["role"]>): Promise<number> {
   const db = await getDb();
   const [u] = await db!
     .insert(users)
@@ -70,7 +72,7 @@ async function mkUser(tag: string, role: string): Promise<number> {
   return u!.id;
 }
 
-async function grant(userId: number, moduleName: string, category: string) {
+async function grant(userId: number, moduleName: string, category: typeof permissions.$inferInsert["category"]) {
   const db = await getDb();
   await db!.insert(permissions).values({
     userId,

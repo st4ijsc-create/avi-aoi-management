@@ -59,7 +59,9 @@ async function user(tag: string, role: string): Promise<number> {
 }
 
 /** One audit row, createdAt = now() − ageMs (so order is fixed: smaller age = newer). `tx` = one transaction ⇒ one now(). */
-async function audit(tx: ReturnType<typeof postgres>, key: string, a: { action: string; entityType: string | null; entityId: number | null; userId: number | null; ageMs: number }) {
+/** Một dòng luồng hoạt động — thủ tục trả `any` (đầu ra không suy ra được) nên khai kiểu hàng ở đây để các callback không rơi vào `any` ngầm. */
+type Dong = { id: number; action: string; entityType: string | null; entityId: number | null; entityName: string | null; userName: string | null; status: string | null; source: string | null };
+async function audit(tx: ReturnType<typeof postgres> | postgres.TransactionSql, key: string, a: { action: string; entityType: string | null; entityId: number | null; userId: number | null; ageMs: number }) {
   const r = await tx`
     INSERT INTO audit_logs ("userId", "userName", action, "entityType", "entityId", "entityName", details, status, "createdAt")
     VALUES (${a.userId}, ${"u" + (a.userId ?? 0)}, ${a.action}, ${a.entityType}, ${a.entityId}, ${`${DAU} ${key}`},
@@ -139,7 +141,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
   // ── activityFeed ────────────────────────────────────────────────────────────────────
   it("★ activityFeed (người được gán nhà máy IN): CHỈ dòng trong phạm vi + dòng của chính mình; dòng ngoài / không phân loại được ẨN", async () => {
     const feed = await (await caller(as(users.scoped))).activityFeed({ limit: 50 });
-    const ids = feed.map((r) => r.id as number);
+    const ids = feed.map((r: Dong) => r.id as number);
     // Phạm vi của người này chỉ chứa cây IN mới tạo ⇒ luồng = ĐÚNG các dòng V của tệp, theo thứ tự mới → cũ.
     expect(mine(ids)).toEqual(VISIBLE.concat(["r10"])); // r10 = máy IN do người khác làm ⇒ cũng trong phạm vi
     expect(ids.length).toBe(VISIBLE.length + 1);
@@ -147,7 +149,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
 
   it("★ activityFeed: người KHÔNG được gán nhà máy (phạm vi rỗng) chỉ thấy dòng của chính mình", async () => {
     const feed = await (await caller(as(users.empty))).activityFeed({ limit: 50 });
-    expect(mine(feed.map((r) => r.id as number))).toEqual(["r10"]);
+    expect(mine(feed.map((r: Dong) => r.id as number))).toEqual(["r10"]);
     expect(feed.length).toBe(1);
   });
 
@@ -177,7 +179,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
       const got = await (await caller(ADMIN)).activityFeed({ limit: 50 });
       const after = await oracle();
       if (JSON.stringify(before) !== JSON.stringify(after)) continue; // ghi song song chen vao giua — do lai
-      expect(got.map(({ id, action, entityType, entityId, entityName, userName, status, source }) => ({ id, action, entityType, entityId, entityName, userName, status, source }))).toEqual(before);
+      expect(got.map(({ id, action, entityType, entityId, entityName, userName, status, source }: Dong) => ({ id, action, entityType, entityId, entityName, userName, status, source }))).toEqual(before);
       checked = true;
     }
     expect(checked, "audit_logs không đứng yên trong 6 lần đo").toBe(true);
@@ -187,8 +189,8 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
     fault.scopeThrows = true;
     try {
       const feed = await (await caller(as(users.scoped))).activityFeed({ limit: 50 });
-      expect(mine(feed.map((r) => r.id as number))).toEqual(["r4"]);
-      expect(feed.every((r) => rows.r4 === r.id || r.userName === `${DAU} scoped`)).toBe(true);
+      expect(mine(feed.map((r: Dong) => r.id as number))).toEqual(["r4"]);
+      expect(feed.every((r: Dong) => rows.r4 === r.id || r.userName === `${DAU} scoped`)).toBe(true);
       const md = await (await caller(as(users.scoped))).masterDataList({ search: DAU, limit: 200, offset: 0 });
       expect(mine(md.items.map((x) => x.id))).toEqual(["r4"]);
       expect(md.total).toBe(1);
@@ -204,7 +206,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 4 Task A2 — sổ kiểm toán theo ph�
     const a = await ins("null");
     const b = await ins("[1]");
     const feed = await (await caller(ADMIN)).activityFeed({ limit: 50 });
-    for (const id of [a, b]) expect(feed.find((r) => r.id === id)?.source).toBe("web");
+    for (const id of [a, b]) expect(feed.find((r: Dong) => r.id === id)?.source).toBe("web");
   });
 
   // ── masterDataList ──────────────────────────────────────────────────────────────────

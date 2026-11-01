@@ -53,7 +53,7 @@ beforeAll(async () => {
   B = await seedNhaMay("b");
   embMoCoi = await storeEmbedding({ imageUrl: `${RUN}-mo-coi.jpg`, embedding: vec(), dim: DEFAULT_EMBEDDING_DIM, modelCode: RUN, label: RUN });
   const u = await taoNguoiDungTest("ua", "engineer", { tienTo: "pw14", ts: RUN, ten: "PW14 ua" });
-  ua = { id: u.id, role: "engineer", name: u.name };
+  ua = { id: u.id, role: "engineer", name: u.name ?? "" };
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${A.code})`);
 }, 120_000);
 
@@ -81,8 +81,8 @@ describe("aiImageSearch.searchByVector — chỉ ảnh của máy trong phạm v
   });
   it("toàn quyền (admin) thấy cả ba; người không gán nhà máy nào thấy rỗng", async () => {
     const adm = await taoNguoiDungTest("uadm", "admin", { tienTo: "pw14", ts: RUN, ten: "PW14 adm" });
-    expect(await tim({ id: adm.id, role: "admin", name: adm.name })).toEqual([A.emb, B.emb, embMoCoi].sort((p, q) => p - q));
+    expect(await tim({ id: adm.id, role: "admin", name: adm.name ?? "" })).toEqual([A.emb, B.emb, embMoCoi].sort((p, q) => p - q));
     const trang = await taoNguoiDungTest("utrang", "engineer", { tienTo: "pw14", ts: RUN, ten: "PW14 trang" });
-    expect(await tim({ id: trang.id, role: "engineer", name: trang.name })).toEqual([]);
+    expect(await tim({ id: trang.id, role: "engineer", name: trang.name ?? "" })).toEqual([]);
   });
 });
