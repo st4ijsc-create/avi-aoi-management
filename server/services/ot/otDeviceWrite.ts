@@ -844,27 +844,34 @@ export function tryEnqueueAdapterCommand<T>(
 }
 
 
-/** T6b — câu errorText của write acked khi đọc lại bị bỏ (theo loại "không rõ" của lô). */
+/** T6b — câu errorText của write acked khi đọc lại bị bỏ (theo loại "không rõ" của lô). Mọi câu bắt đầu "readback skipped: " (maLoiCua ⇒ READBACK_UNAVAILABLE). */
 export const LY_DO_BO_DOC_LAI_MAT_LIEN_KET = "readback skipped: link lost in this batch";
+/** T6b polish (review m1) — câu RIÊNG cho `qua_han_driver`. */
+export const LY_DO_BO_DOC_LAI_QUA_HAN = "readback skipped: driver request timed out in this batch";
+/** T6b polish (review m1) — câu CHUNG cho mọi `ketCucKhongRo` khác (driver plugin đưa giá trị riêng qua cầu nối, không kiểm). */
 export const LY_DO_BO_DOC_LAI_KHONG_RO = "readback skipped: outcome unknown in this batch";
 
 /**
  * SCADA R1b-2b-2a T6 fix 1 + T6b (dieu-phoi 2026-11-01) — MỘT nơi quyết "bỏ đọc lại CẢ lô": kết quả "không rõ" của STOP KHÔNG BAO GIỜ chờ đọc lại.
- * Lô (kết quả `driver.writeTags`) có ≥ 1 write `ok:false` mang `ketCucKhongRo` thuộc tập "không rõ" ⇒ trả câu lý do (write acked của lô ⇒
- * `acked_unverified` với câu này, không `readTags`); ngược lại `null` (đọc lại như thường).
- *   • `mat_lien_ket` (liên kết mất giữa lô, T6) ⇒ LY_DO_BO_DOC_LAI_MAT_LIEN_KET (ưu tiên: nói rõ liên kết đã gãy);
- *   • `qua_han_driver` (driver / thư viện tự hết hạn, thiết bị trả lời cụt — T2 / T3) ⇒ LY_DO_BO_DOC_LAI_KHONG_RO.
+ * Lô (kết quả `driver.writeTags`) có ≥ 1 write `ok:false` mang `ketCucKhongRo` KHÁC null ⇒ trả câu lý do (write acked của lô ⇒ `acked_unverified`
+ * với câu này, không `readTags`); ngược lại `null` (đọc lại như thường). T6b polish (review m1) — CÙNG vị từ với bộ gắn nhãn của `executeOtDeviceWrite`
+ * (`!ok && wr.ketCucKhongRo != null` ⇒ `timeout`): mọi write bị gắn `timeout` theo từng write đều bỏ đọc lại, kể cả giá trị lạ của driver plugin
+ * (`pluginDriverBridge` chuyển kết quả sidecar nguyên trạng).
+ *   • `mat_lien_ket` (liên kết mất giữa lô, T6) ⇒ LY_DO_BO_DOC_LAI_MAT_LIEN_KET (ưu tiên cao nhất: nói rõ liên kết đã gãy);
+ *   • `qua_han_driver` (driver / thư viện tự hết hạn, thiết bị trả lời cụt — T2 / T3) ⇒ LY_DO_BO_DOC_LAI_QUA_HAN;
+ *   • giá trị khác (không null) ⇒ LY_DO_BO_DOC_LAI_KHONG_RO.
  * Một write `timeout` của dispatcher không có `ketCucKhongRo` chỉ xảy ra khi CẢ lệnh quá hạn (`timedOut`) ⇒ không có write acked nào, không cần xét.
  * Hàm thuần (không I/O) — xuất cho test.
  */
-export function lyDoBoDocLai(ketQua: ReadonlyArray<{ ok?: boolean; ketCucKhongRo?: OtCommandResult["ketCucKhongRo"] | null }>): string | null {
-  let khongRo: string | null = null;
+export function lyDoBoDocLai(ketQua: ReadonlyArray<{ ok?: boolean; ketCucKhongRo?: unknown }>): string | null {
+  let lyDo: string | null = null;
   for (const r of ketQua) {
-    if (r == null || r.ok === true) continue;
+    if (r == null || r.ok === true || r.ketCucKhongRo == null) continue;
     if (r.ketCucKhongRo === "mat_lien_ket") return LY_DO_BO_DOC_LAI_MAT_LIEN_KET;
-    if (r.ketCucKhongRo === "qua_han_driver") khongRo = LY_DO_BO_DOC_LAI_KHONG_RO;
+    if (r.ketCucKhongRo === "qua_han_driver") lyDo = LY_DO_BO_DOC_LAI_QUA_HAN;
+    else if (lyDo === null) lyDo = LY_DO_BO_DOC_LAI_KHONG_RO;
   }
-  return khongRo;
+  return lyDo;
 }
 
 /** R1b-2b-2a T2 — kết quả của `driver.writeTags` có ≥ 1 write KHÔNG rõ kết cục (`OtCommandResult.ketCucKhongRo`). */

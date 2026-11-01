@@ -9,19 +9,25 @@
 import { describe, it, expect, afterEach } from "vitest";
 import net from "node:net";
 import { ModbusDriver } from "./drivers/modbusDriver";
-import { executeOtDeviceWrite, lyDoBoDocLai, LY_DO_BO_DOC_LAI_KHONG_RO, LY_DO_BO_DOC_LAI_MAT_LIEN_KET } from "./otDeviceWrite";
+import { executeOtDeviceWrite, lyDoBoDocLai, LY_DO_BO_DOC_LAI_KHONG_RO, LY_DO_BO_DOC_LAI_MAT_LIEN_KET, LY_DO_BO_DOC_LAI_QUA_HAN } from "./otDeviceWrite";
 import { ketCucLo } from "./motPhan";
 import { batDauDoLag } from "../../testing/doLagBucleSuKien";
 
 describe("T6b — lyDoBoDocLai (MỘT nơi quyết, hàm thuần)", () => {
-  it("write `qua_han_driver` ⇒ bỏ đọc lại, câu 'outcome unknown in this batch'", () => {
-    expect(lyDoBoDocLai([{ ok: true }, { ok: false, ketCucKhongRo: "qua_han_driver" }])).toBe(LY_DO_BO_DOC_LAI_KHONG_RO);
-    expect(LY_DO_BO_DOC_LAI_KHONG_RO).toBe("readback skipped: outcome unknown in this batch");
+  it("write `qua_han_driver` ⇒ bỏ đọc lại, câu riêng 'driver request timed out in this batch' (polish m1)", () => {
+    expect(lyDoBoDocLai([{ ok: true }, { ok: false, ketCucKhongRo: "qua_han_driver" }])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN);
+    expect(LY_DO_BO_DOC_LAI_QUA_HAN).toBe("readback skipped: driver request timed out in this batch");
   });
   it("write `mat_lien_ket` ⇒ câu 'link lost in this batch' (ưu tiên khi lô có cả hai loại)", () => {
     expect(lyDoBoDocLai([{ ok: true }, { ok: false, ketCucKhongRo: "mat_lien_ket" }])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
     expect(lyDoBoDocLai([{ ok: false, ketCucKhongRo: "qua_han_driver" }, { ok: false, ketCucKhongRo: "mat_lien_ket" }])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
     expect(LY_DO_BO_DOC_LAI_MAT_LIEN_KET).toBe("readback skipped: link lost in this batch");
+  });
+  it("polish m1: giá trị `ketCucKhongRo` LẠ (driver plugin) ⇒ vẫn bỏ đọc lại, câu chung 'outcome unknown in this batch'; mat_lien_ket > qua_han > lạ", () => {
+    expect(lyDoBoDocLai([{ ok: true }, { ok: false, ketCucKhongRo: "khac" }])).toBe(LY_DO_BO_DOC_LAI_KHONG_RO);
+    expect(LY_DO_BO_DOC_LAI_KHONG_RO).toBe("readback skipped: outcome unknown in this batch");
+    expect(lyDoBoDocLai([{ ok: false, ketCucKhongRo: "khac" }, { ok: false, ketCucKhongRo: "qua_han_driver" }])).toBe(LY_DO_BO_DOC_LAI_QUA_HAN);
+    expect(lyDoBoDocLai([{ ok: false, ketCucKhongRo: "khac" }, { ok: false, ketCucKhongRo: "mat_lien_ket" }])).toBe(LY_DO_BO_DOC_LAI_MAT_LIEN_KET);
   });
   it("lô RÕ (acked + failed, hoặc toàn acked, hoặc rỗng) ⇒ null — đọc lại như thường", () => {
     expect(lyDoBoDocLai([{ ok: true }, { ok: false }])).toBeNull();
@@ -135,7 +141,7 @@ describe("T6b — Modbus THẬT: write acked + write hết hạn của CHÍNH mo
     expect(sim.fc1()).toBe(0); // ★ không lượt đọc nào của thư viện
     expect(o.timedOut).toBe(false);
     expect(o.outcomes.map((x) => x.status)).toEqual(["acked_unverified", "acked_unverified", "acked_unverified", "timeout"]);
-    for (const x of o.outcomes.slice(0, 3)) expect(x).toMatchObject({ ok: true, errorText: LY_DO_BO_DOC_LAI_KHONG_RO, readBackValue: null });
+    for (const x of o.outcomes.slice(0, 3)) expect(x).toMatchObject({ ok: true, errorText: LY_DO_BO_DOC_LAI_QUA_HAN, readBackValue: null });
     expect(o.outcomes[3].errorText).toMatch(/outcome unknown: the write may have been applied on the device$/);
     // lô vẫn cuộn lên `timeout` (T2 thắng một phần)
     expect(ketCucLo(o.outcomes.map((x, i) => ({ tagKey: ws[i].tagKey, ok: x.ok, status: x.status })), o.timedOut)).toMatchObject({ ok: false, status: "timeout", motPhan: null });
@@ -161,4 +167,38 @@ describe("T6b — Modbus THẬT: write acked + write hết hạn của CHÍNH mo
     expect(o.outcomes.every((x) => x.ok)).toBe(true);
     for (const x of o.outcomes) expect(x.errorText ?? "").not.toMatch(/readback skipped/);
   }, 15_000);
+});
+
+describe("T6b polish (review m1) — driver plugin trả `ketCucKhongRo` lạ qua cầu nối (không kiểm)", () => {
+  it("★ kết quả kiểu plugin [{ok:true}, {ok:false, ketCucKhongRo:'khac'}] + docLai bat_buoc ⇒ write 2 'timeout', write 1 acked_unverified câu chung, 0 lượt readTags", async () => {
+    let soDoc = 0;
+    const driver = {
+      protocol: "plugin:demo",
+      writeTags: async () => [
+        { tagKey: "a", ok: true },
+        { tagKey: "b", ok: false, error: "sidecar: device did not confirm", ketCucKhongRo: "khac" },
+      ],
+      readTags: async () => {
+        soDoc += 1;
+        return [];
+      },
+    } as any;
+    const ws = [
+      { tagKey: "a", address: "A", value: 1, dataType: "int" as const },
+      { tagKey: "b", address: "B", value: 2, dataType: "int" as const },
+    ];
+    const o = await executeOtDeviceWrite({
+      input: { adapterId: 995_900, machineId: null, commandType: "set_value", idempotencyKey: `t6b-pl-${Math.random()}`, writes: ws.map((w) => ({ tagKey: w.tagKey, value: w.value })), docLai: "bat_buoc" } as any,
+      driver,
+      resolved: ws.map((w) => ({ write: { tagKey: w.tagKey, value: w.value }, address: w.address, dataType: w.dataType })),
+      driverWrites: ws.map((w) => ({ tagKey: w.tagKey, address: w.address, value: w.value, dataType: w.dataType })),
+      timeoutMs: 5000,
+      stopTyped: false,
+      bumpStopEpoch: false,
+      ledger: { intentIds: [1, 2], confirmedBy: 1 },
+    });
+    expect(soDoc).toBe(0); // ★ không đọc lại
+    expect(o.outcomes.map((x) => x.status)).toEqual(["acked_unverified", "timeout"]);
+    expect(o.outcomes[0]).toMatchObject({ ok: true, errorText: LY_DO_BO_DOC_LAI_KHONG_RO });
+  });
 });

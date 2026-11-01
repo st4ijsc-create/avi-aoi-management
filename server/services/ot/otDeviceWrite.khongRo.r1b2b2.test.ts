@@ -237,7 +237,7 @@ describe("R1b-2b-2a T2 — write không rõ kết cục THEO TỪNG write ⇒ 't
       // R1b-2b-2a T6b (dieu-phoi 2026-11-01) — trước T6b: cmd_a được đọc lại (acked_verified, doc = [["cmd_a"]]); nay không đọc lại gì.
       expect(ex.outcomes.map((o) => o.status)).toEqual(["acked_unverified", "timeout"]);
       expect(ex.outcomes[0].ok).toBe(true);
-      expect(ex.outcomes[0].errorText).toBe("readback skipped: outcome unknown in this batch");
+      expect(ex.outcomes[0].errorText).toBe("readback skipped: driver request timed out in this batch");
       expect(ex.outcomes[1].readBackValue).toBeNull();
       expect(doc).toEqual([]);
     } finally {

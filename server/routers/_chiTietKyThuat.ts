@@ -41,7 +41,8 @@ export async function chiTietKyThuatCua(ctx: { user: { id: number; role: string 
  *                              kết lúc đang bay). Gợi ý an toàn "không rõ máy đã nhận — đọc lại trước khi gửi lần nữa" sống qua lớp che (client
  *                              đã có chữ `scada.lenh.cong.TIMEOUT`).
  *   • `EDGE_REPORTED`        — `edge reported status "…"` / "the edge reported …" (`edgeReportsCentral.ts` hàng do edge báo).
- *   • `READBACK_UNAVAILABLE` — `readback unavailable` (status acked_unverified: ghi xong, không đọc lại được).
+ *   • `READBACK_UNAVAILABLE` — `readback unavailable` (status acked_unverified: ghi xong, không đọc lại được), và `readback skipped: …` (T6b: ghi xong,
+ *                              đọc lại bị bỏ vì lô có write "không rõ" — xét TRƯỚC `TIMEOUT`).
  *   • `READBACK_MISMATCH`    — `readback mismatch: …` / `readback not verified: …` (acked_unverified: đọc lại lệch / mẫu không good).
  *   • `DRIVER_WRITE_FAILED`  — status `failed` với văn bản thô (vd `connect ECONNREFUSED 127.0.0.1:502`, `no result`, `write failed`).
  *   • `TECHNICAL_ERROR`      — mọi văn bản thô khác.
@@ -94,6 +95,9 @@ export function maLoiCua(errorText: string | null | undefined, status?: string |
   const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
   // polish round 2 — CHỈ mã đã biết; tiền tố lạ (nhãn host / thiết bị viết HOA ở đầu văn bản driver) ⇒ rơi xuống mã dự phòng
   if (tienTo && MA_LOI_DA_BIET_SET.has(tienTo)) return tienTo;
+  // R1b-2b-2a T6b polish (review m2) — write ĐÃ acked mà đọc lại bị BỎ vì lô có write "không rõ" (`otDeviceWrite.lyDoBoDocLai`, status
+  // acked_unverified): TRƯỚC luật TIMEOUT — câu chung "readback skipped: outcome unknown in this batch" mang chữ "outcome unknown" nhưng write NÀY đã áp.
+  if (status !== "timeout" && /^readback skipped/i.test(t)) return "READBACK_UNAVAILABLE";
   if (status === "timeout" || /outcome unknown|may have been applied/i.test(t)) return "TIMEOUT";
   if (/^edge reported status|^the edge reported/i.test(t)) return "EDGE_REPORTED";
   if (/^readback unavailable/i.test(t)) return "READBACK_UNAVAILABLE";
