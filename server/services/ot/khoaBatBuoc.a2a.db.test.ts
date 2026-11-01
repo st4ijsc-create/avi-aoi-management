@@ -14,7 +14,7 @@
  * DB THẬT (`_test`): dispatcher THẬT + driver GIẢ đếm `writeTags`; mọi ghi trong giao dịch ROLLBACK; command_log (WORM): không id tường minh.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 const H = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ const H = vi.hoisted(() => ({
   bay: 0,
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
-  canhBao: [] as Array<{ kind: string; message: string; recipients: ReadonlyArray<number>; dedupKey: string }>,
+  canhBao: [] as Array<{ kind: string; title: string; message: string; recipients: ReadonlyArray<number>; dedupKey: string }>,
 }));
 
 vi.mock("../../db/connection", async (importOriginal) => {
@@ -63,7 +63,7 @@ vi.mock("../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../robot/criticalStopAlert")>();
   return {
     ...orig,
-    raiseCriticalStopAlert: async (a: { kind: string; message: string; recipients: ReadonlyArray<number>; dedupKey: string }) => {
+    raiseCriticalStopAlert: async (a: { kind: string; title: string; message: string; recipients: ReadonlyArray<number>; dedupKey: string }) => {
       H.canhBao.push(a);
     },
   };
@@ -141,8 +141,9 @@ function driverGia(kb: KichBan = ACK) {
 
 /** adapter modbus + tag thường `t`, `u` và hai tag GHIM STOP `a` (stopValue 0), `b` (stopValue 0) — driver giả của riêng adapter. */
 async function taoAdapter(tx: Tx, d: unknown): Promise<number> {
-  const endpoint = `tcp://192.0.2.${10 + Math.floor(Math.random() * 200)}:502`;
-  const [a] = await tx.insert(deviceAdapters).values({ code: `${DAU}-A-${Math.random().toString(36).slice(2, 8)}`, name: `${DAU} adapter`, protocol: "modbus", endpoint, isEnabled: true, machineId: MACHINE }).returning();
+  // địa chỉ TEST-NET cố định (RFC 5737): driver giả, endpoint không bao giờ được kết nối — chỉ vào dấu vân tay đích của chính adapter
+  const endpoint = "tcp://192.0.2.10:502";
+  const [a] = await tx.insert(deviceAdapters).values({ code: `${DAU}-A-${randomUUID()}`, name: `${DAU} adapter`, protocol: "modbus", endpoint, isEnabled: true, machineId: MACHINE }).returning();
   const adapterId = a!.id;
   await tx.insert(deviceTags).values([
     { adapterId, tagKey: "t", address: "40001", dataType: "int", writable: true },
@@ -157,7 +158,7 @@ async function taoAdapter(tx: Tx, d: unknown): Promise<number> {
 
 /** Uỷ quyền HITL gắn ĐÚNG lệnh này (confirmed, chủ = OWNER). */
 async function taoHanhDong(tx: Tx, adapterId: number, writes: Array<{ tagKey: string; value: unknown }>, commandType = "set_param"): Promise<string> {
-  const actionId = `${DAU}-act-${Math.random().toString(36).slice(2, 10)}`;
+  const actionId = `${DAU}-act-${randomUUID()}`;
   await tx.insert(aiPendingActions).values({
     id: actionId,
     tool: TOOL,
@@ -356,8 +357,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       expect(d.soGhi).toBe(0);
       await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
     });
-    // interlock: cờ tự chặn TẮT ⇒ cổng (1) từ chối. Giao dịch RIÊNG: lời từ chối uỷ quyền của lệnh không khoá ghi hàng dưới khoá CHUNG
-    // perWriteKey("", tag, idx) (như main — xem báo cáo A2(a), mối lo "khoá chung ở cổng uỷ quyền") ⇒ hai lời từ chối như vậy cùng tag/chỉ số đụng UNIQUE.
+    // interlock: cờ tự chặn TẮT ⇒ cổng (1) từ chối (giao dịch riêng; từ fix round 1 F1 hai lời từ chối không khoá cùng tag KHÔNG còn đụng UNIQUE — ca F1 dưới).
     H.canhBao.length = 0;
     await trongGiaoDich(async (tx) => {
       const ad = await taoAdapter(tx, driverGia());
@@ -412,6 +412,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       const cb = canhBaoKhongKhoa();
       expect(cb).toHaveLength(1);
       expect(cb[0]!.kind).toBe("ot_keyless_stop_like_refused");
+      expect(cb[0]!.title).toBe(`Keyless OT command refused (not sent) — adapter ${ad}`); // fix round 1 F3
       expect(cb[0]!.message).toMatch(/NOT sent/);
       expect(cb[0]!.message).toMatch(/HMI machine stop/);
       expect(cb[0]!.message).toMatch(/idempotency key/);
@@ -444,6 +445,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
       const cb = canhBaoKhongKhoa()[0]!;
       expect(cb.kind).toBe("ot_keyless_pin_unreadable_refused");
+      expect(cb.title).toBe(`Keyless OT command refused (not sent) — adapter ${ad}`); // fix round 1 F3
       expect(cb.message).toMatch(/NOT sent/);
       expect(cb.message).toMatch(/HMI machine stop/);
     });
@@ -547,6 +549,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       expect(tran).toHaveLength(1);
       expect(tran[0]!.message).toMatch(/overflow/i);
       expect(tran[0]!.message).toMatch(/#1\b/);
+      expect(tran[0]!.message).toMatch(/canhBao\.lanThu/); // F5: số lần sau lần #1 nằm ở canhBao.lanThu của hàng sổ
     });
   }, 60_000);
 
@@ -572,6 +575,164 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       const dung = await luat("stop_line", "a", 0);
       expect(await dung()).toMatchObject({ ok: true, simulated: false, status: "acked" });
       expect(d.soGhi).toBe(1);
+    });
+  }, 30_000);
+  // ── A2(a) fix round 1 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  it("★ F1 lời từ chối ở cổng uỷ quyền của lệnh KHÔNG khoá: HAI adapter cùng tag + CÙNG adapter lần hai (HITL NOT_CONFIRMED / requireBoundAction PRECONDITION_FAILED / interlock tắt) ⇒ đúng lời từ chối uỷ quyền, KHÔNG ném; mọi hàng khoá NULL", async () => {
+    await trongGiaoDich(async (tx) => {
+      const ad1 = await taoAdapter(tx, driverGia());
+      const ad2 = await taoAdapter(tx, driverGia());
+      const ids: number[] = [];
+      for (const ad of [ad1, ad2, ad1]) {
+        for (const [ct, writes] of [
+          ["stop", [{ tagKey: "a", value: 0 }]],
+          ["set_param", [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }]],
+        ] as Array<[string, Array<{ tagKey: string; value: unknown }>]>) {
+          const r1 = await gui(tx, ad, writes, "", { commandType: ct, actionId: `${DAU}-khong-co` });
+          expect(r1).toMatchObject({ ok: false, status: "rejected", reason: "NOT_CONFIRMED" });
+          const r2 = await dispatch(lenh(ad, writes, KHONG_TRUYEN, ct, { kind: "hitl", tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER, requireBoundAction: true }));
+          expect(r2).toMatchObject({ ok: false, status: "rejected", reason: "PRECONDITION_FAILED" });
+          const r3 = await dispatch(lenh(ad, [writes[0]!], "", "stop_line", { kind: "interlock", ruleId: 1, eventId: 1, approvedBy: OWNER }));
+          expect(r3).toMatchObject({ ok: false, status: "rejected", reason: "INTERLOCK_AUTO_BLOCK_DISABLED" });
+          ids.push(...r1.commandLogIds, ...r2.commandLogIds, ...r3.commandLogIds);
+        }
+      }
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, ids));
+      expect(hang).toHaveLength(ids.length);
+      expect(hang.every((h) => h.idempotencyKey === null && h.status === "rejected")).toBe(true);
+      expect(hang.filter((h) => /^IDEMPOTENCY_KEY_REQUIRED/.test(String(h.errorText)))).toEqual([]);
+    });
+    await lang();
+    expect(canhBaoKhongKhoa()).toEqual([]);
+  }, 60_000);
+
+  it("★ F1 STOP không khoá bị từ chối SAU (tag thiếu / tag không ghi được / adapter tắt) trên HAI adapter cùng tag, mỗi cái HAI lần ⇒ đúng mã, không ném, hàng khoá NULL", async () => {
+    await trongGiaoDich(async (tx) => {
+      const ad1 = await taoAdapter(tx, driverGia());
+      const ad2 = await taoAdapter(tx, driverGia());
+      await tx.insert(deviceTags).values([
+        { adapterId: ad1, tagKey: "ro", address: "40009", dataType: "int", writable: false },
+        { adapterId: ad2, tagKey: "ro", address: "40009", dataType: "int", writable: false },
+      ]);
+      const ids: number[] = [];
+      for (const ad of [ad1, ad2, ad1, ad2]) {
+        const thieu = await gui(tx, ad, [{ tagKey: "khong-co", value: 0 }], "", { commandType: "stop" });
+        expect(thieu).toMatchObject({ ok: false, reason: "TAG_NOT_FOUND" });
+        const ro = await gui(tx, ad, [{ tagKey: "ro", value: 0 }], KHONG_TRUYEN, { commandType: "stop" });
+        expect(ro).toMatchObject({ ok: false, reason: "TAG_NOT_WRITABLE" });
+        ids.push(...thieu.commandLogIds, ...ro.commandLogIds);
+      }
+      await tx.update(deviceAdapters).set({ isEnabled: false }).where(inArray(deviceAdapters.id, [ad1, ad2]));
+      for (const ad of [ad1, ad2, ad1, ad2]) {
+        const tat = await gui(tx, ad, [{ tagKey: "a", value: 0 }], "", { commandType: "stop" });
+        expect(tat).toMatchObject({ ok: false, reason: "ADAPTER_DISABLED" });
+        ids.push(...tat.commandLogIds);
+      }
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, ids));
+      expect(hang).toHaveLength(ids.length);
+      expect(hang.map((h) => h.idempotencyKey)).toEqual(hang.map(() => null));
+    });
+  }, 60_000);
+
+  it("★ F1 BẢNG THẬT: UNIQUE command_log_idempotencyKey_unique KHÔNG đặt NULLS NOT DISTINCT (nhiều NULL hợp lệ), hai lời từ chối không khoá cùng tag ⇒ hai hàng NULL; sau đó lệnh CÓ khoá trên CÙNG tag bay bình thường (+1 gói, hàng mới, không phát lại, không IDEMPOTENCY_KEY_REUSED)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const [chiMuc] = (await tx.execute(
+        sql`SELECT i.indisunique AS "duyNhat", i.indnullsnotdistinct AS "nullKhongPhanBiet", pg_get_indexdef(i.indexrelid) AS "dinhNghia" FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'command_log_idempotencyKey_unique'`,
+      )) as unknown as Array<{ duyNhat: boolean; nullKhongPhanBiet: boolean; dinhNghia: string }>;
+      expect(chiMuc).toBeDefined();
+      expect(chiMuc!.duyNhat).toBe(true);
+      expect(chiMuc!.nullKhongPhanBiet).toBe(false);
+      expect(chiMuc!.dinhNghia).toMatch(/UNIQUE INDEX .*\("idempotencyKey"\)/);
+      expect(chiMuc!.dinhNghia).not.toMatch(/NULLS NOT DISTINCT/i);
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const r1 = await gui(tx, ad, [{ tagKey: "t", value: 1 }], "", { actionId: `${DAU}-khong-co` });
+      const r2 = await gui(tx, ad, [{ tagKey: "t", value: 1 }], "", { actionId: `${DAU}-khong-co-2` });
+      const r3 = await gui(tx, ad, [{ tagKey: "t", value: 1 }], KHONG_TRUYEN);
+      expect([r1.reason, r2.reason, r3.reason]).toEqual(["NOT_CONFIRMED", "NOT_CONFIRMED", MA_THIEU_KHOA]);
+      const cu = [...r1.commandLogIds, ...r2.commandLogIds, ...r3.commandLogIds];
+      const hangNull = await tx.select().from(commandLog).where(inArray(commandLog.id, cu));
+      expect(hangNull.map((h) => h.idempotencyKey)).toEqual([null, null, null]);
+      const k = await gui(tx, ad, [{ tagKey: "t", value: 1 }], `K-${randomUUID()}`);
+      expect(k).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(k.reason ?? null).toBeNull();
+      expect(d.soGhi).toBe(1);
+      expect(k.commandLogIds.some((id) => cu.includes(id))).toBe(false);
+    });
+  }, 30_000);
+
+  it("★ F1 hàng MÔ PHỎNG của STOP không khoá (OT_CONTROL_ENABLED=false) trên HAI adapter cùng tag ⇒ không ném, hàng khoá NULL", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.OT_CONTROL_ENABLED = "false";
+      const ad1 = await taoAdapter(tx, driverGia());
+      const ad2 = await taoAdapter(tx, driverGia());
+      const ids: number[] = [];
+      for (const ad of [ad1, ad2, ad1]) {
+        const r = await gui(tx, ad, [{ tagKey: "a", value: 0 }], "", { commandType: "stop" });
+        expect(r).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+        ids.push(...r.commandLogIds);
+      }
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, ids));
+      expect(hang.map((h) => h.idempotencyKey)).toEqual([null, null, null]);
+    });
+  }, 30_000);
+
+  it("★ F2 STOP_LIKE không khoá từ HITL KHÔNG actionId (cổng (1) không kiểm gì) ⇒ vẫn từ chối + hàng, KHÔNG cảnh báo, canhBao.boQua = khong_rang_buoc, KHÔNG chạm cửa sổ; cùng bộ được uỷ quyền + ghi thật ⇒ cảnh báo lần 1", async () => {
+    await trongGiaoDich(async (tx) => {
+      const ad = await taoAdapter(tx, driverGia());
+      const writes = [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }];
+      const r = await gui(tx, ad, writes, "", { actionId: null });
+      expect(r).toMatchObject({ ok: false, status: "rejected", reason: MA_THIEU_KHOA_GIONG_STOP });
+      const h = await hangCua(tx, r);
+      expect(h).toHaveLength(2);
+      expect(canhBaoHang(h[0]!)).toMatchObject({ daPhat: false, boQua: "khong_rang_buoc", lanThu: 0 });
+      await lang(80);
+      expect(canhBaoKhongKhoa()).toEqual([]);
+      const r2 = await gui(tx, ad, writes, "");
+      expect(r2.reason).toBe(MA_THIEU_KHOA_GIONG_STOP);
+      const h2 = await hangCua(tx, r2);
+      expect(canhBaoHang(h2[0]!)).toMatchObject({ daPhat: true, lanThu: 1 });
+      expect((canhBaoHang(h2[0]!) as { boQua?: unknown }).boQua).toBeUndefined();
+      await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
+    });
+  }, 30_000);
+
+  it("★ F2 STOP_LIKE / PIN_UNREADABLE không khoá khi CHẠY THỬ (OT_CONTROL_ENABLED=false — cùng vị từ bước 5) dù có uỷ quyền ⇒ hàng, KHÔNG cảnh báo, canhBao.boQua = chay_thu", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.OT_CONTROL_ENABLED = "false";
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const r = await gui(tx, ad, [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }], "");
+      expect(r.reason).toBe(MA_THIEU_KHOA_GIONG_STOP);
+      expect(canhBaoHang((await hangCua(tx, r))[0]!)).toMatchObject({ daPhat: false, boQua: "chay_thu", lanThu: 0 });
+      const actionId = await taoHanhDong(tx, ad, [{ tagKey: "a", value: 0 }]);
+      _setPinReadProbeForTests((id) => {
+        if (id === ad) throw new Error("pin read down (test)");
+      });
+      const r2 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], "", { actionId });
+      _setPinReadProbeForTests(null);
+      expect(r2.reason).toBe(MA_THIEU_KHOA_GHIM_LOI_DOC);
+      expect(canhBaoHang((await hangCua(tx, r2))[0]!)).toMatchObject({ daPhat: false, boQua: "chay_thu" });
+      expect(d.soGhi).toBe(0);
+    });
+    await lang(80);
+    expect(canhBaoKhongKhoa()).toEqual([]);
+  }, 30_000);
+
+  it("★ F5 chèn sổ của lời từ chối STOP_LIKE LỖI (CSDL từ chối NUL trong jsonb) ⇒ dispatch ném như mọi lỗi sổ, NHƯNG cảnh báo khẩn VẪN phát (đếm trước, phát trong finally) và nói hàng sổ không ghi được", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "a", value: "x\u0000y" }];
+      const actionId = await taoHanhDong(tx, ad, writes);
+      await expect(gui(tx, ad, writes, "", { actionId })).rejects.toThrow();
+      expect(d.soGhi).toBe(0);
+      await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
+      const cb = canhBaoKhongKhoa()[0]!;
+      expect(cb.kind).toBe("ot_keyless_stop_like_refused");
+      expect(cb.message).toMatch(/could NOT be written to command_log/);
+      expect(cb.message).toMatch(/NOT sent/);
     });
   }, 30_000);
 });
