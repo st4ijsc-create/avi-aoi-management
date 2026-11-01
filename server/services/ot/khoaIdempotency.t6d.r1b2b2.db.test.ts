@@ -1004,4 +1004,33 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
     });
     expect(H.bay).toBe(0);
   }, 30_000);
+
+  it("★ KD-13 (m41') ĐUA + STOP theo NỘI DUNG: loại lệnh thường (`set_param`), write = tag ghim + giá trị ghim, một lệnh KHÁC giành khoá GIỮA bước 2 và khoá tư vấn ⇒ STOP vẫn ra thiết bị dưới khoá mới (`#stop-`), +1 gói, lanTruoc.lyDo = khoa_lech; đối chứng: cùng đua với write KHÔNG ghim ⇒ bị từ chối, 0 gói", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      H.giuaChung = async () => {
+        await chenHang(tx, { adapterId: ad, tagKey: "a", value: 7, status: "acked", ackValue: { ledger: "result", bam: "lenh-khac" }, key: perWriteKey(K, "a", 0) });
+      };
+      const s = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, "set_param");
+      expect(H.giuaChung).toBeNull(); // móc đã chạy: khoá bị giành SAU bước 2
+      expect(s).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s.commandLogIds));
+      expect(hang[0]!.idempotencyKey).toContain("#stop-");
+      expect((hang[0]!.ackValue as { lanTruoc?: { idempotencyKey?: string; lyDo?: string } }).lanTruoc).toMatchObject({ idempotencyKey: K, lyDo: "khoa_lech" });
+
+      // đối chứng: write KHÔNG phải giá trị ghim ⇒ không phải STOP ⇒ bị từ chối trong giao dịch giữ chỗ
+      const K2 = khoaMoi();
+      H.giuaChung = async () => {
+        await chenHang(tx, { adapterId: ad, tagKey: "a", value: 7, status: "acked", ackValue: { ledger: "result", bam: "lenh-khac" }, key: perWriteKey(K2, "a", 0) });
+      };
+      const r = await gui(tx, ad, [{ tagKey: "a", value: 3 }], K2, "set_param");
+      expect(H.giuaChung).toBeNull();
+      expect(r.reason).toBe(MA_KHOA_DUNG_LAI);
+      expect(d.soGhi).toBe(1);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
 });
