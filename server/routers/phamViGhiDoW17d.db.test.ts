@@ -12,7 +12,7 @@ const RUN = `pw27${process.pid}${Date.now().toString(36)}`;
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 let db: Db;
 const dung = async (q: ReturnType<typeof sql>): Promise<any[]> => (await db.execute(q)) as unknown as any[];
-const ctx = (u: { id: number; name: string }, role: string, hai = true) => ({ user: { id: u.id, role, name: u.name, openId: u.name, twoFactorEnabled: hai } }) as never;
+const ctx = (u: { id: number; name: string | null }, role: string, hai = true) => ({ user: { id: u.id, role, name: u.name, openId: u.name, twoFactorEnabled: hai } }) as never;
 let c: Record<string, ReturnType<typeof import("./aiRobotAnomalyRouter").aiRobotAnomalyRouter.createCaller>> = {};
 
 async function maLoi(chay: () => Promise<unknown>): Promise<string> {

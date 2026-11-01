@@ -13,7 +13,7 @@ let db: Db;
 const dung = async (q: ReturnType<typeof sql>): Promise<any[]> => (await db.execute(q)) as unknown as any[];
 const one = async (q: ReturnType<typeof sql>) => (await dung(q))[0];
 const so = async (q: ReturnType<typeof sql>) => Number((await one(q)).n);
-const ctx = (u: { id: number; name: string }) => ({ user: { id: u.id, role: "supervisor", name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
+const ctx = (u: { id: number; name: string | null }) => ({ user: { id: u.id, role: "supervisor", name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
 async function maLoi(chay: () => Promise<unknown>): Promise<string | null> {
   try {
     await chay();
@@ -22,8 +22,8 @@ async function maLoi(chay: () => Promise<unknown>): Promise<string | null> {
     return String((e as { code?: string }).code ?? "LOI_LA");
   }
 }
-let A!: { id: number; name: string };
-let B!: { id: number; name: string };
+let A!: { id: number; name: string | null };
+let B!: { id: number; name: string | null };
 const ids: Record<string, number> = {};
 
 beforeAll(async () => {

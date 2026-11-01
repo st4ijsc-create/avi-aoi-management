@@ -9,9 +9,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 
 const RUN = `pw22${process.pid}${Date.now().toString(36)}`;
-let op!: { id: number; name: string };
-let sup!: { id: number; name: string };
-const ctxOf = (u: { id: number; name: string }, role: string) => ({ user: { id: u.id, role, name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
+let op!: { id: number; name: string | null };
+let sup!: { id: number; name: string | null };
+const ctxOf = (u: { id: number; name: string | null }, role: string) => ({ user: { id: u.id, role, name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
 
 async function goi(router: unknown, duong: string, ctx: never, vao: unknown): Promise<string> {
   let cur: unknown = (router as { createCaller: (c: never) => unknown }).createCaller(ctx);

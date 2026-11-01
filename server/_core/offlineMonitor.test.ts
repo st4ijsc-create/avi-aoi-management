@@ -8,13 +8,13 @@ const phat = vi.fn();
 vi.mock("./socketPhatTheoNhaMay", () => ({ phatTheoNhaMay: (...a: unknown[]) => phat(...a) }));
 vi.mock("./socket", () => ({ getIO: () => ({ fake: true }) }));
 let daCauHinh = false;
-const notifyOwner = vi.fn(async () => false);
-vi.mock("./notification", () => ({ notificationConfigured: () => daCauHinh, notifyOwner: (...a: unknown[]) => notifyOwner(...(a as [never])) }));
+const notifyOwner = vi.fn(async (..._a: unknown[]) => false);
+vi.mock("./notification", () => ({ notificationConfigured: () => daCauHinh, notifyOwner: (...a: unknown[]) => notifyOwner(...a) }));
 let danhSach: Array<{ log: { id: number; timestamp: Date; ipAddress: string | null }; machine: { id: number; code: string; name: string } }> = [];
-const markSent = vi.fn(async () => undefined);
+const markSent = vi.fn(async (..._a: unknown[]) => undefined);
 vi.mock("../db", () => ({
   getUnnotifiedOfflineMachines: vi.fn(async () => danhSach),
-  markOfflineNotificationSent: (...a: unknown[]) => markSent(...(a as [never])),
+  markOfflineNotificationSent: (...a: unknown[]) => markSent(...a),
 }));
 
 import { __quenDotOfflineChoTest, checkOfflineMachines } from "./offlineMonitor";

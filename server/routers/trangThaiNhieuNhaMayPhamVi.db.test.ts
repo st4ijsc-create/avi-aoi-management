@@ -784,8 +784,8 @@ describe.skipIf(!DB_URL)("PH-45/PH-48 — ba truy vấn trạng thái nhận DAN
       ["overview", (ids: number[]) => ov(c, { factoryIds: ids }), (k: unknown) => (k as OverviewRa).machines.length],
       ["sucKhoeMay", (ids: number[]) => sk(c, { factoryIds: ids }), (k: unknown) => (k as SucKhoeRa).khai.length],
     ] as const) {
-      const mot = await demCau(() => goi(A), () => goi(A));
-      const tatCa = await demCau(() => goi(ba), () => goi(ba));
+      const mot = await demCau<unknown>(() => goi(A), () => goi(A));
+      const tatCa = await demCau<unknown>(() => goi(ba), () => goi(ba));
       console.log(`[PH45] ${ten}: 1 nhà máy = ${mot.soCau} câu · 3 nhà máy = ${tatCa.soCau} câu`);
       // Ràng buộc KÍCH THƯỚC trước khi khẳng định chi phí — "0 hàng, 0 câu" cũng qua.
       expect(demRa(mot.kq), `${ten}: lượt 1 nhà máy rỗng`).toBeGreaterThan(0);
