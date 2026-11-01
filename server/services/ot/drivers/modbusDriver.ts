@@ -202,8 +202,12 @@ export class ModbusDriver extends NotImplementedDriver {
     this.dangBay.huy(client, `socket ${ev}${detail}`);
   }
 
-  /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
+  /**
+   * Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw).
+   * R1b-2b-2b A C4 (KD-2bA 4.3) — `capNhatTrangThai` false (CHỈ đường Lab `docLab`): không ghi `lastOkAt` / `lastError` (trạng thái dùng chung mà
+   * `health()` báo cho supervisor / M10) — một lượt Lab đọc được trong lúc poll hỏng không được làm adapter trông "khoẻ".
+   */
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false, capNhatTrangThai = true): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { registerType, register } = parseModbusAddress(tag.address);
@@ -237,7 +241,7 @@ export class ModbusDriver extends NotImplementedDriver {
         value = scaleXuoi(raw, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
-      this.lastOkAt = now();
+      if (capNhatTrangThai) this.lastOkAt = now();
       return {
         tagKey: tag.tagKey,
         raw,
@@ -247,7 +251,7 @@ export class ModbusDriver extends NotImplementedDriver {
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
       } satisfies OtSample;
     } catch (err) {
-      this.lastError = (err as Error)?.message || String(err);
+      if (capNhatTrangThai) this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, cổng đóng, DeviceUnreachable, ECONNRESET/…) ⇒ HUỶ cả tick;
       // vòng poll phát MỘT loạt mẫu xấu. T12 D3: giao dịch QUÁ HẠN cũng huỷ (không trả lời = mất liên lạc). Exception thiết bị, config_error vẫn theo từng tag.
       const v2 = chatLuongV2Bat();
@@ -259,14 +263,28 @@ export class ModbusDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
-        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error).
-        ...(v2 ? chatLuongLoiModbus(err) : {}),
+        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error). R1b-2b-2b A C4 — đường Lab (chẩn đoán) LUÔN nói.
+        ...(v2 || !capNhatTrangThai ? chatLuongLoiModbus(err) : {}),
       } satisfies OtSample;
     }
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R1b-2b-2b A C4 (mục 5, KD-2bA 4.2/4.3) — Lab "thử đọc một địa chỉ" trên phiên ĐANG CHẠY, song song với vòng poll.
+   * An toàn đồng thời đã ĐO bằng modbus-serial 8.0.25 THẬT (docDongThoi.drivers.r1b2b2b.test.ts): Modbus TCP gắn mỗi yêu cầu một transaction-id
+   * (tcpport.js:238) và giải trả lời theo id đó (index.js:418) ⇒ trả lời đảo thứ tự không bao giờ giải nhầm lần đọc; không hàng đợi trả lời (chỉ chuỗi
+   * ghi socket) ⇒ một lượt Lab treo không trì hoãn lời ghi STOP. Driver này CHỈ nói TCP (`connectTCP`, không RTU / serial / RTU-over-TCP — test ghim).
+   * Không ghi trạng thái dùng chung (`lastOkAt` / `lastError` / `lastLatencyMs`), không huỷ tick, không `setID`, không mở phiên mới.
+   */
+  async docLab(tags: OtTagAddress[]): Promise<OtSample[]> {
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("modbus");
+    const out: OtSample[] = [];
+    for (const tag of tags) out.push(await this.readOne(tag, false, false));
+    return out;
   }
 
   /**

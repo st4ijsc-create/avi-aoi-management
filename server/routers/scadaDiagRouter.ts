@@ -18,10 +18,12 @@
  *   (R1b-2b-2b A C2 — `danhSach`: `endpoint` / `loi` chỉ cho kỹ sư canEdit (`chiTietKyThuatCua`), người khác `null` + `maLoi`; `tamKhoa` mọi người)
  *   ketNoiLai / tamTat / datLoiStub   → vai admin|engineer + 2FA + MOD_OT_CONTROL + `machine_control.canEdit`
  *   datLoiStub thêm: cờ SCADA_LAB_ENABLED, protocol `stub`.
+ *   thuDocDiaChi (R1b-2b-2b A C4, Lab "thử đọc một địa chỉ") → vai admin|engineer + MOD_OT_CONTROL + `machine_control.canEdit`, KHÔNG 2FA (Q1 / KD-2bA 4.1).
  *
- * ĐỂ R1 (không làm ở đây): "Thử đọc một địa chỉ (Lab)". Chỉ báo "Truyền thông n/m": hợp đồng `tomTatTruyenThong` (R1b-2b-2b A C2).
+ * Chỉ báo "Truyền thông n/m": hợp đồng `tomTatTruyenThong` (R1b-2b-2b A C2).
  * ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  */
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, roleProcedure, require2FA } from "../_core/trpc";
@@ -44,7 +46,21 @@ import { layGiaTri, thongTinAdapter } from "../services/scada/boDemHienTai";
 import { layStubDangChay, type LoiStub } from "../services/ot/drivers/stubDriver";
 import { lyDoMcTamKhoaNgan } from "../services/ot/drivers/mitsubishiMcDriver";
 import { lyDoCauHinhDiaChiS7 } from "../services/ot/drivers/s7Address";
-import { detachOtAdapter, getOtAdapterStatus, resetAdapterSession } from "../services/ot/otManager";
+import { detachOtAdapter, getActiveDriver, getOtAdapterStatus, resetAdapterSession } from "../services/ot/otManager";
+import { withDeadline } from "../services/ot/drivers/boundedClose";
+import {
+  GIAO_THUC_THU_DOC,
+  HAN_THU_DOC_DIA_CHI_MS,
+  TAG_THU_DOC,
+  TRAN_THU_DOC_MOI_PHUT,
+  chuanHoaGiaTriThuDoc,
+  datChoThuDoc,
+  ghiKetQuaThuDocNen,
+  lamSachLyDoDriver,
+} from "../services/ot/thuDocDiaChi";
+import type { OtSample } from "../services/ot/otDriver";
+import { laLoiTimeout } from "../services/ot/chatLuong";
+import { runningConnectionMatchesAdapterRow } from "../services/ot/commandDispatcher";
 import type { RuntimeAdapter } from "../services/ot/deviceAdapter";
 // SCADA R1b-1 Task 9 fix round 3 (N1) — cổng ADAPTER dùng chung (tắt adapter có tag được bảo vệ) + TOTP tươi mức 5
 import { congAdapterTx } from "../services/scada/troLaiKenh";
@@ -54,6 +70,11 @@ import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../ser
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // Hành động M10 (spec Phụ lục A: "Kết nối lại / tắt adapter" = engineer, admin): sàn vai + 2FA + giấy phép.
 const kySuProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"));
+// R1b-2b-2b A C4 (Q1, KD-2bA 4.1) — Lab "thử đọc một địa chỉ": sàn vai + giấy phép, KHÔNG 2FA (chủ dự án: "2FA KHÔNG tiên quyết" cho Kỹ thuật &
+// Điều khiển — người đã bật 2FA vẫn đi luồng hiện có); `machine_control.canEdit` gắn ở thủ tục.
+const labDocProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD_OT_CONTROL"));
+
+export { GIAO_THUC_THU_DOC, HAN_THU_DOC_DIA_CHI_MS, TRAN_THU_DOC_MOI_PHUT };
 
 async function getDb() {
   const db = await getDbRaw();
@@ -238,6 +259,56 @@ const loiStubInput = z
 function adapterBao(a: HangAdapter): Pick<RuntimeAdapter, "adapterId" | "code" | "machineId" | "protocol" | "tags"> {
   return { adapterId: a.id, code: a.code, machineId: a.machineId, protocol: a.protocol as RuntimeAdapter["protocol"], tags: [] };
 }
+
+// R1b-2b-2b A C4 — NUL (U+0000) không lưu được vào Postgres (cột reason / jsonb của audit) ⇒ từ chối ở cửa vào (khuôn scadaCommandsRouter.ts:40).
+const khongNul = (v: string) => !v.includes("\u0000");
+const THONG_BAO_NUL = "Không được chứa ký tự NUL (U+0000).";
+const thuDocDiaChiInput = z
+  .object({
+    adapterId: adapterIdInput,
+    address: z.string().trim().min(1).max(128).refine(khongNul, { message: THONG_BAO_NUL }),
+    dataType: z.enum(["bool", "int", "float", "string"]),
+    lyDo: z.string().trim().min(5).max(300).refine(khongNul, { message: THONG_BAO_NUL }),
+  })
+  .strict();
+
+/**
+ * HỢP ĐỒNG B-T9 (R1b-2b-2b A C4) — kết quả MỘT lượt đọc thử. `raw` / `giaTri` đọc THÔ (scale 1, offset 0; chuỗi cắt 256): `raw` = giá trị thô của
+ * driver, `giaTri` = giá trị driver giải mã. `statusCode` = mã trạng thái giao thức (đã làm sạch, ≤ 256); `reason` = lý do khi không good: lý do
+ * chất lượng của driver (`comm_lost` / `config_error` / `device_error` …), `"timeout"` (quá `HAN_THU_DOC_DIA_CHI_MS`), hoặc văn bản lỗi driver ĐÃ LÀM
+ * SẠCH (không stack / host:cổng / đường dẫn, ≤ 256). `ms` = thời gian của lượt đọc.
+ */
+export type KetQuaThuDocDiaChi = {
+  quality: "good" | "uncertain" | "bad";
+  raw: number | boolean | string | null;
+  giaTri: number | boolean | string | null;
+  statusCode: string | null;
+  reason: string | null;
+  ms: number;
+};
+
+class LoiQuaHanThuDoc extends Error {}
+
+/**
+ * Mẫu của driver ⇒ kết quả hợp đồng. Mẫu vắng (driver trả mảng rỗng) ⇒ bad.
+ * C4 fix 1 (review M2) — MỘT giá trị hết hạn trong hợp đồng: mẫu bad mà driver phân loại là hết hạn giao dịch (`statusCode` "timeout" — modbus-serial
+ * TransactionTimedOutError, stub treo) ⇒ `reason: "timeout"` như khi hạn 3 s của thủ tục bắn (statusCode giữ "timeout").
+ */
+function ketQuaTuMau(m: OtSample | undefined, ms: number): KetQuaThuDocDiaChi {
+  if (!m) return { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "no_sample", ms };
+  const hetHan = m.quality !== "good" && m.statusCode === "timeout";
+  return {
+    quality: m.quality,
+    raw: chuanHoaGiaTriThuDoc(m.raw),
+    giaTri: chuanHoaGiaTriThuDoc(m.value),
+    statusCode: lamSachLyDoDriver(m.statusCode),
+    reason: m.quality === "good" ? null : hetHan ? "timeout" : (m.reason ?? null),
+    ms,
+  };
+}
+
+const tuChoiLab = (code: "PRECONDITION_FAILED" | "BAD_REQUEST" | "TOO_MANY_REQUESTS" | "CONFLICT", reason: string, msg: string) =>
+  appError(code, "OPERATION_FAILED", { operation: "scadaLabRead", reason }, msg);
 
 /** Kết quả chip "Truyền thông n/m" (HỢP ĐỒNG B-T7 — R1b-2b-2b A C2). */
 export type TomTatTruyenThong = { ketNoi: number; dangNoi: number; mat: number; khac: number; tong: number; edge: number; tinhLuc: string };
@@ -557,5 +628,102 @@ export const scadaDiagRouter = router({
         reason: input.lyDo,
       });
       return { apDung: !!stub };
+    }),
+
+  /**
+   * R1b-2b-2b A C4 (mục 5) — HỢP ĐỒNG B-T9: Lab "thử đọc MỘT địa chỉ" trên phiên driver ĐANG CHẠY ở trung tâm. Chỉ đọc; không bao giờ `writeTags` /
+   * `connect` / `resetAdapterSession`, không mở phiên mới, không chạm trạng thái dùng chung của driver / adapter (đường `docLab`, KD-2bA 4.3).
+   * Thứ tự cổng (KD-2bA 4.7): phạm vi (ngoài phạm vi = không tồn tại ⇒ NOT_FOUND `adapter`) → edge (`adapterOwnedByEdge`) → giao thức trong
+   * `GIAO_THUC_THU_DOC` (`protocolNotSupported`) → trần (`rateLimited` 10 / phút / người — chỉ lượt được NHẬN mới đếm; `scadaLabDangBan` — 1 lượt đang
+   * bay / adapter, KD-2bA 4.4) → driver đang chạy (hàng tắt / không driver ⇒ `adapterNotRunning`; phiên cũ hơn cấu hình ⇒ `scadaLabPhienCu`, fix 1 I1) → audit Ý ĐỊNH `scada_thu_doc_dia_chi` (có `lyDo`) GHI TRƯỚC lượt đọc — hỏng ⇒
+   * ném, KHÔNG đọc → `docLab` có hạn `HAN_THU_DOC_DIA_CHI_MS` (quá hạn ⇒ `{quality:"bad", reason:"timeout"}`, không ném) → audit KẾT QUẢ
+   * `scada_thu_doc_dia_chi_ket_qua` (quality, ms, mã / lý do đã làm sạch — KHÔNG giá trị) qua bộ ghi nền có trần (KD-2bA 4.5; lỗi ghi không đổi kết quả).
+   * Người gọi là kỹ sư / admin có `machine_control.canEdit` (= người được xem chi tiết kỹ thuật, C1) ⇒ kết quả không che; `reason` / `statusCode` của
+   * driver vẫn được làm sạch (KD-2bA 4.6).
+   */
+  thuDocDiaChi: labDocProcedure
+    .use(requirePermission("machine_control", "canEdit"))
+    .input(thuDocDiaChiInput)
+    .mutation(async ({ ctx, input }): Promise<KetQuaThuDocDiaChi> => {
+      const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId); // 1. phạm vi
+      await tuChoiNeuEdge(a.id, "scadaLabRead"); // 2. edge
+      if (!GIAO_THUC_THU_DOC.has(a.protocol)) {
+        // 3. giao thức
+        throw tuChoiLab("BAD_REQUEST", "protocolNotSupported", `Giao thức ${a.protocol} chưa được chứng minh đọc thử an toàn song song với poll.`);
+      }
+      const cho = datChoThuDoc(ctx.user.id, a.id); // 4. trần (giữ chỗ ĐỒNG BỘ)
+      if (!cho.ok) {
+        throw cho.lyDo === "rateLimited"
+          ? tuChoiLab("TOO_MANY_REQUESTS", "rateLimited", `Quá ${TRAN_THU_DOC_MOI_PHUT} lượt đọc thử trong 60 s.`)
+          : tuChoiLab("CONFLICT", "scadaLabDangBan", "Adapter đang có một lượt đọc thử chưa xong.");
+      }
+      let daNhan = false;
+      try {
+        // 5. driver đang chạy (phiên hiện có — không mở mới). C4 fix 1 (review I1) — KHÔNG tin phiên cũ: sửa / tắt adapter qua đường cấu hình thường
+        // KHÔNG nối lại / gỡ driver (otManager getActiveConnectionFingerprint) ⇒ (a) hàng DB tắt ⇒ adapterNotRunning dù driver còn chạy; (b) dấu vân tay
+        // phiên đang chạy ≠ hàng DB hiện tại (cùng helper với STOP ghim) ⇒ TỪ CHỐI `scadaLabPhienCu` — giá trị của thiết bị CŨ không bao giờ trả về như "good".
+        // Mọi từ chối ở bước này đứng TRƯỚC audit ý định ⇒ 0 dòng audit (như phạm vi / edge / giao thức / trần) và trả chỗ (`huy()` ở finally).
+        if (!a.isEnabled) throw tuChoiLab("PRECONDITION_FAILED", "adapterNotRunning", "Adapter đang tắt trong cấu hình.");
+        const driver = getActiveDriver(a.id);
+        if (!driver) throw tuChoiLab("PRECONDITION_FAILED", "adapterNotRunning", "Adapter không chạy ở trung tâm.");
+        if (typeof driver.docLab !== "function") {
+          throw tuChoiLab("BAD_REQUEST", "protocolNotSupported", "Driver đang chạy không có đường đọc thử đã chứng minh.");
+        }
+        const docLab = driver.docLab.bind(driver);
+        const db = await getDb();
+        if (!(await runningConnectionMatchesAdapterRow(db, a.id))) {
+          throw tuChoiLab("CONFLICT", "scadaLabPhienCu", "Phiên đang chạy cũ hơn cấu hình adapter — kết nối lại / khởi động lại OT trước.");
+        }
+        // 6. audit Ý ĐỊNH — TRƯỚC lượt đọc; ném ⇒ không đọc (lượt không được nhận ⇒ không đếm vào trần). `maLuot` nối dòng ý định với dòng kết quả
+        // (kết quả của recordAuditEvent — hàng vừa ghi — luôn bị BỎ ở bề mặt: controlAuditLogDocCensus §2).
+        const maLuot = randomUUID();
+        await recordAuditEvent(db, {
+          entityType: "device_adapter",
+          entityId: a.id,
+          action: "scada_thu_doc_dia_chi",
+          actorId: ctx.user.id,
+          before: null,
+          after: { address: input.address, dataType: input.dataType, maLuot },
+          reason: input.lyDo,
+        });
+        daNhan = true;
+        const t0 = performance.now();
+        // async bọc ⇒ driver ném ĐỒNG BỘ cũng thành reject (chỗ đang bay vẫn được trả)
+        const pDoc = (async () => docLab([{ tagKey: TAG_THU_DOC, address: input.address, dataType: input.dataType, scale: 1, offset: 0 }]))();
+        // chỗ "đang bay" của adapter trả khi lượt đọc THẬT xong (kể cả sau khi người gọi đã nhận timeout) — KD-2bA 4.4
+        pDoc.then(cho.xongDoc, cho.xongDoc);
+        let kq: KetQuaThuDocDiaChi;
+        try {
+          const mau = await withDeadline(pDoc, HAN_THU_DOC_DIA_CHI_MS, "scada lab read", { unref: true, loi: () => new LoiQuaHanThuDoc() });
+          kq = ketQuaTuMau(mau[0], Math.round(performance.now() - t0));
+        } catch (e) {
+          const ms = Math.round(performance.now() - t0);
+          kq =
+            // C4 fix 1 (M2) — hạn của chính driver / thư viện bắn trước 3 s (vd OPC UA "opcua read timeout after 2000ms", "Transaction has timed out")
+            // ⇒ cùng `reason: "timeout"`
+            e instanceof LoiQuaHanThuDoc || laLoiTimeout(e)
+              ? { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: "timeout", ms }
+              : { quality: "bad", raw: null, giaTri: null, statusCode: null, reason: lamSachLyDoDriver((e as Error)?.message ?? e) ?? "driver_error", ms };
+        }
+        // 7. audit KẾT QUẢ (nền, có trần) — không giá trị thô
+        const ketQua = { quality: kq.quality, ms: kq.ms, statusCode: kq.statusCode, reason: kq.reason, maLuot };
+        ghiKetQuaThuDocNen(
+          async () => {
+            await recordAuditEvent(db, {
+              entityType: "device_adapter",
+              entityId: a.id,
+              action: "scada_thu_doc_dia_chi_ket_qua",
+              actorId: ctx.user.id,
+              before: null,
+              after: ketQua,
+              reason: null,
+            });
+          },
+          { adapterId: a.id, maLuot },
+        );
+        return kq;
+      } finally {
+        if (!daNhan) cho.huy();
+      }
     }),
 });

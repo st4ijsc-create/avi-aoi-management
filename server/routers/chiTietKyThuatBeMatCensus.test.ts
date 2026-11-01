@@ -660,6 +660,14 @@ export const SO_CAI: Record<string, Muc> = {
     phanLoai: "mien_tru",
     lyDo: MT_KY_SU + "; endpoint chỉ trong WHERE / tra stub; trả { apDung }",
   },
+  // R1b-2b-2b A C4 (đo 2026-11-01) — Lab "thử đọc một địa chỉ"
+  "server/routers/scadaDiagRouter.ts#proc:thuDocDiaChi": {
+    // C4 fix 1 (I1): + dich_vu runningConnectionMatchesAdapterRow (đọc hàng device_adapters để so dấu vân tay phiên — chỉ trả boolean, không rời hàm)
+    dem: { dich_vu: 1, ham_cuc_bo: 1 },
+    phanLoai: "mien_tru",
+    lyDo:
+      "vai admin|engineer + MOD_OT_CONTROL + requirePermission(machine_control, canEdit) — đúng tập người xem chi tiết kỹ thuật (KHÔNG 2FA, Q1); chỉ dùng a.id / protocol của helper; trả { quality, raw, giaTri, statusCode, reason, ms } — reason / statusCode của driver đã làm sạch (lamSachLyDoDriver: không host:cổng / đường dẫn / stack, ≤ 256, KD-2bA 4.6), không endpoint / lastError",
+  },
   "server/routers/systemHealthRouter.ts#proc:connectionSupervisors": { dem: { ram: 1 }, phanLoai: "che", qua: ["chiTietKyThuatCua", "maLoiAdapterCua"] },
   // ── server/_core ──
   "server/_core/backgroundJobs.ts#runWorkerProcess": { dem: { ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: MT_KHOI_DONG },
@@ -676,8 +684,11 @@ export const SO_CAI: Record<string, Muc> = {
  *     che +5 (getRun, listRuns, REST runs/:id, nodeStatus, fleet status — fleet chuyển từ miễn trừ), miễn trừ +22.
  *   • polish (đo 2026-11-01): { khoa 71, diemCham 103, che 15, mienTru 56 } — +1 khoá che: REST `POST /equipment/:id/commands` (loại mới `ket_qua_lenh`:
  *     `<adapter>.sendCommand(…)` — EquipmentCommandResult.error / .detail).
+ *   • R1b-2b-2b A C4 (đo 2026-11-01): { khoa 72, diemCham 104, che 15, mienTru 57 } — +1 khoá miễn trừ `scadaDiag#proc:thuDocDiaChi` (ham_cuc_bo: helper phạm vi).
+ *   • C4 fix 1 (đo 2026-11-01): { khoa 72, diemCham 105, che 15, mienTru 57 } — thuDocDiaChi + dich_vu `runningConnectionMatchesAdapterRow` (review I1: từ chối phiên cũ;
+ *     helper chỉ trả boolean).
  */
-const GHIM = { khoa: 71, diemCham: 103, che: 15, mienTru: 56 };
+const GHIM = { khoa: 72, diemCham: 105, che: 15, mienTru: 57 };
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;
