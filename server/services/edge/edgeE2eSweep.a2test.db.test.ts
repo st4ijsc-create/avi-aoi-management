@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import { sweepHarnessLeftovers, harnessPatterns, endpointHostPort, isLoopbackHost, tcpPortListens, HARNESS_PREFIXES, SWEEP_HORIZON_MS, type SweepDeps, type SweepReport } from "./__edgeE2eSweep.dot10";
+import { pendingStopsOf } from "./__edgeE2eStopClose.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const TP = `ZS${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1e6).toString(36).toUpperCase()}`;
@@ -205,6 +206,75 @@ describe("A2 test — F1 harness start-up sweep (real _test DB, ROLLBACK)", () =
     expect(st.us[s.ids.uOld]).toBe(true);
     expect(st.wf[s.ids.wfOld]).toBe("active");
     expect(logs.filter((l) => l.startsWith("[F1 sweep] NOT swept"))).toHaveLength(1);
+  });
+});
+
+describe("A2 test kd — endpoint without host:port, carried STOP (real _test DB, ROLLBACK)", () => {
+  const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+
+  it("★ kd s8: an old SPLC whose endpoint is sim:// or garbage ⇒ keptEndpointUnknown, nothing throws, later stale rows of the SAME sweep still made inert", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      // inserted FIRST (lower ids ⇒ visited before every other stale row of the sweep)
+      const plcAt = (code: string, endpoint: string) =>
+        one(tx`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", enabled) VALUES (${code}, 'A2 kd', 'pilz', 'modbus', ${endpoint}, ${tx.json({ estop: { address: "coil:1" } })}, true) RETURNING id`);
+      const a = await plcAt(`SPLC-${TP}-${OLD + 3}`, "sim://x");
+      const b = await plcAt(`SPLC-${TP}-${OLD + 4}`, "garbage :: not-an-endpoint");
+      const s = await seed(tx);
+      const logs: string[] = [];
+      const rep = await sweepHarnessLeftovers(tx, { now: () => NOW, prefixes: [TP], log: (l) => logs.push(l) });
+      const st = await readState(tx, { ...s, ids: { ...s.ids, a, b } });
+      return { s, rep, st, a, b, logs };
+    });
+    const { s, rep, st } = out;
+    expect(rep.keptEndpointUnknown.map((r) => r.id)).toEqual(expect.arrayContaining([out.a, out.b]));
+    expect(rep.keptEndpointUnknown.find((r) => r.id === out.a)?.reason).toMatch(/not tcp:\/\/host:port/);
+    expect(rep.keptEndpointUnknown.find((r) => r.id === out.b)?.reason).toMatch(/not tcp:\/\/host:port/);
+    expect(st.plc[out.a]).toBe(true);
+    expect(st.plc[out.b]).toBe(true);
+    // the sweep went on past them: later stale rows (SPLC, robot, user, workflow) are still made inert
+    expect(st.plc[s.ids.plcOldDead]).toBe(false);
+    expect(st.rb[s.ids.rOld]).toBe(false);
+    expect(st.us[s.ids.uOld]).toBe(false);
+    expect(st.wf[s.ids.wfOld]).toBe("archived");
+    expect(out.logs.filter((l) => l.startsWith("[F1 sweep] done:"))).toHaveLength(1);
+  });
+
+  it("★ kd s16 / c12: an unacked STOP that was CARRIED on (carriedToId set, its head acked) is NOT pending — the sweep makes the robot inert, pendingStopsOf does not count it (mig 0374 device_keep_pending_stop)", async () => {
+    const out = await inRolledBackTx(async (tx) => {
+      const [usr] = await tx`SELECT id FROM users WHERE role = 'admin' AND "isActive" = true ORDER BY id LIMIT 1`;
+      const n1 = await one(tx`INSERT INTO edge_nodes (code, name, status) VALUES (${`N1-${TP}-kd`}, 'A2 kd 1', 'offline') RETURNING id`);
+      const n2 = await one(tx`INSERT INTO edge_nodes (code, name, status) VALUES (${`N2-${TP}-kd`}, 'A2 kd 2', 'offline') RETURNING id`);
+      const robot = await one(tx`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "edgeNodeId") VALUES (${`RA-${TP}-${OLD + 5}`}, 'A2 kd', 'sim', 'sim://kd', true, ${n1}) RETURNING id`);
+      const [ep] = await tx`SELECT "ownerEpoch" FROM robots WHERE id = ${robot}`;
+      const q1 = await one(
+        tx`INSERT INTO robot_motion_lock_requests ("robotId", "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "expiresAt") VALUES (${robot}, ${n1}, ${Number(ep.ownerEpoch)}, 'stop', 'A2 kd carried', ${Number(usr.id)}, now() + interval '1 hour') RETURNING id`,
+      );
+      // the product's carry (mig 0374 device_owner_stop_carry): an owner change edge → edge moves the unacked STOP head to the new owner
+      await tx`SELECT set_config('avi.actor', 'A2 kd test', true)`;
+      await tx`UPDATE robots SET "edgeNodeId" = ${n2} WHERE id = ${robot}`;
+      const [c1] = await tx`SELECT "carriedToId", "ackedAt" FROM robot_motion_lock_requests WHERE id = ${q1}`;
+      const q2 = Number(c1.carriedToId);
+      // the new head is executed + acked by central the product's way (owner → central, execution recorded, edge_stop_ack_central)
+      await tx`UPDATE robots SET "edgeNodeId" = NULL WHERE id = ${robot}`;
+      const [ex] = await tx`SELECT public.edge_stop_record_central_execution('robot', ${robot}, true, 'A2 kd test') AS id`;
+      await tx`SELECT public.edge_stop_ack_central(${q2}, 'done', ${ex.id}::bigint)`;
+      const rows = await tx`SELECT id, "ackedAt", "carriedToId", outcome FROM robot_motion_lock_requests WHERE "robotId" = ${robot} ORDER BY id`;
+      const pending = await pendingStopsOf(tx, [robot], []);
+      const rep = await sweepHarnessLeftovers(tx, { now: () => NOW, prefixes: [TP], log: () => undefined });
+      const [r] = await tx`SELECT "isEnabled" FROM robots WHERE id = ${robot}`;
+      return { robot, q1, q2, c1, rows, pending, rep, enabledAfter: r.isEnabled };
+    });
+    // the fixture really is "unacked + carried on, head acked"
+    expect(out.q2).toBeGreaterThan(out.q1);
+    expect(out.c1.ackedAt).toBeNull();
+    expect(out.rows.map((x) => [Number(x.id), x.ackedAt === null, x.carriedToId === null ? null : Number(x.carriedToId), x.outcome])).toEqual([
+      [out.q1, true, out.q2, null],
+      [out.q2, false, null, "done"],
+    ]);
+    expect(out.pending).toEqual([]);
+    expect(out.rep.keptPendingStop.map((x) => x.id)).not.toContain(out.robot);
+    expect(out.rep.inert.map((x) => `${x.table}#${x.id}`)).toContain(`robots#${out.robot}`);
+    expect(out.enabledAfter).toBe(false);
   });
 });
 

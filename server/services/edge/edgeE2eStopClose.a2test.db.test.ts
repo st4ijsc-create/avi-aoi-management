@@ -102,7 +102,7 @@ async function centralAck(tx: Tx, kind: DeviceKind, id: number, outcome: "done" 
   }
 }
 
-function fakeOwn(tx: Tx, calls: string[], hang: Set<string>, fail: Set<string> = new Set()): CloseStopsDeps["own"] {
+function fakeOwn(tx: Tx, calls: string[], hang: Set<string>, fail: Set<string> = new Set(), args: unknown[] = []): CloseStopsDeps["own"] {
   const handBack = async (kind: DeviceKind, id: number) => {
     calls.push(`${kind}:${id}`);
     if (hang.has(`${kind}:${id}`)) return new Promise<never>(() => {});
@@ -111,7 +111,10 @@ function fakeOwn(tx: Tx, calls: string[], hang: Set<string>, fail: Set<string> =
     return { ok: true };
   };
   return {
-    changeDeviceOwner: async (a) => handBack(a.kind, a.deviceId),
+    changeDeviceOwner: async (a) => {
+      args.push(a);
+      return handBack(a.kind, a.deviceId);
+    },
     executePendingCentralStops: async (kind, id) => handBack(kind, id),
   };
 }
@@ -121,6 +124,7 @@ describe("A2 test fix round 1 — closeOwnStops (real _test DB, ROLLBACK, inject
     const out = await inRolledBackTx(async (tx) => {
       const s = await seed(tx);
       const calls: string[] = [];
+      const ownerArgs: unknown[] = [];
       const detached: string[] = [];
       const logs: string[] = [];
       const ck = clock();
@@ -131,7 +135,7 @@ describe("A2 test fix round 1 — closeOwnStops (real _test DB, ROLLBACK, inject
         robots: [s.ids.rbRemote, s.ids.rcOther, s.ids.raHang, ...s.oldRobots],
         adapters: [s.ids.aa],
         runCodes: new Set([`AA-${DAU}`, `RB-${DAU}`, `RA-${DAU}`]),
-        own: fakeOwn(tx, calls, new Set([`robot:${s.ids.raHang}`])),
+        own: fakeOwn(tx, calls, new Set([`robot:${s.ids.raHang}`]), new Set(), ownerArgs),
         detach: async (k, id) => void detached.push(`${k}:${id}`),
         now: ck.now,
         sleep: ck.sleep,
@@ -139,7 +143,7 @@ describe("A2 test fix round 1 — closeOwnStops (real _test DB, ROLLBACK, inject
       });
       const oldAfter = await tx`SELECT * FROM robot_motion_lock_requests WHERE id IN ${tx(OLD_STOPS)} ORDER BY id`;
       const [aaReq] = await tx`SELECT outcome FROM robot_motion_lock_requests WHERE id = ${s.req.aa}`;
-      return { s, rep, calls, detached, logs, oldAfter, aaOutcome: aaReq.outcome, elapsed: ck.elapsed() };
+      return { s, rep, calls, ownerArgs, detached, logs, oldAfter, aaOutcome: aaReq.outcome, elapsed: ck.elapsed() };
     });
     const { s, rep, calls } = out;
     // handled: the run's own stub adapter
@@ -151,6 +155,12 @@ describe("A2 test fix round 1 — closeOwnStops (real _test DB, ROLLBACK, inject
     expect(refused[`robot:${s.ids.rcOther}`]).toMatch(/not one of this run's devices/);
     for (const r of s.oldRobots) expect(refused[`robot:${r}`]).toMatch(/not one of this run's devices/);
     expect(calls).toEqual([`adapter:${s.ids.aa}`, `robot:${s.ids.raHang}`]);
+    // kd c9 — the hand-back goes TO CENTRAL (toEdgeNodeId null), for exactly the run's device, by the run's admin: a wrong node
+    // would hand the device TO an edge
+    expect(out.ownerArgs).toEqual([
+      { kind: "adapter", deviceId: s.ids.aa, toEdgeNodeId: null, actorUserId: s.actor, actorName: expect.any(String) },
+      { kind: "robot", deviceId: s.ids.raHang, toEdgeNodeId: null, actorUserId: s.actor, actorName: expect.any(String) },
+    ]);
     // the old STOPs of other runs: never acted on, unchanged
     expect(out.oldAfter).toEqual(s.oldRows);
     for (const id of OLD_STOPS.filter((x) => s.oldRows.some((r) => Number(r.id) === x))) expect(rep.stillPending).toContain(id);
