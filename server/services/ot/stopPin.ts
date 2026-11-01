@@ -388,6 +388,8 @@ export async function datStopPin(input: {
   /**
    * kiem-dinh R1b-1 H1 (a) — kiểm CUỐI trong giao dịch (TOTP), ném để từ chối. BẮT BUỘC (fix round 2, m-1): một bên gọi mới quên truyền ⇒
    * lỗi BIÊN DỊCH, không phải một ghim không mã. Bên gọi không cần mã (test, công cụ nội bộ) phải truyền `async () => {}` TƯỜNG MINH.
+   * ⚠ R1b-2b-2a T5B — chạy TRONG giao dịch giữ khoá adapter / tag ⇒ KHÔNG được lấy kết nối pool (không gọi `kiemTotpCauHinh` ở đây): router truyền
+   * cửa đồng bộ của `chayGiaoDichTotpNgoai` (ném ⇒ rollback ⇒ kiểm mã ngoài giao dịch ⇒ lượt 2). Census `khoaLuatVaPoolTrongTx` (B) canh.
    */
   kiemCuoi: () => Promise<void>;
 }): Promise<KetQuaStopPin> {

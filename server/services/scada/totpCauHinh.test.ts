@@ -14,7 +14,7 @@ vi.mock("../../_core/xacThucTheoMuc", async (importOriginal) => {
   };
 });
 
-import { HAN_TOTP_CAU_HINH_MS, kiemTotpCauHinh } from "./totpCauHinh";
+import { HAN_TOTP_CAU_HINH_MS, chayGiaoDichTotpNgoai, kiemTotpCauHinh } from "./totpCauHinh";
 import { readAppErrorMeta } from "../../_core/appError";
 
 const ctx = { user: { id: 1, role: "engineer", twoFactorEnabled: true } } as never;
@@ -93,5 +93,94 @@ describe("kiemTotpCauHinh — hạn cho lượt kiểm trên kết nối thứ h
     } finally {
       process.off("unhandledRejection", unhandled);
     }
+  });
+});
+
+/**
+ * R1b-2b-2a T5B — `chayGiaoDichTotpNgoai`: giao dịch giữ khoá KHÔNG chạy lượt kiểm TOTP (pool) bên trong. Lượt 1 dừng ở cửa ⇒ rollback ⇒ kiểm
+ * mã NGOÀI giao dịch ⇒ lượt 2 với cửa no-op. Thân giả ghi lại mỗi lượt (trong "giao dịch" hay không) để chứng minh kiểm mã KHÔNG nằm trong lượt nào.
+ */
+describe("chayGiaoDichTotpNgoai — kiểm TOTP ngoài giao dịch, hai lượt (T5B)", () => {
+  function dung(o: { canMa: boolean; loiTruocCua?: unknown; xacMinh?: () => Promise<void> }) {
+    const nhatKy: string[] = [];
+    let trongTx = false;
+    let luot = 0;
+    const chay = async (cuaTotp: () => void) => {
+      luot++;
+      trongTx = true;
+      nhatKy.push(`mo-tx-${luot}`);
+      try {
+        if (o.loiTruocCua) throw o.loiTruocCua;
+        if (o.canMa) cuaTotp();
+        nhatKy.push(`ghi-${luot}`);
+        return `kq-${luot}`;
+      } finally {
+        trongTx = false;
+        nhatKy.push(`dong-tx-${luot}`);
+      }
+    };
+    const xacMinh = vi.fn(async () => {
+      nhatKy.push(trongTx ? "XAC-MINH-TRONG-TX" : "xac-minh-ngoai-tx");
+      await o.xacMinh?.();
+    });
+    return { chay, xacMinh, nhatKy };
+  }
+
+  it("không chạm cửa ⇒ MỘT lượt, không kiểm mã", async () => {
+    const d = dung({ canMa: false });
+    expect(await chayGiaoDichTotpNgoai(d.chay, d.xacMinh)).toBe("kq-1");
+    expect(d.xacMinh).not.toHaveBeenCalled();
+    expect(d.nhatKy).toEqual(["mo-tx-1", "ghi-1", "dong-tx-1"]);
+  });
+
+  it("★ chạm cửa ⇒ lượt 1 KHÔNG ghi (rollback) ⇒ kiểm mã NGOÀI giao dịch đúng MỘT lần ⇒ lượt 2 ghi", async () => {
+    const d = dung({ canMa: true });
+    expect(await chayGiaoDichTotpNgoai(d.chay, d.xacMinh)).toBe("kq-2");
+    expect(d.xacMinh).toHaveBeenCalledTimes(1);
+    expect(d.nhatKy).toEqual(["mo-tx-1", "dong-tx-1", "xac-minh-ngoai-tx", "mo-tx-2", "ghi-2", "dong-tx-2"]);
+  });
+
+  it("★ kiểm mã từ chối ⇒ đúng lỗi ấy, KHÔNG có lượt 2 (không ghi)", async () => {
+    const loi = new Error("SCADA_CONFIG_TOTP_INVALID giả");
+    const d = dung({ canMa: true, xacMinh: async () => Promise.reject(loi) });
+    await expect(chayGiaoDichTotpNgoai(d.chay, d.xacMinh)).rejects.toBe(loi);
+    expect(d.nhatKy).toEqual(["mo-tx-1", "dong-tx-1", "xac-minh-ngoai-tx"]);
+  });
+
+  it("★ lỗi đứng TRƯỚC cửa (phạm vi / NOT_FOUND / kiểm hợp lệ) ⇒ nguyên lỗi ấy, KHÔNG kiểm mã (mã không bị tiêu)", async () => {
+    const loi = new Error("NOT_FOUND giả");
+    const d = dung({ canMa: true, loiTruocCua: loi });
+    await expect(chayGiaoDichTotpNgoai(d.chay, d.xacMinh)).rejects.toBe(loi);
+    expect(d.xacMinh).not.toHaveBeenCalled();
+  });
+
+  it("thân bắt tín hiệu rồi ném lỗi KHÁC ⇒ vẫn đi đường kiểm mã (cửa đã chạm); thân NUỐT tín hiệu rồi chạy tiếp ⇒ INTERNAL kêu to, không bao giờ 'đã qua'", async () => {
+    const xacMinh = vi.fn(async () => undefined);
+    let luot = 0;
+    const doiLoi = async (cuaTotp: () => void) => {
+      luot++;
+      try {
+        cuaTotp();
+      } catch {
+        if (luot === 1) throw new Error("bọc lại");
+      }
+      return luot;
+    };
+    expect(await chayGiaoDichTotpNgoai(doiLoi, xacMinh)).toBe(2);
+    expect(xacMinh).toHaveBeenCalledTimes(1);
+    const nuot = async (cuaTotp: () => void) => {
+      try {
+        cuaTotp();
+      } catch {
+        /* nuốt */
+      }
+      return "da-ghi";
+    };
+    expect(await loiCua(chayGiaoDichTotpNgoai(nuot, xacMinh))).toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      appCode: "OPERATION_FAILED",
+      appParams: { operation: "scadaTotpCauHinh" },
+    });
+    expect(xacMinh).toHaveBeenCalledTimes(1);
   });
 });

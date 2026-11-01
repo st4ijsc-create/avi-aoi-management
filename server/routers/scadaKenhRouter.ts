@@ -70,7 +70,7 @@ import { canonicalOtValue } from "../services/ot/otActionBinding";
 import type { MucRuiRo } from "../services/ot/aiControlGate";
 // kiem-dinh P1-2 — TOTP TƯƠI (mức 5) + ánh xạ lỗi: R1b-1 Task 9 chuyển sang `services/scada/totpCauHinh.ts` để `deviceAdapter.tags.update` và
 // `mappingAsCode.applyImport` (trỏ lại kênh đã khai) dùng CHUNG một bộ mã lỗi / khoá i18n.
-import { kiemTotpCauHinh, totpCauHinhInput as totpInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput as totpInput } from "../services/scada/totpCauHinh";
 
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 const kySuProcedure = roleProcedure("admin", "engineer").use(require2FA).use(moduleGate("MOD_OT_CONTROL"));
@@ -300,7 +300,7 @@ const cheDoRouter = router({
     .mutation(async ({ ctx, input }) => {
       const idsMay = await idsMayCua(ctx);
       const db = await getDb();
-      return db.transaction(async (tx) => {
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         const [may] = await tx.select({ id: machines.id }).from(machines).where(eq(machines.id, input.machineId)).limit(1);
         if (!may || !nhinThay(may.id, idsMay)) throw khongThayMay();
         const [a] = await tx
@@ -365,7 +365,7 @@ const cheDoRouter = router({
         ) {
           return { changed: false, machineId: may.id, ...sau };
         }
-        await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi
+        cuaTotp(); // P1-2: cuối, ngay trước lượt ghi
         const now = new Date();
         await tx
           .insert(scadaKenhCheDo)
@@ -381,7 +381,7 @@ const cheDoRouter = router({
           reason: input.lyDo,
         });
         return { changed: true, machineId: may.id, ...sau };
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
     }),
 
   /** Gỡ kênh chế độ của máy (máy thành LOCAL `chua_khai`). Không có kênh ⇒ `daGo: false`, không audit. */
@@ -391,12 +391,12 @@ const cheDoRouter = router({
     .mutation(async ({ ctx, input }) => {
       const idsMay = await idsMayCua(ctx);
       const db = await getDb();
-      return db.transaction(async (tx) => {
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         const [may] = await tx.select({ id: machines.id }).from(machines).where(eq(machines.id, input.machineId)).limit(1);
         if (!may || !nhinThay(may.id, idsMay)) throw khongThayMay();
         const [cu] = await tx.select().from(scadaKenhCheDo).where(eq(scadaKenhCheDo.machineId, may.id)).limit(1).for("update");
         if (!cu) return { daGo: false };
-        await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi
+        cuaTotp(); // P1-2: cuối, ngay trước lượt ghi
         await tx.delete(scadaKenhCheDo).where(eq(scadaKenhCheDo.machineId, may.id));
         await recordAuditEvent(tx, {
           entityType: "scada_kenh_che_do",
@@ -408,7 +408,7 @@ const cheDoRouter = router({
           reason: input.lyDo,
         });
         return { daGo: true };
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
     }),
 });
 
@@ -475,7 +475,7 @@ export const scadaKenhRouter = router({
       const idsMay = await idsMayCua(ctx);
       const db = await getDb();
       try {
-        return await db.transaction(async (tx) => {
+        return await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
           const [tag0] = await tx
             .select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey })
             .from(deviceTags)
@@ -499,7 +499,7 @@ export const scadaKenhRouter = router({
             return { changed: false, tagId: tag.id, ...sau, mucHieuLuc: mucTacDongKenh(sau) };
           }
 
-          await kiemTotpCauHinh(ctx, input.totpCode); // P1-2: cuối, ngay trước lượt ghi (sau kiểm hợp lệ + nhất quán)
+          cuaTotp(); // P1-2: cuối, ngay trước lượt ghi (sau kiểm hợp lệ + nhất quán)
           await tx
             .update(deviceTags)
             .set({ ...patch, updatedAt: new Date() })
@@ -514,7 +514,7 @@ export const scadaKenhRouter = router({
             reason: input.lyDo,
           });
           return { changed: true, tagId: tag.id, ...sau, mucHieuLuc: mucTacDongKenh(sau) };
-        });
+        }), () => kiemTotpCauHinh(ctx, input.totpCode));
       } catch (err) {
         if (laDeadlock(err)) throw thuLai();
         throw err;
@@ -573,7 +573,7 @@ export const scadaKenhRouter = router({
       const db = await getDb();
       const loId = randomUUID();
       try {
-        return await db.transaction(async (tx) => {
+        return await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
           const adapter = (await khoaAdapterTx(tx, [input.adapterId])).get(input.adapterId);
           kiemPhamViDuoiKhoa(adapter?.machineId, idsMay, khongThayAdapter);
           const luat = await khoaLuatNhamAdapterTx(tx, input.adapterId);
@@ -596,7 +596,7 @@ export const scadaKenhRouter = router({
           //    `recordAuditEvents` (một INSERT nhiều hàng, chuỗi băm nối trong bộ nhớ) — khoá chuỗi audit lấy SAU mọi khoá hàng và chỉ giữ cho
           //    một câu lệnh (trước: lấy ở dòng audit đầu rồi giữ qua 200 vòng UPDATE + INSERT). Thứ tự: kiểm → TOTP → UPDATE → audit.
           if (doi.length > 0) {
-            await kiemTotpCauHinh(ctx, input.totpCode);
+            cuaTotp();
             const now = new Date();
             await ghiKenhLoTx(
               tx,
@@ -630,7 +630,7 @@ export const scadaKenhRouter = router({
             soGiuNguyen: kiem.length - doi.length,
             ketQua: kiem.map((k) => ({ tagId: k.tag.id, changed: k.doi, mucHieuLuc: mucTacDongKenh(k.sau) })),
           };
-        });
+        }), () => kiemTotpCauHinh(ctx, input.totpCode));
       } catch (err) {
         if (laDeadlock(err)) throw thuLai();
         throw err;

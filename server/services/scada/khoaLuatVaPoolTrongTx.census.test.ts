@@ -251,47 +251,24 @@ interface NoPool {
   backlog: string;
   lyDo: string;
 }
-/** Chuỗi gọi pool của TOTP cấu hình (đo bằng `CENSUS_VET=1`): kiemTotpCauHinh → kiemXacThucTheoMuc → verifyFreshTotp → db/auth.get2FAStatus → getDb(). */
-const TOTP = "TOTP mức 5 `kiemTotpCauHinh` gọi TRONG giao dịch giữ khoá (chủ ý: kiểm CUỐI, ngay trước lượt ghi) — chuỗi tới `get2FAStatus` đọc users QUA POOL";
-const BL_TOTP = "R1b-2b-2b · nợ pool-trong-tx #1 (TOTP): đọc trạng thái 2FA trước giao dịch / qua `tx`, giữ thứ tự kiểm CUỐI";
 /**
- * NỢ (B) — lời gọi pool trong callback giao dịch giữ khoá hàng, ĐO bằng AST trên c2d07d00b (2026-11-01). KHÔNG sửa ở T5; mỗi phần tử là một
- * mục backlog R1b-2b-2b. Thêm chỗ mới ⇒ đỏ (sửa mã, đừng thêm vào đây); gỡ được một chỗ ⇒ xoá khỏi đây.
- * 14/15 mục cùng MỘT gốc (TOTP qua pool); 1 mục ngoài SCADA / OT / interlock (equipmentStandards — phạm vi tenant qua pool).
+ * NỢ (B) — lời gọi pool trong callback giao dịch giữ khoá hàng, ĐO bằng AST trên c2d07d00b (2026-11-01). Thêm chỗ mới ⇒ đỏ (sửa mã, đừng thêm vào
+ * đây); gỡ được một chỗ ⇒ xoá khỏi đây.
+ * R1b-2b-2a T5B (2026-11-01, dieu-phoi): 15 → 1. GỠ 14 mục cùng gốc TOTP (12× `kiemTotpCauHinh` trong deviceAdapter update / delete / tags.create /
+ * tags.update / tags.delete, interlock update / delete, scadaDiag tamTat, scadaKenh capNhat / dat / go / khaiHangLoat; + callback
+ * `mappingAsCode#importMapping:xacThucKenhDaKhai` và `stopPin#datStopPinTx:kiemCuoi` — cả hai do router nối tới `kiemTotpCauHinh`): mọi bên gọi
+ * nay đi qua `chayGiaoDichTotpNgoai` (services/scada/totpCauHinh.ts) — trong giao dịch chỉ còn cửa ĐỒNG BỘ `cuaTotp()` (tham số, không I/O), mã
+ * được kiểm NGOÀI giao dịch. `kiemTotpCauHinh` VẪN trong điểm bất động gọi-pool ⇒ gọi lại nó trong callback `.transaction(` là đỏ (đột biến T5B).
+ * Còn 1 mục, KHÁC gốc, NGOÀI SCADA / OT / interlock (equipmentStandards — phạm vi tenant qua pool): giữ ghim, lý do ở mục.
  */
 const NO_POOL: ReadonlyArray<NoPool> = [
-  { viTri: "server/routers/deviceAdapterRouter.ts#update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.create", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/interlockRouter.ts#update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
-  { viTri: "server/routers/interlockRouter.ts#delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
-  { viTri: "server/routers/scadaDiagRouter.ts#tamTat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#capNhat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#dat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#go", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#khaiHangLoat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  {
-    viTri: "server/services/ot/mappingAsCode.ts#importMapping",
-    ham: "xacThucKenhDaKhai",
-    ngay: "2026-11-01",
-    backlog: BL_TOTP,
-    lyDo: `callback \`opts.xacThucKenhDaKhai\` (mappingAsCodeRouter: ${TOTP})`,
-  },
-  {
-    viTri: "server/services/ot/stopPin.ts#datStopPinTx",
-    ham: "kiemCuoi",
-    ngay: "2026-11-01",
-    backlog: BL_TOTP,
-    lyDo: `callback \`input.kiemCuoi\` (deviceAdapterRouter: ${TOTP})`,
-  },
   {
     viTri: "server/routers/equipmentStandardsRouter.ts#publishChangeRequest",
     ham: "hangTheGhi",
     ngay: "2026-11-01",
     backlog: "R1b-2b-2b · nợ pool-trong-tx #2 (NGOÀI SCADA / OT / interlock): tính phạm vi tenant trước giao dịch",
-    lyDo: "`hangTheGhi` → `_theTenantPhamVi.theTenantHopLe` → `idsTrongPhamVi` (pool) trong giao dịch có `.update(`",
+    lyDo:
+      "`hangTheGhi` → `_theTenantPhamVi.theTenantHopLe` → `idsTrongPhamVi` (pool) trong giao dịch có `.update(` — T5B (2026-11-01) GIỮ: khác gốc TOTP, ngoài phạm vi SCADA / OT / interlock của T5B (giao dịch khoá hàng change-request `device_type_change_requests` FOR UPDATE — không phải adapter / luật / tag, không trên đường STOP; `theTenantHopLe` kiểm thẻ tenant của CHÍNH hàng vừa khoá); gỡ = tính phạm vi tenant trước giao dịch ở equipmentStandards (backlog #2)",
   },
 ];
 export const NO_POOL_TRONG_TX: ReadonlySet<string> = new Set(NO_POOL.map((n) => n.viTri));

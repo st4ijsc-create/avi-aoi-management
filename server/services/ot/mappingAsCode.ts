@@ -649,6 +649,8 @@ export interface ImportOptions {
    * SCADA R1b-1 Task 9 — xác thực TOTP TƯƠI cho một lô đụng ≥ 1 tag ĐƯỢC BẢO VỆ (trỏ lại / tạo lên khoá mồ côi / prune) (router: `kiemTotpCauHinh(ctx, input.totpCode)`). Gọi
    * ĐÚNG MỘT lần cho cả lô, trong giao dịch, SAU mọi kiểm nhất quán và NGAY TRƯỚC lượt ghi đầu tiên (lỗi kiểm không tiêu mã). Vắng ⇒ lô đụng
    * tag đã khai bị từ chối `SCADA_CONFIG_TOTP_REQUIRED` (fail-closed — không có đường import nào trỏ lại kênh đã khai mà không qua mã).
+   * ⚠ R1b-2b-2a T5B — callback chạy TRONG giao dịch giữ khoá ⇒ KHÔNG được lấy kết nối pool (không gọi `kiemTotpCauHinh` ở đây): router truyền cửa
+   * đồng bộ của `chayGiaoDichTotpNgoai` (ném ⇒ rollback ⇒ kiểm mã ngoài giao dịch ⇒ chạy lại import). Census `khoaLuatVaPoolTrongTx` (B) canh.
    */
   xacThucKenhDaKhai?: (e: { soTag: number; tagKeys: string[] }) => Promise<void>;
   /**

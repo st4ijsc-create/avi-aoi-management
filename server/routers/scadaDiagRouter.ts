@@ -48,7 +48,7 @@ import { detachOtAdapter, getOtAdapterStatus, resetAdapterSession } from "../ser
 import type { RuntimeAdapter } from "../services/ot/deviceAdapter";
 // SCADA R1b-1 Task 9 fix round 3 (N1) — cổng ADAPTER dùng chung (tắt adapter có tag được bảo vệ) + TOTP tươi mức 5
 import { congAdapterTx } from "../services/scada/troLaiKenh";
-import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 // Doc 37 P0-3 — mọi thủ tục sau giấy phép MOD_OT_CONTROL (cờ LICENSE_MODULE_GATE_ENABLED, mặc định tắt ⇒ đi qua), khuôn interlockRouter.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
@@ -479,14 +479,14 @@ export const scadaDiagRouter = router({
       const a = await adapterTrongPhamVi(phamViCua(ctx), input.adapterId, idsMay);
       await tuChoiNeuEdge(a.id, "scadaDisableAdapter");
       const db = await getDb();
-      await db.transaction(async (tx) => {
+      await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, a.id)).for("update"); // ADAPTER (thứ tự khoá)
         if (!cu) throw khongThay();
         kiemPhamViDuoiKhoa(cu.machineId ?? null, idsMay, khongThay); // R1b-2a T5 (M5) — đổi máy sang nhà máy khác sau kiểm-trước ⇒ cùng NOT_FOUND
         if (cu.isEnabled === true) {
           const cong = await congAdapterTx(tx, { adapterId: a.id, code: cu.code, machineId: cu.machineId ?? null, viec: "tat" });
           if (cong.canTotp) {
-            await kiemTotpCauHinh(ctx, input.totpCode); // CUỐI — ngay trước lượt ghi
+            cuaTotp(); // CUỐI — ngay trước lượt ghi
             await recordAuditEvent(tx, {
               entityType: "device_adapter",
               entityId: a.id,
@@ -508,7 +508,7 @@ export const scadaDiagRouter = router({
           after: { isEnabled: false },
           reason: input.lyDo,
         });
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
       const daGo = await detachOtAdapter(a.id, "scada_diag: tamTat");
       baoTrangThaiAdapter(adapterBao(a), "disabled", null);
       return { daGo };

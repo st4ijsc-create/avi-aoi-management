@@ -57,7 +57,7 @@ import { kiemLenhInterlockTx, luatCoGhiLenh, thamSoNgoaiDaiInterlock, type DbHoa
 import { telemetryTagDungPhamVi } from "../services/interlock/d11";
 // kiem-dinh R1b-1 I1 (2026-10-25) — (a) bám định nghĩa tag nguồn / đích chụp lúc duyệt; (b) TOTP tươi mức 5 khi sửa / xoá luật bảo vệ
 import { bamDinhNghiaLuat, bamDinhNghiaNhieu, duyetConHieuLuc } from "../services/interlock/dinhNghiaDuyet";
-import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 /**
  * kiem-dinh R1b-1 I1 (b) (điều phối 2026-10-25) — luật mà sửa / xoá cần TOTP tươi mức 5 (`kiemTotpCauHinh`): luật GHI LỆNH (không phải `alert`)
@@ -634,7 +634,8 @@ export const interlockRouter = router({
       const { id, threshold, totpCode, ...rest } = input;
       const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — SELECT/UPDATE/audit-INSERT trong CÙNG một transaction.
-      return db.transaction(async (tx) => {
+      // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch (`chayGiaoDichTotpNgoai`: lượt 1 dừng ở cửa ⇒ rollback ⇒ kiểm mã qua pool ⇒ lượt 2 ghi).
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         // R1b-2b-1 T10 (mục 47) — ADAPTER đích (cũ + mới, theo id) FOR SHARE → LUẬT FOR UPDATE (đích đổi giữa chừng ⇒ CONFLICT / NOT_FOUND).
         const { existing, adapters } = await khoaDichLuatTx(tx, id, "targetAdapterId" in rest ? [rest.targetAdapterId] : [], phamVi);
         if (!existing) throw loiLuatKhongThay();
@@ -695,13 +696,13 @@ export const interlockRouter = router({
 
         // kiem-dinh R1b-1 I1 (b) — luật bảo vệ (ghi lệnh, đang bật hoặc đã duyệt, có đích / nguồn tag) ⇒ TOTP tươi mức 5, CUỐI (sau mọi kiểm
         // hợp lệ — một lỗi kiểm không tiêu mã), ngay trước lượt ghi.
-        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, totpCode);
+        if (luatCanTotpKhiSuaXoa(existing)) cuaTotp();
 
         const [row] = await tx.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
         // Audit bất biến: sửa rule (before/after để truy vết cấu hình an toàn).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: id, action: "update", actorId: ctx.user.id, before: existing, after: row, reason });
         return coVersion(tx, row);
-      });
+      }), () => kiemTotpCauHinh(ctx, totpCode));
     }),
 
   delete: actuationProcedure
@@ -713,17 +714,18 @@ export const interlockRouter = router({
       const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — audit + hard-delete trong CÙNG transaction (before-audit vẫn
       // đứng trước DELETE, nay atomically: cả hai cùng đậu hoặc cùng rollback).
-      return db.transaction(async (tx) => {
+      // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch (`chayGiaoDichTotpNgoai`).
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE → LUẬT FOR UPDATE (thứ tự khoá dự án); phạm vi kiểm trên machineId ĐÃ KHOÁ.
         const { existing, adapters } = await khoaDichLuatTx(tx, input.id, [], phamVi);
         if (!existing) throw loiLuatKhongThay();
         luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy
         // kiem-dinh R1b-1 I1 (b) — xoá luật bảo vệ ⇒ TOTP tươi mức 5, CUỐI (sau tồn tại + phạm vi), trước audit + DELETE.
-        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, input.totpCode);
+        if (luatCanTotpKhiSuaXoa(existing)) cuaTotp();
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
         await tx.delete(interlockRules).where(eq(interlockRules.id, input.id));
         return { success: true };
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
     }),
 
   approve: adminProcedure
