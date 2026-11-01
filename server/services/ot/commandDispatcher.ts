@@ -811,9 +811,17 @@ export function __catSauGhiThietBiChoTest(f: ((input: DispatchInput) => Promise<
  */
 export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   // R1b-2b-2a T6d — băm payload của BÊN GỌI (trước mọi ép kiểu), một lần, theo lệnh; trường nội bộ do bên gọi đặt bị bỏ qua.
-  const result = await dispatchCore({ ...input, bamLenh: bamLenhOt(input), ghiChuKhoa: undefined });
+  // T6d fix 2 (AN TOÀN) — khoá idempotency chuẩn hoá MỘT lần ở cửa duy nhất vào đường gửi (`dispatchCore` chỉ được gọi từ đây): kiểu khai `string`
+  // nhưng lúc chạy có bên gọi không truyền (vd khung lệnh canonical thiếu cả idempotency_key lẫn command_id) ⇒ "" (KHÔNG sinh khoá: lệnh thiếu khoá vẫn
+  // là "không khoá" — STOP thay lệnh đang chờ báo biến thể OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY, G9). Mọi chỗ sau thấy một chuỗi.
+  const result = await dispatchCore({ ...input, idempotencyKey: khoaChuanHoa(input.idempotencyKey), bamLenh: bamLenhOt(input), ghiChuKhoa: undefined });
   emitCmdAck(input, result);
   return result;
+}
+
+/** T6d fix 2 — khoá idempotency của bên gọi như chuỗi: thiếu / không phải chuỗi ⇒ "" (lệnh không khoá); chuỗi giữ nguyên từng byte. */
+function khoaChuanHoa(k: unknown): string {
+  return typeof k === "string" ? k : "";
 }
 
 /**
@@ -1178,7 +1186,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(db, input));
     if (qd.loai !== "khong") {
       const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
-      const lyDo = lyDoStopKhoaMoi(qd, kqPhatLai);
+      const lyDo = lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey);
       if (lyDo && (await laStopChoKhoa(db, input))) input = stopGuiLaiVoiKhoaMoi(input, hangCuaQuyetDinh(qd), lyDo);
       else if (kqPhatLai) return kqPhatLai;
       else if (qd.loai === "lech") return tuChoiKhoaDungLai(db, input, qd.hangTrung);
@@ -1602,8 +1610,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     input = stopGuiLaiVoiKhoaMoi(input, reservation.doiKhoaStop.hang, reservation.doiKhoaStop.lyDo);
     reservation = await reserveRealWrite(db, input, resolved, optsGiuCho);
   }
-  if ("doiKhoaStop" in reservation) throw new Error("unreachable: a fresh STOP key is never taken"); // khoá mới chứa UUID; laStop vắng ⇒ không báo lại
-  if (!reservation.ok) return reservation.result;
+  // khoá mới chứa UUID và lần giữ chỗ thứ hai không có `laStop` ⇒ không bao giờ báo `doiKhoaStop` lại. T6d fix 2: nhánh không thể ấy KHÔNG ném (census
+  // ném thô) mà FAIL-CLOSED như giữ chỗ hỏng — không gửi, không bao giờ ok (cùng kết quả LEDGER_INTENT_FAILED của `reserveRealWrite` khi giao dịch lỗi).
+  if (!reservation.ok) {
+    if ("result" in reservation) return reservation.result;
+    console.error(`[Dispatch] adapter ${input.adapterId}: the re-keyed STOP reservation reported its fresh key as taken — not sent (LEDGER_INTENT_FAILED)`);
+    return { ok: false, simulated: false, status: "failed", reason: "LEDGER_INTENT_FAILED", results: failedResults(input, "LEDGER_INTENT_FAILED", "failed"), commandLogIds: [] };
+  }
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
   const commandLogIds: number[] = [];
@@ -2262,13 +2275,16 @@ async function tuChoiKhongChac(db: LedgerDb, input: DispatchInput, hang: Readonl
   return { ok: false, simulated: false, status: "rejected", reason: "DUPLICATE_IN_FLIGHT", results: failedResults(input, "DUPLICATE_IN_FLIGHT"), commandLogIds: ghiIds };
 }
 
-export type LyDoStopKhoaMoi = "khoa_lech" | "lan_truoc_khong_ok" | "dang_bay" | "khong_chac";
+export type LyDoStopKhoaMoi = "khoa_lech" | "lan_truoc_khong_ok" | "dang_bay" | "khong_chac" | "khong_khoa";
 
 /**
  * T6d — lý do gửi lại một STOP dưới khoá mới theo quyết định khoá; null ⇒ không cần (không có hàng, hoặc lần trước là STOP ĐÃ tới thiết bị: ok, không mô
  * phỏng ⇒ phát lại — mẫu robot residual 3: STOP chỉ phát lại một lần trước 'done').
+ * T6d fix 2 — STOP KHÔNG khoá (`""`): khoá ghi của nó (`v2:0::<tag>:<idx>`) là của CHUNG mọi lệnh không khoá ⇒ hàng tìm thấy không bao giờ là "lần trước của
+ * CHÍNH STOP này" ⇒ có hàng nào ⇒ gửi dưới khoá mới (`khong_khoa`), không bao giờ phát lại (STOP không khoá thứ hai sau một STOP ok vẫn ra thiết bị).
  */
-function lyDoStopKhoaMoi(qd: QuyetDinhKhoa, kqPhatLai: DispatchResult | null): LyDoStopKhoaMoi | null {
+function lyDoStopKhoaMoi(qd: QuyetDinhKhoa, kqPhatLai: DispatchResult | null, khongKhoa: boolean): LyDoStopKhoaMoi | null {
+  if (khongKhoa && qd.loai !== "khong") return "khong_khoa";
   if (qd.loai === "lech") return "khoa_lech";
   if (qd.loai === "dang_bay") return "dang_bay";
   if (qd.loai === "khong_chac") return "khong_chac";
@@ -2563,7 +2579,7 @@ async function reserveRealWrite(
       // R1b-2b-2a T6d — dưới khoá tư vấn: MỌI hàng của khoá (kết quả + ý định, khoá mới + cũ); CÙNG chốt `quyetDinhKhoa` với bước 2 (chống đua).
       const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(tx, input));
       const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
-      const lyDoStop = opts.laStop ? lyDoStopKhoaMoi(qd, kqPhatLai) : null;
+      const lyDoStop = opts.laStop ? lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey) : null;
       if (lyDoStop) return { ok: false as const, doiKhoaStop: { hang: hangCuaQuyetDinh(qd), lyDo: lyDoStop } };
       if (kqPhatLai) return { ok: false as const, result: kqPhatLai };
       if (qd.loai === "lech") return { ok: false as const, result: await tuChoiKhoaDungLai(tx, input, qd.hangTrung) };
@@ -3123,7 +3139,11 @@ function failedResults(input: DispatchInput, reason: string, status: DispatchSta
  * hơn 128 ⇒ `boundedKey` (giữ tiền tố + băm của CẢ chuỗi). Hàng ghi theo định dạng CŨ được đọc qua `perWriteKeyCu` (chỉ để phát lại có chốt).
  */
 export function perWriteKey(base: string, tagKey: string, index: number): string {
-  return boundedKey(`v2:${base.length}:${base}:${tagKey.length}:${tagKey}:${index}`);
+  // T6d fix 2 — TOÀN PHẦN (phòng thủ chiều sâu, cửa vào đã chuẩn hoá khoá): base không phải chuỗi ⇒ "" (lệnh không khoá, như `dispatch()`); tagKey không
+  // phải chuỗi ⇒ "_" (CÙNG khoá `writeAll` ghi cho hàng tagKey null) — không bao giờ ném ở bước 2 trước cả khi tag được tra.
+  const b = typeof base === "string" ? base : "";
+  const t = typeof tagKey === "string" ? tagKey : "_";
+  return boundedKey(`v2:${b.length}:${b}:${t.length}:${t}:${index}`);
 }
 
 /** T6d — định dạng CŨ (trước T6d), CHỈ để ĐỌC hàng cũ cho phát lại có chốt / chặn DUPLICATE_IN_FLIGHT; không bao giờ dùng để ghi. */

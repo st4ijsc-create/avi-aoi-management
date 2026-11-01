@@ -1033,4 +1033,132 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
     });
     expect(H.bay).toBe(0);
   }, 30_000);
+  // ── T6d fix 2 (AN TOÀN, kiem-dinh + dieu-phoi 2026-11-01): lệnh THIẾU khoá — `undefined` (bên gọi không truyền trường) và `""` ──────────────────────
+  // Nguồn kích hoạt `DispatchTrigger` cho phép: `hitl` (có actionId; KHÔNG actionId = khung lệnh canonical / Sparkplug) và `interlock`. Không có loại
+  // "system"/"manual" riêng. Mọi đường T6d: ghi thật (giữ chỗ + writeAll), ghi mô phỏng (writeSimulated), phát lại (lần hai, đã có hàng dưới khoá chung).
+
+  for (const [ten, khoa] of [["undefined", undefined], ['""', ""]] as Array<[string, string | undefined]>) {
+    const lenh = (ad: number, writes: Array<{ tagKey: string; value: unknown }>, commandType: string, triggeredBy: DispatchInput["triggeredBy"]): DispatchInput => {
+      const inp = { adapterId: ad, machineId: MACHINE, commandType, writes, triggeredBy, idempotencyKey: khoa } as DispatchInput;
+      if (khoa === undefined) delete (inp as { idempotencyKey?: string }).idempotencyKey; // không truyền trường
+      return inp;
+    };
+    const guiKK = async (tx: Tx, ad: number, writes: Array<{ tagKey: string; value: unknown }>, commandType = "set_param", coActionId = true): Promise<DispatchResult> => {
+      const actionId = coActionId ? await taoHanhDong(tx, ad, writes, commandType) : undefined;
+      return dispatch(lenh(ad, writes, commandType, { kind: "hitl", ...(actionId ? { actionId } : {}), tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }));
+    };
+    const hangCua = async (tx: Tx, r: DispatchResult) => tx.select().from(commandLog).where(inArray(commandLog.id, r.commandLogIds));
+    const lanTruocCua = (h: { ackValue: unknown }) => (h.ackValue as { lanTruoc?: { idempotencyKey?: unknown; lyDo?: string } } | null)?.lanTruoc;
+
+    it(`★ KK-1 khoá ${ten} — GHI THẬT: STOP ghim (hitl) ra thiết bị +1 gói, hàng dưới khoá "v2:0::…"; lần HAI (PHÁT LẠI: hàng ok đã có) VẪN ra thiết bị +1 gói dưới khoá mới (lyDo khong_khoa, lanTruoc.idempotencyKey = "")`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        const s1 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
+        expect(s1).toMatchObject({ ok: true, simulated: false, status: "acked", pinnedStop: true });
+        expect(d.soGhi).toBe(1);
+        const h1 = await hangCua(tx, s1);
+        expect(h1.map((h) => h.idempotencyKey)).toEqual([perWriteKey("", "a", 0)]);
+        expect(lanTruocCua(h1[0]!)).toBeUndefined();
+        const s2 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
+        expect(s2).toMatchObject({ ok: true, simulated: false, status: "acked", pinnedStop: true });
+        expect(d.soGhi).toBe(2); // KHÔNG bị phát lại
+        const h2 = await hangCua(tx, s2);
+        expect(h2[0]!.idempotencyKey).toMatch(/^v2:\d+:#stop-[0-9a-f-]{36}:1:a:0$/);
+        expect(lanTruocCua(h2[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa", commandLogIds: s1.commandLogIds });
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+
+    it(`KK-2 khoá ${ten} — lệnh THƯỜNG (hitl): kết quả bình thường acked +1 gói; gọi lại CÙNG lệnh ⇒ phát lại (0 gói); KHÁC giá trị ⇒ IDEMPOTENCY_KEY_REUSED (0 gói) — không ném`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        const a = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }]);
+        expect(a).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(1);
+        const b = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }]);
+        expect(chieu(b)).toEqual(chieu(a));
+        const c = await guiKK(tx, ad, [{ tagKey: "t", value: 2 }]);
+        expect(c).toMatchObject({ ok: false, reason: MA_KHOA_DUNG_LAI });
+        expect(d.soGhi).toBe(1);
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+
+    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng dưới khoá mới (khong_khoa, không phát lại); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: mô phỏng ok / thật PRECONDITION_FAILED (kết quả bình thường, 0 gói)`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        process.env.OT_CONTROL_ENABLED = "false";
+        const s1 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
+        expect(s1).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+        const s2 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
+        expect(s2).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+        expect(s2.commandLogIds.some((id) => s1.commandLogIds.includes(id))).toBe(false); // hàng MỚI, không phát lại
+        expect(lanTruocCua((await hangCua(tx, s2))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+        const sNoAct = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop", false);
+        expect(sNoAct).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+        expect(d.soGhi).toBe(0);
+        process.env.OT_CONTROL_ENABLED = "true";
+        const s3 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
+        expect(s3).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(1);
+        expect(lanTruocCua((await hangCua(tx, s3))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+        const thatNoAct = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }], "set_param", false);
+        expect(thatNoAct).toMatchObject({ ok: false, reason: "PRECONDITION_FAILED" });
+        expect(d.soGhi).toBe(1);
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+
+    it(`★ KK-4 khoá ${ten} — INTERLOCK: lệnh bảo vệ thường (reduce_speed) acked +1 gói; STOP theo NỘI DUNG (stop_line ghi tag ghim = giá trị ghim) HAI lần ⇒ CẢ HAI ra thiết bị (lần hai khong_khoa)`, async () => {
+      await trongGiaoDich(async (tx) => {
+        process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        const luat = async (action: "reduce_speed" | "stop_line", commandTag: string, commandValue: number) => {
+          const [rule] = await tx
+            .insert(interlockRules)
+            .values({ name: `${DAU} rule ${action}`, scope: "machine", machineId: MACHINE, sourceType: "ng_rate", comparisonOperator: "gt", threshold: "99999", action, targetMachineId: MACHINE, targetAdapterId: ad, commandTag, commandValue: commandValue as never, requiresHumanConfirm: false, enabled: true, approvedBy: OWNER, approvedAt: new Date() })
+            .returning();
+          await dongDauDuyetLuat(rule!.id);
+          return async () => {
+            const [ev] = await tx.insert(interlockEvents).values({ ruleId: rule!.id, action, status: "fired" }).returning();
+            return dispatch(lenh(ad, [{ tagKey: commandTag, value: commandValue }], action, { kind: "interlock", ruleId: rule!.id, eventId: ev!.id, approvedBy: OWNER }));
+          };
+        };
+        const giam = await luat("reduce_speed", "t", 30);
+        expect(await giam()).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(1);
+        const dung = await luat("stop_line", "a", 0);
+        const s1 = await dung();
+        expect(s1).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(2);
+        const s2 = await dung();
+        expect(s2).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(3);
+        expect(lanTruocCua((await hangCua(tx, s2))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+
+    it(`★ KK-5 khoá ${ten} — ĐUA: lệnh không khoá khác ghi hàng (CÙNG lệnh, acked) dưới khoá chung GIỮA bước 2 và khoá tư vấn ⇒ giữ chỗ báo đổi khoá (khong_khoa) ⇒ STOP theo nội dung VẪN ra thiết bị +1 gói`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        const writes = [{ tagKey: "a", value: 0 }];
+        H.giuaChung = async () => {
+          await chenHang(tx, { adapterId: ad, tagKey: "a", value: 0, status: "acked", ackValue: { ledger: "result", bam: bamLenhOt({ commandType: "set_param", writes }) }, key: perWriteKey("", "a", 0) });
+        };
+        const s = await guiKK(tx, ad, writes, "set_param");
+        expect(H.giuaChung).toBeNull(); // móc đã chạy: hàng xuất hiện SAU bước 2
+        expect(s).toMatchObject({ ok: true, simulated: false, status: "acked" });
+        expect(d.soGhi).toBe(1);
+        const h = await hangCua(tx, s);
+        expect(lanTruocCua(h[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+  }
 });
