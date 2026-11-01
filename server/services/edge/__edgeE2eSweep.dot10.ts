@@ -9,7 +9,7 @@
  * What it does (UPDATE only — never DELETE / TRUNCATE; coordinator rule + AMENDMENT 1):
  *   • scope = ONLY rows carrying the harness's own marker: `<table prefix>-<DAU>` where DAU = `<harness prefix>-<13-digit ms>` and
  *     the harness prefix is one of HARNESS_PREFIXES (setupCentral refuses any other prefix, so the list cannot drift):
- *       safety_plc_configs.code  SPLC-<DAU> | SPLCB-<DAU>           → enabled = false, ONLY when its port no longer listens
+ *       safety_plc_configs.code  SPLC-<DAU> | SPLCB-<DAU>           → enabled = false, ONLY when its LOOPBACK port no longer listens
  *       device_adapters.code     AA-<DAU> | AB-<DAU>                 → "isEnabled" = false, ONLY without a pending STOP
  *       robots.code              RA-<DAU> | RB-<DAU> | RC-<DAU>      → "isEnabled" = false, ONLY without a pending STOP
  *       users."openId"           <DAU>-owner|approver|admin|engineer → "isActive" = false
@@ -93,11 +93,15 @@ const defaultIdentity = async (sql: Sql) => {
 
 /** `tcp://host:port` → { host, port }; anything else ⇒ null (the row is then KEPT: its port cannot be checked). */
 export function endpointHostPort(endpoint: string | null): { host: string; port: number } | null {
-  const m = /^tcp:\/\/([^/:]+):(\d{1,5})\/?$/.exec(String(endpoint ?? "").trim());
+  const m = /^tcp:\/\/(\[[^\]/]+\]|[^/:[\]]+):(\d{1,5})\/?$/.exec(String(endpoint ?? "").trim());
   if (!m) return null;
   const port = Number(m[2]);
-  return port > 0 && port < 65_536 ? { host: m[1], port } : null;
+  return port > 0 && port < 65_536 ? { host: m[1].replace(/^\[|\]$/g, ""), port } : null;
 }
+
+/** fix round 1 (R2) — the port probe connects ONLY to a loopback host (the harness's sims listen on 127.0.0.1); never to the network. */
+export const LOOPBACK_HOSTS: readonly string[] = ["127.0.0.1", "::1", "localhost"];
+export const isLoopbackHost = (host: string): boolean => LOOPBACK_HOSTS.includes(host.toLowerCase());
 
 /** The marker patterns (POSIX ARE for Postgres `~` and JS RegExp alike); group 2 = the DAU's 13-digit ms. */
 export function harnessPatterns(prefixes: readonly string[]) {
@@ -157,6 +161,11 @@ export async function sweepHarnessLeftovers(sql: Sql, deps: SweepDeps = {}): Pro
     if (!hp) {
       rep.keptEndpointUnknown.push({ ...row, reason: `endpoint "${String(r.endpoint)}" is not tcp://host:port — its port cannot be checked` });
       log(`[F1 sweep] kept safety_plc_configs #${row.id} ${row.code} — endpoint not tcp://host:port, port not checkable`);
+      continue;
+    }
+    if (!isLoopbackHost(hp.host)) {
+      rep.keptEndpointUnknown.push({ ...row, reason: `endpoint not checkable (not loopback): ${hp.host}:${hp.port}` });
+      log(`[F1 sweep] kept safety_plc_configs #${row.id} ${row.code} — endpoint not checkable (not loopback): ${hp.host}:${hp.port}`);
       continue;
     }
     if (await listens(hp.host, hp.port)) {

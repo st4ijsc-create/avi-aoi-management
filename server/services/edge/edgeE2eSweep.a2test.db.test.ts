@@ -15,7 +15,7 @@ import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import { sweepHarnessLeftovers, harnessPatterns, endpointHostPort, HARNESS_PREFIXES, SWEEP_HORIZON_MS, type SweepDeps, type SweepReport } from "./__edgeE2eSweep.dot10";
+import { sweepHarnessLeftovers, harnessPatterns, endpointHostPort, isLoopbackHost, tcpPortListens, HARNESS_PREFIXES, SWEEP_HORIZON_MS, type SweepDeps, type SweepReport } from "./__edgeE2eSweep.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const TP = `ZS${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1e6).toString(36).toUpperCase()}`;
@@ -79,6 +79,8 @@ async function seed(tx: Tx): Promise<Seeded> {
   ids.plcRecentDead = await plc(`SPLC-${TP}-${RECENT}`, deadPort);
   ids.plcOldLive = await plc(`SPLC-${TP}-${OLD + 1}`, livePort);
   ids.plcNoMarker = await plc(`SPLC-${TP}-${OLD}-x`, deadPort);
+  // fix round 1 (R2): an old marker row whose endpoint is NOT loopback (TEST-NET-1) ⇒ never probed, kept, logged
+  ids.plcOldRemote = await one(tx`INSERT INTO safety_plc_configs (code, name, vendor, backend, endpoint, "statusMap", enabled) VALUES (${`SPLC-${TP}-${OLD + 2}`}, 'A2 sweep', 'pilz', 'modbus', 'tcp://192.0.2.1:502', ${tx.json({ estop: { address: "coil:1" } })}, true) RETURNING id`);
   ids.adOld = await one(tx`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled") VALUES (${`AA-${TP}-${OLD}`}, 'A2 sweep', 'stub', 'stub://a2', true) RETURNING id`);
   ids.adNoMarker = await one(tx`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled") VALUES (${`AZ-${TP}-${OLD}`}, 'A2 sweep', 'stub', 'stub://a2', true) RETURNING id`);
   const node = await one(tx`INSERT INTO edge_nodes (code, name, status) VALUES (${`N-${TP}-a2sweep`}, 'A2 sweep node', 'offline') RETURNING id`);
@@ -135,7 +137,8 @@ async function runCase(deps: Partial<SweepDeps> = {}): Promise<{ s: Seeded; rep:
 
 describe("A2 test — F1 harness start-up sweep (real _test DB, ROLLBACK)", () => {
   it("★ old DAU + dead port ⇒ inert; recent ⇒ untouched; live port ⇒ SPLC untouched; pending STOP ⇒ robot untouched + reported; no marker ⇒ untouched", async () => {
-    const { s, rep, st, logs } = await runCase();
+    const probed: string[] = [];
+    const { s, rep, st, logs } = await runCase({ portListens: (h, p) => (probed.push(`${h}:${p}`), tcpPortListens(h, p)) });
     const i = s.ids;
     expect(rep.skipped).toBeUndefined();
     // made inert
@@ -153,6 +156,12 @@ describe("A2 test — F1 harness start-up sweep (real _test DB, ROLLBACK)", () =
     // port check: a listening port ⇒ the SPLC stays enabled, reported
     expect(st.plc[i.plcOldLive]).toBe(true);
     expect(rep.keptPortListening.map((r) => r.id)).toEqual([i.plcOldLive]);
+    // fix round 1 (R2): a non-loopback endpoint is NEVER probed — kept, logged "not loopback"
+    expect(st.plc[i.plcOldRemote]).toBe(true);
+    expect(probed.some((x) => x.startsWith("192.0.2.1"))).toBe(false);
+    expect(probed.every((x) => x.startsWith("127.0.0.1:"))).toBe(true);
+    expect(rep.keptEndpointUnknown.map((r) => [r.id, r.reason])).toEqual([[i.plcOldRemote, "endpoint not checkable (not loopback): 192.0.2.1:502"]]);
+    expect(logs.filter((l) => l.includes(`kept safety_plc_configs #${i.plcOldRemote} `) && l.includes("not loopback"))).toHaveLength(1);
     // pending STOP: the robot stays as it is, the STOP is not touched, reported by id
     expect(st.rb[i.rOldStop]).toBe(true);
     expect(st.stopPending).toBe(true);
@@ -222,6 +231,11 @@ describe("A2 test — sweep patterns / endpoint / prefix registry (no DB)", () =
     expect(endpointHostPort("sim://x")).toBeNull();
     expect(endpointHostPort("tcp://127.0.0.1:0")).toBeNull();
     expect(endpointHostPort(null)).toBeNull();
+    expect(endpointHostPort("tcp://[::1]:502")).toEqual({ host: "::1", port: 502 });
+  });
+  it("★ fix round 1 (R2): only loopback hosts are probed", () => {
+    for (const h of ["127.0.0.1", "::1", "localhost", "LOCALHOST"]) expect(isLoopbackHost(h), h).toBe(true);
+    for (const h of ["192.0.2.1", "10.0.0.5", "127.0.0.2", "plc.factory.local", "0.0.0.0", "::"]) expect(isLoopbackHost(h), h).toBe(false);
   });
   it("★ census: every setupCentral(prefix) of a test file is in HARNESS_PREFIXES, and every registered prefix is used", () => {
     const dir = path.resolve(__dirname);
