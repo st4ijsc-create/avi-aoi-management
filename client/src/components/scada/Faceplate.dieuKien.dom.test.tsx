@@ -36,13 +36,19 @@ const srv = vi.hoisted(() => ({
   traDk: (() => ({})) as (i: unknown) => unknown,
   loiDk: null as unknown,
   request: [] as unknown[],
+  reqOpts: undefined as { onSuccess?: (r: unknown) => void } | undefined,
   dkOpts: [] as unknown[],
 }));
 vi.mock("@/lib/trpc", () => {
   return {
     trpc: {
       scadaCommands: {
-        request: { useMutation: () => ({ mutate: (v: unknown) => srv.request.push(v), isPending: false }) },
+        request: {
+          useMutation: (o: { onSuccess?: (r: unknown) => void }) => {
+            srv.reqOpts = o;
+            return { mutate: (v: unknown) => srv.request.push(v), isPending: false };
+          },
+        },
         confirm: { useMutation: () => ({ mutate: () => undefined, isPending: false }) },
         huy: { useMutation: () => ({ mutate: () => undefined }) },
         dieuKienChoPhep: {
@@ -69,6 +75,7 @@ vi.mock("@/lib/trpc", () => {
   };
 });
 
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Faceplate } from "./Faceplate";
 
 const kenh = (o: Row = {}): Row => ({
@@ -113,11 +120,11 @@ afterEach(async () => {
   });
 });
 
-const ve = () => {
+const ve = (edgeCode: string | null = null) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <Faceplate adapterId={1} tagKey="sp" machineId={10} edgeCode={null} onDong={() => undefined} />
+      <Faceplate adapterId={1} tagKey="sp" machineId={10} edgeCode={edgeCode} onDong={() => undefined} />
     </QueryClientProvider>,
   );
 };
@@ -244,5 +251,78 @@ describe("Faceplate — Điều kiện cho phép (B-T11)", () => {
     await hoi();
     expect(ketQua()).not.toBeNull();
     expect(srv.dk).toHaveLength(2);
+  });
+});
+
+describe("Faceplate — Điều kiện cho phép: ghim đột biến sống của kiem-dinh (B-T11)", () => {
+  const tuChoi = (code: string, params: Record<string, unknown>) => ({ quaCongTinh: false, tuChoi: { code, params }, chuaTinh: CHUA_TINH });
+
+  it("d6 — truy vấn KHÔNG retry (retry === false, không phải số)", async () => {
+    ve();
+    nhapSo("50");
+    await hoi();
+    expect((srv.dkOpts.at(-1) as Record<string, unknown>).retry).toBe(false);
+  });
+
+  it("★ f1 — hộp xác nhận (M5) đang mở ⇒ khối Điều kiện ẨN; đóng M5 mà còn giá trị ⇒ hiện lại", async () => {
+    ve();
+    nhapSo("240.5");
+    nhapLyDo("Giam SP Z7");
+    await hoi();
+    expect(screen.getByTestId("dieu-kien")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: S("scada.faceplate.nutDoi") }));
+    await act(async () => {
+      srv.reqOpts?.onSuccess?.({
+        requestId: "11111111-2222-4333-8444-555555555555",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        preview: {
+          machine: "RF-2", channel: "Zone 7 SP", unit: "°C", current: { v: 245, q: "good", ageMs: 500 }, requested: 240.5, afterFormula: 240.5,
+          range: { min: 240, max: 250, step: 0.5 }, level: 3, needsTotp: false, mode: "real", simulatedReasons: [], route: "central", warnings: [],
+        },
+      });
+    });
+    expect(screen.queryByTestId("dieu-kien")).toBeNull();
+  });
+
+  it("★ d20/d19 — tuChoi với mã LẠ (params.ma = XYZ) ⇒ câu dự phòng giai đoạn REQUEST (\"Không tạo được yêu cầu\") kèm CHI TIẾT, không phải câu của confirm", async () => {
+    ve();
+    const t = tuChoi("OPERATION_FAILED", { operation: "x", reason: "y", ma: "XYZ" });
+    srv.traDk = () => t;
+    nhapSo("50");
+    await hoi();
+    const chiTiet = mapTrpcError({ data: { appCode: t.tuChoi.code, appParams: t.tuChoi.params } });
+    expect(chiTiet.trim()).not.toBe("");
+    const cau = ketQua()?.textContent ?? "";
+    expect(cau).toContain(S("scada.lenh.loi.khac", { chiTiet }));
+    expect(cau).not.toContain(S("scada.lenh.loi.khacXacNhan", { chiTiet }));
+  });
+
+  it("★ d12/f2 — máy do EDGE sở hữu + lý do local chua_co_mau ⇒ chữ riêng của edge; máy thường ⇒ chữ thường", async () => {
+    srv.traDk = () => tuChoi("SCADA_MACHINE_NOT_REMOTE", { ma: "MODE_LOCAL", lyDo: "chua_co_mau" });
+    ve("E1");
+    nhapSo("50");
+    await hoi();
+    expect(ketQua()).toHaveTextContent(S("scada.lenh.local.chuaCoMauEdge"));
+    cleanup();
+    ve(null);
+    nhapSo("50");
+    await hoi();
+    expect(ketQua()).toHaveTextContent(S("scada.lenh.local.chuaCoMau"));
+    expect(ketQua()?.textContent).not.toContain(S("scada.lenh.local.chuaCoMauEdge"));
+  });
+
+  it("★ d18 — nhập 50 → xoá → nhập lại 50: KHÔNG hiện kết quả cũ ngay; phải chờ đủ 400 ms (debounce không bị bỏ qua)", async () => {
+    ve();
+    nhapSo("50");
+    await hoi();
+    expect(ketQua()).not.toBeNull();
+    nhapSo("");
+    await troi(50);
+    expect(screen.queryByTestId("dieu-kien")).toBeNull();
+    nhapSo("50");
+    await troi(100);
+    expect(screen.queryByTestId("dieu-kien")).toBeNull();
+    await hoi();
+    expect(ketQua()).not.toBeNull();
   });
 });

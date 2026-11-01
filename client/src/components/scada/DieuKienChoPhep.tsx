@@ -4,7 +4,7 @@
  *   • CHỈ HIỂN THỊ. KHÔNG khoá nút "Đổi…" theo kết quả — máy chủ là trọng tài ở `request` (chạy khô chỉ biết các cổng TĨNH, `chuaTinh` nói rõ
  *     phần chưa kiểm: khoá chọn, xác minh mã, hạn gửi).
  *   • KHÔNG POLL (dieu-phoi chốt): hỏi khi người dùng đổi giá trị, sau debounce 400 ms; không `refetchInterval`, không `refetchOnWindowFocus`;
- *     `retry: false`. Trần máy chủ 30 lượt / phút / adapter.
+ *     không retry. Trần máy chủ 30 lượt / phút / adapter.
  *   • Từ chối (`tuChoi {code, params}`) = ĐÚNG lỗi `request` sẽ trả ⇒ dịch bằng CÙNG hàm (`moTaLoiLenh` + `cauLoiLenh`) như lỗi của request.
  *   • Lỗi của chính cuộc chạy khô (kể cả `rateLimited`) ⇒ ẨN khối, không chặn thao tác.
  */
