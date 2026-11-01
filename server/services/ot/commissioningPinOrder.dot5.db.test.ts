@@ -35,6 +35,7 @@ vi.mock("../audit/controlAuditService", async (importOriginal) => {
 import { getDb } from "../../db";
 import { createRecord, latestCommissioningRecheck, COMMISSIONING_PIN_LOCK_NS } from "./commissioningService";
 // doc 81 Đợt 5 task F fix 1 — the CLI importer's pin-clear (scripts/mappings-import.mjs ⇒ goStopPinCliTx) takes the same lock.
+// @ts-expect-error -- scripts/lib/stopPinCli.mjs là JS thuần, không có .d.mts (không thêm tệp ngoài test); khẳng định đo trên DB, không dựa vào kiểu
 import { goStopPinCliTx, COMMISSIONING_PIN_LOCK_NS as CLI_LOCK_NS } from "../../../scripts/lib/stopPinCli.mjs";
 import { datStopPin, ghiAuditGoStopPinTx, GO_STOP_PIN_PATCH } from "./stopPin";
 import { deviceTags } from "../../../drizzle/schema";

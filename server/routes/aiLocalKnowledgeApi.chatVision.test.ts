@@ -34,7 +34,7 @@ describe("§A — khe có thị giác ⇒ model CHÍNH đọc", () => {
     const d = deps({ kheCoThiGiac: vi.fn(async () => true) });
     const r = await applyChatVision("Lỗi gì?", DATA_PNG, undefined, "vi", d);
     expect(d.docBangModelChinh).toHaveBeenCalledTimes(1);
-    expect((d.docBangModelChinh.mock.calls[0] as unknown[])[0]).toBe(DATA_PNG);
+    expect((vi.mocked(d.docBangModelChinh).mock.calls[0] as unknown[])[0]).toBe(DATA_PNG);
     expect(d.docBangSidecar).not.toHaveBeenCalled();
     expect(d.kiemTaiNguyen).not.toHaveBeenCalled();
     expect(r.vision).toMatchObject({ ok: true, nguon: "model-chinh" });

@@ -21,6 +21,7 @@ import {
   BoDemTanSuat,
   CO_AI_OT,
   type DauVaoCongAi,
+  type KetQuaDispatchToiThieu,
 } from "./aiControlGate";
 
 // ── Đồ nghề ──────────────────────────────────────────────────────────────────
@@ -391,7 +392,7 @@ describe("kiemCongAi — ca dương tính canh", () => {
 
 describe("siriengChoAi — acked_unverified KHÔNG phải thành công với AI", () => {
   it("★★★ ÂM TÍNH: acked_unverified + ok:true ⇒ AI thấy ok:false", () => {
-    const cuaDispatcher = { ok: true, status: "acked_unverified", simulated: false };
+    const cuaDispatcher: KetQuaDispatchToiThieu = { ok: true, status: "acked_unverified", simulated: false };
     const choAi = siriengChoAi(cuaDispatcher);
     expect(choAi.ok).toBe(false);
     expect(choAi.status).toBe("acked_unverified"); // status giữ nguyên — trung thực

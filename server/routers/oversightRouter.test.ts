@@ -9,12 +9,12 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const detectDeadlocksMock = vi.fn(async () => ({ enabled: true, cycles: [] as number[][] }));
+const detectDeadlocksMock = vi.fn(async (..._a: unknown[]) => ({ enabled: true, cycles: [] as number[][] }));
 vi.mock("../services/fleet/trafficManager", () => ({
   detectDeadlocks: (...a: unknown[]) => detectDeadlocksMock(...a),
 }));
 
-const mockGetDb = vi.fn(async () => undefined as unknown);
+const mockGetDb = vi.fn(async (..._a: unknown[]) => undefined as unknown);
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
 // Fix round 1 (doc 80 Đợt 1 Task 2) — mock CHỈ `checkPermission` (giữ nguyên
@@ -23,7 +23,7 @@ vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a)
 // này (mock chỉ thay named export mà `oversightRouter.ts` tự `import`) — nên gate
 // `machine_monitoring` vẫn chạy checkPermission THẬT (admin bypass, không chạm DB) trong
 // khi `canSeeNamesSafe` (dùng `checkPermission` NHẬP TỪ NGOÀI) nhận đúng bản mock.
-const checkPermissionMock = vi.fn(async () => true);
+const checkPermissionMock = vi.fn(async (..._a: unknown[]) => true);
 vi.mock("../_core/accessControl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../_core/accessControl")>();
   return { ...actual, checkPermission: (...a: Parameters<typeof actual.checkPermission>) => checkPermissionMock(...a) };

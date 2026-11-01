@@ -16,8 +16,11 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EdgeJournal, nodeEdgeJournalIo, type EdgeJournalFile, type EdgeJournalIo } from "./edgeJournal";
+import { EdgeJournal, nodeEdgeJournalIo, type EdgeAppendResult, type EdgeJournalFile, type EdgeJournalIo, type EdgeReportableRecord } from "./edgeJournal";
 import { EDGE_EPOCH_RE } from "./edgeProtocol";
+/** check:tests — EdgeReportableRecord gồm cả EdgeRobotStateRecord (KHÔNG có `kind`); nhánh `dropped` của EdgeAppendResult KHÔNG có `durable`. Đọc qua `in`, giá trị y như truy cập thẳng (vắng ⇒ undefined). */
+const kindOf = (r: EdgeReportableRecord): string | undefined => ("kind" in r ? r.kind : undefined);
+const durableOf = (o: EdgeAppendResult): boolean | undefined => ("durable" in o ? o.durable : undefined);
 
 const dirs: string[] = [];
 async function tmp(): Promise<string> {
@@ -118,7 +121,7 @@ describe("doc 81 Đợt 10 E — edge journal: epoch, streams, restart", () => {
     const b = await j1.appendRun(9, 2, step("m2"));
     const e = await j1.appendEvent(stopEvent(4));
     expect([a.seq, b.seq, e.seq]).toEqual([1, 2, 1]);
-    expect(j1.pending("run:9:2").map((r) => [r.epoch, r.stream, r.seq, r.record.kind])).toEqual([
+    expect(j1.pending("run:9:2").map((r) => [r.epoch, r.stream, r.seq, kindOf(r.record)])).toEqual([
       [j1.epoch, "run:9:2", 1, "step"],
       [j1.epoch, "run:9:2", 2, "step"],
     ]);
@@ -401,7 +404,7 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     const t0 = Date.now();
     const out = await Promise.all([j.appendRun(9, 2, step("a")), j.appendRun(9, 2, step("b")), j.appendRun(9, 2, step("c"))]);
     expect(Date.now() - t0).toBeLessThan(1_000);
-    expect(out.map((o) => o.durable)).toEqual([true, true, true]);
+    expect(out.map((o) => durableOf(o))).toEqual([true, true, true]);
     expect(r.events.filter((e) => e === "sync:done").length).toBe(1);
     expect(r.events.indexOf("sync:start")).toBeGreaterThan(r.events.lastIndexOf("write:step"));
     await j.close();
@@ -479,7 +482,7 @@ describe("doc 81 Đợt 10 E — edge journal: durability classes (fsync orderin
     };
     const j = await EdgeJournal.open({ dir, io });
     expect(j.admitNonStop()).toBe(true);
-    expect((await j.appendRun(9, 2, step("m1"))).durable).toBe(false); // a failed record write alone …
+    expect(durableOf(await j.appendRun(9, 2, step("m1")))).toBe(false); // a failed record write alone …
     expect(j.admitNonStop()).toBe(false); // … already stops new non-STOP work
     expect(await j.consumeAuthorization({ jti: JTI(4), runId: 9, claimSeq: 2, stepId: "m1", attempt: 1 })).toEqual({ ok: false, reason: "io_error" });
     expect(j.admitNonStop()).toBe(false);
@@ -602,7 +605,7 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     expect(await segments(dir)).toContain(firstSeg); // the ledger record keeps seg-1
     await j1.close();
     const j2 = await EdgeJournal.open({ dir });
-    expect(j2.pending("run:9:2", 9, j1.epoch).map((e) => e.record.kind)).toEqual(["ledger"]);
+    expect(j2.pending("run:9:2", 9, j1.epoch).map((e) => kindOf(e.record))).toEqual(["ledger"]);
     await j2.close();
     // and with the STOP event itself un-acked
     const dir2 = await tmp();
@@ -615,7 +618,7 @@ describe("doc 81 Đợt 10 E — edge journal: bounds + compaction", () => {
     expect(await segments(dir2)).toContain(seg1);
     await k1.close();
     const k2 = await EdgeJournal.open({ dir: dir2 });
-    expect(k2.pending("events", 9, k1.epoch).map((e) => e.record.kind)).toEqual(["stop"]);
+    expect(k2.pending("events", 9, k1.epoch).map((e) => kindOf(e.record))).toEqual(["stop"]);
     await k2.close();
   });
 

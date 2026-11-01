@@ -17,6 +17,7 @@ vi.mock("./flow/lib/bienDichST", async (importOriginal) => {
 
 import { boTepTuCauTraLoi, chayKiemBienDichST, dtoKiemBienDich, khoiBoSungSauBienDich } from "./aiLocalKnowledgeCodingKiemST";
 import type { StreamEvent } from "./aiLocalKnowledgeService";
+import type { KetQuaKiemBienDichST } from "./ai/st/kiemBienDichSt";
 
 const FB_DUNG = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x;\nEND_FUNCTION_BLOCK";
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
@@ -114,7 +115,7 @@ describe("dtoKiemBienDich / boTepTuCauTraLoi", () => {
     expect(boTepTuCauTraLoi("không có mã")).toBeNull();
   });
   it("cauTraLoiDau null khi bản trả về TRÙNG bản đầu (không có gì để xem lại)", () => {
-    const k = { trangThai: "con-loi", lyDo: null, phuongNgu: "st", trinhDich: "rusty", soVong: 2, soLoiDaSua: 0, chanDoanCuoi: [], cauTraLoiDau: "a", cauTraLoiCuoi: "a", msThem: 1 } as const;
+    const k: KetQuaKiemBienDichST = { trangThai: "con-loi", lyDo: null, phuongNgu: "st", trinhDich: "rusty", soVong: 2, soLoiDaSua: 0, chanDoanCuoi: [], cauTraLoiDau: "a", cauTraLoiCuoi: "a", msThem: 1 };
     expect(dtoKiemBienDich(k).cauTraLoiDau).toBeNull();
     expect(dtoKiemBienDich({ ...k, cauTraLoiCuoi: "b" }).cauTraLoiDau).toBe("a");
   });

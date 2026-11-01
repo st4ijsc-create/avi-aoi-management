@@ -37,7 +37,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, resumeRun, getRun } from "./foeEngine";
+import { deployWorkflow, startRun, resumeRun, getRun, FOE_GATE_REQUIRED } from "./foeEngine";
 import { computeBindingDigest } from "./foeGateApproval";
 import type { WorkflowDefinition } from "./workflowModel";
 

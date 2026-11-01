@@ -76,7 +76,7 @@ describe("kiemPatchKenh — gỡ ghim trước khi nâng mức (R1b-2a T6)", () 
     expect(loi(() => kiemPatchKenh(tag({ stopValue: 0 }), [], { writeMin: 5 }))).toMatchObject({ appCode: "STOP_PIN_NGOAI_DAI", appParams: { tagId: 77 } });
     const luat = [{ id: 9, name: "r", action: "reduce_speed", enabled: true, commandValue: 50 }];
     expect(loi(() => kiemPatchKenh(tag(), luat, { writeMax: 10 }))).toMatchObject({ appCode: "INTERLOCK_NGOAI_DAI", appParams: { ruleId: 9, tagId: 77 } });
-    expect(loi(() => patchKhaiKenh({}, 77))).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "patch", tagId: 77 } });
-    expect(loi(() => patchKhaiKenh({}))).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "patch" } });
+    expect(loi(() => patchKhaiKenh({} as Parameters<typeof patchKhaiKenh>[0], 77))).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "patch", tagId: 77 } }); // `{}` = đúng giá trị zod parse ra cho patch rỗng; kiểu z.infer bắt buộc khoá nullish
+    expect(loi(() => patchKhaiKenh({} as Parameters<typeof patchKhaiKenh>[0]))).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "patch" } }); // như dòng trên
   });
 });

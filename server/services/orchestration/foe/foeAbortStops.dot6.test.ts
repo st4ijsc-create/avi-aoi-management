@@ -635,7 +635,7 @@ describe("doc 81 Đợt 6 fix 1 (#1 #2 #8 #9) — sent once, failed STOP retried
     runIdSeen = s.runId!;
     const walked = await resumeRun(s.runId!, { approved: true }, SUP);
     expect(walked.status).toBe("aborted");
-    const ab = (await abortP) as { abortStops?: { sent: string[] } };
+    const ab = (await (abortP as Promise<unknown> | null)) as { abortStops?: { sent: string[] } }; // abortP gán trong insertHook (closure) ⇒ TS thu hẹp nhầm về null
     expect(ab.abortStops?.sent).toEqual(["stop"]);
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop", "stop"]); // refused, then the abort's — no third
   });

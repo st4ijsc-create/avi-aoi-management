@@ -91,7 +91,7 @@ async function chay(
   toolSummary?: string | null,
 ): Promise<number> {
   generateTextStream.mockImplementation(luongRong());
-  const gen = generateWithOllamaStream("viết giúp mình một hàm C#", retrieveChung(intent), [], "engineer", toolSummary, undefined, route);
+  const gen = generateWithOllamaStream("viết giúp mình một hàm C#", retrieveChung(intent), [], "technical", toolSummary, undefined, route);
   for await (const _ of gen) {
     // chỉ cần chạy hết generator để `generateTextStream` được gọi
   }
