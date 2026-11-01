@@ -23,6 +23,9 @@
  *     `scadaKenhThuLai` đúng.
  * T4 polish (review minor 1): CONFLICT `scadaKenhThuLai` ⇒ `resolveEvent` chạy lại CẢ giao dịch đúng MỘT lần — đổi đích một lần ⇒ lần hai
  * `resolved`; đổi đích hai lần liên tiếp (tất định, hai đối thủ) ⇒ CONFLICT; giao dịch bị ép xung đột mãi (`H.epXungDot`) ⇒ đúng 2 giao dịch.
+ * T4 polish 2 (kiem-dinh i1): ghim chế độ khoá LUẬT của `resolveEvent` là FOR SHARE — hai resolve cùng luật KHÔNG xếp hàng sau nhau; sửa luật BỊ
+ * CHẶN bởi một resolve đang mở. Một resolve được "giữ mở" sau khi đã khoá ADAPTER + LUẬT bằng một đối thủ giữ HÀNG SỰ KIỆN của nó FOR UPDATE
+ * (resolve chặn ở UPDATE sự kiện — bước sau khoá luật trong thứ tự ADAPTER → LUẬT → sự kiện).
  *
  * Lệch so với chữ của brief (đo trên `_test`): (1) `interlock_events."ruleId"` là NOT NULL (không FK) ⇒ không có "sự kiện ruleId NULL" thật; ca
  * tương đương = sự kiện mồ côi (luật của nó đã xoá): kỹ sư có phạm vi ⇒ NOT_FOUND, admin ⇒ `resolved` (như hôm nay). (2) Không có trạng thái
@@ -506,6 +509,109 @@ describe("★★ sự kiện không gắn luật thấy được (\"ruleId NULL\
     const [r] = await dung(sql`SELECT coalesce(max(id), 0)::int + 1000000 AS id FROM interlock_events`);
     expect(moTa((await thuGoi(engA.ilk.resolveEvent({ id: Number(r.id), reason: "khong ton tai" }))).loi)).toMatchObject(NF_SU_KIEN);
   }, 30_000);
+});
+
+/**
+ * Giữ MỘT resolveEvent mở SAU khi nó đã khoá ADAPTER + LUẬT: đối thủ giữ hàng sự kiện `eventId` FOR UPDATE ⇒ resolve chặn ở UPDATE sự kiện.
+ * Trả pid của backend resolve (tìm qua `pg_blocking_pids` — tiến trình bị đối thủ chặn), hàm thả và hai kết cục.
+ */
+async function giuResolveMo(eventId: number, goi: () => Promise<unknown>) {
+  let tha!: () => void;
+  const choTha = new Promise<void>((r) => (tha = r));
+  let daKhoa!: (pid: number) => void;
+  const choKhoa = new Promise<number>((r) => (daKhoa = r));
+  const doiThu = thuGoi(
+    db.transaction(async (tx) => {
+      const [p] = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{ pid: number }>;
+      await tx.execute(sql`SELECT id FROM interlock_events WHERE id = ${eventId} FOR UPDATE`);
+      daKhoa(Number(p.pid));
+      await choTha;
+    }),
+  );
+  const pidDoiThu = await choKhoa;
+  const resolve = thuGoi(goi());
+  let pidResolve = 0;
+  try {
+    await vi.waitFor(
+      async () => {
+        const r = await dung(sql`SELECT pid FROM pg_stat_activity WHERE ${pidDoiThu} = ANY(pg_blocking_pids(pid))`);
+        expect(r.length, "resolve phải BỊ CHẶN ở UPDATE hàng sự kiện (đã qua khoá adapter + luật)").toBe(1);
+        pidResolve = Number(r[0].pid);
+      },
+      { timeout: 10_000, interval: 20 },
+    );
+  } catch (e) {
+    tha();
+    await doiThu;
+    await resolve;
+    throw e;
+  }
+  return { pidDoiThu, pidResolve, tha: () => tha(), doiThu, resolve };
+}
+
+/** Chờ `p` xong; MỖI nhịp kiểm KHÔNG backend nào bị `pidCam` chặn (bị chặn ⇒ đỏ NGAY, không đợi hết giờ). Trần 10 s chỉ chống treo. */
+async function xongMaKhongBiChanBoi<T>(p: Promise<KetQua<T>>, pidCam: number, thongDiep: string): Promise<KetQua<T>> {
+  let kq: KetQua<T> | undefined;
+  void p.then((x) => (kq = x));
+  let biChan = 0;
+  await vi.waitFor(
+    async () => {
+      if (kq) return;
+      biChan = await soBiChanBoi(pidCam);
+      if (biChan > 0) return; // dừng chờ ngay — khẳng định bên dưới đỏ
+      expect(kq, "chưa xong").toBeDefined();
+    },
+    { timeout: 10_000, interval: 20 },
+  );
+  expect(biChan, thongDiep).toBe(0);
+  return kq as KetQua<T>;
+}
+
+describe("★★★ kiem-dinh i1 — resolveEvent khoá LUẬT FOR SHARE (không FOR UPDATE)", () => {
+  it("hai resolveEvent trên HAI sự kiện của CÙNG luật: resolve thứ hai KHÔNG bị resolve thứ nhất (đang mở, giữ luật) chặn, xong + resolved trước", async () => {
+    const x = await seedAdapter(A.mid);
+    const id = await seedLuat(x);
+    const ev1 = await seedSuKien(id);
+    const ev2 = await seedSuKien(id);
+    const g = await giuResolveMo(ev1, () => engA.ilk.resolveEvent({ id: ev1, reason: "resolve mot dang mo" }));
+    try {
+      const kq2 = await xongMaKhongBiChanBoi(
+        thuGoi(engA.ilk.resolveEvent({ id: ev2, reason: "resolve hai" })),
+        g.pidResolve,
+        "resolve thứ hai bị resolve thứ nhất CHẶN (luật bị khoá độc quyền?)",
+      );
+      expect(moTa(kq2.loi)).toBeNull();
+      await daDong(ev2);
+      // resolve thứ nhất VẪN mở (vẫn bị đối thủ chặn ở hàng sự kiện) lúc resolve thứ hai đã xong
+      expect(await soBiChanBoi(g.pidDoiThu), "resolve thứ nhất phải VẪN đang mở").toBe(1);
+      await chuaDong(ev1);
+    } finally {
+      g.tha();
+    }
+    expect((await g.doiThu).loi).toBeNull();
+    expect(moTa((await g.resolve).loi)).toBeNull();
+    await daDong(ev1);
+  }, 60_000);
+
+  it("chiều ngược: resolve đang mở (giữ luật FOR SHARE) ⇒ interlock.update cùng luật BỊ CHẶN bởi chính backend resolve; resolve commit ⇒ update đi tiếp", async () => {
+    const x = await seedAdapter(A.mid);
+    const id = await seedLuat(x);
+    const ev = await seedSuKien(id);
+    const g = await giuResolveMo(ev, () => engA.ilk.resolveEvent({ id: ev, reason: "resolve dang mo" }));
+    let sua: Promise<KetQua<unknown>> | undefined;
+    try {
+      sua = thuGoi(engA.ilk.update({ id, description: "sua khi resolve mo" }));
+      await choBiChan(g.pidResolve, "interlock.update phải BỊ CHẶN bởi backend resolve (luật FOR SHARE ⟂ FOR UPDATE)");
+      expect((await dung(sql`SELECT description FROM interlock_rules WHERE id = ${id}`))[0].description).toBeNull();
+    } finally {
+      g.tha();
+    }
+    expect((await g.doiThu).loi).toBeNull();
+    expect(moTa((await g.resolve).loi)).toBeNull();
+    await daDong(ev);
+    expect(moTa((await sua).loi)).toBeNull();
+    expect((await dung(sql`SELECT description FROM interlock_rules WHERE id = ${id}`))[0].description).toBe("sua khi resolve mo");
+  }, 60_000);
 });
 
 describe("★ bổ sung (xác suất) — resolveEvent ∥ update đổi targetAdapterId của CÙNG luật, 10 vòng", () => {
