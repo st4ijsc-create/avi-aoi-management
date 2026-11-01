@@ -1168,7 +1168,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     .where(eq(commandLog.idempotencyKey, probeKey))
     .limit(1);
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
-    return cachedResult(input, existing);
+    return cachedResult(db, input, existing);
   }
   // SCADA R1a T3 fix round 1 (M-1) — no row for write #0: a refusal of ONE later write (TAG_NOT_FOUND / TAG_NOT_WRITABLE /
   // the step-3b channel gate) ledgers only that write, under its own index. Look for it too (first in write order), so a
@@ -1178,7 +1178,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const laterKeys = input.writes.slice(1).map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i + 1));
     const later = await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, laterKeys));
     const first = laterKeys.map((k) => later.find((r) => r.idempotencyKey === k)).find((r) => !!r && TERMINAL_STATUSES.has(r.status));
-    if (first) return cachedResult(input, first);
+    if (first) return cachedResult(db, input, first);
   }
 
   // ── (3) Resolve adapter + tags; assert enabled + writable. ───────────────────
@@ -1950,7 +1950,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         errorText,
         // Task 6 — RESULT row linked to its write-ahead intent (by id; the key pair
         // '<k>' / 'intent:<k>' links them too). T3E — + `motPhan` (lô áp một phần) trên MỌI hàng của lô.
-        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra, ...(motPhan ? { motPhan } : {}) } as any,
+        // R1b-2b-2a T6c — + `khongRo: true` trên MỌI hàng của lô có kết cục `timeout` (không rõ): phát lại theo khoá (`ketQuaPhatLai`) thấy dấu ⇒
+        // `timeout`, kể cả khi hàng đọc được là một write acked.
+        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra, ...(motPhan ? { motPhan } : {}), ...(lo.status === "timeout" ? { khongRo: true } : {}) } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,
@@ -2045,44 +2047,96 @@ function khiLoiAuditStopGhim(action: string, resultId: number | undefined): (err
     );
 }
 
-/** The cached (idempotent replay) result of a prior terminal ledger row for this key. */
-function cachedResult(input: DispatchInput, existing: CommandLog): DispatchResult {
+/** R1b-2b-2a T6c — status một hàng kết quả mang khi thiết bị ĐÃ được ghi (đường sống `ketCucLo`). */
+const TRANG_THAI_HANG_THIET_BI: ReadonlySet<string> = new Set(["acked", "acked_verified", "acked_unverified", "failed", "timeout"]);
+/** Status của một hàng được tính là "ok" (giữ đúng tập cũ của phát lại). */
+const TRANG_THAI_HANG_OK: ReadonlySet<string> = new Set(["simulated", "acked", "acked_verified", "acked_unverified", "sent"]);
+
+/**
+ * R1b-2b-2a T6c — MỌI hàng kết quả của lô (một hàng / write, theo khoá per-write `perWriteKey`), theo thứ tự write của `input`; write không có hàng
+ * ⇒ `undefined`. Phát lại tính kết cục trên ĐỦ lô, không đọc riêng hàng 0.
+ */
+async function hangKetQuaLo(db: LedgerDb, input: DispatchInput): Promise<Array<CommandLog | undefined>> {
+  const keys = input.writes.map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i));
+  if (keys.length === 0) return [];
+  const rows = (await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, keys))) as CommandLog[];
+  return keys.map((k) => rows.find((r) => r.idempotencyKey === k));
+}
+
+/** The cached (idempotent replay) result of a prior terminal ledger row for this key — T6c: computed over EVERY result row of the batch. */
+async function cachedResult(db: LedgerDb, input: DispatchInput, existing: CommandLog): Promise<DispatchResult> {
+  return ketQuaPhatLai(input, existing, await hangKetQuaLo(db, input));
+}
+
+/**
+ * R1b-2b-2a T6c (AN TOÀN, dieu-phoi 2026-11-01) — câu trả lời PHÁT LẠI theo khoá idempotency = câu trả lời SỐNG (ok / status / reason / motPhan) cho mọi
+ * tổ hợp lô. Trước: chỉ đọc hàng 0 ⇒ lô `timeout` trộn có hàng 0 acked được phát lại là `ok: true` (THÀNH CÔNG giả). Nay:
+ *   • `ackValue.motPhan` trên bất kỳ hàng nào (T3E) ⇒ cùng kết cục MOT_PHAN như trước;
+ *   • lô thiết bị (mọi hàng có status thiết bị) HOẶC có dấu `ackValue.khongRo` ⇒ `ketCucLo` (CÙNG hàm với đường sống) trên MỌI write: write không có hàng
+ *     ⇒ `timeout` (không rõ — fail-closed); dấu `khongRo` ⇒ `timeout` dù gì đi nữa (dấu thắng). Hàng ghi TRƯỚC bản vá (không dấu) được suy từ trạng thái
+ *     mọi hàng: có hàng không ok ⇒ không bao giờ `ok: true`; có hàng `timeout` ⇒ `timeout`; acked + failed ⇒ `failed` MOT_PHAN (không gửi lại);
+ *   • lô KHÔNG phải thiết bị (rejected / simulated…): như cũ (status / reason của hàng đọc được), nhưng fail-closed: `ok` chỉ khi MỌI hàng có của lô ok.
+ * Hàm thuần — xuất cho test.
+ */
+export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo: ReadonlyArray<CommandLog | undefined>): DispatchResult {
+  const coMat = hangLo.filter((r): r is CommandLog => !!r);
+  const hang = coMat.length > 0 ? coMat : [existing];
+  const av = (r: CommandLog) => (r.ackValue ?? null) as { pinnedStop?: unknown; motPhan?: unknown; khongRo?: unknown } | null;
+  const ids = hang.map((r) => r.id);
   // fix round 1 (R-1D-h) — a replayed PINNED stop still says so (its ledger row carries ackValue.pinnedStop).
-  const replayedPinnedStop = (existing.ackValue as { pinnedStop?: unknown } | null | undefined)?.pinnedStop === true;
-  // R1b-2b-2a T3E (backlog 90) — a batch applied PARTLY: every result row of it carries ackValue.motPhan ⇒ the replay (a FOE re-walk after a
-  // restart re-sends the same key) is the SAME partial outcome, whichever row is read (the first may be an applied, `acked` one): never ok,
-  // never resent. Read from the ledger only (no memory).
-  const motPhan = motPhanCua((existing.ackValue as { motPhan?: unknown } | null | undefined)?.motPhan);
-  if (motPhan) {
+  const replayedPinnedStop = hang.some((r) => av(r)?.pinnedStop === true);
+  const ghim = replayedPinnedStop ? { pinnedStop: true } : {};
+  const ketQuaMotPhan = (motPhan: MotPhan): DispatchResult => ({
+    ok: false,
+    simulated: false,
+    status: "failed",
+    reason: MA_MOT_PHAN,
+    results: input.writes.map((w) => {
+      const ap = motPhan.daAp.includes(w.tagKey);
+      return { tagKey: w.tagKey, ok: ap, status: ap ? ("acked" as const) : ("failed" as const), ...(ap ? {} : { error: MA_MOT_PHAN }) };
+    }),
+    commandLogIds: ids,
+    motPhan,
+    message: `Command "${input.commandType}" (replayed from the ledger): ${moTaMotPhan(motPhan)}.`,
+    ...ghim,
+  });
+  // R1b-2b-2a T3E (backlog 90) — a batch applied PARTLY: every result row carries ackValue.motPhan ⇒ the SAME partial outcome (never ok, never resent).
+  for (const r of hang) {
+    const mp = motPhanCua(av(r)?.motPhan);
+    if (mp) return ketQuaMotPhan(mp);
+  }
+  const khongRo = hang.some((r) => av(r)?.khongRo === true);
+  const thietBi = hang.every((r) => TRANG_THAI_HANG_THIET_BI.has(r.status));
+  if (khongRo || thietBi) {
+    const outcomes = input.writes.map((w, i) => {
+      const r = hangLo[i];
+      return r ? { tagKey: w.tagKey, ok: TRANG_THAI_HANG_OK.has(r.status), status: r.status as DispatchStatus } : { tagKey: w.tagKey, ok: false, status: "timeout" as DispatchStatus };
+    });
+    const lo = ketCucLo(outcomes, khongRo);
+    if (lo.motPhan) return ketQuaMotPhan(lo.motPhan);
+    const ok = lo.ok && !khongRo; // dấu "không rõ" thắng
+    const status = (khongRo ? "timeout" : lo.status) as DispatchStatus;
     return {
-      ok: false,
+      ok,
       simulated: false,
-      status: "failed",
-      reason: MA_MOT_PHAN,
-      results: input.writes.map((w) => {
-        const ap = motPhan.daAp.includes(w.tagKey);
-        return { tagKey: w.tagKey, ok: ap, status: ap ? ("acked" as const) : ("failed" as const), ...(ap ? {} : { error: MA_MOT_PHAN }) };
+      status,
+      results: input.writes.map((w, i) => {
+        const r = hangLo[i];
+        return { tagKey: w.tagKey, address: r?.address ?? undefined, ok: outcomes[i]!.ok, status: outcomes[i]!.status, error: r ? (r.errorText ?? undefined) : "no result row in the ledger — outcome unknown" };
       }),
-      commandLogIds: [existing.id],
-      motPhan,
-      message: `Command "${input.commandType}" (replayed from the ledger): ${moTaMotPhan(motPhan)}.`,
-      ...(replayedPinnedStop ? { pinnedStop: true } : {}),
+      commandLogIds: ids,
+      ...ghim,
     };
   }
-  const cachedOk =
-    existing.status === "simulated" ||
-    existing.status === "acked" ||
-    existing.status === "acked_verified" ||
-    existing.status === "acked_unverified" ||
-    existing.status === "sent";
+  const cachedOk = TRANG_THAI_HANG_OK.has(existing.status) && hang.every((r) => TRANG_THAI_HANG_OK.has(r.status));
   return {
     ok: cachedOk,
     simulated: existing.status === "simulated",
     status: existing.status,
     reason: existing.errorText ?? undefined,
     results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
-    commandLogIds: [existing.id],
-    ...(replayedPinnedStop ? { pinnedStop: true } : {}),
+    commandLogIds: ids,
+    ...ghim,
   };
 }
 
@@ -2244,7 +2298,7 @@ async function reserveRealWrite(
         .where(inArray(commandLog.idempotencyKey, [resultKeys[0], intentKeys[0]]));
       const priorResult = prior.find((r) => r.idempotencyKey === resultKeys[0]);
       if (priorResult && TERMINAL_STATUSES.has(priorResult.status)) {
-        return { ok: false as const, result: cachedResult(input, priorResult) };
+        return { ok: false as const, result: await cachedResult(tx, input, priorResult) };
       }
       if (prior.length > 0) {
         // The key's intent exists but no result: another call holds it, or the process died

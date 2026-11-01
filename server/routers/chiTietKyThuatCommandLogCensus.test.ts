@@ -331,6 +331,7 @@ const SO_CAI: Record<string, [Dem, PhanLoai, string]> = {
   // ── dispatcher (đường ghi — kết quả về người ra lệnh đã qua canEdit) ──
   "server/services/ot/commandDispatcher.ts#dispatchCore": [{ cot_an_toan: 3, doc_nguyen_hang: 2, ghi: 1 }, "ghi_canEdit", "idempotency (probe + lệnh sau) select() ⇒ cachedResult.reason = errorText cho NGƯỜI GỌI dispatch"],
   "server/services/ot/commandDispatcher.ts#reserveRealWrite": [{ cot_an_toan: 4, doc_chieu: 1, doc_nguyen_hang: 1, ghi: 1 }, "ghi_canEdit", "prior trong tx ⇒ cachedResult cho người gọi dispatch"],
+  "server/services/ot/commandDispatcher.ts#hangKetQuaLo": [{ cot_an_toan: 1, doc_nguyen_hang: 1 }, "ghi_canEdit", "R1b-2b-2a T6c — MỌI hàng kết quả của lô (theo khoá per-write) cho phát lại idempotent (ketQuaPhatLai) ⇒ kết quả về NGƯỜI GỌI dispatch, cùng đường với cachedResult"],
   "server/services/ot/commandDispatcher.ts#writeAll": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ từ chối"],
   "server/services/ot/commandDispatcher.ts#writeSimulated": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ mô phỏng"],
   "server/services/ot/commandDispatcher.ts#auditPinnedStopOverride": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],
@@ -360,7 +361,7 @@ const THU_TUC_CHAM: Record<string, [string[], string]> = {
   "server/routers/programmingRouter.ts#deployBuild": [["dispatchCore"], "đường ghi: deployProcedure (MOD_ENGINEERING) — kết quả dispatch về người ra lệnh"],
   "server/routers/robotRouter.ts#actuate": [["dispatchCore"], "đường ghi: actuationProcedure + machine_control.canEdit"],
   "server/routers/robotRouter.ts#consoleStop": [["dispatchCore"], "STOP: robotStopProcedure (canEdit / degraded auth) — kết quả về người bấm"],
-  "server/routers/scadaCommandsRouter.ts#confirm": [["dispatchCore", "reserveRealWrite"], "đường ghi: canEdit kiểm trong handler (kiemCongVaiTro) — kết quả về chủ yêu cầu"],
+  "server/routers/scadaCommandsRouter.ts#confirm": [["dispatchCore", "hangKetQuaLo", "reserveRealWrite"], "đường ghi: canEdit kiểm trong handler (kiemCongVaiTro) — kết quả về chủ yêu cầu (T6c: phát lại đọc mọi hàng của lô qua hangKetQuaLo)"],
   "server/routers/scadaCommandsRouter.ts#dungMay": [["dispatchCore", "reserveRealWrite"], "STOP: sàn vai mức 1 + canEdit trong handler — kết quả về người bấm"],
   "server/routers/scadaCommandsRouter.ts#trangThai": [["trangThaiYeuCauGhi"], "chủ yêu cầu; hàm chỉ trả ma / ledger suy ra (suy_ra)"],
 };
