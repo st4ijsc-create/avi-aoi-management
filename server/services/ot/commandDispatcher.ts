@@ -2391,7 +2391,8 @@ async function tuChoiThieuKhoa(db: LedgerDb, input: DispatchInput, pl: Exclude<P
       const who = actors(input);
       const kind = pl.loai === "giong_stop" ? "ot_keyless_stop_like_refused" : "ot_keyless_pin_unreadable_refused";
       const tags = [...new Set(input.writes.map((w) => String(w.tagKey)))].join(", ");
-      const so = ids.length > 0 ? `command_log #${ids.join(",")}` : "the refusal row(s) could NOT be written to command_log";
+      // polish — chèn lỗi GIỮA một lô nhiều write ⇒ `ids` rỗng nhưng vài hàng có thể đã ghi: không khẳng định "không hàng nào"
+      const so = ids.length > 0 ? `command_log #${ids.join(",")}` : "the refusal row(s) may NOT have been (fully) written to command_log";
       const tran =
         canhBao.khoa === KHOA_BAT_BUOC_CANH_BAO_TRAN
           ? ` The keyless-refusal alert table is full (${toiDaCanhBaoKhongKhoa} live entries): this is overflow refusal #${canhBao.lanThu} in this ${KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS / 1000}-second window; further overflow refusals in the window are NOT alerted one by one — their counts are in each row's canhBao.lanThu in command_log.`

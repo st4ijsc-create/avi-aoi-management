@@ -1114,10 +1114,19 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
         const s3 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
         expect(s3).toMatchObject({ ok: true, simulated: false, status: "acked" });
         expect(d.soGhi).toBe(1);
-        // fix round 1 (F1): không còn hàng mô phỏng dưới khoá chung ⇒ STOP thật đầu tiên ghi dưới khoá "v2:0::…" (hàng gắn ý định — giữ khoá như fix 2), không lanTruoc
+        // A2(a) fix round 1 (F1) — ghi chú điều phối: từ F1, hàng MÔ PHỎNG của STOP không khoá mang khoá NULL ⇒ STOP mô phỏng không khoá thứ hai KHÔNG còn nối
+        // lanTruoc về lần đầu. Chỉ ảnh hưởng KIỂM TOÁN, không ảnh hưởng an toàn; bất biến T6d vẫn giữ: STOP luôn bay, không bao giờ bị phát lại.
+        // polish — khoá "v2:0::1:a:0" là khoá TOÀN BẢNG: một hàng đã commit sẵn trong _test có thể giữ nó ⇒ s3 có thể bị đổi khoá `#stop-` (khong_khoa). Ghim:
+        // STOP đã bay (trên), s3 là hàng MỚI (không phát lại), khoá KHÁC NULL và là đúng khoá ấy HOẶC khoá đổi `#stop-<uuid>`.
         const h3 = await hangCua(tx, s3);
-        expect(h3[0]!.idempotencyKey).toBe(perWriteKey("", "a", 0));
-        expect(lanTruocCua(h3[0]!)).toBeUndefined();
+        expect(s3.commandLogIds.some((id) => [...s1.commandLogIds, ...s2.commandLogIds, ...sNoAct.commandLogIds].includes(id))).toBe(false);
+        const k3 = h3[0]!.idempotencyKey;
+        expect(k3).not.toBeNull();
+        if (k3 === perWriteKey("", "a", 0)) expect(lanTruocCua(h3[0]!)).toBeUndefined();
+        else {
+          expect(k3).toMatch(/^v2:\d+:#stop-[0-9a-f-]{36}:1:a:0$/);
+          expect(lanTruocCua(h3[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+        }
         const thatNoAct = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }], "set_param", false);
         // A2(a): lệnh THƯỜNG không khoá (hitl không actionId qua cổng (1) — cổng ấy chỉ kiểm khi CÓ actionId) ⇒ IDEMPOTENCY_KEY_REQUIRED (trước: PRECONDITION_FAILED
         // ở đường ghi thật); vẫn 0 gói, kết quả bình thường.

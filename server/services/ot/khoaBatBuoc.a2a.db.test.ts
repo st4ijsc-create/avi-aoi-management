@@ -731,7 +731,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
       const cb = canhBaoKhongKhoa()[0]!;
       expect(cb.kind).toBe("ot_keyless_stop_like_refused");
-      expect(cb.message).toMatch(/could NOT be written to command_log/);
+      expect(cb.message).toMatch(/may NOT have been \(fully\) written to command_log/);
       expect(cb.message).toMatch(/NOT sent/);
     });
   }, 30_000);
