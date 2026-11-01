@@ -27,7 +27,7 @@ const AUTH = { userId: 7, role: "engineer" };
 const FB_SAI = "FUNCTION_BLOCK A\nVAR_INPUT x : BOOL; END_VAR\nVAR_OUTPUT y : BOOL; END_VAR\n  y := x AND ;\nEND_FUNCTION_BLOCK";
 const goi = async (args: Record<string, unknown>) => {
   h.soLan = 0;
-  return kiemBienDichStTool.handler!({ ...args, __authCtx: AUTH } as never, {} as never);
+  return kiemBienDichStTool.handler!({ ...args, __authCtx: AUTH } as never);
 };
 
 describe("kiem_bien_dich_st", () => {

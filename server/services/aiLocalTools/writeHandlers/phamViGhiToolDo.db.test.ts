@@ -36,10 +36,10 @@ let alertA = 0;
 let mpA = 0;
 let thrA = 0;
 let histA = 0;
-let uadmin!: { id: number; role: string; name: string };
+let uadmin!: { id: number; role: string; name: string | null };
 const factories: string[] = [];
-let ua!: { id: number; role: string; name: string };
-let ub!: { id: number; role: string; name: string };
+let ua!: { id: number; role: string; name: string | null };
+let ub!: { id: number; role: string; name: string | null };
 
 async function seedNhaMay(ten: string): Promise<NhaMay> {
   const code = `${RUN}${ten}`;
@@ -72,7 +72,7 @@ async function nguoi(ten: string, nm: NhaMay) {
   return { id: u.id, role: "engineer", name: u.name };
 }
 /** Đề xuất rồi XÁC NHẬN một tool ghi dưới danh nghĩa `user` — đúng đường của trợ lý / agent. Trả trạng thái confirm. */
-async function aiGhi(tool: string, args: Record<string, unknown>, user: { id: number; role: string; name: string }): Promise<{ propose: string; confirm: string | null }> {
+async function aiGhi(tool: string, args: Record<string, unknown>, user: { id: number; role: string; name: string | null }): Promise<{ propose: string; confirm: string | null }> {
   const t = getTool(tool);
   if (!t) throw new Error("không có tool " + tool);
   const p = await proposeAction(t, args, { user, lang: "vi" });

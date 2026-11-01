@@ -79,10 +79,11 @@ describe("§D — không đo được VRAM", () => {
     expect(await ma(kiemNapKhiServerNgoaiSong(M4, undefined, "x", dep(), {}))).toBe("QUA");
   });
   it("thăm dò URL từ LLAMA_SERVER_URL, mặc định :8091, hạn 500 ms", async () => {
-    const d = dep({ modelServer: vi.fn(async () => null) });
+    const modelServer = vi.fn(async (_url: string, _hanMs: number) => null as string | null);
+    const d = dep({ modelServer });
     await goi(d, M4, {});
     await goi(d, M4, { LLAMA_SERVER_URL: "http://127.0.0.1:9999" });
-    expect(d.modelServer.mock.calls).toEqual([["http://127.0.0.1:8091", 500], ["http://127.0.0.1:9999", 500]]);
+    expect(modelServer.mock.calls).toEqual([["http://127.0.0.1:8091", 500], ["http://127.0.0.1:9999", 500]]);
   });
 });
 

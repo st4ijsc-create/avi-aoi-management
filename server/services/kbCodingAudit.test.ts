@@ -184,7 +184,7 @@ describe("hai đường NGOÀI cổng — ghiLuotNgoaiCong", () => {
     const goi = taoGoiModelMayChu({ userId: 7 });
     const vao = (ndung: string) => ({ tinNhan: [{ role: "user" as const, content: ndung }], congCu: [], signal: new AbortController().signal });
     const dung = async (ndung: string) => {
-      const g = goi(vao(ndung));
+      const g = goi(vao(ndung))[Symbol.asyncIterator]();
       for (;;) {
         const n = await g.next();
         if (n.done) break;
@@ -212,7 +212,7 @@ describe("hai đường NGOÀI cổng — ghiLuotNgoaiCong", () => {
 
   it("agent theo vai trò (khongGhiDauVet) ⇒ KHÔNG ghi dấu vết chỉ-ghi (lượt đã đếm qua cổng ở quanLyLuotChay) — tránh hai hàng cho một lượt", async () => {
     const goi = taoGoiModelMayChu({ userId: 7, khongGhiDauVet: true });
-    const g = goi({ tinNhan: [{ role: "user" as const, content: "x" }], congCu: [], signal: new AbortController().signal });
+    const g = goi({ tinNhan: [{ role: "user" as const, content: "x" }], congCu: [], signal: new AbortController().signal })[Symbol.asyncIterator]();
     for (;;) {
       const n = await g.next();
       if (n.done) break;

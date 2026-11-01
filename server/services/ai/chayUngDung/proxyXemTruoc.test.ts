@@ -175,7 +175,7 @@ describe("§2 — cookie phiên ứng dụng KHÔNG đi tới ứng dụng xem t
     expect(locCookieChoUngDung(`app_session_id=x; ${TEN_COOKIE_PHIEN}=y; __aipv_u_a=1; __aipv_u_b=2`)).toBe("a=1; b=2");
     expect(locCookieChoUngDung("app_session_id=x")).toBeNull();
     expect(doiSetCookieRa(["a=1; Path=/; Domain=.x.com; Secure"])).toEqual(["__aipv_u_a=1; Path=/; Secure"]);
-    expect(doiSetCookieRa(["__Host-a=1; Path=/"])).toEqual([], "tiền tố __Host-/__Secure- không đổi tên được ⇒ bỏ");
+    expect(doiSetCookieRa(["__Host-a=1; Path=/"]), "tiền tố __Host-/__Secure- không đổi tên được ⇒ bỏ").toEqual([]);
   });
 });
 
