@@ -116,7 +116,7 @@ import {
 } from "../../../drizzle/schema";
 import { canKiemGiaTriChuaKhai, epKieuGiaTri, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
-import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, laKhoaBenGoiChon, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
@@ -1170,7 +1170,8 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (2) Idempotency: a prior terminal command for this key → return cached. ──
   // commandLog rows store a per-write key; every write's key is read (T6c: the replay rolls up EVERY row; SCADA R1a T3 fix round 1 M-1: a
   // refusal of ONE later write ledgers only that write, under its own index).
-  // R1b-2b-2a T6d — CHỐT phát lại (mẫu robot R-1C-i), MỘT hàm quyết `quyetDinhKhoa`: chỉ CÙNG lệnh (adapterId + tagKey + người gọi + băm payload; hàng
+  // R1b-2b-2a T6d — CHỐT phát lại (mẫu robot R-1C-i), MỘT hàm quyết `quyetDinhKhoa`: chỉ CÙNG lệnh (adapterId + tagKey + băm payload [+ người yêu cầu
+  // CHỈ cho khoá bên gọi chọn `pd:` — T6d fix 1]; hàng
   // trước T6d: khớp CHẮC CHẮN giá trị) mới được phát lại; khoá của lệnh KHÁC ⇒ `IDEMPOTENCY_KEY_REUSED`, không gửi, không trả kết quả cũ. STOP (theo
   // loại, hoặc nội dung = ghim) với khoá lệch / đang bay / lần trước không tới thiết bị ⇒ GỬI THẬT dưới khoá mới, tham chiếu `ackValue.lanTruoc`.
   {
@@ -2081,9 +2082,13 @@ function ackKhoa(input: DispatchInput): Record<string, unknown> {
   return { bam: input.bamLenh ?? bamLenhOt(input), ...(input.ghiChuKhoa ?? {}) };
 }
 
-/** T6d — người gọi của lệnh như cột sổ ghi (`requestedBy`, `triggerKind`): phát lại chỉ cho CÙNG người gọi / nguồn kích hoạt. */
-export function nguoiGoiKhoa(input: DispatchInput): { requestedBy: number; triggerKind: "hitl" | "interlock" } {
-  return { requestedBy: actors(input).requestedBy, triggerKind: triggerCols(input).triggerKind };
+/**
+ * T6d — người yêu cầu của lệnh như cột sổ ghi (`requestedBy`). T6d fix 1 (review I1, dieu-phoi): CHỈ dùng cho khoá BÊN GỌI CHỌN (`laKhoaBenGoiChon`,
+ * miền lập trình `pd:u<N>:`); khoá máy chủ sinh KHÔNG chốt người (FOE tiếp tục chạy dưới SYSTEM_FOE_USER, interlock được duyệt lại bởi người khác ⇒
+ * vẫn phát lại / gửi như cũ). `triggerKind` KHÔNG thuộc chốt (dieu-phoi: đúng bốn trường adapter + tag + băm + commandType).
+ */
+export function nguoiGoiKhoa(input: DispatchInput): { requestedBy: number } {
+  return { requestedBy: actors(input).requestedBy };
 }
 
 /** T6d — mọi hàng sổ có thể thuộc khoá này, theo chỉ số write: kết quả + ý định, định dạng MỚI (`v2` / `i2`) và CŨ (trước T6d, chỉ đọc). */
@@ -2132,7 +2137,11 @@ export type QuyetDinhKhoa =
 /**
  * R1b-2b-2a T6d (AN TOÀN) — MỘT nơi quyết lệnh mang khoá đã dùng có phải CÙNG lệnh không (mẫu robot `robotCommandDispatcher` R-1C-i). MỌI hàng tìm thấy
  * (kết quả + ý định, định dạng mới + cũ) phải là của lệnh này, không thì `lech`:
- *   • cùng `adapterId`, cùng `tagKey` của write CÙNG chỉ số, cùng người gọi (`requestedBy`) và nguồn kích hoạt (`triggerKind`);
+ *   • cùng `adapterId`, cùng `tagKey` của write CÙNG chỉ số; cùng người yêu cầu (`requestedBy`) CHỈ KHI khoá do BÊN GỌI chọn (`laKhoaBenGoiChon`,
+ *     `pd:u<N>:` — T6d fix 1, review I1): khoá máy chủ sinh (`il-`, `hmi:`, `run<N>-…`, actionId, edge) chốt ĐÚNG adapter + tag + băm + commandType,
+ *     KHÔNG người, KHÔNG `triggerKind` (FOE tiếp tục dưới SYSTEM_FOE_USER / interlock duyệt lại ⇒ phát lại như cũ, không bao giờ IDEMPOTENCY_KEY_REUSED);
+ *   • hàng tìm thấy dưới khoá định dạng CŨ mà MANG `ackValue.bam` ⇒ `lech` (T6d fix 1, review M1): băm chỉ được ghi từ T6d, và từ T6d chỉ ghi khoá v2
+ *     ⇒ hàng ấy là của một base KHÁC mà chuỗi v2 trùng chuỗi định dạng cũ của base này (base `v2:1:K:1` + tag `t` + 0 ≡ khoá v2 của base `K`);
  *   • hàng có `ackValue.bam` (ghi từ T6d) ⇒ băm = băm lệnh này (loại lệnh + tag + giá trị + kiểu + thứ tự);
  *   • hàng KHÔNG có băm (trước T6d) ⇒ FAIL-CLOSED: khác loại lệnh ⇒ lệch; giá trị khớp CHẮC CHẮN (`khopGiaTriChac`) ⇒ khớp; không chắc ⇒
  *     `khong_chac` (kết cục lần trước KHÔNG RÕ — từ chối DUPLICATE_IN_FLIGHT, không bao giờ ok, không bao giờ cho bên gọi thử lại khoá mới).
@@ -2142,17 +2151,20 @@ export type QuyetDinhKhoa =
 export function quyetDinhKhoa(
   input: DispatchInput,
   bam: string,
-  nguoiGoi: { requestedBy: number; triggerKind: string },
+  nguoiGoi: { requestedBy: number },
   h: HangTheoKhoa,
 ): QuyetDinhKhoa {
+  const chotNguoi = laKhoaBenGoiChon(input.idempotencyKey); // T6d fix 1 (I1): chốt người CHỈ cho khoá bên gọi chọn
   // "khop" = chắc chắn CÙNG lệnh; "lech" = chắc chắn lệnh KHÁC (cột sổ khác, hoặc băm khác); "khong_chac" = hàng trước T6d (không băm) cùng cột nhưng
   // GIÁ TRỊ không khớp chắc chắn (sổ lưu giá trị ĐÃ ép kiểu / chuẩn hoá ghim: "30.0" ⇒ 30, 1 ⇒ true) — không chứng minh được khác hay cùng.
-  const khopHang = (r: CommandLog, i: number): "khop" | "lech" | "khong_chac" => {
+  const bamCua = (x: CommandLog | undefined) => (x?.ackValue as { bam?: unknown } | null | undefined)?.bam;
+  const khopHang = (r: CommandLog, i: number, dinhDangCu: boolean): "khop" | "lech" | "khong_chac" => {
     const w: { tagKey: string | null; value: unknown } | undefined = input.writes[i] ?? (input.writes.length === 0 && i === 0 ? { tagKey: null, value: null } : undefined);
     if (!w || r.adapterId !== input.adapterId || (r.tagKey ?? null) !== w.tagKey) return "lech";
-    if (r.requestedBy !== nguoiGoi.requestedBy || (r.triggerKind ?? "hitl") !== nguoiGoi.triggerKind) return "lech";
-    const bamCua = (x: CommandLog | undefined) => (x?.ackValue as { bam?: unknown } | null | undefined)?.bam;
+    if (chotNguoi && r.requestedBy !== nguoiGoi.requestedBy) return "lech";
     const bamHang = bamCua(r);
+    // M1: khoá định dạng CŨ + có băm ⇒ hàng của base KHÁC (chuỗi v2 của nó trùng chuỗi cũ của base này) ⇒ không bao giờ phát lại
+    if (dinhDangCu && typeof bamHang === "string") return "lech";
     if (typeof bamHang === "string") return bamHang === bam ? "khop" : "lech";
     // hàng kết quả không băm GẮN với ý định cùng chỉ số (`ackValue.intentId`) — vd kết quả "không rõ" do người vận hành giải bằng hàm DB
     // `ot_write_intent_resolve` (mig 0374, chép cột của ý định nhưng không chép `bam`) ⇒ phán theo băm của CHÍNH ý định ấy
@@ -2165,11 +2177,11 @@ export function quyetDinhKhoa(
   const tatCa: CommandLog[] = [];
   let lech = false;
   let khongChac = false;
-  for (const ds of [h.ketQuaMoi, h.ketQuaCu, h.yDinhMoi, h.yDinhCu]) {
+  for (const [ds, dinhDangCu] of [[h.ketQuaMoi, false], [h.ketQuaCu, true], [h.yDinhMoi, false], [h.yDinhCu, true]] as const) {
     ds.forEach((r, i) => {
       if (!r) return;
       if (!tatCa.some((x) => x.id === r.id)) tatCa.push(r);
-      const k = khopHang(r, i);
+      const k = khopHang(r, i, dinhDangCu);
       if (k === "lech") lech = true;
       else if (k === "khong_chac") khongChac = true;
     });

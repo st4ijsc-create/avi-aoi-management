@@ -15,7 +15,7 @@
  *     nhất của đường lập trình gọi `dispatch()`), kể cả hàng `program_deployments` ghi TRƯỚC T6d (khoá thô). Lớp hai: chốt phát lại của dispatcher.
  * Census `khoaMienLapTrinh.census.test.ts`: MỌI khoá từ input bên gọi tới các điểm dẫn vào `dispatch()` đi qua các hàm này.
  */
-import { boundedKey } from "../ot/otActionBinding";
+import { boundedKey, laKhoaBenGoiChon } from "../ot/otActionBinding";
 
 /** Khoá idempotency của MỘT lượt deploy / yêu cầu duyệt / rollback: miền của người gọi. */
 export function khoaMienLapTrinh(userId: number, khoaBenGoi: string): string {
@@ -32,13 +32,19 @@ export function tienToMienLapTrinh(userId: number, tienToBenGoi: string): string
 
 /** Khoá đã ở miền lập trình (`pd:u<số>:…`). */
 export function laKhoaMienLapTrinh(khoa: string): boolean {
-  return /^pd:u\d+:/.test(khoa);
+  return laKhoaBenGoiChon(khoa); // MỘT vị từ (mô-đun OT trung lập) — dispatcher dùng cùng vị từ để quyết có chốt người yêu cầu hay không
+}
+
+/** Khoá đã ở miền lập trình CỦA ĐÚNG người này (`pd:u<userId>:…`, userId bằng đúng — không phải tiền tố số của người khác). */
+export function laKhoaMienCua(khoa: string, userId: number): boolean {
+  return khoa.startsWith(`pd:u${Math.trunc(userId)}:`);
 }
 
 /**
- * Khoá `dispatch()` của một lượt ghi thiết bị từ đường lập trình: khoá đã ở miền ⇒ giữ nguyên (hàng deploy từ T6d); khoá thô (hàng ghi TRƯỚC T6d, hoặc
- * bên gọi nội bộ quên đặt miền) ⇒ đặt vào miền của người yêu cầu. Khoá lập trình KHÔNG BAO GIỜ tới `dispatch()` ngoài miền `pd:`.
+ * Khoá `dispatch()` của một lượt ghi thiết bị từ đường lập trình: khoá đã ở miền CỦA người yêu cầu ⇒ giữ nguyên (hàng deploy từ T6d); khoá thô (hàng ghi
+ * TRƯỚC T6d, hoặc bên gọi nội bộ quên đặt miền) HOẶC khoá ở miền của NGƯỜI KHÁC (vd khoá thô trước T6d của A viết đúng chữ `pd:u<B>:K`) ⇒ đặt vào miền
+ * của người yêu cầu (T6d fix 1, review M2). Khoá lập trình KHÔNG BAO GIỜ tới `dispatch()` ngoài miền `pd:u<người yêu cầu>:`.
  */
 export function khoaDispatchLapTrinh(khoa: string, nguoiYeuCau: number): string {
-  return laKhoaMienLapTrinh(khoa) ? khoa : khoaMienLapTrinh(nguoiYeuCau, khoa);
+  return laKhoaMienCua(khoa, nguoiYeuCau) ? khoa : khoaMienLapTrinh(nguoiYeuCau, khoa);
 }

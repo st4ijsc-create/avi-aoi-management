@@ -14,7 +14,9 @@
  *     `const { dispatch } = await import(…commandDispatcher)` hoặc `ns.dispatch` của `import * as ns` / `const ns = await import(…)`. Mỗi tham chiếu (lời gọi
  *     hoặc truyền như giá trị) phải nằm trong `SO_CAI_DISPATCH` với NGUỒN KHOÁ đã phân loại; đường lập trình (`mien_lap_trinh`) phải có thuộc tính
  *     `idempotencyKey` của đối số là lời gọi `khoaDispatchLapTrinh(…)`. Điểm mới / điểm biến mất ⇒ đỏ.
- * Chống quét rỗng: (A) tập điểm gọi ĐÃ đặt miền ĐÚNG bằng `DIEM_DA_DAT_MIEN`; (B) tập tham chiếu ĐÚNG bằng sổ cái; số tệp quét > 0.
+ * (D) T6d fix 1 (review M4) — sổ cái MỌI chỗ tra / ghi `program_deployments` theo khoá (`eq(programDeployments.idempotencyKey, …)` / `.insert(programDeployments)`)
+ *     trong `server/**`: chỗ tra phải lọc `requestedBy`; nguồn khoá đã phân loại (`mien_trong_ham` ⇒ hàm bao gọi hàm đặt miền — vd URSim deploy).
+ * Chống quét rỗng: (A) tập điểm gọi ĐÃ đặt miền ĐÚNG bằng `DIEM_DA_DAT_MIEN`; (B), (D) tập tham chiếu ĐÚNG bằng sổ cái; số tệp quét > 0.
  *
  * GIỚI HẠN (ghi rõ): (A) lan khoá bên gọi chỉ qua KHAI BÁO biến trong cùng tệp (không qua phép gán lại, tham số hàm, thuộc tính đối tượng dựng rời);
  * (B) không phân giải `dispatch` truyền qua nhiều lớp biến (vd `const f = dispatch; f(…)` được đếm là MỘT tham chiếu ở chỗ gán — vẫn vào sổ cái).
@@ -27,7 +29,8 @@ import ts from "typescript";
 
 const GOC = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const THU_MUC_BEN_GOI = ["server/routers", "server/routes", "server/api"];
-const DIEM_TOI_DISPATCH = new Set(["deployBuild", "requestDeployApproval", "rollbackDeployment", "deployToFleet", "assertIdempotencyKeyConsistent", "dispatch", "executeCommand", "sendCommand"]);
+// T6d fix 1 (review M4): + `deployUrscriptToUrsim` (ghi `program_deployments` theo khoá bên gọi; đặt miền trong hàm + §D) — bên gọi mới từ input ⇒ (A) bắt
+const DIEM_TOI_DISPATCH = new Set(["deployBuild", "requestDeployApproval", "rollbackDeployment", "deployToFleet", "assertIdempotencyKeyConsistent", "dispatch", "executeCommand", "sendCommand", "deployUrscriptToUrsim"]);
 const HAM_DAT_MIEN = new Set(["khoaMienLapTrinh", "tienToMienLapTrinh", "khoaDispatchLapTrinh"]);
 const GOC_BEN_GOI = new Set(["input", "body", "req", "params", "query", "args", "cmd"]);
 const TRUONG_KHOA = new Set(["idempotencyKey", "idempotencyKeyPrefix"]);
@@ -333,5 +336,95 @@ describe("★★★ census T6d — khoá idempotency của bên gọi tới disp
     expect(thamChieuDispatch("server/x.ts", `import { dispatch } from "./ot/commandDispatcher"; const deps = { dispatch, x: 1 };`)).toEqual([{ diem: "server/x.ts#<module>", khoaQuaMienLapTrinh: false }]); // thuộc tính rút gọn = truyền như giá trị
     expect(thamChieuDispatch("server/x.ts", `import { dispatch } from "./ot/commandDispatcher"; start({ dispatch: dispatch });`)).toEqual([{ diem: "server/x.ts#<module>", khoaQuaMienLapTrinh: false }]);
     expect(thamChieuDispatch("server/x.ts", `import { isOtControlEnabled } from "./ot/commandDispatcher"; dispatch(x);`)).toEqual([]); // dispatch KHÁC (không nhập từ commandDispatcher)
+  });
+});
+
+/**
+ * (D) SCADA R1b-2b-2a T6d fix 1 (review M4) — SỔ CÁI mọi chỗ TRA / GHI `program_deployments` THEO KHOÁ trong `server/**` (không test):
+ *   • tra = lời gọi `eq(programDeployments.idempotencyKey, …)` — phải nằm trong `and(…)` có `eq(programDeployments.requestedBy, …)` (chỉ hàng của CHÍNH
+ *     người gọi: khoá của người / nhà máy khác không bao giờ trả hàng của họ, không lộ "đã tồn tại");
+ *   • ghi = `.insert(programDeployments)`.
+ * Mỗi chỗ (tệp#hàm-bao) phải có trong `SO_CAI_PROGRAM_DEPLOYMENTS` với NGUỒN khoá đã phân loại; `mien_trong_ham` ⇒ CHÍNH hàm bao gọi một hàm đặt miền.
+ * Chỗ mới / chỗ biến mất ⇒ đỏ.
+ */
+type NguonKhoaDeploy = "mien_o_router" | "mien_trong_ham" | "mien_o_ben_goi_noi_bo";
+const SO_CAI_PROGRAM_DEPLOYMENTS: Record<string, [NguonKhoaDeploy, string]> = {
+  "server/services/programming/programmingService.ts#deployBuild": ["mien_o_router", "req.idempotencyKey = khoaMienLapTrinh(ctx.user.id, input.idempotencyKey) ở programmingRouter (§A); approve / rollback / fleet truyền khoá đã lưu (đã miền)"],
+  "server/services/programming/programmingService.ts#findDeploymentByKey": ["mien_o_router", "khoá đã miền từ deployBuild / requestDeployApproval / timDeployTruoc; lọc requestedBy"],
+  "server/services/programming/programmingService.ts#requestDeployApproval": ["mien_o_router", "req.idempotencyKey = khoaMienLapTrinh(…) ở programmingRouter (§A)"],
+  "server/services/robot/ursim/ursimDeployService.ts#deployUrscriptToUrsim": ["mien_trong_ham", "khoaDispatchLapTrinh(req.idempotencyKey, req.hitl.requestedBy) ĐẦU hàm; tra lọc requestedBy (chưa có bên gọi sản xuất — T6d fix 1, review M4)"],
+  "server/services/robot/ursim/ursimDeployService.ts#record": ["mien_o_ben_goi_noi_bo", "chỉ được gọi từ deployUrscriptToUrsim với req ĐÃ đặt miền"],
+};
+
+export interface ChoDeployTheoKhoa {
+  diem: string;
+  loai: "tra" | "ghi";
+  /** tra: nằm trong `and(…)` có `eq(programDeployments.requestedBy, …)`. */
+  locNguoi: boolean;
+  /** hàm bao gần nhất có gọi một hàm đặt miền. */
+  hamCoDatMien: boolean;
+}
+
+/** (D) Mọi chỗ tra / ghi `program_deployments` theo khoá trong MỘT tệp. */
+export function deployTheoKhoa(rel: string, src: string): ChoDeployTheoKhoa[] {
+  if (!src.includes("programDeployments")) return [];
+  const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const laCot = (e: ts.Expression | undefined, cot: string) => !!e && ts.isPropertyAccessExpression(e) && e.name.text === cot && ts.isIdentifier(e.expression) && e.expression.text === "programDeployments";
+  const laEqCot = (e: ts.Node, cot: string) => ts.isCallExpression(e) && tenGoi(e.expression) === "eq" && laCot(e.arguments[0], cot);
+  const hamGan = (n: ts.Node): ts.Node => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isFunctionDeclaration(p) || ts.isMethodDeclaration(p) || ts.isFunctionExpression(p) || ts.isArrowFunction(p)) return p;
+    return sf;
+  };
+  const coDatMien = (h: ts.Node): boolean => {
+    let co = false;
+    const t = (m: ts.Node): void => {
+      if (co) return;
+      if (ts.isCallExpression(m) && HAM_DAT_MIEN.has(tenGoi(m.expression) ?? "")) co = true;
+      else ts.forEachChild(m, t);
+    };
+    t(h);
+    return co;
+  };
+  const ra: ChoDeployTheoKhoa[] = [];
+  const tham = (n: ts.Node): void => {
+    if (laEqCot(n, "idempotencyKey")) {
+      const p = n.parent;
+      const locNguoi = ts.isCallExpression(p) && tenGoi(p.expression) === "and" && p.arguments.some((a) => laEqCot(a, "requestedBy"));
+      ra.push({ diem: `${rel}#${hamBao(n)}`, loai: "tra", locNguoi, hamCoDatMien: coDatMien(hamGan(n)) });
+    }
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "insert" && n.arguments.length === 1 && ts.isIdentifier(n.arguments[0]!) && (n.arguments[0] as ts.Identifier).text === "programDeployments") {
+      ra.push({ diem: `${rel}#${hamBao(n)}`, loai: "ghi", locNguoi: true, hamCoDatMien: coDatMien(hamGan(n)) });
+    }
+    ts.forEachChild(n, tham);
+  };
+  tham(sf);
+  return ra;
+}
+
+describe("★★★ census T6d fix 1 (§D, review M4) — mọi chỗ tra / ghi program_deployments theo khoá: đã phân loại miền, tra lọc người yêu cầu", () => {
+  const cho: ChoDeployTheoKhoa[] = [];
+  for (const p of liet(join(GOC, "server"))) {
+    const rel = relative(GOC, p).replace(/\\/g, "/");
+    cho.push(...deployTheoKhoa(rel, readFileSync(p, "utf8")));
+  }
+
+  it("sổ cái: tập chỗ ĐÚNG bằng sổ (chỗ mới / biến mất ⇒ đỏ; chống quét rỗng); mọi chỗ TRA lọc requestedBy; `mien_trong_ham` ⇒ hàm bao gọi hàm đặt miền", () => {
+    expect(cho.length).toBeGreaterThanOrEqual(6); // đo 2026-11-01: programmingService 3 ghi + 1 tra, URSim 1 tra + 1 ghi
+    expect([...new Set(cho.map((c) => c.diem))].sort()).toEqual(Object.keys(SO_CAI_PROGRAM_DEPLOYMENTS).sort());
+    expect(cho.filter((c) => c.loai === "tra" && !c.locNguoi)).toEqual([]);
+    for (const c of cho) {
+      if (SO_CAI_PROGRAM_DEPLOYMENTS[c.diem]![0] === "mien_trong_ham") expect({ diem: c.diem, mien: c.hamCoDatMien }).toEqual({ diem: c.diem, mien: true });
+    }
+    expect(cho.filter((c) => c.diem.endsWith("ursimDeployService.ts#deployUrscriptToUrsim")).map((c) => c.loai)).toEqual(["tra"]);
+  });
+
+  it("§D ĐỘT BIẾN tệp ảo: tra theo khoá KHÔNG lọc requestedBy ⇒ locNguoi=false; bỏ hàm đặt miền ⇒ hamCoDatMien=false; tra có lọc ⇒ ổn", () => {
+    expect(deployTheoKhoa("server/x.ts", `export async function f(k) { return db.select().from(programDeployments).where(eq(programDeployments.idempotencyKey, k)); }`)).toEqual([
+      { diem: "server/x.ts#f", loai: "tra", locNguoi: false, hamCoDatMien: false },
+    ]);
+    expect(
+      deployTheoKhoa("server/x.ts", `export async function f(r) { const k = khoaDispatchLapTrinh(r.k, r.u); return db.select().from(programDeployments).where(and(eq(programDeployments.idempotencyKey, k), eq(programDeployments.requestedBy, r.u))); }`),
+    ).toEqual([{ diem: "server/x.ts#f", loai: "tra", locNguoi: true, hamCoDatMien: true }]);
+    expect(deployTheoKhoa("server/x.ts", `async function g(v) { await db.insert(programDeployments).values(v); }`)).toEqual([{ diem: "server/x.ts#g", loai: "ghi", locNguoi: true, hamCoDatMien: false }]);
   });
 });

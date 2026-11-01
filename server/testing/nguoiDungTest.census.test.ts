@@ -114,11 +114,15 @@ export const HOAN_TAC: readonly string[] = [
   "server/services/edge/edgeStopNeverDropped.dot10.db.test.ts",
   "server/services/edge/otIntentResolve.dot10.db.test.ts",
   "server/services/edge/otIntentResultRace.dot10.db.test.ts",
+  // SCADA R1b-2b-2a T6d fix 1 (2026-11-01, dieu-phoi: test KHÔNG BAO GIỜ DELETE / TRUNCATE, mọi dọn dẹp bằng ROLLBACK) — người dùng chèn trong giao dịch
+  // ROLLBACK của từng ca (D14: người giải ý định cho hàm DB ot_write_intent_resolve; router: hai giám sát viên A / B), không qua helper (helper DELETE).
+  "server/routers/khoaMienLapTrinh.t6d.db.test.ts",
+  "server/services/ot/khoaIdempotency.t6d.r1b2b2.db.test.ts",
 ];
 
 /** Trần — hạ khi chuyển thêm. */
 const TRAN_CHUA_DON = 0;
-const TRAN_HOAN_TAC = 8;
+const TRAN_HOAN_TAC = 10; // 8 → 10 (2026-11-01, T6d fix 1): luật dieu-phoi mới "test không DELETE, dọn bằng ROLLBACK" ⇒ HOAN_TAC là nhóm ĐÚNG cho tệp mới
 const TRAN_TU_DON = 72;
 
 function lietKeTest(): string[] {

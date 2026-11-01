@@ -66,7 +66,7 @@ import { aiPendingActions, commandLog, orchestrationRunSteps, orchestrationRuns 
 import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
-import { __catSauGhiThietBiChoTest, perWriteKey, type DispatchInput } from "../../ot/commandDispatcher";
+import { __catSauGhiThietBiChoTest, bamLenhOt, perWriteKey, type DispatchInput } from "../../ot/commandDispatcher";
 import { makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns } from "./foeEngine";
 import type { WorkflowStep } from "./workflowModel";
@@ -299,6 +299,90 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       const tuChoi = await tx.select().from(commandLog).where(and(like(commandLog.idempotencyKey, `v2:%:run${runId}-main-a%`), eq(commandLog.status, "rejected"))); // T6d — khoá v2
       expect(tuChoi.map((x) => x.idempotencyKey).sort()).toEqual([1, 2, 3].map((n) => perWriteKey(`run${runId}-main-a${n}`, "a", 0)).sort());
       expect(tuChoi.every((x) => String(x.errorText).startsWith("TAG_NOT_WRITABLE"))).toBe(true);
+    });
+    expect(H.bay).toBe(0);
+  });
+  // ── SCADA R1b-2b-2a T6d fix 1 (review I1 + bộ điều khiển) ─────────────────────────────────────────────────────────────────────────────────────────
+  // FOE tiếp tục bền chạy dưới SYSTEM_FOE_USER; hàng sổ của lần đi TRƯỚC cùng khoá `run<N>-main-a1` có thể mang người yêu cầu KHÁC (lần đi đầu do người dùng
+  // chạy / một đường không cổng ghi user.id). Khoá FOE là khoá MÁY CHỦ sinh ⇒ chốt phát lại CHỈ adapter + tag + băm + commandType: không bao giờ
+  // IDEMPOTENCY_KEY_REUSED vì người khác, không attempt key mới, không ghi thiết bị lần hai. Và nếu khoá thật sự mang lệnh KHÁC (băm lệch ⇒
+  // IDEMPOTENCY_KEY_REUSED) ⇒ lớp "có thể đã áp": FOE KHÔNG gửi lại với khoá mới.
+  const NGUOI_LAN_TRUOC = 990_913_103;
+  const bamStart = bamLenhOt({ commandType: "start", writes: [{ tagKey: "a", value: 5 }] });
+  async function hangLanTruoc(tx: Tx, o: { a1: number; m1: number; key: string; status: "sent" | "acked"; ackValue: unknown }) {
+    await tx.insert(commandLog).values({
+      actionId: null,
+      adapterId: o.a1,
+      machineId: o.m1,
+      tagKey: "a",
+      address: "DB1,INT0",
+      commandType: "start",
+      requestedValue: 5 as never,
+      requestedBy: NGUOI_LAN_TRUOC,
+      confirmedBy: APPROVER,
+      status: o.status,
+      ackValue: o.ackValue as never,
+      idempotencyKey: o.key,
+      sentAt: new Date(),
+    });
+  }
+  const buocMain = (m1: number) => ({ id: "main", type: "command" as const, machineId: m1, command: "start", args: { tagKey: "a", value: 5 }, maxAttempts: 2 });
+
+  it("★ (4) T6d fix 1 — tiếp tục dưới SYSTEM_FOE_USER, ý định a1 của lần trước (CÙNG lệnh, người yêu cầu KHÁC) ⇒ DUPLICATE_IN_FLIGHT (không IDEMPOTENCY_KEY_REUSED), 0 PDU, KHÔNG attempt key a2", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, a1 } = await dungThietBi(tx);
+      const runId = await dungRun(buocMain(m1));
+      await hangLanTruoc(tx, { a1, m1, key: `intent:${perWriteKey(`run${runId}-main-a1`, "a", 0)}`, status: "sent", ackValue: { ledger: "intent", bam: bamStart } });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      expect(soPduGhi() - pdu0).toBe(0); // ★ thiết bị KHÔNG bị ghi lần hai
+      const main = await buoc(tx, runId, "main");
+      expect(main?.status).toBe("failed");
+      expect(String(main?.error)).toMatch(new RegExp(`^${FOE_OUTCOME_UNKNOWN}: DUPLICATE_IN_FLIGHT: `));
+      expect(String(main?.error)).not.toContain("IDEMPOTENCY_KEY_REUSED");
+      expect(await tx.select().from(aiPendingActions).where(like(aiPendingActions.id, `foe-run${runId}-main-a%`)).then((x) => x.map((a) => a.id))).toEqual([`foe-run${runId}-main-a1`]);
+      expect(await ketQuaCuaKhoa(tx, `run${runId}-main-a2`)).toHaveLength(0);
+      expect(await ketQuaCuaKhoa(tx, `intent:run${runId}-main-a2`)).toHaveLength(0);
+    });
+    expect(H.bay).toBe(0);
+  });
+
+  it("★ (5) T6d fix 1 — tiếp tục dưới SYSTEM_FOE_USER, lần trước ĐÃ áp (ý định + kết quả acked, CÙNG lệnh, người yêu cầu KHÁC) ⇒ PHÁT LẠI: bước hoàn tất, 0 PDU, không a2", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, a1 } = await dungThietBi(tx);
+      const runId = await dungRun(buocMain(m1));
+      await hangLanTruoc(tx, { a1, m1, key: `intent:${perWriteKey(`run${runId}-main-a1`, "a", 0)}`, status: "sent", ackValue: { ledger: "intent", bam: bamStart } });
+      await hangLanTruoc(tx, { a1, m1, key: perWriteKey(`run${runId}-main-a1`, "a", 0), status: "acked", ackValue: { ledger: "result", bam: bamStart } });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      expect(soPduGhi() - pdu0).toBe(0); // ★ phát lại, không ghi thiết bị
+      const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId));
+      expect(run!.status).toBe("completed");
+      const main = await buoc(tx, runId, "main");
+      expect(main?.status).toBe("completed");
+      expect(main?.attempt).toBe(1);
+      expect(await ketQuaCuaKhoa(tx, `run${runId}-main-a2`)).toHaveLength(0);
+    });
+    expect(H.bay).toBe(0);
+  });
+
+  it("★ (6) T6d fix 1 (bộ điều khiển) — khoá a1 mang lệnh KHÁC (băm lệch) ⇒ IDEMPOTENCY_KEY_REUSED = lớp \"có thể đã áp\": FOE KHÔNG gửi lại với attempt key a2, 0 PDU; câu lỗi nói THẬT (không rõ đã áp chưa — kiểm thiết bị)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, a1 } = await dungThietBi(tx);
+      const runId = await dungRun(buocMain(m1));
+      await hangLanTruoc(tx, { a1, m1, key: perWriteKey(`run${runId}-main-a1`, "a", 0), status: "acked", ackValue: { ledger: "result", bam: "lenh-khac" } });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      const main = await buoc(tx, runId, "main");
+      expect(main?.status).toBe("failed");
+      expect(main?.attempt).toBe(1);
+      expect(String(main?.error)).toMatch(
+        new RegExp(`^${FOE_OUTCOME_UNKNOWN}: IDEMPOTENCY_KEY_REUSED: command "start" — .*unknown whether that earlier command was applied to the device; check the device before continuing; outcome unknown — not sent again; check the device\\.$`),
+      );
+      expect(await tx.select().from(aiPendingActions).where(like(aiPendingActions.id, `foe-run${runId}-main-a%`)).then((x) => x.map((a) => a.id))).toEqual([`foe-run${runId}-main-a1`]);
+      expect(await ketQuaCuaKhoa(tx, `run${runId}-main-a2`)).toHaveLength(0);
+      expect(await ketQuaCuaKhoa(tx, `intent:run${runId}-main-a2`)).toHaveLength(0);
     });
     expect(H.bay).toBe(0);
   });

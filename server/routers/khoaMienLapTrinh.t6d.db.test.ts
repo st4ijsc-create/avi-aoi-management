@@ -28,7 +28,6 @@ vi.mock("../db/connection", async (importOriginal) => {
 });
 
 import * as conn from "../db/connection";
-import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { khoaMienLapTrinh, tienToMienLapTrinh } from "../services/programming/khoaMienLapTrinh";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -52,7 +51,9 @@ async function seed(ten: string): Promise<Nm> {
   const [l] = await dung(sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${w.id}, ${code}, ${code}) RETURNING id`);
   const [s] = await dung(sql`INSERT INTO stations ("lineId", code, name) VALUES (${l.id}, ${code}, ${code}) RETURNING id`);
   const [m] = await dung(sql`INSERT INTO machines ("stationId", code, name, "machineType") VALUES (${s.id}, ${code}, ${code}, 'AOI') RETURNING id`);
-  const u = await taoNguoiDungTest(`${ten.toLowerCase()}${soCa}`, "supervisor", { tienTo: "t6d", ts: RUN, ten: `T6D ${ten}` });
+  // T6d fix 1 (review M3, dieu-phoi: test KHÔNG BAO GIỜ DELETE / TRUNCATE — dọn bằng ROLLBACK) — người dùng chèn TRONG giao dịch của ca (như các bảng
+  // khác), không qua helper `taoNguoiDungTest` (helper đăng ký afterAll DELETE ngoài giao dịch)
+  const [u] = await dung(sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`t6d-${code}`}, ${`t6d-${code}`}, ${`T6D ${ten}`}, 'supervisor', true) RETURNING id`);
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${code})`);
   const [p] = await dung(sql`INSERT INTO program_projects (code, name, kind, "factoryId", "deviceId") VALUES (${code + "-P"}, ${"P" + ten}, 'stub', ${f.id}, ${m.id}) RETURNING id`);
   const [a] = await dung(sql`INSERT INTO program_artifacts ("projectId", branch, version, kind, language, content, "contentHash", status) VALUES (${p.id}, 'main', 1, 'stub', 'txt', ${"src-" + ten}, ${"h" + ten}, 'draft') RETURNING id`);

@@ -72,6 +72,8 @@ import { adapterTargetFingerprint } from "./adapterTarget";
 import { dispatch, perWriteKey, bamLenhOt, quyetDinhKhoa, MA_KHOA_DUNG_LAI, type DispatchResult, type DispatchInput, type HangTheoKhoa } from "./commandDispatcher";
 import type { OtCommandResult, OtWrite } from "./otDriver";
 import { coTheDaBayCua } from "../equipment/lenhTruocCoTheDaBay";
+import { interlockEvents, interlockRules } from "../../../drizzle/schema";
+import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `T6D-${Date.now()}`;
@@ -221,9 +223,9 @@ describe("T6d — khoá không mơ hồ (thuần)", () => {
     const ab = [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }];
     expect(bamLenhOt({ commandType: "set_param", writes: ab })).not.toBe(bamLenhOt({ commandType: "set_param", writes: [...ab].reverse() }));
   });
-  it("quyetDinhKhoa: bảng quyết định (băm / adapter / tag / người gọi / hàng cũ khớp chắc chắn / ý định)", () => {
+  it("quyetDinhKhoa: bảng quyết định (băm / adapter / tag / người yêu cầu CHỈ cho khoá `pd:` / hàng cũ khớp chắc chắn / ý định)", () => {
     const input = { adapterId: 1, commandType: "set_param", writes: [{ tagKey: "t", value: "245" }], idempotencyKey: "K", triggeredBy: { kind: "hitl", requestedBy: 7 } } as unknown as DispatchInput;
-    const ng = { requestedBy: 7, triggerKind: "hitl" };
+    const ng = { requestedBy: 7 };
     const hang = (o: Partial<{ id: number; adapterId: number; tagKey: string; commandType: string; requestedValue: unknown; ackValue: unknown; status: string; requestedBy: number; triggerKind: string }>) =>
       ({ id: 1, adapterId: 1, tagKey: "t", commandType: "set_param", requestedValue: 245, ackValue: { ledger: "result" }, status: "acked", requestedBy: 7, triggerKind: "hitl", ...o }) as never;
     const h = (o: Partial<HangTheoKhoa>): HangTheoKhoa => ({ ketQuaMoi: [undefined], ketQuaCu: [undefined], yDinhMoi: [undefined], yDinhCu: [undefined], ...o });
@@ -235,8 +237,23 @@ describe("T6d — khoá không mơ hồ (thuần)", () => {
     expect(q({ ketQuaMoi: [hang({ ackValue: { bam: "khac" } })] })).toBe("lech"); // payload khác
     expect(q({ ketQuaMoi: [hang({ ackValue: { bam: b }, adapterId: 2 })] })).toBe("lech"); // adapter khác
     expect(q({ ketQuaMoi: [hang({ ackValue: { bam: b }, tagKey: "u" })] })).toBe("lech"); // tag khác
-    expect(q({ ketQuaMoi: [hang({ ackValue: { bam: b }, requestedBy: 8 })] })).toBe("lech"); // người gọi khác
-    expect(q({ ketQuaMoi: [hang({ ackValue: { bam: b }, triggerKind: "interlock" })] })).toBe("lech"); // nguồn kích hoạt khác
+    // T6d fix 1 (I1): khoá MÁY CHỦ sinh ⇒ chốt ĐÚNG adapter + tag + băm + commandType: người yêu cầu / nguồn kích hoạt khác VẪN phát lại
+    for (const khoa of ["K", "il-12-34", "run55-main-a1", `hmi:${randomUUID()}`, "hmistop:x", "foe-run1-main-a1", "edge:n1:j1"]) {
+      const ik = { ...input, idempotencyKey: khoa } as DispatchInput;
+      expect(quyetDinhKhoa(ik, b, ng, h({ ketQuaMoi: [hang({ ackValue: { bam: b }, requestedBy: 8 })] })).loai, khoa).toBe("phat_lai");
+      expect(quyetDinhKhoa(ik, b, ng, h({ ketQuaMoi: [hang({ ackValue: { bam: b }, triggerKind: "interlock" })] })).loai, khoa).toBe("phat_lai");
+      expect(quyetDinhKhoa(ik, b, ng, h({ ketQuaCu: [hang({ requestedBy: 8, triggerKind: "interlock" })] })).loai, khoa).toBe("phat_lai"); // nhánh hàng CŨ cũng vậy
+      expect(quyetDinhKhoa(ik, b, ng, h({ yDinhMoi: [hang({ status: "sent", ackValue: { ledger: "intent", bam: b }, requestedBy: 0 })] })).loai, khoa).toBe("dang_bay");
+    }
+    // khoá BÊN GỌI chọn (miền lập trình `pd:u<N>:`) ⇒ người yêu cầu khác = lệch (cả hàng mới lẫn hàng cũ)
+    const pd = { ...input, idempotencyKey: "pd:u7:K" } as DispatchInput;
+    expect(quyetDinhKhoa(pd, b, ng, h({ ketQuaMoi: [hang({ ackValue: { bam: b }, requestedBy: 8 })] })).loai).toBe("lech");
+    expect(quyetDinhKhoa(pd, b, ng, h({ ketQuaCu: [hang({ requestedBy: 8 })] })).loai).toBe("lech");
+    expect(quyetDinhKhoa(pd, b, ng, h({ ketQuaMoi: [hang({ ackValue: { bam: b } })] })).loai).toBe("phat_lai");
+    expect(quyetDinhKhoa(pd, b, ng, h({ ketQuaMoi: [hang({ ackValue: { bam: b }, triggerKind: "interlock" })] })).loai).toBe("phat_lai"); // triggerKind không thuộc chốt
+    // M1: hàng tìm dưới khoá định dạng CŨ mà MANG băm (kể cả băm bằng) ⇒ của base khác ⇒ lệch, không bao giờ phát lại
+    expect(q({ ketQuaCu: [hang({ ackValue: { bam: b } })] })).toBe("lech");
+    expect(q({ yDinhCu: [hang({ status: "sent", ackValue: { ledger: "intent", bam: b } })] })).toBe("lech");
     // hàng CŨ (không băm): khớp chắc chắn ⇒ phát lại; giá trị không chắc ⇒ khong_chac (kết cục KHÔNG RÕ); cột / loại lệnh khác ⇒ lệch
     expect(q({ ketQuaCu: [hang({})] })).toBe("phat_lai"); // "245" ≡ 245
     expect(q({ ketQuaCu: [hang({ requestedValue: 246 })] })).toBe("khong_chac");
@@ -351,7 +368,8 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(r.ok).toBe(false);
       expect(r.reason).toBe("DUPLICATE_IN_FLIGHT"); // không phải IDEMPOTENCY_KEY_REUSED: FOE sẽ KHÔNG thử lại với khoá mới (coTheDaBayCua)
       expect(coTheDaBayCua({ ok: false, detail: { reason: r.reason } })).toBe("DUPLICATE_IN_FLIGHT");
-      expect(coTheDaBayCua({ ok: false, detail: { reason: MA_KHOA_DUNG_LAI } })).toBeNull(); // lệch CHẮC CHẮN ⇒ lệnh này chưa gửi ⇒ thử lại được
+      // T6d fix 1 (bộ điều khiển): lệch cũng thuộc lớp "có thể đã bay" — lệnh TRƯỚC cùng khoá có thể đã áp ⇒ FOE không thử lại với khoá mới
+      expect(coTheDaBayCua({ ok: false, detail: { reason: MA_KHOA_DUNG_LAI } })).toBe(MA_KHOA_DUNG_LAI);
       expect(d.soGhi).toBe(0);
     });
     expect(H.bay).toBe(0);
@@ -430,11 +448,11 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
     });
     expect(H.bay).toBe(0);
   }, 30_000);
-  it("★ D4b khoá trùng, CÙNG adapter / tag / payload nhưng NGƯỜI GỌI khác ⇒ từ chối (không lộ kết quả của người kia), 0 gói", async () => {
+  it("★ D4b khoá BÊN GỌI chọn (`pd:u<A>:`) trùng, CÙNG adapter / tag / payload nhưng NGƯỜI YÊU CẦU khác ⇒ từ chối (không lộ kết quả của người kia), 0 gói", async () => {
     await trongGiaoDich(async (tx) => {
       const d = driverGia();
       const ad = await taoAdapter(tx, d);
-      const K = khoaMoi();
+      const K = `pd:u${OWNER}:${khoaMoi()}`;
       const a = await gui(tx, ad, [{ tagKey: "t", value: 1 }], K);
       const b = await gui(tx, ad, [{ tagKey: "t", value: 1 }], K, "set_param", KHAC);
       expect(a.ok).toBe(true);
@@ -571,6 +589,96 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(chieu(r2)).toEqual(chieu(r1));
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       expect(d.soGhi).toBe(0);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+  it("★ D16 (T6d fix 1, I1) khoá MÁY CHỦ sinh (`il-`, `run…`, `hmi:`) với NGƯỜI YÊU CẦU khác, cùng adapter / tag / payload ⇒ phát lại như cũ (= sống), 0 gói thêm; ý định treo ⇒ DUPLICATE_IN_FLIGHT (không IDEMPOTENCY_KEY_REUSED)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "t", value: 1 }];
+      for (const K of [`il-${Math.floor(Math.random() * 1e6)}-${Math.floor(Math.random() * 1e6)}`, `run${Math.floor(Math.random() * 1e6)}-main-a1`, `hmi:${randomUUID()}`]) {
+        const truoc = d.soGhi;
+        const a = await gui(tx, ad, writes, K);
+        const b = await gui(tx, ad, writes, K, "set_param", KHAC);
+        expect(a.ok, K).toBe(true);
+        expect(chieu(b), K).toEqual(chieu(a));
+        expect(b.reason ?? null, K).not.toBe(MA_KHOA_DUNG_LAI);
+        expect(d.soGhi - truoc, K).toBe(1);
+      }
+      // ý định treo (lần trước của người khác, cùng lệnh) ⇒ đang bay ⇒ DUPLICATE_IN_FLIGHT, 0 gói
+      const K2 = `run${Math.floor(Math.random() * 1e6)}-main-a1`;
+      await chenHang(tx, { adapterId: ad, tagKey: "t", value: 1, status: "sent", ackValue: { ledger: "intent", bam: bamLenhOt({ commandType: "set_param", writes }) }, key: `intent:${perWriteKey(K2, "t", 0)}` });
+      const truoc = d.soGhi;
+      expect((await gui(tx, ad, writes, K2, "set_param", KHAC)).reason).toBe("DUPLICATE_IN_FLIGHT");
+      expect(d.soGhi).toBe(truoc);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ D17 (T6d fix 1, M1) hàng ghi dưới khoá định dạng CŨ mà MANG băm (base `v2:1:K:1`, tag `t`, chỉ số 0 ≡ khoá v2 của base `K`) ⇒ lệch: KHÔNG phát lại kết quả của lệnh K, 0 gói", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "t", value: 1 }];
+      // đúng ca của review: base `K` một ký tự ⇒ khoá v2 `v2:1:K:1:t:0`; base `v2:1:K:1` ⇒ chuỗi định dạng CŨ `v2:1:K:1:t:0` (trùng)
+      const a = await gui(tx, ad, writes, "K");
+      expect(a.ok).toBe(true);
+      expect(perWriteKey("K", "t", 0)).toBe("v2:1:K:1:t:0");
+      const b = await gui(tx, ad, writes, "v2:1:K:1");
+      expect(b).toMatchObject({ ok: false, status: "rejected", reason: MA_KHOA_DUNG_LAI });
+      expect(b.commandLogIds.some((id) => a.commandLogIds.includes(id))).toBe(false);
+      expect(d.soGhi).toBe(1);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ D18 (T6d fix 1, I1) interlock gửi lại cùng khoá `il-<luật>-<sự kiện>` SAU KHI luật được NGƯỜI KHÁC duyệt lại ⇒ phát lại như cũ, 0 gói thêm (không IDEMPOTENCY_KEY_REUSED)", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const [rule] = await tx
+        .insert(interlockRules)
+        .values({
+          name: `${DAU} rule`,
+          scope: "machine",
+          machineId: MACHINE,
+          sourceType: "ng_rate",
+          comparisonOperator: "gt",
+          threshold: "99999",
+          action: "reduce_speed",
+          targetMachineId: MACHINE,
+          targetAdapterId: ad,
+          commandTag: "t",
+          commandValue: 30 as never,
+          requiresHumanConfirm: false,
+          enabled: true,
+          approvedBy: OWNER,
+          approvedAt: new Date(),
+        })
+        .returning();
+      await dongDauDuyetLuat(rule!.id);
+      const [ev] = await tx.insert(interlockEvents).values({ ruleId: rule!.id, action: "reduce_speed", status: "fired" }).returning();
+      const K = `il-${rule!.id}-${ev!.id}`;
+      const il = (approvedBy: number): DispatchInput => ({
+        adapterId: ad,
+        machineId: MACHINE,
+        commandType: "reduce_speed",
+        writes: [{ tagKey: "t", value: 30 }],
+        triggeredBy: { kind: "interlock", ruleId: rule!.id, eventId: ev!.id, approvedBy },
+        idempotencyKey: K,
+      });
+      const a = await dispatch(il(OWNER));
+      expect(a).toMatchObject({ ok: true, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      // người KHÁC duyệt lại luật (cùng định nghĩa) ⇒ lệnh interlock lần sau mang approvedBy = KHAC (requestedBy của hàng sổ đổi)
+      await tx.update(interlockRules).set({ approvedBy: KHAC, approvedAt: new Date() }).where(inArray(interlockRules.id, [rule!.id]));
+      await dongDauDuyetLuat(rule!.id);
+      const b = await dispatch(il(KHAC));
+      expect(chieu(b)).toEqual(chieu(a));
+      expect(b.reason ?? null).not.toBe(MA_KHOA_DUNG_LAI);
+      expect(d.soGhi).toBe(1);
     });
     expect(H.bay).toBe(0);
   }, 30_000);

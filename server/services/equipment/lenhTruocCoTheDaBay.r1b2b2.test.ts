@@ -6,6 +6,8 @@
  * foeDuplicateInFlight.r1b2b2.db.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const M = vi.hoisted(() => ({
   ot: vi.fn(),
@@ -24,7 +26,7 @@ vi.mock("../robot/robotCommandDispatcher", async (importOriginal) => {
 });
 vi.mock("../robot/robotEdgeDispatch", () => ({ dispatchRobotOnEdge: M.robotEdge }));
 
-import { CAC_MA_CO_THE_DA_BAY, coTheDaBayCua } from "./lenhTruocCoTheDaBay";
+import { CAC_MA_CO_THE_DA_BAY, coTheDaBayCua, moTaCoTheDaBay } from "./lenhTruocCoTheDaBay";
 import { equipmentRegistry } from "./equipmentAdapter";
 import { FOE_OUTCOME_UNKNOWN, ketCucLenhFoe, khongGuiLaiKhongRo } from "../orchestration/foe/foeEngine";
 import { idempotentReplay, PROCESS_RESTART_OUTCOME_UNKNOWN } from "../robot/robotCommandDispatcher";
@@ -47,8 +49,8 @@ afterEach(() => {
 });
 
 describe("T3F — lớp 'lệnh trước có thể đã bay' ⇒ không rõ kết cục, không attempt key mới (non-STOP); STOP thử lại", () => {
-  it("bảng mã đúng ba mã nguồn; chuỗi robot = hằng PROCESS_RESTART_OUTCOME_UNKNOWN của dispatcher robot (ghim)", () => {
-    expect([...CAC_MA_CO_THE_DA_BAY].sort()).toEqual(["DUPLICATE_IN_FLIGHT", "IDEMPOTENT_JOB_IN_PROGRESS", "process_restart_outcome_unknown"].sort());
+  it("bảng mã đúng bốn mã nguồn (T6d fix 1: + IDEMPOTENCY_KEY_REUSED); chuỗi robot = hằng PROCESS_RESTART_OUTCOME_UNKNOWN của dispatcher robot (ghim)", () => {
+    expect([...CAC_MA_CO_THE_DA_BAY].sort()).toEqual(["DUPLICATE_IN_FLIGHT", "IDEMPOTENCY_KEY_REUSED", "IDEMPOTENT_JOB_IN_PROGRESS", "process_restart_outcome_unknown"].sort());
     expect(CAC_MA_CO_THE_DA_BAY).toContain(PROCESS_RESTART_OUTCOME_UNKNOWN);
   });
 
@@ -60,6 +62,44 @@ describe("T3F — lớp 'lệnh trước có thể đã bay' ⇒ không rõ kế
     expect(c).toMatchObject({ kind: "failed" });
     expect(String((c as { error: string }).error)).toMatch(new RegExp(`^${FOE_OUTCOME_UNKNOWN}: DUPLICATE_IN_FLIGHT: command "start" — .*outcome unknown — not sent again; check the device\\.$`));
     expect(chot(r, true)).toBeNull();
+  });
+
+  it("★ T6d fix 1 — OT trung tâm: dispatcher `rejected` + IDEMPOTENCY_KEY_REUSED (khoá mang lệnh TRƯỚC khác — có thể đã áp) qua mặt tiền THẬT ⇒ FOE_OUTCOME_UNKNOWN cho non-STOP (KHÔNG attempt key mới); STOP ⇒ null (thử lại)", async () => {
+    M.ot.mockResolvedValue({ ok: false, simulated: false, status: "rejected", reason: "IDEMPOTENCY_KEY_REUSED", results: [], commandLogIds: [12] });
+    const r = await equipmentRegistry.getAdapter("ot-s7").sendCommand(otCmd as never);
+    expect(coTheDaBayCua(r)).toBe("IDEMPOTENCY_KEY_REUSED");
+    const c = chot(r, false);
+    expect(c).toMatchObject({ kind: "failed" });
+    expect(String((c as { error: string }).error)).toMatch(new RegExp(`^${FOE_OUTCOME_UNKNOWN}: IDEMPOTENCY_KEY_REUSED: command "start" — .*outcome unknown — not sent again; check the device\\.$`));
+    expect(chot(r, true)).toBeNull();
+  });
+
+  it("★ T6d fix 1 — robot trung tâm: từ chối chuyển động IDEMPOTENCY_KEY_REUSED (job TRƯỚC cùng khoá, robot / job khác) ⇒ cũng thuộc lớp \"có thể đã áp\" (không thử lại khoá mới); STOP ⇒ null", async () => {
+    M.robot.mockResolvedValue({ ok: false, status: "rejected", jobId: 4, error: "IDEMPOTENCY_KEY_REUSED" });
+    const r = await equipmentRegistry.getAdapter("robot").sendCommand(robotCmd as never);
+    expect(coTheDaBayCua(r)).toBe("IDEMPOTENCY_KEY_REUSED");
+    expect(String((chot(r, false) as { error: string }).error)).toMatch(new RegExp(`^${FOE_OUTCOME_UNKNOWN}: IDEMPOTENCY_KEY_REUSED: `));
+    expect(chot(r, true)).toBeNull();
+  });
+
+  it("★ T6d fix 1 (dieu-phoi) — CÂU cho người vận hành khi FOE dừng vì IDEMPOTENCY_KEY_REUSED nói THẬT: không rõ lệnh trước (cùng khoá) đã áp vào thiết bị chưa — kiểm thiết bị trước khi chạy tiếp; không bao giờ chỉ \"khoá trùng\"", () => {
+    const cau = moTaCoTheDaBay("IDEMPOTENCY_KEY_REUSED", "start");
+    expect(cau.startsWith('IDEMPOTENCY_KEY_REUSED: command "start" — ')).toBe(true);
+    const nghia = cau.slice('IDEMPOTENCY_KEY_REUSED: command "start" — '.length);
+    expect(nghia).toMatch(/earlier, different command already used the same key/);
+    expect(nghia).toMatch(/unknown whether that earlier command was applied to the device/);
+    expect(nghia).toMatch(/check the device before continuing/);
+    expect(nghia).not.toMatch(/^IDEMPOTENCY_KEY_REUSED\b/); // không phải mã thô
+    expect(nghia).not.toMatch(/authorisation of this attempt/); // không rơi vào câu dự phòng của edge
+    // câu hiển thị (commandAudit.maLoi — tra ĐẦU TIÊN bởi nhanMaLoi) vi / en / zh: đúng nghĩa, KHÔNG khuyên "gửi lại với khoá mới"
+    const goc = join(__dirname, "..", "..", "..", "client", "src", "i18n", "locales");
+    const cauI18n = (lg: string) => (JSON.parse(readFileSync(join(goc, `${lg}.json`), "utf8")) as { commandAudit: { maLoi: Record<string, string> } }).commandAudit.maLoi.IDEMPOTENCY_KEY_REUSED;
+    expect(cauI18n("vi")).toMatch(/Không rõ lệnh trước \(cùng khoá\) đã áp vào thiết bị chưa — kiểm thiết bị trước khi chạy tiếp/);
+    expect(cauI18n("vi")).not.toMatch(/Gửi lại với khoá mới/);
+    expect(cauI18n("en")).toMatch(/unknown whether that earlier command was applied to the device — check the device before continuing/);
+    expect(cauI18n("en")).not.toMatch(/Send again with a new key/);
+    expect(cauI18n("zh")).toMatch(/无法确定之前那条命令（同一键）是否已应用到设备 — 继续之前请检查设备/);
+    expect(cauI18n("zh")).not.toMatch(/请使用新键重新发送/);
   });
 
   it("★ robot trung tâm: IDEMPOTENT_JOB_IN_PROGRESS (job cùng khoá chưa kết thúc) ⇒ không rõ; STOP ⇒ null", async () => {
@@ -112,7 +152,8 @@ describe("T3F — lớp 'lệnh trước có thể đã bay' ⇒ không rõ kế
       expect(coTheDaBayCua(r), reason).toBeNull();
       expect(chot(r, false), reason).toBeNull();
     }
-    for (const error of ["LEDGER_WRITE_FAILED", "HITL_ACTION_REQUIRED", "NOT_CONFIRMED", "MOTION_LOCKED", "robot_motion_in_progress", "IDEMPOTENCY_KEY_REUSED", "INTERLOCK_BLOCKED"]) {
+    // T6d fix 1: IDEMPOTENCY_KEY_REUSED KHÔNG còn ở đây (lớp "có thể đã áp" — ca riêng ở trên)
+    for (const error of ["LEDGER_WRITE_FAILED", "HITL_ACTION_REQUIRED", "NOT_CONFIRMED", "MOTION_LOCKED", "robot_motion_in_progress", "INTERLOCK_BLOCKED"]) {
       M.robot.mockResolvedValueOnce({ ok: false, status: "rejected", jobId: 4, error });
       const r = await equipmentRegistry.getAdapter("robot").sendCommand(robotCmd as never);
       expect(coTheDaBayCua(r), error).toBeNull();
