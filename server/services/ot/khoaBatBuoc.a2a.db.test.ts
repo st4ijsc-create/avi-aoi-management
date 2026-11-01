@@ -841,6 +841,91 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       expect(s2.commandLogIds).toEqual(s1.commandLogIds);
     });
   }, 30_000);
+  // ── kiem-dinh (a22 / a20 / a26) ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  it("★ kd a22 bộ khử trùng CÓ adapterId: STOP_LIKE không khoá trên adapter X rồi adapter Y, CÙNG tên tag (a, t), CÙNG người yêu cầu, trong 60 s ⇒ HAI cảnh báo; hàng của Y canhBao.daPhat === true", async () => {
+    await trongGiaoDich(async (tx) => {
+      const adX = await taoAdapter(tx, driverGia());
+      const adY = await taoAdapter(tx, driverGia());
+      const writes = [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }];
+      const rX = await gui(tx, adX, writes, "", { requestedBy: OWNER });
+      const rY = await gui(tx, adY, writes, "", { requestedBy: OWNER });
+      expect([rX.reason, rY.reason]).toEqual([MA_THIEU_KHOA_GIONG_STOP, MA_THIEU_KHOA_GIONG_STOP]);
+      expect(canhBaoHang((await hangCua(tx, rX))[0]!)).toMatchObject({ lanThu: 1, daPhat: true });
+      expect(canhBaoHang((await hangCua(tx, rY))[0]!)).toMatchObject({ lanThu: 1, daPhat: true });
+      await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(2), { timeout: 3000 });
+      await lang(80);
+      expect(canhBaoKhongKhoa()).toHaveLength(2);
+    });
+  }, 30_000);
+
+  it("★ kd a20 bộ khử trùng dùng tập tag ĐÃ SẮP + KHÔNG TRÙNG: [a,t] rồi [t,a] ⇒ CÙNG bộ ⇒ 1 cảnh báo; [a,a,t] rồi [a,t] ⇒ CÙNG bộ ⇒ 1 cảnh báo", async () => {
+    await trongGiaoDich(async (tx) => {
+      const ad = await taoAdapter(tx, driverGia());
+      const r1 = await gui(tx, ad, [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }], "");
+      const r2 = await gui(tx, ad, [{ tagKey: "t", value: 1 }, { tagKey: "a", value: 0 }], "");
+      expect([r1.reason, r2.reason]).toEqual([MA_THIEU_KHOA_GIONG_STOP, MA_THIEU_KHOA_GIONG_STOP]);
+      expect(canhBaoHang((await hangCua(tx, r2))[0]!)).toMatchObject({ lanThu: 2, daPhat: false });
+      expect(canhBaoHang((await hangCua(tx, r2))[0]!)!.khoa).toBe(canhBaoHang((await hangCua(tx, r1))[0]!)!.khoa);
+      await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(1), { timeout: 3000 });
+      await lang(80);
+      expect(canhBaoKhongKhoa()).toHaveLength(1);
+      // tập TRÙNG tag: cửa sổ mới (người yêu cầu khác để bộ mới)
+      const r3 = await gui(tx, ad, [{ tagKey: "a", value: 0 }, { tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }], "", { requestedBy: KHAC });
+      const r4 = await gui(tx, ad, [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }], "", { requestedBy: KHAC });
+      expect([r3.reason, r4.reason]).toEqual([MA_THIEU_KHOA_GIONG_STOP, MA_THIEU_KHOA_GIONG_STOP]);
+      expect(canhBaoHang((await hangCua(tx, r3))[0]!)).toMatchObject({ lanThu: 1, daPhat: true });
+      expect(canhBaoHang((await hangCua(tx, r4))[0]!)).toMatchObject({ lanThu: 2, daPhat: false });
+      await vi.waitFor(() => expect(canhBaoKhongKhoa()).toHaveLength(2), { timeout: 3000 });
+      await lang(80);
+      expect(canhBaoKhongKhoa()).toHaveLength(2);
+    });
+  }, 30_000);
+
+  it("★ kd a26 ngoại lệ GIỮ khoá cho hàng gắn ý định: (1) STOP không khoá ĐÃ bay ⇒ hàng KẾT QUẢ mang ackValue.intentId, khoá KHÁC NULL (v2:0::… / #stop-); (2) STOP không khoá CHƯA ghim bị STOP ghim thay thế khi đang ở cổng ⇒ hàng KẾT QUẢ (writeAll + intentIds) mang intentId, khoá KHÁC NULL; (3) lời từ chối thuần không ý định ⇒ khoá NULL", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const laKhoaGiu = (k: string | null) => k !== null && /^v2:(0::|\d+:#stop-[0-9a-f-]{36}:)/.test(k);
+      // (1) STOP ghim không khoá bay
+      const s = await gui(tx, ad, [{ tagKey: "a", value: 0 }], "", { commandType: "stop" });
+      expect(s).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      const hs = await hangCua(tx, s);
+      expect(hs).toHaveLength(1);
+      expect(typeof (hs[0]!.ackValue as { intentId?: unknown }).intentId).toBe("number");
+      expect(laKhoaGiu(hs[0]!.idempotencyKey)).toBe(true);
+      // (2) STOP CHƯA ghim (loại stop, tag thường) giữ ở cổng (preflight) — STOP ghim gửi trong lúc đó ⇒ SUPERSEDED_BY_STOP, hàng kết quả qua writeAll + intentIds
+      const uWrites = [{ tagKey: "t", value: 0 }];
+      const uAct = await taoHanhDong(tx, ad, uWrites, "stop");
+      let tha!: () => void;
+      let vao!: () => void;
+      const daVao = new Promise<void>((r) => (vao = r));
+      const choTha = new Promise<void>((r) => (tha = r));
+      H.giuaChung = async () => {
+        vao();
+        await choTha;
+      };
+      const pU = gui(tx, ad, uWrites, "", { commandType: "stop", actionId: uAct });
+      await daVao;
+      const s2 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], "", { commandType: "stop" });
+      expect(s2).toMatchObject({ ok: true, status: "acked" });
+      tha();
+      const rU = await pU;
+      expect(rU).toMatchObject({ ok: false, status: "rejected", reason: "SUPERSEDED_BY_STOP" });
+      const hu = (await hangCua(tx, rU)).filter((h) => (h.ackValue as { ledger?: string } | null)?.ledger === "result");
+      expect(hu).toHaveLength(1);
+      expect(typeof (hu[0]!.ackValue as { intentId?: unknown }).intentId).toBe("number");
+      expect(laKhoaGiu(hu[0]!.idempotencyKey)).toBe(true);
+      expect(d.soGhi).toBe(2); // hai STOP ghim; STOP chưa ghim KHÔNG ra thiết bị
+      // (3) lời từ chối thuần (không ý định) ⇒ khoá NULL
+      const r3 = await gui(tx, ad, [{ tagKey: "khong-co", value: 0 }], "", { commandType: "stop" });
+      expect(r3.reason).toBe("TAG_NOT_FOUND");
+      const h3 = await hangCua(tx, r3);
+      expect(h3.map((h) => h.idempotencyKey)).toEqual([null]);
+      expect((h3[0]!.ackValue as { intentId?: unknown } | null)?.intentId).toBeUndefined();
+    });
+    H.giuaChung = null;
+  }, 30_000);
 });
 
 /** (e) — kết quả ĐO trên main 0211196f6 trước khi sửa (2026-11-02, tệp tạm chạy riêng ca (e)): STOP theo nội dung CÓ khoá, ghim lỗi đọc ⇒ acked, 1 gói. */

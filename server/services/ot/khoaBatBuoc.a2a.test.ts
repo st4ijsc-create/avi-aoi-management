@@ -104,6 +104,7 @@ describe("A2(a) — khoaDispatchLapTrinh: phần bên gọi rỗng ⇒ null (t�
       const r = await new MitsubishiEngineeringAdapter().deploy(build, { stage: "staging", idempotencyKey: k, deviceId: 41, hitl: { actionId: "act", requestedBy: 6, confirmedBy: 8 } });
       expect(r).toMatchObject({ ok: false, status: "rejected" });
       expect(String(r.error)).toMatch(/^IDEMPOTENCY_KEY_REQUIRED\b/);
+      expect(r.detail?.reason).toBe("IDEMPOTENCY_KEY_REQUIRED"); // kd a39
     }
     expect(H.goi).toHaveLength(0);
   });
