@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const createAdapter = vi.fn(() => "ADAPTER");
+const createAdapter = vi.fn((..._a: unknown[]) => "ADAPTER");
 vi.mock("@socket.io/redis-adapter", () => ({ createAdapter }));
 vi.mock("ioredis", () => {
   class FakeRedis {

@@ -272,6 +272,7 @@ describe("vramRouter.state — `trusted` / `degradedReasons` / `baselineVerified
     publishDecisionTick(
       {
         attributableBytes: 1 * MIB,
+        deviceUsedBytes: null, // trường bắt buộc của nhịp; ca này chỉ đo ba ô baseline
         baselineVerified: false,
         baselineUnverifiedReasons: ["co-tan-du-giu-gpu"],
         baselineOrigin: "captured",

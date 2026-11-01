@@ -31,9 +31,15 @@ import { executeDecision } from "./index";
 import { listTools, type Tool } from "./toolRegistry";
 import { xoaSoNganSach, nganSachConLai, gocHopCat } from "./repoSandbox";
 import { _xoaSoBamHITL } from "./writeHandlers/applyDiff";
-import { confineTargetUnder, doiTenConfined, xoaConfined } from "./readToolsProgramming";
+import { confineTargetUnder, doiTenConfined, xoaConfined, type ConfinedTarget } from "./readToolsProgramming";
 import { chonDuocTheoTrigger } from "./intentClassifier";
 import { phanLoaiTuTri } from "../ai/autonomyPolicy";
+
+/** Thu hẹp `ConfineOutcome` về đích đã qua cổng — ném (không im lặng) nếu cổng từ chối. */
+const dich = (c: ReturnType<typeof confineTargetUnder>) => {
+  if (!c.ok) throw new Error(`confineTargetUnder rejected: ${JSON.stringify(c)}`);
+  return c.target;
+};
 
 const CTX = { user: { id: 7, role: "engineer", name: "T" }, lang: "vi" as const };
 
@@ -488,7 +494,7 @@ describe("§G — CỬA ĐĨA tự kiểm lại trên fd (tráo SAU khi qua `con
     const c = confineTargetUnder(REPO, rel);
     expect(c.ok).toBe(true);
     fs.writeFileSync(path.join(REPO, rel), "b\n");
-    const r = xoaConfined((c as { target: never }).target, bam("a\n"));
+    const r = xoaConfined(dich(c), bam("a\n"));
     expect(r).toEqual({ ok: false, kind: "CHANGED" });
     expect(co(rel)).toBe(true);
     fs.rmSync(path.join(REPO, rel));
@@ -502,7 +508,7 @@ describe("§G — CỬA ĐĨA tự kiểm lại trên fd (tráo SAU khi qua `con
     fs.rmSync(path.join(REPO, rel));
     fs.linkSync(path.join(NGOAI, "outside.ts"), path.join(REPO, rel));
     try {
-      const r = xoaConfined((c as { target: never }).target, bam(BI_MAT));
+      const r = xoaConfined(dich(c), bam(BI_MAT));
       expect(r.ok).toBe(false);
       expect(co(rel)).toBe(true);
       expect(fs.readFileSync(path.join(NGOAI, "outside.ts"), "utf8")).toBe(BI_MAT);
@@ -517,7 +523,7 @@ describe("§G — CỬA ĐĨA tự kiểm lại trên fd (tráo SAU khi qua `con
     const d = confineTargetUnder(REPO, "src/cua-dich.ts");
     expect(n.ok && d.ok).toBe(true);
     fs.writeFileSync(path.join(REPO, "src/cua-dich.ts"), "cua-nguoi\n");
-    const r = doiTenConfined((n as { target: never }).target, (d as { target: never }).target, bam("n\n"));
+    const r = doiTenConfined(dich(n), dich(d), bam("n\n"));
     expect(r).toEqual({ ok: false, kind: "DEST_EXISTS" });
     expect(doc("src/cua-dich.ts")).toBe("cua-nguoi\n");
     expect(co("src/cua-nguon.ts")).toBe(true);
@@ -531,10 +537,10 @@ describe("§G — CỬA ĐĨA tự kiểm lại trên fd (tráo SAU khi qua `con
    * realpath-của-cha ngay trước `unlink` cứu được tệp ngoài (đột biến gỡ nó ⇒ ĐỎ ở đây).
    */
   for (const [ten, chay] of [
-    ["xoaConfined", (t: never, b: string) => xoaConfined(t, b)],
-    ["doiTenConfined (nguồn)", (t: never, b: string) => {
+    ["xoaConfined", (t: ConfinedTarget, b: string) => xoaConfined(t, b)],
+    ["doiTenConfined (nguồn)", (t: ConfinedTarget, b: string) => {
       const d = confineTargetUnder(REPO, "src/cua-junction-dich.ts");
-      return doiTenConfined(t, (d as { target: never }).target, b);
+      return doiTenConfined(t, dich(d), b);
     }],
   ] as const) {
     it(`★★★ ${ten}: cha bị tráo thành JUNCTION ra ngoài sau phán quyết ⇒ từ chối, tệp NGOÀI còn nguyên`, () => {
@@ -548,7 +554,7 @@ describe("§G — CỬA ĐĨA tự kiểm lại trên fd (tráo SAU khi qua `con
       fs.rmSync(path.join(REPO, "src", "cha-bi-trao"), { recursive: true, force: true });
       fs.symlinkSync(ngoaiCha, path.join(REPO, "src", "cha-bi-trao"), "junction");
       try {
-        const r = chay((c as { target: never }).target, bam(NOI_DUNG));
+        const r = chay(dich(c), bam(NOI_DUNG));
         expect(r.ok, JSON.stringify(r)).toBe(false);
         expect(fs.readFileSync(path.join(ngoaiCha, "x.ts"), "utf8"), "tệp NGOÀI gốc bị xoá qua junction").toBe(NOI_DUNG);
         expect(co("src/cua-junction-dich.ts")).toBe(false);

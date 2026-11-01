@@ -30,7 +30,7 @@ vi.mock("../services/aiLocalKnowledgeService", () => ({
 vi.mock("../services/aiGateway", () => ({
   planInference: vi.fn(async () => ({ decision: { modelId: "m" }, record: vi.fn() })),
 }));
-const mockGetDb = vi.fn(async () => undefined);
+const mockGetDb = vi.fn(async (..._a: unknown[]) => undefined);
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
 const importRouter = async () => (await import("./programmingRouter")).programmingRouter;

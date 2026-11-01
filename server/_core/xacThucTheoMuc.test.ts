@@ -367,7 +367,7 @@ describe("§6 — chung cache + chung sổ với chuỗi step-up cũ trên `depl
     lenhTheoMuc: deployProcedure
       .input(z.object({ totpCode: z.string().max(16), kiemMuc5: z.boolean().optional() }))
       .mutation(({ ctx, input }) =>
-        input.kiemMuc5 ? kiemXacThucTheoMuc(ctx as never, 5, input.totpCode) : { ok: true as const },
+        input.kiemMuc5 ? kiemXacThucTheoMuc(ctx as never, 5, input.totpCode) : ({ ok: true } as never), // lưới giữ đúng hình `{ ok: true }` (khẳng định toEqual bên dưới) — thiếu `cach` có chủ ý
       ),
   });
   const goi = (ctx: Ctx) => luoi.createCaller({ ...ctx, req: { ip: "127.0.0.1", headers: {} }, res: {} } as never);

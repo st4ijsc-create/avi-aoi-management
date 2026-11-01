@@ -31,7 +31,7 @@ vi.mock("./vramProbe", () => ({
 
 type Holder = { pid: number; name: string };
 type Proc = { pid: number; ppid: number; cmdline: string; ctime: number };
-let hoGiuGpu: { holders: Holder[]; ours: Holder[]; peers: Holder[]; orphans: Holder[]; thirdParty: Holder[] } | null = null;
+let hoGiuGpu: { holders: readonly Holder[]; ours: readonly Holder[]; peers: readonly Holder[]; orphans: readonly Holder[]; thirdParty: readonly Holder[] } | null = null;
 let bangTienTrinh: Proc[] | null = null;
 vi.mock("./vramGpuHolders", async (goc) => {
   const that = await goc<typeof import("./vramGpuHolders")>();

@@ -70,7 +70,7 @@ const LUOT_DO: LuotLenh = {
   ketQua: { xanh: false, soDo: 2, soXanh: 10 },
   luc: "07:06:00",
   nguon: "vong_tu_dong",
-  diaDiemLoi: [{ tep: null, dong: null, cot: null, thongDiep: "FAIL Divide_ByZero" }],
+  diaDiemLoi: [{ tep: null, dong: null, cot: null, thongDiep: "FAIL Divide_ByZero", mucDo: "loi" }],
 };
 // Thứ tự LƯU (cũ→mới): xanh trước, đỏ sau ⇒ bảng phải hiện ĐỎ (mới) TRƯỚC XANH (cũ).
 const LUOT_MAU: LuotLenh[] = [LUOT_XANH, LUOT_DO];
