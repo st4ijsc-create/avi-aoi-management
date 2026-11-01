@@ -57,4 +57,9 @@ describe("T6 fix 1 — ketQuaStopGhim (STOP ghim của chuyển chủ sở hữu
       ),
     ).toEqual({ ok: true, sent: "sent", detail: "pinned stop written (stop_a, stop_b)" });
   });
+
+  it("kiem-dinh e3: lô RỖNG (không write nào chạy) KHÔNG được coi là đã ghi STOP ⇒ ok false, sent failed", () => {
+    expect(ketQuaStopGhim({ timedOut: false, outcomes: [] }, PINS)).toEqual({ ok: false, sent: "failed", detail: "pinned stop write failed" });
+    expect(ketQuaStopGhim({ timedOut: true, outcomes: [] }, PINS)).toEqual({ ok: false, sent: "failed", detail: "pinned stop write timed out — outcome unknown" });
+  });
 });

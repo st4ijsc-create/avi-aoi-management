@@ -9,7 +9,7 @@
  * trỏ vào driver giả. Mọi ghi DB nằm trong giao dịch ROLLBACK của chính test (ngoài giao dịch getDb là BẪY). Bảng WORM command_log: không id tường minh.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { like } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 const H = vi.hoisted(() => ({
   tx: null as unknown,
@@ -57,7 +57,7 @@ import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
-import { dispatch, type DispatchResult } from "./commandDispatcher";
+import { dispatch, ketQuaPhatLai, perWriteKey, type DispatchResult } from "./commandDispatcher";
 import { equipmentRegistry } from "../equipment/equipmentAdapter";
 import { ketCucLenhFoe, khongGuiLaiMotPhan } from "../orchestration/foe/foeEngine";
 import { LOI_CHUA_GUI_MAT_LIEN_KET } from "./drivers/dangBay";
@@ -215,7 +215,8 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
         const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
         expect(d.soGhi).toBe(1); // phát lại không ghi thiết bị
         expect(chieu(phatLai)).toEqual(chieu(song));
-        const hang = (await tx.select().from(commandLog).where(like(commandLog.idempotencyKey, `${key}:%`))).filter((r) => (r.ackValue as { ledger?: unknown } | null)?.ledger === "result");
+        // R1b-2b-2a T6d — khoá kết quả định dạng không mơ hồ (perWriteKey v2) thay cho `${key}:<tag>:<i>`
+        const hang = (await tx.select().from(commandLog).where(inArray(commandLog.idempotencyKey, writes.map((w, i) => perWriteKey(key, w.tagKey, i))))).filter((r) => (r.ackValue as { ledger?: unknown } | null)?.ledger === "result");
         expect(hang).toHaveLength(3);
         for (const r of hang) expect((r.ackValue as { khongRo?: unknown }).khongRo === true).toBe(ca.mong.status === "timeout");
       });
@@ -340,6 +341,130 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
       expect(H.bay).toBe(0);
     }, 30_000);
   }
+
+  /**
+   * kiem-dinh pins (f11 / f15 / f16 / f18 / f24) — hàng có `ackValue` TUỲ Ý (vai sổ ghi khác, dấu chỉ trên MỘT hàng). Literal tại chỗ (KHÔNG id tường minh,
+   * bảng WORM), trong giao dịch ROLLBACK của test. Trả id theo thứ tự chèn.
+   */
+  async function chenHangAck(tx: Tx, adapterId: number, actionId: string, key: string, hang: Array<{ tagKey: string; status: "acked" | "failed"; errorText?: string; ackValue: Record<string, unknown> }>): Promise<number[]> {
+    const addr: Record<string, string> = { a: "40001", b: "40002", c: "40003" };
+    const ids: number[] = [];
+    for (const [i, h] of hang.entries()) {
+      const [r] = await tx
+        .insert(commandLog)
+        .values({
+          actionId,
+          adapterId,
+          machineId: MACHINE,
+          tagKey: h.tagKey,
+          address: addr[h.tagKey]!,
+          commandType: "set_param",
+          requestedValue: i + 1,
+          requestedBy: OWNER,
+          confirmedBy: OWNER,
+          status: h.status,
+          errorText: h.errorText ?? null,
+          ackValue: h.ackValue,
+          idempotencyKey: `${key}:${h.tagKey}:${i}`,
+          sentAt: new Date(),
+        })
+        .returning({ id: commandLog.id });
+      ids.push(r!.id);
+    }
+    return ids;
+  }
+
+  // f11 — hàng status thiết bị nhưng vai sổ ghi KHÁC "result" KHÔNG phải hàng kết quả của lô ⇒ nhánh không-thiết-bị: giữ `reason` = MÃ tiền tố; không
+  // suy MOT_PHAN từ các hàng ấy. DB: `refused_duplicate` + một vai CHƯA BIẾT (mọi vai khác "result"). `late_result` KHÔNG chèn được (guard
+  // command_log_result_guard: chỉ chính guard tạo, và đổi khoá thành "late:<id>:<khoá>" ⇒ phát lại không bao giờ đọc tới) ⇒ ghim bằng hàm thuần
+  // `ketQuaPhatLai` ngay dưới.
+  for (const vai of ["refused_duplicate", "vai_khac_chua_biet"] as const) {
+    it(`kiem-dinh f11: 1 write, hàng failed vai '${vai}' ⇒ phát lại giữ reason = MÃ (không coi là hàng thiết bị)`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const writes = [{ tagKey: "a", value: 1 }];
+        const d = driverGia([ACK]);
+        const { adapterId, actionId } = await dung(tx, writes, d);
+        const key = `${DAU}-vk1-${Math.random().toString(36).slice(2, 8)}`;
+        await chenHangAck(tx, adapterId, actionId, key, [{ tagKey: "a", status: "failed", errorText: "DRIVER_WRITE_FAILED: device refused", ackValue: { ledger: vai, intentId: 1 } }]);
+        const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
+        expect(d.soGhi).toBe(0);
+        expect(phatLai).toMatchObject({ ok: false, status: "failed", reason: "DRIVER_WRITE_FAILED" });
+        expect(phatLai.motPhan ?? null).toBeNull();
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+    it(`kiem-dinh f11: 2 write [acked, failed] vai '${vai}' ⇒ KHÔNG suy MOT_PHAN, không ok`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const writes = [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }];
+        const d = driverGia([ACK, ACK]);
+        const { adapterId, actionId } = await dung(tx, writes, d);
+        const key = `${DAU}-vk2-${Math.random().toString(36).slice(2, 8)}`;
+        await chenHangAck(tx, adapterId, actionId, key, [
+          { tagKey: "a", status: "acked", ackValue: { ledger: vai, intentId: 1 } },
+          { tagKey: "b", status: "failed", errorText: "DRIVER_WRITE_FAILED: device refused", ackValue: { ledger: vai, intentId: 2 } },
+        ]);
+        const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
+        expect(d.soGhi).toBe(0);
+        expect(phatLai.ok).toBe(false);
+        expect(phatLai.reason).not.toBe("MOT_PHAN");
+        expect(phatLai.motPhan ?? null).toBeNull();
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+  }
+
+  it("kiem-dinh f11 (hàm thuần ketQuaPhatLai): hàng vai 'late_result' ⇒ không phải hàng thiết bị — 1 write giữ reason = MÃ; [acked, failed] không suy MOT_PHAN", () => {
+    const hangGia = (id: number, tagKey: string, status: string, errorText: string | null) =>
+      ({ id, tagKey, address: null, status, errorText, ackValue: { ledger: "late_result", intentId: id - 100, lateAfterResolutionId: 1 }, idempotencyKey: `k:${tagKey}:0` }) as unknown as Parameters<typeof ketQuaPhatLai>[1];
+    const mot = hangGia(901, "a", "failed", "DRIVER_WRITE_FAILED: device refused");
+    const r1 = ketQuaPhatLai(lenh(1, "x", [{ tagKey: "a", value: 1 }], "k") as never, mot, [mot]);
+    expect(r1).toMatchObject({ ok: false, status: "failed", reason: "DRIVER_WRITE_FAILED" });
+    expect(r1.motPhan ?? null).toBeNull();
+    const a = hangGia(902, "a", "acked", null);
+    const b = hangGia(903, "b", "failed", "DRIVER_WRITE_FAILED: device refused");
+    const r2 = ketQuaPhatLai(lenh(1, "x", [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], "k") as never, a, [a, b]);
+    expect(r2.ok).toBe(false);
+    expect(r2.reason).not.toBe("MOT_PHAN");
+    expect(r2.motPhan ?? null).toBeNull();
+    expect(r2.commandLogIds).toEqual([902, 903]);
+  });
+
+  // Tuỳ chọn (f15 / f16 / f18 / f24) — bất biến "mọi hàng mang cùng dấu" KHÔNG được giả định: dấu chỉ trên hàng 1 (không phải hàng 0 = `existing`) vẫn
+  // được đọc, và commandLogIds = id của MỌI hàng của lô theo thứ tự write.
+  it("kiem-dinh (tuỳ chọn) hàng KHÔNG đồng nhất: `pinnedStop` chỉ trên hàng 1 ⇒ phát lại vẫn pinnedStop; commandLogIds = mọi hàng", async () => {
+    await trongGiaoDich(async (tx) => {
+      const writes = [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }];
+      const d = driverGia([ACK, ACK]);
+      const { adapterId, actionId } = await dung(tx, writes, d);
+      const key = `${DAU}-kdn1-${Math.random().toString(36).slice(2, 8)}`;
+      const ids = await chenHangAck(tx, adapterId, actionId, key, [
+        { tagKey: "a", status: "acked", ackValue: { ledger: "result" } },
+        { tagKey: "b", status: "acked", ackValue: { ledger: "result", pinnedStop: true } },
+      ]);
+      const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
+      expect(d.soGhi).toBe(0);
+      expect(phatLai).toMatchObject({ ok: true, status: "acked", pinnedStop: true });
+      expect(phatLai.commandLogIds).toEqual(ids);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+  it("kiem-dinh (tuỳ chọn) hàng KHÔNG đồng nhất: `motPhan` chỉ trên hàng 1 (status đều acked) ⇒ phát lại MOT_PHAN, KHÔNG ok; commandLogIds = mọi hàng", async () => {
+    await trongGiaoDich(async (tx) => {
+      const writes = [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }];
+      const d = driverGia([ACK, ACK]);
+      const { adapterId, actionId } = await dung(tx, writes, d);
+      const key = `${DAU}-kdn2-${Math.random().toString(36).slice(2, 8)}`;
+      const ids = await chenHangAck(tx, adapterId, actionId, key, [
+        { tagKey: "a", status: "acked", ackValue: { ledger: "result" } },
+        { tagKey: "b", status: "acked", ackValue: { ledger: "result", motPhan: { daAp: ["a"], khongAp: ["b"] } } },
+      ]);
+      const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
+      expect(d.soGhi).toBe(0);
+      expect(phatLai).toMatchObject({ ok: false, status: "failed", reason: "MOT_PHAN", motPhan: { daAp: ["a"], khongAp: ["b"] } });
+      expect(phatLai.commandLogIds).toEqual(ids);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
 
   // ── polish m2 — các hình lô KHÔNG phải "thiết bị đã trả lời": phát lại vẫn deepEqual câu trả lời sống (ok / status / reason / motPhan / pinnedStop) ──
   const KHAC: Array<{ ten: string; writes: Array<{ tagKey: string; value: unknown }>; tc: { isEnabled?: boolean; commandType?: string; khongDriver?: boolean; tatDieuKhien?: boolean }; mong: Partial<DispatchResult>; soGhi: number }> = [

@@ -82,7 +82,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
     expect(rec.alerts.some((a) => a.kind === "ot_stop_routed_to_edge" && a.message.includes(`#${id}`))).toBe(true);
     expect(rec.fallback).toEqual([]);
     // the ledger says what happened (no silent failure)
-    const led = await k.sql`SELECT status, "errorText" FROM command_log WHERE "adapterId" = ${k.ids.adapterA} AND "idempotencyKey" LIKE ${`ffi4-stop-${seq}-%`}`;
+    const led = await k.sql`SELECT status, "errorText" FROM command_log WHERE "adapterId" = ${k.ids.adapterA} AND "idempotencyKey" LIKE ${`v2:%:ffi4-stop-${seq}-%`}`; // R1b-2b-2a T6d — khoá v2
     expect(led.length).toBeGreaterThan(0);
     expect(String(led[0].errorText ?? "")).toMatch(new RegExp(`#${id}`));
   });

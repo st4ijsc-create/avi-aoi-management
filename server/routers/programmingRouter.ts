@@ -78,6 +78,7 @@ import {
   dpcVersionReviewEnabled,
   dpcDeployApprovalEnabled,
   assertBuildInExpectedProject,
+  timDeployTruoc,
   type DpcUser,
 } from "../services/programming/programmingService";
 // ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
@@ -113,6 +114,7 @@ import {
 } from "../services/programming/copilotStream";
 // ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
 import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
+import { khoaMienLapTrinh, tienToMienLapTrinh } from "../services/programming/khoaMienLapTrinh"; // R1b-2b-2a T6d — miền khoá idempotency của bên gọi
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
 import { getEngineeringStreamManager } from "../services/programming/engineeringStream";
 // ── P4 (doc 24 Wave-3) — structured IEC 61131-3 POU (LAD/FBD/SFC) + PLCopen XML round-trip ──
@@ -246,28 +248,26 @@ export function idempotencyKeyConflicts(
   return false;
 }
 
-/** Chặn tái dùng idempotencyKey cho yêu cầu khác → CONFLICT; key mới hoặc cùng yêu cầu → cho qua. */
+/**
+ * Chặn tái dùng idempotencyKey cho yêu cầu khác → CONFLICT; key mới hoặc cùng yêu cầu → cho qua.
+ * R1b-2b-2a T6d — chỉ xét hàng của CHÍNH người gọi (`timDeployTruoc`: khoá LƯU ở miền người gọi + khoá CŨ chưa đặt miền, cả hai lọc `requestedBy`) ⇒
+ * khoá trùng với khoá của người / nhà máy khác KHÔNG BAO GIỜ ra CONFLICT hay lộ build / thiết bị của họ (ngoài phạm vi ≡ không thấy). Thông báo nêu khoá
+ * NGƯỜI GỌI gửi (`khoaBenGoi`), không phải khoá lưu.
+ */
 async function assertIdempotencyKeyConsistent(
-  idempotencyKey: string,
+  khoaLuu: string,
   want: { buildId: number; stage: string; deviceId: number | null },
+  khoaBenGoi: string,
+  userId: number,
 ): Promise<void> {
-  const d = await db();
-  const [prior] = await d
-    .select({
-      buildId: programDeployments.buildId,
-      stage: programDeployments.stage,
-      deviceId: programDeployments.deviceId,
-    })
-    .from(programDeployments)
-    .where(eq(programDeployments.idempotencyKey, idempotencyKey))
-    .limit(1);
-  if (!prior) return; // key mới → không xung đột
+  const prior = await timDeployTruoc(khoaLuu, khoaBenGoi, userId);
+  if (!prior) return; // key mới (trong phạm vi người gọi) → không xung đột
   if (idempotencyKeyConflicts(prior, want)) {
     throw appError(
       "CONFLICT",
       "INVALID_VALUE",
       { field: "idempotencyKey" },
-      `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
+      `Khóa idempotency "${khoaBenGoi}" đã được dùng cho một lần deploy KHÁC ` +
         `(build #${prior.buildId}, ${prior.stage}${prior.deviceId != null ? `, thiết bị #${prior.deviceId}` : ""}). ` +
         `Yêu cầu hiện tại khác → hãy dùng khóa mới; hệ thống không ghi đè hay nuốt xung đột.`,
     );
@@ -664,16 +664,19 @@ export const programmingRouter = router({
       await assertDeployTargetsInScope({ buildId: input.buildId, deviceIds: [input.deviceId] }, phamViCua(ctx)); // phạm vi người dùng (L3 2026-10-25): luôn kiểm phạm vi
       await assertBuildInExpectedProject(input.buildId, input.expectedProjectId);
       // Doc 54 P3.4 — chặn tái dùng idempotencyKey cho một yêu cầu KHÁC (surface CONFLICT).
-      await assertIdempotencyKeyConsistent(input.idempotencyKey, {
-        buildId: input.buildId,
-        stage: input.stage,
-        deviceId: input.deviceId ?? null,
-      });
+      // R1b-2b-2a T6d — khoá của bên gọi vào MIỀN của người gọi trước mọi tra cứu / ghi (khoá người khác không bao giờ trùng, không lộ).
+      await assertIdempotencyKeyConsistent(
+        khoaMienLapTrinh(ctx.user.id, input.idempotencyKey),
+        { buildId: input.buildId, stage: input.stage, deviceId: input.deviceId ?? null },
+        input.idempotencyKey, // khoaBenGoi — khoá cũ của CHÍNH người gọi + văn bản thông báo
+        ctx.user.id,
+      );
       return deployBuild(
         {
           buildId: input.buildId,
           stage: input.stage,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey: khoaMienLapTrinh(ctx.user.id, input.idempotencyKey),
+          khoaCu: input.idempotencyKey,
           deviceId: input.deviceId,
           hitl: {
             actionId: input.actionId,
@@ -717,13 +720,15 @@ export const programmingRouter = router({
         );
       }
       // Doc 54 P3.4 — cùng chống swallow-reject như deployBuild (yêu cầu duyệt luôn là production).
-      await assertIdempotencyKeyConsistent(input.idempotencyKey, {
-        buildId: input.buildId,
-        stage: "production",
-        deviceId: input.deviceId ?? null,
-      });
+      // R1b-2b-2a T6d — khoá vào miền của người gọi (approveDeployment dùng khoá LƯU này làm khoá dispatch()).
+      await assertIdempotencyKeyConsistent(
+        khoaMienLapTrinh(ctx.user.id, input.idempotencyKey),
+        { buildId: input.buildId, stage: "production", deviceId: input.deviceId ?? null },
+        input.idempotencyKey, // khoaBenGoi — khoá cũ của CHÍNH người gọi + văn bản thông báo
+        ctx.user.id,
+      );
       return requestDeployApproval(
-        { buildId: input.buildId, idempotencyKey: input.idempotencyKey, deviceId: input.deviceId, reason: input.reason },
+        { buildId: input.buildId, idempotencyKey: khoaMienLapTrinh(ctx.user.id, input.idempotencyKey), khoaCu: input.idempotencyKey, deviceId: input.deviceId, reason: input.reason },
         toDpcUser(ctx.user),
       );
     }),
@@ -886,7 +891,8 @@ export const programmingRouter = router({
         input.deploymentId,
         toDpcUser(ctx.user),
         { actionId: input.actionId, requestedBy: ctx.user.id, confirmedBy: input.confirmedBy },
-        input.idempotencyKey,
+        khoaMienLapTrinh(ctx.user.id, input.idempotencyKey), // R1b-2b-2a T6d — miền của người gọi
+        input.idempotencyKey, // khoaCu — CHỈ tìm hàng trước T6d của chính người gọi
       );
     }),
 
@@ -919,7 +925,8 @@ export const programmingRouter = router({
           deviceIds: input.deviceIds,
           stage: input.stage,
           strategy: input.strategy,
-          idempotencyKeyPrefix: input.idempotencyKeyPrefix,
+          idempotencyKeyPrefix: tienToMienLapTrinh(ctx.user.id, input.idempotencyKeyPrefix), // R1b-2b-2a T6d — miền của người gọi
+          tienToCu: input.idempotencyKeyPrefix, // T6d — CHỈ tìm hàng trước T6d của chính người gọi
           actionId: input.actionId,
           confirmedBy: input.confirmedBy,
           reason: input.reason,

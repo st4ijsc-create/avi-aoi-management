@@ -18,6 +18,11 @@ const LY_DO_CO_THE_DA_BAY: ReadonlyMap<string, string> = new Map([
   // robot/robotCommandDispatcher.ts reconcileOrphanedRobotJobs + idempotentReplay — job cùng khoá còn `running` khi tiến trình khởi động lại (robot có thể
   // đã chạy hoặc chưa). Chuỗi = PROCESS_RESTART_OUTCOME_UNKNOWN (ghim bằng test; không nhập mô-đun dispatcher robot nặng vào đây).
   ["process_restart_outcome_unknown", "an earlier robot job with the same key was still running when the process restarted — robot outcome unknown"],
+  // R1b-2b-2a T6d fix 1 (bộ điều khiển, phòng thủ chiều sâu) — ot/commandDispatcher.ts `tuChoiKhoaDungLai` + robot/robotCommandDispatcher.ts (cùng mã):
+  // khoá đã mang một lệnh TRƯỚC khác (thiết bị / tag / giá trị / người yêu cầu khác). Lệnh NÀY không gửi, nhưng lệnh trước cùng khoá CÓ THỂ đã áp vào
+  // thiết bị ⇒ FOE KHÔNG BAO GIỜ thử lại với attempt key mới (STOP vẫn gửi lại). Câu cho người vận hành nói THẬT: không rõ lệnh trước đã áp chưa —
+  // kiểm thiết bị (không phải "khoá trùng" khó hiểu).
+  ["IDEMPOTENCY_KEY_REUSED", "an earlier, different command already used the same key — it is unknown whether that earlier command was applied to the device; check the device before continuing"],
 ]);
 
 /** Edge: uỷ quyền của lần gửi này ĐÃ bị tiêu thụ (`jti_consumed`) — một lệnh mang nó có thể đã đi (consume được fsync TRƯỚC lời gọi driver). */

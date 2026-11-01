@@ -4404,7 +4404,7 @@
       "motionInProgress": "The robot is already executing another motion — this one was refused (not queued). Wait and send again.",
       "ledgerWriteFailed": "The robot command ledger could not be written — the motion was refused and nothing was sent.",
       "idempotentJobInProgress": "A command with the same idempotency key is still running — it is not run twice.",
-      "idempotencyKeyReused": "This idempotency key was already used for another robot or command — the motion was refused. Use a new key.",
+      "idempotencyKeyReused": "This idempotency key was already used for another robot or job — the motion was NOT started. That earlier job may already have run: check the robot, its position and the earlier job's state before commanding again.",
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
@@ -19148,6 +19148,7 @@
     "loiBiChe": "Technical detail hidden (engineer access required)",
     "maLoi": {
       "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "IDEMPOTENCY_KEY_REUSED": "This command was NOT sent: an earlier, different command already used the same key (another device, tag, value or requester). It is unknown whether that earlier command was applied to the device — check the device before continuing; do NOT resend automatically under a new key.",
       "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
       "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",

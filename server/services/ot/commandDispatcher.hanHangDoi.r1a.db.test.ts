@@ -46,7 +46,7 @@ vi.mock("./otManager", async (importOriginal) => {
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
-import { dispatch, type DispatchInput, _adapterCommandQueueDepthForTests, _resetAdapterCommandQueuesForTests } from "./commandDispatcher";
+import { dispatch, perWriteKey, type DispatchInput, _adapterCommandQueueDepthForTests, _resetAdapterCommandQueuesForTests } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
@@ -273,10 +273,10 @@ describe.skipIf(!DB_URL)("R1a T5 — hạn hàng đợi (K9) + đọc lại bắ
     expect(writtenBatches).toEqual([[{ tagKey: "nhiet_sp", value: 241 }]]); // B (242) never reached the device
 
     const rows = await ledger(inB.idempotencyKey);
-    const intent = rows.find((r) => r.idempotencyKey === `intent:${inB.idempotencyKey}:nhiet_sp:0`);
+    const intent = rows.find((r) => r.idempotencyKey === `intent:${perWriteKey(inB.idempotencyKey, "nhiet_sp", 0)}`); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2; ý định = intent:<khoá v2>) + ackValue.bam
     const results = rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "result");
     expect(rows).toHaveLength(2);
-    expect(intent?.ackValue).toEqual({ ledger: "intent" });
+    expect(intent?.ackValue).toEqual({ ledger: "intent", bam: expect.any(String) });
     expect(results).toHaveLength(1);
     expect(results[0]!.status).toBe("rejected");
     expect(results[0]!.errorText).toMatch(/^QUEUE_EXPIRED: expired in the adapter command queue: waited \d+ ms for its turn \(limit 60000 ms\)/);

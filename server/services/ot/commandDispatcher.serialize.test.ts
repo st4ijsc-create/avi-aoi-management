@@ -235,7 +235,7 @@ describe("G1.9 — flag ON: per-adapter serialization", () => {
     expect(rB.ok).toBe(false);
     expect(rB.status).toBe("rejected");
     expect(rB.reason).toBe("BUSY");
-    const busyRow = cmdLog.find((r) => String(r.idempotencyKey).startsWith("busy-B"));
+    const busyRow = cmdLog.find((r) => String(r.idempotencyKey).startsWith("v2:6:busy-B")); // R1b-2b-2a T6d — khoá v2 (độ dài + base)
     expect(busyRow).toBeTruthy();
     expect(busyRow!.status).toBe("rejected");
     expect(busyRow!.errorText).toMatch(/BUSY/);

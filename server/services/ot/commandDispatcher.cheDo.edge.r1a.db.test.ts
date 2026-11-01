@@ -63,12 +63,12 @@ describe.skipIf(!onTest)("R1a T4 — MODE_LOCAL never blocks a STOP routed to th
   });
 
   it("edge-owned adapter, machine LOCAL: a NON-stop write ⇒ MODE_LOCAL: chua_khai, nothing queued", async () => {
-    const { dispatch } = await import("./commandDispatcher");
+    const { dispatch, perWriteKey } = await import("./commandDispatcher");
     const before = Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n);
     const key = `r1t4e-set-${++seq}-${k.DAU}`;
     const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 5 }], triggeredBy: hitl(), idempotencyKey: key });
     expect(r).toMatchObject({ status: "rejected", reason: "MODE_LOCAL" });
-    const rows = await k.sql`SELECT "errorText" FROM command_log WHERE "idempotencyKey" LIKE ${`${key}%`}`;
+    const rows = await k.sql`SELECT "errorText" FROM command_log WHERE "idempotencyKey" = ${perWriteKey(key, "speed_sp", 0)}`; // R1b-2b-2a T6d — khoá v2 không mơ hồ
     expect(rows.map(x => x.errorText)).toEqual(["MODE_LOCAL: chua_khai"]);
     expect(Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n)).toBe(before);
   });

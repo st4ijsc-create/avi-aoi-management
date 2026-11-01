@@ -100,6 +100,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
@@ -115,7 +116,7 @@ import {
 } from "../../../drizzle/schema";
 import { canKiemGiaTriChuaKhai, epKieuGiaTri, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
-import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, laKhoaBenGoiChon, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
@@ -342,6 +343,13 @@ export interface DispatchInput {
   lang?: "vi" | "en" | "zh";
   /** Unique key → at most one effective dispatch. */
   idempotencyKey: string;
+  /**
+   * R1b-2b-2a T6d — NỘI BỘ (do `dispatch()` đặt, bên gọi không truyền): băm payload của lệnh như BÊN GỌI gửi (trước mọi ép kiểu) — `bamLenhOt`. Ghi vào
+   * `ackValue.bam` của MỌI hàng của lệnh; phát lại chỉ khi hàng cũ CÙNG adapterId + tagKey + băm.
+   */
+  bamLenh?: string;
+  /** T6d — NỘI BỘ: ghi chú sổ cho mọi hàng của lệnh (STOP gửi lại khi khoá trùng / lệch: `lanTruoc`). */
+  ghiChuKhoa?: Record<string, unknown>;
   /**
    * doc 33 I2 (F5): optional policy-as-code CONTEXT for the SEC_PLATFORM governance gate —
    * `{ zone, product, line, approved, role, fat_passed, … }`. doc 48 R1 (T3): the evaluated
@@ -802,9 +810,18 @@ export function __catSauGhiThietBiChoTest(f: ((input: DispatchInput) => Promise<
  * It adds NO gate and changes NO result: dispatchCore is the entire safety path.
  */
 export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
-  const result = await dispatchCore(input);
+  // R1b-2b-2a T6d — băm payload của BÊN GỌI (trước mọi ép kiểu), một lần, theo lệnh; trường nội bộ do bên gọi đặt bị bỏ qua.
+  // T6d fix 2 (AN TOÀN) — khoá idempotency chuẩn hoá MỘT lần ở cửa duy nhất vào đường gửi (`dispatchCore` chỉ được gọi từ đây): kiểu khai `string`
+  // nhưng lúc chạy có bên gọi không truyền (vd khung lệnh canonical thiếu cả idempotency_key lẫn command_id) ⇒ "" (KHÔNG sinh khoá: lệnh thiếu khoá vẫn
+  // là "không khoá" — STOP thay lệnh đang chờ báo biến thể OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY, G9). Mọi chỗ sau thấy một chuỗi.
+  const result = await dispatchCore({ ...input, idempotencyKey: khoaChuanHoa(input.idempotencyKey), bamLenh: bamLenhOt(input), ghiChuKhoa: undefined });
   emitCmdAck(input, result);
   return result;
+}
+
+/** T6d fix 2 — khoá idempotency của bên gọi như chuỗi: thiếu / không phải chuỗi ⇒ "" (lệnh không khoá); chuỗi giữ nguyên từng byte. */
+function khoaChuanHoa(k: unknown): string {
+  return typeof k === "string" ? k : "";
 }
 
 /**
@@ -1159,26 +1176,23 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // ── (2) Idempotency: a prior terminal command for this key → return cached. ──
-  // commandLog rows store a per-write key; probe the deterministic first one
-  // (index 0, first tagKey) so a repeat dispatch with the same base key matches.
-  const probeKey = perWriteKey(input.idempotencyKey, input.writes[0]?.tagKey ?? "_", 0);
-  const [existing] = await db
-    .select()
-    .from(commandLog)
-    .where(eq(commandLog.idempotencyKey, probeKey))
-    .limit(1);
-  if (existing && TERMINAL_STATUSES.has(existing.status)) {
-    return cachedResult(db, input, existing);
-  }
-  // SCADA R1a T3 fix round 1 (M-1) — no row for write #0: a refusal of ONE later write (TAG_NOT_FOUND / TAG_NOT_WRITABLE /
-  // the step-3b channel gate) ledgers only that write, under its own index. Look for it too (first in write order), so a
-  // retry returns that cached refusal instead of re-running the gates into the unique constraint. Single-write commands
-  // (and any command whose write #0 has a row) never reach this read.
-  if (!existing && input.writes.length > 1) {
-    const laterKeys = input.writes.slice(1).map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i + 1));
-    const later = await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, laterKeys));
-    const first = laterKeys.map((k) => later.find((r) => r.idempotencyKey === k)).find((r) => !!r && TERMINAL_STATUSES.has(r.status));
-    if (first) return cachedResult(db, input, first);
+  // commandLog rows store a per-write key; every write's key is read (T6c: the replay rolls up EVERY row; SCADA R1a T3 fix round 1 M-1: a
+  // refusal of ONE later write ledgers only that write, under its own index).
+  // R1b-2b-2a T6d — CHỐT phát lại (mẫu robot R-1C-i), MỘT hàm quyết `quyetDinhKhoa`: chỉ CÙNG lệnh (adapterId + tagKey + băm payload [+ người yêu cầu
+  // CHỈ cho khoá bên gọi chọn `pd:` — T6d fix 1]; hàng
+  // trước T6d: khớp CHẮC CHẮN giá trị) mới được phát lại; khoá của lệnh KHÁC ⇒ `IDEMPOTENCY_KEY_REUSED`, không gửi, không trả kết quả cũ. STOP (theo
+  // loại, hoặc nội dung = ghim) với khoá lệch / đang bay / lần trước không tới thiết bị ⇒ GỬI THẬT dưới khoá mới, tham chiếu `ackValue.lanTruoc`.
+  {
+    const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(db, input));
+    if (qd.loai !== "khong") {
+      const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
+      const lyDo = lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey);
+      if (lyDo && (await laStopChoKhoa(db, input))) input = stopGuiLaiVoiKhoaMoi(input, hangCuaQuyetDinh(qd), lyDo);
+      else if (kqPhatLai) return kqPhatLai;
+      else if (qd.loai === "lech") return tuChoiKhoaDungLai(db, input, qd.hangTrung);
+      else if (qd.loai === "khong_chac") return tuChoiKhongChac(db, input, qd.hang);
+      // `dang_bay` (lệnh thường): đi tiếp — bước giữ chỗ (5b-0) từ chối DUPLICATE_IN_FLIGHT dưới khoá tư vấn (T3F, giữ nguyên).
+    }
   }
 
   // ── (3) Resolve adapter + tags; assert enabled + writable. ───────────────────
@@ -1587,8 +1601,22 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
   //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
   //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
-  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, rawBindingWrites: rawCallerWrites, ledgerExtra, pinnedStop: stopCls.pinnedStop });
-  if (!reservation.ok) return reservation.result;
+  // R1b-2b-2a T6d — một STOP (theo loại, ghim, hoặc nội dung = ghim của hàng bước 3 — hàm thuần, không đọc thêm) không bao giờ bị khoá trùng nuốt, kể cả
+  // khi lệnh khác giành khoá GIỮA bước 2 và khoá tư vấn: bước giữ chỗ báo `doiKhoaStop` ⇒ gửi lại MỘT lần dưới khoá mới (chưa tiêu duyệt nào).
+  const laStopKhoa = isStopCommandType(input.commandType) || stopCls.pinnedStop || classifyOtStop("stop", input.writes, stopPinsFromTagRows(step3TagRows)).pinnedStop;
+  const optsGiuCho = { bindingInput: callerInput, rawBindingWrites: rawCallerWrites, ledgerExtra, pinnedStop: stopCls.pinnedStop };
+  let reservation = await reserveRealWrite(db, input, resolved, { ...optsGiuCho, laStop: laStopKhoa });
+  if ("doiKhoaStop" in reservation) {
+    input = stopGuiLaiVoiKhoaMoi(input, reservation.doiKhoaStop.hang, reservation.doiKhoaStop.lyDo);
+    reservation = await reserveRealWrite(db, input, resolved, optsGiuCho);
+  }
+  // khoá mới chứa UUID và lần giữ chỗ thứ hai không có `laStop` ⇒ không bao giờ báo `doiKhoaStop` lại. T6d fix 2: nhánh không thể ấy KHÔNG ném (census
+  // ném thô) mà FAIL-CLOSED như giữ chỗ hỏng — không gửi, không bao giờ ok (cùng kết quả LEDGER_INTENT_FAILED của `reserveRealWrite` khi giao dịch lỗi).
+  if (!reservation.ok) {
+    if ("result" in reservation) return reservation.result;
+    console.error(`[Dispatch] adapter ${input.adapterId}: the re-keyed STOP reservation reported its fresh key as taken — not sent (LEDGER_INTENT_FAILED)`);
+    return { ok: false, simulated: false, status: "failed", reason: "LEDGER_INTENT_FAILED", results: failedResults(input, "LEDGER_INTENT_FAILED", "failed"), commandLogIds: [] };
+  }
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
   const commandLogIds: number[] = [];
@@ -1952,7 +1980,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         // '<k>' / 'intent:<k>' links them too). T3E — + `motPhan` (lô áp một phần) trên MỌI hàng của lô.
         // R1b-2b-2a T6c — + `khongRo: true` trên MỌI hàng của lô có kết cục `timeout` (không rõ): phát lại theo khoá (`ketQuaPhatLai`) thấy dấu ⇒
         // `timeout`, kể cả khi hàng đọc được là một write acked.
-        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra, ...(motPhan ? { motPhan } : {}), ...(lo.status === "timeout" ? { khongRo: true } : {}) } as any,
+        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ackKhoa(input), ...ledgerExtra, ...(motPhan ? { motPhan } : {}), ...(lo.status === "timeout" ? { khongRo: true } : {}) } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,
@@ -2062,19 +2090,228 @@ const MA_THAT_BAI_KHONG_GUI: ReadonlySet<string> = new Set(["ADAPTER_OFFLINE"]);
 const maTienTo = (errorText: string | null | undefined): string | undefined => (errorText ? /^([A-Z][A-Z0-9_]*):/.exec(errorText)?.[1] : undefined);
 
 /**
- * R1b-2b-2a T6c — MỌI hàng kết quả của lô (một hàng / write, theo khoá per-write `perWriteKey`), theo thứ tự write của `input`; write không có hàng
- * ⇒ `undefined`. Phát lại tính kết cục trên ĐỦ lô, không đọc riêng hàng 0.
+ * R1b-2b-2a T6d — băm payload của một lệnh OT như BÊN GỌI gửi (trước mọi ép kiểu / chuẩn hoá ghim): loại lệnh + danh sách write CHUẨN HOÁ theo thứ tự
+ * (tagKey, kiểu JS của giá trị, giá trị chuẩn hoá `canonicalOtValue`). Hai lệnh cùng khoá chỉ là "cùng lệnh" khi băm bằng nhau (và cùng adapterId, tagKey
+ * từng hàng, người gọi — `quyetDinhKhoa`). Hàm thuần.
  */
-async function hangKetQuaLo(db: LedgerDb, input: DispatchInput): Promise<Array<CommandLog | undefined>> {
-  const keys = input.writes.map((w, i) => perWriteKey(input.idempotencyKey, w.tagKey, i));
-  if (keys.length === 0) return [];
-  const rows = (await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, keys))) as CommandLog[];
-  return keys.map((k) => rows.find((r) => r.idempotencyKey === k));
+export function bamLenhOt(input: Pick<DispatchInput, "commandType" | "writes">): string {
+  const chuan = JSON.stringify({ v: 1, commandType: input.commandType, writes: input.writes.map((w) => [w.tagKey, typeof w.value, canonicalOtValue(w.value)]) });
+  return createHash("sha256").update(chuan, "utf8").digest("hex");
 }
 
-/** The cached (idempotent replay) result of a prior terminal ledger row for this key — T6c: computed over EVERY result row of the batch. */
-async function cachedResult(db: LedgerDb, input: DispatchInput, existing: CommandLog): Promise<DispatchResult> {
-  return ketQuaPhatLai(input, existing, await hangKetQuaLo(db, input));
+/** T6d — `ackValue` thêm vào MỌI hàng sổ của lệnh: `bam` (+ ghi chú khoá nếu có: `lanTruoc` của STOP gửi lại). */
+function ackKhoa(input: DispatchInput): Record<string, unknown> {
+  return { bam: input.bamLenh ?? bamLenhOt(input), ...(input.ghiChuKhoa ?? {}) };
+}
+
+/**
+ * T6d — người yêu cầu của lệnh như cột sổ ghi (`requestedBy`). T6d fix 1 (review I1, dieu-phoi): CHỈ dùng cho khoá BÊN GỌI CHỌN (`laKhoaBenGoiChon`,
+ * miền lập trình `pd:u<N>:`); khoá máy chủ sinh KHÔNG chốt người (FOE tiếp tục chạy dưới SYSTEM_FOE_USER, interlock được duyệt lại bởi người khác ⇒
+ * vẫn phát lại / gửi như cũ). `triggerKind` KHÔNG thuộc chốt (dieu-phoi: đúng bốn trường adapter + tag + băm + commandType).
+ */
+export function nguoiGoiKhoa(input: DispatchInput): { requestedBy: number } {
+  return { requestedBy: actors(input).requestedBy };
+}
+
+/** T6d — mọi hàng sổ có thể thuộc khoá này, theo chỉ số write: kết quả + ý định, định dạng MỚI (`v2` / `i2`) và CŨ (trước T6d, chỉ đọc). */
+export interface HangTheoKhoa {
+  ketQuaMoi: Array<CommandLog | undefined>;
+  ketQuaCu: Array<CommandLog | undefined>;
+  yDinhMoi: Array<CommandLog | undefined>;
+  yDinhCu: Array<CommandLog | undefined>;
+}
+
+/** T6d — đọc MỘT lần mọi hàng của khoá (kết quả + ý định của MỌI write, cả hai định dạng). */
+async function hangTheoKhoa(db: LedgerDb, input: DispatchInput): Promise<HangTheoKhoa> {
+  // lệnh KHÔNG có write: `writeAll` ghi MỘT hàng tagKey null dưới khoá `_` chỉ số 0 (giữ phát lại như trước T6d)
+  const tags = input.writes.length > 0 ? input.writes.map((w) => w.tagKey) : ["_"];
+  const ketQuaMoi = tags.map((t, i) => perWriteKey(input.idempotencyKey, t, i));
+  const ketQuaCu = tags.map((t, i) => perWriteKeyCu(input.idempotencyKey, t, i));
+  const yDinhMoi = ketQuaMoi.map(intentKeyFor);
+  const yDinhCu = ketQuaCu.map(intentKeyFor);
+  const tat = [...new Set([...ketQuaMoi, ...ketQuaCu, ...yDinhMoi, ...yDinhCu])];
+  const rows = tat.length === 0 ? [] : ((await db.select().from(commandLog).where(inArray(commandLog.idempotencyKey, tat))) as CommandLog[]);
+  const tim = (keys: string[]) => keys.map((k) => rows.find((r) => r.idempotencyKey === k));
+  return { ketQuaMoi: tim(ketQuaMoi), ketQuaCu: tim(ketQuaCu), yDinhMoi: tim(yDinhMoi), yDinhCu: tim(yDinhCu) };
+}
+
+/** T6d — hai giá trị là CHẮC CHẮN cùng một giá trị ghi (JSON chuẩn hoá bằng nhau, hoặc hai giá trị nguyên thuỷ có cùng dạng chuỗi: "245" ≡ 245). */
+function khopGiaTriChac(a: unknown, b: unknown): boolean {
+  if (canonicalOtValue(a) === canonicalOtValue(b)) return true;
+  const nguyenThuy = (v: unknown) => v === null || ["string", "number", "boolean"].includes(typeof v);
+  return nguyenThuy(a) && nguyenThuy(b) && String(a) === String(b);
+}
+
+export type QuyetDinhKhoa =
+  | { loai: "khong" }
+  /** CÙNG lệnh, có hàng kết quả kết thúc ⇒ phát lại T6c (`ketQuaPhatLai`). */
+  | { loai: "phat_lai"; existing: CommandLog; hangLo: Array<CommandLog | undefined> }
+  /** CÙNG lệnh, ý định (hoặc hàng chưa kết thúc) không có kết quả: đang bay / không rõ ⇒ DUPLICATE_IN_FLIGHT (T3F), STOP ⇒ gửi lại. */
+  | { loai: "dang_bay"; hang: CommandLog[] }
+  /** Khoá thuộc lệnh KHÁC ⇒ IDEMPOTENCY_KEY_REUSED (không gửi, không trả kết quả cũ); STOP ⇒ gửi thật dưới khoá mới. */
+  | { loai: "lech"; hangTrung: CommandLog[] }
+  /**
+   * Hàng TRƯỚC T6d (không băm) không chứng minh được cùng hay khác lệnh ⇒ coi như kết cục lần trước KHÔNG RÕ: lệnh thường bị từ chối DUPLICATE_IN_FLIGHT
+   * (lớp "có thể đã bay" — FOE không thử lại với khoá mới, không gửi lại), STOP ⇒ gửi thật dưới khoá mới.
+   */
+  | { loai: "khong_chac"; hang: CommandLog[] };
+
+/**
+ * R1b-2b-2a T6d (AN TOÀN) — MỘT nơi quyết lệnh mang khoá đã dùng có phải CÙNG lệnh không (mẫu robot `robotCommandDispatcher` R-1C-i). MỌI hàng tìm thấy
+ * (kết quả + ý định, định dạng mới + cũ) phải là của lệnh này, không thì `lech`:
+ *   • cùng `adapterId`, cùng `tagKey` của write CÙNG chỉ số; cùng người yêu cầu (`requestedBy`) CHỈ KHI khoá do BÊN GỌI chọn (`laKhoaBenGoiChon`,
+ *     `pd:u<N>:` — T6d fix 1, review I1): khoá máy chủ sinh (`il-`, `hmi:`, `run<N>-…`, actionId, edge) chốt ĐÚNG adapter + tag + băm + commandType,
+ *     KHÔNG người, KHÔNG `triggerKind` (FOE tiếp tục dưới SYSTEM_FOE_USER / interlock duyệt lại ⇒ phát lại như cũ, không bao giờ IDEMPOTENCY_KEY_REUSED);
+ *   • hàng tìm thấy dưới khoá định dạng CŨ mà MANG `ackValue.bam` ⇒ `lech` (T6d fix 1, review M1): băm chỉ được ghi từ T6d, và từ T6d chỉ ghi khoá v2
+ *     ⇒ hàng ấy là của một base KHÁC mà chuỗi v2 trùng chuỗi định dạng cũ của base này (base `v2:1:K:1` + tag `t` + 0 ≡ khoá v2 của base `K`);
+ *   • hàng có `ackValue.bam` (ghi từ T6d) ⇒ băm = băm lệnh này (loại lệnh + tag + giá trị + kiểu + thứ tự);
+ *   • hàng KHÔNG có băm (trước T6d) ⇒ FAIL-CLOSED: khác loại lệnh ⇒ lệch; giá trị khớp CHẮC CHẮN (`khopGiaTriChac`) ⇒ khớp; không chắc ⇒
+ *     `khong_chac` (kết cục lần trước KHÔNG RÕ — từ chối DUPLICATE_IN_FLIGHT, không bao giờ ok, không bao giờ cho bên gọi thử lại khoá mới).
+ * Một hàng lệch ⇒ `lech` (thắng `khong_chac`). Khớp hết: hàng kết quả (ưu tiên định dạng mới) có hàng kết thúc ⇒ `phat_lai`; còn hàng mà không kết quả kết thúc ⇒ `dang_bay`; không hàng ⇒ `khong`.
+ * Hàm thuần — xuất cho test.
+ */
+export function quyetDinhKhoa(
+  input: DispatchInput,
+  bam: string,
+  nguoiGoi: { requestedBy: number },
+  h: HangTheoKhoa,
+): QuyetDinhKhoa {
+  const chotNguoi = laKhoaBenGoiChon(input.idempotencyKey); // T6d fix 1 (I1): chốt người CHỈ cho khoá bên gọi chọn
+  // "khop" = chắc chắn CÙNG lệnh; "lech" = chắc chắn lệnh KHÁC (cột sổ khác, hoặc băm khác); "khong_chac" = hàng trước T6d (không băm) cùng cột nhưng
+  // GIÁ TRỊ không khớp chắc chắn (sổ lưu giá trị ĐÃ ép kiểu / chuẩn hoá ghim: "30.0" ⇒ 30, 1 ⇒ true) — không chứng minh được khác hay cùng.
+  const bamCua = (x: CommandLog | undefined) => (x?.ackValue as { bam?: unknown } | null | undefined)?.bam;
+  const khopHang = (r: CommandLog, i: number, dinhDangCu: boolean): "khop" | "lech" | "khong_chac" => {
+    const w: { tagKey: string | null; value: unknown } | undefined = input.writes[i] ?? (input.writes.length === 0 && i === 0 ? { tagKey: null, value: null } : undefined);
+    if (!w || r.adapterId !== input.adapterId || (r.tagKey ?? null) !== w.tagKey) return "lech";
+    if (chotNguoi && r.requestedBy !== nguoiGoi.requestedBy) return "lech";
+    const bamHang = bamCua(r);
+    // M1: khoá định dạng CŨ + có băm ⇒ hàng của base KHÁC (chuỗi v2 của nó trùng chuỗi cũ của base này) ⇒ không bao giờ phát lại
+    if (dinhDangCu && typeof bamHang === "string") return "lech";
+    if (typeof bamHang === "string") return bamHang === bam ? "khop" : "lech";
+    // hàng kết quả không băm GẮN với ý định cùng chỉ số (`ackValue.intentId`) — vd kết quả "không rõ" do người vận hành giải bằng hàm DB
+    // `ot_write_intent_resolve` (mig 0374, chép cột của ý định nhưng không chép `bam`) ⇒ phán theo băm của CHÍNH ý định ấy
+    const yd = h.yDinhMoi[i] ?? h.yDinhCu[i];
+    const bamYd = bamCua(yd);
+    if (yd && yd.id !== r.id && (r.ackValue as { intentId?: unknown } | null | undefined)?.intentId === yd.id && typeof bamYd === "string") return bamYd === bam ? "khop" : "lech";
+    if (r.commandType !== input.commandType) return "lech";
+    return khopGiaTriChac(r.requestedValue, w.value) ? "khop" : "khong_chac"; // hàng chưa có băm: khớp CHẮC CHẮN, hoặc không chắc (fail-closed)
+  };
+  const tatCa: CommandLog[] = [];
+  let lech = false;
+  let khongChac = false;
+  for (const [ds, dinhDangCu] of [[h.ketQuaMoi, false], [h.ketQuaCu, true], [h.yDinhMoi, false], [h.yDinhCu, true]] as const) {
+    ds.forEach((r, i) => {
+      if (!r) return;
+      if (!tatCa.some((x) => x.id === r.id)) tatCa.push(r);
+      const k = khopHang(r, i, dinhDangCu);
+      if (k === "lech") lech = true;
+      else if (k === "khong_chac") khongChac = true;
+    });
+  }
+  if (tatCa.length === 0) return { loai: "khong" };
+  if (lech) return { loai: "lech", hangTrung: tatCa };
+  if (khongChac) return { loai: "khong_chac", hang: tatCa };
+  const hangLo = h.ketQuaMoi.some((r) => !!r) ? h.ketQuaMoi : h.ketQuaCu;
+  const dau = hangLo[0];
+  const ketThuc = (r: CommandLog | undefined): r is CommandLog => !!r && TERMINAL_STATUSES.has(r.status as DispatchStatus);
+  // cùng thứ tự đọc với trước T6d: hàng của write #0; không có ⇒ hàng kết thúc đầu tiên theo thứ tự write (R1a T3 M-1)
+  const existing = dau ? (ketThuc(dau) ? dau : undefined) : hangLo.find(ketThuc);
+  if (existing) return { loai: "phat_lai", existing, hangLo: [...hangLo] };
+  // chưa có kết quả kết thúc: hàng của write #0 trước (cùng tập T3F đọc trước T6d), không có thì mọi hàng
+  const dau0 = [h.yDinhMoi[0] ?? h.yDinhCu[0], dau].filter((r): r is CommandLog => !!r);
+  return { loai: "dang_bay", hang: dau0.length > 0 ? dau0 : tatCa };
+}
+
+/**
+ * T6d — lệnh này có phải STOP cho mục đích chốt khoá không: loại lệnh STOP (`isStopCommandType`), HOẶC nội dung đúng các tag ghim STOP với giá trị ghim
+ * (đọc ghim của adapter — CHỈ khi khoá đã dùng). Đọc lỗi ⇒ false (lệnh thường: từ chối, không gửi). Chỉ quyết "không nuốt STOP": mọi cổng sau vẫn áp.
+ */
+async function laStopChoKhoa(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<boolean> {
+  if (isStopCommandType(input.commandType)) return true;
+  try {
+    return matchPinnedStop(await loadStopPins(db, input.adapterId), input.writes).ok;
+  } catch {
+    return false;
+  }
+}
+
+/** T6d — mã từ chối khi khoá đã dùng cho lệnh KHÁC (cùng mã với robot `IDEMPOTENCY_KEY_REUSED`). */
+export const MA_KHOA_DUNG_LAI = "IDEMPOTENCY_KEY_REUSED";
+
+/** T6d — từ chối lệnh (không STOP) mang khoá của lệnh khác: hàng sổ KHÔNG mang khoá (khoá thuộc lệnh kia — UNIQUE), ghi tham chiếu; không gửi gì. */
+async function tuChoiKhoaDungLai(db: LedgerDb, input: DispatchInput, hangTrung: ReadonlyArray<CommandLog>): Promise<DispatchResult> {
+  console.warn(`[Dispatch] adapter ${input.adapterId}: idempotency key already used by a different command (command_log #${hangTrung.map((r) => r.id).join(",")}) — refused, nothing sent (T6d)`);
+  const ids = await writeAll(
+    db,
+    input,
+    "rejected",
+    MA_KHOA_DUNG_LAI,
+    "idempotency key already used by a different command (another adapter, tag, value or caller) — not sent, the earlier result is not returned",
+    undefined,
+    undefined,
+    { nullKey: true, ackExtra: { khoaDungLai: { commandLogIds: hangTrung.map((r) => r.id) } } },
+  );
+  return { ok: false, simulated: false, status: "rejected", reason: MA_KHOA_DUNG_LAI, results: failedResults(input, MA_KHOA_DUNG_LAI), commandLogIds: ids };
+}
+
+/**
+ * T6d — từ chối lệnh (không STOP) mà khoá có hàng TRƯỚC T6d không chứng minh được cùng / khác lệnh: DUPLICATE_IN_FLIGHT (kết cục lần trước KHÔNG RÕ —
+ * lớp "có thể đã bay" của T3F: FOE không gửi lại với khoá mới), hàng KHÔNG mang khoá, tham chiếu hàng cũ; không gửi gì. Vì sao không
+ * IDEMPOTENCY_KEY_REUSED: mã ấy nghĩa "khoá thuộc một lệnh KHÁC đã chứng minh, lệnh này chưa gửi" và nằm trong lớp "có thể đã được áp" (lệnh khác có thể đã chạy):
+ * FOE KHÔNG BAO GIỜ thử lại nó dưới khoá mới; STOP thì được đổi khoá và gửi thật. Ở đây hàng cũ có thể CHÍNH là lệnh này (đã áp trước nâng cấp) ⇒ không dùng mã ấy.
+ */
+async function tuChoiKhongChac(db: LedgerDb, input: DispatchInput, hang: ReadonlyArray<CommandLog>): Promise<DispatchResult> {
+  const ids = hang.map((r) => r.id);
+  const ghiIds = await writeAll(
+    db,
+    input,
+    "rejected",
+    "DUPLICATE_IN_FLIGHT",
+    `idempotency key already used by pre-T6d ledger row(s) #${ids.join(",")} that carry no payload hash and cannot be proven to be this command — outcome of that attempt unknown, not sent`,
+    undefined,
+    undefined,
+    { nullKey: true, ackExtra: { khoaKhongChac: { commandLogIds: ids } } },
+  );
+  return { ok: false, simulated: false, status: "rejected", reason: "DUPLICATE_IN_FLIGHT", results: failedResults(input, "DUPLICATE_IN_FLIGHT"), commandLogIds: ghiIds };
+}
+
+export type LyDoStopKhoaMoi = "khoa_lech" | "lan_truoc_khong_ok" | "dang_bay" | "khong_chac" | "khong_khoa";
+
+/**
+ * T6d — lý do gửi lại một STOP dưới khoá mới theo quyết định khoá; null ⇒ không cần (không có hàng, hoặc lần trước là STOP ĐÃ tới thiết bị: ok, không mô
+ * phỏng ⇒ phát lại — mẫu robot residual 3: STOP chỉ phát lại một lần trước 'done').
+ * T6d fix 2 — STOP KHÔNG khoá (`""`): khoá ghi của nó (`v2:0::<tag>:<idx>`) là của CHUNG mọi lệnh không khoá ⇒ hàng tìm thấy không bao giờ là "lần trước của
+ * CHÍNH STOP này" ⇒ có hàng nào ⇒ gửi dưới khoá mới (`khong_khoa`), không bao giờ phát lại (STOP không khoá thứ hai sau một STOP ok vẫn ra thiết bị).
+ */
+function lyDoStopKhoaMoi(qd: QuyetDinhKhoa, kqPhatLai: DispatchResult | null, khongKhoa: boolean): LyDoStopKhoaMoi | null {
+  if (khongKhoa && qd.loai !== "khong") return "khong_khoa";
+  if (qd.loai === "lech") return "khoa_lech";
+  if (qd.loai === "dang_bay") return "dang_bay";
+  if (qd.loai === "khong_chac") return "khong_chac";
+  if (qd.loai === "phat_lai" && kqPhatLai && !(kqPhatLai.ok && !kqPhatLai.simulated)) return "lan_truoc_khong_ok";
+  return null;
+}
+
+/** T6d — các hàng lần trước mà một STOP gửi lại tham chiếu. */
+function hangCuaQuyetDinh(qd: QuyetDinhKhoa): CommandLog[] {
+  if (qd.loai === "lech") return qd.hangTrung;
+  if (qd.loai === "dang_bay" || qd.loai === "khong_chac") return qd.hang;
+  if (qd.loai === "phat_lai") return qd.hangLo.filter((r): r is CommandLog => !!r);
+  return [];
+}
+
+/**
+ * T6d — STOP với khoá của lệnh khác / đang bay / lần trước không tới thiết bị: GỬI THẬT dưới khoá MỚI (khoá gốc thuộc lần trước — UNIQUE), mọi hàng ghi
+ * tham chiếu `ackValue.lanTruoc`. Mẫu robot (R-1C-i + residual 3): một STOP thừa vô hại, một STOP bị nuốt thì không. Mọi cổng sau vẫn áp.
+ */
+function stopGuiLaiVoiKhoaMoi(input: DispatchInput, hangTruoc: ReadonlyArray<CommandLog>, lyDo: LyDoStopKhoaMoi): DispatchInput {
+  const ids = hangTruoc.map((r) => r.id);
+  console.warn(`[Dispatch] STOP on adapter ${input.adapterId}: idempotency key already used (${lyDo}, command_log #${ids.join(",")}) — not a replay, STOP sent under a new key (T6d)`);
+  return {
+    ...input,
+    idempotencyKey: `${input.idempotencyKey}#stop-${randomUUID()}`,
+    ghiChuKhoa: { ...(input.ghiChuKhoa ?? {}), lanTruoc: { idempotencyKey: input.idempotencyKey, commandLogIds: ids, lyDo } },
+  };
 }
 
 /**
@@ -2120,7 +2357,8 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
   const khongRo = hang.some((r) => av(r)?.khongRo === true);
   // T6c polish (review m1) — lô THIẾT BỊ = mọi hàng có status thiết bị VÀ là hàng KẾT QUẢ của đường ghi (`ackValue.ledger === "result"`, đường sống luôn
   // ghi). Hàng từ chối / `failed` không gửi gì (`writeFailed` ADAPTER_OFFLINE: không `ackValue`) ⇒ nhánh không-thiết-bị (giữ `reason` = mã như đường sống).
-  // T6c polish 2 (re-review Important) — hàng CŨ ghi trước sổ ghi trước (status thiết bị, KHÔNG `ackValue.ledger`) cũng là hàng thiết bị ⇒ CÙNG `ketCucLo`
+  // T6c polish 2 (re-review Important) — hàng KHÔNG `ackValue.ledger` (hàng cũ trước sổ ghi trước, hoặc hàng ghi không qua sổ; T6d chỉ thêm `bam`, không thêm
+  // `ledger`) mang status thiết bị cũng là hàng thiết bị ⇒ CÙNG `ketCucLo`
   // (legacy [acked, failed] ⇒ failed MOT_PHAN như đường sống), TRỪ khi errorText mang tiền tố mã của một thất bại KHÔNG gửi (`MA_THAT_BAI_KHONG_GUI`).
   const hangThietBi = (r: CommandLog): boolean => {
     if (!TRANG_THAI_HANG_THIET_BI.has(r.status)) return false;
@@ -2264,7 +2502,14 @@ function verifyActionBinding(
 /** Advisory-lock namespace so OT command keys never share a lock with another subsystem. */
 const OT_COMMAND_LOCK_NS = "ot.command:";
 
-/** The intent row's key — derived deterministically from the result row's per-write key. */
+/**
+ * The intent row's key — derived deterministically from the result row's per-write key.
+ * R1b-2b-2a T6d — UNCHANGED form `intent:<result key>`, now over the unambiguous `v2:` result key (`perWriteKey`): every result key starts with
+ * `v2:` and every intent key with `intent:` ⇒ the two never collide, and no caller base can produce another base's intent key (before: base
+ * `intent:X` gave a RESULT key equal to base `X`'s INTENT key). The prefix is kept because the DB function `ot_write_intent_resolve` (mig 0374)
+ * derives the manual resolution's result key as `substr(intentKey, 8)` — with `intent:` it yields exactly the v2 result key (no migration). The same
+ * function reads pre-T6d intents (`intent:<base>:<tag>:<idx>`) from their pre-T6d result keys (`perWriteKeyCu`).
+ */
 function intentKeyFor(resultKey: string): string {
   // fix round 1 — prefix + short hash when too long (was a bare 128-char cut that dropped the
   // ':<idx>' suffix ⇒ all writes of a long-key command shared ONE intent key).
@@ -2273,7 +2518,9 @@ function intentKeyFor(resultKey: string): string {
 
 type Reservation =
   | { ok: true; intentIds: number[]; boundConfirmer: number | null }
-  | { ok: false; result: DispatchResult };
+  | { ok: false; result: DispatchResult }
+  /** R1b-2b-2a T6d — chỉ khi `opts.laStop`: khoá đã bị lệnh khác / lượt đang bay / lượt không tới thiết bị giữ ⇒ bên gọi gửi lại STOP dưới khoá mới. */
+  | { ok: false; doiKhoaStop: { hang: CommandLog[]; lyDo: LyDoStopKhoaMoi } };
 
 /**
  * Real-write reservation, ONE transaction, committed BEFORE the driver is called:
@@ -2301,6 +2548,8 @@ async function reserveRealWrite(
     pinnedStop?: boolean;
     /** SCADA R1a Task 3 — the caller's RAW writes (before step-3b coercion): the binding may match these OR `bindingInput`'s. */
     rawBindingWrites?: ReadonlyArray<DispatchWrite>;
+    /** R1b-2b-2a T6d — this command is a STOP (type, pin or pinned content): a taken key ⇒ `doiKhoaStop` (re-sent under a new key), never swallowed. */
+    laStop?: boolean;
   } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
@@ -2327,15 +2576,16 @@ async function reserveRealWrite(
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${OT_COMMAND_LOCK_NS + input.idempotencyKey}))`);
 
-      const prior = await tx
-        .select()
-        .from(commandLog)
-        .where(inArray(commandLog.idempotencyKey, [resultKeys[0], intentKeys[0]]));
-      const priorResult = prior.find((r) => r.idempotencyKey === resultKeys[0]);
-      if (priorResult && TERMINAL_STATUSES.has(priorResult.status)) {
-        return { ok: false as const, result: await cachedResult(tx, input, priorResult) };
-      }
-      if (prior.length > 0) {
+      // R1b-2b-2a T6d — dưới khoá tư vấn: MỌI hàng của khoá (kết quả + ý định, khoá mới + cũ); CÙNG chốt `quyetDinhKhoa` với bước 2 (chống đua).
+      const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(tx, input));
+      const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
+      const lyDoStop = opts.laStop ? lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey) : null;
+      if (lyDoStop) return { ok: false as const, doiKhoaStop: { hang: hangCuaQuyetDinh(qd), lyDo: lyDoStop } };
+      if (kqPhatLai) return { ok: false as const, result: kqPhatLai };
+      if (qd.loai === "lech") return { ok: false as const, result: await tuChoiKhoaDungLai(tx, input, qd.hangTrung) };
+      if (qd.loai === "khong_chac") return { ok: false as const, result: await tuChoiKhongChac(tx, input, qd.hang) };
+      if (qd.loai === "dang_bay") {
+        const prior = qd.hang;
         // The key's intent exists but no result: another call holds it, or the process died
         // between the device write and the result row. Either way a second write is unsafe.
         // Ledgered with a NULL key (the per-write keys belong to the in-flight command).
@@ -2422,7 +2672,7 @@ async function reserveRealWrite(
             status: "sent",
             ...trig,
             ...ctx,
-            ackValue: { ledger: "intent", ...(opts.ledgerExtra ?? {}) } as any,
+            ackValue: { ledger: "intent", ...ackKhoa(input), ...(opts.ledgerExtra ?? {}) } as any, // T6d — + bam (chốt phát lại)
             idempotencyKey: intentKeys[i],
             sentAt,
           })
@@ -2620,6 +2870,7 @@ async function writeSimulated(
         ...trig,
         ...ctx,
         errorText,
+        ackValue: ackKhoa(input) as any, // R1b-2b-2a T6d — bam (chốt phát lại)
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
       })
       .returning({ id: commandLog.id });
@@ -2710,11 +2961,10 @@ async function writeAll(
         ...trig,
         ...ctx,
         errorText: `${reason}: ${detail}`,
-        ...(link?.intentIds && link.intentIds.length > 0
-          ? { ackValue: { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)], ...(link.ackExtra ?? {}) } as any }
-          : link?.ackExtra && Object.keys(link.ackExtra).length > 0
-            ? { ackValue: { ...link.ackExtra } as any }
-            : {}),
+        // R1b-2b-2a T6d — MỌI hàng mang `ackValue.bam` (chốt phát lại theo đúng lệnh); trước T6d hàng không liên kết không có `ackValue`.
+        ackValue: (link?.intentIds && link.intentIds.length > 0
+          ? { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)], ...ackKhoa(input), ...(link.ackExtra ?? {}) }
+          : { ...ackKhoa(input), ...(link?.ackExtra ?? {}) }) as any,
         idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", idx),
       })
       .returning({ id: commandLog.id });
@@ -2882,8 +3132,22 @@ function failedResults(input: DispatchInput, reason: string, status: DispatchSta
   return input.writes.map((w) => ({ tagKey: w.tagKey, ok: false, status, error: reason }));
 }
 
-/** Make a per-write idempotency key so a multi-write command keeps the unique constraint. */
-function perWriteKey(base: string, tagKey: string, index: number): string {
+/**
+ * Make a per-write idempotency key so a multi-write command keeps the unique constraint.
+ * R1b-2b-2a T6d (AN TOÀN) — định dạng KHÔNG MƠ HỒ: tiền tố phiên bản `v2:` + ĐỘ DÀI của từng phần (`v2:<len>:<base>:<len>:<tagKey>:<idx>`) ⇒ hai bộ
+ * (base, tagKey, idx) khác nhau KHÔNG BAO GIỜ cho cùng chuỗi (trước: `${base}:${tagKey}:${idx}` — base `K` + tag `x:y` ≡ base `K:x` + tag `y`). Khoá dài
+ * hơn 128 ⇒ `boundedKey` (giữ tiền tố + băm của CẢ chuỗi). Hàng ghi theo định dạng CŨ được đọc qua `perWriteKeyCu` (chỉ để phát lại có chốt).
+ */
+export function perWriteKey(base: string, tagKey: string, index: number): string {
+  // T6d fix 2 — TOÀN PHẦN (phòng thủ chiều sâu, cửa vào đã chuẩn hoá khoá): base không phải chuỗi ⇒ "" (lệnh không khoá, như `dispatch()`); tagKey không
+  // phải chuỗi ⇒ "_" (CÙNG khoá `writeAll` ghi cho hàng tagKey null) — không bao giờ ném ở bước 2 trước cả khi tag được tra.
+  const b = typeof base === "string" ? base : "";
+  const t = typeof tagKey === "string" ? tagKey : "_";
+  return boundedKey(`v2:${b.length}:${b}:${t.length}:${t}:${index}`);
+}
+
+/** T6d — định dạng CŨ (trước T6d), CHỈ để ĐỌC hàng cũ cho phát lại có chốt / chặn DUPLICATE_IN_FLIGHT; không bao giờ dùng để ghi. */
+function perWriteKeyCu(base: string, tagKey: string, index: number): string {
   // doc 81 Đợt 1B Task 6 fix round 1 — ≤128 AND unique: a bare slice(0,128) collapsed every
   // write of a long-key command onto one key. Keys ≤128 chars are unchanged byte for byte.
   return boundedKey(`${base}:${tagKey}:${index}`);

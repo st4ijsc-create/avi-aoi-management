@@ -78,8 +78,10 @@ export interface FleetRolloutInput {
   deviceIds: number[];
   stage: "staging" | "production";
   strategy: FleetRolloutStrategy;
-  /** Tiền tố khóa idempotency; mỗi máy → `${prefix}-dev{deviceId}`. */
+  /** Tiền tố khóa idempotency; mỗi máy → `${prefix}-dev{deviceId}`. R1b-2b-2a T6d — router truyền tiền tố ĐÃ đặt miền (`tienToMienLapTrinh`). */
   idempotencyKeyPrefix: string;
+  /** T6d — tiền tố CŨ chưa đặt miền: CHỈ để tìm hàng TRƯỚC T6d của CHÍNH người gọi (`timDeployTruoc`, lọc `requestedBy`). */
+  tienToCu?: string;
   /** actionId gốc; mỗi máy → `${actionId}-dev{deviceId}` (audit tách bạch). */
   actionId: string;
   /** Người ký duyệt (four-eyes) — bắt buộc cho production, phải KHÁC người yêu cầu. */
@@ -138,6 +140,7 @@ export interface FleetRolloutDeps {
     user: DpcUser,
     hitl: { actionId: string; requestedBy: number; confirmedBy?: number },
     idempotencyKey: string,
+    khoaCu?: string,
   ) => Promise<DeploymentRow & { rolledBackFromId?: number; targetRolledBack?: boolean }>;
   /**
    * doc 81 Đợt 1B Task 3 — promote có thể GHI THẬT xuống máy không? Mặc định: đúng điều kiện
@@ -188,6 +191,7 @@ async function deployOne(
         buildId: input.buildId,
         stage: input.stage,
         idempotencyKey: `${input.idempotencyKeyPrefix}-dev${deviceId}`,
+        ...(input.tienToCu ? { khoaCu: `${input.tienToCu}-dev${deviceId}` } : {}), // T6d — hàng trước T6d của chính người gọi
         deviceId,
         hitl: {
           actionId: `${input.actionId}-dev${deviceId}`,
@@ -297,6 +301,7 @@ export async function deployToFleet(
               confirmedBy: input.confirmedBy,
             },
             `${input.idempotencyKeyPrefix}-rollback-dev${r.deviceId}`,
+            input.tienToCu ? `${input.tienToCu}-rollback-dev${r.deviceId}` : undefined, // T6d
           );
           // doc 80 WS-03 — rollbackDeployment KHÔNG còn ném khi lượt lùi failed/simulated; nó
           // trả status thật + `targetRolledBack`. Chỉ báo "đã khôi phục" khi server thật sự

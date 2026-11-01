@@ -9,10 +9,26 @@
  * thật: dispatcher, facade safety, interlock gate, commandLog, ai_pending_actions.
  *
  * command_log là WORM (avi_app không có UPDATE/DELETE) ⇒ hàng test ở lại; mọi khoá mang tiền tố
- * DAU (duy nhất theo lượt chạy) nên không va hàng cũ. Adapter/tag/pending action được dọn.
+ * DAU (duy nhất theo lượt chạy) nên không va hàng cũ.
+ *
+ * ── VÌ SAO KHÔNG DÙNG ROLLBACK (N4, dieu-phoi 2026-11-01) ──────────────────────────────────────────────────────────────
+ * Luật: test KHÔNG BAO GIỜ DELETE / TRUNCATE, không owner `aoi`, dọn bằng ROLLBACK khi được. Tệp này KHÔNG được: mọi đường
+ * thật nó đo — dispatch() (khoá advisory, SELECT … FOR UPDATE + CAS trên ai_pending_actions, INSERT intent), tool AI
+ * set_machine_param qua proposeAction/confirmAction, bước FOE R4 (foeApprovalDbRefusal đọc lại run/gate), commandLogRouter.stats
+ * — đọc qua pool `getDb()` của CHÍNH NÓ hoặc mở giao dịch RIÊNG; ca race cưỡng bức còn cần một kết nối THỨ BA. Fixture trong
+ * một giao dịch chưa commit của test thì các kết nối đó KHÔNG thấy; ép chúng về một kết nối là đổi điều được đo (đua/khoá).
+ * Nên: fixture dùng id RIÊNG mỗi lượt và KHÔNG xoá gì —
+ *   • máy / chủ / người duyệt: khối 1000 id cấp bằng `nextval` (khoiIdRieng; sequence không bao giờ cấp lại, kể cả phiên song song);
+ *   • adapter / tag / luật / sự kiện / run / action: id serial + tên/khoá mang DAU (duy nhất theo lượt + pid).
+ * Hàng Ở LẠI `_test` (như các test DB khác). afterAll chỉ UPDATE hàng của CHÍNH lượt (chọn theo id/khối/DAU riêng, không lọc rộng):
+ *   • adapter → isEnabled=false, luật interlock → enabled=false (mã quét toàn bảng: interlockEngine, chẩn đoán SCADA);
+ *   • về trạng thái KẾT THÚC để không làm "mồi" cho bộ quét nền của test khác: run FOE → aborted, bước run chưa kết thúc → failed
+ *     (bước gate đã 'completed' giữ nguyên), ai_pending_actions proposed/confirmed/dang_ap_client → expired, sự kiện interlock → resolved.
+ *   Bốn bảng này không có trigger WORM / REVOKE chặn UPDATE của vai test (đã kiểm drizzle/*.sql; trigger pending_epoch của
+ *   orchestration_runs chỉ tăng khi chuyển SANG held/awaiting_confirm). command_log là WORM ⇒ không đụng.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, between, eq, inArray, like, notInArray, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 
 const fake = vi.hoisted(() => ({
@@ -50,32 +66,88 @@ vi.mock("./otManager", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
+import {
+  aiPendingActions,
+  commandLog,
+  deviceAdapters,
+  deviceTags,
+  interlockEvents,
+  interlockRules,
+  orchestrationRunSteps,
+  orchestrationRuns,
+} from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { dispatch, NO_CONFIRMER, type DispatchInput } from "./commandDispatcher";
+import { dispatch, NO_CONFIRMER, perWriteKey, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
-import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
-
-const fixtures: FoeGateRunFixture[] = []; // doc 81 Đợt 4 fix round 1 — real run/gate rows, removed in afterAll
+import { makeFoeGateRun } from "../orchestration/foe/__foeGateRunFixture";
 import { SparkplugCommandHandler, SPARKPLUG_ACTION_ID_METRIC, SPARKPLUG_COMMAND_TOOL } from "../uns/sparkplugCommand";
 import { encodePayload } from "../uns/sparkplugEncoder";
 
 const DB_URL = process.env.DATABASE_URL;
-const DAU = `T6D1B-${Date.now()}`;
-const OWNER = 990_600_101;
-const OTHER_USER = 990_600_102;
-const MACHINE = 990_600_001;
+// N4 — `-<pid>`: hai tiến trình vitest khởi cùng mili-giây vẫn khác DAU (mã adapter UNIQUE, khoá idempotency, id action).
+const DAU = `T6D1B-${Date.now()}-${process.pid}`;
 const TOOL = "set_machine_param";
 
-/** Dọn adapter/tag mồ côi của một lượt trước bị ngắt: máy tổng hợp CỐ ĐỊNH ⇒ tool AI (machineControl.ts: adapter đầu tiên theo machineId) chọn nhầm adapter sót, không có driver giả ⇒ bi_tu_choi_ghi. */
-async function donAdapterSotCuaMay(machineIds: number[]): Promise<void> {
-  const x = await d();
-  const old = await x.select({ id: deviceAdapters.id }).from(deviceAdapters).where(inArray(deviceAdapters.machineId, machineIds));
-  for (const a of old) {
-    await x.delete(deviceTags).where(eq(deviceTags.adapterId, a.id));
-    await x.delete(deviceAdapters).where(eq(deviceAdapters.id, a.id));
-  }
+/**
+ * N4 — khối 1000 id RIÊNG của lượt chạy (thay id cố định 990_600_xxx): một giá trị `nextval` của sequence device_adapters
+ * (không bao giờ cấp lại, kể cả cho phiên song song) ⇒ GOC = 1e9 + (n mod 1e6)·1000 (≤ 1_999_999_999, vừa int4, trên mọi id
+ * serial thật của máy/người dùng). Máy tổng hợp riêng ⇒ tool AI (machineControl.ts: adapter ĐẦU TIÊN theo machineId) chỉ thấy
+ * adapter của lượt này — không cần (và không được) xoá adapter "sót" của máy. Không có FK tới machines/users (id cố định cũ cũng
+ * không tồn tại). Gọi SAU cầu chì `_test` của beforeAll.
+ */
+let gocId = 0;
+async function khoiIdRieng(): Promise<number> {
+  if (gocId) return gocId;
+  const [r] = (await (await d()).execute(sql`SELECT nextval(pg_get_serial_sequence('device_adapters', 'id'))::bigint AS n`)) as unknown as Array<{ n: string | number }>;
+  gocId = 1_000_000_000 + (Number(r!.n) % 1_000_000) * 1000;
+  return gocId;
 }
+let MACHINE = 0; // gocId + 1
+let OWNER = 0; // gocId + 101
+let OTHER_USER = 0; // gocId + 102 (ca R-4-i dùng thêm +7 / +9 — vẫn trong khối)
+
+/** N4 follow-up — id run FOE / luật interlock CỦA LƯỢT NÀY (afterAll cấp tệp đưa chúng về trạng thái kết thúc, chọn đúng theo id). */
+const runIdsCuaLuot: number[] = [];
+const ruleIdsCuaLuot: number[] = [];
+async function taoRunFoe(spec: Parameters<typeof makeFoeGateRun>[0]) {
+  const fx = await makeFoeGateRun(spec);
+  runIdsCuaLuot.push(fx.runId);
+  return fx;
+}
+
+// N4 follow-up — afterAll CẤP TỆP (chạy sau afterAll của hai describe): UPDATE hàng của CHÍNH lượt về trạng thái KẾT THÚC, không DELETE.
+afterAll(async () => {
+  if (!gocId) return; // chưa qua cầu chì `_test` (hoặc không có DB) ⇒ lượt này không tạo hàng nào
+  const x = await d();
+  const now = new Date();
+  const lyDo = `test-fixture ${DAU}: kết thúc bởi afterAll (N4)`;
+  if (runIdsCuaLuot.length) {
+    await x
+      .update(orchestrationRunSteps)
+      .set({ status: "failed", error: lyDo, finishedAt: now })
+      .where(and(inArray(orchestrationRunSteps.runId, runIdsCuaLuot), inArray(orchestrationRunSteps.status, ["pending", "running", "awaiting_confirm", "held"])));
+    await x
+      .update(orchestrationRuns)
+      .set({ status: "aborted", error: lyDo, finishedAt: now, updatedAt: now })
+      .where(and(inArray(orchestrationRuns.id, runIdsCuaLuot), notInArray(orchestrationRuns.status, ["completed", "failed", "aborted"])));
+  }
+  // Mọi action của lượt: chủ trong khối id riêng (makeAction, proposeAction, FOE) hoặc id mang DAU (`<DAU>-act-N`, `foe-<DAU>-…`).
+  await x
+    .update(aiPendingActions)
+    .set({ status: "expired" })
+    .where(
+      and(
+        inArray(aiPendingActions.status, ["proposed", "confirmed", "dang_ap_client"]),
+        or(between(aiPendingActions.userId, gocId, gocId + 999), like(aiPendingActions.id, `${DAU}-%`), like(aiPendingActions.id, `foe-${DAU}-%`)),
+      ),
+    );
+  if (ruleIdsCuaLuot.length) {
+    await x
+      .update(interlockEvents)
+      .set({ status: "resolved", resolvedAt: now, notes: lyDo })
+      .where(and(inArray(interlockEvents.ruleId, ruleIdsCuaLuot), notInArray(interlockEvents.status, ["resolved", "failed", "skipped"])));
+  }
+}, 60_000);
 
 // ── driver giả: đếm số lần thiết bị bị ghi ──────────────────────────────────
 let writeCalls = 0;
@@ -197,7 +269,10 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     // Hạn sản xuất KHÔNG đổi.
     await import("./adapterFacade");
     await import("../safety/plc/safetyPlcAdapter");
-    await donAdapterSotCuaMay([MACHINE]);
+    const goc = await khoiIdRieng();
+    MACHINE = goc + 1;
+    OWNER = goc + 101;
+    OTHER_USER = goc + 102;
     const x = await d();
     const [a] = await x
       .insert(deviceAdapters)
@@ -215,14 +290,9 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
 
   afterAll(async () => {
     fake.drivers.clear();
-    for (const f of fixtures.splice(0)) await f.cleanup();
-    const x = await d();
-    await x.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
-    await x.delete(aiPendingActions).where(like(aiPendingActions.id, `foe-${DAU}%`));
-    if (adapterId) {
-      await x.delete(deviceTags).where(eq(deviceTags.adapterId, adapterId));
-      await x.delete(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
-    }
+    // N4 — KHÔNG DELETE: adapter/tag/action/run FOE ở lại với id riêng của lượt; adapter bị TẮT (chỉ hàng của lượt này).
+    // Run FOE / action → trạng thái kết thúc ở afterAll CẤP TỆP.
+    if (adapterId) await (await d()).update(deviceAdapters).set({ isEnabled: false }).where(eq(deviceAdapters.id, adapterId));
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];
       else process.env[k] = savedEnv[k];
@@ -256,16 +326,16 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     expect(await pendingStatus(actionId)).toBe("executed");
 
     const rows = await ledger(inp.idempotencyKey);
-    const intent = rows.find((r) => r.idempotencyKey === `intent:${inp.idempotencyKey}:speed_sp:0`);
-    const result = rows.find((r) => r.idempotencyKey === `${inp.idempotencyKey}:speed_sp:0`);
+    const intent = rows.find((r) => r.idempotencyKey === `intent:${perWriteKey(inp.idempotencyKey, "speed_sp", 0)}`); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2; ý định = intent:<khoá v2>) + ackValue.bam
+    const result = rows.find((r) => r.idempotencyKey === perWriteKey(inp.idempotencyKey, "speed_sp", 0));
     expect(rows).toHaveLength(2);
     expect(intent?.status).toBe("sent");
-    expect(intent?.ackValue).toEqual({ ledger: "intent" });
+    expect(intent?.ackValue).toEqual({ ledger: "intent", bam: expect.any(String) });
     expect(intent?.actionId).toBe(actionId);
     expect(intent?.requestedValue).toBe(42);
     expect(intent?.confirmedBy).toBe(OWNER);
     expect(result?.status).toBe("acked");
-    expect(result?.ackValue).toEqual({ ledger: "result", intentId: intent!.id });
+    expect(result?.ackValue).toEqual({ ledger: "result", intentId: intent!.id, bam: (intent!.ackValue as { bam?: string }).bam });
     expect(result!.id).toBeGreaterThan(intent!.id); // intent INSERTed first
 
     const replay = await dispatch({ ...inp });
@@ -482,7 +552,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       const payload = encodePayload({ metrics: [{ name: "cmd_run", type: "Boolean", value: true }] });
       await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
       expect(writeCalls).toBe(0);
-      const rows = (await (await d()).select().from(commandLog).where(like(commandLog.idempotencyKey, `spcmd-${MACHINE}-DCMD-%`))).filter(
+      const rows = (await (await d()).select().from(commandLog).where(like(commandLog.idempotencyKey, `v2:%:spcmd-${MACHINE}-DCMD-%`)) /* R1b-2b-2a T6d — khoá v2 */).filter(
         (r) => r.createdAt.getTime() >= before - 1000 && r.adapterId === adapterId,
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -572,8 +642,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const cap = { adapterKind: "ot-stub" } as never;
     // doc 81 Đợt 4 Task A5 + fix round 1 (R-4-i) — the step rides on a REAL run (owner OWNER) whose gate OTHER_USER
     // approved through the server path; the dispatcher re-reads both from the DB.
-    const fx = await makeFoeGateRun({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER_USER });
-    fixtures.push(fx);
+    const fx = await taoRunFoe({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER_USER });
     const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
     const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
     expect(cmd.hitl).toMatchObject({ requestedBy: OWNER, confirmedBy: OTHER_USER });
@@ -633,8 +702,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     let i = 0;
     for (const [label, spec] of cases) {
       i += 1;
-      const fx = spec ? await makeFoeGateRun(spec) : null;
-      if (fx) fixtures.push(fx);
+      const fx = spec ? await taoRunFoe(spec) : null;
       // previewJson says what a VALID approval looks like: owner OWNER, approver OTHER_USER = confirmer.
       const approval = { runId: fx?.runId ?? 2_000_000_000, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
       const key = `${DAU}-dbl${i}-s1-a1`;
@@ -655,8 +723,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const user = { id: OWNER, role: "engineer" } as never;
     const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
     const cap = { adapterKind: "ot-stub" } as never;
-    const fx = await makeFoeGateRun({ tag: `${DAU}-pure`, owner: OWNER, approvedBy: OTHER_USER });
-    fixtures.push(fx);
+    const fx = await taoRunFoe({ tag: `${DAU}-pure`, owner: OWNER, approvedBy: OTHER_USER });
     const key = `${DAU}-pure-s1-a1`;
     const args = { adapterId, tagKey: "speed_sp", value: 77 };
     const real = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
@@ -684,12 +751,11 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     // SCADA R1a T10 (K5) — tool ghi OT tính mức = max(tool, actuation_level kênh); kênh để trống = 5 ⇒ confirm từ chối MUC_QUA_CAO và
     // cổng AI chặn. Ca này đo đường HITL → dispatch nên kênh được KHAI mức 3 (đúng hợp đồng mới) TRONG try, trả về NULL ở finally.
     const tagSpeed = and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.tagKey, "speed_sp"));
-    let actionId: string | null = null;
     try {
       await (await d()).update(deviceTags).set({ actuationLevel: 3 }).where(tagSpeed);
       const proposed = await proposeAction(tool, params, { user: admin, lang: "vi" });
       expect(proposed.ok).toBe(true);
-      actionId = (proposed as { pendingAction: { actionId: string } }).pendingAction.actionId;
+      const actionId = (proposed as { pendingAction: { actionId: string } }).pendingAction.actionId;
       const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
       expect(row!.previewJson).toHaveProperty("__otPayloadHash");
       const res = await confirmAction(actionId, actionId, admin, "vi");
@@ -701,7 +767,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       expect(again.status).toBe("executed");
       expect(writeCalls).toBe(1);
     } finally {
-      if (actionId) await (await d()).delete(aiPendingActions).where(eq(aiPendingActions.id, actionId));
+      // N4 — hàng action ở lại (id của proposeAction, chủ = OWNER riêng của lượt); chỉ trả mức kênh về NULL.
       await (await d()).update(deviceTags).set({ actuationLevel: null }).where(tagSpeed);
     }
   });
@@ -712,9 +778,10 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
 // keys > 128 chars stay unique; command-log stats do not double-count write-ahead intents.
 // ══════════════════════════════════════════════════════════════════════════════════════════
 describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long keys, stats (DB thật)", () => {
-  const MI = 990_600_011; // machine of the interlock/long-key adapter
-  const MS = 990_600_012; // machine of the stats-only adapter
-  const APPROVER = 990_600_201;
+  // N4 — trong khối id riêng của lượt (khoiIdRieng), gán ở beforeAll sau cầu chì.
+  let MI = 0; // machine of the interlock/long-key adapter (gocId + 11)
+  let MS = 0; // machine of the stats-only adapter (gocId + 12)
+  let APPROVER = 0; // gocId + 201
   let adI = 0;
   let adS = 0;
   let ruleReduce = 0;
@@ -765,6 +832,7 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
         approvedAt: new Date(),
       })
       .returning();
+    ruleIdsCuaLuot.push(rule!.id); // N4 follow-up — sự kiện của luật này → resolved ở afterAll cấp tệp
     await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: v.action, status: "fired" }).returning();
     return { ruleId: rule!.id, eventId: ev!.id };
@@ -785,7 +853,15 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/);
     for (const k of [...ENV_KEYS, "INTERLOCK_AUTO_BLOCK_ENABLED"]) savedEnv[k] = process.env[k];
-    await donAdapterSotCuaMay([MI, MS]);
+    const goc = await khoiIdRieng();
+    MI = goc + 11;
+    MS = goc + 12;
+    APPROVER = goc + 201;
+    if (!OWNER) {
+      // describe này chạy một mình (lọc -t) ⇒ OWNER của describe trên chưa gán.
+      OWNER = goc + 101;
+      OTHER_USER = goc + 102;
+    }
     adI = await makeAdapter("FI", MI);
     adS = await makeAdapter("FS", MS);
     ({ ruleId: ruleReduce, eventId: evReduce } = await makeRule({ action: "reduce_speed", commandTag: "speed_sp", commandValue: 30 }));
@@ -795,17 +871,12 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
 
   afterAll(async () => {
     const x = await d();
-    // Disable first (belt and braces), then remove the fixtures.
+    // N4 — KHÔNG DELETE: luật/sự kiện/action/adapter ở lại với id/tên riêng của lượt; chỉ TẮT luật (interlockEngine quét mọi luật
+    // enabled) và adapter của CHÍNH lượt này.
     await x.update(interlockRules).set({ enabled: false }).where(like(interlockRules.name, `${DAU}%`));
-    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleReduce)).catch(() => {});
-    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleStop)).catch(() => {});
-    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleObj)).catch(() => {});
-    await x.delete(interlockRules).where(like(interlockRules.name, `${DAU}%`)).catch(() => {});
-    await x.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
     for (const id of [adI, adS]) {
       fake.drivers.delete(id);
-      await x.delete(deviceTags).where(eq(deviceTags.adapterId, id));
-      await x.delete(deviceAdapters).where(eq(deviceAdapters.id, id));
+      if (id) await x.update(deviceAdapters).set({ isEnabled: false }).where(eq(deviceAdapters.id, id));
     }
     for (const k of [...ENV_KEYS, "INTERLOCK_AUTO_BLOCK_ENABLED"]) {
       if (savedEnv[k] === undefined) delete process.env[k];
@@ -908,14 +979,17 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
     ];
     const actionId = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
     const head = `${DAU}-edge-`;
-    const key = head + "e".repeat(114 - head.length); // result key = 114 + ':speed_sp:N' = 125 chars
+    const key = head + "e".repeat(114 - head.length); // định dạng CŨ: khoá kết quả 125 ký tự (≤128) nhưng khoá intent >128
     expect(`${key}:speed_sp:0`.length).toBe(125);
+    // R1b-2b-2a T6d — định dạng v2 (độ dài từng phần) vượt 128 ⇒ boundedKey: hai write cùng tag vẫn khác khoá (băm của CẢ chuỗi giữ ':0' / ':1')
+    expect(perWriteKey(key, "speed_sp", 0)).not.toBe(perWriteKey(key, "speed_sp", 1));
+    expect(perWriteKey(key, "speed_sp", 0).length).toBeLessThanOrEqual(128);
     const res = await dispatch({ ...input({ actionId, writes }), adapterId: adI, machineId: MI, idempotencyKey: key });
     expect(res.status).toBe("acked");
     expect(writeCalls).toBe(1);
     const rows = await ledger(key.slice(0, 60));
     expect(rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "intent")).toHaveLength(2);
-    expect(rows.map((r) => r.idempotencyKey)).toEqual(expect.arrayContaining([`${key}:speed_sp:0`, `${key}:speed_sp:1`]));
+    expect(rows.map((r) => r.idempotencyKey)).toEqual(expect.arrayContaining([perWriteKey(key, "speed_sp", 0), perWriteKey(key, "speed_sp", 1)]));
   });
 
   it("hai khoá dài KHÁC nhau chỉ ở đuôi (chung 128 ký tự đầu) ⇒ HAI lệnh độc lập, không cache/DUPLICATE giả", async () => {

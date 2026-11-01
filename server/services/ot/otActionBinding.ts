@@ -84,6 +84,17 @@ export function boundedKey(key: string, max = 128): string {
   return `${key.slice(0, max - 17)}~${h}`;
 }
 
+/**
+ * SCADA R1b-2b-2a T6d fix 1 (review I1, dieu-phoi 2026-11-01) — the ONE predicate "this idempotency key was CHOSEN BY THE CALLER": the programming /
+ * deploy key domain `pd:u<userId>:…` (`server/services/programming/khoaMienLapTrinh.ts` builds it; it lives HERE, a neutral OT module, so `ot/` never
+ * imports from `programming/`). The dispatcher's replay guard binds the REQUESTER only for these keys. Every other key is SERVER-generated
+ * (`il-<rule>-<event>`, `hmi:` / `hmistop:`, FOE `run<N>-…`, AI actionId, edge, Sparkplug) and its guard is exactly adapter + tag + payload hash +
+ * commandType — a FOE resume as SYSTEM_FOE_USER or an interlock re-approved by someone else must replay / send exactly as before.
+ */
+export function laKhoaBenGoiChon(key: string): boolean {
+  return /^pd:u\d+:/.test(key);
+}
+
 /** Stable JSON of the payload (exported for tests / diagnostics only). */
 export function canonicalOtPayload(p: OtWriteBindingPayload): string {
   return JSON.stringify(

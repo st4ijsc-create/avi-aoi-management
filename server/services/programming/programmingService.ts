@@ -23,6 +23,7 @@ import { appError } from "../../_core/appError";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+import { boundedKey } from "../ot/otActionBinding"; // R1b-2b-2a T6d — pendingIdem ≤ 128
 import {
   programProjects,
   programArtifacts,
@@ -411,7 +412,10 @@ export async function simulateBuild(buildId: number, scenario: ProgSimScenario, 
 export interface DeployRequest {
   buildId: number;
   stage: "staging" | "production";
+  /** R1b-2b-2a T6d — khoá LƯU đã đặt miền (`khoaMienLapTrinh`); cũng là khoá `dispatch()` của lượt ghi thiết bị. */
   idempotencyKey: string;
+  /** T6d — khoá CŨ chưa đặt miền của bên gọi: CHỈ để tìm hàng TRƯỚC T6d do CHÍNH người gọi yêu cầu (`timDeployTruoc`). */
+  khoaCu?: string;
   /** HITL provenance — the human confirming the deploy (== sign-off). */
   hitl: { actionId: string; requestedBy: number; confirmedBy?: number; reason?: string };
   deviceId?: number;
@@ -769,7 +773,7 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
   const d = await db();
 
   // Idempotency — return a prior deployment for this key as-is (fast path, no reservation).
-  const prior = await findDeploymentByKey(req.idempotencyKey);
+  const prior = await timDeployTruoc(req.idempotencyKey, req.khoaCu, user.id); // R1b-2b-2a T6d — khoá miền (+ khoá cũ của CHÍNH người gọi)
   if (prior) return prior;
 
   const { b, art, projectDeviceId } = await loadDeployCtx(req.buildId);
@@ -796,13 +800,13 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
     .onConflictDoNothing({ target: programDeployments.idempotencyKey })
     .returning();
   if (!reserved) {
-    const existing = await findDeploymentByKey(req.idempotencyKey);
+    const existing = await findDeploymentByKey(req.idempotencyKey, user.id); // T6d — chỉ hàng của chính người gọi
     if (existing) return existing;
     throw appError(
       "CONFLICT",
       "OPERATION_FAILED",
       { operation: "deployBuild", reason: "idempotencyKeyUnreadable" },
-      `Idempotency key "${req.idempotencyKey}" is in use but its deployment could not be read back.`,
+      "The deployment for this idempotency key could not be reserved or read back — use a new key.", // T6d — không nhắc lại khoá / không khẳng định tồn tại
     );
   }
 
@@ -905,14 +909,30 @@ export async function failInterruptedDeployments(
   }
 }
 
-async function findDeploymentByKey(idempotencyKey: string) {
+/**
+ * R1b-2b-2a T6d — hàng deploy của MỘT khoá LƯU, CHỈ khi do chính người gọi yêu cầu (`requestedBy`). Khoá lưu đã ở miền người gọi (`khoaMienLapTrinh`)
+ * nên hàng của người khác không bao giờ mang khoá này; lọc thêm `requestedBy` để cả một hàng TRƯỚC T6d tình cờ / cố ý mang đúng chuỗi khoá miền của
+ * người khác cũng KHÔNG được trả (ngoài phạm vi ≡ không thấy).
+ */
+async function findDeploymentByKey(idempotencyKey: string, userId: number) {
   const d = await db();
   const [row] = await d
     .select()
     .from(programDeployments)
-    .where(eq(programDeployments.idempotencyKey, idempotencyKey))
+    .where(and(eq(programDeployments.idempotencyKey, idempotencyKey), eq(programDeployments.requestedBy, userId)))
     .limit(1);
   return row;
+}
+
+/**
+ * R1b-2b-2a T6d — lượt deploy TRƯỚC của người gọi cho khoá này: theo khoá LƯU (miền `khoaMienLapTrinh`), rồi — chỉ để tương thích hàng ghi TRƯỚC T6d —
+ * theo khoá CŨ chưa đặt miền (`khoaCu`), cũng CHỈ hàng của CHÍNH người gọi. Hàng của người khác KHÔNG BAO GIỜ được trả, không lộ sự tồn tại: deploy của
+ * người gọi chạy bình thường dưới khoá miền của họ. Router dùng CÙNG hàm cho kiểm nhất quán (Doc 54 P3.4).
+ */
+export async function timDeployTruoc(idempotencyKey: string, khoaCu: string | undefined, userId: number) {
+  const moi = await findDeploymentByKey(idempotencyKey, userId);
+  if (moi || !khoaCu) return moi;
+  return findDeploymentByKey(khoaCu, userId);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -926,6 +946,8 @@ export interface DeployApprovalRequest {
   reason?: string;
   /** Khóa idempotency ổn định theo (build, production) → double-click không tạo 2 yêu cầu. */
   idempotencyKey: string;
+  /** R1b-2b-2a T6d — khoá CŨ chưa đặt miền (chỉ hàng của CHÍNH người gọi). */
+  khoaCu?: string;
 }
 
 /**
@@ -939,7 +961,7 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
   const d = await db();
 
   // Idempotency — trả lại hàng deployment đã có cho key này (đang chờ / đã kết thúc).
-  const prior = await findDeploymentByKey(req.idempotencyKey);
+  const prior = await timDeployTruoc(req.idempotencyKey, req.khoaCu, requester.id); // R1b-2b-2a T6d
   if (prior) return prior;
 
   const { b, art, proj, projectDeviceId } = await loadDeployCtx(req.buildId);
@@ -949,13 +971,13 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
   // (500) sau khi ĐÃ tạo một ai_pending_actions mồ côi. Nay unique index là trọng tài
   // (ON CONFLICT DO NOTHING); lượt thua trả dòng của lượt thắng.
   const loserReturnsExisting = async () => {
-    const existing = await findDeploymentByKey(req.idempotencyKey);
+    const existing = await findDeploymentByKey(req.idempotencyKey, requester.id); // T6d — chỉ hàng của chính người gọi
     if (existing) return existing;
     throw appError(
       "CONFLICT",
       "OPERATION_FAILED",
       { operation: "requestDeployApproval", reason: "idempotencyKeyUnreadable" },
-      `Idempotency key "${req.idempotencyKey}" is in use but its deployment could not be read back.`,
+      "The deployment for this idempotency key could not be reserved or read back — use a new key.", // T6d — không nhắc lại khoá / không khẳng định tồn tại
     );
   };
 
@@ -983,7 +1005,7 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
 
   // Hàng ai_pending_actions THẬT — id chính là actionId dispatcher tái xác minh.
   const actionId = randomUUID();
-  const pendingIdem = `progdeploy-${req.idempotencyKey}-${randomUUID().slice(0, 8)}`;
+  const pendingIdem = boundedKey(`progdeploy-${req.idempotencyKey}-${randomUUID().slice(0, 8)}`); // T6d — khoá miền dài hơn khoá thô: luôn ≤ 128 (varchar)
   const expiresAt = new Date(Date.now() + DEPLOY_APPROVAL_TTL_MS);
 
   // Một transaction: dòng chờ duyệt (trọng tài theo khoá) + pending record chỉ cùng xuất hiện
@@ -1297,7 +1319,10 @@ export async function rollbackDeployment(
   deploymentId: number,
   user: DpcUser,
   hitl: { actionId: string; requestedBy: number; confirmedBy?: number },
+  /** R1b-2b-2a T6d — khoá LƯU đã ở miền người gọi (`khoaMienLapTrinh`). */
   idempotencyKey: string,
+  /** T6d — khoá CŨ chưa đặt miền: CHỈ tìm hàng TRƯỚC T6d của CHÍNH người gọi (`timDeployTruoc`). */
+  khoaCu?: string,
 ) {
   const d = await db();
   const [target] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
@@ -1336,7 +1361,7 @@ export async function rollbackDeployment(
 
   const dep = await deployBuild(
     // Ép deviceId = target.deviceId (nếu có) để LÙI ĐÚNG máy, không dùng previous.deviceId.
-    { buildId: previous.buildId, stage: target.stage, idempotencyKey, hitl, deviceId: (target.deviceId ?? previous.deviceId) ?? undefined },
+    { buildId: previous.buildId, stage: target.stage, idempotencyKey, khoaCu, hitl, deviceId: (target.deviceId ?? previous.deviceId) ?? undefined },
     user,
   );
 
