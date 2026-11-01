@@ -117,7 +117,8 @@ describe("§1 — MỘT tiến trình mỗi dự án, cổng trong dải", () =>
     expect(ql.trangThai("p1")?.trangThai).toBe("dang-khoi-dong");
     await ql.lamMoiSanSang("p1");
     expect(ql.trangThai("p1")?.trangThai).toBe("dang-khoi-dong");
-    nghe.add(a.ok ? a.muc.cong : -1);
+    if (!a.ok || a.muc.cong === null) throw new Error("expected a started app that has a port");
+    nghe.add(a.muc.cong);
     await ql.lamMoiSanSang("p1");
     expect(ql.trangThai("p1")?.trangThai).toBe("dang-chay");
   });

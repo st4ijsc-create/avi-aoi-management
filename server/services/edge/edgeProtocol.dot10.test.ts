@@ -394,7 +394,7 @@ describe("edge protocol v2 — helpers", () => {
     const env = signEdgeObject("config", { a: 1 }, key);
     expect(edgeConfigHash(env)).toMatch(/^[0-9a-f]{64}$/);
     expect(edgeConfigHash({ ...env })).toBe(edgeConfigHash(env));
-    expect(edgeConfigHash({ ...env, payload: { a: 2 } })).not.toBe(edgeConfigHash(env));
+    expect(edgeConfigHash({ ...env, payload: JSON.stringify({ a: 2 }) })).not.toBe(edgeConfigHash(env)); // payload = canonical JSON TEXT (EdgeSignedEnvelope)
   });
 });
 

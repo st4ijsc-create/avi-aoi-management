@@ -39,12 +39,12 @@ describe("moLuotChay — lỗi trước SSE", () => {
 
 describe("moLuotChay — thân yêu cầu", () => {
   it("xacNhanVanHanh:true đi NGUYÊN VĂN; vắng ⇒ không có trường", async () => {
-    const f = vi.fn(async () => ({ ok: true, status: 200, body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) } }) as unknown as Response);
+    const f = vi.fn(async (_url: unknown, _init?: RequestInit) => ({ ok: true, status: 200, body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) } }) as unknown as Response);
     vi.stubGlobal("fetch", f);
     const o = { signal: new AbortController().signal, onSuKien: () => undefined };
     await moLuotChay({ cauHoi: "q", projectId: "p", cheDo: "hoi", chonModel: "ngoai:openai:m", xacNhanVanHanh: true }, o);
     await moLuotChay({ cauHoi: "q", projectId: "p", cheDo: "hoi", chonModel: "ngoai:openai:m" }, o);
-    const thans = f.mock.calls.map((c) => JSON.parse((c[1] as { body: string }).body));
+    const thans = f.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
     expect(thans[0].xacNhanVanHanh).toBe(true);
     expect("xacNhanVanHanh" in thans[1]).toBe(false);
   });

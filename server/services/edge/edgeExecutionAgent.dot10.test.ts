@@ -21,10 +21,12 @@ import { EdgeCentralClient, createEdgeAuthorizeClient } from "./edgeCentralClien
 import { EdgeConfigSource } from "./edgeConfigSource";
 import { EdgeExecutionAgent, type EdgeAgentConfig, type EdgeDevicePort, type EdgeRunIo, type EdgeSegmentOutcome, type EdgeWalker } from "./edgeExecutionAgent";
 import { FakeCentral, KIT_TOKEN, kitHashDefinition } from "./edgeFakeCentral.testkit";
-import { EdgeJournal } from "./edgeJournal";
+import { EdgeJournal, type EdgeReportableRecord } from "./edgeJournal";
 import { EDGE_AUTH_TTL_MIN_MS } from "./edgeProtocol";
 import { generateEdgeSigningKey, parseEdgeCanonicalJson } from "./edgeSigning";
 import { EdgeProgramChecks, EdgeStreamShipper, createEdgeAuthUnusedReporter, createEdgeJournalConsume, createEdgeReportSink } from "./edgeStreams";
+/** check:tests — EdgeReportableRecord gồm cả EdgeRobotStateRecord (KHÔNG có `kind`): đọc qua `in`, giá trị y như `record.kind` (vắng ⇒ undefined). */
+const kindOf = (r: EdgeReportableRecord): string | undefined => ("kind" in r ? r.kind : undefined);
 
 /**
  * fix review 1 (R-10-ag) — only DURABLE records ship. A record appended without awaiting (an anomaly, an ack) becomes durable
@@ -297,10 +299,10 @@ describe("doc 81 Đợt 10 E — agent v2: claim → signed package → walk →
     const jti = "0a0b0c0d-0000-4000-8000-000000000001";
     expect(await h.journal.consumeAuthorization({ jti, runId: 9, claimSeq: 1, stepId: "m1", attempt: 1 })).toEqual({ ok: true });
     expect(await report({ runId: 9, claimSeq: 1, jti, stepId: "m1", attempt: 1, reason: "expired_before_use" })).toBe(false);
-    expect(h.journal.pending("run:9:1").filter((p) => p.record.kind === "auth_unused")).toEqual([]);
+    expect(h.journal.pending("run:9:1").filter((p) => kindOf(p.record) === "auth_unused")).toEqual([]);
     const fresh = "0a0b0c0d-0000-4000-8000-000000000002";
     expect(await report({ runId: 9, claimSeq: 1, jti: fresh, stepId: "m1", attempt: 2, reason: "expired_before_use" })).toBe(true);
-    expect(h.journal.pending("run:9:1").filter((p) => p.record.kind === "auth_unused").map((p) => (p.record as { jti: string }).jti)).toEqual([fresh]);
+    expect(h.journal.pending("run:9:1").filter((p) => kindOf(p.record) === "auth_unused").map((p) => (p.record as { jti: string }).jti)).toEqual([fresh]);
   });
 
   it("★ nothing is claimed with a FULL journal, in commands-only mode, or without a walker", async () => {
@@ -489,7 +491,7 @@ describe("doc 81 Đợt 10 E — agent v2: central commands (design §2.8)", () 
     await h.agent.handleCommands([stop]);
     expect(await h.shipper.flush("events")).toBe("refused");
     expect(logs.join("\n")).toMatch(/ANOMALY: central refused the events stream/);
-    expect(h.journal.pending("events").some((e) => e.record.kind === "command_ack")).toBe(true);
+    expect(h.journal.pending("events").some((e) => kindOf(e.record) === "command_ack")).toBe(true);
     expect((await h.agent.handleCommands([stop])).map((c) => c.outcome)).toEqual(["duplicate"]);
     expect(h.devices.calls).toEqual(["stopRobot:12"]);
     // a STOP the device could not take: not remembered, not acked ⇒ the next delivery tries again

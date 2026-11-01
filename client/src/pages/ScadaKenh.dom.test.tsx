@@ -691,6 +691,55 @@ describe("kiem-dinh P1-2 — mã TOTP 6 số bắt buộc ở cả ba hộp tho�
     expect(oMa(dlg).value).toBe("");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
+
+  it.each(["capNhat", "dat", "go"] as const)(
+    "M2 — %s: OPERATION_FAILED reason scadaTotpDaDungDuLieuDoi (mã ĐÃ TIÊU, dữ liệu đổi) ⇒ ô mã bị XOÁ, tiêu điểm về ô mã, hộp giữ mở",
+    (proc) => {
+      render(<ScadaKenh />);
+      if (proc === "capNhat") fireEvent.click(within(hangTag("speed_sp")).getByRole("button", { name: S("scada.kenh.nut.sua") }));
+      else fireEvent.click(within(hangMay("M-10")).getByRole("button", { name: S(proc === "dat" ? "scada.kenh.nut.datKenhCheDo" : "scada.kenh.nut.goKenhCheDo") }));
+      const dlg = screen.getByRole("dialog");
+      nhapMa(dlg);
+      expect(oMa(dlg).value).toBe(MA);
+      (document.activeElement as HTMLElement | null)?.blur();
+      act(() =>
+        srv.mutOpts[proc].onError?.({
+          message: "x",
+          data: { code: "CONFLICT", appCode: "OPERATION_FAILED", appParams: { operation: "scadaConfigTotp", reason: "scadaTotpDaDungDuLieuDoi", maGoc: "UNKNOWN" } },
+        }),
+      );
+      expect(oMa(dlg).value).toBe("");
+      expect(oMa(dlg)).toHaveFocus();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    },
+  );
+
+  it("M2 — toast của reason scadaTotpDaDungDuLieuDoi nói THẬT: dữ liệu đã đổi, nhập mã MỚI (không nói \"sai\"), đúng chuỗi errors.reason", () => {
+    render(<ScadaKenh />);
+    fireEvent.click(within(hangTag("speed_sp")).getByRole("button", { name: S("scada.kenh.nut.sua") }));
+    const dlg = screen.getByRole("dialog");
+    nhapMa(dlg);
+    act(() =>
+      srv.mutOpts.capNhat.onError?.({
+        message: "x",
+        data: { code: "CONFLICT", appCode: "OPERATION_FAILED", appParams: { operation: "scadaConfigTotp", reason: "scadaTotpDaDungDuLieuDoi", maGoc: "UNKNOWN" } },
+      }),
+    );
+    expect(toastError).toHaveBeenCalledTimes(1);
+    const cau = String(toastError.mock.calls[0][0]);
+    expect(cau).toContain((vi_.errors.reason as Record<string, string>).scadaTotpDaDungDuLieuDoi);
+    expect(cau).toContain("MỚI");
+    expect(cau).not.toMatch(/sai/i);
+  });
+
+  it("M2 — OPERATION_FAILED với reason KHÁC (scadaKenhThuLai) KHÔNG xoá ô mã", () => {
+    render(<ScadaKenh />);
+    fireEvent.click(within(hangTag("speed_sp")).getByRole("button", { name: S("scada.kenh.nut.sua") }));
+    const dlg = screen.getByRole("dialog");
+    nhapMa(dlg);
+    act(() => srv.mutOpts.capNhat.onError?.({ message: "x", data: { code: "CONFLICT", appCode: "OPERATION_FAILED", appParams: { operation: "x", reason: "scadaKenhThuLai" } } }));
+    expect(oMa(dlg).value).toBe(MA);
+  });
 });
 
 describe("R1b-2a T7 — khai mức hàng loạt (chọn kênh, một hộp, ô mã TOTP hiện sẵn — một lượt gọi mỗi lô)", () => {

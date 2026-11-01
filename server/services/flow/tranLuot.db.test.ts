@@ -7,7 +7,7 @@
  *   (iv)  kill switch con — đã ở H1 (luongCon.db.test.ts).
  * Mỗi ca dựng đúng kịch bản của audit và HỎNG trên mã trước bản vá (không có trần ⇒ mọi lượt đều vào).
  */
-import { vi, beforeAll } from "vitest";
+import { vi } from "vitest";
 import { donLuongTheoTienTo } from "./__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";

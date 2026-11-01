@@ -9,7 +9,7 @@
  *   3. `ai.agent`: tool luồng con chạy đồng bộ, kết quả là DỮ LIỆU quay lại model; chữ "gọi tool" trong nội dung KHÔNG chạy gì;
  *      tool lạ / tham số sai kiểu ⇒ quan sát lỗi; trần lượt.
  */
-import { vi, beforeAll } from "vitest";
+import { vi } from "vitest";
 import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "./__donDuLieuTest";
 vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";

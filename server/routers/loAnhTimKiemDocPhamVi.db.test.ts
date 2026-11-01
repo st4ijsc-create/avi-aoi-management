@@ -60,12 +60,12 @@ beforeAll(async () => {
   B = await seedNhaMay("b");
   embMoCoi = await storeEmbedding({ imageUrl: `${RUN}-mo-coi.jpg`, embedding: vec(), dim: DEFAULT_EMBEDDING_DIM, modelCode: RUN, label: RUN });
   const u = await taoNguoiDungTest("ua", "engineer", { tienTo: "l5b", ts: RUN, ten: "L5b ua" });
-  ua = { id: u.id, role: "engineer", name: u.name };
+  ua = { id: u.id, role: "engineer", name: u.name ?? "" };
   await dung(sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${u.id}, ${A.code})`);
   const ad = await taoNguoiDungTest("uadm", "admin", { tienTo: "l5b", ts: RUN, ten: "L5b adm" });
-  uadm = { id: ad.id, role: "admin", name: ad.name };
+  uadm = { id: ad.id, role: "admin", name: ad.name ?? "" };
   const tr = await taoNguoiDungTest("utrang", "engineer", { tienTo: "l5b", ts: RUN, ten: "L5b trang" });
-  utrang = { id: tr.id, role: "engineer", name: tr.name };
+  utrang = { id: tr.id, role: "engineer", name: tr.name ?? "" };
 }, 120_000);
 
 afterAll(async () => {

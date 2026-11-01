@@ -5,6 +5,6 @@ export interface MucRawMessage {
   cau: string;
 }
 
-export declare function demRawMessage(goc?: string): MucRawMessage[];
+export declare function demRawMessage(goc?: string, ghiDe?: Map<string, string>): MucRawMessage[];
 export declare function duyetFile(goc: string): string[];
 export declare const DAU_MIEN_TRU: RegExp;

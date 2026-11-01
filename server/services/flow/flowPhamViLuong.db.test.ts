@@ -14,7 +14,7 @@ import { aiFlowCredentials, aiFlowRuns, aiFlowSteps, aiFlows } from "../../../dr
 import { batDauRun, chayMotMuc, luuPhienBan } from "./dongCo";
 import { taoBiMat } from "./biMat";
 import { biMatTrongPhamVi, luongTrongPhamVi, luotTrongPhamVi, nhaMayChoLuongMoi, nhaMayHopLe } from "./phamViLuong";
-import { datFetchLuong } from "./nut/tichHop";
+import { datFetchLuong, type HamFetch } from "./nut/tichHop";
 
 const RUN = `pl_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 const TT = `t9pl${Math.floor(Math.random() * 1e5)}`;
@@ -26,7 +26,7 @@ const f: Record<string, number> = {};
 const u: Record<string, number> = {};
 let db: NonNullable<Awaited<ReturnType<typeof getDb>>>;
 const giu = { k: process.env.AI_FLOW_KHOA_BI_MAT, h: process.env.AI_FLOW_HTTP_HOST_CHO_PHEP };
-let fetchCu: typeof fetch;
+let fetchCu: HamFetch;
 const goiMang: string[] = [];
 const pv = (userId: number, userRole = "engineer") => ({ userId, userRole });
 
