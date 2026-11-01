@@ -239,7 +239,7 @@ describe.skipIf(!onTest)("0372–0375 on _test through the narrow projections", 
       const [actor] = (await tx.execute(sql`INSERT INTO users ("openId", role, "isActive") VALUES (${"__dot10Af3_" + Date.now()}, 'admin', true) RETURNING id`)) as unknown as Array<{ id: number }>;
       await resolveStop(tx, { requestId: q.id, actorUserId: actor.id, resolution: "stopped at the cabinet, verified" });
       const after = await tx.select().from(devicePendingStops).where(eq(devicePendingStops.robotId, robot));
-      return { whileEdge, pending, row, failedListed, after: after.map((x) => ({ resolvedByHuman: x.resolvedByHuman, needsResolution: x.needsResolution, centralMustExecute: x.centralMustExecute })), id: q.id };
+      return { whileEdge, pending, row, failedListed, after: after.map((x: typeof devicePendingStops.$inferSelect) => ({ resolvedByHuman: x.resolvedByHuman, needsResolution: x.needsResolution, centralMustExecute: x.centralMustExecute })), id: q.id };
     });
     expect(out.whileEdge).toBe("23514");
     expect(out.pending).toHaveLength(1);

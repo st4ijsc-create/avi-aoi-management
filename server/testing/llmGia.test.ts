@@ -15,7 +15,7 @@ import { _datNguNapChoTest } from "../services/aiLlamaServerClient";
 import { datMoiTruongLlmGia, dungSuKien, khoiDongLlmGia, mulberry32, type BuocGia, type LlmGia } from "./llmGia";
 
 const TOOL: WireTool = { type: "function", function: { name: "read_file", parameters: { type: "object", properties: { path: { type: "string" } } } } };
-const T = (args: object | string = { path: "a.ts" }): BuocGia => ({ loai: "tra-loi", toolCalls: [{ ten: "read_file", args }] });
+const T = (args: Record<string, unknown> | string = { path: "a.ts" }): BuocGia => ({ loai: "tra-loi", toolCalls: [{ ten: "read_file", args }] });
 const CHU = (chu: string): BuocGia => ({ loai: "tra-loi", chu });
 
 let gia: LlmGia | null = null;

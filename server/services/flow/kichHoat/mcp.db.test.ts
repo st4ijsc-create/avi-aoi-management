@@ -6,7 +6,7 @@
  *   • không danh tính ⇒ `tools/list` chỉ sổ tĩnh, `tools/call` luồng ⇒ từ chối (fail-closed như mọi tool MCP).
  * Danh tính MCP được GIẢ ở `xacThucCli` (bcrypt/khoá tài khoản thật có lưới riêng ở aiCodingCli).
  */
-import { vi, beforeAll } from "vitest";
+import { vi } from "vitest";
 import { donLuongTheoTienTo, donNhaMayVaNguoiTheoMa } from "../__donDuLieuTest";
 const dtGia = vi.hoisted(() => ({ ok: true, userId: 1, role: "engineer" }));
 vi.hoisted(() => {

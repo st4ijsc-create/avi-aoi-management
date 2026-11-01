@@ -39,7 +39,7 @@ const auth = vi.hoisted(() => ({
 vi.mock("../services/machineAuthService", () => auth);
 
 const dbm = vi.hoisted(() => ({
-  createAuditLog: vi.fn(async (): Promise<any> => ({ id: 1 })),
+  createAuditLog: vi.fn(async (..._a: any[]): Promise<any> => ({ id: 1 })),
   getDb: vi.fn(async (): Promise<any> => ({ fake: true })),
   getMachineById: vi.fn(async (): Promise<any> => undefined),
   getMachineByCode: vi.fn(async (): Promise<any> => undefined),

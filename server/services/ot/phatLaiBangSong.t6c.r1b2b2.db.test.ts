@@ -289,9 +289,63 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
     }, 30_000);
   }
 
+  /**
+   * T6c polish 2 (re-review Important) — hàng CŨ ghi TRƯỚC sổ ghi trước: KHÔNG `ackValue` (không `ledger`). Chèn literal tại chỗ (KHÔNG id tường minh, bảng WORM),
+   * trong giao dịch ROLLBACK của test. `null` ⇒ write ấy KHÔNG có hàng.
+   */
+  async function chenHangTruocLedger(tx: Tx, adapterId: number, actionId: string, key: string, hang: Array<{ tagKey: string; status: "acked" | "failed" | "simulated"; errorText?: string } | null>) {
+    const addr: Record<string, string> = { a: "40001", b: "40002", c: "40003" };
+    for (const [i, h] of hang.entries()) {
+      if (!h) continue; // hàng THIẾU
+      await tx.insert(commandLog).values({
+        actionId,
+        adapterId,
+        machineId: MACHINE,
+        tagKey: h.tagKey,
+        address: addr[h.tagKey]!,
+        commandType: "set_param",
+        requestedValue: i + 1,
+        requestedBy: OWNER,
+        confirmedBy: OWNER,
+        status: h.status,
+        errorText: h.errorText ?? (h.status === "failed" ? "modbus exception 2" : null),
+        idempotencyKey: `${key}:${h.tagKey}:${i}`,
+        sentAt: h.status === "acked" ? new Date() : null,
+      });
+    }
+  }
+
+  const TRUOC_LEDGER: Array<{ ten: string; hang: Parameters<typeof chenHangTruocLedger>[4]; mong: { ok: boolean; status: string; reason?: string; motPhan?: { daAp: string[]; khongAp: string[] } } }> = [
+    { ten: "★ N1 trước ledger [acked, (THIẾU hàng 1)]", hang: [{ tagKey: "a", status: "acked" }, null], mong: { ok: false, status: "timeout" } },
+    { ten: "★ N2 trước ledger [acked, failed] ⇒ failed MOT_PHAN như đường sống", hang: [{ tagKey: "a", status: "acked" }, { tagKey: "b", status: "failed" }], mong: { ok: false, status: "failed", reason: "MOT_PHAN", motPhan: { daAp: ["a"], khongAp: ["b"] } } },
+    { ten: "N3 trước ledger [acked, acked] ⇒ ok như trước", hang: [{ tagKey: "a", status: "acked" }, { tagKey: "b", status: "acked" }], mong: { ok: true, status: "acked" } },
+    { ten: "★ N4 [simulated, (THIẾU hàng 1)] — nhánh không-thiết-bị, write thiếu hàng ⇒ timeout", hang: [{ tagKey: "a", status: "simulated" }, null], mong: { ok: false, status: "timeout" } },
+    { ten: "N5 trước ledger [ADAPTER_OFFLINE, ADAPTER_OFFLINE] ⇒ thất bại KHÔNG gửi: giữ reason", hang: [{ tagKey: "a", status: "failed", errorText: "ADAPTER_OFFLINE: No connected driver for adapter" }, { tagKey: "b", status: "failed", errorText: "ADAPTER_OFFLINE: No connected driver for adapter" }], mong: { ok: false, status: "failed", reason: "ADAPTER_OFFLINE" } },
+  ];
+  for (const ca of TRUOC_LEDGER) {
+    it(`${ca.ten} ⇒ phát lại ok=${ca.mong.ok}, status ${ca.mong.status}; thiết bị không bị ghi`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const writes = [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }];
+        const d = driverGia([ACK, ACK]);
+        const { adapterId, actionId } = await dung(tx, writes, d);
+        const key = `${DAU}-tl-${Math.random().toString(36).slice(2, 8)}`;
+        await chenHangTruocLedger(tx, adapterId, actionId, key, ca.hang);
+        const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
+        expect(d.soGhi).toBe(0);
+        expect(phatLai.ok).toBe(ca.mong.ok);
+        expect(phatLai.status).toBe(ca.mong.status);
+        expect(phatLai.reason ?? null).toBe(ca.mong.reason ?? null);
+        expect(phatLai.motPhan ?? null).toEqual(ca.mong.motPhan ?? null);
+        if (ca.mong.status === "timeout") expect(phatLai.results.find((x) => x.tagKey === "b")).toMatchObject({ ok: false, status: "timeout" });
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+  }
+
   // ── polish m2 — các hình lô KHÔNG phải "thiết bị đã trả lời": phát lại vẫn deepEqual câu trả lời sống (ok / status / reason / motPhan / pinnedStop) ──
   const KHAC: Array<{ ten: string; writes: Array<{ tagKey: string; value: unknown }>; tc: { isEnabled?: boolean; commandType?: string; khongDriver?: boolean; tatDieuKhien?: boolean }; mong: Partial<DispatchResult>; soGhi: number }> = [
     { ten: "★ P1 STOP ghim (a = stopValue 0)", writes: [{ tagKey: "a", value: 0 }], tc: { commandType: "stop" }, mong: { ok: true, status: "acked", pinnedStop: true }, soGhi: 1 },
+    { ten: "★ R2 từ chối MỘT write (TAG_NOT_FOUND: chỉ hàng của write ấy) — polish 2: thiếu hàng của lô rejected KHÔNG thành timeout", writes: [{ tagKey: "a", value: 1 }, { tagKey: "zz", value: 2 }], tc: {}, mong: { ok: false, status: "rejected", reason: "TAG_NOT_FOUND" }, soGhi: 0 },
     { ten: "R1 lô bị từ chối hết (ADAPTER_DISABLED)", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { isEnabled: false }, mong: { ok: false, status: "rejected", reason: "ADAPTER_DISABLED" }, soGhi: 0 },
     { ten: "S1 lô mô phỏng (OT_CONTROL_ENABLED tắt)", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { tatDieuKhien: true }, mong: { ok: true, simulated: true, status: "simulated" }, soGhi: 0 },
     { ten: "★ O1 ADAPTER_OFFLINE (không driver nào chạy) — failed KHÔNG gửi gì", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { khongDriver: true }, mong: { ok: false, status: "failed", reason: "ADAPTER_OFFLINE" }, soGhi: 0 },

@@ -476,19 +476,29 @@ function canTotp(nguoi: NguoiGoiLenh, muc: MucRuiRo): boolean {
   return true;
 }
 
+/**
+ * Cảnh báo của bản xem trước (`preview.warnings`) — MỘT nơi tính, dùng chung bởi `lapBanXemTruoc` (request) và `kiemDieuKienGhiTag`
+ * (`canhBao` của chạy khô, R1b-2b-2b A C5): cùng adapter + tag + đồng hồ ⇒ cùng danh sách.
+ */
+function canhBaoXemTruoc(a: HangAdapterLenh, tagKey: string, now: number): { current: BanXemTruoc["current"]; warnings: string[] } {
+  const { current, canhBao } = giaTriHienTai(a.id, tagKey, now);
+  const warnings = ["SAFETY_KIEM_LUC_GUI"];
+  if (canhBao) warnings.push(canhBao);
+  if (!a.isEnabled) warnings.push("ADAPTER_TAT");
+  return { current, warnings };
+}
+
+/** `needsTotp` do `kiemDieuKienGhiTag` tính (`canTotp` chỉ được gọi ở đó — census C5). */
 async function lapBanXemTruoc(
-  nguoi: NguoiGoiLenh,
   a: HangAdapterLenh,
   tag: TagLenh,
   giaTri: GiaTriLenh,
   muc: MucRuiRo,
+  needsTotp: boolean,
   now: number,
 ): Promise<BanXemTruoc> {
-  const { current, canhBao } = giaTriHienTai(a.id, tag.tagKey, now);
+  const { current, warnings } = canhBaoXemTruoc(a, tag.tagKey, now);
   const simulatedReasons = await lyDoMoPhong(a.id);
-  const warnings = ["SAFETY_KIEM_LUC_GUI"];
-  if (canhBao) warnings.push(canhBao);
-  if (!a.isEnabled) warnings.push("ADAPTER_TAT");
   const coDai = tag.writeMin != null || tag.writeMax != null || tag.writeStep != null;
   return {
     machine: a.machineName ?? a.machineCode ?? a.code,
@@ -499,7 +509,7 @@ async function lapBanXemTruoc(
     afterFormula: giaTri, // R1 không có công thức ra (C.7): afterFormula === requested
     range: coDai ? { min: tag.writeMin, max: tag.writeMax, step: tag.writeStep } : null,
     level: muc,
-    needsTotp: canTotp(nguoi, muc),
+    needsTotp,
     mode: simulatedReasons.length > 0 ? "simulated" : "real",
     simulatedReasons,
     route: "central",
@@ -570,12 +580,196 @@ async function phatScadaCmd(
   }
 }
 
+// ─── R1b-2b-2b A C5 (M4) — CỔNG TĨNH DÙNG CHUNG: `request` + "Điều kiện cho phép" chạy khô ────────────────────────────────────
+//
+// `kiemDieuKienGhiTag` là NƠI DUY NHẤT gọi các cổng tĩnh của `request`, đúng thứ tự cố định ở đầu tệp: cờ → 0433 → phạm vi → (móc của
+// request: gửi lại) → đọc tag → kênh + giá trị → vai + quyền + 2FA → edge → chế độ → `canTotp`. `yeuCauGhiTag` gọi CHÍNH hàm này rồi mới
+// lấy khoá chọn + ghi dòng chờ; thủ tục chạy khô `scadaCommands.dieuKienChoPhep` gọi nó KHÔNG có móc ⇒ chỉ đọc: không ghi bảng nào, không
+// ghi attempts, không chạm bộ điều tiết, không xác minh / tiêu TOTP (chỉ báo `canTotp`), không lấy khoá chọn, không `dispatch()`.
+// Census AST `server/services/scada/dieuKienChoPhep.census.test.ts` ghim: các cổng chỉ được gọi ở đây, không trong thân `yeuCauGhiTag`.
+//
+// KD-2bA 5.1 — kết luận đặt tên `quaCongTinh` (qua các cổng TĨNH), không hứa "chắc chắn gửi được": ba điều KHÔNG tính được trước nằm ở
+// `chuaTinh` — khoá chọn (người khác có thể đang chọn kênh), xác minh TOTP (chỉ ở confirm), hạn gửi (TTL 60 s + hàng đợi của dispatcher).
+
+/** Những điều kiện chạy khô KHÔNG tính (KD-2bA 5.1) — UI hiện cạnh kết luận. Thứ tự cố định. */
+export const CHUA_TINH_DIEU_KIEN = Object.freeze(["khoa-chon", "totp-xac-minh", "han-gui"] as const);
+export type ChuaTinhDieuKien = (typeof CHUA_TINH_DIEU_KIEN)[number];
+
+/** Kết quả cổng tĩnh. `tuChoi` = từ chối NỘI BỘ (router chiếu sang `{code, params}` công bố — `tuChoiCongBo`). */
+export type KetQuaDieuKien =
+  | { quaCongTinh: true; canTotp: boolean; muc: MucRuiRo; canhBao: string[]; chuaTinh: ChuaTinhDieuKien[] }
+  | { quaCongTinh: false; tuChoi: TuChoiYeuCau; chuaTinh: ChuaTinhDieuKien[] };
+
+/** Cổng tĩnh dừng ở đâu — `request` dựa vào đó để ghi dòng attempts y như trước C5 (QĐ-1). */
+export type BuocDieuKien = "truoc_db" | "pham_vi" | "dung_som" | "kenh" | "sau_kenh";
+
+/**
+ * CHỈ `yeuCauGhiTag` truyền: đồng hồ của request + móc ngay sau cổng phạm vi (tra gửi lại theo clientRequestId — QĐ-5, giữ đúng vị trí cũ).
+ * Hàm cổng ĐIỀN lại ngữ cảnh đã đọc (db, adapter, tag, giá trị đã ép kiểu, bước dừng) để request không đọc lại lần hai.
+ */
+export interface MocYeuCauGhi {
+  nowDate: Date;
+  /** `true` ⇒ request đã tự kết thúc lượt (gửi lại); cổng sau KHÔNG chạy, kết quả trả về bị bỏ qua (`buoc` = "dung_som"). */
+  sauPhamVi(db: Db, a: HangAdapterLenh): Promise<boolean>;
+  db?: Db;
+  a?: HangAdapterLenh;
+  tag?: TagLenh;
+  giaTri?: GiaTriLenh;
+  buoc?: BuocDieuKien;
+}
+
+/**
+ * Cổng tĩnh của lệnh ghi tag HMI. `pv` = `phamViCua(ctx)`. Không ném cho từ chối đã biết; lỗi hạ tầng (DB, phạm vi không quyết được) thì ném.
+ * Không có `moc` (chạy khô) ⇒ CHỈ ĐỌC.
+ */
+export async function kiemDieuKienGhiTag(
+  nguoi: NguoiGoiLenh,
+  pv: PhamViNguoiXem,
+  input: { adapterId: number; tagKey: string; value: unknown },
+  moc?: MocYeuCauGhi,
+): Promise<KetQuaDieuKien> {
+  const chuaTinh = (): ChuaTinhDieuKien[] => [...CHUA_TINH_DIEU_KIEN];
+  const dung = (tuChoi: TuChoiYeuCau, buoc: BuocDieuKien): KetQuaDieuKien => {
+    if (moc) moc.buoc = buoc;
+    return { quaCongTinh: false, tuChoi, chuaTinh: chuaTinh() };
+  };
+  // 1. cờ — không chạm DB
+  if (!lenhHmiBat()) return dung({ ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." }, "truoc_db");
+  // R1b-2a T9 — thiếu 0433 ⇒ từ chối có mã, không chạm DB (không khoá chọn, không attempts)
+  const thieu0433 = canh0433();
+  if (thieu0433) return dung(thieu0433, "truoc_db");
+
+  const db = await getDb();
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
+  if (moc) moc.db = db;
+  const now = (moc?.nowDate ?? new Date()).getTime();
+
+  // 2. phạm vi
+  const a = await adapterTrongPhamViLenh(db, pv, input.adapterId);
+  if (!a) return dung({ ma: "NOT_FOUND", entity: "adapter", chiTiet: "Adapter không tồn tại." }, "pham_vi");
+  if (moc) {
+    moc.a = a;
+    // 2b. gửi lại (chỉ request)
+    if (await moc.sauPhamVi(db, a)) return dung({ ma: "DA_XU_LY", chiTiet: "Request đã tự kết thúc lượt (gửi lại)." }, "dung_som");
+  }
+
+  // 3–4. kênh + giá trị
+  const tag = await docTagLenh(db, a.id, input.tagKey);
+  const kenh = kiemCongKenhVaGiaTri(tag, input.tagKey, input.value);
+  if (!kenh.ok) return dung(kenh.tuChoi, "kenh");
+  const t = tag as TagLenh;
+  const giaTri = kenh.giaTri;
+  const muc = mucTacDongKenh(t);
+  if (moc) {
+    moc.tag = t;
+    moc.giaTri = giaTri;
+  }
+
+  // 5. vai trò + quyền + 2FA
+  const vai = await kiemCongVaiTro(nguoi, muc);
+  if (!vai.ok) return dung(vai.tuChoi, "sau_kenh");
+
+  // 6. edge
+  const edge = await kiemCongEdge(db, a.id);
+  if (!edge.ok) return dung(edge.tuChoi, "sau_kenh");
+
+  // 7. chế độ máy (của adapter)
+  const cheDo = await kiemCongCheDo(a.machineId, now);
+  if (!cheDo.ok) return dung(cheDo.tuChoi, "sau_kenh");
+
+  // TOTP: chỉ BÁO (đọc cache step-up), không xác minh / không tiêu mã — confirm mới kiểm (QĐ-6)
+  return { quaCongTinh: true, canTotp: canTotp(nguoi, muc), muc, canhBao: canhBaoXemTruoc(a, t.tagKey, now).warnings, chuaTinh: chuaTinh() };
+}
+
+// ─── Trần chạy khô (Q6 + KD-2bA 5.4) ──────────────────────────────────────────────────────────────────────────────────────────────
+/** Q6 — lượt chạy khô tối đa mỗi người trong cửa sổ 60 s (chống dò phạm vi / tag). */
+export const TRAN_DIEU_KIEN_MOI_PHUT = 60;
+/** KD-2bA 5.4 — thêm trần theo (người, adapter): dò tag trên MỘT adapter chạm trần này trước trần người. */
+export const TRAN_DIEU_KIEN_MOI_ADAPTER_PHUT = 30;
+export const CUA_SO_TRAN_DIEU_KIEN_MS = 60_000;
+/** Trần cứng số khoá (người, adapter) giữ trong RAM — vượt ⇒ quét khoá hết hạn, rồi bỏ khoá cũ nhất. */
+export const TRAN_KHOA_DIEU_KIEN = 5_000;
+
+const luotDieuKienTheoNguoi = new Map<number, number[]>();
+const luotDieuKienTheoAdapter = new Map<string, number[]>();
+/** Mốc log chẩn đoán gần nhất theo khoá bị chặn (mỗi khoá tối đa MỘT dòng log mỗi cửa sổ — không để kẻ dò làm ngập log). */
+const daLogChanDieuKien = new Map<string, number>();
+
+function conHan(ls: number[] | undefined, now: number): number[] {
+  return (ls ?? []).filter((t) => t > now - CUA_SO_TRAN_DIEU_KIEN_MS);
+}
+
+function donKhoaDieuKien(now: number): void {
+  if (luotDieuKienTheoAdapter.size < TRAN_KHOA_DIEU_KIEN && luotDieuKienTheoNguoi.size < TRAN_KHOA_DIEU_KIEN && daLogChanDieuKien.size < TRAN_KHOA_DIEU_KIEN) {
+    return;
+  }
+  for (const [k, ls] of luotDieuKienTheoAdapter) if (conHan(ls, now).length === 0) luotDieuKienTheoAdapter.delete(k);
+  for (const [k, ls] of luotDieuKienTheoNguoi) if (conHan(ls, now).length === 0) luotDieuKienTheoNguoi.delete(k);
+  for (const [k, luc] of daLogChanDieuKien) if (luc <= now - CUA_SO_TRAN_DIEU_KIEN_MS) daLogChanDieuKien.delete(k);
+  for (const m of [luotDieuKienTheoAdapter, luotDieuKienTheoNguoi, daLogChanDieuKien] as Map<unknown, unknown>[]) {
+    while (m.size >= TRAN_KHOA_DIEU_KIEN) {
+      const dau = m.keys().next();
+      if (dau.done) break;
+      m.delete(dau.value);
+    }
+  }
+}
+
+/**
+ * Đếm MỘT lượt chạy khô — ĐỒNG BỘ (không `await` giữa kiểm và ghi). Trần người trước, rồi trần (người, adapter). Bị chặn ⇒ không đếm
+ * (chỉ lượt được nhận mới vào cửa sổ) + log chẩn đoán (warn, một dòng / khoá / cửa sổ). Gọi TRƯỚC mọi chạm DB.
+ */
+export function datLuotDieuKien(
+  userId: number,
+  adapterId: number,
+  now: number = Date.now(),
+): { ok: true } | { ok: false; theo: "nguoi" | "nguoi_adapter"; tran: number } {
+  donKhoaDieuKien(now);
+  const khoaAd = `${userId}:${adapterId}`;
+  const lsNguoi = conHan(luotDieuKienTheoNguoi.get(userId), now);
+  const lsAd = conHan(luotDieuKienTheoAdapter.get(khoaAd), now);
+  const chan =
+    lsNguoi.length >= TRAN_DIEU_KIEN_MOI_PHUT
+      ? ({ theo: "nguoi", tran: TRAN_DIEU_KIEN_MOI_PHUT, khoa: `n:${userId}` } as const)
+      : lsAd.length >= TRAN_DIEU_KIEN_MOI_ADAPTER_PHUT
+        ? ({ theo: "nguoi_adapter", tran: TRAN_DIEU_KIEN_MOI_ADAPTER_PHUT, khoa: `a:${khoaAd}` } as const)
+        : null;
+  if (chan) {
+    luotDieuKienTheoNguoi.set(userId, lsNguoi);
+    if (lsAd.length > 0) luotDieuKienTheoAdapter.set(khoaAd, lsAd);
+    else luotDieuKienTheoAdapter.delete(khoaAd);
+    const lanLog = daLogChanDieuKien.get(chan.khoa);
+    if (lanLog === undefined || lanLog <= now - CUA_SO_TRAN_DIEU_KIEN_MS) {
+      daLogChanDieuKien.set(chan.khoa, now);
+      logger.warn(
+        { userId, adapterId, theo: chan.theo, tran: chan.tran, cuaSoMs: CUA_SO_TRAN_DIEU_KIEN_MS },
+        "[SCADA] chạy khô 'Điều kiện cho phép' bị chặn vì quá trần — có thể là dò phạm vi / tag",
+      );
+    }
+    return { ok: false, theo: chan.theo, tran: chan.tran };
+  }
+  lsNguoi.push(now);
+  lsAd.push(now);
+  luotDieuKienTheoNguoi.set(userId, lsNguoi);
+  luotDieuKienTheoAdapter.set(khoaAd, lsAd);
+  return { ok: true };
+}
+
+/** Cho test: quên mọi lượt chạy khô đã đếm. */
+export function _datLaiTranDieuKienChoTest(): void {
+  luotDieuKienTheoNguoi.clear();
+  luotDieuKienTheoAdapter.clear();
+  daLogChanDieuKien.clear();
+}
+
 // ─── request ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type KetQuaYeuCauGhi = { ok: true; ketQua: KetQuaYeuCau; moi: boolean } | { ok: false; tuChoi: TuChoiYeuCau };
 
 /**
  * `scadaCommands.request`. `pv` = `phamViCua(ctx)` (danh tính từ ctx, không từ input). `now` = đồng hồ ứng dụng (một nguồn cho
  * TTL của dòng chờ lẫn khoá chọn). Không ném cho các từ chối đã biết; lỗi hạ tầng (DB, phạm vi không quyết được) thì ném.
+ * Cổng 1–7 + `needsTotp`: `kiemDieuKienGhiTag` (C5 — cùng hàm với chạy khô, không chép). Ở đây: dòng attempts của từ chối, gửi lại,
+ * bản xem trước, khoá chọn + dòng chờ.
  */
 export async function yeuCauGhiTag(
   nguoi: NguoiGoiLenh,
@@ -586,25 +780,16 @@ export async function yeuCauGhiTag(
   // R1b-1 T7 fix round 1 (I-1) — phòng thủ chiều sâu: router đã từ chối NUL, nhưng `lyDo` còn vào jsonb của dòng chờ + cột ly_do; lọc ở đây
   // để một lối gọi khác (hoặc router sửa sau này) không biến một từ chối có mã thành 500.
   const input: DauVaoYeuCau = { ...dauVao, lyDo: catLyDo(dauVao.lyDo) ?? "" };
-  // 1. cờ — không chạm DB
-  if (!lenhHmiBat()) return { ok: false, tuChoi: { ma: "FEATURE_DISABLED", chiTiet: "SCADA_COMMANDS_ENABLED tắt." } };
-  // R1b-2a T9 — thiếu 0433 ⇒ từ chối có mã, không chạm DB (không khoá chọn, không attempts)
-  const thieu0433 = canh0433();
-  if (thieu0433) return { ok: false, tuChoi: thieu0433 };
-
-  const db = await getDb();
-  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   const now = nowDate.getTime();
   const userId = nguoi.user.id;
+  const idempotencyKey = `hmi:${userId}:${input.clientRequestId}`;
 
-  // 2. phạm vi
-  const a = await adapterTrongPhamViLenh(db, pv, input.adapterId);
-  if (!a) {
-    await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: input.lyDo });
-    return { ok: false, tuChoi: { ma: "NOT_FOUND", entity: "adapter", chiTiet: "Adapter không tồn tại." } };
-  }
-
-  const tuChoi = async (t: TuChoiYeuCau, extra: { requestId?: string | null; requestedValue?: unknown; afterFormula?: unknown } = {}) => {
+  const tuChoiTren = async (
+    db: Db,
+    a: HangAdapterLenh,
+    t: TuChoiYeuCau,
+    extra: { requestId?: string | null; requestedValue?: unknown; afterFormula?: unknown } = {},
+  ) => {
     await ghiThuLenh(db, {
       requestId: extra.requestId ?? null,
       userId,
@@ -620,37 +805,50 @@ export async function yeuCauGhiTag(
     return { ok: false as const, tuChoi: t };
   };
 
-  // 2b. gửi lại
-  const idempotencyKey = `hmi:${userId}:${input.clientRequestId}`;
-  const cu = await docDongCho(db, idempotencyKey);
-  if (cu) {
-    const kq = dungLai(cu, userId, input, now);
-    if (kq) return { ok: true, ketQua: kq, moi: false };
-    return tuChoi({ ma: "DA_XU_LY", chiTiet: "clientRequestId này đã được dùng cho một yêu cầu đã xử lý / khác." }, { requestId: cu.id });
+  // 1–7. cổng tĩnh — CÙNG hàm với chạy khô. Móc 2b (gửi lại) chạy ngay sau cổng phạm vi, như trước C5.
+  const guiLai: { kq: KetQuaYeuCauGhi | null } = { kq: null };
+  const moc: MocYeuCauGhi = {
+    nowDate,
+    sauPhamVi: async (db, a) => {
+      const cu = await docDongCho(db, idempotencyKey);
+      if (!cu) return false;
+      const kq = dungLai(cu, userId, input, now);
+      guiLai.kq = kq
+        ? { ok: true, ketQua: kq, moi: false }
+        : await tuChoiTren(db, a, { ma: "DA_XU_LY", chiTiet: "clientRequestId này đã được dùng cho một yêu cầu đã xử lý / khác." }, { requestId: cu.id });
+      return true;
+    },
+  };
+  const dk = await kiemDieuKienGhiTag(nguoi, pv, input, moc);
+  if (guiLai.kq) return guiLai.kq;
+  if (!dk.quaCongTinh) {
+    switch (moc.buoc) {
+      case "truoc_db": // cờ / 0433 — không chạm DB (QĐ-1)
+        return { ok: false, tuChoi: dk.tuChoi };
+      case "pham_vi": {
+        // không lộ adapter (QĐ-1)
+        const db = moc.db as Db;
+        await ghiThuLenh(db, { userId, stage: "request", outcome: "rejected", reasonCode: "NOT_FOUND", lyDo: input.lyDo });
+        return { ok: false, tuChoi: dk.tuChoi };
+      }
+      case "kenh": // giá trị THÔ người gửi
+        return tuChoiTren(moc.db as Db, moc.a as HangAdapterLenh, dk.tuChoi);
+      case "sau_kenh": // giá trị ĐÃ ÉP KIỂU
+        return tuChoiTren(moc.db as Db, moc.a as HangAdapterLenh, dk.tuChoi, { requestedValue: moc.giaTri });
+      default:
+        // không thể xảy ra ("dung_som" đã trả ở `guiLai`): vẫn TỪ CHỐI (fail-closed), không đi tiếp tới khoá chọn / dòng chờ
+        return { ok: false, tuChoi: dk.tuChoi };
+    }
   }
-
-  // 3–4. kênh + giá trị
-  const tag = await docTagLenh(db, a.id, input.tagKey);
-  const kenh = kiemCongKenhVaGiaTri(tag, input.tagKey, input.value);
-  if (!kenh.ok) return tuChoi(kenh.tuChoi);
-  const t = tag as TagLenh;
-  const giaTri = kenh.giaTri;
-  const muc = mucTacDongKenh(t);
-
-  // 5. vai trò + quyền + 2FA
-  const vai = await kiemCongVaiTro(nguoi, muc);
-  if (!vai.ok) return tuChoi(vai.tuChoi, { requestedValue: giaTri });
-
-  // 6. edge
-  const edge = await kiemCongEdge(db, a.id);
-  if (!edge.ok) return tuChoi(edge.tuChoi, { requestedValue: giaTri });
-
-  // 7. chế độ máy (của adapter)
-  const cheDo = await kiemCongCheDo(a.machineId, now);
-  if (!cheDo.ok) return tuChoi(cheDo.tuChoi, { requestedValue: giaTri });
+  const db = moc.db as Db;
+  const a = moc.a as HangAdapterLenh;
+  const t = moc.tag as TagLenh;
+  const giaTri = moc.giaTri as GiaTriLenh;
+  const muc = dk.muc;
+  const tuChoi = (t: TuChoiYeuCau, extra: Parameters<typeof tuChoiTren>[3] = {}) => tuChoiTren(db, a, t, extra);
 
   // bản xem trước (trước transaction: giữ transaction quanh khoá NGẮN)
-  const preview = await lapBanXemTruoc(nguoi, a, t, giaTri, muc, now);
+  const preview = await lapBanXemTruoc(a, t, giaTri, muc, dk.canTotp, now);
   const requestId = randomUUID();
   const hetHan = new Date(now + LENH_HMI_TTL_MS);
   const hash = otPayloadHash({

@@ -76,7 +76,7 @@ export function useDinhDangGiaTri(displayFormat: string | null | undefined, data
 }
 
 /** Câu chính của một từ chối (dùng trong hộp và trong toast cấp trang — kiem-dinh P1-4). */
-function cauLoiLenh(t: TFunction, moTa: MoTaLoi, chiTiet: string): string {
+export function cauLoiLenh(t: TFunction, moTa: MoTaLoi, chiTiet: string): string {
   const lyDo = moTa.khoaLyDo ? t(moTa.khoaLyDo, { lyDo: moTa.thamSo.lyDo }) : undefined;
   return t(moTa.khoa, { ...moTa.thamSo, ...(lyDo !== undefined ? { lyDo } : {}), ...(moTa.canChiTiet ? { chiTiet } : {}) });
 }

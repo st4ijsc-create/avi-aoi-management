@@ -51,12 +51,13 @@ describe.skipIf(process.env.LUONG_PL !== "1")("(a) độ chính xác phân loạ
         inputs: { main: [item] }, nodes: {}, env: {}, run: { id: `eval-${i}`, flowId: "eval", batDau: new Date().toISOString() },
         ghiModel: (v: VetModel) => vet.push(v),
       } as unknown as NguCanhChay;
-      let kq: { main: Array<{ json: { nhan: string } }> } | undefined;
+      type KqNut = { main: Array<{ json: { nhan: string } }> };
+      let kq: KqNut | undefined;
       let t0 = Date.now();
       for (let lan = 0; lan < 20 && !kq; lan++) {
         t0 = Date.now();
         try {
-          kq = (await kb.chay(tham, ngu)) as typeof kq;
+          kq = (await kb.chay(tham, ngu)) as unknown as KqNut; // nút trả union (KetQuaChay | YeuCauCho | …); lưới này chỉ đọc hình KqNut và khẳng định ở dưới
         } catch (e) {
           if (!/rate limit/i.test(String((e as Error)?.message))) throw e; // Cổng AI giới hạn tốc độ theo người dùng/tầng ⇒ chờ rồi thử lại (thời gian chờ KHÔNG tính vào lượt)
           limit++;

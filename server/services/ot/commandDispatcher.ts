@@ -2066,6 +2066,15 @@ function khiLoiAuditStopGhim(action: string, resultId: number | undefined): (err
 const TRANG_THAI_HANG_THIET_BI: ReadonlySet<string> = new Set(["acked", "acked_verified", "acked_unverified", "failed", "timeout"]);
 /** Status của một hàng được tính là "ok" (giữ đúng tập cũ của phát lại). */
 const TRANG_THAI_HANG_OK: ReadonlySet<string> = new Set(["simulated", "acked", "acked_verified", "acked_unverified", "sent"]);
+/**
+ * T6c polish 2 (re-review Important) — MÃ mà dispatcher ghi với một status THIẾT BỊ (`failed`) mà KHÔNG chạm thiết bị: chỉ `writeFailed`, người gọi DUY
+ * NHẤT là ADAPTER_OFFLINE (đo lịch sử git của mọi lời gọi `writeFailed(` / `writeAll(` từ F4a 09bdb6c84: không mã nào khác). Không dùng `MA_LOI_DA_BIET`
+ * (`_chiTietKyThuat`): tập ấy chứa cả mã của hàng THIẾT BỊ (MOT_PHAN, READBACK_*, OT_MC_TAM_KHOA, OT_S7_*, DRIVER_WRITE_FAILED) nên "mã đã biết" không có
+ * nghĩa "không gửi"; và nhập tệp router vào dispatcher kéo theo accessControl / schema (gãy các test mock schema). Không xuất (không phải nguồn census).
+ */
+const MA_THAT_BAI_KHONG_GUI: ReadonlySet<string> = new Set(["ADAPTER_OFFLINE"]);
+/** MÃ tiền tố `MA:` của một errorText (`writeAll` ghi `${reason}: ${detail}`) — cùng biểu thức với `reason` phát lại (polish m1). */
+const maTienTo = (errorText: string | null | undefined): string | undefined => (errorText ? /^([A-Z][A-Z0-9_]*):/.exec(errorText)?.[1] : undefined);
 
 /**
  * R1b-2b-2a T6d — băm payload của một lệnh OT như BÊN GỌI gửi (trước mọi ép kiểu / chuẩn hoá ghim): loại lệnh + danh sách write CHUẨN HOÁ theo thứ tự
@@ -2297,7 +2306,9 @@ function stopGuiLaiVoiKhoaMoi(input: DispatchInput, hangTruoc: ReadonlyArray<Com
  *     ⇒ `timeout` (không rõ — fail-closed); dấu `khongRo` ⇒ `timeout` dù gì đi nữa (dấu thắng). Hàng ghi TRƯỚC bản vá (không dấu) được suy từ trạng thái
  *     mọi hàng: có hàng không ok ⇒ không bao giờ `ok: true`; có hàng `timeout` ⇒ `timeout`; acked + failed ⇒ `failed` MOT_PHAN (không gửi lại);
  *   • lô KHÔNG phải thiết bị (rejected / simulated / `failed` không gửi gì như ADAPTER_OFFLINE): status của hàng đọc được, `reason` = MÃ tiền tố của
- *     errorText (= `reason` sống, polish m1), fail-closed: `ok` chỉ khi MỌI hàng có của lô ok.
+ *     errorText (= `reason` sống, polish m1), fail-closed: `ok` chỉ khi MỌI hàng có của lô ok;
+ *   • polish 2 (re-review Important): hàng CŨ không `ackValue.ledger` mà có status thiết bị = hàng thiết bị (trừ tiền tố `MA_THAT_BAI_KHONG_GUI`);
+ *     ở nhánh không-thiết-bị, write KHÔNG có hàng ⇒ `timeout`, không bao giờ ok (trừ lô mà mọi hàng có đều `rejected`: từ chối một write, không gì được gửi).
  * Hàm thuần — xuất cho test.
  */
 export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo: ReadonlyArray<CommandLog | undefined>): DispatchResult {
@@ -2330,7 +2341,17 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
   const khongRo = hang.some((r) => av(r)?.khongRo === true);
   // T6c polish (review m1) — lô THIẾT BỊ = mọi hàng có status thiết bị VÀ là hàng KẾT QUẢ của đường ghi (`ackValue.ledger === "result"`, đường sống luôn
   // ghi). Hàng từ chối / `failed` không gửi gì (`writeFailed` ADAPTER_OFFLINE: không `ackValue`) ⇒ nhánh không-thiết-bị (giữ `reason` = mã như đường sống).
-  const thietBi = hang.every((r) => TRANG_THAI_HANG_THIET_BI.has(r.status) && av(r)?.ledger === "result");
+  // T6c polish 2 (re-review Important) — hàng CŨ ghi trước sổ ghi trước (status thiết bị, KHÔNG `ackValue.ledger`) cũng là hàng thiết bị ⇒ CÙNG `ketCucLo`
+  // (legacy [acked, failed] ⇒ failed MOT_PHAN như đường sống), TRỪ khi errorText mang tiền tố mã của một thất bại KHÔNG gửi (`MA_THAT_BAI_KHONG_GUI`).
+  const hangThietBi = (r: CommandLog): boolean => {
+    if (!TRANG_THAI_HANG_THIET_BI.has(r.status)) return false;
+    const ledger = av(r)?.ledger;
+    if (ledger === "result") return true;
+    if (ledger !== undefined && ledger !== null) return false; // vai khác của sổ ghi (refused_duplicate / late_result …) — giữ như polish 1
+    const ma = maTienTo(r.errorText);
+    return !(ma && MA_THAT_BAI_KHONG_GUI.has(ma));
+  };
+  const thietBi = hang.every(hangThietBi);
   if (khongRo || thietBi) {
     const outcomes = input.writes.map((w, i) => {
       const r = hangLo[i];
@@ -2352,16 +2373,24 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
       ...ghim,
     };
   }
-  const cachedOk = TRANG_THAI_HANG_OK.has(existing.status) && hang.every((r) => TRANG_THAI_HANG_OK.has(r.status));
+  // T6c polish 2 (re-review Important) — write KHÔNG có hàng ⇒ không biết nó ra sao ⇒ `timeout`, KHÔNG BAO GIỜ `ok` (cùng luật nhánh thiết bị). Ngoại lệ DUY
+  // NHẤT: mọi hàng có đều `rejected` — từ chối một write (TAG_NOT_FOUND / TAG_NOT_WRITABLE / cổng kênh: `writeRejected` `onlyTagKey`) chỉ ghi hàng của write
+  // ấy, các write khác KHÔNG được gửi (từ chối luôn đứng TRƯỚC khi gửi) ⇒ giữ `rejected` + mã như đường sống.
+  const thieuHang = coMat.length < input.writes.length && !coMat.every((r) => r.status === "rejected");
+  const cachedOk = !thieuHang && TRANG_THAI_HANG_OK.has(existing.status) && hang.every((r) => TRANG_THAI_HANG_OK.has(r.status));
   // T6c polish (review m1) — `reason` của đường sống là MÃ (`writeAll` / `writeSimulated` ghi `${mã}: ${chi tiết}`) ⇒ phát lại trả lại MÃ đó, không phải văn
   // bản đầy đủ; văn bản không tiền tố mã ⇒ giữ nguyên (hàng lạ). Một hàng `timeout` (hàng cũ không `ackValue`) ⇒ `timeout` (fail-closed).
-  const ma = existing.errorText ? /^([A-Z][A-Z0-9_]*):/.exec(existing.errorText)?.[1] : undefined;
+  const ma = maTienTo(existing.errorText);
   return {
     ok: cachedOk,
     simulated: existing.status === "simulated",
-    status: hang.some((r) => r.status === "timeout") ? "timeout" : existing.status,
+    status: thieuHang || hang.some((r) => r.status === "timeout") ? "timeout" : existing.status,
     reason: ma ?? existing.errorText ?? undefined,
-    results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
+    results: input.writes.map((w, i) =>
+      thieuHang && !hangLo[i]
+        ? { tagKey: w.tagKey, ok: false, status: "timeout" as DispatchStatus, error: "no result row in the ledger — outcome unknown" }
+        : { tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined },
+    ),
     commandLogIds: ids,
     ...ghim,
   };

@@ -357,7 +357,7 @@ describe("T3E — FOE không gửi lại lô áp MỘT PHẦN", () => {
 
 describe("T3E — ketCucLenhFoe: timeout THẮNG motPhan (T2B)", () => {
   it("status timeout + detail.motPhan ⇒ outcomeUnknown, KHÔNG mang motPhan", () => {
-    const out = ketCucLenhFoe({ ok: false, status: "timeout", detail: { motPhan: { daAp: ["a"], khongAp: ["b"] } } } as Parameters<typeof ketCucLenhFoe>[0], "start");
+    const out = ketCucLenhFoe({ ok: false, status: "timeout", routedTo: "ot-dispatcher", detail: { motPhan: { daAp: ["a"], khongAp: ["b"] } } }, "start");
     expect(out).toMatchObject({ kind: "failed", outcomeUnknown: true });
     expect(out).not.toHaveProperty("motPhan");
   });

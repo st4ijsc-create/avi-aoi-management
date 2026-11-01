@@ -28,7 +28,7 @@ function quet(nguon: string, ten = "x.ts"): { co: boolean; dong: number }[] {
   const ra: { co: boolean; dong: number }[] = [];
   const di = (n: ts.Node) => {
     if (ts.isObjectLiteralExpression(n)) {
-      const khoa = new Set(n.properties.map((p) => (p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : ts.isShorthandPropertyAssignment(p) ? p.name.text : "")));
+      const khoa = new Set(n.properties.map((p) => (p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : ""))); // thuộc tính viết tắt `{ a }` có tên là Identifier ⇒ đã vào nhánh trên (nhánh riêng cho nó là chết, và kiểu thu hẹp về never)
       if (HINH.every((k) => khoa.has(k))) ra.push({ co: khoa.has("kiemPhamVi"), dong: sf.getLineAndCharacterOfPosition(n.getStart()).line + 1 });
     }
     ts.forEachChild(n, di);

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CONG_CU, chayVongAgent, type SuKienAgent, type TinNhan, type WireTool } from "@shared/agentCore";
 import type { KetQuaGoiNgoai, YeuCauGoiNgoai } from "./congNgoai";
-import { chayToolDocNgoai, type KetQuaTool, type TrongThaiDoc } from "./congCuDocNgoai";
+import { chayToolDocNgoai, type KetQuaTool, type NguoiGoi, type TrongThaiDoc } from "./congCuDocNgoai";
 import { ANH_XA_TOOL_AGENT_NGOAI, TRAN_VONG_AGENT_NGOAI, taoCapAgentNgoai, type CauHinhAgentNgoai } from "./vongAgentNgoai";
 import { LoiNgoai } from "./loi";
 
@@ -20,7 +20,7 @@ function dung(kichBan: TraLoiGia[], them: Partial<CauHinhAgentNgoai> = {}) {
     const b = kichBan[Math.min(i++, kichBan.length - 1)]!;
     return { noiDung: b.noiDung ?? "", toolCalls: b.toolCalls ?? [], khongTinCay: true, tokenVao: 100, tokenRa: 20, chiPhiUocUsd: 0.001, callId: 900 + i } as unknown as KetQuaGoiNgoai;
   });
-  const chayTool = vi.fn(async (ten: string, thamSo: Record<string, unknown>): Promise<KetQuaTool> => ({ ok: true, path: String(thamSo.path ?? "."), noiDung: `<<<KQ ${ten} ${JSON.stringify(thamSo)}>>>` }));
+  const chayTool = vi.fn(async (ten: string, thamSo: Record<string, unknown>, _o: { goc: string; user: NguoiGoi; doc: TrongThaiDoc }): Promise<KetQuaTool> => ({ ok: true, path: String(thamSo.path ?? "."), noiDung: `<<<KQ ${ten} ${JSON.stringify(thamSo)}>>>` }));
   const doc: TrongThaiDoc = { byte: 0, tep: 0, tranByte: 262_144, tranTep: 50 };
   const cap = taoCapAgentNgoai({
     dich: { nhaCungCap: "anthropic", model: "claude-x" },

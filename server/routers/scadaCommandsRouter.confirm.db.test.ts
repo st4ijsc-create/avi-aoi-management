@@ -1046,7 +1046,7 @@ describe("R1b-2a T9 — canh 0433 đầu confirm + xả tổng kết cho ngườ
     const khoaTruoc = await khoa("sp0433");
     expect(khoaTruoc?.request_id).toBe(requestId);
     const dispatchTruoc = H.dispatchCalls;
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
     try {
       const m = await moc();
       const loi = await loiCua(u.caller.confirm({ requestId }));

@@ -41,12 +41,16 @@ async function goi(ten: string, args: Record<string, unknown>, u: Ca) {
   const t = getTool(ten);
   if (!t) throw new Error("không có tool " + ten);
   const p = (t.parameters as { parse: (x: unknown) => unknown }).parse({ ...args, __authCtx: { userId: u.id, role: u.role } });
+  if (!t.handler) throw new Error("tool không có handler: " + ten);
   return t.handler(p as never);
 }
 
 beforeAll(async () => {
   const sp = async (k: string) => dangKyModelSanPhamTest(await createProductModel({ code: `${RUN}-${k}`, name: `${RUN}${k}` } as never));
-  HN = await seedHaiNhaMayDo(RUN, "l8", [], await sp("PM"), taoNguoiDungTest);
+  HN = await seedHaiNhaMayDo(RUN, "l8", [], await sp("PM"), async (ten, vaiTro, o) => {
+    const u = await taoNguoiDungTest(ten, vaiTro as Parameters<typeof taoNguoiDungTest>[1], o);
+    return { id: u.id, name: u.name ?? undefined };
+  });
   const { A, B } = HN;
   uA = { id: A.userId, role: "supervisor" };
   uB = { id: B.userId, role: "supervisor" };

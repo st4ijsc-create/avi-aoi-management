@@ -288,7 +288,7 @@ describe("★ (2026-10-22, dieu-phoi) MẶC ĐỊNH khi AI_KIEM_BIEN_DICH_ST KH�
   it("stream mà khách tắt (`st4i_kiem_bien_dich:false`) ⇒ không kiểm", async () => {
     await voiEnvTrong(async () => {
       datLai(`\`\`\`st\n${FB_SAI}\n\`\`\``);
-      const s = await khach().chat.completions.create({ model: "code.plc", stream: true, messages: [{ role: "user", content: "x" }], st4i_kiem_bien_dich: false } as never);
+      const s = await khach().chat.completions.create({ model: "code.plc", stream: true, messages: [{ role: "user", content: "x" }], st4i_kiem_bien_dich: false } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
       for await (const _ of s) void _;
       expect(h.soLanBienDich).toBe(0);
     });

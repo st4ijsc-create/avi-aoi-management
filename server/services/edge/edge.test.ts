@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── tiny in-memory drizzle stand-in (only the chains the coordinator uses) ──
 import { getTableName } from "drizzle-orm";
+import type { StartRunResult } from "../orchestration/foe/foeEngine";
 
 type Row = Record<string, any>;
 const store = new Map<string, Row[]>();
@@ -155,7 +156,7 @@ function defaultGetRun(runId: number) {
   };
 }
 const { startRunMock, getRunMock, abortRunMock } = vi.hoisted(() => ({
-  startRunMock: vi.fn(async (..._a: unknown[]) => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
+  startRunMock: vi.fn(async (..._a: unknown[]): Promise<StartRunResult> => ({ ok: true, enabled: true, runId: 1, status: "completed" as const })),
   /** doc 81 Đợt 7 I1 — the LOCAL abort the edge runs when central stopped the run. */
   abortRunMock: vi.fn(async (runId: number, ..._a: unknown[]) => ({ ok: true, enabled: true, runId, status: "aborted" as const })),
   getRunMock: vi.fn(async (runId: number) => defaultGetRun(runId)),
@@ -499,9 +500,9 @@ describe("doc 81 Đợt 7 I1 — central: an edge sync never overwrites a centra
       const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "running", steps: [{ stepId: "s1", stepType: "command", status: "running" }] } as never);
       expect(res).toMatchObject({ ok: true, data: { stale: true, stepsApplied: 0 } });
       expect(run1()).toMatchObject({ status: done, finishedAt: ABORTED_AT });
-      expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "s1").status).toBe("completed");
+      expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "s1")!.status).toBe("completed");
       // a TERMINAL replay (the same final payload again) is idempotent and still never moves the run
-      const again = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: "running" === done ? "x" : done, steps: [] } as never);
+      const again = await syncRunResult({ edgeNodeCode: "edge-x", runId: 1, status: done, steps: [] } as never);
       expect(again).toMatchObject({ ok: true, data: { stale: true } });
       expect(run1().status).toBe(done);
     });

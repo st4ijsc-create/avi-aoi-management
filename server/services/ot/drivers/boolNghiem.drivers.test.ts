@@ -38,7 +38,7 @@ function mockModbus() {
     setTimeout: vi.fn(),
     readHoldingRegisters: vi.fn(async () => ({ data: [0] })),
     readCoils: vi.fn(async () => ({ data: [true] })),
-    writeCoil: vi.fn(async () => ({})),
+    writeCoil: vi.fn(async (_r: number, _v: boolean) => ({})),
     writeRegister: vi.fn(async () => ({})),
     writeRegisters: vi.fn(async () => ({})),
     close: vi.fn((cb: () => void) => cb()),
@@ -284,7 +284,7 @@ describe("EtherNet/IP — ghi bool một luật", () => {
       // T3A commit 2 (D1) — driver lấy kiểu CIP từ danh sách tag mà thư viện nạp lúc connect (state.tagList)
       state: { tagList: { getTag: (n: string) => ({ name: n, type: { code: 0xc4, structure: false, arrayDims: 0 } }) } },
       readTag: vi.fn(async () => {}),
-      writeTag: vi.fn(async () => {}),
+      writeTag: vi.fn(async (_tag: unknown, _value?: unknown) => {}),
       disconnect: vi.fn(async () => {}),
     };
     vi.doMock("st-ethernet-ip", () => ({

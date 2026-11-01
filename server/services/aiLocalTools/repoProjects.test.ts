@@ -134,12 +134,12 @@ describe("§2 — FAIL-CLOSED: id lạ / client gửi ĐƯỜNG DẪN ⇒ TỪ C
   });
 
   it("★★★ phanGiaiGoc: VẮNG ⇒ ok+goc null · hợp lệ ⇒ ok+goc · lạ/đường dẫn ⇒ PROJECT_NOT_FOUND", () => {
-    expect(phanGiaiGoc(undefined)).toEqual({ ok: true, id: null, goc: null });
-    expect(phanGiaiGoc("")).toEqual({ ok: true, id: null, goc: null });
-    expect(phanGiaiGoc("projA")).toEqual({ ok: true, id: "projA", goc: path.resolve(A) });
-    expect(phanGiaiGoc("id-la")).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
-    expect(phanGiaiGoc("../../etc")).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
-    expect(phanGiaiGoc(A)).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
+    expect(phanGiaiGoc(undefined, null)).toEqual({ ok: true, id: null, goc: null });
+    expect(phanGiaiGoc("", null)).toEqual({ ok: true, id: null, goc: null });
+    expect(phanGiaiGoc("projA", null)).toEqual({ ok: true, id: "projA", goc: path.resolve(A) });
+    expect(phanGiaiGoc("id-la", null)).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
+    expect(phanGiaiGoc("../../etc", null)).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
+    expect(phanGiaiGoc(A, null)).toEqual({ ok: false, ma: "PROJECT_NOT_FOUND" });
   });
 });
 

@@ -47,16 +47,16 @@ const { RevertVersionError } = vi.hoisted(() => {
   return { RevertVersionError };
 });
 
-const updateSpy = vi.fn(async () => {});
-const batchSpy = vi.fn(async () => ({ updated: 1, productModelId: 1, code: "PM-1", pointsConfigVersion: 2 }));
-const revertSpy = vi.fn(async () => ({
+const updateSpy = vi.fn(async (..._a: any[]) => {});
+const batchSpy = vi.fn(async (..._a: any[]) => ({ updated: 1, productModelId: 1, code: "PM-1", pointsConfigVersion: 2 }));
+const revertSpy = vi.fn(async (..._a: any[]) => ({
   productModelId: 7, code: "PM-7", targetVersion: 1, fromVersion: 3, newVersion: 4,
   pointsReverted: 1, pointsUnchanged: 0, pointsSkipped: 0, skippedPointIds: [],
 }));
 const getPointSpy = vi.fn();
 const getByIdsSpy = vi.fn();
-const auditSpy = vi.fn(async () => ({ id: 1 }));
-const bumpSpy = vi.fn(async (id: number) => ({ productModelId: id, code: "PM-TEST", version: 2 }));
+const auditSpy = vi.fn(async (..._a: any[]) => ({ id: 1 }));
+const bumpSpy = vi.fn(async (id: number, ..._r: any[]) => ({ productModelId: id, code: "PM-TEST", version: 2 }));
 
 vi.mock("../db", () => ({
   updateMeasurementPointDef: (...a: any[]) => updateSpy(...a),
@@ -65,7 +65,7 @@ vi.mock("../db", () => ({
   RevertVersionError,
   getMeasurementPointDefById: (...a: any[]) => getPointSpy(...a),
   getMeasurementPointDefsByIds: (...a: any[]) => getByIdsSpy(...a),
-  bumpPointsConfigVersion: (...a: any[]) => bumpSpy(...a),
+  bumpPointsConfigVersion: (id: number, ...r: any[]) => bumpSpy(id, ...r),
   createAuditLog: (...a: any[]) => auditSpy(...a),
 }));
 vi.mock("../services/thresholdGovernanceService", () => ({

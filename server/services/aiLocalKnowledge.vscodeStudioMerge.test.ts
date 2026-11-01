@@ -64,7 +64,7 @@ const opsEmbeddings = [
 const opsChunksJsonl = opsChunks.map((c) => JSON.stringify(c)).join("\n");
 const opsEmbeddingsJsonl = opsEmbeddings.map((e) => JSON.stringify(e)).join("\n");
 
-const fsExistsSync = vi.fn(() => true);
+const fsExistsSync = vi.fn((_p: string) => true);
 const fsReadFileSync = vi.fn((p: string) => (String(p).includes("chunks") ? opsChunksJsonl : opsEmbeddingsJsonl));
 vi.mock("node:fs", () => ({
   default: { existsSync: (...a: unknown[]) => fsExistsSync(...(a as [string])), readFileSync: (...a: unknown[]) => fsReadFileSync(...(a as [string])) },

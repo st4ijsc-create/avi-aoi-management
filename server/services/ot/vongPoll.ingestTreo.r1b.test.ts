@@ -31,7 +31,7 @@ const TAGS: OtTagAddress[] = [
   { tagKey: "t1", address: "1", dataType: "float" },
   { tagKey: "t2", address: "2", dataType: "float" },
 ];
-const mauTot = (tagKey: string, value: unknown = 1): OtSample => ({ tagKey, raw: value, value, quality: "good", timestamp: new Date() });
+const mauTot = (tagKey: string, value: OtSample["value"] = 1): OtSample => ({ tagKey, raw: value, value, quality: "good", timestamp: new Date() });
 const phanLoi = () => ({ statusCode: "timeout", reason: "comm_lost" as const });
 const treoMai = () => new Promise<void>(() => undefined);
 

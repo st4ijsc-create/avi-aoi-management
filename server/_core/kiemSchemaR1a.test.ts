@@ -21,6 +21,7 @@ import {
   lyDoSchemaR1a,
   phanLoaiLoiKiem,
   trangThaiSchemaR1a,
+  type TrangThaiSchemaR1a,
 } from "./kiemSchemaR1a";
 import { createHealthHandler } from "./healthProbes";
 import { nguyenNhanBoDemHong } from "./totpKhoaSai";
@@ -553,7 +554,7 @@ describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do
     expect(Object.keys(dang).filter((k) => k.startsWith("schemaR1a"))).toEqual(["schemaR1a"]);
   });
   it("thiếu 0431 ⇒ 200 (liveness — khởi động lại không chữa được migration) nhưng status degraded + schemaR1a nói rõ", async () => {
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: ["device_tags.write_min"], thieu0432: ["totp_khoa_sai"], thieu0433: [] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: ["device_tags.write_min"], thieu0432: ["totp_khoa_sai"], thieu0433: [], thieu0434: [], thieu0433Fk: [] });
     const r = await goiHealth();
     expect(r.status).toBe(200);
     expect(r.body.status).toBe("degraded");
@@ -562,7 +563,7 @@ describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do
   });
   it("★ rà soát cuối M-7 — một hình dạng: thiếu và không biết đều là ĐỐI TƯỢNG có ok:false + trangThai; không biết KHÔNG nhầm thành khoẻ", async () => {
     const hinh = (v: unknown) => (v && typeof v === "object" ? Object.keys(v as object).sort() : typeof v);
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
     const thieu = (await goiHealth()).body;
     __datTrangThaiSchemaR1a({ kieu: "khong_kiem_duoc", loi: "connect ECONNREFUSED 10.0.0.1:5434", loai: "ket_noi_tu_choi" });
     const khongBiet = (await goiHealth()).body;
@@ -575,7 +576,7 @@ describe("/health (route THẬT — `/api/health` là SPA catch-all) mang lý do
     expect(Object.keys(khongBiet).filter((k) => k.startsWith("schemaR1a"))).toEqual(["schemaR1a"]);
   });
   it("★ R1b-1 T7 — thiếu 0433 ⇒ 200 nhưng status degraded + schemaR1a.thieuMigration có 0433 (cùng cách báo như 0431)", async () => {
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
     const r = await goiHealth();
     expect(r.status).toBe(200);
     expect(r.body.status).toBe("degraded");
@@ -591,7 +592,7 @@ describe("TOTP_KHONG_KIEM_DUOC mang nguyên nhân 'thiếu migration 0432' trong
     expect(nguyenNhanBoDemHong(new Error("wrap", { cause: { code: "42703", message: "column loai does not exist" } }))).toContain("thiếu migration 0432");
   });
   it("tiến trình đã thấy thiếu 0432 lúc khởi động ⇒ mọi lỗi bộ đếm đều gắn nguyên nhân", () => {
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: ["totp_khoa_sai"], thieu0433: [] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: "x", thieu0431: [], thieu0432: ["totp_khoa_sai"], thieu0433: [], thieu0434: [], thieu0433Fk: [] });
     expect(nguyenNhanBoDemHong(new Error("timeout"))).toContain("thiếu migration 0432");
   });
   it("lỗi khác (DB treo) ⇒ chỉ thông điệp gốc, không đổ oan cho migration", () => {
@@ -603,8 +604,8 @@ describe("TOTP_KHONG_KIEM_DUOC mang nguyên nhân 'thiếu migration 0432' trong
 
 describe("R1b-2a T9 — biet0433Thieu (canh đầu request / confirm)", () => {
   afterEach(() => __datTrangThaiSchemaR1a({ kieu: "chua_kiem" }));
-  const daKiem = (thieu0433: string[]) =>
-    ({ kieu: "da_kiem", luc: "2026-10-26T00:00:00Z", thieu0431: [], thieu0432: [], thieu0433, thieu0434: [] }) as const;
+  const daKiem = (thieu0433: string[]): TrangThaiSchemaR1a =>
+    ({ kieu: "da_kiem", luc: "2026-10-26T00:00:00Z", thieu0431: [], thieu0432: [], thieu0433, thieu0434: [], thieu0433Fk: [] });
 
   it("chỉ true khi ĐÃ kiểm và thiếu cột ly_do; chưa kiểm / không kiểm được / đủ ⇒ false (không biết ≠ thiếu)", () => {
     __datTrangThaiSchemaR1a({ kieu: "chua_kiem" });

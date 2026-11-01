@@ -10,6 +10,8 @@
  *                          chọn, không kiểm chế độ, không 2FA, mức 1; miễn nhóm giới hạn "2fa" — census trpcGioiHanThuTuc). Thứ tự: lenhHmi.ts.
  *   mayDungKhanCap (query) — R1b-2b-1 T1 (mục 59): máy trong phạm vi mà người gọi được dừng, cho khối DỪNG khẩn cấp trên trang buộc đổi
  *                          mật khẩu (tối thiểu; miễn cổng buộc-đổi-mật-khẩu cùng dungMay). Logic: services/scada/mayDungKhanCap.ts.
+ *   dieuKienChoPhep (query) — R1b-2b-2b A C5 (M4, B-T11): "Điều kiện cho phép" CHẠY KHÔ — CÙNG hàm cổng tĩnh với request
+ *                          (`kiemDieuKienGhiTag`), không ghi gì, không tiêu TOTP, không dispatch; trần 60 / phút / người + 30 / phút / (người, adapter).
  *
  * Router MỎNG: logic + thứ tự cổng + nhật ký `scada_command_attempts` ở `server/services/scada/lenhHmi.ts`. Ở đây chỉ: danh tính + phạm
  * vi từ `ctx` (`phamViCua(ctx)`, không bao giờ từ input) và đổi từ chối thành `appError` (mỗi mã MỘT lời gọi literal — cổng
@@ -20,18 +22,22 @@
  */
 import { z } from "zod";
 import { router, moduleProcedure } from "../_core/trpc";
-import { appError } from "../_core/appError";
+import { appError, readAppErrorMeta, type AppErrorCode, type AppErrorParams } from "../_core/appError";
 import { loiTotpKhoa } from "../_core/totpKhoaSai";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
+  datLuotDieuKien,
   dungMayHmi,
   huyYeuCauGhi,
+  kiemDieuKienGhiTag,
   trangThaiYeuCauGhi,
   xacNhanGhiTag,
   yeuCauGhiTag,
+  type ChuaTinhDieuKien,
   type NguoiGoiLenh,
   type TuChoiYeuCau,
 } from "../services/scada/lenhHmi";
+import type { MucRuiRo } from "../services/ot/aiControlGate";
 import { mayDungKhanCap } from "../services/scada/mayDungKhanCap";
 
 const thuTucLenh = moduleProcedure("MOD_OT_CONTROL");
@@ -133,6 +139,22 @@ export function loiTuChoiLenh(t: TuChoiYeuCau) {
   }
 }
 
+/**
+ * KD-2bA 5.2 — phần CÔNG BỐ của một từ chối: ĐÚNG `(appCode, params)` của lỗi mà `loiTuChoiLenh` dựng cho `request` — không hơn (không
+ * `chiTiet`, không `boiUserId` / `conLaiMs` / `edgeNodeId` … ngoài params đó). Dựng bằng CHÍNH `loiTuChoiLenh` ⇒ client dịch bằng cùng khoá.
+ */
+export type TuChoiCongBo = { code: AppErrorCode; params: AppErrorParams };
+export function tuChoiCongBo(t: TuChoiYeuCau): TuChoiCongBo {
+  // loiTuChoiLenh luôn dựng bằng appError ⇒ luôn có appCode (test C5 phủ MỌI mã); thiếu (không thể) ⇒ mã chung OPERATION_FAILED
+  const meta = readAppErrorMeta(loiTuChoiLenh(t));
+  return { code: (meta?.appCode ?? "OPERATION_FAILED") as AppErrorCode, params: meta?.appParams ?? {} };
+}
+
+/** HỢP ĐỒNG B-T11 — kết quả `scadaCommands.dieuKienChoPhep`. */
+export type DieuKienChoPhep =
+  | { quaCongTinh: true; canTotp: boolean; muc: MucRuiRo; canhBao: string[]; chuaTinh: ChuaTinhDieuKien[] }
+  | { quaCongTinh: false; tuChoi: TuChoiCongBo; chuaTinh: ChuaTinhDieuKien[] };
+
 export const scadaCommandsRouter = router({
   request: thuTucLenh
     .input(
@@ -201,4 +223,39 @@ export const scadaCommandsRouter = router({
    * buộc-đổi-mật-khẩu. Chỉ id / nhãn máy / nhãn chuyền / coDung / số adapter (ruling C16); ≤ 201 hàng + `biCat` (C6). Thân có hạn 3 s.
    */
   mayDungKhanCap: thuTucLenh.query(({ ctx }) => mayDungKhanCap(nguoiGoi(ctx), phamViCua(ctx))),
+
+  /**
+   * R1b-2b-2b A C5 (M4, hợp đồng B-T11) — "Điều kiện cho phép" CHẠY KHÔ: chạy CÙNG các cổng tĩnh của `request` (`kiemDieuKienGhiTag`, cùng
+   * thứ tự) mà KHÔNG ghi gì (0 `ai_pending_actions`, 0 `scada_command_attempts`, 0 audit, không chạm bộ điều tiết), KHÔNG xác minh / tiêu
+   * TOTP (chỉ báo `canTotp`), KHÔNG lấy khoá chọn, KHÔNG `dispatch()`. Kết luận `quaCongTinh` + `chuaTinh` (KD-2bA 5.1).
+   *   • NOT_FOUND (adapter / tag không tồn tại hoặc ngoài phạm vi) ⇒ NÉM y hệt `request` (cùng `loiTuChoiLenh`) — chạy khô không là cửa dò.
+   *   • Từ chối khác ⇒ trả `{ quaCongTinh:false, tuChoi:{code, params} }` = đúng phần công bố của lỗi `request` (KD-2bA 5.2).
+   *   • Trần (Q6 + KD-2bA 5.4): 60 lượt / 60 s / người, 30 lượt / 60 s / (người, adapter) — TRƯỚC mọi chạm DB ⇒ TOO_MANY_REQUESTS
+   *     `OPERATION_FAILED {operation:"scadaDryRun", reason:"rateLimited"}`; bị chặn thì không đếm, log chẩn đoán (lenhHmi `datLuotDieuKien`).
+   */
+  dieuKienChoPhep: thuTucLenh
+    .input(
+      z
+        .object({
+          adapterId: z.number().int().positive(),
+          tagKey: z.string().min(1).max(128),
+          value: z.union([z.number().finite(), z.boolean(), z.string().max(256)]),
+        })
+        .strict(),
+    )
+    .query(async ({ ctx, input }): Promise<DieuKienChoPhep> => {
+      const tran = datLuotDieuKien(ctx.user.id, input.adapterId);
+      if (!tran.ok) {
+        throw appError(
+          "TOO_MANY_REQUESTS",
+          "OPERATION_FAILED",
+          { operation: "scadaDryRun", reason: "rateLimited" },
+          `Quá ${tran.tran} lượt chạy khô "Điều kiện cho phép" trong 60 s.`,
+        );
+      }
+      const kq = await kiemDieuKienGhiTag(nguoiGoi(ctx), phamViCua(ctx), input);
+      if (kq.quaCongTinh) return { quaCongTinh: true, canTotp: kq.canTotp, muc: kq.muc, canhBao: kq.canhBao, chuaTinh: kq.chuaTinh };
+      if (kq.tuChoi.ma === "NOT_FOUND") throw loiTuChoiLenh(kq.tuChoi);
+      return { quaCongTinh: false, tuChoi: tuChoiCongBo(kq.tuChoi), chuaTinh: kq.chuaTinh };
+    }),
 });

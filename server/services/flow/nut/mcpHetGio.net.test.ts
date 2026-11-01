@@ -116,7 +116,7 @@ describe("hạn giờ trên mạng thật", () => {
     modo = "cham";
     const t = Date.now();
     // lời gọi thứ ba bắt đầu khi còn ~0,1 s hạn tổng ⇒ bị cắt giữa chừng: mã MCP_HET_GIO (hạn từng lời gọi đã rút theo hạn tổng); nếu hạn tổng hết đúng LÚC chuyển item thì MCP_HET_GIO_TONG — cả hai đều đúng
-    await expect(chay(6)).rejects.toSatisfy((e: { ma?: string }) => e.ma === "MCP_HET_GIO_TONG" || e.ma === "MCP_HET_GIO");
+    await expect(chay(6)).rejects.toSatisfy((e: unknown) => (e as { ma?: string }).ma === "MCP_HET_GIO_TONG" || (e as { ma?: string }).ma === "MCP_HET_GIO");
     expect(Date.now() - t).toBeLessThan(8_000);
     expect(soTool).toBeGreaterThanOrEqual(1);
     expect(soTool).toBeLessThanOrEqual(3);

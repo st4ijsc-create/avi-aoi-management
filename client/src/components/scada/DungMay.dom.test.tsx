@@ -54,7 +54,7 @@ vi.mock("@/lib/trpc", () => {
   return {
     trpc: {
       useUtils: () => ({ scadaKenh: { cheDo: { danhSach: { invalidate: () => undefined } }, danhSach: { invalidate: () => undefined } } }),
-      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy"), dungMay: mut("dungMay") },
+      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy"), dungMay: mut("dungMay"), dieuKienChoPhep: { useQuery: () => ({ data: undefined, isError: false }) } },
       scadaKenh: {
         danhSach: { useQuery: () => ({ data: srv.kenh, isLoading: false, isError: false }) },
         cheDo: {

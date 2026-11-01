@@ -2,6 +2,7 @@
  * SCADA R1a Task 13 — ô "Lý do" dùng chung cho mọi hộp thoại sửa của M12 (cùng mẫu với hộp lý do của `ScadaDiag`): bắt buộc, cắt khoảng
  * trắng, ≥ 5 ký tự (khớp `lyDoInput` ở máy chủ: `trim().min(5).max(300)`). Máy chủ vẫn là ranh giới thật.
  */
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,10 +35,20 @@ export const LOP_O_CHON =
 export const MA_TOTP_DAI = 6;
 export const maTotpDu = (ma: string): boolean => ma.length === MA_TOTP_DAI && /^[0-9]+$/.test(ma);
 
-/** Lỗi máy chủ về mã TOTP (thiếu / sai / đã dùng / tạm khoá) ⇒ hộp thoại xoá ô mã để người dùng nhập mã MỚI. */
+/**
+ * Lỗi máy chủ về mã TOTP (thiếu / sai / đã dùng / tạm khoá) ⇒ hộp thoại xoá ô mã để người dùng nhập mã MỚI.
+ * Kể cả `OPERATION_FAILED` với `reason: "scadaTotpDaDungDuLieuDoi"` (R1b-2b-2a T5B): mã ĐÃ TIÊU nhưng lần ghi thứ hai thất bại vì dữ liệu đổi ⇒
+ * mã cũ không dùng lại được, phải nhập mã mới (không phải "mã sai").
+ */
 export function laLoiMaTotp(e: unknown): boolean {
-  const ma = (e as { data?: { appCode?: string } } | null)?.data?.appCode;
-  return ma === "SCADA_CONFIG_TOTP_REQUIRED" || ma === "SCADA_CONFIG_TOTP_INVALID" || ma === "TOTP_TAM_KHOA";
+  const d = (e as { data?: { appCode?: string; appParams?: { reason?: string } } } | null)?.data;
+  const ma = d?.appCode;
+  return (
+    ma === "SCADA_CONFIG_TOTP_REQUIRED" ||
+    ma === "SCADA_CONFIG_TOTP_INVALID" ||
+    ma === "TOTP_TAM_KHOA" ||
+    (ma === "OPERATION_FAILED" && d?.appParams?.reason === "scadaTotpDaDungDuLieuDoi")
+  );
 }
 
 /**
@@ -62,10 +73,23 @@ export function TruongTotp({
   describedBy?: string;
 }) {
   const { t } = useTranslation();
+  const oRef = useRef<HTMLInputElement>(null);
+  const truoc = useRef(value);
+  const canTieuDiem = useRef(false);
+  // Ô mã bị XOÁ (lỗi mã ⇒ nhập mã mới): đưa tiêu điểm về ô; nếu ô còn khoá (đang gửi) thì đợi đến khi mở lại.
+  useEffect(() => {
+    if (truoc.current !== "" && value === "") canTieuDiem.current = true;
+    truoc.current = value;
+    if (canTieuDiem.current && !disabled) {
+      canTieuDiem.current = false;
+      oRef.current?.focus();
+    }
+  }, [value, disabled]);
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{t("scada.kenh.dialog.totp")}</Label>
       <Input
+        ref={oRef}
         id={id}
         inputMode="numeric"
         autoComplete="one-time-code"

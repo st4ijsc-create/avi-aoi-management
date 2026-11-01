@@ -292,7 +292,7 @@ async function claimPackage(x: EdgeHarness, claimSeq: number): Promise<EdgeRunPa
       return { kind: "ot" as const, stepId, adapterId: 501, pins };
     }),
     stopsUnsure: [...v.unsure],
-    prior: edgePriorPictureOf(stepRows(x.runId)),
+    prior: edgePriorPictureOf(stepRows(x.runId) as unknown as Parameters<typeof edgePriorPictureOf>[0]), // hàng FakeDb = Record<string, any> (không khai stepId/status) — cùng mảng, chỉ đổi kiểu
     issuedAt: Date.now(),
     claimSeq,
     workflowId: run.workflowId,
@@ -515,7 +515,7 @@ describe("doc 81 Đợt 10 C — one walker, two stores: central and edge produc
     await edgeSegment(e, 2);
     expect(perStep(walkerWritesEdge(e))).toEqual(perStep(walkerWritesCentral(c)));
     expect(finalRows(e.runId)).toEqual(finalRows(c));
-    const sortSent = (l: ReturnType<typeof sentCommands>) => [...l].sort((a, b) => (a.stepId < b.stepId ? -1 : 1));
+    const sortSent = (l: ReturnType<typeof sentCommands>) => [...l].sort((a, b) => ((a.stepId as string) < (b.stepId as string) ? -1 : 1));
     expect(sortSent(sentCommands(n0))).toEqual(sortSent(sentCommands(0, n0)));
     expect(runRow(e.runId).status).toBe("completed");
   });

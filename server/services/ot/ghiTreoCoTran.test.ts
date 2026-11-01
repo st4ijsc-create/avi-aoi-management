@@ -324,7 +324,7 @@ describe("★ fix round 1 — hàng chờ: FIFO, xả dưới CÙNG trần, gi�
     expect(tomTat).toEqual([]);
     expect(trangThaiGhiTreo().tomTatCho).toBe(1);
     // một lượt bỏ mới trong lúc chờ thử lại (hàng chờ lại đầy ⇒ tràn)
-    const cho2: Array<ReturnType<typeof hoan>> = [];
+    const cho2: Array<ReturnType<typeof hoan<void>>> = [];
     for (let i = 0; i < 300 && trangThaiGhiTreo().hangCho < TRAN_HANG_CHO_GHI_NEN; i++) {
       const h = hoan();
       cho2.push(h);
@@ -481,7 +481,7 @@ describe("★ điều phối — −1 trên MỌI đường thoát; về 0 sau k
   });
 
   it("★ trộn nhanh-ok / chậm-bỏ-rơi / bị từ chối / ném đồng bộ ⇒ ≤ 8 suốt quá trình, về 0 khi mọi lượt xong", async () => {
-    const cham: Array<ReturnType<typeof hoan>> = [];
+    const cham: Array<ReturnType<typeof hoan<void>>> = [];
     let maxDem = 0;
     for (let i = 0; i < 40; i++) {
       const loai = i % 4;

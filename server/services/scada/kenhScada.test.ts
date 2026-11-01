@@ -493,14 +493,14 @@ describe("R1b-2a T1 — tag int CHƯA khai: mọi int đi lưới thô; không h
     for (const v of [3, true, false, "7", " 7 ", -0]) expect(kiemLuoiThoChuaKhai(int1, v)).toEqual({ ok: true, giaTri: v });
   });
   it("M2 — không hữu hạn ⇒ TYPE_MISMATCH trên mọi int chưa khai (scale 1 và scale 10)", () => {
-    for (const tag of [int1, { dataType: "int", scale: "10", offset: null }])
+    for (const tag of [int1, { dataType: "int" as const, scale: "10", offset: null }])
       for (const v of ["abc", NaN, Infinity, -Infinity, {}, "Infinity", "1e400"]) {
         expect(kiemLuoiThoChuaKhai(tag, v)).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
         expect((kiemLuoiThoChuaKhai(tag, v) as { chiTiet: string }).chiTiet).toContain("giá trị không phải số hữu hạn — tag int không ghi được");
       }
   });
   it("K3 — mảng / đối tượng / Symbol / chuỗi rỗng / chỉ khoảng trắng / null / undefined ⇒ TYPE_MISMATCH (Number() của chúng là 0 hay 25 nhưng không phải ý định ghi số)", () => {
-    for (const tag of [int1, { dataType: "int", scale: "10", offset: null }])
+    for (const tag of [int1, { dataType: "int" as const, scale: "10", offset: null }])
       for (const v of [[7], [25], ["25"], [], [[]], { v: 25 }, Symbol("x"), "", "   ", "\t", null, undefined, () => 1]) {
         expect(kiemLuoiThoChuaKhai(tag, v), String(typeof v === "symbol" ? "Symbol" : JSON.stringify(v))).toMatchObject({ ok: false, ma: "TYPE_MISMATCH" });
       }

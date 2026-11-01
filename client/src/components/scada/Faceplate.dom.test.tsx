@@ -49,7 +49,7 @@ vi.mock("@/lib/trpc", () => {
   });
   return {
     trpc: {
-      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy") },
+      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy"), dieuKienChoPhep: { useQuery: () => ({ data: undefined, isError: false }) } },
       scadaKenh: {
         danhSach: {
           useQuery: (i: unknown) => {

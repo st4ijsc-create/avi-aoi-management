@@ -4096,6 +4096,7 @@
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
       "scadaLabRead": "thử đọc một địa chỉ (Lab)",
       "scadaSelectTag": "chọn kênh để ra lệnh",
+      "scadaDryRun": "kiểm tra điều kiện cho phép (chạy khô)",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
       "scadaTotpCauHinh": "kiểm mã xác thực cho thay đổi cấu hình kênh",
       "scadaConfigTotp": "kiểm mã xác thực cho thay đổi cấu hình",
@@ -4558,7 +4559,7 @@
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
       "adapterNotRunning": "Adapter không chạy ở trung tâm (đang tắt, chưa kết nối hoặc mất kết nối) — không có phiên để đọc thử.",
       "protocolNotSupported": "Giao thức của adapter này chưa được chứng minh đọc thử an toàn song song với vòng poll — Lab không đọc được (chỉ Modbus TCP, OPC UA và stub).",
-      "rateLimited": "Quá 10 lượt đọc thử trong một phút — chờ một lát rồi thử lại.",
+      "rateLimited": "Quá số lượt cho phép trong một phút — chờ một lát rồi thử lại.",
       "scadaLabDangBan": "Adapter này đang có một lượt đọc thử chưa xong — chờ lượt đó xong rồi thử lại.",
       "scadaLabPhienCu": "Phiên kết nối đang chạy cũ hơn cấu hình adapter (endpoint / tuỳ chọn đã sửa sau khi kết nối) — kết nối lại adapter hoặc khởi động lại OT rồi đọc thử lại.",
       "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
@@ -24651,6 +24652,36 @@
         "EDGE_OUTCOME_UNKNOWN": "Chưa rõ kết quả trên edge: node edge có thể đã áp lệnh — kiểm tra thiết bị trước khi chạy lại.",
         "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
         "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."
+      }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "Thử đọc một địa chỉ (Lab)",
+        "chiDoc": "Chỉ đọc — không ghi xuống thiết bị.",
+        "troGiup": "Đọc một lần, có hạn 3 giây, tối đa 10 lượt mỗi phút. Với Modbus, gateway TCP→RTU hoặc thiết bị chỉ xử lý một giao dịch có thể bỏ yêu cầu Lab chen vào, làm một nhịp poll hết hạn. Lý do được ghi vào audit, giá trị đọc không được lưu.",
+        "diaChi": "Địa chỉ",
+        "kieu": "Kiểu dữ liệu",
+        "nutDoc": "Đọc",
+        "chatLuong": "Chất lượng",
+        "giaTriTho": "Giá trị thô",
+        "giaTri": "Giá trị giải mã",
+        "maTrangThai": "Mã trạng thái",
+        "lyDoKetQua": "Lý do",
+        "thoiGian": "Thời gian",
+        "reasonTimeout": "Hết hạn — thiết bị không trả lời kịp",
+        "reasonNoSample": "Chưa có mẫu nào cho địa chỉ này"
+      }
+    },
+    "dieuKien": {
+      "tieuDe": "Điều kiện cho phép",
+      "duocPhep": "Được phép",
+      "duocPhepTotp": "Được phép — cần mã xác thực hai lớp",
+      "khongDuocPhep": "Không được phép: {{lyDo}}",
+      "chuaTinh": "Chưa kiểm tra trước: {{ds}} — máy chủ quyết định khi bạn bấm Đổi.",
+      "chuaTinhMuc": {
+        "khoa-chon": "khoá chọn",
+        "totp-xac-minh": "xác minh mã",
+        "han-gui": "hạn gửi"
       }
     }
   },

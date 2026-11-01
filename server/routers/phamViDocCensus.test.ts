@@ -1008,7 +1008,11 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 // ★★ 2026-11-01 · SCADA R1b-2b-2b A — C4 (Lab "thử đọc một địa chỉ") — **D 1223 → 1224 · tong 2446 → 2447 · A/B/C/S KHÔNG đổi.** Mutation MỚI
 //   `scadaDiag.thuDocDiaChi` (ghi audit ý định + kết quả) ⇒ nhóm D. Đo: ghim cũ (gốc 14bc31526) đỏ ĐÚNG +1 D / +1 tong. `tong` 2447 trùng
 //   `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 459, D: 1224, S: 721, tong: 2447 } as const;
+// ★★ 2026-11-01 · SCADA R1b-2b-2b A — C5 (M4, "Điều kiện cho phép" chạy khô) — **S 721 → 722 · tong 2447 → 2448 · A/B/C/D KHÔNG đổi.** Query MỚI
+//   `scadaCommands.dieuKienChoPhep` — phạm vi qua `adapterTrongPhamViLenh` (`idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`, cùng hàm cổng với
+//   request; ngoài phạm vi = NOT_FOUND y hệt — `scadaCommandsRouter.dieuKien.r1b2b2b.db.test.ts`) ⇒ nhóm S. Không ghi gì. Đo: ghim cũ (gốc f5f22efe5)
+//   đỏ ĐÚNG +1 S / +1 tong. `tong` 2448 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
+const GHIM = { A: 35, B: 8, C: 459, D: 1224, S: 722, tong: 2448 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
