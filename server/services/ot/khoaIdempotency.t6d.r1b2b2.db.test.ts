@@ -682,4 +682,213 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
     });
     expect(H.bay).toBe(0);
   }, 30_000);
+
+  // ── T6d kd (kiem-dinh 2026-11-01): đóng 5 đột biến sống sót ──────────────────────────────────────────────────────────────
+
+  it("★ KD-1 (m37) STOP gửi HAI LẦN cùng khoá gốc, mỗi lần bị đổi khoá ⇒ CẢ HAI ra thiết bị (2 hàng, 2 khoá khác nhau — `#stop-<uuid>` không cố định)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      const a = await gui(tx, ad, [{ tagKey: "t", value: 1 }], K);
+      expect(a.ok).toBe(true);
+      expect(d.soGhi).toBe(1);
+      const s1 = await gui(tx, ad, [{ tagKey: "t", value: 0 }], K, "stop");
+      const s2 = await gui(tx, ad, [{ tagKey: "t", value: 0 }], K, "stop");
+      expect(s1).toMatchObject({ ok: true, status: "acked" });
+      expect(s2).toMatchObject({ ok: true, status: "acked" });
+      expect(d.soGhi).toBe(3); // mỗi STOP một gói vật lý
+      expect(s1.commandLogIds.some((id) => s2.commandLogIds.includes(id))).toBe(false);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, [...s1.commandLogIds, ...s2.commandLogIds]));
+      expect(hang).toHaveLength(2);
+      const khoa = hang.map((h) => h.idempotencyKey as string);
+      expect(new Set(khoa).size).toBe(2);
+      for (const k of khoa) expect(k).toContain(`${K}#stop-`);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-2 (m1) `dispatch()` GHI ĐÈ `bamLenh` bên gọi truyền: băm giả KHÔNG vào sổ, và quyết định phát lại theo payload THẬT (băm giả = băm lệnh A không làm lệnh B trông như phát lại A)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const wA = [{ tagKey: "t", value: 1 }];
+      const wB = [{ tagKey: "t", value: 2 }];
+      const bamA = bamLenhOt({ commandType: "set_param", writes: wA });
+      const bamB = bamLenhOt({ commandType: "set_param", writes: wB });
+      const K = khoaMoi();
+      const guiGia = async (writes: typeof wA, gia: Partial<DispatchInput>) => {
+        const actionId = await taoHanhDong(tx, ad, writes);
+        return dispatch({ adapterId: ad, machineId: MACHINE, commandType: "set_param", writes, triggeredBy: { kind: "hitl", actionId, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: K, ...gia });
+      };
+      const a = await guiGia(wA, { bamLenh: bamB }); // băm GIẢ (của lệnh B) cho lệnh A
+      expect(a.ok).toBe(true);
+      const hangA = await tx.select().from(commandLog).where(inArray(commandLog.id, a.commandLogIds));
+      expect(hangA.length).toBeGreaterThan(0);
+      for (const h of hangA) expect((h.ackValue as { bam?: string }).bam).toBe(bamA);
+      expect(d.soGhi).toBe(1);
+      const b = await guiGia(wB, { bamLenh: bamA }); // lệnh B mang băm của A: nếu tin băm giả ⇒ "phát lại A" (ok:true)
+      expect(b).toMatchObject({ ok: false, status: "rejected", reason: MA_KHOA_DUNG_LAI });
+      expect(d.soGhi).toBe(1);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-3 (m1b) `dispatch()` GHI ĐÈ `ghiChuKhoa` bên gọi truyền: `{ bam: 'gia', lanTruoc: … }` KHÔNG vào `ackValue` (băm thật, không `lanTruoc`/trường lạ)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "t", value: 1 }];
+      const actionId = await taoHanhDong(tx, ad, writes);
+      const r = await dispatch({
+        adapterId: ad,
+        machineId: MACHINE,
+        commandType: "set_param",
+        writes,
+        triggeredBy: { kind: "hitl", actionId, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER },
+        idempotencyKey: khoaMoi(),
+        ghiChuKhoa: { bam: "gia", lanTruoc: { idempotencyKey: "gia", commandLogIds: [1], lyDo: "khoa_lech" }, truongLa: true },
+      });
+      expect(r.ok).toBe(true);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, r.commandLogIds));
+      expect(hang.length).toBeGreaterThan(0);
+      for (const h of hang) {
+        const av = h.ackValue as Record<string, unknown>;
+        expect(av.bam).toBe(bamLenhOt({ commandType: "set_param", writes }));
+        expect(av).not.toHaveProperty("lanTruoc");
+        expect(av).not.toHaveProperty("truongLa");
+      }
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-4 (m14b) ý định v2 mang băm của payload A, GIẢI bằng `ot_write_intent_resolve` (kết quả KHÔNG băm, gắn ý định qua intentId) ⇒ gọi lại cùng khoá với payload B ⇒ IDEMPOTENCY_KEY_REUSED, 0 gói, không phát lại kết quả của A", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const wA = [{ tagKey: "t", value: 1 }];
+      const K = khoaMoi();
+      const [yd] = await tx
+        .insert(commandLog)
+        .values({
+          actionId: null,
+          adapterId: ad,
+          machineId: MACHINE,
+          tagKey: "t",
+          address: "40001",
+          commandType: "set_param",
+          requestedValue: 1 as never,
+          requestedBy: OWNER,
+          confirmedBy: OWNER,
+          status: "sent",
+          ackValue: { ledger: "intent", bam: bamLenhOt({ commandType: "set_param", writes: wA }) } as never,
+          idempotencyKey: `intent:${perWriteKey(K, "t", 0)}`,
+          sentAt: new Date(),
+          createdAt: new Date(Date.now() - 30 * 60_000),
+        })
+        .returning({ id: commandLog.id });
+      const nguoi = (await tx.execute(sql`INSERT INTO public.users ("openId", role, "isActive") VALUES (${`${DAU}-op-${randomUUID().slice(0, 6)}`}, 'admin', true) RETURNING id`)) as unknown as Array<{ id: number }>;
+      await tx.execute(sql`SELECT public.ot_write_intent_resolve(${yd!.id}, ${nguoi[0]!.id}, ${"tien trinh sap giua ghi va so"})`);
+      const [kq] = await tx.select().from(commandLog).where(inArray(commandLog.idempotencyKey, [perWriteKey(K, "t", 0)]));
+      expect(kq).toMatchObject({ status: "timeout" });
+      const av = kq!.ackValue as { bam?: unknown; intentId?: unknown };
+      expect(av.bam).toBeUndefined(); // hàm DB không chép băm
+      expect(av.intentId).toBe(yd!.id); // nhưng gắn ý định
+      const r = await gui(tx, ad, [{ tagKey: "t", value: 2 }], K);
+      expect(r).toMatchObject({ ok: false, status: "rejected", reason: MA_KHOA_DUNG_LAI });
+      expect(r.commandLogIds).not.toContain(kq!.id);
+      expect(d.soGhi).toBe(0);
+      // thuần: kết quả không băm + ý định mang băm KHÁC băm lệnh ⇒ "lech"
+      const inp: DispatchInput = { adapterId: ad, machineId: MACHINE, commandType: "set_param", writes: [{ tagKey: "t", value: 2 }], triggeredBy: { kind: "hitl", actionId: "x", tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: K };
+      const [ydHang] = await tx.select().from(commandLog).where(inArray(commandLog.id, [yd!.id]));
+      expect(quyetDinhKhoa(inp, bamLenhOt(inp), { requestedBy: OWNER }, { ketQuaMoi: [kq], ketQuaCu: [undefined], yDinhMoi: [ydHang], yDinhCu: [undefined] }).loai).toBe("lech");
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-5 (m46) hàng `writeAll` KHÔNG liên kết ý định (khoá lệch, ADAPTER_DISABLED) và hàng LIÊN KẾT ý định (DUPLICATE_IN_FLIGHT) đều mang `ackValue.bam` = băm lệnh", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "t", value: 1 }];
+      const bam = bamLenhOt({ commandType: "set_param", writes });
+      // không liên kết: từ chối khoá lệch (nullKey)
+      const K0 = khoaMoi();
+      await gui(tx, ad, writes, K0);
+      const lech = await gui(tx, ad, [{ tagKey: "t", value: 2 }], K0);
+      expect(lech.reason).toBe(MA_KHOA_DUNG_LAI);
+      const [hl] = await tx.select().from(commandLog).where(inArray(commandLog.id, lech.commandLogIds));
+      expect((hl!.ackValue as { bam?: string }).bam).toBe(bamLenhOt({ commandType: "set_param", writes: [{ tagKey: "t", value: 2 }] }));
+      // liên kết ý định: ý định treo cùng lệnh ⇒ DUPLICATE_IN_FLIGHT, hàng `refused_duplicate` + intentId
+      const K1 = khoaMoi();
+      await chenHang(tx, { adapterId: ad, tagKey: "t", value: 1, status: "sent", ackValue: { ledger: "intent", bam }, key: `intent:${perWriteKey(K1, "t", 0)}` });
+      const dup = await gui(tx, ad, writes, K1);
+      expect(dup.reason).toBe("DUPLICATE_IN_FLIGHT");
+      const [hd] = await tx.select().from(commandLog).where(inArray(commandLog.id, dup.commandLogIds));
+      const av = hd!.ackValue as { ledger?: string; intentId?: unknown; bam?: string };
+      expect(av.ledger).toBe("refused_duplicate");
+      expect(av.intentId).toBeDefined();
+      expect(av.bam).toBe(bam);
+      expect(d.soGhi).toBe(1);
+      // adapter tắt: một hàng không liên kết
+      await tx.update(deviceAdapters).set({ isEnabled: false }).where(inArray(deviceAdapters.id, [ad]));
+      const off = await gui(tx, ad, writes, khoaMoi());
+      expect(off.reason).toBe("ADAPTER_DISABLED");
+      const [ho] = await tx.select().from(commandLog).where(inArray(commandLog.id, off.commandLogIds));
+      expect((ho!.ackValue as { bam?: string }).bam).toBe(bam);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-6 (m47) ghi MÔ PHỎNG (OT_CONTROL_ENABLED=false) ⇒ hàng sổ mang `ackValue.bam` = băm lệnh; khác payload cùng khoá ⇒ IDEMPOTENCY_KEY_REUSED", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.OT_CONTROL_ENABLED = "false";
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const writes = [{ tagKey: "t", value: 1 }];
+      const K = khoaMoi();
+      const a = await gui(tx, ad, writes, K);
+      expect(a).toMatchObject({ ok: true, simulated: true, status: "simulated" });
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, a.commandLogIds));
+      expect(hang.length).toBeGreaterThan(0);
+      for (const h of hang) expect((h.ackValue as { bam?: string }).bam).toBe(bamLenhOt({ commandType: "set_param", writes }));
+      const b = await gui(tx, ad, [{ tagKey: "t", value: 2 }], K);
+      expect(b).toMatchObject({ ok: false, reason: MA_KHOA_DUNG_LAI });
+      expect(d.soGhi).toBe(0);
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
+
+  it("★ KD-7 (m44) ĐUA: giữa bước 2 và khoá tư vấn xuất hiện hàng CŨ (không băm) cùng cột nhưng giá trị KHÔNG chắc ⇒ giữ chỗ từ chối DUPLICATE_IN_FLIGHT (0 gói, duyệt KHÔNG bị tiêu); STOP vẫn gửi dưới khoá mới (khong_chac)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = khoaMoi();
+      H.giuaChung = async () => {
+        await chenHangCu(tx, ad, K, "t", 1); // sổ lưu 1 (đã ép kiểu), bên gọi gửi "1.0" ⇒ không chứng minh được
+      };
+      const writes = [{ tagKey: "t", value: "1.0" }];
+      const actionId = await taoHanhDong(tx, ad, writes);
+      const r = await dispatch({ adapterId: ad, machineId: MACHINE, commandType: "set_param", writes, triggeredBy: { kind: "hitl", actionId, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER }, idempotencyKey: K });
+      expect(H.giuaChung).toBeNull();
+      expect(r).toMatchObject({ ok: false, reason: "DUPLICATE_IN_FLIGHT" });
+      expect(d.soGhi).toBe(0);
+      const [act] = await tx.select().from(aiPendingActions).where(inArray(aiPendingActions.id, [actionId]));
+      expect(act!.status).toBe("confirmed");
+      const [hr] = await tx.select().from(commandLog).where(inArray(commandLog.id, r.commandLogIds));
+      expect(hr!.ackValue).toHaveProperty("khoaKhongChac");
+
+      const K2 = khoaMoi();
+      H.giuaChung = async () => {
+        await chenHang(tx, { adapterId: ad, tagKey: "t", value: 0, status: "acked", ackValue: { ledger: "result" }, key: `${K2}:t:0`, commandType: "stop" });
+      };
+      const s = await gui(tx, ad, [{ tagKey: "t", value: "0.0" }], K2, "stop");
+      expect(H.giuaChung).toBeNull();
+      expect(s.ok).toBe(true);
+      expect(d.soGhi).toBe(1);
+      const hang = await tx.select().from(commandLog).where(inArray(commandLog.id, s.commandLogIds));
+      expect((hang[0]!.ackValue as { lanTruoc?: { lyDo?: string } }).lanTruoc?.lyDo).toBe("khong_chac");
+    });
+    expect(H.bay).toBe(0);
+  }, 30_000);
 });
