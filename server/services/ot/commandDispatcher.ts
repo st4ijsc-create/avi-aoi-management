@@ -819,6 +819,11 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   return result;
 }
 
+/** A2(a) — khoá "rỗng" = lệnh KHÔNG khoá: không phải chuỗi, "" hoặc chỉ khoảng trắng (`trim` CHỈ để thử rỗng; khoá không rỗng không bao giờ bị sửa). */
+function laKhoaRong(k: unknown): boolean {
+  return typeof k !== "string" || k.trim() === "";
+}
+
 /** T6d fix 2 — khoá idempotency của bên gọi như chuỗi: thiếu / không phải chuỗi ⇒ "" (lệnh không khoá); chuỗi giữ nguyên từng byte. */
 function khoaChuanHoa(k: unknown): string {
   return typeof k === "string" ? k : "";
@@ -1181,7 +1186,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // xúc thiết bị. Không khoá = không chống trùng (thử lại = ghi hai lần). `trim()` CHỈ để thử rỗng: khoá không rỗng không bao giờ bị sửa (KK-6).
   // STOP (theo loại, hoặc nội dung = ghim) không khoá VẪN BAY như trước (G9 NO_KEY, fix 2 `khong_khoa`). Lô trộn (tag ghim STOP + write khác, loại lệnh
   // thường) KHÔNG phải STOP theo phân loại của hệ ⇒ từ chối CẢ lô (không gửi một phần — tách lô là backlog A2(e)), có cảnh báo khẩn.
-  if (input.idempotencyKey.trim() === "") {
+  if (laKhoaRong(input.idempotencyKey)) {
     const pl = await phanLoaiStopKhoa(db, input);
     if (pl.loai !== "stop") return tuChoiThieuKhoa(db, input, pl);
   }
@@ -2295,6 +2300,9 @@ let toiDaCanhBaoKhongKhoa = KHOA_BAT_BUOC_CANH_BAO_TOI_DA;
  * A2(a) AMENDMENT 1 + 2 — đếm một lần từ chối vào cửa sổ khử trùng của bộ `khoa`; `daPhat` ⇒ lần ĐẦU của cửa sổ (phát cảnh báo), sau đó trong cửa sổ
  * KHÔNG phát (nhưng mỗi lần vẫn ghi hàng sổ, `lanThu` đếm). Bộ hết cửa sổ (≥ `KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS`) ⇒ cửa sổ mới. Bảng đầy (sau khi dọn bộ
  * hết hạn) ⇒ KHÔNG đuổi bộ còn sống (nó sẽ phát lại) — bộ mới gộp vào `KHOA_BAT_BUOC_CANH_BAO_TRAN` (cửa sổ riêng, một cảnh báo / cửa sổ). Xuất cho test.
+ * Đã chấp nhận (fix round 1, F5): (a) hai biến thể STOP_LIKE / PIN_UNREADABLE DÙNG CHUNG bộ (adapter, tập tag, người yêu cầu) ⇒ cùng một cửa sổ (tối đa một
+ * cảnh báo khẩn / bộ / cửa sổ; cả hai câu đều nói "KHÔNG gửi — dùng STOP máy HMI"); (b) cảnh báo tràn luôn là lần "#1" của cửa sổ tràn — số lần SAU nằm ở
+ * `canhBao.lanThu` của từng hàng sổ (câu cảnh báo nói rõ điều đó). Chỉ gọi cho lệnh ĐÃ được uỷ quyền có kiểm và sẽ ghi thật (F2).
  */
 export function demCanhBaoKhongKhoa(khoa: string, now: number = Date.now()): { khoa: string; lanThu: number; daPhat: boolean; batDau: number } {
   const conSong = (e: CuaSoCanhBao) => now - e.batDau < KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS;
@@ -2353,29 +2361,50 @@ async function tuChoiThieuKhoa(db: LedgerDb, input: DispatchInput, pl: Exclude<P
         ? `the adapter's stop pins could not be read (${pl.loi}), so it cannot be proven a STOP`
         : null;
   const chiTiet = viSao ? `${CHI_TIET_THIEU_KHOA} (${viSao} — use the HMI machine stop, or resend with an idempotency key)` : CHI_TIET_THIEU_KHOA;
-  const canhBao = pl.loai === "thuong" ? null : demCanhBaoKhongKhoa(boKhuTrungKhongKhoa(input));
+  // fix round 1 F2 (phán quyết điều phối) — cảnh báo KHẨN chỉ cho yêu cầu THẬT, GỬI ĐƯỢC: (a) uỷ quyền mà cổng (1) THỰC SỰ kiểm — interlock (đã qua
+  // verifyInterlockAuthorization) hoặc HITL CÓ actionId (đã qua kiểm hành động / ràng buộc); HITL không actionId (không requireBoundAction) qua cổng (1) mà
+  // không kiểm gì ⇒ không cảnh báo; (b) lệnh sẽ KHÔNG chạy thử — cùng vị từ bước (5) (`isOtControlEnabled()`, thuần, không tác dụng phụ). Không đủ ⇒ hàng
+  // vẫn ghi như cũ, `canhBao { daPhat: false, boQua }`, KHÔNG chạm cửa sổ khử trùng. (Hạ cấp mô phỏng của bước 5a — chưa nghiệm thu — cần đọc DB, không xét.)
+  const t = input.triggeredBy;
+  const boQua: "khong_rang_buoc" | "chay_thu" | null =
+    t.kind === "hitl" && !t.actionId ? "khong_rang_buoc" : !isOtControlEnabled() ? "chay_thu" : null;
+  const canhBao =
+    pl.loai === "thuong"
+      ? null
+      : boQua
+        ? { khoa: boKhuTrungKhongKhoa(input), lanThu: 0, daPhat: false, batDau: 0, boQua }
+        : { ...demCanhBaoKhongKhoa(boKhuTrungKhongKhoa(input)), boQua: undefined };
   console.warn(
-    `[Dispatch] adapter ${input.adapterId}: ${ma} — "${input.commandType}" without an idempotency key refused, nothing sent (A2(a))${canhBao ? ` — alert ${canhBao.daPhat ? "raised" : `deduplicated (#${canhBao.lanThu} in window)`}` : ""}`,
+    `[Dispatch] adapter ${input.adapterId}: ${ma} — "${input.commandType}" without an idempotency key refused, nothing sent (A2(a))${canhBao ? ` — alert ${canhBao.boQua ? `skipped (${canhBao.boQua})` : canhBao.daPhat ? "raised" : `deduplicated (#${canhBao.lanThu} in window)`}` : ""}`,
   );
-  const ids = await writeAll(db, input, "rejected", ma, chiTiet, undefined, undefined, {
-    nullKey: true,
-    ...(canhBao ? { ackExtra: { canhBao: { khoa: canhBao.khoa, lanThu: canhBao.lanThu, daPhat: canhBao.daPhat } } } : {}),
-  });
-  if (canhBao?.daPhat) {
-    const who = actors(input);
-    const kind = pl.loai === "giong_stop" ? "ot_keyless_stop_like_refused" : "ot_keyless_pin_unreadable_refused";
-    const tags = [...new Set(input.writes.map((w) => String(w.tagKey)))].join(", ");
-    const tran =
-      canhBao.khoa === KHOA_BAT_BUOC_CANH_BAO_TRAN
-        ? ` The keyless-refusal alert table is full (${toiDaCanhBaoKhongKhoa} live entries): this is overflow refusal #${canhBao.lanThu} in this ${KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS / 1000}-second window; further overflow refusals in the window are NOT alerted one by one (each one is in command_log).`
-        : "";
-    void raiseOtStopAlert(
-      kind,
-      input,
-      `OT command "${input.commandType}" for adapter ${input.adapterId} (tags: ${tags}) arrived WITHOUT an idempotency key and ${viSao} — the command was NOT sent (command_log #${ids.join(",")}). To stop the machine use the STOP path (HMI machine stop); otherwise resend the command with an idempotency key.${tran}`,
-      [who.requestedBy, who.confirmedBy],
-      `ot_keyless:${canhBao.khoa}:${canhBao.batDau}`,
-    );
+  // F5 — đếm TRƯỚC (ở trên), phát trong `finally`: chèn sổ lỗi cũng không để cửa sổ câm (cửa sổ đã ghi nhận lần này ⇒ không lần nào khác phát thay).
+  let ids: number[] = [];
+  try {
+    ids = await writeAll(db, input, "rejected", ma, chiTiet, undefined, undefined, {
+      nullKey: true,
+      ...(canhBao
+        ? { ackExtra: { canhBao: { khoa: canhBao.khoa, lanThu: canhBao.lanThu, daPhat: canhBao.daPhat, ...(canhBao.boQua ? { boQua: canhBao.boQua } : {}) } } }
+        : {}),
+    });
+  } finally {
+    if (canhBao?.daPhat) {
+      const who = actors(input);
+      const kind = pl.loai === "giong_stop" ? "ot_keyless_stop_like_refused" : "ot_keyless_pin_unreadable_refused";
+      const tags = [...new Set(input.writes.map((w) => String(w.tagKey)))].join(", ");
+      const so = ids.length > 0 ? `command_log #${ids.join(",")}` : "the refusal row(s) could NOT be written to command_log";
+      const tran =
+        canhBao.khoa === KHOA_BAT_BUOC_CANH_BAO_TRAN
+          ? ` The keyless-refusal alert table is full (${toiDaCanhBaoKhongKhoa} live entries): this is overflow refusal #${canhBao.lanThu} in this ${KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS / 1000}-second window; further overflow refusals in the window are NOT alerted one by one — their counts are in each row's canhBao.lanThu in command_log.`
+          : "";
+      void raiseOtStopAlert(
+        kind,
+        input,
+        `OT command "${input.commandType}" for adapter ${input.adapterId} (tags: ${tags}) arrived WITHOUT an idempotency key and ${viSao} — the command was NOT sent (${so}). To stop the machine use the STOP path (HMI machine stop); otherwise resend the command with an idempotency key.${tran}`,
+        [who.requestedBy, who.confirmedBy],
+        `ot_keyless:${canhBao.khoa}:${canhBao.batDau}`,
+        `Keyless OT command refused (not sent) — adapter ${input.adapterId}`,
+      );
+    }
   }
   return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids };
 }
@@ -3016,7 +3045,8 @@ async function writeSimulated(
         ...ctx,
         errorText,
         ackValue: ackKhoa(input) as any, // R1b-2b-2a T6d — bam (chốt phát lại)
-        idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
+        // fix round 1 A2(a) F1 — hàng MÔ PHỎNG (không gửi, không gắn ý định) của lệnh không khoá ⇒ khoá NULL (cùng lý do với `writeAll`).
+        idempotencyKey: laKhoaRong(input.idempotencyKey) ? null : perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
       })
       .returning({ id: commandLog.id });
     commandLogIds.push(row.id);
@@ -3088,6 +3118,12 @@ async function writeAll(
   const indexed = input.writes.map((w, idx) => ({ w, idx }));
   const writes = onlyTagKey ? indexed.filter((e) => e.w.tagKey === onlyTagKey) : indexed;
   const list = writes.length > 0 ? writes : [{ w: { tagKey: null as any, value: null }, idx: 0 }];
+  // fix round 1 A2(a) F1 (AN TOÀN) — lệnh KHÔNG khoá (khoá rỗng sau chuẩn hoá, kể cả chỉ khoảng trắng — cùng định nghĩa "không khoá" với bước (1b)): MỌI hàng
+  // không gắn ý định ghi trước (từ chối / thất bại trước thiết bị) mang khoá NULL. Trước: `perWriteKey("", tag, idx)` KHÔNG chứa adapter mà
+  // `command_log_idempotencyKey_unique` là UNIQUE TOÀN BẢNG ⇒ lời từ chối không khoá THỨ HAI cùng tag + chỉ số (mọi adapter) vỡ UNIQUE ⇒ dispatch() NÉM.
+  // UNIQUE cho phép nhiều NULL; mọi truy vấn phát lại tìm theo `IN (<khoá chuỗi>)` nên không bao giờ thấy hàng NULL. Hàng gắn ý định (`link.intentIds`) — STOP
+  // không khoá ĐÃ bay — giữ khoá như trước (fix 2: `v2:0::…` hoặc `#stop-<uuid>`). Mã / lý do không đổi.
+  const khongKhoaSo = link?.nullKey === true || (laKhoaRong(input.idempotencyKey) && !(link?.intentIds && link.intentIds.length > 0));
   for (let i = 0; i < list.length; i++) {
     const { w, idx } = list[i];
     const [row] = await db
@@ -3110,7 +3146,7 @@ async function writeAll(
         ackValue: (link?.intentIds && link.intentIds.length > 0
           ? { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)], ...ackKhoa(input), ...(link.ackExtra ?? {}) }
           : { ...ackKhoa(input), ...(link?.ackExtra ?? {}) }) as any,
-        idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", idx),
+        idempotencyKey: khongKhoaSo ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", idx),
       })
       .returning({ id: commandLog.id });
     ids.push(row.id);
@@ -3255,12 +3291,12 @@ function raiseUnverifiedStopRefusedAlert(input: DispatchInput, message: string, 
 }
 
 /** I-4 — the durable critical alert of an OT STOP central could not execute itself (criticalStopAlert; never throws). */
-function raiseOtStopAlert(kind: string, input: DispatchInput, message: string, recipients: number[] = [], dedupKey?: string): Promise<void> {
+function raiseOtStopAlert(kind: string, input: DispatchInput, message: string, recipients: number[] = [], dedupKey?: string, title?: string): Promise<void> {
   return import("../robot/criticalStopAlert")
     .then(({ raiseCriticalStopAlert }) =>
       raiseCriticalStopAlert({
         kind,
-        title: `OT STOP not executed by central — adapter ${input.adapterId}`,
+        title: title ?? `OT STOP not executed by central — adapter ${input.adapterId}`,
         message,
         recipients: recipients.filter((u) => Number.isSafeInteger(u) && u > 0),
         dedupKey: dedupKey ?? `${kind}:${input.adapterId}:${input.idempotencyKey}`,

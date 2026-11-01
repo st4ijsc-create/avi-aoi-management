@@ -20,7 +20,10 @@
  * Chống quét rỗng: (A) tập điểm gọi ĐÃ đặt miền ĐÚNG bằng `DIEM_DA_DAT_MIEN`; (B), (D) tập tham chiếu ĐÚNG bằng sổ cái; số tệp quét > 0.
  *
  * GIỚI HẠN (ghi rõ): (A) lan khoá bên gọi chỉ qua KHAI BÁO biến trong cùng tệp (không qua phép gán lại, tham số hàm, thuộc tính đối tượng dựng rời);
- * (B) không phân giải `dispatch` truyền qua nhiều lớp biến (vd `const f = dispatch; f(…)` được đếm là MỘT tham chiếu ở chỗ gán — vẫn vào sổ cái).
+ * (B) không phân giải `dispatch` truyền qua nhiều lớp biến (vd `const f = dispatch; f(…)` được đếm là MỘT tham chiếu ở chỗ gán — vẫn vào sổ cái);
+ * (B') A2(a) fix round 1 — khoá truyền qua `const`: chốt null chỉ nhận dạng `if (x === null | == null) return / throw` (không `if (!x)`, không hàm chốt riêng,
+ *     không `?? `); thứ tự xét theo VỊ TRÍ trong mã + khối bao, không theo luồng điều khiển (chốt trong `try` bị `catch` nuốt vẫn được tính); đếm khai báo
+ *     tính cả hàm lồng (khắt khe hơn phạm vi thật — một tên trùng trong hàm lồng cũng làm điểm gọi đỏ).
  */
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -238,28 +241,44 @@ export function thamChieuDispatch(rel: string, src: string): ThamChieuDispatch[]
   };
   /**
    * A2(a) — `khoaDispatchLapTrinh` trả `null` khi phần bên gọi rỗng (bên gọi trả lời từ chối, không gọi dispatch()) ⇒ điểm gọi đọc kết quả vào một
-   * `const` rồi truyền định danh: chấp nhận định danh CHỈ KHI nó là `const <tên> = khoaDispatchLapTrinh(…)` khai báo trong CÙNG hàm bao với lời gọi
-   * dispatch (không `let` — gán lại được; không khai ở hàm khác; không hàm đặt miền khác).
+   * `const` rồi truyền định danh. Fix round 1 (F4) — định danh được chấp nhận CHỈ KHI, trong hàm bao gần nhất của lời gọi dispatch:
+   *   • tên ấy được khai báo ĐÚNG MỘT lần (biến ở mọi khối, tham số, phần tử phân rã, hàm / lớp cùng tên ⇒ đều đếm — không che bóng, không trùng tham số);
+   *   • lần khai ấy là `const <tên> = khoaDispatchLapTrinh(…)` khai TRỰC TIẾP trong hàm ấy (không `let`, không hàm đặt miền khác);
+   *   • có chốt `if (<tên> === null | == null) return / throw …` nằm SAU lần khai, kết thúc TRƯỚC lời dùng, trong một khối bao lời dùng.
    */
   const constDatMien = (id: ts.Identifier): boolean => {
     const ham = hamGan(id);
-    let co = false;
-    const t = (m: ts.Node): void => {
-      if (co) return;
-      if (
-        ts.isVariableDeclaration(m) &&
-        ts.isIdentifier(m.name) &&
-        m.name.text === id.text &&
-        ts.isVariableDeclarationList(m.parent) &&
-        (m.parent.flags & ts.NodeFlags.Const) !== 0 &&
-        laGoiDatMienDispatch(m.initializer) &&
-        hamGan(m) === ham
-      )
-        co = true;
-      else ts.forEachChild(m, t);
+    const khai: ts.Node[] = [];
+    const quet = (m: ts.Node): void => {
+      if ((ts.isVariableDeclaration(m) || ts.isParameter(m) || ts.isBindingElement(m)) && ts.isIdentifier(m.name) && m.name.text === id.text) khai.push(m);
+      else if ((ts.isFunctionDeclaration(m) || ts.isClassDeclaration(m)) && m.name?.text === id.text) khai.push(m);
+      ts.forEachChild(m, quet);
     };
-    t(ham);
-    return co;
+    quet(ham);
+    if (khai.length !== 1) return false;
+    const d = khai[0]!;
+    if (!ts.isVariableDeclaration(d) || !ts.isVariableDeclarationList(d.parent) || (d.parent.flags & ts.NodeFlags.Const) === 0) return false;
+    if (!laGoiDatMienDispatch(d.initializer) || hamGan(d) !== ham) return false;
+    const laTen = (e: ts.Expression) => ts.isIdentifier(e) && e.text === id.text;
+    const laNull = (e: ts.Expression) => e.kind === ts.SyntaxKind.NullKeyword;
+    const soNull = (e: ts.Expression): boolean =>
+      ts.isBinaryExpression(e) &&
+      (e.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || e.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken) &&
+      ((laTen(e.left) && laNull(e.right)) || (laNull(e.left) && laTen(e.right)));
+    const raKhoi = (st: ts.Statement): boolean =>
+      ts.isReturnStatement(st) || ts.isThrowStatement(st) || (ts.isBlock(st) && st.statements.some((x) => ts.isReturnStatement(x) || ts.isThrowStatement(x)));
+    const baoLoiDung = (khoi: ts.Node): boolean => {
+      for (let q: ts.Node | undefined = id.parent; q; q = q.parent) if (q === khoi) return true;
+      return false;
+    };
+    let coChot = false;
+    const tim = (m: ts.Node): void => {
+      if (coChot) return;
+      if (ts.isIfStatement(m) && soNull(m.expression) && raKhoi(m.thenStatement) && m.getStart() >= d.getEnd() && m.getEnd() <= id.getStart() && hamGan(m) === ham && baoLoiDung(m.parent)) coChot = true;
+      else ts.forEachChild(m, tim);
+    };
+    tim(ham);
+    return coChot;
   };
   const doiSoMien = (call: ts.CallExpression | undefined): boolean => {
     const o = call?.arguments[0];
@@ -376,6 +395,27 @@ describe("★★★ census T6d — khoá idempotency của bên gọi tới disp
     expect(
       thamChieuDispatch("server/x.ts", `const khoa = khoaDispatchLapTrinh(k, 1); export async function g() { const { dispatch } = await import("./commandDispatcher"); return dispatch({ idempotencyKey: khoa }); }`),
     ).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+
+  // A2(a) fix round 1 F4 — mỗi ca giả (4 đầu) ĐƯỢC luật cũ (chỉ khớp tên) chấp nhận và phải bị từ chối; 2 ca cuối: chốt hợp lệ vẫn được nhận.
+  const M = (than: string, thamSo = "o") => thamChieuDispatch("server/x.ts", `export async function g(${thamSo}) { const { dispatch } = await import("./commandDispatcher"); ${than} }`);
+  it("§C F4 const khoaDispatchLapTrinh: che bóng trong khối", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; { const khoa = o.k; return dispatch({ idempotencyKey: khoa }); }`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: tham số cùng tên", () => {
+    expect(M(`{ const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; } return dispatch({ idempotencyKey: khoa });`, "o, khoa")).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: không chốt null", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: chốt SAU lời dùng", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); const r = dispatch({ idempotencyKey: khoa }); if (khoa === null) return; return r;`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: chốt hợp lệ `null == khoa` + khối return", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (null == khoa) { log(); return { ok: false }; } return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: true }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: chốt hợp lệ throw", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) throw e; return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: true }]);
   });
 });
 

@@ -380,12 +380,16 @@ describe("T6d fix 2 — lệnh không khoá idempotency (đơn vị, DB giả, d
       expect(hang.map((x) => ({ status: x.status, key: x.idempotencyKey ?? null }))).toEqual([{ status: "rejected", key: null }]);
     });
 
-    it(`khoá ${ten}: write THIẾU tagKey ⇒ từ chối bình thường ở bước tra tag (không ném ở bước 2), 0 gói`, async () => {
-      const c = khongKhoa(input("cmd_jog", "set_jog"), khoa);
+    // A2(a) fix round 1 (F6) — lệnh THƯỜNG không khoá nay bị từ chối ở (1b) TRƯỚC bước 2 ⇒ ca này dùng lệnh STOP (theo loại) không khoá để vẫn đi qua
+    // bước 2 (khoá ghi perWriteKey("", undefined→"_")) và bước 3 (tra tag) như tiêu đề nói.
+    it(`khoá ${ten}: write THIẾU tagKey (STOP không khoá) ⇒ từ chối bình thường ở bước tra tag (không ném ở bước 2), 0 gói`, async () => {
+      const c = khongKhoa(input("cmd_run", "stop", false), khoa);
       (c.writes[0] as { tagKey?: string }).tagKey = undefined;
       const r = await within(dispatch(c), 3000);
       expect(r.ok).toBe(false);
       expect(typeof r.reason).toBe("string");
+      expect(r.reason).not.toMatch(/^IDEMPOTENCY_KEY_REQUIRED/); // đi qua (1b): STOP không khoá không bị từ chối vì thiếu khoá
+      expect(r.reason).toBe("TAG_NOT_FOUND");
       expect(D.log).toHaveLength(0);
     });
   }

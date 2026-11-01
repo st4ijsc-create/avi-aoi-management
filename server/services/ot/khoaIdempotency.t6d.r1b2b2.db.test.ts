@@ -1091,7 +1091,7 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(H.bay).toBe(0);
     }, 30_000);
 
-    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng dưới khoá mới (khong_khoa, không phát lại); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: STOP mô phỏng ok / lệnh thường thật IDEMPOTENCY_KEY_REQUIRED (A2(a); kết quả bình thường, 0 gói)`, async () => {
+    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng = hàng MỚI (không phát lại; A2(a) fix 1: hàng mô phỏng không khoá mang khoá NULL); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: STOP mô phỏng ok / lệnh thường thật IDEMPOTENCY_KEY_REQUIRED (A2(a); kết quả bình thường, 0 gói)`, async () => {
       await trongGiaoDich(async (tx) => {
         const d = driverGia();
         const ad = await taoAdapter(tx, d);
@@ -1101,7 +1101,12 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
         const s2 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
         expect(s2).toMatchObject({ ok: true, simulated: true, status: "simulated" });
         expect(s2.commandLogIds.some((id) => s1.commandLogIds.includes(id))).toBe(false); // hàng MỚI, không phát lại
-        expect(lanTruocCua((await hangCua(tx, s2))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+        // A2(a) fix round 1 (F1) — hàng MÔ PHỎNG của lệnh không khoá (không gửi, không gắn ý định) mang khoá NULL ⇒ bước 2 không thấy s1 ⇒ s2 không cần đổi khoá
+        // (trước: hàng s1 dưới khoá chung "v2:0::…" ⇒ s2 đổi khoá, lanTruoc khong_khoa). Vẫn KHÔNG phát lại — đó là điều ca này ghim.
+        const h1 = await hangCua(tx, s1);
+        const h2 = await hangCua(tx, s2);
+        expect([...h1, ...h2].map((h) => h.idempotencyKey)).toEqual([null, null]);
+        expect(lanTruocCua(h2[0]!)).toBeUndefined();
         const sNoAct = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop", false);
         expect(sNoAct).toMatchObject({ ok: true, simulated: true, status: "simulated" });
         expect(d.soGhi).toBe(0);
@@ -1109,7 +1114,10 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
         const s3 = await guiKK(tx, ad, [{ tagKey: "a", value: 0 }], "stop");
         expect(s3).toMatchObject({ ok: true, simulated: false, status: "acked" });
         expect(d.soGhi).toBe(1);
-        expect(lanTruocCua((await hangCua(tx, s3))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+        // fix round 1 (F1): không còn hàng mô phỏng dưới khoá chung ⇒ STOP thật đầu tiên ghi dưới khoá "v2:0::…" (hàng gắn ý định — giữ khoá như fix 2), không lanTruoc
+        const h3 = await hangCua(tx, s3);
+        expect(h3[0]!.idempotencyKey).toBe(perWriteKey("", "a", 0));
+        expect(lanTruocCua(h3[0]!)).toBeUndefined();
         const thatNoAct = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }], "set_param", false);
         // A2(a): lệnh THƯỜNG không khoá (hitl không actionId qua cổng (1) — cổng ấy chỉ kiểm khi CÓ actionId) ⇒ IDEMPOTENCY_KEY_REQUIRED (trước: PRECONDITION_FAILED
         // ở đường ghi thật); vẫn 0 gói, kết quả bình thường.
