@@ -272,6 +272,9 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   const DB_URL = process.env.DATABASE_URL ?? "";
   if (!/_test\b/.test(new URL(DB_URL).pathname)) throw new Error("the F1 E2E harness runs on the _test DB only");
   const pgPort = Number(new URL(DB_URL).port || 5432);
+  // A2 test — the start-up sweep below recognises ONLY the registered prefixes (its scope = this harness's own markers)
+  const { HARNESS_PREFIXES, sweepHarnessLeftovers } = await import("./__edgeE2eSweep.dot10");
+  if (!(HARNESS_PREFIXES as readonly string[]).includes(prefix)) throw new Error(`F1 harness prefix "${prefix}" is not in HARNESS_PREFIXES (__edgeE2eSweep.dot10.ts): register it so a killed run of it is swept`);
   const DAU = `${prefix}-${Date.now()}`;
   const saved: Record<string, string | undefined> = {};
   const envAll = { ...CENTRAL_ENV, ...(opts.env ?? {}) };
@@ -286,6 +289,10 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   const ids: Record<string, number> = {};
   const codes: Record<string, string> = {};
   const edges: EdgeProc[] = [];
+
+  // A2 test — BEFORE inserting anything: leftovers of DEAD runs (killed process trees never ran teardown) are made inert —
+  // UPDATE only, own markers only, fail-closed on the DB identity, pending STOPs left alone (see __edgeE2eSweep.dot10.ts)
+  await sweepHarnessLeftovers(sql).catch((e) => console.warn(`[F1 sweep] failed — nothing more swept: ${(e as Error).message}`));
 
   // ── people ──
   const adminLogin = { username: `${DAU}-admin`, password: `F1-${Math.random().toString(36).slice(2)}-pw!` };
@@ -716,6 +723,59 @@ async function removeHarnessPlcRows(sql: ReturnType<typeof postgres>, ids: Recor
   if (robotsAll.length) await sql`DELETE FROM safety_plc_configs WHERE "robotId" IN ${sql(robotsAll)}`;
 }
 
+/**
+ * A2 test — the STOP requests of THIS run's devices, closed before they are removed (a device with a pending STOP is undeletable —
+ * mig 0374 device_keep_pending_stop — and stayed ENABLED on _test: requests #5150 / #51720 / #51721, all unacked).
+ * The old statement selected `"ackedAt" IS NULL` STOPs and handed them to edge_stop_resolve, which accepts ONLY an acked refused /
+ * failed STOP ⇒ it raised on the first one and the single statement (every STOP of the run) failed; a refused / failed STOP (acked)
+ * was never selected. Now, with the L-7 pending predicate of device_keep_pending_stop:
+ *   1. an UNACKED STOP cannot be closed by a person (edge_stop_resolve refuses by design): its device must take it. The run's edges
+ *      are stopped by now, so the device goes back to CENTRAL the product's way (changeDeviceOwner → null, actor = the run's admin):
+ *      central EXECUTES the owed STOP (central control is on in CENTRAL_ENV) and acks it done | failed via edge_stop_ack_central
+ *      (R-10-i / R-10-w). A device already central-owned (robot C): executePendingCentralStops. This process's central session of
+ *      the device is then detached again (it is about to be removed).
+ *   2. every REFUSED / FAILED unresolved STOP (step 1's failures included): edge_stop_resolve by the run's admin, ONE per statement.
+ *   3. anything still pending (e.g. owner change refused while a job is in flight): logged by id; the DB then refuses the device
+ *      delete and the device stays — never forced.
+ */
+async function closeOwnStops(sql: ReturnType<typeof postgres>, u: Central["u"], robotsAll: number[], adaptersAll: number[]): Promise<void> {
+  const pending = () => sql`
+    SELECT q.id, q."robotId", q."adapterId", (q."ackedAt" IS NULL) AS unacked FROM robot_motion_lock_requests q
+     WHERE (q."robotId" IN ${sql(robotsAll.length ? robotsAll : [0])} OR q."adapterId" IN ${sql(adaptersAll.length ? adaptersAll : [0])})
+       AND q.kind = 'stop' AND q."carriedToId" IS NULL
+       AND (q."ackedAt" IS NULL OR (q.outcome IN ('refused', 'failed') AND q."resolvedAt" IS NULL))
+     ORDER BY q.id`;
+  const devices = new Map<string, { kind: "robot" | "adapter"; id: number }>();
+  for (const q of await pending()) {
+    if (!q.unacked) continue;
+    const d = q.robotId != null ? { kind: "robot" as const, id: Number(q.robotId) } : { kind: "adapter" as const, id: Number(q.adapterId) };
+    devices.set(`${d.kind}:${d.id}`, d);
+  }
+  if (devices.size) {
+    const own = await import("../robot/deviceOwnershipService");
+    for (const d of devices.values()) {
+      try {
+        const [row] = d.kind === "robot" ? await sql`SELECT "edgeNodeId" FROM robots WHERE id = ${d.id}` : await sql`SELECT "edgeNodeId" FROM device_adapters WHERE id = ${d.id}`;
+        if (row?.edgeNodeId != null) {
+          const r = await own.changeDeviceOwner({ kind: d.kind, deviceId: d.id, toEdgeNodeId: null, actorUserId: u.admin, actorName: "F1 admin (teardown)" });
+          if (!r.ok) console.warn(`[F1] teardown: ${d.kind} ${d.id} not handed to central for its owed STOP (${r.reason}: ${r.detail})`);
+        } else await own.executePendingCentralStops(d.kind, d.id, u.admin);
+      } catch (e) {
+        console.warn(`[F1] teardown: owed STOP of ${d.kind} ${d.id}: ${(e as Error).message}`);
+      } finally {
+        if (d.kind === "robot") await import("../robot/robotManager").then((m) => m.detachRobot(d.id)).catch(() => undefined);
+        else await import("../ot/otManager").then((m) => m.detachOtAdapter(d.id)).catch(() => undefined);
+      }
+    }
+  }
+  for (const q of await pending()) {
+    if (q.unacked) continue;
+    await sql`SELECT public.edge_stop_resolve(${q.id}, ${u.admin}, 'F1 e2e teardown')`.catch((e) => console.warn(`[F1] teardown: STOP #${q.id} not resolved: ${(e as Error).message}`));
+  }
+  const left = await pending();
+  if (left.length) console.warn(`[F1] teardown: STOP request(s) still pending — their device stays (the DB refuses its delete): ${left.map((q) => `#${q.id} (${q.robotId != null ? `robot ${q.robotId}` : `adapter ${q.adapterId}`})`).join(", ")}`);
+}
+
 async function cleanupRows(sql: ReturnType<typeof postgres>, ids: Record<string, number>, u: Central["u"], wfIds: number[]): Promise<void> {
   const warn = (what: string) => (e: unknown) => console.warn(`[F1] ${what}: ${(e as Error).message}`);
   for (const w of wfIds) {
@@ -729,9 +789,8 @@ async function cleanupRows(sql: ReturnType<typeof postgres>, ids: Record<string,
   }
   const robotsAll = [ids.robotA, ids.robotB, ids.robotC].filter(Boolean);
   const adaptersAll = [ids.adapterA, ids.adapterB].filter(Boolean);
-  // pending STOP requests block a device delete (0374 R-10-i): closed through the guarded human resolution
-  await sql`SELECT public.edge_stop_resolve(q.id, ${u.admin}, 'F1 e2e teardown') FROM robot_motion_lock_requests q
-            WHERE (q."robotId" IN ${sql(robotsAll)} OR q."adapterId" IN ${sql(adaptersAll)}) AND q."ackedAt" IS NULL AND q.kind = 'stop'`.catch(warn("STOP resolution"));
+  // pending STOP requests block a device delete (0374 R-10-i): A2 test — closed the product's way, per request (closeOwnStops)
+  await closeOwnStops(sql, u, robotsAll, adaptersAll).catch(warn("STOP closing"));
   await sql`UPDATE robot_motion_lock_requests SET "ackedAt" = now(), outcome = 'expired' WHERE ("robotId" IN ${sql(robotsAll)}) AND "ackedAt" IS NULL AND kind <> 'stop'`.catch(() => undefined);
   const { getDb } = await import("../../db/connection");
   const d = await getDb().catch(() => null);
