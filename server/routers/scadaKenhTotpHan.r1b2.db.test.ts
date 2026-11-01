@@ -1,10 +1,11 @@
 /**
  * SCADA R1b-2a T5 (kiem-dinh M7, điều phối Q5) — lượt kiểm TOTP trong giao dịch cấu hình có HẠN 3 s, trên CSDL `_test` THẬT.
  *
- * `scadaKenh.capNhat` gọi `kiemTotpCauHinh` BÊN TRONG giao dịch đang giữ khoá adapter (FOR SHARE) + tag (FOR UPDATE). Lượt kiểm chạy trên kết
- * nối THỨ HAI (bộ đếm sai phải commit kể cả khi giao dịch rollback — đầu `totpCauHinh.ts`); pool cạn ⇒ trước vá giao dịch treo vô hạn giữ khoá.
- * Sau vá: `kiemXacThucTheoMuc` giả TREO ⇒ capNhat trả CONFLICT `scadaKenhThuLai` trong [2900, 5000) ms, hàng không đổi, khoá được nhả (một lượt
- * capNhat ngay sau đó đi qua không chờ). Thời gian thật ≈ 3 s < 10 s (phán quyết K15).
+ * Lịch sử: R1b-2a T5 — `scadaKenh.capNhat` gọi `kiemTotpCauHinh` BÊN TRONG giao dịch giữ khoá adapter (FOR SHARE) + tag (FOR UPDATE), lượt
+ * kiểm chạy trên kết nối THỨ HAI ⇒ pool cạn là treo; hạn 3 s đổi treo thành CONFLICT. Từ R1b-2b-2a T5B: lượt kiểm chạy NGOÀI giao dịch
+ * (`chayGiaoDichTotpNgoai` — lượt 1 dừng ở cửa TOTP ⇒ rollback, nhả khoá ⇒ kiểm mã ⇒ lượt 2), nên ca này nay ghim: lượt kiểm TREO (mô phỏng pool
+ * cạn) ⇒ capNhat trả CONFLICT `scadaKenhThuLai` trong [2900, 5000) ms, KHÔNG có lượt 2, hàng không đổi, khoá đã nhả (một lượt capNhat ngay sau đó
+ * đi qua không chờ). Thời gian thật ≈ 3 s < 10 s (phán quyết K15). Ca pool = 1 thật: `totpTrongTxPool1.r1b2b2.db.test.ts`.
  * R1b-2a T6 polish (điều phối 2026-10-25): cận trên 3500 → 5000 ms — dưới tải đo được 3528 / 3766 ms (đỏ oan). Vẫn phân biệt "có hạn" với
  * "không hạn": không hạn ⇒ treo tới timeout của ca (9,5 s) ⇒ đỏ; cận dưới 2900 ms giữ ⇒ hạn không bị rút ngắn lặng lẽ. `vi.mock` ở đây là của `_core/xacThucTheoMuc` (bộ kiểm
  * TOTP — điểm treo mô phỏng pool cạn), không phải hàm phạm vi cục bộ (K9).

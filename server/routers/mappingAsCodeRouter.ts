@@ -37,7 +37,7 @@ import {
   MappingImportError,
   MappingValidationError,
 } from "../services/ot/mappingAsCode";
-import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 /** Giới hạn kích thước YAML upload (1 MiB) — file mapping thật cỡ vài KB. */
 const yamlInput = z.string().min(1).max(1_048_576);
@@ -148,15 +148,17 @@ export const mappingAsCodeRouter = router({
       const idsMay = await idsMayTrongPhamVi(ctx);
       await kiemPhamViYaml(ctx, input.yaml);
       try {
-        return await importMapping(input.yaml, {
+        // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch của importMapping (`chayGiaoDichTotpNgoai`: lượt 1 dừng ở `xacThucKenhDaKhai` ⇒ rollback ⇒
+        // kiểm mã qua pool ⇒ lượt 2 chạy lại import). Hiệu ứng sau giao dịch (audit / cache / drift) chỉ chạy ở lượt commit.
+        return await chayGiaoDichTotpNgoai((cuaTotp) => importMapping(input.yaml, {
           dryRun: false,
           prune: input.prune,
           actorId: ctx.user.id,
           actorName: actorName(ctx.user as { username?: string | null; name?: string | null }),
           source: "trpc",
-          xacThucKenhDaKhai: () => kiemTotpCauHinh(ctx, input.totpCode),
+          xacThucKenhDaKhai: async () => cuaTotp(),
           kiemPhamViDuoiKhoa: (m) => kiemPhamViDuoiKhoa(m, idsMay, khongThayAdapter),
-        });
+        }), () => kiemTotpCauHinh(ctx, input.totpCode));
       } catch (err) {
         throw toTrpcError(err);
       }

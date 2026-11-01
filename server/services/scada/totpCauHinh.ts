@@ -22,19 +22,32 @@
  * `scadaDiag.tamTat` (chỉ đòi mã khi đụng tag được bảo vệ; dò mã đã bị khoá T16 theo tài khoản chặn; xếp vào nhóm "2fa" đếm theo path sẽ cho
  * mọi lượt sửa tag / adapter thường ngày ăn chung xô 20 / 15 phút theo IP với 2FA / deploy).
  *
- * ★ R1b-2a T5 (kiem-dinh M7, điều phối Q5 DUYỆT 2026-10-25) — KẾT NỐI THỨ HAI TRONG GIAO DỊCH CẤU HÌNH, CÓ HẠN:
- *   Mọi bên gọi ở trên gọi hàm này BÊN TRONG giao dịch cấu hình (đang giữ khoá adapter / luật / tag). `kiemXacThucTheoMuc` đọc / ghi bộ đếm sai
- *   (`totp_khoa_sai`, T16) và sổ mã đã dùng (`totp_consumed`) qua POOL — một kết nối THỨ HAI ngoài `tx`. Điều đó là CỐ Ý và KHÔNG được chuyển
- *   vào `tx`: bộ đếm sai phải COMMIT kể cả khi giao dịch cấu hình rollback (lượt bị từ chối vì mã sai CHÍNH LÀ lượt rollback) — đếm trong `tx`
- *   thì mỗi mã sai bị rollback cùng giao dịch ⇒ bộ đếm không bao giờ tăng ⇒ dò mã không giới hạn.
- *   Cái giá: pool cạn (mọi kết nối đang bị các giao dịch cấu hình như thế này giữ) ⇒ lượt lấy kết nối thứ hai chờ VÔ HẠN trong khi `tx` giữ
- *   khoá. Vì vậy lượt kiểm được bọc `withDeadline(…, HAN_TOTP_CAU_HINH_MS)`: quá hạn ⇒ CONFLICT "thử lại" (`OPERATION_FAILED` · operation
- *   `scadaTotpCauHinh` · reason `scadaKenhThuLai`), giao dịch của bên gọi rollback và nhả khoá trong ≤ 3 s thay vì treo.
- *   Giới hạn đã biết (preflight D10): lượt kiểm bị bỏ rơi khi quá hạn vẫn có thể chạy xong sau đó trên kết nối riêng — mã có thể đã bị tiêu
- *   dù người dùng được báo "thử lại" (họ chờ mã mới; không có đường nào ghi cấu hình bằng lượt ấy vì giao dịch đã rollback).
+ * ★ R1b-2b-2a T5B (dieu-phoi 2026-11-01) — KHÔNG lấy thêm kết nối pool trong giao dịch giữ khoá hàng. Lượt kiểm (`kiemXacThucTheoMuc`) đọc 2FA
+ *   (`get2FAStatus`), nạp / xoá bộ đếm sai (`totp_khoa_sai`, T16), tiêu mã ở sổ (`totp_consumed`) QUA POOL. Trước T5B mọi bên gọi chạy nó BÊN
+ *   TRONG giao dịch cấu hình (đang giữ khoá adapter / luật / tag) ⇒ kết nối THỨ HAI trong khi kết nối thứ nhất giữ khoá ⇒ N giao dịch như thế cạn
+ *   pool là tự khoá chết (mỗi cái chờ một kết nối mà chỉ cái khác nhả được) — đúng lớp ngân sách pool của đường STOP; hạn 3 s (R1b-2a Q5) chỉ đổi
+ *   "treo" thành "CONFLICT thử lại", vẫn từ chối MỌI lượt cấu hình có mã khi pool cạn (đo: pool = 1 ⇒ 100 % CONFLICT).
+ *   Nay MỌI bên gọi đi qua `chayGiaoDichTotpNgoai` (dưới): lượt 1 chạy giao dịch tới ĐÚNG chỗ kiểm cũ (CUỐI — sau mọi kiểm hợp lệ / nhất quán /
+ *   phạm vi), cửa `cuaTotp()` ném một tín hiệu ⇒ giao dịch ROLLBACK, nhả khoá + kết nối; TOTP được kiểm NGOÀI mọi giao dịch (hàm dưới, nguyên văn
+ *   như cũ, kể cả hạn 3 s); mã đúng ⇒ lượt 2 chạy lại giao dịch từ đầu (khoá lại, kiểm lại mọi thứ dưới khoá mới) và cửa thành no-op.
+ *   Vì sao KHÔNG chuyển lượt kiểm vào `tx` (cách a): bộ đếm sai phải COMMIT kể cả khi giao dịch cấu hình rollback (lượt bị từ chối vì mã sai CHÍNH
+ *   LÀ lượt rollback) — đếm trong `tx` thì dò mã không giới hạn. Vì sao KHÔNG kiểm trước giao dịch rồi mới ghi (cách b thuần): mã bị tiêu cả khi
+ *   lượt ấy sau đó hỏng kiểm hợp lệ / không cần mã (R1a final M-3 ghim "lỗi kiểm hợp lệ không tiêu mã"), và cần-mã-hay-không chỉ biết DƯỚI khoá.
+ *   Chống phát lại GIỮ NGUYÊN: cùng `kiemXacThucTheoMuc` (sổ `totp_consumed` ON CONFLICT một câu, khoá hàng; bộ đếm nạp TRƯỚC khi xác minh, commit
+ *   độc lập), MỘT lượt xác minh cho mỗi lượt gọi. Cửa sổ duy nhất mới: giữa lượt 1 và lượt 2 trạng thái đổi ⇒ lượt 2 có thể hỏng kiểm hợp lệ SAU
+ *   KHI mã đã tiêu (cùng tính chất với hôm trước khi lượt ghi hỏng sau lượt kiểm) — không bao giờ ghi mà không có mã: lượt 2 chỉ chạy khi chính
+ *   lượt gọi này vừa xác minh đúng.
+ *   Census: `khoaLuatVaPoolTrongTx.census.test.ts` (B) — `kiemTotpCauHinh` vẫn là hàm gọi pool; gọi nó trong callback `.transaction(` ⇒ ĐỎ.
+ *   Bất biến STOP (T5B fix 1, review m4): đường `dungMay` / dispatcher không đổi. `setStopPin` giữ adapter FOR SHARE + tag FOR UPDATE chỉ trong
+ *   lượt 1 (kiểm, không I/O ngoài `tx`) và lượt 2 (kiểm + ghi), KHÔNG trong lúc kiểm mã (tới 3 s khi pool bận) ⇒ khoá ngắn hơn trước. Tác dụng
+ *   phụ DUY NHẤT ngoài giao dịch của lượt 1: `finally` của `datStopPin` gọi `invalidateStopPinPresence(adapterId)` — xoá bộ nhớ đệm "adapter có
+ *   ghim không" (fail-closed: lượt STOP kế tiếp của adapter ấy đọc lại DB một lần), không audit, không phát (`stopPinChanged` chỉ khi `changed`);
+ *   trước T5B nó cũng chạy ở MỌI lượt bị từ chối. Ghim: `totpHaiLuot.dieuKien.r1b2b2.db.test.ts` (ĐK3: mã sai ⇒ không audit / phát / socket).
+ *   Giới hạn đã biết (preflight D10, giữ): lượt kiểm bị bỏ rơi khi quá hạn vẫn có thể chạy xong sau đó — mã có thể đã bị tiêu dù người dùng được
+ *   báo "thử lại" (không có đường nào ghi cấu hình bằng lượt ấy: lượt 2 không chạy).
  */
 import { z } from "zod";
-import { appError } from "../../_core/appError";
+import { appError, readAppErrorMeta } from "../../_core/appError";
 import { kiemXacThucTheoMuc, type CtxXacThuc } from "../../_core/xacThucTheoMuc";
 import { loiTotpKhoa } from "../../_core/totpKhoaSai";
 import { withDeadline } from "../ot/drivers/boundedClose";
@@ -42,7 +55,7 @@ import { withDeadline } from "../ot/drivers/boundedClose";
 /** Mã TOTP 6 số của các mutation cấu hình kênh (vắng ⇒ `TOTP_CAN` ở handler, không phải lỗi zod — UI hiện đúng câu "cần mã"). */
 export const totpCauHinhInput = z.string().max(16).optional();
 
-/** R1b-2a T5 (Q5) — hạn của lượt kiểm TOTP (kết nối thứ hai) khi chạy trong giao dịch cấu hình. Xem đầu tệp. */
+/** R1b-2a T5 (Q5) — hạn của lượt kiểm TOTP. T5B: lượt kiểm nay chạy NGOÀI giao dịch (không giữ khoá nào) — hạn giữ để trần độ trễ + mã lỗi như cũ. */
 export const HAN_TOTP_CAU_HINH_MS = 3000;
 
 /** Quá hạn kiểm TOTP ⇒ "thử lại" (khoá i18n có sẵn `errors.reason.scadaKenhThuLai`). */
@@ -88,5 +101,128 @@ export async function kiemTotpCauHinh(ctx: CtxXacThuc, totpCode: string | undefi
     case "TOTP_TAM_KHOA":
     case "TOTP_KHONG_KIEM_DUOC":
       throw loiTotpKhoa(kq.ma === "TOTP_TAM_KHOA" ? { ma: kq.ma, conLaiMs: kq.conLaiMs } : { ma: kq.ma }, { ma: kq.ma })!;
+  }
+}
+
+/** Tín hiệu NỘI BỘ của lượt 1: giao dịch tới chỗ kiểm TOTP ⇒ rollback để kiểm NGOÀI giao dịch. Không bao giờ ra khỏi `chayGiaoDichTotpNgoai`. */
+class CanKiemTotpNgoaiTx extends Error {
+  constructor() {
+    super("T5B: giao dịch tới chỗ kiểm TOTP — rollback, kiểm ngoài giao dịch");
+    this.name = "CanKiemTotpNgoaiTx";
+  }
+}
+
+/** Cửa TOTP trong giao dịch bị NUỐT (thân bắt lỗi rồi chạy tiếp) ⇒ lỗi lập trình, kêu to (không bao giờ coi là "đã qua cửa"). */
+const loiCuaBiNuot = () =>
+  appError(
+    "INTERNAL_SERVER_ERROR",
+    "OPERATION_FAILED",
+    { operation: "scadaTotpCauHinh" },
+    "T5B: cửa TOTP trong giao dịch cấu hình bị nuốt (thân giao dịch bắt tín hiệu rồi chạy tiếp) — lỗi lập trình.",
+  );
+
+/**
+ * T5B fix 1 (điều kiện 4 của dieu-phoi) — mã gốc của lỗi lượt 2, để người đọc log / UI biết dữ liệu nào vừa đổi: `reason` của appError, rồi
+ * `appCode`; lỗi miền không phải appError (`StopPinLoi.loai`, `MappingImportError.code`, mã SQLSTATE của postgres) theo tên trường; không có ⇒
+ * "UNKNOWN". Không đọc `message` để làm mã (có thể chứa dữ liệu người dùng).
+ * T5B polish (re-review M1) — đi theo chuỗi `.cause` tới sâu 5 (cùng khuôn `isUniqueViolation` / `isMissingTable` ở `_core/dbErrors.ts`):
+ * drizzle-orm ≥ 0.44 bọc MỌI lỗi truy vấn trong `DrizzleQueryError` ("Failed query: …", không có `code`) và lỗi postgres thật (SQLSTATE: 40P01
+ * deadlock, 23505 trùng khoá…) nằm ở `.cause`. Lấy mã ĐẦU TIÊN gặp (ngoài → trong); `thongDiepTrong` = thông điệp của mắt xích TRONG CÙNG (lỗi
+ * postgres gốc — KHÔNG lấy thông điệp "Failed query: … params: …" của lớp bọc, tham số có thể chứa bí mật).
+ */
+const SAU_CAUSE_TOI_DA = 5;
+function chuoiCause(e: unknown): unknown[] {
+  const ra: unknown[] = [];
+  for (let cur: unknown = e, i = 0; cur != null && i < SAU_CAUSE_TOI_DA; i++) {
+    ra.push(cur);
+    if (typeof cur !== "object") break;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return ra;
+}
+function maMotMat(e: unknown): string | null {
+  const meta = readAppErrorMeta(e);
+  const reason = meta?.appParams?.reason;
+  if (typeof reason === "string" && reason) return reason;
+  if (meta?.appCode) return meta.appCode;
+  const x = e as { loai?: unknown; code?: unknown } | null;
+  if (x && typeof x === "object" && typeof x.loai === "string" && x.loai) return x.loai;
+  if (x && typeof x === "object" && typeof x.code === "string" && x.code) return x.code;
+  return null;
+}
+function maGocCua(e: unknown): string {
+  for (const mat of chuoiCause(e)) {
+    const ma = maMotMat(mat);
+    if (ma) return ma;
+  }
+  return "UNKNOWN";
+}
+function thongDiepTrong(e: unknown): string {
+  const chuoi = chuoiCause(e);
+  for (let i = chuoi.length - 1; i >= 0; i--) {
+    const m = (chuoi[i] as { message?: unknown } | null)?.message;
+    if (typeof m === "string" && m) return m;
+    if (typeof chuoi[i] === "string") return chuoi[i] as string;
+  }
+  return String(e);
+}
+
+/**
+ * T5B fix 1 (điều kiện 4, phán quyết dieu-phoi 2026-11-01) — lượt 2 hỏng SAU KHI mã đã được xác minh = đã TIÊU (sổ `totp_consumed`): dữ liệu vừa
+ * đổi giữa hai lượt (luật bị xoá / sửa, tag thành không ghi được, xung đột…). KHÔNG bao giờ nói "mã sai"; báo đúng sự thật: mã đã dùng, dữ liệu
+ * vừa thay đổi, kiểm tra lại và nhập mã MỚI. `maGoc` giữ lỗi gốc (`maGocCua`).
+ */
+function loiLuot2SauTieuMa(e: unknown) {
+  const maGoc = maGocCua(e);
+  // lỗi gốc KHÔNG đi tới người dùng (thông điệp chung ở trên) ⇒ ghi log máy chủ để vận hành truy được (vd lỗi ghi audit — maGoc "UNKNOWN")
+  console.warn(`[totpCauHinh] T5B: lượt 2 hỏng SAU khi mã đã tiêu (maGoc=${maGoc}): ${thongDiepTrong(e)}`);
+  return appError(
+    "CONFLICT",
+    "OPERATION_FAILED",
+    { operation: "scadaConfigTotp", reason: "scadaTotpDaDungDuLieuDoi", maGoc },
+    "Mã xác thực đã được dùng nhưng dữ liệu vừa thay đổi — thay đổi chưa được lưu. Kiểm tra lại rồi nhập mã MỚI.",
+  );
+}
+
+/**
+ * ★ R1b-2b-2a T5B — chạy một giao dịch cấu hình giữ khoá hàng mà kiểm TOTP mức 5 KHÔNG lấy thêm kết nối pool khi đang giữ khoá. Xem đầu tệp.
+ *
+ * @param chay   mở giao dịch (`db.transaction(async (tx) => …)`, hoặc gọi dịch vụ tự mở giao dịch) và gọi `cuaTotp()` — ĐỒNG BỘ, không I/O — ĐÚNG
+ *               chỗ kiểm TOTP cũ (CUỐI, sau mọi kiểm hợp lệ, ngay trước lượt ghi), chỉ khi lượt ấy cần mã. Có thể chạy HAI lần: thân không được có
+ *               hiệu ứng ngoài giao dịch TRƯỚC cửa (đọc / kiểm thì được).
+ * @param xacMinh kiểm TOTP NGOÀI mọi giao dịch — bên gọi truyền `() => kiemTotpCauHinh(ctx, totpCode)`; ném appError ⇒ lượt bị từ chối với
+ *               ĐÚNG mã lỗi như trước T5B (TOTP_CAN / TOTP_SAI / TOTP_CHUA_DANG_KY / ROLE_FLOOR / TOTP_TAM_KHOA / TOTP_KHONG_KIEM_DUOC / quá hạn).
+ *
+ * Luồng: lượt 1 không chạm cửa ⇒ trả / ném kết quả của nó (MỘT giao dịch — đường thường ngày không đổi; lỗi giữ NGUYÊN — chưa tiêu mã nào).
+ * Chạm cửa ⇒ rollback ⇒ `xacMinh()` ⇒ (ném ⇒ từ chối, lỗi nguyên văn) ⇒ lượt 2 với cửa no-op (đã xác minh cho CHÍNH lượt gọi này) ⇒ kết quả lượt
+ * 2. Lượt 2 TÍNH LẠI mọi thứ dưới khoá mới, kể cả "có cần mã không" (điều kiện 1): không cần nữa ⇒ vẫn ghi (mã đã xác minh, không xác minh lần
+ * hai). Lượt 2 ném ⇒ `loiLuot2SauTieuMa` (điều kiện 4: CONFLICT `scadaTotpDaDungDuLieuDoi`, `maGoc` = lỗi gốc) — mã đã tiêu, người dùng cần mã mới.
+ * "Đã xác minh" KHÔNG phải cờ / trường nào (điều kiện 2): nó là chính việc gọi lượt 2 trong closure này, cùng `input` (cùng đích, cùng nội dung);
+ * không đầu vào API nào chạm được tới nó.
+ * Thứ tự từ chối giữ nguyên: mọi lỗi đứng trước cửa (phạm vi / NOT_FOUND / kiểm hợp lệ) ném ở lượt 1 TRƯỚC mọi kiểm mã ⇒ mã không bị tiêu, bộ
+ * đếm sai không chạm (như cũ).
+ */
+export async function chayGiaoDichTotpNgoai<T>(chay: (cuaTotp: () => void) => Promise<T>, xacMinh: () => Promise<void>): Promise<T> {
+  let chamCua = false;
+  let luot1: { kq: T } | null = null;
+  try {
+    luot1 = {
+      kq: await chay(() => {
+        chamCua = true;
+        throw new CanKiemTotpNgoaiTx();
+      }),
+    };
+  } catch (e) {
+    if (!chamCua) throw e; // lỗi THẬT của lượt 1 (đứng trước cửa) — nguyên văn
+  }
+  if (luot1 !== null) {
+    if (chamCua) throw loiCuaBiNuot();
+    return luot1.kq;
+  }
+  await xacMinh(); // NGOÀI giao dịch — không giữ khoá, không giữ kết nối
+  try {
+    return await chay(() => undefined);
+  } catch (e) {
+    throw loiLuot2SauTieuMa(e); // mã đã tiêu ⇒ không bao giờ ném lỗi gốc nguyên văn (điều kiện 4)
   }
 }

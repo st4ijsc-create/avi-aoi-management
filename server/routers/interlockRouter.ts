@@ -23,7 +23,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import { appError } from "../_core/appError";
+import { appError, readAppErrorMeta } from "../_core/appError";
 import { and, eq, desc, gt, inArray } from "drizzle-orm";
 import {
   router,
@@ -57,7 +57,7 @@ import { kiemLenhInterlockTx, luatCoGhiLenh, thamSoNgoaiDaiInterlock, type DbHoa
 import { telemetryTagDungPhamVi } from "../services/interlock/d11";
 // kiem-dinh R1b-1 I1 (2026-10-25) — (a) bám định nghĩa tag nguồn / đích chụp lúc duyệt; (b) TOTP tươi mức 5 khi sửa / xoá luật bảo vệ
 import { bamDinhNghiaLuat, bamDinhNghiaNhieu, duyetConHieuLuc } from "../services/interlock/dinhNghiaDuyet";
-import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 
 /**
  * kiem-dinh R1b-1 I1 (b) (điều phối 2026-10-25) — luật mà sửa / xoá cần TOTP tươi mức 5 (`kiemTotpCauHinh`): luật GHI LỆNH (không phải `alert`)
@@ -129,6 +129,11 @@ async function luatTrongPhamVi(
 
 /** Ngoài phạm vi ≡ không tồn tại (cùng lỗi id không có thật). */
 const loiLuatKhongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
+/** CONFLICT `scadaKenhThuLai` của `khoaDichLuatTx` (đích của luật đổi giữa lượt đọc không khoá và lượt khoá luật — thử lại được). */
+const laXungDotThuLai = (e: unknown): boolean =>
+  e instanceof TRPCError && e.code === "CONFLICT" && readAppErrorMeta(e)?.appParams?.reason === "scadaKenhThuLai";
+/** Sự kiện không tồn tại — và sự kiện của luật ngoài phạm vi (cùng lỗi, không lộ luật). */
+const loiSuKienKhongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
 
 /**
  * SCADA R1b-2b-1 T10 (mục 47, T5 m-6) — như `luatTrongPhamVi` nhưng vế `targetAdapterId` kiểm trên `machineId` ĐÃ KHOÁ (`adapters` của
@@ -173,6 +178,8 @@ async function layPhamViGhiLuat(ctx: CoDanhTinh): Promise<PhamViGhiLuat> {
  *      (không lộ sự tồn tại bằng CONFLICT). Adapter đích mới chỉ được ĐỌC (không khoá — khoá adapter sau luật là đảo thứ tự) để chọn lỗi; cả hai
  *      nhánh đều từ chối, không ghi gì.
  * Luật không tồn tại (ở bước 3) ⇒ `existing: null` (bên gọi ném NOT_FOUND). `ruleId` null (create) ⇒ chỉ bước 2.
+ * `khoaLuat` (R1b-2b-2a T4, mục 62): chế độ khoá LUẬT ở bước 3 — `"update"` (mặc định, mọi đường GHI luật) hoặc `"share"` (`resolveEvent`: chỉ cần
+ * luật không đổi / không bị xoá tới khi ta commit, không ghi luật). Thứ tự ADAPTER → LUẬT giữ nguyên ở cả hai chế độ.
  * Bên gọi chạy `luatTrongPhamViDuoiKhoa` cho luật hiện có (và luật sau vá) với `adapters` trả về. Mọi lượt đọc protocol / trạng thái adapter đích sau
  * đó trong cùng giao dịch (`kiemLenhInterlockTx` — luật địa chỉ bit; `assertDichNguonSanSang`; bám định nghĩa) đọc hàng ĐANG bị ta giữ FOR SHARE.
  */
@@ -181,6 +188,7 @@ async function khoaDichLuatTx(
   ruleId: number | null,
   adapterIdsMoi: ReadonlyArray<number | null | undefined>,
   phamVi?: PhamViGhiLuat,
+  khoaLuat: "update" | "share" = "update",
 ): Promise<{ existing: InterlockRule | null; adapters: Map<number, { machineId: number | null }> }> {
   let dichDaDoc: number | null = null;
   if (ruleId != null) {
@@ -192,7 +200,7 @@ async function khoaDichLuatTx(
     [dichDaDoc, ...adapterIdsMoi].filter((x): x is number => x != null),
   );
   if (ruleId == null) return { existing: null, adapters };
-  const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, ruleId)).limit(1).for("update");
+  const [existing] = await tx.select().from(interlockRules).where(eq(interlockRules.id, ruleId)).limit(1).for(khoaLuat);
   if (!existing) return { existing: null, adapters };
   if ((existing.targetAdapterId ?? null) !== dichDaDoc) {
     if (phamVi) {
@@ -626,7 +634,8 @@ export const interlockRouter = router({
       const { id, threshold, totpCode, ...rest } = input;
       const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — SELECT/UPDATE/audit-INSERT trong CÙNG một transaction.
-      return db.transaction(async (tx) => {
+      // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch (`chayGiaoDichTotpNgoai`: lượt 1 dừng ở cửa ⇒ rollback ⇒ kiểm mã qua pool ⇒ lượt 2 ghi).
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         // R1b-2b-1 T10 (mục 47) — ADAPTER đích (cũ + mới, theo id) FOR SHARE → LUẬT FOR UPDATE (đích đổi giữa chừng ⇒ CONFLICT / NOT_FOUND).
         const { existing, adapters } = await khoaDichLuatTx(tx, id, "targetAdapterId" in rest ? [rest.targetAdapterId] : [], phamVi);
         if (!existing) throw loiLuatKhongThay();
@@ -687,13 +696,13 @@ export const interlockRouter = router({
 
         // kiem-dinh R1b-1 I1 (b) — luật bảo vệ (ghi lệnh, đang bật hoặc đã duyệt, có đích / nguồn tag) ⇒ TOTP tươi mức 5, CUỐI (sau mọi kiểm
         // hợp lệ — một lỗi kiểm không tiêu mã), ngay trước lượt ghi.
-        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, totpCode);
+        if (luatCanTotpKhiSuaXoa(existing)) cuaTotp();
 
         const [row] = await tx.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
         // Audit bất biến: sửa rule (before/after để truy vết cấu hình an toàn).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: id, action: "update", actorId: ctx.user.id, before: existing, after: row, reason });
         return coVersion(tx, row);
-      });
+      }), () => kiemTotpCauHinh(ctx, totpCode));
     }),
 
   delete: actuationProcedure
@@ -705,17 +714,18 @@ export const interlockRouter = router({
       const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-1 T10 — TRƯỚC giao dịch
       // ILK-10 — audit + hard-delete trong CÙNG transaction (before-audit vẫn
       // đứng trước DELETE, nay atomically: cả hai cùng đậu hoặc cùng rollback).
-      return db.transaction(async (tx) => {
+      // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch (`chayGiaoDichTotpNgoai`).
+      return chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         // R1b-2b-1 T10 (mục 47) — ADAPTER đích FOR SHARE → LUẬT FOR UPDATE (thứ tự khoá dự án); phạm vi kiểm trên machineId ĐÃ KHOÁ.
         const { existing, adapters } = await khoaDichLuatTx(tx, input.id, [], phamVi);
         if (!existing) throw loiLuatKhongThay();
         luatTrongPhamViDuoiKhoa(existing, phamVi.tap, adapters, phamVi.idsMay); // phạm vi nhà máy
         // kiem-dinh R1b-1 I1 (b) — xoá luật bảo vệ ⇒ TOTP tươi mức 5, CUỐI (sau tồn tại + phạm vi), trước audit + DELETE.
-        if (luatCanTotpKhiSuaXoa(existing)) await kiemTotpCauHinh(ctx, input.totpCode);
+        if (luatCanTotpKhiSuaXoa(existing)) cuaTotp();
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null, reason: input.reason });
         await tx.delete(interlockRules).where(eq(interlockRules.id, input.id));
         return { success: true };
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
     }),
 
   approve: adminProcedure
@@ -881,16 +891,31 @@ export const interlockRouter = router({
     .input(z.object({ id: z.number().int().positive(), notes: z.string().max(2000).optional(), reason: z.string().min(3) }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      const phamVi = await layPhamViGhiLuat(ctx); // R1b-2b-2a T4 (mục 62) — TRƯỚC giao dịch (không gọi pool trong giao dịch)
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
-      return db.transaction(async (tx) => {
+      const chayGd = () => db.transaction(async (tx) => {
         const [existing] = await tx.select().from(interlockEvents).where(eq(interlockEvents.id, input.id)).limit(1);
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
-        // phạm vi nhà máy: sự kiện của luật ngoài phạm vi ≡ không tồn tại
-        const [luat] = existing.ruleId != null ? await tx.select().from(interlockRules).where(eq(interlockRules.id, existing.ruleId)).limit(1) : [];
+        if (!existing) throw loiSuKienKhongThay();
+        // phạm vi nhà máy: sự kiện của luật ngoài phạm vi ≡ không tồn tại. R1b-2b-2a T4 (mục 62) — ADAPTER đích FOR SHARE → LUẬT FOR SHARE
+        // (`khoaDichLuatTx`, thứ tự khoá dự án; hàng sự kiện khoá SAU ở UPDATE, chuỗi audit sau cùng), phạm vi kiểm trên machineId ĐÃ KHOÁ:
+        // adapter đổi sang máy nhà máy khác đã commit trước ta ⇒ NOT_FOUND; không đổi được nữa tới khi ta commit.
+        let luat: InterlockRule | null = null;
+        let adapters = new Map<number, { machineId: number | null }>();
+        if (existing.ruleId != null) {
+          try {
+            ({ existing: luat, adapters } = await khoaDichLuatTx(tx, existing.ruleId, [], phamVi, "share"));
+          } catch (e) {
+            // NOT_FOUND "interlockRule" (đích đổi giữa chừng sang ngoài phạm vi) ⇒ cùng lỗi sự kiện không tồn tại (không lộ luật);
+            // CONFLICT `scadaKenhThuLai` (đích đổi giữa chừng, vẫn trong phạm vi) đi nguyên — ra NGOÀI giao dịch, `chayGd` được chạy lại một lần.
+            if (e instanceof TRPCError && e.code === "NOT_FOUND") throw loiSuKienKhongThay();
+            throw e;
+          }
+        }
+        // luật đã bị xoá (khoá không thấy hàng) ⇒ `{}` — như hôm nay: chỉ toàn quyền đóng được sự kiện mồ côi.
         try {
-          await luatTrongPhamVi(ctx, luat ?? {});
+          luatTrongPhamViDuoiKhoa(luat ?? {}, phamVi.tap, adapters, phamVi.idsMay);
         } catch {
-          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
+          throw loiSuKienKhongThay();
         }
         const [row] = await tx
           .update(interlockEvents)
@@ -901,6 +926,15 @@ export const interlockRouter = router({
         await recordAuditEvent(tx, { entityType: "interlock_event", entityId: input.id, action: "resolve", actorId: ctx.user.id, before: existing, after: row, reason: input.reason });
         return row;
       });
+      // R1b-2b-2a T4 polish (review minor 1) — đích của luật đổi đồng thời (CONFLICT `scadaKenhThuLai`) ⇒ chạy lại CẢ giao dịch đúng MỘT lần (giao dịch
+      // mới: đọc không khoá mới, khoá ADAPTER → LUẬT mới; `phamVi` tính trước giao dịch dùng lại). KHÔNG thử lại trong cùng giao dịch: lúc đó ta đang
+      // giữ luật FOR SHARE, khoá adapter đích mới là đảo thứ tự khoá. Lần hai vẫn xung đột ⇒ CONFLICT đi nguyên như trước.
+      try {
+        return await chayGd();
+      } catch (e) {
+        if (!laXungDotThuLai(e)) throw e;
+      }
+      return chayGd();
     }),
 
   /**

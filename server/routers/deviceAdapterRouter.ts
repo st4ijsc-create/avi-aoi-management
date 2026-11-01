@@ -91,7 +91,7 @@ import {
   loiTrungKhoaTag,
   trungKhoaTagTx,
 } from "../services/scada/troLaiKenh";
-import { kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
+import { chayGiaoDichTotpNgoai, kiemTotpCauHinh, totpCauHinhInput } from "../services/scada/totpCauHinh";
 import { thamSoNgoaiDaiStopPin } from "../services/scada/nhatQuanKenh"; // R1b-2a T2 (K17) — tham số STOP_PIN_NGOAI_DAI dùng chung
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 // SCADA R1b-2b-2b A — C2 (KD-2bA 2.1 / 2.2): che endpoint / lastError dưới kỹ sư canEdit (một luật với C1) + posture tạm khoá không bao giờ che
@@ -426,7 +426,7 @@ export const deviceAdapterRouter = router({
         // host lạ + bí mật mới) commit, ghi SAU ⇒ hàng = endpoint của A + bí mật CŨ do B khôi phục.
         // Với FOR UPDATE, B chờ A commit rồi đọc ĐÚNG hàng sắp bị ghi đè: placeholder khôi phục bí mật
         // của A (A tự cung cấp), còn form cũ mang endpoint E0 ≠ hàng của A ⇒ bị từ chối.
-        const row = await db.transaction(async (tx) => {
+        const row = await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
           // R1b-2a T5 (kiem-dinh M5) — ADAPTER FOR UPDATE NGAY đầu giao dịch, MỌI patch (trước: chỉ khi đổi đích / tắt / đổi mã / bí mật — sửa tên
           // hay chu kỳ không khoá gì), rồi KIỂM LẠI phạm vi trên `machineId` ĐÃ KHOÁ: đổi máy sang nhà máy khác đã commit sau kiểm-trước ⇒ cùng
           // NOT_FOUND, không ghi. Các nhánh dưới đọc lại hàng này trong CÙNG giao dịch (khoá đã giữ ⇒ không chờ, không đổi thứ tự khoá).
@@ -503,7 +503,7 @@ export const deviceAdapterRouter = router({
               patch.connectionOptions = sealConnectionOptionSecrets(nextOptions);
             }
           }
-          if (canTotpDoiDich) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
+          if (canTotpDoiDich) cuaTotp(); // CUỐI — ngay trước lượt ghi
           const [updated] = await tx.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
           if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
           if (canTotpDoiDich) {
@@ -523,7 +523,7 @@ export const deviceAdapterRouter = router({
             stopPinsCleared = await goMoiStopPinCuaAdapterTx(tx, { adapterId: id, nguon: "adapter_redefined", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.update" });
           }
           return { updated, stopPinsCleared };
-        });
+        }), () => kiemTotpCauHinh(ctx, totpCode));
         const [an] = await hangAnToan(ctx, [row.updated]);
         return { ...an, stopPinsCleared: row.stopPinsCleared };
       } catch (err) {
@@ -547,7 +547,7 @@ export const deviceAdapterRouter = router({
       const db = await getDb();
       const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
       await adapterTrongPhamVi(ctx, input.id, idsMay); // ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC cổng adapter T9
-      await db.transaction(async (tx) => {
+      await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
         const [existing] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).for("update"); // ADAPTER (thứ tự khoá)
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         kiemPhamViDuoiKhoa(existing.machineId ?? null, idsMay, khongThayAdapter); // R1b-2a T5 (M5) — phạm vi trên hàng ĐÃ KHOÁ
@@ -564,7 +564,7 @@ export const deviceAdapterRouter = router({
           );
         }
         const cong = await congAdapterTx(tx, { adapterId: input.id, code: existing.code, machineId: existing.machineId ?? null, viec: "xoa" });
-        if (cong.canTotp) await kiemTotpCauHinh(ctx, input.totpCode); // CUỐI — ngay trước lượt ghi
+        if (cong.canTotp) cuaTotp(); // CUỐI — ngay trước lượt ghi
         if (cong.canTotp) {
           await recordAuditEvent(tx, {
             entityType: "device_adapter",
@@ -587,7 +587,7 @@ export const deviceAdapterRouter = router({
         }
         await tx.delete(deviceTags).where(eq(deviceTags.adapterId, input.id));
         await tx.delete(deviceAdapters).where(eq(deviceAdapters.id, input.id));
-      });
+      }), () => kiemTotpCauHinh(ctx, input.totpCode));
       return { success: true };
     }),
 
@@ -711,7 +711,7 @@ export const deviceAdapterRouter = router({
         const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
         await adapterTrongPhamVi(ctx, v.adapterId, idsMay); // thêm tag vào adapter ngoài phạm vi ≡ NOT_FOUND (rà bảo mật 2026-10-24) — TRƯỚC kiểm T9
         try {
-          return await db.transaction(async (tx) => {
+          return await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
             const cap = { adapterId: v.adapterId, tagKey: v.tagKey };
             // Thứ tự khoá ADAPTER → LUẬT → TAG → KÊNH CHẾ ĐỘ (troLaiKenh.ts). R1b-2a T5 (M5): phạm vi kiểm LẠI trên hàng adapter ĐÃ KHOÁ (adapter
             // biến mất giữa chừng ⇒ cùng NOT_FOUND của kiểm-trước, thay cho lỗi FK của INSERT).
@@ -739,7 +739,7 @@ export const deviceAdapterRouter = router({
             };
             const moi = { ...record, scale: record.scale ?? null, offset: record.offset ?? null };
             const kt = kiemTaoTag({ moi, luat, nguon, coKenhCheDo: kenhCheDo.length > 0 });
-            if (kt.canTotp) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
+            if (kt.canTotp) cuaTotp(); // CUỐI — ngay trước lượt ghi
             const [row] = await tx.insert(deviceTags).values(record).returning();
             if (kt.moCoi) {
               await recordAuditEvent(tx, {
@@ -753,7 +753,7 @@ export const deviceAdapterRouter = router({
               });
             }
             return row;
-          });
+          }), () => kiemTotpCauHinh(ctx, totpCode));
         } catch (err) {
           if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
@@ -790,7 +790,7 @@ export const deviceAdapterRouter = router({
         try {
           // doc 81 Đợt 1D Task 1 — tag khoá FOR UPDATE; tag đang GHIM DỪNG mà thành không-ghi-được /
           // bị tắt / đổi định nghĩa dây ⇒ ghim bị gỡ trong CÙNG transaction, cùng audit.
-          return await db.transaction(async (tx) => {
+          return await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
             const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
             const [tag0] = await tx.select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey }).from(deviceTags).where(eq(deviceTags.id, id));
             if (!tag0) throw khongThay();
@@ -840,7 +840,7 @@ export const deviceAdapterRouter = router({
               nguonMoi,
               kenhCheDoMoi: kenhCheDoMoi.length > 0,
             });
-            if (kq.canTotp) await kiemTotpCauHinh(ctx, totpCode); // CUỐI — ngay trước lượt ghi
+            if (kq.canTotp) cuaTotp(); // CUỐI — ngay trước lượt ghi
 
             const nguonGo = lyDoGoStopPinKhiSuaTag(existing, patch);
             if (nguonGo) Object.assign(patch, GO_STOP_PIN_PATCH);
@@ -882,7 +882,7 @@ export const deviceAdapterRouter = router({
               return { ...row, stopPinAutoCleared: true as const, commissioningRecheckRequired };
             }
             return row;
-          });
+          }), () => kiemTotpCauHinh(ctx, totpCode));
         } catch (err) {
           if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
@@ -904,7 +904,7 @@ export const deviceAdapterRouter = router({
         const idsMay = await idsMayTrongPhamVi(ctx); // R1b-2a T5 — tính TRƯỚC giao dịch, dùng lại dưới khoá
         await adapterCuaTag(ctx, input.id, idsMay); // tag thuộc adapter ngoài phạm vi ≡ không tồn tại
         // doc 81 Đợt 1D Task 1 — xoá tag đang GHIM DỪNG ⇒ audit gỡ ghim trong CÙNG transaction.
-        await db.transaction(async (tx) => {
+        await chayGiaoDichTotpNgoai((cuaTotp) => db.transaction(async (tx) => {
           const khongThay = () => appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
           const [tag0] = await tx.select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey }).from(deviceTags).where(eq(deviceTags.id, input.id));
           if (!tag0) throw khongThay();
@@ -921,7 +921,7 @@ export const deviceAdapterRouter = router({
           }
           const kenhCheDo = await kenhCheDoCuaTagTx(tx, tag0);
           const kx = kiemXoaTag({ cu: existing, luat, nguon, coKenhCheDo: kenhCheDo.length > 0 });
-          if (kx.canTotp) await kiemTotpCauHinh(ctx, input.totpCode); // CUỐI — ngay trước lượt ghi
+          if (kx.canTotp) cuaTotp(); // CUỐI — ngay trước lượt ghi
           await tx.delete(deviceTags).where(eq(deviceTags.id, input.id));
           if (kx.canTotp) {
             await recordAuditEvent(tx, {
@@ -944,7 +944,7 @@ export const deviceAdapterRouter = router({
           if (existing.stopValue != null) {
             await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: "tag_deleted", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.delete" });
           }
-        });
+        }), () => kiemTotpCauHinh(ctx, input.totpCode));
         return { success: true };
       }),
 
@@ -980,7 +980,9 @@ export const deviceAdapterRouter = router({
         }
         const phamViMay = await idsTrongPhamVi("machine", phamViCua(ctx));
         try {
-          return await datStopPin({
+          // R1b-2b-2a T5B — TOTP kiểm NGOÀI giao dịch của datStopPin (`chayGiaoDichTotpNgoai`: lượt 1 dừng ở `kiemCuoi` ⇒ rollback ⇒ kiểm mã qua
+          // pool ⇒ lượt 2 ghi). Ghim STOP không còn giữ khoá adapter / tag trong lúc kiểm mã.
+          return await chayGiaoDichTotpNgoai((cuaTotp) => datStopPin({
             adapterId: input.adapterId,
             tagKey: input.tagKey,
             // Vắng (undefined) KHÔNG phải "gỡ" — chỉ null TƯỜNG MINH mới gỡ; vắng ⇒ sai kiểu (validateStopValue).
@@ -988,9 +990,9 @@ export const deviceAdapterRouter = router({
             reason: input.reason,
             nguoiSua: nguoiSuaTu(ctx),
             phamViMay,
-            // H1 (a) 3 — TOTP tươi mức 5, CUỐI (sau kiểm hợp lệ trong giao dịch của datStopPin).
-            kiemCuoi: () => kiemTotpCauHinh(ctx, input.totpCode),
-          });
+            // H1 (a) 3 — TOTP tươi mức 5, CUỐI (sau kiểm hợp lệ trong giao dịch của datStopPin) — cửa đồng bộ, mã kiểm ngoài giao dịch.
+            kiemCuoi: async () => cuaTotp(),
+          }), () => kiemTotpCauHinh(ctx, input.totpCode));
         } catch (e) {
           if (e instanceof StopPinLoi) loiStopPin(e);
           throw e;

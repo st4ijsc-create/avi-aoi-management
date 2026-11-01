@@ -353,8 +353,13 @@ describe("scadaKenh.capNhat — quyền, kiểm hợp lệ, audit trong giao d�
   it("audit trong CÙNG giao dịch: audit lỗi SAU khi đã chèn ⇒ thay đổi rollback và KHÔNG còn dòng audit lẻ", async () => {
     const ld = lyDo("hong");
     H.hongSauAudit = ld;
+    const canhBao = vi.spyOn(console, "warn");
     const e = await loiCua(engA.capNhat({ tagId: tg.out1, patch: { actuationLevel: 4, writeMax: 9 }, lyDo: ld }));
-    expect(e.message).toContain("R1aT12-hong-sau-audit");
+    // R1b-2b-2a T5B fix 1 (điều kiện 4) — capNhat đòi mã ⇒ lỗi ở lượt 2 (sau khi mã đã tiêu) ra CONFLICT scadaTotpDaDungDuLieuDoi; lỗi gốc nằm ở
+    // log máy chủ (maGoc "UNKNOWN": Error thô, không phải appError).
+    expect(e).toMatchObject({ code: "CONFLICT", appCode: "OPERATION_FAILED", appParams: { reason: "scadaTotpDaDungDuLieuDoi", maGoc: "UNKNOWN" } });
+    expect(canhBao.mock.calls.some((c) => String(c[0]).includes("R1aT12-hong-sau-audit"))).toBe(true);
+    canhBao.mockRestore();
     expect(await cotTag(tg.out1)).toMatchObject({ actuationLevel: null, writeMax: null });
     expect(await auditTheoLyDo(ld)).toHaveLength(0);
   });
