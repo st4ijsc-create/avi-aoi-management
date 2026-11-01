@@ -13,7 +13,8 @@
  * (B) Sổ cái MỌI tham chiếu tới `dispatch` của commandDispatcher trong `server/**` (không test): nhập tĩnh `import { dispatch [as x] }`, nhập động
  *     `const { dispatch } = await import(…commandDispatcher)` hoặc `ns.dispatch` của `import * as ns` / `const ns = await import(…)`. Mỗi tham chiếu (lời gọi
  *     hoặc truyền như giá trị) phải nằm trong `SO_CAI_DISPATCH` với NGUỒN KHOÁ đã phân loại; đường lập trình (`mien_lap_trinh`) phải có thuộc tính
- *     `idempotencyKey` của đối số là lời gọi `khoaDispatchLapTrinh(…)`. Điểm mới / điểm biến mất ⇒ đỏ.
+ *     `idempotencyKey` của đối số là lời gọi `khoaDispatchLapTrinh(…)` (A2(a): hoặc định danh của `const x = khoaDispatchLapTrinh(…)` trong CÙNG hàm — hàm trả
+ *     null khi phần bên gọi rỗng, bên gọi từ chối trước dispatch()). Điểm mới / điểm biến mất ⇒ đỏ.
  * (D) T6d fix 1 (review M4) — sổ cái MỌI chỗ tra / ghi `program_deployments` theo khoá (`eq(programDeployments.idempotencyKey, …)` / `.insert(programDeployments)`)
  *     trong `server/**`: chỗ tra phải lọc `requestedBy`; nguồn khoá đã phân loại (`mien_trong_ham` ⇒ hàm bao gọi hàm đặt miền — vd URSim deploy).
  * Chống quét rỗng: (A) tập điểm gọi ĐÃ đặt miền ĐÚNG bằng `DIEM_DA_DAT_MIEN`; (B), (D) tập tham chiếu ĐÚNG bằng sổ cái; số tệp quét > 0.
@@ -230,11 +231,41 @@ export function thamChieuDispatch(rel: string, src: string): ThamChieuDispatch[]
   };
   tham1(sf);
   const ra: ThamChieuDispatch[] = [];
+  const laGoiDatMienDispatch = (e: ts.Expression | undefined): boolean => !!e && ts.isCallExpression(e) && tenGoi(e.expression) === "khoaDispatchLapTrinh";
+  const hamGan = (n: ts.Node): ts.Node => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isFunctionDeclaration(p) || ts.isMethodDeclaration(p) || ts.isFunctionExpression(p) || ts.isArrowFunction(p)) return p;
+    return sf;
+  };
+  /**
+   * A2(a) — `khoaDispatchLapTrinh` trả `null` khi phần bên gọi rỗng (bên gọi trả lời từ chối, không gọi dispatch()) ⇒ điểm gọi đọc kết quả vào một
+   * `const` rồi truyền định danh: chấp nhận định danh CHỈ KHI nó là `const <tên> = khoaDispatchLapTrinh(…)` khai báo trong CÙNG hàm bao với lời gọi
+   * dispatch (không `let` — gán lại được; không khai ở hàm khác; không hàm đặt miền khác).
+   */
+  const constDatMien = (id: ts.Identifier): boolean => {
+    const ham = hamGan(id);
+    let co = false;
+    const t = (m: ts.Node): void => {
+      if (co) return;
+      if (
+        ts.isVariableDeclaration(m) &&
+        ts.isIdentifier(m.name) &&
+        m.name.text === id.text &&
+        ts.isVariableDeclarationList(m.parent) &&
+        (m.parent.flags & ts.NodeFlags.Const) !== 0 &&
+        laGoiDatMienDispatch(m.initializer) &&
+        hamGan(m) === ham
+      )
+        co = true;
+      else ts.forEachChild(m, t);
+    };
+    t(ham);
+    return co;
+  };
   const doiSoMien = (call: ts.CallExpression | undefined): boolean => {
     const o = call?.arguments[0];
     if (!o || !ts.isObjectLiteralExpression(o)) return false;
     const p = o.properties.find((x): x is ts.PropertyAssignment => ts.isPropertyAssignment(x) && ts.isIdentifier(x.name) && x.name.text === "idempotencyKey");
-    return !!p && ts.isCallExpression(p.initializer) && tenGoi(p.initializer.expression) === "khoaDispatchLapTrinh";
+    return !!p && (laGoiDatMienDispatch(p.initializer) || (ts.isIdentifier(p.initializer) && constDatMien(p.initializer)));
   };
   const tham2 = (n: ts.Node): void => {
     let laTC = false;
@@ -336,6 +367,15 @@ describe("★★★ census T6d — khoá idempotency của bên gọi tới disp
     expect(thamChieuDispatch("server/x.ts", `import { dispatch } from "./ot/commandDispatcher"; const deps = { dispatch, x: 1 };`)).toEqual([{ diem: "server/x.ts#<module>", khoaQuaMienLapTrinh: false }]); // thuộc tính rút gọn = truyền như giá trị
     expect(thamChieuDispatch("server/x.ts", `import { dispatch } from "./ot/commandDispatcher"; start({ dispatch: dispatch });`)).toEqual([{ diem: "server/x.ts#<module>", khoaQuaMienLapTrinh: false }]);
     expect(thamChieuDispatch("server/x.ts", `import { isOtControlEnabled } from "./ot/commandDispatcher"; dispatch(x);`)).toEqual([]); // dispatch KHÁC (không nhập từ commandDispatcher)
+    // A2(a) — khoá qua `const` gán từ khoaDispatchLapTrinh trong CÙNG hàm ⇒ mien=true; `let` / hàm đặt miền khác / const ở hàm khác ⇒ mien=false
+    const dong = (than: string) => thamChieuDispatch("server/x.ts", `export async function g(o) { const { dispatch } = await import("./commandDispatcher"); ${than} }`);
+    expect(dong(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: true }]);
+    expect(dong(`let khoa = khoaDispatchLapTrinh(o.k, 1); khoa = o.k; return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+    expect(dong(`const khoa = khoaMienLapTrinh(1, o.k); return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+    expect(dong(`const khoa = o.k; return dispatch({ idempotencyKey: khoa });`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+    expect(
+      thamChieuDispatch("server/x.ts", `const khoa = khoaDispatchLapTrinh(k, 1); export async function g() { const { dispatch } = await import("./commandDispatcher"); return dispatch({ idempotencyKey: khoa }); }`),
+    ).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
   });
 });
 

@@ -69,7 +69,7 @@ import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import { boundedKey, FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
-import { dispatch, perWriteKey, bamLenhOt, quyetDinhKhoa, MA_KHOA_DUNG_LAI, type DispatchResult, type DispatchInput, type HangTheoKhoa } from "./commandDispatcher";
+import { dispatch, perWriteKey, bamLenhOt, quyetDinhKhoa, MA_KHOA_DUNG_LAI, MA_THIEU_KHOA, type DispatchResult, type DispatchInput, type HangTheoKhoa } from "./commandDispatcher";
 import type { OtCommandResult, OtWrite } from "./otDriver";
 import { coTheDaBayCua } from "../equipment/lenhTruocCoTheDaBay";
 import { interlockEvents, interlockRules } from "../../../drizzle/schema";
@@ -1070,23 +1070,28 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(H.bay).toBe(0);
     }, 30_000);
 
-    it(`KK-2 khoá ${ten} — lệnh THƯỜNG (hitl): kết quả bình thường acked +1 gói; gọi lại CÙNG lệnh ⇒ phát lại (0 gói); KHÁC giá trị ⇒ IDEMPOTENCY_KEY_REUSED (0 gói) — không ném`, async () => {
+    // A2(a) (dieu-phoi 2026-11-02) — trước A2(a): lệnh THƯỜNG không khoá acked +1 gói / phát lại / IDEMPOTENCY_KEY_REUSED. Từ A2(a): bị TỪ CHỐI ở cửa vào
+    // (IDEMPOTENCY_KEY_REQUIRED, sau cổng uỷ quyền, trước idempotency) — mỗi lần gọi một lời từ chối MỚI (hàng khoá NULL), 0 gói, không ném.
+    it(`KK-2 khoá ${ten} — lệnh THƯỜNG (hitl): A2(a) ⇒ IDEMPOTENCY_KEY_REQUIRED, 0 gói, hàng rejected khoá NULL; gọi lại (cùng / khác giá trị) ⇒ lại từ chối như vậy (không phát lại, không IDEMPOTENCY_KEY_REUSED) — không ném`, async () => {
       await trongGiaoDich(async (tx) => {
         const d = driverGia();
         const ad = await taoAdapter(tx, d);
         const a = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }]);
-        expect(a).toMatchObject({ ok: true, simulated: false, status: "acked" });
-        expect(d.soGhi).toBe(1);
+        expect(a).toMatchObject({ ok: false, simulated: false, status: "rejected", reason: MA_THIEU_KHOA });
+        expect(d.soGhi).toBe(0);
+        const hangA = await hangCua(tx, a);
+        expect(hangA.map((h) => ({ status: h.status, key: h.idempotencyKey }))).toEqual([{ status: "rejected", key: null }]);
         const b = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }]);
         expect(chieu(b)).toEqual(chieu(a));
+        expect(b.commandLogIds.some((id) => a.commandLogIds.includes(id))).toBe(false); // lời từ chối MỚI, không phát lại
         const c = await guiKK(tx, ad, [{ tagKey: "t", value: 2 }]);
-        expect(c).toMatchObject({ ok: false, reason: MA_KHOA_DUNG_LAI });
-        expect(d.soGhi).toBe(1);
+        expect(c).toMatchObject({ ok: false, reason: MA_THIEU_KHOA });
+        expect(d.soGhi).toBe(0);
       });
       expect(H.bay).toBe(0);
     }, 30_000);
 
-    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng dưới khoá mới (khong_khoa, không phát lại); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: mô phỏng ok / thật PRECONDITION_FAILED (kết quả bình thường, 0 gói)`, async () => {
+    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng dưới khoá mới (khong_khoa, không phát lại); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: STOP mô phỏng ok / lệnh thường thật IDEMPOTENCY_KEY_REQUIRED (A2(a); kết quả bình thường, 0 gói)`, async () => {
       await trongGiaoDich(async (tx) => {
         const d = driverGia();
         const ad = await taoAdapter(tx, d);
@@ -1106,13 +1111,15 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
         expect(d.soGhi).toBe(1);
         expect(lanTruocCua((await hangCua(tx, s3))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
         const thatNoAct = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }], "set_param", false);
-        expect(thatNoAct).toMatchObject({ ok: false, reason: "PRECONDITION_FAILED" });
+        // A2(a): lệnh THƯỜNG không khoá (hitl không actionId qua cổng (1) — cổng ấy chỉ kiểm khi CÓ actionId) ⇒ IDEMPOTENCY_KEY_REQUIRED (trước: PRECONDITION_FAILED
+        // ở đường ghi thật); vẫn 0 gói, kết quả bình thường.
+        expect(thatNoAct).toMatchObject({ ok: false, reason: MA_THIEU_KHOA });
         expect(d.soGhi).toBe(1);
       });
       expect(H.bay).toBe(0);
     }, 30_000);
 
-    it(`★ KK-4 khoá ${ten} — INTERLOCK: lệnh bảo vệ thường (reduce_speed) acked +1 gói; STOP theo NỘI DUNG (stop_line ghi tag ghim = giá trị ghim) HAI lần ⇒ CẢ HAI ra thiết bị (lần hai khong_khoa)`, async () => {
+    it(`★ KK-4 khoá ${ten} — INTERLOCK: lệnh bảo vệ thường (reduce_speed) không khoá ⇒ A2(a) IDEMPOTENCY_KEY_REQUIRED, 0 gói; STOP theo NỘI DUNG (stop_line ghi tag ghim = giá trị ghim) HAI lần ⇒ CẢ HAI ra thiết bị (lần hai khong_khoa)`, async () => {
       await trongGiaoDich(async (tx) => {
         process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
         const d = driverGia();
@@ -1129,15 +1136,16 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
           };
         };
         const giam = await luat("reduce_speed", "t", 30);
-        expect(await giam()).toMatchObject({ ok: true, simulated: false, status: "acked" });
-        expect(d.soGhi).toBe(1);
+        // A2(a): trước — acked +1 gói; nay lệnh bảo vệ THƯỜNG không khoá bị từ chối (đường interlock sống luôn sinh khoá `il-<luật>-<sự kiện>`)
+        expect(await giam()).toMatchObject({ ok: false, simulated: false, status: "rejected", reason: MA_THIEU_KHOA });
+        expect(d.soGhi).toBe(0);
         const dung = await luat("stop_line", "a", 0);
         const s1 = await dung();
         expect(s1).toMatchObject({ ok: true, simulated: false, status: "acked" });
-        expect(d.soGhi).toBe(2);
+        expect(d.soGhi).toBe(1);
         const s2 = await dung();
         expect(s2).toMatchObject({ ok: true, simulated: false, status: "acked" });
-        expect(d.soGhi).toBe(3);
+        expect(d.soGhi).toBe(2);
         expect(lanTruocCua((await hangCua(tx, s2))[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
       });
       expect(H.bay).toBe(0);

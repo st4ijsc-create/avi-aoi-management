@@ -19149,6 +19149,9 @@
     "maLoi": {
       "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
       "IDEMPOTENCY_KEY_REUSED": "Lệnh này KHÔNG được gửi: một lệnh trước, khác lệnh này, đã dùng cùng khoá (thiết bị, tag, giá trị hoặc người yêu cầu khác). Không rõ lệnh trước (cùng khoá) đã áp vào thiết bị chưa — kiểm thiết bị trước khi chạy tiếp; KHÔNG tự gửi lại với khoá mới.",
+      "IDEMPOTENCY_KEY_REQUIRED": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency nên một lần thử lại có thể ghi xuống thiết bị hai lần. Gửi lại kèm khoá idempotency (HMI và các đường có sẵn tự thêm khoá).",
+      "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency và ghi vào tag DỪNG, nhưng không phải lệnh DỪNG (lẫn giá trị khác, hoặc giá trị không phải giá trị DỪNG). KHÔNG được gửi — dùng nút dừng máy trên HMI hoặc gửi lại kèm khoá.",
+      "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency và không đọc được giá trị DỪNG của thiết bị, nên không chứng minh được đây là lệnh DỪNG. KHÔNG được gửi — dùng nút dừng máy trên HMI hoặc gửi lại kèm khoá.",
       "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
       "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
       "OT_S7_BIT_NGOAI_DAI": "Địa chỉ bit S7 nằm ngoài 0..7 (cấu hình tag sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Sửa địa chỉ tag (vd DB1,X1.0 thay cho DB1,X0.8); cần dừng máy ngay thì dùng E-STOP cứng tại máy",

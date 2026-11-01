@@ -42,7 +42,7 @@ describe("T6d — miền khoá lập trình (thuần)", () => {
     const cuaB = khoaMienLapTrinh(12, "K"); // "pd:u12:K"
     expect(khoaDispatchLapTrinh(cuaB, 12)).toBe(cuaB); // đúng người ⇒ giữ
     expect(khoaDispatchLapTrinh(cuaB, 3)).toBe(khoaMienLapTrinh(3, cuaB)); // người khác ⇒ miền của người yêu cầu
-    expect(khoaDispatchLapTrinh(cuaB, 3).startsWith("pd:u3:")).toBe(true);
+    expect(khoaDispatchLapTrinh(cuaB, 3)?.startsWith("pd:u3:")).toBe(true); // A2(a): kiểu trả string | null (null = phần bên gọi rỗng)
     expect(khoaDispatchLapTrinh(cuaB, 1)).toBe(khoaMienLapTrinh(1, cuaB)); // "pd:u12:" KHÔNG phải miền của u1 (tiền tố số)
     expect(khoaDispatchLapTrinh("pd:u1:K", 12)).toBe(khoaMienLapTrinh(12, "pd:u1:K"));
   });

@@ -1175,6 +1175,17 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     }
   }
 
+  // ── (1b) R1b-2b-2a A2(a) (+ AMENDMENT 1) — lệnh KHÔNG khoá idempotency mà KHÔNG phải STOP ⇒ TỪ CHỐI. ──────────
+  // Ngay SAU cổng uỷ quyền (1) — lệnh không được uỷ quyền nhận đúng lời từ chối uỷ quyền như trước (không mã khoá, không cảnh báo khẩn: người không
+  // được uỷ quyền không bắn được cảnh báo / hàng sổ hàng loạt; cổng (1) chỉ ĐỌC khi thành công) — và TRƯỚC idempotency (2), giữ chỗ, ý định, mọi tiếp
+  // xúc thiết bị. Không khoá = không chống trùng (thử lại = ghi hai lần). `trim()` CHỈ để thử rỗng: khoá không rỗng không bao giờ bị sửa (KK-6).
+  // STOP (theo loại, hoặc nội dung = ghim) không khoá VẪN BAY như trước (G9 NO_KEY, fix 2 `khong_khoa`). Lô trộn (tag ghim STOP + write khác, loại lệnh
+  // thường) KHÔNG phải STOP theo phân loại của hệ ⇒ từ chối CẢ lô (không gửi một phần — tách lô là backlog A2(e)), có cảnh báo khẩn.
+  if (input.idempotencyKey.trim() === "") {
+    const pl = await phanLoaiStopKhoa(db, input);
+    if (pl.loai !== "stop") return tuChoiThieuKhoa(db, input, pl);
+  }
+
   // ── (2) Idempotency: a prior terminal command for this key → return cached. ──
   // commandLog rows store a per-write key; every write's key is read (T6c: the replay rolls up EVERY row; SCADA R1a T3 fix round 1 M-1: a
   // refusal of ONE later write ledgers only that write, under its own index).
@@ -2223,16 +2234,150 @@ export function quyetDinhKhoa(
 }
 
 /**
+ * T6d / A2(a) — phân loại một lệnh theo ghim STOP cho mục đích khoá (MỘT lần đọc ghim):
+ *   • `stop`         — loại lệnh STOP (`isStopCommandType`), HOẶC nội dung đúng các tag ghim STOP với giá trị ghim (`matchPinnedStop`);
+ *   • `giong_stop`   — không phải STOP nhưng có write vào một tag ghim STOP (lô trộn, hoặc giá trị khác ghim);
+ *   • `ghim_loi_doc` — không đọc được ghim của adapter (`loadStopPins` ném) ⇒ không chứng minh được STOP;
+ *   • `thuong`       — còn lại.
+ */
+type PhanLoaiStopKhoa = { loai: "stop" } | { loai: "giong_stop" } | { loai: "ghim_loi_doc"; loi: string } | { loai: "thuong" };
+
+async function phanLoaiStopKhoa(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<PhanLoaiStopKhoa> {
+  if (isStopCommandType(input.commandType)) return { loai: "stop" };
+  let pins: StopPin[];
+  try {
+    pins = await loadStopPins(db, input.adapterId);
+  } catch (err) {
+    return { loai: "ghim_loi_doc", loi: String((err as Error)?.message ?? err).slice(0, 160) };
+  }
+  let khopGhim = false;
+  try {
+    khopGhim = matchPinnedStop(pins, input.writes).ok;
+  } catch {
+    khopGhim = false; // như trước A2(a): lỗi khi so ⇒ không phải STOP
+  }
+  if (khopGhim) return { loai: "stop" };
+  return input.writes.some((w) => pins.some((p) => p.tagKey === w.tagKey)) ? { loai: "giong_stop" } : { loai: "thuong" };
+}
+
+/**
  * T6d — lệnh này có phải STOP cho mục đích chốt khoá không: loại lệnh STOP (`isStopCommandType`), HOẶC nội dung đúng các tag ghim STOP với giá trị ghim
  * (đọc ghim của adapter — CHỈ khi khoá đã dùng). Đọc lỗi ⇒ false (lệnh thường: từ chối, không gửi). Chỉ quyết "không nuốt STOP": mọi cổng sau vẫn áp.
+ * A2(a): cùng phân loại với cửa từ chối lệnh không khoá (`phanLoaiStopKhoa`), hành vi không đổi.
  */
 async function laStopChoKhoa(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<boolean> {
-  if (isStopCommandType(input.commandType)) return true;
-  try {
-    return matchPinnedStop(await loadStopPins(db, input.adapterId), input.writes).ok;
-  } catch {
+  return (await phanLoaiStopKhoa(db, input)).loai === "stop";
+}
+
+// ─── R1b-2b-2a A2(a) — lệnh THƯỜNG không khoá idempotency bị từ chối ở cửa vào ────────────────────────────────────────────────
+
+/** A2(a) — lệnh thường (không write nào chạm tag ghim STOP) không có khoá idempotency. */
+export const MA_THIEU_KHOA = "IDEMPOTENCY_KEY_REQUIRED";
+/** A2(a) — không khoá, có write vào tag ghim STOP nhưng KHÔNG phải STOP (lô trộn / giá trị khác ghim) — cảnh báo khẩn. */
+export const MA_THIEU_KHOA_GIONG_STOP = "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE";
+/** A2(a) — không khoá, ghim STOP của adapter không đọc được ⇒ không chứng minh được STOP — cảnh báo khẩn. */
+export const MA_THIEU_KHOA_GHIM_LOI_DOC = "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE";
+const CHI_TIET_THIEU_KHOA = "idempotency key required for a non-STOP command — not sent";
+
+/** A2(a) AMENDMENT 1 — cửa sổ khử trùng cảnh báo khẩn của lệnh không khoá giống STOP / ghim lỗi đọc. */
+export const KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS = 60_000;
+/** A2(a) AMENDMENT 2 — trần số bộ CÒN SỐNG trong bảng khử trùng; đầy ⇒ bộ mới gộp vào khoá tràn (không bao giờ đuổi bộ còn sống). */
+export const KHOA_BAT_BUOC_CANH_BAO_TOI_DA = 1024;
+/** A2(a) AMENDMENT 2 — khoá tràn dùng chung (một cảnh báo / cửa sổ cho mọi bộ tràn). */
+export const KHOA_BAT_BUOC_CANH_BAO_TRAN = "__tran__";
+
+type CuaSoCanhBao = { batDau: number; lanThu: number };
+const cuaSoCanhBaoKhongKhoa = new Map<string, CuaSoCanhBao>();
+let cuaSoTranKhongKhoa: CuaSoCanhBao | null = null;
+let toiDaCanhBaoKhongKhoa = KHOA_BAT_BUOC_CANH_BAO_TOI_DA;
+
+/**
+ * A2(a) AMENDMENT 1 + 2 — đếm một lần từ chối vào cửa sổ khử trùng của bộ `khoa`; `daPhat` ⇒ lần ĐẦU của cửa sổ (phát cảnh báo), sau đó trong cửa sổ
+ * KHÔNG phát (nhưng mỗi lần vẫn ghi hàng sổ, `lanThu` đếm). Bộ hết cửa sổ (≥ `KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS`) ⇒ cửa sổ mới. Bảng đầy (sau khi dọn bộ
+ * hết hạn) ⇒ KHÔNG đuổi bộ còn sống (nó sẽ phát lại) — bộ mới gộp vào `KHOA_BAT_BUOC_CANH_BAO_TRAN` (cửa sổ riêng, một cảnh báo / cửa sổ). Xuất cho test.
+ */
+export function demCanhBaoKhongKhoa(khoa: string, now: number = Date.now()): { khoa: string; lanThu: number; daPhat: boolean; batDau: number } {
+  const conSong = (e: CuaSoCanhBao) => now - e.batDau < KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS;
+  const e = cuaSoCanhBaoKhongKhoa.get(khoa);
+  if (e && conSong(e)) {
+    e.lanThu += 1;
+    return { khoa, lanThu: e.lanThu, daPhat: false, batDau: e.batDau };
+  }
+  if (e) cuaSoCanhBaoKhongKhoa.delete(khoa);
+  if (cuaSoCanhBaoKhongKhoa.size >= toiDaCanhBaoKhongKhoa) {
+    for (const [k, v] of cuaSoCanhBaoKhongKhoa) if (!conSong(v)) cuaSoCanhBaoKhongKhoa.delete(k);
+  }
+  if (cuaSoCanhBaoKhongKhoa.size >= toiDaCanhBaoKhongKhoa) {
+    if (cuaSoTranKhongKhoa && conSong(cuaSoTranKhongKhoa)) {
+      cuaSoTranKhongKhoa.lanThu += 1;
+      return { khoa: KHOA_BAT_BUOC_CANH_BAO_TRAN, lanThu: cuaSoTranKhongKhoa.lanThu, daPhat: false, batDau: cuaSoTranKhongKhoa.batDau };
+    }
+    cuaSoTranKhongKhoa = { batDau: now, lanThu: 1 };
+    return { khoa: KHOA_BAT_BUOC_CANH_BAO_TRAN, lanThu: 1, daPhat: true, batDau: now };
+  }
+  cuaSoCanhBaoKhongKhoa.set(khoa, { batDau: now, lanThu: 1 });
+  return { khoa, lanThu: 1, daPhat: true, batDau: now };
+}
+
+/** TEST ONLY — xoá bảng khử trùng; `toiDa` > 0 ⇒ hạ trần (mặc định `KHOA_BAT_BUOC_CANH_BAO_TOI_DA`). Ngoài vitest: bỏ qua. */
+export function __datLaiCanhBaoKhongKhoaChoTest(toiDa?: number | null): boolean {
+  if (!process.env.VITEST) {
+    console.error("[Dispatch] __datLaiCanhBaoKhongKhoaChoTest ignored outside vitest");
     return false;
   }
+  cuaSoCanhBaoKhongKhoa.clear();
+  cuaSoTranKhongKhoa = null;
+  toiDaCanhBaoKhongKhoa = typeof toiDa === "number" && Number.isSafeInteger(toiDa) && toiDa > 0 ? toiDa : KHOA_BAT_BUOC_CANH_BAO_TOI_DA;
+  return true;
+}
+
+/** A2(a) AMENDMENT 1 — bộ khử trùng: (adapterId, tập tagKey KHÁC NHAU đã sắp, người yêu cầu — `requestedBy ?? confirmedBy` / luật interlock). */
+function boKhuTrungKhongKhoa(input: DispatchInput): string {
+  const tags = [...new Set(input.writes.map((w) => String(w.tagKey)))].sort();
+  const t = input.triggeredBy;
+  const ai = t.kind === "hitl" ? `u${t.requestedBy ?? t.confirmedBy}` : `r${t.ruleId}`;
+  return `${input.adapterId}|${JSON.stringify(tags)}|${ai}`;
+}
+
+/**
+ * A2(a) — từ chối lệnh KHÔNG phải STOP mà không có khoá idempotency (đã qua cổng uỷ quyền (1), TRƯỚC idempotency (2), giữ chỗ, ý định, thiết bị): hàng
+ * rejected cho mỗi write, KHÔNG mang khoá (`nullKey` — khoá rỗng là của chung mọi lệnh không khoá); không gửi gì. Biến thể giống STOP / ghim lỗi đọc ⇒
+ * hàng mang `ackValue.canhBao { khoa, lanThu, daPhat }` và cảnh báo khẩn (khử trùng theo bộ trong cửa sổ — `demCanhBaoKhongKhoa`).
+ */
+async function tuChoiThieuKhoa(db: LedgerDb, input: DispatchInput, pl: Exclude<PhanLoaiStopKhoa, { loai: "stop" }>): Promise<DispatchResult> {
+  const ma = pl.loai === "giong_stop" ? MA_THIEU_KHOA_GIONG_STOP : pl.loai === "ghim_loi_doc" ? MA_THIEU_KHOA_GHIM_LOI_DOC : MA_THIEU_KHOA;
+  const viSao =
+    pl.loai === "giong_stop"
+      ? "it writes a pinned STOP tag but is not a STOP"
+      : pl.loai === "ghim_loi_doc"
+        ? `the adapter's stop pins could not be read (${pl.loi}), so it cannot be proven a STOP`
+        : null;
+  const chiTiet = viSao ? `${CHI_TIET_THIEU_KHOA} (${viSao} — use the HMI machine stop, or resend with an idempotency key)` : CHI_TIET_THIEU_KHOA;
+  const canhBao = pl.loai === "thuong" ? null : demCanhBaoKhongKhoa(boKhuTrungKhongKhoa(input));
+  console.warn(
+    `[Dispatch] adapter ${input.adapterId}: ${ma} — "${input.commandType}" without an idempotency key refused, nothing sent (A2(a))${canhBao ? ` — alert ${canhBao.daPhat ? "raised" : `deduplicated (#${canhBao.lanThu} in window)`}` : ""}`,
+  );
+  const ids = await writeAll(db, input, "rejected", ma, chiTiet, undefined, undefined, {
+    nullKey: true,
+    ...(canhBao ? { ackExtra: { canhBao: { khoa: canhBao.khoa, lanThu: canhBao.lanThu, daPhat: canhBao.daPhat } } } : {}),
+  });
+  if (canhBao?.daPhat) {
+    const who = actors(input);
+    const kind = pl.loai === "giong_stop" ? "ot_keyless_stop_like_refused" : "ot_keyless_pin_unreadable_refused";
+    const tags = [...new Set(input.writes.map((w) => String(w.tagKey)))].join(", ");
+    const tran =
+      canhBao.khoa === KHOA_BAT_BUOC_CANH_BAO_TRAN
+        ? ` The keyless-refusal alert table is full (${toiDaCanhBaoKhongKhoa} live entries): this is overflow refusal #${canhBao.lanThu} in this ${KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS / 1000}-second window; further overflow refusals in the window are NOT alerted one by one (each one is in command_log).`
+        : "";
+    void raiseOtStopAlert(
+      kind,
+      input,
+      `OT command "${input.commandType}" for adapter ${input.adapterId} (tags: ${tags}) arrived WITHOUT an idempotency key and ${viSao} — the command was NOT sent (command_log #${ids.join(",")}). To stop the machine use the STOP path (HMI machine stop); otherwise resend the command with an idempotency key.${tran}`,
+      [who.requestedBy, who.confirmedBy],
+      `ot_keyless:${canhBao.khoa}:${canhBao.batDau}`,
+    );
+  }
+  return { ok: false, simulated: false, status: "rejected", reason: ma, results: failedResults(input, ma), commandLogIds: ids };
 }
 
 /** T6d — mã từ chối khi khoá đã dùng cho lệnh KHÁC (cùng mã với robot `IDEMPOTENCY_KEY_REUSED`). */

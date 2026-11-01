@@ -102,7 +102,7 @@ vi.mock("./otManager", () => ({
   resetAdapterSession: vi.fn(async () => ({ reset: true, via: "supervisor" })),
 }));
 
-import { dispatch, perWriteKey, _resetAdapterCommandQueuesForTests, OT_SAFETY_PREFLIGHT_DEADLINE_MS } from "./commandDispatcher";
+import { dispatch, perWriteKey, _resetAdapterCommandQueuesForTests, OT_SAFETY_PREFLIGHT_DEADLINE_MS, MA_THIEU_KHOA } from "./commandDispatcher";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 /** The first write is slower than the re-check threshold, so the command queued behind it waits past it. */
@@ -369,11 +369,15 @@ describe("T6d fix 2 — lệnh không khoá idempotency (đơn vị, DB giả, d
       expect((hang2.ackValue as Row).lanTruoc).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
     });
 
-    it(`khoá ${ten}: lệnh THƯỜNG ⇒ kết quả bình thường (acked, +1 gói), không ném`, async () => {
+    // A2(a) (dieu-phoi 2026-11-02) — trước: lệnh THƯỜNG không khoá acked +1 gói. Từ A2(a): bị TỪ CHỐI ở cửa vào (IDEMPOTENCY_KEY_REQUIRED), 0 gói, hàng
+    // rejected khoá NULL — vẫn không ném.
+    it(`khoá ${ten}: lệnh THƯỜNG ⇒ A2(a) IDEMPOTENCY_KEY_REQUIRED, 0 gói, hàng rejected khoá NULL — không ném`, async () => {
       const c = khongKhoa(input("cmd_jog", "set_jog"), khoa);
       const r = await within(dispatch(c), 3000);
-      expect(r).toMatchObject({ ok: true, simulated: false, status: "acked" });
-      expect(D.log.map((w) => w.tag)).toEqual(["cmd_jog"]);
+      expect(r).toMatchObject({ ok: false, simulated: false, status: "rejected", reason: MA_THIEU_KHOA });
+      expect(D.log).toHaveLength(0);
+      const hang = cmdLog.filter((x) => r.commandLogIds.includes(x.id as number));
+      expect(hang.map((x) => ({ status: x.status, key: x.idempotencyKey ?? null }))).toEqual([{ status: "rejected", key: null }]);
     });
 
     it(`khoá ${ten}: write THIẾU tagKey ⇒ từ chối bình thường ở bước tra tag (không ném ở bước 2), 0 gói`, async () => {

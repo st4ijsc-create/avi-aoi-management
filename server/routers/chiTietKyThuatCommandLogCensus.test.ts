@@ -334,6 +334,7 @@ const SO_CAI: Record<string, [Dem, PhanLoai, string]> = {
   "server/services/ot/commandDispatcher.ts#hangTheoKhoa": [{ cot_an_toan: 1, doc_nguyen_hang: 1 }, "ghi_canEdit", "R1b-2b-2a T6c/T6d — MỌI hàng kết quả của lô (khoá mới v2 + khoá cũ) + ý định write #0 cho chốt phát lại (quyetDinhKhoa / ketQuaPhatLai) ⇒ kết quả về NGƯỜI GỌI dispatch"],
   "server/services/ot/commandDispatcher.ts#stopGuiLaiVoiKhoaMoi": [{ sql_tho: 1 }, "noi_bo", "T6d — chuỗi log `command_log #id` (STOP gửi lại khi khoá trùng / lệch)"],
   "server/services/ot/commandDispatcher.ts#tuChoiKhoaDungLai": [{ sql_tho: 1 }, "noi_bo", "T6d — chuỗi log `command_log #id` (khoá đã dùng cho lệnh khác: từ chối, không gửi)"],
+  "server/services/ot/commandDispatcher.ts#tuChoiThieuKhoa": [{ sql_tho: 2 }, "noi_bo", "R1b-2b-2a A2(a) — chuỗi cảnh báo khẩn `command_log #id` + câu tràn \"each one is in command_log\" (lệnh không khoá bị từ chối, không gửi)"],
   "server/services/ot/commandDispatcher.ts#writeAll": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ từ chối"],
   "server/services/ot/commandDispatcher.ts#writeSimulated": [{ cot_an_toan: 1, ghi: 1 }, "chi_cot_an_toan", "insert sổ mô phỏng"],
   "server/services/ot/commandDispatcher.ts#auditPinnedStopOverride": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],

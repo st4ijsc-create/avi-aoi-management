@@ -44,7 +44,14 @@ export function laKhoaMienCua(khoa: string, userId: number): boolean {
  * Khoá `dispatch()` của một lượt ghi thiết bị từ đường lập trình: khoá đã ở miền CỦA người yêu cầu ⇒ giữ nguyên (hàng deploy từ T6d); khoá thô (hàng ghi
  * TRƯỚC T6d, hoặc bên gọi nội bộ quên đặt miền) HOẶC khoá ở miền của NGƯỜI KHÁC (vd khoá thô trước T6d của A viết đúng chữ `pd:u<B>:K`) ⇒ đặt vào miền
  * của người yêu cầu (T6d fix 1, review M2). Khoá lập trình KHÔNG BAO GIỜ tới `dispatch()` ngoài miền `pd:u<người yêu cầu>:`.
+ * R1b-2b-2a A2(a) — phần BÊN GỌI rỗng ⇒ `null` (TỪ CHỐI; bên gọi trả lời từ chối có mã `IDEMPOTENCY_KEY_REQUIRED`, không gọi dispatch()): khoá không phải
+ * chuỗi / rỗng / chỉ khoảng trắng, hoặc khoá miền `pd:u<N>:` đúng chữ (phần sau rỗng / chỉ khoảng trắng — của người này hay người khác). Không dựa vào zod
+ * của router: `pd:u<N>:` không rỗng nhưng là khoá CHUNG của mọi lượt không khoá của người ấy.
  */
-export function khoaDispatchLapTrinh(khoa: string, nguoiYeuCau: number): string {
+export function khoaDispatchLapTrinh(khoa: string, nguoiYeuCau: number): string | null {
+  if (typeof khoa !== "string" || khoa.trim() === "" || /^pd:u\d+:\s*$/.test(khoa)) return null;
   return laKhoaMienCua(khoa, nguoiYeuCau) ? khoa : khoaMienLapTrinh(nguoiYeuCau, khoa);
 }
+
+/** A2(a) — câu từ chối (mã đứng đầu) khi `khoaDispatchLapTrinh` trả null. */
+export const LOI_KHOA_LAP_TRINH_RONG = "IDEMPOTENCY_KEY_REQUIRED: programming deploy without an idempotency key (empty caller part) — not sent";

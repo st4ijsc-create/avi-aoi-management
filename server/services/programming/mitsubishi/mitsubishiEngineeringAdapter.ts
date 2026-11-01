@@ -26,7 +26,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from "node:crypto";
-import { khoaDispatchLapTrinh } from "../khoaMienLapTrinh"; // R1b-2b-2a T6d — khoá lập trình tới dispatch() luôn ở miền `pd:`
+import { khoaDispatchLapTrinh, LOI_KHOA_LAP_TRINH_RONG } from "../khoaMienLapTrinh"; // R1b-2b-2a T6d — khoá lập trình tới dispatch() luôn ở miền `pd:`
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -162,6 +162,12 @@ export class MitsubishiEngineeringAdapter implements ProgrammingAdapter {
       return { ok: false, status: "rejected", simulated: true, error: "HITL sign-off (confirmedBy) required to push MELSEC parameters." };
     }
 
+    // R1b-2b-2a A2(a) — phần bên gọi của khoá rỗng ⇒ từ chối có mã, KHÔNG gọi dispatch() (không dựa vào zod của router).
+    const khoa = khoaDispatchLapTrinh(opts.idempotencyKey, opts.hitl.requestedBy);
+    if (khoa === null) {
+      return { ok: false, status: "rejected", simulated: true, error: LOI_KHOA_LAP_TRINH_RONG, detail: { reason: "IDEMPOTENCY_KEY_REQUIRED" } };
+    }
+
     const { dispatch } = await import("../../ot/commandDispatcher");
     const res = await dispatch({
       adapterId,
@@ -176,7 +182,7 @@ export class MitsubishiEngineeringAdapter implements ProgrammingAdapter {
       },
       // R1b-2b-2a T6d — điểm DUY NHẤT của đường lập trình gọi dispatch(): khoá luôn ở miền `pd:u<người yêu cầu>:` (hàng deploy cũ khoá thô cũng vậy) ⇒
       // không bao giờ đụng khoá HMI / interlock / FOE / AI hay khoá lập trình của người khác (census khoaMienLapTrinh).
-      idempotencyKey: khoaDispatchLapTrinh(opts.idempotencyKey, opts.hitl.requestedBy),
+      idempotencyKey: khoa,
     });
 
     // Map DispatchResult → ProgDeployResult (honest, mirrors the dispatcher outcome).

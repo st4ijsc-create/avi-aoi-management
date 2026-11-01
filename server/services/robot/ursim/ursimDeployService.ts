@@ -31,7 +31,7 @@ import { programDeployments } from "../../../../drizzle/schema";
 import { dpcDeployEnabled } from "../../programming/programmingService";
 import { validateUrscriptOnUrsim, ursimEnabled, type UrsimValidationResult } from "./ursimHarness";
 import { resolveSimTarget } from "./simTargetRegistry";
-import { khoaDispatchLapTrinh } from "../../programming/khoaMienLapTrinh";
+import { khoaDispatchLapTrinh, LOI_KHOA_LAP_TRINH_RONG } from "../../programming/khoaMienLapTrinh";
 
 export interface UrsimDeployRequest {
   /** The URScript TEXT (as produced by the D1 transpiler / a build). */
@@ -103,7 +103,10 @@ export async function deployUrscriptToUrsim(reqBenGoi: UrsimDeployRequest): Prom
   // SCADA R1b-2b-2a T6d fix 1 (review M4) — the caller's key goes into the programming key DOMAIN of the requester before any lookup / insert
   // (`pd:u<requestedBy>:…`, same function as the Mitsubishi path), and the lookup filters `requestedBy`: another user's / factory's key is simply a
   // different key (never their row, never "already exists"). Census `khoaMienLapTrinh.census.test.ts` §D.
-  const req: UrsimDeployRequest = { ...reqBenGoi, idempotencyKey: khoaDispatchLapTrinh(reqBenGoi.idempotencyKey, reqBenGoi.hitl.requestedBy) };
+  // R1b-2b-2a A2(a) — phần bên gọi rỗng ⇒ từ chối (không tra, không ghi, không chạm bộ điều khiển).
+  const khoa = khoaDispatchLapTrinh(reqBenGoi.idempotencyKey, reqBenGoi.hitl.requestedBy);
+  if (khoa === null) return { status: "rejected", simulated: true, reason: LOI_KHOA_LAP_TRINH_RONG };
+  const req: UrsimDeployRequest = { ...reqBenGoi, idempotencyKey: khoa };
   const db = await getDb();
 
   // Idempotency — return a prior terminal deployment for this key (of THIS requester) as-is.

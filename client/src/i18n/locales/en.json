@@ -19149,6 +19149,9 @@
     "maLoi": {
       "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
       "IDEMPOTENCY_KEY_REUSED": "This command was NOT sent: an earlier, different command already used the same key (another device, tag, value or requester). It is unknown whether that earlier command was applied to the device — check the device before continuing; do NOT resend automatically under a new key.",
+      "IDEMPOTENCY_KEY_REQUIRED": "This command was NOT sent: it carries no idempotency key, so a retry could write it to the device twice. Resend it with an idempotency key (the HMI and the other built-in paths add one automatically).",
+      "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE": "This command was NOT sent: it has no idempotency key and it writes a STOP tag, but it is not a STOP command (other values are mixed in, or the value is not the STOP value). NOT sent — use the HMI machine stop or resend with a key.",
+      "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE": "This command was NOT sent: it has no idempotency key and the device's STOP values could not be read, so it cannot be proven to be a STOP. NOT sent — use the HMI machine stop or resend with a key.",
       "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
       "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",

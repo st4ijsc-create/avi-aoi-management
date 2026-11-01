@@ -233,6 +233,13 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
       if (issuedBy == null) {
         return rejectedAck(cmd, "INVALID_ARGS");
       }
+      // R1b-2b-2a A2(a) — kiểu khai `idempotency_key: string` nhưng lúc chạy không ai kiểm: khoá = idempotency_key, không có thì command_id (thiếu / không
+      // phải chuỗi / chỉ khoảng trắng = không có). Cả hai không có ⇒ INVALID_ARGS, KHÔNG gọi dispatch() (lệnh không khoá không có chống trùng). Khoá dùng
+      // NGUYÊN VĂN (trim chỉ để thử rỗng).
+      const khoa = [cmd.idempotency_key, cmd.command_id].find((k): k is string => typeof k === "string" && k.trim() !== "");
+      if (khoa === undefined) {
+        return rejectedAck(cmd, "INVALID_ARGS");
+      }
 
       // MỘT CỬA: dispatch() áp mọi cổng + ghi sổ cái + phát cmd_ack. idempotency_key
       // của lệnh canonical là idempotencyKey của dispatcher (trùng → trả ack cũ,
@@ -243,7 +250,7 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
         commandType: "tag.write",
         writes: [{ tagKey: tag, value: cmd.args.value }],
         triggeredBy: { kind: "hitl", confirmedBy: issuedBy, requestedBy: issuedBy },
-        idempotencyKey: cmd.idempotency_key || cmd.command_id,
+        idempotencyKey: khoa,
         correlationId: cmd.correlation_id ?? undefined,
         deadlineMs: cmd.deadline_ms,
       });
