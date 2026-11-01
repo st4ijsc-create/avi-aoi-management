@@ -24673,6 +24673,18 @@
         "reasonTimeout": "Timed out — the device did not answer in time",
         "reasonNoSample": "No sample yet for this address"
       }
+    },
+    "dieuKien": {
+      "tieuDe": "Allowed conditions",
+      "duocPhep": "Allowed",
+      "duocPhepTotp": "Allowed — two-factor code required",
+      "khongDuocPhep": "Not allowed: {{lyDo}}",
+      "chuaTinh": "Not checked in advance: {{ds}} — the server decides when you press Change.",
+      "chuaTinhMuc": {
+        "khoa-chon": "selection lock",
+        "totp-xac-minh": "code verification",
+        "han-gui": "send deadline"
+      }
     }
   },
   "chonModel": {

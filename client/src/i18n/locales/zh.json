@@ -24670,6 +24670,18 @@
         "reasonTimeout": "超时 — 设备未及时应答",
         "reasonNoSample": "此地址暂无样本"
       }
+    },
+    "dieuKien": {
+      "tieuDe": "允许条件",
+      "duocPhep": "允许",
+      "duocPhepTotp": "允许——需要双因素验证码",
+      "khongDuocPhep": "不允许：{{lyDo}}",
+      "chuaTinh": "未预先检查：{{ds}}——点击“更改”时由服务器决定。",
+      "chuaTinhMuc": {
+        "khoa-chon": "选择锁",
+        "totp-xac-minh": "验证码校验",
+        "han-gui": "发送期限"
+      }
     }
   },
   "chonModel": {

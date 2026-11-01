@@ -10,7 +10,7 @@
  *   • Lý do ≥ 5 ký tự nhập TRƯỚC khi gọi `scadaCommands.request`; "Đổi…" gọi request rồi mở M5 (`HopThoaiLenh`).
  *   • Từ chối của request ⇒ `ThongBaoLoiLenh` (lý do + cách xử lý). OFF_STEP ⇒ nút "Dùng {goiY}" CHỈ điền ô — người dùng vẫn phải bấm
  *     "Đổi…" lại (không tự gửi, không tự làm tròn).
- *   • Danh sách "Điều kiện cho phép" (request chạy khô) để R1b.
+ *   • Khối "Điều kiện cho phép" (`DieuKienChoPhep`, chạy khô C5, debounce 400 ms, không poll, KHÔNG khoá nút Đổi — máy chủ là trọng tài).
  *   • R1b-1 Task 2 — nút "DỪNG MÁY" (`NutDungMay`, STOP HMI một bước) LUÔN hiện khi kênh thuộc một máy — kể cả LOCAL, kênh chỉ đọc, kênh
  *     đang tải; cảnh báo cấp máy "Máy chưa ghim STOP" khi `coGhimStop` false. Gợi ý MODE_LOCAL theo `coGhimStop` (ruling R-2).
  */
@@ -36,6 +36,7 @@ import {
   phanTichDinhDang,
 } from "./kenhHienThi";
 import { TruongLyDo, lyDoDuDai } from "./TruongLyDo";
+import { DieuKienChoPhep } from "./DieuKienChoPhep";
 import { HopThoaiLenh, ThongBaoLoiLenh, useDinhDangGiaTri, type YeuCauLenh } from "./HopThoaiLenh";
 import { khoaLyDoLocal, moTaLoiLenh, type MoTaLoi } from "./ketQuaLenh";
 import { NutDungMay, type KhaNangDung } from "./DungMay";
@@ -305,6 +306,7 @@ export function Faceplate({ adapterId, tagKey, machineId, edgeCode, onDong }: Fa
                     {nhapLoi && <p className="text-xs text-destructive">{t("scada.faceplate.soLoi")}</p>}
                   </div>
                 )}
+                {!yeuCau && <DieuKienChoPhep adapterId={adapterId} tagKey={tagKey} giaTri={giaTri} laEdge={!!edgeCode} />}
                 <TruongLyDo id="faceplate-ly-do" value={lyDo} onChange={setLyDo} />
                 {loi && <ThongBaoLoiLenh moTa={loi.moTa} chiTiet={loi.chiTiet} onDungGoiY={dungGoiY} coGhimStop={may?.coGhimStop ?? undefined} />}
                 <div className="flex justify-end">
