@@ -116,16 +116,19 @@ function driverGia(kichBan: KichBan[]) {
   return d;
 }
 
-/** adapter modbus + tag a/b/c + uỷ quyền HITL gắn đúng lệnh — TRONG giao dịch. */
-async function dung(tx: Tx, writes: Array<{ tagKey: string; value: unknown }>, driver: unknown) {
-  const [a] = await tx.insert(deviceAdapters).values({ code: `${DAU}-A-${Math.random().toString(36).slice(2, 8)}`, name: `${DAU} adapter`, protocol: "modbus", endpoint: ENDPOINT, isEnabled: true, machineId: MACHINE }).returning();
+/**
+ * adapter modbus + tag a/b/c + uỷ quyền HITL gắn đúng lệnh — TRONG giao dịch. Polish m2: `isEnabled` (ADAPTER_DISABLED), `commandType` (STOP ghim),
+ * tag `a` có `stopValue` 0 (giá trị ghim), `driver: null` ⇒ không driver nào chạy cho adapter (ADAPTER_OFFLINE).
+ */
+async function dung(tx: Tx, writes: Array<{ tagKey: string; value: unknown }>, driver: unknown, tc: { isEnabled?: boolean; commandType?: string } = {}) {
+  const [a] = await tx.insert(deviceAdapters).values({ code: `${DAU}-A-${Math.random().toString(36).slice(2, 8)}`, name: `${DAU} adapter`, protocol: "modbus", endpoint: ENDPOINT, isEnabled: tc.isEnabled ?? true, machineId: MACHINE }).returning();
   const adapterId = a!.id;
   await tx.insert(deviceTags).values([
-    { adapterId, tagKey: "a", address: "40001", dataType: "int", writable: true },
+    { adapterId, tagKey: "a", address: "40001", dataType: "int", writable: true, stopValue: 0 as never },
     { adapterId, tagKey: "b", address: "40002", dataType: "int", writable: true },
     { adapterId, tagKey: "c", address: "40003", dataType: "int", writable: true },
   ]);
-  H.drivers.set(adapterId, driver);
+  if (driver !== null) H.drivers.set(adapterId, driver);
   H.fingerprints.set(adapterId, adapterTargetFingerprint({ protocol: "modbus", endpoint: ENDPOINT, machineId: MACHINE, connectionOptions: null }));
   const actionId = `${DAU}-act-${Math.random().toString(36).slice(2, 10)}`;
   await tx.insert(aiPendingActions).values({
@@ -135,7 +138,7 @@ async function dung(tx: Tx, writes: Array<{ tagKey: string; value: unknown }>, d
     userId: OWNER,
     userRole: "engineer",
     summary: `${DAU} test action`,
-    previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: TOOL, adapterId, machineId: MACHINE, commandType: "set_param", writes })),
+    previewJson: withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: TOOL, adapterId, machineId: MACHINE, commandType: tc.commandType ?? "set_param", writes })),
     status: "confirmed",
     idempotencyKey: `${actionId}-idem`,
     expiresAt: new Date(Date.now() + 600_000),
@@ -143,10 +146,10 @@ async function dung(tx: Tx, writes: Array<{ tagKey: string; value: unknown }>, d
   return { adapterId, actionId };
 }
 
-const lenh = (adapterId: number, actionId: string, writes: Array<{ tagKey: string; value: unknown }>, key: string) => ({
+const lenh = (adapterId: number, actionId: string, writes: Array<{ tagKey: string; value: unknown }>, key: string, commandType = "set_param") => ({
   adapterId,
   machineId: MACHINE,
-  commandType: "set_param",
+  commandType,
   writes,
   triggeredBy: { kind: "hitl" as const, actionId, tool: TOOL, confirmedBy: OWNER, requestedBy: OWNER },
   idempotencyKey: key,
@@ -159,6 +162,7 @@ const chieu = (r: DispatchResult) => ({
   status: r.status,
   reason: r.reason ?? null,
   motPhan: r.motPhan ?? null,
+  pinnedStop: r.pinnedStop === true, // polish m2 — STOP ghim phát lại vẫn nói là STOP ghim
   results: r.results.map((x) => ({ tagKey: x.tagKey, ok: x.ok, status: x.status })),
 });
 
@@ -259,9 +263,9 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
     }
   }
 
-  const CU: Array<{ ten: string; hang: Parameters<typeof chenHangCu>[4]; mong: { ok: false; status: string } }> = [
+  const CU: Array<{ ten: string; hang: Parameters<typeof chenHangCu>[4]; mong: { ok: false; status: string; reason?: string; motPhan?: { daAp: string[]; khongAp: string[] } } }> = [
     { ten: "★ L1 hàng cũ [acked, timeout] không dấu", hang: [{ tagKey: "a", status: "acked" }, { tagKey: "b", status: "timeout" }], mong: { ok: false, status: "timeout" } },
-    { ten: "L2 hàng cũ [acked, failed] không dấu motPhan", hang: [{ tagKey: "a", status: "acked" }, { tagKey: "b", status: "failed" }], mong: { ok: false, status: "failed" } },
+    { ten: "L2 hàng cũ [acked, failed] không dấu motPhan", hang: [{ tagKey: "a", status: "acked" }, { tagKey: "b", status: "failed" }], mong: { ok: false, status: "failed", reason: "MOT_PHAN", motPhan: { daAp: ["a"], khongAp: ["b"] } } }, // polish m2: khẳng định reason + motPhan
     { ten: "L3 hàng cũ [acked, (THIẾU hàng 1)]", hang: [{ tagKey: "a", status: "acked" }, null], mong: { ok: false, status: "timeout" } },
     { ten: "L4 dấu khongRo trên hàng acked (dấu thắng)", hang: [{ tagKey: "a", status: "acked", khongRo: true }, { tagKey: "b", status: "acked_verified", khongRo: true }], mong: { ok: false, status: "timeout" } },
   ];
@@ -277,6 +281,32 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
         expect(d.soGhi).toBe(0);
         expect(phatLai.ok).toBe(false);
         expect(phatLai.status).toBe(ca.mong.status);
+        if (ca.mong.reason) expect(phatLai.reason).toBe(ca.mong.reason);
+        if (ca.mong.motPhan) expect(phatLai.motPhan).toEqual(ca.mong.motPhan);
+      });
+      expect(H.bay).toBe(0);
+    }, 30_000);
+  }
+
+  // ── polish m2 — các hình lô KHÔNG phải "thiết bị đã trả lời": phát lại vẫn deepEqual câu trả lời sống (ok / status / reason / motPhan / pinnedStop) ──
+  const KHAC: Array<{ ten: string; writes: Array<{ tagKey: string; value: unknown }>; tc: { isEnabled?: boolean; commandType?: string; khongDriver?: boolean; tatDieuKhien?: boolean }; mong: Partial<DispatchResult>; soGhi: number }> = [
+    { ten: "★ P1 STOP ghim (a = stopValue 0)", writes: [{ tagKey: "a", value: 0 }], tc: { commandType: "stop" }, mong: { ok: true, status: "acked", pinnedStop: true }, soGhi: 1 },
+    { ten: "R1 lô bị từ chối hết (ADAPTER_DISABLED)", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { isEnabled: false }, mong: { ok: false, status: "rejected", reason: "ADAPTER_DISABLED" }, soGhi: 0 },
+    { ten: "S1 lô mô phỏng (OT_CONTROL_ENABLED tắt)", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { tatDieuKhien: true }, mong: { ok: true, simulated: true, status: "simulated" }, soGhi: 0 },
+    { ten: "★ O1 ADAPTER_OFFLINE (không driver nào chạy) — failed KHÔNG gửi gì", writes: [{ tagKey: "a", value: 1 }, { tagKey: "b", value: 2 }], tc: { khongDriver: true }, mong: { ok: false, status: "failed", reason: "ADAPTER_OFFLINE" }, soGhi: 0 },
+  ];
+  for (const ca of KHAC) {
+    it(`${ca.ten} ⇒ phát lại deepEqual câu trả lời sống (gồm reason + pinnedStop)`, async () => {
+      await trongGiaoDich(async (tx) => {
+        if (ca.tc.tatDieuKhien) process.env.OT_CONTROL_ENABLED = "false";
+        const d = driverGia([ACK, ACK]);
+        const { adapterId, actionId } = await dung(tx, ca.writes, ca.tc.khongDriver ? null : d, { isEnabled: ca.tc.isEnabled, commandType: ca.tc.commandType });
+        const key = `${DAU}-khac-${Math.random().toString(36).slice(2, 8)}`;
+        const song = await dispatch(lenh(adapterId, actionId, ca.writes, key, ca.tc.commandType));
+        expect(song).toMatchObject(ca.mong);
+        const phatLai = await dispatch(lenh(adapterId, actionId, ca.writes, key, ca.tc.commandType));
+        expect(chieu(phatLai)).toEqual(chieu(song));
+        expect(d.soGhi).toBe(ca.soGhi); // phát lại không ghi thiết bị
       });
       expect(H.bay).toBe(0);
     }, 30_000);

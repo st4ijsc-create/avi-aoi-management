@@ -2075,13 +2075,14 @@ async function cachedResult(db: LedgerDb, input: DispatchInput, existing: Comman
  *   • lô thiết bị (mọi hàng có status thiết bị) HOẶC có dấu `ackValue.khongRo` ⇒ `ketCucLo` (CÙNG hàm với đường sống) trên MỌI write: write không có hàng
  *     ⇒ `timeout` (không rõ — fail-closed); dấu `khongRo` ⇒ `timeout` dù gì đi nữa (dấu thắng). Hàng ghi TRƯỚC bản vá (không dấu) được suy từ trạng thái
  *     mọi hàng: có hàng không ok ⇒ không bao giờ `ok: true`; có hàng `timeout` ⇒ `timeout`; acked + failed ⇒ `failed` MOT_PHAN (không gửi lại);
- *   • lô KHÔNG phải thiết bị (rejected / simulated…): như cũ (status / reason của hàng đọc được), nhưng fail-closed: `ok` chỉ khi MỌI hàng có của lô ok.
+ *   • lô KHÔNG phải thiết bị (rejected / simulated / `failed` không gửi gì như ADAPTER_OFFLINE): status của hàng đọc được, `reason` = MÃ tiền tố của
+ *     errorText (= `reason` sống, polish m1), fail-closed: `ok` chỉ khi MỌI hàng có của lô ok.
  * Hàm thuần — xuất cho test.
  */
 export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo: ReadonlyArray<CommandLog | undefined>): DispatchResult {
   const coMat = hangLo.filter((r): r is CommandLog => !!r);
   const hang = coMat.length > 0 ? coMat : [existing];
-  const av = (r: CommandLog) => (r.ackValue ?? null) as { pinnedStop?: unknown; motPhan?: unknown; khongRo?: unknown } | null;
+  const av = (r: CommandLog) => (r.ackValue ?? null) as { ledger?: unknown; pinnedStop?: unknown; motPhan?: unknown; khongRo?: unknown } | null;
   const ids = hang.map((r) => r.id);
   // fix round 1 (R-1D-h) — a replayed PINNED stop still says so (its ledger row carries ackValue.pinnedStop).
   const replayedPinnedStop = hang.some((r) => av(r)?.pinnedStop === true);
@@ -2106,7 +2107,9 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
     if (mp) return ketQuaMotPhan(mp);
   }
   const khongRo = hang.some((r) => av(r)?.khongRo === true);
-  const thietBi = hang.every((r) => TRANG_THAI_HANG_THIET_BI.has(r.status));
+  // T6c polish (review m1) — lô THIẾT BỊ = mọi hàng có status thiết bị VÀ là hàng KẾT QUẢ của đường ghi (`ackValue.ledger === "result"`, đường sống luôn
+  // ghi). Hàng từ chối / `failed` không gửi gì (`writeFailed` ADAPTER_OFFLINE: không `ackValue`) ⇒ nhánh không-thiết-bị (giữ `reason` = mã như đường sống).
+  const thietBi = hang.every((r) => TRANG_THAI_HANG_THIET_BI.has(r.status) && av(r)?.ledger === "result");
   if (khongRo || thietBi) {
     const outcomes = input.writes.map((w, i) => {
       const r = hangLo[i];
@@ -2129,11 +2132,14 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
     };
   }
   const cachedOk = TRANG_THAI_HANG_OK.has(existing.status) && hang.every((r) => TRANG_THAI_HANG_OK.has(r.status));
+  // T6c polish (review m1) — `reason` của đường sống là MÃ (`writeAll` / `writeSimulated` ghi `${mã}: ${chi tiết}`) ⇒ phát lại trả lại MÃ đó, không phải văn
+  // bản đầy đủ; văn bản không tiền tố mã ⇒ giữ nguyên (hàng lạ). Một hàng `timeout` (hàng cũ không `ackValue`) ⇒ `timeout` (fail-closed).
+  const ma = existing.errorText ? /^([A-Z][A-Z0-9_]*):/.exec(existing.errorText)?.[1] : undefined;
   return {
     ok: cachedOk,
     simulated: existing.status === "simulated",
-    status: existing.status,
-    reason: existing.errorText ?? undefined,
+    status: hang.some((r) => r.status === "timeout") ? "timeout" : existing.status,
+    reason: ma ?? existing.errorText ?? undefined,
     results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
     commandLogIds: ids,
     ...ghim,

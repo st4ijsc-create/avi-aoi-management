@@ -600,7 +600,7 @@ describe.skipIf(!DB_URL)(
       expect(r1.reason).toBe("OUT_OF_RANGE");
       const r2 = await dispatch({ ...inp });
       expect(r2.status).toBe("rejected");
-      expect(r2.reason).toMatch(/^OUT_OF_RANGE: /); // cachedResult: reason = errorText của dòng đã lưu
+      expect(r2.reason).toBe(r1.reason); // R1b-2b-2a T6c polish (m1) — phát lại = sống: reason là MÃ (trước: errorText đầy đủ của dòng đã lưu)
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
       expect(rows).toHaveLength(1);
@@ -618,7 +618,7 @@ describe.skipIf(!DB_URL)(
       expect(r1.reason).toBe("TAG_NOT_WRITABLE");
       const r2 = await dispatch({ ...inp });
       expect(r2.status).toBe("rejected");
-      expect(r2.reason).toMatch(/^TAG_NOT_WRITABLE: /);
+      expect(r2.reason).toBe(r1.reason); // T6c polish (m1) — phát lại = sống (mã)
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
       expect(rows.map(r => r.idempotencyKey)).toEqual([`${inp.idempotencyKey}:ro_kv:1`]);

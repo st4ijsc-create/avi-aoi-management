@@ -3,7 +3,8 @@
  *
  * T6 fix 1 bỏ đọc lại cả lô khi có write `mat_lien_ket`. T2 vẫn cho đọc lại ở lô trộn write acked + write `qua_han_driver` (driver / thư viện tự hết
  * hạn) ⇒ một STOP với đọc lại BẮT BUỘC (HMI, `docLai:"bat_buoc"`) báo "không rõ" muộn thêm tới hạn đọc lại. T6b: MỘT hàm thuần `lyDoBoDocLai` quyết
- * cho mọi loại "không rõ" — lô có ≥ 1 write `ketCucKhongRo ∈ {mat_lien_ket, qua_han_driver}` ⇒ không `readTags`, write acked ⇒ `acked_unverified`
+ * cho mọi loại "không rõ" — lô có ≥ 1 write `ok:false` mang `ketCucKhongRo` KHÁC null (mat_lien_ket, qua_han_driver, hay giá trị lạ của driver plugin —
+ * polish m1) ⇒ không `readTags`, write acked ⇒ `acked_unverified`
  * với câu lý do; lô vẫn cuộn lên `timeout` (T2).
  */
 import { describe, it, expect, afterEach } from "vitest";
