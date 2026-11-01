@@ -13,12 +13,14 @@
  *      central EXECUTES the owed STOP and acks it done | failed via edge_stop_ack_central — R-10-i / R-10-w); a device already
  *      central-owned: executePendingCentralStops. FAIL-CLOSED guard first (AMENDMENT 2 item 1): only a device that carries THIS
  *      run's marker (its code is one of the run's own codes) AND whose endpoint is a simulator / loopback one (`sim://`, `stub://`,
- *      `tcp://127.0.0.1:<port>`, `tcp://localhost:<port>`) — anything else is logged and kept, its owner is never changed. The
- *      requests of other runs (#5150 / #51720 / #51721 …) can therefore never be acted on, even if an id leaked into the lists.
+ *      `tcp://127.0.0.1:<port>`, `tcp://localhost:<port>`) — anything else is logged and kept, its owner is never changed.
  *      The ack is awaited under ONE bounded deadline for the whole step (AMENDMENT 2 item 2): on timeout ⇒ logged, device kept,
- *      the teardown goes on (never hangs). This process's central session of the device is detached afterwards.
- *   2. every REFUSED / FAILED unresolved STOP (step 1's failures included) of the run's devices: edge_stop_resolve by the run's
- *      admin, ONE request per statement (the function itself refuses anything else).
+ *      the teardown goes on (never hangs); a DEFINITE failure (owner change refused / threw) ends that device's wait at once
+ *      (logged, kept) so the rest of the budget stays for later devices. This process's central session of the device is detached.
+ *   2. every REFUSED / FAILED unresolved STOP (step 1's failures included) of a device that carries THIS run's code (the same
+ *      own-run check as step 1 — resolving another run's STOP is a human path; logged, not resolved): edge_stop_resolve by the
+ *      run's admin, ONE request per statement (the function itself refuses anything else).
+ *   ⇒ the requests of other runs (#5150 / #51720 / #51721 …) are never acted on in step 1 OR step 2, even if an id leaked into the lists.
  *   3. whatever is still pending: logged by id; the DB then refuses the device delete and the device stays — never forced.
  */
 import type postgres from "postgres";
@@ -72,6 +74,10 @@ export interface CloseStopsReport {
   refused: Array<{ device: string; reason: string }>;
   /** devices whose ack did not come before the deadline (kept) */
   timedOut: string[];
+  /** polish — devices whose hand-back FAILED definitely (owner change refused / threw): kept, not waited for */
+  failed: Array<{ device: string; reason: string }>;
+  /** polish — acked refused / failed STOPs NOT resolved because their device is not one of this run's (a human path) */
+  notOwnNotResolved: number[];
   /** refused / failed requests resolved by the run's admin */
   resolved: number[];
   /** requests still pending at the end (their device stays) */
@@ -99,7 +105,7 @@ export async function closeOwnStops(d: CloseStopsDeps): Promise<CloseStopsReport
   const now = d.now ?? Date.now;
   const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const deadline = now() + (d.deadlineMs ?? TEARDOWN_STOP_ACK_DEADLINE_MS);
-  const rep: CloseStopsReport = { handled: [], refused: [], timedOut: [], resolved: [], stillPending: [], pendingAtStart: [] };
+  const rep: CloseStopsReport = { handled: [], refused: [], timedOut: [], failed: [], resolved: [], stillPending: [], pendingAtStart: [], notOwnNotResolved: [] };
 
   const start = await pendingStopsOf(d.sql, d.robots, d.adapters);
   rep.pendingAtStart = start.map((q) => q.id);
@@ -120,19 +126,27 @@ export async function closeOwnStops(d: CloseStopsDeps): Promise<CloseStopsReport
       continue;
     }
     let settled = false;
+    const fx: { failure: string | null } = { failure: null };
     const work = (async () => {
       if (row.edgeNodeId != null) {
         const r = await d.own.changeDeviceOwner({ kind: dev.kind, deviceId: dev.id, toEdgeNodeId: null, actorUserId: d.actorUserId, actorName: "F1 admin (teardown)" });
-        if (!r.ok) log(`[F1] teardown: ${key} not handed to central for its owed STOP (${r.reason}: ${r.detail})`);
+        if (!r.ok) fx.failure = `not handed to central for its owed STOP (${r.reason}: ${r.detail})`;
       } else await d.own.executePendingCentralStops(dev.kind, dev.id, d.actorUserId);
     })()
-      .catch((e) => log(`[F1] teardown: owed STOP of ${key}: ${(e as Error).message}`))
+      .catch((e) => {
+        fx.failure = `owed STOP hand-back threw: ${(e as Error).message}`;
+      })
       .finally(() => {
         settled = true;
       });
+    // A call given up at the deadline keeps running in the background (a promise cannot be cancelled). It is the TIMEOUT case only
+    // (a definite failure ends the wait at once, below) and it is bounded by the product's own deadlines — the transient STOP
+    // session (CENTRAL_STOP_SESSION_DEADLINE_MS 10 s), the driver timeout (5 s in CENTRAL_ENV) and 1 s DB steps, ≈ 15 s — so it
+    // ends on its own; the teardown never waits for it and never hangs.
     void work;
     let acked = false;
     for (;;) {
+      if (settled && fx.failure !== null) break; // polish: a definite failure — stop waiting now, the budget stays for later devices
       if (settled) {
         acked = !(await pendingStopsOf(d.sql, dev.kind === "robot" ? [dev.id] : [], dev.kind === "adapter" ? [dev.id] : [])).some((q) => q.unacked);
         if (acked) break;
@@ -141,7 +155,10 @@ export async function closeOwnStops(d: CloseStopsDeps): Promise<CloseStopsReport
       await sleep(TEARDOWN_STOP_POLL_MS);
     }
     if (acked) rep.handled.push(key);
-    else {
+    else if (fx.failure !== null) {
+      rep.failed.push({ device: key, reason: fx.failure });
+      log(`[F1] teardown: ${key} kept — ${fx.failure}; not waited for further`);
+    } else {
       rep.timedOut.push(key);
       log(`[F1] teardown: ${key} kept — its owed STOP was not acked before the teardown deadline (${d.deadlineMs ?? TEARDOWN_STOP_ACK_DEADLINE_MS} ms); not waited for further`);
     }
@@ -150,6 +167,13 @@ export async function closeOwnStops(d: CloseStopsDeps): Promise<CloseStopsReport
 
   for (const q of await pendingStopsOf(d.sql, d.robots, d.adapters)) {
     if (q.unacked) continue;
+    // polish — the same own-run check as step 1: resolving ANOTHER run's STOP is a human path, never this teardown's
+    const [dv] = q.kind === "robot" ? await d.sql`SELECT code FROM robots WHERE id = ${q.deviceId}` : await d.sql`SELECT code FROM device_adapters WHERE id = ${q.deviceId}`;
+    if (!dv || !d.runCodes.has(String(dv.code))) {
+      rep.notOwnNotResolved.push(q.id);
+      log(`[F1] teardown: STOP #${q.id} NOT resolved — ${q.kind} ${q.deviceId} (${dv ? String(dv.code) : "no row"}) is not one of this run's devices (a person resolves it)`);
+      continue;
+    }
     try {
       await d.sql`SELECT public.edge_stop_resolve(${q.id}, ${d.actorUserId}, 'F1 e2e teardown')`;
       rep.resolved.push(q.id);
@@ -160,6 +184,6 @@ export async function closeOwnStops(d: CloseStopsDeps): Promise<CloseStopsReport
   const left = await pendingStopsOf(d.sql, d.robots, d.adapters);
   rep.stillPending = left.map((q) => q.id);
   if (left.length) log(`[F1] teardown: STOP request(s) still pending (${PENDING_SQL_NOTE}) — their device stays (the DB refuses its delete): ${left.map((q) => `#${q.id} (${q.kind} ${q.deviceId})`).join(", ")}`);
-  log(`[F1] teardown STOPs: pending at start [${rep.pendingAtStart.join(", ")}], handled ${rep.handled.length}, resolved [${rep.resolved.join(", ")}], still pending [${rep.stillPending.join(", ")}], refused ${rep.refused.length}, timed out ${rep.timedOut.length}`);
+  log(`[F1] teardown STOPs: pending at start [${rep.pendingAtStart.join(", ")}], handled ${rep.handled.length}, resolved [${rep.resolved.join(", ")}], still pending [${rep.stillPending.join(", ")}], refused ${rep.refused.length}, failed ${rep.failed.length}, timed out ${rep.timedOut.length}, not own (not resolved) [${rep.notOwnNotResolved.join(", ")}]`);
   return rep;
 }
