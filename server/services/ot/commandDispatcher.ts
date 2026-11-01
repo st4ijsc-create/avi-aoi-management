@@ -2235,8 +2235,8 @@ async function tuChoiKhoaDungLai(db: LedgerDb, input: DispatchInput, hangTrung: 
 /**
  * T6d — từ chối lệnh (không STOP) mà khoá có hàng TRƯỚC T6d không chứng minh được cùng / khác lệnh: DUPLICATE_IN_FLIGHT (kết cục lần trước KHÔNG RÕ —
  * lớp "có thể đã bay" của T3F: FOE không gửi lại với khoá mới), hàng KHÔNG mang khoá, tham chiếu hàng cũ; không gửi gì. Vì sao không
- * IDEMPOTENCY_KEY_REUSED: mã ấy nghĩa "CHẮC CHẮN lệnh khác, lệnh này chưa gửi" ⇒ bên gọi (FOE) được thử lại khoá mới — với một hàng cũ có thể CHÍNH là
- * lệnh này (đã áp trước nâng cấp) đó là ghi lại lần hai.
+ * IDEMPOTENCY_KEY_REUSED: mã ấy nghĩa "khoá thuộc một lệnh KHÁC đã chứng minh, lệnh này chưa gửi" và nằm trong lớp "có thể đã được áp" (lệnh khác có thể đã chạy):
+ * FOE KHÔNG BAO GIỜ thử lại nó dưới khoá mới; STOP thì được đổi khoá và gửi thật. Ở đây hàng cũ có thể CHÍNH là lệnh này (đã áp trước nâng cấp) ⇒ không dùng mã ấy.
  */
 async function tuChoiKhongChac(db: LedgerDb, input: DispatchInput, hang: ReadonlyArray<CommandLog>): Promise<DispatchResult> {
   const ids = hang.map((r) => r.id);

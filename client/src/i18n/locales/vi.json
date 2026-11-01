@@ -4403,7 +4403,7 @@
       "motionInProgress": "Robot đang thực hiện một chuyển động khác — lệnh này bị từ chối (không xếp hàng). Đợi xong rồi gửi lại.",
       "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
       "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
-      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — lệnh chuyển động bị từ chối. Dùng mã mới.",
+      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — chuyển động KHÔNG được bắt đầu. Lệnh trước đó có thể đã chạy: kiểm tra robot, vị trí và trạng thái lệnh trước đó trước khi ra lệnh lại.",
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {

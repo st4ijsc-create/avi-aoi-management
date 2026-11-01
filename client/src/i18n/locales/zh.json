@@ -4403,7 +4403,7 @@
       "motionInProgress": "机器人正在执行另一个运动——此指令被拒绝（不排队）。请等待完成后重新发送。",
       "ledgerWriteFailed": "无法写入机器人指令日志——运动被拒绝，未发送任何内容。",
       "idempotentJobInProgress": "具有相同幂等键的指令仍在执行——不会重复执行。",
-      "idempotencyKeyReused": "该幂等键已用于其他机器人或指令——运动被拒绝。请使用新的键。",
+      "idempotencyKeyReused": "该幂等键已用于其他机器人或作业——本次运动未启动。先前的作业可能已经执行：再次下达指令前，请检查机器人、其位置以及先前作业的状态。",
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {

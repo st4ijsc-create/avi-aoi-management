@@ -116,7 +116,9 @@ export const HOAN_TAC: readonly string[] = [
   "server/services/edge/otIntentResultRace.dot10.db.test.ts",
   // SCADA R1b-2b-2a T6d fix 1 (2026-11-01, dieu-phoi: test KHÔNG BAO GIỜ DELETE / TRUNCATE, mọi dọn dẹp bằng ROLLBACK) — người dùng chèn trong giao dịch
   // ROLLBACK của từng ca (D14: người giải ý định cho hàm DB ot_write_intent_resolve; router: hai giám sát viên A / B), không qua helper (helper DELETE).
+  // 2026-11-01 — khoaMienLapTrinh.t6d.db.test.ts: insert trong ROLLBACK, không owner, không DELETE (hai giám sát viên A / B trong tx từng ca).
   "server/routers/khoaMienLapTrinh.t6d.db.test.ts",
+  // 2026-11-01 — khoaIdempotency.t6d.r1b2b2.db.test.ts: insert trong ROLLBACK, không owner, không DELETE (người giải ý định D14 trong tx từng ca).
   "server/services/ot/khoaIdempotency.t6d.r1b2b2.db.test.ts",
 ];
 
