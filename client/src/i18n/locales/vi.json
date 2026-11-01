@@ -24670,6 +24670,18 @@
         "reasonTimeout": "Hết hạn — thiết bị không trả lời kịp",
         "reasonNoSample": "Chưa có mẫu nào cho địa chỉ này"
       }
+    },
+    "dieuKien": {
+      "tieuDe": "Điều kiện cho phép",
+      "duocPhep": "Được phép",
+      "duocPhepTotp": "Được phép — cần mã xác thực hai lớp",
+      "khongDuocPhep": "Không được phép: {{lyDo}}",
+      "chuaTinh": "Chưa kiểm tra trước: {{ds}} — máy chủ quyết định khi bạn bấm Đổi.",
+      "chuaTinhMuc": {
+        "khoa-chon": "khoá chọn",
+        "totp-xac-minh": "xác minh mã",
+        "han-gui": "hạn gửi"
+      }
     }
   },
   "chonModel": {
