@@ -23,7 +23,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { dinhDangTuoi, hienChatLuong, kieuVien, type VienChatLuong } from "./chatLuongHienThi";
-import { ChipTrangThai, HuyHieuTamKhoa, tenEdge, useDonViThoiGian, type HangDiag } from "./BangTruyenThong";
+import { ChipTrangThai, HuyHieuMotPhan, HuyHieuTamKhoa, tenEdge, useDonViThoiGian, type HangDiag } from "./BangTruyenThong";
 import { laLoaiKenhGhi } from "./kenhHienThi";
 import { Faceplate } from "./Faceplate";
 import type { HangKenh } from "./BangKenh";
@@ -258,6 +258,7 @@ export function NganTagAdapter({ hang, now, canAct, onDong }: NganTagAdapterProp
               <SheetDescription className="flex flex-wrap items-center gap-2">
                 <ChipTrangThai hang={hang} now={now} />
                 <HuyHieuTamKhoa hang={hang} />
+                <HuyHieuMotPhan hang={hang} />
                 <span>{hang.protocol}</span>
                 <span data-testid="endpoint-ngan-tag" className="break-all">{hang.endpoint ?? "—"}</span>
               </SheetDescription>

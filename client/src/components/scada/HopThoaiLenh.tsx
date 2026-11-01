@@ -41,6 +41,7 @@ import {
   laTrangThaiKetQua,
   moTaLoiLenh,
   nhanKetQua,
+  type MotPhanLenh,
   type MoTaLoi,
   type TrangThaiKetQua,
 } from "./ketQuaLenh";
@@ -122,7 +123,7 @@ export function ThongBaoLoiLenh({
 }
 
 type Pha = "proposed" | "dangGui" | "ketQua" | "ketThuc";
-type KetQua = { status: TrangThaiKetQua; reason?: string; readBackValue?: unknown };
+type KetQua = { status: TrangThaiKetQua; reason?: string; readBackValue?: unknown; motPhan?: MotPhanLenh };
 
 export interface HopThoaiLenhProps {
   yeuCau: YeuCauLenh;
@@ -210,9 +211,9 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
   };
 
   const confirm = trpc.scadaCommands.confirm.useMutation({
-    onSuccess: (kq: { status: string; reason?: string; readBackValue?: unknown }) => {
+    onSuccess: (kq: { status: string; reason?: string; readBackValue?: unknown; motPhan?: MotPhanLenh }) => {
       const status = laTrangThaiKetQua(kq.status) ? kq.status : "failed";
-      const nhanNen = nhanKetQua(status, { readBack: kq.readBackValue, reason: kq.reason, requested: p.requested, dinhDang: fmt });
+      const nhanNen = nhanKetQua(status, { readBack: kq.readBackValue, reason: kq.reason, motPhan: kq.motPhan, requested: p.requested, dinhDang: fmt });
       if (baoNenNeuDaGo(t(nhanNen.khoa, nhanNen.thamSo), status === "acked_verified" ? "success" : "warning")) return;
       canHuyRef.current = false;
       setLoi(null);
@@ -220,6 +221,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
         status: laTrangThaiKetQua(kq.status) ? kq.status : "failed",
         ...(kq.reason ? { reason: kq.reason } : {}),
         ...("readBackValue" in kq ? { readBackValue: kq.readBackValue } : {}),
+        ...(kq.motPhan ? { motPhan: kq.motPhan } : {}),
       });
       doiPha("ketQua");
     },
@@ -255,6 +257,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
         status: e.status,
         ...(e.reason ? { reason: e.reason } : {}),
         ...("readBackValue" in e ? { readBackValue: e.readBackValue } : {}),
+        ...(e.motPhan ? { motPhan: e.motPhan } : {}),
       });
       canHuyRef.current = false;
       phaRef.current = "ketQua";
@@ -264,7 +267,7 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
   useScadaCmd(requestId, nhanSuKien);
 
   // ── tự đóng: CHỈ khi nhanKetQua nói vậy (acked_verified) ──
-  const nhan = ketQua ? nhanKetQua(ketQua.status, { readBack: ketQua.readBackValue, reason: ketQua.reason, requested: p.requested, dinhDang: fmt }) : null;
+  const nhan = ketQua ? nhanKetQua(ketQua.status, { readBack: ketQua.readBackValue, reason: ketQua.reason, motPhan: ketQua.motPhan, requested: p.requested, dinhDang: fmt }) : null;
   const tuDong = nhan?.tuDongDongMs ?? null;
   useEffect(() => {
     if (tuDong === null) return;
@@ -407,6 +410,13 @@ export function HopThoaiLenh({ yeuCau, lyDo, dinhDang, dataType, edgeCode, nhanL
             style={{ borderLeftColor: VIEN_TRUNG_TINH }}
           >
             <p className="font-medium">{t(nhan.khoa, nhan.thamSo)}</p>
+            {ketQua.motPhan && (
+              <div data-testid="mot-phan" className="space-y-0.5 text-xs">
+                <p className="font-medium">{t("scada.lenh.motPhan.dem", { daAp: ketQua.motPhan.daAp.length, khongAp: ketQua.motPhan.khongAp.length })}</p>
+                <p data-testid="mot-phan-da-ap">{t("scada.lenh.motPhan.daAp", { ds: ketQua.motPhan.daAp.join(", ") })}</p>
+                <p data-testid="mot-phan-khong-ap">{t("scada.lenh.motPhan.khongAp", { ds: ketQua.motPhan.khongAp.join(", ") })}</p>
+              </div>
+            )}
             {ketQua.status === "simulated" && tenMoPhong && <p>{t("scada.lenh.ketQua.lyDoMoPhong", { lyDo: tenMoPhong })}</p>}
             {nhan.goiYStop && <p data-testid="goi-y-stop">{t(khoaGoiYStop(coGhimStop))}</p>}
             {(ketQua.status === "rejected" || ketQua.status === "failed") && (

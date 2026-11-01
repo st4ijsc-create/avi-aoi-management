@@ -732,3 +732,45 @@ describe("kiem-dinh P1-4 — đang gửi (dangGui): không đóng được; bị
     expect(Object.values(toastFn).every((f) => f.mock.calls.length === 0)).toBe(true);
   });
 });
+
+describe("M5 — MOT_PHAN (T3E): lô ghi áp MỘT PHẦN", () => {
+  const MP = { daAp: ["SPD", "TMP"], khongAp: ["VLV"] };
+
+  it("★ confirm failed + MOT_PHAN + motPhan ⇒ câu MOT_PHAN (KHÔNG PHẢI thành công, KHÔNG 'đọc lại rồi gửi lần nữa'), đếm và hai danh sách tagKey, không tự đóng", async () => {
+    vi.useFakeTimers(FAKE);
+    const { onDong } = ve();
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "failed", ok: false, simulated: false, reason: "MOT_PHAN", motPhan: MP, commandLogIds: [1, 2, 3] });
+    const kq = within(hop()).getByTestId("ket-qua");
+    expect(kq).toHaveTextContent(S("scada.lenh.cong.MOT_PHAN"));
+    expect(kq).not.toHaveTextContent(/Gửi lỗi/);
+    expect(kq).not.toHaveTextContent(S("scada.lenh.ketQua.ackedVerified", { v: "" }).slice(0, 8));
+    expect(within(kq).getByTestId("mot-phan")).toHaveTextContent(S("scada.lenh.motPhan.dem", { daAp: 2, khongAp: 1 }));
+    expect(within(kq).getByTestId("mot-phan-da-ap")).toHaveTextContent("SPD, TMP");
+    expect(within(kq).getByTestId("mot-phan-khong-ap")).toHaveTextContent("VLV");
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(onDong).not.toHaveBeenCalled();
+  });
+
+  it("★ cùng kết cục đến qua socket scada:cmd ⇒ cùng câu và danh sách", async () => {
+    ve();
+    bamGui();
+    await act(async () => {
+      phat("scada:cmd", { requestId: RID, status: "failed", at: new Date().toISOString(), reason: "MOT_PHAN", motPhan: MP });
+    });
+    const kq = within(hop()).getByTestId("ket-qua");
+    expect(kq).toHaveTextContent(S("scada.lenh.cong.MOT_PHAN"));
+    expect(within(kq).getByTestId("mot-phan-khong-ap")).toHaveTextContent("VLV");
+  });
+
+  it("failed với lý do khác (không motPhan) ⇒ hành vi cũ: câu 'Gửi lỗi', không khối mot-phan", async () => {
+    ve();
+    bamGui();
+    await traLoi("confirm", "onSuccess", { status: "failed", ok: false, simulated: false, reason: "DRIVER_WRITE_FAILED", commandLogIds: [1] });
+    const kq = within(hop()).getByTestId("ket-qua");
+    expect(kq).toHaveTextContent(S("scada.lenh.ketQua.failed", { ma: "DRIVER_WRITE_FAILED" }));
+    expect(within(kq).queryByTestId("mot-phan")).toBeNull();
+  });
+});

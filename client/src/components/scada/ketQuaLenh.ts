@@ -62,6 +62,7 @@ export const CONG_BIET = [
   "HET_HAN",
   "KHOA_MAT",
   "MAY_DA_DOI",
+  "MOT_PHAN",
 ] as const;
 
 const CONG_BIET_SET: ReadonlySet<string> = new Set(CONG_BIET);
@@ -76,9 +77,19 @@ export function khoaCong(reason: string | undefined): { khoa: string; ma: string
 
 const chuoi = (v: unknown): string => (typeof v === "object" && v !== null ? JSON.stringify(v) : String(v));
 
+/** T3E — lô ghi áp MỘT PHẦN: tagKey đã áp / không áp (lenhHmi `motPhan`); vắng ở mọi kết cục khác. */
+export interface MotPhanLenh {
+  daAp: string[];
+  khongAp: string[];
+}
+
 export interface NguCanhKetQua {
   readBack?: unknown;
   reason?: string;
+  /** T3E — chỉ dùng khi `reason === "MOT_PHAN"` (đếm trong tham số). */
+  motPhan?: MotPhanLenh | null;
+  /** T3E — kết quả của STOP HMI: STOP được GỬI LẠI (idempotent) ⇒ câu riêng, KHÔNG nói "không gửi lại". */
+  laStop?: boolean;
   requested: unknown;
   /** định dạng giá trị theo khuôn kênh + ngôn ngữ (vắng ⇒ String) */
   dinhDang?: (v: unknown) => string;
@@ -109,6 +120,14 @@ export function nhanKetQua(
     case "timeout":
       return { khoa: "scada.lenh.ketQua.timeout", tuDongDongMs: null, thamSo: {} };
     case "failed":
+      // T3E — áp MỘT PHẦN: câu riêng (không phải "gửi lỗi — đọc lại rồi gửi lần nữa"); STOP ⇒ câu STOP (gửi lại an toàn)
+      if (ctx.reason === "MOT_PHAN") {
+        return {
+          khoa: ctx.laStop ? "scada.lenh.cong.MOT_PHAN_STOP" : khoaCong("MOT_PHAN").khoa,
+          tuDongDongMs: null,
+          thamSo: { ma: "MOT_PHAN", ...(ctx.motPhan ? { soDaAp: String(ctx.motPhan.daAp.length), soKhongAp: String(ctx.motPhan.khongAp.length) } : {}) },
+        };
+      }
       return { khoa: "scada.lenh.ketQua.failed", tuDongDongMs: null, thamSo: { ma: ctx.reason ?? "—" } };
     case "rejected":
     default: {

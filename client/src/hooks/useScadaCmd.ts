@@ -18,6 +18,8 @@ export interface SuKienScadaCmd {
   at: string;
   reason?: string;
   readBackValue?: unknown;
+  /** T3E — chỉ khi lô áp MỘT PHẦN */
+  motPhan?: { daAp: string[]; khongAp: string[] };
 }
 
 export function useScadaCmd(requestId: string | null, onSuKien: (e: SuKienScadaCmd) => void): void {
