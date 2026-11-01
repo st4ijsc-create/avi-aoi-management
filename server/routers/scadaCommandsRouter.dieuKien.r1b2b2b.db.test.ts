@@ -13,7 +13,7 @@
  *   • Ma trận cặp SINH TỰ ĐỘNG: cờ × mức × vai × chế độ × dải (2 × 4 × 4 × 2 × 3 = 192 cặp).
  *   • Trần Q6 (60 / 60 s / người) + KD-2bA 5.4 (30 / 60 s / (người, adapter)) ⇒ TOO_MANY_REQUESTS OPERATION_FAILED {scadaDryRun, rateLimited},
  *     log chẩn đoán MỘT dòng / khoá / cửa sổ. Đồng hồ: `Date` giả (đứng yên) — không phụ thuộc đồng hồ tường.
- *   • Với MỌI mã `TuChoiYeuCau` (bảng mẫu buộc đủ bằng kiểu `Record<MaTuChoiYeuCau, …>`): `tuChoiCongBo(t)` deepEqual đúng `(appCode, params)`
+ *   • Với MỌI mã `TuChoiYeuCau` (bảng mẫu buộc đủ bằng kiểu `Record<TuChoiYeuCau["ma"], …>` + đẳng thức kiểu với `MaTuChoiYeuCau` (cổng `check:tests`)): `tuChoiCongBo(t)` deepEqual đúng `(appCode, params)`
  *     mà `loiTuChoiLenh(t)` dựng — không hơn (KD-2bA 5.2).
  * `scada_command_attempts` là WORM: dòng do các lượt `request` đối chứng tạo ra ở lại (đúng thiết kế, như request.db.test).
  */
@@ -91,6 +91,10 @@ const nguoi: Record<string, { id: number; caller: Caller }> = {};
 const CHUA_TINH = ["khoa-chon", "totp-xac-minh", "han-gui"];
 const LY_DO = "kiem tra dieu kien c5";
 const uuid = () => crypto.randomUUID();
+
+/** Fix round 1 (review I-1) — đẳng thức kiểu lúc biên dịch: union viết tay `MaTuChoiYeuCau` phải BẰNG `TuChoiYeuCau["ma"]`. */
+type BangNhau<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const MA_KHOP_KIEU: BangNhau<MaTuChoiYeuCau, TuChoiYeuCau["ma"]> = true;
 
 async function dung(q: ReturnType<typeof sql>): Promise<any[]> {
   return (await db.execute(q)) as unknown as any[];
@@ -198,8 +202,11 @@ async function chayKho(ten: string, input: { adapterId: number; tagKey: string; 
   return kq;
 }
 
-/** Mã máy chủ (`ma`) đã được phủ bằng một cặp thật — đối chiếu với tập mã cổng tĩnh ở cuối tệp. */
-const maDaPhu = new Set<string>();
+/** Mã máy chủ (`ma`) của một kết quả chạy khô ĐÃ đối chiếu với request (`cap`): qua ⇒ "QUA_CONG_TINH"; từ chối ⇒ params.ma; ném ⇒ appParams.ma. */
+function maCua(dk: KetQuaGoi): string {
+  if (!dk.ok) return String(dk.loi.appParams?.ma);
+  return dk.v.quaCongTinh ? "QUA_CONG_TINH" : String(dk.v.tuChoi.params.ma);
+}
 
 /** MỘT CẶP: chạy khô rồi request thật (cùng đầu vào) ⇒ cùng kết luận / cùng (code, params). Trả kết quả chạy khô. */
 async function cap(ten: string, input: { adapterId: number; tagKey: string; value: unknown }): Promise<KetQuaGoi> {
@@ -211,18 +218,15 @@ async function cap(ten: string, input: { adapterId: number; tagKey: string; valu
       ok: true,
       v: { quaCongTinh: true, canTotp: rq.v.preview.needsTotp, muc: rq.v.preview.level, canhBao: rq.v.preview.warnings, chuaTinh: CHUA_TINH },
     });
-    maDaPhu.add("QUA_CONG_TINH");
     const h = await goi(nguoi[ten].caller.huy({ requestId: rq.v.requestId }));
     expect(h.ok, `huỷ yêu cầu đối chứng ${nhan}`).toBe(true);
   } else if (rq.loi.appCode === "ENTITY_NOT_FOUND") {
     expect(dk, nhan).toEqual({ ok: false, loi: rq.loi });
-    maDaPhu.add(String(rq.loi.appParams?.ma));
   } else {
     expect(dk, nhan).toEqual({
       ok: true,
       v: { quaCongTinh: false, tuChoi: { code: rq.loi.appCode, params: rq.loi.appParams }, chuaTinh: CHUA_TINH },
     });
-    maDaPhu.add(String(rq.loi.appParams?.ma));
   }
   return dk;
 }
@@ -426,7 +430,7 @@ describe("C5 — 8 tình huống của brief: chạy khô cho CÙNG kết luận
     }
     const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
     const truoc = trangThaiSchemaR1a();
-    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [] });
+    __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
     try {
       const r = await cap("opA", { adapterId: ad.a, tagKey: "m3", value: 100 });
       expect(r).toMatchObject({ ok: true, v: { quaCongTinh: false, tuChoi: { code: "SCADA_SCHEMA_MISSING", params: { migration: "0433" } } } });
@@ -541,8 +545,10 @@ describe("C5 — trần chạy khô (Q6 60 / phút / người + KD-2bA 5.4 30 / 
 });
 
 describe("C5 — KD-2bA 5.2: với MỌI mã TuChoiYeuCau, tuChoiCongBo = đúng (appCode, params) của lỗi request, không hơn", () => {
-  // Kiểu `Record<MaTuChoiYeuCau, …>` BUỘC đủ mọi mã: thêm mã mới vào lenhHmi mà không thêm mẫu ở đây ⇒ tsc đỏ.
-  const MAU: Record<MaTuChoiYeuCau, TuChoiYeuCau[]> = {
+  // Fix round 1 (review I-1): khoá theo `TuChoiYeuCau["ma"]` (union THẬT của các biến thể) ⇒ thêm một biến thể từ chối vào lenhHmi mà không thêm
+  // mẫu ở đây ⇒ `npm run check:tests` (tsconfig.tests.json — cổng CI chặn) ĐỎ. Thêm: `MaTuChoiYeuCau` (union viết tay) phải BẰNG `TuChoiYeuCau["ma"]`.
+  // 25 mã (đo 2026-11-01).
+  const MAU: Record<TuChoiYeuCau["ma"], TuChoiYeuCau[]> = {
     FEATURE_DISABLED: [{ ma: "FEATURE_DISABLED", chiTiet: "c" }],
     NOT_FOUND: (["adapter", "deviceTag", "scadaRequest", "machine"] as const).map((entity) => ({ ma: "NOT_FOUND" as const, entity, chiTiet: "c" })),
     CHANNEL_READ_ONLY: [{ ma: "CHANNEL_READ_ONLY", tagKey: "t", chiTiet: "c" }],
@@ -590,10 +596,54 @@ describe("C5 — KD-2bA 5.2: với MỌI mã TuChoiYeuCau, tuChoiCongBo = đúng
         so++;
       }
     }
-    expect(so).toBeGreaterThanOrEqual(26);
+    expect(Object.keys(MAU).length, "số mã").toBeGreaterThanOrEqual(25);
+    expect(so, "số mẫu").toBeGreaterThanOrEqual(30);
   });
 
-  it("mọi mã mà CỔNG TĨNH sinh ra đã được phủ bằng một CẶP thật (chạy khô ↔ request) ở trên", () => {
+  it("MaTuChoiYeuCau (union viết tay) BẰNG TuChoiYeuCau['ma'] — kiểm lúc biên dịch (check:tests)", () => {
+    expect(MA_KHOP_KIEU).toBe(true);
+  });
+
+  it("mọi mã mà CỔNG TĨNH sinh ra được phủ bằng một CẶP thật (chạy khô ↔ request) — TỰ CHỨA, không dựa ca trước (fix round 1, review M-2)", async () => {
+    const { __datTrangThaiSchemaR1a, trangThaiSchemaR1a } = await import("../_core/kiemSchemaR1a");
+    type CaPhu = { ten: string; input: { adapterId: number; tagKey: string; value: unknown }; dat?: () => () => void };
+    const CA: CaPhu[] = [
+      {
+        ten: "opA",
+        input: { adapterId: ad.a, tagKey: "m3", value: 100 },
+        dat: () => (vi.stubEnv("SCADA_COMMANDS_ENABLED", "false"), () => vi.stubEnv("SCADA_COMMANDS_ENABLED", "true")),
+      },
+      {
+        ten: "opA",
+        input: { adapterId: ad.a, tagKey: "m3", value: 100 },
+        dat: () => {
+          const truoc = trangThaiSchemaR1a();
+          __datTrangThaiSchemaR1a({ kieu: "da_kiem", luc: new Date().toISOString(), thieu0431: [], thieu0432: [], thieu0433: ["scada_command_attempts.ly_do"], thieu0434: [], thieu0433Fk: [] });
+          return () => __datTrangThaiSchemaR1a(truoc);
+        },
+      },
+      { ten: "opA", input: { adapterId: ad.b, tagKey: "m3", value: 100 } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "khong_co", value: 1 } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "doc", value: 1 } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "m3", value: "abc" } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "m3", value: 301 } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "m3", value: 240.2 } },
+      { ten: "opA", input: { adapterId: ad.a, tagKey: "m5", value: 100 } },
+      { ten: "opKhongQuyen", input: { adapterId: ad.a, tagKey: "m3", value: 100 } },
+      { ten: "engKhong2fa", input: { adapterId: ad.a, tagKey: "m4", value: 100 } },
+      { ten: "engA", input: { adapterId: ad.e, tagKey: "m3", value: 100 } },
+      { ten: "engA", input: { adapterId: ad.a, tagKey: "m5", value: 100 }, dat: () => (datCheDo(1), () => datCheDo(2)) },
+      { ten: "engA", input: { adapterId: ad.a, tagKey: "m3", value: 100 } },
+    ];
+    const daPhu = new Set<string>();
+    for (const ca of CA) {
+      const traLai = ca.dat?.();
+      try {
+        daPhu.add(maCua(await cap(ca.ten, ca.input)));
+      } finally {
+        traLai?.();
+      }
+    }
     const MA_CONG_TINH = [
       "FEATURE_DISABLED",
       "THIEU_MIGRATION",
@@ -609,6 +659,6 @@ describe("C5 — KD-2bA 5.2: với MỌI mã TuChoiYeuCau, tuChoiCongBo = đúng
       "MODE_LOCAL",
       "QUA_CONG_TINH",
     ];
-    expect([...maDaPhu].sort()).toEqual([...MA_CONG_TINH].sort());
+    expect([...daPhu].sort()).toEqual([...MA_CONG_TINH].sort());
   });
 });

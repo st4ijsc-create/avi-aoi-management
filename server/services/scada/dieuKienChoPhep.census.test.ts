@@ -11,6 +11,9 @@
  *      ghi duy nhất của request (gửi lại) đi qua móc `moc.sauPhamVi` mà chạy khô không truyền.
  *   5. Router: không gọi hàm cổng nào trực tiếp; `kiemDieuKienGhiTag` gọi ĐÚNG một lần, trong thủ tục `dieuKienChoPhep`; thủ tục đó không nhắc
  *      tên nào thuộc `GHI` hay đường gửi (`yeuCauGhiTag`, `xacNhanGhiTag`, `dungMayHmi` …).
+ *   6. (fix round 1, review M-3) `xacNhanGhiTag` (confirm) chạy lại cổng trên dữ liệu HIỆN TẠI bằng chuỗi RIÊNG (có từ R1a, không đổi ở C5):
+ *      ghim chuỗi lời gọi của nó (`THU_TU_XAC_NHAN`) — cổng của confirm = `CONG` trừ `canTotp` (cùng thứ tự), rồi `kiemXacThucTheoMuc` SAU cổng
+ *      chế độ, rồi gia hạn khoá, rồi `dispatch`. Ai sửa thứ tự / bỏ một cổng ở confirm (lệch khỏi cổng chung) ⇒ ĐỎ.
  * Ca "tệp ảo" ở cuối: tiêm vi phạm vào bản sao nguồn ⇒ bộ quét phải báo đúng chỗ (chống "xanh vì quét trúng 0 thứ").
  */
 import { describe, expect, it } from "vitest";
@@ -133,6 +136,35 @@ function quetLenh(src: string) {
   };
 }
 
+/**
+ * Chuỗi lời gọi của `xacNhanGhiTag` — ĐO bằng AST trên cây 630fe4970 (2026-11-01). `kiemCongKenhVaGiaTri` hai lần: một trong nhánh tag vắng / tắt
+ * (dựng mã từ chối), một ở cổng 3–4. Không có `canTotp` (confirm xác minh thật bằng `kiemXacThucTheoMuc`).
+ */
+const THU_TU_XAC_NHAN = [
+  "lenhHmiBat",
+  "canh0433",
+  "adapterTrongPhamViLenh",
+  "docTagLenh",
+  "kiemCongKenhVaGiaTri",
+  "kiemCongKenhVaGiaTri",
+  "kiemCongVaiTro",
+  "kiemCongEdge",
+  "kiemCongCheDo",
+  "kiemXacThucTheoMuc",
+  "giaHanKhoaChon",
+  "dispatch",
+] as const;
+
+function quetXacNhan(src: string): { chuoi: string[]; congKhongLap: string[] } {
+  const ham = hamCapTep(sf(src)).get("xacNhanGhiTag");
+  if (!ham) throw new Error("không thấy xacNhanGhiTag ở cấp tệp");
+  const theoDoi = new Set<string>([...CONG, "kiemXacThucTheoMuc", "giaHanKhoaChon", "giuKhoaChon", "dispatch"]);
+  const chuoi = loiGoi(ham).filter((g) => theoDoi.has(g.ten)).map((g) => g.ten);
+  const tapCong = new Set<string>(CONG);
+  const congKhongLap = chuoi.filter((t, i) => tapCong.has(t) && chuoi.indexOf(t) === i);
+  return { chuoi, congKhongLap };
+}
+
 function quetRouter(src: string) {
   const s = sf(src);
   const goiTatCa = loiGoi(s);
@@ -181,6 +213,16 @@ describe("C5 census — một hàm cổng dùng chung (KD-2bA 5.3)", () => {
   });
 });
 
+describe("C5 census — confirm (xacNhanGhiTag) không lệch khỏi cổng chung (fix round 1, review M-3)", () => {
+  it("★ chuỗi lời gọi của xacNhanGhiTag đúng THU_TU_XAC_NHAN", () => {
+    expect(quetXacNhan(NGUON_LENH).chuoi).toEqual([...THU_TU_XAC_NHAN]);
+  });
+
+  it("★ cổng của confirm (không lặp) = CONG trừ canTotp, cùng thứ tự với kiemDieuKienGhiTag", () => {
+    expect(quetXacNhan(NGUON_LENH).congKhongLap).toEqual(CONG.filter((t) => t !== "canTotp"));
+  });
+});
+
 describe("C5 census — tệp ảo: bộ quét bắt vi phạm tiêm vào", () => {
   const tiemVaoYeuCau = (dong: string) => {
     const moc = "  const dk = await kiemDieuKienGhiTag(nguoi, pv, input, moc);\n";
@@ -197,9 +239,10 @@ describe("C5 census — tệp ảo: bộ quét bắt vi phạm tiêm vào", () =
   });
 
   it("bỏ kiemCongCheDo khỏi kiemDieuKienGhiTag ⇒ thứ tự lệch", () => {
-    const moc = "  const cheDo = await kiemCongCheDo(a.machineId, now);\n";
-    expect(NGUON_LENH.includes(moc)).toBe(true);
-    const src = NGUON_LENH.replace(moc, "  const cheDo = { ok: true } as const;\n");
+    // mốc DUY NHẤT của kiemDieuKienGhiTag (confirm có cùng dòng `const cheDo = …` nhưng theo sau là `tuChoiKetThuc`)
+    const moc = "  const cheDo = await kiemCongCheDo(a.machineId, now);\n  if (!cheDo.ok) return dung(";
+    expect(NGUON_LENH.split(moc).length - 1, "mốc tiêm phải khớp đúng một lần").toBe(1);
+    const src = NGUON_LENH.replace(moc, "  const cheDo = { ok: true } as const;\n  if (!cheDo.ok) return dung(");
     expect(quetLenh(src).thuTuCongTrongKiem).not.toEqual([...CONG]);
   });
 
@@ -208,6 +251,14 @@ describe("C5 census — tệp ảo: bộ quét bắt vi phạm tiêm vào", () =
     expect(NGUON_LENH.includes(moc)).toBe(true);
     const src = NGUON_LENH.replace(moc, "  await ghiThuLenh(db, { userId: 0, stage: \"request\", outcome: \"rejected\" });\n" + moc);
     expect(quetLenh(src).ghiTrongKiem).toEqual(["ghiThuLenh"]);
+  });
+
+  it("confirm đảo cổng edge / chế độ ⇒ chuỗi lệch", () => {
+    const edge = "  const edge = await kiemCongEdge(db, a.id);\n  if (!edge.ok) return tuChoiKetThuc(edge.tuChoi);\n";
+    const cheDo = "  const cheDo = await kiemCongCheDo(a.machineId, now);\n  if (!cheDo.ok) return tuChoiKetThuc(cheDo.tuChoi);\n";
+    expect(NGUON_LENH.includes(edge + cheDo), "mốc tiêm phải tồn tại").toBe(true);
+    const src = NGUON_LENH.replace(edge + cheDo, cheDo + edge);
+    expect(quetXacNhan(src).congKhongLap).not.toEqual(CONG.filter((t) => t !== "canTotp"));
   });
 
   it("router gọi request trong thủ tục chạy khô ⇒ báo yeuCauGhiTag", () => {
