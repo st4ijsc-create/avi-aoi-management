@@ -124,17 +124,47 @@ const loiCuaBiNuot = () =>
 /**
  * T5B fix 1 (điều kiện 4 của dieu-phoi) — mã gốc của lỗi lượt 2, để người đọc log / UI biết dữ liệu nào vừa đổi: `reason` của appError, rồi
  * `appCode`; lỗi miền không phải appError (`StopPinLoi.loai`, `MappingImportError.code`, mã SQLSTATE của postgres) theo tên trường; không có ⇒
- * "UNKNOWN". Không đọc `message` (có thể chứa dữ liệu người dùng).
+ * "UNKNOWN". Không đọc `message` để làm mã (có thể chứa dữ liệu người dùng).
+ * T5B polish (re-review M1) — đi theo chuỗi `.cause` tới sâu 5 (cùng khuôn `isUniqueViolation` / `isMissingTable` ở `_core/dbErrors.ts`):
+ * drizzle-orm ≥ 0.44 bọc MỌI lỗi truy vấn trong `DrizzleQueryError` ("Failed query: …", không có `code`) và lỗi postgres thật (SQLSTATE: 40P01
+ * deadlock, 23505 trùng khoá…) nằm ở `.cause`. Lấy mã ĐẦU TIÊN gặp (ngoài → trong); `thongDiepTrong` = thông điệp của mắt xích TRONG CÙNG (lỗi
+ * postgres gốc — KHÔNG lấy thông điệp "Failed query: … params: …" của lớp bọc, tham số có thể chứa bí mật).
  */
-function maGocCua(e: unknown): string {
+const SAU_CAUSE_TOI_DA = 5;
+function chuoiCause(e: unknown): unknown[] {
+  const ra: unknown[] = [];
+  for (let cur: unknown = e, i = 0; cur != null && i < SAU_CAUSE_TOI_DA; i++) {
+    ra.push(cur);
+    if (typeof cur !== "object") break;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return ra;
+}
+function maMotMat(e: unknown): string | null {
   const meta = readAppErrorMeta(e);
   const reason = meta?.appParams?.reason;
   if (typeof reason === "string" && reason) return reason;
   if (meta?.appCode) return meta.appCode;
   const x = e as { loai?: unknown; code?: unknown } | null;
-  if (x && typeof x.loai === "string" && x.loai) return x.loai;
-  if (x && typeof x.code === "string" && x.code) return x.code;
+  if (x && typeof x === "object" && typeof x.loai === "string" && x.loai) return x.loai;
+  if (x && typeof x === "object" && typeof x.code === "string" && x.code) return x.code;
+  return null;
+}
+function maGocCua(e: unknown): string {
+  for (const mat of chuoiCause(e)) {
+    const ma = maMotMat(mat);
+    if (ma) return ma;
+  }
   return "UNKNOWN";
+}
+function thongDiepTrong(e: unknown): string {
+  const chuoi = chuoiCause(e);
+  for (let i = chuoi.length - 1; i >= 0; i--) {
+    const m = (chuoi[i] as { message?: unknown } | null)?.message;
+    if (typeof m === "string" && m) return m;
+    if (typeof chuoi[i] === "string") return chuoi[i] as string;
+  }
+  return String(e);
 }
 
 /**
@@ -145,7 +175,7 @@ function maGocCua(e: unknown): string {
 function loiLuot2SauTieuMa(e: unknown) {
   const maGoc = maGocCua(e);
   // lỗi gốc KHÔNG đi tới người dùng (thông điệp chung ở trên) ⇒ ghi log máy chủ để vận hành truy được (vd lỗi ghi audit — maGoc "UNKNOWN")
-  console.warn(`[totpCauHinh] T5B: lượt 2 hỏng SAU khi mã đã tiêu (maGoc=${maGoc}): ${e instanceof Error ? e.message : String(e)}`);
+  console.warn(`[totpCauHinh] T5B: lượt 2 hỏng SAU khi mã đã tiêu (maGoc=${maGoc}): ${thongDiepTrong(e)}`);
   return appError(
     "CONFLICT",
     "OPERATION_FAILED",

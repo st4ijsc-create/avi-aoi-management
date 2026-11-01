@@ -249,4 +249,48 @@ describe("chayGiaoDichTotpNgoai — kiểm TOTP ngoài giao dịch, hai lượt 
       expect(luot).toBe(2);
     }
   });
+
+  it("★ polish (re-review M1): lỗi pg BỌC trong DrizzleQueryError (SQLSTATE ở `.cause`) ⇒ maGoc 40P01 / 23505; log mang thông điệp pg GỐC, không mang tham số truy vấn", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm/errors");
+    const canhBao = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const ca: Array<[string, string]> = [
+        ["40P01", "deadlock detected"],
+        ["23505", 'duplicate key value violates unique constraint "device_tags_adapter_key"'],
+      ];
+      for (const [ma, thongDiep] of ca) {
+        const pg = Object.assign(new Error(thongDiep), { code: ma, severity: "ERROR" });
+        const boc = new DrizzleQueryError('update "device_tags" set "x" = $1', ["BI_MAT_THAM_SO"], pg);
+        let luot = 0;
+        const chay = async (cuaTotp: () => void) => {
+          luot++;
+          if (luot === 1) cuaTotp();
+          throw boc;
+        };
+        expect(await loiCua(chayGiaoDichTotpNgoai(chay, async () => undefined)), ma).toMatchObject({
+          code: "CONFLICT",
+          appParams: { operation: "scadaConfigTotp", reason: "scadaTotpDaDungDuLieuDoi", maGoc: ma },
+        });
+        const dong = String(canhBao.mock.calls.at(-1)?.[0]);
+        expect(dong).toContain(`maGoc=${ma}`);
+        expect(dong).toContain(thongDiep);
+        expect(dong).not.toContain("BI_MAT_THAM_SO");
+        expect(dong).not.toContain("Failed query");
+      }
+      // lớp bọc lồng (Error → DrizzleQueryError → pg) vẫn tới SQLSTATE trong sâu 5
+      const pg = Object.assign(new Error("deadlock detected"), { code: "40P01" });
+      const long = Object.assign(new Error("ngoai"), { cause: new DrizzleQueryError("select 1", [], pg) });
+      let luot = 0;
+      expect(
+        await loiCua(
+          chayGiaoDichTotpNgoai(async (cuaTotp) => {
+            if (++luot === 1) cuaTotp();
+            throw long;
+          }, async () => undefined),
+        ),
+      ).toMatchObject({ appParams: { maGoc: "40P01" } });
+    } finally {
+      canhBao.mockRestore();
+    }
+  });
 });
