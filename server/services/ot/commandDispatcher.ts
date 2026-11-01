@@ -2341,7 +2341,8 @@ export function ketQuaPhatLai(input: DispatchInput, existing: CommandLog, hangLo
   const khongRo = hang.some((r) => av(r)?.khongRo === true);
   // T6c polish (review m1) — lô THIẾT BỊ = mọi hàng có status thiết bị VÀ là hàng KẾT QUẢ của đường ghi (`ackValue.ledger === "result"`, đường sống luôn
   // ghi). Hàng từ chối / `failed` không gửi gì (`writeFailed` ADAPTER_OFFLINE: không `ackValue`) ⇒ nhánh không-thiết-bị (giữ `reason` = mã như đường sống).
-  // T6c polish 2 (re-review Important) — hàng CŨ ghi trước sổ ghi trước (status thiết bị, KHÔNG `ackValue.ledger`) cũng là hàng thiết bị ⇒ CÙNG `ketCucLo`
+  // T6c polish 2 (re-review Important) — hàng KHÔNG `ackValue.ledger` (hàng cũ trước sổ ghi trước, hoặc hàng ghi không qua sổ; T6d chỉ thêm `bam`, không thêm
+  // `ledger`) mang status thiết bị cũng là hàng thiết bị ⇒ CÙNG `ketCucLo`
   // (legacy [acked, failed] ⇒ failed MOT_PHAN như đường sống), TRỪ khi errorText mang tiền tố mã của một thất bại KHÔNG gửi (`MA_THAT_BAI_KHONG_GUI`).
   const hangThietBi = (r: CommandLog): boolean => {
     if (!TRANG_THAI_HANG_THIET_BI.has(r.status)) return false;
