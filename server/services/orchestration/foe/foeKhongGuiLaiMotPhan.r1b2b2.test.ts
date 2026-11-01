@@ -229,7 +229,7 @@ import { startS7commSim, type S7commSim, type SimFault } from "../../ot/drivers/
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { executeOtDeviceWrite } from "../../ot/otDeviceWrite";
 import { ketCucLo, MA_MOT_PHAN, moTaMotPhan } from "../../ot/motPhan";
-import { FOE_OUTCOME_PARTIAL, FOE_OUTCOME_UNKNOWN } from "./foeEngine";
+import { FOE_OUTCOME_PARTIAL, FOE_OUTCOME_UNKNOWN, ketCucLenhFoe } from "./foeEngine";
 
 // ── "dispatcher có thiết bị": lô HAI item thật qua device stage + nodes7 + sim ──
 const LO = [
@@ -353,4 +353,12 @@ describe("T3E — FOE không gửi lại lô áp MỘT PHẦN", () => {
     expect(goi("start")).toBe(1);
     expect(soPduGhi()).toBe(1);
   }, 30_000);
+});
+
+describe("T3E — ketCucLenhFoe: timeout THẮNG motPhan (T2B)", () => {
+  it("status timeout + detail.motPhan ⇒ outcomeUnknown, KHÔNG mang motPhan", () => {
+    const out = ketCucLenhFoe({ ok: false, status: "timeout", detail: { motPhan: { daAp: ["a"], khongAp: ["b"] } } } as Parameters<typeof ketCucLenhFoe>[0], "start");
+    expect(out).toMatchObject({ kind: "failed", outcomeUnknown: true });
+    expect(out).not.toHaveProperty("motPhan");
+  });
 });

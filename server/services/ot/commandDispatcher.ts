@@ -766,6 +766,30 @@ function emitCmdAck(input: DispatchInput, result: DispatchResult): void {
   })();
 }
 
+/** R1b-2b-2a T3F — global slot of the test-only cut point (symbol: not reachable by name from outside). */
+const CAT_SAU_GHI_CHO_TEST = Symbol.for("avi.ot.dispatch.catSauGhiThietBiChoTest");
+export function catSauGhiThietBiChoTest(): ((input: DispatchInput) => Promise<void>) | null { // exported for the gate test
+  // the READER requires vitest too: code outside vitest never reaches the hook by setting the global
+  if (!process.env.VITEST) return null;
+  const f = (globalThis as Record<symbol, unknown>)[CAT_SAU_GHI_CHO_TEST];
+  return typeof f === "function" ? (f as (input: DispatchInput) => Promise<void>) : null;
+}
+/**
+ * R1b-2b-2a T3F — TEST ONLY (vitest): a function awaited right after the device answered a real write and BEFORE its result rows are written
+ * (simulates a crash between "device written" and "result row written": e.g. a promise that never settles). null clears it. Outside vitest
+ * (`process.env.VITEST` absent) it does nothing, logs, returns false. Never used by production code.
+ */
+export function __catSauGhiThietBiChoTest(f: ((input: DispatchInput) => Promise<void>) | null): boolean {
+  if (!process.env.VITEST) {
+    console.error("[Dispatch] __catSauGhiThietBiChoTest ignored outside vitest");
+    return false;
+  }
+  const g = globalThis as Record<symbol, unknown>;
+  if (f) g[CAT_SAU_GHI_CHO_TEST] = f;
+  else delete g[CAT_SAU_GHI_CHO_TEST];
+  return true;
+}
+
 /**
  * Dispatch a machine command. In F4a this is always DRY-RUN unless
  * OT_CONTROL_ENABLED === "true" (reserved for F4b). Returns a structured result
@@ -1884,6 +1908,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     };
   }
   const { sentAt, timedOut, outcomes } = executed;
+  // R1b-2b-2a T3F — TEST-ONLY cut point (vitest only, setter AND reader): the device has answered, the result rows are not written yet — the
+  // window a process crash leaves an intent without a result (⇒ DUPLICATE_IN_FLIGHT on replay). Production: never set, never awaited.
+  const catSauGhi = catSauGhiThietBiChoTest();
+  if (catSauGhi) await catSauGhi(input);
 
   // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
   //   timeout (the command's, or ≥1 write whose outcome is unknown) → 'timeout'; else any failed → 'failed';
