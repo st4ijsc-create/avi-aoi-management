@@ -77,7 +77,7 @@ async function seedTag(key: string, level: number | null) {
  * kiem-dinh R1b-1 I-A (fix round 2, 2026-10-25) — FIXTURE: tag CÓ ghim khai `actuationLevel = 1` (dừng ghim chỉ tính ghim đủ điều kiện STOP, cùng luật
  * STOP HMI); `muc` ghi đè (null = chưa khai ⇒ 5 ⇒ không phải dừng ghim).
  */
-async function seedTagDung(adId: number, key: string, stopValue: boolean | null, muc?: number | null) {
+async function seedTagDung(adId: number, key: string, stopValue: boolean | null, muc?: 1 | 3 | 4 | 5 | null) {
   const actuationLevel = muc !== undefined ? muc : stopValue === null ? null : 1;
   await db.insert(deviceTags).values({ adapterId: adId, tagKey: key, address: `M.${key}`, dataType: "bool", writable: true, isEnabled: true, stopValue, actuationLevel });
 }

@@ -7,6 +7,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { dungLenhUngDung, sinhUngDungThat } from "./cuaSinhUngDung";
+import type { LenhUngDung } from "./quanLyUngDung";
+
+/** Thu hẹp kết quả `dungLenhUngDung` về `LenhUngDung` — ném (không im lặng bỏ qua) khi nhận `thieu`/`tuChoi`. */
+function lenh(r: ReturnType<typeof dungLenhUngDung>): LenhUngDung {
+  if (!("file" in r)) throw new Error(`expected a command, got ${JSON.stringify(r)}`);
+  return r;
+}
 
 const tam: string[] = [];
 function gocTam(): string {
@@ -21,9 +28,7 @@ afterEach(() => {
 
 describe("§1 — dựng argv từ khai báo chạy (KHÔNG chuỗi lệnh tự do)", () => {
   it("★★★ npm script ⇒ node <npm-cli.js> run <dev|start> (không qua npm.cmd, không shell)", () => {
-    const r = dungLenhUngDung({ loai: "npm", script: "dev" }, gocTam());
-    expect("thieu" in r).toBe(false);
-    if ("thieu" in r) return;
+    const r = lenh(dungLenhUngDung({ loai: "npm", script: "dev" }, gocTam()));
     expect(r.file).toBe(process.execPath);
     expect(r.args.slice(-2)).toEqual(["run", "dev"]);
     expect(r.args[0]).toMatch(/npm-cli\.js$/);
@@ -33,21 +38,21 @@ describe("§1 — dựng argv từ khai báo chạy (KHÔNG chuỗi lệnh tự 
   it("★★★ python ⇒ python CỦA VENV khi có `.venv` (gói đã cài nằm ở đó), python hệ thống khi không", () => {
     const g = gocTam();
     let r = dungLenhUngDung({ loai: "python", tep: "app.py" }, g);
-    expect(!("thieu" in r) && r.file).toBe("python");
+    expect(lenh(r).file).toBe("python");
     const py = process.platform === "win32" ? path.join(g, ".venv", "Scripts", "python.exe") : path.join(g, ".venv", "bin", "python");
     fs.mkdirSync(path.dirname(py), { recursive: true });
     fs.writeFileSync(py, "");
     r = dungLenhUngDung({ loai: "python", tep: "app.py" }, g);
-    expect(!("thieu" in r) && r.file).toBe(py);
-    expect(!("thieu" in r) && r.args).toEqual(["app.py"]);
+    expect(lenh(r).file).toBe(py);
+    expect(lenh(r).args).toEqual(["app.py"]);
   });
 
   it("★★ dotnet ⇒ `run --project <csproj> --no-launch-profile` (launchSettings không đè ASPNETCORE_URLS) + `--no-restore` mặc định offline", () => {
     const r = dungLenhUngDung({ loai: "dotnet", duAn: "src/App.csproj" }, gocTam());
-    expect(!("thieu" in r) && r.args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile", "--no-restore"]);
+    expect(lenh(r).args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile", "--no-restore"]);
     process.env.DOTNET_CHO_PHEP_RESTORE = "1";
     const r2 = dungLenhUngDung({ loai: "dotnet", duAn: "src/App.csproj" }, gocTam());
-    expect(!("thieu" in r2) && r2.args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile"]);
+    expect(lenh(r2).args).toEqual(["run", "--project", "src/App.csproj", "--no-launch-profile"]);
   });
 });
 
@@ -62,7 +67,9 @@ describe("§2 — tiến trình THẬT: môi trường LỌC, PORT/HOST đúng c
       { ...process.env, DATABASE_URL: "postgres://canary-ai7:matkhau@x/y", MASTER_API_KEY: "canary-master-ai7" },
     );
     let out = "";
-    con.stdout?.on("data", (c: Buffer) => (out += c.toString("utf8")));
+    con.stdout?.on("data", (c: string | Buffer) => {
+      out += c.toString("utf8");
+    });
     await new Promise<void>((giai) => con.on("exit", () => giai()));
     const j = JSON.parse(out.trim()) as { env: Record<string, string>; cwd: string };
     expect(out).not.toContain("canary-ai7");
@@ -81,7 +88,9 @@ describe("§2 — tiến trình THẬT: môi trường LỌC, PORT/HOST đúng c
       "127.0.0.2",
     );
     let out = "";
-    con.stdout?.on("data", (c: Buffer) => (out += c.toString("utf8")));
+    con.stdout?.on("data", (c: string | Buffer) => {
+      out += c.toString("utf8");
+    });
     await new Promise<void>((giai) => con.on("exit", () => giai()));
     expect(out.trim()).toBe("5156 127.0.0.2");
   });
