@@ -11,7 +11,7 @@
  *   • a FULL journal blocks only new non-STOP actuation: `auth.consumed` is refused, robot-state samples are dropped (counted),
  *     STOP / step / lock records are still written.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -28,7 +28,22 @@ async function tmp(): Promise<string> {
   dirs.push(d);
   return d;
 }
+// kiem-dinh 2026-11-02 — mọi EdgeJournal mở trong một ca được ĐÓNG tường minh ở afterEach (một số ca mô phỏng mất điện bằng cách bỏ j1 không đóng): nếu
+// không, FileHandle bị đóng lúc GC và Node 26 coi đó là LỖI (ERR_INVALID_STATE) ⇒ vitest thoát 1 dù 25/25 xanh. `close()` idempotent.
+const opened: EdgeJournal[] = [];
+const rawFiles: EdgeJournalFile[] = []; // tay cầm thật mà recordingIo mở: ca “đĩa treo” có close() của journal KHÔNG bao giờ xong ⇒ đóng thẳng tay cầm
+beforeEach(() => {
+  const open = EdgeJournal.open.bind(EdgeJournal);
+  vi.spyOn(EdgeJournal, "open").mockImplementation(async (...a: Parameters<typeof EdgeJournal.open>) => {
+    const j = await open(...a);
+    opened.push(j);
+    return j;
+  });
+});
 afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const j of opened.splice(0).reverse()) await Promise.race([j.close().catch(() => undefined), new Promise<void>((r) => setTimeout(r, 500))]); // đĩa treo ⇒ không chờ mãi
+  for (const x of rawFiles.splice(0)) await x.close().catch(() => undefined);
   for (const d of dirs.splice(0)) await fs.rm(d, { recursive: true, force: true }).catch(() => undefined);
 });
 
@@ -76,6 +91,7 @@ function recordingIo(): { io: EdgeJournalIo; events: string[]; holdSync: () => v
     ...nodeEdgeJournalIo,
     async openAppend(p: string): Promise<EdgeJournalFile> {
       const f = await nodeEdgeJournalIo.openAppend(p);
+      rawFiles.push(f);
       return {
         async write(data: string) {
           for (const line of data.split("\n").filter(Boolean)) {

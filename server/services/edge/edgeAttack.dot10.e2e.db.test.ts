@@ -654,7 +654,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
   it("★ A7 — a FULL journal blocks new non-STOP work only: no run is claimed, but a robot STOP and a pinned OT STOP still go out", async () => {
     await edge.stop();
     edge = await c.spawnEdge("full", { env: { EDGE_JOURNAL_MAX_BYTES: "1", EDGE_REQUEST_TIMEOUT_MS: "8000" } });
-    expect(edge.counts()!.journal?.full).toBe(true);
+    // kiem-dinh 2026-11-02 — counts() ngay sau spawnEdge chạy trước khi journal báo đầy ⇒ chập chờn: ĐỢI sự kiện thay vì đọc ngay.
+    await edge.waitCounts("the journal reports full", (k) => k.journal?.full === true, 15_000);
     const s = c.steps;
     const id = await c.startRun("full", [s.gate(), s.move("m1")]);
     await sleep(3_000); // ~15 pulls
