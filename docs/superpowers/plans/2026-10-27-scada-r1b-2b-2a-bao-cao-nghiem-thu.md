@@ -164,6 +164,11 @@ _(Task 11)_
 
 ### VẬN HÀNH
 
+- (T6 fix 1 + T6b, dieu-phoi 2026-11-01) **Nguyên tắc: kết quả "không rõ" của STOP không bao giờ chờ đọc lại.** Lô ghi có ≥ 1 write "không rõ"
+  (liên kết mất giữa lô `mat_lien_ket`, hoặc driver / thư viện tự hết hạn `qua_han_driver`) ⇒ KHÔNG đọc lại cả lô, kể cả khi HMI ép đọc lại
+  (`docLai: "bat_buoc"`) và với mọi lệnh, không chỉ STOP. Write đã acked của lô hiện `acked_unverified` với "readback skipped: link lost in this batch"
+  / "readback skipped: outcome unknown in this batch"; lô vẫn `timeout` "outcome unknown" ⇒ băng E-STOP cứng `khong_ro` hiện ngay, không trễ thêm hạn
+  đọc lại (mặc định 5 s). Người vận hành muốn xác nhận giá trị của write đã acked thì đọc tag trên màn hình sau khi liên kết hồi phục.
 - (T1) Bộ đếm `demGhiBoQuaDay`, hàng chờ ghi nền và tóm tắt chưa ghi đều mất khi khởi động lại tiến trình. `batDauLuc` cho biết bộ đếm đếm từ khi nào.
 - (T1) Tắt êm: `server.close` chờ lượt xả (≤ 2 s); hạn ép thoát 5 s của `gracefulShutdown` vẫn đứng trên cùng.
 - (T3A) **Bộ điều khiển không liệt kê tag thì không điều khiển EIP được.** Get Instance Attribute List lỗi ⇒ `connect()` hỏng (như trước); danh sách

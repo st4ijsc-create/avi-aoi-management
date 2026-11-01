@@ -223,7 +223,7 @@ describe("R1b-2b-2a T2 — write không rõ kết cục THEO TỪNG write ⇒ 't
     expect(r.status).toBe("failed");
   });
 
-  it("đọc lại BẬT: write không rõ KHÔNG được đọc lại (chỉ write acked)", async () => {
+  it("đọc lại BẬT: lô có write không rõ ⇒ KHÔNG đọc lại CẢ lô (T6b — kết quả 'không rõ' không bao giờ chờ đọc lại); write acked ⇒ acked_unverified", async () => {
     process.env.OT_READBACK_ENABLED = "true";
     const doc: string[][] = [];
     const goc = driver.readTags;
@@ -234,9 +234,12 @@ describe("R1b-2b-2a T2 — write không rõ kết cục THEO TỪNG write ⇒ 't
         return [{ tagKey: "cmd_a", ok: true }, KHONG_RO("cmd_b")];
       };
       const ex = await ghi({ tagKeys: ["cmd_a", "cmd_b"], intentIds: [1, 2] });
-      expect(ex.outcomes.map((o) => o.status)).toEqual(["acked_verified", "timeout"]);
+      // R1b-2b-2a T6b (dieu-phoi 2026-11-01) — trước T6b: cmd_a được đọc lại (acked_verified, doc = [["cmd_a"]]); nay không đọc lại gì.
+      expect(ex.outcomes.map((o) => o.status)).toEqual(["acked_unverified", "timeout"]);
+      expect(ex.outcomes[0].ok).toBe(true);
+      expect(ex.outcomes[0].errorText).toBe("readback skipped: outcome unknown in this batch");
       expect(ex.outcomes[1].readBackValue).toBeNull();
-      expect(doc).toEqual([["cmd_a"]]);
+      expect(doc).toEqual([]);
     } finally {
       driver.readTags = goc;
     }

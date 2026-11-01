@@ -844,6 +844,29 @@ export function tryEnqueueAdapterCommand<T>(
 }
 
 
+/** T6b — câu errorText của write acked khi đọc lại bị bỏ (theo loại "không rõ" của lô). */
+export const LY_DO_BO_DOC_LAI_MAT_LIEN_KET = "readback skipped: link lost in this batch";
+export const LY_DO_BO_DOC_LAI_KHONG_RO = "readback skipped: outcome unknown in this batch";
+
+/**
+ * SCADA R1b-2b-2a T6 fix 1 + T6b (dieu-phoi 2026-11-01) — MỘT nơi quyết "bỏ đọc lại CẢ lô": kết quả "không rõ" của STOP KHÔNG BAO GIỜ chờ đọc lại.
+ * Lô (kết quả `driver.writeTags`) có ≥ 1 write `ok:false` mang `ketCucKhongRo` thuộc tập "không rõ" ⇒ trả câu lý do (write acked của lô ⇒
+ * `acked_unverified` với câu này, không `readTags`); ngược lại `null` (đọc lại như thường).
+ *   • `mat_lien_ket` (liên kết mất giữa lô, T6) ⇒ LY_DO_BO_DOC_LAI_MAT_LIEN_KET (ưu tiên: nói rõ liên kết đã gãy);
+ *   • `qua_han_driver` (driver / thư viện tự hết hạn, thiết bị trả lời cụt — T2 / T3) ⇒ LY_DO_BO_DOC_LAI_KHONG_RO.
+ * Một write `timeout` của dispatcher không có `ketCucKhongRo` chỉ xảy ra khi CẢ lệnh quá hạn (`timedOut`) ⇒ không có write acked nào, không cần xét.
+ * Hàm thuần (không I/O) — xuất cho test.
+ */
+export function lyDoBoDocLai(ketQua: ReadonlyArray<{ ok?: boolean; ketCucKhongRo?: OtCommandResult["ketCucKhongRo"] | null }>): string | null {
+  let khongRo: string | null = null;
+  for (const r of ketQua) {
+    if (r == null || r.ok === true) continue;
+    if (r.ketCucKhongRo === "mat_lien_ket") return LY_DO_BO_DOC_LAI_MAT_LIEN_KET;
+    if (r.ketCucKhongRo === "qua_han_driver") khongRo = LY_DO_BO_DOC_LAI_KHONG_RO;
+  }
+  return khongRo;
+}
+
 /** R1b-2b-2a T2 — kết quả của `driver.writeTags` có ≥ 1 write KHÔNG rõ kết cục (`OtCommandResult.ketCucKhongRo`). */
 function mangKetCucKhongRo(v: unknown): boolean {
   return Array.isArray(v) && v.some((r) => r != null && typeof r === "object" && (r as { ketCucKhongRo?: unknown }).ketCucKhongRo != null);
@@ -1426,17 +1449,19 @@ export async function executeOtDeviceWrite(a: {
   //    R1b-2b-2a T6 fix 1 (review I1) — lô có ≥ 1 write `ketCucKhongRo: "mat_lien_ket"` (liên kết mất GIỮA lô): KHÔNG đọc lại CẢ lô, mọi lệnh (không
   //    chỉ STOP) — đọc trên liên kết đã gãy không thêm gì, và với EIP phiên nhiễm `readTags` chờ phiên mới (≤ 2 s) rồi đọc (≤ timeoutMs) ⇒ câu trả lời
   //    "không rõ" của STOP chậm hơn T17. Write acked ⇒ `acked_unverified` "readback skipped: link lost in this batch" (lô vẫn `timeout` theo T2).
-  //    Chỉ áp khi đọc lại SẼ chạy (cờ / `bat_buoc`); `qua_han_driver` không đổi ở vòng này.
+  //    Chỉ áp khi đọc lại SẼ chạy (cờ / `bat_buoc`).
+  //    R1b-2b-2a T6b (dieu-phoi 2026-11-01) — mở rộng cho MỌI write "không rõ" (`qua_han_driver` nữa): kết quả "không rõ" của STOP KHÔNG BAO GIỜ chờ
+  //    đọc lại. MỘT nơi quyết: `lyDoBoDocLai` (hàm thuần).
   const docLaiSeChay = (isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked");
-  const boDocLaiViMatLienKet = docLaiSeChay && resultsArr.some((x) => x.ok !== true && x.ketCucKhongRo === "mat_lien_ket");
-  if (boDocLaiViMatLienKet) {
+  const lyDoBo = docLaiSeChay ? lyDoBoDocLai(resultsArr) : null;
+  if (lyDoBo) {
     for (const o of outcomes) {
       if (o.status !== "acked") continue;
       o.status = "acked_unverified";
-      o.errorText = "readback skipped: link lost in this batch";
+      o.errorText = lyDoBo;
     }
   }
-  if (docLaiSeChay && !boDocLaiViMatLienKet) {
+  if (docLaiSeChay && !lyDoBo) {
     const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
     const readTags: OtTagAddress[] = ackedIdx.map((i) => {
       const r = resolved[i];
