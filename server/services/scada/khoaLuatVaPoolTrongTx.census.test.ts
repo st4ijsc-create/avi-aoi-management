@@ -34,12 +34,17 @@
  *       ngoài callback, rồi `db.select(…)` trong callback).
  *
  * GIỚI HẠN đã biết (ghi rõ, không giả vờ đủ):
- *   • (A) không đi vào thân hàm được gọi để tìm khoá adapter SAU (chỉ dấu hiệu trực tiếp + `khoaAdapterTx` / `congAdapterTx` trong cùng hàm);
- *     giao dịch trải nhiều hàm chỉ được nối qua hợp đồng có tên.
+ *   • (A) vế "khoá adapter TRƯỚC" chỉ tính dấu hiệu trực tiếp trong cùng hàm (helper có thể khoá có điều kiện); vế "khoá adapter SAU" tính cả
+ *     lời gọi tới hàm có thân khoá adapter (điểm bất động — fix round 1, review m5). Giao dịch trải nhiều hàm chỉ được nối qua hợp đồng có tên.
  *   • (A) "chắc chắn chạy" là xấp xỉ cú pháp: `if (!x) return; khoa…` vẫn tính là chắc chắn (đúng); `if (a) { khoa…; s } else { return }` tính là
  *     KHÔNG (bảo thủ, đỏ oan thì sửa mã hoặc ghi hợp đồng).
- *   • (B) lời gọi qua tham số / biến hàm / `bind` / phần tử mảng / `export default` không được phân giải (không coi là gọi pool); `x.<tên chung>(…)`
- *     (`get`, `run`, `select`, …) không khớp theo tên — không loại thì điểm bất động nuốt cả cây (đo 2026-11-01: 8 817 tên).
+ *   • (B) lời gọi qua tham số / biến hàm / `bind` / phần tử mảng / `export default` / thành viên rút gọn `{ fnA }` không được phân giải (không coi
+ *     là gọi pool); import không tương đối và `default` ⇒ `[]` (review m4 — đo: không có chỗ nào trong phạm vi hôm nay). `x.<tên chung>(…)`
+ *     (`get`, `run`, `select`, …) không khớp theo tên — không loại thì điểm bất động nuốt cả cây (đo 2026-11-01: 8 817 tên). Chỗ mù này CÓ GIỚI
+ *     HẠN (fix round 1, review I2): mọi phương thức first-party tên chung tới pool được GHIM (`TEN_CHUNG_GOI_POOL`, ratchet), và `x.<tên đã ghim>()`
+ *     với `x` là đối tượng NHẬP được coi là gọi pool.
+ *   • Tên hợp đồng chung chung (`lam`) khớp theo tên ở mọi tệp ⇒ chỉ có thể đỏ oan (review m6). Ca "đo (in bảng)" xanh trống khi không có
+ *     `CENSUS_IN=1` (review m7 — để lại có chủ ý: công cụ đo, không phải khẳng định).
  *   • (B) tham số hàm bao ngoài làm tay cầm pool (`function f(db) { db.transaction(async (tx) => db.select…) }`) và tay cầm pool nhập từ module
  *     (`import { db }`) không bị bắt — chỉ biến khởi tạo từ một lời gọi pool.
  *   • (B) hạt chỉ là `HAM_GOI_POOL` (brief): `getReadDb` / `getJobsDb` (pool khác) không là hạt.
@@ -152,8 +157,96 @@ export const HAM_GOI_POOL: ReadonlySet<string> = new Set([
   "layPhamViGhiLuat",
 ]);
 
+/**
+ * GHIM (review T5 I2) — phương thức first-party TÊN CHUNG (`TEN_CHUNG`) có thân tới pool, đo bằng AST trên 1e9bbd23a (2026-11-01). Lời gọi
+ * `x.<tên chung>()` KHÔNG khớp theo tên (không thì điểm bất động nuốt cả cây) ⇒ đây là chỗ mù; ghim nó để chỗ mù CÓ GIỚI HẠN: thêm phương thức
+ * như vậy ⇒ đỏ (đổi tên cho riêng biệt, hoặc thêm vào đây kèm lý do). Tên trong tập này: `x.<tên>()` với `x` là đối tượng NHẬP ⇒ coi là gọi pool.
+ */
+const TEN_CHUNG_GOI_POOL: ReadonlyArray<{ viTri: string; lyDo: string }> = [
+  { viTri: "server/license/license-guard.ts#start", lyDo: "`this.checkLicense()` — phương thức cùng lớp; khoá `.checkLicense` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/license/license-service.ts#sync", lyDo: "`db.getLicenseByKey()` tới pool (điểm bất động)" },
+  { viTri: "server/license/license-service.ts#validate", lyDo: "`db.getLicenseByKey()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ai/microBatcher.ts#flush", lyDo: "`this.flush()` — phương thức cùng lớp; khoá `.flush` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/aiJobQueue.ts#run", lyDo: "`generateNarrative()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/index.ts#execute", lyDo: "`executeDecision()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/index.ts#first", lyDo: "`chonToolVong1()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/index.ts#next", lyDo: "`decideNextToolLLM()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers.ts#execute", lyDo: "`getMeasurementPointDefById()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/alerts.ts#execute", lyDo: "`acknowledgeAlert()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/applyDiff.ts#execute", lyDo: "`phanQuyet()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/applyDiffBatch.ts#execute", lyDo: "`phanQuyetLo()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/engineering.ts#execute", lyDo: "gọi trực tiếp hạt `getDb()`" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/interlock.ts#execute", lyDo: "gọi trực tiếp hạt `getDb()`" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/machineControl.ts#execute", lyDo: "`plan()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/maintenance.ts#execute", lyDo: "gọi trực tiếp hạt `getDb()`" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/measurementPoint.ts#execute", lyDo: "`createMeasurementPointDef()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/qualityAdvisory.ts#execute", lyDo: "`runRca()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/repoCommand.ts#execute", lyDo: "`checkPermission()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/visionControl.ts#execute", lyDo: "`runDispatch()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/xoaDoiTenTep.ts#execute", lyDo: "`phanQuyetXoa()` tới pool (điểm bất động)" },
+  { viTri: "server/services/aiLocalTools/writeHandlers/yield.ts#execute", lyDo: "`resolveThreshold()` tới pool (điểm bất động)" },
+  { viTri: "server/services/cacheWarmingService.ts#initialize", lyDo: "`this.warmCache()` — phương thức cùng lớp; khoá `.warmCache` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/cfx/cfxClient.ts#start", lyDo: "`this.connectEndpoint()` — phương thức cùng lớp; khoá `.connectEndpoint` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeConfigSource.ts#refresh", lyDo: "`writeFileAtomic()` tới pool (điểm bất động)" },
+  { viTri: "server/services/edge/edgeExecutionAgent.ts#ack", lyDo: "`this.deps.sink//R-10-z—stop-class:neverdroppedwhenthejournalisfull,boundedwait.event()` — phương thức cùng lớp; khoá `.event` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeExecutionAgent.ts#start", lyDo: "`this.tick()` — phương thức cùng lớp; khoá `.tick` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeExecutionAgent.ts#tick", lyDo: "`this.pullPhase()` — phương thức cùng lớp; khoá `.pullPhase` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeExecutionAgent.ts#watch", lyDo: "`this.handleCommands()` — phương thức cùng lớp; khoá `.handleCommands` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeJournal.ts#ack", lyDo: "`this.maybeCompact()` — phương thức cùng lớp; khoá `.maybeCompact` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeJournal.ts#close", lyDo: "`this.writeSnapshot()` — phương thức cùng lớp; khoá `.writeSnapshot` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeJournal.ts#init", lyDo: "`this.startFresh()` — phương thức cùng lớp; khoá `.startFresh` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeJournal.ts#reset", lyDo: "`this.startFresh()` — phương thức cùng lớp; khoá `.startFresh` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeStreams.ts#flush", lyDo: "`this.flushOnce()` — phương thức cùng lớp; khoá `.flushOnce` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/edge/edgeStreams.ts#run", lyDo: "`journal.appendRun()` tới pool (điểm bất động)" },
+  { viTri: "server/services/edge/edgeStreams.ts#start", lyDo: "`this.flushAll()` — phương thức cùng lớp; khoá `.flushAll` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/instruments/scpiAdapter.ts#query", lyDo: "`this.enqueue()` — phương thức cùng lớp; khoá `.enqueue` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/instruments/scpiAdapter.ts#reset", lyDo: "`this.write()` — phương thức cùng lớp; khoá `.write` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/instruments/scpiAdapter.ts#write", lyDo: "`this.enqueue()` — phương thức cùng lớp; khoá `.enqueue` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/instruments/zplPrinterAdapter.ts#ping", lyDo: "`this.open()` — phương thức cùng lớp; khoá `.open` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/orchestration/templates/qtStepHandlers.ts#run", lyDo: "`allocateOrder()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ot/drivers/mitsubishiMcDriver.ts#close", lyDo: "`hardening.guard()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ot/drivers/mitsubishiMcDriver.ts#connect", lyDo: "`dropMcBounded()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ot/drivers/mitsubishiMcDriver.ts#disconnect", lyDo: "`dropMcBounded()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ot/drivers/s7BlockChecksum.ts#open", lyDo: "`net.connect()` tới pool (điểm bất động)" },
+  { viTri: "server/services/ot/otStopEpochKeyEpisode.ts#write", lyDo: "`sendNotification()` tới pool (điểm bất động)" },
+  { viTri: "server/services/plugins/pluginDriverBridge.ts#connect", lyDo: "`this.disconnect()` — phương thức cùng lớp; khoá `.disconnect` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/plugins/sidecar/pluginSupervisor.ts#start", lyDo: "`this.spawnOnce()` — phương thức cùng lớp; khoá `.spawnOnce` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/programming/iec61131/iec61131Adapter.ts#validate", lyDo: "`checkStructuredText()` tới pool (điểm bất động)" },
+  { viTri: "server/services/robot/drivers/deltaRobotDriver.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/fanucDriver.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/mitsubishiRobotDriver.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/simRobotDriver.ts#abort", lyDo: "`this.motionLock.clearByStop()` — phương thức cùng lớp; khoá `.clearByStop` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/tcpLineClient.ts#send", lyDo: "`this.write()` — phương thức cùng lớp; khoá `.write` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/tcpLineClient.ts#write", lyDo: "`this.reconnect()` — phương thức cùng lớp; khoá `.reconnect` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/drivers/techmanDriver.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/robotDriver.ts#lock", lyDo: "`this.notify()` — phương thức cùng lớp; khoá `.notify` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/robot/ursimBridge.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/ros2/ros2Bridge.ts#start", lyDo: "`this.onTelemetry()` — phương thức cùng lớp; khoá `.onTelemetry` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/ros2/rosbridgeClient.ts#connect", lyDo: "`this.onMessage()` — phương thức cùng lớp; khoá `.onMessage` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/ros2/rosbridgeClient.ts#publish", lyDo: "`this.advertise()` — phương thức cùng lớp; khoá `.advertise` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/ros2/rosbridgeClient.ts#subscribe", lyDo: "`this.send()` — phương thức cùng lớp; khoá `.send` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/ros2/rosbridgeClient.ts#unsubscribe", lyDo: "`this.send()` — phương thức cùng lớp; khoá `.send` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/safety/plc/safetyPlcPoller.ts#start", lyDo: "`this.refreshLoop()` — phương thức cùng lớp; khoá `.refreshLoop` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/safety/plc/safetyPlcPoller.ts#tick", lyDo: "`this.pollNow()` — phương thức cùng lớp; khoá `.pollNow` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/safety/plc/safetyPlcPollerHealth.ts#list", lyDo: "`listAt()` tới pool (điểm bất động)" },
+  { viTri: "server/services/safety/plc/safetyPlcPollerHealth.ts#load", lyDo: "`db()` tới pool (điểm bất động)" },
+  { viTri: "server/services/safety/plc/safetyPlcPollerHealth.ts#save", lyDo: "`db()` tới pool (điểm bất động)" },
+  { viTri: "server/services/safety/trustedSafetyOrigin.ts#consume", lyDo: "gọi trực tiếp hạt `getDb()`" },
+  { viTri: "server/services/secsgem/hsmsClient.ts#connect", lyDo: "`net.connect()` tới pool (điểm bất động)" },
+  { viTri: "server/services/secsgem/hsmsClient.ts#select", lyDo: "`this.send()` — phương thức cùng lớp; khoá `.send` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/streaming/inProcessAdapter.ts#publish", lyDo: "`deliver()` tới pool (điểm bất động)" },
+  { viTri: "server/services/streaming/lakeSink.ts#start", lyDo: "`getStreamBridge()` tới pool (điểm bất động)" },
+  { viTri: "server/services/streaming/streamProcessor.ts#start", lyDo: "`this.onMessage()` — phương thức cùng lớp; khoá `.onMessage` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/uns/sparkplugCommand.ts#start", lyDo: "`this.handleMessage()` — phương thức cùng lớp; khoá `.handleMessage` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/vda5050/vda5050Adapter.ts#start", lyDo: "`this.onMessage()` — phương thức cùng lớp; khoá `.onMessage` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/vda5050/vda5050Driver.ts#abort", lyDo: "`this.runJob()` — phương thức cùng lớp; khoá `.runJob` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+  { viTri: "server/services/vda5050/vda5050Driver.ts#connect", lyDo: "`this.onMessage()` — phương thức cùng lớp; khoá `.onMessage` gộp mọi lớp (bảo thủ theo tên) tới pool" },
+];
+
 interface NoPool {
   viTri: string;
+  /** Hàm / tay cầm gọi pool tại chỗ gọi (review T5 I1: ghim theo CHỖ GỌI `viTri:ham`, mỗi phần tử một lời gọi). */
+  ham: string;
   ngay: string;
   backlog: string;
   lyDo: string;
@@ -167,38 +260,43 @@ const BL_TOTP = "R1b-2b-2b · nợ pool-trong-tx #1 (TOTP): đọc trạng thái
  * 14/15 mục cùng MỘT gốc (TOTP qua pool); 1 mục ngoài SCADA / OT / interlock (equipmentStandards — phạm vi tenant qua pool).
  */
 const NO_POOL: ReadonlyArray<NoPool> = [
-  { viTri: "server/routers/deviceAdapterRouter.ts#update", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#delete", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.create", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.update", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/deviceAdapterRouter.ts#tags.delete", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/interlockRouter.ts#update", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
-  { viTri: "server/routers/interlockRouter.ts#delete", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
-  { viTri: "server/routers/scadaDiagRouter.ts#tamTat", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#capNhat", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#dat", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#go", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
-  { viTri: "server/routers/scadaKenhRouter.ts#khaiHangLoat", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/deviceAdapterRouter.ts#update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/deviceAdapterRouter.ts#delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/deviceAdapterRouter.ts#tags.create", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/deviceAdapterRouter.ts#tags.update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/deviceAdapterRouter.ts#tags.delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/interlockRouter.ts#update", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
+  { viTri: "server/routers/interlockRouter.ts#delete", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: `${TOTP} — giữ adapter FOR SHARE + luật FOR UPDATE` },
+  { viTri: "server/routers/scadaDiagRouter.ts#tamTat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/scadaKenhRouter.ts#capNhat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/scadaKenhRouter.ts#dat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/scadaKenhRouter.ts#go", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
+  { viTri: "server/routers/scadaKenhRouter.ts#khaiHangLoat", ham: "kiemTotpCauHinh", ngay: "2026-11-01", backlog: BL_TOTP, lyDo: TOTP },
   {
     viTri: "server/services/ot/mappingAsCode.ts#importMapping",
+    ham: "xacThucKenhDaKhai",
     ngay: "2026-11-01",
     backlog: BL_TOTP,
     lyDo: `callback \`opts.xacThucKenhDaKhai\` (mappingAsCodeRouter: ${TOTP})`,
   },
   {
     viTri: "server/services/ot/stopPin.ts#datStopPinTx",
+    ham: "kiemCuoi",
     ngay: "2026-11-01",
     backlog: BL_TOTP,
     lyDo: `callback \`input.kiemCuoi\` (deviceAdapterRouter: ${TOTP})`,
   },
   {
     viTri: "server/routers/equipmentStandardsRouter.ts#publishChangeRequest",
+    ham: "hangTheGhi",
     ngay: "2026-11-01",
     backlog: "R1b-2b-2b · nợ pool-trong-tx #2 (NGOÀI SCADA / OT / interlock): tính phạm vi tenant trước giao dịch",
     lyDo: "`hangTheGhi` → `_theTenantPhamVi.theTenantHopLe` → `idsTrongPhamVi` (pool) trong giao dịch có `.update(`",
   },
 ];
 export const NO_POOL_TRONG_TX: ReadonlySet<string> = new Set(NO_POOL.map((n) => n.viTri));
+/** Review T5 I1 — nợ theo CHỖ GỌI (`viTri:ham`, có lặp nếu một thủ tục gọi nhiều lần): thêm một lời gọi pool vào thủ tục ĐÃ nợ cũng đỏ. */
+export const NO_POOL_THEO_CHO_GOI: ReadonlyArray<string> = NO_POOL.map((n) => `${n.viTri}:${n.ham}`);
 
 // ─── Tiện ích AST ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -527,7 +625,14 @@ class PhanGiai {
   /** tên hàm cấp tệp → các tệp khai báo (cho đường lùi bảo thủ). */
   private readonly capTepTheoTen = new Map<string, string[]>();
   private readonly nho = new Map<string, string[]>();
-  constructor(readonly cay: TepDaParse[]) {
+  /**
+   * @param tenChungGhim tên phương thức CHUNG đã ghim là "có phương thức first-party tên ấy gọi pool" (`TEN_CHUNG_GOI_POOL`): lời gọi `x.<tên>()` với
+   *   `x` là đối tượng NHẬP (import) được coi là tới phương thức ấy (bảo thủ — review T5 I2).
+   */
+  constructor(
+    readonly cay: TepDaParse[],
+    private readonly tenChungGhim: ReadonlySet<string> = new Set(),
+  ) {
     this.theoDuong = new Map(cay.map((t) => [t.duong, t]));
     for (const t of cay) for (const ten of t.cm.hamCapTep) this.capTepTheoTen.set(ten, [...(this.capTepTheoTen.get(ten) ?? []), t.duong]);
   }
@@ -540,26 +645,34 @@ class PhanGiai {
   }
 
   /** Hàm `ten` mà module `duong` xuất ra (lần qua `export … from` / `export *`). Không thấy trong tệp có thật ⇒ BẢO THỦ: mọi hàm cấp tệp tên ấy. */
-  giaiXuat(duong: string | null, ten: string, sau = 0): string[] {
-    if (!duong || sau > 8) return [];
+  giaiXuat(duong: string | null, ten: string): string[] {
+    if (!duong || !this.theoDuong.has(duong)) return [];
+    // review T5 m3 — nhớ CHỈ kết quả cấp ngoài (đã có đường lùi), tính đủ mỗi lần bằng `giaiTrong` không nhớ ⇒ không phụ thuộc thứ tự phân giải
+    // (trước: (X, f) đi qua barrel ở độ sâu ≥ 1 được nhớ là `[]` không đường lùi, rồi `import { f } from "./X"` trực tiếp nhận lại `[]`).
     const khoaNho = `${duong}\u0001${ten}`;
     const daCo = this.nho.get(khoaNho);
     if (daCo) return daCo;
-    this.nho.set(khoaNho, []); // chặn vòng
-    const t = this.theoDuong.get(duong);
-    let ra: string[] = [];
-    if (t) {
-      const goc = t.cm.xuatTen.get(ten) ?? ten;
-      if (t.cm.hamCapTep.has(goc)) ra = [`${duong}#${goc}`];
-      else {
-        for (const x of t.cm.xuatLai) {
-          if (x.ten === null) ra.push(...this.giaiXuat(this.giaiSpec(duong, x.spec), ten, sau + 1));
-          else if (x.ten.has(ten)) ra.push(...this.giaiXuat(this.giaiSpec(duong, x.spec), x.ten.get(ten)!, sau + 1));
-        }
-        if (ra.length === 0 && sau === 0 && ten !== "default") ra = (this.capTepTheoTen.get(ten) ?? []).map((d) => `${d}#${ten}`);
-      }
-    }
+    let ra = this.giaiTrong(duong, ten, new Set());
+    if (ra.length === 0 && ten !== "default") ra = (this.capTepTheoTen.get(ten) ?? []).map((d) => `${d}#${ten}`);
     this.nho.set(khoaNho, ra);
+    return ra;
+  }
+
+  /** Lần `export … from` / `export *` (không nhớ, không đường lùi); `tham` chặn vòng barrel. */
+  private giaiTrong(duong: string | null, ten: string, tham: Set<string>): string[] {
+    if (!duong) return [];
+    const khoa = `${duong}\u0001${ten}`;
+    if (tham.has(khoa)) return [];
+    tham.add(khoa);
+    const t = this.theoDuong.get(duong);
+    if (!t) return [];
+    const goc = t.cm.xuatTen.get(ten) ?? ten;
+    if (t.cm.hamCapTep.has(goc)) return [`${duong}#${goc}`];
+    const ra: string[] = [];
+    for (const x of t.cm.xuatLai) {
+      if (x.ten === null) ra.push(...this.giaiTrong(this.giaiSpec(duong, x.spec), ten, tham));
+      else if (x.ten.has(ten)) ra.push(...this.giaiTrong(this.giaiSpec(duong, x.spec), x.ten.get(ten)!, tham));
+    }
     return ra;
   }
 
@@ -577,7 +690,9 @@ class PhanGiai {
     const r = e.expression;
     if (ts.isIdentifier(r) && t.cm.nhapNs.has(r.text)) return this.giaiXuat(this.giaiSpec(t.duong, t.cm.nhapNs.get(r.text)!), ten);
     if (r.kind === ts.SyntaxKind.ThisKeyword) return [`.${ten}`];
-    return TEN_CHUNG.has(ten) ? [] : [`.${ten}`];
+    if (!TEN_CHUNG.has(ten)) return [`.${ten}`];
+    // tên chung: chỉ khớp khi tên đã ghim là có phương thức first-party gọi pool VÀ gốc là đối tượng NHẬP (review T5 I2 — bảo thủ có giới hạn)
+    return this.tenChungGhim.has(ten) && ts.isIdentifier(r) && t.cm.nhap.has(r.text) ? [`.${ten}`] : [];
   }
 }
 
@@ -749,7 +864,10 @@ function pgCuaRepo(goc: string): PhanGiai {
   let pg = nhoPg.get(goc);
   if (!pg) {
     const ds = goc === GOC_REPO ? MOI_FILE : locServer(goc);
-    pg = new PhanGiai(ds.map((f) => parse({ duong: f.duong, ma: readFileSync(f.that, "utf8") })));
+    pg = new PhanGiai(
+      ds.map((f) => parse({ duong: f.duong, ma: readFileSync(f.that, "utf8") })),
+      new Set(TEN_CHUNG_GOI_POOL.map((x) => x.viTri.slice(x.viTri.indexOf("#") + 1))),
+    );
     nhoPg.set(goc, pg);
   }
   return pg;
@@ -770,16 +888,21 @@ function quetKhoaLuatPg(pg: PhanGiai, hopDong: ReadonlyArray<HopDong>): ViTriKho
     if (pg.theoDuong.get(duong)?.cm.hamTheoTen.has(ten)) quaKhoa.set(h.viTri, { ten, loai: h.loai });
   }
   const tenQua = new Set([...quaKhoa.values()].map((q) => q.ten));
+  // review T5 m5 — hàm có thân khoá adapter (trực tiếp hoặc qua hàm khác, điểm bất động): lời gọi tới chúng là lượt khoá adapter cho vế "SAU"
+  // (không cho vế "TRƯỚC" — helper có thể khoá có điều kiện; vế trước giữ bảo thủ: chỉ dấu hiệu trực tiếp trong cùng hàm).
+  const khoaAdapterQuaHam = diemBatDong(pg, (n) => laKhoaAdapterTrucTiep(n));
   const ra: ViTriKhoaLuatDayDu[] = [];
   for (const t of pg.cay) {
     const ma = t.src.text;
     if (!ma.includes("interlockRules") && !ma.includes("interlock_rules") && ![...tenQua].some((k) => ma.includes(k))) continue;
     const khoaAdapter: ts.Node[] = [];
+    const khoaAdapterHelper: ts.Node[] = [];
     const viTri: Array<{ node: ts.Node; qua: { ten: string; loai: LoaiHopDong } | null }> = [];
     const di = (n: ts.Node): void => {
       if (ts.isCallExpression(n)) {
         const ten = tenGoi(n);
-        if (ten === "khoaAdapterTx" || ten === "congAdapterTx" || khoaFor(n, "deviceAdapters")) khoaAdapter.push(n);
+        if (laKhoaAdapterTrucTiep(n)) khoaAdapter.push(n);
+        else if (pg.dich(t, n).some((k) => khoaAdapterQuaHam.has(k))) khoaAdapterHelper.push(n);
         if (khoaFor(n, "interlockRules")) viTri.push({ node: n, qua: null });
         if (ten && tenQua.has(ten)) {
           // theo TÊN (bảo thủ: trùng tên ở tệp khác cũng là vị trí "qua"); ưu tiên hợp đồng mà lời gọi phân giải tới
@@ -789,7 +912,7 @@ function quetKhoaLuatPg(pg: PhanGiai, hopDong: ReadonlyArray<HopDong>): ViTriKho
           viTri.push({ node: n, qua: q[1] });
         }
       } else {
-        if (sqlKhoaBang(n, "device_adapters")) khoaAdapter.push(n);
+        if (laKhoaAdapterTrucTiep(n)) khoaAdapter.push(n);
         if (sqlKhoaBang(n, "interlock_rules")) viTri.push({ node: n, qua: null });
       }
       n.forEachChild(di);
@@ -802,13 +925,24 @@ function quetKhoaLuatPg(pg: PhanGiai, hopDong: ReadonlyArray<HopDong>): ViTriKho
         viTri: `${t.duong}#${hamBaoNgoai(v.node)}`,
         dong: dongCua(t.src, v.node),
         coKhoaAdapterTruoc: trong.some((m) => troiTruoc(m, v.node)),
-        coKhoaAdapterSau: trong.some((m) => m.getStart() >= v.node.getEnd() && !khoaLaiHangDaGiu(m, v.node, trong)),
+        coKhoaAdapterSau:
+          trong.some((m) => m.getStart() >= v.node.getEnd() && !khoaLaiHangDaGiu(m, v.node, trong)) ||
+          khoaAdapterHelper.some((m) => m !== v.node && chua(pv, m) && m.getStart() >= v.node.getEnd()),
         qua: v.qua?.ten ?? null,
         loaiQua: v.qua?.loai ?? null,
       });
     }
   }
   return ra;
+}
+
+/** Dấu hiệu khoá adapter TRỰC TIẾP: `khoaAdapterTx(` / `congAdapterTx(`, chuỗi `.from(deviceAdapters)…for(…)`, SQL thô `device_adapters … FOR …`. */
+function laKhoaAdapterTrucTiep(n: ts.Node): boolean {
+  if (ts.isCallExpression(n)) {
+    const ten = tenGoi(n);
+    return ten === "khoaAdapterTx" || ten === "congAdapterTx" || khoaFor(n, "deviceAdapters");
+  }
+  return sqlKhoaBang(n, "device_adapters");
 }
 
 /** Chữ ký của một lượt khoá adapter (để nhận ra KHOÁ LẠI cùng hàng): `.where(…)` + chế độ của chuỗi `.for(`, hoặc đối số `khoaAdapterTx(`. */
@@ -890,6 +1024,38 @@ interface KetQuaB {
   soCallbackCoKhoa: number;
   /** |tập hàm gọi pool| (điểm bất động). */
   coDiemBatDong: number;
+  /** Phương thức first-party TÊN CHUNG có thân tới pool (`<đường>#<tên>`, đo) — review T5 I2. */
+  tenChungGoiPool: Array<{ viTri: string; qua: string }>;
+}
+
+/**
+ * Review T5 I2 — đo phương thức first-party (phương thức lớp / hàm thuộc tính đối tượng) có tên trong `TEN_CHUNG` mà thân có lời gọi tới pool
+ * (hạt theo tên, hoặc tới một khoá trong bảng điểm bất động — kể cả khi bị che bởi tham số: bảo thủ). Đây là chỗ mù của việc loại tên chung; nó
+ * được GHIM (`TEN_CHUNG_GOI_POOL`) để chỗ mù có giới hạn: thêm một phương thức như vậy ⇒ đỏ, phải xem xét.
+ */
+function tenChungGoiPool(pg: PhanGiai, bang: BangPool): Array<{ viTri: string; qua: string }> {
+  const ra = new Map<string, string>();
+  for (const t of pg.cay) {
+    for (const m of t.cm.phuongThuc) {
+      if (!TEN_CHUNG.has(m.ten)) continue;
+      const than = (m.node as ts.FunctionLikeDeclaration).body;
+      const c = than ? loiGoiDau(than, (x) => goiHatPool(x) !== null || goiToiPool(bang, pg.dich(t, x), x)) : null;
+      if (c && !ra.has(`${t.duong}#${m.ten}`)) ra.set(`${t.duong}#${m.ten}`, c.expression.getText().replace(/\s+/g, ""));
+    }
+  }
+  return [...ra.entries()].map(([viTri, qua]) => ({ viTri, qua })).sort((a, b) => (a.viTri < b.viTri ? -1 : a.viTri > b.viTri ? 1 : 0));
+}
+
+/** Lời gọi ĐẦU TIÊN thoả `p` trong `e`, ĐI VÀO cả hàm lồng (thân phương thức gọi pool trong closure vẫn là gọi pool). */
+function loiGoiDau(e: ts.Node, p: (c: ts.CallExpression) => boolean): ts.CallExpression | null {
+  let ra: ts.CallExpression | null = null;
+  const di = (n: ts.Node): void => {
+    if (ra) return;
+    if (ts.isCallExpression(n) && p(n)) ra = n;
+    else n.forEachChild(di);
+  };
+  di(e);
+  return ra;
 }
 
 function quetPoolTrongTxPg(pg: PhanGiai, laPhamVi: (duong: string) => boolean): KetQuaB {
@@ -902,7 +1068,7 @@ function quetPoolTrongTxPg(pg: PhanGiai, laPhamVi: (duong: string) => boolean): 
     if (tx && ts.isPropertyAccessExpression(n.expression) && gocChuoi(n.expression.expression) === tx) return null;
     return goiToiPool(bang, pg.dich(t, n), n) ? tenGoi(n) : null;
   };
-  const theoViTri = new Map<string, { dong: number; ham: Set<string> }>();
+  const choGoi: ViTriPoolTrongTx[] = [];
   let soCallbackCoKhoa = 0;
   for (const t of pg.cay) {
     if (!laPhamVi(t.duong) || !t.src.text.includes(".transaction(")) continue;
@@ -910,10 +1076,7 @@ function quetPoolTrongTxPg(pg: PhanGiai, laPhamVi: (duong: string) => boolean): 
     const ghi = (n: ts.Node, ham: string): void => {
       if (daBao.has(n)) return;
       daBao.add(n);
-      const vt = `${t.duong}#${hamBaoNgoai(n)}`;
-      const cu = theoViTri.get(vt);
-      if (cu) cu.ham.add(ham);
-      else theoViTri.set(vt, { dong: dongCua(t.src, n), ham: new Set([ham]) });
+      choGoi.push({ viTri: `${t.duong}#${hamBaoNgoai(n)}`, dong: dongCua(t.src, n), ham });
     };
     const xetCallback = (cb: ts.FunctionLikeDeclaration): void => {
       const than = cb.body!;
@@ -955,8 +1118,7 @@ function quetPoolTrongTxPg(pg: PhanGiai, laPhamVi: (duong: string) => boolean): 
     };
     di(t.src);
   }
-  const viTri = [...theoViTri.entries()].map(([vt, v]) => ({ viTri: vt, dong: v.dong, ham: [...v.ham].sort().join(",") }));
-  return { viTri, soCallbackCoKhoa, coDiemBatDong: bang.size };
+  return { viTri: choGoi, soCallbackCoKhoa, coDiemBatDong: bang.size, tenChungGoiPool: tenChungGoiPool(pg, bang) };
 }
 
 /** Biểu thức `e` (không đi vào hàm lồng) có lời gọi thoả `p`? */
@@ -972,8 +1134,8 @@ function coLoiGoi(e: ts.Node, p: (c: ts.CallExpression) => boolean): boolean {
 }
 
 /** (B) trên nguồn trong bộ nhớ (thiết bị đo). Phạm vi: mọi tệp truyền vào. */
-export function quetPoolTrongTxNguon(tep: ReadonlyArray<TepNguon>): KetQuaB {
-  return quetPoolTrongTxPg(new PhanGiai(tep.map(parse)), () => true);
+export function quetPoolTrongTxNguon(tep: ReadonlyArray<TepNguon>, tenChungGhim: ReadonlySet<string> = new Set()): KetQuaB {
+  return quetPoolTrongTxPg(new PhanGiai(tep.map(parse), tenChungGhim), () => true);
 }
 
 const nhoB = new Map<string, KetQuaB>();
@@ -983,7 +1145,7 @@ function quetBRepo(goc: string): KetQuaB {
   return r;
 }
 
-/** (B) — mọi vị trí (gộp theo `viTri`) gọi pool trong callback giao dịch giữ khoá hàng, phạm vi `PHAM_VI_B`. */
+/** (B) — mọi CHỖ GỌI pool (một phần tử mỗi lời gọi; review T5 I1) trong callback giao dịch giữ khoá hàng, phạm vi `PHAM_VI_B`. */
 export function quetPoolTrongTx(goc: string): ViTriPoolTrongTx[] {
   return quetBRepo(goc).viTri;
 }
@@ -1000,7 +1162,8 @@ describe("★★★ census — thứ tự khoá ADAPTER → LUẬT interlock + c
       const a = quetKhoaLuatDayDu(GOC_REPO);
       console.log("(A)\n" + a.map((v) => `${v.viTri}:${v.dong} truoc=${v.coKhoaAdapterTruoc} sau=${v.coKhoaAdapterSau} qua=${v.qua ?? "-"}`).join("\n"));
       const b = quetBRepo(GOC_REPO);
-      console.log(`(B) callback có khoá: ${b.soCallbackCoKhoa}; điểm bất động: ${b.coDiemBatDong}\n` + b.viTri.map((v) => `${v.viTri}:${v.dong} ${v.ham}`).sort().join("\n"));
+      console.log(`(B) callback có khoá: ${b.soCallbackCoKhoa}; điểm bất động: ${b.coDiemBatDong}\n` + b.viTri.map((v) => `${v.viTri}:${v.ham} @${v.dong}`).sort().join("\n"));
+      console.log(`TEN_CHUNG gọi pool: ${b.tenChungGoiPool.length}\n` + b.tenChungGoiPool.map((x) => `${x.viTri} <= ${x.qua}`).join("\n"));
       if (process.env.CENSUS_VET === "1") {
         const vet = new Map<string, string>();
         const fp = tinhBangPool(pgCuaRepo(GOC_REPO), vet);
@@ -1010,6 +1173,7 @@ describe("★★★ census — thứ tự khoá ADAPTER → LUẬT interlock + c
     LAU,
   );
 
+  // Đột biến đã chạy (fix round 1, review m8): thu phạm vi quét về `server/routers` ⇒ ca này đỏ (cùng ★ (A), ★ hợp đồng, ★ (B), ★ I2).
   it(
     "cầu chì — phạm vi quét không mù (đủ file, tệp neo đọc được > 500 ký tự, đủ thư mục (B))",
     () => {
@@ -1055,6 +1219,7 @@ describe("★★★ census — thứ tự khoá ADAPTER → LUẬT interlock + c
     LAU,
   );
 
+  // Đột biến đã chạy (fix round 1, review m8): thêm mục hợp đồng không có thật ⇒ ca này đỏ; xoá mục `khoaLuatNhamTagTx` ⇒ ★ (A) đỏ.
   it(
     "★ hợp đồng — mỗi mục là vị trí ĐO được (không mục thừa), có ngày + lý do, và có ít nhất một bên gọi được kiểm",
     () => {
@@ -1075,13 +1240,29 @@ describe("★★★ census — thứ tự khoá ADAPTER → LUẬT interlock + c
     "★ (B) lời gọi pool trong giao dịch giữ khoá hàng = đúng tập nợ đã ghim (ratchet)",
     () => {
       expect(quetBRepo(GOC_REPO).soCallbackCoKhoa, "cầu chì: ≥ 20 callback giao dịch có khoá").toBeGreaterThanOrEqual(20);
-      expect(quetPoolTrongTx(GOC_REPO).map((v) => v.viTri).sort()).toEqual([...NO_POOL_TRONG_TX].sort());
+      const do_ = quetPoolTrongTx(GOC_REPO);
+      // review T5 I1 — ghim theo CHỖ GỌI: thêm một lời gọi pool vào thủ tục ĐÃ nợ (vd interlockRouter#update) cũng đỏ
+      expect(do_.map((v) => `${v.viTri}:${v.ham}`).sort(), "chỗ gọi pool trong tx giữ khoá ≠ tập nợ đã ghim").toEqual([...NO_POOL_THEO_CHO_GOI].sort());
+      expect([...new Set(do_.map((v) => v.viTri))].sort()).toEqual([...NO_POOL_TRONG_TX].sort());
       expect(NO_POOL_TRONG_TX.has("server/routers/interlockRouter.ts#resolveEvent")).toBe(false);
       for (const n of NO_POOL) {
         expect(n.ngay, n.viTri).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         expect(n.backlog, n.viTri).toMatch(/^R1b-2b-2b · /);
       }
-      expect(NO_POOL.length, "trùng mục nợ").toBe(NO_POOL_TRONG_TX.size);
+    },
+    LAU,
+  );
+
+  it(
+    "★ (B) review I2 — phương thức first-party TÊN CHUNG có thân tới pool = đúng tập đã ghim (chỗ mù của TEN_CHUNG có giới hạn, ratchet)",
+    () => {
+      const do_ = quetBRepo(GOC_REPO).tenChungGoiPool.map((x) => x.viTri);
+      expect(do_, "phương thức tên chung MỚI gọi pool ⇒ đổi tên cho riêng biệt, hoặc thêm vào TEN_CHUNG_GOI_POOL kèm lý do").toEqual(
+        TEN_CHUNG_GOI_POOL.map((x) => x.viTri).sort(),
+      );
+      for (const x of TEN_CHUNG_GOI_POOL) expect(x.lyDo.length, x.viTri).toBeGreaterThan(10);
+      // neo: chỗ mù review nêu (store.consume của trustedSafetyOrigin) nay có tên
+      expect(do_).toContain("server/services/safety/trustedSafetyOrigin.ts#consume");
     },
     LAU,
   );
@@ -1221,5 +1402,72 @@ describe("★★★ census — thứ tự khoá ADAPTER → LUẬT interlock + c
     expect(q(``, `const { boc } = await import("../services/b"); await boc(1);`)).toHaveLength(1);
     // hàm không gọi pool ⇒ không
     expect(q(`import { khac } from "../services/b";`, `await khac(1);`)).toEqual([]);
+  });
+
+  // ─── Fix round 1 (review T5 I1 / I2 / m3 / m5) ───
+
+  it("thiết bị đo (B) review I1: mỗi CHỖ GỌI pool là một phần tử `viTri:ham` (thêm lời gọi vào thủ tục đã nợ ⇒ khác tập)", () => {
+    const mot = B(voTx(`    await kiemTotp(ctx);`, `  async function kiemTotp(c) { return getDb(); }`)).map((v) => `${v.viTri}:${v.ham}`);
+    expect(mot).toEqual(["r.ts#f:kiemTotp"]);
+    const hai = B(voTx(`    await kiemTotp(ctx);\n    await luatTrongPhamVi(ctx, {});\n    await kiemTotp(ctx);`, `  async function kiemTotp(c) { return getDb(); }`)).map(
+      (v) => `${v.viTri}:${v.ham}`,
+    );
+    expect(hai.sort()).toEqual(["r.ts#f:kiemTotp", "r.ts#f:kiemTotp", "r.ts#f:luatTrongPhamVi"]);
+  });
+
+  it("thiết bị đo (B) review I2: phương thức first-party TÊN CHUNG gọi pool bị ĐO (⇒ ratchet đỏ); tên đã ghim + gốc NHẬP ⇒ là gọi pool", () => {
+    const tep: TepNguon[] = [
+      { duong: "server/services/svc.ts", ma: `export const svc = { async execute(id) { return getDb(); } };\nexport class K { async run() { return 1; } }\n` },
+      {
+        duong: "server/routers/r.ts",
+        ma: `import { svc } from "../services/svc";\nexport async function f(db, local) {\n  await db.transaction(async (tx) => {\n    await tx.update(t).set({});\n    await svc.execute(1);\n    await local.execute(2);\n  });\n}\n`,
+      },
+    ];
+    const chuaGhim = quetPoolTrongTxNguon(tep);
+    expect(chuaGhim.tenChungGoiPool, "`execute()` mới gọi getDb được đo ⇒ khác TEN_CHUNG_GOI_POOL ⇒ ca ★ I2 đỏ").toMatchObject([
+      { viTri: "server/services/svc.ts#execute", qua: "getDb" },
+    ]);
+    expect(chuaGhim.viTri, "chưa ghim: tên chung không khớp (chỗ mù — vì vậy phải ghim)").toEqual([]);
+    const daGhim = quetPoolTrongTxNguon(tep, new Set(["execute"]));
+    expect(daGhim.viTri, "đã ghim: `svc.execute()` (svc NHẬP) là gọi pool; `local.execute()` (tham số) không").toMatchObject([
+      { viTri: "server/routers/r.ts#f", ham: "execute", dong: 5 },
+    ]);
+  });
+
+  it("thiết bị đo review m3: phân giải `export *` không phụ thuộc thứ tự (barrel trước / trực tiếp trước cho cùng kết quả)", () => {
+    const tep: TepNguon[] = [
+      { duong: "server/x.ts", ma: `export const f = wrap();\n` },
+      { duong: "server/barrel.ts", ma: `export * from "./x";\n` },
+      { duong: "server/y.ts", ma: `export async function f() { return getDb(); }\n` },
+    ];
+    const a = new PhanGiai(tep.map(parse));
+    const aBarrel = a.giaiXuat("server/barrel.ts", "f");
+    const aTrucTiep = a.giaiXuat("server/x.ts", "f");
+    const b = new PhanGiai(tep.map(parse));
+    const bTrucTiep = b.giaiXuat("server/x.ts", "f");
+    const bBarrel = b.giaiXuat("server/barrel.ts", "f");
+    expect(aTrucTiep).toEqual(bTrucTiep);
+    expect(aBarrel).toEqual(bBarrel);
+    expect(aTrucTiep, "x.ts không có hàm f ⇒ bảo thủ: hàm cấp tệp cùng tên").toEqual(["server/y.ts#f"]);
+  });
+
+  it("thiết bị đo (A) review m5: helper khoá adapter BÊN TRONG (điểm bất động) là lượt khoá 'sau'; không tính cho vế 'trước'", () => {
+    const HD: HopDong[] = [{ viTri: "lib.ts#khoaLa", loai: "khong_khoa_adapter_sau", ngay: "2026-11-01", lyDo: "x" }];
+    const lib =
+      `export async function khoaLa(tx) { return tx.select().from(interlockRules).for("share"); }\n` +
+      `export async function khoaAdapterNgam(tx, id) { await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update"); }\n` +
+      `export async function boc2(tx) { await khoaAdapterNgam(tx, 1); }\n`;
+    const goi =
+      `import { khoaLa, boc2 } from "./lib";\n` +
+      `export async function laXauQuaHelper(tx) { await khoaLa(tx); await boc2(tx); }\n` +
+      `export async function luatRoiHelper(tx) { await khoaAdapterTx(tx, [1]); await tx.select().from(interlockRules).for("update"); await boc2(tx); }\n` +
+      `export async function helperTruoc(tx) { await boc2(tx); await tx.select().from(interlockRules).for("update"); }\n`;
+    const vt = quetKhoaLuatNguon([{ duong: "lib.ts", ma: lib }, { duong: "goi.ts", ma: goi }], HD);
+    expect(vt.find((v) => v.viTri === "goi.ts#laXauQuaHelper"), "gọi hàm hợp đồng `khong_khoa_adapter_sau` rồi helper khoá adapter ⇒ đỏ").toMatchObject({
+      loaiQua: "khong_khoa_adapter_sau",
+      coKhoaAdapterSau: true,
+    });
+    expect(vt.find((v) => v.viTri === "goi.ts#luatRoiHelper")).toMatchObject({ qua: null, coKhoaAdapterTruoc: true, coKhoaAdapterSau: true });
+    expect(vt.find((v) => v.viTri === "goi.ts#helperTruoc"), "helper có thể khoá có điều kiện ⇒ vế trước giữ bảo thủ").toMatchObject({ coKhoaAdapterTruoc: false });
   });
 });
