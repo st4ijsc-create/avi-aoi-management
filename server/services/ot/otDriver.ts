@@ -264,6 +264,16 @@ export interface OtDriver {
   disconnect(): Promise<void>;
   isConnected(): boolean;
   readTags(tags: OtTagAddress[]): Promise<OtSample[]>;
+  /**
+   * SCADA R1b-2b-2b A C4 (mục 5, KD-2bA 4.2/4.3) — OPTIONAL: Lab "thử đọc một địa chỉ" (`scadaDiag.thuDocDiaChi`) trên phiên ĐANG CHẠY.
+   * Hợp đồng cho driver cài nó:
+   *   • chỉ đọc — không ghi, không `connect` / mở phiên mới, không đổi đơn vị / trạm của phiên;
+   *   • gọi ĐỒNG THỜI với vòng poll và với `writeTags` mà không làm hỏng lần đọc của poll và không trì hoãn lời ghi (STOP) — đã ĐO bằng thư viện thật
+   *     (`drivers/docDongThoi.drivers.r1b2b2b.test.ts`); giao thức chưa chứng minh ⇒ KHÔNG cài (Lab từ chối `protocolNotSupported`);
+   *   • KHÔNG ghi trạng thái dùng chung (`lastOkAt` / `lastError` / `lastLatencyMs` của `health()`), không huỷ tick, không báo trạng thái adapter;
+   *   • lỗi theo tag ⇒ mẫu `bad` (như `readTags` công khai), không ném trừ khi phiên không chạy.
+   */
+  docLab?(tags: OtTagAddress[]): Promise<OtSample[]>;
   subscribe(
     tags: OtTagAddress[],
     onSample: OnOtSample,

@@ -7,7 +7,7 @@
 
 _(Task 11)_
 
-**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2. C1 + T2 + T2B lên main `cde649dda`; T3A + 3B-0 (bàn giao `34491c975`) lên main; lô 3 — T3 + vòng sửa 1/2 + 3B-0 polish + T3C + polish + T3D (bàn giao `815ff1303`) — lên main `32f9cb607` (cổng dieu-phoi xanh toàn bộ, cùng B-T8 scada-ui `23d74adf2`).
+**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2. C1 + T2 + T2B lên main `cde649dda`; T3A + 3B-0 (bàn giao `34491c975`) lên main; lô 3 — T3 + vòng sửa 1/2 + 3B-0 polish + T3C + polish + T3D (bàn giao `815ff1303`) — lên main `32f9cb607` (cổng dieu-phoi xanh toàn bộ, cùng B-T8 scada-ui `23d74adf2`). T3E (lô ghi áp MỘT PHẦN, `8adc704ba` + `699995c82`, kiem-dinh ĐẠT) lên main `10c81faff` cùng nhánh hợp đồng C2/C3 (2026-11-01); T3F + polish T3E (`d632a9a39`, `866217832`, `b0011f8c1`) chờ kiem-dinh.
 
 ## 1. Ma trận ô — `server/services/scada/r1b2b2aNghiemThu.db.test.ts`
 

@@ -308,7 +308,7 @@ export class StubDriver implements OtDriver {
    * Đọc tuần tự từng tag. `huyKhiMat` (chỉ đường poll, sau cờ V2) ⇒ lỗi `laLoiHuyTickPoll` (liên kết HOẶC quá hạn — T12 D3) HUỶ cả tick;
    * ngược lại lỗi theo từng tag thành mẫu bad (như `readTags` công khai của driver thật).
    */
-  private async docTuanTu(tags: OtTagAddress[], huyKhiMat: boolean): Promise<OtSample[]> {
+  private async docTuanTu(tags: OtTagAddress[], huyKhiMat: boolean, capNhatTrangThai = true): Promise<OtSample[]> {
     if (!this.connected || this.matKetNoiHieuLuc()) throw new DeviceUnreachableError("stub");
     const v2 = chatLuongV2Bat();
     const out: OtSample[] = [];
@@ -317,7 +317,7 @@ export class StubDriver implements OtDriver {
         out.push(await this.docMotTag(t));
       } catch (err) {
         if (huyKhiMat && laLoiHuyTickPoll(err)) throw err;
-        this.lastError = (err as Error)?.message || String(err);
+        if (capNhatTrangThai) this.lastError = (err as Error)?.message || String(err);
         out.push({
           tagKey: t.tagKey,
           raw: null,
@@ -325,7 +325,7 @@ export class StubDriver implements OtDriver {
           quality: "bad",
           timestamp: new Date(),
           tsSource: "server",
-          ...(v2 ? chatLuongLoiChung(err) : {}),
+          ...(v2 || !capNhatTrangThai ? chatLuongLoiChung(err) : {}), // R1b-2b-2b A C4 — đường Lab (chẩn đoán) LUÔN nói vì sao
         });
       }
     }
@@ -334,6 +334,11 @@ export class StubDriver implements OtDriver {
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     return this.docTuanTu(tags, false);
+  }
+
+  /** SCADA R1b-2b-2b A C4 — Lab "thử đọc một địa chỉ" (OtDriver.docLab): như `readTags` nhưng không ghi `lastError` (KD-2bA 4.3). Stub luôn trong tập Lab. */
+  async docLab(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docTuanTu(tags, false, false);
   }
 
   async subscribe(

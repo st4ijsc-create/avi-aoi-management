@@ -215,9 +215,19 @@ const BIEN_TRAI = String.raw`(?<=^|[\s(\[,;"'])`;
 const BIEN_PHAI = String.raw`(?=$|[\s:(),;\]"']|\.(?:\s|$))`;
 const RE_MA_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}([A-Z][A-Z0-9_]*)${BIEN_PHAI}`, "g");
 const RE_CONG_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}(FOE_GATE_REQUIRED)\\(([a-zA-Z]{1,40})\\)${BIEN_PHAI}`);
+/**
+ * C2 polish (c, kiem-dinh 2026-11-01) — khi có NHIỀU mã đã biết, ưu tiên NHÓM AN TOÀN (kết cục thiết bị không chắc: người gọi phải kiểm thiết bị);
+ * trong nhóm: xuất hiện đầu tiên thắng; ngoài nhóm: mã đã biết đầu tiên (như trước). `FOE_GATE_REQUIRED(<lý do>)` do `maLoiBuocFoe` xử lý trước.
+ */
+const MA_NHOM_AN_TOAN: ReadonlySet<string> = new Set(["FOE_OUTCOME_UNKNOWN", "FOE_OUTCOME_PARTIAL", "EDGE_OUTCOME_UNKNOWN", "MOT_PHAN", "TIMEOUT"]);
 export function maDaBietDauTien(text: string | null | undefined): string | null {
-  for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) if (MA_LOI_DA_BIET_SET.has(m[1])) return m[1];
-  return null;
+  let dauTien: string | null = null;
+  for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) {
+    if (!MA_LOI_DA_BIET_SET.has(m[1])) continue;
+    if (MA_NHOM_AN_TOAN.has(m[1])) return m[1];
+    dauTien ??= m[1];
+  }
+  return dauTien;
 }
 
 /**
