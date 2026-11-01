@@ -8,6 +8,9 @@
  * `dispatch()` là mock (không DB, không thiết bị); không cờ nào được bật.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const H = vi.hoisted(() => ({ goi: [] as Array<{ idempotencyKey: unknown }> }));
 vi.mock("./commandDispatcher", () => ({
@@ -110,5 +113,55 @@ describe("A2(a) — khoaDispatchLapTrinh: phần bên gọi rỗng ⇒ null (t�
     expect(r).toMatchObject({ status: "rejected", simulated: true });
     expect(String(r.reason)).toMatch(/^IDEMPOTENCY_KEY_REQUIRED\b/);
     expect(r.deploymentId).toBeUndefined();
+  });
+});
+
+describe("A2(a) fix round 2 — MỌI phép thử rỗng của khoá trong dispatcher đi qua laKhoaRong (quét AST nguồn — ghim từng chỗ dùng, độc lập với khoaChuanHoa)", () => {
+  const nguon = readFileSync(fileURLToPath(new URL("./commandDispatcher.ts", import.meta.url)), "utf8");
+  const sf = ts.createSourceFile("commandDispatcher.ts", nguon, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const laKhoa = (e: ts.Node): boolean => ts.isPropertyAccessExpression(e) && e.name.text === "idempotencyKey";
+  const hamBao = (n: ts.Node): string => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isFunctionDeclaration(p) && p.name) return p.name.text;
+    return "<module>";
+  };
+  const viPham: string[] = [];
+  const goiLyDo: string[] = [];
+  const dong = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+  const tham = (n: ts.Node): void => {
+    // `!x.idempotencyKey`
+    if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.ExclamationToken && laKhoa(n.operand)) viPham.push(`:${dong(n)} !…idempotencyKey`);
+    // `x.idempotencyKey === "" / !== ""` (hai phía)
+    if (ts.isBinaryExpression(n) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken].includes(n.operatorToken.kind)) {
+      const rong = (e: ts.Expression) => ts.isStringLiteral(e) && e.text === "";
+      if ((laKhoa(n.left) && rong(n.right)) || (rong(n.left) && laKhoa(n.right))) viPham.push(`:${dong(n)} idempotencyKey === ""`);
+    }
+    // `x.idempotencyKey.length`
+    if (ts.isPropertyAccessExpression(n) && n.name.text === "length" && laKhoa(n.expression)) viPham.push(`:${dong(n)} idempotencyKey.length`);
+    // khoá dùng làm ĐIỀU KIỆN thật/giả: `cond ? …`, `a && x.idempotencyKey`, `x.idempotencyKey || …`, `if (x.idempotencyKey)`
+    if (ts.isConditionalExpression(n)) {
+      const dk = n.condition;
+      const thanhPhan = ts.isBinaryExpression(dk) && dk.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? [dk.left, dk.right] : [dk];
+      if (thanhPhan.some(laKhoa)) viPham.push(`:${dong(n)} … ? (idempotencyKey làm điều kiện)`);
+    }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.BarBarToken && laKhoa(n.left)) viPham.push(`:${dong(n)} idempotencyKey || …`);
+    if (ts.isIfStatement(n) && laKhoa(n.expression)) viPham.push(`:${dong(n)} if (idempotencyKey)`);
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "lyDoStopKhoaMoi") goiLyDo.push(hamBao(n));
+    ts.forEachChild(n, tham);
+  };
+  tham(sf);
+
+  it("★ không còn phép thử rỗng rời trên khoá (`!key`, `key === \"\"`, `key.length`, khoá làm điều kiện thật/giả)", () => {
+    expect(viPham).toEqual([]);
+  });
+  it("★ lyDoStopKhoaMoi chỉ được gọi từ lyDoStopKhoaMoiCho (\"không khoá\" = laKhoaRong); bước 2 và giữ chỗ đều gọi lyDoStopKhoaMoiCho", () => {
+    expect(goiLyDo).toEqual(["lyDoStopKhoaMoiCho"]);
+    expect(nguon.match(/lyDoStopKhoaMoiCho\(qd, kqPhatLai, input\.idempotencyKey\)/g)).toHaveLength(2);
+  });
+  it("★ quét không rỗng: bắt được mẫu cũ trên tệp ảo (đột biến chỗ dùng)", () => {
+    const ao = ts.createSourceFile("ao.ts", `function f(input){ const a = lyDoStopKhoaMoi(qd, kq, !input.idempotencyKey); const b = typeof s === "string" && s.idempotencyKey ? s.idempotencyKey : null; }`, ts.ScriptTarget.Latest, true);
+    const truoc = viPham.length;
+    tham(ao);
+    expect(viPham.length - truoc).toBe(2);
+    viPham.length = truoc;
   });
 });

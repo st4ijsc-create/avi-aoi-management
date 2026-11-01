@@ -814,19 +814,39 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   // T6d fix 2 (AN TOÀN) — khoá idempotency chuẩn hoá MỘT lần ở cửa duy nhất vào đường gửi (`dispatchCore` chỉ được gọi từ đây): kiểu khai `string`
   // nhưng lúc chạy có bên gọi không truyền (vd khung lệnh canonical thiếu cả idempotency_key lẫn command_id) ⇒ "" (KHÔNG sinh khoá: lệnh thiếu khoá vẫn
   // là "không khoá" — STOP thay lệnh đang chờ báo biến thể OT_COMMAND_SUPERSEDED_BY_STOP_NO_KEY, G9). Mọi chỗ sau thấy một chuỗi.
+  // A2(a) fix round 2 — chuỗi CHỈ khoảng trắng cũng ⇒ "" (chỉ khoảng trắng = không khoá ở MỌI chỗ; xem `khoaChuanHoa`).
   const result = await dispatchCore({ ...input, idempotencyKey: khoaChuanHoa(input.idempotencyKey), bamLenh: bamLenhOt(input), ghiChuKhoa: undefined });
   emitCmdAck(input, result);
   return result;
 }
 
-/** A2(a) — khoá "rỗng" = lệnh KHÔNG khoá: không phải chuỗi, "" hoặc chỉ khoảng trắng (`trim` CHỈ để thử rỗng; khoá không rỗng không bao giờ bị sửa). */
+/**
+ * A2(a) — khoá "rỗng" = lệnh KHÔNG khoá: không phải chuỗi, "" hoặc chỉ khoảng trắng (`trim` CHỈ để thử rỗng; khoá không rỗng không bao giờ bị sửa).
+ * A2(a) fix round 2 (AN TOÀN) — vị từ DUY NHẤT cho "khoá rỗng" trong dispatcher: mọi phép thử rỗng của khoá (bước 1b, lý do đổi khoá STOP ở bước 2 và
+ * giữ chỗ, khoá NULL của `writeAll` / `writeSimulated`, khoá STOP hiển thị NO_KEY) đi qua đây — không `!key` / `key === ""` / `key.length` rời.
+ */
 function laKhoaRong(k: unknown): boolean {
   return typeof k !== "string" || k.trim() === "";
 }
 
-/** T6d fix 2 — khoá idempotency của bên gọi như chuỗi: thiếu / không phải chuỗi ⇒ "" (lệnh không khoá); chuỗi giữ nguyên từng byte. */
-function khoaChuanHoa(k: unknown): string {
-  return typeof k === "string" ? k : "";
+/**
+ * T6d fix 2 — khoá idempotency của bên gọi như chuỗi: thiếu / không phải chuỗi ⇒ "" (lệnh không khoá); chuỗi giữ nguyên từng byte.
+ * A2(a) fix round 2 (AN TOÀN, kiem-dinh) — chuỗi CHỈ khoảng trắng ⇒ "" (chỉ khoảng trắng = KHÔNG khoá, ở MỌI chỗ). Trước: `"   "` đi tiếp như một khoá thật
+ * ⇒ mọi STOP khoá `"   "` dùng chung khoá ghi `v2:3:   :…` mà hai chỗ gọi lý do đổi khoá STOP (phép phủ định chuỗi khoá, không trim) coi là CÓ khoá ⇒ STOP thứ hai
+ * sau một STOP ok bị PHÁT LẠI (acked, KHÔNG gửi). Chuỗi có ký tự khác khoảng trắng giữ NGUYÊN từng byte (`"  K  "` — KK-6).
+ */
+export function khoaChuanHoa(k: unknown): string {
+  return typeof k === "string" && !laKhoaRong(k) ? k : "";
+}
+
+/** A2(a) fix round 2 — lý do gửi lại STOP dưới khoá mới, với "không khoá" = `laKhoaRong` (MỘT chỗ cho cả bước 2 lẫn giữ chỗ). Xuất cho test. */
+export function lyDoStopKhoaMoiCho(qd: QuyetDinhKhoa, kqPhatLai: DispatchResult | null, idempotencyKey: unknown): LyDoStopKhoaMoi | null {
+  return lyDoStopKhoaMoi(qd, kqPhatLai, laKhoaRong(idempotencyKey));
+}
+
+/** A2(a) fix round 2 — khoá của STOP đã gửi như hiển thị trong lời huỷ lệnh chờ: rỗng (`laKhoaRong`) ⇒ null (biến thể NO_KEY, G9). Xuất cho test. */
+export function khoaStopHienThi(k: unknown): string | null {
+  return typeof k === "string" && !laKhoaRong(k) ? k : null;
 }
 
 /**
@@ -1202,7 +1222,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(db, input));
     if (qd.loai !== "khong") {
       const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
-      const lyDo = lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey);
+      const lyDo = lyDoStopKhoaMoiCho(qd, kqPhatLai, input.idempotencyKey);
       if (lyDo && (await laStopChoKhoa(db, input))) input = stopGuiLaiVoiKhoaMoi(input, hangCuaQuyetDinh(qd), lyDo);
       else if (kqPhatLai) return kqPhatLai;
       else if (qd.loai === "lech") return tuChoiKhoaDungLai(db, input, qd.hangTrung);
@@ -1820,7 +1840,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     if (isSuperseded(queued)) {
       // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
       // final wave G9 — a STOP without an idempotency key: its own localisable code, never the literal "unknown".
-      const stopKey = typeof queued.stop?.idempotencyKey === "string" && queued.stop.idempotencyKey ? queued.stop.idempotencyKey : null;
+      const stopKey = khoaStopHienThi(queued.stop?.idempotencyKey);
       const stopWord = queued.stop?.contentStop === true ? "STOP" : "pinned STOP"; // K-fix 2 — a content stop that is not the pin says so
       const ids = await writeRejected(
         db,
@@ -1882,7 +1902,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   if (isStoppedBeforeWrite(executed) && unverifiedStop) {
     // doc 81 Đợt 11 final fix wave residual (R-11-m) — an UNVERIFIED stop writing a pinned stop tag with a non-pin value, in its gates
     // while a verified STOP was sent: superseded by that STOP (a stop is never "STOPPED_BEFORE_WRITE" — R-11-j), nothing written.
-    const stopKey = typeof executed.stop?.idempotencyKey === "string" && executed.stop.idempotencyKey ? executed.stop.idempotencyKey : null;
+    const stopKey = khoaStopHienThi(executed.stop?.idempotencyKey);
     const ids = await writeRejected(
       db,
       input,
@@ -1907,7 +1927,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     // doc 81 Đợt 11 K-fix (R-11-d) — a STOP was issued for this adapter after this write's gates began: cancelled right before
     // the device write, driver.writeTags never reached. The RESULT row of the intent (like BUSY / SUPERSEDED_BY_STOP) names the
     // STOP; the operator reads the same coded "cancelled because a STOP was issued — resend if still needed" sentence.
-    const stopKey = typeof executed.stop?.idempotencyKey === "string" && executed.stop.idempotencyKey ? executed.stop.idempotencyKey : null;
+    const stopKey = khoaStopHienThi(executed.stop?.idempotencyKey);
     const ids = await writeRejected(
       db,
       input,
@@ -2754,7 +2774,7 @@ async function reserveRealWrite(
       // R1b-2b-2a T6d — dưới khoá tư vấn: MỌI hàng của khoá (kết quả + ý định, khoá mới + cũ); CÙNG chốt `quyetDinhKhoa` với bước 2 (chống đua).
       const qd = quyetDinhKhoa(input, input.bamLenh ?? bamLenhOt(input), nguoiGoiKhoa(input), await hangTheoKhoa(tx, input));
       const kqPhatLai = qd.loai === "phat_lai" ? ketQuaPhatLai(input, qd.existing, qd.hangLo) : null;
-      const lyDoStop = opts.laStop ? lyDoStopKhoaMoi(qd, kqPhatLai, !input.idempotencyKey) : null;
+      const lyDoStop = opts.laStop ? lyDoStopKhoaMoiCho(qd, kqPhatLai, input.idempotencyKey) : null;
       if (lyDoStop) return { ok: false as const, doiKhoaStop: { hang: hangCuaQuyetDinh(qd), lyDo: lyDoStop } };
       if (kqPhatLai) return { ok: false as const, result: kqPhatLai };
       if (qd.loai === "lech") return { ok: false as const, result: await tuChoiKhoaDungLai(tx, input, qd.hangTrung) };

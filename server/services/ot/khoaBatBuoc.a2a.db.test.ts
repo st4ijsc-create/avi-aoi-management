@@ -22,6 +22,8 @@ const H = vi.hoisted(() => ({
   bay: 0,
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
+  /** chạy TRONG preflight an toàn (sau bước 2, trước khoá tư vấn) — một hàng xuất hiện giữa hai lần đọc (khuôn KD-13 / KK-5). */
+  giuaChung: null as null | (() => Promise<void>),
   canhBao: [] as Array<{ kind: string; title: string; message: string; recipients: ReadonlyArray<number>; dedupKey: string }>,
 }));
 
@@ -47,7 +49,12 @@ vi.mock("../safety/plc/safetyPlcAdapter", async (importOriginal) => {
       kind: "modbus" as const,
       label: () => "fake real PLC",
       read: async () => ({ estop: false }),
-      readChecked: async () => ({ status: { estop: false }, unreadable: [] }),
+      readChecked: async () => {
+        const h = H.giuaChung;
+        H.giuaChung = null;
+        if (h) await h();
+        return { status: { estop: false }, unreadable: [] };
+      },
     }),
   };
 });
@@ -75,6 +82,12 @@ import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import {
   dispatch,
+  khoaChuanHoa,
+  khoaStopHienThi,
+  lyDoStopKhoaMoiCho,
+  perWriteKey,
+  bamLenhOt,
+  type QuyetDinhKhoa,
   demCanhBaoKhongKhoa,
   __datLaiCanhBaoKhongKhoaChoTest,
   KHOA_BAT_BUOC_CANH_BAO_CUA_SO_MS,
@@ -206,6 +219,25 @@ const chieu = (r: DispatchResult) => ({ ok: r.ok, simulated: r.simulated, status
 const ENV_KEYS = ["OT_CONTROL_ENABLED", "OT_COMMISSIONING_REQUIRED", "OT_SAFETY_PREFLIGHT_ENABLED", "OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "AI_OT_CONTROL_ENABLED", "PARAM_GUARDRAIL_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
+describe("A2(a) fix round 2 — khoá CHỈ khoảng trắng = không khoá (thuần, mỗi lớp phòng thủ một ghim)", () => {
+  it("★ khoaChuanHoa: thiếu / không phải chuỗi / \"\" / chỉ khoảng trắng (\" \", \"   \", \"\\t\", \"\\n \\r\", NBSP) ⇒ \"\"; chuỗi có ký tự khác giữ NGUYÊN từng byte", () => {
+    for (const k of [undefined, null, 42, {}, "", " ", "   ", "\t", "\n \r", "\u00a0"]) expect(khoaChuanHoa(k), JSON.stringify(k)).toBe("");
+    for (const k of ["K", "  K  ", "\tK", "hmi:abc", " #stop-x"]) expect(khoaChuanHoa(k)).toBe(k);
+  });
+  it("★ lyDoStopKhoaMoiCho: khoá \"   \" / \"\\t\" / \"\" xử như KHÔNG khoá (có hàng ⇒ khong_khoa, kể cả lần trước ok = phát lại); khoá thật ⇒ phát lại STOP ok (null)", () => {
+    const hang = { id: 1, status: "acked" } as never;
+    const qd: QuyetDinhKhoa = { loai: "phat_lai", existing: hang, hangLo: [hang] };
+    const ok = { ok: true, simulated: false, status: "acked", results: [], commandLogIds: [1] } as DispatchResult;
+    for (const k of ["", "   ", "\t", undefined]) expect(lyDoStopKhoaMoiCho(qd, ok, k), JSON.stringify(k)).toBe("khong_khoa");
+    for (const k of ["K", "  K  "]) expect(lyDoStopKhoaMoiCho(qd, ok, k), k).toBeNull();
+    expect(lyDoStopKhoaMoiCho({ loai: "khong" }, null, "   ")).toBeNull();
+  });
+  it("★ khoaStopHienThi: khoá rỗng / chỉ khoảng trắng ⇒ null (biến thể NO_KEY); khoá thật giữ nguyên", () => {
+    for (const k of [undefined, "", "   ", "\t"]) expect(khoaStopHienThi(k)).toBeNull();
+    expect(khoaStopHienThi("  K  ")).toBe("  K  ");
+  });
+});
+
 describe("A2(a) — cửa sổ khử trùng cảnh báo lệnh không khoá giống STOP (thuần, đồng hồ tiêm)", () => {
   beforeEach(() => __datLaiCanhBaoKhongKhoaChoTest());
   afterAll(() => __datLaiCanhBaoKhongKhoaChoTest());
@@ -265,6 +297,7 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
     for (const k of ENV_KEYS.slice(2)) delete process.env[k];
     H.bay = 0;
     H.canhBao.length = 0;
+    H.giuaChung = null;
     __datLaiCanhBaoKhongKhoaChoTest();
     _setPinReadProbeForTests(null);
   });
@@ -733,6 +766,79 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
       expect(cb.kind).toBe("ot_keyless_stop_like_refused");
       expect(cb.message).toMatch(/may NOT have been \(fully\) written to command_log/);
       expect(cb.message).toMatch(/NOT sent/);
+    });
+  }, 30_000);
+  // ── A2(a) fix round 2 — khoá CHỈ khoảng trắng (kiem-dinh: STOP thứ hai bị phát lại, không gửi) ─────────────────────────────────────────────
+
+  /** mọi khoá chuỗi của adapter phải có base "" (`v2:0::`) hoặc khoá đổi `#stop-<uuid>` — KHÔNG bao giờ base khoảng trắng (`v2:3:   :`, `v2:1:\t:`). */
+  const khongBaseTrang = (k: string | null) => k === null || /^(intent:)?v2:(0::|\d+:#stop-[0-9a-f-]{36}:)/.test(k);
+
+  for (const [ten, khoa] of [['"   "', "   "], ['"\\t"', "\t"]] as Array<[string, string]>) {
+    it(`★ W1 khoá ${ten}: 4 STOP liên tiếp (2 theo NỘI DUNG a=0,b=0; 2 theo LOẠI a=0), mỗi lần sau một STOP ok ⇒ +1 gói MỖI lần, 4 hàng kết quả khác nhau, không lần nào phát lại; khoá ghi không mang base khoảng trắng`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = driverGia();
+        const ad = await taoAdapter(tx, d);
+        const ids: number[][] = [];
+        const lenhW = [
+          ["set_param", [{ tagKey: "a", value: 0 }, { tagKey: "b", value: 0 }]],
+          ["set_param", [{ tagKey: "a", value: 0 }, { tagKey: "b", value: 0 }]],
+          ["stop", [{ tagKey: "a", value: 0 }]],
+          ["stop", [{ tagKey: "a", value: 0 }]],
+        ] as Array<[string, Array<{ tagKey: string; value: unknown }>]>;
+        for (const [i, [ct, writes]] of lenhW.entries()) {
+          const r = await gui(tx, ad, writes, khoa, { commandType: ct });
+          expect(r, `lần ${i + 1}`).toMatchObject({ ok: true, simulated: false, status: "acked" });
+          expect(d.soGhi, `lần ${i + 1}`).toBe(i + 1);
+          expect(r.commandLogIds.some((id) => ids.flat().includes(id)), `lần ${i + 1} phát lại?`).toBe(false);
+          ids.push(r.commandLogIds);
+        }
+        const hang = await moiHangAdapter(tx, ad);
+        expect(hang.filter((h) => (h.ackValue as { ledger?: string } | null)?.ledger !== "intent")).toHaveLength(6); // 2 + 2 + 1 + 1 hàng kết quả
+        expect(hang.map((h) => h.idempotencyKey).filter((k) => !khongBaseTrang(k))).toEqual([]);
+      });
+    }, 60_000);
+  }
+
+  it("★ W2 ĐUA (giữ chỗ, khuôn KD-13 / KK-5) khoá \"   \": một hàng CÙNG lệnh (acked) xuất hiện dưới khoá chung GIỮA bước 2 và khoá tư vấn ⇒ STOP theo nội dung VẪN ra thiết bị dưới khoá mới `#stop-` (+1 gói, lanTruoc khong_khoa, idempotencyKey \"\")", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const tag = `w2-${randomUUID()}`; // tag ghim RIÊNG ⇒ khoá chung của nó chắc chắn chưa có trong _test
+      await tx.insert(deviceTags).values({ adapterId: ad, tagKey: tag, address: "40011", dataType: "int", writable: true, stopValue: 0 as never });
+      const writes = [{ tagKey: tag, value: 0 }];
+      const actionId = await taoHanhDong(tx, ad, writes);
+      H.giuaChung = async () => {
+        await tx.insert(commandLog).values({
+          actionId: null, adapterId: ad, machineId: MACHINE, tagKey: tag, address: "40011", commandType: "set_param", requestedValue: 0 as never,
+          requestedBy: OWNER, confirmedBy: OWNER, status: "acked", errorText: null,
+          ackValue: { ledger: "result", bam: bamLenhOt({ commandType: "set_param", writes }) } as never,
+          idempotencyKey: perWriteKey("", tag, 0), sentAt: new Date(),
+        });
+      };
+      const s = await gui(tx, ad, writes, "   ", { actionId });
+      expect(H.giuaChung).toBeNull(); // móc đã chạy: hàng xuất hiện SAU bước 2
+      expect(s).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      const h = await hangCua(tx, s);
+      expect(h[0]!.idempotencyKey).toMatch(/^v2:\d+:#stop-[0-9a-f-]{36}:/);
+      expect((h[0]!.ackValue as { lanTruoc?: unknown }).lanTruoc).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+    });
+    H.giuaChung = null;
+  }, 30_000);
+
+  it("W3 đối chứng: khoá \"  K  \" (có ký tự) — STOP hai lần ⇒ lần hai PHÁT LẠI như mọi khoá không rỗng (STOP trước ok ⇒ phát lại, 0 gói thêm, cùng hàng); khoá lưu NGUYÊN từng byte", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapter(tx, d);
+      const K = `  K-${randomUUID()}  `;
+      const s1 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, { commandType: "stop" });
+      expect(s1).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      expect((await hangCua(tx, s1))[0]!.idempotencyKey).toBe(perWriteKey(K, "a", 0));
+      const s2 = await gui(tx, ad, [{ tagKey: "a", value: 0 }], K, { commandType: "stop" });
+      expect(s2).toMatchObject({ ok: true, simulated: false, status: "acked" });
+      expect(d.soGhi).toBe(1);
+      expect(s2.commandLogIds).toEqual(s1.commandLogIds);
     });
   }, 30_000);
 });
