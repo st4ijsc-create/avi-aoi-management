@@ -1423,7 +1423,20 @@ export async function executeOtDeviceWrite(a: {
   //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
   //    SCADA R1a Task 5 (K7) — `input.docLai === "bat_buoc"` (the HMI path) forces this read-back even with OT_READBACK_ENABLED off;
   //    the comparison below is the same (readbackMatches + quality "good"). Absent ⇒ the flag alone decides, as before.
-  if ((isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked")) {
+  //    R1b-2b-2a T6 fix 1 (review I1) — lô có ≥ 1 write `ketCucKhongRo: "mat_lien_ket"` (liên kết mất GIỮA lô): KHÔNG đọc lại CẢ lô, mọi lệnh (không
+  //    chỉ STOP) — đọc trên liên kết đã gãy không thêm gì, và với EIP phiên nhiễm `readTags` chờ phiên mới (≤ 2 s) rồi đọc (≤ timeoutMs) ⇒ câu trả lời
+  //    "không rõ" của STOP chậm hơn T17. Write acked ⇒ `acked_unverified` "readback skipped: link lost in this batch" (lô vẫn `timeout` theo T2).
+  //    Chỉ áp khi đọc lại SẼ chạy (cờ / `bat_buoc`); `qua_han_driver` không đổi ở vòng này.
+  const docLaiSeChay = (isOtReadbackEnabled() || input.docLai === "bat_buoc") && outcomes.some((o) => o.status === "acked");
+  const boDocLaiViMatLienKet = docLaiSeChay && resultsArr.some((x) => x.ok !== true && x.ketCucKhongRo === "mat_lien_ket");
+  if (boDocLaiViMatLienKet) {
+    for (const o of outcomes) {
+      if (o.status !== "acked") continue;
+      o.status = "acked_unverified";
+      o.errorText = "readback skipped: link lost in this batch";
+    }
+  }
+  if (docLaiSeChay && !boDocLaiViMatLienKet) {
     const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
     const readTags: OtTagAddress[] = ackedIdx.map((i) => {
       const r = resolved[i];

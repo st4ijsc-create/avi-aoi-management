@@ -360,7 +360,74 @@ describe("R1b-2b-2a T3A — ack MUỘN của lời ghi đã hết hạn không b
     expect(o.outcomes[0]).toMatchObject({ ok: false, status: "timeout", readBackValue: null });
     expect(o.outcomes[0].errorText).toMatch(/^link lost while the write was in flight \(after \d+ms\) — outcome unknown/);
   }, 10_000);
+
+  /**
+   * R1b-2b-2a T6 fix 1 (review I1) — STOP NHIỀU tag của HMI (đọc lại BẮT BUỘC), phiên bị NHIỄM bởi một lượt đọc poll hết hạn khi lời ghi 2 đang bay:
+   * lời ghi 1 acked, lời ghi 2 `mat_lien_ket`. Trước fix 1: lô có `timedOut=false` ⇒ đọc lại chạy ⇒ `readTags` chờ phiên MỚI (mở chậm 1500 ms) rồi
+   * đọc ⇒ câu "không rõ" tới sau ~1,8 s (T17 đã bỏ độ trễ này). Sau fix 1: lô có `mat_lien_ket` ⇒ KHÔNG đọc lại cả lô; trả lời trong (hạn lời ghi
+   * của thư viện 300 ms + 500 ms) đo từ lúc gửi lô, cộng phần máy không chạy ta (`batDauDoLag`) — KHÔNG gồm hạn đọc lại nào.
+   */
+  it("★ T6 fix 1: STOP 2 tag, docLai bat_buoc, phiên nhiễm khi lời ghi 2 đang bay ⇒ 'không rõ' trong (hạn ghi 300 + 500) ms, write 1 acked_unverified 'readback skipped', 0 lượt đọc", async () => {
+    const HAN_GHI_THU_VIEN_MS = 300;
+    const { tb, d } = await moDriver(
+      {
+        treRegister: (n) => (n >= 2 ? 1500 : 0), // phiên MỚI sau nhiễm mở CHẬM ⇒ đọc lại (nếu chạy) phải chờ nó
+        onYeuCau: (r, tl) => {
+          if (r.service === 0x4d && r.ten === "Stop") tl(0); // lời ghi 1 acked; lời ghi 2 (Stop2) và mọi lượt đọc: im lặng
+        },
+      },
+      2600,
+    );
+    (d as any).plc.timeout_sp = HAN_GHI_THU_VIEN_MS;
+    const pDoc = d.readTags([{ tagKey: "a", address: "TagA", dataType: "int" } as any]); // hết hạn ~300 ⇒ nhiễm
+    await new Promise((r) => setTimeout(r, 50));
+    const lag = batDauDoLag();
+    const t0 = performance.now();
+    const o = await executeOtDeviceWrite({
+      input: {
+        adapterId: 994_500 + Math.floor(Math.random() * 400),
+        machineId: null,
+        commandType: "stop",
+        idempotencyKey: `t6f1-${Math.random()}`,
+        writes: [
+          { tagKey: "stop", value: true },
+          { tagKey: "stop2", value: true },
+        ],
+        docLai: "bat_buoc",
+      } as any,
+      driver: d,
+      resolved: [
+        { write: { tagKey: "stop", value: true }, address: "Stop", dataType: "bool" },
+        { write: { tagKey: "stop2", value: true }, address: "Stop2", dataType: "bool" },
+      ] as any,
+      driverWrites: [
+        { tagKey: "stop", address: "Stop", value: true, dataType: "bool" },
+        { tagKey: "stop2", address: "Stop2", value: true, dataType: "bool" },
+      ] as any,
+      timeoutMs: 5000,
+      stopTyped: true,
+      bumpStopEpoch: true,
+      ledger: { intentIds: [1, 2], confirmedBy: 1 },
+    });
+    const troi = performance.now() - t0;
+    const lagMs = await lag.dung(TRAN_LAG_T6F1_MS);
+    await pDoc;
+    expect(troi, `trả lời sau ${Math.round(troi)} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(HAN_GHI_THU_VIEN_MS + 500 + lagMs);
+    expect(o.timedOut).toBe(false);
+    expect(o.outcomes.map((x: any) => x.status)).toEqual(["acked_unverified", "timeout"]);
+    expect(o.outcomes[0]).toMatchObject({ ok: true, errorText: "readback skipped: link lost in this batch", readBackValue: null });
+    expect(o.outcomes[1].errorText).toMatch(/^link lost while the write was in flight \(after \d+ms\) — outcome unknown/);
+    // 0 lượt đọc của thư viện ngoài lượt đọc poll gây nhiễm
+    expect(tb.yeuCau.filter((x) => x.service === 0x4c).map((x) => x.ten)).toEqual(["TagA"]);
+    expect(tb.ghi().map((x) => [x.ten, x.ketNoi])).toEqual([
+      ["Stop", 1],
+      ["Stop2", 1],
+    ]);
+  }, 10_000);
 });
+
+/** T6 fix 1 — trần phần "máy không chạy ta" cộng vào cận thời gian: < 1500 ms (phiên mới chậm) ⇒ hồi quy "đọc lại chạy" vẫn đỏ. */
+const TRAN_LAG_T6F1_MS = 700;
 
 describe("R1b-2b-2a T3A (D3) — ĐỌC sau phiên nhiễm không bao giờ trả giá trị của tag khác", () => {
   it("★ (r1) TagA hết hạn, trả lời muộn của A (111) tới khi đọc TagB ⇒ TagB KHÔNG good, không 111 (trước vá: good 111)", async () => {

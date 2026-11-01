@@ -42,7 +42,7 @@ const depDoLag: PhuThuocDoLag = {
 type Ex = { timedOut: boolean; outcomes: Array<{ ok: boolean; status: string; errorText: string | null }> };
 type W = { tagKey: string; address: string; dataType: string; value: unknown };
 
-async function ghiLo(driver: OtDriver, writes: W[], o: { adapterId?: number; intentIds?: number[] } = {}): Promise<Ex> {
+async function ghiLo(driver: OtDriver, writes: W[], o: { adapterId?: number; intentIds?: number[]; docLai?: "bat_buoc" } = {}): Promise<Ex> {
   const { executeOtDeviceWrite } = await import("../otDeviceWrite");
   return executeOtDeviceWrite({
     input: {
@@ -51,6 +51,7 @@ async function ghiLo(driver: OtDriver, writes: W[], o: { adapterId?: number; int
       commandType: "set_value",
       idempotencyKey: `t6-${Math.random()}`,
       writes: writes.map((w) => ({ tagKey: w.tagKey, value: w.value })),
+      ...(o.docLai ? { docLai: o.docLai } : {}),
     } as any,
     driver,
     resolved: writes.map((w) => ({ write: { tagKey: w.tagKey, value: w.value }, address: w.address, dataType: w.dataType })),
@@ -66,7 +67,8 @@ const tick = () => new Promise<void>((r) => setImmediate(r));
 
 /** Bắn điểm rớt khi điều kiện "đang bay" đúng; đo từ lúc bắn tới lúc trả lời (`lagMs` = phần máy không chạy ta, kẹp TRAN_LAG_MS). */
 async function rotKhi(p: Promise<Ex>, dangBay: () => boolean, ban: () => unknown): Promise<{ ex: Ex; ms: number; lagMs: number }> {
-  const het = performance.now() + 2000;
+  // chờ lô TỚI thư viện (không đo): lượt đầu của tệp trả giá nạp lạnh otDeviceWrite / driver (đo 1,4–1,9 s, có lần > 2 s khi máy tải) ⇒ 8 s
+  const het = performance.now() + 8000;
   while (!dangBay() && performance.now() < het) await new Promise<void>((r) => setTimeout(r, 2));
   expect(dangBay()).toBe(true);
   const lag = batDauDoLag(5, depDoLag);
@@ -145,6 +147,57 @@ describe("T6 OPC UA — lô một lần gửi", () => {
     laMotLanGui(ex);
     expect(c0.session.write.mock.calls[0][0]).toHaveLength(2); // chỉ b, c đã vào lời gọi thư viện
     expect(ms, `trả lời sau ${ms} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(HAN_NHANH_MS + lagMs);
+    await d.disconnect();
+  }, 15_000);
+
+  it("T6 fix 1 (review m4): lỗi chuẩn bị là CHUỖI RỖNG (không bao giờ gửi) ⇒ vẫn 'failed', không 'timeout' (kiểm `!== undefined` như S7 / MC)", async () => {
+    const huyCho: Array<(e: Error) => void> = [];
+    const dsClient: any[] = [];
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: {
+        create: vi.fn(() => {
+          const client: any = new EventEmitter();
+          const session = {
+            read: vi.fn(async () => []),
+            write: vi.fn((_nodes: unknown[]) => new Promise((_, rej) => huyCho.push(rej))),
+            close: vi.fn(async () => {}),
+          };
+          Object.assign(client, { session, connect: vi.fn(async () => {}), createSession: vi.fn(async () => session), disconnect: vi.fn(async () => {}) });
+          dsClient.push(client);
+          return client;
+        }),
+      },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {
+        constructor(public o: any) {}
+      },
+    }));
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    // phân giải địa chỉ của "a" ném một lỗi có message RỖNG và String() RỖNG ⇒ lỗi chuẩn bị "" (khối catch của bước chuẩn bị)
+    const goc = (d as any).resolveAddress.bind(d);
+    (d as any).resolveAddress = async (addr: string) => {
+      if (addr === "ns=2;s=A") throw Object.assign(Object.create(null), { message: "", toString: () => "" });
+      return goc(addr);
+    };
+    const c0 = dsClient[0];
+    const p = ghiLo(d, [
+      { tagKey: "a", address: "ns=2;s=A", dataType: "int", value: 1 },
+      { tagKey: "b", address: "ns=2;s=B", dataType: "int", value: 2 },
+    ]);
+    const { ex } = await rotKhi(
+      p,
+      () => c0.session.write.mock.calls.length === 1,
+      () => {
+        c0.emit("connection_lost");
+        for (const r of huyCho.splice(0)) r(new Error("Connection Break"));
+      },
+    );
+    expect(c0.session.write.mock.calls[0][0]).toHaveLength(1); // chỉ b được gửi
+    expect(ex.outcomes.map((x) => x.status)).toEqual(["failed", "timeout"]);
+    expect(ex.outcomes[1].errorText).toMatch(LINK_LOST_T17);
     await d.disconnect();
   }, 15_000);
 });
@@ -291,6 +344,35 @@ describe("T6 Modbus — tuần tự", () => {
     expect(c.writeCoil).toHaveBeenCalledTimes(2); // ★ write SAU điểm rớt không tới thư viện
     laBaNhanTuanTu(ex);
     expect(ms, `trả lời sau ${ms} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(HAN_NHANH_MS + lagMs);
+    await d.disconnect();
+  }, 15_000);
+
+  it("T6 fix 1 (review I1): đọc lại BẮT BUỘC (docLai bat_buoc) + rớt giữa lô ⇒ KHÔNG đọc lại cả lô (readTags 0 lần), acked ⇒ acked_unverified 'readback skipped', vẫn trả lời < HAN_NHANH_MS", async () => {
+    const ds = giaModbus();
+    const { ModbusDriver } = await import("./modbusDriver");
+    const d = new ModbusDriver();
+    await d.connect({ endpoint: "tcp://127.0.0.1:502" });
+    const c = ds[0];
+    // đọc lại CHẬM (6 s, bị cắt ở hạn đọc lại 5 s) nếu bị gọi — đọc lại có chạy thì câu trả lời "không rõ" chậm ≥ 5 s > HAN_NHANH_MS + TRAN_LAG_MS
+    const docLai = vi.spyOn(d, "readTags").mockImplementation(() => new Promise((r) => setTimeout(() => r([]), 6000)));
+    const p = ghiLo(
+      d,
+      [
+        { tagKey: "a", address: "coil:1", dataType: "bool", value: true },
+        { tagKey: "b", address: "coil:2", dataType: "bool", value: true },
+        { tagKey: "c", address: "coil:3", dataType: "bool", value: true },
+      ],
+      { docLai: "bat_buoc" },
+    );
+    const { ex, ms, lagMs } = await rotKhi(p, () => c.writeCoil.mock.calls.length === 2, () => c.emit("close"));
+    expect(ms, `trả lời sau ${ms} ms (máy không chạy ta ${lagMs} ms)`).toBeLessThan(HAN_NHANH_MS + lagMs);
+    expect(docLai).not.toHaveBeenCalled();
+    expect(ex.timedOut).toBe(false);
+    expect(ex.outcomes.map((x) => x.status)).toEqual(["acked_unverified", "timeout", "failed"]);
+    expect(ex.outcomes[0].ok).toBe(true);
+    expect(ex.outcomes[0].errorText).toBe("readback skipped: link lost in this batch");
+    expect(ex.outcomes[1].errorText).toMatch(LINK_LOST_T17);
+    expect(ex.outcomes[2].errorText).toBe(LOI_CHUA_GUI_MAT_LIEN_KET);
     await d.disconnect();
   }, 15_000);
 });

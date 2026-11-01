@@ -982,7 +982,7 @@ export class OpcuaDriver extends NotImplementedDriver {
         const ketCucKhongRo = ketCucKhongRoCua(err) ?? (msg.startsWith(OPCUA_TIEN_TO_QUA_HAN) ? "qua_han_driver" : null);
         // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
         return prepared.map((p) =>
-          p.error
+          p.error !== undefined
             ? { tagKey: p.tagKey, ok: false, error: p.error }
             : ketCucKhongRo
               ? { tagKey: p.tagKey, ok: false, error: msg, ketCucKhongRo }
@@ -994,7 +994,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     // Ghép statusCode về từng write theo thứ tự các node đã gửi.
     let scIdx = 0;
     const out: OtCommandResult[] = prepared.map((p) => {
-      if (p.error) return { tagKey: p.tagKey, ok: false, error: p.error };
+      if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
       const sc = statusCodes[scIdx++];
       const scVal = typeof sc?.value === "number" ? sc.value : 0;
       const good = scVal === 0; // StatusCodes.Good

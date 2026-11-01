@@ -90,7 +90,9 @@ const tick = () => new Promise<void>((r) => setImmediate(r));
 
 /** Bắn điểm huỷ khi lệnh ghi đã tới thư viện; đo từ lúc bắn tới lúc dispatcher trả lời (`lagMs` = phần máy không chạy ta trong cùng cửa sổ, kẹp `TRAN_LAG_MS`). */
 async function doDiemHuy(p: Promise<Ex>, daToiThuVien: () => boolean, ban: () => unknown): Promise<{ ex: Ex; ms: number; lagMs: number }> {
-  const het = performance.now() + 2000;
+  // T6 fix 1 — chờ lệnh TỚI thư viện (KHÔNG đo, không phải cận T17): ca đầu của tệp trả giá nạp lạnh otDeviceWrite / driver (> 2 s khi máy tải —
+  // một nguồn chập chờn của "S7 (i)" (T3E §11.1); đo ở T6 fix 1: hỏng ở dòng expect(daToiThuVien) dưới, không ở cận thời gian) ⇒ 8 s.
+  const het = performance.now() + 8000;
   while (!daToiThuVien() && performance.now() < het) await (daToiThuVien() ? tick() : new Promise<void>((r) => setTimeout(r, 2)));
   expect(daToiThuVien()).toBe(true);
   const lag = batDauDoLag(5, depDoLag);
