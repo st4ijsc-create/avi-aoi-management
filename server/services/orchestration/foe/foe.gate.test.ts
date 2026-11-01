@@ -24,8 +24,12 @@ const robotJobsRows: Row[] = [];
 let seq = 1;
 
 // eq/and mock (mirrors commandDispatcher.test.ts) — WHERE áp bằng JS.
-vi.mock("drizzle-orm", () => ({
+// T6d fix 2 — importOriginal: mô-đun thật + chỉ ghi đè các vị từ fake DB dưới đây hiểu (eq / and / inArray — `hangTheoKhoa` của T6d đọc mọi hàng
+// của khoá bằng `inArray`); một import mới của dispatcher không còn làm vỡ mock ("No export is defined on the mock").
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("drizzle-orm")>()),
   eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
+  inArray: (col: any, vals: any[]) => ({ __k: col.__name, __v: vals, __op: "in" }),
   and: (...ps: any[]) => ({ __and: ps }),
 }));
 
@@ -33,6 +37,7 @@ function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
   if (pred.__and) return pred.__and.every((p: any) => matches(row, p));
   if (pred.__op === "eq") return row[pred.__k] === pred.__v;
+  if (pred.__op === "in") return pred.__v.includes(row[pred.__k]);
   return true;
 }
 function tableFor(table: any): Row[] {
@@ -49,9 +54,14 @@ function makeFakeDb() {
   return {
     select: () => ({
       from: (table: any) => ({
-        where: (pred: any) => ({
-          limit: async () => tableFor(table).filter((r) => matches(r, pred)).slice(0, 1),
-        }),
+        // awaitable `where()` (T6d `hangTheoKhoa`: mọi hàng của khoá, không `limit`) + `limit()` như trước
+        where: (pred: any) => {
+          const hit = () => tableFor(table).filter((r) => matches(r, pred));
+          return {
+            limit: async () => hit().slice(0, 1),
+            then: (ok: (v: Row[]) => unknown, err?: (e: unknown) => unknown) => Promise.resolve(hit()).then(ok, err),
+          };
+        },
       }),
     }),
     insert: (table: any) => ({
