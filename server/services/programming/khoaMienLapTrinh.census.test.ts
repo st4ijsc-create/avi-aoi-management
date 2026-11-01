@@ -402,7 +402,10 @@ describe("★★★ census T6d — khoá idempotency của bên gọi tới disp
   it("§C F4 const khoaDispatchLapTrinh: che bóng trong khối", () => {
     expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; { const khoa = o.k; return dispatch({ idempotencyKey: khoa }); }`)).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
   });
-  it("§C F4 const khoaDispatchLapTrinh: tham số cùng tên", () => {
+  it("§C F4 const khoaDispatchLapTrinh: tham số cùng tên (const cùng cấp — AST vẫn dựng dù JS báo trùng)", () => {
+    expect(M(`const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; return dispatch({ idempotencyKey: khoa });`, "o, khoa")).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
+  });
+  it("§C F4 const khoaDispatchLapTrinh: tham số cùng tên, const trong khối", () => {
     expect(M(`{ const khoa = khoaDispatchLapTrinh(o.k, 1); if (khoa === null) return; } return dispatch({ idempotencyKey: khoa });`, "o, khoa")).toEqual([{ diem: "server/x.ts#g", khoaQuaMienLapTrinh: false }]);
   });
   it("§C F4 const khoaDispatchLapTrinh: không chốt null", () => {
