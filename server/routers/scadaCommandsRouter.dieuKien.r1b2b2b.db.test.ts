@@ -491,6 +491,11 @@ describe("C5 — trần chạy khô (Q6 60 / phút / người + KD-2bA 5.4 30 / 
   const tran = (loi: Loi) => ({ code: loi.code, appCode: loi.appCode, appParams: loi.appParams });
   const RATE = { code: "TOO_MANY_REQUESTS", appCode: "OPERATION_FAILED", appParams: { operation: "scadaDryRun", reason: "rateLimited" } };
 
+  it("kiem-dinh — ghim LITERAL hai trần đã duyệt (Q6 60 / phút / người; KD-2bA 5.4 30 / phút / (người, adapter)): đổi hằng ⇒ đỏ", () => {
+    expect(L.TRAN_DIEU_KIEN_MOI_PHUT).toBe(60);
+    expect(L.TRAN_DIEU_KIEN_MOI_ADAPTER_PHUT).toBe(30);
+  });
+
   it("lượt 61 trong 60 s (rải 3 adapter, dưới trần adapter) ⇒ rateLimited; người khác không bị ảnh hưởng; qua cửa sổ ⇒ lại được", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-01T03:00:00Z") });
     vi.stubEnv("SCADA_COMMANDS_ENABLED", "false"); // không chạm DB: trần đứng TRƯỚC mọi cổng
