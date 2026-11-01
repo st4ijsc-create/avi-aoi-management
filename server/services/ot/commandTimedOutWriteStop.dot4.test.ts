@@ -295,7 +295,7 @@ describe("B3 — a STOP behind a timed-out write (QĐ-4b, grace = 1000 ms)", () 
     expect(rOld.status).toBe("timeout");
     expect(Date.now() - t0).toBeLessThan(TIMEOUT_MS + GRACE);
     // fix scan (2) — the ledger never claims "not applied": the outcome is UNKNOWN.
-    const oldRows = cmdLog.filter((r) => String(r.idempotencyKey ?? "").startsWith("b3-old-") && r.status === "timeout");
+    const oldRows = cmdLog.filter((r) => /^v2:\d+:b3-old-/.test(String(r.idempotencyKey ?? "")) /* R1b-2b-2a T6d — khoá v2 */ && r.status === "timeout");
     expect(oldRows.length).toBeGreaterThan(0);
     for (const r of oldRows) expect(String(r.errorText)).toMatch(/outcome unknown: the write may have been applied/);
     const rStop = await within(pStop, TIMEOUT_MS + GRACE + D.reset.boundMs + 700);
@@ -395,7 +395,7 @@ describe("B3 alert-only (R-4-q) — read-only watch after a STOP that followed a
     expect(alarm.notes[0].opts).toEqual({ safetyCritical: true, capExempt: "ot_stop_unverified", dedupKey: expect.stringMatching(/^ot_stop_unverified:machine:5:stop:[0-9]+$/) }); // Đợt 5 F6 + fix 1 (R-5-f) — bypass, throttled per (type, machine); Đợt 8 final wave F1 (R-8-d) — exempt from the per-recipient cap
     expect(unverified()).toHaveLength(1);
     const ev = unverified()[0];
-    const oldIntent = cmdLog.find((r) => String(r.idempotencyKey ?? "").startsWith("intent:al-run-"));
+    const oldIntent = cmdLog.find((r) => /^intent:v2:\d+:al-run-/.test(String(r.idempotencyKey ?? "")) /* R1b-2b-2a T6d — ý định trên khoá kết quả v2 */);
     expect(ev).toMatchObject({ entityType: "ot_command", entityId: oldIntent!.id }); // linked to the abandoned command's ledger row
     expect(ev.after.drift).toEqual([{ tagKey: "cmd_run", expected: false, actual: true, abandonedValueLanded: true }]);
     expect(writesAfterStop()).toBe(0); // ★ nothing re-sent

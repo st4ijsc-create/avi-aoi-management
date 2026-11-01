@@ -81,7 +81,7 @@ import {
   interlockRules,
 } from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { congKenhSom, dispatch, type DispatchInput, type TagCongKenh } from "./commandDispatcher";
+import { congKenhSom, dispatch, perWriteKey, type DispatchInput, type TagCongKenh } from "./commandDispatcher";
 import { inverseScale } from "./drivers/otScale";
 import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
@@ -604,7 +604,7 @@ describe.skipIf(!DB_URL)(
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
       expect(rows).toHaveLength(1);
-      expect(rows[0]!.idempotencyKey).toBe(`${inp.idempotencyKey}:toc_do:1`);
+      expect(rows[0]!.idempotencyKey).toBe(perWriteKey(inp.idempotencyKey, "toc_do", 1)); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2)
     });
 
     it("M-1: TAG_NOT_WRITABLE ở write #1, gọi lại CÙNG khoá ⇒ cùng hành vi (trả từ chối đã lưu, không ném)", async () => {
@@ -621,7 +621,7 @@ describe.skipIf(!DB_URL)(
       expect(r2.reason).toBe(r1.reason); // T6c polish (m1) — phát lại = sống (mã)
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
-      expect(rows.map(r => r.idempotencyKey)).toEqual([`${inp.idempotencyKey}:ro_kv:1`]);
+      expect(rows.map(r => r.idempotencyKey)).toEqual([perWriteKey(inp.idempotencyKey, "ro_kv", 1)]); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2)
     });
 
     it("M-4: STOP ghim gửi \"0\" (ép kiểu ⇒ 0) với OT BẬT, commissioning tắt ⇒ 5a-stop phân loại là STOP GHIM (pinnedStop), thiết bị nhận số 0", async () => {

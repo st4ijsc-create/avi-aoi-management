@@ -19147,6 +19147,7 @@
     "loiBiChe": "Technical detail hidden (engineer access required)",
     "maLoi": {
       "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "IDEMPOTENCY_KEY_REUSED": "The idempotency key was already used for a DIFFERENT command (another device, tag or value) — the command was NOT sent and the other command's result is not returned. Send again with a new key",
       "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
       "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",

@@ -223,8 +223,8 @@ describe("commandDispatcher — F4b real write (OT_CONTROL_ENABLED=true)", () =>
     expect(intentsAtWrite).toBe(1);
     const intent = cmdLog.find(isIntentRow)!;
     expect(intent.status).toBe("sent");
-    expect(intent.idempotencyKey).toBe("intent:key-1:cmd_start:0");
-    expect(resultRows(cmdLog)[0].ackValue).toEqual({ ledger: "result", intentId: intent.id });
+    expect(intent.idempotencyKey).toBe("intent:v2:5:key-1:9:cmd_start:0"); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (độ dài từng phần); trước: "intent:key-1:cmd_start:0"
+    expect(resultRows(cmdLog)[0].ackValue).toEqual({ ledger: "result", intentId: intent.id, bam: expect.any(String) }); // T6d — + bam (chốt phát lại)
     expect(pending.get("act-1")!.status).toBe("executed"); // consumed exactly once
     expect(r.simulated).toBe(false);
     expect(r.status).toBe("acked");

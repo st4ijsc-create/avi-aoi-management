@@ -52,7 +52,7 @@ vi.mock("./otManager", async (importOriginal) => {
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { dispatch, NO_CONFIRMER, type DispatchInput } from "./commandDispatcher";
+import { dispatch, NO_CONFIRMER, perWriteKey, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { makeFoeGateRun, type FoeGateRunFixture } from "../orchestration/foe/__foeGateRunFixture";
 
@@ -256,16 +256,16 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     expect(await pendingStatus(actionId)).toBe("executed");
 
     const rows = await ledger(inp.idempotencyKey);
-    const intent = rows.find((r) => r.idempotencyKey === `intent:${inp.idempotencyKey}:speed_sp:0`);
-    const result = rows.find((r) => r.idempotencyKey === `${inp.idempotencyKey}:speed_sp:0`);
+    const intent = rows.find((r) => r.idempotencyKey === `intent:${perWriteKey(inp.idempotencyKey, "speed_sp", 0)}`); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2; ý định = intent:<khoá v2>) + ackValue.bam
+    const result = rows.find((r) => r.idempotencyKey === perWriteKey(inp.idempotencyKey, "speed_sp", 0));
     expect(rows).toHaveLength(2);
     expect(intent?.status).toBe("sent");
-    expect(intent?.ackValue).toEqual({ ledger: "intent" });
+    expect(intent?.ackValue).toEqual({ ledger: "intent", bam: expect.any(String) });
     expect(intent?.actionId).toBe(actionId);
     expect(intent?.requestedValue).toBe(42);
     expect(intent?.confirmedBy).toBe(OWNER);
     expect(result?.status).toBe("acked");
-    expect(result?.ackValue).toEqual({ ledger: "result", intentId: intent!.id });
+    expect(result?.ackValue).toEqual({ ledger: "result", intentId: intent!.id, bam: (intent!.ackValue as { bam?: string }).bam });
     expect(result!.id).toBeGreaterThan(intent!.id); // intent INSERTed first
 
     const replay = await dispatch({ ...inp });
@@ -482,7 +482,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       const payload = encodePayload({ metrics: [{ name: "cmd_run", type: "Boolean", value: true }] });
       await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
       expect(writeCalls).toBe(0);
-      const rows = (await (await d()).select().from(commandLog).where(like(commandLog.idempotencyKey, `spcmd-${MACHINE}-DCMD-%`))).filter(
+      const rows = (await (await d()).select().from(commandLog).where(like(commandLog.idempotencyKey, `v2:%:spcmd-${MACHINE}-DCMD-%`)) /* R1b-2b-2a T6d — khoá v2 */).filter(
         (r) => r.createdAt.getTime() >= before - 1000 && r.adapterId === adapterId,
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -908,14 +908,17 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
     ];
     const actionId = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
     const head = `${DAU}-edge-`;
-    const key = head + "e".repeat(114 - head.length); // result key = 114 + ':speed_sp:N' = 125 chars
+    const key = head + "e".repeat(114 - head.length); // định dạng CŨ: khoá kết quả 125 ký tự (≤128) nhưng khoá intent >128
     expect(`${key}:speed_sp:0`.length).toBe(125);
+    // R1b-2b-2a T6d — định dạng v2 (độ dài từng phần) vượt 128 ⇒ boundedKey: hai write cùng tag vẫn khác khoá (băm của CẢ chuỗi giữ ':0' / ':1')
+    expect(perWriteKey(key, "speed_sp", 0)).not.toBe(perWriteKey(key, "speed_sp", 1));
+    expect(perWriteKey(key, "speed_sp", 0).length).toBeLessThanOrEqual(128);
     const res = await dispatch({ ...input({ actionId, writes }), adapterId: adI, machineId: MI, idempotencyKey: key });
     expect(res.status).toBe("acked");
     expect(writeCalls).toBe(1);
     const rows = await ledger(key.slice(0, 60));
     expect(rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "intent")).toHaveLength(2);
-    expect(rows.map((r) => r.idempotencyKey)).toEqual(expect.arrayContaining([`${key}:speed_sp:0`, `${key}:speed_sp:1`]));
+    expect(rows.map((r) => r.idempotencyKey)).toEqual(expect.arrayContaining([perWriteKey(key, "speed_sp", 0), perWriteKey(key, "speed_sp", 1)]));
   });
 
   it("hai khoá dài KHÁC nhau chỉ ở đuôi (chung 128 ký tự đầu) ⇒ HAI lệnh độc lập, không cache/DUPLICATE giả", async () => {

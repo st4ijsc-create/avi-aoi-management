@@ -19147,6 +19147,7 @@
     "loiBiChe": "Chi tiết kỹ thuật bị ẩn (cần quyền kỹ sư)",
     "maLoi": {
       "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
+      "IDEMPOTENCY_KEY_REUSED": "Khoá chống lặp đã được dùng cho một lệnh KHÁC (thiết bị, tag hoặc giá trị khác) — lệnh KHÔNG được gửi và không trả kết quả của lệnh kia. Gửi lại với khoá mới",
       "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
       "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
       "OT_S7_BIT_NGOAI_DAI": "Địa chỉ bit S7 nằm ngoài 0..7 (cấu hình tag sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Sửa địa chỉ tag (vd DB1,X1.0 thay cho DB1,X0.8); cần dừng máy ngay thì dùng E-STOP cứng tại máy",

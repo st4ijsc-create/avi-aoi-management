@@ -66,7 +66,7 @@ import { aiPendingActions, commandLog, orchestrationRunSteps, orchestrationRuns 
 import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
-import { __catSauGhiThietBiChoTest, type DispatchInput } from "../../ot/commandDispatcher";
+import { __catSauGhiThietBiChoTest, perWriteKey, type DispatchInput } from "../../ot/commandDispatcher";
 import { makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns } from "./foeEngine";
 import type { WorkflowStep } from "./workflowModel";
@@ -166,8 +166,9 @@ async function sapGiuaGhiVaSo(runId: number) {
   __catSauGhiThietBiChoTest(null);
 }
 
+/** R1b-2b-2a T6d — tiền tố theo base của khoá (cách viết cũ `intent:<base>` / `<base>`) ⇒ khoá v2 không mơ hồ (`intent:v2:<len>:<base>:…` / `v2:<len>:<base>:…`). */
 const ketQuaCuaKhoa = (tx: Tx, prefix: string) =>
-  tx.select().from(commandLog).where(like(commandLog.idempotencyKey, `${prefix}%`));
+  tx.select().from(commandLog).where(like(commandLog.idempotencyKey, prefix.startsWith("intent:") ? `intent:v2:%:${prefix.slice("intent:".length)}%` : `v2:%:${prefix}%`));
 const buoc = async (tx: Tx, runId: number, stepId: string) =>
   (await tx.select().from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, stepId))).limit(1))[0];
 
@@ -232,7 +233,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       await sapGiuaGhiVaSo(runId);
       expect(soPduGhi() - pdu0).toBe(1); // thiết bị ĐÃ bị ghi
       const sauSap = await ketQuaCuaKhoa(tx, `intent:run${runId}-main-`);
-      expect(sauSap.map((r) => r.idempotencyKey)).toEqual([`intent:run${runId}-main-a1:a:0`]); // ý định a1 …
+      expect(sauSap.map((r) => r.idempotencyKey)).toEqual([`intent:${perWriteKey(`run${runId}-main-a1`, "a", 0)}`]); // ý định a1 … (T6d — khoá v2)
       expect(await ketQuaCuaKhoa(tx, `run${runId}-main-`)).toHaveLength(0); // … mà KHÔNG có hàng kết quả
 
       // khởi động lại: rehydrate + tiếp tục bền ⇒ đi lại từ sổ
@@ -255,7 +256,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       // bù trừ chạy ĐÚNG 1 lần
       expect(ghiBuTru).toBe(1);
       expect((await buoc(tx, runId, "undo"))?.status).toBe("compensated");
-      expect((await ketQuaCuaKhoa(tx, `run${runId}-undo-`)).map((x) => [x.idempotencyKey, x.status])).toEqual([[`run${runId}-undo-a1:c:0`, "acked"]]);
+      expect((await ketQuaCuaKhoa(tx, `run${runId}-undo-`)).map((x) => [x.idempotencyKey, x.status])).toEqual([[perWriteKey(`run${runId}-undo-a1`, "c", 0), "acked"]]);
     });
     expect(H.bay).toBe(0);
   });
@@ -295,8 +296,8 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       const main = await buoc(tx, runId, "main");
       expect(main?.attempt).toBe(3);
       expect(String(main?.error)).not.toContain(FOE_OUTCOME_UNKNOWN);
-      const tuChoi = await tx.select().from(commandLog).where(and(like(commandLog.idempotencyKey, `run${runId}-main-a%`), eq(commandLog.status, "rejected")));
-      expect(tuChoi.map((x) => x.idempotencyKey).sort()).toEqual([1, 2, 3].map((n) => `run${runId}-main-a${n}:a:0`));
+      const tuChoi = await tx.select().from(commandLog).where(and(like(commandLog.idempotencyKey, `v2:%:run${runId}-main-a%`), eq(commandLog.status, "rejected"))); // T6d — khoá v2
+      expect(tuChoi.map((x) => x.idempotencyKey).sort()).toEqual([1, 2, 3].map((n) => perWriteKey(`run${runId}-main-a${n}`, "a", 0)).sort());
       expect(tuChoi.every((x) => String(x.errorText).startsWith("TAG_NOT_WRITABLE"))).toBe(true);
     });
     expect(H.bay).toBe(0);

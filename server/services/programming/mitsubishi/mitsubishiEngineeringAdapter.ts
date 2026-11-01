@@ -26,6 +26,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from "node:crypto";
+import { khoaDispatchLapTrinh } from "../khoaMienLapTrinh"; // R1b-2b-2a T6d — khoá lập trình tới dispatch() luôn ở miền `pd:`
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -173,7 +174,9 @@ export class MitsubishiEngineeringAdapter implements ProgrammingAdapter {
         confirmedBy: opts.hitl.confirmedBy,
         requestedBy: opts.hitl.requestedBy,
       },
-      idempotencyKey: opts.idempotencyKey,
+      // R1b-2b-2a T6d — điểm DUY NHẤT của đường lập trình gọi dispatch(): khoá luôn ở miền `pd:u<người yêu cầu>:` (hàng deploy cũ khoá thô cũng vậy) ⇒
+      // không bao giờ đụng khoá HMI / interlock / FOE / AI hay khoá lập trình của người khác (census khoaMienLapTrinh).
+      idempotencyKey: khoaDispatchLapTrinh(opts.idempotencyKey, opts.hitl.requestedBy),
     });
 
     // Map DispatchResult → ProgDeployResult (honest, mirrors the dispatcher outcome).

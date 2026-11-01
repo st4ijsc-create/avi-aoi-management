@@ -157,7 +157,7 @@ vi.mock("../../../drizzle/schema", () => {
     programArtifacts: mk("program_artifacts", ["id", "projectId", "branch", "version", "kind", "language", "content", "status", "diagnosticsJson"]),
     programBuilds: mk("program_builds", ["id", "artifactId", "adapterKind", "status", "ok", "outputRef", "diagnosticsJson"]),
     programSimRuns: mk("program_sim_runs", ["id", "buildId", "ok"]),
-    programDeployments: mk("program_deployments", ["id", "buildId", "projectId", "deviceId", "stage", "status", "simulated", "signedOffBy", "idempotencyKey", "rolledBackFromId"]),
+    programDeployments: mk("program_deployments", ["id", "buildId", "projectId", "deviceId", "stage", "status", "simulated", "signedOffBy", "idempotencyKey", "rolledBackFromId", "requestedBy"]), // R1b-2b-2a T6d — tra cứu theo khoá lọc requestedBy (chỉ hàng của chính người gọi)
     programSymbols: mk("program_symbols", ["id", "projectId", "name"]),
   };
 });

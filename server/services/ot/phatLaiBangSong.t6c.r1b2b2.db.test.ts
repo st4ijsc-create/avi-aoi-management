@@ -9,7 +9,7 @@
  * trỏ vào driver giả. Mọi ghi DB nằm trong giao dịch ROLLBACK của chính test (ngoài giao dịch getDb là BẪY). Bảng WORM command_log: không id tường minh.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { like } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 const H = vi.hoisted(() => ({
   tx: null as unknown,
@@ -57,7 +57,7 @@ import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
-import { dispatch, type DispatchResult } from "./commandDispatcher";
+import { dispatch, perWriteKey, type DispatchResult } from "./commandDispatcher";
 import { equipmentRegistry } from "../equipment/equipmentAdapter";
 import { ketCucLenhFoe, khongGuiLaiMotPhan } from "../orchestration/foe/foeEngine";
 import { LOI_CHUA_GUI_MAT_LIEN_KET } from "./drivers/dangBay";
@@ -215,7 +215,8 @@ describe.skipIf(!DB_URL)("T6c — phát lại theo khoá idempotency = câu tr�
         const phatLai = await dispatch(lenh(adapterId, actionId, writes, key));
         expect(d.soGhi).toBe(1); // phát lại không ghi thiết bị
         expect(chieu(phatLai)).toEqual(chieu(song));
-        const hang = (await tx.select().from(commandLog).where(like(commandLog.idempotencyKey, `${key}:%`))).filter((r) => (r.ackValue as { ledger?: unknown } | null)?.ledger === "result");
+        // R1b-2b-2a T6d — khoá kết quả định dạng không mơ hồ (perWriteKey v2) thay cho `${key}:<tag>:<i>`
+        const hang = (await tx.select().from(commandLog).where(inArray(commandLog.idempotencyKey, writes.map((w, i) => perWriteKey(key, w.tagKey, i))))).filter((r) => (r.ackValue as { ledger?: unknown } | null)?.ledger === "result");
         expect(hang).toHaveLength(3);
         for (const r of hang) expect((r.ackValue as { khongRo?: unknown }).khongRo === true).toBe(ca.mong.status === "timeout");
       });
