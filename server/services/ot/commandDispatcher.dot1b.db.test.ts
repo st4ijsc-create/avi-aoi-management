@@ -11,16 +11,24 @@
  * command_log là WORM (avi_app không có UPDATE/DELETE) ⇒ hàng test ở lại; mọi khoá mang tiền tố
  * DAU (duy nhất theo lượt chạy) nên không va hàng cũ.
  *
- * N4 (dieu-phoi 2026-11-01) — test KHÔNG BAO GIỜ DELETE / TRUNCATE, không owner `aoi`. Fixture KHÔNG thể nằm trong giao dịch
- * ROLLBACK của test: mọi đường thật (dispatch, tool AI set_machine_param qua proposeAction/confirmAction, bước FOE R4,
- * commandLogRouter.stats) đọc qua pool `getDb()` của chính nó và mở giao dịch riêng (khoá advisory, FOR UPDATE + CAS), còn ca
- * race cưỡng bức cần một kết nối THỨ BA — hàng chưa commit thì các kết nối đó không thấy. Nên: id RIÊNG mỗi lượt (máy, chủ,
- * người duyệt lấy từ một khối cấp bằng `nextval` — sequence không bao giờ cấp lại; adapter/tag/rule/event/run/action có id
- * serial + tên/khoá mang DAU) và hàng Ở LẠI `_test` (như các test DB khác). afterAll chỉ VÔ HIỆU HOÁ adapter + luật interlock
- * của chính lượt (UPDATE theo id/DAU riêng) để không còn là adapter/luật "đang bật" cho mã quét toàn bảng.
+ * ── VÌ SAO KHÔNG DÙNG ROLLBACK (N4, dieu-phoi 2026-11-01) ──────────────────────────────────────────────────────────────
+ * Luật: test KHÔNG BAO GIỜ DELETE / TRUNCATE, không owner `aoi`, dọn bằng ROLLBACK khi được. Tệp này KHÔNG được: mọi đường
+ * thật nó đo — dispatch() (khoá advisory, SELECT … FOR UPDATE + CAS trên ai_pending_actions, INSERT intent), tool AI
+ * set_machine_param qua proposeAction/confirmAction, bước FOE R4 (foeApprovalDbRefusal đọc lại run/gate), commandLogRouter.stats
+ * — đọc qua pool `getDb()` của CHÍNH NÓ hoặc mở giao dịch RIÊNG; ca race cưỡng bức còn cần một kết nối THỨ BA. Fixture trong
+ * một giao dịch chưa commit của test thì các kết nối đó KHÔNG thấy; ép chúng về một kết nối là đổi điều được đo (đua/khoá).
+ * Nên: fixture dùng id RIÊNG mỗi lượt và KHÔNG xoá gì —
+ *   • máy / chủ / người duyệt: khối 1000 id cấp bằng `nextval` (khoiIdRieng; sequence không bao giờ cấp lại, kể cả phiên song song);
+ *   • adapter / tag / luật / sự kiện / run / action: id serial + tên/khoá mang DAU (duy nhất theo lượt + pid).
+ * Hàng Ở LẠI `_test` (như các test DB khác). afterAll chỉ UPDATE hàng của CHÍNH lượt (chọn theo id/khối/DAU riêng, không lọc rộng):
+ *   • adapter → isEnabled=false, luật interlock → enabled=false (mã quét toàn bảng: interlockEngine, chẩn đoán SCADA);
+ *   • về trạng thái KẾT THÚC để không làm "mồi" cho bộ quét nền của test khác: run FOE → aborted, bước run chưa kết thúc → failed
+ *     (bước gate đã 'completed' giữ nguyên), ai_pending_actions proposed/confirmed/dang_ap_client → expired, sự kiện interlock → resolved.
+ *   Bốn bảng này không có trigger WORM / REVOKE chặn UPDATE của vai test (đã kiểm drizzle/*.sql; trigger pending_epoch của
+ *   orchestration_runs chỉ tăng khi chuyển SANG held/awaiting_confirm). command_log là WORM ⇒ không đụng.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, between, eq, inArray, like, notInArray, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 
 const fake = vi.hoisted(() => ({
@@ -58,7 +66,16 @@ vi.mock("./otManager", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
+import {
+  aiPendingActions,
+  commandLog,
+  deviceAdapters,
+  deviceTags,
+  interlockEvents,
+  interlockRules,
+  orchestrationRunSteps,
+  orchestrationRuns,
+} from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, NO_CONFIRMER, perWriteKey, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
@@ -88,6 +105,49 @@ async function khoiIdRieng(): Promise<number> {
 let MACHINE = 0; // gocId + 1
 let OWNER = 0; // gocId + 101
 let OTHER_USER = 0; // gocId + 102 (ca R-4-i dùng thêm +7 / +9 — vẫn trong khối)
+
+/** N4 follow-up — id run FOE / luật interlock CỦA LƯỢT NÀY (afterAll cấp tệp đưa chúng về trạng thái kết thúc, chọn đúng theo id). */
+const runIdsCuaLuot: number[] = [];
+const ruleIdsCuaLuot: number[] = [];
+async function taoRunFoe(spec: Parameters<typeof makeFoeGateRun>[0]) {
+  const fx = await makeFoeGateRun(spec);
+  runIdsCuaLuot.push(fx.runId);
+  return fx;
+}
+
+// N4 follow-up — afterAll CẤP TỆP (chạy sau afterAll của hai describe): UPDATE hàng của CHÍNH lượt về trạng thái KẾT THÚC, không DELETE.
+afterAll(async () => {
+  if (!gocId) return; // chưa qua cầu chì `_test` (hoặc không có DB) ⇒ lượt này không tạo hàng nào
+  const x = await d();
+  const now = new Date();
+  const lyDo = `test-fixture ${DAU}: kết thúc bởi afterAll (N4)`;
+  if (runIdsCuaLuot.length) {
+    await x
+      .update(orchestrationRunSteps)
+      .set({ status: "failed", error: lyDo, finishedAt: now })
+      .where(and(inArray(orchestrationRunSteps.runId, runIdsCuaLuot), inArray(orchestrationRunSteps.status, ["pending", "running", "awaiting_confirm", "held"])));
+    await x
+      .update(orchestrationRuns)
+      .set({ status: "aborted", error: lyDo, finishedAt: now, updatedAt: now })
+      .where(and(inArray(orchestrationRuns.id, runIdsCuaLuot), notInArray(orchestrationRuns.status, ["completed", "failed", "aborted"])));
+  }
+  // Mọi action của lượt: chủ trong khối id riêng (makeAction, proposeAction, FOE) hoặc id mang DAU (`<DAU>-act-N`, `foe-<DAU>-…`).
+  await x
+    .update(aiPendingActions)
+    .set({ status: "expired" })
+    .where(
+      and(
+        inArray(aiPendingActions.status, ["proposed", "confirmed", "dang_ap_client"]),
+        or(between(aiPendingActions.userId, gocId, gocId + 999), like(aiPendingActions.id, `${DAU}-%`), like(aiPendingActions.id, `foe-${DAU}-%`)),
+      ),
+    );
+  if (ruleIdsCuaLuot.length) {
+    await x
+      .update(interlockEvents)
+      .set({ status: "resolved", resolvedAt: now, notes: lyDo })
+      .where(and(inArray(interlockEvents.ruleId, ruleIdsCuaLuot), notInArray(interlockEvents.status, ["resolved", "failed", "skipped"])));
+  }
+}, 60_000);
 
 // ── driver giả: đếm số lần thiết bị bị ghi ──────────────────────────────────
 let writeCalls = 0;
@@ -231,6 +291,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
   afterAll(async () => {
     fake.drivers.clear();
     // N4 — KHÔNG DELETE: adapter/tag/action/run FOE ở lại với id riêng của lượt; adapter bị TẮT (chỉ hàng của lượt này).
+    // Run FOE / action → trạng thái kết thúc ở afterAll CẤP TỆP.
     if (adapterId) await (await d()).update(deviceAdapters).set({ isEnabled: false }).where(eq(deviceAdapters.id, adapterId));
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];
@@ -581,7 +642,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const cap = { adapterKind: "ot-stub" } as never;
     // doc 81 Đợt 4 Task A5 + fix round 1 (R-4-i) — the step rides on a REAL run (owner OWNER) whose gate OTHER_USER
     // approved through the server path; the dispatcher re-reads both from the DB.
-    const fx = await makeFoeGateRun({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER_USER });
+    const fx = await taoRunFoe({ tag: `${DAU}-r4`, owner: OWNER, approvedBy: OTHER_USER });
     const approval = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
     const cmd = buildEquipmentCommand(descriptor, cap, MACHINE, args, key, user, approval);
     expect(cmd.hitl).toMatchObject({ requestedBy: OWNER, confirmedBy: OTHER_USER });
@@ -641,7 +702,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     let i = 0;
     for (const [label, spec] of cases) {
       i += 1;
-      const fx = spec ? await makeFoeGateRun(spec) : null;
+      const fx = spec ? await taoRunFoe(spec) : null;
       // previewJson says what a VALID approval looks like: owner OWNER, approver OTHER_USER = confirmer.
       const approval = { runId: fx?.runId ?? 2_000_000_000, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
       const key = `${DAU}-dbl${i}-s1-a1`;
@@ -662,7 +723,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     const user = { id: OWNER, role: "engineer" } as never;
     const descriptor = { name: "set_param", label: "p", paramsSchema: [], riskLevel: "low", requiredPermission: "machine_control/canEdit" } as never;
     const cap = { adapterKind: "ot-stub" } as never;
-    const fx = await makeFoeGateRun({ tag: `${DAU}-pure`, owner: OWNER, approvedBy: OTHER_USER });
+    const fx = await taoRunFoe({ tag: `${DAU}-pure`, owner: OWNER, approvedBy: OTHER_USER });
     const key = `${DAU}-pure-s1-a1`;
     const args = { adapterId, tagKey: "speed_sp", value: 77 };
     const real = { runId: fx.runId, runOwner: OWNER, approvedBy: OTHER_USER, gateStepId: "g0" };
@@ -771,6 +832,7 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
         approvedAt: new Date(),
       })
       .returning();
+    ruleIdsCuaLuot.push(rule!.id); // N4 follow-up — sự kiện của luật này → resolved ở afterAll cấp tệp
     await dongDauDuyetLuat(rule!.id); // kiem-dinh R1b-1 I1 (a) FIXTURE — "đã duyệt" gieo thẳng mang bám định nghĩa hiện tại
     const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: v.action, status: "fired" }).returning();
     return { ruleId: rule!.id, eventId: ev!.id };
