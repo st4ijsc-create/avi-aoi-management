@@ -124,12 +124,41 @@ const FAC_NULLCORP = `AKS_FAC_NC_${ts}`;
  * toàn cục đếm ra 13 thay vì 6). Cửa sổ theo `ts` khiến mỗi lượt có một khoảng thời gian
  * KHÔNG giao với bất kỳ lượt nào khác, nên phép đếm là tuyệt đối chứ không phải chênh lệch.
  */
-const RUN_DAY = new Date(2044, 0, 1 + (Math.floor(ts / 1000) % 9000));
+const SO_NGAY_CUA_SO = 9000; // 2044-01-01 .. ~2068-08 (bảng product_inspections có phân vùng phủ tới đó)
 const pad = (n: number) => String(n).padStart(2, "0");
-const dayStr = `${RUN_DAY.getFullYear()}-${pad(RUN_DAY.getMonth() + 1)}-${pad(RUN_DAY.getDate())}`;
-const WIN_FROM = `${dayStr}T00:00:00.000Z`;
-const WIN_TO = `${dayStr}T23:59:59.000Z`;
-const INSPECTED_AT = new Date(`${dayStr}T03:00:00Z`);
+/**
+ * ★★★ 2026-11-02 (kiem-dinh, gốc của "9 ca đỏ khi chạy song song rộng, chạy riêng 45/45 xanh"): lời khẳng định ở trên "mỗi lượt có một khoảng thời gian KHÔNG
+ * giao với bất kỳ lượt nào khác" là SAI sau 9000 giây — `% 9000` QUAY VÒNG mỗi 2,5 giờ, và hàng dựng sẵn là WORM (không dọn được). Đo trên `_test`: 267/9000 ngày
+ * cửa sổ đã có hàng của các lượt trước (tăng thêm ~1 ngày mỗi lượt) ⇒ ~3 % lượt gặp ngày đã dùng, lượt ấy đếm thừa hàng mồ côi / hàng của lượt cũ ở mọi ca "khoá toàn cục"
+ * (TÁI HIỆN XÁC ĐỊNH: ép `ts` rơi vào ngày đã dùng ⇒ 11 ca đỏ; `chonNgayTrong` ⇒ xanh). Hai lượt khởi động cùng giây cũng cùng ngày. Nay: bắt đầu từ ngày ngẫu nhiên
+ * rồi DÒ ngày CHƯA CÓ hàng nào (kiểm tra cả `product_inspections` và `oee_metrics`) trước khi dựng dữ liệu; hết 9000 ngày ⇒ ném lỗi RÕ (không im lặng dùng ngày bẩn).
+ */
+let RUN_DAY: Date;
+let dayStr: string;
+let WIN_FROM: string;
+let WIN_TO: string;
+let INSPECTED_AT: Date;
+const datNgay = (idx: number): void => {
+  RUN_DAY = new Date(2044, 0, 1 + idx);
+  dayStr = `${RUN_DAY.getFullYear()}-${pad(RUN_DAY.getMonth() + 1)}-${pad(RUN_DAY.getDate())}`;
+  WIN_FROM = `${dayStr}T00:00:00.000Z`;
+  WIN_TO = `${dayStr}T23:59:59.000Z`;
+  INSPECTED_AT = new Date(`${dayStr}T03:00:00Z`);
+};
+datNgay(Math.floor(ts / 1000) % SO_NGAY_CUA_SO); // giá trị khởi tạo (đồng bộ); beforeAll chọn lại ngày TRỐNG
+/** Dò ngày chưa có hàng nào ở HAI bảng dựng sẵn (cả ngày UTC của cửa sổ). `batDau` ngẫu nhiên ⇒ hai lượt đồng thời hầu như không chọn cùng ngày. */
+async function chonNgayTrong(
+  daCoHang: (tu: string, den: string) => Promise<boolean>,
+  batDau: number = Math.floor(Math.random() * SO_NGAY_CUA_SO),
+): Promise<number> {
+  for (let k = 0; k < SO_NGAY_CUA_SO; k++) {
+    const idx = (batDau + k) % SO_NGAY_CUA_SO;
+    datNgay(idx);
+    const den = new Date(new Date(`${dayStr}T00:00:00.000Z`).getTime() + 86_400_000).toISOString();
+    if (!(await daCoHang(`${dayStr}T00:00:00.000Z`, den))) return idx;
+  }
+  throw new Error("apiKeyTenantScope: hết 9000 ngày cửa sổ trống trên _test (hàng WORM tích luỹ) — mở rộng dải ngày / phân vùng");
+}
 
 /** Khoá thô (chỉ tồn tại trong tiến trình test; CSDL chỉ giữ SHA-256). */
 const KEY_UNDECLARED = `ak_test_undeclared_${ts}`;
@@ -266,6 +295,12 @@ const totalFor = (rows: any[], machineId: number): number =>
 
 beforeAll(async () => {
   const conn0 = await getDb();
+  await chonNgayTrong(async (tu, den) => {
+    const a = await conn0!.select({ n: sql<number>`count(*)::int` }).from(productInspections).where(sql`${productInspections.inspectionTime} >= ${tu}::timestamptz AND ${productInspections.inspectionTime} < ${den}::timestamptz`);
+    if (Number(a[0]?.n ?? 0) > 0) return true;
+    const b = await conn0!.select({ n: sql<number>`count(*)::int` }).from(oeeMetrics).where(sql`${oeeMetrics.timestamp} >= ${tu}::timestamptz AND ${oeeMetrics.timestamp} < ${den}::timestamptz`);
+    return Number(b[0]?.n ?? 0) > 0;
+  });
   // ★★★ 2026-08-18 — HAI NHÀ MÁY THẬT, hai chuỗi phân cấp RIÊNG.
   //
   // Bản trước của lưới này đặt CẢ HAI máy dưới CÙNG một trạm của MỘT nhà máy `AKSF_…`, và mã
