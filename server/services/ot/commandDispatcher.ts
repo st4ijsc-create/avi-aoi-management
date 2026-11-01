@@ -1134,6 +1134,25 @@ async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof
   }
 }
 
+/**
+ * R1b-2b-2a A2(g) (AN TOÀN) — liên kết sổ của MỌI hàng từ chối ghi TRƯỚC idempotency (2): cổng uỷ quyền (1) — PRECONDITION_FAILED (requireBoundAction
+ * không actionId), `bound.reason` (ACTION_BINDING_MISMATCH …), NOT_CONFIRMED, INTERLOCK_* (`verifyInterlockAuthorization`). (Bước (1b) A2(a) chỉ chạy cho
+ * lệnh KHÔNG khoá và đã ghi khoá NULL — `tuChoiThieuKhoa`.) Khoá NULL (`nullKey`) + khoá gốc của bên gọi ở `ackValue.khoaGoc` (để kiểm toán vẫn thấy
+ * khoá; lệnh không khoá: không có khoá gốc ⇒ không thêm trường, hàng y như A2(a) F1). Mã / lý do / chi tiết không đổi.
+ *
+ * Vì sao: trước, hàng từ chối của lệnh CÓ khoá mang `perWriteKey(key, tag, idx)` mà `command_log_idempotencyKey_unique` là UNIQUE TOÀN BẢNG ⇒ lần thử lại
+ * cùng khoá bị từ chối ở (1) lần nữa — hoặc khoá ĐÃ BAY rồi một lần sau bị từ chối ở (1) — vỡ UNIQUE ⇒ `dispatch()` NÉM (hợp đồng: không ném cho lỗi
+ * dự kiến); cùng khoá trên hai adapter cũng vỡ (khoá ghi không chứa adapter).
+ *
+ * Ngữ nghĩa: từ chối trước (2) nghĩa là KHÔNG gì được gửi ⇒ khoá KHÔNG bị tiêu: lần sau được uỷ quyền đúng với cùng khoá ĐI QUA (gửi thật), kể cả với
+ * payload KHÁC (chưa gì bay dưới khoá đó) — hàng NULL không bao giờ khớp `hangTheoKhoa` (`IN (<khoá chuỗi>)`). Còn khoá ĐÃ bay giữ nguyên phát lại /
+ * `IDEMPOTENCY_KEY_REUSED`: hàng từ chối không bao giờ che hay thay hàng đã bay. Hàng ghi TỪ (2) trở đi giữ khoá như cũ (lời từ chối ở (3)+ của lệnh có
+ * khoá là hàng kết thúc mà lần thử lại PHÁT LẠI — phát lại == sống, không đổi).
+ */
+function lienKetTuChoiTruocBuoc2(input: DispatchInput): LedgerLink {
+  return { nullKey: true, ...(laKhoaRong(input.idempotencyKey) ? {} : { ackExtra: { khoaGoc: input.idempotencyKey } }) };
+}
+
 async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // doc 81 Đợt 11 K-fix (R-11-d) — FIRST, before any await: the adapter's STOP epoch as this command's gates begin. Read-only;
   // K-fix 2 (R-11-i b): nothing here moves it — only a TRUE stop does, when it is SENT (device stage).
@@ -1144,6 +1163,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // ── (1) Authorization gate — branch on the trigger source. ───────────────────
+  // R1b-2b-2a A2(g) — every refusal row written here (before step 2) goes through `lienKetTuChoiTruocBuoc2`: NULL ledger key + `ackValue.khoaGoc`.
   if (input.triggeredBy.kind === "hitl") {
     const t = input.triggeredBy;
     if (t.requireBoundAction) {
@@ -1151,7 +1171,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       // anonymous-MQTT S1 path is closed here in code, whatever the flags say). Read-only
       // here; the real-write path re-verifies under FOR UPDATE and consumes the row.
       if (!t.actionId) {
-        const ids = await writeRejected(db, input, "PRECONDITION_FAILED", "command requires a bound, confirmed HITL actionId (none supplied)");
+        const ids = await writeRejected(db, input, "PRECONDITION_FAILED", "command requires a bound, confirmed HITL actionId (none supplied)", undefined, undefined, lienKetTuChoiTruocBuoc2(input));
         return { ok: false, simulated: false, status: "rejected", reason: "PRECONDITION_FAILED", results: failedResults(input, "PRECONDITION_FAILED"), commandLogIds: ids };
       }
       const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, t.actionId)).limit(1);
@@ -1166,7 +1186,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         }
       }
       if (!bound.ok) {
-        const ids = await writeRejected(db, input, bound.reason, bound.detail);
+        const ids = await writeRejected(db, input, bound.reason, bound.detail, undefined, undefined, lienKetTuChoiTruocBuoc2(input));
         return { ok: false, simulated: false, status: "rejected", reason: bound.reason, results: failedResults(input, bound.reason), commandLogIds: ids };
       }
     } else if (input.triggeredBy.actionId) {
@@ -1187,7 +1207,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         pending.userId === confirmedBy;
 
       if (!confirmedOk) {
-        const ids = await writeRejected(db, input, "NOT_CONFIRMED", "HITL action not confirmed or owner mismatch");
+        const ids = await writeRejected(db, input, "NOT_CONFIRMED", "HITL action not confirmed or owner mismatch", undefined, undefined, lienKetTuChoiTruocBuoc2(input));
         return { ok: false, simulated: false, status: "rejected", reason: "NOT_CONFIRMED", results: failedResults(input, "NOT_CONFIRMED"), commandLogIds: ids };
       }
     }
@@ -1195,7 +1215,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     // F5b: deterministic interlock rule must be authorized (verifyInterlockAuthorization).
     const auth = await verifyInterlockAuthorization(db, input, input.triggeredBy);
     if (!auth.ok) {
-      const ids = await writeRejected(db, input, auth.reason, auth.detail);
+      const ids = await writeRejected(db, input, auth.reason, auth.detail, undefined, undefined, lienKetTuChoiTruocBuoc2(input));
       return { ok: false, simulated: false, status: "rejected", reason: auth.reason, results: failedResults(input, auth.reason), commandLogIds: ids };
     }
   }

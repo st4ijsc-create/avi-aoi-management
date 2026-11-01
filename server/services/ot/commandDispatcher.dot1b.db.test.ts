@@ -242,6 +242,17 @@ async function ledger(base: string) {
     .where(like(commandLog.idempotencyKey, `%${base}%`));
 }
 
+/**
+ * R1b-2b-2a A2(g) — hàng từ chối ở cổng uỷ quyền (1), TRƯỚC idempotency (2), mang khoá sổ NULL và khoá của bên gọi ở `ackValue.khoaGoc` (không còn tìm
+ * được qua `idempotencyKey`): tìm theo khoá gốc ĐÚNG bằng.
+ */
+async function ledgerTruocBuoc2(khoa: string) {
+  return (await d())
+    .select()
+    .from(commandLog)
+    .where(sql`${commandLog.ackValue}->>'khoaGoc' = ${khoa}`);
+}
+
 async function pendingStatus(id: string) {
   const [row] = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, id)).limit(1);
   return row?.status;
@@ -552,11 +563,13 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
       const payload = encodePayload({ metrics: [{ name: "cmd_run", type: "Boolean", value: true }] });
       await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
       expect(writeCalls).toBe(0);
-      const rows = (await (await d()).select().from(commandLog).where(like(commandLog.idempotencyKey, `v2:%:spcmd-${MACHINE}-DCMD-%`)) /* R1b-2b-2a T6d — khoá v2 */).filter(
+      // R1b-2b-2a A2(g) — từ chối ở cổng (1) ⇒ khoá sổ NULL, khoá gốc `spcmd-…` ở ackValue.khoaGoc (trước: `v2:%:spcmd-…` ở idempotencyKey)
+      const rows = (await (await d()).select().from(commandLog).where(sql`${commandLog.ackValue}->>'khoaGoc' LIKE ${`spcmd-${MACHINE}-DCMD-%`}`)).filter(
         (r) => r.createdAt.getTime() >= before - 1000 && r.adapterId === adapterId,
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
       const row = rows[rows.length - 1]!;
+      expect(row.idempotencyKey).toBeNull();
       expect(row.status).toBe("rejected");
       expect(row.errorText).toMatch(/^PRECONDITION_FAILED/);
       expect(row.confirmedBy).toBe(NO_CONFIRMER);
@@ -940,9 +953,11 @@ describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long key
     expect(res.status).toBe("rejected");
     expect(res.reason).toBe(reason);
     expect(writeCalls).toBe(0);
-    const rows = await ledger(inp.idempotencyKey);
+    // R1b-2b-2a A2(g) — từ chối ở cổng interlock (1) ⇒ hàng khoá sổ NULL, khoá của bên gọi ở ackValue.khoaGoc
+    const rows = await ledgerTruocBuoc2(inp.idempotencyKey);
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(rows.every((row) => row.status === "rejected" && String(row.errorText).startsWith(reason))).toBe(true);
+    expect(rows.every((row) => row.status === "rejected" && String(row.errorText).startsWith(reason) && row.idempotencyKey === null)).toBe(true);
+    expect(await ledger(inp.idempotencyKey)).toHaveLength(0);
   });
 
   // ───────────── (3) idempotency keys > 128 chars ─────────────
