@@ -589,6 +589,21 @@ describe("★★★ cụm lớn (ADDENDUM 1) — cleanupExpiredSessions có th�
     expect(msNhan, "nhận 5 000 tải trọng phải gần như tức thì (chỉ xếp hàng)").toBeLessThan(2_000);
   }, 30_000);
 
+  it("(K1b) 5 000 {\"u\"} (ví dụ một lượt gán quyền hàng loạt) ⇒ cùng trần lô; người bị ảnh hưởng rớt, B còn sống", async () => {
+    const a = await noiSan(A, "ve-11a", "factory:1");
+    const b = await noiSan(B, "ve-12", "factory:1");
+    const na = lyDoNgat(a);
+    for (let i = 0; i < 5_000; i++) xl.nhanThongBaoPhamVi(JSON.stringify({ u: [i === 4_999 ? A : 800_000 + i] }));
+    await xl.__choXongChoTest();
+    expect(await na).toBe("io server disconnect");
+    await cho(80);
+    expect(conSong(b)).toBe(true);
+    const tk = xl.thongKeXetLaiQuyen();
+    expect(tk.nguoiXuLy).toBe(5_000);
+    expect(tk.loLonNhat).toBeLessThanOrEqual(500);
+    expect(tk.loXuLy).toBeGreaterThanOrEqual(10);
+  }, 30_000);
+
   it("(K2) hàng đợi VƯỢT TRẦN ⇒ bỏ hàng đợi và QUÉT (không mất sự kiện: phiên bị thu hồi vẫn rớt qua lượt quét); đối chứng B còn sống", async () => {
     xl.__datCauHinhChoTest({ tranHang: 100 });
     const s1 = await noiSan(A, "ve-11a", "factory:1");
