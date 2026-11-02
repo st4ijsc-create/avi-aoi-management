@@ -42,6 +42,10 @@ describe.skipIf(!onTest)("R1a T4 — MODE_LOCAL never blocks a STOP routed to th
   afterAll(async () => {
     if (savedFlag === undefined) delete process.env.SCADA_CONG_CHE_DO_ENABLED;
     else process.env.SCADA_CONG_CHE_DO_ENABLED = savedFlag;
+    // A2(h) fixture rows: tests never DELETE (rule from 2026-11-01) — the rows are made unusable FOREVER instead: status 'cancelled' (the
+    // product's own terminal cancel state, cancelAction) — verifyActionBinding accepts only 'confirmed' (and, gate (1) only, 'executed'),
+    // confirmAction only 'proposed' / 'confirmed' — and expiresAt in the past (refused as expired even if the status were ever reset).
+    if (k) await k.sql`UPDATE ai_pending_actions SET status = 'cancelled', "expiresAt" = now() - interval '1 day' WHERE id LIKE ${`${k.DAU}-a2h-%`}`.catch(() => undefined);
     await k?.teardown();
   }, 120_000);
 
@@ -52,21 +56,49 @@ describe.skipIf(!onTest)("R1a T4 — MODE_LOCAL never blocks a STOP routed to th
 
   const hitl = () => ({ kind: "hitl" as const, requestedBy: k.u.admin, confirmedBy: k.u.admin });
 
-  it("★ edge-owned adapter, machine LOCAL: `stop` with a NON-pin value ⇒ routed (edgeStopRequest + queued stop row), NOT MODE_LOCAL", async () => {
+/**
+ * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim, TRƯỚC cổng chế độ /
+ * chủ edge / kênh). Ca cần tới cổng nó đo gửi kèm MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ = người xác nhận, băm CHÍNH lệnh ấy).
+ * Hàng của fixture mang tiền tố `<DAU>-a2h-`; afterAll làm chúng VÔ HIỆU vĩnh viễn (UPDATE, không DELETE — luật 2026-11-01).
+ */
+const A2H_TOOL = "set_machine_param";
+async function hitlRangBuoc(inp: { adapterId: number; machineId?: number | null; commandType: string; writes: Array<{ tagKey: string; value: unknown }> }) {
+  const { otPayloadHash, withOtPayloadHash } = await import("./otActionBinding");
+  const id = `${k.DAU}-a2h-${++seq}`;
+  const preview = withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: A2H_TOOL, adapterId: inp.adapterId, machineId: inp.machineId ?? null, commandType: inp.commandType, writes: inp.writes }));
+  await k.sql`INSERT INTO ai_pending_actions (id, tool, "argsJson", "userId", "userRole", summary, "previewJson", status, "idempotencyKey", "expiresAt")
+              VALUES (${id}, ${A2H_TOOL}, ${k.sql.json({})}, ${k.u.admin}, 'engineer', 'A2(h) fixture', ${k.sql.json(preview as never)}, 'confirmed', ${`${id}-idem`}, now() + interval '10 minutes')`;
+  return { kind: "hitl" as const, actionId: id, tool: A2H_TOOL, requestedBy: k.u.admin, confirmedBy: k.u.admin };
+}
+
+  // R1b-2b-2a A2(h) — EXPECTATION CHANGED (coordinator ruling (a)): before, a `stop` with a NON-pin value and NO actionId was routed. Since A2(h),
+  // gate (1) binds by default: a non-pinned STOP without an actionId is refused PRECONDITION_FAILED (nothing queued). The case's own subject
+  // ("MODE_LOCAL never blocks a STOP routed to the edge") is kept with a correctly BOUND stop: routed, not MODE_LOCAL.
+  it("★ edge-owned adapter, machine LOCAL: `stop` with a NON-pin value — NO actionId ⇒ PRECONDITION_FAILED, nothing queued (A2(h)); correctly BOUND ⇒ routed (edgeStopRequest + queued stop row), NOT MODE_LOCAL", async () => {
     const { dispatch } = await import("./commandDispatcher");
     (await import("../edge/edgeNodeCommands")).noteEdgeNodePull(k.ids.nodeA);
-    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "speed_sp", value: 5 }], triggeredBy: hitl(), idempotencyKey: `r1t4e-stop-${++seq}-${k.DAU}` });
+    const before = Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n);
+    const u = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "speed_sp", value: 5 }], triggeredBy: hitl(), idempotencyKey: `r1t4e-stopu-${++seq}-${k.DAU}` });
+    expect(u).toMatchObject({ ok: false, status: "rejected", reason: "PRECONDITION_FAILED" });
+    expect(u.edgeStopRequest).toBeUndefined();
+    expect(Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n)).toBe(before);
+    const lenh = { adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: "speed_sp", value: 5 }] };
+    const r = await dispatch({ ...lenh, triggeredBy: await hitlRangBuoc(lenh), idempotencyKey: `r1t4e-stop-${++seq}-${k.DAU}` });
     expect(r.reason).not.toBe("MODE_LOCAL");
     expect(r).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId: k.ids.nodeA } });
     const [row] = await k.sql`SELECT kind, "adapterId", "edgeNodeId" FROM robot_motion_lock_requests WHERE id = ${r.edgeStopRequest!.requestId}`;
     expect(row).toMatchObject({ kind: "stop", adapterId: k.ids.adapterA, edgeNodeId: k.ids.nodeA });
   });
 
-  it("edge-owned adapter, machine LOCAL: a NON-stop write ⇒ MODE_LOCAL: chua_khai, nothing queued", async () => {
+  // R1b-2b-2a A2(h) — the mode gate is measured with a correctly BOUND command (it still blocks); unbound, gate (1) answers first (accepted error order).
+  it("edge-owned adapter, machine LOCAL: a NON-stop write (correctly bound) ⇒ MODE_LOCAL: chua_khai, nothing queued; unbound ⇒ PRECONDITION_FAILED first (A2(h))", async () => {
     const { dispatch, perWriteKey } = await import("./commandDispatcher");
     const before = Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n);
+    const u = await dispatch({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 5 }], triggeredBy: hitl(), idempotencyKey: `r1t4e-setu-${++seq}-${k.DAU}` });
+    expect(u).toMatchObject({ status: "rejected", reason: "PRECONDITION_FAILED" });
     const key = `r1t4e-set-${++seq}-${k.DAU}`;
-    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 5 }], triggeredBy: hitl(), idempotencyKey: key });
+    const lenh = { adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 5 }] };
+    const r = await dispatch({ ...lenh, triggeredBy: await hitlRangBuoc(lenh), idempotencyKey: key });
     expect(r).toMatchObject({ status: "rejected", reason: "MODE_LOCAL" });
     const rows = await k.sql`SELECT "errorText" FROM command_log WHERE "idempotencyKey" = ${perWriteKey(key, "speed_sp", 0)}`; // R1b-2b-2a T6d — khoá v2 không mơ hồ
     expect(rows.map(x => x.errorText)).toEqual(["MODE_LOCAL: chua_khai"]);

@@ -456,6 +456,21 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     expect((aside().querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHanUnavailable"));
   });
 
+  it("R1b-2b-2a T9 (mục 71) — nganSachPoolStop.du=false ⇒ thấy câu vi; du=true hoặc thiếu trường ⇒ không có", () => {
+    srv.posture = { ...POSTURE_OK, nganSachPoolStop: { poolMax: 20, canToiThieu: 25, du: false } };
+    render(<EngineeringHub />);
+    expect((aside().querySelector("[data-posture-pool-stop-thieu]") as HTMLElement).textContent).toBe("Ngân sách pool STOP HMI hụt: DB_POOL_MAX 20 < 25");
+    cleanup();
+    srv.posture = { ...POSTURE_OK, nganSachPoolStop: { poolMax: 25, canToiThieu: 25, du: true } };
+    render(<EngineeringHub />);
+    expect(aside().querySelector("[data-posture-pool-stop-thieu]")).toBeNull();
+    expect(aside().textContent).not.toContain("DB_POOL_MAX");
+    cleanup();
+    srv.posture = { ...POSTURE_OK };
+    render(<EngineeringHub />);
+    expect(aside().querySelector("[data-posture-pool-stop-thieu]")).toBeNull();
+  });
+
   it("dưới 1024 px chip tư thế VẪN ở header (panel phụ xuống dưới MAIN)", () => {
     presetNarrow(true);
     srv.posture = { ...POSTURE_OK, otControlEnabled: true, interlockEngineEnabled: false, writesOnEngineOff: true };
