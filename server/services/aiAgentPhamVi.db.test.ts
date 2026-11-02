@@ -54,7 +54,7 @@ describe.skipIf(!DB_URL)("Command Center — phạm vi nhà máy trên CSDL th�
     await phien`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ID.engA}, ${FAC_A}), (${ID.engB}, ${FAC_B})`;
     await phien`INSERT INTO user_corporate_assignments ("userId", "corporateCode") VALUES (${ID.engCorp}, ${CORP})`;
 
-    const het = new Date(Date.now() + 3600_000);
+    const het = new Date(Date.now() + 3600_000).toISOString();
     for (const k of ["admin", "engA", "engB", "engNone"]) {
       const vai = k === "admin" ? "admin" : "engineer";
       await phien`INSERT INTO ai_agent_sessions (id, "userId", "userRole", goal, status, "expiresAt")
