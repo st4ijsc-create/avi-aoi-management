@@ -81,6 +81,8 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
   let lan = 0;
   let hen: unknown = null;
   let biServerNgat = false;
+  /** fix round 2 (I-2) — đã vào chế độ thử lại vì hạ tầng (`SERVICE_UNAVAILABLE`), kể cả từ lần nối đầu. */
+  let daChoDichVu = false;
   let trangThai: TrangThaiNoiLai = "binh_thuong";
   const dat = (t: TrangThaiNoiLai) => {
     if (t === trangThai) return;
@@ -96,6 +98,7 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
     }
     const ms = treLanThu(Math.min(lan, SO_LAN_TOI_DA), ngauNhien());
     lan++;
+    if (khongTran) daChoDichVu = true; // fix round 2 (I-2): từ đây lỗi KHÁC hạ tầng được xử lý như sau khi bị server ngắt
     dat(khongTran ? "cho_dich_vu" : "dang_noi_lai");
     hen = henGio(() => {
       hen = null;
@@ -114,18 +117,24 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
       thu(true);
       return;
     }
-    if (!biServerNgat) return; // lỗi nối lần ĐẦU (khác hạ tầng): hành vi cũ giữ nguyên (không đổi đường đăng nhập ban đầu)
+    // lỗi nối lần ĐẦU (khác hạ tầng): hành vi cũ giữ nguyên (không đổi đường đăng nhập ban đầu) — TRỪ KHI chính bộ này đang thử lại vì hạ tầng
+    // (fix round 2, I-2): khi ấy một UNAUTHORIZED / RATE_LIMITED là lượt thử CỦA NÓ, không được để kẹt ở `cho_dich_vu` mà không hẹn gì.
+    if (!biServerNgat && !daChoDichVu) return;
     if (msg === LOI_HANDSHAKE_HET_PHIEN) {
       if (hen !== null) huyHen(hen);
       hen = null;
       biServerNgat = false;
+      daChoDichVu = false;
       dat("het_phien");
       o.khiHetPhien?.();
       return;
     }
     // middleware từ chối vì lý do khác (vd. RATE_LIMITED) ⇒ socket.io không tự thử lại ⇒ thử lại có giới hạn; lỗi mạng (socket còn active)
     // ⇒ bộ nối lại của socket.io-client lo.
-    if (socket.active === false) thu();
+    if (socket.active === false) {
+      if (trangThai === "cho_dich_vu") lan = 0; // rời chế độ hạ tầng (vô hạn) ⇒ lượt thử CÓ GIỚI HẠN bắt đầu lại từ đầu
+      thu();
+    }
   };
   const onConnect = () => {
     if (hen !== null) huyHen(hen);
@@ -133,6 +142,7 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
     lan = 0;
     const sauNgat = biServerNgat;
     biServerNgat = false;
+    daChoDichVu = false;
     dat("binh_thuong");
     if (sauNgat) o.khiQuyenDoi?.();
   };
