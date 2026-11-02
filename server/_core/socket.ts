@@ -56,6 +56,8 @@ import {
   duocVaoPhongTelemetryAll,
   tuDongVaoPhongPhamVi,
 } from "./socketPhongQuyen";
+// ── F5-nhanh — handler NHẠY CẢM xác thực LẠI chủ thể (vai / isActive / phiên) từ DB TẠI LÚC THAO TÁC, không tin bản chụp handshake.
+import { xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
 // ── P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY, không phát vào `global` (xem tệp).
 import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
 
@@ -928,14 +930,18 @@ export function initializeSocket(server: HttpServer): Server {
       // trong DB). Task 7 chặn máy; Task 11 (phát hiện khi làm Task 7) siết tiếp: MỌI socket
       // trình duyệt đã đăng nhập (kể cả operator) vẫn gọi được và NHẬN apiKey — mirror ĐÚNG
       // quyền tRPC `machine.approve` (`machineRegistrationGate("canEdit")`, hierarchyRouters.ts).
-      if (!(await duocQuanLyDangKyMay(socket.data, "canEdit"))) {
+      // ★★★ F5-nhanh — cổng quyền chạy trên chủ thể ĐỌC LẠI từ DB lúc này (vai + isActive + phiên còn hiệu lực), KHÔNG trên
+      // `socket.data.user` chụp lúc handshake: admin bị hạ vai / tài khoản bị tắt / phiên bị thu hồi ⇒ không còn đúc được khoá máy.
+      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canEdit"))) {
         // Giá trị trong payload (`data`) do CHÍNH socket bị từ chối gửi lên — ép kiểu/escape
         // trước khi ghép vào dòng log để một chuỗi machineId/socketId cố tình chứa "\n..." không
         // giả được thành một dòng log khác (log forging). Number() trung hoà machineId (NaN nếu
         // không phải số, không phải chuỗi); JSON.stringify đóng khung + escape ký tự điều khiển
         // trong socketId.
         console.warn(
-          `[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong du quyen duyet dang ky may; ` +
+          `[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong du quyen duyet dang ky may` +
+          `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}; ` +
           `machineId=${Number((data as any)?.machineId)} socketId=${JSON.stringify((data as any)?.socketId ?? null)}`,
         );
         return;
@@ -984,7 +990,7 @@ export function initializeSocket(server: HttpServer): Server {
           const khoa = await issueMachineKey({
             machineId: existingMachine.id,
             name: `socket-approve:${existingMachine.code}`,
-            createdBy: ((socket.data as any)?.user?.id as number | undefined) ?? null,
+            createdBy: chuThe.data.user.id, // F5-nhanh: người duyệt = chủ thể ĐỌC LẠI, không phải bản chụp handshake
           });
           apiKey = khoa.plaintextKey;
           keyPrefix = khoa.keyPrefix;
@@ -1004,11 +1010,11 @@ export function initializeSocket(server: HttpServer): Server {
 
         // ★ doc 81 Đợt 1B final wave (item 6) — CÙNG vết kiểm toán như tRPC machine.approve
         // (hierarchyRouters.ts: action machine.approve, keyPrefix/keyId/credentialIssued). Actor = NGƯỜI
-        // DUYỆT của socket này (socket.data.user), không bao giờ là khoá; snapshot KHÔNG chứa khoá
+        // DUYỆT của socket này (F5-nhanh: chủ thể ĐỌC LẠI lúc thao tác), không bao giờ là khoá; snapshot KHÔNG chứa khoá
         // plaintext. logCrudOperation tự nuốt lỗi ghi (kiểm toán không được làm hỏng lượt duyệt đã commit).
         try {
-          const nguoiDuyet = (socket.data as any)?.user as { id: number; name?: string | null } | undefined;
-          await logCrudOperation(createAuditContext({ user: nguoiDuyet ?? null, req: socket.request as any }), {
+          const nguoiDuyet = chuThe.data.user; // F5-nhanh: chủ thể đọc lại lúc thao tác
+          await logCrudOperation(createAuditContext({ user: nguoiDuyet, req: socket.request as any }), {
             action: "machine.approve",
             entityType: ENTITY_TYPES.MACHINE,
             entityId: data.machineId,
@@ -1094,14 +1100,17 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Admin rejects registration
-    socket.on("admin:reject_registration", (data: { socketId: string; reason: string }) => {
+    socket.on("admin:reject_registration", async (data: { socketId: string; reason: string }) => {
       // ★ doc 80 PLT-01 (Task 11) — mirror ĐÚNG quyền tRPC `machine.reject`: `adminProcedure`
       // THẲNG (`_shared.ts`), không qua cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED ⇒ luôn luôn role
       // admin (xem `duocTuChoiDangKyMay`).
-      if (!duocTuChoiDangKyMay(socket.data)) {
+      // ★★★ F5-nhanh — vai đọc LẠI từ DB lúc thao tác (không tin bản chụp handshake), fail-closed.
+      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      if (!chuThe.ok || !duocTuChoiDangKyMay(chuThe.data)) {
         // Ép kiểu/escape trước khi ghi log — cùng lý do như admin:approve_registration.
         console.warn(
-          `[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai admin; ` +
+          `[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai admin` +
+          `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}; ` +
           `socketId=${JSON.stringify((data as any)?.socketId ?? null)} reason=${JSON.stringify((data as any)?.reason ?? null)}`,
         );
         return;
