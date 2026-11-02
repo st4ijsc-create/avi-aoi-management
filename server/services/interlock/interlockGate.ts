@@ -301,14 +301,25 @@ export interface InterlockGateResult {
   violations: InterlockGateViolation[];
 }
 
+/**
+ * Đích máy của lệnh khi hỏi cổng. `machineId` = MỘT id (dạng cũ — cổng robot giữ `machineId = robotId`, robotInterlockTarget);
+ * `machineIds` = TẬP máy (A2(i)(1): đường OT truyền `tapMayChoInterlock(máy của adapter, máy bên gọi)`). Luật `targetMachineId` khớp nếu
+ * nằm trong HỢP của hai trường (null / vắng bị bỏ).
+ */
+export interface InterlockGateTarget {
+  adapterId: number;
+  machineId?: number | null;
+  machineIds?: readonly number[];
+  tagKeys: string[];
+}
+
 /** Rule có nhắm tới đúng thiết bị/máy của lệnh này không (theo targetAdapterId/targetMachineId/commandTag). */
-function isTargeted(
-  rule: InterlockRule,
-  params: { adapterId: number; machineId?: number | null; tagKeys: string[] },
-): boolean {
+function isTargeted(rule: InterlockRule, params: InterlockGateTarget): boolean {
   const byAdapter = rule.targetAdapterId != null && rule.targetAdapterId === params.adapterId;
+  const target = rule.targetMachineId;
   const byMachine =
-    rule.targetMachineId != null && params.machineId != null && rule.targetMachineId === params.machineId;
+    target != null &&
+    ((params.machineId != null && target === params.machineId) || (params.machineIds?.includes(target) ?? false));
   // commandTag khớp tag đang ghi (và, nếu có targetAdapterId, phải cùng adapter).
   const byTag =
     rule.commandTag != null &&
@@ -333,11 +344,7 @@ function isTargeted(
  * `dinhNghiaDuyet.ts`): cổng này CHỈ CHẶN; coi luật lệch bám là chưa duyệt sẽ GỠ chặn (fail-open). Luật lệch bám vẫn chặn theo điều kiện như
  * trước; nó chỉ mất quyền bật lại / tự gửi lệnh (enable, engine, dispatcher).
  */
-export async function evaluateInterlockGate(params: {
-  adapterId: number;
-  machineId?: number | null;
-  tagKeys: string[];
-}): Promise<InterlockGateResult> {
+export async function evaluateInterlockGate(params: InterlockGateTarget): Promise<InterlockGateResult> {
   try {
     const now = Date.now();
     const db = await getDb();

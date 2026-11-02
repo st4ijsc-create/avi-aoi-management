@@ -181,6 +181,7 @@ import { isCommissioned, isCommissioningRequired } from "./commissioningService"
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
 // không tạo vòng phụ thuộc).
 import { evaluateInterlockGate } from "../interlock/interlockGate";
+import { tapMayChoInterlock } from "../interlock/tapMayChoInterlock";
 import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGate"; // doc 33 I2 (F5): policy-as-code gate
 // G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
 // caller did not pass an explicit correlationId we read the ambient one (if any).
@@ -1598,9 +1599,13 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   }
 
   if (input.triggeredBy.kind === "hitl") {
+    // SCADA R1b-2b-2a A2(i)(1) — `targetMachineId` rules are matched against the UNION {the ADAPTER's machine (the step-3 row, no second read),
+    // the caller's machine} (tapMayChoInterlock — stricter only): an FOE step naming another machine's adapter can no longer skip the rules of the
+    // machine the write actually lands on. Adapter on no machine ⇒ the caller's only (as before). A pinned STOP is unchanged: a block from the wider
+    // set is overridden below exactly like any other (R-1D-c). The binding hash (reserveRealWrite) keeps the CALLER's machine.
     const gate = await evaluateInterlockGate({
       adapterId: input.adapterId,
-      machineId: input.machineId ?? null,
+      machineIds: tapMayChoInterlock(adapter.machineId, input.machineId),
       tagKeys: input.writes.map((w) => w.tagKey),
     });
     if (gate.blocked) {

@@ -54,6 +54,7 @@ import { EDGE_TYP_NAME, EdgeContractError } from "./edgeSigning";
 import { edgeStepAuthorizations, robotMotionLockAuthority, type EdgeStepAuthorizationRow } from "./edgeControlSchema";
 import { runEdgeAssignments, type RunEdgeAssignment } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
+import { tapMayChoInterlock } from "../interlock/tapMayChoInterlock";
 import {
   auditNode,
   centralDb,
@@ -358,11 +359,17 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
   };
 }
 
-/** Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock. */
-async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "ot" }>, ownerEpoch: number): Promise<Gate | Verdict> {
+/**
+ * Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock.
+ * Exported for the A2(i)(1) DB suite (interlockMayAdapter.a2i1.db.test.ts), which drives it on a rolled-back transaction.
+ */
+export async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "ot" }>, ownerEpoch: number): Promise<Gate | Verdict> {
   const adapterId = rb.adapterId as number;
   const { deviceAdapters, deviceTags } = await import("../../../drizzle/schema");
-  const [adapter] = await d.select({ isEnabled: deviceAdapters.isEnabled }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
+  // A2(i)(1) — the ONE adapter read also gives the adapter's machine for the interlock set below (no second read). Fail-closed: a read failure is
+  // NOT caught here (never a fallback to "the caller's machine only") — it reaches authorizeForNode's catch ⇒ 503 edge_unavailable, nothing signed
+  // or written (the edge holds the step; a pinned STOP never gets here — step 5).
+  const [adapter] = await d.select({ isEnabled: deviceAdapters.isEnabled, machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
   if (!adapter || adapter.isEnabled !== true) return { gate: "adapter_disabled", detail: "adapter not found or disabled" };
   // M-9 — a console STOP of this adapter not acknowledged done ⇒ no write
   if (await adapterStopOutstanding(d, adapterId, ownerEpoch)) return { gate: "lock_requested", detail: "a central STOP request for this adapter is outstanding" };
@@ -395,7 +402,8 @@ async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind
       if (sg) return sg;
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
-    const g = await evaluateInterlockGate({ adapterId, machineId: rb.machineId, tagKeys: rb.writes.map((w) => w.tagKey) });
+    // A2(i)(1) — the SAME set as central's dispatcher: {the adapter's machine, the step's machine} (tapMayChoInterlock)
+    const g = await evaluateInterlockGate({ adapterId, machineIds: tapMayChoInterlock(adapter.machineId, rb.machineId), tagKeys: rb.writes.map((w) => w.tagKey) });
     if (g.blocked) return { gate: "interlock", detail: g.failClosed ? "interlock evaluation error — fail-closed" : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
