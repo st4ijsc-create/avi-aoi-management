@@ -24,7 +24,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { docTheViec, kiemDiffTheoThe, type TheViec, type ViPhamDiff } from "./theViec";
 
-export type TenDriver = "kho" | "cli";
+export type TenDriver = "kho" | "cli" | "host";
 
 export interface KetQuaDriver {
   /** vòng model đã chạy nếu driver biết; null = không biết */
@@ -33,6 +33,8 @@ export interface KetQuaDriver {
   token: { cache: number | null; prompt: number | null; soLuotModel: number } | null;
   /** nhật ký ngắn (đi stderr) */
   ghiChu: string[];
+  /** thống kê cổng duyệt (driver host): giây chờ NGƯỜI tách khỏi thời gian model */
+  duyet?: { soLanCho: number; soChapNhan: number; soTuChoi: number; giayChoDuyet: number };
 }
 
 export interface DauVaoDriver {
@@ -41,6 +43,8 @@ export interface DauVaoDriver {
   /** luật dự án đã ghép sẵn + thẻ, dạng một lệnh */
   lenh: string;
   hanGiay: number;
+  /** thư mục kết quả (hồ sơ chờ duyệt đặt ở đây) */
+  ra: string;
   ghiLuotDir: string | null;
   khoGhi: Record<string, string>;
 }
@@ -56,6 +60,12 @@ export interface KetQuaViec {
   baseSha?: string;
   driver?: TenDriver;
   giayTuong?: number;
+  /** giayTuong trừ thời gian chờ người duyệt = thời gian của model + công cụ */
+  giayModel?: number;
+  soLanCho?: number;
+  soChapNhan?: number;
+  soTuChoi?: number;
+  giayChoDuyet?: number;
   vong?: number | null;
   token?: KetQuaDriver["token"];
   tepDoi?: string[];
@@ -141,7 +151,7 @@ export const driverCli: Driver = (v) =>
     void dong;
   });
 
-const DRIVERS: Record<TenDriver, Driver> = { kho: driverKho, cli: driverCli };
+const DRIVERS: Record<Exclude<TenDriver, "host">, Driver> = { kho: driverKho, cli: driverCli };
 
 // ── Thu diff ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -198,6 +208,8 @@ export interface ThamSoViec {
   ra: string;
   ghiLuotDir?: string | null;
   khoGhi?: Record<string, string>;
+  /** nhãn ghi vào JSON khi `driver` là hàm (vd "host") */
+  tenDriver?: TenDriver;
   /** CHỈ cho ca kiểm: cho phép worktree không phải worktree LIÊN KẾT (kho tạm). Không có cờ CLI tương ứng. */
   choPhepKhoRieng?: boolean;
   luat?: string;
@@ -207,7 +219,7 @@ export interface ThamSoViec {
 export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const nhatKy = p.nhatKy ?? (() => undefined);
   const tuChoi = (loi: string, ma: string | null = null): KetQuaViec => ({ ma, ok: false, ketCuc: "tu-choi", loi });
-  const tenDriver: TenDriver = typeof p.driver === "string" ? p.driver : "kho";
+  const tenDriver: TenDriver = typeof p.driver === "string" ? p.driver : p.tenDriver ?? "kho";
 
   const dt = docTheViec(p.van);
   if (!dt.ok) return tuChoi(dt.loi);
@@ -246,10 +258,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     /* nếu không ghi được exclude, thuTepDoi vẫn bỏ AGENTS.md ra khỏi danh sách */
   }
 
+  if (p.driver === "host") return tuChoi("driver host phải được dựng ở dòng lệnh (phuThuocHostThat) rồi truyền vào dạng hàm", the.ma);
   const driver = typeof p.driver === "string" ? DRIVERS[p.driver] : p.driver;
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
-  const kq = await driver({ the, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
+  const kq = await driver({ the, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -282,6 +295,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     baseSha,
     driver: tenDriver,
     giayTuong,
+    giayModel: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
+    ...(kq.duyet ? { soLanCho: kq.duyet.soLanCho, soChapNhan: kq.duyet.soChapNhan, soTuChoi: kq.duyet.soTuChoi, giayChoDuyet: kq.duyet.giayChoDuyet } : {}),
     vong: kq.vong,
     token: kq.token,
     tepDoi,
@@ -311,15 +326,31 @@ async function main(): Promise<number> {
     return 2;
   }
   const drv = (a.driver ?? "cli") as TenDriver;
-  if (drv !== "kho" && drv !== "cli") {
+  if (drv !== "kho" && drv !== "cli" && drv !== "host") {
     process.stderr.write(`driver không hợp lệ: ${drv}\n`);
     return 2;
+  }
+  let driver: TenDriver | Driver = drv;
+  if (drv === "host") {
+    const id = Number(a["nguoi-id"]);
+    if (!Number.isInteger(id) || id <= 0) {
+      process.stderr.write("driver host cần --nguoi-id <id engineer1 trong _test> (KHÔNG admin) [--nguoi-vai engineer] [--han-duyet <giây>]\n");
+      return 2;
+    }
+    if ((a["nguoi-vai"] ?? "engineer") === "admin") {
+      process.stderr.write("từ chối: pilot KHÔNG chạy bằng vai admin\n");
+      return 2;
+    }
+    const { driverHost, phuThuocHostThat } = await import("./driverHost");
+    const dep = await phuThuocHostThat({ nguoi: { id, role: a["nguoi-vai"] ?? "engineer", name: "pilot-tho-ca" } });
+    driver = driverHost(dep, a["han-duyet"] ? Number(a["han-duyet"]) : 3600);
   }
   const kq = await chayMotViec({
     van: fs.readFileSync(a.the, "utf8"),
     wt: a.wt ?? "D:\\SOURCES\\_tho_ca_wt",
     base: a.base ?? "main",
-    driver: drv,
+    driver,
+    tenDriver: drv,
     ra: a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"),
     ghiLuotDir: a["ghi-luot"] ?? null,
     khoGhi: a["kho-ghi"] ? (JSON.parse(a["kho-ghi"]) as Record<string, string>) : {},
