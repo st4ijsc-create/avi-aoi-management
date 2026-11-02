@@ -130,12 +130,74 @@ export function dieuKienMienCommitNotify(nguon: string): string[] {
   if (!/skpvtb/.test(ma)) hong.push("thiếu tiền tố skpvtb");
   if (/\bDELETE\s+FROM\b|\bTRUNCATE\b|\.delete\(/i.test(ma)) hong.push("có DELETE / TRUNCATE");
   if (/aoi@|MIGRATION_DB_|asOwner\(/.test(ma)) hong.push("dùng owner aoi");
+  if (/\bSET\s+(LOCAL\s+|SESSION\s+)?ROLE\b(?!\s*=)/i.test(ma)) hong.push("đổi vai bằng SET ROLE"); // fix round 2 (M-3); `UPDATE … SET role = …` (cột) KHÔNG tính
   if (/INSERT\s+INTO\s+(public\.)?"?\w+"?\s*\(\s*"?id"?\s*[,)]/i.test(ma)) hong.push("INSERT có id tường minh");
   if (!/UPDATE users SET "isActive" = false/.test(ma)) hong.push("thiếu dọn người dùng bằng UPDATE isActive=false");
   if (!/UPDATE user_sessions SET "isActive" = false, "expiresAt" = now\(\)/.test(ma)) hong.push("thiếu dọn phiên (isActive=false + hết hạn)");
   if (!/UPDATE user_factory_assignments SET "factoryCode" = /.test(ma)) hong.push("thiếu dọn phân công bằng UPDATE về mã trơ");
   return hong;
 }
+/**
+ * fix round 2 (M-3) — dấu bằng chứng phải nằm trong một ca CHẠY THẬT: chuỗi chứa `dau` nằm trong một lời gọi `it` / `test` / `describe`, và
+ * không lời gọi nào bao quanh nó (kể cả chính nó) là `.skip` / `.todo` / `.skipIf` / `.runIf` / `xit` / `xdescribe`; nếu lời gọi gần nhất là
+ * `describe`, nó phải chứa ít nhất một `it` / `test` không bị bỏ qua. Chỉ nhắc trong chú thích / chuỗi ngoài ca ⇒ KHÔNG phải bằng chứng.
+ */
+export function coBangChungChayThat(nguon: string, dau: string): boolean {
+  const sf = ts.createSourceFile("bang-chung.test.ts", nguon, ts.ScriptTarget.Latest, true);
+  const goc = (e: ts.Expression): { ten: string | null; boQua: boolean } => {
+    let cur: ts.Expression = e;
+    let boQua = false;
+    for (let k = 0; k < 10; k++) {
+      if (ts.isIdentifier(cur)) {
+        if (cur.text === "xit" || cur.text === "xdescribe" || cur.text === "xtest") return { ten: cur.text.slice(1), boQua: true };
+        return { ten: ["it", "test", "describe"].includes(cur.text) ? cur.text : null, boQua };
+      }
+      if (ts.isPropertyAccessExpression(cur)) {
+        if (["skip", "todo", "skipIf", "runIf", "fails"].includes(cur.name.text)) boQua = true;
+        cur = cur.expression;
+      } else if (ts.isCallExpression(cur)) cur = cur.expression; // describe.skipIf(x)(…)
+      else return { ten: null, boQua };
+    }
+    return { ten: null, boQua };
+  };
+  const laCa = (n: ts.Node) => ts.isCallExpression(n) && goc(n.expression).ten !== null;
+  const coCaChayTrong = (n: ts.Node): boolean => {
+    let co = false;
+    const di = (x: ts.Node) => {
+      if (co) return;
+      if (ts.isCallExpression(x)) {
+        const g = goc(x.expression);
+        if ((g.ten === "it" || g.ten === "test") && !g.boQua) co = true;
+      }
+      ts.forEachChild(x, di);
+    };
+    ts.forEachChild(n, di);
+    return co;
+  };
+  let hopLe = false;
+  const di = (n: ts.Node): void => {
+    if (hopLe) return;
+    if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && n.text.includes(dau)) {
+      let ganNhat: ts.CallExpression | null = null;
+      let biBoQua = false;
+      for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+        if (laCa(p)) {
+          const c = p as ts.CallExpression;
+          if (!ganNhat) ganNhat = c;
+          if (goc(c.expression).boQua) biBoQua = true;
+        }
+      }
+      if (ganNhat && !biBoQua) {
+        const g = goc(ganNhat.expression);
+        hopLe = g.ten === "describe" ? coCaChayTrong(ganNhat) : true;
+      }
+    }
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return hopLe;
+}
+
 /** Tệp được miễn: CÓ trong danh sách VÀ thoả mọi điều kiện. */
 export function tepMienCommitNotify(docTep: (f: string) => string | null): Set<string> {
   const out = new Set<string>();
@@ -290,7 +352,7 @@ describe("census — test không tự insert(users) ngoài giao dịch hoàn tá
       expect(nguon, `tệp miễn ${m.file} phải tồn tại`).not.toBeNull();
       expect(dieuKienMienCommitNotify(nguon!), m.file).toEqual([]);
       expect(ket.get(m.file)?.tao, "tệp miễn phải thật sự tạo người dùng (không thì xoá mục)").toBe(true);
-      expect(docTep(m.caHoanTac.file) ?? "", "ca hoàn tác (bằng chứng) phải tồn tại").toContain(m.caHoanTac.dau);
+      expect(coBangChungChayThat(docTep(m.caHoanTac.file) ?? "", m.caHoanTac.dau), "ca hoàn tác (bằng chứng) phải tồn tại trong một ca CHẠY THẬT").toBe(true);
     }
   });
 
@@ -399,10 +461,31 @@ describe("census — đột biến của chính bộ quét", () => {
       ["bỏ dọn phiên", that.replace('"isActive" = false, "expiresAt" = now()', '"isActive" = false')],
       ["id tường minh", that.replace('INSERT INTO users ("openId"', 'INSERT INTO users (id, "openId"')],
       ["owner aoi", that + "\nconst u = 'postgres://aoi@x/y';"],
+      ["SET ROLE", that + "\nconst q = sql`SET ROLE aoi`;"],
+      ["SET LOCAL ROLE", that + "\nconst q = sql`set local role aoi`;"],
     ] as const) {
       expect(that).not.toBe(dotBien);
       expect(dieuKienMienCommitNotify(dotBien).length, ten).toBeGreaterThan(0);
       expect(tepMienCommitNotify(() => dotBien).size, ten).toBe(0);
+    }
+  });
+  it("(M-3) bằng chứng phải nằm trong ca CHẠY THẬT: it.skip / describe.skip / .todo / skipIf / chỉ trong chú thích ⇒ KHÔNG phải bằng chứng", () => {
+    const D = "ROLLBACK_KHONG_GIAO_THONG_BAO";
+    expect(coBangChungChayThat(fs.readFileSync(path.join(GOC, MIEN_COMMIT_NOTIFY[0].caHoanTac.file), "utf8"), D), "tệp bằng chứng thật").toBe(true);
+    expect(coBangChungChayThat(`describe("${D}", () => { it("x", () => {}); });`, D)).toBe(true);
+    expect(coBangChungChayThat(`it("${D} x", () => {});`, D)).toBe(true);
+    for (const [ten, nguon] of [
+      ["it.skip", `describe("a", () => { it.skip("${D}", () => {}); });`],
+      ["describe.skip", `describe.skip("${D}", () => { it("x", () => {}); });`],
+      ["describe ngoài skip", `describe.skip("a", () => { describe("${D}", () => { it("x", () => {}); }); });`],
+      ["it.todo", `it.todo("${D}");`],
+      ["skipIf", `describe.skipIf(true)("${D}", () => { it("x", () => {}); });`],
+      ["describe chỉ có it.skip", `describe("${D}", () => { it.skip("x", () => {}); });`],
+      ["chỉ trong chú thích", `// ${D}\nit("x", () => {});`],
+      ["chuỗi ngoài mọi ca", `const x = "${D}";`],
+      ["xit", `xit("${D}", () => {});`],
+    ] as const) {
+      expect(coBangChungChayThat(nguon, D), ten).toBe(false);
     }
   });
   it("nhận ra lệnh xoá (Drizzle và SQL)", () => {
