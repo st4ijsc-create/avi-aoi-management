@@ -31,11 +31,11 @@ interface Luat {
 }
 
 /** Cổng hợp lệ cho đối số thứ hai của `thuVaoPhong(phòng, <cổng>)`. */
-const CONG_THU_VAO_PHONG = ["duocVaoPhongPhamVi", "duocVaoPhongRobot", "duocVaoPhongThietBi", "duocVaoPhongTelemetryAll"];
+const CONG_THU_VAO_PHONG = ["duocVaoPhongPhamVi", "duocVaoPhongRobot", "duocVaoPhongThietBi", "duocVaoPhongTelemetryAll", "duocVaoPhongAiAgents"];
 
 const LUAT: Luat[] = [
   // ── subscribe: hàm bọc join bất đồng bộ (MỌI lời gọi `thuVaoPhong` được kiểm riêng bên dưới)
-  { file: "server/_core/socket.ts", phong: /^phong$/, gate: ["duocVaoPhongPhamVi(", "duocVaoPhongRobot(", "duocVaoPhongThietBi(", "duocVaoPhongTelemetryAll("] },
+  { file: "server/_core/socket.ts", phong: /^phong$/, gate: ["duocVaoPhongPhamVi(", "duocVaoPhongRobot(", "duocVaoPhongThietBi(", "duocVaoPhongTelemetryAll(", "duocVaoPhongAiAgents("] },
   // ── twin: cổng có từ Đợt 6 (G12/G20)
   { file: "server/_core/socket.ts", phong: /^`twin:\$\{twinFactoryId\}`$/, gate: ["nguoiXemDuocNhan(", "resolveTenantFactoryScope("] },
   // ── engineering: QUYỀN + PHẠM VI
@@ -57,7 +57,6 @@ const LUAT: Luat[] = [
   },
   { file: "server/_core/socket.ts", phong: /^`site:\$\{\(data as any\)\.siteCode\}`$/, mien: "roll-up liên nhà máy của federation (cấp SITE, không phải dữ liệu một nhà máy); chưa có mô hình phạm vi theo site — cần quyết định sản phẩm." },
   { file: "server/_core/socket.ts", phong: /^"sites:global"$/, mien: "như `site:` — tổng hợp federation toàn cục; trang Federation là trang quản trị cấp tập đoàn." },
-  { file: "server/_core/socket.ts", phong: /^"ai:agents"$/, mien: "tín hiệu NHẮC làm mới (không mang dữ liệu phiên/kế hoạch/đối số — xem `aiAgentRealtime.ts`); chỉ socket người dùng." },
 ];
 
 /** Hợp lệ làm đối số cổng của `thuVaoPhong`. */
@@ -194,6 +193,14 @@ describe("ĐỘT BIẾN — lưới phải BẮT", () => {
     expect(b.viPham.length).toBeGreaterThan(0);
     const c = quetJoin(socketTs().replace(g, 'thuVaoPhong("telemetry:all");'), "server/_core/socket.ts");
     expect(c.viPham.length).toBeGreaterThan(0);
+  });
+
+  it("(b2) `ai:agents` (mục tiêu agent của người khác): bỏ cổng / mở cửa / quay lại `socket.join` trần ⇒ ĐỎ", () => {
+    const g = 'thuVaoPhong("ai:agents", duocVaoPhongAiAgents(socket.data));';
+    expect(socketTs()).toContain(g);
+    for (const doi of ['thuVaoPhong("ai:agents", Promise.resolve(true));', 'thuVaoPhong("ai:agents");', 'socket.join("ai:agents");']) {
+      expect(quetJoin(socketTs().replace(g, doi), "server/_core/socket.ts").viPham.length, doi).toBeGreaterThan(0);
+    }
   });
 
   it("(c) bỏ cổng của luật cũ: twin không còn nguoiXemDuocNhan / engineering không còn kiểm phạm vi ⇒ ĐỎ", () => {

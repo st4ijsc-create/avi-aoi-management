@@ -1334,9 +1334,26 @@ describe("dungHtmlBang — phân biệt câu hỏi/trả lời: CSS lớp .luot-
     // rằng ta không bịa một tên KHÔNG nằm trong tập biến kế hoạch đã liệt kê/đã dùng nơi khác trong
     // CHÍNH tệp này (nơi khác dùng ⇒ chắc chắn đã từng chạy được trong webview thật).
     for (const bien of ["--vscode-textBlockQuote-background", "--vscode-focusBorder",
-      "--vscode-textBlockQuote-border", "--vscode-descriptionForeground"]) {
+      "--vscode-charts-orange", "--vscode-descriptionForeground"]) {
       expect(cssMoi).toContain(bien);
     }
+    // charts-orange là biến theme chuẩn cùng họ với charts-blue đã chạy thật ở thanh đồng hồ của chính tệp này.
+    expect(html).toContain("var(--vscode-charts-blue)");
+  });
+
+  // 2026-11-02 chủ dự án: chấm "B" (người hỏi) và "AI" (Thợ Cả) cùng tông XANH ⇒ khó phân biệt.
+  // Ghim: chấm + tên AI màu CAM, chấm người hỏi màu XANH — hai biến KHÁC NHAU, không phải màu nút.
+  it("★★★ chấm vai: người hỏi XANH, Thợ Cả CAM — không trùng tông", () => {
+    const layNenCham = (lop: string): string => {
+      const m = html.match(new RegExp("\\." + lop + " > \\.nhan::before \\{[^}]*background:\\s*var\\((--vscode-[a-zA-Z.-]+)"));
+      expect(m, `không tìm thấy nền chấm cho ${lop}`).not.toBeNull();
+      return m![1];
+    };
+    expect(layNenCham("luot-nguoi-dung")).toBe("--vscode-charts-blue");
+    expect(layNenCham("luot-ai")).toBe("--vscode-charts-orange");
+    expect(html).toMatch(/\.luot-ai > \.nhan \{[^}]*color:\s*var\(--vscode-charts-orange\)/);
+    // màu nút (xanh) không còn dùng cho chấm AI
+    expect(html).not.toMatch(/\.luot-ai > \.nhan::before \{[^}]*--vscode-button-background/);
   });
 });
 

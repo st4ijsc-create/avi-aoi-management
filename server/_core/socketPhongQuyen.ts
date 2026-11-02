@@ -118,6 +118,24 @@ export function duocVaoPhongNguoiDung(data: DuLieuSocket | null | undefined, use
   return Number(userId) === data!.user!.id;
 }
 
+/**
+ * Phòng `ai:agents` (nudge làm mới Agent Command Center): CHỈ admin | engineer + giấy phép MOD_AI — cùng cặp với
+ * `aiAgentCenterRouter` (`roleProcedure("admin","engineer").use(moduleGate("MOD_AI"))`). Lỗi kiểm giấy phép ⇒ false (fail-closed).
+ * Việc "sự kiện nào thuộc phạm vi người nhận" do bridge quyết (aiAgentRealtime.ts), cổng này chỉ chặn người không được xem màn.
+ */
+export const VAI_XEM_AI_AGENTS = ["admin", "engineer"] as const;
+export async function duocVaoPhongAiAgents(data: DuLieuSocket | null | undefined): Promise<boolean> {
+  if (!laSocketNguoiDung(data)) return false;
+  if (!(VAI_XEM_AI_AGENTS as readonly string[]).includes(String(data!.user!.role ?? ""))) return false;
+  try {
+    const { isModuleLicensed } = await import("./moduleGate");
+    return await isModuleLicensed("MOD_AI");
+  } catch (err) {
+    console.error("[Socket.io] loi kiem giay phep MOD_AI cho ai:agents:", (err as Error)?.message ?? err);
+    return false;
+  }
+}
+
 /** Nhãn ngắn cho log từ chối. */
 export function moTaSocket(data: DuLieuSocket | null | undefined): string {
   const ct = data?.clientType ?? "unknown";

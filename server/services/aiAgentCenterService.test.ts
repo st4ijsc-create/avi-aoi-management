@@ -27,6 +27,9 @@ process.env.LICENSE_BYPASS = "true";
 
 type Row = Record<string, any>;
 
+/** Người xem toàn quyền: các ca dưới đây kiểm HÌNH DẠNG read-model; phạm vi nhà máy có tệp riêng (aiAgentCenterService.phamVi.test.ts). */
+const ADMIN = { id: 1, role: "admin" };
+
 // ─── drizzle-orm — pure passthrough (never inspects its column args) ───────────────
 // ⚠ 2026-09-24 — CẢ HAI mock nay là "bản THẬT + ghi đè": ca router (`await import("../routers/aiAgentCenterRouter")`
 // → `_core/trpc` → `_core/sdk` → `server/db` (index)) nạp CẢ lớp db, nơi hàng chục tệp dựng biểu thức từ bảng
@@ -230,7 +233,7 @@ describe("getRoster", () => {
       },
     ]);
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const opsAgent = roster.find((r) => r.id === "operations-agent");
 
     expect(opsAgent).toMatchObject({
@@ -258,7 +261,7 @@ describe("getRoster", () => {
       },
     ]);
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const opsAgent = roster.find((r) => r.id === "operations-agent");
 
     expect(opsAgent).toMatchObject({
@@ -299,7 +302,7 @@ describe("getRoster", () => {
       },
     ]);
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const opsAgent = roster.find((r) => r.id === "operations-agent");
 
     expect(opsAgent).toMatchObject({
@@ -340,7 +343,7 @@ describe("getRoster", () => {
       },
     ]);
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const opsAgent = roster.find((r) => r.id === "operations-agent");
 
     expect(opsAgent).toMatchObject({
@@ -354,7 +357,7 @@ describe("getRoster", () => {
     getBatchRcaStatus.mockReturnValue({ enabled: false, lastRunAt: null });
     getSelfLearningStatus.mockReturnValue({ enabled: true, lastRunAt: new Date("2026-07-25T02:00:00Z") });
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
 
     expect(roster.find((r) => r.id === "scheduled-batch-rca")?.status).toBe("disabled");
     const selfLearning = roster.find((r) => r.id === "scheduled-self-learning");
@@ -372,7 +375,7 @@ describe("getRoster", () => {
       }),
     );
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const proactive = roster.find((r) => r.id === "proactive-agent");
 
     expect(proactive?.status).toBe("awaiting_approval");
@@ -388,7 +391,7 @@ describe("getRoster", () => {
         aiPendingActions: [[{ summary: "Should be ignored", createdAt: new Date() }]],
       }),
     );
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     expect(roster.find((r) => r.id === "proactive-agent")?.status).toBe("disabled");
     expect(roster.find((r) => r.id === "proactive-agent")?.currentTask).toBeNull();
   });
@@ -404,7 +407,7 @@ describe("getRoster", () => {
       }),
     );
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
     const dataInsight = roster.find((r) => r.id === "specialist-data-analyst");
 
     expect(dataInsight?.status).toBe("working");
@@ -420,7 +423,7 @@ describe("getRoster", () => {
   });
 
   it("an empty system ⇒ all 14 roster entries present with honest idle/disabled — no fabricated tasks/tokens", async () => {
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
 
     expect(roster.map((r) => r.id).sort()).toEqual([...ALL_ROSTER_IDS].sort());
     for (const entry of roster) {
@@ -433,7 +436,7 @@ describe("getRoster", () => {
   it("a THROWN source degrades ONLY that persona to error — the rest of the roster still returns", async () => {
     listSessionsForOps.mockRejectedValue(new Error("db exploded"));
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
 
     expect(roster).toHaveLength(ALL_ROSTER_IDS.length);
     expect(roster.find((r) => r.id === "operations-agent")?.status).toBe("error");
@@ -447,7 +450,7 @@ describe("getRoster", () => {
   it("a THROWN specialist-agents source degrades all 4 specialists to error, not the rest of the roster", async () => {
     getDb.mockRejectedValue(new Error("connection reset"));
 
-    const roster = await getRoster();
+    const roster = await getRoster(ADMIN);
 
     for (const id of ["specialist-data-analyst", "specialist-backend-engineer", "specialist-frontend-engineer", "specialist-qa-optimizer"]) {
       expect(roster.find((r) => r.id === id)?.status).toBe("error");
@@ -465,7 +468,7 @@ describe("getCommandCenterReadModel", () => {
       { id: "s-new", userId: 1, username: "u", userRole: "engineer", goal: "new", status: "awaiting_confirm", stepIndex: 1, stepTotal: 2, writeCount: 1, updatedAt: new Date("2026-07-25T10:00:00Z"), expiresAt: new Date() },
     ]);
 
-    const model = await getCommandCenterReadModel({ limit: 2 });
+    const model = await getCommandCenterReadModel(ADMIN, { limit: 2 });
 
     expect(model.sessions).toHaveLength(3);
     expect(model.roster.length).toBeGreaterThan(0);
@@ -476,7 +479,7 @@ describe("getCommandCenterReadModel", () => {
   });
 
   it("honest-empty shape when nothing is running — roster still populated, sessions/taskFeed empty arrays", async () => {
-    const model = await getCommandCenterReadModel();
+    const model = await getCommandCenterReadModel(ADMIN);
 
     expect(model.sessions).toEqual([]);
     expect(model.taskFeed).toEqual([]);
@@ -486,7 +489,7 @@ describe("getCommandCenterReadModel", () => {
   it("a thrown sessions source degrades sessions/taskFeed to empty but still returns the roster", async () => {
     listSessionsForOps.mockRejectedValue(new Error("boom"));
 
-    const model = await getCommandCenterReadModel();
+    const model = await getCommandCenterReadModel(ADMIN);
 
     expect(model.sessions).toEqual([]);
     expect(model.taskFeed).toEqual([]);
@@ -506,6 +509,15 @@ describe("aiAgentCenterRouter — ops-scoped RBAC", () => {
     const res = await admin.getRoster();
     expect(Array.isArray(res.roster)).toBe(true);
     expect(res.roster.length).toBe(ALL_ROSTER_IDS.length);
+    // ★ phạm vi nhà máy: người xem đến từ ctx.user (không hằng số, không input)
+    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: 20 }, { id: 1, role: "admin" });
+  });
+
+  it("★ engineer getRoster: người xem là ENGINEER (không hằng số admin) được truyền xuống", async () => {
+    const { aiAgentCenterRouter } = await import("../routers/aiAgentCenterRouter");
+    const eng = aiAgentCenterRouter.createCaller(ctx({ id: 2, role: "engineer", name: "Eng" }));
+    await eng.getRoster();
+    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: 20 }, { id: 2, role: "engineer" });
   });
 
   it("engineer can read the full read-model", async () => {
@@ -515,6 +527,7 @@ describe("aiAgentCenterRouter — ops-scoped RBAC", () => {
     expect(Array.isArray(res.roster)).toBe(true);
     expect(Array.isArray(res.sessions)).toBe(true);
     expect(Array.isArray(res.taskFeed)).toBe(true);
+    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: 30 }, { id: 2, role: "engineer" });
   });
 
   it("a non-privileged user (operator) is rejected — scoped per RBAC", async () => {

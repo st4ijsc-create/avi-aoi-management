@@ -54,6 +54,7 @@ import {
   duocVaoPhongRobot,
   duocVaoPhongThietBi,
   duocVaoPhongTelemetryAll,
+  duocVaoPhongAiAgents,
   tuDongVaoPhongPhamVi,
 } from "./socketPhongQuyen";
 // ── F5-nhanh — handler NHẠY CẢM xác thực LẠI chủ thể (vai / isActive / phiên) từ DB TẠI LÚC THAO TÁC, không tin bản chụp handshake.
@@ -562,9 +563,9 @@ export function initializeSocket(server: HttpServer): Server {
       // AI_AGENTS_LIVE_ENABLED) that tells it to refetch getReadModel sooner than
       // its 5s poll. Room membership is NOT RBAC-scoped — safe only because the
       // event itself carries no session/plan/args data (see aiAgentRealtime.ts).
+      // ★ BẢO MẬT — có cổng: admin|engineer + MOD_AI (`duocVaoPhongAiAgents`); bridge còn lọc theo phạm vi nhà máy từng người nhận.
       if ((data as any).aiAgents) {
-        socket.join("ai:agents");
-        console.log(`[Socket.io] ${socket.id} joined ai:agents`);
+        thuVaoPhong("ai:agents", duocVaoPhongAiAgents(socket.data));
       }
       // Everyone joins the global room for all alerts
       socket.join("global");
@@ -598,7 +599,10 @@ export function initializeSocket(server: HttpServer): Server {
         socket.leave("telemetry:all");
       }
       // E2-4 — leave the AI Agent Command Center refresh room.
-      if ((data as any).aiAgents) socket.leave("ai:agents");
+      if ((data as any).aiAgents) {
+        huyVe("ai:agents");
+        socket.leave("ai:agents");
+      }
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins

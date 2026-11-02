@@ -49,6 +49,7 @@ import { and, desc, eq, gte, inArray, notLike, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions, aiSpecialistSessions, aiSpecialistSessionSteps, aiGatewayMetrics } from "../../drizzle/schema";
 import { listSessionsForOps, type OpsSessionSummary } from "./aiAgentOrchestrator";
+import { locTheoChu, type NguoiXemAgent } from "./aiAgentPhamVi";
 import { listSpecialistAgents } from "./aiSpecialistAgentService";
 import { isGgufAvailable } from "./aiGgufEngine";
 import { isAutoProposeEnabled } from "./aiAutoProposer";
@@ -248,13 +249,13 @@ function agenticOrchestratorEnabled(): boolean {
   return process.env.AI_AGENTIC_ENABLED === "1";
 }
 
-async function buildOperationsAgentEntry(): Promise<AgentRosterEntry> {
+async function buildOperationsAgentEntry(nguoiXem: NguoiXemAgent): Promise<AgentRosterEntry> {
   return safeEntry("operations-agent", "Operations Agent", "orchestrator", async () => {
     const enabled = agenticOrchestratorEnabled();
     // listSessionsForOps is itself fail-safe (never throws — degrades to []); we
     // still call it inside this try/catch so a TEST that mocks it to throw
     // exercises this persona's degrade path without affecting the rest of getRoster().
-    const sessions = await listSessionsForOps({ limit: 20 });
+    const sessions = await listSessionsForOps({ limit: 20 }, nguoiXem);
 
     // This persona is derived from MULTIPLE ops-wide sessions (different users'
     // sessions all land in the same `sessions` list) — rank every session that
@@ -294,7 +295,7 @@ function specialistRosterId(agentId: string): string {
  * + ai_specialist_session_steps), so they are built together — a single query failure
  * degrades all 4 at once (still each present in the roster, per the brief).
  */
-async function buildSpecialistAgentEntries(): Promise<AgentRosterEntry[]> {
+async function buildSpecialistAgentEntries(nguoiXem: NguoiXemAgent): Promise<AgentRosterEntry[]> {
   const agents = listSpecialistAgents(); // pure, sync, static registry — never throws
   const entries: AgentRosterEntry[] = agents.map((a) => ({
     id: specialistRosterId(a.id),
@@ -318,9 +319,11 @@ async function buildSpecialistAgentEntries(): Promise<AgentRosterEntry[]> {
 
     // Cross-user (ops-scoped) "currently running" specialist sessions — deliberately
     // no userId filter, mirrors listSessionsForOps's own documented convention.
-    const runningSessions = await db
+    // ★ Phạm vi nhà máy: bảng không có cột nhà máy ⇒ lọc theo CHỦ phiên (aiAgentPhamVi) sau khi lấy dư, rồi cắt 20.
+    const runningRaw = await db
       .select({
         id: aiSpecialistSessions.id,
+        userId: aiSpecialistSessions.userId,
         objective: aiSpecialistSessions.objective,
         requestedAgents: aiSpecialistSessions.requestedAgents,
         updatedAt: aiSpecialistSessions.updatedAt,
@@ -328,7 +331,8 @@ async function buildSpecialistAgentEntries(): Promise<AgentRosterEntry[]> {
       .from(aiSpecialistSessions)
       .where(eq(aiSpecialistSessions.status, "running"))
       .orderBy(desc(aiSpecialistSessions.updatedAt))
-      .limit(20);
+      .limit(nguoiXem.role === "admin" ? 20 : OVER_FETCH);
+    const runningSessions = (await locTheoChu(runningRaw, nguoiXem, (r) => r.userId)).slice(0, 20);
 
     const stepCountBySession = new Map<number, number>();
     if (runningSessions.length > 0) {
@@ -401,7 +405,7 @@ async function buildRcaWatcherEntry(): Promise<AgentRosterEntry> {
 
 // ─── 7. Proactive Agent (auto-proposer) ─────────────────────────────────────────
 
-async function buildProactiveAgentEntry(): Promise<AgentRosterEntry> {
+async function buildProactiveAgentEntry(nguoiXem: NguoiXemAgent): Promise<AgentRosterEntry> {
   return safeEntry("proactive-agent", "Proactive Agent", "proactive", async () => {
     const enabled = isAutoProposeEnabled();
     if (!enabled) {
@@ -420,14 +424,14 @@ async function buildProactiveAgentEntry(): Promise<AgentRosterEntry> {
     }
 
     const rows = await db
-      .select({ summary: aiPendingActions.summary, createdAt: aiPendingActions.createdAt })
+      .select({ summary: aiPendingActions.summary, createdAt: aiPendingActions.createdAt, userId: aiPendingActions.userId })
       .from(aiPendingActions)
       // SCADA R1a T9 fix round 2 — lệnh HMI (`hmi.*`) không phải việc của agent AI
       .where(and(eq(aiPendingActions.status, "proposed"), gte(aiPendingActions.expiresAt, new Date()), notLike(aiPendingActions.tool, "hmi.%")))
       .orderBy(desc(aiPendingActions.createdAt))
-      .limit(1);
+      .limit(nguoiXem.role === "admin" ? 1 : OVER_FETCH);
 
-    const latest = rows[0] ?? null;
+    const latest = (await locTheoChu(rows, nguoiXem, (r) => r.userId))[0] ?? null;
     return {
       status: normalizeAgentStatus({ enabled, awaitingApproval: !!latest }),
       currentTask: latest?.summary ?? null,
@@ -507,6 +511,9 @@ function buildScheduledAgentEntries(): AgentRosterEntry[] {
   ];
 }
 
+/** Số hàng lấy dư trước khi lọc theo phạm vi chủ (người xem không toàn quyền) rồi cắt về trần của nguồn. */
+const OVER_FETCH = 300;
+
 // ─── Roster assembly ─────────────────────────────────────────────────────────────
 
 /**
@@ -514,12 +521,12 @@ function buildScheduledAgentEntries(): AgentRosterEntry[] {
  * individually fail-safe (never rejects), so this never throws either; a broken
  * source degrades only its own persona to "error".
  */
-export async function getRoster(): Promise<AgentRosterEntry[]> {
+export async function getRoster(nguoiXem: NguoiXemAgent): Promise<AgentRosterEntry[]> {
   const [operationsAgent, specialists, rcaWatcher, proactiveAgent, orchestrationAdvisor, copilotChat] = await Promise.all([
-    buildOperationsAgentEntry(),
-    buildSpecialistAgentEntries(),
+    buildOperationsAgentEntry(nguoiXem),
+    buildSpecialistAgentEntries(nguoiXem),
     buildRcaWatcherEntry(),
-    buildProactiveAgentEntry(),
+    buildProactiveAgentEntry(nguoiXem),
     buildOrchestrationAdvisorEntry(),
     buildCopilotChatEntry(),
   ]);
@@ -533,7 +540,7 @@ export async function getRoster(): Promise<AgentRosterEntry[]> {
  * Unified, newest-first, capped feed across sources. Each sub-source is fetched in
  * its OWN try/catch so one failing never empties the whole feed.
  */
-async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promise<TaskFeedItem[]> {
+async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[], nguoiXem: NguoiXemAgent): Promise<TaskFeedItem[]> {
   const items: TaskFeedItem[] = [];
 
   // (a) Orchestrator sessions — reuse the ALREADY-fetched ops-scoped session list.
@@ -552,9 +559,10 @@ async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promis
   try {
     const db = await getDb();
     if (db) {
-      const rows = await db
+      const rowsRaw = await db
         .select({
           id: aiSpecialistSessions.id,
+          userId: aiSpecialistSessions.userId,
           objective: aiSpecialistSessions.objective,
           summary: aiSpecialistSessions.summary,
           requestedAgents: aiSpecialistSessions.requestedAgents,
@@ -563,7 +571,8 @@ async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promis
         })
         .from(aiSpecialistSessions)
         .orderBy(desc(aiSpecialistSessions.updatedAt))
-        .limit(cap);
+        .limit(nguoiXem.role === "admin" ? cap : Math.max(cap, OVER_FETCH));
+      const rows = (await locTheoChu(rowsRaw, nguoiXem, (r) => r.userId)).slice(0, cap);
 
       const ids = rows.map((r) => r.id);
       const tokensBySession = new Map<number, number>();
@@ -597,9 +606,10 @@ async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promis
   try {
     const db = await getDb();
     if (db) {
-      const rows = await db
+      const rowsRaw = await db
         .select({
           id: aiPendingActions.id,
+          userId: aiPendingActions.userId,
           summary: aiPendingActions.summary,
           status: aiPendingActions.status,
           createdAt: aiPendingActions.createdAt,
@@ -607,7 +617,8 @@ async function buildTaskFeed(cap: number, sessions: OpsSessionSummary[]): Promis
         .from(aiPendingActions)
         .where(notLike(aiPendingActions.tool, "hmi.%")) // SCADA R1a T9 fix round 2 — lệnh HMI không phải hành động HITL của AI
         .orderBy(desc(aiPendingActions.createdAt))
-        .limit(cap);
+        .limit(nguoiXem.role === "admin" ? cap : Math.max(cap, OVER_FETCH));
+      const rows = (await locTheoChu(rowsRaw, nguoiXem, (r) => r.userId)).slice(0, cap);
 
       for (const r of rows) {
         items.push({
@@ -643,14 +654,14 @@ export interface GetReadModelOptions {
  * placeholder rows). All aggregation is fail-safe: a broken sub-source degrades
  * that piece only, never throws the whole read-model.
  */
-export async function getCommandCenterReadModel(opts?: GetReadModelOptions): Promise<CommandCenterReadModel> {
+export async function getCommandCenterReadModel(nguoiXem: NguoiXemAgent, opts?: GetReadModelOptions): Promise<CommandCenterReadModel> {
   const cap = Math.min(Math.max(1, opts?.limit ?? 50), 200);
 
   const [roster, sessions] = await Promise.all([
-    getRoster(),
+    getRoster(nguoiXem),
     (async () => {
       try {
-        return await listSessionsForOps({ limit: 30 });
+        return await listSessionsForOps({ limit: 30 }, nguoiXem);
       } catch (err) {
         console.error("[aiAgentCenterService] read-model sessions source failed:", (err as Error)?.message ?? err);
         return [] as OpsSessionSummary[];
@@ -660,7 +671,7 @@ export async function getCommandCenterReadModel(opts?: GetReadModelOptions): Pro
 
   let taskFeed: TaskFeedItem[] = [];
   try {
-    taskFeed = await buildTaskFeed(cap, sessions);
+    taskFeed = await buildTaskFeed(cap, sessions, nguoiXem);
   } catch (err) {
     console.error("[aiAgentCenterService] read-model taskFeed assembly failed:", (err as Error)?.message ?? err);
   }
