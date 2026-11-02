@@ -761,6 +761,9 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     expect(r2).toMatchObject({ status: "held" });
     expect(String(r2.error)).toMatch(/^EDGE_HELD\(configStale\).*signed safety-PLC config\(s\) #7 absent/);
     expect(String(r2.error)).toContain("reported unused");
+    // r4 (review m-1): the hold adds NO EDGE_CONFIG_STALE — the dispatch gate's EDGE_SAFETY_CONFIG_MISSING (journaled by the gate,
+    // mocked out here) is the one anomaly for it; the stale-config hold above still writes its EDGE_CONFIG_STALE
+    expect(e.events.map((x) => x.code)).toEqual([]);
     expect(e.unused).toMatchObject([{ runId: e.runId, claimSeq: 2, stepId: "r2", attempt: 1, reason: "config_stale" }]);
     expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
     expect(runRow(e.runId).status).toBe("held");

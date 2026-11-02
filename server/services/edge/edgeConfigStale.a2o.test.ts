@@ -278,7 +278,8 @@ describe("A2(o) AMENDMENT 2 — a stale-config authorisation is journaled + repo
     journals.push(journal);
     const recs: unknown[] = [];
     const sink = { run: async (_r: number, _c: number, rec: unknown) => (recs.push(rec), { seq: recs.length, durable: true }) } as never;
-    const report = createEdgeAuthUnusedReporter(journal, sink);
+    // central advertised auth_unused.config_stale (A2(o) r3/r4: else the journaled wire reason is the baseline — edgeAuthUnusedCompat.a2o)
+    const report = createEdgeAuthUnusedReporter(journal, sink, { centralAccepts: (t) => t === "auth_unused.config_stale" });
     const jti = "3b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a83";
     expect(await report({ runId: 9, claimSeq: 2, jti, stepId: "r2", attempt: 1, reason: "config_stale" })).toBe(true);
     expect(journal.isJtiConsumed(jti)).toBe(true);
