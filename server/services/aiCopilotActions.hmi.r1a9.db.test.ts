@@ -86,7 +86,7 @@ describe("lệnh HMI không đi qua các đường AI", () => {
   });
 
   it("fix round 2 — Agent Center taskFeed không có hàng HMI, có hàng AI", async () => {
-    const { taskFeed } = await getCommandCenterReadModel({ limit: 200 });
+    const { taskFeed } = await getCommandCenterReadModel({ id: 1, role: "admin" }, { limit: 200 });
     const feedIds = taskFeed.map((t) => t.id);
     expect(feedIds).toContain(`action:${ids.ai}`);
     for (const id of [ids.hmi, ids.hmiHet, ids.hmiCho]) expect(feedIds).not.toContain(`action:${id}`);

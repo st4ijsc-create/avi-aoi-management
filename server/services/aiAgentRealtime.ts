@@ -29,20 +29,22 @@
  * bridge's OUTBOUND re-emit to the socket. This mirrors how choke points don't
  * need to know or care whether the live channel is enabled.
  *
- * PAYLOAD SAFETY — the nudge carries ONLY { kind?, event, sessionId?, at }. NO
- * plan content, NO tool args, NO secrets, NO preview/result. The FE reacts to
- * the nudge by refetching the RBAC-gated getReadModel query — that is the ONLY
- * place real agent/session data is authorized to flow. Room membership on
- * `ai:agents` is NOT itself RBAC-enforced (any authenticated socket may join,
- * same as `telemetry:all`/`sites:global`), so the payload must stay leak-proof
- * independent of who is in the room — never add a field here without checking
- * this file's docblock first.
+ * PAYLOAD SAFETY — the nudge ON THE WIRE carries ONLY { kind?, event, at }. NO
+ * plan content, NO tool args, NO secrets, NO preview/result, and (since the
+ * factory-scope fix) NO sessionId. The FE reacts to the nudge by refetching the
+ * RBAC-gated getReadModel query — that is the ONLY place real agent/session data
+ * is authorized to flow.
+ *
+ * ★ PHẠM VI (sửa lỗ an ninh): phòng `ai:agents` nay CÓ cổng (admin|engineer + MOD_AI, `duocVaoPhongAiAgents`) và bridge phát THEO TỪNG
+ *   NGƯỜI NHẬN: chỉ socket mà nhà máy của họ GIAO với nhà máy của CHỦ sự kiện (`ownerUserId`, KHÔNG lên dây) mới nhận
+ *   (aiAgentPhamVi.nguoiNhanThayChu — cùng bộ phân giải với getReadModel). Sự kiện không rõ chủ ⇒ chỉ admin nhận.
  *
  * SAFETY: signal-only. No DB write, no control path — this module never calls
  * a tool and never touches aiAgentSessions/aiPendingActions itself.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { eventBus, EventTypes, type DomainEvent } from "../_core/eventBus";
+import { nguoiNhanThayChu } from "./aiAgentPhamVi";
 
 /** The choke point that produced this nudge. Informational only — the FE does
  *  not branch on it; it just refetches on ANY nudge. */
@@ -59,8 +61,13 @@ export interface AiAgentNudgePayload {
   /** Reserved for a future per-agent-kind room split; not populated yet. */
   kind?: string;
   event: AiAgentEventKind;
-  sessionId?: string;
   at: number;
+}
+
+/** Hình dạng NỘI BỘ trên eventBus (có chủ sự kiện để bridge định tuyến theo phạm vi; chủ và sessionId KHÔNG BAO GIỜ lên dây). */
+export interface AiAgentBusPayload extends AiAgentNudgePayload {
+  sessionId?: string;
+  ownerUserId?: number;
 }
 
 /**
@@ -71,9 +78,9 @@ export interface AiAgentNudgePayload {
  * cancelSession/proposeAction/confirmAction all call this as their LAST step,
  * after their own state change already persisted).
  */
-export function publishAiAgentEvent(event: AiAgentEventKind, sessionId?: string): void {
+export function publishAiAgentEvent(event: AiAgentEventKind, sessionId?: string, ownerUserId?: number): void {
   try {
-    const payload: AiAgentNudgePayload = { event, sessionId, at: Date.now() };
+    const payload: AiAgentBusPayload = { event, sessionId, ownerUserId, at: Date.now() };
     eventBus.publish(EventTypes.AI_AGENT, payload, "aiAgentRealtime");
   } catch (err) {
     console.error("[AiAgentRealtime] publish failed:", (err as Error)?.message ?? err);
@@ -98,7 +105,7 @@ let unsubscribe: (() => void) | null = null;
 export function installAiAgentSocketBridge(): void {
   if (installed) return;
   installed = true;
-  unsubscribe = eventBus.subscribe<AiAgentNudgePayload>(EventTypes.AI_AGENT, async (e: DomainEvent<AiAgentNudgePayload>) => {
+  unsubscribe = eventBus.subscribe<AiAgentBusPayload>(EventTypes.AI_AGENT, async (e: DomainEvent<AiAgentBusPayload>) => {
     if (!enabled()) return; // NO-OP unless AI_AGENTS_LIVE_ENABLED — FE 5s poll stays the fallback
     try {
       // Lazy import: this module is imported by the choke points (aiAgentOrchestrator.ts
@@ -107,12 +114,29 @@ export function installAiAgentSocketBridge(): void {
       const { getIO } = await import("../_core/socket");
       const io = getIO();
       if (!io) return;
-      io.to("ai:agents").emit("ai:agents", e.payload);
+      await phatTheoPhamVi(io, e.payload);
     } catch (err) {
       console.error("[AiAgentRealtime] bridge re-emit failed:", (err as Error)?.message ?? err);
     }
   });
   console.log(`[AiAgentRealtime] bridge installed (AI_AGENTS_LIVE_ENABLED=${enabled()}) → room ai:agents`);
+}
+
+/** Phát cho TỪNG socket trong `ai:agents` mà phạm vi nhà máy cho nhận; payload trên dây KHÔNG có sessionId/ownerUserId. */
+async function phatTheoPhamVi(io: NonNullable<ReturnType<typeof import("../_core/socket").getIO>>, p: AiAgentBusPayload): Promise<void> {
+  const tren: AiAgentNudgePayload = { event: p.event, at: p.at, ...(p.kind ? { kind: p.kind } : {}) };
+  const sockets = await io.in("ai:agents").fetchSockets();
+  const quyet = new Map<number, Promise<boolean>>(); // một phép quyết định cho mỗi NGƯỜI (nhiều tab) trong một sự kiện
+  for (const s of sockets) {
+    const u = (s.data as { user?: { id?: unknown; role?: unknown } } | undefined)?.user;
+    if (typeof u?.id !== "number" || !Number.isFinite(u.id)) continue; // không danh tính ⇒ không nhận
+    let q = quyet.get(u.id);
+    if (!q) {
+      q = nguoiNhanThayChu({ id: u.id, role: String(u.role ?? "") }, p.ownerUserId).catch(() => false);
+      quyet.set(u.id, q);
+    }
+    if (await q) s.emit("ai:agents", tren);
+  }
 }
 
 /** Tear down the bridge (tests / shutdown). */

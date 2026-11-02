@@ -390,7 +390,7 @@ describe("E2-4 — realtime nudge at each choke point", () => {
   it("startSession publishes session_started with the new sessionId, AFTER the row is persisted", async () => {
     plan([{ kind: "read", tool: "read_thing", args: {} }]);
     const s = await startSession("g", { user: MANAGER as any });
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("session_started", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("session_started", s.sessionId, MANAGER.id);
     // the row must already be awaiting_approval by the time we publish
     expect(store.get(s.sessionId!)!.status).toBe("awaiting_approval");
   });
@@ -407,7 +407,7 @@ describe("E2-4 — realtime nudge at each choke point", () => {
     const s = await startSession("g", { user: MANAGER as any });
     publishAiAgentEvent.mockClear();
     await approvePlan(s.sessionId!, { user: MANAGER as any });
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId, MANAGER.id);
   });
 
   it("confirmStep publishes 'confirmed' (plus the inner advance's 'advanced')", async () => {
@@ -421,8 +421,8 @@ describe("E2-4 — realtime nudge at each choke point", () => {
     await approvePlan(s.sessionId!, { user: MANAGER as any });
     publishAiAgentEvent.mockClear();
     await confirmStep(s.sessionId!, "ACT1", "ACT1", { user: MANAGER as any });
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("confirmed", s.sessionId);
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("confirmed", s.sessionId, MANAGER.id);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId, MANAGER.id);
   });
 
   it("cancelSession publishes 'cancelled'", async () => {
@@ -432,7 +432,7 @@ describe("E2-4 — realtime nudge at each choke point", () => {
     await approvePlan(s.sessionId!, { user: MANAGER as any });
     publishAiAgentEvent.mockClear();
     await cancelSession(s.sessionId!, { user: MANAGER as any });
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId, MANAGER.id);
   });
 
   it("a THROWING publishAiAgentEvent never breaks the choke point (advance still returns normally)", async () => {
@@ -523,7 +523,7 @@ describe("E2-4 — realtime nudge at each choke point", () => {
       await approvePlan(s.sessionId!, { user: MANAGER as any });
       const first = await cancelSession(s.sessionId!, { user: MANAGER as any });
       expect(first.ok).toBe(true);
-      expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+      expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId, MANAGER.id);
       publishAiAgentEvent.mockClear();
       const second = await cancelSession(s.sessionId!, { user: MANAGER as any });
       expect(second.ok).toBe(false);

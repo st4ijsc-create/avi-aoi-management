@@ -313,11 +313,11 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
     deviceStreamId: "robot:1", robotId: 5, siteCode: "HN", sitesGlobal: true, telemetryAll: true, aiAgents: true,
   };
   const PHONG_TRINH_DUYET = [
-    "ai:agents", "device:robot:1", "factory:1", "global", "line:4", "machine:3",
+    "device:robot:1", "factory:1", "global", "line:4", "machine:3",
     "robot:5", "scope:all", "site:HN", "sites:global", "telemetry:all", "twin:1", "workshop:2",
-  ].sort(); // P-S1b: + `scope:all` (người dùng toàn quyền tự vào phòng này)
+  ].sort(); // P-S1b: + `scope:all` (người dùng toàn quyền tự vào phòng này). `ai:agents` KHÔNG còn ở đây: user 8 là operator ⇒ cổng duocVaoPhongAiAgents từ chối (xem socketPhongQuyen.aiAgents.test.ts)
 
-  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 12 phòng (hành vi cũ)", async () => {
+  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 12 phòng (hành vi cũ; operator KHÔNG vào ai:agents)", async () => {
     const may = await ketNoi({ may: true });
     const nd = await ketNoi({ phien: 8 }); // user KHÔNG có quyền engineering: subscribe chung không đổi
     may.emit("subscribe", MOI_KHOA);
