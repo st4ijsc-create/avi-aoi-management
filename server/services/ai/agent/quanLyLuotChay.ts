@@ -97,6 +97,7 @@ import { taoChoDuyetKeHoach } from "./choDuyetKeHoach";
 import type { TimTaiLieu } from "./timTaiLieuAgent";
 import { chuanBiLuotNgoai, laChonModelNgoai, phuThuocLuotNgoaiThat, type LuotNgoaiSanSang, type PhuThuocLuotNgoai } from "./luotChayNgoai";
 import { taoCapAgentNgoai, TRAN_VONG_AGENT_NGOAI, type CapAgentNgoai } from "../ngoai/vongAgentNgoai";
+import { nganSachNguCanhCho } from "./nganSachNguCanh";
 import {
   chotSauGhi,
   chupTruocGhi,
@@ -294,6 +295,8 @@ export interface PhuThuocQuanLy {
   ngoai?: PhuThuocLuotNgoai;
   /** (Đợt 10.4b L3b) phiên đã có lượt model ngoài? `null` = không đọc được (⇒ hạ tự trị, fail-closed). Mặc định đọc `ai_coding_sessions` (lọc chủ). */
   phienCoLuotNgoai?: (userId: number, sessionId: string) => Promise<boolean | null>;
+  /** (Đợt 12 H3.2b) ngân sách ngữ cảnh theo model (mặc định `nganSachNguCanhCho`: mô tả model + /props). Lưới thay để không gọi :8091. */
+  nganSachNguCanh?: (modelId: string | undefined) => Promise<number>;
 }
 
 async function phienCoLuotNgoaiThat(userId: number, sessionId: string): Promise<boolean | null> {
@@ -946,6 +949,12 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
         try {
           // (L3) lượt ngoài: KHÔNG ngữ cảnh dự án (tệp quy ước, bài học, cây) — bộ chuyển còn bỏ system lõi, đây là lớp thứ hai.
           const nguCanhDuAn = capNgoai ? "" : await dungNguCanh({ ten, goc, projectId, execCtx, userId: user.id, cauHoi, lang });
+          // ★ Đợt 12 H3.2b — ngân sách ngữ cảnh theo MÔ TẢ model + kiểm /props (số nhỏ hơn). CHỈ khi dùng model THẬT của khe (không tiêm
+          //   goiModel, không lượt ngoài) và người gọi chưa tự đặt; lỗi ⇒ để lõi dùng mặc định (= hôm nay).
+          const nganSachNguCanh =
+            phuThuoc.gioiHan?.nganSachNguCanhToken === undefined && !capNgoai && (!phuThuoc.goiModel || phuThuoc.nganSachNguCanh)
+              ? await (phuThuoc.nganSachNguCanh ?? ((m: string | undefined) => nganSachNguCanhCho(m)))(theoVaiTro?.modelId ?? modelChon?.modelId).catch(() => undefined)
+              : undefined;
           const goiModelLuot: GoiModel = capNgoai
             ? capNgoai.goiModel
             : theoVaiTro
@@ -1053,7 +1062,11 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
             },
             ...(haTuTriDauChung ? { haTuTriDau: true } : {}),
             signal: boHuy.signal,
-            gioiHan: capNgoai ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI } : phuThuoc.gioiHan,
+            gioiHan: capNgoai
+              ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI }
+              : nganSachNguCanh !== undefined
+                ? { ...phuThuoc.gioiHan, nganSachNguCanhToken: nganSachNguCanh }
+                : phuThuoc.gioiHan,
             ngonNgu: lang,
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0
