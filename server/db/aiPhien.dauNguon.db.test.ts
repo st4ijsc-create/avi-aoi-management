@@ -53,7 +53,6 @@ describe.skipIf(!DB_URL)("aiPhien.themLuot — dấu nguồn model ngoài trên 
     await mkUser("a");
     await mkUser("b");
     for (const k of ["a1", "a2", "a3", "a4", "a5", "a6", "a7"]) await mkPhien(k, "a", "du-an-1");
-    await mkPhien("a-di-san", "a", null);
   }, 120_000);
 
   afterAll(async () => {
@@ -119,12 +118,11 @@ describe.skipIf(!DB_URL)("aiPhien.themLuot — dấu nguồn model ngoài trên 
     expect(await themLuot(ID.b, { sessionId: PH.b1, expectedVersion: 1, luot: luot(t), ngoaiCallIds: [idA] })).toEqual({ ok: false, ma: "DAU_NGUON_LECH" });
     expect(await themLuot(ID.b, { sessionId: PH.a1, expectedVersion: 2, luot: luot(t) })).toEqual({ ok: false, ma: "NOT_FOUND" });
   });
-});
 
-describe.skipIf(!DB_URL)("G3 — duAnCuaPhien trên CSDL thật", () => {
-  it("trả dự án của phiên CỦA CHỦ; hàng di sản ⇒ projectId null; phiên của người khác / không có ⇒ NOT_FOUND", async () => {
+  // G3 — duAnCuaPhien trên CSDL thật (cùng giao dịch: fixture chưa bị ROLLBACK)
+  it("trả dự án của phiên CỦA CHỦ; phiên của người khác / không có ⇒ NOT_FOUND", async () => {
     expect(await duAnCuaPhien(ID.a, PH.a1)).toEqual({ ok: true, projectId: "du-an-1" });
-    expect(await duAnCuaPhien(ID.a, PH["a-di-san"])).toEqual({ ok: true, projectId: null });
+    // cột projectId NOT NULL ⇒ không có hàng di sản null trong CSDL; nhánh null ở router chỉ là phòng thủ (đã khoá ở aiPhien.duAn.test.ts)
     expect(await duAnCuaPhien(ID.b, PH.a1)).toEqual({ ok: false, ma: "NOT_FOUND" });
     expect(await duAnCuaPhien(ID.a, "00000000-0000-4000-8000-000000000000")).toEqual({ ok: false, ma: "NOT_FOUND" });
   });
