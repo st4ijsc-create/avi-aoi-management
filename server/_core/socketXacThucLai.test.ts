@@ -832,3 +832,46 @@ describe("★★★ F5-nhanh (a) review — đường gắn thiết bị nhà m�
     expect(getMachineByCode).not.toHaveBeenCalled();
   });
 });
+
+describe("★★★ F5-nhanh (a) re-review polish — THỨ TỰ: phạm vi kiểm TRƯỚC khi rút đăng ký khỏi sổ chờ (ghim bằng lượt tra phạm vi bị GIỮ)", () => {
+  it("(Q1) trong lúc lượt tra phạm vi của registrar (máy đích B) đang BỊ GIỮ, đăng ký vẫn trong sổ: admin duyệt CHÍNH đăng ký ấy thành công; thả ra ⇒ registrar bị từ chối, không đúc khoá", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    const pv = await import("./phamViDuyetMay");
+    const macDinh = async (cap: "machine" | "station", p: { userId: number; userRole: string }) => {
+      if (nemKhiTraPhamViDuyet) throw new Error("db nac (gia lap)"); // = seam gốc ở beforeAll
+      if (p.userId === 3) return cap === "machine" ? PHAM_VI_MAY_REG3 : [1];
+      return [];
+    };
+    try {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      // làm ẤM import động (accessControl) bằng MỘT lượt tuần tự — tránh trò vitest phục vụ module thật cho import đồng thời đầu tiên
+      const am = new Promise((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: "khong-ton-tai", machineId: MAY.id });
+      await am;
+
+      const dk = await dangKyMoi("MA-A"); // đăng ký TRONG phạm vi registrar
+      let tha!: () => void;
+      const giu = new Promise<void>((r) => (tha = r));
+      let daBiGiu = false;
+      pv.__datBoTraPhamViDuyetMayChoTest(async (cap, p) => {
+        if (p.userId === 3 && cap === "machine") {
+          daBiGiu = true;
+          await giu; // GIỮ lượt tra phạm vi của registrar
+        }
+        return macDinh(cap, p);
+      });
+      const loiReg = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: MAY_B.id }); // máy đích ngoài phạm vi
+      await vi.waitFor(() => expect(daBiGiu).toBe(true));
+      // ⇐ registrar đang đứng ở lượt tra phạm vi. Bản sai thứ tự (rút trước, trả lại khi từ chối) làm đăng ký VẮNG khỏi sổ lúc này.
+      await duyetDoiChung(ad, dk, 2); // admin (miễn phạm vi, không tra) duyệt CHÍNH đăng ký ấy ⇒ phải thành công
+      tha();
+      expect((await loiReg).message).toMatch(/not found/i);
+      expect(issueMachineKey).toHaveBeenCalledTimes(1); // chỉ khoá của lượt admin
+    } finally {
+      pv.__datBoTraPhamViDuyetMayChoTest(macDinh);
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  });
+});
