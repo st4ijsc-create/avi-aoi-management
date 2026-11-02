@@ -30,6 +30,7 @@ import {
   EDGE_STREAM_EVENTS,
   EDGE_STREAM_ROBOT_STATE,
   EDGE_TELEMETRY_BATCH_MAX,
+  edgeAuthUnusedWireReason,
   edgeRunStream,
   parseEdgeStream,
   type EdgeAuthUnusedReason,
@@ -185,7 +186,7 @@ export class EdgeStreamShipper {
         if (!tok) return "no_token";
         r = await this.client.post(
           "report",
-          { claimSeq: tok.claimSeq, claimToken: tok.claimToken, epoch, stream, records: batch.map((b) => b.record as EdgeRunReportRecord) },
+          { claimSeq: tok.claimSeq, claimToken: tok.claimToken, epoch, stream, records: batch.map((b) => this.wireRunRecord(b.record as EdgeRunReportRecord)) },
           { runId: parsed.runId },
         );
       } else if (parsed.kind === "events") {
@@ -240,6 +241,18 @@ export class EdgeStreamShipper {
       return "refused";
     }
     return "refused";
+  }
+
+  /**
+   * A2(o) r3 — a run record as it goes ON THE WIRE: an `auth_unused` `config_stale` is sent as such only to a central that
+   * advertised it (edgeCentralClient.centralAccepts); an OLD central gets `expired_before_use`, which it accepts and supersedes
+   * the same way (its strict literal would refuse the whole batch and wedge the run stream). The journal keeps the true reason.
+   */
+  private wireRunRecord(rec: EdgeRunReportRecord): EdgeRunReportRecord {
+    if (rec.kind !== "auth_unused") return rec;
+    const accepts = (token: string) => (typeof this.client.centralAccepts === "function" ? this.client.centralAccepts(token) === true : false);
+    const reason = edgeAuthUnusedWireReason(rec.reason, accepts);
+    return reason === rec.reason ? rec : { ...rec, reason };
   }
 
   private warnOnce(k: string, msg: string): void {

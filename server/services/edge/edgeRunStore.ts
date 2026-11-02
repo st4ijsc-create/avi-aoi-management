@@ -50,7 +50,7 @@ import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
-import { EDGE_CONFIG_STALE, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
+import { EDGE_CONFIG_STALE, EDGE_SAFETY_CONFIG_MISSING, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
 import type { EdgeAuthUnusedReason } from "./edgeProtocol";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -455,11 +455,14 @@ export class EdgeRunStore extends EdgeStoreBase {
   /**
    * A2(o) AMENDMENT 2 — a dispatch refused by the edge's config gate because the config went STALE after the authorisation
    * (edgeNonStopConfigGate CONFIG_STALE: nothing sent, the jti NOT consumed) ⇒ HELD as above, never a failure (no retry, no
-   * compensation). Any other refusal ⇒ null (the walker's usual failure path).
+   * compensation). A2(o) r3 (review m-4) — SAFETY_CONFIG_MISSING the same way: the gate runs BEFORE the consume too, so nothing
+   * was sent; the gate already journaled the anomaly (central's URGENT alert) and asked for a refresh; the Continue re-authorises
+   * the step under the refreshed config (central signs only ids it serves). Any other refusal ⇒ null (the walker's usual failure
+   * path).
    */
   async heldByDispatch(stepId: string, result: { ok: boolean; detail?: Record<string, unknown> | null }): Promise<{ reason: RunStoreHeldReason; error: string } | null> {
     const d = (result.detail ?? null) as { edge?: unknown; reason?: unknown; refusal?: unknown } | null;
-    if (result.ok || !d || d.edge !== true || d.reason !== EDGE_CONFIG_STALE) return null;
+    if (result.ok || !d || d.edge !== true || (d.reason !== EDGE_CONFIG_STALE && d.reason !== EDGE_SAFETY_CONFIG_MISSING)) return null;
     // the authorisation it was refused under was NEVER used (the gate runs before the consume): journaled + reported unused, so
     // it can never be used later and central supersedes it ⇒ the Continue RE-AUTHORISES the step under the new config
     const jti = this.jtiByStep.get(stepId) ?? null;
@@ -472,7 +475,12 @@ export class EdgeRunStore extends EdgeStoreBase {
       this.jtiByStep.delete(stepId);
       this.attemptByStep.delete(stepId);
     }
-    const why = typeof d.refusal === "string" && d.refusal ? d.refusal : "the edge's config is older than the one central announced";
+    const why =
+      typeof d.refusal === "string" && d.refusal
+        ? d.refusal
+        : d.reason === EDGE_SAFETY_CONFIG_MISSING
+          ? "a safety-PLC config the authorisation was signed for is not in the edge's config"
+          : "the edge's config is older than the one central announced";
     const h = this.heldForStaleConfig(stepId, `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`);
     return { reason: h.heldReason, error: h.error };
   }

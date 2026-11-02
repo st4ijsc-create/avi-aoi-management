@@ -211,9 +211,11 @@ export async function edgeAuthorizeSafetyConfigIds(
  * central's matcher with the shipping RULE; this one compares the signed list with what was SHIPPED: a config the build could not
  * express or a snapshot the edge has not got yet is never vouched for. Missing ⇒ device_refused {safety} naming them (+ an
  * EDGE_ANOMALY audit); null ⇔ every id is served. A served snapshot that cannot be built THROWS (⇒ 503, nothing signed).
+ * A2(o) r3 (review m-2) — read for EVERY non-STOP authorisation, an EMPTY signed list included: a node whose config cannot be
+ * built gets NO non-STOP authorisation at all (the operator text of noteConfigUnbuildable says so), not only for guarded devices.
+ * A verified STOP never gets here (authorizeForNode step 5).
  */
 export async function edgeSafetyIdsNotServed(node: EdgeNodePrincipal, ids: readonly number[]): Promise<EdgeAnswer<never> | null> {
-  if (ids.length === 0) return null;
   const { servedSafetyPlcConfigIds } = await import("./edgeConfigCentral");
   const served = await servedSafetyPlcConfigIds(node);
   const missing = ids.filter((id) => !served.has(id));
