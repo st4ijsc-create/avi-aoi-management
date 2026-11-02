@@ -122,23 +122,54 @@ export function chuanDuong(p: string): string | null {
 }
 
 /**
- * VÙNG CẤM CỨNG — luật cứng của kế hoạch: không giao đường lệnh/STOP, ot/*, an ninh/quyền/auth, migration, socket, thiết bị, bí mật.
+ * VÙNG CẤM — luật cứng của kế hoạch: không giao đường lệnh/STOP, ot/*, an ninh/quyền/auth, migration, socket, thiết bị, bí mật.
  * Áp ĐỘC LẬP với thẻ: một thẻ lỡ ghi tệp vùng cấm vẫn bị từ chối ở `docTheViec`, và một lượt chạm vùng cấm bị đánh dấu dù thẻ cho phép.
+ *
+ * HAI MỨC (sửa sau TC-02: `client/src/lib/stateVocabulary.edge.test.ts` bị gắn nhãn "vung-cam (thiet bi)" chỉ vì TÊN TỆP có chữ "edge"):
+ *  • MẠNH — khớp theo ĐOẠN THƯ MỤC (`…/edge/…`, `…/ot/…`, `drizzle/`, `auth/`…) hoặc tệp đặc biệt (.env, khoá, .git), và — CHỈ trong mã backend
+ *    `server/` · `shared/` — tên tệp nền socket, auth, accessControl, trpc, permission, sdk (tiền tố). Luôn là vùng cấm.
+ *  • MỜ — khớp CHUỖI CON tên tệp (stop·interlock·dispatcher·plc·modbus·opcua·mqtt·robot·scada·edge·device·hardware·secret), CHỈ trong `server/` · `shared/`
+ *    (nơi một cái tên như `foeStopHangMoi.ts` đáng ngờ thật). Tệp ngoài `server/`·`shared/` (vd `client/src/lib/…edge…`) KHÔNG bao giờ là vùng cấm theo tên.
+ *    Tệp khớp mờ mà NGOÀI thẻ ⇒ nhãn "ngoai-danh-sach" (đúng sự thật: bị chặn vì ngoài thẻ); khớp mờ mà TRONG thẻ ⇒ vẫn vùng cấm (thẻ sai).
  */
-export const VUNG_CAM: ReadonlyArray<{ ten: string; re: RegExp }> = [
-  { ten: "ot", re: /(^|\/)ot(\/|$)/i },
-  { ten: "stop/interlock", re: /(stop|e-?stop|interlock|dispatcher)/i },
-  { ten: "auth/quyen", re: /(^|\/)(auth|accessControl|trpc|permission|requirePermission|sdk)[^/]*\.(ts|tsx|js|mjs)$|(^|\/)auth\//i },
+const GOC_BACKEND = /^(server|shared)\//i;
+
+export const VUNG_CAM_MANH: ReadonlyArray<{ ten: string; re: RegExp }> = [
+  { ten: "ot", re: /(^|\/)ot\//i },
   { ten: "migration", re: /(^|\/)(drizzle|migrations?)\//i },
-  { ten: "socket", re: /(^|\/)socket[^/]*\.(ts|tsx|js|mjs)$/i },
-  { ten: "thiet bi", re: /(plc|modbus|opcua|mqtt|robot|scada|edge|device|hardware)/i },
-  { ten: "bi mat", re: /(^|\/)\.env([./]|$)|\.(pem|key|p12|pfx)$|secret/i },
+  { ten: "auth/quyen", re: /(^|\/)auth\//i },
+  { ten: "thiet bi", re: /(^|\/)(edge|robots?|scada|plc|modbus|opcua|mqtt|devices?|hardware)\//i },
+  { ten: "stop/interlock", re: /(^|\/)(stop|estop|e-stop|interlocks?)\//i },
+  { ten: "bi mat", re: /(^|\/)\.env([./]|$)|\.(pem|key|p12|pfx)$/i },
   { ten: "git", re: /(^|\/)\.git(\/|$)/i },
 ];
 
-export function vungCamCua(duong: string): string | null {
-  for (const v of VUNG_CAM) if (v.re.test(duong)) return v.ten;
+/** Chỉ áp cho đường bắt đầu bằng server/ hoặc shared/. */
+export const VUNG_CAM_MANH_BACKEND: ReadonlyArray<{ ten: string; re: RegExp }> = [
+  { ten: "auth/quyen", re: /(^|\/)(auth|accessControl|trpc|permission|requirePermission|sdk)[^/]*\.(ts|tsx|js|mjs)$/i },
+  { ten: "socket", re: /(^|\/)socket[^/]*\.(ts|tsx|js|mjs)$/i },
+];
+
+/** Chỉ áp cho đường bắt đầu bằng server/ hoặc shared/. */
+export const VUNG_CAM_MO_BACKEND: ReadonlyArray<{ ten: string; re: RegExp }> = [
+  { ten: "stop/interlock", re: /(stop|e-?stop|interlock|dispatcher)/i },
+  { ten: "thiet bi", re: /(plc|modbus|opcua|mqtt|robot|scada|edge|device|hardware)/i },
+  { ten: "bi mat", re: /secret/i },
+];
+
+/** Mức vùng cấm của một đường (đã chuẩn hoá, POSIX): "manh" | "mo" | null. THUẦN. */
+export function mucVungCam(duong: string): { muc: "manh" | "mo"; ten: string } | null {
+  for (const v of VUNG_CAM_MANH) if (v.re.test(duong)) return { muc: "manh", ten: v.ten };
+  if (GOC_BACKEND.test(duong)) {
+    for (const v of VUNG_CAM_MANH_BACKEND) if (v.re.test(duong)) return { muc: "manh", ten: v.ten };
+    for (const v of VUNG_CAM_MO_BACKEND) if (v.re.test(duong)) return { muc: "mo", ten: v.ten };
+  }
   return null;
+}
+
+/** Tên vùng cấm (cả mạnh lẫn mờ) hoặc null — dùng để từ chối thẻ / lời gọi ghi. */
+export function vungCamCua(duong: string): string | null {
+  return mucVungCam(duong)?.ten ?? null;
 }
 
 function kiemTepDuocPhep(mau: string): string | null {
@@ -177,12 +208,14 @@ export function kiemDiffTheoThe(tepDoi: readonly string[], tepDuocPhep: readonly
       ra.push({ duong: t, loai: "duong-khong-hop-le" });
       continue;
     }
-    const cam = vungCamCua(d);
-    if (cam) {
-      ra.push({ duong: d, loai: "vung-cam", chiTiet: cam });
+    const cam = mucVungCam(d);
+    const trongThe = tepDuocPhep.some((m) => khop(m, d));
+    // MẠNH ⇒ luôn vùng cấm. MỜ (khớp chuỗi con tên tệp trong server/shared): ngoài thẻ ⇒ nhãn đúng sự thật "ngoai-danh-sach"; trong thẻ ⇒ vùng cấm (thẻ sai).
+    if (cam && (cam.muc === "manh" || trongThe)) {
+      ra.push({ duong: d, loai: "vung-cam", chiTiet: cam.ten });
       continue;
     }
-    if (!tepDuocPhep.some((m) => khop(m, d))) ra.push({ duong: d, loai: "ngoai-danh-sach" });
+    if (!trongThe) ra.push({ duong: d, loai: "ngoai-danh-sach", ...(cam ? { chiTiet: `khớp mờ vùng cấm (${cam.ten}) — nhưng đã ngoài thẻ` } : {}) });
   }
   return ra;
 }

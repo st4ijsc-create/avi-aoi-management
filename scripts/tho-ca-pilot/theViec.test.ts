@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { docTheViec, docGioiHan, kiemDiffTheoThe, chuanDuong, vungCamCua } from "./theViec";
+import { docTheViec, docGioiHan, kiemDiffTheoThe, chuanDuong, vungCamCua, mucVungCam } from "./theViec";
 
 const THE = `MÃ: TC-01
 MỤC TIÊU: viết unit test cho relativeTime
@@ -91,5 +91,41 @@ describe("quetChamDb — quét NỘI DUNG (luật 2026-11-02), không chỉ tên
   it("tepTestTrongLenh lấy đường test trong lệnh kiểm", () => {
     expect(tepTestTrongLenh("npx vitest run client/src/lib/a.test.ts server\\b.test.tsx --reporter=dot")).toEqual(["client/src/lib/a.test.ts", "server/b.test.tsx"]);
     expect(tepTestTrongLenh("npm test")).toEqual([]);
+  });
+});
+
+describe("vùng cấm theo ĐOẠN THƯ MỤC, không theo chuỗi con tên tệp (TC-02: stateVocabulary.edge.test.ts bị gắn nhãn vung-cam)", () => {
+  it("★ tên tệp ngoài server/shared chứa edge / robot / socket / device / stop… ⇒ KHÔNG phải vùng cấm", () => {
+    for (const p of ["client/src/lib/stateVocabulary.edge.test.ts", "client/src/lib/robotArm.ts", "client/src/lib/socketClient.ts", "client/src/lib/deviceList.ts", "client/src/lib/stopwatch.ts", "client/src/lib/secretsMask.ts", "scripts/tho-ca-pilot/edgeCase.test.ts"]) {
+      expect(vungCamCua(p), p).toBeNull();
+    }
+  });
+  it("★ tệp ngoài thẻ mang chữ 'edge' ở client ⇒ nhãn ngoai-danh-sach (không phải vung-cam)", () => {
+    expect(kiemDiffTheoThe(["client/src/lib/stateVocabulary.edge.test.ts"], ["client/src/lib/stateVocabulary.unit.test.ts"])).toEqual([
+      { duong: "client/src/lib/stateVocabulary.edge.test.ts", loai: "ngoai-danh-sach" },
+    ]);
+  });
+  it("★ THƯ MỤC cấm vẫn MẠNH ở mọi nơi: server/services/edge/**, server/edge/**, client/src/robot/**, …/ot/**, drizzle/, auth/", () => {
+    for (const p of ["server/services/edge/x.ts", "server/edge/y.ts", "client/src/robot/z.ts", "server/services/ot/a.ts", "drizzle/0450.sql", "server/auth/b.ts", "client/src/devices/c.ts", "server/services/interlock/d.ts", ".env", "x/key.pem"]) {
+      expect(mucVungCam(p)?.muc, p).toBe("manh");
+    }
+  });
+  it("★ backend: socket*/auth*/trpc*/accessControl* là MẠNH; tên tệp mờ (stop, edge, robot…) ở server/shared là MỜ", () => {
+    for (const p of ["server/_core/socket.ts", "server/_core/trpc.ts", "server/db/auth.ts", "shared/accessControl.ts"]) expect(mucVungCam(p)?.muc, p).toBe("manh");
+    for (const p of ["server/services/foe/foeStopHangMoi.ts", "server/utils/edgeCase.ts", "server/utils/robotHelper.ts"]) expect(mucVungCam(p)?.muc, p).toBe("mo");
+  });
+  it("★ khớp MỜ: ngoài thẻ ⇒ ngoai-danh-sach (kèm giải thích); trong thẻ ⇒ vung-cam; MẠNH luôn vung-cam", () => {
+    expect(kiemDiffTheoThe(["server/utils/edgeCase.ts"], ["server/utils/a.ts"])).toEqual([
+      { duong: "server/utils/edgeCase.ts", loai: "ngoai-danh-sach", chiTiet: expect.stringContaining("khớp mờ") },
+    ]);
+    expect(kiemDiffTheoThe(["server/utils/edgeCase.ts"], ["server/utils/edgeCase.ts"]).map((v) => v.loai)).toEqual(["vung-cam"]);
+    expect(kiemDiffTheoThe(["server/services/edge/x.ts"], ["server/utils/a.ts"]).map((v) => v.loai)).toEqual(["vung-cam"]);
+    expect(kiemDiffTheoThe(["server/services/edge/x.ts"], ["server/services/edge/x.ts"]).map((v) => v.loai)).toEqual(["vung-cam"]);
+  });
+  it("thẻ cho phép tệp có chữ edge ở client ⇒ hợp lệ (không còn bị từ chối oan); thẻ cho server/edge ⇒ từ chối", () => {
+    const the = (t: string) => docTheViec(`MÃ: T1\nMỤC TIÊU: x\nTỆP ĐƯỢC PHÉP SỬA/TẠO: ${t}\nLỆNH KIỂM: npx vitest run a.unit.test.ts`);
+    expect(the("client/src/lib/stateVocabulary.edge.unit.test.ts").ok).toBe(true);
+    expect(the("server/services/edge/x.ts").ok).toBe(false);
+    expect(the("server/utils/edgeCase.ts").ok).toBe(false);
   });
 });
