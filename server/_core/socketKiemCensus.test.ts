@@ -129,12 +129,16 @@ const TEP_CHI_MUC = () => [
   ...readdirSync(resolve(GOC, "server/db")).filter((f) => /\.ts$/.test(f) && !/\.(test|spec|d)\.ts$/.test(f)).map((f) => `server/db/${f}`),
   "server/_core/accessControl.ts",
   "server/_core/sdk.ts",
+  "server/_core/socketXacThucLai.ts", // fix round 2 (M-1 b): bộ đọc của chính lượt quét
 ];
 const GOC_PHAN_GIAI: Array<{ file: string; ten: string }> = [
   { file: "server/db/reportAggregators.ts", ten: "resolveTenantFactoryScope" },
   { file: "server/_core/accessControl.ts", ten: "getUserAssignmentCodes" },
   { file: "server/_core/accessControl.ts", ten: "checkPermission" },
   { file: "server/_core/sdk.ts", ten: "authenticateRequest" },
+  // fix round 2 (M-1 b) — lượt quét của bộ nhận đọc lại chủ thể qua hai hàm này (không qua sdk): cột chúng đọc cũng phải có trigger
+  { file: "server/_core/socketXacThucLai.ts", ten: "xacThucLaiChoThaoTacSocket" },
+  { file: "server/_core/socketXacThucLai.ts", ten: "layBoDocChuThe" },
 ];
 /**
  * Bảng KHÔNG cần trigger dù bộ phân giải chạm tới — có LÝ DO, chỉ được THU HẸP. (Rỗng lúc viết: mọi bảng mà bốn gốc chạm tới đều có trigger.)
@@ -201,6 +205,12 @@ export function bangCuaBoPhanGiai(nguon: Map<string, string>, goc = GOC_PHAN_GIA
           for (const x of n.text.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"/g)) thuocTinh.add(x[1]); // cột trích dẫn trong SQL thô
         }
         if (ts.isPropertyAccessExpression(n)) thuocTinh.add(n.name.text);
+        // fix round 2 (M-1 a) — đọc qua phân rã (`const { role, isActive } = hang`) và truy cập chuỗi (`hang["lockedUntil"]`)
+        if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
+          const ten = n.propertyName ?? n.name;
+          if (ts.isIdentifier(ten) || ts.isStringLiteral(ten)) thuocTinh.add(ten.text);
+        }
+        if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression)) thuocTinh.add(n.argumentExpression.text);
         ts.forEachChild(n, di);
       };
       di(m.node);
@@ -262,7 +272,8 @@ export const MIEN_COT: Record<string, Record<string, string>> = {
     email: "hiển thị, không quyết định quyền",
     loginMethod: "hiển thị",
     lastSignedIn: "ghi mỗi request — cố ý KHÔNG bắn",
-    passwordChangedAt: "chỉ NỚI cổng buộc đổi mật khẩu (đổi xong mật khẩu); THẮT do passwordInvalidBefore — có trong UPDATE OF",
+    passwordChangedAt:
+      "đổi ở đường sản phẩm (đổi xong mật khẩu) chỉ NỚI cổng buộc đổi mật khẩu (suyRaPhaiDoiMatKhau, publicUser.ts); nó CÓ THỂ THẮT cổng (đặt lùi về ≤ passwordInvalidBefore) nhưng mã sản phẩm không bao giờ ghi như vậy — chỉ SQL thẳng; trường hợp ấy do lượt quét định kỳ 5 phút bắt (xacThucLai PHAI_DOI_MAT_KHAU)",
     twoFactorEnabled: "cổng 2FA chỉ áp cho adminProcedure HTTP; phòng socket không đọc (kiểm kê §1 H)",
     createdAt: "không đổi",
     updatedAt: "dấu thời gian",
@@ -315,7 +326,7 @@ describe("★★★ F5 đầy đủ — census phòng điều khiển / phòng a
     expect([...coTrigger].sort()).toEqual(["factories", "permissions", "user_corporate_assignments", "user_factory_assignments", "user_sessions", "users"]);
     const { bang, daDi } = bangCuaBoPhanGiai(nguonChiMuc());
     // thiết bị đo tự canh: các gốc + đường đi đã biết phải được THẤY (không thì bộ dò mù và (4) xanh vô nghĩa)
-    for (const k of ["server/db/reportAggregators.ts#resolveTenantFactoryScope", "server/_core/accessControl.ts#checkPermission", "server/_core/sdk.ts#xacThucTho", "server/db/auth.ts#getSessionByToken", "server/db/auth.ts#getUserFactoryAssignments"]) {
+    for (const k of ["server/db/reportAggregators.ts#resolveTenantFactoryScope", "server/_core/accessControl.ts#checkPermission", "server/_core/sdk.ts#xacThucTho", "server/db/auth.ts#getSessionByToken", "server/db/auth.ts#getUserFactoryAssignments", "server/_core/socketXacThucLai.ts#xacThucLaiChoThaoTacSocket", "server/_core/socketXacThucLai.ts#layBoDocChuThe", "server/db/auth.ts#getUserById"]) {
       expect(daDi, k).toContain(k);
     }
     for (const t of ["users", "user_sessions", "user_factory_assignments", "user_corporate_assignments", "permissions", "factories"]) expect([...bang.keys()], t).toContain(t);
@@ -359,6 +370,20 @@ describe("★★★ fix round 1 (m4) — CỘT mà bộ phân giải đọc trê
         expect(uo.get(t)?.has(c), `${t}.${c} vừa miễn vừa có trong UPDATE OF`).not.toBe(true);
       }
     }
+  });
+  it("(M-1) ĐỘT BIẾN: cột MỚI đọc bằng PHÂN RÃ hoặc truy cập CHUỖI, kể cả trong bộ đọc của lượt quét ⇒ ĐỎ", () => {
+    const uo = cotUpdateOf(doc("drizzle/0435_socket_pham_vi.sql"));
+    const n1 = nguonChiMuc();
+    const ac = n1.get("server/_core/accessControl.ts")!;
+    const moc = "const resolvedModule = resolvePermissionModule(moduleName);";
+    n1.set("server/_core/accessControl.ts", ac.replace(moc, `${moc}\n  const { lockedUntil } = (perm as any) ?? {};`));
+    expect(thieu(cotDoc(bangCuaBoPhanGiai(n1).thuocTinh), uo)).toContain("users.lockedUntil");
+    const n2 = nguonChiMuc();
+    const xt = n2.get("server/_core/socketXacThucLai.ts")!;
+    const moc2 = 'if (nguoi.isActive === false) return { ok: false, lyDo: "TAI_KHOAN_BI_TAT" };';
+    expect(xt).toContain(moc2);
+    n2.set("server/_core/socketXacThucLai.ts", xt.replace(moc2, `${moc2}\n    if ((nguoi as any)["lockedUntil"]) return { ok: false, lyDo: "KHOA" };`));
+    expect(thieu(cotDoc(bangCuaBoPhanGiai(n2).thuocTinh), uo)).toContain("users.lockedUntil");
   });
   it("(m4) ĐỘT BIẾN: bộ phân giải đọc một cột MỚI (users.lockedUntil) ⇒ ĐỎ; bỏ một cột khỏi UPDATE OF ⇒ ĐỎ", () => {
     const nguon = nguonChiMuc();
