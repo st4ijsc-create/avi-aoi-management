@@ -17100,7 +17100,8 @@
       "cauHinhHongCanhBao": "Some enabled interlock rules do NOT work: the gate blocks every command aimed at them, or dispatch will refuse their protective command. Fix them on the interlock page.",
       "cauHinhHongMo": "Open interlock rules",
       "stopQuaHan": "HMI STOP refused for deadline (24 h): {{count}}",
-      "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable"
+      "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable",
+      "poolStopThieu": "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}"
     },
     "table": {
       "kind": "Work item",

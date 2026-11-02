@@ -349,6 +349,11 @@ function PostureSection() {
               ? t("oversight.posture.stopQuaHanUnavailable", "HMI STOP deadline refusals unavailable")
               : t("oversight.posture.stopQuaHan", "HMI STOP refused for deadline (24 h): {{count}}", { count: data.stopQuaHan24h.count })}
           </p>
+          {data.nganSachPoolStop?.du === false && (
+            <p className="text-xs text-warning" data-posture-pool-stop-thieu>
+              {t("oversight.posture.poolStopThieu", "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}", { poolMax: data.nganSachPoolStop.poolMax, canToiThieu: data.nganSachPoolStop.canToiThieu })}
+            </p>
+          )}
           {!data.interlockCoverageDegraded && typeof data.interlockRulesCauHinhHong === "number" && data.interlockRulesCauHinhHong > 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground" data-posture-cau-hinh-hong-canh-bao>
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />

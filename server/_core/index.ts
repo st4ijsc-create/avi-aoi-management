@@ -4432,6 +4432,8 @@ async function startServer() {
       try {
         const { kiemCauHinhLenhHmi } = await import("../services/scada/lenhHmi");
         kiemCauHinhLenhHmi();
+        // R1b-2b-2a T9 (muc 71) - DB_POOL_MAX thap hon ngan sach pool cua STOP HMI => canh bao MOT lan (chi log).
+        (await import("../services/scada/nganSachPoolStop")).canhBaoNganSachPoolStopKhiKhoiDong();
       } catch (err) {
         console.error("[SCADA] kiểm cấu hình lệnh HMI lỗi:", (err as Error)?.message || err);
       }
