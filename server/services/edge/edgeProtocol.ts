@@ -544,6 +544,10 @@ export const edgePulledRunSchema = z.strictObject({
   claimSeq: zClaimSeqNext,
   refused: z.literal("definitionChanged").optional(),
 });
+/** SCADA R1b-2b-2a A2(j) — the most claims / unconfirmed-STOP runs ONE pull answer carries (the schema limits below; central fits its lists into
+ *  them without a silent drop — docHetTheoTrang.chonTrongGioiHanGiaoThuc + runStateUnavailable). Values unchanged. */
+export const EDGE_PULL_CLAIMS_MAX = 200;
+export const EDGE_PULL_STOPS_UNCONFIRMED_MAX = 50;
 export const edgeNodeClaimSchema = z.strictObject({ runId: zId, claimSeq: zClaimSeq, status: zRunStatus, abortRequested: z.boolean(), stale: z.boolean() });
 export const edgePullAnswerSchema = z.strictObject({
   node: zCode(128),
@@ -552,9 +556,9 @@ export const edgePullAnswerSchema = z.strictObject({
   keysetVersion: zCount,
   programCheckRequested: z.boolean(),
   runs: z.array(edgePulledRunSchema).max(100),
-  claims: z.array(edgeNodeClaimSchema).max(200),
+  claims: z.array(edgeNodeClaimSchema).max(EDGE_PULL_CLAIMS_MAX),
   /** aborted runs whose STOPs central could not confirm: a SIGNED sweep picture each (typ runpkg, kind sweep_picture) */
-  stopsUnconfirmed: z.array(z.strictObject({ runId: zId, picture: edgeSignedEnvelopeSchema })).max(50),
+  stopsUnconfirmed: z.array(z.strictObject({ runId: zId, picture: edgeSignedEnvelopeSchema })).max(EDGE_PULL_STOPS_UNCONFIRMED_MAX),
   /** signed commands (typ cmd) */
   commands: zSignedList(EDGE_PULL_COMMANDS_MAX),
   /** B (R-10-k / R-10-p) — present ONLY when central's signer is unavailable: the node's unacked STOPs, unsigned */

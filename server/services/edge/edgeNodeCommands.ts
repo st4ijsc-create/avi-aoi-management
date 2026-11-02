@@ -19,7 +19,7 @@
  *   • expireEdgeRequests — the sweeper: lock / clear only (a STOP is NEVER expired — the query excludes kind 'stop'); overdue
  *     STOPs are reported at error level instead.
  */
-import { and, asc, desc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { EDGE_PULL_COMMANDS_MAX, EDGE_UNSIGNED_STOP_TYP, edgeCommandSchema, edgeUnsignedStopSchema, type EdgeUnsignedStop } from "./edgeProtocol";
 import { ackEdgeStop, robotMotionLockRequests, robotOwnership, adapterOwnership, isEdgeControlRefusal, lockStopRequestDevices, type RobotMotionLockRequestRow } from "./edgeControlSchema";
 import { auditNode, centralDb, centralSigner, signForNode, type Db } from "./edgeCentralCommon";
@@ -548,30 +548,67 @@ export function edgeStopDeliveryCheckMs(): number {
   return envInt("EDGE_STOP_DELIVERY_CHECK_MS", edgeNodePullMs(), 500, 60_000);
 }
 
+/** The dedup key of the "STOP not acknowledged" alert of request `id` — ALSO the durable marker the sweep reads (A2(j)): an inbox row carrying it in
+ *  `metadata.dedupKey` means that request was alerted. One definition for the alert and the marker query. */
+export function khoaCanhBaoStopChuaGiao(requestId: number): string {
+  return `${TIEN_TO_KHOA_STOP_CHUA_GIAO}${requestId}`;
+}
+const TIEN_TO_KHOA_STOP_CHUA_GIAO = "stop_undelivered:request:";
+
 /**
  * doc 81 Đợt 10 final fix wave (I-3, R-10-br, L-7) — the sweep of STOP requests the owning edge has NOT acknowledged within the ack
  * deadline (edgeStopAckDeadlineMs: 3 × pullMs + slack): each gets ONE durable critical alert (alert stream + a safety-critical
  * inbox row to the requester, retried until persisted; dedup key `stop_undelivered:request:<id>` — the same key the console uses
  * when it already knew the node was unreachable, so one inbox row per request). The STOP stays pending and is still delivered
  * every pull (never expired, R-10-k). Returns how many alerts this pass raised. A read failure throws (the caller logs it).
+ *
+ * SCADA R1b-2b-2a A2(j) — read TO THE END, not `ORDER BY id LIMIT 200` (the oldest 200 were re-read every pass and skipped by the in-memory set, so
+ * the 201st and every newer unacked STOP was never alerted). Now:
+ *   • only the NOT-YET-ALERTED heads are read: the durable marker is the alert's own inbox row (`notifications.metadata->>'dedupKey'` =
+ *     khoaCanhBaoStopChuaGiao(id), written because the alert carries `khuTrungBenVung`) — no new column. A restart therefore neither re-alerts
+ *     (rows already alerted are not even read: no alert-stream storm) nor skips (a head whose row never landed is read and alerted again — once
+ *     per process, the in-memory set covers the gap until the async row lands);
+ *   • ascending id cursor, page by page (docHetTheoTrang), with a very large page budget; reaching it ⇒ everything read is alerted + one admin alert.
  */
 export async function alertUndeliveredStops(now: number = Date.now()): Promise<number> {
   const d = await centralDb();
   const deadlineMs = edgeStopAckDeadlineMs();
-  const rows = await d
-    .select({ id: robotMotionLockRequests.id, edgeNodeId: robotMotionLockRequests.edgeNodeId, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, requestedBy: robotMotionLockRequests.requestedBy, createdAt: robotMotionLockRequests.createdAt, deliveredAt: robotMotionLockRequests.deliveredAt })
-    .from(robotMotionLockRequests)
-    .where(
-      and(
-        eq(robotMotionLockRequests.kind, "stop"),
-        isNull(robotMotionLockRequests.ackedAt),
-        isNull(robotMotionLockRequests.carriedToId),
-        lte(robotMotionLockRequests.createdAt, new Date(now - deadlineMs)),
-        sql`${robotMotionLockRequests.createdAt} > now() - interval '24 hours'`,
-      ),
-    )
-    .orderBy(asc(robotMotionLockRequests.id))
-    .limit(200);
+  const { docHetTheoTrang, baoDocCatBot } = await import("./docHetTheoTrang");
+  const docTrang = (danhDau: boolean) => (sau: number | null, n: number) =>
+    d
+      .select({ id: robotMotionLockRequests.id, edgeNodeId: robotMotionLockRequests.edgeNodeId, robotId: robotMotionLockRequests.robotId, adapterId: robotMotionLockRequests.adapterId, requestedBy: robotMotionLockRequests.requestedBy, createdAt: robotMotionLockRequests.createdAt, deliveredAt: robotMotionLockRequests.deliveredAt })
+      .from(robotMotionLockRequests)
+      .where(
+        and(
+          eq(robotMotionLockRequests.kind, "stop"),
+          isNull(robotMotionLockRequests.ackedAt),
+          isNull(robotMotionLockRequests.carriedToId),
+          lte(robotMotionLockRequests.createdAt, new Date(now - deadlineMs)),
+          sql`${robotMotionLockRequests.createdAt} > now() - interval '24 hours'`,
+          sau === null ? undefined : gt(robotMotionLockRequests.id, sau),
+          // the durable marker: this request's alert already has its inbox row (the requester's)
+          !danhDau ? undefined : sql`NOT EXISTS (SELECT 1 FROM notifications n WHERE n."userId" = ${robotMotionLockRequests.requestedBy} AND n.metadata->>'dedupKey' = ${TIEN_TO_KHOA_STOP_CHUA_GIAO} || ${robotMotionLockRequests.id}::text)`,
+        ),
+      )
+      .orderBy(asc(robotMotionLockRequests.id))
+      .limit(n);
+  let doc: { hang: Awaited<ReturnType<ReturnType<typeof docTrang>>>; catBot: boolean };
+  try {
+    doc = await docHetTheoTrang(docTrang(true), (r) => r.id);
+  } catch (err) {
+    // the marker read failed (e.g. the inbox table) ⇒ never go silent: read without it (the in-memory set and the alert's own durable dedup still apply)
+    console.error(`[EdgeCommands] undelivered-STOP sweep: the durable-marker read failed (${String((err as Error)?.message ?? err).slice(0, 160)}) — reading without it`);
+    doc = await docHetTheoTrang(docTrang(false), (r) => r.id);
+  }
+  const { hang: rows, catBot } = doc;
+  if (catBot) {
+    baoDocCatBot({
+      kind: "stop_undelivered_list_cut",
+      title: "Unacknowledged STOP sweep could not read every request",
+      message: `The sweep of STOP requests not acknowledged by their edge node read ${rows.length} rows and stopped at its page budget — more are unread this pass. Check the edge nodes; use the machines' E-STOP where needed.`,
+      dedupKey: "stop_undelivered_list_cut",
+    });
+  }
   for (const [id, at] of undeliveredAlerted) if (now - at > 48 * 3_600_000) undeliveredAlerted.delete(id);
   let raised = 0;
   for (const r of rows) {
@@ -590,11 +627,13 @@ export async function alertUndeliveredStops(now: number = Date.now()): Promise<n
       title: `STOP not acknowledged — ${target}`,
       message,
       recipients: [r.requestedBy],
-      dedupKey: `stop_undelivered:request:${r.id}`,
+      dedupKey: khoaCanhBaoStopChuaGiao(r.id),
       source: r.robotId != null ? "robot" : "ot",
       entityType: r.robotId != null ? "robot" : "ot_command",
       entityId: (r.robotId ?? r.adapterId) as number,
       retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+      // A2(j) — the inbox row carries metadata.dedupKey = the durable marker the read above skips on (and a duplicate row is never written)
+      khuTrungBenVung: {},
     });
     raised++;
   }
