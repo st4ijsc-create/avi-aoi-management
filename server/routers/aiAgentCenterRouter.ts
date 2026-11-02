@@ -23,15 +23,15 @@ const opsAgentCenterProcedure = roleProcedure("admin", "engineer").use(moduleGat
 
 export const aiAgentCenterRouter = router({
   /** Bare roster (9 personas + Scheduled Agents) — no sessions/taskFeed. */
-  getRoster: opsAgentCenterProcedure.query(async () => {
-    return { roster: await getRoster() };
+  getRoster: opsAgentCenterProcedure.query(async ({ ctx }) => {
+    return { roster: await getRoster({ id: ctx.user.id, role: String(ctx.user.role) }) };
   }),
 
   /** Full read-model: roster + recent ops-scoped orchestrator sessions + unified task feed. */
   getReadModel: opsAgentCenterProcedure
     .input(z.object({ limit: z.number().int().min(1).max(200).optional() }).optional())
-    .query(async ({ input }) => {
-      return getCommandCenterReadModel({ limit: input?.limit });
+    .query(async ({ input, ctx }) => {
+      return getCommandCenterReadModel({ id: ctx.user.id, role: String(ctx.user.role) }, { limit: input?.limit });
     }),
 
   /**
