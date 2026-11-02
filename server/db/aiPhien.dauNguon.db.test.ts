@@ -122,11 +122,11 @@ describe.skipIf(!DB_URL)("aiPhien.themLuot — dấu nguồn model ngoài trên 
 });
 
 describe.skipIf(!DB_URL)("G3 — duAnCuaPhien trên CSDL thật", () => {
-  it("trả dự án của phiên CỦA CHỦ; hàng di sản ⇒ null; phiên của người khác / không có ⇒ undefined", async () => {
-    expect(await duAnCuaPhien(ID.a, PH.a1)).toBe("du-an-1");
-    expect(await duAnCuaPhien(ID.a, PH["a-di-san"])).toBeNull();
-    expect(await duAnCuaPhien(ID.b, PH.a1)).toBeUndefined();
-    expect(await duAnCuaPhien(ID.a, "00000000-0000-4000-8000-000000000000")).toBeUndefined();
+  it("trả dự án của phiên CỦA CHỦ; hàng di sản ⇒ projectId null; phiên của người khác / không có ⇒ NOT_FOUND", async () => {
+    expect(await duAnCuaPhien(ID.a, PH.a1)).toEqual({ ok: true, projectId: "du-an-1" });
+    expect(await duAnCuaPhien(ID.a, PH["a-di-san"])).toEqual({ ok: true, projectId: null });
+    expect(await duAnCuaPhien(ID.b, PH.a1)).toEqual({ ok: false, ma: "NOT_FOUND" });
+    expect(await duAnCuaPhien(ID.a, "00000000-0000-4000-8000-000000000000")).toEqual({ ok: false, ma: "NOT_FOUND" });
   });
   it("mo vẫn đọc được phiên của chủ (kho không tự soát allowlist — việc của router, đã khoá ở aiPhien.duAn.test.ts)", async () => {
     expect(await mo(ID.a, PH.a1)).toMatchObject({ ok: true });

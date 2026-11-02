@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 process.env.LICENSE_BYPASS = "true";
 
-const duAnCuaPhien = vi.fn(async (..._a: unknown[]): Promise<string | null | undefined> => "da-1");
+type KqDuAn = { ok: true; projectId: string | null } | { ok: false; ma: "NOT_FOUND" | "LOI" };
+const duAnCuaPhien = vi.fn(async (..._a: unknown[]): Promise<KqDuAn> => ({ ok: true, projectId: "da-1" }));
 const hamKho = (ra: object) => vi.fn(async (..._a: unknown[]) => ({ ok: true, ...ra }) as Record<string, unknown>);
 const kho = {
   duAnCuaPhien: (...a: unknown[]) => duAnCuaPhien(...a),
@@ -41,7 +42,7 @@ const CAC_THU_TUC: Array<[string, (c: Goi) => Promise<{ ok: boolean; note: strin
 
 beforeEach(() => {
   vi.clearAllMocks();
-  duAnCuaPhien.mockResolvedValue("da-1");
+  duAnCuaPhien.mockResolvedValue({ ok: true, projectId: "da-1" });
   phanGiai.mockReturnValue({ ok: true });
 });
 
@@ -60,17 +61,23 @@ describe("G3 — dự án đã rời allowlist ⇒ NOT_FOUND ở thủ tục the
       expect(khoFn).toHaveBeenCalledTimes(1);
     });
     it(`${ten}: hàng di sản projectId=null ⇒ không soát allowlist, chỉ chủ (kho quyết)`, async () => {
-      duAnCuaPhien.mockResolvedValue(null);
+      duAnCuaPhien.mockResolvedValue({ ok: true, projectId: null });
       phanGiai.mockReturnValue({ ok: false }); // dù phanGiaiGoc sẽ từ chối, null không đi qua nó
       const r = await chay(await goi());
       expect(r.ok).toBe(true);
       expect(phanGiai).not.toHaveBeenCalled();
     });
     it(`${ten}: không có hàng của người này ⇒ để kho trả NOT_FOUND (không phân biệt)`, async () => {
-      duAnCuaPhien.mockResolvedValue(undefined);
+      duAnCuaPhien.mockResolvedValue({ ok: false, ma: "NOT_FOUND" });
       await chay(await goi());
       expect(khoFn).toHaveBeenCalledTimes(1);
       expect(phanGiai).not.toHaveBeenCalled();
+    });
+    it(`★ ${ten}: LỖI ĐỌC dự án (DB lỗi) ⇒ NOT_FOUND, kho KHÔNG bị gọi (fail-closed, không "cho qua")`, async () => {
+      duAnCuaPhien.mockResolvedValue({ ok: false, ma: "LOI" });
+      const r = await chay(await goi());
+      expect(r).toMatchObject({ ok: false, note: "NOT_FOUND" });
+      expect(khoFn).not.toHaveBeenCalled();
     });
   }
   it("★ xoa VẪN cho phép khi dự án đã rời allowlist (dọn phiên của chính mình) — không soát", async () => {

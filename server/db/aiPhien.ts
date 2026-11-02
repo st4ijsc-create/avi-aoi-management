@@ -256,17 +256,21 @@ async function versionHienTai(userId: number, sessionId: string): Promise<number
   return r ? Number(r.v) : undefined;
 }
 
-/** Dự án (id danh sách trắng) của phiên thuộc CHÍNH `userId`: chuỗi · null (hàng di sản không dự án) · undefined (không có hàng của người này / lỗi đọc). Dùng để soát lại danh sách trắng ở router. */
-export async function duAnCuaPhien(userId: number, sessionId: string): Promise<string | null | undefined> {
-  if (!hopLeUser(userId) || !laIdPhienHopLe(sessionId)) return undefined;
+/**
+ * Dự án (id danh sách trắng) của phiên thuộc CHÍNH `userId`, để router soát lại allowlist.
+ * `{ok:true, projectId}` (null = hàng di sản không dự án) · `{ok:false, ma:"NOT_FOUND"}` (không có hàng của người này) · `{ok:false, ma:"LOI"}` (lỗi đọc / DB vắng).
+ * ★ LOI tách khỏi NOT_FOUND để router KHÔNG coi lỗi đọc là "cho qua" (fail-closed): một SELECT lỗi mà SELECT sau của kho lại thành công sẽ bỏ lọt soát allowlist.
+ */
+export async function duAnCuaPhien(userId: number, sessionId: string): Promise<{ ok: true; projectId: string | null } | { ok: false; ma: "NOT_FOUND" | "LOI" }> {
+  if (!hopLeUser(userId) || !laIdPhienHopLe(sessionId)) return { ok: false, ma: "NOT_FOUND" };
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return { ok: false, ma: "LOI" };
   try {
     const [r] = await db.select({ p: aiCodingSessions.projectId }).from(aiCodingSessions).where(and(eq(aiCodingSessions.id, sessionId), chuSoHuu(userId))).limit(1);
-    return r ? (r.p === null || r.p === undefined ? null : String(r.p)) : undefined;
+    return r ? { ok: true, projectId: r.p === null || r.p === undefined ? null : String(r.p) } : { ok: false, ma: "NOT_FOUND" };
   } catch (err) {
     canhBao("duAnCuaPhien", err);
-    return undefined;
+    return { ok: false, ma: "LOI" };
   }
 }
 

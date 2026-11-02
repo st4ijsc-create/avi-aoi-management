@@ -41,13 +41,14 @@ async function coQuyenDoc(ctx: any): Promise<boolean> {
 
 /**
  * G3 — soát lại DANH SÁCH TRẮNG dự án cho thủ tục THEO ID (mo/themLuot/doiTen/nhanBan/nopTomTat): phiên của dự án đã rời allowlist ⇒ NOT_FOUND
- * (không lộ "phiên có nhưng dự án bị gỡ"; hàng không đổi). Hàng di sản `projectId = null` ⇒ chỉ chủ (như trước). Không có hàng của người này ⇒ để kho trả NOT_FOUND.
+ * (không lộ "phiên có nhưng dự án bị gỡ"; hàng không đổi). Hàng di sản `projectId = null` ⇒ chỉ chủ (như trước). Không có hàng của người này ⇒ để kho trả NOT_FOUND; LỖI ĐỌC dự án ⇒ NOT_FOUND (fail-closed).
  * `xoa` CỐ Ý không qua cổng này (chủ dọn phiên của chính mình, không đọc/ghi nội dung).
  */
 async function duAnPhienConHieuLuc(u: NguoiGoiDuAn, sessionId: string): Promise<boolean> {
   const p = await kho.duAnCuaPhien(u.id, sessionId);
-  if (p === undefined || p === null) return true;
-  return phanGiaiGoc(p, u).ok;
+  if (!p.ok) return p.ma === "NOT_FOUND"; // không có hàng ⇒ để kho trả NOT_FOUND; LỖI ĐỌC ⇒ KHÔNG cho qua (fail-closed ⇒ NOT_FOUND)
+  if (p.projectId === null) return true; // hàng di sản không dự án ⇒ chỉ chủ
+  return phanGiaiGoc(p.projectId, u).ok;
 }
 
 const turnSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(GIOI_HAN_PHIEN.BYTE_MOI_LUOT) }).strict();
