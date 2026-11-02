@@ -109,6 +109,7 @@ vi.mock("../../robot/robotManager", () => ({
 }));
 
 import { equipmentRegistry, type EquipmentCommand } from "../../equipment/equipmentAdapter";
+import { FOE_ENGINE_TOOL, otPayloadHash, withFoeGateApproval, withOtPayloadHash } from "../../ot/otActionBinding";
 
 const USER = 7;
 
@@ -153,8 +154,22 @@ beforeEach(() => {
 
 describe("FOE → REAL OT gate (equipmentRegistry.sendCommand, no dispatcher mock)", () => {
   it("HỢP LỆ: bản ghi ai_pending_actions confirmed → cổng QUA → simulated", async () => {
-    pending.set("foe-run1-a-a1", { id: "foe-run1-a-a1", status: "executed", userId: USER });
-    const res = await equipmentRegistry.getAdapter("ot-opcua").sendCommand(otFoeCommand("foe-run1-a-a1", "run1-a-a1"));
+    // R1b-2b-2a A2(h) — cổng (1) nay ràng buộc MỌI actionId với đúng lệnh: hàng FOE như ensureOrchestrationAction ghi cho bước có cổng duyệt
+    // (confirmed, tool FOE, băm lệnh, duyệt của người duyệt ≠ chủ run) + lệnh như buildEquipmentCommand dựng (tool, requestedBy = chủ, confirmedBy = người duyệt).
+    const APPROVER = USER + 1;
+    const cmd: EquipmentCommand = { ...otFoeCommand("foe-run1-a-a1", "run1-a-a1"), hitl: { actionId: "foe-run1-a-a1", tool: FOE_ENGINE_TOOL, requestedBy: USER, confirmedBy: APPROVER } };
+    pending.set("foe-run1-a-a1", {
+      id: "foe-run1-a-a1",
+      tool: FOE_ENGINE_TOOL,
+      status: "confirmed",
+      userId: APPROVER,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      previewJson: withFoeGateApproval(
+        withOtPayloadHash(null, otPayloadHash({ tool: FOE_ENGINE_TOOL, adapterId: 10, machineId: 5, commandType: "start", writes: cmd.writes ?? [] })),
+        { runId: 1, runOwner: USER, approvedBy: APPROVER, gateStepId: "g0" },
+      ),
+    });
+    const res = await equipmentRegistry.getAdapter("ot-opcua").sendCommand(cmd);
     expect(res.routedTo).toBe("ot-dispatcher");
     expect(res.ok).toBe(true);
     expect(res.status).toBe("simulated");

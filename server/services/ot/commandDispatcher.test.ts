@@ -170,7 +170,8 @@ describe("commandDispatcher — F4a safety", () => {
   });
 
   it("owner mismatch → rejected NOT_CONFIRMED", async () => {
-    pending.set("act-1", { id: "act-1", status: "confirmed", userId: 999 });
+    // R1b-2b-2a A2(h) — uỷ quyền gắn ĐÚNG lệnh (cổng (1) nay kiểm ràng buộc đầy đủ), chỉ CHỦ sai
+    pending.set("act-1", boundPending("act-1", baseInput(), { userId: 999 }));
     const r = await dispatch(baseInput());
     expect(r.status).toBe("rejected");
     expect(r.reason).toBe("NOT_CONFIRMED");

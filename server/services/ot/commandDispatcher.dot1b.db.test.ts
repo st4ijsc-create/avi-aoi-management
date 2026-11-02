@@ -356,7 +356,9 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
 
   it("đường mô phỏng (OT_CONTROL_ENABLED tắt) giữ NGUYÊN hành vi cũ: action 'executed' vẫn cho ghi sổ simulated, không tiêu thụ, không intent", async () => {
     process.env.OT_CONTROL_ENABLED = "false";
-    const actionId = await makeAction({ status: "executed", bind: null });
+    // R1b-2b-2a A2(h) — cổng (1) nay ràng buộc mọi actionId: hàng 'executed' GẮN ĐÚNG lệnh (AMENDMENT 2 — đi tiếp tới bước (2)); hàng không binding
+    // (bind: null) nay bị ACTION_BINDING_MISMATCH. Fixture: hàng gắn đúng; khẳng định giữ nguyên.
+    const actionId = await makeAction({ status: "executed" });
     const inp = input({ actionId });
     const res = await dispatch(inp);
     expect(res.simulated).toBe(true);
@@ -373,9 +375,14 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     expect(res.status).toBe("rejected");
     expect(res.reason).toBe("PRECONDITION_FAILED");
     expect(writeCalls).toBe(0);
-    const rows = await ledger(inp.idempotencyKey);
+    // R1b-2b-2a A2(h) — lời từ chối nay ở cổng (1) (trước: ở giữ chỗ ghi thật) ⇒ hàng TRƯỚC bước 2 mang khoá NULL + ackValue.khoaGoc (A2(g)): đọc theo
+    // commandLogIds thay vì theo khoá ghi; vẫn ĐÚNG 1 dòng rejected PRECONDITION_FAILED, không intent.
+    const rows = await (await d()).select().from(commandLog).where(inArray(commandLog.id, res.commandLogIds));
     expect(rows.map((r) => r.status)).toEqual(["rejected"]);
     expect(rows[0]!.errorText).toMatch(/^PRECONDITION_FAILED/);
+    expect(rows[0]!.idempotencyKey).toBeNull();
+    expect((rows[0]!.ackValue as { khoaGoc?: unknown } | null)?.khoaGoc).toBe(inp.idempotencyKey);
+    expect(await ledger(inp.idempotencyKey)).toEqual([]); // không intent / không hàng nào dưới khoá ghi
   });
 
   it.each([

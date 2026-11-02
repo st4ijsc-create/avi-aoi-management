@@ -1091,7 +1091,7 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
       expect(H.bay).toBe(0);
     }, 30_000);
 
-    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng = hàng MỚI (không phát lại; A2(a) fix 1: hàng mô phỏng không khoá mang khoá NULL); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: STOP mô phỏng ok / lệnh thường thật IDEMPOTENCY_KEY_REQUIRED (A2(a); kết quả bình thường, 0 gói)`, async () => {
+    it(`★ KK-3 khoá ${ten} — GHI MÔ PHỎNG (OT_CONTROL_ENABLED=false): STOP ghim mô phỏng, lần HAI mô phỏng = hàng MỚI (không phát lại; A2(a) fix 1: hàng mô phỏng không khoá mang khoá NULL); bật điều khiển ⇒ STOP không khoá ra thiết bị +1 gói; hitl KHÔNG actionId: STOP ghim mô phỏng ok / lệnh thường thật PRECONDITION_FAILED ở cổng (1) (A2(h); kết quả bình thường, 0 gói)`, async () => {
       await trongGiaoDich(async (tx) => {
         const d = driverGia();
         const ad = await taoAdapter(tx, d);
@@ -1128,9 +1128,10 @@ describe.skipIf(!DB_URL)("T6d — chốt phát lại của dispatcher OT (DB th�
           expect(lanTruocCua(h3[0]!)).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
         }
         const thatNoAct = await guiKK(tx, ad, [{ tagKey: "t", value: 1 }], "set_param", false);
-        // A2(a): lệnh THƯỜNG không khoá (hitl không actionId qua cổng (1) — cổng ấy chỉ kiểm khi CÓ actionId) ⇒ IDEMPOTENCY_KEY_REQUIRED (trước: PRECONDITION_FAILED
-        // ở đường ghi thật); vẫn 0 gói, kết quả bình thường.
-        expect(thatNoAct).toMatchObject({ ok: false, reason: MA_THIEU_KHOA });
+        // R1b-2b-2a A2(h) — trước (A2(a)): hitl không actionId qua cổng (1) mà không kiểm gì ⇒ (1b) IDEMPOTENCY_KEY_REQUIRED. Từ A2(h): cổng (1) ràng buộc MẶC
+        // ĐỊNH ⇒ lệnh thường không actionId bị từ chối PRECONDITION_FAILED ở (1), trước (1b); vẫn 0 gói, kết quả bình thường (không ném).
+        // (STOP ghim không actionId — sNoAct ở trên — vẫn không bị từ chối: STOP ghim không cần duyệt riêng.)
+        expect(thatNoAct).toMatchObject({ ok: false, reason: "PRECONDITION_FAILED" });
         expect(d.soGhi).toBe(1);
       });
       expect(H.bay).toBe(0);

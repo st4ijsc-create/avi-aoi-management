@@ -711,15 +711,19 @@ describe.skipIf(!DB_URL)("A2(a) — dispatcher từ chối lệnh THƯỜNG khô
     });
   }, 30_000);
 
-  it("★ F2 STOP_LIKE không khoá từ HITL KHÔNG actionId (cổng (1) không kiểm gì) ⇒ vẫn từ chối + hàng, KHÔNG cảnh báo, canhBao.boQua = khong_rang_buoc, KHÔNG chạm cửa sổ; cùng bộ được uỷ quyền + ghi thật ⇒ cảnh báo lần 1", async () => {
+  // R1b-2b-2a A2(h) — trước: HITL KHÔNG actionId qua cổng (1) mà không kiểm gì ⇒ tới (1b): MA_THIEU_KHOA_GIONG_STOP, canhBao.boQua = khong_rang_buoc. Từ A2(h):
+  // cổng (1) ràng buộc MẶC ĐỊNH ⇒ không actionId và không phải STOP ghim ⇒ PRECONDITION_FAILED ở (1), TRƯỚC (1b) (nhánh boQua khong_rang_buoc không còn tới
+  // được). Vẫn: hàng từ chối khoá NULL, KHÔNG cảnh báo, KHÔNG chạm cửa sổ; cùng bộ được uỷ quyền + ghi thật ⇒ cảnh báo lần 1 (đoạn sau không đổi).
+  it("★ F2 STOP_LIKE không khoá từ HITL KHÔNG actionId ⇒ A2(h): từ chối PRECONDITION_FAILED ở cổng (1) (trước (1b)), hàng khoá NULL, KHÔNG cảnh báo, KHÔNG chạm cửa sổ; cùng bộ được uỷ quyền + ghi thật ⇒ cảnh báo lần 1", async () => {
     await trongGiaoDich(async (tx) => {
       const ad = await taoAdapter(tx, driverGia());
       const writes = [{ tagKey: "a", value: 0 }, { tagKey: "t", value: 1 }];
       const r = await gui(tx, ad, writes, "", { actionId: null });
-      expect(r).toMatchObject({ ok: false, status: "rejected", reason: MA_THIEU_KHOA_GIONG_STOP });
+      expect(r).toMatchObject({ ok: false, status: "rejected", reason: "PRECONDITION_FAILED" });
       const h = await hangCua(tx, r);
       expect(h).toHaveLength(2);
-      expect(canhBaoHang(h[0]!)).toMatchObject({ daPhat: false, boQua: "khong_rang_buoc", lanThu: 0 });
+      expect(h.map((x) => [x.idempotencyKey, String(x.errorText)])).toEqual(h.map(() => [null, "PRECONDITION_FAILED: command requires a bound, confirmed HITL actionId (none supplied)"]));
+      expect(canhBaoHang(h[0]!)).toBeUndefined();
       await lang(80);
       expect(canhBaoKhongKhoa()).toEqual([]);
       const r2 = await gui(tx, ad, writes, "");

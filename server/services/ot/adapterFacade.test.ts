@@ -5,14 +5,14 @@
  * commandDispatcher.correlation.test.ts; NO live DB):
  *   - executeCommand fallback (verb 'tag.write') goes THROUGH dispatch() — the
  *     one-door: a commandLog ledger row is written and driver.writeTags is NEVER
- *     called by the facade itself (mode gate OFF ⇒ simulated ⇒ zero writes).
- *   - dispatcher gates APPLY through the facade (tag not writable → ack rejected
- *     reason TAG_NOT_WRITABLE — impossible if the facade bypassed the dispatcher).
+ *     called by the facade itself. R1b-2b-2a A2(h): a CanonicalCommand has no HITL
+ *     actionId ⇒ dispatch() refuses it at gate (1) (PRECONDITION_FAILED) on EVERY
+ *     path (was: mode gate OFF ⇒ simulated; tag not writable ⇒ TAG_NOT_WRITABLE).
  *   - control ON → the dispatcher's real-write gates apply: a CanonicalCommand has no HITL
  *     actionId ⇒ PRECONDITION_FAILED, driver 0× (doc 81 Đợt 1B Task 6, Ruling R5).
  *   - verb ≠ 'tag.write' → ack rejected reason UNSUPPORTED, dispatcher untouched.
  *   - bad args / bad issued_by → INVALID_ARGS, dispatcher untouched.
- *   - idempotency: same idempotency_key twice → cached ack, ONE ledger row.
+ *   - idempotency: same idempotency_key twice → both refused at gate (1), key not consumed (A2(h)).
  *   - driver implementing executeCommand/describe/getSafetyStatus → delegated.
  *   - describe fallback: capabilityModel (machineType) + device_tags rows
  *     (direction/deadband/sampling_ms carried).
@@ -176,28 +176,32 @@ beforeEach(() => {
 });
 
 describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backdoor)", () => {
-  it("verb tag.write + mode gate OFF → ledger row 'simulated', ack done/SIMULATED, driver.writeTags NEVER called", async () => {
+  // R1b-2b-2a A2(h) — a CanonicalCommand carries NO HITL actionId (issued_by only), and gate (1) now binds every HITL command on every path:
+  // no actionId (not a pinned STOP) ⇒ PRECONDITION_FAILED, simulated path included. Before A2(h): mode gate OFF ⇒ 'simulated'. The one-door
+  // property is unchanged: the refusal row is written by dispatch() (NULL ledger key + ackValue.khoaGoc, A2(g)), never by the facade.
+  it("verb tag.write + mode gate OFF → dispatch() refuses at gate (1): ack rejected PRECONDITION_FAILED (A2(h): no actionId), ONE ledger row by the dispatcher, driver.writeTags NEVER called", async () => {
     const facade = createAdapterFacade({ adapterId: 10, machineId: 5 });
     const ack = await facade.executeCommand(baseCmd());
-    expect(ack.status).toBe("done");
-    expect(ack.reason).toBe("SIMULATED");
+    expect(ack.status).toBe("rejected");
+    expect(ack.reason).toBe("PRECONDITION_FAILED");
     expect(ack.command_id).toBe("cmd-1");
     expect(typeof ack.ts).toBe("string");
     // One-door proof: the dispatcher wrote its append-only ledger row…
     expect(resultRows(cmdLog)).toHaveLength(1);
-    expect(resultRows(cmdLog)[0].status).toBe("simulated");
+    expect(resultRows(cmdLog)[0].status).toBe("rejected");
     expect(resultRows(cmdLog)[0].commandType).toBe("tag.write");
-    expect(resultRows(cmdLog)[0].idempotencyKey).toContain("idem-1");
+    expect(resultRows(cmdLog)[0].idempotencyKey ?? null).toBeNull();
+    expect(resultRows(cmdLog)[0].ackValue).toMatchObject({ khoaGoc: "idem-1" });
     // …and the facade never touched the device directly.
     expect(writeTagsSpy).not.toHaveBeenCalled();
   });
 
-  it("dispatcher gates APPLY: tag not writable → ack rejected TAG_NOT_WRITABLE", async () => {
+  it("dispatcher gates APPLY: tag not writable → still refused by dispatch(); since A2(h) gate (1) answers first (PRECONDITION_FAILED, before the tag gate)", async () => {
     tags[0].writable = false;
     const facade = createAdapterFacade({ adapterId: 10 });
     const ack = await facade.executeCommand(baseCmd());
     expect(ack.status).toBe("rejected");
-    expect(ack.reason).toBe("TAG_NOT_WRITABLE");
+    expect(ack.reason).toBe("PRECONDITION_FAILED");
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(resultRows(cmdLog)[0].status).toBe("rejected");
   });
@@ -257,14 +261,18 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     expect(parseIssuedBy("abc")).toBeNull();
   });
 
-  it("idempotency: same idempotency_key twice → cached ack, ONE ledger row (spec §13.2)", async () => {
+  // R1b-2b-2a A2(h) — both calls are refused at gate (1) (no actionId); a refusal before step 2 never consumes the key (A2(g)): each call is
+  // answered on its own (no cached replay of a refusal), two NULL-key rows, 0 device writes. Before A2(h): cached 'done', ONE row.
+  it("idempotency: same idempotency_key twice → both refused PRECONDITION_FAILED at gate (1) (A2(h)), each its own NULL-key row, key not consumed, 0 writes", async () => {
     const facade = createAdapterFacade({ adapterId: 10 });
     const a1 = await facade.executeCommand(baseCmd());
     const a2 = await facade.executeCommand(baseCmd({ command_id: "cmd-2" }));
-    expect(a1.status).toBe("done");
-    expect(a2.status).toBe("done");
+    expect(a1).toMatchObject({ status: "rejected", reason: "PRECONDITION_FAILED" });
+    expect(a2).toMatchObject({ status: "rejected", reason: "PRECONDITION_FAILED" });
     expect(a2.command_id).toBe("cmd-2");
-    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)).toHaveLength(2);
+    expect(resultRows(cmdLog).map((r) => r.idempotencyKey ?? null)).toEqual([null, null]);
+    expect(writeTagsSpy).not.toHaveBeenCalled();
   });
 
   it("driver implementing executeCommand → delegated (dispatcher untouched)", async () => {

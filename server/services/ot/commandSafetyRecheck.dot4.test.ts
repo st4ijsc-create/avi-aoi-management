@@ -385,6 +385,8 @@ describe("T6d fix 2 — lệnh không khoá idempotency (đơn vị, DB giả, d
     it(`khoá ${ten}: write THIẾU tagKey (STOP không khoá) ⇒ từ chối bình thường ở bước tra tag (không ném ở bước 2), 0 gói`, async () => {
       const c = khongKhoa(input("cmd_run", "stop", false), khoa);
       (c.writes[0] as { tagKey?: string }).tagKey = undefined;
+      // R1b-2b-2a A2(h) — cổng (1) nay ràng buộc mọi actionId với ĐÚNG lệnh: uỷ quyền gắn lại với lệnh ĐÃ sửa (fixture, không đổi khẳng định)
+      pending.set(c.triggeredBy.actionId, boundPending(c.triggeredBy.actionId, c));
       const r = await within(dispatch(c), 3000);
       expect(r.ok).toBe(false);
       expect(typeof r.reason).toBe("string");
