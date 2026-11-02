@@ -21,6 +21,8 @@ import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 const CHUP: Record<number, { id: number; role: string; name: string }> = {
   1: { id: 1, role: "admin", name: "admin-se-bi-ha" },
   2: { id: 2, role: "admin", name: "admin-doi-chung" },
+  // polish — non-admin được cấp quyền machine_registration (chỉ có tác dụng khi MACHINE_APPROVE_RBAC_OPEN_ENABLED=true)
+  3: { id: 3, role: "engineer", name: "registrar-engineer" },
 };
 vi.mock("./sdk", () => ({
   sdk: {
@@ -36,7 +38,10 @@ vi.mock("../db/connection", async (importOriginal) => {
 });
 
 // ── "DB" có thẩm quyền mà bộ xác thực lại đọc (mặc định trong mã: db.getUserById / db.getSessionByToken — ca (U7) đo dây nối đó). ──
-type HangNguoi = { id: number; role: string; isActive: boolean | null; name: string };
+type HangNguoi = {
+  id: number; role: string; isActive: boolean | null; name: string;
+  passwordChangedAt?: Date | string | null; passwordInvalidBefore?: Date | string | null;
+};
 type HangPhien = { userId: number; isActive: boolean | null; expiresAt: Date | null };
 let NGUOI_DB: Record<number, HangNguoi> = {};
 let PHIEN_DB: Record<string, HangPhien> = {};
@@ -46,11 +51,13 @@ function datLaiDb() {
   NGUOI_DB = {
     1: { id: 1, role: "admin", isActive: true, name: "admin-se-bi-ha" },
     2: { id: 2, role: "admin", isActive: true, name: "admin-doi-chung" },
+    3: { id: 3, role: "engineer", isActive: true, name: "registrar-engineer", passwordChangedAt: null, passwordInvalidBefore: null },
   };
   PHIEN_DB = {
     "ve-1a": { userId: 1, isActive: true, expiresAt: null },
     "ve-1b": { userId: 1, isActive: true, expiresAt: null },
     "ve-2": { userId: 2, isActive: true, expiresAt: null },
+    "ve-3": { userId: 3, isActive: true, expiresAt: null },
   };
   NEM_KHI_DOC_NGUOI.clear();
   nemKhiDocPhien = false;
@@ -84,6 +91,12 @@ const issueMachineKey = vi.fn(async (o: { machineId: number; createdBy?: number 
 vi.mock("../services/machineAuthService", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/machineAuthService")>()),
   issueMachineKey: (...a: any[]) => (issueMachineKey as any)(...a),
+}));
+
+// polish — nhánh cờ RBAC mở của duocQuanLyDangKyMay hỏi checkPermission: user 3 CÓ machine_registration, mọi người khác KHÔNG.
+vi.mock("./accessControl", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./accessControl")>()),
+  checkPermission: vi.fn(async (uid: number, _vai: string, mod: string) => uid === 3 && mod === "machine_registration"),
 }));
 
 vi.mock("./socketRedisAdapter", () => ({ attachRedisAdapter: vi.fn(async () => false) }));
@@ -393,5 +406,111 @@ describe("★★ F5-nhanh — hàm xacThucLaiChoThaoTacSocket (gọi thẳng)", 
     expect(getSessionByToken).toHaveBeenCalledWith("ve-1a");
     getUserById.mockImplementationOnce(async () => undefined); // getUserById trả undefined khi getDb() null
     expect(await xtl.xacThucLaiChoThaoTacSocket(sk(adminChup, "app_session_id=ve-1a"))).toEqual({ ok: false, lyDo: "KHONG_CO_NGUOI_DUNG" });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// F5-nhanh polish — admin:join / admin:get_online_machines cũng xác thực lại; cổng buộc-đổi-mật-khẩu trong bộ xác thực lại
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+function phongServer(c: ClientSocket): string[] {
+  const sk = socketMod.getIO()!.sockets.sockets.get(c.id!);
+  if (!sk) throw new Error(`không thấy socket server ${c.id}`);
+  return [...sk.rooms].filter((r) => r !== c.id).sort();
+}
+
+describe("★★★ F5-nhanh polish P1 — admin:join với vai đọc lại", () => {
+  it("(P1a) admin bị HẠ vai sau handshake ⇒ admin:join BỊ TỪ CHỐI: không vào phòng admin, không nhận danh sách chờ, không nhận yêu cầu đăng ký mới; đối chứng: admin còn vai vào được và nhận đúng danh sách ấy", async () => {
+    const dk = await dangKyMoi("P1A");
+    const ke = await ketNoi({ phien: 1, ve: "ve-1a" });
+    const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+    NGUOI_DB[1].role = "engineer"; // bản chụp vẫn admin
+    const choKe = ghiNhan(ke, "admin:pending_registrations");
+    const yeuCauKe = ghiNhan(ke, "machine:registration_request");
+    ke.emit("admin:join");
+    await vi.waitFor(() =>
+      expect(tuChoiLog().some((s: string) => s.includes(ke.id!) && s.includes("join admin"))).toBe(true),
+    );
+    // đối chứng: admin còn vai
+    const choAd = new Promise<any[]>((r) => ad.once("admin:pending_registrations", r));
+    ad.emit("admin:join");
+    const ds = await choAd;
+    expect(ds.some((x) => x.requestSocketId === dk.may.id)).toBe(true);
+    expect(phongServer(ad)).toContain("admin");
+    // một yêu cầu đăng ký MỚI phát vào phòng admin: ad nhận, ke không
+    const yeuCauAd = new Promise((r) => ad.once("machine:registration_request", r));
+    await dangKyMoi("P1A-2");
+    await yeuCauAd;
+    await cho(50);
+    expect(phongServer(ke)).not.toContain("admin");
+    expect(choKe).toEqual([]);
+    expect(yeuCauKe).toEqual([]);
+  });
+
+  it("(P1b) phiên của socket bị THU HỒI ⇒ admin:join BỊ TỪ CHỐI (PHIEN_DA_THU_HOI); đối chứng: cùng người, phiên khác vào được", async () => {
+    await dangKyMoi("P1B");
+    const ke = await ketNoi({ phien: 1, ve: "ve-1a" });
+    const cungNguoi = await ketNoi({ phien: 1, ve: "ve-1b" });
+    PHIEN_DB["ve-1a"].isActive = false;
+    const choKe = ghiNhan(ke, "admin:pending_registrations");
+    ke.emit("admin:join");
+    await vi.waitFor(() =>
+      expect(tuChoiLog().some((s: string) => s.includes(ke.id!) && s.includes("join admin") && s.includes("PHIEN_DA_THU_HOI"))).toBe(true),
+    );
+    const cho2 = new Promise((r) => cungNguoi.once("admin:pending_registrations", r));
+    cungNguoi.emit("admin:join");
+    await cho2;
+    expect(phongServer(cungNguoi)).toContain("admin");
+    expect(phongServer(ke)).not.toContain("admin");
+    expect(choKe).toEqual([]);
+  });
+});
+
+describe("★★ F5-nhanh polish P2 — admin:get_online_machines với vai đọc lại", () => {
+  it("(P2) admin bị HẠ vai ⇒ không nhận machine:online_list (danh sách máy online MỌI nhà máy); đối chứng: admin còn vai nhận", async () => {
+    const ke = await ketNoi({ phien: 1, ve: "ve-1a" });
+    const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+    NGUOI_DB[1].role = "viewer";
+    const dsKe = ghiNhan(ke, "machine:online_list");
+    ke.emit("admin:get_online_machines");
+    await vi.waitFor(() =>
+      expect(tuChoiLog().some((s: string) => s.includes(ke.id!) && s.includes("admin:get_online_machines"))).toBe(true),
+    );
+    const dsAd = new Promise((r) => ad.once("machine:online_list", r));
+    ad.emit("admin:get_online_machines");
+    await dsAd;
+    await cho(50);
+    expect(dsKe).toEqual([]);
+  });
+});
+
+describe("★★★ F5-nhanh polish P3 — cổng BUỘC ĐỔI MẬT KHẨU trong bộ xác thực lại", () => {
+  it("(P3) cờ RBAC mở: non-admin có quyền machine_registration nhưng bị BUỘC ĐỔI MẬT KHẨU sau handshake ⇒ approve BỊ TỪ CHỐI (PHAI_DOI_MAT_KHAU), không đúc khoá; đổi xong mật khẩu ⇒ CHÍNH socket ấy duyệt được (đối chứng)", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      const ke = await ketNoi({ phien: 3, ve: "ve-3" });
+      const dk = await dangKyMoi("P3");
+      NGUOI_DB[3].passwordInvalidBefore = new Date(Date.now() - 60_000); // quản trị thu hồi mật khẩu
+      NGUOI_DB[3].passwordChangedAt = null;
+      await duyetBiChan(ke, dk, "PHAI_DOI_MAT_KHAU");
+      NGUOI_DB[3].passwordChangedAt = new Date(); // người dùng đã đổi SAU mốc thu hồi
+      await duyetDoiChung(ke, dk, 3);
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  });
+
+  const sk = (data: unknown, cookie?: string) => ({ data, handshake: { headers: cookie ? { cookie } : {} } });
+  it("(U8) gọi thẳng: engineer bị buộc ⇒ PHAI_DOI_MAT_KHAU; admin cùng mốc ⇒ qua (vai miễn trừ — CÙNG luật handshake); mốc không đọc được ⇒ chặn", async () => {
+    const eng = { clientType: "browser", user: { id: 3, role: "engineer" } };
+    NGUOI_DB[3].passwordInvalidBefore = new Date(Date.now() - 60_000);
+    expect(await xtl.xacThucLaiChoThaoTacSocket(sk(eng, "app_session_id=ve-3"))).toEqual({ ok: false, lyDo: "PHAI_DOI_MAT_KHAU" });
+    NGUOI_DB[1].passwordInvalidBefore = new Date(Date.now() - 60_000);
+    NGUOI_DB[1].passwordChangedAt = null;
+    const adm = { clientType: "browser", user: { id: 1, role: "admin" } };
+    expect(await xtl.xacThucLaiChoThaoTacSocket(sk(adm, "app_session_id=ve-1a"))).toMatchObject({ ok: true });
+    NGUOI_DB[3].passwordInvalidBefore = "khong-phai-ngay";
+    expect(await xtl.xacThucLaiChoThaoTacSocket(sk(eng, "app_session_id=ve-3"))).toEqual({ ok: false, lyDo: "PHAI_DOI_MAT_KHAU" });
+    NGUOI_DB[3].passwordInvalidBefore = null; // chưa từng thu hồi ⇒ qua
+    expect(await xtl.xacThucLaiChoThaoTacSocket(sk(eng, "app_session_id=ve-3"))).toMatchObject({ ok: true, data: { user: { role: "engineer" } } });
   });
 });

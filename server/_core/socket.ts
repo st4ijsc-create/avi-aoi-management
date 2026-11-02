@@ -868,8 +868,14 @@ export function initializeSocket(server: HttpServer): Server {
       // máy + trạng thái kết nối: mirror ĐÚNG quyền tRPC `machine.listPending`
       // (`machineRegistrationGate("canView")`, hierarchyRouters.ts) — trước bản vá MỌI socket
       // trình duyệt đã đăng nhập (kể cả operator) vào được, không chỉ admin/người có quyền.
-      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
+      // ★★★ F5-nhanh polish — phòng `admin` giao danh sách ĐĂNG KÝ CHỜ (mã/serial/IP máy) và nhận mọi yêu cầu đăng ký sau đó ⇒ vai đọc
+      // LẠI từ DB lúc join (không tin bản chụp handshake): admin bị hạ vai / tắt / phiên bị thu hồi không vào được nữa.
+      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canView"))) {
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
+          `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}`,
+        );
         return;
       }
       socket.join("admin");
@@ -912,8 +918,14 @@ export function initializeSocket(server: HttpServer): Server {
     // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
     socket.on("admin:get_online_machines", async () => {
       // ★ doc 80 PLT-01 (Task 11) — cùng quyền `admin:join` (mirror `machine.listPending`).
-      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
-        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
+      // ★★★ F5-nhanh polish — danh sách máy online của MỌI nhà máy (không lọc phạm vi) chỉ dành cho người quản trị đăng ký máy ⇒ cùng
+      // xác thực lại như admin:join (người bị hạ vai về vai có phạm vi không được thấy máy nhà máy khác).
+      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canView"))) {
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
+          `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}`,
+        );
         return;
       }
       let onlineMachineCodes: string[];

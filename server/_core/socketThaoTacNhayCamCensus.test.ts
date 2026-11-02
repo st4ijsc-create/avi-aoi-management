@@ -35,13 +35,14 @@ const BANG: Muc[] = [
   // ── NHẠY CẢM — phải xác thực lại (F5-nhanh) ──
   { file: "server/_core/socket.ts", event: "admin:approve_registration", loai: "NHAY_CAM", lyDo: "duyệt đăng ký máy + ĐÚC khoá API máy (issueMachineKey) + ghi machines" },
   { file: "server/_core/socket.ts", event: "admin:reject_registration", loai: "NHAY_CAM", lyDo: "từ chối đăng ký máy (đổi trạng thái sổ chờ, báo máy)" },
+  // polish — chỉ-đọc nhưng giao dữ liệu CHỈ người quản trị đăng ký máy được thấy ⇒ cùng luật xác thực lại
+  { file: "server/_core/socket.ts", event: "admin:join", loai: "NHAY_CAM", lyDo: "vào phòng admin: danh sách ĐĂNG KÝ CHỜ (mã/serial/IP máy) + mọi yêu cầu đăng ký sau đó" },
+  { file: "server/_core/socket.ts", event: "admin:get_online_machines", loai: "NHAY_CAM", lyDo: "danh sách máy online của MỌI nhà máy (không lọc phạm vi) — chỉ người quản trị đăng ký máy" },
   // ── CHỈ ĐỌC — đăng ký nhận / vào phòng có cổng theo phòng (ngoài phạm vi F5-nhanh; F5 đầy đủ xử lý tính cũ của phòng) ──
   { file: "server/_core/socket.ts", event: "subscribe", loai: "CHI_DOC", lyDo: "vào phòng theo phạm vi (duocVaoPhong*) — chỉ nhận" },
   { file: "server/_core/socket.ts", event: "unsubscribe", loai: "CHI_DOC", lyDo: "rời phòng" },
   { file: "server/_core/socket.ts", event: "engineering:subscribe", loai: "CHI_DOC", lyDo: "vào phòng engineering:* (quyền + phạm vi) — chỉ nhận" },
   { file: "server/_core/socket.ts", event: "engineering:unsubscribe", loai: "CHI_DOC", lyDo: "rời phòng" },
-  { file: "server/_core/socket.ts", event: "admin:join", loai: "CHI_DOC", lyDo: "vào phòng admin + nhận danh sách chờ (duocQuanLyDangKyMay canView, vai chụp — F5 đầy đủ)" },
-  { file: "server/_core/socket.ts", event: "admin:get_online_machines", loai: "CHI_DOC", lyDo: "đọc danh sách máy online (canView, vai chụp — F5 đầy đủ)" },
   { file: "server/services/notificationService.ts", event: "auth:user", loai: "CHI_DOC", lyDo: "vào phòng user:{id} CỦA CHÍNH MÌNH — chỉ nhận" },
   { file: "server/services/scada/scadaSocket.ts", event: "scada:subscribe", loai: "CHI_DOC", lyDo: "đăng ký nhận tag SCADA (quyền + phạm vi mỗi lượt) — chỉ nhận" },
   { file: "server/services/scada/scadaSocket.ts", event: "scada:unsubscribe", loai: "CHI_DOC", lyDo: "huỷ đăng ký" },

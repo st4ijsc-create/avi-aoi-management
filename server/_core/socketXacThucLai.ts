@@ -13,13 +13,16 @@
  *   • trả CHỦ THỂ MỚI (`DuLieuSocket` với vai từ DB) để handler đưa vào cổng quyền sẵn có (`duocQuanLyDangKyMay`,
  *     `duocTuChoiDangKyMay`) — một luật quyền, chỉ thay NGUỒN vai;
  *   • FAIL-CLOSED: không phải socket người dùng / không có vé / lỗi tra cứu / không có hàng người dùng / tài khoản tắt /
- *     không có hàng phiên / phiên bị thu hồi / phiên hết hạn / phiên của người KHÁC ⇒ từ chối.
+ *     không có hàng phiên / phiên bị thu hồi / phiên hết hạn / phiên của người KHÁC / bị BUỘC ĐỔI MẬT KHẨU (cùng cổng + cùng vai
+ *     miễn trừ như handshake) ⇒ từ chối.
  *     ⚠ KHÁC `chanNeuPhienDaThuHoi` (fail-OPEN trên lỗi tra cứu cho HTTP): ở đây hành động là ĐÚC KHOÁ / đổi trạng thái —
  *     "không hỏi được" phải rơi về CHẶN.
  *
  * Ngoài phạm vi (F5 đầy đủ): ngắt socket / rời phòng khi quyền đổi; handler chỉ-đọc theo phòng.
  */
+import { biChanBoiCongDoiMatKhau } from "@shared/buocDoiMatKhau";
 import { docVePhienTuCookie } from "./vePhienCookie";
+import { suyRaPhaiDoiMatKhau } from "./publicUser";
 import type { DuLieuSocket } from "./socketPhongQuyen";
 
 /** Hàng người dùng tối thiểu mà phép xác thực lại cần. */
@@ -28,6 +31,29 @@ export interface HangNguoiDungXacThucLai {
   role?: string | null;
   isActive?: boolean | null;
   name?: string | null;
+  /** Hai mốc của cổng BUỘC ĐỔI MẬT KHẨU — có sẵn trong hàng `users` (`getUserById` = select *), không tốn thêm câu hỏi. */
+  passwordChangedAt?: Date | string | null;
+  passwordInvalidBefore?: Date | string | null;
+}
+
+/**
+ * F5-nhanh polish — CÙNG cổng buộc-đổi-mật-khẩu mà handshake áp (`sdk.chanNeuPhaiDoiMatKhau` = `biChanBoiCongDoiMatKhau(vai,
+ * suyRaPhaiDoiMatKhau(mốc))`), trên hàng VỪA đọc và vai VỪA đọc (vai miễn trừ — `shared/buocDoiMatKhau.ts` — giữ nguyên quyết định chủ dự án).
+ * Mốc có giá trị mà không đọc được thành ngày ⇒ coi là PHẢI đổi (hỏng theo chiều ĐÓNG).
+ */
+function biBuocDoiMatKhau(nguoi: HangNguoiDungXacThucLai, vai: string): boolean {
+  const ngay = (v: Date | string | null | undefined): Date | null | "hong" => {
+    if (v == null) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    return Number.isNaN(d.getTime()) ? "hong" : d;
+  };
+  const doiLuc = ngay(nguoi.passwordChangedAt);
+  const thuHoi = ngay(nguoi.passwordInvalidBefore);
+  const phaiDoi =
+    thuHoi === "hong" || (thuHoi !== null && doiLuc === "hong")
+      ? true
+      : suyRaPhaiDoiMatKhau({ passwordChangedAt: doiLuc as Date | null, passwordInvalidBefore: thuHoi as Date | null });
+  return biChanBoiCongDoiMatKhau(vai, phaiDoi);
 }
 /** Hàng sổ phiên tối thiểu. */
 export interface HangPhienXacThucLai {
@@ -94,12 +120,14 @@ export async function xacThucLaiChoThaoTacSocket(socket: SocketXacThucLai): Prom
     if (!nguoi || nguoi.id !== idChup) return { ok: false, lyDo: "KHONG_CO_NGUOI_DUNG" };
     // `=== false` tường minh — cùng ngữ nghĩa `chanNeuTaiKhoanBiTat` (sdk.ts): cột cho phép NULL.
     if (nguoi.isActive === false) return { ok: false, lyDo: "TAI_KHOAN_BI_TAT" };
+    const vai = String(nguoi.role ?? "");
+    if (biBuocDoiMatKhau(nguoi, vai)) return { ok: false, lyDo: "PHAI_DOI_MAT_KHAU" };
 
     return {
       ok: true,
       data: {
         clientType: "browser",
-        user: { id: nguoi.id, role: String(nguoi.role ?? ""), name: nguoi.name ?? null },
+        user: { id: nguoi.id, role: vai, name: nguoi.name ?? null },
       },
     };
   } catch (err) {
