@@ -179,7 +179,7 @@ async function anh(): Promise<Record<string, unknown>> {
   const [r] = await dung(sql`SELECT
       (SELECT md5(COALESCE(string_agg(p.id || ':' || p.status, '|' ORDER BY p.id), '')) FROM ai_pending_actions p WHERE p."userId" IN (${u})) AS cho,
       (SELECT count(*)::int FROM scada_command_attempts WHERE user_id IN (${u})) AS thu,
-      (SELECT COALESCE(max(id), 0)::bigint FROM scada_command_attempts WHERE user_id IN (${u})) AS thu_max,
+      (SELECT COALESCE(max(id) FILTER (WHERE id <= COALESCE(pg_sequence_last_value(pg_get_serial_sequence('scada_command_attempts', 'id')::regclass), 0)), 0)::bigint FROM scada_command_attempts WHERE user_id IN (${u})) AS thu_max,
       (SELECT count(*)::int FROM control_audit_log WHERE "actorId" IN (${u})) AS audit,
       (SELECT count(*)::int FROM command_log WHERE "requestedBy" IN (${u})) AS lenh,
       (SELECT md5(COALESCE(string_agg(k::text, '|' ORDER BY k::text), '')) FROM totp_khoa_sai k WHERE k.user_id IN (${u})) AS totp,

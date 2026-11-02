@@ -403,7 +403,7 @@ const ZERO_SUMMARY = {
 
 // ── ILK-06 (doc 80 Phụ lục D §6/§7.1) — số rule interlock THỰC SỰ CHẶN ĐƯỢC LỆNH ──
 // "Độ phủ interlock" phải khớp CHÍNH XÁC tập rule mà `evaluateInterlockGate` xét
-// (`interlockGate.ts:207-215`): enabled + ĐÃ DUYỆT (approvedBy IS NOT NULL) + action nằm
+// (`interlockGate.ts` `dieuKienLuatUngVien` + the JS backstop in `evaluateInterlockGate`): enabled + ĐÃ DUYỆT (approvedBy IS NOT NULL) + action nằm
 // trong allowlist chặn (`INTERLOCK_GATE_ACTIONS` — không tính `alert`, KHÔNG chặn gì) + có
 // đích (targetMachineId/targetAdapterId). Fix round 1 — bản trước chỉ xét enabled+có đích,
 // nên một rule `alert` có đích nhưng CHƯA DUYỆT vẫn được đếm là "có phủ" — đúng hình dạng
