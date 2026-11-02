@@ -33,7 +33,22 @@ const sw = vi.hoisted(() => ({
   plcOnly: "" as string,
   /** R-10-as N-1 — every evaluateActionPolicy call (passed through) */
   policyCalls: [] as Array<{ subject: string; action: string; resource: string; ctx: Record<string, unknown> }>,
+  /** R1b-2b-2a A2(o) — the snapshot central SERVES the node: the real one, the real one WITHOUT these ids, or unbuildable */
+  served: "real" as "real" | "throw" | { without: number[] },
 }));
+
+vi.mock("./edgeConfigCentral", async (orig) => {
+  const real = (await orig()) as typeof import("./edgeConfigCentral");
+  return {
+    ...real,
+    servedSafetyPlcConfigIds: async (...a: Parameters<typeof real.servedSafetyPlcConfigIds>) => {
+      if (sw.served === "throw") throw new Error("A2O served config build failed");
+      const ids = await real.servedSafetyPlcConfigIds(...a);
+      const drop = sw.served === "real" ? [] : sw.served.without;
+      return new Set([...ids].filter((id) => !drop.includes(id)));
+    },
+  };
+});
 
 vi.mock("../security/policyGate", async (orig) => {
   const real = (await orig()) as typeof import("../security/policyGate");
@@ -181,7 +196,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
     await k?.teardown();
   }, 120_000);
   beforeEach(() => {
-    Object.assign(sw, { enabled: "real", lockReq: false, owners: false, identity: false, digest: false, safety: false, plc: "real", role: false, cmds: false });
+    Object.assign(sw, { enabled: "real", lockReq: false, owners: false, identity: false, digest: false, safety: false, plc: "real", role: false, cmds: false, served: "real" });
     sw.policyCalls.length = 0;
   });
 
@@ -417,6 +432,26 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
       delete process.env.ROBOT_COMMISSIONING_REQUIRED;
       await k.sql`DELETE FROM safety_plc_configs WHERE id = ${plcB}`.catch(() => undefined);
     }
+  });
+
+  it("★ R1b-2b-2a A2(o) O3: robot A's signed config is NOT in the snapshot central serves the node ⇒ device_refused {safety} naming it, nothing written or signed; the served snapshot unbuildable ⇒ 503", async () => {
+    const before = await rows();
+    const pendingBefore = await pending();
+    sw.served = { without: [plcRobotA] };
+    const r = await robotAttempt();
+    expect(r, JSON.stringify(r)).toMatchObject({ http: 409, code: "device_refused", data: { gate: "safety" } });
+    expect(r.message).toContain(`#${plcRobotA}`);
+    expect(r).not.toHaveProperty("data.authorization");
+    sw.served = "throw";
+    const u = await robotAttempt();
+    expect(u, JSON.stringify(u)).toMatchObject({ http: 503, code: "edge_unavailable" });
+    expect(u).not.toHaveProperty("data.authorization");
+    expect(await rows()).toBe(before);
+    expect(await pending()).toBe(pendingBefore);
+    // the served snapshot back (it does ship robot A's config) ⇒ the check is the only cause above
+    sw.served = "real";
+    const { servedSafetyPlcConfigIds } = await import("./edgeConfigCentral");
+    expect([...(await servedSafetyPlcConfigIds(await k.principal("A")))]).toContain(plcRobotA);
   });
 
   it("control: with every read answering, the same attempt is authorised (the switches are the only cause above)", async () => {
