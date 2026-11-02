@@ -7,12 +7,14 @@
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getSharedSocket } from "../lib/socketManager";
+import { getSharedSocket, layTrangThaiNoiLai, theoDoiTrangThaiNoiLai } from "../lib/socketManager";
 
 export function ConnectionBanner() {
   const { t } = useTranslation();
   const [socketUp, setSocketUp] = useState(true);
   const [netUp, setNetUp] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  // F5 đầy đủ — server ngắt socket vì quyền / phạm vi đổi ⇒ trạng thái "đang nối lại" riêng (khác mất kết nối thường).
+  const [noiLai, setNoiLai] = useState(layTrangThaiNoiLai());
 
   useEffect(() => {
     const socket = getSharedSocket();
@@ -21,6 +23,7 @@ export function ConnectionBanner() {
     const onDisconnect = () => setSocketUp(false);
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    const goNoiLai = theoDoiTrangThaiNoiLai(setNoiLai);
 
     const onNetUp = () => setNetUp(true);
     const onNetDown = () => setNetUp(false);
@@ -28,6 +31,7 @@ export function ConnectionBanner() {
     window.addEventListener("offline", onNetDown);
 
     return () => {
+      goNoiLai();
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       window.removeEventListener("online", onNetUp);
@@ -45,7 +49,11 @@ export function ConnectionBanner() {
     >
       {!netUp
         ? t("connectionBanner.netDown", "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…")
-        : t("connectionBanner.socketDown", "Mất kết nối thời gian thực — đang thử kết nối lại…")}
+        : noiLai === "dang_noi_lai"
+          ? t("connectionBanner.quyenDoi", "Quyền truy cập vừa thay đổi — đang kết nối lại…")
+          : noiLai === "dung"
+            ? t("connectionBanner.noiLaiDung", "Không kết nối lại được kênh thời gian thực — hãy tải lại trang.")
+            : t("connectionBanner.socketDown", "Mất kết nối thời gian thực — đang thử kết nối lại…")}
     </div>
   );
 }

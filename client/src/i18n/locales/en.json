@@ -21025,7 +21025,9 @@
   },
   "connectionBanner": {
     "netDown": "Network connection lost — data may be out of date. Waiting to reconnect…",
-    "socketDown": "Realtime connection lost — reconnecting…"
+    "socketDown": "Realtime connection lost — reconnecting…",
+    "quyenDoi": "Your access has changed — reconnecting…",
+    "noiLaiDung": "Could not reconnect the realtime channel — please reload the page."
   },
   "aiStudioHub": {
     "models": "Models & Versions",

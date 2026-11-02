@@ -21025,7 +21025,9 @@
   },
   "connectionBanner": {
     "netDown": "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…",
-    "socketDown": "Mất kết nối thời gian thực — đang thử kết nối lại…"
+    "socketDown": "Mất kết nối thời gian thực — đang thử kết nối lại…",
+    "quyenDoi": "Quyền truy cập vừa thay đổi — đang kết nối lại…",
+    "noiLaiDung": "Không kết nối lại được kênh thời gian thực — hãy tải lại trang."
   },
   "aiStudioHub": {
     "models": "Mô hình & Phiên bản",
