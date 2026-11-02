@@ -111,6 +111,27 @@ export function duocTuChoiDangKyMay(data: DuLieuSocket | null | undefined): bool
 }
 
 /**
+ * ★★ F5-nhanh review (Minor 3, 2026-11-02) — TIỀN LỌC TRONG BỘ NHỚ trước bộ xác thực lại (`socketXacThucLai.ts`), CHỈ THU HẸP.
+ *
+ * Dashboard / AndonBoard gửi `admin:get_online_machines` mỗi lần nối, với MỌI vai ⇒ không có tiền lọc thì mỗi người không phải admin trả
+ * 2 SELECT (người dùng + sổ phiên) chỉ để bị từ chối. Tiền lọc đọc BẢN CHỤP handshake và chỉ được phép trả `false` ở chỗ cổng thật CHẮC CHẮN
+ * cũng từ chối với bản chụp ấy; `true` KHÔNG cho qua gì — nơi gọi vẫn xác thực lại rồi chạy cổng thật trên chủ thể mới.
+ * ⚠ Hệ quả có chủ ý: người được NÂNG vai sau handshake bị tiền lọc từ chối tới khi nối lại (chiều ĐÓNG — đúng nghĩa "chỉ thu hẹp").
+ * ⚠ Cờ RBAC mở ⇒ quyết định cần `checkPermission` (DB) ⇒ tiền lọc không đoán, trả `true` (để cổng thật quyết sau xác thực lại).
+ * Census `socketThaoTacNhayCamCensus.test.ts` chỉ cho hai hàm này đứng TRƯỚC xác thực lại, và chỉ ở hình dạng
+ * `tienLoc(socket.data) ? await xacThucLaiChoThaoTacSocket(socket) : { ok: false, … }`.
+ */
+export function tienLocQuanLyDangKyMay(data: DuLieuSocket | null | undefined): boolean {
+  if (!laSocketNguoiDung(data)) return false;
+  if (!coMoRbacDuyetMay()) return String(data!.user!.role ?? "") === "admin";
+  return true;
+}
+/** Tiền lọc của `admin:reject_registration` — cổng thật chỉ đọc vai (luôn admin), nên tiền lọc = cổng thật trên BẢN CHỤP. */
+export function tienLocTuChoiDangKyMay(data: DuLieuSocket | null | undefined): boolean {
+  return duocTuChoiDangKyMay(data);
+}
+
+/**
  * Phòng thông báo `user:{userId}` — chỉ socket người dùng, và chỉ phòng CỦA CHÍNH người đó.
  */
 export function duocVaoPhongNguoiDung(data: DuLieuSocket | null | undefined, userId: unknown): boolean {
@@ -178,6 +199,23 @@ async function layCongPhamVi(): Promise<CongPhamVi> {
 
 function pvCuaSocket(data: DuLieuSocket): { userId: number; userRole: string } {
   return { userId: data.user!.id as number, userRole: String(data.user!.role ?? "") };
+}
+
+/**
+ * ★★★ F5-nhanh review (2026-11-02) — PHẠM VI MÁY của một chủ thể (thường là chủ thể VỪA đọc lại): `null` = toàn quyền (admin / vai toàn
+ * quyền — cùng bộ phân giải `idsTrongPhamVi` mọi router dùng, KHÔNG luật thứ hai); tập id = chỉ các máy ấy. Không phải socket người dùng /
+ * lỗi ⇒ TẬP RỖNG (fail-closed: thấy ít hơn, không bao giờ thấy nhiều hơn). Dùng cho danh sách quản trị đăng ký máy qua socket khi cờ RBAC
+ * mở (mirror tRPC `machine.listPending` = `getPendingMachines(phamViCua(ctx))` lọc theo `idsTrongPhamVi("machine")`).
+ */
+export async function idsMayTrongPhamViCua(data: DuLieuSocket | null | undefined): Promise<Set<number> | null> {
+  if (!laSocketNguoiDung(data)) return new Set();
+  try {
+    const ids = await (await layCongPhamVi()).idsTrongPhamVi("machine", pvCuaSocket(data!));
+    return ids === null ? null : new Set(ids);
+  } catch (err) {
+    console.error("[Socket.io] loi tinh pham vi may (fail-closed => rong):", (err as Error)?.message ?? err);
+    return new Set();
+  }
 }
 
 /** Được vào phòng `{cap}:{id}` không — nhà máy / xưởng / chuyền / máy NẰM TRONG PHẠM VI người dùng? */
