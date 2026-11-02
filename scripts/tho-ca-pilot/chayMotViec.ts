@@ -35,6 +35,8 @@ export interface KetQuaDriver {
   ghiChu: string[];
   /** thống kê cổng duyệt (driver host): giây chờ NGƯỜI tách khỏi thời gian model */
   duyet?: { soLanCho: number; soChapNhan: number; soTuChoi: number; giayChoDuyet: number };
+  /** lý do dừng của lượt (hoan-thanh | het-luot | het-gio | loi-model | …) nếu driver biết */
+  lyDoDung?: string;
 }
 
 export interface DauVaoDriver {
@@ -54,7 +56,7 @@ export interface KetQuaViec {
   ma: string | null;
   ok: boolean;
   /** xong | het-gio | loi-driver | vi-pham | tu-choi */
-  ketCuc: "xong" | "het-gio" | "loi-driver" | "vi-pham" | "tu-choi";
+  ketCuc: "xong" | "het-gio" | "loi-driver" | "vi-pham" | "tu-choi" | "khong-lam";
   loi?: string;
   nhanh?: string;
   baseSha?: string;
@@ -62,6 +64,8 @@ export interface KetQuaViec {
   giayTuong?: number;
   /** giayTuong trừ thời gian chờ người duyệt = thời gian của model + công cụ */
   giayModel?: number;
+  /** lý do dừng của lượt agent (hoan-thanh | het-luot | loi-model | …) — driver host */
+  lyDoDung?: string;
   soLanCho?: number;
   soChapNhan?: number;
   soTuChoi?: number;
@@ -301,9 +305,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");
   if (kq.vong === null) luuY.push("số vòng: driver không biết");
 
+  // KHÔNG BAO GIỜ "xong" khi không làm gì: lượt lỗi ⇒ loi-driver; không đổi tệp nào và không lỗi ⇒ khong-lam (ok:false)
   let ketCuc: KetQuaViec["ketCuc"] = "xong";
   if (kq.hetGio) ketCuc = "het-gio";
   else if (kq.loi) ketCuc = "loi-driver";
+  else if (tepDoi.length === 0) ketCuc = "khong-lam";
   if (viPham.length > 0 || crlf.length > 0) ketCuc = "vi-pham";
 
   return {
@@ -317,6 +323,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     giayTuong,
     giayModel: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
     ...(kq.duyet ? { soLanCho: kq.duyet.soLanCho, soChapNhan: kq.duyet.soChapNhan, soTuChoi: kq.duyet.soTuChoi, giayChoDuyet: kq.duyet.giayChoDuyet } : {}),
+    ...(kq.lyDoDung ? { lyDoDung: kq.lyDoDung } : {}),
     vong: kq.vong,
     token: kq.token,
     tepDoi,
@@ -352,6 +359,12 @@ async function main(): Promise<number> {
   }
   let driver: TenDriver | Driver = drv;
   if (drv === "host") {
+    if (a["env-tu"]) {
+      const { napEnvTuTep } = await import("./napEnv");
+      const kqNap = napEnvTuTep(a["env-tu"]);
+      process.stderr.write(`[tho-ca-pilot] đã nạp từ --env-tu (chỉ tên khoá): ${kqNap.daNap.join(" ") || "(không)"}; đã có sẵn trong môi trường (giữ nguyên): ${kqNap.daCo.join(" ") || "(không)"}
+`);
+    }
     const id = Number(a["nguoi-id"]);
     if (!Number.isInteger(id) || id <= 0) {
       process.stderr.write("driver host cần --nguoi-id <id engineer1 trong _test> (KHÔNG admin) [--nguoi-vai engineer] [--han-duyet <giây>]\n");

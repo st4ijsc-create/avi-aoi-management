@@ -191,3 +191,53 @@ describe("duyetQuaTep + duyet.ts (hồ sơ ↔ quyết định)", () => {
     expect(await duyetQuaTep(ho("act-1"), { ra, hanMs: 700 })).toEqual({ quyet: "het-gio" });
   });
 });
+
+import { thieuKhoaModel } from "./driverHost";
+
+describe("driverHost — đo ĐÚNG kết cục (bug TC-01 lần 1: lượt lỗi model bị báo 'xong')", () => {
+  const chay = async (kb: Parameters<typeof taoDep>[0], over: Partial<PhuThuocHost> = {}) => {
+    const { dep } = taoDep(kb, async () => ({ quyet: "tu-choi" }), over);
+    return driverHost(dep)(dauVao(ra));
+  };
+  it("★ loi RỒI xong(loi-model) — thứ tự thật của host — vẫn là LỖI, mang mã lỗi", async () => {
+    const kq = await chay(async (phat) => {
+      phat({ loai: "loi", ma: "TOOL_CALL_KHONG_HO_TRO", thongDiep: "model null" });
+      phat({ loai: "xong", lyDo: "loi-model" });
+    });
+    expect(kq.loi).toContain("TOOL_CALL_KHONG_HO_TRO");
+    expect(kq.lyDoDung).toBe("loi-model");
+  });
+  it("★ xong với lyDo KHÁC hoan-thanh (loi-model / het-luot / huy / het-token) ⇒ loi; het-gio ⇒ hetGio; hoan-thanh ⇒ sạch", async () => {
+    for (const ly of ["loi-model", "het-luot", "huy", "het-token", "lap-lai"]) {
+      const kq = await chay(async (phat) => phat({ loai: "xong", lyDo: ly }));
+      expect(kq.loi, ly).toContain(ly);
+    }
+    expect((await chay(async (phat) => phat({ loai: "xong", lyDo: "het-gio" }))).hetGio).toBe(true);
+    const ok = await chay(async (phat) => phat({ loai: "xong", lyDo: "hoan-thanh" }));
+    expect(ok.loi).toBeUndefined();
+    expect(ok.hetGio).toBe(false);
+  });
+  it("★ nguồn thứ hai: hàng lượt trangThai=loi mà sự kiện không báo lỗi ⇒ loi", async () => {
+    const kq = await chay(async (phat) => phat({ loai: "xong", lyDo: "hoan-thanh" }), { trangThaiLuot: async () => ({ trangThai: "loi", lyDoDung: "loi-model" }) });
+    expect(kq.loi).toContain("trangThai=loi");
+    const sach = await chay(async (phat) => phat({ loai: "xong", lyDo: "hoan-thanh" }), { trangThaiLuot: async () => ({ trangThai: "xong", lyDoDung: "hoan-thanh" }) });
+    expect(sach.loi).toBeUndefined();
+  });
+  it("thieuKhoaModel liệt kê đúng khoá thiếu", () => {
+    expect(thieuKhoaModel({})).toEqual(["LLAMA_SERVER_ENABLED=true", "LLAMA_SERVER_URL", "LLAMA_SERVER_MODEL", "GGUF_CODE_MODEL|GGUF_DEFAULT_MODEL"]);
+    expect(thieuKhoaModel({ LLAMA_SERVER_ENABLED: "true", LLAMA_SERVER_URL: "u", LLAMA_SERVER_MODEL: "m", GGUF_DEFAULT_MODEL: "g" })).toEqual([]);
+    expect(thieuKhoaModel({ LLAMA_SERVER_ENABLED: "false", LLAMA_SERVER_URL: "u", LLAMA_SERVER_MODEL: "m", GGUF_CODE_MODEL: "g" })).toEqual(["LLAMA_SERVER_ENABLED=true"]);
+  });
+});
+
+describe("driverHost — lỗi đầu tiên là lỗi gốc", () => {
+  it("★ hai sự kiện loi liên tiếp ⇒ giữ lỗi ĐẦU (nguyên nhân gốc), không bị lỗi sau ghi đè", async () => {
+    const { dep } = taoDep(async (phat) => {
+      phat({ loai: "loi", ma: "GOC", thongDiep: "a" });
+      phat({ loai: "loi", ma: "HE_QUA", thongDiep: "b" });
+    }, async () => ({ quyet: "tu-choi" }));
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(kq.loi).toContain("GOC");
+    expect(kq.loi).not.toContain("HE_QUA");
+  });
+});

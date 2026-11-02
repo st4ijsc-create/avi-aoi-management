@@ -66,9 +66,13 @@ describe("chayMotViec — chạy khô (driver kho, không model)", () => {
     expect(r.crlf).toEqual(["client/src/lib/a.test.ts"]);
   });
 
-  it("không có thay đổi nào ⇒ xong, 0 tệp (model không làm gì cũng là một kết quả để đo)", async () => {
+  it("★ không có thay đổi nào và không lỗi ⇒ khong-lam, ok:false (KHÔNG BAO GIỜ 'xong' khi không làm gì)", async () => {
     const r = await chay();
-    expect(r).toMatchObject({ ok: true, ketCuc: "xong", tepDoi: [], dong: { them: 0, xoa: 0 } });
+    expect(r).toMatchObject({ ok: false, ketCuc: "khong-lam", tepDoi: [], dong: { them: 0, xoa: 0 } });
+  });
+  it("★ lượt LỖI (driver báo loi) mà không đổi tệp ⇒ loi-driver, không phải khong-lam/xong; lyDoDung đi vào JSON", async () => {
+    const loi: Driver = async () => ({ vong: null, token: null, ghiChu: [], hetGio: false, loi: "TOOL_CALL_KHONG_HO_TRO: model null", lyDoDung: "loi-model" });
+    expect(await chay({ driver: loi })).toMatchObject({ ok: false, ketCuc: "loi-driver", loi: expect.stringContaining("TOOL_CALL_KHONG_HO_TRO"), lyDoDung: "loi-model" });
   });
 
   it("driver hết giờ ⇒ het-gio; driver lỗi ⇒ loi-driver; vi phạm thắng", async () => {

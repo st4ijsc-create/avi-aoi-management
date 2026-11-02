@@ -125,6 +125,8 @@ export interface PhuThuocHost {
   duyet(actionId: string): Promise<{ ok: boolean; daGhi: boolean; status: string | null }>;
   bac(actionId: string, lyDo: string): Promise<void>;
   duAnId(wt: string): string;
+  /** (tuỳ chọn) trạng thái lượt đọc từ kho sau khi dừng */
+  trangThaiLuot?(runId: string): Promise<{ trangThai: string | null; lyDoDung: string | null } | null>;
   chinhSachDuyet: ChinhSachDuyet;
   /** đo thời gian chờ người (ms) — tiêm được để test */
   bay(): number;
@@ -148,6 +150,9 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     let coCache = false;
     let soLuotModel = 0;
     let ketThuc: { loai: "xong" } | { loai: "loi"; thongDiep: string } | null = null;
+    /** lỗi của lượt (STICKY: sự kiện `xong` đến SAU `loi` không được xoá nó — bug lượt TC-01 đầu tiên báo "xong" cho lượt lỗi model) và lý do dừng */
+    let loiLuot: string | null = null;
+    let lyDoDung: string | null = null;
     let hetGioDuyet = false;
     let chuoi: Promise<void> = Promise.resolve();
     /** thời điểm bắt đầu chờ người (đang chờ dở) — để hạn model KHÔNG tính cả lúc đang chờ */
@@ -209,9 +214,11 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       } else if (e.loai === "goi-tool" && typeof e.luot === "number") {
         vong = Math.max(vong, e.luot);
       } else if (e.loai === "xong") {
-        ketThuc = { loai: "xong" };
+        lyDoDung = typeof e.lyDo === "string" ? e.lyDo : "khong-ro";
+        if (ketThuc === null) ketThuc = { loai: "xong" };
       } else if (e.loai === "loi") {
-        ketThuc = { loai: "loi", thongDiep: `${String(e.ma)}: ${String(e.thongDiep)}` };
+        loiLuot ??= `${String(e.ma)}: ${String(e.thongDiep)}`;
+        ketThuc = { loai: "loi", thongDiep: loiLuot };
       }
     });
     if (!dung) return { vong: null, token: null, ghiChu, hetGio: false, loi: "không nghe được lượt vừa tạo" };
@@ -239,8 +246,15 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       hetGio,
       duyet: { soLanCho: th.soLanCho, soChapNhan: th.soChapNhan, soTuChoi: th.soTuChoi, giayChoDuyet: Math.round(th.msCho / 100) / 10 },
     };
-    const kc = ketThuc as { loai: "xong" } | { loai: "loi"; thongDiep: string } | null;
-    if (kc && kc.loai === "loi") kq.loi = kc.thongDiep;
+    if (loiLuot) kq.loi = loiLuot;
+    else if (lyDoDung === "het-gio") kq.hetGio = true;
+    else if (lyDoDung !== null && lyDoDung !== "hoan-thanh") kq.loi = `lượt dừng không hoàn thành: lyDo=${lyDoDung}`;
+    // nguồn thứ hai: hàng ai_agent_runs (trangThai) — lượt "loi" mà sự kiện không kịp tới vẫn không được tính là xong
+    if (!kq.loi && !kq.hetGio && dep.trangThaiLuot) {
+      const t = await dep.trangThaiLuot(tao.runId).catch(() => null);
+      if (t && t.trangThai === "loi") kq.loi = `hàng lượt trangThai=loi lyDoDung=${t.lyDoDung ?? "?"}`;
+    }
+    if (lyDoDung !== null) kq.lyDoDung = lyDoDung;
     return kq;
   };
 
@@ -259,7 +273,8 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
     async kiemMoiTruong(v) {
       const url = process.env.DATABASE_URL;
       if (!url) return "thiếu DATABASE_URL (phải trỏ aoi_management_test)";
-      if (!process.env.LLAMA_SERVER_URL) return "thiếu LLAMA_SERVER_URL";
+      const thieuMt = thieuKhoaModel(process.env);
+      if (thieuMt.length > 0) return `thiếu khoá cấu hình model: ${thieuMt.join(", ")} (xem --env-tu / napEnv.ts)`;
       const roots = process.env.AI_REPO_SANDBOX_ROOTS ?? "";
       const ten = path.basename(path.resolve(v.wt));
       const co = roots.split(";").some((m) => {
@@ -295,7 +310,22 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
       await tt.thuTucBac(c.nguoi, { actionId, lyDo });
     },
     duAnId: (wt) => path.basename(path.resolve(wt)),
+    async trangThaiLuot(runId) {
+      const ct = await ql.chiTiet(runId, c.nguoi.id);
+      return ct ? { trangThai: String((ct as unknown as { trangThai?: unknown }).trangThai ?? ""), lyDoDung: ((ct as unknown as { lyDoDung?: string | null }).lyDoDung ?? null) } : null;
+    },
     chinhSachDuyet: c.chinhSachDuyet ?? duyetQuaTep,
     bay: () => Date.now(),
   };
+}
+
+/** Khoá model/serving mà host agent BẮT BUỘC có (thiếu ⇒ model null ⇒ "tool call không hỗ trợ"). Thuần. */
+export function thieuKhoaModel(env: Record<string, string | undefined>): string[] {
+  const ra: string[] = [];
+  const bat = (env.LLAMA_SERVER_ENABLED ?? "").trim().toLowerCase();
+  if (bat !== "true" && bat !== "1") ra.push("LLAMA_SERVER_ENABLED=true");
+  if (!(env.LLAMA_SERVER_URL ?? "").trim()) ra.push("LLAMA_SERVER_URL");
+  if (!(env.LLAMA_SERVER_MODEL ?? "").trim()) ra.push("LLAMA_SERVER_MODEL");
+  if (!(env.GGUF_CODE_MODEL ?? "").trim() && !(env.GGUF_DEFAULT_MODEL ?? "").trim()) ra.push("GGUF_CODE_MODEL|GGUF_DEFAULT_MODEL");
+  return ra;
 }
