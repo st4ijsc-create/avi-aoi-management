@@ -167,11 +167,12 @@ const RAW_SQL = /\b(?:FROM|JOIN|UPDATE|INTO)\s+(?:public\.)?"?([a-z][a-z0-9_]*)"
 const LOI_GOI_BANG = new Set(["from", "insert", "update", "delete", "innerJoin", "leftJoin", "rightJoin", "fullJoin"]);
 
 /** Bảng mà các gốc chạm tới (đọc / ghi), đi theo lời gọi hàm trong chỉ mục (theo tên; trùng tên ⇒ đi tất cả). */
-export function bangCuaBoPhanGiai(nguon: Map<string, string>, goc = GOC_PHAN_GIAI): { bang: Map<string, string[]>; daDi: string[] } {
+export function bangCuaBoPhanGiai(nguon: Map<string, string>, goc = GOC_PHAN_GIAI): { bang: Map<string, string[]>; daDi: string[]; thuocTinh: Set<string> } {
   const schema = bangSchema();
   const cm = lapChiMuc(nguon);
   const bang = new Map<string, string[]>();
   const daDi = new Set<string>();
+  const thuocTinh = new Set<string>(); // m4 — mọi tên thuộc tính ĐỌC trong các hàm đã đi (bảo thủ: không phân biệt đối tượng)
   const ghi = (t: string, o: string) => {
     const ds = bang.get(t) ?? [];
     if (!ds.includes(o)) ds.push(o);
@@ -197,7 +198,9 @@ export function bangCuaBoPhanGiai(nguon: Map<string, string>, goc = GOC_PHAN_GIA
         }
         if (ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n) || ts.isStringLiteral(n)) {
           for (const x of n.text.matchAll(RAW_SQL)) if ([...schema.values()].includes(x[1])) ghi(x[1], khoa);
+          for (const x of n.text.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"/g)) thuocTinh.add(x[1]); // cột trích dẫn trong SQL thô
         }
+        if (ts.isPropertyAccessExpression(n)) thuocTinh.add(n.name.text);
         ts.forEachChild(n, di);
       };
       di(m.node);
@@ -205,8 +208,81 @@ export function bangCuaBoPhanGiai(nguon: Map<string, string>, goc = GOC_PHAN_GIA
     }
   };
   for (const g of goc) tham(g.ten, g.file);
-  return { bang, daDi: [...daDi].sort() };
+  return { bang, daDi: [...daDi].sort(), thuocTinh };
 }
+
+/** m4 — bảng → (tên thuộc tính TS → tên cột DB), AST trên drizzle/schema (`export const x = pgTable("ten", { prop: kieu("cot"), … })`). */
+export function cotSchema(): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
+  const dir = resolve(GOC, "drizzle/schema");
+  for (const ten of readdirSync(dir)) {
+    if (!/\.ts$/.test(ten)) continue;
+    const sf = parse(ten, readFileSync(resolve(dir, ten), "utf8"));
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "pgTable" && n.arguments[0] && ts.isStringLiteral(n.arguments[0]) && n.arguments[1] && ts.isObjectLiteralExpression(n.arguments[1])) {
+        const cot = new Map<string, string>();
+        for (const pr of n.arguments[1].properties) {
+          if (!ts.isPropertyAssignment(pr)) continue;
+          let e: ts.Expression = pr.initializer;
+          let dbTen: string | null = null;
+          for (let k = 0; k < 30 && !dbTen; k++) {
+            if (ts.isCallExpression(e)) {
+              if (e.arguments[0] && ts.isStringLiteral(e.arguments[0]) && ts.isIdentifier(e.expression)) dbTen = e.arguments[0].text;
+              else e = e.expression;
+            } else if (ts.isPropertyAccessExpression(e)) e = e.expression;
+            else break;
+          }
+          cot.set(pr.name.getText(sf), dbTen ?? pr.name.getText(sf));
+        }
+        out.set(n.arguments[0].text, cot);
+      }
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+  }
+  return out;
+}
+/** m4 — cột trong danh sách `UPDATE OF` của trigger trên bảng (rỗng = trigger không giới hạn cột, hoặc không có UPDATE). */
+export function cotUpdateOf(sqlText: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const x of sqlText.matchAll(/CREATE\s+TRIGGER\s+trg_socket_pham_vi\w*\s+AFTER\s+UPDATE\s+OF\s+([\s\S]*?)\s+ON\s+(?:public\.)?"?([a-z0-9_]+)"?/gi)) {
+    const ds = out.get(x[2]) ?? new Set<string>();
+    for (const c of x[1].split(",")) ds.add(c.trim().replace(/"/g, ""));
+    out.set(x[2], ds);
+  }
+  return out;
+}
+/** m4 — bảng có trigger UPDATE giới hạn cột: mọi cột mà bộ phân giải ĐỌC phải nằm trong `UPDATE OF` hoặc được miễn kèm LÝ DO (chỉ thu hẹp). */
+const BANG_CO_UPDATE_OF = ["users", "user_sessions", "factories"] as const;
+export const MIEN_COT: Record<string, Record<string, string>> = {
+  users: {
+    id: "khoá chính — không đổi",
+    openId: "khoá danh tính của vé (đổi ⇒ vé cũ không còn khớp người nào: sdk từ chối — chiều ĐÓNG)",
+    name: "hiển thị, không quyết định quyền",
+    email: "hiển thị, không quyết định quyền",
+    loginMethod: "hiển thị",
+    lastSignedIn: "ghi mỗi request — cố ý KHÔNG bắn",
+    passwordChangedAt: "chỉ NỚI cổng buộc đổi mật khẩu (đổi xong mật khẩu); THẮT do passwordInvalidBefore — có trong UPDATE OF",
+    twoFactorEnabled: "cổng 2FA chỉ áp cho adminProcedure HTTP; phòng socket không đọc (kiểm kê §1 H)",
+    createdAt: "không đổi",
+    updatedAt: "dấu thời gian",
+    username: "hiển thị / đăng nhập mới",
+  },
+  user_sessions: {
+    id: "khoá chính",
+    userId: "chủ phiên — không đổi sau khi tạo",
+    sessionToken: "khoá tra vé — không đổi",
+    expiresAt: "HẠN THỜI GIAN (không cần lượt ghi): lượt quét định kỳ 5 phút kiểm (xacThucLai PHIEN_HET_HAN)",
+    lastActivityAt: "ghi mỗi request — cố ý KHÔNG bắn",
+    createdAt: "không đổi",
+  },
+  factories: {
+    id: "khoá chính",
+    name: "hiển thị",
+    isActive: "KHÔNG phải thay đổi phạm vi (kiểm kê §1 E3: resolveTenantFactoryScope không lọc isActive — khớp tRPC)",
+  },
+};
+
 
 function nguonChiMuc(): Map<string, string> {
   return new Map(TEP_CHI_MUC().map((f) => [f, doc(f)]));
@@ -249,6 +325,50 @@ describe("★★★ F5 đầy đủ — census phòng điều khiển / phòng a
       expect(ly.length, t).toBeGreaterThan(20);
       expect(bang.has(t), `miễn mồ côi ${t}`).toBe(true);
     }
+  });
+});
+
+describe("★★★ fix round 1 (m4) — CỘT mà bộ phân giải đọc trên users / user_sessions / factories ⊆ UPDATE OF của trigger (hoặc miễn có lý do)", () => {
+  function cotDoc(thuocTinh: Set<string>) {
+    const cs = cotSchema();
+    const out = new Map<string, string[]>();
+    for (const t of BANG_CO_UPDATE_OF) {
+      const cot = cs.get(t)!;
+      out.set(t, [...cot.entries()].filter(([ts]) => thuocTinh.has(ts) || thuocTinh.has(cot.get(ts)!)).map(([, db]) => db).sort());
+    }
+    return out;
+  }
+  function thieu(doc: Map<string, string[]>, uo: Map<string, Set<string>>) {
+    const out: string[] = [];
+    for (const [t, ds] of doc) for (const c of ds) if (!uo.get(t)?.has(c) && !MIEN_COT[t]?.[c]) out.push(`${t}.${c}`);
+    return out;
+  }
+  it("(m4) mọi cột đọc được nằm trong UPDATE OF hoặc MIEN_COT (có lý do, không mồ côi); thiết bị đo thấy các cột đã biết", () => {
+    const uo = cotUpdateOf(doc("drizzle/0435_socket_pham_vi.sql"));
+    expect([...uo.get("users")!].sort()).toEqual(["isActive", "passwordInvalidBefore", "role"]);
+    expect([...uo.get("user_sessions")!]).toEqual(["isActive"]);
+    expect([...uo.get("factories")!].sort()).toEqual(["code", "corporateCode"]);
+    const d = cotDoc(bangCuaBoPhanGiai(nguonChiMuc()).thuocTinh);
+    for (const c of ["role", "isActive", "openId"]) expect(d.get("users"), `users.${c}`).toContain(c);
+    for (const c of ["isActive", "expiresAt", "sessionToken"]) expect(d.get("user_sessions"), `user_sessions.${c}`).toContain(c);
+    for (const c of ["code", "corporateCode", "id"]) expect(d.get("factories"), `factories.${c}`).toContain(c);
+    expect(thieu(d, uo), "cột phạm vi đọc mà KHÔNG trong UPDATE OF (đổi ở cột ấy không ngắt socket nào)").toEqual([]);
+    for (const [t, m] of Object.entries(MIEN_COT)) {
+      for (const [c, ly] of Object.entries(m)) {
+        expect(ly.length, `${t}.${c}`).toBeGreaterThan(5);
+        expect(uo.get(t)?.has(c), `${t}.${c} vừa miễn vừa có trong UPDATE OF`).not.toBe(true);
+      }
+    }
+  });
+  it("(m4) ĐỘT BIẾN: bộ phân giải đọc một cột MỚI (users.lockedUntil) ⇒ ĐỎ; bỏ một cột khỏi UPDATE OF ⇒ ĐỎ", () => {
+    const nguon = nguonChiMuc();
+    const ac = nguon.get("server/_core/accessControl.ts")!;
+    const moc = "const resolvedModule = resolvePermissionModule(moduleName);";
+    nguon.set("server/_core/accessControl.ts", ac.replace(moc, `${moc}\n  const khoa = (perm as any)?.lockedUntil;`));
+    const uo = cotUpdateOf(doc("drizzle/0435_socket_pham_vi.sql"));
+    expect(thieu(cotDoc(bangCuaBoPhanGiai(nguon).thuocTinh), uo)).toContain("users.lockedUntil");
+    const uo2 = cotUpdateOf(doc("drizzle/0435_socket_pham_vi.sql").replace('AFTER UPDATE OF role, "isActive", "passwordInvalidBefore"', 'AFTER UPDATE OF role, "isActive"'));
+    expect(thieu(cotDoc(bangCuaBoPhanGiai(nguonChiMuc()).thuocTinh), uo2)).toContain("users.passwordInvalidBefore");
   });
 });
 
