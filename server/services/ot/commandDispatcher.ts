@@ -22,6 +22,9 @@
  *                     writes the ledger intent). No actionId on the real path ⇒
  *                     PRECONDITION_FAILED. `requireBoundAction` (Sparkplug DCMD/NCMD)
  *                     applies the binding check on EVERY path, simulated included.
+ *                     R1b-2b-2a A2(h): that binding is now the DEFAULT for EVERY HITL command
+ *                     at gate (1), on every path; no actionId ⇒ PRECONDITION_FAILED, except a
+ *                     PINNED stop (phanLoaiStopGhimRangBuoc — the reservation's predicate too).
  *       'interlock' → a DETERMINISTIC, human-approved interlock rule auto-firing
  *                     (F5b). dispatch re-verifies (verifyInterlockAuthorization):
  *                     rule enabled + approvedBy set & matching + requiresHumanConfirm
@@ -305,6 +308,8 @@ export interface HitlTrigger {
   /** User who originally requested (proposed) the action. */
   requestedBy: number;
   /**
+   * R1b-2b-2a A2(h) — REDUNDANT for any command but a pinned STOP: gate (1) now binds every HITL command on every path.
+   * Still accepted; with it a pinned STOP without an actionId is refused too.
    * doc 81 Đợt 1B Task 6 — apply the strict binding check on EVERY path (simulated too),
    * not only on the real write. Set by the Sparkplug NCMD/DCMD receiver: an anonymous
    * MQTT command without a valid bound actionId is rejected + ledgered, regardless of
@@ -1095,7 +1100,7 @@ export function appErrorCongKenh(kq: KetQuaCongKenhSom, tags: ReadonlyArray<Pick
 }
 
 /**
- * Gate 1 (requireBoundAction) verifies the binding BEFORE step 3 reads the tags. To accept the same coerced form step 3b
+ * Gate 1 (every HITL actionId since A2(h)) verifies the binding BEFORE step 3 reads the tags. To accept the same coerced form step 3b
  * will produce, this reads the written tags' declarations and returns the type-coerced writes — or null when nothing
  * would change, or the read fails (⇒ the raw verdict stands: fail-closed). Read-only.
  */
@@ -1153,6 +1158,39 @@ function lienKetTuChoiTruocBuoc2(input: DispatchInput): LedgerLink {
   return { nullKey: true, ...(laKhoaRong(input.idempotencyKey) ? {} : { ackExtra: { khoaGoc: input.idempotencyKey } }) };
 }
 
+/**
+ * R1b-2b-2a A2(h) — THE pinned-STOP predicate of the HITL binding exemption (L-7: the engine-self-approval refusal
+ * `foeSelfApprovalRefusal` inside `verifyActionBinding` never blocks a PINNED stop). ONE function, TWO call sites in `dispatchCore`:
+ *   • gate (1) — `laStopGhimTaiCong1` (pins read with `loadStopPins`);
+ *   • step 5a-stop — pins from the step-3 rows; its verdict, narrowed by the stricter layers there (canonicalisePinnedStop, running
+ *     connection), is `opts.pinnedStop` of the write-ahead reservation (`reserveRealWrite` → `verifyActionBinding`).
+ * Pinned ⇔ stop-typed AND every write is a pinned (tagKey, value) pair of the adapter (`classifyOtStop`); `pins === null` (the pin read
+ * failed) ⇒ NOT pinned. "STOP" is defined for this purpose HERE ONLY (A2(h) H6 scans the gate for a second definition):
+ * `laStopChoKhoa` / `phanLoaiStopKhoa` are the KEY-purpose classification (content stops included) — not this predicate.
+ */
+export function phanLoaiStopGhimRangBuoc(commandType: string, writes: DispatchWrite[], pins: StopPin[] | null): OtStopClassification {
+  return classifyOtStop(commandType, writes, pins);
+}
+
+/**
+ * R1b-2b-2a A2(h) — gate (1)'s answer of `phanLoaiStopGhimRangBuoc`, before step 3 has read the tags: the adapter's pins
+ * (`loadStopPins`, the same rule as the step-3 pins; a read error ⇒ `null` ⇒ not pinned) against the writes step 3b will send — the
+ * type-coerced form when it differs (`writesEpKieuChoRangBuoc`, the form 5a-stop classifies), else the caller's. Read-only. A command
+ * that is not stop-typed is answered without a read (`classifyOtStop` decides that on the type alone).
+ */
+async function laStopGhimTaiCong1(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<boolean> {
+  if (!phanLoaiStopGhimRangBuoc(input.commandType, input.writes, []).isStop) return false;
+  let pins: StopPin[] | null;
+  try {
+    pins = await loadStopPins(db, input.adapterId);
+  } catch (err) {
+    console.warn(`[Dispatch] gate (1): pinned-stop read failed for adapter ${input.adapterId} — not treated as a pinned stop:`, (err as Error)?.message || err);
+    pins = null;
+  }
+  const writes = (await writesEpKieuChoRangBuoc(db, input)) ?? input.writes;
+  return phanLoaiStopGhimRangBuoc(input.commandType, writes, pins).pinnedStop;
+}
+
 async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // doc 81 Đợt 11 K-fix (R-11-d) — FIRST, before any await: the adapter's STOP epoch as this command's gates begin. Read-only;
   // K-fix 2 (R-11-i b): nothing here moves it — only a TRUE stop does, when it is SENT (device stage).
@@ -1166,49 +1204,49 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // R1b-2b-2a A2(g) — every refusal row written here (before step 2) goes through `lienKetTuChoiTruocBuoc2`: NULL ledger key + `ackValue.khoaGoc`.
   if (input.triggeredBy.kind === "hitl") {
     const t = input.triggeredBy;
-    if (t.requireBoundAction) {
-      // doc 81 Đợt 1B Task 6 — Sparkplug NCMD/DCMD: strict binding on EVERY path (the
-      // anonymous-MQTT S1 path is closed here in code, whatever the flags say). Read-only
-      // here; the real-write path re-verifies under FOR UPDATE and consumes the row.
-      if (!t.actionId) {
+    // R1b-2b-2a A2(h) (AN TOÀN) — the binding is the DEFAULT for every HITL command, on EVERY path (simulated / dry-run, not commissioned,
+    // the edge STOP routing, every refusal before the reservation — not only the real write): an `actionId` is verified by
+    // `verifyActionBinding` (confirmed, unexpired, owned by `confirmedBy`, same tool, payload hash of THIS command — raw or the coerced form
+    // step 3b sends). Before A2(h) only `requireBoundAction` (doc 81 Đợt 1B Task 6, Sparkplug / HMI) did; any other actionId got the legacy
+    // check (confirmed|executed + owner — not bound to this command) and NO actionId got nothing. `requireBoundAction` stays accepted
+    // (redundant now, except that it refuses a missing actionId even for a pinned STOP). Read-only here; the real-write path re-verifies
+    // under FOR UPDATE and consumes the row.
+    // PINNED STOP (L-7 — a pinned STOP is never refused for want of a separate approval): `laStopGhimTaiCong1` → `phanLoaiStopGhimRangBuoc`,
+    // the SAME predicate whose 5a-stop verdict is the reservation's `opts.pinnedStop`. Pinned ⇒ exempt from the engine-self-approval
+    // refusal (as in the reservation), and with NO actionId it is not refused here (unchanged; the reservation still demands a bound
+    // actionId before any real write, the edge routing sends only the adapter's pins). Any other command without an actionId ⇒
+    // PRECONDITION_FAILED (fail-closed).
+    // The pins are read ONLY where the answer can change the verdict (doc 81 Đợt 1D M1 — no separate pin read on any other STOP; L-7
+    // latency): no actionId (refuse or not), or an orchestration-engine row (the pinned flag only lifts `foeSelfApprovalRefusal`, which
+    // answers null for every other tool — pinned by A2(h) H6). Any other row: `false` is the same verdict as the predicate's answer.
+    const stopGhim = () => laStopGhimTaiCong1(db, input);
+    if (!t.actionId) {
+      if (t.requireBoundAction || !(await stopGhim())) {
         const ids = await writeRejected(db, input, "PRECONDITION_FAILED", "command requires a bound, confirmed HITL actionId (none supplied)", undefined, undefined, lienKetTuChoiTruocBuoc2(input));
         return { ok: false, simulated: false, status: "rejected", reason: "PRECONDITION_FAILED", results: failedResults(input, "PRECONDITION_FAILED"), commandLogIds: ids };
       }
+    } else {
       const [pending] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, t.actionId)).limit(1);
-      let bound = verifyActionBinding(pending, input, t);
+      // AMENDMENT 2 — `daTieuChoBuoc2`: a spent ('executed') row bound to THIS command goes on to step (2), which answers for the attempt that
+      // spent it (replay / DUPLICATE_IN_FLIGHT / IDEMPOTENCY_KEY_REUSED / MOT_PHAN) — refusing it here made a resumed FOE step (same key, same
+      // row) look "not flown" and re-send under a new attempt key (double write). It can never be written: the reservation consumes only
+      // 'confirmed' rows. A `requireBoundAction` caller (HMI write / HMI STOP / Sparkplug — doc 81 Đợt 1B Task 6) keeps its strict rule
+      // unchanged: a spent row is refused on every path (an anonymous MQTT command never replays a spent row, simulated included).
+      const daTieu = t.requireBoundAction !== true;
+      const ghim = pending?.tool === FOE_ENGINE_TOOL ? await stopGhim() : false;
+      let bound = verifyActionBinding(pending, input, t, { pinnedStop: ghim, daTieuChoBuoc2: daTieu });
       if (!bound.ok && bound.reason === "ACTION_BINDING_MISMATCH") {
         // SCADA R1a Task 3 — the binding may have been hashed on the COERCED value step 3b will send (declared tags only;
         // see the hash decision at step 3b). Same verifier, raw form first; neither form matches ⇒ the raw verdict stands.
         const epKieu = await writesEpKieuChoRangBuoc(db, input);
         if (epKieu) {
-          const lai = verifyActionBinding(pending, { ...input, writes: epKieu }, t);
+          const lai = verifyActionBinding(pending, { ...input, writes: epKieu }, t, { pinnedStop: ghim, daTieuChoBuoc2: daTieu });
           if (lai.ok) bound = lai;
         }
       }
       if (!bound.ok) {
         const ids = await writeRejected(db, input, bound.reason, bound.detail, undefined, undefined, lienKetTuChoiTruocBuoc2(input));
         return { ok: false, simulated: false, status: "rejected", reason: bound.reason, results: failedResults(input, bound.reason), commandLogIds: ids };
-      }
-    } else if (input.triggeredBy.actionId) {
-      // F4: defense-in-depth — the pending action must be confirmed/executed AND
-      // owned by the confirming user. (Legacy check — kept byte-identical for the
-      // simulated path; the real-write path adds the strict binding + consume.)
-      const actionId = input.triggeredBy.actionId;
-      const confirmedBy = input.triggeredBy.confirmedBy;
-      const [pending] = await db
-        .select()
-        .from(aiPendingActions)
-        .where(eq(aiPendingActions.id, actionId))
-        .limit(1);
-
-      const confirmedOk =
-        !!pending &&
-        (pending.status === "confirmed" || pending.status === "executed") &&
-        pending.userId === confirmedBy;
-
-      if (!confirmedOk) {
-        const ids = await writeRejected(db, input, "NOT_CONFIRMED", "HITL action not confirmed or owner mismatch", undefined, undefined, lienKetTuChoiTruocBuoc2(input));
-        return { ok: false, simulated: false, status: "rejected", reason: "NOT_CONFIRMED", results: failedResults(input, "NOT_CONFIRMED"), commandLogIds: ids };
       }
     }
   } else {
@@ -1311,7 +1349,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         stored `__otPayloadHash` matches EITHER the coerced writes (an HMI request hashes the coerced value: "245" ⇒ 245) OR
   //         the caller's raw writes (proposeAction hashes the AI tool's raw params, e.g. "1" for a bool — such an action stays
   //         valid). Both forms describe the SAME value on the wire (the coerced one), so accepting either authorises nothing a
-  //         human did not confirm. Gate 1 (requireBoundAction) applies the same two forms (writesEpKieuChoRangBuoc).
+  //         human did not confirm. Gate 1 (every HITL actionId, A2(h)) applies the same two forms (writesEpKieuChoRangBuoc).
   const rawCallerWrites = input.writes;
   /**
    * The ONE refusal path of the early gate block (3b channel gate, 3c mode gate). fix round 1 (I-1) — a STOP-typed command to an
@@ -1423,7 +1461,8 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   let stopCls: OtStopClassification = { isStop: false, pinnedStop: false };
   if (input.triggeredBy.kind === "hitl" && isStopCommandType(input.commandType)) {
     // final wave 3 (M1) — the pins come from the step-3 tag rows (one snapshot with the write), not a separate read.
-    stopCls = classifyOtStop(input.commandType, input.writes, stopPinsFromTagRows(step3TagRows));
+    // R1b-2b-2a A2(h) — the SAME predicate as gate (1) (`phanLoaiStopGhimRangBuoc`): this verdict becomes `opts.pinnedStop` below.
+    stopCls = phanLoaiStopGhimRangBuoc(input.commandType, input.writes, stopPinsFromTagRows(step3TagRows));
     if (!stopCls.pinnedStop && stopCls.isStop && stopCls.stopPinReason === "no_pins") {
       // LABEL ONLY (never an exemption): none of the WRITTEN tags is pinned — say `unpinned_tag` when the adapter has
       // other pinned tags (the pre-M1 wording), `pin_load_failed` when that cannot be read.
@@ -2654,17 +2693,25 @@ function verifyActionBinding(
      * ones). The stored hash may match either; every other field (tool/adapter/machine/commandType) comes from `input`.
      */
     altWrites?: ReadonlyArray<DispatchWrite>;
+    /**
+     * R1b-2b-2a A2(h) AMENDMENT 2 — GATE (1) ONLY, never the reservation: an 'executed' (spent) row is accepted — status and expiry not
+     * checked for it — when EVERYTHING else holds (owner, tool, engine self-approval, payload hash). Such a command only goes on to the
+     * idempotency step (2) (replay / DUPLICATE_IN_FLIGHT / IDEMPOTENCY_KEY_REUSED / MOT_PHAN of the attempt that spent the row); it can never
+     * be written: the reservation verifies WITHOUT this flag and consumes only a 'confirmed' row. Any other status ⇒ refused as before.
+     */
+    daTieuChoBuoc2?: boolean;
   } = {},
 ): BindingVerdict {
   if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
-  if (pending.status !== "confirmed") {
+  const daTieuQua = opts.daTieuChoBuoc2 === true && pending.status === "executed";
+  if (pending.status !== "confirmed" && !daTieuQua) {
     return {
       ok: false,
       reason: "NOT_CONFIRMED",
       detail: `HITL action status is '${pending.status}' — only a 'confirmed' action authorises a write, exactly once`,
     };
   }
-  if (pending.expiresAt.getTime() <= Date.now()) {
+  if (!daTieuQua && pending.expiresAt.getTime() <= Date.now()) {
     return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action expired" };
   }
   if (t.confirmedBy !== undefined && pending.userId !== t.confirmedBy) {
