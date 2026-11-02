@@ -87,6 +87,21 @@ text{font-family:"Segoe UI",system-ui,sans-serif}
 .explain h3{margin:16px 0 6px;font-size:14px}
 .explain ul{margin:4px 0 4px 18px;padding:0}
 .explain li{margin:3px 0}
+.p2{max-width:none;padding:6px 18px 10px}
+.p2 h2{font-size:15px;margin:10px 0}
+.grid3{display:grid;grid-template-columns:minmax(420px,1fr) minmax(420px,1fr);gap:14px}
+@media(max-width:1000px){.grid3{grid-template-columns:1fr}}
+.axt{width:100%;border-collapse:collapse;font-size:12.5px;background:#f7f8f9}
+.axt th,.axt td{border-top:1px solid #c4c8cc;padding:4px 8px;text-align:left;font-variant-numeric:tabular-nums}
+.axt th{background:#e8eaec;font-weight:600}
+.axt tr.cu td{color:var(--stale);background:#f1eaf9}.axt tr.cu td.v{text-decoration:line-through}
+.foot{padding:6px 12px;font-size:11.5px;color:#39424a;background:#e8eaec;border-top:1px solid #a2a8ae}
+.fam{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:10px}
+.fc{background:#f7f8f9;border:1px solid #9aa1a8;border-radius:4px;padding:8px;font-size:12px;display:flex;flex-direction:column;gap:3px}
+.fc svg{width:60px;height:44px}.fc span{color:var(--mute)}
+.fc i.new{color:#b45309;font-style:normal;font-weight:600}
+.params{padding:10px 12px;font-size:12.5px;background:#eceef0;border-top:1px solid #a2a8ae}
+.params div{margin-top:4px}.roles code{background:#dfe2e5;padding:0 4px}
 @media (prefers-reduced-motion: reduce){ .pill.live::before{animation:none} }
 </style>
 </head>
@@ -213,6 +228,90 @@ text{font-family:"Segoe UI",system-ui,sans-serif}
 </aside>
 </main>
 
+<div class="p2">
+  <h2>PHA 2 — Mô hình động học &amp; thư viện khuôn (mockup §7B / §7C)</h2>
+  <div class="grid3">
+    <div class="screen" id="mirror">
+      <div class="hdr"><div><b>Máy 3 trục XYZ</b> · chế độ <b>GƯƠNG</b></div><div class="link"><span class="pill live" id="mPill">gương · 25 Hz</span></div></div>
+      <div class="banner stale" id="mStale"></div>
+      <svg viewBox="0 0 440 250" aria-label="Giàn XYZ ở chế độ gương">
+        <rect x="20" y="210" width="400" height="14" fill="#e9ebed" stroke="#6b747c" stroke-width="2"/>
+        <text class="tag" x="24" y="240">Ray X (0–380 mm)</text>
+        <g id="gX"><rect x="-8" y="60" width="16" height="160" fill="#c9cdd1" stroke="#6b747c" stroke-width="2"/><rect x="-8" y="60" width="16" height="16" fill="#5b6670"/>
+          <rect x="-62" y="62" width="124" height="12" fill="#dfe2e5" stroke="#6b747c" stroke-width="2"/>
+          <g id="gY"><rect x="-14" y="56" width="28" height="24" fill="#aeb5bb" stroke="#6b747c" stroke-width="2"/>
+            <g id="gZ"><rect x="-4" y="80" width="8" height="48" fill="#5b6670" stroke="#3b434a"/><polygon points="-7,128 7,128 0,140" fill="#3b434a"/></g></g></g>
+        <rect x="150" y="196" width="120" height="14" fill="#e9ebed" stroke="#8a929a" stroke-dasharray="3 3"/>
+        <text class="tag" x="156" y="192">phôi</text>
+      </svg>
+      <table class="axt" id="axT"><thead><tr><th>Trục</th><th>Vị trí thực</th><th>Tuổi mẫu</th><th>Chất lượng</th></tr></thead><tbody></tbody></table>
+      <div class="legend"><span class="st">Cũ ⇒ trục đứng + số gạch tím</span><span>Hình = minh hoạ; <b>số là sự thật</b></span></div>
+      <div class="foot">Twin KHÔNG phải hệ an toàn. An toàn thuộc PLC / safety PLC. Tần số mẫu thực <span id="mHz">25</span> Hz.</div>
+    </div>
+
+    <div class="screen">
+      <div class="hdr"><div><b>Thư viện khuôn thiết bị</b></div><div class="link"><span class="pill">3 lớp: họ · khuôn · cổng</span></div></div>
+      <div class="fam">
+        <div class="fc"><svg viewBox="0 0 60 44"><path d="M8 38 L24 20 L38 28 L52 8" fill="none" stroke="#3b434a" stroke-width="4" stroke-linecap="round"/><circle cx="8" cy="38" r="5" fill="#5b6670"/><circle cx="24" cy="20" r="4" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/><circle cx="38" cy="28" r="4" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/></svg><b>Nối tiếp</b><span>6 trục · SCARA · cobot<br>URDF/DH — <i>có sẵn bộ giải</i></span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><polygon points="30,6 8,14 52,14" fill="#c9cdd1" stroke="#3b434a" stroke-width="2"/><line x1="12" y1="14" x2="26" y2="34" stroke="#3b434a" stroke-width="3"/><line x1="48" y1="14" x2="34" y2="34" stroke="#3b434a" stroke-width="3"/><line x1="30" y1="12" x2="30" y2="34" stroke="#3b434a" stroke-width="3"/><circle cx="30" cy="36" r="6" fill="#5b6670"/></svg><b>Delta (nhện)</b><span>3 tay song song<br><i class="new">CHƯA có bộ giải</i></span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><rect x="6" y="34" width="48" height="5" fill="#8a929a"/><rect x="10" y="10" width="40" height="5" fill="#8a929a"/><rect x="26" y="10" width="8" height="5" fill="#3b434a"/><line x1="30" y1="15" x2="30" y2="28" stroke="#3b434a" stroke-width="3"/></svg><b>Giàn Cartesian</b><span>2 / 3 trục tịnh tiến<br>chuỗi trục</span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><path d="M4 36 H28 A14 14 0 0 0 42 22 V8" fill="none" stroke="#8a929a" stroke-width="9"/><path d="M4 36 H28 A14 14 0 0 0 42 22 V8" fill="none" stroke="#f4f5f6" stroke-width="2" stroke-dasharray="3 3"/></svg><b>Băng tải theo đường</b><span>thẳng · cung · nghiêng · nhập · rẽ<br><i class="new">sinh tham số</i> · belt/con lăn</span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><ellipse cx="30" cy="30" rx="20" ry="7" fill="#dfe2e5" stroke="#3b434a" stroke-width="2"/><rect x="26" y="10" width="8" height="20" fill="#5b6670"/></svg><b>Họ nhỏ</b><span>bàn xoay · bàn chuyển · thang nâng</span></div>
+      </div>
+      <div class="legend"><span>khuôn = họ + tham số + mô hình 3D + vai trò tag</span></div>
+      <div class="params"><b>Ví dụ khuôn: Băng tải con lăn cong</b>
+        <div>dài vào 1200 mm · bán kính 800 mm · góc 90° · rộng 500 mm · bước con lăn 75 mm · nghiêng 0°</div>
+        <div class="roles">Vai trò tag: <code>toc_do</code> (bắt buộc, thực) · <code>chay</code> · <code>cam_bien[1..2]</code> — tên theo census C-tag</div></div>
+    </div>
+  </div>
+
+  <div class="screen" style="margin-top:14px">
+    <div class="hdr"><div><b>Cảnh ghép:</b> Băng tải → Robot → Máy (đặt + cổng nối)</div><div class="link"><span class="pill">kết nối <b>suy từ hình học</b></span></div></div>
+    <svg viewBox="0 0 1120 300" aria-label="Cảnh ghép có cổng nối">
+      <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#3b434a"/></marker></defs>
+      <!-- băng tải cong -->
+      <path d="M40 220 H230 A70 70 0 0 0 300 150 V120" fill="none" stroke="#c9cdd1" stroke-width="46" stroke-linecap="butt"/>
+      <path d="M40 220 H230 A70 70 0 0 0 300 150 V120" fill="none" stroke="#6b747c" stroke-width="2" stroke-dasharray="1 9"/>
+      <text class="tag" x="44" y="258">CV-301 con lăn cong (R 800)</text>
+      <!-- cảm biến -->
+      <g><path d="M120 196 l8 8 l-8 8 l-8 -8z" fill="#f4f5f6" stroke="#6b747c" stroke-width="2"/><text class="tag" x="96" y="190">PE-1</text></g>
+      <g><path d="M300 170 l8 8 l-8 8 l-8 -8z" fill="#5b6670" stroke="#3b434a" stroke-width="2"/><text class="tag" x="316" y="182">PE-2 (đang báo)</text></g>
+      <!-- vật ước lượng giữa hai cảm biến -->
+      <rect x="196" y="206" width="34" height="28" fill="none" stroke="#5d666e" stroke-width="2" stroke-dasharray="4 3"/>
+      <text class="tag" x="186" y="250" style="fill:#5d666e">vật "ước lượng"</text>
+      <!-- vật thật tại PE-2 -->
+      <rect x="283" y="150" width="34" height="28" fill="#dfe2e5" stroke="#3b434a" stroke-width="2"/>
+      <!-- cổng ra băng tải -->
+      <g><circle cx="300" cy="118" r="9" fill="#fff" stroke="#3b434a" stroke-width="2.5"/><line x1="300" y1="118" x2="300" y2="96" stroke="#3b434a" stroke-width="2.5" marker-end="url(#arr)"/></g>
+      <text class="tag" x="130" y="98">cổng ra · h=820 · ↑</text>
+      <!-- robot -->
+      <g><rect x="360" y="40" width="70" height="20" fill="#5b6670"/><rect x="383" y="60" width="24" height="26" fill="#8a929a" stroke="#3b434a" stroke-width="2"/>
+        <path d="M395 40 L420 8 L470 22" fill="none" stroke="#3b434a" stroke-width="9" stroke-linecap="round"/><circle cx="395" cy="40" r="7" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/><circle cx="420" cy="8" r="6" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/></g>
+      <text class="tag" x="360" y="100">UR-01 robot 6 trục (họ nối tiếp)</text>
+      <g><circle cx="470" cy="22" r="8" fill="#fff" stroke="#3b434a" stroke-width="2.5"/></g>
+      <text class="tag" x="486" y="26">bích dụng cụ</text>
+      <!-- đường gắp -->
+      <path d="M470 30 Q 520 90 560 120" fill="none" stroke="#8a929a" stroke-dasharray="5 4" stroke-width="2"/>
+      <!-- máy -->
+      <rect x="560" y="110" width="200" height="130" rx="6" fill="#e9ebed" stroke="#6b747c" stroke-width="3"/>
+      <text class="tag" x="570" y="130">M-401 Máy gia công</text>
+      <g><circle cx="560" cy="170" r="9" fill="#fff" stroke="#3b434a" stroke-width="2.5"/><line x1="540" y1="170" x2="551" y2="170" stroke="#3b434a" stroke-width="2.5" marker-end="url(#arr)"/></g>
+      <text class="tag" x="430" y="212">cổng nạp · h=860 · →</text>
+      <!-- cảnh báo lệch -->
+      <g><rect x="780" y="120" width="320" height="86" rx="4" fill="#fbeede" stroke="var(--a-high)" stroke-width="2"/>
+        <text x="782" y="142" font-size="12" font-weight="700" fill="#262b30">Cổng ra CV-301 → cổng nạp M-401</text>
+        <text x="782" y="162" font-size="12" fill="#262b30">Lệch cao độ 40 mm (820 ↔ 860).</text>
+        <text x="782" y="180" font-size="12" fill="#262b30">Không hít. Nâng chân băng tải 40 mm</text>
+        <text x="782" y="196" font-size="12" fill="#262b30">hoặc đổi cổng (dung sai ±10 mm).</text></g>
+      <g><rect x="640" y="24" width="460" height="64" rx="4" fill="#eceef0" stroke="#8a929a"/>
+        <text x="650" y="50" font-size="12" font-weight="700" fill="#262b30">Kết nối suy ra (placement-as-truth)</text>
+        <text x="650" y="68" font-size="12" fill="#262b30">CV-301.ra → UR-01 (khay gắp): hít OK, cao độ khớp</text>
+        <text x="650" y="84" font-size="12" fill="#262b30">UR-01 → M-401.nạp: <tspan fill="#b45309" font-weight="700">chưa nối (lệch cao độ)</tspan></text></g>
+    </svg>
+    <div class="legend"><span>Cổng: vòng + mũi tên hướng + cao độ</span><span>Nét đứt = "ước lượng" giữa hai cảm biến (chỉ minh hoạ, tắt khi cũ)</span><span class="on">Đặc = cảm biến đang báo (vật thật)</span></div>
+  </div>
+</div>
+
 <div class="explain">
   <h3>Cách đọc mockup</h3>
   <ul>
@@ -238,7 +337,7 @@ text{font-family:"Segoe UI",system-ui,sans-serif}
   const alarmsEl = $("alarms");
 
   function setSt(s){
-    st = s;
+    st = s; window.__st = s;
     document.querySelectorAll(".bar button[data-st]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.st === s)));
     $("screen").classList.toggle("sim", s === "sim");
     $("bSim").style.display = s === "sim" ? "block" : "none";
@@ -362,6 +461,37 @@ text{font-family:"Segoe UI",system-ui,sans-serif}
   for (let i = 45; i >= 1; i--) samples.push({ t: performance.now() - i * 1000, v: 0.82 + (Math.random() - .5) * 0.04 });
   setSt("normal");
   requestAnimationFrame(frame);
+
+  // ── PHA 2: máy 3 trục, chế độ GƯƠNG — mẫu giả lập 25 Hz; hiển thị chỉ làm mượt VỀ phía mẫu đã nhận (không ngoại suy) ──
+  const AX = [
+    { id: "X", min: 0, max: 380, du: "mm" }, { id: "Y", min: 0, max: 200, du: "mm" }, { id: "Z", min: 0, max: 90, du: "mm" } ];
+  const mt = { tgt: [190, 100, 20], sh: [190, 100, 20], at: performance.now() };
+  setInterval(() => {
+    if (window.__st === "stale") return;                       // mất mẫu: không cập nhật, mẫu cuối giữ nguyên
+    const t = performance.now() / 1000;
+    mt.tgt = [190 + 150 * Math.sin(t * 0.7), 100 + 80 * Math.sin(t * 1.1 + 1), 45 + 40 * Math.sin(t * 1.9)];
+    mt.at = performance.now();
+  }, 40);
+  let ml = performance.now();
+  const tb = document.querySelector("#axT tbody");
+  function mframe(now) {
+    const dt = Math.min(80, now - ml); ml = now;
+    const age = now - mt.at, stale = window.__st === "stale" && age > 3000;
+    if (!stale) { const k = 1 - Math.exp(-dt / 30); for (let i = 0; i < 3; i++) mt.sh[i] += (mt.tgt[i] - mt.sh[i]) * k; }
+    document.getElementById("gX").setAttribute("transform", `translate(${60 + mt.sh[0] * 0.8} 0)`);
+    document.getElementById("gY").setAttribute("transform", `translate(${(mt.sh[1] - 100) * 0.4} 0)`);
+    document.getElementById("gZ").setAttribute("transform", `translate(0 ${mt.sh[2] - 20})`);
+    const stroke = stale ? "#6f3fb0" : "#6b747c";
+    document.querySelectorAll("#gX rect, #gY rect, #gZ rect").forEach(r => r.style.stroke = stroke);
+    const sim = window.__st === "sim";
+    const p = document.getElementById("mPill"); p.className = "pill " + (stale ? "stale" : sim ? "sim" : "live");
+    p.textContent = stale ? "DỮ LIỆU CŨ " + (age / 1000).toFixed(1) + " s" : sim ? "MÔ PHỎNG · 25 Hz" : "gương · 25 Hz";
+    const b = document.getElementById("mStale"); b.style.display = stale ? "block" : "none";
+    if (stale) b.textContent = "DỮ LIỆU CŨ " + (age / 1000).toFixed(1) + " s — hình đứng yên ở mẫu cuối, KHÔNG phải vị trí hiện tại.";
+    tb.innerHTML = AX.map((a, i) => `<tr class="${stale ? "cu" : ""}"><td>${a.id}</td><td class="v">${stale ? "~" : ""}${mt.sh[i].toFixed(1)} ${a.du}</td><td>${age < 100 ? "< 0.1" : (age / 1000).toFixed(1)} s</td><td>${stale ? "không tin được" : "tốt"}</td></tr>`).join("");
+    requestAnimationFrame(mframe);
+  }
+  requestAnimationFrame(mframe);
 })();
 </script>
 </body>

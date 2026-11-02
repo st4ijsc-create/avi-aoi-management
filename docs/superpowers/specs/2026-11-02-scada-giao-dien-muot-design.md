@@ -1,7 +1,7 @@
 # SCADA giao diện đẹp, mượt, chỉn chu — đặc tả thiết kế (bản để duyệt)
 
 - **Ngày:** 2026-11-02 · **Tác giả:** phiên `scada-ui` · **Người duyệt:** dieu-phoi → chủ dự án
-- **Trạng thái:** ĐẶC TẢ + MOCKUP. CHƯA có mã sản phẩm. Không chạm `.env` / :3000 / :8091 / GPU; không chạy DB; không đo trên máy chạy.
+- **Trạng thái:** v2 (thêm §7B động học máy + §7C thư viện khuôn, Pha 2). ĐẶC TẢ + MOCKUP. CHƯA có mã sản phẩm. Không chạm `.env` / :3000 / :8091 / GPU; không chạy DB; không đo trên máy chạy.
 - **Mockup xem được:** [mockup.html](2026-11-02-scada-giao-dien-muot-mockup/mockup.html) (mở thẳng bằng trình duyệt; 4 trạng thái bấm đổi được) + ảnh [1 bình thường](2026-11-02-scada-giao-dien-muot-mockup/anh-1-binh-thuong.png) · [2 cảnh báo](2026-11-02-scada-giao-dien-muot-mockup/anh-2-canh-bao.png) · [3 dữ liệu cũ](2026-11-02-scada-giao-dien-muot-mockup/anh-3-du-lieu-cu.png).
 - **Nhãn bằng chứng dùng trong tài liệu:** **[MÃ]** = đã đọc trong mã, có `tệp:dòng` · **[ĐỀ XUẤT]** = thiết kế mới, chưa có · **[CHƯA KIỂM]** = suy luận, cần đo / hỏi chủ sở hữu trước khi dựa vào.
 
@@ -223,6 +223,160 @@ Phụ thuộc: bộ mô phỏng nhà máy hiện có (và tham khảo Open Indus
 
 ---
 
+## 7B. Mô hình động học máy — máy 2/3 trục, máy + băng tải, robot (bổ sung v2, Pha 2)
+
+**Câu hỏi của chủ dự án:** máy 2 trục / 3 trục, máy + băng tải, robot có hiển thị / mô phỏng ĐÚNG chuyển động thật không? **Hiện trạng (dieu-phoi đo, tôi đối chiếu một phần mã): chưa.** Twin chỉ tô màu trạng thái, mô hình đứng yên (animation duy nhất: mũi tên dòng chảy, `DongChayLine.tsx`); khớp robot ở `RobotCockpit` là thanh 2D nhận `robot:telemetry` (`RobotCockpit.tsx:482-502`; server phát `socket.ts:2390` vào phòng `robot:{id}`), tab 3D là glTF đứng yên. FK/IK/va chạm/Rapier có ở SERVER (`server/services/programming/sim/{kinematicModel,ik,collision,rapierPhysics}.ts`; `kinematicModel.ts` có sẵn `rotAxis`, `translateAxis`, `dhTransform`, kiểu khớp `revolute | prismatic | fixed`). Chưa có mô tả trục gắn tag vị trí; chưa có mô phỏng vật trên băng tải theo cảm biến.
+
+### 7B.1 Khuôn máy khai báo bằng DỮ LIỆU **[ĐỀ XUẤT]**
+Một tài liệu có phiên bản `KhuonDongHoc` (Zod, cùng phong cách `pouModel`), KHÔNG hard-code theo từng máy:
+```ts
+type Truc = {
+  id: string;                         // "X", "Y", "Z", "J1"…
+  loai: "tinh_tien" | "quay";         // prismatic | revolute (khớp kiểu `JointType` đã có)
+  cha: string | null;                 // cây cha–con (Z gắn trên Y gắn trên X…)
+  truc: [number, number, number];     // hướng trục trong hệ cha
+  gocToaDo: { vitri: [number,number,number]; xoay: [number,number,number] };  // pivot
+  gioiHan: { min: number; max: number; donVi: "mm" | "deg" | "rad" };
+  boPhan3D: string[];                 // tên node glTF chuyển động theo trục này
+  tag: { feedback: TagRef; setpoint?: TagRef };   // 7B.2
+  heSo?: { tySo: number; lech: number };           // đơn vị thô → kỹ thuật, khai tường minh
+  tanSoToiThieuHz?: number;           // nhịp cần có để gương được coi là mượt (7B.3)
+};
+type KhuonDongHoc = { phienBan: number; loai: "gian_2_truc" | "xyz_3_truc" | "bang_tai" | "robot_6_truc" | "tuy_chinh";
+                      truc: Truc[]; bangTai?: { tocDoTag: TagRef; chieuDai: number; camBien?: { tag: TagRef; viTri: number }[] };
+                      robot?: { dh?: DhRow[]; urdf?: string } };   // dùng lại chuỗi `kinematicModel` phía server
+```
+Khuôn mẫu pha 2: **giàn 2 trục (XY)**, **XYZ 3 trục**, **băng tải** (tốc độ + cảm biến), **robot 6 trục** (DH / URDF). **Không viết FK thứ hai** cho robot: dùng lại `kinematicModel` (cách dùng: 7B.7). Chuỗi động học robot hiện là "sample" ⇒ **pilot phải thay bằng mô hình URDF của đúng robot**; chưa dùng được để hiển thị thật.
+
+### 7B.2 Gắn trục vào tag VỊ TRÍ THỰC, không phải setpoint
+- Chế độ gương CHỈ đọc `tag.feedback` (encoder / vị trí thực). `setpoint` chỉ để vẽ "bóng mục tiêu" mờ (tuỳ chọn), **không bao giờ** điều khiển hình chính. Trục thiếu `feedback` ⇒ không vào chế độ gương ("không có tín hiệu vị trí thực"), KHÔNG rơi về setpoint (cùng nguyên tắc §5.3: thiếu dữ liệu ≠ bình thường).
+- Kiểm hợp lý lúc nạp khuôn: đơn vị, hệ số; giá trị ngoài `[min,max]` ⇒ kẹp hình + cờ "ngoài dải" (không vẽ máy xuyên khung).
+- Tag qua cùng kiểm phạm vi nhà máy; trục `denied` ⇒ đứng + "không có quyền".
+
+### 7B.3 Tốc độ dữ liệu — trục cần 20–50 Hz, không thể 2 s
+| Nguồn | Hiện có | Cần cho gương |
+|---|---|---|
+| Robot | `robot:telemetry` đã đẩy (tần số **[CHƯA ĐO]**); phòng `robot:{id}` — **[CHƯA KIỂM]** đã qua cổng phạm vi chưa (census socket) | Dùng lại; thêm `ts` thiết bị + `seq` nếu chưa có; đo nhịp thật ở pha 0 |
+| Trục máy (PLC/servo) | adapter poll mặc định 5 s (`POLL_MAC_DINH_MS`) | Tầng "nóng" 20–50 Hz **chỉ cho trục đang xem**, qua edge / đăng ký OPC UA / Modbus nhanh; `capMs = 50` (§3.3-B) |
+| Băng tải | tốc độ + cảm biến từ tag thường | cảm biến cạnh: sự kiện có `ts` thiết bị; tốc độ ≤ 10 Hz đủ |
+
+- Chỉ trục đang hiển thị lên tầng nóng: mở khung ⇒ đăng ký, đóng ⇒ huỷ (đếm tham chiếu §3.7). Trục không xem giữ nhịp thường.
+- **Băng thông [CHƯA KIỂM, ước tính]:** ~50 byte/mẫu. 6 trục × 50 Hz ≈ 15 KB/s/người xem; XYZ 3 trục ≈ 7,5 KB/s. Giảm: khung delta dùng **chỉ số tag thay vì chuỗi** (đề xuất cho 1a), **deadband theo trục** (vd. 0,05 mm / 0,05°) để trục đứng không phát; trục đứng vẫn có `tick` (§3.3-A) nên "không đổi" ≠ "mất dữ liệu".
+- Trần số trục "nóng" mỗi người (vd. 12) và mỗi nhà máy; vượt ⇒ mã lỗi tường minh (không cắt im lặng).
+- **Chạm đúng phát hiện (3) §0:** nguồn mặc định 5 s không thể gương. Tầng nóng cần cấu hình nguồn (việc server / edge), không sửa được bằng UI.
+
+### 7B.4 Mô hình 3D và công cụ "rig"
+- CAD nhập phải **giữ cây bộ phận + pivot** (đường `occtWorker`); nếu đang gộp thành một lưới thì pha 2A mở đầu bằng **kiểm kê** (bao nhiêu mô hình giữ được cây node) — **[CHƯA KIỂM]**.
+- Công cụ **rig** trong TwinStudio: chọn node → gán `Truc.boPhan3D`, đặt pivot/trục bằng gizmo, kéo thử trượt trong giới hạn (xem trước cục bộ, KHÔNG ghi tag), lưu `KhuonDongHoc` có phiên bản qua đường duyệt/kiểm phạm vi sẵn có. Cảnh báo khi node gán hai trục hoặc cha–con sai thứ tự.
+- Chuẩn asset §8 (3D-2) áp dụng: chuyển động chỉ đổi ma trận node, **không đổi hình học theo khung** (giữ instancing và `frameloop="demand"`).
+
+### 7B.5 Hai chế độ TÁCH BẠCH
+| | (a) GƯƠNG | (b) MÔ PHỎNG |
+|---|---|---|
+| Nguồn | tag `feedback` thật (đẩy 20–50 Hz) | simulator / PLC ảo; Rapier cho vật và băng tải |
+| Nhãn | pill "GƯƠNG · tuổi N ms" | viền + banner xanh ngọc "MÔ PHỎNG" (§7) |
+| Dữ liệu cũ | trục đứng + **tím gạch**, số "~", tuổi (T3) | không áp dụng (nguồn nội bộ) |
+| Lệnh | không; lệnh đi faceplate như cũ | khoá |
+| Vật trên băng | **không vẽ** ngoài cảm biến thật (T4) | do Rapier sinh, nhãn "ước tính" |
+| Trộn | **cấm** — một khung nhìn một chế độ; đổi chế độ ⇒ đổi nguồn ở tầng dữ liệu (§7-1) | |
+
+- **Gương luôn kèm SỐ CHÍNH XÁC bên cạnh** hình (bảng: trục · vị trí thật · đơn vị · tuổi mẫu · chất lượng). Hình là minh hoạ, số mới là sự thật.
+- Làm mượt (T1) chỉ nội suy VỀ phía mẫu đã nhận, kẹp ≤ 1 chu kỳ mẫu; không ngoại suy đà (T2). Cũ ⇒ đóng băng.
+- Băng tải gương: cuộn theo tốc độ đo; vật chỉ xuất hiện tại cảm biến thật, dịch theo tốc độ đo, biến mất khi mẫu tốc độ cũ.
+
+### 7B.6 Giới hạn độ chính xác và an toàn (phải hiển thị / phát biểu rõ)
+1. Độ chính xác hình bị chặn bởi tần số mẫu + độ trễ (L-A/L-B). Không tuyên bố chính xác hơn mẫu; màn ghi "tần số mẫu thực N Hz, tuổi N ms" (đo thật, không số danh định).
+2. Hình có thể **trễ** so với máy; không bao giờ **đi trước** (T2). Có thể bỏ khung hiển thị, **không bỏ mẫu** trong bảng số.
+3. Va chạm / khoảng cách trong mô phỏng chỉ để **tư vấn**. **An toàn thuộc PLC / safety PLC; twin không bao giờ là hệ an toàn** (chân trang cố định trên mọi khung gương và mô phỏng).
+4. Khuôn sai (hệ số, pivot, đơn vị) ⇒ hình sai mà trông tin cậy: khuôn mới phải qua **hiệu chuẩn** — đặt trục về hai vị trí đã biết, so hình ↔ số đo; hiện "khuôn chưa hiệu chuẩn" tới khi xong.
+5. Khuôn / rig KHÔNG ghi tag, KHÔNG đụng `commandDispatcher` / OT driver / `lenhHmi`.
+
+### 7B.7 Quyết định kiến trúc còn mở (scada-master + twin)
+- **FK ở đâu:** (i) client dùng chung mã thuần TS tách từ `kinematicModel` (không RTT; cần test khớp client ≡ server trên bộ tư thế cố định); (ii) server tính pose rồi đẩy (thêm tải + trễ). **Đề xuất (i)** cho giàn/XYZ/băng tải/robot. **[CHƯA KIỂM — tuỳ khả năng tách mã.]**
+- **Rapier:** mô phỏng (b) chạy server (`rapierPhysics.ts` có sẵn) rồi đẩy pose: một nguồn sự thật, dễ gắn nhãn — đề xuất server.
+
+### 7B.8 Pilot đề xuất
+**(1)** một máy 3 trục XYZ (adapter mô phỏng, 50 Hz) · **(2)** một băng tải có cảm biến PE (adapter mô phỏng) · **(3)** robot UR (URSim có sẵn; thay chuỗi "sample" bằng URDF UR thật). Mỗi cái: gương + một ca mô phỏng. Tiêu chí (đo, không cảm giác): hình↔số đo khớp ở tư thế tĩnh trong độ phân giải mẫu; đột biến "ngoại suy" và "rơi về setpoint" đỏ; cũ ⇒ đóng băng (S-1 = 0); độ trễ thiết bị→hình p95 ≤ 150 ms ở trục nóng (**mục tiêu đề xuất**, chốt sau pha 0); khung p95 theo F-1/F-2.
+
+**Mockup:** khung "Máy 3 trục XYZ — chế độ GƯƠNG" trong `mockup.html` (ảnh `anh-4-pha2-guong-thu-vien-canh.png`): hình trục theo mẫu giả lập 25 Hz, bảng số kèm tuổi; nút trạng thái "cũ" ⇒ đóng băng + tím gạch.
+
+---
+
+## 7C. Thư viện khuôn thiết bị — ghép robot nhện, robot 6 trục các hãng, băng tải (bổ sung v2, Pha 2)
+
+Mục đích: **một thư viện nhỏ các HỌ động học, mỗi họ một bộ giải; thiết bị cụ thể = họ + tham số + mô hình 3D + vai trò tag; ghép vào cảnh bằng CỔNG NỐI.** Thêm hãng / biến thể = thêm dữ liệu, không thêm mã. `KhuonDongHoc` của §7B.1 trở thành *một dạng* của "khuôn" dưới đây (họ giàn / nối tiếp).
+
+### 7C.1 Lớp 1 — HỌ ĐỘNG HỌC (tập nhỏ, mỗi họ một bộ giải)
+
+| Họ | Phủ | Bộ giải (nguồn) | Trạng thái |
+|---|---|---|---|
+| `noi_tiep` | robot 6 trục các hãng, SCARA, cobot | FK từ URDF/DH: `twin/pipeline/urdfParser.ts` + `urdfToKinematicChain.ts` + `programming/sim/kinematicModel.ts` (**[MÃ]** các tệp có thật). Hãng khác = URDF/tham số khác, **cùng mã** | Có; chuỗi hiện là "sample" ⇒ cần URDF thật cho pilot |
+| `delta_song_song` | robot nhện (delta parallel) | FK/IK dạng đóng, 3 tay + trục quay tuỳ chọn (tham số: bán kính đế/bàn kẹp, chiều dài tay trên/dưới, góc motor) | **CHƯA có** — việc mới. ⚠ `server/services/robot/drivers/deltaRobotDriver.ts` là driver **hãng Delta**, KHÔNG phải robot nhện — không dùng lẫn tên |
+| `gian_cartesian` | giàn 2/3 trục | chuỗi trục tịnh tiến (§7B.1) | Chưa có mô tả; FK tầm thường |
+| `bang_tai_duong` | băng tải thẳng / cong / nghiêng / nhập / rẽ; belt hoặc con lăn | **đường tâm** = chuỗi đoạn {thẳng, cung(R, góc), nghiêng(Δz)}, tham số hoá theo độ dài cung `s`; nhập/rẽ = nút nối đường tâm; con lăn: bước con lăn, vùng tích luỹ | Chưa có (việc mới) |
+| họ nhỏ | bàn xoay, bàn chuyển, thang nâng | một trục quay / tịnh tiến + hành trình rời rạc | Chưa có; sau pilot |
+
+Quy tắc: một họ chỉ khai **ba thứ** — (1) tham số có kiểu + giới hạn, (2) hàm `pose(giaTriTrục) → ma trận node`, (3) danh sách **vai trò tag** bắt buộc/tuỳ chọn. Mọi thứ khác (hình, cổng nối, gương, mô phỏng) dùng chung.
+
+### 7C.2 Lớp 2 — KHUÔN = họ + tham số + mô hình 3D + VAI TRÒ TAG **[ĐỀ XUẤT]**
+```ts
+type Khuon = {
+  id: string; phienBan: number; ho: "noi_tiep"|"delta_song_song"|"gian_cartesian"|"bang_tai_duong"|"khac";
+  thamSo: Record<string, number | string>;             // dài, rộng, bán kính cung, góc, độ nghiêng; hoặc URDF/DH
+  mo_hinh3D: { loai: "glb_tinh" | "urdf_mesh" | "sinh_tham_so"; nguon?: string };   // băng tải: SINH, không cần CAD từng biến thể
+  vaiTro: Record<string, { bat_buoc: boolean; kieu: "so"|"bool"|"su_kien"; donVi?: string; mang?: boolean }>;
+  // ví dụ nối tiếp: q1..q6 (số, thực), mode; băng tải: toc_do (số, thực), chay (bool), cam_bien[] (bool/sự kiện, mang theo vị trí s)
+  cong: Cong[];                                         // 7C.3
+  hieuChuan: { daHieuChuan: boolean; nguoi?: string; ngay?: string };   // 7B.6-4
+};
+```
+- **Băng tải sinh tham số** (như Factory IO): dài, rộng, bán kính cong, góc cong, độ nghiêng, kiểu belt/con lăn, bước con lăn ⇒ hình + đường tâm + cổng nối sinh từ tham số; **không có CAD cho từng biến thể**. Đây là thứ phân biệt "đẹp, đồng nhất, đổi tham số là xong" với "mô hình lẫn lộn" (đề bài mục 4).
+- **Robot các hãng:** URDF hãng + mesh từng khâu giữ cây node (7B.4). Khác hãng = khác URDF, cùng bộ giải `noi_tiep`.
+- **Vai trò tag** (`q1..q6`, `toc_do`, `chay`, `cam_bien[]`…) **phải bằng tên trong census C-tag** (đã nêu §5.2: nếu census dùng tên khác thì theo census). Thiếu vai trò bắt buộc ⇒ khuôn không vào chế độ gương (7B.2).
+- Khuôn có phiên bản, đi qua đường duyệt/kiểm phạm vi sẵn có; thư viện có phạm vi (dùng chung toàn hệ thống / riêng nhà máy) — **[CHƯA KIỂM]** theo mô hình K14 (thư viện thiết bị) đã có đặc tả riêng; tránh dựng thư viện thứ hai: đối chiếu K14 trước khi làm.
+
+### 7C.3 Lớp 3 — THỂ HIỆN trong cảnh: đặt + CỔNG NỐI
+```ts
+type Cong = { id: string; huong: "vao"|"ra"|"nap"|"do"|"de"|"bich_dung_cu";
+              viTri: [number,number,number]; huongMat: [number,number,number]; caoDo: number;
+              tuongThich?: { rongMm?: number; kieu?: string[] } };
+```
+- Băng tải: cổng vào/ra có **hướng + cao độ + bề rộng**; robot: **đế** + **mặt bích dụng cụ**; máy: điểm **nạp / dỡ**.
+- **Hít khi kéo thả:** gần cổng tương thích trong ngưỡng ⇒ hít + đặt; kiểm **hướng đối diện, cao độ khớp (±dung sai), bề rộng tương thích**; lệch ⇒ báo lý do cụ thể (không nối im lặng).
+- **Kết nối suy từ hình học** (placement-as-truth, như OIP): "băng tải A ra → băng tải B vào" được SUY từ hai cổng trùng nhau, không khai đồ thị tay riêng. Hệ quả cần ghi nhận: **sửa vị trí = sửa kết nối**; luôn hiện danh sách kết nối suy ra để người dùng kiểm.
+- Gắn tag thật vào vai trò; chọn chế độ **gương** hoặc **mô phỏng** (7B.5) cho cả cụm.
+
+### 7C.4 Hành vi chế độ GƯƠNG theo họ (trung thực — T1–T10)
+| Họ | Đầu vào thật | Hiển thị | Ranh giới trung thực |
+|---|---|---|---|
+| `noi_tiep` | `q1..qn` thực | FK(q) → pose từng khâu (FK ở client hoặc server đẩy pose — 7B.7) | cũ ⇒ đóng băng + tím gạch; số q kèm tuổi |
+| `delta_song_song` | 3 góc motor thực (+ góc xoay) | FK delta → bàn kẹp | như trên; chưa có bộ giải ⇒ **chưa hứa độ chính xác** tới khi có test khớp số liệu hãng |
+| `gian_cartesian` | vị trí trục thực | tịnh tiến node theo trục | như trên |
+| `bang_tai_duong` | tốc độ thực (+ cảm biến) | cuộn bề mặt theo tốc độ đo (T4) | **Vị trí vật CHỈ BIẾT tại cảm biến.** Giữa hai cảm biến: nội suy theo tốc độ đo, **gắn nhãn "ước lượng"** (hình ảnh khác: viền nét đứt / mờ), biến mất khi mẫu tốc độ hoặc cảm biến cũ; **không bịa vật** khi chưa có cảm biến báo. Vật ước lượng KHÔNG được dùng để ra quyết định (chỉ hình minh hoạ) |
+| mô phỏng (mọi họ) | simulator / PLC ảo + **Rapier** | vật, va chạm, tích luỹ trên con lăn | nhãn "MÔ PHỎNG" (§7); va chạm chỉ tư vấn (7B.6) |
+
+⚠ **Ngoại suy trong băng tải** (nội suy giữa hai cảm biến theo tốc độ) là ngoại lệ DUY NHẤT được ngoại suy theo đà, và chỉ được phép vì: (a) bị chặn giữa hai điểm đo thật, (b) gắn nhãn "ước lượng", (c) tắt khi dữ liệu cũ. Đây là cập nhật cho T2/T4 ở §4 (cùng thay đổi: T4 "sản phẩm dịch theo tốc độ đo" nay đi kèm nhãn "ước lượng" khi ở giữa hai cảm biến).
+
+### 7C.5 Quy trình thêm thiết bị mới
+1. Chọn **họ**. 2. Nhập **URDF/CAD** hoặc **sinh tham số** (băng tải). 3. **Trình hướng dẫn gắn vai trò tag** (liệt kê vai trò bắt buộc; gợi ý tag từ adapter trong phạm vi; không cho gán tag ngoài phạm vi). 4. **Kiểm**: giới hạn trục, đơn vị, hệ số, đủ vai trò, đối chiếu census; chạy thử trượt cục bộ (không ghi tag); **hiệu chuẩn** (7B.6-4). 5. **Đặt + hít** vào cảnh. Mỗi bước có kiểm thử đột biến ở pha triển khai (vd. "bỏ kiểm cao độ cổng" ⇒ đỏ).
+
+### 7C.6 Pilot Pha 2 (cập nhật 7B.8)
+(1) **robot UR** (URSim có sẵn; URDF UR thật) · (2) **một robot nhện** (bộ giải delta MỚI + kiểm khớp số liệu hãng/bài toán chuẩn) · (3) **một băng tải thẳng + một băng tải con lăn cong** (sinh tham số) · (4) **một giàn 3 trục**. Cảnh ghép: băng tải → robot → máy, nối bằng cổng.
+Tiêu chí: hình ↔ số đo khớp tại tư thế tĩnh; cổng lệch cao độ/hướng bị từ chối có lý do; băng tải: vật chỉ xuất hiện khi cảm biến báo, "ước lượng" biến mất khi cảm biến cũ; delta: FK so với bài toán chuẩn trong sai số khai báo; đột biến "ngoại suy ngoài khoảng giữa hai cảm biến" đỏ.
+
+### 7C.7 Rủi ro riêng của thư viện
+| Rủi ro | Chặn |
+|---|---|
+| Bộ giải delta sai mà hình vẫn trông đúng | Test khớp bài toán chuẩn + số liệu hãng; tới khi đạt: nhãn "chưa kiểm chứng" trên mọi khung delta |
+| Kết nối suy từ hình học sai (kéo lệch 1 cm đổi nối) | Hít có ngưỡng + dung sai khai; hiện danh sách kết nối suy ra; đổi kết nối thành sự kiện có xác nhận |
+| Thư viện tự sinh số lượng khuôn / tham số lớn gây hỗn loạn | Phiên bản + duyệt; đối chiếu K14 để không có hai thư viện |
+| Tham số băng tải sinh hình mà không có tag tốc độ | Thiếu `toc_do` ⇒ không gương (cuộn nền bị TẮT, không cuộn theo hằng số) |
+| Người dùng tưởng vật "ước lượng" là vật thật | Hình khác biệt + chú giải cố định + biến mất khi cũ; không dùng ở khung L1 |
+
+**Mockup v2:** thêm (i) khung "Máy 3 trục XYZ — chế độ GƯƠNG", (ii) bảng chọn khuôn theo họ, (iii) cảnh ghép băng tải → robot → máy có cổng nối (hít OK / lệch cao độ).
+
+---
+
 ## 8. Tay nghề 3D twin (mục 4 của đề bài; Pha 3)
 
 Không lập backlog thứ hai: **kế thừa K13 + §5 của spec 2026-10-23 (H2, H3, H5, H8)** và thêm các mục dưới đây. Mọi việc 3D phải mở đầu bằng đo F-2 (§2) và Performance trace GPU cho các góc xấu — **không đoán**.
@@ -251,7 +405,8 @@ Phụ trách: **phiên twin** (chủ sở hữu mã 3D). scada-ui chỉ cung c�
 | **1b (client lõi)** | `scadaLive.ts` + `useTagSong` + pill nguồn + dự phòng hỏi vòng; thay Faceplate | 1a trên main | DOM test + đo lại L-A; S-1 = 0 |
 | **1c (hoạt ảnh)** | Bộ làm mượt T1, đồng hồ cũ T3, băng tải T4, `reduced-motion` | 1b | Test mô phỏng thời gian (đột biến "ngoại suy" phải đỏ) |
 | **1d (mimic + ký hiệu)** | 6 ký hiệu đầu (Motor, BangTai, Van, Bon, OSo, HuyHieuCanhBao) + một màn L2 mẫu + faceplate v2 | 1c; bảng vai trò tag chốt | Chụp ảnh bốn trạng thái như mockup; F-1 đạt |
-| **2** | Chế độ mô phỏng §7 | 1d; quyết định chủ dự án về cờ + quyền | Nhãn không bỏ sót (đột biến "bỏ nhãn" đỏ); server từ chối lệnh từ nguồn mô phỏng |
+| **2A** | Mô hình động học máy §7B — chế độ GƯƠNG: khuôn dữ liệu, trục ↔ tag feedback, tầng nóng 20–50 Hz, rig TwinStudio, pilot 3 trục + băng tải + robot UR | 1d; kiểm kê CAD giữ cây node; chốt FK client/server; nguồn nóng cấu hình được | Hình↔số đo khớp; cũ ⇒ đóng băng; đột biến "ngoại suy"/"rơi về setpoint" đỏ |
+| **2B** | Chế độ mô phỏng §7 + mô phỏng động học (Rapier, vật trên băng) | 2A; quyết định chủ dự án về cờ + quyền | Nhãn không bỏ sót (đột biến "bỏ nhãn" đỏ); server từ chối lệnh từ nguồn mô phỏng |
 | **3** | 3D theo §8 | Pha 0 F-2 đỏ thật; phiên twin nhận việc | F-2 đạt, hai con số cùng kịch bản |
 
 Ước lượng thô **[CHƯA KIỂM, ±50 %]**: 0 = 1 ngày; 1a = 1 (hợp đồng + test) + phần server của scada-master; 1b = 3; 1c = 2; 1d = 5; 2 = 4; 3 = theo spec K13 (≥ 10). Số này để xếp thứ tự, không phải cam kết.
@@ -294,6 +449,8 @@ Phụ trách: **phiên twin** (chủ sở hữu mã 3D). scada-ui chỉ cung c�
 ---
 
 ## 12. Câu hỏi chờ quyết định
+
+0. (§7B) FK chạy ở client (mã dùng chung + test khớp server)? Trần số trục "nóng"/người? URDF robot UR do hãng cấp hay tự khai? Phòng `robot:{id}` đã qua cổng phạm vi chưa (scada-master/twin kiểm)?
 
 1. **Bật `SCADA_SOCKET_ENABLED` ở bản chạy** khi nào (phụ thuộc hợp đồng 1a)? Đây là việc của chủ dự án / dieu-phoi, scada-ui không đụng `.env`.
 2. **Mục tiêu < 300 ms** hiểu theo tầng nguồn (§2) có chấp nhận không? Nếu muốn mọi tag đều < 300 ms thì phải đổi chu kỳ quét mặc định 5 s của adapter (việc server, ảnh hưởng tải thiết bị thật) — scada-ui không đề xuất làm.
