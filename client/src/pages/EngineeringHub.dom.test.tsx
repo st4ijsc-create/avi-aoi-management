@@ -488,7 +488,7 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     });
 
     it("count = 0 hoặc degraded ⇒ KHÔNG có danh sách bước (degraded giữ câu 'không đọc được')", () => {
-      stop({ count: 0, theoBuoc: {} });
+      stop({ count: 0, theoBuoc: { db: 1 } }); // count 0 ⇒ không in danh sách dù theoBuoc còn khoá (câu "0" là kết luận)
       render(<EngineeringHub />);
       expect(aside().querySelector("[data-testid='posture-stop-qua-han-buoc']")).toBeNull();
       cleanup();
