@@ -204,8 +204,8 @@ export const aiAgentRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input }) => {
-      const sessions = await listSessionsForOps({ limit: input?.limit, status: input?.status });
+    .query(async ({ input, ctx }) => {
+      const sessions = await listSessionsForOps({ limit: input?.limit, status: input?.status }, { id: ctx.user.id, role: String(ctx.user.role) });
       return { sessions };
     }),
 

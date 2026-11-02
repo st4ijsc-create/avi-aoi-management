@@ -80,9 +80,9 @@ import { daBiTuChoiGhi, maTuChoiGhi } from "@shared/aiCodingLoop";
 /** E2-4 — defensive call site: a realtime-nudge failure must never break the
  *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
  *  itself already never throws — see aiAgentRealtime.ts). */
-function nudge(event: Parameters<typeof publishAiAgentEvent>[0]): void {
+function nudge(event: Parameters<typeof publishAiAgentEvent>[0], ownerUserId?: number): void {
   try {
-    publishAiAgentEvent(event);
+    publishAiAgentEvent(event, undefined, ownerUserId);
   } catch (err) {
     console.error("[aiCopilotActions] realtime nudge failed:", (err as Error)?.message ?? err);
   }
@@ -389,7 +389,7 @@ export async function proposeAction(
   // (event + timestamp only — no tool/args/preview on the wire). No sessionId:
   // proposeAction is used both standalone and by the agent orchestrator's write
   // steps, which have already/will separately nudge their OWN session lifecycle.
-  nudge("action_proposed");
+  nudge("action_proposed", ctx.user.id);
 
   // ── FIX 3 (D2 review) — Audit: the PROPOSED row is written FIRST, before the D2
   // bounded-autonomy attempt below, so the audit trail's causal order is always
@@ -1220,7 +1220,7 @@ export async function confirmAction(
   // E2-4 — nudge AFTER the row is persisted (executed HOẶC bi_tu_choi_ghi — cả hai đều là một lượt
   // confirm đã xử lý xong, đáng để UI làm tươi). Fire-and-forget, minimal payload (event +
   // timestamp only — no result/args on the wire).
-  nudge("action_confirmed");
+  nudge("action_confirmed", user.id);
 
   // Audit: executed (lifecycle) + target-entity update (before/after) when the
   // preview captured a concrete entity + changes.
