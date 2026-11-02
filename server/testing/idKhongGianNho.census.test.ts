@@ -28,8 +28,7 @@ const NGAU_NHIEN_TOI_DA = 10_000;
  * Chỉ được GIẢM; sửa một tệp thì xoá dòng ở đây và hạ TRAN_NO.
  */
 export const NO: readonly string[] = [
-  // robot_jobs (WORM) / audit_logs (WORM) — id robot = base + now % 9_000: 168–512 / 9000 id đã có hàng (1,9–5,7 %). ĐẾM TUYỆT ĐỐI trên audit chỉ ở robotHitl (ĐỎ THẬT, scada-master đang sửa).
-  "server/services/robot/robotHitlActionRequired.dot1c.db.test.ts", // audit_logs theo entityId: ĐỎ ~5,7 %
+  // robot_jobs (WORM) / audit_logs (WORM) — id robot = base + now % 9_000: 168–512 / 9000 id đã có hàng (1,9–5,7 %). robotHitl (đếm audit tuyệt đối) đã sửa ở A2 test: id 1e8 + đếm sau mốc.
   "server/services/robot/robotAbortNeverOrder.dot1c.db.test.ts", // 2,3 % — truy theo jobId ⇒ an toàn
   "server/services/robot/robotCommandDispatcher.binding.db.test.ts", // 4,0 % — đếm TƯƠNG ĐỐI trước/sau ⇒ an toàn
   "server/services/robot/robotMotionLockPersist.dot4.db.test.ts", // 2,3 % — audit >= 1, nội dung lý do giống nhau ⇒ lành
@@ -54,7 +53,7 @@ export const NO: readonly string[] = [
   "server/services/ot/drivers/s7HanDuPhong.fix1.r1b2b2.test.ts",
   "server/services/ot/khongRoBoDocLai.t6b.r1b2b2.test.ts",
 ];
-const TRAN_NO = 21;
+const TRAN_NO = 20;
 
 export interface ViPham {
   dong: number;

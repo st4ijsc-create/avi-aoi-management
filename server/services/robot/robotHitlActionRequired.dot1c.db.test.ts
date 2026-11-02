@@ -27,11 +27,13 @@ vi.mock("../../routers/_robotPhamVi", async (orig) => ({
   robotTrongPhamVi: async () => undefined,
   robotThayDuocNghiem: async () => true,
 }));
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, gt, inArray, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 const rt = vi.hoisted(() => ({ runJobCalls: 0, jobs: [] as Array<{ jobType: string; params?: Record<string, unknown> }> }));
-const ROBOT_ID_HOISTED = vi.hoisted(() => ({ id: 990_710_000 + (Date.now() % 9_000) }));
+// A2 test — robot id from a LARGE space (1e8, not `now % 9_000`): audit_logs / robot_jobs are WORM, so ids of past runs keep their rows;
+// 9_000 ids had 512 already used (~5,7 % red). 1e8 slots ⇒ < 1e-5 per run at today’s scale; the AUDIT case also counts relative to a baseline.
+const ROBOT_ID_HOISTED = vi.hoisted(() => ({ id: 1_200_000_000 + (Date.now() % 100_000_000) }));
 const mint = vi.hoisted(() => ({ fail: false, calls: 0 }));
 const agv = vi.hoisted(() => ({ adapter: null as unknown }));
 
@@ -711,12 +713,15 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
     });
 
     it("★ router: disableAutomation (canEdit) writes the AUDIT row then the switch; robot.list shows it; enableAutomation turns it back on", async () => {
+      // A2 test — audit_logs is WORM (rows of earlier runs never go away): count only rows written AFTER this baseline.
+      const { sql: q } = await import("drizzle-orm");
+      const [{ moc }] = await (await d()).select({ moc: q<number>`coalesce(max(${auditLogs.id}), 0)`.mapWith(Number) }).from(auditLogs);
       const off = await router(OPERATOR).disableAutomation({ robotId: ROBOT, reason: "AGV lane under repair" });
       expect(off).toMatchObject({ robotId: ROBOT, automation: "off", changed: true });
       const [row] = await (await d()).select().from(systemSettings).where(eq(systemSettings.settingKey, KEY));
       expect(row?.settingValue).toBe("true");
       expect(row?.updatedBy).toBe(OPERATOR);
-      const audits = await (await d()).select().from(auditLogs).where(and(eq(auditLogs.entityType, "robot"), eq(auditLogs.entityId, ROBOT), eq(auditLogs.action, "robot.disableAutomation")));
+      const audits = await (await d()).select().from(auditLogs).where(and(gt(auditLogs.id, moc), eq(auditLogs.entityType, "robot"), eq(auditLogs.entityId, ROBOT), eq(auditLogs.action, "robot.disableAutomation")));
       expect(audits.length).toBe(1);
       const det = typeof audits[0].details === "string" ? JSON.parse(audits[0].details as string) : audits[0].details;
       expect(det).toMatchObject({ reason: "AGV lane under repair", before: "on", after: "off" });

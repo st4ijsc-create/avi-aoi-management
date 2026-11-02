@@ -1512,12 +1512,16 @@ describe("doc 81 Đợt 10 C fix review 4 (B F-B2-1) — a Continue of a held ed
     expect(runRow(e.runId).status).toBe("held");
     e.offlineSteps = undefined;
     const RESUMER = { id: 14, role: "supervisor", name: "resumer" };
+    // A2 test — the resume must land in a LATER millisecond than the gate approval: on a tie edgeEngineActorOf is (rightly)
+    // unknown, and a fast run used to make both stamps equal (flaky {gate} / now {unknown}). Wait until the clock has passed gateAt.
+    while (Date.now() <= gateAt) await new Promise((r) => setTimeout(r, 1));
     const t0 = Date.now();
     const view = (await getRun(e.runId, { bindingDigest: true }))!;
     expect((await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, RESUMER)).status).toBe("queued");
     const rec = runRow(e.runId).contextJson[EDGE_RESUMED_BY_CTX_KEY];
     expect(rec).toMatchObject({ userId: RESUMER.id });
     expect(rec.at).toBeGreaterThanOrEqual(t0);
+    expect(rec.at).toBeGreaterThan(gateAt);
     // B's /authorize rule: the held path ⇒ the RESUMER (its role is then read for the engine policy)
     expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: RESUMER.id, path: "held" });
     // an edge context patch can never set (or overwrite) it
