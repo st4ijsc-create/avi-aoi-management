@@ -1,0 +1,576 @@
+{
+ "_doc": "F5 day du - ca hanh vi cua public.socket_pham_vi_payload (0435). Dung chung: scripts/apply-migration-0435.mjs (c) va server/_core/socketPhamVi0435.db.test.ts. Moi ca: [nhan, bang, op, old, new, mong]; mong null = ham phai tra NULL. Hang chua token / ten / mat khau ('tok-BI-MAT', 'hash-bi-mat', 'Ten Bi Mat') de chung minh KHONG lot ra tai trong.",
+ "cases": [
+  [
+   "users DELETE",
+   "users",
+   "DELETE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   null,
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "users UPDATE role",
+   "users",
+   "UPDATE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 5,
+    "role": "operator",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "users UPDATE isActive",
+   "users",
+   "UPDATE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": false,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "users UPDATE passwordInvalidBefore",
+   "users",
+   "UPDATE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": "2026-11-02T00:00:00Z",
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "users UPDATE lastSignedIn only (moi request)",
+   "users",
+   "UPDATE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-11-02T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "users UPDATE name/passwordHash only",
+   "users",
+   "UPDATE",
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "x",
+    "passwordHash": "y",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "users INSERT",
+   "users",
+   "INSERT",
+   null,
+   {
+    "id": 5,
+    "role": "engineer",
+    "isActive": true,
+    "passwordInvalidBefore": null,
+    "name": "Ten Bi Mat",
+    "passwordHash": "hash-bi-mat",
+    "lastSignedIn": "2026-01-01T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "sessions DELETE",
+   "user_sessions",
+   "DELETE",
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   null,
+   {
+    "s": 9,
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "sessions UPDATE true->false",
+   "user_sessions",
+   "UPDATE",
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": false,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   {
+    "s": 9,
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "sessions UPDATE false->true",
+   "user_sessions",
+   "UPDATE",
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": false,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "sessions UPDATE true->true (lastActivityAt)",
+   "user_sessions",
+   "UPDATE",
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-11-02T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "sessions UPDATE false->false",
+   "user_sessions",
+   "UPDATE",
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": false,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": false,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "sessions INSERT (dang nhap)",
+   "user_sessions",
+   "INSERT",
+   null,
+   {
+    "id": 9,
+    "userId": 5,
+    "isActive": true,
+    "sessionToken": "tok-BI-MAT",
+    "expiresAt": "2027-01-01T00:00:00Z",
+    "lastActivityAt": "2026-01-01T00:00:00Z"
+   },
+   null
+  ],
+  [
+   "ufa INSERT",
+   "user_factory_assignments",
+   "INSERT",
+   null,
+   {
+    "id": 3,
+    "userId": 5,
+    "factoryCode": "F-A",
+    "assignedBy": 1
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "ufa DELETE",
+   "user_factory_assignments",
+   "DELETE",
+   {
+    "id": 3,
+    "userId": 5,
+    "factoryCode": "F-A",
+    "assignedBy": 1
+   },
+   null,
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "ufa UPDATE userId 6->5 (ca hai, sap xep)",
+   "user_factory_assignments",
+   "UPDATE",
+   {
+    "id": 3,
+    "userId": 6,
+    "factoryCode": "F-A",
+    "assignedBy": 1
+   },
+   {
+    "id": 3,
+    "userId": 5,
+    "factoryCode": "F-A",
+    "assignedBy": 1
+   },
+   {
+    "u": [
+     5,
+     6
+    ]
+   }
+  ],
+  [
+   "ufa UPDATE cung userId",
+   "user_factory_assignments",
+   "UPDATE",
+   {
+    "id": 3,
+    "userId": 5,
+    "factoryCode": "F-A",
+    "assignedBy": 1
+   },
+   {
+    "id": 3,
+    "userId": 5,
+    "factoryCode": "F-B",
+    "assignedBy": 1
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "uca INSERT",
+   "user_corporate_assignments",
+   "INSERT",
+   null,
+   {
+    "id": 1,
+    "userId": 7,
+    "corporateCode": "C-1"
+   },
+   {
+    "u": [
+     7
+    ]
+   }
+  ],
+  [
+   "uca DELETE",
+   "user_corporate_assignments",
+   "DELETE",
+   {
+    "id": 1,
+    "userId": 7,
+    "corporateCode": "C-1"
+   },
+   null,
+   {
+    "u": [
+     7
+    ]
+   }
+  ],
+  [
+   "permissions INSERT",
+   "permissions",
+   "INSERT",
+   null,
+   {
+    "id": 4,
+    "userId": 5,
+    "moduleName": "andon",
+    "canView": true,
+    "expiresAt": null
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "permissions UPDATE",
+   "permissions",
+   "UPDATE",
+   {
+    "id": 4,
+    "userId": 5,
+    "moduleName": "andon",
+    "canView": true,
+    "expiresAt": null
+   },
+   {
+    "id": 4,
+    "userId": 5,
+    "moduleName": "andon",
+    "canView": false,
+    "expiresAt": null
+   },
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "permissions DELETE",
+   "permissions",
+   "DELETE",
+   {
+    "id": 4,
+    "userId": 5,
+    "moduleName": "andon",
+    "canView": true,
+    "expiresAt": null
+   },
+   null,
+   {
+    "u": [
+     5
+    ]
+   }
+  ],
+  [
+   "factories UPDATE code",
+   "factories",
+   "UPDATE",
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   {
+    "id": 2,
+    "code": "F-A2",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   {
+    "all": 1
+   }
+  ],
+  [
+   "factories UPDATE corporateCode",
+   "factories",
+   "UPDATE",
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": null,
+    "name": "Nha may A",
+    "isActive": true
+   },
+   {
+    "all": 1
+   }
+  ],
+  [
+   "factories UPDATE name only",
+   "factories",
+   "UPDATE",
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "y",
+    "isActive": true
+   },
+   null
+  ],
+  [
+   "factories INSERT",
+   "factories",
+   "INSERT",
+   null,
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   null
+  ],
+  [
+   "factories DELETE",
+   "factories",
+   "DELETE",
+   {
+    "id": 2,
+    "code": "F-A",
+    "corporateCode": "C-1",
+    "name": "Nha may A",
+    "isActive": true
+   },
+   null,
+   null
+  ],
+  [
+   "bang la",
+   "machines",
+   "UPDATE",
+   {
+    "id": 1
+   },
+   {
+    "id": 2
+   },
+   null
+  ]
+ ]
+}
