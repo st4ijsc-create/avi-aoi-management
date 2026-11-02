@@ -186,7 +186,8 @@ async function xoaBoNhoPhamViHet(): Promise<void> {
  */
 async function xoaBoNhoChoQuet(): Promise<void> {
   try {
-    await BO_NHO_THEO_NGUOI[0].xoaHet!();
+    // fix round 2 (M-2): gọi THẲNG đúng bộ nhớ phân công (không theo chỉ số mảng — đổi thứ tự BO_NHO_THEO_NGUOI không được đổi lượt quét)
+    (await import("./accessControl")).clearAssignmentCache();
   } catch (e) {
     console.error("[SocketXetLaiQuyen] xoa assignmentCache truoc luot quet that bai:", (e as Error)?.message ?? e);
   }
