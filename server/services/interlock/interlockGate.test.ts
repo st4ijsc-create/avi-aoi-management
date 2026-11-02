@@ -179,3 +179,31 @@ describe("evaluateInterlockGate — fail-closed", () => {
     expect(r.failClosed).toBe(true);
   });
 });
+
+describe("evaluateInterlockGate — A2(i)(1) tập máy `machineIds` (hợp với `machineId` đơn)", () => {
+  const luatChiMay = (may: number) => blockRule({ targetAdapterId: null, commandTag: null, targetMachineId: may });
+
+  it("luật CHỈ nhắm máy 7 (không adapter, không tag): machineIds [7, 5] ⇒ chặn; [5] ⇒ cho qua; [] ⇒ cho qua", async () => {
+    state.rules = [luatChiMay(7)];
+    state.observationCount = 5;
+    expect((await evaluateInterlockGate({ adapterId: 10, machineIds: [7, 5], tagKeys: ["cmd_start"] })).blocked).toBe(true);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineIds: [5, 7], tagKeys: ["cmd_start"] })).blocked).toBe(true);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineIds: [5], tagKeys: ["cmd_start"] })).blocked).toBe(false);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineIds: [], tagKeys: ["cmd_start"] })).blocked).toBe(false);
+  });
+
+  it("machineId đơn (dạng cũ, cổng robot) vẫn khớp; hai trường cùng có ⇒ HỢP", async () => {
+    state.rules = [luatChiMay(7)];
+    state.observationCount = 5;
+    expect((await evaluateInterlockGate({ adapterId: 10, machineId: 7, tagKeys: [] })).blocked).toBe(true);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineId: 5, machineIds: [7], tagKeys: [] })).blocked).toBe(true);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineId: 7, machineIds: [5], tagKeys: [] })).blocked).toBe(true);
+    expect((await evaluateInterlockGate({ adapterId: 10, machineId: null, machineIds: [5], tagKeys: [] })).blocked).toBe(false);
+  });
+
+  it("luật không có targetMachineId không bao giờ khớp theo máy (kể cả machineIds rỗng / có số)", async () => {
+    state.rules = [blockRule({ targetAdapterId: null, commandTag: null, targetMachineId: null })];
+    state.observationCount = 5;
+    expect((await evaluateInterlockGate({ adapterId: 10, machineIds: [5, 7], tagKeys: [] })).blocked).toBe(false);
+  });
+});
