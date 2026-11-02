@@ -119,7 +119,7 @@ import {
 } from "../../../drizzle/schema";
 import { canKiemGiaTriChuaKhai, epKieuGiaTri, kiemGiaTriGhi, kiemLuoiThoChuaKhai, laKenhGhi, loaiKenh } from "../scada/kenhScada"; // SCADA R1a Task 3 (K4) — the ONE coercion/range/step rule
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
-import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, laKhoaBenGoiChon, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, laHangMoiStopGhim, laKhoaBenGoiChon, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
@@ -1105,7 +1105,7 @@ export function appErrorCongKenh(kq: KetQuaCongKenhSom, tags: ReadonlyArray<Pick
  * will produce, this reads the written tags' declarations and returns the type-coerced writes — or null when nothing
  * would change, or the read fails (⇒ the raw verdict stands: fail-closed). Read-only.
  */
-async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<DispatchWrite[] | null> {
+async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: Pick<DispatchInput, "adapterId" | "writes">): Promise<DispatchWrite[] | null> {
   try {
     const keys = input.writes.map((w) => w.tagKey);
     if (keys.length === 0) return null;
@@ -1179,17 +1179,40 @@ export function phanLoaiStopGhimRangBuoc(commandType: string, writes: DispatchWr
  * type-coerced form when it differs (`writesEpKieuChoRangBuoc`, the form 5a-stop classifies), else the caller's. Read-only. A command
  * that is not stop-typed is answered without a read (`classifyOtStop` decides that on the type alone).
  */
-async function laStopGhimTaiCong1(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, input: DispatchInput): Promise<boolean> {
+async function laStopGhimTaiCong1(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: Pick<DispatchInput, "adapterId" | "commandType" | "writes">,
+  /** R1b-2b-2a A2(m) — told when the pin read failed (the FOE engine raises its URGENT alert on it); gate (1) passes none. */
+  baoLoiDocGhim?: (loi: string) => void,
+  noi = "gate (1)",
+): Promise<boolean> {
   if (!phanLoaiStopGhimRangBuoc(input.commandType, input.writes, []).isStop) return false;
   let pins: StopPin[] | null;
   try {
     pins = await loadStopPins(db, input.adapterId);
   } catch (err) {
-    console.warn(`[Dispatch] gate (1): pinned-stop read failed for adapter ${input.adapterId} — not treated as a pinned stop:`, (err as Error)?.message || err);
+    console.warn(`[Dispatch] ${noi}: pinned-stop read failed for adapter ${input.adapterId} — not treated as a pinned stop:`, (err as Error)?.message || err);
+    baoLoiDocGhim?.(String((err as Error)?.message ?? err));
     pins = null;
   }
   const writes = (await writesEpKieuChoRangBuoc(db, input)) ?? input.writes;
   return phanLoaiStopGhimRangBuoc(input.commandType, writes, pins).pinnedStop;
+}
+
+/**
+ * R1b-2b-2a A2(m) — the FOE engine's question "is the command this step is about to send a PINNED STOP?", answered by gate (1)'s OWN
+ * function (`laStopGhimTaiCong1` → `phanLoaiStopGhimRangBuoc`, the same pins rule and the same coerced writes) — never a second
+ * definition. Pinned ⇒ the engine mints a FRESH authorisation row for this one dispatch (foeRunStore.ensureOrchestrationAction).
+ * `loiDocGhim` ≠ null ⇔ the pins could not be read (⇒ not pinned: the old path, fail-closed). Read-only. This answer only chooses the
+ * ROW: the dispatcher re-decides at gate (1) and at the reservation with its own reads (a pin change in between ⇒ its verdict wins).
+ */
+export async function phanLoaiStopGhimChoFoe(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: Pick<DispatchInput, "adapterId" | "commandType" | "writes">,
+): Promise<{ pinnedStop: boolean; loiDocGhim: string | null }> {
+  let loiDocGhim: string | null = null;
+  const pinnedStop = await laStopGhimTaiCong1(db, input, (loi) => (loiDocGhim = loi), "FOE engine");
+  return { pinnedStop, loiDocGhim };
 }
 
 async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
@@ -2766,6 +2789,10 @@ function verifyActionBinding(
   return { ok: true, owner: pending.userId };
 }
 
+/** R1b-2b-2a A2(m) AMENDMENT 2 — the refusal detail of a marked fresh FOE STOP row presented by a command this dispatcher does not classify as a pinned STOP. */
+export const HANG_MOI_STOP_GHIM_TU_CHOI =
+  "orchestration action is a fresh STOP authorisation (hangMoiStopGhim) but this command is not a pinned STOP for the dispatcher — refused (it authorises only a pinned STOP)";
+
 /** Advisory-lock namespace so OT command keys never share a lock with another subsystem. */
 const OT_COMMAND_LOCK_NS = "ot.command:";
 
@@ -2889,6 +2916,12 @@ async function reserveRealWrite(
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
           verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true, altWrites: opts.rawBindingWrites });
+          // R1b-2b-2a A2(m) AMENDMENT 2 — a FRESH row the FOE engine minted for a command IT classified as a pinned STOP (marked) is consumed ONLY by
+          // a pinned STOP THIS dispatcher confirms (opts.pinnedStop, its own step-3 verdict). Not pinned here (stale connection, pins changed,
+          // value form) ⇒ REFUSED, with or without a real gate approval: one approval = one write stays absolute for every non-pinned command.
+          if (verdict.ok && laHangMoiStopGhim(pending?.previewJson) && opts.pinnedStop !== true) {
+            verdict = { ok: false, reason: "NOT_CONFIRMED", detail: HANG_MOI_STOP_GHIM_TU_CHOI };
+          }
           // doc 81 Đợt 4 fix round 1 (R-4-i) — an orchestration-engine action: re-derive the run owner and the gate
           // approver from the DB rows (run + gate + workflow) under this transaction; previewJson only points at the run.
           // A PINNED stop is exempt (L-7).
