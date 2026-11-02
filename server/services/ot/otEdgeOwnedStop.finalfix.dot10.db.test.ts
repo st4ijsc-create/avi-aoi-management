@@ -58,6 +58,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
       await k.sql`DELETE FROM device_tags WHERE "adapterId" = ${centralAdapter}`.catch(() => undefined);
       await k.sql`DELETE FROM device_adapters WHERE id = ${centralAdapter}`.catch(() => undefined);
     }
+    if (k) await k.sql`DELETE FROM ai_pending_actions WHERE id LIKE ${`${k.DAU}-a2h-%`}`.catch(() => undefined); // A2(h) fixture rows
     await k?.teardown();
   }, 120_000);
   beforeEach(() => {
@@ -68,6 +69,21 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
   });
 
   const hitl = () => ({ kind: "hitl" as const, requestedBy: k.u.admin, confirmedBy: k.u.admin });
+
+/**
+ * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim, TRƯỚC cổng chế độ /
+ * chủ edge / kênh). Ca cần tới cổng nó đo gửi kèm MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ = người xác nhận, băm CHÍNH lệnh ấy).
+ * Hàng của fixture mang tiền tố `<DAU>-a2h-` và được dọn ở afterAll (trước teardown của bộ kit).
+ */
+const A2H_TOOL = "set_machine_param";
+async function hitlRangBuoc(inp: { adapterId: number; machineId?: number | null; commandType: string; writes: Array<{ tagKey: string; value: unknown }> }) {
+  const { otPayloadHash, withOtPayloadHash } = await import("./otActionBinding");
+  const id = `${k.DAU}-a2h-${++seq}`;
+  const preview = withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: A2H_TOOL, adapterId: inp.adapterId, machineId: inp.machineId ?? null, commandType: inp.commandType, writes: inp.writes }));
+  await k.sql`INSERT INTO ai_pending_actions (id, tool, "argsJson", "userId", "userRole", summary, "previewJson", status, "idempotencyKey", "expiresAt")
+              VALUES (${id}, ${A2H_TOOL}, ${k.sql.json({})}, ${k.u.admin}, 'engineer', 'A2(h) fixture', ${k.sql.json(preview as never)}, 'confirmed', ${`${id}-idem`}, now() + interval '10 minutes')`;
+  return { kind: "hitl" as const, actionId: id, tool: A2H_TOOL, requestedBy: k.u.admin, confirmedBy: k.u.admin };
+}
 
   it("★ STOP to an edge-owned adapter ⇒ an adapter STOP request queued for its owner + a durable alert; never ADAPTER_OFFLINE", async () => {
     const { dispatch } = await import("./commandDispatcher");
@@ -143,7 +159,9 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 final fix wave I-4 — central OT com
   it("★ a NON-STOP write to an edge-owned adapter ⇒ refused ADAPTER_OWNED_BY_EDGE (nothing queued); a central adapter without a driver keeps ADAPTER_OFFLINE", async () => {
     const { dispatch } = await import("./commandDispatcher");
     const before = Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n);
-    const w = await dispatch({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 9 }], triggeredBy: hitl(), idempotencyKey: `ffi4-w-${++seq}-${k.DAU}` });
+    // R1b-2b-2a A2(h) — the edge-ownership gate is measured with a correctly BOUND write (it still blocks); unbound, gate (1) answers first.
+    const lenhW = { adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: "speed_sp", value: 9 }] };
+    const w = await dispatch({ ...lenhW, triggeredBy: await hitlRangBuoc(lenhW), idempotencyKey: `ffi4-w-${++seq}-${k.DAU}` });
     expect(w).toMatchObject({ ok: false, status: "rejected", reason: "ADAPTER_OWNED_BY_EDGE" });
     expect(Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n)).toBe(before);
     const c = await dispatch({ adapterId: centralAdapter, commandType: "stop", writes: [{ tagKey: "stop_cmd", value: true }], triggeredBy: hitl(), idempotencyKey: `ffi4-c-${++seq}-${k.DAU}` });

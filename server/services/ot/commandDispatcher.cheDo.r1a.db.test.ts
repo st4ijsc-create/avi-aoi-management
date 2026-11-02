@@ -76,7 +76,7 @@ import {
   scadaKenhCheDo,
 } from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { dispatch, type DispatchInput } from "./commandDispatcher";
+import { dispatch as dispatchGoc, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 import { datThongTinAdapter, napTuOt, xoaAdapter, POLL_MAC_DINH_MS } from "../scada/boDemHienTai";
@@ -142,6 +142,37 @@ async function makeAction(bind: { adapterId: number; machineId: number; commandT
     expiresAt: new Date(Date.now() + 600_000),
   });
   return id;
+}
+
+/**
+ * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim, TRƯỚC cổng chế độ).
+ * Các ca của tệp này đo cổng chế độ (3c) SAU cổng (1) với lệnh HITL không actionId — nên trước khi gửi, một lệnh HITL không actionId (và không
+ * requireBoundAction) được gắn MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ OWNER, tool của lệnh, băm CHÍNH lệnh ấy). Nhờ vậy mỗi ca
+ * vẫn tới đúng cổng nó đo — và chứng minh cổng chế độ VẪN chặn khi ràng buộc ĐÚNG. Mọi khẳng định giữ nguyên.
+ */
+async function dispatch(inp: DispatchInput) {
+  const t = inp.triggeredBy;
+  if (t.kind === "hitl" && !t.actionId && !t.requireBoundAction) {
+    const id = `${DAU}-act-${++seq}`;
+    const tool = t.tool ?? TOOL;
+    await (await d()).insert(aiPendingActions).values({
+      id,
+      tool,
+      argsJson: {},
+      userId: t.confirmedBy ?? OWNER,
+      userRole: "engineer",
+      summary: `${DAU} test action (A2(h) fixture)`,
+      previewJson: withOtPayloadHash(
+        { entityType: "machine" },
+        otPayloadHash({ tool, adapterId: inp.adapterId, machineId: inp.machineId ?? null, commandType: inp.commandType, writes: inp.writes }),
+      ),
+      status: "confirmed",
+      idempotencyKey: `${id}-idem`,
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    return dispatchGoc({ ...inp, triggeredBy: { ...t, actionId: id } });
+  }
+  return dispatchGoc(inp);
 }
 
 /** Lệnh hitl trên adapter A (máy chưa khai) trừ khi nói khác. `machineId: undefined` tường minh ⇒ bỏ trường. */
