@@ -14,6 +14,7 @@ Repo: TypeScript (server/ client/ shared/ scripts/), kiểm bằng vitest.
 
 ## Test
 - vitest, test thuần: KHÔNG chạm DB, mạng, đồng hồ thật (dùng fake timers / tham số giờ), tệp ngoài thư mục tạm.
+- Tên tệp test theo vitest `include` (sai tên = vitest "No test files found"): client/src → `*.unit.test.ts` (hoặc `*.dom.test.tsx`); server / shared / scripts → `*.test.ts`; vscode-extension/src → `*.unit.test.ts`. KHÔNG sửa vitest.config.
 - Test phải KIỂM ĐƯỢC hành vi: assert giá trị cụ thể, ca biên, ca lỗi. `expect(x).toBeDefined()` một mình là test yếu.
 - Không `DELETE` / `TRUNCATE`, không dùng tài khoản owner `aoi`.
 

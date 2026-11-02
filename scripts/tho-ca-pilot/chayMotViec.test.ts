@@ -144,3 +144,23 @@ describe("chayMotViec — test chạm DB (luật 2026-11-02)", () => {
     expect(r.viPham).toEqual([{ duong: "client/src/lib/a.test.ts", loai: "cham-db", chiTiet: "import postgres" }]);
   });
 });
+
+describe("chayMotViec — cất kết quả lượt trước (cây bẩn trên nhánh pilot)", () => {
+  it("★ cây bẩn trên nhánh pilot/tho-ca-* ⇒ commit vào CHÍNH nhánh đó rồi chạy tiếp; luuY nói rõ; nhánh cũ giữ tệp", async () => {
+    git(wt, "checkout", "-q", "-b", "pilot/tho-ca-TC-98");
+    fs.writeFileSync(path.join(wt, "ket-qua-cu.txt"), "hồ sơ lượt trước\n");
+    git(wt, "add", "ket-qua-cu.txt");
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "x\n" } });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", nhanh: "pilot/tho-ca-TC-99" });
+    expect(r.luuY?.join(" ")).toContain("đã cất kết quả lượt trước vào nhánh pilot/tho-ca-TC-98");
+    expect(git(wt, "show", "pilot/tho-ca-TC-98:ket-qua-cu.txt")).toBe("hồ sơ lượt trước");
+    expect(git(wt, "log", "-1", "--format=%s", "pilot/tho-ca-TC-98")).toContain("cất kết quả lượt trước");
+    expect(r.tepDoi).toEqual(["client/src/lib/a.test.ts"]); // tệp cũ không lẫn vào diff mới
+  });
+  it("★ cây bẩn trên nhánh KHÁC (main/nhánh thường) ⇒ vẫn từ chối, KHÔNG commit gì", async () => {
+    const dau = git(wt, "rev-parse", "HEAD");
+    fs.writeFileSync(path.join(wt, "dang-lam-do.txt"), "x");
+    expect(await chay()).toMatchObject({ ketCuc: "tu-choi", loi: expect.stringContaining("không đứng trên nhánh pilot") });
+    expect(git(wt, "rev-parse", "HEAD")).toBe(dau);
+  });
+});

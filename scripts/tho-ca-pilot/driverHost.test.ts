@@ -287,3 +287,26 @@ describe("khoá ký checkpoint & đếm lỗi công cụ (TC-01 lượt 2: KHONG
     expect(keLoiCongCu({})).toBe("KHONG_RO");
   });
 });
+
+describe("loiCongCu — nhãn riêng cho từ chối (không lẫn lỗi công cụ thật)", () => {
+  it("★ BI_BAC do bộ chạy tự từ chối ⇒ TU_CHOI_BO_CHAY; do người duyệt ⇒ TU_CHOI_NGUOI_DUYET; BI_BAC lạ (id không do ta bác) vẫn là BI_BAC; lỗi thật giữ mã", async () => {
+    const { dep } = taoDep(async (phat) => {
+      phat(canDuyet("apply_diff", { path: "server/services/ot/x.ts" }, "a1")); // bộ chạy tự từ chối
+      await new Promise((r) => setTimeout(r, 80)); // host chỉ phát kết quả tool SAU quyết định (thứ tự thật)
+      phat({ loai: "ket-qua-tool", id: "tc1", ten: "apply_diff", ok: false, ma: "BI_BAC", tomTat: "rejected" });
+      phat({ loai: "ket-qua-tool", id: "tc-la", ten: "x", ok: false, ma: "BI_BAC", tomTat: "rejected" });
+      phat({ loai: "ket-qua-tool", id: "tc-that", ten: "x", ok: false, ma: "NOT_FOUND", tomTat: "no file" });
+      phat({ loai: "xong", lyDo: "hoan-thanh" });
+    }, async () => ({ quyet: "tu-choi" }));
+    expect((await driverHost(dep)(dauVao(ra))).loiCongCu).toEqual({ TU_CHOI_BO_CHAY: 1, BI_BAC: 1, NOT_FOUND: 1 });
+  });
+  it("người duyệt từ chối ⇒ TU_CHOI_NGUOI_DUYET", async () => {
+    const { dep } = taoDep(async (phat) => {
+      phat(canDuyet("apply_diff", { path: "client/src/lib/a.test.ts" }, "a2"));
+      await new Promise((r) => setTimeout(r, 120));
+      phat({ loai: "ket-qua-tool", id: "tc1", ten: "apply_diff", ok: false, ma: "BI_BAC", tomTat: "rejected" });
+      phat({ loai: "xong", lyDo: "hoan-thanh" });
+    }, async () => ({ quyet: "tu-choi", lyDo: "sai" }));
+    expect((await driverHost(dep)(dauVao(ra))).loiCongCu).toEqual({ TU_CHOI_NGUOI_DUYET: 1 });
+  });
+});

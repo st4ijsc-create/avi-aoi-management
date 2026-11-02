@@ -93,7 +93,8 @@ function git(args: string[], cwd: string, dauVao?: string): { ok: boolean; out: 
   return { ok: r.status === 0, out: r.stdout ?? "", err: r.stderr ?? "" };
 }
 
-const RE_NHANH_MA = /^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/;
+const NHANH_PILOT = /^pilot\/tho-ca-[A-Za-z0-9-]+$/;
+const RE_NHANH_MA =/^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/;
 
 /** Luật dự án nguồn sự thật (cạnh bộ chạy trong repo). */
 export function duongTepLuat(): string {
@@ -245,8 +246,21 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const chung = git(["rev-parse", "--git-common-dir"], wt).out.trim();
   const laLienKet = path.resolve(wt, gitDir) !== path.resolve(wt, chung);
   if (!laLienKet && !p.choPhepKhoRieng) return tuChoi("đây là worktree CHÍNH, không phải worktree liên kết — từ chối", the.ma);
-  const ban = git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && !x.endsWith(` ${TEP_LUAT}`));
-  if (ban.length > 0) return tuChoi(`worktree không sạch (${ban.length} mục) — dọn trước khi nhận việc`, the.ma);
+  const trangThaiBan = () => git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && !x.endsWith(` ${TEP_LUAT}`));
+  let ban = trangThaiBan();
+  const luuY0: string[] = [];
+  if (ban.length > 0) {
+    // CẤT kết quả lượt trước: chỉ khi đang đứng trên nhánh pilot/tho-ca-* (commit vào CHÍNH nhánh đó, không bao giờ main hay nhánh khác); mọi trường hợp khác ⇒ từ chối như cũ.
+    const nhanhHienTai = git(["branch", "--show-current"], wt).out.trim();
+    if (!NHANH_PILOT.test(nhanhHienTai)) return tuChoi(`worktree không sạch (${ban.length} mục) và không đứng trên nhánh pilot/tho-ca-* — dọn tay trước khi nhận việc`, the.ma);
+    const them = git(["add", "-A", "--", ".", `:(exclude)${TEP_LUAT}`], wt);
+    const loiNhan = ["pilot: cất kết quả lượt trước (không lên main)", "", "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"].join("\n");
+    const cm = them.ok ? git(["-c", "user.name=tho-ca-pilot", "-c", "user.email=tho-ca-pilot@localhost", "commit", "-q", "-m", loiNhan], wt) : them;
+    if (!cm.ok) return tuChoi(`không cất được kết quả lượt trước trên ${nhanhHienTai}: ${cm.err.trim()}`, the.ma);
+    luuY0.push(`đã cất kết quả lượt trước vào nhánh ${nhanhHienTai} (${ban.length} mục)`);
+    ban = trangThaiBan();
+    if (ban.length > 0) return tuChoi(`worktree vẫn không sạch sau khi cất (${ban.length} mục)`, the.ma);
+  }
 
   // LỆNH KIỂM trỏ vào tệp test ĐÃ CÓ mà chạm DB ⇒ từ chối (luật: quét import/nội dung, không chỉ tên .db.test). Tệp chưa có (Thợ Cả sẽ tạo) kiểm sau khi chạy.
   for (const t of tepTestTrongLenh(the.lenhKiem)) {
@@ -307,7 +321,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     }
   }
   const crlf = tepCrlf(wt, tepDoi);
-  const luuY: string[] = [...(kq.luuY ?? [])];
+  const luuY: string[] = [...luuY0, ...(kq.luuY ?? [])];
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");
   if (kq.vong === null) luuY.push("số vòng: driver không biết");
 

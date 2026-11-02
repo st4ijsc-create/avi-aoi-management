@@ -19,6 +19,10 @@ import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
 
 export const NHAN_PILOT = "pilot-tho-ca";
+/** nhãn trong loiCongCu cho từ chối KHÔNG phải lỗi công cụ: bộ chạy tự từ chối (lọc trước) · người duyệt từ chối · hết hạn chờ người */
+export const NHAN_TU_CHOI_BO_CHAY = "TU_CHOI_BO_CHAY";
+export const NHAN_TU_CHOI_NGUOI = "TU_CHOI_NGUOI_DUYET";
+export const NHAN_HET_GIO_DUYET = "HET_GIO_DUYET";
 export const CSDL_CHO_PHEP = "aoi_management_test";
 
 // ── Lọc trước khi tới người duyệt (thuần) ─────────────────────────────────────────────────────────
@@ -165,11 +169,14 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     let chuoi: Promise<void> = Promise.resolve();
     /** thời điểm bắt đầu chờ người (đang chờ dở) — để hạn model KHÔNG tính cả lúc đang chờ */
     let dangChoTu: number | null = null;
+    /** nhãn riêng cho các từ chối (id lời gọi tool → nhãn): để loiCongCu không trộn "bộ chạy/người từ chối" (mã BI_BAC của host) với lỗi công cụ THẬT */
+    const nhanTuChoi = new Map<string, string>();
 
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
       const loc = locTruocKhiCho(de, v.the, v.wt);
       if (loc.loai === "tu-choi") {
         th.soTuChoi++;
+        nhanTuChoi.set(id, NHAN_TU_CHOI_BO_CHAY);
         ghiChu.push(`tự từ chối ${de.ten}: ${loc.lyDo}`);
         await dep.bac(actionId, `[pilot tự từ chối] ${loc.lyDo}`);
         return;
@@ -200,10 +207,10 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         ghiChu.push(`duyệt ${de.ten} ${loc.duong.join(",")}: ok=${kq.ok} daGhi=${kq.daGhi} status=${kq.status}`);
       } else {
         th.soTuChoi++;
+        nhanTuChoi.set(id, q.quyet === "het-gio" ? NHAN_HET_GIO_DUYET : NHAN_TU_CHOI_NGUOI);
         if (q.quyet === "het-gio") hetGioDuyet = true;
         await dep.bac(actionId, q.quyet === "het-gio" ? "hết hạn chờ dieu-phoi" : (q.lyDo ?? "dieu-phoi từ chối"));
       }
-      void id;
     };
 
     const dung = dep.nghe(tao.runId, (m) => {
@@ -220,7 +227,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           prompt += e.promptN;
         }
       } else if (e.loai === "ket-qua-tool" && e.ok === false) {
-        const k = keLoiCongCu(e);
+        const k = (e.ma === "BI_BAC" && nhanTuChoi.get(String(e.id))) || keLoiCongCu(e);
         loiCongCu[k] = (loiCongCu[k] ?? 0) + 1;
       } else if (e.loai === "goi-tool" && typeof e.luot === "number") {
         vong = Math.max(vong, e.luot);
