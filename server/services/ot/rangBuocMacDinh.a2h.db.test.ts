@@ -94,7 +94,7 @@ vi.mock("../robot/criticalStopAlert", async (importOriginal) => {
 import * as conn from "../../db/connection";
 import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import { adapterTargetFingerprint } from "./adapterTarget";
-import { __catSauGhiThietBiChoTest, dispatch, perWriteKey, type DispatchInput, type DispatchResult } from "./commandDispatcher";
+import { __catSauGhiThietBiChoTest, dispatch, perWriteKey, phanLoaiStopGhimRangBuoc, type DispatchInput, type DispatchResult } from "./commandDispatcher";
 import { foeSelfApprovalRefusal, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { _setPinReadProbeForTests } from "./stopPin";
 import type { OtWrite } from "./otDriver";
@@ -132,12 +132,13 @@ async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   }
 }
 
-type DriverGia = { soGoi: number; treo: "khong" | "truoc_goi"; writeTags: (ws: OtWrite[]) => Promise<Array<{ tagKey: string; ok: boolean }>> } & Record<string, unknown>;
+type DriverGia = { soGoi: number; ghi: OtWrite[][]; treo: "khong" | "truoc_goi"; writeTags: (ws: OtWrite[]) => Promise<Array<{ tagKey: string; ok: boolean }>> } & Record<string, unknown>;
 /** driver giả: `soGoi` = số gói ghi ĐÃ lên dây. `treo = "truoc_goi"` ⇒ writeTags không bao giờ trả lời và KHÔNG gửi gì (sập trước gói). */
 function driverGia(): DriverGia {
   const d: DriverGia = {
     protocol: "modbus",
     soGoi: 0,
+    ghi: [],
     treo: "khong",
     isConnected: () => true,
     connect: async () => undefined,
@@ -146,6 +147,7 @@ function driverGia(): DriverGia {
     writeTags: async (ws: OtWrite[]) => {
       if (d.treo === "truoc_goi") return new Promise<never>(() => undefined);
       d.soGoi += 1;
+      d.ghi.push(ws.map((w) => ({ ...w })));
       return ws.map((w) => ({ tagKey: w.tagKey, ok: true }));
     },
     readTags: async () => [],
@@ -161,6 +163,23 @@ async function taoAdapter(tx: Tx, d: unknown): Promise<number> {
   await tx.insert(deviceTags).values([
     { adapterId, tagKey: "t", address: "40001", dataType: "int", writable: true },
     { adapterId, tagKey: "a", address: "40003", dataType: "int", writable: true, stopValue: 0 as never },
+  ]);
+  H.drivers.set(adapterId, d);
+  H.fingerprints.set(adapterId, adapterTargetFingerprint({ protocol: "modbus", endpoint, machineId: MACHINE, connectionOptions: null }));
+  return adapterId;
+}
+
+/**
+ * kiem-dinh k14 — adapter modbus có kênh GHI ĐÃ KHAI (channelKind "output" ⇒ `kenhDaKhaiGhi` ⇒ giá trị được ép kiểu ở cổng (1) và bước 3b):
+ * `ik` int ghim 0 (thanh ghi), `bk` bool ghim true (địa chỉ BIT coil:5 — luật bit của congKenhSom với modbus).
+ */
+async function taoAdapterKhai(tx: Tx, d: unknown): Promise<number> {
+  const endpoint = "tcp://192.0.2.22:502"; // TEST-NET (RFC 5737): driver giả, không bao giờ kết nối
+  const [a] = await tx.insert(deviceAdapters).values({ code: `${DAU}-AK-${randomUUID()}`, name: `${DAU} adapter khai`, protocol: "modbus", endpoint, isEnabled: true, machineId: MACHINE }).returning();
+  const adapterId = a!.id;
+  await tx.insert(deviceTags).values([
+    { adapterId, tagKey: "ik", address: "40004", dataType: "int", writable: true, channelKind: "output", stopValue: 0 as never },
+    { adapterId, tagKey: "bk", address: "coil:5", dataType: "bool", writable: true, channelKind: "output", stopValue: true as never },
   ]);
   H.drivers.set(adapterId, d);
   H.fingerprints.set(adapterId, adapterTargetFingerprint({ protocol: "modbus", endpoint, machineId: MACHINE, connectionOptions: null }));
@@ -572,6 +591,37 @@ describe.skipIf(!DB_URL)("A2(h) — ràng buộc MẶC ĐỊNH ở cổng (1); S
         expect(rn, ten).toMatchObject({ ok: true, simulated: true, status: "simulated" });
       }
       expect(d.soGoi).toBe(0);
+    });
+  });
+
+  it("★ K14 (kiem-dinh) cổng (1) phân loại STOP ghim trên dạng ĐÃ ÉP KIỂU: STOP FOE tự xác nhận mang giá trị THÔ (\"0\" cho int ghim 0; \"true\" / \"1\" / 1 cho bool ghim true) trên kênh ĐÃ KHAI ⇒ đường thật BAY (+1 gói, thiết bị nhận giá trị GHIM), đường mô phỏng KHÔNG NOT_CONFIRMED", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = driverGia();
+      const ad = await taoAdapterKhai(tx, d);
+      // vì sao ca này phân biệt: khớp ghim là CHẶT — dạng thô KHÔNG phải ghim, dạng ép kiểu thì là (k14 = cổng (1) dùng dạng thô ⇒ ĐỎ)
+      expect(phanLoaiStopGhimRangBuoc("stop", [{ tagKey: "ik", value: "0" }], [{ tagKey: "ik", value: 0 }]).pinnedStop).toBe(false);
+      expect(phanLoaiStopGhimRangBuoc("stop", [{ tagKey: "ik", value: 0 }], [{ tagKey: "ik", value: 0 }]).pinnedStop).toBe(true);
+      expect(phanLoaiStopGhimRangBuoc("stop", [{ tagKey: "bk", value: "true" }], [{ tagKey: "bk", value: true }]).pinnedStop).toBe(false);
+      const ca: Array<[string, W, W]> = [
+        ['int ghim 0, ghi "0"', [{ tagKey: "ik", value: "0" }], [{ tagKey: "ik", value: 0 }]],
+        ['bool ghim true, ghi "true"', [{ tagKey: "bk", value: "true" }], [{ tagKey: "bk", value: true }]],
+        ['bool ghim true, ghi "1"', [{ tagKey: "bk", value: "1" }], [{ tagKey: "bk", value: true }]],
+        // đối chứng: số 1 khớp ghim bool CẢ ở dạng thô (khopGhim 1 ≡ true) — không phân biệt k14, ghim rằng nó vẫn bay
+        ["bool ghim true, ghi 1", [{ tagKey: "bk", value: 1 }], [{ tagKey: "bk", value: true }]],
+      ];
+      for (const [ten, writes, ghim] of ca) {
+        process.env.OT_CONTROL_ENABLED = "false";
+        const rs = await gui(await foeTuDuyet(ad, k("k14s"), DESC_STOP, { writes }));
+        expect(rs.detail?.reason, `mô phỏng: ${ten}`).not.toBe("NOT_CONFIRMED");
+        expect(rs, `mô phỏng: ${ten}`).toMatchObject({ ok: true, status: "simulated" });
+
+        process.env.OT_CONTROL_ENABLED = "true";
+        const truoc = d.soGoi;
+        const rt = await gui(await foeTuDuyet(ad, k("k14t"), DESC_STOP, { writes }));
+        expect(rt, `thật: ${ten}`).toMatchObject({ ok: true, status: "acked" });
+        expect(d.soGoi - truoc, `thật: ${ten}`).toBe(1);
+        expect(d.ghi.at(-1)!.map((w) => ({ tagKey: w.tagKey, value: w.value })), `thật: ${ten}`).toEqual(ghim); // thiết bị nhận giá trị GHIM
+      }
     });
   });
 
