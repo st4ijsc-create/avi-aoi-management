@@ -1,7 +1,7 @@
 # SCADA giao diện đẹp, mượt, chỉn chu — đặc tả thiết kế (bản để duyệt)
 
 - **Ngày:** 2026-11-02 · **Tác giả:** phiên `scada-ui` · **Người duyệt:** dieu-phoi → chủ dự án
-- **Trạng thái:** v2 (thêm §7B động học máy + §7C thư viện khuôn, Pha 2). ĐẶC TẢ + MOCKUP. CHƯA có mã sản phẩm. Không chạm `.env` / :3000 / :8091 / GPU; không chạy DB; không đo trên máy chạy.
+- **Trạng thái:** v3 (chủ dự án DUYỆT v2 ngày 2026-11-02; quyết định ở §12A). v2 (thêm §7B động học máy + §7C thư viện khuôn, Pha 2). ĐẶC TẢ + MOCKUP. CHƯA có mã sản phẩm. Không chạm `.env` / :3000 / :8091 / GPU; không chạy DB; không đo trên máy chạy.
 - **Mockup xem được:** [mockup.html](2026-11-02-scada-giao-dien-muot-mockup/mockup.html) (mở thẳng bằng trình duyệt; 4 trạng thái bấm đổi được) + ảnh [1 bình thường](2026-11-02-scada-giao-dien-muot-mockup/anh-1-binh-thuong.png) · [2 cảnh báo](2026-11-02-scada-giao-dien-muot-mockup/anh-2-canh-bao.png) · [3 dữ liệu cũ](2026-11-02-scada-giao-dien-muot-mockup/anh-3-du-lieu-cu.png).
 - **Nhãn bằng chứng dùng trong tài liệu:** **[MÃ]** = đã đọc trong mã, có `tệp:dòng` · **[ĐỀ XUẤT]** = thiết kế mới, chưa có · **[CHƯA KIỂM]** = suy luận, cần đo / hỏi chủ sở hữu trước khi dựa vào.
 
@@ -458,6 +458,27 @@ Phụ trách: **phiên twin** (chủ sở hữu mã 3D). scada-ui chỉ cung c�
 4. **Chế độ tối** cho phòng điều khiển ban đêm: đưa vào pha 1d hay để sau? (ISA-101 thường có cả nền sáng và tối.)
 5. **Bảng vai trò tag** (§5.2) — dùng tên nào, đã có census chưa?
 6. **Quyền xem mô phỏng** (§7): vai trò nào?
+
+---
+
+## 12A. QUYẾT ĐỊNH CỦA CHỦ DỰ ÁN (duyệt v2, 2026-11-02) — v3 ghi lại, thay cho các câu hỏi §12
+
+| # | Câu hỏi | Quyết định | Hệ quả cho đặc tả |
+|---|---|---|---|
+| 1 | Khi nào bật `SCADA_SOCKET_ENABLED` | Bật **khi hợp đồng 1a lên main và đã kiểm**. Chủ dự án tự sửa `.env`; dieu-phoi báo dòng cần thêm. (Lưu ý: kênh cần **cả** `SCADA_LIVE_CACHE_ENABLED=true` và `SCADA_SOCKET_ENABLED=true`, thiếu một ⇒ `scada:error DISABLED` — `.env.example:3338-3342`.) | scada-ui KHÔNG đụng `.env`; pha 1b chỉ merge được trước khi bật vì client có dự phòng hỏi vòng (§3.4) |
+| 2 | SLO theo tầng nguồn | **Chấp nhận**: < 300 ms chỉ cho tag tầng "nóng"; tầng thường hiện tuổi. **KHÔNG đổi chu kỳ quét mặc định 5 s.** | §2 giữ nguyên; xoá khả năng "đổi poll mặc định" khỏi mọi phương án |
+| 3 | Phạm vi pha 1 | **L2 + L3 (faceplate).** L1 tổng quan để pha sau. | §5.1-6, §9: L1 ra khỏi pha 1 |
+| 4 | Chế độ tối | **SAU pha 1**, thành bước riêng. | Token màu pha 1 chỉ chế độ sáng; không vẽ chế độ tối trong pha 1 |
+| 5 | Tên vai trò tag | **Theo tên census C-tag** (scada-master kiểm kê). Chưa chốt ⇒ §5.2 ghi tạm, đánh dấu **"chờ C-tag"**. | Bảng §5.2 và `Khuon.vaiTro` (§7C.2) là **TẠM — chờ C-tag**; không viết mã ký hiệu ràng buộc tên cho tới khi census chốt |
+| 6 | Quyền xem / chạy mô phỏng | **CHỈ kỹ sư + admin.** | §7-6: quyền xem mô phỏng = kỹ sư + admin (không operator); server kiểm, không chỉ UI |
+| 0a | FK client hay server | **Mô-đun dùng chung client/server + test khớp.** | §7B.7 chọn (i) với điều kiện: tách `kinematicModel` thành mô-đun thuần dùng chung, test chéo client ≡ server trên bộ tư thế cố định |
+| 0b | Trần trục nóng | **12 / người dùng** (điều chỉnh sau đo pha 0). | §7B.3 |
+| 0c | URDF robot | Ưu tiên **bản hãng / ROS-Industrial**; không có thì **tự khai + kiểm giới hạn**. | §7B.1, §7C.5 bước 4 |
+| 0d | Phòng `robot:{id}` có qua cổng phạm vi chưa | dieu-phoi chuyển **scada-master** kiểm. | Chặn gương robot (2A) cho tới khi có kết luận |
+
+**Việc kế tiếp (dieu-phoi giao):**
+1. **Pha 0 (đo mốc)** — việc đầu tiên, sau B-T12, trên bản dev riêng, ngoài cửa sổ GPU, không đụng :3000. Kế hoạch: [pha0-ke-hoach.md](2026-11-02-scada-giao-dien-muot-pha0-ke-hoach.md) — **gửi dieu-phoi duyệt TRƯỚC khi chạy**.
+2. **1a (hợp đồng)** — soạn §3.6 thành brief cho scada-master: [1a-brief-scada-master.md](2026-11-02-scada-giao-dien-muot-1a-brief-scada-master.md). scada-master làm **SAU hàng an toàn A2 đang chạy**.
 
 ---
 
