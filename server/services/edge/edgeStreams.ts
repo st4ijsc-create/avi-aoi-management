@@ -69,15 +69,35 @@ export function createEdgeJournalConsume(journal: EdgeJournal): EdgeJournalConsu
  * R-10-bp (fix review 7) — an authorisation that arrived after its TTL and was NOT used: `auth.unused` journaled (fsync, the
  * jti consumed-as-unused) FIRST, only then the run-stream record `auth_unused` (central supersedes the authorisation). A jti
  * already consumed (used) is refused by the journal ⇒ never reported unused. true ⇔ both landed.
+ *
+ * A2(o) r3/r4 (review I-1) — the WIRE reason is chosen ONCE, here, when the run record is journaled: `config_stale` only when
+ * central advertised it (opts.centralAccepts — EdgeCentralClient.centralAccepts; absent ⇒ the baseline), else
+ * `expired_before_use`, which an OLD central accepts and supersedes the same way. The journaled record IS what every send and
+ * resend carries — byte-identical for the record's whole life (the journal survives a restart; claim tokens do not, and a stream
+ * without its token is orphaned to evidence, never re-sent under another reason): central stores each record's hash, and a resend
+ * of a seq with other content would be a 409 seq_conflict for the whole batch (the run stream wedged). The TRUE reason stays in
+ * the local journal (`auth.unused`) and in the log line.
  */
-export function createEdgeAuthUnusedReporter(journal: EdgeJournal, sink: EdgeReportSink): (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: EdgeAuthUnusedReason }) => Promise<boolean> {
+export function createEdgeAuthUnusedReporter(
+  journal: EdgeJournal,
+  sink: EdgeReportSink,
+  opts: { centralAccepts?: (token: string) => boolean } = {},
+): (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: EdgeAuthUnusedReason }) => Promise<boolean> {
   return async (u) => {
     const j = await journal.markAuthorizationUnused(u);
     if (!j.ok) {
       console.warn(`[EdgeJournal] ${u.reason === "config_stale" ? "stale-config" : "late"} authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
       return false;
     }
-    const r = await sink.run(u.runId, u.claimSeq, { kind: "auth_unused", stepId: u.stepId, attempt: u.attempt, jti: u.jti, reason: u.reason, at: Date.now() });
+    const accepts = (token: string): boolean => {
+      try {
+        return opts.centralAccepts?.(token) === true;
+      } catch {
+        return false;
+      }
+    };
+    const reason = edgeAuthUnusedWireReason(u.reason, accepts);
+    const r = await sink.run(u.runId, u.claimSeq, { kind: "auth_unused", stepId: u.stepId, attempt: u.attempt, jti: u.jti, reason, at: Date.now() });
     return r.seq !== null;
   };
 }
@@ -186,7 +206,7 @@ export class EdgeStreamShipper {
         if (!tok) return "no_token";
         r = await this.client.post(
           "report",
-          { claimSeq: tok.claimSeq, claimToken: tok.claimToken, epoch, stream, records: batch.map((b) => this.wireRunRecord(b.record as EdgeRunReportRecord)) },
+          { claimSeq: tok.claimSeq, claimToken: tok.claimToken, epoch, stream, records: batch.map((b) => b.record as EdgeRunReportRecord) },
           { runId: parsed.runId },
         );
       } else if (parsed.kind === "events") {
@@ -241,18 +261,6 @@ export class EdgeStreamShipper {
       return "refused";
     }
     return "refused";
-  }
-
-  /**
-   * A2(o) r3 — a run record as it goes ON THE WIRE: an `auth_unused` `config_stale` is sent as such only to a central that
-   * advertised it (edgeCentralClient.centralAccepts); an OLD central gets `expired_before_use`, which it accepts and supersedes
-   * the same way (its strict literal would refuse the whole batch and wedge the run stream). The journal keeps the true reason.
-   */
-  private wireRunRecord(rec: EdgeRunReportRecord): EdgeRunReportRecord {
-    if (rec.kind !== "auth_unused") return rec;
-    const accepts = (token: string) => (typeof this.client.centralAccepts === "function" ? this.client.centralAccepts(token) === true : false);
-    const reason = edgeAuthUnusedWireReason(rec.reason, accepts);
-    return reason === rec.reason ? rec : { ...rec, reason };
   }
 
   private warnOnce(k: string, msg: string): void {

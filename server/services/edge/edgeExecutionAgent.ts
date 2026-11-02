@@ -1001,8 +1001,9 @@ export class EdgeExecutionAgent {
   private unused: EdgeRunIo["reportUnused"] | null = null;
   private unusedReporter(): NonNullable<EdgeRunIo["reportUnused"]> {
     if (!this.unused) {
-      const { journal, sink } = this.deps;
-      this.unused = async (u) => (await import("./edgeStreams")).createEdgeAuthUnusedReporter(journal, sink)(u);
+      const { journal, sink, client } = this.deps;
+      // A2(o) r4 — the wire reason is fixed when journaled, from what central advertised (EdgeCentralClient.centralAccepts)
+      this.unused = async (u) => (await import("./edgeStreams")).createEdgeAuthUnusedReporter(journal, sink, { centralAccepts: (t) => client.centralAccepts?.(t) === true })(u);
     }
     return this.unused;
   }

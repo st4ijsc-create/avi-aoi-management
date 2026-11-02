@@ -124,14 +124,17 @@ export function edgePlcConfigGuardsNode(
 
 // ── R1b-2b-2a A2(o) — URGENT alerts of a config central cannot serve (the factory-drift pattern of deviceOwnershipService) ──
 /**
- * key → when THIS process raised it (one scan / one rebuild every few seconds never repeats). A2(o) r3 (review I-1): an entry
- * EXPIRES after EDGE_CONFIG_ALERT_WINDOW_MS (24 h, the durable dedup's window — docHetTheoTrang.baoDocCatBot's pattern) and is
- * DELETED when the delivery failed (recipients unreadable / none, or the raise threw) ⇒ the next occurrence alerts again. A node
- * that builds again re-arms its build keys (rearmConfigAlerts).
+ * key → until when THIS process suppresses it (one scan / one rebuild every few seconds never repeats). A2(o) r3 (review I-1):
+ * a delivered alert is suppressed for EDGE_CONFIG_ALERT_WINDOW_MS (24 h, the durable dedup's window — docHetTheoTrang.baoDocCatBot's
+ * pattern). A2(o) r4 (review m-2): a delivery that FAILED (recipients unreadable / none, or the raise threw) keeps a SHORT stamp
+ * (EDGE_CONFIG_ALERT_RETRY_MS, 5 min) — a rebuild every few seconds never floods the log or raises to [] again and again, and
+ * after 5 min the next occurrence alerts again. A node that builds again re-arms its build keys (rearmConfigAlerts).
  */
-const configAlerted = new Map<string, number>();
+const configAlerted = new Map<string, { until: number }>();
 /** = robot/criticalStopAlert CRITICAL_STOP_ALERT_DEDUP_WINDOW_MS (24 h; pinned equal by edgeConfigCentral.a2o.test) */
 export const EDGE_CONFIG_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** A2(o) r4 — how long a FAILED delivery is suppressed before the next occurrence alerts again */
+export const EDGE_CONFIG_ALERT_RETRY_MS = 5 * 60 * 1000;
 const CONFIG_ALERTED_MAX = 10_000;
 /** serialized: two builds never race to write the same inbox rows */
 let configAlertQueue: Promise<unknown> = Promise.resolve();
@@ -147,36 +150,38 @@ export async function alertRecipients(d: Db): Promise<number[]> {
 /**
  * A2(o) — one URGENT alert per `dedupKey`: per process (configAlerted, 24 h) AND durably for 24 h (khuTrungBenVung — a restart
  * never re-sends it to every admin), retried until the inbox row lands. A delivery that failed (recipients unreadable / none, the
- * raise threw) forgets the key (A2(o) r3) ⇒ the next occurrence alerts again. Fire-and-forget; never throws. false ⇔ already
- * alerted here within the window (or in flight).
+ * raise threw) is suppressed for 5 min only (A2(o) r4) ⇒ an occurrence after that alerts again. Fire-and-forget; never throws.
+ * false ⇔ suppressed here (within the window, or in flight).
  */
 export function raiseEdgeConfigAlert(a: { kind: string; dedupKey: string; title: string; message: string; nodeId: number }, recipients: () => Promise<number[]>): boolean {
   const now = Date.now();
-  const at = configAlerted.get(a.dedupKey);
-  if (at !== undefined && now - at < EDGE_CONFIG_ALERT_WINDOW_MS) return false;
+  const held = configAlerted.get(a.dedupKey);
+  if (held !== undefined && now < held.until) return false;
   if (configAlerted.size >= CONFIG_ALERTED_MAX) {
-    for (const [k, t] of configAlerted) if (now - t >= EDGE_CONFIG_ALERT_WINDOW_MS) configAlerted.delete(k);
+    for (const [k, e] of configAlerted) if (now >= e.until) configAlerted.delete(k);
     if (configAlerted.size >= CONFIG_ALERTED_MAX) configAlerted.clear();
   }
-  // marked while in flight (a rebuild every few seconds never queues a second one); un-marked when the delivery failed
-  configAlerted.set(a.dedupKey, now);
-  const forget = () => {
-    if (configAlerted.get(a.dedupKey) === now) configAlerted.delete(a.dedupKey);
+  // marked for the full window while in flight (a rebuild every few seconds never queues a second one); a failed delivery
+  // SHORTENS it to the retry stamp (only this call's entry: a newer one is never touched)
+  const mine = { until: now + EDGE_CONFIG_ALERT_WINDOW_MS };
+  configAlerted.set(a.dedupKey, mine);
+  const failed = () => {
+    if (configAlerted.get(a.dedupKey) === mine) mine.until = Date.now() + EDGE_CONFIG_ALERT_RETRY_MS;
   };
   configAlertQueue = configAlertQueue
     .then(async () => {
-      // an unreadable / empty recipient list still raises (the log line + alert stream carry it) but the key is FORGOTTEN: the
-      // inbox row was written for nobody, so the next occurrence alerts again
+      // an unreadable / empty recipient list still raises (the log line + alert stream carry it) but only the SHORT stamp is
+      // kept: the inbox row was written for nobody, so an occurrence after 5 min alerts again
       let to: number[] = [];
       let delivered = true;
       try {
         to = await recipients();
       } catch (err) {
         delivered = false;
-        console.error(`[EdgeConfig] ${a.kind}: the alert recipients could not be read (${String((err as Error)?.message ?? err).slice(0, 160)}) — the next occurrence alerts again`);
+        console.error(`[EdgeConfig] ${a.kind}: the alert recipients could not be read (${String((err as Error)?.message ?? err).slice(0, 160)}) — an occurrence after 5 min alerts again`);
       }
       if (!Array.isArray(to) || to.length === 0) {
-        if (delivered) console.error(`[EdgeConfig] ${a.kind}: no active admin / supervisor to alert — the next occurrence alerts again`);
+        if (delivered) console.error(`[EdgeConfig] ${a.kind}: no active admin / supervisor to alert — an occurrence after 5 min alerts again`);
         delivered = false;
         to = [];
       }
@@ -197,11 +202,11 @@ export function raiseEdgeConfigAlert(a: { kind: string; dedupKey: string; title:
         });
       } catch (err) {
         delivered = false;
-        console.error(`[EdgeConfig] ${a.kind}: the alert could not be raised (${String((err as Error)?.message ?? err).slice(0, 160)}) — the next occurrence alerts again`);
+        console.error(`[EdgeConfig] ${a.kind}: the alert could not be raised (${String((err as Error)?.message ?? err).slice(0, 160)}) — an occurrence after 5 min alerts again`);
       }
-      if (!delivered) forget();
+      if (!delivered) failed();
     })
-    .catch(() => undefined); // one failed alert never breaks the queue (its key was forgotten: the next occurrence alerts)
+    .catch(() => undefined); // one failed alert never breaks the queue (its stamp was shortened: a later occurrence alerts)
   return true;
 }
 /** A node built a config again ⇒ its BUILD alerts re-arm (a NEW failure later alerts again); edge-reported ones are not build state. */

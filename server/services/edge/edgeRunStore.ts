@@ -444,10 +444,16 @@ export class EdgeRunStore extends EdgeStoreBase {
     }
   }
 
-  /** A2(o) AMENDMENT 2 — the step is HELD (configStale) and an anomaly says WHY, with the config's age. */
-  private heldForStaleConfig(stepId: string, why: string): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
+  /**
+   * A2(o) AMENDMENT 2 — the step is HELD (configStale) and an anomaly says WHY, with the config's age. A2(o) r4 (review m-1): a hold
+   * CAUSED by a missing safety-PLC config writes no EDGE_CONFIG_STALE — the dispatch gate already journaled EDGE_SAFETY_CONFIG_MISSING
+   * (central's URGENT alert) for it; the step error still says why.
+   */
+  private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
     this.heldReason = "configStale";
-    this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
+    if (cause === EDGE_CONFIG_STALE) {
+      this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
+    }
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
     return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held (Continue it once the edge has its new config).` };
   }
@@ -481,7 +487,11 @@ export class EdgeRunStore extends EdgeStoreBase {
         : d.reason === EDGE_SAFETY_CONFIG_MISSING
           ? "a safety-PLC config the authorisation was signed for is not in the edge's config"
           : "the edge's config is older than the one central announced";
-    const h = this.heldForStaleConfig(stepId, `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`);
+    const h = this.heldForStaleConfig(
+      stepId,
+      `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`,
+      d.reason === EDGE_SAFETY_CONFIG_MISSING ? EDGE_SAFETY_CONFIG_MISSING : EDGE_CONFIG_STALE,
+    );
     return { reason: h.heldReason, error: h.error };
   }
 
