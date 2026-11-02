@@ -102,6 +102,50 @@ export const TU_DON: readonly string[] = [
 /** Tệp tạo người dùng KHÔNG xoá ⇒ RÒ. ĐÃ RỖNG (2026-10-23): bốn tệp rò đã chuyển sang `taoNguoiDungTest`, bảy tệp còn lại hoá ra không rò (chúng nằm trong giao dịch hoàn tác). Phải GIỮ rỗng. */
 export const CHUA_DON: readonly string[] = [];
 
+/**
+ * ★ MIỄN TRỪ CÓ HẠN, ĐÚNG MỘT TỆP (2026-11-03, phiên điều phối, phán quyết (a) của F5 đầy đủ fix round 1) — tệp ĐẦU-CUỐI COMMIT ⇒ NOTIFY ⇒
+ * socket rớt. Lý do: "NOTIFY chỉ giao lúc COMMIT, ROLLBACK không thể kiểm". Bằng chứng (cả hai được census KIỂM, không chỉ ghi):
+ *   • tài liệu Postgres, lệnh NOTIFY: "if a NOTIFY is executed inside a transaction, the notify events are not delivered until and unless the
+ *     transaction is committed" (https://www.postgresql.org/docs/current/sql-notify.html);
+ *   • ca HOÀN TÁC `ROLLBACK_KHONG_GIAO_THONG_BAO` trong `socketPhamVi0435.db.test.ts`: một lượt ghi bị hoàn tác KHÔNG giao thông báo nào tới
+ *     một LISTEN thật (đối chứng: một NOTIFY đã commit thì tới).
+ * Điều kiện (kiểm trên NGUỒN, mất một ⇒ ĐỎ): tiền tố `skpvtb`, vai ứng dụng (không owner `aoi` / MIGRATION_DB_*), không id tường minh trong
+ * INSERT, dọn bằng UPDATE về trơ (người dùng `isActive = false`, phiên `isActive = false` + `expiresAt = now()`, phân công đổi mã `…-tro`),
+ * KHÔNG DELETE / TRUNCATE. Chỉ ĐÚNG tệp này; tệp thứ hai dùng cùng hình dạng ⇒ vẫn VI PHẠM (lưới đột biến bên dưới). KHÔNG được thêm mục.
+ */
+export const MIEN_COMMIT_NOTIFY: readonly { file: string; ngay: string; lyDo: string; caHoanTac: { file: string; dau: string } }[] = [
+  {
+    file: "server/_core/socketPhamViThongBao.db.test.ts",
+    ngay: "2026-11-03",
+    lyDo: "NOTIFY chỉ giao lúc COMMIT, ROLLBACK không thể kiểm",
+    caHoanTac: { file: "server/_core/socketPhamVi0435.db.test.ts", dau: "ROLLBACK_KHONG_GIAO_THONG_BAO" },
+  },
+];
+const TRAN_MIEN_COMMIT_NOTIFY = 1;
+const boChuThich = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+/** Điều kiện của miễn trừ trên NGUỒN tệp; trả danh sách điều kiện HỎNG (rỗng = hợp lệ). */
+export function dieuKienMienCommitNotify(nguon: string): string[] {
+  const ma = boChuThich(nguon);
+  const hong: string[] = [];
+  if (!/skpvtb/.test(ma)) hong.push("thiếu tiền tố skpvtb");
+  if (/\bDELETE\s+FROM\b|\bTRUNCATE\b|\.delete\(/i.test(ma)) hong.push("có DELETE / TRUNCATE");
+  if (/aoi@|MIGRATION_DB_|asOwner\(/.test(ma)) hong.push("dùng owner aoi");
+  if (/INSERT\s+INTO\s+(public\.)?"?\w+"?\s*\(\s*"?id"?\s*[,)]/i.test(ma)) hong.push("INSERT có id tường minh");
+  if (!/UPDATE users SET "isActive" = false/.test(ma)) hong.push("thiếu dọn người dùng bằng UPDATE isActive=false");
+  if (!/UPDATE user_sessions SET "isActive" = false, "expiresAt" = now\(\)/.test(ma)) hong.push("thiếu dọn phiên (isActive=false + hết hạn)");
+  if (!/UPDATE user_factory_assignments SET "factoryCode" = /.test(ma)) hong.push("thiếu dọn phân công bằng UPDATE về mã trơ");
+  return hong;
+}
+/** Tệp được miễn: CÓ trong danh sách VÀ thoả mọi điều kiện. */
+export function tepMienCommitNotify(docTep: (f: string) => string | null): Set<string> {
+  const out = new Set<string>();
+  for (const m of MIEN_COMMIT_NOTIFY) {
+    const nguon = docTep(m.file);
+    if (nguon !== null && dieuKienMienCommitNotify(nguon).length === 0) out.add(m.file);
+  }
+  return out;
+}
+
 /** Trần — hạ khi chuyển thêm. */
 const TRAN_CHUA_DON = 0;
 const TRAN_TU_DON = 72;
@@ -232,11 +276,26 @@ const TUNG_HOAN_TAC: readonly string[] = [
 
 describe("census — test không tự insert(users) ngoài giao dịch hoàn tác (hoặc helper / danh sách cũ)", () => {
   const ket = quetTatCa();
+  const docTep = (f: string) => (fs.existsSync(path.join(GOC, f)) ? fs.readFileSync(path.join(GOC, f), "utf8") : null);
+  const mienCommit = tepMienCommitNotify(docTep);
   const ngoaiLe = new Set([...TU_DON, ...CHUA_DON]);
   const hoanTac = [...ket].filter(([, k]) => laHoanTac(k)).map(([f]) => f);
 
+  it("★ miễn trừ COMMIT ⇒ NOTIFY (2026-11-03): đúng MỘT mục, có ngày + lý do + bằng chứng còn tồn tại, mọi điều kiện thoả; không mở rộng", () => {
+    expect(MIEN_COMMIT_NOTIFY.length).toBe(TRAN_MIEN_COMMIT_NOTIFY);
+    for (const m of MIEN_COMMIT_NOTIFY) {
+      expect(m.ngay).toBe("2026-11-03");
+      expect(m.lyDo).toBe("NOTIFY chỉ giao lúc COMMIT, ROLLBACK không thể kiểm");
+      const nguon = docTep(m.file);
+      expect(nguon, `tệp miễn ${m.file} phải tồn tại`).not.toBeNull();
+      expect(dieuKienMienCommitNotify(nguon!), m.file).toEqual([]);
+      expect(ket.get(m.file)?.tao, "tệp miễn phải thật sự tạo người dùng (không thì xoá mục)").toBe(true);
+      expect(docTep(m.caHoanTac.file) ?? "", "ca hoàn tác (bằng chứng) phải tồn tại").toContain(m.caHoanTac.dau);
+    }
+  });
+
   it("★ mọi tệp test tạo người dùng là: giao dịch hoàn tác (AST), hoặc nằm trong danh sách cũ", () => {
-    const vi = tepViPham(ket, ngoaiLe);
+    const vi = tepViPham(ket, new Set([...ngoaiLe, ...mienCommit]));
     expect(
       vi,
       "tệp mới tạo người dùng: chèn TRONG `db.transaction(async (tx) => { … throw new Rollback() })` và KHÔNG qua kết nối chung db/conn/getDb() (luật 2026-11-02: không DELETE, dọn bằng ROLLBACK)",
@@ -328,6 +387,23 @@ describe("census — đột biến của chính bộ quét", () => {
     ]);
     expect(tepViPham(ket, new Set(["cu.tu-don.test.ts"]))).toEqual(["moi.ro.test.ts", "moi.hoantac.nhung.chen.chung.test.ts"]);
     expect(tepViPham(ket, new Set())).toEqual(["moi.ro.test.ts", "moi.hoantac.nhung.chen.chung.test.ts", "cu.tu-don.test.ts"]);
+  });
+  it("miễn COMMIT ⇒ NOTIFY không mở rộng: tệp THỨ HAI cùng hình dạng ⇒ vẫn vi phạm; tệp miễn mất một điều kiện ⇒ hết miễn", () => {
+    const that = fs.readFileSync(path.join(GOC, MIEN_COMMIT_NOTIFY[0].file), "utf8");
+    const k = quetNguon("server/_core/zzBanSao.db.test.ts", that);
+    expect(k.tao).toBe(true);
+    const mien = tepMienCommitNotify((f) => (f === MIEN_COMMIT_NOTIFY[0].file ? that : null));
+    expect(tepViPham(new Map([["server/_core/zzBanSao.db.test.ts", k]]), mien)).toEqual(["server/_core/zzBanSao.db.test.ts"]);
+    for (const [ten, dotBien] of [
+      ["DELETE", that.replace("// DỌN = UPDATE VỀ TRƠ (KHÔNG DELETE)", "await chay(sql`DELETE FROM users WHERE id = 0`);")],
+      ["bỏ dọn phiên", that.replace('"isActive" = false, "expiresAt" = now()', '"isActive" = false')],
+      ["id tường minh", that.replace('INSERT INTO users ("openId"', 'INSERT INTO users (id, "openId"')],
+      ["owner aoi", that + "\nconst u = 'postgres://aoi@x/y';"],
+    ] as const) {
+      expect(that).not.toBe(dotBien);
+      expect(dieuKienMienCommitNotify(dotBien).length, ten).toBeGreaterThan(0);
+      expect(tepMienCommitNotify(() => dotBien).size, ten).toBe(0);
+    }
   });
   it("nhận ra lệnh xoá (Drizzle và SQL)", () => {
     expect(quetNguon("x.ts", "await db.delete(users).where(a)").xoa).toBe(true);

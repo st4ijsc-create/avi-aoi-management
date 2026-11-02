@@ -1,5 +1,6 @@
 /**
- * socketPhamVi0435.db.test.ts — ★★★ F5 đầy đủ: di trú 0435 (`socket_pham_vi`) trên `_test`, CHỈ ĐỌC + giao dịch HOÀN TÁC (không một hàng nào).
+ * socketPhamVi0435.db.test.ts — ★★★ F5 đầy đủ: di trú 0435 (`socket_pham_vi`) trên `_test`, CHỈ ĐỌC + giao dịch HOÀN TÁC (không một hàng nào được
+ * commit; ca ROLLBACK_KHONG_GIAO_THONG_BAO commit đúng một `SELECT pg_notify(...)` đối chứng — không ghi bảng).
  *
  *   (a) catalog: 8 trigger trên 6 bảng, AFTER ROW, đúng sự kiện / cột `UPDATE OF` / có WHEN / gọi `public.socket_pham_vi_notify`, đang bật;
  *   (b) quyền hàm: `socket_pham_vi_payload` avi_app EXECUTE được (theo thiết kế), không PUBLIC; `socket_pham_vi_notify` không ai EXECUTE;
@@ -116,7 +117,7 @@ describe("★★★ 0435 socket_pham_vi — catalog, quyền, hành vi (hoàn t�
 
   it("(c) hàm tải trọng ĐÃ ÁP qua hết bảng ca (mọi bảng × thao tác, UPDATE không đổi ⇒ NULL, phiên chỉ true→false, userId cũ + mới, không giá trị hàng)", async () => {
     const sai = await trongGiaoDichHoanTac((tx) => chayBangCa(tx, "public.socket_pham_vi_payload"));
-    expect(CA.length).toBeGreaterThanOrEqual(28);
+    expect(CA.length).toBeGreaterThanOrEqual(31);
     expect(sai).toEqual([]);
   });
 
@@ -144,5 +145,50 @@ describe("★★★ 0435 socket_pham_vi — catalog, quyền, hành vi (hoàn t�
     expect(ketQua.f5_db_khong_doi.length, "đột biến 'UPDATE không đổi vẫn bắn' SỐNG SÓT").toBeGreaterThan(0);
     expect(ketQua.f5_db_phien.length, "đột biến 'phiên false→true' SỐNG SÓT").toBeGreaterThan(0);
     expect(ketQua.f5_db_chi_moi.length, "đột biến 'chỉ userId mới' SỐNG SÓT").toBeGreaterThan(0);
+  });
+});
+
+describe("★★★ ROLLBACK_KHONG_GIAO_THONG_BAO — bằng chứng của miễn trừ COMMIT ⇒ NOTIFY (nguoiDungTest.census MIEN_COMMIT_NOTIFY)", () => {
+  /**
+   * Tài liệu Postgres (NOTIFY): "if a NOTIFY is executed inside a transaction, the notify events are not delivered until and unless the
+   * transaction is committed". Đo trên `_test` bằng một LISTEN THẬT (client NOTIFY riêng của connection.ts): một lượt ghi KÍCH trigger 0435
+   * trong giao dịch HOÀN TÁC ⇒ KHÔNG thông báo nào tới; đối chứng DƯƠNG: một NOTIFY đã commit (không ghi hàng nào) ⇒ tới. Không hàng nào được
+   * commit (INSERT nằm trong giao dịch hoàn tác; NOTIFY đối chứng không ghi bảng).
+   */
+  it("một lượt ghi bị HOÀN TÁC không giao thông báo nào tới LISTEN thật; NOTIFY đã commit thì tới", async () => {
+    const { getNotifyClient } = await import("../db/connection");
+    const nc = getNotifyClient() as unknown as {
+      listen(ch: string, fn: (p: string) => void, onlisten?: () => void): Promise<{ unlisten: () => Promise<unknown> }>;
+    } | null;
+    expect(nc, "cần client NOTIFY của _test").not.toBeNull();
+    const nhan: number[][] = [];
+    const sub = await nc!.listen("socket_pham_vi", (p: string) => {
+      try {
+        const o = JSON.parse(p) as { u?: number[] };
+        if (Array.isArray(o.u)) nhan.push(o.u);
+      } catch {
+        /* nhịp tim / tải trọng khác */
+      }
+    });
+    try {
+      const uid = 2_000_000_000 + Math.floor(Math.random() * 100_000_000);
+      const daGhi = await trongGiaoDichHoanTac(async (tx) =>
+        hang(
+          await tx.execute(
+            sql`INSERT INTO permissions ("userId", category, "moduleName", "canView") VALUES (${uid}, 'dashboard', ${`f5rb${uid}`}, true) RETURNING "userId" AS u`,
+          ),
+        ),
+      );
+      expect(daGhi.map((r) => Number(r.u)), "lượt ghi KÍCH trigger phải thật sự chạy (rồi bị hoàn tác)").toEqual([uid]);
+      const db = await getDb();
+      await db!.execute(sql`SELECT pg_notify('socket_pham_vi', ${JSON.stringify({ u: [uid + 1] })})`); // đối chứng: NOTIFY đã commit
+      const bd = Date.now();
+      while (!nhan.some((u) => u.includes(uid + 1)) && Date.now() - bd < 5_000) await new Promise((r) => setTimeout(r, 50));
+      expect(nhan.some((u) => u.includes(uid + 1)), "đối chứng dương: NOTIFY đã commit phải tới").toBe(true);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(nhan.some((u) => u.includes(uid)), "lượt ghi HOÀN TÁC KHÔNG được giao thông báo").toBe(false);
+    } finally {
+      await sub.unlisten().catch(() => undefined);
+    }
   });
 });

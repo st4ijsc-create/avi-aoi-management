@@ -571,6 +571,72 @@
     "id": 2
    },
    null
+  ],
+  [
+   "uca UPDATE cung userId (doi ma tap doan)",
+   "user_corporate_assignments",
+   "UPDATE",
+   {
+    "id": 1,
+    "userId": 7,
+    "corporateCode": "C-1"
+   },
+   {
+    "id": 1,
+    "userId": 7,
+    "corporateCode": "C-2"
+   },
+   {
+    "u": [
+     7
+    ]
+   }
+  ],
+  [
+   "uca UPDATE userId 8->7 (ca hai, sap xep)",
+   "user_corporate_assignments",
+   "UPDATE",
+   {
+    "id": 1,
+    "userId": 8,
+    "corporateCode": "C-1"
+   },
+   {
+    "id": 1,
+    "userId": 7,
+    "corporateCode": "C-1"
+   },
+   {
+    "u": [
+     7,
+     8
+    ]
+   }
+  ],
+  [
+   "permissions UPDATE userId 6->5 (ca hai, sap xep)",
+   "permissions",
+   "UPDATE",
+   {
+    "id": 4,
+    "userId": 6,
+    "moduleName": "andon",
+    "canView": true,
+    "expiresAt": null
+   },
+   {
+    "id": 4,
+    "userId": 5,
+    "moduleName": "andon",
+    "canView": true,
+    "expiresAt": null
+   },
+   {
+    "u": [
+     5,
+     6
+    ]
+   }
   ]
  ]
 }
