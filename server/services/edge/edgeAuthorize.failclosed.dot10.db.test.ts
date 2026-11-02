@@ -35,6 +35,8 @@ const sw = vi.hoisted(() => ({
   policyCalls: [] as Array<{ subject: string; action: string; resource: string; ctx: Record<string, unknown> }>,
   /** R1b-2b-2a A2(o) — the snapshot central SERVES the node: the real one, the real one WITHOUT these ids, or unbuildable */
   served: "real" as "real" | "throw" | { without: number[] },
+  /** A2(o) r3 F3 — how many times the served snapshot was read */
+  servedCalls: 0,
 }));
 
 vi.mock("./edgeConfigCentral", async (orig) => {
@@ -42,6 +44,7 @@ vi.mock("./edgeConfigCentral", async (orig) => {
   return {
     ...real,
     servedSafetyPlcConfigIds: async (...a: Parameters<typeof real.servedSafetyPlcConfigIds>) => {
+      sw.servedCalls += 1;
       if (sw.served === "throw") throw new Error("A2O served config build failed");
       const ids = await real.servedSafetyPlcConfigIds(...a);
       const drop = sw.served === "real" ? [] : sw.served.without;
@@ -454,9 +457,58 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — /authorize is fail-closed at ev
     expect([...(await servedSafetyPlcConfigIds(await k.principal("A")))]).toContain(plcRobotA);
   });
 
+  it("★ A2(o) r3 F3: the signed list is EMPTY (no PLC guards the robot) and the node's config is UNBUILDABLE ⇒ the non-STOP authorisation is refused (503, nothing written or signed); a pinned STOP (robot abort) on the same node + robot still answers 'send it' without reading the snapshot", async () => {
+    const { edgeAuthorizeSafetyConfigIds } = await import("./edgeAuthorizeCentral");
+    const { centralDb } = await import("./edgeCentralCommon");
+    await k.sql`UPDATE safety_plc_configs SET enabled = false WHERE id = ${plcRobotA}`;
+    try {
+      // the device gates sign an EMPTY list now (simulation: central consults no PLC; robot A's own row disabled)
+      expect(await edgeAuthorizeSafetyConfigIds(await centralDb(), k.ids.nodeA, { robotId: k.ids.robotA }, { centralPreflight: false })).toEqual([]);
+      const before = await rows();
+      const pendingBefore = await pending();
+      sw.served = "throw";
+      sw.servedCalls = 0;
+      const r = await robotAttempt();
+      expect(r, JSON.stringify(r)).toMatchObject({ http: 503, code: "edge_unavailable" });
+      expect(r).not.toHaveProperty("data.authorization");
+      expect(sw.servedCalls).toBe(1); // the snapshot WAS read for the empty list
+      expect(await rows()).toBe(before);
+      expect(await pending()).toBe(pendingBefore);
+      // a pinned STOP on the same node and robot: step 5 answers before any gate — the unbuildable snapshot is never read
+      const s = kitSteps(k);
+      const run = await k.newRun("fcf3stop", "A", [s.gate, s.robotStop]);
+      const { claimForNodeV2 } = await import("./edgeExecutionCentral");
+      const c = await claimForNodeV2(await k.principal("A"), run.runId, { claimSeq: 0, defHash: run.defHash, programChecks: k.readings([k.ids.adapterA]) });
+      expect(c.http, JSON.stringify(c)).toBe(200);
+      const { robotPayloadHash } = await import("../ot/otActionBinding");
+      const { authorizeForNode } = await import("./edgeAuthorizeCentral");
+      sw.servedCalls = 0;
+      const stop = await authorizeForNode(await k.principal("A"), run.runId, {
+        claimSeq: c.data!.claimSeq,
+        claimToken: c.data!.claimToken,
+        stepId: "s1",
+        attempt: 1,
+        idempotencyKey: `run${run.runId}-s1-a1`,
+        reqNonce: nonce(),
+        command: { kind: "robot", robotId: k.ids.robotA, jobType: "abort", params: {} },
+        payloadHash: robotPayloadHash({ robotId: k.ids.robotA, jobType: "abort", params: {} }),
+        programChecks: k.readings([k.ids.adapterA]),
+      });
+      expect(stop, JSON.stringify(stop)).toMatchObject({ http: 400, code: "stop_needs_no_authorization" });
+      expect(sw.servedCalls).toBe(0);
+      // control: the snapshot buildable again ⇒ the same empty-list attempt is authorised (the snapshot was the only cause)
+      sw.served = "real";
+      const ok = await robotAttempt();
+      expect(ok.http, JSON.stringify(ok)).toBe(200);
+      expect((JSON.parse(ok.data!.authorization.payload) as { safetyConfigIds: number[] }).safetyConfigIds).toEqual([]);
+    } finally {
+      await k.sql`UPDATE safety_plc_configs SET enabled = true WHERE id = ${plcRobotA}`;
+    }
+  });
+
   it("control: with every read answering, the same attempt is authorised (the switches are the only cause above)", async () => {
     const r = await robotAttempt();
     expect(r.http, JSON.stringify(r)).toBe(200);
-    expect(await rows()).toBe(7); // + the OK attempts of the I-1, N-1, F-B2-1 (×2), empty-safety-list and R-10-aw tests
+    expect(await rows()).toBe(8); // + the OK attempts of the I-1, N-1, F-B2-1 (×2), empty-safety-list, R-10-aw and r3 F3 tests
   });
 });

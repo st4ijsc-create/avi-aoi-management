@@ -32,6 +32,8 @@ const h = vi.hoisted(() => ({
   telemetry: [] as Array<{ key: string; value: unknown }>,
   /** R1b-2b-2a A2(o) AMENDMENT 2 — these steps' NEXT dispatch is refused by the edge's config gate (CONFIG_STALE: nothing sent) */
   staleDispatch: new Set<string>(),
+  /** A2(o) r3 F4 — these steps' NEXT dispatch is refused by the config gate with SAFETY_CONFIG_MISSING (nothing sent) */
+  missingDispatch: new Set<string>(),
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -63,6 +65,10 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       if (h.staleDispatch.delete(stepId)) {
         // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "CONFIG_STALE", detail: { edge: true, stop: false, reason: "CONFIG_STALE", refusal: "central announced config v4 3 s ago; this edge still holds v3 (issued 95 s ago) — non-STOP writes are refused until the refresh succeeds (STOPs still go)" } };
+      }
+      if (h.missingDispatch.delete(stepId)) {
+        // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's SAFETY_CONFIG_MISSING (before driver / consume)
+        return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "SAFETY_CONFIG_MISSING", detail: { edge: true, stop: false, reason: "SAFETY_CONFIG_MISSING", refusal: "signed safety-PLC config(s) #7 absent from the verified config v3 (issued 95 s ago) — the preflight could not consult them; refused, a refresh is requested" } };
       }
       const left = h.failPlan.get(stepId) ?? 0;
       h.onLedger?.(cmd, left === 0); // the REAL ordering: the ledger result is recorded before the walker writes its result row
@@ -175,6 +181,7 @@ beforeEach(() => {
   h.sent.length = 0;
   h.failPlan.clear();
   h.staleDispatch.clear();
+  h.missingDispatch.clear();
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -735,6 +742,36 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => a.claimSeq)).toEqual([2, 3]); // a NEW authorisation under the new claim
     expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2", "r2"]); // refused once (nothing out), then sent once
     expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ A2(o) r3 F4: a safety-PLC config MISSING at the edge dispatch (SAFETY_CONFIG_MISSING, before the consume: nothing sent) ⇒ HELD like a stale config: no retry, no compensation, the authorisation reported unused; after the refresh + Continue ⇒ re-authorised and sent exactly once", async () => {
+    const e = await edgeAssignedRun(def("a2o-miss", [gate(), move("r2", { maxAttempts: 3, compensation: ot("c2") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.unused = [];
+    h.missingDispatch.add("r2");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // ONE dispatch attempt, refused by the gate: no retry (maxAttempts 3)
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => [a.claimSeq, a.attempt])).toEqual([[2, 1]]);
+    const r2 = stepRows(e.runId).find((s) => s.stepId === "r2")!;
+    expect(r2).toMatchObject({ status: "held" });
+    expect(String(r2.error)).toMatch(/^EDGE_HELD\(configStale\).*signed safety-PLC config\(s\) #7 absent/);
+    expect(String(r2.error)).toContain("reported unused");
+    expect(e.unused).toMatchObject([{ runId: e.runId, claimSeq: 2, stepId: "r2", attempt: 1, reason: "config_stale" }]);
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(runRow(e.runId).status).toBe("held");
+    // the edge's refresh brings the PLC config ⇒ Continue ⇒ a NEW authorisation, sent once, completed; 0 compensations
+    await continueHeld(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out, JSON.stringify({ out: s3.out, rows: stepRows(e.runId) })).toMatchObject({ outcome: "completed" });
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => a.claimSeq)).toEqual([2, 3]);
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2", "r2"]); // refused once (nothing out), then sent once
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(stepRows(e.runId).find((s) => s.stepId === "c2")).toBeUndefined();
     expect(runRow(e.runId).status).toBe("completed");
   });
 

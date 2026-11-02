@@ -12,6 +12,9 @@
  *        throws) — the STOPs they carry still go.
  *   O8 — a config that cannot be built is no longer a SILENT configVersion 0: logged once per node + reason, and a contract
  *        failure raises one URGENT alert (edge_config_unbuildable).
+ *   r3 F1 — the per-process alert memory EXPIRES after 24 h and FORGETS a key whose delivery failed (recipients unreadable /
+ *        none, the raise threw) ⇒ the next occurrence alerts again; within 24 h ⇒ not.
+ *   r3 F3 — an EMPTY signed list still reads the served snapshot: an unbuildable config ⇒ throws (⇒ 503), never a pass.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -23,6 +26,8 @@ const H = vi.hoisted(() => ({
   served: "real" as "real" | "throw" | number[],
   plcs: [] as Array<Record<string, unknown>>,
   dbError: null as Error | null,
+  /** r3 F1 — the raise throws (the inbox / stream could not be written) */
+  raiseThrows: false,
 }));
 vi.mock("../../db/connection", () => ({
   getDb: async () => {
@@ -30,7 +35,10 @@ vi.mock("../../db/connection", () => ({
   },
 }));
 vi.mock("../robot/criticalStopAlert", () => ({
-  raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a),
+  raiseCriticalStopAlert: async (a: Record<string, unknown>) => {
+    if (H.raiseThrows) throw new Error("raise failed");
+    H.alerts.push(a);
+  },
 }));
 vi.mock("../safety/plc/safetyPlcAdapter", () => ({ listPlcConfigs: async () => H.plcs }));
 vi.mock("./edgeCentralCommon", async (orig) => {
@@ -77,6 +85,7 @@ beforeEach(() => {
   H.served = "real";
   H.plcs = [];
   H.dbError = null;
+  H.raiseThrows = false;
   __resetEdgeConfigAlertsForTests();
   errors = [];
   warns = [];
@@ -147,11 +156,20 @@ describe("A2(o) O3 — authorize signs only ids inside the snapshot central SERV
     expect(H.audits).toEqual([{ action: "EDGE_ANOMALY", details: { anomaly: "safety_config_not_served", ids: [7] }, status: "failure" }]);
   });
 
-  it("control: every signed id served (a superset is fine) ⇒ null; an empty list never asks", async () => {
+  it("control: every signed id served (a superset is fine) ⇒ null; an empty list with a buildable snapshot ⇒ null", async () => {
     H.served = [7, 8, 9];
     expect(await edgeSafetyIdsNotServed(NODE, [7, 8])).toBeNull();
-    H.served = "throw";
+    H.served = [];
     expect(await edgeSafetyIdsNotServed(NODE, [])).toBeNull();
+    expect(H.audits).toEqual([]);
+  });
+
+  it("★ r3 F3: an EMPTY signed list still reads the served snapshot — unbuildable ⇒ THROWS (⇒ 503), never a pass for an unguarded device", async () => {
+    H.served = "throw";
+    await expect(edgeSafetyIdsNotServed(NODE, [])).rejects.toThrow("config build failed");
+    // the real one: no config can be built (central's DB unavailable) ⇒ throws as well
+    H.served = "real";
+    await expect(edgeSafetyIdsNotServed(NODE, [])).rejects.toThrow();
     expect(H.audits).toEqual([]);
   });
 
@@ -273,5 +291,72 @@ describe("A2(o) AMENDMENT 2 — central's answer to an EDGE-reported anomaly", (
     expect(branch).toContain(`audits.push({ action: "EDGE_ANOMALY"`);
     expect(branch).toMatch(/alertForEdgeAnomaly\(node, \{ code: rec\.code, detail: rec\.detail \}/);
     expect(branch.indexOf("audits.push")).toBeLessThan(branch.indexOf("alertForEdgeAnomaly("));
+  });
+});
+
+describe("A2(o) r3 F1 — the per-process alert memory: forgotten when the delivery failed, expires after 24 h", () => {
+  const MISSING = { code: "EDGE_SAFETY_CONFIG_MISSING", detail: "robot 12: signed safety-PLC config(s) #7 absent from the verified config v3 (issued 9 s ago)" };
+  it("the window is the durable dedup's (criticalStopAlert CRITICAL_STOP_ALERT_DEDUP_WINDOW_MS, 24 h)", async () => {
+    const real = await vi.importActual<typeof import("../robot/criticalStopAlert")>("../robot/criticalStopAlert");
+    const { EDGE_CONFIG_ALERT_WINDOW_MS } = await import("./edgeConfigCentral");
+    expect(EDGE_CONFIG_ALERT_WINDOW_MS).toBe(real.CRITICAL_STOP_ALERT_DEDUP_WINDOW_MS);
+    expect(EDGE_CONFIG_ALERT_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("★ the recipients read FAILS ⇒ the key is forgotten: the next anomaly for the same (node, ids) alerts (to the people); then deduped again", async () => {
+    const { alertForEdgeAnomaly } = await import("./edgeConfigCentral");
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => Promise.reject(new Error("users unreadable")))).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    // the stream + log still carried it (raised to nobody) …
+    expect(H.alerts).toHaveLength(1);
+    expect(H.alerts[0]).toMatchObject({ dedupKey: "edge_safety_plc_missing:7:7", recipients: [] });
+    expect(errors.some((l) => l.includes("recipients could not be read"))).toBe(true);
+    // … but the key is NOT kept: the next occurrence alerts, now reaching the people
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1, 2])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(2);
+    expect(H.alerts[1]).toMatchObject({ dedupKey: "edge_safety_plc_missing:7:7", recipients: [1, 2], khuTrungBenVung: {} });
+    // delivered ⇒ kept: deduped from here on
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1, 2])).toBe(false);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(2);
+  });
+
+  it("★ the recipients list is EMPTY, or the raise THROWS ⇒ forgotten too (the next occurrence alerts)", async () => {
+    const { alertForEdgeAnomaly } = await import("./edgeConfigCentral");
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [3])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts.map((a) => a.recipients)).toEqual([[], [3]]);
+    // the raise throws (another key) ⇒ forgotten
+    const other = { ...MISSING, detail: "robot 12: signed safety-PLC config(s) #8 absent" };
+    H.raiseThrows = true;
+    expect(alertForEdgeAnomaly(NODE, other, async () => [1])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(errors.some((l) => l.includes("the alert could not be raised"))).toBe(true);
+    H.raiseThrows = false;
+    expect(alertForEdgeAnomaly(NODE, other, async () => [1])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts.map((a) => a.dedupKey)).toEqual(["edge_safety_plc_missing:7:7", "edge_safety_plc_missing:7:7", "edge_safety_plc_missing:7:8"]);
+  });
+
+  it("★ an entry OLDER than 24 h ⇒ alerts again; within 24 h ⇒ not (a state that lasts is re-raised once a day, as the durable dedup allows)", async () => {
+    const { alertForEdgeAnomaly, EDGE_CONFIG_ALERT_WINDOW_MS } = await import("./edgeConfigCentral");
+    const t0 = 1_900_000_000_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1])).toBe(true);
+      await __edgeConfigAlertsSettledForTests();
+      now.mockReturnValue(t0 + EDGE_CONFIG_ALERT_WINDOW_MS - 1);
+      expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1])).toBe(false);
+      now.mockReturnValue(t0 + EDGE_CONFIG_ALERT_WINDOW_MS);
+      expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1])).toBe(true);
+      await __edgeConfigAlertsSettledForTests();
+      expect(H.alerts).toHaveLength(2);
+      expect(H.alerts[1]).toMatchObject({ dedupKey: "edge_safety_plc_missing:7:7", khuTrungBenVung: {} });
+    } finally {
+      now.mockRestore();
+    }
   });
 });
