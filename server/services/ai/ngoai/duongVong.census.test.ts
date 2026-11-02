@@ -89,6 +89,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/services/aiLocalTools/intentClassifier.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài" },
   "server/services/aoiImageEmbeddingWorker.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài (embedding ảnh AOI)" },
   "server/services/edge/__edgeE2eHarness.dot10.ts": { so: 3, lyDo: "giả lập / khung thử chỉ dùng trong lưới (tiền tố __) — không chạy ở sản xuất" },
+  "server/services/edge/__edgeE2eSweep.dot10.ts": { so: 1, lyDo: "2026-11-02 A2 test (scada): test-only — dò cổng TCP của SPLC còn sót của harness F1 (net.connect 400 ms, không gửi byte); CHỈ host loopback 127.0.0.1 / ::1 / localhost (isLoopbackHost, ghim ở edgeE2eSweep.a2test.db.test.ts + đột biến R2 ĐỎ), host khác ⇒ không dò; chỉ __edgeE2eHarness và test nạp" },
   "server/services/fcmService.ts": { so: 2, lyDo: "đẩy thông báo FCM (Google) — đích cố định, không phải máy chủ AI" },
   "server/services/federation/siteClient.ts": { so: 1, lyDo: "liên kết nhà máy (federation) — site đã đăng ký bởi quản trị" },
   "server/services/instruments/scpiAdapter.ts": { so: 1, lyDo: "driver thiết bị OT/đo lường trong nhà máy (TCP tới IP máy đã khai) — không phải HTTP ra Internet" },
@@ -121,7 +122,8 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
 };
 /** GHIM: số tệp miễn trừ + tổng điểm — đổi ⇒ đo lại + ghi lý do (ratchet). */
 // 2026-10-26 (dieu-phoi e): _core/llm.ts hết fetch thô (ảnh qua taiAnhAnToan → fetchGhim) ⇒ 64→63 tệp, 97→96 điểm.
-const GHIM = { tep: 64, diem: 97 } as const;
+// 2026-11-02 (A2 test scada): + server/services/edge/__edgeE2eSweep.dot10.ts (1 điểm import:net, dò cổng loopback của harness, test-only) ⇒ 64→65 tệp, 97→98 điểm.
+const GHIM = { tep: 65, diem: 98 } as const;
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};
