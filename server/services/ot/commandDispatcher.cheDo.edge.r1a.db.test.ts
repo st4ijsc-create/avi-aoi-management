@@ -42,7 +42,10 @@ describe.skipIf(!onTest)("R1a T4 — MODE_LOCAL never blocks a STOP routed to th
   afterAll(async () => {
     if (savedFlag === undefined) delete process.env.SCADA_CONG_CHE_DO_ENABLED;
     else process.env.SCADA_CONG_CHE_DO_ENABLED = savedFlag;
-    if (k) await k.sql`DELETE FROM ai_pending_actions WHERE id LIKE ${`${k.DAU}-a2h-%`}`.catch(() => undefined); // A2(h) fixture rows
+    // A2(h) fixture rows: tests never DELETE (rule from 2026-11-01) — the rows are made unusable FOREVER instead: status 'cancelled' (the
+    // product's own terminal cancel state, cancelAction) — verifyActionBinding accepts only 'confirmed' (and, gate (1) only, 'executed'),
+    // confirmAction only 'proposed' / 'confirmed' — and expiresAt in the past (refused as expired even if the status were ever reset).
+    if (k) await k.sql`UPDATE ai_pending_actions SET status = 'cancelled', "expiresAt" = now() - interval '1 day' WHERE id LIKE ${`${k.DAU}-a2h-%`}`.catch(() => undefined);
     await k?.teardown();
   }, 120_000);
 
@@ -56,7 +59,7 @@ describe.skipIf(!onTest)("R1a T4 — MODE_LOCAL never blocks a STOP routed to th
 /**
  * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim, TRƯỚC cổng chế độ /
  * chủ edge / kênh). Ca cần tới cổng nó đo gửi kèm MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ = người xác nhận, băm CHÍNH lệnh ấy).
- * Hàng của fixture mang tiền tố `<DAU>-a2h-` và được dọn ở afterAll (trước teardown của bộ kit).
+ * Hàng của fixture mang tiền tố `<DAU>-a2h-`; afterAll làm chúng VÔ HIỆU vĩnh viễn (UPDATE, không DELETE — luật 2026-11-01).
  */
 const A2H_TOOL = "set_machine_param";
 async function hitlRangBuoc(inp: { adapterId: number; machineId?: number | null; commandType: string; writes: Array<{ tagKey: string; value: unknown }> }) {
