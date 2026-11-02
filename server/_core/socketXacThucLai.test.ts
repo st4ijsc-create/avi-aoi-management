@@ -23,6 +23,8 @@ const CHUP: Record<number, { id: number; role: string; name: string }> = {
   2: { id: 2, role: "admin", name: "admin-doi-chung" },
   // polish — non-admin được cấp quyền machine_registration (chỉ có tác dụng khi MACHINE_APPROVE_RBAC_OPEN_ENABLED=true)
   3: { id: 3, role: "engineer", name: "registrar-engineer" },
+  // review fix (Minor 3) — operator: bản chụp KHÔNG đủ quyền ⇒ tiền lọc từ chối, 0 câu DB
+  4: { id: 4, role: "operator", name: "operator-dashboard" },
 };
 vi.mock("./sdk", () => ({
   sdk: {
@@ -52,18 +54,26 @@ function datLaiDb() {
     1: { id: 1, role: "admin", isActive: true, name: "admin-se-bi-ha" },
     2: { id: 2, role: "admin", isActive: true, name: "admin-doi-chung" },
     3: { id: 3, role: "engineer", isActive: true, name: "registrar-engineer", passwordChangedAt: null, passwordInvalidBefore: null },
+    4: { id: 4, role: "operator", isActive: true, name: "operator-dashboard" },
   };
   PHIEN_DB = {
     "ve-1a": { userId: 1, isActive: true, expiresAt: null },
     "ve-1b": { userId: 1, isActive: true, expiresAt: null },
     "ve-2": { userId: 2, isActive: true, expiresAt: null },
     "ve-3": { userId: 3, isActive: true, expiresAt: null },
+    "ve-4": { userId: 4, isActive: true, expiresAt: null },
   };
   NEM_KHI_DOC_NGUOI.clear();
   nemKhiDocPhien = false;
 }
 datLaiDb();
 
+const MAY_THEO_MA: Record<string, { id: number; code: string }> = { "MA-A": { id: 101, code: "MA-A" }, "MB-B": { id: 202, code: "MB-B" } };
+/** Máy đang online (kho hiện diện giả): một máy mỗi nhà máy. */
+const ONLINE = [
+  { machineId: 101, machineCode: "MA-A", socketId: "sa", ipAddress: "10.0.0.1", lastHeartbeat: Date.now() },
+  { machineId: 202, machineCode: "MB-B", socketId: "sb", ipAddress: "10.0.0.2", lastHeartbeat: Date.now() },
+];
 const MAY = { id: 42, code: "M-42", name: "May 42", machineType: "AOI", apiKey: null, isActive: true, stationId: null, registrationStatus: "pending", syncMode: "realtime", serialNumber: null, firmwareVersion: null };
 const updateMachine = vi.fn(async (..._a: any[]) => undefined);
 const getUserById = vi.fn(async (id: number) => (NGUOI_DB[id] ? { ...NGUOI_DB[id] } : undefined));
@@ -73,6 +83,8 @@ vi.mock("../db", () => ({
   createMachineStatusLog: vi.fn(async () => undefined),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
   getMachineById: vi.fn(async (id: number) => (id === MAY.id ? { ...MAY } : undefined)),
+  // review fix — đăng ký chờ (mã tự khai) ánh xạ về máy trong DB: MA-A ở nhà máy A (id 101), MB-B ở nhà máy B (id 202)
+  getMachineByCode: vi.fn(async (code: string) => MAY_THEO_MA[code]),
   updateMachine: (...a: any[]) => (updateMachine as any)(...a),
   getLineByStationId: vi.fn(async () => undefined),
   getUnreadNotificationCount: vi.fn(async () => 0),
@@ -96,7 +108,7 @@ vi.mock("../services/machineAuthService", async (importOriginal) => ({
 // polish — nhánh cờ RBAC mở của duocQuanLyDangKyMay hỏi checkPermission: user 3 CÓ machine_registration, mọi người khác KHÔNG.
 vi.mock("./accessControl", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./accessControl")>()),
-  checkPermission: vi.fn(async (uid: number, _vai: string, mod: string) => uid === 3 && mod === "machine_registration"),
+  checkPermission: vi.fn(async (uid: number, vai: string, mod: string) => vai === "admin" || (uid === 3 && mod === "machine_registration")), // admin qua như checkPermission thật
 }));
 
 vi.mock("./socketRedisAdapter", () => ({ attachRedisAdapter: vi.fn(async () => false) }));
@@ -105,8 +117,8 @@ vi.mock("./machinePresenceStore", () => ({
     setOnline: vi.fn(async () => undefined),
     setOffline: vi.fn(async () => undefined),
     refresh: vi.fn(async () => undefined),
-    listOnline: vi.fn(async () => []),
-    listOnlineCodes: vi.fn(async () => []),
+    listOnline: vi.fn(async () => ONLINE.map((e) => ({ ...e }))),
+    listOnlineCodes: vi.fn(async () => ONLINE.map((e) => e.machineCode)),
   }),
 }));
 vi.mock("./eventBus", () => ({
@@ -212,7 +224,11 @@ async function duyetDoiChung(ad: ClientSocket, dk: Awaited<ReturnType<typeof dan
 beforeAll(async () => {
   for (const k of ENV_KHOA) delete process.env[k]; // mặc định trong mã: enforce (đúc mk_), cờ RBAC mở TẮT (approve = role admin)
   socketMod = await import("./socket");
-  (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
+  // Phạm vi (seam của db/hierarchy): admin ⇒ null (toàn quyền); registrar 3 ⇒ nhà máy A (id 1) / máy 101; mọi người khác ⇒ rỗng.
+  (await import("./socketPhongQuyen")).__datCongPhamViChoTest({
+    trongPhamVi: async () => true,
+    idsTrongPhamVi: async (cap, pv) => (pv.userRole === "admin" ? null : pv.userId === 3 ? (cap === "machine" ? [101] : cap === "factory" ? [1] : []) : []),
+  });
   xtl = await import("./socketXacThucLai");
   xtl.__datBoDocChuTheChoTest(BO_DOC);
   http = createServer();
@@ -512,5 +528,99 @@ describe("★★★ F5-nhanh polish P3 — cổng BUỘC ĐỔI MẬT KHẨU tro
     expect(await xtl.xacThucLaiChoThaoTacSocket(sk(eng, "app_session_id=ve-3"))).toEqual({ ok: false, lyDo: "PHAI_DOI_MAT_KHAU" });
     NGUOI_DB[3].passwordInvalidBefore = null; // chưa từng thu hồi ⇒ qua
     expect(await xtl.xacThucLaiChoThaoTacSocket(sk(eng, "app_session_id=ve-3"))).toMatchObject({ ok: true, data: { user: { role: "engineer" } } });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// F5-nhanh review fixes — lọc phạm vi nhà máy khi cờ RBAC mở; tiền lọc trong bộ nhớ (0 câu DB cho người không đủ quyền)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ F5-nhanh review R2 — cờ RBAC mở: người quản trị đăng ký KHÔNG phải admin chỉ thấy nhà máy của mình", () => {
+  it("(R2a) registrar nhà máy A: admin:join chỉ nhận đăng ký chờ + máy đang nối của A; admin:get_online_machines chỉ mã máy của A; đối chứng: admin thấy cả A và B", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      const dkA = await dangKyMoi("MA-A");
+      const dkB = await dangKyMoi("MB-B");
+      const dkLa = await dangKyMoi("KHONG-CO-TRONG-DB"); // mã không khớp máy nào ⇒ không thuộc phạm vi nào
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+
+      const choReg = new Promise<any[]>((r) => reg.once("admin:pending_registrations", r));
+      const noiReg = new Promise<any[]>((r) => reg.once("admin:connected_machines", r));
+      reg.emit("admin:join");
+      const [dsReg, ketNoiReg] = await Promise.all([choReg, noiReg]);
+      const idsReg = dsReg.map((x) => x.requestSocketId);
+      expect(idsReg).toContain(dkA.may.id);
+      expect(idsReg).not.toContain(dkB.may.id);
+      expect(idsReg).not.toContain(dkLa.may.id);
+      expect(ketNoiReg.map((m) => m.machineId)).toEqual([101]);
+      const onlReg = new Promise<any>((r) => reg.once("machine:online_list", r));
+      reg.emit("admin:get_online_machines");
+      expect((await onlReg).machines).toEqual(["MA-A"]);
+
+      // đối chứng: admin (phạm vi null) thấy TẤT CẢ
+      const choAd = new Promise<any[]>((r) => ad.once("admin:pending_registrations", r));
+      const noiAd = new Promise<any[]>((r) => ad.once("admin:connected_machines", r));
+      ad.emit("admin:join");
+      const [dsAd, ketNoiAd] = await Promise.all([choAd, noiAd]);
+      expect(dsAd.map((x) => x.requestSocketId)).toEqual(expect.arrayContaining([dkA.may.id, dkB.may.id, dkLa.may.id]));
+      expect(ketNoiAd.map((m) => m.machineId).sort()).toEqual([101, 202]);
+      const onlAd = new Promise<any>((r) => ad.once("machine:online_list", r));
+      ad.emit("admin:get_online_machines");
+      expect([...(await onlAd).machines].sort()).toEqual(["MA-A", "MB-B"]);
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  });
+
+  it("(R2b) tính phạm vi NÉM ⇒ registrar nhận danh sách RỖNG (fail-closed), không phải tất cả", async () => {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    const pq = await import("./socketPhongQuyen");
+    try {
+      await dangKyMoi("MA-A");
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      pq.__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async (_c, pv) => { if (pv.userRole === "admin") return null; throw new Error("db nac"); } });
+      const onl = new Promise<any>((r) => reg.once("machine:online_list", r));
+      reg.emit("admin:get_online_machines");
+      expect((await onl).machines).toEqual([]);
+      const cho = new Promise<any[]>((r) => reg.once("admin:pending_registrations", r));
+      reg.emit("admin:join");
+      expect(await cho).toEqual([]);
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+      pq.__datCongPhamViChoTest({
+        trongPhamVi: async () => true,
+        idsTrongPhamVi: async (cap, pv) => (pv.userRole === "admin" ? null : pv.userId === 3 ? (cap === "machine" ? [101] : cap === "factory" ? [1] : []) : []),
+      });
+    }
+  });
+});
+
+describe("★★ F5-nhanh review R3 — tiền lọc trong bộ nhớ: bản chụp không đủ quyền ⇒ từ chối với 0 câu DB", () => {
+  it("(R3) operator (Dashboard gửi admin:get_online_machines mỗi lần nối) ⇒ từ chối, KHÔNG đọc người dùng / sổ phiên; đối chứng: admin đọc đúng 1+1", async () => {
+    const op = await ketNoi({ phien: 4, ve: "ve-4" });
+    const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+    const docNguoi = vi.spyOn(BO_DOC, "docNguoiDung");
+    const docPhien = vi.spyOn(BO_DOC, "docPhien");
+    try {
+      const dsOp = ghiNhan(op, "machine:online_list");
+      op.emit("admin:get_online_machines");
+      op.emit("admin:join");
+      op.emit("admin:approve_registration", { socketId: "x", machineId: MAY.id });
+      op.emit("admin:reject_registration", { socketId: "x", reason: "r" });
+      await vi.waitFor(() =>
+        expect(tuChoiLog().filter((s: string) => s.includes(op.id!) && s.includes("BAN_CHUP_KHONG_DU_QUYEN")).length).toBe(4),
+      );
+      expect(docNguoi).not.toHaveBeenCalled();
+      expect(docPhien).not.toHaveBeenCalled();
+      expect(dsOp).toEqual([]);
+      const onl = new Promise((r) => ad.once("machine:online_list", r));
+      ad.emit("admin:get_online_machines");
+      await onl;
+      expect(docNguoi).toHaveBeenCalledTimes(1);
+      expect(docPhien).toHaveBeenCalledTimes(1);
+    } finally {
+      docNguoi.mockRestore();
+      docPhien.mockRestore();
+    }
   });
 });

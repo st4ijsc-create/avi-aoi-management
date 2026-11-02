@@ -56,6 +56,9 @@ import {
   duocVaoPhongTelemetryAll,
   duocVaoPhongAiAgents,
   tuDongVaoPhongPhamVi,
+  tienLocQuanLyDangKyMay,
+  tienLocTuChoiDangKyMay,
+  idsMayTrongPhamViCua,
 } from "./socketPhongQuyen";
 // ── F5-nhanh — handler NHẠY CẢM xác thực LẠI chủ thể (vai / isActive / phiên) từ DB TẠI LÚC THAO TÁC, không tin bản chụp handshake.
 import { xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
@@ -93,6 +96,22 @@ const connectedMachines: Map<number, { socketId: string; ipAddress: string; last
 // Map machineId -> machineCode for quick lookup
 const onlineMachineCodesMap: Map<number, string> = new Map();
 const presence = getMachinePresenceStore();
+
+/**
+ * F5-nhanh review — một đăng ký chờ (máy VÔ DANH tự khai `machineInfo.code`) thuộc phạm vi máy `ids` không? Mã khớp một máy trong DB ⇒
+ * phạm vi của máy đó; không khớp / lỗi tra cứu ⇒ KHÔNG thuộc phạm vi nào (người có phạm vi không thấy nó — fail-closed). Admin không đi qua đây.
+ */
+async function dangKyChoTrongPhamVi(reg: PendingMachineRegistration, ids: Set<number>): Promise<boolean> {
+  try {
+    const ma = String(reg.machineInfo?.code ?? "");
+    if (!ma) return false;
+    const may = await db.getMachineByCode(ma);
+    return !!may && ids.has(may.id);
+  } catch (err: any) {
+    console.error("[Socket.io] tra may theo ma dang ky that bai (an khoi danh sach):", err?.message ?? err);
+    return false;
+  }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ★★★ NHỊP TIM QUA SOCKET PHẢI BỀN HOÁ XUỐNG `machines.lastHeartbeat`
@@ -870,7 +889,10 @@ export function initializeSocket(server: HttpServer): Server {
       // trình duyệt đã đăng nhập (kể cả operator) vào được, không chỉ admin/người có quyền.
       // ★★★ F5-nhanh polish — phòng `admin` giao danh sách ĐĂNG KÝ CHỜ (mã/serial/IP máy) và nhận mọi yêu cầu đăng ký sau đó ⇒ vai đọc
       // LẠI từ DB lúc join (không tin bản chụp handshake): admin bị hạ vai / tắt / phiên bị thu hồi không vào được nữa.
-      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      // F5-nhanh review (Minor 3): tiền lọc TRONG BỘ NHỚ trên bản chụp — chỉ THU HẸP (bản chụp đã không đủ quyền ⇒ từ chối, 0 câu DB).
+      const chuThe = tienLocQuanLyDangKyMay(socket.data)
+        ? await xacThucLaiChoThaoTacSocket(socket)
+        : ({ ok: false, lyDo: "BAN_CHUP_KHONG_DU_QUYEN" } as const);
       if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canView"))) {
         console.warn(
           `[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
@@ -881,8 +903,18 @@ export function initializeSocket(server: HttpServer): Server {
       socket.join("admin");
       console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
 
+      // ★★★ F5-nhanh review (2026-11-02) — cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED mở cho người KHÔNG phải admin vào đây (permission bit
+      // machine_registration). Trước bản vá họ nhận đăng ký chờ + máy đang nối của MỌI nhà máy. Nay lọc theo phạm vi máy của CHỦ THỂ ĐỌC LẠI
+      // (`idsMayTrongPhamViCua` = idsTrongPhamVi("machine"), như tRPC machine.listPending); admin/toàn quyền ⇒ null ⇒ tất cả như cũ.
+      // Ngoài phạm vi và không tồn tại cho CÙNG kết quả: mục bị bỏ khỏi danh sách, không có dấu vết nào.
+      const phamViMay = await idsMayTrongPhamViCua(chuThe.data);
+      const pendingTrongPhamVi: Array<[string, PendingMachineRegistration]> = [];
+      for (const [id, reg] of Array.from(pendingRegistrations.entries())) {
+        if (phamViMay === null || (await dangKyChoTrongPhamVi(reg, phamViMay))) pendingTrongPhamVi.push([id, reg]);
+      }
+
       // Send current pending registrations
-      const pending = Array.from(pendingRegistrations.entries()).map(([id, reg]) => ({
+      const pending = pendingTrongPhamVi.map(([id, reg]) => ({
         requestSocketId: id,
         ipAddress: reg.ipAddress,
         machineInfo: reg.machineInfo,
@@ -911,16 +943,19 @@ export function initializeSocket(server: HttpServer): Server {
           ...info,
         }));
       }
-      socket.emit("admin:connected_machines", connected);
+      socket.emit("admin:connected_machines", phamViMay === null ? connected : connected.filter((m) => phamViMay.has(m.machineId)));
     });
 
     // Dashboard requests online machines list — UNION across all instances via
     // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
     socket.on("admin:get_online_machines", async () => {
       // ★ doc 80 PLT-01 (Task 11) — cùng quyền `admin:join` (mirror `machine.listPending`).
-      // ★★★ F5-nhanh polish — danh sách máy online của MỌI nhà máy (không lọc phạm vi) chỉ dành cho người quản trị đăng ký máy ⇒ cùng
-      // xác thực lại như admin:join (người bị hạ vai về vai có phạm vi không được thấy máy nhà máy khác).
-      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      // ★★★ F5-nhanh polish + review — danh sách mã máy online chỉ dành cho người quản trị đăng ký máy ⇒ cùng xác thực lại như admin:join;
+      // admin/toàn quyền thấy MỌI nhà máy, người có phạm vi (cờ RBAC mở) chỉ thấy máy TRONG phạm vi của mình (lọc bên dưới).
+      // F5-nhanh review (Minor 3): tiền lọc TRONG BỘ NHỚ trên bản chụp — chỉ THU HẸP (bản chụp đã không đủ quyền ⇒ từ chối, 0 câu DB).
+      const chuThe = tienLocQuanLyDangKyMay(socket.data)
+        ? await xacThucLaiChoThaoTacSocket(socket)
+        : ({ ok: false, lyDo: "BAN_CHUP_KHONG_DU_QUYEN" } as const);
       if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canView"))) {
         console.warn(
           `[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
@@ -928,12 +963,25 @@ export function initializeSocket(server: HttpServer): Server {
         );
         return;
       }
+      // ★★★ F5-nhanh review — cùng lọc phạm vi như admin:join: người có phạm vi (cờ RBAC mở) chỉ thấy mã máy online TRONG phạm vi của mình.
+      const phamViMay = await idsMayTrongPhamViCua(chuThe.data);
       let onlineMachineCodes: string[];
-      try {
-        onlineMachineCodes = await presence.listOnlineCodes();
-      } catch (err: any) {
-        console.error("[Socket.io] presence listOnlineCodes failed, using local map:", err?.message ?? err);
-        onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+      if (phamViMay === null) {
+        try {
+          onlineMachineCodes = await presence.listOnlineCodes();
+        } catch (err: any) {
+          console.error("[Socket.io] presence listOnlineCodes failed, using local map:", err?.message ?? err);
+          onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+        }
+      } else {
+        let entries: Array<{ machineId: number; machineCode: string }>;
+        try {
+          entries = await presence.listOnline();
+        } catch (err: any) {
+          console.error("[Socket.io] presence listOnline failed, using local map:", err?.message ?? err);
+          entries = Array.from(onlineMachineCodesMap.entries()).map(([machineId, machineCode]) => ({ machineId, machineCode }));
+        }
+        onlineMachineCodes = Array.from(new Set(entries.filter((e) => phamViMay.has(e.machineId) && e.machineCode).map((e) => e.machineCode)));
       }
       socket.emit("machine:online_list", { machines: onlineMachineCodes });
       console.log(`[Socket.io] Sent online machines list to ${socket.id}: ${onlineMachineCodes.length} machines`);
@@ -948,7 +996,10 @@ export function initializeSocket(server: HttpServer): Server {
       // quyền tRPC `machine.approve` (`machineRegistrationGate("canEdit")`, hierarchyRouters.ts).
       // ★★★ F5-nhanh — cổng quyền chạy trên chủ thể ĐỌC LẠI từ DB lúc này (vai + isActive + phiên còn hiệu lực), KHÔNG trên
       // `socket.data.user` chụp lúc handshake: admin bị hạ vai / tài khoản bị tắt / phiên bị thu hồi ⇒ không còn đúc được khoá máy.
-      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      // F5-nhanh review (Minor 3): tiền lọc TRONG BỘ NHỚ trên bản chụp — chỉ THU HẸP (bản chụp đã không đủ quyền ⇒ từ chối, 0 câu DB).
+      const chuThe = tienLocQuanLyDangKyMay(socket.data)
+        ? await xacThucLaiChoThaoTacSocket(socket)
+        : ({ ok: false, lyDo: "BAN_CHUP_KHONG_DU_QUYEN" } as const);
       if (!chuThe.ok || !(await duocQuanLyDangKyMay(chuThe.data, "canEdit"))) {
         // Giá trị trong payload (`data`) do CHÍNH socket bị từ chối gửi lên — ép kiểu/escape
         // trước khi ghép vào dòng log để một chuỗi machineId/socketId cố tình chứa "\n..." không
@@ -1121,7 +1172,10 @@ export function initializeSocket(server: HttpServer): Server {
       // THẲNG (`_shared.ts`), không qua cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED ⇒ luôn luôn role
       // admin (xem `duocTuChoiDangKyMay`).
       // ★★★ F5-nhanh — vai đọc LẠI từ DB lúc thao tác (không tin bản chụp handshake), fail-closed.
-      const chuThe = await xacThucLaiChoThaoTacSocket(socket);
+      // F5-nhanh review (Minor 3): tiền lọc TRONG BỘ NHỚ trên bản chụp — chỉ THU HẸP (bản chụp đã không đủ quyền ⇒ từ chối, 0 câu DB).
+      const chuThe = tienLocTuChoiDangKyMay(socket.data)
+        ? await xacThucLaiChoThaoTacSocket(socket)
+        : ({ ok: false, lyDo: "BAN_CHUP_KHONG_DU_QUYEN" } as const);
       if (!chuThe.ok || !duocTuChoiDangKyMay(chuThe.data)) {
         // Ép kiểu/escape trước khi ghi log — cùng lý do như admin:approve_registration.
         console.warn(

@@ -62,6 +62,34 @@ const BANG: Muc[] = [
 ];
 
 const HAM_XAC_THUC_LAI = "xacThucLaiChoThaoTacSocket";
+/**
+ * F5-nhanh review (Minor 3) — NGOẠI LỆ DUY NHẤT của luật "không gì đọc bản chụp trước xác thực lại": tiền lọc TRONG BỘ NHỚ chỉ THU HẸP
+ * (socketPhongQuyen.ts). Chỉ hợp lệ ở ĐÚNG hình dạng `tienLoc(socket.data) ? await xacThucLai(socket) : { ok: false, … }` — kết quả `true`
+ * của nó không cho qua gì (vẫn phải xác thực lại + cổng thật), kết quả `false` chỉ dẫn tới từ chối. Dùng nó ở hình dạng khác ⇒ ĐỎ.
+ */
+const TIEN_LOC = ["tienLocQuanLyDangKyMay", "tienLocTuChoiDangKyMay"];
+/** Lời gọi nhận `socket.data` được phép đứng trước xác thực lại: tiền lọc (đúng hình dạng) + nhãn log. */
+const DUOC_DOC_CHUP_TRUOC = new Set([...TIEN_LOC, "moTaSocket"]);
+
+const boBoc = (e: ts.Node): ts.Node => {
+  let x = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isAwaitExpression(x)) x = x.expression;
+  return x;
+};
+/** `tienLoc(...)` có đứng đúng hình dạng `tienLoc(socket.data) ? await xacThucLai(socket) : ({ ok: false, … })` không? */
+function tienLocDungHinhDang(c: ts.CallExpression, sf: ts.SourceFile): boolean {
+  if (c.arguments[0]?.getText(sf).replace(/\s+/g, "") !== "socket.data") return false;
+  let cha: ts.Node = c.parent;
+  while (ts.isParenthesizedExpression(cha)) cha = cha.parent;
+  if (!ts.isConditionalExpression(cha) || boBoc(cha.condition) !== c) return false;
+  const dung = boBoc(cha.whenTrue);
+  if (!ts.isCallExpression(dung) || !ts.isIdentifier(dung.expression) || dung.expression.text !== HAM_XAC_THUC_LAI) return false;
+  const sai = boBoc(cha.whenFalse);
+  if (!ts.isObjectLiteralExpression(sai)) return false;
+  return sai.properties.some(
+    (pr) => ts.isPropertyAssignment(pr) && pr.name.getText(sf) === "ok" && pr.initializer.kind === ts.SyntaxKind.FalseKeyword,
+  );
+}
 const CONG_QUYEN = ["duocQuanLyDangKyMay", "duocTuChoiDangKyMay", "laSocketNguoiDung", "checkPermission", "duocVaoPhongNguoiDung"];
 /** Lời gọi GHI / tác dụng phụ (theo hình dạng) — không được có trong handler CHỈ_ĐỌC / VÒNG_ĐỜI, và không được đứng TRƯỚC xác thực lại. */
 const GHI = /\b(?:issueMachineKey|logCrudOperation|(?:db|tx)\.(?:insert|update|delete)\b|db\.(?:update|create|insert|delete|upsert|set)\w*|pendingRegistrations\.(?:set|delete))\s*\(/;
@@ -245,6 +273,25 @@ describe("★★★ F5-nhanh — census handler socket nhạy cảm", () => {
           }
         }
         if (docUserChup(h.fn, h.sf)) loi.push(`${k}: đọc socket.data.user (bản chụp) trong handler nhạy cảm`);
+        // F5-nhanh review — mọi lời gọi nhận bản chụp (`socket.data`) TRƯỚC xác thực lại: chỉ tiền lọc đúng hình dạng / nhãn log.
+        const diGoi = (x: ts.Node): void => {
+          if (ts.isCallExpression(x)) {
+            const ten = ts.isIdentifier(x.expression)
+              ? x.expression.text
+              : ts.isPropertyAccessExpression(x.expression)
+                ? x.expression.name.text
+                : "?";
+            const a0 = x.arguments[0] ? boBoc(x.arguments[0]).getText(h.sf).replace(/\s+/g, "") : "";
+            if (a0 === "socket.data" && x.getStart(h.sf) < viTriXtl && !DUOC_DOC_CHUP_TRUOC.has(ten)) {
+              loi.push(`${k}: '${ten}(socket.data)' chạy TRƯỚC xác thực lại (chỉ tiền lọc thu hẹp đúng hình dạng mới được phép)`);
+            }
+            if (TIEN_LOC.includes(ten) && !tienLocDungHinhDang(x, h.sf)) {
+              loi.push(`${k}: tiền lọc '${ten}' dùng SAI hình dạng — chỉ được '${ten}(socket.data) ? await ${HAM_XAC_THUC_LAI}(socket) : { ok: false, … }'`);
+            }
+          }
+          ts.forEachChild(x, diGoi);
+        };
+        diGoi(h.fn);
       }
     }
     expect(loi).toEqual([]);
