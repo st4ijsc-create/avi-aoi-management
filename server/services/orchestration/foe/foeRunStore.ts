@@ -189,6 +189,12 @@ export interface RunStore {
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>>;
   authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   /**
+   * R1b-2b-2a A2(o) AMENDMENT 2 — a dispatch REFUSED for a reason that means "hold, not fail" (the edge's config went stale after
+   * the authorisation: nothing sent) ⇒ the step is HELD (no retry, no compensation). Absent / null ⇒ the usual failure path.
+   * The central store has none (it never sees that refusal).
+   */
+  heldByDispatch?(stepId: string, result: { ok: boolean; detail?: Record<string, unknown> | null }): Promise<{ reason: RunStoreHeldReason; error: string } | null>;
+  /**
    * EDGE only (synchronous — never a wait on a STOP's path): binds every abort-sweep STOP command to the run segment for the
    * edge dispatch (its ledger record). The central store has none.
    */
