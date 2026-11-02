@@ -1029,17 +1029,20 @@ export async function reassignCorporate(userId: number, oldCorporateCode: string
   const db = await getDb();
   if (!db) return null;
   
-  await db.delete(userCorporateAssignments)
-    .where(and(
-      eq(userCorporateAssignments.userId, userId),
-      eq(userCorporateAssignments.corporateCode, oldCorporateCode)
-    ));
-  const [result] = await db.insert(userCorporateAssignments).values({
-    userId,
-    corporateCode: newCorporateCode,
-    assignedBy,
-  }).returning({ id: userCorporateAssignments.id });
-  return result;
+  // ★★★ F5 đầy đủ (mục 6) — DELETE rồi INSERT trong MỘT giao dịch: sập giữa hai câu không được để người dùng MẤT phạm vi (nửa trạng thái).
+  return db.transaction(async (tx) => {
+    await tx.delete(userCorporateAssignments)
+      .where(and(
+        eq(userCorporateAssignments.userId, userId),
+        eq(userCorporateAssignments.corporateCode, oldCorporateCode)
+      ));
+    const [result] = await tx.insert(userCorporateAssignments).values({
+      userId,
+      corporateCode: newCorporateCode,
+      assignedBy,
+    }).returning({ id: userCorporateAssignments.id });
+    return result;
+  });
 }
 
 export async function reassignFactory(userId: number, oldFactoryCode: string, newFactoryCode: string, assignedBy: number) {
@@ -1047,17 +1050,20 @@ export async function reassignFactory(userId: number, oldFactoryCode: string, ne
   const db = await getDb();
   if (!db) return null;
   
-  await db.delete(userFactoryAssignments)
-    .where(and(
-      eq(userFactoryAssignments.userId, userId),
-      eq(userFactoryAssignments.factoryCode, oldFactoryCode)
-    ));
-  const [result] = await db.insert(userFactoryAssignments).values({
-    userId,
-    factoryCode: newFactoryCode,
-    assignedBy,
-  }).returning({ id: userFactoryAssignments.id });
-  return result;
+  // ★★★ F5 đầy đủ (mục 6) — DELETE rồi INSERT trong MỘT giao dịch: sập giữa hai câu không được để người dùng MẤT phạm vi (nửa trạng thái).
+  return db.transaction(async (tx) => {
+    await tx.delete(userFactoryAssignments)
+      .where(and(
+        eq(userFactoryAssignments.userId, userId),
+        eq(userFactoryAssignments.factoryCode, oldFactoryCode)
+      ));
+    const [result] = await tx.insert(userFactoryAssignments).values({
+      userId,
+      factoryCode: newFactoryCode,
+      assignedBy,
+    }).returning({ id: userFactoryAssignments.id });
+    return result;
+  });
 }
 
 // Helper to check if user has access to corporate/factory
