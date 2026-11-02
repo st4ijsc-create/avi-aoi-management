@@ -1,0 +1,235 @@
+/**
+ * R1b-2b-2a A2(o) — CENTRAL never serves / signs a safety-PLC set it cannot stand behind (no DB: the DB reads are stubbed).
+ *   O2 — a guarding config the shipped form cannot express (fails the item schema / no trust digest) ⇒ the WHOLE build is
+ *        refused (EdgeContractError safety_plc_unshippable), never a set without it; ONE URGENT alert per (node, config, digest):
+ *        per process AND durably (khuTrungBenVung, 24 h — a restart does not re-send it to every admin).
+ *   O3 — authorize: a signed id NOT in the snapshot central serves the node (servedSafetyPlcConfigIds) ⇒ device_refused
+ *        {safety} naming it + EDGE_ANOMALY audit; all served ⇒ null; the served snapshot unbuildable ⇒ throws (⇒ 503). The call
+ *        sits in authorizeForNode after the device gates and before the transaction (source scan).
+ *   O4 — more than 64 guarding configs ⇒ device_refused {safety}, never a truncated list; exactly 64 ⇒ all 64 listed.
+ *   O5 (central) — a pinned STOP never meets the new checks: authorize answers stop_needs_no_authorization BEFORE the gates
+ *        and the served-snapshot check; an unbuildable config never fails the pull / heartbeat (currentConfigVersion never
+ *        throws) — the STOPs they carry still go.
+ *   O8 — a config that cannot be built is no longer a SILENT configVersion 0: logged once per node + reason, and a contract
+ *        failure raises one URGENT alert (edge_config_unbuildable).
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+const H = vi.hoisted(() => ({
+  alerts: [] as Array<Record<string, unknown>>,
+  audits: [] as Array<{ action: string; details: Record<string, unknown>; status?: string }>,
+  served: "real" as "real" | "throw" | number[],
+  plcs: [] as Array<Record<string, unknown>>,
+  dbError: null as Error | null,
+}));
+vi.mock("../../db/connection", () => ({
+  getDb: async () => {
+    throw new Error("DB_TRAP: this suite never reaches the DB");
+  },
+}));
+vi.mock("../robot/criticalStopAlert", () => ({
+  raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a),
+}));
+vi.mock("../safety/plc/safetyPlcAdapter", () => ({ listPlcConfigs: async () => H.plcs }));
+vi.mock("./edgeCentralCommon", async (orig) => {
+  const real = (await orig()) as typeof import("./edgeCentralCommon");
+  return {
+    ...real,
+    centralDb: async () => {
+      throw H.dbError ?? new real.EdgeCentralUnavailable("db unavailable");
+    },
+    nodeFactoryId: async () => 1,
+    robotPlacements: async (_d: unknown, ids: readonly number[]) => new Map(ids.map((id) => [id, { id, stationId: 3, lineId: 2, factoryId: 1 }] as const)),
+    auditNode: async (_n: unknown, action: string, _e: unknown, details: Record<string, unknown>, status?: string) => void H.audits.push({ action, details, status }),
+  };
+});
+vi.mock("./edgeConfigCentral", async (orig) => {
+  const real = (await orig()) as typeof import("./edgeConfigCentral");
+  return {
+    ...real,
+    servedSafetyPlcConfigIds: async (...a: Parameters<typeof real.servedSafetyPlcConfigIds>) => {
+      if (H.served === "real") return real.servedSafetyPlcConfigIds(...a);
+      if (H.served === "throw") throw new Error("config build failed");
+      return new Set(H.served);
+    },
+  };
+});
+
+import { EdgeContractError } from "./edgeSigning";
+import { __edgeConfigAlertsSettledForTests, __resetEdgeConfigAlertsForTests, currentConfigVersion, shipSafetyPlcConfigs } from "./edgeConfigCentral";
+import { EDGE_AUTH_MAX_SAFETY_CONFIG_IDS, edgeAuthorizeSafetyConfigIds, edgeSafetyIdsNotServed } from "./edgeAuthorizeCentral";
+import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
+import type { SafetyPlcConfig } from "../../../drizzle/schema";
+
+const NODE = { nodeId: 7, nodeCode: "EDGE-A", credentialId: 31, factoryCode: "F1" } as unknown as EdgeNodePrincipal;
+const plc = (id: number, over: Partial<SafetyPlcConfig> = {}): SafetyPlcConfig =>
+  ({ id, code: `PLC-${id}`, name: `plc ${id}`, vendor: "generic", backend: "modbus", endpoint: "tcp://plc", statusMap: null, robotId: 12, stationId: null, lineId: null, factoryId: null, enabled: true, ...over }) as unknown as SafetyPlcConfig;
+const HEX = "a".repeat(64);
+const deps = (digest: (c: SafetyPlcConfig) => string = () => HEX) => ({ digest, approved: async () => false, recipients: async () => [1, 2] });
+
+let errors: string[] = [];
+let warns: string[] = [];
+beforeEach(() => {
+  H.alerts.length = 0;
+  H.audits.length = 0;
+  H.served = "real";
+  H.plcs = [];
+  H.dbError = null;
+  __resetEdgeConfigAlertsForTests();
+  errors = [];
+  warns = [];
+  vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errors.push(a.map(String).join(" ")));
+  vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => void warns.push(a.map(String).join(" ")));
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
+});
+
+describe("A2(o) O2 — central refuses to build a config that cannot carry a guarding safety PLC (never a set without it)", () => {
+  it("control: every guarding config expressible ⇒ all shipped, in order, no alert", async () => {
+    const out = await shipSafetyPlcConfigs(NODE, [plc(4), plc(9)], deps());
+    expect(out.map((c) => c.id)).toEqual([4, 9]);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toEqual([]);
+  });
+
+  it("★ O2: one config fails the item schema (id 0) ⇒ the WHOLE build throws safety_plc_unshippable (logged), one URGENT alert with the durable dedup", async () => {
+    const bad = plc(0, { code: "PLC-BAD" });
+    await expect(shipSafetyPlcConfigs(NODE, [plc(4), bad], deps())).rejects.toMatchObject({ name: "EdgeContractError", code: "safety_plc_unshippable" });
+    await __edgeConfigAlertsSettledForTests();
+    expect(errors.some((l) => l.includes("NO config is served") && l.includes("#0 PLC-BAD"))).toBe(true);
+    expect(H.alerts).toHaveLength(1);
+    expect(H.alerts[0]).toMatchObject({
+      kind: "edge_safety_plc_unshippable",
+      dedupKey: `edge_safety_plc_unshippable:7:0:${HEX}`,
+      recipients: [1, 2],
+      khuTrungBenVung: {},
+      retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+      entityType: "edge_node",
+      entityId: 7,
+    });
+    // the next build (every pull rebuilds) ⇒ refused again, but NOT alerted again in this process
+    await expect(shipSafetyPlcConfigs(NODE, [plc(4), bad], deps())).rejects.toBeInstanceOf(EdgeContractError);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(1);
+    // a restart forgets the process memory: the alert is raised again, and only the DURABLE dedup (khuTrungBenVung) keeps it to one row
+    __resetEdgeConfigAlertsForTests();
+    await expect(shipSafetyPlcConfigs(NODE, [plc(4), bad], deps())).rejects.toBeInstanceOf(EdgeContractError);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(2);
+    expect(H.alerts[1]).toMatchObject({ dedupKey: H.alerts[0].dedupKey, khuTrungBenVung: {} });
+  });
+
+  it("★ O2: a trust digest that is not hex64 / cannot be computed ⇒ refused too; each config alerted under its own key", async () => {
+    await expect(
+      shipSafetyPlcConfigs(
+        NODE,
+        [plc(4), plc(5), plc(6)],
+        deps((c) => {
+          if (c.id === 5) return "sha256:not-hex";
+          if (c.id === 6) throw new Error("digest crashed");
+          return HEX;
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "safety_plc_unshippable" });
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts.map((a) => a.dedupKey)).toEqual(["edge_safety_plc_unshippable:7:5:sha256:not-hex", "edge_safety_plc_unshippable:7:6:none"]);
+  });
+});
+
+describe("A2(o) O3 — authorize signs only ids inside the snapshot central SERVES the node", () => {
+  it("★ O3: signed [7, 8], served {8} ⇒ device_refused {safety} naming #7 + EDGE_ANOMALY audit", async () => {
+    H.served = [8];
+    const r = await edgeSafetyIdsNotServed(NODE, [7, 8]);
+    expect(r).toMatchObject({ http: 409, code: "device_refused", data: { gate: "safety" } });
+    expect(r!.message).toContain("#7");
+    expect(r!.message).not.toContain("#8");
+    expect(H.audits).toEqual([{ action: "EDGE_ANOMALY", details: { anomaly: "safety_config_not_served", ids: [7] }, status: "failure" }]);
+  });
+
+  it("control: every signed id served (a superset is fine) ⇒ null; an empty list never asks", async () => {
+    H.served = [7, 8, 9];
+    expect(await edgeSafetyIdsNotServed(NODE, [7, 8])).toBeNull();
+    H.served = "throw";
+    expect(await edgeSafetyIdsNotServed(NODE, [])).toBeNull();
+    expect(H.audits).toEqual([]);
+  });
+
+  it("★ O3: the served snapshot cannot be built ⇒ THROWS (authorizeForNode's catch ⇒ 503, nothing signed) — never a pass", async () => {
+    H.served = "throw";
+    await expect(edgeSafetyIdsNotServed(NODE, [7])).rejects.toThrow("config build failed");
+    // the real one: centralDb unavailable ⇒ currentNodeConfig throws as well
+    H.served = "real";
+    await expect(edgeSafetyIdsNotServed(NODE, [7])).rejects.toThrow();
+  });
+
+  it("★ O3 / O5 (central): authorizeForNode calls it with the gates' signed ids — after the STOP answer and the device gates, inside the try, before the transaction", () => {
+    const s = readFileSync(path.join(__dirname, "edgeAuthorizeCentral.ts"), "utf8");
+    const body = s.slice(s.indexOf("export async function authorizeForNode("), s.indexOf("async function insertOrReplay("));
+    const call = body.indexOf("await edgeSafetyIdsNotServed(node, g.safetyConfigIds)");
+    expect(call).toBeGreaterThan(0);
+    expect([...body.matchAll(/edgeSafetyIdsNotServed\(/g)]).toHaveLength(1);
+    expect(call).toBeGreaterThan(body.indexOf("  try {"));
+    expect(call).toBeGreaterThan(body.lastIndexOf("stop_needs_no_authorization"));
+    expect(call).toBeGreaterThan(body.indexOf(`if ("gate" in g) return edgeError("device_refused"`));
+    expect(call).toBeLessThan(body.indexOf("insertOrReplay("));
+    expect(call).toBeLessThan(body.indexOf("} catch (err) {"));
+  });
+});
+
+describe("A2(o) O4 — more than 64 guarding configs ⇒ refused, never a truncated signed list", () => {
+  const d = {} as never;
+  it(`★ O4: ${EDGE_AUTH_MAX_SAFETY_CONFIG_IDS + 1} configs guard the robot ⇒ device_refused {safety}, naming the count`, async () => {
+    H.plcs = Array.from({ length: EDGE_AUTH_MAX_SAFETY_CONFIG_IDS + 1 }, (_, i) => plc(100 + i));
+    await expect(edgeAuthorizeSafetyConfigIds(d, 7, { robotId: 12 }, { centralPreflight: false })).rejects.toMatchObject({
+      answer: { http: 409, code: "device_refused", data: { gate: "safety" }, message: expect.stringContaining("65 safety-PLC configurations") },
+    });
+  });
+  it("control: exactly 64 ⇒ all 64 listed, sorted", async () => {
+    H.plcs = Array.from({ length: EDGE_AUTH_MAX_SAFETY_CONFIG_IDS }, (_, i) => plc(200 - i));
+    const ids = await edgeAuthorizeSafetyConfigIds(d, 7, { robotId: 12 }, { centralPreflight: false });
+    expect(ids).toHaveLength(64);
+    expect(ids[0]).toBe(137);
+    expect(ids[63]).toBe(200);
+  });
+});
+
+describe("A2(o) O5 (central) + O8 — an unbuildable config never fails the pull / heartbeat, and is never silent", () => {
+  it("★ O5/O8: unshippable safety PLC ⇒ currentConfigVersion resolves 0 (the pull still answers with its STOPs), logged ONCE per reason", async () => {
+    H.dbError = new EdgeContractError("safety_plc_unshippable", "safety-PLC config(s) #0 PLC-BAD of node EDGE-A cannot be shipped");
+    expect(await currentConfigVersion(NODE)).toBe(0);
+    expect(await currentConfigVersion(NODE)).toBe(0);
+    const lines = errors.filter((l) => l.includes("config of node EDGE-A cannot be built"));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("configVersion 0");
+    expect(lines[0]).toContain("refused");
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toEqual([]); // that one alerts per config, in the build
+  });
+
+  it("★ O8: a contract failure (e.g. > 200 configs: the signed schema refuses the envelope) ⇒ one URGENT edge_config_unbuildable alert, durable dedup", async () => {
+    H.dbError = new EdgeContractError("invalid_payload", "signForNode: central built an invalid config payload");
+    expect(await currentConfigVersion(NODE)).toBe(0);
+    expect(await currentConfigVersion(NODE)).toBe(0);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(1);
+    expect(H.alerts[0]).toMatchObject({ kind: "edge_config_unbuildable", dedupKey: "edge_config_unbuildable:7:invalid_payload", khuTrungBenVung: {}, entityId: 7 });
+    expect(errors.filter((l) => l.includes("cannot be built"))).toHaveLength(1);
+  });
+
+  it("O8: central's DB unreachable ⇒ a warning (not an alert), still never thrown", async () => {
+    expect(await currentConfigVersion(NODE)).toBe(0);
+    expect(warns.some((l) => l.includes("config of node EDGE-A cannot be built"))).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toEqual([]);
+  });
+
+  it("★ O5 (central): the pull and the heartbeat take the version through currentConfigVersion (never throws) — no STOP path reads the served snapshot", () => {
+    const read = (rel: string) => readFileSync(path.join(__dirname, rel), "utf8");
+    expect(read("edgeExecutionCentral.ts")).toContain("configVersion = await currentConfigVersion(node);");
+    expect(read("edgeCoordinator.ts")).toContain("configVersion: await currentConfigVersion(node)");
+    for (const rel of ["edgeExecutionCentral.ts", "edgeCoordinator.ts", "edgeNodeCommands.ts", "edgeReportsCentral.ts"]) {
+      expect(read(rel), rel).not.toMatch(/servedSafetyPlcConfigIds|currentNodeConfig\(/);
+    }
+  });
+});
