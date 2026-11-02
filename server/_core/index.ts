@@ -3730,6 +3730,15 @@ async function startServer() {
 
   // Initialize Socket.io for realtime notifications
   initializeSocket(server);
+  // ★★★ F5 đầy đủ — LISTEN `socket_pham_vi` (trigger 0435): đổi vai / phân công / quyền / phiên ⇒ xoá bộ nhớ đệm cục bộ rồi ngắt socket
+  // trình duyệt của người đó trên bản sao NÀY; quét khi LISTEN suy giảm / phục hồi và mỗi 5 phút. Mọi bản sao trung tâm; KHÔNG ở edge
+  // (không có DB trung tâm). Không await (LISTEN có hạn, thử lại nền).
+  void import("./socketXetLaiQuyen")
+    .then(async ({ batDauNgheSocketPhamVi }) => {
+      const { isEdgeProcessRole } = await import("../db/connection");
+      if (!isEdgeProcessRole()) await batDauNgheSocketPhamVi();
+    })
+    .catch((err) => console.error("[SocketXetLaiQuyen] failed to start:", (err as any)?.message || err));
   
   // Start offline machine monitor
   startOfflineMonitor();

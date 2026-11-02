@@ -15,8 +15,8 @@
  *   • một bên không có nhà máy nào / không phân giải được ⇒ KHÔNG (fail-closed)
  *   • ngược lại                                            ⇒ thấy khi hai tập nhà máy GIAO nhau
  *
- * Bộ nhớ đệm phạm vi chủ hàng: TTL NGẮN (≤ 30 s) — nợ ghi nhận: khi hook F5 (đổi phân công / vai / isActive) của scada-master lên main,
- * `xoaCachePhamViChu` được nối vào ĐÚNG hook đó, không tự dựng hook thứ hai.
+ * Bộ nhớ đệm phạm vi chủ hàng: TTL NGẮN (≤ 30 s). F5 đầy đủ: `xoaCachePhamViChu` được nối vào ĐÚNG hook đó — bộ nhận `socket_pham_vi`
+ * (`server/_core/socketXetLaiQuyen.ts`, trigger 0435) xoá mục của người bị đổi phân công / vai / quyền / phiên trên MỌI bản sao.
  */
 import { inArray } from "drizzle-orm";
 

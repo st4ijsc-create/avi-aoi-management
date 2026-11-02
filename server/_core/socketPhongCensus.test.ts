@@ -44,6 +44,9 @@ const LUAT: Luat[] = [
   { file: "server/_core/socket.ts", phong: /^`machine:\$\{machineId\}`$/, gate: ["xacDinhMaySuKien("] },
   // ── admin
   { file: "server/_core/socket.ts", phong: /^"admin"$/, gate: ["duocQuanLyDangKyMay("] },
+  // ── F5 đầy đủ: phòng ĐIỀU KHIỂN của server (chỉ để NGẮT — census socketKiemCensus cấm phát vào đó), danh tính từ handshake đã xác thực
+  { file: "server/_core/socket.ts", phong: /^phongKiemNguoi\(u\.id\)$/, gate: ["laSocketNguoiDung(", "sdk.authenticateRequest("] },
+  { file: "server/_core/socket.ts", phong: /^phongKiemPhien\(\(socket\.data as any\)\.khoaPhien\)$/, gate: ["laSocketNguoiDung(", "chuanBiKiemHandshake("] },
   // ── P-S1b: tự vào phòng theo PHẠM VI của chính người dùng (idsTrongPhamVi) — không từ lời tự khai
   { file: "server/_core/socketPhongQuyen.ts", phong: /^PHONG_TOAN_QUYEN_SOCKET$/, gate: ["laSocketNguoiDung(", "idsTrongPhamVi("] },
   { file: "server/_core/socketPhongQuyen.ts", phong: /^`factory:\$\{id\}`$/, gate: ["laSocketNguoiDung(", "idsTrongPhamVi("] },
