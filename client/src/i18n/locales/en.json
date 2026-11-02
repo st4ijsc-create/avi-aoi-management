@@ -21027,7 +21027,9 @@
     "netDown": "Network connection lost — data may be out of date. Waiting to reconnect…",
     "socketDown": "Realtime connection lost — reconnecting…",
     "quyenDoi": "Your access has changed — reconnecting…",
-    "noiLaiDung": "Could not reconnect the realtime channel — please reload the page."
+    "choDichVu": "The server cannot verify the connection right now — retrying automatically…",
+    "noiLaiDung": "Stopped reconnecting the realtime channel — it will retry when the network is back or when you return to this tab; or reload the page.",
+    "hetPhien": "Your session is no longer valid — redirecting to sign in…"
   },
   "aiStudioHub": {
     "models": "Models & Versions",

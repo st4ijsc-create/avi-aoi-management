@@ -112,8 +112,16 @@ const presence = getMachinePresenceStore();
  * `socket_pham_vi`, quét ≤ 5 phút cho thông báo mất) ⇒ cache sống không lâu hơn phạm vi mà nó chụp; nối lại = `admin:join` mới = cache mới.
  * Fail-closed: không có cache (chưa join đúng đường) / cache rỗng / không liệt kê được phòng / tra máy của sự kiện lỗi ⇒ KHÔNG gửi người có
  * phạm vi. Ngoài phạm vi ≡ không tồn tại (không dấu vết).
+ * fix round 1 (m3) — giới hạn ĐÃ NÓI của cache: một máy được TẠO / gán vào phạm vi của người nhận SAU lượt join không có trong cache ⇒ người có
+ * phạm vi KHÔNG nhận sự kiện kết nối của nó (chiều ĐÓNG) tới khi join lại; `machine:registration_request` (hiếm) phân giải LẠI lúc phát.
+ * Đổi cha của máy (máy chuyển nhà máy) ⇒ phase 2 (kiểm kê §1 I).
  */
-async function phatPhongAdminTheoPhamVi(suKien: string, payload: unknown, mayCuaSuKien: () => Promise<number | undefined>): Promise<void> {
+async function phatPhongAdminTheoPhamVi(
+  suKien: string,
+  payload: unknown,
+  mayCuaSuKien: () => Promise<number | undefined>,
+  tuyChon: { tinhLaiPhamVi?: boolean } = {},
+): Promise<void> {
   if (!io) return;
   let nguoiNhan: Awaited<ReturnType<Server["fetchSockets"]>>;
   try {
@@ -124,7 +132,11 @@ async function phatPhongAdminTheoPhamVi(suKien: string, payload: unknown, mayCua
   }
   let idMay: number | undefined | "chua" | "loi" = "chua";
   for (const s of nguoiNhan) {
-    const pham = (s.data as { __phamViMayAdmin?: unknown } | undefined)?.__phamViMayAdmin;
+    // m3 — `tinhLaiPhamVi`: phân giải phạm vi người nhận NGAY LÚC PHÁT (sự kiện hiếm — đăng ký máy: một máy vừa tạo / vừa gán trạm sau lượt join
+    // vẫn tới đúng registrar); lỗi ⇒ tập rỗng (không gửi). Còn lại dùng cache lúc join.
+    const pham = tuyChon.tinhLaiPhamVi
+      ? await idsMayTrongPhamViCua(s.data as never).then((x) => (x === null ? null : [...x]))
+      : (s.data as { __phamViMayAdmin?: unknown } | undefined)?.__phamViMayAdmin;
     if (pham === null) {
       s.emit(suKien, payload);
       continue;
@@ -144,7 +156,7 @@ async function phatPhongAdminTheoPhamVi(suKien: string, payload: unknown, mayCua
 
 /** `machine:registration_request` — máy của đăng ký = máy khớp MÃ TỰ KHAI (`idMayCuaMaDangKy`, cùng luật lọc `admin:join` và kiểm duyệt). */
 function phatYeuCauDangKyTheoPhamVi(reg: PendingMachineRegistration, payload: unknown): Promise<void> {
-  return phatPhongAdminTheoPhamVi("machine:registration_request", payload, () => idMayCuaMaDangKy(reg.machineInfo?.code));
+  return phatPhongAdminTheoPhamVi("machine:registration_request", payload, () => idMayCuaMaDangKy(reg.machineInfo?.code), { tinhLaiPhamVi: true });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -324,6 +336,14 @@ async function xacThucHandshakeMay(socket: Socket, mode: "log" | "enforce"): Pro
   return mode === "enforce" ? new Error("MACHINE_UNAUTHORIZED") : undefined;
 }
 
+/** F5 fix round 1 (I1) — mã lỗi handshake trình duyệt: từ chối dứt khoát vs hạ tầng hỏng. */
+export const MA_HANDSHAKE_TU_CHOI = "UNAUTHORIZED";
+export const MA_HANDSHAKE_HA_TANG = "SERVICE_UNAVAILABLE";
+export function maLoiHandshakeTrinhDuyet(err: unknown): typeof MA_HANDSHAKE_TU_CHOI | typeof MA_HANDSHAKE_HA_TANG {
+  const ma = (err as { statusCode?: unknown } | null)?.statusCode;
+  return ma === 401 || ma === 403 ? MA_HANDSHAKE_TU_CHOI : MA_HANDSHAKE_HA_TANG;
+}
+
 export function initializeSocket(server: HttpServer): Server {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")
@@ -380,15 +400,19 @@ export function initializeSocket(server: HttpServer): Server {
       }
       // ★★★ F5 đầy đủ — khoá phiên (`user_sessions.id` của vé cookie — KHÔNG BAO GIỜ là vé) + dấu vân tay quyền lúc nối: bộ nhận
       // `socket_pham_vi` ngắt đúng phiên bị thu hồi; lượt quét so quyền MỚI với dấu vân tay này. Không bao giờ ném.
-      const kiem = await chuanBiKiemHandshake(cookieHeader, Number((user as any).id));
+      const kiem = await chuanBiKiemHandshake(cookieHeader, Number((user as any).id), String((user as any).role ?? ""));
       (socket.data as any).user = user;
       (socket.data as any).clientType = "browser";
       (socket.data as any).khoaPhien = kiem.khoaPhien;
       (socket.data as any).__vanTay = kiem.vanTay;
       return next();
     } catch (err) {
-      console.error("[Socket.io] Handshake auth failed:", err);
-      return next(new Error("UNAUTHORIZED"));
+      // ★★★ F5 đầy đủ fix round 1 (I1) — một TỪ CHỐI DỨT KHOÁT (vé sai / phiên thu hồi / hết hạn / tài khoản tắt / thiếu / buộc đổi mật
+      // khẩu — sdk ném HttpError 401/403) ⇒ `UNAUTHORIZED` (client DỪNG + đường đăng xuất). Lỗi HẠ TẦNG (DB / tra sổ hỏng, hết giờ) ⇒
+      // `SERVICE_UNAVAILABLE`: kết nối VẪN bị từ chối (KHÔNG BAO GIỜ cho vào — fail-closed), chỉ khác MÃ để client tự thử lại khi DB về.
+      const ma = maLoiHandshakeTrinhDuyet(err);
+      console.error(`[Socket.io] Handshake auth failed (${ma}):`, err);
+      return next(new Error(ma));
     }
   });
 
@@ -945,6 +969,10 @@ export function initializeSocket(server: HttpServer): Server {
           `[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
           `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}`,
         );
+        // F5 fix round 1 (m2) — một lượt join lại BỊ TỪ CHỐI trên socket ĐÃ ở phòng `admin` (quyền vừa mất) ⇒ rời phòng + bỏ cache phạm vi:
+        // không để lần join cũ (đã hết hiệu lực) tiếp tục nhận sự kiện quản trị.
+        socket.leave("admin");
+        delete (socket.data as any).__phamViMayAdmin;
         return;
       }
       // ★★★ F5-nhanh review (2026-11-02) — cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED mở cho người KHÔNG phải admin vào đây (permission bit

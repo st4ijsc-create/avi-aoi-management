@@ -5,6 +5,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ganNoiLaiKhiServerNgat, treLanThu, SO_LAN_TOI_DA, TRE_TRAN_MS, type TrangThaiNoiLai } from "./socketNoiLai";
 
+function nguonKhoiPhuc() {
+  let fn: (() => void) | null = null;
+  return { gan: (f: () => void) => { fn = f; return () => { fn = null; }; }, ban: () => fn?.(), daGan: () => fn !== null };
+}
+
 function socketGia() {
   const nghe = new Map<string, Set<(...a: any[]) => void>>();
   const s = {
@@ -119,5 +124,66 @@ describe("T10 — nối lại sau `io server disconnect`", () => {
     expect(khiHetPhien).not.toHaveBeenCalled();
     go();
     expect(s.soNghe()).toBe(0);
+  });
+});
+
+describe("★★★ fix round 1 (I1 / m8) — hạ tầng hỏng ⇒ tự thử lại tới khi DB về; đã dừng ⇒ thử lại khi mạng / tab về", () => {
+  it("(c) handshake SERVICE_UNAVAILABLE (kể cả lần nối ĐẦU) ⇒ thử lại VƯỢT trần 8 lần, độ trễ ≤ 30 s, trạng thái `cho_dich_vu`; DB về ⇒ vào được", () => {
+    const s = socketGia();
+    const dh = dongHo();
+    const tt: TrangThaiNoiLai[] = [];
+    const khiHetPhien = vi.fn();
+    ganNoiLaiKhiServerNgat(s, { henGio: dh.henGio, huyHen: dh.huyHen, ngauNhien: () => 0.99, khiHetPhien, khiDoiTrangThai: (t) => tt.push(t) });
+    for (let i = 0; i < SO_LAN_TOI_DA * 3; i++) {
+      s.active = false;
+      s.phat("connect_error", new Error("SERVICE_UNAVAILABLE"));
+      dh.chayCuoi();
+    }
+    expect(s.connect).toHaveBeenCalledTimes(SO_LAN_TOI_DA * 3);
+    expect(Math.max(...dh.hen.map((h) => h.ms))).toBeLessThanOrEqual(TRE_TRAN_MS);
+    expect(tt).toEqual(["cho_dich_vu"]);
+    expect(khiHetPhien).not.toHaveBeenCalled();
+    s.connected = true;
+    s.phat("connect");
+    expect(tt).toEqual(["cho_dich_vu", "binh_thuong"]);
+  });
+
+  it("(d) đối chứng: UNAUTHORIZED sau khi bị server ngắt ⇒ DỪNG (không hẹn thêm), khiHetPhien; SERVICE_UNAVAILABLE sau đó vẫn được thử lại (DB hỏng ≠ hết phiên)", () => {
+    const s = socketGia();
+    const dh = dongHo();
+    const khiHetPhien = vi.fn();
+    ganNoiLaiKhiServerNgat(s, { henGio: dh.henGio, huyHen: dh.huyHen, ngauNhien: () => 0, khiHetPhien });
+    s.phat("disconnect", "io server disconnect");
+    dh.chayCuoi();
+    s.phat("connect_error", new Error("UNAUTHORIZED"));
+    expect(khiHetPhien).toHaveBeenCalledTimes(1);
+    const soHen = dh.hen.length;
+    s.phat("connect_error", new Error("RATE_LIMITED"));
+    expect(dh.hen.length).toBe(soHen);
+  });
+
+  it("(m8) đã `dung` (hết 8 lượt) ⇒ mạng về / tab hiện lại ⇒ thử lại từ đầu; khi đang bình thường thì sự kiện ấy không làm gì", () => {
+    const s = socketGia();
+    const dh = dongHo();
+    const kp = nguonKhoiPhuc();
+    const tt: TrangThaiNoiLai[] = [];
+    const go = ganNoiLaiKhiServerNgat(s, { henGio: dh.henGio, huyHen: dh.huyHen, ngauNhien: () => 0.5, ganKhoiPhuc: kp.gan, khiDoiTrangThai: (t) => tt.push(t) });
+    kp.ban();
+    expect(dh.hen).toEqual([]);
+    s.phat("disconnect", "io server disconnect");
+    for (let i = 0; i < SO_LAN_TOI_DA + 1; i++) {
+      dh.chayCuoi();
+      s.active = false;
+      s.phat("connect_error", new Error("RATE_LIMITED"));
+    }
+    expect(tt[tt.length - 1]).toBe("dung");
+    const truoc = (s.connect as any).mock.calls.length;
+    kp.ban();
+    expect(tt[tt.length - 1]).toBe("dang_noi_lai");
+    expect(dh.hen[dh.hen.length - 1].ms).toBeLessThanOrEqual(3_000); // lượt đầu lại (1–3 s)
+    dh.chayCuoi();
+    expect((s.connect as any).mock.calls.length).toBe(truoc + 1);
+    go();
+    expect(kp.daGan()).toBe(false);
   });
 });

@@ -12,7 +12,12 @@
  * Thuần (không DOM, không React) ⇒ lưới đơn vị điều khiển được đồng hồ và số ngẫu nhiên.
  */
 
-export type TrangThaiNoiLai = "binh_thuong" | "dang_noi_lai" | "dung" | "het_phien";
+/**
+ * `dang_noi_lai` = đang thử lại sau khi server ngắt (quyền đổi); `cho_dich_vu` = máy chủ tạm không xác thực được (handshake
+ * `SERVICE_UNAVAILABLE` — DB / sổ phiên hỏng), đang tự thử lại KHÔNG giới hạn số lần; `dung` = đã hết lượt (sẽ thử lại khi mạng về / tab hiện
+ * lại); `het_phien` = handshake bị từ chối dứt khoát (`UNAUTHORIZED`).
+ */
+export type TrangThaiNoiLai = "binh_thuong" | "dang_noi_lai" | "cho_dich_vu" | "dung" | "het_phien";
 
 /** Phần của socket.io-client `Socket` mà bộ nối lại dùng. */
 export interface SocketNoiLai {
@@ -32,6 +37,11 @@ export interface TuyChonNoiLai {
   khiHetPhien?: () => void;
   khiQuyenDoi?: () => void;
   khiDoiTrangThai?: (t: TrangThaiNoiLai) => void;
+  /**
+   * fix round 1 (m8) — gắn bộ nghe "môi trường đã có thể nối lại" (mạng `online`, tab hiện lại `visibilitychange`); trạng thái `dung` thử lại khi
+   * nó bắn. Trả hàm gỡ. Mặc định: `window` + `document` (không có ⇒ không gắn gì). Lưới tiêm.
+   */
+  ganKhoiPhuc?: (fn: () => void) => () => void;
 }
 
 export const TRE_DAU_MIN_MS = 1_000;
@@ -40,6 +50,21 @@ export const TRE_TRAN_MS = 30_000;
 export const SO_LAN_TOI_DA = 8;
 export const LY_DO_SERVER_NGAT = "io server disconnect";
 export const LOI_HANDSHAKE_HET_PHIEN = "UNAUTHORIZED";
+/** fix round 1 (I1) — server không xác thực được VÌ HẠ TẦNG (DB / sổ phiên): vẫn bị từ chối, nhưng nên tự thử lại tới khi DB về. */
+export const LOI_HANDSHAKE_HA_TANG = "SERVICE_UNAVAILABLE";
+
+function ganKhoiPhucMacDinh(fn: () => void): () => void {
+  if (typeof window === "undefined" || typeof document === "undefined") return () => undefined;
+  const khiHien = () => {
+    if (document.visibilityState === "visible") fn();
+  };
+  window.addEventListener("online", fn);
+  document.addEventListener("visibilitychange", khiHien);
+  return () => {
+    window.removeEventListener("online", fn);
+    document.removeEventListener("visibilitychange", khiHien);
+  };
+}
 
 /** Độ trễ của lần thử thứ `lan` (0-based): lần 0 ∈ [1 s, 3 s]; sau đó cơ số × 2^lan có nhiễu ±50 %, trần TRE_TRAN_MS. */
 export function treLanThu(lan: number, r: number): number {
@@ -62,15 +87,16 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
     trangThai = t;
     o.khiDoiTrangThai?.(t);
   };
-  const thu = () => {
+  /** `khongTran` (I1 — hạ tầng hỏng): không giới hạn số lần, độ trễ vẫn lùi tới trần TRE_TRAN_MS. */
+  const thu = (khongTran = false) => {
     if (hen !== null) return;
-    if (lan >= SO_LAN_TOI_DA) {
+    if (!khongTran && lan >= SO_LAN_TOI_DA) {
       dat("dung");
       return;
     }
-    const ms = treLanThu(lan, ngauNhien());
+    const ms = treLanThu(Math.min(lan, SO_LAN_TOI_DA), ngauNhien());
     lan++;
-    dat("dang_noi_lai");
+    dat(khongTran ? "cho_dich_vu" : "dang_noi_lai");
     hen = henGio(() => {
       hen = null;
       if (!socket.connected) socket.connect();
@@ -82,8 +108,13 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
     thu();
   };
   const onConnectError = (err: unknown) => {
-    if (!biServerNgat) return; // lỗi nối lần ĐẦU: hành vi cũ giữ nguyên (không đổi đường đăng nhập ban đầu)
     const msg = String((err as { message?: unknown } | null)?.message ?? err ?? "");
+    // I1 — hạ tầng hỏng: LUÔN tự thử lại (kể cả lần nối đầu / nối lại của socket.io sau khi mạng chập), không giới hạn số lần.
+    if (msg === LOI_HANDSHAKE_HA_TANG) {
+      thu(true);
+      return;
+    }
+    if (!biServerNgat) return; // lỗi nối lần ĐẦU (khác hạ tầng): hành vi cũ giữ nguyên (không đổi đường đăng nhập ban đầu)
     if (msg === LOI_HANDSHAKE_HET_PHIEN) {
       if (hen !== null) huyHen(hen);
       hen = null;
@@ -105,11 +136,18 @@ export function ganNoiLaiKhiServerNgat(socket: SocketNoiLai, o: TuyChonNoiLai = 
     dat("binh_thuong");
     if (sauNgat) o.khiQuyenDoi?.();
   };
+  // m8 — đã dừng (hết lượt) ⇒ mạng về / tab hiện lại thì thử lại từ đầu (không bao giờ kẹt im lặng tới khi tải lại trang).
+  const goKhoiPhuc = (o.ganKhoiPhuc ?? ganKhoiPhucMacDinh)(() => {
+    if (trangThai !== "dung" || socket.connected) return;
+    lan = 0;
+    thu();
+  });
   socket.on("disconnect", onDisconnect);
   socket.on("connect_error", onConnectError);
   socket.on("connect", onConnect);
   return () => {
     if (hen !== null) huyHen(hen);
+    goKhoiPhuc();
     socket.off("disconnect", onDisconnect);
     socket.off("connect_error", onConnectError);
     socket.off("connect", onConnect);

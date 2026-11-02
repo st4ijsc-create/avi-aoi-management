@@ -12,7 +12,7 @@
  *     (`io.local`) và bộ nhớ đệm CỦA NÓ — đúng như nhau có / không có bộ chuyển Redis. THỨ TỰ mỗi tải trọng:
  *       {"u":[…]}         ⇒ với mỗi id: xoá MỌI bộ nhớ đệm theo người (`BO_NHO_THEO_NGUOI`) RỒI ngắt phòng `kiem:user:{id}`;
  *       {"s":S,"u":[id]}  ⇒ cùng lượt xoá cho id, RỒI ngắt `kiem:phien:S` (+ socket của id KHÔNG biết khoá phiên — chiều ĐÓNG);
- *       {"all":1}         ⇒ xoá hết bộ nhớ đệm, RỒI ngắt mọi socket trình duyệt cục bộ với độ trễ ngẫu nhiên từng socket; giới hạn tần suất
+ *       {"all":1}         ⇒ xoá hết bộ nhớ PHẠM VI (KHÔNG danh tính, KHÔNG bộ nhớ STOP suy giảm — fix round 1 C1), RỒI ngắt mọi socket trình duyệt cục bộ với độ trễ ngẫu nhiên từng socket; giới hạn tần suất
  *                            (≤ 1 lượt / CUA_SO_ALL_MS, dồn cụm thành MỘT lượt đuôi — không mất);
  *       hỏng hình dạng    ⇒ coi như {"all":1} (chịu cùng giới hạn tần suất) + một dòng log (fail-closed).
  *     Lỗi khi xoá bộ nhớ của một người ⇒ VẪN ngắt socket của người đó (`finally`).
@@ -20,9 +20,10 @@
  *     tối đa LO_MOI_NHIP mục rồi nhường vòng lặp sự kiện; hàng đợi quá TRAN_HANG ⇒ bỏ hàng đợi và QUÉT (không mất sự kiện nào: lượt quét
  *     kiểm lại mọi socket với DB).
  *   • QUÉT (LISTEN suy giảm / phục hồi — thông báo trong khoảng trống đã mất —, tràn hàng đợi, và định kỳ CHU_KY_QUET_MS cho các hạn THỜI
- *     GIAN: `permissions.expiresAt`, `user_sessions.expiresAt`): xoá hết bộ nhớ đệm rồi với mỗi socket trình duyệt cục bộ đọc LẠI hàng
+ *     GIAN: `permissions.expiresAt`, `user_sessions.expiresAt`): CHỈ xoá bộ nhớ phân công (C1) rồi với mỗi socket trình duyệt cục bộ đọc LẠI hàng
  *     người dùng + hàng sổ phiên (`xacThucLaiChoThaoTacSocket`: vai, isActive, buộc đổi mật khẩu, phiên còn sống / chưa hết hạn), phạm vi nhà
- *     máy (`idsTrongPhamVi("factory")`) và dấu vân tay quyền; so với dấu vân tay lúc nối; KHÁC hoặc BẤT KỲ lỗi nào ⇒ ngắt. Tải DB bị chặn:
+ *     máy (`idsTrongPhamVi("factory")`), mã tập đoàn và dấu vân tay quyền; so với dấu vân tay lúc nối; KHÁC ⇒ ngắt; LỖI ⇒ ngắt ở lượt CHẶT,
+ *     KHÔNG ngắt (ghi nợ) ở lượt SỰ CỐ lúc `onEpisodeLost` (fix round 1 I1 — xem `yeuCauQuet`). Tải DB bị chặn:
  *     tối đa DONG_THOI_QUET socket song song, phạm vi + quyền tính MỘT lần mỗi người mỗi lượt.
  *
  * Phòng điều khiển `kiem:user:{id}` / `kiem:phien:{user_sessions.id}`: socket.ts vào cả hai lúc nối cho MỌI socket trình duyệt; KHÔNG BAO GIỜ
@@ -109,16 +110,25 @@ export function docThongBaoPhamVi(raw: unknown): ThongBaoPhamVi {
 export interface BoNhoTheoNguoi {
   ten: string;
   xoaNguoi(userId: number): Promise<void>;
-  xoaHet(): Promise<void>;
+  /**
+   * Xoá TẤT CẢ — chỉ có ở bộ nhớ PHẠM VI (dữ liệu dẫn xuất, đọc lại được ngay). ★★★ fix round 1 (C1): bộ nhớ DANH TÍNH (authSessionCache)
+   * và bộ nhớ STOP suy giảm (robotStopAuthMemo) KHÔNG BAO GIỜ bị xoá toàn cục ở đây: bộ nhớ STOP phải SỐNG QUA một sự cố DB (STOP suy giảm
+   * với danh tính BIẾT CUỐI — robotStopAuth.ts / robotStopAuthMemo.ts đầu tệp, L-7 / R-10-bb); nó chỉ bị xoá toàn cục bởi lượt đổi quyền quản
+   * trị. Lượt quét bắt đầu ĐÚNG lúc sự cố DB (`onEpisodeLost`) và "all" thì ai cũng NOTIFY được (kể cả tải trọng hỏng) ⇒ xoá toàn cục ở
+   * đây là một cách xoá bộ nhớ STOP từ xa.
+   */
+  xoaHet?: () => Promise<void>;
 }
 /**
  * MỌI bộ nhớ đệm theo người / theo phạm vi có trong `server/` (kiểm bằng grep `new Map` + TTL lúc viết; báo cáo F5 đầy đủ liệt kê):
  *   1. `accessControl.assignmentCache` (30 s, mã nhà máy / tập đoàn được gán) — người gọi `invalidateAssignmentCache` ĐẦU TIÊN trong sản phẩm;
- *   2. `authSessionCache` L1 (hàng `users` theo phiên, ≤ AUTH_CACHE_TTL_S) — `invalidateAuthUser` (nó cũng dọn bộ nhớ STOP);
+ *   2. `authSessionCache` L1 (hàng `users` theo phiên, ≤ AUTH_CACHE_TTL_S) — `invalidateAuthUser` (nó cũng dọn bộ nhớ STOP CỦA NGƯỜI ĐÓ);
  *   3. `robotStopAuthMemo` (phiên + sự thật STOP-only) — `invalidateStopAuthForUser` (gọi tường minh: không dựa vào hiệu ứng phụ của 2);
  *   4. `aiAgentPhamVi` (phạm vi chủ hàng agent, 30 s) — `xoaCachePhamViChu`;
  *   5. `routes/_congAnh.nhoDemPhamVi` (phạm vi lối vào ảnh, 30 s, khoá userId:role) — `xoaNhoDemPhamViAnhCuaNguoi`.
  * Không thuộc diện (không theo người): `phamViGhiMay.boNho` (máy → chuỗi tenant), `_uyQuyenAnh.nhoDem` (đường dẫn → khoá tenant, sự kiện WORM).
+ * {"u"} / {"s"} xoá CẢ NĂM cho đúng người ấy (cùng hợp đồng với lượt xoá theo người của chính bộ nhớ STOP) — một tải trọng nhắm giả chỉ xoá
+ * được bộ nhớ của người ấy + ngắt người ấy (chiều ĐÓNG). "all" / tải trọng hỏng chỉ xoá các bộ có `xoaHet` (1, 4, 5).
  */
 export const BO_NHO_THEO_NGUOI: readonly BoNhoTheoNguoi[] = [
   {
@@ -129,12 +139,10 @@ export const BO_NHO_THEO_NGUOI: readonly BoNhoTheoNguoi[] = [
   {
     ten: "authSessionCache",
     xoaNguoi: async (id) => (await import("../services/authSessionCache")).invalidateAuthUser(id),
-    xoaHet: async () => (await import("../services/authSessionCache")).clearAuthSessionCache(),
   },
   {
     ten: "robotStopAuthMemo",
     xoaNguoi: async (id) => (await import("../services/robot/robotStopAuthMemo")).invalidateStopAuthForUser(id),
-    xoaHet: async () => (await import("../services/robot/robotStopAuthMemo")).clearAllStopAuthMemo(),
   },
   {
     ten: "aiAgentPhamVi",
@@ -161,13 +169,26 @@ async function xoaBoNhoNguoi(id: number): Promise<number> {
   }
   return loi;
 }
-async function xoaBoNhoHet(): Promise<void> {
+/** "all" / tải trọng hỏng: CHỈ bộ nhớ PHẠM VI (có `xoaHet`) — KHÔNG danh tính, KHÔNG bộ nhớ STOP (fix round 1 C1). */
+async function xoaBoNhoPhamViHet(): Promise<void> {
   for (const b of BO_NHO_THEO_NGUOI) {
+    if (!b.xoaHet) continue;
     try {
       await b.xoaHet();
     } catch (e) {
       console.error(`[SocketXetLaiQuyen] xoa het ${b.ten} that bai:`, (e as Error)?.message ?? e);
     }
+  }
+}
+/**
+ * Lượt quét: CHỈ bộ nhớ phân công (để phép so phạm vi đọc phân công MỚI — ≤ 30 s nếu không xoá). Không cần xoá gì khác: hàng người dùng + sổ
+ * phiên được đọc TƯƠI bằng `xacThucLaiChoThaoTacSocket` (không qua authSessionCache), quyền đọc tươi bằng `docQuyen`.
+ */
+async function xoaBoNhoChoQuet(): Promise<void> {
+  try {
+    await BO_NHO_THEO_NGUOI[0].xoaHet!();
+  } catch (e) {
+    console.error("[SocketXetLaiQuyen] xoa assignmentCache truoc luot quet that bai:", (e as Error)?.message ?? e);
   }
 }
 
@@ -226,9 +247,27 @@ export function vanTayQuyen(rows: readonly HangQuyenVanTay[], bayGio: number = D
     .join("|");
 }
 
-/** Dấu vân tay lúc nối (trong `socket.data.__vanTay`). `quyen: null` = đọc lỗi lúc nối ⇒ lượt quét kế tiếp NGẮT (nối lại = đọc lại). */
+/**
+ * fix round 1 (m5) — MÃ TẬP ĐOÀN được gán (cổng của phòng `sites:*` / `site:{code}`): cùng nguồn `getUserAssignmentCodes` mà bộ phân giải
+ * phạm vi dùng; admin ⇒ [] (toàn quyền, không theo mã). Đã sắp xếp.
+ */
+type BoDocTapDoan = (userId: number, role: string) => Promise<string[]>;
+let boDocTapDoanGhiDe: BoDocTapDoan | null = null;
+/** Chỉ lưới: thay bộ đọc mã tập đoàn. `null` ⇒ mặc định (`accessControl.getUserAssignmentCodes`, bộ nhớ phân công đã xoá trước lượt quét). */
+export function __datBoDocTapDoanChoTest(f: BoDocTapDoan | null): void {
+  boDocTapDoanGhiDe = f;
+}
+async function docTapDoan(userId: number, role: string): Promise<string[]> {
+  const ds = boDocTapDoanGhiDe
+    ? await boDocTapDoanGhiDe(userId, role)
+    : (await (await import("./accessControl")).getUserAssignmentCodes(userId, role)).corporateCodes;
+  return [...ds].sort();
+}
+
+/** Dấu vân tay lúc nối (trong `socket.data.__vanTay`). Trường `null` = đọc lỗi lúc nối ⇒ lượt quét CHẶT kế tiếp NGẮT (nối lại = đọc lại). */
 export interface VanTayHandshake {
   quyen: string | null;
+  tapDoan: string[] | null;
 }
 
 /**
@@ -236,7 +275,7 @@ export interface VanTayHandshake {
  * đọc qua CÙNG bộ đọc với xacThucLai (seam chung); KHÔNG lưu vé; (2) dấu vân tay quyền. Không bao giờ ném.
  * Không đọc được khoá phiên ⇒ `null`: socket vẫn ở `kiem:user:{id}`, và một {"s"} của người đó ngắt nó (không biết phiên nào ⇒ chiều ĐÓNG).
  */
-export async function chuanBiKiemHandshake(cookieHeader: string | undefined, userId: number): Promise<{ khoaPhien: number | null; vanTay: VanTayHandshake }> {
+export async function chuanBiKiemHandshake(cookieHeader: string | undefined, userId: number, role: string): Promise<{ khoaPhien: number | null; vanTay: VanTayHandshake }> {
   const khoaPhienP = (async (): Promise<number | null> => {
     try {
       const ve = docVePhienTuCookie(cookieHeader);
@@ -256,8 +295,16 @@ export async function chuanBiKiemHandshake(cookieHeader: string | undefined, use
       return null;
     }
   })();
-  const [khoaPhien, quyen] = await Promise.all([khoaPhienP, quyenP]);
-  return { khoaPhien, vanTay: { quyen } };
+  const tapDoanP = (async (): Promise<string[] | null> => {
+    try {
+      return await docTapDoan(userId, role);
+    } catch (e) {
+      console.warn("[SocketXetLaiQuyen] khong doc duoc ma tap doan luc handshake (quet ke tiep se ngat):", (e as Error)?.message ?? e);
+      return null;
+    }
+  })();
+  const [khoaPhien, quyen, tapDoan] = await Promise.all([khoaPhienP, quyenP, tapDoanP]);
+  return { khoaPhien, vanTay: { quyen, tapDoan } };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -288,9 +335,11 @@ export interface ThongKeXetLaiQuyen {
   quetNgat: number;
   quetLoi: number;
   quetMsCuoi: number;
+  /** I1 — một lượt `su_co` đã giữ socket vì không tra được: một lượt `chat` đang NỢ (onRecovered / định kỳ trả). */
+  quetNo: boolean;
 }
 const tkMoi = (): ThongKeXetLaiQuyen => ({
-  nhan: 0, hong: 0, loXuLy: 0, loLonNhat: 0, nguoiXuLy: 0, phienXuLy: 0, tranHang: 0, allYeuCau: 0, allChay: 0, quet: 0, quetSocket: 0, quetNgat: 0, quetLoi: 0, quetMsCuoi: 0,
+  nhan: 0, hong: 0, loXuLy: 0, loLonNhat: 0, nguoiXuLy: 0, phienXuLy: 0, tranHang: 0, allYeuCau: 0, allChay: 0, quet: 0, quetSocket: 0, quetNgat: 0, quetLoi: 0, quetMsCuoi: 0, quetNo: false,
 });
 let tk = tkMoi();
 export function thongKeXetLaiQuyen(): ThongKeXetLaiQuyen {
@@ -435,7 +484,7 @@ async function chayAll(lyDo: string): Promise<void> {
   const ds = socketNguoiDungCucBo();
   console.warn(`[SocketXetLaiQuyen] "all" (${lyDo}): xoa het bo nho dem, ngat ${ds.length} socket trinh duyet cuc bo (tre <= ${ch.treAllToiDaMs} ms)`);
   try {
-    await xoaBoNhoHet();
+    await xoaBoNhoPhamViHet();
   } finally {
     for (const s of ds) {
       const t = setTimeout(() => s.disconnect(true), Math.floor(Math.random() * Math.max(0, ch.treAllToiDaMs)));
@@ -445,19 +494,33 @@ async function chayAll(lyDo: string): Promise<void> {
 }
 
 // ─── QUÉT ────────────────────────────────────────────────────────────────────────────────────
-/** Yêu cầu một lượt quét; đang quét ⇒ dồn thành MỘT lượt lặp ngay sau. Trả promise của lượt đang chạy. */
-export function yeuCauQuet(lyDo: string): Promise<void> {
+/**
+ * ★★★ fix round 1 (I1) — HAI chế độ quét:
+ *   • `chat` (mặc định — LISTEN phục hồi, định kỳ, tràn hàng đợi): BẤT KỲ lỗi nào ⇒ NGẮT (fail-closed khi DB đã về);
+ *   • `su_co` (CHỈ lúc LISTEN bắt đầu suy giảm — `onEpisodeLost`, tức thường là đầu một sự cố DB): lỗi tra cứu ⇒ KHÔNG ngắt, ghi "NỢ một lượt
+ *     quét" (`tk.quetNo`); khác biệt ĐÃ XÁC MINH được (vai / phạm vi / quyền / phiên đọc được mà khác) ⇒ vẫn ngắt. Lý do: không lượt thu hồi nào
+ *     COMMIT được khi DB sập; thông báo lỡ trong khoảng trống do lượt `chat` BẮT BUỘC lúc `onRecovered` bắt. Không có chế độ này, một nhịp DB
+ *     ngắt MỌI tab cùng lúc (và handshake nối lại khi DB còn sập bị từ chối).
+ * Đang quét ⇒ dồn thành MỘT lượt lặp ngay sau, với chế độ CHẶT NHẤT được yêu cầu trong lúc chờ.
+ */
+export type CheDoQuet = "chat" | "su_co";
+let cheDoLap: CheDoQuet = "su_co";
+export function yeuCauQuet(lyDo: string, cheDo: CheDoQuet = "chat"): Promise<void> {
   if (dangQuet) {
     quetLai = true;
+    if (cheDo === "chat") cheDoLap = "chat";
     return dangQuet;
   }
   dangQuet = (async () => {
     try {
       let l = lyDo;
+      let c = cheDo;
       do {
         quetLai = false;
-        await quetMotLuot(l);
+        cheDoLap = "su_co";
+        await quetMotLuot(l, c);
         l = `${lyDo} (lap)`;
+        c = cheDoLap;
       } while (quetLai);
     } finally {
       dangQuet = null;
@@ -469,62 +532,87 @@ export function yeuCauQuet(lyDo: string): Promise<void> {
 interface VanTayNguoiMoi {
   nhaMay: number[] | null;
   quyen: string;
+  tapDoan: string[];
 }
+type KetLuanSocket = "giu" | "ngat" | "loi";
 
-async function quetMotLuot(lyDo: string): Promise<void> {
+async function quetMotLuot(lyDo: string, cheDo: CheDoQuet): Promise<void> {
   if (!io) return;
   const bd = Date.now();
   tk.quet++;
-  await xoaBoNhoHet(); // bộ nhớ đệm cũ sẽ che thay đổi (≤ 30 s phân công / ≤ 45 s vai)
+  await xoaBoNhoChoQuet(); // phân công cũ sẽ che thay đổi (≤ 30 s); KHÔNG xoá danh tính / bộ nhớ STOP (C1)
   const ds = socketNguoiDungCucBo();
   const nho = new Map<string, Promise<VanTayNguoiMoi>>();
   let ngat = 0;
   let loi = 0;
+  let giuDoLoi = 0;
   let i = 0;
   const tho = async () => {
     while (i < ds.length) {
       const s = ds[i++];
-      let giu = false;
+      let kl: KetLuanSocket;
       try {
-        giu = await socketConHopLe(s, nho);
+        kl = await socketConHopLe(s, nho);
       } catch (e) {
-        loi++;
-        giu = false;
-        console.warn(`[SocketXetLaiQuyen] quet: loi kiem socket ${s.id} => NGAT:`, (e as Error)?.message ?? e);
+        kl = "loi";
+        console.warn(`[SocketXetLaiQuyen] quet (${cheDo}): loi kiem socket ${s.id}:`, (e as Error)?.message ?? e);
       }
-      if (!giu && !s.disconnected) {
+      if (kl === "loi") loi++;
+      const ngatSocket = kl === "ngat" || (kl === "loi" && cheDo === "chat");
+      if (kl === "loi" && cheDo === "su_co") giuDoLoi++;
+      if (ngatSocket && !s.disconnected) {
         s.disconnect(true);
         ngat++;
       }
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(ch.dongThoiQuet, ds.length)) }, tho));
+  if (cheDo === "chat") tk.quetNo = false; // lượt chặt đã chạy trọn: nợ (nếu có) đã trả
+  else if (giuDoLoi > 0) tk.quetNo = true; // lượt sự cố giữ socket vì không tra được ⇒ nợ một lượt chặt (onRecovered / định kỳ)
   tk.quetSocket += ds.length;
   tk.quetNgat += ngat;
   tk.quetLoi += loi;
   tk.quetMsCuoi = Date.now() - bd;
-  console.log(`[SocketXetLaiQuyen] quet (${lyDo}): ${ds.length} socket, ${nho.size} nguoi, ${ngat} ngat, ${loi} loi, ${tk.quetMsCuoi} ms`);
+  console.log(`[SocketXetLaiQuyen] quet ${cheDo} (${lyDo}): ${ds.length} socket, ${nho.size} nguoi, ${ngat} ngat, ${loi} loi, ${giuDoLoi} giu-do-loi, ${tk.quetMsCuoi} ms`);
 }
 
-/** Socket còn khớp dấu vân tay lúc nối? Mọi lỗi được NÉM cho nơi gọi (⇒ ngắt). */
-async function socketConHopLe(s: Socket, nho: Map<string, Promise<VanTayNguoiMoi>>): Promise<boolean> {
+/** Phòng KHÔNG mang dữ liệu theo phạm vi: id riêng của socket, phòng điều khiển, `global` (không dữ liệu — census phát), `user:{id}` của chính họ. */
+function laPhongKhongPhamVi(phong: string, s: Socket, userId: number): boolean {
+  return phong === s.id || phong.startsWith(TIEN_TO_PHONG_KIEM) || phong === "global" || phong === `user:${userId}`;
+}
+
+/**
+ * Socket còn khớp dấu vân tay lúc nối? `ngat` = khác biệt ĐÃ XÁC MINH (hoặc từ chối dứt khoát của xacThucLai); `loi` = không tra / không
+ * xác minh được (lỗi DB, dấu vân tay lúc nối thiếu). Mọi ngoại lệ được NÉM cho nơi gọi (⇒ `loi`).
+ */
+async function socketConHopLe(s: Socket, nho: Map<string, Promise<VanTayNguoiMoi>>): Promise<KetLuanSocket> {
   const r = await xacThucLaiChoThaoTacSocket(s); // vai · isActive · buộc đổi mật khẩu · phiên sống / chưa hết hạn / đúng người — fail-closed
-  if (!r.ok) return false;
+  if (!r.ok) return r.lyDo === "LOI_TRA_CUU" ? "loi" : "ngat";
   const d = s.data as DuLieuSocket & { __vanTay?: VanTayHandshake; __phamViNhaMay?: number[] | null; __daVaoPhongPhamVi?: boolean };
-  if (String(d.user?.role ?? "") !== r.data.user.role) return false;
+  if (String(d.user?.role ?? "") !== r.data.user.role) return "ngat";
   const vt = d.__vanTay;
-  if (!vt || typeof vt.quyen !== "string") return false;
+  if (!vt || typeof vt.quyen !== "string" || !Array.isArray(vt.tapDoan)) return "loi"; // không đối chiếu được (đọc lỗi lúc nối)
+  // m5 — chưa có dấu vân tay phạm vi (lượt tự vào phòng chưa xong / lỗi): ở trong BẤT KỲ phòng có phạm vi nào ⇒ không đối chiếu được ⇒ `loi`
+  // (lượt chặt NGẮT; nối lại = cấp phòng lại). Không ở phòng có phạm vi nào ⇒ không có gì để mất ⇒ bỏ qua phần phạm vi.
+  const coDauVanTayPhamVi = d.__daVaoPhongPhamVi === true;
+  if (!coDauVanTayPhamVi && [...s.rooms].some((p) => !laPhongKhongPhamVi(p, s, r.data.user.id))) return "loi";
   const khoa = `${r.data.user.id}:${r.data.user.role}`;
   let p = nho.get(khoa);
   if (!p) {
     const chuThe = r.data;
-    p = (async () => ({ nhaMay: await idsNhaMayTrongPhamViHoacNem(chuThe), quyen: vanTayQuyen(await docQuyen(chuThe.user.id)) }))();
+    p = (async () => ({
+      nhaMay: await idsNhaMayTrongPhamViHoacNem(chuThe),
+      quyen: vanTayQuyen(await docQuyen(chuThe.user.id)),
+      tapDoan: await docTapDoan(chuThe.user.id, chuThe.user.role),
+    }))();
+    p.catch(() => undefined); // mọi người chờ đều bắt; tránh "unhandled" khi chỉ một socket chờ
     nho.set(khoa, p);
   }
   const moi = await p;
-  if (moi.quyen !== vt.quyen) return false;
-  if (d.__daVaoPhongPhamVi === true && JSON.stringify(moi.nhaMay) !== JSON.stringify(d.__phamViNhaMay)) return false;
-  return true;
+  if (moi.quyen !== vt.quyen) return "ngat";
+  if (JSON.stringify(moi.tapDoan) !== JSON.stringify(vt.tapDoan)) return "ngat"; // m5 — cổng `sites:*` / `site:{code}`
+  if (coDauVanTayPhamVi && JSON.stringify(moi.nhaMay) !== JSON.stringify(d.__phamViNhaMay)) return "ngat";
+  return "giu";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -542,8 +630,8 @@ export async function batDauNgheSocketPhamVi(thamSo: ThamSoNghe = {}): Promise<{
     channel: KENH_SOCKET_PHAM_VI,
     tag: "SocketXetLaiQuyen",
     onPayload: (raw) => nhanThongBaoPhamVi(raw),
-    onEpisodeLost: () => void yeuCauQuet("LISTEN suy giam"),
-    onRecovered: () => void yeuCauQuet("LISTEN phuc hoi"),
+    onEpisodeLost: () => void yeuCauQuet("LISTEN suy giam", "su_co"), // I1: lỗi tra cứu không ngắt, ghi nợ
+    onRecovered: () => void yeuCauQuet("LISTEN phuc hoi", "chat"), // I1: BẮT BUỘC, chặt (trả nợ)
     lostMeaning:
       "Until it reconnects, a user whose role / scope / session changed keeps the live socket on THIS replica until the next sweep (<= 5 min); a sweep runs now and on recovery.",
     ...thamSo,

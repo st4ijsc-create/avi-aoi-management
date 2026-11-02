@@ -21027,7 +21027,9 @@
     "netDown": "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…",
     "socketDown": "Mất kết nối thời gian thực — đang thử kết nối lại…",
     "quyenDoi": "Quyền truy cập vừa thay đổi — đang kết nối lại…",
-    "noiLaiDung": "Không kết nối lại được kênh thời gian thực — hãy tải lại trang."
+    "choDichVu": "Máy chủ tạm thời chưa xác thực được kết nối — đang tự thử lại…",
+    "noiLaiDung": "Đã dừng kết nối lại kênh thời gian thực — sẽ thử lại khi có mạng hoặc khi bạn quay lại tab; hoặc tải lại trang.",
+    "hetPhien": "Phiên đăng nhập không còn hiệu lực — đang chuyển tới trang đăng nhập…"
   },
   "aiStudioHub": {
     "models": "Mô hình & Phiên bản",

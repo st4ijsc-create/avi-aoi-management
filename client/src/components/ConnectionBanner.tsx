@@ -51,9 +51,13 @@ export function ConnectionBanner() {
         ? t("connectionBanner.netDown", "Mất kết nối mạng — dữ liệu có thể không cập nhật. Đang chờ khôi phục…")
         : noiLai === "dang_noi_lai"
           ? t("connectionBanner.quyenDoi", "Quyền truy cập vừa thay đổi — đang kết nối lại…")
-          : noiLai === "dung"
-            ? t("connectionBanner.noiLaiDung", "Không kết nối lại được kênh thời gian thực — hãy tải lại trang.")
-            : t("connectionBanner.socketDown", "Mất kết nối thời gian thực — đang thử kết nối lại…")}
+          : noiLai === "cho_dich_vu"
+            ? t("connectionBanner.choDichVu", "Máy chủ tạm thời chưa xác thực được kết nối — đang tự thử lại…")
+            : noiLai === "dung"
+              ? t("connectionBanner.noiLaiDung", "Đã dừng kết nối lại kênh thời gian thực — sẽ thử lại khi có mạng hoặc khi bạn quay lại tab; hoặc tải lại trang.")
+              : noiLai === "het_phien"
+                ? t("connectionBanner.hetPhien", "Phiên đăng nhập không còn hiệu lực — đang chuyển tới trang đăng nhập…")
+                : t("connectionBanner.socketDown", "Mất kết nối thời gian thực — đang thử kết nối lại…")}
     </div>
   );
 }
