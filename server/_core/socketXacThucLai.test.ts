@@ -515,7 +515,7 @@ describe("★★★ F5-nhanh polish P3 — cổng BUỘC ĐỔI MẬT KHẨU tro
     process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
     try {
       const ke = await ketNoi({ phien: 3, ve: "ve-3" });
-      const dk = await dangKyMoi("P3");
+      const dk = await dangKyMoi("MA-A"); // F5-nhanh (a) review: đăng ký của registrar phải thuộc phạm vi (MA-A ⇒ máy 101 của A)
       NGUOI_DB[3].passwordInvalidBefore = new Date(Date.now() - 60_000); // quản trị thu hồi mật khẩu
       NGUOI_DB[3].passwordChangedAt = null;
       await duyetBiChan(ke, dk, "PHAI_DOI_MAT_KHAU");
@@ -652,7 +652,7 @@ describe("★★★ F5-nhanh D — socket approve/reject kiểm phạm vi máy (
   it("(D1) registrar nhà máy A duyệt máy 202 của nhà máy B ⇒ CÙNG lời 'not found' như máy không có thật, không đọc máy, không đúc khoá, không ghi, đăng ký trả về sổ chờ; đối chứng: duyệt máy 42 của A ⇒ được", async () => {
     await voiCoMo(async () => {
       const reg = await ketNoi({ phien: 3, ve: "ve-3" });
-      const dk = await dangKyMoi("D1");
+      const dk = await dangKyMoi("MA-A"); // đăng ký trong phạm vi A (máy 101) — ca này đo MÁY ĐÍCH ngoài phạm vi
       const loi = new Promise<any>((r) => reg.once("admin:approve_error", r));
       reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: MAY_B.id });
       const l1 = await loi;
@@ -673,7 +673,7 @@ describe("★★★ F5-nhanh D — socket approve/reject kiểm phạm vi máy (
   it("(D2) tra phạm vi LỖI ⇒ từ chối như không có máy, không đúc khoá; DB hồi ⇒ duyệt được", async () => {
     await voiCoMo(async () => {
       const reg = await ketNoi({ phien: 3, ve: "ve-3" });
-      const dk = await dangKyMoi("D2");
+      const dk = await dangKyMoi("MA-A");
       nemKhiTraPhamViDuyet = true;
       const loi = new Promise<any>((r) => reg.once("admin:approve_error", r));
       reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: MAY.id });
@@ -713,5 +713,122 @@ describe("★★ F5-nhanh — kiemPhamViDuyetMay gọi thẳng (đường reject
     expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 101, { stationId: 999 })).toMatchObject({ ok: false, cap: "station" });
     nemKhiTraPhamViDuyet = true;
     expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 101)).toMatchObject({ ok: false, lyDo: "LOI_PHAM_VI" });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// F5-nhanh (a) review — đăng ký bị TIÊU THỤ phải trong phạm vi; phạm vi kiểm TRƯỚC khi rút sổ chờ; phát registration_request theo người nhận
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ F5-nhanh (a) review — đường gắn thiết bị nhà máy B vào máy của A", () => {
+  async function voiCoMo<T>(f: () => Promise<T>): Promise<T> {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      return await f();
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  }
+  /** Danh sách chờ admin thấy (requestSocketId) — để biết đăng ký còn trong sổ hay đã bị rút. */
+  async function soChoAdminThay(ad: ClientSocket): Promise<string[]> {
+    const p = new Promise<any[]>((r) => ad.once("admin:pending_registrations", r));
+    ad.emit("admin:join");
+    return (await p).map((x) => x.requestSocketId);
+  }
+
+  it("(I1) registrar A duyệt ĐĂNG KÝ của thiết bị nhà máy B (mã MB-B) vào máy 42 CỦA A ⇒ CÙNG lời như đăng ký không tồn tại; không đúc khoá, không ghi; đăng ký B KHÔNG bị rút; đối chứng: đăng ký A (MA-A) vào máy 42 ⇒ được", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      const dkB = await dangKyMoi("MB-B");
+      const loi = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: dkB.may.id, machineId: MAY.id });
+      const l1 = await loi;
+      const loi2 = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: "khong-ton-tai", machineId: MAY.id });
+      expect(l1).toEqual(await loi2); // ngoài phạm vi ≡ không tồn tại
+      expect(issueMachineKey).not.toHaveBeenCalled();
+      expect(updateMachine).not.toHaveBeenCalled();
+      expect(dkB.duyet).toEqual([]);
+      expect(await soChoAdminThay(ad)).toContain(dkB.may.id); // KHÔNG bị tiêu thụ
+      const dkA = await dangKyMoi("MA-A");
+      await duyetDoiChung(reg, dkA, 3);
+    });
+  });
+
+  it("(I2) Minor 1 — spam duyệt NGOÀI phạm vi (đăng ký B, hoặc máy đích B) KHÔNG BAO GIỜ rút đăng ký khỏi sổ chờ; admin vẫn duyệt được nó", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      const dkB = await dangKyMoi("MB-B");
+      const dkA = await dangKyMoi("MA-A");
+      // ⚠ TUẦN TỰ (chờ từng lời từ chối): gửi 10 gói SONG SONG làm vitest phục vụ module accessControl THẬT (không phải bản mock) cho các
+      // import() động đồng thời đầu tiên — đo được 9/10 lượt "REAL". Đó là trò của thiết bị đo, không phải hành vi sản phẩm (sản phẩm luôn dùng bản thật).
+      const loi: unknown[] = [];
+      for (let i = 0; i < 5; i++) {
+        for (const goi of [{ socketId: dkB.may.id, machineId: MAY.id } /* đăng ký ngoài phạm vi */, { socketId: dkA.may.id, machineId: MAY_B.id } /* máy đích ngoài phạm vi */]) {
+          const p = new Promise((r) => reg.once("admin:approve_error", r));
+          reg.emit("admin:approve_registration", goi);
+          loi.push(await p);
+        }
+      }
+      expect(loi).toHaveLength(10);
+      const so = await soChoAdminThay(ad);
+      expect(so).toEqual(expect.arrayContaining([dkB.may.id, dkA.may.id]));
+      expect(issueMachineKey).not.toHaveBeenCalled();
+      await duyetDoiChung(ad, dkB, 2); // admin (miễn phạm vi) duyệt đúng đăng ký mà spam không rút được
+    });
+  });
+
+  it("(A1) phát machine:registration_request theo NGƯỜI NHẬN: registrar A KHÔNG nhận yêu cầu của thiết bị B, nhận của A; admin nhận cả hai", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      await soChoAdminThay(reg);
+      await soChoAdminThay(ad);
+      const yeuCauReg = ghiNhan(reg, "machine:registration_request");
+      const yeuCauAd = ghiNhan(ad, "machine:registration_request");
+      const dkB = await dangKyMoi("MB-B");
+      const dkA = await dangKyMoi("MA-A");
+      await vi.waitFor(() => expect(yeuCauAd.length).toBe(2));
+      await vi.waitFor(() => expect(yeuCauReg.length).toBe(1));
+      await cho(50);
+      expect((yeuCauAd as any[]).map((x) => x.requestSocketId).sort()).toEqual([dkA.may.id, dkB.may.id].sort());
+      expect((yeuCauReg as any[]).map((x) => x.requestSocketId)).toEqual([dkA.may.id]);
+    });
+  });
+
+  it("(A2) phạm vi người nhận KHÔNG tính được ⇒ registrar không nhận gì (fail-closed); admin vẫn nhận", async () => {
+    await voiCoMo(async () => {
+      const pq = await import("./socketPhongQuyen");
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      await soChoAdminThay(reg);
+      await soChoAdminThay(ad);
+      const yeuCauReg = ghiNhan(reg, "machine:registration_request");
+      const yeuCauAd = ghiNhan(ad, "machine:registration_request");
+      pq.__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async (_c, pv) => { if (pv.userRole === "admin") return null; throw new Error("db nac"); } });
+      try {
+        await dangKyMoi("MA-A");
+        await vi.waitFor(() => expect(yeuCauAd.length).toBe(1));
+        await cho(80);
+        expect(yeuCauReg).toEqual([]);
+      } finally {
+        pq.__datCongPhamViChoTest({
+          trongPhamVi: async () => true,
+          idsTrongPhamVi: async (cap, pv) => (pv.userRole === "admin" ? null : pv.userId === 3 ? (cap === "machine" ? [101] : cap === "factory" ? [1] : []) : []),
+        });
+      }
+    });
+  });
+
+  it("(K2) kiemPhamViDuyetMay với tuỳ chọn dangKy: mã B ⇒ cap 'dangKy'; mã A ⇒ qua; mã lạ ⇒ chặn; admin ⇒ miễn, KHÔNG tra mã", async () => {
+    const pv = await import("./phamViDuyetMay");
+    const getMachineByCode = (await import("../db")).getMachineByCode as unknown as ReturnType<typeof vi.fn>;
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 42, { dangKy: { ma: "MB-B" } })).toMatchObject({ ok: false, cap: "dangKy" });
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 42, { dangKy: { ma: "MA-A" } })).toEqual({ ok: true });
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 42, { dangKy: { ma: "LA-HOAC" } })).toMatchObject({ ok: false, cap: "dangKy" });
+    getMachineByCode.mockClear();
+    expect(await pv.kiemPhamViDuyetMay({ userId: 2, userRole: "admin" }, 42, { dangKy: { ma: "MB-B" } })).toEqual({ ok: true });
+    expect(getMachineByCode).not.toHaveBeenCalled();
   });
 });

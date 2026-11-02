@@ -63,7 +63,7 @@ import {
 // ── F5-nhanh — handler NHẠY CẢM xác thực LẠI chủ thể (vai / isActive / phiên) từ DB TẠI LÚC THAO TÁC, không tin bản chụp handshake.
 import { xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
 // ★★★ F5-nhanh — MỘT hàm kiểm phạm vi máy cho duyệt / từ chối (cùng hàm với tRPC machine.approve / machine.reject).
-import { kiemPhamViDuyetMay } from "./phamViDuyetMay";
+import { kiemPhamViDuyetMay, idMayCuaMaDangKy, dangKyTrongPhamViMay } from "./phamViDuyetMay";
 // ── P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY, không phát vào `global` (xem tệp).
 import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
 
@@ -100,18 +100,39 @@ const onlineMachineCodesMap: Map<number, string> = new Map();
 const presence = getMachinePresenceStore();
 
 /**
- * F5-nhanh review — một đăng ký chờ (máy VÔ DANH tự khai `machineInfo.code`) thuộc phạm vi máy `ids` không? Mã khớp một máy trong DB ⇒
- * phạm vi của máy đó; không khớp / lỗi tra cứu ⇒ KHÔNG thuộc phạm vi nào (người có phạm vi không thấy nó — fail-closed). Admin không đi qua đây.
+ * ★★★ F5-nhanh (a) review (mục A) — PHÁT `machine:registration_request` THEO PHẠM VI TỪNG NGƯỜI NHẬN trong phòng `admin`.
+ * Trước bản vá sự kiện phát cho CẢ phòng ⇒ registrar nhà máy A (cờ RBAC mở) thấy yêu cầu đăng ký của thiết bị nhà máy B kèm requestSocketId
+ * — nửa còn lại của đường gắn thiết bị B vào máy của A. Nay: người nhận có phạm vi TOÀN QUYỀN (admin) nhận tất cả; người có phạm vi chỉ nhận
+ * đăng ký mà mã tự khai khớp một máy TRONG phạm vi (`idMayCuaMaDangKy` — cùng luật với lọc `admin:join` và kiểm duyệt). Không tính được phạm
+ * vi người nhận / lỗi tra ⇒ KHÔNG gửi người đó (fail-closed). Phạm vi người nhận tính trên `socket.data` của họ (cùng cách lọc twin lúc phát).
+ * Các sự kiện khác của phòng `admin` (connected / disconnected / sync_status / discovered) ⇒ F5 đầy đủ.
  */
-async function dangKyChoTrongPhamVi(reg: PendingMachineRegistration, ids: Set<number>): Promise<boolean> {
+async function phatYeuCauDangKyTheoPhamVi(reg: PendingMachineRegistration, payload: unknown): Promise<void> {
+  if (!io) return;
+  let nguoiNhan: Awaited<ReturnType<Server["fetchSockets"]>>;
   try {
-    const ma = String(reg.machineInfo?.code ?? "");
-    if (!ma) return false;
-    const may = await db.getMachineByCode(ma);
-    return !!may && ids.has(may.id);
+    nguoiNhan = await io.in("admin").fetchSockets();
   } catch (err: any) {
-    console.error("[Socket.io] tra may theo ma dang ky that bai (an khoi danh sach):", err?.message ?? err);
-    return false;
+    console.error("[Socket.io] khong liet ke duoc phong admin (khong phat registration_request):", err?.message ?? err);
+    return;
+  }
+  let idMayDangKy: number | undefined | "chua" | "loi" = "chua";
+  for (const s of nguoiNhan) {
+    const pham = await idsMayTrongPhamViCua(s.data as never); // lỗi ⇒ tập rỗng
+    if (pham === null) {
+      s.emit("machine:registration_request", payload);
+      continue;
+    }
+    if (pham.size === 0) continue;
+    if (idMayDangKy === "chua") {
+      try {
+        idMayDangKy = await idMayCuaMaDangKy(reg.machineInfo?.code);
+      } catch (err: any) {
+        console.error("[Socket.io] tra may theo ma dang ky that bai (khong phat cho nguoi co pham vi):", err?.message ?? err);
+        idMayDangKy = "loi";
+      }
+    }
+    if (typeof idMayDangKy === "number" && pham.has(idMayDangKy)) s.emit("machine:registration_request", payload);
   }
 }
 
@@ -729,11 +750,8 @@ export function initializeSocket(server: HttpServer): Server {
       };
       pendingRegistrations.set(socket.id, registration);
       
-      // Notify admin dashboard about new registration request
-      io?.to("admin").emit("machine:registration_request", {
-        requestSocketId: socket.id,
-        ...registration,
-      });
+      // Notify admin dashboard about new registration request — F5-nhanh (a) review: theo phạm vi từng người nhận
+      void phatYeuCauDangKyTheoPhamVi(registration, { requestSocketId: socket.id, ...registration });
       
       // Acknowledge receipt to machine
       socket.emit("machine:register_ack", {
@@ -912,7 +930,7 @@ export function initializeSocket(server: HttpServer): Server {
       const phamViMay = await idsMayTrongPhamViCua(chuThe.data);
       const pendingTrongPhamVi: Array<[string, PendingMachineRegistration]> = [];
       for (const [id, reg] of Array.from(pendingRegistrations.entries())) {
-        if (phamViMay === null || (await dangKyChoTrongPhamVi(reg, phamViMay))) pendingTrongPhamVi.push([id, reg]);
+        if (phamViMay === null || (await dangKyTrongPhamViMay(reg.machineInfo?.code, phamViMay))) pendingTrongPhamVi.push([id, reg]);
       }
 
       // Send current pending registrations
@@ -1015,9 +1033,22 @@ export function initializeSocket(server: HttpServer): Server {
         );
         return;
       }
+      // ★★★ F5-nhanh (a) review — PHẠM VI kiểm TRƯỚC khi chạm sổ chờ (Minor 1: một lượt duyệt ngoài phạm vi bị spam không bao giờ rút
+      // đăng ký của người khác khỏi sổ), trên CẢ máy đích LẪN đăng ký bị tiêu thụ (Important 1: registrar A không gắn được thiết bị đang xin
+      // của nhà máy B vào máy 42 của A). Đăng ký ngoài phạm vi ⇒ như không tồn tại; máy ngoài phạm vi ⇒ như máy không có thật. Admin miễn.
+      const dangKyXem = pendingRegistrations.get(data.socketId);
+      const phamViDuyet = dangKyXem
+        ? await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, data.machineId, {
+            dangKy: { ma: dangKyXem.machineInfo?.code },
+          })
+        : null;
       const registration = pendingRegistrations.get(data.socketId);
-      if (!registration) {
+      if (!registration || registration !== dangKyXem || !phamViDuyet || (!phamViDuyet.ok && phamViDuyet.cap === "dangKy")) {
         socket.emit("admin:approve_error", { message: "Registration not found or expired" });
+        return;
+      }
+      if (!phamViDuyet.ok) {
+        socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
         return;
       }
       // ★ doc 81 Đợt 1B final wave (item 6) — LẤY NGUYÊN TỬ: rút khỏi sổ chờ TRƯỚC await đầu tiên.
@@ -1030,11 +1061,8 @@ export function initializeSocket(server: HttpServer): Server {
       };
 
       try {
-        // ★★★ F5-nhanh — máy đích phải trong phạm vi của CHỦ THỂ ĐỌC LẠI (cờ RBAC mở ⇒ người không phải admin). Ngoài phạm vi / lỗi phạm vi ⇒
-        // CÙNG lời "not found" như máy không có thật, máy không được đọc, đăng ký trả về sổ chờ, không đúc khoá, không ghi gì. Admin miễn.
-        const phamViDuyet = await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, data.machineId);
-        // Step 2: Get or generate API Key
-        const existingMachine = phamViDuyet.ok ? await db.getMachineById(data.machineId) : undefined;
+        // Step 2: Get or generate API Key (phạm vi đã kiểm ở trên, trước khi rút đăng ký khỏi sổ chờ)
+        const existingMachine = await db.getMachineById(data.machineId);
         if (!existingMachine) {
           traLaiSoCho();
           socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
@@ -1194,10 +1222,9 @@ export function initializeSocket(server: HttpServer): Server {
       // ★★★ F5-nhanh — cùng hàm phạm vi với approve; đích = máy khớp mã TỰ KHAI của đăng ký (chỉ tra khi không phải admin — hôm nay cổng
       // reject luôn là admin ⇒ miễn). Ngoài phạm vi ⇒ như đăng ký không tồn tại (không làm gì, không báo).
       const phamViTuChoi = dangKy
-        ? await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, async () => {
-            const ma = String(dangKy.machineInfo?.code ?? "");
-            return ma ? (await db.getMachineByCode(ma))?.id : undefined;
-          })
+        ? await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, () =>
+            idMayCuaMaDangKy(dangKy.machineInfo?.code),
+          )
         : ({ ok: false } as const);
       const registration = phamViTuChoi.ok ? dangKy : undefined;
       if (registration) {

@@ -25,22 +25,54 @@ export interface NguoiDuyetMay {
   userRole?: string | null;
 }
 
-export type CapDuyetMay = "machine" | "station";
+export type CapDuyetMay = "machine" | "station" | "dangKy";
 
 export type KetQuaPhamViDuyetMay =
   | { ok: true }
   | { ok: false; cap: CapDuyetMay; lyDo: "THIEU_DANH_TINH" | "KHONG_CO_MAY" | "NGOAI_PHAM_VI" | "LOI_PHAM_VI" };
 
-type TraIds = (cap: CapDuyetMay, pv: { userId: number; userRole: string }) => Promise<number[] | null>;
+type TraIds = (cap: "machine" | "station", pv: { userId: number; userRole: string }) => Promise<number[] | null>;
 let traIdsGhiDe: TraIds | null = null;
 /** Chỉ lưới: thay bộ tra phạm vi (không cần CSDL). `null` ⇒ về mặc định (`db/hierarchy.idsTrongPhamVi` strict THẬT). */
 export function __datBoTraPhamViDuyetMayChoTest(f: TraIds | null): void {
   traIdsGhiDe = f;
 }
-async function traIds(cap: CapDuyetMay, pv: { userId: number; userRole: string }): Promise<number[] | null> {
+async function traIds(cap: "machine" | "station", pv: { userId: number; userRole: string }): Promise<number[] | null> {
   if (traIdsGhiDe) return traIdsGhiDe(cap, pv);
   const { idsTrongPhamVi } = await import("../db/hierarchy");
   return idsTrongPhamVi(cap, pv, { strict: true });
+}
+
+type TraMayTheoMa = (ma: string) => Promise<number | null | undefined>;
+let traMayTheoMaGhiDe: TraMayTheoMa | null = null;
+/** Chỉ lưới: thay phép tra "mã máy tự khai ⇒ id máy" (không cần CSDL). `null` ⇒ mặc định (`db.getMachineByCode` THẬT). */
+export function __datBoTraMayTheoMaChoTest(f: TraMayTheoMa | null): void {
+  traMayTheoMaGhiDe = f;
+}
+
+/**
+ * ★★★ F5-nhanh (a) review — LUẬT DUY NHẤT gán một ĐĂNG KÝ CHỜ qua socket (máy VÔ DANH tự khai `machineInfo.code`) cho một máy: mã khớp
+ * một máy trong DB ⇒ id máy đó; mã rỗng / không khớp ⇒ `undefined` (không thuộc phạm vi nào). Lỗi tra ⇒ NÉM (người gọi quyết fail-closed).
+ * Dùng ở: lọc danh sách chờ (`admin:join`), lọc phát `machine:registration_request` theo người nhận, và tuỳ chọn `dangKy` của
+ * `kiemPhamViDuyetMay` (duyệt / từ chối). ⚠ Mã là LỜI TỰ KHAI (backlog: nhãn "chưa xác minh, tự khai" trên giao diện).
+ */
+export async function idMayCuaMaDangKy(ma: string | null | undefined): Promise<number | undefined> {
+  const m = String(ma ?? "").trim();
+  if (!m) return undefined;
+  if (traMayTheoMaGhiDe) return (await traMayTheoMaGhiDe(m)) ?? undefined;
+  const db = await import("../db");
+  return (await db.getMachineByCode(m))?.id;
+}
+
+/** Đăng ký chờ (mã tự khai) có thuộc phạm vi máy `ids` không. Lỗi tra / không khớp ⇒ false (fail-closed). */
+export async function dangKyTrongPhamViMay(ma: string | null | undefined, ids: ReadonlySet<number>): Promise<boolean> {
+  try {
+    const id = await idMayCuaMaDangKy(ma);
+    return id !== undefined && ids.has(id);
+  } catch (err) {
+    console.error("[PhamViDuyetMay] tra may theo ma dang ky that bai (an khoi pham vi):", (err as Error)?.message ?? err);
+    return false;
+  }
 }
 
 const laIdHopLe = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
@@ -48,11 +80,15 @@ const laIdHopLe = (v: unknown): v is number => typeof v === "number" && Number.i
 /**
  * Máy đích (và trạm đích nếu có) có nằm trong phạm vi người duyệt không. Không bao giờ ném.
  * @param mayDich id máy, hoặc một hàm trả id (đường socket `reject`: id suy từ mã tự khai — chỉ tra khi KHÔNG phải admin).
+ * @param tuyChon.dangKy ★ F5-nhanh (a) review — ĐĂNG KÝ CHỜ mà lượt duyệt TIÊU THỤ (socket `admin:approve_registration`): với người không
+ *   phải admin, máy của mã tự khai của đăng ký ấy cũng phải trong phạm vi (nếu không, registrar A gắn thiết bị ĐANG XIN của nhà máy B vào máy
+ *   42 của A ⇒ thiết bị B nhận khoá + cấu hình của máy 42 và đổ dữ liệu B vào A). Ngoài phạm vi ⇒ `cap: "dangKy"` (người gọi trả lời như
+ *   đăng ký không tồn tại).
  */
 export async function kiemPhamViDuyetMay(
   nguoi: NguoiDuyetMay | null | undefined,
   mayDich: number | null | undefined | (() => Promise<number | null | undefined>),
-  tuyChon: { stationId?: number | null } = {},
+  tuyChon: { stationId?: number | null; dangKy?: { ma: string | null | undefined } } = {},
 ): Promise<KetQuaPhamViDuyetMay> {
   const vai = String(nguoi?.userRole ?? "");
   if (vai === "admin") return { ok: true };
@@ -63,6 +99,10 @@ export async function kiemPhamViDuyetMay(
     if (!laIdHopLe(id)) return { ok: false, cap: "machine", lyDo: "KHONG_CO_MAY" };
     const pv = { userId, userRole: vai };
     const mays = await traIds("machine", pv);
+    if (tuyChon.dangKy !== undefined && mays !== null) {
+      const idDangKy = await idMayCuaMaDangKy(tuyChon.dangKy.ma);
+      if (idDangKy === undefined || !mays.includes(idDangKy)) return { ok: false, cap: "dangKy", lyDo: "NGOAI_PHAM_VI" };
+    }
     if (mays !== null && !mays.includes(id)) return { ok: false, cap: "machine", lyDo: "NGOAI_PHAM_VI" };
     const tram = tuyChon.stationId;
     if (tram != null) {

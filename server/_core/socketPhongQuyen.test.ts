@@ -197,6 +197,8 @@ beforeAll(async () => {
   // F5-nhanh — approve kiểm PHẠM VI MÁY (kiemPhamViDuyetMay): tệp này đo cổng QUYỀN, nên máy 42 nằm trong phạm vi của user 11 (người duy
   // nhất không phải admin được duyệt ở 7e). Ca ngoài phạm vi / lỗi phạm vi: socketXacThucLai.test.ts (D1–D2) + machineApprovePhamVi.test.ts.
   (await import("./phamViDuyetMay")).__datBoTraPhamViDuyetMayChoTest(async (cap, pv) => (pv.userId === 11 && cap === "machine" ? [MAY.id] : []));
+  // F5-nhanh (a) review — duyệt còn kiểm ĐĂNG KÝ bị tiêu thụ (mã tự khai ⇒ máy): mọi mã đăng ký ở tệp này gán về máy 42 (trong phạm vi user 11).
+  (await import("./phamViDuyetMay")).__datBoTraMayTheoMaChoTest(async () => MAY.id);
   http = createServer();
   socketMod.initializeSocket(http);
   socketMod.stopTwinBroadcaster();

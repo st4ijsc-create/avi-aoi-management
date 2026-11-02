@@ -1,18 +1,22 @@
 /**
- * ★★★ CENSUS AST (F5-nhanh, 2026-11-02) — MỌI đường DUYỆT / TỪ CHỐI đăng ký máy gọi `kiemPhamViDuyetMay` (server/_core/phamViDuyetMay.ts)
- * TRƯỚC khi ghi.
+ * ★★★ CENSUS AST (F5-nhanh, 2026-11-02; mở rộng theo re-review (a) Minor 2) — MỌI đường DUYỆT / TỪ CHỐI đăng ký máy và MỌI đường ĐÚC /
+ * XOAY / THU HỒI khoá máy phải kiểm PHẠM VI MÁY trước khi ghi.
  *
- * Lỗ gốc: cờ `MACHINE_APPROVE_RBAC_OPEN_ENABLED` cho người không phải admin duyệt máy; cả tRPC `machine.approve` lẫn socket
- * `admin:approve_registration` không kiểm phạm vi ⇒ duyệt / đúc khoá cho máy nhà máy khác. Lớp lỗi "đường thứ N quên": một đường duyệt /
- * từ chối MỚI (router khác, REST, socket khác) mà không gọi hàm chung ⇒ ĐỎ.
+ * Lỗ gốc: cờ `MACHINE_APPROVE_RBAC_OPEN_ENABLED` cho người không phải admin duyệt máy; tRPC `machine.approve` + socket
+ * `admin:approve_registration` không kiểm phạm vi (duyệt / đúc khoá cho máy nhà máy khác); `machineApi.issueKey` đúc khoá không kiểm phạm vi.
+ * Lớp lỗi "đường thứ N quên": đường MỚI không kiểm ⇒ ĐỎ.
  *
- * "Đường duyệt / từ chối" nhận theo HÌNH DẠNG (không danh sách tên), trong `server/**` không test:
- *   · lời gọi `approveMachine(` / `rejectMachine(` (bộ ghi của db/hierarchy);
- *   · `registrationStatus: "approved" | "rejected"` trong đối số của `updateMachine(`;
- *   · phát `"machine:registration_approved"` / `"machine:registration_rejected"`.
- * Đơn vị = thủ tục (thuộc tính của `router({...})`) · handler `socket.on(...)` · hàm ngoài cùng. Đơn vị phải gọi `kiemPhamViDuyetMay(` ở vị
- * trí TRƯỚC điểm ghi đầu tiên.
- * Có ĐỘT BIẾN (chạy tay, ghi trong báo cáo F5-nhanh): bỏ lời gọi ở tRPC / ở socket; thêm một thủ tục duyệt mới không gọi ⇒ ĐỎ.
+ * ĐIỂM nhận theo HÌNH DẠNG (không danh sách tên), `server/**` không test:
+ *   loại DUYỆT (phải gọi `kiemPhamViDuyetMay`):
+ *     · `approveMachine(` / `rejectMachine(`;
+ *     · `registrationStatus: "approved" | "rejected"` trong đối số object của `updateMachine(` HOẶC của drizzle `.set(`;
+ *     · `updateMachine(id, <biến>)`: biến khởi tạo bằng object literal có spread / có `registrationStatus` / không giải được ⇒ là điểm;
+ *     · phát `"machine:registration_approved"` / `"machine:registration_rejected"`.
+ *   loại KHOÁ (phải gọi `kiemPhamViDuyetMay` | `viTriHopLe` | `khoaMayGhi`): `issueMachineKey(` · `issueFleetMachineKey(` ·
+ *     `issueMachineClaimToken(` · `rotateMachineKey(` · `revokeMachineKey(`.
+ * ĐƠN VỊ = hàm (function-like) TRONG CÙNG chứa điểm (re-review Minor 2: không còn "hàm ngoài cùng" — một lời kiểm ở closure anh em không
+ * được tính). Lời kiểm phải đứng TRƯỚC điểm trong đơn vị. Nhãn: thủ tục `router({...})` / handler `socket.on|once("ev", fn | tênHàm)`.
+ * Có ĐỘT BIẾN cho từng hình dạng (chạy tay, ghi trong báo cáo F5-nhanh).
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -21,14 +25,37 @@ import ts from "typescript";
 
 const GOC = process.cwd();
 const rel = (p: string) => relative(GOC, p).replace(/\\/g, "/");
-const HAM = "kiemPhamViDuyetMay";
+const KIEM_DUYET = ["kiemPhamViDuyetMay"];
+const KIEM_KHOA = ["kiemPhamViDuyetMay", "viTriHopLe", "khoaMayGhi"];
+const GOI_KHOA = ["issueMachineKey", "issueFleetMachineKey", "issueMachineClaimToken", "rotateMachineKey", "revokeMachineKey"];
 
 /** Tệp được miễn (có lý do; chỉ được thu hẹp). */
-const MIEN: Record<string, string> = {
+const MIEN_TEP: Record<string, string> = {
   "server/db/hierarchy.ts":
-    "KHAI các bộ ghi approveMachine/rejectMachine (tầng dữ liệu, không có người gọi) + đường ENROLLMENT bằng token máy (thông tin xác thực " +
-    "máy, không có chủ thể người dùng để kiểm phạm vi — token do admin phát trước)",
+    "KHAI bộ ghi approveMachine/rejectMachine (tầng dữ liệu) + đường ENROLLMENT bằng token máy (thông tin xác thực máy, không có chủ thể người dùng)",
+  "server/services/machineAuthService.ts": "KHAI các bộ đúc / xoay / thu hồi khoá (tầng dịch vụ); người gọi ở router/socket bị kiểm",
 };
+/** Đơn vị được miễn — CHỈ khi đơn vị còn mang đúng hình dạng nêu trong `phaiCo` (miễn gắn vào hình dạng, không gắn vào cái tên). */
+const MIEN_DON_VI: Array<{ file: string; nhan: string; lyDo: string; phaiCo: RegExp }> = [
+  {
+    file: "server/routers/hierarchyRouters.ts",
+    nhan: "thủ tục issueClaimToken",
+    lyDo: "phát claim token CHỈ admin (adminProcedure) — admin luôn toàn quyền phạm vi",
+    phaiCo: /^issueClaimToken:\s*adminProcedure\b/,
+  },
+  {
+    file: "server/routers/hierarchyRouters.ts",
+    nhan: "thủ tục enroll",
+    lyDo: "đăng ký máy bằng ENROLLMENT TOKEN (thông tin xác thực máy do admin phát trước), không có chủ thể người dùng",
+    phaiCo: /^enroll:\s*publicProcedure\b/,
+  },
+  {
+    file: "server/routers/hierarchyRouters.ts",
+    nhan: "thủ tục update",
+    lyDo: "machine.update: ghi registrationStatus bị chặn cho mọi vai trừ admin ngay trong thân (doc 54 P0-2)",
+    phaiCo: /data\.registrationStatus !== undefined && ctx\.user\.role !== "admin"/,
+  },
+];
 
 function liet(dir: string, out: string[] = []): string[] {
   for (const ten of readdirSync(dir)) {
@@ -43,66 +70,118 @@ function liet(dir: string, out: string[] = []): string[] {
 const tenGoi = (c: ts.CallExpression): string | null =>
   ts.isIdentifier(c.expression) ? c.expression.text : ts.isPropertyAccessExpression(c.expression) ? c.expression.name.text : null;
 
-/** Đơn vị bao quanh một điểm ghi + nhãn. */
-function donVi(n: ts.Node, sf: ts.SourceFile): { nut: ts.Node; nhan: string } {
-  let ngoaiCung: ts.Node | null = null;
-  for (let a: ts.Node | undefined = n.parent; a; a = a.parent) {
-    // thủ tục: thuộc tính của object literal là đối số của `router(`
-    if (
-      ts.isPropertyAssignment(a) &&
-      ts.isObjectLiteralExpression(a.parent) &&
-      ts.isCallExpression(a.parent.parent) &&
-      tenGoi(a.parent.parent) === "router"
-    ) {
-      return { nut: a, nhan: `thủ tục ${a.name.getText(sf)}` };
+/** Hàm được dùng làm handler theo TÊN: `socket.on("ev", tenHam)` / `.once` — tên hàm ⇒ tên sự kiện. */
+function handlerTheoTen(sf: ts.SourceFile): Map<string, string> {
+  const ra = new Map<string, string>();
+  const di = (n: ts.Node) => {
+    if (ts.isCallExpression(n)) {
+      const t = tenGoi(n);
+      const a0 = n.arguments[0];
+      const a1 = n.arguments[1];
+      if ((t === "on" || t === "once") && a0 && ts.isStringLiteralLike(a0) && a1 && ts.isIdentifier(a1)) ra.set(a1.text, a0.text);
     }
-    // handler socket.on("ev", fn)
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  return ra;
+}
+function tenCuaHam(f: ts.Node): string | null {
+  if (ts.isFunctionDeclaration(f) && f.name) return f.name.text;
+  if ((ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isVariableDeclaration(f.parent) && ts.isIdentifier(f.parent.name)) return f.parent.name.text;
+  return null;
+}
+
+/** Đơn vị = hàm trong cùng chứa `n`; nhãn theo thủ tục router / handler socket (gắn trực tiếp hoặc theo tên). */
+function donVi(n: ts.Node, sf: ts.SourceFile, theoTen: Map<string, string>): { nut: ts.Node; nhan: string } {
+  let trong: ts.Node | null = null;
+  for (let a: ts.Node | undefined = n.parent; a; a = a.parent) {
+    if (ts.isFunctionLike(a)) {
+      trong = a;
+      break;
+    }
+  }
+  if (!trong) return { nut: sf, nhan: "cấp tệp" };
+  for (let a: ts.Node | undefined = trong; a; a = a.parent) {
+    if (ts.isPropertyAssignment(a) && ts.isObjectLiteralExpression(a.parent) && ts.isCallExpression(a.parent.parent) && tenGoi(a.parent.parent) === "router") {
+      return { nut: trong, nhan: `thủ tục ${a.name.getText(sf)}` };
+    }
     if (
       ts.isFunctionLike(a) &&
       ts.isCallExpression(a.parent) &&
-      tenGoi(a.parent) === "on" &&
+      (tenGoi(a.parent) === "on" || tenGoi(a.parent) === "once") &&
       a.parent.arguments[1] === a &&
       ts.isStringLiteralLike(a.parent.arguments[0])
     ) {
-      return { nut: a, nhan: `socket.on("${(a.parent.arguments[0] as ts.StringLiteralLike).text}")` };
+      return { nut: trong, nhan: `socket.${tenGoi(a.parent)}("${(a.parent.arguments[0] as ts.StringLiteralLike).text}")` };
     }
-    if (ts.isFunctionLike(a)) ngoaiCung = a;
+    if (ts.isFunctionLike(a)) {
+      const ten = tenCuaHam(a);
+      if (ten && theoTen.has(ten)) return { nut: trong, nhan: `socket handler theo tên ${ten} ("${theoTen.get(ten)}")` };
+    }
   }
-  return { nut: ngoaiCung ?? sf, nhan: "hàm ngoài cùng" };
+  return { nut: trong, nhan: `hàm ${tenCuaHam(trong) ?? "vô danh"}` };
+}
+
+/** `updateMachine(id, bien)`: biến có thể chở registrationStatus không (giải trong đơn vị; không giải được ⇒ CÓ — bảo thủ). */
+function bienCoTheChoTrangThai(bien: ts.Identifier, donViNut: ts.Node): boolean {
+  let khoiTao: ts.Expression | undefined;
+  const tim = (x: ts.Node) => {
+    if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name) && x.name.text === bien.text && x.initializer) khoiTao = x.initializer;
+    if (!khoiTao) ts.forEachChild(x, tim);
+  };
+  tim(donViNut);
+  if (!khoiTao) return true;
+  const xet = (e: ts.Expression): boolean => {
+    let x: ts.Expression = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+    if (ts.isConditionalExpression(x)) return xet(x.whenTrue) || xet(x.whenFalse);
+    if (!ts.isObjectLiteralExpression(x)) return true;
+    return x.properties.some((p) => ts.isSpreadAssignment(p) || (p.name !== undefined && p.name.getText() === "registrationStatus"));
+  };
+  return xet(khoiTao);
 }
 
 interface Diem {
   file: string;
   dong: number;
   nhan: string;
-  coHam: boolean;
-  hamTruoc: boolean;
-  loai: string;
+  loai: "duyet" | "khoa";
+  chiTiet: string;
+  daKiemTruoc: boolean;
+  textDonVi: string;
 }
 function quet(file: string, ma: string): Diem[] {
   const sf = ts.createSourceFile(file, ma, ts.ScriptTarget.Latest, true);
+  const theoTen = handlerTheoTen(sf);
   const ra: Diem[] = [];
-  const them = (n: ts.Node, loai: string) => {
-    const dv = donVi(n, sf);
-    const goi: number[] = [];
+  const them = (n: ts.Node, loai: "duyet" | "khoa", chiTiet: string) => {
+    const dv = donVi(n, sf, theoTen);
+    const kiem = loai === "duyet" ? KIEM_DUYET : KIEM_KHOA;
+    let daKiemTruoc = false;
     const tim = (x: ts.Node) => {
-      if (ts.isCallExpression(x) && tenGoi(x) === HAM) goi.push(x.getStart(sf));
+      if (ts.isCallExpression(x) && kiem.includes(tenGoi(x) ?? "") && x.getStart(sf) < n.getStart(sf)) daKiemTruoc = true;
       ts.forEachChild(x, tim);
     };
     tim(dv.nut);
-    ra.push({
-      file,
-      dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
-      nhan: dv.nhan,
-      coHam: goi.length > 0,
-      hamTruoc: goi.some((g) => g < n.getStart(sf)),
-      loai,
-    });
+    // văn bản để đối chiếu miễn: thuộc tính router (nếu có) hoặc chính đơn vị
+    let txt = dv.nut.getText(sf);
+    for (let a: ts.Node | undefined = dv.nut; a; a = a.parent) {
+      if (ts.isPropertyAssignment(a) && ts.isObjectLiteralExpression(a.parent) && ts.isCallExpression(a.parent.parent) && tenGoi(a.parent.parent) === "router") {
+        txt = a.getText(sf);
+        break;
+      }
+    }
+    ra.push({ file, dong: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, nhan: dv.nhan, loai, chiTiet, daKiemTruoc, textDonVi: txt });
   };
   const di = (n: ts.Node) => {
     if (ts.isCallExpression(n)) {
       const t = tenGoi(n);
-      if (t === "approveMachine" || t === "rejectMachine") them(n, t);
+      if (t === "approveMachine" || t === "rejectMachine") them(n, "duyet", t);
+      if (t && GOI_KHOA.includes(t)) them(n, "khoa", t);
+      if (t === "updateMachine" && n.arguments[1] && ts.isIdentifier(n.arguments[1])) {
+        const dv = donVi(n, sf, theoTen);
+        if (bienCoTheChoTrangThai(n.arguments[1], dv.nut)) them(n, "duyet", `updateMachine(id, ${n.arguments[1].text})`);
+      }
     }
     if (
       ts.isPropertyAssignment(n) &&
@@ -110,16 +189,16 @@ function quet(file: string, ma: string): Diem[] {
       ts.isStringLiteralLike(n.initializer) &&
       (n.initializer.text === "approved" || n.initializer.text === "rejected")
     ) {
-      // chỉ khi nằm trong đối số của updateMachine(...)
       for (let a: ts.Node | undefined = n.parent; a; a = a.parent) {
         if (ts.isCallExpression(a)) {
-          if (tenGoi(a) === "updateMachine") them(n, `updateMachine(registrationStatus:${n.initializer.text})`);
+          const t = tenGoi(a);
+          if (t === "updateMachine" || t === "set") them(n, "duyet", `${t}(registrationStatus:${n.initializer.text})`);
           break;
         }
       }
     }
     if (ts.isStringLiteralLike(n) && (n.text === "machine:registration_approved" || n.text === "machine:registration_rejected")) {
-      them(n, `emit ${n.text}`);
+      them(n, "duyet", `emit ${n.text}`);
     }
     ts.forEachChild(n, di);
   };
@@ -128,34 +207,45 @@ function quet(file: string, ma: string): Diem[] {
 }
 
 const TAT_CA = liet(resolve(GOC, "server")).flatMap((p) => {
-  const f = rel(p);
   const ma = readFileSync(p, "utf8");
-  if (!/approveMachine|rejectMachine|registrationStatus|registration_(approved|rejected)/.test(ma)) return [];
-  return quet(f, ma);
+  if (!/approveMachine|rejectMachine|registrationStatus|registration_(approved|rejected)|updateMachine|MachineKey|MachineClaimToken/.test(ma)) return [];
+  return quet(rel(p), ma);
 });
+const mienDonVi = (d: Diem) => MIEN_DON_VI.find((m) => m.file === d.file && m.nhan === d.nhan);
 
-describe("★★★ F5-nhanh — census: mọi đường duyệt / từ chối máy kiểm phạm vi máy", () => {
-  it("thiết bị đo tự canh: thấy đủ bốn đường đã biết (tRPC approve/reject, socket approve/reject)", () => {
-    const nhan = new Set(TAT_CA.filter((d) => !MIEN[d.file]).map((d) => `${d.file} :: ${d.nhan}`));
+describe("★★★ F5-nhanh — census: duyệt / từ chối máy và đúc / xoay / thu hồi khoá máy đều kiểm phạm vi máy", () => {
+  it("thiết bị đo tự canh: thấy đủ các đường đã biết", () => {
+    const nhan = new Set(TAT_CA.filter((d) => !MIEN_TEP[d.file]).map((d) => `${d.file} :: ${d.nhan} :: ${d.loai}`));
     expect([...nhan]).toEqual(
       expect.arrayContaining([
-        "server/routers/hierarchyRouters.ts :: thủ tục approve",
-        "server/routers/hierarchyRouters.ts :: thủ tục reject",
-        'server/_core/socket.ts :: socket.on("admin:approve_registration")',
-        'server/_core/socket.ts :: socket.on("admin:reject_registration")',
+        "server/routers/hierarchyRouters.ts :: thủ tục approve :: duyet",
+        "server/routers/hierarchyRouters.ts :: thủ tục approve :: khoa",
+        "server/routers/hierarchyRouters.ts :: thủ tục reject :: duyet",
+        'server/_core/socket.ts :: socket.on("admin:approve_registration") :: duyet',
+        'server/_core/socket.ts :: socket.on("admin:approve_registration") :: khoa',
+        'server/_core/socket.ts :: socket.on("admin:reject_registration") :: duyet',
+        "server/routers/machineApiRouters.ts :: thủ tục issueKey :: khoa",
+        "server/routers/machineApiRouters.ts :: thủ tục rotateKey :: khoa",
+        "server/routers/machineApiRouters.ts :: thủ tục revokeKey :: khoa",
       ]),
     );
   });
 
-  it("mỗi điểm duyệt / từ chối (ngoài MIEN) nằm trong đơn vị gọi kiemPhamViDuyetMay TRƯỚC điểm ghi", () => {
-    const loi = TAT_CA.filter((d) => !MIEN[d.file] && !(d.coHam && d.hamTruoc)).map(
-      (d) => `${d.file}:${d.dong} [${d.loai}] trong ${d.nhan}: ${d.coHam ? "gọi kiemPhamViDuyetMay SAU điểm ghi" : "KHÔNG gọi kiemPhamViDuyetMay"}`,
+  it("mỗi điểm (ngoài MIEN) có lời kiểm phạm vi đứng TRƯỚC nó trong CÙNG hàm trong cùng", () => {
+    const loi = TAT_CA.filter((d) => !MIEN_TEP[d.file] && !mienDonVi(d) && !d.daKiemTruoc).map(
+      (d) => `${d.file}:${d.dong} [${d.loai}: ${d.chiTiet}] trong ${d.nhan}: thiếu ${d.loai === "duyet" ? KIEM_DUYET.join("|") : KIEM_KHOA.join("|")} TRƯỚC điểm này`,
     );
     expect(loi).toEqual([]);
   });
 
-  it("MIEN chỉ được thu hẹp: mục mồ côi ⇒ ĐỎ", () => {
-    const moCoi = Object.keys(MIEN).filter((f) => !TAT_CA.some((d) => d.file === f));
-    expect(moCoi).toEqual([]);
+  it("miễn theo đơn vị chỉ còn hiệu lực khi đơn vị còn đúng HÌNH DẠNG đã nêu; MIEN mồ côi ⇒ ĐỎ", () => {
+    const loi: string[] = [];
+    for (const m of MIEN_DON_VI) {
+      const ds = TAT_CA.filter((d) => d.file === m.file && d.nhan === m.nhan);
+      if (ds.length === 0) loi.push(`MIEN_DON_VI mồ côi: ${m.file} :: ${m.nhan}`);
+      for (const d of ds) if (!m.phaiCo.test(d.textDonVi.trim())) loi.push(`${m.file} :: ${m.nhan} không còn hình dạng được miễn (${m.phaiCo})`);
+    }
+    for (const f of Object.keys(MIEN_TEP)) if (!TAT_CA.some((d) => d.file === f)) loi.push(`MIEN_TEP mồ côi: ${f}`);
+    expect(loi).toEqual([]);
   });
 });

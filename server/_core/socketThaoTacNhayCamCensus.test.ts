@@ -174,6 +174,19 @@ function docUserChup(fn: ts.Node, sf: ts.SourceFile): boolean {
   return co;
 }
 
+/** `function ten(){}` / `const ten = (…) => …` / `const ten = function(){}` khai trong tệp ⇒ nút hàm; không thấy ⇒ null. */
+function giaiHamTheoTen(sf: ts.SourceFile, ten: string): ts.Node | null {
+  let ra: ts.Node | null = null;
+  const di = (x: ts.Node) => {
+    if (ra) return;
+    if (ts.isFunctionDeclaration(x) && x.name?.text === ten) ra = x;
+    else if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name) && x.name.text === ten && x.initializer && (ts.isArrowFunction(x.initializer) || ts.isFunctionExpression(x.initializer))) ra = x.initializer;
+    if (!ra) ts.forEachChild(x, di);
+  };
+  di(sf);
+  return ra;
+}
+
 interface Handler {
   file: string;
   event: string;
@@ -188,14 +201,16 @@ function thuHandler(): Handler[] {
       if (
         ts.isCallExpression(n) &&
         ts.isPropertyAccessExpression(n.expression) &&
-        n.expression.name.text === "on" &&
+        (n.expression.name.text === "on" || n.expression.name.text === "once") &&
         ts.isIdentifier(n.expression.expression) &&
         n.expression.expression.text === "socket" &&
         n.arguments.length >= 2 &&
         ts.isStringLiteralLike(n.arguments[0]) &&
         !laSocketMangCucBo(n)
       ) {
-        out.push({ file: rel(p), event: (n.arguments[0] as ts.StringLiteralLike).text, fn: n.arguments[1], sf });
+        // re-review (a) Minor 2: handler theo TÊN (`socket.on("x", h)`) ⇒ giải về hàm khai trong tệp; không giải được ⇒ giữ nút tên (ca dưới ĐỎ).
+        const h = n.arguments[1];
+        out.push({ file: rel(p), event: (n.arguments[0] as ts.StringLiteralLike).text, fn: ts.isIdentifier(h) ? (giaiHamTheoTen(sf, h.text) ?? h) : h, sf });
       }
       ts.forEachChild(n, di);
     };
@@ -233,6 +248,11 @@ describe("★★★ F5-nhanh — census handler socket nhạy cảm", () => {
     expect(HANDLERS.some((h) => h.event === "admin:approve_registration")).toBe(true);
     // driver TCP (net.Socket `socket.on("data")`) KHÔNG lọt vào: phạm vi theo import socket.io / hàm đăng ký
     expect(HANDLERS.some((h) => h.event === "data")).toBe(false);
+  });
+
+  it("handler theo TÊN phải giải được về một hàm khai trong cùng tệp (không thì không đọc được thân để kiểm)", () => {
+    const loi = HANDLERS.filter((h) => !ts.isFunctionLike(h.fn)).map((h) => `${khoa(h.file, h.event)}: handler '${h.fn.getText(h.sf)}' không giải được`);
+    expect(loi).toEqual([]);
   });
 
   it("MỌI handler đều được phân loại đúng số lượng; mục mồ côi ⇒ ĐỎ", () => {
