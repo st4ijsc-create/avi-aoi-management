@@ -355,6 +355,10 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
       await khoiDong(runId);
       expect(soPduGhi() - pdu1).toBe(1);
       expect((await trangThaiRun(tx, runId)).status).toBe("completed");
+      // fix round 1 (DB mutant 2 survived here): the STOP goes out on the resumed attempt 1 itself — never a NOT_CONFIRMED on the old row
+      // rescued only by the STOP default of attempts (attempt 2's new key)
+      expect((await buoc(tx, runId, "main"))?.attempt).toBe(1);
+      expect(await tx.select().from(commandLog).where(and(like(commandLog.actionId, `foe-run${runId}-main-a%`), eq(commandLog.status, "rejected")))).toHaveLength(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
