@@ -68,9 +68,16 @@ async function seed(tx: Tx) {
   const robot = (code: string, endpoint: string) =>
     one(tx`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "edgeNodeId") VALUES (${code}, 'A2 stopclose', 'sim', ${endpoint}, true, ${node}) RETURNING id`);
   const stop = async (col: "robotId" | "adapterId", id: number) => {
-    const [ep] = col === "robotId" ? await tx`SELECT "ownerEpoch" FROM robots WHERE id = ${id}` : await tx`SELECT "ownerEpoch" FROM device_adapters WHERE id = ${id}`;
+    // gate census fix (wormIdTuongMinhCensus `sql_cot_dong`): a FIXED column list per target — never a column list built at run time
+    if (col === "robotId") {
+      const [ep] = await tx`SELECT "ownerEpoch" FROM robots WHERE id = ${id}`;
+      return one(
+        tx`INSERT INTO robot_motion_lock_requests ("robotId", "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "expiresAt") VALUES (${id}, ${node}, ${Number(ep.ownerEpoch)}, 'stop', 'A2 stopclose', ${actor}, now() + interval '1 hour') RETURNING id`,
+      );
+    }
+    const [ep] = await tx`SELECT "ownerEpoch" FROM device_adapters WHERE id = ${id}`;
     return one(
-      tx`INSERT INTO robot_motion_lock_requests (${tx(col)}, "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "expiresAt") VALUES (${id}, ${node}, ${Number(ep.ownerEpoch)}, 'stop', 'A2 stopclose', ${actor}, now() + interval '1 hour') RETURNING id`,
+      tx`INSERT INTO robot_motion_lock_requests ("adapterId", "edgeNodeId", "ownerEpoch", kind, reason, "requestedBy", "expiresAt") VALUES (${id}, ${node}, ${Number(ep.ownerEpoch)}, 'stop', 'A2 stopclose', ${actor}, now() + interval '1 hour') RETURNING id`,
     );
   };
   const ids = {
