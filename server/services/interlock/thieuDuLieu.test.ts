@@ -6,13 +6,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("drizzle-orm", () => ({
-  and: (...a: any[]) => ({ op: "and", a }),
-  eq: (col: any, val: any) => ({ op: "eq", col, val }),
-  gte: (col: any, val: any) => ({ op: "gte", col, val }),
-  desc: (col: any) => ({ op: "desc", col }),
-  sql: Object.assign((..._a: any[]) => ({ op: "sql" }), {}),
-}));
+// SCADA R1b-2b-2a A2(j) — the REAL drizzle operators (a partial factory mock made any operator the gate adds throw inside its try ⇒ fail-closed for
+// the wrong reason); the fake DB below ignores conditions either way.
+vi.mock("drizzle-orm", async (importOriginal) => ({ ...(await importOriginal<typeof import("drizzle-orm")>()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
   interlockRules: { __t: "interlock_rules", id: {}, enabled: { __c: "enabled" } },
@@ -172,6 +168,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [mau({ q: "bad", v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("thieu_du_lieu");
   });
 
@@ -180,6 +177,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [mau({ q: "uncertain", v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("thieu_du_lieu");
   });
 
@@ -188,6 +186,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [mau({ stale: true, ageMs: 999_999, v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("thieu_du_lieu");
   });
 
@@ -196,6 +195,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [mau({ adapterId: 10, v: 10 }), mau({ adapterId: 11, v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("thieu_du_lieu");
     const kq = await danhGiaLuat(luat());
     expect(kq).toEqual({ dung: false, thieuDuLieu: true, lyDo: "mo_ho" });
@@ -206,12 +206,14 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [mau({ v: 10 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("cau_hinh");
     expect(cache.hoi).toEqual([]); // không đoán máy
     expect(await danhGiaLuat(luat({ machineId: null }))).toEqual({ dung: false, thieuDuLieu: true, lyDo: "cau_hinh" });
     state.rules = [luat({ machineId: null, khiThieuDuLieu: "cho_qua" })];
     const r2 = await evaluateInterlockGate(params);
     expect(r2.blocked).toBe(true); // cho_qua chỉ áp cho thiếu DỮ LIỆU, không áp cho luật hỏng cấu trúc
+    expect(r2.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r2.violations[0].lyDo).toBe("cau_hinh");
   });
 
@@ -220,6 +222,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     cache.mau = [];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations).toHaveLength(0);
   });
 
@@ -227,6 +230,7 @@ describe("cổng interlock — thiếu dữ liệu ⇒ CHẶN (D2)", () => {
     state.rules = [luat({ khiThieuDuLieu: "chan" })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
   });
 
   it("lyDo của danhGiaLuat phân biệt: khong_co_mau / chat_luong_xau / cu", async () => {
@@ -247,6 +251,7 @@ describe("cổng interlock — mẫu tốt đọc từ bộ đệm", () => {
     cache.mau = [mau({ v: 95 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations).toHaveLength(1);
     expect(r.violations[0].lyDo).toBeUndefined();
     expect(await danhGiaLuat(luat())).toEqual({ dung: true, thieuDuLieu: false });
@@ -257,6 +262,7 @@ describe("cổng interlock — mẫu tốt đọc từ bộ đệm", () => {
     cache.mau = [mau({ v: 60 })];
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations).toHaveLength(0);
   });
 
@@ -288,6 +294,7 @@ describe("đường DB cũ (bộ đệm TẮT) — không có hàng ⇒ thiếu 
     expect(await danhGiaLuat(luat())).toEqual({ dung: false, thieuDuLieu: true, lyDo: "khong_co_mau" });
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
     expect(r.violations[0].lyDo).toBe("thieu_du_lieu");
     expect(cache.hoi).toEqual([]); // không chạm bộ đệm khi cờ tắt
   });
@@ -360,6 +367,7 @@ describe("Task 9 fix round 1 — chuỗi dài hơn bộ đệm + chất lượng
       state.rules = [luat({ sourceKey: "  " })];
       const r = await evaluateInterlockGate(params);
       expect(r.blocked).toBe(true);
+      expect(r.failClosed).toBe(false); // A2(j) J4 — rule-caused, never an operator throwing inside the try
       expect(r.violations[0].lyDo).toBe("cau_hinh");
       expect(cache.hoi).toEqual([]);
     }
