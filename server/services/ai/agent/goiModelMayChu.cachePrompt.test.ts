@@ -17,6 +17,7 @@ async function xongVoi(done: Record<string, unknown>, ghiDauVet = false) {
   const goi = taoGoiModelMayChu({
     khongGhiDauVet: !ghiDauVet,
     chatStream: async function* () {
+      yield { type: "token", token: "ok" } as never; // (H3.1b) lượt rỗng nay là EMPTY_RESPONSE
       yield { type: "done", toolCalls: [], tokensPrompt: 14, tokensGenerated: 3, ...done } as never;
     },
   });

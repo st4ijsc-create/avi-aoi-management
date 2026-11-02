@@ -233,10 +233,10 @@ describe("đường model — lỗi mạng và giao thức (STRICT: lỗi đi ng
     expect(g.soLanGoi()).toBe(2);
   });
 
-  it("`<think>` KHÔNG ĐÓNG: chữ nghĩ không rò ra `chu`", async () => {
+  it("`<think>` KHÔNG ĐÓNG: chữ nghĩ không rò ra `chu`; (H3.1b, L5b) lượt không còn câu trả lời ⇒ EMPTY_RESPONSE (chưa phát gì ⇒ tạm thời)", async () => {
     await dung([CHU("<think>khong bao gio dong, bi mat noi tam")]);
     const r = await motLuot();
-    expect(r.loi).toBeNull();
+    expect(r.loi).toMatchObject({ ma: "EMPTY_RESPONSE", tamThoi: true });
     expect(r.chu).not.toContain("noi tam");
     expect(r.chu).not.toContain("<think>");
   });
@@ -277,13 +277,13 @@ describe("đường model — SẢN XUẤT (STRICT tắt, server CÒN SỐNG): G
     expect(r.loi).toMatchObject({ ma: "CONTEXT_OVERFLOW", tamThoi: false });
   });
 
-  it.fails("LỖ L1 (H3.1): 429 ⇒ RATE_LIMIT tạm thời — HIỆN: G1-D bọc `new Error(msg)` mất httpStatus ⇒ MODEL_LOI không-tạm-thời ⇒ vòng DỪNG thay vì thử lại", async () => {
+  it("LỖ L1 (H3.1): 429 ⇒ RATE_LIMIT tạm thời — trước H3.1b: G1-D bọc `new Error(msg)` mất httpStatus ⇒ MODEL_LOI không-tạm-thời ⇒ vòng DỪNG thay vì thử lại", async () => {
     await dung([{ loai: "rate_limit" }], { strict: false });
     const r = await motLuot();
     expect(r.loi).toMatchObject({ ma: "RATE_LIMIT", tamThoi: true });
   });
 
-  it.fails("LỖ L2 (H3.1): 503 hết 4 lần thử ⇒ MODEL_DANG_NAP tạm thời — HIỆN: MODEL_LOI không-tạm-thời", async () => {
+  it("LỖ L2 (H3.1): 503 hết 4 lần thử ⇒ MODEL_DANG_NAP tạm thời — trước H3.1b: MODEL_LOI không-tạm-thời", async () => {
     await dung([{ loai: "dang_nap" }, { loai: "dang_nap" }, { loai: "dang_nap" }, { loai: "dang_nap" }], { strict: false });
     const r = await motLuot();
     expect(r.loi).toMatchObject({ ma: "MODEL_DANG_NAP", tamThoi: true });
@@ -291,13 +291,13 @@ describe("đường model — SẢN XUẤT (STRICT tắt, server CÒN SỐNG): G
 });
 
 describe("lỗ phân loại còn lại (mong muốn theo C-P1, code hiện chưa có)", () => {
-  it.fails("LỖ L3: RST socket TRƯỚC byte đầu (chưa phát gì ⇒ thử lại an toàn) ⇒ lỗi tạm thời — HIỆN: MODEL_LOI không-tạm-thời (`chuyenLoiModel` chỉ đọc `code` ở tầng ngoài, ECONNRESET nằm trong `cause` của LoiStreamServer)", async () => {
+  it("LỖ L3: RST socket TRƯỚC byte đầu (chưa phát gì ⇒ thử lại an toàn) ⇒ lỗi tạm thời — trước H3.1b: MODEL_LOI không-tạm-thời (`chuyenLoiModel` chỉ đọc `code` ở tầng ngoài, ECONNRESET nằm trong `cause` của LoiStreamServer)", async () => {
     await dung([{ loai: "connection_reset", truocHeader: true }]);
     const r = await motLuot();
     expect(r.loi).toMatchObject({ tamThoi: true });
   });
 
-  it.fails("LỖ L4: 429 `insufficient_quota` KHÔNG được thử lại (C-P1: QUOTA) — HIỆN: RATE_LIMIT tạm thời như 429 thường ⇒ vòng thử lại và giữ chỗ ngân sách lần nữa", async () => {
+  it("LỖ L4: 429 `insufficient_quota` KHÔNG được thử lại (C-P1: QUOTA) — trước H3.1b: RATE_LIMIT tạm thời như 429 thường ⇒ vòng thử lại và giữ chỗ ngân sách lần nữa", async () => {
     await dung([{ loai: "rate_limit", thanKieu: "insufficient_quota" }]);
     const r = await motLuot();
     expect(r.loi).toMatchObject({ tamThoi: false });
@@ -362,7 +362,7 @@ describe("vòng agent thật trên đường model thật", () => {
     expect(g.soLanGoi()).toBe(2);
   });
 
-  it.fails("LỖ L1 ở tầng vòng: 429 trong cấu hình SẢN XUẤT ⇒ vòng phải thử lại và hoàn thành — HIỆN: dừng `loi-model` MODEL_LOI sau 1 yêu cầu", async () => {
+  it("LỖ L1 ở tầng vòng: 429 trong cấu hình SẢN XUẤT ⇒ vòng phải thử lại và hoàn thành — trước H3.1b: dừng `loi-model` MODEL_LOI sau 1 yêu cầu", async () => {
     await dung([{ loai: "rate_limit" }, CHU("ok")], { strict: false });
     const r = await chayVong();
     expect(r.kq.lyDo).toBe("hoan-thanh");
@@ -421,13 +421,13 @@ describe("vòng agent thật trên đường model thật", () => {
     expect(r.kq.lyDo).toBe("huy");
   });
 
-  it.fails("LỖ L5 (C-P1 EMPTY_RESPONSE): server trả 200 không một chữ / tool (hoặc chỉ `<think>` không đóng) ⇒ KHÔNG được báo `hoan-thanh` im lặng — HIỆN: hoan-thanh, 0 sự kiện `chu`", async () => {
+  it("LỖ L5 (C-P1 EMPTY_RESPONSE): server trả 200 không một chữ / tool (hoặc chỉ `<think>` không đóng) ⇒ KHÔNG được báo `hoan-thanh` im lặng — trước H3.1b: hoan-thanh, 0 sự kiện `chu`", async () => {
     await dung([{ loai: "rong" }]);
     const r = await chayVong();
     expect(r.kq.lyDo === "hoan-thanh" && chuSk(r.sk) === "").toBe(false);
   });
 
-  it.fails("LỖ L5b: `<think>` không đóng cho tới hết ⇒ cùng L5 — HIỆN hoan-thanh rỗng", async () => {
+  it("LỖ L5b: `<think>` không đóng cho tới hết ⇒ cùng L5 — trước H3.1b: hoan-thanh rỗng", async () => {
     await dung([CHU("<think>khong bao gio dong")]);
     const r = await chayVong();
     expect(r.kq.lyDo === "hoan-thanh" && chuSk(r.sk) === "").toBe(false);

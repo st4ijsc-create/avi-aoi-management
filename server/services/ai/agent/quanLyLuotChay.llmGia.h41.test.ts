@@ -196,9 +196,9 @@ describe("H4.1 · lượt chạy qua quản lý SẢN XUẤT + model mặc đị
     expect(r.cuoi).toMatchObject({ trangThai: "loi" });
   });
 
-  // LỖ ĐÃ BIẾT (C-P1 EMPTY_RESPONSE; `llmGia.test.ts` L5): server trả 200 không một chữ / tool ⇒ HIỆN lượt báo 'xong'/'hoan-thanh' với 0 chữ. Khi do-model
-  // đưa H3.1b lên main, ca này PHẢI chuyển sang xanh và `it.fails` đỏ ⇒ buộc người sửa gỡ `.fails` (lưới tự báo, không cần ai nhớ).
-  it.fails("LỖ L5 ở tầng quản lý: 200 rỗng ⇒ lượt KHÔNG được 'xong'/'hoan-thanh' im lặng với 0 chữ — HIỆN: xong rỗng", async () => {
+  // C-P1 EMPTY_RESPONSE (`llmGia.test.ts` L5): server trả 200 không một chữ / tool ⇒ lượt KHÔNG được báo 'xong'/'hoan-thanh' với 0 chữ.
+  // 2026-11-03 dieu-phoi: H3.1b lên main ⇒ `it.fails` đỏ đúng như hẹn ⇒ gỡ `.fails`, ca này nay là ràng buộc xanh.
+  it("L5 ở tầng quản lý: 200 rỗng ⇒ lượt KHÔNG được 'xong'/'hoan-thanh' im lặng với 0 chữ", async () => {
     await dung([{ loai: "rong" }]);
     const r = await chay();
     expect(r.luot.lyDoDung === "hoan-thanh" && chuSk(r.sk) === "").toBe(false);

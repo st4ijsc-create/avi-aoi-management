@@ -87,7 +87,7 @@ describe("goiModelMayChu", () => {
   it("★★ AI_AGENT_NGHI=0 ⇒ disableThinking (ablation nghĩ bật/tắt)", async () => {
     process.env.AI_AGENT_NGHI = "0";
     let nhan: GgufChatOptions | null = null;
-    const goi = taoGoiModelMayChu({ chatStream: engineGia([{ type: "done", toolCalls: [] }], (o) => (nhan = o)) });
+    const goi = taoGoiModelMayChu({ chatStream: engineGia([{ type: "token", token: "ok" }, { type: "done", toolCalls: [] }], (o) => (nhan = o)) });
     await gom(goi({ tinNhan: TIN, congCu: [TOOL], signal: new AbortController().signal }));
     expect(nhan!.disableThinking).toBe(true);
   });
@@ -98,6 +98,7 @@ describe("goiModelMayChu", () => {
       mucUuTien: "agent",
       chatStream: async function* () {
         muc = mucUuTienHienTai();
+        yield { type: "token", token: "ok" } as GgufStreamChunk;
         yield { type: "done", toolCalls: [] } as GgufStreamChunk;
       },
     });
@@ -106,6 +107,7 @@ describe("goiModelMayChu", () => {
     const goi2 = taoGoiModelMayChu({
       chatStream: async function* () {
         muc = mucUuTienHienTai();
+        yield { type: "token", token: "ok" } as GgufStreamChunk;
         yield { type: "done", toolCalls: [] } as GgufStreamChunk;
       },
     });
@@ -129,6 +131,7 @@ describe("goiModelMayChu", () => {
       const goi = taoGoiModelMayChu({
         chatStream: (_o, _id, s) =>
           quaCongUuTienLuong(async function* () {
+            yield { type: "token", token: "ok" } as GgufStreamChunk;
             yield { type: "done", toolCalls: [] } as GgufStreamChunk;
           }, s),
       });
