@@ -8,6 +8,8 @@
  *   2. VERIFY the authorisation for exactly this job (edgeAuthorizationVerifier: signature, node, credential, context, payload
  *      hash recomputed from the job about to be sent, signed target = robot + job type, TTL from the request send, nonce pending,
  *      jti unused) — a refusal is journaled as an anomaly;
+ *   2b. A2(o) CONFIG GATE (edgeNonStopConfigGate, shared with OT): stale config ⇒ CONFIG_STALE; a signed safety-PLC config id
+ *      absent from the snapshot ⇒ SAFETY_CONFIG_MISSING (anomaly + refresh request; nothing consumed, no slot);
  *   3. LOCAL GATES: the driver active + connected, its in-memory MOTION LOCK (the authority's source of truth, §2.11), journal
  *      admission, the safety-PLC preflight (snapshot configs), the MOTION SLOT (R14, robotDeviceRun);
  *   4. re-check the window, CONSUME the jti in the journal (durable BEFORE the driver call) — refused ⇒ nothing sent;
@@ -28,7 +30,7 @@ import type { RobotJobSpec } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason } from "../ot/safetyPreflightPolicy";
 import { edgeAuthorizationStillValid, verifyEdgeStepAuthorization, type EdgeStepAuthorization } from "../edge/edgeAuthorizationVerifier";
-import { edgeDeviceRuntime, envRobotControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
+import { edgeDeviceRuntime, edgeNonStopConfigGate, envRobotControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
 
 /** Same bound as central's robot safety preflight. */
 const EDGE_ROBOT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
@@ -156,6 +158,10 @@ export async function dispatchRobotOnEdge(input: EdgeRobotDispatchInput, rt: Edg
   if (a.runId !== input.run.runId || a.claimSeq !== input.run.claimSeq || a.stepId !== input.run.stepId || a.attempt !== input.run.attempt || a.idempotencyKey !== input.idempotencyKey) {
     return refusal("AUTHORIZATION_INVALID", { detail: "context_mismatch" });
   }
+  // R1b-2b-2a A2(o) — the config gate (ONE helper, shared with otEdgeDispatch): a stale config, or a safety-PLC config the
+  // authorisation was signed for that the verified snapshot lacks ⇒ refused before the driver, the preflight, the slot and the consume
+  const cfgGate = edgeNonStopConfigGate(rt, cfg, verdict.claims.safetyConfigIds, { target: `robot ${input.robotId}`, runId: input.run.runId });
+  if (cfgGate) return refusal(cfgGate.reason, { detail: cfgGate.detail });
 
   const robot = getActiveRobot(input.robotId);
   if (!robot) return refusal("ROBOT_NOT_ACTIVE");

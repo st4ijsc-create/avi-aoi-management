@@ -26,6 +26,8 @@
  *                     (the dispatchers' rule).
  *   8. mode         — real ⇔ central's ROBOT_/OT_CONTROL_ENABLED and commissioned; the edge applies the stricter of this and
  *                     its own (central's kill switch over edge actuation).
+ *   8b. served config — R1b-2b-2a A2(o): the signed safety-PLC ids (never more than 64, never truncated) must all be in the
+ *                     snapshot central SERVES the node now, else 409 device_refused {safety}; that snapshot unbuildable ⇒ 503.
  *   9. one transaction — the claim re-checked FOR UPDATE; an existing authorisation of (run, claim, step, attempt) with the
  *                     SAME nonce ⇒ the identical token again (re-signed from the stored row — Ed25519 is deterministic), a
  *                     different nonce ⇒ 409 already_authorized; else an `ai_pending_actions` row (status executed, bound to
@@ -84,6 +86,9 @@ import type { ProgramCheck } from "../ot/programChecksum";
 
 /** foeEngine.FOE_GATE_REQUIRED — the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
 const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
+
+/** R1b-2b-2a A2(o) — edgeProtocol's safetyConfigIds bound (z.array(zId).max(64)): one authorisation never names more */
+export const EDGE_AUTH_MAX_SAFETY_CONFIG_IDS = 64;
 
 class Answer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -145,6 +150,8 @@ interface Verdict {
  *     safetyPreflightPolicy.plcConfigAppliesToTargets over resolveSafetyTargets — unresolvable ⇒ every config) must be a
  *     SUBSET of the signed set; any config central would consult that the edge would not get ⇒ device_refused {safety}
  *     naming the missing ids. Never a partial list, never an empty one standing in for configs central applies.
+ *   • R1b-2b-2a A2(o) — more than EDGE_AUTH_MAX_SAFETY_CONFIG_IDS ⇒ device_refused {safety} (never truncated); the served-snapshot
+ *     subset is checked by the caller (edgeSafetyIdsNotServed, needs the principal).
  * (In simulation central consults no safety PLC: the explicit list is then the whole truth.)
  */
 export async function edgeAuthorizeSafetyConfigIds(
@@ -167,8 +174,18 @@ export async function edgeAuthorizeSafetyConfigIds(
   const ids = all
     .filter((c) => edgePlcConfigGuardsNode(c, f, robots, stations, lines))
     .map((c) => c.id)
-    .sort((a, b) => a - b)
-    .slice(0, 64);
+    .sort((a, b) => a - b);
+  // R1b-2b-2a A2(o) — never a TRUNCATED list (was .slice(0, 64): the 65th config on would have been signed away unseen): more
+  // than the signed schema carries ⇒ refused, naming how many
+  if (ids.length > EDGE_AUTH_MAX_SAFETY_CONFIG_IDS) {
+    throw new Answer(
+      edgeError(
+        "device_refused",
+        `${ids.length} safety-PLC configurations guard this device — more than the ${EDGE_AUTH_MAX_SAFETY_CONFIG_IDS} one authorisation can name; refused (never a partial list). Merge or narrow the device's safety-PLC configurations.`,
+        { gate: "safety" },
+      ),
+    );
+  }
   if (opts.centralPreflight) {
     const { resolveSafetyTargets } = await import("../ot/safetyTarget");
     const { plcConfigAppliesToTargets } = await import("../ot/safetyPreflightPolicy");
@@ -186,6 +203,27 @@ export async function edgeAuthorizeSafetyConfigIds(
     }
   }
   return ids;
+}
+
+/**
+ * R1b-2b-2a A2(o) — the signed safety-PLC ids must be a SUBSET of the snapshot central actually SERVES this node now
+ * (edgeConfigCentral.servedSafetyPlcConfigIds — the same cached object configForNode serves). The R-10-aw check above compares
+ * central's matcher with the shipping RULE; this one compares the signed list with what was SHIPPED: a config the build could not
+ * express or a snapshot the edge has not got yet is never vouched for. Missing ⇒ device_refused {safety} naming them (+ an
+ * EDGE_ANOMALY audit); null ⇔ every id is served. A served snapshot that cannot be built THROWS (⇒ 503, nothing signed).
+ */
+export async function edgeSafetyIdsNotServed(node: EdgeNodePrincipal, ids: readonly number[]): Promise<EdgeAnswer<never> | null> {
+  if (ids.length === 0) return null;
+  const { servedSafetyPlcConfigIds } = await import("./edgeConfigCentral");
+  const served = await servedSafetyPlcConfigIds(node);
+  const missing = ids.filter((id) => !served.has(id));
+  if (missing.length === 0) return null;
+  await auditNode(node, "EDGE_ANOMALY", { type: "edge_node", id: node.nodeId }, { anomaly: "safety_config_not_served", ids: missing.slice(0, 64) }, "failure");
+  return edgeError(
+    "device_refused",
+    `Safety-PLC configuration(s) ${missing.slice(0, 16).map((x) => `#${x}`).join(", ")}${missing.length > 16 ? ` (+${missing.length - 16})` : ""} guard this device but are not in the config central serves this node now (not built yet, or not expressible) — refused; retry once the node's config has them.`,
+    { gate: "safety" },
+  );
 }
 
 /** M-2 — the role of a user for FIELD_V2 / policy. A read error THROWS (503): an unreadable role is never "user" by default. */
@@ -565,6 +603,10 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     // ── 7 + 8. device gates, mode ──
     const g = rb.kind === "robot" ? await robotGates(d, node.nodeId, rb, approval.approvedBy, runOwner, owner.ownerEpoch) : await otGates(d, node.nodeId, rb, owner.ownerEpoch);
     if ("gate" in g) return edgeError("device_refused", `Step "${req.stepId}": ${g.detail}.`, { gate: g.gate });
+    // ── 8b. A2(o) — the signed safety-PLC ids ⊆ the snapshot central SERVES this node (after the gates: cheapest first, N5; a
+    //    verified STOP never gets here — step 5)
+    const notServed = await edgeSafetyIdsNotServed(node, g.safetyConfigIds);
+    if (notServed) return notServed;
 
     // ── 9. one transaction ──
     const ttlMs = clampEdgeAuthTtlMs(process.env.EDGE_AUTH_TTL_MS);

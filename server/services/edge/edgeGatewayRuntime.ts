@@ -458,6 +458,7 @@ export async function sendHeartbeat(): Promise<EdgeGatewayHealth> {
     if (r.ok !== rt.lastHeartbeatOk) console.warn(r.ok ? "[EdgeGateway] heartbeat answered — central reachable" : `[EdgeGateway] heartbeat failed (HTTP ${r.status || "network"}${r.code ? ` ${r.code}` : ""}) — degraded`);
     rt.lastHeartbeatOk = r.ok;
     if (r.ok) {
+      rt.config.noteCentralConfigVersion?.(r.data.configVersion); // R1b-2b-2a A2(o) — newer announced ⇒ stale until adopted
       if (r.data.configVersion > rt.config.version() || r.data.keysetVersion > rt.config.trust().version) {
         await rt.config.refresh();
       }
@@ -521,6 +522,9 @@ async function installDeviceRuntime(rt: EdgeRuntime): Promise<void> {
     nodeId: rt.nodeId,
     config: () => rt.config.current(),
     journal: rt.journal,
+    // R1b-2b-2a A2(o) — the config gate of every non-STOP write: stale (announced, not adopted) + the refresh a refusal asks for
+    configStale: () => rt.config.staleness(),
+    requestConfigRefresh: () => rt.config.requestRefresh(),
     auth: () =>
       rt.config.current() === null
         ? null
