@@ -17101,7 +17101,26 @@
       "cauHinhHongMo": "Open interlock rules",
       "stopQuaHan": "HMI STOP refused for deadline (24 h): {{count}}",
       "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable",
-      "poolStopThieu": "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}"
+      "poolStopThieu": "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "Not recorded in the ledger (since {{tu}}): {{count}}",
+      "buoc": {
+        "db": "Database error",
+        "het_han_tong_truoc_handler": "Total deadline spent before the handler",
+        "pham_vi": "Scope check",
+        "doc_may": "Machine read",
+        "vai_tro": "Role check",
+        "doc_adapter": "Adapter read",
+        "doc_ghim": "STOP pin read",
+        "dong_cho": "Pending row",
+        "adapter": "Send to adapter",
+        "xac_thuc": "Authentication",
+        "cong_doi_mat_khau": "Password-change gate",
+        "giay_phep": "Licence",
+        "pham_vi_tenant": "Tenant scope",
+        "ghi_so_loi": "Ledger write failed",
+        "khac": "Other step",
+        "khong_ro": "Step unknown"
+      }
     },
     "table": {
       "kind": "Work item",
