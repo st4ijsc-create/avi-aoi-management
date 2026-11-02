@@ -9,6 +9,7 @@
  * FLAG: EDGE_RUNTIME_ENABLED off ⇒ 503 `edge_disabled` (as POST /edge/sync).
  */
 import type { NextFunction, Request, Response, Router } from "express";
+import { EDGE_CENTRAL_ACCEPTS_HEADER, edgeCentralAcceptsHeaderValue } from "../../services/edge/edgeProtocol";
 import { sendError, sendOk, wrap } from "./envelope";
 
 type NodeRequest = Request & { edgeNode?: import("../../services/edge/edgeNodeCredentials").EdgeNodePrincipal };
@@ -45,6 +46,8 @@ function runIdOf(req: Request): number {
 }
 
 function answer(res: Response, a: { http: number; code?: string; message?: string; data?: unknown }): void {
+  // R1b-2b-2a A2(o) r3 — what this central accepts beyond the v2 baseline (a header: an old edge ignores it; absent ⇔ an old central)
+  res.setHeader(EDGE_CENTRAL_ACCEPTS_HEADER, edgeCentralAcceptsHeaderValue());
   if (a.http >= 200 && a.http < 300) {
     sendOk(res, a.data ?? null, a.http);
     return;

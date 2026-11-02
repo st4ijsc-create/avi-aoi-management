@@ -686,13 +686,54 @@ export const edgeLedgerRecordSchema = z.strictObject({
  * Central (B) marks that authorisation superseded, so a Continue re-authorises the step (C's resume ignores superseded ones)
  * instead of failing it EDGE_OUTCOME_UNKNOWN. A jti the edge journaled as USED is never reported unused.
  */
+/**
+ * Why an authorisation was never used: it arrived after its TTL (R-10-bp), or — R1b-2b-2a A2(o) AMENDMENT 2 — the edge's config went
+ * STALE between the authorisation and the send (edgeNonStopConfigGate CONFIG_STALE: the step is held; a Continue re-authorises it
+ * under the new config).
+ */
+export const EDGE_AUTH_UNUSED_REASONS = ["expired_before_use", "config_stale"] as const;
+export type EdgeAuthUnusedReason = (typeof EDGE_AUTH_UNUSED_REASONS)[number];
+
+/**
+ * R1b-2b-2a A2(o) r3 (coordinator: "deploy edge + central together" is NOT accepted) — what THIS central accepts beyond the v2
+ * baseline, advertised on EVERY node-route answer as an HTTP header (never a body field: every answer schema is strict, so a new
+ * field would make an OLD edge refuse the whole answer; an old edge ignores an unknown header). Absent ⇔ an OLD central.
+ *   • `auth_unused.config_stale` — the run-report `auth_unused` record may carry reason `config_stale`. An old central's schema
+ *     has `z.literal("expired_before_use")`: `config_stale` would refuse the WHOLE batch and the shipper would retry it for ever
+ *     (the run stream wedged, the authorisation never superseded). Without the capability the edge sends `expired_before_use`,
+ *     which every central reads as "authorisation never used" (superseded) — the safety meaning is the same.
+ * EDGE_PROTOCOL_VERSION is NOT bumped (an old pair would stop talking).
+ */
+export const EDGE_CENTRAL_ACCEPTS_HEADER = "x-edge-central-accepts";
+export const EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE = "auth_unused.config_stale";
+export const EDGE_CENTRAL_ACCEPTS: readonly string[] = Object.freeze([EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE]);
+/** The header value central sends (comma-separated tokens). */
+export const edgeCentralAcceptsHeaderValue = (): string => EDGE_CENTRAL_ACCEPTS.join(",");
+/** Parse the header (null / garbage ⇒ the empty set: an old central). Tokens are bounded and lower-case [a-z0-9._-]. */
+export function parseEdgeCentralAccepts(v: string | null | undefined): ReadonlySet<string> {
+  if (typeof v !== "string" || v.length === 0 || v.length > 1_000) return new Set();
+  return new Set(
+    v
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => /^[a-z0-9._-]{1,64}$/.test(t)),
+  );
+}
+/**
+ * The reason an `auth_unused` record carries ON THE WIRE: `config_stale` only when central advertised it; otherwise the baseline
+ * `expired_before_use` (an old central supersedes the authorisation the same way). The edge's own journal keeps the true reason.
+ */
+export function edgeAuthUnusedWireReason(reason: EdgeAuthUnusedReason, centralAccepts: (token: string) => boolean): EdgeAuthUnusedReason {
+  if (reason === "config_stale" && !centralAccepts(EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE)) return "expired_before_use";
+  return reason;
+}
 export const edgeAuthUnusedRecordSchema = z.strictObject({
   kind: z.literal("auth_unused"),
   seq: zSeq,
   stepId: zStepId,
   attempt: z.number().int().nonnegative().max(EDGE_ATTEMPT_MAX),
   jti: zJti,
-  reason: z.literal("expired_before_use"),
+  reason: z.enum(EDGE_AUTH_UNUSED_REASONS),
   at: zEpochMs,
 });
 export const edgeRunReportRecordSchema = z.discriminatedUnion("kind", [edgeStepRecordSchema, edgeContextRecordSchema, edgeAbortStopRecordSchema, edgeLedgerRecordSchema, edgeAuthUnusedRecordSchema]);

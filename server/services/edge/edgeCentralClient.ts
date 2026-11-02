@@ -23,6 +23,8 @@ import { performance } from "node:perf_hooks";
 import type { z } from "zod";
 import {
   EDGE_ANSWER_SCHEMAS,
+  EDGE_CENTRAL_ACCEPTS_HEADER,
+  parseEdgeCentralAccepts,
   EDGE_AUTH_TTL_MAX_MS,
   EDGE_NODE_ROUTES,
   EDGE_REQUEST_SCHEMAS,
@@ -202,10 +204,20 @@ export class EdgeCentralClient {
   private readonly fetchImpl: typeof fetch;
   readonly monoNow: () => number;
   private readonly log: (m: string) => void;
+  /**
+   * A2(o) r3 — what central advertised on its LAST protocol-valid answer (EDGE_CENTRAL_ACCEPTS_HEADER). Empty until central
+   * answered once, and empty for an OLD central ⇒ every optional extension falls back to the v2 baseline.
+   */
+  private accepts: ReadonlySet<string> = new Set();
   constructor(private readonly opts: EdgeCentralClientOptions) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.monoNow = opts.monoNow ?? (() => performance.now());
     this.log = opts.log ?? ((m) => console.warn(m));
+  }
+
+  /** A2(o) r3 — did central (its last valid answer) advertise `token`? false ⇔ unknown / an old central (fall back). */
+  centralAccepts(token: string): boolean {
+    return this.accepts.has(token);
   }
 
   /** POST one node route. Never throws; never logs the credential or a body. */
@@ -249,6 +261,7 @@ export class EdgeCentralClient {
         this.log(`[EdgeClient] ${route}: central's answer does not match the protocol (${a.error.issues[0]?.path.join(".") ?? "?"}) — treated as unavailable`);
         return { ok: false, status: res.status, code: "bad_answer", unavailable: true };
       }
+      this.accepts = parseEdgeCentralAccepts(res.headers?.get?.(EDGE_CENTRAL_ACCEPTS_HEADER) ?? null);
       return { ok: true, status: res.status, data: a.data as AnswerOf<R> };
     }
     const code = typeof json?.error?.code === "string" ? json.error.code : null;
@@ -358,7 +371,7 @@ export interface EdgeAuthorizeDeps {
    * R-10-bp (fix review 7) — an authorisation that arrived after its TTL and was NOT used: journal it unused (fsync, the jti
    * consumed-as-unused) and THEN report it on the run stream (`auth_unused`). Resolves true only when both happened.
    */
-  unused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: "expired_before_use" }) => Promise<boolean>;
+  unused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: import("./edgeProtocol").EdgeAuthUnusedReason }) => Promise<boolean>;
   /** an answer that failed verification is reported as an anomaly (events stream) */
   anomaly?: (code: string, runId: number, detail: string) => void;
 }

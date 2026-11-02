@@ -7,6 +7,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { adapterTargetFingerprint } from "../ot/adapterTarget";
 import {
+  EDGE_CENTRAL_ACCEPTS,
+  EDGE_CENTRAL_ACCEPTS_HEADER,
   EDGE_NODE_ROUTES,
   EDGE_PROTOCOL_VERSION,
   edgeConfigHash,
@@ -57,6 +59,8 @@ export class FakeCentral {
   readonly cursors = new Map<string, number>();
   readonly received: Record<string, any[]> = { report: [], locksEvents: [], robotsState: [], telemetry: [] };
   down = false;
+  /** A2(o) r3 — what this central advertises (EDGE_CENTRAL_ACCEPTS_HEADER on every answer); null ⇔ an OLD central (no header) */
+  accepts: readonly string[] | null = EDGE_CENTRAL_ACCEPTS;
   private config: EdgeConfigSnapshot;
   private keysetEnv: EdgeSignedEnvelope;
 
@@ -310,8 +314,9 @@ export class FakeCentral {
     const h = this.handlers[route];
     const a = h ? await h(body, runId) : this.defaults(route, body, runId);
     if (a === "network") throw new TypeError("fetch failed");
-    if (a.status >= 200 && a.status < 300) return new Response(JSON.stringify({ ok: true, data: a.data }), { status: a.status });
-    return new Response(JSON.stringify({ ok: false, error: { code: a.code ?? "error", message: "refused", ...(a.details !== undefined ? { details: a.details } : {}) } }), { status: a.status });
+    const headers: Record<string, string> = this.accepts ? { [EDGE_CENTRAL_ACCEPTS_HEADER]: this.accepts.join(",") } : {};
+    if (a.status >= 200 && a.status < 300) return new Response(JSON.stringify({ ok: true, data: a.data }), { status: a.status, headers });
+    return new Response(JSON.stringify({ ok: false, error: { code: a.code ?? "error", message: "refused", ...(a.details !== undefined ? { details: a.details } : {}) } }), { status: a.status, headers });
   }) as unknown as typeof fetch;
 
   callsTo(route: EdgeNodeRoute): KitCall[] {

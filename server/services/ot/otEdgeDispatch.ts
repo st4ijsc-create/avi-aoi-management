@@ -8,6 +8,8 @@
  *   2. VERIFY the authorisation for exactly this command (edgeAuthorizationVerifier: signature, node, credential, context, the
  *      payload hash recomputed from the bytes about to be sent, the signed target = the snapshot's resolved writes, TTL from
  *      the request send, nonce pending, jti unused) — a refusal is journaled as an anomaly;
+ *   2b. A2(o) CONFIG GATE (edgeNonStopConfigGate): central announced a newer config not adopted yet ⇒ CONFIG_STALE; a signed
+ *      safety-PLC config id absent from the snapshot ⇒ SAFETY_CONFIG_MISSING (anomaly + refresh request; nothing consumed);
  *   3. LOCAL GATES: a connected driver, journal admission (full ⇒ no new non-STOP), the safety-PLC preflight (snapshot configs);
  *   4. re-check the window, then CONSUME the jti in the journal (durable BEFORE the send) — refused ⇒ nothing sent;
  *   5. mode: central's signed `mode` simulated or this edge's OT_CONTROL off ⇒ simulated (nothing sent);
@@ -44,7 +46,7 @@ import { isOtSafetyPreflightEnabled, safetyPreflightReason } from "./safetyPrefl
 import { withDeadline } from "./drivers/boundedClose";
 import { hanLenhOtMacDinhMs } from "./hanLenhOt";
 import { edgeAuthorizationStillValid, verifyEdgeStepAuthorization, type EdgeStepAuthorization } from "../edge/edgeAuthorizationVerifier";
-import { edgeDeviceRuntime, envOtControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
+import { edgeDeviceRuntime, edgeNonStopConfigGate, envOtControlEnabled, type EdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
 import type { EdgeConfigSnapshot } from "../edge/edgeProtocol";
 import { STOP_DB_STEP_DEADLINE_MS } from "../robot/stopJob";
 import { ketCucLo, MA_MOT_PHAN, type MotPhan } from "./motPhan";
@@ -376,6 +378,10 @@ export async function dispatchOtOnEdge(input: EdgeOtDispatchInput, rt: EdgeDevic
   if (a.runId !== input.run.runId || a.claimSeq !== input.run.claimSeq || a.stepId !== input.run.stepId || a.attempt !== input.run.attempt || a.idempotencyKey !== input.idempotencyKey) {
     return refusal(input, "AUTHORIZATION_INVALID", { detail: "context_mismatch" });
   }
+  // R1b-2b-2a A2(o) — the config gate (ONE helper, shared with robotEdgeDispatch): a stale config, or a safety-PLC config the
+  // authorisation was signed for that the verified snapshot lacks ⇒ refused before the driver, the preflight and the consume
+  const cfgGate = edgeNonStopConfigGate(rt, cfg, verdict.claims.safetyConfigIds, { target: `adapter ${input.adapterId}`, runId: input.run.runId });
+  if (cfgGate) return refusal(input, cfgGate.reason, { detail: cfgGate.detail });
 
   const driver = getActiveDriver(input.adapterId);
   if (!driver) return { ...refusal(input, "ADAPTER_OFFLINE"), status: "failed" };
