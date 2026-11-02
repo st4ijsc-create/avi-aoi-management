@@ -802,6 +802,7 @@ export const oversightRouter = router({
       // gồm luật lệch lưới (luatLenhLechLuoi nhận cùng cổng qua `them`)
       const cauHinhHong = pv ? await fetchInterlockCauHinhHong(d, congLuat) : { count: 0, degraded: true };
       const stopQuaHan24h = await fetchStopQuaHan(d, pv);
+      const { kiemNganSachPoolStop } = await import("../services/scada/nganSachPoolStop");
 
       return {
         otControlEnabled,
@@ -818,6 +819,8 @@ export const oversightRouter = router({
         stopQuaHan24h,
         // R1b-2b-2a T1 (KD-A3, fix round 1) — ghi nền của đường STOP: bị bỏ 24 h + trạng thái sống trần / hàng chờ (bộ nhớ tiến trình; chỉ toàn quyền)
         ghiNenStopBoQua24h: ghiNenStopBoQua(pv),
+        // R1b-2b-2a T9 (muc 71) - DB_POOL_MAX so voi ngan sach pool cua STOP HMI (cau hinh tien trinh, khong theo pham vi).
+        nganSachPoolStop: kiemNganSachPoolStop(),
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         // Đợt 10.3 (§12) — dịch vụ forge (sinh ảnh / chuyển giọng nói… ra ngoài KHÔNG qua cổng AI ngoài) đang cấu hình?

@@ -17100,7 +17100,8 @@
       "cauHinhHongCanhBao": "Có luật interlock đang bật nhưng KHÔNG chức năng: cổng chặn mọi lệnh nhắm tới nó, hoặc lệnh bảo vệ của nó sẽ bị dispatch từ chối. Sửa luật ở trang interlock.",
       "cauHinhHongMo": "Mở trang interlock",
       "stopQuaHan": "STOP HMI bị từ chối vì quá hạn (24 h): {{count}}",
-      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn"
+      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn",
+      "poolStopThieu": "Ngân sách pool STOP HMI hụt: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}"
     },
     "table": {
       "kind": "Loại việc",

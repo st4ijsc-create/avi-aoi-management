@@ -15,7 +15,8 @@ vi.mock("../services/fleet/trafficManager", () => ({
 }));
 
 const mockGetDb = vi.fn(async (..._a: unknown[]) => undefined as unknown);
-vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
+// R1b-2b-2a T9 — posture đọc resolvePoolMax() thật (thuần, chỉ đọc env) qua nganSachPoolStop ⇒ giữ nguyên bản thật, chỉ thay getDb.
+vi.mock("../db/connection", async (importOriginal) => ({ ...(await importOriginal<typeof import("../db/connection")>()), getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
 // Fix round 1 (doc 80 Đợt 1 Task 2) — mock CHỈ `checkPermission` (giữ nguyên
 // `requirePermission` thật qua `importOriginal`). `requirePermission`'s middleware gọi
@@ -329,6 +330,22 @@ describe("oversightRouter.posture (ILK-06)", () => {
       expect((await oversightRouter.createCaller(admin()).posture()).forgeNgoaiBat).toBe(true);
     } finally {
       ENV.forgeApiUrl = cu;
+    }
+  });
+
+  it("★ R1b-2b-2a T9 (mục 71) — nganSachPoolStop đúng hình; DB_POOL_MAX=20 ⇒ du:false; mặc định ⇒ du:true", async () => {
+    const { DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP } = await import("../services/scada/mayDungKhanCap");
+    const { DU_TRU_POOL_CHO_DUNG_MAY } = await import("../services/scada/lenhHmi");
+    const { TRAN_GHI_TREO_STOP } = await import("../services/ot/ghiTreoCoTran");
+    const can = DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP + TRAN_GHI_TREO_STOP + DU_TRU_POOL_CHO_DUNG_MAY;
+    mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);
+    vi.stubEnv("DB_POOL_MAX", "");
+    expect((await oversightRouter.createCaller(admin()).posture()).nganSachPoolStop).toEqual({ poolMax: 25, canToiThieu: can, du: true });
+    vi.stubEnv("DB_POOL_MAX", "20");
+    try {
+      expect((await oversightRouter.createCaller(admin()).posture()).nganSachPoolStop).toEqual({ poolMax: 20, canToiThieu: can, du: false });
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 
