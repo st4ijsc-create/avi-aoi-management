@@ -2,6 +2,7 @@
  * SCADA R1b-2b-2a A2(j) — the edge lists on the STOP / abort path are read TO THE END (real `_test` DB, every write inside a transaction that is
  * ROLLED BACK; no explicit ids; no DELETE / TRUNCATE; the app role only).
  *   (1) alertUndeliveredStops: 201 unacknowledged STOP heads past the ack deadline (one more than the old `LIMIT 200`) ⇒ the NEWEST is alerted
+ *       (polish round: ≤ 200 alerts per pass, so the sweep runs pass after pass until quiet; every head exactly once)
  *       (base: never — the oldest 200 were re-read every pass). A simulated restart (in-process memory forgotten) ⇒ no request alerted again whose
  *       inbox row (the durable marker) exists; a request whose row never landed ⇒ alerted again exactly once (none missed); a new overdue STOP ⇒ alerted.
  *   (2) docClaimCuaNode / v1 pull: 201 claims of one node, the abort-carrying one has the HIGHEST run id ⇒ present with abortRequested (base: an
@@ -142,11 +143,22 @@ describe.skipIf(!onTest)("A2(j) — edge STOP / abort lists read to the end (rea
       const newest = ins[200]!;
       H.noRow.add(ins[5]!); // this one's inbox row never lands
 
-      await m.alertUndeliveredStops();
-      await Promise.all(H.pending);
+      // polish round: at most TRAN_CANH_BAO_STOP_MOI_LUOT alerts per pass (other files' overdue rows on _test may take slots too) ⇒ pass until quiet
+      const passesUntilQuiet = async (): Promise<number> => {
+        let passes = 0;
+        for (; passes < 10; passes++) {
+          const n = await m.alertUndeliveredStops();
+          await Promise.all(H.pending);
+          expect(n).toBeLessThanOrEqual(m.TRAN_CANH_BAO_STOP_MOI_LUOT);
+          if (n === 0) break;
+        }
+        return passes;
+      };
+      expect(await passesUntilQuiet()).toBeLessThan(10);
       const mineAlerts = H.alerts.filter((a) => H.mine.has(Number(a.dedupKey.split(":").pop())));
       expect(mineAlerts.map((a) => a.dedupKey)).toContain(m.khoaCanhBaoStopChuaGiao(newest));
       expect(new Set(mineAlerts.map((a) => a.dedupKey)).size).toBe(201);
+      expect(mineAlerts).toHaveLength(201); // none twice
       expect(mineAlerts.every((a) => a.kind === "stop_undelivered" && a.khuTrungBenVung !== undefined && a.recipients[0] === k.userId)).toBe(true);
 
       // same process, second pass ⇒ nothing again
@@ -163,8 +175,7 @@ describe.skipIf(!onTest)("A2(j) — edge STOP / abort lists read to the end (rea
       const later = Number(late!.id);
       H.mine.add(later);
       H.alerts.length = 0;
-      await m.alertUndeliveredStops();
-      await Promise.all(H.pending);
+      expect(await passesUntilQuiet()).toBeLessThan(10);
       const after = H.alerts.filter((a) => H.mine.has(Number(a.dedupKey.split(":").pop()))).map((a) => a.dedupKey).sort();
       expect(after).toEqual([m.khoaCanhBaoStopChuaGiao(ins[5]!), m.khoaCanhBaoStopChuaGiao(later)].sort());
     });

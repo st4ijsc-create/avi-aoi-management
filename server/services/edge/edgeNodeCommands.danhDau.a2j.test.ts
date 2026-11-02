@@ -16,11 +16,16 @@ const H = vi.hoisted(() => ({
   queries: [] as string[],
   rows: [] as Array<Record<string, unknown>>,
   alerts: [] as Array<{ dedupKey: string; khuTrungBenVung?: unknown }>,
+  /** request ids whose inbox row (the durable marker) "landed" — the fake applies the NOT EXISTS to them */
+  marked: new Set<number>(),
+  /** when true, an alert's inbox row lands at once (the marker exists from then on) */
+  rowsLand: false,
 }));
 
 vi.mock("../robot/criticalStopAlert", () => ({
   raiseCriticalStopAlert: vi.fn(async (a: { dedupKey: string; khuTrungBenVung?: unknown }) => {
     H.alerts.push(a);
+    if (H.rowsLand) H.marked.add(Number(a.dedupKey.split(":").pop()));
   }),
 }));
 
@@ -30,17 +35,25 @@ vi.mock("../../db/connection", () => ({
     select: () => ({
       from: () => {
         let where: SQL | undefined;
+        let limit = Infinity;
         const b: any = {
           where: (w: SQL) => ((where = w), b),
           orderBy: () => b,
-          limit: () => b,
+          limit: (n: number) => ((limit = n), b),
           then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
             Promise.resolve()
               .then(() => {
-                const text = where ? dialect.sqlToQuery(where).sql : "";
-                H.queries.push(text);
-                if (text.includes("NOT EXISTS") && H.markerFails) throw new Error('relation "notifications" is unreadable (test)');
-                return H.rows;
+                const q = where ? dialect.sqlToQuery(where) : { sql: "", params: [] as unknown[] };
+                H.queries.push(q.sql);
+                const marker = q.sql.includes("NOT EXISTS");
+                if (marker && H.markerFails) throw new Error('relation "notifications" is unreadable (test)');
+                // honour the keyset cursor (id > $n), the marker (NOT EXISTS) and the LIMIT, in id order — as Postgres would
+                const m = /"robot_motion_lock_requests"\."id" > \$(\d+)/.exec(q.sql);
+                const sau = m ? Number(q.params[Number(m[1]) - 1]) : -Infinity;
+                return H.rows
+                  .filter((r) => (r.id as number) > sau && !(marker && H.marked.has(r.id as number)))
+                  .sort((x, y) => (x.id as number) - (y.id as number))
+                  .slice(0, limit);
               })
               .then(res, rej),
         };
@@ -50,13 +63,15 @@ vi.mock("../../db/connection", () => ({
   })),
 }));
 
-import { alertUndeliveredStops, khoaCanhBaoStopChuaGiao, __resetUndeliveredStopAlertsForTests } from "./edgeNodeCommands";
+import { alertUndeliveredStops, khoaCanhBaoStopChuaGiao, __resetUndeliveredStopAlertsForTests, TRAN_CANH_BAO_STOP_MOI_LUOT } from "./edgeNodeCommands";
 
 const old = new Date(Date.now() - 3_600_000);
 beforeEach(() => {
   H.markerFails = false;
   H.queries = [];
   H.alerts = [];
+  H.marked = new Set();
+  H.rowsLand = false;
   H.rows = [
     { id: 7001, edgeNodeId: 3, robotId: null, adapterId: 41, requestedBy: 9, createdAt: old, deliveredAt: null },
     { id: 7002, edgeNodeId: 3, robotId: 12, adapterId: null, requestedBy: 9, createdAt: old, deliveredAt: old },
@@ -87,5 +102,46 @@ describe("A2(j) alertUndeliveredStops — durable marker + fallback", () => {
     expect(H.queries[1]).not.toContain("NOT EXISTS");
     expect(logs.some((l) => l.includes("durable-marker read failed"))).toBe(true);
     expect(H.alerts.map((a) => a.dedupKey)).toEqual([khoaCanhBaoStopChuaGiao(7001), khoaCanhBaoStopChuaGiao(7002)]);
+  });
+});
+
+describe("A2(j) polish — per-pass alert budget (no burst after an outage; none lost, none twice)", () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ id: 9000 + i, edgeNodeId: 3, robotId: null, adapterId: 41, requestedBy: 9, createdAt: old, deliveredAt: null }));
+
+  it("the budget is 200 per pass", () => {
+    expect(TRAN_CANH_BAO_STOP_MOI_LUOT).toBe(200);
+  });
+
+  it("★ 300 overdue STOPs ⇒ 200 alerted on pass 1 (the oldest), the other 100 on pass 2, none twice; pass 3 ⇒ nothing", async () => {
+    H.rows = many(300);
+    H.rowsLand = true; // each alert's inbox row lands (the marker)
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await alertUndeliveredStops()).toBe(200);
+      const p1 = H.alerts.map((a) => a.dedupKey);
+      expect(p1).toEqual(many(200).map((r) => khoaCanhBaoStopChuaGiao(r.id)));
+      expect(await alertUndeliveredStops()).toBe(100);
+      expect(await alertUndeliveredStops()).toBe(0);
+    } finally {
+      err.mockRestore();
+    }
+    const keys = H.alerts.map((a) => a.dedupKey);
+    expect(keys).toHaveLength(300);
+    expect(new Set(keys).size).toBe(300);
+  });
+
+  it("★ the same with a RESTART between the passes (in-process memory gone; only the marker remains) ⇒ still 200 + 100, none twice", async () => {
+    H.rows = many(300);
+    H.rowsLand = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await alertUndeliveredStops()).toBe(200);
+      __resetUndeliveredStopAlertsForTests();
+      expect(await alertUndeliveredStops()).toBe(100);
+    } finally {
+      err.mockRestore();
+    }
+    expect(new Set(H.alerts.map((a) => a.dedupKey)).size).toBe(300);
+    expect(H.alerts).toHaveLength(300);
   });
 });

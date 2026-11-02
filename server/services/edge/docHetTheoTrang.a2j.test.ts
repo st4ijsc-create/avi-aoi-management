@@ -269,3 +269,45 @@ describe("A2(j) AMENDMENT 1 — the assertion where the v2 answer is built", () 
     expect(giuTrongGioiHanTraLoi(NODE, { ...base, claims, stopsUnconfirmed: [], runs: [], runStateUnavailable: true as const }).runStateUnavailable).toBe(true);
   });
 });
+
+// ── Polish round: rotation under churn (key cursor) ──────────────────────────────────────────────────────────────────────────────────────
+describe("A2(j) polish — rotation bound under churn (one confirmed + one new STOP per pull)", () => {
+  it("★ 51 STOPs, limit 50, each pull the oldest delivered STOP is confirmed (leaves) and one new arrives ⇒ every STOP delivered within 3 pulls of appearing (60 pulls)", () => {
+    __resetStopsUnconfirmedRotationForTests();
+    const node = { nodeId: 4242, nodeCode: "N4242" };
+    let list = Array.from({ length: 51 }, (_, i) => ({ runId: i + 1 }));
+    const appeared = new Map<number, number>(list.map((s) => [s.runId, 0]));
+    const firstSent = new Map<number, number>();
+    let next = 1000;
+    for (let pull = 0; pull < 60; pull++) {
+      const got = chonStopsChoTraLoi(node, list).chon;
+      expect(got.length).toBeLessThanOrEqual(50);
+      for (const s of got) if (!firstSent.has(s.runId)) firstSent.set(s.runId, pull);
+      // churn: the OLDEST STOP this pull sent (lowest run id) is confirmed by the node and leaves; a new one is aborted and arrives (highest id).
+      // (This is the reviewer's case: with a position window the item just before the start shifts down exactly as fast as the start ⇒ starved.)
+      const confirmed = Math.min(...got.map((s) => s.runId));
+      list = list.filter((s) => s.runId !== confirmed);
+      const fresh = next++;
+      list.push({ runId: fresh });
+      appeared.set(fresh, pull + 1);
+    }
+    const late: string[] = [];
+    for (const [id, at] of appeared) {
+      if (at > 57) continue; // not present for 3 pulls inside the run
+      const sent = firstSent.get(id);
+      if (sent === undefined || sent - at > 2) late.push(`#${id} appeared pull ${at}, first sent ${sent ?? "never"}`);
+    }
+    expect(late, late.slice(0, 5).join("; ")).toEqual([]);
+  });
+
+  it("the cursor follows the KEY: a window starts right after the last run id sent, wrapping past the highest", () => {
+    __resetStopsUnconfirmedRotationForTests();
+    const node = { nodeId: 4243, nodeCode: "N4243" };
+    const list = [30, 10, 50, 20, 40].map((runId) => ({ runId })); // unordered on purpose
+    const w = (l: Array<{ runId: number }>) => chonTrongGioiHanGiaoThuc(l, 2, { xoay: `${node.nodeId}:t` }).chon.map((s) => s.runId);
+    expect(w(list)).toEqual([10, 20]);
+    expect(w(list)).toEqual([30, 40]);
+    expect(w(list.filter((s) => s.runId !== 30))).toEqual([50, 10]); // wraps; a removed item does not shift the others
+    expect(w(list)).toEqual([20, 30]);
+  });
+});
