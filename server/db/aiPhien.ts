@@ -39,7 +39,7 @@ const KIND: readonly string[] = KIND_PHIEN;
 const NGUON: readonly string[] = NGUON_PHIEN;
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type MaLoiPhien = "NOT_FOUND" | "CONFLICT" | "QUA_TRAN_PHIEN" | "THAM_SO_SAI" | "LOI";
+export type MaLoiPhien = "NOT_FOUND" | "CONFLICT" | "QUA_TRAN_PHIEN" | "THAM_SO_SAI" | "DAU_NGUON_LECH" | "LOI";
 export type KetQuaPhien<T> = ({ ok: true } & T) | { ok: false; ma: MaLoiPhien; versionHienTai?: number };
 
 export interface TomTatPhien {
@@ -256,9 +256,23 @@ async function versionHienTai(userId: number, sessionId: string): Promise<number
   return r ? Number(r.v) : undefined;
 }
 
+/** Dự án (id danh sách trắng) của phiên thuộc CHÍNH `userId`: chuỗi · null (hàng di sản không dự án) · undefined (không có hàng của người này / lỗi đọc). Dùng để soát lại danh sách trắng ở router. */
+export async function duAnCuaPhien(userId: number, sessionId: string): Promise<string | null | undefined> {
+  if (!hopLeUser(userId) || !laIdPhienHopLe(sessionId)) return undefined;
+  const db = await getDb();
+  if (!db) return undefined;
+  try {
+    const [r] = await db.select({ p: aiCodingSessions.projectId }).from(aiCodingSessions).where(and(eq(aiCodingSessions.id, sessionId), chuSoHuu(userId))).limit(1);
+    return r ? (r.p === null || r.p === undefined ? null : String(r.p)) : undefined;
+  } catch (err) {
+    canhBao("duAnCuaPhien", err);
+    return undefined;
+  }
+}
+
 export async function themLuot(
   userId: number,
-  y: { sessionId: string; expectedVersion: number; luot: unknown; contextPct?: number },
+  y: { sessionId: string; expectedVersion: number; luot: unknown; contextPct?: number; ngoaiCallIds?: unknown },
 ): Promise<KetQuaPhien<{ version: number; turnCount: number }>> {
   if (!hopLeUser(userId) || !laIdPhienHopLe(y.sessionId) || !Number.isInteger(y.expectedVersion) || y.expectedVersion < 1) return { ok: false, ma: "THAM_SO_SAI" };
   if (!Array.isArray(y.luot) || y.luot.length > TRAN_LUOT_MOI_LAN_GHI) return { ok: false, ma: "THAM_SO_SAI" };
@@ -266,6 +280,12 @@ export async function themLuot(
   if (them.length === 0) return { ok: false, ma: "THAM_SO_SAI" };
   const pct = y.contextPct === undefined ? null : Number.isInteger(y.contextPct) && y.contextPct >= 0 && y.contextPct <= 200 ? y.contextPct : undefined;
   if (pct === undefined) return { ok: false, ma: "THAM_SO_SAI" };
+  // ★ G1 — id nguồn model ngoài do client khai: tuỳ chọn, ≤ 50 số nguyên dương (sai hình ⇒ THAM_SO_SAI, không ghi)
+  let ngoaiCallIds: number[] | null = null;
+  if (y.ngoaiCallIds !== undefined && y.ngoaiCallIds !== null) {
+    if (!Array.isArray(y.ngoaiCallIds) || y.ngoaiCallIds.length > 50 || !y.ngoaiCallIds.every((x) => Number.isInteger(x) && (x as number) > 0)) return { ok: false, ma: "THAM_SO_SAI" };
+    ngoaiCallIds = y.ngoaiCallIds as number[];
+  }
   const db = await getDb();
   if (!db) return { ok: false, ma: "LOI" };
   try {
@@ -276,12 +296,28 @@ export async function themLuot(
       .limit(1);
     if (!row) return { ok: false, ma: "NOT_FOUND" };
     if (Number(row.version) !== y.expectedVersion) return { ok: false, ma: "CONFLICT", versionHienTai: Number(row.version) };
+    // ★ G1 — DẤU NGUỒN: tái dùng ĐÚNG bộ xác minh của `luuPhien` (web). Id sai người / không ok / băm không khớp lượt nào ⇒ KHÔNG ghi gì (DAU_NGUON_LECH);
+    //   không gửi id ⇒ vẫn TỰ DÒ theo băm 24 h của chính người này (client không rửa được dấu bằng cách bỏ id). Lỗi khác ⇒ ném ⇒ LOI, không ghi (fail-closed).
+    let coLuotNgoaiMoi = false;
+    try {
+      const { xacMinhPhienCoLuotNgoai } = await import("../services/ai/ngoai/dauNguon");
+      coLuotNgoaiMoi = await xacMinhPhienCoLuotNgoai(db as never, {
+        userId,
+        traLoi: them.filter((t) => t.role === "assistant").map((t) => t.content),
+        ngoaiCallIds,
+      });
+    } catch (e) {
+      if ((e as { ma?: unknown })?.ma === "NGOAI_KHONG_TON_TAI") return { ok: false, ma: "DAU_NGUON_LECH" };
+      throw e;
+    }
     const turns = locLuot([...locLuot(row.turns), ...them]);
     const ra = await db
       .update(aiCodingSessions)
       .set({
         turns,
         turnCount: turns.length,
+        // cờ ĐƠN ĐIỆU (chỉ lên, trong CÙNG câu UPDATE với lượt vào): không bao giờ ghi false đè true
+        ...(coLuotNgoaiMoi ? { coLuotNgoai: true } : {}),
         title: row.title === "" ? nhanTuLuot(turns) : row.title,
         ...(pct !== null ? { contextPct: pct } : {}),
         version: sql`${aiCodingSessions.version} + 1`,
