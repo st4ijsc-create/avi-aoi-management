@@ -194,6 +194,9 @@ beforeAll(async () => {
       return m ? { userId: Number(m[1]), isActive: true, expiresAt: null } : undefined;
     },
   });
+  // F5-nhanh — approve kiểm PHẠM VI MÁY (kiemPhamViDuyetMay): tệp này đo cổng QUYỀN, nên máy 42 nằm trong phạm vi của user 11 (người duy
+  // nhất không phải admin được duyệt ở 7e). Ca ngoài phạm vi / lỗi phạm vi: socketXacThucLai.test.ts (D1–D2) + machineApprovePhamVi.test.ts.
+  (await import("./phamViDuyetMay")).__datBoTraPhamViDuyetMayChoTest(async (cap, pv) => (pv.userId === 11 && cap === "machine" ? [MAY.id] : []));
   http = createServer();
   socketMod.initializeSocket(http);
   socketMod.stopTwinBroadcaster();

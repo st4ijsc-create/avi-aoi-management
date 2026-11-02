@@ -62,6 +62,8 @@ import {
 } from "./socketPhongQuyen";
 // ── F5-nhanh — handler NHẠY CẢM xác thực LẠI chủ thể (vai / isActive / phiên) từ DB TẠI LÚC THAO TÁC, không tin bản chụp handshake.
 import { xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
+// ★★★ F5-nhanh — MỘT hàm kiểm phạm vi máy cho duyệt / từ chối (cùng hàm với tRPC machine.approve / machine.reject).
+import { kiemPhamViDuyetMay } from "./phamViDuyetMay";
 // ── P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY, không phát vào `global` (xem tệp).
 import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
 
@@ -1028,8 +1030,11 @@ export function initializeSocket(server: HttpServer): Server {
       };
 
       try {
+        // ★★★ F5-nhanh — máy đích phải trong phạm vi của CHỦ THỂ ĐỌC LẠI (cờ RBAC mở ⇒ người không phải admin). Ngoài phạm vi / lỗi phạm vi ⇒
+        // CÙNG lời "not found" như máy không có thật, máy không được đọc, đăng ký trả về sổ chờ, không đúc khoá, không ghi gì. Admin miễn.
+        const phamViDuyet = await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, data.machineId);
         // Step 2: Get or generate API Key
-        const existingMachine = await db.getMachineById(data.machineId);
+        const existingMachine = phamViDuyet.ok ? await db.getMachineById(data.machineId) : undefined;
         if (!existingMachine) {
           traLaiSoCho();
           socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
@@ -1185,7 +1190,16 @@ export function initializeSocket(server: HttpServer): Server {
         );
         return;
       }
-      const registration = pendingRegistrations.get(data.socketId);
+      const dangKy = pendingRegistrations.get(data.socketId);
+      // ★★★ F5-nhanh — cùng hàm phạm vi với approve; đích = máy khớp mã TỰ KHAI của đăng ký (chỉ tra khi không phải admin — hôm nay cổng
+      // reject luôn là admin ⇒ miễn). Ngoài phạm vi ⇒ như đăng ký không tồn tại (không làm gì, không báo).
+      const phamViTuChoi = dangKy
+        ? await kiemPhamViDuyetMay({ userId: chuThe.data.user.id, userRole: chuThe.data.user.role }, async () => {
+            const ma = String(dangKy.machineInfo?.code ?? "");
+            return ma ? (await db.getMachineByCode(ma))?.id : undefined;
+          })
+        : ({ ok: false } as const);
+      const registration = phamViTuChoi.ok ? dangKy : undefined;
       if (registration) {
         registration.status = "rejected";
         

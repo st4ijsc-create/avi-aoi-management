@@ -49,6 +49,7 @@ let NGUOI_DB: Record<number, HangNguoi> = {};
 let PHIEN_DB: Record<string, HangPhien> = {};
 const NEM_KHI_DOC_NGUOI = new Set<number>();
 let nemKhiDocPhien = false;
+let nemKhiTraPhamViDuyet = false; // F5-nhanh — seam phạm vi duyệt ném
 function datLaiDb() {
   NGUOI_DB = {
     1: { id: 1, role: "admin", isActive: true, name: "admin-se-bi-ha" },
@@ -65,6 +66,7 @@ function datLaiDb() {
   };
   NEM_KHI_DOC_NGUOI.clear();
   nemKhiDocPhien = false;
+  nemKhiTraPhamViDuyet = false;
 }
 datLaiDb();
 
@@ -74,6 +76,9 @@ const ONLINE = [
   { machineId: 101, machineCode: "MA-A", socketId: "sa", ipAddress: "10.0.0.1", lastHeartbeat: Date.now() },
   { machineId: 202, machineCode: "MB-B", socketId: "sb", ipAddress: "10.0.0.2", lastHeartbeat: Date.now() },
 ];
+/** F5-nhanh (phạm vi duyệt) — máy 202 thuộc nhà máy B; registrar 3 chỉ có máy 101 + MAY (42) ở nhà máy A. */
+const MAY_B = { id: 202, code: "MB-B", name: "May B", machineType: "AOI", apiKey: null, isActive: true, stationId: 9, registrationStatus: "pending", syncMode: "realtime", serialNumber: null, firmwareVersion: null };
+const PHAM_VI_MAY_REG3 = [101, 42];
 const MAY = { id: 42, code: "M-42", name: "May 42", machineType: "AOI", apiKey: null, isActive: true, stationId: null, registrationStatus: "pending", syncMode: "realtime", serialNumber: null, firmwareVersion: null };
 const updateMachine = vi.fn(async (..._a: any[]) => undefined);
 const getUserById = vi.fn(async (id: number) => (NGUOI_DB[id] ? { ...NGUOI_DB[id] } : undefined));
@@ -82,7 +87,7 @@ vi.mock("../db", () => ({
   updateMachineHeartbeat: vi.fn(async () => undefined),
   createMachineStatusLog: vi.fn(async () => undefined),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
-  getMachineById: vi.fn(async (id: number) => (id === MAY.id ? { ...MAY } : undefined)),
+  getMachineById: vi.fn(async (id: number) => (id === MAY.id ? { ...MAY } : id === MAY_B.id ? { ...MAY_B } : undefined)),
   // review fix — đăng ký chờ (mã tự khai) ánh xạ về máy trong DB: MA-A ở nhà máy A (id 101), MB-B ở nhà máy B (id 202)
   getMachineByCode: vi.fn(async (code: string) => MAY_THEO_MA[code]),
   updateMachine: (...a: any[]) => (updateMachine as any)(...a),
@@ -230,6 +235,12 @@ beforeAll(async () => {
     idsTrongPhamVi: async (cap, pv) => (pv.userRole === "admin" ? null : pv.userId === 3 ? (cap === "machine" ? [101] : cap === "factory" ? [1] : []) : []),
   });
   xtl = await import("./socketXacThucLai");
+  // F5-nhanh — seam của hàm phạm vi duyệt/từ chối (cùng phạm vi với seam phòng ở trên): registrar 3 ⇒ máy 101 + 42; khác ⇒ rỗng.
+  (await import("./phamViDuyetMay")).__datBoTraPhamViDuyetMayChoTest(async (cap, pv) => {
+    if (nemKhiTraPhamViDuyet) throw new Error("db nac (gia lap)");
+    if (pv.userId === 3) return cap === "machine" ? PHAM_VI_MAY_REG3 : [1];
+    return [];
+  });
   xtl.__datBoDocChuTheChoTest(BO_DOC);
   http = createServer();
   socketMod.initializeSocket(http);
@@ -622,5 +633,85 @@ describe("★★ F5-nhanh review R3 — tiền lọc trong bộ nhớ: bản ch�
       docNguoi.mockRestore();
       docPhien.mockRestore();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// F5-nhanh — duyệt / từ chối kiểm PHẠM VI MÁY (kiemPhamViDuyetMay, cùng hàm với tRPC)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("★★★ F5-nhanh D — socket approve/reject kiểm phạm vi máy (cờ RBAC mở)", () => {
+  async function voiCoMo<T>(f: () => Promise<T>): Promise<T> {
+    process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED = "true";
+    try {
+      return await f();
+    } finally {
+      delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED;
+    }
+  }
+
+  it("(D1) registrar nhà máy A duyệt máy 202 của nhà máy B ⇒ CÙNG lời 'not found' như máy không có thật, không đọc máy, không đúc khoá, không ghi, đăng ký trả về sổ chờ; đối chứng: duyệt máy 42 của A ⇒ được", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const dk = await dangKyMoi("D1");
+      const loi = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: MAY_B.id });
+      const l1 = await loi;
+      // máy KHÔNG có thật cho cùng lời (khuôn chung) — ngoài phạm vi ≡ không tồn tại
+      const loi2 = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: 987654 });
+      const l2 = await loi2;
+      expect(l1.message.replace(String(MAY_B.id), "N")).toBe(l2.message.replace("987654", "N"));
+      const getMachineById = (await import("../db")).getMachineById as unknown as ReturnType<typeof vi.fn>;
+      expect(getMachineById.mock.calls.some((c) => c[0] === MAY_B.id)).toBe(false);
+      expect(issueMachineKey).not.toHaveBeenCalled();
+      expect(updateMachine).not.toHaveBeenCalled();
+      expect(dk.duyet).toEqual([]);
+      await duyetDoiChung(reg, dk, 3); // đăng ký còn nguyên ⇒ duyệt máy 42 (trong phạm vi) được
+    });
+  });
+
+  it("(D2) tra phạm vi LỖI ⇒ từ chối như không có máy, không đúc khoá; DB hồi ⇒ duyệt được", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const dk = await dangKyMoi("D2");
+      nemKhiTraPhamViDuyet = true;
+      const loi = new Promise<any>((r) => reg.once("admin:approve_error", r));
+      reg.emit("admin:approve_registration", { socketId: dk.may.id, machineId: MAY.id });
+      expect((await loi).message).toContain("not found");
+      expect(issueMachineKey).not.toHaveBeenCalled();
+      expect(updateMachine).not.toHaveBeenCalled();
+      nemKhiTraPhamViDuyet = false;
+      await duyetDoiChung(reg, dk, 3);
+    });
+  });
+
+  it("(D3) registrar KHÔNG từ chối được đăng ký (cổng reject = admin) — đăng ký còn nguyên; admin (miễn phạm vi) từ chối được", async () => {
+    await voiCoMo(async () => {
+      const reg = await ketNoi({ phien: 3, ve: "ve-3" });
+      const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      const dk = await dangKyMoi("MB-B");
+      reg.emit("admin:reject_registration", { socketId: dk.may.id, reason: "reg thu" });
+      await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(reg.id!) && s.includes("admin:reject_registration"))).toBe(true));
+      await cho(50);
+      expect(dk.tuChoi).toEqual([]);
+      ad.emit("admin:reject_registration", { socketId: dk.may.id, reason: "admin" });
+      await vi.waitFor(() => expect(dk.tuChoi.length).toBe(1));
+    });
+  });
+});
+
+describe("★★ F5-nhanh — kiemPhamViDuyetMay gọi thẳng (đường reject: đích suy từ mã tự khai)", () => {
+  it("(K1) admin ⇒ miễn, KHÔNG gọi hàm suy đích; non-admin: đích A ⇒ qua, đích B ⇒ NGOAI_PHAM_VI, không suy được ⇒ KHONG_CO_MAY, không danh tính ⇒ chặn, lỗi ⇒ LOI_PHAM_VI", async () => {
+    const pv = await import("./phamViDuyetMay");
+    const suy = vi.fn(async () => MAY_B.id);
+    expect(await pv.kiemPhamViDuyetMay({ userId: 2, userRole: "admin" }, suy)).toEqual({ ok: true });
+    expect(suy).not.toHaveBeenCalled();
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, async () => 101)).toEqual({ ok: true });
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, suy)).toMatchObject({ ok: false, lyDo: "NGOAI_PHAM_VI" });
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, async () => undefined)).toMatchObject({ ok: false, lyDo: "KHONG_CO_MAY" });
+    expect(await pv.kiemPhamViDuyetMay({ userRole: "engineer" }, 101)).toMatchObject({ ok: false, lyDo: "THIEU_DANH_TINH" });
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 101, { stationId: 999 })).toMatchObject({ ok: false, cap: "station" });
+    nemKhiTraPhamViDuyet = true;
+    expect(await pv.kiemPhamViDuyetMay({ userId: 3, userRole: "engineer" }, 101)).toMatchObject({ ok: false, lyDo: "LOI_PHAM_VI" });
   });
 });

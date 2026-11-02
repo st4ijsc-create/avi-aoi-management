@@ -2,6 +2,8 @@ import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_
 import { adminProcedure } from "./_shared";
 import { phamViCua, type CoDanhTinh } from "./_phamViNguoiXem";
 import { idsTrongPhamVi } from "../db/hierarchy";
+// ★★★ F5-nhanh — MỘT hàm kiểm phạm vi máy cho duyệt / từ chối đăng ký (cùng hàm với socket admin:approve/reject_registration).
+import { kiemPhamViDuyetMay } from "../_core/phamViDuyetMay";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -1082,8 +1084,12 @@ export const machineRouter = router({
       stationId: z.number().optional(),                // Gán vào station/line
     }))
     .mutation(async ({ input, ctx }) => {
-      const machine = await db.getMachineById(input.id);
+      // ★★★ F5-nhanh — cờ RBAC mở cho người KHÔNG phải admin duyệt máy: máy đích (và trạm đích) phải trong phạm vi của họ. Ngoài phạm vi
+      // ≡ không tồn tại (CÙNG NOT_FOUND với máy không có thật; máy ngoài phạm vi thậm chí không được đọc). Admin miễn; lỗi phạm vi ⇒ từ chối.
+      const phamViDuyet = await kiemPhamViDuyetMay(phamViCua(ctx), input.id, { stationId: input.stationId });
+      const machine = phamViDuyet.ok || phamViDuyet.cap === "station" ? await db.getMachineById(input.id) : undefined;
       if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
+      if (!phamViDuyet.ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, "Station not found");
 
       // M7: the admin may normalise the code at approval — pre-check it against
       // ACTIVE machines so the rename fails as a clean CONFLICT, not a raw 500.
@@ -1498,6 +1504,10 @@ export const machineRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // ★★★ F5-nhanh — cùng hàm phạm vi với approve (adminProcedure ⇒ hôm nay luôn admin ⇒ miễn; giữ lời gọi để một lượt nới cổng
+      // sau này không mở đường từ chối máy nhà máy khác). Ngoài phạm vi ⇒ NOT_FOUND như approve.
+      const phamViTuChoi = await kiemPhamViDuyetMay(phamViCua(ctx), input.id);
+      if (!phamViTuChoi.ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       await db.rejectMachine(input.id, input.reason);
       await auditAction(ctx, {
         action: "machine.reject", entityType: ENTITY_TYPES.MACHINE, entityId: input.id,
