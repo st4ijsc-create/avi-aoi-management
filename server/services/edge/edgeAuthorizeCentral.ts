@@ -354,7 +354,7 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     const g = await evaluateInterlockGate(robotInterlockTarget(robotId));
-    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? "interlock evaluation error — fail-closed" : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
+    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
   return {
@@ -410,7 +410,7 @@ export async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand,
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     // A2(i)(1) — the SAME set as central's dispatcher: {the adapter's machine, the step's machine} (tapMayChoInterlock)
     const g = await evaluateInterlockGate({ adapterId, machineIds: tapMayChoInterlock(adapter.machineId, rb.machineId), tagKeys: rb.writes.map((w) => w.tagKey) });
-    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? "interlock evaluation error — fail-closed" : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
+    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
   return {
