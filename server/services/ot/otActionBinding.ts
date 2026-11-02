@@ -198,6 +198,21 @@ export function withFoeGateApproval(preview: Record<string, unknown> | null | un
   return { ...(preview ?? {}), [FOE_APPROVAL_FIELD]: { ...a } };
 }
 
+/**
+ * R1b-2b-2a A2(m) AMENDMENT 2 — the MARK on a fresh authorisation row the FOE engine mints for ONE dispatch of a command IT classified as a
+ * pinned STOP (foeRunStore.ensureOrchestrationAction `hangMoi`). The mark never grants anything: the reservation REFUSES a marked row
+ * whenever the dispatcher's own predicate says the command is NOT a pinned STOP (`opts.pinnedStop` false), gate approval or not — so a
+ * fresh row is only ever consumed by a pinned STOP the dispatcher confirms ("one approval = one write" intact for every other command).
+ */
+export const HANG_MOI_STOP_GHIM_FIELD = "hangMoiStopGhim";
+export function withHangMoiStopGhim(preview: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  return { ...(preview ?? {}), [HANG_MOI_STOP_GHIM_FIELD]: true };
+}
+/** true ⇔ the row carries the fresh-pinned-STOP mark. */
+export function laHangMoiStopGhim(preview: unknown): boolean {
+  return !!preview && typeof preview === "object" && (preview as Record<string, unknown>)[HANG_MOI_STOP_GHIM_FIELD] === true;
+}
+
 /** Read the stored gate approval; null when absent/malformed (⇒ no separate approval on record). */
 export function readFoeGateApproval(preview: unknown): FoeGateApproval | null {
   if (!preview || typeof preview !== "object") return null;
