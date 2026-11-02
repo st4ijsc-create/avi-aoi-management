@@ -233,3 +233,45 @@ describe("A2(o) O5 (central) + O8 — an unbuildable config never fails the pull
     }
   });
 });
+
+describe("A2(o) AMENDMENT 2 — central's answer to an EDGE-reported anomaly", () => {
+  const MISSING = { code: "EDGE_SAFETY_CONFIG_MISSING", detail: "adapter 5: signed safety-PLC config(s) #9, #7 absent from the verified config v3 (issued 90 s ago) — the preflight could not consult them; refused, a refresh is requested" };
+  it("★ EDGE_SAFETY_CONFIG_MISSING ⇒ ONE URGENT alert per (node, sorted ids), durable 24 h dedup + per-process dedup", async () => {
+    const { alertForEdgeAnomaly } = await import("./edgeConfigCentral");
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1, 2])).toBe(true);
+    expect(alertForEdgeAnomaly(NODE, MISSING, async () => [1, 2])).toBe(false); // the same refusal again (every retried write)
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toHaveLength(1);
+    expect(H.alerts[0]).toMatchObject({
+      kind: "edge_safety_plc_missing",
+      dedupKey: "edge_safety_plc_missing:7:7,9",
+      recipients: [1, 2],
+      khuTrungBenVung: {},
+      retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+      entityType: "edge_node",
+      entityId: 7,
+    });
+    expect(String(H.alerts[0].message)).toContain("#7, #9");
+    // another set of ids is another alert
+    expect(alertForEdgeAnomaly(NODE, { ...MISSING, detail: "robot 12: signed safety-PLC config(s) #11 absent from the verified config v3" }, async () => [1])).toBe(true);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts.map((a) => a.dedupKey)).toEqual(["edge_safety_plc_missing:7:7,9", "edge_safety_plc_missing:7:11"]);
+  });
+
+  it("★ EDGE_CONFIG_STALE (and any other code) ⇒ NO alert — it stays the EDGE_ANOMALY audit", async () => {
+    const { alertForEdgeAnomaly } = await import("./edgeConfigCentral");
+    for (const code of ["EDGE_CONFIG_STALE", "EDGE_AUTHORIZATION_REFUSED", "EDGE_STOP_NOT_PINNED"]) expect(alertForEdgeAnomaly(NODE, { code, detail: MISSING.detail }, async () => [1])).toBe(false);
+    await __edgeConfigAlertsSettledForTests();
+    expect(H.alerts).toEqual([]);
+  });
+
+  it("★ edgeReportsCentral: the events stream's anomaly branch audits EVERY anomaly and hands it to alertForEdgeAnomaly (source scan)", () => {
+    const s = readFileSync(path.join(__dirname, "edgeReportsCentral.ts"), "utf8");
+    const at = s.indexOf(`if (rec.kind === "anomaly") {`);
+    expect(at).toBeGreaterThan(0);
+    const branch = s.slice(at, s.indexOf("return;", at));
+    expect(branch).toContain(`audits.push({ action: "EDGE_ANOMALY"`);
+    expect(branch).toMatch(/alertForEdgeAnomaly\(node, \{ code: rec\.code, detail: rec\.detail \}/);
+    expect(branch.indexOf("audits.push")).toBeLessThan(branch.indexOf("alertForEdgeAnomaly("));
+  });
+});

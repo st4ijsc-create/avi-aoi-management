@@ -269,3 +269,24 @@ describe("A2(o) wiring — the heartbeat and the device runtime use the SAME sou
     expect(gw).toContain("requestConfigRefresh: () => rt.config.requestRefresh(),");
   });
 });
+
+describe("A2(o) AMENDMENT 2 — a stale-config authorisation is journaled + reported NEVER used (reason config_stale)", () => {
+  it("★ createEdgeAuthUnusedReporter: the jti is consumed-as-unused first (never usable again), then an auth_unused record central accepts", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "edge-a2o-j-"));
+    dirs.push(dir);
+    const journal = await EdgeJournal.open({ dir, groupCommitMs: 1 });
+    journals.push(journal);
+    const recs: unknown[] = [];
+    const sink = { run: async (_r: number, _c: number, rec: unknown) => (recs.push(rec), { seq: recs.length, durable: true }) } as never;
+    const report = createEdgeAuthUnusedReporter(journal, sink);
+    const jti = "3b8f3c1e-5d7a-4c1b-9a2e-3f4d5c6b7a83";
+    expect(await report({ runId: 9, claimSeq: 2, jti, stepId: "r2", attempt: 1, reason: "config_stale" })).toBe(true);
+    expect(journal.isJtiConsumed(jti)).toBe(true);
+    expect(await journal.consumeAuthorization({ jti, runId: 9, claimSeq: 2, stepId: "r2", attempt: 1 })).toMatchObject({ ok: false });
+    const { edgeRunReportRecordSchema } = await import("./edgeProtocol");
+    expect(edgeRunReportRecordSchema.safeParse({ ...(recs[0] as object), seq: 1 }).success).toBe(true);
+    expect(recs[0]).toMatchObject({ kind: "auth_unused", jti, stepId: "r2", attempt: 1, reason: "config_stale" });
+    // a jti already consumed (used) is never reported unused
+    expect(await report({ runId: 9, claimSeq: 2, jti, stepId: "r2", attempt: 1, reason: "config_stale" })).toBe(false);
+  });
+});
