@@ -17748,7 +17748,26 @@
       "cauHinhHongMo": "打开联锁规则页",
       "stopQuaHan": "HMI 停机因超时被拒（24 小时）：{{count}}",
       "stopQuaHanUnavailable": "无法读取 HMI 停机超时拒绝数",
-      "poolStopThieu": "HMI 停机连接池预算不足：DB_POOL_MAX {{poolMax}} < {{canToiThieu}}"
+      "poolStopThieu": "HMI 停机连接池预算不足：DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "未能写入账本（自 {{tu}}）：{{count}}",
+      "buoc": {
+        "db": "数据库错误",
+        "het_han_tong_truoc_handler": "处理前总期限已耗尽",
+        "pham_vi": "范围检查",
+        "doc_may": "读取设备",
+        "vai_tro": "角色检查",
+        "doc_adapter": "读取适配器",
+        "doc_ghim": "读取 STOP 引脚",
+        "dong_cho": "待处理行",
+        "adapter": "发送到适配器",
+        "xac_thuc": "身份验证",
+        "cong_doi_mat_khau": "改密码门控",
+        "giay_phep": "许可证",
+        "pham_vi_tenant": "租户范围",
+        "ghi_so_loi": "账本写入失败",
+        "khac": "其他步骤",
+        "khong_ro": "步骤未知"
+      }
     },
     "table": {
       "kind": "工作项",
