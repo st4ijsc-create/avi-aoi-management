@@ -97,24 +97,40 @@ export function baoDocCatBot(a: { kind: string; title: string; message: string; 
   })();
 }
 
-/** Rotation offsets per (node, list, tier): more than one answer can carry ⇒ a different window each pull, so none starves. */
+/** Rotation cursor per (node, list, tier): the KEY (run id) of the last item sent — more than one answer can carry ⇒ the next window starts after it. */
 const xoay = new Map<string, number>();
 /** Tests only. */
 export function __resetStopsUnconfirmedRotationForTests(): void {
   xoay.clear();
 }
 
-/** `n` items of `list` starting where the previous pull of `khoa` stopped (contiguous windows ⇒ all covered in ⌈len / n⌉ pulls). */
-function cuaSoXoay<T>(list: readonly T[], n: number, khoa: string | null): T[] {
+/** The stable key of an item: the number itself, or its `runId` (claims, `{ runId }`), or `a.runId` (aborted-run rows). */
+function khoaMacDinh(x: unknown): number {
+  if (typeof x === "number") return x;
+  const o = x as { runId?: unknown; a?: { runId?: unknown } } | null;
+  const k = typeof o?.runId === "number" ? o.runId : typeof o?.a?.runId === "number" ? o.a.runId : NaN;
+  if (!Number.isFinite(k)) throw new LoiDocHetTheoTrang("chonTrongGioiHanGiaoThuc: an item has no numeric key (runId)");
+  return k;
+}
+
+/**
+ * `n` items of `list` in KEY order, starting right after the key of the last item the previous pull of `khoa` sent, wrapping (polish round —
+ * the window was position-based `(count × n) mod len`: with one item confirmed and one new per pull, a reviewer measured a STOP first delivered on
+ * pull 52). A key cursor is churn-proof: every item present for ⌈len / n⌉ + 1 consecutive pulls is sent at least once (the cursor passes every key
+ * once per lap; items that leave do not shift the others).
+ */
+function cuaSoXoay<T>(list: readonly T[], n: number, khoa: string | null, khoaPhanTu: (x: T) => number): T[] {
   if (n <= 0 || list.length === 0) return [];
   if (list.length <= n) return [...list];
-  if (khoa === null) return list.slice(0, n);
-  const lan = xoay.get(khoa) ?? 0;
-  xoay.set(khoa, lan + 1);
-  if (xoay.size > 20_000) xoay.clear();
-  const start = (lan * n) % list.length;
+  const sapXep = [...list].sort((x, y) => khoaPhanTu(x) - khoaPhanTu(y));
+  if (khoa === null) return sapXep.slice(0, n);
+  const sau = xoay.get(khoa);
+  let start = sau === undefined ? 0 : sapXep.findIndex((x) => khoaPhanTu(x) > sau);
+  if (start < 0) start = 0; // past the highest key ⇒ wrap
   const out: T[] = [];
-  for (let i = 0; i < n; i++) out.push(list[(start + i) % list.length]!);
+  for (let i = 0; i < n; i++) out.push(sapXep[(start + i) % sapXep.length]!);
+  if (xoay.size > 20_000) xoay.clear();
+  xoay.set(khoa, khoaPhanTu(out[out.length - 1]!));
   return out;
 }
 
@@ -123,18 +139,24 @@ function cuaSoXoay<T>(list: readonly T[], n: number, khoa: string | null): T[] {
  * longer list makes the WHOLE answer invalid on the edge — its STOP commands included) WITHOUT dropping a STOP / abort for good:
  *   • `uuTien` (claims: abortRequested) — the priority items come first; if they alone exceed `max`, a ROTATING window over them (every abort
  *     signal reaches the node within ⌈aborts / max⌉ pulls); otherwise all of them + a rotating window over the rest;
- *   • no `uuTien` (unconfirmed STOPs) — a rotating window over the list (every STOP within ⌈n / max⌉ pulls).
+ *   • no `uuTien` (unconfirmed STOPs) — a rotating window over the list (every STOP within ⌈n / max⌉ pulls; ⌈n / max⌉ + 1 under churn).
+ * Windows follow a KEY cursor (`khoaPhanTu`, default runId — see cuaSoXoay), never a position.
  * Rotation is per `xoay` key (node + list). `vuot` ⇒ the caller sets `runStateUnavailable` and raises the overflow alert (chonClaimsChoTraLoi /
  * chonStopsChoTraLoi do both).
  */
-export function chonTrongGioiHanGiaoThuc<T>(list: readonly T[], max: number, opts: { uuTien?: (x: T) => boolean; xoay?: number | string } = {}): { chon: T[]; vuot: boolean } {
+export function chonTrongGioiHanGiaoThuc<T>(
+  list: readonly T[],
+  max: number,
+  opts: { uuTien?: (x: T) => boolean; xoay?: number | string; khoaPhanTu?: (x: T) => number } = {},
+): { chon: T[]; vuot: boolean } {
   if (list.length <= max) return { chon: [...list], vuot: false };
   const khoa = opts.xoay === undefined ? null : String(opts.xoay);
-  if (!opts.uuTien) return { chon: cuaSoXoay(list, max, khoa), vuot: true };
+  const kp = opts.khoaPhanTu ?? (khoaMacDinh as (x: T) => number);
+  if (!opts.uuTien) return { chon: cuaSoXoay(list, max, khoa, kp), vuot: true };
   const uu = list.filter((x) => opts.uuTien!(x));
   const con = list.filter((x) => !opts.uuTien!(x));
-  if (uu.length >= max) return { chon: cuaSoXoay(uu, max, khoa === null ? null : `${khoa}:uu`), vuot: true };
-  return { chon: [...uu, ...cuaSoXoay(con, max - uu.length, khoa === null ? null : `${khoa}:con`)], vuot: true };
+  if (uu.length >= max) return { chon: cuaSoXoay(uu, max, khoa === null ? null : `${khoa}:uu`, kp), vuot: true };
+  return { chon: [...uu, ...cuaSoXoay(con, max - uu.length, khoa === null ? null : `${khoa}:con`, kp)], vuot: true };
 }
 
 type NutTraLoi = { nodeId: number; nodeCode: string };

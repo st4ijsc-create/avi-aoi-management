@@ -558,8 +558,9 @@ const TIEN_TO_KHOA_STOP_CHUA_GIAO = "stop_undelivered:request:";
 /**
  * doc 81 Đợt 10 final fix wave (I-3, R-10-br, L-7) — the sweep of STOP requests the owning edge has NOT acknowledged within the ack
  * deadline (edgeStopAckDeadlineMs: 3 × pullMs + slack): each gets ONE durable critical alert (alert stream + a safety-critical
- * inbox row to the requester, retried until persisted; dedup key `stop_undelivered:request:<id>` — the same key the console uses
- * when it already knew the node was unreachable, so one inbox row per request). The STOP stays pending and is still delivered
+ * inbox row to the requester, retried until persisted; dedup key `stop_undelivered:request:<id>` — the same key the console paths use
+ * when they already knew the node was unreachable (commandDispatcher raiseOtStopAlert, robotEdgeCommandPort); since the A2(j) polish round they
+ * pass `khuTrungBenVung` too, so their inbox row carries the marker and the sweep does not alert that request a second time). The STOP stays pending and is still delivered
  * every pull (never expired, R-10-k). Returns how many alerts this pass raised. A read failure throws (the caller logs it).
  *
  * SCADA R1b-2b-2a A2(j) — read TO THE END, not `ORDER BY id LIMIT 200` (the oldest 200 were re-read every pass and skipped by the in-memory set, so
@@ -568,8 +569,15 @@ const TIEN_TO_KHOA_STOP_CHUA_GIAO = "stop_undelivered:request:";
  *     khoaCanhBaoStopChuaGiao(id), written because the alert carries `khuTrungBenVung`) — no new column. A restart therefore neither re-alerts
  *     (rows already alerted are not even read: no alert-stream storm) nor skips (a head whose row never landed is read and alerted again — once
  *     per process, the in-memory set covers the gap until the async row lands);
- *   • ascending id cursor, page by page (docHetTheoTrang), with a very large page budget; reaching it ⇒ everything read is alerted + one admin alert.
+ *   • ascending id cursor, page by page (docHetTheoTrang), with a very large page budget; reaching it ⇒ everything read is alerted + one admin alert;
+ *   • polish round — at most TRAN_CANH_BAO_STOP_MOI_LUOT alerts per pass (an outage can leave hundreds overdue at once: no alert burst). Safe
+ *     because of the marker: what is not alerted this pass has no inbox row and is not in the in-memory set ⇒ it is read again next pass.
+ * The in-memory set (`undeliveredAlerted`) only bridges the gap until the async inbox row lands; it is bounded at 20 000 ids (oldest evicted). In the
+ * FALLBACK mode (marker read failed) an evicted id can be alerted once more — its inbox row is still not duplicated (`khuTrungBenVung`), only the
+ * alert-stream notice / log line repeats; the fallback is logged every pass it is used.
  */
+/** Most "STOP not acknowledged" alerts one sweep pass raises; the rest are alerted on the next passes (none lost — see alertUndeliveredStops). */
+export const TRAN_CANH_BAO_STOP_MOI_LUOT = 200;
 export async function alertUndeliveredStops(now: number = Date.now()): Promise<number> {
   const d = await centralDb();
   const deadlineMs = edgeStopAckDeadlineMs();
@@ -611,8 +619,13 @@ export async function alertUndeliveredStops(now: number = Date.now()): Promise<n
   }
   for (const [id, at] of undeliveredAlerted) if (now - at > 48 * 3_600_000) undeliveredAlerted.delete(id);
   let raised = 0;
+  let hoan = 0;
   for (const r of rows) {
     if (undeliveredAlerted.has(r.id)) continue;
+    if (raised >= TRAN_CANH_BAO_STOP_MOI_LUOT) {
+      hoan++; // not marked anywhere ⇒ read and alerted on a later pass
+      continue;
+    }
     undeliveredAlerted.set(r.id, now);
     if (undeliveredAlerted.size > 20_000) undeliveredAlerted.delete(undeliveredAlerted.keys().next().value as number);
     const target = r.robotId != null ? `robot ${r.robotId}` : `adapter ${r.adapterId}`;
@@ -637,6 +650,7 @@ export async function alertUndeliveredStops(now: number = Date.now()): Promise<n
     });
     raised++;
   }
+  if (hoan > 0) console.error(`[EdgeCommands] ${hoan} more unacknowledged STOP(s) past the per-pass alert budget (${TRAN_CANH_BAO_STOP_MOI_LUOT}) — alerted on the next pass(es)`);
   return raised;
 }
 

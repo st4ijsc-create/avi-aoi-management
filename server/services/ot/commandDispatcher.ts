@@ -3419,6 +3419,10 @@ function raiseUnverifiedStopRefusedAlert(input: DispatchInput, message: string, 
 }
 
 /** I-4 — the durable critical alert of an OT STOP central could not execute itself (criticalStopAlert; never throws). */
+/** Tests only (A2(j) polish): the OT STOP alert helper, to pin that a per-request STOP alert carries the durable dedup (the sweep's marker). */
+export function _raiseOtStopAlertChoTest(kind: string, input: DispatchInput, message: string, recipients: number[] = [], dedupKey?: string): Promise<void> {
+  return raiseOtStopAlert(kind, input, message, recipients, dedupKey);
+}
 function raiseOtStopAlert(kind: string, input: DispatchInput, message: string, recipients: number[] = [], dedupKey?: string, title?: string): Promise<void> {
   return import("../robot/criticalStopAlert")
     .then(({ raiseCriticalStopAlert }) =>
@@ -3432,6 +3436,9 @@ function raiseOtStopAlert(kind: string, input: DispatchInput, message: string, r
         entityType: "ot_command",
         entityId: input.adapterId,
         retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+        // A2(j) polish — a per-request STOP alert (`stop_undelivered:request:<id>`) carries the durable dedup: its inbox row gets metadata.dedupKey,
+        // the marker edgeNodeCommands.alertUndeliveredStops reads ⇒ the sweep does not alert the same request a second time
+        ...(dedupKey?.startsWith("stop_undelivered:request:") ? { khuTrungBenVung: {} } : {}),
       }),
     )
     .catch(() => undefined);
