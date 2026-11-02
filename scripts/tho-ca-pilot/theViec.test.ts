@@ -67,3 +67,29 @@ describe("kiemDiffTheoThe — chỉ sửa tệp được phép", () => {
     expect(vungCamCua("server/db/auth.ts")).toBe("auth/quyen");
   });
 });
+
+import { quetChamDb, tepTestTrongLenh } from "./theViec";
+
+describe("quetChamDb — quét NỘI DUNG (luật 2026-11-02), không chỉ tên .db.test", () => {
+  it("★ test tên thường nhưng import getDb / postgres / drizzle / db/* / mock db / DATABASE_URL ⇒ chạm DB", () => {
+    const co = (s: string) => quetChamDb("x.test.ts", s).length > 0;
+    expect(co(`import { getDb } from "../db/connection";`)).toBe(true);
+    expect(co("const x = await getDb();")).toBe(true); // chỉ getDb, không import đường db
+    expect(co(`import postgres from "postgres";`)).toBe(true);
+    expect(co(`import { eq } from 'drizzle-orm';`)).toBe(true);
+    expect(co(`import * as d from "../../server/db";`)).toBe(true);
+    expect(co(`vi.mock("../db/connection", () => ({}));`)).toBe(true);
+    expect(co(`const u = process.env.DATABASE_URL;`)).toBe(true);
+    expect(co(`await db.delete(users).where(x)`)).toBe(true);
+    expect(co(`const m = await import("postgres");`)).toBe(true);
+  });
+  it("tên .db.test luôn là DB; test thuần không dấu hiệu ⇒ sạch", () => {
+    expect(quetChamDb("a.db.test.ts", "")).toEqual(["tên .db.test"]);
+    expect(quetChamDb("a.test.ts", `import { it, expect } from "vitest";\nimport { relativeTime } from "./relativeTime";\nit("x", () => expect(relativeTime(0, 1)).toBe("now"));`)).toEqual([]);
+    expect(quetChamDb("a.test.ts", `import { tinhDb } from "./dbHelper";`)).toEqual([]); // "db" nằm trong tên khác, không phải thư mục db
+  });
+  it("tepTestTrongLenh lấy đường test trong lệnh kiểm", () => {
+    expect(tepTestTrongLenh("npx vitest run client/src/lib/a.test.ts server\\b.test.tsx --reporter=dot")).toEqual(["client/src/lib/a.test.ts", "server/b.test.tsx"]);
+    expect(tepTestTrongLenh("npm test")).toEqual([]);
+  });
+});

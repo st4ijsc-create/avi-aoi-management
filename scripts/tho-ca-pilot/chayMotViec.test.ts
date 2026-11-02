@@ -119,3 +119,24 @@ describe("ghepLenh & driverKho", () => {
     expect(r.ghiChu.join(" ")).toMatch(/bỏ qua/);
   });
 });
+
+describe("chayMotViec — test chạm DB (luật 2026-11-02)", () => {
+  it("★ LỆNH KIỂM trỏ vào tệp test ĐÃ CÓ mà import getDb ⇒ tu-choi, chưa tạo nhánh", async () => {
+    fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "client/src/lib/a.test.ts"), 'import { getDb } from "../../../server/db/connection";\n');
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "co test db");
+    const r = await chay();
+    expect(r).toMatchObject({ ketCuc: "tu-choi", loi: expect.stringContaining("chạm DB") });
+    expect(git(wt, "branch", "--show-current")).not.toContain("pilot");
+  });
+  it("★ LỆNH KIỂM trỏ vào *.db.test (chưa có) ⇒ tu-choi", async () => {
+    const the = THE("client/src/lib/a.db.test.ts").replace("a.test.ts", "a.db.test.ts");
+    expect(await chay({ van: the })).toMatchObject({ ketCuc: "tu-choi", loi: expect.stringContaining(".db.test") });
+  });
+  it("★ Thợ Cả VIẾT test chạm DB ⇒ vi-pham cham-db (dieu-phoi không được chạy nó)", async () => {
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": 'import postgres from "postgres";\n' } });
+    expect(r.ketCuc).toBe("vi-pham");
+    expect(r.viPham).toEqual([{ duong: "client/src/lib/a.test.ts", loai: "cham-db", chiTiet: "import postgres" }]);
+  });
+});

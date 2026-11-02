@@ -22,7 +22,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { docTheViec, kiemDiffTheoThe, type TheViec, type ViPhamDiff } from "./theViec";
+import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -238,6 +238,16 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const ban = git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && !x.endsWith(` ${TEP_LUAT}`));
   if (ban.length > 0) return tuChoi(`worktree không sạch (${ban.length} mục) — dọn trước khi nhận việc`, the.ma);
 
+  // LỆNH KIỂM trỏ vào tệp test ĐÃ CÓ mà chạm DB ⇒ từ chối (luật: quét import/nội dung, không chỉ tên .db.test). Tệp chưa có (Thợ Cả sẽ tạo) kiểm sau khi chạy.
+  for (const t of tepTestTrongLenh(the.lenhKiem)) {
+    const f = path.join(wt, t);
+    if (fs.existsSync(f)) {
+      const dau = quetChamDb(t, fs.readFileSync(f, "utf8"));
+      if (dau.length > 0) return tuChoi(`LỆNH KIỂM trỏ vào tệp chạm DB (${t}: ${dau.join(", ")}) — pilot không chạy test DB`, the.ma);
+    } else if (quetChamDb(t, "").length > 0) {
+      return tuChoi(`LỆNH KIỂM trỏ vào tệp .db.test (${t}) — pilot không chạy test DB`, the.ma);
+    }
+  }
   const base = git(["rev-parse", "--verify", `${p.base}^{commit}`], wt);
   if (!base.ok) return tuChoi(`không có base "${p.base}"`, the.ma);
   const baseSha = base.out.trim();
@@ -276,6 +286,16 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   fs.writeFileSync(diffPath, diffText, "utf8");
 
   const viPham = kiemDiffTheoThe(tepDoi, the.tepDuocPhep);
+  // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó)
+  for (const t of tepDoi) {
+    if (!/\.test\.[cm]?[jt]sx?$/.test(t)) continue;
+    try {
+      const dau = quetChamDb(t, fs.readFileSync(path.join(wt, t), "utf8"));
+      if (dau.length > 0) viPham.push({ duong: t, loai: "cham-db", chiTiet: dau.join(", ") });
+    } catch {
+      /* tệp bị xoá */
+    }
+  }
   const crlf = tepCrlf(wt, tepDoi);
   const luuY: string[] = [];
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");

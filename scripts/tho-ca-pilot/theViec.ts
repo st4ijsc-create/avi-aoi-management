@@ -164,7 +164,7 @@ function khop(mau: string, duong: string): boolean {
 
 export interface ViPhamDiff {
   duong: string;
-  loai: "ngoai-danh-sach" | "vung-cam" | "duong-khong-hop-le";
+  loai: "ngoai-danh-sach" | "vung-cam" | "duong-khong-hop-le" | "cham-db";
   chiTiet?: string;
 }
 
@@ -185,4 +185,31 @@ export function kiemDiffTheoThe(tepDoi: readonly string[], tepDuocPhep: readonly
     if (!tepDuocPhep.some((m) => khop(m, d))) ra.push({ duong: d, loai: "ngoai-danh-sach" });
   }
   return ra;
+}
+
+// ── Test chạm DB (luật dieu-phoi 2026-11-02: quét NỘI DUNG, không chỉ tên *.db.test.ts) ─────────────
+
+/** Dấu hiệu một tệp chạm DB: import/mock getDb·postgres·drizzle·db/*, DATABASE_URL, hoặc tên *.db.test.*. THUẦN; trả danh sách dấu hiệu tìm thấy. */
+export function quetChamDb(duong: string, noiDung: string): string[] {
+  const ra: string[] = [];
+  if (/\.db\.test\.[cm]?[jt]sx?$/i.test(duong)) ra.push("tên .db.test");
+  const mau: Array<[string, RegExp]> = [
+    ["getDb/getReadDb", /\bget(Read)?Db\b/],
+    ["import postgres", /(?:from|import|require\()\s*\(?\s*["']postgres["']/],
+    ["import drizzle", /(?:from|import|require\()\s*\(?\s*["']drizzle-orm[^"']*["']/],
+    ["import db/*", /(?:from|import|require\()\s*\(?\s*["'][^"']*\/db(?:\/[^"']*)?["']/],
+    ["vi.mock db", /vi\.(?:do)?mock\(\s*["'][^"']*\/db(?:\/[^"']*)?["']/],
+    ["DATABASE_URL", /\bDATABASE_URL\b/],
+    ["db.select/insert/execute", /\bdb\s*\.\s*(?:select|insert|update|delete|execute|transaction)\s*\(/],
+  ];
+  for (const [ten, re] of mau) if (re.test(noiDung)) ra.push(ten);
+  return ra;
+}
+
+/** Các đường tệp test nêu trong LỆNH KIỂM (token kết thúc bằng .test.ts/tsx/js/mjs/cjs/jsx). */
+export function tepTestTrongLenh(lenh: string): string[] {
+  return lenh
+    .split(/\s+/)
+    .map((x) => x.replace(/^["']|["']$/g, "").replace(/\\/g, "/"))
+    .filter((x) => /\.test\.[cm]?[jt]sx?$/.test(x));
 }
