@@ -164,3 +164,36 @@ describe("chayMotViec — cất kết quả lượt trước (cây bẩn trên n
     expect(git(wt, "rev-parse", "HEAD")).toBe(dau);
   });
 });
+
+describe("chayMotViec — bước cất dùng PATHSPEC (hook BG-124 chặn commit trần)", () => {
+  /** Hook thật của repo (bản chạy trong .git/hooks của kho chính) — chỉ cho qua pathspec-commit (index tạm next-index-*). */
+  const HOOK = `#!/bin/sh
+ten_index=$(basename "\${GIT_INDEX_FILE:-index}")
+case "$ten_index" in
+  next-index-*) exit 0 ;;
+  *) echo "BG-124: COMMIT TRAN bi chan" >&2; exit 1 ;;
+esac
+`;
+  const caiHook = () => {
+    const f = path.join(wt, ".git", "hooks", "pre-commit");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, HOOK, { mode: 0o755 });
+  };
+  it("★ có hook từ chối commit trần: cất vẫn thành công (pathspec), CHỈ commit tệp của lượt trước, không cuốn tệp khác đang stage", async () => {
+    caiHook();
+    git(wt, "checkout", "-q", "-b", "pilot/tho-ca-TC-97");
+    fs.writeFileSync(path.join(wt, "ket-qua-cu.txt"), "lượt trước\n");
+    git(wt, "add", "ket-qua-cu.txt");
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "x\n" } });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong" });
+    expect(git(wt, "show", "pilot/tho-ca-TC-97:ket-qua-cu.txt")).toBe("lượt trước");
+    expect(git(wt, "log", "-1", "--format=%s", "pilot/tho-ca-TC-97")).toContain("cất kết quả lượt trước");
+  });
+  it("đối chứng: chính hook ấy CHẶN commit trần (để biết ca trên có sức kiểm)", () => {
+    caiHook();
+    fs.writeFileSync(path.join(wt, "x.txt"), "x");
+    git(wt, "add", "x.txt");
+    const r = spawnSync("git", ["commit", "-q", "-m", "tran"], { cwd: wt, encoding: "utf8" });
+    expect(r.status).not.toBe(0);
+  });
+});

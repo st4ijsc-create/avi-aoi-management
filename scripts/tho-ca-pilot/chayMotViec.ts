@@ -253,9 +253,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // CẤT kết quả lượt trước: chỉ khi đang đứng trên nhánh pilot/tho-ca-* (commit vào CHÍNH nhánh đó, không bao giờ main hay nhánh khác); mọi trường hợp khác ⇒ từ chối như cũ.
     const nhanhHienTai = git(["branch", "--show-current"], wt).out.trim();
     if (!NHANH_PILOT.test(nhanhHienTai)) return tuChoi(`worktree không sạch (${ban.length} mục) và không đứng trên nhánh pilot/tho-ca-* — dọn tay trước khi nhận việc`, the.ma);
-    const them = git(["add", "-A", "--", ".", `:(exclude)${TEP_LUAT}`], wt);
+    // ★ PATHSPEC ở CẢ add LẪN commit (hook BG-124 dùng chung chặn commit trần: nó cuốn toàn index). Danh sách = đúng các tệp lượt trước đã đổi.
+    const tepCat = thuTepDoi(wt);
+    const them = git(["add", "--", ...tepCat], wt);
     const loiNhan = ["pilot: cất kết quả lượt trước (không lên main)", "", "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"].join("\n");
-    const cm = them.ok ? git(["-c", "user.name=tho-ca-pilot", "-c", "user.email=tho-ca-pilot@localhost", "commit", "-q", "-m", loiNhan], wt) : them;
+    const cm = them.ok ? git(["-c", "user.name=tho-ca-pilot", "-c", "user.email=tho-ca-pilot@localhost", "commit", "-q", "-m", loiNhan, "--", ...tepCat], wt) : them;
     if (!cm.ok) return tuChoi(`không cất được kết quả lượt trước trên ${nhanhHienTai}: ${cm.err.trim()}`, the.ma);
     luuY0.push(`đã cất kết quả lượt trước vào nhánh ${nhanhHienTai} (${ban.length} mục)`);
     ban = trangThaiBan();
