@@ -22,6 +22,7 @@
  * must tell "decided out" from "could not decide" (read visibility, abort / reject) treat a definition that is out of scope
  * ONLY because of such steps as UNDECIDED, never as "out of scope" (foeEngine.decideDefinition).
  */
+import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import type { StopPin, StopPinTagRow } from "../../ot/stopPin"; // types only — the module is loaded lazily (heavy, cycle-free)
@@ -50,10 +51,42 @@ export function isRobotKind(kind: string): boolean {
   return kind === "robot" || kind === "vda5050";
 }
 
-/** Doc 25 T1 — the ai_pending_actions id of an FOE command (varchar 64). */
+/** ai_pending_actions.id is varchar(64). */
+const ACTION_ID_MAX = 64;
+/** Hex characters of the sha256 slice that stands for the cut tail of a long id (64 bits). */
+const ACTION_ID_HASH_HEX = 16;
+
+/**
+ * Doc 25 T1 — the ai_pending_actions id of an FOE command (varchar 64). ONE function for every caller: the central authorisation row
+ * (foeRunStore.ensureOrchestrationAction), the command the engine sends (buildEquipmentCommand) and the edge authorisation row
+ * (edge/edgeAuthorizeCentral).
+ * R1b-2b-2a A2(m) — an id of at most 64 characters is `foe-<key>`, byte-identical to before. A LONGER one is NEVER truncated any more
+ * (the cut fell on the `-a<attempt>` tail: every attempt of a long step id shared ONE row, and two steps sharing the first ~50
+ * characters shared one row): a readable prefix + `~` + a sha256 slice of the WHOLE key (the `abortStopKey` scheme).
+ */
 export function orchestrationActionId(idempotencyKey: string): string {
   const id = `foe-${idempotencyKey}`;
-  return id.length <= 64 ? id : id.slice(0, 64);
+  if (id.length <= ACTION_ID_MAX) return id;
+  const hash = createHash("sha256").update(idempotencyKey).digest("hex").slice(0, ACTION_ID_HASH_HEX);
+  return `${id.slice(0, ACTION_ID_MAX - ACTION_ID_HASH_HEX - 1)}~${hash}`;
+}
+
+/**
+ * R1b-2b-2a A2(m) — upgrade compatibility ONLY: the id the pre-A2(m) `orchestrationActionId` gave (`foe-<key>` cut to 64). Equal to
+ * `orchestrationActionId(key)` for every key of ≤ 60 characters. A row a run left under it before the upgrade is still found
+ * (ensureOrchestrationAction) — never shadowed by a fresh confirmed row under the new id (that would allow a second write).
+ */
+export function orchestrationActionIdCu(idempotencyKey: string): string {
+  return `foe-${idempotencyKey}`.slice(0, ACTION_ID_MAX);
+}
+
+/**
+ * R1b-2b-2a A2(m) — the id of a FRESH authorisation row for ONE dispatch of an FOE step whose command is a PINNED STOP: built from
+ * (idempotency key, attempt, per-dispatch nonce) and hash-shortened by `orchestrationActionId` (never truncated). A new nonce per
+ * dispatch ⇒ a new row per attempt, per resume, per walk: a STOP is never refused because an earlier dispatch spent its row.
+ */
+export function stopActionIdMoi(idempotencyKey: string, attempt: number, nonce: string): string {
+  return orchestrationActionId(`${idempotencyKey}#stop-a${attempt}-${nonce}`);
 }
 
 /** Minimal principal shape (foeEngine.FoeUser). */
