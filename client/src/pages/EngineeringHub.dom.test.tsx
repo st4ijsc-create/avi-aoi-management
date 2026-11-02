@@ -15,7 +15,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
+import i18next from "i18next";
 import vi_ from "@/i18n/locales/vi.json";
+import en_ from "@/i18n/locales/en.json";
+import zh_ from "@/i18n/locales/zh.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { resolvePermissionModule } from "@shared/permissions";
@@ -49,6 +52,7 @@ const ok = (count = 0, samples: Bucket["samples"] = []): Bucket => ({ count, sam
 const srv = vi.hoisted(() => ({
   summary: undefined as Record<string, unknown> | undefined,
   posture: undefined as Record<string, unknown> | undefined,
+  postureOpts: undefined as Record<string, unknown> | undefined,
   summaryError: false,
 }));
 function setSummary(o: Record<string, Bucket> = {}, mine: Record<string, Bucket> = {}) {
@@ -72,7 +76,8 @@ vi.mock("@/lib/trpc", () => ({
         get(_t2, proc: string) {
           const key = `${router}.${proc}`;
           return {
-            useQuery: () => {
+            useQuery: (_i?: unknown, opts?: Record<string, unknown>) => {
+              if (key === "oversight.posture") srv.postureOpts = opts;
               if (key === "oversight.pendingSummary" && srv.summaryError) {
                 return { data: undefined, isLoading: false, isPending: false, isError: true, error: new Error("x"), refetch: () => undefined };
               }
@@ -454,6 +459,88 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     srv.posture = { ...POSTURE_OK, stopQuaHan24h: { count: 0, theoBuoc: {}, khongGhiSo: null, degraded: true } };
     render(<EngineeringHub />);
     expect((aside().querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHanUnavailable"));
+  });
+
+  describe("R1b-2b-2b B-T3 (mục 54) — theoBuoc của STOP quá hạn + không ghi sổ + làm tươi 10 s", () => {
+    const stop = (o: Record<string, unknown>) => {
+      srv.posture = { ...POSTURE_OK, stopQuaHan24h: { count: 5, theoBuoc: { doc_ghim: 3, db: 2 }, khongGhiSo: null, degraded: false, ...o } };
+    };
+    const nhanBuoc = (k: string) => S(`oversight.posture.buoc.${k}`);
+    const dsBuoc = () => within(aside().querySelector("[data-testid='posture-stop-qua-han-buoc']") as HTMLElement).getAllByRole("listitem");
+
+    it("★ {doc_ghim: 3, db: 2} ⇒ nhãn vi của doc_ghim ĐỨNG TRƯỚC db, kèm số 3 / 2 (giảm dần, không theo thứ tự khoá)", () => {
+      stop({ theoBuoc: { db: 2, doc_ghim: 3 } });
+      render(<EngineeringHub />);
+      const li = dsBuoc();
+      expect(li.map((x) => x.textContent)).toEqual([`${nhanBuoc("doc_ghim")}: 3`, `${nhanBuoc("db")}: 2`]);
+      expect(nhanBuoc("doc_ghim")).not.toBe(nhanBuoc("db"));
+    });
+
+    it("★ khoá LẠ ('zzz') ⇒ nhãn chung 'khác' + khoá thô ở title; khoá server 'khac'/'khong_ro' có nhãn riêng", () => {
+      stop({ count: 3, theoBuoc: { zzz: 2, khong_ro: 1 } });
+      render(<EngineeringHub />);
+      const [zzz, khongRo] = dsBuoc();
+      expect(zzz.textContent).toBe(`${nhanBuoc("khac")}: 2`);
+      expect(zzz).toHaveAttribute("title", "zzz");
+      expect(khongRo.textContent).toBe(`${nhanBuoc("khong_ro")}: 1`);
+      expect(khongRo).not.toHaveAttribute("title");
+      expect(aside().textContent).not.toContain("oversight.posture.buoc");
+    });
+
+    it("count = 0 hoặc degraded ⇒ KHÔNG có danh sách bước (degraded giữ câu 'không đọc được')", () => {
+      stop({ count: 0, theoBuoc: { db: 1 } }); // count 0 ⇒ không in danh sách dù theoBuoc còn khoá (câu "0" là kết luận)
+      render(<EngineeringHub />);
+      expect(aside().querySelector("[data-testid='posture-stop-qua-han-buoc']")).toBeNull();
+      cleanup();
+      stop({ count: 5, degraded: true, khongGhiSo: { count: 1, theoBuoc: { giay_phep: 1 }, batDauLuc: "2026-11-01T00:00:00.000Z" } });
+      render(<EngineeringHub />);
+      expect(aside().querySelector("[data-testid='posture-stop-qua-han-buoc']")).toBeNull();
+      expect(aside().querySelector("[data-posture-khong-ghi-so]")).toBeNull();
+      expect((aside().querySelector("[data-posture-stop-qua-han]") as HTMLElement).textContent).toBe(S("oversight.posture.stopQuaHanUnavailable"));
+    });
+
+    it("★ khongGhiSo {count 1, giay_phep 1} ⇒ dòng 'Không ghi được sổ (từ …): 1' + danh sách riêng; khongGhiSo null ⇒ không dòng", () => {
+      stop({ khongGhiSo: { count: 1, theoBuoc: { giay_phep: 1 }, batDauLuc: "2026-11-01T00:00:00.000Z" } });
+      render(<EngineeringHub />);
+      const dong = aside().querySelector("[data-posture-khong-ghi-so]") as HTMLElement;
+      expect(dong.textContent).toContain(S("oversight.posture.khongGhiSo").split("{{tu}}")[0]);
+      expect(dong.textContent).toMatch(/: 1$/);
+      expect(dong.textContent).not.toContain("{{");
+      const ds = within(aside().querySelector("[data-testid='posture-khong-ghi-so-buoc']") as HTMLElement).getAllByRole("listitem");
+      expect(ds.map((x) => x.textContent)).toEqual([`${nhanBuoc("giay_phep")}: 1`]);
+      cleanup();
+      stop({ khongGhiSo: null });
+      render(<EngineeringHub />);
+      expect(aside().querySelector("[data-posture-khong-ghi-so]")).toBeNull();
+    });
+
+    it("en / zh: nhãn đổi theo ngôn ngữ (không còn chữ Việt, không lộ khoá i18n)", async () => {
+      i18next.addResourceBundle("en", "translation", en_ as Record<string, unknown>, true, true);
+      i18next.addResourceBundle("zh", "translation", zh_ as Record<string, unknown>, true, true);
+      try {
+        for (const [lng, bundle] of [["en", en_], ["zh", zh_]] as const) {
+          await act(async () => {
+            await i18next.changeLanguage(lng);
+          });
+          stop({ theoBuoc: { doc_ghim: 3, db: 2 }, khongGhiSo: { count: 1, theoBuoc: { giay_phep: 1 }, batDauLuc: "2026-11-01T00:00:00.000Z" } });
+          render(<EngineeringHub />);
+          const B = (bundle as unknown as { oversight: { posture: { buoc: Record<string, string> } } }).oversight.posture.buoc;
+          expect(dsBuoc().map((x) => x.textContent)).toEqual([`${B.doc_ghim}: 3`, `${B.db}: 2`]);
+          expect(B.doc_ghim).not.toBe(nhanBuoc("doc_ghim"));
+          expect(aside().textContent).not.toContain("oversight.posture.");
+          cleanup();
+        }
+      } finally {
+        await act(async () => {
+          await i18next.changeLanguage("vi");
+        });
+      }
+    });
+
+    it("★ posture làm tươi: staleTime 10000 + refetchOnWindowFocus true", () => {
+      render(<EngineeringHub />);
+      expect(srv.postureOpts).toMatchObject({ staleTime: 10_000, refetchOnWindowFocus: true });
+    });
   });
 
   it("R1b-2b-2a T9 (mục 71) — nganSachPoolStop.du=false ⇒ thấy câu vi; du=true hoặc thiếu trường ⇒ không có", () => {

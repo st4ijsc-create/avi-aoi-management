@@ -1918,6 +1918,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
+  // R1b-2b-2a A2(o) AMENDMENT 2 — the edge refused it because its config went STALE after the authorisation (nothing sent, the
+  // authorisation NOT used): HELD — no retry, no compensation; a Continue re-authorises it under the new config.
+  const heldBy = result.ok || !rc.store.heldByDispatch ? null : await rc.store.heldByDispatch(step.id, { ok: result.ok, detail: (result.detail ?? null) as Record<string, unknown> | null });
+  if (heldBy) return { kind: "held", stepId: step.id, reason: heldBy.reason, error: heldBy.error };
 
   // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).
   await stopBoundedWrite(isStop, rc.runId, step.id, "result row", () =>

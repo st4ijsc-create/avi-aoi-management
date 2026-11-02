@@ -52,6 +52,8 @@ describe("final fix wave I-3 — console STOP for an UNREACHABLE edge owner", ()
     await new Promise((x) => setTimeout(x, 10));
     expect(alerts.list).toHaveLength(1);
     expect(alerts.list[0]).toMatchObject({ kind: "stop_undelivered", dedupKey: "stop_undelivered:request:501" });
+    // A2(j) polish — the durable dedup flag: the inbox row carries metadata.dedupKey, the marker the undelivered-STOP sweep reads (no second alert)
+    expect((alerts.list[0] as { khuTrungBenVung?: unknown }).khuTrungBenVung).toEqual({});
     expect(alerts.list[0].message).toMatch(/unreachable/i);
   });
 

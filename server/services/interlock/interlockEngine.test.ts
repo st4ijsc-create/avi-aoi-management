@@ -24,13 +24,9 @@ import path from "node:path";
 // ca riêng đặt `duyetHL.v = false` (định nghĩa đổi sau duyệt).
 const duyetHL = vi.hoisted(() => ({ v: true }));
 vi.mock("./dinhNghiaDuyet", () => ({ luatDuyetConHieuLuc: vi.fn(async () => duyetHL.v) }));
-vi.mock("drizzle-orm", () => ({
-  and: (...a: any[]) => ({ op: "and", a }),
-  eq: (col: any, val: any) => ({ op: "eq", col, val }),
-  gte: (col: any, val: any) => ({ op: "gte", col, val }),
-  desc: (col: any) => ({ op: "desc", col }),
-  sql: Object.assign((..._a: any[]) => ({ op: "sql" }), {}),
-}));
+// SCADA R1b-2b-2a A2(j) — the REAL drizzle operators (a partial factory mock made any operator the gate adds throw inside its try ⇒ fail-closed for
+// the wrong reason); the fake DB below ignores conditions either way.
+vi.mock("drizzle-orm", async (importOriginal) => ({ ...(await importOriginal<typeof import("drizzle-orm")>()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
   interlockRules: { __t: "interlock_rules", id: { __c: "id" }, enabled: { __c: "enabled" } },

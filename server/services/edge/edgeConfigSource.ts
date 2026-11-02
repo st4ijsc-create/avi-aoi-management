@@ -116,6 +116,11 @@ export class EdgeConfigSource {
   private lastAccepted: number | null = null;
   private readonly listeners = new Set<(c: EdgeConfigSnapshot) => void>();
   private readonly log: (m: string) => void;
+  /** R1b-2b-2a A2(o) — central announced a config newer than the verified one (pull / heartbeat), since when */
+  private staleMark: { centralVersion: number; sinceMs: number } | null = null;
+  /** A2(o) — the refresh requested by a refused dispatch (single-flight) and when the last one started */
+  private requested: Promise<unknown> | null = null;
+  private requestedAt = -Infinity;
 
   private constructor(private readonly opts: EdgeConfigSourceOptions, store: EdgeTrustStore) {
     this.store = store;
@@ -203,6 +208,53 @@ export class EdgeConfigSource {
   }
   safetyPlcConfigs(): EdgeConfigSnapshot["safetyPlcConfigs"] {
     return [...(this.config?.safetyPlcConfigs ?? [])];
+  }
+
+  private nowMs(): number {
+    return (this.opts.now ?? Date.now)();
+  }
+
+  /**
+   * R1b-2b-2a A2(o) — central's configVersion as a pull / heartbeat answer states it. Newer than the verified config ⇒ STALE
+   * (kept, with the time it was first seen, until a refresh adopts that version); not newer ⇒ not stale. 0 / not a positive
+   * integer (central could not build the config) says nothing ⇒ the mark is kept as it is — and central unreachable (no answer)
+   * never calls this, so a stale config stays stale (fail-closed for non-STOP writes; STOPs never look at it).
+   */
+  noteCentralConfigVersion(v: unknown): void {
+    if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) return;
+    if (v <= this.version()) {
+      if (this.staleMark) this.log(`[EdgeConfig] config v${this.version()} is current again (central announces v${v}) — non-STOP writes resume`);
+      this.staleMark = null;
+      return;
+    }
+    if (!this.staleMark) this.log(`[EdgeConfig] central announces config v${v}, this edge holds v${this.version()} — non-STOP writes are refused until the refresh succeeds (STOPs still go)`);
+    this.staleMark = { centralVersion: Math.max(v, this.staleMark?.centralVersion ?? 0), sinceMs: this.staleMark?.sinceMs ?? this.nowMs() };
+  }
+
+  /** A2(o) — null ⇔ the verified config is the newest central announced (as far as this edge knows). */
+  staleness(): { centralVersion: number; localVersion: number; sinceMs: number; configIssuedAt: number | null } | null {
+    const m = this.staleMark;
+    if (!m) return null;
+    if (this.version() >= m.centralVersion) {
+      this.staleMark = null;
+      return null;
+    }
+    return { centralVersion: m.centralVersion, localVersion: this.version(), sinceMs: m.sinceMs, configIssuedAt: this.config?.issuedAt ?? null };
+  }
+
+  /** A2(o) — a refused dispatch asks for a refresh: single-flight, at most one per second; never throws, never awaited. */
+  requestRefresh(): void {
+    if (this.requested || this.nowMs() - this.requestedAt < 1_000) return;
+    this.requestedAt = this.nowMs();
+    const p = this.refresh()
+      .then((r) => {
+        if (!r.ok) this.log(`[EdgeConfig] requested config refresh failed (${r.reason}) — the previous verified config stays in use`);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.requested === p) this.requested = null;
+      });
+    this.requested = p;
   }
 
   /**

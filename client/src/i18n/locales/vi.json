@@ -17101,7 +17101,26 @@
       "cauHinhHongMo": "Mở trang interlock",
       "stopQuaHan": "STOP HMI bị từ chối vì quá hạn (24 h): {{count}}",
       "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn",
-      "poolStopThieu": "Ngân sách pool STOP HMI hụt: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}"
+      "poolStopThieu": "Ngân sách pool STOP HMI hụt: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "Không ghi được sổ (từ {{tu}}): {{count}}",
+      "buoc": {
+        "db": "Lỗi cơ sở dữ liệu",
+        "het_han_tong_truoc_handler": "Hết hạn tổng trước khi xử lý",
+        "pham_vi": "Kiểm phạm vi",
+        "doc_may": "Đọc máy",
+        "vai_tro": "Kiểm vai trò",
+        "doc_adapter": "Đọc adapter",
+        "doc_ghim": "Đọc ghim STOP",
+        "dong_cho": "Dòng chờ",
+        "adapter": "Gửi tới adapter",
+        "xac_thuc": "Xác thực",
+        "cong_doi_mat_khau": "Cổng đổi mật khẩu",
+        "giay_phep": "Giấy phép",
+        "pham_vi_tenant": "Phạm vi tenant",
+        "ghi_so_loi": "Ghi sổ lỗi",
+        "khac": "Bước khác",
+        "khong_ro": "Không rõ bước"
+      }
     },
     "table": {
       "kind": "Loại việc",

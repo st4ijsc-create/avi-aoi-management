@@ -25,7 +25,9 @@ vi.mock("../../db/connection", () => ({
     }),
     update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
     // the robots row read by the REAL robotEnabledGate (and any other select: same answer)
-    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(H.robotRow) }) }) }),
+    // A2(j) gate fix — the interlock gate's rule read is select().from().where().orderBy(id).limit(cap + 1): the chain must offer orderBy, else the
+    // gate throws inside its try and fails CLOSED (motion rejected for the wrong reason). No interlock rule in these suites ⇒ [] for that read.
+    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(H.robotRow), orderBy: () => ({ limit: () => Promise.resolve([]) }) }) }) }),
   })),
 }));
 vi.mock("../robot/robotManager", () => ({

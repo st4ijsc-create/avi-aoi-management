@@ -98,7 +98,9 @@ export class EdgeContractError extends Error {
       | "bad_argument"
       | "package_mismatch"
       | "not_in_config"
-      | "cache_format",
+      | "cache_format"
+      /** R1b-2b-2a A2(o) — a safety-PLC config guarding the node cannot be expressed in the config: NOTHING is shipped (never a set without it) */
+      | "safety_plc_unshippable",
     message: string,
   ) {
     super(message);

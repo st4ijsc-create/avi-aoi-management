@@ -21,7 +21,7 @@
  * holds. configHash = edgeProtocol.edgeConfigHash(envelope); a request quoting it gets `notModified`.
  */
 import { eq, inArray, sql } from "drizzle-orm";
-import { deviceAdapters, deviceTags, edgeNodes, machines, robots } from "../../../drizzle/schema";
+import { deviceAdapters, deviceTags, edgeNodes, machines, robots, type SafetyPlcConfig } from "../../../drizzle/schema";
 import {
   EDGE_PROTOCOL_VERSION,
   clampEdgeAuthTtlMs,
@@ -120,6 +120,194 @@ export function edgePlcConfigGuardsNode(
   if (cfg.stationId != null) return ownStations.has(cfg.stationId);
   if (cfg.lineId != null) return ownLines.has(cfg.lineId);
   return cfg.factoryId === nodeFactoryId;
+}
+
+// ── R1b-2b-2a A2(o) — URGENT alerts of a config central cannot serve (the factory-drift pattern of deviceOwnershipService) ──
+/**
+ * key → until when THIS process suppresses it (one scan / one rebuild every few seconds never repeats). A2(o) r3 (review I-1):
+ * a delivered alert is suppressed for EDGE_CONFIG_ALERT_WINDOW_MS (24 h, the durable dedup's window — docHetTheoTrang.baoDocCatBot's
+ * pattern). A2(o) r4 (review m-2): a delivery that FAILED (recipients unreadable / none, or the raise threw) keeps a SHORT stamp
+ * (EDGE_CONFIG_ALERT_RETRY_MS, 5 min) — a rebuild every few seconds never floods the log or raises to [] again and again, and
+ * after 5 min the next occurrence alerts again. A node that builds again re-arms its build keys (rearmConfigAlerts).
+ */
+const configAlerted = new Map<string, { until: number }>();
+/** = robot/criticalStopAlert CRITICAL_STOP_ALERT_DEDUP_WINDOW_MS (24 h; pinned equal by edgeConfigCentral.a2o.test) */
+export const EDGE_CONFIG_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** A2(o) r4 — how long a FAILED delivery is suppressed before the next occurrence alerts again */
+export const EDGE_CONFIG_ALERT_RETRY_MS = 5 * 60 * 1000;
+const CONFIG_ALERTED_MAX = 10_000;
+/** serialized: two builds never race to write the same inbox rows */
+let configAlertQueue: Promise<unknown> = Promise.resolve();
+const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
+
+/** The people who can act: active admins + supervisors (bounded read; an unreadable list ⇒ none — the log line + alert stream still carry it). */
+export async function alertRecipients(d: Db): Promise<number[]> {
+  const { withDeadline } = await import("../ot/drivers/boundedClose");
+  const r = await withDeadline(Promise.resolve(d.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)), 5_000, "edge config alert recipients");
+  return rowsOf(r).map((u) => Number(u.id));
+}
+
+/**
+ * A2(o) — one URGENT alert per `dedupKey`: per process (configAlerted, 24 h) AND durably for 24 h (khuTrungBenVung — a restart
+ * never re-sends it to every admin), retried until the inbox row lands. A delivery that failed (recipients unreadable / none, the
+ * raise threw) is suppressed for 5 min only (A2(o) r4) ⇒ an occurrence after that alerts again. Fire-and-forget; never throws.
+ * false ⇔ suppressed here (within the window, or in flight).
+ */
+export function raiseEdgeConfigAlert(a: { kind: string; dedupKey: string; title: string; message: string; nodeId: number }, recipients: () => Promise<number[]>): boolean {
+  const now = Date.now();
+  const held = configAlerted.get(a.dedupKey);
+  if (held !== undefined && now < held.until) return false;
+  if (configAlerted.size >= CONFIG_ALERTED_MAX) {
+    for (const [k, e] of configAlerted) if (now >= e.until) configAlerted.delete(k);
+    if (configAlerted.size >= CONFIG_ALERTED_MAX) configAlerted.clear();
+  }
+  // marked for the full window while in flight (a rebuild every few seconds never queues a second one); a failed delivery
+  // SHORTENS it to the retry stamp (only this call's entry: a newer one is never touched)
+  const mine = { until: now + EDGE_CONFIG_ALERT_WINDOW_MS };
+  configAlerted.set(a.dedupKey, mine);
+  const failed = () => {
+    if (configAlerted.get(a.dedupKey) === mine) mine.until = Date.now() + EDGE_CONFIG_ALERT_RETRY_MS;
+  };
+  configAlertQueue = configAlertQueue
+    .then(async () => {
+      // an unreadable / empty recipient list still raises (the log line + alert stream carry it) but only the SHORT stamp is
+      // kept: the inbox row was written for nobody, so an occurrence after 5 min alerts again
+      let to: number[] = [];
+      let delivered = true;
+      try {
+        to = await recipients();
+      } catch (err) {
+        delivered = false;
+        console.error(`[EdgeConfig] ${a.kind}: the alert recipients could not be read (${String((err as Error)?.message ?? err).slice(0, 160)}) — an occurrence after 5 min alerts again`);
+      }
+      if (!Array.isArray(to) || to.length === 0) {
+        if (delivered) console.error(`[EdgeConfig] ${a.kind}: no active admin / supervisor to alert — an occurrence after 5 min alerts again`);
+        delivered = false;
+        to = [];
+      }
+      try {
+        const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+        await raiseCriticalStopAlert({
+          kind: a.kind,
+          title: a.title,
+          message: a.message,
+          recipients: to,
+          dedupKey: a.dedupKey,
+          // a STATE alert: the per-process memory is empty after every boot ⇒ the durable 24 h dedup keeps one row per (person, key)
+          khuTrungBenVung: {},
+          retryUntilPersisted: { everyMs: 30_000, attempts: 20 },
+          source: "ot",
+          entityType: "edge_node",
+          entityId: a.nodeId,
+        });
+      } catch (err) {
+        delivered = false;
+        console.error(`[EdgeConfig] ${a.kind}: the alert could not be raised (${String((err as Error)?.message ?? err).slice(0, 160)}) — an occurrence after 5 min alerts again`);
+      }
+      if (!delivered) failed();
+    })
+    .catch(() => undefined); // one failed alert never breaks the queue (its stamp was shortened: a later occurrence alerts)
+  return true;
+}
+/** A node built a config again ⇒ its BUILD alerts re-arm (a NEW failure later alerts again); edge-reported ones are not build state. */
+const BUILD_ALERT_KINDS = new Set(["edge_safety_plc_unshippable", "edge_config_unbuildable"]);
+function rearmConfigAlerts(nodeId: number): void {
+  for (const k of [...configAlerted.keys()]) {
+    const [kind, node] = k.split(":");
+    if (BUILD_ALERT_KINDS.has(kind) && node === String(nodeId)) configAlerted.delete(k);
+  }
+}
+
+/**
+ * R1b-2b-2a A2(o) AMENDMENT 2 — what central raises for an anomaly an EDGE reported (events stream, edgeReportsCentral):
+ *   • EDGE_SAFETY_CONFIG_MISSING (a write refused: a safety PLC the authorisation was signed for is not in the edge's config) ⇒
+ *     ONE URGENT alert per (node, sorted ids) — per process and durably for 24 h (raiseEdgeConfigAlert);
+ *   • EDGE_CONFIG_STALE and every other code ⇒ nothing beyond the EDGE_ANOMALY audit the caller writes.
+ * true ⇔ an alert was raised now. Never throws.
+ */
+export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { code: string; detail?: string | null }, recipients: () => Promise<number[]>): boolean {
+  if (rec.code !== "EDGE_SAFETY_CONFIG_MISSING") return false;
+  const detail = String(rec.detail ?? "");
+  const listed = /signed safety-PLC config\(s\) ([#0-9, ]+)/.exec(detail)?.[1] ?? "";
+  const ids = [...new Set([...listed.matchAll(/#(\d+)/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+  const idText = ids.length ? ids.map((x) => `#${x}`).join(", ") : "(not named)";
+  return raiseEdgeConfigAlert(
+    {
+      kind: "edge_safety_plc_missing",
+      dedupKey: `edge_safety_plc_missing:${node.nodeId}:${ids.length ? ids.join(",") : "unnamed"}`,
+      title: `Edge node ${node.nodeCode}: a write was refused — safety-PLC config missing on the edge`,
+      message: `Edge node ${node.nodeCode} refused a non-STOP write: the safety-PLC config(s) ${idText} guarding the device are not in the config it holds, so its preflight could not consult them (nothing was sent; the edge asked for a refresh). If this repeats, check that central can build and serve the node's config.`,
+      nodeId: node.nodeId,
+    },
+    recipients,
+  );
+}
+/** Tests only — the alert queue settled; the per-process memory forgotten (a restart). */
+export function __edgeConfigAlertsSettledForTests(): Promise<unknown> {
+  return configAlertQueue;
+}
+export function __resetEdgeConfigAlertsForTests(): void {
+  configAlerted.clear();
+  configAlertQueue = Promise.resolve();
+  unbuildableLogged.clear();
+}
+
+type ShippedPlc = Content["safetyPlcConfigs"][number];
+/**
+ * R1b-2b-2a A2(o) — the safety-PLC section of a node's config: EVERY config the I-3 rule ships for the node, or NOTHING. A config
+ * whose shipped form fails the item schema (or whose trust digest cannot be computed) was skipped silently before (a fail-open
+ * trap: the edge's preflight then never read it). Now the whole build is REFUSED (EdgeContractError safety_plc_unshippable ⇒
+ * configForNode 503, authorize 503 — the served-snapshot check) and an URGENT alert names each config, once per
+ * (node, config, trust digest) (raiseEdgeConfigAlert). The node's alerts re-arm when its config is served again (currentNodeConfig).
+ */
+export async function shipSafetyPlcConfigs(
+  node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">,
+  guarding: ReadonlyArray<SafetyPlcConfig>,
+  deps: { digest: (cfg: SafetyPlcConfig) => string; approved: (cfg: SafetyPlcConfig) => Promise<boolean>; recipients: () => Promise<number[]> },
+): Promise<ShippedPlc[]> {
+  const out: ShippedPlc[] = [];
+  const unshippable: Array<{ id: number; code: string; digest: string; issue: string }> = [];
+  for (const cfg of guarding) {
+    const projection = {
+      id: cfg.id,
+      code: cfg.code,
+      vendor: cfg.vendor,
+      backend: cfg.backend,
+      endpoint: cfg.endpoint ?? null,
+      statusMap: plain(cfg.statusMap ?? null),
+      robotId: cfg.robotId ?? null,
+      stationId: cfg.stationId ?? null,
+      lineId: cfg.lineId ?? null,
+      factoryId: cfg.factoryId ?? null,
+      enabled: cfg.enabled === true,
+    };
+    let digest: string;
+    try {
+      digest = deps.digest(cfg);
+    } catch (err) {
+      unshippable.push({ id: cfg.id, code: String(cfg.code), digest: "none", issue: `trust digest not computable (${String((err as Error)?.message ?? err).slice(0, 120)})` });
+      continue;
+    }
+    const p = edgeConfigSafetyPlcSchema.safeParse({ id: cfg.id, trustDigest: digest, approved: await deps.approved(cfg), config: projection });
+    if (p.success) out.push(p.data);
+    else unshippable.push({ id: cfg.id, code: String(cfg.code), digest: String(digest).slice(0, 64), issue: `not expressible: ${p.error.issues[0]?.path.join(".") || "?"} ${p.error.issues[0]?.message ?? ""}`.trim() });
+  }
+  if (unshippable.length === 0) return out;
+  const names = unshippable.map((u) => `#${u.id} ${u.code}`).join(", ");
+  console.error(`[EdgeConfig] node ${node.nodeCode}: safety-PLC config(s) ${names} cannot be expressed in its config — NO config is served (never a set without them): ${unshippable.map((u) => `#${u.id}: ${u.issue}`).join("; ")}`);
+  for (const u of unshippable) {
+    raiseEdgeConfigAlert(
+      {
+        kind: "edge_safety_plc_unshippable",
+        dedupKey: `edge_safety_plc_unshippable:${node.nodeId}:${u.id}:${u.digest}`,
+        title: `Edge node ${node.nodeCode}: safety-PLC config #${u.id} cannot be shipped`,
+        message: `Safety-PLC config #${u.id} (${u.code}) guards devices of edge node ${node.nodeCode} but cannot be expressed in the node's signed config (${u.issue}). Central serves NO config to the node and refuses every non-STOP authorisation for it until the config is fixed (STOPs still go). Fix or disable the safety-PLC config.`,
+        nodeId: node.nodeId,
+      },
+      deps.recipients,
+    );
+  }
+  throw new EdgeContractError("safety_plc_unshippable", `safety-PLC config(s) ${names} of node ${node.nodeCode} cannot be shipped`);
 }
 
 /** Build the node's config CONTENT (deterministic for a given DB state + keyring). Throws on a DB error. */
@@ -236,26 +424,11 @@ export async function buildNodeConfigContent(d: Db, node: EdgeNodePrincipal): Pr
   const ownRobots = new Set(scope.robots.map((p) => p.id));
   const ownStations = new Set([...scope.robots, ...scope.adapters].map((p) => p.stationId).filter((x): x is number => x != null));
   const ownLines = new Set([...scope.robots, ...scope.adapters].map((p) => p.lineId).filter((x): x is number => x != null));
-  const safetyOut: Content["safetyPlcConfigs"] = [];
+  let safetyOut: Content["safetyPlcConfigs"] = [];
   if (scope.factoryId !== null && (ownRobots.size > 0 || scope.adapters.length > 0)) {
-    for (const cfg of await listPlcConfigs({ onlyEnabled: true })) {
-      if (!edgePlcConfigGuardsNode(cfg, scope.factoryId, ownRobots, ownStations, ownLines)) continue;
-      const projection = {
-        id: cfg.id,
-        code: cfg.code,
-        vendor: cfg.vendor,
-        backend: cfg.backend,
-        endpoint: cfg.endpoint ?? null,
-        statusMap: plain(cfg.statusMap ?? null),
-        robotId: cfg.robotId ?? null,
-        stationId: cfg.stationId ?? null,
-        lineId: cfg.lineId ?? null,
-        factoryId: cfg.factoryId ?? null,
-        enabled: cfg.enabled === true,
-      };
-      const p = edgeConfigSafetyPlcSchema.safeParse({ id: cfg.id, trustDigest: plcTrustDigest(cfg), approved: await isPlcConfigTrustApproved(cfg), config: projection });
-      if (p.success) safetyOut.push(p.data);
-    }
+    const factoryId = scope.factoryId;
+    const guarding = (await listPlcConfigs({ onlyEnabled: true })).filter((cfg) => edgePlcConfigGuardsNode(cfg, factoryId, ownRobots, ownStations, ownLines));
+    safetyOut = await shipSafetyPlcConfigs(node, guarding, { digest: plcTrustDigest, approved: isPlcConfigTrustApproved, recipients: () => alertRecipients(d) });
   }
 
   return {
@@ -286,6 +459,8 @@ interface CachedConfig {
   configHash: string;
   builtAt: number;
   credentialId: number;
+  /** R1b-2b-2a A2(o) — the safety-PLC config ids THIS envelope ships (authorize signs only ids inside it) */
+  safetyPlcConfigIds: number[];
 }
 const cache = new Map<number, CachedConfig>();
 /** Tests only. */
@@ -314,7 +489,7 @@ export async function currentNodeConfig(node: EdgeNodePrincipal, opts: { fresh?:
   const prev = cache.get(node.nodeId);
   const d = await centralDb();
   const ownershipKey = await nodeOwnershipKey(d, node.nodeId);
-  if (!opts.fresh && prev && prev.credentialId === node.credentialId && prev.ownershipKey === ownershipKey && Date.now() - prev.builtAt < edgeConfigCacheMs()) return prev;
+  if (!opts.fresh && prev && prev.credentialId === node.credentialId && prev.ownershipKey === ownershipKey && Date.now() - prev.builtAt < edgeConfigCacheMs()) return served(node, prev);
   const signer = centralSigner();
   if (!signer) throw new EdgeContractError("no_signer", "no signer");
   const content = await buildNodeConfigContent(d, node);
@@ -322,20 +497,76 @@ export async function currentNodeConfig(node: EdgeNodePrincipal, opts: { fresh?:
   if (prev && prev.contentHash === contentHash && prev.credentialId === node.credentialId) {
     const kept = { ...prev, ownershipKey, builtAt: Date.now() };
     cache.set(node.nodeId, kept);
-    return kept;
+    return served(node, kept);
   }
   const version = Math.max(Math.floor(Date.now() / 1000), (prev?.version ?? 0) + 1);
   const envelope = signForNode(signer, "config", edgeConfigSnapshotSchema, { ...content, configVersion: version, issuedAt: Date.now() }, node);
-  const out: CachedConfig = { ownershipKey, contentHash, version, envelope, configHash: edgeConfigHash(envelope), builtAt: Date.now(), credentialId: node.credentialId };
+  const out: CachedConfig = {
+    ownershipKey,
+    contentHash,
+    version,
+    envelope,
+    configHash: edgeConfigHash(envelope),
+    builtAt: Date.now(),
+    credentialId: node.credentialId,
+    safetyPlcConfigIds: content.safetyPlcConfigs.map((c) => c.id),
+  };
   cache.set(node.nodeId, out);
-  return out;
+  return served(node, out);
 }
 
-/** configVersion for heartbeat / pull answers (0 when it cannot be built now — the edge keeps what it has). */
+/** A2(o) — a config is served again: the node's alerts re-arm and its next build failure is logged again. */
+function served(node: EdgeNodePrincipal, c: CachedConfig): CachedConfig {
+  if (unbuildableLogged.delete(node.nodeId)) console.log(`[EdgeConfig] config of node ${node.nodeCode} can be built again (v${c.version})`);
+  rearmConfigAlerts(node.nodeId);
+  return c;
+}
+
+/**
+ * R1b-2b-2a A2(o) — the safety-PLC config ids of the snapshot central SERVES this node right now: the SAME cached object
+ * configForNode serves (currentNodeConfig). Throws when no config can be built (⇒ 503 at the caller, nothing signed).
+ */
+export async function servedSafetyPlcConfigIds(node: EdgeNodePrincipal): Promise<ReadonlySet<number>> {
+  return new Set((await currentNodeConfig(node)).safetyPlcConfigIds);
+}
+
+/** node id → the last build failure logged (one line per change, not one per pull) */
+const unbuildableLogged = new Map<number, string>();
+
+/**
+ * A2(o) / O8 — a config that cannot be built is never reported SILENTLY as configVersion 0: logged once per node and reason
+ * (central unreachable ⇒ a warning; anything else ⇒ an error), and a CONTRACT failure (e.g. more than 200 safety-PLC configs —
+ * the signed schema refuses the envelope) raises one URGENT alert per (node, code). safety_plc_unshippable alerts per config
+ * already (shipSafetyPlcConfigs). Authorize refuses meanwhile (the served-snapshot check throws ⇒ 503).
+ */
+function noteConfigUnbuildable(node: EdgeNodePrincipal, err: unknown): void {
+  const why = String((err as Error)?.message ?? err).slice(0, 300);
+  if (unbuildableLogged.get(node.nodeId) === why) return;
+  unbuildableLogged.set(node.nodeId, why);
+  const unavailable = isEdgeUnavailableError(err);
+  const line = `[EdgeConfig] config of node ${node.nodeCode} cannot be built (${why}) — its pull / heartbeat answers carry configVersion 0, the node keeps its previous config, and every non-STOP authorisation for it is refused until it builds`;
+  if (unavailable) console.warn(line);
+  else console.error(line);
+  if (err instanceof EdgeContractError && err.code !== "safety_plc_unshippable" && err.code !== "no_signer") {
+    raiseEdgeConfigAlert(
+      {
+        kind: "edge_config_unbuildable",
+        dedupKey: `edge_config_unbuildable:${node.nodeId}:${err.code}`,
+        title: `Edge node ${node.nodeCode}: its signed config cannot be built`,
+        message: `Central cannot build the signed config of edge node ${node.nodeCode} (${err.code}). The node keeps its previous config and every non-STOP authorisation for it is refused until the config builds again (STOPs still go). Check the node's devices and safety-PLC configs (at most 200 per node).`,
+        nodeId: node.nodeId,
+      },
+      async () => alertRecipients(await centralDb()),
+    );
+  }
+}
+
+/** configVersion for heartbeat / pull answers (0 when it cannot be built now — the edge keeps what it has; never silent, O8). */
 export async function currentConfigVersion(node: EdgeNodePrincipal): Promise<number> {
   try {
     return (await currentNodeConfig(node)).version;
-  } catch {
+  } catch (err) {
+    noteConfigUnbuildable(node, err);
     return 0;
   }
 }

@@ -1,4 +1,4 @@
-import { khoaMayGhi, tramCungNhaMayVoiMay } from "./_cauHinhPhamVi";
+import { khoaMayGhi, tramCungNhaMayVoiMay, viTriHopLe } from "./_cauHinhPhamVi";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -4591,6 +4591,10 @@ export const machineApiRouter = router({
       if (expiresAt && Number.isNaN(expiresAt.getTime())) {
         throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "Invalid expiresAt date");
       }
+      // ★★★ F5-nhanh (a) review (mục B) — CÙNG khuôn phạm vi với rotateKey / revokeKey (khoaMayGhi ⇒ viTriHopLe): máy ngoài phạm vi người gọi
+      // ≡ máy không có thật (NOT_FOUND machine), kiểm TRƯỚC khi đúc; toàn quyền (admin) ⇒ không kiểm. Trước bản vá: người có admin_system/canCreate
+      // của nhà máy A đúc được khoá mk_ cho máy của nhà máy B.
+      await viTriHopLe(ctx, { machineId: input.machineId }, "machine");
       return issueMachineKey({
         machineId: input.machineId,
         name: input.name,

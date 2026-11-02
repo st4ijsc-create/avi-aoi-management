@@ -7,6 +7,9 @@ import { appError } from "../_core/appError";
 import { eq, and } from "drizzle-orm";
 import { getDb as getDbRaw } from "../db";
 import { permissions, users, userRoles, type Permission, type InsertPermission } from "../../drizzle/schema";
+// ★★★ F5-nhanh — CÙNG bộ dọn auth cache mà `user.update` / `user.updateRole` dùng (db/auth.ts). Mọi thủ tục ở đây đổi vai / quyền
+// của một người dùng phải gọi nó cho người đó (census: permissionsRouterDonCacheCensus.test.ts).
+import { invalidateAuthUser } from "../services/authSessionCache";
 
 // Non-null DB accessor: throws if the database is not connected so downstream
 // queries can rely on a defined handle (resolves "db is possibly null").
@@ -463,7 +466,10 @@ export const permissionsRouter = router({
           updatedAt: new Date()
         })
         .where(eq(users.id, input.userId));
-      
+      // ★★★ F5-nhanh — như `user.update` / `user.updateRole` (db/auth.ts → invalidateAuthUser): dọn auth cache của người bị đổi
+      // vai NGAY, nếu không HTTP còn phục vụ vai cũ tới AUTH_CACHE_TTL_S (45 s) và một admin bị hạ vẫn qua adminProcedure.
+      await invalidateAuthUser(input.userId);
+
       return { success: true, userId: input.userId, newRole: input.role };
     }),
 
@@ -501,41 +507,47 @@ export const permissionsRouter = router({
       
       // Get default permissions for role
       const defaultPerms = DEFAULT_ROLE_PERMISSIONS[input.role] || [];
-      
-      // Delete existing permissions
-      await db
-        .delete(permissions)
-        .where(eq(permissions.userId, input.userId));
-      
-      // Insert new default permissions
-      if (defaultPerms.length > 0) {
+
+      // ★★★ F5-nhanh — ba câu ghi KHÔNG trong một giao dịch (DELETE quyền, INSERT quyền, UPDATE vai) ⇒ dọn auth cache trong
+      // `finally`: hỏng giữa chừng vẫn dọn (một nửa đã ghi cũng là một thay đổi quyền).
+      try {
+        // Delete existing permissions
         await db
-          .insert(permissions)
-          .values(
-            defaultPerms.map((perm: any) => ({
-              userId: input.userId,
-              category: perm.category,
-              moduleName: perm.moduleName,
-              canView: perm.canView,
-              canCreate: perm.canCreate,
-              canEdit: perm.canEdit,
-              canDelete: perm.canDelete,
-              canExport: perm.canExport,
-              grantedBy: ctx.user.id,
-              grantedAt: new Date(),
-            }))
-          );
+          .delete(permissions)
+          .where(eq(permissions.userId, input.userId));
+        
+        // Insert new default permissions
+        if (defaultPerms.length > 0) {
+          await db
+            .insert(permissions)
+            .values(
+              defaultPerms.map((perm: any) => ({
+                userId: input.userId,
+                category: perm.category,
+                moduleName: perm.moduleName,
+                canView: perm.canView,
+                canCreate: perm.canCreate,
+                canEdit: perm.canEdit,
+                canDelete: perm.canDelete,
+                canExport: perm.canExport,
+                grantedBy: ctx.user.id,
+                grantedAt: new Date(),
+              }))
+            );
+        }
+        
+        // Update user role
+        await db
+          .update(users)
+          .set({
+            role: input.role,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, input.userId));
+      } finally {
+        await invalidateAuthUser(input.userId);
       }
-      
-      // Update user role
-      await db
-        .update(users)
-        .set({
-          role: input.role,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, input.userId));
-      
+
       return { success: true, permissionsApplied: defaultPerms.length };
     }),
 
@@ -631,53 +643,59 @@ export const permissionsRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
-      // Check if permission already exists
-      const [existing] = await db.select().from(permissions).where(and(
-        eq(permissions.userId, input.userId),
-        eq(permissions.moduleName, input.moduleName)
-      )).limit(1);
-      
-      if (existing) {
-        // Update existing permission
-        await db
-          .update(permissions)
-          .set({
-            category: input.category,
-            canView: input.canView,
-            canCreate: input.canCreate,
-            canEdit: input.canEdit,
-            canDelete: input.canDelete,
-            canExport: input.canExport,
-            customPermissions: input.customPermissions,
-            grantedBy: ctx.user.id,
-            grantedAt: new Date(),
-            expiresAt: input.expiresAt,
-            updatedAt: new Date(),
-          })
-          .where(eq(permissions.id, existing.id));
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
+      // hỏng giữa chừng vẫn dọn).
+      try {
+        // Check if permission already exists
+        const [existing] = await db.select().from(permissions).where(and(
+          eq(permissions.userId, input.userId),
+          eq(permissions.moduleName, input.moduleName)
+        )).limit(1);
         
-        return { success: true, action: 'updated', permissionId: existing.id };
-      } else {
-        // Create new permission
-        const [newPermission] = await db
-          .insert(permissions)
-          .values({
-            userId: input.userId,
-            category: input.category,
-            moduleName: input.moduleName,
-            canView: input.canView,
-            canCreate: input.canCreate,
-            canEdit: input.canEdit,
-            canDelete: input.canDelete,
-            canExport: input.canExport,
-            customPermissions: input.customPermissions,
-            grantedBy: ctx.user.id,
-            grantedAt: new Date(),
-            expiresAt: input.expiresAt,
-          })
-          .returning();
-        
-        return { success: true, action: 'created', permissionId: newPermission.id };
+        if (existing) {
+          // Update existing permission
+          await db
+            .update(permissions)
+            .set({
+              category: input.category,
+              canView: input.canView,
+              canCreate: input.canCreate,
+              canEdit: input.canEdit,
+              canDelete: input.canDelete,
+              canExport: input.canExport,
+              customPermissions: input.customPermissions,
+              grantedBy: ctx.user.id,
+              grantedAt: new Date(),
+              expiresAt: input.expiresAt,
+              updatedAt: new Date(),
+            })
+            .where(eq(permissions.id, existing.id));
+          
+          return { success: true, action: 'updated', permissionId: existing.id };
+        } else {
+          // Create new permission
+          const [newPermission] = await db
+            .insert(permissions)
+            .values({
+              userId: input.userId,
+              category: input.category,
+              moduleName: input.moduleName,
+              canView: input.canView,
+              canCreate: input.canCreate,
+              canEdit: input.canEdit,
+              canDelete: input.canDelete,
+              canExport: input.canExport,
+              customPermissions: input.customPermissions,
+              grantedBy: ctx.user.id,
+              grantedAt: new Date(),
+              expiresAt: input.expiresAt,
+            })
+            .returning();
+          
+          return { success: true, action: 'created', permissionId: newPermission.id };
+        }
+      } finally {
+        await invalidateAuthUser(input.userId);
       }
     }),
 
@@ -705,30 +723,36 @@ export const permissionsRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
-      // Delete all existing permissions for this user
-      await db
-        .delete(permissions)
-        .where(eq(permissions.userId, input.userId));
-      
-      // Insert new permissions
-      if (input.permissions.length > 0) {
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
+      // hỏng giữa chừng vẫn dọn).
+      try {
+        // Delete all existing permissions for this user
         await db
-          .insert(permissions)
-          .values(
-            input.permissions.map(perm => ({
-              userId: input.userId,
-              category: perm.category,
-              moduleName: perm.moduleName,
-              canView: perm.canView,
-              canCreate: perm.canCreate,
-              canEdit: perm.canEdit,
-              canDelete: perm.canDelete,
-              canExport: perm.canExport,
-              customPermissions: perm.customPermissions,
-              grantedBy: ctx.user.id,
-              grantedAt: new Date(),
-            }))
-          );
+          .delete(permissions)
+          .where(eq(permissions.userId, input.userId));
+        
+        // Insert new permissions
+        if (input.permissions.length > 0) {
+          await db
+            .insert(permissions)
+            .values(
+              input.permissions.map(perm => ({
+                userId: input.userId,
+                category: perm.category,
+                moduleName: perm.moduleName,
+                canView: perm.canView,
+                canCreate: perm.canCreate,
+                canEdit: perm.canEdit,
+                canDelete: perm.canDelete,
+                canExport: perm.canExport,
+                customPermissions: perm.customPermissions,
+                grantedBy: ctx.user.id,
+                grantedAt: new Date(),
+              }))
+            );
+        }
+      } finally {
+        await invalidateAuthUser(input.userId);
       }
       
       return { success: true, count: input.permissions.length };
@@ -739,7 +763,7 @@ export const permissionsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const [permission] = await db.select({ id: permissions.id }).from(permissions).where(eq(permissions.id, input.id)).limit(1);
+      const [permission] = await db.select({ id: permissions.id, userId: permissions.userId }).from(permissions).where(eq(permissions.id, input.id)).limit(1);
       
       if (!permission) {
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'permission' }, 'Permission not found');
@@ -748,6 +772,8 @@ export const permissionsRouter = router({
       await db
         .delete(permissions)
         .where(eq(permissions.id, input.id));
+      // ★★★ F5-nhanh — đổi QUYỀN ⇒ dọn auth cache của CHỦ hàng quyền (input chỉ có id hàng ⇒ userId đọc ở câu SELECT trên).
+      await invalidateAuthUser(permission.userId);
       
       return { success: true };
     }),
@@ -760,6 +786,8 @@ export const permissionsRouter = router({
       await db
         .delete(permissions)
         .where(eq(permissions.userId, input.userId));
+      // ★★★ F5-nhanh — đổi QUYỀN ⇒ dọn auth cache của người đó như `user.update`.
+      await invalidateAuthUser(input.userId);
       
       return { success: true };
     }),
@@ -1087,41 +1115,21 @@ export const permissionsRouter = router({
       let applied = 0;
       let skipped = 0;
 
-      for (const tmpl of permTemplates) {
-        if (!tmpl.moduleName) continue;
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
+      // hỏng giữa chừng vẫn dọn).
+      try {
+        for (const tmpl of permTemplates) {
+          if (!tmpl.moduleName) continue;
 
-        if (input.overwrite) {
-          // Upsert: delete existing then insert
-          await db
-            .delete(permissions)
-            .where(and(
-              eq(permissions.userId, input.userId),
-              eq(permissions.moduleName, tmpl.moduleName),
-            ));
+          if (input.overwrite) {
+            // Upsert: delete existing then insert
+            await db
+              .delete(permissions)
+              .where(and(
+                eq(permissions.userId, input.userId),
+                eq(permissions.moduleName, tmpl.moduleName),
+              ));
 
-          await db.insert(permissions).values({
-            userId: input.userId,
-            moduleName: tmpl.moduleName as any,
-            canView: tmpl.canView ?? false,
-            canCreate: tmpl.canCreate ?? false,
-            canEdit: tmpl.canEdit ?? false,
-            canDelete: tmpl.canDelete ?? false,
-            canExport: tmpl.canExport ?? false,
-            grantedBy: ctx.user.id,
-          } as any);
-          applied++;
-        } else {
-          // Only insert if no existing permission for this module
-          const [existingPerm] = await db
-            .select({ id: permissions.id })
-            .from(permissions)
-            .where(and(
-              eq(permissions.userId, input.userId),
-              eq(permissions.moduleName, tmpl.moduleName),
-            ))
-            .limit(1);
-
-          if (!existingPerm) {
             await db.insert(permissions).values({
               userId: input.userId,
               moduleName: tmpl.moduleName as any,
@@ -1134,9 +1142,35 @@ export const permissionsRouter = router({
             } as any);
             applied++;
           } else {
-            skipped++;
+            // Only insert if no existing permission for this module
+            const [existingPerm] = await db
+              .select({ id: permissions.id })
+              .from(permissions)
+              .where(and(
+                eq(permissions.userId, input.userId),
+                eq(permissions.moduleName, tmpl.moduleName),
+              ))
+              .limit(1);
+
+            if (!existingPerm) {
+              await db.insert(permissions).values({
+                userId: input.userId,
+                moduleName: tmpl.moduleName as any,
+                canView: tmpl.canView ?? false,
+                canCreate: tmpl.canCreate ?? false,
+                canEdit: tmpl.canEdit ?? false,
+                canDelete: tmpl.canDelete ?? false,
+                canExport: tmpl.canExport ?? false,
+                grantedBy: ctx.user.id,
+              } as any);
+              applied++;
+            } else {
+              skipped++;
+            }
           }
         }
+      } finally {
+        await invalidateAuthUser(input.userId);
       }
 
       return { success: true, applied, skipped, totalTemplates: permTemplates.length };
@@ -1180,29 +1214,35 @@ export const permissionsRouter = router({
 
       let applied = 0;
 
-      for (const tmpl of permTemplates) {
-        if (!tmpl.moduleName) continue;
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
+      // hỏng giữa chừng vẫn dọn).
+      try {
+        for (const tmpl of permTemplates) {
+          if (!tmpl.moduleName) continue;
 
-        if (input.overwrite) {
-          await db
-            .delete(permissions)
-            .where(and(
-              eq(permissions.userId, input.userId),
-              eq(permissions.moduleName, tmpl.moduleName),
-            ));
+          if (input.overwrite) {
+            await db
+              .delete(permissions)
+              .where(and(
+                eq(permissions.userId, input.userId),
+                eq(permissions.moduleName, tmpl.moduleName),
+              ));
+          }
+
+          await db.insert(permissions).values({
+            userId: input.userId,
+            moduleName: tmpl.moduleName as any,
+            canView: tmpl.canView ?? false,
+            canCreate: tmpl.canCreate ?? false,
+            canEdit: tmpl.canEdit ?? false,
+            canDelete: tmpl.canDelete ?? false,
+            canExport: tmpl.canExport ?? false,
+            grantedBy: ctx.user.id,
+          } as any);
+          applied++;
         }
-
-        await db.insert(permissions).values({
-          userId: input.userId,
-          moduleName: tmpl.moduleName as any,
-          canView: tmpl.canView ?? false,
-          canCreate: tmpl.canCreate ?? false,
-          canEdit: tmpl.canEdit ?? false,
-          canDelete: tmpl.canDelete ?? false,
-          canExport: tmpl.canExport ?? false,
-          grantedBy: ctx.user.id,
-        } as any);
-        applied++;
+      } finally {
+        await invalidateAuthUser(input.userId);
       }
 
       return { success: true, applied, role: input.builtInRole };

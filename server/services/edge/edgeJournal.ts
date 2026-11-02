@@ -50,6 +50,7 @@ import {
   edgeRunReportRecordSchema,
   edgeRunStream,
   newEdgeEpoch,
+  type EdgeAuthUnusedReason,
   type EdgeEventRecord,
   type EdgeRobotStateRecord,
   type EdgeRunReportRecord,
@@ -791,7 +792,7 @@ export class EdgeJournal {
    * reported unused before) is refused: a used token is never reported unused. A full journal does not refuse (the record is
    * tiny, and it only ever lowers what can move); an IO failure does (fail-closed: not reported ⇒ central keeps it as sent).
    */
-  async markAuthorizationUnused(c: { jti: string; runId: number; claimSeq: number; stepId: string; attempt: number; reason: "expired_before_use" }): Promise<EdgeUnusedResult> {
+  async markAuthorizationUnused(c: { jti: string; runId: number; claimSeq: number; stepId: string; attempt: number; reason: EdgeAuthUnusedReason }): Promise<EdgeUnusedResult> {
     if (this.closed) return { ok: false, reason: "closed" };
     if (typeof c?.jti !== "string" || c.jti.length === 0 || c.jti.length > 64) return { ok: false, reason: "invalid" };
     if (this.jtis.has(c.jti)) return { ok: false, reason: "jti_consumed" };

@@ -209,6 +209,8 @@ export interface EdgeRunIo {
   programChecks: () => EdgeProgramCheck[];
   /** aborted when central says abortRequested (or the agent stops the run): the walker sweeps locally */
   signal: AbortSignal;
+  /** R1b-2b-2a A2(o) AMENDMENT 2 — an authorisation never used (stale config at the send): journaled + reported unused */
+  reportUnused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: import("./edgeProtocol").EdgeAuthUnusedReason }) => Promise<boolean>;
 }
 
 /** The segment outcome a walker returns (maps 1:1 onto POST complete). */
@@ -488,6 +490,9 @@ export class EdgeExecutionAgent {
     this.online = true;
     report.online = true;
     const p = pulled.data;
+    // R1b-2b-2a A2(o) — a newer config announced ⇒ the edge's config is STALE until a refresh adopts it: every non-STOP write is
+    // refused meanwhile (edgeNonStopConfigGate); STOPs never look at it
+    this.deps.config.noteCentralConfigVersion?.(p.configVersion);
     this.refreshPending = p.configVersion > this.deps.config.version() || p.keysetVersion > this.deps.config.trust().version;
     const hold = p.runStateUnavailable === true;
     if (hold && !this.runStateHold) console.warn("[EdgeExec] central's run state is UNAVAILABLE (runStateUnavailable) — every non-STOP work is held; STOPs still go");
@@ -988,7 +993,19 @@ export class EdgeExecutionAgent {
       config: d.config,
       programChecks: () => d.programChecks.latest(),
       signal: seg.controller.signal,
+      // R1b-2b-2a A2(o) AMENDMENT 2 — the step held for a stale config: its unused authorisation is superseded at central
+      reportUnused: this.unusedReporter(),
     };
+  }
+
+  private unused: EdgeRunIo["reportUnused"] | null = null;
+  private unusedReporter(): NonNullable<EdgeRunIo["reportUnused"]> {
+    if (!this.unused) {
+      const { journal, sink, client } = this.deps;
+      // A2(o) r4 — the wire reason is fixed when journaled, from what central advertised (EdgeCentralClient.centralAccepts)
+      this.unused = async (u) => (await import("./edgeStreams")).createEdgeAuthUnusedReporter(journal, sink, { centralAccepts: (t) => client.centralAccepts?.(t) === true })(u);
+    }
+    return this.unused;
   }
 
   private async runSegment(seg: Segment, pkg: EdgeRunPackage): Promise<void> {

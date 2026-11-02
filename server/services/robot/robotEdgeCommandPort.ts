@@ -208,7 +208,7 @@ export async function sendConsoleStopForEdgeRobot(a: {
     console.error(`[Robot] CRITICAL: ${message}`);
     void import("./criticalStopAlert")
       .then(({ raiseCriticalStopAlert }) =>
-        raiseCriticalStopAlert({ kind: "stop_undelivered", title: `STOP queued for an unreachable edge node — robot ${a.robotId}`, message, recipients: [a.requestedBy], dedupKey: `stop_undelivered:request:${q.requestId}`, source: "robot", entityType: "robot", entityId: a.robotId, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } }),
+        raiseCriticalStopAlert({ kind: "stop_undelivered", title: `STOP queued for an unreachable edge node — robot ${a.robotId}`, message, recipients: [a.requestedBy], dedupKey: `stop_undelivered:request:${q.requestId}`, source: "robot", entityType: "robot", entityId: a.robotId, retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, khuTrungBenVung: {} }), // A2(j) polish — the inbox row is the sweep's marker
       )
       .catch(() => undefined);
     if (a.fallbackStop && f.state === "pending") {

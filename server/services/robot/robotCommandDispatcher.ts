@@ -1010,7 +1010,9 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
     if (gate.blocked) {
       const detail = gate.failClosed
-        ? "interlock evaluation error — fail-closed (no run)"
+        ? gate.vuotTran
+          ? `interlock rule set for this target exceeds ${gate.vuotTran.tran} rules — fail-closed (no run)` // A2(j)
+          : "interlock evaluation error — fail-closed (no run)"
         : `blocked by active interlock rule(s): ${gate.violations
             .map((v) => `#${v.ruleId}(${v.action})`)
             .join(", ")}`;
