@@ -13,6 +13,7 @@
  * (robot STOP: no lookup, no row; OT STOP: both lookups concurrently under ONE STOP_DB_STEP_DEADLINE_MS, the row bounded);
  * the edge store answers a STOP without asking central.
  */
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
@@ -28,7 +29,7 @@ import {
 import { validateWorkflow, type WorkflowDefinition, type WorkflowStep, type MachineForValidation } from "./workflowModel";
 import type { CommandDescriptor, EquipmentCapability } from "../../equipment/capabilityModel";
 import type { EquipmentCommand } from "../../equipment/equipmentAdapter";
-import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withOtPayloadHash, type FoeGateApproval } from "../../ot/otActionBinding";
+import { FOE_ENGINE_TOOL, otPayloadHash, robotPayloadHash, withFoeGateApproval, withHangMoiStopGhim, withOtPayloadHash, type FoeGateApproval } from "../../ot/otActionBinding";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { withDeadline } from "../../ot/drivers/boundedClose";
 import {
@@ -43,7 +44,7 @@ import {
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
-import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, type StopVerification } from "./foeStepClass";
+import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,11 @@ export interface AuthorizeInput {
 export type RunStoreHeldReason = "centralUnreachable" | "journalFull" | "keysetUnknown" | "configStale";
 
 export type AuthorizeVerdict =
-  | { ok: true; cmd: EquipmentCommand; args: Record<string, unknown>; approval: FoeGateApproval | null }
+  /**
+   * stopGhim (R1b-2b-2a A2(m)) — central only: the command is a PINNED STOP and rides on a fresh authorisation row (the walker's
+   * retry loop gives such a step with no explicit maxAttempts its STOP default, foeEngine.soLanThuToiDa).
+   */
+  | { ok: true; cmd: EquipmentCommand; args: Record<string, unknown>; approval: FoeGateApproval | null; stopGhim?: true }
   /** refused — the step fails with `error` (FOE_GATE_REQUIRED(<reason>) … for a gate refusal: the Studio keys on it) */
   | { ok: false; verdict: "refused"; error: string; reason?: string }
   /** central stopped the run (abort / rejection) — the walker sweeps locally (edge store only) */
@@ -474,17 +479,37 @@ export async function ensureOrchestrationAction(
    * verified at all).
    */
   approval?: FoeGateApproval,
-): Promise<void> {
+  /**
+   * R1b-2b-2a A2(m) — `hangMoi`: the command is a PINNED STOP (the dispatcher's own predicate, `phanLoaiStopGhimChoFoe`): the row is
+   * ALWAYS inserted under this fresh per-dispatch id (`stopActionIdMoi`), never an existing row reused — a spent row of an earlier
+   * dispatch (a crash after the reservation, a resume by another user, a row past its hour) can never refuse the STOP. Its content is
+   * exactly what any STOP row gets (tool, binding hash, gate approval if any, owner = approver or walker), PLUS the mark
+   * hangMoiStopGhim (AMENDMENT 2): the reservation refuses a marked row unless the dispatcher itself classifies the command as a pinned STOP.
+   * Without it (every other
+   * command): the deterministic id, an existing row reused whatever its status (a spent row stays spent: one approval = one write).
+   */
+  opts: { hangMoi?: { actionId: string } } = {},
+): Promise<string | null> {
   try {
     const d = await getDb();
-    if (!d) return;
-    const actionId = orchestrationActionId(idempotencyKey);
-    const [existing] = await d
-      .select()
-      .from(aiPendingActions)
-      .where(eq(aiPendingActions.id, actionId))
-      .limit(1);
-    if (existing) return; // resume/retry → tái dùng bản ghi cũ
+    if (!d) return null;
+    const hangMoi = opts.hangMoi?.actionId ?? null;
+    const actionId = hangMoi ?? orchestrationActionId(idempotencyKey);
+    if (!hangMoi) {
+      const [existing] = await d
+        .select()
+        .from(aiPendingActions)
+        .where(eq(aiPendingActions.id, actionId))
+        .limit(1);
+      if (existing) return actionId; // resume/retry → tái dùng bản ghi cũ
+      // A2(m) upgrade compatibility — a run mid-flight across the upgrade may hold its row under the OLD (truncated) id of a long key:
+      // that row is THE authorisation of this key (pending or spent) ⇒ used, never shadowed by a fresh confirmed row (a second write).
+      const cu = orchestrationActionIdCu(idempotencyKey);
+      if (cu !== actionId) {
+        const [legacy] = await d.select().from(aiPendingActions).where(eq(aiPendingActions.id, cu)).limit(1);
+        if (legacy) return cu;
+      }
+    }
     const isOt = cmd != null && cmd.adapterId != null && cmd.robotId == null;
     // doc 81 Đợt 1B final wave (item 2, ruling R4) — a ROBOT command gets the same treatment as
     // an OT one: a 'confirmed' row bound (robotPayloadHash) to EXACTLY the job the robot route
@@ -509,6 +534,9 @@ export async function ensureOrchestrationAction(
     }
     const approved = (isOt || isRobot) && approval != null;
     if (approved && previewJson) previewJson = withFoeGateApproval(previewJson, approval);
+    // A2(m) AMENDMENT 2 — the fresh row of a pinned STOP is MARKED: the reservation refuses it unless the dispatcher itself classifies the
+    // command as a pinned STOP (never a grant — a non-pinned command can never consume it, whatever approval it carries)
+    if (hangMoi && previewJson) previewJson = withHangMoiStopGhim(previewJson);
     await d.insert(aiPendingActions).values({
       id: actionId,
       tool: FOE_ACTION_TOOL,
@@ -523,8 +551,10 @@ export async function ensureOrchestrationAction(
       idempotencyKey: actionId,
       expiresAt: new Date(Date.now() + 3_600_000),
     });
+    return actionId;
   } catch {
     // fail-safe: không tạo được ⇒ cổng dispatcher sẽ fail-closed (an toàn).
+    return null;
   }
 }
 
@@ -609,7 +639,7 @@ export async function enabledAdapterIdsOfMachine(machineId: number): Promise<num
 async function centralAuthorizeCommand(
   rc: RunStoreContext,
   step: Extract<WorkflowStep, { type: "command" }>,
-  _attempt: number,
+  attempt: number,
   x: AuthorizeInput,
 ): Promise<AuthorizeVerdict> {
   const { isStop, rawArgs, descriptor, cap, idempotencyKey } = x;
@@ -659,12 +689,71 @@ async function centralAuthorizeCommand(
   // the walk as "confirmer" (item 35) and cost an unbounded DB wait before the STOP (item 36). An OT STOP keeps its row
   // (the OT dispatcher accepts a pinned stop on a self-confirmed row) but waits for it at most STOP_DB_STEP_DEADLINE_MS;
   // past that the STOP goes on and the OT dispatcher's own path decides (no row ⇒ NOT_CONFIRMED, visibly).
+  // R1b-2b-2a A2(m) — an OT command that is a PINNED STOP (the dispatcher's own predicate, asked through `phanLoaiStopGhimChoFoe`; a STOP's
+  // read bounded by D) gets a FRESH authorisation row for THIS dispatch: a new id from (key, attempt, nonce), never an existing row —
+  // so a resume (same attempt key), a resume by another user, a row past its hour or an attempt whose row an earlier dispatch spent
+  // (crash after the reservation) never refuses the STOP. The T6d re-key inside dispatch() keeps this actionId, so a fresh row per
+  // dispatch is all it needs (no status exemption in the reservation: one approval = one write). Every other command: unchanged.
+  const stopGhim = !isRobotKind(cap.adapterKind) && cmd.adapterId != null && cmd.hitl != null ? await laStopGhimChoHangFoe(rc, step, cmd, isStop) : false;
+  if (stopGhim && cmd.hitl) cmd.hitl.actionId = stopActionIdMoi(idempotencyKey, attempt, randomUUID());
   if (!(isRobotKind(cap.adapterKind) && (cmd.robotId == null || isStop))) {
-    await stopBoundedWrite(isStop, rc.runId, step.id, "authorisation row", () =>
-      ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined),
-    );
+    // the id the row was found / written under, applied only when known in time (a STOP's write is bounded by D: a late answer
+    // never rewrites a command already on its way)
+    let idDaDung: string | null = null;
+    await stopBoundedWrite(isStop, rc.runId, step.id, "authorisation row", async () => {
+      idDaDung = await ensureOrchestrationAction(rc.user, idempotencyKey, step, args, cmd, approval ?? undefined, stopGhim && cmd.hitl ? { hangMoi: { actionId: cmd.hitl.actionId } } : {});
+    });
+    // A2(m) compatibility — a row of a run mid-flight across the upgrade found under the OLD id of a long key is the one this command uses
+    if (idDaDung && cmd.hitl && !stopGhim) cmd.hitl.actionId = idDaDung;
   }
-  return { ok: true, cmd, args, approval };
+  return { ok: true, cmd, args, approval, ...(stopGhim ? { stopGhim: true as const } : {}) };
+}
+
+/**
+ * R1b-2b-2a A2(m) — is the command an OT step is about to send a PINNED STOP? The dispatcher's OWN predicate (gate (1)'s function:
+ * `phanLoaiStopGhimChoFoe` → `laStopGhimTaiCong1` → `phanLoaiStopGhimRangBuoc`; never the key-purpose `laStopChoKhoa`, which counts
+ * content stops). A command that is not stop-typed is answered without a read. On a STOP's path (`stop`) the read is bounded by D (L-7).
+ * The pins could not be read (error, no DB, deadline) ⇒ NOT pinned — the old path (fail-closed) — AND, for a stop-typed step, ONE
+ * URGENT alert per run / step / adapter (the critical-stop alert's own durable dedup): the STOP may not be re-sendable after a crash.
+ * This answer only chooses the authorisation ROW; the dispatcher re-decides at gate (1) and at the reservation (its verdict wins).
+ */
+async function laStopGhimChoHangFoe(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, cmd: EquipmentCommand, stop: boolean): Promise<boolean> {
+  const adapterId = cmd.adapterId as number;
+  const hoi = (async (): Promise<{ pinnedStop: boolean; loiDocGhim: string | null }> => {
+    const d = await getDb();
+    if (!d) return { pinnedStop: false, loiDocGhim: "database unavailable" };
+    const { phanLoaiStopGhimChoFoe } = await import("../../ot/commandDispatcher");
+    return phanLoaiStopGhimChoFoe(d, { adapterId, commandType: cmd.name, writes: cmd.writes ?? [] });
+  })();
+  let kq: { pinnedStop: boolean; loiDocGhim: string | null };
+  try {
+    kq = stop ? await withDeadline(hoi, STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${step.id} pin check`) : await hoi;
+  } catch (err) {
+    kq = { pinnedStop: false, loiDocGhim: String((err as Error)?.message ?? err) };
+  }
+  if (kq.loiDocGhim !== null && stop) canhBaoGhimStopKhongXacMinh(rc, step.id, adapterId, kq.loiDocGhim);
+  return kq.pinnedStop;
+}
+
+/** A2(m) AMENDMENT 1 (M11) — the URGENT alert of a STOP step whose pins could not be verified (never throws, never awaited). */
+function canhBaoGhimStopKhongXacMinh(rc: RunStoreContext, stepId: string, adapterId: number, loi: string): void {
+  const recipients = [...new Set([rc.runOwner ?? 0, rc.user.id || 0])].filter((u) => Number.isSafeInteger(u) && u > 0);
+  const message = `STOP pin could not be verified — the STOP may not be re-sendable (run ${rc.runId}, step "${stepId}", adapter ${adapterId}): ${loi.slice(0, 200)}. It was sent on its ordinary authorisation; after a crash or a resume it may be refused. Check the adapter's stop pins, and use the machine's direct STOP / E-STOP if needed.`;
+  void import("../../robot/criticalStopAlert")
+    .then(({ raiseCriticalStopAlert }) =>
+      raiseCriticalStopAlert({
+        kind: "foe_stop_pin_unverified",
+        title: `STOP pin could not be verified — run ${rc.runId}, step ${stepId}`,
+        message,
+        recipients,
+        dedupKey: `foe_stop_pin_unverified:${rc.runId}:${stepId}:${adapterId}`,
+        source: "ot",
+        entityType: "orchestration_run",
+        entityId: rc.runId,
+        khuTrungBenVung: {},
+      }),
+    )
+    .catch(() => undefined);
 }
 
 // ── the abort sweep's central picture (moved from foeEngine.ts, Đợt 6 — unchanged) ───────────────────────────────────
@@ -835,7 +924,10 @@ export const centralRunStore: RunStore = Object.freeze({
   },
   authorizeCommand: centralAuthorizeCommand,
   authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void> {
-    return stopBoundedWrite(true, runId, step.id, "abort authorisation row", () => ensureOrchestrationAction(user, idempotencyKey, step, args, cmd));
+    // the abort key carries a per-sweep nonce (abortStopKey, ≤ 60 characters): a fresh row per sweep already
+    return stopBoundedWrite(true, runId, step.id, "abort authorisation row", async () => {
+      await ensureOrchestrationAction(user, idempotencyKey, step, args, cmd);
+    });
   },
   async sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null> {
     return x.live ? liveSweepSource(x.live) : x.run ? storedSweepSource(x.run, x.hasLiveDriver ?? (() => false)) : null;

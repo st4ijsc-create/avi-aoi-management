@@ -447,6 +447,8 @@ export async function applyLedger(
   const ot = "adapterId" in rec.target ? rec.target : null;
   const { isStopCommandType } = await import("../ot/commandDispatcher");
   const { isStopJobType } = await import("../robot/stopJob");
+  // R1b-2b-2a A2(m) — the ledger row names the authorisation row edgeAuthorizeCentral wrote: the SAME id function (hash-shortened, never cut)
+  const { orchestrationActionId } = await import("../orchestration/foe/foeStepClass");
   const isStop = rec.stop === true && (robot ? isStopJobType(robot.jobType) : isStopCommandType(ot!.commandType));
   const owner = robot ? (await robotOwners(tx, [robot.robotId])).get(robot.robotId) : (await adapterOwners(tx, [ot!.adapterId])).get(ot!.adapterId);
   if (!owner || owner.edgeNodeId !== node.nodeId) {
@@ -494,7 +496,7 @@ export async function applyLedger(
         params: null,
         status: status as never,
         triggerKind: "hitl",
-        actionId: auth ? `foe-${rec.idempotencyKey}`.slice(0, 64) : null,
+        actionId: auth ? orchestrationActionId(rec.idempotencyKey) : null,
         requestedBy: runOwner,
         confirmedBy: approval?.approvedBy ?? null,
         idempotencyKey: key,
@@ -513,7 +515,7 @@ export async function applyLedger(
     await tx
       .insert(commandLog)
       .values({
-        actionId: auth ? `foe-${rec.idempotencyKey}`.slice(0, 64) : null,
+        actionId: auth ? orchestrationActionId(rec.idempotencyKey) : null,
         adapterId: ot!.adapterId,
         commandType: ot!.commandType,
         requestedValue: (rec.result as { writes?: unknown } | null)?.writes ?? null,
