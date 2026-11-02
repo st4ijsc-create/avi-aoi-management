@@ -1,0 +1,188 @@
+/**
+ * Pilot "Thợ Cả nhận việc" — THẺ VIỆC (mẫu: D:\SOURCES\_tho_ca_pilot\ke-hoach.md) + phép kiểm "chỉ sửa tệp được phép".
+ * THUẦN (không fs, không git): bộ chạy `chayMotViec.ts` đưa danh sách tệp đổi vào đây để phân loại.
+ *
+ * Thẻ là văn bản `KHOÁ: giá trị` (khoá in hoa, một khoá có thể trải nhiều dòng thụt vào hoặc gạch đầu dòng):
+ *   MÃ: TC-01
+ *   MỤC TIÊU: <một câu>
+ *   TỆP ĐƯỢC PHÉP SỬA/TẠO: a.ts, b.ts   (hoặc mỗi tệp một dòng "- a.ts"; hỗ trợ `dir/*` và `dir/**`)
+ *   NGỮ CẢNH ĐỌC: ...
+ *   LỆNH KIỂM: npx vitest run a.test.ts
+ *   GIỚI HẠN: 15 phút, 12 vòng
+ */
+
+export interface TheViec {
+  ma: string;
+  mucTieu: string;
+  tepDuocPhep: string[];
+  nguCanhDoc: string[];
+  lenhKiem: string;
+  gioiHan: { giay: number; vong: number };
+}
+
+const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
+  "MA": "ma",
+  "MUC TIEU": "mucTieu",
+  "TEP DUOC PHEP SUA/TAO": "tepDuocPhep",
+  "TEP DUOC PHEP": "tepDuocPhep",
+  "NGU CANH DOC": "nguCanhDoc",
+  "LENH KIEM": "lenhKiem",
+  "GIOI HAN": "gioiHan",
+};
+
+/** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
+function chuanKhoa(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const RE_MA = /^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/;
+
+export type KetQuaThe = { ok: true; the: TheViec } | { ok: false; loi: string };
+
+function tachDanhSach(s: string): string[] {
+  return s
+    .split(/[,\n]/)
+    .map((x) => x.replace(/^\s*[-*]\s+/, "").trim())
+    .filter((x) => x !== "");
+}
+
+/** `GIỚI HẠN: 15 phút, 12 vòng` (phút/giây/vòng, thứ tự tuỳ ý). Vắng ⇒ mặc định 15 phút, 12 vòng. */
+export function docGioiHan(s: string | undefined): { giay: number; vong: number } {
+  let giay = 15 * 60;
+  let vong = 12;
+  if (s) {
+    const ph = /(\d+)\s*(phut|phút|min|m)\b/i.exec(s);
+    const gi = /(\d+)\s*(giay|giây|sec|s)\b/i.exec(s);
+    const vg = /(\d+)\s*(vong|vòng|round|rounds|turn|turns)\b/i.exec(s);
+    if (ph) giay = Number(ph[1]) * 60;
+    else if (gi) giay = Number(gi[1]);
+    if (vg) vong = Number(vg[1]);
+  }
+  return { giay: Math.min(Math.max(giay, 30), 3600), vong: Math.min(Math.max(vong, 1), 40) };
+}
+
+export function docTheViec(van: string): KetQuaThe {
+  const truong = new Map<string, string>();
+  let hienTai: string | null = null;
+  for (const dong of van.replace(/\r\n/g, "\n").split("\n")) {
+    const m = /^([^:\n]{1,40}):\s*(.*)$/.exec(dong);
+    const khoa = m ? KHOA[chuanKhoa(m[1])] : undefined;
+    if (m && khoa) {
+      hienTai = khoa;
+      truong.set(khoa, m[2]);
+    } else if (hienTai) {
+      truong.set(hienTai, `${truong.get(hienTai) ?? ""}\n${dong}`);
+    }
+  }
+  const ma = (truong.get("ma") ?? "").trim();
+  if (!RE_MA.test(ma)) return { ok: false, loi: "MÃ thẻ thiếu hoặc không hợp lệ (chữ, số, gạch ngang; ≤ 31 ký tự)" };
+  const mucTieu = (truong.get("mucTieu") ?? "").trim();
+  if (mucTieu === "") return { ok: false, loi: "thiếu MỤC TIÊU" };
+  const tepDuocPhep = tachDanhSach(truong.get("tepDuocPhep") ?? "");
+  if (tepDuocPhep.length === 0) return { ok: false, loi: "thiếu TỆP ĐƯỢC PHÉP SỬA/TẠO (danh sách rỗng ⇒ không việc nào hợp lệ)" };
+  for (const t of tepDuocPhep) {
+    const loi = kiemTepDuocPhep(t);
+    if (loi) return { ok: false, loi: `TỆP ĐƯỢC PHÉP "${t}": ${loi}` };
+  }
+  const lenhKiem = (truong.get("lenhKiem") ?? "").trim();
+  if (lenhKiem === "") return { ok: false, loi: "thiếu LỆNH KIỂM" };
+  return {
+    ok: true,
+    the: {
+      ma,
+      mucTieu,
+      tepDuocPhep,
+      nguCanhDoc: tachDanhSach(truong.get("nguCanhDoc") ?? ""),
+      lenhKiem,
+      gioiHan: docGioiHan(truong.get("gioiHan")),
+    },
+  };
+}
+
+// ── Chuẩn hoá đường + vùng cấm ────────────────────────────────────────────────────────────────
+
+/** Đường tương đối kiểu POSIX trong worktree, hoặc null nếu thoát ra ngoài / tuyệt đối / có ký tự điều khiển. */
+export function chuanDuong(p: string): string | null {
+  if (/[\u0000-\u001f\u007f]/.test(p)) return null;
+  const x = p.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (x === "" || x.startsWith("/") || /^[A-Za-z]:/.test(x)) return null;
+  const phan: string[] = [];
+  for (const s of x.split("/")) {
+    if (s === "" || s === ".") continue;
+    if (s === "..") return null;
+    phan.push(s);
+  }
+  return phan.length ? phan.join("/") : null;
+}
+
+/**
+ * VÙNG CẤM CỨNG — luật cứng của kế hoạch: không giao đường lệnh/STOP, ot/*, an ninh/quyền/auth, migration, socket, thiết bị, bí mật.
+ * Áp ĐỘC LẬP với thẻ: một thẻ lỡ ghi tệp vùng cấm vẫn bị từ chối ở `docTheViec`, và một lượt chạm vùng cấm bị đánh dấu dù thẻ cho phép.
+ */
+export const VUNG_CAM: ReadonlyArray<{ ten: string; re: RegExp }> = [
+  { ten: "ot", re: /(^|\/)ot(\/|$)/i },
+  { ten: "stop/interlock", re: /(stop|e-?stop|interlock|dispatcher)/i },
+  { ten: "auth/quyen", re: /(^|\/)(auth|accessControl|trpc|permission|requirePermission|sdk)[^/]*\.(ts|tsx|js|mjs)$|(^|\/)auth\//i },
+  { ten: "migration", re: /(^|\/)(drizzle|migrations?)\//i },
+  { ten: "socket", re: /(^|\/)socket[^/]*\.(ts|tsx|js|mjs)$/i },
+  { ten: "thiet bi", re: /(plc|modbus|opcua|mqtt|robot|scada|edge|device|hardware)/i },
+  { ten: "bi mat", re: /(^|\/)\.env([./]|$)|\.(pem|key|p12|pfx)$|secret/i },
+  { ten: "git", re: /(^|\/)\.git(\/|$)/i },
+];
+
+export function vungCamCua(duong: string): string | null {
+  for (const v of VUNG_CAM) if (v.re.test(duong)) return v.ten;
+  return null;
+}
+
+function kiemTepDuocPhep(mau: string): string | null {
+  const m = mau.replace(/\\/g, "/");
+  const goc = m.replace(/\/\*{1,2}$/, "");
+  const duong = chuanDuong(goc);
+  if (duong === null) return "đường không hợp lệ (tuyệt đối, có '..' hoặc ký tự điều khiển)";
+  if (/\*/.test(goc)) return "chỉ cho phép ký tự đại diện ở cuối (`dir/*` hoặc `dir/**`)";
+  const cam = vungCamCua(duong);
+  if (cam) return `nằm trong vùng cấm (${cam})`;
+  return null;
+}
+
+function khop(mau: string, duong: string): boolean {
+  const m = mau.replace(/\\/g, "/");
+  if (m.endsWith("/**")) return duong.startsWith(m.slice(0, -2));
+  if (m.endsWith("/*")) {
+    const goc = m.slice(0, -1);
+    return duong.startsWith(goc) && !duong.slice(goc.length).includes("/");
+  }
+  return chuanDuong(m) === duong;
+}
+
+export interface ViPhamDiff {
+  duong: string;
+  loai: "ngoai-danh-sach" | "vung-cam" | "duong-khong-hop-le";
+  chiTiet?: string;
+}
+
+/** Phân loại các tệp mà diff chạm vào. Rỗng ⇒ không vi phạm. THUẦN. */
+export function kiemDiffTheoThe(tepDoi: readonly string[], tepDuocPhep: readonly string[]): ViPhamDiff[] {
+  const ra: ViPhamDiff[] = [];
+  for (const t of tepDoi) {
+    const d = chuanDuong(t);
+    if (d === null) {
+      ra.push({ duong: t, loai: "duong-khong-hop-le" });
+      continue;
+    }
+    const cam = vungCamCua(d);
+    if (cam) {
+      ra.push({ duong: d, loai: "vung-cam", chiTiet: cam });
+      continue;
+    }
+    if (!tepDuocPhep.some((m) => khop(m, d))) ra.push({ duong: d, loai: "ngoai-danh-sach" });
+  }
+  return ra;
+}
