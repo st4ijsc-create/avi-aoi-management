@@ -534,7 +534,7 @@ type ThamSoNghe = Partial<Pick<Parameters<typeof import("../services/ops/pgChann
 
 /**
  * LISTEN `socket_pham_vi` (bộ nghe dùng chung: LISTEN có hạn, thử lại nền, nhịp tim, cảnh báo) + quét định kỳ. Không chặn boot (gọi không await).
- * Suy giảm (`onLost`) và phục hồi (`onRecovered`) ⇒ QUÉT: thông báo trong khoảng trống đã mất.
+ * Suy giảm (`onEpisodeLost`) và phục hồi (`onRecovered`) ⇒ QUÉT: thông báo trong khoảng trống đã mất.
  */
 export async function batDauNgheSocketPhamVi(thamSo: ThamSoNghe = {}): Promise<{ stop(): Promise<void> }> {
   const { startChannelListener } = await import("../services/ops/pgChannelListener");
@@ -542,7 +542,7 @@ export async function batDauNgheSocketPhamVi(thamSo: ThamSoNghe = {}): Promise<{
     channel: KENH_SOCKET_PHAM_VI,
     tag: "SocketXetLaiQuyen",
     onPayload: (raw) => nhanThongBaoPhamVi(raw),
-    onLost: () => void yeuCauQuet("LISTEN suy giam"),
+    onEpisodeLost: () => void yeuCauQuet("LISTEN suy giam"),
     onRecovered: () => void yeuCauQuet("LISTEN phuc hoi"),
     lostMeaning:
       "Until it reconnects, a user whose role / scope / session changed keeps the live socket on THIS replica until the next sweep (<= 5 min); a sweep runs now and on recovery.",

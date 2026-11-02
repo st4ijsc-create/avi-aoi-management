@@ -446,7 +446,7 @@ describe("★★★ T5 / T8 — QUÉT (fail-closed, hạn thời gian, LISTEN ph
     expect([a2, b].map(conSong)).toEqual([false, true]);
   });
 
-  it("(T8) LISTEN rớt + tự LISTEN lại (thông báo trong khoảng trống MẤT) ⇒ onLost/onRecovered ⇒ QUÉT; tải trọng đi qua BỘ NGHE THẬT cũng ngắt", async () => {
+  it("(T8) LISTEN rớt + tự LISTEN lại (thông báo trong khoảng trống MẤT) ⇒ onEpisodeLost/onRecovered ⇒ QUÉT; tải trọng đi qua BỘ NGHE THẬT cũng ngắt", async () => {
     const lang: Array<{ fn: (p: string) => void; onlisten?: () => void }> = [];
     const kenh = await xl.batDauNgheSocketPhamVi({
       listenClient: () => ({

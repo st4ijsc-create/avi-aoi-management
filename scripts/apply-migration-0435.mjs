@@ -108,7 +108,7 @@ await runMigration({
     const ket = await rolledBack(appSql, async (tx) => {
       const out = [];
       for (const [nhan, bang, op, cu, moi, mong] of CA_0435) {
-        const [r] = await tx`SELECT public.socket_pham_vi_payload(${bang}, ${op}, ${cu === null ? null : JSON.stringify(cu)}::text::jsonb, ${moi === null ? null : JSON.stringify(moi)}::text::jsonb) AS p`;
+        const [r] = await tx`SELECT public.socket_pham_vi_payload(${bang}, ${op}, ${cu === null ? null : tx.json(cu)}::jsonb, ${moi === null ? null : tx.json(moi)}::jsonb) AS p`;
         out.push({ nhan, mong, p: r.p });
       }
       return out;

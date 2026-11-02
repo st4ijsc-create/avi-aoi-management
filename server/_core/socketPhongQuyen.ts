@@ -304,7 +304,7 @@ export const PHONG_TOAN_QUYEN_SOCKET = "scope:all";
  * `tuDongVaoPhongPhamVi` cấp phòng, đã sắp xếp. ⚠ NÉM khi lỗi (không nuốt): lượt quét của `socketXetLaiQuyen` coi lỗi là NGẮT (fail-closed).
  */
 export async function idsNhaMayTrongPhamViHoacNem(data: DuLieuSocket): Promise<number[] | null> {
-  if (!laSocketNguoiDung(data)) throw new Error("khong phai socket nguoi dung");
+  // `data` là chủ thể VỪA đọc lại (`xacThucLaiChoThaoTacSocket` ok ⇒ luôn là socket người dùng); thiếu `user` ⇒ pvCuaSocket ném TypeError.
   const ids = await (await layCongPhamVi()).idsTrongPhamVi("factory", pvCuaSocket(data));
   return ids === null ? null : [...ids].sort((a, b) => a - b);
 }
