@@ -725,6 +725,9 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
       }
       if (rec.kind === "anomaly") {
         audits.push({ action: "EDGE_ANOMALY", entity: await runEntity(rec.runId), details: { anomaly: rec.code, reportedByEdge: true, runId: rec.runId, detail: rec.detail, at: rec.at }, status: "failure" });
+        // R1b-2b-2a A2(o) AMENDMENT 2 — a write refused for a MISSING safety PLC ⇒ URGENT alert (24 h dedup); EDGE_CONFIG_STALE stays this audit
+        const { alertForEdgeAnomaly, alertRecipients } = await import("./edgeConfigCentral");
+        alertForEdgeAnomaly(node, { code: rec.code, detail: rec.detail }, async () => alertRecipients(await centralDb()));
         return;
       }
       if ((rec as { kind: string }).kind === "actuation") {

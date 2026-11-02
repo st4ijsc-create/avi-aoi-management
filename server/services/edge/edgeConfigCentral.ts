@@ -130,7 +130,7 @@ let configAlertQueue: Promise<unknown> = Promise.resolve();
 const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
 
 /** The people who can act: active admins + supervisors (bounded read; an unreadable list ⇒ none — the log line + alert stream still carry it). */
-async function alertRecipients(d: Db): Promise<number[]> {
+export async function alertRecipients(d: Db): Promise<number[]> {
   const { withDeadline } = await import("../ot/drivers/boundedClose");
   const r = await withDeadline(Promise.resolve(d.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role IN ('admin', 'supervisor')`)), 5_000, "edge config alert recipients");
   return rowsOf(r).map((u) => Number(u.id));
@@ -165,9 +165,38 @@ export function raiseEdgeConfigAlert(a: { kind: string; dedupKey: string; title:
     .catch(() => undefined); // one failed alert never breaks the queue
   return true;
 }
-/** A node built a config again ⇒ its alerts re-arm (a NEW failure later alerts again). */
+/** A node built a config again ⇒ its BUILD alerts re-arm (a NEW failure later alerts again); edge-reported ones are not build state. */
+const BUILD_ALERT_KINDS = new Set(["edge_safety_plc_unshippable", "edge_config_unbuildable"]);
 function rearmConfigAlerts(nodeId: number): void {
-  for (const k of [...configAlerted]) if (k.split(":")[1] === String(nodeId)) configAlerted.delete(k);
+  for (const k of [...configAlerted]) {
+    const [kind, node] = k.split(":");
+    if (BUILD_ALERT_KINDS.has(kind) && node === String(nodeId)) configAlerted.delete(k);
+  }
+}
+
+/**
+ * R1b-2b-2a A2(o) AMENDMENT 2 — what central raises for an anomaly an EDGE reported (events stream, edgeReportsCentral):
+ *   • EDGE_SAFETY_CONFIG_MISSING (a write refused: a safety PLC the authorisation was signed for is not in the edge's config) ⇒
+ *     ONE URGENT alert per (node, sorted ids) — per process and durably for 24 h (raiseEdgeConfigAlert);
+ *   • EDGE_CONFIG_STALE and every other code ⇒ nothing beyond the EDGE_ANOMALY audit the caller writes.
+ * true ⇔ an alert was raised now. Never throws.
+ */
+export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { code: string; detail?: string | null }, recipients: () => Promise<number[]>): boolean {
+  if (rec.code !== "EDGE_SAFETY_CONFIG_MISSING") return false;
+  const detail = String(rec.detail ?? "");
+  const listed = /signed safety-PLC config\(s\) ([#0-9, ]+)/.exec(detail)?.[1] ?? "";
+  const ids = [...new Set([...listed.matchAll(/#(\d+)/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+  const idText = ids.length ? ids.map((x) => `#${x}`).join(", ") : "(not named)";
+  return raiseEdgeConfigAlert(
+    {
+      kind: "edge_safety_plc_missing",
+      dedupKey: `edge_safety_plc_missing:${node.nodeId}:${ids.length ? ids.join(",") : "unnamed"}`,
+      title: `Edge node ${node.nodeCode}: a write was refused — safety-PLC config missing on the edge`,
+      message: `Edge node ${node.nodeCode} refused a non-STOP write: the safety-PLC config(s) ${idText} guarding the device are not in the config it holds, so its preflight could not consult them (nothing was sent; the edge asked for a refresh). If this repeats, check that central can build and serve the node's config.`,
+      nodeId: node.nodeId,
+    },
+    recipients,
+  );
 }
 /** Tests only — the alert queue settled; the per-process memory forgotten (a restart). */
 export function __edgeConfigAlertsSettledForTests(): Promise<unknown> {

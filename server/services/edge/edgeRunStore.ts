@@ -50,6 +50,8 @@ import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
+import { EDGE_CONFIG_STALE, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
+import type { EdgeAuthUnusedReason } from "./edgeProtocol";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A run-stream record before the journal numbers it (edgeJournal.EdgeRunRecordInput). */
@@ -96,6 +98,16 @@ export interface EdgeRunStoreIo {
   /** admission of NEW non-STOP work (false: journal full / unhealthy — a STOP never asks) */
   consume?: { admitNonStop(): boolean };
   authorize: { authorize(input: EdgeStepAuthorizeRequest): Promise<EdgeStepAuthorizeOutcome> };
+  /**
+   * R1b-2b-2a A2(o) AMENDMENT 2 — the edge's config source (the agent passes its EdgeConfigSource): central announced a newer
+   * config than the verified one ⇒ the next non-STOP step is HELD (configStale), never refused, never compensated. Absent ⇒ never stale.
+   */
+  config?: { staleness?(): EdgeConfigStaleness | null };
+  /**
+   * A2(o) AMENDMENT 2 — journal an authorisation as NEVER used (consumed-as-unused, fsync) and report it (`auth_unused`): central
+   * supersedes it, so a Continue re-authorises the step instead of failing it EDGE_OUTCOME_UNKNOWN (edgeStreams.createEdgeAuthUnusedReporter).
+   */
+  reportUnused?(u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: EdgeAuthUnusedReason }): Promise<boolean>;
 }
 
 /**
@@ -274,6 +286,8 @@ export class EdgeRunStore extends EdgeStoreBase {
   private readonly priorAbortSent: Set<string>;
   /** the authorisation (jti) a NON-STOP command step last ran under — quoted by its rows (central checks it, design §2.6) */
   private readonly jtiByStep = new Map<string, string>();
+  /** A2(o) — the attempt each of those authorisations was issued for (an unused report names it) */
+  private readonly attemptByStep = new Map<string, number>();
 
   constructor(
     readonly pkg: EdgeRunPackage,
@@ -376,6 +390,11 @@ export class EdgeRunStore extends EdgeStoreBase {
     // Everything else (an UNPINNED stop-typed write included — not a STOP, R-5-j) needs a fresh, single-use authorisation.
     if (this.journalRefused !== null || this.outcomeUnknown.has(step.id)) return this.unavailable(step.id, "journalFull");
     if (this.io.consume && this.io.consume.admitNonStop() === false) return this.unavailable(step.id, "journalFull");
+    // R1b-2b-2a A2(o) AMENDMENT 2 — a STALE config (central announced a newer one, not adopted yet) ⇒ HELD before asking: nothing
+    // is authorised under the old config; a Continue after the refresh re-authorises the step under the NEW one (new claim, new
+    // authorisation — the old one is never reused). Never a refusal (no compensation). Central never reached ⇒ stays held.
+    const stale = this.configStaleness();
+    if (stale) return this.heldForStaleConfig(step.id, stale);
     const body = edgeAuthorizeCommandOf(probe);
     if (!body) {
       // data-raw-ok: an edge refusal recorded on the step row (machine-to-machine), like FOE_GATE_REQUIRED
@@ -393,6 +412,7 @@ export class EdgeRunStore extends EdgeStoreBase {
       const approval: FoeGateApproval | null = a ? { runId: this.io.runId, runOwner: rc.runOwner, approvedBy: a.approvedBy, gateStepId: a.gateStepId ?? "" } : null;
       const cmd = approval ? buildEquipmentCommand(x.descriptor, x.cap, step.machineId, args, x.idempotencyKey, rc.user, approval) : probe;
       this.jtiByStep.set(step.id, out.claims.jti);
+      this.attemptByStep.set(step.id, attempt);
       bindEdge(cmd, {
         authorization: { envelope: out.authorization, runId: run.runId, claimSeq: run.claimSeq, stepId: step.id, attempt, idempotencyKey: x.idempotencyKey, reqNonce: out.reqNonce },
         run,
@@ -410,6 +430,51 @@ export class EdgeRunStore extends EdgeStoreBase {
       default:
         return { ok: false, verdict: "refused", error: refusalError(step.id, out.code, out.reason), reason: out.reason ?? out.code ?? undefined };
     }
+  }
+
+  /** A2(o) — the config's staleness (an unreadable one counts as stale: fail-closed, the step is held) */
+  private configStaleness(): string | null {
+    const src = this.io.config;
+    if (!src || typeof src.staleness !== "function") return null;
+    try {
+      const st = src.staleness();
+      return st ? edgeConfigStaleText(st) : null;
+    } catch (err) {
+      return `the config's staleness could not be read (${String((err as Error)?.message ?? err).slice(0, 120)})`;
+    }
+  }
+
+  /** A2(o) AMENDMENT 2 — the step is HELD (configStale) and an anomaly says WHY, with the config's age. */
+  private heldForStaleConfig(stepId: string, why: string): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
+    this.heldReason = "configStale";
+    this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
+    // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
+    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held (Continue it once the edge has its new config).` };
+  }
+
+  /**
+   * A2(o) AMENDMENT 2 — a dispatch refused by the edge's config gate because the config went STALE after the authorisation
+   * (edgeNonStopConfigGate CONFIG_STALE: nothing sent, the jti NOT consumed) ⇒ HELD as above, never a failure (no retry, no
+   * compensation). Any other refusal ⇒ null (the walker's usual failure path).
+   */
+  async heldByDispatch(stepId: string, result: { ok: boolean; detail?: Record<string, unknown> | null }): Promise<{ reason: RunStoreHeldReason; error: string } | null> {
+    const d = (result.detail ?? null) as { edge?: unknown; reason?: unknown; refusal?: unknown } | null;
+    if (result.ok || !d || d.edge !== true || d.reason !== EDGE_CONFIG_STALE) return null;
+    // the authorisation it was refused under was NEVER used (the gate runs before the consume): journaled + reported unused, so
+    // it can never be used later and central supersedes it ⇒ the Continue RE-AUTHORISES the step under the new config
+    const jti = this.jtiByStep.get(stepId) ?? null;
+    const attempt = this.attemptByStep.get(stepId) ?? null;
+    let reported = false;
+    if (jti !== null && attempt !== null && this.io.reportUnused) {
+      reported = await this.io.reportUnused({ runId: this.io.runId, claimSeq: this.io.claimSeq, jti, stepId, attempt, reason: "config_stale" }).catch(() => false);
+    }
+    if (reported) {
+      this.jtiByStep.delete(stepId);
+      this.attemptByStep.delete(stepId);
+    }
+    const why = typeof d.refusal === "string" && d.refusal ? d.refusal : "the edge's config is older than the one central announced";
+    const h = this.heldForStaleConfig(stepId, `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`);
+    return { reason: h.heldReason, error: h.error };
   }
 
   private unavailable(stepId: string, reason: RunStoreHeldReason): AuthorizeVerdict {

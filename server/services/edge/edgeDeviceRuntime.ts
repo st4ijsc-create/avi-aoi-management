@@ -66,6 +66,11 @@ export const EDGE_CONFIG_STALE = "CONFIG_STALE" as const;
 
 const secondsAgo = (at: number | null | undefined, now: number): string => (typeof at === "number" && Number.isFinite(at) ? `${Math.max(0, Math.round((now - at) / 1000))} s ago` : "at an unknown time");
 
+/** A2(o) — the ONE wording of a stale config (the dispatch gate, the run store's hold, their anomalies): versions + ages. */
+export function edgeConfigStaleText(stale: EdgeConfigStaleness, now: number = Date.now()): string {
+  return `central announced config v${stale.centralVersion} ${secondsAgo(stale.sinceMs, now)}; this edge still holds v${stale.localVersion} (issued ${secondsAgo(stale.configIssuedAt, now)})`;
+}
+
 /**
  * R1b-2b-2a A2(o) — THE config gate of every NON-STOP edge write (OT and robot motion: otEdgeDispatch / robotEdgeDispatch call
  * this one helper, after the authorisation is verified and BEFORE any preflight / slot / consume — a refused jti is never burnt):
@@ -91,9 +96,7 @@ export function edgeNonStopConfigGate(
     stale = null;
     staleDetail = `the config's staleness could not be read (${String((err as Error)?.message ?? err).slice(0, 120)})`;
   }
-  if (stale) {
-    staleDetail = `central announced config v${stale.centralVersion} ${secondsAgo(stale.sinceMs, now)}; this edge still holds v${stale.localVersion} (issued ${secondsAgo(stale.configIssuedAt, now)})`;
-  }
+  if (stale) staleDetail = edgeConfigStaleText(stale, now);
   let refusal: { reason: typeof EDGE_SAFETY_CONFIG_MISSING | typeof EDGE_CONFIG_STALE; code: string; detail: string } | null = null;
   if (staleDetail !== null) {
     refusal = { reason: EDGE_CONFIG_STALE, code: "EDGE_CONFIG_STALE", detail: `${staleDetail} — non-STOP writes are refused until the refresh succeeds (STOPs still go)` };

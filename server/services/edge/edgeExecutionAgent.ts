@@ -209,6 +209,8 @@ export interface EdgeRunIo {
   programChecks: () => EdgeProgramCheck[];
   /** aborted when central says abortRequested (or the agent stops the run): the walker sweeps locally */
   signal: AbortSignal;
+  /** R1b-2b-2a A2(o) AMENDMENT 2 — an authorisation never used (stale config at the send): journaled + reported unused */
+  reportUnused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: import("./edgeProtocol").EdgeAuthUnusedReason }) => Promise<boolean>;
 }
 
 /** The segment outcome a walker returns (maps 1:1 onto POST complete). */
@@ -991,7 +993,18 @@ export class EdgeExecutionAgent {
       config: d.config,
       programChecks: () => d.programChecks.latest(),
       signal: seg.controller.signal,
+      // R1b-2b-2a A2(o) AMENDMENT 2 — the step held for a stale config: its unused authorisation is superseded at central
+      reportUnused: this.unusedReporter(),
     };
+  }
+
+  private unused: EdgeRunIo["reportUnused"] | null = null;
+  private unusedReporter(): NonNullable<EdgeRunIo["reportUnused"]> {
+    if (!this.unused) {
+      const { journal, sink } = this.deps;
+      this.unused = async (u) => (await import("./edgeStreams")).createEdgeAuthUnusedReporter(journal, sink)(u);
+    }
+    return this.unused;
   }
 
   private async runSegment(seg: Segment, pkg: EdgeRunPackage): Promise<void> {

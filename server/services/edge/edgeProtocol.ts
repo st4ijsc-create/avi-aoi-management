@@ -682,13 +682,20 @@ export const edgeLedgerRecordSchema = z.strictObject({
  * Central (B) marks that authorisation superseded, so a Continue re-authorises the step (C's resume ignores superseded ones)
  * instead of failing it EDGE_OUTCOME_UNKNOWN. A jti the edge journaled as USED is never reported unused.
  */
+/**
+ * Why an authorisation was never used: it arrived after its TTL (R-10-bp), or — R1b-2b-2a A2(o) AMENDMENT 2 — the edge's config went
+ * STALE between the authorisation and the send (edgeNonStopConfigGate CONFIG_STALE: the step is held; a Continue re-authorises it
+ * under the new config).
+ */
+export const EDGE_AUTH_UNUSED_REASONS = ["expired_before_use", "config_stale"] as const;
+export type EdgeAuthUnusedReason = (typeof EDGE_AUTH_UNUSED_REASONS)[number];
 export const edgeAuthUnusedRecordSchema = z.strictObject({
   kind: z.literal("auth_unused"),
   seq: zSeq,
   stepId: zStepId,
   attempt: z.number().int().nonnegative().max(EDGE_ATTEMPT_MAX),
   jti: zJti,
-  reason: z.literal("expired_before_use"),
+  reason: z.enum(EDGE_AUTH_UNUSED_REASONS),
   at: zEpochMs,
 });
 export const edgeRunReportRecordSchema = z.discriminatedUnion("kind", [edgeStepRecordSchema, edgeContextRecordSchema, edgeAbortStopRecordSchema, edgeLedgerRecordSchema, edgeAuthUnusedRecordSchema]);

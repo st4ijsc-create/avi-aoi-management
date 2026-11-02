@@ -358,7 +358,7 @@ export interface EdgeAuthorizeDeps {
    * R-10-bp (fix review 7) — an authorisation that arrived after its TTL and was NOT used: journal it unused (fsync, the jti
    * consumed-as-unused) and THEN report it on the run stream (`auth_unused`). Resolves true only when both happened.
    */
-  unused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: "expired_before_use" }) => Promise<boolean>;
+  unused?: (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: import("./edgeProtocol").EdgeAuthUnusedReason }) => Promise<boolean>;
   /** an answer that failed verification is reported as an anomaly (events stream) */
   anomaly?: (code: string, runId: number, detail: string) => void;
 }

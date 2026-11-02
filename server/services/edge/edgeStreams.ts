@@ -32,6 +32,7 @@ import {
   EDGE_TELEMETRY_BATCH_MAX,
   edgeRunStream,
   parseEdgeStream,
+  type EdgeAuthUnusedReason,
   type EdgeEventRecord,
   type EdgeProgramCheck,
   type EdgeRobotStateRecord,
@@ -68,11 +69,11 @@ export function createEdgeJournalConsume(journal: EdgeJournal): EdgeJournalConsu
  * jti consumed-as-unused) FIRST, only then the run-stream record `auth_unused` (central supersedes the authorisation). A jti
  * already consumed (used) is refused by the journal ⇒ never reported unused. true ⇔ both landed.
  */
-export function createEdgeAuthUnusedReporter(journal: EdgeJournal, sink: EdgeReportSink): (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: "expired_before_use" }) => Promise<boolean> {
+export function createEdgeAuthUnusedReporter(journal: EdgeJournal, sink: EdgeReportSink): (u: { runId: number; claimSeq: number; jti: string; stepId: string; attempt: number; reason: EdgeAuthUnusedReason }) => Promise<boolean> {
   return async (u) => {
     const j = await journal.markAuthorizationUnused(u);
     if (!j.ok) {
-      console.warn(`[EdgeJournal] late authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
+      console.warn(`[EdgeJournal] ${u.reason === "config_stale" ? "stale-config" : "late"} authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
       return false;
     }
     const r = await sink.run(u.runId, u.claimSeq, { kind: "auth_unused", stepId: u.stepId, attempt: u.attempt, jti: u.jti, reason: u.reason, at: Date.now() });
