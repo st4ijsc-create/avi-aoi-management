@@ -34,6 +34,7 @@ vi.mock("../robot/robotAdapter", async (importOriginal) => {
 });
 
 import { setupCentral, waitFor, sleep, noDbEvidence, type Central, type EdgeProc, type CentralTestHooks } from "./__edgeE2eHarness.dot10";
+import { countSeqConflictsOfNode } from "./__edgeAuditDem.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -379,8 +380,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
     expect(new Set(cursors.map((r) => r.epoch))).toEqual(new Set([epochBefore, epochAfter]));
     const firstNew = await c.sql`SELECT stream, min(seq)::int AS first FROM edge_node_report_records WHERE "edgeNodeId" = ${c.ids.nodeA} AND epoch = ${epochAfter} GROUP BY stream`;
     expect(firstNew.every((r) => r.first === 1)).toBe(true);
-    const conflicts = await c.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action LIKE '%EDGE_ANOMALY%' AND details::text LIKE '%seq_conflict%' AND "createdAt" > now() - interval '30 minutes' AND details::text LIKE ${`%${c.ids.nodeA}%`}`;
-    expect(conflicts[0].n).toBe(0);
+    const conflicts = await countSeqConflictsOfNode(c.sql, c.ids.nodeA, 30); // exact by node (entityType/entityId), not a substring of details
+    expect(conflicts).toBe(0);
     // jti: one per (claim, step, attempt), each reported once; m1's was never used again
     const auths = await c.sql`SELECT jti, "stepId", "claimSeq", "resultReportedAt" IS NOT NULL AS reported FROM edge_step_authorizations WHERE "runId" = ${id} ORDER BY "issuedAt"`;
     expect(auths.map((a) => a.stepId)).toEqual(["m1", "m2"]);
