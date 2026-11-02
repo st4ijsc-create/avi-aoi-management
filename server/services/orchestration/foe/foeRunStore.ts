@@ -504,6 +504,8 @@ export async function ensureOrchestrationAction(
       if (existing) return actionId; // resume/retry → tái dùng bản ghi cũ
       // A2(m) upgrade compatibility — a run mid-flight across the upgrade may hold its row under the OLD (truncated) id of a long key:
       // that row is THE authorisation of this key (pending or spent) ⇒ used, never shadowed by a fresh confirmed row (a second write).
+      // REMOVAL NOTE (fix round 1): engine rows expire after 1 h and a resumed run past that is refused anyway (expired) — this lookup
+      // and orchestrationActionIdCu can be removed one release after A2(m) (no row under a legacy id can still authorise anything then).
       const cu = orchestrationActionIdCu(idempotencyKey);
       if (cu !== actionId) {
         const [legacy] = await d.select().from(aiPendingActions).where(eq(aiPendingActions.id, cu)).limit(1);

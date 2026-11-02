@@ -842,7 +842,6 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   );
 
   let outcome: StepOutcome;
-  let maxAttempts = soLanThuToiDa(step, false);
   let attempt = 0;
   // doc 81 Đợt 10 C fix review 1 — a command an edge SENT but whose result its journal refused (outcome unknown, recorded by
   // central at that segment's end): NEVER sent again — it is a failure (its compensation, if any, follows as for any failure).
@@ -869,11 +868,12 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
       outcome = motPhanChot;
       break;
     }
-    // R1b-2b-2a A2(m) — a PINNED STOP (the central store said so for this dispatch) with no explicit maxAttempts gets the STOP default of
-    // attempts, each after a bounded pause (stopGhimLuiMs ≤ D); an explicit maxAttempts is kept as is (no pause, as before).
+    // R1b-2b-2a A2(m) (+ fix round 1) — the budget is decided PER ATTEMPT from the LATEST outcome: a PINNED STOP (the central store said so
+    // for THIS dispatch) with no explicit maxAttempts gets the STOP default of attempts, each after a bounded pause (stopGhimLuiMs ≤ D); an
+    // attempt that was NOT pinned (pins removed meanwhile, M10 flow) gets the non-pinned budget (unset ⇒ 1 attempt, R-5-j) — never a sticky
+    // default from an earlier pinned attempt. An explicit maxAttempts is kept as is (no pause, as before).
     const ghimMacDinh = outcome.kind === "failed" && outcome.stopGhim === true && step.maxAttempts === undefined;
-    if (ghimMacDinh) maxAttempts = Math.max(maxAttempts, soLanThuToiDa(step, true));
-    if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
+    if (outcome.kind !== "failed" || attempt >= soLanThuToiDa(step, ghimMacDinh)) break;
     if (ghimMacDinh) await sleep(stopGhimLuiMs(attempt + 1), rc.controller.signal); // an abort wakes it: the next attempt answers 'aborted'
   }
   if (outcome.kind === "failed" && outcome.stopGhim) {

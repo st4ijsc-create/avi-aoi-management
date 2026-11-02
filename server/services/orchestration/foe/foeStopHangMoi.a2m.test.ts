@@ -348,10 +348,12 @@ describe("A2(m) — the engine asks the A2(h) predicate; the reservation is unch
     expect(res.slice(mark, mark + 300)).toContain('verdict = { ok: false, reason: "NOT_CONFIRMED", detail: HANG_MOI_STOP_GHIM_TU_CHOI };');
   });
 
-  it("the walker's retry loop: STOP default only for a pinned STOP (outcome.stopGhim) with maxAttempts UNSET; explicit kept", () => {
+  it("the walker's retry loop: STOP default only for a pinned STOP (outcome.stopGhim) with maxAttempts UNSET, decided PER ATTEMPT; the pause awaited", () => {
     const eng = code(src("server/services/orchestration/foe/foeEngine.ts"));
-    expect(eng).toMatch(/let maxAttempts = soLanThuToiDa\(step, false\);/);
-    expect(eng).toMatch(/const ghimMacDinh = outcome\.kind === "failed" && outcome\.stopGhim === true && step\.maxAttempts === undefined;/);
-    expect(eng).toMatch(/if \(ghimMacDinh\) maxAttempts = Math\.max\(maxAttempts, soLanThuToiDa\(step, true\)\);/);
+    const loop = eng.slice(eng.indexOf("else while (true) {"), eng.indexOf("if (outcome.kind === \"failed\" && outcome.stopGhim) {"));
+    expect(loop).toMatch(/const ghimMacDinh = outcome\.kind === "failed" && outcome\.stopGhim === true && step\.maxAttempts === undefined;/);
+    expect(loop).toMatch(/if \(outcome\.kind !== "failed" \|\| attempt >= soLanThuToiDa\(step, ghimMacDinh\)\) break;/);
+    expect(loop).toMatch(/if \(ghimMacDinh\) await sleep\(stopGhimLuiMs\(attempt \+ 1\), rc\.controller\.signal\);/);
+    expect(loop).not.toMatch(/maxAttempts = Math\.max/); // fix round 1 — no sticky budget
   });
 });

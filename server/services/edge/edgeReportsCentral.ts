@@ -447,7 +447,10 @@ export async function applyLedger(
   const ot = "adapterId" in rec.target ? rec.target : null;
   const { isStopCommandType } = await import("../ot/commandDispatcher");
   const { isStopJobType } = await import("../robot/stopJob");
-  // R1b-2b-2a A2(m) — the ledger row names the authorisation row edgeAuthorizeCentral wrote: the SAME id function (hash-shortened, never cut)
+  // R1b-2b-2a A2(m) — the ledger row names the authorisation row edgeAuthorizeCentral wrote: the SAME id function (hash-shortened, never cut).
+  // Upgrade note (A2(m) fix round 1): a LONG key (id > 64 characters) authorised by a pre-A2(m) central and reported after the upgrade gets
+  // the new hashed id here while its authorisation row sits under the old truncated id — the actionId is an audit LINK only (no gate reads
+  // it on this path; the edge write already happened under its signed authorisation), so such an in-flight row simply does not join.
   const { orchestrationActionId } = await import("../orchestration/foe/foeStepClass");
   const isStop = rec.stop === true && (robot ? isStopJobType(robot.jobType) : isStopCommandType(ot!.commandType));
   const owner = robot ? (await robotOwners(tx, [robot.robotId])).get(robot.robotId) : (await adapterOwners(tx, [ot!.adapterId])).get(ot!.adapterId);
