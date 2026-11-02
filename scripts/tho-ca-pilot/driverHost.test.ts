@@ -77,6 +77,7 @@ function taoDep(kichBan: (phat: (e: Su) => void, dep: { duyet: string[]; bac: st
     duAnId: () => "_tho_ca_wt_ao",
     chinhSachDuyet: chinhSach,
     bay: () => Date.now(),
+    datKhoaKy: () => ({ ok: true, tam: false }),
     ...over,
   };
   return { dep, dd };
@@ -239,5 +240,50 @@ describe("driverHost — lỗi đầu tiên là lỗi gốc", () => {
     const kq = await driverHost(dep)(dauVao(ra));
     expect(kq.loi).toContain("GOC");
     expect(kq.loi).not.toContain("HE_QUA");
+  });
+});
+
+import { bamKhoaKyTam, keLoiCongCu } from "./driverHost";
+
+describe("khoá ký checkpoint & đếm lỗi công cụ (TC-01 lượt 2: KHONG_CO_KHOA chặn mọi lần ghi)", () => {
+  it("★ bamKhoaKyTam: đã có khoá ≥16 ⇒ giữ nguyên (không tạm); thiếu / ngắn ⇒ SINH khoá riêng 64 hex", () => {
+    const co: Record<string, string> = { SECRET_ENCRYPTION_KEY: "x".repeat(20) };
+    expect(bamKhoaKyTam(co)).toEqual({ ok: true, tam: false });
+    expect(co.SECRET_ENCRYPTION_KEY).toBe("x".repeat(20));
+    const jwt: Record<string, string> = { JWT_SECRET: "y".repeat(16) };
+    expect(bamKhoaKyTam(jwt)).toEqual({ ok: true, tam: false });
+    expect(jwt.SECRET_ENCRYPTION_KEY).toBeUndefined();
+    for (const e of [{}, { SECRET_ENCRYPTION_KEY: "ngan" }, { JWT_SECRET: "ngan" }] as Array<Record<string, string>>) {
+      expect(bamKhoaKyTam(e)).toEqual({ ok: true, tam: true });
+      expect(e.SECRET_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
+    }
+    const a: Record<string, string> = {};
+    const b: Record<string, string> = {};
+    bamKhoaKyTam(a);
+    bamKhoaKyTam(b);
+    expect(a.SECRET_ENCRYPTION_KEY).not.toBe(b.SECRET_ENCRYPTION_KEY);
+  });
+  it("★ không tạo được khoá ⇒ KHÔNG tạo lượt (loi-driver nêu rõ); khoá tạm ⇒ luuY, không lộ khoá", async () => {
+    let tao = 0;
+    const a = taoDep(() => undefined, async () => ({ quyet: "tu-choi" }), { datKhoaKy: () => ({ ok: false, tam: false }), taoLuot: async () => (tao++, { ok: false as const, loi: "x" }) });
+    expect((await driverHost(a.dep)(dauVao(ra))).loi).toContain("khoá ký checkpoint");
+    expect(tao).toBe(0);
+    const b = taoDep(async (phat) => phat({ loai: "xong", lyDo: "hoan-thanh" }), async () => ({ quyet: "tu-choi" }), { datKhoaKy: () => ({ ok: true, tam: true }) });
+    const kq = await driverHost(b.dep)(dauVao(ra));
+    expect(kq.luuY?.join(" ")).toContain("khoá pilot tạm");
+    expect(JSON.stringify(kq)).not.toMatch(/[0-9a-f]{64}/);
+  });
+  it("★ loiCongCu đếm theo mã (kèm mã chi tiết trong tóm tắt)", async () => {
+    const { dep } = taoDep(async (phat) => {
+      for (let i = 0; i < 3; i++) phat({ loai: "ket-qua-tool", id: `t${i}`, ten: "write_file", ok: false, ma: "CHECKPOINT_LOI", tomTat: "Refused: checkpoint could not be created (KHONG_CO_KHOA)" });
+      phat({ loai: "ket-qua-tool", id: "t9", ten: "x", ok: false, tomTat: "boom" });
+      phat({ loai: "ket-qua-tool", id: "t10", ten: "x", ok: true, tomTat: "ok" });
+      phat({ loai: "xong", lyDo: "hoan-thanh" });
+    }, async () => ({ quyet: "tu-choi" }));
+    expect((await driverHost(dep)(dauVao(ra))).loiCongCu).toEqual({ "CHECKPOINT_LOI:KHONG_CO_KHOA": 3, KHONG_RO: 1 });
+  });
+  it("keLoiCongCu: không mã chi tiết ⇒ chỉ ma", () => {
+    expect(keLoiCongCu({ ma: "NOT_FOUND", tomTat: "file not found" })).toBe("NOT_FOUND");
+    expect(keLoiCongCu({})).toBe("KHONG_RO");
   });
 });

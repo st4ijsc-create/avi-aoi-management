@@ -37,6 +37,10 @@ export interface KetQuaDriver {
   duyet?: { soLanCho: number; soChapNhan: number; soTuChoi: number; giayChoDuyet: number };
   /** lý do dừng của lượt (hoan-thanh | het-luot | het-gio | loi-model | …) nếu driver biết */
   lyDoDung?: string;
+  /** lưu ý driver muốn ghi vào JSON (vd khoá checkpoint tạm) */
+  luuY?: string[];
+  /** đếm lỗi công cụ theo mã (vd { "CHECKPOINT_LOI:KHONG_CO_KHOA": 4 }) */
+  loiCongCu?: Record<string, number>;
 }
 
 export interface DauVaoDriver {
@@ -70,6 +74,8 @@ export interface KetQuaViec {
   soChapNhan?: number;
   soTuChoi?: number;
   giayChoDuyet?: number;
+  /** số lỗi công cụ theo mã — để thấy ngay từ JSON vì sao Thợ Cả không ghi được */
+  loiCongCu?: Record<string, number>;
   vong?: number | null;
   token?: KetQuaDriver["token"];
   tepDoi?: string[];
@@ -301,7 +307,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     }
   }
   const crlf = tepCrlf(wt, tepDoi);
-  const luuY: string[] = [];
+  const luuY: string[] = [...(kq.luuY ?? [])];
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");
   if (kq.vong === null) luuY.push("số vòng: driver không biết");
 
@@ -324,6 +330,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     giayModel: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
     ...(kq.duyet ? { soLanCho: kq.duyet.soLanCho, soChapNhan: kq.duyet.soChapNhan, soTuChoi: kq.duyet.soTuChoi, giayChoDuyet: kq.duyet.giayChoDuyet } : {}),
     ...(kq.lyDoDung ? { lyDoDung: kq.lyDoDung } : {}),
+    ...(kq.loiCongCu ? { loiCongCu: kq.loiCongCu } : {}),
     vong: kq.vong,
     token: kq.token,
     tepDoi,

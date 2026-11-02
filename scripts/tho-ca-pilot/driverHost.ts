@@ -12,6 +12,7 @@
  * Môi trường (đặt bởi người chạy, qua env của TIẾN TRÌNH này; bộ chạy không đọc/sửa .env): DATABASE_URL trỏ `aoi_management_test` (khẳng định
  * `current_database()` trước khi chạy), LLAMA_SERVER_URL, AI_REPO_SANDBOX_ROOTS có `<tên thư mục worktree>=<đường worktree>`.
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
@@ -130,6 +131,8 @@ export interface PhuThuocHost {
   chinhSachDuyet: ChinhSachDuyet;
   /** đo thời gian chờ người (ms) — tiêm được để test */
   bay(): number;
+  /** Bảo đảm có khoá ký checkpoint (SECRET_ENCRYPTION_KEY|JWT_SECRET ≥ 16). `tam` = bộ chạy tự sinh khoá riêng của tiến trình. */
+  datKhoaKy(): { ok: boolean; tam: boolean };
 }
 
 export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
@@ -137,6 +140,11 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     const ghiChu: string[] = [];
     const loiMt = await dep.kiemMoiTruong(v);
     if (loiMt) return { vong: null, token: null, ghiChu, hetGio: false, loi: `môi trường không đạt: ${loiMt}` };
+    // Checkpoint ký manifest TRƯỚC mọi lượt ghi: thiếu khoá ⇒ write_file bị chặn trước cả cổng duyệt (TC-01 lượt 2). Kiểm TRƯỚC khi tạo lượt.
+    const khoa = dep.datKhoaKy();
+    if (!khoa.ok) return { vong: null, token: null, ghiChu, hetGio: false, loi: "môi trường không đạt: thiếu khoá ký checkpoint (SECRET_ENCRYPTION_KEY|JWT_SECRET ≥ 16 ký tự) và không tạo được khoá tạm" };
+    const luuY: string[] = khoa.tam ? ["checkpoint ký bằng khoá pilot tạm (sinh ngẫu nhiên cho tiến trình này; checkpoint của lượt không đọc lại được sau khi tiến trình thoát)"] : [];
+    const loiCongCu: Record<string, number> = {};
 
     const projectId = dep.duAnId(v.wt);
     const cauHoi = `[${NHAN_PILOT}:${v.the.ma}] ${v.lenh}`;
@@ -211,6 +219,9 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           cache += e.cacheN;
           prompt += e.promptN;
         }
+      } else if (e.loai === "ket-qua-tool" && e.ok === false) {
+        const k = keLoiCongCu(e);
+        loiCongCu[k] = (loiCongCu[k] ?? 0) + 1;
       } else if (e.loai === "goi-tool" && typeof e.luot === "number") {
         vong = Math.max(vong, e.luot);
       } else if (e.loai === "xong") {
@@ -255,6 +266,8 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       if (t && t.trangThai === "loi") kq.loi = `hàng lượt trangThai=loi lyDoDung=${t.lyDoDung ?? "?"}`;
     }
     if (lyDoDung !== null) kq.lyDoDung = lyDoDung;
+    kq.loiCongCu = loiCongCu;
+    if (luuY.length > 0) kq.luuY = luuY;
     return kq;
   };
 
@@ -316,6 +329,7 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
     },
     chinhSachDuyet: c.chinhSachDuyet ?? duyetQuaTep,
     bay: () => Date.now(),
+    datKhoaKy: () => bamKhoaKyTam(process.env),
   };
 }
 
@@ -328,4 +342,20 @@ export function thieuKhoaModel(env: Record<string, string | undefined>): string[
   if (!(env.LLAMA_SERVER_MODEL ?? "").trim()) ra.push("LLAMA_SERVER_MODEL");
   if (!(env.GGUF_CODE_MODEL ?? "").trim() && !(env.GGUF_DEFAULT_MODEL ?? "").trim()) ra.push("GGUF_CODE_MODEL|GGUF_DEFAULT_MODEL");
   return ra;
+}
+
+/** Khoá ký checkpoint: có sẵn (≥ 16 ký tự, theo đúng thứ tự ưu tiên của checkpointAgent) ⇒ giữ; không ⇒ SINH khoá ngẫu nhiên RIÊNG cho tiến trình (không dùng bí mật server, không in). */
+export function bamKhoaKyTam(env: Record<string, string | undefined>): { ok: boolean; tam: boolean } {
+  const ikm = (env.SECRET_ENCRYPTION_KEY ?? "").trim() || (env.JWT_SECRET ?? "").trim();
+  if (ikm.length >= 16) return { ok: true, tam: false };
+  env.SECRET_ENCRYPTION_KEY = randomBytes(32).toString("hex");
+  return { ok: true, tam: true };
+}
+
+/** Khoá đếm lỗi công cụ: `ma` của kết quả tool (vd CHECKPOINT_LOI); nếu tóm tắt nêu thêm một mã IN HOA (vd KHONG_CO_KHOA) thì `ma:MÃ`. Thuần. */
+export function keLoiCongCu(e: { ma?: unknown; tomTat?: unknown }): string {
+  const ma = typeof e.ma === "string" && e.ma !== "" ? e.ma : "KHONG_RO";
+  const tt = typeof e.tomTat === "string" ? e.tomTat : "";
+  const m = /\b([A-Z][A-Z0-9]*_[A-Z0-9_]{2,})\b/.exec(tt);
+  return m && m[1] !== ma ? `${ma}:${m[1]}` : ma;
 }
