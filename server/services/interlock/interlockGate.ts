@@ -16,7 +16,7 @@
  * giờ raise Andon hay ghi lệnh máy — đó là việc của engine/dispatcher.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { and, eq, gte, sql, desc } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, or, sql, desc, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   interlockRules,
@@ -299,6 +299,11 @@ export interface InterlockGateResult {
   /** true = bị chặn vì lỗi/không đánh giá được (fail-closed), không phải do rule met. */
   failClosed: boolean;
   violations: InterlockGateViolation[];
+  /**
+   * SCADA R1b-2b-2a A2(j) — present ⇔ the rule set aimed at this command has MORE than `tran` rows (`TRAN_LUAT_INTERLOCK`): the gate evaluated
+   * NOTHING and refused (`blocked && failClosed`), never a subset. Callers only name it in their refusal text (codes unchanged).
+   */
+  vuotTran?: { tran: number };
 }
 
 /**
@@ -328,6 +333,124 @@ function isTargeted(rule: InterlockRule, params: InterlockGateTarget): boolean {
   return byAdapter || byMachine || byTag;
 }
 
+/** The JS filter of the gate over an ENABLED rule: approved (raw) + a blocking action + `isTargeted`. Exported for the J2 equivalence grid only. */
+export function laLuatChanNhamDung(rule: InterlockRule, params: InterlockGateTarget): boolean {
+  return rule.approvedBy != null && INTERLOCK_GATE_ACTIONS.has(rule.action) && isTargeted(rule, params);
+}
+
+/**
+ * SCADA R1b-2b-2a A2(j) — the most rules the gate loads for ONE command. More ⇒ fail-closed (`vuotTran`) + one deduped URGENT alert; never a
+ * partial set. Why 1000 (the old literal, kept): the query is now narrowed to the rules aimed AT this command (adapter / machine set / global tag
+ * key — `dieuKienLuatUngVien`), enabled + approved + a blocking action; a real target has single digits to tens of those, so 1000 is reached only by
+ * misconfiguration. A smaller value would turn configurations we cannot measure into new refusals; a larger or no cap would let a pathological rule
+ * set add unbounded latency to the gate, which also runs on the pinned-STOP path (commandDispatcher, before the R-1D-c override). The narrowed set
+ * is a subset of what the old unnarrowed `.limit(1000)` counted, so no command that passed the old cap honestly can hit this one.
+ */
+export const TRAN_LUAT_INTERLOCK = 1000;
+let tranLuatChoTest: number | null = null;
+/** Tests only: lower the cap (null = back to TRAN_LUAT_INTERLOCK). */
+export function _datTranLuatInterlockChoTest(n: number | null): void {
+  tranLuatChoTest = n;
+}
+function tranLuatHienTai(): number {
+  return tranLuatChoTest ?? TRAN_LUAT_INTERLOCK;
+}
+
+/** The machine set of a target: {machineId} ∪ machineIds, safe integers only (no integer column value can equal anything else), de-duplicated. */
+function tapMayCuaDich(params: InterlockGateTarget): number[] {
+  const out: number[] = [];
+  for (const m of [params.machineId, ...(params.machineIds ?? [])]) {
+    if (typeof m === "number" && Number.isSafeInteger(m) && !out.includes(m)) out.push(m);
+  }
+  return out;
+}
+
+/**
+ * SCADA R1b-2b-2a A2(j) — the SQL form of "enabled + approved + blocking action + `isTargeted`" — EXACTLY the JS filter (pinned by the J2 grid,
+ * interlockGate.tranLuat.a2j.test.ts, and its DB twin), so the cap counts only rules that can decide this command:
+ *   • approved: `approvedBy IS NOT NULL` ≡ `r.approvedBy != null` (raw, deliberately — see evaluateInterlockGate);
+ *   • action: `action IN INTERLOCK_GATE_ACTIONS` ≡ `.has(r.action)`;
+ *   • byAdapter: `targetAdapterId = adapterId` (NULL never equal) — only for a safe-integer adapterId (anything else can equal no integer);
+ *   • byMachine: `targetMachineId IN {machineId} ∪ machineIds` — omitted when that set is empty (robot gate: machineId = robotId; OT: tapMayChoInterlock);
+ *   • byTag: `commandTag IN tagKeys AND targetAdapterId IS NULL` — the `targetAdapterId = adapterId` half of JS byTag is already byAdapter; omitted
+ *     when there is no tag key (robot gate).
+ * A rule with no targetAdapterId, no targetMachineId and no commandTag is targeted by NOTHING in JS, so no SQL branch returns it. The JS filter
+ * still runs after the query (backstop).
+ */
+export function dieuKienLuatUngVien(params: InterlockGateTarget): SQL {
+  const nhanh: SQL[] = [];
+  if (Number.isSafeInteger(params.adapterId)) nhanh.push(eq(interlockRules.targetAdapterId, params.adapterId));
+  const tapMay = tapMayCuaDich(params);
+  if (tapMay.length > 0) nhanh.push(inArray(interlockRules.targetMachineId, tapMay));
+  const tags = [...new Set((params.tagKeys ?? []).filter((t): t is string => typeof t === "string"))];
+  if (tags.length > 0) nhanh.push(and(inArray(interlockRules.commandTag, tags), isNull(interlockRules.targetAdapterId)) as SQL);
+  return and(
+    eq(interlockRules.enabled, true),
+    isNotNull(interlockRules.approvedBy),
+    inArray(interlockRules.action, [...INTERLOCK_GATE_ACTIONS] as Array<InterlockRule["action"]>),
+    nhanh.length > 0 ? (or(...nhanh) as SQL) : sql`false`,
+  ) as SQL;
+}
+
+/** In-process dedup of the cap alert (the inbox row is also deduped durably for 24 h by raiseCriticalStopAlert `khuTrungBenVung`). */
+const tranDaBao = new Map<string, number>();
+const TRAN_BAO_CUA_SO_MS = 24 * 60 * 60 * 1000;
+/** Tests only: forget the in-process dedup (simulates a restart). */
+export function _quenCanhBaoTranLuatChoTest(): void {
+  tranDaBao.clear();
+}
+
+/** The dedup key of the cap alert: the adapter AND the machine set (the robot gate passes adapterId -1 for every robot — its robot id is the machine). */
+export function khoaCanhBaoTranLuat(params: InterlockGateTarget): string {
+  return `interlock_tran_luat:adapter:${params.adapterId}:may:${tapMayCuaDich(params).join(",")}`;
+}
+
+/**
+ * ONE deduped URGENT alert that the rule set of a target exceeds the cap (the alert stream + a safety-critical inbox row to every active admin).
+ * Fire-and-forget: never awaited on the decision path, never throws. An inbox / alert-stream notice is neither an Andon nor a command write
+ * (the module rule at the top still holds).
+ */
+function baoVuotTranLuat(params: InterlockGateTarget, tran: number): void {
+  const key = khoaCanhBaoTranLuat(params);
+  const now = Date.now();
+  const luc = tranDaBao.get(key);
+  if (luc !== undefined && now - luc < TRAN_BAO_CUA_SO_MS) return;
+  if (tranDaBao.size >= 5_000) tranDaBao.clear();
+  tranDaBao.set(key, now);
+  const tapMay = tapMayCuaDich(params);
+  const dich = params.adapterId >= 0 ? `adapter ${params.adapterId}` : `robot ${tapMay.join(",") || "?"}`;
+  const message =
+    `The interlock rules aimed at ${dich}${tapMay.length && params.adapterId >= 0 ? ` (machines ${tapMay.join(", ")})` : ""} exceed ${tran} ` +
+    `(enabled, approved, blocking). The inline interlock gate refuses every command to it (fail-closed) until the rule set is reduced; ` +
+    `a pinned OT STOP is still sent (R-1D-c). Review the interlock rules of this target.`;
+  void (async () => {
+    try {
+      let recipients: number[] = [];
+      try {
+        const db = await getDb();
+        const r = db ? await (db as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(sql`SELECT id FROM users WHERE role = 'admin' AND "isActive" = true`) : [];
+        recipients = ((Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<{ id: unknown }>).map((x) => Number(x.id)).filter((x) => Number.isSafeInteger(x) && x > 0);
+      } catch {
+        recipients = []; // the alert stream + log still carry it
+      }
+      const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+      await raiseCriticalStopAlert({
+        kind: "interlock_tran_luat",
+        title: `Interlock rule set over the cap — ${dich}`,
+        message,
+        recipients,
+        dedupKey: key,
+        source: params.adapterId >= 0 ? "ot" : "robot",
+        entityType: params.adapterId >= 0 ? "device_adapter" : "robot",
+        entityId: params.adapterId >= 0 ? params.adapterId : tapMay[0],
+        khuTrungBenVung: {},
+      });
+    } catch (err) {
+      console.error(`[InterlockGate] cap alert failed: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
+    }
+  })();
+}
+
 /**
  * CỔNG INTERLOCK ĐỒNG BỘ — dùng inline trong commandDispatcher.dispatch() TRƯỚC
  * mọi real-write cho lệnh HITL.
@@ -350,16 +473,24 @@ export async function evaluateInterlockGate(params: InterlockGateTarget): Promis
     const db = await getDb();
     if (!db) return { blocked: true, failClosed: true, violations: [] };
 
-    // Chỉ lấy rule đang enabled; lọc approved + action + target ở app-level.
+    // SCADA R1b-2b-2a A2(j) — only the rules that can decide THIS command (dieuKienLuatUngVien ≡ the JS filter below), in a fixed order, cap + 1:
+    // more than the cap ⇒ refuse (fail-closed) + one deduped alert — never evaluate an arbitrary subset (the old `.limit(1000)` counted every
+    // enabled rule of the database, unordered ⇒ a targeted rule could fall outside it and the command went through).
+    const tran = tranLuatHienTai();
     const enabledRules = await db
       .select()
       .from(interlockRules)
-      .where(eq(interlockRules.enabled, true))
-      .limit(1000);
+      .where(dieuKienLuatUngVien(params))
+      .orderBy(asc(interlockRules.id))
+      .limit(tran + 1);
+    if (enabledRules.length > tran) {
+      console.error(`[InterlockGate] more than ${tran} interlock rules aimed at adapter ${params.adapterId} — fail-closed (nothing evaluated)`);
+      baoVuotTranLuat(params, tran);
+      return { blocked: true, failClosed: true, violations: [], vuotTran: { tran } };
+    }
 
-    const relevant = enabledRules.filter(
-      (r) => r.approvedBy != null && INTERLOCK_GATE_ACTIONS.has(r.action) && isTargeted(r, params),
-    );
+    // Backstop: the same filter in JS (the SQL above returns exactly this set; kept so a query change can never widen what blocks).
+    const relevant = enabledRules.filter((r) => laLuatChanNhamDung(r, params));
 
     const violations: InterlockGateViolation[] = [];
     for (const rule of relevant) {

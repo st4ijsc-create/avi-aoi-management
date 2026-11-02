@@ -1649,7 +1649,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     });
     if (gate.blocked) {
       const detail = gate.failClosed
-        ? "interlock evaluation error — fail-closed (no write)"
+        ? gate.vuotTran
+          ? `interlock rule set for this target exceeds ${gate.vuotTran.tran} rules — fail-closed (no write)` // A2(j)
+          : "interlock evaluation error — fail-closed (no write)"
         : `blocked by active interlock rule(s): ${gate.violations
             .map((v) =>
               v.lyDo === "thieu_du_lieu"
