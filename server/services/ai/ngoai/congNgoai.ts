@@ -413,8 +413,9 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
   const cheLoi = (e: unknown): LoiNgoai =>
     e instanceof LoiNgoai
       ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-        ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che
-          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}), ...(e.requestId ? { requestId: e.requestId } : {}) })
+        ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che.
+          //   (H3.3a, rà kiem-dinh a14) `requestId` KHÔNG đi theo lỗi ra người gọi — chỉ vào sổ (lấy từ lỗi GỐC ở `ghiKq`).
+          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
         : e
       : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
   let kq: KetQuaNhaCungCap | null = null;

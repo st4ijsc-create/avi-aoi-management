@@ -14,6 +14,7 @@ import { anthropic } from "./nhaCungCap/anthropic";
 import { openai, openaiTuongThich } from "./nhaCungCap/openai";
 import { gemini } from "./nhaCungCap/gemini";
 import { taoCapAgentNgoai, type CauHinhAgentNgoai } from "./vongAgentNgoai";
+import { ghepPhan } from "./ghepPhan";
 
 datPhanGiaiDns(async () => [{ address: "93.184.216.34", family: 4 }]);
 const thanGui: string[] = [];
@@ -142,6 +143,31 @@ describe("H3.3b §B — cờ BẬT: khối tool gốc từ bộ chuyển tới t
       expect(b.messages[4]).toMatchObject({ role: "assistant", content: "Xem tiếp chỗ gọi.", tool_calls: [{ id: ID2 }] });
       expect(b.messages[5]).toMatchObject({ role: "tool", tool_call_id: ID2 });
     }
+  });
+
+  it("(rà kiem-dinh b22) Anthropic: lịch sử BẮT ĐẦU bằng assistant mang goiTool ⇒ messages[0] là user '(bắt đầu)' (Anthropic đòi tin đầu là user)", async () => {
+    const tin = ghepPhan([
+      { vaiTro: "system", phan: [{ loai: "huong-dan-tinh", noiDung: "hệ" }] },
+      { vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: "" }], goiTool: [{ id: "ngoai-11111111-1", ten: "read_file", thamSo: { path: "a.ts" } }] },
+      { vaiTro: "tool", tenTool: "read_file", phan: [{ loai: "ma-repo", noiDung: "x" }], idGoiTool: "ngoai-11111111-1" },
+    ]).tinNhan;
+    const b = JSON.parse(await thanHttp(anthropic, { tinNhan: tin, congCu: [{ ten: "read_file", moTa: "r", schema: { type: "object" } }] } as never)) as { messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }> };
+    expect(b.messages[0]).toEqual({ role: "user", content: [{ type: "text", text: "(bắt đầu)" }] });
+    expect(b.messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+  });
+
+  it("(rà kiem-dinh b13) ghepPhan ĐÓNG BĂNG SÂU goiTool: sửa tham số sau khi ghép ⇒ TypeError (strict); sửa nguồn sau khi ghép không đổi bản ghép", () => {
+    const nguon = { path: "a.ts", sau: { x: 1 } };
+    const tin = ghepPhan([{ vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: "" }], goiTool: [{ id: "ngoai-11111111-1", ten: "read_file", thamSo: nguon }] }]).tinNhan;
+    const g = tin[0]!.goiTool![0]!;
+    expect(() => {
+      (g.thamSo as { sau: { x: number } }).sau.x = 2;
+    }).toThrow(TypeError);
+    expect(() => {
+      (g as { id: string }).id = "khac";
+    }).toThrow(TypeError);
+    nguon.sau.x = 99;
+    expect((g.thamSo as { sau: { x: number } }).sau.x).toBe(1);
   });
 
   it("Anthropic: tool_use trong assistant, tool_result{tool_use_id} trong user NGAY SAU; xen kẽ user/assistant; không khối chữ rỗng", async () => {
