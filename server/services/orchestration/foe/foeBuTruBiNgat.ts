@@ -207,6 +207,8 @@ export const LY_DO_KHONG_GUI = {
   // fix round 1
   ketNoiChuaSan: "the device's connection was not up within the re-send window (D) after the restart",
   loiGhiNhan: "the claim of the re-send could not be written (database error)",
+  // fix round 2 (C-1)
+  luotTruocDungGiua: "a previous boot claimed the STOP re-send and then stopped: the STOP may or may not have reached the device — check the machine on site",
 } as const;
 export type LyDoKhongGui = keyof typeof LY_DO_KHONG_GUI;
 
@@ -239,13 +241,17 @@ export function quyetDinhGuiLai(bc: BangChungGuiLai): { gui: true; conLaiMs: num
  * Test seam: called at the start of each lookup stage ("b1" | "b2" | "b3") and by the engine right before its claim ("claim"); a throw there is a
  * lookup / write error. Effective only under vitest.
  */
-export type GiaiDoanDauDo = "b1" | "b2" | "b3" | "claim";
-let dauDoChoTest: ((stage: GiaiDoanDauDo) => void) | null = null;
-export function _setBuTruBiNgatProbeForTests(fn: ((stage: GiaiDoanDauDo) => void) | null): void {
+export type GiaiDoanDauDo = "b1" | "b2" | "b3" | "claim" | "claimSau" | "truocDiBo";
+let dauDoChoTest: ((stage: GiaiDoanDauDo) => void | Promise<void>) | null = null;
+export function _setBuTruBiNgatProbeForTests(fn: ((stage: GiaiDoanDauDo) => void | Promise<void>) | null): void {
   dauDoChoTest = fn;
 }
 export function dauDoBuTru(stage: GiaiDoanDauDo): void {
-  if (dauDoChoTest && process.env.VITEST) dauDoChoTest(stage);
+  if (dauDoChoTest && process.env.VITEST) void dauDoChoTest(stage);
+}
+/** The awaited form of the seam (a test can make that stage SLOW, e.g. "truocDiBo" — the walk before its run context exists). */
+export async function dauDoBuTruCho(stage: GiaiDoanDauDo): Promise<void> {
+  if (dauDoChoTest && process.env.VITEST) await dauDoChoTest(stage);
 }
 
 /**
@@ -422,7 +428,13 @@ export const CHO_KET_NOI_BUOC_MS = 500;
  * `hanMs` (what is left of D). Not ready in time ⇒ { sanSang: false } (⇒ held + URGENT, nothing sent, the single try NOT consumed).
  * ⇒ A boot whose adapters connect more than D (5 min) after the STOP intent never auto-sends it (held + URGENT, a person continues it).
  */
-export async function choKetNoiSanSang(d: Db, adapterId: number, hanMs: number): Promise<{ sanSang: boolean; choMs: number }> {
+export async function choKetNoiSanSang(
+  d: Db,
+  adapterId: number,
+  hanMs: number,
+  /** fix round 2 (m-2) — called ONCE when the session is not up at the first look (the early URGENT), with what is left of the wait (ms) */
+  khiPhaiCho?: (conMs: number) => void,
+): Promise<{ sanSang: boolean; choMs: number }> {
   const t0 = performance.now();
   const om = await import("../../ot/otManager");
   const { runningConnectionMatchesAdapterRow } = await import("../../ot/commandDispatcher");
@@ -430,10 +442,20 @@ export async function choKetNoiSanSang(d: Db, adapterId: number, hanMs: number):
   const boNghe = om.onOtGatewayStarted(() => danhThuc?.());
   try {
     for (;;) {
-      if (om.getActiveDriver(adapterId) && om.getActiveConnectionFingerprint(adapterId) && (await runningConnectionMatchesAdapterRow(d, adapterId))) {
+      // (fix round 2, m-2) the DB read of the dispatcher's check is bounded (a slow DB counts as not ready yet)
+      if (
+        om.getActiveDriver(adapterId) &&
+        om.getActiveConnectionFingerprint(adapterId) &&
+        (await withDeadline(runningConnectionMatchesAdapterRow(d, adapterId), STOP_DB_STEP_DEADLINE_MS, `FOE boot re-send adapter ${adapterId} connection check`).catch(() => false))
+      ) {
         return { sanSang: true, choMs: Math.round(performance.now() - t0) };
       }
       const con = hanMs - (performance.now() - t0);
+      if (khiPhaiCho) {
+        const f = khiPhaiCho;
+        khiPhaiCho = undefined;
+        f(con);
+      }
       if (con <= 0) return { sanSang: false, choMs: Math.round(performance.now() - t0) };
       await new Promise<void>((r) => {
         const t = setTimeout(r, Math.min(CHO_KET_NOI_BUOC_MS, con));
@@ -449,5 +471,11 @@ export async function choKetNoiSanSang(d: Db, adapterId: number, hanMs: number):
   }
 }
 
-/** How long past its window a claimed attempt's lease lasts (its guarded outcome write lands inside it). */
+/** fix round 2 (m-4) — the bound of the claim UPDATE and of the attempt's outcome / held writes. */
+export const HAN_GHI_KET_QUA_LUOT_MS = 5 * STOP_DB_STEP_DEADLINE_MS;
+/**
+ * How long past its window a claimed attempt's lease lasts (evidence on the marker). fix round 2 (m-4) — it must outlast the longest attempt:
+ * the window (the attempt's own bound) + its outcome write (HAN_GHI_KET_QUA_LUOT_MS) — pinned by a unit test. Ownership is NOT decided by the
+ * lease (C-1): only by the boot nonce + the in-process registry.
+ */
 export const BIEN_LUOT_GUI_MS = 30_000;
