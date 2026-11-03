@@ -94,6 +94,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      nhỏ và xám nhất trên màn hình. Chữ cái là CSS thuần (::before) nên cấu trúc DOM của lượt (nhãn + nội dung) không đổi. */
   .luot > .nhan { display: flex; align-items: center; gap: 6px; opacity: 1; font-size: 12px; font-weight: 600; text-transform: none; margin-bottom: 2px; }
   /* Đợt 10.4b-E — huy hiệu NGUỒN của lượt do model NGOÀI sinh (chữ thuần, không bấm được). */
+  /* 0.6.0 (E1) — nút kiểm định bằng AI ngoài dưới bong bóng trợ lý + khung KẾT QUẢ KHÔNG TIN CẬY (viền đứt, nhãn cố định). */
+  .hang-kiem-dinh { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; }
+  .hang-kiem-dinh[hidden] { display: none; }
+  .khung-kiem-dinh { margin-top: 6px; padding: 6px 8px; border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-panel-border)); border-radius: 4px; }
+  .nhan-khong-tin-cay { display: block; font-size: 11px; font-weight: 600; color: var(--vscode-editorWarning-foreground, inherit); margin-bottom: 4px; }
   .huy-hieu-nguon { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; opacity: .9; }
   .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
                           background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
@@ -1230,6 +1235,59 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   //   DANH (luotId, chiSoKhoi) + phiếu + lý do; văn bản câu hỏi/câu trả lời do HOST giữ (không tin chữ từ webview).
   //   Kết quả gửi chỉ hiện ở dòng trạng thái nhỏ — lỗi mạng KHÔNG thành lượt "Lỗi" hay hộp thoại (chi tiết: kênh Output).
   const agPhanHoi = {};
+  // ★★★ 0.6.0 (E1) — nút "Kiểm định bằng AI ngoài" dưới MỖI bong bóng trợ lý ĐÃ XONG mà host cấp mã (\`maBong\`). Webview CHỈ gửi mã đó:
+  //   chữ câu hỏi / câu trả lời, id lượt máy chủ, model, tiêu chí đều do HOST (bản ghi của host + QuickPick + modal của host).
+  //   Hiện khi danh mục có model ngoài dùng được cho kiểm định (\`danh_muc_model.coKiemDinh\`).
+  //   Kết quả: khung riêng, nhãn CỐ ĐỊNH "AI ngoài — không tin cậy", cây đã qua bộ render không tin cậy của host; webview bỏ thêm mọi
+  //   liên kết và vẽ khối mã KHÔNG có nút Chép/Chèn/Áp dụng (không đường nào từ kết quả tới ghi tệp / chạy lệnh).
+  const NHAN_KHONG_TIN_CAY = "AI ngoài — không tin cậy";
+  let coKiemDinh = false;
+  let kiemDinhTheoMa = {};
+  function themNutKiemDinh(khung, maBong) {
+    const luot = khung && khung.parentNode;
+    if (!luot || typeof maBong !== "string" || !maBong || kiemDinhTheoMa[maBong]) return;
+    const hang = taoPhan("div", "hang-kiem-dinh");
+    const nut = taoPhan("button", "nut-kiem-dinh", "Kiểm định bằng AI ngoài");
+    nut.title = "Nhờ một model AI NGOÀI chấm câu trả lời này (có xác nhận và ước chi phí trước khi gửi)";
+    const trangThai = taoPhan("span", "nhan", "");
+    nut.addEventListener("click", () => {
+      if (nut.disabled) return;
+      nut.disabled = true;
+      trangThai.textContent = "Đang chuẩn bị…";
+      vscode.postMessage({ loai: "kiem_dinh_bong", maBong });
+    });
+    hang.appendChild(nut);
+    hang.appendChild(trangThai);
+    hang.hidden = !coKiemDinh;
+    luot.appendChild(hang);
+    kiemDinhTheoMa[maBong] = { luot, hang, nut, trangThai, khung: null };
+  }
+  function khongLienKet(ds) {
+    const ra = [];
+    for (const n of Array.isArray(ds) ? ds : []) {
+      if (!n || typeof n !== "object") continue;
+      if (n.t === "a") { for (const c of khongLienKet(n.con)) ra.push(c); continue; }
+      if (n.t === "table") { ra.push(Object.assign({}, n, { dau: (n.dau || []).map(khongLienKet), hang: (n.hang || []).map((h) => (h || []).map(khongLienKet)) })); continue; }
+      ra.push(Array.isArray(n.con) ? Object.assign({}, n, { con: khongLienKet(n.con) }) : n);
+    }
+    return ra;
+  }
+  function veKetQuaKiemDinh(m) {
+    const p = kiemDinhTheoMa[m.maBong];
+    if (!p) return;
+    if (p.khung && p.khung.parentNode) p.khung.parentNode.removeChild(p.khung);
+    const khung = taoPhan("div", "khung-kiem-dinh");
+    khung.setAttribute("data-khong-tin-cay", "1");
+    const chuNhan = String(m.nhan || "");
+    khung.appendChild(taoPhan("span", "nhan-khong-tin-cay", chuNhan.indexOf(NHAN_KHONG_TIN_CAY) === 0 ? chuNhan.slice(0, 240) : NHAN_KHONG_TIN_CAY));
+    const than = taoPhan("div", "ag-md");
+    veMd(khongLienKet(m.cay), 0, than, true);
+    khung.appendChild(than);
+    p.luot.appendChild(khung);
+    p.khung = khung;
+    p.trangThai.textContent = "";
+    p.nut.disabled = false;
+  }
   function agNutPhanHoi(ph) {
     if (!ph || typeof ph.luotId !== "string" || typeof ph.chiSoKhoi !== "number") return;
     const vung = taoPhan("div", "ag-phan-hoi");
@@ -1427,6 +1485,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       nutHoanTac.disabled = false;
       if (m.phanHoi) agNutPhanHoi(m.phanHoi);
       if (m.lyDo === "hoan-thanh") themHangHanhDong();
+      if (m.lyDo === "hoan-thanh" && m.maBong && khoiTraLoi) themNutKiemDinh(khoiTraLoi, m.maBong);
       khoiTraLoi = null;
       return;
     }
@@ -1591,6 +1650,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     // luồng cũ có kịp tới hay không.
     xoaChiBaoChoAi();
     khoiTraLoi = null;
+    kiemDinhTheoMa = {};
     theDuyet.hidden = true;
     moKhoaNutDuyet();
     // ★★★ ĐỢT M — cùng lý lẽ với thẻ ghi tệp ở trên: một yêu cầu chạy lệnh của phiên VỪA RỜI không
@@ -1674,6 +1734,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       // giữa các vòng của MỘT lượt hỏi đang chạy — ẩn theo chúng sẽ ẩn nhầm lúc còn đang chạy).
       nutDung.hidden = true;
       if (khoiTraLoi && !m.canhBao) themHangHanhDong();
+      if (khoiTraLoi && m.maBong) themNutKiemDinh(khoiTraLoi, m.maBong);
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê ngữ cảnh của lượt VỪA XONG (extension đã tính trên
       // \`this.lichSu\` THẬT — xem \`thongKeHoiThoaiHienTai\` ở \`bangChat.ts\`).
       thongKeHoiThoai = { soLuot: m.soLuot ?? 0, soKyTu: m.soKyTu ?? 0 };
@@ -1832,6 +1893,16 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       nutTaiKhoan.setAttribute("aria-label", nhanTaiKhoan);
     } else if (m.loai === "danh_muc_model") {
       veOChonModel(m.muc, m.chon);
+      coKiemDinh = m.coKiemDinh === true;
+      for (const k of Object.keys(kiemDinhTheoMa)) kiemDinhTheoMa[k].hang.hidden = !coKiemDinh;
+    } else if (m.loai === "kiem_dinh_trang_thai") {
+      const p = kiemDinhTheoMa[m.maBong];
+      if (p) {
+        p.trangThai.textContent = String(m.chu || "").slice(0, 400);
+        if (m.xong === true) p.nut.disabled = false;
+      }
+    } else if (m.loai === "kiem_dinh_kq") {
+      veKetQuaKiemDinh(m);
     } else if (m.loai === "che_do") {
       if (m.cheDo === "hoi" || m.cheDo === "sua" || m.cheDo === "tu-dong" || m.cheDo === "chat-cu") { cheDoLuu = m.cheDo; veOCheDo(); }
     } else if (m.loai === "muc_quyen") {
@@ -1870,6 +1941,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
         // trả lời của AI trong lịch sử cũng dựng markdown (host gửi kèm cây); khối mã chưa đăng ký chỉ số ⇒ không hiện nút hành động
         if (l.vaiTro !== "user" && Array.isArray(l.cay)) veLaiKhoiMd(khung, l.cay, 0, true);
         if (l.huyHieu) datHuyHieuNguon(khung, l.huyHieu);
+        if (l.vaiTro !== "user" && l.maBong) themNutKiemDinh(khung, l.maBong);
       }
       // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa vẽ lại (extension gửi kèm
       // \`soLuot\`/\`soKyTu\` của bản ghi vừa khôi phục — xem \`khoiPhucHoiThoaiGanNhat\`/\`moLichSu\`).

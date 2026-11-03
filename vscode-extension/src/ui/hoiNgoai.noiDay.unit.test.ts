@@ -42,7 +42,10 @@ describe("nối dây model ngoài", () => {
     expect(hoiNgoai).toContain("{ modal: true }");
   });
   it("khôi phục hội thoại (khởi động + Lịch sử) đều qua luotChoWebview", () => {
-    expect(bang.match(/\.map\(luotChoWebview\)/g)).toHaveLength(2);
+    // 0.6.0 (E1): cả hai đường khôi phục đi qua `luotKhoiPhucCoMaBong` (cấp mã bong bóng) — hàm đó dựng tin bằng `luotChoWebview`.
+    expect(bang.match(/luot: this\.luotKhoiPhucCoMaBong\(/g)).toHaveLength(2);
+    expect(bang).toContain("const w = luotChoWebview(l);");
+    expect(bang).not.toMatch(/\.map\(luotChoWebview\)/);
   });
   it("webview: huy hiệu nguồn chỉ bằng textContent; xử lý nguon_ngoai + huyHieu ở hoan_tat + khôi phục", () => {
     const html = doc("ui", "htmlBang.ts");

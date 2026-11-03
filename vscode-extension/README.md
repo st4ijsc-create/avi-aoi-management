@@ -44,6 +44,7 @@ mở được sổ kiểm toán thì không ghi — thà không ghi còn hơn gh
 - **Đồng hồ ngữ cảnh**: số token ngữ cảnh gửi model ở lượt gần nhất (dấu `~` = ước lượng 2,8 ký tự/token vì cổng
   `/v1` chưa trả `usage` khi stream) và % ngân sách 64k.
 - Nút **Chat mới** / **Lịch sử** ở đầu khung; hội thoại lưu theo từng workspace.
+- **Kiểm định bằng AI ngoài** (từ 0.6.0, khi máy chủ có model ngoài dùng cho kiểm định): nút dưới mỗi câu trả lời đã xong ⇒ chọn model ⇒ hộp thoại xác nhận (model, mức dữ liệu, chi phí ước, số byte sẽ gửi, trích đã che) ⇒ kết quả hiện trong khung riêng **«AI ngoài — không tin cậy»** (chỉ để đọc: không liên kết bấm được, khối mã không có nút áp dụng).
 
 ### Ngữ cảnh tự đính
 
@@ -168,7 +169,7 @@ mở một repo thù địch là đủ để chuyển cookie/token sang máy ch�
 ## Cài đặt offline
 
 ```
-code --install-extension avi-ai-local-0.5.2.vsix
+code --install-extension avi-ai-local-0.6.0.vsix
 ```
 
 Đóng gói từ gốc repo:
@@ -178,9 +179,22 @@ npm run ext:build
 npm run ext:package
 ```
 
-Lệnh sinh `vscode-extension/avi-ai-local-0.5.2.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.5.2+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
+Lệnh sinh `vscode-extension/avi-ai-local-0.6.0.vsix` (không commit vào git). Đầu khung chat hiện **mã build** (`0.6.0+<commit>`; `-dirty` = build từ cây chưa commit) — so với `git rev-parse --short HEAD` để biết bản đang chạy có khớp repo không.
 
 ## Ghi chú phát hành
+
+### 0.6.0
+
+Mới
+- **Nút "Kiểm định bằng AI ngoài" ở bong bóng trợ lý** (Trợ lý, Chat cũ, Agent xong, hội thoại khôi phục). Hiện khi danh mục máy chủ có model ngoài dùng cho kiểm định (`duocDungO` chứa `kiem-dinh`).
+  - Chữ đem kiểm định lấy từ **bản ghi của extension** (khung chat chỉ gửi mã bong bóng). Câu trả lời model ngoài mà máy chủ đã lưu ⇒ máy chủ tự đọc theo id; câu trả lời model cục bộ ⇒ gửi văn bản, extension tự cắt ≤ 16 KB (không chẻ ký tự) và báo **"ĐÃ CẮT"**.
+  - Không tự chạy: chọn model (QuickPick) ⇒ máy chủ ước chi phí (`aiKiemDinh.xemTruoc`) ⇒ **hộp thoại modal của VSCode** nêu model, mức dữ liệu, chi phí ước, số byte thật, trích câu trả lời đã che ⇒ đồng ý mới gửi (`aiKiemDinh.chay`, có tính phí).
+  - Kết quả **không tin cậy**: khung riêng có nhãn cố định «AI ngoài — không tin cậy», liên kết thành chữ + tên miền, ảnh / HTML là chữ, khối mã không có Chép/Chèn/Áp dụng; không có đường nào từ kết quả tới ghi tệp hay chạy lệnh.
+  - Lỗi nói theo mã: đang có lượt kiểm định (409), quá dài (413), vượt trần (429), phiên hết hạn (401).
+
+Không đổi / giới hạn
+- Model ngoài trong extension vẫn **chỉ Hỏi đáp**; agent ngoài **không** mở.
+- Hội thoại khôi phục từ phiên trước kiểm định bằng văn bản (id lượt máy chủ không lưu bền ở extension).
 
 ### 0.5.2
 

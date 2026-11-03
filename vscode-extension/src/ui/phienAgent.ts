@@ -72,6 +72,8 @@ export interface PhuThuocPhienAgent {
   goc: () => string[];
   /** Lưu một lượt vào lịch sử hội thoại của khung (kho "Lịch sử"). */
   ghiLuot?: (cauHoi: string, traLoi: string) => void;
+  /** ★ 0.6.0 (E1) — host ghi BẢN GHI bong bóng (chữ do host giữ) cho câu trả lời CUỐI của lượt đã xong; trả mã gửi kèm `ag_xong.maBong`. */
+  dangKyBong?: (cauHoi: string, traLoi: string) => string;
   /** ★ Đợt 10.2 — mã model người dùng chọn ở ô chọn (auto/vắng ⇒ dùng `aviAiLocal.agentModel`). */
   chonModel?: () => string;
   // ── đường nối cho lưới ──
@@ -306,7 +308,8 @@ export class PhienAgent {
       if (anh.length > 0 && tinCauHoi?.role === "user") tinCauHoi.content += ghiChuAnhLuotTruoc(anh);
       cuoi = [...kq.tinNhan].reverse().find((m) => m.role === "assistant" && m.content.trim())?.content ?? "";
       const phanHoi = this.ghiNhoLuotChoPhanHoi(runId, cauHoiTho, goc[0]);
-      this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length, ...(phanHoi ? { phanHoi } : {}) });
+      const maBong = kq.lyDo === "hoan-thanh" && cuoi.trim() ? this.pt.dangKyBong?.(cauHoiTho, cuoi) : undefined;
+      this.pt.gui({ loai: "ag_xong", lyDo: kq.lyDo, coHoanTac: !so.rong, soTep: so.danhSach().length, ...(phanHoi ? { phanHoi } : {}), ...(maBong ? { maBong } : {}) });
       daBaoXong = true;
       this.pt.ghiLuot?.(cauHoiTho, cuoi);
     } catch (e) {
