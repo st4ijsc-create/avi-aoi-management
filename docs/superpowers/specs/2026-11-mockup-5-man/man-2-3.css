@@ -77,7 +77,7 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap-3)}
 .kpi{background:var(--isa-surface);border:1px solid var(--isa-line);border-radius:var(--radius-2);padding:10px 14px}
 .kpi .l{font-size:12px;color:var(--text-2)}
-.kpi .v{white-space:nowrap;font:600 30px/1.15 var(--font-mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi .v{white-space:nowrap;font:600 30px/1.15 var(--font-body);font-variant-numeric:tabular-nums;margin-top:2px}
 .kpi .v small{font:400 14px var(--font-body);color:var(--text-2);margin-left:4px}
 .kpi .m{font-size:11.5px;color:var(--text-3);margin-top:2px}
 .kpi.stale{border:1.5px dashed var(--stale);background:var(--stale-soft) repeating-linear-gradient(135deg,transparent 0 8px,rgba(111,63,176,.08) 8px 16px)}
@@ -91,7 +91,7 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .line .n{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:6px;align-items:baseline}.line .n span:last-child{font-size:12px;white-space:nowrap}.line .n span:first-child{min-width:0}
 .line .st{font-size:12.5px;color:var(--text-2);margin-top:1px}
 .line .vals{display:grid;grid-template-columns:repeat(2,auto);justify-content:start;gap:8px 28px;margin-top:8px;font-size:12px;color:var(--text-2);white-space:nowrap}
-.line .vals b{display:block;white-space:nowrap;font:600 17px var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text-1)}
+.line .vals b{display:block;white-space:nowrap;font:600 17px var(--font-body);font-variant-numeric:tabular-nums;color:var(--text-1)}
 .line.ab{border-left-width:6px}
 .line.ab.p1{border-color:var(--alarm-p1);background:var(--alarm-p1-soft)}
 .line.ab.p2{border-color:var(--alarm-p2);background:var(--alarm-p2-soft)}
@@ -133,7 +133,7 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .cells{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap-3)}
 .cell{border:1.5px solid var(--text-2);border-radius:var(--radius-1);background:#fff;padding:8px 12px}
 .cell .l{font-size:12px;color:var(--text-2)}
-.cell .v{font:600 28px/1.15 var(--font-mono);font-variant-numeric:tabular-nums}
+.cell .v{font:600 28px/1.15 var(--font-body);font-variant-numeric:tabular-nums}
 .cell .v small{font:400 13px var(--font-body);color:var(--text-2);margin-left:4px}
 .cell .age{font-size:11.5px;color:var(--text-3);margin-top:1px}
 .cell.unc{border:1.5px dotted var(--text-3)}
@@ -159,7 +159,7 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .write{border:1px solid var(--isa-line);border-radius:var(--radius-2);padding:10px;background:#fff}
 .write label{font-size:12px;color:var(--text-2);display:block;margin-bottom:3px}
 .write .row{display:flex;gap:8px;align-items:stretch}
-.write .inp{flex:1;border:1.5px solid var(--text-2);border-radius:var(--radius-1);padding:0 10px;min-height:var(--touch-min);display:flex;align-items:center;font:600 16px var(--font-mono);background:#fff}
+.write .inp{flex:1;border:1.5px solid var(--text-2);border-radius:var(--radius-1);padding:0 10px;min-height:var(--touch-min);display:flex;align-items:center;font:600 16px var(--font-body);background:#fff}
 .write .inp small{margin-left:6px;font:400 12px var(--font-body);color:var(--text-2)}
 .cond{margin-top:8px;font-size:12.5px;padding:6px 8px;border-left:4px solid var(--text-2);background:var(--isa-field)}
 .cond b{font-weight:700}
@@ -185,7 +185,7 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .dlg .sub{color:var(--text-2);font-size:13px;margin-bottom:12px}
 .prev{display:grid;grid-template-columns:1fr 24px 1fr 24px 1fr;gap:4px;align-items:stretch;margin:6px 0 12px}
 .prev .b{border:1.5px solid var(--text-2);background:#fff;border-radius:var(--radius-1);padding:8px 10px}
-.prev .b .l{font-size:11.5px;color:var(--text-2)} .prev .b .v{font:600 22px var(--font-mono)} .prev .b.hl{border:2.5px solid var(--text-1)}
+.prev .b .l{font-size:11.5px;color:var(--text-2)} .prev .b .v{font:600 22px var(--font-body);font-variant-numeric:tabular-nums} .prev .b.hl{border:2.5px solid var(--text-1)}
 .prev .arr{display:grid;place-items:center;font-size:18px;color:var(--text-2)}
 .dlg .f{margin-top:10px}
 .dlg .f label{font-size:12px;color:var(--text-2);display:block;margin-bottom:3px}

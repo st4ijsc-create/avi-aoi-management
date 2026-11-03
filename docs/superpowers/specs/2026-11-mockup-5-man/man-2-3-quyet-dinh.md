@@ -71,3 +71,6 @@ Thang chữ nhỏ nhất dùng: 11 px (caption); phần lớn ≥ 12,5 px. Khôn
 - Chưa có màn 1/4/5 và vỏ thật (luong-ui); `man-2-3.css` có vỏ tạm.
 - Chưa vẽ tab Tag/Cảnh báo/Recipe/Kết quả/Lịch sử/Thợ Cả bên trong màn 3 (chỉ tab Tổng quan + ngăn Thợ Cả).
 - Chưa kiểm bằng công cụ tương phản tự động ngoài phép tính tay ở trên; chưa kiểm `prefers-reduced-motion` bằng trình duyệt (CSS có `@media`).
+
+## Phông số (theo luong-ui, token.css @4d5e78c7c)
+Số đo (`.num`) dùng Be Vietnam Pro + `tabular-nums` (dấu phẩy thập phân trong Geist Mono rộng bất thường: "96 , 4"); Geist Mono (`.mono`) chỉ cho mã, địa chỉ, giờ, mã TOTP. 20 ảnh đã chụp lại theo quy ước này.
