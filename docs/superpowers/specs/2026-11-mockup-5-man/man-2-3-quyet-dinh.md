@@ -51,8 +51,13 @@ Xem: `man-2-3.html` (bấm đổi màn / trạng thái / cỡ; `?bare=1&man=2|3&
 | `--sim-ink` / `--sim-soft` (banner) | 7,51 |
 | `--alarm-p1-ink` / `--alarm-p1-soft` | 7,09 |
 | `--text-1` / `--alarm-p1-soft` (thẻ line P1) | 11,66 |
-| trắng / `--accent` (nút) | 6,77 |
+| trắng / `--accent` #0c5a85 (nút chính) | 7,46 |
+| `--accent` / `--isa-surface` (tab, liên kết) | 7,01 |
+| `--accent` / `--isa-field` | 6,12 |
+| `--accent` / `--accent-soft` #d6e6f1 (tab chọn, nút chọn nhóm, mục rail đang chọn) | 5,84 |
+| `--text-1` / `--accent-soft` | 12,04 |
 | trắng / `--actuation-4`, `--actuation-3`, `--packml-stopped` | 4,60 · 5,42 · 9,34 |
+(Bảng đã cập nhật 2026-11-04 theo `--accent` mới; token.css @713eb58a3.)
 Thang chữ nhỏ nhất dùng: 11 px (caption); phần lớn ≥ 12,5 px. Không dùng `text-[Npx]` hay màu hex trong `man-2-3.css` (mọi màu qua token).
 
 ## Luật đã chốt (chu-du-an-HST, 2026-11-03)

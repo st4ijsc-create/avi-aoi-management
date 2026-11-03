@@ -186,7 +186,7 @@ function render() {
   const cv = document.getElementById("cv");
   cv.dataset.w = W; cv.dataset.density = W==="1280" ? "comfortable" : "default";
   cv.className = "app" + (state==="tho-ca"?" hasdrawer":"");
-  cv.dataset.rail = W==="1280" ? "closed" : "open"; cv.dataset.railTone = "light"; cv.dataset.scope = (MAN==="2"&&state==="mo-phong") ? "real" : "real";
+  cv.dataset.rail = W==="1280" ? "closed" : "open"; cv.dataset.scope = (MAN==="2"&&state==="mo-phong") ? "real" : "real";
   cv.innerHTML = MAN==="2" ? man2(state) : man3(state);
   const ctl = document.getElementById("ctl");
   const btn = (txt, on, fn) => { const b=document.createElement("button"); b.textContent=txt; b.setAttribute("aria-pressed", on); b.onclick=fn; return b; };
