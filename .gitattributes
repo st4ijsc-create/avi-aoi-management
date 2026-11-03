@@ -30,3 +30,6 @@ sandbox-projects/csharp-demo/** text eol=crlf
 *.gltf binary
 *.step binary
 *.stp binary
+
+# 2026-11-03 (rà kiem-dinh B1): ban sao vendor GIU NGUYEN byte (sha256 ghim trong THIRD_PARTY.md + census)
+vendor/oip-plc/** -text

@@ -89,6 +89,23 @@ describe("B1 — hành vi theo thời gian mô phỏng", () => {
   });
 });
 
+describe("B1 — so kiểu + bước thời gian lẻ (rà kiem-dinh w12, d)", () => {
+  it("so CHẶT: kỳ vọng false mà ST trả INT 0 ⇒ lệch; kỳ vọng 1 mà ST trả TRUE ⇒ lệch", () => {
+    const st = "VAR_OUTPUT so : INT; co : BOOL; END_VAR\nso := 0;\nco := TRUE;";
+    expect(chamKichBan(st, [{ dt: DT, ky: { so: false, co: 1 } }]).lech.map((l) => l.ten).sort()).toEqual(["co", "so"]);
+    expect(chamKichBan(st, [{ dt: DT, ky: { so: 0, co: true } }])).toEqual({ dat: true, lech: [] });
+  });
+  it("PT KHÔNG chia hết dt (TON 300 ms, dt 250 ms): Q bật ở lần quét đầu tiên ET ≥ PT (ET 0 · 250 · 500 ⇒ lần 3)", () => {
+    const st = "VAR_INPUT go : BOOL; END_VAR VAR_OUTPUT q : BOOL; et : TIME; END_VAR VAR t : TON; END_VAR\nt(IN := go, PT := T#300ms);\nq := t.Q;\net := t.ET;";
+    expect(
+      chamKichBan(st, [
+        { vao: { go: true }, dt: DT, lan: 2, ky: { q: false, et: 250 }, nhan: "ET 250 < 300" },
+        { dt: DT, ky: { q: true }, nhan: "ET ≥ 300" },
+      ]),
+    ).toEqual({ dat: true, lech: [] });
+  });
+});
+
 describe("B1 — chấm", () => {
   it("chương trình SAI (PT nhầm 2 s) bị bắt: lệch đúng bước, đúng biến", () => {
     const sai = "VAR_INPUT go : BOOL; END_VAR VAR_OUTPUT done : BOOL; END_VAR VAR t : TON; END_VAR\nt(IN := go, PT := T#2s);\ndone := t.Q;";
@@ -113,18 +130,21 @@ describe("B1 — an toàn: ba lớp chặn sinh mã, mỗi lớp một ca đỏ 
 
   it("lớp 2 — bẫy: trong voiBaySinhMa `new Function` / `Function` / `eval` NÉM; ra khỏi bẫy (kể cả khi ném) thì trả lại", () => {
     const F = globalThis.Function;
+    const E = globalThis.eval;
     voiBaySinhMa(() => {
       expect(() => new Function("return 1")).toThrow(LoiSinhMa);
       expect(() => (globalThis as { Function: (s: string) => unknown }).Function("return 1")).toThrow(LoiSinhMa);
       expect(() => (0, globalThis.eval)("1")).toThrow(LoiSinhMa);
     });
     expect(globalThis.Function).toBe(F);
+    expect(globalThis.eval).toBe(E);
     expect(() =>
       voiBaySinhMa(() => {
         throw new Error("x");
       }),
     ).toThrow("x");
     expect(globalThis.Function).toBe(F);
+    expect(globalThis.eval).toBe(E);
     expect(new Function("return 7")()).toBe(7);
   });
 
