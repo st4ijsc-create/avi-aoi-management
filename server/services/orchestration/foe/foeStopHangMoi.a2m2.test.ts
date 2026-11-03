@@ -12,6 +12,7 @@ import {
   LY_DO_KHONG_GUI,
   STOP_BU_TRU_KHOI_DONG_HAN_MS,
   hanGuiLaiMs,
+  hangCuaKetQua,
   phanLoaiBuTruBiNgat,
   quyetDinhGuiLai,
   type BangChungGuiLai,
@@ -118,6 +119,26 @@ describe("A2(m2) — quyetDinhGuiLai: the boot re-sends ONLY when every check ho
   });
 });
 
+describe("A2(m2) fix round 1 — m-3 / m-4 (pure)", () => {
+  it("m-3: a NOT-final row that names no step of the definition (renamed / redeployed) ⇒ khongRo definitionChanged (failed + URGENT, never silent)", () => {
+    expect(phanLoaiBuTruBiNgat(def([lenh("main", bu("undo"))]), [{ stepId: "mainOld", status: "failed" }, { stepId: "undoOld", status: "running" }], {})).toEqual({
+      kind: "khongRo",
+      lyDo: "definitionChanged",
+      compIds: ["undoOld"],
+    });
+    // final rows of renamed steps and the abort sweep's own rows are not "lost"
+    expect(phanLoaiBuTruBiNgat(def([lenh("main", bu("undo"))]), [{ stepId: "mainOld", status: "failed" }, { stepId: "abort:x", status: "running" }], {})).toEqual({ kind: "khong" });
+  });
+  it("m-4: an unexpected result shape THROWS (a lookup error ⇒ not sent), never an empty list read as 'no later command'", () => {
+    expect(hangCuaKetQua([{ a: 1 }])).toEqual([{ a: 1 }]);
+    expect(hangCuaKetQua({ rows: [{ a: 2 }] })).toEqual([{ a: 2 }]);
+    for (const x of [{}, null, undefined, { rows: "x" }, 7]) expect(() => hangCuaKetQua(x), String(x)).toThrow(/unexpected database result shape/);
+  });
+  it("C-1: D stays 5 min, the single constant", () => {
+    expect(STOP_BU_TRU_KHOI_DONG_HAN_MS).toBe(5 * 60_000);
+  });
+});
+
 describe("A2(m2) — source pins", () => {
   const nguon = (p: string) => readFileSync(resolve(__dirname, p), "utf8").replace(/\r\n/g, "\n");
   const fnBody = (src: string, head: string) => {
@@ -126,11 +147,15 @@ describe("A2(m2) — source pins", () => {
     const j = src.indexOf("\n}\n", i);
     return src.slice(i, j);
   };
-  it("b2 is on the DB clock: the collector compares in SQL on now() and never reads the process clock", () => {
-    const body = fnBody(nguon("./foeBuTruBiNgat.ts"), "export async function xetGuiLaiBuTruBiNgat(");
-    expect(body).not.toMatch(/Date\.now|new Date\(/);
+  it("b2 is on the DB clock: the collector and its readers compare in SQL on now() and never read the process clock; m-1: both bounds as instants", () => {
+    const src = nguon("./foeBuTruBiNgat.ts");
+    for (const head of ["export async function xetGuiLaiBuTruBiNgat(", "export async function docCuaSoGuiLai(", "export async function docLenhSau("]) {
+      expect(fnBody(src, head), head).not.toMatch(/Date\.now|new Date\(/);
+    }
+    const body = fnBody(src, "export async function docCuaSoGuiLai(");
     expect(body).toMatch(/now\(\) - c\."createdAt"::timestamptz/);
-    expect(body).toMatch(/LEAST\(c\."createdAt" \+ \(\$\{hanMs\}::float8 \* interval '1 millisecond'\), a\."authExpiresAt"\)::timestamptz - now\(\)/);
+    // m-1 — "createdAt" (DEFAULT now(): the session zone's wall time) as the session zone; "expiresAt" (drizzle: the UTC wall time) AT TIME ZONE 'UTC'
+    expect(body).toContain(`LEAST(c."createdAt"::timestamptz + (\${hanMs}::float8 * interval '1 millisecond'), a."authExpiresAt" AT TIME ZONE 'UTC') - now()`);
   });
   it("the generic FOE_DURABLE auto-resume never continues a run held for an interrupted compensation", () => {
     const body = fnBody(nguon("./foeEngine.ts"), "export async function autoResumeInterruptedRuns(");

@@ -13,6 +13,12 @@
  * the S7 driver after the reservation, before the PDU (Q1, Q6 — the A2(m) crash harness); (2) the same state written as rows (run
  * 'compensating', the step 'failed', its compensation 'running' — a crash right after the compensation's running row; Q2–Q5, Q7).
  *
+ * Fix round 1 (review-a2m2-result.md + coordinator C-1..C-3): Q8 no intent row ⇒ held + URGENT; Q9 the boot waits for the adapter's session
+ * (I-1); Q10 the deadline aborts the walk and late answers never rewrite the row (I-2); Q11 a claim error ⇒ held + URGENT (I-3); Q12 the REAL
+ * durable alert dedup per interruption (I-4); Q13 a live attempt of another instance is never wiped (I-5a); Q14 a non-UTC session zone (m-1);
+ * Q15 a renamed step ⇒ failed + URGENT (m-3); Q16 the re-check before the hand-over (m-5 / I-2); Q17 the b3 query's edges + the interlock gate (m-9).
+ * Within one test transaction now() is fixed, so the time left of D is set by moving the intent row's createdAt (DB time).
+ *
  * Every DB write is inside the test's own transaction, ROLLED BACK (getDb ⇒ that transaction; outside it getDb is a TRAP that counts and returns
  * null ⇒ nothing is ever committed). WORM tables (command_log, device_owner_changes via the owner trigger, audit_logs): rows inserted inside the
  * rolled-back transaction, never an explicit id. Never the owner role, no DELETE / TRUNCATE.
@@ -29,6 +35,9 @@ const H = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
   alerts: [] as Array<Record<string, unknown>>,
+  thatAlert: false,
+  /** called (once, then cleared) on the first driver lookup — the boot's connection wait is the first caller after the decision */
+  khiLayDriver: null as null | ((adapterId: number) => void),
 }));
 
 vi.mock("../../../db/connection", async (importOriginal) => {
@@ -62,7 +71,14 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/otManager")>();
   return {
     ...orig,
-    getActiveDriver: (adapterId: number) => H.drivers.get(adapterId) as ReturnType<typeof orig.getActiveDriver>,
+    getActiveDriver: (adapterId: number) => {
+      const f = H.khiLayDriver;
+      if (f) {
+        H.khiLayDriver = null;
+        f(adapterId);
+      }
+      return H.drivers.get(adapterId) as ReturnType<typeof orig.getActiveDriver>;
+    },
     getActiveConnectionFingerprint: (adapterId: number) => H.fingerprints.get(adapterId),
   };
 });
@@ -74,6 +90,9 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
     ...orig,
     raiseCriticalStopAlert: async (a: Record<string, unknown>) => {
       H.alerts.push(a);
+      // I-4 — the REAL alert (its durable dedup on the notifications table, inside the test transaction) when a case asks for it
+      // (to the run owner only: the dedup is per recipient; every admin / supervisor of `_test` would outlast the transaction)
+      if (H.thatAlert) await orig.raiseCriticalStopAlert({ ...(a as object), recipients: [990_915_201] } as never);
     },
   };
 });
@@ -86,7 +105,9 @@ import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
-import { _setBuTruBiNgatProbeForTests } from "./foeBuTruBiNgat";
+import { _setBuTruBiNgatProbeForTests, STOP_BU_TRU_KHOI_DONG_HAN_MS } from "./foeBuTruBiNgat";
+import { __quenBoNhoKhuTrungChoTest } from "../../robot/criticalStopAlert";
+import { interlockRules } from "../../../../drizzle/schema";
 import type { WorkflowStep } from "./workflowModel";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -108,7 +129,7 @@ const soPduGhi = () => sim.pdus.filter((p) => p.bytes[1] === 0x01 && p.bytes[10]
  * the PDU), (b) with `loiMotLan` set the NEXT write goes out under the sim's `writeError` fault (the PLC answers an error) and the fault is cleared
  * right after (a following write would succeed).
  */
-const S7 = { treo: false, daTreo: null as null | (() => void), loiMotLan: false };
+const S7 = { treo: false, daTreo: null as null | (() => void), loiMotLan: false, treMs: 0 };
 let s7Boc: unknown;
 function bocS7(): unknown {
   return new Proxy(s7, {
@@ -119,6 +140,12 @@ function bocS7(): unknown {
             S7.treo = false;
             S7.daTreo?.();
             return new Promise<never>(() => undefined); // the process "dies" here: this walk never continues
+          }
+          if (S7.treMs > 0) {
+            const ms = S7.treMs;
+            S7.treMs = 0;
+            await new Promise((r) => setTimeout(r, ms)); // the write lands LATE (I-2)
+            return target.writeTags(ws);
           }
           if (S7.loiMotLan) {
             S7.loiMotLan = false;
@@ -261,7 +288,7 @@ async function auditCua(tx: Tx, runId: number) {
   return rows
     .map((r) => {
       const det = typeof r.details === "string" ? (JSON.parse(r.details) as Record<string, any>) : ((r.details ?? {}) as Record<string, any>);
-      return { status: r.status, det };
+      return { status: r.status, action: r.action, det };
     })
     .filter((x) => x.det?.operation === AUDIT_OP);
 }
@@ -281,11 +308,33 @@ async function kiemGiuKhongGui(tx: Tx, runId: number, pdu0: number, lyDo: string
   const a = canhBaoCua(runId);
   expect(a.map((x) => x.kind), lyDo).toEqual(["foe_compensation_interrupted_held"]);
   expect(a[0]!.khuTrungBenVung, lyDo).toEqual({});
-  expect(a[0]!.dedupKey, lyDo).toBe(`foe_compensation_interrupted_held:${runId}:undo`);
+  expect(String(a[0]!.dedupKey), lyDo).toMatch(new RegExp(`^foe_compensation_interrupted_held:${runId}:undo:\\d+$`)); // I-4: + the interruption
   expect((a[0]!.recipients as number[]).includes(OWNER), lyDo).toBe(true);
   const au = await auditCua(tx, runId);
-  expect(au.map((x) => [x.status, x.det.metadata?.outcome, x.det.metadata?.reason]), lyDo).toEqual([["failure", "held", lyDo]]);
+  expect(au.map((x) => [x.status, x.action, x.det.metadata?.outcome, x.det.metadata?.reason]), lyDo).toEqual([["failure", "foe_stop_compensation_boot", "held", lyDo]]);
 }
+
+/** Move the DB time of the intent: the compensation row was written `truocMs` before the DB's now() (within the transaction now() is fixed). */
+async function yDinhTruoc(tx: Tx, runId: number, truocMs: number) {
+  await tx.execute(sql`UPDATE orchestration_run_steps SET "createdAt" = now() - (${truocMs}::float8 * interval '1 millisecond') WHERE "runId" = ${runId} AND "stepId" = 'undo'`);
+}
+/** Leave `conMs` of the window D (DB clock). */
+const conLaiCuaSo = (tx: Tx, runId: number, conMs: number) => yDinhTruoc(tx, runId, STOP_BU_TRU_KHOI_DONG_HAN_MS - conMs);
+/** The adapter's session is not up yet (as on a real boot before startOt); `sauMs` later it comes up (the real fingerprint), or never. */
+function ketNoiSau(a1: number, sauMs: number | null) {
+  const drv = H.drivers.get(a1);
+  const fp = H.fingerprints.get(a1);
+  H.drivers.delete(a1);
+  H.fingerprints.delete(a1);
+  if (sauMs !== null) {
+    setTimeout(() => {
+      H.drivers.set(a1, drv);
+      H.fingerprints.set(a1, fp!);
+    }, sauMs);
+  }
+}
+const soThongBao = async (tx: Tx, runId: number, kind: string) =>
+  Number(((await tx.execute(sql`SELECT count(*)::int AS n FROM notifications WHERE "userId" = ${OWNER} AND metadata->>'dedupKey' LIKE ${`${kind}:${runId}:%`}`)) as unknown as Array<{ n: number }>)[0]!.n);
 
 const ENV_KEYS = ["FOE_ENABLED", "FOE_DURABLE", "OT_CONTROL_ENABLED", "OT_COMMISSIONING_REQUIRED", "OT_SAFETY_PREFLIGHT_ENABLED", "OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "AI_OT_CONTROL_ENABLED", "PARAM_GUARDRAIL_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED", "OT_CONTROL_TIMEOUT_MS"] as const;
 const savedEnv: Record<string, string | undefined> = {};
@@ -340,6 +389,9 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     BT.hong = 0;
     S7.treo = false;
     S7.loiMotLan = false;
+    S7.treMs = 0;
+    H.thatAlert = false;
+    H.khiLayDriver = null;
     sim.setFault(null);
     _setPinReadProbeForTests(null);
     _setBuTruBiNgatProbeForTests(null);
@@ -384,12 +436,15 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       // b5 — URGENT also on success (deduped), and the audit row with the evidence of b1–b3
       const a = canhBaoCua(runId);
       expect(a.map((x) => x.kind)).toEqual(["foe_stop_compensation_resent_at_boot"]);
-      expect(a[0]!.dedupKey).toBe(`foe_stop_compensation_resent_at_boot:${runId}:undo`);
+      expect(String(a[0]!.dedupKey)).toMatch(new RegExp(`^foe_stop_compensation_resent_at_boot:${runId}:undo:\\d+$`));
+      expect(String(a[0]!.title)).toContain("STOP re-sent at boot — check the machine state on site"); // C-3 (c)
+      expect(String(a[0]!.message)).toContain("STOP re-sent at boot — check the machine state on site");
       expect(a[0]!.khuTrungBenVung).toEqual({});
       expect((a[0]!.recipients as number[]).includes(OWNER)).toBe(true);
       const au = await auditCua(tx, runId);
       expect(au).toHaveLength(1);
       expect(au[0]!.status).toBe("success");
+      expect(au[0]!.action).toBe("foe_stop_compensation_boot"); // m-8
       const md = au[0]!.det.metadata as Record<string, any>;
       expect(md).toMatchObject({ runId, stepId: "main", compId: "undo", outcome: "sent", reason: "allChecksPassed" });
       expect(md.evidence.b1).toMatchObject({ pinnedStop: true, loiDocGhim: null, commandType: "stop" });
@@ -458,7 +513,8 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(run.error).toContain("2 compensations (undo1, undo2) were in flight");
       expect(mine).toEqual([{ runId, compId: "undo1,undo2", outcome: "failed", reason: "several" }]);
       const a = canhBaoCua(runId);
-      expect(a.map((x) => [x.kind, x.dedupKey])).toEqual([["foe_compensation_interrupted_failed", `foe_compensation_interrupted_failed:${runId}:undo1,undo2`]]);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_failed"]);
+      expect(String(a[0]!.dedupKey)).toMatch(new RegExp(`^foe_compensation_interrupted_failed:${runId}:undo1,undo2:\\d+$`));
       expect((await hangUyQuyen(tx, `foe-run${runId}-undo`)).length).toBe(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
@@ -634,14 +690,23 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
-  it("★ Q5b — b4: a dispatcher GATE refuses (stale running connection: not a pinned STOP for the dispatcher) ⇒ 0 PDU, ONE refused attempt, held + URGENT", async () => {
+  it("★ Q5b — b4: a dispatcher GATE refuses (the pins change after the engine minted its fresh row: the dispatcher no longer counts it a pinned STOP) ⇒ 0 PDU, ONE refused attempt, held + URGENT", async () => {
     await trongGiaoDich(async (tx) => {
       const { m1, m2, a1 } = await dungThietBi(tx);
       const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
       await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
-      H.fingerprints.set(a1, "stale-connection (test)");
+      let doi = false;
+      _setPinReadProbeForTests(async (adapterId) => {
+        if (doi || adapterId !== a1) return;
+        const moi = (await tx.execute(sql`SELECT count(*)::int AS n FROM ai_pending_actions WHERE id LIKE ${`foe-run${runId}-undo-a2#stop-%`}`)) as unknown as Array<{ n: number }>;
+        if (moi[0]!.n > 0) {
+          doi = true; // the engine read the pins and minted its fresh row; the pins change before the dispatcher reads them
+          await tx.execute(sql`UPDATE device_tags SET stop_value = NULL WHERE "adapterId" = ${a1} AND "tagKey" = 'a'`);
+        }
+      });
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
+      expect(doi).toBe(true);
       expect(soPduGhi() - pdu0).toBe(0);
       expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "guiLoi" }]);
       expect((await trangThaiRun(tx, runId)).status).toBe("held");
@@ -721,6 +786,279 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(dau(run)?.dangGuiLai).toBeUndefined();
       expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0);
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  // ═══════════════════════════════════════ fix round 1 (review review-a2m2-result.md + coordinator C-1..C-3) ═══════════════════════════════════════
+
+  it("★ Q8 (C-2) — the compensation row was never written (crash before it): no intent time ⇒ held + URGENT, never silent, 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"]]); // no "undo" row at all
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "khongCoThoiDiemYDinh", mine);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q9a (I-1) — on boot the adapter's session is NOT up yet (OT drivers start after rehydrate); it comes up 2 s later ⇒ the boot waits, then EXACTLY 1 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      ketNoiSau(a1, 2000);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
+      expect(md.waitedMs).toBeGreaterThanOrEqual(1500);
+      expect(md.recheck.cuaSo.conLaiMs).toBeGreaterThan(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q9b (I-1) — the adapter's session never comes up within what is left of D ⇒ 0 PDU, held + URGENT, the single try NOT consumed", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 2000); // 2 s of D left (DB clock)
+      ketNoiSau(a1, null);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "ketNoiChuaSan", mine); // incl. daThuGuiLai unset, no -a2 row
+      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).waitedMs).toBeGreaterThanOrEqual(1500);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q10a (I-2) — the dispatch hangs past the window: the run is held + URGENT at the deadline, and the LATE answer never rewrites the compensation row ('held' stays)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 3000);
+      S7.treMs = 5000; // handed over, the device answers after 5 s
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "khongXacNhan" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("held");
+      await new Promise((r) => setTimeout(r, 4500)); // the late answer lands
+      expect(soPduGhi() - pdu0).toBe(1); // it was handed over before the deadline (the dispatcher's own bound applies)
+      expect((await buoc(tx, runId, "undo"))?.status).toBe("held"); // ★ never 'compensated' after the run was held
+      expect((await trangThaiRun(tx, runId)).status).toBe("held");
+      expect(dau(await trangThaiRun(tx, runId))?.dangGuiLai).toBeUndefined();
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q10b (I-2) — the window closes BEFORE the hand-over (the engine's authorisation is slow): the walk is ABORTED ⇒ 0 PDU, held + URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 800);
+      let cham = false;
+      _setPinReadProbeForTests(async (adapterId) => {
+        if (cham || adapterId !== a1) return;
+        const r = (await tx.execute(sql`SELECT "contextJson"->'foeBuTruBiNgat'->>'dangGuiLai' AS n FROM orchestration_runs WHERE id = ${runId}`)) as unknown as Array<{ n: string | null }>;
+        if (r[0]?.n) {
+          cham = true; // the attempt was claimed: its central-store pin read is slow (inside the read's own 1 s bound), past the 800 ms left —
+          // so the deadline fires before the hand-over whether the abort lands before this read or during it
+          await new Promise((res) => setTimeout(res, 900));
+        }
+      });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await new Promise((r) => setTimeout(r, 1500)); // the aborted walk finishes
+      expect(soPduGhi() - pdu0).toBe(0); // ★ never handed over after the deadline
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "khongXacNhan" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("held");
+      expect((await buoc(tx, runId, "undo"))?.status).toBe("held");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q11 (I-3) — the claim UPDATE throws ⇒ held + URGENT + audit (never 'claimed elsewhere' silence), 0 PDU, the try not consumed", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      _setBuTruBiNgatProbeForTests((stage) => {
+        if (stage === "claim") throw new Error("statement timeout (test)");
+      });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "loiGhiNhan", mine);
+      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).claimError).toContain("statement timeout (test)");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q12 (I-4) — the REAL durable dedup: the same interruption seen by two boots ⇒ ONE URGENT; a second interruption of the same run ⇒ a second URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      H.thatAlert = true;
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await yDinhTruoc(tx, runId, 6 * 60_000); // past D ⇒ held at every boot
+      const [u0] = (await tx.execute(sql`SELECT "updatedAt"::text AS u FROM orchestration_runs WHERE id = ${runId}`)) as unknown as Array<{ u: string }>;
+      __quenBoNhoKhuTrungChoTest();
+      await khoiDongLai(runId); // boot 1
+      expect(await soThongBao(tx, runId, "foe_compensation_interrupted_held")).toBe(1);
+      // the SAME interruption seen again (boot 1's held write lost, its alert delivered): the run row as the crash left it
+      await tx.execute(sql`UPDATE orchestration_runs SET status = 'compensating', "updatedAt" = ${u0!.u}::timestamp WHERE id = ${runId}`);
+      __quenBoNhoKhuTrungChoTest(); // a restart: only the durable dedup remains
+      await khoiDongLai(runId); // boot 2
+      expect(await soThongBao(tx, runId, "foe_compensation_interrupted_held")).toBe(1); // ★ no second row
+      // a SECOND interruption: a person's Continue walks the compensation again and the process dies again during it
+      const daToi = new Promise<void>((r) => (S7.daTreo = r));
+      S7.treo = true;
+      void resumeRun(runId, { approved: true, note: "A2(m2) Q12" }, { id: KHAC, role: "admin", name: "other" }, {}, { scope: null });
+      await Promise.race([daToi, new Promise((_, rej) => setTimeout(() => rej(new Error("crash point not reached")), 60_000))]);
+      S7.daTreo = null;
+      expect((await trangThaiRun(tx, runId)).status).toBe("compensating");
+      __quenBoNhoKhuTrungChoTest();
+      await khoiDongLai(runId); // boot 3
+      expect(await soThongBao(tx, runId, "foe_compensation_interrupted_held")).toBe(2); // ★ the new interruption alerts again
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q13 (I-5a) — another instance holds a LIVE attempt (marker + unexpired DB-clock lease): this boot's held write never wipes it ⇒ run stays 'compensating', marker kept, 0 PDU, no alert", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const [n] = (await tx.execute(sql`SELECT FLOOR(EXTRACT(EPOCH FROM now()) * 1000)::bigint AS ms`)) as unknown as Array<{ ms: string | number }>;
+      const dauSong = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "other-instance", hanLuotGuiMs: Number(n!.ms) + 60_000 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauSong });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "notOurs" }]);
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("compensating");
+      expect(dau(run)).toMatchObject({ daThuGuiLai: true, dangGuiLai: "other-instance" });
+      expect(canhBaoCua(runId)).toHaveLength(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q14 (m-1) — a NON-UTC session time zone (Asia/Ho_Chi_Minh): the window and the original authorisation's expiry are compared as instants ⇒ still sent (not 'always expired')", async () => {
+    await trongGiaoDich(async (tx) => {
+      await tx.execute(sql`SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh'`); // before every row (DEFAULT now() of this session ⇒ local wall time)
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      // the original STOP's authorisation row as the engine writes it (drizzle: a JS Date ⇒ the UTC wall time), valid for its hour
+      const id = `foe-run${runId}-undo-a1#stop-a1-${Math.random().toString(16).slice(2, 10)}`;
+      await tx.insert(aiPendingActions).values({ id, tool: "foe.engine", argsJson: {}, userId: APPROVER, userRole: "foe_gate_approver", summary: "FOE orchestration: step undo", status: "executed", idempotencyKey: id, expiresAt: new Date(Date.now() + 3_600_000) });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      expect(soPduGhi() - pdu0).toBe(1);
+      const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
+      expect(md.evidence.b2.conLaiMs).toBeGreaterThan(290_000); // D (5 min), not the cap shifted by +7 h
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q15 (m-3) — redeployed with the step renamed during the outage: a not-final row names no step of the definition ⇒ 'failed' + URGENT (never silent)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["mainOld", "failed"], ["undoOld", "running"]]);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undoOld", outcome: "failed", reason: "definitionChanged" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("failed");
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_failed"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q16a (m-5) — another command reaches the device WHILE the boot waits for the connection ⇒ the re-check before the hand-over sees it: 0 PDU, held + URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      ketNoiSau(a1, 1500);
+      H.khiLayDriver = () => {
+        void (async () => await tx.execute(sql`INSERT INTO command_log ("adapterId", "machineId", "tagKey", "commandType", "requestedBy", "confirmedBy", status) VALUES (${a1}, ${m1}, 'a', 'start', ${KHAC}, ${KHAC}, 'acked')`))(); // (drizzle builds lazily: awaited inside)
+      };
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "coLenhSau", mine);
+      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).evidence.b3.lenhSau).toEqual([]); // the decision did not see it
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q16b (I-2) — the window closes (DB time) WHILE the boot waits for the connection ⇒ the re-check before the hand-over: 0 PDU, held + URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      ketNoiSau(a1, 1500);
+      H.khiLayDriver = () => void yDinhTruoc(tx, runId, 6 * 60_000); // while the boot waits (after its decision)
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "quaHan", mine);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q17 (m-9) — 'another command' covers: the MACHINE via another adapter; another run's FOE command; run R0 (prefix collision) — each ⇒ 0 PDU, held + URGENT", async () => {
+    for (const ten of ["machine via another adapter", "another run's FOE command", "run-id prefix collision"] as const) {
+      await trongGiaoDich(async (tx) => {
+        const { m1, m2, a1, a2 } = await dungThietBi(tx);
+        const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+        await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+        const [adapter, actionId] =
+          ten === "machine via another adapter" ? [a2, null] : ten === "another run's FOE command" ? [a1, `foe-run${runId + 7}-main-a1`] : [a1, `foe-run${runId}0-main-a1`];
+        await tx.execute(sql`INSERT INTO command_log ("actionId", "adapterId", "machineId", "tagKey", "commandType", "requestedBy", "confirmedBy", status) VALUES (${actionId}, ${adapter}, ${m1}, 'a', 'start', ${KHAC}, ${KHAC}, 'acked')`);
+        const pdu0 = soPduGhi();
+        const { mine } = await khoiDongLai(runId);
+        await kiemGiuKhongGui(tx, runId, pdu0, "coLenhSau", mine);
+      });
+    }
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q17d (m-9) — an ACTIVE interlock rule on the machine: the boot goes through the interlock gate, which never blocks a pinned STOP (R-1D-c) ⇒ sent, the override recorded", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await tx.insert(interlockRules).values({
+        name: `${DAU} rule machine ${m1}`,
+        scope: "machine",
+        machineId: m1,
+        sourceType: "spc_violation",
+        comparisonOperator: "gte",
+        threshold: "0",
+        action: "stop_line",
+        targetMachineId: m1,
+        targetAdapterId: null,
+        commandTag: null,
+        requiresHumanConfirm: true,
+        enabled: true,
+        approvedBy: OWNER,
+        approvedAt: new Date(),
+      } as never);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      expect(soPduGhi() - pdu0).toBe(1);
+      await new Promise((r) => setTimeout(r, 800)); // the override audit is a bounded background write
+      const ov = (await tx.execute(sql`SELECT count(*)::int AS n FROM control_audit_log WHERE action = 'stop_interlock_override' AND "afterJson"->>'machineId' = ${String(m1)}`)) as unknown as Array<{ n: number }>;
+      expect(ov[0]!.n).toBe(1);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
