@@ -28,15 +28,15 @@ thành tin user "Kết quả công cụ …" ⇒ model ngoài không thấy kh�
    (chỉ `tool`). `ghepPhan` mang hai trường này qua (mức của phần `dau-ra-model` / `ma-repo` như hiện nay); `tinNhanSach` (danh sách
    trắng trường của cổng) thêm đúng hai trường, KHÔNG gì khác.
 2. **Bộ che** (`cheYeuCau`): che `goiTool[].thamSo` bằng `cheGiaTri` (đệ quy, như kết quả tool) và đếm vào `soTruongDaChe`; `id` / `ten`
-   KHÔNG che nhưng `id` phải khớp `^ngoai-[0-9a-f]{8}-\d{1,4}$` (do chính bộ chuyển phát) và `ten` phải thuộc tập tool đã cấp ⇒ khác ⇒
+   KHÔNG che nhưng `id` phải khớp `ID_GOI_TOOL_NGOAI` = `^ngoai-[0-9A-Za-z_-]{1,8}-\d{1,4}$` (do chính bộ chuyển phát; cũng là khuôn id Anthropic) và `ten` phải thuộc tập tool đã cấp ⇒ khác ⇒
    `NGOAI_KHONG_QUA_BO_GHEP` (không gửi). Lưới che: bí mật / PII đặt trong tham số tool và trong kết quả tool ⇒ không còn trong thân HTTP
    của CẢ ba họ API (đọc thân thật từ `datFetchNgoaiChoTest`).
 3. Ánh xạ từng họ (chỉ khi cờ BẬT; TẮT ⇒ đường `lichSuXenKe` cũ, thân HTTP TRÙNG TỪNG BYTE — lưới ghim bằng ảnh chụp thân):
    - OpenAI / tương thích: `assistant.tool_calls[{id, type:"function", function:{name, arguments: JSON}}]` + `{role:"tool", tool_call_id, content}`.
    - Anthropic: khối `tool_use{id,name,input}` trong `assistant`, `tool_result{tool_use_id, content}` trong `user` NGAY SAU; nhiều kết quả
      liền nhau gộp một tin user; system tách riêng như nay.
-   - Gemini: `functionCall{name,args}` trong `model`, `functionResponse{name, response:{ket_qua: <chữ>}}` trong `user` (Gemini không có id
-     ⇒ khớp theo thứ tự; tên lặp hai lần trong một lượt vẫn đúng thứ tự).
+   - Gemini: **GIỮ ĐƯỜNG CHỮ** cả khi cờ bật (quyết lúc làm 03/11): lịch sử `functionCall` của Gemini đời mới đòi `thought_signature` của
+     chính lượt trước — ta không lưu ⇒ 400. Lời gọi thành dòng `[gọi công cụ …]` (tham số ĐÃ CHE), kết quả tool như cũ.
    - Lịch sử client (`lich-su-client`) KHÔNG có id do bộ chuyển phát ⇒ luôn đi dạng chữ như nay (không nâng cấp tin cũ thành khối gốc).
 4. `vongAgentNgoai.ts`: khi cờ BẬT, assistant mang `goiTool` thay cho dòng `[gọi công cụ …]`; tool mang `idGoiTool`. Kiểm `idDaPhat` giữ nguyên.
 5. Census `duongVong` / `phanLoaiNut` cập nhật nếu đổi điểm (ghim lại, báo số).

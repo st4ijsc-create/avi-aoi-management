@@ -26,7 +26,7 @@ import { mucCuaGhep } from "./ghepPhan";
 import { bamCauTraLoi, bamNoiDung, ghiKetQua, ghiYDinh, luuNoiDungNeuBat, type DbSo } from "./soNgoai";
 import { giuLuotBay, thaLuotBay } from "./luotBay";
 import { chotTranLuot, raToiThieuCho, datTruoc, huyGiuChuaGui, ketToan, uocTokenVao, type DbDem, type PhieuGiu } from "./tranChiPhi";
-import type { CongCuNgoai, KetQuaNhaCungCap, MangNgoai, NhaCungCapAi, TinNhanNgoai, YeuCauNhaCungCap } from "./nhaCungCap/kieu";
+import { ID_GOI_TOOL_NGOAI, type CongCuNgoai, type KetQuaNhaCungCap, type MangNgoai, type NhaCungCapAi, type TinNhanNgoai, type YeuCauNhaCungCap } from "./nhaCungCap/kieu";
 import { anthropic } from "./nhaCungCap/anthropic";
 import { gemini } from "./nhaCungCap/gemini";
 import { openai, openaiTuongThich } from "./nhaCungCap/openai";
@@ -189,6 +189,8 @@ export function kiemToolCallTraVe(toolCalls: KetQuaNhaCungCap["toolCalls"], cong
 
 function kiemKichThuoc(yc: YeuCauGoiNgoai): void {
   for (const m of yc.tinNhan) if (Buffer.byteLength(m.noiDung ?? "", "utf8") > TRAN_CHUOI_BYTE) throw new LoiNgoai("NGOAI_QUA_LON", "tin nhắn");
+  // (H3.3b) tham số tool gốc: cùng trần một chuỗi
+  for (const m of yc.tinNhan) for (const g of m.goiTool ?? []) if (Buffer.byteLength(JSON.stringify(g.thamSo ?? null), "utf8") > TRAN_CHUOI_BYTE) throw new LoiNgoai("NGOAI_QUA_LON", "tham số tool");
   for (const c of yc.congCu ?? []) if (Buffer.byteLength(JSON.stringify(c), "utf8") > TRAN_CHUOI_BYTE) throw new LoiNgoai("NGOAI_QUA_LON", "công cụ");
   if (Buffer.byteLength(JSON.stringify({ t: yc.tinNhan, c: yc.congCu ?? [] }), "utf8") > TRAN_YEU_CAU_BYTE) throw new LoiNgoai("NGOAI_QUA_LON", "yêu cầu");
 }
@@ -205,12 +207,43 @@ async function mucCuaYeuCau(nguon: NguonMuc): Promise<MucDuLieu> {
   return gopMuc(...nguon.phanDaGhep);
 }
 
+/**
+ * (H3.3b) khối tool GỐC — fail-closed, TRƯỚC che / giữ chỗ / sổ: `goiTool` chỉ ở `assistant`, `idGoiTool` chỉ ở `tool`; id theo khuôn
+ * `ID_GOI_TOOL_NGOAI` và không trùng; tên thuộc tập tool ĐÃ CẤP cho lời gọi này; tham số là đối tượng; `idGoiTool` phải trả lời một id đã
+ * xuất hiện ở assistant TRƯỚC nó. Khác ⇒ `NGOAI_KHONG_QUA_BO_GHEP` (lỗi lập trình phía máy chủ — không gửi).
+ */
+export function kiemToolGoc(tinNhan: readonly TinNhanNgoai[], congCu: readonly CongCuNgoai[] | undefined): void {
+  const tenCap = new Set((congCu ?? []).map((c) => c.ten));
+  const daThay = new Set<string>();
+  const hong = (ly: string): never => {
+    throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", `tool-goc:${ly}`);
+  };
+  for (const m of tinNhan) {
+    if (m.goiTool !== undefined) {
+      if (m.vaiTro !== "assistant" || !Array.isArray(m.goiTool)) hong("vai");
+      for (const g of m.goiTool!) {
+        if (typeof g?.id !== "string" || !ID_GOI_TOOL_NGOAI.test(g.id) || daThay.has(g.id)) hong("id");
+        if (typeof g.ten !== "string" || !tenCap.has(g.ten)) hong("ten");
+        if (!g.thamSo || typeof g.thamSo !== "object" || Array.isArray(g.thamSo)) hong("tham-so");
+        daThay.add(g.id);
+      }
+    }
+    if (m.idGoiTool !== undefined && (m.vaiTro !== "tool" || typeof m.idGoiTool !== "string" || !daThay.has(m.idGoiTool))) hong("id-ket-qua");
+  }
+}
+
 function cheYeuCau(yc: YeuCauNhaCungCap, tu: TuDienNhay): { daChe: YeuCauNhaCungCap; soTruong: number } {
   let soTruong = 0;
   const tinNhan = yc.tinNhan.map((m) => {
     const kq = cheGiaTri(m.noiDung, tu);
     soTruong += kq.soTruongDaChe;
-    return { ...m, noiDung: String(kq.giaTri) };
+    // (H3.3b) tham số tool GỐC đi qua CÙNG bộ che (đệ quy) — id / tên không phải dữ liệu (đã kiểm khuôn ở `kiemToolGoc`)
+    const goiTool = m.goiTool?.map((g) => {
+      const t = cheGiaTri(g.thamSo, tu);
+      soTruong += t.soTruongDaChe;
+      return { id: g.id, ten: g.ten, thamSo: t.giaTri };
+    });
+    return { ...m, noiDung: String(kq.giaTri), ...(goiTool ? { goiTool } : {}) };
   });
   const congCu = yc.congCu?.map((c) => {
     const moTa = cheChuoi(c.moTa, tu);
@@ -337,7 +370,15 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
   let maxTokens = maxTokensYeuCau;
   // ★ 11.0 (rà kiem-dinh) — DANH SÁCH TRẮNG trường tin nhắn: kiểu TS không chặn trường THỪA lúc chạy (vd `reasoning_content` của lõi agent
   //   khi bật giữ nghĩ, `nghiTruoc`, dấu nội bộ) ⇒ chỉ vai trò + nội dung + tên tool đi tiếp tới bộ che và nhà cung cấp.
-  const tinNhanSach: TinNhanNgoai[] = yc.tinNhan.map(({ vaiTro, noiDung, tenTool }) => ({ vaiTro, noiDung, ...(tenTool !== undefined ? { tenTool } : {}) }));
+  //   (H3.3b) thêm ĐÚNG hai trường khối tool gốc — sau khi `kiemToolGoc` kiểm vai / id / tên.
+  const tinNhanSach: TinNhanNgoai[] = yc.tinNhan.map(({ vaiTro, noiDung, tenTool, goiTool, idGoiTool }) => ({
+    vaiTro,
+    noiDung,
+    ...(tenTool !== undefined ? { tenTool } : {}),
+    ...(goiTool?.length ? { goiTool: goiTool.map(({ id, ten, thamSo }) => ({ id, ten, thamSo })) } : {}),
+    ...(idGoiTool !== undefined ? { idGoiTool } : {}),
+  }));
+  kiemToolGoc(tinNhanSach, yc.congCu);
   const yeuCau: YeuCauNhaCungCap = { model: model.model, tinNhan: tinNhanSach, ...(yc.congCu?.length ? { congCu: yc.congCu } : {}), maxTokens, nhietDo: 0.2 };
   // (6)
   buoc("che");

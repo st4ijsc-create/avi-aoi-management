@@ -104,6 +104,21 @@ export interface CauHinhAgentNgoai {
   doc: TrongThaiDoc;
   goi: (yc: YeuCauGoiNgoai) => Promise<KetQuaGoiNgoai>;
   chayTool: (ten: string, thamSo: Record<string, unknown>, o: { goc: string; user: NguoiGoi; doc: TrongThaiDoc }) => Promise<KetQuaTool>;
+  /**
+   * (H3.3b) gửi lịch sử tool dạng KHỐI GỐC (`goiTool` / `idGoiTool`) thay cho dòng chữ `[gọi công cụ …]`. Vắng ⇒ cờ env
+   * `AI_NGOAI_TOOL_GOC === "1"` đọc lúc tạo cặp (mặc định TẮT ⇒ byte gửi đi như trước H3.3b — đổi byte ⇒ đo trước khi bật).
+   */
+  toolGoc?: boolean;
+}
+
+/** (H3.3b) chuỗi `arguments` của lõi ⇒ tham số đối tượng (bộ chuyển tự phát bằng `JSON.stringify` — hỏng ⇒ đối tượng đánh dấu, không ném). */
+function thamSoTuChuoi(s: unknown): Record<string, unknown> {
+  try {
+    const v = JSON.parse(String(s ?? "{}"));
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : { __khongParse: String(s ?? "").slice(0, 200) };
+  } catch {
+    return { __khongParse: String(s ?? "").slice(0, 200) };
+  }
 }
 
 export interface CapAgentNgoai {
@@ -133,6 +148,7 @@ function congCuQuangBa(congCu: readonly WireTool[]): CongCuNgoai[] {
 }
 
 export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
+  const toolGoc = c.toolGoc ?? process.env.AI_NGOAI_TOOL_GOC === "1";
   const idDaPhat = new Set<string>();
   const lichSuKhoa = new Set(c.lichSu.map(khoaTin));
   const ids: number[] = [];
@@ -148,11 +164,18 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
       if (m.role === "system") continue;
       if (m.role === "tool") {
         if (typeof m.tool_call_id !== "string" || !idDaPhat.has(m.tool_call_id)) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", "tool-khong-dang-ky");
-        ds.push({ vaiTro: "tool", tenTool: String(m.name ?? ""), phan: [{ loai: "ma-repo", noiDung: m.content }] });
+        ds.push({ vaiTro: "tool", tenTool: String(m.name ?? ""), phan: [{ loai: "ma-repo", noiDung: m.content }], ...(toolGoc ? { idGoiTool: m.tool_call_id } : {}) });
         continue;
       }
       if (lichSuKhoa.has(khoaTin(m))) {
         ds.push({ vaiTro: m.role, phan: [{ loai: "lich-su-client", noiDung: m.content }] });
+        continue;
+      }
+      if (m.role === "assistant" && toolGoc && m.tool_calls?.length) {
+        // (H3.3b) khối gốc: CHỈ id do chính bộ chuyển phát ở vòng trước (lịch sử khác đã rẽ sang `lich-su-client` phía trên)
+        if (m.tool_calls.some((tc) => !idDaPhat.has(String(tc.id)))) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", "tool-call-khong-dang-ky");
+        const goiTool = m.tool_calls.map((tc) => ({ id: String(tc.id), ten: tc.function.name, thamSo: thamSoTuChuoi(tc.function.arguments) }));
+        ds.push({ vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: m.content ?? "" }], goiTool });
         continue;
       }
       if (m.role === "assistant") {

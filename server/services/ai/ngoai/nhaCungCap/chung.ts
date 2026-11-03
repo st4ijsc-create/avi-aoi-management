@@ -3,7 +3,7 @@
  * khi ném / ghi), số token, lịch sử chữ (công cụ cũ đã là dòng chữ — giới hạn đã ghi: model ngoài KHÔNG thấy tool_use gốc).
  */
 import { LoiNgoai, requestIdHopLe, type PhanLoaiLoiNgoai } from "../loi";
-import type { TinNhanNgoai } from "./kieu";
+import type { GoiToolNgoai, TinNhanNgoai } from "./kieu";
 
 /** Trường lỗi của ba họ API (OpenAI `error.code/type`, Anthropic `error.type`, Gemini `error.status`) gộp thành chữ thường để so khớp. */
 function dauHieu(json: unknown): { thongDiep: string; ma: string } {
@@ -80,14 +80,32 @@ export function docRetryAfter(giaTri: string | null | undefined, bayGio: number 
 
 export const so = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
 
-/** System gộp; còn lại user / assistant xen kẽ (tin `tool` thành user "Kết quả công cụ …"); hai tin cùng vai liền nhau thì nối. */
+/** (H3.3b) lời gọi tool gốc ⇒ dòng chữ — CÙNG khuôn `tinGoiTool` của bộ chuyển agent khi cờ tắt (đường chữ của Gemini khi cờ bật). */
+export function chuGoiTool(g: GoiToolNgoai): string {
+  return `[gọi công cụ ${g.ten} ${JSON.stringify(g.thamSo ?? {}).slice(0, 400)}]`;
+}
+
+/** (H3.3b) yêu cầu có khối tool GỐC (chỉ khi cờ `AI_NGOAI_TOOL_GOC` bật ở bộ chuyển) ⇒ bản cài dùng định dạng gốc của họ API. */
+export function coToolGoc(tinNhan: readonly TinNhanNgoai[]): boolean {
+  return tinNhan.some((m) => (m.goiTool?.length ?? 0) > 0 || m.idGoiTool !== undefined);
+}
+
+/**
+ * System gộp; còn lại user / assistant xen kẽ (tin `tool` thành user "Kết quả công cụ …"); hai tin cùng vai liền nhau thì nối.
+ * (H3.3b) `goiTool` (nếu có) thành dòng chữ `chuGoiTool` sau nội dung — đường chữ không mất lời gọi.
+ */
 export function lichSuXenKe(tinNhan: readonly TinNhanNgoai[]): { system: string; ds: Array<{ vai: "user" | "assistant"; chu: string }> } {
   const system = tinNhan.filter((m) => m.vaiTro === "system").map((m) => m.noiDung).join("\n\n");
   const ds: Array<{ vai: "user" | "assistant"; chu: string }> = [];
   for (const m of tinNhan) {
     if (m.vaiTro === "system") continue;
     const vai = m.vaiTro === "assistant" ? "assistant" : "user";
-    const chu = m.vaiTro === "tool" ? `Kết quả công cụ ${m.tenTool ?? ""}:\n${m.noiDung}` : m.noiDung;
+    const chu =
+      m.vaiTro === "tool"
+        ? `Kết quả công cụ ${m.tenTool ?? ""}:\n${m.noiDung}`
+        : m.goiTool?.length
+          ? [m.noiDung, ...m.goiTool.map(chuGoiTool)].filter(Boolean).join("\n")
+          : m.noiDung;
     const cuoi = ds[ds.length - 1];
     if (cuoi && cuoi.vai === vai) cuoi.chu += `\n\n${chu}`;
     else ds.push({ vai, chu });

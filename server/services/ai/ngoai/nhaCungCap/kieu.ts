@@ -5,10 +5,26 @@
  */
 import type { NhaCungCapNgoai } from "../../chonModel/kieu";
 
+/** (H3.3b) một lời gọi tool của model ở lượt trước — `id` do CHÍNH bộ chuyển phát (`ID_GOI_TOOL_NGOAI`), `ten` thuộc tập đã cấp. */
+export interface GoiToolNgoai {
+  id: string;
+  ten: string;
+  thamSo: unknown;
+}
+
+/** (H3.3b) id lời gọi tool do bộ chuyển agent ngoài phát: `ngoai-<8 ký tự đầu runId>-<số>` — cũng là khuôn id Anthropic chấp nhận. */
+export const ID_GOI_TOOL_NGOAI = /^ngoai-[0-9A-Za-z_-]{1,8}-\d{1,4}$/;
+
 export interface TinNhanNgoai {
   vaiTro: "system" | "user" | "assistant" | "tool";
   noiDung: string;
   tenTool?: string;
+  /**
+   * (H3.3b, chỉ khi cờ `AI_NGOAI_TOOL_GOC` BẬT) — `assistant`: lời gọi tool dạng KHỐI GỐC; `tool`: id lời gọi mà kết quả này trả lời.
+   * Vắng cả hai ⇒ nhà cung cấp dùng đường chữ cũ (`lichSuXenKe`) — byte gửi đi như trước H3.3b.
+   */
+  goiTool?: readonly GoiToolNgoai[];
+  idGoiTool?: string;
 }
 
 export interface CongCuNgoai {

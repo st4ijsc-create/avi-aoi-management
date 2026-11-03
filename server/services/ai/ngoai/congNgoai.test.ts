@@ -264,6 +264,48 @@ describe("cổng AI ngoài — gọi", () => {
     }
   });
 
+  const congCuTra = [{ ten: "tra_tai_lieu", moTa: "tra cứu", schema: { type: "object", properties: { q: {} }, additionalProperties: false } }];
+  const ghepGoc = (thamSo: unknown, ketQua: string, o: { id?: string; idKq?: string; ten?: string; vaiGoi?: "assistant" | "user" } = {}) =>
+    ghepPhan([
+      { vaiTro: "system", phan: [{ loai: "huong-dan-tinh", noiDung: "Hệ thống." }] },
+      { vaiTro: "user", phan: [{ loai: "cau-go-lap-trinh", noiDung: "hỏi" }] },
+      { vaiTro: o.vaiGoi ?? "assistant", phan: [{ loai: "dau-ra-model", noiDung: "" }], goiTool: [{ id: o.id ?? "ngoai-11111111-1", ten: o.ten ?? "tra_tai_lieu", thamSo }] },
+      { vaiTro: "tool", tenTool: "tra_tai_lieu", phan: [{ loai: "ma-repo", noiDung: ketQua }], idGoiTool: o.idKq ?? o.id ?? "ngoai-11111111-1" },
+    ]).tinNhan;
+
+  it("★ Đợt 12 H3.3b — khối tool GỐC: mọi vector che đặt vào THAM SỐ tool call + kết quả tool ⇒ yêu cầu nhà cung cấp nhận không còn chuỗi nhạy; id/tên giữ", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    for (const v of VECTOR_CHE.filter((x) => x.phaiKhongCon.length && !x.tuDien && x.cheDo !== "schema")) {
+      const s = typeof v.dauVao === "string" ? v.dauVao : JSON.stringify(v.dauVao);
+      const thamSo = v.dauVao && typeof v.dauVao === "object" && !Array.isArray(v.dauVao) ? v.dauVao : { q: v.dauVao };
+      await goiAiNgoai(yc({ tinNhan: ghepGoc(thamSo, s), congCu: congCuTra }), dep(g));
+      const daChe = g.nhan.at(-1)!.yc;
+      const nhan = JSON.stringify(daChe);
+      for (const bm of v.phaiKhongCon) expect(nhan, `${v.ten}: còn "${bm}"`).not.toContain(bm);
+      const a = daChe.tinNhan.find((m) => m.vaiTro === "assistant")!;
+      expect(a.goiTool).toEqual([expect.objectContaining({ id: "ngoai-11111111-1", ten: "tra_tai_lieu" })]);
+      expect(daChe.tinNhan.find((m) => m.vaiTro === "tool")!.idGoiTool).toBe("ngoai-11111111-1");
+    }
+  });
+
+  it("★ Đợt 12 H3.3b — khối tool gốc SAI (vai / id / id trùng / tên ngoài tập / tham số mảng / kết quả trả lời id lạ) ⇒ NGOAI_KHONG_QUA_BO_GHEP, không gọi", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const ca: Array<[string, ReturnType<typeof ghepGoc>]> = [
+      ["vai", ghepGoc({ q: 1 }, "x", { vaiGoi: "user" })],
+      ["id", ghepGoc({ q: 1 }, "x", { id: "call_abc;drop" })],
+      ["ten", ghepGoc({ q: 1 }, "x", { ten: "run_command" })],
+      ["tham-so", ghepGoc([1, 2], "x")],
+      ["id-ket-qua", ghepGoc({ q: 1 }, "x", { idKq: "ngoai-11111111-9" })],
+    ];
+    for (const [ten, tin] of ca) expect(await maLoi(goiAiNgoai(yc({ tinNhan: tin, congCu: congCuTra }), dep(g))), ten).toBe("NGOAI_KHONG_QUA_BO_GHEP");
+    const trung = ghepPhan([
+      { vaiTro: "user", phan: [{ loai: "cau-go-lap-trinh", noiDung: "hỏi" }] },
+      { vaiTro: "assistant", phan: [{ loai: "dau-ra-model", noiDung: "" }], goiTool: [{ id: "ngoai-11111111-1", ten: "tra_tai_lieu", thamSo: {} }, { id: "ngoai-11111111-1", ten: "tra_tai_lieu", thamSo: {} }] },
+    ]).tinNhan;
+    expect(await maLoi(goiAiNgoai(yc({ tinNhan: trung, congCu: congCuTra }), dep(g))), "id-trung").toBe("NGOAI_KHONG_QUA_BO_GHEP");
+    expect(g.nhan).toHaveLength(0);
+  });
+
   it("loi-nhac-lai: lỗi nhà cung cấp nhắc lại khoá ⇒ lỗi ném ra đã che; sổ ghi kết quả 'loi' với mã, không nội dung", async () => {
     const g = taoNhaCungCapGia([{ kieu: "loi", thongDiep: `400 invalid request: echo ${KHOA_GIA.anthropic} and password=hunter99` }]);
     let loi: unknown;
