@@ -144,7 +144,8 @@
 .ds-small { font: 400 12px/1.4 var(--font-body); color: var(--text-2); }
 .ds-caption { font: 600 11px/1.3 var(--font-body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+/* .num = số đo (chữ số bằng nhau, dấu phẩy gọn); .mono = mã, địa chỉ, giờ (Geist Mono) */
+.num { font-family: var(--font-body); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 
 /* ───────────── Nền tảng ───────────── */
 *, *::before, *::after { box-sizing: border-box; }

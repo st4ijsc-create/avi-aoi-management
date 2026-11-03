@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Màn 4 · Cảnh báo — mockup</title>
+<link rel="stylesheet" href="token.css">
+<link rel="stylesheet" href="shell.css">
+<style>
+
+.flood { display: flex; align-items: center; gap: var(--gap-4); padding: var(--gap-3) var(--gap-4); background: var(--alarm-p2-soft); color: var(--alarm-p2-ink); border: 2px solid var(--alarm-p2); border-radius: var(--radius-2); }
+.flood-ic { font-size: 22px; color: var(--alarm-p2); }
+.bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; }
+.bars i { width: 10px; background: var(--isa-graphic-muted); border-radius: 2px 2px 0 0; min-height: 4px; }
+.bars i.hi { background: var(--alarm-p2); }
+.bulk { display: flex; align-items: center; gap: var(--gap-3); padding: var(--gap-2) var(--gap-4); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-2); color: var(--text-1); }
+.note-stale { display: flex; align-items: center; gap: var(--gap-3); flex-wrap: wrap; }
+.gt-cao { font-weight: 700; color: var(--alarm-p1-ink); }
+.tbl .num { white-space: nowrap; }
+
+</style>
+</head>
+<body>
+<div class="app" data-density="comfortable" data-state="hon-hop" data-scope="real" data-rail="closed">
+  <header class="hdr">
+    <div class="crumbs" aria-label="Phạm vi"><b>Công ty ABC</b><span class="sep">▸</span><b>Nhà máy Bình Dương</b><button class="btn sm scope-btn" type="button"><span data-i18n="chung.doiPhamVi">Đổi phạm vi</span></button></div>
+    <div class="sp"></div>
+    <span class="ctn" data-st="hon-hop"><a class="alarm-chip unacked-p1" href="#" title="Có cảnh báo P1 chưa ack"><span class="p p1">■ 2</span><span class="p p2">▲ 3</span><span>Chưa ack</span></a></span><span class="ctn" data-st="lu"><a class="alarm-chip unacked-p1" href="#" title="Có cảnh báo P1 chưa ack"><span class="p p1">■ 3</span><span class="p p2">▲ 5</span><span>Chưa ack</span></a></span><span class="ctn" data-st="du-lieu-cu"><a class="alarm-chip unacked-p1" href="#" title="Có cảnh báo P1 chưa ack"><span class="p p1">■ 2</span><span class="p p2">▲ 3</span><span>Chưa ack</span></a></span><span class="ctn" data-st="chi-tiet"><a class="alarm-chip unacked-p1" href="#" title="Có cảnh báo P1 chưa ack"><span class="p p1">■ 2</span><span class="p p2">▲ 3</span><span>Chưa ack</span></a></span>
+    <span class="ctn" data-st="hon-hop"><span class="pill fresh live"><span class="dot"></span>Trực tiếp</span></span><span class="ctn" data-st="lu"><span class="pill fresh live"><span class="dot"></span>Trực tiếp</span></span><span class="ctn" data-st="du-lieu-cu"><span class="pill fresh live"><span class="dot"></span>Trực tiếp</span></span><span class="ctn" data-st="chi-tiet"><span class="pill fresh live"><span class="dot"></span>Trực tiếp</span></span>
+    <span class="ctn" data-sc="real"><span class="origin">THẬT</span></span><span class="ctn" data-sc="sim"><span class="origin sim">MÔ PHỎNG</span></span>
+    <span class="cmdk"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg> <span data-i18n="chung.timNhanh">Tìm nhanh</span> <span class="kbd">⌘K</span></span>
+    <span class="user"><span class="av">LT</span>Lê Thanh Tâm</span>
+  </header>
+  <nav class="rail" aria-label="Điều hướng 7 vùng">
+    <div class="brand"><span class="logo">AV</span><span class="name">AVI·AOI</span></div>
+    <a href="#"  title="Trang chủ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span class="lbl"><span data-i18n="chung.vung.trangChu">Trang chủ</span></span></a><a href="#" aria-current="page" title="Giám sát"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="lbl"><span data-i18n="chung.vung.giamSat">Giám sát</span></span><span class="badge">5</span></a><a href="#"  title="Sản xuất & Chất lượng"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l6 4V9l6 4V5h6v16z"/><path d="M7 17h2M12 17h2M17 17h2"/></svg><span class="lbl"><span data-i18n="chung.vung.sanXuat">Sản xuất & Chất lượng</span></span></a><a href="#"  title="Dữ liệu chủ"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span class="lbl"><span data-i18n="chung.vung.duLieuChu">Dữ liệu chủ</span></span></a><a href="#"  title="Kỹ thuật"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/></svg><span class="lbl"><span data-i18n="chung.vung.kyThuat">Kỹ thuật</span></span></a><a href="#"  title="Thợ Cả"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/><path d="M19 17l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg><span class="lbl"><span data-i18n="chung.vung.thoCa">Thợ Cả</span></span></a><a href="#"  title="Phân tích & Quản trị"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/></svg><span class="lbl"><span data-i18n="chung.vung.phanTich">Phân tích & Quản trị</span></span></a>
+    <div class="grow"></div>
+    <div class="bottom">
+      <a href="#" title="Cài đặt"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span class="lbl"><span data-i18n="chung.caiDat">Cài đặt</span></span></a>
+      <a href="#" title="Giao diện"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span class="lbl"><span data-i18n="chung.giaoDien">Giao diện sáng</span></span></a>
+    </div>
+  </nav>
+  <main class="main" id="main">
+    <div class="sim-banner" role="status"><span data-i18n="chung.moPhong.banner">ĐANG XEM DỮ LIỆU MÔ PHỎNG — không phải máy thật; lệnh gửi đi KHÔNG tác động thiết bị</span></div>
+    
+    <div class="page-h">
+      <div class="t">
+        <h1 class="ds-h1"><span data-i18n="giamSat.canhBao.tieuDe">Cảnh báo</span></h1>
+        <div class="sub">Phạm vi: Nhà máy Bình Dương · cập nhật theo thời gian thực</div>
+      </div>
+      <div class="act"><button class="btn" type="button"><span data-i18n="giamSat.canhBao.amThanh">Âm P1: bật</span></button><button class="btn" type="button"><span data-i18n="chung.xuatCsv">Xuất CSV</span></button></div>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Cảnh báo">
+      <button role="tab" aria-selected="true"><span data-i18n="giamSat.canhBao.tab.dangMo">Đang mở</span><span class="cnt">12</span></button>
+      <button role="tab" aria-selected="false"><span data-i18n="giamSat.canhBao.tab.andon">Andon</span><span class="cnt">1</span></button>
+      <button role="tab" aria-selected="false"><span data-i18n="giamSat.canhBao.tab.lichSu">Lịch sử</span></button>
+      <button role="tab" aria-selected="false"><span data-i18n="giamSat.canhBao.tab.kpi">KPI</span></button>
+      <button role="tab" aria-selected="false"><span data-i18n="giamSat.canhBao.tab.dinhNghia">Định nghĩa</span></button>
+      <button role="tab" aria-selected="false"><span data-i18n="giamSat.canhBao.tab.thongBao">Thông báo</span></button>
+    </div>
+    <div class="flood" data-st="lu" role="alert">
+      <span class="flood-ic">▲</span>
+      <div class="grow"><b>LŨ CẢNH BÁO (ALARM_FLOOD)</b> — <span class="num">38</span> cảnh báo trong 10 phút (ngưỡng ISA-18.2: <span class="num">10</span>).<br><span class="ds-small" style="color:inherit">Đã gom theo nguyên nhân gốc; cảnh báo P1/P2 độc lập vẫn hiện đầy đủ bên dưới.</span></div>
+      <div class="bars" aria-label="Số cảnh báo mỗi phút, 10 phút gần nhất"><i class="" style="height:4px"></i><i class="" style="height:4px"></i><i class="" style="height:8px"></i><i class="" style="height:4px"></i><i class="" style="height:12px"></i><i class="hi" style="height:24px"></i><i class="hi" style="height:36px"></i><i class="hi" style="height:32px"></i><i class="" style="height:16px"></i><i class="" style="height:12px"></i></div>
+    </div>
+    <div class="note-stale" data-st="du-lieu-cu"><span class="pill fresh stale"><span class="dot"></span>1 hàng có tag dữ liệu cũ</span> <span class="ds-small">Giá trị tím gạch = không còn đáng tin; chưa thể xác nhận vượt ngưỡng. Ưu tiên của cảnh báo vẫn giữ nguyên.</span></div>
+    <div class="filters">
+      <span class="field"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"/></svg> Phạm vi: Nhà máy Bình Dương ▾</span>
+      <span class="field">Loại: Cảnh báo ▾</span>
+      <button class="btn sm" type="button" aria-pressed="true"><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span></span><span class="num">2</span></button><button class="btn sm" type="button" aria-pressed="true"><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span></span><span class="num">3</span></button><button class="btn sm" type="button" aria-pressed="true"><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span></span><span class="num">4</span></button><button class="btn sm" type="button" aria-pressed="true"><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span></span><span class="num">3</span></button>
+      <span class="field"><span class="chk"></span> Hiện tạm ẩn</span>
+      <span class="field grow"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg> Tìm mã, thông điệp, tài sản…</span>
+    </div>
+    <div class="bulk" data-st="hon-hop"><b class="num">2</b> hàng đã chọn · <button class="btn sm primary" type="button">Ack hàng loạt</button><button class="btn sm" type="button">Tạm ẩn hàng loạt ▾</button><button class="btn sm quiet" type="button">Bỏ chọn</button></div>
+    <div class="tbl-wrap" data-st="hon-hop"><table class="tbl"><thead><tr><th style="width:36px"></th><th><span data-i18n="giamSat.canhBao.cot.uuTien">Ưu tiên</span></th><th><span data-i18n="giamSat.canhBao.cot.taiSan">Tài sản</span></th><th><span data-i18n="giamSat.canhBao.cot.maThongDiep">Mã · thông điệp</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.giaTri">Giá trị / giới hạn</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.tuoi">Tuổi</span></th><th><span data-i18n="giamSat.canhBao.cot.trangThai">Trạng thái ISA-18.2 · leo thang</span></th><th></th></tr></thead><tbody><tr class="p1 ">
+      <td><span class="chk on">✓</span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-MNT-04</td>
+      <td><b class="mono" style="font-size:12px">FEEDER_JAM_12</b><br><span class="ds-body">Kẹt feeder #12 — máy dừng gắp</span></td>
+      <td class="num"><span class="num gt-cao">kẹt = 1</span><br><span class="ds-small">—</span></td>
+      <td class="num">00:42</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:18</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p1 ">
+      <td><span class="chk on">✓</span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-REF-01</td>
+      <td><b class="mono" style="font-size:12px">OVEN_ZONE5_HH</b><br><span class="ds-body">Lò reflow vùng 5 quá nhiệt (HH)</span></td>
+      <td class="num"><span class="num gt-cao">268,4 °C</span><br><span class="ds-small">HH 265 °C</span></td>
+      <td class="num">03:10</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 2/3 · còn 01:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">AOI_FAILRATE_HI</b><br><span class="ds-body">Tỉ lệ lỗi AOI vượt ngưỡng</span></td>
+      <td class="num"><span class="num ">4,8 %</span><br><span class="ds-small">H 3,0 %</span></td>
+      <td class="num">12:30</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-SPI-02</td>
+      <td><b class="mono" style="font-size:12px">SPI_VOL_DEV</b><br><span class="ds-body">Lệch thể tích kem hàn dưới mức</span></td>
+      <td class="num"><span class="num gt-cao">78 %</span><br><span class="ds-small">L 85 %</span></td>
+      <td class="num">18:05</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 06:55</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">THT-01 ▸ THT-WAVE-01</td>
+      <td><b class="mono" style="font-size:12px">WAVE_PRE_LO</b><br><span class="ds-body">Nhiệt sấy sóng thấp</span></td>
+      <td class="num"><span class="num gt-cao">86,1 °C</span><br><span class="ds-small">L 90 °C</span></td>
+      <td class="num">21:40</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 03:20</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-PRN-01</td>
+      <td><b class="mono" style="font-size:12px">SQUEEGEE_WEAR</b><br><span class="ds-body">Dao gạt gần hết tuổi thọ</span></td>
+      <td class="num"><span class="num ">92 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">1:12:05</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-CNV-02</td>
+      <td><b class="mono" style="font-size:12px">CNV_SPEED_DEV</b><br><span class="ds-body">Lệch tốc độ băng tải</span></td>
+      <td class="num"><span class="num ">0,82 m/ph</span><br><span class="ds-small">L 0,85 m/ph</span></td>
+      <td class="num">22:40</td>
+      <td><span class="ast cleared-unack"><i class="s">○</i>Đã hết · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 02:10</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">PKG ▸ PKG-WH-01</td>
+      <td><b class="mono" style="font-size:12px">AIR_PRESS_LO</b><br><span class="ds-body">Áp khí nén thấp</span></td>
+      <td class="num"><span class="num ">0,52 MPa</span><br><span class="ds-small">L 0,55 MPa</span></td>
+      <td class="num">05:12</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-AOI-03</td>
+      <td><b class="mono" style="font-size:12px">COMM_SLOW</b><br><span class="ds-body">Giao tiếp chậm — trễ vòng hỏi 2,4 s</span></td>
+      <td class="num"><span class="num ">2,4 s</span><br><span class="ds-small">H 2,0 s</span></td>
+      <td class="num">3:05:00</td>
+      <td><span class="ast oos"><i class="s">⊘</i>Ngoài dịch vụ (bảo trì)</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">CAL_DUE</b><br><span class="ds-body">Sắp đến hạn hiệu chuẩn camera</span></td>
+      <td class="num"><span class="num ">còn 6 ngày</span><br><span class="ds-small">≤ 7 ngày</span></td>
+      <td class="num">2:40:11</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-MNT-01</td>
+      <td><b class="mono" style="font-size:12px">NOZZLE_CLEAN</b><br><span class="ds-body">Nhắc vệ sinh đầu hút</span></td>
+      <td class="num"><span class="num ">—</span><br><span class="ds-small">—</span></td>
+      <td class="num">4:02:30</td>
+      <td><span class="ast shelved"><i class="s">⏸</i>Tạm ẩn đến 17:30</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03</td>
+      <td><b class="mono" style="font-size:12px">LOG_DISK</b><br><span class="ds-body">Ổ nhật ký gần đầy</span></td>
+      <td class="num"><span class="num ">91 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">5:30:12</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr></tbody></table></div><div class="tbl-wrap" data-st="lu"><table class="tbl"><thead><tr><th style="width:36px"></th><th><span data-i18n="giamSat.canhBao.cot.uuTien">Ưu tiên</span></th><th><span data-i18n="giamSat.canhBao.cot.taiSan">Tài sản</span></th><th><span data-i18n="giamSat.canhBao.cot.maThongDiep">Mã · thông điệp</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.giaTri">Giá trị / giới hạn</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.tuoi">Tuổi</span></th><th><span data-i18n="giamSat.canhBao.cot.trangThai">Trạng thái ISA-18.2 · leo thang</span></th><th></th></tr></thead><tbody>
+      <tr class="grp p1"><td><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></td><td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td><td colspan="4">Nguyên nhân gốc: PLC SMT03 mất kết nối (<span class='mono'>PLC_SMT03_LOST</span>) <span class="ds-small">— gom 24 cảnh báo thứ cấp</span></td><td class="ds-small">Bậc 2/3 · còn 01:20</td><td><button class="btn sm primary" type="button">Ack nhóm</button></td></tr>
+      <tr class="p2"><td></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-MNT-04</td><td><b class="mono" style="font-size:12px">TAG_BAD_QUALITY</b> <span class="ds-small">tag chất lượng xấu</span></td><td class="num muted">—</td><td class="num">02:11</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
+      <tr class="p2"><td></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-AOI-07</td><td><b class="mono" style="font-size:12px">TAG_BAD_QUALITY</b> <span class="ds-small">tag chất lượng xấu</span></td><td class="num muted">—</td><td class="num">02:11</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
+      <tr class="p3"><td></td><td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-REF-01</td><td><b class="mono" style="font-size:12px">TAG_BAD_QUALITY</b> <span class="ds-small">tag chất lượng xấu</span></td><td class="num muted">—</td><td class="num">02:10</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
+      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo thứ cấp khác (đang gom — <a href="#" style="color:var(--accent)">mở rộng</a>)</td></tr>
+      <tr class="grp p2"><td><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td><td colspan="4">Nguyên nhân gốc: Nhiệt độ lò reflow dao động (<span class='mono'>OVEN_TEMP_OSC</span>) <span class="ds-small">— gom 8 cảnh báo thứ cấp</span></td><td class="ds-small">Bậc 2/3 · còn 01:20</td><td><button class="btn sm primary" type="button">Ack nhóm</button></td></tr>
+      <tr class="p3"><td></td><td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-REF-01</td><td><b class="mono" style="font-size:12px">OVEN_ZONE3_H</b> <span class="ds-small">vùng 3 cao</span></td><td class="num muted">—</td><td class="num">04:02</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
+      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 7 cảnh báo thứ cấp khác</td></tr>
+      <tr class="p1 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-MNT-04</td>
+      <td><b class="mono" style="font-size:12px">FEEDER_JAM_12</b><br><span class="ds-body">Kẹt feeder #12 — máy dừng gắp</span></td>
+      <td class="num"><span class="num gt-cao">kẹt = 1</span><br><span class="ds-small">—</span></td>
+      <td class="num">00:42</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:18</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p1 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-REF-01</td>
+      <td><b class="mono" style="font-size:12px">OVEN_ZONE5_HH</b><br><span class="ds-body">Lò reflow vùng 5 quá nhiệt (HH)</span></td>
+      <td class="num"><span class="num gt-cao">268,4 °C</span><br><span class="ds-small">HH 265 °C</span></td>
+      <td class="num">03:10</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 2/3 · còn 01:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-SPI-02</td>
+      <td><b class="mono" style="font-size:12px">SPI_VOL_DEV</b><br><span class="ds-body">Lệch thể tích kem hàn dưới mức</span></td>
+      <td class="num"><span class="num gt-cao">78 %</span><br><span class="ds-small">L 85 %</span></td>
+      <td class="num">18:05</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 06:55</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr>
+    </tbody></table></div><div class="tbl-wrap" data-st="du-lieu-cu"><table class="tbl"><thead><tr><th style="width:36px"></th><th><span data-i18n="giamSat.canhBao.cot.uuTien">Ưu tiên</span></th><th><span data-i18n="giamSat.canhBao.cot.taiSan">Tài sản</span></th><th><span data-i18n="giamSat.canhBao.cot.maThongDiep">Mã · thông điệp</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.giaTri">Giá trị / giới hạn</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.tuoi">Tuổi</span></th><th><span data-i18n="giamSat.canhBao.cot.trangThai">Trạng thái ISA-18.2 · leo thang</span></th><th></th></tr></thead><tbody><tr class="p1 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-MNT-04</td>
+      <td><b class="mono" style="font-size:12px">FEEDER_JAM_12</b><br><span class="ds-body">Kẹt feeder #12 — máy dừng gắp</span></td>
+      <td class="num"><span class="num gt-cao">kẹt = 1</span><br><span class="ds-small">—</span></td>
+      <td class="num">00:42</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:18</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p1 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-REF-01</td>
+      <td><b class="mono" style="font-size:12px">OVEN_ZONE5_HH</b><br><span class="ds-body">Lò reflow vùng 5 quá nhiệt (HH)</span></td>
+      <td class="num"><span class="num gt-cao">268,4 °C</span><br><span class="ds-small">HH 265 °C</span></td>
+      <td class="num">03:10</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 2/3 · còn 01:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">AOI_FAILRATE_HI</b><br><span class="ds-body">Tỉ lệ lỗi AOI vượt ngưỡng</span></td>
+      <td class="num"><span class="num ">4,8 %</span><br><span class="ds-small">H 3,0 %</span></td>
+      <td class="num">12:30</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-SPI-02</td>
+      <td><b class="mono" style="font-size:12px">SPI_VOL_DEV</b><br><span class="ds-body">Lệch thể tích kem hàn dưới mức</span></td>
+      <td class="num"><span class="num gt-cao">78 %</span><br><span class="ds-small">L 85 %</span></td>
+      <td class="num">18:05</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 06:55</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">THT-01 ▸ THT-WAVE-01</td>
+      <td><b class="mono" style="font-size:12px">WAVE_PRE_LO</b><br><span class="ds-body">Nhiệt sấy sóng thấp</span></td>
+      <td class="num"><span class="num is-stale" title="Giá trị cũ — chưa xác nhận được vượt ngưỡng">82,4 °C</span> <span class="ds-small" style="color:var(--stale-ink)">cũ 3 ph</span><br><span class="ds-small">L 90 °C</span></td>
+      <td class="num">21:40</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 03:20</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-PRN-01</td>
+      <td><b class="mono" style="font-size:12px">SQUEEGEE_WEAR</b><br><span class="ds-body">Dao gạt gần hết tuổi thọ</span></td>
+      <td class="num"><span class="num ">92 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">1:12:05</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-CNV-02</td>
+      <td><b class="mono" style="font-size:12px">CNV_SPEED_DEV</b><br><span class="ds-body">Lệch tốc độ băng tải</span></td>
+      <td class="num"><span class="num ">0,82 m/ph</span><br><span class="ds-small">L 0,85 m/ph</span></td>
+      <td class="num">22:40</td>
+      <td><span class="ast cleared-unack"><i class="s">○</i>Đã hết · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 02:10</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">PKG ▸ PKG-WH-01</td>
+      <td><b class="mono" style="font-size:12px">AIR_PRESS_LO</b><br><span class="ds-body">Áp khí nén thấp</span></td>
+      <td class="num"><span class="num ">0,52 MPa</span><br><span class="ds-small">L 0,55 MPa</span></td>
+      <td class="num">05:12</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-AOI-03</td>
+      <td><b class="mono" style="font-size:12px">COMM_SLOW</b><br><span class="ds-body">Giao tiếp chậm — trễ vòng hỏi 2,4 s</span></td>
+      <td class="num"><span class="num ">2,4 s</span><br><span class="ds-small">H 2,0 s</span></td>
+      <td class="num">3:05:00</td>
+      <td><span class="ast oos"><i class="s">⊘</i>Ngoài dịch vụ (bảo trì)</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">CAL_DUE</b><br><span class="ds-body">Sắp đến hạn hiệu chuẩn camera</span></td>
+      <td class="num"><span class="num ">còn 6 ngày</span><br><span class="ds-small">≤ 7 ngày</span></td>
+      <td class="num">2:40:11</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-MNT-01</td>
+      <td><b class="mono" style="font-size:12px">NOZZLE_CLEAN</b><br><span class="ds-body">Nhắc vệ sinh đầu hút</span></td>
+      <td class="num"><span class="num ">—</span><br><span class="ds-small">—</span></td>
+      <td class="num">4:02:30</td>
+      <td><span class="ast shelved"><i class="s">⏸</i>Tạm ẩn đến 17:30</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03</td>
+      <td><b class="mono" style="font-size:12px">LOG_DISK</b><br><span class="ds-body">Ổ nhật ký gần đầy</span></td>
+      <td class="num"><span class="num ">91 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">5:30:12</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr></tbody></table></div><div class="tbl-wrap" data-st="chi-tiet"><table class="tbl"><thead><tr><th style="width:36px"></th><th><span data-i18n="giamSat.canhBao.cot.uuTien">Ưu tiên</span></th><th><span data-i18n="giamSat.canhBao.cot.taiSan">Tài sản</span></th><th><span data-i18n="giamSat.canhBao.cot.maThongDiep">Mã · thông điệp</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.giaTri">Giá trị / giới hạn</span></th><th class="num"><span data-i18n="giamSat.canhBao.cot.tuoi">Tuổi</span></th><th><span data-i18n="giamSat.canhBao.cot.trangThai">Trạng thái ISA-18.2 · leo thang</span></th><th></th></tr></thead><tbody><tr class="p1 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-MNT-04</td>
+      <td><b class="mono" style="font-size:12px">FEEDER_JAM_12</b><br><span class="ds-body">Kẹt feeder #12 — máy dừng gắp</span></td>
+      <td class="num"><span class="num gt-cao">kẹt = 1</span><br><span class="ds-small">—</span></td>
+      <td class="num">00:42</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:18</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p1 sel">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-REF-01</td>
+      <td><b class="mono" style="font-size:12px">OVEN_ZONE5_HH</b><br><span class="ds-body">Lò reflow vùng 5 quá nhiệt (HH)</span></td>
+      <td class="num"><span class="num gt-cao">268,4 °C</span><br><span class="ds-small">HH 265 °C</span></td>
+      <td class="num">03:10</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 2/3 · còn 01:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">AOI_FAILRATE_HI</b><br><span class="ds-body">Tỉ lệ lỗi AOI vượt ngưỡng</span></td>
+      <td class="num"><span class="num ">4,8 %</span><br><span class="ds-small">H 3,0 %</span></td>
+      <td class="num">12:30</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-SPI-02</td>
+      <td><b class="mono" style="font-size:12px">SPI_VOL_DEV</b><br><span class="ds-body">Lệch thể tích kem hàn dưới mức</span></td>
+      <td class="num"><span class="num gt-cao">78 %</span><br><span class="ds-small">L 85 %</span></td>
+      <td class="num">18:05</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 06:55</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p2 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td>
+      <td class="ds-small" style="max-width:150px">THT-01 ▸ THT-WAVE-01</td>
+      <td><b class="mono" style="font-size:12px">WAVE_PRE_LO</b><br><span class="ds-body">Nhiệt sấy sóng thấp</span></td>
+      <td class="num"><span class="num gt-cao">86,1 °C</span><br><span class="ds-small">L 90 °C</span></td>
+      <td class="num">21:40</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 03:20</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-PRN-01</td>
+      <td><b class="mono" style="font-size:12px">SQUEEGEE_WEAR</b><br><span class="ds-body">Dao gạt gần hết tuổi thọ</span></td>
+      <td class="num"><span class="num ">92 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">1:12:05</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-CNV-02</td>
+      <td><b class="mono" style="font-size:12px">CNV_SPEED_DEV</b><br><span class="ds-body">Lệch tốc độ băng tải</span></td>
+      <td class="num"><span class="num ">0,82 m/ph</span><br><span class="ds-small">L 0,85 m/ph</span></td>
+      <td class="num">22:40</td>
+      <td><span class="ast cleared-unack"><i class="s">○</i>Đã hết · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 02:10</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">PKG ▸ PKG-WH-01</td>
+      <td><b class="mono" style="font-size:12px">AIR_PRESS_LO</b><br><span class="ds-body">Áp khí nén thấp</span></td>
+      <td class="num"><span class="num ">0,52 MPa</span><br><span class="ds-small">L 0,55 MPa</span></td>
+      <td class="num">05:12</td>
+      <td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span><br><span class="ds-small">Bậc 1/3 · còn 04:50</span></td>
+      <td style="white-space:nowrap"><button class="btn sm primary" type="button">Ack</button> <button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p3 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span><span class="t">Trung bình</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-01 ▸ SMT01-AOI-03</td>
+      <td><b class="mono" style="font-size:12px">COMM_SLOW</b><br><span class="ds-body">Giao tiếp chậm — trễ vòng hỏi 2,4 s</span></td>
+      <td class="num"><span class="num ">2,4 s</span><br><span class="ds-small">H 2,0 s</span></td>
+      <td class="num">3:05:00</td>
+      <td><span class="ast oos"><i class="s">⊘</i>Ngoài dịch vụ (bảo trì)</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03 ▸ SMT03-AOI-07</td>
+      <td><b class="mono" style="font-size:12px">CAL_DUE</b><br><span class="ds-body">Sắp đến hạn hiệu chuẩn camera</span></td>
+      <td class="num"><span class="num ">còn 6 ngày</span><br><span class="ds-small">≤ 7 ngày</span></td>
+      <td class="num">2:40:11</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-02 ▸ SMT02-MNT-01</td>
+      <td><b class="mono" style="font-size:12px">NOZZLE_CLEAN</b><br><span class="ds-body">Nhắc vệ sinh đầu hút</span></td>
+      <td class="num"><span class="num ">—</span><br><span class="ds-small">—</span></td>
+      <td class="num">4:02:30</td>
+      <td><span class="ast shelved"><i class="s">⏸</i>Tạm ẩn đến 17:30</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr><tr class="p4 ">
+      <td><span class="chk "></span></td>
+      <td><span class="alarm-badge p4"><i class="g">●</i><span class="n">4</span><span class="t">Thông tin</span></span></td>
+      <td class="ds-small" style="max-width:150px">SMT-03</td>
+      <td><b class="mono" style="font-size:12px">LOG_DISK</b><br><span class="ds-body">Ổ nhật ký gần đầy</span></td>
+      <td class="num"><span class="num ">91 %</span><br><span class="ds-small">H 90 %</span></td>
+      <td class="num">5:30:12</td>
+      <td><span class="ast acked"><i class="s">◐</i>Đã ack</span></td>
+      <td style="white-space:nowrap"><button class="btn sm quiet" type="button">Chi tiết</button></td>
+    </tr></tbody></table></div>
+  
+  </main>
+  <aside class="drawer" data-st="chi-tiet" aria-label="Chi tiết cảnh báo">
+  <div class="h">
+    <div class="row sp-b"><span class="row"><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span><b class="mono" style="font-size:13px">OVEN_ZONE5_HH</b></span><button class="btn sm quiet" type="button" aria-label="Đóng"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <h2 class="ds-h3" style="margin:0">Lò reflow vùng 5 quá nhiệt (HH)</h2>
+    <div class="ds-small">SMT-03 ▸ <a href="#" style="color:var(--accent)">SMT03-REF-01</a> · <span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span> · mở <span class="num">03:10</span></div>
+  </div>
+  <div class="b">
+    <div class="row" style="align-items:stretch">
+      <div class="metric p1" style="flex:1"><span class="ds-caption">Giá trị</span><span class="v">268,4<small>°C</small></span><span class="age">chất lượng tốt · 1 s trước</span></div>
+      <div class="metric" style="flex:1"><span class="ds-caption">Giới hạn HH</span><span class="v">265,0<small>°C</small></span><span class="age">deadband 2 °C · trễ 5 s</span></div>
+    </div>
+    <div><div class="sec-h"><span data-i18n="giamSat.canhBao.nguyenNhan">Nguyên nhân có thể (từ định nghĩa)</span></div>
+      <ul style="margin:0;padding-left:18px" class="ds-body"><li>Nhiệt kế vùng 5 lệch hiệu chuẩn</li><li>Quạt đối lưu vùng 5 giảm tốc</li><li>Băng tải dừng khi lò đang nóng</li></ul></div>
+    <div><div class="sec-h"><span data-i18n="giamSat.canhBao.hanhDong">Hành động khuyến nghị</span></div>
+      <ol style="margin:0;padding-left:18px" class="ds-body"><li>Kiểm tra băng tải có đang chạy không</li><li>Nếu &gt; 270 °C: dừng cấp bo, mở nắp tản nhiệt</li><li>Gọi bảo trì nếu không giảm sau 3 phút</li></ol></div>
+    <div><div class="sec-h"><span data-i18n="giamSat.canhBao.xuHuong15">Xu hướng 15 phút (tag nhiệt vùng 5)</span></div><svg viewBox="0 0 360 96" width="100%" height="96" role="img" aria-label="Nhiệt độ vùng 5 trong 15 phút, có khoảng hở mất tín hiệu">
+  <line x1="0" y1="24" x2="360" y2="24" stroke="var(--alarm-p1)" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="4" y="18" font-size="11" fill="var(--alarm-p1-ink)" font-family="var(--font-body)">HH 265 °C</text>
+  <polyline fill="none" stroke="var(--text-1)" stroke-width="2" points="0,74 30,72 60,70 90,66 120,60 150,52 180,44"/>
+  <polyline fill="none" stroke="var(--text-1)" stroke-width="2" points="222,34 250,30 280,27 310,22 340,20 360,18"/>
+  <rect x="182" y="10" width="38" height="76" fill="var(--stale-soft)" opacity="0.8"/>
+  <text x="184" y="52" font-size="11" fill="var(--stale-ink)" font-family="var(--font-body)">hở 5 s</text>
+  <text x="0" y="94" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">−15 ph</text><text x="320" y="94" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">nay</text>
+</svg></div>
+    <div><div class="sec-h"><span data-i18n="giamSat.canhBao.nhatKy">Nhật ký sự kiện</span></div>
+      <ul class="tl"><li><span class="ts">19:58:02</span>Kích hoạt · giá trị 265,3 °C</li><li><span class="ts">19:58:07</span>Gửi thông báo bậc 1 (3 người)</li><li><span class="ts">20:01:10</span>Leo thang bậc 2 — chưa ack sau 3 phút</li><li><span class="ts">20:01:12</span>Gửi thông báo bậc 2 (2 người)</li></ul></div>
+    <div><div class="sec-h"><span data-i18n="giamSat.canhBao.giaoNhan">Gửi thông báo</span></div>
+      <div class="tbl-wrap"><table class="tbl"><tbody>
+        <tr><td>SMS</td><td>Trưởng ca</td><td>✓ Đã gửi</td><td class="num">19:58:09</td></tr>
+        <tr><td>Email</td><td>Quản lý SX</td><td>✓ Đã gửi</td><td class="num">20:01:12</td></tr>
+        <tr><td>Zalo</td><td>Kỹ sư bảo trì</td><td style="color:var(--alarm-p2-ink);font-weight:600">✕ Lỗi — thử lại 1/3</td><td class="num">20:01:13</td></tr>
+      </tbody></table></div></div>
+  </div>
+  <div class="f">
+    <button class="btn primary" type="button"><span data-i18n="chung.ack">Ack</span></button><button class="btn" type="button"><span data-i18n="giamSat.canhBao.shelve">Tạm ẩn ▾</span></button><button class="btn" type="button"><span data-i18n="giamSat.canhBao.ghiChu">Ghi chú</span></button><button class="btn" type="button"><span data-i18n="giamSat.canhBao.oos">Ngoài dịch vụ</span></button><a class="btn quiet" href="#"><span data-i18n="giamSat.canhBao.moMay">Mở máy L3 ↗</span></a>
+  </div>
+</aside>
+</div>
+<div class="demo" role="toolbar" aria-label="Chỉ có trong mockup"><b>Trạng thái</b><button type="button" data-set="state:hon-hop">12 hỗn hợp</button><button type="button" data-set="state:lu">Lũ</button><button type="button" data-set="state:du-lieu-cu">Tag stale</button><button type="button" data-set="state:chi-tiet">Chi tiết</button><span aria-hidden="true">·</span><b>Mật độ</b><button type="button" data-set="density:comfortable">1280×800</button><button type="button" data-set="density:default">1920×1080</button><span aria-hidden="true">·</span><b>Rail</b><button type="button" data-set="rail:closed">Thu gọn</button><button type="button" data-set="rail:open">Mở</button></div>
+<script src="shell.js"></script>
+</body>
+</html>
