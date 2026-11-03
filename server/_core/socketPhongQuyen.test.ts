@@ -341,6 +341,11 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
     may.emit("subscribe", MOI_KHOA);
     nd.emit("subscribe", MOI_KHOA);
     await vi.waitFor(() => expect(phongCua(nd)).toEqual(PHONG_TRINH_DUYET));
+    // PV-socket-1 fix round 1 (n3) — cổng federation là HAI tầng bất đồng bộ: chờ SỰ KIỆN kết thúc của nó (log từ chối `sites:invalid` của
+    // CHÍNH socket này — chỉ phát khi bộ phân giải đã trả `[]`) rồi mới khẳng định KHÔNG có phòng `sites:*` (không dựa vào một khoảng chờ).
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd.id!) && s.includes("sites:invalid"))).toBe(true));
+    expect(phongCua(nd)).toEqual(PHONG_TRINH_DUYET);
+    expect(phongCua(nd).filter((p) => p.startsWith("site"))).toEqual([]);
     await cho(50);
     expect(phongCua(may)).toEqual([]);
 

@@ -156,7 +156,8 @@ describe("ĐỘT BIẾN — lưới phải BẮT bốn dạng và THA điểm h�
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // Lỗ L1: `io.to(`site:${code}`)` / `io.to("sites:global")` — phòng ai đăng nhập cũng vào được. Từ PV-socket-1 phòng của `site:update` là
 // `sites:all` / `sites:corp:{mã}` (cổng `duocVaoPhongFederation`), định tuyến bởi `phongNhanSiteUpdate` (gương `dieuKienTrang`). Luật:
-//  (S1) `.to/.in` tới chuỗi `sites:global` hoặc chuỗi bắt đầu `site:` ⇒ CẤM ở mọi nơi;
+//  (S1) `.to/.in` tới một tên phòng DỰNG TẠI CHỖ bắt đầu `site:` / `sites:` (literal, template, phép nối `"sites:" + x`) ⇒ CẤM ở mọi nơi
+//       (fix round 1 m1 — kể cả trong hàm phát: tên phòng chỉ đến từ hằng / hàm dựng của socketPhongQuyen.ts);
 //  (S2) `.emit("site:update", …)` ⇒ CHỈ trong hàm `emitSiteUpdate` của socket.ts;
 //  (S3) `.to/.in` có đối số chạm `sites:` / tên phòng federation (hằng · hàm dựng) ⇒ CHỈ trong `emitSiteUpdate`;
 //  (S4) chuỗi `sites:all` / `sites:corp:` (literal, không tính chú thích) ⇒ CHỈ trong socketPhongQuyen.ts (không ai dựng tên phòng ở nơi khác).
@@ -170,12 +171,18 @@ export interface ViPhamSite {
   ma: string;
 }
 
+/** Đoạn chữ ĐẦU TIÊN (trái nhất) của mỗi tên phòng trong đối số: literal · template · phép nối `a + b` · ngoặc · mảng (fix round 1 m1). */
 function chuoiCua(e: ts.Expression): string[] {
+  if (ts.isParenthesizedExpression(e)) return chuoiCua(e.expression);
   if (ts.isStringLiteralLike(e)) return [e.text];
   if (ts.isTemplateExpression(e)) return [e.head.text];
+  if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) return chuoiCua(e.left);
   if (ts.isArrayLiteralExpression(e)) return e.elements.flatMap((x) => (ts.isExpression(x) ? chuoiCua(x) : []));
   return [];
 }
+
+/** Bộ lọc trước của lượt quét toàn server (fix round 1 m1): KHÔNG phân biệt hoa thường — phongSitesTapDoan / PHONG_SITES_TOAN_QUYEN … viết hoa S. */
+export const canQuetSite = (src: string): boolean => /site/i.test(src);
 
 export function quetPhatSite(src: string, file: string): ViPhamSite[] {
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
@@ -197,7 +204,7 @@ export function quetPhatSite(src: string, file: string): ViPhamSite[] {
         const ten = cur.expression.name.text;
         if ((ten !== "to" && ten !== "in") || cur.arguments.length === 0) continue;
         const dd = cur.arguments[0];
-        if (chuoiCua(dd).some((t) => t === "sites:global" || t.startsWith("site:"))) out.push({ file, dong: dong(n), luat: "S1", ma: dd.getText() });
+        if (chuoiCua(dd).some((t) => t.startsWith("site:") || t.startsWith("sites:"))) out.push({ file, dong: dong(n), luat: "S1", ma: dd.getText() });
         else if ((/sites:/.test(dd.getText()) || TEN_PHONG_FEDERATION.test(dd.getText())) && !trongHamPhat(n)) out.push({ file, dong: dong(n), luat: "S3", ma: dd.getText() });
       }
     }
@@ -215,7 +222,7 @@ describe("census PV-socket-1 — `site:update` chỉ phát theo phạm vi, từ 
     for (const p of tep) {
       const rel = relative(GOC, p).replace(/\\/g, "/");
       const src = readFileSync(p, "utf8");
-      if (!/site/.test(src)) continue;
+      if (!canQuetSite(src)) continue;
       vp.push(...quetPhatSite(src, rel));
     }
     expect(vp, vp.map((v) => `${v.file}:${v.dong} ${v.luat} ${v.ma}`).join("\n")).toEqual([]);
@@ -249,6 +256,17 @@ describe("ĐỘT BIẾN PV-socket-1 — lưới site:update phải BẮT", () =>
     expect(vp.map((v) => v.luat).sort()).toEqual(["S2", "S3"]);
     expect(quetPhatSite('io.to(PHONG_SITES_TOAN_QUYEN).emit("y", 1);', "server/services/x.ts").map((v) => v.luat)).toEqual(["S3"]);
   });
+  it("(m1) phép nối / template / ngoặc tới `site:` / `sites:` ⇒ S1 ĐỎ ở mọi nơi; tệp chỉ dùng tên hàm dựng (không chữ \"site\" thường) KHÔNG bị bỏ qua", () => {
+    for (const ma of ['io.to("site:" + c).emit("x", 1);', 'io.to("sites:" + "global").emit("x", 1);', 'io.to(("sites:corp:" + m)).emit("x", 1);', "io.to(`sites:${k}`).emit('x', 1);", 'io.in(["a", "sites:" + k]).emit("x", 1);']) {
+      expect(quetPhatSite(ma, "server/services/x.ts").map((v) => v.luat), ma).toContain("S1");
+    }
+    expect(doi('io.to("sites:" + "all").emit("site:update", goi);').some((v) => v.luat === "S1")).toBe(true); // kể cả trong hàm phát
+    const chiTenHam = 'import { phongSitesTapDoan } from "../_core/socketPhongQuyen";\nexport function f(io: any, c: string) { io.to(phongSitesTapDoan(c)!).emit("kpi:detail", 1); }\n';
+    expect(/site/.test(chiTenHam)).toBe(false); // bộ lọc cũ (phân biệt hoa thường) sẽ BỎ QUA tệp này
+    expect(canQuetSite(chiTenHam)).toBe(true); // bộ lọc THẬT của lượt quét toàn server
+    expect(quetPhatSite(chiTenHam, "server/services/x.ts").map((v) => v.luat)).toEqual(["S3"]);
+  });
+
   it("(S4) dựng tên phòng `sites:all` / `sites:corp:` ở tệp khác ⇒ ĐỎ (tham chiếu: socketPhongQuyen.ts được phép)", () => {
     expect(quetPhatSite('const p = "sites:all";', "server/services/x.ts").map((v) => v.luat)).toEqual(["S4"]);
     expect(quetPhatSite("const p = `sites:corp:${m}`;", "server/services/x.ts").map((v) => v.luat)).toEqual(["S4"]);

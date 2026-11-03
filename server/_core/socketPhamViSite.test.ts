@@ -99,7 +99,7 @@ const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TWIN_GOC = process.env.TWIN_STREAM_ENABLED;
 
 // ── người: A (tập đoàn C-A, có admin_system) · B (C-B, có) · OP (C-A, KHÔNG admin_system) · AD (admin) · Z (có quyền, 0 mã)
-//    N (cổng NÉM) · W (một mã sai hình dạng + C-A) · S (cổng CHẬM) ──
+//    N (cổng NÉM) · W (một mã có ký tự điều khiển + mã chữ tự do VN.HCM) · S (cổng CHẬM) ──
 const A = 21, B = 22, OP = 23, AD = 24, Z = 25, N = 26, W = 27, S = 28;
 type HangNguoi = { id: number; role: string; isActive: boolean | null; name: string; passwordChangedAt?: Date | null; passwordInvalidBefore?: Date | null };
 let NGUOI_DB: Record<number, HangNguoi> = {};
@@ -108,6 +108,7 @@ let TAP_DOAN: Record<number, string[]> = {};
 let QUYEN_FED = new Set<number>();
 let PHAM: Record<number, number[]> = {};
 let nemCongFed = new Set<number>();
+let giayPhepFed = true;
 let nemPhamViCho = new Set<number>();
 const CHAM_FED_MS: Record<number, number> = { [S]: 200 };
 
@@ -119,16 +120,18 @@ function datLai() {
   };
   SDK.chup = Object.fromEntries(Object.values(NGUOI_DB).map((n) => [n.id, { id: n.id, role: n.role, name: n.name }]));
   PHIEN_DB = Object.fromEntries(Object.values(NGUOI_DB).map((n) => [`ve-${n.id}`, { id: n.id * 100, userId: n.id, isActive: true, expiresAt: null }]));
-  TAP_DOAN = { [A]: ["C-A"], [B]: ["C-B"], [OP]: ["C-A"], [Z]: [], [N]: ["C-A"], [W]: ["xau ma!", "C-A"], [S]: ["C-A"] };
+  TAP_DOAN = { [A]: ["C-A"], [B]: ["C-B"], [OP]: ["C-A"], [Z]: [], [N]: ["C-A"], [W]: ["xau\u0007ma", "VN.HCM"], [S]: ["C-A"] };
   QUYEN_FED = new Set([A, B, Z, N, W, S]); // OP KHÔNG có admin_system/canView; AD là admin
   PHAM = { [A]: [1], [B]: [2], [OP]: [1], [Z]: [], [N]: [1], [W]: [1], [S]: [1] };
   PHAM_TWIN.ds = PHAM;
   nemCongFed = new Set();
+  giayPhepFed = true;
   nemPhamViCho = new Set();
 }
 datLai();
 
 const CONG_FED = {
+  coGiayPhep: async () => giayPhepFed,
   coQuyen: async (userId: number, role: string) => {
     if (nemCongFed.has(userId)) throw new Error("db nac (gia lap)");
     if (CHAM_FED_MS[userId]) await cho(CHAM_FED_MS[userId]);
@@ -188,6 +191,7 @@ const SITE_A: Site = { siteCode: "SA", siteId: 1, corporateCode: "C-A", isLocal:
 const SITE_B: Site = { siteCode: "SB", siteId: 2, corporateCode: "C-B", isLocal: false };
 const SITE_L: Site = { siteCode: "SL", siteId: 3, corporateCode: "C-A", isLocal: true }; // site CỤC BỘ (lõi này) gắn mã C-A ⇒ vẫn chỉ toàn quyền
 const SITE_N: Site = { siteCode: "SN", siteId: 4, corporateCode: null, isLocal: false }; // không mã tập đoàn ⇒ chỉ toàn quyền
+const SITE_V: Site = { siteCode: "SV", siteId: 5, corporateCode: "VN.HCM", isLocal: false }; // fix round 1 m3: mã tập đoàn chữ tự do
 const goi = (s: Site) => ({
   ...s, status: "active", freshness: "ok" as const, kpi: { yieldRate: 0.97, ngRate: 0.03, throughput: 1234, oee: 0.81 }, alerts: { open: 4, critical: 1 }, ts: Date.now(),
 });
@@ -265,7 +269,7 @@ describe("★★★ F1 — phòng `site:{code}` không còn", () => {
 });
 
 describe("★★★ F2 — `sites:all` / `sites:corp:{mã}`: mỗi người chỉ nhận site trong phạm vi tRPC của mình", () => {
-  it("(2) A chỉ SA · B chỉ SB · OP (không admin_system) không gì · Z (0 mã) không gì · W (mã xấu bị bỏ) chỉ SA · AD nhận SA SB SL SN đúng một lần mỗi site", async () => {
+  it("(2) A chỉ SA · B chỉ SB · OP (không admin_system) không gì · Z (0 mã) không gì · W (mã có ký tự điều khiển bị bỏ; VN.HCM giữ) chỉ SV · AD nhận SA SB SL SN SV đúng một lần mỗi site", async () => {
     const ds = await Promise.all([A, B, OP, AD, Z, W].map(noi));
     const [a, b, op, ad, z, w] = ds;
     const n = ds.map((c) => ghiNhan(c, "site:update"));
@@ -274,20 +278,20 @@ describe("★★★ F2 — `sites:all` / `sites:corp:{mã}`: mỗi người ch�
       expect(phongSites(a)).toEqual(["sites:corp:C-A"]);
       expect(phongSites(b)).toEqual(["sites:corp:C-B"]);
       expect(phongSites(ad)).toEqual(["sites:all"]);
-      expect(phongSites(w)).toEqual(["sites:corp:C-A"]);
+      expect(phongSites(w)).toEqual(["sites:corp:VN.HCM"]);
     }, { timeout: 3000 });
     await cho(150);
     expect(phongSites(op)).toEqual([]);
     expect(phongSites(z)).toEqual([]);
-    for (const s of [SITE_A, SITE_B, SITE_L, SITE_N]) socketMod.emitSiteUpdate(goi(s));
-    await vi.waitFor(() => expect(ma(n[3])).toEqual(["SA", "SB", "SL", "SN"]), { timeout: 3000 }); // đối chứng DƯƠNG: admin nhận tất (một lần mỗi site)
+    for (const s of [SITE_A, SITE_B, SITE_L, SITE_N, SITE_V]) socketMod.emitSiteUpdate(goi(s));
+    await vi.waitFor(() => expect(ma(n[3])).toEqual(["SA", "SB", "SL", "SN", "SV"]), { timeout: 3000 }); // đối chứng DƯƠNG: admin nhận tất (một lần mỗi site)
     await cho(200);
     expect(ma(n[0])).toEqual(["SA"]); // không SB (tập đoàn khác), không SL (site cục bộ), không SN (không mã)
     expect(ma(n[1])).toEqual(["SB"]);
     expect(n[2]).toEqual([]);
     expect(n[4]).toEqual([]);
-    expect(ma(n[5])).toEqual(["SA"]);
-    expect(n[3]).toHaveLength(4);
+    expect(ma(n[5])).toEqual(["SV"]);
+    expect(n[3]).toHaveLength(5);
   });
 
   it("(3) cổng NÉM (DB lỗi) ⇒ không join + SUBSCRIBE_DENIED; không quyền / 0 mã ⇒ cũng SUBSCRIBE_DENIED; đối chứng: A vào và nhận, không lỗi", async () => {
@@ -306,6 +310,18 @@ describe("★★★ F2 — `sites:all` / `sites:corp:{mã}`: mỗi người ch�
     await cho(100);
     expect(nhanN).toEqual([]);
     expect(loi[3]).toEqual([]);
+  });
+
+  it("(3c) fix round 1 m2 — KHÔNG có giấy phép MOD_FEDERATION ⇒ admin và A đều không vào + SUBSCRIBE_DENIED; đối chứng: giấy phép về ⇒ subscribe lại vào sites:all / sites:corp:C-A", async () => {
+    giayPhepFed = false;
+    const [ad, a] = await Promise.all([AD, A].map(noi));
+    const loi = [ad, a].map((c) => ghiNhan(c, "subscribe:error"));
+    for (const c of [ad, a]) c.emit("subscribe", { sitesGlobal: true });
+    await vi.waitFor(() => expect(loi.map((l) => l.length)).toEqual([1, 1]), { timeout: 3000 });
+    expect([phongSites(ad), phongSites(a)]).toEqual([[], []]);
+    giayPhepFed = true;
+    for (const c of [ad, a]) c.emit("subscribe", { sitesGlobal: true });
+    await vi.waitFor(() => expect([phongSites(ad), phongSites(a)]).toEqual([["sites:all"], ["sites:corp:C-A"]]), { timeout: 3000 });
   });
 
   it("(3b) unsubscribe {sitesGlobal}: rời phòng; cổng CHẬM + unsubscribe NGAY ⇒ kết quả muộn KHÔNG join; đối chứng: subscribe lại không unsubscribe ⇒ vào", async () => {
