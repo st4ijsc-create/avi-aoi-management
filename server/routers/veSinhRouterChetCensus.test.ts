@@ -82,5 +82,7 @@ describe("Dọn vệ sinh lô B — trang/thành phần client mồ côi và b�
     expect(doc("client/src/App.tsx")).not.toMatch(/AnalyticsSettings/);
     expect(doc("server/_core/index.ts")).not.toMatch(/simOtTelemetry|startSimOtTelemetry/);
     expect(doc("package.json")).not.toMatch(/sim-live-daemon|"sim:live"/);
+    // E0-1: lịch quét twinFidelity (ghi simulation_runs mỗi giờ, 80 941 hàng, fidelity 0 %) đã gỡ; kiểm tay `twinGov.runFidelityCheck` vẫn còn.
+    expect(doc("server/_core/backgroundJobs.ts")).not.toMatch(/startTwinFidelitySweep/);
   });
 });

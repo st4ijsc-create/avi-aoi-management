@@ -130,6 +130,8 @@ const TARGETS: RetentionTarget[] = [
   { table: "mqtt_connection_logs",       column: "timestamp",   envKey: "RETENTION_MQTT_CONNECTION_LOGS_DAYS",  defaultDays: 365 },
   { table: "mqtt_reconnect_logs",        column: "timestamp",   envKey: "RETENTION_MQTT_RECONNECT_LOGS_DAYS",   defaultDays: 365 },
   { table: "package_activity_logs",      column: "createdAt",   envKey: "RETENTION_PACKAGE_ACTIVITY_LOGS_DAYS", defaultDays: 365 },
+  // F0-1 (dọn vệ sinh 2026-11-04): sổ sự kiện VRAM tăng ≈ 745 hàng/ngày và trước đây KHÔNG mã nào xoá (66 423 hàng / 87 MB). 30 ngày là đủ cho chẩn đoán; KHÔNG phải sổ tuân thủ.
+  { table: "vram_events",                column: "createdAt",   envKey: "RETENTION_VRAM_EVENTS_DAYS",           defaultDays: 30 },
 ];
 
 /** Exposed for tests/inspection — do not mutate. */
