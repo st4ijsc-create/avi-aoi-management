@@ -20,7 +20,9 @@ Phần dưới chỉ PHÂN LOẠI các ô lệch giữa phán quyết chính th�
 | chính thức TRƯỢT (101) | 2 | 53 | 2 | 44 |
 
 Đồng thuận (đạt/đạt + trượt/trượt-hoặc-từ-chối-khác): 150 + 53 + 44 = 247 / 288 = 85,8 %; loại 30 dòng tập con (tt8 / ud8 / tv6 dùng LINT):
-247 / 258 = 95,7 %.
+247 / 258 = 95,7 %. (rà kiem-dinh) Con số này GỘP 44 dòng "chính thức trượt × OIP từ chối biên dịch" — cùng kết luận "không đạt" nhưng OIP từ
+chối biên dịch KHÔNG phải bằng chứng HÀNH VI; đồng thuận thuần hành vi (cả hai đều chạy được): đạt/đạt 150 + trượt/trượt 53 = 203 / (150 + 8 + 2 + 53)
+= 203 / 213 = 95,3 %.
 
 ### Ô chính thức ĐẠT × OIP trượt (8) — CẢ 8 do lệch ngữ nghĩa OIP, KHÔNG phải lỗi model bộ test chính thức bỏ sót
 1. **tt2-co-gian-tuong-tu ×4** — `THO / 27648.0` với `THO : INT`: OIP ép hằng REAL về INT và chia NGUYÊN (13824 / 27648.0 = **0**); IEC ed3 / RuSTy nới
@@ -34,8 +36,8 @@ Phần dưới chỉ PHÂN LOẠI các ô lệch giữa phán quyết chính th�
 
 ### Ô chính thức TRƯỢT × OIP đạt (2) — không phải OIP "dễ dãi"
 - **ud2-den-giao-thong** (chính thức 47/49): 2 test trượt nằm ở 5 kiểm của khối phụ `NhapNhay` mà kịch bản KHÔNG phủ (ghi trong `nguon`).
-- **tv2-dem-san-pham** (chính thức: không có dòng tổng kết test, mã thoát 1 = RuSTy không biên dịch / chạy được): OIP biên dịch và chạy đủ 30 kiểm
-  đạt — khác phương ngữ trình dịch, không phải hành vi sai.
+- **tv2-dem-san-pham** (chính thức: `KHONG_THAY_TONG_KET_TEST`, mã thoát 1 — **SUY LUẬN** (không có log RuSTy trong báo cáo): RuSTy không biên
+  dịch / chạy được): OIP biên dịch và chạy đủ 30 kiểm đạt — có thể là khác phương ngữ trình dịch, chưa xác nhận.
 
 ### Ô chính thức TRƯỢT × OIP từ chối khác (44)
 Lỗi biên dịch trên OIP ở lời giải cũng trượt chính thức (vd `unexpected 'REAL' in expression`) — hai bên cùng kết luận "không đạt".
