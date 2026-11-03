@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 //
-// R1b-2b-2b B-T7 — chip "Truyền thông n/m" (scadaDiag.tomTatTruyenThong, hợp đồng C2) + hiển thị endpoint / lỗi bị che.
+// R1b-2b-2b B-T7 — chip "Truyền thông N nối · M tắt" (scadaDiag.tomTatTruyenThong, hợp đồng C2) + hiển thị endpoint / lỗi bị che.
 // Render THẬT với bundle i18n vi/en/zh THẬT; chỉ mock hợp đồng mạng.
-//   - chip: "Truyền thông {ketNoi}/{tong}" (+ " · edge {edge}" khi > 0); edge KHÔNG vào mẫu số; mất > 0 ⇒ tone "mat"; lỗi / đang tải /
-//     tong = 0 & edge = 0 ⇒ không render; là liên kết tới /scada/diag.
+//   - chip: "Truyền thông {ketNoi} nối · {khac} tắt" (+ " · N đang nối lại" / " · N mất" / " · edge N" khi > 0); mất > 0 ⇒ tone "mat"; lỗi / đang tải /
+//     tong = 0 & edge = 0 ⇒ không render; là liên kết tới /scada/diag. Hợp đồng C2 KHÔNG đổi (chủ dự án 2026-11-04: "0/15" làm 15 adapter "Đã tắt" trông như bật).
 //   - bảng M10 + ngăn tag: endpoint / loi null ⇒ "—", title rỗng, KHÔNG chuỗi "null" / "undefined"; maLoi hiện câu dịch; tamKhoa
 //     hiện huy hiệu và KHÔNG bao giờ bị che.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -55,19 +55,19 @@ afterEach(() => {
 const TOM = { ketNoi: 3, dangNoi: 0, mat: 1, khac: 0, tong: 4, edge: 1, tinhLuc: "2026-10-31T00:00:00.000Z" };
 
 describe("ChipTruyenThong", () => {
-  it("★ 3/4 · edge 1, tone mất, liên kết /scada/diag, làm mới 15 s không thử lại", () => {
+  it("★ 3 nối · 0 tắt · 1 mất · edge 1, tone mất, liên kết /scada/diag, làm mới 15 s không thử lại", () => {
     srv.data = TOM;
     render(<ChipTruyenThong />);
-    const chip = screen.getByRole("link", { name: /Truyền thông 3\/4 · edge 1/ });
+    const chip = screen.getByRole("link", { name: "Truyền thông 3 nối · 0 tắt · 1 mất · edge 1" });
     expect(chip).toHaveAttribute("href", "/scada/diag");
     expect(chip).toHaveAttribute("data-tone", "mat");
     expect(srv.opts).toMatchObject({ refetchInterval: 15_000, retry: false });
   });
 
-  it("edge = 0 ⇒ không có đoạn '· edge'; đang nối lại ⇒ tone dang_noi; sạch ⇒ trung tính", () => {
+  it("edge = 0 ⇒ không có đoạn '· edge'; đang nối lại ⇒ tone dang_noi + đoạn riêng; sạch ⇒ trung tính", () => {
     srv.data = { ...TOM, mat: 0, dangNoi: 1, ketNoi: 3, tong: 4, edge: 0 };
     const { rerender } = render(<ChipTruyenThong />);
-    expect(screen.getByRole("link")).toHaveTextContent(/^Truyền thông 3\/4$/);
+    expect(screen.getByRole("link")).toHaveTextContent(/^Truyền thông 3 nối · 0 tắt · 1 đang nối lại$/);
     expect(screen.getByRole("link")).toHaveAttribute("data-tone", "dang_noi");
     srv.data = { ...TOM, mat: 0, dangNoi: 0, ketNoi: 4, tong: 4, edge: 0 };
     rerender(<ChipTruyenThong />);
@@ -88,21 +88,31 @@ describe("ChipTruyenThong", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("chỉ có adapter edge (tong 0, edge 2) ⇒ vẫn hiện, 0/0 · edge 2", () => {
+  it("chỉ có adapter edge (tong 0, edge 2) ⇒ vẫn hiện, 0 nối · 0 tắt · edge 2", () => {
     srv.data = { ...TOM, ketNoi: 0, mat: 0, tong: 0, edge: 2 };
     render(<ChipTruyenThong />);
-    expect(screen.getByRole("link")).toHaveTextContent("Truyền thông 0/0 · edge 2");
+    expect(screen.getByRole("link")).toHaveTextContent("Truyền thông 0 nối · 0 tắt · edge 2");
+  });
+
+  it("★ ca DEV thật: 15 adapter bật cấu hình nhưng cả 15 'Đã tắt' ⇒ '0 nối · 15 tắt' (không còn '0/15'); tooltip giải thích", () => {
+    srv.data = { ketNoi: 0, dangNoi: 0, mat: 0, khac: 15, tong: 15, edge: 0, tinhLuc: "2026-11-03T00:00:00.000Z" };
+    render(<ChipTruyenThong />);
+    const chip = screen.getByRole("link");
+    expect(chip).toHaveTextContent(/^Truyền thông 0 nối · 15 tắt$/);
+    expect(chip.textContent).not.toMatch(/\d+\/\d+/);
+    expect(chip.getAttribute("title")).toMatch(/15 adapter đã bật cấu hình.*0 đang nối.*15 tắt hoặc chưa rõ/);
+    expect(chip).toHaveAttribute("data-tone", "trung_tinh");
   });
 
   it("en / zh: nhãn đổi theo ngôn ngữ", async () => {
     srv.data = TOM;
     await i18next.changeLanguage("en");
     const { unmount } = render(<ChipTruyenThong />);
-    expect(screen.getByRole("link").textContent).toMatch(/^Communication 3\/4 · edge 1$/);
+    expect(screen.getByRole("link").textContent).toMatch(/^Communication 3 connected · 0 off · 1 lost · edge 1$/);
     unmount();
     await i18next.changeLanguage("zh");
     render(<ChipTruyenThong />);
-    expect(screen.getByRole("link").textContent).toMatch(/3\/4/);
+    expect(screen.getByRole("link").textContent).toMatch(/3.*已连接.*0.*已关闭/);
     expect(screen.getByRole("link").textContent).not.toMatch(/Truyền|Communication/);
     await i18next.changeLanguage("vi");
   });

@@ -24670,9 +24670,11 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "Communication {{ketNoi}}/{{tong}}",
-        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
+        "nhan": "Communication {{ketNoi}} connected · {{khac}} off",
+        "dangNoi": "{{dangNoi}} reconnecting",
+        "mat": "{{mat}} lost",
+        "edge": "edge {{edge}}",
+        "moTa": "Of {{tong}} adapters enabled in configuration (edge not counted): {{ketNoi}} connected · {{dangNoi}} reconnecting · {{mat}} lost · {{khac}} off or unknown — click to open communication diagnostics"
       }
     },
     "orchestration": {
