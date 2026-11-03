@@ -189,9 +189,17 @@ describe("predictiveAlert.list — Task 6 (Wave 4): resolutionNotes/status contr
 });
 
 describe("predictiveAlert.generatePredictions — W0-1 join/column fix (integration)", () => {
+  // Phạm vi hẹp CÓ CHỦ ĐÍCH: một machineId không tồn tại. Câu SELECT (join machines→stations→lines→workshops→factories, cột "overallResult")
+  // vẫn được Postgres phân tích + chạy ĐỦ ⇒ lỗi cột/join vẫn làm test đỏ; nhưng không còn quét vòng forecast qua MỌI máy có inspection của _test
+  // (trước: >30 s tuỳ kích thước _test ⇒ hết giờ không liên quan tới W0-1).
+  const MAY_KHONG_TON_TAI = 2_000_000_000;
   it("resolves without a SQL error (previously: hard failure — nonexistent m.factoryId / i.result)", async () => {
     if (!db) return;
-    await expect(alertCaller.generatePredictions({ daysToAnalyze: 7 })).resolves.toMatchObject({ success: true });
+    await expect(alertCaller.generatePredictions({ machineId: MAY_KHONG_TON_TAI, daysToAnalyze: 7 })).resolves.toEqual({
+      success: true,
+      alertsCreated: 0,
+      message: "Not enough data for prediction",
+    });
   });
 });
 
