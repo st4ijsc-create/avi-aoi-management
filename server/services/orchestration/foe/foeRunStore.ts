@@ -470,6 +470,11 @@ export async function persistContext(rc: RunStoreContext): Promise<void> {
  * confirmed by the approver of an earlier hitl_gate of the run (≠ run owner) — see findSeparateGateApproval.
  */
 export const FOE_ACTION_TOOL = FOE_ENGINE_TOOL;
+/**
+ * The lifetime of an engine authorisation row (ai_pending_actions."expiresAt" = creation + this). R1b-2b-2a A2(m2): named so the
+ * boot re-send of an interrupted STOP compensation can never be allowed past the original STOP's own authorisation (foeBuTruBiNgat).
+ */
+export const FOE_ACTION_TTL_MS = 3_600_000;
 
 export async function ensureOrchestrationAction(
   user: RunStoreUser,
@@ -557,7 +562,7 @@ export async function ensureOrchestrationAction(
         ? { status: "confirmed" as const, previewJson }
         : { status: "executed" as const, executedAt: new Date() }),
       idempotencyKey: actionId,
-      expiresAt: new Date(Date.now() + 3_600_000),
+      expiresAt: new Date(Date.now() + FOE_ACTION_TTL_MS),
     });
     return actionId;
   } catch {

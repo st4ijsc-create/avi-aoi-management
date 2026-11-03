@@ -238,6 +238,8 @@ const CLASSIFIED: Record<string, Kind> = {
   },
   "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
   "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
+  // 2026-11-03 R1b-2b-2a A2(m2) — the boot decision about ONE interrupted compensation (called only by the engine boot hook rehydrateInterruptedRuns)
+  "server/services/orchestration/foe/foeBuTruBiNgat.ts": { kind: "allow", reason: "boot only: read-only facts (step rows, adapter, owner changes, command_log) of a run the FOE boot hook already holds; system principal, no caller identity, no run id from a caller, returns no run to anyone" },
   // 2026-10-12 doc 81 Đợt 10 task C — the engine's CENTRAL RunStore (persistence / gate functions moved out of foeEngine unchanged)
   // + the appliers of an edge segment (recordEdgeStepRows / applyEdgeSegmentEnd, called by B's node endpoints after their
   // assignment + node-scope check). edgeRunGuard.ts was deleted (the per-step /authorize replaces it).
