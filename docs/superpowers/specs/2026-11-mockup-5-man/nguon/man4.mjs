@@ -58,7 +58,7 @@ function bang(s) {
       ${con(2, "SMT-03 ▸ SMT03-REF-01", "OVEN_ZONE5_HH", "vùng 5 quá nhiệt", "02:11")}
       ${con(2, "SMT-03 ▸ SMT03-MNT-04", "FEEDER_STARVE", "thiếu linh kiện, máy chờ", "02:11")}
       ${con(3, "SMT-03 ▸ SMT03-CNV-02", "CNV_SPEED_DEV", "lệch tốc độ băng tải", "02:10")}
-      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo quy trình khác của các máy sau PLC (đang gom — <a href="#" style="color:var(--accent)">mở rộng</a>)</td></tr>
+      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo quy trình khác của các máy sau PLC (đang gom) <button class="btn sm quiet" type="button">mở rộng</button></td></tr>
       ${nhom(2, "Nhiệt độ lò reflow dao động (<span class='mono'>OVEN_TEMP_OSC</span>)", 8)}
       ${con(3, "SMT-03 ▸ SMT03-REF-01", "OVEN_ZONE3_H", "vùng 3 cao", "04:02")}
       <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 7 cảnh báo thứ cấp khác</td></tr>
@@ -83,7 +83,7 @@ const drawer = `<aside class="drawer" data-st="chi-tiet" aria-label="Chi tiết 
   <div class="h">
     <div class="row sp-b"><span class="row">${alarmBadge(1)}<b class="mono" style="font-size:13px">OVEN_ZONE5_HH</b></span><button class="btn sm quiet" type="button" aria-label="Đóng">${ic("x").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')}</button></div>
     <h2 class="ds-h3" style="margin:0">Lò reflow vùng 5 quá nhiệt (HH)</h2>
-    <div class="ds-small">SMT-03 ▸ <a href="#" style="color:var(--accent)">SMT03-REF-01</a> · ${ast("act-unack")} · mở <span class="num">03:10</span></div>
+    <div class="ds-small">SMT-03 ▸ SMT03-REF-01 · ${ast("act-unack")} · mở <span class="num">03:10</span></div>
   </div>
   <div class="b">
     <div class="row" style="align-items:stretch">
@@ -164,7 +164,7 @@ export function man4() {
     ]),
     mauCss: `
 .flood { display: flex; align-items: center; gap: var(--gap-4); padding: var(--gap-3) var(--gap-4); background: var(--alarm-p2-soft); color: var(--alarm-p2-ink); border: 2px solid var(--alarm-p2); border-radius: var(--radius-2); }
-.flood-ic { font-size: 22px; color: var(--alarm-p2); }
+.flood-ic { font-size: 22px; color: var(--alarm-p2-ink); }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; }
 .bars i { width: 10px; background: var(--isa-graphic-muted); border-radius: 2px 2px 0 0; min-height: 4px; }
 .bars i.hi { background: var(--alarm-p2); }

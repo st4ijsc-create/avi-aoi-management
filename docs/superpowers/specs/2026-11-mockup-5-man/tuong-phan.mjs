@@ -22,7 +22,7 @@ P.push(["accent", "isa-surface", "liên kết/nút viền accent trên thẻ", T
 P.push(["isa-rail-ink", "isa-rail", "chữ rail", T], ["isa-rail-ink-2", "isa-rail", "chữ rail phụ", T], ["isa-rail-ink", "isa-rail-2", "chữ rail mục chọn", T], ["accent", "isa-rail-2", "chữ accent trên mục chọn rail", T]);
 for (const s of ["execute", "idle", "resetting", "held", "suspended", "stopped", "aborted"]) P.push([`packml-${s}`, "isa-surface", `trạng thái PackML ${s} (chữ)`, T]);
 for (const k of [1, 3, 4, 5]) P.push([`actuation-${k}-ink`, `actuation-${k}`, `chữ mức tác động ${k}`, T]);
-P.push(["stop-ink", "stop", "chữ nút DỪNG MÁY", T], ["isa-line-strong", "isa-surface", "viền ô số (đồ hoạ)", 3]);
+P.push(["actuation-3", "isa-surface-2", "cờ mức tác động L3 (chữ)", T], ["alarm-p2-ink", "alarm-p2-soft", "ký tự ▲ dải lũ (chữ ink)", T], ["stop-ink", "stop", "chữ nút DỪNG MÁY", T], ["isa-line-strong", "isa-surface", "viền ô số (đồ hoạ)", 3]);
 let fail = 0;
 const rows = P.map(([f, b, d, min]) => { const r = cr(tok[f], tok[b]); const ok = r >= min; if (!ok) fail++; return `| ${d} | \`${f}\` ${tok[f]} | \`${b}\` ${tok[b]} | ${r.toFixed(2)}:1 | ≥ ${min}:1 | ${ok ? "ĐẠT" : "**KHÔNG ĐẠT**"} |`; });
 console.log(`# Đo tương phản — token.css\n\nSinh bằng \`node tuong-phan.mjs\` (WCAG 2.x, đọc hex từ token.css). Chữ/giá trị ≥ 4,5:1; đồ hoạ ≥ 3:1.\n\n| Cặp | Màu chữ/đồ hoạ | Nền | Tỉ lệ | Ngưỡng | KQ |\n|---|---|---|---|---|---|\n${rows.join("\n")}\n\n**${P.length} cặp, ${fail} không đạt.**`);

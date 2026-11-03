@@ -9,7 +9,7 @@
 <style>
 
 .flood { display: flex; align-items: center; gap: var(--gap-4); padding: var(--gap-3) var(--gap-4); background: var(--alarm-p2-soft); color: var(--alarm-p2-ink); border: 2px solid var(--alarm-p2); border-radius: var(--radius-2); }
-.flood-ic { font-size: 22px; color: var(--alarm-p2); }
+.flood-ic { font-size: 22px; color: var(--alarm-p2-ink); }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; }
 .bars i { width: 10px; background: var(--isa-graphic-muted); border-radius: 2px 2px 0 0; min-height: 4px; }
 .bars i.hi { background: var(--alarm-p2); }
@@ -185,7 +185,7 @@
       <tr class="p2"><td></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-REF-01</td><td><b class="mono" style="font-size:12px">OVEN_ZONE5_HH</b> <span class="ds-small">vùng 5 quá nhiệt</span></td><td class="num muted">—</td><td class="num">02:11</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
       <tr class="p2"><td></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-MNT-04</td><td><b class="mono" style="font-size:12px">FEEDER_STARVE</b> <span class="ds-small">thiếu linh kiện, máy chờ</span></td><td class="num muted">—</td><td class="num">02:11</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
       <tr class="p3"><td></td><td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-CNV-02</td><td><b class="mono" style="font-size:12px">CNV_SPEED_DEV</b> <span class="ds-small">lệch tốc độ băng tải</span></td><td class="num muted">—</td><td class="num">02:10</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
-      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo quy trình khác của các máy sau PLC (đang gom — <a href="#" style="color:var(--accent)">mở rộng</a>)</td></tr>
+      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo quy trình khác của các máy sau PLC (đang gom) <button class="btn sm quiet" type="button">mở rộng</button></td></tr>
       <tr class="grp p2"><td><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></td><td><span class="alarm-badge p2"><i class="g">▲</i><span class="n">2</span><span class="t">Cao</span></span></td><td colspan="4">Nguyên nhân gốc: Nhiệt độ lò reflow dao động (<span class='mono'>OVEN_TEMP_OSC</span>) <span class="ds-small">— gom 8 cảnh báo thứ cấp</span></td><td class="ds-small">Bậc 2/3 · còn 01:20</td><td><button class="btn sm primary" type="button">Ack nhóm</button></td></tr>
       <tr class="p3"><td></td><td><span class="alarm-badge p3"><i class="g">▼</i><span class="n">3</span></span></td><td class="ds-small">SMT-03 ▸ SMT03-REF-01</td><td><b class="mono" style="font-size:12px">OVEN_ZONE3_H</b> <span class="ds-small">vùng 3 cao</span></td><td class="num muted">—</td><td class="num">04:02</td><td><span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span></td><td></td></tr>
       <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 7 cảnh báo thứ cấp khác</td></tr>
@@ -440,7 +440,7 @@
   <div class="h">
     <div class="row sp-b"><span class="row"><span class="alarm-badge p1"><i class="g">■</i><span class="n">1</span><span class="t">Nghiêm trọng</span></span><b class="mono" style="font-size:13px">OVEN_ZONE5_HH</b></span><button class="btn sm quiet" type="button" aria-label="Đóng"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <h2 class="ds-h3" style="margin:0">Lò reflow vùng 5 quá nhiệt (HH)</h2>
-    <div class="ds-small">SMT-03 ▸ <a href="#" style="color:var(--accent)">SMT03-REF-01</a> · <span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span> · mở <span class="num">03:10</span></div>
+    <div class="ds-small">SMT-03 ▸ SMT03-REF-01 · <span class="ast act-unack"><i class="s">●</i>Đang kích hoạt · chưa ack</span> · mở <span class="num">03:10</span></div>
   </div>
   <div class="b">
     <div class="row" style="align-items:stretch">

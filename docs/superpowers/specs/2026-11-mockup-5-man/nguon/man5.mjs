@@ -106,7 +106,7 @@ function chiTietSim() {
   ${tabs("tq")}
   <div class="d-b">
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
-      <div class="stack"><div class="sec-h">${i("duLieuChu.taiSan.lop", "Lớp thiết bị")}</div><a href="#" style="color:var(--accent);font-weight:600">AOI — Kiểm tra quang học ↗</a><span class="ds-small">Lớp đã xuất bản · v3 · bộ tag mẫu 18</span></div>
+      <div class="stack"><div class="sec-h">${i("duLieuChu.taiSan.lop", "Lớp thiết bị")}</div><a class="btn quiet" href="#" style="justify-content:flex-start">AOI — Kiểm tra quang học ↗</a><span class="ds-small">Lớp đã xuất bản · v3 · bộ tag mẫu 18</span></div>
       <div class="stack"><div class="sec-h">${i("duLieuChu.taiSan.thongTinGoc", "Thông tin gốc")}</div><span class="ds-body">Hãng: <b>Simulator</b> · Model: <b>AOI-SIM-1</b></span><span class="ds-body">Serial: <span class="mono">SIM-0001</span> · FW: <span class="mono">sim-1.4.2</span></span></div>
     </div>
     <div class="sec-h">${i("duLieuChu.taiSan.thuocTinh", "Thuộc tính theo lược đồ lớp")}</div>

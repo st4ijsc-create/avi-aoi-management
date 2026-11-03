@@ -45,15 +45,21 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 3. "Dừng — chờ máy xác nhận" = huy hiệu tạm nhấp nháy cạnh nhãn PackML (việc của scada-ui; dùng `animation` CSS thuần, tắt khi `prefers-reduced-motion` — cùng quy tắc `chipPulse` của `AlarmChip`).
 4. Sửa dữ liệu mẫu màn 5 `ngoai-pham-vi`: người dùng chỉ được gán Line SMT-01; liên kết `?node=SMT-03` trỏ tới nút KHÔNG có trong cây của họ ⇒ **cây không tô chọn dòng nào** (trước đây tô SMT-01 trong khi thông báo nói SMT-03), thông báo nói rõ nguồn, số thiết bị trong cây/chân cây chỉ tính phần được gán (14, không còn 142).
 
+## Sửa theo kiem-dinh 2026-11-04 (báo cáo `D:\SOURCES\_kd_out\mock_out\BAO-CAO.md`, đo @713eb58a3)
+1. **R1 tương phản**: ký tự ▲ của dải lũ dùng `--alarm-p2-ink` (6,96:1) thay `--alarm-p2` (3,64:1 trên nền nhạt). Rà toàn bộ: không còn chữ/ký tự nào dùng `color: var(--alarm-pN)` trực tiếp (grep = 0); màu chính chỉ cho glyph SVG/viền/ô đặc có chữ trắng. Thêm 2 cặp vào `tuong-phan.mjs` (cờ L3 trên nền lõm, ▲ lũ).
+2. **R4 vùng chạm — KHÔNG ngoại lệ**: `.btn.sm`, `AlarmChip`, `.cmdk`, `.field` và hộp chọn `.chk` đều dùng `min-height/width: var(--touch-min)` (48 px @comfortable, 40 px @default); "sm" chỉ nhỏ chữ/đệm. Liên kết trong dòng chữ đổi thành nút `.btn.quiet` (mở rộng, lớp thiết bị) hoặc bỏ liên kết (mã máy ở tiêu đề AlarmDrawer — "Mở máy L3" ở chân ngăn đã có). Công cụ đo kèm: `node do-cham.mjs` → **728 phần tử tương tác, 0 dưới mục tiêu chạm** ở cả hai mật độ (loại khung `.demo` của mockup).
+3. **Quy tắc 6, nhất quán dữ liệu cũ**: vỏ có dữ liệu cũ hiện diện (`.is-stale` hoặc `.fresh.stale` đang hiển thị — `shell.js` đặt `data-has-stale` trên `.app`; app thật suy từ dữ liệu) ⇒ **AlarmChip P1 đứng yên, viền đứt tím + dấu "◇ cũ"**. Áp cho cả man-1 và man-4 (man-4/du-lieu-cu hết nhấp nháy). Một tên class duy nhất `.is-stale` (scada-ui đổi `.stale` theo).
+4. **Token cho scada-ui bỏ hex/rgba thô** (man-2-3): `--scrim` (phủ nền hộp thoại, color-mix từ `--text-1`), `--hatch-bg` / `--hatch-line` / `--hatch-stale` (gạch xiên; SVG `<pattern>` dùng `fill: var(--hatch-bg)` / `stroke: var(--hatch-line)` từ CSS), `--mock-canvas` / `--mock-bar` / `--mock-bar-ink` / `--mock-bar-ink-2` / `--mock-bar-line` / `--mock-bar-line-2` (khung điều khiển + nền ngoài CHỈ của mockup); chữ trắng trên nền đặc = `--accent-ink`. `--stale-soft`, `--stale`, `--isa-graphic`, `--isa-graphic-muted` đã có từ đầu.
+
 ## Tự kiểm 8 quy tắc §3 (không thay cho kiem-dinh)
 | # | Quy tắc | Bằng chứng |
 |---|---|---|
 | 1 | Nền xám sáng; chữ 3 mức; accent chỉ tương tác; không xanh lá | `token.css` `--isa-*`, `--text-1/2/3`; `grep -i green` = 0; accent chỉ xuất hiện ở nút/tab/liên kết/focus/chọn |
 | 2 | Màu chỉ cho bất thường; 4 mức = hình+số+chữ; stale thắng cảnh báo; uncertain viền chấm; thiếu tag fault = không có tín hiệu | màn 4 `du-lieu-cu`; màn 5 hàng `fault`; ô `1,42 kW` uncertain |
 | 3 | Be Vietnam Pro + Geist Mono, tabular-nums, ≥ 11 px, không `text-[`/palette thô, mọi màu qua token | `grep` hex ngoài `token.css` = 0, `text-[` = 0, cỡ chữ < 11 px = 0 (lệnh trong lịch sử commit) |
-| 4 | comfortable (1280×800, ≥ 48 px) + default (1920×1080) | 28 ảnh, mỗi trạng thái cả hai cỡ |
-| 5 | Tương phản ≥ 4,5:1 cho giá trị | `tuong-phan.md`: 56 cặp, 0 không đạt (chữ ≥ 4,5:1, đồ hoạ ≥ 3:1) |
-| 6 | Hoạt ảnh chỉ CSS, tôn trọng reduced-motion, không hoạt ảnh khi stale | `token.css` tắt mọi animation dưới `prefers-reduced-motion`; `.is-stale { animation: none !important }`; STOP 3 trạng thái thuộc màn 3 (scada-ui) |
+| 4 | comfortable (1280×800, ≥ 48 px) + default (1920×1080, ≥ 40 px) | 28 ảnh, mỗi trạng thái cả hai cỡ; `do-cham.mjs`: 728 phần tử, 0 dưới mục tiêu |
+| 5 | Tương phản ≥ 4,5:1 cho giá trị | `tuong-phan.md`: 58 cặp, 0 không đạt (chữ ≥ 4,5:1, đồ hoạ ≥ 3:1) |
+| 6 | Hoạt ảnh chỉ CSS, tôn trọng reduced-motion, không hoạt ảnh khi stale | `token.css` tắt mọi animation dưới `prefers-reduced-motion`; `.is-stale { animation: none !important }`; AlarmChip P1 đứng yên khi có dữ liệu cũ (mục "Sửa theo kiem-dinh"); STOP 3 trạng thái thuộc màn 3 (scada-ui) |
 | 7 | i18n: chuỗi là khoá vi | `khoa-i18n.md` (khoá dự kiến theo namespace vùng; chuỗi dữ liệu mẫu không phải khoá) |
 | 8 | Mô phỏng: viền 4 px + banner + watermark + pill, màn 2 không sót | màn 5 `may-mo-phong` đủ 4 lớp (+ nhãn đầu); **màn 2 do scada-ui** |
 

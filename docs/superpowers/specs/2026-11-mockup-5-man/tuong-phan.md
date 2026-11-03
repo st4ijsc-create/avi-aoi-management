@@ -58,7 +58,9 @@ Sinh bằng `node tuong-phan.mjs` (WCAG 2.x, đọc hex từ token.css). Chữ/g
 | chữ mức tác động 3 | `actuation-3-ink` #ffffff | `actuation-3` #866500 | 5.42:1 | ≥ 4.5:1 | ĐẠT |
 | chữ mức tác động 4 | `actuation-4-ink` #ffffff | `actuation-4` #c25400 | 4.60:1 | ≥ 4.5:1 | ĐẠT |
 | chữ mức tác động 5 | `actuation-5-ink` #ffffff | `actuation-5` #c0262d | 5.90:1 | ≥ 4.5:1 | ĐẠT |
+| cờ mức tác động L3 (chữ) | `actuation-3` #866500 | `isa-surface-2` #eef0f2 | 4.74:1 | ≥ 4.5:1 | ĐẠT |
+| ký tự ▲ dải lũ (chữ ink) | `alarm-p2-ink` #7c3600 | `alarm-p2-soft` #fbe0c8 | 6.96:1 | ≥ 4.5:1 | ĐẠT |
 | chữ nút DỪNG MÁY | `stop-ink` #ffffff | `stop` #c0262d | 5.90:1 | ≥ 4.5:1 | ĐẠT |
 | viền ô số (đồ hoạ) | `isa-line-strong` #727e89 | `isa-surface` #f7f8f9 | 3.90:1 | ≥ 3:1 | ĐẠT |
 
-**56 cặp, 0 không đạt.**
+**58 cặp, 0 không đạt.**

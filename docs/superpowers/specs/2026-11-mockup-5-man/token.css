@@ -67,6 +67,10 @@
   --stale-soft: #e6def2;
   --stale-ink: #4a3278;
   --uncertain: #7b8793;          /* viền chấm xám */
+  /* Gạch xiên dữ liệu cũ (dùng cho nền; SVG <pattern> dùng fill:var(--hatch-bg) / var(--hatch-line) từ CSS, không hex trong HTML) */
+  --hatch-bg: var(--stale-soft);
+  --hatch-line: var(--stale);
+  --hatch-stale: repeating-linear-gradient(135deg, transparent 0 5px, var(--stale-soft) 5px 7px);
 
   /* ───────────── Mô phỏng (spec v3 §7: viền 4 px + banner + watermark + pill) ───────────── */
   --sim: #0a7a72;
@@ -90,16 +94,20 @@
   --actuation-3: #866500;  --actuation-3-ink: #ffffff;
   --actuation-4: #c25400;  --actuation-4-ink: #ffffff;
   --actuation-5: #c0262d;  --actuation-5-ink: #ffffff;
+  /* Khung CHỈ của mockup (nền ngoài + thanh điều khiển) — không có trong app, khai ở đây để mọi tệp khác 0 hex/rgba */
+  --mock-canvas: #9aa2a9;  --mock-bar: #1a2025;  --mock-bar-ink: #f4f5f6;  --mock-bar-ink-2: #444f58;
+  --mock-bar-line: #7d8791;  --mock-bar-line-2: #8a929a;
   --stop: #c0262d;               /* nút DỪNG MÁY: luôn hiện, không bao giờ bị hộp xác nhận che */
   --stop-ink: #ffffff;
 
-  /* ───────────── Chữ ───────────── */
+
   --font-body: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   /* ───────────── Khoảng cách / bán kính / bóng ───────────── */
   --gap-1: 4px;  --gap-2: 8px;  --gap-3: 12px;  --gap-4: 16px;  --gap-5: 24px;  --gap-6: 32px;
   --radius-1: 3px;  --radius-2: 6px;  --radius-3: 10px;
+  --scrim: color-mix(in srgb, var(--text-1) 55%, transparent);   /* phủ nền hộp thoại / ngăn phủ */
   --shadow-drawer: -8px 0 24px rgba(27, 38, 48, 0.18);
   --shadow-pop: 0 6px 20px rgba(27, 38, 48, 0.16);
 
