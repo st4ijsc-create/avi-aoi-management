@@ -566,7 +566,9 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // ★★ 2026-11-01 · SCADA R1b-2b-2b A — C4: +1 mutation `scadaDiag.thuDocDiaChi` (ngoài bề mặt AI, sau MOD_OT_CONTROL) ⇒ tong 2446→2447 (= phamViDocCensus tong). Đo: ghim cũ đỏ ĐÚNG +1.
 // ★★ 2026-11-04 · dọn vệ sinh lô A (tho-ca-agent) — gỡ 10 router 0 client-caller (AST scripts/pha0/ban-do-client-goi.mjs): monteCarloFlow · simTargets · kbVector · aiVisionLanguage(+aiVision.language) · aiSmartAlertRouting · ntfClassifier · inspectionVariant · mpVariantSubform · thresholdSuggestion ⇒ −34 thủ tục. ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
 //   cổng: beMatAi 471→461 · aiCoCong 409→406 · aiMienTru 62→55 (aiSmartAlertRouting ×7 khỏi miễn trừ vận hành; aiVisionLanguage ×3 có cổng) · tong 2448→2414 trùng phamViDocCensus#GHIM.tong.
-const GHIM = { tong: 2414, beMatAi: 461, aiCoCong: 406, aiMienTru: 55, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-11-04 · dọn vệ sinh lô A2 + gỡ orchestrationGov/twinGov (chủ dự án chọn) — tho-ca-agent: thêm −77 thủ tục (A2 −68: parameterGuardrail, measurementSamples, spcConfig, aiAdvanced đã comment, 21 thủ tục lẻ… ; gỡ Gov −9). ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
+//   cổng: beMatAi 461→429 · aiCoCong 406→374 · tong 2414→2337 (aiMienTru 55 · ngoaiAiCoCong 0 không đổi); SKU khác: MOD_ENGINEERING 76→64 · MOD_OT_CONTROL 133→131 · MOD_QUALITY 67→62.
+const GHIM = { tong: 2337, beMatAi: 429, aiCoCong: 374, aiMienTru: 55, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
 //   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc
@@ -587,7 +589,7 @@ const GHIM = { tong: 2414, beMatAi: 461, aiCoCong: 406, aiMienTru: 55, ngoaiAiCo
  */
 const GHIM_MODULE_KHAC = {
   MOD_PRODUCTION: 62,
-  MOD_QUALITY: 67,
+  MOD_QUALITY: 62,
   // ★ 2026-09-26 doc 80 Đợt 0 Task 1 (ORC-11) — 68 → 73: 5 thủ tục `orchestrationGov.*` (trước là
   //   `protectedProcedure` trần, IDOR nhật ký run) nay đi qua `moduleProcedure("MOD_ENGINEERING")`
   //   như `orchestrationRouter`. Cố ý — lời khai ở `server/routers/orchestrationGovRouter.ts`.
@@ -598,7 +600,7 @@ const GHIM_MODULE_KHAC = {
   //   anh em trong router lập trình. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
   //   đo HEAD `8d51dc150` = 2283; lượt này +2 → 2285, chính là hai thủ tục này.)
   // ★ 2026-10-11 doc 81 Đợt 7 I fix 1 — 75 → 76: `orchestration.runListMeta` (query, MOD_ENGINEERING như listRuns).
-  MOD_ENGINEERING: 76,
+  MOD_ENGINEERING: 64,
   MOD_FEDERATION: 8,
   // ★ 2026-09-27 doc 80 Đợt 1 Task 4 (SAF-02) — 105 → 106: thủ tục MỚI `safety.sourceHealth`
   //   (query chỉ đọc) nằm trong `safetyRouter.ts`, nơi `protectedProcedure` đã bị che bằng
@@ -644,7 +646,7 @@ const GHIM_MODULE_KHAC = {
   //   phép với scadaDiag anh em. Không thủ tục cũ nào đổi cổng. Đo: ghim cũ đỏ (SKU khác đổi) ĐÚNG +1.
   // ★ 2026-11-01 · R1b-2b-2b A — C5 scadaCommands.dieuKienChoPhep +1 — 132 → 133: query chạy khô trên `moduleProcedure("MOD_OT_CONTROL")` của
   //   scadaCommandsRouter (cùng `thuTucLenh` với request). Không thủ tục cũ nào đổi cổng. Đo: ghim cũ đỏ (SKU khác đổi) ĐÚNG +1.
-  MOD_OT_CONTROL: 133,
+  MOD_OT_CONTROL: 131,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

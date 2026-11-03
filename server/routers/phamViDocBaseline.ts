@@ -126,7 +126,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments": "adminProcedure ⇒ admin = toàn quyền; quản trị gán người dùng ↔ nhà máy — dieu-phoi duyệt 2026-10-25",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
-    "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions":

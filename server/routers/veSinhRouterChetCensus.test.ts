@@ -11,13 +11,7 @@ import path from "node:path";
 const ROOT = path.resolve(__dirname, "..", "..");
 
 /** Router/namespace đã gỡ khỏi `appRouter` ở lô A — không có tệp, không có khoá. */
-const DA_GO = ["monteCarloFlow", "simTargets", "kbVector", "aiVisionLanguage", "aiSmartAlertRouting", "ntfClassifier", "inspectionVariant", "mpVariantSubform", "thresholdSuggestion"] as const;
-
-/** Router mà kế hoạch gọi là "chết" nhưng AST thấy người gọi thật ⇒ chủ dự án giữ nguyên (dieu-phoi, 2026-11-04). */
-const GIU_CO_NGUOI_GOI: Record<string, string> = {
-  orchestrationGov: "client/src/pages/SynapsePlatformPage.tsx",
-  twinGov: "client/src/pages/SynapsePlatformPage.tsx",
-};
+const DA_GO = ["monteCarloFlow", "simTargets", "kbVector", "aiVisionLanguage", "aiSmartAlertRouting", "ntfClassifier", "inspectionVariant", "mpVariantSubform", "thresholdSuggestion", "parameterGuardrail", "measurementSamples", "spcConfig", "orchestrationGov", "twinGov"] as const;
 
 type KetQua = { muc: string; goi: Array<{ loai: string; vt: string }>; dong: Array<{ loai: string }>; chuoi: Array<{ loai: string; vt: string; tr: string }> };
 function banDo(...muc: string[]): KetQua[] {
@@ -56,16 +50,6 @@ describe("Dọn vệ sinh — bản đồ AST: không client nào gọi tên đ�
       .map((x) => k.muc + " @ " + x.vt + " \"" + x.tr + "\""));
     expect(chuoi).toEqual([]);
   }, 180_000);
-
-  it("★ orchestrationGov / twinGov CÓ người gọi thật ở trang định tuyến — gỡ chúng là việc của chủ dự án (giai đoạn 4, P5), không phải của lô này", () => {
-    const kq = banDo(...Object.keys(GIU_CO_NGUOI_GOI));
-    for (const k of kq) {
-      const dsClient = k.goi.filter((x) => x.loai === "client").map((x) => x.vt.split(":")[0]);
-      expect(dsClient, k.muc).toContain(GIU_CO_NGUOI_GOI[k.muc]);
-    }
-    expect(fs.readFileSync(path.join(ROOT, "server/routers.ts"), "utf8")).toMatch(/^\s*orchestrationGov\s*:/m);
-    expect(fs.readFileSync(path.join(ROOT, "server/routers.ts"), "utf8")).toMatch(/^\s*twinGov\s*:/m);
-  }, 180_000);
 });
 
 describe("Dọn vệ sinh lô B — trang/thành phần client mồ côi và bộ phát giả lập DB đã gỡ không quay lại", () => {
@@ -76,8 +60,17 @@ describe("Dọn vệ sinh lô B — trang/thành phần client mồ côi và b�
     "client/src/components/ProductMachineMappingContent.tsx", "client/src/components/AIAnnotationAssistant.tsx", "client/src/components/AnnotationExportImport.tsx",
     "client/src/components/AnnotationTemplates.tsx", "client/src/components/AnnotationVersionHistory.tsx", "client/src/components/HistoryBatchOperations.tsx",
     "scripts/sim-factory/sim-live-daemon.mjs", "server/services/simOtTelemetryService.ts",
+    "client/src/pages/SynapsePlatformPage.tsx", "server/routers/orchestrationGovRouter.ts", "server/routers/twinGovRouter.ts", "server/services/orchestration/slaPolicy.ts",
   ];
   for (const f of DA_XOA) it(`${f}: không còn`, () => expect(fs.existsSync(path.join(ROOT, f))).toBe(false));
+  it("SynapsePlatform: client/src không còn nhắc tên trang (chủ dự án chọn GỠ, 2026-11-04); route cũ chỉ chuyển hướng; menu không còn mục", () => {
+    const khop: string[] = [];
+    const duyet = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); if (e.isDirectory()) { if (e.name !== "node_modules") duyet(q); } else if (/\.(tsx?|json)$/.test(e.name) && !/\.(test|spec)\./.test(e.name) && /SynapsePlatform/.test(fs.readFileSync(q, "utf8"))) khop.push(q); } };
+    duyet(path.join(ROOT, "client/src"));
+    expect(khop).toEqual([]);
+    expect(doc("client/src/App.tsx")).toMatch(/path="\/synapse-platform"><Redirect to="\/admin" \/>/);
+    expect(doc("client/src/lib/navigation.tsx")).not.toMatch(/href: "\/synapse-platform"/);
+  });
   it("App.tsx không còn khai AnalyticsSettings; index.ts không còn gọi bộ phát telemetry giả; package.json không còn sim:live", () => {
     expect(doc("client/src/App.tsx")).not.toMatch(/AnalyticsSettings/);
     expect(doc("server/_core/index.ts")).not.toMatch(/simOtTelemetry|startSimOtTelemetry/);

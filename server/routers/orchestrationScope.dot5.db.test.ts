@@ -807,25 +807,6 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect((await hub()).orchestration.degraded).toBe(false);
   });
 
-  it("★ R-5-d gov: runEvents / replayRun of another factory's run ⇒ the SAME answer as a missing run; the owner reads them", async () => {
-    const saved = process.env.FOE_DURABLE;
-    process.env.FOE_DURABLE = "true";
-    try {
-      const { deployWorkflow, startRun } = await engine();
-      const rB = ref("gov-b");
-      expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
-      const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
-      const gov = async (key: string, role = "engineer") => (await import("./orchestrationGovRouter")).orchestrationGovRouter.createCaller(ctxOf(key, role));
-      const N = 2_000_000_000;
-      const ua = await gov("ua");
-      expect(await ua.runEvents({ runId: runB })).toEqual(await ua.runEvents({ runId: N }));
-      expect(JSON.stringify(await ua.replayRun({ runId: runB })).split(String(runB)).join("ID")).toBe(JSON.stringify(await ua.replayRun({ runId: N })).split(String(N)).join("ID"));
-      await vi.waitFor(async () => expect((await (await gov("ub")).runEvents({ runId: runB })).length).toBeGreaterThan(0));
-    } finally {
-      if (saved === undefined) delete process.env.FOE_DURABLE;
-      else process.env.FOE_DURABLE = saved;
-    }
-  });
 
   it("★ R-5-d oversight hub + 'mine': another factory's pending run is neither counted nor sampled for A; B's own user sees it", async () => {
     const { deployWorkflow, startRun, runIdVisibleTo } = await engine();

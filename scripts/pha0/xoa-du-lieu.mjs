@@ -2,14 +2,14 @@
 /**
  * Pha 0 lô D — ĐẾM + XOÁ dữ liệu rác, MỘT mục mỗi lần, trong MỘT giao dịch. KHÔNG tự chạy; do dieu-phoi chạy sau khi chủ dự án duyệt số đếm.
  *
- *   DATABASE_URL=... node scripts/pha0/xoa-du-lieu.mjs --item E0-1|F0-1|Q0-5 --db <current_database mong đợi> [--chi-dem (mặc định) | --test-only | --commit --expect-n <N>] [--vacuum]
+ *   DATABASE_URL=... node scripts/pha0/xoa-du-lieu.mjs --item E0-1|F0-1 --db <current_database mong đợi> [--chi-dem (mặc định) | --test-only | --commit --expect-n <N>]
  *
  * Luật cứng:
  *   - Mặc định `--chi-dem`: giao dịch `READ ONLY` — CHỈ SELECT (đếm, canh, phụ thuộc), KHÔNG có DELETE nào được gửi; dùng cho DEV. `--test-only` (đếm bằng DELETE+ROLLBACK) chỉ nên dùng trên `_test`.
  *   - `--test-only`: chạy đủ (đếm trước, xoá, đếm sau) rồi ROLLBACK — in ĐÚNG số sẽ xoá. KHÔNG có cờ nào làm `--test-only` ghi thật.
  *   - `--commit` đòi `--expect-n` = số đếm từ lần `--test-only` ngay trước (lệch ⇒ ROLLBACK, không ghi) và `--db` khớp `current_database()` (Đ-28).
  *   - Mỗi mục có "điều kiện canh" (guard) đo TRƯỚC khi xoá: sai ⇒ dừng, không xoá.
- *   - Chỉ DELETE đúng điều kiện của mục (không TRUNCATE, không DROP). `--vacuum` (chỉ Q0-5, sau COMMIT, ngoài giao dịch) chạy VACUUM FULL inspection_packages.
+ *   - Chỉ DELETE đúng điều kiện của mục (không TRUNCATE, không DROP). Q0-5 (product_inspections seed) ĐÃ BỎ khỏi công cụ: bảng là sổ WORM (mig 0279 REVOKE DELETE avi_app), chủ dự án chọn GIỮ seed (2026-11-04).
  *   - Dùng owner nào do người chạy cấp qua DATABASE_URL (script không chọn vai, không đọc .env).
  */
 import postgres from "postgres";
@@ -21,7 +21,6 @@ const dbMong = arg("--db");
 const commit = co("--commit");
 const chiDem = !commit && !co("--test-only");
 const expectN = arg("--expect-n");
-const vacuum = co("--vacuum");
 if (commit && (co("--test-only") || co("--chi-dem"))) { console.error("--commit và --test-only loại trừ nhau"); process.exit(2); }
 if (!item || !dbMong || !process.env.DATABASE_URL) { console.error("Thiếu --item/--db hoặc DATABASE_URL"); process.exit(2); }
 if (commit && (expectN === undefined || !/^\d+$/.test(expectN))) { console.error("--commit đòi --expect-n <số nguyên> từ lần --test-only trước"); process.exit(2); }
@@ -40,16 +39,6 @@ const MUC = {
     where: `"createdAt" < now() - interval '30 days'`,
     canh: [{ ten: "còn lại hàng trong 30 ngày (không xoá sạch bảng)", sql: `SELECT (count(*) FILTER (WHERE "createdAt" >= now() - interval '30 days') > 0)::int AS n FROM vram_events`, mongDoi: 1 }],
     tomtat: `SELECT count(*)::int AS tong, min("createdAt") AS som_nhat, max("createdAt") AS muon_nhat FROM vram_events`,
-  },
-  "Q0-5": {
-    mota: "product_inspections — 13 236 kết quả SEED (15–16/09/2026, không model, không line); cây con xoá theo FK CASCADE",
-    bang: "product_inspections",
-    where: `"productModelId" IS NULL AND "lineCode" IS NULL AND "inspectionTime" >= '2026-09-15' AND "inspectionTime" < '2026-09-17'`,
-    canh: [
-      { ten: "TOÀN BỘ bảng là seed (không còn hàng thật ngoài điều kiện)", sql: `SELECT count(*)::int AS n FROM product_inspections WHERE NOT ("productModelId" IS NULL AND "lineCode" IS NULL AND "inspectionTime" >= '2026-09-15' AND "inspectionTime" < '2026-09-17')`, mongDoi: 0 },
-    ],
-    tomtat: `SELECT count(*)::int AS tong, min("inspectionTime") AS som_nhat, max("inspectionTime") AS muon_nhat FROM product_inspections`,
-    phuThuoc: true,
   },
 };
 const m = MUC[item];
@@ -93,12 +82,6 @@ try {
   if (commit) { await sql`COMMIT`; in_({ ket_qua: "ĐÃ COMMIT", da_xoa: daXoa }); }
   else { await sql`ROLLBACK`; in_({ ket_qua: "TEST-ONLY: ĐÃ ROLLBACK, CSDL KHÔNG ĐỔI", se_xoa: daXoa }); }
 
-  if (commit && vacuum && item === "Q0-5") {
-    const [t] = await sql`SELECT pg_size_pretty(pg_total_relation_size('inspection_packages')) AS truoc`;
-    await sql.unsafe("VACUUM FULL inspection_packages");
-    const [s] = await sql`SELECT pg_size_pretty(pg_total_relation_size('inspection_packages')) AS sau`;
-    in_({ vacuum_full_inspection_packages: { ...t, ...s } });
-  }
 } catch (e) {
   try { await sql`ROLLBACK`; } catch {}
   console.error("LỖI:", e?.message ?? e);

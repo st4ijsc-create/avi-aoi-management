@@ -94,7 +94,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/systemRouters.ts (5) ──
   // ── server/routers/thresholdApprovalRouter.ts (6) ──
   // ── server/routers/trainingBatchCommentsRouter.ts (7) ──
-  // ── server/routers/twinGovRouter.ts (1) ──
   // ── server/routers/twinRouter.ts (3) ──
   // ── server/routers/userRouters.ts (2) ──
   // ── server/routers/vda5050Router.ts (2) ──

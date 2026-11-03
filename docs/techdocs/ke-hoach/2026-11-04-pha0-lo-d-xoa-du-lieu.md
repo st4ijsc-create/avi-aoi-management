@@ -24,7 +24,7 @@ Script dừng (không xoá) khi: `current_database()` ≠ `--db` (Đ‑28) · đ
 |---|---|---|---|---|
 | **E0‑1** | `simulation_runs` `WHERE "mode"='fidelity_check'` | 80 941 hàng / 73,7 MB | 0 hàng `mode <> 'fidelity_check'` | Lịch `twinFidelity` đã GỠ khỏi `backgroundJobs.ts` (commit lô A2+); kiểm tay `twinGov.runFidelityCheck` còn. Bảng không FK. |
 | **F0‑1** (mặc định TẮT, bật bằng biến) | `vram_events` `WHERE "createdAt" < now() - interval '30 days'` | ≈ 60 000 (tổng 66 423, +745/ngày) | còn ≥ 1 hàng trong 30 ngày | Từ nay `dataRetentionService` có mục `vram_events` 30 ngày (`RETENTION_VRAM_EVENTS_DAYS`); chỉ chạy khi `DATA_RETENTION_ENABLED=true` (P0‑6) **và** vai ứng dụng có quyền DELETE bảng này (kiểm khi P0‑1 đổi sang `avi_app`). |
-| **Q0‑5** | `product_inspections` `WHERE "productModelId" IS NULL AND "lineCode" IS NULL AND "inspectionTime" ∈ [2026‑09‑15, 2026‑09‑17)` | 13 236 hàng (OK 11 560 / NG 1 676) | **0 hàng ngoài điều kiện** (cả bảng là seed) | Hypertable. Cây con theo FK CASCADE (bảng ở `inspection.ts:331`) xoá theo; script IN ra số hàng **mồ côi** ở mọi bảng có cột `inspectionId` không FK (ai_*, defect disposition, inspectionTree, …) để chủ dự án thấy trước. `--vacuum` (sau COMMIT, ngoài giao dịch) chạy `VACUUM FULL inspection_packages` (18 MB / 0 hàng). |
+| ~~Q0‑5~~ | **BỎ** (chủ dự án 2026-11-04): `product_inspections` là sổ WORM (mig 0279 REVOKE DELETE `avi_app`) — GIỮ seed 13 236 hàng; không xoá, không `VACUUM FULL inspection_packages` | — | — | — |
 
 Kết quả kỳ vọng sau cùng: 3 bảng như bảng trên, `inspection_packages` < 1 MB.
 
