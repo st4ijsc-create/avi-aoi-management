@@ -175,8 +175,7 @@ async function startServer() {
   // Đợt 10.3 (§12) — đường "forge" của khung gốc ra ngoài KHÔNG qua cổng AI ngoài ⇒ cảnh báo MỘT lần khi URL được đặt.
   (await import("./forgeNgoai")).canhBaoForgeKhiKhoiDong();
 
-  // QW4 — Observability bootstrap (Sentry / OpenTelemetry). No-op unless the
-  // corresponding env vars and packages are present. Must run before app init.
+  // QW4 — Observability bootstrap (bộ đánh giá SLO; khung vết ngoài đã gỡ ở Pha 0 P0-5). Must run before app init.
   try {
     const { initObservability } = await import("./observability");
     await initObservability();

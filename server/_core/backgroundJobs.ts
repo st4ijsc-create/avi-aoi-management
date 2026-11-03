@@ -858,7 +858,7 @@ export async function runWorkerProcess(): Promise<void> {
     console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
   }
 
-  // Observability bootstrap (Sentry/OTel) — no-op unless configured.
+  // Observability bootstrap (bộ đánh giá SLO) — no-op unless OBSERVABILITY is on.
   try {
     const { initObservability } = await import("./observability");
     await initObservability();
