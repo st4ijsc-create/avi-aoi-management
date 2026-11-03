@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "Invalid value for {{field}}.",
     "INVALID_VALUE_WITH_REASON": "Invalid value for {{field}}. {{reason}}",
     "FEATURE_DISABLED": "The {{feature}} feature is not enabled on this system.",
+    "MODULE_PAUSED": "The {{module}} module is paused and will be developed later — the command was not sent.",
     "OPERATION_FAILED": "Could not complete: {{operation}}.",
     "OPERATION_FAILED_WITH_REASON": "Could not complete: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
@@ -24862,5 +24863,12 @@
     "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
     "tuChoi": "Don't send",
     "dongY": "Agree, send"
+  },
+  "robotTamDung": {
+    "tieuDe": "The robot/AGV module will be developed later",
+    "moTa": "Robot/AGV control is paused: this page only reports status and sends no command. Other machines and lines are unaffected.",
+    "moTaNgan": "View only — human↔robot coordination is paused until the robot/AGV module is developed.",
+    "dangKiemTra": "Checking module status…",
+    "veTrangChu": "Back to home"
   }
 }

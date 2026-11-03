@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "{{field}}的值无效。",
     "INVALID_VALUE_WITH_REASON": "{{field}}的值无效。{{reason}}",
     "FEATURE_DISABLED": "此系统尚未启用{{feature}}功能。",
+    "MODULE_PAUSED": "{{module}} 模块已暂停，将在后续开发 — 命令未发送。",
     "OPERATION_FAILED": "操作失败：{{operation}}。",
     "OPERATION_FAILED_WITH_REASON": "操作失败：{{operation}}。{{reason}}",
     "PERMISSION_DENIED": "您无权：{{action}}。",
@@ -24859,5 +24860,12 @@
     "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
     "tuChoi": "不发送",
     "dongY": "同意并发送"
+  },
+  "robotTamDung": {
+    "tieuDe": "机器人/AGV 模块将在后续开发",
+    "moTa": "机器人/AGV 控制已暂停：本页仅报告状态，不会下发任何命令。其他机台与产线不受影响。",
+    "moTaNgan": "仅查看 — 人机协作暂停，待机器人/AGV 模块开发后恢复。",
+    "dangKiemTra": "正在检查模块状态…",
+    "veTrangChu": "返回首页"
   }
 }

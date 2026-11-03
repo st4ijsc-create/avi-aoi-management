@@ -24,6 +24,8 @@ const AILocalChatBubble = React.lazy(() =>
 );
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { UiPrefsSync } from "./components/UiPrefsSync";
+import { RobotModuleProvider } from "./hooks/useRobotModuleTamDung";
+import { CongMoDunRobot } from "./components/robot/CongMoDunRobot";
 import { RouteGuard } from "./components/RouteGuard";
 // ★★★ Đợt 21 lô Y (§13b 14.2.3) — 14 đường vào Twin cũ, mỗi đường ≤1 chặng.
 import { traDichCu } from "./components/twin3d/bo-cuc/dinhTuyenTwinCu";
@@ -583,15 +585,15 @@ function Router() {
       <Route path="/control-readiness"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlReadiness /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/hot-folders"><RouteGuard navHref="/hot-folders"><AIPageWrapper><HotFolderConfigPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CongMoDunRobot><RobotControl /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       {/* ENG-F1 (doc 40): gated command console — actuation qua HITL dispatcher (mode/commissioning/interlock gate giữ nguyên). */}
-      <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CommandConsole /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CongMoDunRobot><CommandConsole /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
           chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
           trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
       {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm Labs: route mới, CÙNG cổng (navHref của chính mục nav = machine_status;
           giấy phép MOD_OT_CONTROL ở module-registry). URL cũ /fleet-orchestration chuyển hướng giữ query (engineeringLegacyRoutes). */}
-      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><CongMoDunRobot><FleetOrchestration /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
@@ -878,6 +880,8 @@ function App() {
               {/* doc 81 Đợt 4 Task D1 — sở thích giao diện theo tài khoản (localStorage ⇄ user_settings.uiPrefs). */}
               <UiPrefsSync />
               <Toaster />
+              {/* Pha 0 · C0-5 — cờ mô-đun robot/AGV (nguồn: máy chủ) cho CongMoDunRobot + SafetyWorkforce. */}
+              <RobotModuleProvider>
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
                   code-split page (including bare `component={}` routes)
                   has a fallback while its chunk loads. Per-page AIPageWrapper boundaries
@@ -898,6 +902,7 @@ function App() {
                   </CongDoiMatKhau>
                 </Suspense>
               </AppShell>
+              </RobotModuleProvider>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
                   lazy AI pages. The bubble hides itself when not logged in.

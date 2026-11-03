@@ -3638,6 +3638,7 @@
     "INVALID_VALUE": "Giá trị không hợp lệ ở {{field}}.",
     "INVALID_VALUE_WITH_REASON": "Giá trị không hợp lệ ở {{field}}. {{reason}}",
     "FEATURE_DISABLED": "Tính năng {{feature}} chưa được bật trên hệ thống này.",
+    "MODULE_PAUSED": "Mô-đun {{module}} đang tạm dừng và sẽ phát triển sau — lệnh không được gửi.",
     "OPERATION_FAILED": "Không thực hiện được: {{operation}}.",
     "OPERATION_FAILED_WITH_REASON": "Không thực hiện được: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "Bạn không có quyền: {{action}}.",
@@ -24859,5 +24860,12 @@
     "moTa": "Đây là trợ lý vận hành: câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH. Gửi tới model bên ngoài (trả phí) sau khi che dữ liệu nhạy cảm theo mẫu. Hỏi một lần cho cuộc trò chuyện này.",
     "tuChoi": "Không gửi",
     "dongY": "Đồng ý, gửi"
+  },
+  "robotTamDung": {
+    "tieuDe": "Mô-đun robot/AGV sẽ phát triển sau",
+    "moTa": "Điều khiển robot/AGV đang tạm dừng: trang này chỉ để báo trạng thái và không gửi lệnh nào. Máy và dây chuyền khác không bị ảnh hưởng.",
+    "moTaNgan": "Chỉ xem — phối hợp người↔robot tạm dừng cho đến khi mô-đun robot/AGV được phát triển.",
+    "dangKiemTra": "Đang kiểm tra trạng thái mô-đun…",
+    "veTrangChu": "Về trang chủ"
   }
 }
