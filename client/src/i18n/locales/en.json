@@ -24674,6 +24674,7 @@
         "dangNoi": "{{dangNoi}} reconnecting",
         "mat": "{{mat}} lost",
         "edge": "edge {{edge}}",
+        "moTaCu": "Read failed — figures from the previous read (updated at {{luc}}).",
         "moTa": "Of {{tong}} adapters enabled in configuration (edge not counted): {{ketNoi}} connected · {{dangNoi}} reconnecting · {{mat}} lost · {{khac}} off or unknown — click to open communication diagnostics"
       }
     },

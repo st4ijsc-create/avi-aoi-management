@@ -24671,6 +24671,7 @@
         "dangNoi": "{{dangNoi}} đang nối lại",
         "mat": "{{mat}} mất",
         "edge": "edge {{edge}}",
+        "moTaCu": "Đọc lỗi — số của lần trước (cập nhật lúc {{luc}}).",
         "moTa": "Trong {{tong}} adapter đã bật cấu hình (không tính edge): {{ketNoi}} đang nối · {{dangNoi}} nối lại · {{mat}} mất kết nối · {{khac}} tắt hoặc chưa rõ — bấm để mở chẩn đoán truyền thông"
       }
     },

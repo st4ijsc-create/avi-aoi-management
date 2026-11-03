@@ -94,6 +94,31 @@ describe("ChipTruyenThong", () => {
     expect(screen.getByRole("link")).toHaveTextContent("Truyền thông 0 nối · 0 tắt · edge 2");
   });
 
+  it("★ h8: VỪA mất VỪA đang nối lại ⇒ tông 'mat' (mất thắng nối lại), cả hai đoạn đều hiện", () => {
+    srv.data = { ketNoi: 5, dangNoi: 2, mat: 1, khac: 0, tong: 8, edge: 0, tinhLuc: "2026-11-04T05:00:00.000Z" };
+    render(<ChipTruyenThong />);
+    const chip = screen.getByRole("link");
+    expect(chip).toHaveAttribute("data-tone", "mat");
+    expect(chip).toHaveTextContent("Truyền thông 5 nối · 0 tắt · 2 đang nối lại · 1 mất");
+  });
+
+  it("★ h14: đọc LỖI nhưng còn số của lần trước ⇒ GIỮ số, tông 'cu' (tím gạch), tooltip 'Đọc lỗi — số của lần trước (cập nhật lúc HH:MM)' + câu mô tả; hết lỗi ⇒ trở lại tông thật", () => {
+    srv.data = { ketNoi: 3, dangNoi: 0, mat: 0, khac: 1, tong: 4, edge: 0, tinhLuc: "2026-11-04T05:07:00.000Z" };
+    srv.isError = true;
+    const { rerender } = render(<ChipTruyenThong />);
+    const chip = screen.getByRole("link");
+    expect(chip).toHaveTextContent("Truyền thông 3 nối · 1 tắt");
+    expect(chip).toHaveAttribute("data-tone", "cu");
+    expect(chip.getAttribute("style") ?? "").toMatch(/line-through/);
+    const title = chip.getAttribute("title") ?? "";
+    expect(title).toMatch(/^Đọc lỗi — số của lần trước \(cập nhật lúc \d{1,2}:\d{2}.*\)\./);
+    expect(title).toMatch(/Trong 4 adapter đã bật cấu hình/);
+    srv.isError = false;
+    rerender(<ChipTruyenThong />);
+    expect(screen.getByRole("link")).toHaveAttribute("data-tone", "trung_tinh");
+    expect(screen.getByRole("link").getAttribute("title") ?? "").not.toMatch(/Đọc lỗi/);
+  });
+
   it("★ ca DEV thật: 15 adapter bật cấu hình nhưng cả 15 'Đã tắt' ⇒ '0 nối · 15 tắt' (không còn '0/15'); tooltip giải thích", () => {
     srv.data = { ketNoi: 0, dangNoi: 0, mat: 0, khac: 15, tong: 15, edge: 0, tinhLuc: "2026-11-03T00:00:00.000Z" };
     render(<ChipTruyenThong />);
