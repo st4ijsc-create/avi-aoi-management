@@ -121,6 +121,7 @@ import { canKiemGiaTriChuaKhai, epKieuGiaTri, kiemGiaTriGhi, kiemLuoiThoChuaKhai
 import { cheDoMay, congCheDoBat, laToolHmiCongCheDo } from "../scada/cheDoMay"; // SCADA R1a Task 4 (K2/D3) — machine LOCAL/REMOTE
 import { boundedKey, canonicalOtValue, FOE_ENGINE_TOOL, foeSelfApprovalRefusal, laHangMoiStopGhim, laKhoaBenGoiChon, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { foeApprovalDbRefusal, preReadProgramChecksForAction, type PreReadPrograms } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-i); Đợt 8 final wave O M2
+import { orchestrationActionId } from "../orchestration/foe/foeStepClass"; // R1b-2b-2a A2(k) — the id an FOE row minted for a key carries (k3)
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
 // doc 81 Đợt 10 task D — the device stage (queue, write, read-back, STOP watch, slot hold) lives in otDeviceWrite.ts; every
@@ -1729,7 +1730,8 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // R1b-2b-2a T6d — một STOP (theo loại, ghim, hoặc nội dung = ghim của hàng bước 3 — hàm thuần, không đọc thêm) không bao giờ bị khoá trùng nuốt, kể cả
   // khi lệnh khác giành khoá GIỮA bước 2 và khoá tư vấn: bước giữ chỗ báo `doiKhoaStop` ⇒ gửi lại MỘT lần dưới khoá mới (chưa tiêu duyệt nào).
   const laStopKhoa = isStopCommandType(input.commandType) || stopCls.pinnedStop || classifyOtStop("stop", input.writes, stopPinsFromTagRows(step3TagRows)).pinnedStop;
-  const optsGiuCho = { bindingInput: callerInput, rawBindingWrites: rawCallerWrites, ledgerExtra, pinnedStop: stopCls.pinnedStop };
+  // R1b-2b-2a A2(k) — `laStopKhoa` goes into BOTH reservation calls (the re-keyed one gets no `laStop`): a STOP is never answered "may have flown".
+  const optsGiuCho = { bindingInput: callerInput, rawBindingWrites: rawCallerWrites, ledgerExtra, laStopKhoa, pinnedStop: stopCls.pinnedStop };
   let reservation = await reserveRealWrite(db, input, resolved, { ...optsGiuCho, laStop: laStopKhoa });
   if ("doiKhoaStop" in reservation) {
     input = stopGuiLaiVoiKhoaMoi(input, reservation.doiKhoaStop.hang, reservation.doiKhoaStop.lyDo);
@@ -2791,6 +2793,45 @@ function verifyActionBinding(
   return { ok: true, owner: pending.userId };
 }
 
+/**
+ * R1b-2b-2a A2(k) (AN TOÀN, defence in depth) — reason code of the reservation: the orchestration-engine row minted for THIS very key is already
+ * spent ('executed') and the key has no row at all (no intent, no result). Inside the reservation that state cannot come from central's own
+ * reservation (it consumes the row and writes the intent in ONE transaction), so the row was spent elsewhere — the edge's /authorize writes it
+ * 'executed' under the same `foe-<key>` id (edgeAuthorizeCentral) — and the write may already have reached the device through that path.
+ * It is in the "may have flown" class (`equipment/lenhTruocCoTheDaBay.ts`): FOE does not resend, fails the step, runs its compensation and fails
+ * the run (no alert, no held run). NOT_CONFIRMED (FOE: "not flown" ⇒ retried under a new attempt key) stays the answer for every other spent row.
+ */
+export const MA_HANG_FOE_DA_TIEU = "FOE_ROW_SPENT_FOR_KEY";
+
+/**
+ * R1b-2b-2a A2(k) — PURE. Called ONLY by the reservation, ONLY after `verifyActionBinding` refused a row whose status is 'executed' (no row exists
+ * under the key at that point: `qd.loai === "khong"`). The refusal detail of `MA_HANG_FOE_DA_TIEU` when ALL hold, else null (the refusal stays
+ * NOT_CONFIRMED exactly as before):
+ *   (k1) the command is NOT a STOP for key purposes: `laStopKhoa === false`, the dispatcher's own flag (absent ⇒ null) — a STOP is never put in
+ *        the "may have flown" class (L-7);
+ *   (k2) the row is an orchestration-engine row (`FOE_ENGINE_TOOL`);
+ *   (k3) the row was minted for THIS key (`orchestrationActionId(key)`) — a spent id replayed / forged under another key (the Sparkplug / HMI
+ *        reuse shape) stays NOT_CONFIRMED;
+ *   (k4) everything else in the binding holds (owner, tool, engine self-approval, payload hash): `verifyActionBinding` with `daTieuChoBuoc2` —
+ *        READ ONLY: nothing is consumed and nothing is ever written on this answer (the reservation still consumes only a 'confirmed' row);
+ *   (k5) the row is not an A2(m) fresh pinned-STOP row (`hangMoiStopGhim`) — those keep A2(m)'s rule.
+ */
+export function lyDoHangFoeDaTieuChoKhoa(
+  pending: AiPendingAction | undefined,
+  bindingInput: DispatchInput,
+  khoa: string,
+  t: HitlTrigger,
+  opts: { laStopKhoa?: boolean; altWrites?: ReadonlyArray<DispatchWrite> } = {},
+): string | null {
+  if (!pending || pending.status !== "executed") return null;
+  if (opts.laStopKhoa !== false) return null; // (k1)
+  if (pending.tool !== FOE_ENGINE_TOOL) return null; // (k2)
+  if (pending.id !== orchestrationActionId(khoa)) return null; // (k3)
+  if (laHangMoiStopGhim(pending.previewJson)) return null; // (k5)
+  if (!verifyActionBinding(pending, bindingInput, t, { daTieuChoBuoc2: true, altWrites: opts.altWrites }).ok) return null; // (k4)
+  return `orchestration action ${pending.id} was minted for this very idempotency key and is already spent, yet the key has no write-ahead intent — the write may already have reached the device through another path (an edge node); not sent, and not to be retried under a new key`;
+}
+
 /** R1b-2b-2a A2(m) AMENDMENT 2 — the refusal detail of a marked fresh FOE STOP row presented by a command this dispatcher does not classify as a pinned STOP. */
 export const HANG_MOI_STOP_GHIM_TU_CHOI =
   "orchestration action is a fresh STOP authorisation (hangMoiStopGhim) but this command is not a pinned STOP for the dispatcher — refused (it authorises only a pinned STOP)";
@@ -2846,6 +2887,11 @@ async function reserveRealWrite(
     rawBindingWrites?: ReadonlyArray<DispatchWrite>;
     /** R1b-2b-2a T6d — this command is a STOP (type, pin or pinned content): a taken key ⇒ `doiKhoaStop` (re-sent under a new key), never swallowed. */
     laStop?: boolean;
+    /**
+     * R1b-2b-2a A2(k) — the SAME STOP-for-key-purposes flag as `laStop`, but passed to BOTH reservation calls (the re-keyed STOP call gets no
+     * `laStop`): `false` is required for `MA_HANG_FOE_DA_TIEU` (k1); absent ⇒ treated as a STOP (NOT_CONFIRMED as before).
+     */
+    laStopKhoa?: boolean;
   } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
@@ -2908,7 +2954,7 @@ async function reserveRealWrite(
       let boundConfirmer: number | null = null;
       if (input.triggeredBy.kind === "hitl") {
         const t = input.triggeredBy;
-        let verdict: BindingVerdict | { ok: false; reason: "PRECONDITION_FAILED"; detail: string };
+        let verdict: BindingVerdict | { ok: false; reason: "PRECONDITION_FAILED" | typeof MA_HANG_FOE_DA_TIEU; detail: string };
         if (!t.actionId) {
           verdict = { ok: false, reason: "PRECONDITION_FAILED", detail: "real OT write requires a bound, confirmed, single-use HITL actionId (none supplied)" };
         } else {
@@ -2918,6 +2964,13 @@ async function reserveRealWrite(
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
           verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t, { pinnedStop: opts.pinnedStop === true, altWrites: opts.rawBindingWrites });
+          // R1b-2b-2a A2(k) (defence in depth) — a SPENT row and no row under the key (guaranteed here): when the spent row is the FOE row minted
+          // for THIS key and bound to THIS non-STOP command (k1..k5, `lyDoHangFoeDaTieuChoKhoa` — read only), it was spent elsewhere (the edge) and the
+          // write may have flown ⇒ MA_HANG_FOE_DA_TIEU (FOE: do not resend under a new key), ledgered below like every refusal. Otherwise NOT_CONFIRMED.
+          if (!verdict.ok && pending?.status === "executed") {
+            const daTieu = lyDoHangFoeDaTieuChoKhoa(pending, opts.bindingInput ?? input, input.idempotencyKey, t, { laStopKhoa: opts.laStopKhoa, altWrites: opts.rawBindingWrites });
+            if (daTieu) verdict = { ok: false, reason: MA_HANG_FOE_DA_TIEU, detail: daTieu };
+          }
           // R1b-2b-2a A2(m) AMENDMENT 2 — a FRESH row the FOE engine minted for a command IT classified as a pinned STOP (marked) is consumed ONLY by
           // a pinned STOP THIS dispatcher confirms (opts.pinnedStop, its own step-3 verdict). Not pinned here (stale connection, pins changed,
           // value form) ⇒ REFUSED, with or without a real gate approval: one approval = one write stays absolute for every non-pinned command.
