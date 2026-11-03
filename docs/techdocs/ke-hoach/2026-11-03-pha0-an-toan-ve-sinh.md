@@ -61,7 +61,7 @@
 | # | Việc | Nghiệm thu |
 |---|---|---|
 | E0‑1 | Dừng job `twinFidelity` (`TWIN_FIDELITY_ENABLED=false`, gỡ lịch) + **xoá `simulation_runs` 80 941** (sau duyệt) | bảng 0 hàng, job không chạy |
-| E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`) | 70‑N1 grep INSERT trong `scripts/sim*` = 0 |
+| E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`); **giữ** 2 seeder dev chạy tay `seed.mjs`/`seed-production.mjs` (miễn trừ có tên, 70‑N1 sửa 04/11) | 70‑N1: grep INSERT trong `scripts/sim*` ∖ {2 seeder} = 0; không lịch/boot nào gọi seeder — **XONG 04/11** (tho-ca-agent) |
 | E0‑3 | Gỡ router chết `orchestrationGov` (+ `slaPolicy`, `dag`), `twinGov` (+ `driftDetector`), `monteCarloFlow`, `simTargets`, `services/simulation/monteCarlo.ts`; procedure chết `programming.*` (5), `orchestration.getWorkflow/getVersion`, `machineRecipe.get/getActive`, `twin.*` (7), `digitalTwin.*` (3) | census 0 client‑caller |
 | E0‑4 | `orchestration_run_edge_assignments` vào drizzle; bỏ khai trùng `orchestration_runs` ở `runApiKeyIdentity.ts` | drizzle là nguồn |
 | E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |

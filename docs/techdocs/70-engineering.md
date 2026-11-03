@@ -202,7 +202,7 @@ Dải migration: **0570–0589** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20�
 
 | # | Tiêu chí | Đo bằng |
 |---|---|---|
-| N1 | Không mã nào ghi bảng KPI/telemetry ngoài pipeline 30/60: grep `INSERT INTO\|db.insert(` trong `scripts/sim*` = 0; `sim-live-daemon` không còn | grep |
+| N1 | **Không tiến trình mô phỏng SỐNG nào INSERT thẳng DB** (daemon/service/scheduler): `sim-live-daemon`, `simOtTelemetryService` không còn; dữ liệu sống của simulator đi qua ingest 30/60. **Miễn trừ có tên**: seeder dev chạy tay `scripts/sim-factory/seed.mjs`, `seed-production.mjs` (`npm run sim:factory`/`sim:production`) — nguyên tắc "seed sai thì xoá & seed lại"; seeder chỉ ghi vào site `origin=sim` (10) và không được chạy theo lịch/khi boot. Đo: grep `INSERT INTO\|db.insert(` trong `scripts/sim*` ∖ {2 seeder} = 0; census chặn `setInterval`/cron gọi seeder | grep + census |
 | N2 | Mọi `program_deployment.status=deployed|verified` có `command_id` (50); đột biến "bỏ qua request" ⇒ đỏ | SQL + vitest |
 | N3 | Sim‑gate: artefact ST build ok nhưng chưa có `program_sim_run(engine∈hành vi, ok)` ⇒ `deploy.request` từ chối `SIM_GATE` | vitest |
 | N4 | Cùng kịch bản I/O: bộ thông dịch lưu đồ và ST sinh ra (OIP walker) cho **cùng vết bước** (K12 §2.6a) trên 30 mẫu + 30 đột biến | test so sánh |
@@ -238,3 +238,4 @@ Dải migration: **0570–0589** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20�
 |---|---|---|---|
 | 2026-11-03 | chủ dự án + chu-du-an-HST | **Duyệt v1.1**: 8 câu hỏi §7 theo khuyến nghị (K12/K13 nhận, K14 hoãn; OIP walker; 5→2 luồng; OpenPLC đích nạp; xoá simulation_runs; simulator origin=sim; recipe một mô hình; mig 0570–0589) | — |
 | 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt c1f82ea1b` + DB live; nhận K12/K13 của scada-master, doc 09 D0–D7, OIP B1/B2 | DPC 16,6k LOC nhưng 0 đích nạp thật; sim‑gate ST = build ok; 5 bộ máy luồng/3 kho duyệt/3 deploy UI; 4 canvas xyflow; `simulation_runs` 80 941 hàng fidelity 0 %; sim‑live‑daemon INSERT thẳng DB; 46 bảng (22 rỗng) |
+| 2026-11-04 | dieu-phoi + chu-du-an-HST | E0‑2 xong (tho-ca-agent): gỡ `sim-live-daemon.mjs`, `simOtTelemetryService`, cờ `SIM_OT_TELEMETRY_*`; **N1 sửa**: miễn trừ 2 seeder dev chạy tay (`seed.mjs`, `seed-production.mjs`), cấm tiến trình sim sống INSERT thẳng | — |
