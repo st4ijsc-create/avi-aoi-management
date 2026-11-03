@@ -39,6 +39,21 @@
 
 Không import ngoài (không gói npm, không `node:`). Không gì ngoài mục đích.
 
+## Giới hạn đã biết (đo ở B2 03/11 — `scripts/ai-eval/st-hanh-vi/b2/bao-cao/B2-phan-tich.md`)
+
+KHÔNG vá vendor để sửa (dieu-phoi 03/11 — giữ một sửa đổi duy nhất là `va-vendor.patch` cấm sinh mã), KHÔNG báo upstream. Vì các điểm dưới
+đây, điểm hành vi OIP KHÔNG dùng cho bộ chấm chính thức — chỉ làm công cụ đối chiếu.
+
+Lệch ngữ nghĩa (làm SAI phán quyết với lời giải đúng chuẩn IEC ed3 / RuSTy), mỗi điểm có ca dò riêng:
+1. `INT / <hằng REAL>` (vd `THO / 27648.0`) bị tính là chia NGUYÊN (13824 / 27648.0 = 0; chuẩn = 0,5). `INT_TO_REAL(x) / 27648.0` thì đúng.
+2. `TON` / `TOF` với `PT = T#0s` trễ MỘT lần quét (TON: Q chưa lên ở lần quét thấy sườn; TOF: Q chưa hạ) — chuẩn: ngay trong chu kỳ đó.
+3. `CTD` kẹp `CV` ở 0 (xung CD khi CV = 0 không đếm âm) — CTD chuẩn đếm xuống âm.
+
+Giới hạn tập con (OIP từ chối biên dịch — tính riêng, không phải lời giải sai):
+4. Không có số nguyên 64 bit: `LINT`, `TIME_TO_LINT` ⇒ "LINT is not supported" / "unknown function 'TIME_TO_LINT'".
+5. Không gán `=>` đầu ra của khối con thẳng vào đầu ra của FUNCTION_BLOCK ("cannot bind TP output 'Q' into function-block output 'Q'"); đầu ra
+   (`VAR_OUTPUT`) của FUNCTION không gán được bằng `=>` ("a FUNCTION has no outputs to bind with =>").
+
 ## Bảng tệp (bản UPSTREAM — sha256 để lần sau so lại)
 
 `src/plc/scanCodegen.ts` sau `va-vendor.patch`: sha256 `401596aa9cabcc1bed1fb9b3b9e81fc1c313ac5ab792480ad34ebbe2eb431874`.
