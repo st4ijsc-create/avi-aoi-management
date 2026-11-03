@@ -717,6 +717,13 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const ghi = await tx.select().from(commandLog).where(eq(commandLog.actionId, lan[0]!.id));
       expect(ghi.map((r) => r.status)).toEqual(["rejected"]);
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      // m-2 (fix round 3) — refused by the dispatcher: "not sent", never "may have gone out"
+      const al = canhBaoCua(runId)[0]!;
+      expect(String(al.title)).toContain("(refused by the dispatcher — not sent)");
+      expect(String(al.title) + String(al.message)).not.toContain("MAY HAVE GONE OUT");
+      const run = await trangThaiRun(tx, runId);
+      expect(run.error).toContain("was refused by the dispatcher — not sent");
+      expect(run.error).not.toContain("MAY HAVE GONE OUT");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -735,6 +742,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect((await buoc(tx, runId, "undo"))?.status).toBe("held");
       expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a`)).toHaveLength(1);
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      expect(String(canhBaoCua(runId)[0]!.title)).toContain("MAY HAVE GONE OUT"); // m-2: handed over, the device answered — not "refused"
       // and the next boot never tries again (once)
       const pdu1 = soPduGhi();
       await tx.update(orchestrationRuns).set({ status: "compensating" }).where(eq(orchestrationRuns.id, runId)); // as if it crashed again
@@ -1033,6 +1041,79 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const { mine } = await p1;
       expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_stop_compensation_resent_at_boot"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q18a (fix round 3, I-1) — a previous boot claimed, its attempt wrote the compensation row 'failed' and the process died before the outcome write: never the silent 'nothing in flight' ⇒ held + URGENT + audit, 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "failed"]], { foeBuTruBiNgat: dauCu });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocKhongXong" }]);
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("held"); // not failed silently
+      expect(run.error).toContain("a previous boot's STOP re-send did not complete — the STOP may not have reached the device — check on site");
+      expect(dau(run)).toMatchObject({ daThuGuiLai: true, ketQuaGuiLai: "luotTruocKhongXong" });
+      expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0); // no second send
+      const al = canhBaoCua(runId);
+      expect(al.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      expect(String(al[0]!.title)).toContain("A previous boot's STOP re-send did not complete");
+      expect(String(al[0]!.message)).toContain("a previous boot's STOP re-send did not complete — the STOP may not have reached the device — check on site");
+      const au = await auditCua(tx, runId);
+      expect(au.map((x) => [x.det.metadata?.reason, x.det.metadata?.staleAttempt, x.det.metadata?.decisionReason])).toEqual([["luotTruocKhongXong", "boot1-attempt", "daGuiLaiMotLan"]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q18b (fix round 3, I-1) — same, but the attempt wrote 'compensated' (the STOP went out, the outcome was never recorded): held + URGENT 'the STOP was re-sent at a previous boot … check the machine on site' (b5 kept), 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: dauCu });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDaGui" }]);
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("held");
+      expect(run.error).toContain("the STOP was re-sent at a previous boot (the outcome was not recorded) — check the machine on site");
+      expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0);
+      const al = canhBaoCua(runId);
+      expect(al.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      expect(String(al[0]!.title)).toContain("STOP re-sent at a previous boot (outcome not recorded)");
+      expect(String(al[0]!.message)).toContain("the STOP was re-sent at a previous boot (the outcome was not recorded) — check the machine on site");
+      expect((await auditCua(tx, runId)).map((x) => x.det.metadata?.reason)).toEqual(["luotTruocDaGui"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q19 (fix round 3, m-1) — a previous boot claimed and boot 2's lookups FAIL: the texts still say what is known ('may or may not have reached the device'), title and message agree", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauCu });
+      _setBuTruBiNgatProbeForTests((stage) => {
+        if (stage === "b1") throw new Error("lookup failed (test)");
+      });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]); // not "loiTraCuu"
+      const al = canhBaoCua(runId)[0]!;
+      expect(String(al.message)).toContain("the STOP may or may not have reached the device");
+      expect(String(al.title)).toContain("MAY OR MAY NOT have reached the device");
+      expect(String(al.title)).not.toContain("NOT re-sent");
+      const run = await trangThaiRun(tx, runId);
+      expect(run.error).toContain("may or may not have reached the device");
+      expect(run.error).not.toContain("NOT re-sent at boot");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.reason, x.det.metadata?.decisionReason])).toEqual([["luotTruocDungGiua", "loiTraCuu"]]);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
