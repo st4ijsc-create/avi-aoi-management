@@ -198,6 +198,9 @@ Không đổi / giới hạn
 - Model ngoài trong extension vẫn **chỉ Hỏi đáp**; agent ngoài **không** mở.
 - Hội thoại khôi phục từ phiên trước kiểm định bằng văn bản (id lượt máy chủ không lưu bền ở extension).
 
+Kiểm chứng (VS Code 1.136 thật qua test-electron, bản `0.6.0+e1bc6d894` cài từ `.vsix` — sha256 `dist/extension.js` bản cài = bản trong `.vsix` = bản build; máy chủ production riêng cổng 3013, DB thử, nhà cung cấp model ngoài GIẢ; 2026-11-03)
+- 21/21: nút ở bong bóng khôi phục (nguồn văn bản của extension) và ở câu trả lời ngoài đã lưu (nguồn theo id); modal đúng nội dung (byte thật, trích đã che); kết quả trong DOM thật không có liên kết / ảnh / nút khối mã; phản hồi có `tool_calls` bị máy chủ chặn; khối `avi-tool` trong chữ không chạy gì; `.env` đang mở + vùng chọn không vào thân gửi đi; extension không tải gì ngoài máy chủ.
+
 ### 0.5.2
 
 Giao diện
