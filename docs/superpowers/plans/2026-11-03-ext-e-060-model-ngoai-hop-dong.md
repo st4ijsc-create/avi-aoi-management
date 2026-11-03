@@ -15,15 +15,26 @@ KHÔNG mở bề mặt agent ngoài; KHÔNG dùng phiên chia sẻ extension (2F
 | `.env` đang mở KHÔNG tự đính kèm | thân ngoài không có ngữ cảnh workspace / tệp mở / đính kèm / @mention | `noiDay` (không `thuThapNguCanh`, không `dungKhoiTepNgoai`) + `modelNgoai.unit.test.ts` `dungThanNgoai` | ca HÀNH VI: mở `.env` + vùng chọn + đính kèm sẵn ⇒ thân gửi đi (đo ở nhà cung cấp giả, §3) không chứa tên / nội dung; đột biến ⇒ đỏ |
 | CSP webview chặn ảnh / connect | `htmlBang.ts`: `default-src 'none'; img-src data:; style-src 'nonce-…'; script-src 'nonce-…'` | `htmlBang.agent.unit.test.ts` (chuỗi CSP, không `img-src https:`/`*`) | thêm: không `connect-src`, không `frame-src`; ảnh markdown ngoài trong câu trả lời ngoài KHÔNG thành `<img src=http…>` (bộ render không tin cậy); đột biến: nới CSP / render ảnh ⇒ đỏ |
 
+## 1b. MÁY CHỦ (làm TRƯỚC mã E — dieu-phoi 03/11): nguồn kiểm định `van-ban` — dùng chung cho L4 bong bóng web (luong-ui) và E
+- `aiKiemDinh.{xemTruoc, chay}` nhận thêm `nguon: { loai: "van-ban", beMat: "bong-bong" | "extension", cauHoi, traLoi }` (zod `.strict()`: không
+  mức / nhà máy / đính kèm / ảnh / trường lạ; `beMat` khác ⇒ BAD_REQUEST). Trần **16 KB = TỔNG byte UTF-8 `cauHoi + traLoi`** ⇒ quá ⇒ 413
+  `NGOAI_QUA_LON` (cả `xemTruoc`); `traLoi` rỗng ⇒ BAD_REQUEST như cũ.
+- KHÔNG đọc kho (chữ do client gửi) ⇒ mức **LUÔN `van-hanh`** (nhà máy phải `choDuLieuVanHanh`, không ⇒ 403 `NGOAI_DU_LIEU_VAN_HANH`); bề mặt ghi
+  `nguonMuc.beMat` = `bong-bong` / `extension` (chỉ nhãn — mức từ phần ghép). Chống lặp 409 / bộ nhớ 120 s / trần chi phí 429 như nguồn khác.
+- Lượt CÓ bản lưu máy chủ ⇒ client dùng nguồn theo ID (`chat` …) — `van-ban` chỉ là đường dự phòng (đã trả lời luong-ui §6).
+- "BeMatNgoai bong-bong" của dieu-phoi = nhãn `beMat` của nguồn văn bản (bong bóng chọn model bằng danh mục `chat` như hiện nay — không thêm mục
+  vào `BE_MAT_NGOAI_DUOC_DUNG`).
+- Lưới `aiKiemDinhRouter.test.ts` (+4 ca, sửa ca "van-ban ⇒ BAD_REQUEST" thành 6 dạng sai): đột biến 7/7 ĐỎ (mức ky-thuat, bỏ trần, trần từng
+  trường, trần ký tự, đi qua kho, bỏ strict, beMat lỏng).
+
 ## 2. MỚI trong 0.6.0
 
 ### E1 — nút "Kiểm định bằng AI ngoài" ở BONG BÓNG TRỢ LÝ (extension)
-- Chỉ hiện trên bong bóng trợ lý có **id tin nhắn phía máy chủ**: hôm nay = câu trả lời model ngoài mà máy chủ đã lưu (`done.daLuu = { tinNguoiDungId,
-  tinTraLoiId }` của L1, cùng `conversationId` máy chủ). Câu trả lời model CỤC BỘ trong extension không có bản lưu máy chủ ⇒ KHÔNG có nút (giới hạn
-  khai; mở rộng = việc riêng).
-- **Nguồn = THEO ID**, không văn bản: `aiKiemDinh.chay({ chonModel, nguon: { loai: "chat", cuocTroChuyenId, tinNhanId: tinTraLoiId }, tieuChi? })`.
-  Kế hoạch ghi "nguồn `van-ban`" — máy chủ 10.4 CỐ Ý từ chối nguồn văn bản (input strict; ghim `aiKiemDinhRouter.test.ts`) ⇒ E dùng nguồn `chat`
-  theo ID (máy chủ đọc kho, chỉ chủ lượt, tự suy mức).
+- Hiện trên MỌI bong bóng trợ lý đã xong (không đang stream, có chữ), khi danh mục có model ngoài `duocDungO ∋ "kiem-dinh"`.
+- **Nguồn:** câu trả lời model ngoài máy chủ đã lưu (`done.daLuu = { tinNguoiDungId, tinTraLoiId }` của L1 + `conversationId` máy chủ) ⇒ nguồn
+  THEO ID `{ loai: "chat", cuocTroChuyenId, tinNhanId: tinTraLoiId }` (máy chủ đọc kho, tự suy mức); câu trả lời model CỤC BỘ (không có bản lưu máy
+  chủ) ⇒ nguồn `van-ban` §1b `{ loai: "van-ban", beMat: "extension", cauHoi, traLoi }` — HOST lấy chữ từ bản ghi CỦA HOST (không nhận chữ từ
+  webview), cắt ≤ 16 KB theo byte UTF-8 (không chẻ ký tự) + báo "đã cắt".
 - Không tự chạy: người dùng bấm ⇒ host chọn model kiểm định (QuickPick các model ngoài có `duocDungO` chứa `kiem-dinh`) ⇒ host gọi
   `aiKiemDinh.xemTruoc` (ước chi phí, mức dữ liệu) ⇒ **modal host** (`showWarningMessage({modal:true})`: model, mức, chi phí ước) ⇒ đồng ý mới gọi
   `chay`. Webview chỉ gửi "bấm nút trên bong bóng i" — host tra id từ bản ghi CỦA HOST (không nhận id / model / tiêu chí từ webview).
@@ -49,6 +60,5 @@ KHÔNG mở bề mặt agent ngoài; KHÔNG dùng phiên chia sẻ extension (2F
 chắc không vỡ); tsc gốc + check:tests; đột biến mỗi mục §1 và §2; harness LIVE có ảnh chụp + sha256.
 
 ## 4. Câu hỏi
-- (Q1) Kiểm định chỉ câu trả lời model NGOÀI đã lưu (đề xuất) — hay cần cả câu trả lời cục bộ (phải để extension lưu lượt cục bộ lên máy chủ = đổi
-  dữ liệu ra máy chủ, việc riêng)?
+- (Q1) ĐÃ GIẢI (dieu-phoi 03/11): câu trả lời cục bộ kiểm định qua nguồn `van-ban` §1b — không cần lưu lượt cục bộ lên máy chủ.
 - (Q2) Máy chủ thử cho harness LIVE: cổng 3013 (do-model) với `_test` DB + nhà cung cấp giả — đồng ý?

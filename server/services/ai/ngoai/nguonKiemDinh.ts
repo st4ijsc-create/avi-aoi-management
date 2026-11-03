@@ -15,13 +15,33 @@ import type { MucDuLieu } from "./phanLoai";
 export type NguonKiemDinh =
   | { loai: "chat"; cuocTroChuyenId: number; tinNhanId: number }
   | { loai: "agent"; runId: string }
-  | { loai: "coding"; phienId: string; chiSoLuot: number };
+  | { loai: "coding"; phienId: string; chiSoLuot: number }
+  | NguonVanBan;
+
+/**
+ * ★ Đợt 10.4b L4 + E (dieu-phoi 03/11) — nguồn VĂN BẢN cho bong bóng web / extension khi lượt KHÔNG có bản lưu máy chủ. Máy chủ không chứng
+ * minh được gì về chữ client gửi ⇒ mức LUÔN `van-hanh` (nhà máy phải `choDuLieuVanHanh`); trần TỔNG byte UTF-8 `cauHoi + traLoi`.
+ * Có bản lưu (id) ⇒ client PHẢI dùng nguồn theo ID (`chat` …) — van-ban chỉ là đường dự phòng.
+ */
+export interface NguonVanBan {
+  loai: "van-ban";
+  beMat: "bong-bong" | "extension";
+  cauHoi: string;
+  traLoi: string;
+}
+export const TRAN_VAN_BAN_KIEM_DINH_BYTE = 16 * 1024;
 
 export interface NoiDungNguon {
   cauHoi: string;
   traLoi: string;
   muc: MucDuLieu;
-  beMat: "chat" | "coding" | "agent-turn";
+  beMat: "chat" | "coding" | "agent-turn" | "bong-bong" | "extension";
+}
+
+/** Nguồn văn bản ⇒ nội dung (thuần, không đọc kho): mức `van-hanh` CỐ ĐỊNH. Quá trần byte ⇒ `null` (người gọi trả NGOAI_QUA_LON). */
+export function noiDungVanBan(n: NguonVanBan): NoiDungNguon | null {
+  if (Buffer.byteLength(n.cauHoi, "utf8") + Buffer.byteLength(n.traLoi, "utf8") > TRAN_VAN_BAN_KIEM_DINH_BYTE) return null;
+  return { cauHoi: n.cauHoi, traLoi: n.traLoi, muc: "van-hanh", beMat: n.beMat };
 }
 
 /**
@@ -112,6 +132,8 @@ export async function docNguonKiemDinh(userId: number, nguon: NguonKiemDinh): Pr
     }
     return { cauHoi, traLoi: luot.content, muc: "van-hanh", beMat: "coding" };
   }
+  // văn bản: thủ tục xử lý TRƯỚC (không qua kho) — tới đây là lời gọi sai ⇒ không có
+  if (nguon.loai === "van-ban") return null;
   // chat
   if (!Number.isInteger(nguon.cuocTroChuyenId) || !Number.isInteger(nguon.tinNhanId)) return null;
   const [{ getDb }, { aiChatConversations, aiChatMessages }] = await Promise.all([import("../../../db/connection"), import("../../../../drizzle/schema/ai")]);

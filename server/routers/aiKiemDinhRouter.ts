@@ -27,6 +27,8 @@ const NGUON = z.discriminatedUnion("loai", [
   z.object({ loai: z.literal("chat"), cuocTroChuyenId: z.number().int().positive(), tinNhanId: z.number().int().positive() }).strict(),
   z.object({ loai: z.literal("agent"), runId: z.string().uuid() }).strict(),
   z.object({ loai: z.literal("coding"), phienId: z.string().uuid(), chiSoLuot: z.number().int().min(0).max(10_000) }).strict(),
+  // ★ 10.4b L4 + E — văn bản của bong bóng / extension khi lượt KHÔNG có bản lưu máy chủ (trần TỔNG byte kiểm ở thủ tục ⇒ 413 NGOAI_QUA_LON)
+  z.object({ loai: z.literal("van-ban"), beMat: z.enum(["bong-bong", "extension"]), cauHoi: z.string().max(16_384), traLoi: z.string().max(16_384) }).strict(),
 ]);
 const INPUT = z
   .object({
@@ -79,7 +81,13 @@ async function nguonKiemDinhTrongPhamVi(ctx: { user: { id: number } }, i: Input)
   if (!BE_MAT_NGOAI_DUOC_DUNG.includes("kiem-dinh")) throw khongCo();
   const nm = await dep.nhaMayCua(ctx);
   if (!nm || nm.length !== 1) throw khongCo(); // B2: đúng MỘT nhà máy (kho không gắn nhà máy)
-  const nguon = await dep.docNguon(ctx.user.id, i.nguon);
+  let nguon: NoiDungNguon | null;
+  if (i.nguon.loai === "van-ban") {
+    // ★ 10.4b L4 + E — không đọc kho: chữ client gửi, mức van-hanh CỐ ĐỊNH; quá trần tổng byte ⇒ 413
+    const { noiDungVanBan } = await import("../services/ai/ngoai/nguonKiemDinh");
+    nguon = noiDungVanBan(i.nguon);
+    if (!nguon) throw loiNgoai("NGOAI_QUA_LON", "PAYLOAD_TOO_LARGE");
+  } else nguon = await dep.docNguon(ctx.user.id, i.nguon);
   if (!nguon) throw khongCo();
   if (!nguon.traLoi.trim()) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "aiKiemDinh", reason: "kiem-dinh-tra-loi-rong" }, "trống");
   const [, nhaCungCap = "", ...m] = i.chonModel.split(":");

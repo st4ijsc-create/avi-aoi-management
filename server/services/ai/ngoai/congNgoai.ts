@@ -33,7 +33,7 @@ import { openai, openaiTuongThich } from "./nhaCungCap/openai";
 
 export type NguonMuc =
   | { loai: "luong"; mucDuLieu?: () => Promise<MucDuLieu> }
-  | { loai: "be-mat"; beMat: "chat" | "coding" | "agent-turn" | "v1"; phanDaGhep: MucDuLieu[] };
+  | { loai: "be-mat"; beMat: "chat" | "coding" | "agent-turn" | "v1" | "bong-bong" | "extension"; phanDaGhep: MucDuLieu[] };
 
 export interface YeuCauGoiNgoai {
   dich: { nhaCungCap: string; model: string };

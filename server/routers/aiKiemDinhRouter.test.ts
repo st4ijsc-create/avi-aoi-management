@@ -61,19 +61,72 @@ const loi = async (p: Promise<unknown>) => {
 };
 
 describe("input strict", () => {
-  it("khoá lạ / nguồn van-ban / văn bản / mức / nhà máy / congCu ⇒ BAD_REQUEST; chonModel không phải ngoai ⇒ BAD_REQUEST", async () => {
+  it("khoá lạ / nguồn van-ban SAI DẠNG / văn bản / mức / nhà máy / congCu ⇒ BAD_REQUEST; chonModel không phải ngoai ⇒ BAD_REQUEST", async () => {
     dat();
     for (const bad of [
       { ...INPUT, mucDuLieu: "ky-thuat" },
       { ...INPUT, factoryId: 5 },
       { ...INPUT, congCu: [] },
+      // (10.4b L4 + E) van-ban chỉ nhận {loai, beMat ∈ bong-bong|extension, cauHoi, traLoi}
       { ...INPUT, nguon: { loai: "van-ban", cauHoi: "x", traLoi: "y" } },
+      { ...INPUT, nguon: { loai: "van-ban", beMat: "chat", cauHoi: "x", traLoi: "y" } },
+      { ...INPUT, nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "x", traLoi: "y", mucDuLieu: "ky-thuat" } },
+      { ...INPUT, nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "x", traLoi: "y", nhaMay: 5 } },
+      { ...INPUT, nguon: { loai: "van-ban", beMat: "extension", cauHoi: "x", traLoi: "y", dinhKem: [] } },
+      { ...INPUT, nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "x", traLoi: 5 } },
       { ...INPUT, nguon: { loai: "agent", runId: RUN, traLoi: "chèn" } },
       { ...INPUT, chonModel: "vai-tro:chat" },
       { ...INPUT, chonModel: "auto" },
     ]) {
       expect(await loi(goi().chay(bad as never)), JSON.stringify(bad)).toMatch(/^BAD_REQUEST/);
     }
+  });
+});
+
+describe("★ 10.4b L4 + E — nguồn VĂN BẢN (bong bóng / extension, lượt không có bản lưu máy chủ)", () => {
+  const VB = (o: Record<string, unknown> = {}) => ({ ...INPUT, nguon: { loai: "van-ban" as const, beMat: "bong-bong" as const, cauHoi: "máy L3 dừng?", traLoi: "do kẹt băng tải", ...o } });
+  it("mức LUÔN van-hanh; bề mặt theo beMat; văn bản tới cổng qua ghepPhan", async () => {
+    const m = dat();
+    const kq = await goi().chay(VB({ beMat: "extension" }) as never);
+    expect(kq).toMatchObject({ ketQua: { ketLuan: "can-sua" }, callId: 77 });
+    expect(m.nhan[0]!.ngu.nguonMuc).toEqual({ loai: "be-mat", beMat: "extension", phanDaGhep: ["van-hanh"] });
+    expect(JSON.stringify(m.nhan[0]!.tinNhan)).toContain("do kẹt băng tải");
+    expect(JSON.stringify(m.nhan[0]!.tinNhan)).toContain("máy L3 dừng?");
+  });
+  it("docNguon (đọc kho) KHÔNG được gọi cho van-ban", async () => {
+    const goiDoc: unknown[] = [];
+    const nhan: YeuCauGoiNgoai[] = [];
+    dat();
+    __datPhuThuocKiemDinhChoTest({
+      nhaMayCua: async () => [5],
+      docNguon: async (_u, n) => (goiDoc.push(n), { cauHoi: "KHO", traLoi: "KHO", muc: "ky-thuat", beMat: "chat" }),
+      goi: async (yc) => (nhan.push(yc), { noiDung: HOP_LE, toolCalls: [], khongTinCay: true, tokenVao: 1, tokenRa: 1, chiPhiUocUsd: null, callId: 9 }),
+    });
+    await goi().chay(VB() as never);
+    expect(goiDoc).toEqual([]);
+    expect(nhan[0]!.ngu.nguonMuc).toMatchObject({ beMat: "bong-bong", phanDaGhep: ["van-hanh"] });
+    expect(JSON.stringify(nhan[0]!.tinNhan)).not.toContain("KHO");
+  });
+  it("trần 16 KB = TỔNG byte UTF-8 cauHoi + traLoi: vừa đúng ⇒ chạy; quá 1 byte ⇒ 413 NGOAI_QUA_LON, cổng không gọi; traLoi rỗng ⇒ BAD_REQUEST", async () => {
+    const { nhan } = dat();
+    const ba = "ă"; // 2 byte UTF-8
+    await goi().chay(VB({ cauHoi: "a".repeat(16 * 1024 - 2 * 100), traLoi: ba.repeat(100) }) as never);
+    expect(nhan).toHaveLength(1);
+    expect(await loi(goi().chay(VB({ cauHoi: "a".repeat(16 * 1024 - 2 * 100 + 1), traLoi: ba.repeat(100) }) as never))).toBe("PAYLOAD_TOO_LARGE:NGOAI_QUA_LON");
+    expect(await loi(goi().xemTruoc(VB({ cauHoi: "a".repeat(16 * 1024), traLoi: "x" }) as never))).toBe("PAYLOAD_TOO_LARGE:NGOAI_QUA_LON");
+    expect(nhan).toHaveLength(1);
+    expect(await loi(goi().chay(VB({ traLoi: "   " }) as never))).toBe("BAD_REQUEST:kiem-dinh-tra-loi-rong");
+  });
+  it("xemTruoc: mucDuLieu van-hanh; chống lặp áp cho van-ban (cùng chữ đang chạy ⇒ 409)", async () => {
+    dat();
+    expect((await goi().xemTruoc(VB() as never)).mucDuLieu).toBe("van-hanh");
+    let mo!: () => void;
+    dat({ cho: new Promise<void>((r) => (mo = r)) });
+    const p1 = goi().chay(VB() as never);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await loi(goi().chay(VB() as never))).toBe("CONFLICT:NGOAI_DANG_CHAY");
+    mo();
+    await p1;
   });
 });
 
