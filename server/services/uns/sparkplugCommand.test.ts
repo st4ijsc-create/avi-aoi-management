@@ -23,7 +23,7 @@ const DEVICE = "Station45";
 
 function makeDeps(over: Partial<SparkplugCommandDeps> = {}) {
   const onRebirth = vi.fn(() => {});
-  const subscribe = vi.fn(() => {});
+  const subscribe = vi.fn((_filters: string[], _onMessage: (topic: string, payload: Buffer) => void) => {});
   const log = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
   const deps: SparkplugCommandDeps = { subscribe, onRebirth, log, ...over };
   return { deps, onRebirth, subscribe, log };
