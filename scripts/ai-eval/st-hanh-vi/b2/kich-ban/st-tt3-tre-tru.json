@@ -1,0 +1,75 @@
+{
+  "id": "st-tt3-tre-tru",
+  "khoi": "TreTru",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb, lanh) va an/tests/an.st (s, l, s0, sAm, l0, sSp); moi lan goi = mot buoc dtMs 0; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi-fb",
+      "buoc": [
+        { "vao": { "PV": 40.0, "SP": 50.0, "DAI": 4.0, "CHE_DO_LAM_LANH": false }, "dtMs": 0, "ky": { "Q": true }, "nhan": "suoi PV thap => bat" },
+        { "vao": { "PV": 60.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "suoi PV cao => tat" }
+      ]
+    },
+    {
+      "ten": "hien-thi-lanh",
+      "buoc": [
+        { "vao": { "PV": 60.0, "SP": 50.0, "DAI": 4.0, "CHE_DO_LAM_LANH": true }, "dtMs": 0, "ky": { "Q": true }, "nhan": "lanh PV cao => bat" }
+      ]
+    },
+    {
+      "ten": "an-s",
+      "buoc": [
+        { "vao": { "PV": 50.0, "SP": 50.0, "DAI": 4.0, "CHE_DO_LAM_LANH": false }, "dtMs": 0, "ky": { "Q": false }, "nhan": "suoi ban dau giua => F" },
+        { "vao": { "PV": 49.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "suoi 49 giu F" },
+        { "vao": { "PV": 48.0 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "suoi 48 = nguong bat => T" },
+        { "vao": { "PV": 51.0 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "suoi 51 giu T" },
+        { "vao": { "PV": 51.99 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "suoi 51.99 giu T" },
+        { "vao": { "PV": 52.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "suoi 52 = nguong tat => F" },
+        { "vao": { "PV": 49.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "suoi 49 giu F lan 2" },
+        { "vao": { "PV": 30.0 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "suoi 30 => T" }
+      ]
+    },
+    {
+      "ten": "an-l",
+      "buoc": [
+        { "vao": { "PV": 50.0, "SP": 50.0, "DAI": 4.0, "CHE_DO_LAM_LANH": true }, "dtMs": 0, "ky": { "Q": false }, "nhan": "lanh ban dau giua => F" },
+        { "vao": { "PV": 52.0 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "lanh 52 => T" },
+        { "vao": { "PV": 49.0 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "lanh 49 giu T" },
+        { "vao": { "PV": 48.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "lanh 48 => F" },
+        { "vao": { "PV": 51.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "lanh 51 giu F" }
+      ]
+    },
+    {
+      "ten": "an-s0",
+      "buoc": [
+        { "vao": { "PV": 19.9, "SP": 20.0, "DAI": 0.0, "CHE_DO_LAM_LANH": false }, "dtMs": 0, "ky": { "Q": true }, "nhan": "dai0 19.9 => T" },
+        { "vao": { "PV": 20.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "dai0 PV=SP => tat thang F" },
+        { "vao": { "PV": 19.99 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "dai0 19.99 => T" }
+      ]
+    },
+    {
+      "ten": "an-sAm",
+      "buoc": [
+        { "vao": { "PV": 19.0, "SP": 20.0, "DAI": -10.0, "CHE_DO_LAM_LANH": false }, "dtMs": 0, "ky": { "Q": true }, "nhan": "dai am 19 => T" },
+        { "vao": { "PV": 20.5 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "dai am 20.5 => F" },
+        { "vao": { "PV": 19.5 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "dai am 19.5 => T" }
+      ]
+    },
+    {
+      "ten": "an-l0",
+      "buoc": [
+        { "vao": { "PV": 20.0, "SP": 20.0, "DAI": 0.0, "CHE_DO_LAM_LANH": true }, "dtMs": 0, "ky": { "Q": false }, "nhan": "lanh dai0 PV=SP => F" },
+        { "vao": { "PV": 20.1 }, "dtMs": 0, "ky": { "Q": true }, "nhan": "lanh dai0 20.1 => T" },
+        { "vao": { "PV": 20.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "lanh dai0 ve SP => F" }
+      ]
+    },
+    {
+      "ten": "an-sSp",
+      "buoc": [
+        { "vao": { "PV": 47.0, "SP": 50.0, "DAI": 4.0, "CHE_DO_LAM_LANH": false }, "dtMs": 0, "ky": { "Q": true }, "nhan": "SP 50 PV 47 => T" },
+        { "vao": { "SP": 40.0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "SP ha 40 => F" },
+        { "vao": { "CHE_DO_LAM_LANH": true }, "dtMs": 0, "ky": { "Q": true }, "nhan": "doi sang lanh PV 47 SP 40 => T" }
+      ]
+    }
+  ]
+}

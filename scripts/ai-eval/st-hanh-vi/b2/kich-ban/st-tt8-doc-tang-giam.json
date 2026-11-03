@@ -1,0 +1,42 @@
+{
+  "id": "st-tt8-doc-tang-giam",
+  "khoi": "DocTangGiam",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb, f2); KT_BUOC(T#Xms); fb(...) = mot buoc dtMs X, goi khong KT_BUOC = dtMs 0; doan f2: test goi f2 lan dau khi G_NOW da = 8950 ms (tong KT_BUOC truoc do) nen buoc dau cua f2 dung dtMs 8950 de giu nguyen gia tri G_NOW tuyet doi; KT_REAL cua test dung dung sai tuyet doi 0.001/0.0001, kich ban dung dung sai chung cua bo cham - gia tri ky vong chep nguyen; khong bo kiem nao (de dung TIME_TO_LINT nano giay chi la goi y cach tinh trong loi giai, khong co kiem nao can so 64 bit)",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "DICH": 20.0, "TOC_DO_TANG": 10.0, "TOC_DO_GIAM": 5.0, "BAT": false }, "dtMs": 0, "ky": { "RA": 20.0 }, "nhan": "t=0 BAT tat => RA = DICH" },
+        { "vao": { "DICH": 30.0, "BAT": true }, "dtMs": 100, "ky": { "RA": 20.0 }, "nhan": "t=100 chu ky dau dt = 0" },
+        { "dtMs": 100, "ky": { "RA": 21.0 }, "nhan": "t=200 sau 100ms => 21" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "DICH": 20.0, "TOC_DO_TANG": 10.0, "TOC_DO_GIAM": 5.0, "BAT": false }, "dtMs": 0, "ky": { "RA": 20.0, "DA_TOI": true }, "nhan": "t0 RA 20" },
+        { "vao": { "DICH": 25.0, "BAT": true }, "dtMs": 100, "ky": { "RA": 20.0, "DA_TOI": false }, "nhan": "t100 RA giu 20" },
+        { "dtMs": 100, "ky": { "RA": 21.0 }, "nhan": "t200 RA 21" },
+        { "dtMs": 100, "ky": { "RA": 22.0 }, "nhan": "t300 RA 22" },
+        { "dtMs": 200, "ky": { "RA": 24.0, "DA_TOI": false }, "nhan": "t500 RA 24" },
+        { "dtMs": 150, "ky": { "RA": 25.0, "DA_TOI": true }, "nhan": "t650 kep 25" },
+        { "vao": { "DICH": 10.0 }, "dtMs": 100, "ky": { "RA": 24.5, "DA_TOI": false }, "nhan": "t750 giam 24.5" },
+        { "dtMs": 1000, "ky": { "RA": 19.5 }, "nhan": "t1750 RA 19.5" },
+        { "dtMs": 2000, "ky": { "RA": 10.0, "DA_TOI": true }, "nhan": "t3750 kep 10" },
+        { "vao": { "DICH": 50.0, "BAT": false }, "dtMs": 0, "ky": { "RA": 50.0, "DA_TOI": true }, "nhan": "t3750 BAT tat bam 50" },
+        { "vao": { "DICH": 60.0, "BAT": true }, "dtMs": 5000, "ky": { "RA": 50.0, "DA_TOI": false }, "nhan": "t8750 bat lai chu ky dau giu 50" },
+        { "dtMs": 100, "ky": { "RA": 51.0 }, "nhan": "t8850 RA 51" },
+        { "dtMs": 0, "ky": { "RA": 51.0 }, "nhan": "cung thoi diem giu 51" },
+        { "vao": { "DICH": 0.0 }, "dtMs": 100, "ky": { "RA": 50.5 }, "nhan": "t8950 dao chieu 50.5" }
+      ]
+    },
+    {
+      "ten": "an-f2",
+      "buoc": [
+        { "vao": { "DICH": 5.0, "TOC_DO_TANG": 1.0, "TOC_DO_GIAM": 1.0, "BAT": true }, "dtMs": 8950, "ky": { "RA": 0.0, "DA_TOI": false }, "nhan": "t8950 f2 dau RA 0" },
+        { "dtMs": 1000, "ky": { "RA": 1.0 }, "nhan": "f2 sau 1s RA 1" },
+        { "dtMs": 10000, "ky": { "RA": 5.0, "DA_TOI": true }, "nhan": "f2 sau 11s kep 5" }
+      ]
+    }
+  ]
+}

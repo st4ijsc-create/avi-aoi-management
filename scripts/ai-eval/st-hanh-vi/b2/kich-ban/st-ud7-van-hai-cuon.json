@@ -1,0 +1,48 @@
+{
+  "id": "st-ud7-van-hai-cuon",
+  "khoi": "VanHaiCuon",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhVan.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau cua an o t=10); lan goi dau hien_thi = dtMs 0. Vong kin vi tri van p (+10 khi CUON_MO chu ky truoc, -10 khi CUON_DONG, tru khi ket; CT_DONG = p <= 0, CT_MO = p >= 100 hoac haiCT) duoc thay bang quy dao CT_MO/CT_DONG ho mo theo duong mong doi (khop cac gia tri p trong chu thich an.st). BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao) va 5 KT cua FUNCTION phu ViTriVan goi rieng (1 o hien_thi, 4 o an) - khong phai khoi chinh.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "MO": false, "DONG": false, "CT_MO": false, "CT_DONG": true, "RESET": false, "T_HANH_TRINH": 150 }, "dtMs": 0, "ky": { "TRANG_THAI": 4 }, "nhan": "dang dong san => DA_DONG" },
+        { "vao": { "MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "CUON_MO": true }, "nhan": "lenh MO => DANG_MO" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "MO": false, "DONG": false, "CT_MO": false, "CT_DONG": true, "RESET": false, "T_HANH_TRINH": 150 }, "dtMs": 10, "ky": { "TRANG_THAI": 4 }, "nhan": "t=10 da dong p 0" },
+        { "vao": { "MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "CUON_MO": true }, "nhan": "t=20 lenh mo" },
+        { "vao": { "MO": false, "CT_DONG": false }, "dtMs": 10, "lan": 9, "ky": { "TRANG_THAI": 1 }, "nhan": "t=110 van dang mo p 90" },
+        { "vao": { "CT_MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "CUON_MO": false }, "nhan": "t=120 p 100 da mo" },
+        { "vao": { "MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "CUON_MO": false }, "nhan": "t=130 mo khi da mo" },
+        { "vao": { "MO": false }, "dtMs": 10, "nhan": "t=140" },
+        { "vao": { "DONG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2, "CUON_DONG": true }, "nhan": "t=150 lenh dong" },
+        { "vao": { "DONG": false, "CT_MO": false }, "dtMs": 10, "lan": 3, "nhan": "t=160..180 p 90..70" },
+        { "vao": { "MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "CUON_MO": false, "CUON_DONG": false }, "nhan": "t=190 dao, p 60" },
+        { "vao": { "MO": false }, "dtMs": 10, "ky": { "CUON_MO": true }, "nhan": "t=200 cuon mo p 60" },
+        { "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 1 }, "nhan": "t=230 dang mo p 90" },
+        { "vao": { "CT_MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3 }, "nhan": "t=240 p 100 da mo" },
+        { "vao": { "DONG": true }, "dtMs": 10, "nhan": "t=250 dong nhung ket (p giu 100)" },
+        { "vao": { "DONG": false }, "dtMs": 10, "lan": 14, "ky": { "TRANG_THAI": 2, "CUON_DONG": true }, "nhan": "t=390 van dang dong" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 9, "MA_LOI": 1, "CUON_DONG": false }, "nhan": "t=400 loi hanh trinh" },
+        { "vao": { "MO": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=410 lenh khi loi" },
+        { "vao": { "MO": false }, "dtMs": 10, "nhan": "t=420" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "MA_LOI": 0 }, "nhan": "t=430 reset p 100" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=440" },
+        { "vao": { "MO": true, "DONG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "CUON_DONG": false }, "nhan": "t=450 hai lenh bo" },
+        { "vao": { "MO": false, "DONG": false }, "dtMs": 10, "nhan": "t=460" },
+        { "vao": { "DONG": true }, "dtMs": 10, "nhan": "t=470 dang dong" },
+        { "vao": { "DONG": false, "CT_MO": true, "CT_DONG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9, "MA_LOI": 2, "CUON_DONG": false }, "nhan": "t=480 hai cong tac" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=490 reset khi con hai CT" },
+        { "vao": { "CT_MO": false, "CT_DONG": false }, "dtMs": 10, "ky": { "TRANG_THAI": 5, "MA_LOI": 0 }, "nhan": "t=500 reset p 90 giua chung" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=510" },
+        { "vao": { "DONG": true }, "dtMs": 10, "nhan": "t=520 dong tu p 90" },
+        { "vao": { "DONG": false }, "dtMs": 10, "lan": 8, "ky": { "TRANG_THAI": 2 }, "nhan": "t=600 dang dong p 10" },
+        { "vao": { "CT_DONG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 4, "CUON_DONG": false }, "nhan": "t=610 p 0 da dong" }
+      ]
+    }
+  ]
+}

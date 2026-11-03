@@ -1,0 +1,11 @@
+--- a/src/plc/scanCodegen.ts	2026-11-03 08:06:31.387512600 +0700
++++ b/src/plc/scanCodegen.ts	2026-11-03 09:13:45.094380400 +0700
+@@ -1032,6 +1032,8 @@
+ 
+ /** Evaluate generated source: inside a Compartment when the realm is locked down, else with the Function constructor. */
+ function evaluate(src: string): unknown {
++  // [avi-aoi va-vendor.patch] cấm sinh mã (dieu-phoi 03/11): ST do model sinh là ĐẦU VÀO KHÔNG TIN CẬY — chỉ chạy AST walker.
++  throw new Error(`cam sinh ma (dieu-phoi 03/11): vendor/oip-plc chi chay AST walker (${src.length} ky tu khong danh gia)`)
+   if (partSandboxActive()) {
+     compartment ??= new (globalThis as unknown as { Compartment: new () => { evaluate(src: string): unknown } }).Compartment()
+     return compartment.evaluate(src)

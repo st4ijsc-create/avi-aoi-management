@@ -1,0 +1,44 @@
+{
+  "id": "st-tt2-co-gian-tuong-tu",
+  "khoi": "CoGianTuongTu",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (f2, fb); moi lan goi = mot buoc dtMs 0; KT_REAL cua test dung dung sai tuyet doi 0.01/0.0001, kich ban dung dung sai chung cua bo cham (tuong doi 1e-4, tuyet doi 1e-6 quanh 0) - gia tri ky vong chep nguyen; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "THO": 13824, "KT_THAP": 0.0, "KT_CAO": 100.0 }, "dtMs": 0, "ky": { "GIA_TRI": 50.0 }, "nhan": "13824 thang 0..100 => 50" },
+        { "vao": { "THO": 27648 }, "dtMs": 0, "ky": { "GIA_TRI": 100.0 }, "nhan": "27648 => 100" },
+        { "vao": { "THO": 32767 }, "dtMs": 0, "ky": { "TREN_DAI": true }, "nhan": "32767 => TREN_DAI" }
+      ]
+    },
+    {
+      "ten": "an-f2",
+      "buoc": [
+        { "vao": { "THO": 32767, "KT_THAP": 0.0, "KT_CAO": 100.0 }, "dtMs": 0, "ky": { "LOI": true, "GIA_TRI": 0.0 }, "nhan": "dau tien loi => LOI, GIA_TRI 0" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "THO": 0, "KT_THAP": 0.0, "KT_CAO": 100.0 }, "dtMs": 0, "ky": { "GIA_TRI": 0.0, "LOI": false }, "nhan": "0 => 0, LOI F" },
+        { "vao": { "THO": 6912 }, "dtMs": 0, "ky": { "GIA_TRI": 25.0 }, "nhan": "6912 => 25" },
+        { "vao": { "THO": 30000 }, "dtMs": 0, "ky": { "GIA_TRI": 100.0, "TREN_DAI": false }, "nhan": "30000 => kep 100, khong TREN_DAI" },
+        { "vao": { "THO": 32511 }, "dtMs": 0, "ky": { "TREN_DAI": false, "LOI": false }, "nhan": "32511 => khong TREN_DAI, LOI F" },
+        { "vao": { "THO": 32512 }, "dtMs": 0, "ky": { "TREN_DAI": true, "LOI": true, "DUOI_DAI": false, "GIA_TRI": 100.0 }, "nhan": "32512 => TREN_DAI, LOI, giu 100" },
+        { "vao": { "THO": -1382 }, "dtMs": 0, "ky": { "DUOI_DAI": false, "GIA_TRI": 0.0 }, "nhan": "-1382 => khong DUOI_DAI, kep 0" },
+        { "vao": { "THO": 13824 }, "dtMs": 0, "ky": { "GIA_TRI": 50.0 }, "nhan": "13824 => 50" },
+        { "vao": { "THO": -1383 }, "dtMs": 0, "ky": { "DUOI_DAI": true, "LOI": true, "GIA_TRI": 50.0 }, "nhan": "-1383 => DUOI_DAI, LOI, giu 50" },
+        { "vao": { "THO": -32768 }, "dtMs": 0, "ky": { "GIA_TRI": 50.0 }, "nhan": "-32768 => van giu 50" },
+        { "vao": { "THO": 20736 }, "dtMs": 0, "ky": { "LOI": false, "GIA_TRI": 75.0 }, "nhan": "hoi phuc 20736 => 75" },
+        { "vao": { "THO": 13824, "KT_THAP": 4.0, "KT_CAO": 20.0 }, "dtMs": 0, "ky": { "GIA_TRI": 12.0 }, "nhan": "4..20 13824 => 12" },
+        { "vao": { "THO": 6912 }, "dtMs": 0, "ky": { "GIA_TRI": 8.0 }, "nhan": "4..20 6912 => 8" },
+        { "vao": { "THO": 6912, "KT_THAP": 100.0, "KT_CAO": 0.0 }, "dtMs": 0, "ky": { "GIA_TRI": 75.0 }, "nhan": "dao 6912 => 75" },
+        { "vao": { "THO": 27648 }, "dtMs": 0, "ky": { "GIA_TRI": 0.0 }, "nhan": "dao 27648 => 0" },
+        { "vao": { "THO": -1000 }, "dtMs": 0, "ky": { "GIA_TRI": 100.0 }, "nhan": "dao -1000 => kep 100" },
+        { "vao": { "THO": 30000 }, "dtMs": 0, "ky": { "GIA_TRI": 0.0 }, "nhan": "dao 30000 => kep 0" },
+        { "vao": { "THO": 13824, "KT_THAP": -50.0, "KT_CAO": 50.0 }, "dtMs": 0, "ky": { "GIA_TRI": 0.0 }, "nhan": "-50..50 13824 => 0" },
+        { "vao": { "THO": 20736 }, "dtMs": 0, "ky": { "GIA_TRI": 25.0 }, "nhan": "-50..50 20736 => 25" }
+      ]
+    }
+  ]
+}

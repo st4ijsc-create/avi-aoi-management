@@ -1,0 +1,40 @@
+{
+  "id": "st-tt1-bo-phieu-2oo3",
+  "khoi": "BoPhieu2oo3",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb); vong FOR i=0..7 (i = A + 2B + 4C) trai ra 8 buoc voi bang mQ/mL/mK; moi lan goi fb(...) khong KT_BUOC = mot buoc dtMs 0; RESET khong truyen o lan goi dau = FALSE (gia tri ban dau); khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "A": true, "B": true, "C": true, "RESET": false }, "dtMs": 0, "ky": { "Q": true }, "nhan": "ba kenh TRUE => Q" },
+        { "vao": { "C": false }, "dtMs": 0, "ky": { "LECH": true, "KENH_LECH": 3 }, "nhan": "110 => LECH, kenh lech 3" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "A": false, "B": false, "C": false, "RESET": false }, "dtMs": 0, "ky": { "Q": false, "LECH": false, "KENH_LECH": 0 }, "nhan": "bang i=0" },
+        { "vao": { "A": true, "B": false, "C": false }, "dtMs": 0, "ky": { "Q": false, "LECH": true, "KENH_LECH": 1 }, "nhan": "bang i=1" },
+        { "vao": { "A": false, "B": true, "C": false }, "dtMs": 0, "ky": { "Q": false, "LECH": true, "KENH_LECH": 2 }, "nhan": "bang i=2" },
+        { "vao": { "A": true, "B": true, "C": false }, "dtMs": 0, "ky": { "Q": true, "LECH": true, "KENH_LECH": 3 }, "nhan": "bang i=3" },
+        { "vao": { "A": false, "B": false, "C": true }, "dtMs": 0, "ky": { "Q": false, "LECH": true, "KENH_LECH": 3 }, "nhan": "bang i=4" },
+        { "vao": { "A": true, "B": false, "C": true }, "dtMs": 0, "ky": { "Q": true, "LECH": true, "KENH_LECH": 2 }, "nhan": "bang i=5" },
+        { "vao": { "A": false, "B": true, "C": true }, "dtMs": 0, "ky": { "Q": true, "LECH": true, "KENH_LECH": 1 }, "nhan": "bang i=6" },
+        { "vao": { "A": true, "B": true, "C": true }, "dtMs": 0, "ky": { "Q": true, "LECH": false, "KENH_LECH": 0, "DEM_LECH": 1 }, "nhan": "bang i=7 + dem sau bang = 1 suon" },
+        { "vao": { "A": false, "B": false, "C": false, "RESET": true }, "dtMs": 0, "nhan": "000 RESET" },
+        { "vao": { "RESET": false }, "dtMs": 0, "nhan": "nha RESET" },
+        { "vao": { "A": true, "B": false, "C": false }, "dtMs": 0, "nhan": "100" },
+        { "vao": { "A": false, "B": false, "C": false }, "dtMs": 0, "nhan": "000" },
+        { "vao": { "A": false, "B": true, "C": false }, "dtMs": 0, "nhan": "010" },
+        { "vao": { "A": false, "B": false, "C": false }, "dtMs": 0, "nhan": "000" },
+        { "vao": { "A": true, "B": true, "C": true }, "dtMs": 0, "nhan": "111" },
+        { "vao": { "A": false, "B": true, "C": true }, "dtMs": 0, "ky": { "DEM_LECH": 3 }, "nhan": "011 => dem 3 suon" },
+        { "vao": { "A": false, "B": true, "C": true, "RESET": true }, "dtMs": 0, "ky": { "DEM_LECH": 0 }, "nhan": "reset => 0" },
+        { "vao": { "A": true, "B": false, "C": false, "RESET": true }, "dtMs": 0, "ky": { "DEM_LECH": 0 }, "nhan": "reset giu, lech doi kenh => van 0" },
+        { "vao": { "A": true, "B": false, "C": false, "RESET": false }, "dtMs": 0, "ky": { "DEM_LECH": 0 }, "nhan": "nha reset khi LECH con TRUE => 0" },
+        { "vao": { "A": true, "B": true, "C": true }, "dtMs": 0, "nhan": "111" },
+        { "vao": { "A": true, "B": true, "C": false }, "dtMs": 0, "ky": { "DEM_LECH": 1 }, "nhan": "suon moi sau reset => 1" }
+      ]
+    }
+  ]
+}

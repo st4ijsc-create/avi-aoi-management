@@ -1,0 +1,31 @@
+{
+  "id": "st-tv10-chot-uu-tien",
+  "khoi": "HaiChot",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); vong FOR 12 buoc trai thanh 12 buoc dtMs 0 theo mang vDat/vXoa/mSr/mRs/mDoi cua test; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "DAT": true, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": true }, "nhan": "dat => Q_SR, Q_RS" },
+        { "vao": { "DAT": false, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": false }, "nhan": "xoa => Q_SR FALSE" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "DAT": false, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": false, "Q_RS": false, "DOI_TRANG_THAI": 0 }, "nhan": "buoc 1" },
+        { "vao": { "DAT": true, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": true, "DOI_TRANG_THAI": 1 }, "nhan": "buoc 2" },
+        { "vao": { "DAT": false, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": true, "DOI_TRANG_THAI": 1 }, "nhan": "buoc 3" },
+        { "vao": { "DAT": true, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": false, "DOI_TRANG_THAI": 1 }, "nhan": "buoc 4" },
+        { "vao": { "DAT": false, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": false, "DOI_TRANG_THAI": 1 }, "nhan": "buoc 5" },
+        { "vao": { "DAT": false, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": false, "Q_RS": false, "DOI_TRANG_THAI": 2 }, "nhan": "buoc 6" },
+        { "vao": { "DAT": true, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": false, "DOI_TRANG_THAI": 3 }, "nhan": "buoc 7" },
+        { "vao": { "DAT": false, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": false, "Q_RS": false, "DOI_TRANG_THAI": 4 }, "nhan": "buoc 8" },
+        { "vao": { "DAT": true, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": false, "DOI_TRANG_THAI": 5 }, "nhan": "buoc 9" },
+        { "vao": { "DAT": true, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": true, "DOI_TRANG_THAI": 5 }, "nhan": "buoc 10" },
+        { "vao": { "DAT": false, "XOA": false }, "dtMs": 0, "ky": { "Q_SR": true, "Q_RS": true, "DOI_TRANG_THAI": 5 }, "nhan": "buoc 11" },
+        { "vao": { "DAT": false, "XOA": true }, "dtMs": 0, "ky": { "Q_SR": false, "Q_RS": false, "DOI_TRANG_THAI": 6 }, "nhan": "buoc 12" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "st-tv5-giam-sat-phan-hoi",
+  "khoi": "GiamSatPhanHoi",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau t=0 = dtMs 0; FOR i := 1 TO 5 gop bang lan 5; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "LENH_CHAY": true, "PHAN_HOI": false, "T_CHO": 40, "RESET": false }, "dtMs": 0, "nhan": "t=0 lenh, chua phan hoi" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "ky": { "BAO_DONG": false }, "nhan": "dang chay co phan hoi => khong loi" },
+        { "vao": { "PHAN_HOI": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true, "BAO_DONG": true }, "nhan": "mat phan hoi => loi + bao dong" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "LENH_CHAY": false, "PHAN_HOI": false, "T_CHO": 40, "RESET": false }, "dtMs": 0, "ky": { "BAO_DONG": false }, "nhan": "t=0 khong loi" },
+        { "vao": { "LENH_CHAY": true, "PHAN_HOI": false }, "dtMs": 10, "lan": 5, "ky": { "LOI_MAT_PHAN_HOI": false, "BAO_DONG": false }, "nhan": "t=50 chua co phan hoi => khong MAT" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "ky": { "BAO_DONG": false }, "nhan": "t=60 co phan hoi" },
+        { "vao": { "PHAN_HOI": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true, "BAO_DONG": true, "LOI_PHAN_HOI_THUA": false }, "nhan": "t=70 mat => MAT" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true }, "nhan": "t=80 reset khi dk con => giu" },
+        { "vao": { "PHAN_HOI": true, "RESET": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true }, "nhan": "t=90 phan hoi lai van chot" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": false, "BAO_DONG": false }, "nhan": "t=100 reset khi het dk => xoa" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=110" },
+        { "vao": { "PHAN_HOI": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true }, "nhan": "t=120 mat lan 2" },
+        { "vao": { "LENH_CHAY": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": true }, "nhan": "t=130 bo lenh, chua reset => giu" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": false }, "nhan": "t=140 reset sau bo lenh => xoa" },
+        { "vao": { "PHAN_HOI": true, "RESET": false }, "dtMs": 10, "nhan": "t=150 phan hoi thua bat dau" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "lan": 3, "ky": { "LOI_PHAN_HOI_THUA": false }, "nhan": "t=180 thua 30ms chua loi" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "ky": { "LOI_PHAN_HOI_THUA": true, "BAO_DONG": true, "LOI_MAT_PHAN_HOI": false }, "nhan": "t=190 thua 40ms => loi" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_PHAN_HOI_THUA": true }, "nhan": "t=200 reset khi con thua => giu" },
+        { "vao": { "PHAN_HOI": false, "RESET": false }, "dtMs": 10, "ky": { "LOI_PHAN_HOI_THUA": true }, "nhan": "t=210 het phan hoi van chot" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_PHAN_HOI_THUA": false, "BAO_DONG": false }, "nhan": "t=220 reset => xoa thua" },
+        { "vao": { "PHAN_HOI": true, "RESET": false }, "dtMs": 10, "nhan": "t=230" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "lan": 3, "nhan": "t=240..260" },
+        { "vao": { "PHAN_HOI": false }, "dtMs": 10, "ky": { "BAO_DONG": false }, "nhan": "t=270 thua ngan => khong loi" },
+        { "vao": { "LENH_CHAY": true, "PHAN_HOI": true }, "dtMs": 10, "nhan": "t=280 lenh co phan hoi" },
+        { "vao": { "LENH_CHAY": false, "PHAN_HOI": true }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": false }, "nhan": "t=290 bo lenh con phan hoi => khong MAT" },
+        { "vao": { "PHAN_HOI": true }, "dtMs": 10, "lan": 2, "nhan": "t=300..310" },
+        { "vao": { "PHAN_HOI": false }, "dtMs": 10, "ky": { "BAO_DONG": false }, "nhan": "t=320 quan tinh 30ms => khong loi" },
+        { "vao": { "LENH_CHAY": true, "PHAN_HOI": false }, "dtMs": 10, "ky": { "LOI_MAT_PHAN_HOI": false }, "nhan": "t=330 lan chay moi chua co => khong MAT" },
+        { "vao": { "LENH_CHAY": true, "PHAN_HOI": false }, "dtMs": 10, "ky": { "BAO_DONG": false }, "nhan": "t=340 van khong MAT" }
+      ]
+    }
+  ]
+}
