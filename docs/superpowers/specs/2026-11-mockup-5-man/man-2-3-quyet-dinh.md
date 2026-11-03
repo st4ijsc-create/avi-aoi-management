@@ -59,7 +59,12 @@ Thang chữ nhỏ nhất dùng: 11 px (caption); phần lớn ≥ 12,5 px. Khôn
 - Chữ ưu tiên (P1–P4) LUÔN dùng `--alarm-pN-ink`; glyph/viền dùng màu chính `--alarm-pN` (đồ hoạ ≥ 3:1). Áp cho cả 4 mức.
 - Khoảng hở/mất kết nối trong spark = tím sọc (như dữ liệu cũ); uncertain = viền/nét chấm xám. KHÔNG thêm màu đỏ nhạt.
 - Hộp xác nhận minh hoạ: setpoint mặc định mức 3; ví dụ hiển thị mức 4 + TOTP ghi rõ "kỹ sư đã siết tag này lên mức 4".
-- Chờ chủ dự án: Q1 (accent ≈ sim; khuyến nghị đổi accent sang xanh lam đậm, --sim giữ xanh ngọc độc quyền), Q3 (khuyến nghị: KHÔNG đổi nhãn PackML; thêm huy hiệu tạm nhấp nháy "Dừng — chờ máy xác nhận" cạnh nhãn, biến mất khi đọc lại khớp).
+- Đã chốt 2026-11-04 (xem mục dưới): Q1 (accent ≈ sim; khuyến nghị đổi accent sang xanh lam đậm, --sim giữ xanh ngọc độc quyền), Q3 (khuyến nghị: KHÔNG đổi nhãn PackML; thêm huy hiệu tạm nhấp nháy "Dừng — chờ máy xác nhận" cạnh nhãn, biến mất khi đọc lại khớp).
+
+## Đã chốt 2026-11-04 (chủ dự án)
+- Q1: `--accent` đổi sang XANH DƯƠNG (~#0c5a85, luong-ui sửa token.css); `--sim` giữ xanh ngọc độc quyền.
+- Q3: "Dừng — chờ máy xác nhận" = HUY HIỆU TẠM nhấp nháy cạnh nhãn PackML (viền đứt đỏ, CSS thuần, tắt khi `prefers-reduced-motion`, biến mất ở `da-dung`); PackML vẫn Execute cho tới khi đọc lại khớp (T6). Đã vẽ ở trạng thái `dung-cho`.
+- Rail trái SÁNG là mặc định toàn hệ.
 
 ## Câu hỏi cho chủ dự án
 1. `--accent` (#0b6477) và `--sim` (#0a7a72) đều xanh ngọc, rất gần nhau. Trong mockup, mô phỏng luôn đi kèm viền 4 px + dải chữ + watermark nên không nhầm với nút/tab; có muốn đẩy `--accent` sang một màu khác (ví dụ xanh lam đậm) để tách hẳn không?

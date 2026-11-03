@@ -179,3 +179,6 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .app[data-w="1920"] .write .inp{font-size:20px}
 .app[data-w="1920"] .cmds li{min-height:44px;font-size:14px}
 .tabs{overflow:hidden;flex:none}
+.pill.pm-wait{border:2px dashed var(--alarm-p1);color:var(--alarm-p1-ink);background:var(--alarm-p1-soft);font-weight:700;animation:blink 1s steps(2) infinite}
+@media(prefers-reduced-motion:reduce){.pill.pm-wait{animation:none}}
+body.bare .pill.pm-wait,body.bare .stop3 div.now::after{animation:none}
