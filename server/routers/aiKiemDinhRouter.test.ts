@@ -117,6 +117,30 @@ describe("★ 10.4b L4 + E — nguồn VĂN BẢN (bong bóng / extension, lư�
     expect(nhan).toHaveLength(1);
     expect(await loi(goi().chay(VB({ traLoi: "   " }) as never))).toBe("BAD_REQUEST:kiem-dinh-tra-loi-rong");
   });
+  it("(rà kiem-dinh n13) khoá chống lặp / bộ nhớ 120 s theo NỘI DUNG nguồn: hai văn bản KHÁC (cùng model, tiêu chí) ⇒ HAI lần gọi, không trả kết quả của nhau; cùng văn bản ⇒ bộ nhớ", async () => {
+    const { nhan } = dat();
+    const a = await goi().chay(VB({ traLoi: "đáp A" }) as never);
+    const b = await goi().chay(VB({ traLoi: "đáp B" }) as never);
+    expect(nhan).toHaveLength(2);
+    expect(a).not.toHaveProperty("tuBoNho");
+    expect(b).not.toHaveProperty("tuBoNho");
+    expect(JSON.stringify(nhan[1]!.tinNhan)).toContain("đáp B");
+    const a2 = await goi().chay(VB({ traLoi: "đáp A" }) as never);
+    expect(a2).toMatchObject({ tuBoNho: true });
+    expect(nhan).toHaveLength(2);
+    // hai id chat khác nhau cũng không đụng khoá
+    const { nhan: n2 } = dat();
+    await goi().chay({ ...INPUT, nguon: { loai: "chat", cuocTroChuyenId: 1, tinNhanId: 10 } });
+    await goi().chay({ ...INPUT, nguon: { loai: "chat", cuocTroChuyenId: 1, tinNhanId: 11 } });
+    expect(n2).toHaveLength(2);
+  });
+  it("(rà kiem-dinh n10, n12) mỗi trường van-ban > 16 384 ký tự ⇒ BAD_REQUEST (zod, trước khi đếm byte); docNguonKiemDinh với van-ban gọi thẳng ⇒ null (không trả nội dung)", async () => {
+    dat();
+    expect(await loi(goi().chay(VB({ traLoi: "x".repeat(16_385) }) as never))).toMatch(/^BAD_REQUEST/);
+    expect(await loi(goi().chay(VB({ cauHoi: "x".repeat(16_385), traLoi: "y" }) as never))).toMatch(/^BAD_REQUEST/);
+    const { docNguonKiemDinh } = await import("../services/ai/ngoai/nguonKiemDinh");
+    expect(await docNguonKiemDinh(7, { loai: "van-ban", beMat: "bong-bong", cauHoi: "q", traLoi: "a" })).toBeNull();
+  });
   it("xemTruoc: mucDuLieu van-hanh; chống lặp áp cho van-ban (cùng chữ đang chạy ⇒ 409)", async () => {
     dat();
     expect((await goi().xemTruoc(VB() as never)).mucDuLieu).toBe("van-hanh");
