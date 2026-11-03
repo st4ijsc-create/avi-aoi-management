@@ -88,6 +88,25 @@ for (const vung of VUNG) {
     const viTri = (n) => { const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf)); return `${rel.replace(/\\/g, "/")}:${line + 1}`; };
 
     const visit = (n) => {
+      // destructuring: `const { simTargets } = trpc` · `const { a: { b } } = utils` ⇒ coi như chuỗi trpc.simTargets (kiểm định P2, 2026-11-04)
+      if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer) {
+        const goc = phang(n.initializer);
+        const lan = (bp, tien) => {
+          for (const el of bp.elements) {
+            const ten = el.propertyName ? (ts.isIdentifier(el.propertyName) || ts.isStringLiteralLike(el.propertyName) ? el.propertyName.text : "[*]") : ts.isIdentifier(el.name) ? el.name.text : "[*]";
+            const c = [...tien, ten];
+            for (const k of kq) {
+              const [r, pp] = k.parts;
+              for (let i = 1; i < c.length; i++) {
+                if (c[i] !== r) continue;
+                if (pp === undefined || c[i + 1] === pp) { k.goi.push({ loai, vt: viTri(el), chuoi: c.join(".") + " (destructuring)" }); break; }
+              }
+            }
+            if (ts.isObjectBindingPattern(el.name)) lan(el.name, c);
+          }
+        };
+        lan(n.name, goc);
+      }
       if (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) {
         // chỉ xử lý nút NGOÀI CÙNG của chuỗi (cha không phải truy cập tiếp trên cùng chuỗi)
         const cha = n.parent;

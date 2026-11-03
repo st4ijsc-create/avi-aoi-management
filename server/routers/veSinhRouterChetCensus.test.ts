@@ -19,7 +19,7 @@ const GIU_CO_NGUOI_GOI: Record<string, string> = {
   twinGov: "client/src/pages/SynapsePlatformPage.tsx",
 };
 
-type KetQua = { muc: string; goi: Array<{ loai: string; vt: string }>; dong: Array<{ loai: string }> };
+type KetQua = { muc: string; goi: Array<{ loai: string; vt: string }>; dong: Array<{ loai: string }>; chuoi: Array<{ loai: string; vt: string; tr: string }> };
 function banDo(...muc: string[]): KetQua[] {
   const ra = execFileSync(process.execPath, ["scripts/pha0/ban-do-client-goi.mjs", "--json", ...muc], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return JSON.parse(ra) as KetQua[];
@@ -46,6 +46,15 @@ describe("Dọn vệ sinh — bản đồ AST: không client nào gọi tên đ�
     expect(vi).toEqual([]);
     const dong = kq.flatMap((k) => k.dong.filter((x) => x.loai !== "test").map(() => k.muc));
     expect(dong).toEqual([]);
+    // ★ kiểm định P5: đường /api/trpc/<router>.<proc>, mảng đường dẫn, fetch thô — chuỗi ký tự mang tên router (có "." + thủ tục, hoặc đúng bằng tên) ngoài test = 0.
+    //   Bỏ đuôi tệp (aiVisionLanguage.ts) và chuỗi nhật ký "[tên] …" (service giữ).
+    const chuoi = kq.flatMap((k) => k.chuoi.filter((x) => x.loai !== "test")
+      .filter((x) => {
+        const ten = k.muc.replace(/\./g, "\\.");
+        return new RegExp("(^|[^A-Za-z0-9_])" + ten + "\\.(?!(?:tsx?|mjs|cjs|js)\\b)[A-Za-z]").test(x.tr) || new RegExp("^" + ten + "$").test(x.tr.trim());
+      })
+      .map((x) => k.muc + " @ " + x.vt + " \"" + x.tr + "\""));
+    expect(chuoi).toEqual([]);
   }, 180_000);
 
   it("★ orchestrationGov / twinGov CÓ người gọi thật ở trang định tuyến — gỡ chúng là việc của chủ dự án (giai đoạn 4, P5), không phải của lô này", () => {

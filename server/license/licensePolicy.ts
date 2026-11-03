@@ -28,7 +28,6 @@
  */
 export const RUNTIME_CRITICAL_PREFIXES: readonly string[] = [
   "inspection",
-  "inspectionVariant",
   "machineStatus",
   "machineApi",
   "productionSession",
