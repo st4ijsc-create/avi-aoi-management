@@ -191,7 +191,7 @@ describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực th
     expect(tat).toEqual({ thePhat: true, tuChoi: false });
     const bat = await ghiTepChuaDoc(true);
     expect(bat).toEqual({ thePhat: false, tuChoi: true });
-  }, 90_000);
+  }, 150_000); // hai vòng × chờ kết cục tối đa 40 s + khởi/huỷ (rà kiem-dinh 2026-11-03)
 });
 
 describe("H1.5 công tắc AI_AGENT_TOOL_TIMEOUT nối tới bộ thực thi", () => {
