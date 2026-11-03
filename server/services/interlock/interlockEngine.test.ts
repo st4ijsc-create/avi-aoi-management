@@ -116,6 +116,10 @@ vi.mock("../ot/commandDispatcher", () => ({
   isOtControlEnabled: () => flags.otControl,
 }));
 
+// SCADA R1b-2b-2a A2(l) (3) — the advisory safety-audit hook (fire-and-forget dynamic import): captured, never written.
+const auditSpy = vi.fn(async (_input: any) => ({ ok: true, enabled: true }));
+vi.mock("../safety/safetyAuditService", () => ({ record: (...a: any[]) => (auditSpy as any)(...a) }));
+
 // Import AFTER mocks.
 import { runOnce, evaluateRule } from "./interlockEngine";
 import { giaTriLenhInterlock } from "./giaTriLenh";
@@ -311,6 +315,27 @@ describe("interlockEngine — F5b auto-block (deterministic, human-approved)", (
     const ev = await evaluateRule(autoRule({ approvedBy: null }));
     expect(ev?.status).toBe("skipped");
     expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("A2(l) (3) — the safety-audit row never stores a MACHINE id as the robot id", () => {
+  it("stop_line rule on target machine 5 (source machine 6) ⇒ audit robotId null; both machines named in notes, not as a robot", async () => {
+    auditSpy.mockClear();
+    state.observationCount = 5;
+    await evaluateRule(baseRule({ action: "stop_line", machineId: 6, targetMachineId: 5, lineId: 3, stationId: 4 }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    const a = auditSpy.mock.calls[0]![0];
+    expect(a.robotId).toBeNull();
+    expect(a).toMatchObject({ lineId: 3, stationId: 4, detectedBy: "interlock" });
+    expect(a.notes).toContain("target machine 5");
+    expect(a.notes).toContain("source machine 6");
+  });
+  it("no target machine ⇒ robotId still null (it used to fall back to the source machine)", async () => {
+    auditSpy.mockClear();
+    state.observationCount = 5;
+    await evaluateRule(baseRule({ action: "reduce_speed", machineId: 9, targetMachineId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(auditSpy.mock.calls[0]![0].robotId).toBeNull();
   });
 });
 
