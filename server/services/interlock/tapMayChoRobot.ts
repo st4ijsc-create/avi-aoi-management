@@ -7,6 +7,9 @@
  *
  * Rule (coordinator, A2(l) option (B) — no migration, the `ot/safetyTarget.ts` precedent, stricter only):
  *   • `robots."stationId"` set ⇒ the machines of THAT station (its `lineId`, when also set, must agree; otherwise the place is contradictory);
+ *     fix round 1 (m3, controller ruling): a station with NO machine rows ⇒ the machines of that station's LINE (`tramKhongMay: true` — never
+ *     silently unguarded; same "possibly anywhere on the line" reasoning). If the line has none either ⇒ an empty set, and the preview says
+ *     "no machines to check" (not "clear");
  *   • only `robots."lineId"` ⇒ EVERY machine of that line (over-blocking accepted — decision (1): a line-level robot may be at any station);
  *   • neither, or a station / line that does not exist, or a contradictory pair ⇒ UNPLACED: MOTION refused with `ROBOT_CHUA_DINH_VI`
  *     (decision (2)), the gate is not consulted;
@@ -37,7 +40,7 @@ export const ROBOT_CHUA_DINH_VI = "ROBOT_CHUA_DINH_VI" as const;
 export type LyDoChuaDinhVi = "khong_co_robot" | "khong_vi_tri" | "tram_khong_ton_tai" | "chuyen_khong_ton_tai" | "mau_thuan";
 
 export type ViTriRobot =
-  | { loai: "tram"; robotId: number; stationId: number; lineId: number; machineIds: number[] }
+  | { loai: "tram"; robotId: number; stationId: number; lineId: number; machineIds: number[]; tramKhongMay?: true }
   | { loai: "chuyen"; robotId: number; lineId: number; machineIds: number[] }
   | { loai: "chua_dinh_vi"; robotId: number; lyDo: LyDoChuaDinhVi }
   | { loai: "loi"; robotId: number; loi: string };
@@ -52,6 +55,17 @@ function boTrung(ids: Array<number | null | undefined>): number[] {
   return out.sort((a, b) => a - b);
 }
 
+/** Every machine of every station of line `lineId` (any isActive), sorted, de-duplicated. Throws on a DB error (the caller turns it into `loi`). */
+async function mayCuaChuyen(d: DbDoc, lineId: number): Promise<number[]> {
+  const ms = await d
+    .select({ id: machines.id })
+    .from(machines)
+    .innerJoin(stations, eq(stations.id, machines.stationId))
+    .where(eq(stations.lineId, lineId))
+    .orderBy(asc(machines.id));
+  return boTrung(ms.map((m) => m.id));
+}
+
 /** WHERE the robot is ⇒ the machine set its MOTION is gated by. Never throws: an error is `{ loai: "loi" }` (the caller refuses motion). */
 export async function tapMayChoRobot(d: DbDoc | null | undefined, robotId: number): Promise<ViTriRobot> {
   if (!Number.isSafeInteger(robotId) || robotId <= 0) return { loai: "chua_dinh_vi", robotId, lyDo: "khong_co_robot" };
@@ -64,18 +78,14 @@ export async function tapMayChoRobot(d: DbDoc | null | undefined, robotId: numbe
       if (!s) return { loai: "chua_dinh_vi", robotId, lyDo: "tram_khong_ton_tai" };
       if (r.lineId != null && r.lineId !== s.lineId) return { loai: "chua_dinh_vi", robotId, lyDo: "mau_thuan" };
       const ms = await d.select({ id: machines.id }).from(machines).where(eq(machines.stationId, s.id)).orderBy(asc(machines.id));
-      return { loai: "tram", robotId, stationId: s.id, lineId: s.lineId, machineIds: boTrung(ms.map((m) => m.id)) };
+      if (ms.length > 0) return { loai: "tram", robotId, stationId: s.id, lineId: s.lineId, machineIds: boTrung(ms.map((m) => m.id)) };
+      // m3 — a station with no machine: the rules on its LINE apply (stricter than an empty, never-blocked set)
+      return { loai: "tram", robotId, stationId: s.id, lineId: s.lineId, machineIds: await mayCuaChuyen(d, s.lineId), tramKhongMay: true };
     }
     if (r.lineId != null) {
       const [l] = await d.select({ id: productionLines.id }).from(productionLines).where(eq(productionLines.id, r.lineId)).limit(1);
       if (!l) return { loai: "chua_dinh_vi", robotId, lyDo: "chuyen_khong_ton_tai" };
-      const ms = await d
-        .select({ id: machines.id })
-        .from(machines)
-        .innerJoin(stations, eq(stations.id, machines.stationId))
-        .where(eq(stations.lineId, l.id))
-        .orderBy(asc(machines.id));
-      return { loai: "chuyen", robotId, lineId: l.id, machineIds: boTrung(ms.map((m) => m.id)) };
+      return { loai: "chuyen", robotId, lineId: l.id, machineIds: await mayCuaChuyen(d, l.id) };
     }
     return { loai: "chua_dinh_vi", robotId, lyDo: "khong_vi_tri" };
   } catch (err) {
@@ -129,7 +139,7 @@ export interface LyDoViPhamRobot {
   /** the machine of the robot's place the rule targets (null if the rule row could not be read) */
   machineId: number | null;
   machineCode: string | null;
-  /** true ⇔ the robot is line-level: the rule's machine is on the same LINE, not necessarily at the robot's station */
+  /** true ⇔ the rule matched through the robot's LINE (a line-level robot, or a station with no machines — m3), not its station */
   cungChuyen: boolean;
 }
 
@@ -138,7 +148,7 @@ export interface LyDoViPhamRobot {
  * because the robot is line-level ("rule on machine X (same line)"). Read-only; a read error ⇒ machine unknown (null), never throws.
  */
 export async function lyDoViPhamRobot(d: DbDoc | null | undefined, kq: KetQuaInterlockRobot): Promise<LyDoViPhamRobot[]> {
-  const cungChuyen = kq.viTri.loai === "chuyen";
+  const cungChuyen = kq.viTri.loai === "chuyen" || (kq.viTri.loai === "tram" && kq.viTri.tramKhongMay === true);
   const ids = kq.violations.map((v) => v.ruleId).filter((x) => Number.isSafeInteger(x));
   const byRule = new Map<number, { machineId: number | null; machineCode: string | null }>();
   if (d && ids.length > 0) {
@@ -154,4 +164,14 @@ export async function lyDoViPhamRobot(d: DbDoc | null | undefined, kq: KetQuaInt
     }
   }
   return kq.violations.map((v) => ({ ruleId: v.ruleId, machineId: byRule.get(v.ruleId)?.machineId ?? null, machineCode: byRule.get(v.ruleId)?.machineCode ?? null, cungChuyen }));
+}
+
+/**
+ * fix round 1 (m3) — what the console says besides the verdict: `khongCoMay` ⇔ the robot is placed but its set is EMPTY (no machine on its
+ * station nor on its line ⇒ no machine rule can guard it: "no machines to check", never "clear"); `tramKhongMay` ⇔ its station has no machine
+ * and the rules of line `lineId` apply.
+ */
+export function ghiChuViTri(viTri: ViTriRobot): { khongCoMay: boolean; tramKhongMay: boolean; lineId: number | null } {
+  if (viTri.loai !== "tram" && viTri.loai !== "chuyen") return { khongCoMay: false, tramKhongMay: false, lineId: null };
+  return { khongCoMay: viTri.machineIds.length === 0, tramKhongMay: viTri.loai === "tram" && viTri.tramKhongMay === true, lineId: viTri.lineId };
 }

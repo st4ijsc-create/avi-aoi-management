@@ -20456,7 +20456,10 @@
     "rejected": "Lệnh không thực thi: {{status}}",
     "pickRobot": "Chọn robot trước.",
     "interlockSameLine": "luật trên máy {{machine}} (cùng chuyền)",
-    "interlockSameStation": "luật trên máy {{machine}} (cùng trạm)"
+    "interlockSameStation": "luật trên máy {{machine}} (cùng trạm)",
+    "interlockStopNeverBlocked": "Khoá liên động chỉ chặn chuyển động — lệnh DỪNG không bao giờ bị chặn.",
+    "interlockNoMachines": "Không có máy nào để kiểm tra — không luật khoá liên động nào bảo vệ được trạm hay chuyền của robot này.",
+    "interlockStationNoMachines": "Trạm này không có máy — áp các luật của chuyền {{line}}."
   },
   "analysisHub": {
     "title": "Trung tâm phân tích AI",

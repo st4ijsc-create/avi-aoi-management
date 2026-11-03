@@ -350,9 +350,10 @@ export function edgeEngineActorOf(contextJson: unknown, newestApproval: { approv
 
 /**
  * Step 7 + 8 for a robot attempt — the robot dispatcher's order: enabled, lock, FIELD_V2, commissioning ⇒ mode, policy, safety, interlock.
- * Exported for the A2(l) DB suite (tapMayChoRobot.a2l.db.test.ts), which drives it on a rolled-back transaction.
+ * Internal: it ASSUMES steps 1–6 already ran (node / run / claim, payload, ownership, the step-5 STOP short-circuit, approval) — only
+ * authorizeForNode calls it. The A2(l) DB suite reaches it through `__robotGatesForTests` (below).
  */
-export async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "robot" }>, approvedBy: number, runOwner: number, ownerEpoch: number): Promise<Gate | Verdict> {
+async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "robot" }>, approvedBy: number, runOwner: number, ownerEpoch: number): Promise<Gate | Verdict> {
   const robotId = rb.robotId as number;
   const { readRobotEnabledForMotion } = await import("../robot/robotEnabledGate");
   // fail-closed: only an explicit `true` passes — false, { error } (unreadable / timeout) or a throw all refuse
@@ -409,6 +410,12 @@ export async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltComma
     target: { robotId, jobType: rb.jobType as never },
   };
 }
+
+/**
+ * @internal test hook — the A2(l) DB suite (tapMayChoRobot.a2l.db.test.ts) drives the robot device gates on a rolled-back transaction. NEVER call
+ * it from production code: it skips steps 1–6 of authorizeForNode (pinned by the census in tapMayChoRobot.a2l.test.ts).
+ */
+export const __robotGatesForTests = robotGates;
 
 /**
  * Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock.

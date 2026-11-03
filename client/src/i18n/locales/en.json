@@ -20456,7 +20456,10 @@
     "rejected": "Command not executed: {{status}}",
     "pickRobot": "Select a robot first.",
     "interlockSameLine": "rule on machine {{machine}} (same line)",
-    "interlockSameStation": "rule on machine {{machine}} (same station)"
+    "interlockSameStation": "rule on machine {{machine}} (same station)",
+    "interlockStopNeverBlocked": "Interlocks gate motion only — a STOP is never blocked.",
+    "interlockNoMachines": "No machines to check — no interlock rule can guard this robot's station or line.",
+    "interlockStationNoMachines": "This station has no machines — the rules on line {{line}} apply."
   },
   "analysisHub": {
     "title": "AI Analysis Hub",

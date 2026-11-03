@@ -769,7 +769,7 @@ export const robotRouter = router({
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ robotId: z.number() }))
     .query(async ({ input, ctx }) => {
-      const { tapMayChoRobot, danhGiaInterlockRobot, lyDoViPhamRobot } = await import("../services/interlock/tapMayChoRobot");
+      const { tapMayChoRobot, danhGiaInterlockRobot, lyDoViPhamRobot, ghiChuViTri } = await import("../services/interlock/tapMayChoRobot");
       // phạm vi người dùng (L4 2026-10-25): robot ngoài phạm vi ≡ robot không tồn tại (-1 ⇒ khong_co_robot), không lộ luật interlock của nhà máy khác
       const mucTieu = (await robotThayDuoc(ctx, input.robotId)) ? input.robotId : -1;
       const db = await getDb();
@@ -780,6 +780,7 @@ export const robotRouter = router({
         failClosed: gate.failClosed,
         maTuChoi: gate.maTuChoi ?? null,
         viTri: gate.viTri.loai,
+        ...ghiChuViTri(gate.viTri), // fix round 1 (m3): khongCoMay / tramKhongMay / lineId
         violations: gate.violations.map((v, i) => ({ ...v, machineId: lyDo[i]?.machineId ?? null, machineCode: lyDo[i]?.machineCode ?? null, cungChuyen: lyDo[i]?.cungChuyen ?? false })),
       };
     }),

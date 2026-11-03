@@ -20456,7 +20456,10 @@
     "rejected": "命令未执行：{{status}}",
     "pickRobot": "请先选择机器人。",
     "interlockSameLine": "设备 {{machine}} 上的规则（同一产线）",
-    "interlockSameStation": "设备 {{machine}} 上的规则（同一工位）"
+    "interlockSameStation": "设备 {{machine}} 上的规则（同一工位）",
+    "interlockStopNeverBlocked": "联锁只限制运动——停止指令永远不会被阻止。",
+    "interlockNoMachines": "没有可检查的设备——没有任何联锁规则能保护该机器人的工位或产线。",
+    "interlockStationNoMachines": "该工位没有设备——适用产线 {{line}} 的规则。"
   },
   "analysisHub": {
     "title": "AI 分析中心",
