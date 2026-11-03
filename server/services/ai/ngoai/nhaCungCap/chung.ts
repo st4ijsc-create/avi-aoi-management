@@ -2,7 +2,7 @@
  * ★ Đợt 10.3 — phần dùng chung của các bản cài nhà cung cấp: lỗi HTTP ⇒ `LoiNgoai` (thông điệp THÔ — cổng che bằng `cheChuoi` trước
  * khi ném / ghi), số token, lịch sử chữ (công cụ cũ đã là dòng chữ — giới hạn đã ghi: model ngoài KHÔNG thấy tool_use gốc).
  */
-import { LoiNgoai, type PhanLoaiLoiNgoai } from "../loi";
+import { LoiNgoai, requestIdHopLe, type PhanLoaiLoiNgoai } from "../loi";
 import type { TinNhanNgoai } from "./kieu";
 
 /** Trường lỗi của ba họ API (OpenAI `error.code/type`, Anthropic `error.type`, Gemini `error.status`) gộp thành chữ thường để so khớp. */
@@ -43,11 +43,28 @@ export function phanLoaiHttp(status: number, json: unknown): PhanLoaiLoiNgoai {
   return "CLIENT";
 }
 
-export function loiHttp(status: number, json: unknown, choMs?: number): LoiNgoai {
+export function loiHttp(status: number, json: unknown, choMs?: number, requestId?: string): LoiNgoai {
   const { thongDiep } = dauHieu(json);
   const phanLoai = phanLoaiHttp(status, json);
   const thuLai = phanLoai === "RATE_LIMIT" || phanLoai === "SERVER" || phanLoai === "TIMEOUT";
-  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `${status} ${thongDiep}`.slice(0, 800), { thuLai, phanLoai, ...(choMs !== undefined ? { choMs } : {}) });
+  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", `${status} ${thongDiep}`.slice(0, 800), {
+    thuLai,
+    phanLoai,
+    ...(choMs !== undefined ? { choMs } : {}),
+    ...(requestId !== undefined ? { requestId } : {}),
+  });
+}
+
+/** (H3.3a) tiêu đề id yêu cầu của ba họ API, theo thứ tự: Anthropic `request-id`, OpenAI / tương thích `x-request-id`, Gemini `x-goog-request-id`. */
+export const TIEU_DE_REQUEST_ID = ["request-id", "x-request-id", "x-goog-request-id"] as const;
+
+/** (H3.3a) id yêu cầu từ tiêu đề phản hồi: tiêu đề CÓ MẶT đầu tiên quyết định; giá trị sai bộ ký tự ⇒ `undefined` (không lấy tiêu đề sau). */
+export function docRequestId(lay: (ten: string) => string | null | undefined): string | undefined {
+  for (const t of TIEU_DE_REQUEST_ID) {
+    const v = lay(t);
+    if (typeof v === "string" && v !== "") return requestIdHopLe(v);
+  }
+  return undefined;
 }
 
 /** `Retry-After` (giây hoặc ngày HTTP) ⇒ ms; rác / âm / quá khứ ⇒ `undefined`. `bayGio` để lưới cố định đồng hồ. */

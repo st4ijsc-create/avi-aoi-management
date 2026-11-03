@@ -43,8 +43,8 @@ export const openai: NhaCungCapAi = {
   async goi(yc, layKhoa, mang) {
     const body = JSON.stringify(thanYeuCau(yc, false));
     const r = await mang.goiJson(URL_OPENAI, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${await layKhoa()}` }, body });
-    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs);
-    return docKetQua(r.json);
+    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs, r.requestId);
+    return { ...docKetQua(r.json), ...(r.requestId ? { requestId: r.requestId } : {}) };
   },
 };
 
@@ -55,7 +55,7 @@ export const openaiTuongThich: NhaCungCapAi = {
     const url = `${ngu.endpoint.replace(/\/+$/, "")}/chat/completions`;
     const body = JSON.stringify(thanYeuCau(yc, true));
     const r = await mang.goiJson(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${await layKhoa()}` }, body });
-    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs);
-    return docKetQua(r.json);
+    if (r.status >= 400) throw loiHttp(r.status, r.json, r.retryAfterMs, r.requestId);
+    return { ...docKetQua(r.json), ...(r.requestId ? { requestId: r.requestId } : {}) };
   },
 };

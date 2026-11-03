@@ -31,12 +31,14 @@ export interface KetQuaNhaCungCap {
   /** `null` = nhà cung cấp không trả usage (không hoàn chỗ). */
   tokenVao: number | null;
   tokenRa: number | null;
+  /** (H3.3a) id yêu cầu của nhà cung cấp (tiêu đề phản hồi, đã kiểm bộ ký tự) — chỉ sổ / log máy chủ. */
+  requestId?: string;
 }
 
 /** Mạng ra ngoài DUY NHẤT của nhà cung cấp (bản thật ở `mangNgoai.ts`, Task 9). */
 export interface MangNgoai {
-  /** `retryAfterMs` (H3.1): tiêu đề `Retry-After` đã đổi ra ms khi nhà cung cấp gửi. */
-  goiJson(url: string, init: { method: "POST"; headers: Record<string, string>; body: string }): Promise<{ status: number; json: unknown; retryAfterMs?: number }>;
+  /** `retryAfterMs` (H3.1): tiêu đề `Retry-After` đã đổi ra ms khi nhà cung cấp gửi. `requestId` (H3.3a): `docRequestId` của tiêu đề. */
+  goiJson(url: string, init: { method: "POST"; headers: Record<string, string>; body: string }): Promise<{ status: number; json: unknown; retryAfterMs?: number; requestId?: string }>;
 }
 
 export interface NhaCungCapAi {

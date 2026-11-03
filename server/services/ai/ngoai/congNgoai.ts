@@ -373,7 +373,7 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
     e instanceof LoiNgoai
       ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
         ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che
-          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
+          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}), ...(e.requestId ? { requestId: e.requestId } : {}) })
         : e
       : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
   let kq: KetQuaNhaCungCap | null = null;
@@ -412,7 +412,7 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
       if (loi?.chuaGui) await huyGiuChuaGui(db, phieu).catch(() => undefined);
       else await ketToan(db, phieu, null).catch(() => undefined); // đã rời máy, không usage ⇒ giữ ước tính
       const loiDaChe = cheLoi(e);
-      await ghiKq(yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: loiDaChe.ma });
+      await ghiKq(yDinhId, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: loiDaChe.ma, ...(loi?.requestId ? { requestId: loi.requestId } : {}) });
       if (!loi?.thuLai || lan >= dep.soLanThu) throw loiDaChe;
       // (H3.1) backoff + jitter, tôn trọng `Retry-After`; nhà cung cấp xin chờ quá trần ⇒ dừng thử (không giữ chỗ lần nữa)
       const cho = choTruocLanThu(lan, loi.choMs, dep.ngauNhien);
@@ -435,13 +435,13 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
     kiemToolCallTraVe(kq.toolCalls, daChe.congCu);
   } catch (e) {
     const loi = cheLoi(e);
-    await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "tu-choi", maLoi: loi.ma });
+    await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "tu-choi", maLoi: loi.ma, ...(kq.requestId ? { requestId: kq.requestId } : {}) });
     throw loi;
   }
   // (12)
   buoc("so-ket-qua");
   // ★ 10.4b L0a' — băm câu trả lời (hàng ket-qua, WORM) ⇒ máy chủ xác minh dấu nguồn khi client lưu tin (`aiChat.saveStreamedMessage`).
-  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok", bamTraLoi: bamCauTraLoi(kq.noiDung ?? "") });
+  await ghiKq(yDinhId, { tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, ketCuc: "ok", bamTraLoi: bamCauTraLoi(kq.noiDung ?? ""), ...(kq.requestId ? { requestId: kq.requestId } : {}) });
   await luuNoiDungNeuBat(db, yDinhId, tinhTran, noiDungDaChe, cfg).catch(() => undefined);
   return { noiDung: kq.noiDung, toolCalls: kq.toolCalls, khongTinCay: true, tokenVao: kq.tokenVao, tokenRa: kq.tokenRa, chiPhiUocUsd: chiPhi, callId: yDinhId };
 }

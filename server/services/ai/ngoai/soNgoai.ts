@@ -39,6 +39,8 @@ export interface HangKetQua {
   maLoi?: string;
   /** ★ 10.4b L0a' (0417) — `bamCauTraLoi(noiDung)` của câu trả lời nhà cung cấp (chỉ hàng ok). */
   bamTraLoi?: string;
+  /** (H3.3a) id yêu cầu của nhà cung cấp (đã qua `requestIdHopLe`) — mọi kết cục có phản hồi HTTP (ok / loi / tu-choi). */
+  requestId?: string;
 }
 
 /**
