@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 5 màn then chốt</title>
+<link rel="stylesheet" href="token.css">
+<style>
+  body { padding: var(--gap-6); }
+  .wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--gap-5); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--gap-4); }
+  .c { background: var(--isa-surface); border: 1px solid var(--isa-line); border-radius: var(--radius-3); padding: var(--gap-4); display: flex; flex-direction: column; gap: var(--gap-2); }
+  .c a { color: var(--accent); font-weight: 600; }
+  ul { margin: 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="ds-h1">Mockup 5 màn then chốt — pha 0</h1>
+    <p class="ds-body">HTML + CSS tĩnh (không build app). Theme sáng ISA-101, Be Vietnam Pro + Geist Mono. Mọi màu qua <code class="mono">token.css</code>. Thêm <code class="mono">?state=…&amp;density=comfortable|default&amp;rail=open|closed</code> vào URL hoặc dùng thanh điều khiển đen ở đáy trang (chỉ có trong mockup).</p>
+  </header>
+  <div class="grid">
+    <section class="c"><h2 class="ds-h3">1 · Trang chủ theo vai</h2><span class="ds-small">luong-ui</span><a href="man-1-home.html">man-1-home.html</a><span class="ds-small">bình thường · có P1 chưa ack · dữ liệu cũ × 3 vai</span></section>
+    <section class="c"><h2 class="ds-h3">2 · Phòng vận hành</h2><span class="ds-small">scada-ui (nhánh docs/mockup-man-2-3)</span><a href="man-2-3.html">man-2-3.html</a><span class="ds-small">bình thường · 2 line bất thường · mô phỏng</span></section>
+    <section class="c"><h2 class="ds-h3">3 · Máy L3 (faceplate v2)</h2><span class="ds-small">scada-ui (nhánh docs/mockup-man-2-3)</span><a href="man-2-3.html">man-2-3.html</a><span class="ds-small">chạy · đã gửi DỪNG · đã dừng · dữ liệu cũ · LOCAL</span></section>
+    <section class="c"><h2 class="ds-h3">4 · Cảnh báo</h2><span class="ds-small">luong-ui</span><a href="man-4-canh-bao.html">man-4-canh-bao.html</a><span class="ds-small">12 hỗn hợp · lũ · tag stale · chi tiết (AlarmDrawer)</span></section>
+    <section class="c"><h2 class="ds-h3">5 · Tài sản</h2><span class="ds-small">luong-ui</span><a href="man-5-tai-san.html">man-5-tai-san.html</a><span class="ds-small">máy thật · máy mô phỏng · ngoài phạm vi · wizard bước 3</span></section>
+  </div>
+  <section class="c"><h2 class="ds-h3">Tệp kèm theo</h2><ul class="ds-body">
+    <li><b>token.css</b> — hệ token duy nhất (app + simulator); <b>shell.css</b> — vỏ AppFrame + thành phần chung; <b>shell.js</b> — chỉ để đổi trạng thái mockup</li>
+    <li><b>tuong-phan.md</b> — đo tương phản 58 cặp (sinh bằng <code class="mono">node tuong-phan.mjs</code>)</li>
+    <li><b>khoa-i18n.md</b> — khoá i18n dự kiến; <b>quyet-dinh-thi-giac.md</b> — quyết định + câu hỏi cho chủ dự án</li>
+    <li>Sinh lại: <code class="mono">node tao-mockup.mjs</code> (HTML) · <code class="mono">node chup.mjs</code> (PNG, cần Playwright)</li></ul></section>
+</div>
+</body>
+</html>
