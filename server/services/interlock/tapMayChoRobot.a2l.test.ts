@@ -158,10 +158,22 @@ describe("A2(l) census — the robot id is never a machine id; the three robot s
     const callRobotGates = auth.indexOf("await robotGates(d, node.nodeId, rb,");
     expect(callRobotGates).toBeGreaterThan(stopReturn);
     // inside robotGates the interlock runs only on the real path
-    const rg = auth.slice(auth.indexOf("export async function robotGates("), auth.indexOf("export async function otGates("));
+    const rg = auth.slice(auth.indexOf("\nasync function robotGates("), auth.indexOf("export async function otGates("));
     const ifReal = rg.indexOf("  if (real) {");
     expect(ifReal).toBeGreaterThan(-1);
     expect(rg.indexOf("danhGiaInterlockRobot(")).toBeGreaterThan(ifReal);
+  });
+});
+
+describe("A2(l) fix round 1 (m9) — robotGates is internal; its test hook is used by tests only", () => {
+  it("robotGates is not exported; __robotGatesForTests is marked @internal and referenced only by edgeAuthorizeCentral.ts and *.test.ts files", () => {
+    const auth = src(AUTH);
+    expect(auth).toMatch(/\nasync function robotGates\(/);
+    expect(auth).not.toMatch(/export (async )?function robotGates\b|export \{[^}]*\brobotGates\b/);
+    expect(auth).toMatch(/@internal test hook[^\n]*\n[^\n]*\n \*\/\nexport const __robotGatesForTests = robotGates;/);
+    const prod = prodFiles(path.join(ROOT, "server")).concat(prodFiles(path.join(ROOT, "client", "src")));
+    const users = prod.filter((f) => /__robotGatesForTests/.test(readFileSync(f, "utf8"))).map((f) => path.relative(ROOT, f).split(path.sep).join("/"));
+    expect(users).toEqual([AUTH]);
   });
 });
 

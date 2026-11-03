@@ -85,7 +85,53 @@ import * as conn from "../../db/connection";
 import { interlockRules } from "../../../drizzle/schema";
 import { tapMayChoRobot, ROBOT_CHUA_DINH_VI, type ViTriRobot } from "./tapMayChoRobot";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
-import { robotGates } from "../edge/edgeAuthorizeCentral";
+import { __robotGatesForTests as robotGates, authorizeForNode } from "../edge/edgeAuthorizeCentral"; // @internal test hook (m9)
+import { robotPayloadHash } from "../ot/otActionBinding";
+import { hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+/**
+ * m6 — a central edge signing key + keyring FILES for one case (the central kit's recipe): the node's claim is signed for real. One temp dir
+ * with two files, removed in `finally`; env and the signing caches restored.
+ */
+async function voiKhoaKy<T>(fn: () => Promise<T>): Promise<T> {
+  const sg = await import("../edge/edgeSigning");
+  const cc = await import("../edge/edgeCentralCommon");
+  const ec = await import("../edge/edgeExecutionCentral");
+  const keys = ["EDGE_SIGNING_KEY_FILE", "EDGE_SIGNING_KEY_DIR", "EDGE_SIGNING_KEY_PEM", "SECRET_ENCRYPTION_KEY"] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "a2l-edge-"));
+  try {
+    const { key, privateKeyPem } = sg.generateEdgeSigningKey();
+    const keyFile = path.join(dir, `${key.kid}.pem`);
+    writeFileSync(keyFile, privateKeyPem, { mode: 0o600 });
+    const now = Date.now();
+    writeFileSync(
+      path.join(dir, sg.EDGE_KEYRING_FILE),
+      JSON.stringify({ v: 1, version: 1, updatedAt: now, keys: [{ kid: key.kid, publicKeyPem: key.publicKeyPem, status: "active", notBefore: now - 60_000, retiredAt: null, root: true }] }),
+      { mode: 0o600 },
+    );
+    delete process.env.EDGE_SIGNING_KEY_PEM;
+    process.env.EDGE_SIGNING_KEY_FILE = keyFile;
+    process.env.EDGE_SIGNING_KEY_DIR = dir;
+    if (!process.env.SECRET_ENCRYPTION_KEY && !process.env.JWT_SECRET) process.env.SECRET_ENCRYPTION_KEY = `a2l-${randomBytes(16).toString("hex")}`;
+    sg.__resetCentralEdgeSigningKeyForTests();
+    cc.__resetCentralSignerCacheForTests();
+    ec.__resetClaimRateForTests();
+    return await fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k] as string;
+    }
+    sg.__resetCentralEdgeSigningKeyForTests();
+    cc.__resetCentralSignerCacheForTests();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `A2L-${Date.now()}`;
@@ -203,7 +249,7 @@ async function xemTruoc(robotId: number) {
   return c.interlockPreview({ robotId });
 }
 
-const ENV = ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "ROBOT_SAFETY_PREFLIGHT_ENABLED", "FIELD_V2_ENABLED", "SEC_PLATFORM", "ROBOT_CONTROL_TIMEOUT_MS"] as const;
+const ENV = ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "ROBOT_SAFETY_PREFLIGHT_ENABLED", "FIELD_V2_ENABLED", "SEC_PLATFORM", "ROBOT_CONTROL_TIMEOUT_MS", "EDGE_RUNTIME_ENABLED", "FOE_ENABLED", "EDGE_CLAIM_MIN_INTERVAL_MS"] as const;
 const saved: Record<string, string | undefined> = {};
 
 describe.skipIf(!DB_URL)("A2(l) — robot interlock by the machines WHERE the robot is (CSDL _test, ROLLBACK)", () => {
@@ -215,6 +261,10 @@ describe.skipIf(!DB_URL)("A2(l) — robot interlock by the machines WHERE the ro
     process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "false"; // the safety-PLC preflight is measured elsewhere; this suite measures the interlock
     delete process.env.FIELD_V2_ENABLED;
     delete process.env.SEC_PLATFORM;
+    // m6 — the edge run routes (the central kit's settings): runtime on, FOE on, no claim rate limit
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    process.env.FOE_ENABLED = "true";
+    process.env.EDGE_CLAIM_MIN_INTERVAL_MS = "0";
   });
   afterAll(() => {
     for (const k of ENV) {
@@ -373,5 +423,107 @@ describe.skipIf(!DB_URL)("A2(l) — robot interlock by the machines WHERE the ro
         expect(H.jobs.get(id)).toEqual(["abort", "abort", "abort"]); // canonical abort, 3 times
       }
     });
+  });
+
+  it("m3 (fix round 1) — a station with NO machine ⇒ the machines of its LINE apply (tramKhongMay); blocked by a rule on another station of the line, at all 3 sites", async () => {
+    await trongGiaoDich(async (tx) => {
+      const c = await taoCay(tx);
+      const S1c = await one(tx, sql`INSERT INTO stations ("lineId", code, name) VALUES (${c.L1}, ${`S1c-${DAU}-${ngan()}`}, 'S1c empty') RETURNING id`);
+      const rRong = await taoRobot(tx, { lineId: c.L1, stationId: S1c });
+      expect(await tapMayChoRobot(tx as never, rRong)).toEqual({ loai: "tram", robotId: rRong, stationId: S1c, lineId: c.L1, machineIds: [c.mA1, c.mA2, c.mB].sort((a, b) => a - b), tramKhongMay: true });
+      expect(await chuyenDong(rRong)).toMatchObject({ ok: true, status: "done" });
+      expect(await xemTruoc(rRong)).toMatchObject({ blocked: false, khongCoMay: false, tramKhongMay: true, lineId: c.L1 });
+      const luat = await taoLuat(tx, c.mB); // a machine of ANOTHER station of the same line
+      expect(await chuyenDong(rRong)).toMatchObject({ ok: false, status: "rejected", error: "INTERLOCK_BLOCKED" });
+      const p = await xemTruoc(rRong);
+      expect(p).toMatchObject({ blocked: true, viTri: "tram", tramKhongMay: true, lineId: c.L1 });
+      expect(p.violations).toEqual([expect.objectContaining({ ruleId: luat, machineId: c.mB, cungChuyen: true })]);
+      expect(await congEdge(tx, c, rRong)).toEqual({ gate: "interlock", detail: `interlock rule(s) #${luat}` });
+    });
+  });
+
+  it("m3 — a station with no machine on a line with no machine ⇒ empty set: not blocked, but the preview says khongCoMay ('no machines to check'), never a plain clear", async () => {
+    await trongGiaoDich(async (tx) => {
+      const c = await taoCay(tx);
+      const w = (await tx.execute(sql`SELECT "workshopId" AS id FROM production_lines WHERE id = ${c.L1}`)) as unknown as Array<{ id: number }>;
+      const L3 = await one(tx, sql`INSERT INTO production_lines ("workshopId", code, name) VALUES (${w[0]!.id}, ${`L3-${DAU}-${ngan()}`}, 'a2l line 3 empty') RETURNING id`);
+      const S3 = await one(tx, sql`INSERT INTO stations ("lineId", code, name) VALUES (${L3}, ${`S3-${DAU}-${ngan()}`}, 'S3 empty') RETURNING id`);
+      const r = await taoRobot(tx, { lineId: null, stationId: S3 });
+      expect(await tapMayChoRobot(tx as never, r)).toEqual({ loai: "tram", robotId: r, stationId: S3, lineId: L3, machineIds: [], tramKhongMay: true });
+      for (const m of [c.mA1, c.mA2, c.mB, c.m2]) await taoLuat(tx, m); // rules elsewhere cannot reach it
+      expect(await chuyenDong(r)).toMatchObject({ ok: true, status: "done" });
+      expect(await xemTruoc(r)).toMatchObject({ blocked: false, failClosed: false, maTuChoi: null, viTri: "tram", khongCoMay: true, tramKhongMay: true, lineId: L3, violations: [] });
+      // a placed robot WITH machines is never "khongCoMay"
+      const rTram = await taoRobot(tx, { lineId: c.L1, stationId: c.S1a });
+      expect(await xemTruoc(rTram)).toMatchObject({ khongCoMay: false, tramKhongMay: false });
+    });
+  });
+
+  it("m6 (L-7, edge /authorize) — a STOP step for an unplaced robot (dangling station / contradictory, both inside the node's factory) ⇒ stop_needs_no_authorization, never ROBOT_CHUA_DINH_VI; resolver + gate never consulted", async () => {
+    await voiKhoaKy(() => trongGiaoDich(async (tx) => {
+      const c = await taoCay(tx);
+      await tx.execute(sql`UPDATE edge_nodes SET "protocolVersion" = 2 WHERE id = ${c.node}`);
+      const nc = (await tx.execute(sql`SELECT code FROM edge_nodes WHERE id = ${c.node}`)) as unknown as Array<{ code: string }>;
+      const u = await one(tx, sql`INSERT INTO users ("openId", username, name, role, "isActive") VALUES (${`a2l-${ngan()}`}, ${`a2l-${ngan()}`}, 'a2l owner', 'admin', true) RETURNING id`);
+      // a real node credential + principal (the claim guard wants a credential of the node), all inside the rolled-back transaction
+      const { issueNodeCredential, authenticateEdgeNodeToken } = await import("../edge/edgeNodeCredentials");
+      const { token } = await issueNodeCredential({ nodeCode: nc[0]!.code, actorUserId: u, reason: "a2l fix1 m6" });
+      const node = (await authenticateEdgeNodeToken(token))!;
+      expect(node?.nodeId).toBe(c.node);
+      const { claimForNodeV2 } = await import("../edge/edgeExecutionCentral");
+      const mRobot = await one(tx, sql`INSERT INTO machines ("stationId", code, name, "machineType", "isActive") VALUES (${c.S2}, ${`MR-${DAU}`.slice(0, 50)}, 'a2l robot cell', 'ROBOT', true) RETURNING id`);
+      // owned by the node at INSERT; placed in the node's factory (the I-4 step-4 check passes) but UNPLACED for the interlock resolver
+      const owned = async (lineId: number | null, stationId: number | null) => {
+        const id = await one(tx, sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`R-${DAU}-${randomUUID()}`}, 'a2l', 'sim', 'sim://a2l', true, ${lineId}, ${stationId}, ${c.node}) RETURNING id`);
+        H.jobs.set(id, []);
+        return id;
+      };
+      const rMo = await owned(c.L1, 2_000_000_021); // dangling station, valid line
+      const rMauThuan = await owned(c.L1, c.S2); // a station of line 2, the robot says line 1
+      const rKhong = await owned(null, null); // no place at all (in no factory)
+      for (const m of [c.mA1, c.mA2, c.mB, c.m2]) await taoLuat(tx, m);
+      const authorizeStop = async (robotId: number) => {
+        const steps = [{ id: "s1", type: "command", machineId: mRobot, command: "abort", args: { robotId } }];
+        const ref = `A2L-${ngan()}`;
+        const def = { ref, name: ref, steps };
+        const wf = await one(tx, sql`INSERT INTO orchestration_workflows (ref, name, "definitionJson", status, "scopeKey", version) VALUES (${ref}, ${ref}, ${JSON.stringify(def)}::jsonb, 'active', 'global', 1) RETURNING id`);
+        const runId = await one(tx, sql`INSERT INTO orchestration_runs ("workflowId", "workflowRef", status, "paramsJson", "contextJson", "startedBy") VALUES (${wf}, ${ref}, 'queued', '{}'::jsonb, '{}'::jsonb, ${u}) RETURNING id`);
+        const defHash = hashWorkflowDefinition(def as never);
+        await tx.execute(sql`INSERT INTO orchestration_run_edge_assignments ("runId", "edgeNodeId", "workflowId", "workflowVersion", "defHash", "assignedBy") VALUES (${runId}, ${c.node}, ${wf}, 1, ${defHash}, ${u})`);
+        const cl = await claimForNodeV2(node, runId, { claimSeq: 0, defHash, programChecks: [] }); // the node claims its run (the real path)
+        if (cl.http !== 200) return { etap: "claim" as const, ...cl };
+        return authorizeForNode(node, runId, {
+          claimSeq: cl.data!.claimSeq,
+          claimToken: cl.data!.claimToken,
+          stepId: "s1",
+          attempt: 1,
+          idempotencyKey: `run${runId}-s1-a1`,
+          reqNonce: randomBytes(18).toString("base64url"),
+          command: { kind: "robot", robotId, jobType: "abort", params: {} },
+          payloadHash: robotPayloadHash({ robotId, jobType: "abort", params: {} }),
+          programChecks: [],
+        });
+      };
+      for (const id of [rMo, rMauThuan]) {
+        // the MOTION of the same robot IS refused by the edge robot gate (the hostile environment is real) …
+        expect(await congEdge(tx, c, id)).toMatchObject({ gate: "interlock", detail: expect.stringContaining(ROBOT_CHUA_DINH_VI) });
+        H.traCuu = 0;
+        H.congHoi = 0;
+        // … its STOP is not
+        const a = await authorizeStop(id);
+        expect(a, JSON.stringify(a)).toMatchObject({ http: 400, code: "stop_needs_no_authorization" });
+        expect(a).not.toHaveProperty("etap"); // the claim went through; this is the /authorize answer
+        expect(JSON.stringify(a)).not.toContain(ROBOT_CHUA_DINH_VI);
+        expect(H.traCuu).toBe(0);
+        expect(H.congHoi).toBe(0);
+      }
+      // a robot with no place at all is in no factory ⇒ not this node's (I-4 — pre-existing): its run is not even claimed; still never
+      // ROBOT_CHUA_DINH_VI, the resolver never consulted (the edge sends its own STOP without asking central)
+      H.traCuu = 0;
+      const k = await authorizeStop(rKhong);
+      expect(k, JSON.stringify(k)).toMatchObject({ etap: "claim", code: "not_owned" });
+      expect(JSON.stringify(k)).not.toContain(ROBOT_CHUA_DINH_VI);
+      expect(H.traCuu).toBe(0);
+    }));
   });
 });

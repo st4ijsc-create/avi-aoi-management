@@ -35,10 +35,15 @@ vi.mock("../../../drizzle/schema", () => ({
   spcRuleViolations: { __t: "spc_rule_violations", detectedAt: {}, isActive: {}, machineId: {} },
   cpkHistory: { __t: "cpk_history", cpk: {}, machineId: {}, periodEnd: {} },
   otTelemetry: { __t: "ot_telemetry", ts: {}, numValue: {}, machineId: {}, metric: {} },
+  // A2(l) fix round 1 (m2) — the audit row's locator is read from the rule's machine (machines ⋈ stations)
+  machines: { __t: "machines", id: { __c: "id" }, stationId: { __c: "stationId" } },
+  stations: { __t: "stations", id: { __c: "id" }, lineId: { __c: "lineId" } },
 }));
 
 // Programmable engine state.
 const state: {
+  /** m2 — the (machines ⋈ stations) row of the rule's machine; null = no row */
+  viTriMay?: { stationId: number; lineId: number } | null;
   rules: any[];
   observationCount: number;
   insertedEvents: any[];
@@ -81,6 +86,7 @@ function makeBuilder(t: string, cols: any): any {
   const rows = () => resolveSelect(t, cols);
   const builder: any = {
     where: () => builder,
+    innerJoin: () => builder,
     orderBy: () => builder,
     limit: async () => rows(),
     // thenable: `await builder` resolves to rows
@@ -91,6 +97,7 @@ function makeBuilder(t: string, cols: any): any {
 
 function resolveSelect(t: string, _cols: any): any[] {
   if (t === "interlock_rules") return state.rules.filter((r) => r.enabled === true);
+  if (t === "machines") return state.viTriMay ? [state.viTriMay] : [];
   if (t === "process_results") return [{ c: state.observationCount, total: 10, fail: state.observationCount }];
   if (t === "spc_rule_violations") return [{ c: state.observationCount }];
   if (t === "cpk_history") return [{ cpk: String(state.observationCount) }];
@@ -152,6 +159,7 @@ function baseRule(over: Partial<any> = {}): any {
 
 beforeEach(() => {
   duyetHL.v = true;
+  state.viTriMay = null;
   state.rules = [];
   state.observationCount = 0;
   state.insertedEvents = [];
@@ -329,6 +337,28 @@ describe("A2(l) (3) — the safety-audit row never stores a MACHINE id as the ro
     expect(a).toMatchObject({ lineId: 3, stationId: 4, detectedBy: "interlock" });
     expect(a.notes).toContain("target machine 5");
     expect(a.notes).toContain("source machine 6");
+  });
+  it("m2 — a rule with NO line / station: the row is located by the rule's target machine (its station + line), so a factory-scoped viewer sees it", async () => {
+    auditSpy.mockClear();
+    state.observationCount = 5;
+    state.viTriMay = { stationId: 41, lineId: 4 };
+    await evaluateRule(baseRule({ action: "stop_line", machineId: 6, targetMachineId: 5, lineId: null, stationId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(auditSpy.mock.calls[0]![0]).toMatchObject({ robotId: null, lineId: 4, stationId: 41 });
+    state.viTriMay = null;
+  });
+  it("m2 — the rule's own line / station win; an unknown machine ⇒ no locator (never a guess)", async () => {
+    auditSpy.mockClear();
+    state.observationCount = 5;
+    state.viTriMay = { stationId: 41, lineId: 4 };
+    await evaluateRule(baseRule({ action: "stop_line", targetMachineId: 5, lineId: 3, stationId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(auditSpy.mock.calls[0]![0]).toMatchObject({ lineId: 3, stationId: null });
+    auditSpy.mockClear();
+    state.viTriMay = null;
+    await evaluateRule(baseRule({ id: 2, action: "stop_line", targetMachineId: 5, lineId: null, stationId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(auditSpy.mock.calls[0]![0]).toMatchObject({ lineId: null, stationId: null });
   });
   it("no target machine ⇒ robotId still null (it used to fall back to the source machine)", async () => {
     auditSpy.mockClear();
