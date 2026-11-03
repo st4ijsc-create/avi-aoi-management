@@ -239,6 +239,7 @@ describe("KhoScadaLive — nối lại, hở seq, lỗi", () => {
     sk.noi();
     sk.phat("scada:delta", delta("ui-0", 1, [gv(1, "t", 99)]));
     expect(kho.doc(1, "t")).toMatchObject({ v: 5, cu: true });
+    expect(sk.lanPhat("scada:subscribe")).toHaveLength(2); // bỏ im lặng: KHÔNG coi là hở seq ⇒ không bắn thêm subscribe
   });
 
   it("★ hở seq (1 → 3) ⇒ đăng ký lại, tag cũ cho tới snapshot mới; seq lặp cũng vậy", () => {
