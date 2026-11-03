@@ -157,6 +157,112 @@ export async function duocVaoPhongAiAgents(data: DuLieuSocket | null | undefined
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ PV-socket-1 (2026-11-03) — PHÒNG FEDERATION `sites:all` / `sites:corp:{mã tập đoàn}` (thay `site:{code}` + `sites:global`)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Lỗ L1 (pv-socket-kiem-ke §3): `site:update` (KPI + số cảnh báo theo site) phát vào `site:{code}` / `sites:global` mà ai đăng nhập cũng
+// join được ⇒ người không có `admin_system`, người tập đoàn khác, người không được xem site cục bộ đều nhận. Hợp đồng tRPC của cùng dữ liệu
+// (`federationRouter`): `requirePermission("admin_system","canView")` + `dieuKienTrang` (toàn quyền ⇒ mọi site; người hẹp ⇒ site có
+// `corporateCode` thuộc mã tập đoàn của họ VÀ không `isLocal`). Hai hàm dưới đây là CẶP của hợp đồng ấy ở tầng socket:
+//   • vào phòng (`phongFederationDuocVao` / `duocVaoPhongFederation`): cùng giấy phép `MOD_FEDERATION` (`isModuleLicensed` — ĐÚNG quyết định
+//     của `moduleProcedure("MOD_FEDERATION")` mà router dùng) + cùng `checkPermission` + cùng `getUserAssignmentCodes` (isAdmin ⇒
+//     `sites:all`; còn lại ⇒ `sites:corp:{mã}` cho mỗi mã; 0 mã ⇒ không phòng nào). Lỗi ⇒ không phòng nào (fail-closed).
+//   • phát (`phongNhanSiteUpdate`): `sites:all` + `sites:corp:{site.corporateCode}` CHỈ khi site KHÔNG `isLocal` và có mã.
+// Mã tập đoàn trong tên phòng (fix round 1 m3): mã tập đoàn là CHỮ TỰ DO (`bootstrapRouter.ts`, `sitesRouter.ts` — vd. "VN.HCM"), đến từ CSDL
+// (phân công của người dùng / hàng `sites`), KHÔNG từ client (F1 đã bỏ `siteCode`). Tên phòng là KHOÁ so khớp chính xác dựng từ giá trị máy
+// chủ, không bao giờ được phân tích ngược ⇒ chỉ đòi: chuỗi khác rỗng, ≤ 100 ký tự, không ký tự điều khiển. Lệch ⇒ không phòng (chiều ĐÓNG).
+
+/** Quyền xem màn Federation — cùng cặp `federationRouter` (`requirePermission("admin_system","canView")`). */
+export const QUYEN_XEM_FEDERATION = { module: "admin_system", action: "canView" } as const;
+/** Phòng toàn quyền của `site:update` (admin: mọi site, kể cả site cục bộ). */
+export const PHONG_SITES_TOAN_QUYEN = "sites:all";
+/** Tiền tố phòng theo mã tập đoàn của `site:update`. */
+export const TIEN_TO_PHONG_SITES_TAP_DOAN = "sites:corp:";
+/** Giấy phép module của màn Federation — cùng `federationRouter` (`moduleProcedure("MOD_FEDERATION")`). */
+export const GIAY_PHEP_FEDERATION = "MOD_FEDERATION";
+const DO_DAI_MA_TAP_DOAN_TOI_DA = 100;
+const KY_TU_DIEU_KHIEN = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** Tên phòng `sites:corp:{mã}` — mã rỗng / quá dài / có ký tự điều khiển / không phải chuỗi ⇒ `null` (không dựng tên phòng). */
+export function phongSitesTapDoan(ma: unknown): string | null {
+  return typeof ma === "string" && ma.length >= 1 && ma.length <= DO_DAI_MA_TAP_DOAN_TOI_DA && !KY_TU_DIEU_KHIEN.test(ma)
+    ? `${TIEN_TO_PHONG_SITES_TAP_DOAN}${ma}`
+    : null;
+}
+
+/** Ba bộ đọc của cổng federation — tách để lưới tiêm (`__datCongFederationChoTest`); mặc định = `moduleGate` + `accessControl` THẬT. */
+interface CongFederation {
+  coGiayPhep(): Promise<boolean>;
+  coQuyen(userId: number, role: string): Promise<boolean>;
+  maTapDoan(userId: number, role: string): Promise<{ toanQuyen: boolean; corporateCodes: readonly string[] }>;
+}
+let congFederationGhiDe: CongFederation | null = null;
+/** Chỉ lưới: thay bộ đọc giấy phép / quyền / mã tập đoàn của cổng federation. `null` ⇒ mặc định. */
+export function __datCongFederationChoTest(f: CongFederation | null): void {
+  congFederationGhiDe = f;
+}
+async function layCongFederation(): Promise<CongFederation> {
+  if (congFederationGhiDe) return congFederationGhiDe;
+  const ac = await import("./accessControl"); // import động: như duocVaoPhongEngineering
+  const mg = await import("./moduleGate");
+  return {
+    coGiayPhep: () => mg.isModuleLicensed(GIAY_PHEP_FEDERATION),
+    coQuyen: (userId, role) => ac.checkPermission(userId, role, QUYEN_XEM_FEDERATION.module, QUYEN_XEM_FEDERATION.action),
+    maTapDoan: async (userId, role) => {
+      const r = await ac.getUserAssignmentCodes(userId, role);
+      return { toanQuyen: r.isAdmin, corporateCodes: r.corporateCodes };
+    },
+  };
+}
+
+/**
+ * Các phòng `site:update` mà socket này ĐƯỢC vào (đã sắp xếp). Không phải socket người dùng / không quyền / 0 mã / LỖI ⇒ `[]`.
+ * Toàn quyền (isAdmin — cùng điều kiện `congMaTenant` trả "không lọc") ⇒ CHỈ `sites:all` (phòng ấy đã nhận mọi site).
+ */
+export async function phongFederationDuocVao(data: DuLieuSocket | null | undefined): Promise<string[]> {
+  if (!laSocketNguoiDung(data)) return [];
+  try {
+    const user = data!.user!;
+    const userId = user.id as number;
+    const role = String(user.role ?? "");
+    const cong = await layCongFederation();
+    // Thứ tự như router: `moduleProcedure` (giấy phép) rồi `requirePermission` (quyền) rồi `dieuKienTrang` (phạm vi).
+    if (!(await cong.coGiayPhep())) return [];
+    if (!(await cong.coQuyen(userId, role))) return [];
+    const { toanQuyen, corporateCodes } = await cong.maTapDoan(userId, role);
+    if (toanQuyen) return [PHONG_SITES_TOAN_QUYEN];
+    const ds = new Set<string>();
+    for (const ma of corporateCodes) {
+      const p = phongSitesTapDoan(ma);
+      if (p) ds.add(p);
+      else console.warn(`[Socket.io] bo qua ma tap doan sai hinh dang cho phong federation (user=${userId})`);
+    }
+    return [...ds].sort();
+  } catch (err) {
+    console.error("[Socket.io] loi kiem quyen phong federation (fail-closed):", (err as Error)?.message ?? err);
+    return [];
+  }
+}
+
+/** Cổng MỘT phòng federation (dùng với `thuVaoPhong`): phòng ∈ `phongFederationDuocVao`. Lỗi ⇒ false. */
+export async function duocVaoPhongFederation(data: DuLieuSocket | null | undefined, phong: unknown): Promise<boolean> {
+  if (typeof phong !== "string") return false;
+  return (await phongFederationDuocVao(data)).includes(phong);
+}
+
+/**
+ * Phòng NHẬN một `site:update` — gương của `dieuKienTrang`: luôn `sites:all`; thêm `sites:corp:{mã}` CHỈ khi site KHÔNG cục bộ
+ * (`isLocal === false`, chặt: thiếu/không rõ ⇒ coi như cục bộ) và có mã tập đoàn hợp lệ.
+ */
+export function phongNhanSiteUpdate(site: { corporateCode?: string | null; isLocal?: boolean | null }): string[] {
+  const ds = [PHONG_SITES_TOAN_QUYEN];
+  if (site.isLocal === false && site.corporateCode != null) {
+    const p = phongSitesTapDoan(site.corporateCode);
+    if (p) ds.push(p);
+  }
+  return ds;
+}
+
 /** Nhãn ngắn cho log từ chối. */
 export function moTaSocket(data: DuLieuSocket | null | undefined): string {
   const ct = data?.clientType ?? "unknown";

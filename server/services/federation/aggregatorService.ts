@@ -146,6 +146,9 @@ async function pollSite(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, site
           ? { open: snap.alertRollup.open, critical: snap.alertRollup.critical }
           : null,
         ts: Date.now(),
+        // PV-socket-1 — routing only (stripped before send): mirror of federationRouter `dieuKienTrang`.
+        corporateCode: site.corporateCode ?? null,
+        isLocal: site.isLocal,
       });
     } catch (e) {
       console.error("[Federation] site:update emit failed:", (e as Error).message);

@@ -249,7 +249,7 @@ export function vanTayQuyen(rows: readonly HangQuyenVanTay[], bayGio: number = D
 }
 
 /**
- * fix round 1 (m5) — MÃ TẬP ĐOÀN được gán (cổng của phòng `sites:*` / `site:{code}`): cùng nguồn `getUserAssignmentCodes` mà bộ phân giải
+ * fix round 1 (m5) — MÃ TẬP ĐOÀN được gán (cổng của phòng `sites:corp:{mã}` — PV-socket-1): cùng nguồn `getUserAssignmentCodes` mà bộ phân giải
  * phạm vi dùng; admin ⇒ [] (toàn quyền, không theo mã). Đã sắp xếp.
  */
 type BoDocTapDoan = (userId: number, role: string) => Promise<string[]>;
@@ -611,7 +611,7 @@ async function socketConHopLe(s: Socket, nho: Map<string, Promise<VanTayNguoiMoi
   }
   const moi = await p;
   if (moi.quyen !== vt.quyen) return "ngat";
-  if (JSON.stringify(moi.tapDoan) !== JSON.stringify(vt.tapDoan)) return "ngat"; // m5 — cổng `sites:*` / `site:{code}`
+  if (JSON.stringify(moi.tapDoan) !== JSON.stringify(vt.tapDoan)) return "ngat"; // m5 — cổng phòng `sites:corp:{mã}` (PV-socket-1)
   if (coDauVanTayPhamVi && JSON.stringify(moi.nhaMay) !== JSON.stringify(d.__phamViNhaMay)) return "ngat";
   return "giu";
 }
