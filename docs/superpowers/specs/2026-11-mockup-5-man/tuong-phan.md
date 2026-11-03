@@ -39,16 +39,14 @@ Sinh bằng `node tuong-phan.mjs` (WCAG 2.x, đọc hex từ token.css). Chữ/g
 | chữ trắng trên banner MÔ PHỎNG đặc | `accent-ink` #ffffff | `sim` #0a7a72 | 5.20:1 | ≥ 4.5:1 | ĐẠT |
 | viền MÔ PHỎNG 4 px (đồ hoạ) | `sim` #0a7a72 | `isa-field` #e6e9ec | 4.27:1 | ≥ 3:1 | ĐẠT |
 | chữ nhãn QA | `qa` #7a5a1a | `qa-soft` #efe3c8 | 4.99:1 | ≥ 4.5:1 | ĐẠT |
-| liên kết/nút viền accent trên thẻ | `accent` #0b6477 | `isa-surface` #f7f8f9 | 6.36:1 | ≥ 4.5:1 | ĐẠT |
-| chữ nút accent | `accent-ink` #ffffff | `accent` #0b6477 | 6.77:1 | ≥ 4.5:1 | ĐẠT |
-| chữ accent trên nền accent nhạt (tab chọn) | `accent` #0b6477 | `accent-soft` #d3e8ed | 5.33:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail | `isa-rail-ink` #e8edf1 | `isa-rail` #1f2a33 | 12.40:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail phụ | `isa-rail-ink-2` #b3c0ca | `isa-rail` #1f2a33 | 7.87:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail mục chọn | `isa-rail-ink` #e8edf1 | `isa-rail-2` #2a3742 | 10.34:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail xám sáng | `rail-lt-ink` #1b2630 | `rail-lt-bg` #eef0f2 | 13.45:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail xám sáng phụ | `rail-lt-ink-2` #3f4d59 | `rail-lt-bg` #eef0f2 | 7.60:1 | ≥ 4.5:1 | ĐẠT |
-| chữ rail xám sáng mục chọn | `rail-lt-ink` #1b2630 | `rail-lt-bg-2` #d3e8ed | 12.10:1 | ≥ 4.5:1 | ĐẠT |
-| chữ accent trên mục chọn rail sáng | `accent` #0b6477 | `rail-lt-bg-2` #d3e8ed | 5.33:1 | ≥ 4.5:1 | ĐẠT |
+| liên kết/nút viền accent trên thẻ | `accent` #0c5a85 | `isa-surface` #f7f8f9 | 7.01:1 | ≥ 4.5:1 | ĐẠT |
+| liên kết accent trên nền trang | `accent` #0c5a85 | `isa-field` #e6e9ec | 6.12:1 | ≥ 4.5:1 | ĐẠT |
+| chữ nút accent | `accent-ink` #ffffff | `accent` #0c5a85 | 7.46:1 | ≥ 4.5:1 | ĐẠT |
+| chữ accent trên nền accent nhạt (tab chọn) | `accent` #0c5a85 | `accent-soft` #d6e6f1 | 5.84:1 | ≥ 4.5:1 | ĐẠT |
+| chữ rail | `isa-rail-ink` #1b2630 | `isa-rail` #e6e9ec | 12.61:1 | ≥ 4.5:1 | ĐẠT |
+| chữ rail phụ | `isa-rail-ink-2` #3f4d59 | `isa-rail` #e6e9ec | 7.13:1 | ≥ 4.5:1 | ĐẠT |
+| chữ rail mục chọn | `isa-rail-ink` #1b2630 | `isa-rail-2` #d6e6f1 | 12.04:1 | ≥ 4.5:1 | ĐẠT |
+| chữ accent trên mục chọn rail | `accent` #0c5a85 | `isa-rail-2` #d6e6f1 | 5.84:1 | ≥ 4.5:1 | ĐẠT |
 | trạng thái PackML execute (chữ) | `packml-execute` #2c3a45 | `isa-surface` #f7f8f9 | 10.98:1 | ≥ 4.5:1 | ĐẠT |
 | trạng thái PackML idle (chữ) | `packml-idle` #566672 | `isa-surface` #f7f8f9 | 5.58:1 | ≥ 4.5:1 | ĐẠT |
 | trạng thái PackML resetting (chữ) | `packml-resetting` #4d6b79 | `isa-surface` #f7f8f9 | 5.35:1 | ≥ 4.5:1 | ĐẠT |
@@ -63,4 +61,4 @@ Sinh bằng `node tuong-phan.mjs` (WCAG 2.x, đọc hex từ token.css). Chữ/g
 | chữ nút DỪNG MÁY | `stop-ink` #ffffff | `stop` #c0262d | 5.90:1 | ≥ 4.5:1 | ĐẠT |
 | viền ô số (đồ hoạ) | `isa-line-strong` #727e89 | `isa-surface` #f7f8f9 | 3.90:1 | ≥ 3:1 | ĐẠT |
 
-**58 cặp, 0 không đạt.**
+**56 cặp, 0 không đạt.**

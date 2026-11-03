@@ -5,7 +5,7 @@
  * QUY TẮC: đây là NƠI DUY NHẤT được viết giá trị màu thô (hex). Mọi tệp khác chỉ dùng `var(--…)`.
  *   • Theme SÁNG ISA-101 là mặc định (`:root`). Theme tối (.dark) để SAU SCADA pha 1 — chỉ chừa chỗ, chưa khai.
  *   • MÀU CHỈ CHO BẤT THƯỜNG. Bình thường = xám trung tính. KHÔNG xanh lá cho "bình thường".
- *   • Accent (teal) CHỈ cho tương tác (nút, liên kết, focus, tab đang chọn) — không bao giờ mang nghĩa trạng thái.
+ *   • Accent (xanh dương) CHỈ cho tương tác (nút, liên kết, focus, tab đang chọn) — không bao giờ mang nghĩa trạng thái.
  *   • 4 mức ưu tiên: hình + số + chữ (■1 ▲2 ▼3 ●4). Màu là lớp thứ tư, không phải lớp duy nhất.
  *   • Dữ liệu CŨ (stale) = tím gạch xiên, THẮNG màu cảnh báo (giá trị cũ không được tô đỏ như thể còn sống).
  *   • Chữ ≥ 11 px trên màn vận hành. Số kỹ thuật: Geist Mono + tabular-nums.
@@ -32,26 +32,21 @@
   --isa-graphic-muted: #cdd3d8;  /* đối tượng bình thường trên khung đồ hoạ */
   --isa-line: #c3cad1;           /* viền mảnh */
   --isa-line-strong: #727e89;    /* viền nhấn, viền ô số */
-  --isa-rail: #1f2a33;           /* rail trái: tối, KHÔNG phải theme tối — chỉ để tách điều hướng */
-  --isa-rail-2: #2a3742;
-  --isa-rail-ink: #e8edf1;
-  --isa-rail-ink-2: #b3c0ca;
-  /* Biến thể rail XÁM SÁNG (chờ chủ dự án chọn Q2): bật bằng data-rail-tone="light" trên .app */
-  --rail-lt-bg: #eef0f2;
-  --rail-lt-bg-2: #d3e8ed;
-  --rail-lt-ink: #1b2630;
-  --rail-lt-ink-2: #3f4d59;
+  --isa-rail: #e6e9ec;           /* rail trái: xám sáng như nền (chủ dự án chốt 2026-11-04; bỏ rail tối) */
+  --isa-rail-2: #d6e6f1;         /* mục đang chọn */
+  --isa-rail-ink: #1b2630;
+  --isa-rail-ink-2: #3f4d59;
 
   /* ───────────── Chữ 3 mức ───────────── */
   --text-1: #1b2630;
   --text-2: #3f4d59;
   --text-3: #566672;
 
-  /* ───────────── Accent — CHỈ tương tác ───────────── */
-  --accent: #0b6477;
+  /* ───────────── Accent — CHỈ tương tác (xanh dương; chủ dự án chốt 2026-11-04 để --sim giữ xanh ngọc độc quyền) ───────────── */
+  --accent: #0c5a85;
   --accent-ink: #ffffff;
-  --accent-soft: #d3e8ed;
-  --focus-ring: #0b6477;
+  --accent-soft: #d6e6f1;
+  --focus-ring: #0c5a85;
 
   /* ───────────── Ưu tiên cảnh báo ISA-18.2: màu chính + nền nhạt + chữ đậm trên nền nhạt ───────────── */
   --alarm-p1: #c0262d;           /* ■ 1 Nghiêm trọng */

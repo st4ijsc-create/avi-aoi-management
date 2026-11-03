@@ -5,8 +5,8 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 ## Vỏ (AppFrame) và token
 1. **Thanh đầu 56 px, 5 bất biến theo thứ tự cố định**: phạm vi ISA-95 (breadcrumb + "Đổi phạm vi") · `AlarmChip` · `FreshnessPill` · nhãn THẬT/MÔ PHỎNG · ⌘K, rồi người dùng. Không `AppLauncher`, không chế độ Đơn giản/Nâng cao.
 2. **Phạm vi mô phỏng đổi cả vỏ**: thanh đầu nền xanh ngọc nhạt + viền dưới 4 px, banner đặc dưới thanh đầu, pill "Mô phỏng", nhãn MÔ PHỎNG, khung chi tiết viền 4 px + watermark 8 % (màn 5, `may-mo-phong`).
-3. **Rail 7 vùng, 64 px thu gọn / 240 px mở** (ảnh `man-1-rail-mo-*` và mọi ảnh 1920 dùng rail mở). Rail tối (`--isa-rail`) chỉ để tách điều hướng khỏi vùng làm việc — nội dung vẫn là theme sáng. Đáy rail = cài đặt + giao diện (không điều hướng). Mục đang chọn: nền `--isa-rail-2` + vạch trắng 4 px bên trái.
-4. **Màu chỉ cho bất thường**: bề mặt toàn xám ISA; accent teal chỉ cho nút/tab/liên kết/focus; **không có xanh lá** ở bất kỳ nơi nào (kiểm bằng grep, xem dưới). Trạng thái "đang chạy" = ký hiệu ▶ + chữ, màu trung tính.
+3. **Rail 7 vùng, 64 px thu gọn (ảnh 1280) / 240 px mở (ảnh 1920)**, **xám sáng như nền** (đã chốt 2026-11-04; bỏ biến thể rail tối), tách khỏi vùng làm việc bằng viền phải 1 px. Đáy rail = cài đặt + giao diện (không điều hướng). Mục đang chọn: nền `--isa-rail-2` (xanh dương nhạt) + chữ/vạch accent 4 px bên trái.
+4. **Màu chỉ cho bất thường**: bề mặt toàn xám ISA; accent xanh dương chỉ cho nút/tab/liên kết/focus; **không có xanh lá** ở bất kỳ nơi nào (kiểm bằng grep, xem dưới). Trạng thái "đang chạy" = ký hiệu ▶ + chữ, màu trung tính.
 5. **Ưu tiên cảnh báo = hình + số + chữ** (■1 Nghiêm trọng · ▲2 Cao · ▼3 Trung bình · ●4 Thông tin) qua một `AlarmBadge`; P1/P2 ô đặc (chữ trắng), P3/P4 nền nhạt + viền. Hàng bảng có vạch trái theo ưu tiên (độ dày 6 px) để quét dọc.
 6. **Dữ liệu cũ = tím + gạch xiên + viền đứt, thắng màu cảnh báo** (`.is-stale`): ô số, pill, hàng tag, cả trạng thái PackML suy ra từ dữ liệu cũ. uncertain = viền chấm xám (`1,42 kW · không chắc`). Thiếu tag `fault` bắt buộc = chữ nghiêng "không có tín hiệu" trên nền lõm, kèm dải cảnh báo (không bao giờ hiện "bình thường").
 7. **Chữ**: Be Vietnam Pro 400/500/600/700 + Geist Mono 400/500/600; thang `.ds-h1…caption` (11–24 px); số đo dùng chữ thân + `tabular-nums` (`.num`), **Geist Mono chỉ cho mã/địa chỉ/giờ** — thử dùng mono cho số thập phân thì dấu phẩy rộng như một ô chữ ("96 , 4"), đã bỏ. Tối thiểu 11 px; không `text-[Npx]`, không hex ngoài `token.css`.
@@ -39,9 +39,11 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 5. Wizard "Thêm thiết bị" là **ngăn phủ 520 px** với bước 1–6 ngang (✓ xong · ● hiện tại), vẽ bước 3 (kết nối) kèm kết quả thử.
 - Đã trả lời: mô phỏng/QA **chung cây** (10 §2 `site.origin`), phân biệt bằng OriginBadge + đổi vỏ; thẻ kết nối thay bảng chấp nhận khi ≤ 5 kết nối/máy, > 5 chuyển bảng.
 
-## Hỏi chung
-1. **`--accent` (#0b6477) và `--sim` (#0a7a72) gần nhau** (scada-ui cũng nêu): hiện tách bằng nghĩa dùng (sim luôn đi kèm nhãn chữ + viền dày + banner), không bằng màu. Phương án nếu cần tách hẳn: accent chuyển xanh dương hơn (≈ #0c5a85) hoặc sim chuyển xanh ngọc sáng hơn với chữ tối. Chọn?
-2. Rail tối trong theme sáng, hay rail xám sáng? **Đã chụp cả hai để so**: `man-1-rail-mo-giam-sat-*` (tối) và `man-1-rail-xam-sang-giam-sat-*` (sáng, `?railtone=light`; tương phản 4 cặp đạt). Màn 3 của scada-ui hiện đang vẽ rail sáng.
+## Đã chốt 2026-11-04 (chủ dự án)
+1. **`--accent` → xanh dương `#0c5a85`**, `--sim` giữ xanh ngọc `#0a7a72` độc quyền cho mô phỏng; `--accent-soft` `#d6e6f1`, `--focus-ring` theo accent. Bốn cặp tương phản accent (trên thẻ, trên nền trang, trên accent-soft, trên mục chọn rail) + chữ trắng trên accent đều ≥ 4,5:1 — xem `tuong-phan.md`.
+2. **Rail trái xám sáng (như nền) là mặc định**; biến thể rail tối và thuộc tính `data-rail-tone` đã gỡ (thuộc tính thừa trong HTML của scada-ui vô hại).
+3. "Dừng — chờ máy xác nhận" = huy hiệu tạm nhấp nháy cạnh nhãn PackML (việc của scada-ui; dùng `animation` CSS thuần, tắt khi `prefers-reduced-motion` — cùng quy tắc `chipPulse` của `AlarmChip`).
+4. Sửa dữ liệu mẫu màn 5 `ngoai-pham-vi`: người dùng chỉ được gán Line SMT-01; liên kết `?node=SMT-03` trỏ tới nút KHÔNG có trong cây của họ ⇒ **cây không tô chọn dòng nào** (trước đây tô SMT-01 trong khi thông báo nói SMT-03), thông báo nói rõ nguồn, số thiết bị trong cây/chân cây chỉ tính phần được gán (14, không còn 142).
 
 ## Tự kiểm 8 quy tắc §3 (không thay cho kiem-dinh)
 | # | Quy tắc | Bằng chứng |
@@ -49,8 +51,8 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 | 1 | Nền xám sáng; chữ 3 mức; accent chỉ tương tác; không xanh lá | `token.css` `--isa-*`, `--text-1/2/3`; `grep -i green` = 0; accent chỉ xuất hiện ở nút/tab/liên kết/focus/chọn |
 | 2 | Màu chỉ cho bất thường; 4 mức = hình+số+chữ; stale thắng cảnh báo; uncertain viền chấm; thiếu tag fault = không có tín hiệu | màn 4 `du-lieu-cu`; màn 5 hàng `fault`; ô `1,42 kW` uncertain |
 | 3 | Be Vietnam Pro + Geist Mono, tabular-nums, ≥ 11 px, không `text-[`/palette thô, mọi màu qua token | `grep` hex ngoài `token.css` = 0, `text-[` = 0, cỡ chữ < 11 px = 0 (lệnh trong lịch sử commit) |
-| 4 | comfortable (1280×800, ≥ 48 px) + default (1920×1080) | 32 ảnh, mỗi trạng thái cả hai cỡ |
-| 5 | Tương phản ≥ 4,5:1 cho giá trị | `tuong-phan.md`: 58 cặp, 0 không đạt (chữ ≥ 4,5:1, đồ hoạ ≥ 3:1) |
+| 4 | comfortable (1280×800, ≥ 48 px) + default (1920×1080) | 28 ảnh, mỗi trạng thái cả hai cỡ |
+| 5 | Tương phản ≥ 4,5:1 cho giá trị | `tuong-phan.md`: 56 cặp, 0 không đạt (chữ ≥ 4,5:1, đồ hoạ ≥ 3:1) |
 | 6 | Hoạt ảnh chỉ CSS, tôn trọng reduced-motion, không hoạt ảnh khi stale | `token.css` tắt mọi animation dưới `prefers-reduced-motion`; `.is-stale { animation: none !important }`; STOP 3 trạng thái thuộc màn 3 (scada-ui) |
 | 7 | i18n: chuỗi là khoá vi | `khoa-i18n.md` (khoá dự kiến theo namespace vùng; chuỗi dữ liệu mẫu không phải khoá) |
 | 8 | Mô phỏng: viền 4 px + banner + watermark + pill, màn 2 không sót | màn 5 `may-mo-phong` đủ 4 lớp (+ nhãn đầu); **màn 2 do scada-ui** |

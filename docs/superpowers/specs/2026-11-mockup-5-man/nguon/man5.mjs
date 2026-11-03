@@ -15,9 +15,9 @@ function cay(s) {
   if (s === "ngoai-pham-vi") {
     return [
       nut(0, true, "Công ty ABC", "ent", "real", "—", null, false),
-      nut(1, true, "Nhà máy Bình Dương", "site", "real", 142, null, false),
-      nut(2, true, "Xưởng SMT", "area", "real", 61, null, false),
-      nut(3, true, "Line SMT-01", "line", "real", 14, [3, 1], true),
+      nut(1, true, "Nhà máy Bình Dương", "site", "real", 14, null, false),
+      nut(2, true, "Xưởng SMT", "area", "real", 14, null, false),
+      nut(3, true, "Line SMT-01", "line", "real", 14, [3, 1], false),
       nut(4, null, "SMT01-PRN-01", "asset", "real", "", [3, 1], false),
       nut(4, null, "SMT01-SPI-01", "asset", "real", "", null, false),
       nut(4, null, "SMT01-MNT-01", "asset", "real", "", null, false),
@@ -125,7 +125,7 @@ const ngoaiPhamVi = `
     <div class="empty" role="status">
       ${ic("lock")}
       <h2 class="ds-h3" style="margin:0">${i("chung.phamViRong.tieuDe", "Ngoài phạm vi của bạn")}</h2>
-      <p class="ds-body" style="margin:0;max-width:46ch">${i("chung.phamViRong", "Tài khoản của bạn chưa được gán phạm vi cho nút “Line SMT-03”. Không có dữ liệu nào được hiển thị — đây không phải trạng thái “rỗng bình thường”.")}</p>
+      <p class="ds-body" style="margin:0;max-width:46ch">${i("chung.phamViRong", "Tài khoản của bạn chưa được gán phạm vi cho nút “Line SMT-03” (từ liên kết ?node=SMT-03; nút này không có trong cây của bạn). Không có dữ liệu nào được hiển thị — đây không phải trạng thái “rỗng bình thường”.")}</p>
       <div class="row"><button class="btn primary" type="button">${i("chung.xinCapPhamVi", "Xin cấp phạm vi")}</button><button class="btn" type="button">${i("chung.veNutTrongPhamVi", "Về nút trong phạm vi của tôi")}</button></div>
     </div>
   </div>`;
@@ -157,7 +157,7 @@ export function man5() {
       <section class="card cay" aria-label="Cây ISA-95">
         <div class="cay-h"><span class="field grow">${mini("search")} Tìm nút, mã, thiết bị…</span></div>
         ${STATES.map((s) => `<ul class="tree" role="tree" data-st="${s}">${cay(s)}</ul>`).join("")}
-        <div class="cay-f ds-small">Cây ảo hoá · tải theo cấp · <span class="num">142</span> thiết bị trong phạm vi</div>
+        <div class="cay-f ds-small">Cây ảo hoá · tải theo cấp · <span class="num" data-st="may-that may-sim wizard">142</span><span class="num" data-st="ngoai-pham-vi">14</span> thiết bị trong phạm vi</div>
       </section>
       <section class="card det" aria-label="Chi tiết">
         <div class="ctn" data-st="may-that wizard">${chiTietThat()}</div>

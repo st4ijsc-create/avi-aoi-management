@@ -45,6 +45,7 @@
   grid-area: rail;
   background: var(--isa-rail);
   color: var(--isa-rail-ink);
+  border-right: 1px solid var(--isa-line);
   display: flex; flex-direction: column;
   padding: var(--gap-2) 0;
   min-width: 0;
@@ -59,18 +60,13 @@
 }
 .rail a .lbl, .rail .item .lbl { display: none; white-space: nowrap; }
 .rail svg { width: 24px; height: 24px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.rail a[aria-current="page"] { background: var(--isa-rail-2); color: var(--isa-rail-ink); }
-.rail a[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; background: var(--isa-rail-ink); border-radius: 0 var(--radius-1) var(--radius-1) 0; }
+.rail a[aria-current="page"] { background: var(--isa-rail-2); color: var(--accent); }
+.rail a[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; background: var(--accent); border-radius: 0 var(--radius-1) var(--radius-1) 0; }
 .rail .grow { flex: 1 1 auto; }
-.rail .bottom { border-top: 1px solid var(--isa-rail-2); padding-top: var(--gap-2); }
+.rail .bottom { border-top: 1px solid var(--isa-line); padding-top: var(--gap-2); }
 .app[data-rail="open"] .rail .lbl, .app[data-rail="open"] .rail .brand .name { display: inline; }
 .rail .badge { margin-left: auto; font: 600 11px/1 var(--font-mono); padding: 2px 6px; border-radius: 10px; background: var(--alarm-p1); color: var(--accent-ink); display: none; }
 .app[data-rail="open"] .rail .badge { display: inline-block; }
-
-/* Biến thể rail xám sáng (so sánh Q2) */
-.app[data-rail-tone="light"] .rail { --isa-rail: var(--rail-lt-bg); --isa-rail-2: var(--rail-lt-bg-2); --isa-rail-ink: var(--rail-lt-ink); --isa-rail-ink-2: var(--rail-lt-ink-2); border-right: 1px solid var(--isa-line); }
-.app[data-rail-tone="light"] .rail a[aria-current="page"] { color: var(--accent); }
-.app[data-rail-tone="light"] .rail a[aria-current="page"]::before { background: var(--accent); }
 
 /* ───────────── Vùng chính + PageHeader ───────────── */
 .main { grid-area: main; min-width: 0; padding: var(--gap-5); display: flex; flex-direction: column; gap: var(--gap-4); position: relative; }

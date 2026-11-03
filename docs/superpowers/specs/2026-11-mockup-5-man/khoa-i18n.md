@@ -12,7 +12,7 @@ Sinh tự động từ các thuộc tính `data-i18n` trong mockup; namespace th
 | `chung.giaoDien` | Giao diện sáng |
 | `chung.moPhong.banner` | ĐANG XEM DỮ LIỆU MÔ PHỎNG — không phải máy thật; lệnh gửi đi KHÔNG tác động thiết bị |
 | `chung.moVaKy` | Mở |
-| `chung.phamViRong` | Tài khoản của bạn chưa được gán phạm vi cho nút “Line SMT-03”. Không có dữ liệu nào được hiển thị — đây không phải trạng thái “rỗng bình thường”. |
+| `chung.phamViRong` | Tài khoản của bạn chưa được gán phạm vi cho nút “Line SMT-03” (từ liên kết ?node=SMT-03; nút này không có trong cây của bạn). Không có dữ liệu nào được hiển thị — đây không phải trạng thái “rỗng bình thường”. |
 | `chung.phamViRong.tieuDe` | Ngoài phạm vi của bạn |
 | `chung.timNhanh` | Tìm nhanh |
 | `chung.veNutTrongPhamVi` | Về nút trong phạm vi của tôi |
