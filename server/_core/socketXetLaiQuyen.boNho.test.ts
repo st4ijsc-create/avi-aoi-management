@@ -68,3 +68,42 @@ describe("F5 — bộ nhớ nào bị xoá ở mỗi đường", () => {
     expect([...GOI].sort()).toEqual(["ai:8", "anh:8", "assign:8", "auth:8", "stop:8"]);
   });
 });
+
+describe("★★★ kiem-dinh test round — x38 (quét định kỳ) / x14 (biên trần hàng đợi)", () => {
+  it("(x38) quét ĐỊNH KỲ: mỗi chu kỳ một lượt quét (≥ 2 lượt sau 2 chu kỳ); stop() gỡ hẹn giờ (không lượt nào nữa)", async () => {
+    vi.useFakeTimers();
+    try {
+      xl.__datCauHinhChoTest({ chuKyQuetMs: 1_000 });
+      const kenh = await xl.batDauNgheSocketPhamVi({
+        listenClient: () => ({ listen: async (_c: string, _fn: (p: string) => void, onlisten?: () => void) => (onlisten?.(), { unlisten: async () => undefined }) }),
+        notifyClient: () => ({ notify: async () => undefined }),
+        pingMs: 3_600_000,
+        alert: () => undefined,
+      });
+      const truoc = xl.thongKeXetLaiQuyen().quet;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(xl.thongKeXetLaiQuyen().quet).toBe(truoc + 1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(xl.thongKeXetLaiQuyen().quet).toBe(truoc + 2);
+      expect(GOI.filter((g) => g === "assign:*").length, "mỗi lượt định kỳ là một lượt quét thật (xoá bộ nhớ phân công)").toBe(2);
+      await kenh.stop();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(xl.thongKeXetLaiQuyen().quet, "stop() gỡ hẹn giờ quét").toBe(truoc + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("(x14) trần hàng đợi: ĐÚNG bằng trần ⇒ KHÔNG tràn (xử lý bình thường); trần + 1 ⇒ tràn ⇒ bỏ hàng đợi + QUÉT", async () => {
+    xl.__datCauHinhChoTest({ cuaSoAllMs: 0, treAllToiDaMs: 0, tranHang: 10 });
+    for (let i = 1; i <= 10; i++) xl.nhanThongBaoPhamVi(JSON.stringify({ u: [100 + i] }));
+    await xl.__choXongChoTest();
+    expect(xl.thongKeXetLaiQuyen()).toMatchObject({ tranHang: 0, nguoiXuLy: 10, quet: 0 });
+    xl.__datLaiChoTest();
+    for (let i = 1; i <= 11; i++) xl.nhanThongBaoPhamVi(JSON.stringify({ u: [200 + i] }));
+    await xl.__choXongChoTest();
+    expect(xl.thongKeXetLaiQuyen().tranHang).toBe(1);
+    expect(xl.thongKeXetLaiQuyen().quet).toBeGreaterThanOrEqual(1);
+    expect(xl.thongKeXetLaiQuyen().nguoiXuLy, "hàng đợi bị bỏ khi tràn").toBe(0);
+  });
+});
