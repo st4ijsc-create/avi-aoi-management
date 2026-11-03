@@ -678,6 +678,7 @@ const ROBOT_REFUSAL_KEYS: Readonly<Record<string, string>> = Object.freeze({
   "robot not active/connected": "robotNotActive",
   "MOTION_LOCKED": "motionLocked",
   "ROBOT_DISABLED": "robotDisabled", // doc 81 Đợt 4 final wave R-4-x — motion to a robot disabled after boot
+  "ROBOT_CHUA_DINH_VI": "robotChuaDinhVi", // SCADA R1b-2b-2a A2(l) — motion to a robot with no resolvable station / line
   "SAFETY_BLOCKED": "safetyBlocked",
   "SAFETY_UNKNOWN": "safetyUnknown",
   "SAFETY_SIM_ONLY": "safetySimOnly",

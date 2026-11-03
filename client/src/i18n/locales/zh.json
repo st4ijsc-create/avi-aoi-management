@@ -4405,7 +4405,8 @@
       "ledgerWriteFailed": "无法写入机器人指令日志——运动被拒绝，未发送任何内容。",
       "idempotentJobInProgress": "具有相同幂等键的指令仍在执行——不会重复执行。",
       "idempotencyKeyReused": "该幂等键已用于其他机器人或作业——本次运动未启动。先前的作业可能已经执行：再次下达指令前，请检查机器人、其位置以及先前作业的状态。",
-      "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
+      "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。",
+      "robotChuaDinhVi": "机器人尚未定位（没有工位/产线，或其工位/产线不存在或相互矛盾）——无法确定哪些设备的联锁规则适用于它，因此运动被拒绝。停止指令仍会发送。请将机器人分配到工位或产线。"
     },
     "reason": {
       "can-nha-may": "密钥需先关联工厂才能启用",
@@ -20453,7 +20454,9 @@
     "queuedOnEdge": "STOP 已发送到机器人的边缘节点 — 正在等待其确认（见作业日志）。",
     "queuedEdgeUnreachable": "STOP 已排队，但机器人的边缘节点无法连接 — 中心已尝试自行发送 STOP 并发出严重告警。如机器人仍在运动，请使用硬件急停 (E-STOP)。",
     "rejected": "命令未执行：{{status}}",
-    "pickRobot": "请先选择机器人。"
+    "pickRobot": "请先选择机器人。",
+    "interlockSameLine": "设备 {{machine}} 上的规则（同一产线）",
+    "interlockSameStation": "设备 {{machine}} 上的规则（同一工位）"
   },
   "analysisHub": {
     "title": "AI 分析中心",

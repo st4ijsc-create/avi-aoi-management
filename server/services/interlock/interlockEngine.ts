@@ -282,14 +282,17 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
     void import("../safety/safetyAuditService")
       .then((m) => m.record({
         eventType: safetyType,
-        robotId: rule.targetMachineId ?? rule.machineId ?? null,
+        // SCADA R1b-2b-2a A2(l) (3) — was `rule.targetMachineId ?? rule.machineId`: a MACHINE id stored as the robot id (the same id confusion
+        // as the old robot gate). The engine fires a RULE; it gates no particular robot here, so no robot id is known ⇒ null. The machines are
+        // recorded separately (notes) — never as a robot.
+        robotId: null,
         lineId: rule.lineId ?? null,
         stationId: rule.stationId ?? null,
         sourceInterlockEventId: event.id,
         detectedBy: "interlock",
         handledBy: "interlock_engine",
         outcome: safetyOutcome,
-        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop)`,
+        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop); target machine ${rule.targetMachineId ?? "-"}, source machine ${rule.machineId ?? "-"}`,
       }))
       .catch((e) => console.error(`[Interlock] safety-audit hook failed for rule #${rule.id}:`, (e as Error)?.message || e));
   }

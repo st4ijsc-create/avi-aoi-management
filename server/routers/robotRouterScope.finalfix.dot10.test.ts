@@ -72,7 +72,6 @@ vi.mock("../services/robot/robotManager", () => ({
 }));
 vi.mock("../services/robot/robotCommandDispatcher", () => ({
   dispatchRobotJob: vi.fn(async () => ({ ok: false, status: "rejected", error: "ROBOT_OWNED_BY_EDGE" })),
-  robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
 
 import { robotRouter } from "./robotRouter";

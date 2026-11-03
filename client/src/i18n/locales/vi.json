@@ -4405,7 +4405,8 @@
       "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
       "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
       "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — chuyển động KHÔNG được bắt đầu. Lệnh trước đó có thể đã chạy: kiểm tra robot, vị trí và trạng thái lệnh trước đó trước khi ra lệnh lại.",
-      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
+      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát.",
+      "robotChuaDinhVi": "Robot CHƯA ĐƯỢC ĐỊNH VỊ (không có trạm/chuyền, hoặc trạm/chuyền không tồn tại hay mâu thuẫn) — không biết máy nào có luật khoá liên động áp cho nó, nên lệnh chuyển động bị từ chối. Lệnh DỪNG vẫn được gửi. Gán robot vào một trạm hoặc một chuyền."
     },
     "reason": {
       "can-nha-may": "khoá cần gắn nhà máy trước khi kích hoạt",
@@ -20453,7 +20454,9 @@
     "queuedOnEdge": "Đã gửi lệnh STOP tới nút biên của robot — đang chờ nút biên xác nhận (xem nhật ký lệnh).",
     "queuedEdgeUnreachable": "Lệnh STOP đã xếp hàng nhưng KHÔNG LIÊN LẠC ĐƯỢC nút biên của robot — trung tâm đã thử tự gửi STOP và phát cảnh báo nghiêm trọng. Dùng nút E-STOP phần cứng nếu robot vẫn chuyển động.",
     "rejected": "Lệnh không thực thi: {{status}}",
-    "pickRobot": "Chọn robot trước."
+    "pickRobot": "Chọn robot trước.",
+    "interlockSameLine": "luật trên máy {{machine}} (cùng chuyền)",
+    "interlockSameStation": "luật trên máy {{machine}} (cùng trạm)"
   },
   "analysisHub": {
     "title": "Trung tâm phân tích AI",

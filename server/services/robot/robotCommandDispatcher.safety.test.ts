@@ -111,6 +111,13 @@ vi.mock("../interlock/interlockGate", () => ({
   }),
 }));
 
+// SCADA R1b-2b-2a A2(l) — WHERE the robot is is measured by tapMayChoRobot.a2l(.db).test.ts; here robot 7 is placed at a station whose
+// machines are 70 and 71 (the fake DB does not model robots / stations / machines).
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 700, lineId: 70, machineIds: [70, 71] }),
+}));
+
 // Nguồn đọc NỀN của facade an toàn (facade THẬT gọi nó). mode quyết định kết quả facade.
 const plc = vi.hoisted(() => ({ mode: "ok" as "ok" | "estop" | "disabled" | "read_error" | "throw" }));
 vi.mock("../safety/plc/safetyPlcAdapter", () => ({
@@ -499,10 +506,11 @@ describe("manual KHÔNG bỏ qua HITL cho chuyển động", () => {
 });
 
 describe("interlock robot: khoá đánh giá", () => {
-  it("cổng interlock nhận machineId=robotId và adapterId không thể là adapter thật", async () => {
+  it("A2(l): cổng interlock nhận các MÁY nơi robot đứng (không bao giờ machineId=robotId) và adapterId không thể là adapter thật", async () => {
     await connectDriver(2000);
     await within(dispatchRobotJob(HOME), 10_000);
-    expect(interlock.calls).toEqual([{ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: 7, tagKeys: [] }]);
+    expect(interlock.calls).toEqual([{ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineIds: [70, 71], tagKeys: [], robotId: 7 }]);
+    expect(interlock.calls[0]).not.toHaveProperty("machineId");
     expect(ROBOT_NO_OT_ADAPTER_ID).toBeLessThan(1);
   });
 });

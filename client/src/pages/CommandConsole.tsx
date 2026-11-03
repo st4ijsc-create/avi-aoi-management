@@ -385,8 +385,18 @@ export default function CommandConsole() {
                   </div>
                   {interlockBlocked && (interlockQ.data?.violations?.length ?? 0) > 0 && (
                     <div className="mt-0.5">
-                      {(interlockQ.data?.violations ?? []).map((v) => `#${v.ruleId} (${v.action})`).join(", ")}
+                      {/* SCADA R1b-2b-2a A2(l) — the robot is gated by the machines WHERE it is: name the rule's machine (same station / same line) */}
+                      {(interlockQ.data?.violations ?? [])
+                        .map((v) => {
+                          const may = v.machineCode ?? (v.machineId != null ? `#${v.machineId}` : null);
+                          const noi = may == null ? "" : ` — ${(v.cungChuyen ? t("console.interlockSameLine", "rule on machine {{machine}} (same line)") : t("console.interlockSameStation", "rule on machine {{machine}} (same station)")).replace("{{machine}}", may)}`;
+                          return `#${v.ruleId} (${v.action})${noi}`;
+                        })
+                        .join(", ")}
                     </div>
+                  )}
+                  {interlockQ.data?.maTuChoi && (
+                    <div className="mt-0.5">{translateRobotRefusal(interlockQ.data.maTuChoi, interlockQ.data.maTuChoi)}</div>
                   )}
                   {interlockQ.data?.failClosed && (
                     <div className="mt-0.5">{t("console.interlockFailClosed", "Evaluation error — fail-closed (no run).")}</div>
