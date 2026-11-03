@@ -250,7 +250,7 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[ReportingMart] start failed:", (err as any)?.message || err);
   }
 
-  // P1 WS1.1 — Data retention pruning. Opt in via DATA_RETENTION_ENABLED=true.
+  // P1 WS1.1 — Data retention pruning. ★ Pha 0 P0-6: BẬT mặc định (tắt khẩn: DATA_RETENTION_ENABLED=false).
   try {
     const { startDataRetention } = await import("../services/dataRetentionService");
     startDataRetention();
@@ -404,7 +404,7 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[PmSchedule] init failed:", (err as any)?.message || err);
   }
 
-  // G3/G12 — DR verify-restore cadence. Opt in via DR_VERIFY_ENABLED=true.
+  // G3/G12 — DR verify-restore cadence. ★ Pha 0 P0-6: BẬT mặc định (tắt: DR_VERIFY_ENABLED=false).
   try {
     const { startDisasterRecoveryService } = await import("../services/disasterRecoveryService");
     startDisasterRecoveryService();

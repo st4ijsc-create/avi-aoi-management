@@ -65,6 +65,7 @@ describe("backgroundJobs bootstrap (real module, flags off)", () => {
     FLEET_RESOURCE_ENABLED: "false",
     PDM_WORKORDER_ENABLED: "false",
     DR_VERIFY_ENABLED: "false",
+    BACKUP_MAC_DINH: "false", // ★ Pha 0 P0-6 — sao lưu mặc định theo lịch (bật mặc định)
     EDGE_RUNTIME_ENABLED: "false",
     AI_MODEL_AUTOROLLBACK_ENABLED: "false",
     AI_MODEL_PERF_SNAPSHOTS_ENABLED: "false",
