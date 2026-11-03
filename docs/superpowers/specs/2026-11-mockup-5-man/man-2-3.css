@@ -40,9 +40,9 @@ body:not(.bare) .stage{padding:10px;overflow:auto}
 .tb2 td.pr{width:150px;white-space:nowrap}
 .tb2 .tx{line-height:1.3}
 .tb2 .sub{font-size:12px;color:var(--text-3)}
-.tb2 tr.stalerow td{background:var(--stale-soft)}
-.tb2 tr.stalerow .tx{color:var(--stale);text-decoration:line-through;text-decoration-thickness:2px}
-.tb2 tr.stalerow .sub{color:var(--stale)}
+.tb2 tr.is-stale td{background:var(--stale-soft)}
+.tb2 tr.is-stale .tx{color:var(--stale);text-decoration:line-through;text-decoration-thickness:2px}
+.tb2 tr.is-stale .sub{color:var(--stale)}
 .ev{list-style:none;margin:0;padding:0;font-size:13px}
 .ev li{display:flex;gap:10px;align-items:center;min-height:32px;border-bottom:1px solid var(--isa-line)}
 .ev time{font:12px var(--font-mono);color:var(--text-3);flex:none}

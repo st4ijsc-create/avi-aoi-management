@@ -94,3 +94,5 @@ Từ bản này màn 2/3 dùng `shell.css` + `shell.js` của luong-ui (nhánh `
 - Vùng chạm: mọi `button / a[href] / [role=tab]` của hai màn (390 phần tử đo trên 20 trạng thái × cỡ) đạt `--touch-min` (48 px @comfortable, 40 px @default) — nhờ `.btn`, `.alarm-chip`, `.cmdk` của shell.css mới (@dcef7d539).
 - Ghi chú watermark: chữ MÔ PHỎNG ở màn 2 gắn theo ô line (cỡ 26 px, theo ô), không phủ toàn màn; màn 5 dùng 96 px phủ khung — chấp nhận vì theo ô.
 - Bố cục màn 3 ở 1280×800 khi có banner dữ liệu cũ: thẻ spark co theo chỗ còn lại (không tràn quá khung).
+
+- Đã chốt 2026-11-04: chip theo nguồn P1 — AlarmChip P1 nhấp nháy theo nguồn của chính P1 (line 3 tươi ⇒ nhấp nháy dù line 6 cũ); chỉ đứng yên khi P1 thuộc nguồn cũ / toàn phạm vi cũ (kiem-dinh đo lại @6b62c2c42: ĐẠT 7/7). Hàng bảng cảnh báo cũ dùng `.is-stale` (một tên); pill `.fresh.stale` là của vỏ luong-ui, giữ nguyên.
