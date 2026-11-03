@@ -1076,6 +1076,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
       const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 };
       await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: dauCu });
+      await tx.execute(sql`UPDATE orchestration_run_steps SET "resultJson" = '{"routedTo":"ot","status":"acked","accepted":true}'::jsonb WHERE "runId" = ${runId} AND "stepId" = 'undo'`);
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
       expect(soPduGhi() - pdu0).toBe(0);
@@ -1089,6 +1090,54 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(String(al[0]!.title)).toContain("STOP re-sent at a previous boot (outcome not recorded)");
       expect(String(al[0]!.message)).toContain("the STOP was re-sent at a previous boot (the outcome was not recorded) — check the machine on site");
       expect((await auditCua(tx, runId)).map((x) => x.det.metadata?.reason)).toEqual(["luotTruocDaGui"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q18c (polish m-1) — the previous boot's 'compensated' row came from a SIMULATED (dry-run) dispatch: never 'the STOP was re-sent' ⇒ 'may not have reached the device — check on site', held + URGENT, 0 PDU", async () => {
+    for (const [ten, ketQua] of [
+      ["simulated", '{"routedTo":"ot","status":"simulated","accepted":true,"simulated":true}'],
+      ["not accepted", '{"routedTo":"ot","status":"failed","accepted":false}'],
+    ] as const) {
+      await trongGiaoDich(async (tx) => {
+        const { m1, m2 } = await dungThietBi(tx);
+        const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+        const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 };
+        await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: dauCu });
+        await tx.execute(sql`UPDATE orchestration_run_steps SET "resultJson" = ${ketQua}::jsonb WHERE "runId" = ${runId} AND "stepId" = 'undo'`);
+        const pdu0 = soPduGhi();
+        const { mine } = await khoiDongLai(runId);
+        expect(soPduGhi() - pdu0, ten).toBe(0);
+        expect(mine, ten).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocKhongXong" }]);
+        const run = await trangThaiRun(tx, runId);
+        expect(run.status, ten).toBe("held");
+        expect(run.error, ten).toContain("the STOP may not have reached the device — check on site");
+        expect(run.error, ten).not.toContain("the STOP was re-sent");
+        const al = canhBaoCua(runId);
+        expect(String(al[0]!.title), ten).not.toContain("STOP re-sent at a previous boot");
+        expect(String(al[0]!.message), ten).toContain("may not have reached the device — check on site");
+      });
+    }
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q20 (polish m-3) — a claim marker that does not name its step / compensation: never held under a placeholder (a Continue would re-walk the failed step) ⇒ failed + URGENT + audit, 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const dauThieu = { at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot" };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: dauThieu });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: null, outcome: "failed", reason: "markerIncomplete" }]);
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("failed");
+      expect(run.error).toContain("its record does not name the step / compensation");
+      expect(((run.contextJson ?? {}) as Record<string, any>).foeResumeState?.["?"]).toBeUndefined();
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_failed"]);
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.outcome, x.det.metadata?.reason, x.det.metadata?.staleAttempt])).toEqual([["failed", "markerIncomplete", "boot1-attempt"]]);
+      expect(await hangUyQuyen(tx, `foe-run${runId}-`)).toHaveLength(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
