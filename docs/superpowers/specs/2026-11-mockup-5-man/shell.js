@@ -13,7 +13,9 @@
       if (ok) e.setAttribute("data-vis", ""); else e.removeAttribute("data-vis");
     }
     var cu = [].slice.call(document.querySelectorAll(".is-stale,.fresh.stale")).some(function (e) { return e.getClientRects().length > 0 && !e.closest(".demo"); });
-    if (cu) app.setAttribute("data-has-stale", ""); else app.removeAttribute("data-has-stale");
+    if (cu) app.setAttribute("data-has-stale", ""); else app.removeAttribute("data-has-stale"); // chỉ để hiện pill "dữ liệu cũ · N" — KHÔNG tắt chip
+    var toanCu = [].slice.call(document.querySelectorAll(".hdr .fresh.stale")).some(function (e) { return e.getClientRects().length > 0; });
+    if (toanCu) app.setAttribute("data-scope-stale", ""); else app.removeAttribute("data-scope-stale");
     document.querySelectorAll("[data-set]").forEach(function (b) {
       var kv = b.getAttribute("data-set").split(":");
       b.setAttribute("aria-pressed", String(app.getAttribute(KEYS[kv[0]]) === kv[1]));

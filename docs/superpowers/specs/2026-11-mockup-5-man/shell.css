@@ -178,10 +178,11 @@
 .alarm-chip.unacked-p1 { background: var(--alarm-p1); border-color: var(--alarm-p1); color: var(--accent-ink); animation: chipPulse 1.2s ease-in-out infinite; }
 .alarm-chip.unacked-p1 .p1 { color: var(--accent-ink); }
 .alarm-chip.unacked-p1 .p2 { color: var(--accent-ink); }
-/* Vỏ có dữ liệu cũ hiện diện (shell.js đặt data-has-stale khi có .is-stale/.fresh.stale đang hiển thị) ⇒ AlarmChip P1 đứng yên và mang dấu cũ:
-   "cũ thắng cảnh báo" áp cho cả chip — số P1 có thể không còn đúng, nhấp nháy sẽ giả vẻ khẩn cấp còn sống (chủ dự án + kiem-dinh 2026-11-04). */
-.app[data-has-stale] .alarm-chip.unacked-p1 { animation: none; outline: 2px dashed var(--stale); outline-offset: 2px; }
-.app[data-has-stale] .alarm-chip.unacked-p1::after { content: "◇ cũ"; font: 700 11px/1 var(--font-body); margin-left: var(--gap-1); }
+/* AlarmChip P1 nhấp nháy theo NGUỒN của chính P1 chưa ack (chủ dự án 2026-11-04): nguồn tươi ⇒ nhấp nháy dù nguồn/line KHÁC đang cũ;
+   đứng yên + dấu cũ CHỈ khi P1 đó thuộc nguồn cũ (class .src-stale trên chip) hoặc TOÀN phạm vi cũ (FreshnessPill của vỏ tím ⇒ shell.js đặt data-scope-stale).
+   "Có dữ liệu cũ bất kỳ ⇒ chip đứng yên" là fail-open (một cảm biến hỏng tắt báo P1 toàn nhà máy) nên KHÔNG dùng. */
+.app[data-scope-stale] .alarm-chip.unacked-p1, .alarm-chip.unacked-p1.src-stale { animation: none; outline: 2px dashed var(--stale); outline-offset: 2px; }
+.app[data-scope-stale] .alarm-chip.unacked-p1::after, .alarm-chip.unacked-p1.src-stale::after { content: "◇ cũ"; font: 700 11px/1 var(--font-body); margin-left: var(--gap-1); }
 @keyframes chipPulse { 0%, 100% { box-shadow: 0 0 0 0 var(--alarm-p1-soft); } 50% { box-shadow: 0 0 0 6px var(--alarm-p1-soft); } }
 
 /* Trạng thái ISA-18.2 (ký hiệu + chữ, màu chỉ khi cần hành động) */
