@@ -37,6 +37,15 @@ export type MaLoiNgoai =
 export const PHAN_LOAI_LOI_NGOAI = ["QUOTA", "RATE_LIMIT", "EMPTY_RESPONSE", "TIMEOUT", "TRANSPORT", "CONTEXT_WINDOW_EXCEEDED", "AUTH", "SERVER", "CLIENT"] as const;
 export type PhanLoaiLoiNgoai = (typeof PHAN_LOAI_LOI_NGOAI)[number];
 
+/**
+ * (H3.3a) id yêu cầu do NHÀ CUNG CẤP đặt (tiêu đề phản hồi) — DỮ LIỆU NGOÀI ⇒ chỉ nhận đúng bộ ký tự an toàn cho sổ / log, khác ⇒ bỏ
+ * (không cắt, không làm sạch: một id đã sửa là id sai).
+ */
+const RE_REQUEST_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
+export function requestIdHopLe(v: unknown): string | undefined {
+  return typeof v === "string" && RE_REQUEST_ID.test(v) ? v : undefined;
+}
+
 export class LoiNgoai extends Error {
   /** Chắc chắn yêu cầu CHƯA rời máy (lỗi trước khi gửi) ⇒ cổng hoàn TOÀN BỘ chỗ đã giữ. */
   readonly chuaGui: boolean;
@@ -46,10 +55,12 @@ export class LoiNgoai extends Error {
   readonly phanLoai?: PhanLoaiLoiNgoai;
   /** (H3.1) nhà cung cấp xin chờ (`Retry-After`, ms) trước lần thử sau. */
   readonly choMs?: number;
+  /** (H3.3a) id yêu cầu của nhà cung cấp cho lần gọi lỗi (đã qua `requestIdHopLe`) — chỉ sổ / log máy chủ, không ra client. */
+  readonly requestId?: string;
   constructor(
     readonly ma: MaLoiNgoai,
     readonly chiTiet?: string,
-    co: { chuaGui?: boolean; thuLai?: boolean; phanLoai?: PhanLoaiLoiNgoai; choMs?: number } = {},
+    co: { chuaGui?: boolean; thuLai?: boolean; phanLoai?: PhanLoaiLoiNgoai; choMs?: number; requestId?: string } = {},
   ) {
     super(chiTiet ? `${ma}: ${chiTiet}` : ma);
     this.name = "LoiNgoai";
@@ -57,6 +68,8 @@ export class LoiNgoai extends Error {
     this.thuLai = co.thuLai === true;
     if (co.phanLoai) this.phanLoai = co.phanLoai;
     if (typeof co.choMs === "number" && Number.isFinite(co.choMs) && co.choMs >= 0) this.choMs = Math.trunc(co.choMs);
+    const rid = requestIdHopLe(co.requestId);
+    if (rid) this.requestId = rid;
   }
 }
 
