@@ -209,6 +209,18 @@ describe("webview — nút kiểm định bằng AI ngoài (0.6.0 E1)", () => {
     expect(w.daGui.filter((m) => m.loai === "ag_khoi_ma")).toEqual([{ loai: "ag_khoi_ma", chiSo: 4, hanhDong: "chep" }]);
   });
 
+  it("★★ (rà kiem-dinh h4) mã bong bóng không phải chuỗi / rỗng ⇒ KHÔNG nút", () => {
+    const w = chay();
+    w.banTin(DM(true));
+    for (const maBong of [123, { a: 1 }, "", null]) {
+      w.nut("o-nhap").value = "hỏi";
+      w.nut("o-che-do").value = "chat-cu";
+      w.nut("nut-gui").bam();
+      w.banTin({ loai: "hoan_tat", vanBanCuoi: null, cay: [], chiSoMaDau: 0, canhBao: null, maBong });
+    }
+    expect(nutKiemDinh(w)).toHaveLength(0);
+  });
+
   it("★★ kết quả cho mã lạ ⇒ bỏ qua", () => {
     const w = chay();
     luotXong(w, "ma-1");

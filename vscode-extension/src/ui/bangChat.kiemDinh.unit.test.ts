@@ -101,7 +101,7 @@ vi.mock("vscode", () => ({
 }));
 
 import { BangChat } from "./bangChat";
-import { NHAN_KHONG_TIN_CAY, NUT_DONG_Y_KIEM_DINH } from "../loi/kiemDinhBong";
+import { NHAN_KHONG_TIN_CAY, NUT_DONG_Y_KIEM_DINH, TRAN_BAN_GHI_BONG } from "../loi/kiemDinhBong";
 import { LoiHttp } from "../loi/loiHttp";
 
 const khoGia = { quen: () => undefined, moDiff: async () => undefined, moDiffCucBo: async () => undefined };
@@ -310,6 +310,8 @@ describe("E1 — nút kiểm định: host giữ bản ghi, webview chỉ gửi 
     const chu = may.daGui.filter((m) => m.loai === "kiem_dinh_trang_thai" && m.xong === true).map((m) => String(m.chu));
     expect(chu[0]).toContain("Đang có một lượt kiểm định");
     expect(chu[1]).toContain("trần trong ngày của bạn");
+    // (rà kiem-dinh u6) xem trước sai hình dạng ⇒ câu ĐÚNG (không phải lỗi chung "Kiểm định thất bại" do TypeError)
+    expect(chu[2]).toContain("bản xem trước không đọc được");
   });
 
   it("★★ bấm đúp khi đang chạy ⇒ chỉ MỘT lượt (khoá theo bong bóng ở host)", async () => {
@@ -349,6 +351,19 @@ describe("E1 — nút kiểm định: host giữ bản ghi, webview chỉ gửi 
     const ct = String((may.canhBao[0]!.tuyChon as { detail: string }).detail);
     expect(ct).toContain(`Sẽ gửi: ${byte} byte`);
     expect(ct).toContain("ĐÃ CẮT");
+  });
+
+  it("★★ (rà kiem-dinh b5) trần bản ghi bong bóng: đăng ký TRAN+1 ⇒ mã ĐẦU bị bỏ (bấm ⇒ bỏ qua), mã cuối còn", async () => {
+    const bang = await sanSang();
+    const dk = (bang.dangKyBong as (b: { cauHoi: string; traLoi: string }) => string).bind(bang);
+    const ds = Array.from({ length: TRAN_BAN_GHI_BONG + 1 }, (_, i) => dk({ cauHoi: `q${i}`, traLoi: `a${i}` }));
+    expect((bang.banGhiBong as Map<string, unknown>).size).toBe(TRAN_BAN_GHI_BONG);
+    may.nhanTin?.({ loai: "kiem_dinh_bong", maBong: ds[0] });
+    await nhip();
+    expect(may.goiChiTiet).toEqual([]);
+    may.nhanTin?.({ loai: "kiem_dinh_bong", maBong: ds.at(-1) });
+    await nhip();
+    expect((may.goiChiTiet[0]!.dauVao as { nguon: { traLoi: string } }).nguon.traLoi).toBe(`a${TRAN_BAN_GHI_BONG}`);
   });
 
   it("★★ Chat mới ⇒ mã bong bóng cũ hết hiệu lực", async () => {

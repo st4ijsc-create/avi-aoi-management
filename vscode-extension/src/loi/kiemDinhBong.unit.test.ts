@@ -132,6 +132,15 @@ describe("kết quả — KHÔNG TIN CẬY", () => {
     expect(code).toHaveLength(1);
     expect((code[0] as { ma: string }).ma).toBe("a\n```\nthoát rào\n```\nb");
   });
+  it("★★ (rà kiem-dinh e24) chữ AI ngoài bị bỏ ký tự đảo chiều / độ rộng 0 ở MỌI trường (moTa, viTri, banChuanHoa, bài học, vet)", () => {
+    const ban = "‮​⁦";
+    const kq = docKetQuaKiemDinh({
+      ketQua: { ketLuan: "sai", diem: 1, loi: [{ muc: "vua", moTa: `m${ban}a`, viTri: `v${ban}t` }], banChuanHoa: `x${ban}y`, baiHocDeXuat: [{ noiDung: `b${ban}h`, phamVi: "nguoi" }] },
+      vet: { nhaCungCap: `p${ban}`, model: `m${ban}` },
+    })!;
+    expect([kq.loi[0]!.moTa, kq.loi[0]!.viTri, kq.banChuanHoa, kq.baiHoc[0], kq.nhaCungCap, kq.model]).toEqual(["ma", "vt", "xy", "bh", "p", "m"]);
+  });
+
   it("★★★ nhãn luôn mở đầu bằng 'AI ngoài — không tin cậy'; nói rõ kết quả từ bộ nhớ", () => {
     const n = nhanKetQuaKiemDinh(docKetQuaKiemDinh(tho)!);
     expect(n.startsWith(NHAN_KHONG_TIN_CAY)).toBe(true);
