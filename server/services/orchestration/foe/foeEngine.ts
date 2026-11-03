@@ -44,6 +44,7 @@ import {
   setRunStatusUnlessAborted,
   stopBoundedWrite,
   upsertStep,
+  upsertStepOn,
   type AbortSweepSource,
   type EdgeSegmentEnd,
   type PriorSteps,
@@ -56,6 +57,18 @@ import {
   edgeResumeStateOf,
 } from "./foeRunStore";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
+// R1b-2b-2a A2(m2) — a run interrupted while compensating: which compensation was in flight, and may the boot re-send it (b1–b3)
+import {
+  BU_TRU_BI_NGAT_CTX_KEY,
+  HAN_XET_GUI_LAI_MS,
+  LAN_GUI_LAI_KHOI_DONG,
+  LY_DO_KHONG_GUI,
+  dauBuTruCua,
+  phanLoaiBuTruBiNgat,
+  xetGuiLaiBuTruBiNgat,
+  type DauBuTruBiNgat,
+  type PhanLoaiBuTru,
+} from "./foeBuTruBiNgat";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -556,6 +569,12 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
    * writes no run status. (Đợt 10 C removed the DB run guard: the per-step /authorize of the edge store decides.)
    */
   edgeDetached?: boolean;
+  /**
+   * R1b-2b-2a A2(m2) (b1) — the walk is the BOOT re-send of an interrupted STOP compensation: a command the central store does not
+   * authorise as a PINNED STOP for this dispatch (`auth.stopGhim`) is never handed to a dispatcher (the pins may have changed since the
+   * boot checked them). Set only by guiLaiBuTruLucKhoiDong.
+   */
+  chiGuiStopGhim?: boolean;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -1901,6 +1920,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     }
   }
   const cmd = auth.cmd;
+  // R1b-2b-2a A2(m2) (b1) — the boot re-send hands ONLY a pinned STOP (the central store's verdict for THIS dispatch) to a dispatcher
+  if (rc.chiGuiStopGhim && auth.stopGhim !== true) {
+    return { kind: "failed", error: `FOE_BOOT_RESEND_NOT_PINNED: the compensation "${step.id}" is not a pinned STOP for this dispatch — not sent.` };
+  }
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
@@ -2011,7 +2034,16 @@ async function execWaitTelemetry(rc: RunContext, step: Extract<WorkflowStep, { t
 }
 
 /** Run a step's compensation (saga undo). Fail-safe — records but never throws. */
-async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: string): Promise<StepOutcome | undefined> {
+async function runCompensation(
+  rc: RunContext,
+  step: WorkflowStep,
+  stepError?: string,
+  /**
+   * R1b-2b-2a A2(m2) — `attempt`: the attempt number of the compensation's dispatch (its idempotency key `run<R>-<comp>-a<attempt>`).
+   * Always 1 for a walk; the boot re-send of an interrupted STOP compensation uses LAN_GUI_LAI_KHOI_DONG (a key no walk used).
+   */
+  opts: { attempt?: number } = {},
+): Promise<StepOutcome | undefined> {
   if (!step.compensation) return;
   try {
     const comp = step.compensation;
@@ -2035,7 +2067,7 @@ async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: s
     await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
       rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
     );
-    const out = await runStepBody(rc, comp, 1, compStop);
+    const out = await runStepBody(rc, comp, opts.attempt ?? 1, compStop);
     if (out.kind === "held") {
       // doc 81 Đợt 10 C fix review 1 (R-10-y, D5) — the compensation could not be authorised: nothing sent, nothing marked
       // failed; the run is held AT it. A Continue resumes it: central reads THAT from the rows (step failed + compensation held —
@@ -2053,6 +2085,8 @@ async function runCompensation(rc: RunContext, step: WorkflowStep, stepError?: s
         finishedAt: new Date(),
       }),
     );
+    // R1b-2b-2a A2(m2) — the outcome (the boot re-send reads it; the walk's callers only look for 'held', as before)
+    return out;
   } catch {
     // swallow — compensation failures must not crash the run unwind.
   }
@@ -3489,6 +3523,12 @@ export interface RehydrateResult {
   runIds: number[];
   /** doc 33 I5 — số run được AUTO-resume (chỉ khi FOE_DURABLE). undefined nếu không bật. */
   autoResumed?: number;
+  /**
+   * R1b-2b-2a A2(m2) — the runs interrupted while COMPENSATING, and what the boot did with each: `held` (one top-level compensation in
+   * flight — not re-sent: `lyDo`), `sent` (a pinned STOP compensation re-sent ONCE at boot ⇒ the run ends 'failed' as its step did),
+   * `failed` (several / nested / undecidable ⇒ 'failed' + URGENT), `none` (nothing in flight ⇒ 'failed' as before).
+   */
+  compensations?: Array<{ runId: number; compId: string | null; outcome: "held" | "sent" | "failed" | "none"; reason?: string }>;
 }
 
 /**
@@ -3509,6 +3549,8 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       if (!run || run.status !== "held") continue; // skip failed/terminal
       const ctx = (run.contextJson as Record<string, unknown>) ?? {};
       if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
+      // R1b-2b-2a A2(m2) — a run held because a COMPENSATION was interrupted: only the guarded boot re-send (b1–b4) or a person continues it
+      if (BU_TRU_BI_NGAT_CTX_KEY in ctx) continue;
       // doc 81 Đợt 9 task S2 — an edge run interrupted on its node waits for a person's Continue (undecidable ⇒ skipped)
       const onEdge = await readEdgeAssignment(d, runId).catch(() => "unknown" as const);
       if (onEdge !== null) continue;
@@ -3541,6 +3583,11 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
  *     (execStep bỏ qua bước đã 'completed'/'skipped'; với control OFF mọi dispatch là dry-run).
  *   • 'compensating' → 'failed' (terminal). Run đang UNWIND một lỗi; drive-lại về phía trước
  *     là KHÔNG an toàn, nên chốt terminal + ghi lý do.
+ *     R1b-2b-2a A2(m2) (L-7) — NGOẠI LỆ, xem foeBuTruBiNgat: ĐÚNG MỘT bù trừ cấp đỉnh chưa kết thúc (running / held / pending) ⇒
+ *     'held' + trạng thái tiếp tục compensationHeld của bước đó (một lần Tiếp tục CHỈ gửi lại bù trừ ấy, bước tiến không chạy lại)
+ *     + URGENT; và nếu nó là STOP GHIM thoả b1–b3 (thời điểm ý định theo đồng hồ CSDL còn trong D, thiết bị không thuộc edge, không
+ *     đổi chủ, không lệnh nào khác tới sau) ⇒ boot gửi lại ĐÚNG MỘT LẦN qua commandDispatcher (mọi cổng, khoá mới, hàng uỷ quyền mới)
+ *     + URGENT (cả khi thành công) + audit bằng chứng. Hai bù trừ trở lên / lồng / không đọc được ⇒ 'failed' + URGENT (không đoán).
  *   • 'awaiting_confirm' / 'held' → BỎ QUA. Đây là WAIT BỀN VỮNG chờ người — không cần
  *     rehydrate; một người sẽ resume qua resumeRun như thường.
  *
@@ -3549,6 +3596,9 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
  */
 export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
   const result: RehydrateResult = { enabled: foeEnabled(), scanned: 0, interrupted: 0, failed: 0, runIds: [] };
+  // R1b-2b-2a A2(m2) — runs interrupted while ONE top-level compensation was in flight: held / re-sent after the scan
+  const buTru: BuTruChoXuLy[] = [];
+  const compensations: NonNullable<RehydrateResult["compensations"]> = [];
   // final wave F8 — the boot-time schema check of migration 0367 (this function is the FOE's boot hook; it never throws).
   await checkFoeSchema({ boot: true });
   try {
@@ -3583,12 +3633,27 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
         interruptedFrom: run.status,
       };
       if (run.status === "compensating") {
-        await setRunStatus(run.id, "failed", {
-          finishedAt: now,
-          error: `Interrupted by server restart while compensating (run ${run.id}); not auto-resumed.`,
-          contextJson: markedCtx,
-        });
-        result.failed += 1;
+        // R1b-2b-2a A2(m2) — WHICH compensation was in flight (step rows + deployed definition; unreadable ⇒ undecidable, never a guess)
+        const pl = await phanLoaiBuTruCuaRun(d, run, ctx);
+        if (pl.k.kind === "mot") {
+          // held (and maybe re-sent once) by giuHoacGuiLaiBuTru after this scan; until then it stays 'compensating' (a crash meanwhile ⇒
+          // the next boot sees it again)
+          buTru.push({ run, markedCtx, k: pl.k, def: pl.def!, wfVersion: pl.wfVersion });
+          result.interrupted += 1;
+        } else {
+          const k = pl.k;
+          await setRunStatus(run.id, "failed", {
+            finishedAt: now,
+            error:
+              k.kind === "khong"
+                ? `Interrupted by server restart while compensating (run ${run.id}); not auto-resumed.`
+                : `Interrupted by server restart while compensating (run ${run.id}): ${moTaBuTruKhongDoan(k)} — not resumed, nothing re-sent; check the equipment now.`,
+            contextJson: markedCtx,
+          });
+          result.failed += 1;
+          compensations.push({ runId: run.id, compId: k.kind === "khong" ? null : k.compIds.join(",") || null, outcome: k.kind === "khong" ? "none" : "failed", ...(k.kind === "khong" ? {} : { reason: k.kind === "nhieu" ? "several" : k.lyDo }) });
+          if (k.kind !== "khong") await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: k.compIds.join(",") || null, stepId: null, lyDo: moTaBuTruKhongDoan(k) });
+        }
       } else {
         // queued/running → resumable 'held'.
         await setRunStatus(run.id, "held", {
@@ -3603,14 +3668,358 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
     // nuốt — một lỗi rehydrate KHÔNG được chặn khởi động server.
     console.error("[FOE] rehydrateInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
   }
+  // R1b-2b-2a A2(m2) — the runs with ONE interrupted compensation: held + URGENT, or (b1–b4) its pinned STOP re-sent ONCE. Each is
+  // bounded (decision ≤ HAN_XET_GUI_LAI_MS, the send ≤ what is left of D) and never throws; the boot hook does not wait on this function.
+  const buTruXong = Promise.all(
+    buTru.map((b) =>
+      giuHoacGuiLaiBuTru(b)
+        .then((o) => {
+          compensations.push(o);
+        })
+        .catch((err: unknown) => {
+          console.error(`[FOE] rehydrate: interrupted compensation of run ${b.run.id} not handled: ${(err as Error)?.message ?? err}`);
+          compensations.push({ runId: b.run.id, compId: b.k.compId, outcome: "held", reason: "error" });
+        }),
+    ),
+  );
   // doc 33 I5 (F8) — durable execution: when FOE_DURABLE, auto-continue the interrupted runs
   // instead of leaving them 'held' for manual resume. Default off → unchanged behavior.
+  // (A2(m2): a run held for an interrupted compensation is skipped there — BU_TRU_BI_NGAT_CTX_KEY.)
   if (foeDurableEnabled() && result.runIds.length > 0) {
     const ar = await autoResumeInterruptedRuns(result.runIds);
     result.autoResumed = ar.resumed;
     if (ar.resumed > 0) console.log(`[FOE] durable: auto-resumed ${ar.resumed} interrupted run(s)`);
   }
+  await buTruXong;
+  if (compensations.length > 0) result.compensations = compensations;
   return result;
+}
+
+// ── R1b-2b-2a A2(m2) — a run interrupted while COMPENSATING (see foeBuTruBiNgat) ───────────────────────────────────────
+
+/** The principal of the boot re-send (never a person: the run's gate approval, if any, is the authorisation row's confirmer). */
+const SYSTEM_FOE_BOOT_USER: FoeUser = { id: 0, role: "system", name: "FOE boot STOP re-send" };
+
+interface BuTruChoXuLy {
+  run: OrchestrationRun;
+  markedCtx: Record<string, unknown>;
+  k: Extract<PhanLoaiBuTru, { kind: "mot" }>;
+  def: WorkflowDefinition;
+  wfVersion: number | null;
+}
+
+/** The classification of a 'compensating' run from its rows + the deployed definition; any read error / timeout ⇒ undecidable. */
+async function phanLoaiBuTruCuaRun(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  run: OrchestrationRun,
+  ctx: Record<string, unknown>,
+): Promise<{ k: PhanLoaiBuTru; def: WorkflowDefinition | null; wfVersion: number | null }> {
+  try {
+    return await withDeadline(
+      (async () => {
+        const [wf] = await d.select(WF_CORE_COLS).from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1); // F8: no "scopeKey"
+        const def = (wf?.definitionJson as WorkflowDefinition | undefined) ?? null;
+        const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, run.id));
+        return { k: phanLoaiBuTruBiNgat(def, rows, ctx), def, wfVersion: wf?.version ?? null };
+      })(),
+      HAN_XET_GUI_LAI_MS,
+      `FOE rehydrate run ${run.id} compensation rows`,
+    );
+  } catch (err) {
+    return { k: { kind: "khongRo", lyDo: `unreadable (${String((err as Error)?.message ?? err).slice(0, 160)})`, compIds: [] }, def: null, wfVersion: null };
+  }
+}
+
+function moTaBuTruKhongDoan(k: Exclude<PhanLoaiBuTru, { kind: "khong" | "mot" }>): string {
+  if (k.kind === "nhieu") return `${k.compIds.length} compensations (${k.compIds.join(", ")}) were in flight — which STOP was being sent cannot be told`;
+  const why: Record<string, string> = {
+    rejectionUnwind: "it was unwinding a gate rejection",
+    definitionUnreadable: "its workflow definition could not be read",
+    nested: "the compensation in flight belongs to a nested step",
+    stepRowNotFailed: "the step of the compensation in flight is not recorded as failed",
+  };
+  return `${why[k.lyDo] ?? `its compensation state is ${k.lyDo}`}${k.compIds.length ? ` (${k.compIds.join(", ")})` : ""}`;
+}
+
+const lyDoText = (lyDo: string): string => (LY_DO_KHONG_GUI as Record<string, string>)[lyDo] ?? lyDo;
+
+/**
+ * ONE run with ONE interrupted top-level compensation: decide (b1–b3, foeBuTruBiNgat.xetGuiLaiBuTruBiNgat — DB facts, DB clock), then
+ *   • not re-sendable ⇒ 'held' (compensationHeld: a Continue re-sends ONLY the compensation, the step is never re-run) + URGENT + audit;
+ *   • re-sendable ⇒ CLAIM it (compare-and-set on 'compensating' + the marker daThuGuiLai not yet set — written BEFORE the attempt, so a
+ *     second boot / a second replica never sends it again), ONE attempt through runCompensation → execCommand → the central store →
+ *     equipmentRegistry → commandDispatcher (every gate; key `-a2`, a fresh authorisation row), bounded by what is left of D; then
+ *     really sent ⇒ 'failed' (as the step did) + URGENT ("re-sent at boot") + audit; anything else (refused, simulated — OT control off —,
+ *     failed, not confirmed, an exception, past D) ⇒ the compensation row back to 'held' + the run 'held' + URGENT + audit.
+ * Never throws (the caller catches anyway).
+ */
+async function giuHoacGuiLaiBuTru(b: BuTruChoXuLy): Promise<NonNullable<RehydrateResult["compensations"]>[number]> {
+  const { run, k } = b;
+  const ctx0 = (run.contextJson as Record<string, unknown> | null) ?? {};
+  const prior = (ctx0[RESUME_STATE_CTX_KEY] as ResumeStateMap | undefined) ?? {};
+  const { dangGuiLai: _cu, ...dauCu } = dauBuTruCua(ctx0) ?? ({} as Partial<DauBuTruBiNgat>);
+  const dau: DauBuTruBiNgat = { ...dauCu, stepId: k.stepId, compId: k.compId, at: new Date().toISOString() };
+  const ctxGiu: Record<string, unknown> = {
+    ...b.markedCtx,
+    [RESUME_STATE_CTX_KEY]: { ...prior, [k.stepId]: { state: "compensationHeld", error: k.error } },
+    [BU_TRU_BI_NGAT_CTX_KEY]: dau,
+  };
+  const d = await getDb();
+  if (!d) return { runId: run.id, compId: k.compId, outcome: "held", reason: "loiTraCuu" }; // still 'compensating': the next boot sees it
+
+  // ── the decision (b1–b3) ──
+  let xet: Awaited<ReturnType<typeof xetGuiLaiBuTruBiNgat>> | null = null;
+  let loiXet: string | null = null;
+  try {
+    const executed = runExecutedVersions(run);
+    xet = await withDeadline(
+      xetGuiLaiBuTruBiNgat(d, {
+        runId: run.id,
+        stepId: k.stepId,
+        compId: k.compId,
+        def: b.def,
+        ctx: ctx0,
+        foeBat: foeEnabled(),
+        dinhNghiaKhop: executed === null || (b.wfVersion !== null && executed.includes(b.wfVersion)),
+      }),
+      HAN_XET_GUI_LAI_MS,
+      `FOE boot re-send run ${run.id} checks`,
+    );
+  } catch (err) {
+    loiXet = String((err as Error)?.message ?? err).slice(0, 300);
+  }
+  const quyetDinh = xet?.quyetDinh ?? ({ gui: false, lyDo: "loiTraCuu" } as const);
+  const bangChung = xet?.bangChung ?? null;
+
+  if (!quyetDinh.gui) {
+    const lyDo = quyetDinh.lyDo;
+    const written = await setRunStatusUnlessAborted(
+      run.id,
+      "held",
+      {
+        error: `Interrupted by server restart while sending the compensation "${k.compId}" of step "${k.stepId}" (run ${run.id}); NOT re-sent at boot: ${lyDoText(lyDo)}. A Continue sends that compensation again (only it); check the equipment now.`,
+        contextJson: { ...ctxGiu, [BU_TRU_BI_NGAT_CTX_KEY]: { ...dau, ketQuaGuiLai: lyDo } },
+      },
+      ["compensating"],
+    ).catch(() => false);
+    console.error(`[FOE] run ${run.id}: compensation "${k.compId}" was interrupted — held (${written ? "written" : "NOT written"}), not re-sent at boot: ${lyDo}`);
+    await ghiAuditBuTru(run.id, false, { stepId: k.stepId, compId: k.compId, outcome: "held", reason: lyDo, reasonText: lyDoText(lyDo), evidence: bangChung, lookupError: loiXet ?? bangChung?.loi ?? null });
+    await canhBaoBuTruBiNgat(d, run, { loai: "held", compId: k.compId, stepId: k.stepId, lyDo: lyDoText(lyDo) });
+    return { runId: run.id, compId: k.compId, outcome: "held", reason: lyDo };
+  }
+
+  // ── claim (write-ahead, once): compensating ⇒ compensating + marker daThuGuiLai + this attempt's nonce ──
+  const nonce = randomBytes(8).toString("hex");
+  const ctxGui: Record<string, unknown> = { ...ctxGiu, [BU_TRU_BI_NGAT_CTX_KEY]: { ...dau, daThuGuiLai: true, dangGuiLai: nonce } };
+  let claimed = false;
+  try {
+    const rows = await d
+      .update(orchestrationRuns)
+      .set({ contextJson: ctxGui, updatedAt: new Date() })
+      .where(
+        and(
+          eq(orchestrationRuns.id, run.id),
+          eq(orchestrationRuns.status, "compensating"),
+          sql`COALESCE((${orchestrationRuns.contextJson} -> ${BU_TRU_BI_NGAT_CTX_KEY} ->> 'daThuGuiLai')::boolean, false) = false`,
+        ),
+      )
+      .returning({ id: orchestrationRuns.id });
+    claimed = rows.length === 1;
+  } catch (err) {
+    console.error(`[FOE] run ${run.id}: boot re-send claim failed: ${(err as Error)?.message ?? err}`);
+  }
+  if (!claimed) {
+    // another replica claimed it, or the run moved (aborted …): that path owns it — nothing sent here
+    console.warn(`[FOE] run ${run.id}: interrupted compensation "${k.compId}" — not claimed for the boot re-send (claimed elsewhere / the run moved)`);
+    return { runId: run.id, compId: k.compId, outcome: "held", reason: "notClaimed" };
+  }
+
+  // ── ONE attempt, bounded by what is left of D ──
+  let gui: { sent: boolean; lyDo: string; chiTiet: Record<string, unknown> };
+  try {
+    gui = await withDeadline(guiLaiBuTruLucKhoiDong(run.id, k, b.def), Math.max(1, quyetDinh.conLaiMs), `FOE boot re-send run ${run.id} compensation ${k.compId}`);
+  } catch (err) {
+    gui = { sent: false, lyDo: "khongXacNhan", chiTiet: { error: String((err as Error)?.message ?? err).slice(0, 300) } };
+  }
+  const dauKq = { ...dau, daThuGuiLai: true as const, ketQuaGuiLai: gui.sent ? "sent" : gui.lyDo };
+  const evidence = { stepId: k.stepId, compId: k.compId, reason: gui.sent ? "allChecksPassed" : gui.lyDo, reasonText: gui.sent ? "b1–b3 held: a pinned STOP, inside D on the DB clock, central-owned, same owner epoch, no later command" : lyDoText(gui.lyDo), evidence: bangChung, dispatch: gui.chiTiet };
+  if (gui.sent) {
+    const written = await capNhatTheoLuotGui(d, run.id, nonce, "failed", {
+      finishedAt: new Date(),
+      error: `Step "${k.stepId}" failed; its STOP compensation "${k.compId}" was interrupted by a server restart and was RE-SENT ONCE at boot (run ${run.id}) — check the equipment.`,
+      contextJson: { ...ctxGui, [BU_TRU_BI_NGAT_CTX_KEY]: dauKq },
+    });
+    console.warn(`[FOE] run ${run.id}: STOP compensation "${k.compId}" RE-SENT once at boot (run ${written ? "failed as its step" : "status NOT written"})`);
+    await ghiAuditBuTru(run.id, true, { ...evidence, outcome: "sent" });
+    await canhBaoBuTruBiNgat(d, run, { loai: "sent", compId: k.compId, stepId: k.stepId, lyDo: "" });
+    return { runId: run.id, compId: k.compId, outcome: "sent" };
+  }
+  const loiGiu = `Interrupted by server restart while sending the compensation "${k.compId}" of step "${k.stepId}" (run ${run.id}); the boot re-send did NOT go out: ${lyDoText(gui.lyDo)}. A Continue sends that compensation again (only it); check the equipment now.`;
+  const written = await capNhatTheoLuotGui(d, run.id, nonce, "held", { error: loiGiu, contextJson: { ...ctxGui, [BU_TRU_BI_NGAT_CTX_KEY]: dauKq } }, {
+    // the compensation is still DUE: its row is never left 'compensated' / 'failed' (a later crash would then read "nothing in flight")
+    stepId: k.compId,
+    error: `Not re-sent at boot: ${lyDoText(gui.lyDo)}`,
+  });
+  console.error(`[FOE] run ${run.id}: boot re-send of compensation "${k.compId}" did NOT go out (${gui.lyDo}) — held (${written ? "written" : "NOT written"})`);
+  await ghiAuditBuTru(run.id, false, { ...evidence, outcome: "held" });
+  await canhBaoBuTruBiNgat(d, run, { loai: "held", compId: k.compId, stepId: k.stepId, lyDo: lyDoText(gui.lyDo) });
+  return { runId: run.id, compId: k.compId, outcome: "held", reason: gui.lyDo };
+}
+
+/**
+ * The outcome write of the boot re-send: only while the run is still 'compensating' under THIS attempt's nonce (an abort, a timeout that
+ * already held it, never another walk's state); with `buTru`, the compensation row goes back to 'held' in the same transaction.
+ */
+async function capNhatTheoLuotGui(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  runId: number,
+  nonce: string,
+  status: OrchestrationRun["status"],
+  patch: Partial<OrchestrationRun>,
+  buTru?: { stepId: string; error: string },
+): Promise<boolean> {
+  try {
+    return await withDeadline(
+      d.transaction(async (tx) => {
+        const rows = await tx
+          .update(orchestrationRuns)
+          .set({ status, updatedAt: new Date(), ...patch })
+          .where(
+            and(
+              eq(orchestrationRuns.id, runId),
+              eq(orchestrationRuns.status, "compensating"),
+              sql`(${orchestrationRuns.contextJson} -> ${BU_TRU_BI_NGAT_CTX_KEY} ->> 'dangGuiLai') = ${nonce}`,
+            ),
+          )
+          .returning({ id: orchestrationRuns.id });
+        if (rows.length !== 1) return false;
+        if (buTru) await upsertStepOn(tx as never, runId, buTru.stepId, "command", { status: "held", error: buTru.error, finishedAt: new Date() });
+        return true;
+      }),
+      5 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE boot re-send run ${runId} outcome`,
+    );
+  } catch (err) {
+    console.error(`[FOE] run ${runId}: boot re-send outcome not written: ${(err as Error)?.message ?? err}`);
+    return false;
+  }
+}
+
+/**
+ * THE attempt: the compensation through the engine's own compensation path (runCompensation → runStepBody → execCommand → central store
+ * → equipmentRegistry → commandDispatcher), registered as a live run (an abort reaches it), only a pinned STOP handed over
+ * (rc.chiGuiStopGhim), attempt LAN_GUI_LAI_KHOI_DONG. "Sent" only when its row says so: compensated, accepted, NOT simulated.
+ */
+async function guiLaiBuTruLucKhoiDong(
+  runId: number,
+  k: Extract<PhanLoaiBuTru, { kind: "mot" }>,
+  def: WorkflowDefinition,
+): Promise<{ sent: boolean; lyDo: string; chiTiet: Record<string, unknown> }> {
+  const d = await getDb();
+  if (!d) return { sent: false, lyDo: "khongXacNhan", chiTiet: { error: "database unavailable" } };
+  const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+  if (!run || run.status !== "compensating") return { sent: false, lyDo: "daHuy", chiTiet: { status: run?.status ?? null } };
+  const step = def.steps.find((s) => s.id === k.stepId);
+  if (!step?.compensation || step.compensation.id !== k.compId) return { sent: false, lyDo: "dinhNghiaDaDoi", chiTiet: {} };
+  const rc = await buildRunContext(run, def, SYSTEM_FOE_BOOT_USER);
+  rc.chiGuiStopGhim = true;
+  let out: StepOutcome | undefined;
+  await withLiveRun(rc, async () => {
+    out = await runCompensation(rc, step, k.error, { attempt: LAN_GUI_LAI_KHOI_DONG });
+    return "compensating";
+  });
+  const [row] = await d
+    .select()
+    .from(orchestrationRunSteps)
+    .where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, k.compId)))
+    .limit(1);
+  const r = (row?.resultJson ?? null) as Record<string, unknown> | null;
+  const chiTiet = { outcome: out?.kind ?? null, error: out && "error" in out ? out.error : null, row: row?.status ?? null, status: r?.status ?? null, accepted: r?.accepted ?? null, simulated: r?.simulated ?? null, routedTo: r?.routedTo ?? null };
+  if (rc.aborting) return { sent: false, lyDo: "daHuy", chiTiet };
+  const moPhong = r?.simulated === true || r?.status === "simulated";
+  const sent = out?.kind === "ok" && row?.status === "compensated" && r?.accepted === true && !moPhong;
+  if (sent) return { sent: true, lyDo: "", chiTiet };
+  return { sent: false, lyDo: moPhong ? "moPhong" : out?.kind === "failed" ? "guiLoi" : "khongXacNhan", chiTiet };
+}
+
+/** The audit row of a boot decision (b5: reason + the evidence of b1–b3). Bounded; never throws. */
+async function ghiAuditBuTru(runId: number, ok: boolean, metadata: Record<string, unknown>): Promise<void> {
+  try {
+    await withDeadline(
+      (async () => {
+        const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+        await logCrudOperation(createAuditContext({ user: { id: 0, name: SYSTEM_FOE_BOOT_USER.name } }), {
+          action: "config_change",
+          entityType: "orchestration_run",
+          entityId: runId,
+          details: { operation: FOE_BU_TRU_KHOI_DONG_AUDIT_OP, metadata: { runId, ...metadata } },
+          status: ok ? "success" : "failure",
+        });
+      })(),
+      5 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${runId} interrupted compensation audit`,
+    );
+  } catch (err) {
+    console.error(`[FOE] run ${runId}: interrupted compensation audit not written: ${(err as Error)?.message ?? err}`);
+  }
+}
+
+/** The audit operation of every boot decision about an interrupted compensation (A2(m2)). */
+export const FOE_BU_TRU_KHOI_DONG_AUDIT_OP = "foe_compensation_interrupted_boot";
+
+/**
+ * The URGENT alert of an interrupted compensation (the critical-stop alert, its durable dedup per run + compensation + outcome):
+ *   held — not re-sent (why); sent — a STOP was RE-SENT at boot (b5: a person must know); failed — several / undecidable (never a guess).
+ * Recipients: the run owner + active admins / supervisors (bounded read; unreadable ⇒ the owner only — the log line and the alert
+ * stream carry it anyway). Bounded; never throws.
+ */
+async function canhBaoBuTruBiNgat(
+  d: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  run: OrchestrationRun,
+  a: { loai: "held" | "sent" | "failed"; compId: string | null; stepId: string | null; lyDo: string },
+): Promise<void> {
+  try {
+    let nguoi: number[] = [];
+    try {
+      const rows = await withDeadline(
+        Promise.resolve(d.select({ id: users.id }).from(users).where(and(eq(users.isActive, true), inArray(users.role, ["admin", "supervisor"] as never[])))),
+        STOP_DB_STEP_DEADLINE_MS,
+        `FOE run ${run.id} alert recipients`,
+      );
+      nguoi = rows.map((u) => Number(u.id));
+    } catch {
+      /* the owner only */
+    }
+    const recipients = [...new Set([run.startedBy ?? 0, ...nguoi])].filter((u) => Number.isSafeInteger(u) && u > 0);
+    const kind = a.loai === "sent" ? "foe_stop_compensation_resent_at_boot" : a.loai === "held" ? "foe_compensation_interrupted_held" : "foe_compensation_interrupted_failed";
+    const comp = a.compId ? `"${a.compId}"` : "(unknown)";
+    const title =
+      a.loai === "sent"
+        ? `STOP re-sent at boot — run ${run.id}, compensation ${comp}`
+        : a.loai === "held"
+          ? `Compensation interrupted — run ${run.id} held, ${comp} NOT re-sent`
+          : `Compensation interrupted — run ${run.id} failed, nothing re-sent`;
+    const message =
+      a.loai === "sent"
+        ? `The server restarted while run ${run.id} was sending the STOP compensation ${comp} of step "${a.stepId}". The boot RE-SENT that STOP once (pinned STOP, inside its window on the database clock, central-owned, same owner, no later command to the device). Check the equipment.`
+        : a.loai === "held"
+          ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}" — it was NOT re-sent: ${a.lyDo}. The run is HELD: a Continue sends ONLY that compensation. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`
+          : `The server restarted while run ${run.id} was compensating: ${a.lyDo}. The run is FAILED and nothing was re-sent. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`;
+    const { raiseCriticalStopAlert } = await import("../../robot/criticalStopAlert");
+    await raiseCriticalStopAlert({
+      kind,
+      title,
+      message,
+      recipients,
+      dedupKey: `${kind}:${run.id}:${a.compId ?? "-"}`,
+      source: "ot",
+      entityType: "orchestration_run",
+      entityId: run.id,
+      khuTrungBenVung: {},
+    });
+  } catch (err) {
+    console.error(`[FOE] run ${run.id}: interrupted compensation alert failed: ${(err as Error)?.message ?? err}`);
+  }
 }
 
 // ── doc 81 Đợt 6 (owner decision 2026-10-11, "Huỷ vẫn chạy bước DỪNG") — an ABORT / a gate REJECTION still sends the run's STOPs
