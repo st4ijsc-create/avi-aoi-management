@@ -1167,6 +1167,136 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
+  // ═══════════════════════════════════════ kiem-dinh test round (mutation review @ b551ab751) — TEST-ONLY ═══════════════════════════════════════
+
+  it("★ KD-e1 — ONE try: a second contender claims while this boot waits for the connection ⇒ this boot's claim CAS loses (claimed = false) ⇒ 0 PDU, held + URGENT + audit (never silent)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      ketNoiSau(a1, 1500);
+      // while this boot waits (after its decision, before its claim) another contender writes ITS claim on the run
+      H.khiLayDriver = () => {
+        void (async () =>
+          await tx.execute(
+            sql`UPDATE orchestration_runs SET "contextJson" = jsonb_set("contextJson", '{foeBuTruBiNgat}', '{"stepId":"main","compId":"undo","daThuGuiLai":true,"dangGuiLai":"contender","bootLuot":"other-instance"}'::jsonb) WHERE id = ${runId}`,
+          ))();
+      };
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0); // ★ never a second STOP
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]);
+      expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0); // this boot never dispatched
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("held");
+      expect(canhBaoCua(runId).filter((x) => x.kind !== "foe_stop_compensation_pending_at_boot").map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
+      expect(md).toMatchObject({ claimLost: true, staleAttempt: "contender", decisionReason: "daGuiLaiMotLan" });
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ KD-e2 — the boot re-send acts as the SYSTEM (id 0, role system), never a person / admin: its fresh authorisation row and the dispatcher's ledger say so", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      // the gate g0 passed by the owner: no counting approval ⇒ the fresh row is self-confirmed by the walking subject
+      const { runId } = await makeFoeGateRun({ tag: `${DAU}-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy: OWNER, steps: [buocChinh(m2, buStopGhim(m1))] });
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      const lan = await hangUyQuyen(tx, `foe-run${runId}-undo-a2`);
+      expect(lan.map((r) => [r.userId, r.userRole])).toEqual([[0, "system"]]);
+      const ghi = await tx.select().from(commandLog).where(eq(commandLog.actionId, lan[0]!.id));
+      expect(ghi.length).toBeGreaterThan(0);
+      expect(ghi.every((r) => r.requestedBy === 0 && r.confirmedBy === 0)).toBe(true);
+      const au = await auditCua(tx, runId);
+      expect(au.map((x) => x.det.metadata?.outcome)).toEqual(["sent"]);
+      const [auRow] = await tx.select().from(auditLogs).where(and(eq(auditLogs.entityType, "orchestration_run"), eq(auditLogs.entityId, runId)));
+      expect(auRow!.userId).toBe(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ KD-w3 — a driver exists but its running connection does NOT match the adapter row (stale fingerprint) ⇒ never ready within D ⇒ held + URGENT, the single try NOT taken (no claim, no dispatch)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 2000);
+      H.fingerprints.set(a1, "stale-connection (test)"); // the driver is there (H.drivers), but talks to another target
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "ketNoiChuaSan", mine); // incl. daThuGuiLai unset, no -a2 row
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ KD-w4 — the adapter has a recorded connection fingerprint but NO connected driver ⇒ not ready within D ⇒ held + URGENT, the single try NOT taken", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 2000);
+      H.drivers.delete(a1); // the fingerprint of the row's own target stays (registered, not connected)
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "ketNoiChuaSan", mine);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ KD-o3 — the owner-change lookup answers a row WITHOUT its count ⇒ a lookup error (never 'no change') ⇒ 0 PDU, held + URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      // the product's DB handle answers the device_owner_changes count with a row that has no "n" (an unexpected result shape)
+      const that = tx as unknown as { execute: (q: unknown) => Promise<unknown> };
+      H.tx = new Proxy(that, {
+        get(target, prop, recv) {
+          if (prop === "execute") {
+            return (q: { queryChunks?: unknown }) => {
+              let van = "";
+              try {
+                van = JSON.stringify(q?.queryChunks ?? "");
+              } catch {
+                /* not inspectable ⇒ the real query */
+              }
+              return van.includes("device_owner_changes") ? Promise.resolve([{}]) : target.execute(q);
+            };
+          }
+          const v = Reflect.get(target, prop, recv) as unknown;
+          return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+      const pdu0 = soPduGhi();
+      let mine: Awaited<ReturnType<typeof khoiDongLai>>["mine"];
+      try {
+        ({ mine } = await khoiDongLai(runId));
+      } finally {
+        H.tx = tx;
+      }
+      await kiemGiuKhongGui(tx, runId, pdu0, "loiTraCuu", mine);
+      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).lookupError).toContain("owner-change count unreadable");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ KD-l5 — another command matching only the ADAPTER (no machine on its ledger row) counts as a later command ⇒ 0 PDU, held + URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2, a1 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await tx.execute(sql`INSERT INTO command_log ("adapterId", "machineId", "tagKey", "commandType", "requestedBy", "confirmedBy", status) VALUES (${a1}, NULL, 'a', 'start', ${KHAC}, ${KHAC}, 'acked')`);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await kiemGiuKhongGui(tx, runId, pdu0, "coLenhSau", mine);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
   it("★ Q14 (m-1) — a NON-UTC session time zone (Asia/Ho_Chi_Minh): the window and the original authorisation's expiry are compared as instants ⇒ still sent (not 'always expired')", async () => {
     await trongGiaoDich(async (tx) => {
       await tx.execute(sql`SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh'`); // before every row (DEFAULT now() of this session ⇒ local wall time)
