@@ -87,3 +87,10 @@ Số đo (`.num`) dùng Be Vietnam Pro + `tabular-nums` (dấu phẩy thập ph�
 
 ## Vỏ dùng chung (cập nhật theo luong-ui)
 Từ bản này màn 2/3 dùng `shell.css` + `shell.js` của luong-ui (nhánh `docs/mockup-man-1-4-5` @9eb5671d9): `.app .hdr .rail .main .page-h .tabs .btn .seg .pill .fresh .origin .alarm-badge .alarm-chip .drawer .sim-banner`, rail SÁNG (`data-rail-tone="light"`), thanh đầu theo 5 bất biến. Huy hiệu ưu tiên là `.alarm-badge` (glyph + số + chữ). `man-2-3.css` chỉ còn phần nội dung (ô số, thẻ line, PackML, DỪNG MÁY ba trạng thái, hộp lệnh, ngăn Thợ Cả). Khi gộp, `token.css`, `shell.css`, `shell.js`, `fonts/` của luong-ui phải nằm cùng thư mục (không commit ở nhánh này). Mục "Màn 3 — quyết định 1" (DỪNG MÁY trên portal) dùng token `--stop` / `--stop-ink`.
+
+## Sửa theo kiem-dinh 2026-11-04 (R3 hex/rgba thô; R4 vùng chạm)
+- Hex thô và `rgba(` ngoài token.css: 0 (man-2-3.html + man-2-3.css). SVG `<pattern>` dùng `style="fill:var(--hatch-bg)"` / `stroke:var(--hatch-line)`; nền gạch xiên dữ liệu cũ dùng `--hatch-stale`; phủ hộp thoại dùng `--scrim`; khung điều khiển chỉ-mockup dùng `--mock-canvas` / `--mock-bar*`. Watermark MÔ PHỎNG và hai mẫu sọc xám dùng `color-mix()` thuần token.
+- Một tên class dữ liệu cũ: `.is-stale` (bỏ `.stale`) như vỏ luong-ui; ở thẻ của màn 2/3 chỉ khung ngoài mang dấu cũ (giống `.metric.is-stale`), không vẽ thêm viền đứt lên từng số.
+- Vùng chạm: mọi `button / a[href] / [role=tab]` của hai màn (390 phần tử đo trên 20 trạng thái × cỡ) đạt `--touch-min` (48 px @comfortable, 40 px @default) — nhờ `.btn`, `.alarm-chip`, `.cmdk` của shell.css mới (@dcef7d539).
+- Ghi chú watermark: chữ MÔ PHỎNG ở màn 2 gắn theo ô line (cỡ 26 px, theo ô), không phủ toàn màn; màn 5 dùng 96 px phủ khung — chấp nhận vì theo ô.
+- Bố cục màn 3 ở 1280×800 khi có banner dữ liệu cũ: thẻ spark co theo chỗ còn lại (không tràn quá khung).
