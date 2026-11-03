@@ -72,7 +72,7 @@
 | Q0‑2 | Sửa 6 công thức lệch về `shared/kpiYield.ts`: `productionDashboardRouter:250,440,488`, `stationAnalysisRouter:832`, `dataComparisonService:267`, `federationRouter:266`, `aiSmartAlertRouter.detectYieldDrop`; nhãn "FPY" client đúng định nghĩa; ngưỡng yield ingest `< 90` cứng → đọc cấu hình | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
 | Q0‑4 | `qualityGateEvaluator` bỏ UPDATE `machines`; `acquisitionWorker` qua WAL (lỗ đã biết) | test |
-| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng) + **xoá 13 236 kết quả seed** (sau duyệt) | kích thước |
+| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song
 
@@ -102,3 +102,18 @@
 ## 9. Số đo trước/sau (kiem‑dinh)
 
 route sống · trang không import · router 0 client · `notifications` 24 h · kích thước 6 bảng rác · `ot_telemetry` hàng/24 h · cửa lệnh ngoài dispatcher (census) · `rolsuper/rolbypassrls` của app · lỗi CSP console · cỡ bundle client · số khoá `.env` trùng.
+
+## 10. Kết quả lô xoá dữ liệu (dieu‑phoi 2026‑11‑04, DEV `aoi_management`, avi_app, --test-only trước)
+
+| Mục | Trước | Xoá | Còn | Ghi chú |
+|---|---|---|---|---|
+| AL0‑3a `notifications` | 56 460 | 56 460 | 0 | |
+| AL0‑3b `alert_escalations` | 7 779 | 7 779 | 0 | |
+| AL0‑3c `predictive_alerts` EXPIRED (+ occurrences cascade) | 992 + 1 635 | 992 + 1 635 | 0 | |
+| AL0‑3d `mqtt_alert_history` | 3 219 duyệt | 3 221 | 0 | lệch +2: rule bắn mù tới lúc xoá; **luật mới: khoá bằng số đã duyệt**, lệch ⇒ dừng và hỏi |
+| F0‑1 `vram_events` > 30 d | 66 443 | 55 887 | 10 556 | chủ dự án đặt `RETENTION_VRAM_EVENTS_DAYS=30` sau gộp eng‑ai |
+| T0‑4a `machine_health_history` > 90 d | 2,88 M | 77 798 | 2 801 600 | vẫn ≈ 1 GB — < 200 MB chỉ ở 30‑T8 |
+| T0‑4b `rul_estimates` > 90 d | 2,86 M | 55 207 | 2 799 905 | như trên |
+| E0‑1 `simulation_runs` | 82 626 | 0 (hoãn) | 82 626 | xoá sau khi nhánh gỡ lịch lên main |
+| Q0‑5 seed `product_inspections` | 13 236 | 0 (giữ) | 13 236 | WORM; chủ dự án chọn giữ |
+| `machine_status_logs` | 95 971 | — | — | không đưa vào: OEE đang đọc |
