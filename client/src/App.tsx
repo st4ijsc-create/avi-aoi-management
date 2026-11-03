@@ -186,7 +186,7 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 //   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
 // ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
 //   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
-//   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
+//   vì §13b 3g xếp nó NGOÀI Twin (đo AST 2026-11-04: chỉ 1 thủ tục tRPC, `orchestration.simulate` chạy khô, không ghi; bản cũ ghi "0 lời gọi tRPC" là SAI).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
 const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 // ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
@@ -624,7 +624,7 @@ function Router() {
           Bảng + test: lib/engineeringLegacyRedirects.tsx(.dom.test.tsx). */}
       {engineeringLegacyRoutes()}
       <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
-      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
+      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo AST 2026-11-04: chỉ `orchestration.simulate` chạy khô, không ghi — chú thích cũ "0 lời gọi tRPC" là SAI):
           nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
       <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       {/* ★ §13b 3f — phát lại workflow ĐÃ GỘP vào /twin (`orchestration.simulate`). */}

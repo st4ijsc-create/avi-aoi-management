@@ -118,8 +118,6 @@ const NHOM_GHI: Nhom[] = [
   ["defectHeatmapRouter.ts", ["defectHeatmapRouter.generate"], T(R + "defectHeatmapScope.test.ts", "generate: cũng nối `scope` từ phiên")],
   ["aiChatRouter.ts", ["aiChatRouter.chat"], M(R + "aiChatRouter.ts", "const convIdNum = parseInt(input.conversationId, 10);")], // chỉ GHI vào hội thoại của chính người gọi (kiểm userId trước khi insert); LLM chạy trên đầu vào của người gọi
   ["productRouters.ts", ["productModelRouter.create"], T(R + "phamViGhiDoW19.db.test.ts", "productModel.create: thiếu quyền settings_products")],
-  // ── router không mount ──
-  ["aiAdvancedRouter.ts", ["abTestRouter.runInference", "abTestRouter.submitFeedback"], T(R + "phamViGhiCensus.test.ts", "§5d router TẮT")],
   // ── thủ tục AI nhận khoá ảnh (W17c): các thủ tục còn miễn trừ chỉ nhận ảnh base64 / văn bản của người gọi ──
   ["aiSegmentationRouter.ts", ["aiSegmentationRouter.runSegmentation"], M(R + "aiSegmentationRouter.ts", "image: z.string().min(16)")],
   ["aiSegmentationRouter.ts", ["aiSegmentationRouter.deleteMask"], M(R + "aiSegmentationRouter.ts", "row.createdBy !== ctx.user.id")],
@@ -150,7 +148,6 @@ export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
   "server/routers/systemRouters.ts#corporateFactoryStatsRouter.warmingStats": M("server/routers/systemRouters.ts", "warmingStats: adminProcedure"),
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments": M("server/routers/userRouters.ts", "getAllUserAssignments: adminProcedure"),
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy": T("server/routers/machineRecipeRouter.test.ts", "recipes.genealogy returns the code history"),
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get": M("server/routers/machineRecipeRouter.ts", "const row = await getRecipeById(input.id);"),
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes": M("server/routers/machineRecipeRouter.ts", ".groupBy(machineRecipes.code)"),
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listVersions": M("server/routers/machineRecipeRouter.ts", "return listRecipeVersions(input.code);"),
   "server/routers/alertRouters.ts#alertRouter.list": M("server/routers/alertRouters.ts", "return db.getAlertSettings(ctx.user.id);"),

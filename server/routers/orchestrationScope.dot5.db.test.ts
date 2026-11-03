@@ -357,7 +357,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     await vi.waitFor(() => expect(audit.calls.some((c) => c.details?.metadata?.stage === "approve")).toBe(true));
   });
 
-  it("★ reads: out-of-scope rows are exactly 'not found' (getRun, getWorkflow, getVersion, simulate, duplicate, delete) or absent (listRuns, listWorkflows, listVersions)", async () => {
+  it("★ reads: out-of-scope rows are exactly 'not found' (getRun, simulate, duplicate, delete) or absent (listRuns, listWorkflows, listVersions)", async () => {
     const { deployWorkflow, startRun } = await engine();
     const rB = ref("read-b");
     const rA = ref("read-a");
@@ -385,8 +385,6 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     };
     const N = 2_000_000_000;
     await same(() => ua.getRun({ runId: runB }), () => ua.getRun({ runId: N }), String(runB), String(N));
-    await same(() => ua.getWorkflow({ id: wfB.id }), () => ua.getWorkflow({ id: N }), String(wfB.id), String(N));
-    await same(() => ua.getVersion({ id: Number(verB.id) }), () => ua.getVersion({ id: N }), String(verB.id), String(N));
     await same(() => ua.simulate({ workflowRef: rB, params: {} } as any), () => ua.simulate({ workflowRef: `${RUN}-zz`, params: {} } as any), rB, `${RUN}-zz`);
     await same(() => ua.duplicateWorkflow({ id: wfB.id, newRef: `${RUN}-dup` }), () => ua.duplicateWorkflow({ id: N, newRef: `${RUN}-dup` }), "", "");
     await same(() => ua.deleteWorkflow({ id: wfB.id }), () => ua.deleteWorkflow({ id: N }), "", "");

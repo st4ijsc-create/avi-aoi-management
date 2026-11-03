@@ -27,11 +27,11 @@ import { aoiPackageRouter } from "./routers/aoiPackageRouter";
 import { permissionsRouter } from "./routers/permissionsRouter";
 import { backupRouter } from "./routers/backupRouter";
 import { webhookRouter } from "./routers/webhookRouter";
-import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolationRouter, cpkTrendRouter, qualityGateRouter } from "./routers/spcAdvancedRouter";
+import { workstationSpcRouter, correlationRouter, spcRuleViolationRouter, cpkTrendRouter, qualityGateRouter } from "./routers/spcAdvancedRouter";
 
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
-import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
 // Khối C Task 9 (QĐ-6) — đường ĐỌC cây dạy (surface→position→capture→component)
 // kèm trạng thái giới hạn; tiêu thụ bởi tab "Cây dạy" (Task 10/11).
 import { cayDayRouter } from "./routers/cayDayRouter";
@@ -216,7 +216,6 @@ import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11
 import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
 import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
 import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
-import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
 import { doraRouter } from "./routers/doraRouter"; // doc 44 W6-4 (G5.20): DORA metrics (deploy-freq/lead-time/change-fail/MTTR) — read + admin record (DORA_ENABLED OFF)
 import { sopRouter } from "./routers/sopRouter"; // doc 44 W6-1 (G5.14): e-SOP CRUD + execution (start/confirm-step/finish) — LDS-L5 §6.2
 import { alarmKpiRouter } from "./routers/alarmKpiRouter"; // doc 44 W6-1 (G5.11 đo): READ-ONLY ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)
@@ -433,7 +432,6 @@ export const appRouter = router({
   instrumentMsaRecord: instrumentMsaRecordRouter,
   mpLightingProfile: mpLightingProfileRouter,
   // P4.B G14
-  measurementSamples: measurementSamplesRouter,
   spcAlerts: spcAlertsRouter,
   // P4.B G10
   mpDefectStats: mpDefectStatsRouter,
@@ -526,7 +524,6 @@ export const appRouter = router({
   ncr: ncrRouter, // doc 35 W4-B
   feederVerify: feederVerifyRouter, // doc 35 W4-C
   lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
-  parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
   sop: sopRouter, // doc 44 W6-1 — e-SOP CRUD + execution (LDS-L5 §6.2, G5.14)
   alarmKpi: alarmKpiRouter, // doc 44 W6-1 — ISA-18.2 alarm KPI dashboard aggregation (G5.11 đo)
   orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
@@ -645,7 +642,6 @@ export const appRouter = router({
   webhook: webhookRouter,
 
   // SPC Advanced & Quality Gate
-  spcConfig: spcConfigRouter,
   workstationSpc: workstationSpcRouter,
   correlation: correlationRouter,
   spcRuleViolation: spcRuleViolationRouter,

@@ -86,7 +86,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/oversightRouter.ts — ★ 2026-10-26 (SCADA R1b-2a T12, điều phối 2026-10-25): `posture` ĐÃ TRẢ, xoá khỏi sổ — mọi số đếm
   //    (độ phủ, luật hỏng cấu hình / lệch lưới, STOP HMI quá hạn 24 h) lọc theo phạm vi từ ctx (`idsTrongPhamVi` strict); A/B ở
   //    `oversightPosturePhamVi.r1b2.db.test.ts`.
-  // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   // ── server/routers/permissionsRouter.ts (2) ────────────────────────────────────────────────
   // ── server/routers/processRouter.ts (2) ────────────────────────────────────────────────────
   // ── server/routers/productVariantRouter.ts (2) ─────────────────────────────────────────────
@@ -127,7 +126,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/userRouters.ts#userAssignmentRouter.getAllUserAssignments": "adminProcedure ⇒ admin = toàn quyền; quản trị gán người dùng ↔ nhà máy — dieu-phoi duyệt 2026-10-25",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.genealogy":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
-  "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.get":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",
   "server/routers/machineRecipeRouter.ts#machineRecipeRouter.recipes.listCodes":
     "danh mục công thức dùng chung toàn tập đoàn — chủ dự án duyệt 2026-10-24",

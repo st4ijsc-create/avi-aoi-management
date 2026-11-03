@@ -1,7 +1,7 @@
 /**
  * ★★★ Lô W4 — phạm vi nhà máy của thủ tục GHI productRouters khoá theo MÁY (kiểm định phamViGhi, 2026-10-24).
  * Khuôn `phamViGhiDoW2.db.test.ts`: hai nhà máy A/B, kỹ sư CHỈ gán nhà máy A gọi lên máy/ánh xạ của nhà máy B.
- * Chỉ phần khoá theo máy (productMachineMapping.update/delete · measurementSamples.ingest). Phần khoá theo SẢN PHẨM chờ chính sách chủ dự án.
+ * Chỉ phần khoá theo máy (productMachineMapping.update/delete (measurementSamples.ingest đã gỡ cùng router, dọn vệ sinh lô A2)). Phần khoá theo SẢN PHẨM chờ chính sách chủ dự án.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
@@ -24,7 +24,6 @@ const factories: string[] = [];
 let pm = 0;
 let userA!: {
   map: ReturnType<typeof import("./productRouters").productMachineMappingRouter.createCaller>;
-  smp: ReturnType<typeof import("./productRouters").measurementSamplesRouter.createCaller>;
 };
 
 async function seedNhaMay(ten: string): Promise<NhaMay> {
@@ -65,7 +64,7 @@ beforeAll(async () => {
   }
   const ctx = { user: { id: u.id, role: "engineer", name: u.name, twoFactorEnabled: true } } as never;
   const pr = await import("./productRouters");
-  userA = { map: pr.productMachineMappingRouter.createCaller(ctx), smp: pr.measurementSamplesRouter.createCaller(ctx) };
+  userA = { map: pr.productMachineMappingRouter.createCaller(ctx) };
 }, 120_000);
 
 afterAll(async () => {
@@ -102,21 +101,5 @@ describe("productMachineMapping.update / delete — ánh xạ sản phẩm↔má
     const loi = await maLoi(() => userA.map.delete({ id: ib }));
     await userA.map.delete({ id: ia });
     expect({ loi, b: (await dongMap(ib)) !== undefined, a: (await dongMap(ia)) !== undefined }).toEqual({ loi: "NOT_FOUND", b: true, a: false });
-  });
-});
-
-describe("measurementSamples.ingest — lô mẫu đo ghi lên máy nhà máy khác", () => {
-  const dong = (machineId?: number) => ({ pointDefId: 1, ...(machineId ? { machineId } : {}), lotCode: RUN, value: 1.5, sampledAt: new Date() });
-  const dem = async (mid: number) => Number((await dung(sql`SELECT count(*)::int AS n FROM measurement_samples WHERE "lotCode" = ${RUN} AND "machineId" = ${mid}`))[0].n);
-  it("lô có một dòng máy B ⇒ NOT_FOUND, KHÔNG dòng nào được ghi (kể cả dòng máy A)", async () => {
-    const loi = await maLoi(() => userA.smp.ingest({ rows: [dong(A.mid), dong(B.mid)] }));
-    expect({ loi, a: await dem(A.mid), b: await dem(B.mid) }).toEqual({ loi: "NOT_FOUND", a: 0, b: 0 });
-  });
-  it("dòng không nêu máy (phạm vi hẹp) ⇒ BAD_REQUEST, không ghi", async () => {
-    expect(await maLoi(() => userA.smp.ingest({ rows: [dong()] }))).toBe("BAD_REQUEST");
-  });
-  it("đối chứng: toàn dòng máy A ⇒ qua cổng phạm vi (không NOT_FOUND/BAD_REQUEST do phạm vi)", async () => {
-    const loi = await maLoi(() => userA.smp.ingest({ rows: [dong(A.mid)] }));
-    expect(["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN"]).not.toContain(loi);
   });
 });
