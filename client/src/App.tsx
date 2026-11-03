@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import { LopDungMayNoi } from "@/components/scada/LopDungMayNoi";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
@@ -884,6 +885,8 @@ function App() {
               {/* doc 81 Đợt 4 Task D1 — sở thích giao diện theo tài khoản (localStorage ⇄ user_settings.uiPrefs). */}
               <UiPrefsSync />
               <Toaster />
+              {/* PHA 0 · C0-3 — nút DỪNG MÁY nổi ở tầng trên cùng khi hộp thoại lồng che nút DỪNG trong faceplate (dungMayNoi.ts) */}
+              <LopDungMayNoi />
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
                   code-split page (including bare `component={}` routes like /api-docs)
                   has a fallback while its chunk loads. Per-page AIPageWrapper boundaries

@@ -24602,6 +24602,10 @@
       }
     },
     "dungMay": {
+      "lopNoi": {
+        "nhan": "Emergency machine stop",
+        "nut": "STOP MACHINE — {{may}}"
+      },
       "nut": "STOP MACHINE",
       "tieuDe": "Stop machine {{may}}?",
       "moTa": "Sends the pinned STOP to {{n}} adapter(s).",
