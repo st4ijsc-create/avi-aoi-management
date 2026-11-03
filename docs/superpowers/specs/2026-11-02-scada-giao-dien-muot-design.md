@@ -128,6 +128,18 @@ Lý do giữ tuple 8 phần tử: `GiaTriGoi` đã có test + client của ngư�
 - `useTagSong(adapterId, tagKey)` trả `{ v, q, tuoiMs, cu, nguon: "day" | "hoi" | "mo_phong" }`. **Mọi** ký hiệu, ô số, faceplate đọc qua hook này — một cửa duy nhất, không component nào tự gọi `tagCuaAdapter`.
 - Kiểm thử bắt buộc (đã có thói quen của dự án): đột biến "bỏ kiểm tick ⇒ tag cũ vẫn hiện tươi" PHẢI đỏ.
 
+### 3.8 Phán quyết của scada-master cho hợp đồng 1a (2026-11-03, nhánh `feat/scada-1a`) **[ĐÃ CHỐT, chờ lên main]**
+Client CHƯA viết mã theo các trường này cho tới khi 1a lên main.
+- **A1** `staleAfterMs` lấy từ MỘT nguồn: `nguongCuCuaAdapter` (logic `nguongCuMs` đã xuất). Poll 5 s ⇒ 15 000; có deadband ⇒ 70 000.
+- **A2** Ngưỡng đổi giữa phiên đăng ký: delta kế (hoặc tick nếu chưa có delta) mang thêm trường tuỳ chọn `staleAfterMs` CHỈ chứa các khoá đã đổi; client gộp vào bản đồ của mình, KHÔNG đăng ký lại.
+- **A3/B1** Vẫn MỘT `setInterval`. Nhịp mỗi socket = min `capMs` của các đăng ký còn sống (≥ 50). Tick 1000 ms cho mỗi đăng ký còn sống. `seq` chung một dãy cho snapshot/delta/tick theo (socket, subId); đăng ký lại ⇒ `seq` về 0.
+- **B2** `TOO_MANY_HOT` là mã lỗi mới. Hot (`capMs` < 250) ≤ 2 mỗi socket và ≤ 3 mỗi người dùng, đếm THEO TIẾN TRÌNH. Hằng số ở `GIOI_HAN`.
+- **B3** `ganGiam`: KHÔNG có trong 1a.
+- `nguon` ≠ "that" ⇒ BAD_REQUEST; `capMs` ngoài tập {50,100,250,1000} ⇒ BAD_REQUEST.
+- **F5**: từ khi F5 lên main, máy chủ ngắt socket khi quyền/phạm vi/phiên đổi (lý do "io server disconnect"). `client/src/lib/socketNoiLai.ts` đã nối lại có lùi. `useScadaLive` PHẢI đăng ký lại sau nối lại và hiện mọi tag là cũ cho tới khi snapshot mới về (đúng §3.3 C).
+- **Q5** phòng `robot:{id}` ĐÃ qua cổng phạm vi (PASS, `socket-robot-pham-vi.md`) ⇒ phản chiếu robot (2A) không bị chặn ở điểm này; 1a siết thêm census phòng→cổng.
+- **Q6** thẻ vai trò tag (C-tag): task riêng sau 1a. Q1/Q3/Q4 (deadband trước `dangKyThayDoi`, chi phí đo của tick, bộ nhận ngoài): trả lời trong `task-1a-report.md`, scada-master sẽ gửi số khi xong.
+
 ---
 
 ## 4. Quy tắc hoạt ảnh TRUNG THỰC (mục 2 của đề bài)
