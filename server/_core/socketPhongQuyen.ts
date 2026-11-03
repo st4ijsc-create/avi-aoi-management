@@ -164,11 +164,13 @@ export async function duocVaoPhongAiAgents(data: DuLieuSocket | null | undefined
 // join được ⇒ người không có `admin_system`, người tập đoàn khác, người không được xem site cục bộ đều nhận. Hợp đồng tRPC của cùng dữ liệu
 // (`federationRouter`): `requirePermission("admin_system","canView")` + `dieuKienTrang` (toàn quyền ⇒ mọi site; người hẹp ⇒ site có
 // `corporateCode` thuộc mã tập đoàn của họ VÀ không `isLocal`). Hai hàm dưới đây là CẶP của hợp đồng ấy ở tầng socket:
-//   • vào phòng (`phongFederationDuocVao` / `duocVaoPhongFederation`): cùng `checkPermission` + cùng `getUserAssignmentCodes` (isAdmin ⇒
+//   • vào phòng (`phongFederationDuocVao` / `duocVaoPhongFederation`): cùng giấy phép `MOD_FEDERATION` (`isModuleLicensed` — ĐÚNG quyết định
+//     của `moduleProcedure("MOD_FEDERATION")` mà router dùng) + cùng `checkPermission` + cùng `getUserAssignmentCodes` (isAdmin ⇒
 //     `sites:all`; còn lại ⇒ `sites:corp:{mã}` cho mỗi mã; 0 mã ⇒ không phòng nào). Lỗi ⇒ không phòng nào (fail-closed).
 //   • phát (`phongNhanSiteUpdate`): `sites:all` + `sites:corp:{site.corporateCode}` CHỈ khi site KHÔNG `isLocal` và có mã.
-// Mã tập đoàn trong tên phòng: kiểm hình dạng (chuỗi, ≤ 50, `[A-Za-z0-9_-]` như mã site) — KHÔNG dựng tên phòng từ giá trị chưa kiểm.
-// Mã lệch hình dạng ⇒ không phòng (người dùng chỉ mất bản đẩy realtime của mã đó; trang vẫn poll 30 s qua tRPC) — chiều ĐÓNG.
+// Mã tập đoàn trong tên phòng (fix round 1 m3): mã tập đoàn là CHỮ TỰ DO (`bootstrapRouter.ts`, `sitesRouter.ts` — vd. "VN.HCM"), đến từ CSDL
+// (phân công của người dùng / hàng `sites`), KHÔNG từ client (F1 đã bỏ `siteCode`). Tên phòng là KHOÁ so khớp chính xác dựng từ giá trị máy
+// chủ, không bao giờ được phân tích ngược ⇒ chỉ đòi: chuỗi khác rỗng, ≤ 100 ký tự, không ký tự điều khiển. Lệch ⇒ không phòng (chiều ĐÓNG).
 
 /** Quyền xem màn Federation — cùng cặp `federationRouter` (`requirePermission("admin_system","canView")`). */
 export const QUYEN_XEM_FEDERATION = { module: "admin_system", action: "canView" } as const;
@@ -176,27 +178,35 @@ export const QUYEN_XEM_FEDERATION = { module: "admin_system", action: "canView" 
 export const PHONG_SITES_TOAN_QUYEN = "sites:all";
 /** Tiền tố phòng theo mã tập đoàn của `site:update`. */
 export const TIEN_TO_PHONG_SITES_TAP_DOAN = "sites:corp:";
-const MA_TAP_DOAN_HOP_LE = /^[A-Za-z0-9_-]{1,50}$/;
+/** Giấy phép module của màn Federation — cùng `federationRouter` (`moduleProcedure("MOD_FEDERATION")`). */
+export const GIAY_PHEP_FEDERATION = "MOD_FEDERATION";
+const DO_DAI_MA_TAP_DOAN_TOI_DA = 100;
+const KY_TU_DIEU_KHIEN = /[\u0000-\u001f\u007f-\u009f]/;
 
-/** Tên phòng `sites:corp:{mã}` — mã sai hình dạng ⇒ `null` (không dựng tên phòng). */
+/** Tên phòng `sites:corp:{mã}` — mã rỗng / quá dài / có ký tự điều khiển / không phải chuỗi ⇒ `null` (không dựng tên phòng). */
 export function phongSitesTapDoan(ma: unknown): string | null {
-  return typeof ma === "string" && MA_TAP_DOAN_HOP_LE.test(ma) ? `${TIEN_TO_PHONG_SITES_TAP_DOAN}${ma}` : null;
+  return typeof ma === "string" && ma.length >= 1 && ma.length <= DO_DAI_MA_TAP_DOAN_TOI_DA && !KY_TU_DIEU_KHIEN.test(ma)
+    ? `${TIEN_TO_PHONG_SITES_TAP_DOAN}${ma}`
+    : null;
 }
 
-/** Hai bộ đọc của cổng federation — tách để lưới tiêm (`__datCongFederationChoTest`); mặc định = `accessControl` THẬT. */
+/** Ba bộ đọc của cổng federation — tách để lưới tiêm (`__datCongFederationChoTest`); mặc định = `moduleGate` + `accessControl` THẬT. */
 interface CongFederation {
+  coGiayPhep(): Promise<boolean>;
   coQuyen(userId: number, role: string): Promise<boolean>;
   maTapDoan(userId: number, role: string): Promise<{ toanQuyen: boolean; corporateCodes: readonly string[] }>;
 }
 let congFederationGhiDe: CongFederation | null = null;
-/** Chỉ lưới: thay bộ đọc quyền / mã tập đoàn của cổng federation. `null` ⇒ mặc định. */
+/** Chỉ lưới: thay bộ đọc giấy phép / quyền / mã tập đoàn của cổng federation. `null` ⇒ mặc định. */
 export function __datCongFederationChoTest(f: CongFederation | null): void {
   congFederationGhiDe = f;
 }
 async function layCongFederation(): Promise<CongFederation> {
   if (congFederationGhiDe) return congFederationGhiDe;
   const ac = await import("./accessControl"); // import động: như duocVaoPhongEngineering
+  const mg = await import("./moduleGate");
   return {
+    coGiayPhep: () => mg.isModuleLicensed(GIAY_PHEP_FEDERATION),
     coQuyen: (userId, role) => ac.checkPermission(userId, role, QUYEN_XEM_FEDERATION.module, QUYEN_XEM_FEDERATION.action),
     maTapDoan: async (userId, role) => {
       const r = await ac.getUserAssignmentCodes(userId, role);
@@ -216,6 +226,8 @@ export async function phongFederationDuocVao(data: DuLieuSocket | null | undefin
     const userId = user.id as number;
     const role = String(user.role ?? "");
     const cong = await layCongFederation();
+    // Thứ tự như router: `moduleProcedure` (giấy phép) rồi `requirePermission` (quyền) rồi `dieuKienTrang` (phạm vi).
+    if (!(await cong.coGiayPhep())) return [];
     if (!(await cong.coQuyen(userId, role))) return [];
     const { toanQuyen, corporateCodes } = await cong.maTapDoan(userId, role);
     if (toanQuyen) return [PHONG_SITES_TOAN_QUYEN];
