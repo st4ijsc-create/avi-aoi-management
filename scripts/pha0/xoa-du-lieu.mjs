@@ -2,10 +2,11 @@
 /**
  * Pha 0 lô D — ĐẾM + XOÁ dữ liệu rác, MỘT mục mỗi lần, trong MỘT giao dịch. KHÔNG tự chạy; do dieu-phoi chạy sau khi chủ dự án duyệt số đếm.
  *
- *   DATABASE_URL=... node scripts/pha0/xoa-du-lieu.mjs --item E0-1|F0-1|Q0-5 --db <current_database mong đợi> [--test-only | --commit --expect-n <N>] [--vacuum]
+ *   DATABASE_URL=... node scripts/pha0/xoa-du-lieu.mjs --item E0-1|F0-1|Q0-5 --db <current_database mong đợi> [--chi-dem (mặc định) | --test-only | --commit --expect-n <N>] [--vacuum]
  *
  * Luật cứng:
- *   - Mặc định `--test-only`: chạy đủ (đếm trước, xoá, đếm sau) rồi ROLLBACK — in ĐÚNG số sẽ xoá. KHÔNG có cờ nào làm `--test-only` ghi thật.
+ *   - Mặc định `--chi-dem`: giao dịch `READ ONLY` — CHỈ SELECT (đếm, canh, phụ thuộc), KHÔNG có DELETE nào được gửi; dùng cho DEV. `--test-only` (đếm bằng DELETE+ROLLBACK) chỉ nên dùng trên `_test`.
+ *   - `--test-only`: chạy đủ (đếm trước, xoá, đếm sau) rồi ROLLBACK — in ĐÚNG số sẽ xoá. KHÔNG có cờ nào làm `--test-only` ghi thật.
  *   - `--commit` đòi `--expect-n` = số đếm từ lần `--test-only` ngay trước (lệch ⇒ ROLLBACK, không ghi) và `--db` khớp `current_database()` (Đ-28).
  *   - Mỗi mục có "điều kiện canh" (guard) đo TRƯỚC khi xoá: sai ⇒ dừng, không xoá.
  *   - Chỉ DELETE đúng điều kiện của mục (không TRUNCATE, không DROP). `--vacuum` (chỉ Q0-5, sau COMMIT, ngoài giao dịch) chạy VACUUM FULL inspection_packages.
@@ -18,9 +19,10 @@ const co = (k) => process.argv.includes(k);
 const item = arg("--item");
 const dbMong = arg("--db");
 const commit = co("--commit");
+const chiDem = !commit && !co("--test-only");
 const expectN = arg("--expect-n");
 const vacuum = co("--vacuum");
-if (commit && co("--test-only")) { console.error("--commit và --test-only loại trừ nhau"); process.exit(2); }
+if (commit && (co("--test-only") || co("--chi-dem"))) { console.error("--commit và --test-only loại trừ nhau"); process.exit(2); }
 if (!item || !dbMong || !process.env.DATABASE_URL) { console.error("Thiếu --item/--db hoặc DATABASE_URL"); process.exit(2); }
 if (commit && (expectN === undefined || !/^\d+$/.test(expectN))) { console.error("--commit đòi --expect-n <số nguyên> từ lần --test-only trước"); process.exit(2); }
 
@@ -58,10 +60,10 @@ const in_ = (o) => console.log(JSON.stringify(o, (_, v) => (typeof v === "bigint
 let ketThuc = 0;
 try {
   const [{ cd, usr }] = await sql`SELECT current_database() AS cd, current_user AS usr`;
-  in_({ muc: item, mota: m.mota, current_database: cd, current_user: usr, che_do: commit ? "COMMIT" : "TEST-ONLY(ROLLBACK)" });
+  in_({ muc: item, mota: m.mota, current_database: cd, current_user: usr, che_do: commit ? "COMMIT" : chiDem ? "CHI-DEM(READ ONLY, không DELETE)" : "TEST-ONLY(ROLLBACK)" });
   if (cd !== dbMong) { console.error(`DỪNG: current_database()=${cd} ≠ --db ${dbMong}`); process.exit(3); }
 
-  await sql`BEGIN`;
+  if (chiDem) await sql`BEGIN READ ONLY`; else await sql`BEGIN`;
   const truoc = (await sql.unsafe(m.tomtat))[0];
   in_({ truoc });
   for (const c of m.canh) {
@@ -81,6 +83,7 @@ try {
     }
     in_({ phu_thuoc_tro_vao_hang_sap_xoa: pt });
   }
+  if (chiDem) { await sql`ROLLBACK`; in_({ ket_qua: "CHI-DEM: CSDL KHÔNG ĐỔI (giao dịch READ ONLY, không DELETE)", se_xoa: sapXoa }); process.exit(0); }
   if (commit && String(sapXoa) !== expectN) { await sql`ROLLBACK`; console.error(`DỪNG: sắp xoá ${sapXoa} ≠ --expect-n ${expectN} — không ghi`); process.exit(5); }
 
   const daXoa = (await sql.unsafe(`DELETE FROM ${m.bang} WHERE ${m.where} RETURNING 1`)).length;

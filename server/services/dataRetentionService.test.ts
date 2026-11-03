@@ -54,10 +54,10 @@ describe("retention target configuration (doc 27 decision #2)", () => {
     expect(t!.defaultDays).toBe(365);
   });
 
-  it("F0-1: vram_events có cửa sổ 30 ngày (sổ chẩn đoán, không phải tuân thủ)", () => {
+  it("F0-1: vram_events CÓ mục retention nhưng MẶC ĐỊNH TẮT (0): vắng RETENTION_VRAM_EVENTS_DAYS ⇒ không xoá; chủ dự án đặt =30 sau khi duyệt số đếm", () => {
     const t = byTable.get("vram_events");
     expect(t, "vram_events thiếu trong TARGETS").toBeDefined();
-    expect(t!.defaultDays).toBe(30);
+    expect(t!.defaultDays).toBe(0);
     expect(t!.column).toBe("createdAt");
     expect(t!.envKey).toBe("RETENTION_VRAM_EVENTS_DAYS");
   });
