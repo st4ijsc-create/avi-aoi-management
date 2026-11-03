@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { docNhatKyTuMoc, moNhatKyNoiThem } from "../e2e/flow-studio/nhatKyServer";
+import { TRAN_BYTE, docNhatKyTuMoc, moNhatKyNoiThem } from "../e2e/flow-studio/nhatKyServer";
 
 let dir: string;
 let file: string;
@@ -64,6 +64,10 @@ describe("nhatKyServer", () => {
     const moi = fs.readFileSync(file, "utf8");
     expect(moi.indexOf("lượt C")).toBeGreaterThan(-1);
     expect(moi.indexOf("lượt D")).toBeGreaterThan(moi.indexOf("lượt C"));
+  });
+
+  it("trần mặc định đúng 20 MB (dieu-phoi 2026-11-04)", () => {
+    expect(TRAN_BYTE).toBe(20 * 1024 * 1024);
   });
 
   it("mốc bắt đầu vượt cuối tệp (tệp bị cắt) ⇒ chuỗi rỗng, không ném", () => {
