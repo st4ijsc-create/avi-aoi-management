@@ -343,7 +343,7 @@ Dải migration: **0510–0529** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20�
 
 | Bước | Việc | Nghiệm thu |
 |---|---|---|
-| **AL0** | Tắt cờ `ALERT_EVALUATOR_ENABLED` cho đường `detectDefectSpike` phát 5 user; xoá dữ liệu lũ (`notifications` 56 433, `alert_escalations`, `mqtt_alert_history`) **sau khi chủ dự án xác nhận** (Q2); sửa import `sendBulletinPushNotification` (bug) hoặc tắt bulletin | `notifications` 24 h < 50; không còn lỗi import |
+| **AL0** | Gỡ lịch `detectDefectSpike/detectYieldDrop` phát 5 user (xong 04/11, do-model 7072d4eda; nghiệm thu đếm `notifications` THEO NGUỒN 2 bộ dò = 0, không đếm tổng); THROUGHPUT_LOW chỉ bắn khi luồng MQTT từng sống 24 h trước; xoá dữ liệu lũ (`notifications` 56 433, `alert_escalations`, `mqtt_alert_history`) **sau khi chủ dự án xác nhận** (Q2); sửa import `sendBulletinPushNotification` (bug) hoặc tắt bulletin | `notifications` 24 h < 50; không còn lỗi import |
 | **AL1** | Tạo `alarm_definition`, `alarm_event`, `alarm_journal` (hypertable + trigger WORM), `notification_rule`, `notification_delivery`; sửa `notifications`, `alarm_taxonomy`; `shared/alarm/*`; RLS theo `site_id` | DDL `--test-only` xanh; census |
 | **AL2** | Seed: `master_alarms` 13 → định nghĩa lớp; `alarm_taxonomy` priority; định nghĩa hệ thống `COMM_LOST`/`STALE` mỗi site; `notification_rule` mặc định mỗi site; di trú `andon_events` 80 → `alarm_event` | đếm khớp 13/175/80 |
 | **AL3** | `raiseEvent` + lifecycle + router `alarm.*`; **chạy song song 2 tuần** (`ALARM_LEGACY_SHADOW`): 5 cửa cũ gọi thêm `raiseEvent`; so khớp số lượng và ưu tiên hằng ngày (rủi ro P0 của báo cáo) | bảng so khớp ≥ 95 % trùng; chênh lệch được giải thích |

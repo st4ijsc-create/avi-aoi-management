@@ -48,7 +48,7 @@
 
 | # | Việc | Nghiệm thu |
 |---|---|---|
-| AL0‑1 | Tắt đường `detectDefectSpike/detectYieldDrop` phát 5 user (`ALERT_EVALUATOR_ENABLED=false` tạm, hoặc gỡ fan‑out) | `notifications` 24 h < 50 hàng |
+| AL0‑1 | Tắt đường `detectDefectSpike/detectYieldDrop` phát 5 user; THROUGHPUT_LOW chỉ bắn khi luồng MQTT từng sống trong 24 h trước cửa sổ — **XONG 04/11** (do-model 7072d4eda, nhánh alarm-telemetry) | **theo nguồn**: `notifications` 24 h có nguồn `detectDefectSpike`/`detectYieldDrop` = 0 và `mqtt_alert_history` THROUGHPUT_LOW khi không có luồng = 0 (không đếm tổng — ~15 nguồn hợp lệ khác vẫn ghi) |
 | AL0‑2 | Sửa import `sendBulletinPushNotification` không tồn tại (`mqttService.ts:3250`) hoặc tắt bulletin | lỗi import = 0 |
 | AL0‑3 | **Xoá dữ liệu lũ** (sau duyệt chủ dự án, số đếm trước/sau): `notifications` 56 433, `alert_escalations` 7 779, `predictive_alerts` + `_occurrences` 992 + 1 635, `mqtt_alert_history` 3 183; `machine_status_logs` 95 971 **chỉ sau khi 90 xác nhận OEE không đọc** `[cần kiểm]` | SQL đếm |
 | T0‑1 | `UNS_BRIDGE_ENABLED=false` (không có broker 1884 — đo 03/11) | cờ |
@@ -101,7 +101,7 @@
 
 ## 9. Số đo trước/sau (kiem‑dinh)
 
-route sống · trang không import · router 0 client · `notifications` 24 h · kích thước 6 bảng rác · `ot_telemetry` hàng/24 h · cửa lệnh ngoài dispatcher (census) · `rolsuper/rolbypassrls` của app · lỗi CSP console · cỡ bundle client · số khoá `.env` trùng.
+route sống · trang không import · router 0 client · `notifications` 24 h **theo nguồn** (2 bộ dò = 0) + `mqtt_alert_history` THROUGHPUT_LOW không luồng = 0 · kích thước 6 bảng rác · `ot_telemetry` hàng/24 h · cửa lệnh ngoài dispatcher (census) · `rolsuper/rolbypassrls` của app · lỗi CSP console · cỡ bundle client · số khoá `.env` trùng.
 
 ## 10. Kết quả lô xoá dữ liệu (dieu‑phoi 2026‑11‑04, DEV `aoi_management`, avi_app, --test-only trước)
 
