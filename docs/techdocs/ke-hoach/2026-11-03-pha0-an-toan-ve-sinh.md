@@ -62,8 +62,8 @@
 |---|---|---|
 | E0‑1 | Dừng job `twinFidelity` (`TWIN_FIDELITY_ENABLED=false`, gỡ lịch) + **xoá `simulation_runs` 80 941** (sau duyệt) | bảng 0 hàng, job không chạy |
 | E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`); **giữ** 2 seeder dev chạy tay `seed.mjs`/`seed-production.mjs` (miễn trừ có tên, 70‑N1 sửa 04/11) | 70‑N1: grep INSERT trong `scripts/sim*` ∖ {2 seeder} = 0; không lịch/boot nào gọi seeder — **XONG 04/11** (tho-ca-agent) |
-| E0‑3 | Gỡ router chết `orchestrationGov` (+ `slaPolicy`, `dag`), `twinGov` (+ `driftDetector`), `monteCarloFlow`, `simTargets`, `services/simulation/monteCarlo.ts`; procedure chết `programming.*` (5), `orchestration.getWorkflow/getVersion`, `machineRecipe.get/getActive`, `twin.*` (7), `digitalTwin.*` (3) | census 0 client‑caller |
-| E0‑4 | `orchestration_run_edge_assignments` vào drizzle; bỏ khai trùng `orchestration_runs` ở `runApiKeyIdentity.ts` | drizzle là nguồn |
+| E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — chờ chủ dự án (a)/(b)), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
+| E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
 | E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
 | F0‑1 | `vram_events` retention 30 d (job + xoá cũ hơn sau duyệt: ≈ 60k hàng) | 80‑N8 |
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; bảng 0 hàng `ab_test_*`, `batch_inference_*`, `training_batch_*` (mig 0590) | 80‑N9 |
@@ -77,7 +77,7 @@
 ## 5. Thứ tự và song song
 
 1. Ngày 1: dieu‑phoi commit tài liệu; mở 4 nhánh; kiem‑dinh đo "trước" (§9).
-2. Ngày 1–3: P0‑1…P0‑6, C0‑1…C0‑8, AL0‑1/AL0‑2, T0‑1…T0‑3, E0‑3/E0‑4, F0‑2, Q0‑1…Q0‑4 song song (không chạm nhau; chạm `App.tsx`/`.env.example` thì dieu‑phoi giải xung đột).
+2. Ngày 1–3: P0‑1…P0‑6, C0‑1…C0‑8, AL0‑1/AL0‑2, T0‑1…T0‑3, E0‑3, F0‑2, Q0‑1…Q0‑4 song song (không chạm nhau; chạm `App.tsx`/`.env.example` thì dieu‑phoi giải xung đột).
 3. Ngày 3–4: chủ dự án duyệt **danh sách xoá** (AL0‑3, T0‑4, E0‑1, F0‑1, Q0‑5) với số đếm trước; dieu‑phoi chạy bằng `aoi`, ghi số sau.
 4. Ngày 4–5: P0‑7/F0‑3 (`.env` chủ dự án), P0‑8…P0‑11, E0‑1/E0‑2.
 5. Ngày 5–7: gộp từng nhánh qua cổng đầy đủ; kiem‑dinh đo "sau"; ghi Nhật ký 10 module; cập nhật 00‑INDEX.
