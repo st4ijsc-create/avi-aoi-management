@@ -74,3 +74,6 @@ Thang chữ nhỏ nhất dùng: 11 px (caption); phần lớn ≥ 12,5 px. Khôn
 
 ## Phông số (theo luong-ui, token.css @4d5e78c7c)
 Số đo (`.num`) dùng Be Vietnam Pro + `tabular-nums` (dấu phẩy thập phân trong Geist Mono rộng bất thường: "96 , 4"); Geist Mono (`.mono`) chỉ cho mã, địa chỉ, giờ, mã TOTP. 20 ảnh đã chụp lại theo quy ước này.
+
+## Vỏ dùng chung (cập nhật theo luong-ui)
+Từ bản này màn 2/3 dùng `shell.css` + `shell.js` của luong-ui (nhánh `docs/mockup-man-1-4-5` @9eb5671d9): `.app .hdr .rail .main .page-h .tabs .btn .seg .pill .fresh .origin .alarm-badge .alarm-chip .drawer .sim-banner`, rail SÁNG (`data-rail-tone="light"`), thanh đầu theo 5 bất biến. Huy hiệu ưu tiên là `.alarm-badge` (glyph + số + chữ). `man-2-3.css` chỉ còn phần nội dung (ô số, thẻ line, PackML, DỪNG MÁY ba trạng thái, hộp lệnh, ngăn Thợ Cả). Khi gộp, `token.css`, `shell.css`, `shell.js`, `fonts/` của luong-ui phải nằm cùng thư mục (không commit ở nhánh này). Mục "Màn 3 — quyết định 1" (DỪNG MÁY trên portal) dùng token `--stop` / `--stop-ink`.
