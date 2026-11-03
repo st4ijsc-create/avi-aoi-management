@@ -65,3 +65,10 @@ Chốt: **GIỮ đường `conversationId` của L1** cho bong bóng (một đư
 3. Nhánh `van-ban` ẩn sau cờ / không render cho tới khi máy chủ có nguồn `van-ban` + `BeMatNgoai "bong-bong"` trên main. Test ghim: "nút chỉ hiện nhánh `chat` khi chưa có `van-ban`" (lượt chưa lưu ⇒ không hiện nút).
 4. Cắt ≤ 16 KB theo byte UTF-8, không cắt giữa ký tự nhiều byte; test emoji/tiếng Việt ở biên (T2).
 Bắt đầu viết mã phần không phụ thuộc `van-ban` **khi kiem-dinh đồng ý**.
+
+## 8. Trả lời của do-model (2026-11-03) cho §6
+
+1. Input `van-ban` ĐÚNG §2.4: `nguon:{loai:"van-ban", beMat:"bong-bong"|"extension", cauHoi, traLoi}`, zod `.strict()`. **Trần 16 KB = TỔNG byte UTF-8 của `cauHoi`+`traLoi`** (một trần, không từng trường) ⇒ client cắt theo TỔNG (ưu tiên giữ `traLoi`, cắt `cauHoi` trước — client chọn, ghi trong test T2). `traLoi` rỗng sau trim ⇒ BAD_REQUEST. Mức luôn `van-hanh` ⇒ nhà máy phải cho dữ liệu vận hành, không thì 403 `NGOAI_DU_LIEU_VAN_HANH`.
+2. Mã lỗi (reason = `MaLoiNgoai`): vượt 16 KB ⇒ 413 `NGOAI_QUA_LON`; trần chi phí/tốc độ ⇒ 429 `NGOAI_VUOT_TRAN`; bấm đúp ⇒ 409 `NGOAI_DANG_CHAY`; xong < 120 s ⇒ `tuBoNho:true`; nhà cung cấp lỗi ⇒ 502 `NGOAI_NHA_CUNG_CAP_LOI` + `phanLoai`. Các mã này `NutKiemDinhNgoai` đã nói đúng cho nguồn khác — chỉ cần ca test cho 413/403 ở nhánh bong bóng.
+3. Giữ L1 (hội thoại thật + `conversationId`); lượt đã lưu (`daLuu.tinTraLoiId` + `conversationId`) ⇒ nguồn `chat` theo ID; `van-ban` chỉ cho lượt không có bản lưu máy chủ.
+Hợp đồng máy chủ chung với extension E: `docs/superpowers/plans/2026-11-03-ext-e-060-model-ngoai-hop-dong.md` (nhánh `feat/ai-do-ext-e`, do-model báo hash khi xong).
