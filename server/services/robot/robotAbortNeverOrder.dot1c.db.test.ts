@@ -21,6 +21,12 @@ const ROBOT_ID_HOISTED = vi.hoisted(() => ({ id: 990_730_000 + (Date.now() % 9_0
 const MACHINE_ID_HOISTED = vi.hoisted(() => ({ id: 990_730_000 + (Date.now() % 9_000) + 50_000 }));
 const broker = vi.hoisted(() => ({ published: [] as Array<{ topic: string; payload: any }>, driver: null as unknown }));
 
+// SCADA R1b-2b-2a A2(l) — this suite's robot has no robots row (fake id); WHERE a robot is is measured by tapMayChoRobot.a2l(.db).test.ts,
+// so the robot is placed (a station with one machine id no rule targets) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [-990_912_499] }),
+}));
 vi.mock("./robotManager", () => ({
   getActiveRobot: (id: number) => (id === ROBOT_ID_HOISTED.id && broker.driver ? { driver: broker.driver } : undefined),
 }));
