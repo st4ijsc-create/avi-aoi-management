@@ -9,7 +9,8 @@
  * Hình dạng: đọc AST (không regex trên dòng) → với mỗi lời gọi `<x>.join(<phòng>)` mà `<x>` là `socket`, lấy (1) mẫu tên phòng,
  * (2) HANDLER bao ngoài (hàm truyền cho `socket.on(...)`). Mỗi lời gọi phải khớp ĐÚNG MỘT luật trong BẢNG dưới đây; luật `gate` đòi handler
  * chứa các lời gọi cổng đã khai; luật `mien` ghi LÝ DO. Luật mồ côi (không lời gọi nào khớp) ⇒ ĐỎ. Riêng `thuVaoPhong(...)` (hàm bọc join bất đồng
- * bộ của `subscribe`): MỌI lời gọi phải truyền một CỔNG hợp lệ (hoặc `Promise.resolve(false)` — id sai hình dạng ⇒ từ chối).
+ * bộ của `subscribe`): MỌI lời gọi phải truyền ĐÚNG cổng của PHÒNG đó theo BẢNG PHÒNG → CỔNG (SCADA 1a), hoặc `Promise.resolve(false)` — id sai
+ * hình dạng ⇒ từ chối.
  *
  * Có ĐỘT BIẾN: lưới phải BẮT (a) phòng mới không cổng, (b) cổng bị thay bằng `Promise.resolve(true)`, (c) bỏ cổng của luật cũ.
  */
@@ -30,8 +31,41 @@ interface Luat {
   mien?: string;
 }
 
-/** Cổng hợp lệ cho đối số thứ hai của `thuVaoPhong(phòng, <cổng>)`. */
-const CONG_THU_VAO_PHONG = ["duocVaoPhongPhamVi", "duocVaoPhongRobot", "duocVaoPhongThietBi", "duocVaoPhongTelemetryAll", "duocVaoPhongAiAgents", "duocVaoPhongFederation"];
+/**
+ * SCADA 1a (2026-11-03) — BẢNG PHÒNG → CỔNG cho `thuVaoPhong(<phòng>, <cổng>)` (thay "bất kỳ cổng hợp lệ nào cho bất kỳ phòng nào" — trước đây
+ * `thuVaoPhong("robot:…", duocVaoPhongTelemetryAll(…))` hay `duocVaoPhongPhamVi(socket.data, "line", n)` cho phòng robot vẫn XANH).
+ * Tên phòng đọc từ ĐỐI SỐ 1 (chuỗi / template — tiền tố tĩnh; `${cap}` của vòng `for (const [.., cap] of [[..,"factory"], …])` được khai triển từ
+ * mảng hằng của vòng); phòng là BIẾN chỉ hợp lệ khi chính biến đó là đối số phòng của cổng federation (cổng tự kiểm tên phòng ∈ danh sách được vào).
+ * Hai nhánh `c ? A : B` của phòng và của cổng cùng điều kiện được GHÉP CẶP (nhánh id sai hình dạng ↔ `Promise.resolve(false)`).
+ * Tiền tố phòng KHÔNG có trong bảng ⇒ ĐỎ.
+ */
+interface CongPhong {
+  /** Tên cổng (callee) được phép. */
+  ten: string;
+  /** Ràng buộc đối số (chỉ số đối số ⇒ phải bằng NGUỒN của phần tử nào của phòng): "cap" = biến cấp của template, "id" = biến id cuối template, "phong" = chính biến phòng. */
+  doiSo?: Record<number, "cap" | "id" | "phong">;
+}
+interface DongBangPhong {
+  /** Khớp tên phòng đã chuẩn hoá (template ⇒ `${x}` thay bằng `{x}`). */
+  khop: (ten: string) => boolean;
+  moTa: string;
+  /** Cổng được phép; rỗng = chỉ `Promise.resolve(false)` (phòng từ chối). */
+  cong: CongPhong[];
+}
+const tienTo = (p: string) => (ten: string) => ten.startsWith(p);
+const dung = (p: string) => (ten: string) => ten === p;
+export const BANG_PHONG_CONG: DongBangPhong[] = [
+  ...(["factory", "workshop", "line", "machine"] as const).map((cap) => ({ khop: tienTo(`${cap}:`), moTa: `${cap}:`, cong: [{ ten: "duocVaoPhongPhamVi", doiSo: { 1: "cap", 2: "id" } as Record<number, "cap" | "id" | "phong"> }] })),
+  { khop: tienTo("robot:"), moTa: "robot:", cong: [{ ten: "duocVaoPhongRobot", doiSo: { 1: "id" } }] },
+  { khop: tienTo("device:"), moTa: "device:", cong: [{ ten: "duocVaoPhongThietBi" }] },
+  { khop: dung("telemetry:all"), moTa: "telemetry:all", cong: [{ ten: "duocVaoPhongTelemetryAll" }] },
+  { khop: dung("ai:agents"), moTa: "ai:agents", cong: [{ ten: "duocVaoPhongAiAgents" }] },
+  // PV-socket-1: phòng `sites:all` / `sites:corp:{mã}` — tên phòng là BIẾN lấy từ `phongFederationDuocVao`; cổng nhận chính biến đó và kiểm nó ∈ danh sách
+  { khop: (t) => t === "sites:all" || t.startsWith("sites:corp:") || t === "{bien-phong-federation}", moTa: "sites:all | sites:corp: (biến)", cong: [{ ten: "duocVaoPhongFederation", doiSo: { 1: "phong" } }] },
+  { khop: dung("sites:invalid"), moTa: "sites:invalid (chỉ từ chối)", cong: [] },
+];
+/** Tên cổng xuất hiện trong bảng (kiểm export). */
+const CONG_THU_VAO_PHONG = [...new Set(BANG_PHONG_CONG.flatMap((d) => d.cong.map((c) => c.ten)))];
 
 const LUAT: Luat[] = [
   // ── subscribe: hàm bọc join bất đồng bộ (MỌI lời gọi `thuVaoPhong` được kiểm riêng bên dưới)
@@ -61,16 +95,112 @@ const LUAT: Luat[] = [
   },
 ];
 
-/** Hợp lệ làm đối số cổng của `thuVaoPhong`. */
-function laCongHopLe(e: ts.Expression): boolean {
-  if (ts.isParenthesizedExpression(e)) return laCongHopLe(e.expression);
-  if (ts.isConditionalExpression(e)) return laCongHopLe(e.whenTrue) && laCongHopLe(e.whenFalse);
-  if (ts.isCallExpression(e)) {
-    const t = e.expression.getText();
-    if (t === "Promise.resolve") return e.arguments.length === 1 && e.arguments[0].getText() === "false"; // từ chối, không phải mở cửa
-    return CONG_THU_VAO_PHONG.includes(t);
+/** Bỏ ngoặc. */
+const boNgoac = (e: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(e) ? boNgoac(e.expression) : e);
+const boAs = (e: ts.Expression): ts.Expression => (ts.isAsExpression(e) || ts.isParenthesizedExpression(e) ? boAs(e.expression) : e);
+
+/** Ghép cặp (nhánh phòng, nhánh cổng): hai biểu thức điều kiện CÙNG điều kiện ⇒ ghép theo nhánh; còn lại ⇒ tích. */
+function capNhanh(phong: ts.Expression, cong: ts.Expression): [ts.Expression, ts.Expression][] {
+  const p = boNgoac(phong);
+  const c = boNgoac(cong);
+  if (ts.isConditionalExpression(p) && ts.isConditionalExpression(c) && p.condition.getText() === c.condition.getText()) {
+    return [...capNhanh(p.whenTrue, c.whenTrue), ...capNhanh(p.whenFalse, c.whenFalse)];
   }
-  return false;
+  if (ts.isConditionalExpression(p)) return [...capNhanh(p.whenTrue, c), ...capNhanh(p.whenFalse, c)];
+  if (ts.isConditionalExpression(c)) return [...capNhanh(p, c.whenTrue), ...capNhanh(p, c.whenFalse)];
+  return [[p, c]];
+}
+
+interface TenPhong {
+  /** Tên đã chuẩn hoá: phần động `${x}` ⇒ `{x}`; phòng là biến ⇒ `{bien-phong-federation}`. */
+  ten: string;
+  /** Nguồn biến cấp (`${cap}` đầu template) — để ràng buộc đối số cổng. */
+  cap?: string;
+  /** Nguồn biến id (`${n}` cuối template). */
+  id?: string;
+  /** Nguồn biến phòng (phòng là một định danh). */
+  bien?: string;
+}
+
+/** `X` là phần tử thứ i của mẫu mảng trong `for (const [..] of [[..], ..] as const)` bao ngoài ⇒ các chuỗi hằng ở vị trí i; không giải được ⇒ null. */
+function giaiBienVong(x: ts.Identifier): string[] | null {
+  for (let cur: ts.Node | undefined = x.parent; cur; cur = cur.parent) {
+    if (!ts.isForOfStatement(cur) || !ts.isVariableDeclarationList(cur.initializer)) continue;
+    const ten = cur.initializer.declarations[0]?.name;
+    if (!ten || !ts.isArrayBindingPattern(ten)) continue;
+    const i = ten.elements.findIndex((el) => ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === x.text);
+    if (i < 0) continue;
+    const mang = boAs(cur.expression);
+    if (!ts.isArrayLiteralExpression(mang)) return null;
+    const out: string[] = [];
+    for (const hang of mang.elements) {
+      const h = boAs(hang as ts.Expression);
+      if (!ts.isArrayLiteralExpression(h)) return null;
+      const g = h.elements[i];
+      if (!g || !ts.isStringLiteralLike(g)) return null;
+      out.push(g.text);
+    }
+    return out;
+  }
+  return null;
+}
+
+/** Đối số 1 của `thuVaoPhong` ⇒ các tên phòng có thể; null = không giải được (ĐỎ). */
+function tenPhongCua(e: ts.Expression): TenPhong[] | null {
+  if (ts.isStringLiteralLike(e)) return [{ ten: e.text }];
+  if (ts.isIdentifier(e)) return [{ ten: "{bien-phong-federation}", bien: e.text }];
+  if (!ts.isTemplateExpression(e)) return null;
+  const spans = e.templateSpans;
+  const cuoi = spans[spans.length - 1];
+  const id = cuoi.literal.text === "" ? cuoi.expression.getText() : undefined;
+  if (e.head.text === "") {
+    // phần đầu động: chỉ chấp nhận biến của vòng hằng (`${cap}`), khai triển thành từng giá trị
+    const x = spans[0].expression;
+    if (!ts.isIdentifier(x)) return null;
+    const giaTri = giaiBienVong(x);
+    if (!giaTri || giaTri.length === 0) return null;
+    const duoi = spans[0].literal.text + spans.slice(1).map((s) => `{${s.expression.getText()}}${s.literal.text}`).join("");
+    return giaTri.map((g) => ({ ten: g + duoi, cap: x.text, id: spans.length > 1 ? id : undefined }));
+  }
+  return [{ ten: e.head.text + spans.map((s) => `{${s.expression.getText()}}${s.literal.text}`).join(""), id }];
+}
+
+const laTuChoi = (c: ts.Expression): boolean =>
+  ts.isCallExpression(c) && c.expression.getText() === "Promise.resolve" && c.arguments.length === 1 && c.arguments[0].getText() === "false";
+
+/** Kiểm một lời gọi `thuVaoPhong(phòng, cổng)` theo BẢNG PHÒNG → CỔNG; trả lý do vi phạm (rỗng = đạt). */
+export function kiemThuVaoPhong(n: ts.CallExpression): string[] {
+  if (n.arguments.length < 2) return ["`thuVaoPhong` phải nhận một CỔNG (đối số thứ hai)"];
+  const loi: string[] = [];
+  for (const [p, c] of capNhanh(n.arguments[0], n.arguments[1])) {
+    const ds = tenPhongCua(p);
+    if (!ds) {
+      loi.push(`tên phòng \`${p.getText()}\` không giải được (chuỗi / template có tiền tố tĩnh / biến vòng hằng / biến phòng federation)`);
+      continue;
+    }
+    for (const ph of ds) {
+      const dong = BANG_PHONG_CONG.filter((d) => d.khop(ph.ten));
+      if (dong.length === 0) {
+        loi.push(`phòng \`${ph.ten}\` KHÔNG có trong BẢNG PHÒNG → CỔNG — phòng mới phải khai cổng riêng`);
+        continue;
+      }
+      if (laTuChoi(c)) continue; // từ chối, không mở cửa
+      const ok =
+        ts.isCallExpression(c) &&
+        dong.some((d) =>
+          d.cong.some(
+            (g) =>
+              g.ten === c.expression.getText() &&
+              Object.entries(g.doiSo ?? {}).every(([i, nguon]) => {
+                const can = nguon === "cap" ? ph.cap : nguon === "id" ? ph.id : ph.bien;
+                return can !== undefined && c.arguments[Number(i)]?.getText() === can;
+              }),
+          ),
+        );
+      if (!ok) loi.push(`cổng \`${c.getText()}\` KHÔNG phải cổng của phòng \`${ph.ten}\` (bảng: ${dong.map((d) => d.cong.map((g) => g.ten).join("|") || "chỉ Promise.resolve(false)").join(" / ")})`);
+    }
+  }
+  return loi;
 }
 
 export interface ViPham {
@@ -122,9 +252,7 @@ export function quetJoin(src: string, file: string): { viPham: ViPham[]; khop: n
       }
       // thuVaoPhong(<phòng>, <cổng>)
       if (ts.isIdentifier(callee) && callee.text === "thuVaoPhong") {
-        if (n.arguments.length < 2 || !laCongHopLe(n.arguments[1])) {
-          viPham.push({ file, dong: dong(n), phong: n.arguments[0]?.getText() ?? "?", lyDo: "`thuVaoPhong` phải nhận một CỔNG hợp lệ (duocVaoPhong* hoặc Promise.resolve(false)) làm đối số thứ hai" });
-        }
+        for (const lyDo of kiemThuVaoPhong(n)) viPham.push({ file, dong: dong(n), phong: n.arguments[0]?.getText() ?? "?", lyDo });
       }
     }
     ts.forEachChild(n, duyet);
@@ -168,6 +296,25 @@ describe("census — mọi socket.join đứng sau cổng hoặc có miễn kèm
     const moCoi = LUAT.map((l, i) => ({ l, i })).filter(({ i }) => !khop.has(i));
     expect(moCoi.map(({ l }) => `${l.file} ${l.phong}`), "luật mồ côi — xoá hoặc sửa").toEqual([]);
     for (const l of LUAT) expect(Boolean(l.gate?.length) || (l.mien ?? "").length > 20, `luật ${l.phong} thiếu cổng/lý do miễn`).toBe(true);
+  });
+
+  it("SCADA 1a — BẢNG PHÒNG → CỔNG: mọi lời gọi `thuVaoPhong` của socket.ts giải được tên phòng, và MỌI dòng bảng có ≥ 1 lời gọi khớp (không dòng mồ côi)", () => {
+    const sf = ts.createSourceFile("socket.ts", doc("server/_core/socket.ts"), ts.ScriptTarget.Latest, true);
+    const goi: ts.CallExpression[] = [];
+    const di = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "thuVaoPhong") goi.push(n);
+      ts.forEachChild(n, di);
+    };
+    di(sf);
+    expect(goi.length, "thiết bị đo: thấy các lời gọi thuVaoPhong").toBeGreaterThanOrEqual(7);
+    const daDung = new Set<number>();
+    for (const n of goi) {
+      expect(kiemThuVaoPhong(n), n.getText()).toEqual([]);
+      for (const [p] of capNhanh(n.arguments[0], n.arguments[1])) {
+        for (const ph of tenPhongCua(p) ?? []) BANG_PHONG_CONG.forEach((d, i) => d.khop(ph.ten) && daDung.add(i));
+      }
+    }
+    expect(BANG_PHONG_CONG.map((d, i) => (daDung.has(i) ? null : d.moTa)).filter(Boolean), "dòng bảng mồ côi").toEqual([]);
   });
 
   it("tên cổng trong bảng thực sự được export (không trỏ vào hàm không tồn tại)", () => {
@@ -217,6 +364,53 @@ describe("ĐỘT BIẾN — lưới phải BẮT", () => {
     ]) {
       expect(quetJoin(socketTs().replace(g, doi), "server/_core/socket.ts").viPham.length, doi).toBeGreaterThan(0);
     }
+  });
+
+  it("(e) SCADA 1a — cổng SAI PHÒNG (thay / hoán đổi / chèn — census cũ: các ca chèn + hoán đổi XANH) ⇒ ĐỎ do BẢNG; phòng lạ ⇒ ĐỎ", () => {
+    // Mọi khẳng định dưới đây đòi vi phạm do BẢNG PHÒNG → CỔNG báo (không nhờ luật "handler thiếu tên cổng" — luật đó chỉ đỏ khi tên cổng
+    // BIẾN MẤT khỏi handler, nên mù với cổng sai được THÊM / HOÁN ĐỔI; đo trên census cũ: các ca chèn dưới đây XANH).
+    const S = "server/_core/socket.ts";
+    const loiBang = (src: string) => quetJoin(src, S).viPham.filter((v) => /BẢNG PHÒNG|KHÔNG phải cổng của phòng|không giải được/.test(v.lyDo));
+    const robot = "duocVaoPhongRobot(socket.data, n)";
+    expect(socketTs()).toContain(robot);
+    for (const doi of ["duocVaoPhongTelemetryAll(socket.data)", 'duocVaoPhongPhamVi(socket.data, "line", n)', "Promise.resolve(true)", "duocVaoPhongRobot(socket.data, 1)", "duocVaoPhongThietBi(socket.data, n)"]) {
+      expect(loiBang(socketTs().replace(robot, doi)).length, `robot: ⇒ ${doi}`).toBeGreaterThan(0);
+    }
+    const thietBi = "duocVaoPhongThietBi(socket.data, dd.deviceStreamId)";
+    expect(socketTs()).toContain(thietBi);
+    for (const doi of ["duocVaoPhongRobot(socket.data, dd.deviceStreamId)", "duocVaoPhongTelemetryAll(socket.data)"]) {
+      expect(loiBang(socketTs().replace(thietBi, doi)).length, `device: ⇒ ${doi}`).toBeGreaterThan(0);
+    }
+    // hoán đổi: robot dùng cổng thiết bị, device dùng cổng robot — MỌI tên cổng vẫn có trong handler
+    expect(loiBang(socketTs().replace(robot, "duocVaoPhongThietBi(socket.data, n)").replace(thietBi, "duocVaoPhongRobot(socket.data, dd.deviceStreamId)")).length).toBeGreaterThan(0);
+    const fed = "thuVaoPhong(p, duocVaoPhongFederation(socket.data, p))";
+    expect(socketTs()).toContain(fed);
+    for (const doi of ["thuVaoPhong(p, duocVaoPhongTelemetryAll(socket.data))", 'thuVaoPhong(p, duocVaoPhongPhamVi(socket.data, "factory", p))', 'thuVaoPhong(p, duocVaoPhongFederation(socket.data, "sites:all"))']) {
+      expect(loiBang(socketTs().replace(fed, doi)).length, `federation ⇒ ${doi}`).toBeGreaterThan(0);
+    }
+    const phamVi = "duocVaoPhongPhamVi(socket.data, cap, n)";
+    expect(socketTs()).toContain(phamVi);
+    for (const doi of ['duocVaoPhongPhamVi(socket.data, "factory", n)', "duocVaoPhongRobot(socket.data, n)"]) {
+      expect(loiBang(socketTs().replace(phamVi, doi)).length, `factory/workshop/line/machine ⇒ ${doi}`).toBeGreaterThan(0);
+    }
+    // CHÈN một lời gọi cổng sai cạnh lời gọi đúng (mọi tên cổng vẫn có trong handler) + phòng có tiền tố KHÔNG trong bảng + phần đầu động
+    const g = 'thuVaoPhong("telemetry:all", duocVaoPhongTelemetryAll(socket.data));';
+    for (const chen of [
+      "thuVaoPhong(`robot:${n}`, duocVaoPhongTelemetryAll(socket.data));",
+      'thuVaoPhong(`robot:${n}`, duocVaoPhongPhamVi(socket.data, "line", n));',
+      "thuVaoPhong(`robot:${n}`, Promise.resolve(true));",
+      "thuVaoPhong(`device:${khoa}`, duocVaoPhongRobot(socket.data, n));",
+      'thuVaoPhong("sites:all", duocVaoPhongTelemetryAll(socket.data));',
+      'thuVaoPhong("sites:corp:X", duocVaoPhongAiAgents(socket.data));',
+      "thuVaoPhong(`plc:${n}`, duocVaoPhongRobot(socket.data, n));",
+      'thuVaoPhong("telemetry:all2", duocVaoPhongTelemetryAll(socket.data));',
+      "thuVaoPhong(`${String(dd.x)}:1`, duocVaoPhongTelemetryAll(socket.data));",
+    ]) {
+      expect(loiBang(socketTs().replace(g, g + "\n        " + chen)).length, chen).toBeGreaterThan(0);
+    }
+    // đối chứng: thêm lời gọi HỢP LỆ (phòng trong bảng + đúng cổng / `Promise.resolve(false)`) vẫn xanh (bộ dò không đỏ vì mọi thứ)
+    const them = g + '\n        thuVaoPhong("robot:invalid", Promise.resolve(false));\n        thuVaoPhong(`robot:${n}`, duocVaoPhongRobot(socket.data, n));';
+    expect(quetJoin(socketTs().replace(g, them), "server/_core/socket.ts").viPham).toEqual([]);
   });
 
   it("(c) bỏ cổng của luật cũ: twin không còn nguoiXemDuocNhan / engineering không còn kiểm phạm vi ⇒ ĐỎ", () => {
