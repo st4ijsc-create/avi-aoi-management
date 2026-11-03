@@ -862,7 +862,7 @@ describe("★★★ fix round 1 — C1 (bộ nhớ STOP suy giảm SỐNG QUA l�
     const khiHetPhien = vi.fn();
     const c2 = ioClient(url, { path: "/api/socket.io", transports: ["websocket"], forceNew: true, reconnection: false, extraHeaders: { cookie: `phien=${B}; app_session_id=ve-12` } });
     clients.push(c2);
-    await new Promise((r) => c2.once("connect", r));
+    await new Promise<void>((r) => c2.once("connect", () => r()));
     let soLanNoi = 0;
     c2.on("connect_error", () => soLanNoi++);
     ganNoiLaiKhiServerNgat(c2 as never, { henGio: (fn) => setTimeout(fn, 30), huyHen: (h) => clearTimeout(h as never), khiHetPhien });
