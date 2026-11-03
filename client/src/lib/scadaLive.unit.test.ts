@@ -278,6 +278,42 @@ describe("KhoScadaLive — nối lại, hở seq, lỗi", () => {
   });
 });
 
+describe("KhoScadaLive — hành vi máy chủ sau nối lại (scada-master 2026-11-04)", () => {
+  it("★ sau nối lại máy chủ KHÔNG còn đăng ký nào và im lặng tới khi nhận subscribe: client gửi lại NGAY, cùng subId + cùng tập tag; mọi tag cũ; tick/delta 'ma' của đăng ký cũ KHÔNG làm tươi lại", () => {
+    sanSang([gv(1, "t", 5, 0)]);
+    sk.phat("scada:tick", tick("ui-0", 1, [{ adapterId: 1, trangThai: "connected", tuoiMauMoiNhatMs: 0 }]));
+    sk.ngat();
+    sk.noi();
+    const ds = sk.lanPhat("scada:subscribe");
+    expect(ds).toHaveLength(2);
+    expect(ds[1].payload.subId).toBe(ds[0].payload.subId);
+    expect(ds[1].payload.tags).toEqual(ds[0].payload.tags);
+    expect(kho.doc(1, "t").cu).toBe(true);
+    // gói còn sót trên đường (không xảy ra với máy chủ thật, nhưng client không được tin) — không làm tươi
+    sk.phat("scada:tick", tick("ui-0", 2, [{ adapterId: 1, trangThai: "connected", tuoiMauMoiNhatMs: 0 }]));
+    sk.phat("scada:delta", delta("ui-0", 1, [gv(1, "t", 77)]));
+    expect(kho.doc(1, "t")).toMatchObject({ v: 5, cu: true });
+    expect(kho.docAdapter(1).trangThai).toBe("connected"); // tick cũ đã áp trước khi ngắt; không bị tick ma ghi đè
+    sk.phat("scada:snapshot", snap("ui-0", [gv(1, "t", 8, 0)], { "1:t": 15_000 }));
+    expect(kho.doc(1, "t")).toMatchObject({ v: 8, cu: false });
+  });
+
+  it("★ ngưỡng MẶC ĐỊNH 15 000 ms khi máy chủ không gửi staleAfterMs cho tag: tuổi 14 s tươi, 16 s cũ (không phải 60 s)", () => {
+    sanSang([gv(1, "t", 5, 0)], {}); // snapshot KHÔNG kèm ngưỡng cho 1:t
+    let seq = 0;
+    for (let i = 0; i < 14; i++) {
+      vi.advanceTimersByTime(1000);
+      sk.phat("scada:tick", tick("ui-0", ++seq, []));
+    }
+    expect(kho.doc(1, "t").cu).toBe(false);
+    for (let i = 0; i < 2; i++) {
+      vi.advanceTimersByTime(1000);
+      sk.phat("scada:tick", tick("ui-0", ++seq, []));
+    }
+    expect(kho.doc(1, "t").cu).toBe(true);
+  });
+});
+
 describe("KhoScadaLive — tick / trạng thái adapter", () => {
   it("★ trangThai null = KHÔNG RÕ: giữ null, không bao giờ suy ra 'connected'; chưa có tick ⇒ coTick false", () => {
     sanSang([gv(1, "t", 5, 0)]);

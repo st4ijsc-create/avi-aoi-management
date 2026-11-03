@@ -299,11 +299,8 @@ export class KhoScadaLive {
     const laNoiLai = this.daTungNoi;
     this.daTungNoi = true;
     this.soBusy = 0;
-    // sau nối lại (kể cả server ngắt — F5) máy chủ đã THẢ mọi đăng ký ⇒ gửi lại hết; tới khi có snapshot mọi tag là cũ
-    for (const sub of this.subs.values()) {
-      sub.cho = true;
-      sub.seq = null;
-    }
+    // sau nối lại (kể cả server ngắt — F5) máy chủ đã THẢ mọi đăng ký và KHÔNG gửi gì cho tới khi nhận `scada:subscribe` mới (scada-master 2026-11-04):
+    // `dongBo(ep = true)` DỰNG LẠI mọi đăng ký (cho = true, seq = null) và gửi lại; tới khi snapshot về mọi tag là cũ.
     this.datTrangThai("cho_snapshot");
     this.dongBo(laNoiLai || this.subs.size > 0);
     this.baoTatCa();
