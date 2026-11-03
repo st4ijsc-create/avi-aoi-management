@@ -171,7 +171,8 @@ _(Task 11)_
   `command_log` nên kiểm tra này không thấy được. Cảnh báo URGENT "STOP re-sent at boot — check the machine state on site" báo mỗi lần gửi lại:
   người vận hành phải kiểm tra trạng thái máy tại chỗ. Thiết bị kết nối lại muộn hơn 5 phút sau thời điểm ý định ⇒ không tự gửi (run giữ `held`
   + URGENT, một người bấm Tiếp tục). Giả định MỘT phiên bản ứng dụng trên một CSDL (như toàn bộ FOE): hai phiên bản chạy song song có thể gửi
-  STOP hai lần.
+  STOP hai lần. **Khởi động lại / triển khai CHỒNG LẤN (tiến trình cũ còn chạy trong lúc tiến trình mới khởi động) được tính là HAI phiên bản**:
+  phải dừng hẳn tiến trình cũ trước khi khởi động tiến trình mới.
 
 - (T6 fix 1 + T6b, dieu-phoi 2026-11-01) **Nguyên tắc: kết quả "không rõ" của STOP không bao giờ chờ đọc lại.** Lô ghi có ≥ 1 write "không rõ"
   (liên kết mất giữa lô `mat_lien_ket`, driver / thư viện tự hết hạn `qua_han_driver`, hoặc giá trị "không rõ" khác của driver plugin) ⇒ KHÔNG đọc

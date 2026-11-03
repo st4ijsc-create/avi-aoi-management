@@ -209,6 +209,9 @@ export const LY_DO_KHONG_GUI = {
   loiGhiNhan: "the claim of the re-send could not be written (database error)",
   // fix round 2 (C-1)
   luotTruocDungGiua: "a previous boot claimed the STOP re-send and then stopped: the STOP may or may not have reached the device — check the machine on site",
+  // fix round 3 (I-1) — the previous boot's attempt left its compensation row final, then stopped before its outcome write
+  luotTruocDaGui: "the STOP was re-sent at a previous boot (the outcome was not recorded) — check the machine on site",
+  luotTruocKhongXong: "a previous boot's STOP re-send did not complete — the STOP may not have reached the device — check on site",
 } as const;
 export type LyDoKhongGui = keyof typeof LY_DO_KHONG_GUI;
 
@@ -317,6 +320,8 @@ export async function docCuaSoGuiLai(d: Db, runId: number, compId: string) {
  * ★ SINGLE-INSTANCE ASSUMPTION (I-5b, parked): the exclusion of the run's OWN rows also hides a LIVE walk of the same run in ANOTHER app instance
  *   (FOE's liveRuns registry is per process; rehydrate treats every non-edge 'compensating' run as interrupted). With two instances on one DB, an
  *   instance booting while another is live-sending this compensation may send a second STOP. FOE as a whole assumes ONE app instance per DB.
+ *   An OVERLAPPING restart or deploy (the old process still running while the new one boots) counts as TWO instances: the old process
+ *   must be dead before the new one starts.
  */
 export async function docLenhSau(d: Db, x: { runId: number; compId: string; adapterId: number; machineId: number }) {
   const sau = hangCuaKetQua(
