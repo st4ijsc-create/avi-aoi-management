@@ -21,9 +21,11 @@
  * SAFETY GUARD: the resolved test db name MUST contain "test" and MUST differ from the dev
  * db — otherwise we throw and abort the run rather than risk wiping dev data.
  */
-import { readFileSync, existsSync, mkdtempSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { afterAll, inject } from "vitest";
+import { TEN_GOC_TAM_LUOI } from "./vitest.globalSetup";
 
 /** Read a SINGLE key from a .env file without injecting anything else into process.env. */
 function readEnvKey(file: string, key: string): string | undefined {
@@ -80,11 +82,43 @@ process.env.DB_POOL_MAX_JOBS ??= "2";
 process.env.DB_POOL_MAX_READ ??= "2";
 
 /**
+ * ★ 2026-11-03 (do-model, dieu-phoi duyệt) — MỌI thư mục tạm của setup nằm dưới `%TEMP%/aoi-vitest/<lượt>/<pid>-…/` (gốc lượt do
+ * `vitest.globalSetup.ts` cấp qua `inject`; chạy thiếu globalSetup ⇒ `%TEMP%/aoi-vitest/`) và bị XOÁ ở `afterAll` của chính tệp
+ * (afterAll của setupFiles chạy cả khi ca đỏ / ném). Trước đây mỗi tệp `mkdtemp` hai thư mục thẳng dưới `os.tmpdir()` không xoá
+ * ⇒ %TEMP% 1,28 triệu mục, lstat(%TEMP%) 300–600 ms (đo 2026-11-03). Lưới canh: `server/_core/vitestSetupTam.test.ts`.
+ */
+function gocTamLuot(): string {
+  let g: unknown;
+  try {
+    g = inject("aoiTamLuot");
+  } catch {
+    g = undefined;
+  }
+  const goc = typeof g === "string" && g ? g : resolve(tmpdir(), TEN_GOC_TAM_LUOI);
+  mkdirSync(goc, { recursive: true });
+  return goc;
+}
+const THU_MUC_TAM_TEP = mkdtempSync(resolve(gocTamLuot(), `${process.pid}-`));
+afterAll(() => {
+  try {
+    rmSync(THU_MUC_TAM_TEP, { recursive: true, force: true, maxRetries: 3 });
+  } catch {
+    /* best-effort: còn sót thì teardown của globalSetup xoá cả gốc lượt */
+  }
+});
+/** Thư mục con (đã tạo) trong thư mục tạm của TỆP này. */
+function thuMucTamCuaTep(ten: string): string {
+  const d = resolve(THU_MUC_TAM_TEP, ten);
+  mkdirSync(d, { recursive: true });
+  return d;
+}
+
+/**
  * doc 81 Đợt 10 final fix wave (I-5) — the central motion-lock "persist pending" markers (robotMotionLockStore) default to
  * ./data/robot-motion-lock-pending: a test must NEVER write under data/. Every test worker gets its own temp directory instead
  * (a test that measures the markers sets its own).
  */
-process.env.ROBOT_MOTION_LOCK_PENDING_DIR ??= mkdtempSync(resolve(tmpdir(), "vitest-rml-pending-"));
+process.env.ROBOT_MOTION_LOCK_PENDING_DIR ??= thuMucTamCuaTep("rml-pending");
 
 /**
  * VRAM Pha 2A Task 3 — KHÔNG test đơn vị nào được sinh `powershell.exe`.
@@ -126,7 +160,7 @@ process.env.VRAM_GPU_HOLDER_SCAN ??= "off";
  * một phép đo đang chạy trên máy có thể giữ ⇒ bộ định tuyến trong lưới đổi hành vi theo việc ngoài lưới. Trỏ về một thư
  * mục tạm RỖNG (không có tệp ⇒ không khoá); lưới khoá dùng đường tường minh.
  */
-process.env.LLAMA_WATCHDOG_PAUSE_FILE = resolve(mkdtempSync(resolve(tmpdir(), "vitest-khoa-khe-")), "llama-watchdog.pause");
+process.env.LLAMA_WATCHDOG_PAUSE_FILE = resolve(thuMucTamCuaTep("khoa-khe"), "llama-watchdog.pause");
 
 /**
  * ★ Đợt 9 (2026-10-25, dieu-phoi) — HÀNG RÀO NẠP IN-PROCESS (`server/services/ai/napServerNgoai.ts`) và ĐO TƯƠI của broker
