@@ -98,17 +98,6 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ★ 2026-10-09 (doc 81 Đợt 3b final wave, rà soát bảo mật) — `safetyRouter.listAssignments` RỜI sổ: nay lọc theo phạm vi
   //   nhà máy của HÀNG (factoryId › chuyền › trạm; mồ côi bị loại) bằng `resolveTenantFactoryScope(phamViCua(ctx))` — bộ lọc
   //   ca Đợt 3b Task 1 từng cho phép dò hàng nhà máy khác theo id ca. Bộ quét xếp nó sang S.
-  // ── server/routers/simTargetsRouter.ts (1) ─────────────────────────────────────────────────
-  // ★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — `ursimPing` vào nhóm (A) vì Task 3 (R3/R9)
-  // cho `resolveSimTarget` đọc `robots` + `device_adapters` của MỌI tenant để TỪ CHỐI một sim
-  // target trỏ vào host của thiết bị thật (nhả phanh robot thật là điều cổng này ngăn). Thủ tục
-  // KHÔNG trả một hàng tenant nào (chỉ reachable:true/false của cổng dashboard URSim) và phép so
-  // CỐ Ý xuyên tenant — thu hẹp theo `ctx.user` sẽ làm YẾU chính cổng an toàn ấy. (Trước đây khối này so
-  // với `oversightRouter.posture` "số đếm gộp, không phải dữ liệu tenant" — lời so ấy HẾT ĐÚNG 2026-10-26: R1b-2a T12
-  // xác định số đếm luật theo nhà máy LÀ dữ liệu tenant và đã lọc nó theo phạm vi.) Sàn: URSIM_ENABLED
-  // + machine_control/canCreate. Bộ suy xếp (A) vì đúng hình dạng nó canh; giữ ở đây để không ai
-  // quên nó là một lượt đọc xuyên tenant có chủ đích.
-  // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────
   // ── server/routers/systemHealthRouter.ts (1) ───────────────────────────────────────────────
   // ── server/routers/systemRouters.ts (1) ────────────────────────────────────────────────────
@@ -129,7 +118,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults": "ca mặc định TOÀN CỤC (shift_configs.factoryId NULL) — dùng chung mọi nhà máy, chỉ GHI là toàn quyền (luật W13) — dieu-phoi duyệt 2026-10-25",
   "server/routers/alertRouters.ts#alertRouter.getById": "dữ liệu của CHÍNH người gọi: chỉ chủ cài đặt hoặc admin, ngoài ≡ NOT_FOUND (luật W17a) — dieu-phoi duyệt 2026-10-25",
   "server/routers/alertRouters.ts#alertRouter.listAll": "adminProcedure ⇒ admin = toàn quyền; liệt kê cài đặt cảnh báo của mọi người dùng — dieu-phoi duyệt 2026-10-25",
-  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": "một mục tiêu sim DUY NHẤT lấy từ env (URSIM_HOST); resolveSimTarget từ chối host trùng robot / adapter thật; chỉ trả reachable true/false, không trả hàng tenant; giữ cổng machine_control — dieu-phoi duyệt 2026-10-25",
   "server/routers/hierarchyRouters.ts#machineRouter.config": "TẠM MIỄN: hợp đồng thiết bị, public theo serial — KHÔNG xác thực: ai biết serial đều nhận machineId / code / ánh xạ trạm-chuyền (lộ không xác thực). Backlog: bắt khoá máy cho config = đổi hợp đồng client, chờ chủ dự án — dieu-phoi duyệt tạm 2026-10-25",
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": "adminProcedure ⇒ admin = toàn quyền; danh mục vai trò dựng sẵn, không dữ liệu tenant — dieu-phoi duyệt 2026-10-25",
   "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole": "adminProcedure ⇒ admin = toàn quyền; quyền mặc định theo vai trò, không dữ liệu tenant — dieu-phoi duyệt 2026-10-25",
@@ -160,8 +148,6 @@ export const MIEN_TRU_CO_CHU_Y: Readonly<Record<string, string>> = {
   "server/routers/semanticsRouter.ts#semanticsRouter.list": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
   "server/routers/semanticsRouter.ts#semanticsRouter.get": "định nghĩa metric TĨNH (YAML contracts/metrics, không có dữ liệu theo nhà máy) — dieu-phoi duyệt 2026-10-25",
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": "ĐÃ phạm vi qua userId/userRole → resolveStatsScope (db.getTopNGMeasurementPointsEnhanced); bộ quét không nhận lời gọi db.* — bằng chứng: loDoLuongPhamVi.db.test.ts \"spc.topNGPoints\" (A 1 · admin 2) + db/statisticsScope.test.ts — dieu-phoi duyệt 2026-10-25",
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": "adminProcedure ⇒ vai admin = phạm vi TOÀN QUYỀN (cùng lý do edgeDeployment); mô hình NTF trained toàn cục — dieu-phoi duyệt 2026-10-25",
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": "chỉ trả mô hình đang chạy phạm vi TOÀN CỤC (machineId NULL: getActiveNtfClassifier() không truyền máy) + cờ — theo quyết định \"NULL ⇒ thấy cho mọi người có quyền module\"; mô hình theo máy KHÔNG qua thủ tục này — dieu-phoi duyệt 2026-10-25",
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.capabilities": "chỉ cấu hình mô hình + số năng lực (ai_models, tệp mô hình trên đĩa, đếm mẫu toàn hệ thống); không trả hàng dữ liệu nhà máy — dieu-phoi duyệt 2026-10-25",
   "server/routers/aiSettingsRouter.ts#aiSettingsRouter.getDataPipelineStats": "4 con số tổng + cờ pipeline (đếm embedding, tệp uploads, lỗi, trạng thái); không trả hàng dữ liệu nhà máy — dieu-phoi duyệt 2026-10-25",
 };

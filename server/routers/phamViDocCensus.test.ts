@@ -1012,7 +1012,9 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   `scadaCommands.dieuKienChoPhep` — phạm vi qua `adapterTrongPhamViLenh` (`idsTrongPhamVi("machine", phamViCua(ctx), {strict:true})`, cùng hàm cổng với
 //   request; ngoài phạm vi = NOT_FOUND y hệt — `scadaCommandsRouter.dieuKien.r1b2b2b.db.test.ts`) ⇒ nhóm S. Không ghi gì. Đo: ghim cũ (gốc f5f22efe5)
 //   đỏ ĐÚNG +1 S / +1 tong. `tong` 2448 trùng `congGiayPhepAiCensus.test.ts#GHIM.tong`.
-const GHIM = { A: 35, B: 8, C: 459, D: 1224, S: 722, tong: 2448 } as const;
+// ★★ 2026-11-04 · dọn vệ sinh lô A (tho-ca-agent) — gỡ 10 router 0 client-caller (AST scripts/pha0/ban-do-client-goi.mjs): monteCarloFlow · simTargets · kbVector · aiVisionLanguage(+aiVision.language) · aiSmartAlertRouting · ntfClassifier · inspectionVariant · mpVariantSubform · thresholdSuggestion ⇒ −34 thủ tục. ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
+//   A 35→32 · C 459→448 · D 1224→1210 · S 722→716 · tong 2448→2414 (−34) trùng congGiayPhepAiCensus#GHIM.tong; miễn trừ 34→31 (ntfClassifier.list|status · simTargets.ursimPing).
+const GHIM = { A: 32, B: 8, C: 448, D: 1210, S: 716, tong: 2414 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
@@ -1125,7 +1127,7 @@ describe("§5 — SỔ NỢ KHÔNG ĐƯỢC HOÁ THẠCH", () => {
       if (lyDo.trim().length < 20 || !/\d{4}-\d{2}-\d{2}/.test(lyDo)) loi.push(`${k} — lý do thiếu/không có ngày duyệt`);
     }
     expect(loi).toEqual([]);
-    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(34); // L9: 31 → 34 (shiftConfig.defaults · alertRouter.getById|listAll); 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
+    expect(Object.keys(MIEN_TRU_CO_CHU_Y).length, "ghim số miễn trừ: thêm mục = quyết định của chủ dự án, ghi lý do ở đây").toBe(31); // dọn vệ sinh lô A: 34 → 31 (ntfClassifier.list|status · simTargets.ursimPing gỡ cùng router); L9: 31 → 34 (shiftConfig.defaults · alertRouter.getById|listAll); 23 → 31 (L6c 2026-10-25: ursimPing · machineRouter.config · permissions ×2 · sites ×2 · warmingStats · getAllUserAssignments); 16 → 21 (lô L6a 2026-10-25: semantics.list|get · spc.topNGPoints · ntfClassifier.list|status; partsBelowReorder trả lại kiem-dinh W16)
   });
 
   it("sổ nợ GOM THEO FILE, mỗi file một khối liền mạch, trong khối đã sắp xếp, không lặp", () => {

@@ -65,7 +65,6 @@ const NHOM_GHI: Nhom[] = [
   ["safetyRouter.ts", ["safetyRouter.abortCollaboration"], T(R + "phamViGhiDoW8.db.test.ts", "abortCollaboration")],
   ["robotRouter.ts", ["robotRouter.consoleStop"], T(R + "robotStopDegradedAuth.dot10.db.test.ts", "another factory's STOP is refused")],
   ["scadaCommandsRouter.ts", ["scadaCommandsRouter.huy"], T(R + "scadaCommandsRouter.confirm.db.test.ts", "người khác huy ⇒ NOT_FOUND")],
-  ["simTargetsRouter.ts", ["simTargetsRouter.validateUrscript"], T(R + "simTargetsRouter.test.ts", "validateUrscript — không nhận host/cổng tuỳ ý")],
   ["hotFolderRouter.ts", ["hotFolderRouter.dryRun"], T(R + "hotFolderRouter.test.ts", "dryRun (persists nothing)")],
   ["aoiOnboardingRouter.ts", ["aoiOnboardingRouter.dryRun"], T(R + "aoiOnboardingRouter.test.ts", "dryRun (persists nothing)")],
   // ── W19: sở hữu theo người dùng — hội thoại AI · bình luận · báo cáo ──
@@ -143,7 +142,6 @@ export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults": T("server/routers/loCauHinhDocPhamVi.db.test.ts", "shiftConfig.list: ca nhà máy B ẩn"),
   "server/routers/alertRouters.ts#alertRouter.getById": T("server/routers/loCauHinhDocPhamVi.db.test.ts", "alertRouter.getById: chủ hoặc admin"),
   "server/routers/alertRouters.ts#alertRouter.listAll": M("server/routers/alertRouters.ts", "listAll: adminProcedure"),
-  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing": M("server/routers/simTargetsRouter.ts", "resolveSimTarget(input.targetId)"),
   "server/routers/hierarchyRouters.ts#machineRouter.config": M("server/routers/hierarchyRouters.ts", "config: publicProcedure"),
   "server/routers/permissionsRouter.ts#permissionsRouter.getBuiltInRoles": M("server/routers/permissionsRouter.ts", "getBuiltInRoles: adminProcedure"),
   "server/routers/permissionsRouter.ts#permissionsRouter.getDefaultPermissionsForRole": M("server/routers/permissionsRouter.ts", "getDefaultPermissionsForRole: adminProcedure"),
@@ -170,8 +168,6 @@ export const BANG_CHUNG_DOC: Readonly<Record<string, BangChung>> = {
   "server/routers/semanticsRouter.ts#semanticsRouter.list": T("server/routers/semanticsRouter.test.ts", "list returns the governed catalogue"),
   "server/routers/semanticsRouter.ts#semanticsRouter.get": T("server/routers/semanticsRouter.test.ts", "get returns the full definition; NOT_FOUND for unknown metric"),
   "server/routers/spcAnalysisRouter.ts#spcAnalysisRouter.topNGPoints": T("server/routers/loDoLuongPhamVi.db.test.ts", "spc.topNGPoints — số NG của điểm đo chung"),
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.list": M("server/routers/ntfClassifierRouter.ts", "list: adminProcedure"),
-  "server/routers/ntfClassifierRouter.ts#ntfClassifierRouter.status": M("server/routers/ntfClassifierRouter.ts", "const active = await getActiveNtfClassifier();"),
   "server/routers/aiLocalTrainingRouter.ts#aiLocalTrainingRouter.capabilities": M("server/routers/aiLocalTrainingRouter.ts", "return getTrainingCapabilities(input.modelId);"),
   "server/routers/aiSettingsRouter.ts#aiSettingsRouter.getDataPipelineStats": M("server/routers/aiSettingsRouter.ts", "getDataPipelineStats: protectedProcedure.query"),
 };

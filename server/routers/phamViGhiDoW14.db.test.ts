@@ -76,7 +76,6 @@ let c!: {
   imp: ReturnType<typeof import("./dataRouters").importRouter.createCaller>;
   exp: ReturnType<typeof import("./dataRouters").exportRouter.createCaller>;
   tri: ReturnType<typeof import("./stationTriangulationRouter").stationTriangulationRouter.createCaller>;
-  mpv: ReturnType<typeof import("./mpVariantSubformRouter").mpVariantSubformRouter.createCaller>;
   gov: ReturnType<typeof import("./twinGovRouter").twinGovRouter.createCaller>;
   hook: ReturnType<typeof import("./webhookRouter").webhookRouter.createCaller>;
   rb: ReturnType<typeof import("./reportBuilderRouter").reportBuilderRouter.createCaller>;
@@ -122,7 +121,6 @@ beforeAll(async () => {
     imp: (await import("./dataRouters")).importRouter.createCaller(ctx),
     exp: (await import("./dataRouters")).exportRouter.createCaller(ctx),
     tri: (await import("./stationTriangulationRouter")).stationTriangulationRouter.createCaller(ctx),
-    mpv: (await import("./mpVariantSubformRouter")).mpVariantSubformRouter.createCaller(ctx),
     gov: (await import("./twinGovRouter")).twinGovRouter.createCaller(ctx),
     hook: (await import("./webhookRouter")).webhookRouter.createCaller(ctx),
     rb: (await import("./reportBuilderRouter")).reportBuilderRouter.createCaller(ctx),
@@ -204,7 +202,7 @@ describe("energy · msd · stencil", () => {
   });
 });
 
-describe("productOnboarding · qualityGateTemplate.applyToLine · twinGov · mpVariantSubform", () => {
+describe("productOnboarding · qualityGateTemplate.applyToLine · twinGov", () => {
   it("bản nháp onboarding của sản phẩm B ⇒ NOT_FOUND; sản phẩm A được", async () => {
     const l = [
       await maLoi(() => c.onb.saveDraft({ productModelId: B.product, currentStep: 1 })),
@@ -215,14 +213,13 @@ describe("productOnboarding · qualityGateTemplate.applyToLine · twinGov · mpV
     expect(await so(sql`SELECT count(*)::int AS n FROM product_onboarding_drafts WHERE "productModelId" = ${B.product}`)).toBe(0);
     expect(await maLoi(() => c.onb.saveDraft({ productModelId: A.product, currentStep: 1 }))).toBeNull();
   });
-  it("áp mẫu cổng chất lượng lên chuyền / máy B ⇒ NOT_FOUND; chạy kiểm tra độ trung thực twin cho chuyền B ⇒ NOT_FOUND; extraFields điểm đo B ⇒ NOT_FOUND", async () => {
+  it("áp mẫu cổng chất lượng lên chuyền / máy B ⇒ NOT_FOUND; chạy kiểm tra độ trung thực twin cho chuyền B ⇒ NOT_FOUND", async () => {
     const l = [
       await maLoi(() => c.qgt.applyToLine({ templateId: "ipc-a-610", lineId: B.lid })),
       await maLoi(() => c.qgt.applyToLine({ templateId: "ipc-a-610", lineId: A.lid, machineId: B.mid })),
       await maLoi(() => c.gov.runFidelityCheck({ lineId: B.lid })),
-      await maLoi(() => c.mpv.setExtra({ pointDefId: B.point, payload: {} })),
     ];
-    expect(l).toEqual([NF, NF, NF, NF]);
+    expect(l).toEqual([NF, NF, NF]);
     expect(await so(sql`SELECT count(*)::int AS n FROM quality_gates WHERE "lineId" IN (${A.lid}, ${B.lid})`)).toBe(0);
     expect(await maLoi(() => c.qgt.applyToLine({ templateId: "ipc-a-610", lineId: A.lid }))).toBeNull(); // đối chứng: mẫu dựng sẵn hợp lệ ⇒ tạo cổng cho chuyền A
     expect(await so(sql`SELECT count(*)::int AS n FROM quality_gates WHERE "lineId" = ${A.lid}`)).toBeGreaterThan(0);

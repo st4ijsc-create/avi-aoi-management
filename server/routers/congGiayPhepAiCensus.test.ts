@@ -180,16 +180,6 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
   //    rồi cho một bộ cấu hình gợi ý. Người gọi là `components/onboarding/AISetupSuggestion.tsx`.
   "server/routers/aiSetupAdvisorRouter.ts#aiSetupAdvisorRouter.status",
   "server/routers/aiSetupAdvisorRouter.ts#aiSetupAdvisorRouter.suggestSetup",
-  // ── aiSmartAlertRoutingRouter — đường GHI/ACK/LEO THANG của `predictive_alerts`. Phần AI duy
-  //    nhất (`enrichRoutingWithAI`) là tuỳ chọn và trả `null` khi hỏng: định tuyến, lưu và gửi
-  //    thông báo xảy ra bất kể có AI hay không.
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.acknowledge",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.cleanup",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.detectSpike",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.detectYieldDrop",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.processEscalation",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.route",
-  "server/routers/aiSmartAlertRoutingRouter.ts#aiSmartAlertRoutingRouter.stats",
   // ── aiThresholdAdvisorRouter — thống kê cổ điển (`utils/thresholdSuggestion`), KHÔNG LLM.
   //    `AIThresholdSuggestButton` được gắn ở `ProductModels` và `MqttNgRateThreshold` — màn dữ liệu
   //    chủ / ngưỡng, việc vận hành hằng ngày.
@@ -574,7 +564,9 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 // ★ 2026-10-31 Đợt 12 H5.4 (tho-ca-agent): +1 thủ tục AI có cổng MOD_AI (aiAgent.tiepTucLuot) ⇒ beMatAi 470→471, aiCoCong 408→409, tong 2444→2445. ĐO trên nhánh.
 // ★★ 2026-10-31 · scada-master GỘP main 499954cb2 vào feat/scada-2bA-hop-dong (C2) — ĐO trên cây gộp: main + nhánh C2 scadaDiag.tomTatTruyenThong +1 (ngoài bề mặt AI) ⇒ tong 2446.
 // ★★ 2026-11-01 · SCADA R1b-2b-2b A — C4: +1 mutation `scadaDiag.thuDocDiaChi` (ngoài bề mặt AI, sau MOD_OT_CONTROL) ⇒ tong 2446→2447 (= phamViDocCensus tong). Đo: ghim cũ đỏ ĐÚNG +1.
-const GHIM = { tong: 2448, beMatAi: 471, aiCoCong: 409, aiMienTru: 62, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// ★★ 2026-11-04 · dọn vệ sinh lô A (tho-ca-agent) — gỡ 10 router 0 client-caller (AST scripts/pha0/ban-do-client-goi.mjs): monteCarloFlow · simTargets · kbVector · aiVisionLanguage(+aiVision.language) · aiSmartAlertRouting · ntfClassifier · inspectionVariant · mpVariantSubform · thresholdSuggestion ⇒ −34 thủ tục. ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
+//   cổng: beMatAi 471→461 · aiCoCong 409→406 · aiMienTru 62→55 (aiSmartAlertRouting ×7 khỏi miễn trừ vận hành; aiVisionLanguage ×3 có cổng) · tong 2448→2414 trùng phamViDocCensus#GHIM.tong.
+const GHIM = { tong: 2414, beMatAi: 461, aiCoCong: 406, aiMienTru: 55, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
 //   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc
