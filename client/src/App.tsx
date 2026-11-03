@@ -39,7 +39,6 @@ import Home from "./pages/Home";
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const History = React.lazy(() => import("./pages/History"));
 const DataSettings = React.lazy(() => import("./pages/DataSettings"));
-const ApiDocs = React.lazy(() => import("./pages/ApiDocs"));
 const ProductModels = React.lazy(() => import("./pages/ProductModels"));
 const InspectionDetail = React.lazy(() => import("./pages/InspectionDetail")); // doc64 S5-OPT: eager→lazy
 const Layout = React.lazy(() => import("./pages/Layout")); // doc64 S5-OPT: eager→lazy
@@ -264,7 +263,6 @@ const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc6
 const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
 const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy
 const StationAnalysis = React.lazy(() => import("./pages/StationAnalysis")); // Wave 1: code-split (2.7k LOC)
-const ComponentShowcase = React.lazy(() => import("./pages/ComponentShowcase")); // Wave 1: dev showcase of DS + foundation primitives
 
 function AIPageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -318,10 +316,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
-      <Route path="/api-docs" component={ApiDocs} />
-      {/* Wave 1 (foundation): dev-open showcase of the shared design-system +
-          the new foundation primitives (DataTable/AsyncBoundary/FilterBar/FormScaffold). */}
-      <Route path="/component-showcase" component={ComponentShowcase} />
 
       {/* ── OVERVIEW ─────────────────────────────────────────────────────── */}
       <Route path="/dashboard"><RouteGuard navHref="/dashboard"><Dashboard /></RouteGuard></Route>
@@ -885,7 +879,7 @@ function App() {
               <UiPrefsSync />
               <Toaster />
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
-                  code-split page (including bare `component={}` routes like /api-docs)
+                  code-split page (including bare `component={}` routes)
                   has a fallback while its chunk loads. Per-page AIPageWrapper boundaries
                   still take precedence where present.
                   Wave 1b: AppShell (flag-gated, default OFF) optionally hoists ONE
@@ -895,8 +889,7 @@ function App() {
                 <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
                   {/* ★★★★ Pha 7 / I-4 — CỔNG BUỘC ĐỔI MẬT KHẨU. Nó bọc CHÍNH `<Router/>`: khi khoá,
                       TOÀN BỘ bảng route không được render, nên không có "route lách được" — kể cả
-                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`, `/api-docs`,
-                      `/component-showcase`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
+                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
                       ⚠ Đừng hạ nó xuống trong cây (vào RouteGuard hay từng Route): làm thế là biến
                         một lượng từ ∀ thành một DANH SÁCH, đúng lớp lỗi "phần tử thứ N+1". Lưới
                         cấu trúc canh đúng vị trí này: client/src/lib/congDoiMatKhau.unit.test.ts §3. */}
