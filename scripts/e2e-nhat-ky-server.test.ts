@@ -41,6 +41,31 @@ describe("nhatKyServer", () => {
     expect(re.exec(fs.readFileSync(file, "utf8"))?.[1]).toBe("3051");
   });
 
+  it("★ TRẦN: log > trần ⇒ đổi tên thành .1 (ghi đè .1 cũ — chỉ giữ MỘT bản cũ), tệp mới chỉ có dòng đầu; ≤ trần ⇒ KHÔNG xoay", () => {
+    const tran = 200;
+    const a = moNhatKyNoiThem(file, "lượt A", undefined, tran);
+    fs.writeSync(a.fd, "A".repeat(300));
+    fs.closeSync(a.fd);
+    const b = moNhatKyNoiThem(file, "lượt B", undefined, tran);
+    fs.writeSync(b.fd, "B".repeat(300));
+    fs.closeSync(b.fd);
+    expect(fs.readFileSync(`${file}.1`, "utf8")).toContain("A".repeat(300));
+    expect(fs.readFileSync(file, "utf8")).not.toContain("A");
+    const c = moNhatKyNoiThem(file, "lượt C", undefined, tran); // log (B) > trần ⇒ .1 bị GHI ĐÈ bằng B
+    fs.closeSync(c.fd);
+    const cu = fs.readFileSync(`${file}.1`, "utf8");
+    expect(cu).toContain("B".repeat(300));
+    expect(cu).not.toContain("A");
+    expect(fs.readdirSync(dir).sort()).toEqual(["server.log", "server.log.1"]); // không sinh .2, .3…
+    // ≤ trần: không xoay
+    const d = moNhatKyNoiThem(file, "lượt D", undefined, 10_000);
+    fs.closeSync(d.fd);
+    expect(fs.readFileSync(`${file}.1`, "utf8")).toContain("B".repeat(300));
+    const moi = fs.readFileSync(file, "utf8");
+    expect(moi.indexOf("lượt C")).toBeGreaterThan(-1);
+    expect(moi.indexOf("lượt D")).toBeGreaterThan(moi.indexOf("lượt C"));
+  });
+
   it("mốc bắt đầu vượt cuối tệp (tệp bị cắt) ⇒ chuỗi rỗng, không ném", () => {
     const a = moNhatKyNoiThem(file, "x");
     fs.closeSync(a.fd);
