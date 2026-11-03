@@ -192,6 +192,8 @@ Mới
   - Kết quả **không tin cậy**: khung riêng có nhãn cố định «AI ngoài — không tin cậy», liên kết thành chữ + tên miền, ảnh / HTML là chữ, khối mã không có Chép/Chèn/Áp dụng; không có đường nào từ kết quả tới ghi tệp hay chạy lệnh.
   - Lỗi nói theo mã: đang có lượt kiểm định (409), quá dài (413), vượt trần (429), phiên hết hạn (401).
 
+- **Khối mã trong câu trả lời model ngoài chỉ còn nút Chép** (trước đây có cả Chèn / Áp dụng); extension cũng từ chối Chèn / Áp dụng cho các khối đó nếu nhận yêu cầu.
+
 Không đổi / giới hạn
 - Model ngoài trong extension vẫn **chỉ Hỏi đáp**; agent ngoài **không** mở.
 - Hội thoại khôi phục từ phiên trước kiểm định bằng văn bản (id lượt máy chủ không lưu bền ở extension).

@@ -1136,11 +1136,11 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   const agThe = {};
   function agBatDauLuot() { agDoan = null; agNghi = null; agKeHoach = null; agTool = {}; coMdDang = false; }
   /** Thay TOÀN BỘ nội dung một khối bằng cây markdown (đường Chat/SERVER + lịch sử). Chỉ createElement/textContent — innerHTML chỉ nhận chuỗi rỗng để dọn. */
-  function veLaiKhoiMd(el, cay, chiSoMaDau, dangStream) {
+  function veLaiKhoiMd(el, cay, chiSoMaDau, dangStream, chiChep) {
     el.textContent = "";
     el.innerHTML = "";
     if (typeof el.className === "string" && el.className.indexOf("ag-md") < 0) el.className = (el.className + " ag-md").trim();
-    veMd(cay, chiSoMaDau, el, dangStream);
+    veMd(cay, chiSoMaDau, el, dangStream, chiChep);
   }
   function agKhung() { if (!khoiTraLoi) khoiTraLoi = themLuot("ai", ""); return khoiTraLoi; }
   function taoPhan(the, lop, chu) {
@@ -1181,7 +1181,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       const dau = taoPhan("div", "khoi-ma-dau");
       dau.appendChild(taoPhan("span", "", String(n.ngonNgu || "mã")));
       // đang stream: khối chưa ĐĂNG KÝ chỉ số ở host (chỉ bản cuối mới đăng ký) ⇒ chưa hiện Chép/Chèn/Áp dụng, tránh nút chết
-      for (const [hanhDong, nhan, goiY] of demMa.dangStream ? [] : HANH_DONG_MA) {
+      // 0.6.0 — câu trả lời model NGOÀI (không tin cậy): chỉ Chép (host cũng từ chối Chèn / Áp dụng cho các khối đó)
+      for (const [hanhDong, nhan, goiY] of demMa.dangStream ? [] : demMa.chiChep ? HANH_DONG_MA.filter((h) => h[0] === "chep") : HANH_DONG_MA) {
         const b = taoPhan("button", "nut-khoi-ma", nhan);
         b.title = goiY;
         b.addEventListener("click", () => vscode.postMessage({ loai: "ag_khoi_ma", chiSo, hanhDong }));
@@ -1216,8 +1217,8 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
     (n.con || []).forEach((c) => veNutMd(c, e, demMa));
     cha.appendChild(e);
   }
-  function veMd(cay, chiSoMaDau, cha, dangStream) {
-    const demMa = { tiep: chiSoMaDau | 0, dangStream: dangStream === true };
+  function veMd(cay, chiSoMaDau, cha, dangStream, chiChep) {
+    const demMa = { tiep: chiSoMaDau | 0, dangStream: dangStream === true, chiChep: chiChep === true };
     (Array.isArray(cay) ? cay : []).forEach((n) => veNutMd(n, cha, demMa));
   }
   const NHAN_LY_DO = {
@@ -1722,7 +1723,7 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
       xoaChiBaoChoAi();
       // vanBanCuoi chỉ có khi server bảo THAY chữ đã stream (degraded) — không phải mọi lượt.
       // ★ 2026-10-24 — cây markdown CUỐI của chính văn bản được hiển thị (host dựng, đã đăng ký khối mã); không có cây (host cũ) ⇒ hành vi cũ.
-      if (Array.isArray(m.cay) && khoiTraLoi) veLaiKhoiMd(khoiTraLoi, m.cay, m.chiSoMaDau | 0, false);
+      if (Array.isArray(m.cay) && khoiTraLoi) veLaiKhoiMd(khoiTraLoi, m.cay, m.chiSoMaDau | 0, false, m.chiChep === true);
       else if (m.vanBanCuoi != null && khoiTraLoi) khoiTraLoi.textContent = m.vanBanCuoi;
       coMdDang = false;
       // Cắt ngang hoặc khung hỏng: KHÔNG được im lặng — phải hiện, kể cả khi câu trả lời trông

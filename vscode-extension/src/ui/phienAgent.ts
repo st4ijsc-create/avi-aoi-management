@@ -149,7 +149,8 @@ export class PhienAgent {
   /** ★ 2026-10-24 — người dùng đã bấm "Duyệt & tự duyệt các lần sửa tiếp trong lượt này": hết hiệu lực khi lượt kết thúc/bị dừng. */
   private duyetHetLuot = false;
   private readonly deXuatNho = new Map<string, string>();
-  private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string }> = [];
+  /** `chiChep` (0.6.0): khối của câu trả lời model NGOÀI — KHÔNG TIN CẬY ⇒ chỉ Chép, host từ chối Chèn / Áp dụng dù webview gửi gì. */
+  private readonly dsKhoiMa: Array<{ ngonNgu: string; ma: string; chiChep?: true }> = [];
   /** ★ 2026-10-24 — dựng markdown TĂNG DẦN khi stream (thay `ag_chu` thô): host phân tích lại văn bản đã nhận (tiết lưu) và gửi cây `ag_md_dang`; bản cuối vẫn là `ag_md`. */
   private readonly dungMd = new BoDemMdTangDan((cay) => this.pt.gui({ loai: "ag_md_dang", cay }));
   private doan = "";
@@ -417,9 +418,9 @@ export class PhienAgent {
   }
 
   /** ★ 2026-10-24 — đường CHAT (không phải agent) dựng khối mã đánh số TOÀN CỤC chung với agent để nút Chép/Chèn/Áp dụng của câu trả lời Chat cũng hoạt động; trả chỉ số đầu. */
-  themKhoiMa(ds: Array<{ ngonNgu: string; ma: string }>): number {
+  themKhoiMa(ds: Array<{ ngonNgu: string; ma: string }>, chiChep = false): number {
     const dau = this.dsKhoiMa.length;
-    this.dsKhoiMa.push(...ds);
+    this.dsKhoiMa.push(...(chiChep ? ds.map((k) => ({ ...k, chiChep: true as const })) : ds));
     return dau;
   }
 
@@ -600,6 +601,10 @@ export class PhienAgent {
     if (hanhDong === "chep") {
       await vscode.env.clipboard.writeText(k.ma);
       this.pt.gui({ loai: "ag_thong_bao", thongDiep: "Đã chép khối mã." });
+      return;
+    }
+    if (k.chiChep) {
+      this.pt.gui({ loai: "ag_thong_bao", thongDiep: "Khối mã từ model ngoài (không tin cậy) chỉ chép được — không chèn / áp dụng trực tiếp." });
       return;
     }
     const ed = vscode.window.activeTextEditor;

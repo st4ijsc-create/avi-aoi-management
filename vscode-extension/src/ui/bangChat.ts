@@ -1505,7 +1505,9 @@ export class BangChat {
         loai: "hoan_tat",
         vanBanCuoi: null,
         cay,
-        chiSoMaDau: this.phienAgent.themKhoiMa(layKhoiMaMd(cay)),
+        // ★ 0.6.0 — khối mã của câu trả lời NGOÀI (không tin cậy): chỉ Chép (host từ chối Chèn / Áp dụng — `phienAgent.hanhDongKhoiMa`)
+        chiSoMaDau: this.phienAgent.themKhoiMa(layKhoiMaMd(cay), true),
+        chiChep: true,
         canhBao: kq.canhBao,
         huyHieu: nhan,
         ...(traLoi.trim() ? { maBong: this.dangKyBong({ cauHoi, traLoi, ...(kq.daLuu ? { daLuu: kq.daLuu } : {}) }) } : {}),

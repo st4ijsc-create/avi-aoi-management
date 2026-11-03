@@ -197,6 +197,18 @@ describe("webview — nút kiểm định bằng AI ngoài (0.6.0 E1)", () => {
     expect(tatCa(k[0]!).find((p) => p.className === "nhan-khong-tin-cay")!.textContent).toBe("AI ngoài — không tin cậy · anthropic/claude-x");
   });
 
+  it("★★★ hoan_tat chiChep (câu trả lời model ngoài) ⇒ khối mã CHỈ có nút Chép", () => {
+    const w = chay();
+    w.nut("o-nhap").value = "hỏi";
+    w.nut("o-che-do").value = "chat-cu";
+    w.nut("nut-gui").bam();
+    w.banTin({ loai: "hoan_tat", vanBanCuoi: null, cay: [{ t: "code", ngonNgu: "sh", ma: "rm -rf /" }], chiSoMaDau: 4, chiChep: true, canhBao: null, huyHieu: "Model ngoài · p/m" });
+    const nutMa = tatCa(w.nut("hoi-thoai")).filter((p) => p.className === "nut-khoi-ma");
+    expect(nutMa.map((n) => n.textContent)).toEqual(["Chép"]);
+    nutMa[0]!.bam();
+    expect(w.daGui.filter((m) => m.loai === "ag_khoi_ma")).toEqual([{ loai: "ag_khoi_ma", chiSo: 4, hanhDong: "chep" }]);
+  });
+
   it("★★ kết quả cho mã lạ ⇒ bỏ qua", () => {
     const w = chay();
     luotXong(w, "ma-1");

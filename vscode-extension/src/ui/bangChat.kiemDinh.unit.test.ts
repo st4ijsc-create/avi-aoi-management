@@ -25,6 +25,7 @@ const may = vi.hoisted(() => ({
   chayToolSoLan: 0,
   editor: undefined as unknown,
   daXoaCookie: 0,
+  clip: [] as string[],
 }));
 
 vi.mock("../mang/dongSse", () => ({
@@ -61,7 +62,7 @@ vi.mock("vscode", () => ({
   ViewColumn: { Beside: 2 },
   Uri: { file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }) },
   commands: { executeCommand: async () => undefined },
-  env: { clipboard: { writeText: async () => undefined } },
+  env: { clipboard: { writeText: async (t: string) => void may.clip.push(t) } },
   window: {
     createWebviewPanel: () => ({
       webview: {
@@ -198,6 +199,7 @@ beforeEach(() => {
   may.chayToolSoLan = 0;
   may.editor = undefined;
   may.daXoaCookie = 0;
+  may.clip = [];
 });
 
 describe("E1 — nút kiểm định: host giữ bản ghi, webview chỉ gửi mã", () => {
@@ -384,6 +386,23 @@ describe("§1 + E1 — đường Hỏi bằng model NGOÀI", () => {
     expect(may.goiChiTiet[0]!.dauVao).toEqual({ chonModel: "ngoai:anthropic:claude-x", nguon: { loai: "chat", cuocTroChuyenId: 77, tinNhanId: 6 } });
     expect(String((may.canhBao[0]!.tuyChon as { detail: string }).detail)).toContain("đã lưu trên máy chủ");
     expect(String(may.daGui.find((m) => m.loai === "kiem_dinh_kq")!.nhan).startsWith(NHAN_KHONG_TIN_CAY)).toBe(true);
+  });
+
+  it("★★★ khối mã của câu trả lời NGOÀI: chỉ Chép — host từ chối Chèn / Áp dụng dù webview gửi (chiChep trong hoan_tat)", async () => {
+    const bang = await sanSang();
+    await hoiNgoai(bang, [{ type: "token", token: "Mã:\n```sh\nrm -rf /tmp/x\n```" }, { type: "done" }]);
+    const ht = may.daGui.find((m) => m.loai === "hoan_tat")!;
+    expect(ht.chiChep).toBe(true);
+    const chiSo = ht.chiSoMaDau as number;
+    may.editor = { document: { uri: { scheme: "file", fsPath: "C:\\ws\\a.st" }, isDirty: false, getText: () => "", offsetAt: () => 0 }, selection: { isEmpty: true, start: {}, end: {} } };
+    for (const hanhDong of ["chen", "ap-dung"]) may.nhanTin?.({ loai: "ag_khoi_ma", chiSo, hanhDong });
+    await nhip();
+    const tb = may.daGui.filter((m) => m.loai === "ag_thong_bao").map((m) => String(m.thongDiep));
+    expect(tb.filter((t) => t.includes("chỉ chép được"))).toHaveLength(2);
+    expect(may.daGui.some((m) => m.loai === "ag_loi" || m.loai === "ag_the_duyet")).toBe(false);
+    may.nhanTin?.({ loai: "ag_khoi_ma", chiSo, hanhDong: "chep" });
+    await nhip();
+    expect(may.clip).toEqual(["rm -rf /tmp/x"]);
   });
 
   it("★★★ không có daLuu ⇒ nguồn van-ban (chữ host đã làm sạch)", async () => {
