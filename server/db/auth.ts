@@ -1,4 +1,4 @@
-import { eq, and, desc, like, sql, or, not, lte } from "drizzle-orm";
+import { eq, and, desc, like, sql, or, not, lte, lt } from "drizzle-orm";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import {
@@ -856,6 +856,22 @@ export async function getSessionByToken(sessionToken: string) {
     .where(eq(userSessions.sessionToken, sessionToken))
     .limit(1);
   return session;
+}
+
+/**
+ * ★ Pha 0 P0-11 — GIA HẠN TẠI CHỖ: chỉ đổi `expiresAt` (KHÔNG đụng `isActive` ⇒ trigger 0435 `socket_pham_vi` không bắn), chỉ khi hàng
+ * CÒN hoạt động và hạn mới LỚN hơn hạn hiện có (phiên vừa thu hồi giữa chừng không sống lại; lượt đồng thời không kéo lùi hạn).
+ * Trả số hàng đã đổi (0 ⇒ không gia hạn).
+ */
+export async function giaHanPhienTaiCho(sessionToken: string, hetHanMoi: Date, tx?: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<number> {
+  const db = tx ?? (await getDb());
+  if (!db) return 0;
+  const r = await db
+    .update(userSessions)
+    .set({ expiresAt: hetHanMoi })
+    .where(and(eq(userSessions.sessionToken, sessionToken), eq(userSessions.isActive, true), lt(userSessions.expiresAt, hetHanMoi)))
+    .returning({ id: userSessions.id });
+  return r.length;
 }
 
 export async function updateSessionActivity(sessionId: number) {
