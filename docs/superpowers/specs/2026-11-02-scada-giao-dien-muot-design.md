@@ -140,6 +140,31 @@ Client CHƯA viết mã theo các trường này cho tới khi 1a lên main.
 - **Q5** phòng `robot:{id}` ĐÃ qua cổng phạm vi (PASS, `socket-robot-pham-vi.md`) ⇒ phản chiếu robot (2A) không bị chặn ở điểm này; 1a siết thêm census phòng→cổng.
 - **Q6** thẻ vai trò tag (C-tag): task riêng sau 1a. Q1/Q3/Q4 (deadband trước `dangKyThayDoi`, chi phí đo của tick, bộ nhận ngoài): trả lời trong `task-1a-report.md`, scada-master sẽ gửi số khi xong.
 
+#### 3.8.1 Hợp đồng CUỐI (`server/services/scada/scadaSocket.ts:61-124`, kiem-dinh ĐẠT ở d5e5270d9 trên `feat/scada-1a`; chờ dieu-phoi gộp main)
+```ts
+export const CAP_MS_HOP_LE = [50, 100, 250, 1000] as const;
+export type CapMs = (typeof CAP_MS_HOP_LE)[number];
+export type MaLoiScada = "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "TOO_MANY_HOT" | "DISABLED" | "BUSY";
+export type GiaTriGoi = [adapterId, tagKey, v, q, ts, ageMs, stale, reason];   // KHÔNG đổi
+export type KhoaTagScada = `${number}:${string}`;
+export type TagScada = { adapterId: number; tagKey: string };
+export type ScadaSubscribe = { subId?: string; tags: TagScada[]; capMs?: CapMs /* vắng => 250 */; nguon?: "that" };
+export type ScadaSnapshot = { subId: string; seq: number /* 0 */; serverTs: number; values: GiaTriGoi[];
+                              staleAfterMs: Record<KhoaTagScada, number>; denied: TagScada[] };
+export type ScadaDelta    = { subId: string; seq: number; serverTs: number; values: GiaTriGoi[];
+                              staleAfterMs?: Record<KhoaTagScada, number> /* chỉ khoá ĐÃ ĐỔI — gộp vào bản đồ */ };
+export type ScadaTickAdapter = { adapterId: number; trangThai: TrangThaiKetNoi | null; tuoiMauMoiNhatMs: number | null };
+export type ScadaTick     = { subId: string; seq: number; serverTs: number; adapters: ScadaTickAdapter[];
+                              staleAfterMs?: Record<KhoaTagScada, number> };
+```
+- `TrangThaiKetNoi = "connecting" | "connected" | "lost" | "disabled"`. ⚠ `trangThai` có thể `null` = "không rõ" (trung tâm không có phiên cho adapter đó — do edge sở hữu / chưa từng báo): KHÔNG hiện như đã kết nối; dùng `tuoiMauMoiNhatMs` để biết tuổi.
+- `seq`: một dãy cho mỗi (socket, subId), chung snapshot/delta/tick; snapshot = 0; đăng ký lại cùng subId ⇒ snapshot mới, `seq` 0. Ngưỡng cũ = `max(3·poll, deadband ? 70 000 : 0)` (poll 5 s ⇒ 15 000).
+- Lỗi `scada:error {code}`: `capMs` ngoài tập, `nguon` ≠ "that" ⇒ BAD_REQUEST; nóng (`capMs` < 250) > 2/socket hoặc > 3/người dùng (theo tiến trình) ⇒ TOO_MANY_HOT. Không đổi: 500 tag/đăng ký, 10 đăng ký/socket, BUSY. Socket máy: snapshot `denied` = tất cả, không tick.
+- `GIOI_HAN`: tagMoiDangKy 500, dangKyMoiSocket 10, chuKyDeltaMs 250, buocVongMs 50, capMsToiThieu 50, tickMs 1000, nguongNongMs 250, nongMoiSocket 2, nongMoiNguoi 3.
+- Từ F5: socket bị máy chủ ngắt ("io server disconnect") ⇒ MỌI đăng ký SCADA của nó bị giải phóng; client đăng ký lại sau nối lại và hiện cũ cho tới khi có snapshot.
+- Chi phí đo (scripts/scada-1a-bench.ts): tick ≈ 1,1–1,9 µs và ~350 B mỗi đăng ký mỗi giây (5 adapter); 600 đăng ký cùng tick: 1,1 ms; 1000: 1,3 ms. ĐẮT là bùng nổ delta (600 đăng ký × 150 tag đổi cùng lúc ≈ 40 ms trong một bước 50 ms) — đầu vào cho B3; trần nóng 2/3 là tạm cho tới pha 0.
+- Q1 (ngân sách byte): deadband chỉ áp trước `dangKyThayDoi` khi `OT_TAG_DEADBAND_ENABLED` BẬT — mặc định TẮT ⇒ mỗi chu kỳ poll đánh dấu mọi tag đã poll là đổi ⇒ một delta mỗi chu kỳ chứa mọi tag, ≈ 1,8 KB/s mỗi đăng ký 150 tag ở poll 5 s, KHÔNG phụ thuộc `capMs`. ⇒ cập nhật SLO O-1/O-2 theo số này ở pha 0. Q4: không có nơi nhận nào khác của `scada:snapshot/delta` (chỉ test) ⇒ thêm trường không phá ai.
+
 ---
 
 ## 4. Quy tắc hoạt ảnh TRUNG THỰC (mục 2 của đề bài)
