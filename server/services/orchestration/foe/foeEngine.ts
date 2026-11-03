@@ -3648,9 +3648,23 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
         // decision stops at the spent try, and the stale branch holds it + URGENT + audit with the text of that row (no second send).
         const dauLuot = dauBuTruCua(ctx);
         const daNhan = typeof dauLuot?.dangGuiLai === "string" && dauLuot.dangGuiLai !== "";
-        if (pl.k.kind === "mot" || daNhan) {
+        // (polish m-3) a claim marker that does not name its step + compensation cannot be held safely: a Continue would find no resume state
+        // for the real failed step and walk it FORWARD again ⇒ failed + URGENT + audit (never a guess, never silent)
+        const dauThieu = pl.k.kind !== "mot" && daNhan && !(typeof dauLuot?.stepId === "string" && dauLuot.stepId !== "" && typeof dauLuot?.compId === "string" && dauLuot.compId !== "");
+        if (dauThieu) {
+          const lyDo = "a previous boot claimed a STOP re-send but its record does not name the step / compensation — which STOP was being sent cannot be told";
+          await setRunStatus(run.id, "failed", {
+            finishedAt: now,
+            error: `Interrupted by server restart while compensating (run ${run.id}): ${lyDo} — not resumed, nothing re-sent; check the machine on site now.`,
+            contextJson: markedCtx,
+          });
+          result.failed += 1;
+          compensations.push({ runId: run.id, compId: null, outcome: "failed", reason: "markerIncomplete" });
+          await ghiAuditBuTru(run.id, false, { outcome: "failed", reason: "markerIncomplete", reasonText: lyDo, staleAttempt: dauLuot?.dangGuiLai ?? null, marker: dauLuot });
+          await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: null, stepId: null, lyDo, dauLan: dauLanNgat(run) });
+        } else if (pl.k.kind === "mot" || daNhan) {
           const k: Extract<PhanLoaiBuTru, { kind: "mot" }> =
-            pl.k.kind === "mot" ? pl.k : { kind: "mot", stepId: String(dauLuot?.stepId ?? "?"), compId: String(dauLuot?.compId ?? "?"), error: "" };
+            pl.k.kind === "mot" ? pl.k : { kind: "mot", stepId: String(dauLuot!.stepId), compId: String(dauLuot!.compId), error: "" };
           // held (and maybe re-sent once) by giuHoacGuiLaiBuTru after this scan; until then it stays 'compensating' (a crash meanwhile ⇒
           // the next boot sees it again)
           buTru.push({ run, markedCtx, k, def: pl.def ?? { ref: run.workflowRef ?? "", name: "", steps: [] }, wfVersion: pl.wfVersion });
@@ -4017,15 +4031,15 @@ interface HuyLuotGui {
 
 /**
  * fix round 3 (I-1, m-1) — the reason of a STALE attempt (another boot claimed the re-send and stopped before its outcome) from what its
- * compensation row recorded: 'compensated' ⇒ the STOP was re-sent (the outcome was not recorded); 'failed' (or no row) ⇒ the re-send did not
- * complete; anything else (running / held — the crash came during the send) or unreadable ⇒ it may or may not have reached the device.
+ * compensation row recorded: 'compensated' with an accepted, not simulated dispatch result ⇒ the STOP was re-sent (the outcome was not
+ * recorded); 'failed', no row, or 'compensated' by a simulated / not-accepted dispatch (polish m-1) ⇒ the re-send did not complete; anything else (running / held — the crash came during the send) or unreadable ⇒ it may or may not have reached the device.
  */
 async function lyDoLuotCu(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, runId: number, compId: string): Promise<string> {
   try {
     const [r] = await withDeadline(
       Promise.resolve(
         d
-          .select({ status: orchestrationRunSteps.status })
+          .select({ status: orchestrationRunSteps.status, resultJson: orchestrationRunSteps.resultJson })
           .from(orchestrationRunSteps)
           .where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, compId)))
           .limit(1),
@@ -4033,8 +4047,11 @@ async function lyDoLuotCu(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, run
       STOP_DB_STEP_DEADLINE_MS,
       `FOE run ${runId} stale attempt row`,
     );
-    if (r?.status === "compensated") return "luotTruocDaGui";
-    if (!r || r.status === "failed") return "luotTruocKhongXong";
+    // (polish m-1) 'compensated' is also written for a SIMULATED (dry-run) or not-accepted dispatch: "re-sent" only with the live path's test
+    const kq = (r?.resultJson ?? null) as Record<string, unknown> | null;
+    const daGuiThat = kq?.accepted === true && kq?.simulated !== true && kq?.status !== "simulated";
+    if (r?.status === "compensated" && daGuiThat) return "luotTruocDaGui";
+    if (!r || r.status === "failed" || r.status === "compensated") return "luotTruocKhongXong";
     return "luotTruocDungGiua";
   } catch {
     return "luotTruocDungGiua";
