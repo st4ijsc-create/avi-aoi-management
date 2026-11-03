@@ -170,7 +170,7 @@ describe("kiem pham vi tung tag", () => {
     napTuOt({ adapterId: 10, machineId: 5 }, [mau("temp", 1)]);
     const { goi, nhan } = taoSocket({ clientType: "machine", user: null });
     await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "temp" }] });
-    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", values: [], denied: [{ adapterId: 10, tagKey: "temp" }] });
+    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", seq: 0, serverTs: T0, values: [], staleAfterMs: {}, denied: [{ adapterId: 10, tagKey: "temp" }] });
   });
 
   it("khong co quyen machine_monitoring/canView => denied; loi kiem quyen => denied (fail-closed)", async () => {
@@ -205,7 +205,7 @@ describe("kiem pham vi tung tag", () => {
   it("adapter khong ton tai => denied (cung ket qua nhu ngoai pham vi)", async () => {
     const { goi, nhan } = taoSocket();
     await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 999, tagKey: "t" }] });
-    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", values: [], denied: [{ adapterId: 999, tagKey: "t" }] });
+    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", seq: 0, serverTs: T0, values: [], staleAfterMs: {}, denied: [{ adapterId: 999, tagKey: "t" }] });
   });
 
   it("adapter ton tai nhung khong do trung tam: xet pham vi theo machineId DB, tra v:null bad stale", async () => {
@@ -300,7 +300,7 @@ describe("chong khuech dai (I1)", () => {
     traSpy.mockRejectedValue(new Error("db"));
     const { goi, nhan } = taoSocket();
     await goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 900, tagKey: "a" }] });
-    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", values: [], denied: [{ adapterId: 900, tagKey: "a" }] });
+    expect(nhan("scada:snapshot")[0]).toEqual({ subId: "x", seq: 0, serverTs: T0, values: [], staleAfterMs: {}, denied: [{ adapterId: 900, tagKey: "a" }] });
   });
 
   it("subscribe thu hai khi cai dau con dang cho => BUSY; xong cai dau thi nhan lai duoc", async () => {

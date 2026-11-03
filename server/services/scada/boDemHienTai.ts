@@ -169,8 +169,11 @@ interface Mau {
   rx: number;
 }
 
-/** Ngưỡng stale (ms) của một adapter: `max(3·poll, coDeadband ? 70 s : 0)`; chưa đăng ký ⇒ poll mặc định, không deadband. */
-function nguongCuMs(adapterId: number): number {
+/**
+ * Ngưỡng stale (ms) HIỆN HÀNH của một adapter: `max(3·poll, coDeadband ? 70 s : 0)`; chưa đăng ký ⇒ poll mặc định, không deadband.
+ * SCADA 1a (A1) — công khai: kênh `scada:subscribe` gửi `staleAfterMs` bằng CHÍNH hàm này (một nguồn sự thật với phép tính `stale` bên dưới).
+ */
+export function nguongCuCuaAdapter(adapterId: number): number {
   const t = thongTin.get(adapterId);
   const pollMs = t?.pollMs ?? POLL_MAC_DINH_MS;
   return Math.max(3 * pollMs, t?.coDeadband ? NGUONG_DEADBAND_MS : 0);
@@ -191,7 +194,7 @@ function apMau(m: Mau, tuDb: boolean): string | null {
   // interlock không bao giờ nối các mẫu qua một đoạn mất kết nối hoặc một giá trị không chắc.
   // final I3: (a) mục nạp DB bắt đầu RỖNG (không nối qua khởi động lại); (b) khoảng NHẬN giữa mẫu này và mẫu trước > ngưỡng stale ⇒ xoá
   // (đoạn im lặng — mất liên lạc không phát mẫu xấu khi cờ V2 tắt — không được nối hai phía).
-  const imLangQuaLau = cu !== undefined && m.rx - cu.rx > nguongCuMs(m.adapterId);
+  const imLangQuaLau = cu !== undefined && m.rx - cu.rx > nguongCuCuaAdapter(m.adapterId);
   let lichSu = cu && !imLangQuaLau ? cu.lichSu.slice() : [];
   let lichSuRx = cu && !imLangQuaLau ? cu.lichSuRx.slice() : [];
   if (tuDb || m.q !== "good") {
@@ -291,12 +294,20 @@ export function napTuOt(
 
 function lamTuoi(g: GiaTriHienTai, now: number): GiaTriCoTuoi {
   const t = thongTin.get(g.adapterId);
-  const nguong = nguongCuMs(g.adapterId);
+  const nguong = nguongCuCuaAdapter(g.adapterId);
   const tuoi = now - g.rx;
   // Máy hiệu lực quyết lúc ĐỌC: adapter đã chuyển/gỡ máy (thongTin.machineId null) ⇒ không còn thuộc máy cũ. Chỉ khi KHÔNG có
   // thông tin adapter mới dùng giá trị đã lưu.
   const machineId = t ? t.machineId : g.machineId;
   return { ...g, machineId, lichSu: g.lichSu.slice(), lichSuRx: g.lichSuRx.slice(), ageMs: Math.max(0, tuoi), stale: tuoi > nguong };
+}
+
+/**
+ * SCADA 1a (A3) — giờ máy chủ NHẬN (`rx`, ms) của mẫu đang giữ cho khoá `${adapterId}:${tagKey}` (CÙNG khoá bộ đệm); null = chưa có mẫu. Getter thuần, không sao chép mục
+ * (nhịp tim `scada:tick` gọi mỗi giây cho từng tag được phép — `layGiaTri` sao chép `lichSu`).
+ */
+export function rxTheoKhoa(khoaTag: string): number | null {
+  return boDem.get(khoaTag)?.rx ?? null;
 }
 
 export function layGiaTri(adapterId: number, tagKey: string, now: number = Date.now()): GiaTriCoTuoi | null {

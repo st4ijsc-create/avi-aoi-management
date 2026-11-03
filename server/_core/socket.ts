@@ -622,7 +622,9 @@ export function initializeSocket(server: HttpServer): Server {
       // ★ BẢO MẬT — khoá thiết bị logic (`machine:N` / `robot:N`) phải nằm trong phạm vi (xem `duocVaoPhongThietBi`).
       if (dd.deviceStreamId) {
         const khoa = typeof dd.deviceStreamId === "string" ? dd.deviceStreamId : "";
-        thuVaoPhong(/^(machine|robot):\d{1,12}$/.test(khoa) ? `device:${khoa}` : "device:invalid", duocVaoPhongThietBi(socket.data, dd.deviceStreamId));
+        // SCADA 1a fix 1 (m-2): cổng kiểm ĐÚNG khoá dựng tên phòng (`khoa`), không phải giá trị thô — census bảng phòng → cổng ràng buộc đối số này
+        const khoaHopLe = /^(machine|robot):\d{1,12}$/.test(khoa);
+        thuVaoPhong(khoaHopLe ? `device:${khoa}` : "device:invalid", khoaHopLe ? duocVaoPhongThietBi(socket.data, khoa) : Promise.resolve(false));
       }
       // U3-live (doc 21 §6 / G-5) — Robot live-telemetry room (per robot). The Robot
       // Cockpit joins `robot:{robotId}` to receive compact live UDM deltas emitted by

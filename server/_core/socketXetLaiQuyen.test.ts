@@ -17,6 +17,8 @@ import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 const NHAT_KY = vi.hoisted(() => [] as string[]);
 /** Người có quyền machine_registration (cờ RBAC mở) — đổi được giữa ca (m2). */
 const QUYEN_DK = vi.hoisted(() => new Set<number>([15]));
+/** SCADA 1a fix 1 (I-1) — người có quyền xem tag SCADA (machine_monitoring/canView) cho `scada:subscribe`. */
+const QUYEN_SCADA = vi.hoisted(() => new Set<number>());
 // ── BẢN CHỤP handshake theo cookie `phien=<id>`; TAT = tài khoản bị tắt ⇒ handshake ném (như sdk thật) ──
 const SDK = vi.hoisted(() => ({ chup: {} as Record<number, { id: number; role: string; name: string }>, tat: new Set<number>(), dbSap: false }));
 vi.mock("./sdk", () => ({
@@ -67,7 +69,7 @@ vi.mock("../services/machineAuthService", async (importOriginal) => ({
 // ── NĂM bộ nhớ đệm theo người: spy ghi vào NHAT_KY (giữ bản gốc cho mọi export khác) ──
 vi.mock("./accessControl", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./accessControl")>()),
-  checkPermission: vi.fn(async (uid: number, vai: string, mod: string) => vai === "admin" || (QUYEN_DK.has(uid) && mod === "machine_registration")),
+  checkPermission: vi.fn(async (uid: number, vai: string, mod: string) => vai === "admin" || (QUYEN_DK.has(uid) && mod === "machine_registration") || (QUYEN_SCADA.has(uid) && mod === "machine_monitoring")),
   invalidateAssignmentCache: vi.fn((id: number) => void NHAT_KY.push(`xoa:assign:${id}`)),
   clearAssignmentCache: vi.fn(() => void NHAT_KY.push("xoaHet:assign")),
 }));
@@ -1043,6 +1045,103 @@ describe("★★★ kiem-dinh test round — x17 / x23 / x24 / x25 / p2", () => 
     PHAM[A] = [1]; // đối chứng: tập KHÁC ⇒ ngắt
     await xl.yeuCauQuet("luoi p2 doi chung");
     await cho(80);
+    expect(conSong(a)).toBe(false);
+  });
+});
+
+describe("★★★ SCADA 1a fix 1 (I-1) — đăng ký `scada:subscribe` còn sống là DỮ LIỆU THEO PHẠM VI cho lượt quét (cùng luật với phòng)", () => {
+  /** Adapter do trung tâm quản của máy 202 (nhà máy 2) / máy 101 (nhà máy 1) — bộ đệm THẬT, không CSDL. */
+  const AD_202 = 920_202;
+  const AD_101 = 920_101;
+  let bd: typeof import("../services/scada/boDemHienTai");
+  let sc: typeof import("../services/scada/scadaSocket");
+
+  beforeEach(async () => {
+    bd = await import("../services/scada/boDemHienTai");
+    sc = await import("../services/scada/scadaSocket");
+    vi.stubEnv("SCADA_SOCKET_ENABLED", "true");
+    vi.stubEnv("SCADA_LIVE_CACHE_ENABLED", "true");
+    bd.__datLaiBoDemHienTai();
+    sc.__datLaiScadaSocket();
+    bd.datThongTinAdapter(AD_202, { pollMs: 1000, coDeadband: false, machineId: 202, code: "S1A-202" });
+    bd.datThongTinAdapter(AD_101, { pollMs: 1000, coDeadband: false, machineId: 101, code: "S1A-101" });
+    QUYEN_SCADA.clear();
+  });
+  afterEach(() => {
+    sc.__datLaiScadaSocket();
+    bd.__datLaiBoDemHienTai();
+    QUYEN_SCADA.clear();
+    vi.unstubAllEnvs();
+  });
+
+  /** Đăng ký SCADA qua socket.io THẬT; chờ snapshot có ĐÚNG một tag được phép (không phải đăng ký toàn denied). */
+  async function dangKyScada(c: ClientSocket, adapterId: number): Promise<void> {
+    const sn = ghiNhan(c, "scada:snapshot") as any[];
+    c.emit("scada:subscribe", { subId: "s", tags: [{ adapterId, tagKey: "t" }] });
+    await vi.waitFor(() => expect(sn.length).toBe(1), { timeout: 3000 });
+    expect(sn[0].denied).toEqual([]);
+    expect(sn[0].values).toHaveLength(1);
+  }
+
+  /** H (engineer, phạm vi nhà máy 2) nối khi bộ phân giải phạm vi LỖI ⇒ không dấu vân tay phạm vi, không phòng có phạm vi. */
+  async function noiKhongDauVanTay(): Promise<ClientSocket> {
+    NGUOI_DB[H].role = "engineer";
+    SDK.chup[H].role = "engineer";
+    PHAM[H] = [2];
+    QUYEN_SCADA.add(H);
+    nemPhamViCho.add(H);
+    const c = await ketNoi({ phien: H, ve: "ve-14" });
+    await cho(150);
+    nemPhamViCho.delete(H);
+    const sk = socketMod.getIO()!.sockets.sockets.get(c.id!)!;
+    expect((sk.data as any).__daVaoPhongPhamVi).not.toBe(true);
+    return c;
+  }
+
+  it("(S1) lượt CHẶT: socket chỉ giữ đăng ký SCADA (không dấu vân tay, không phòng có phạm vi), phạm vi bị cắt, NOTIFY mất ⇒ NGẮT + thả đăng ký; đối chứng: socket cùng người KHÔNG đăng ký ⇒ giữ, B ⇒ giữ", async () => {
+    const b = await noiSan(B, "ve-12", "factory:1");
+    const h1 = await noiKhongDauVanTay();
+    const h2 = await ketNoi({ phien: H, ve: "ve-14" }); // cùng người, nối SAU khi hết lỗi ⇒ có dấu vân tay phạm vi [2] + phòng factory:2
+    await vi.waitFor(() => expect(phongCua(h2)).toContain("factory:2"), { timeout: 3000 });
+    nemPhamViCho.add(H); // h3: không dấu vân tay, KHÔNG đăng ký SCADA, chỉ phòng không phạm vi
+    const h3 = await ketNoi({ phien: H, ve: "ve-14" });
+    await cho(150);
+    nemPhamViCho.delete(H);
+    await dangKyScada(h1, AD_202);
+    expect(phongCua(h1).every((p) => p.startsWith("kiem:"))).toBe(true); // KHÔNG phòng có phạm vi — chỉ đăng ký SCADA
+    expect(sc.__vongDangChay()).toBe(true);
+    PHAM[H] = []; // cắt phạm vi thẳng trong DB, không NOTIFY
+    await xl.yeuCauQuet("luoi S1");
+    await cho(120);
+    expect([h1, h3, b].map(conSong), "h1 (đăng ký SCADA) ngắt; h3 (không gì để mất) giữ; B giữ").toEqual([false, true, true]);
+    expect(conSong(h2), "h2 có dấu vân tay [2] ≠ [] ⇒ ngắt (luật cũ)").toBe(false);
+    await vi.waitFor(() => expect(sc.__vongDangChay()).toBe(false), { timeout: 3000 });
+  });
+
+  it("(S2) lượt SỰ CỐ (có lỗi tra cứu phạm vi) ⇒ GIỮ + ghi nợ; lượt CHẶT kế ⇒ NGẮT", async () => {
+    const h1 = await noiKhongDauVanTay();
+    await dangKyScada(h1, AD_202);
+    nemPhamViCho.add(H); // tra phạm vi lỗi trong lượt sự cố
+    await xl.yeuCauQuet("luoi S2 su co", "su_co");
+    await cho(80);
+    expect(conSong(h1), "sự cố: giữ").toBe(true);
+    expect(xl.thongKeXetLaiQuyen().quetNo, "sự cố: ghi nợ").toBe(true);
+    nemPhamViCho.delete(H);
+    await xl.yeuCauQuet("luoi S2 chat", "chat");
+    await cho(100);
+    expect(conSong(h1), "chặt: ngắt (không dấu vân tay để đối chiếu)").toBe(false);
+  });
+
+  it("(S3) đối chứng: socket CÓ dấu vân tay + đăng ký SCADA, phạm vi KHÔNG đổi ⇒ GIỮ (không ngắt oan); phạm vi bị cắt ⇒ NGẮT", async () => {
+    QUYEN_SCADA.add(A);
+    const a = await noiSan(A, "ve-11a", "factory:1");
+    await dangKyScada(a, AD_101);
+    await xl.yeuCauQuet("luoi S3 khong doi");
+    await cho(80);
+    expect(conSong(a)).toBe(true);
+    PHAM[A] = [];
+    await xl.yeuCauQuet("luoi S3 cat");
+    await cho(100);
     expect(conSong(a)).toBe(false);
   });
 });

@@ -674,6 +674,12 @@ export const SO_CAI: Record<string, Muc> = {
   "server/_core/backgroundJobs.ts#startBackgroundSchedulers": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_KHOI_DONG },
   "server/_core/index.ts#<tep>": { dem: { ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: MT_KHOI_DONG },
   "server/_core/index.ts#startServer": { dem: { dich_vu: 3 }, phanLoai: "mien_tru", lyDo: MT_KHOI_DONG },
+  // SCADA 1a (đo 2026-11-03) — registerScadaHandlers (scadaSocket) giờ gọi layTrangThaiAdapter cho nhịp tim `scada:tick`
+  "server/_core/socket.ts#initializeSocket": {
+    dem: { dich_vu: 1 },
+    phanLoai: "mien_tru",
+    lyDo: "registerScadaHandlers ⇒ scada:tick chỉ đọc `.tt` (enum connecting/connected/lost/disabled) của layTrangThaiAdapter cho adapter có tag ĐƯỢC PHÉP; `loi` (lastError) / `lyDo` / endpoint KHÔNG rời hàm (scadaSocket.ts phatTick; ghim bằng test 'tick.adapters' — đúng 3 khoá adapterId / trangThai / tuoiMauMoiNhatMs)",
+  },
 };
 
 /**
@@ -687,8 +693,10 @@ export const SO_CAI: Record<string, Muc> = {
  *   • R1b-2b-2b A C4 (đo 2026-11-01): { khoa 72, diemCham 104, che 15, mienTru 57 } — +1 khoá miễn trừ `scadaDiag#proc:thuDocDiaChi` (ham_cuc_bo: helper phạm vi).
  *   • C4 fix 1 (đo 2026-11-01): { khoa 72, diemCham 105, che 15, mienTru 57 } — thuDocDiaChi + dich_vu `runningConnectionMatchesAdapterRow` (review I1: từ chối phiên cũ;
  *     helper chỉ trả boolean).
+ *   • SCADA 1a (đo 2026-11-03): { khoa 73, diemCham 106, che 15, mienTru 58 } — +1 khoá miễn trừ `socket.ts#initializeSocket` (dich_vu registerScadaHandlers:
+ *     scada:tick đọc trạng thái kết nối RAM, chỉ trường `.tt`).
  */
-const GHIM = { khoa: 72, diemCham: 105, che: 15, mienTru: 57 };
+const GHIM = { khoa: 73, diemCham: 106, che: 15, mienTru: 58 };
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;
