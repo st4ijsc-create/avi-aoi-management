@@ -259,7 +259,6 @@ const LicenseManagement = React.lazy(() => import("./pages/LicenseManagement"));
 const MonitoringSettings = React.lazy(() => import("./pages/MonitoringSettings")); // doc64 S5-OPT: eager→lazy
 // doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
 const AdminMonitoring = React.lazy(() => import("./pages/AdminMonitoring")); // doc64 S5-OPT: eager→lazy
-const AnalyticsSettings = React.lazy(() => import("./pages/AnalyticsSettings")); // doc64 S5-OPT: eager→lazy
 const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc64 S5-OPT: eager→lazy
 const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
 const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy

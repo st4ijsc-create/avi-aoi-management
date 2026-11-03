@@ -58,3 +58,20 @@ describe("Dọn vệ sinh — bản đồ AST: không client nào gọi tên đ�
     expect(fs.readFileSync(path.join(ROOT, "server/routers.ts"), "utf8")).toMatch(/^\s*twinGov\s*:/m);
   }, 180_000);
 });
+
+describe("Dọn vệ sinh lô B — trang/thành phần client mồ côi và bộ phát giả lập DB đã gỡ không quay lại", () => {
+  const doc = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
+  const DA_XOA = [
+    "client/src/pages/SPCAdvanced.tsx", "client/src/pages/AnnotationStatistics.tsx", "client/src/pages/AnalyticsSettings.tsx",
+    "client/src/components/ImageAnnotation.tsx", "client/src/components/ImageComparison.tsx", "client/src/components/BatchImageExport.tsx",
+    "client/src/components/ProductMachineMappingContent.tsx", "client/src/components/AIAnnotationAssistant.tsx", "client/src/components/AnnotationExportImport.tsx",
+    "client/src/components/AnnotationTemplates.tsx", "client/src/components/AnnotationVersionHistory.tsx", "client/src/components/HistoryBatchOperations.tsx",
+    "scripts/sim-factory/sim-live-daemon.mjs", "server/services/simOtTelemetryService.ts",
+  ];
+  for (const f of DA_XOA) it(`${f}: không còn`, () => expect(fs.existsSync(path.join(ROOT, f))).toBe(false));
+  it("App.tsx không còn khai AnalyticsSettings; index.ts không còn gọi bộ phát telemetry giả; package.json không còn sim:live", () => {
+    expect(doc("client/src/App.tsx")).not.toMatch(/AnalyticsSettings/);
+    expect(doc("server/_core/index.ts")).not.toMatch(/simOtTelemetry|startSimOtTelemetry/);
+    expect(doc("package.json")).not.toMatch(/sim-live-daemon|"sim:live"/);
+  });
+});
