@@ -138,8 +138,9 @@ describe("T3 fix 1 — S7 (nodes7 giả): s4 / s15 / s16 / s17 / M-2", () => {
       () => (loiDoc = "resolved"),
       (e) => (loiDoc = e),
     );
+    // R1b-2b-2a T6 (mục 69) — writeTags không ném cả lô nữa: kết quả THEO TỪNG write (trước T6: reject LoiMatLienKetKhiDangGui).
     const pGhi2 = d.writeTags([{ tagKey: "sp", address: "DB1,INT4", value: 3, dataType: "int" }]).then(
-      () => (loiGhi2 = "resolved"),
+      (v) => (loiGhi2 = v),
       (e) => (loiGhi2 = e),
     );
     await vi.advanceTimersByTimeAsync(HAN_DU_PHONG_GHI_DRIVER_MS - 1000 - 1);
@@ -154,8 +155,8 @@ describe("T3 fix 1 — S7 (nodes7 giả): s4 / s15 / s16 / s17 / M-2", () => {
     // hai yêu cầu kia: NGAY, cùng thời điểm ảo — không phải 7500 (dự phòng riêng của lời ghi 2) hay 21000 (hạn đọc)
     expect(laLoiMatLienKetKhiDangGui(loiDoc)).toBe(true);
     expect(ketCucKhongRoCua(loiDoc)).toBe("mat_lien_ket");
-    expect(laLoiMatLienKetKhiDangGui(loiGhi2)).toBe(true);
-    expect(ketCucKhongRoCua(loiGhi2)).toBe("mat_lien_ket");
+    expect(loiGhi2).toMatchObject([{ tagKey: "sp", ok: false, ketCucKhongRo: "mat_lien_ket" }]);
+    expect((loiGhi2 as Array<{ error: string }>)[0].error).toMatch(/^s7 link lost while a request was in flight/);
     expect(vi.getTimerCount()).toBe(0); // không còn hẹn giờ nào (dự phòng lời ghi 2 + hạn đọc đã huỷ)
     expect(thucMs).toBeLessThan(1000);
     expect(conn.writeItems).toHaveBeenCalledTimes(2);

@@ -24,10 +24,10 @@ async function maLoi(chay: () => Promise<unknown>): Promise<string | null> {
     return String((e as { code?: string }).code ?? "LOI_LA");
   }
 }
-const tenTep = (u: { id: number; name: string }) => ({ user: { id: u.id, role: "supervisor", name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
+const tenTep = (u: { id: number; name: string | null }) => ({ user: { id: u.id, role: "supervisor", name: u.name, openId: u.name, twoFactorEnabled: true } }) as never;
 
-let A!: { id: number; name: string };
-let B!: { id: number; name: string };
+let A!: { id: number; name: string | null };
+let B!: { id: number; name: string | null };
 const codes: string[] = [];
 let ids: Record<string, number> = {};
 

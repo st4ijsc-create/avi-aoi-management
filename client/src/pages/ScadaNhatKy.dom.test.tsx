@@ -297,6 +297,16 @@ describe("ScadaNhatKy — /scada/journal (B-T8)", () => {
     expect(hangCua("thu:22")).not.toHaveTextContent(an);
   });
 
+  it("★ T3E: hàng lệnh KHÔNG áp của lô một phần (reasonCode MOT_PHAN) ⇒ câu MOT_PHAN đã dịch (không mã trần), kể cả khi bị che", async () => {
+    H.tra.mockResolvedValue({
+      hang: [hang({ id: "lenh:30", trangThai: "failed", reasonCode: "MOT_PHAN", loi: null, loiBiChe: true })],
+      conTro: null,
+    });
+    render(<ScadaNhatKy />);
+    await screen.findByTestId("hang-lenh:30");
+    expect(hangCua("lenh:30")).toHaveTextContent(S("scada.lenh.cong.MOT_PHAN"));
+  });
+
   it("kỹ sư: loi hiện nguyên; loi null và không bị che ⇒ '—'; người ngoài phạm vi ⇒ 'quản trị' đã dịch, không id", async () => {
     H.tra.mockResolvedValue({
       hang: [

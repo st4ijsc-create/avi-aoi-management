@@ -84,6 +84,17 @@ export function boundedKey(key: string, max = 128): string {
   return `${key.slice(0, max - 17)}~${h}`;
 }
 
+/**
+ * SCADA R1b-2b-2a T6d fix 1 (review I1, dieu-phoi 2026-11-01) — the ONE predicate "this idempotency key was CHOSEN BY THE CALLER": the programming /
+ * deploy key domain `pd:u<userId>:…` (`server/services/programming/khoaMienLapTrinh.ts` builds it; it lives HERE, a neutral OT module, so `ot/` never
+ * imports from `programming/`). The dispatcher's replay guard binds the REQUESTER only for these keys. Every other key is SERVER-generated
+ * (`il-<rule>-<event>`, `hmi:` / `hmistop:`, FOE `run<N>-…`, AI actionId, edge, Sparkplug) and its guard is exactly adapter + tag + payload hash +
+ * commandType — a FOE resume as SYSTEM_FOE_USER or an interlock re-approved by someone else must replay / send exactly as before.
+ */
+export function laKhoaBenGoiChon(key: string): boolean {
+  return /^pd:u\d+:/.test(key);
+}
+
 /** Stable JSON of the payload (exported for tests / diagnostics only). */
 export function canonicalOtPayload(p: OtWriteBindingPayload): string {
   return JSON.stringify(
@@ -185,6 +196,21 @@ const posInt = (v: unknown): v is number => typeof v === "number" && Number.isIn
 /** Return a copy of previewJson carrying the gate approval. */
 export function withFoeGateApproval(preview: Record<string, unknown> | null | undefined, a: FoeGateApproval): Record<string, unknown> {
   return { ...(preview ?? {}), [FOE_APPROVAL_FIELD]: { ...a } };
+}
+
+/**
+ * R1b-2b-2a A2(m) AMENDMENT 2 — the MARK on a fresh authorisation row the FOE engine mints for ONE dispatch of a command IT classified as a
+ * pinned STOP (foeRunStore.ensureOrchestrationAction `hangMoi`). The mark never grants anything: the reservation REFUSES a marked row
+ * whenever the dispatcher's own predicate says the command is NOT a pinned STOP (`opts.pinnedStop` false), gate approval or not — so a
+ * fresh row is only ever consumed by a pinned STOP the dispatcher confirms ("one approval = one write" intact for every other command).
+ */
+export const HANG_MOI_STOP_GHIM_FIELD = "hangMoiStopGhim";
+export function withHangMoiStopGhim(preview: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  return { ...(preview ?? {}), [HANG_MOI_STOP_GHIM_FIELD]: true };
+}
+/** true ⇔ the row carries the fresh-pinned-STOP mark. */
+export function laHangMoiStopGhim(preview: unknown): boolean {
+  return !!preview && typeof preview === "object" && (preview as Record<string, unknown>)[HANG_MOI_STOP_GHIM_FIELD] === true;
 }
 
 /** Read the stored gate approval; null when absent/malformed (⇒ no separate approval on record). */

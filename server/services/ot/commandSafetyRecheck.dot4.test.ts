@@ -102,7 +102,7 @@ vi.mock("./otManager", () => ({
   resetAdapterSession: vi.fn(async () => ({ reset: true, via: "supervisor" })),
 }));
 
-import { dispatch, _resetAdapterCommandQueuesForTests, OT_SAFETY_PREFLIGHT_DEADLINE_MS } from "./commandDispatcher";
+import { dispatch, perWriteKey, _resetAdapterCommandQueuesForTests, OT_SAFETY_PREFLIGHT_DEADLINE_MS, MA_THIEU_KHOA } from "./commandDispatcher";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 /** The first write is slower than the re-check threshold, so the command queued behind it waits past it. */
@@ -329,5 +329,78 @@ describe("final wave G9 (group C review M5) — a waiting command cancelled by a
     expect(await within(pB2, 3000)).toMatchObject({ appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey: stop2.idempotencyKey } } });
     await within(pA2, 3000);
     await within(pStop2, 3000);
+  });
+});
+
+// ── R1b-2b-2a T6d fix 2 (AN TOÀN) — lệnh THIẾU khoá idempotency (`undefined` hoặc `""`) không bao giờ làm dispatcher ném; STOP ghim vẫn RA THIẾT BỊ ──
+// Hai lớp phòng thủ, mỗi lớp một ghim: (1) `dispatch()` chuẩn hoá khoá về "" ở cửa vào; (2) `perWriteKey` toàn phần (base / tagKey không phải chuỗi).
+const KHONG_KHOA: Array<[string, string | undefined]> = [["undefined", undefined], ['""', ""]];
+function khongKhoa<T extends { idempotencyKey?: string }>(inp: T, khoa: string | undefined): T {
+  if (khoa === undefined) delete inp.idempotencyKey; // bên gọi KHÔNG truyền trường (không chỉ truyền undefined)
+  else inp.idempotencyKey = khoa;
+  return inp;
+}
+const ketQuaCua = (inp: { writes: Array<{ tagKey: string }> }) => cmdLog.filter((r) => r.tagKey === inp.writes[0].tagKey && (r.ackValue as Row | undefined)?.ledger !== "intent");
+
+describe("T6d fix 2 — lệnh không khoá idempotency (đơn vị, DB giả, dispatcher THẬT)", () => {
+  it("perWriteKey TOÀN PHẦN: base không phải chuỗi ⇒ như \"\", tagKey không phải chuỗi ⇒ như \"_\" (khoá writeAll ghi cho hàng tagKey null) — không ném", () => {
+    expect(() => perWriteKey(undefined as never, "t", 0)).not.toThrow();
+    expect(perWriteKey(undefined as never, "t", 0)).toBe(perWriteKey("", "t", 0));
+    expect(perWriteKey(null as never, "t", 0)).toBe("v2:0::1:t:0");
+    expect(perWriteKey("K", undefined as never, 0)).toBe(perWriteKey("K", "_", 0));
+    expect(perWriteKey("K", null as never, 2)).toBe("v2:1:K:1:_:2");
+  });
+
+  for (const [ten, khoa] of KHONG_KHOA) {
+    it(`★ khoá ${ten}: STOP GHIM ra thiết bị (+1 gói, acked) — lần HAI (đã có hàng dưới khoá chung "v2:0::…") vẫn ra thiết bị dưới khoá MỚI \`#stop-\`, không bị phát lại`, async () => {
+      const s1 = khongKhoa(input("cmd_run", "stop", false), khoa);
+      const r1 = await within(dispatch(s1), 3000);
+      expect(r1).toMatchObject({ ok: true, simulated: false, status: "acked", pinnedStop: true });
+      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run"]);
+      expect(ketQuaCua(s1)).toHaveLength(1);
+      expect(ketQuaCua(s1)[0].idempotencyKey).toBe(perWriteKey("", "cmd_run", 0)); // khoá ghi của lệnh không khoá = base ""
+
+      const s2 = khongKhoa(input("cmd_run", "stop", false), khoa);
+      const r2 = await within(dispatch(s2), 3000);
+      expect(r2).toMatchObject({ ok: true, simulated: false, status: "acked", pinnedStop: true });
+      expect(D.log.map((w) => w.tag)).toEqual(["cmd_run", "cmd_run"]); // gói vật lý thứ hai
+      const hang2 = ketQuaCua(s2).find((r) => r.id === r2.commandLogIds[0])!;
+      expect(String(hang2.idempotencyKey)).toMatch(/^v2:\d+:#stop-[0-9a-f-]{36}:7:cmd_run:0$/); // base MỚI = "" + "#stop-<uuid>" (cửa vào chuẩn hoá: không phải "undefined#stop-…")
+      expect((hang2.ackValue as Row).lanTruoc).toMatchObject({ idempotencyKey: "", lyDo: "khong_khoa" });
+    });
+
+    // A2(a) (dieu-phoi 2026-11-02) — trước: lệnh THƯỜNG không khoá acked +1 gói. Từ A2(a): bị TỪ CHỐI ở cửa vào (IDEMPOTENCY_KEY_REQUIRED), 0 gói, hàng
+    // rejected khoá NULL — vẫn không ném.
+    it(`khoá ${ten}: lệnh THƯỜNG ⇒ A2(a) IDEMPOTENCY_KEY_REQUIRED, 0 gói, hàng rejected khoá NULL — không ném`, async () => {
+      const c = khongKhoa(input("cmd_jog", "set_jog"), khoa);
+      const r = await within(dispatch(c), 3000);
+      expect(r).toMatchObject({ ok: false, simulated: false, status: "rejected", reason: MA_THIEU_KHOA });
+      expect(D.log).toHaveLength(0);
+      const hang = cmdLog.filter((x) => r.commandLogIds.includes(x.id as number));
+      expect(hang.map((x) => ({ status: x.status, key: x.idempotencyKey ?? null }))).toEqual([{ status: "rejected", key: null }]);
+    });
+
+    // A2(a) fix round 1 (F6) — lệnh THƯỜNG không khoá nay bị từ chối ở (1b) TRƯỚC bước 2 ⇒ ca này dùng lệnh STOP (theo loại) không khoá để vẫn đi qua
+    // bước 2 (khoá ghi perWriteKey("", undefined→"_")) và bước 3 (tra tag) như tiêu đề nói.
+    it(`khoá ${ten}: write THIẾU tagKey (STOP không khoá) ⇒ từ chối bình thường ở bước tra tag (không ném ở bước 2), 0 gói`, async () => {
+      const c = khongKhoa(input("cmd_run", "stop", false), khoa);
+      (c.writes[0] as { tagKey?: string }).tagKey = undefined;
+      // R1b-2b-2a A2(h) — cổng (1) nay ràng buộc mọi actionId với ĐÚNG lệnh: uỷ quyền gắn lại với lệnh ĐÃ sửa (fixture, không đổi khẳng định)
+      pending.set(c.triggeredBy.actionId, boundPending(c.triggeredBy.actionId, c));
+      const r = await within(dispatch(c), 3000);
+      expect(r.ok).toBe(false);
+      expect(typeof r.reason).toBe("string");
+      expect(r.reason).not.toMatch(/^IDEMPOTENCY_KEY_REQUIRED/); // đi qua (1b): STOP không khoá không bị từ chối vì thiếu khoá
+      expect(r.reason).toBe("TAG_NOT_FOUND");
+      expect(D.log).toHaveLength(0);
+    });
+  }
+
+  it("write THIẾU tagKey CÓ khoá ⇒ cũng không ném (lớp perWriteKey toàn phần — cửa vào chỉ chuẩn hoá khoá, không chuẩn hoá tag)", async () => {
+    const c = input("cmd_jog", "set_jog");
+    (c.writes[0] as { tagKey?: string }).tagKey = undefined;
+    const r = await within(dispatch(c), 3000);
+    expect(r.ok).toBe(false);
+    expect(D.log).toHaveLength(0);
   });
 });

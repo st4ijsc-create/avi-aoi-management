@@ -158,3 +158,34 @@ export function ketCucKhongRoCua(err: unknown): KetCucKhongRo | null {
  * đặt lại phiên) luôn chạy khi thư viện còn giữ yêu cầu.
  */
 export const HAN_DU_PHONG_GHI_DRIVER_MS = 6500;
+
+/**
+ * SCADA R1b-2b-2a T6 (mục 69) — write của một lô TUẦN TỰ (Modbus / EIP / SLMP) nằm SAU write gặp mất liên kết: driver KHÔNG giao nó cho thư viện
+ * (liên kết đã mất) ⇒ kết cục RÕ "không gửi" ⇒ `failed` (không mang `ketCucKhongRo`). Trước T6 cả lô bị ném ⇒ write này mang nhãn `timeout` sai.
+ */
+export const LOI_CHUA_GUI_MAT_LIEN_KET = "not sent: link lost earlier in this batch";
+
+/**
+ * T6 — ghi TUẦN TỰ theo từng write, dừng giao cho thư viện ngay khi một write trả `ketCucKhongRo: "mat_lien_ket"`:
+ *   • write TRƯỚC điểm rớt giữ kết quả thật (ok:true ⇒ đọc lại như thường);
+ *   • write gặp mất liên kết giữ kết quả của nó (`mat_lien_ket` ⇒ dispatcher `timeout`, không bao giờ `failed`);
+ *   • write SAU điểm rớt KHÔNG gọi `ghi` ⇒ `{ ok:false, error: LOI_CHUA_GUI_MAT_LIEN_KET }` (`failed`), trả lời NGAY (một STOP không chờ thêm gì).
+ * `ghi` không ném (writeOne của driver); nếu ném, lỗi đi lên như cũ (nhánh `catch` của dispatcher).
+ */
+export async function ghiTuanTuDungKhiMatLienKet<W extends { tagKey: string }, R extends { tagKey: string; ok: boolean; error?: string; ketCucKhongRo?: KetCucKhongRo }>(
+  writes: ReadonlyArray<W>,
+  ghi: (w: W) => Promise<R>,
+): Promise<Array<R | { tagKey: string; ok: false; error: string }>> {
+  const out: Array<R | { tagKey: string; ok: false; error: string }> = [];
+  let daRot = false;
+  for (const w of writes) {
+    if (daRot) {
+      out.push({ tagKey: w.tagKey, ok: false, error: LOI_CHUA_GUI_MAT_LIEN_KET });
+      continue;
+    }
+    const r = await ghi(w);
+    out.push(r);
+    if (r.ok !== true && r.ketCucKhongRo === "mat_lien_ket") daRot = true;
+  }
+  return out;
+}

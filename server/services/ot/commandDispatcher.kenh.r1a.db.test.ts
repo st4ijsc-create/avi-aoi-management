@@ -81,9 +81,9 @@ import {
   interlockRules,
 } from "../../../drizzle/schema";
 import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
-import { congKenhSom, dispatch, type DispatchInput, type TagCongKenh } from "./commandDispatcher";
+import { congKenhSom, dispatch as dispatchGoc, perWriteKey, type DispatchInput, type TagCongKenh } from "./commandDispatcher";
 import { inverseScale } from "./drivers/otScale";
-import { FOE_ENGINE_TOOL, otPayloadHash, withOtPayloadHash } from "./otActionBinding";
+import { FOE_ENGINE_TOOL, otPayloadHash, withFoeGateApproval, withOtPayloadHash } from "./otActionBinding";
 import { adapterTargetFingerprint } from "./adapterTarget";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -160,6 +160,36 @@ async function makeAction(bind: {
     expiresAt: new Date(Date.now() + 600_000),
   });
   return id;
+}
+
+/**
+ * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim). Các ca của tệp này
+ * đo những cổng SAU cổng (1) (kênh / dải / bước / chế độ / STOP ghim) với lệnh HITL không actionId — nên trước khi gửi, một lệnh HITL không actionId
+ * (và không requireBoundAction) được gắn MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ OWNER, băm CHÍNH lệnh ấy). Mọi khẳng định giữ nguyên.
+ */
+async function dispatch(inp: DispatchInput) {
+  const t = inp.triggeredBy;
+  if (t.kind === "hitl" && !t.actionId && !t.requireBoundAction) {
+    const id = `${DAU}-act-${++seq}`;
+    const tool = t.tool ?? TOOL;
+    await (await d()).insert(aiPendingActions).values({
+      id,
+      tool,
+      argsJson: {},
+      userId: t.confirmedBy ?? OWNER,
+      userRole: "engineer",
+      summary: `${DAU} test action (A2(h) fixture)`,
+      previewJson: withOtPayloadHash(
+        { entityType: "machine" },
+        otPayloadHash({ tool, adapterId: inp.adapterId, machineId: inp.machineId ?? null, commandType: inp.commandType, writes: inp.writes }),
+      ),
+      status: "confirmed",
+      idempotencyKey: `${id}-idem`,
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    return dispatchGoc({ ...inp, triggeredBy: { ...t, actionId: id } });
+  }
+  return dispatchGoc(inp);
 }
 
 function input(
@@ -600,11 +630,11 @@ describe.skipIf(!DB_URL)(
       expect(r1.reason).toBe("OUT_OF_RANGE");
       const r2 = await dispatch({ ...inp });
       expect(r2.status).toBe("rejected");
-      expect(r2.reason).toMatch(/^OUT_OF_RANGE: /); // cachedResult: reason = errorText của dòng đã lưu
+      expect(r2.reason).toBe(r1.reason); // R1b-2b-2a T6c polish (m1) — phát lại = sống: reason là MÃ (trước: errorText đầy đủ của dòng đã lưu)
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
       expect(rows).toHaveLength(1);
-      expect(rows[0]!.idempotencyKey).toBe(`${inp.idempotencyKey}:toc_do:1`);
+      expect(rows[0]!.idempotencyKey).toBe(perWriteKey(inp.idempotencyKey, "toc_do", 1)); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2)
     });
 
     it("M-1: TAG_NOT_WRITABLE ở write #1, gọi lại CÙNG khoá ⇒ cùng hành vi (trả từ chối đã lưu, không ném)", async () => {
@@ -618,10 +648,10 @@ describe.skipIf(!DB_URL)(
       expect(r1.reason).toBe("TAG_NOT_WRITABLE");
       const r2 = await dispatch({ ...inp });
       expect(r2.status).toBe("rejected");
-      expect(r2.reason).toMatch(/^TAG_NOT_WRITABLE: /);
+      expect(r2.reason).toBe(r1.reason); // T6c polish (m1) — phát lại = sống (mã)
       expect(r2.commandLogIds).toEqual(r1.commandLogIds);
       const rows = await ledger(inp.idempotencyKey);
-      expect(rows.map(r => r.idempotencyKey)).toEqual([`${inp.idempotencyKey}:ro_kv:1`]);
+      expect(rows.map(r => r.idempotencyKey)).toEqual([perWriteKey(inp.idempotencyKey, "ro_kv", 1)]); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (perWriteKey v2)
     });
 
     it("M-4: STOP ghim gửi \"0\" (ép kiểu ⇒ 0) với OT BẬT, commissioning tắt ⇒ 5a-stop phân loại là STOP GHIM (pinnedStop), thiết bị nhận số 0", async () => {
@@ -886,6 +916,9 @@ describe.skipIf(!DB_URL)(
       const ids: string[] = [];
       // Hàng ai_pending_actions của bước FOE (động cơ tạo nó khi cổng hitl_gate duyệt; ở đây ghi thẳng): id = orchestrationActionId(khoá),
       // tool foe.orchestration, đã xác nhận bởi người xác nhận của lệnh — đủ cho cổng 1 (đường mô phỏng) để lệnh TỚI cổng kênh 3b.
+      // R1b-2b-2a A2(h) — cổng 1 nay ràng buộc mọi actionId: hàng như ensureOrchestrationAction ghi cho bước CÓ cổng duyệt (băm lệnh + duyệt của
+      // người duyệt OWNER ≠ chủ run APPROVER), lệnh dựng CÓ duyệt (requestedBy = chủ run, confirmedBy = người duyệt). Khẳng định không đổi.
+      const duyet = { runId: 1, runOwner: APPROVER, approvedBy: OWNER, gateStepId: "g0" };
       const lenh = async (giaTri: number) => {
         const cmd = buildEquipmentCommand(
           { name: "write_tag" } as never,
@@ -894,6 +927,7 @@ describe.skipIf(!DB_URL)(
           { adapterId, writes: [{ tagKey: "sc10cu", value: giaTri }] },
           nextKey("foe-t13"),
           { id: OWNER, role: "engineer" },
+          duyet,
         );
         ids.push(cmd.hitl.actionId);
         await x.insert(aiPendingActions).values({
@@ -903,7 +937,10 @@ describe.skipIf(!DB_URL)(
           userId: OWNER,
           userRole: "engineer",
           summary: `${DAU} foe t13`,
-          previewJson: { entityType: "machine" },
+          previewJson: withFoeGateApproval(
+            withOtPayloadHash(null, otPayloadHash({ tool: FOE_ENGINE_TOOL, adapterId, machineId: MACHINE, commandType: "write_tag", writes: cmd.writes ?? [] })),
+            duyet,
+          ),
           status: "confirmed",
           idempotencyKey: `${cmd.hitl.actionId}-idem`,
           expiresAt: new Date(Date.now() + 600_000),

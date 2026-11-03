@@ -33,6 +33,7 @@ vi.mock("@/lib/trpc", () => ({
         }),
       },
       mauTho: { useQuery: () => ({ data: [], isLoading: false }) },
+      thuDocDiaChi: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     scadaKenh: {
       danhSach: {
@@ -105,5 +106,40 @@ describe("NganTagAdapter — chi tiết bị che (C2, kiem-dinh u17/u18)", () =>
     moVoi({ tamKhoa: null });
     expect(screen.getByTestId("endpoint-ngan-tag")).toHaveTextContent("10.0.0.7:502");
     expect(screen.queryByTestId("tam-khoa-adapter-7")).toBeNull();
+  });
+});
+
+describe("NganTagAdapter — lô áp MỘT PHẦN gần nhất (T3E, kiem-dinh w17)", () => {
+  it("★ hàng có motPhanGanNhat ⇒ huy hiệu với số đếm ở đầu ngăn; không có ⇒ không huy hiệu", () => {
+    const { unmount } = render(
+      <NganTagAdapter
+        hang={{ ...HANG, motPhanGanNhat: { ma: "MOT_PHAN", luc: "2026-11-01T00:00:00.000Z", soDaAp: 3, soKhongAp: 1, daAp: null, khongAp: null, commandLogIds: [1] } } as unknown as HangDiag}
+        now={Date.now()}
+        canAct={false}
+        onDong={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId("mot-phan-adapter-7")).toHaveTextContent("đã áp 3 · không áp 1");
+    unmount();
+    render(<NganTagAdapter hang={HANG} now={Date.now()} canAct={false} onDong={() => undefined} />);
+    expect(screen.queryByTestId("mot-phan-adapter-7")).toBeNull();
+  });
+});
+
+describe("NganTagAdapter — khối Lab thử đọc địa chỉ (B-T9)", () => {
+  const moVoi = (canAct: boolean, over: Record<string, unknown> = {}) =>
+    render(<NganTagAdapter hang={{ ...HANG, ...over } as unknown as HangDiag} now={Date.now()} canAct={canAct} onDong={() => undefined} />);
+
+  it("★ canAct ⇒ có khối thử đọc; không canAct ⇒ không có", () => {
+    moVoi(true);
+    expect(screen.getByTestId("khoi-thu-doc")).toBeInTheDocument();
+    cleanup();
+    moVoi(false);
+    expect(screen.queryByTestId("khoi-thu-doc")).toBeNull();
+  });
+
+  it("adapter do edge sở hữu ⇒ không có khối (máy chủ từ chối adapterOwnedByEdge)", () => {
+    moVoi(true, { soHuu: { loai: "edge", edgeCode: "E1" }, trangThai: "edge_chua_co_so_lieu" });
+    expect(screen.queryByTestId("khoi-thu-doc")).toBeNull();
   });
 });

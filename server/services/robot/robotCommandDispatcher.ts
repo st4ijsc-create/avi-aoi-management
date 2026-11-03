@@ -425,13 +425,18 @@ async function finalize(
  * still `running` (or in any non-terminal state) is NOT re-run and NOT reported as done:
  * `rejected` + IDEMPOTENT_JOB_IN_PROGRESS.
  */
-function idempotentReplay(prior: { id: number; status: string }): RobotDispatchResult {
+export function idempotentReplay(prior: { id: number; status: string; result?: unknown }): RobotDispatchResult {
   switch (prior.status) {
     case "done":
     case "simulated":
       return { ok: true, status: prior.status, jobId: prior.id };
     case "failed":
     case "rejected":
+      // R1b-2b-2a T3F (backlog 91) — a job the startup sweep closed as PROCESS_RESTART_OUTCOME_UNKNOWN (still `running` when the process died: the
+      // robot may have moved) replays WITH that reason, machine-readable: FOE then never retries it under a new attempt key (lenhTruocCoTheDaBay).
+      if ((prior.result as { reasonCode?: unknown } | null | undefined)?.reasonCode === PROCESS_RESTART_OUTCOME_UNKNOWN) {
+        return { ok: false, status: prior.status, jobId: prior.id, error: PROCESS_RESTART_OUTCOME_UNKNOWN };
+      }
       return { ok: false, status: prior.status, jobId: prior.id };
     default:
       return { ok: false, status: "rejected", jobId: prior.id, error: "IDEMPOTENT_JOB_IN_PROGRESS" };
@@ -1005,7 +1010,9 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
     const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
     if (gate.blocked) {
       const detail = gate.failClosed
-        ? "interlock evaluation error — fail-closed (no run)"
+        ? gate.vuotTran
+          ? `interlock rule set for this target exceeds ${gate.vuotTran.tran} rules — fail-closed (no run)` // A2(j)
+          : "interlock evaluation error — fail-closed (no run)"
         : `blocked by active interlock rule(s): ${gate.violations
             .map((v) => `#${v.ruleId}(${v.action})`)
             .join(", ")}`;

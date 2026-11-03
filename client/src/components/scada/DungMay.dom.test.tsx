@@ -54,7 +54,7 @@ vi.mock("@/lib/trpc", () => {
   return {
     trpc: {
       useUtils: () => ({ scadaKenh: { cheDo: { danhSach: { invalidate: () => undefined } }, danhSach: { invalidate: () => undefined } } }),
-      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy"), dungMay: mut("dungMay") },
+      scadaCommands: { request: mut("request"), confirm: mut("confirm"), huy: mut("huy"), dungMay: mut("dungMay"), dieuKienChoPhep: { useQuery: () => ({ data: undefined, isError: false }) } },
       scadaKenh: {
         danhSach: { useQuery: () => ({ data: srv.kenh, isLoading: false, isError: false }) },
         cheDo: {
@@ -894,5 +894,60 @@ describe("R1b-2a T4 — băng đỏ cố định 'DÙNG E-STOP CỨNG TẠI MÁY
       expect(CHU_VIET.test(E(k)), k).toBe(false);
       expect(S(k).length, k).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("kết quả STOP áp MỘT PHẦN (T3E) — STOP được gửi lại", () => {
+  it("★ failed + MOT_PHAN + motPhan ⇒ câu STOP (bấm DỪNG MÁY lần nữa là an toàn), liệt kê tag chưa áp, vẫn là KHÔNG đạt + dòng đỏ E-STOP; KHÔNG nói 'không gửi lại'", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        {
+          adapterId: 1,
+          code: "PLC-A",
+          status: "failed",
+          ok: false,
+          simulated: false,
+          reason: "MOT_PHAN",
+          motPhan: { daAp: ["stop_cmd"], khongAp: ["speed_sp", "valve"] },
+          writes: [{ tagKey: "stop_cmd", value: true }],
+          commandLogIds: [5, 6, 7],
+        },
+      ],
+    });
+    const a = screen.getByTestId("ket-qua-dung-1");
+    expect(a).toHaveAttribute("data-loai", "khongDat");
+    expect(a).toHaveTextContent(S("scada.lenh.cong.MOT_PHAN_STOP"));
+    expect(a).not.toHaveTextContent(S("scada.lenh.cong.MOT_PHAN"));
+    expect(a.textContent).not.toMatch(/KHÔNG được tự gửi lại/);
+    expect(screen.getByTestId("mot-phan-dung-1")).toHaveTextContent("speed_sp, valve");
+    expect(screen.getByTestId("mot-phan-dem-1")).toHaveTextContent(S("scada.lenh.motPhan.dem", { daAp: 1, khongAp: 2 })); // kiem-dinh w8
+    expect(within(a).getByTestId("dung-estop")).toBeInTheDocument();
+  });
+
+  it("failed với lý do khác, không motPhan ⇒ hành vi cũ (không dòng mot-phan-dung)", async () => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [{ adapterId: 1, code: "PLC-A", status: "failed", ok: false, simulated: false, reason: "DRIVER_WRITE_FAILED", writes: [], commandLogIds: [5] }],
+    });
+    expect(screen.getByTestId("ket-qua-dung-1")).toHaveTextContent(S("scada.lenh.ketQua.failed", { ma: "DRIVER_WRITE_FAILED" }));
+    expect(screen.queryByTestId("mot-phan-dung-1")).toBeNull();
+  });
+});
+
+describe("STOP áp MỘT PHẦN qua đường edge / dự phòng (kiem-dinh w9)", () => {
+  it.each([["edgeStopRequest"], ["centralFallbackSent"]])("★ %s đồng thời có motPhan ⇒ KHÔNG hiện dòng 'không áp' (kết cục thật là 'đã gửi tới edge / dự phòng')", async (co) => {
+    veHop();
+    fireEvent.click(nutMacDinh());
+    await traLoi("onSuccess", {
+      ketQua: [
+        { adapterId: 1, code: "PLC-A", status: "failed", ok: false, simulated: false, reason: "MOT_PHAN", [co]: true, motPhan: { daAp: ["a"], khongAp: ["b"] }, writes: [], commandLogIds: [5] },
+      ],
+    });
+    expect(screen.getByTestId("ket-qua-dung-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("mot-phan-dung-1")).toBeNull();
+    expect(screen.queryByTestId("mot-phan-dem-1")).toBeNull();
   });
 });

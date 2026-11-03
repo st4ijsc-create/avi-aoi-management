@@ -6,7 +6,9 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { boChuThich, chayChiDoc, kiemSqlChiDoc, lietKeBang, taoKetNoiDb, truyVan, TRAN_HANG } from "./dbChiDoc";
 
-const db = taoKetNoiDb(process.env.DATABASE_URL!);
+const ket = taoKetNoiDb(process.env.DATABASE_URL!);
+if (!ket) throw new Error("thiếu DATABASE_URL của lưới _test — không mở được kết nối chỉ đọc");
+const db = ket;
 afterAll(() => db.dong());
 
 describe("kiểm văn bản (báo sớm)", () => {

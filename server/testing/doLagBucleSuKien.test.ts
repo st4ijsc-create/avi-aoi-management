@@ -12,7 +12,7 @@ import { batDauDoLag, hieuChuanChuKy, TRAN_MAC_DINH, type PhuThuocDoLag } from "
 function dongHoGia(chuKyRanh: number) {
   let t = 0;
   let cpu = 0;
-  let cb: (() => void) | null = null;
+  let cb = null as (() => void) | null; // gán trong callback giả ⇒ ép kiểu để TS không thu hẹp về `null`
   const dep: PhuThuocDoLag = {
     now: () => t,
     cpuMs: () => cpu,
@@ -77,7 +77,7 @@ describe("doLagBucleSuKien", () => {
     const khoang = [...Array(18).fill(15.6), 120, 300];
     let t = 0;
     let i = 0;
-    let cb: (() => void) | null = null;
+    let cb = null as (() => void) | null; // gán trong callback giả ⇒ ép kiểu để TS không thu hẹp về `null`
     const dep = {
       now: () => t,
       setInterval: (f: () => void) => ((cb = f), 1),
@@ -95,7 +95,7 @@ describe("doLagBucleSuKien", () => {
 
   it("hiệu chuẩn không bao giờ nhỏ hơn buocMs (đồng hồ giả chạy nhanh hơn bước yêu cầu)", async () => {
     let t = 0;
-    let cb: (() => void) | null = null;
+    let cb = null as (() => void) | null; // gán trong callback giả ⇒ ép kiểu để TS không thu hẹp về `null`
     const dep = { now: () => t, setInterval: (f: () => void) => ((cb = f), 1), clearInterval: () => (cb = null) };
     const p = hieuChuanChuKy(dep, 5, 10);
     for (let i = 0; i < 10; i++) {

@@ -173,9 +173,25 @@ describe("commandDispatcher — cổng interlock inline (HITL)", () => {
     expect(r.status).toBe("acked");
     expect(r.ok).toBe(true);
     expect(gateSpy).toHaveBeenCalledTimes(1);
-    // gate nhận đúng target của lệnh.
-    expect(gateSpy.mock.calls[0][0]).toMatchObject({ adapterId: 10, machineId: 5, tagKeys: ["cmd_start"] });
+    // gate nhận đúng target của lệnh. A2(i)(1): tập máy = {máy của adapter 10 (=5), máy bên gọi (=5)} ⇒ [5]; không còn trường machineId đơn.
+    expect(gateSpy.mock.calls[0][0]).toEqual({ adapterId: 10, machineIds: [5], tagKeys: ["cmd_start"] });
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("A2(i)(1): adapter trên máy KHÁC máy bên gọi ⇒ cổng nhận HỢP {máy adapter, máy bên gọi} (máy adapter trước); adapter không máy ⇒ chỉ máy bên gọi; bên gọi null ⇒ chỉ máy adapter", async () => {
+    adapters[0].machineId = 9;
+    expect((await dispatch(hitlInput())).status).toBe("acked");
+    expect(gateSpy.mock.calls[0][0]).toEqual({ adapterId: 10, machineIds: [9, 5], tagKeys: ["cmd_start"] });
+
+    adapters[0].machineId = null;
+    pending.set("act-2", boundPending("act-2", hitlInput({ idempotencyKey: "key-2" })));
+    expect((await dispatch(hitlInput({ idempotencyKey: "key-2", triggeredBy: { kind: "hitl", actionId: "act-2", tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 } }))).status).toBe("acked");
+    expect(gateSpy.mock.calls[1][0]).toEqual({ adapterId: 10, machineIds: [5], tagKeys: ["cmd_start"] });
+
+    adapters[0].machineId = 9;
+    pending.set("act-3", boundPending("act-3", hitlInput({ idempotencyKey: "key-3", machineId: undefined })));
+    expect((await dispatch(hitlInput({ idempotencyKey: "key-3", machineId: undefined, triggeredBy: { kind: "hitl", actionId: "act-3", tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 } }))).status).toBe("acked");
+    expect(gateSpy.mock.calls[2][0]).toEqual({ adapterId: 10, machineIds: [9], tagKeys: ["cmd_start"] });
   });
 
   it("dry-run (OT_CONTROL_ENABLED off) → simulated, gate KHÔNG được gọi (không real-write)", async () => {

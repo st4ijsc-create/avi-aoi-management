@@ -447,6 +447,11 @@ export async function applyLedger(
   const ot = "adapterId" in rec.target ? rec.target : null;
   const { isStopCommandType } = await import("../ot/commandDispatcher");
   const { isStopJobType } = await import("../robot/stopJob");
+  // R1b-2b-2a A2(m) — the ledger row names the authorisation row edgeAuthorizeCentral wrote: the SAME id function (hash-shortened, never cut).
+  // Upgrade note (A2(m) fix round 1): a LONG key (id > 64 characters) authorised by a pre-A2(m) central and reported after the upgrade gets
+  // the new hashed id here while its authorisation row sits under the old truncated id — the actionId is an audit LINK only (no gate reads
+  // it on this path; the edge write already happened under its signed authorisation), so such an in-flight row simply does not join.
+  const { orchestrationActionId } = await import("../orchestration/foe/foeStepClass");
   const isStop = rec.stop === true && (robot ? isStopJobType(robot.jobType) : isStopCommandType(ot!.commandType));
   const owner = robot ? (await robotOwners(tx, [robot.robotId])).get(robot.robotId) : (await adapterOwners(tx, [ot!.adapterId])).get(ot!.adapterId);
   if (!owner || owner.edgeNodeId !== node.nodeId) {
@@ -494,7 +499,7 @@ export async function applyLedger(
         params: null,
         status: status as never,
         triggerKind: "hitl",
-        actionId: auth ? `foe-${rec.idempotencyKey}`.slice(0, 64) : null,
+        actionId: auth ? orchestrationActionId(rec.idempotencyKey) : null,
         requestedBy: runOwner,
         confirmedBy: approval?.approvedBy ?? null,
         idempotencyKey: key,
@@ -513,7 +518,7 @@ export async function applyLedger(
     await tx
       .insert(commandLog)
       .values({
-        actionId: auth ? `foe-${rec.idempotencyKey}`.slice(0, 64) : null,
+        actionId: auth ? orchestrationActionId(rec.idempotencyKey) : null,
         adapterId: ot!.adapterId,
         commandType: ot!.commandType,
         requestedValue: (rec.result as { writes?: unknown } | null)?.writes ?? null,
@@ -720,6 +725,9 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
       }
       if (rec.kind === "anomaly") {
         audits.push({ action: "EDGE_ANOMALY", entity: await runEntity(rec.runId), details: { anomaly: rec.code, reportedByEdge: true, runId: rec.runId, detail: rec.detail, at: rec.at }, status: "failure" });
+        // R1b-2b-2a A2(o) AMENDMENT 2 — a write refused for a MISSING safety PLC ⇒ URGENT alert (24 h dedup); EDGE_CONFIG_STALE stays this audit
+        const { alertForEdgeAnomaly, alertRecipients } = await import("./edgeConfigCentral");
+        alertForEdgeAnomaly(node, { code: rec.code, detail: rec.detail }, async () => alertRecipients(await centralDb()));
         return;
       }
       if ((rec as { kind: string }).kind === "actuation") {

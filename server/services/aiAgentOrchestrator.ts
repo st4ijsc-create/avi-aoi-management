@@ -36,13 +36,14 @@ import { planGoal, replanFromObservations, AGENT_MAX_STEPS, AGENT_MAX_REPLANS, t
 // aiAgentRealtime.ts) and carries only a minimal, non-sensitive payload — never
 // plan content/tool args. Called AFTER each choke point's own state change persists.
 import { publishAiAgentEvent, type AiAgentEventKind } from "./aiAgentRealtime";
+import { locTheoChu, type NguoiXemAgent } from "./aiAgentPhamVi";
 
 /** E2-4 — defensive call site: a realtime-nudge failure must never break the
  *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
  *  itself already never throws — see aiAgentRealtime.ts). */
-function nudge(event: AiAgentEventKind, sessionId?: string): void {
+function nudge(event: AiAgentEventKind, sessionId?: string, ownerUserId?: number): void {
   try {
-    publishAiAgentEvent(event, sessionId);
+    publishAiAgentEvent(event, sessionId, ownerUserId);
   } catch (err) {
     console.error("[aiAgentOrchestrator] realtime nudge failed:", (err as Error)?.message ?? err);
   }
@@ -177,7 +178,7 @@ export async function startSession(
 
   // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload
   // (event + sessionId + timestamp only — no goal/plan on the wire).
-  nudge("session_started", sessionId);
+  nudge("session_started", sessionId, ctx.user.id);
 
   return {
     ok: true,
@@ -630,7 +631,7 @@ export async function advance(
   const result = await advanceImpl(sessionId, ctx, () => {
     changed = true;
   });
-  if (changed) nudge("advanced", sessionId);
+  if (changed) nudge("advanced", sessionId, ctx.user.id);
   return result;
 }
 
@@ -730,7 +731,7 @@ export async function confirmStep(
   const result = await confirmStepImpl(sessionId, actionId, token, ctx, () => {
     changed = true;
   });
-  if (changed) nudge("confirmed", sessionId);
+  if (changed) nudge("confirmed", sessionId, ctx.user.id);
   return result;
 }
 
@@ -785,7 +786,7 @@ export async function cancelSession(
   const result = await cancelSessionImpl(sessionId, ctx, () => {
     changed = true;
   });
-  if (changed) nudge("cancelled", sessionId);
+  if (changed) nudge("cancelled", sessionId, ctx.user.id);
   return result;
 }
 
@@ -837,11 +838,17 @@ export interface OpsSessionSummary {
  * extend this into a richer read-model; this shape is additive-safe for that (new
  * optional fields can be appended without breaking existing callers). Fail-safe:
  * never throws — a DB/read error degrades to an empty list.
+ *
+ * ★ PHẠM VI NHÀ MÁY (tham số `nguoiXem` BẮT BUỘC): "no userId filter" cũ cho mọi engineer đọc mục tiêu agent của nhà máy KHÁC.
+ *   Nay lọc theo nhà máy của CHỦ phiên (aiAgentPhamVi.locTheoChu — cùng bộ phân giải với twin/báo cáo). Ngoài phạm vi ⇒ hàng bị LOẠI.
  */
-export async function listSessionsForOps(opts?: {
-  limit?: number;
-  status?: AiAgentSession["status"];
-}): Promise<OpsSessionSummary[]> {
+export async function listSessionsForOps(
+  opts: {
+    limit?: number;
+    status?: AiAgentSession["status"];
+  } | undefined,
+  nguoiXem: NguoiXemAgent,
+): Promise<OpsSessionSummary[]> {
   const db = await getDb();
   if (!db) return [];
   const limit = Math.min(Math.max(1, opts?.limit ?? 30), 100);
@@ -873,9 +880,11 @@ export async function listSessionsForOps(opts?: {
       .leftJoin(users, eq(users.id, aiAgentSessions.userId))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(aiAgentSessions.updatedAt))
-      .limit(limit);
+      // ★ phạm vi nhà máy: người xem không toàn quyền ⇒ lấy dư rồi lọc theo CHỦ phiên (bảng không có cột nhà máy)
+      .limit(nguoiXem.role === "admin" ? limit : 300);
 
-    return rows.map((r: any) => {
+    const thay = await locTheoChu(rows as Array<{ userId: number }>, nguoiXem, (r) => r.userId);
+    return (thay as typeof rows).slice(0, limit).map((r: any) => {
       const steps = (r.planJson as AgentPlan | null)?.steps;
       return {
         id: r.id,

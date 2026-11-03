@@ -978,7 +978,8 @@ export function buildHitlDispatchInput(proposal: HostCommandProposal, ctx: HitlD
       requestedBy: ctx.requestedBy,
     },
     lang: ctx.lang,
-    idempotencyKey: ctx.idempotencyKey ?? `gem300-s2f41-${target.commandType}-${Date.now()}`,
+    // R1b-2b-2a A2(a) — "" / chỉ khoảng trắng cũng là KHÔNG có khoá (`??` để "" lọt tới dispatch(), nơi lệnh thường không khoá bị từ chối) ⇒ khoá sinh.
+    idempotencyKey: typeof ctx.idempotencyKey === "string" && ctx.idempotencyKey.trim() !== "" ? ctx.idempotencyKey : `gem300-s2f41-${target.commandType}-${Date.now()}`,
   };
 }
 

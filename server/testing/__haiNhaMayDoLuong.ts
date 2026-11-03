@@ -11,7 +11,7 @@ import { getDb } from "../db/connection";
 const taoLoi = (m: string) => new Error(m);
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 /** hàm tạo người dùng của test (`taoNguoiDungTest`) — truyền vào để tệp này KHÔNG import `nguoiDungTest` (census ném-thô đếm theo tên module được import bởi mã không-test). */
-export type TaoNguoi = (ten: string, vaiTro: string, o: { tienTo: string; ts: string; ten: string }) => Promise<{ id: number; name?: string }>;
+export type TaoNguoi = (ten: string, vaiTro: "supervisor" | "admin", o: { tienTo: string; ts: string; ten: string }) => Promise<{ id: number; name?: string | null }>;
 export interface NhaMayDo {
   fid: number;
   wid: number;

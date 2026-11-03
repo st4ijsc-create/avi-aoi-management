@@ -41,7 +41,7 @@ import { boolChoGhi } from "./boolNghiem";
 import { closeModbusClient, withDeadline } from "./boundedClose";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiModbus, chatLuongV2Bat, laLoiHuyTickPoll } from "../chatLuong";
-import { SoYeuCauDangBay, laLoiMatLienKetKhiDangGui, ketCucKhongRoCua } from "./dangBay";
+import { SoYeuCauDangBay, ghiTuanTuDungKhiMatLienKet, ketCucKhongRoCua } from "./dangBay";
 
 /**
  * SCADA R1b-2b-2a T2 (mục 66) — hết hạn GIAO DỊCH của chính modbus-serial 8.0.25 (`client.setTimeout(cfg.timeoutMs)`): `_startTimeout` gọi lại bằng
@@ -202,8 +202,12 @@ export class ModbusDriver extends NotImplementedDriver {
     this.dangBay.huy(client, `socket ${ev}${detail}`);
   }
 
-  /** Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw). */
-  private async readOne(tag: OtTagAddress, abortOnCommLost = false): Promise<OtSample> {
+  /**
+   * Đọc một tag, trả OtSample. Lỗi → quality:"bad" (không throw).
+   * R1b-2b-2b A C4 (KD-2bA 4.3) — `capNhatTrangThai` false (CHỈ đường Lab `docLab`): không ghi `lastOkAt` / `lastError` (trạng thái dùng chung mà
+   * `health()` báo cho supervisor / M10) — một lượt Lab đọc được trong lúc poll hỏng không được làm adapter trông "khoẻ".
+   */
+  private async readOne(tag: OtTagAddress, abortOnCommLost = false, capNhatTrangThai = true): Promise<OtSample> {
     const now = () => new Date();
     try {
       const { registerType, register } = parseModbusAddress(tag.address);
@@ -237,7 +241,7 @@ export class ModbusDriver extends NotImplementedDriver {
         value = scaleXuoi(raw, tag.dataType === "int" ? "int" : "float", tag.scale, tag.offset);
       }
 
-      this.lastOkAt = now();
+      if (capNhatTrangThai) this.lastOkAt = now();
       return {
         tagKey: tag.tagKey,
         raw,
@@ -247,7 +251,7 @@ export class ModbusDriver extends NotImplementedDriver {
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
       } satisfies OtSample;
     } catch (err) {
-      this.lastError = (err as Error)?.message || String(err);
+      if (capNhatTrangThai) this.lastError = (err as Error)?.message || String(err);
       // SCADA R0 (C1) — đường poll, sau cờ: lỗi mức LIÊN KẾT (socket đóng/reset, cổng đóng, DeviceUnreachable, ECONNRESET/…) ⇒ HUỶ cả tick;
       // vòng poll phát MỘT loạt mẫu xấu. T12 D3: giao dịch QUÁ HẠN cũng huỷ (không trả lời = mất liên lạc). Exception thiết bị, config_error vẫn theo từng tag.
       const v2 = chatLuongV2Bat();
@@ -259,14 +263,28 @@ export class ModbusDriver extends NotImplementedDriver {
         quality: "bad",
         timestamp: now(),
         tsSource: "server", // doc 81 Đợt 4 Task B6 — stamped by the driver on receipt
-        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error).
-        ...(v2 ? chatLuongLoiModbus(err) : {}),
+        // SCADA R0 (C2) — sau cờ: nói VÌ SAO (mã exception Modbus ⇒ config_error/device_error). R1b-2b-2b A C4 — đường Lab (chẩn đoán) LUÔN nói.
+        ...(v2 || !capNhatTrangThai ? chatLuongLoiModbus(err) : {}),
       } satisfies OtSample;
     }
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     return this.docTuanTu(tags, false);
+  }
+
+  /**
+   * SCADA R1b-2b-2b A C4 (mục 5, KD-2bA 4.2/4.3) — Lab "thử đọc một địa chỉ" trên phiên ĐANG CHẠY, song song với vòng poll.
+   * An toàn đồng thời đã ĐO bằng modbus-serial 8.0.25 THẬT (docDongThoi.drivers.r1b2b2b.test.ts): Modbus TCP gắn mỗi yêu cầu một transaction-id
+   * (tcpport.js:238) và giải trả lời theo id đó (index.js:418) ⇒ trả lời đảo thứ tự không bao giờ giải nhầm lần đọc; không hàng đợi trả lời (chỉ chuỗi
+   * ghi socket) ⇒ một lượt Lab treo không trì hoãn lời ghi STOP. Driver này CHỈ nói TCP (`connectTCP`, không RTU / serial / RTU-over-TCP — test ghim).
+   * Không ghi trạng thái dùng chung (`lastOkAt` / `lastError` / `lastLatencyMs`), không huỷ tick, không `setID`, không mở phiên mới.
+   */
+  async docLab(tags: OtTagAddress[]): Promise<OtSample[]> {
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("modbus");
+    const out: OtSample[] = [];
+    for (const tag of tags) out.push(await this.readOne(tag, false, false));
+    return out;
   }
 
   /**
@@ -366,9 +384,9 @@ export class ModbusDriver extends NotImplementedDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (writeTags reject) để dispatcher trả 'timeout'
-      // NGAY — không gộp vào ok:false ('failed' nói sai: lệnh có thể đã tới PLC). Các write sau trong lô không được gửi (liên kết đã mất).
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lệnh ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ dispatcher trả 'timeout' NGAY ('failed' nói sai: lệnh có thể đã
+      // tới PLC). R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: write NÀY mang `ketCucKhongRo: "mat_lien_ket"` (ketCucKhongRoCua dưới); write TRƯỚC
+      // giữ kết quả thật; write SAU không gửi (`ghiTuanTuDungKhiMatLienKet` trong writeTags ⇒ LOI_CHUA_GUI_MAT_LIEN_KET, 'failed').
       // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH modbus-serial: lệnh đã lên dây, thiết bị chưa trả lời ⇒ kết cục KHÔNG RÕ của write này
       // (dispatcher ⇒ 'timeout'), không 'failed'. Exception Modbus (thiết bị ĐÃ trả lời) / lỗi trước khi gửi ⇒ 'failed' như cũ.
       const ketCucKhongRo = ketCucKhongRoCua(err) ?? (laQuaHanModbusSerial(err) ? "qua_han_driver" : null);
@@ -390,10 +408,8 @@ export class ModbusDriver extends NotImplementedDriver {
     }
     if (writes.length === 0) return [];
 
-    const out: OtCommandResult[] = [];
-    for (const w of writes) {
-      out.push(await this.writeOne(w));
-    }
+    // T6 — tuần tự; mất liên kết ở một write ⇒ các write SAU không tới thư viện (kết quả theo từng write, không ném cả lô).
+    const out: OtCommandResult[] = await ghiTuanTuDungKhiMatLienKet(writes, (w) => this.writeOne(w));
     if (out.every((r) => r.ok)) this.lastOkAt = new Date();
     return out;
   }

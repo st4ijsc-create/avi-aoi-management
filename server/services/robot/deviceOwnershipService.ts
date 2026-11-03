@@ -451,8 +451,22 @@ async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: 
     })();
     executed = await withDeadline(work, sessionDeadlineMs, `adapter ${adapterId} transient STOP session`);
   }
+  return ketQuaStopGhim(executed, pins);
+}
+
+/**
+ * Kết quả trả về của STOP ghim khi chuyển chủ sở hữu (`sendAdapterStop`). R1b-2b-2a T6 fix 1 (review m1) — ≥ 1 write `timeout` (lệnh quá hạn, HOẶC
+ * nhãn theo TỪNG write: liên kết mất giữa lô / driver tự hết hạn) ⇒ "timed out — outcome unknown" (lời ghi ĐÃ giao: có thể đã áp), KHÔNG BAO GIỜ
+ * "failed". `sent` / `ok` không đổi. Xuất cho test.
+ */
+export function ketQuaStopGhim(
+  executed: { timedOut: boolean; outcomes: ReadonlyArray<{ ok: boolean; status: string }> },
+  pins: ReadonlyArray<{ tagKey: string }>,
+): { ok: boolean; sent: "sent" | "failed"; detail: string } {
   const allOk = executed.outcomes.length > 0 && executed.outcomes.every((o) => o.ok);
-  return allOk ? { ok: true, sent: "sent", detail: `pinned stop written (${pins.map((p) => p.tagKey).join(", ")})` } : { ok: false, sent: "failed", detail: executed.timedOut ? "pinned stop write timed out" : "pinned stop write failed" };
+  if (allOk) return { ok: true, sent: "sent", detail: `pinned stop written (${pins.map((p) => p.tagKey).join(", ")})` };
+  const khongRo = executed.timedOut || executed.outcomes.some((o) => o.status === "timeout");
+  return { ok: false, sent: "failed", detail: khongRo ? "pinned stop write timed out — outcome unknown" : "pinned stop write failed" };
 }
 
 /**

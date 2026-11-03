@@ -230,6 +230,26 @@ describe("machineApi — khoá máy + stationId tự khai", () => {
     expect(await so(sql`SELECT count(*)::int AS n FROM api_keys WHERE id = ${B.keyMay} AND "isActive" = true`)).toBe(1);
     expect(await maLoi(() => c.mach.revokeKey({ keyId: A.keyMay }))).toBeNull();
   });
+  it("issueKey (F5-nhanh (a) review B — cùng cổng viTriHopLe như rotate/revoke): máy B ⇒ ĐÚNG lỗi của máy không tồn tại, không tạo khoá; máy A ⇒ có khoá", async () => {
+    const loiDay = async (chay: () => Promise<unknown>): Promise<string | null> => {
+      try {
+        await chay();
+        return null;
+      } catch (e) {
+        return `${String((e as { code?: string }).code)}:${(e as Error).message}`;
+      }
+    };
+    const ngoai = await loiDay(() => c.mach.issueKey({ machineId: B.mid, name: `${RUN}-ikb` }));
+    const khongCo = await loiDay(() => c.mach.issueKey({ machineId: 2_000_000_000, name: `${RUN}-ikx` }));
+    expect(ma(ngoai)).toBe(NF);
+    expect(ngoai).toBe(khongCo); // ngoài phạm vi ≡ không tồn tại (cùng mã + cùng thông điệp)
+    expect(await so(sql`SELECT count(*)::int AS n FROM api_keys WHERE name IN (${RUN + "-ikb"}, ${RUN + "-ikx"})`)).toBe(0);
+    expect(await so(sql`SELECT count(*)::int AS n FROM api_keys WHERE "machineId" = ${B.mid}`)).toBe(1); // chỉ khoá gieo sẵn (k2)
+    const k = (await c.mach.issueKey({ machineId: A.mid, name: `${RUN}-ika` })) as { plaintextKey?: string };
+    expect(k.plaintextKey).toMatch(/^mk_/);
+    expect(await so(sql`SELECT count(*)::int AS n FROM api_keys WHERE name = ${RUN + "-ika"} AND "machineId" = ${A.mid}`)).toBe(1);
+    // dọn: hàng khoá mang tên `${RUN}-…` ⇒ đã nằm trong lượt dọn sẵn có của afterAll (api_keys WHERE name LIKE RUN%) — không thêm DELETE.
+  });
   it("tramCungNhaMayVoiMay: trạm cùng nhà máy ⇒ true; trạm nhà máy khác / không tồn tại ⇒ false", async () => {
     const { tramCungNhaMayVoiMay } = await import("./_cauHinhPhamVi");
     expect([await tramCungNhaMayVoiMay(A.mid, A.sid), await tramCungNhaMayVoiMay(A.mid, B.sid), await tramCungNhaMayVoiMay(A.mid, 2_000_000_000)]).toEqual([true, false, false]);

@@ -210,6 +210,13 @@ const CLASSIFIED: Record<string, Kind> = {
   "server/services/edge/__edgeCentralKit.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 B suites (_test only)" },
   // 2026-10-13 doc 81 Đợt 10 task F1 — classified (new file of the population): the two-process E2E / attack harness
   "server/services/edge/__edgeE2eHarness.dot10.ts": { kind: "allow", reason: "test fixture of the Đợt 10 F1 two-process suites (_test only, refuses any other DB); not imported by product code" },
+  // 2026-11-02 A2 test (R1b-2b-2a) — classified (new file of the population, via the raw table name orchestration_workflows): the F1
+  // harness start-up sweep. Importers (grep "__edgeE2eSweep" in server/ scripts/ shared/ client/): __edgeE2eHarness.dot10.ts and
+  // edgeE2eSweep.a2test.db.test.ts only — both test-only.
+  "server/services/edge/__edgeE2eSweep.dot10.ts": {
+    kind: "allow",
+    reason: "test fixture: the F1 harness start-up sweep (UPDATE-only, fail-closed unless aoi_management_test and not the owner aoi); archives only workflows whose ref carries a DEAD harness run's marker; takes no run / workflow id from a caller; imported only by the harness and its test",
+  },
   "server/services/edge/edgeExecutionAgent.ts": { kind: "allow", reason: "runs ON the edge (no caller identity): executes only runs central handed THIS node under a claim (doc 81 Đợt 10 C: foeEngine.driveEdgeRunFromPackage walks the SIGNED run package of that claim, no DB; every non-STOP step asks central's /authorize)" },
   "server/services/edge/edgeCoordinator.ts": { kind: "allow", reason: "service: run-id entries (assignRun / syncRunResult / listRunsForNode) are reached only through edgeRuntimeRouter + api/v1 /edge/sync, both checked here" },
   "server/services/edge/edgeRuntime.ts": { kind: "allow", reason: "runs ON an edge host (no caller identity); executeAssignedRun has no production caller" },

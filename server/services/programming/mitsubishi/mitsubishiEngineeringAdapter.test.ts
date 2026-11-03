@@ -61,6 +61,19 @@ describe("MitsubishiEngineeringAdapter.deploy (honest guard) + registry", () => 
     expect(r.status).toBe("failed");
   });
 
+  // SCADA R1b-2b-2a A2(a) (kiem-dinh a39) — phần bên gọi của khoá rỗng ⇒ từ chối có mã TRƯỚC dispatch() (không cần mock: dispatch không được nạp);
+  // detail.reason mang mã máy đọc được.
+  it("A2(a) deploy với khoá rỗng / chỉ khoảng trắng / `pd:u<N>:` ⇒ rejected, error IDEMPOTENCY_KEY_REQUIRED…, detail.reason === IDEMPOTENCY_KEY_REQUIRED", async () => {
+    const a = new MitsubishiEngineeringAdapter();
+    const build = { ok: true, diagnostics: [], meta: { paramMap: { D100: "1" } } } as never;
+    for (const k of ["", "   ", "pd:u6:"]) {
+      const r = await a.deploy(build, { stage: "staging", idempotencyKey: k, deviceId: 41, hitl: { actionId: "act", requestedBy: 6, confirmedBy: 8 } });
+      expect(r).toMatchObject({ ok: false, status: "rejected" });
+      expect(String(r.error)).toMatch(/^IDEMPOTENCY_KEY_REQUIRED\b/);
+      expect(r.detail?.reason).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    }
+  });
+
   it("registry: mitsubishi-engineering implemented", () => {
     expect(programmingRegistry.isImplemented("mitsubishi-engineering")).toBe(true);
   });

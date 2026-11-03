@@ -43,6 +43,7 @@ describe("residual I-6 / MIN-5 — the shared-state suites run in a serial proje
   });
 
   it("★ residual 2: test:all runs the serial project EVEN IF the default run fails, and exits non-zero if either failed", async () => {
+    // @ts-expect-error -- scripts/test-all.mjs là JS thuần, không có .d.mts (không thêm tệp ngoài test); ca chỉ khẳng định trên giá trị runAll trả về
     const { runAll } = await import("../../../scripts/test-all.mjs");
     const ran: string[][] = [];
     const fake = (codes: number[]) => (args: string[]) => (ran.push(args), codes[ran.length - 1]);

@@ -17,13 +17,13 @@ import { flowRouter } from "../../routers/flowRouter";
 import { BO_KIEM_CHO_QUA, __datBoKiemChuLuongChoTest } from "./boKiemPhamVi";
 import { chuanHoaHost, taoBiMat } from "./biMat";
 import { batDauRun, chayMotMuc, luuPhienBan } from "./dongCo";
-import { datFetchLuong } from "./nut/tichHop";
+import { datFetchLuong, type HamFetch } from "./nut/tichHop";
 
 const TT = `t9bh${Math.floor(Math.random() * 1e5)}`;
 const nut = (id: string, type: string, parameters: Record<string, unknown> = {}, them: Record<string, unknown> = {}) => ({ id, type, typeVersion: 1, name: id, position: [0, 0] as [number, number], parameters, ...them });
 const noi = (a: string, b: string) => ({ from: { node: a, port: "main" }, to: { node: b, port: "main" } });
 const giu = { k: process.env.AI_FLOW_KHOA_BI_MAT, h: process.env.AI_FLOW_HTTP_HOST_CHO_PHEP };
-let fetchCu: typeof fetch;
+let fetchCu: HamFetch;
 const mang: { url: string; headers: Record<string, string> }[] = [];
 let db: NonNullable<Awaited<ReturnType<typeof getDb>>>;
 let uid = 0;

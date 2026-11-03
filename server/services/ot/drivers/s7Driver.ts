@@ -56,7 +56,7 @@ import { inverseScale, scaleXuoi } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
-import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui, laLoiQuaHanYeuCauDriver } from "./dangBay";
+import { HAN_DU_PHONG_GHI_DRIVER_MS, LoiQuaHanYeuCauDriver, SoYeuCauDangBay, ketCucKhongRoCua, laLoiQuaHanYeuCauDriver } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { hanLenhOtMacDinhMs } from "../hanLenhOt";
 import { chatLuongLoiChung, chatLuongV2Bat, laMauBadThuVien, MAU_GIA_TRI_HONG } from "../chatLuong";
@@ -765,8 +765,9 @@ export class S7Driver extends NotImplementedDriver {
     } catch (err) {
       batchError = (err as Error)?.message || String(err);
       this.lastError = batchError;
-      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: mọi write đã vào writeItems ⇒ `ketCucKhongRo: "mat_lien_ket"` (ketCucKhongRoCua dưới); write
+      // hỏng chuẩn bị cục bộ (địa chỉ / read-only / ép kiểu — không bao giờ tới nodes7) giữ lỗi riêng ⇒ 'failed'.
       // T3 — hết hạn của thư viện (gói ĐÃ gửi) hoặc bộ hẹn dự phòng ⇒ kết cục KHÔNG RÕ cho MỌI write của lô ('timeout'), không 'failed'.
       ketCucKhongRo = ketCucKhongRoCua(err);
       // T3 — bộ hẹn dự phòng hết = thư viện CHƯA trả lời ⇒ còn giữ yêu cầu ⇒ hạ phiên TRƯỚC khi trả (lệnh kế — STOP — không chồng lên yêu cầu cũ).

@@ -1189,7 +1189,7 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     h.manh = ["a", "b"];
     h.tokensReasoningGia = 7;
     let dung: any;
-    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u: unknown) => { dung = u; } } as never)) { /* rút */ }
     expect(dung).toMatchObject({ tokensIn: 10, tokensOut: 2, tokensReasoning: 7, thinking: true, samplingProfile: "hien-tai" });
     expect(typeof dung.modelId).toBe("string");
     expect(dung.latencyMs).toBeGreaterThanOrEqual(0);
@@ -1200,7 +1200,7 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     h.manh = ["a"];
     h.tokensReasoningGia = undefined;
     let dung: any;
-    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, onUsage: (u: unknown) => { dung = u; } } as never)) { /* rút */ }
     expect(dung.tokensReasoning).toBeUndefined();
     expect(dung.thinking).toBeNull();
   });
@@ -1210,7 +1210,7 @@ describe("B2 — hồ sơ sampling tới engine (hợp đồng + cần gạt A/B
     h.manh = ["a"];
     h.tokensReasoningGia = 0;
     let dung: any;
-    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, disableThinking: true, onUsage: (u) => { dung = u; } } as never)) { /* rút */ }
+    for await (const _ of streamCodingModel({ systemPrompt: "s", prompt: "p", maxTokens: 64, disableThinking: true, onUsage: (u: unknown) => { dung = u; } } as never)) { /* rút */ }
     expect(dung.thinking).toBe(false);
     expect(dung.tokensReasoning).toBe(0);
   });

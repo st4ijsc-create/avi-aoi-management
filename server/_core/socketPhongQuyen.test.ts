@@ -145,7 +145,8 @@ function ketNoi(opts: { may?: boolean; phien?: number }): Promise<ClientSocket> 
     forceNew: true,
     reconnection: false,
     auth: opts.may ? { clientType: "machine" } : {},
-    extraHeaders: opts.phien != null ? { cookie: `phien=${opts.phien}` } : {},
+    // F5-nhanh: thêm vé phiên `app_session_id` (bộ xác thực lại của handler nhạy cảm đọc vé này rồi tra sổ phiên qua bộ đọc tiêm).
+    extraHeaders: opts.phien != null ? { cookie: `phien=${opts.phien}; app_session_id=ve-${opts.phien}` } : {},
   });
   clients.push(c);
   return new Promise((resolve, reject) => {
@@ -184,6 +185,20 @@ beforeAll(async () => {
   // Tệp này đo PHÂN QUYỀN PHÒNG (vai/quyền). Cổng PHẠM VI của `subscribe` (bản vá 2026-10-23) được đo ở socketPhamViPhong.db.test.ts trên CSDL
   // thật; ở đây mọi người dùng trình duyệt có phạm vi TOÀN QUYỀN (`null`) để các ca cũ vẫn đo đúng thứ chúng đo.
   (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
+  // F5-nhanh: handler nhạy cảm (approve/reject) đọc LẠI chủ thể lúc thao tác. Tệp này đo CỔNG VAI/QUYỀN ⇒ bộ đọc trả đúng NGUOI_DUNG
+  // (cùng vai như handshake), phiên `ve-<id>` còn hiệu lực. Ca hạ vai / tắt / thu hồi: socketXacThucLai.test.ts.
+  (await import("./socketXacThucLai")).__datBoDocChuTheChoTest({
+    docNguoiDung: async (id) => (NGUOI_DUNG[id] ? { ...NGUOI_DUNG[id], isActive: true } : undefined),
+    docPhien: async (ve) => {
+      const m = /^ve-(\d+)$/.exec(ve);
+      return m ? { userId: Number(m[1]), isActive: true, expiresAt: null } : undefined;
+    },
+  });
+  // F5-nhanh — approve kiểm PHẠM VI MÁY (kiemPhamViDuyetMay): tệp này đo cổng QUYỀN, nên máy 42 nằm trong phạm vi của user 11 (người duy
+  // nhất không phải admin được duyệt ở 7e). Ca ngoài phạm vi / lỗi phạm vi: socketXacThucLai.test.ts (D1–D2) + machineApprovePhamVi.test.ts.
+  (await import("./phamViDuyetMay")).__datBoTraPhamViDuyetMayChoTest(async (cap, pv) => (pv.userId === 11 && cap === "machine" ? [MAY.id] : []));
+  // F5-nhanh (a) review — duyệt còn kiểm ĐĂNG KÝ bị tiêu thụ (mã tự khai ⇒ máy): mọi mã đăng ký ở tệp này gán về máy 42 (trong phạm vi user 11).
+  (await import("./phamViDuyetMay")).__datBoTraMayTheoMaChoTest(async () => MAY.id);
   http = createServer();
   socketMod.initializeSocket(http);
   socketMod.stopTwinBroadcaster();
@@ -313,11 +328,11 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
     deviceStreamId: "robot:1", robotId: 5, siteCode: "HN", sitesGlobal: true, telemetryAll: true, aiAgents: true,
   };
   const PHONG_TRINH_DUYET = [
-    "ai:agents", "device:robot:1", "factory:1", "global", "line:4", "machine:3",
+    "device:robot:1", "factory:1", "global", "line:4", "machine:3",
     "robot:5", "scope:all", "site:HN", "sites:global", "telemetry:all", "twin:1", "workshop:2",
-  ].sort(); // P-S1b: + `scope:all` (người dùng toàn quyền tự vào phòng này)
+  ].sort(); // P-S1b: + `scope:all` (người dùng toàn quyền tự vào phòng này). `ai:agents` KHÔNG còn ở đây: user 8 là operator ⇒ cổng duocVaoPhongAiAgents từ chối (xem socketPhongQuyen.aiAgents.test.ts)
 
-  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 12 phòng (hành vi cũ)", async () => {
+  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 12 phòng (hành vi cũ; operator KHÔNG vào ai:agents)", async () => {
     const may = await ketNoi({ may: true });
     const nd = await ketNoi({ phien: 8 }); // user KHÔNG có quyền engineering: subscribe chung không đổi
     may.emit("subscribe", MOI_KHOA);

@@ -77,7 +77,9 @@ async function guiStop(driver: OtDriver, write: { tagKey: string; address: strin
 }
 
 function laKhongRoKetCuc(ex: Ex): void {
-  expect(ex.timedOut).toBe(true);
+  // R1b-2b-2a T6 (mục 69) — driver không NÉM cả lô nữa: write đã giao cho thư viện mang `ketCucKhongRo: "mat_lien_ket"` ⇒ nhãn `timeout` THEO
+  // TỪNG write (cùng câu T17), `timedOut` của lệnh = false (trước T6: driver ném ⇒ cả lô ⇒ true). Thời gian trả lời GIỮ nguyên cận.
+  expect(ex.timedOut).toBe(false);
   expect(ex.outcomes).toHaveLength(1);
   expect(ex.outcomes[0].ok).toBe(false);
   expect(ex.outcomes[0].status).toBe("timeout");
@@ -85,10 +87,17 @@ function laKhongRoKetCuc(ex: Ex): void {
 }
 
 const tick = () => new Promise<void>((r) => setImmediate(r));
+/** Chờ điều kiện theo THỜI GIAN (không theo SỐ vòng): dưới tải song song 200 `tick` trôi qua trước khi một connect() bất đồng bộ tới điểm chặn (gốc đỏ của ca OPC UA connect lại, 2026-11-02). */
+const choDen = async (kt: () => boolean, ms = 8000): Promise<void> => {
+  const het = performance.now() + ms;
+  while (!kt() && performance.now() < het) await new Promise<void>((r) => setTimeout(r, 2));
+};
 
 /** Bắn điểm huỷ khi lệnh ghi đã tới thư viện; đo từ lúc bắn tới lúc dispatcher trả lời (`lagMs` = phần máy không chạy ta trong cùng cửa sổ, kẹp `TRAN_LAG_MS`). */
 async function doDiemHuy(p: Promise<Ex>, daToiThuVien: () => boolean, ban: () => unknown): Promise<{ ex: Ex; ms: number; lagMs: number }> {
-  const het = performance.now() + 2000;
+  // T6 fix 1 — chờ lệnh TỚI thư viện (KHÔNG đo, không phải cận T17): ca đầu của tệp trả giá nạp lạnh otDeviceWrite / driver (> 2 s khi máy tải —
+  // một nguồn chập chờn của "S7 (i)" (T3E §11.1); đo ở T6 fix 1: hỏng ở dòng expect(daToiThuVien) dưới, không ở cận thời gian) ⇒ 8 s.
+  const het = performance.now() + 8000;
   while (!daToiThuVien() && performance.now() < het) await (daToiThuVien() ? tick() : new Promise<void>((r) => setTimeout(r, 2)));
   expect(daToiThuVien()).toBe(true);
   const lag = batDauDoLag(5, depDoLag);
@@ -364,11 +373,11 @@ describe("R1b-2b-1 OPC UA — connect() lại: không lệnh ghi nào lên clien
     await d.connect({ endpoint: "opc.tcp://x" });
     const c0 = ds[0];
     const pc = d.connect({ endpoint: "opc.tcp://x" });
-    for (let i = 0; i < 200 && !thaConnect; i++) await tick();
+    await choDen(() => thaConnect !== null);
     expect(thaConnect).not.toBeNull(); // đang trong cửa sổ connect lần 2
     await expect(d.writeTags([{ tagKey: "stop", address: "ns=2;s=Stop", value: true, dataType: "bool" }])).rejects.toThrow();
     expect(c0.session.write).not.toHaveBeenCalled();
-    for (let i = 0; i < 200 && c0.disconnect.mock.calls.length === 0; i++) await tick();
+    await choDen(() => c0.disconnect.mock.calls.length > 0);
     expect(c0.session.close).toHaveBeenCalled();
     expect(c0.disconnect).toHaveBeenCalled();
     thaConnect!();

@@ -4086,9 +4086,12 @@
       "deviceAdapterUpdate": "更新适配器",
       "scadaDisableAdapter": "暂停适配器",
       "scadaSetStubFault": "为模拟器设置故障",
+      "scadaLabRead": "试读一个地址（Lab）",
       "scadaSelectTag": "选择要下达命令的通道",
+      "scadaDryRun": "检查写入许可条件（试运行）",
       "scadaKenhCapNhat": "更新通道声明",
       "scadaTotpCauHinh": "校验通道配置变更的验证码",
+      "scadaConfigTotp": "校验配置变更的验证码",
       "dieuKienDoiTuongTrongPhamVi": "范围内对象条件",
       "flowNguoiNhan": "查找流程接收人",
       "flowXuat": "导出 AI 流程包",
@@ -4401,7 +4404,7 @@
       "motionInProgress": "机器人正在执行另一个运动——此指令被拒绝（不排队）。请等待完成后重新发送。",
       "ledgerWriteFailed": "无法写入机器人指令日志——运动被拒绝，未发送任何内容。",
       "idempotentJobInProgress": "具有相同幂等键的指令仍在执行——不会重复执行。",
-      "idempotencyKeyReused": "该幂等键已用于其他机器人或指令——运动被拒绝。请使用新的键。",
+      "idempotencyKeyReused": "该幂等键已用于其他机器人或作业——本次运动未启动。先前的作业可能已经执行：再次下达指令前，请检查机器人、其位置以及先前作业的状态。",
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {
@@ -4554,6 +4557,11 @@
       "flowDuyetTrungNguoiBat": "您启用了此流程版本 — 审批人必须是其他人。",
       "flowDuyetTrungChuLuot": "您是本次运行的所有者（触发或启用者）— 审批人必须是其他人。",
       "adapterOwnedByEdge": "该适配器由边缘节点拥有——中心服务器不控制其会话。",
+      "adapterNotRunning": "适配器未在中心服务器运行（已停用、未连接或连接中断）——没有可用于试读的会话。",
+      "protocolNotSupported": "该适配器的协议尚未被证明可与轮询并行安全试读——Lab 无法读取（仅支持 Modbus TCP、OPC UA 和 stub）。",
+      "rateLimited": "一分钟内尝试次数过多——请稍候再试。",
+      "scadaLabDangBan": "该适配器仍有一次试读未完成——请等待其完成后再试。",
+      "scadaLabPhienCu": "正在运行的连接会话早于适配器配置（连接后端点/选项已修改）——请重新连接适配器或重启 OT 后再试读。",
       "otMcTamKhoa": "Mitsubishi MC 控制已临时锁定（安全）：在修复 3B 之前不会向设备发送写入——如需停机请使用现场硬接线急停（E-STOP）。",
       "chiTietKyThuatBiChe": "端点和连接配置属于您无权查看的技术细节——只有具备设备控制编辑权限的工程师/管理员才能修改。其他字段仍可编辑。",
       "adapterNotStub": "仅适用于 stub 协议的适配器。",
@@ -4567,6 +4575,7 @@
       "scadaKenhCheDoTagTat": "模式通道的标签已停用——请先启用标签，再重新声明。",
       "scadaKenhGhiTrenTagKhongGhi": "该通道类型接受写入，但标签不可写——请将标签设为可写，或选择只读通道类型。",
       "scadaKenhThuLai": "通道刚被并发修改——请刷新后重试。",
+      "scadaTotpDaDungDuLieuDoi": "验证码已被使用，但数据刚刚发生变化——变更未保存。请重新检查后输入新的验证码。",
       "scadaKenhTagTrung": "同一标签在本批中出现多次——每个标签只能一行。",
       "scadaKenhCheDoKhongDoiAdapter": "该标签是某台机器的模式通道——不能移到其他适配器。请先在“通道与限值”页面移除或重新声明模式通道。",
       "scadaKenhCheDoGoTruoc": "该标签是某台机器的模式通道——删除标签前，请先在“通道与限值”页面移除模式通道（需要双因素验证码）。",
@@ -17738,7 +17747,27 @@
       "cauHinhHongCanhBao": "部分已启用的联锁规则无法工作：闸门会阻断所有指向它们的命令，或其保护命令会被 dispatch 拒绝。请在联锁页面修复。",
       "cauHinhHongMo": "打开联锁规则页",
       "stopQuaHan": "HMI 停机因超时被拒（24 小时）：{{count}}",
-      "stopQuaHanUnavailable": "无法读取 HMI 停机超时拒绝数"
+      "stopQuaHanUnavailable": "无法读取 HMI 停机超时拒绝数",
+      "poolStopThieu": "HMI 停机连接池预算不足：DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "未能写入账本（自 {{tu}}）：{{count}}",
+      "buoc": {
+        "db": "数据库错误",
+        "het_han_tong_truoc_handler": "处理前总期限已耗尽",
+        "pham_vi": "范围检查",
+        "doc_may": "读取设备",
+        "vai_tro": "角色检查",
+        "doc_adapter": "读取适配器",
+        "doc_ghim": "读取 STOP 引脚",
+        "dong_cho": "待处理行",
+        "adapter": "发送到适配器",
+        "xac_thuc": "身份验证",
+        "cong_doi_mat_khau": "改密码门控",
+        "giay_phep": "许可证",
+        "pham_vi_tenant": "租户范围",
+        "ghi_so_loi": "账本写入失败",
+        "khac": "其他步骤",
+        "khong_ro": "步骤未知"
+      }
     },
     "table": {
       "kind": "工作项",
@@ -19513,6 +19542,10 @@
     "loiBiChe": "技术细节已隐藏（需要工程师权限）",
     "maLoi": {
       "TIMEOUT": "不确定设备是否已收到 — 再次发送前请先回读该值",
+      "IDEMPOTENCY_KEY_REUSED": "本命令未发送：之前另一条不同的命令已使用相同的键（设备、标签、数值或请求人不同）。无法确定之前那条命令（同一键）是否已应用到设备 — 继续之前请检查设备；切勿使用新键自动重发。",
+      "IDEMPOTENCY_KEY_REQUIRED": "本命令未发送：命令没有幂等键，重试可能向设备重复写入。请携带幂等键重新发送（HMI 及其他内置路径会自动添加）。",
+      "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE": "本命令未发送：命令没有幂等键，且写入了停机标签，但它不是停机命令（混有其他数值，或数值不是停机值）。未发送 — 请使用 HMI 停机，或携带键重新发送。",
+      "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE": "本命令未发送：命令没有幂等键，且无法读取设备的停机值，因此无法证明这是停机命令。未发送 — 请使用 HMI 停机，或携带键重新发送。",
       "DRIVER_WRITE_FAILED": "写入设备失败 — 不确定设备是否已收到；再次发送前请先回读该值",
       "OT_MC_TAM_KHOA": "三菱 MC 控制已临时锁定：mcprotocol 库错误解析 PLC 回复 — 命令未发送。等待修复 3B；如需停机请使用设备上的硬接线急停",
       "OT_S7_BIT_NGOAI_DAI": "S7 位地址超出 0..7（标签配置错误）— 命令未发送，整批被拒绝。请修正标签地址（例如用 DB1,X1.0 代替 DB1,X0.8）；如需立即停机请使用设备上的硬接线急停",
@@ -24246,7 +24279,8 @@
         "dialogXoaLoiTieuDe": "清除 {{code}} 的 stub 故障？",
         "dialogMoTa": "对模拟适配器的 Lab 操作。原因将记录到审计日志。"
       },
-      "tamKhoa": "临时锁定"
+      "tamKhoa": "临时锁定",
+      "motPhanGanNhat": "近期仅部分执行：已执行 {{daAp}} · 未执行 {{khongAp}}"
     },
     "kenh": {
       "title": "通道与限值",
@@ -24499,7 +24533,9 @@
         "HET_HAN": "未发送 — 请求已过期；请创建新请求",
         "KHOA_MAT": "未发送 — 您已不再持有该通道；请创建新请求",
         "MAY_DA_DOI": "未发送 — 该设备已被分配给其他机器；请创建新请求",
-        "khac": "未发送 — 在关卡 {{ma}} 被拒绝；请查看命令日志或询问工程师"
+        "khac": "未发送 — 在关卡 {{ma}} 被拒绝；请查看命令日志或询问工程师",
+        "MOT_PHAN": "命令仅被部分执行：部分数值已写入设备，其余被设备拒绝。系统不会自动重发——请在设备处检查，如仍需要，仅重发未执行的部分。",
+        "MOT_PHAN_STOP": "此适配器上的 STOP 仅被部分执行：部分停止引脚已写入，其余被设备拒绝。再次按下“停机”是安全的（STOP 会重发）——如仍未停止，请使用设备处的硬 E-STOP。"
       },
       "loi": {
         "FEATURE_DISABLED": "服务器上的 SCADA HMI 命令已关闭 — 请管理员启用（SCADA_COMMANDS_ENABLED）。",
@@ -24551,6 +24587,11 @@
         "loiDoc": "读取模式通道出错 — 视为 LOCAL",
         "kenhSaiMay": "模式通道不属于此设备的适配器 — 视为 LOCAL",
         "khongRo": "无法确定模式（{{lyDo}}）— 视为 LOCAL"
+      },
+      "motPhan": {
+        "dem": "已执行 {{daAp}} · 未执行 {{khongAp}}",
+        "daAp": "已执行：{{ds}}",
+        "khongAp": "未执行：{{ds}}"
       }
     },
     "dungMay": {
@@ -24634,6 +24675,36 @@
         "EDGE_OUTCOME_UNKNOWN": "edge 上结果未知：edge 节点可能已应用命令 — 重新运行前请检查设备。",
         "REJECTED": "命令被拒绝 — 未向设备写入任何内容。",
         "PRECONDITION_FAILED": "步骤前置条件（互锁）未满足 — 未向设备写入任何内容。"
+      }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "试读一个地址（Lab）",
+        "chiDoc": "只读 — 不会向设备写入任何内容。",
+        "troGiup": "单次读取，限时 3 秒，每分钟最多 10 次。使用 Modbus 时，TCP→RTU 网关或单事务设备可能丢弃中途插入的 Lab 请求，导致一个轮询周期超时。原因会写入审计日志，读取的值不会保存。",
+        "diaChi": "地址",
+        "kieu": "数据类型",
+        "nutDoc": "读取",
+        "chatLuong": "质量",
+        "giaTriTho": "原始值",
+        "giaTri": "解码值",
+        "maTrangThai": "状态码",
+        "lyDoKetQua": "原因",
+        "thoiGian": "耗时",
+        "reasonTimeout": "超时 — 设备未及时应答",
+        "reasonNoSample": "此地址暂无样本"
+      }
+    },
+    "dieuKien": {
+      "tieuDe": "允许条件",
+      "duocPhep": "允许",
+      "duocPhepTotp": "允许——需要双因素验证码",
+      "khongDuocPhep": "不允许：{{lyDo}}",
+      "chuaTinh": "未预先检查：{{ds}}——点击“更改”时由服务器决定。",
+      "chuaTinhMuc": {
+        "khoa-chon": "选择锁",
+        "totp-xac-minh": "验证码校验",
+        "han-gui": "发送期限"
       }
     }
   },

@@ -141,6 +141,17 @@ const BE_MAT_TU_CANH: { duong: string; vi_sao: string; canh_boi: string }[] = [
       "xác thực thật vẫn ở tầng sau: createContext → sdk.authenticateRequest + thuTucGoc (sổ phiên · users.isActive · cổng buộc-đổi-mật-khẩu). Chứng minh bằng DB thật: phiên ĐÃ THU HỒI / tài khoản BỊ TẮT / " +
       "người BỊ BUỘC ĐỔI MẬT KHẨU đi qua middleware (chỉ bị đếm) mà thủ tục VẪN KHÔNG chạy — server/_core/trpcGioiHanThuTuc.xacThuc.db.test.ts §2–§4",
   },
+  {
+    duong: "server/_core/socketXacThucLai.ts",
+    vi_sao:
+      "F5-nhanh review 2026-11-02: bộ XÁC THỰC LẠI của handler socket nhạy cảm (approve/reject/join/get_online). Socket đã qua sdk.authenticateRequest " +
+      "ở handshake; hàm này chỉ THU HẸP (đọc lại hàng users + hàng sổ phiên của CÙNG vé cookie lúc thao tác). Cố ý KHÔNG gọi phép chặn chung của sdk: " +
+      "chanNeuPhienDaThuHoi FAIL-OPEN khi tra cứu lỗi (đúng cho HTTP), còn đây là đúc khoá máy / lộ danh sách đăng ký ⇒ phải fail-CLOSED. " +
+      "Trục BUỘC ĐỔI MẬT KHẨU (cùng vị từ biChanBoiCongDoiMatKhau(vai, suyRaPhaiDoiMatKhau(mốc)) trên hàng VỪA đọc; mốc hỏng ⇒ chặn): hàm TỰ kiểm, chặt hơn điểm chung.",
+    canh_boi:
+      "server/_core/socketXacThucLai.test.ts — S2b/S2c (phiên thu hồi / hết hạn / không có hàng sổ), S2a (users.isActive=false), P3+U8 (buộc đổi mật khẩu, " +
+      "cùng biChanBoiCongDoiMatKhau + suyRaPhaiDoiMatKhau), S3/U6 (lỗi tra cứu ⇒ CHẶN); census socketThaoTacNhayCamCensus.test.ts ghim mọi handler nhạy cảm gọi nó",
+  },
 ];
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -355,7 +366,7 @@ describe("★★★★ Pha 8 Task 1 — ∀ điểm xác thực HTTP/socket: c�
     expect(
       BE_MAT_TU_CANH.map((b) => b.duong),
       "tập bề mặt được phép vòng qua điểm chung đã đổi — đây là một quyết định an ninh",
-    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/context.ts", "server/_core/trpcGioiHanThuTuc.ts"]);
+    ).toEqual(["server/services/robot/robotStopAuth.ts", "server/_core/context.ts", "server/_core/trpcGioiHanThuTuc.ts", "server/_core/socketXacThucLai.ts"]);
     expect(BE_MAT_TU_CANH.every((b) => b.canh_boi.length > 0), "mỗi mục phải nêu cơ chế canh THAY THẾ").toBe(true);
   });
 

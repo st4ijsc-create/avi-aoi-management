@@ -161,7 +161,7 @@ describe.skipIf(!onTest)("R-10-bk — exactly one result per intent under concur
     let review: string | null = "chưa chạy";
     let reviewAgain: string | null = "chưa chạy";
     let ownerChangeAfterReview: string | null = "chưa chạy";
-    let rows: Awaited<ReturnType<typeof ledgerRows>> = [];
+    let rows: Array<Awaited<ReturnType<typeof ledgerRows>>[number]> = [];
     await C.begin(async (tx) => {
       ownerChangeBeforeReview = await lyDo(tx, (sp) => sp`UPDATE public.device_adapters SET "edgeNodeId" = ${f.n2} WHERE id = ${f.adapter}`);
       review = await code(tx, (sp) => sp`SELECT public.ot_write_late_result_review(${lateRow?.id ?? 0}, ${f.actor}, 'device did write; value checked on site')`);

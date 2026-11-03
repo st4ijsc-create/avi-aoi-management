@@ -7,7 +7,7 @@
 
 _(Task 11)_
 
-**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2. C1 + T2 + T2B lên main `cde649dda`; T3A + 3B-0 (bàn giao `34491c975`) lên main; lô 3 — T3 + vòng sửa 1/2 + 3B-0 polish + T3C + polish + T3D (bàn giao `815ff1303`) — lên main `32f9cb607` (cổng dieu-phoi xanh toàn bộ, cùng B-T8 scada-ui `23d74adf2`).
+**Mốc gộp:** T0 + T1 đã lên main ở `3ab258eb4` (cổng dieu-phoi xanh, trừ `opcuaDriver.secure.sim` đỏ do Node 26 và flake `fetchModels`). Phần Node 26 do scada-ui vá ở `4dd3013f4` (main `c96e4c3dc`); nhánh nhận main ở `fdb4ac727` trước T2. C1 + T2 + T2B lên main `cde649dda`; T3A + 3B-0 (bàn giao `34491c975`) lên main; lô 3 — T3 + vòng sửa 1/2 + 3B-0 polish + T3C + polish + T3D (bàn giao `815ff1303`) — lên main `32f9cb607` (cổng dieu-phoi xanh toàn bộ, cùng B-T8 scada-ui `23d74adf2`). T3E (lô ghi áp MỘT PHẦN, `8adc704ba` + `699995c82`, kiem-dinh ĐẠT) lên main `10c81faff` cùng nhánh hợp đồng C2/C3 (2026-11-01); T3F + polish T3E (`d632a9a39`, `866217832`, `b0011f8c1`) chờ kiem-dinh.
 
 ## 1. Ma trận ô — `server/services/scada/r1b2b2aNghiemThu.db.test.ts`
 
@@ -164,6 +164,12 @@ _(Task 11)_
 
 ### VẬN HÀNH
 
+- (T6 fix 1 + T6b, dieu-phoi 2026-11-01) **Nguyên tắc: kết quả "không rõ" của STOP không bao giờ chờ đọc lại.** Lô ghi có ≥ 1 write "không rõ"
+  (liên kết mất giữa lô `mat_lien_ket`, driver / thư viện tự hết hạn `qua_han_driver`, hoặc giá trị "không rõ" khác của driver plugin) ⇒ KHÔNG đọc
+  lại cả lô, kể cả khi HMI ép đọc lại (`docLai: "bat_buoc"`) và với mọi lệnh, không chỉ STOP. Write đã acked của lô hiện `acked_unverified` với
+  "readback skipped: link lost in this batch" / "readback skipped: driver request timed out in this batch" / "readback skipped: outcome unknown in
+  this batch" (người xem bị che chi tiết thấy mã `READBACK_UNAVAILABLE`); lô vẫn `timeout` "outcome unknown" ⇒ băng E-STOP cứng `khong_ro` hiện ngay,
+  không trễ thêm hạn đọc lại (mặc định 5 s). Người vận hành muốn xác nhận giá trị của write đã acked thì đọc tag trên màn hình sau khi liên kết hồi phục.
 - (T1) Bộ đếm `demGhiBoQuaDay`, hàng chờ ghi nền và tóm tắt chưa ghi đều mất khi khởi động lại tiến trình. `batDauLuc` cho biết bộ đếm đếm từ khi nào.
 - (T1) Tắt êm: `server.close` chờ lượt xả (≤ 2 s); hạn ép thoát 5 s của `gracefulShutdown` vẫn đứng trên cùng.
 - (T3A) **Bộ điều khiển không liệt kê tag thì không điều khiển EIP được.** Get Instance Attribute List lỗi ⇒ `connect()` hỏng (như trước); danh sách

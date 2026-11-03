@@ -177,9 +177,53 @@ export function quetDiemXacThuc(duong: string, ma: string): DiemXacThuc[] {
     return false;
   };
 
-  /** Thân hàm gần nhất bao quanh `n` có gọi **một trong** `tenHams` không? */
+  /**
+   * ★★★ F5-nhanh review (2026-11-02) — **ĐƠN VỊ của hình dạng thứ ba RỘNG hơn một thân hàm.**
+   *
+   * Đo được: `server/_core/socketXacThucLai.ts` đọc sổ phiên và hàng `users` trong **hai** arrow của **một** bảng bộ đọc
+   * (`{ docNguoiDung: (id) => db.getUserById(id), docPhien: (ve) => db.getSessionByToken(ve) }`) ⇒ "thân hàm gần nhất" của mỗi
+   * lượt đọc chỉ chứa MỘT vế ⇒ `quetDiemXacThuc` trả **0 điểm** — một phép phân giải danh tính vô hình với cả ba lượng từ ∀.
+   * Tách hai lượt đọc vào hai closure là đủ để thoát lưới: đúng lớp "lưới canh theo HÌNH DẠNG HẸP".
+   * ⇒ Đơn vị = (a) thân hàm gần nhất (như cũ) · (b) hàm NGOÀI CÙNG bao quanh (hai lượt đọc dưới cùng một hàm cấp đỉnh) ·
+   *   (c) object literal mà hàm gần nhất là GIÁ TRỊ của một thuộc tính / phương thức của nó (bảng bộ đọc).
+   * ⚠ (c) cố ý KHÔNG lấy "object literal gần nhất bất kỳ": `router({...})` là một object literal chứa MỌI thủ tục, và một thủ tục
+   *   gọi `getSessionByToken` một mình (sessionRouter — để biết "phiên nào đang gọi") cạnh một thủ tục khác gọi `getUserById`
+   *   sẽ thành dương tính giả. Handler của thủ tục là đối số của `.query()/.mutation()`, không phải giá trị thuộc tính ⇒ không khớp (c).
+   */
+  const cacDonVi = (n: ts.Node): ts.Node[] => {
+    let gan: ts.SignatureDeclaration | undefined;
+    let ngoai: ts.SignatureDeclaration | undefined;
+    for (let a: ts.Node | undefined = n.parent; a !== undefined; a = a.parent) {
+      if (ts.isFunctionLike(a)) {
+        gan ??= a;
+        ngoai = a;
+      }
+    }
+    const ra: ts.Node[] = [];
+    if (gan === undefined) return ra;
+    ra.push(gan);
+    if (ngoai !== undefined && ngoai !== gan) ra.push(ngoai);
+    const cha = gan.parent;
+    if (ts.isObjectLiteralExpression(cha)) ra.push(cha); // phương thức `{ docPhien(ve) { … } }`
+    else if (ts.isPropertyAssignment(cha) && ts.isObjectLiteralExpression(cha.parent)) ra.push(cha.parent);
+    return ra;
+  };
+  const donViCoGoi = (donVi: ts.Node, tenHam: string): boolean => {
+    let thay = false;
+    const tim = (x: ts.Node): void => {
+      if (thay) return;
+      if (ts.isCallExpression(x) && tenGoi(x) === tenHam) {
+        thay = true;
+        return;
+      }
+      x.forEachChild(tim);
+    };
+    donVi.forEachChild(tim);
+    return thay;
+  };
+  /** Một trong các ĐƠN VỊ bao quanh `n` (xem `cacDonVi`) có gọi **một trong** `tenHams` không? */
   const thanCoGoiMot = (n: ts.Node, tenHams: readonly string[]): boolean =>
-    tenHams.some((h) => thanCoGoi(n, h));
+    cacDonVi(n).some((dv) => tenHams.some((h) => donViCoGoi(dv, h)));
 
   const di = (n: ts.Node): void => {
     if (ts.isCallExpression(n)) {

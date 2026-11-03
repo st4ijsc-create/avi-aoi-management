@@ -51,6 +51,7 @@
 - **Bất biến STOP (mọi task).**
   - STOP khớp ghim KHÔNG BAO GIỜ bị phần mềm chặn (cổng chế độ / khoá chọn / dải / bước / lưới / kiểu / sổ / pool / Redis).
   - Không ack giả: không bao giờ `acked*` khi thiết bị chưa trả lời; không bao giờ `failed` cho write CÓ THỂ đã tới thiết bị (đó là `timeout`).
+  - **Kết quả "không rõ" của STOP không bao giờ chờ đọc lại** (dieu-phoi 2026-11-01, T6 fix 1 + T6b). Trạng thái không rõ phải tới người vận hành SỚM NHẤT để họ dùng E-STOP cứng: lô có ≥ 1 write `ketCucKhongRo ∈ {mat_lien_ket, qua_han_driver}` ⇒ KHÔNG đọc lại cả lô (mọi lệnh), write acked ⇒ `acked_unverified` "readback skipped: …"; lô vẫn `timeout`. Một nơi quyết: `lyDoBoDocLai` (`server/services/ot/otDeviceWrite.ts`).
   - Thứ tự khoá dự án: ADAPTER (FOR SHARE / UPDATE, id tăng) → LUẬT interlock (FOR SHARE / UPDATE, theo id) → TAG (FOR UPDATE, ORDER BY id) → KÊNH CHẾ ĐỘ (`troLaiKenh.ts`). Hàng `interlock_events` (nếu khoá) SAU luật. Khoá chuỗi audit (`AUDIT_CHAIN_LOCK`) SAU mọi khoá hàng.
   - Phạm vi kiểm LẠI dưới khoá; không gọi pool (`getDb()` / helper đọc qua pool) bên trong giao dịch đang giữ khoá hàng.
   - Danh tính luôn từ `ctx.user`, không bao giờ từ input. "Không thấy" và "ngoài phạm vi" trả CÙNG một lỗi NOT_FOUND.

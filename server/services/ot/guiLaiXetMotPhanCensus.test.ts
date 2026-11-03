@@ -110,8 +110,9 @@ const laImport = (e: ts.Expression | undefined): string | null => {
   return null;
 };
 
-/** Quét MỘT tệp (đường dẫn tương đối + văn bản) — xuất cho ca đột biến (tệp ảo). */
-export function quetTep(rel: string, van: string): ChoGui[] {
+/** Quét MỘT tệp (đường dẫn tương đối + văn bản) — xuất cho ca đột biến (tệp ảo). `tenXet` = tập tên mà một lời gọi tới ⇒ chỗ "xét" (mặc định: lớp
+ *  MỘT PHẦN của T3E; T3F dùng CÙNG bộ quét với lớp "lệnh trước có thể đã bay"). */
+export function quetTep(rel: string, van: string, tenXet: ReadonlySet<string> = TEN_XET): ChoGui[] {
   const sf = ts.createSourceFile(rel, van, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const ten = new Map<string, string>(); // tên cục bộ → tên gửi
   const khongGian = new Map<string, string>(); // namespace cục bộ → mô-đun
@@ -171,13 +172,13 @@ export function quetTep(rel: string, van: string): ChoGui[] {
   };
   const xetHam = (nut: ts.Node | null): boolean => {
     if (!nut) return false;
-    if (goiTen(nut, TEN_XET)) return true;
+    if (goiTen(nut, tenXet)) return true;
     let co = false;
     const d = (x: ts.Node) => {
       if (co) return;
       if (ts.isCallExpression(x) && ts.isIdentifier(x.expression)) {
         const h = hamTrongTep.get(x.expression.text);
-        if (h && h !== nut && goiTen(h, TEN_XET)) co = true;
+        if (h && h !== nut && goiTen(h, tenXet)) co = true;
       }
       ts.forEachChild(x, d);
     };
@@ -309,5 +310,85 @@ describe("★★★ T3E — census: mọi chỗ gửi lệnh phải xét MOT_PHA
     // phân giải: import động + Promise.all + namespace
     const dong = quetTep("server/services/x/dong.ts", `export async function a() { const [{ dispatchOtOnEdge: d }] = await Promise.all([import("../ot/otEdgeDispatch")]); await d({}); }\nexport async function b() { const m = await import("../ot/commandDispatcher"); await m.dispatch({} as any); }\nexport async function c() { await (await import("../robot/robotCommandDispatcher")).dispatchRobotJob({} as any); }\n`);
     expect(dong.map((x) => `${x.ham}:${x.ten}`)).toEqual(["a:dispatchOtOnEdge", "b:dispatch", "c:dispatchRobotJob"]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ SCADA R1b-2b-2a T3F (backlog 91) — CÙNG bộ quét, lớp thứ hai: mọi chỗ gửi lệnh (nơi có thể rẽ nhánh thử lại khi thấy một từ chối) phải XÉT lớp
+// "lệnh trước có thể đang bay / đã bay" (DUPLICATE_IN_FLIGHT sau sập + dựng lại, …) — gọi `coTheDaBayCua` (server/services/equipment/lenhTruocCoTheDaBay.ts,
+// MỘT nơi suy) — hoặc nằm trong MIEN_DA_BAY có lý do. Tập chỗ = đúng tập của T3E (cùng `quetTep`, cùng lưới thô); chỉ tập tên "xét" khác.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+const TEN_XET_DA_BAY = new Set(["coTheDaBayCua"]);
+
+/** MIỄN lớp "có thể đã bay": chỗ không có nhánh gửi lại TỰ ĐỘNG với khoá / attempt MỚI (kết cục về người gọi), STOP (luôn gửi lại), bên tạo kết cục. */
+export const MIEN_DA_BAY: Record<string, string> = {
+  // ── bên TẠO kết cục / bản bọc / mặt tiền (mã đi qua nguyên vẹn; người tiêu thụ — FOE — xét) ──
+  "server/services/ot/commandDispatcher.ts::dispatchCore": "dispatcher: chính nó TRẢ DUPLICATE_IN_FLIGHT (hàng ý định không kết quả ⇒ không ghi lại); không thử lại",
+  "server/services/ot/otEdgeDispatch.ts::runDeviceStage": "bản bọc device stage của edge: không thử lại; dispatchOtOnEdge trả lời từ chối (AUTHORIZATION_INVALID / JOURNAL_CONSUME_FAILED + jti_consumed) nguyên vẹn",
+  "server/services/equipment/equipmentAdapter.ts::OtEquipmentAdapter.sendCommand": "mặt tiền OT: chuyển detail.reason (+ detail.refusal của edge) của bên gửi vào kết quả nguyên vẹn (FOE xét); không thử lại",
+  "server/services/equipment/equipmentAdapter.ts::RobotEquipmentAdapter.sendCommand": "mặt tiền robot: chuyển error (IDEMPOTENT_JOB_IN_PROGRESS / process_restart_outcome_unknown) + detail.reason/refusal của edge nguyên vẹn (FOE xét); không thử lại",
+  // ── một lần gửi, kết cục về người gọi (không gửi lại TỰ ĐỘNG với khoá / attempt mới) ──
+  "server/api/v1/router.ts::createV1Router": "API v1: một lần sendCommand, kết quả (detail.reason) về bên gọi API; không thử lại",
+  "server/services/aiLocalTools/writeHandlers/machineControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả (reason) về người dùng; không thử lại",
+  "server/services/aiLocalTools/writeHandlers/visionControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả về người dùng; không thử lại",
+  "server/services/interlock/interlockEngine.ts::evaluateRule": "interlock tự chặn: một lần dispatch mỗi sự kiện, kết quả vào sổ + audit; không thử lại",
+  "server/services/ot/adapterFacade.ts::createAdapterFacade": "lệnh canonical tag.write: một lần dispatch, ack mang reason; trùng khoá ⇒ ack cũ, không thực thi lại",
+  "server/services/uns/sparkplugCommand.ts::SparkplugCommandHandler.routeControlMetrics": "Sparkplug DCMD: một lần dispatch mỗi loại lệnh, kết quả ghi log; không thử lại",
+  "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts::MitsubishiEngineeringAdapter.deploy": "đẩy tham số công thức MC: một lần dispatch, error = reason về người triển khai; không thử lại",
+  "server/services/scada/lenhHmi.ts::xacNhanGhiTag": "HMI ghi tag: một lần dispatch sau xác nhận của người vận hành, kết quả (reasonCode) về màn hình; không thử lại",
+  "server/routers/robotRouter.ts::<module>": "thủ tục robot (job từ người dùng): một lần dispatchRobotJob, kết quả (error) về người gọi; không thử lại",
+  "server/services/ros2/ros2Bridge.ts::Ros2Bridge.dispatchToRos2": "robot (ROS2): một lần dispatchRobotJob mỗi thông điệp (chuyển động HOẶC dừng), kết quả về bên gọi; không thử lại",
+  "server/services/vda5050/vda5050Adapter.ts::Vda5050Adapter.sendOrder": "AGV (VDA5050): một lần dispatchRobotJob mỗi order, kết quả về bên gọi; không thử lại",
+  "server/services/vda5050/vda5050Adapter.ts::Vda5050Adapter.sendInstantActions": "AGV (VDA5050): một lần dispatchRobotJob mỗi instant action, kết quả về bên gọi; không thử lại",
+  // ── STOP: luôn gửi lại / gửi ngay (dừng là idempotent — T3F giữ STOP gửi lại) ──
+  "server/services/orchestration/foe/foeEngine.ts::runAbortStopSweep": "quét STOP khi huỷ run: chỉ gửi STOP ghim — dừng là idempotent",
+  "server/services/scada/lenhHmi.ts::guiStopMotAdapter": "STOP của HMI (mỗi adapter một lần) — dừng là idempotent",
+  "server/services/edge/edgeExecutionAgent.ts::edgeDispatchDevicePort": "cổng thiết bị của lệnh trung tâm trên edge: robot abort / STOP OT ghim — dừng là idempotent",
+  "server/services/edge/edgeGatewayRuntime.ts::releaseAdapter": "STOP ghim khi nhả thiết bị (thử lại theo chu kỳ là của STOP — dừng là idempotent)",
+  "server/services/edge/edgeGatewayRuntime.ts::quiesceRobot": "robot abort khi edge dừng thiết bị (STOP)",
+  "server/services/robot/deviceOwnershipService.ts::sendRobotStop": "robot abort khi chuyển chủ sở hữu (STOP)",
+  "server/services/robot/deviceOwnershipService.ts::sendAdapterStop": "STOP ghim OT khi chuyển chủ sở hữu — dừng là idempotent",
+  "server/routers/robotRouter.ts::consoleStopNoSessionPath": "robot STOP từ bàn điều khiển (abort)",
+};
+
+const CHO_DA_BAY = TAT_CA.flatMap((f) => quetTep(f.rel, f.van, TEN_XET_DA_BAY));
+
+describe("★★★ T3F — census: mọi chỗ gửi lệnh phải xét 'lệnh trước có thể đã bay' (hoặc miễn có lý do)", () => {
+  it("cùng tập chỗ với T3E (cùng bộ quét); FOE execCommand XÉT (qua ketCucLenhFoe → coTheDaBayCua)", () => {
+    expect(CHO_DA_BAY.map((c) => `${c.tep}::${c.ham}:${c.dong}`)).toEqual(CHO.map((c) => `${c.tep}::${c.ham}:${c.dong}`));
+    const foe = CHO_DA_BAY.filter((c) => c.tep === "server/services/orchestration/foe/foeEngine.ts" && c.ham === "execCommand");
+    expect(foe).toHaveLength(1);
+    expect(foe[0]!.xet).toBe(true);
+  });
+
+  it("★ mọi chỗ: xét lớp 'có thể đã bay', hoặc nằm trong MIEN_DA_BAY (nêu tên chỗ thiếu); không miễn cũ; FOE không được miễn", () => {
+    const k = kiem(CHO_DA_BAY, MIEN_DA_BAY);
+    expect(k.khongXet, `chỗ gửi lệnh chưa xét 'có thể đã bay': ${k.khongXet.join(" | ")}`).toEqual([]);
+    expect(k.mienCu, `miễn không còn chỗ: ${k.mienCu.join(" | ")}`).toEqual([]);
+    expect(k.foeBiMien).toBe(false);
+  });
+
+  it("vòng thử lại của FOE (execStep) gọi khongGuiLaiKhongRo(outcome, stop) rồi DỪNG (không attempt key mới) — ghim cấu trúc", () => {
+    const f = TAT_CA.find((x) => x.rel === "server/services/orchestration/foe/foeEngine.ts")!;
+    const sf = ts.createSourceFile(f.rel, f.van, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const execStep = sf.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === "execStep");
+    expect(execStep).toBeDefined();
+    expect(/const khongRoChot = khongGuiLaiKhongRo\(\s*outcome\s*,\s*stop\s*\);\s*if \(khongRoChot\) \{\s*outcome = khongRoChot;\s*break;\s*\}/.test(execStep!.getText())).toBe(true);
+  });
+
+  it("★ đột biến (tệp ảo): bỏ coTheDaBayCua khỏi ketCucLenhFoe ⇒ chỗ FOE execCommand ĐỎ, nêu tên", () => {
+    const f = TAT_CA.find((x) => x.rel === "server/services/orchestration/foe/foeEngine.ts")!;
+    expect(f.van).toContain("const daBay = coTheDaBayCua(result);");
+    const dotBien = f.van.replace("const daBay = coTheDaBayCua(result);", "const daBay = null as string | null;");
+    const cho = [...CHO_DA_BAY.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, dotBien, TEN_XET_DA_BAY)];
+    const k = kiem(cho, MIEN_DA_BAY);
+    expect(k.khongXet.some((x) => x.startsWith("server/services/orchestration/foe/foeEngine.ts::execCommand "))).toBe(true);
+  });
+
+  it("đột biến (tệp ảo): chỗ gửi MỚI có vòng thử lại mà không xét ⇒ ĐỎ, nêu tên; xét qua MỘT bước trong tệp ⇒ xanh", () => {
+    const moi = quetTep("server/services/x/guiLaiMoi.ts", `import { dispatch } from "../ot/commandDispatcher";\nexport async function guiLai(i: any) { for (let n = 0; n < 3; n++) { const r = await dispatch({ ...i, idempotencyKey: i.k + n }); if (r.ok) return r; } }\n`, TEN_XET_DA_BAY);
+    expect(kiem([...CHO_DA_BAY, ...moi], MIEN_DA_BAY).khongXet).toEqual(["server/services/x/guiLaiMoi.ts::guiLai (dispatch :2)"]);
+    const motBuoc = quetTep("server/services/x/xet.ts", `import { dispatchRobotJob } from "../robot/robotCommandDispatcher";\nimport { coTheDaBayCua } from "../equipment/lenhTruocCoTheDaBay";\nfunction dung(r: any) { return coTheDaBayCua(r) !== null; }\nexport async function g(i: any) { const r = await dispatchRobotJob(i); return dung(r); }\n`, TEN_XET_DA_BAY);
+    expect(motBuoc).toMatchObject([{ ham: "g", xet: true }]);
   });
 });

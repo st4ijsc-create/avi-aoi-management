@@ -205,7 +205,8 @@ describe("aiAgentRouter — listAgentSessionsForOps (D4)", () => {
     const res = await admin.listAgentSessionsForOps(undefined);
     expect(res.sessions).toHaveLength(1);
     expect(res.sessions[0].id).toBe("s1");
-    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: undefined, status: undefined });
+    // ★ phạm vi nhà máy: người xem (id + vai từ ctx.user, KHÔNG từ input) PHẢI được truyền xuống dịch vụ
+    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: undefined, status: undefined }, { id: ADMIN_2FA.id, role: "admin" });
   });
 
   it("engineer also sees the ops-scoped session list", async () => {
@@ -213,6 +214,7 @@ describe("aiAgentRouter — listAgentSessionsForOps (D4)", () => {
     const eng = aiAgentRouter.createCaller(ctx(ENGINEER));
     const res = await eng.listAgentSessionsForOps({ limit: 10 });
     expect(res.sessions).toHaveLength(1);
+    expect(listSessionsForOps).toHaveBeenCalledWith({ limit: 10, status: undefined }, { id: ENGINEER.id, role: "engineer" });
   });
 
   it("a non-privileged user (operator) is rejected — scoped per RBAC", async () => {

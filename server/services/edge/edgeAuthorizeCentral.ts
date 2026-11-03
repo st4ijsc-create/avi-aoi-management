@@ -26,6 +26,8 @@
  *                     (the dispatchers' rule).
  *   8. mode         — real ⇔ central's ROBOT_/OT_CONTROL_ENABLED and commissioned; the edge applies the stricter of this and
  *                     its own (central's kill switch over edge actuation).
+ *   8b. served config — R1b-2b-2a A2(o): the signed safety-PLC ids (never more than 64, never truncated) must all be in the
+ *                     snapshot central SERVES the node now, else 409 device_refused {safety}; that snapshot unbuildable ⇒ 503.
  *   9. one transaction — the claim re-checked FOR UPDATE; an existing authorisation of (run, claim, step, attempt) with the
  *                     SAME nonce ⇒ the identical token again (re-signed from the stored row — Ed25519 is deterministic), a
  *                     different nonce ⇒ 409 already_authorized; else an `ai_pending_actions` row (status executed, bound to
@@ -54,6 +56,7 @@ import { EDGE_TYP_NAME, EdgeContractError } from "./edgeSigning";
 import { edgeStepAuthorizations, robotMotionLockAuthority, type EdgeStepAuthorizationRow } from "./edgeControlSchema";
 import { runEdgeAssignments, type RunEdgeAssignment } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
+import { tapMayChoInterlock } from "../interlock/tapMayChoInterlock";
 import {
   auditNode,
   centralDb,
@@ -83,6 +86,9 @@ import type { ProgramCheck } from "../ot/programChecksum";
 
 /** foeEngine.FOE_GATE_REQUIRED — the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
 const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
+
+/** R1b-2b-2a A2(o) — edgeProtocol's safetyConfigIds bound (z.array(zId).max(64)): one authorisation never names more */
+export const EDGE_AUTH_MAX_SAFETY_CONFIG_IDS = 64;
 
 class Answer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -144,6 +150,8 @@ interface Verdict {
  *     safetyPreflightPolicy.plcConfigAppliesToTargets over resolveSafetyTargets — unresolvable ⇒ every config) must be a
  *     SUBSET of the signed set; any config central would consult that the edge would not get ⇒ device_refused {safety}
  *     naming the missing ids. Never a partial list, never an empty one standing in for configs central applies.
+ *   • R1b-2b-2a A2(o) — more than EDGE_AUTH_MAX_SAFETY_CONFIG_IDS ⇒ device_refused {safety} (never truncated); the served-snapshot
+ *     subset is checked by the caller (edgeSafetyIdsNotServed, needs the principal).
  * (In simulation central consults no safety PLC: the explicit list is then the whole truth.)
  */
 export async function edgeAuthorizeSafetyConfigIds(
@@ -166,8 +174,18 @@ export async function edgeAuthorizeSafetyConfigIds(
   const ids = all
     .filter((c) => edgePlcConfigGuardsNode(c, f, robots, stations, lines))
     .map((c) => c.id)
-    .sort((a, b) => a - b)
-    .slice(0, 64);
+    .sort((a, b) => a - b);
+  // R1b-2b-2a A2(o) — never a TRUNCATED list (was .slice(0, 64): the 65th config on would have been signed away unseen): more
+  // than the signed schema carries ⇒ refused, naming how many
+  if (ids.length > EDGE_AUTH_MAX_SAFETY_CONFIG_IDS) {
+    throw new Answer(
+      edgeError(
+        "device_refused",
+        `${ids.length} safety-PLC configurations guard this device — more than the ${EDGE_AUTH_MAX_SAFETY_CONFIG_IDS} one authorisation can name; refused (never a partial list). Merge or narrow the device's safety-PLC configurations.`,
+        { gate: "safety" },
+      ),
+    );
+  }
   if (opts.centralPreflight) {
     const { resolveSafetyTargets } = await import("../ot/safetyTarget");
     const { plcConfigAppliesToTargets } = await import("../ot/safetyPreflightPolicy");
@@ -185,6 +203,29 @@ export async function edgeAuthorizeSafetyConfigIds(
     }
   }
   return ids;
+}
+
+/**
+ * R1b-2b-2a A2(o) — the signed safety-PLC ids must be a SUBSET of the snapshot central actually SERVES this node now
+ * (edgeConfigCentral.servedSafetyPlcConfigIds — the same cached object configForNode serves). The R-10-aw check above compares
+ * central's matcher with the shipping RULE; this one compares the signed list with what was SHIPPED: a config the build could not
+ * express or a snapshot the edge has not got yet is never vouched for. Missing ⇒ device_refused {safety} naming them (+ an
+ * EDGE_ANOMALY audit); null ⇔ every id is served. A served snapshot that cannot be built THROWS (⇒ 503, nothing signed).
+ * A2(o) r3 (review m-2) — read for EVERY non-STOP authorisation, an EMPTY signed list included: a node whose config cannot be
+ * built gets NO non-STOP authorisation at all (the operator text of noteConfigUnbuildable says so), not only for guarded devices.
+ * A verified STOP never gets here (authorizeForNode step 5).
+ */
+export async function edgeSafetyIdsNotServed(node: EdgeNodePrincipal, ids: readonly number[]): Promise<EdgeAnswer<never> | null> {
+  const { servedSafetyPlcConfigIds } = await import("./edgeConfigCentral");
+  const served = await servedSafetyPlcConfigIds(node);
+  const missing = ids.filter((id) => !served.has(id));
+  if (missing.length === 0) return null;
+  await auditNode(node, "EDGE_ANOMALY", { type: "edge_node", id: node.nodeId }, { anomaly: "safety_config_not_served", ids: missing.slice(0, 64) }, "failure");
+  return edgeError(
+    "device_refused",
+    `Safety-PLC configuration(s) ${missing.slice(0, 16).map((x) => `#${x}`).join(", ")}${missing.length > 16 ? ` (+${missing.length - 16})` : ""} guard this device but are not in the config central serves this node now (not built yet, or not expressible) — refused; retry once the node's config has them.`,
+    { gate: "safety" },
+  );
 }
 
 /** M-2 — the role of a user for FIELD_V2 / policy. A read error THROWS (503): an unreadable role is never "user" by default. */
@@ -289,14 +330,20 @@ export const EDGE_RESUMED_BY_CTX_KEY = "edgeResumedBy";
  * F-B2-1 — whose role central's engine policy (foeEngine.execCommand: `role: rc.user.role`) would use for this attempt:
  *   • the gate path (the newest resume is the gate approval) ⇒ the APPROVER;
  *   • a held / interrupted resume AFTER the newest approval ⇒ the RESUMER (recorded under EDGE_RESUMED_BY_CTX_KEY);
- *   • the run was held and continued but who continued it is not recorded ⇒ unknown (the caller refuses: fail closed).
+ *   • the run was held and continued but who continued it is not recorded ⇒ unknown (the caller refuses: fail closed);
+ *   • A2 test — the recorded resume and the newest approval carry the SAME millisecond ⇒ which came last cannot be known ⇒
+ *     unknown too (same refusal path, "who continued it is not recorded"): never guess a person. Earlier code fell to the approver.
  */
 export function edgeEngineActorOf(contextJson: unknown, newestApproval: { approvedBy: number; at: number }): { userId: number; path: "gate" | "held" } | { unknown: true } {
   const ctx = (contextJson && typeof contextJson === "object" ? contextJson : {}) as Record<string, unknown>;
   const r = ctx[EDGE_RESUMED_BY_CTX_KEY] as { userId?: unknown; at?: unknown } | undefined;
   const userId = r && typeof r.userId === "number" && Number.isInteger(r.userId) && r.userId > 0 ? r.userId : null;
   const at = r && typeof r.at === "number" && Number.isFinite(r.at) ? r.at : null;
-  if (userId !== null && at !== null) return at > newestApproval.at ? { userId, path: "held" } : { userId: newestApproval.approvedBy, path: "gate" };
+  if (userId !== null && at !== null) {
+    if (at > newestApproval.at) return { userId, path: "held" };
+    if (at < newestApproval.at) return { userId: newestApproval.approvedBy, path: "gate" };
+    return { unknown: true }; // same millisecond: order unknown ⇒ fail closed
+  }
   if (ctx.interruptedEarlier === true) return { unknown: true };
   return { userId: newestApproval.approvedBy, path: "gate" };
 }
@@ -347,7 +394,7 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
     const g = await evaluateInterlockGate(robotInterlockTarget(robotId));
-    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? "interlock evaluation error — fail-closed" : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
+    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
   return {
@@ -358,11 +405,17 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
   };
 }
 
-/** Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock. */
-async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "ot" }>, ownerEpoch: number): Promise<Gate | Verdict> {
+/**
+ * Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock.
+ * Exported for the A2(i)(1) DB suite (interlockMayAdapter.a2i1.db.test.ts), which drives it on a rolled-back transaction.
+ */
+export async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "ot" }>, ownerEpoch: number): Promise<Gate | Verdict> {
   const adapterId = rb.adapterId as number;
   const { deviceAdapters, deviceTags } = await import("../../../drizzle/schema");
-  const [adapter] = await d.select({ isEnabled: deviceAdapters.isEnabled }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
+  // A2(i)(1) — the ONE adapter read also gives the adapter's machine for the interlock set below (no second read). Fail-closed: a read failure is
+  // NOT caught here (never a fallback to "the caller's machine only") — it reaches authorizeForNode's catch ⇒ 503 edge_unavailable, nothing signed
+  // or written (the edge holds the step; a pinned STOP never gets here — step 5).
+  const [adapter] = await d.select({ isEnabled: deviceAdapters.isEnabled, machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
   if (!adapter || adapter.isEnabled !== true) return { gate: "adapter_disabled", detail: "adapter not found or disabled" };
   // M-9 — a console STOP of this adapter not acknowledged done ⇒ no write
   if (await adapterStopOutstanding(d, adapterId, ownerEpoch)) return { gate: "lock_requested", detail: "a central STOP request for this adapter is outstanding" };
@@ -395,8 +448,9 @@ async function otGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind
       if (sg) return sg;
     }
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
-    const g = await evaluateInterlockGate({ adapterId, machineId: rb.machineId, tagKeys: rb.writes.map((w) => w.tagKey) });
-    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? "interlock evaluation error — fail-closed" : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
+    // A2(i)(1) — the SAME set as central's dispatcher: {the adapter's machine, the step's machine} (tapMayChoInterlock)
+    const g = await evaluateInterlockGate({ adapterId, machineIds: tapMayChoInterlock(adapter.machineId, rb.machineId), tagKeys: rb.writes.map((w) => w.tagKey) });
+    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
   return {
@@ -551,6 +605,10 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     // ── 7 + 8. device gates, mode ──
     const g = rb.kind === "robot" ? await robotGates(d, node.nodeId, rb, approval.approvedBy, runOwner, owner.ownerEpoch) : await otGates(d, node.nodeId, rb, owner.ownerEpoch);
     if ("gate" in g) return edgeError("device_refused", `Step "${req.stepId}": ${g.detail}.`, { gate: g.gate });
+    // ── 8b. A2(o) — the signed safety-PLC ids ⊆ the snapshot central SERVES this node (after the gates: cheapest first, N5; a
+    //    verified STOP never gets here — step 5)
+    const notServed = await edgeSafetyIdsNotServed(node, g.safetyConfigIds);
+    if (notServed) return notServed;
 
     // ── 9. one transaction ──
     const ttlMs = clampEdgeAuthTtlMs(process.env.EDGE_AUTH_TTL_MS);

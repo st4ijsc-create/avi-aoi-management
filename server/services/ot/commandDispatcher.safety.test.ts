@@ -325,16 +325,16 @@ describe("Đợt 1D Task 2 — preflight với tag DỪNG ghim", () => {
     expect(r.appError?.appParams).toMatchObject({ stopPinReason: "value_mismatch" });
     expect(getSafetyStatusSpy).toHaveBeenCalledTimes(1);
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(resultRows(cmdLog)[0].ackValue).toEqual({ pinnedStop: false, stopPinReason: "value_mismatch" });
+    expect(resultRows(cmdLog)[0].ackValue).toEqual({ pinnedStop: false, stopPinReason: "value_mismatch", bam: expect.any(String) }); // T6d — + bam
   });
 
-  it("lệnh KHÔNG phải stop với đúng tag+giá trị ghim ⇒ preflight vẫn chạy, ledger KHÔNG mang ackValue mới (byte-identical)", async () => {
+  it("lệnh KHÔNG phải stop với đúng tag+giá trị ghim ⇒ preflight vẫn chạy, ledger KHÔNG mang ghi chú STOP ghim (T6d: chỉ bam)", async () => {
     pinStop(true);
     safetyState = "UNKNOWN";
     const r = await dispatch(baseInput());
     expect(r.reason).toBe("SAFETY_UNKNOWN");
     expect(r.pinnedStop).toBeUndefined();
-    expect(resultRows(cmdLog)[0].ackValue).toBeUndefined();
+    expect(resultRows(cmdLog)[0].ackValue).toEqual({ bam: expect.any(String) }); // R1b-2b-2a T6d — chỉ bam (chốt phát lại); không ghi chú STOP ghim nào
   });
 });
 

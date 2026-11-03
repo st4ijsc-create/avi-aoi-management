@@ -54,6 +54,10 @@ describe.skipIf(!onTest)("R1a T3 fix round 1 I-1 — 3b never blocks a STOP rout
       await k.sql`DELETE FROM device_tags WHERE "adapterId" = ${centralAdapter}`.catch(() => undefined);
       await k.sql`DELETE FROM device_adapters WHERE id = ${centralAdapter}`.catch(() => undefined);
     }
+    // A2(h) fixture rows: tests never DELETE (rule from 2026-11-01) — the rows are made unusable FOREVER instead: status 'cancelled' (the
+    // product's own terminal cancel state, cancelAction) — verifyActionBinding accepts only 'confirmed' (and, gate (1) only, 'executed'),
+    // confirmAction only 'proposed' / 'confirmed' — and expiresAt in the past (refused as expired even if the status were ever reset).
+    if (k) await k.sql`UPDATE ai_pending_actions SET status = 'cancelled', "expiresAt" = now() - interval '1 day' WHERE id LIKE ${`${k.DAU}-a2h-%`}`.catch(() => undefined);
     await k?.teardown();
   }, 120_000);
 
@@ -64,10 +68,27 @@ describe.skipIf(!onTest)("R1a T3 fix round 1 I-1 — 3b never blocks a STOP rout
 
   const hitl = () => ({ kind: "hitl" as const, requestedBy: k.u.admin, confirmedBy: k.u.admin });
 
+/**
+ * R1b-2b-2a A2(h) — FIXTURE: cổng uỷ quyền (1) nay ràng buộc MỌI lệnh HITL (không actionId ⇒ PRECONDITION_FAILED trừ STOP ghim, TRƯỚC cổng chế độ /
+ * chủ edge / kênh). Ca cần tới cổng nó đo gửi kèm MỘT uỷ quyền đúng như nơi tạo của sản phẩm lưu (confirmed, chủ = người xác nhận, băm CHÍNH lệnh ấy).
+ * Hàng của fixture mang tiền tố `<DAU>-a2h-`; afterAll làm chúng VÔ HIỆU vĩnh viễn (UPDATE, không DELETE — luật 2026-11-01).
+ */
+const A2H_TOOL = "set_machine_param";
+async function hitlRangBuoc(inp: { adapterId: number; machineId?: number | null; commandType: string; writes: Array<{ tagKey: string; value: unknown }> }) {
+  const { otPayloadHash, withOtPayloadHash } = await import("./otActionBinding");
+  const id = `${k.DAU}-a2h-${++seq}`;
+  const preview = withOtPayloadHash({ entityType: "machine" }, otPayloadHash({ tool: A2H_TOOL, adapterId: inp.adapterId, machineId: inp.machineId ?? null, commandType: inp.commandType, writes: inp.writes }));
+  await k.sql`INSERT INTO ai_pending_actions (id, tool, "argsJson", "userId", "userRole", summary, "previewJson", status, "idempotencyKey", "expiresAt")
+              VALUES (${id}, ${A2H_TOOL}, ${k.sql.json({})}, ${k.u.admin}, 'engineer', 'A2(h) fixture', ${k.sql.json(preview as never)}, 'confirmed', ${`${id}-idem`}, now() + interval '10 minutes')`;
+  return { kind: "hitl" as const, actionId: id, tool: A2H_TOOL, requestedBy: k.u.admin, confirmedBy: k.u.admin };
+}
+/** A2(h) — the command with a correctly bound authorisation (each case below measures the channel gate / routing, AFTER gate (1)). */
+const bound = async (x: { adapterId: number; commandType: string; writes: Array<{ tagKey: string; value: unknown }>; idempotencyKey: string }) => ({ ...x, triggeredBy: await hitlRangBuoc(x) });
+
   it("★ edge-owned adapter: `stop` with an OUT-OF-RANGE non-pin value ⇒ routed (edgeStopRequest + a queued stop request row), NOT OUT_OF_RANGE", async () => {
     const { dispatch } = await import("./commandDispatcher");
     (await import("../edge/edgeNodeCommands")).noteEdgeNodePull(k.ids.nodeA); // the owner is pulling (reachable)
-    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: TAG_KHAI, value: 500 }], triggeredBy: hitl(), idempotencyKey: `r1t3e-stop-${++seq}-${k.DAU}` });
+    const r = await dispatch(await bound({ adapterId: k.ids.adapterA, commandType: "stop", writes: [{ tagKey: TAG_KHAI, value: 500 }], idempotencyKey: `r1t3e-stop-${++seq}-${k.DAU}` }));
     expect(r.reason).not.toBe("OUT_OF_RANGE");
     expect(r).toMatchObject({ reason: "ADAPTER_OWNED_BY_EDGE", edgeStopRequest: { edgeNodeId: k.ids.nodeA } });
     const [row] = await k.sql`SELECT kind, "adapterId", "edgeNodeId" FROM robot_motion_lock_requests WHERE id = ${r.edgeStopRequest!.requestId}`;
@@ -77,14 +98,14 @@ describe.skipIf(!onTest)("R1a T3 fix round 1 I-1 — 3b never blocks a STOP rout
   it("edge-owned adapter: a NON-stop write out of range ⇒ still OUT_OF_RANGE (only stop-typed commands are routed), nothing queued", async () => {
     const { dispatch } = await import("./commandDispatcher");
     const before = Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n);
-    const r = await dispatch({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: TAG_KHAI, value: 500 }], triggeredBy: hitl(), idempotencyKey: `r1t3e-set-${++seq}-${k.DAU}` });
+    const r = await dispatch(await bound({ adapterId: k.ids.adapterA, commandType: "set_param", writes: [{ tagKey: TAG_KHAI, value: 500 }], idempotencyKey: `r1t3e-set-${++seq}-${k.DAU}` }));
     expect(r).toMatchObject({ status: "rejected", reason: "OUT_OF_RANGE" });
     expect(Number((await k.sql`SELECT count(*)::int AS n FROM robot_motion_lock_requests WHERE "adapterId" = ${k.ids.adapterA}`)[0].n)).toBe(before);
   });
 
   it("CENTRAL adapter without a driver (not edge-owned): the same `stop` ⇒ still OUT_OF_RANGE, no fallback STOP", async () => {
     const { dispatch } = await import("./commandDispatcher");
-    const r = await dispatch({ adapterId: centralAdapter, commandType: "stop", writes: [{ tagKey: TAG_KHAI, value: 500 }], triggeredBy: hitl(), idempotencyKey: `r1t3e-c-${++seq}-${k.DAU}` });
+    const r = await dispatch(await bound({ adapterId: centralAdapter, commandType: "stop", writes: [{ tagKey: TAG_KHAI, value: 500 }], idempotencyKey: `r1t3e-c-${++seq}-${k.DAU}` }));
     expect(r).toMatchObject({ ok: false, status: "rejected", reason: "OUT_OF_RANGE" });
     expect(r.edgeStopRequest).toBeUndefined();
     expect(rec.fallback).toEqual([]);

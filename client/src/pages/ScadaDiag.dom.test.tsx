@@ -126,6 +126,7 @@ vi.mock("@/lib/trpc", () => {
         ketNoiLai: mut("ketNoiLai"),
         tamTat: mut("tamTat"),
         datLoiStub: mut("datLoiStub"),
+        thuDocDiaChi: mut("thuDocDiaChi"),
       },
     },
   };

@@ -4094,9 +4094,12 @@
       "deviceAdapterUpdate": "cập nhật adapter",
       "scadaDisableAdapter": "tạm tắt adapter",
       "scadaSetStubFault": "đặt lỗi mô phỏng cho stub",
+      "scadaLabRead": "thử đọc một địa chỉ (Lab)",
       "scadaSelectTag": "chọn kênh để ra lệnh",
+      "scadaDryRun": "kiểm tra điều kiện cho phép (chạy khô)",
       "scadaKenhCapNhat": "cập nhật khai báo kênh",
       "scadaTotpCauHinh": "kiểm mã xác thực cho thay đổi cấu hình kênh",
+      "scadaConfigTotp": "kiểm mã xác thực cho thay đổi cấu hình",
       "dieuKienDoiTuongTrongPhamVi": "điều kiện đối tượng trong phạm vi",
       "flowNguoiNhan": "tìm người nhận cho luồng",
       "flowXuat": "xuất luồng AI ra gói",
@@ -4401,7 +4404,7 @@
       "motionInProgress": "Robot đang thực hiện một chuyển động khác — lệnh này bị từ chối (không xếp hàng). Đợi xong rồi gửi lại.",
       "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
       "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
-      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — lệnh chuyển động bị từ chối. Dùng mã mới.",
+      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — chuyển động KHÔNG được bắt đầu. Lệnh trước đó có thể đã chạy: kiểm tra robot, vị trí và trạng thái lệnh trước đó trước khi ra lệnh lại.",
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
@@ -4554,6 +4557,11 @@
       "flowDuyetTrungNguoiBat": "Bạn đã bật phiên bản luồng này — người duyệt phải là người khác.",
       "flowDuyetTrungChuLuot": "Bạn là chủ lượt chạy này (đã kích hoạt hoặc bật) — người duyệt phải là người khác.",
       "adapterOwnedByEdge": "Adapter này do một edge node sở hữu — trung tâm không điều khiển phiên của nó.",
+      "adapterNotRunning": "Adapter không chạy ở trung tâm (đang tắt, chưa kết nối hoặc mất kết nối) — không có phiên để đọc thử.",
+      "protocolNotSupported": "Giao thức của adapter này chưa được chứng minh đọc thử an toàn song song với vòng poll — Lab không đọc được (chỉ Modbus TCP, OPC UA và stub).",
+      "rateLimited": "Quá số lượt cho phép trong một phút — chờ một lát rồi thử lại.",
+      "scadaLabDangBan": "Adapter này đang có một lượt đọc thử chưa xong — chờ lượt đó xong rồi thử lại.",
+      "scadaLabPhienCu": "Phiên kết nối đang chạy cũ hơn cấu hình adapter (endpoint / tuỳ chọn đã sửa sau khi kết nối) — kết nối lại adapter hoặc khởi động lại OT rồi đọc thử lại.",
       "otMcTamKhoa": "Điều khiển Mitsubishi MC đang TẠM KHOÁ (an toàn): lệnh ghi không được gửi tới thiết bị cho tới bản sửa 3B — cần dừng máy thì dùng E-STOP cứng tại máy.",
       "chiTietKyThuatBiChe": "Endpoint và cấu hình kết nối là chi tiết kỹ thuật bạn không được xem — chỉ kỹ sư / quản trị có quyền sửa điều khiển máy mới đổi được. Các trường khác vẫn sửa được.",
       "adapterNotStub": "Chỉ áp dụng cho adapter giao thức stub.",
@@ -4567,6 +4575,7 @@
       "scadaKenhCheDoTagTat": "Tag của kênh chế độ đang tắt — bật tag trước rồi khai lại.",
       "scadaKenhGhiTrenTagKhongGhi": "Loại kênh này nhận lệnh ghi, nhưng tag không cho phép ghi — bật \"cho phép ghi\" cho tag hoặc chọn loại kênh chỉ đọc.",
       "scadaKenhThuLai": "Kênh vừa bị thay đổi đồng thời — tải lại rồi thử lại.",
+      "scadaTotpDaDungDuLieuDoi": "Mã xác thực đã được dùng nhưng dữ liệu vừa thay đổi — thay đổi chưa được lưu. Kiểm tra lại rồi nhập mã MỚI.",
       "scadaKenhTagTrung": "Một tag xuất hiện hơn một lần trong lô — mỗi tag chỉ một dòng.",
       "scadaKenhCheDoKhongDoiAdapter": "Tag này là kênh chế độ của một máy — không chuyển sang adapter khác được. Gỡ hoặc khai lại kênh chế độ ở trang Kênh & giới hạn trước.",
       "scadaKenhCheDoGoTruoc": "Tag này là kênh chế độ của một máy — gỡ kênh chế độ ở trang Kênh & giới hạn (cần mã xác thực) trước khi xoá tag.",
@@ -17091,7 +17100,27 @@
       "cauHinhHongCanhBao": "Có luật interlock đang bật nhưng KHÔNG chức năng: cổng chặn mọi lệnh nhắm tới nó, hoặc lệnh bảo vệ của nó sẽ bị dispatch từ chối. Sửa luật ở trang interlock.",
       "cauHinhHongMo": "Mở trang interlock",
       "stopQuaHan": "STOP HMI bị từ chối vì quá hạn (24 h): {{count}}",
-      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn"
+      "stopQuaHanUnavailable": "Không đọc được số STOP HMI quá hạn",
+      "poolStopThieu": "Ngân sách pool STOP HMI hụt: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "Không ghi được sổ (từ {{tu}}): {{count}}",
+      "buoc": {
+        "db": "Lỗi cơ sở dữ liệu",
+        "het_han_tong_truoc_handler": "Hết hạn tổng trước khi xử lý",
+        "pham_vi": "Kiểm phạm vi",
+        "doc_may": "Đọc máy",
+        "vai_tro": "Kiểm vai trò",
+        "doc_adapter": "Đọc adapter",
+        "doc_ghim": "Đọc ghim STOP",
+        "dong_cho": "Dòng chờ",
+        "adapter": "Gửi tới adapter",
+        "xac_thuc": "Xác thực",
+        "cong_doi_mat_khau": "Cổng đổi mật khẩu",
+        "giay_phep": "Giấy phép",
+        "pham_vi_tenant": "Phạm vi tenant",
+        "ghi_so_loi": "Ghi sổ lỗi",
+        "khac": "Bước khác",
+        "khong_ro": "Không rõ bước"
+      }
     },
     "table": {
       "kind": "Loại việc",
@@ -19139,6 +19168,10 @@
     "loiBiChe": "Chi tiết kỹ thuật bị ẩn (cần quyền kỹ sư)",
     "maLoi": {
       "TIMEOUT": "Không rõ máy đã nhận hay chưa — đọc lại giá trị trước khi gửi lần nữa",
+      "IDEMPOTENCY_KEY_REUSED": "Lệnh này KHÔNG được gửi: một lệnh trước, khác lệnh này, đã dùng cùng khoá (thiết bị, tag, giá trị hoặc người yêu cầu khác). Không rõ lệnh trước (cùng khoá) đã áp vào thiết bị chưa — kiểm thiết bị trước khi chạy tiếp; KHÔNG tự gửi lại với khoá mới.",
+      "IDEMPOTENCY_KEY_REQUIRED": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency nên một lần thử lại có thể ghi xuống thiết bị hai lần. Gửi lại kèm khoá idempotency (HMI và các đường có sẵn tự thêm khoá).",
+      "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency và ghi vào tag DỪNG, nhưng không phải lệnh DỪNG (lẫn giá trị khác, hoặc giá trị không phải giá trị DỪNG). KHÔNG được gửi — dùng nút dừng máy trên HMI hoặc gửi lại kèm khoá.",
+      "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE": "Lệnh này KHÔNG được gửi: lệnh không có khoá idempotency và không đọc được giá trị DỪNG của thiết bị, nên không chứng minh được đây là lệnh DỪNG. KHÔNG được gửi — dùng nút dừng máy trên HMI hoặc gửi lại kèm khoá.",
       "DRIVER_WRITE_FAILED": "Ghi xuống thiết bị lỗi — không rõ máy đã nhận hay chưa; đọc lại giá trị trước khi gửi lần nữa",
       "OT_MC_TAM_KHOA": "Điều khiển Mitsubishi MC đang TẠM KHOÁ: thư viện mcprotocol phân tích sai phản hồi của PLC — lệnh KHÔNG được gửi. Chờ bản sửa 3B; cần dừng máy thì dùng E-STOP cứng tại máy",
       "OT_S7_BIT_NGOAI_DAI": "Địa chỉ bit S7 nằm ngoài 0..7 (cấu hình tag sai) — lệnh KHÔNG được gửi, cả lô bị từ chối. Sửa địa chỉ tag (vd DB1,X1.0 thay cho DB1,X0.8); cần dừng máy ngay thì dùng E-STOP cứng tại máy",
@@ -24246,7 +24279,8 @@
         "dialogXoaLoiTieuDe": "Xoá lỗi stub của {{code}}?",
         "dialogMoTa": "Thao tác Lab trên adapter mô phỏng. Lý do được ghi vào audit."
       },
-      "tamKhoa": "Tạm khoá"
+      "tamKhoa": "Tạm khoá",
+      "motPhanGanNhat": "Áp một phần gần đây: đã áp {{daAp}} · không áp {{khongAp}}"
     },
     "kenh": {
       "title": "Kênh & giới hạn",
@@ -24499,7 +24533,9 @@
         "HET_HAN": "Không gửi — yêu cầu đã hết hạn; tạo yêu cầu mới",
         "KHOA_MAT": "Không gửi — bạn không còn giữ kênh; tạo yêu cầu mới",
         "MAY_DA_DOI": "Không gửi — thiết bị đã được gán sang máy khác; tạo yêu cầu mới",
-        "khac": "Không gửi — bị từ chối ở cổng {{ma}}; xem nhật ký lệnh hoặc hỏi kỹ sư"
+        "khac": "Không gửi — bị từ chối ở cổng {{ma}}; xem nhật ký lệnh hoặc hỏi kỹ sư",
+        "MOT_PHAN": "Lệnh chỉ được áp MỘT PHẦN: một số giá trị đã ghi vào máy, số khác máy báo KHÔNG nhận. Lệnh KHÔNG được tự gửi lại — kiểm tra tại máy rồi chỉ gửi lại phần chưa áp nếu vẫn cần.",
+        "MOT_PHAN_STOP": "STOP chỉ được áp MỘT PHẦN trên adapter này: một số ghim dừng đã ghi, số khác máy báo KHÔNG nhận. Nhấn DỪNG MÁY lần nữa là an toàn (STOP được gửi lại) — nếu vẫn không dừng, dùng E-STOP cứng tại máy."
       },
       "loi": {
         "FEATURE_DISABLED": "Lệnh HMI SCADA đang tắt trên máy chủ — nhờ quản trị bật (SCADA_COMMANDS_ENABLED).",
@@ -24551,6 +24587,11 @@
         "loiDoc": "lỗi đọc kênh chế độ — coi như LOCAL",
         "kenhSaiMay": "kênh chế độ không thuộc adapter của máy này — coi như LOCAL",
         "khongRo": "không xác định được chế độ ({{lyDo}}) — coi như LOCAL"
+      },
+      "motPhan": {
+        "dem": "Đã áp {{daAp}} · không áp {{khongAp}}",
+        "daAp": "Đã áp: {{ds}}",
+        "khongAp": "Không áp: {{ds}}"
       }
     },
     "dungMay": {
@@ -24634,6 +24675,36 @@
         "EDGE_OUTCOME_UNKNOWN": "Chưa rõ kết quả trên edge: node edge có thể đã áp lệnh — kiểm tra thiết bị trước khi chạy lại.",
         "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
         "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."
+      }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "Thử đọc một địa chỉ (Lab)",
+        "chiDoc": "Chỉ đọc — không ghi xuống thiết bị.",
+        "troGiup": "Đọc một lần, có hạn 3 giây, tối đa 10 lượt mỗi phút. Với Modbus, gateway TCP→RTU hoặc thiết bị chỉ xử lý một giao dịch có thể bỏ yêu cầu Lab chen vào, làm một nhịp poll hết hạn. Lý do được ghi vào audit, giá trị đọc không được lưu.",
+        "diaChi": "Địa chỉ",
+        "kieu": "Kiểu dữ liệu",
+        "nutDoc": "Đọc",
+        "chatLuong": "Chất lượng",
+        "giaTriTho": "Giá trị thô",
+        "giaTri": "Giá trị giải mã",
+        "maTrangThai": "Mã trạng thái",
+        "lyDoKetQua": "Lý do",
+        "thoiGian": "Thời gian",
+        "reasonTimeout": "Hết hạn — thiết bị không trả lời kịp",
+        "reasonNoSample": "Chưa có mẫu nào cho địa chỉ này"
+      }
+    },
+    "dieuKien": {
+      "tieuDe": "Điều kiện cho phép",
+      "duocPhep": "Được phép",
+      "duocPhepTotp": "Được phép — cần mã xác thực hai lớp",
+      "khongDuocPhep": "Không được phép: {{lyDo}}",
+      "chuaTinh": "Chưa kiểm tra trước: {{ds}} — máy chủ quyết định khi bạn bấm Đổi.",
+      "chuaTinhMuc": {
+        "khoa-chon": "khoá chọn",
+        "totp-xac-minh": "xác minh mã",
+        "han-gui": "hạn gửi"
       }
     }
   },

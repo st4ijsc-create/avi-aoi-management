@@ -24,7 +24,7 @@
  */
 import net from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
-import { LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { LoiMatLienKetKhiDangGui, LoiQuaHanYeuCauDriver, ghiTuanTuDungKhiMatLienKet, ketCucKhongRoCua } from "./dangBay";
 import type {
   OtProtocol,
   OtDriver,
@@ -445,8 +445,9 @@ export class SlmpDriver implements OtDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      // R1b-2b-1 — lệnh ĐÃ ghi lên socket khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-      if (laLoiMatLienKetKhiDangGui(err)) throw err;
+      // R1b-2b-1 — lệnh ĐÃ ghi lên socket khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+      // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: write NÀY mang `ketCucKhongRo: "mat_lien_ket"` (ketCucKhongRoCua dưới); write TRƯỚC giữ kết quả
+      // thật; write SAU không gửi (`ghiTuanTuDungKhiMatLienKet` trong writeTags ⇒ LOI_CHUA_GUI_MAT_LIEN_KET, 'failed').
       // R1b-2b-2a T2 (mục 66) — hẹn giờ giao dịch của driver hết khi khung đã gửi ⇒ kết cục KHÔNG RÕ của write này (dispatcher ⇒ 'timeout').
       const ketCucKhongRo = ketCucKhongRoCua(err);
       if (ketCucKhongRo) return { tagKey: w.tagKey, ok: false, error: msg, ketCucKhongRo };
@@ -462,8 +463,8 @@ export class SlmpDriver implements OtDriver {
   async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.socket) throw new DeviceUnreachableError("slmp");
     if (writes.length === 0) return [];
-    const out: OtCommandResult[] = [];
-    for (const w of writes) out.push(await this.writeOne(w));
+    // T6 — mất liên kết ở một write ⇒ các write SAU không tới socket (kết quả theo từng write, không ném cả lô).
+    const out: OtCommandResult[] = await ghiTuanTuDungKhiMatLienKet(writes, (w) => this.writeOne(w));
     if (out.every((r) => r.ok)) this.lastOkAt = new Date();
     return out;
   }

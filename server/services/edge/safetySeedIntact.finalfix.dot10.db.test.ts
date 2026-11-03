@@ -54,7 +54,7 @@ describe.skipIf(!onTest)("final fix wave I-6 — the seed guard on _test", () =>
     const [seed] = await sql`SELECT id, enabled FROM safety_plc_configs WHERE code = ${SIM_SAFETY_SEED_CODE}`;
     if (!seed || !seed.enabled) return;
     const dead = await acquireSeedGuard(DB_URL);
-    await dead.__abandonForTests(); // the process "dies": its connection closes, nothing restores
+    await dead.__abandonForTests!(); // the process "dies": its connection closes, nothing restores (hook luôn có: acquireSeedGuard gắn nó; vắng ⇒ TypeError đỏ như trước)
     const left = await seedLeftover(DB_URL);
     expect(left).toMatchObject({ leftover: true });
     expect(left.message).toMatch(/restored at the next harness start/);

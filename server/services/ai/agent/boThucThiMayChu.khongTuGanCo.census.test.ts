@@ -43,7 +43,7 @@ const chiMuc = (co: boolean): CongChiMucMa => ({
       ? { dinhNghia: [{ duong: "src/a.ts", dong: 1, kind: "function", chuKy: "export function cong(a: number, b: number)" }], thamChieu: [{ duong: "src/a.ts", dong: 2, dongMa: "return a + b;" }], catBot: false }
       : { dinhNghia: [], thamChieu: [], catBot: false },
   timMaNgu: async () =>
-    co ? { ketQua: [{ duong: "src/a.ts", dongDau: 1, dongCuoi: 3, noiDung: "export function cong(a, b) {\n  return a + b;\n}", diem: 0.8 }], trangThai: "san-sang" as const } : { ketQua: [], trangThai: "san-sang" as const },
+    co ? { ketQua: [{ duong: "src/a.ts", dongDau: 1, dongCuoi: 3, doan: "export function cong(a, b) {\n  return a + b;\n}", diem: 0.8 }], trangThai: "san-sang" as const } : { ketQua: [], trangThai: "san-sang" as const },
   lamTuoiTep: async () => undefined,
   dungChiMuc: async () => ({ soTep: 1, soDoan: 1, ms: 1 }),
 });

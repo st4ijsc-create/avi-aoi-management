@@ -13,14 +13,10 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Drizzle operators as identity markers (đủ cho gate + fetchObservation).
-vi.mock("drizzle-orm", () => ({
-  and: (...a: any[]) => ({ op: "and", a }),
-  eq: (col: any, val: any) => ({ op: "eq", col, val }),
-  gte: (col: any, val: any) => ({ op: "gte", col, val }),
-  desc: (col: any) => ({ op: "desc", col }),
-  sql: Object.assign((..._a: any[]) => ({ op: "sql" }), {}),
-}));
+// SCADA R1b-2b-2a A2(j) — the REAL drizzle operators (importOriginal): a factory mock exporting only some operators made any new operator the gate
+// uses throw "No export defined on mock" INSIDE the gate's try ⇒ failClosed ⇒ every "blocked" test passed for the wrong reason. Every non-fail-closed
+// case below therefore asserts `failClosed === false` (J4). The fake builder ignores the condition (JS backstop filter does the targeting).
+vi.mock("drizzle-orm", async (importOriginal) => ({ ...(await importOriginal<typeof import("drizzle-orm")>()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
   interlockRules: { __t: "interlock_rules", id: {}, enabled: { __c: "enabled" } },
@@ -115,6 +111,8 @@ describe("evaluateInterlockGate — chặn khi rule vi phạm", () => {
     state.observationCount = 5;
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
+    expect(r.failClosed).toBe(false);
+    expect(r.violations).toMatchObject([{ ruleId: 1 }]);
   });
 });
 
@@ -124,6 +122,7 @@ describe("evaluateInterlockGate — cho qua", () => {
     state.observationCount = 1; // < 3
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false);
     expect(r.violations).toHaveLength(0);
   });
 
@@ -132,6 +131,7 @@ describe("evaluateInterlockGate — cho qua", () => {
     state.observationCount = 5;
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false);
   });
 
   it("rule action=alert (không chặn) → bỏ qua", async () => {
@@ -139,6 +139,7 @@ describe("evaluateInterlockGate — cho qua", () => {
     state.observationCount = 5;
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false);
   });
 
   it("rule nhắm target khác (adapter/máy/tag đều không khớp) → bỏ qua", async () => {
@@ -146,6 +147,7 @@ describe("evaluateInterlockGate — cho qua", () => {
     state.observationCount = 5;
     const r = await evaluateInterlockGate({ adapterId: 10, machineId: 5, tagKeys: ["cmd_start"] });
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false);
   });
 
   it("rule enabled=false không được truy vấn → not blocked", async () => {
@@ -153,6 +155,7 @@ describe("evaluateInterlockGate — cho qua", () => {
     state.observationCount = 5;
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(false);
+    expect(r.failClosed).toBe(false);
   });
 });
 
@@ -177,5 +180,33 @@ describe("evaluateInterlockGate — fail-closed", () => {
     const r = await evaluateInterlockGate(params);
     expect(r.blocked).toBe(true);
     expect(r.failClosed).toBe(true);
+  });
+});
+
+describe("evaluateInterlockGate — A2(i)(1) tập máy `machineIds` (hợp với `machineId` đơn)", () => {
+  const luatChiMay = (may: number) => blockRule({ targetAdapterId: null, commandTag: null, targetMachineId: may });
+
+  it("luật CHỈ nhắm máy 7 (không adapter, không tag): machineIds [7, 5] ⇒ chặn; [5] ⇒ cho qua; [] ⇒ cho qua", async () => {
+    state.rules = [luatChiMay(7)];
+    state.observationCount = 5;
+    expect(await evaluateInterlockGate({ adapterId: 10, machineIds: [7, 5], tagKeys: ["cmd_start"] })).toMatchObject({ blocked: true, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineIds: [5, 7], tagKeys: ["cmd_start"] })).toMatchObject({ blocked: true, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineIds: [5], tagKeys: ["cmd_start"] })).toMatchObject({ blocked: false, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineIds: [], tagKeys: ["cmd_start"] })).toMatchObject({ blocked: false, failClosed: false });
+  });
+
+  it("machineId đơn (dạng cũ, cổng robot) vẫn khớp; hai trường cùng có ⇒ HỢP", async () => {
+    state.rules = [luatChiMay(7)];
+    state.observationCount = 5;
+    expect(await evaluateInterlockGate({ adapterId: 10, machineId: 7, tagKeys: [] })).toMatchObject({ blocked: true, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineId: 5, machineIds: [7], tagKeys: [] })).toMatchObject({ blocked: true, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineId: 7, machineIds: [5], tagKeys: [] })).toMatchObject({ blocked: true, failClosed: false });
+    expect(await evaluateInterlockGate({ adapterId: 10, machineId: null, machineIds: [5], tagKeys: [] })).toMatchObject({ blocked: false, failClosed: false });
+  });
+
+  it("luật không có targetMachineId không bao giờ khớp theo máy (kể cả machineIds rỗng / có số)", async () => {
+    state.rules = [blockRule({ targetAdapterId: null, commandTag: null, targetMachineId: null })];
+    state.observationCount = 5;
+    expect(await evaluateInterlockGate({ adapterId: 10, machineIds: [5, 7], tagKeys: [] })).toMatchObject({ blocked: false, failClosed: false });
   });
 });

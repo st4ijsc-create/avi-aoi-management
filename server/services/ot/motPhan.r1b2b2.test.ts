@@ -183,6 +183,9 @@ describe("T3E — motPhanTuKetQua / motPhanCua (một nơi suy)", () => {
     expect(motPhanTuKetQua([{ tagKey: "x", ok: true, status: "acked" }, { tagKey: "y", ok: false, status: "rejected" }])).toBeNull();
     expect(motPhanTuKetQua(null)).toBeNull();
   });
+  it("status `sent` tính là ĐÃ ÁP: sent + failed ⇒ MOT_PHAN (daAp chứa sent, khongAp chứa failed)", () => {
+    expect(motPhanTuKetQua([{ tagKey: "s", ok: true, status: "sent" }, { tagKey: "f", ok: false, status: "failed" }])).toEqual({ daAp: ["s"], khongAp: ["f"] });
+  });
   it("bộ ghi lần thử HMI: đuôi câu mang danh sách đã áp / không áp; kết cục khác ⇒ rỗng", () => {
     expect(duoiMotPhan({ motPhan: { daAp: ["run"], khongAp: ["run2", "run3"] } })).toBe(" — đã áp: run; không áp: run2, run3");
     expect(duoiMotPhan({})).toBe("");

@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 const getDbMock = vi.fn();
-const insertValuesMock = vi.fn(async () => undefined);
+const insertValuesMock = vi.fn(async (..._args: unknown[]) => undefined);
 // Bảng đi cùng mỗi lượt `values` — `record()` còn gọi `recordLlmAudit` (sổ `ai_llm_audit`, CÙNG getDb mock này), nên
 // đếm `insert` trần là đếm lẫn hai sổ. Xem `hangDaGhi`.
 const insertMock = vi.fn((table: unknown) => ({ values: (rows: unknown) => insertValuesMock(rows, table) }));

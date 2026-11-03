@@ -162,7 +162,8 @@ function ketNoi(opts: { auth?: Record<string, unknown>; phien?: number }): Promi
     forceNew: true,
     reconnection: false,
     auth: opts.auth ?? {},
-    extraHeaders: opts.phien != null ? { cookie: `phien=${opts.phien}` } : {},
+    // F5-nhanh: thêm vé phiên `app_session_id` (bộ xác thực lại của handler nhạy cảm đọc vé này rồi tra sổ phiên qua bộ đọc tiêm).
+    extraHeaders: opts.phien != null ? { cookie: `phien=${opts.phien}; app_session_id=ve-${opts.phien}` } : {},
   });
   clients.push(c);
   return trongHan(
@@ -210,6 +211,12 @@ beforeAll(async () => {
   socketMod = await import("./socket");
   // P-S1b: sự kiện máy giờ phát theo phòng (scope:all / factory:{id}); tệp này đo XÁC THỰC MÁY bằng DB giả nên người quan sát có phạm vi TOÀN QUYỀN (phạm vi thật: socketPhamViPhong.db.test.ts).
   (await import("./socketPhongQuyen")).__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async () => null });
+  // F5-nhanh: admin:approve_registration đọc LẠI chủ thể lúc thao tác — người dùng 1 vẫn là admin, phiên `ve-1` còn hiệu lực
+  // (tệp này đo XÁC THỰC MÁY; ca hạ vai / tắt / thu hồi: socketXacThucLai.test.ts).
+  (await import("./socketXacThucLai")).__datBoDocChuTheChoTest({
+    docNguoiDung: async (id) => (id === 1 ? { id: 1, role: "admin", name: "admin", isActive: true } : undefined),
+    docPhien: async (ve) => (ve === "ve-1" ? { userId: 1, isActive: true, expiresAt: null } : undefined),
+  });
   authMod = await import("./socketMachineAuth");
   rlMod = await import("./socketMachineRateLimit");
   http = createServer();

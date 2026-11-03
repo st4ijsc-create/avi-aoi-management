@@ -71,13 +71,35 @@ function tenCongCuGoi(c: GgufStreamChunk | null): string | undefined {
   return ten.length ? "kb-agent-luot cong-cu=" + ten.join(",") : undefined;
 }
 
-/** `httpStatus` của lỗi hoặc của một `cause` (tối đa 4 tầng). */
-function trangThaiHttp(e: unknown): number | undefined {
+/** Số tầng `cause` tối đa được đọc (engine bọc ⇒ LoiStreamServer ⇒ TypeError "fetch failed" ⇒ lỗi socket = 4; trần chống vòng lặp). */
+const SAU_CHUOI_CAUSE = 6;
+
+/** Lỗi và các `cause` của nó (ngoài cùng trước), tối đa `SAU_CHUOI_CAUSE` tầng, chỉ đối tượng. */
+function chuoiCause(e: unknown): object[] {
+  const ra: object[] = [];
   let x: unknown = e;
-  for (let i = 0; i < 4 && x && typeof x === "object"; i++) {
+  for (let i = 0; i < SAU_CHUOI_CAUSE && x && typeof x === "object" && !ra.includes(x); i++) {
+    ra.push(x);
+    x = (x as { cause?: unknown }).cause;
+  }
+  return ra;
+}
+
+/** `httpStatus` của lỗi hoặc của một `cause` (tầng gần nhất thắng). */
+function trangThaiHttp(chuoi: object[]): number | undefined {
+  for (const x of chuoi) {
     const st = (x as { httpStatus?: unknown }).httpStatus;
     if (typeof st === "number") return st;
-    x = (x as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+/** Mã lỗi socket/mạng ở BẤT KỲ tầng nào (lỗi mạng thật luôn nằm dưới đáy chuỗi: `fetch failed` ⇒ cause.code). */
+const RE_MA_MANG = /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|UND_ERR_SOCKET)$/;
+function maMangTrongChuoi(chuoi: object[]): string | undefined {
+  for (const x of chuoi) {
+    const c = (x as { code?: unknown }).code;
+    if (typeof c === "string" && RE_MA_MANG.test(c)) return c;
   }
   return undefined;
 }
@@ -85,10 +107,20 @@ function trangThaiHttp(e: unknown): number | undefined {
 /** Lỗi engine ⇒ `LoiModel` có cờ tạm thời đúng nghĩa. */
 export function chuyenLoiModel(e: unknown): LoiModel {
   if (e instanceof LoiModel) return e;
-  // ★ Đợt 12 H3.1 — mã ổn định theo HTTP của llama-server (tìm cả trong chuỗi `cause` — engine có thể bọc lại lỗi).
-  const st = trangThaiHttp(e);
+  const chuoi = chuoiCause(e);
+  // Đã có chữ / mảnh tool rời máy chủ tới người dùng (bit do client hoặc engine gắn ở BẤT KỲ tầng nào) ⇒ chạy lại = câu trả lời chắp vá.
+  const daPhat = chuoi.some((x) => (x as { daPhatChu?: unknown }).daPhatChu === true);
+  // ★ Đợt 12 H3.1 — mã ổn định theo HTTP của llama-server (tìm cả trong chuỗi `cause` — engine có thể bọc lại lỗi; H3.1b: cấu hình
+  //   sản xuất STRICT tắt bọc qua G1-D, nay giữ `cause`).
+  const st = trangThaiHttp(chuoi);
   if (st === 503) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "MODEL_DANG_NAP" });
-  if (st === 429) return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "RATE_LIMIT" });
+  if (st === 429) {
+    // ★ H3.1b (C-P1) — 429 `insufficient_quota` = HẾT HẠN MỨC, không phải dồn dập: thử lại chỉ giữ chỗ ngân sách lần nữa ⇒ không tạm thời.
+    const hetHanMuc = chuoi.some((x) => (x as { maNhaCungCap?: unknown }).maNhaCungCap === "insufficient_quota");
+    return hetHanMuc
+      ? new LoiModel(moTaLoi(e), { tamThoi: false, ma: "QUOTA" })
+      : new LoiModel(moTaLoi(e), { tamThoi: true, ma: "RATE_LIMIT" });
+  }
   const code = (e as { code?: unknown } | null)?.code;
   // mã LLAMA_SERVER_DOWN xét TRƯỚC chữ tràn: lỗi nạp model có thể chứa "n_ctx" mà vẫn là lỗi TẠM THỜI (được thử lại)
   if (code === "LLAMA_SERVER_DOWN") return new LoiModel(moTaLoi(e), { tamThoi: true, ma: "LLAMA_SERVER_DOWN" });
@@ -96,9 +128,10 @@ export function chuyenLoiModel(e: unknown): LoiModel {
   if (laLoiTranNguCanh(e)) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
   if (typeof code === "string" && code.startsWith("LLM_QUEUE_")) return new LoiModel(moTaLoi(e), { tamThoi: false, ma: code });
   if (code === "tool_calls_unsupported_path") return new LoiModel(moTaLoi(e), { tamThoi: false, ma: "TOOL_CALL_KHONG_HO_TRO" });
-  if (typeof code === "string" && /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_SOCKET)$/.test(code)) {
-    return new LoiModel(moTaLoi(e), { tamThoi: true, ma: code });
-  }
+  // ★ H3.1b (lỗ L3) — RST / từ chối kết nối nằm trong `cause` (LoiStreamServer ⇒ fetch failed ⇒ ECONNRESET): tìm cả chuỗi. Thử lại CHỈ
+  //   khi chưa phát gì ra người dùng; đứt SAU khi đã phát ⇒ giữ mã mạng nhưng không tạm thời.
+  const maMang = maMangTrongChuoi(chuoi);
+  if (maMang) return new LoiModel(moTaLoi(e), { tamThoi: !daPhat, ma: maMang });
   return new LoiModel(moTaLoi(e), { tamThoi: false, ma: "MODEL_LOI" });
 }
 
@@ -174,6 +207,9 @@ async function* luongModelMayChu(
     //   Chỉ BĂM: prompt = đuôi TRAN_CHU_DAU_VET ký tự của hội thoại gửi đi; câu trả lời = chữ đã che; mã nguồn không được lưu.
     const t0 = Date.now();
     let chuDaPhat = "";
+    // ★ H3.1b (lỗ L5) — lượt này đã phát chữ / suy luận nào ra người dùng chưa (chuDaPhat bị cắt ở trần băm nên không dùng được).
+    let coChu = false;
+    let coNghi = false;
     let ketThuc: GgufStreamChunk | null = null;
     let hoanTat = false;
     try {
@@ -182,11 +218,15 @@ async function* luongModelMayChu(
         const an = cheChu.push(catSuyLuan.push(c.token));
         if (an) {
           if (chuDaPhat.length < TRAN_CHU_DAU_VET) chuDaPhat += an;
+          coChu = true;
           day({ loai: "chu", noiDung: an });
         }
       } else if (c.type === "reasoning" && typeof c.token === "string" && c.token) {
         const an = cheNghi.push(c.token);
-        if (an) day({ loai: "nghi", noiDung: an });
+        if (an) {
+          coNghi = true;
+          day({ loai: "nghi", noiDung: an });
+        }
       } else if (c.type === "error") {
         if (laLoiTranNguCanh(c.error)) throw new LoiModel(`model stream error: ${c.error}`, { tamThoi: false, ma: MA_LOI_TRAN_NGU_CANH });
         throw new LoiModel(`model stream error: ${c.error ?? "unknown"}`, { tamThoi: true, ma: "MODEL_LOI_LUONG" });
@@ -194,12 +234,27 @@ async function* luongModelMayChu(
         const conChu = cheChu.push(catSuyLuan.flush()) + cheChu.flush();
         if (conChu) {
           if (chuDaPhat.length < TRAN_CHU_DAU_VET) chuDaPhat += conChu;
+          coChu = true;
           day({ loai: "chu", noiDung: conChu });
         }
         ketThuc = c;
-        hoanTat = true;
         const conNghi = cheNghi.flush();
-        if (conNghi) day({ loai: "nghi", noiDung: conNghi });
+        if (conNghi) {
+          coNghi = true;
+          day({ loai: "nghi", noiDung: conNghi });
+        }
+        // ★ H3.1b (lỗ L5, C-P1 EMPTY_RESPONSE) — 200 mà không một chữ / tool (hoặc chỉ `<think>` không đóng — bộ cắt nuốt hết) ⇒ KHÔNG báo
+        //   hoàn thành im lặng. Thử lại (tạm thời) CHỈ khi chưa phát gì ra người dùng — kể cả suy luận; đã hiện suy luận ⇒ dừng có lỗi.
+        //   Lượt bị cắt ở trần (`length`) để lõi xử lý như cũ (biCat / G5-D).
+        if (!coChu && !(Array.isArray(c.toolCalls) && c.toolCalls.length > 0) && c.finishReason !== "length") {
+          throw new LoiModel(
+            coNghi
+              ? "model kết thúc lượt mà không có câu trả lời (chỉ có suy luận) — EMPTY_RESPONSE"
+              : "model trả lời RỖNG (200 không chữ, không tool call) — EMPTY_RESPONSE",
+            { tamThoi: !coNghi, ma: "EMPTY_RESPONSE" },
+          );
+        }
+        hoanTat = true;
         const coUsage = typeof c.tokensPrompt === "number" || typeof c.tokensGenerated === "number";
         day({
           loai: "xong",

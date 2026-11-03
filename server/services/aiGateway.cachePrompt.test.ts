@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 const getDbMock = vi.fn();
-const insertValuesMock = vi.fn(async () => undefined);
+const insertValuesMock = vi.fn(async (..._args: unknown[]) => undefined);
 const insertMock = vi.fn((table: unknown) => ({ values: (rows: unknown) => insertValuesMock(rows, table) }));
 
 vi.mock("./aiGgufEngine", () => ({

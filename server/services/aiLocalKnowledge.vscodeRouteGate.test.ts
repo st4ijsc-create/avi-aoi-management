@@ -118,7 +118,7 @@ const SUFFIX_H6 =
 const SUFFIX_H6_CA_HAI =
   "\n\n(Nhắc lại: nếu câu hỏi trên cần nội dung một tệp bạn chưa có, hãy phát khối ```avi-tool``` như đã hướng dẫn; nếu câu hỏi là yêu cầu viết mã MỚI (không cần đọc tệp), hãy viết THẲNG mã đó — cả hai ca ĐỪNG trả lời \"không có thông tin\". Nếu câu hỏi trên hỏi về, hoặc yêu cầu dùng, một CÔNG CỤ NGOÀI (MCP) đã kết nối ở trên, đừng trả lời lạc đề — hãy phát khối ```avi-tool``` với \"tool\":\"mcp_goi\" như đã hướng dẫn. Nếu câu hỏi trên là một điều đáng NHỚ LÂU DÀI (chưa có trong BỘ NHỚ DÀI HẠN ở trên) hoặc yêu cầu bạn ghi nhớ nó, đừng bỏ qua — hãy đề xuất bằng khối ```avi-tool``` với \"tool\":\"de_xuat_nho\" như đã hướng dẫn.)";
 // Khối DẠY MCP (bản sao literal của `dungVanBanDayMcpNgoai([{server:"everything",tool:"echo",...}])`).
-function khoiDayMcp(server, tool, moTa) {
+function khoiDayMcp(server: string, tool: string, moTa: string) {
   return (
     `Bạn còn có thể gọi CÔNG CỤ NGOÀI mà người dùng đã KẾT NỐI VÀ DUYỆT (MCP server ngoài) — danh sách hiện có:\n` +
     `- server "${server}", tool "${tool}": ${moTa}\n\n` +
@@ -130,7 +130,7 @@ function khoiDayMcp(server, tool, moTa) {
   );
 }
 // Khối DẠY bộ nhớ (bản sao literal của `dungVanBanDayBoNho(["<mục nhớ>"])`).
-function khoiDayBoNho(mucNho) {
+function khoiDayBoNho(mucNho: string) {
   return (
     `BỘ NHỚ DÀI HẠN — những điều người dùng (hoặc chính bạn, ĐÃ ĐƯỢC DUYỆT) từng lưu lại ở các lần hỏi TRƯỚC (quyết định kiến trúc, quy ước dự án, sở thích người dùng):\n` +
     `- ${mucNho}\n\n` +

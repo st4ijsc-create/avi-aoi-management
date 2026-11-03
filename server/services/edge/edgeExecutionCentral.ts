@@ -38,8 +38,8 @@
  * 'aborted' and sends what it can; the edge learns it from the next answer (or from the run row, edgeRunGuard).
  */
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, like, sql } from "drizzle-orm";
-import { abortResendAllowed } from "@shared/foeAbortResend"; // the engine's own re-send window (R-6-d), read the same way
+import { and, asc, eq, gt, gte, inArray, isNotNull, like, lte, sql } from "drizzle-orm";
+import { ABORT_RESEND_WINDOW_MS, abortResendAllowed } from "@shared/foeAbortResend"; // the engine's own re-send window (R-6-d), read the same way
 import { getDb } from "../../db/connection";
 import { orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows } from "../../../drizzle/schema";
 import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
@@ -47,6 +47,7 @@ import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import type { FoeScope } from "../orchestration/foe/foeScope";
 import { centralStopped, edgeRuntimeEnabled as edgeRuntimeEnabledNow } from "./edgeCoordinator";
 import { runEdgeAssignments, isEdgeSchemaMissing, type RunEdgeAssignment } from "./edgeExecutionSchema";
+import { chonClaimsChoTraLoi, chonStopsChoTraLoi, giuTrongGioiHanTraLoi } from "./docHetTheoTrang";
 export { readEdgeAssignment, edgeAssignedRunIdsAmong } from "./edgeExecutionSchema";
 import { hashEdgeSecret, sameDigest, type EdgeNodePrincipal } from "./edgeNodeCredentials";
 // doc 81 Đợt 10 task B — protocol v2
@@ -54,6 +55,8 @@ import { users } from "../../../drizzle/schema";
 import { computeBindingDetail, findStepDeep, runStartedViaApi, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
 import {
   EDGE_PROTOCOL_VERSION,
+  EDGE_PULL_CLAIMS_MAX,
+  EDGE_PULL_STOPS_UNCONFIRMED_MAX,
   edgeClaimRequestSchema,
   edgeCompleteRequestSchema,
   edgeError,
@@ -257,12 +260,7 @@ export async function pullForNode(
       }
       runs.push({ ...base, definition: def }); // F2 — no controller read here (the digest is compared fresh at the claim)
     }
-    const claimedRows = await d
-      .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
-      .from(runEdgeAssignments)
-      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
-      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash)))
-      .limit(200);
+    const { hang: claimedRows } = await docClaimCuaNode(d, node); // A2(j) — every claim (they carry the abort signal), not an unordered 200
     const staleBefore = Date.now() - edgeClaimStaleMs();
     const claims: NodeClaim[] = claimedRows.map(({ a, run }) => {
       const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
@@ -278,31 +276,105 @@ export async function pullForNode(
     // node, so no signal can reach one): central's own sweep could not confirm some STOP (a failed `abort:<id>` row — central
     // usually cannot reach the line's devices). The node re-sends exactly those through its dispatchers (the engine's resend:
     // never a STOP already confirmed, only within ABORT_RESEND_WINDOW_MS — the same window, read the same way, as an abort retry).
-    const abortedRows = await d
-      .select({ runId: runEdgeAssignments.runId, finishedAt: orchestrationRuns.finishedAt })
-      .from(runEdgeAssignments)
-      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
-      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), eq(orchestrationRuns.status, "aborted")))
-      .orderBy(desc(orchestrationRuns.finishedAt))
-      .limit(50);
-    const recent = abortedRows.filter((r) => abortResendAllowed(r.finishedAt)).map((r) => r.runId);
-    const stopsUnconfirmed = recent.length
-      ? [
-          ...new Set(
-            (
-              await d
-                .select({ runId: orchestrationRunSteps.runId })
-                .from(orchestrationRunSteps)
-                .where(and(inArray(orchestrationRunSteps.runId, recent), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")))
-            ).map((r) => r.runId),
-          ),
-        ]
-      : [];
+    // A2(j) — every such run in the window (read to the end), not the 50 most recent
+    const stopsUnconfirmed = (await docRunAbortCanGuiLaiStop(d, node)).hang.map((r) => r.a.runId);
     return { http: 200, data: { node: node.nodeCode, runs, claims, stopsUnconfirmed } };
   } catch (err) {
     if (!isEdgeSchemaMissing(err)) console.error(`[EdgeExec] pull for node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
     return unavailable;
   }
+}
+
+// ── A2(j): the two lists of a pull that carry a STOP / an abort signal, read TO THE END ──────────────────────────────────────────────
+
+type ClaimRow = { a: RunEdgeAssignment; run: { id: number; status: string; contextJson: unknown } };
+type PullDb = Awaited<ReturnType<typeof db>>;
+
+/**
+ * SCADA R1b-2b-2a A2(j) — EVERY current claim of the node (claim token set), joined with its run. Before: `LIMIT 200` with no ORDER BY — a live run
+ * outside an arbitrary 200 never learnt of central's abort through the pull (the edge aborts only what it finds in `claims` with `abortRequested`).
+ * Ascending runId (the assignment's PK) cursor, page by page (docHetTheoTrang); the page budget reached ⇒ `catBot` (the caller still uses every row
+ * read, alerts, and — v2 — tells the node its run state is incomplete).
+ */
+export async function docClaimCuaNode(d: PullDb, node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">): Promise<{ hang: ClaimRow[]; catBot: boolean }> {
+  const { docHetTheoTrang, baoDocCatBot } = await import("./docHetTheoTrang");
+  const r = await docHetTheoTrang<ClaimRow>(
+    (sau, n) =>
+      d
+        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
+        .from(runEdgeAssignments)
+        .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+        .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash), sau === null ? undefined : gt(runEdgeAssignments.runId, sau)))
+        .orderBy(asc(runEdgeAssignments.runId))
+        .limit(n) as Promise<ClaimRow[]>,
+    (x) => x.a.runId,
+  );
+  if (r.catBot) {
+    baoDocCatBot({
+      kind: "edge_claims_list_cut",
+      title: `Edge node ${node.nodeCode}: claims list could not be read to the end`,
+      message: `Edge node ${node.nodeCode}: the list of its current claims (which carries central's abort signal) stopped at its page budget after ${r.hang.length} rows — every row read is answered; the rest is not in this pull.`,
+      dedupKey: `edge_claims_list_cut:${node.nodeId}`,
+    });
+  }
+  return r;
+}
+
+type AbortRow = { a: RunEdgeAssignment; finishedAt: Date | null };
+
+/**
+ * SCADA R1b-2b-2a A2(j) — EVERY run of the node that central ABORTED inside the re-send window (ABORT_RESEND_WINDOW_MS, abortResendAllowed) and that
+ * has a failed `abort:<step>` row (a STOP central could not confirm — the node re-sends it, L-7). Before: the 50 most recent aborted runs, then the
+ * window ⇒ the 51st+ such STOP was silently dropped. The window is pushed into SQL (1 s wider on each side — the JS check stays the exact rule), runs
+ * are read on an ascending runId cursor to the end; the failed-step lookup runs per 200 ids (bounded IN lists).
+ */
+export async function docRunAbortCanGuiLaiStop(
+  d: PullDb,
+  node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">,
+  now: number = Date.now(),
+): Promise<{ hang: AbortRow[]; catBot: boolean }> {
+  const { docHetTheoTrang, baoDocCatBot } = await import("./docHetTheoTrang");
+  const tu = new Date(now - ABORT_RESEND_WINDOW_MS - 1_000);
+  const den = new Date(now + ABORT_RESEND_WINDOW_MS + 1_000);
+  const r = await docHetTheoTrang<AbortRow>(
+    (sau, n) =>
+      d
+        .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
+        .from(runEdgeAssignments)
+        .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+        .where(
+          and(
+            eq(runEdgeAssignments.edgeNodeId, node.nodeId),
+            eq(orchestrationRuns.status, "aborted"),
+            gte(orchestrationRuns.finishedAt, tu),
+            lte(orchestrationRuns.finishedAt, den),
+            sau === null ? undefined : gt(runEdgeAssignments.runId, sau),
+          ),
+        )
+        .orderBy(asc(runEdgeAssignments.runId))
+        .limit(n) as Promise<AbortRow[]>,
+    (x) => x.a.runId,
+  );
+  const recent = r.hang.filter((x) => abortResendAllowed(x.finishedAt, now));
+  const failed = new Set<number>();
+  const CO = 200;
+  for (let i = 0; i < recent.length; i += CO) {
+    const ids = recent.slice(i, i + CO).map((x) => x.a.runId);
+    const rows = await d
+      .select({ runId: orchestrationRunSteps.runId })
+      .from(orchestrationRunSteps)
+      .where(and(inArray(orchestrationRunSteps.runId, ids), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")));
+    for (const x of rows) failed.add(x.runId);
+  }
+  if (r.catBot) {
+    baoDocCatBot({
+      kind: "edge_stop_resend_list_cut",
+      title: `Edge node ${node.nodeCode}: aborted runs to re-send could not be read to the end`,
+      message: `Edge node ${node.nodeCode}: the list of aborted runs whose STOPs central could not confirm stopped at its page budget after ${r.hang.length} runs — every run read is re-sent; the rest is not in this pull. Use the machines' E-STOP where needed.`,
+      dedupKey: `edge_stop_resend_list_cut:${node.nodeId}`,
+    });
+  }
+  return { hang: recent.filter((x) => failed.has(x.a.runId)), catBot: r.catBot };
 }
 
 // ── F2: a run no node claims is held, visibly (bounded queueing) ───────────────────────────────────────────────────────
@@ -782,44 +854,35 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
     return out;
   });
   const claims = await section("claims", [] as EdgeNodeClaim[], async () => {
-    const claimedRows = await d
-      .select({ a: runEdgeAssignments, run: { status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
-      .from(runEdgeAssignments)
-      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
-      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash)))
-      .limit(200);
+    // A2(j) — EVERY claim, read to the end (it carries central's abort signal); budget cut / more than the answer carries ⇒ runStateUnavailable
+    const { hang: claimedRows, catBot } = await docClaimCuaNode(d, node);
     const staleBefore = Date.now() - edgeClaimStaleMs();
-    return claimedRows
+    const all = claimedRows
       .filter(({ a }) => a.claimSeq > 0)
       .map(({ a, run }) => {
         const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
         return { runId: a.runId, claimSeq: a.claimSeq, status: run.status as EdgeNodeClaim["status"], abortRequested: centralStopped(run), stale: !last || new Date(last).getTime() < staleBefore };
       });
+    const { chon, vuot } = chonClaimsChoTraLoi(node, all); // aborts first; overflow ⇒ rotating window + URGENT alert (deduped)
+    if (catBot || vuot) {
+      runSideFailed = true;
+      console.error(`[EdgeExec] v2 pull for node ${node.nodeCode}: ${all.length} claims (${all.filter((c) => c.abortRequested).length} with an abort) — ${vuot ? `more than the answer carries (${EDGE_PULL_CLAIMS_MAX}; aborts first)` : "the read stopped at its page budget"}; runStateUnavailable set (the node holds non-STOP work)`);
+    }
+    return chon;
   });
   // L-7 — aborted runs of this node whose STOPs central could not confirm: a SIGNED sweep picture each (the node re-sends);
   // one run whose picture cannot be built / signed is left out (logged, runStateUnavailable) — never the others, never the commands
   const stopsUnconfirmed = await section("unconfirmed STOPs of aborted runs", [] as Array<{ runId: number; picture: EdgeSignedEnvelope }>, async () => {
-    const abortedRows = await d
-      .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
-      .from(runEdgeAssignments)
-      .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
-      .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), eq(orchestrationRuns.status, "aborted")))
-      .orderBy(desc(orchestrationRuns.finishedAt))
-      .limit(50);
-    const recent = abortedRows.filter((r) => abortResendAllowed(r.finishedAt));
-    const failedIds = recent.length
-      ? new Set(
-          (
-            await d
-              .select({ runId: orchestrationRunSteps.runId })
-              .from(orchestrationRunSteps)
-              .where(and(inArray(orchestrationRunSteps.runId, recent.map((r) => r.a.runId)), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")))
-          ).map((r) => r.runId),
-        )
-      : new Set<number>();
+    // A2(j) — EVERY aborted run of the window with an unconfirmed STOP (read to the end, not the 50 most recent); more than the answer carries ⇒
+    // a rotating window per pull (none starves) + runStateUnavailable (the node keeps its re-send state for the runs not listed this time)
+    const { hang: unconfirmed, catBot } = await docRunAbortCanGuiLaiStop(d, node);
+    const { chon: recent, vuot } = chonStopsChoTraLoi(node, unconfirmed); // overflow ⇒ rotating window + URGENT alert (deduped)
+    if (catBot || vuot) {
+      runSideFailed = true;
+      console.error(`[EdgeExec] v2 pull for node ${node.nodeCode}: ${unconfirmed.length} aborted runs with an unconfirmed STOP — ${vuot ? `more than the answer carries (${EDGE_PULL_STOPS_UNCONFIRMED_MAX}; rotating window)` : "the read stopped at its page budget"}; runStateUnavailable set`);
+    }
     const out: Array<{ runId: number; picture: EdgeSignedEnvelope }> = [];
     for (const r of signer ? recent : []) {
-      if (!failedIds.has(r.a.runId)) continue;
       await section(`sweep picture of aborted run ${r.a.runId}`, undefined, async () => {
         const def = await assignedDefinition(d, r.a);
         if (!def) return;
@@ -829,20 +892,22 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
     }
     return out;
   });
+  // A2(j) AMENDMENT 1 — the assertion: never over the schema limits (the edge would drop the whole answer, STOPs included); order STOPs → abort
+  // claims → the rest
   return {
     http: 200,
-    data: {
+    data: giuTrongGioiHanTraLoi(node, {
       node: node.nodeCode,
       protocolVersion: EDGE_PROTOCOL_VERSION,
       configVersion,
       keysetVersion: signer ? signer.keyset.version : 0,
       programCheckRequested: await programCheckWanted(d, node),
-      runs,
-      claims,
-      stopsUnconfirmed,
       ...commands,
+      stopsUnconfirmed,
+      claims,
+      runs,
       ...(runSideFailed ? { runStateUnavailable: true as const } : {}),
-    },
+    }),
   };
 }
 

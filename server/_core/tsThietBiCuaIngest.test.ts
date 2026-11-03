@@ -160,7 +160,7 @@ describe("docTsThietBi — bảng luật (oracle Date.UTC)", () => {
     ["2026-09-27T03:00Z", { ok: true, t: T }],
     ["rác", { ok: false, reason: "invalid_ts" }],
     ["2026-02-30T25:61:00Z", { ok: false, reason: "invalid_ts" }],
-  ])("%s", (raw, ky) => {
+  ])("%s", (raw, ky: { ok: boolean; t?: number; reason?: string }) => {
     const k = docTsThietBi(raw);
     if (ky.ok) expect(k.ok && k.ts?.getTime()).toBe(ky.t);
     else expect(k).toEqual({ ok: false, reason: ky.reason });

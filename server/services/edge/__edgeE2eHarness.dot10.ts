@@ -272,6 +272,9 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   const DB_URL = process.env.DATABASE_URL ?? "";
   if (!/_test\b/.test(new URL(DB_URL).pathname)) throw new Error("the F1 E2E harness runs on the _test DB only");
   const pgPort = Number(new URL(DB_URL).port || 5432);
+  // A2 test — the start-up sweep below recognises ONLY the registered prefixes (its scope = this harness's own markers)
+  const { HARNESS_PREFIXES, sweepHarnessLeftovers } = await import("./__edgeE2eSweep.dot10");
+  if (!(HARNESS_PREFIXES as readonly string[]).includes(prefix)) throw new Error(`F1 harness prefix "${prefix}" is not in HARNESS_PREFIXES (__edgeE2eSweep.dot10.ts): register it so a killed run of it is swept`);
   const DAU = `${prefix}-${Date.now()}`;
   const saved: Record<string, string | undefined> = {};
   const envAll = { ...CENTRAL_ENV, ...(opts.env ?? {}) };
@@ -286,6 +289,10 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
   const ids: Record<string, number> = {};
   const codes: Record<string, string> = {};
   const edges: EdgeProc[] = [];
+
+  // A2 test — BEFORE inserting anything: leftovers of DEAD runs (killed process trees never ran teardown) are made inert —
+  // UPDATE only, own markers only, fail-closed on the DB identity, pending STOPs left alone (see __edgeE2eSweep.dot10.ts)
+  await sweepHarnessLeftovers(sql).catch((e) => console.warn(`[F1 sweep] failed — nothing more swept: ${(e as Error).message}`));
 
   // ── people ──
   const adminLogin = { username: `${DAU}-admin`, password: `F1-${Math.random().toString(36).slice(2)}-pw!` };
@@ -690,6 +697,9 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
       }
       c.setMode("up");
       await new Promise<void>((r) => srv.close(() => r()));
+      // A2 test fix round 1 (R1) — the run's own STOPs are closed while its simulators still listen: central's transient STOP
+      // session reaches the harness's OWN OT / safety sim port (closed after this, so no other process can have rebound it)
+      await closeRunStops().catch((e) => console.warn(`[F1] STOP closing: ${(e as Error).message}`));
       await ot.close().catch(() => undefined);
       await plc.close().catch(() => undefined);
       // doc 81 Đợt 12 final fix wave residual (R-12-f item 2) — this harness's own safety-PLC row(s) go BEFORE the seed lock is
@@ -706,6 +716,23 @@ export async function setupCentral(prefix: string, opts: { env?: Record<string, 
       else console.warn(`[F1] kept ${dir}`);
     },
   };
+  /** A2 test — this run's STOP requests (own devices, own marker, sim / loopback only, bounded): see __edgeE2eStopClose.dot10.ts. */
+  async function closeRunStops(): Promise<void> {
+    const { closeOwnStops } = await import("./__edgeE2eStopClose.dot10");
+    const own = await import("../robot/deviceOwnershipService");
+    await closeOwnStops({
+      sql,
+      actorUserId: u.admin,
+      robots: [ids.robotA, ids.robotB, ids.robotC].filter(Boolean),
+      adapters: [ids.adapterA, ids.adapterB].filter(Boolean),
+      runCodes: new Set([codes.robotA, codes.robotB, codes.robotC, codes.adapterA, codes.adapterB].filter(Boolean)),
+      own,
+      detach: async (kind, id) => {
+        if (kind === "robot") await (await import("../robot/robotManager")).detachRobot(id);
+        else await (await import("../ot/otManager")).detachOtAdapter(id);
+      },
+    });
+  }
   return c;
 }
 
@@ -729,9 +756,8 @@ async function cleanupRows(sql: ReturnType<typeof postgres>, ids: Record<string,
   }
   const robotsAll = [ids.robotA, ids.robotB, ids.robotC].filter(Boolean);
   const adaptersAll = [ids.adapterA, ids.adapterB].filter(Boolean);
-  // pending STOP requests block a device delete (0374 R-10-i): closed through the guarded human resolution
-  await sql`SELECT public.edge_stop_resolve(q.id, ${u.admin}, 'F1 e2e teardown') FROM robot_motion_lock_requests q
-            WHERE (q."robotId" IN ${sql(robotsAll)} OR q."adapterId" IN ${sql(adaptersAll)}) AND q."ackedAt" IS NULL AND q.kind = 'stop'`.catch(warn("STOP resolution"));
+  // pending STOP requests block a device delete (0374 R-10-i): A2 test fix round 1 (R1) — closed EARLIER in teardown(), before the
+  // harness's simulators close (closeOwnStops, __edgeE2eStopClose.dot10.ts); whatever is still pending keeps its device (logged)
   await sql`UPDATE robot_motion_lock_requests SET "ackedAt" = now(), outcome = 'expired' WHERE ("robotId" IN ${sql(robotsAll)}) AND "ackedAt" IS NULL AND kind <> 'stop'`.catch(() => undefined);
   const { getDb } = await import("../../db/connection");
   const d = await getDb().catch(() => null);

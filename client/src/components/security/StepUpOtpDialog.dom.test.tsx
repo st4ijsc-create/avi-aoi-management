@@ -49,8 +49,9 @@ describe("useStepUpOtp — trả focus về nút đã mở hộp OTP", () => {
       fireEvent.click(screen.getByRole("button", { name: "Huỷ" }));
       await new Promise((r) => setTimeout(r, 10)); // Radix FocusScope trả focus trong setTimeout(0)
     });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(opener);
+    // chờ có giới hạn (waitFor): dưới tải song song FocusScope của Radix trả focus muộn hơn 10 ms (cùng lý do hai ca dưới)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -63,8 +64,9 @@ describe("useStepUpOtp — trả focus về nút đã mở hộp OTP", () => {
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
       await new Promise((r) => setTimeout(r, 10));
     });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(opener);
+    // chờ có giới hạn (waitFor): dưới tải song song FocusScope của Radix trả focus muộn hơn 10 ms (cùng lý do hai ca dưới)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it("nút mở đã rời DOM ⇒ không ném, không cố focus phần tử chết", async () => {

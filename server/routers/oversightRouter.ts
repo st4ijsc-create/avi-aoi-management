@@ -403,7 +403,7 @@ const ZERO_SUMMARY = {
 
 // ── ILK-06 (doc 80 Phụ lục D §6/§7.1) — số rule interlock THỰC SỰ CHẶN ĐƯỢC LỆNH ──
 // "Độ phủ interlock" phải khớp CHÍNH XÁC tập rule mà `evaluateInterlockGate` xét
-// (`interlockGate.ts:207-215`): enabled + ĐÃ DUYỆT (approvedBy IS NOT NULL) + action nằm
+// (`interlockGate.ts` `dieuKienLuatUngVien` + the JS backstop in `evaluateInterlockGate`): enabled + ĐÃ DUYỆT (approvedBy IS NOT NULL) + action nằm
 // trong allowlist chặn (`INTERLOCK_GATE_ACTIONS` — không tính `alert`, KHÔNG chặn gì) + có
 // đích (targetMachineId/targetAdapterId). Fix round 1 — bản trước chỉ xét enabled+có đích,
 // nên một rule `alert` có đích nhưng CHƯA DUYỆT vẫn được đếm là "có phủ" — đúng hình dạng
@@ -802,6 +802,7 @@ export const oversightRouter = router({
       // gồm luật lệch lưới (luatLenhLechLuoi nhận cùng cổng qua `them`)
       const cauHinhHong = pv ? await fetchInterlockCauHinhHong(d, congLuat) : { count: 0, degraded: true };
       const stopQuaHan24h = await fetchStopQuaHan(d, pv);
+      const { kiemNganSachPoolStop } = await import("../services/scada/nganSachPoolStop");
 
       return {
         otControlEnabled,
@@ -818,6 +819,8 @@ export const oversightRouter = router({
         stopQuaHan24h,
         // R1b-2b-2a T1 (KD-A3, fix round 1) — ghi nền của đường STOP: bị bỏ 24 h + trạng thái sống trần / hàng chờ (bộ nhớ tiến trình; chỉ toàn quyền)
         ghiNenStopBoQua24h: ghiNenStopBoQua(pv),
+        // R1b-2b-2a T9 (muc 71) - DB_POOL_MAX so voi ngan sach pool cua STOP HMI (cau hinh tien trinh, khong theo pham vi).
+        nganSachPoolStop: kiemNganSachPoolStop(),
         // ILK-06 — ghi lệnh thật BẬT (OT hoặc robot) mà engine interlock TẮT.
         writesOnEngineOff: (otControlEnabled || robotControlEnabled) && !interlockEngineEnabled,
         // Đợt 10.3 (§12) — dịch vụ forge (sinh ảnh / chuyển giọng nói… ra ngoài KHÔNG qua cổng AI ngoài) đang cấu hình?

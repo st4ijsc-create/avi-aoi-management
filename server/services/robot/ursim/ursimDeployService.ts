@@ -25,12 +25,13 @@
  * no socket), so `power on` + `brake release` cannot be aimed at a real arm through here.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { programDeployments } from "../../../../drizzle/schema";
 import { dpcDeployEnabled } from "../../programming/programmingService";
 import { validateUrscriptOnUrsim, ursimEnabled, type UrsimValidationResult } from "./ursimHarness";
 import { resolveSimTarget } from "./simTargetRegistry";
+import { khoaDispatchLapTrinh, LOI_KHOA_LAP_TRINH_RONG } from "../../programming/khoaMienLapTrinh";
 
 export interface UrsimDeployRequest {
   /** The URScript TEXT (as produced by the D1 transpiler / a build). */
@@ -98,16 +99,23 @@ async function record(
  * Deploy a URScript program to a URSim endpoint through the gate. Same gate/idempotency
  * semantics as programmingService.deployBuild; the ONLY device path is the URSim client.
  */
-export async function deployUrscriptToUrsim(req: UrsimDeployRequest): Promise<UrsimDeployResult> {
+export async function deployUrscriptToUrsim(reqBenGoi: UrsimDeployRequest): Promise<UrsimDeployResult> {
+  // SCADA R1b-2b-2a T6d fix 1 (review M4) — the caller's key goes into the programming key DOMAIN of the requester before any lookup / insert
+  // (`pd:u<requestedBy>:…`, same function as the Mitsubishi path), and the lookup filters `requestedBy`: another user's / factory's key is simply a
+  // different key (never their row, never "already exists"). Census `khoaMienLapTrinh.census.test.ts` §D.
+  // R1b-2b-2a A2(a) — phần bên gọi rỗng ⇒ từ chối (không tra, không ghi, không chạm bộ điều khiển).
+  const khoa = khoaDispatchLapTrinh(reqBenGoi.idempotencyKey, reqBenGoi.hitl.requestedBy);
+  if (khoa === null) return { status: "rejected", simulated: true, reason: LOI_KHOA_LAP_TRINH_RONG };
+  const req: UrsimDeployRequest = { ...reqBenGoi, idempotencyKey: khoa };
   const db = await getDb();
 
-  // Idempotency — return a prior terminal deployment for this key as-is.
+  // Idempotency — return a prior terminal deployment for this key (of THIS requester) as-is.
   if (db) {
     try {
       const [prior] = await db
         .select()
         .from(programDeployments)
-        .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
+        .where(and(eq(programDeployments.idempotencyKey, req.idempotencyKey), eq(programDeployments.requestedBy, req.hitl.requestedBy)))
         .limit(1);
       if (prior) {
         return {

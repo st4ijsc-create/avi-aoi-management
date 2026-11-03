@@ -4,11 +4,14 @@
  * Vì sao: tệp test tạo admin/supervisor mà không dọn ⇒ `aoi_management_test` chất 1.951 admin/supervisor hoạt động, mọi cảnh báo "gửi cho mọi admin" nhân hàng theo số đó
  * (1,86 triệu hàng `notifications`). Helper `server/testing/nguoiDungTest.ts` đăng ký afterAll dọn đúng các id nó tạo.
  *
- * Hai danh sách MIỄN — chỉ được GIẢM (bậc thang):
- *   • TU_DON  — tệp có tự xoá người dùng (`delete(users)` / `DELETE FROM users`) nên không rò. TODO: chuyển dần sang helper khi sửa tệp.
- *   • CHUA_DON — tệp tạo người dùng mà KHÔNG xoá ⇒ RÒ. Đã RỖNG, phải giữ rỗng.
- *   • HOAN_TAC — tệp tạo người dùng trong giao dịch luôn bị hoàn tác ⇒ không rò, và KHÔNG được chuyển sang helper (đổi điều được đo).
- * Mục lỗi thời (tệp không còn tạo người dùng, hoặc không còn tồn tại) ⇒ ĐỎ, buộc xoá khỏi danh sách.
+ * Luật hiện hành (2026-11-02, kiem-dinh N3): test KHÔNG DELETE, mọi dọn dẹp bằng ROLLBACK ⇒ cách ĐÚNG để một test có người dùng là chèn TRONG giao dịch bị hoàn tác.
+ * Tệp tạo người dùng được phân loại bằng AST (không còn danh sách tay + trần cho nhóm này):
+ *   • HOÀN TÁC (TỰ NHẬN BIẾT) — có `.transaction(cb)` / `.begin(cb)` (postgres.js) mà `cb` ném một giá trị tên có "rollback" (hoặc câu `ROLLBACK` thô), KHÔNG xoá người dùng, và KHÔNG chèn người
+ *     dùng qua kết nối chung (`db` / `conn` / `getDb()` …) ⇒ không bao giờ commit ⇒ không rò. Tệp mới đúng kiểu này KHÔNG phải sửa census.
+ *   • TU_DON  — tệp CŨ tự xoá người dùng nó tạo (`delete(users)` / `DELETE FROM users`). Trái luật mới nhưng CHƯA bắt buộc chuyển: chỉ được GIẢM (trần).
+ *   • CHUA_DON — tạo mà KHÔNG xoá ⇒ RÒ. Đã RỖNG, phải giữ rỗng.
+ *   • Helper `taoNguoiDungTest` — LỖI THỜI (nó DELETE): không dùng cho tệp mới; tệp đang dùng giữ nguyên, chuyển dần sang giao dịch hoàn tác.
+ * Mục lỗi thời trong danh sách (tệp mất / không còn tạo người dùng) ⇒ ĐỎ, buộc xoá khỏi danh sách.
  */
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -96,29 +99,11 @@ export const TU_DON: readonly string[] = [
   "server/services/scheduledReportScope.db.test.ts",
 ];
 
-/** Tệp tạo người dùng KHÔNG xoá ⇒ RÒ. ĐÃ RỖNG (2026-10-23): bốn tệp rò đã chuyển sang `taoNguoiDungTest`, bảy tệp còn lại hoá ra không rò (xem HOAN_TAC). Phải GIỮ rỗng. */
+/** Tệp tạo người dùng KHÔNG xoá ⇒ RÒ. ĐÃ RỖNG (2026-10-23): bốn tệp rò đã chuyển sang `taoNguoiDungTest`, bảy tệp còn lại hoá ra không rò (chúng nằm trong giao dịch hoàn tác). Phải GIỮ rỗng. */
 export const CHUA_DON: readonly string[] = [];
-
-/**
- * Tệp tạo người dùng TRONG GIAO DỊCH BỊ HOÀN TÁC (`class Rollback` / `ROLLBACK`) ⇒ không bao giờ commit ⇒ KHÔNG rò (đo 2026-10-23: chạy từng tệp, số người dùng ở `_test` không đổi).
- * KHÔNG chuyển sang helper: helper chèn ở kết nối riêng (commit), còn các ca này đo khoá/thứ tự/đua NGAY TRONG giao dịch ấy — đổi nơi tạo là đổi điều được đo.
- * Bắt buộc: nguồn tệp có dấu hoàn tác. `otIntentResultRace` còn một fixture ĐÃ COMMIT — đã chuyển sang helper; phần `INSERT INTO users` còn lại nằm trong `tx` bị hoàn tác.
- * TODO: nếu một tệp ở đây thêm người dùng ngoài giao dịch hoàn tác, census KHÔNG thấy — kiểm bằng đo số người dùng `_test` trước/sau (xem báo cáo).
- */
-export const HOAN_TAC: readonly string[] = [
-  "server/services/edge/edgeControlSchema.dot10.db.test.ts",
-  "server/services/edge/edgeDbSearchPath.dot10.db.test.ts",
-  "server/services/edge/edgeDbSearchPath0376.dot10.db.test.ts",
-  "server/services/edge/edgeHumanResolverAuth.dot10.db.test.ts",
-  "server/services/edge/edgeResolution.dot10.db.test.ts",
-  "server/services/edge/edgeStopNeverDropped.dot10.db.test.ts",
-  "server/services/edge/otIntentResolve.dot10.db.test.ts",
-  "server/services/edge/otIntentResultRace.dot10.db.test.ts",
-];
 
 /** Trần — hạ khi chuyển thêm. */
 const TRAN_CHUA_DON = 0;
-const TRAN_HOAN_TAC = 8;
 const TRAN_TU_DON = 72;
 
 function lietKeTest(): string[] {
@@ -138,31 +123,92 @@ function lietKeTest(): string[] {
 export interface KetQuaQuet {
   tao: boolean;
   xoa: boolean;
+  /** có `.transaction(cb)` mà `cb` ném giá trị tên "rollback" (hoặc câu `ROLLBACK` thô) — bằng chứng giao dịch luôn bị hoàn tác. */
+  hoanTac: boolean;
+  /** có chỗ chèn người dùng đi qua KẾT NỐI CHUNG (`db` / `conn` / `getDb()` …) — commit ngay, ngoài mọi giao dịch hoàn tác. */
+  chenKetNoiChung: boolean;
 }
 
 const RE_INSERT_SQL = /INSERT\s+INTO\s+(public\.)?"?users"?\b/i;
 const RE_DELETE_SQL = /DELETE\s+FROM\s+(public\.)?"?users"?\b/i;
+const RE_ROLLBACK_THO = /^\s*ROLLBACK\s*;?\s*$/i;
+/** Tên kết nối CHUNG của tiến trình test (mỗi lệnh trên đó commit). `tx` / `sp` / tham số giao dịch KHÔNG nằm ở đây. */
+const KET_NOI_CHUNG = new Set(["db", "conn", "database", "pool", "getDb", "dbConn", "realDb"]);
 
-/** Quét một nguồn: có tạo người dùng (`.insert(users)` hoặc chuỗi SQL `INSERT INTO users`) và có xoá không. */
+/** Gốc của một chuỗi truy cập: `(await getDb())!.insert` ⇒ "getDb"; `db.insert` ⇒ "db"; `tx.execute` ⇒ "tx". */
+function gocChuoi(e: ts.Expression): string | null {
+  let cur: ts.Expression = e;
+  for (let k = 0; k < 20; k++) {
+    if (ts.isIdentifier(cur)) return cur.text;
+    if (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
+    else if (ts.isNonNullExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isAwaitExpression(cur) || ts.isAsExpression(cur)) cur = cur.expression;
+    else if (ts.isCallExpression(cur)) cur = cur.expression;
+    else return null;
+  }
+  return null;
+}
+
+/** Chỗ chèn bằng chuỗi SQL: lời gọi bao nó. `X.execute(sql`…`)` ⇒ gốc của X; `f(tx, sql`…`)` ⇒ đối số đầu; postgres.js `b`…`` ⇒ tên thẻ; không rõ ⇒ null (không kết tội). */
+function goiBaoChuoi(n: ts.Node): string | null {
+  for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+    if (ts.isTaggedTemplateExpression(p) && ts.isIdentifier(p.tag) && p.tag.text !== "sql") return p.tag.text;
+    if (ts.isCallExpression(p)) {
+      if (ts.isPropertyAccessExpression(p.expression)) return gocChuoi(p.expression.expression);
+      const a0 = p.arguments[0];
+      return a0 && ts.isIdentifier(a0) ? a0.text : null;
+    }
+    if (ts.isSourceFile(p) || ts.isBlock(p)) return null;
+  }
+  return null;
+}
+
+/** Quét một nguồn: có tạo người dùng (`.insert(users)` hoặc chuỗi SQL `INSERT INTO users`), có xoá, có giao dịch hoàn tác, có chèn qua kết nối chung. */
 export function quetNguon(ten: string, nguon: string): KetQuaQuet {
   const sf = ts.createSourceFile(ten, nguon, ts.ScriptTarget.Latest, true);
   let tao = false;
   let xoa = RE_DELETE_SQL.test(nguon);
+  let hoanTac = false;
+  let chenKetNoiChung = false;
+  const ketNoiChung = (g: string | null) => !!g && KET_NOI_CHUNG.has(g);
+  const ngemRollback = (n: ts.Node) => {
+    let thay = false;
+    const dd = (x: ts.Node) => {
+      if (ts.isThrowStatement(x) && x.expression && /rollback/i.test(x.expression.getText(sf))) thay = true;
+      ts.forEachChild(x, dd);
+    };
+    dd(n);
+    return thay;
+  };
   const di = (n: ts.Node) => {
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
       const a = n.arguments[0];
       const laUsers = !!a && ts.isIdentifier(a) && a.text === "users";
-      if (n.expression.name.text === "insert" && laUsers) tao = true;
+      if (n.expression.name.text === "insert" && laUsers) {
+        tao = true;
+        if (ketNoiChung(gocChuoi(n.expression.expression))) chenKetNoiChung = true;
+      }
       if (n.expression.name.text === "delete" && laUsers) xoa = true;
+      if ((n.expression.name.text === "transaction" || n.expression.name.text === "begin") && n.arguments.some((x) => (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) && ngemRollback(x))) hoanTac = true;
     }
     if (ts.isTemplateExpression(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isStringLiteral(n)) {
-      if (RE_INSERT_SQL.test(n.getText(sf))) tao = true;
+      if (RE_INSERT_SQL.test(n.getText(sf))) {
+        tao = true;
+        if (ketNoiChung(goiBaoChuoi(n))) chenKetNoiChung = true;
+      }
+      if (ts.isNoSubstitutionTemplateLiteral(n) && RE_ROLLBACK_THO.test(n.text)) hoanTac = true; // postgres.js: await b`ROLLBACK`
     }
     ts.forEachChild(n, di);
   };
   di(sf);
-  return { tao, xoa };
+  return { tao, xoa, hoanTac, chenKetNoiChung };
 }
+
+/** Tệp VI PHẠM: tạo người dùng, không phải giao dịch hoàn tác, và không nằm trong danh sách cũ. Thuần ⇒ kiểm được bằng bản đồ giả. */
+export const tepViPham = (ket: ReadonlyMap<string, KetQuaQuet>, ngoaiLe: ReadonlySet<string>): string[] =>
+  [...ket].filter(([f, k]) => k.tao && !laHoanTac(k) && !ngoaiLe.has(f)).map(([f]) => f);
+
+/** Tệp tạo người dùng mà MỌI chỗ chèn không đi qua kết nối chung, có giao dịch luôn hoàn tác và không xoá ⇒ không rò. */
+export const laHoanTac = (k: KetQuaQuet): boolean => k.tao && !k.xoa && k.hoanTac && !k.chenKetNoiChung;
 
 const quetTatCa = () => {
   const kq = new Map<string, KetQuaQuet>();
@@ -170,13 +216,31 @@ const quetTatCa = () => {
   return kq;
 };
 
-describe("census — test không tự insert(users) ngoài taoNguoiDungTest", () => {
-  const ket = quetTatCa();
-  const ngoaiLe = new Set([...TU_DON, ...CHUA_DON, ...HOAN_TAC]);
+/** Các tệp từng nằm trong danh sách tay HOAN_TAC (trước 2026-11-02): bộ quét AST PHẢI vẫn nhận ra chúng (chống bộ quét yếu đi trong im lặng). */
+const TUNG_HOAN_TAC: readonly string[] = [
+  "server/services/edge/edgeControlSchema.dot10.db.test.ts",
+  "server/services/edge/edgeDbSearchPath.dot10.db.test.ts",
+  "server/services/edge/edgeDbSearchPath0376.dot10.db.test.ts",
+  "server/services/edge/edgeHumanResolverAuth.dot10.db.test.ts",
+  "server/services/edge/edgeResolution.dot10.db.test.ts",
+  "server/services/edge/edgeStopNeverDropped.dot10.db.test.ts",
+  "server/services/edge/otIntentResolve.dot10.db.test.ts",
+  "server/services/edge/otIntentResultRace.dot10.db.test.ts",
+  "server/routers/khoaMienLapTrinh.t6d.db.test.ts",
+  "server/services/ot/khoaIdempotency.t6d.r1b2b2.db.test.ts",
+];
 
-  it("★ mọi tệp test tạo người dùng đều nằm trong danh sách miễn (hoặc dùng helper)", () => {
-    const vi = [...ket].filter(([f, k]) => k.tao && !ngoaiLe.has(f)).map(([f]) => f);
-    expect(vi, "tệp mới tự insert(users): dùng taoNguoiDungTest (server/testing/nguoiDungTest.ts)").toEqual([]);
+describe("census — test không tự insert(users) ngoài giao dịch hoàn tác (hoặc helper / danh sách cũ)", () => {
+  const ket = quetTatCa();
+  const ngoaiLe = new Set([...TU_DON, ...CHUA_DON]);
+  const hoanTac = [...ket].filter(([, k]) => laHoanTac(k)).map(([f]) => f);
+
+  it("★ mọi tệp test tạo người dùng là: giao dịch hoàn tác (AST), hoặc nằm trong danh sách cũ", () => {
+    const vi = tepViPham(ket, ngoaiLe);
+    expect(
+      vi,
+      "tệp mới tạo người dùng: chèn TRONG `db.transaction(async (tx) => { … throw new Rollback() })` và KHÔNG qua kết nối chung db/conn/getDb() (luật 2026-11-02: không DELETE, dọn bằng ROLLBACK)",
+    ).toEqual([]);
   });
 
   it("★ bậc thang: mục lỗi thời (tệp mất / không còn tạo người dùng) phải bị xoá khỏi danh sách", () => {
@@ -189,24 +253,21 @@ describe("census — test không tự insert(users) ngoài taoNguoiDungTest", ()
     expect(CHUA_DON.filter((f) => ket.get(f)?.xoa)).toEqual([]);
   });
 
-  it("★ HOAN_TAC thật sự có dấu giao dịch hoàn tác (không thì là RÒ giả danh) và không có lệnh xoá người dùng", () => {
-    const thieu = HOAN_TAC.filter((f) => !/class\s+Rollback|\bROLLBACK\b/.test(fs.readFileSync(path.join(GOC, f), "utf8")));
-    expect(thieu).toEqual([]);
-    expect(HOAN_TAC.filter((f) => ket.get(f)?.xoa)).toEqual([]);
+  it("★ bộ quét vẫn nhận mười tệp hoàn tác cũ (không yếu đi trong im lặng) và không tệp nào trong danh sách cũ lọt vào nhóm hoàn tác", () => {
+    expect(TUNG_HOAN_TAC.filter((f) => !hoanTac.includes(f))).toEqual([]);
+    expect(hoanTac.filter((f) => ngoaiLe.has(f))).toEqual([]);
   });
 
-  it("★ CHUA_DON phải RỖNG — tệp mới tạo người dùng không dọn thì dùng helper, không thêm vào đây", () => {
+  it("★ CHUA_DON phải RỖNG — tệp mới tạo người dùng không dọn thì chèn trong giao dịch hoàn tác, không thêm vào đây", () => {
     expect(CHUA_DON).toEqual([]);
   });
 
-  it("★ hai danh sách không giao nhau, không trùng, và chỉ được GIẢM (trần)", () => {
-    expect(TU_DON.filter((f) => HOAN_TAC.includes(f))).toEqual([]);
-    expect(new Set(HOAN_TAC).size).toBe(HOAN_TAC.length);
-    expect(HOAN_TAC.length).toBeLessThanOrEqual(TRAN_HOAN_TAC);
+  it("★ danh sách cũ không trùng và chỉ được GIẢM (trần)", () => {
     expect(new Set(TU_DON).size).toBe(TU_DON.length);
     expect(new Set(CHUA_DON).size).toBe(CHUA_DON.length);
     expect(CHUA_DON.length).toBeLessThanOrEqual(TRAN_CHUA_DON);
     expect(TU_DON.length).toBeLessThanOrEqual(TRAN_TU_DON);
+    expect(TU_DON.length, "TU_DON ngắn đi ⇒ HẠ TRAN_TU_DON cùng lúc (bậc thang chỉ giảm, không để chỗ trống cho tệp mới)").toBe(TRAN_TU_DON);
   });
 
   it("★ năm tệp đã chuyển KHÔNG còn insert(users) và dùng helper", () => {
@@ -236,6 +297,37 @@ describe("census — đột biến của chính bộ quét", () => {
     ["chỉ nhắc trong comment", "// insert(users) bị cấm", false],
   ])("%s", (_t, nguon, mongDoi) => {
     expect(quetNguon("x.test.ts", nguon as string).tao).toBe(mongDoi);
+  });
+  const TX = "await db.transaction(async (tx) => { await tx.insert(users).values({}); throw new Rollback(); });";
+  it.each([
+    ["Drizzle trong giao dịch ném Rollback", TX, true],
+    ["ném ký hiệu ROLLBACK (Symbol)", "await db.transaction(async (tx) => { await tx.insert(users).values({}); throw ROLLBACK; });", true],
+    ["SQL thô qua tx.execute", "await d.transaction(async (tx) => { await tx.execute(sql`INSERT INTO users (id) VALUES (1)`); throw new Rollback(); });", true],
+    ["postgres.js begin + thẻ tx", "await c.begin(async (tx) => { await tx`INSERT INTO public.users (id) VALUES (1)`; throw new Rollback(); });", true],
+    ["giao dịch KHÔNG ném rollback (commit)", "await db.transaction(async (tx) => { await tx.insert(users).values({}); });", false],
+    ["chèn bằng kết nối chung db ngay trong tệp có rollback", TX + " await db.insert(users).values({});", false],
+    ["chèn bằng (await getDb())! trong tệp có rollback", TX + " await (await getDb())!.insert(users).values({});", false],
+    ["SQL thô qua db.execute (kết nối chung)", TX + " await db.execute(sql`INSERT INTO users (id) VALUES (2)`);", false],
+    ["có DELETE users ⇒ không phải hoàn tác", TX + " await db.delete(users);", false],
+    ["không giao dịch", "await tx.insert(users).values({});", false],
+    ["giao dịch ném lỗi KHÁC (không phải rollback) ⇒ commit khi hết lỗi", "await db.transaction(async (tx) => { await tx.insert(users).values({}); throw new Error('boom'); });", false],
+    ["postgres.js: BEGIN / INSERT / ROLLBACK thô", "await b`BEGIN`; await b`INSERT INTO users (id) VALUES (1)`; await b`ROLLBACK`;", true],
+    ["postgres.js: INSERT thô trên kết nối chung db trong tệp có rollback", TX + " await db`INSERT INTO users (id) VALUES (3)`;", false],
+    ["chỉ nhắc ROLLBACK trong chú thích", "// throw new Rollback()\nawait db.transaction(async (tx) => { await tx.insert(users).values({}); });", false],
+  ])("laHoanTac: %s", (_t, nguon, mongDoi) => {
+    expect(laHoanTac(quetNguon("x.test.ts", "export {};\n" + (nguon as string)))).toBe(mongDoi); // `export {}` ⇒ mô-đun: nếu không, TS đọc `await (` là lời gọi hàm tên await
+  });
+  it("tepViPham: tệp tạo người dùng ngoài giao dịch hoàn tác và ngoài danh sách cũ ⇒ vi phạm; hoàn tác / có trong danh sách / không tạo ⇒ sạch", () => {
+    const k = (o: Partial<KetQuaQuet>): KetQuaQuet => ({ tao: false, xoa: false, hoanTac: false, chenKetNoiChung: false, ...o });
+    const ket = new Map<string, KetQuaQuet>([
+      ["moi.ro.test.ts", k({ tao: true })],
+      ["moi.hoantac.test.ts", k({ tao: true, hoanTac: true })],
+      ["moi.hoantac.nhung.chen.chung.test.ts", k({ tao: true, hoanTac: true, chenKetNoiChung: true })],
+      ["cu.tu-don.test.ts", k({ tao: true, xoa: true })],
+      ["khong.tao.test.ts", k({})],
+    ]);
+    expect(tepViPham(ket, new Set(["cu.tu-don.test.ts"]))).toEqual(["moi.ro.test.ts", "moi.hoantac.nhung.chen.chung.test.ts"]);
+    expect(tepViPham(ket, new Set())).toEqual(["moi.ro.test.ts", "moi.hoantac.nhung.chen.chung.test.ts", "cu.tu-don.test.ts"]);
   });
   it("nhận ra lệnh xoá (Drizzle và SQL)", () => {
     expect(quetNguon("x.ts", "await db.delete(users).where(a)").xoa).toBe(true);

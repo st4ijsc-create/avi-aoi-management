@@ -106,7 +106,7 @@ function backend(drivers: Fake[], o: { timeoutMs?: number; intervalMs?: number }
   };
   return { b, polls };
 }
-const statuses = (reads: Array<{ status?: Record<string, unknown> } | { error: string }>) => reads.map((r) => ("error" in r ? `error` : JSON.stringify((r as { status: unknown }).status)));
+const statuses = (reads: ReadonlyArray<{ status?: unknown } | { error: string }>) => reads.map((r) => ("error" in r ? `error` : JSON.stringify((r as { status: unknown }).status)));
 
 let quiet: Array<ReturnType<typeof vi.spyOn>> = [];
 beforeEach(() => {

@@ -4086,9 +4086,12 @@
       "deviceAdapterUpdate": "update the adapter",
       "scadaDisableAdapter": "disable the adapter",
       "scadaSetStubFault": "set a simulated stub fault",
+      "scadaLabRead": "test-read one address (Lab)",
       "scadaSelectTag": "select a channel to command",
+      "scadaDryRun": "check the write conditions (dry run)",
       "scadaKenhCapNhat": "update the channel declaration",
       "scadaTotpCauHinh": "verify the authentication code for the channel configuration change",
+      "scadaConfigTotp": "verify the authentication code for the configuration change",
       "dieuKienDoiTuongTrongPhamVi": "in-scope object condition",
       "flowNguoiNhan": "find recipients for the flow",
       "flowXuat": "export an AI flow package",
@@ -4401,7 +4404,7 @@
       "motionInProgress": "The robot is already executing another motion — this one was refused (not queued). Wait and send again.",
       "ledgerWriteFailed": "The robot command ledger could not be written — the motion was refused and nothing was sent.",
       "idempotentJobInProgress": "A command with the same idempotency key is still running — it is not run twice.",
-      "idempotencyKeyReused": "This idempotency key was already used for another robot or command — the motion was refused. Use a new key.",
+      "idempotencyKeyReused": "This idempotency key was already used for another robot or job — the motion was NOT started. That earlier job may already have run: check the robot, its position and the earlier job's state before commanding again.",
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
@@ -4554,6 +4557,11 @@
       "flowDuyetTrungNguoiBat": "You enabled this flow version — the approver must be someone else.",
       "flowDuyetTrungChuLuot": "You own this run (you triggered or enabled it) — the approver must be someone else.",
       "adapterOwnedByEdge": "This adapter is owned by an edge node — the central server does not control its session.",
+      "adapterNotRunning": "The adapter is not running on the central server (disabled, not connected or connection lost) — there is no session to test-read on.",
+      "protocolNotSupported": "This adapter's protocol has not been proven safe to test-read alongside the poll loop — Lab cannot read it (only Modbus TCP, OPC UA and stub).",
+      "rateLimited": "Too many attempts in one minute — wait a moment and try again.",
+      "scadaLabDangBan": "A test read on this adapter is still in progress — wait for it to finish and try again.",
+      "scadaLabPhienCu": "The running connection session is older than the adapter configuration (endpoint / options edited after it connected) — reconnect the adapter or restart OT, then test-read again.",
       "otMcTamKhoa": "Mitsubishi MC control is LOCKED (safety): writes are not sent to the device until fix 3B — to stop the machine use the hardwired E-STOP.",
       "chiTietKyThuatBiChe": "The endpoint and connection settings are technical details you cannot view — only an engineer/admin with machine-control edit rights can change them. Other fields can still be edited.",
       "adapterNotStub": "Only applies to stub-protocol adapters.",
@@ -4567,6 +4575,7 @@
       "scadaKenhCheDoTagTat": "The mode channel's tag is disabled — enable the tag first, then declare the channel again.",
       "scadaKenhGhiTrenTagKhongGhi": "This channel kind accepts writes, but the tag is not writable — make the tag writable or choose a read-only channel kind.",
       "scadaKenhThuLai": "The channel was changed concurrently — reload and try again.",
+      "scadaTotpDaDungDuLieuDoi": "The authentication code was used but the data changed in the meantime — nothing was saved. Check again and enter a NEW code.",
       "scadaKenhTagTrung": "A tag appears more than once in the batch — one row per tag.",
       "scadaKenhCheDoKhongDoiAdapter": "This tag is a machine's mode channel — it cannot be moved to another adapter. Remove or re-declare the mode channel on the Channels & limits page first.",
       "scadaKenhCheDoGoTruoc": "This tag is a machine's mode channel — remove the mode channel on the Channels & limits page (two-factor code required) before deleting the tag.",
@@ -17091,7 +17100,27 @@
       "cauHinhHongCanhBao": "Some enabled interlock rules do NOT work: the gate blocks every command aimed at them, or dispatch will refuse their protective command. Fix them on the interlock page.",
       "cauHinhHongMo": "Open interlock rules",
       "stopQuaHan": "HMI STOP refused for deadline (24 h): {{count}}",
-      "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable"
+      "stopQuaHanUnavailable": "HMI STOP deadline refusals unavailable",
+      "poolStopThieu": "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}",
+      "khongGhiSo": "Not recorded in the ledger (since {{tu}}): {{count}}",
+      "buoc": {
+        "db": "Database error",
+        "het_han_tong_truoc_handler": "Total deadline spent before the handler",
+        "pham_vi": "Scope check",
+        "doc_may": "Machine read",
+        "vai_tro": "Role check",
+        "doc_adapter": "Adapter read",
+        "doc_ghim": "STOP pin read",
+        "dong_cho": "Pending row",
+        "adapter": "Send to adapter",
+        "xac_thuc": "Authentication",
+        "cong_doi_mat_khau": "Password-change gate",
+        "giay_phep": "Licence",
+        "pham_vi_tenant": "Tenant scope",
+        "ghi_so_loi": "Ledger write failed",
+        "khac": "Other step",
+        "khong_ro": "Step unknown"
+      }
     },
     "table": {
       "kind": "Work item",
@@ -19139,6 +19168,10 @@
     "loiBiChe": "Technical detail hidden (engineer access required)",
     "maLoi": {
       "TIMEOUT": "Unknown whether the machine received it — read the value back before sending again",
+      "IDEMPOTENCY_KEY_REUSED": "This command was NOT sent: an earlier, different command already used the same key (another device, tag, value or requester). It is unknown whether that earlier command was applied to the device — check the device before continuing; do NOT resend automatically under a new key.",
+      "IDEMPOTENCY_KEY_REQUIRED": "This command was NOT sent: it carries no idempotency key, so a retry could write it to the device twice. Resend it with an idempotency key (the HMI and the other built-in paths add one automatically).",
+      "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE": "This command was NOT sent: it has no idempotency key and it writes a STOP tag, but it is not a STOP command (other values are mixed in, or the value is not the STOP value). NOT sent — use the HMI machine stop or resend with a key.",
+      "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE": "This command was NOT sent: it has no idempotency key and the device's STOP values could not be read, so it cannot be proven to be a STOP. NOT sent — use the HMI machine stop or resend with a key.",
       "DRIVER_WRITE_FAILED": "Device write failed — unknown whether the machine received it; read the value back before sending again",
       "OT_MC_TAM_KHOA": "Mitsubishi MC control is TEMPORARILY LOCKED: the mcprotocol library misreads PLC replies — the command was NOT sent. Waiting for fix 3B; to stop the machine use the hardwired E-STOP at the machine",
       "OT_S7_BIT_NGOAI_DAI": "S7 bit address outside 0..7 (wrong tag configuration) — the command was NOT sent and the whole batch was refused. Fix the tag address (e.g. DB1,X1.0 instead of DB1,X0.8); to stop the machine now use the hardwired E-STOP at the machine",
@@ -24249,7 +24282,8 @@
         "dialogXoaLoiTieuDe": "Clear stub fault on {{code}}?",
         "dialogMoTa": "Lab action on a simulated adapter. The reason is recorded in the audit log."
       },
-      "tamKhoa": "Temporarily locked"
+      "tamKhoa": "Temporarily locked",
+      "motPhanGanNhat": "Recently applied only partly: applied {{daAp}} · not applied {{khongAp}}"
     },
     "kenh": {
       "title": "Channels & limits",
@@ -24502,7 +24536,9 @@
         "HET_HAN": "Not sent — the request expired; create a new request",
         "KHOA_MAT": "Not sent — you no longer hold the channel; create a new request",
         "MAY_DA_DOI": "Not sent — the device was reassigned to another machine; create a new request",
-        "khac": "Not sent — rejected at gate {{ma}}; see the command log or ask an engineer"
+        "khac": "Not sent — rejected at gate {{ma}}; see the command log or ask an engineer",
+        "MOT_PHAN": "The command was applied only PARTLY: some values were written to the machine, the machine refused the others. It is NOT resent automatically — check at the machine, then resend only the part not applied if still needed.",
+        "MOT_PHAN_STOP": "The STOP was applied only PARTLY on this adapter: some stop pins were written, the machine refused the others. Pressing STOP MACHINE again is safe (STOP is resent) — if it still does not stop, use the hard E-STOP at the machine."
       },
       "loi": {
         "FEATURE_DISABLED": "SCADA HMI commands are turned off on the server — ask an administrator to enable them (SCADA_COMMANDS_ENABLED).",
@@ -24554,6 +24590,11 @@
         "loiDoc": "error reading the mode channel — treated as LOCAL",
         "kenhSaiMay": "the mode channel does not belong to this machine's adapter — treated as LOCAL",
         "khongRo": "mode could not be determined ({{lyDo}}) — treated as LOCAL"
+      },
+      "motPhan": {
+        "dem": "Applied {{daAp}} · not applied {{khongAp}}",
+        "daAp": "Applied: {{ds}}",
+        "khongAp": "Not applied: {{ds}}"
       }
     },
     "dungMay": {
@@ -24637,6 +24678,36 @@
         "EDGE_OUTCOME_UNKNOWN": "Outcome unknown on the edge: the edge node may have applied the command — check the device before running again.",
         "REJECTED": "The command was rejected — nothing was written to the device.",
         "PRECONDITION_FAILED": "The step's precondition (interlock) was not met — nothing was written to the device."
+      }
+    },
+    "lab": {
+      "thuDoc": {
+        "tieuDe": "Try reading one address (Lab)",
+        "chiDoc": "Read-only — nothing is written to the device.",
+        "troGiup": "One read with a 3-second limit, at most 10 per minute. With Modbus, a TCP→RTU gateway or a single-transaction device may drop the Lab request squeezed in between, causing one poll cycle to time out. The reason is written to the audit log; the value read is not stored.",
+        "diaChi": "Address",
+        "kieu": "Data type",
+        "nutDoc": "Read",
+        "chatLuong": "Quality",
+        "giaTriTho": "Raw value",
+        "giaTri": "Decoded value",
+        "maTrangThai": "Status code",
+        "lyDoKetQua": "Reason",
+        "thoiGian": "Time",
+        "reasonTimeout": "Timed out — the device did not answer in time",
+        "reasonNoSample": "No sample yet for this address"
+      }
+    },
+    "dieuKien": {
+      "tieuDe": "Allowed conditions",
+      "duocPhep": "Allowed",
+      "duocPhepTotp": "Allowed — two-factor code required",
+      "khongDuocPhep": "Not allowed: {{lyDo}}",
+      "chuaTinh": "Not checked in advance: {{ds}} — the server decides when you press Change.",
+      "chuaTinhMuc": {
+        "khoa-chon": "selection lock",
+        "totp-xac-minh": "code verification",
+        "han-gui": "send deadline"
       }
     }
   },

@@ -19,6 +19,7 @@ vi.hoisted(() => {
 
 import { randomBytes, sign as cryptoSign } from "node:crypto";
 import { setupCentral, waitFor, sleep, noDbEvidence, type Central, type EdgeProc, type CentralTestHooks } from "./__edgeE2eHarness.dot10";
+import { countSeqConflictsOfNode } from "./__edgeAuditDem.dot10";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -261,7 +262,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     expect(conflict.status, conflict.text).toBe(409);
     expect(conflict.json.error.code).toBe("seq_conflict");
     expect((await c.stepRows(cl.runId)).find((r) => r.stepId === "m1")?.status).toBe("running");
-    expect(one(await c.sql`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'EDGE_ANOMALY' AND details::text LIKE '%seq_conflict%' AND details::text LIKE ${`%${c.ids.nodeB}%`}`)).toBeGreaterThanOrEqual(1);
+    expect(await countSeqConflictsOfNode(c.sql, c.ids.nodeB)).toBeGreaterThanOrEqual(1); // exact by node (entityType/entityId)
     await c.abort(cl.runId);
   }, 90_000);
 
@@ -654,7 +655,8 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
   it("★ A7 — a FULL journal blocks new non-STOP work only: no run is claimed, but a robot STOP and a pinned OT STOP still go out", async () => {
     await edge.stop();
     edge = await c.spawnEdge("full", { env: { EDGE_JOURNAL_MAX_BYTES: "1", EDGE_REQUEST_TIMEOUT_MS: "8000" } });
-    expect(edge.counts()!.journal?.full).toBe(true);
+    // kiem-dinh 2026-11-02 — counts() ngay sau spawnEdge chạy trước khi journal báo đầy ⇒ chập chờn: ĐỢI sự kiện thay vì đọc ngay.
+    await edge.waitCounts("the journal reports full", (k) => k.journal?.full === true, 15_000);
     const s = c.steps;
     const id = await c.startRun("full", [s.gate(), s.move("m1")]);
     await sleep(3_000); // ~15 pulls

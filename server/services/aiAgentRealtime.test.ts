@@ -20,13 +20,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { eventBus, EventTypes } from "../_core/eventBus";
 
-// Fake io — just enough surface for `io.to(room).emit(channel, payload)`.
+// Fake io — just enough surface for `io.in(room).fetchSockets()` → per-socket `emit(channel, payload)` (bridge phát THEO NGƯỜI NHẬN).
+// Một socket admin (toàn quyền, không cần DB) ⇒ nhận mọi sự kiện; bản kiểm phạm vi nhiều người ở aiAgentRealtime.phamVi.test.ts.
 const emitCalls: Array<{ room: string; channel: string; payload: unknown }> = [];
 const fakeIo = {
-  to: (room: string) => ({
-    emit: (channel: string, payload: unknown) => {
-      emitCalls.push({ room, channel, payload });
-    },
+  in: (room: string) => ({
+    fetchSockets: async () => [
+      {
+        data: { user: { id: 1, role: "admin" } },
+        emit: (channel: string, payload: unknown) => {
+          emitCalls.push({ room, channel, payload });
+        },
+      },
+    ],
   }),
 };
 const getIO = vi.fn(() => fakeIo as any);
@@ -37,7 +43,7 @@ vi.mock("../_core/socket", () => ({
 import { publishAiAgentEvent, installAiAgentSocketBridge, uninstallAiAgentSocketBridge } from "./aiAgentRealtime";
 
 describe("publishAiAgentEvent — minimal, non-sensitive payload", () => {
-  it("publishes on the eventBus with ONLY event/sessionId/at/kind — no plan/args/secret", () => {
+  it("publishes on the eventBus with ONLY event/sessionId/ownerUserId/at/kind — no plan/args/secret", () => {
     const calls: any[] = [];
     const unsub = eventBus.subscribe(EventTypes.AI_AGENT, (e) => calls.push(e));
     publishAiAgentEvent("advanced", "sess-1");
@@ -49,7 +55,7 @@ describe("publishAiAgentEvent — minimal, non-sensitive payload", () => {
     expect(typeof payload.at).toBe("number");
     // Exhaustive key allowlist — a future edit that adds a new field here MUST
     // be a conscious, reviewed change (see the module docblock on payload safety).
-    const allowedKeys = new Set(["kind", "event", "sessionId", "at"]);
+    const allowedKeys = new Set(["kind", "event", "sessionId", "ownerUserId", "at"]);
     for (const k of Object.keys(payload)) expect(allowedKeys.has(k)).toBe(true);
     // Explicitly guard against the fields the brief calls out by name.
     expect(payload).not.toHaveProperty("plan");
@@ -101,15 +107,16 @@ describe("installAiAgentSocketBridge — flag-gated NO-OP (mirrors TWIN_LIVE_ENA
     expect(emitCalls).toHaveLength(0);
   });
 
-  it("flag ON → io.to('ai:agents').emit('ai:agents', payload)", async () => {
+  it("flag ON → mỗi socket được phép nhận ('ai:agents') — payload trên dây KHÔNG có sessionId/ownerUserId", async () => {
     process.env.AI_AGENTS_LIVE_ENABLED = "true";
     installAiAgentSocketBridge();
-    publishAiAgentEvent("session_started", "sess-on");
+    publishAiAgentEvent("session_started", "sess-on", 7);
     await new Promise((r) => setTimeout(r, 20));
     expect(emitCalls).toHaveLength(1);
     expect(emitCalls[0].room).toBe("ai:agents");
     expect(emitCalls[0].channel).toBe("ai:agents");
-    expect(emitCalls[0].payload).toMatchObject({ event: "session_started", sessionId: "sess-on" });
+    expect(emitCalls[0].payload).toMatchObject({ event: "session_started" });
+    expect(Object.keys(emitCalls[0].payload as object).sort()).toEqual(["at", "event"]);
   });
 
   it("install is idempotent (double install → single delivery per event)", async () => {

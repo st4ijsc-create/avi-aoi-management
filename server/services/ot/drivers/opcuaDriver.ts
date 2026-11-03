@@ -35,7 +35,7 @@ import { inverseScale } from "./otScale";
 import { boolChoGhi } from "./boolNghiem";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
-import { SoYeuCauDangBay, ketCucKhongRoCua, laLoiMatLienKetKhiDangGui } from "./dangBay";
+import { SoYeuCauDangBay, ketCucKhongRoCua } from "./dangBay";
 import { taoVongPoll } from "../vongPoll";
 import { chatLuongLoiChung, chatLuongOpcua, chatLuongV2Bat, MAU_GIA_TRI_HONG } from "../chatLuong";
 import {
@@ -490,6 +490,21 @@ export class OpcuaDriver extends NotImplementedDriver {
   }
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docNode(tags, true);
+  }
+
+  /**
+   * SCADA R1b-2b-2b A C4 (mục 5, KD-2bA 4.2/4.3) — Lab "thử đọc một địa chỉ" trên phiên ĐANG CHẠY, song song với vòng poll / lời ghi.
+   * An toàn đồng thời đã ĐO bằng node-opcua 2.174.0 THẬT (máy chủ trong tiến trình, trả lời chậm / đảo thứ tự / im lặng —
+   * docDongThoi.drivers.r1b2b2b.test.ts): mỗi ReadRequest mang `requestHandle` riêng và được giải theo nó; client không xếp hàng giao dịch ⇒ một
+   * ReadRequest treo không trì hoãn WriteRequest (STOP); hết hạn giao dịch của thư viện chỉ trả lỗi cho đúng yêu cầu đó (không hạ kênh).
+   * Không ghi `lastOkAt` / `lastLatencyMs` (trạng thái dùng chung của `health()`).
+   */
+  async docLab(tags: OtTagAddress[]): Promise<OtSample[]> {
+    return this.docNode(tags, false);
+  }
+
+  private async docNode(tags: OtTagAddress[], capNhatTrangThai: boolean): Promise<OtSample[]> {
     if (!this.connected || !this.session) {
       throw new DeviceUnreachableError("opcua");
     }
@@ -511,8 +526,10 @@ export class OpcuaDriver extends NotImplementedDriver {
       const t0 = Date.now();
       // SCADA R0 (C5) — đọc CÓ HẠN (không cờ, sửa lỗi treo), giống S7: hạn không huỷ được yêu cầu đang bay nhưng không giữ vòng mãi mãi.
       const results = await withDeadline(Promise.resolve(session.read(nodesToRead)), this.timeoutMs + 1000, "opcua read");
-      this.lastLatencyMs = Date.now() - t0;
-      this.lastOkAt = new Date();
+      if (capNhatTrangThai) {
+        this.lastLatencyMs = Date.now() - t0;
+        this.lastOkAt = new Date();
+      }
       arr = Array.isArray(results) ? results : [results];
     }
 
@@ -957,14 +974,15 @@ export class OpcuaDriver extends NotImplementedDriver {
       } catch (err) {
         const msg = (err as Error)?.message || String(err);
         this.lastError = msg;
-        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ ⇒ ném lên (dispatcher ⇒ 'timeout' ngay), không 'failed'.
-        if (laLoiMatLienKetKhiDangGui(err)) throw err;
+        // R1b-2b-1 — lô ĐÃ giao cho thư viện khi liên kết mất: kết cục KHÔNG RÕ (dispatcher ⇒ 'timeout' ngay), không 'failed'.
+        // R1b-2b-2a T6 (mục 69) — KHÔNG ném cả lô nữa: kết quả THEO TỪNG write — node đã đưa vào session.write ⇒ `ketCucKhongRo: "mat_lien_ket"`
+        // (ketCucKhongRoCua bên dưới); write hỏng chuẩn bị cục bộ (ép kiểu / phân giải — không bao giờ gửi) giữ lỗi riêng ⇒ 'failed'.
         // R1b-2b-2a T2 (mục 66) — hết hạn giao dịch của CHÍNH node-opcua (WriteRequest đã gửi, máy chủ chưa trả lời) ⇒ MỌI node đã gửi mang
         // "không rõ kết cục" (dispatcher ⇒ 'timeout'), không 'failed'. Lỗi ép kiểu / phân giải cục bộ (không gửi) giữ 'failed'.
         const ketCucKhongRo = ketCucKhongRoCua(err) ?? (msg.startsWith(OPCUA_TIEN_TO_QUA_HAN) ? "qua_han_driver" : null);
         // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
         return prepared.map((p) =>
-          p.error
+          p.error !== undefined
             ? { tagKey: p.tagKey, ok: false, error: p.error }
             : ketCucKhongRo
               ? { tagKey: p.tagKey, ok: false, error: msg, ketCucKhongRo }
@@ -976,7 +994,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     // Ghép statusCode về từng write theo thứ tự các node đã gửi.
     let scIdx = 0;
     const out: OtCommandResult[] = prepared.map((p) => {
-      if (p.error) return { tagKey: p.tagKey, ok: false, error: p.error };
+      if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
       const sc = statusCodes[scIdx++];
       const scVal = typeof sc?.value === "number" ? sc.value : 0;
       const good = scVal === 0; // StatusCodes.Good

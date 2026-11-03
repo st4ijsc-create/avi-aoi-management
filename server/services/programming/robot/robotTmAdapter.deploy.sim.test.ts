@@ -71,7 +71,7 @@ describe("RobotTmAdapter.deploy — không tải chương trình giả (doc 81 �
     expect(driver.isConnected()).toBe(true);
     const r = await new RobotTmAdapter().deploy(
       { ok: true, diagnostics: [], outputRef: "tm://job/abc" },
-      { stage: "staging", idempotencyKey: "t4-deploy-1", hitl: { requestedBy: 1, confirmedBy: 2 }, deviceId: 42 },
+      { stage: "staging", idempotencyKey: "t4-deploy-1", hitl: { actionId: "t4-deploy-1", requestedBy: 1, confirmedBy: 2 }, deviceId: 42 },
     );
     // đợi một nhịp để mọi byte (nếu có) kịp tới server giả
     await new Promise((res) => setTimeout(res, 100));

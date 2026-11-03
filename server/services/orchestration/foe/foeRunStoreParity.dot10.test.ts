@@ -30,6 +30,10 @@ const h = vi.hoisted(() => ({
   /** fix review 3 — the edge dispatch's LEDGER record (journaled inside sendCommand, BEFORE the walker's result row) */
   onLedger: null as null | ((cmd: Record<string, any>, ok: boolean) => void),
   telemetry: [] as Array<{ key: string; value: unknown }>,
+  /** R1b-2b-2a A2(o) AMENDMENT 2 — these steps' NEXT dispatch is refused by the edge's config gate (CONFIG_STALE: nothing sent) */
+  staleDispatch: new Set<string>(),
+  /** A2(o) r3 F4 — these steps' NEXT dispatch is refused by the config gate with SAFETY_CONFIG_MISSING (nothing sent) */
+  missingDispatch: new Set<string>(),
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -58,6 +62,14 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
       const stepId = m ? m[1] : "?";
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
+      if (h.staleDispatch.delete(stepId)) {
+        // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
+        return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "CONFIG_STALE", detail: { edge: true, stop: false, reason: "CONFIG_STALE", refusal: "central announced config v4 3 s ago; this edge still holds v3 (issued 95 s ago) — non-STOP writes are refused until the refresh succeeds (STOPs still go)" } };
+      }
+      if (h.missingDispatch.delete(stepId)) {
+        // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's SAFETY_CONFIG_MISSING (before driver / consume)
+        return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "SAFETY_CONFIG_MISSING", detail: { edge: true, stop: false, reason: "SAFETY_CONFIG_MISSING", refusal: "signed safety-PLC config(s) #7 absent from the verified config v3 (issued 95 s ago) — the preflight could not consult them; refused, a refresh is requested" } };
+      }
       const left = h.failPlan.get(stepId) ?? 0;
       h.onLedger?.(cmd, left === 0); // the REAL ordering: the ledger result is recorded before the walker writes its result row
       if (left > 0) {
@@ -168,6 +180,8 @@ beforeEach(() => {
   fake.seed(robots, [{ id: 2, code: "R2", vendor: "sim", endpoint: "tcp://10.0.0.2:1", connectionOptions: { port: 1 }, isEnabled: true, status: "online", updatedAt: T0 }]);
   h.sent.length = 0;
   h.failPlan.clear();
+  h.staleDispatch.clear();
+  h.missingDispatch.clear();
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -249,6 +263,12 @@ interface EdgeHarness {
   offlineSteps?: Set<string>;
   /** "stopped" answered by central from now on */
   stopped: boolean;
+  /** R1b-2b-2a A2(o) AMENDMENT 2 — the edge config source's staleness (absent ⇒ never stale) */
+  staleness?: () => { centralVersion: number; localVersion: number; sinceMs: number; configIssuedAt: number | null } | null;
+  /** events-stream records of every segment (anomalies) */
+  events?: Array<Record<string, any>>;
+  /** A2(o) AMENDMENT 2 — authorisations the edge reported NEVER used (central supersedes them, as edgeReportsCentral.applyAuthUnused) */
+  unused?: Array<Record<string, any>>;
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
@@ -292,7 +312,7 @@ async function claimPackage(x: EdgeHarness, claimSeq: number): Promise<EdgeRunPa
       return { kind: "ot" as const, stepId, adapterId: 501, pins };
     }),
     stopsUnsure: [...v.unsure],
-    prior: edgePriorPictureOf(stepRows(x.runId)),
+    prior: edgePriorPictureOf(stepRows(x.runId) as unknown as Parameters<typeof edgePriorPictureOf>[0]), // hàng FakeDb = Record<string, any> (không khai stepId/status) — cùng mảng, chỉ đổi kiểu
     issuedAt: Date.now(),
     claimSeq,
     workflowId: run.workflowId,
@@ -352,12 +372,19 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
         x.records.push(rec);
         return { seq: x.records.length, durable: true };
       },
-      async event() {
+      async event(rec) {
+        x.events?.push(rec as Record<string, any>);
         return { seq: 1, durable: true };
       },
     },
     consume: { admitNonStop: () => true },
     authorize: fakeAuthorize(x, d, primed),
+    ...(x.staleness ? { config: { staleness: x.staleness } } : {}),
+    async reportUnused(u) {
+      x.unused?.push({ ...u });
+      for (const r of fake.store.get("edge_step_authorizations") ?? []) if (r.jti === u.jti && r.resultReportedAt == null) r.supersededAt = new Date();
+      return true;
+    },
   });
   // ★ the edge walk (and a local abort sweep) run against a database that THROWS — and is never even asked
   h.dbThrows = true;
@@ -515,7 +542,7 @@ describe("doc 81 Đợt 10 C — one walker, two stores: central and edge produc
     await edgeSegment(e, 2);
     expect(perStep(walkerWritesEdge(e))).toEqual(perStep(walkerWritesCentral(c)));
     expect(finalRows(e.runId)).toEqual(finalRows(c));
-    const sortSent = (l: ReturnType<typeof sentCommands>) => [...l].sort((a, b) => (a.stepId < b.stepId ? -1 : 1));
+    const sortSent = (l: ReturnType<typeof sentCommands>) => [...l].sort((a, b) => ((a.stepId as string) < (b.stepId as string) ? -1 : 1));
     expect(sortSent(sentCommands(n0))).toEqual(sortSent(sentCommands(0, n0)));
     expect(runRow(e.runId).status).toBe("completed");
   });
@@ -635,6 +662,131 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     await waitFor(() => h.sent.slice(n0).some((s) => s.stepId === "s1"), "sweep sent s1");
     expect(s2).toMatchObject({ outcome: "aborted" });
     expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r1", "s1"]);
+  });
+
+  /** a Continue of a HELD edge run (resumeRun ⇒ queued for its node again) */
+  async function continueHeld(x: EdgeHarness) {
+    const view = (await getRun(x.runId, { bindingDigest: true }))!;
+    const r = await resumeRun(x.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    expect(r).toMatchObject({ ok: true, status: "queued" });
+  }
+  const STALE = () => ({ centralVersion: 4, localVersion: 3, sinceMs: Date.now() - 3_000, configIssuedAt: Date.now() - 95_000 });
+
+  it("★ A2(o) AMENDMENT 2: the config changes MID-RUN (stale before r2's authorisation) ⇒ r2 HELD (configStale: nothing asked, nothing sent, 0 compensations, anomaly with the config's age); after the refresh + Continue r2 runs EXACTLY ONCE under a NEW authorisation", async () => {
+    const e = await edgeAssignedRun(def("a2o-mid", [gate(), move("r1", { compensation: ot("c1") }), move("r2", { maxAttempts: 2, compensation: ot("c2") }), robotStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    let stale = false;
+    e.staleness = () => (stale ? STALE() : null);
+    const ledger = h.onLedger;
+    h.onLedger = (cmd, ok) => {
+      ledger?.(cmd, ok);
+      if (String(cmd.idempotencyKey).includes("-r1-")) stale = true; // central announces a new config right after r1
+    };
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r1"]); // r2 / s9 / any compensation never reached the equipment
+    expect(e.authorizeCalls.filter((a) => a.claimSeq === 2).map((a) => a.stepId)).toEqual(["r1"]); // r2 never asked under the old config
+    const r2 = stepRows(e.runId).find((s) => s.stepId === "r2")!;
+    expect(r2).toMatchObject({ status: "held" });
+    expect(String(r2.error)).toMatch(/^EDGE_HELD\(configStale\)/);
+    expect(String(r2.error)).toMatch(/issued [0-9]+ s ago/);
+    expect(e.events).toMatchObject([{ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: e.runId }]);
+    expect(e.events[0].detail).toMatch(/central announced config v4 [0-9]+ s ago; this edge still holds v3 \(issued 9[0-9] s ago\)/);
+    expect(runRow(e.runId).status).toBe("held");
+    // the refresh never arrives ⇒ a Continue holds it AGAIN (indefinitely: never a failure, never compensated)
+    await continueHeld(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(e.events.map((x) => x.code)).toEqual(["EDGE_CONFIG_STALE", "EDGE_CONFIG_STALE"]);
+    // the refresh arrives ⇒ Continue ⇒ r2 re-authorised under the new claim and sent once; the run completes
+    stale = false;
+    h.onLedger = ledger;
+    await continueHeld(e);
+    const s4 = await edgeSegment(e, 4);
+    expect(s4.out).toMatchObject({ outcome: "completed" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r1", "r2", "s9"]); // r2 EXACTLY once, r1 not again
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => a.claimSeq)).toEqual([4]);
+    expect(h.sent.some((s) => s.stepId === "c1" || s.stepId === "c2")).toBe(false); // 0 compensations
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toBeUndefined();
+    expect(stepRows(e.runId).find((s) => s.stepId === "c2")).toBeUndefined();
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ A2(o) AMENDMENT 2: the config goes stale AFTER r2's authorisation (the edge dispatch gate answers CONFIG_STALE) ⇒ HELD, not failed: no retry, no compensation; Continue ⇒ re-authorised under the new claim (never the old authorisation) and sent once", async () => {
+    const e = await edgeAssignedRun(def("a2o-disp", [gate(), move("r2", { maxAttempts: 3, compensation: ot("c2") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.unused = [];
+    h.staleDispatch.add("r2");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // ONE dispatch attempt (the gate refused it: nothing reached a device) — no retry
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => [a.claimSeq, a.attempt])).toEqual([[2, 1]]);
+    const r2 = stepRows(e.runId).find((s) => s.stepId === "r2")!;
+    expect(r2).toMatchObject({ status: "held" });
+    expect(String(r2.error)).toMatch(/^EDGE_HELD\(configStale\).*issued 95 s ago/);
+    expect(e.events.map((x) => x.code)).toEqual(["EDGE_CONFIG_STALE"]);
+    // the refused authorisation is journaled + reported NEVER used (central supersedes it): it can never be reused
+    expect(e.unused).toMatchObject([{ runId: e.runId, claimSeq: 2, stepId: "r2", attempt: 1, reason: "config_stale" }]);
+    expect(String(r2.error)).toContain("reported unused");
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(runRow(e.runId).status).toBe("held");
+    await continueHeld(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out, JSON.stringify({ out: s3.out, rows: stepRows(e.runId) })).toMatchObject({ outcome: "completed" });
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => a.claimSeq)).toEqual([2, 3]); // a NEW authorisation under the new claim
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2", "r2"]); // refused once (nothing out), then sent once
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ A2(o) r3 F4: a safety-PLC config MISSING at the edge dispatch (SAFETY_CONFIG_MISSING, before the consume: nothing sent) ⇒ HELD like a stale config: no retry, no compensation, the authorisation reported unused; after the refresh + Continue ⇒ re-authorised and sent exactly once", async () => {
+    const e = await edgeAssignedRun(def("a2o-miss", [gate(), move("r2", { maxAttempts: 3, compensation: ot("c2") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.unused = [];
+    h.missingDispatch.add("r2");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // ONE dispatch attempt, refused by the gate: no retry (maxAttempts 3)
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => [a.claimSeq, a.attempt])).toEqual([[2, 1]]);
+    const r2 = stepRows(e.runId).find((s) => s.stepId === "r2")!;
+    expect(r2).toMatchObject({ status: "held" });
+    expect(String(r2.error)).toMatch(/^EDGE_HELD\(configStale\).*signed safety-PLC config\(s\) #7 absent/);
+    expect(String(r2.error)).toContain("reported unused");
+    // r4 (review m-1): the hold adds NO EDGE_CONFIG_STALE — the dispatch gate's EDGE_SAFETY_CONFIG_MISSING (journaled by the gate,
+    // mocked out here) is the one anomaly for it; the stale-config hold above still writes its EDGE_CONFIG_STALE
+    expect(e.events.map((x) => x.code)).toEqual([]);
+    expect(e.unused).toMatchObject([{ runId: e.runId, claimSeq: 2, stepId: "r2", attempt: 1, reason: "config_stale" }]);
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(runRow(e.runId).status).toBe("held");
+    // the edge's refresh brings the PLC config ⇒ Continue ⇒ a NEW authorisation, sent once, completed; 0 compensations
+    await continueHeld(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out, JSON.stringify({ out: s3.out, rows: stepRows(e.runId) })).toMatchObject({ outcome: "completed" });
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").map((a) => a.claimSeq)).toEqual([2, 3]);
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2", "r2"]); // refused once (nothing out), then sent once
+    expect(h.sent.some((s) => s.stepId === "c2")).toBe(false);
+    expect(stepRows(e.runId).find((s) => s.stepId === "c2")).toBeUndefined();
+    expect(runRow(e.runId).status).toBe("completed");
+  });
+
+  it("★ A2(o) AMENDMENT 2: a STOP never waits for the config — with the config stale the robot abort before the held step still goes out (L-7)", async () => {
+    const e = await edgeAssignedRun(def("a2o-stop", [gate(), robotStop("s1"), move("r1")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.staleness = STALE;
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["s1"]);
   });
 
   it("★ the walker refuses a package that is not the assigned snapshot / not this claim (nothing walked)", async () => {
@@ -1512,12 +1664,16 @@ describe("doc 81 Đợt 10 C fix review 4 (B F-B2-1) — a Continue of a held ed
     expect(runRow(e.runId).status).toBe("held");
     e.offlineSteps = undefined;
     const RESUMER = { id: 14, role: "supervisor", name: "resumer" };
+    // A2 test — the resume must land in a LATER millisecond than the gate approval: on a tie edgeEngineActorOf is (rightly)
+    // unknown, and a fast run used to make both stamps equal (flaky {gate} / now {unknown}). Wait until the clock has passed gateAt.
+    while (Date.now() <= gateAt) await new Promise((r) => setTimeout(r, 1));
     const t0 = Date.now();
     const view = (await getRun(e.runId, { bindingDigest: true }))!;
     expect((await resumeRun(e.runId, { approved: true, expectedStepId: null, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, RESUMER)).status).toBe("queued");
     const rec = runRow(e.runId).contextJson[EDGE_RESUMED_BY_CTX_KEY];
     expect(rec).toMatchObject({ userId: RESUMER.id });
     expect(rec.at).toBeGreaterThanOrEqual(t0);
+    expect(rec.at).toBeGreaterThan(gateAt);
     // B's /authorize rule: the held path ⇒ the RESUMER (its role is then read for the engine policy)
     expect(edgeEngineActorOf(runRow(e.runId).contextJson, { approvedBy: OTHER.id, at: gateAt })).toEqual({ userId: RESUMER.id, path: "held" });
     // an edge context patch can never set (or overwrite) it

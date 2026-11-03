@@ -170,7 +170,8 @@ describe("commandDispatcher — F4a safety", () => {
   });
 
   it("owner mismatch → rejected NOT_CONFIRMED", async () => {
-    pending.set("act-1", { id: "act-1", status: "confirmed", userId: 999 });
+    // R1b-2b-2a A2(h) — uỷ quyền gắn ĐÚNG lệnh (cổng (1) nay kiểm ràng buộc đầy đủ), chỉ CHỦ sai
+    pending.set("act-1", boundPending("act-1", baseInput(), { userId: 999 }));
     const r = await dispatch(baseInput());
     expect(r.status).toBe("rejected");
     expect(r.reason).toBe("NOT_CONFIRMED");
@@ -223,8 +224,8 @@ describe("commandDispatcher — F4b real write (OT_CONTROL_ENABLED=true)", () =>
     expect(intentsAtWrite).toBe(1);
     const intent = cmdLog.find(isIntentRow)!;
     expect(intent.status).toBe("sent");
-    expect(intent.idempotencyKey).toBe("intent:key-1:cmd_start:0");
-    expect(resultRows(cmdLog)[0].ackValue).toEqual({ ledger: "result", intentId: intent.id });
+    expect(intent.idempotencyKey).toBe("intent:v2:5:key-1:9:cmd_start:0"); // R1b-2b-2a T6d — khoá kết quả không mơ hồ (độ dài từng phần); trước: "intent:key-1:cmd_start:0"
+    expect(resultRows(cmdLog)[0].ackValue).toEqual({ ledger: "result", intentId: intent.id, bam: expect.any(String) }); // T6d — + bam (chốt phát lại)
     expect(pending.get("act-1")!.status).toBe("executed"); // consumed exactly once
     expect(r.simulated).toBe(false);
     expect(r.status).toBe("acked");

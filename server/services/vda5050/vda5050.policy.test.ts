@@ -28,7 +28,9 @@ function makeDbMock() {
       },
     }),
     update: (_table: any) => ({ set: (_v: any) => ({ where: () => Promise.resolve() }) }),
-    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+    // A2(j) gate fix — the interlock gate's rule read is select().from().where().orderBy(id).limit(cap + 1): the chain must offer orderBy, else the
+    // gate throws inside its try and fails CLOSED (motion rejected for the wrong reason). No interlock rule in these suites ⇒ [] for that read.
+    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]), orderBy: () => ({ limit: () => Promise.resolve([]) }) }) }) }),
   };
 }
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeDbMock()) }));

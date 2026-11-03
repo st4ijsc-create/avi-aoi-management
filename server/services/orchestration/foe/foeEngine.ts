@@ -94,6 +94,7 @@ import { asPackmlState } from "../../equipment/packml";
 import { STOP_DB_STEP_DEADLINE_MS, isStopJob } from "../../robot/stopJob"; // final wave F5 — the STOP DB deadline; Đợt 6 — the robot stop classifier
 import { withDeadline } from "../../ot/drivers/boundedClose"; // final wave F5 — bounded STOP-step lookups
 import { moTaMotPhan, motPhanCua, type MotPhan } from "../../ot/motPhan"; // R1b-2b-2a T3E (backlog 90) — lô áp MỘT PHẦN: không gửi lại
+import { coTheDaBayCua, moTaCoTheDaBay } from "../../equipment/lenhTruocCoTheDaBay"; // R1b-2b-2a T3F (backlog 91) — lệnh trước có thể đã bay: không gửi lại
 import {
   computeBindingDetail,
   programChecksRecord,
@@ -572,11 +573,14 @@ type StepOutcome =
   | { kind: "skipped" }
   | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
   /**
-   * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown).
+   * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown), or (T3F) the
+   * dispatcher refused because the previous command with the same key may be in flight or already applied (coTheDaBayCua).
    * motPhan (R1b-2b-2a T3E): set ONLY by execCommand when the dispatch was `failed` with a partial batch (detail.motPhan). Both are read only by
    * execStep's retry loop, which rewrites the outcome (flag dropped) before it leaves.
+   * stopGhim (R1b-2b-2a A2(m)): set ONLY by execCommand when the central store authorised the command as a PINNED STOP (fresh row);
+   * read only by execStep's retry loop (the STOP default of attempts, soLanThuToiDa), which drops it before the outcome leaves.
    */
-  | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan }
+  | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan; stopGhim?: true }
   | { kind: "aborted"; error: string }
   /**
    * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
@@ -745,12 +749,39 @@ async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<bo
  *   E fix 2 (review N1) — a STOP COMPENSATION of a failing step is dispatched within 4·D after the step's body returns:
  *   the step's failed row (≤ D), the run's 'compensating' status (≤ D), the compensation's running row (≤ D), its
  *   lookups / authorisation row (≤ D, ≤ D) — i.e. ≤ 5·D. (The failing step's OWN body is not a STOP — it is awaited as before.)
+ *   R1b-2b-2a A2(m) — an OT STOP's pin check (foeRunStore.laStopGhimChoHangFoe, ≤ D, between the lookups and its authorisation
+ *   row) adds one D per STOP to every figure above: (L + 5)·D, (L + 5 + 7·(k − 1))·D, ≤ 6·D. A failed attempt of a PINNED STOP on
+ *   its default of attempts waits ≤ D before the next one (stopGhimLuiMs: 250 ms, then 500 ms).
  */
 async function stopBoundedReadbacks(stop: boolean, rc: RunContext, stepId: string, c: Condition | undefined): Promise<void> {
   if (!stop) return refreshConditionReadbacks(rc, c);
   await withDeadline(refreshConditionReadbacks(rc, c), STOP_DB_STEP_DEADLINE_MS, `FOE stop step ${stepId} read-back`).catch((err: unknown) => {
     console.warn(`[FOE] run ${rc.runId} stop step ${stepId}: condition read-back not answered in time — evaluated on the last values (L-7): ${(err as Error)?.message ?? err}`);
   });
+}
+
+/** R1b-2b-2a A2(m) — attempts in total of a PINNED STOP step whose maxAttempts is UNSET (an explicit maxAttempts is kept as is). */
+export const STOP_GHIM_SO_LAN_MAC_DINH = 3;
+/** R1b-2b-2a A2(m) — the first pause before a retry of such a STOP; doubled per attempt, never above D (STOP_DB_STEP_DEADLINE_MS). */
+export const STOP_GHIM_LUI_DAU_MS = 250;
+
+/**
+ * R1b-2b-2a A2(m) — the attempts in total of a step: an explicit `maxAttempts` (retries) ⇒ maxAttempts + 1, as before; UNSET ⇒ 1 — except
+ * a PINNED STOP (`stopGhim`: the central store authorised THIS dispatch as one), which gets STOP_GHIM_SO_LAN_MAC_DINH: a STOP whose
+ * first attempt failed (device error, a crash-and-resume refusal) is sent again. Pure.
+ */
+export function soLanThuToiDa(step: Pick<WorkflowStep, "maxAttempts">, stopGhim: boolean): number {
+  if (stopGhim && step.maxAttempts === undefined) return STOP_GHIM_SO_LAN_MAC_DINH;
+  // the engine's retry budget — the bound edge /authorize mirrors (edgeAuthorizeParity: `req.attempt > maxAttempts`); unchanged
+  return Math.max(1, (step.maxAttempts ?? 0) + 1);
+}
+
+/**
+ * R1b-2b-2a A2(m) — the pause before attempt `attempt` (≥ 2) of a pinned STOP on its default: 250 ms, 500 ms, … bounded by the engine's
+ * STOP bound D = STOP_DB_STEP_DEADLINE_MS (1 s). With the default of 3 attempts the STOP waits at most 750 ms in pauses in total. Pure.
+ */
+export function stopGhimLuiMs(attempt: number): number {
+  return Math.min(STOP_DB_STEP_DEADLINE_MS, STOP_GHIM_LUI_DAU_MS * 2 ** Math.max(0, attempt - 2));
 }
 
 /** Execute ONE step subtree. Persists state; routes commands via E0. Fail-safe. */
@@ -811,7 +842,6 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   );
 
   let outcome: StepOutcome;
-  const maxAttempts = Math.max(1, (step.maxAttempts ?? 0) + 1);
   let attempt = 0;
   // doc 81 Đợt 10 C fix review 1 — a command an edge SENT but whose result its journal refused (outcome unknown, recorded by
   // central at that segment's end): NEVER sent again — it is a failure (its compensation, if any, follows as for any failure).
@@ -824,8 +854,11 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     outcome = await runStepBody(rc, step, attempt, stop);
     // R1b-2b-2a T2B (backlog 78) — a NON-STOP command whose dispatch timed out (sent, outcome unknown) is NEVER sent again
     // (precedent: outcomeUnknownOf). A STOP keeps the old retry (never held back as "unknown"); a real "failed" is retried.
-    if (outcome.kind === "failed" && outcome.outcomeUnknown && !stop) {
-      outcome = { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
+    // R1b-2b-2a T3F (backlog 91) — the same for a refusal meaning "the previous command with this key may be in flight or already applied"
+    // (DUPLICATE_IN_FLIGHT after a crash + rebuild, …: ketCucLenhFoe sets outcomeUnknown): no further attempt, i.e. NO new attempt key.
+    const khongRoChot = khongGuiLaiKhongRo(outcome, stop);
+    if (khongRoChot) {
+      outcome = khongRoChot;
       break;
     }
     // R1b-2b-2a T3E (backlog 90) — a NON-STOP command whose batch was applied PARTLY is NEVER sent again (the applied items would be applied twice);
@@ -835,7 +868,17 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
       outcome = motPhanChot;
       break;
     }
-    if (outcome.kind !== "failed" || attempt >= maxAttempts) break;
+    // R1b-2b-2a A2(m) (+ fix round 1) — the budget is decided PER ATTEMPT from the LATEST outcome: a PINNED STOP (the central store said so
+    // for THIS dispatch) with no explicit maxAttempts gets the STOP default of attempts, each after a bounded pause (stopGhimLuiMs ≤ D); an
+    // attempt that was NOT pinned (pins removed meanwhile, M10 flow) gets the non-pinned budget (unset ⇒ 1 attempt, R-5-j) — never a sticky
+    // default from an earlier pinned attempt. An explicit maxAttempts is kept as is (no pause, as before).
+    const ghimMacDinh = outcome.kind === "failed" && outcome.stopGhim === true && step.maxAttempts === undefined;
+    if (outcome.kind !== "failed" || attempt >= soLanThuToiDa(step, ghimMacDinh)) break;
+    if (ghimMacDinh) await sleep(stopGhimLuiMs(attempt + 1), rc.controller.signal); // an abort wakes it: the next attempt answers 'aborted'
+  }
+  if (outcome.kind === "failed" && outcome.stopGhim) {
+    const { stopGhim: _boCo, ...conLai } = outcome;
+    outcome = conLai;
   }
 
   // doc 81 Đợt 6 — finished, or failed ON ITS OWN (an 'aborted' outcome is the abort's: the sweep decides about it)
@@ -900,6 +943,17 @@ function outcomeUnknownOf(rc: RunContext, stepId: string): string | null {
 }
 
 /**
+ * R1b-2b-2a T2B / T3F — the outcome a NON-STOP step ends on after an attempt whose outcome is UNKNOWN (`outcomeUnknown`: the dispatch timed out,
+ * or the dispatcher refused because the previous command with the same key / authorisation may be in flight or already applied):
+ * FOE_OUTCOME_UNKNOWN, no further attempt (no new attempt key); null otherwise (a STOP keeps its retry; a plain failure ⇒ the loop decides as before).
+ * Pure (exported for the crash-rebuild DB test).
+ */
+export function khongGuiLaiKhongRo(outcome: StepOutcome, stop: boolean): StepOutcome | null {
+  if (stop || outcome.kind !== "failed" || !outcome.outcomeUnknown) return null;
+  return { kind: "failed", error: `${FOE_OUTCOME_UNKNOWN}: ${outcome.error} — not sent again; check the device.` };
+}
+
+/**
  * R1b-2b-2a T3E — the outcome a NON-STOP step ends on after an attempt whose batch was applied PARTLY (`failed` + motPhan): FOE_OUTCOME_PARTIAL,
  * no further attempt; null otherwise (a STOP, or not partial ⇒ the retry loop decides as before). Pure (exported for the ledger-replay DB test).
  */
@@ -910,12 +964,16 @@ export function khongGuiLaiMotPhan(outcome: StepOutcome, stop: boolean): StepOut
 
 /**
  * The StepOutcome of a command a dispatcher answered (the end of execCommand; pure, exported for the ledger-replay DB test):
- * ok ⇒ ok; `timeout` ⇒ failed + outcomeUnknown (T2B: T2's rule wins over partial); `failed` + detail.motPhan ⇒ failed + motPhan (T3E); else failed.
+ * ok ⇒ ok; `timeout` ⇒ failed + outcomeUnknown (T2B: T2's rule wins over partial); a "may be in flight / already applied" refusal
+ * (`coTheDaBayCua`: DUPLICATE_IN_FLIGHT, …) ⇒ failed + outcomeUnknown (T3F); `failed` + detail.motPhan ⇒ failed + motPhan (T3E); else failed.
  */
 export function ketCucLenhFoe(result: EquipmentCommandResult, command: string): StepOutcome {
   if (result.ok) return { kind: "ok" };
   const error = result.error ?? `Command "${command}" rejected (${result.status}).`;
   if (result.status === "timeout") return { kind: "failed", error, outcomeUnknown: true };
+  // R1b-2b-2a T3F (backlog 91) — "the previous command may be in flight or already applied" (DUPLICATE_IN_FLIGHT, …) ⇒ outcome UNKNOWN, like timeout
+  const daBay = coTheDaBayCua(result);
+  if (daBay) return { kind: "failed", error: moTaCoTheDaBay(daBay, command), outcomeUnknown: true };
   const motPhan = motPhanCua(result.detail?.motPhan);
   return motPhan ? { kind: "failed", error, motPhan } : { kind: "failed", error };
 }
@@ -1860,6 +1918,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
+  // R1b-2b-2a A2(o) AMENDMENT 2 — the edge refused it because its config went STALE after the authorisation (nothing sent, the
+  // authorisation NOT used): HELD — no retry, no compensation; a Continue re-authorises it under the new config.
+  const heldBy = result.ok || !rc.store.heldByDispatch ? null : await rc.store.heldByDispatch(step.id, { ok: result.ok, detail: (result.detail ?? null) as Record<string, unknown> | null });
+  if (heldBy) return { kind: "held", stepId: step.id, reason: heldBy.reason, error: heldBy.error };
 
   // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).
   await stopBoundedWrite(isStop, rc.runId, step.id, "result row", () =>
@@ -1875,7 +1937,9 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     }),
   );
 
-  return ketCucLenhFoe(result, step.command);
+  const ketCuc = ketCucLenhFoe(result, step.command);
+  // R1b-2b-2a A2(m) — a PINNED STOP that failed: execStep's retry loop gives it the STOP default of attempts (soLanThuToiDa)
+  return auth.stopGhim && ketCuc.kind === "failed" ? { ...ketCuc, stopGhim: true } : ketCuc;
 }
 
 async function execSequence(rc: RunContext, steps: WorkflowStep[]): Promise<StepOutcome> {

@@ -1,6 +1,10 @@
 /**
  * ★ Tiện ích TEST dùng chung (2026-10-23) — TẠO NGƯỜI DÙNG TEST VÀ TỰ DỌN.
  *
+ * ⚠ LỖI THỜI (2026-11-02, luật dieu-phoi: test KHÔNG DELETE, dọn bằng ROLLBACK): helper này DỌN BẰNG DELETE trên kết nối riêng (commit). KHÔNG dùng cho tệp MỚI —
+ * chèn người dùng TRONG giao dịch luôn hoàn tác (`db.transaction(async (tx) => { … throw new Rollback() })`); census tự nhận kiểu đó, không cần sửa danh sách.
+ * Tệp đang dùng giữ nguyên, chuyển dần khi sửa tới.
+ *
  * Vì sao: nhiều tệp `*.test.ts` tự `insert(users)` mà KHÔNG xoá ⇒ CSDL `_test` chất 5.196 người dùng (1.951 admin/supervisor hoạt động). Mọi cảnh báo "gửi cho mọi
  * admin/supervisor" (vd. quét lệch nhà máy edge) nhân hàng theo số người này: 1,86 triệu hàng `notifications`, instance e2e nghẽn. Xem backlog ở
  * `docs/superpowers/audits/2026-10-23-socket-phat-theo-nha-may.md`.

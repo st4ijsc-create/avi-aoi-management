@@ -418,3 +418,64 @@ describe("★ R1b-2b-2a T1 (mục 61, KD-A2) — mọi lượt ghi nền của �
     });
   });
 });
+
+// ═════════ R1b-2b-2a T9 (mục 71) — kiểm ngân sách pool theo DB_POOL_MAX thật + cảnh báo khởi động ═════════
+describe("R1b-2b-2a T9 — kiemNganSachPoolStop / canhBaoNganSachPoolStopKhiKhoiDong", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.doUnmock("../../logger");
+    vi.doUnmock("./lenhHmi");
+    vi.resetModules();
+  });
+
+  it("pool = cần tối thiểu ⇒ đủ; hụt 1 ⇒ không đủ; lớn hơn ⇒ đủ; cần tối thiểu = tổng trần + dự trữ (tính từ hằng, không viết cứng)", async () => {
+    const { kiemNganSachPoolStop } = await import("./nganSachPoolStop");
+    const can = DONG_THOI_KHAO_SAT_DUNG_KHAN_CAP + TRAN_GHI_SO_TREO_STOP_HMI + DU_TRU_POOL_CHO_DUNG_MAY;
+    expect(can).toBe(25); // hôm nay 8 + 8 + 9
+    expect(kiemNganSachPoolStop(can)).toEqual({ poolMax: can, canToiThieu: can, du: true });
+    expect(kiemNganSachPoolStop(20)).toEqual({ poolMax: 20, canToiThieu: can, du: false });
+    expect(kiemNganSachPoolStop(can - 1).du).toBe(false);
+    expect(kiemNganSachPoolStop(40).du).toBe(true);
+  });
+
+  it("seam: nâng DU_TRU_POOL_CHO_DUNG_MAY lên 10 ⇒ canToiThieu theo (không viết cứng 25)", async () => {
+    vi.resetModules();
+    vi.doMock("./lenhHmi", async (orig) => ({ ...(await orig<typeof import("./lenhHmi")>()), DU_TRU_POOL_CHO_DUNG_MAY: 10 }));
+    const { kiemNganSachPoolStop } = await import("./nganSachPoolStop");
+    expect(kiemNganSachPoolStop(25)).toEqual({ poolMax: 25, canToiThieu: 26, du: false });
+  });
+
+  async function taiVoiLogger() {
+    const warn = vi.fn();
+    vi.resetModules();
+    vi.doMock("../../logger", () => ({ logger: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
+    const m = await import("./nganSachPoolStop");
+    return { warn, m };
+  }
+
+  it("DB_POOL_MAX=20 ⇒ cảnh báo MỘT lần dù gọi 2 lần (kèm poolMax, canToiThieu)", async () => {
+    vi.stubEnv("DB_POOL_MAX", "20");
+    const { warn, m } = await taiVoiLogger();
+    m.canhBaoNganSachPoolStopKhiKhoiDong();
+    m.canhBaoNganSachPoolStopKhiKhoiDong();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toEqual({ poolMax: 20, canToiThieu: 25 });
+    expect(String(warn.mock.calls[0][1])).toContain("DB_POOL_MAX 20 < 25");
+  });
+
+  it("DB_POOL_MAX rỗng (mặc định 25) ⇒ 0 cảnh báo", async () => {
+    vi.stubEnv("DB_POOL_MAX", "");
+    const { warn, m } = await taiVoiLogger();
+    m.canhBaoNganSachPoolStopKhiKhoiDong();
+    m.canhBaoNganSachPoolStopKhiKhoiDong();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("index.ts gọi canhBaoNganSachPoolStopKhiKhoiDong cạnh kiemCauHinhLenhHmi (đột biến 'bỏ lời gọi' ⇒ đỏ)", () => {
+    const ma = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../_core/index.ts"), "utf8");
+    expect(ma.length).toBeGreaterThan(5000);
+    const i = ma.indexOf("kiemCauHinhLenhHmi();");
+    expect(i).toBeGreaterThan(0);
+    expect(ma.slice(i, i + 600)).toMatch(/nganSachPoolStop"\)\)\.canhBaoNganSachPoolStopKhiKhoiDong\(\)/);
+  });
+});

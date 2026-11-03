@@ -82,8 +82,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
      tôi vừa nói", giống cách trình soạn thảo VSCode tô một khối được trích dẫn. */
   .luot-nguoi-dung { background: var(--vscode-textBlockQuote-background);
                       border-left-color: var(--vscode-focusBorder); }
-  /* Trả lời AI — KHÔNG nền (khác hẳn ô người dùng), chỉ viền trái màu trung tính của theme. */
-  .luot-ai { border-left-color: var(--vscode-textBlockQuote-border); }
+  /* Trả lời AI — KHÔNG nền (khác hẳn ô người dùng), viền trái CAM của theme (charts-orange).
+     2026-11-02 chủ dự án: viền trung tính + chấm AI màu nút (xanh) trùng tông xanh của người hỏi ⇒ khó
+     phân biệt; Thợ Cả đổi sang CAM, người hỏi giữ XANH. */
+  .luot-ai { border-left-color: var(--vscode-charts-orange); }
   /* Thông báo hệ thống (lỗi/thông báo/lưu ý) — vai THỨ BA rõ ràng, không ép vào "ai": viền trái lấy
      màu chữ-mô-tả của theme, khác cả hai màu trên để không bị nhầm là một câu trả lời của AI. */
   .luot-he-thong { border-left-color: var(--vscode-descriptionForeground); }
@@ -95,8 +97,10 @@ export function dungHtmlBang(dv: { nonce: string; daDangNhap?: boolean; maBuild?
   .huy-hieu-nguon { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; opacity: .9; }
   .luot > .nhan::before { content: "•"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
                           background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .luot-nguoi-dung > .nhan::before { content: "B"; }
-  .luot-ai > .nhan::before { content: "AI"; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .luot-nguoi-dung > .nhan::before { content: "B"; background: var(--vscode-charts-blue); color: var(--vscode-editor-background); }
+  /* Chấm + tên "Thợ Cả" màu CAM — chữ trong chấm lấy màu nền editor (tối trên cam ở theme tối, sáng trên cam ở theme sáng). */
+  .luot-ai > .nhan { color: var(--vscode-charts-orange); }
+  .luot-ai > .nhan::before { content: "AI"; background: var(--vscode-charts-orange); color: var(--vscode-editor-background); }
   .luot-he-thong > .nhan::before { content: "!"; background: transparent; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-descriptionForeground); }
   /* ★★★ ĐỢT I / TASK I-1a — CHỈ BÁO ĐANG CHẠY. Bong bóng AI KHÔNG được rỗng-im-lìm trong lúc model
      nghĩ (3-58s đo được) — người dùng phải THẤY nó còn sống. Thuần CSS @keyframes (không JS

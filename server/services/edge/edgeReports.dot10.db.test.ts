@@ -461,6 +461,38 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — reports / events / complete (re
     expect(await superseded(jti2)).toBeNull();
   });
 
+  it("★ A2(o) r3 F5: `auth_unused` with reason config_stale (a stale-config hold) AND with the F2 fallback reason expired_before_use (an old central's wire form) ⇒ the jti ends superseded, the Continue re-authorises the step under a new claim — never outcome-unknown", async () => {
+    const s = kitSteps(k);
+    const c = await import("./edgeExecutionCentral");
+    const { getRun, resumeRun } = await import("../orchestration/foe/foeEngine");
+    for (const reason of ["config_stale", "expired_before_use"] as const) {
+      const p = await claimed(`a2ocs-${reason === "config_stale" ? "cs" : "eb"}`, [s.gate, s.otWrite]);
+      const jti = await authorizeO1(p);
+      const r = await report(p, [{ kind: "auth_unused", seq: 1, jti, stepId: "o1", attempt: 1, reason, at: Date.now() }]);
+      expect(r, `${reason}: ${JSON.stringify(r)}`).toMatchObject({ http: 200, data: { ackedSeq: 1, applied: 1 } });
+      expect(r.data!.outcomes ?? []).toEqual([]); // applied, not an anomaly
+      const [auth] = await k.sql`SELECT "supersededAt", "resultReportedAt" FROM edge_step_authorizations WHERE jti = ${jti}`;
+      expect(auth.supersededAt, reason).not.toBeNull();
+      expect(auth.resultReportedAt).toBeNull();
+      const [aud] = await k.sql`SELECT details FROM audit_logs WHERE action = 'EDGE_AUTH_UNUSED' AND "entityId" = ${p.runId} ORDER BY id DESC LIMIT 1`;
+      expect(String(aud?.details ?? "")).toContain(reason);
+      // the segment ends HELD (configStale — the walker's hold); the Continue never counts o1 as possibly sent
+      const done = await c.completeForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, claimToken: p.claimToken, seq: 1, outcome: "held", heldReason: "configStale", epoch: p.epoch, reportedThrough: 1 });
+      expect(done.http, JSON.stringify(done)).toBe(200);
+      const view = await getRun(p.runId, { bindingDigest: true });
+      const res = await resumeRun(p.runId, { approved: true, expectedStepId: null, expectedDefHash: view!.defHash!, expectedBindingDigest: view!.bindingDigest! }, { id: k.u.admin2, role: "admin", name: "continuer" });
+      expect(res, JSON.stringify(res)).toMatchObject({ ok: true, status: "queued" });
+      const [ctx] = await k.sql`SELECT "contextJson" FROM orchestration_runs WHERE id = ${p.runId}`;
+      expect(JSON.stringify((ctx.contextJson as Record<string, unknown>)?.foeResumeState ?? {})).not.toContain("o1");
+      const [o1] = await k.sql`SELECT status, error FROM orchestration_run_steps WHERE "runId" = ${p.runId} AND "stepId" = 'o1'`;
+      expect(String(o1?.error ?? "")).not.toContain("EDGE_OUTCOME_UNKNOWN");
+      const re = await c.claimForNodeV2(await k.principal("A"), p.runId, { claimSeq: p.claimSeq, defHash: p.defHash, programChecks: k.readings([k.ids.adapterA]) });
+      expect(re.http, JSON.stringify(re)).toBe(200);
+      const jti2 = await authorizeO1({ runId: p.runId, claimSeq: re.data!.claimSeq, claimToken: re.data!.claimToken });
+      expect(jti2).not.toBe(jti);
+    }
+  });
+
   it("★ R-10-bq (scan on 202960fde): `auth_unused` is REFUSED whenever central holds evidence the jti WAS used — a step row past dispatch citing it, an actuation event citing it — and is accepted once only; the outcome stays unknown (supersededAt NULL)", async () => {
     const s = kitSteps(k);
     const { eventsForNode } = await import("./edgeReportsCentral");

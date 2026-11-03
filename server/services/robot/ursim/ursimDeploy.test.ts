@@ -69,6 +69,18 @@ const req = (key: string, confirmedBy?: number, targetId = "default") => ({
 });
 
 describe("deployUrscriptToUrsim gate reuse", () => {
+  it("T6d fix 1 (M4) — khoá bên gọi được ĐẶT MIỀN người yêu cầu trước khi ghi `program_deployments` (`pd:u7:…`); khoá ở miền NGƯỜI KHÁC ⇒ đặt lại miền", async () => {
+    await deployUrscriptToUrsim(req("k-mien", 9));
+    expect(inserted[0].idempotencyKey).toBe("pd:u7:k-mien");
+    expect(inserted[0].requestedBy).toBe(7);
+    inserted.length = 0;
+    await deployUrscriptToUrsim(req("pd:u7:k-da-mien", 9));
+    expect(inserted[0].idempotencyKey).toBe("pd:u7:k-da-mien"); // đã ở miền CỦA người yêu cầu ⇒ giữ nguyên
+    inserted.length = 0;
+    await deployUrscriptToUrsim(req("pd:u70:k-nguoi-khac", 9));
+    expect(inserted[0].idempotencyKey).toBe("pd:u7:pd:u70:k-nguoi-khac");
+  });
+
   it("gate CLOSED (flags off) → simulated, no socket, target=ursim", async () => {
     const res = await deployUrscriptToUrsim(req("k-off", 9)); // even with sign-off, flags off
     expect(res.status).toBe("simulated");

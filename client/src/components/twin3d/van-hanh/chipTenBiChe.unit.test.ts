@@ -48,7 +48,8 @@ const TWIN_LINE = doc("client/src/pages/TwinLine.tsx");
 
 /** Một ứng viên nhãn tối thiểu, neo tại (x,y) trong khung 1000×700. */
 function ungVien(khoa: string, x: number, y: number, batThuong = true): NhanUngVien {
-  return { khoa, x, y, diemUuTien: 1, ngoaiKhung: false, batThuong } as NhanUngVien;
+  // khoangCachMet NaN: locNhan đọc `Number.isFinite ? … : Infinity` ⇒ cùng hành vi với trường vắng trước đây (không thêm khoảng cách giả)
+  return { khoa, x, y, khoangCachMet: Number.NaN, diemUuTien: 1, ngoaiKhung: false, batThuong } as NhanUngVien;
 }
 
 describe("V3.1 — `soBiChe` là một đại lượng RIÊNG, không lẫn vào lọc chính sách", () => {

@@ -302,8 +302,37 @@ function PostureFlag({ label, on, warn }: { label: string; on: boolean; warn?: b
   );
 }
 
+/** R1b-2b-2b B-T3 (mục 54) — 10 s + làm tươi khi quay lại cửa sổ: client không biết phạm vi người dùng vừa đổi ⇒ rút cửa sổ thay vì đoán. */
 function usePostureQuery() {
-  return trpc.oversight.posture.useQuery(undefined, { staleTime: 30_000 });
+  return trpc.oversight.posture.useQuery(undefined, { staleTime: 10_000, refetchOnWindowFocus: true });
+}
+
+/** Mốc ISO ⇒ chữ theo ngôn ngữ; không đọc được ⇒ giữ nguyên chuỗi. */
+function tuLuc(iso: string, locale: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(locale);
+}
+
+/** Tập khoá `theoBuoc` máy chủ phát (stopQuaHan24h + khongGhiSo) — khoá ngoài tập ⇒ nhãn chung "khác" + khoá thô ở `title`. */
+const KHOA_BUOC = new Set([
+  "db", "het_han_tong_truoc_handler", "pham_vi", "doc_may", "vai_tro", "doc_adapter", "doc_ghim", "dong_cho", "adapter",
+  "xac_thuc", "cong_doi_mat_khau", "giay_phep", "pham_vi_tenant", "ghi_so_loi", "khac", "khong_ro",
+]);
+
+/** `buoc: số` sắp theo số GIẢM dần (hoà ⇒ theo khoá cho ổn định). */
+function DanhSachBuoc({ theoBuoc, testId }: { theoBuoc: Record<string, number>; testId: string }) {
+  const { t } = useTranslation();
+  const hang = Object.entries(theoBuoc).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  if (hang.length === 0) return null;
+  return (
+    <ul className="list-disc pl-4 text-xs text-muted-foreground" data-testid={testId}>
+      {hang.map(([khoa, n]) => (
+        <li key={khoa} data-buoc={khoa} title={KHOA_BUOC.has(khoa) ? undefined : khoa}>
+          {t(`oversight.posture.buoc.${KHOA_BUOC.has(khoa) ? khoa : "khac"}`)}: {n}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
@@ -312,7 +341,7 @@ function usePostureQuery() {
  * SERVER — không lộ tên biến `.env`). Ghi lệnh thật BẬT mà engine interlock TẮT ⇒ cảnh báo VÀNG.
  */
 function PostureSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const query = usePostureQuery();
   const data = query.data;
   return (
@@ -349,6 +378,25 @@ function PostureSection() {
               ? t("oversight.posture.stopQuaHanUnavailable", "HMI STOP deadline refusals unavailable")
               : t("oversight.posture.stopQuaHan", "HMI STOP refused for deadline (24 h): {{count}}", { count: data.stopQuaHan24h.count })}
           </p>
+          {data.stopQuaHan24h && !data.stopQuaHan24h.degraded && data.stopQuaHan24h.count > 0 && (
+            <DanhSachBuoc theoBuoc={data.stopQuaHan24h.theoBuoc ?? {}} testId="posture-stop-qua-han-buoc" />
+          )}
+          {data.stopQuaHan24h && !data.stopQuaHan24h.degraded && data.stopQuaHan24h.khongGhiSo && (
+            <>
+              <p className="text-xs text-muted-foreground" data-posture-khong-ghi-so>
+                {t("oversight.posture.khongGhiSo", "Not recorded in the ledger (since {{tu}}): {{count}}", {
+                  tu: tuLuc(data.stopQuaHan24h.khongGhiSo.batDauLuc, i18n.language),
+                  count: data.stopQuaHan24h.khongGhiSo.count,
+                })}
+              </p>
+              <DanhSachBuoc theoBuoc={data.stopQuaHan24h.khongGhiSo.theoBuoc ?? {}} testId="posture-khong-ghi-so-buoc" />
+            </>
+          )}
+          {data.nganSachPoolStop?.du === false && (
+            <p className="text-xs text-warning" data-posture-pool-stop-thieu>
+              {t("oversight.posture.poolStopThieu", "HMI STOP pool budget short: DB_POOL_MAX {{poolMax}} < {{canToiThieu}}", { poolMax: data.nganSachPoolStop.poolMax, canToiThieu: data.nganSachPoolStop.canToiThieu })}
+            </p>
+          )}
           {!data.interlockCoverageDegraded && typeof data.interlockRulesCauHinhHong === "number" && data.interlockRulesCauHinhHong > 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs text-muted-foreground" data-posture-cau-hinh-hong-canh-bao>
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />

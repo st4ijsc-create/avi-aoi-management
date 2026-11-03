@@ -24,8 +24,12 @@ const robotJobsRows: Row[] = [];
 let seq = 1;
 
 // eq/and mock (mirrors commandDispatcher.test.ts) — WHERE áp bằng JS.
-vi.mock("drizzle-orm", () => ({
+// T6d fix 2 — importOriginal: mô-đun thật + chỉ ghi đè các vị từ fake DB dưới đây hiểu (eq / and / inArray — `hangTheoKhoa` của T6d đọc mọi hàng
+// của khoá bằng `inArray`); một import mới của dispatcher không còn làm vỡ mock ("No export is defined on the mock").
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("drizzle-orm")>()),
   eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
+  inArray: (col: any, vals: any[]) => ({ __k: col.__name, __v: vals, __op: "in" }),
   and: (...ps: any[]) => ({ __and: ps }),
 }));
 
@@ -33,6 +37,7 @@ function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
   if (pred.__and) return pred.__and.every((p: any) => matches(row, p));
   if (pred.__op === "eq") return row[pred.__k] === pred.__v;
+  if (pred.__op === "in") return pred.__v.includes(row[pred.__k]);
   return true;
 }
 function tableFor(table: any): Row[] {
@@ -49,9 +54,14 @@ function makeFakeDb() {
   return {
     select: () => ({
       from: (table: any) => ({
-        where: (pred: any) => ({
-          limit: async () => tableFor(table).filter((r) => matches(r, pred)).slice(0, 1),
-        }),
+        // awaitable `where()` (T6d `hangTheoKhoa`: mọi hàng của khoá, không `limit`) + `limit()` như trước
+        where: (pred: any) => {
+          const hit = () => tableFor(table).filter((r) => matches(r, pred));
+          return {
+            limit: async () => hit().slice(0, 1),
+            then: (ok: (v: Row[]) => unknown, err?: (e: unknown) => unknown) => Promise.resolve(hit()).then(ok, err),
+          };
+        },
       }),
     }),
     insert: (table: any) => ({
@@ -99,6 +109,7 @@ vi.mock("../../robot/robotManager", () => ({
 }));
 
 import { equipmentRegistry, type EquipmentCommand } from "../../equipment/equipmentAdapter";
+import { FOE_ENGINE_TOOL, otPayloadHash, withFoeGateApproval, withOtPayloadHash } from "../../ot/otActionBinding";
 
 const USER = 7;
 
@@ -143,8 +154,22 @@ beforeEach(() => {
 
 describe("FOE → REAL OT gate (equipmentRegistry.sendCommand, no dispatcher mock)", () => {
   it("HỢP LỆ: bản ghi ai_pending_actions confirmed → cổng QUA → simulated", async () => {
-    pending.set("foe-run1-a-a1", { id: "foe-run1-a-a1", status: "executed", userId: USER });
-    const res = await equipmentRegistry.getAdapter("ot-opcua").sendCommand(otFoeCommand("foe-run1-a-a1", "run1-a-a1"));
+    // R1b-2b-2a A2(h) — cổng (1) nay ràng buộc MỌI actionId với đúng lệnh: hàng FOE như ensureOrchestrationAction ghi cho bước có cổng duyệt
+    // (confirmed, tool FOE, băm lệnh, duyệt của người duyệt ≠ chủ run) + lệnh như buildEquipmentCommand dựng (tool, requestedBy = chủ, confirmedBy = người duyệt).
+    const APPROVER = USER + 1;
+    const cmd: EquipmentCommand = { ...otFoeCommand("foe-run1-a-a1", "run1-a-a1"), hitl: { actionId: "foe-run1-a-a1", tool: FOE_ENGINE_TOOL, requestedBy: USER, confirmedBy: APPROVER } };
+    pending.set("foe-run1-a-a1", {
+      id: "foe-run1-a-a1",
+      tool: FOE_ENGINE_TOOL,
+      status: "confirmed",
+      userId: APPROVER,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      previewJson: withFoeGateApproval(
+        withOtPayloadHash(null, otPayloadHash({ tool: FOE_ENGINE_TOOL, adapterId: 10, machineId: 5, commandType: "start", writes: cmd.writes ?? [] })),
+        { runId: 1, runOwner: USER, approvedBy: APPROVER, gateStepId: "g0" },
+      ),
+    });
+    const res = await equipmentRegistry.getAdapter("ot-opcua").sendCommand(cmd);
     expect(res.routedTo).toBe("ot-dispatcher");
     expect(res.ok).toBe(true);
     expect(res.status).toBe("simulated");

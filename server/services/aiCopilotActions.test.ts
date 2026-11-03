@@ -252,7 +252,7 @@ describe("cancel write-action", () => {
 describe("E2-4 — realtime nudge at the propose/confirm choke points", () => {
   it("proposeAction publishes 'action_proposed' AFTER the row is persisted", async () => {
     const res = await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_proposed");
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_proposed", undefined, ADMIN.id);
     // the row must already exist in the store by the time we publish
     expect(store.has(res.pendingAction!.actionId)).toBe(true);
   });
@@ -269,7 +269,7 @@ describe("E2-4 — realtime nudge at the propose/confirm choke points", () => {
     publishAiAgentEvent.mockClear();
     const res = await confirmAction(pa.actionId, pa.token, ADMIN, "vi");
     expect(res.status).toBe("executed");
-    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_confirmed");
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_confirmed", undefined, ADMIN.id);
   });
 
   it("a wrong-owner confirm (blocked before execute) does NOT publish 'action_confirmed'", async () => {
@@ -285,9 +285,9 @@ describe("E2-4 — realtime nudge at the propose/confirm choke points", () => {
     await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
     const call = publishAiAgentEvent.mock.calls.find((c) => c[0] === "action_proposed")!;
     expect(call).toBeTruthy();
-    // proposeAction calls publishAiAgentEvent(event) — a single positional arg,
-    // never args/preview/secret data.
-    expect(call).toHaveLength(1);
+    // proposeAction calls publishAiAgentEvent(event, undefined, ownerUserId) — chỉ tên sự kiện + id CHỦ (để bridge định tuyến theo phạm vi nhà máy;
+    // id chủ KHÔNG lên dây), never args/preview/secret data.
+    expect(call).toEqual(["action_proposed", undefined, ADMIN.id]);
   });
 
   it("a THROWING publishAiAgentEvent never breaks proposeAction/confirmAction", async () => {

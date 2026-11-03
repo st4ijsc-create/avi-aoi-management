@@ -41,7 +41,8 @@ export async function chiTietKyThuatCua(ctx: { user: { id: number; role: string 
  *                              kết lúc đang bay). Gợi ý an toàn "không rõ máy đã nhận — đọc lại trước khi gửi lần nữa" sống qua lớp che (client
  *                              đã có chữ `scada.lenh.cong.TIMEOUT`).
  *   • `EDGE_REPORTED`        — `edge reported status "…"` / "the edge reported …" (`edgeReportsCentral.ts` hàng do edge báo).
- *   • `READBACK_UNAVAILABLE` — `readback unavailable` (status acked_unverified: ghi xong, không đọc lại được).
+ *   • `READBACK_UNAVAILABLE` — `readback unavailable` (status acked_unverified: ghi xong, không đọc lại được), và `readback skipped: …` (T6b: ghi xong,
+ *                              đọc lại bị bỏ vì lô có write "không rõ" — xét TRƯỚC `TIMEOUT`).
  *   • `READBACK_MISMATCH`    — `readback mismatch: …` / `readback not verified: …` (acked_unverified: đọc lại lệch / mẫu không good).
  *   • `DRIVER_WRITE_FAILED`  — status `failed` với văn bản thô (vd `connect ECONNREFUSED 127.0.0.1:502`, `no result`, `write failed`).
  *   • `TECHNICAL_ERROR`      — mọi văn bản thô khác.
@@ -63,13 +64,18 @@ export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABL
  *   (hằng ở foeEngine.ts / foeRunStore.ts, nằm trong nguồn suy của census) và `EDGE_OUTCOME_UNKNOWN` (literal ở foeRunStore.ts — trạng thái tiếp tục).
  * + `MOT_PHAN` (R1b-2b-2a T3E, backlog 90: lô ghi thiết bị áp MỘT PHẦN — `reason` của dispatch + tiền tố errorText của hàng KHÔNG áp; status vẫn `failed`;
  *   hằng `MA_MOT_PHAN` ở server/services/ot/motPhan.ts, tệp nằm trong nguồn suy của census). Danh sách item đi trong `ackValue.motPhan` (chi tiết kỹ thuật).
+ * + `IDEMPOTENCY_KEY_REUSED` (R1b-2b-2a T6d: khoá idempotency đã dùng cho lệnh KHÁC — adapter / tag / payload lệch ⇒ lệnh không gửi, không trả kết quả cũ;
+ *   cùng mã với robot; hằng `MA_KHOA_DUNG_LAI` ở commandDispatcher.ts).
+ * + `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE`, `IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE` (R1b-2b-2a A2(a): lệnh không phải STOP KHÔNG có
+ *   khoá idempotency ⇒ không gửi; biến thể ghi tag ghim STOP mà không phải STOP / không đọc được ghim kèm cảnh báo khẩn; hằng `MA_THIEU_KHOA*` ở commandDispatcher.ts.
+ *   KHÔNG thuộc lớp "có thể đã bay" — lệnh chắc chắn chưa gửi).
  */
 export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
   "CHANNEL_READ_ONLY", "CHUA_GHIM_STOP", "DANG_DUOC_CHON", "DA_XU_LY", "DB_UNAVAILABLE", "DIEU_TIET", "DISPATCH_LOI", "DRIVER_WRITE_FAILED",
   "DUPLICATE_IN_FLIGHT", "EDGE_CHUA_HO_TRO", "EDGE_OUTCOME_UNKNOWN", "EDGE_REPORTED", "EDGE_STOP_NOT_PINNED", "FAILED", "FEATURE_DISABLED",
   "FOE_GATE_REQUIRED", "FOE_OUTCOME_PARTIAL", "FOE_OUTCOME_UNKNOWN", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
-  "HET_HAN", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
+  "HET_HAN", "IDEMPOTENCY_KEY_REQUIRED", "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE", "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE", "IDEMPOTENCY_KEY_REUSED", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
   "INTERLOCK_EVENT_INVALID", "INTERLOCK_NOT_APPROVED", "INTERLOCK_REQUIRES_HUMAN_CONFIRM", "INTERLOCK_RULE_DISABLED", "INTERLOCK_RULE_NOT_FOUND",
   "INTERLOCK_TAG_MISMATCH", "INTERLOCK_TARGET_MISMATCH", "INTERLOCK_VALUE_MISMATCH", "INTERLOCK_WRITES_MISMATCH", "KHOA_CHON_LOI", "KHOA_MAT",
   "LEDGER_INTENT_FAILED", "MAY_DA_DOI", "MODE_LOCAL", "MOT_PHAN", "NOT_CONFIRMED", "NOT_FOUND", "OFF_STEP", "OT_MC_TAM_KHOA", "OT_S7_BIT_NGOAI_DAI",
@@ -94,6 +100,9 @@ export function maLoiCua(errorText: string | null | undefined, status?: string |
   const tienTo = /^([A-Z][A-Z0-9_]*):/.exec(t)?.[1];
   // polish round 2 — CHỈ mã đã biết; tiền tố lạ (nhãn host / thiết bị viết HOA ở đầu văn bản driver) ⇒ rơi xuống mã dự phòng
   if (tienTo && MA_LOI_DA_BIET_SET.has(tienTo)) return tienTo;
+  // R1b-2b-2a T6b polish (review m2) — write ĐÃ acked mà đọc lại bị BỎ vì lô có write "không rõ" (`otDeviceWrite.lyDoBoDocLai`, status
+  // acked_unverified): TRƯỚC luật TIMEOUT — câu chung "readback skipped: outcome unknown in this batch" mang chữ "outcome unknown" nhưng write NÀY đã áp.
+  if (status !== "timeout" && /^readback skipped/i.test(t)) return "READBACK_UNAVAILABLE";
   if (status === "timeout" || /outcome unknown|may have been applied/i.test(t)) return "TIMEOUT";
   if (/^edge reported status|^the edge reported/i.test(t)) return "EDGE_REPORTED";
   if (/^readback unavailable/i.test(t)) return "READBACK_UNAVAILABLE";
@@ -215,9 +224,19 @@ const BIEN_TRAI = String.raw`(?<=^|[\s(\[,;"'])`;
 const BIEN_PHAI = String.raw`(?=$|[\s:(),;\]"']|\.(?:\s|$))`;
 const RE_MA_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}([A-Z][A-Z0-9_]*)${BIEN_PHAI}`, "g");
 const RE_CONG_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}(FOE_GATE_REQUIRED)\\(([a-zA-Z]{1,40})\\)${BIEN_PHAI}`);
+/**
+ * C2 polish (c, kiem-dinh 2026-11-01) — khi có NHIỀU mã đã biết, ưu tiên NHÓM AN TOÀN (kết cục thiết bị không chắc: người gọi phải kiểm thiết bị);
+ * trong nhóm: xuất hiện đầu tiên thắng; ngoài nhóm: mã đã biết đầu tiên (như trước). `FOE_GATE_REQUIRED(<lý do>)` do `maLoiBuocFoe` xử lý trước.
+ */
+const MA_NHOM_AN_TOAN: ReadonlySet<string> = new Set(["FOE_OUTCOME_UNKNOWN", "FOE_OUTCOME_PARTIAL", "EDGE_OUTCOME_UNKNOWN", "MOT_PHAN", "TIMEOUT"]);
 export function maDaBietDauTien(text: string | null | undefined): string | null {
-  for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) if (MA_LOI_DA_BIET_SET.has(m[1])) return m[1];
-  return null;
+  let dauTien: string | null = null;
+  for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) {
+    if (!MA_LOI_DA_BIET_SET.has(m[1])) continue;
+    if (MA_NHOM_AN_TOAN.has(m[1])) return m[1];
+    dauTien ??= m[1];
+  }
+  return dauTien;
 }
 
 /**

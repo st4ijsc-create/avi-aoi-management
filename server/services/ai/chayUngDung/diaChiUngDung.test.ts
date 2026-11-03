@@ -86,7 +86,9 @@ describe("§3 — cửa sinh: HOST/ASPNETCORE_URLS = địa chỉ ứng dụng, 
       "127.0.0.2",
     );
     let out = "";
-    con.stdout?.on("data", (c: Buffer) => (out += c.toString("utf8")));
+    con.stdout?.on("data", (c: string | Buffer) => {
+      out += c.toString("utf8");
+    });
     await new Promise<void>((g) => con.on("exit", () => g()));
     expect(out.trim()).toBe("127.0.0.2 http://127.0.0.2:5157");
   });
