@@ -42,8 +42,8 @@ export const TIEN_TO_TAI_LIEU_SAN_PHAM: readonly string[] = [
 export const DOAN_NOI_BO: ReadonlySet<string> = new Set(["superpowers", ".superpowers", ".claude", "memory", "plans", "specs", "audits"]);
 /** (L3c) tên tệp `.env*` ở mọi nơi. */
 export const KHUON_TEN_NOI_BO: readonly RegExp[] = [/^\.env/i];
-/** (L3c) tài liệu KẾ HOẠCH / LỘ TRÌNH nội bộ dưới `docs/` (`AI_UPGRADE_PLAN.md`, `…_ROADMAP.md`) — chỉ xét dưới `docs/` (mã `planner.ts` không dính). */
-export const KHUON_TEN_KE_HOACH_DOCS: readonly RegExp[] = [/(^|[_.-])plan([_.-]|$)/i, /roadmap/i];
+/** (L3c) tài liệu KẾ HOẠCH / LỘ TRÌNH nội bộ dưới `docs/` (`AI_UPGRADE_PLAN.md`, `UpgradePlan.md`, `…_ROADMAP.md`; "plan" KHÔNG theo sau chữ cái — `PLANNING_NOTES.md` qua) — chỉ xét dưới `docs/` (mã `planner.ts` không dính). */
+export const KHUON_TEN_KE_HOACH_DOCS: readonly RegExp[] = [/plan(?![a-z])/i, /roadmap/i];
 
 export function laTaiLieuSanPham(t: { sourceType: string; sourcePath?: string | null }): boolean {
   const p = String(t.sourcePath ?? "").replace(/\\/g, "/");
