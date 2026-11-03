@@ -120,7 +120,7 @@ function spark(kind) {
   let d="",seg=false;
   pts.forEach((v,i)=>{ if(v===null){seg=false;return;} d+=(seg?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" "; seg=true; });
   let gaps="";
-  pts.forEach((v,i)=>{ if(v===null && (i===0||pts[i-1]!==null)){ let j=i; while(j<30&&pts[j]===null)j++; gaps+=`<rect class="gap ${kind==='stale'?'':'g'}" x="${x(i)-3}" y="4" width="${x(Math.min(j,29))-x(i)+6}" height="${H-8}" opacity=".9"/>`; } });
+  pts.forEach((v,i)=>{ if(v===null && (i===0||pts[i-1]!==null)){ let j=i; while(j<30&&pts[j]===null)j++; gaps+=`<rect class="gap" x="${x(i)-3}" y="4" width="${x(Math.min(j,29))-x(i)+6}" height="${H-8}" opacity=".9"/>`; } });
   return `<svg class="spark ${kind==="stale"?"stale":""}" viewBox="0 0 ${W2} ${H}" preserveAspectRatio="none" aria-label="Mô-men 60 giây gần nhất"><line class="grid" x1="0" x2="${W2}" y1="${H/2}" y2="${H/2}"/>${gaps}<path class="ln" d="${d}"/></svg>`;
 }
 function cell(l, v, u, k, age) {
@@ -160,7 +160,7 @@ function man3(st) {
   const noWrite = waiting||stopped||stale;
   const writeP = local
     ? `<div class="notice"><b>Máy đang ở LOCAL</b>Ghi từ xa bị ẩn — thay đổi tham số làm tại tủ điện. Vẫn đọc được, vẫn có DỪNG MÁY.</div>`
-    : `<div class="write"><label>Đặt mô-men siết (SP) · dải 0,50–2,50 · bước 0,05</label><div class="row"><div class="inp">1,35<small>N·m</small></div><button class="btn primary" ${noWrite?"disabled":""}>Đổi…</button></div><div class="cond">${stale?`<b>Không cho phép:</b> dữ liệu cũ 42 s — không xác minh được giá trị hiện tại`:waiting||stopped?`<b>Không cho phép:</b> máy đang dừng / chờ dừng`:`<b>Được phép</b> · <span class="lvl l4">▲ Mức 4</span> cần mã TOTP · 1,21 → 1,35 trong dải`}</div></div>`;
+    : `<div class="write"><label>Đặt mô-men siết (SP) · dải 0,50–2,50 · bước 0,05</label><div class="row"><div class="inp">1,35<small>N·m</small></div><button class="btn primary" ${noWrite?"disabled":""}>Đổi…</button></div><div class="cond">${stale?`<b>Không cho phép:</b> dữ liệu cũ 42 s — không xác minh được giá trị hiện tại`:waiting||stopped?`<b>Không cho phép:</b> máy đang dừng / chờ dừng`:`<b>Được phép</b> · <span class="lvl l4">▲ Mức 4</span> cần mã TOTP · tag này đã được kỹ sư siết lên mức 4 (mặc định setpoint = mức 3)`}</div></div>`;
   const cmds = [["14:32:05","DỪNG MÁY (gửi)","đã gửi"],["14:10:42","SP mô-men 1,20 → 1,21","khớp"],["13:58:11","Recipe v7 → v8","khớp"]];
   if (!waiting && !stopped) cmds.shift();
   const cm = cmds.map(c=>`<li><time>${c[0]}</time><span>${c[1]}</span><span class="ack">${c[2]}</span></li>`).join("");
@@ -169,7 +169,7 @@ function man3(st) {
     <div class="card"><h2>Mô-men siết · 60 s <small>trái = cũ → phải = nay · khoảng hở = không có mẫu, KHÔNG nối</small></h2>${sp}</div></div>
     <div class="r"><div class="card ctrl"><h2>Dừng máy <small>3 trạng thái, không lẫn</small></h2>${s3}</div><div class="card"><h2>Điều khiển</h2>${writeP}</div><div class="card" style="flex:1"><h2>Lệnh gần đây</h2><ul class="cmds">${cm}</ul></div></div></div>`;
   let over = "";
-  if (dlg) over = `<div class="scrim"><div class="dlg" role="dialog" aria-label="Xác nhận lệnh"><h2>Xác nhận đổi mô-men siết SP</h2><div class="sub">SCR-06 · tag torque_sp · <span class="lvl l4">▲ Mức 4</span> cần TOTP · <span class="pill real">THẬT — ghi xuống máy</span></div>
+  if (dlg) over = `<div class="scrim"><div class="dlg" role="dialog" aria-label="Xác nhận lệnh"><h2>Xác nhận đổi mô-men siết SP</h2><div class="sub">SCR-06 · tag torque_sp · <span class="lvl l4">▲ Mức 4</span> cần TOTP <span class="muted">(kỹ sư đã siết tag này từ mức 3 lên 4)</span> · <span class="pill real">THẬT — ghi xuống máy</span></div>
     <div class="prev"><div class="b"><div class="l">Hiện tại</div><div class="v">1,21 N·m</div></div><div class="arr">→</div><div class="b"><div class="l">Yêu cầu</div><div class="v">1,35 N·m</div></div><div class="arr">→</div><div class="b hl"><div class="l">Sau công thức (×1 + 0)</div><div class="v">1,35 N·m</div></div></div>
     <div class="f"><label>Lý do (bắt buộc, ≥ 5 ký tự)</label><div class="ta">Đổi lô vít M3 mới theo phiếu kỹ thuật PK-0412</div></div>
     <div class="f"><label>Mã xác thực hai lớp (6 số) — bắt buộc ở mức ≥ 4</label><div class="ta otp">4 8 2 ▍</div></div>

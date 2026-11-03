@@ -24,7 +24,7 @@ Xem: `man-2-3.html` (bấm đổi màn / trạng thái / cỡ; `?bare=1&man=2|3&
 2. DỪNG ba trạng thái tách rời, không dùng chung một màu: "1 · Đã gửi → 2 · Máy nhận (chờ N s, nhấp nháy) → 3 · Đọc lại khớp (PackML Stopped)". Ở "chờ" PackML VẪN hiện Execute kèm chú thích "chưa xác nhận dừng"; chỉ khi đọc lại khớp mới hiện Stopped.
 3. PackML hiện cả dãy trạng thái; trạng thái hiện tại có viền đậm + chữ + dấu (▶ Execute / ■ Stopped); khi dữ liệu cũ: "? Execute? — không rõ" viền đứt tím, không khẳng định.
 4. Ô số: viền = ô số; số lớn Geist Mono; đơn vị; dòng dưới "chất lượng · tuổi". Tốt = viền đặc đen; nghi ngờ = viền CHẤM xám; cũ = viền đứt tím + nền sọc + gạch ngang số + "CŨ · 42 s"; thiếu tín hiệu = chữ "Không có tín hiệu" (không số, không 0).
-5. Spark 60 s: khoảng hở KHÔNG nối, tô sọc xám (không có mẫu); khi dữ liệu cũ phần đuôi tô sọc tím và nét đứt tím. Khi dừng, đường rơi về 0 thật.
+5. Spark 60 s: khoảng hở KHÔNG nối và luôn tô sọc TÍM (D10 / 01-QUY-UOC §9 #7: không có mẫu vì mất kết nối = `quality=bad` = "không tin được", cùng ký hiệu với dữ liệu cũ); khi dữ liệu cũ phần đuôi còn có nét đứt tím. Xám CHẤM chỉ dành cho `uncertain`. Khi dừng, đường rơi về 0 thật.
 6. Huy hiệu REMOTE = chữ viền đen đặc; LOCAL = chữ viền đen nền sọc; kèm chữ, không chỉ màu. LOCAL ẩn khối ghi, thay bằng ghi chú; DỪNG MÁY vẫn hiện.
 7. Khối ghi: nhãn có dải + bước; dòng điều kiện "Được phép · ▲ Mức 4 cần TOTP" hoặc "Không cho phép: …"; nút "Đổi…" mở hộp; bị khoá (viền đứt) khi dừng/chờ dừng/dữ liệu cũ.
 8. CommandConfirmDialog: preview 3 ô "Hiện tại → Yêu cầu → Sau công thức" (ô cuối viền đậm), mức tác động (token `--actuation-N` + hình ▲ + số), nhãn THẬT/MÔ PHỎNG + lý do bắt buộc, TTL 60 s đếm từ lúc nhận (số + thanh), ô TOTP chỉ hiện ở mức ≥ 4. Dùng chung HopThoaiLenh tổng quát hoá.
@@ -55,11 +55,17 @@ Xem: `man-2-3.html` (bấm đổi màn / trạng thái / cỡ; `?bare=1&man=2|3&
 | trắng / `--actuation-4`, `--actuation-3`, `--packml-stopped` | 4,60 · 5,42 · 9,34 |
 Thang chữ nhỏ nhất dùng: 11 px (caption); phần lớn ≥ 12,5 px. Không dùng `text-[Npx]` hay màu hex trong `man-2-3.css` (mọi màu qua token).
 
+## Luật đã chốt (chu-du-an-HST, 2026-11-03)
+- Chữ ưu tiên (P1–P4) LUÔN dùng `--alarm-pN-ink`; glyph/viền dùng màu chính `--alarm-pN` (đồ hoạ ≥ 3:1). Áp cho cả 4 mức.
+- Khoảng hở/mất kết nối trong spark = tím sọc (như dữ liệu cũ); uncertain = viền/nét chấm xám. KHÔNG thêm màu đỏ nhạt.
+- Hộp xác nhận minh hoạ: setpoint mặc định mức 3; ví dụ hiển thị mức 4 + TOTP ghi rõ "kỹ sư đã siết tag này lên mức 4".
+- Chờ chủ dự án: Q1 (accent ≈ sim; khuyến nghị đổi accent sang xanh lam đậm, --sim giữ xanh ngọc độc quyền), Q3 (khuyến nghị: KHÔNG đổi nhãn PackML; thêm huy hiệu tạm nhấp nháy "Dừng — chờ máy xác nhận" cạnh nhãn, biến mất khi đọc lại khớp).
+
 ## Câu hỏi cho chủ dự án
 1. `--accent` (#0b6477) và `--sim` (#0a7a72) đều xanh ngọc, rất gần nhau. Trong mockup, mô phỏng luôn đi kèm viền 4 px + dải chữ + watermark nên không nhầm với nút/tab; có muốn đẩy `--accent` sang một màu khác (ví dụ xanh lam đậm) để tách hẳn không?
 2. `--alarm-p2` (#c25400) đạt 4,33:1 trên nền thẻ — chữ P2 phải dùng ngả ink. Chấp nhận quy tắc "chữ ưu tiên luôn dùng `-ink`, glyph/viền dùng màu chính"?
 3. Trạng thái DỪNG chờ xác nhận: PackML vẫn hiện Execute + chú thích (không hiện "Stopping"). Chủ dự án có muốn thêm trạng thái trung gian "Dừng — chờ máy xác nhận" lên chính nhãn PackML?
-4. Spark có khoảng hở xám khi không có mẫu: có cần phân biệt "mất kết nối" (xám) với "chất lượng xấu" (đỏ nhạt) ở pha 2?
+4. (ĐÃ TRẢ LỜI — xem Luật đã chốt) Spark: khoảng hở = tím sọc, không thêm đỏ nhạt.
 
 ## Chưa làm / giới hạn
 - Chưa có màn 1/4/5 và vỏ thật (luong-ui); `man-2-3.css` có vỏ tạm.
