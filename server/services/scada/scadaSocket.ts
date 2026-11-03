@@ -243,6 +243,16 @@ export function __soDangKyNong(userId?: number): number {
   }
   return n;
 }
+/**
+ * SCADA 1a fix 1 (I-1) — socket có đang GIỮ dữ liệu theo phạm vi qua kênh này không: ≥ 1 đăng ký sống (tag đã kiểm phạm vi lúc đăng ký) hoặc
+ * một lệnh subscribe đang chờ (sẽ thành đăng ký với phạm vi đọc lúc ấy). Lượt quét F5 (`socketXetLaiQuyen.socketConHopLe`) coi socket như
+ * vậy NGANG với socket đang ở phòng có phạm vi — đăng ký SCADA không phải phòng nên trước đây lượt quét không thấy. Đã ngắt ⇒ false.
+ */
+export function coDuLieuPhamViScada(data: unknown): boolean {
+  const st = (data as { __scada?: TrangThaiScada } | null | undefined)?.__scada;
+  return !!st && !st.daNgat && (st.subs.size > 0 || st.cho !== null);
+}
+
 /** Chỉ cho lưới: số socket đang có ≥ 1 đăng ký (phát hiện rò đăng ký). */
 export function __soSocketDangKy(): number {
   return cacSocket.size;

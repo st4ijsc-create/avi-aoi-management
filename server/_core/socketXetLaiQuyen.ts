@@ -35,6 +35,7 @@ import type { Server, Socket } from "socket.io";
 import { laSocketNguoiDung, idsNhaMayTrongPhamViHoacNem, type DuLieuSocket } from "./socketPhongQuyen";
 import { layBoDocChuThe, xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
 import { docVePhienTuCookie } from "./vePhienCookie";
+import { coDuLieuPhamViScada } from "../services/scada/scadaSocket";
 
 export const KENH_SOCKET_PHAM_VI = "socket_pham_vi";
 export const TIEN_TO_PHONG_KIEM = "kiem:";
@@ -595,8 +596,9 @@ async function socketConHopLe(s: Socket, nho: Map<string, Promise<VanTayNguoiMoi
   if (!vt || typeof vt.quyen !== "string" || !Array.isArray(vt.tapDoan)) return "loi"; // không đối chiếu được (đọc lỗi lúc nối)
   // m5 — chưa có dấu vân tay phạm vi (lượt tự vào phòng chưa xong / lỗi): ở trong BẤT KỲ phòng có phạm vi nào ⇒ không đối chiếu được ⇒ `loi`
   // (lượt chặt NGẮT; nối lại = cấp phòng lại). Không ở phòng có phạm vi nào ⇒ không có gì để mất ⇒ bỏ qua phần phạm vi.
+  // SCADA 1a fix 1 (I-1): đăng ký `scada:subscribe` còn sống (không phải phòng) cũng là dữ liệu theo phạm vi — cùng luật với phòng.
   const coDauVanTayPhamVi = d.__daVaoPhongPhamVi === true;
-  if (!coDauVanTayPhamVi && [...s.rooms].some((p) => !laPhongKhongPhamVi(p, s, r.data.user.id))) return "loi";
+  if (!coDauVanTayPhamVi && ([...s.rooms].some((p) => !laPhongKhongPhamVi(p, s, r.data.user.id)) || coDuLieuPhamViScada(s.data))) return "loi";
   const khoa = `${r.data.user.id}:${r.data.user.role}`;
   let p = nho.get(khoa);
   if (!p) {

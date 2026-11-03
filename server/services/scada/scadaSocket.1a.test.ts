@@ -19,10 +19,12 @@ import { __datCongPhamViChoTest } from "../../_core/socketPhongQuyen";
 import { NGUONG_DEADBAND_MS, __datLaiBoDemHienTai, datThongTinAdapter, layGiaTri, napTuOt, nguongCuCuaAdapter } from "./boDemHienTai";
 import { __datLaiTrangThaiAdapter, baoTrangThaiAdapter } from "../ot/trangThaiAdapter";
 import {
+  CAP_MS_HOP_LE,
   GIOI_HAN,
   __datLaiScadaSocket,
   __datTraAdapterChoTest,
   __soDangKyNong,
+  coDuLieuPhamViScada,
   __soSocketDangKy,
   __vongDangChay,
   registerScadaHandlers,
@@ -502,6 +504,45 @@ describe("vòng + tick dừng khi không còn đăng ký; socket máy không tic
     await may.goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
     await kq.goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
     expect(kq.nhan("scada:snapshot")[0]).toEqual(may.nhan("scada:snapshot")[0]);
+  });
+});
+
+describe("fix 1 (I-1) — coDuLieuPhamViScada: socket GIỮ dữ liệu theo phạm vi qua kênh SCADA (lượt quét F5 dùng)", () => {
+  it("false lúc đầu; TRUE khi subscribe đang chờ; TRUE khi có đăng ký; false sau huỷ hết; false sau ngắt; socket máy ⇒ false", async () => {
+    dangKyAdapter(10, 5);
+    const { goi, sk } = taoSocket();
+    expect(coDuLieuPhamViScada(sk.data)).toBe(false);
+    let mo!: () => void;
+    kiemQuyen.mockImplementationOnce(() => new Promise<boolean>((r) => { mo = () => r(true); }));
+    const p = goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(coDuLieuPhamViScada(sk.data), "đang chờ").toBe(true);
+    mo();
+    await p;
+    expect(coDuLieuPhamViScada(sk.data), "có đăng ký").toBe(true);
+    await goi("scada:unsubscribe", {});
+    expect(coDuLieuPhamViScada(sk.data), "huỷ hết").toBe(false);
+    await goi("scada:subscribe", { subId: "y", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(coDuLieuPhamViScada(sk.data)).toBe(true);
+    await goi("disconnect");
+    expect(coDuLieuPhamViScada(sk.data), "đã ngắt").toBe(false);
+    const may = taoSocket({ clientType: "machine", user: null });
+    await may.goi("scada:subscribe", { subId: "x", tags: [{ adapterId: 10, tagKey: "t" }] });
+    expect(coDuLieuPhamViScada(may.sk.data)).toBe(false);
+    expect(coDuLieuPhamViScada(undefined)).toBe(false);
+    expect(coDuLieuPhamViScada({})).toBe(false);
+  });
+});
+
+describe("m-5 — mọi capMs hợp lệ ≥ kẹp dưới và là BỘI của bước vòng 50 ms (tiền đề của kẹp và của phép % nhịp khung)", () => {
+  it("CAP_MS_HOP_LE: ≥ capMsToiThieu, chia hết buocVongMs; mặc định thuộc tập; 1000 ms tick là bội của bước", () => {
+    for (const c of CAP_MS_HOP_LE) {
+      expect(c, `${c} >= kẹp`).toBeGreaterThanOrEqual(GIOI_HAN.capMsToiThieu);
+      expect(c % GIOI_HAN.buocVongMs, `${c} là bội của bước`).toBe(0);
+    }
+    expect(CAP_MS_HOP_LE as readonly number[]).toContain(GIOI_HAN.chuKyDeltaMs);
+    expect(GIOI_HAN.capMsToiThieu % GIOI_HAN.buocVongMs).toBe(0);
+    expect(GIOI_HAN.tickMs % GIOI_HAN.buocVongMs).toBe(0);
   });
 });
 
