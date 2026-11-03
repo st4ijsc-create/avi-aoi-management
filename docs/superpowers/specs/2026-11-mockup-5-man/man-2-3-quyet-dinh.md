@@ -1,5 +1,7 @@
 # Màn 2 (Phòng vận hành) + Màn 3 (Máy L3 / faceplate v2) — quyết định thị giác
 
+> **ĐÃ DUYỆT 2026-11-04** (chủ dự án duyệt thị giác bộ mockup 5 màn, main ac0e63289). Quyết định màn 2/3 dưới đây có hiệu lực; faceplate v2 / ký hiệu thật chỉ bắt đầu ở pha 2 (90-P3 + 1d của spec mượt) sau khi pha 0 gộp xong và chủ dự án báo.
+
 Phiên: scada-ui, 2026-11-03. Phạm vi: chỉ màn 2 và 3 trong brief `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Vỏ (rail, thanh đầu) vẽ TẠM để đủ khung; vỏ thật là của luong-ui (`shell.css`). Số liệu là GIẢ, mỗi giá trị mang chất lượng + tuổi. Chưa có mã app nào được viết.
 
 Xem: `man-2-3.html` (bấm đổi màn / trạng thái / cỡ; `?bare=1&man=2|3&state=…&w=1280|1920` cho ảnh). Token: `token.css` của luong-ui (bản sao, KHÔNG sửa giá trị) qua `@import` trong `man-2-3.css`.
