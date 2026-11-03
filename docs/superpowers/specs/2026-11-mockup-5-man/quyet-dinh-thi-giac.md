@@ -12,6 +12,8 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 7. **Chữ**: Be Vietnam Pro 400/500/600/700 + Geist Mono 400/500/600; thang `.ds-h1…caption` (11–24 px); số đo dùng chữ thân + `tabular-nums` (`.num`), **Geist Mono chỉ cho mã/địa chỉ/giờ** — thử dùng mono cho số thập phân thì dấu phẩy rộng như một ô chữ ("96 , 4"), đã bỏ. Tối thiểu 11 px; không `text-[Npx]`, không hex ngoài `token.css`.
 8. **Mật độ**: `comfortable` (1280×800: nút/hàng ≥ 48 px, chữ 15 px) và `default` (1920×1080: 40 px, 14 px) đặt bằng `data-density` ở thẻ gốc (DensityProvider ở vỏ).
 
+9. **Slot "DỪNG MÁY" cố định ở vỏ** (scada-ui đề xuất khi vẽ màn 3): `.drawer` là `position: fixed` nên nút DỪNG MÁY của màn máy phải nằm ở lớp portal riêng, dịch trái theo ngăn (`right: var(--drawer-w) + gap`). Khuyến nghị cho AppFrame thật: khai báo một **slot vùng hành động cố định** (z-index trên drawer, không bị drawer/hộp xác nhận che) để mọi màn có lệnh dừng dùng chung — ghi vào 50 §4 khi hoàn thiện.
+
 ## Màn 1 — Trang chủ theo vai (`/`)
 1. Cùng một khung cho 3 vai (vận hành · giám sát · kỹ sư): dải 4 ô số ngay dưới tiêu đề (số + đơn vị + **tuổi dữ liệu**), rồi 3 `RoleTile` theo `home.tiles`. Bộ chọn vai chỉ có trong mockup; app thật lấy vai từ tài khoản (manager/admin có tile riêng — **không vẽ**, ngoài 3 vai brief).
 2. Tile là đơn vị cảnh báo: có P1 chưa ack → vạch trái đỏ 6 px + `AlarmBadge` ở tiêu đề tile + `AlarmChip` đỏ nhấp nháy ở vỏ (CSS thuần, tắt khi `prefers-reduced-motion`). P2 → vạch cam, không nhấp nháy.

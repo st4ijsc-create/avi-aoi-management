@@ -99,7 +99,7 @@
 .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 
 /* ───────────── Tab (TabbedHub) ───────────── */
-.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--isa-line); overflow-x: auto; }
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--isa-line); overflow-x: auto; overflow-y: hidden; }
 .tabs button, .tabs a {
   min-height: var(--touch-min); padding: 0 var(--gap-4); border: 0; background: transparent; color: var(--text-2);
   font: 600 14px/1 var(--font-body); display: inline-flex; align-items: center; gap: var(--gap-2); white-space: nowrap; cursor: pointer; text-decoration: none;
