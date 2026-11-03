@@ -1,7 +1,7 @@
 /* Màn 4 — Cảnh báo (`/canh-bao`, TechDocs 40 §4). Trạng thái: 12 cảnh báo hỗn hợp · lũ (ALARM_FLOOD) · hàng tag stale · chi tiết (AlarmDrawer). */
 import { i, ic, alarmBadge, fresh, header, chipP1, demo, trang, GLYPH } from "./chung.mjs";
 
-const STATES = ["hon-hop", "lu", "du-lieu-cu", "chi-tiet"];
+const STATES = ["hon-hop", "lu", "du-lieu-cu", "p1-tuoi-line-cu", "chi-tiet"];
 
 const AST = {
   "act-unack": ["●", "Đang kích hoạt · chưa ack"],
@@ -29,7 +29,15 @@ const ROWS = [
 ];
 
 function bang(s) {
-  const stale = s === "du-lieu-cu";
+  const stale = s === "du-lieu-cu" || s === "p1-tuoi-line-cu"; // id 5 = hàng có tag cũ
+  // du-lieu-cu = ca "P1 NGUỒN CŨ": P1 chưa ack DUY NHẤT là hàng tag cũ (WAVE_PRE_LO nâng P1); hai P1 kia về "đã ack" ⇒ chip đứng yên + dấu cũ.
+  // p1-tuoi-line-cu = ca "P1 nguồn TƯƠI + line khác cũ": chỉ một hàng P2 có tag cũ ⇒ chip VẪN nhấp nháy (không fail-open).
+  const ROWS_S = ROWS.map((r) => {
+    if (s !== "du-lieu-cu") return r;
+    if (r[0] === 1 || r[0] === 2) return [...r.slice(0, 8), "acked", "—"];
+    if (r[0] === 5) return [r[0], 1, r[2], r[3], "Nhiệt sấy sóng thấp nghiêm trọng", r[5], r[6], r[7], r[8], r[9]];
+    return r;
+  }).sort((a, b) => a[1] - b[1]); // sắp theo ưu tiên (ổn định) — P1 mới nâng lên đầu bảng
   const chon = s === "hon-hop" ? [4, 5, 8] : []; // P1 phải ack từng hàng (chủ dự án 2026-11-03): chỉ chọn P2–P4
   const sel = s === "chi-tiet" ? 2 : -1;
   const hang = (r) => {
@@ -38,7 +46,7 @@ function bang(s) {
     const giaTri = isStaleRow
       ? `<span class="num is-stale" title="Giá trị cũ — chưa xác nhận được vượt ngưỡng">82,4 °C</span> <span class="ds-small" style="color:var(--stale-ink)">cũ 3 ph</span>`
       : `<span class="num ${tt === "act-unack" && p <= 2 ? "gt-cao" : ""}">${gt}</span>`;
-    return `<tr class="p${p} ${id === sel ? "sel" : ""}">
+    return `<tr class="p${p} ${id === sel ? "sel" : ""}"${p === 1 && tt === "act-unack" ? " data-p1-unack" : ""}>
       <td><span class="chk ${chon.includes(id) ? "on" : ""}" role="checkbox" aria-checked="${chon.includes(id)}"></span></td>
       <td>${alarmBadge(p)}</td>
       <td class="ds-small" style="max-width:150px">${ts}</td>
@@ -62,10 +70,10 @@ function bang(s) {
       ${nhom(2, "Nhiệt độ lò reflow dao động (<span class='mono'>OVEN_TEMP_OSC</span>)", 8)}
       ${con(3, "SMT-03 ▸ SMT03-REF-01", "OVEN_ZONE3_H", "vùng 3 cao", "04:02")}
       <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 7 cảnh báo thứ cấp khác</td></tr>
-      ${hang(ROWS[0])}${hang(ROWS[1])}${hang(ROWS[3])}
+      ${hang(ROWS_S[0])}${hang(ROWS_S[1])}${hang(ROWS_S[3])}
     </tbody></table>`;
   }
-  return `<table class="tbl">${head}<tbody>${ROWS.map(hang).join("")}</tbody></table>`;
+  return `<table class="tbl">${head}<tbody>${ROWS_S.map(hang).join("")}</tbody></table>`;
 }
 
 const spark = `<svg viewBox="0 0 360 104" width="100%" height="104" role="img" aria-label="Nhiệt độ vùng 5 trong 15 phút, có khoảng hở mất tín hiệu">
@@ -132,7 +140,8 @@ export function man4() {
       <div class="grow"><b>LŨ CẢNH BÁO (ALARM_FLOOD)</b> — <span class="num">38</span> cảnh báo trong 10 phút (ngưỡng ISA-18.2: <span class="num">10</span>).<br><span class="ds-small" style="color:inherit">Đã gom theo nguyên nhân gốc; cảnh báo P1/P2 độc lập vẫn hiện đầy đủ bên dưới.</span></div>
       <div class="bars" aria-label="Số cảnh báo mỗi phút, 10 phút gần nhất">${[1, 1, 2, 1, 3, 6, 9, 8, 4, 3].map((v) => `<i class="${v >= 6 ? "hi" : ""}" style="height:${v * 4}px"></i>`).join("")}</div>
     </div>
-    <div class="note-stale" data-st="du-lieu-cu"><span class="pill fresh stale"><span class="dot"></span>1 hàng có tag dữ liệu cũ</span> <span class="ds-small">Giá trị tím gạch = không còn đáng tin; chưa thể xác nhận vượt ngưỡng. Ưu tiên của cảnh báo vẫn giữ nguyên.</span></div>
+    <div class="note-stale" data-st="du-lieu-cu"><span class="pill fresh stale"><span class="dot"></span>1 hàng có tag dữ liệu cũ</span> <span class="ds-small">P1 chưa ack DUY NHẤT nằm trên tag cũ — chưa thể xác nhận vượt ngưỡng; chip ở vỏ đứng yên + dấu cũ (nguồn cũ). Ưu tiên của cảnh báo vẫn giữ nguyên.</span></div>
+    <div class="note-stale" data-st="p1-tuoi-line-cu"><span class="pill fresh stale"><span class="dot"></span>1 hàng P2 có tag dữ liệu cũ</span> <span class="ds-small">Các P1 chưa ack nằm trên nguồn TƯƠI nên chip vẫn nhấp nháy — một cảm biến hỏng không được tắt báo P1 toàn nhà máy.</span></div>
     <div class="filters">
       <span class="field">${ic("folder").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')} Phạm vi: Nhà máy Bình Dương ▾</span>
       <span class="field">Loại: Cảnh báo ▾</span>
@@ -146,7 +155,7 @@ export function man4() {
   const hdr = header({
     crumbs: '<b>Công ty ABC</b><span class="sep">▸</span><b>Nhà máy Bình Dương</b>',
     allStates: STATES,
-    chip: { "hon-hop": chipP1(2, 3), lu: chipP1(3, 5), "du-lieu-cu": chipP1(2, 3), "chi-tiet": chipP1(2, 3) },
+    chip: { "hon-hop": chipP1(2, 3), lu: chipP1(3, 5), "du-lieu-cu": chipP1(1, 3), "p1-tuoi-line-cu": chipP1(2, 3), "chi-tiet": chipP1(2, 3) },
     freshMap: { default: fresh("live", "Trực tiếp") },
   });
   return trang({
@@ -158,7 +167,7 @@ export function man4() {
     main,
     drawer,
     demoHtml: demo([
-      { nhan: "Trạng thái", khoa: "state", muc: [["hon-hop", "12 hỗn hợp"], ["lu", "Lũ"], ["du-lieu-cu", "Tag stale"], ["chi-tiet", "Chi tiết"]] },
+      { nhan: "Trạng thái", khoa: "state", muc: [["hon-hop", "12 hỗn hợp"], ["lu", "Lũ"], ["du-lieu-cu", "P1 nguồn cũ"], ["p1-tuoi-line-cu", "P1 tươi + tag cũ"], ["chi-tiet", "Chi tiết"]] },
       { nhan: "Mật độ", khoa: "density", muc: [["comfortable", "1280×800"], ["default", "1920×1080"]] },
       { nhan: "Rail", khoa: "rail", muc: [["closed", "Thu gọn"], ["open", "Mở"]] },
     ]),

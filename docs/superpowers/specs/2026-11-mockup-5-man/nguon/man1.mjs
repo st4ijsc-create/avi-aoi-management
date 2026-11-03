@@ -16,7 +16,7 @@ const age = (s, fresh_, old) => (s === "du-lieu-cu" ? `<span class="num is-stale
 function vanHanh(s) {
   const p1 = s === "p1-chua-ack";
   const may = `<ul class="list">
-    <li><span class="grow"><b>SMT03-MNT-04</b><br><span class="ds-small">Máy gắp linh kiện · Line SMT-03</span></span>
+    <li${p1 ? " data-p1-unack" : ""}><span class="grow"><b>SMT03-MNT-04</b><br><span class="ds-small">Máy gắp linh kiện · Line SMT-03</span></span>
       ${p1 ? pm("stopped", "Dừng — kẹt feeder") : pm("execute", "Đang chạy")}
       <span class="metric" style="min-width:104px"><span class="v">${STALE(s, "11,8")}<small>s</small></span><span class="age">chu kỳ · ${s === "du-lieu-cu" ? "cũ 4 ph" : "2 s trước"}</span></span></li>
     <li><span class="grow"><b>SMT03-AOI-07</b><br><span class="ds-small">Kiểm tra quang học · Line SMT-03</span></span>
@@ -59,7 +59,7 @@ function giamSat(s) {
     ? [[1, "SMT03-MNT-04", "Kẹt feeder #12", "00:42", "act-unack"], [1, "SMT03-REF-01", "Lò reflow vùng 5 quá nhiệt", "03:10", "act-unack"], [2, "SMT02-SPI-02", "Lệch thể tích kem hàn", "18:05", "act-unack"], [2, "SMT03-AOI-07", "Tỉ lệ lỗi AOI vượt ngưỡng", "12:30", "acked"], [3, "PKG-WH-01", "Áp khí nén thấp", "05:12", "act-unack"]]
     : [[2, "SMT02-SPI-02", "Lệch thể tích kem hàn", "18:05", "act-unack"], [2, "SMT03-AOI-07", "Tỉ lệ lỗi AOI vượt ngưỡng", "12:30", "acked"], [3, "PKG-WH-01", "Áp khí nén thấp", "05:12", "act-unack"], [3, "SMT01-PRN-01", "Dao gạt gần hết tuổi thọ", "1:12:05", "acked"], [4, "SMT03-AOI-07", "Sắp đến hạn hiệu chuẩn", "2:40:11", "acked"]];
   const top = `<ul class="list">${top5
-    .map(([p, a, m, t, ss]) => `<li>${alarmBadge(p, { chu: false })}<span class="grow ell"><b>${m}</b><br><span class="ds-small">${a}</span></span><span class="num ${ss === "act-unack" ? "" : "muted"}">${t}</span><span class="ds-small">${ss === "act-unack" ? "chưa ack" : "đã ack"}</span></li>`)
+    .map(([p, a, m, t, ss]) => `<li${p === 1 && ss === "act-unack" ? " data-p1-unack" : ""}>${alarmBadge(p, { chu: false })}<span class="grow ell"><b>${m}</b><br><span class="ds-small">${a}</span></span><span class="num ${ss === "act-unack" ? "" : "muted"}">${t}</span><span class="ds-small">${ss === "act-unack" ? "chưa ack" : "đã ack"}</span></li>`)
     .join("")}</ul>`;
   return [
     tile({ cls: p1 ? "has-p1" : "", titleKey: "home.dayChuyen", titleVi: "Dây chuyền", body: ds, foot: `<a class="btn quiet sm" href="#">${i("home.moPhongVanHanh", "Mở Phòng vận hành")}</a>` }),
@@ -71,7 +71,7 @@ function giamSat(s) {
 function kySu(s) {
   const p1 = s === "p1-chua-ack";
   const loi = `<ul class="list">
-    <li>${p1 ? alarmBadge(1, { chu: false }) : alarmBadge(2, { chu: false })}<span class="grow"><b>SMT03-MNT-04</b><br><span class="ds-small">${p1 ? "FEEDER_JAM_12 · kẹt feeder #12" : "NOZZLE_VAC_LOW · áp hút đầu #3 thấp"}</span></span><span class="num ${s === "du-lieu-cu" ? "is-stale" : ""}">${s === "du-lieu-cu" ? "cũ 4 ph" : "00:42"}</span></li>
+    <li${p1 ? " data-p1-unack" : ""}>${p1 ? alarmBadge(1, { chu: false }) : alarmBadge(2, { chu: false })}<span class="grow"><b>SMT03-MNT-04</b><br><span class="ds-small">${p1 ? "FEEDER_JAM_12 · kẹt feeder #12" : "NOZZLE_VAC_LOW · áp hút đầu #3 thấp"}</span></span><span class="num ${s === "du-lieu-cu" ? "is-stale" : ""}">${s === "du-lieu-cu" ? "cũ 4 ph" : "00:42"}</span></li>
     <li>${alarmBadge(2, { chu: false })}<span class="grow"><b>SMT02-SPI-02</b><br><span class="ds-small">SPI_VOL_DEV · lệch thể tích kem</span></span><span class="num muted">18:05</span></li>
     <li>${alarmBadge(3, { chu: false })}<span class="grow"><b>PKG-WH-01</b><br><span class="ds-small">AIR_PRESS_LO · áp khí thấp</span></span><span class="num muted">05:12</span></li></ul>`;
   const tc = `<ul class="list">

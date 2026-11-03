@@ -2,7 +2,7 @@
 import { chromium } from "@playwright/test";
 import { pathToFileURL, fileURLToPath } from "node:url";
 const dir = fileURLToPath(new URL("./", import.meta.url));
-const PAGES = { "man-1-home.html": ["binh-thuong", "p1-chua-ack", "du-lieu-cu"], "man-4-canh-bao.html": ["hon-hop", "lu", "du-lieu-cu", "chi-tiet"], "man-5-tai-san.html": ["may-that", "may-sim", "ngoai-pham-vi", "wizard"] };
+const PAGES = { "man-1-home.html": ["binh-thuong", "p1-chua-ack", "du-lieu-cu"], "man-4-canh-bao.html": ["hon-hop", "lu", "du-lieu-cu", "p1-tuoi-line-cu", "chi-tiet"], "man-5-tai-san.html": ["may-that", "may-sim", "ngoai-pham-vi", "wizard"] };
 const b = await chromium.launch(); let tong = 0, loi = 0; const mau = {};
 for (const [tep, ds] of Object.entries(PAGES)) for (const st of ds) for (const [w, h, den, min] of [[1280, 800, "comfortable", 48], [1920, 1080, "default", 40]]) {
   const p = await b.newPage({ viewport: { width: w, height: h } });

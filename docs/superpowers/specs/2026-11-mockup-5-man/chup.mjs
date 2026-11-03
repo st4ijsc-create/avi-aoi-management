@@ -18,7 +18,8 @@ const PLAN = {
   "man-4": ["man-4-canh-bao.html", "man-4", [
     ["12-hon-hop", "state=hon-hop"],
     ["lu-canh-bao", "state=lu"],
-    ["du-lieu-cu", "state=du-lieu-cu"],
+    ["du-lieu-cu-p1-nguon-cu", "state=du-lieu-cu"],
+    ["p1-tuoi-line-khac-cu", "state=p1-tuoi-line-cu"],
     ["chi-tiet-ngan-phai", "state=chi-tiet"],
   ]],
   "man-5": ["man-5-tai-san.html", "man-5", [
