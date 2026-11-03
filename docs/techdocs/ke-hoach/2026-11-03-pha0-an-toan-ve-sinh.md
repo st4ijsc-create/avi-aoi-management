@@ -62,7 +62,7 @@
 |---|---|---|
 | E0‑1 | Dừng job `twinFidelity` (`TWIN_FIDELITY_ENABLED=false`, gỡ lịch) + **xoá `simulation_runs` 80 941** (sau duyệt) | bảng 0 hàng, job không chạy |
 | E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`); **giữ** 2 seeder dev chạy tay `seed.mjs`/`seed-production.mjs` (miễn trừ có tên, 70‑N1 sửa 04/11) | 70‑N1: grep INSERT trong `scripts/sim*` ∖ {2 seeder} = 0; không lịch/boot nào gọi seeder — **XONG 04/11** (tho-ca-agent) |
-| E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — chờ chủ dự án (a)/(b)), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
+| E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
 | E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
 | E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
 | F0‑1 | `vram_events` retention 30 d (job + xoá cũ hơn sau duyệt: ≈ 60k hàng) | 80‑N8 |
