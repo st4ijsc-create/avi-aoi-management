@@ -11,15 +11,11 @@
  *   • returns the consistent `{ ok, data?, error? }` envelope.
  *   • is fail-safe (envelope.wrap → structured error, never a 500 crash).
  *
- * SAFETY (non-negotiable): POST /equipment/:id/commands routes through
- * equipmentRegistry.getAdapter(kind).sendCommand(...) which goes through the EXISTING
- * HITL/dry-run dispatcher (commandDispatcher / robotCommandDispatcher). With the
- * control flag off (the default) the dispatcher returns `simulated` and writes
- * NOTHING. This API NEVER performs a direct device write.
+ * SAFETY (non-negotiable): API này KHÔNG BAO GIỜ ghi thiết bị. `POST /equipment/:id/commands` đã GỠ (pha 0 · C0-1) — trả 410 GONE cố định cho mọi lệnh,
+ * kể cả robot; lệnh thiết bị chỉ đi qua tRPC/dispatcher có người xác nhận. Các route đọc (state, capabilities, ingest) giữ nguyên.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { Router, type Request, type Response, json as jsonBody } from "express";
-import { nanoid } from "nanoid";
 import { API_SCOPES } from "./scopes";
 import { requireScope } from "./auth";
 import { requireDeclaredTenantScope, tenantCodeScopeOf } from "./apiKeyScope"; // doc 81 Đợt 5 task E2
@@ -50,9 +46,7 @@ import { otIngestHttpStatus } from "../../_core/otIngestRoute";
 import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
-  type CommandDescriptor,
 } from "../../services/equipment/capabilityModel";
-import { equipmentRegistry, type EquipmentCommand } from "../../services/equipment/equipmentAdapter";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../../services/telemetryBus";
 import { truongTsMau } from "../../utils/factoryTime";
 import { boKhoaMetaDanhRieng } from "../../services/telemetryMetaDanhRieng";
@@ -123,6 +117,10 @@ function resolveCapability(m: MachineRow): EquipmentCapability {
   return getCapabilitiesForMachine({ machineType: m.machineType, capabilities: m.capabilities as never });
 }
 
+/** 410 body message for the removed `POST /equipment/:id/commands` (pha 0 · C0-1). */
+export const GONE_EQUIPMENT_COMMANDS_MESSAGE =
+  "Cửa lệnh thiết bị qua REST v1 đã được gỡ (không còn hỗ trợ, kể cả robot). Dùng HMI SCADA (scadaCommands) có xác nhận; trạng thái vẫn đọc được ở GET /equipment/:id/state.";
+
 function operationStatusToPackml(status: string): string {
   switch (status) {
     case "running": return "Execute";
@@ -135,66 +133,6 @@ function operationStatusToPackml(status: string): string {
     case "blocked": return "Held";
     default: return "Idle";
   }
-}
-
-/** Robot-family adapter kinds — the ONLY kinds `POST /equipment/:id/commands` still serves (R1b-1 T5, D8). */
-function isRobotAdapterKind(kind: string): boolean {
-  return kind === "robot" || kind === "vda5050";
-}
-
-/**
- * Robot-ness is decided from the machine's OWN `machineType` default profile, NEVER from the per-machine
- * `capabilities` jsonb override (mergeCapability accepts any `adapterKind` string there): an OT machine
- * spoofing `{"adapterKind":"robot"}` must not reach the robot dispatcher, and a real robot with an `ot-*`
- * override must keep its REST abort/e_stop (R1b-1 T5 fix round 1). Returns the default adapter kind.
- */
-function defaultAdapterKind(m: MachineRow): string {
-  return getCapabilitiesForMachine(m.machineType).adapterKind;
-}
-
-/** 501 body message for any non-robot command over REST v1 (R1b-1 T5, D8). */
-const OT_REST_501_MESSAGE =
-  "Lệnh OT qua REST v1 không được hỗ trợ — dùng HMI SCADA (scadaCommands) hoặc STOP ghim. Xem docs/ECOSYSTEM/ADAPTER_SDK.md.";
-
-/**
- * Build the EquipmentCommand envelope for the dispatcher from a capability command
- * + the request body args. Translates known verbs into the dispatcher's `writes`
- * (OT) / `job` (robot) shape. The HITL provenance is synthesized for an automated
- * external caller — the dispatcher still applies its dry-run gate.
- */
-function buildCommand(
-  descriptor: CommandDescriptor,
-  isRobot: boolean,
-  machineId: number,
-  args: Record<string, unknown>,
-  idempotencyKey: string,
-  principalName: string,
-): EquipmentCommand {
-  const cmd: EquipmentCommand = {
-    name: descriptor.name,
-    machineId,
-    idempotencyKey,
-    // Automated external caller: actionId tags the audit trail; requestedBy 0 = system.
-    hitl: { actionId: `apiv1-${idempotencyKey}`, requestedBy: 0 },
-  };
-
-  if (isRobot) {
-    cmd.robotId = typeof args.robotId === "number" ? args.robotId : machineId;
-    if (descriptor.name === "run_job" && typeof args.jobType === "string") {
-      cmd.job = { jobType: args.jobType as never, params: (args.params as Record<string, unknown>) ?? {} };
-    }
-  } else {
-    // OT-family: adapterId for the dispatcher; tag writes derived from args.
-    cmd.adapterId = typeof args.adapterId === "number" ? args.adapterId : machineId;
-    if (Array.isArray(args.writes)) {
-      cmd.writes = (args.writes as Array<{ tagKey: string; value: unknown }>).filter(
-        (w) => w && typeof w.tagKey === "string",
-      );
-    } else if (typeof args.tagKey === "string") {
-      cmd.writes = [{ tagKey: args.tagKey, value: args.value }];
-    }
-  }
-  return cmd;
 }
 
 // ── telemetry normalization (mirrors POST /api/ot/ingest in _core/index.ts) ───
@@ -347,73 +285,15 @@ export function createV1Router(): Router {
     }),
   );
 
-  // POST /equipment/:id/commands — route via the HITL/dry-run dispatcher.
+  // POST /equipment/:id/commands — ĐÃ GỠ (pha 0 · C0-1, TechDocs 50 §C0). Cửa REST v1 phát lệnh thiết bị (kể cả nhánh robot) là CỬA CHẾT: mọi lệnh không phải
+  // STOP đều bị dispatcher từ chối vì không có hành động HITL đã xác nhận; đường STOP/abort robot nay chỉ đi qua tRPC/dispatcher (có người xác nhận). Trả 410 GONE
+  // CỐ ĐỊNH cho MỌI lệnh (kể cả robot) TRƯỚC khi đọc máy/DB: không hàng command_log, không ghi thiết bị, không webhook, không gọi adapter. Vẫn qua `requireScope`
+  // (khoá không đủ quyền thấy 401/403, không lộ rằng cửa đã gỡ). Cũng gỡ luôn lỗi trộn id (`robotId` mặc định = id MÁY khi thiếu `args.robotId`, scada-master tìm thấy).
   r.post(
     "/equipment/:id/commands",
     requireScope(API_SCOPES.EQUIPMENT_COMMAND),
-    wrap(async (req, res) => {
-      const m = await loadMachine(Number(req.params.id), req.apiPrincipal);
-      const capability = resolveCapability(m);
-      const body = (req.body ?? {}) as { command?: string; args?: Record<string, unknown>; idempotencyKey?: string };
-      const commandName = body.command;
-      if (!commandName || typeof commandName !== "string") {
-        throw new ApiHttpError(400, "bad_request", "Body field `command` is required.");
-      }
-      const descriptor = capability.supportedCommands.find((c) => c.name === commandName);
-      if (!descriptor) {
-        throw new ApiHttpError(400, "unsupported_command", `Command "${commandName}" is not supported by this machine.`, {
-          supported: capability.supportedCommands.map((c) => c.name),
-        });
-      }
-      // SCADA R1b-1 Task 5 (D8) — lệnh KHÔNG phải robot (OT/PLC/vision/mtconnect/...) KHÔNG đi REST v1: 501 TRƯỚC
-      // idempotencyKey/buildCommand/dispatcher ⇒ không hàng command_log, không ghi thiết bị, không webhook.
-      // Đường robot (abort/e_stop — robotStopExempt, robotAbortNeverOrder) giữ nguyên; cùng bộ phân biệt với buildCommand.
-      const routedKind = defaultAdapterKind(m); // machineType default profile, ignores capabilities override
-      const isRobot = isRobotAdapterKind(routedKind);
-      if (!isRobot) {
-        throw new ApiHttpError(501, "not_implemented", OT_REST_501_MESSAGE);
-      }
-      const args = (body.args ?? {}) as Record<string, unknown>;
-      const idempotencyKey = body.idempotencyKey?.trim() || nanoid();
-      const command = buildCommand(
-        descriptor,
-        isRobot,
-        m.id,
-        args,
-        idempotencyKey,
-        req.apiPrincipal?.name ?? "api-key",
-      );
-
-      // ROUTE THROUGH THE EXISTING HITL DISPATCHER (honours the dry-run gate).
-      const adapter = equipmentRegistry.getAdapter(routedKind as never);
-      const result = await adapter.sendCommand(command);
-
-      // Outbound webhook (flag-gated, fail-safe — never blocks the response).
-      void emit("equipment.command.executed", {
-        machineId: m.id,
-        machineCode: m.code,
-        command: commandName,
-        status: result.status,
-        routedTo: result.routedTo,
-        simulated: result.detail?.simulated ?? undefined,
-      });
-
-      // SCADA R1b-2b-2b A — C2 polish (điều phối 2026-11-01): `result.error` / `result.detail` có thể mang văn bản driver / controller robot
-      // (host:port). Khoá API KHÔNG BAO GIỜ là người xem chi tiết kỹ thuật ⇒ CÙNG bộ che với bước orchestration (`cheKetQuaLenh`, người xem `false`
-      // TƯỜNG MINH): `error` ⇒ MÃ, `detail` ⇒ danh sách trắng (simulated / commandLogIds / appError / edge / stop / pinnedStop / jobId / outcomeUnknown,
-      // reason ⇒ mã, motPhan ⇒ số đếm). ok / status / routedTo / accepted giữ nguyên.
-      const { cheKetQuaLenh } = await import("../../routers/_chiTietKyThuat");
-      const an = cheKetQuaLenh(result, false);
-      sendOk(res, {
-        machineId: m.id,
-        command: commandName,
-        idempotencyKey,
-        routedTo: result.routedTo,
-        status: result.status,
-        accepted: result.ok,
-        detail: an.detail,
-        error: an.error,
-      });
+    wrap(async () => {
+      throw new ApiHttpError(410, "gone", GONE_EQUIPMENT_COMMANDS_MESSAGE);
     }),
   );
 
