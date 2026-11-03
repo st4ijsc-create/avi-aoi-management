@@ -16,10 +16,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+const THU_MUC_NAY = path.dirname(fileURLToPath(import.meta.url));
 import { chamKichBan, type BuocKichBan } from "../stHanhVi";
 
-export const GOC_KHO = path.resolve(__dirname, "..", "..", "ngau-nhien", "kho");
-export const THU_MUC_KICH_BAN = path.join(__dirname, "kich-ban");
+export const GOC_KHO = path.resolve(THU_MUC_NAY, "..", "..", "ngau-nhien", "kho");
+export const THU_MUC_KICH_BAN = path.join(THU_MUC_NAY, "kich-ban");
 
 export interface Chan {
   ten: string;

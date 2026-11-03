@@ -8,6 +8,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+const THU_MUC_NAY = path.dirname(fileURLToPath(import.meta.url));
 import { createHash } from "node:crypto";
 import { chamLoiGiai, docKichBan, GOC_KHO, THU_MUC_KICH_BAN, type KetQuaBai } from "./boBocBai";
 
@@ -16,7 +18,7 @@ const arg = (t: string, md: string) => {
   return i > 0 ? process.argv[i + 1]! : md;
 };
 const THU_MUC_BAO_CAO = arg("--bao-cao", "D:/SOURCES/_ai9_do/scripts/ai-eval/ngau-nhien/reports");
-const RA = arg("--ra", path.join(__dirname, "bao-cao"));
+const RA = arg("--ra", path.join(THU_MUC_NAY, "bao-cao"));
 const BAO_CAO = ["PLC-v1-ab-kiem-q36-27b-1.json", "PLC-v1-ab-kiem-q36-27b-2.json"];
 
 /** Lỗi biên dịch do TẬP CON của OIP (không phải lỗi lời giải) — theo thông điệp của checker OIP (LINT / TIME_TO_LINT: 64 bit). */
@@ -31,7 +33,7 @@ interface NgoaiLe {
   sai?: number[];
   ly_do: string;
 }
-const NGOAI_LE = (JSON.parse(fs.readFileSync(path.join(__dirname, "ngoai-le-dang-ky.json"), "utf8")) as { muc: NgoaiLe[] }).muc;
+const NGOAI_LE = (JSON.parse(fs.readFileSync(path.join(THU_MUC_NAY, "ngoai-le-dang-ky.json"), "utf8")) as { muc: NgoaiLe[] }).muc;
 
 interface Dong {
   id: string;
