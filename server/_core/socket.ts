@@ -66,6 +66,8 @@ import { xacThucLaiChoThaoTacSocket } from "./socketXacThucLai";
 import { kiemPhamViDuyetMay, idMayCuaMaDangKy, dangKyTrongPhamViMay } from "./phamViDuyetMay";
 // ── P-S1b — sự kiện máy phát theo PHÒNG NHÀ MÁY, không phát vào `global` (xem tệp).
 import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
+// ★★★ F5 đầy đủ — socket sống MẤT cái người dùng đã mất: phòng điều khiển `kiem:user:{id}` / `kiem:phien:{id}` + bộ nhận `socket_pham_vi`.
+import { chuanBiKiemHandshake, ganIoXetLaiQuyen, phongKiemNguoi, phongKiemPhien } from "./socketXetLaiQuyen";
 
 let io: Server | null = null;
 
@@ -100,40 +102,61 @@ const onlineMachineCodesMap: Map<number, string> = new Map();
 const presence = getMachinePresenceStore();
 
 /**
- * ★★★ F5-nhanh (a) review (mục A) — PHÁT `machine:registration_request` THEO PHẠM VI TỪNG NGƯỜI NHẬN trong phòng `admin`.
- * Trước bản vá sự kiện phát cho CẢ phòng ⇒ registrar nhà máy A (cờ RBAC mở) thấy yêu cầu đăng ký của thiết bị nhà máy B kèm requestSocketId
- * — nửa còn lại của đường gắn thiết bị B vào máy của A. Nay: người nhận có phạm vi TOÀN QUYỀN (admin) nhận tất cả; người có phạm vi chỉ nhận
- * đăng ký mà mã tự khai khớp một máy TRONG phạm vi (`idMayCuaMaDangKy` — cùng luật với lọc `admin:join` và kiểm duyệt). Không tính được phạm
- * vi người nhận / lỗi tra ⇒ KHÔNG gửi người đó (fail-closed). Phạm vi người nhận tính trên `socket.data` của họ (cùng cách lọc twin lúc phát).
- * Các sự kiện khác của phòng `admin` (connected / disconnected / sync_status / discovered) ⇒ F5 đầy đủ.
+ * ★★★ F5 đầy đủ (mục 5) — MỌI sự kiện của phòng `admin` phát THEO PHẠM VI TỪNG NGƯỜI NHẬN (một hàm; census `socketKiemCensus.test.ts` cấm
+ * `io.to("admin").emit` / `io.in("admin").emit`). Trước: `machine:connected` (kèm IP) / `machine:disconnected` / `machine:sync_status` /
+ * `machine:discovered` tới CẢ phòng ⇒ registrar nhà máy A (cờ RBAC mở) thấy máy của nhà máy B. (`machine:registration_request` đã lọc từ
+ * F5-nhanh; nay cùng hàm.)
+ * Phạm vi người nhận: tập máy CACHE ở socket lúc `admin:join` (`__phamViMayAdmin`, tính trên chủ thể ĐỌC LẠI từ DB — null = toàn quyền).
+ * Vì sao cache mà không tính lại mỗi lần phát: sự kiện kết nối máy có thể dày (máy chập chờn) × N người nhận ⇒ một lượt phân giải phạm vi
+ * (≥ 3 câu DB) mỗi người mỗi sự kiện. Với F5 đầy đủ, mọi thay đổi phạm vi / vai / quyền / phiên của người nhận NGẮT socket (bộ nhận
+ * `socket_pham_vi`, quét ≤ 5 phút cho thông báo mất) ⇒ cache sống không lâu hơn phạm vi mà nó chụp; nối lại = `admin:join` mới = cache mới.
+ * Fail-closed: không có cache (chưa join đúng đường) / cache rỗng / không liệt kê được phòng / tra máy của sự kiện lỗi ⇒ KHÔNG gửi người có
+ * phạm vi. Ngoài phạm vi ≡ không tồn tại (không dấu vết).
+ * fix round 1 (m3) — giới hạn ĐÃ NÓI của cache: một máy được TẠO / gán vào phạm vi của người nhận SAU lượt join không có trong cache ⇒ người có
+ * phạm vi KHÔNG nhận sự kiện kết nối của nó (chiều ĐÓNG) tới khi join lại; `machine:registration_request` (hiếm) phân giải LẠI lúc phát.
+ * Đổi cha của máy (máy chuyển nhà máy) ⇒ phase 2 (kiểm kê §1 I).
  */
-async function phatYeuCauDangKyTheoPhamVi(reg: PendingMachineRegistration, payload: unknown): Promise<void> {
+async function phatPhongAdminTheoPhamVi(
+  suKien: string,
+  payload: unknown,
+  mayCuaSuKien: () => Promise<number | undefined>,
+  tuyChon: { tinhLaiPhamVi?: boolean } = {},
+): Promise<void> {
   if (!io) return;
   let nguoiNhan: Awaited<ReturnType<Server["fetchSockets"]>>;
   try {
     nguoiNhan = await io.in("admin").fetchSockets();
   } catch (err: any) {
-    console.error("[Socket.io] khong liet ke duoc phong admin (khong phat registration_request):", err?.message ?? err);
+    console.error(`[Socket.io] khong liet ke duoc phong admin (khong phat ${suKien}):`, err?.message ?? err);
     return;
   }
-  let idMayDangKy: number | undefined | "chua" | "loi" = "chua";
+  let idMay: number | undefined | "chua" | "loi" = "chua";
   for (const s of nguoiNhan) {
-    const pham = await idsMayTrongPhamViCua(s.data as never); // lỗi ⇒ tập rỗng
+    // m3 — `tinhLaiPhamVi`: phân giải phạm vi người nhận NGAY LÚC PHÁT (sự kiện hiếm — đăng ký máy: một máy vừa tạo / vừa gán trạm sau lượt join
+    // vẫn tới đúng registrar); lỗi ⇒ tập rỗng (không gửi). Còn lại dùng cache lúc join.
+    const pham = tuyChon.tinhLaiPhamVi
+      ? await idsMayTrongPhamViCua(s.data as never).then((x) => (x === null ? null : [...x]))
+      : (s.data as { __phamViMayAdmin?: unknown } | undefined)?.__phamViMayAdmin;
     if (pham === null) {
-      s.emit("machine:registration_request", payload);
+      s.emit(suKien, payload);
       continue;
     }
-    if (pham.size === 0) continue;
-    if (idMayDangKy === "chua") {
+    if (!Array.isArray(pham) || pham.length === 0) continue;
+    if (idMay === "chua") {
       try {
-        idMayDangKy = await idMayCuaMaDangKy(reg.machineInfo?.code);
+        idMay = await mayCuaSuKien();
       } catch (err: any) {
-        console.error("[Socket.io] tra may theo ma dang ky that bai (khong phat cho nguoi co pham vi):", err?.message ?? err);
-        idMayDangKy = "loi";
+        console.error(`[Socket.io] tra may cua ${suKien} that bai (khong phat cho nguoi co pham vi):`, err?.message ?? err);
+        idMay = "loi";
       }
     }
-    if (typeof idMayDangKy === "number" && pham.has(idMayDangKy)) s.emit("machine:registration_request", payload);
+    if (typeof idMay === "number" && pham.includes(idMay)) s.emit(suKien, payload);
   }
+}
+
+/** `machine:registration_request` — máy của đăng ký = máy khớp MÃ TỰ KHAI (`idMayCuaMaDangKy`, cùng luật lọc `admin:join` và kiểm duyệt). */
+function phatYeuCauDangKyTheoPhamVi(reg: PendingMachineRegistration, payload: unknown): Promise<void> {
+  return phatPhongAdminTheoPhamVi("machine:registration_request", payload, () => idMayCuaMaDangKy(reg.machineInfo?.code), { tinhLaiPhamVi: true });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -313,6 +336,14 @@ async function xacThucHandshakeMay(socket: Socket, mode: "log" | "enforce"): Pro
   return mode === "enforce" ? new Error("MACHINE_UNAUTHORIZED") : undefined;
 }
 
+/** F5 fix round 1 (I1) — mã lỗi handshake trình duyệt: từ chối dứt khoát vs hạ tầng hỏng. */
+export const MA_HANDSHAKE_TU_CHOI = "UNAUTHORIZED";
+export const MA_HANDSHAKE_HA_TANG = "SERVICE_UNAVAILABLE";
+export function maLoiHandshakeTrinhDuyet(err: unknown): typeof MA_HANDSHAKE_TU_CHOI | typeof MA_HANDSHAKE_HA_TANG {
+  const ma = (err as { statusCode?: unknown } | null)?.statusCode;
+  return ma === 401 || ma === 403 ? MA_HANDSHAKE_TU_CHOI : MA_HANDSHAKE_HA_TANG;
+}
+
 export function initializeSocket(server: HttpServer): Server {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")
@@ -327,6 +358,9 @@ export function initializeSocket(server: HttpServer): Server {
     },
     path: "/api/socket.io",
   });
+
+  // F5 đầy đủ — bộ nhận `socket_pham_vi` ngắt socket CỤC BỘ của bản sao này (LISTEN khởi ở index.ts, chỉ bản sao không phải edge).
+  ganIoXetLaiQuyen(io);
 
   // Optional Redis adapter — unlocks horizontal scaling when REDIS_URL is set.
   // No-op (in-memory) when REDIS_URL is absent or the adapter package is missing.
@@ -364,12 +398,21 @@ export function initializeSocket(server: HttpServer): Server {
       if (!user) {
         return next(new Error("UNAUTHORIZED"));
       }
+      // ★★★ F5 đầy đủ — khoá phiên (`user_sessions.id` của vé cookie — KHÔNG BAO GIỜ là vé) + dấu vân tay quyền lúc nối: bộ nhận
+      // `socket_pham_vi` ngắt đúng phiên bị thu hồi; lượt quét so quyền MỚI với dấu vân tay này. Không bao giờ ném.
+      const kiem = await chuanBiKiemHandshake(cookieHeader, Number((user as any).id), String((user as any).role ?? ""));
       (socket.data as any).user = user;
       (socket.data as any).clientType = "browser";
+      (socket.data as any).khoaPhien = kiem.khoaPhien;
+      (socket.data as any).__vanTay = kiem.vanTay;
       return next();
     } catch (err) {
-      console.error("[Socket.io] Handshake auth failed:", err);
-      return next(new Error("UNAUTHORIZED"));
+      // ★★★ F5 đầy đủ fix round 1 (I1) — một TỪ CHỐI DỨT KHOÁT (vé sai / phiên thu hồi / hết hạn / tài khoản tắt / thiếu / buộc đổi mật
+      // khẩu — sdk ném HttpError 401/403) ⇒ `UNAUTHORIZED` (client DỪNG + đường đăng xuất). Lỗi HẠ TẦNG (DB / tra sổ hỏng, hết giờ) ⇒
+      // `SERVICE_UNAVAILABLE`: kết nối VẪN bị từ chối (KHÔNG BAO GIỜ cho vào — fail-closed), chỉ khác MÃ để client tự thử lại khi DB về.
+      const ma = maLoiHandshakeTrinhDuyet(err);
+      console.error(`[Socket.io] Handshake auth failed (${ma}):`, err);
+      return next(new Error(ma));
     }
   });
 
@@ -380,7 +423,14 @@ export function initializeSocket(server: HttpServer): Server {
 
     // ★★★ P-S1b — socket NGƯỜI DÙNG tự vào phòng theo PHẠM VI của họ (`scope:all` hoặc `factory:{id}` mỗi nhà máy trong phạm vi): sự kiện máy chỉ còn
     // phát vào các phòng đó, KHÔNG vào `global`. Làm ngay khi nối (không đợi `subscribe`) để trang nào đang nghe cũng nhận như trước; `subscribe` thử lại nếu lượt này lỗi.
-    if (laSocketNguoiDung(socket.data)) void tuDongVaoPhongPhamVi(socket as never);
+    if (laSocketNguoiDung(socket.data)) {
+      // ★★★ F5 đầy đủ — hai phòng ĐIỀU KHIỂN của server (KHÔNG BAO GIỜ mang sự kiện — census `socketKiemCensus.test.ts`): bộ nhận
+      // `socket_pham_vi` (socketXetLaiQuyen.ts) ngắt `kiem:user:{id}` khi vai / phân công / quyền / isActive của người ấy đổi và
+      // `kiem:phien:{id}` khi đúng phiên ấy bị thu hồi. Nối lại = handshake mới = mọi cổng phòng chạy lại trên dữ liệu mới.
+      socket.join(phongKiemNguoi(u.id));
+      if (typeof (socket.data as any).khoaPhien === "number") socket.join(phongKiemPhien((socket.data as any).khoaPhien));
+      void tuDongVaoPhongPhamVi(socket as never);
+    }
 
     // ★★★ doc 81 Đợt 1B Task 9 (BE3 §L4b) — giới hạn tần suất MỌI gói `machine:*` (theo socket + IP),
     // ở CẢ BA chế độ auth, TRƯỚC mọi listener (kể cả hook state-store additive): gói vượt ngưỡng bị bỏ
@@ -714,7 +764,7 @@ export function initializeSocket(server: HttpServer): Server {
           }).catch(err => console.error('[Socket.io] Failed to log machine offline status:', err));
           
           // Notify admin dashboard
-          io?.to("admin").emit("machine:disconnected", { machineId, machineCode, timestamp: new Date() });
+          void phatPhongAdminTheoPhamVi("machine:disconnected", { machineId, machineCode, timestamp: new Date() }, async () => machineId); // F5 đầy đủ mục 5
           // Broadcast status change to all clients
           phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "offline" }, { machineId, machineCode });
           break;
@@ -855,12 +905,13 @@ export function initializeSocket(server: HttpServer): Server {
         }
 
         // Notify admin dashboard
-        io?.to("admin").emit("machine:connected", {
+        // F5 đầy đủ mục 5 — theo phạm vi từng người nhận (payload kèm IP máy)
+        void phatPhongAdminTheoPhamVi("machine:connected", {
           machineId,
           machineCode,
           ipAddress,
           timestamp: new Date(),
-        });
+        }, async () => machineId);
 
         // Broadcast status change to all clients
         phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "online" }, { machineId, machineCode });
@@ -918,16 +969,22 @@ export function initializeSocket(server: HttpServer): Server {
           `[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may` +
           `${chuThe.ok ? "" : ` (xac thuc lai: ${chuThe.lyDo})`}`,
         );
+        // F5 fix round 1 (m2) — một lượt join lại BỊ TỪ CHỐI trên socket ĐÃ ở phòng `admin` (quyền vừa mất) ⇒ rời phòng + bỏ cache phạm vi:
+        // không để lần join cũ (đã hết hiệu lực) tiếp tục nhận sự kiện quản trị.
+        socket.leave("admin");
+        delete (socket.data as any).__phamViMayAdmin;
         return;
       }
-      socket.join("admin");
-      console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
-
       // ★★★ F5-nhanh review (2026-11-02) — cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED mở cho người KHÔNG phải admin vào đây (permission bit
       // machine_registration). Trước bản vá họ nhận đăng ký chờ + máy đang nối của MỌI nhà máy. Nay lọc theo phạm vi máy của CHỦ THỂ ĐỌC LẠI
       // (`idsMayTrongPhamViCua` = idsTrongPhamVi("machine"), như tRPC machine.listPending); admin/toàn quyền ⇒ null ⇒ tất cả như cũ.
       // Ngoài phạm vi và không tồn tại cho CÙNG kết quả: mục bị bỏ khỏi danh sách, không có dấu vết nào.
       const phamViMay = await idsMayTrongPhamViCua(chuThe.data);
+      // ★★★ F5 đầy đủ mục 5 — phạm vi máy của người nhận CACHE ở socket TRƯỚC khi vào phòng (mọi sự kiện phòng `admin` lọc theo nó —
+      // `phatPhongAdminTheoPhamVi`); thay đổi phạm vi ⇒ socket bị ngắt ⇒ join mới ⇒ cache mới. Lỗi tra ⇒ tập rỗng (không nhận gì).
+      (socket.data as any).__phamViMayAdmin = phamViMay === null ? null : [...phamViMay];
+      socket.join("admin");
+      console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
       const pendingTrongPhamVi: Array<[string, PendingMachineRegistration]> = [];
       for (const [id, reg] of Array.from(pendingRegistrations.entries())) {
         if (phamViMay === null || (await dangKyTrongPhamViMay(reg.machineInfo?.code, phamViMay))) pendingTrongPhamVi.push([id, reg]);
@@ -1411,13 +1468,14 @@ export function initializeSocket(server: HttpServer): Server {
 
         // Notify admin & global
         // Fix round 1 (mục 1): danh tính ĐÃ xác thực (ở `off` chính là data.* như cũ).
-        io?.to("admin").emit("machine:sync_status", {
+        // F5 đầy đủ mục 5 — theo phạm vi từng người nhận
+        void phatPhongAdminTheoPhamVi("machine:sync_status", {
           machineId,
           machineCode,
           status: "syncing",
           ipAddress,
           timestamp: new Date(),
-        });
+        }, async () => machineId);
         phatTheoNhaMay(io, "machine:status_change", { machineCode, status: "syncing" }, { machineId, machineCode });
 
         console.log(`[Socket.io] Machine ${machineId} (${machineCode}) started real-time sync`);
@@ -2676,8 +2734,9 @@ export function autoDiscoverMachine(topic: string, payload: any): DiscoveredMach
   discoveredMachines.set(machineCode, discovered);
   
   // Notify admin about new discovered machine
+  // F5 đầy đủ mục 5 — theo phạm vi từng người nhận; máy của sự kiện = máy khớp MÃ lấy từ topic (tự khai, như đăng ký chờ) — không khớp ⇒ chỉ toàn quyền
   if (io) {
-    io.to("admin").emit("machine:discovered", discovered);
+    void phatPhongAdminTheoPhamVi("machine:discovered", discovered, () => idMayCuaMaDangKy(machineCode));
   }
   
   return discovered;

@@ -11,6 +11,7 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
 import { donKhoNguoiDungLucKhoiDong } from "./lib/donKhoaNguoiDung";
+import { datXuLyKetNoiLai } from "./lib/socketManager";
 import "./fonts.css"; // Đợt 43 (G117): Geist / Geist Mono tự phục vụ — TRƯỚC index.css để @font-face có mặt khi --font-sans được dùng
 import "./index.css";
 import { i18nReady } from "./i18n"; // Initialize i18n (vi fetch song song — doc64 S5-OPT V4)
@@ -45,6 +46,14 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   window.location.href = getLoginUrl();
 };
+
+// ★★★ F5 đầy đủ — server ngắt socket khi quyền / phiên đổi (socketManager nối lại). Handshake nối lại bị từ chối UNAUTHORIZED ⇒ cho các
+// truy vấn đang hoạt động chạy lại: phiên đã chết ⇒ tRPC trả UNAUTHORIZED ⇒ `redirectToLoginIfUnauthorized` bên dưới (đường SẴN CÓ). Nối lại
+// thành công ⇒ cũng chạy lại (quyền / phạm vi mới hiện ngay, không chờ staleTime).
+datXuLyKetNoiLai({
+  khiHetPhien: () => void queryClient.invalidateQueries(),
+  khiQuyenDoi: () => void queryClient.invalidateQueries(),
+});
 
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {

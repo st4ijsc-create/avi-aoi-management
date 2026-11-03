@@ -299,6 +299,16 @@ export interface SocketVaoPhong {
 /** Phòng toàn quyền — khai ở đây (không import `socketPhatTheoNhaMay`) để giữ module này không kéo DB lúc nạp; test canh hai hằng khớp nhau. */
 export const PHONG_TOAN_QUYEN_SOCKET = "scope:all";
 
+/**
+ * F5 đầy đủ — phạm vi NHÀ MÁY MỚI của một chủ thể (thường là chủ thể vừa đọc lại), CÙNG bộ phân giải `idsTrongPhamVi("factory")` mà
+ * `tuDongVaoPhongPhamVi` cấp phòng, đã sắp xếp. ⚠ NÉM khi lỗi (không nuốt): lượt quét của `socketXetLaiQuyen` coi lỗi là NGẮT (fail-closed).
+ */
+export async function idsNhaMayTrongPhamViHoacNem(data: DuLieuSocket): Promise<number[] | null> {
+  // `data` là chủ thể VỪA đọc lại (`xacThucLaiChoThaoTacSocket` ok ⇒ luôn là socket người dùng); thiếu `user` ⇒ pvCuaSocket ném TypeError.
+  const ids = await (await layCongPhamVi()).idsTrongPhamVi("factory", pvCuaSocket(data));
+  return ids === null ? null : [...ids].sort((a, b) => a - b);
+}
+
 export async function tuDongVaoPhongPhamVi(socket: SocketVaoPhong): Promise<boolean> {
   if (!laSocketNguoiDung(socket.data)) return false;
   if (socket.data.__daVaoPhongPhamVi === true) return true;
@@ -309,6 +319,9 @@ export async function tuDongVaoPhongPhamVi(socket: SocketVaoPhong): Promise<bool
     if (socket.data.__daVaoPhongPhamVi === true) return true; // lượt song song đã xong
     if (ids === null) socket.join(PHONG_TOAN_QUYEN_SOCKET);
     else for (const id of ids) socket.join(`factory:${id}`);
+    // F5 đầy đủ — DẤU VÂN TAY phạm vi: đúng tập vừa cấp phòng (null = toàn quyền). Lượt quét của `socketXetLaiQuyen` so tập MỚI với tập này;
+    // khác ⇒ ngắt (nối lại = phòng mới). Mảng (không Set) để đi qua được bộ chuyển Redis.
+    socket.data.__phamViNhaMay = ids === null ? null : [...ids].sort((a, b) => a - b);
     socket.data.__daVaoPhongPhamVi = true;
     return true;
   } catch (err) {

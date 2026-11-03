@@ -223,6 +223,18 @@ export function xoaNhoDemPhamViAnh(): void {
 }
 
 /**
+ * F5 đầy đủ — xoá nhớ đệm phạm vi ảnh của MỘT người (mọi vai): bộ nhận `socket_pham_vi` (`server/_core/socketXetLaiQuyen.ts`) gọi khi phân
+ * công / vai / quyền / phiên của người ấy đổi, trên MỌI bản sao ⇒ lượt thu hồi gán nhà máy có hiệu lực ngay ở lối vào ảnh, không chờ 30 s.
+ * Khoá có hai dạng: `F:{userId}:{role}` (tập nhà máy) và `{userId}:{role}` (tập máy).
+ */
+export function xoaNhoDemPhamViAnhCuaNguoi(userId: number): void {
+  for (const khoa of [...nhoDemPhamVi.keys()]) {
+    const phan = khoa.startsWith("F:") ? khoa.slice(2) : khoa;
+    if (phan.split(":")[0] === String(userId)) nhoDemPhamVi.delete(khoa);
+  }
+}
+
+/**
  * ★★★ 2026-08-18 — **TẬP `factories.id` trong phạm vi**, nhớ đệm CÙNG một chỗ với tập máy.
  *
  * ⚠⚠ ĐO ĐƯỢC, KHÔNG SUY RA. Bản đầu của `_uyQuyenAnh.theoMaNhaMay` gọi thẳng

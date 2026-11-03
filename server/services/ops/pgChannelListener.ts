@@ -152,6 +152,11 @@ export async function startChannelListener(o: {
    * sent in the gap were never delivered, so the owner re-reads its state (e.g. a reconcile). Never awaited; a throw is contained.
    */
   onRecovered?: () => void;
+  /**
+   * F5 đầy đủ (socket_pham_vi) — called once when a lost episode BEGINS (state → degraded): an owner that must act on what it may be
+   * missing right now (the socket receiver sweeps its sockets) does not have to wait for the recovery. Never awaited; a throw is contained.
+   */
+  onEpisodeLost?: () => void;
 }): Promise<ChannelListener> {
   const id = randomUUID();
   const listenClient = o.listenClient ?? defaultListenClient;
@@ -190,6 +195,11 @@ export async function startChannelListener(o: {
       st.reason = reason;
       st.lostEpisodes += 1;
       alert("lost", reason);
+      try {
+        o.onEpisodeLost?.(); // F5 đầy đủ (tên riêng: `onLost` trùng tên sink của driver OPC UA trong census pool-trong-tx)
+      } catch (e) {
+        console.warn(`[${o.tag}] onEpisodeLost failed: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+      }
     }
   };
   const markOk = (reason: string) => {

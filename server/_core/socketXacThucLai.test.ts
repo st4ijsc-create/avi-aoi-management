@@ -797,16 +797,18 @@ describe("★★★ F5-nhanh (a) review — đường gắn thiết bị nhà m�
     });
   });
 
-  it("(A2) phạm vi người nhận KHÔNG tính được ⇒ registrar không nhận gì (fail-closed); admin vẫn nhận", async () => {
+  // F5 đầy đủ (mục 5) — phạm vi người nhận nay được CACHE lúc `admin:join` (thay đổi phạm vi ⇒ socket bị ngắt ⇒ join mới); điểm fail-closed dời
+  // về lúc join: phạm vi không tính được LÚC JOIN ⇒ cache rỗng ⇒ registrar không nhận gì (kể cả đăng ký của chính nhà máy mình).
+  it("(A2) phạm vi người nhận KHÔNG tính được (lúc join) ⇒ registrar không nhận gì (fail-closed); admin vẫn nhận", async () => {
     await voiCoMo(async () => {
       const pq = await import("./socketPhongQuyen");
       const reg = await ketNoi({ phien: 3, ve: "ve-3" });
       const ad = await ketNoi({ phien: 2, ve: "ve-2" });
+      pq.__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async (_c, pv) => { if (pv.userRole === "admin") return null; throw new Error("db nac"); } });
       await soChoAdminThay(reg);
       await soChoAdminThay(ad);
       const yeuCauReg = ghiNhan(reg, "machine:registration_request");
       const yeuCauAd = ghiNhan(ad, "machine:registration_request");
-      pq.__datCongPhamViChoTest({ trongPhamVi: async () => true, idsTrongPhamVi: async (_c, pv) => { if (pv.userRole === "admin") return null; throw new Error("db nac"); } });
       try {
         await dangKyMoi("MA-A");
         await vi.waitFor(() => expect(yeuCauAd.length).toBe(1));

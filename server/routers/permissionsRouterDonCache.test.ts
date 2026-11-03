@@ -53,7 +53,9 @@ function taoDbGia() {
     }),
   };
 }
-const dbGia = taoDbGia();
+// F5 đầy đủ (mục 6) — các thủ tục nhiều câu nay chạy trong `db.transaction`: ở lưới này giao dịch CHUYỂN THẲNG (không hoàn tác) để giữ nguyên
+// thứ tự nhật ký mà lưới đo (dọn SAU câu ghi cuối). Ngữ nghĩa hoàn tác được đo riêng ở `ghiQuyenMotGiaoDich.test.ts`.
+const dbGia = Object.assign(taoDbGia(), { transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(dbGia) });
 
 vi.mock("../db/connection", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../db/connection")>()),

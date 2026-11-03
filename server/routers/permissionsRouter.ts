@@ -508,42 +508,45 @@ export const permissionsRouter = router({
       // Get default permissions for role
       const defaultPerms = DEFAULT_ROLE_PERMISSIONS[input.role] || [];
 
-      // ★★★ F5-nhanh — ba câu ghi KHÔNG trong một giao dịch (DELETE quyền, INSERT quyền, UPDATE vai) ⇒ dọn auth cache trong
-      // `finally`: hỏng giữa chừng vẫn dọn (một nửa đã ghi cũng là một thay đổi quyền).
+      // ★★★ F5-nhanh — dọn auth cache trong `finally` (cả khi giao dịch bên dưới hoàn tác: dọn thừa vô hại). F5 đầy đủ: ba câu ghi (DELETE
+      // quyền, INSERT quyền, UPDATE vai) nay trong MỘT giao dịch.
       try {
-        // Delete existing permissions
-        await db
-          .delete(permissions)
-          .where(eq(permissions.userId, input.userId));
+        // ★★★ F5 đầy đủ (mục 6) — MỘT giao dịch: hỏng sau DELETE ⇒ không gì đổi (không để nửa trạng thái: mất quyền / mất vai).
+        await db.transaction(async (tx) => {
+          // Delete existing permissions
+          await tx
+            .delete(permissions)
+            .where(eq(permissions.userId, input.userId));
         
-        // Insert new default permissions
-        if (defaultPerms.length > 0) {
-          await db
-            .insert(permissions)
-            .values(
-              defaultPerms.map((perm: any) => ({
-                userId: input.userId,
-                category: perm.category,
-                moduleName: perm.moduleName,
-                canView: perm.canView,
-                canCreate: perm.canCreate,
-                canEdit: perm.canEdit,
-                canDelete: perm.canDelete,
-                canExport: perm.canExport,
-                grantedBy: ctx.user.id,
-                grantedAt: new Date(),
-              }))
-            );
-        }
+          // Insert new default permissions
+          if (defaultPerms.length > 0) {
+            await tx
+              .insert(permissions)
+              .values(
+                defaultPerms.map((perm: any) => ({
+                  userId: input.userId,
+                  category: perm.category,
+                  moduleName: perm.moduleName,
+                  canView: perm.canView,
+                  canCreate: perm.canCreate,
+                  canEdit: perm.canEdit,
+                  canDelete: perm.canDelete,
+                  canExport: perm.canExport,
+                  grantedBy: ctx.user.id,
+                  grantedAt: new Date(),
+                }))
+              );
+          }
         
-        // Update user role
-        await db
-          .update(users)
-          .set({
-            role: input.role,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, input.userId));
+          // Update user role
+          await tx
+            .update(users)
+            .set({
+              role: input.role,
+              updatedAt: new Date()
+            })
+            .where(eq(users.id, input.userId));
+        });
       } finally {
         await invalidateAuthUser(input.userId);
       }
@@ -643,8 +646,8 @@ export const permissionsRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
-      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
-      // hỏng giữa chừng vẫn dọn).
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: cả hai nhánh, mỗi nhánh MỘT
+      // câu ghi — không cần giao dịch).
       try {
         // Check if permission already exists
         const [existing] = await db.select().from(permissions).where(and(
@@ -723,34 +726,37 @@ export const permissionsRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
-      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
-      // hỏng giữa chừng vẫn dọn).
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: dọn cả khi giao dịch
+      // bên dưới hoàn tác — dọn thừa vô hại).
       try {
-        // Delete all existing permissions for this user
-        await db
-          .delete(permissions)
-          .where(eq(permissions.userId, input.userId));
+        // ★★★ F5 đầy đủ (mục 6) — MỘT giao dịch: hỏng sau DELETE ⇒ không gì đổi (không để nửa trạng thái: mất quyền / mất vai).
+        await db.transaction(async (tx) => {
+          // Delete all existing permissions for this user
+          await tx
+            .delete(permissions)
+            .where(eq(permissions.userId, input.userId));
         
-        // Insert new permissions
-        if (input.permissions.length > 0) {
-          await db
-            .insert(permissions)
-            .values(
-              input.permissions.map(perm => ({
-                userId: input.userId,
-                category: perm.category,
-                moduleName: perm.moduleName,
-                canView: perm.canView,
-                canCreate: perm.canCreate,
-                canEdit: perm.canEdit,
-                canDelete: perm.canDelete,
-                canExport: perm.canExport,
-                customPermissions: perm.customPermissions,
-                grantedBy: ctx.user.id,
-                grantedAt: new Date(),
-              }))
-            );
-        }
+          // Insert new permissions
+          if (input.permissions.length > 0) {
+            await tx
+              .insert(permissions)
+              .values(
+                input.permissions.map(perm => ({
+                  userId: input.userId,
+                  category: perm.category,
+                  moduleName: perm.moduleName,
+                  canView: perm.canView,
+                  canCreate: perm.canCreate,
+                  canEdit: perm.canEdit,
+                  canDelete: perm.canDelete,
+                  canExport: perm.canExport,
+                  customPermissions: perm.customPermissions,
+                  grantedBy: ctx.user.id,
+                  grantedAt: new Date(),
+                }))
+              );
+          }
+        });
       } finally {
         await invalidateAuthUser(input.userId);
       }
@@ -1115,45 +1121,24 @@ export const permissionsRouter = router({
       let applied = 0;
       let skipped = 0;
 
-      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
-      // hỏng giữa chừng vẫn dọn).
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: dọn cả khi giao dịch
+      // bên dưới hoàn tác — dọn thừa vô hại).
       try {
-        for (const tmpl of permTemplates) {
-          if (!tmpl.moduleName) continue;
+        // ★★★ F5 đầy đủ (mục 6) — MỘT giao dịch: hỏng sau DELETE ⇒ không gì đổi (không để nửa trạng thái: mất quyền / mất vai).
+        await db.transaction(async (tx) => {
+          for (const tmpl of permTemplates) {
+            if (!tmpl.moduleName) continue;
 
-          if (input.overwrite) {
-            // Upsert: delete existing then insert
-            await db
-              .delete(permissions)
-              .where(and(
-                eq(permissions.userId, input.userId),
-                eq(permissions.moduleName, tmpl.moduleName),
-              ));
+            if (input.overwrite) {
+              // Upsert: delete existing then insert
+              await tx
+                .delete(permissions)
+                .where(and(
+                  eq(permissions.userId, input.userId),
+                  eq(permissions.moduleName, tmpl.moduleName),
+                ));
 
-            await db.insert(permissions).values({
-              userId: input.userId,
-              moduleName: tmpl.moduleName as any,
-              canView: tmpl.canView ?? false,
-              canCreate: tmpl.canCreate ?? false,
-              canEdit: tmpl.canEdit ?? false,
-              canDelete: tmpl.canDelete ?? false,
-              canExport: tmpl.canExport ?? false,
-              grantedBy: ctx.user.id,
-            } as any);
-            applied++;
-          } else {
-            // Only insert if no existing permission for this module
-            const [existingPerm] = await db
-              .select({ id: permissions.id })
-              .from(permissions)
-              .where(and(
-                eq(permissions.userId, input.userId),
-                eq(permissions.moduleName, tmpl.moduleName),
-              ))
-              .limit(1);
-
-            if (!existingPerm) {
-              await db.insert(permissions).values({
+              await tx.insert(permissions).values({
                 userId: input.userId,
                 moduleName: tmpl.moduleName as any,
                 canView: tmpl.canView ?? false,
@@ -1165,10 +1150,34 @@ export const permissionsRouter = router({
               } as any);
               applied++;
             } else {
-              skipped++;
+              // Only insert if no existing permission for this module
+              const [existingPerm] = await tx
+                .select({ id: permissions.id })
+                .from(permissions)
+                .where(and(
+                  eq(permissions.userId, input.userId),
+                  eq(permissions.moduleName, tmpl.moduleName),
+                ))
+                .limit(1);
+
+              if (!existingPerm) {
+                await tx.insert(permissions).values({
+                  userId: input.userId,
+                  moduleName: tmpl.moduleName as any,
+                  canView: tmpl.canView ?? false,
+                  canCreate: tmpl.canCreate ?? false,
+                  canEdit: tmpl.canEdit ?? false,
+                  canDelete: tmpl.canDelete ?? false,
+                  canExport: tmpl.canExport ?? false,
+                  grantedBy: ctx.user.id,
+                } as any);
+                applied++;
+              } else {
+                skipped++;
+              }
             }
           }
-        }
+        });
       } finally {
         await invalidateAuthUser(input.userId);
       }
@@ -1214,33 +1223,36 @@ export const permissionsRouter = router({
 
       let applied = 0;
 
-      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: ghi nhiều câu không tx,
-      // hỏng giữa chừng vẫn dọn).
+      // ★★★ F5-nhanh — đổi QUYỀN của người dùng ⇒ dọn auth cache của người đó như `user.update` (finally: dọn cả khi giao dịch
+      // bên dưới hoàn tác — dọn thừa vô hại).
       try {
-        for (const tmpl of permTemplates) {
-          if (!tmpl.moduleName) continue;
+        // ★★★ F5 đầy đủ (mục 6) — MỘT giao dịch: hỏng sau DELETE ⇒ không gì đổi (không để nửa trạng thái: mất quyền / mất vai).
+        await db.transaction(async (tx) => {
+          for (const tmpl of permTemplates) {
+            if (!tmpl.moduleName) continue;
 
-          if (input.overwrite) {
-            await db
-              .delete(permissions)
-              .where(and(
-                eq(permissions.userId, input.userId),
-                eq(permissions.moduleName, tmpl.moduleName),
-              ));
+            if (input.overwrite) {
+              await tx
+                .delete(permissions)
+                .where(and(
+                  eq(permissions.userId, input.userId),
+                  eq(permissions.moduleName, tmpl.moduleName),
+                ));
+            }
+
+            await tx.insert(permissions).values({
+              userId: input.userId,
+              moduleName: tmpl.moduleName as any,
+              canView: tmpl.canView ?? false,
+              canCreate: tmpl.canCreate ?? false,
+              canEdit: tmpl.canEdit ?? false,
+              canDelete: tmpl.canDelete ?? false,
+              canExport: tmpl.canExport ?? false,
+              grantedBy: ctx.user.id,
+            } as any);
+            applied++;
           }
-
-          await db.insert(permissions).values({
-            userId: input.userId,
-            moduleName: tmpl.moduleName as any,
-            canView: tmpl.canView ?? false,
-            canCreate: tmpl.canCreate ?? false,
-            canEdit: tmpl.canEdit ?? false,
-            canDelete: tmpl.canDelete ?? false,
-            canExport: tmpl.canExport ?? false,
-            grantedBy: ctx.user.id,
-          } as any);
-          applied++;
-        }
+        });
       } finally {
         await invalidateAuthUser(input.userId);
       }
