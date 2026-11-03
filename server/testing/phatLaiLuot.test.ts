@@ -229,3 +229,43 @@ describe("H4.2 — đơn vị (thay đường, lượt thừa, cờ nghĩ, đổ
     expect(kiemMauCam("src/maGiamGia.ts dùng https://example.com/a")).toEqual([]);
   });
 });
+
+describe("H4.2 (03/11, fixture thật đầu tiên) — cắt cụt, thư mục tạm, '\\\\' kép, số đo không tất định, so sự kiện", async () => {
+  const { taoBoThay, chuanHoaSoDo, soYeuCau, soSuKien, TOKEN_GOC, TOKEN_GOC_CAT, TOKEN_TAM, TOKEN_NGUOI } = await import("./phatLaiLuot");
+  const goc = "D:\\SOURCES\\repo\\sandbox-projects\\agent-f";
+  it("đầu đường gốc bị cắt ngay trước '…' ⇒ TOKEN_GOC_CAT (ghi và phát cùng độ dài ⇒ cùng chuỗi); không phải ranh giới đường ⇒ giữ", () => {
+    const t = taoBoThay(goc, {});
+    expect(t("Restored D:\\SOURCES\\repo\\sandbox-pr…")).toBe(`Restored ${TOKEN_GOC_CAT}…`);
+    expect(t(`Restored ${goc}\\a.csproj. Restored D:\\SOURCES\\re…`)).toBe(`Restored ${TOKEN_GOC}\\a.csproj. Restored ${TOKEN_GOC_CAT}…`);
+    expect(t("xD:\\SOURCES\\repo…")).toBe("xD:\\SOURCES\\repo…");
+    expect(t("không có dấu cắt D:\\SOURCES\\repo")).toBe("không có dấu cắt D:\\SOURCES\\repo");
+  });
+  it("đường '\\\\' kép (thông điệp assert) của gốc / người dùng ⇒ token; cả đoạn đường trong thư mục tạm (tên mkdtemp ngẫu nhiên) ⇒ TOKEN_TAM", () => {
+    const t = taoBoThay(goc, { home: "C:\\Users\\anh", ten: "anh", tam: "C:\\Users\\anh\\AppData\\Local\\Temp" });
+    expect(t("'D:\\\\SOURCES\\\\repo\\\\sandbox-projects\\\\agent-f\\\\x.js'")).toBe(`'${TOKEN_GOC}\\\\x.js'`);
+    expect(t("mở 'C:\\\\Users\\\\anh\\\\AppData\\\\Local\\\\Temp\\\\viec-edge-8aB3xQ\\\\v.json' lỗi")).toBe(`mở '${TOKEN_TAM}' lỗi`);
+    expect(t("C:\\Users\\anh\\Desktop")).toBe(`${TOKEN_NGUOI}\\Desktop`);
+  });
+  it("chuanHoaSoDo: thời gian (node/xUnit/pytest/dotnet), địa chỉ repr, UUID, 'N chars' ⇒ token; số khác giữ nguyên", () => {
+    expect(chuanHoaSoDo("✔ a (0.6975ms) ℹ duration_ms 109.2471")).toBe(chuanHoaSoDo("✔ a (12.5ms) ℹ duration_ms 98"));
+    expect(chuanHoaSoDo("[xUnit.net 00:00:00.12] X [< 1 ms] Duration: 36 ms")).toBe(chuanHoaSoDo("[xUnit.net 00:00:00.48] X [55 ms] Duration: 4 ms"));
+    expect(chuanHoaSoDo("<T object at 0x00000212CE9DA0D0> Id = 41120694-b134-4df3-ae63-fb39544ff296")).toBe(chuanHoaSoDo("<T object at 0x000001EA2AB7A0D0> Id = f5edc479-a474-44fc-b476-b36c3070267f"));
+    expect(chuanHoaSoDo("[compacted: list_dir — 144 chars]")).toBe(chuanHoaSoDo("[compacted: list_dir — 120 chars]"));
+    expect(chuanHoaSoDo("tests: 5 failed, 16 passed (200 B)")).not.toBe(chuanHoaSoDo("tests: 4 failed, 16 passed (200 B)"));
+  });
+  const yc = (tin: Array<{ role: string; content: string }>) => ({ heThong: "x", congCu: { ten: [], bam: "b" }, co: { disableThinking: false, preserveThinking: false }, tin });
+  it("soYeuCau: kết quả TOOL cùng tập dòng khác thứ tự ⇒ khớp; thiếu / khác một dòng ⇒ lệch; tin model khác thứ tự dòng ⇒ lệch", () => {
+    expect(soYeuCau(yc([{ role: "tool", content: "E a\r\nE b" }]), yc([{ role: "tool", content: "E b\r\nE a" }]))).toBeNull();
+    expect(soYeuCau(yc([{ role: "tool", content: "E a\nE b" }]), yc([{ role: "tool", content: "E a" }]))).toMatchObject({ truong: "tin[0]" });
+    expect(soYeuCau(yc([{ role: "tool", content: "exit code: 0" }]), yc([{ role: "tool", content: "exit code: 1" }]))).toMatchObject({ truong: "tin[0]" });
+    expect(soYeuCau(yc([{ role: "assistant", content: "a\nb" }]), yc([{ role: "assistant", content: "b\na" }]))).toMatchObject({ truong: "tin[0]" });
+  });
+  it("soSuKien: không phụ thuộc thứ tự khoá; cắt cụt ⇒ so tiền tố; bat-dau.model/runId + nen.token* bỏ; khác thật ⇒ trả đường lệch", () => {
+    const ghi = [{ loai: "bat-dau", cheDo: "tu-dong", model: { model: "m" } }, { tomTat: "✔ a (0.5ms) ✔ b (0.7ms) ℹ tests…", loai: "ket-qua-tool" }, { loai: "buoc-do", nen: { soNen: 3, tokenSau: 10, tokenTruoc: 20 } }];
+    const thuc = [{ loai: "bat-dau", runId: "<ID#1>", cheDo: "tu-dong" }, { loai: "ket-qua-tool", tomTat: "✔ a (10.5ms) ✔ b (12.7ms) ℹ te…" }, { loai: "buoc-do", nen: { soNen: 3, tokenSau: 11, tokenTruoc: 21 } }];
+    expect(soSuKien(ghi, thuc)).toBeNull();
+    expect(soSuKien(ghi, [...thuc.slice(0, 2), { loai: "buoc-do", nen: { soNen: 4 } }])).toMatchObject({ duong: "suKien[2].nen.soNen", ghi: 3, thuc: 4 });
+    expect(soSuKien([{ loai: "chu", noiDung: "đúng…" }], [{ loai: "chu", noiDung: "sai hoàn toàn khác hẳn chuỗi kia" }])).toMatchObject({ duong: "suKien[0].noiDung" });
+    expect(soSuKien([{ loai: "x" }], [{ loai: "x" }, { loai: "y" }])).toMatchObject({ duong: "suKien.length" });
+  });
+});

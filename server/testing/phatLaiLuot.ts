@@ -22,28 +22,112 @@ export const TOKEN_NGUOI = "<<NGUOI_DUNG>>";
 
 const sha12 = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 12);
 
-/** Thay đường gốc (mọi biến thể `\` / `/`, hoa / thường ổ đĩa) và thư mục / tên người dùng Windows bằng token. */
-export function taoBoThay(goc: string, nguoi: { home?: string; ten?: string } = { home: os.homedir(), ten: os.userInfo().username }): (s: string) => string {
+/** Đầu đường gốc bị CẮT CỤT ngay trước `…` (tóm tắt sự kiện cắt theo số ký tự) — xem `taoBoThay`. */
+export const TOKEN_GOC_CAT = "<<GOC_DU_AN_CAT>>";
+/** Đường trong thư mục tạm của hệ điều hành (tên `mkdtemp` NGẪU NHIÊN ⇒ thay CẢ đoạn đường, không chỉ tiền tố). */
+export const TOKEN_TAM = "<<DUONG_TAM>>";
+
+/** Mọi biến thể chữ của một đường: `\` / `/` / `\\` (chuỗi đã thoát — thông điệp assert in đường kiểu `'C:\\Users\\…'`), hoa / thường ổ đĩa. */
+function bienTheDuong(p: string): string[] {
   const bien = new Set<string>();
-  for (const g of [goc, goc.replace(/\\/g, "/"), goc.replace(/\//g, "\\")]) {
+  const ngc = p.replace(/\//g, "\\");
+  for (const g of [p, p.replace(/\\/g, "/"), ngc, ngc.replace(/\\/g, "\\\\")]) {
     bien.add(g);
     if (/^[A-Za-z]:/.test(g)) {
       bien.add(g[0]!.toLowerCase() + g.slice(1));
       bien.add(g[0]!.toUpperCase() + g.slice(1));
     }
   }
-  const goi = [...bien].filter(Boolean).sort((a, b) => b.length - a.length);
-  const home = nguoi.home ? [nguoi.home, nguoi.home.replace(/\\/g, "/")] : [];
+  return [...bien].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Thay đường gốc (mọi biến thể, kể cả đầu đường bị cắt cụt trước `…`), đường trong thư mục tạm, thư mục / tên người dùng Windows bằng token.
+ * (03/11 fixture thật đầu tiên) `tam` mặc định = `os.tmpdir()` khi dùng tham số mặc định; truyền `nguoi` tường minh ⇒ chỉ thay cái được truyền.
+ */
+export function taoBoThay(
+  goc: string,
+  nguoi: { home?: string; ten?: string; tam?: string } = { home: os.homedir(), ten: os.userInfo().username, tam: os.tmpdir() },
+): (s: string) => string {
+  const goi = bienTheDuong(goc);
   const thoat = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const reGoc = goi.length ? new RegExp(goi.map(thoat).join("|"), "g") : null;
+  const tam = nguoi.tam ? bienTheDuong(nguoi.tam) : [];
+  const reTam = tam.length ? new RegExp(`(?:${tam.map(thoat).join("|")})[^\\s"'<>]*`, "gi") : null;
+  const home = nguoi.home ? bienTheDuong(nguoi.home) : [];
   const reHome = home.length ? new RegExp(home.map(thoat).join("|"), "gi") : null;
   const reTen = nguoi.ten && nguoi.ten.length >= 3 ? new RegExp(`\\b${thoat(nguoi.ten)}\\b`, "g") : null;
+  /** Đầu đường gốc dài nhất (≥ 3 ký tự, bắt đầu ở ranh giới đường) ngay trước mỗi `…` ⇒ TOKEN_GOC_CAT. */
+  const catCut = (r: string): string => {
+    if (!r.includes("…")) return r;
+    let ra = "";
+    let tu = 0;
+    for (let i = r.indexOf("…"); i >= 0; i = r.indexOf("…", i + 1)) {
+      let k = 0;
+      for (const g of goi) {
+        for (let n = Math.min(g.length - 1, i - tu); n >= 3 && n > k; n--) {
+          if (r.slice(i - n, i) === g.slice(0, n) && !/[\w.:\\/-]/.test(r[i - n - 1] ?? " ")) {
+            k = n;
+            break;
+          }
+        }
+      }
+      if (k) {
+        ra += r.slice(tu, i - k) + TOKEN_GOC_CAT;
+        tu = i;
+      }
+    }
+    return ra + r.slice(tu);
+  };
   return (s) => {
     let r = reGoc ? s.replace(reGoc, TOKEN_GOC) : s;
+    r = catCut(r);
+    if (reTam) r = r.replace(reTam, TOKEN_TAM);
     if (reHome) r = r.replace(reHome, TOKEN_NGUOI);
     if (reTen) r = r.replace(reTen, TOKEN_NGUOI);
     return r;
   };
+}
+
+/**
+ * (03/11) Số đo KHÔNG tất định trong kết quả công cụ THẬT ⇒ token: thời gian (`(0.6975ms)`, `[< 1 ms]` của xUnit, `duration_ms 109.2`,
+ * `in 67 ms`, `0.12s`, `00:00:01.23`), địa chỉ bộ nhớ trong repr Python (`object at 0x000002CAF7E81550`), cỡ "N chars" của mẩu nén.
+ * CHỈ dùng khi SO (cả hai phía) — fixture lưu nguyên văn. Phát lại chạy công cụ thật ⇒ các số này khác mỗi lần.
+ */
+export function chuanHoaSoDo(s: string): string {
+  return s
+    .replace(/\bduration_ms\s+\d+(?:\.\d+)?/g, "duration_ms <T>")
+    .replace(/\b\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\b/g, "<T>")
+    .replace(/(?:<\s?)?\b\d+(?:[.,]\d+)?\s?(?:ms|µs|s|sec|seconds?)\b/g, "<T>")
+    .replace(/\b0x[0-9A-Fa-f]{6,16}\b/g, "0x<DC>")
+    .replace(RE_UUID, "<UUID>")
+    .replace(/\b\d+ chars\b/g, "<N> chars");
+}
+
+/** `chuanHoaSoDo` cho MỌI chuỗi trong một giá trị JSON. */
+export function chuanHoaSoDoGiaTri<T>(v: T): T {
+  return thayMoiChuoi(v, chuanHoaSoDo);
+}
+
+/**
+ * Sự kiện ⇒ dạng SO giữa lần ghi và lần phát (áp CẢ hai phía): `chuanHoaSoDo` + bỏ trường không thuộc harness / suy từ độ dài chữ của công cụ
+ * thật — `bat-dau.model` (định tuyến theo hồ sơ DB máy chủ; lưới phát lại đặt AI_AGENT_THEO_VAI_TRO=0), `bat-dau.runId` (chỉ có ở bản trong bộ
+ * nhớ), `buoc-do.nen.tokenTruoc/tokenSau` (ƯỚC token theo số ký tự — số đo thời gian dài ngắn khác nhau; `soNen` vẫn so).
+ */
+export function suKienDeSo(ds: readonly unknown[]): unknown[] {
+  return chuanHoaSoDoGiaTri(ds).map((e) => {
+    if (!e || typeof e !== "object") return e;
+    const r = e as Record<string, unknown>;
+    if (r.loai === "bat-dau") {
+      const { model: _m, runId: _r, ...con } = r;
+      return con;
+    }
+    if (r.loai === "buoc-do" && r.nen && typeof r.nen === "object") {
+      const { tokenTruoc: _t, tokenSau: _s, ...nen } = r.nen as Record<string, unknown>;
+      return { ...r, nen };
+    }
+    return e;
+  });
 }
 
 export interface TinChuanHoa {
@@ -129,7 +213,13 @@ export interface LuotFixture {
 export interface FixturePhatLai {
   phienBan: number;
   dau: { ngay: string; node: string; nguon: string; bai?: string; dist?: string; model?: string | null };
-  lenh: { cauHoi: string; cheDo: string; duAnTuongDoi: string; commit?: string };
+  /**
+   * (03/11, tuỳ chọn — fixture thật đầu tiên) Môi trường LÚC GHI để phát lại dựng lại đúng:
+   *   `moiTruong` — cờ env máy chủ ảnh hưởng lượt agent (vitest.setup cố ý KHÔNG nạp .env ⇒ thiếu AI_CODING_AUTOLOOP thì lệnh bị từ chối);
+   *   `tonTaiTruoc` — thư mục BỊ GIT BỎ QUA đã có trong dự án khi ghi (`__pycache__`, `bin/`… — `git archive` không có ⇒ list_dir lệch);
+   *   `doDaiGoc` — độ dài chuỗi đường gốc lúc ghi ⇒ phát lại dựng gốc CÙNG độ dài để chỗ cắt cụt theo ký tự (tóm tắt, nén) rơi cùng chỗ.
+   */
+  lenh: { cauHoi: string; cheDo: string; duAnTuongDoi: string; commit?: string; moiTruong?: Record<string, string>; tonTaiTruoc?: string[]; doDaiGoc?: number };
   luot: LuotFixture[];
   ky: { suKien: unknown[]; lyDo: string | null; dat?: boolean | null };
 }
@@ -211,7 +301,9 @@ export function dongGoi(
     bai?: string;
     dist?: string;
     commit?: string;
-    nguoi?: { home?: string; ten?: string };
+    nguoi?: { home?: string; ten?: string; tam?: string };
+    moiTruong?: Record<string, string>;
+    tonTaiTruoc?: string[];
   },
 ): FixturePhatLai {
   const thay = taoBoThay(y.goc, y.nguoi);
@@ -220,7 +312,15 @@ export function dongGoi(
   const fx: FixturePhatLai = {
     phienBan: PHIEN_BAN_FIXTURE,
     dau: { ngay: String(dau?.ngay ?? ""), node: String(dau?.node ?? ""), nguon: "ghiLuotModel", ...(y.bai ? { bai: y.bai } : {}), ...(y.dist ? { dist: y.dist } : {}), model: luotTho[0]?.modelId ?? null },
-    lenh: { cauHoi: thay(y.cauHoi), cheDo: y.cheDo, duAnTuongDoi: y.duAnTuongDoi, ...(y.commit ? { commit: y.commit } : {}) },
+    lenh: {
+      cauHoi: thay(y.cauHoi),
+      cheDo: y.cheDo,
+      duAnTuongDoi: y.duAnTuongDoi,
+      ...(y.commit ? { commit: y.commit } : {}),
+      ...(y.moiTruong && Object.keys(y.moiTruong).length ? { moiTruong: y.moiTruong } : {}),
+      ...(y.tonTaiTruoc?.length ? { tonTaiTruoc: y.tonTaiTruoc } : {}),
+      doDaiGoc: y.goc.length,
+    },
     luot: thanhHieu(
       luotTho
         .sort((a, b) => a.n - b.n)
@@ -253,11 +353,54 @@ export function soYeuCau(ghi: YeuCauChuanHoa, thuc: YeuCauChuanHoa, soHeThong = 
   if (JSON.stringify(ghi.co) !== JSON.stringify(thuc.co)) return lech("co", ghi.co, thuc.co);
   if (ghi.tin.length !== thuc.tin.length) return lech("tin.length", ghi.tin.length, thuc.tin.length);
   for (let i = 0; i < ghi.tin.length; i++) {
-    const a = JSON.stringify(ghi.tin[i]);
-    const b = JSON.stringify(thuc.tin[i]);
+    const a = chuanHoaSoDo(JSON.stringify(dangSoTin(ghi.tin[i]!)));
+    const b = chuanHoaSoDo(JSON.stringify(dangSoTin(thuc.tin[i]!)));
     if (a !== b) return lech(`tin[${i}]`, ghi.tin[i], thuc.tin[i]);
   }
   return null;
+}
+
+/**
+ * (03/11) Kết quả công cụ THẬT so theo TẬP DÒNG: runner chạy song song (xUnit) và băm ngẫu nhiên của Python (`Differing items` của pytest)
+ * đổi THỨ TỰ dòng giữa hai lần chạy. Tin không phải `tool` (do model sinh — phát lại nguyên văn) vẫn so đúng thứ tự.
+ */
+function dangSoTin(t: TinChuanHoa): TinChuanHoa {
+  return t.role === "tool" ? { ...t, content: chuanHoaSoDo(t.content).split(/\r?\n/).sort().join("\n") } : t;
+}
+
+/**
+ * So sự kiện ghi ↔ phát (sau `chuanHoaSuKien` hai phía): không phụ thuộc thứ tự khoá (jsonb của Postgres xếp lại khoá), `suKienDeSo`, và hai
+ * nới lỏng cho chuỗi từ công cụ THẬT — (1) một bên CẮT CỤT (`…`, tóm tắt theo số ký tự / sổ cắt chuỗi dài): bên ngắn (bỏ ≤ 16 ký tự cuối — ≤ 1/4 chuỗi ngắn — có thể
+ * là mẩu số đo dở) phải là TIỀN TỐ của bên dài; (2) cùng TẬP DÒNG khác thứ tự. Trả lệch ĐẦU TIÊN (đường JSON) hoặc null.
+ */
+export function soSuKien(ghi: readonly unknown[], thuc: readonly unknown[]): { duong: string; ghi: unknown; thuc: unknown } | null {
+  const so = (a: unknown, b: unknown, duong: string): { duong: string; ghi: unknown; thuc: unknown } | null => {
+    if (typeof a === "string" && typeof b === "string") {
+      if (a === b) return null;
+      if (a.endsWith("…") || b.endsWith("…")) {
+        const [ngan, dai] = [a.replace(/…$/, ""), b.replace(/…$/, "")].sort((x, y) => x.length - y.length) as [string, string];
+        if (dai.startsWith(ngan.slice(0, ngan.length - Math.min(16, Math.ceil(ngan.length / 4))))) return null;
+      } else if (a.split(/\r?\n/).sort().join("\n") === b.split(/\r?\n/).sort().join("\n")) return null;
+      return { duong, ghi: a, thuc: b };
+    }
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return { duong: `${duong}.length`, ghi: a.length, thuc: b.length };
+      for (let i = 0; i < a.length; i++) {
+        const d = so(a[i], b[i], `${duong}[${i}]`);
+        if (d) return d;
+      }
+      return null;
+    }
+    if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
+      for (const k of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+        const d = so((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${duong}.${k}`);
+        if (d) return d;
+      }
+      return null;
+    }
+    return Object.is(a, b) ? null : { duong, ghi: a, thuc: b };
+  };
+  return so(suKienDeSo(ghi), suKienDeSo(thuc), "suKien");
 }
 
 export class LoiLechPhatLai extends Error {
@@ -271,7 +414,7 @@ export class LoiLechPhatLai extends Error {
  * `HamChatStream` phát lại. `goc` = thư mục dự án của LẦN PHÁT (thay bằng token khi so, đổi token về đường này trong mảnh phát ra).
  * `chat` (mặc định true): lệch ⇒ ném `LoiLechPhatLai`; `false` (chẩn đoán) ⇒ chỉ ghi `lech` rồi vẫn phát mảnh đã ghi.
  */
-export function taoStreamPhatLai(fx: FixturePhatLai, o: { goc: string; chat?: boolean; soHeThong?: boolean; nguoi?: { home?: string; ten?: string } }) {
+export function taoStreamPhatLai(fx: FixturePhatLai, o: { goc: string; chat?: boolean; soHeThong?: boolean; nguoi?: { home?: string; ten?: string; tam?: string } }) {
   const thay = taoBoThay(o.goc, o.nguoi);
   const veGoc = (s: string) => s.split(TOKEN_GOC).join(o.goc);
   const lech: LechPhatLai[] = [];
