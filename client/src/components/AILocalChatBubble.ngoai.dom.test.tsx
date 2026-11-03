@@ -81,7 +81,17 @@ const khungNgoai = (traLoi: string, daLuu: boolean) => [
   data({ type: "done", vet: VET, ...(daLuu ? { daLuu: { tinNguoiDungId: 100, tinTraLoiId: 101 } } : {}) }),
 ];
 
+const THONG_TIN = {
+  nhaCungCap: "fake", model: "m1", duocPhep: true, mucDuLieu: "van-hanh", choDuLieuVanHanh: true,
+  conLaiTranNgay: { nguoi: { token: null }, nhaMay: { duTranChoLuotNay: true } }, dinhKemBiCam: true,
+};
+
 let fetchSpy: ReturnType<typeof vi.fn>;
+const gui = async (cau: string) => {
+  const o = await screen.findByPlaceholderText(/Nhập câu hỏi/i);
+  fireEvent.change(o, { target: { value: cau } });
+  fireEvent.keyDown(o, { key: "Enter", shiftKey: false });
+};
 const bodyCuaGoi = (i: number): Record<string, any> => JSON.parse(String((fetchSpy.mock.calls[i]![1] as RequestInit).body));
 const goiStream = () => fetchSpy.mock.calls.filter((c) => String(c[0]).includes("/api/ai/local-kb/stream"));
 
@@ -240,5 +250,116 @@ describe("AILocalChatBubble — model ngoài (L4)", () => {
     await waitFor(() => expect(H.toastError).toHaveBeenCalled());
     expect(fetchSpy.mock.calls.filter((c) => String(c[0]).includes("/ask"))).toHaveLength(0);
     expect(screen.getByPlaceholderText(/Nhập câu hỏi/i)).toHaveValue("vượt trần");
+  });
+
+  // ── bổ sung theo rà kiem-dinh (b5, m5, b9/b21, b16, b12, b3, b11) ────────────────────────────────────────
+  it("b5 — tin ngoài thứ HAI dùng lại conversationId: createConversation gọi ĐÚNG 1 lần; lịch sử lần hai chỉ có lượt của hội thoại này", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    datXacNhanVanHanh("42", MA);
+    fetchSpy.mockResolvedValueOnce(sse(...khungNgoai("trả lời 1", true))).mockResolvedValueOnce(sse(...khungNgoai("trả lời 2", true)));
+    await moVaGui("câu một");
+    await waitFor(() => expect(screen.getByText("trả lời 1")).toBeInTheDocument());
+    await gui("câu hai");
+    await waitFor(() => expect(goiStream()).toHaveLength(2));
+    expect(H.createConv).toHaveBeenCalledTimes(1);
+    expect(bodyCuaGoi(0).context.conversationId).toBe(42);
+    expect(bodyCuaGoi(1).context.conversationId).toBe(42);
+    expect(bodyCuaGoi(1).history).toEqual([
+      { role: "user", content: "câu một" },
+      { role: "assistant", content: "trả lời 1" },
+    ]);
+  });
+
+  it("m5 — lịch sử gửi kèm tối đa 10 lượt gần nhất của hội thoại ngoài", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    datXacNhanVanHanh("42", MA);
+    localStorage.setItem(
+      "ai_chat_messages_v2",
+      JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, type: i % 2 ? "assistant" : "user", content: `m${i}`, timestamp: new Date().toISOString(), ngoaiConvId: 42 }))),
+    );
+    fetchSpy.mockResolvedValueOnce(sse(...khungNgoai("ok", true)));
+    render(<AILocalChatBubble />);
+    act(() => setAiChatOpen(true));
+    await gui("hỏi tiếp");
+    await waitFor(() => expect(goiStream()).toHaveLength(1));
+    expect(bodyCuaGoi(0).history).toHaveLength(10);
+    expect(bodyCuaGoi(0).history.at(-1)).toEqual({ role: "assistant", content: "m29" });
+  });
+
+  it("b9/b21 — lỗi có vết: gỡ HAI tin tạm, huy hiệu ĐỎ hiện, câu về ô nhập, không còn bong bóng trống", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    // lỗi SAU khi mở SSE mới mang `vet` (khung `error`)
+    fetchSpy.mockResolvedValueOnce(
+      sse(data({ type: "meta", ngoai: { nhaCungCap: "fake", model: "m1" }, confidence: 1, intent: "general", language: "vi", citations: [] }), data({ type: "error", code: "NGOAI_NHA_CUNG_CAP_LOI", error: "NGOAI_NHA_CUNG_CAP_LOI", vet: VET })),
+    );
+    await moVaGui("sẽ lỗi");
+    const hh = await screen.findByTestId("huy-hieu-ngoai");
+    expect(hh.className).toContain("text-red-700");
+    expect(screen.getByPlaceholderText(/Nhập câu hỏi/i)).toHaveValue("sẽ lỗi");
+    expect(screen.queryByTestId("noi-dung-tra-loi-ngoai")).not.toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("ai_chat_messages_v2") ?? "[]")).toEqual([]));
+  });
+
+  it("b16 — đang stream ⇒ KHÔNG nút kiểm định, kể cả khi tin đã có cặp id", async () => {
+    luuChon("chat", MA);
+    localStorage.setItem(
+      "ai_chat_messages_v2",
+      JSON.stringify([{ id: "a1", type: "assistant", content: "đang gõ", timestamp: new Date().toISOString(), streaming: true, ngoaiConvId: 5, tinTraLoiId: 6 }]),
+    );
+    render(<AILocalChatBubble />);
+    act(() => setAiChatOpen(true));
+    expect(await screen.findByText("đang gõ")).toBeInTheDocument();
+    expect(screen.queryByTestId("nut-kiem-dinh-ngoai")).not.toBeInTheDocument();
+  });
+
+  it("b12 — xoá lịch sử ⇒ tin ngoài kế tiếp tạo hội thoại MỚI (không ghi vào hội thoại cũ)", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    datXacNhanVanHanh("42", MA);
+    datXacNhanVanHanh("43", MA);
+    H.createConv.mockReset().mockResolvedValueOnce({ id: 42 }).mockResolvedValueOnce({ id: 43 });
+    fetchSpy.mockResolvedValueOnce(sse(...khungNgoai("một", true))).mockResolvedValueOnce(sse(...khungNgoai("hai", true)));
+    await moVaGui("đầu");
+    await waitFor(() => expect(screen.getByText("một")).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle(/Xóa lịch sử/i));
+    await gui("sau khi xoá");
+    await waitFor(() => expect(goiStream()).toHaveLength(2));
+    expect(H.createConv).toHaveBeenCalledTimes(2);
+    expect(bodyCuaGoi(1).context.conversationId).toBe(43);
+    expect(bodyCuaGoi(1).history).toEqual([]);
+  });
+
+  it("b3 — đồng ý ở tin 1 ⇒ tin 2 KHÔNG hỏi lại", async () => {
+    luuChon("chat", MA); // chưa đồng ý trong phiên
+    datXacNhanVanHanh("42", MA);
+    H.layThongTin.mockReset().mockResolvedValue(THONG_TIN);
+    fetchSpy.mockResolvedValueOnce(sse(...khungNgoai("một", true))).mockResolvedValueOnce(sse(...khungNgoai("hai", true)));
+    await moVaGui("tin một");
+    fireEvent.click(await screen.findByTestId("hdy-dong-y"));
+    await waitFor(() => expect(screen.getByText("một")).toBeInTheDocument());
+    await gui("tin hai");
+    await waitFor(() => expect(goiStream()).toHaveLength(2));
+    expect(screen.queryByTestId("hop-dong-y-ngoai")).not.toBeInTheDocument();
+    expect(H.layThongTin).toHaveBeenCalledTimes(1);
+  });
+
+  it("b11 — kèm ảnh khi chọn model ngoài ⇒ từ chối bằng thông báo, KHÔNG gọi mạng, KHÔNG tạo hội thoại, ô nhập giữ nguyên", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    render(<AILocalChatBubble />);
+    act(() => setAiChatOpen(true));
+    const o = await screen.findByPlaceholderText(/Nhập câu hỏi/i);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" })] } });
+    await waitFor(() => expect(document.querySelector("img[src^='data:image']")).not.toBeNull());
+    fireEvent.change(o, { target: { value: "có ảnh" } });
+    fireEvent.keyDown(o, { key: "Enter", shiftKey: false });
+    await waitFor(() => expect(H.toastError).toHaveBeenCalledWith(expect.stringContaining("tệp đính kèm")));
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(H.createConv).not.toHaveBeenCalled();
+    expect(o).toHaveValue("có ảnh");
   });
 });

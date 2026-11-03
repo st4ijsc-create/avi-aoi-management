@@ -37,6 +37,12 @@ describe("dungNguCanhNgoai — T3b: body ở nhánh ngoài chỉ gồm tập kho
     expect("xacNhanVanHanh" in k).toBe(false);
     expect(Object.keys(k).sort()).toEqual(["chonModel", "conversationId", "route", "uiLanguage"]);
   });
+  it("m1 — đầu ra CỦA dungNguCanhNgoai (trước dungNguCanhKb) cũng chỉ đúng tập khoá L1", () => {
+    const x = dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "vi", xacNhanVanHanh: true });
+    expect(Object.keys(x).sort()).toEqual([...KHOA_NGU_CANH_NGOAI].sort());
+    const y = dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "vi", xacNhanVanHanh: false });
+    expect(Object.keys(y).sort()).toEqual([...KHOA_NGU_CANH_NGOAI].filter((k) => k !== "xacNhanVanHanh").sort());
+  });
   it("route là HẰNG của bề mặt, không phải trang đang đứng", () => {
     expect(ROUTE_BE_MAT_NGOAI).toBe("/ai-chat");
   });
@@ -60,6 +66,10 @@ describe("lichSuNgoai — T16: chỉ lượt của CHÍNH hội thoại ngoài n
   });
   it("hội thoại chưa có lượt ⇒ rỗng (bắt đầu SẠCH)", () => {
     expect(lichSuNgoai(ds, 123)).toEqual([]);
+  });
+  it("mặc định tối đa 10 lượt cuối (m5)", () => {
+    const nhieu: LuotBongBong[] = Array.from({ length: 30 }, (_, i) => ({ type: i % 2 ? "assistant" : "user", content: `m${i}`, ngoaiConvId: 1 }));
+    expect(lichSuNgoai(nhieu, 1)).toHaveLength(10);
   });
   it("chỉ lấy tối đa N lượt cuối", () => {
     const nhieu: LuotBongBong[] = Array.from({ length: 30 }, (_, i) => ({ type: i % 2 ? "assistant" : "user", content: `m${i}`, ngoaiConvId: 1 }));
