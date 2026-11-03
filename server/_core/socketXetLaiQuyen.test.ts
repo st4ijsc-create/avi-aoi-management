@@ -143,6 +143,9 @@ let PHAM: Record<number, number[]> = {};
 let nemPhamViCho = new Set<number>();
 /** fix round 1 (I1) — DB sập cho MỌI bộ đọc (người dùng, phiên, quyền, tập đoàn, phạm vi). */
 let dbSapChoBoDoc = false;
+/** kiem-dinh (x17 / x23) — lỗi tra cứu cho RIÊNG vài người; móc chặn lượt đọc người dùng (giữ một lượt quét đang chạy). */
+const NEM_DOC_NGUOI = new Set<number>();
+let chanDocNguoi: { cho: Promise<void>; daGoi: boolean } | null = null;
 let TAP_DOAN: Record<number, string[]> = {};
 /** Nhà máy → máy (cho phạm vi "machine"). */
 const MAY_CUA_NHA_MAY: Record<number, number[]> = { 1: [101, 42], 2: [202] };
@@ -157,6 +160,8 @@ function datLaiDb() {
   QUYEN_DK.clear();
   QUYEN_DK.add(15);
   dbSapChoBoDoc = false;
+  NEM_DOC_NGUOI.clear();
+  chanDocNguoi = null;
   PHIEN_DB = {
     "ve-11a": { id: 1101, userId: A, isActive: true, expiresAt: null },
     "ve-11b": { id: 1102, userId: A, isActive: true, expiresAt: null },
@@ -190,7 +195,13 @@ const CONG_PHAM_VI = {
 };
 const BO_DOC = {
   docNguoiDung: async (id: number) => {
-    if (dbSapChoBoDoc) throw new Error("db sap (gia lap)");
+    if (chanDocNguoi) {
+      const c = chanDocNguoi;
+      chanDocNguoi = null; // chỉ chặn MỘT lượt đọc
+      c.daGoi = true;
+      await c.cho;
+    }
+    if (dbSapChoBoDoc || NEM_DOC_NGUOI.has(id)) throw new Error("db sap (gia lap)");
     return NGUOI_DB[id] ? { ...NGUOI_DB[id] } : undefined;
   },
   docPhien: async (ve: string) => {
@@ -961,5 +972,77 @@ describe("★★ fix round 1 — m2 / m3 / m5", () => {
     await xl.yeuCauQuet("lưới m5");
     await cho(100);
     expect([a, b, h1, h2].map(conSong)).toEqual([false, true, false, true]);
+  });
+});
+
+describe("★★★ kiem-dinh test round — x17 / x23 / x24 / x25 / p2", () => {
+  it("(x17) yêu cầu CHẶT (onRecovered) đến TRONG lúc lượt SỰ CỐ đang chạy ⇒ lượt lặp sau đó là CHẶT: lỗi tra cứu ⇒ NGẮT; đối chứng B (tra được) còn sống", async () => {
+    const a = await noiSan(A, "ve-11a", "factory:1");
+    const b = await noiSan(B, "ve-12", "factory:1");
+    let tha!: () => void;
+    chanDocNguoi = { cho: new Promise<void>((r) => (tha = r)), daGoi: false };
+    const giu = chanDocNguoi;
+    NEM_DOC_NGUOI.add(A); // A không tra được — cả lượt sự cố lẫn lượt chặt
+    const p = xl.yeuCauQuet("su co (luoi)", "su_co");
+    await vi.waitFor(() => expect(giu.daGoi).toBe(true), { timeout: 3_000 }); // lượt sự cố đang chạy, bị giữ
+    const truoc = xl.thongKeXetLaiQuyen().quet;
+    void xl.yeuCauQuet("phuc hoi (luoi)", "chat"); // đến TRONG lúc đang quét ⇒ dồn
+    tha();
+    await p;
+    expect(xl.thongKeXetLaiQuyen().quet, "đã chạy thêm đúng một lượt lặp").toBe(truoc + 1);
+    await cho(80);
+    expect([a, b].map(conSong), "lượt lặp là CHẶT: A (lỗi tra) bị ngắt").toEqual([false, true]);
+    expect(xl.thongKeXetLaiQuyen().quetNo).toBe(false);
+  });
+
+  it("(x23) lượt SỰ CỐ vẫn NGẮT từ chối DỨT KHOÁT (phiên thu hồi, tài khoản tắt); lỗi TRA CỨU trong CÙNG lượt ⇒ giữ + ghi nợ", async () => {
+    const a = await noiSan(A, "ve-11a", "factory:1");
+    const h = await noiSan(H, "ve-14", "scope:all");
+    const b = await noiSan(B, "ve-12", "factory:1");
+    PHIEN_DB["ve-11a"].isActive = false; // dứt khoát: phiên thu hồi
+    NGUOI_DB[H].isActive = false; // dứt khoát: tài khoản tắt
+    NEM_DOC_NGUOI.add(B); // lỗi tra cứu
+    await xl.yeuCauQuet("su co (luoi)", "su_co");
+    await cho(80);
+    expect([a, h, b].map(conSong)).toEqual([false, false, true]);
+    expect(xl.thongKeXetLaiQuyen().quetNo).toBe(true);
+  });
+
+  it("(x24) vai đổi giữa hai vai CÙNG phạm vi + CÙNG quyền (engineer → operator), thông báo bị lỡ ⇒ lượt quét NGẮT; đối chứng: không đổi vai ⇒ giữ", async () => {
+    const a = await noiSan(A, "ve-11a", "factory:1");
+    const b = await noiSan(B, "ve-12", "factory:1");
+    NGUOI_DB[A].role = "operator"; // phạm vi (PHAM) + quyền (QUYEN_DB) + tập đoàn không phụ thuộc vai ⇒ chỉ VAI khác
+    await xl.yeuCauQuet("luoi x24");
+    await cho(80);
+    expect([a, b].map(conSong)).toEqual([false, true]);
+  });
+
+  it("(x25) dấu vân tay lúc nối THIẾU (null / quyen null) ⇒ lượt SỰ CỐ giữ + ghi nợ; lượt CHẶT ngắt; đối chứng B (đủ dấu vân tay) còn sống", async () => {
+    const a1 = await noiSan(A, "ve-11a", "factory:1");
+    const a2 = await noiSan(A, "ve-11b", "factory:1");
+    const b = await noiSan(B, "ve-12", "factory:1");
+    (socketMod.getIO()!.sockets.sockets.get(a1.id!)!.data as any).__vanTay = null;
+    (socketMod.getIO()!.sockets.sockets.get(a2.id!)!.data as any).__vanTay = { quyen: null, tapDoan: ["C-1"] };
+    await xl.yeuCauQuet("su co (luoi)", "su_co");
+    await cho(60);
+    expect([a1, a2, b].map(conSong), "sự cố: giữ").toEqual([true, true, true]);
+    expect(xl.thongKeXetLaiQuyen().quetNo).toBe(true);
+    await xl.yeuCauQuet("chat (luoi)", "chat");
+    await cho(80);
+    expect([a1, a2, b].map(conSong), "chặt: ngắt").toEqual([false, false, true]);
+  });
+
+  it("(p2) phạm vi nhà máy CÙNG tập, KHÁC thứ tự (lúc nối [2,1], lúc quét [1,2]) ⇒ GIỮ (so không phụ thuộc thứ tự — cả hai phía đều sắp xếp)", async () => {
+    PHAM[A] = [2, 1];
+    const a = await noiSan(A, "ve-11a", "factory:2");
+    await vi.waitFor(() => expect(phongCua(a)).toEqual(expect.arrayContaining(["factory:1", "factory:2"])), { timeout: 3_000 });
+    PHAM[A] = [1, 2];
+    await xl.yeuCauQuet("luoi p2");
+    await cho(80);
+    expect(conSong(a)).toBe(true);
+    PHAM[A] = [1]; // đối chứng: tập KHÁC ⇒ ngắt
+    await xl.yeuCauQuet("luoi p2 doi chung");
+    await cho(80);
+    expect(conSong(a)).toBe(false);
   });
 });
