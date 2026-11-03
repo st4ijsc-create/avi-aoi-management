@@ -57,7 +57,8 @@ const dung = (p: string) => (ten: string) => ten === p;
 export const BANG_PHONG_CONG: DongBangPhong[] = [
   ...(["factory", "workshop", "line", "machine"] as const).map((cap) => ({ khop: tienTo(`${cap}:`), moTa: `${cap}:`, cong: [{ ten: "duocVaoPhongPhamVi", doiSo: { 1: "cap", 2: "id" } as Record<number, "cap" | "id" | "phong"> }] })),
   { khop: tienTo("robot:"), moTa: "robot:", cong: [{ ten: "duocVaoPhongRobot", doiSo: { 1: "id" } }] },
-  { khop: tienTo("device:"), moTa: "device:", cong: [{ ten: "duocVaoPhongThietBi" }] },
+  // fix 1 (m-2): cổng thiết bị phải kiểm CHÍNH khoá dựng tên phòng (`device:${khoa}` ⇒ đối số 1 = `khoa`)
+  { khop: tienTo("device:"), moTa: "device:", cong: [{ ten: "duocVaoPhongThietBi", doiSo: { 1: "id" } }] },
   { khop: dung("telemetry:all"), moTa: "telemetry:all", cong: [{ ten: "duocVaoPhongTelemetryAll" }] },
   { khop: dung("ai:agents"), moTa: "ai:agents", cong: [{ ten: "duocVaoPhongAiAgents" }] },
   // PV-socket-1: phòng `sites:all` / `sites:corp:{mã}` — tên phòng là BIẾN lấy từ `phongFederationDuocVao`; cổng nhận chính biến đó và kiểm nó ∈ danh sách
@@ -376,13 +377,13 @@ describe("ĐỘT BIẾN — lưới phải BẮT", () => {
     for (const doi of ["duocVaoPhongTelemetryAll(socket.data)", 'duocVaoPhongPhamVi(socket.data, "line", n)', "Promise.resolve(true)", "duocVaoPhongRobot(socket.data, 1)", "duocVaoPhongThietBi(socket.data, n)"]) {
       expect(loiBang(socketTs().replace(robot, doi)).length, `robot: ⇒ ${doi}`).toBeGreaterThan(0);
     }
-    const thietBi = "duocVaoPhongThietBi(socket.data, dd.deviceStreamId)";
+    const thietBi = "duocVaoPhongThietBi(socket.data, khoa)";
     expect(socketTs()).toContain(thietBi);
-    for (const doi of ["duocVaoPhongRobot(socket.data, dd.deviceStreamId)", "duocVaoPhongTelemetryAll(socket.data)"]) {
+    for (const doi of ["duocVaoPhongRobot(socket.data, khoa)", "duocVaoPhongTelemetryAll(socket.data)", 'duocVaoPhongThietBi(socket.data, "machine:1")', "duocVaoPhongThietBi(socket.data, dd.deviceStreamId)"]) {
       expect(loiBang(socketTs().replace(thietBi, doi)).length, `device: ⇒ ${doi}`).toBeGreaterThan(0);
     }
     // hoán đổi: robot dùng cổng thiết bị, device dùng cổng robot — MỌI tên cổng vẫn có trong handler
-    expect(loiBang(socketTs().replace(robot, "duocVaoPhongThietBi(socket.data, n)").replace(thietBi, "duocVaoPhongRobot(socket.data, dd.deviceStreamId)")).length).toBeGreaterThan(0);
+    expect(loiBang(socketTs().replace(robot, "duocVaoPhongThietBi(socket.data, n)").replace(thietBi, "duocVaoPhongRobot(socket.data, khoa)")).length).toBeGreaterThan(0);
     const fed = "thuVaoPhong(p, duocVaoPhongFederation(socket.data, p))";
     expect(socketTs()).toContain(fed);
     for (const doi of ["thuVaoPhong(p, duocVaoPhongTelemetryAll(socket.data))", 'thuVaoPhong(p, duocVaoPhongPhamVi(socket.data, "factory", p))', 'thuVaoPhong(p, duocVaoPhongFederation(socket.data, "sites:all"))']) {
