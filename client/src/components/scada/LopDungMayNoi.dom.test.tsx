@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 /** Faceplate giả: Dialog Radix chứa NutDungMay; nút "Đổi…" mở hộp xác nhận LỒNG (Dialog thứ hai). */
-function Harness({ hopLong, soToast = 0 }: { hopLong: boolean; soToast?: number }) {
+function Harness({ hopLong, soToast = 0, thuBa = false }: { hopLong: boolean; soToast?: number; thuBa?: boolean }) {
   React.useEffect(() => {
     for (let i = 0; i < soToast; i++) toast(`toast ${i}`, { duration: Infinity });
   }, [soToast]);
@@ -68,6 +68,12 @@ function Harness({ hopLong, soToast = 0 }: { hopLong: boolean; soToast?: number 
             <DialogContent data-testid="hop-long">
               <DialogTitle>Xác nhận lệnh</DialogTitle>
               <DialogDescription>hộp lồng</DialogDescription>
+              <Dialog open={thuBa}>
+                <DialogContent data-testid="hop-thu-ba">
+                  <DialogTitle>Hộp thứ ba</DialogTitle>
+                  <DialogDescription>lồng tiếp</DialogDescription>
+                </DialogContent>
+              </Dialog>
             </DialogContent>
           </Dialog>
         </DialogContent>
@@ -127,6 +133,16 @@ describe("LopDungMayNoi — C0-3", () => {
     fireEvent.click(nut);
     await tick();
     expect(document.body.textContent).toMatch(/SCR-06/);
+  });
+
+  it("★ hộp thứ ba mở SAU khi nút nổi đã có ⇒ Radix hideOthers đặt aria-hidden lên lớp nổi; lớp TỰ GỠ (nút DỪNG còn trong cây truy cập)", async () => {
+    const { rerender } = render(<Harness hopLong />);
+    await tick();
+    await screen.findByTestId("nut-dung-may-noi");
+    rerender(<Harness hopLong thuBa />);
+    await tick(600);
+    const lop = screen.getByTestId("lop-dung-may-noi");
+    expect(lop.closest('[aria-hidden="true"]')).toBeNull();
   });
 
   it("hộp lồng đóng lại ⇒ nút nổi biến mất (không để rác)", async () => {
