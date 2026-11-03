@@ -1,7 +1,7 @@
 {
   "id": "st-tt9-dong-goi-bit",
   "khoi": "DongGoiBit",
-  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st, CHI cac lan goi DongGoiBit(b) (khoi chinh = dinhDanh); moi lan goi = mot buoc dtMs 0, BIT ghi du 16 phan tu theo trang thai mang b cua test (vong FOR trai ra); gia tri hex doi sang thap phan. BO 20 kiem cua khoi phu MoGoiBit (khong phai khoi chinh): hien_thi 2 (BIT[1], SO_BIT_1), an 18 (M 8001 .. M A5C3, gom ca 'khu hoi A5C3' vi dau vao DongGoiBit(m.BIT) la dau ra cua MoGoiBit). CANH BAO: bai la FUNCTION, ket qua la GIA TRI TRA VE, khong co VAR_OUTPUT => khoa 'DongGoiBit' trong ky = gia tri tra ve (quy uoc de xuat); bo boc hien tai (docGiaoDien chi tim FUNCTION_BLOCK, maBoBoc khai 'fb : <Khoi>') chua ho tro FUNCTION nen kich ban nay CHUA cham duoc cho toi khi bo boc mo rong",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st, CHI cac lan goi DongGoiBit(b) (khoi chinh = dinhDanh); moi lan goi = mot buoc dtMs 0, BIT ghi du 16 phan tu theo trang thai mang b cua test (vong FOR trai ra); gia tri hex doi sang thap phan. BO 20 kiem cua khoi phu MoGoiBit (khong phai khoi chinh): hien_thi 2 (BIT[1], SO_BIT_1), an 18 (M 8001 .. M A5C3, gom ca 'khu hoi A5C3' vi dau vao DongGoiBit(m.BIT) la dau ra cua MoGoiBit). Bai la FUNCTION: khoa 'DongGoiBit' trong ky = gia tri tra ve (bo boc nhanh ham). [03/11 kiem-dinh: bo cau canh bao loi thoi ve bo boc chua ho tro FUNCTION - chi doi chu, khong doi so lieu]",
   "doan": [
     {
       "ten": "hien-thi",

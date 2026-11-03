@@ -19,28 +19,63 @@ const THU_MUC_BAO_CAO = arg("--bao-cao", "D:/SOURCES/_ai9_do/scripts/ai-eval/nga
 const RA = arg("--ra", path.join(__dirname, "bao-cao"));
 const BAO_CAO = ["PLC-v1-ab-kiem-q36-27b-1.json", "PLC-v1-ab-kiem-q36-27b-2.json"];
 
-/** Lỗi biên dịch do TẬP CON của OIP (không phải lỗi lời giải) — theo thông điệp của checker OIP. */
-const RE_TAP_CON = /not supported|not implemented|is a separate IEC language|unsupported/i;
+/** Lỗi biên dịch do TẬP CON của OIP (không phải lỗi lời giải) — theo thông điệp của checker OIP (LINT / TIME_TO_LINT: 64 bit). */
+const RE_TAP_CON = /not supported|not implemented|is a separate IEC language|unsupported|LINT\b|64-bit/i;
+
+/** Ngoại lệ ĐĂNG KÝ TRƯỚC (kiem-dinh rà đáp án, ghi trước khi chạy): lệch ngữ nghĩa OIP / đột biến không phủ / tập con. */
+interface NgoaiLe {
+  id: string;
+  loai: "ngu-nghia-oip" | "khong-phu" | "tap-con-oip";
+  doan?: string;
+  buoc?: number[];
+  sai?: number[];
+  ly_do: string;
+}
+const NGOAI_LE = (JSON.parse(fs.readFileSync(path.join(__dirname, "ngoai-le-dang-ky.json"), "utf8")) as { muc: NgoaiLe[] }).muc;
 
 interface Dong {
   id: string;
   loai: "mau" | "sai" | "model";
   nhan: string;
   chinhThuc: boolean | null;
+  /** phán quyết OIP SAU khi bỏ các bước ngoại lệ ngữ nghĩa đã đăng ký (bước bị bỏ hiện ở `lechNgoaiLe`) */
   oip: "dat" | "truot" | "tu-choi-tap-con" | "tu-choi-khac";
   loi?: string;
   lech?: KetQuaBai["lech"];
+  lechNgoaiLe?: KetQuaBai["lech"];
+  /** dòng dính ngoại lệ đã đăng ký (đột biến vô hình / không phủ / tập con) */
+  ngoaiLe?: NgoaiLe["loai"];
   soKiem: number;
   bam: string;
 }
 
 const bai = fs.readdirSync(GOC_KHO).filter((d) => d.startsWith("st-")).sort();
 const dong: Dong[] = [];
-const cham = (id: string, loai: Dong["loai"], nhan: string, chinhThuc: boolean | null, tep: Record<string, string>) => {
+const cham = (id: string, loai: Dong["loai"], nhan: string, chinhThuc: boolean | null, tep: Record<string, string>, saiSo?: number) => {
   const nguon = Object.keys(tep).sort().map((k) => tep[k]).join("\n");
   const kq = chamLoiGiai(docKichBan(id), nguon);
-  const oip: Dong["oip"] = kq.loi ? (RE_TAP_CON.test(kq.loi) ? "tu-choi-tap-con" : "tu-choi-khac") : kq.dat ? "dat" : "truot";
-  dong.push({ id, loai, nhan, chinhThuc, oip, ...(kq.loi ? { loi: kq.loi.slice(0, 300) } : {}), ...(kq.lech.length ? { lech: kq.lech.slice(0, 3) } : {}), soKiem: kq.soKiem, bam: createHash("sha256").update(nguon).digest("hex").slice(0, 12) });
+  const nlBuoc = NGOAI_LE.filter((n) => n.id === id && n.doan !== undefined);
+  const laNl = (l: KetQuaBai["lech"][number]) => nlBuoc.some((n) => n.doan === l.doan && (n.buoc ?? []).includes(l.buoc));
+  const lech = kq.lech.filter((l) => !laNl(l));
+  const lechNgoaiLe = kq.lech.filter(laNl);
+  const oip: Dong["oip"] = kq.loi ? (RE_TAP_CON.test(kq.loi) ? "tu-choi-tap-con" : "tu-choi-khac") : lech.length === 0 ? "dat" : "truot";
+  const nl =
+    NGOAI_LE.find((n) => n.id === id && saiSo !== undefined && (n.sai ?? []).includes(saiSo))?.loai ??
+    (lechNgoaiLe.length ? "ngu-nghia-oip" : undefined) ??
+    (kq.loi && RE_TAP_CON.test(kq.loi) ? NGOAI_LE.find((n) => n.id === id && n.loai === "tap-con-oip")?.loai : undefined);
+  dong.push({
+    id,
+    loai,
+    nhan,
+    chinhThuc,
+    oip,
+    ...(kq.loi ? { loi: kq.loi.slice(0, 300) } : {}),
+    ...(lech.length ? { lech: lech.slice(0, 3) } : {}),
+    ...(lechNgoaiLe.length ? { lechNgoaiLe: lechNgoaiLe.slice(0, 3) } : {}),
+    ...(nl ? { ngoaiLe: nl } : {}),
+    soKiem: kq.soKiem,
+    bam: createHash("sha256").update(nguon).digest("hex").slice(0, 12),
+  });
 };
 
 for (const id of bai) {
@@ -49,7 +84,7 @@ for (const id of bai) {
   cham(id, "mau", "mau", true, mau);
   (b.sai ?? []).forEach((s, i) => {
     if (!mau[s.tep]?.includes(s.tu)) return void dong.push({ id, loai: "sai", nhan: `sai#${i} KHONG AP DUOC`, chinhThuc: false, oip: "tu-choi-khac", loi: "dot bien khong ap duoc", soKiem: 0, bam: "" });
-    cham(id, "sai", `sai#${i}`, false, { ...mau, [s.tep]: mau[s.tep]!.replace(s.tu, s.den) });
+    cham(id, "sai", `sai#${i}`, false, { ...mau, [s.tep]: mau[s.tep]!.replace(s.tu, s.den) }, i);
   });
 }
 for (const f of BAO_CAO) {
@@ -97,6 +132,17 @@ for (const ct of [true, false]) {
     `| ${ct ? "ĐẠT" : "TRƯỢT"} (${model.filter((d) => d.chinhThuc === ct).length}) | ${o(ct, "dat").length}<br>${vd(o(ct, "dat"))} | ${o(ct, "truot").length}<br>${vd(o(ct, "truot"))} | ${o(ct, "tu-choi-tap-con").length}<br>${vd(o(ct, "tu-choi-tap-con"))} | ${o(ct, "tu-choi-khac").length}<br>${vd(o(ct, "tu-choi-khac"))} |`,
   );
 }
+md.push("");
+md.push("## Ngoại lệ ĐĂNG KÝ TRƯỚC (kiem-dinh rà đáp án, `ngoai-le-dang-ky.json` — ghi trước khi chạy)");
+md.push("| bài | loại | phạm vi | dòng bị ảnh hưởng (mẫu / sai / model) | lý do |");
+md.push("|---|---|---|---|---|");
+for (const n of NGOAI_LE) {
+  const ds = dong.filter((d) => d.id === n.id && d.ngoaiLe === n.loai);
+  const c = (l: Dong["loai"]) => ds.filter((d) => d.loai === l).length;
+  md.push(`| \`${n.id}\` | ${n.loai} | ${n.doan ? `${n.doan} b${(n.buoc ?? []).join(",")}` : n.sai ? `sai#${n.sai.join(",")}` : "cả bài"} | ${c("mau")} / ${c("sai")} / ${c("model")} | ${n.ly_do} |`);
+}
+md.push("");
+md.push("Bước ngoại lệ ngữ nghĩa ĐÃ BỎ khỏi phán quyết OIP ở bảng trên (vẫn ghi `lechNgoaiLe` trong JSON); đột biến dính ngoại lệ đếm trong cột OIP như thường nhưng KHÔNG đọc là \"OIP không bắt\".");
 md.push("");
 md.push("Ô cần đọc kỹ: **chính thức ĐẠT × OIP trượt** (bộ test chính thức bỏ sót hành vi? hoặc kịch bản/OIP khác ngữ nghĩa) và **chính thức TRƯỢT × OIP đạt** (bộ test chính thức chặt hơn kịch bản rút gọn, hoặc lỗi môi trường RuSTy).");
 fs.writeFileSync(path.join(RA, "B2-bang.md"), md.join("\n") + "\n");

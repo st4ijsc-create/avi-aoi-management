@@ -1,0 +1,36 @@
+{
+  "ngay": "2026-11-03",
+  "nguon": "kiem-dinh rà đáp án kịch bản b52140371 (chạy RIÊNG lời giải mẫu + đột biến sai của bai.json, KHÔNG xem lời giải model) — ghi TRƯỚC khi chạy chayB2",
+  "muc": [
+    {
+      "id": "st-tv1-chong-doi",
+      "loai": "ngu-nghia-oip",
+      "doan": "an-fb0",
+      "buoc": [1, 2],
+      "ly_do": "TON PT=T#0ms trên OIP: lần quét đầu IN=TRUE cho Q=FALSE (ET=0), lần quét sau mới TRUE; test ẩn (IEC/RuSTy) đòi Q lên NGAY trong cùng chu kỳ ⇒ mọi lời giải đúng trượt bước này trên OIP. Bỏ khỏi phán quyết OIP (vẫn hiện riêng)."
+    },
+    {
+      "id": "st-tv9-dem-xuong",
+      "loai": "ngu-nghia-oip",
+      "sai": [0],
+      "ly_do": "CTD của OIP KẸP CV ở 0 (xung CD khi CV=0 không đếm âm); CTD chuẩn (RuSTy) đếm xuống âm ⇒ đột biến sai#0 (`suon.Q AND ctdTon.CV > 0` → `suon.Q`) VÔ HÌNH với OIP dù kịch bản chép đủ. Không tính là 'OIP không bắt'."
+    },
+    {
+      "id": "st-tt9-dong-goi-bit",
+      "loai": "khong-phu",
+      "sai": [0],
+      "ly_do": "đột biến sai#0 nằm ở khối PHỤ MoGoiBit mà kịch bản bỏ (20 kiểm của khối phụ không biểu diễn được) ⇒ kịch bản yếu hơn test ẩn theo thiết kế."
+    },
+    {
+      "id": "st-tt8-doc-tang-giam",
+      "loai": "tap-con-oip",
+      "ly_do": "lời giải mẫu dùng TIME_TO_LINT (64 bit) ⇒ OIP 'unknown function TIME_TO_LINT' — tập con OIP, không tính model trượt."
+    },
+    {
+      "id": "st-ud8-pi-chong-bao-hoa",
+      "loai": "tap-con-oip",
+      "ly_do": "như st-tt8 (TIME_TO_LINT)."
+    }
+  ],
+  "canhBaoDoPhu": "đột biến tự sinh của kiem-dinh trên 27 mẫu đạt: 560/646 = 86,7 % bị bắt; bài yếu tt7 12/25, tt9 7/18, tt3 9/16, ud9 30/39, ud7 51/60, tt10 35/38, tt5 19/22 (biên / kẹp không có trong test ẩn — kịch bản kế thừa độ phủ test ẩn)."
+}
