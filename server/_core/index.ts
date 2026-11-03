@@ -349,12 +349,12 @@ async function startServer() {
 
   // Security headers
   app.use(helmet({
-    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default off)
+    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default report-only — Pha 0 P0-3)
     crossOriginEmbedderPolicy: false, // Allow cross-origin resources for LAN devices
   }));
 
   // W0-I (doc 44 G5.7a) — CSP theo SEC_CSP_MODE (off|report-only|enforce, default
-  // off = hành vi cũ) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
+  // report-only — Pha 0 P0-3 bước 1: thu vi phạm, không chặn) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
   // chưa set). Mount NGAY SAU helmet. Fail-safe: lỗi wiring không chặn boot.
   try {
     const { securityHeadersMiddleware } = await import("./securityHeaders");
@@ -562,7 +562,7 @@ async function startServer() {
   // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
   // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
   // rate-limit chung. Origin-check: SEC_ORIGIN_CHECK_MODE off|log|enforce (default
-  // off — pass-through, zero behaviour change). Fail-safe wiring.
+  // log — Pha 0 P0-3 bước 1: đếm lượt lệch, không chặn). Fail-safe wiring.
   try {
     const { registerCspReportEndpoint } = await import("./securityHeaders");
     registerCspReportEndpoint(app);
