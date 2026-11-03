@@ -20,6 +20,7 @@ P.push(["stale", "isa-surface", "giá trị tím (cũ) trên thẻ", T], ["stale
 P.push(["sim-ink", "sim-soft", "chữ pill MÔ PHỎNG", T], ["accent-ink", "sim", "chữ trắng trên banner MÔ PHỎNG đặc", T], ["sim", "isa-field", "viền MÔ PHỎNG 4 px (đồ hoạ)", 3], ["qa", "qa-soft", "chữ nhãn QA", T]);
 P.push(["accent", "isa-surface", "liên kết/nút viền accent trên thẻ", T], ["accent-ink", "accent", "chữ nút accent", T], ["accent", "accent-soft", "chữ accent trên nền accent nhạt (tab chọn)", T]);
 P.push(["rail-ink".replace("rail-ink", "isa-rail-ink"), "isa-rail", "chữ rail", T], ["isa-rail-ink-2", "isa-rail", "chữ rail phụ", T], ["isa-rail-ink", "isa-rail-2", "chữ rail mục chọn", T]);
+P.push(["rail-lt-ink", "rail-lt-bg", "chữ rail xám sáng", T], ["rail-lt-ink-2", "rail-lt-bg", "chữ rail xám sáng phụ", T], ["rail-lt-ink", "rail-lt-bg-2", "chữ rail xám sáng mục chọn", T], ["accent", "rail-lt-bg-2", "chữ accent trên mục chọn rail sáng", T]);
 for (const s of ["execute", "idle", "resetting", "held", "suspended", "stopped", "aborted"]) P.push([`packml-${s}`, "isa-surface", `trạng thái PackML ${s} (chữ)`, T]);
 for (const k of [1, 3, 4, 5]) P.push([`actuation-${k}-ink`, `actuation-${k}`, `chữ mức tác động ${k}`, T]);
 P.push(["stop-ink", "stop", "chữ nút DỪNG MÁY", T], ["isa-line-strong", "isa-surface", "viền ô số (đồ hoạ)", 3]);

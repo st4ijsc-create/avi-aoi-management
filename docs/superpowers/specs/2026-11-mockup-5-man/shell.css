@@ -67,6 +67,11 @@
 .rail .badge { margin-left: auto; font: 600 11px/1 var(--font-mono); padding: 2px 6px; border-radius: 10px; background: var(--alarm-p1); color: var(--accent-ink); display: none; }
 .app[data-rail="open"] .rail .badge { display: inline-block; }
 
+/* Biến thể rail xám sáng (so sánh Q2) */
+.app[data-rail-tone="light"] .rail { --isa-rail: var(--rail-lt-bg); --isa-rail-2: var(--rail-lt-bg-2); --isa-rail-ink: var(--rail-lt-ink); --isa-rail-ink-2: var(--rail-lt-ink-2); border-right: 1px solid var(--isa-line); }
+.app[data-rail-tone="light"] .rail a[aria-current="page"] { color: var(--accent); }
+.app[data-rail-tone="light"] .rail a[aria-current="page"]::before { background: var(--accent); }
+
 /* ───────────── Vùng chính + PageHeader ───────────── */
 .main { grid-area: main; min-width: 0; padding: var(--gap-5); display: flex; flex-direction: column; gap: var(--gap-4); position: relative; }
 .page-h { display: flex; align-items: flex-start; gap: var(--gap-4); flex-wrap: wrap; }

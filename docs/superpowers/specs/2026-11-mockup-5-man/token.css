@@ -36,6 +36,11 @@
   --isa-rail-2: #2a3742;
   --isa-rail-ink: #e8edf1;
   --isa-rail-ink-2: #b3c0ca;
+  /* Biến thể rail XÁM SÁNG (chờ chủ dự án chọn Q2): bật bằng data-rail-tone="light" trên .app */
+  --rail-lt-bg: #eef0f2;
+  --rail-lt-bg-2: #d3e8ed;
+  --rail-lt-ink: #1b2630;
+  --rail-lt-ink-2: #3f4d59;
 
   /* ───────────── Chữ 3 mức ───────────── */
   --text-1: #1b2630;

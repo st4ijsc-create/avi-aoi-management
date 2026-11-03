@@ -15,6 +15,7 @@ const PLAN = {
     ["p1-chua-ack-van-hanh", "state=p1-chua-ack&role=van-hanh"],
     ["binh-thuong-ky-su", "state=binh-thuong&role=ky-su"],
     ["rail-mo-giam-sat", "state=binh-thuong&role=giam-sat&rail=open"],
+    ["rail-xam-sang-giam-sat", "state=binh-thuong&role=giam-sat&rail=open&railtone=light"],
   ]],
   "man-4": ["man-4-canh-bao.html", "man-4", [
     ["12-hon-hop", "state=hon-hop"],

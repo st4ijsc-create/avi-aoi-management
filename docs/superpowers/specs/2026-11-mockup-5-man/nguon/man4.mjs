@@ -30,7 +30,7 @@ const ROWS = [
 
 function bang(s) {
   const stale = s === "du-lieu-cu";
-  const chon = s === "hon-hop" ? [1, 2] : [];
+  const chon = s === "hon-hop" ? [4, 5, 8] : []; // P1 phải ack từng hàng (chủ dự án 2026-11-03): chỉ chọn P2–P4
   const sel = s === "chi-tiet" ? 2 : -1;
   const hang = (r) => {
     const [id, p, ts, ma, tn, gt, gh, tuoi, tt, bac] = r;
@@ -54,11 +54,11 @@ function bang(s) {
     const con = (p, ts, ma, tn, t) => `<tr class="p${p}"><td></td><td>${alarmBadge(p, { chu: false })}</td><td class="ds-small">${ts}</td><td><b class="mono" style="font-size:12px">${ma}</b> <span class="ds-small">${tn}</span></td><td class="num muted">—</td><td class="num">${t}</td><td>${ast("act-unack")}</td><td></td></tr>`;
     const nhom = (p, tieuDe, n) => `<tr class="grp p${p}"><td>${ic("chevd").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')}</td><td>${alarmBadge(p)}</td><td colspan="4">Nguyên nhân gốc: ${tieuDe} <span class="ds-small">— gom ${n} cảnh báo thứ cấp</span></td><td class="ds-small">Bậc 2/3 · còn 01:20</td><td><button class="btn sm primary" type="button">Ack nhóm</button></td></tr>`;
     return `<table class="tbl">${head}<tbody>
-      ${nhom(1, "PLC SMT03 mất kết nối (<span class='mono'>PLC_SMT03_LOST</span>)", 24)}
-      ${con(2, "SMT-03 ▸ SMT03-MNT-04", "TAG_BAD_QUALITY", "tag chất lượng xấu", "02:11")}
-      ${con(2, "SMT-03 ▸ SMT03-AOI-07", "TAG_BAD_QUALITY", "tag chất lượng xấu", "02:11")}
-      ${con(3, "SMT-03 ▸ SMT03-REF-01", "TAG_BAD_QUALITY", "tag chất lượng xấu", "02:10")}
-      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo thứ cấp khác (đang gom — <a href="#" style="color:var(--accent)">mở rộng</a>)</td></tr>
+      ${nhom(1, "PLC SMT03 mất kết nối (<span class='mono'>COMM_LOST</span>)", 24)}
+      ${con(2, "SMT-03 ▸ SMT03-REF-01", "OVEN_ZONE5_HH", "vùng 5 quá nhiệt", "02:11")}
+      ${con(2, "SMT-03 ▸ SMT03-MNT-04", "FEEDER_STARVE", "thiếu linh kiện, máy chờ", "02:11")}
+      ${con(3, "SMT-03 ▸ SMT03-CNV-02", "CNV_SPEED_DEV", "lệch tốc độ băng tải", "02:10")}
+      <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 21 cảnh báo quy trình khác của các máy sau PLC (đang gom — <a href="#" style="color:var(--accent)">mở rộng</a>)</td></tr>
       ${nhom(2, "Nhiệt độ lò reflow dao động (<span class='mono'>OVEN_TEMP_OSC</span>)", 8)}
       ${con(3, "SMT-03 ▸ SMT03-REF-01", "OVEN_ZONE3_H", "vùng 3 cao", "04:02")}
       <tr><td></td><td colspan="7" class="ds-small" style="height:36px">… và 7 cảnh báo thứ cấp khác</td></tr>
@@ -68,14 +68,15 @@ function bang(s) {
   return `<table class="tbl">${head}<tbody>${ROWS.map(hang).join("")}</tbody></table>`;
 }
 
-const spark = `<svg viewBox="0 0 360 96" width="100%" height="96" role="img" aria-label="Nhiệt độ vùng 5 trong 15 phút, có khoảng hở mất tín hiệu">
+const spark = `<svg viewBox="0 0 360 104" width="100%" height="104" role="img" aria-label="Nhiệt độ vùng 5 trong 15 phút, có khoảng hở mất tín hiệu">
   <line x1="0" y1="24" x2="360" y2="24" stroke="var(--alarm-p1)" stroke-width="1.5" stroke-dasharray="6 4"/>
   <text x="4" y="18" font-size="11" fill="var(--alarm-p1-ink)" font-family="var(--font-body)">HH 265 °C</text>
   <polyline fill="none" stroke="var(--text-1)" stroke-width="2" points="0,74 30,72 60,70 90,66 120,60 150,52 180,44"/>
   <polyline fill="none" stroke="var(--text-1)" stroke-width="2" points="222,34 250,30 280,27 310,22 340,20 360,18"/>
-  <rect x="182" y="10" width="38" height="76" fill="var(--stale-soft)" opacity="0.8"/>
-  <text x="184" y="52" font-size="11" fill="var(--stale-ink)" font-family="var(--font-body)">hở 5 s</text>
-  <text x="0" y="94" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">−15 ph</text><text x="320" y="94" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">nay</text>
+  <defs><pattern id="soc" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="var(--stale-soft)"/><rect width="3" height="8" fill="var(--stale)"/></pattern></defs>
+  <rect x="182" y="10" width="38" height="76" fill="url(#soc)"/>
+  <text x="184" y="98" font-size="11" fill="var(--stale-ink)" font-family="var(--font-body)">mất tín hiệu 5 s</text>
+  <text x="0" y="98" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">−15 ph</text><text x="330" y="98" font-size="11" fill="var(--text-3)" font-family="var(--font-body)">nay</text>
 </svg>`;
 
 const drawer = `<aside class="drawer" data-st="chi-tiet" aria-label="Chi tiết cảnh báo">
@@ -139,7 +140,7 @@ export function man4() {
       <span class="field"><span class="chk"></span> Hiện tạm ẩn</span>
       <span class="field grow">${ic("search").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')} Tìm mã, thông điệp, tài sản…</span>
     </div>
-    <div class="bulk" data-st="hon-hop"><b class="num">2</b> hàng đã chọn · <button class="btn sm primary" type="button">Ack hàng loạt</button><button class="btn sm" type="button">Tạm ẩn hàng loạt ▾</button><button class="btn sm quiet" type="button">Bỏ chọn</button></div>
+    <div class="bulk" data-st="hon-hop"><b class="num">3</b> hàng đã chọn · <button class="btn sm primary" type="button">Ack hàng loạt (chỉ P2–P4)</button><button class="btn sm" type="button">Tạm ẩn hàng loạt ▾</button><button class="btn sm quiet" type="button">Bỏ chọn</button></div>
     ${STATES.map((s) => `<div class="tbl-wrap" data-st="${s}">${bang(s)}</div>`).join("")}
   `;
   const hdr = header({

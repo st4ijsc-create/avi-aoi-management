@@ -2,7 +2,7 @@
 (function () {
   var app = document.querySelector(".app");
   var q = new URLSearchParams(location.search);
-  var KEYS = { state: "data-state", role: "data-role", density: "data-density", scope: "data-scope", rail: "data-rail" };
+  var KEYS = { state: "data-state", role: "data-role", density: "data-density", scope: "data-scope", rail: "data-rail", railtone: "data-rail-tone" };
   function apply() {
     var els = document.querySelectorAll("[data-st],[data-rl],[data-sc]");
     for (var i = 0; i < els.length; i++) {
