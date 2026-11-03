@@ -113,9 +113,14 @@ vi.mock("../interlock/interlockGate", () => ({
 
 // SCADA R1b-2b-2a A2(l) — WHERE the robot is is measured by tapMayChoRobot.a2l(.db).test.ts; here robot 7 is placed at a station whose
 // machines are 70 and 71 (the fake DB does not model robots / stations / machines).
+// d7 — `viTriGia.loi` turns the lookup into the resolver's own error result (what a DB failure gives).
+const viTriGia = vi.hoisted(() => ({ loi: false }));
 vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
-  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 700, lineId: 70, machineIds: [70, 71] }),
+  tapMayChoRobot: async (_d: unknown, robotId: number) =>
+    viTriGia.loi
+      ? { loai: "loi" as const, robotId, loi: "pool exhausted" }
+      : { loai: "tram" as const, robotId, stationId: 700, lineId: 70, machineIds: [70, 71] },
 }));
 
 // Nguồn đọc NỀN của facade an toàn (facade THẬT gọi nó). mode quyết định kết quả facade.
@@ -269,6 +274,7 @@ beforeEach(() => {
   ledger.onUpdate = null;
   interlock.calls.length = 0;
   interlock.blocked = false;
+  viTriGia.loi = false;
   plc.mode = "ok";
   fake.respond = healthy;
   process.env.ROBOT_CONTROL_ENABLED = "true";
@@ -512,6 +518,17 @@ describe("interlock robot: khoá đánh giá", () => {
     expect(interlock.calls).toEqual([{ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineIds: [70, 71], tagKeys: [], robotId: 7 }]);
     expect(interlock.calls[0]).not.toHaveProperty("machineId");
     expect(ROBOT_NO_OT_ADAPTER_ID).toBeLessThan(1);
+  });
+
+  it("A2(l) d7: placement lookup error ⇒ INTERLOCK_BLOCKED, the gate is not asked, the ledger text names the lookup error (no run), 0 bytes", async () => {
+    await connectDriver(2000);
+    viTriGia.loi = true;
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r).toMatchObject({ ok: false, status: "rejected", error: "INTERLOCK_BLOCKED" });
+    expect(interlock.calls).toEqual([]);
+    expect(ledger.rows[0]).toMatchObject({ status: "rejected" });
+    expect(ledger.rows[0].errorText).toBe("INTERLOCK_BLOCKED: robot 7 placement lookup error (pool exhausted) — fail-closed (no run)");
+    expect(allCmds(fake)).toEqual([]);
   });
 });
 

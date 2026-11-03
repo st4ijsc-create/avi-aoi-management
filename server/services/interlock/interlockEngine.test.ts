@@ -44,6 +44,9 @@ vi.mock("../../../drizzle/schema", () => ({
 const state: {
   /** m2 — the (machines ⋈ stations) row of the rule's machine; null = no row */
   viTriMay?: { stationId: number; lineId: number } | null;
+  /** i3 — per machine id (read from the query's WHERE): which machine the engine looked up decides the locator */
+  viTriTheoMay?: Record<number, { stationId: number; lineId: number }> | null;
+  mayDaTra?: number[];
   rules: any[];
   observationCount: number;
   insertedEvents: any[];
@@ -83,9 +86,13 @@ function fakeDb() {
 }
 
 function makeBuilder(t: string, cols: any): any {
-  const rows = () => resolveSelect(t, cols);
+  let cond: unknown;
+  const rows = () => resolveSelect(t, cols, cond);
   const builder: any = {
-    where: () => builder,
+    where: (c: unknown) => {
+      cond = c;
+      return builder;
+    },
     innerJoin: () => builder,
     orderBy: () => builder,
     limit: async () => rows(),
@@ -95,8 +102,21 @@ function makeBuilder(t: string, cols: any): any {
   return builder;
 }
 
-function resolveSelect(t: string, _cols: any): any[] {
+/** The value of `eq(machines.id, <n>)`: the schema columns are plain marker objects, so drizzle keeps the number as a raw query chunk. */
+function giaTriEq(cond: unknown): number | null {
+  const chunks = (cond as { queryChunks?: unknown[] } | undefined)?.queryChunks ?? [];
+  const n = chunks.filter((c): c is number => typeof c === "number");
+  return n.length === 1 ? n[0]! : null;
+}
+
+function resolveSelect(t: string, _cols: any, cond?: unknown): any[] {
   if (t === "interlock_rules") return state.rules.filter((r) => r.enabled === true);
+  if (t === "machines" && state.viTriTheoMay) {
+    const id = giaTriEq(cond);
+    if (id === null) throw new Error("test fixture: the machine id of the locator query could not be read");
+    state.mayDaTra?.push(id);
+    return state.viTriTheoMay[id] ? [state.viTriTheoMay[id]] : [];
+  }
   if (t === "machines") return state.viTriMay ? [state.viTriMay] : [];
   if (t === "process_results") return [{ c: state.observationCount, total: 10, fail: state.observationCount }];
   if (t === "spc_rule_violations") return [{ c: state.observationCount }];
@@ -160,6 +180,8 @@ function baseRule(over: Partial<any> = {}): any {
 beforeEach(() => {
   duyetHL.v = true;
   state.viTriMay = null;
+  state.viTriTheoMay = null;
+  state.mayDaTra = [];
   state.rules = [];
   state.observationCount = 0;
   state.insertedEvents = [];
@@ -346,6 +368,21 @@ describe("A2(l) (3) — the safety-audit row never stores a MACHINE id as the ro
     await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
     expect(auditSpy.mock.calls[0]![0]).toMatchObject({ robotId: null, lineId: 4, stationId: 41 });
     state.viTriMay = null;
+  });
+  it("i3 — the locator is read from the rule's TARGET machine, not its source machine; with no target, from the source machine", async () => {
+    auditSpy.mockClear();
+    state.observationCount = 5;
+    state.viTriTheoMay = { 5: { stationId: 51, lineId: 5 }, 6: { stationId: 61, lineId: 6 } };
+    await evaluateRule(baseRule({ action: "stop_line", machineId: 6, targetMachineId: 5, lineId: null, stationId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(state.mayDaTra).toEqual([5]);
+    expect(auditSpy.mock.calls[0]![0]).toMatchObject({ lineId: 5, stationId: 51 });
+    auditSpy.mockClear();
+    state.mayDaTra = [];
+    await evaluateRule(baseRule({ id: 3, action: "stop_line", machineId: 6, targetMachineId: null, lineId: null, stationId: null }));
+    await vi.waitFor(() => expect(auditSpy).toHaveBeenCalledTimes(1));
+    expect(state.mayDaTra).toEqual([6]);
+    expect(auditSpy.mock.calls[0]![0]).toMatchObject({ lineId: 6, stationId: 61 });
   });
   it("m2 — the rule's own line / station win; an unknown machine ⇒ no locator (never a guess)", async () => {
     auditSpy.mockClear();
