@@ -3915,9 +3915,11 @@ async function startServer() {
     rehydrateInterruptedRuns()
       .then((r) => {
         if (r.scanned > 0) {
+          // R1b-2b-2a A2(m2) fix round 1 (m-8) — a STOP compensation re-sent at boot ends its run 'failed' (as its step): counted on its own
+          const resent = (r.compensations ?? []).filter((c) => c.outcome === "sent").length;
           console.log(
-            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted} held(resumable), ` +
-              `${r.failed} failed. ids=${r.runIds.join(",")}`,
+            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted - resent} held(resumable), ` +
+              `${resent} STOP compensation(s) re-sent at boot, ${r.failed} failed. ids=${r.runIds.join(",")}`,
           );
         }
       })

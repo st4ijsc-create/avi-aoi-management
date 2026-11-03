@@ -164,6 +164,15 @@ _(Task 11)_
 
 ### VẬN HÀNH
 
+- (A2(m2), dieu-phoi C-3 — **rủi ro còn lại được chấp nhận**) **Trong vòng 5 phút sau khi khởi động lại, một bù trừ STOP đang bay có thể được gửi
+  lại, kể cả khi máy đã được khởi động tại chỗ.** Khi máy chủ sập lúc một run đang gửi bù trừ STOP ghim, lúc khởi động hệ thống gửi lại STOP đó
+  ĐÚNG MỘT LẦN nếu: còn trong cửa sổ D = 5 phút tính từ thời điểm ý định STOP (đồng hồ CSDL), thiết bị không thuộc edge, không đổi chủ, và
+  KHÔNG có lệnh nào khác tới thiết bị trong `command_log` sau đó. Một lần khởi động máy bằng HMI / bảng điều khiển tại chỗ KHÔNG đi qua
+  `command_log` nên kiểm tra này không thấy được. Cảnh báo URGENT "STOP re-sent at boot — check the machine state on site" báo mỗi lần gửi lại:
+  người vận hành phải kiểm tra trạng thái máy tại chỗ. Thiết bị kết nối lại muộn hơn 5 phút sau thời điểm ý định ⇒ không tự gửi (run giữ `held`
+  + URGENT, một người bấm Tiếp tục). Giả định MỘT phiên bản ứng dụng trên một CSDL (như toàn bộ FOE): hai phiên bản chạy song song có thể gửi
+  STOP hai lần.
+
 - (T6 fix 1 + T6b, dieu-phoi 2026-11-01) **Nguyên tắc: kết quả "không rõ" của STOP không bao giờ chờ đọc lại.** Lô ghi có ≥ 1 write "không rõ"
   (liên kết mất giữa lô `mat_lien_ket`, driver / thư viện tự hết hạn `qua_han_driver`, hoặc giá trị "không rõ" khác của driver plugin) ⇒ KHÔNG đọc
   lại cả lô, kể cả khi HMI ép đọc lại (`docLai: "bat_buoc"`) và với mọi lệnh, không chỉ STOP. Write đã acked của lô hiện `acked_unverified` với

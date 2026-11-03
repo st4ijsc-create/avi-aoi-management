@@ -30,7 +30,7 @@ import { getDb } from "../../../db/connection";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { withDeadline } from "../../ot/drivers/boundedClose";
 import { FOE_REJECT_CLAIM_CTX_KEY } from "./foeGateApproval";
-import { FOE_ACTION_TTL_MS, loadMachines, withResolvedAdapter } from "./foeRunStore";
+import { ABORT_ROW_PREFIX, FOE_ACTION_TTL_MS, loadMachines, withResolvedAdapter } from "./foeRunStore";
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind } from "./foeStepClass";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -110,6 +110,11 @@ export function phanLoaiBuTruBiNgat(
     return song.length ? { kind: "khongRo", lyDo: "definitionUnreadable", compIds: song } : { kind: "khong" };
   }
   const byId = new Map(rows.map((r) => [r.stepId, r] as const));
+  // fix round 1 (m-3) — a NOT-final row that names no step of the (head) definition: the workflow was redeployed with the step renamed during
+  // the outage ⇒ which compensation was in flight cannot be told from this definition ⇒ never 'failed' silently
+  const tenBuoc = new Set(allStepsOf(def.steps).map((s) => s.id));
+  const lac = rows.filter((r) => !cuoi.has(r.status) && !tenBuoc.has(r.stepId) && !r.stepId.startsWith(ABORT_ROW_PREFIX)).map((r) => r.stepId);
+  if (lac.length) return { kind: "khongRo", lyDo: "definitionChanged", compIds: lac };
   const dangDo = allStepsOf(def.steps).filter((s): s is WorkflowStep & { compensation: WorkflowStep } => {
     if (!s.compensation) return false;
     const c = byId.get(s.compensation.id);
@@ -199,6 +204,9 @@ export const LY_DO_KHONG_GUI = {
   guiLoi: "the dispatch was refused by a gate or failed at the device",
   khongXacNhan: "the re-send could not be confirmed (no answer within D, or an error)",
   daHuy: "the run was aborted or moved during the re-send",
+  // fix round 1
+  ketNoiChuaSan: "the device's connection was not up within the re-send window (D) after the restart",
+  loiGhiNhan: "the claim of the re-send could not be written (database error)",
 } as const;
 export type LyDoKhongGui = keyof typeof LY_DO_KHONG_GUI;
 
@@ -226,18 +234,95 @@ export function quyetDinhGuiLai(bc: BangChungGuiLai): { gui: true; conLaiMs: num
   return { gui: true, conLaiMs: bc.b2.conLaiMs };
 }
 
-/** Test seam: called at the start of each lookup stage ("b1" | "b2" | "b3"); a throw there is a lookup error. Effective only under vitest. */
-let dauDoChoTest: ((stage: "b1" | "b2" | "b3") => void) | null = null;
-export function _setBuTruBiNgatProbeForTests(fn: ((stage: "b1" | "b2" | "b3") => void) | null): void {
+
+/**
+ * Test seam: called at the start of each lookup stage ("b1" | "b2" | "b3") and by the engine right before its claim ("claim"); a throw there is a
+ * lookup / write error. Effective only under vitest.
+ */
+export type GiaiDoanDauDo = "b1" | "b2" | "b3" | "claim";
+let dauDoChoTest: ((stage: GiaiDoanDauDo) => void) | null = null;
+export function _setBuTruBiNgatProbeForTests(fn: ((stage: GiaiDoanDauDo) => void) | null): void {
   dauDoChoTest = fn;
 }
-function dauDo(stage: "b1" | "b2" | "b3"): void {
+export function dauDoBuTru(stage: GiaiDoanDauDo): void {
   if (dauDoChoTest && process.env.VITEST) dauDoChoTest(stage);
 }
 
-const rowsOf = (r: unknown): Array<Record<string, unknown>> => (Array.isArray(r) ? r : ((r as { rows?: unknown[] })?.rows ?? [])) as Array<Record<string, unknown>>;
+/**
+ * The rows of a `d.execute` result (postgres-js: the array itself; node-postgres: `.rows`). fix round 1 (m-4) — any other shape THROWS: an empty
+ * list would read as "no later command" (fail-open); a throw is a lookup error (⇒ not sent, held + URGENT).
+ */
+export function hangCuaKetQua(r: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(r)) return r as Array<Record<string, unknown>>;
+  const rows = (r as { rows?: unknown } | null)?.rows;
+  if (Array.isArray(rows)) return rows as Array<Record<string, unknown>>;
+  throw new TypeError("unexpected database result shape (not a row list)");
+}
 const soHoacNull = (v: unknown): number | null => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 const chuoiHoacNull = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+
+/**
+ * b2 — the window of ONE compensation, on the DB clock only (now() in SQL; the process clock is never read):
+ *   conLaiMs = LEAST(intent + D, the earliest expiry of this compensation's own authorisation rows) − now().
+ * fix round 1 (m-1) — both bounds are compared as INSTANTS (timestamptz), each column read in the zone it was written in:
+ *   • "createdAt" (`DEFAULT now()` into a naive column) is the SESSION zone's wall time ⇒ `::timestamptz` (session zone);
+ *   • "expiresAt" is written by drizzle from a JS Date as the UTC wall time ⇒ `AT TIME ZONE 'UTC'`.
+ * (Under `Etc/UTC` the two coincide; under any other session zone the old naive comparison was off by the zone offset.)
+ * Parked m-2 (document only): the cap is the OLDEST authorisation row of this compensation across every walk (min "expiresAt"), and the intent is
+ * the FIRST insert of its row — after a held, a Continue and a crash more than ~1 h later the run is held (fail-closed).
+ */
+export async function docCuaSoGuiLai(d: Db, runId: number, compId: string) {
+  const hanMs = hanGuiLaiMs();
+  const [t] = hangCuaKetQua(
+    await d.execute(sql`
+      SELECT c."createdAt"::text AS "intentAt",
+             now()::text AS "dbNow",
+             r."createdAt"::text AS "runCreatedAt",
+             (a."authExpiresAt" AT TIME ZONE 'UTC')::text AS "authExpiresAt",
+             FLOOR(EXTRACT(EPOCH FROM (now() - c."createdAt"::timestamptz)) * 1000)::bigint AS "tuoiMs",
+             FLOOR(EXTRACT(EPOCH FROM (LEAST(c."createdAt"::timestamptz + (${hanMs}::float8 * interval '1 millisecond'), a."authExpiresAt" AT TIME ZONE 'UTC') - now())) * 1000)::bigint AS "conLaiMs",
+             FLOOR(EXTRACT(EPOCH FROM now()) * 1000)::bigint AS "dbNowMs"
+        FROM public."orchestration_run_steps" c
+        JOIN public."orchestration_runs" r ON r."id" = c."runId"
+        LEFT JOIN LATERAL (
+          SELECT min(p."expiresAt") AS "authExpiresAt" FROM public."ai_pending_actions" p WHERE p."id" LIKE ${`foe-run${runId}-%`} AND p."summary" = ${`FOE orchestration: step ${compId}`}
+        ) a ON true
+       WHERE c."runId" = ${runId} AND c."stepId" = ${compId}`),
+  );
+  return {
+    intentAt: chuoiHoacNull(t?.intentAt),
+    dbNow: chuoiHoacNull(t?.dbNow),
+    hanMs,
+    authExpiresAt: chuoiHoacNull(t?.authExpiresAt),
+    tuoiMs: soHoacNull(t?.tuoiMs),
+    conLaiMs: soHoacNull(t?.conLaiMs),
+    runCreatedAt: chuoiHoacNull(t?.runCreatedAt),
+    dbNowMs: soHoacNull(t?.dbNowMs),
+  };
+}
+
+/**
+ * b3 "another command reached that device after the interruption": every command_log row of that adapter OR that machine since the STOP intent
+ * (DB clock, `>=`), any status, except THIS run's own engine authorisations (`actionId LIKE 'foe-run<R>-%'` — the `-` after the id keeps run 1 from
+ * hiding run 10's rows; hashed long ids keep the prefix).
+ * ★ ACCEPTED RESIDUAL RISK (coordinator C-3, L-7 register): a start at the machine's own HMI / panel never reaches command_log, so this check cannot
+ *   see it — within D (5 min) after a restart an in-flight STOP compensation may be re-sent even though the machine was started locally. The
+ *   re-send is a STOP (energy-reducing) and its URGENT says "check the machine state on site".
+ * ★ SINGLE-INSTANCE ASSUMPTION (I-5b, parked): the exclusion of the run's OWN rows also hides a LIVE walk of the same run in ANOTHER app instance
+ *   (FOE's liveRuns registry is per process; rehydrate treats every non-edge 'compensating' run as interrupted). With two instances on one DB, an
+ *   instance booting while another is live-sending this compensation may send a second STOP. FOE as a whole assumes ONE app instance per DB.
+ */
+export async function docLenhSau(d: Db, x: { runId: number; compId: string; adapterId: number; machineId: number }) {
+  const sau = hangCuaKetQua(
+    await d.execute(sql`
+      SELECT l."id", l."status"::text AS "status", l."actionId" FROM public."command_log" l
+       WHERE (l."adapterId" = ${x.adapterId} OR l."machineId" = ${x.machineId})
+         AND l."createdAt" >= (SELECT c."createdAt" FROM public."orchestration_run_steps" c WHERE c."runId" = ${x.runId} AND c."stepId" = ${x.compId})
+         AND (l."actionId" IS NULL OR l."actionId" NOT LIKE ${`foe-run${x.runId}-%`})
+       ORDER BY l."id" LIMIT 20`),
+  );
+  return sau.map((l) => ({ id: Number(l.id), status: String(l.status), actionId: chuoiHoacNull(l.actionId) }));
+}
 
 /**
  * Collect the facts (b1–b3) of ONE interrupted compensation and decide. Every read is the DB's; every time comparison is in SQL on `now()`.
@@ -270,7 +355,7 @@ export async function xetGuiLaiBuTruBiNgat(
   const xong = () => ({ bangChung: bc, quyetDinh: quyetDinhGuiLai(bc) });
   try {
     // ── b1: a PINNED STOP, by the A2(h) shared predicate (gate (1)'s own function) ──
-    dauDo("b1");
+    dauDoBuTru("b1");
     const step = x.def.steps.find((s) => s.id === x.stepId);
     const comp = step?.compensation;
     if (!comp || comp.id !== x.compId || comp.type !== "command") {
@@ -297,61 +382,25 @@ export async function xetGuiLaiBuTruBiNgat(
     bc.b1.loiDocGhim = ghim.loiDocGhim;
     if (ghim.loiDocGhim !== null || !ghim.pinnedStop) return xong();
 
-    // ── b2: the window, on the DB clock only (now() in SQL; the process clock is never read) ──
-    dauDo("b2");
-    const hanMs = hanGuiLaiMs();
-    const tienTo = `foe-run${x.runId}-%`;
-    const tomTat = `FOE orchestration: step ${x.compId}`;
-    const [t] = rowsOf(
-      await d.execute(sql`
-        SELECT c."createdAt"::text AS "intentAt",
-               now()::text AS "dbNow",
-               r."createdAt"::text AS "runCreatedAt",
-               a."authExpiresAt"::text AS "authExpiresAt",
-               FLOOR(EXTRACT(EPOCH FROM (now() - c."createdAt"::timestamptz)) * 1000)::bigint AS "tuoiMs",
-               FLOOR(EXTRACT(EPOCH FROM (LEAST(c."createdAt" + (${hanMs}::float8 * interval '1 millisecond'), a."authExpiresAt")::timestamptz - now())) * 1000)::bigint AS "conLaiMs"
-          FROM public."orchestration_run_steps" c
-          JOIN public."orchestration_runs" r ON r."id" = c."runId"
-          LEFT JOIN LATERAL (
-            SELECT min(p."expiresAt") AS "authExpiresAt" FROM public."ai_pending_actions" p WHERE p."id" LIKE ${tienTo} AND p."summary" = ${tomTat}
-          ) a ON true
-         WHERE c."runId" = ${x.runId} AND c."stepId" = ${x.compId}`),
-    );
-    bc.b2 = {
-      intentAt: chuoiHoacNull(t?.intentAt),
-      dbNow: chuoiHoacNull(t?.dbNow),
-      hanMs,
-      authExpiresAt: chuoiHoacNull(t?.authExpiresAt),
-      tuoiMs: soHoacNull(t?.tuoiMs),
-      conLaiMs: soHoacNull(t?.conLaiMs),
-      runCreatedAt: chuoiHoacNull(t?.runCreatedAt),
-    };
+    // ── b2: the window, on the DB clock only ──
+    dauDoBuTru("b2");
+    const { dbNowMs: _bo, ...cuaSo } = await docCuaSoGuiLai(d, x.runId, x.compId);
+    bc.b2 = cuaSo;
     if (bc.b2.intentAt === null || bc.b2.runCreatedAt === null) return xong();
 
-    // ── b3: not edge-owned now; owner epoch unchanged since the run; no other command to that device since the intent ──
-    dauDo("b3");
+    // ── b3: not edge-owned now; owner epoch unchanged since the run; no other command to that device since the intent (see docLenhSau:
+    //    the ACCEPTED local-HMI residual risk and the single-instance assumption) ──
+    dauDoBuTru("b3");
     const adapterId = cmd.adapterId;
-    const [a] = rowsOf(await d.execute(sql`SELECT a."edgeNodeId" FROM public."device_adapters" a WHERE a."id" = ${adapterId}`));
-    const [o] = rowsOf(
+    const [a] = hangCuaKetQua(await d.execute(sql`SELECT a."edgeNodeId" FROM public."device_adapters" a WHERE a."id" = ${adapterId}`));
+    const [o] = hangCuaKetQua(
       await d.execute(sql`
         SELECT count(*)::int AS n FROM public."device_owner_changes" o
          WHERE o."deviceKind" = 'adapter' AND o."deviceId" = ${adapterId}
            AND o."changedAt" >= (SELECT r."createdAt"::timestamptz FROM public."orchestration_runs" r WHERE r."id" = ${x.runId})`),
     );
-    const sau = rowsOf(
-      await d.execute(sql`
-        SELECT l."id", l."status"::text AS "status", l."actionId" FROM public."command_log" l
-         WHERE (l."adapterId" = ${adapterId} OR l."machineId" = ${comp.machineId})
-           AND l."createdAt" >= (SELECT c."createdAt" FROM public."orchestration_run_steps" c WHERE c."runId" = ${x.runId} AND c."stepId" = ${x.compId})
-           AND (l."actionId" IS NULL OR l."actionId" NOT LIKE ${tienTo})
-         ORDER BY l."id" LIMIT 20`),
-    );
-    bc.b3 = {
-      adapterTonTai: a !== undefined,
-      edgeNodeId: soHoacNull(a?.edgeNodeId),
-      doiChuSoHuu: Number(o?.n ?? NaN),
-      lenhSau: sau.map((l) => ({ id: Number(l.id), status: String(l.status), actionId: chuoiHoacNull(l.actionId) })),
-    };
+    const lenhSau = await docLenhSau(d, { runId: x.runId, compId: x.compId, adapterId, machineId: comp.machineId });
+    bc.b3 = { adapterTonTai: a !== undefined, edgeNodeId: soHoacNull(a?.edgeNodeId), doiChuSoHuu: Number(o?.n ?? NaN), lenhSau };
     if (!Number.isFinite(bc.b3.doiChuSoHuu)) bc.loi = "owner-change count unreadable"; // ⇒ not sent (fail-closed)
     return xong();
   } catch (err) {
@@ -359,3 +408,46 @@ export async function xetGuiLaiBuTruBiNgat(
     return xong();
   }
 }
+
+// ── fix round 1 (I-1) — readiness of the adapter's session before the hand-over ──────────────────────────────────────────────────────────────
+
+/** The poll step of choKetNoiSanSang (in-memory getters; the DB is read only once the running connection exists). */
+export const CHO_KET_NOI_BUOC_MS = 500;
+
+/**
+ * fix round 1 (I-1) — on a real boot rehydrate runs BEFORE the OT drivers start (index.ts: the FOE boot hook, then listenThenStartOt): a re-send
+ * right away meets ADAPTER_OFFLINE / a stale connection and is NOT counted as a pinned STOP by the dispatcher. So the boot first waits until the
+ * adapter's running session is the one its row names — the dispatcher's OWN check (`runningConnectionMatchesAdapterRow`, behind a cheap
+ * in-memory `getActiveDriver` + fingerprint test) — woken early by `onOtGatewayStarted`, re-checked every CHO_KET_NOI_BUOC_MS, never longer than
+ * `hanMs` (what is left of D). Not ready in time ⇒ { sanSang: false } (⇒ held + URGENT, nothing sent, the single try NOT consumed).
+ * ⇒ A boot whose adapters connect more than D (5 min) after the STOP intent never auto-sends it (held + URGENT, a person continues it).
+ */
+export async function choKetNoiSanSang(d: Db, adapterId: number, hanMs: number): Promise<{ sanSang: boolean; choMs: number }> {
+  const t0 = performance.now();
+  const om = await import("../../ot/otManager");
+  const { runningConnectionMatchesAdapterRow } = await import("../../ot/commandDispatcher");
+  let danhThuc: (() => void) | null = null;
+  const boNghe = om.onOtGatewayStarted(() => danhThuc?.());
+  try {
+    for (;;) {
+      if (om.getActiveDriver(adapterId) && om.getActiveConnectionFingerprint(adapterId) && (await runningConnectionMatchesAdapterRow(d, adapterId))) {
+        return { sanSang: true, choMs: Math.round(performance.now() - t0) };
+      }
+      const con = hanMs - (performance.now() - t0);
+      if (con <= 0) return { sanSang: false, choMs: Math.round(performance.now() - t0) };
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, Math.min(CHO_KET_NOI_BUOC_MS, con));
+        danhThuc = () => {
+          clearTimeout(t);
+          r();
+        };
+      });
+      danhThuc = null;
+    }
+  } finally {
+    boNghe();
+  }
+}
+
+/** How long past its window a claimed attempt's lease lasts (its guarded outcome write lands inside it). */
+export const BIEN_LUOT_GUI_MS = 30_000;
