@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Mockup màn 2 + 3 (scada-ui) — KHÔNG phải sản phẩm</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="man-2-3.css">
+</head>
+<body>
+<div class="ctl" id="ctl"></div>
+<div class="stage"><div class="canvas" id="cv"></div></div>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <pattern id="hatchg" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#eef0f2"/><line x1="0" y1="0" x2="0" y2="8" stroke="#727e89" stroke-width="1.5" opacity=".5"/></pattern>
+  <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#e6def2"/><line x1="0" y1="0" x2="0" y2="8" stroke="#6b4aa0" stroke-width="2" opacity=".45"/></pattern>
+</defs></svg>
+<script>
+/* Số liệu GIẢ — mỗi giá trị mang CHẤT LƯỢNG + TUỔI (không chỉ số). Khoá i18n dự kiến ghi trong data-i18n ở các chuỗi chính. */
+const Q = new URLSearchParams(location.search);
+const MAN = Q.get("man") || "2";
+const STATES = {
+  "2": [["binh-thuong","Bình thường"],["2-line-bat-thuong","2 line bất thường"],["mo-phong","1 line MÔ PHỎNG"]],
+  "3": [["chay","Chạy"],["dung-cho","Đã gửi DỪNG — chờ xác nhận"],["da-dung","Đã dừng (đọc lại khớp)"],["du-lieu-cu","Dữ liệu cũ"],["local","LOCAL (ẩn ghi)"],["lenh-ghi","Hộp xác nhận lệnh"],["tho-ca","Ngăn Thợ Cả"]]
+};
+let state = Q.get("state") || STATES[MAN][0][0];
+let W = Q.get("w") || "1280";
+document.body.classList.toggle("bare", Q.has("bare"));
+
+const gl = (p, sm) => `<i class="gl p${p}${sm?" sm":""}" aria-hidden="true">${["","■","▲","▼","●"][p].replace(/./,m=>({"■":"1","▲":"2","▼":"3","●":"4"}[m]))}</i>`;
+const PR = {1:"Nghiêm trọng",2:"Cao",3:"Trung bình",4:"Thông tin"};
+const prio = p => `<span class="prio p${p}">${gl(p)}P${p} ${PR[p]}</span>`;
+const ICON = {
+  home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  mon:'<rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/>',
+  prod:'<path d="M3 20V9l6 4V9l6 4V5h6v15z"/>',
+  data:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  eng:'<path d="M14 6l4-3 3 3-3 4M3 21l9-9M12 12l-2-2 4-4 4 4-4 4z"/>',
+  ai:'<circle cx="12" cy="12" r="8"/><path d="M9 10h.01M15 10h.01M8.5 14.5c2 2 5 2 7 0"/>',
+  adm:'<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>'
+};
+function shell(active, crumbs, opts) {
+  opts = opts || {};
+  const items = [["home","Trang chủ"],["mon","Giám sát"],["prod","Sản xuất & Chất lượng"],["data","Dữ liệu chủ"],["eng","Kỹ thuật"],["ai","Thợ Cả"],["adm","Phân tích & Quản trị"]];
+  const rail = `<nav class="rail" aria-label="Điều hướng"><div class="brand">◆<span>&nbsp;SYNAPSE</span></div>` +
+    items.map(([k,t],i)=>`<a class="${i===active?"on":""}" href="#"><svg viewBox="0 0 24 24">${ICON[k]}</svg><span>${t}</span></a>`).join("") +
+    `<div class="sp"></div><a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg><span>Cài đặt · Giao diện</span></a></nav>`;
+  const fresh = opts.stale ? `<span class="pill stale" data-i18n="shell.fresh.stale">Dữ liệu cũ · ${opts.stale}</span>`
+    : `<span class="pill push" data-i18n="shell.fresh.push">Đẩy · 0,4 s</span>`;
+  const real = opts.sim ? `<span class="pill real" data-i18n="shell.scope.real">THẬT</span><span class="pill sim">+ 1 line MÔ PHỎNG</span>` : `<span class="pill real" data-i18n="shell.scope.real">THẬT</span>`;
+  const al = opts.p1 ? `<span class="chip-alarm on">${gl(1)} 1 · ${gl(2,1)} 2 chưa ack</span>` : `<span class="chip-alarm">${gl(3,1)} 0 chưa ack</span>`;
+  const top = `<header class="top"><div class="crumb">${crumbs}</div><span class="sp"></span>${al}${fresh}${real}<span class="kbd">⌘K</span><span class="user"><i>H</i>Hà · Giám sát ca</span></header>`;
+  return rail + top;
+}
+
+/* ============ MÀN 2 ============ */
+const FAC = [
+  ["Xưởng A — SMT", [["L1","Line 1 · SMT-01"],["L2","Line 2 · SMT-02"],["L3","Line 3 · SMT-03"],["L4","Line 4 · SMT-04"]]],
+  ["Xưởng B — Lắp ráp", [["L5","Line 5 · Lắp ráp"],["L6","Line 6 · Vặn vít"],["L7","Line 7 · Đóng gói"],["L8","Line 8 · Kiểm tra"]]]
+];
+const LD = { // oee, yield, sl, tt
+  L1:["Chạy","84,1","99,2"],L2:["Chạy","81,7","98,9"],L3:["Chạy","86,0","99,4"],L4:["Chạy","79,3","98,6"],
+  L5:["Chạy","83,5","99,0"],L6:["Chạy","80,2","98,8"],L7:["Chạy","88,4","99,6"],L8:["Chạy","85,9","99,1"]
+};
+function lineCard(id, name, st) {
+  const [tt,oee,yl] = LD[id];
+  let cls = "line", extra = "", status = tt;
+  const vals = (o,y)=>`<div class="vals"><div>OEE<b>${o}<small> %</small></b></div><div>Yield<b>${y}<small> %</small></b></div><div>Tuổi<b>${id==="L6"&&st==="2-line-bat-thuong"?"41 s":"1 s"}</b></div></div>`;
+  if (st==="2-line-bat-thuong" && id==="L3") {
+    cls += " ab p1"; status = `${prio(1)}<div style="margin-top:3px">Dừng sự cố · tuổi 1 s · tốt</div>`;
+    return `<div class="${cls}"><div class="n"><span>${name}</span><span class="num">1 cảnh báo</span></div><div class="st">${status}</div><div class="vals"><div>OEE<b>0,0<small> %</small></b></div><div>Yield<b>97,1<small> %</small></b></div></div></div>`;
+  }
+  if (st==="2-line-bat-thuong" && id==="L6") {
+    cls += " stale";
+    return `<div class="${cls}"><div class="n"><span>${name}</span><span class="num">có P2</span></div><div class="st">◆ Dữ liệu cũ 41 s — không tin được</div><div class="vals"><div>OEE<b>80,2<small> %</small></b></div><div>Yield<b>98,8<small> %</small></b></div><div>Tuổi<b>41 s</b></div></div></div>`;
+  }
+  if (st==="mo-phong" && id==="L4") {
+    return `<div class="line sim"><div class="n"><span>${name}</span><span class="pill sim">MÔ PHỎNG</span></div><div class="simbar">MÔ PHỎNG · không tính vào OEE nhà máy</div><div class="vals"><div>OEE<b>92,0<small> %</small></b></div><div>Yield<b>100,0<small> %</small></b></div><div>Tuổi<b>—</b></div></div></div>`;
+  }
+  return `<div class="${cls}"><div class="n"><span>${name}</span><span class="num muted">0 cảnh báo</span></div><div class="st">${status} · tuổi 1 s · tốt</div>${vals(oee,yl)}</div>`;
+}
+function man2(st) {
+  const sim = st==="mo-phong", ab = st==="2-line-bat-thuong";
+  const kp = [["OEE ca","83,2","%","tốt · 1 s"],["Yield ca","99,0","%","tốt · 1 s"],["Sản lượng ca","18 420","tấm","tốt · 1 s"],["Dừng máy ca","27","phút","tốt · 1 s"]];
+  if (sim) kp[0]=["OEE ca","83,0","%","tốt · 1 s · không gồm line mô phỏng"];
+  if (ab) { kp[0]=["OEE ca","73,6","%","tốt · 1 s · có 1 line dữ liệu cũ"]; kp[3]=["Dừng máy ca","94","phút","tốt · 1 s"]; }
+  const kpis = kp.map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v num">${k[1]}<small>${k[2]}</small></div><div class="m">${k[3]}</div></div>`).join("");
+  const fac = FAC.map(([t,ls])=>`<div class="fac"><h3>${t}<em>${ls.length} line</em></h3><div class="lines">${ls.map(([i,n])=>lineCard(i,n,st)).join("")}</div></div>`).join("");
+  let rows;
+  if (st==="binh-thuong") rows = [[3,"Nhiệt lò reflow lệch nhẹ khỏi tâm","SMT-03","09:41","đã ack"],[3,"Vòng tuần hoàn khí sắp đến hạn bảo trì","SMT-02","08:15","đã ack"],[4,"Cập nhật firmware có sẵn","AOI-04","07:02","đã ack"]];
+  else if (ab) rows = [[1,"Dừng sự cố — cảm biến an toàn cửa mở","SMT-03","14:31","chưa ack"],[2,"Áp khí cấp giảm thấp","SCR-06","14:20","dữ liệu cũ"],[2,"Tốc độ băng tải vượt dải","CNV-02","14:12","đã ack"],[3,"Nhiệt lò reflow lệch nhẹ","SMT-03","09:41","đã ack"],[4,"Cập nhật firmware có sẵn","AOI-04","07:02","đã ack"]];
+  else rows = [[3,"Nhiệt lò reflow lệch nhẹ khỏi tâm","SMT-03","09:41","đã ack"],[3,"Vòng tuần hoàn khí sắp đến hạn bảo trì","SMT-02","08:15","đã ack"],[4,"Cập nhật firmware có sẵn","AOI-04","07:02","đã ack"]];
+  const al = rows.map(r=>{
+    const stale = r[4]==="dữ liệu cũ";
+    const pc = stale ? `<span class="prio" style="color:var(--stale)">◆ cũ</span>` : `<span class="prio p${r[0]}">${gl(r[0])}P${r[0]}</span>`;
+    const ak = r[4]==="chưa ack"?'<span class="ack un">chưa ack</span>':stale?'<span class="ack" style="border-color:var(--stale);color:var(--stale);font-weight:700">dữ liệu cũ</span>':'<span class="ack">đã ack</span>';
+    return `<tr class="${stale?"stalerow":""}"><td class="pr">${pc}</td><td class="tx">${r[1]}<div class="sub"><span class="num">${r[2]}</span> · ${stale?"P"+r[0]+" · ":PR[r[0]]+" · "}<span class="num">${r[3]}</span></div></td><td style="text-align:right">${ak}</td></tr>`;
+  }).join("");
+  const ev = (ab?[["14:31:07",1,"SMT-03 dừng sự cố — cửa an toàn mở"],["14:20:40",2,"SCR-06 áp khí thấp (mất dữ liệu sau 14:20:51)"],["14:12:03",2,"CNV-02 tốc độ vượt dải"],["13:58:22",4,"Ca 2 bàn giao: 3 việc mở"],["13:40:10",3,"Recipe SMT-01 đổi bản v7 → v8 (đã duyệt)"]]
+    :sim?[["14:33:00",4,"Line 4 chuyển chế độ MÔ PHỎNG (kỹ sư Minh)"],["14:12:03",4,"Ca 2 bàn giao: 1 việc mở"],["13:40:10",3,"Recipe SMT-01 đổi bản v7 → v8 (đã duyệt)"],["09:41:00",3,"SMT-03 nhiệt lò lệch nhẹ"]]
+    :[["14:12:03",4,"Ca 2 bàn giao: 1 việc mở"],["13:40:10",3,"Recipe SMT-01 đổi bản v7 → v8 (đã duyệt)"],["09:41:00",3,"SMT-03 nhiệt lò lệch nhẹ"],["07:02:15",4,"AOI-04 có firmware mới"],["06:00:00",4,"Bắt đầu ca 2"]])
+    .map(e=>`<li><time>${e[0]}</time>${gl(e[1],1)}<span>${e[2]}</span></li>`).join("");
+  const banner = sim ? `<div class="banner sim" role="status"><span>◈ MÔ PHỎNG</span><span class="ds-small" style="color:var(--sim-ink);font-weight:400">Line 4 đang chạy số liệu giả lập — không tính vào OEE/yield nhà máy, không gửi lệnh tới máy thật.</span></div>`
+    : ab ? `<div class="banner stale" role="status"><span>◆ 1 line dữ liệu cũ</span><span class="ds-small" style="font-weight:400">Line 6: không nhận mẫu 41 s — giá trị bị gạch, cảnh báo của line này không còn đáng tin cho tới khi có mẫu mới.</span></div>` : "";
+  const head = `<div class="pagehead"><div class="grow"><h1 class="ds-h1" data-i18n="vanHanh.title">Phòng vận hành</h1><div class="sub">Nhà máy Bình Dương · Ca 2 (14:00–22:00) · làm mới 0,4 s</div></div><div class="act"><div class="seg" role="group" aria-label="Bộ lọc vai"><span class="on">Tất cả</span><span>Giám sát</span><span>Kỹ thuật</span></div><button class="btn">Bàn giao ca</button></div></div>`;
+  const body = `<div class="body" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1.15fr);align-content:start"><div class="l" style="min-width:0"><div class="kpis">${kpis}</div>${fac}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0"><div class="card"><h2>5 cảnh báo nặng nhất <small>sắp theo ưu tiên, rồi tuổi</small></h2><table class="tbl alr"><tbody>${al}</tbody></table></div>
+    <div class="card"><h2>Dòng sự kiện <small>mới nhất ở trên</small></h2><ul class="ev">${ev}</ul></div></div></div>`;
+  return shell(1, `<span>Nhà máy Bình Dương</span> › <b>Phòng vận hành</b>`, {p1:ab, stale: ab?"1 line":null, sim}) + `<main class="content">${head}${banner}${body}</main>`;
+}
+
+/* ============ MÀN 3 ============ */
+const PM = ["Aborted","Stopped","Idle","Execute","Held","Suspended","Complete"];
+function spark(kind) {
+  // 60 s, mẫu mỗi 2 s = 30 điểm; null = khoảng hở KHÔNG nối
+  const pts = [], base = 1.2;
+  for (let i=0;i<30;i++) pts.push(+(base + .06*Math.sin(i/2.3) + (i%5===0?.03:0)).toFixed(3));
+  if (kind==="gap") { pts[12]=pts[13]=pts[14]=pts[15]=null; }
+  if (kind==="stale") { for (let i=20;i<30;i++) pts[i]=null; }
+  if (kind==="stopped") { for (let i=22;i<30;i++) pts[i]=0.0; }
+  const W2=560,H=96,x=i=>8+i*(W2-16)/29,lo=kind==="stopped"?0:1.0,hi=kind==="stopped"?1.5:1.4,y=v=>H-10-((v-lo)/(hi-lo))*(H-26);
+  let d="",seg=false;
+  pts.forEach((v,i)=>{ if(v===null){seg=false;return;} d+=(seg?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" "; seg=true; });
+  let gaps="";
+  pts.forEach((v,i)=>{ if(v===null && (i===0||pts[i-1]!==null)){ let j=i; while(j<30&&pts[j]===null)j++; gaps+=`<rect class="gap ${kind==='stale'?'':'g'}" x="${x(i)-3}" y="4" width="${x(Math.min(j,29))-x(i)+6}" height="${H-8}" opacity=".9"/>`; } });
+  return `<svg class="spark ${kind==="stale"?"stale":""}" viewBox="0 0 ${W2} ${H}" preserveAspectRatio="none" aria-label="Mô-men 60 giây gần nhất"><line class="grid" x1="0" x2="${W2}" y1="${H/2}" y2="${H/2}"/>${gaps}<path class="ln" d="${d}"/></svg>`;
+}
+function cell(l, v, u, k, age) {
+  if (k==="nosig") return `<div class="cell nosig"><div class="l">${l}</div><div class="v">Không có tín hiệu</div><div class="age">chưa có mẫu · —</div></div>`;
+  const q = {good:"tốt",unc:"nghi ngờ",stale:"CŨ"}[k];
+  return `<div class="cell ${k==="good"?"":k}"><div class="l">${l}</div><div class="v num">${v}<small>${u}</small></div><div class="age">${q} · ${age}</div></div>`;
+}
+function man3(st) {
+  const stale = st==="du-lieu-cu", stopped = st==="da-dung", waiting = st==="dung-cho", local = st==="local", dlg = st==="lenh-ghi", drawer = st==="tho-ca";
+  const cur = stopped?"Stopped":stale?"?":"Execute";
+  const pm = PM.map(p=>{
+    if (stale) return p==="Execute" ? `<span class="cur unk">Execute? — không rõ</span>` : `<span>${p}</span>`;
+    if (p===cur) return `<span class="cur ${p==="Execute"?"exe":"stp"}">${p==="Execute"?"▶ ":"■ "}${p}${p==="Execute"?" · Đang chạy":" · Đã dừng"}</span>`;
+    return `<span>${p}</span>`;
+  }).join("");
+  const pmNote = stopped ? "Đọc lại khớp lúc 14:32:08 (PackML Stopped xác nhận từ máy)" : waiting ? "Chưa xác nhận dừng — vẫn hiện trạng thái cuối nhận được (Execute, 1 s trước)" : stale ? "Trạng thái PackML không rõ — mẫu cuối cách đây 42 s" : "Xác nhận từ máy · 1 s trước";
+  const a = stale ? "42 s" : "1 s", k = stale ? "stale" : "good";
+  const spd = stopped ? ["0","good"] : ["1 480",k];
+  const cells = [
+    cell("Mô-men siết", stopped?"0,00":"1,21","N·m",stale?"stale":"good",a),
+    cell("Tốc độ trục", spd[0],"vòng/phút",spd[1],a),
+    cell("Số vít đã siết", "1 842","vít",stale?"stale":"good",stale?"42 s":"1 s"),
+    cell("Chu kỳ", stopped?"—":"3,4","s",stale?"stale":stopped?"unc":"good",stale?"42 s":"2 s"),
+    cell("Nhiệt độ đầu bắt", "41,8","°C",stale?"stale":"unc",stale?"42 s":"nghi ngờ"==="x"?"":"6 s"),
+    cell("Áp khí cấp", "—","bar","nosig","")
+  ].join("");
+  const sp = spark(stale?"stale":stopped?"stopped":"gap");
+  const stopState = stopped ? 3 : waiting ? 2 : 0;
+  const s3 = `<div class="stop3"><div class="${stopState>=1?"done":""}"><b>1 · Đã gửi</b>${stopState>=1?"14:32:05":"—"}</div><div class="${stopState===2?"now":stopState>=3?"done":""}"><b>2 · Máy nhận</b>${waiting?"chờ… 3 s":stopped?"14:32:06":"—"}</div><div class="${stopState===3?"done":""}"><b>3 · Đọc lại khớp</b>${stopped?"14:32:08 · Stopped":"—"}</div></div>`;
+  const stopBtn = `<div class="stop-portal"><button class="stopbtn ${stopped?"done":waiting?"sent":stale?"stalecase":""}" aria-label="DỪNG MÁY">${stopped?"■ ĐÃ DỪNG":waiting?"■ DỪNG MÁY":"■ DỪNG MÁY"}<small>${stopped?"đọc lại khớp 14:32:08":waiting?"đã gửi 3 s — bấm lại để gửi lại":stale?"vẫn gửi được dù dữ liệu cũ":"luôn hiện · 1 bước"}</small></button></div>`;
+  const real = `<span class="pill real">THẬT</span>`;
+  const rl = local ? `<span class="pill local" title="Máy ở LOCAL">LOCAL</span>` : `<span class="pill remote">REMOTE</span>`;
+  const pmBadge = stale ? `<span class="pill stale">PackML không rõ</span>` : stopped ? `<span class="pill" style="border:2px solid var(--packml-stopped);font-weight:700">■ Stopped</span>` : `<span class="pill" style="border:2px solid var(--text-1);font-weight:700">▶ Execute</span>`;
+  const head = `<div class="pagehead"><div class="grow"><div class="ds-small" style="margin-bottom:2px">Nhà máy Bình Dương › Xưởng B › Line 6 › <b>SCR-06</b></div><h1 class="ds-h1">Máy vặn vít SCR-06</h1><div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${pmBadge}${rl}${real}<span class="num ds-small">modbus · ADP-L6-SCR · poll 2 s</span></div></div><div class="act" style="margin-right:232px"><button class="btn">Ngăn Thợ Cả</button></div></div>`;
+  const tabs = ["Tổng quan","Tag","Cảnh báo","Recipe","Kết quả","Lịch sử","Thợ Cả"].map((t,i)=>`<a class="${i===0?"on":""}" href="#">${t}${t==="Cảnh báo"&&stale?'<i style="background:var(--stale)">1</i>':""}</a>`).join("");
+  const banner = stale ? `<div class="banner stale" role="status" style="margin-top:8px"><span>◆ Dữ liệu cũ 42 s</span><span class="ds-small" style="font-weight:400">Giá trị bên dưới có thể không còn đúng — không dùng để ra quyết định. Nút DỪNG MÁY vẫn gửi được.</span></div>` : local ? "" : "";
+  const noWrite = waiting||stopped||stale;
+  const writeP = local
+    ? `<div class="notice"><b>Máy đang ở LOCAL</b>Ghi từ xa bị ẩn — thay đổi tham số làm tại tủ điện. Vẫn đọc được, vẫn có DỪNG MÁY.</div>`
+    : `<div class="write"><label>Đặt mô-men siết (SP) · dải 0,50–2,50 · bước 0,05</label><div class="row"><div class="inp">1,35<small>N·m</small></div><button class="btn primary" ${noWrite?"disabled":""}>Đổi…</button></div><div class="cond">${stale?`<b>Không cho phép:</b> dữ liệu cũ 42 s — không xác minh được giá trị hiện tại`:waiting||stopped?`<b>Không cho phép:</b> máy đang dừng / chờ dừng`:`<b>Được phép</b> · <span class="lvl l4">▲ Mức 4</span> cần mã TOTP · 1,21 → 1,35 trong dải`}</div></div>`;
+  const cmds = [["14:32:05","DỪNG MÁY (gửi)","đã gửi"],["14:10:42","SP mô-men 1,20 → 1,21","khớp"],["13:58:11","Recipe v7 → v8","khớp"]];
+  if (!waiting && !stopped) cmds.shift();
+  const cm = cmds.map(c=>`<li><time>${c[0]}</time><span>${c[1]}</span><span class="ack">${c[2]}</span></li>`).join("");
+  const body = `<div class="body m3"><div class="l"><div class="card"><h2>Trạng thái PackML <small>${pmNote}</small></h2><div class="packml">${pm}</div></div>
+    <div class="card"><h2>Giá trị trực tiếp <small>viền = ô số · dòng dưới = chất lượng + tuổi</small></h2><div class="cells">${cells}</div></div>
+    <div class="card"><h2>Mô-men siết · 60 s <small>trái = cũ → phải = nay · khoảng hở = không có mẫu, KHÔNG nối</small></h2>${sp}</div></div>
+    <div class="r"><div class="card ctrl"><h2>Dừng máy <small>3 trạng thái, không lẫn</small></h2>${s3}</div><div class="card"><h2>Điều khiển</h2>${writeP}</div><div class="card" style="flex:1"><h2>Lệnh gần đây</h2><ul class="cmds">${cm}</ul></div></div></div>`;
+  let over = "";
+  if (dlg) over = `<div class="scrim"><div class="dlg" role="dialog" aria-label="Xác nhận lệnh"><h2>Xác nhận đổi mô-men siết SP</h2><div class="sub">SCR-06 · tag torque_sp · <span class="lvl l4">▲ Mức 4</span> cần TOTP · <span class="pill real">THẬT — ghi xuống máy</span></div>
+    <div class="prev"><div class="b"><div class="l">Hiện tại</div><div class="v">1,21 N·m</div></div><div class="arr">→</div><div class="b"><div class="l">Yêu cầu</div><div class="v">1,35 N·m</div></div><div class="arr">→</div><div class="b hl"><div class="l">Sau công thức (×1 + 0)</div><div class="v">1,35 N·m</div></div></div>
+    <div class="f"><label>Lý do (bắt buộc, ≥ 5 ký tự)</label><div class="ta">Đổi lô vít M3 mới theo phiếu kỹ thuật PK-0412</div></div>
+    <div class="f"><label>Mã xác thực hai lớp (6 số) — bắt buộc ở mức ≥ 4</label><div class="ta otp">4 8 2 ▍</div></div>
+    <div class="ttl"><b class="num">TTL 47 s</b><div class="bar"><i></i></div><span class="muted">đếm từ lúc nhận yêu cầu, hết hạn phải làm lại</span></div>
+    <div class="ft"><button class="btn">Huỷ</button><button class="btn primary">Gửi lệnh · THẬT</button></div></div></div>`;
+  if (drawer) over = `<aside class="drawer" aria-label="Ngăn Thợ Cả"><header><span>Thợ Cả · SCR-06</span><span class="pill">Đóng ✕</span></header><div class="in"><div class="ctxchips"><span>Máy SCR-06</span><span>torque · 1,21 N·m · tốt · 1 s</span><span>Cảnh báo: 0</span></div><div class="bub me">Vì sao mô-men có khoảng hở lúc 14:20?</div><div class="bub">Mất mẫu 8 s ở adapter ADP-L6-SCR (poll timeout ×4). Sau đó phục hồi, giá trị liền mạch. Không có lệnh ghi nào trong khoảng này.</div><div class="prop"><b><span>Đề xuất — CHƯA thực hiện</span><span class="lvl l3">▼ Mức 3</span></b>Tăng timeout poll adapter từ 1 s lên 2 s. <br><span class="muted">Cần bạn duyệt ở thẻ duyệt; Thợ Cả không tự gửi.</span><div style="margin-top:8px;display:flex;gap:8px"><button class="btn">Xem thẻ duyệt</button></div></div></div></aside>`;
+  const content = `<main class="content">${head}<div class="tabs">${tabs}</div>${banner}${body}</main>`;
+  return shell(1, `<span>Phạm vi:</span> <b>Nhà máy Bình Dương</b> ▾`, {p1:false, stale: stale?"1 máy":null}) + content + stopBtn + over;
+}
+
+/* ============ điều khiển trang ============ */
+function render() {
+  const cv = document.getElementById("cv");
+  cv.dataset.w = W; cv.dataset.density = W==="1280" ? "comfortable" : "default";
+  cv.className = "canvas" + (state==="tho-ca"?" hasdrawer":"") + (state==="mo-phong"&&MAN==="2"?" simframe":"");
+  cv.innerHTML = MAN==="2" ? man2(state) : man3(state);
+  const ctl = document.getElementById("ctl");
+  const btn = (txt, on, fn) => { const b=document.createElement("button"); b.textContent=txt; b.setAttribute("aria-pressed", on); b.onclick=fn; return b; };
+  ctl.innerHTML = "<b>Màn</b>";
+  ["2","3"].forEach(m=>ctl.appendChild(btn(m==="2"?"2 · Phòng vận hành":"3 · Máy L3", MAN===m, ()=>{ location.search = `?man=${m}&w=${W}`; })));
+  ctl.insertAdjacentHTML("beforeend","<b style='margin-left:12px'>Trạng thái</b>");
+  STATES[MAN].forEach(([k,t])=>ctl.appendChild(btn(t, state===k, ()=>{ state=k; render(); })));
+  ctl.insertAdjacentHTML("beforeend","<b style='margin-left:12px'>Cỡ</b>");
+  [["1280","1280×800 (thoải mái)"],["1920","1920×1080 (mặc định)"]].forEach(([w,t])=>ctl.appendChild(btn(t, W===w, ()=>{ W=w; render(); })));
+  ctl.insertAdjacentHTML("beforeend","<span class='note'>Số liệu GIẢ mang chất lượng + tuổi. Mockup tĩnh, không phải sản phẩm.</span>");
+  if (!Q.has("bare")) { const sc = Math.min(1,(innerWidth-24)/(+W)); cv.style.transform = `scale(${sc})`; cv.style.marginBottom = `${(sc-1)*(W==="1280"?800:1080)}px`; } else cv.style.transform="none";
+}
+render();
+</script>
+</body>
+</html>
