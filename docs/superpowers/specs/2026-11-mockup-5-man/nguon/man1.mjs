@@ -29,10 +29,10 @@ function vanHanh(s) {
     : `<p class="ds-body muted" style="margin:0">${i("home.andon.khongCo", "Không có andon đang mở trên máy của bạn.")}</p>
        <div><button class="btn" type="button">${i("home.andon.keo", "Kéo andon")}</button></div>`;
   const viec = `<ul class="list">
-    <li><span class="chk on">✓</span><span class="grow">Thay stencil lô PCB-2210</span><span class="num muted">09:10</span></li>
-    <li><span class="chk on">✓</span><span class="grow">Kiểm tra áp khí đầu hút</span><span class="num muted">10:00</span></li>
-    <li><span class="chk"></span><span class="grow"><b>Vệ sinh camera AOI-07</b></span><span class="num">15:30</span></li>
-    <li><span class="chk"></span><span class="grow">Bàn giao ca cho ca 3</span><span class="num">21:45</span></li></ul>`;
+    <li><span class="chk on" role="checkbox" aria-checked="true"></span><span class="grow">Thay stencil lô PCB-2210</span><span class="num muted">09:10</span></li>
+    <li><span class="chk on" role="checkbox" aria-checked="true"></span><span class="grow">Kiểm tra áp khí đầu hút</span><span class="num muted">10:00</span></li>
+    <li><span class="chk" role="checkbox" aria-checked="false"></span><span class="grow"><b>Vệ sinh camera AOI-07</b></span><span class="num">15:30</span></li>
+    <li><span class="chk" role="checkbox" aria-checked="false"></span><span class="grow">Bàn giao ca cho ca 3</span><span class="num">21:45</span></li></ul>`;
   return [
     tile({ cls: p1 ? "has-p1" : "", titleKey: "home.mayDuocGiao", titleVi: "Máy được giao", badge: p1 ? alarmBadge(1) : "", body: may, foot: `<a class="btn quiet sm" href="#">${i("home.moMay", "Mở máy")} ${ic("chev").replace("<svg", '<svg width="14" height="14" style="stroke:currentColor;fill:none;stroke-width:2"')}</a>` }),
     tile({ cls: p1 ? "has-p1" : "", titleKey: "home.andon", titleVi: "Andon", body: andon }),

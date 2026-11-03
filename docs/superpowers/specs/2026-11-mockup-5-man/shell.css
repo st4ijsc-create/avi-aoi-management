@@ -204,7 +204,7 @@
 .tbl tr.p3 td:first-child { box-shadow: inset 6px 0 0 var(--alarm-p3); }
 .tbl tr.p4 td:first-child { box-shadow: inset 6px 0 0 var(--alarm-p4); }
 .tbl tr.grp td { background: var(--isa-surface-2); font-weight: 600; }
-.chk { position: relative; display: inline-block; width: var(--touch-min); height: var(--touch-min); font-size: 0; vertical-align: middle; background: none; border: 0; }
+.chk { position: relative; display: inline-block; width: var(--touch-min); height: var(--touch-min); vertical-align: middle; background: none; border: 0; }
 .chk::before { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid var(--isa-line-strong); border-radius: var(--radius-1); background: var(--isa-surface); }
 .chk.on::before { background: var(--accent); border-color: var(--accent); }
 .chk.on::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font: 700 14px/1 var(--font-body); color: var(--accent-ink); }

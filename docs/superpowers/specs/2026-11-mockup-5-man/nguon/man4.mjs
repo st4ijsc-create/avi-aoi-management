@@ -39,7 +39,7 @@ function bang(s) {
       ? `<span class="num is-stale" title="Giá trị cũ — chưa xác nhận được vượt ngưỡng">82,4 °C</span> <span class="ds-small" style="color:var(--stale-ink)">cũ 3 ph</span>`
       : `<span class="num ${tt === "act-unack" && p <= 2 ? "gt-cao" : ""}">${gt}</span>`;
     return `<tr class="p${p} ${id === sel ? "sel" : ""}">
-      <td><span class="chk ${chon.includes(id) ? "on" : ""}">${chon.includes(id) ? "✓" : ""}</span></td>
+      <td><span class="chk ${chon.includes(id) ? "on" : ""}" role="checkbox" aria-checked="${chon.includes(id)}"></span></td>
       <td>${alarmBadge(p)}</td>
       <td class="ds-small" style="max-width:150px">${ts}</td>
       <td><b class="mono" style="font-size:12px">${ma}</b><br><span class="ds-body">${tn}</span></td>
@@ -137,7 +137,7 @@ export function man4() {
       <span class="field">${ic("folder").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')} Phạm vi: Nhà máy Bình Dương ▾</span>
       <span class="field">Loại: Cảnh báo ▾</span>
       ${[1, 2, 3, 4].map((p, k) => prio(p, [2, 3, 4, 3][k])).join("")}
-      <span class="field"><span class="chk"></span> Hiện tạm ẩn</span>
+      <span class="field"><span class="chk" role="checkbox" aria-checked="false"></span> Hiện tạm ẩn</span>
       <span class="field grow">${ic("search").replace("<svg", '<svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:2"')} Tìm mã, thông điệp, tài sản…</span>
     </div>
     <div class="bulk" data-st="hon-hop"><b class="num">3</b> hàng đã chọn · <button class="btn sm primary" type="button">Ack hàng loạt (chỉ P2–P4)</button><button class="btn sm" type="button">Tạm ẩn hàng loạt ▾</button><button class="btn sm quiet" type="button">Bỏ chọn</button></div>
