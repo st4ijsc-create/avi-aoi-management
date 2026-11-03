@@ -53,6 +53,7 @@ import { MOTION_LOCKED_REASON_CODE } from "./robotDriver";
 import { claimRobotMotionSlot, releaseRobotMotionSlot, runRobotDeviceStage } from "./robotDeviceRun"; // doc 81 Đợt 10 task D — device stage extracted verbatim
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { readRobotEnabledForMotion } from "./robotEnabledGate"; // final wave R-4-x
+import { ROBOT_NO_OT_ADAPTER_ID } from "../interlock/tapMayChoRobot"; // A2(l) — one definition
 import { persistedMotionLockCheckRequired, readCentralMotionAuthority, readPersistedMotionLock, recheckMotionAuthorityInTx, ROBOT_OWNED_BY_EDGE } from "./robotSharedMotionLockGate"; // Đợt 9 final wave F1; Đợt 10 task D (N1)
 import { isStopJob, STOP_DB_STEP_DEADLINE_MS } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
@@ -209,20 +210,13 @@ export function isMotionJob(job: RobotJobSpec): boolean {
 export const CANONICAL_STOP_JOB: Readonly<RobotJobSpec> = Object.freeze({ jobType: "abort", params: Object.freeze({}) as Record<string, unknown> });
 
 /**
- * doc 81 Đợt 1B Task 5 — the key the robot's interlock gate (and the console's
- * interlockPreview) evaluates. Decision after reading interlockGate.isTargeted: the gate
- * does NOT need a real OT adapter — a rule reaches a command through targetAdapterId,
- * targetMachineId or commandTag. A robot has no device_adapters row, so no adapter id is
- * real for it; ROBOT_NO_OT_ADAPTER_ID (-1) can never equal a device_adapters.id (serial ≥ 1)
- * nor an interlockRouter targetAdapterId (z.number().int().positive()), so an adapter- or
- * tag-targeted OT rule never blocks a robot by accident. The robot itself is keyed as
- * machineId = robotId, the convention interlockEngine already uses for robot rules
- * (robotId = rule.targetMachineId ?? rule.machineId).
+ * doc 81 Đợt 1B Task 5 — a robot has no device_adapters row: ROBOT_NO_OT_ADAPTER_ID (-1) can never equal a
+ * device_adapters.id nor an interlockRouter targetAdapterId, so an adapter- or tag-targeted OT rule never blocks a
+ * robot by accident. SCADA R1b-2b-2a A2(l) — the robot's interlock key is no longer `machineId = robotId` (a robot id
+ * compared with machine ids): the gate is asked for the machines WHERE the robot is (interlock/tapMayChoRobot.ts, the
+ * ONE resolver of the dispatcher, robot.interlockPreview and the edge robot gate). The constant lives there now.
  */
-export const ROBOT_NO_OT_ADAPTER_ID = -1;
-export function robotInterlockTarget(robotId: number): { adapterId: number; machineId: number; tagKeys: string[] } {
-  return { adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: robotId, tagKeys: [] };
-}
+export { ROBOT_NO_OT_ADAPTER_ID };
 
 /** Upper bound for the safety-PLC preflight read (a hung read must not hang the command). */
 const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
@@ -998,21 +992,32 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   // 4b) INTERLOCK GATE (doc 35 quy-trình-6) — fail-closed, ĐỒNG BỘ, TRƯỚC driver.runJob.
   //     ĐỐI XỨNG với OT commandDispatcher (bước 5a-bis). Reachable ONLY khi
   //     ROBOT_CONTROL_ENABLED==="true" (bước 4 đã trả 'simulated' nếu không) → chỉ gate
-  //     nhánh REAL-MOTION. Khoá đánh giá = robotInterlockTarget(robotId) (xem lựa chọn ở
-  //     định nghĩa hàm: cổng KHÔNG cần adapter thật; machineId=robotId theo quy ước
-  //     interlockEngine; ROBOT_NO_OT_ADAPTER_ID không bao giờ trùng adapter thật) — CHỈ rule
-  //     nhắm targetMachineId=robotId (action chặn/dừng, enabled+approved) mới chặn. Rule đang
+  //     nhánh REAL-MOTION. SCADA R1b-2b-2a A2(l) — khoá đánh giá = các MÁY nơi robot đứng
+  //     (tapMayChoRobot: máy của trạm; robot cấp chuyền ⇒ MỌI máy của chuyền), KHÔNG còn
+  //     machineId=robotId. Robot chưa định vị (không trạm/chuyền, trạm/chuyền không tồn tại,
+  //     mâu thuẫn) ⇒ TỪ CHỐI ROBOT_CHUA_DINH_VI; lỗi tra vị trí ⇒ fail-closed. Rule đang
   //     vi phạm HOẶC lỗi đánh giá (failClosed) → TỪ CHỐI, KHÔNG gọi driver.runJob.
   //     doc 81 Đợt 1B Task 5 fix round 1 (M3) — MOTION only: a stop (abort) is exempt, like the
-  //     safety and HITL gates — an active interlock violation must never block a STOP.
+  //     safety and HITL gates — an active interlock violation (or an unplaced robot) must never block a STOP.
   if (motion) {
-    const { evaluateInterlockGate } = await import("../interlock/interlockGate");
-    const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
+    const { tapMayChoRobot, danhGiaInterlockRobot, moTaViTriKhongDung, ROBOT_CHUA_DINH_VI } = await import("../interlock/tapMayChoRobot");
+    const gate = await danhGiaInterlockRobot(await tapMayChoRobot(await getDb(), input.robotId));
+    if (gate.maTuChoi) {
+      const jobId = await record(
+        input,
+        "rejected",
+        { reasonCode: ROBOT_CHUA_DINH_VI, viTri: gate.viTri },
+        `${moTaViTriKhongDung(gate.viTri)} — motion refused before any driver call; a STOP is still sent`,
+      );
+      return { ok: false, status: "rejected", jobId, error: ROBOT_CHUA_DINH_VI };
+    }
     if (gate.blocked) {
       const detail = gate.failClosed
         ? gate.vuotTran
           ? `interlock rule set for this target exceeds ${gate.vuotTran.tran} rules — fail-closed (no run)` // A2(j)
-          : "interlock evaluation error — fail-closed (no run)"
+          : gate.viTri.loai === "loi"
+            ? `${moTaViTriKhongDung(gate.viTri)} (no run)`
+            : "interlock evaluation error — fail-closed (no run)"
         : `blocked by active interlock rule(s): ${gate.violations
             .map((v) => `#${v.ruleId}(${v.action})`)
             .join(", ")}`;

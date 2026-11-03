@@ -16,6 +16,11 @@ import postgres from "postgres";
 const H = vi.hoisted(() => ({ runJobs: 0, gate: null as null | Promise<void>, release: null as null | (() => void) }));
 vi.mock("./robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 vi.mock("../interlock/interlockGate", () => ({ evaluateInterlockGate: async () => ({ blocked: false, failClosed: false, violations: [] }) }));
+// SCADA R1b-2b-2a A2(l) — this suite's robots are unplaced (no line / station); WHERE a robot is is measured by tapMayChoRobot.a2l(.db).test.ts
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "chuyen" as const, robotId, lineId: 1, machineIds: [] }),
+}));
 vi.mock("./robotManager", () => ({
   getActiveRobot: () => ({
     id: 0,

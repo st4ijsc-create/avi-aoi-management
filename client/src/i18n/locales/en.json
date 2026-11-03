@@ -4405,7 +4405,8 @@
       "ledgerWriteFailed": "The robot command ledger could not be written — the motion was refused and nothing was sent.",
       "idempotentJobInProgress": "A command with the same idempotency key is still running — it is not run twice.",
       "idempotencyKeyReused": "This idempotency key was already used for another robot or job — the motion was NOT started. That earlier job may already have run: check the robot, its position and the earlier job's state before commanding again.",
-      "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
+      "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published.",
+      "robotChuaDinhVi": "The robot is NOT PLACED (no station or line, or its station/line does not exist or contradicts) — the machines whose interlock rules guard it are unknown, so motion was refused. A STOP is still sent. Assign the robot to a station or a line."
     },
     "reason": {
       "can-nha-may": "the key must belong to a factory before it can be activated",
@@ -20453,7 +20454,12 @@
     "queuedOnEdge": "STOP sent to the robot's edge node — waiting for its confirmation (see the job log).",
     "queuedEdgeUnreachable": "STOP queued, but the robot's edge node is UNREACHABLE — central attempted its own STOP and raised a critical alert. Use the hardware E-STOP if the robot is still moving.",
     "rejected": "Command not executed: {{status}}",
-    "pickRobot": "Select a robot first."
+    "pickRobot": "Select a robot first.",
+    "interlockSameLine": "rule on machine {{machine}} (same line)",
+    "interlockSameStation": "rule on machine {{machine}} (same station)",
+    "interlockStopNeverBlocked": "Interlocks gate motion only — a STOP is never blocked.",
+    "interlockNoMachines": "No machines to check — no interlock rule can guard this robot's station or line.",
+    "interlockStationNoMachines": "This station has no machines — the rules on line {{line}} apply."
   },
   "analysisHub": {
     "title": "AI Analysis Hub",

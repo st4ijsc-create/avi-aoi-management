@@ -68,15 +68,15 @@ describe("A2(i)(1) (g) — both OT interlock call sites use the ONE helper", () 
   it("edge authorization: the OT gate call passes machineIds: tapMayChoInterlock(adapter.machineId, rb.machineId), from the ONE adapter read that selects machineId", () => {
     const text = src(AUTH);
     const calls = gateCalls(text);
-    expect(calls).toHaveLength(1); // the robot call is evaluateInterlockGate(robotInterlockTarget(robotId)) — no object literal
+    expect(calls).toHaveLength(1); // the robot interlock goes through danhGiaInterlockRobot(tapMayChoRobot(…)) — A2(l), no gate call here
     expect(calls[0]).toMatch(/machineIds: tapMayChoInterlock\(adapter\.machineId, rb\.machineId\)/);
     expect(calls[0]).not.toMatch(/\bmachineId:/);
     expect(text).toMatch(/import \{ tapMayChoInterlock \} from "\.\.\/interlock\/tapMayChoInterlock";/);
     expect(text).toMatch(/const \[adapter\] = await d\.select\(\{ isEnabled: deviceAdapters\.isEnabled, machineId: deviceAdapters\.machineId \}\)\.from\(deviceAdapters\)/);
-    expect(text).toMatch(/evaluateInterlockGate\(robotInterlockTarget\(robotId\)\)/);
+    expect(text).toMatch(/danhGiaInterlockRobot\(await tapMayChoRobot\(d, robotId\)\)/); // A2(l) — the robot's place, never machineId = robotId
   });
 
-  it("no other production file builds an OT interlock target from a single machineId (robot keeps robotInterlockTarget)", () => {
+  it("no other production file builds an OT interlock target from a single machineId (the robot gate uses tapMayChoRobot — A2(l))", () => {
     for (const rel of [OT, AUTH]) expect(src(rel)).not.toMatch(/evaluateInterlockGate\(\{[^}]*\bmachineId:/);
   });
 });
