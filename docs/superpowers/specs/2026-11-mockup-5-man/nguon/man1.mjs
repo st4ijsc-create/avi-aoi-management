@@ -2,7 +2,7 @@
 import { i, ic, alarmBadge, fresh, header, chipNormal, chipP1, demo, trang, st } from "./chung.mjs";
 
 const STATES = ["binh-thuong", "p1-chua-ack", "du-lieu-cu"];
-const ROLES = ["van-hanh", "giam-sat", "ky-su"];
+const ROLES = ["van-hanh", "giam-sat", "ky-su", "quan-ly", "quan-tri"];
 const STALE = (s, html) => (s === "du-lieu-cu" ? `<span class="is-stale">${html}</span>` : html);
 
 /** PackML: ký hiệu + chữ; trung tính trừ held/suspended/stopped/aborted. */
@@ -88,6 +88,55 @@ function kySu(s) {
   ].join("");
 }
 
+/** Quản lý (manager): KPI nhà máy — OEE theo line, đơn hàng trễ hạn, cảnh báo ảnh hưởng sản xuất. */
+function quanLy(s) {
+  const p1 = s === "p1-chua-ack";
+  const oee = [["SMT-01", 86.2], ["SMT-02", 83.9], ["SMT-03", p1 ? 61.4 : 81.7], ["THT-01", 84.5]];
+  const ds = `<ul class="list">${oee
+    .map(([n, v]) => `<li><b class="grow">${n}</b><span class="obar" aria-hidden="true"><i style="width:${v}%"></i></span><span class="num" style="min-width:68px;text-align:right">${STALE(s, String(v).replace(".", ",") + " %")}</span>${p1 && n === "SMT-03" ? alarmBadge(1, { chu: false }) : ""}</li>`)
+    .join("")}</ul>`;
+  const don = `<ul class="list">
+    <li><span class="grow"><b>PO-2210 · Bo điều khiển</b><br><span class="ds-small">6.012 / 8.000 · giao 06/11</span></span><span class="num muted">75 %</span></li>
+    <li><span class="grow"><b>PO-2214 · Cảm biến áp</b><br><span class="ds-small">1.940 / 5.000 · giao 04/11</span></span><span class="late">▼ trễ 1 ngày</span></li>
+    <li><span class="grow"><b>PO-2219 · Module nguồn</b><br><span class="ds-small">0 / 3.200 · giao 12/11</span></span><span class="num muted">0 %</span></li></ul>`;
+  const top3 = (p1
+    ? [[1, "SMT03-MNT-04", "Kẹt feeder #12", "00:42"], [1, "SMT03-REF-01", "Lò reflow vùng 5 quá nhiệt", "03:10"], [2, "SMT02-SPI-02", "Lệch thể tích kem hàn", "18:05"]]
+    : [[2, "SMT02-SPI-02", "Lệch thể tích kem hàn", "18:05"], [3, "PKG-WH-01", "Áp khí nén thấp", "05:12"], [3, "SMT01-PRN-01", "Dao gạt gần hết tuổi thọ", "1:12:05"]]
+  ).map(([p, a, m, t], k) => `<li${p === 1 ? " data-p1-unack" : ""}>${alarmBadge(p, { chu: false })}<span class="grow ell"><b>${m}</b><br><span class="ds-small">${a}</span></span><span class="num">${t}</span></li>`).join("");
+  return [
+    tile({ cls: p1 ? "has-p1" : "", titleKey: "home.oeeTheoLine", titleVi: "OEE theo line", body: ds, foot: `<a class="btn quiet sm" href="#">${i("home.moPhanTich", "Mở Phân tích")}</a>` }),
+    tile({ cls: "has-p2", titleKey: "home.donHang", titleVi: "Đơn hàng & tiến độ", badge: `<span class="num ds-small">1 trễ</span>`, body: don, foot: `<a class="btn quiet sm" href="#">${i("home.moDonHang", "Mở Đơn hàng")}</a>` }),
+    tile({ cls: p1 ? "has-p1" : "", titleKey: "home.canhBaoAnhHuong", titleVi: "Cảnh báo ảnh hưởng sản xuất", badge: p1 ? alarmBadge(1) : "", body: `<ul class="list">${top3}</ul>`, foot: `<a class="btn quiet sm" href="#">${i("home.moCanhBao", "Mở Cảnh báo")}</a>` }),
+  ].join("");
+}
+
+/** Quản trị (admin): sức khoẻ hệ thống, phiên & tài khoản, sao lưu & giấy phép. */
+function quanTri(s) {
+  const p1 = s === "p1-chua-ack";
+  const khoe = (ten, ghiChu, trang) => `<li><span class="grow"><b>${ten}</b><br><span class="ds-small">${ghiChu}</span></span>${trang}</li>`;
+  const ok = (t) => STALE(s, pm("execute", t));
+  const sk = `<ul class="list">
+    ${khoe("API", "p95 84 ms · lỗi 5xx 0", ok("Chạy"))}
+    ${khoe("CSDL", "kết nối 18 / 100 · chậm nhất 220 ms", ok("Chạy"))}
+    ${khoe("Broker MQTT", "612 client · 1,2 k tin/s", ok("Chạy"))}
+    ${khoe("Edge edge-bd-01", p1 ? "mất kết nối 4 ph — dữ liệu SMT-03 không về" : "độ trễ 38 ms", p1 ? `<span data-p1-unack>${pm("stopped", "Mất kết nối")}</span>` : ok("Chạy"))}
+    ${khoe("Edge edge-bd-02", "độ trễ 41 ms", ok("Chạy"))}</ul>`;
+  const phien = `<ul class="list">
+    <li><span class="grow">Phiên đang mở</span><span class="num">${STALE(s, "14")}</span></li>
+    <li><span class="grow">Tài khoản đang bị khoá</span><span class="num">${STALE(s, "1")}</span></li>
+    <li><span class="grow">Quản trị có 2FA</span><span class="num">${STALE(s, "10 / 10")}</span></li>
+    <li><span class="grow">Đăng nhập thất bại (24 h)</span><span class="num">${STALE(s, "7")}</span></li></ul>`;
+  const sl = `<ul class="list">
+    <li><span class="grow"><b>Sao lưu gần nhất</b><br><span class="ds-small">02:00 hôm nay · 70 GB · đã kiểm khôi phục</span></span><span class="pill">Đạt</span></li>
+    <li><span class="grow"><b>Giấy phép</b><br><span class="ds-small">còn 212 ngày · 12 module</span></span><span class="num muted">T+212</span></li>
+    <li><span class="grow"><b>Lưu giữ dữ liệu</b><br><span class="ds-small">chạy 03:30 · telemetry 90 ngày</span></span><span class="pill">Bật</span></li></ul>`;
+  return [
+    tile({ cls: p1 ? "has-p1" : "", titleKey: "home.sucKhoeHeThong", titleVi: "Sức khoẻ hệ thống", badge: p1 ? alarmBadge(1) : "", body: sk, foot: `<a class="btn quiet sm" href="#">${i("home.moHeThong", "Mở Hệ thống")}</a>` }),
+    tile({ titleKey: "home.phienTaiKhoan", titleVi: "Phiên & tài khoản", body: phien, foot: `<a class="btn quiet sm" href="#">${i("home.moNguoiDung", "Mở Người dùng & quyền")}</a>` }),
+    tile({ titleKey: "home.saoLuuGiayPhep", titleVi: "Sao lưu & giấy phép", body: sl }),
+  ].join("");
+}
+
 /** Dải số liệu đầu trang (ô số có viền + đơn vị + tuổi dữ liệu). */
 function dai(r, s) {
   const stale = s === "du-lieu-cu";
@@ -98,6 +147,8 @@ function dai(r, s) {
   const ds = {
     "giam-sat": [m("Sản lượng ca", p1 ? "4.512" : "4.812", "PCB", "kế hoạch 6.000 · " + agev), m("FPY ca", p1 ? "96,4" : "97,8", "%"), m("OEE ca", p1 ? "78,1" : "82,4", "%"), m("Thời gian dừng", p1 ? "01:12:40" : "00:47:10", "", "tổng các line · " + agev)],
     "van-hanh": [m("Lô hiện tại", "PCB-2210", "", "kế hoạch 2.000 PCB"), m("Đã làm", "1.204", "PCB", agev), m("Chu kỳ trung bình", "11,8", "s"), m("PCB lỗi (NG)", "17", "", agev)],
+    "quan-ly": [m("OEE nhà máy", p1 ? "74,8" : "82,4", "%"), m("FPY ca", p1 ? "96,4" : "97,8", "%"), m("Giao đúng hạn (tuần)", "94,1", "%", "36 đơn · " + agev), m("Sản lượng tuần", "31.204", "PCB", "kế hoạch 36.000 · " + agev)],
+    "quan-tri": [m("Người dùng", "128", "", "7 vai · " + agev), m("Phiên đang mở", "14", "", agev), m("Job nền lỗi (24 h)", p1 ? "1" : "0", "", agev, p1 ? "p1" : ""), m("Dung lượng CSDL", "70", "GB", "tăng 0,4 GB/ngày")],
     "ky-su": [m("Máy có lỗi", "3", "", agev, p1 ? "p1" : "p2"), m("Đề xuất chờ duyệt", "1", "", "Thợ Cả · 19:42"), m("Phiên Thợ Cả", "2", "", "đang mở"), m("Việc đến hạn hôm nay", "2", "", "kỹ thuật")],
   }[r];
   return `<div class="grid strip">${ds.join("")}</div>`;
@@ -112,6 +163,8 @@ export function man1() {
           <span data-rl="van-hanh">Vận hành viên · Nhà máy Bình Dương · Ca 2 (14:00–22:00)</span>
           <span data-rl="giam-sat">Giám sát · Nhà máy Bình Dương · Ca 2 (14:00–22:00)</span>
           <span data-rl="ky-su">Kỹ sư · Nhà máy Bình Dương · Ca hành chính</span>
+          <span data-rl="quan-ly">Quản lý sản xuất · Nhà máy Bình Dương · Tuần 45</span>
+          <span data-rl="quan-tri">Quản trị hệ thống · Toàn công ty ABC</span>
         </div>
       </div>
       <div class="act">
@@ -120,10 +173,12 @@ export function man1() {
           <button type="button" data-set="role:van-hanh">Vận hành viên</button>
           <button type="button" data-set="role:giam-sat">Giám sát</button>
           <button type="button" data-set="role:ky-su">Kỹ sư</button>
+          <button type="button" data-set="role:quan-ly">Quản lý</button>
+          <button type="button" data-set="role:quan-tri">Quản trị</button>
         </div>
       </div>
     </div>
-    ${STATES.map((s) => ROLES.map((r) => `<div class="stack-lg" data-st="${s}" data-rl="${r}">${dai(r, s)}<div class="grid tiles">${{ "van-hanh": vanHanh, "giam-sat": giamSat, "ky-su": kySu }[r](s)}</div></div>`).join("")).join("")}
+    ${STATES.map((s) => ROLES.map((r) => `<div class="stack-lg" data-st="${s}" data-rl="${r}">${dai(r, s)}<div class="grid tiles">${{ "van-hanh": vanHanh, "giam-sat": giamSat, "ky-su": kySu, "quan-ly": quanLy, "quan-tri": quanTri }[r](s)}</div></div>`).join("")).join("")}
   `;
   const crumbs = '<b>Công ty ABC</b><span class="sep">▸</span><b>Nhà máy Bình Dương</b><span class="sep">▸</span><span>Xưởng SMT</span>';
   const hdr = header({
@@ -150,6 +205,9 @@ export function man1() {
 .pm.idle { color: var(--packml-idle); } .pm.held { color: var(--packml-held); } .pm.stopped { color: var(--packml-stopped); } .pm.aborted { color: var(--packml-aborted); }
 .stack-lg { display: flex; flex-direction: column; gap: var(--gap-4); }
 .grid.strip { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.obar { flex: 0 0 120px; height: 10px; background: var(--isa-graphic); border-radius: var(--radius-1); overflow: hidden; }
+.obar i { display: block; height: 100%; background: var(--isa-graphic-muted); border-right: 2px solid var(--text-2); }
+.late { color: var(--alarm-p2-ink); font-weight: 700; font-size: 13px; white-space: nowrap; }
 .yb { display: flex; align-items: flex-end; gap: 6px; height: 48px; padding-top: var(--gap-2); }
 .yb i { flex: 1 1 0; background: var(--isa-graphic-muted); border-radius: var(--radius-1) var(--radius-1) 0 0; min-height: 4px; }
 `,
