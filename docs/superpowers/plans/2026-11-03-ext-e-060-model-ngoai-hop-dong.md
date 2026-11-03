@@ -40,8 +40,15 @@ KHÔNG mở bề mặt agent ngoài; KHÔNG dùng phiên chia sẻ extension (2F
   `chay`. Webview chỉ gửi "bấm nút trên bong bóng i" — host tra id từ bản ghi CỦA HOST (không nhận id / model / tiêu chí từ webview).
 - Kết quả **KHÔNG TIN CẬY**: render qua bộ render không tin cậy hiện có (`lamKhongTinCay` / markdown an toàn — liên kết thành chữ + tên miền, không
   ảnh, không HTML), nhãn "AI ngoài — không tin cậy", không nút áp / không chạy lệnh từ kết quả; lỗi theo mã (`NGOAI_DANG_CHAY` 409, `tuBoNho`, trần).
-- Lưới + đột biến: nút chỉ ở bong bóng trợ lý có id máy chủ; webview gửi id giả / model lạ ⇒ host bỏ qua; không xác nhận ⇒ không gọi `chay`;
-  `xemTruoc` lỗi ⇒ không modal không gọi; kết quả có `<img>`/link/HTML ⇒ render an toàn; đột biến từng điều ⇒ đỏ.
+- Lưới + đột biến: nút chỉ ở bong bóng trợ lý đã xong; webview gửi id giả / model lạ / cauHoi-traLoi giả ⇒ host bỏ qua (dùng bản ghi CỦA HOST —
+  đột biến "lấy chữ từ webview" ⇒ đỏ); không xác nhận ⇒ không gọi `chay`; `xemTruoc` lỗi ⇒ không modal không gọi; kết quả có `<img>`/link/HTML ⇒
+  render an toàn; đột biến từng điều ⇒ đỏ.
+- (rà kiem-dinh hợp đồng E, 03/11) **Modal host phải nói đúng thứ sẽ gửi:** model, mức dữ liệu (`xemTruoc.mucDuLieu` — van-ban luôn van-hanh),
+  chi phí ước (`chiPhiUocUsd` / tokenUoc), số BYTE thật của chữ sẽ gửi + cờ **"đã cắt"** (host tự cắt ≤ 16 KB, tự biết cờ), trích câu trả lời
+  ĐÃ CHE (`xemTruoc.trichTraLoi`); đột biến bỏ cờ cắt / bỏ mức khỏi modal ⇒ đỏ.
+- Vector tiêm NGƯỢC: câu trả lời cục bộ bị kiểm định chứa "bỏ qua hướng dẫn…" / khối lệnh — host không có kênh thực thi từ kết quả kiểm định;
+  kết quả chứa `<img>` / link / HTML / khối lệnh ⇒ vô hại (render không tin cậy, không nút áp / chạy).
+- Nhãn "AI ngoài — không tin cậy" hiện cho CẢ nguồn `chat` lẫn `van-ban`.
 
 ### E2 — harness LIVE (bắt buộc; scratchpad `extlive-*`, không commit dữ liệu chạy)
 - VS Code thật (`test-real-host`, test-electron) + máy chủ thử (_test DB, cổng phiên do-model) + **nhà cung cấp GIẢ** sau `datFetchNgoaiChoTest`
