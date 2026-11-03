@@ -4,7 +4,7 @@
 |---|---|
 | Nguồn | TechDocs 00‑INDEX "Lộ trình tổng hợp" pha 0; bước 90‑P0 · 50‑C0 · 40‑AL0 · 30‑T0 · 70‑E0 · 80‑F0 · 60‑Q0 |
 | Quyết định | Chủ dự án 2026‑11‑03: "(a) pha 0 trước, (b) mockup chạy song song" |
-| Điều kiện cứng | Không chạm `services/scada/*`, `services/ot/commandDispatcher.ts`, `otDeviceWrite.ts`, `edge/*` (A2(o) của scada‑master); không cần GPU; không đổi hành vi model (80); `:3000` vẫn đóng băng; mọi xoá dữ liệu **báo chủ dự án trước, có số đếm trước/sau**, chạy bằng owner `aoi` qua dieu‑phoi; SQL duyệt trước, `--test-only` trước |
+| Điều kiện cứng | Không chạm `services/scada/*`, `services/ot/commandDispatcher.ts`, `otDeviceWrite.ts`, `edge/*` (A2(o) của scada‑master); không cần GPU; không đổi hành vi model (80); `:3000` không còn đóng băng (gỡ 03/11, dieu-phoi); mọi xoá dữ liệu **báo chủ dự án trước, có số đếm trước/sau**, chạy bằng owner `aoi` qua dieu‑phoi; SQL duyệt trước, `--test-only` trước |
 | Cổng gộp | census đầy đủ (`npx vitest run census Census --exclude "**/*.db.test.ts"` + `server/testing`) + `check:tests` (heap 12 GB, kiểm exit code) + bench OpenPLC 24/24 nếu lô chạm 50 (chỉ C0‑UI không chạm) |
 | Ước lượng | ≈ 1 tuần, 4 phiên song song |
 
