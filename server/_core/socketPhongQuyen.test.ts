@@ -330,15 +330,22 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
   };
   const PHONG_TRINH_DUYET = [
     "device:robot:1", "factory:1", "global", "line:4", "machine:3",
-    "robot:5", "scope:all", "site:HN", "sites:global", "telemetry:all", "twin:1", "workshop:2",
+    "robot:5", "scope:all", "telemetry:all", "twin:1", "workshop:2",
   ].sort(); // P-S1b: + `scope:all` (người dùng toàn quyền tự vào phòng này). `ai:agents` KHÔNG còn ở đây: user 8 là operator ⇒ cổng duocVaoPhongAiAgents từ chối (xem socketPhongQuyen.aiAgents.test.ts)
+  // PV-socket-1: `site:HN` (khoá `siteCode` bị bỏ — không join gì) và `sites:global` (không còn) KHÔNG ở đây; user 8 không có admin_system/canView
+  // ⇒ cổng duocVaoPhongFederation từ chối `sites:*` (ca có/không quyền + phạm vi tập đoàn: socketPhamViSite.test.ts)
 
-  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 12 phòng (hành vi cũ; operator KHÔNG vào ai:agents)", async () => {
+  it("(5) socket máy gửi subscribe với MỌI khoá ⇒ KHÔNG vào phòng nào (kể cả global), có log; user trình duyệt cùng gói ⇒ vào đủ 10 phòng (operator KHÔNG vào ai:agents / sites:*; siteCode không join gì)", async () => {
     const may = await ketNoi({ may: true });
     const nd = await ketNoi({ phien: 8 }); // user KHÔNG có quyền engineering: subscribe chung không đổi
     may.emit("subscribe", MOI_KHOA);
     nd.emit("subscribe", MOI_KHOA);
     await vi.waitFor(() => expect(phongCua(nd)).toEqual(PHONG_TRINH_DUYET));
+    // PV-socket-1 fix round 1 (n3) — cổng federation là HAI tầng bất đồng bộ: chờ SỰ KIỆN kết thúc của nó (log từ chối `sites:invalid` của
+    // CHÍNH socket này — chỉ phát khi bộ phân giải đã trả `[]`) rồi mới khẳng định KHÔNG có phòng `sites:*` (không dựa vào một khoảng chờ).
+    await vi.waitFor(() => expect(tuChoiLog().some((s: string) => s.includes(nd.id!) && s.includes("sites:invalid"))).toBe(true));
+    expect(phongCua(nd)).toEqual(PHONG_TRINH_DUYET);
+    expect(phongCua(nd).filter((p) => p.startsWith("site"))).toEqual([]);
     await cho(50);
     expect(phongCua(may)).toEqual([]);
 

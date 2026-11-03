@@ -55,6 +55,9 @@ import {
   duocVaoPhongThietBi,
   duocVaoPhongTelemetryAll,
   duocVaoPhongAiAgents,
+  phongFederationDuocVao,
+  duocVaoPhongFederation,
+  phongNhanSiteUpdate,
   tuDongVaoPhongPhamVi,
   tienLocQuanLyDangKyMay,
   tienLocTuChoiDangKyMay,
@@ -70,6 +73,10 @@ import { phatTheoNhaMay, phatMangTheoNhaMay } from "./socketPhatTheoNhaMay";
 import { chuanBiKiemHandshake, ganIoXetLaiQuyen, phongKiemNguoi, phongKiemPhien } from "./socketXetLaiQuyen";
 
 let io: Server | null = null;
+
+/** PV-socket-1 — vé NHÓM của lượt vào phòng federation (không phải tên phòng) + tiền tố chung của các phòng `sites:*`. */
+const KHOA_VE_SITES = "nhom:sites";
+const TIEN_TO_PHONG_SITES = "sites:";
 
 // Store pending machine registrations
 interface PendingMachineRegistration {
@@ -625,18 +632,21 @@ export function initializeSocket(server: HttpServer): Server {
         const n = idPhongHopLe(dd.robotId);
         thuVaoPhong(n === null ? "robot:invalid" : `robot:${n}`, n === null ? Promise.resolve(false) : duocVaoPhongRobot(socket.data, n));
       }
-      // U5-live (doc 21 §6 / G-7) — Federation SITE room. The Command Center /
-      // Federation tree joins `site:{siteCode}` (a specific site) and/or `sites:global`
-      // (all sites) to receive `site:update` when the aggregator refreshes a site's
-      // roll-up — so the site level is live, not just 30s-polled. Producer-gated by the
-      // aggregator flag; no gate here (a room join is harmless).
-      if ((data as any).siteCode) {
-        socket.join(`site:${(data as any).siteCode}`);
-        console.log(`[Socket.io] ${socket.id} joined site:${(data as any).siteCode}`);
-      }
-      if ((data as any).sitesGlobal) {
-        socket.join("sites:global");
-        console.log(`[Socket.io] ${socket.id} joined sites:global`);
+      // U5-live (doc 21 §6 / G-7) — Federation SITE rooms: the Federation dashboard sends `{sitesGlobal:true}` to receive `site:update`
+      // when the aggregator refreshes a site's roll-up (live, not just 30 s-polled).
+      // ★★★ PV-socket-1 (2026-11-03) — CÓ CỔNG, cùng hợp đồng `federationRouter` (admin_system/canView + `dieuKienTrang`): toàn quyền ⇒
+      // `sites:all`; người hẹp ⇒ `sites:corp:{mã}` cho mỗi mã tập đoàn của họ; không quyền / 0 mã / lỗi ⇒ không phòng nào + SUBSCRIBE_DENIED.
+      // Bộ phân giải chạy MỘT lần để biết TÊN phòng, rồi MỖI phòng vẫn qua `thuVaoPhong` + cổng riêng (kiểm lại — không join theo danh sách
+      // trần). Vé nhóm `KHOA_VE_SITES`: `unsubscribe {sitesGlobal}` đến trước kết quả ⇒ không join. `siteCode` (phòng `site:{code}` cũ, không
+      // client nào gửi) bị BỎ: không join gì, không lỗi.
+      if (dd.sitesGlobal) {
+        const ve = (veVaoPhong.get(KHOA_VE_SITES) ?? 0) + 1;
+        veVaoPhong.set(KHOA_VE_SITES, ve);
+        void phongFederationDuocVao(socket.data).then((ds) => {
+          if (veVaoPhong.get(KHOA_VE_SITES) !== ve) return; // đã unsubscribe / subscribe lại trong lúc kiểm
+          if (ds.length === 0) return thuVaoPhong("sites:invalid", Promise.resolve(false));
+          for (const p of ds) thuVaoPhong(p, duocVaoPhongFederation(socket.data, p));
+        });
       }
       // MON-F6 (doc 40) — OPT-IN telemetry firehose room. `telemetry:sample` is a
       // high-rate stream; it used to fan out to `global` (which EVERY client joins),
@@ -649,7 +659,7 @@ export function initializeSocket(server: HttpServer): Server {
         thuVaoPhong("telemetry:all", duocVaoPhongTelemetryAll(socket.data));
       }
       // E2-4 (doc69 Giai đoạn 4/Wave E2) — OPT-IN AI Agent Command Center refresh
-      // room. A single flat room (like telemetry:all/sites:global — not scoped
+      // room. A single flat room (like telemetry:all — not scoped
       // per-factory/machine): the Command Center joins it to receive the minimal,
       // non-sensitive `ai:agents` nudge (aiAgentRealtime.ts's bridge, gated by
       // AI_AGENTS_LIVE_ENABLED) that tells it to refetch getReadModel sooner than
@@ -682,9 +692,12 @@ export function initializeSocket(server: HttpServer): Server {
         huyVe(`robot:${idPhongHopLe((data as any).robotId) ?? "invalid"}`);
         socket.leave(`robot:${(data as any).robotId}`);
       }
-      // U5-live — leave the federation site room(s).
-      if ((data as any).siteCode) socket.leave(`site:${(data as any).siteCode}`);
-      if ((data as any).sitesGlobal) socket.leave("sites:global");
+      // U5-live / PV-socket-1 — leave the federation site rooms (vé nhóm + vé từng phòng đang kiểm, rồi rời mọi phòng `sites:*`).
+      if ((data as any).sitesGlobal) {
+        huyVe(KHOA_VE_SITES);
+        for (const k of [...veVaoPhong.keys()]) if (k.startsWith(TIEN_TO_PHONG_SITES)) huyVe(k);
+        for (const p of [...socket.rooms]) if (p.startsWith(TIEN_TO_PHONG_SITES)) socket.leave(p);
+      }
       // MON-F6 — leave the opt-in telemetry firehose room.
       if ((data as any).telemetryAll) {
         huyVe("telemetry:all");
@@ -2571,15 +2584,17 @@ export function emitRobotTelemetry(evt: RobotTelemetryLive): void {
 // ============ U5-live — FEDERATION SITE ROLL-UP LIVE (doc 21 §6 / G-7) =========
 
 /**
- * A compact live projection of a site's refreshed roll-up, pushed to the per-site
- * room `site:{siteCode}` + `sites:global` on each aggregator cycle that lands new
- * data for the site. Carries only the small, UI-relevant fields the Federation tree
- * / Command Center site level renders live (freshness + headline KPIs + alert
- * counts) — NOT the full roll-up rows (those stay behind the federationRouter reads).
- * SIGNAL ONLY: the aggregator has already persisted the roll-up; this is a thin
- * transport with NO gate of its own (the PRODUCER — the aggregator — is gated by
- * FEDERATION_AGGREGATOR_ENABLED, so when off it is simply never called and the FE
- * keeps its 30s poll, backward-compatible). No-op when io is not initialized.
+ * A compact live projection of a site's refreshed roll-up, pushed on each aggregator
+ * cycle that lands new data for the site. Carries only the small, UI-relevant fields the
+ * Federation tree / Command Center site level renders live (freshness + headline KPIs +
+ * alert counts) — NOT the full roll-up rows (those stay behind the federationRouter reads).
+ * The aggregator is gated by FEDERATION_AGGREGATOR_ENABLED (off ⇒ never called, the FE
+ * keeps its 30s poll). No-op when io is not initialized.
+ * ★★★ PV-socket-1 (2026-11-03): the payload is per-site aggregate data, so it is SCOPED like
+ * the tRPC read of the same data — routed by `phongNhanSiteUpdate` (`sites:all` +
+ * `sites:corp:{corporateCode}` only for a non-local site, mirror of `dieuKienTrang`), rooms
+ * joined only through `duocVaoPhongFederation`. The old `site:{code}` / `sites:global`
+ * rooms (any logged-in user could join) are gone.
  */
 export interface SiteUpdateEvent {
   siteCode: string;
@@ -2596,12 +2611,17 @@ export interface SiteUpdateEvent {
   } | null;
   alerts?: { open: number; critical: number } | null;
   ts: number;
+  /** PV-socket-1 — ROUTING only (not sent): the site's corporate code (`sites.corporateCode`). */
+  corporateCode: string | null;
+  /** PV-socket-1 — ROUTING only (not sent): `sites.isLocal` (the core itself ⇒ full-access room only). */
+  isLocal: boolean;
 }
 
+/** The ONE emit point of `site:update` (census socketPhatCensus: `sites:*` emits only here). */
 export function emitSiteUpdate(evt: SiteUpdateEvent): void {
   if (!io) return;
-  io.to(`site:${evt.siteCode}`).emit("site:update", evt);
-  io.to("sites:global").emit("site:update", evt);
+  const { corporateCode, isLocal, ...goi } = evt;
+  io.to(phongNhanSiteUpdate({ corporateCode, isLocal })).emit("site:update", goi);
 }
 
 // Emit alert escalation event

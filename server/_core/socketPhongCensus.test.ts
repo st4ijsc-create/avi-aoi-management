@@ -31,11 +31,12 @@ interface Luat {
 }
 
 /** Cổng hợp lệ cho đối số thứ hai của `thuVaoPhong(phòng, <cổng>)`. */
-const CONG_THU_VAO_PHONG = ["duocVaoPhongPhamVi", "duocVaoPhongRobot", "duocVaoPhongThietBi", "duocVaoPhongTelemetryAll", "duocVaoPhongAiAgents"];
+const CONG_THU_VAO_PHONG = ["duocVaoPhongPhamVi", "duocVaoPhongRobot", "duocVaoPhongThietBi", "duocVaoPhongTelemetryAll", "duocVaoPhongAiAgents", "duocVaoPhongFederation"];
 
 const LUAT: Luat[] = [
   // ── subscribe: hàm bọc join bất đồng bộ (MỌI lời gọi `thuVaoPhong` được kiểm riêng bên dưới)
-  { file: "server/_core/socket.ts", phong: /^phong$/, gate: ["duocVaoPhongPhamVi(", "duocVaoPhongRobot(", "duocVaoPhongThietBi(", "duocVaoPhongTelemetryAll(", "duocVaoPhongAiAgents("] },
+  //    PV-socket-1: + `duocVaoPhongFederation` — phòng `sites:all` / `sites:corp:{mã}` của `site:update` (thay `site:{code}` / `sites:global`, miễn trước đây)
+  { file: "server/_core/socket.ts", phong: /^phong$/, gate: ["duocVaoPhongPhamVi(", "duocVaoPhongRobot(", "duocVaoPhongThietBi(", "duocVaoPhongTelemetryAll(", "duocVaoPhongAiAgents(", "duocVaoPhongFederation(", "phongFederationDuocVao("] },
   // ── twin: cổng có từ Đợt 6 (G12/G20)
   { file: "server/_core/socket.ts", phong: /^`twin:\$\{twinFactoryId\}`$/, gate: ["nguoiXemDuocNhan(", "resolveTenantFactoryScope("] },
   // ── engineering: QUYỀN + PHẠM VI
@@ -56,10 +57,8 @@ const LUAT: Luat[] = [
   {
     file: "server/_core/socket.ts",
     phong: /^"global"$/,
-    mien: "phòng chung CHỈ cho socket người dùng đã xác thực (đã qua `laSocketNguoiDung` ở đầu `subscribe`). ⚠ GHI NHẬN: nhiều sự kiện máy vẫn phát vào `global` (andon/oee/inspection…) — rò theo NHÀ MÁY ở tầng PHÁT, không phải tầng vào phòng; cần việc riêng (phát theo phòng nhà máy).",
+    mien: "phòng chung CHỈ cho socket người dùng đã xác thực (đã qua `laSocketNguoiDung` ở đầu `subscribe`). KHÔNG mang dữ liệu: từ P-S1b không còn điểm phát nào vào `global` (census socketPhatCensus, MIEN rỗng). Nơi DUY NHẤT còn dùng nó là `phatTwinUpdateTheoPhamVi` — CHỈ để LIỆT KÊ socket (`fetchSockets`), rồi lọc trạm theo phạm vi TỪNG người nhận và bỏ hẳn người phạm vi rỗng (ghim bằng đột biến ở socketPhamViSite.test.ts).",
   },
-  { file: "server/_core/socket.ts", phong: /^`site:\$\{\(data as any\)\.siteCode\}`$/, mien: "roll-up liên nhà máy của federation (cấp SITE, không phải dữ liệu một nhà máy); chưa có mô hình phạm vi theo site — cần quyết định sản phẩm." },
-  { file: "server/_core/socket.ts", phong: /^"sites:global"$/, mien: "như `site:` — tổng hợp federation toàn cục; trang Federation là trang quản trị cấp tập đoàn." },
 ];
 
 /** Hợp lệ làm đối số cổng của `thuVaoPhong`. */
@@ -202,6 +201,20 @@ describe("ĐỘT BIẾN — lưới phải BẮT", () => {
     const g = 'thuVaoPhong("ai:agents", duocVaoPhongAiAgents(socket.data));';
     expect(socketTs()).toContain(g);
     for (const doi of ['thuVaoPhong("ai:agents", Promise.resolve(true));', 'thuVaoPhong("ai:agents");', 'socket.join("ai:agents");']) {
+      expect(quetJoin(socketTs().replace(g, doi), "server/_core/socket.ts").viPham.length, doi).toBeGreaterThan(0);
+    }
+  });
+
+  it("(b3) PV-socket-1 — phòng federation: cổng bị mở / bỏ, join theo danh sách trần, join trần `site:{code}` / `sites:global` quay lại ⇒ ĐỎ", () => {
+    const g = "for (const p of ds) thuVaoPhong(p, duocVaoPhongFederation(socket.data, p));";
+    expect(socketTs()).toContain(g);
+    for (const doi of [
+      "for (const p of ds) thuVaoPhong(p, Promise.resolve(true));",
+      "for (const p of ds) thuVaoPhong(p);",
+      "for (const p of ds) socket.join(p);",
+      g + "\n      socket.join(`site:${(data as any).siteCode}`);",
+      g + '\n      socket.join("sites:global");',
+    ]) {
       expect(quetJoin(socketTs().replace(g, doi), "server/_core/socket.ts").viPham.length, doi).toBeGreaterThan(0);
     }
   });

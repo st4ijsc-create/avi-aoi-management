@@ -78,6 +78,27 @@ describe("aggregator site:update + honest degradation", () => {
     expect(u.kpi.yieldRate).toBe(95);
     expect(u.kpi.oee).toBe(82.5);
     expect(u.alerts).toEqual({ open: 5, critical: 2 });
+    // PV-socket-1 fix round 1 (I2) — routing fields come from the SITE row (they decide sites:corp:{code} vs sites:all only)
+    expect(u.corporateCode).toBe("ACME");
+    expect(u.isLocal).toBe(false);
+  });
+
+  it("PV-socket-1 (I2): routing fields mirror the site row — local site ⇒ isLocal true; null-code site ⇒ corporateCode null; two sites, one emit each", async () => {
+    holder.result = { ok: true, httpStatus: 200, endpointsHit: [], snapshot: okSnapshot };
+    siteRows = [
+      makeSite({ id: 2, code: "CORE", corporateCode: "ACME", isLocal: true }),
+      makeSite({ id: 3, code: "NOCORP", corporateCode: null, isLocal: false }),
+      makeSite({ id: 4, code: "VN01", corporateCode: "VN.HCM", isLocal: false }),
+    ];
+    const { triggerAggregationCycle } = await import("./aggregatorService");
+    await triggerAggregationCycle();
+
+    const theoMa = Object.fromEntries(siteUpdates.map((u) => [u.siteCode, { corporateCode: u.corporateCode, isLocal: u.isLocal }]));
+    expect(theoMa).toEqual({
+      CORE: { corporateCode: "ACME", isLocal: true }, // the core's whole cross-factory aggregate ⇒ must stay full-access only
+      NOCORP: { corporateCode: null, isLocal: false },
+      VN01: { corporateCode: "VN.HCM", isLocal: false },
+    });
   });
 
   it("a DOWN site does NOT emit site:update and does NOT fabricate a snapshot", async () => {

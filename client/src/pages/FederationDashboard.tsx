@@ -82,7 +82,8 @@ type AlertRollupOutput = FederationOutputs["alertRollup"];
 type CategoryRollupOutput = FederationOutputs["categoryRollup"];
 type RollupCategoryKey = CategoryRollupOutput["category"];
 
-/** Compact live projection pushed on the `sites:global` room. Mirrors the
+/** Compact live projection pushed as `site:update` (server rooms `sites:all` /
+ *  `sites:corp:{corporateCode}`, scoped like the tRPC reads — PV-socket-1). Mirrors the
  *  server's SiteUpdateEvent (server/_core/socket.ts) — kept local to avoid a
  *  server-internal import from the client bundle. */
 interface SiteUpdateEvent {
@@ -578,8 +579,10 @@ export default function FederationDashboard() {
   const rollupsBase = rollupsQ.data ?? [];
   const summary = summaryQ.data;
 
-  // ── U5 LIVE — subscribe `sites:global` for `site:update` (freshness + headline
-  // KPIs + alert counts). When the aggregator/socket is off we simply never
+  // ── U5 LIVE — `subscribe {sitesGlobal:true}` for `site:update` (freshness + headline
+  // KPIs + alert counts). The server joins this socket only to the sites it may read
+  // (admin_system + corporate scope, PV-socket-1); otherwise nothing arrives and the
+  // 30s poll is the only source. When the aggregator/socket is off we simply never
   // receive events and fall back to the existing 30s poll below. The overlay is
   // keyed by siteCode and merged onto the polled rows so we never fabricate a
   // site we didn't poll.
