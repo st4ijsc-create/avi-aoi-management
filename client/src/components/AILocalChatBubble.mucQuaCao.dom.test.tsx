@@ -31,6 +31,7 @@ vi.mock("@/lib/trpc", () => {
     trpc: {
       useUtils: () => ({}),
       aiLocalKb: { health: query, reload: mut(), feedback: mut() },
+      aiChat: { createConversation: mut(), saveStreamedMessage: mut() },
       aiCopilot: {
         confirmAction: { useMutation: () => ({ isPending: false, mutateAsync: H.confirm }) },
         cancelAction: mut(),
