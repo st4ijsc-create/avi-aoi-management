@@ -16373,8 +16373,8 @@
     "trendDesc": "kWh và CO₂ theo kỳ"
   },
   "cockpit": {
-    "actionsGate": "Cockpit chỉ đọc. \"Đề xuất\" mở Control Plane có kiểm soát — không bao giờ phát lệnh trực tiếp.",
-    "actionsHint": "Các lệnh bạn CÓ THỂ đề xuất. Việc thực thi vẫn nằm sau lớp điều khiển có kiểm soát (HITL / chạy thử) — không có gì chạy từ đây.",
+    "actionsGate": "Cockpit chỉ đọc. Không phát lệnh từ đây; lệnh đi qua màn điều khiển máy có kiểm soát.",
+    "actionsHint": "Các lệnh mà hồ sơ năng lực của máy này hỗ trợ — chỉ để tham khảo. Không có lệnh nào chạy từ đây.",
     "active": "Hoạt động",
     "adapterKind": "Loại adapter",
     "alarmsHint": "Nguồn cảnh báo chuẩn hóa ISA-18.2 theo từng máy",

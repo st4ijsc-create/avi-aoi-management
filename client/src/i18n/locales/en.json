@@ -16373,8 +16373,8 @@
     "trendDesc": "kWh and CO₂ by period"
   },
   "cockpit": {
-    "actionsGate": "Read-only cockpit. \"Propose\" opens the gated Control Plane — it never dispatches a command directly.",
-    "actionsHint": "Commands you MAY propose. Execution stays behind the existing gated (HITL / dry-run) control surface — nothing runs from here.",
+    "actionsGate": "Read-only cockpit. It never dispatches a command; commands go through the gated machine control surface.",
+    "actionsHint": "Commands this machine's capability profile supports — for reference only. Nothing runs from here.",
     "active": "Active",
     "adapterKind": "Adapter kind",
     "alarmsHint": "Per-machine ISA-18.2 normalized feed",
