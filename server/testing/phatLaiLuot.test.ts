@@ -268,4 +268,30 @@ describe("H4.2 (03/11, fixture thật đầu tiên) — cắt cụt, thư mục 
     expect(soSuKien([{ loai: "chu", noiDung: "đúng…" }], [{ loai: "chu", noiDung: "sai hoàn toàn khác hẳn chuỗi kia" }])).toMatchObject({ duong: "suKien[0].noiDung" });
     expect(soSuKien([{ loai: "x" }], [{ loai: "x" }, { loai: "y" }])).toMatchObject({ duong: "suKien.length" });
   });
+
+  // (rà kiem-dinh 03/11 — 5 đột biến sống)
+  it("(t23) dangSoTin chuẩn hoá số đo TRƯỚC khi sắp dòng: hai dòng chỉ khác thời gian, thứ tự THÔ ngược nhau giữa ghi và phát ⇒ KHỚP", () => {
+    // thô: ghi sắp [10ms z, 9ms a], phát sắp [12ms a, 8ms z] — sau chuẩn hoá cả hai là [<T> a, <T> z]
+    expect(soYeuCau(yc([{ role: "tool", content: "x (10ms) z\nx (9ms) a" }]), yc([{ role: "tool", content: "x (8ms) z\nx (12ms) a" }]))).toBeNull();
+  });
+  it("(t17) soSuKien: chuỗi sự kiện CÙNG tập dòng khác thứ tự ⇒ khớp; khác một dòng ⇒ lệch", () => {
+    expect(soSuKien([{ loai: "ket-qua-tool", dauRa: "E a\r\nE b" }], [{ loai: "ket-qua-tool", dauRa: "E b\r\nE a" }])).toBeNull();
+    expect(soSuKien([{ loai: "ket-qua-tool", dauRa: "E a\nE b" }], [{ loai: "ket-qua-tool", dauRa: "E a\nE c" }])).toMatchObject({ duong: "suKien[0].dauRa" });
+  });
+  it("(t22) chuanHoaSoDo: đơn vị giây TRẦN ('0.12s', '3 s', '2 sec', '1 second(s)')", () => {
+    expect(chuanHoaSoDo("15 passed in 0.12s")).toBe(chuanHoaSoDo("15 passed in 3.5s"));
+    expect(chuanHoaSoDo("xong sau 3 s")).toBe(chuanHoaSoDo("xong sau 12 s"));
+    expect(chuanHoaSoDo("2 sec · 1 second · 4 seconds")).toBe(chuanHoaSoDo("9 sec · 7 second · 1 seconds"));
+  });
+  it("(t12) ranh giới cắt cụt: 1–2 ký tự đầu gốc trước '…' KHÔNG thay (quá ngắn để là đường); 3 ký tự thì thay", () => {
+    const t = taoBoThay(goc, {});
+    expect(t("ổ D…")).toBe("ổ D…");
+    expect(t("ổ D:…")).toBe("ổ D:…");
+    expect(t("ổ D:\\…")).toBe(`ổ ${TOKEN_GOC_CAT}…`);
+  });
+  it("(t21) dongGoi ghi lenh.doDaiGoc = độ dài chuỗi gốc lúc ghi (phát lại dựng gốc cùng độ dài)", async () => {
+    const { dongGoi } = await import("./phatLaiLuot");
+    const fx = dongGoi([{ loai: "dau" }], { goc: "D:/goc/x", duAnTuongDoi: ".", cauHoi: "q", cheDo: "hoi", suKien: [], lyDo: null, nguoi: {} });
+    expect(fx.lenh.doDaiGoc).toBe("D:/goc/x".length);
+  });
 });
