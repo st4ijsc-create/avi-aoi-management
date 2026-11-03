@@ -1,0 +1,323 @@
+# 50 · Điều khiển một cửa (control)
+
+| | |
+|---|---|
+| Mục tiêu phục vụ | M5 hành động tự động hoá (trực tiếp: mọi lệnh xuống thiết bị); M2 (faceplate L3); M3 (nạp chương trình/recipe qua cùng cửa); AI (L‑7) |
+| Phụ thuộc | 10 hierarchy (phạm vi `control` theo nút cây), 20 asset (tag.writable/actuation_level/energy_direction/stop_value, connection, edge_node, asset_credential), 30 telemetry (LiveStore cho đọc lại, interlock đọc giá trị sống), 40 alarm (`raiseEvent` cho interlock/safety/STOP), 90 platform (2FA, quyền, audit WORM) |
+| Module phụ thuộc vào đây | 60 inspection (interlock từ NG/SPC), 70 engineering (nạp chương trình/recipe = lệnh), 80 ai (tool điều khiển qua L‑7), 90 (báo cáo lệnh) |
+| Mốc đo | `_ai8_wt 25a9de749` (2026-11-03), DB `aoi_management@5434` read-only; SCADA D1–D11 (duyệt 2026-10-23), phân tích K5 `2026-10-23-scada-phan-tich-chi-tiet.md` §B.2/§C.5, spec mượt v3 §6–7, L‑7 (2026-09-07), A2(o) edge |
+| Trạng thái | **v1.1 — ĐÃ DUYỆT 2026-11-03** (8 câu hỏi §7 duyệt theo khuyến nghị; mig 0530–0549; C0 ngay, C1–C5 sau A2(o)) |
+
+## 0. Phạm vi của module
+
+Module này sở hữu **đường đi của một lệnh từ ý định tới thiết bị và kết quả đọc lại**: cửa yêu cầu → xem trước → xác nhận (HITL, 2FA theo mức) → chuỗi cổng (`dispatch()`: ràng buộc hash, idempotency, kênh, chế độ LOCAL/REMOTE, chế độ thật/mô phỏng, nghiệm thu, chính sách, tiền kiểm safety PLC, interlock, đặt chỗ, hàng đợi) → driver/edge → đọc lại → sổ cái. Nó sở hữu **đường DỪNG** (ưu tiên tuyệt đối, một bước, không bị che), **interlock** (quy tắc, engine, cổng fail‑closed), **safety PLC** (cấu hình tin cậy, tiền kiểm), **nghiệm thu/commissioning**, **sở hữu thiết bị trung tâm↔edge**, và hàng rào AI **L‑7**.
+
+Module này **không** sở hữu: định nghĩa tag và mức tác động (20 — 50 chỉ đọc), giá trị sống (30), sự kiện/cảnh báo sinh ra từ lệnh/interlock (40 — 50 gọi `raiseEvent`), nội dung chương trình/recipe (70 — 50 chỉ chở "lệnh nạp"), robot/AGV (tạm dừng theo 20 §7 Q2; khi mở lại phải đi qua cửa này).
+
+Bất biến (từ ràng buộc 01 §9 #1–5, #13, #17, #22): **(1)** mọi byte ghi xuống thiết bị đi qua `dispatch()` — ngoại lệ duy nhất là DỪNG dự phòng trung tâm có sổ WORM; **(2)** interlock thiếu dữ liệu = chặn, đọc giá trị sống; **(3)** chưa khai kênh chế độ = LOCAL; **(4)** ghi thật chỉ khi có safety PLC và đã nghiệm thu; **(5)** không cổng phụ, hộp thoại, khung nổi nào che nút DỪNG; **(6)** AI theo hướng năng lượng, fail‑closed, mức ≥ 4 chặn cứng; **(7)** "kết quả không rõ" của DỪNG không bao giờ chờ đọc lại (2a).
+
+> **Ranh giới thi công:** `services/scada/*`, `services/ot/commandDispatcher.ts`, `otDeviceWrite.ts`, `edge/*` đang do scada-master hoàn thiện (R1b‑2b‑2 → A2). Module này **nhận nguyên trạng chuỗi cổng đã nghiệm thu**, không viết lại; phần di trú §5 chỉ bắt đầu **sau A2(o) lên main**, và mọi đổi tên bảng/cột đi kèm view tương thích.
+
+---
+
+## 1. Hiện trạng đo được
+
+### 1.1 Chuỗi cổng đã có (giữ nguyên)
+
+`commandDispatcher.ts` (3 470 dòng) + `otDeviceWrite.ts` (1 560) — **đúng một** chỗ gọi `driver.writeTags(` (`otDeviceWrite.ts:1346`). Thứ tự cổng thực chạy `[đo]`:
+
+| # | Cổng | Từ chối | Cờ |
+|---|---|---|---|
+| 1 | HITL: `ai_pending_actions` đã `confirmed`, chưa hết hạn, đúng chủ, đúng tool, **đúng `__otPayloadHash`**; không `actionId` ⇒ từ chối (trừ DỪNG ghim) | `NOT_CONFIRMED`, `ACTION_BINDING_MISMATCH` | luôn |
+| 1b | Thiếu idempotency key trên lệnh thường | `PRECONDITION_FAILED` | luôn |
+| 2 | Idempotency / phát lại | trả kết quả cũ; `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE_IN_FLIGHT` | luôn |
+| 3 | Adapter bật, tag tồn tại/bật/`writable` | `TAG_NOT_WRITABLE` | DB |
+| 3b | Kênh: kiểu, `write_min/max/step` (chạy cả khi mô phỏng) | `CHANNEL_*` | luôn |
+| 3c | **Chế độ LOCAL/REMOTE** (`cheDoMay`): REMOTE chỉ khi mẫu tươi/good = `gia_tri_remote`; còn lại LOCAL | `LOCAL` | `SCADA_CONG_CHE_DO_ENABLED` hoặc tool HMI; DỪNG ghim miễn |
+| 4 | Driver trung tâm; adapter thuộc edge ⇒ DỪNG chuyển edge, lệnh khác từ chối | `ADAPTER_OWNED_BY_EDGE` | `edgeNodeId` |
+| 5 | `OT_CONTROL_ENABLED` ≠ true ⇒ ghi `simulated` | — | |
+| 5a | Chưa nghiệm thu ⇒ `simulated` | — | `OT_COMMISSIONING_REQUIRED` |
+| 5a‑stop | Phân loại DỪNG ghim, chuẩn hoá giá trị theo `stop_value` | — | |
+| 5a‑policy | `evaluateCommandPolicy` | `POLICY_DENIED` | `SEC_PLATFORM` |
+| 5a‑safety | Tiền kiểm safety PLC (hạn 5 s); `BLOCKED/SIM_ONLY/UNKNOWN` đều từ chối; DỪNG ghim miễn | `SAFETY_*` | `OT_SAFETY_PREFLIGHT_ENABLED` |
+| 5a‑bis | `evaluateInterlockGate` fail‑closed (> 1 000 luật ⇒ chặn; thiếu dữ liệu ⇒ chặn trừ `khiThieuDuLieu=cho_qua`) | `INTERLOCK_BLOCKED` | luôn |
+| 5b | Đặt chỗ ghi trước: INTENT row dưới `pg_advisory_xact_lock`, CAS `confirmed→executed` | `DUPLICATE_IN_FLIGHT` | luôn |
+| 5c | Hàng đợi theo adapter (≤ 10) | `BUSY`, `SUPERSEDED_BY_STOP` | `OT_CMD_SERIALIZE_ENABLED` |
+| 5d/5e | Kiểm lại safety nếu chờ lâu; STOP epoch đổi | `STOPPED_BEFORE_WRITE` | |
+| 6 | `writeTags` + đọc lại (`OT_READBACK_ENABLED` hoặc `docLai=bat_buoc` ở HMI) | `acked_verified/unverified/failed/timeout` | |
+
+Không có trong dispatcher: 2FA (ở cửa gọi) và giới hạn tốc độ (ở L‑7/limiter). Dispatcher **không phát socket**; HMI phát `scada:cmd` vào `user:{id}`.
+
+### 1.2 Các cửa vào `[đo]`
+
+| Cửa | Điểm vào | Cổng thêm trước `dispatch()` | Trạng thái | Về đâu |
+|---|---|---|---|---|
+| **HMI ghi** | `scadaCommands.request → confirm` (`lenhHmi.ts` 2 281) | `SCADA_COMMANDS_ENABLED`, phạm vi `control` nút cây, kênh, sàn vai trò + `machine_control.canEdit`, **2FA theo mức** (4: step‑up 10 phút; 5: TOTP mỗi lần), khoá chọn, TTL 60 s, đọc lại bắt buộc, `scada_command_attempts` WORM | cờ tắt; nghiệm thu bench OpenPLC 24/24 | **cửa chuẩn** — `control.command.*` |
+| **HMI DỪNG** | `scadaCommands.dungMay` | một bước; chỉ giá trị ghim mức ≤ 1; không 2FA/khoá/chế độ; miễn cổng đổi mật khẩu; ngân sách 2 s/2,5 s; nhãn "không rõ" + băng E‑STOP cứng | cờ tắt; bench PLC thật | **giữ** — `control.stop.*` |
+| AI tool OT (`machineControl.ts`, `visionControl.ts`) | `aiCopilot.confirmAction` (+ agent/CLI/tự xác nhận) | RBAC, **L‑7** (`kiemCongAi`: mức ≥ 4 chặn cứng; `AI_OT_CONTROL_ENABLED` tắt; 5 lệnh/60 s/(user, adapter) **trong RAM**; safety OK), 2FA theo mức; TTL 5 phút | cờ tắt | gộp vào `control.command.*` với `actor.kind=ai` |
+| Interlock auto‑block | poll 10 s nội bộ | luật duyệt + `approvedDefHash` | cờ tắt | giữ; engine → worker; phát `raiseEvent(kind=interlock)` |
+| FOE bước OT | `orchestration.startRun/resumeRun/abortRun` (actuation + 2FA) | duyệt gate FOE; ⚠ A2(i): cổng interlock **tin `input.machineId`** — bước nêu adapter máy khác né luật (lỗ sống, đang vá) | cờ tắt | 70 gọi `control.command.request` với `source=flow` |
+| MELSEC param push | `programming.deployBuild` (TOTP mỗi lần, bốn mắt) | sign‑off, băm build | cờ tắt | 70 → `control.command.request(kind=program)` |
+| Sparkplug DCMD/NCMD | MQTT | `requireBoundAction` nhưng không ai tạo pending `sparkplug.command` | **chết** | gỡ |
+| REST v1 OT `POST /equipment/:id/commands` | REST | **501** (D8 xong) | chết | gỡ hẳn tuyến |
+| REST v1 robot | cùng route | `actionId` tổng hợp `apiv1-*` ⇒ motion hỏng ràng buộc | tạm dừng | gỡ cùng robot |
+| `adapterFacade.executeCommand` | không ai gọi | không `actionId` ⇒ từ chối | chết | gỡ |
+| Robot `dispatchRobotJob` (`robot.actuate/consoleStop`, VDA5050, ROS2) | `actuationProcedure` | idempotency, HITL motion, nghiệm thu, policy, safety, **interlock có**; **không cổng LOCAL/REMOTE** (0 lần `cheDoMay`) | cờ tắt (20 Q2) | tạm dừng; khi mở lại = `dispatch(kind=robot)` |
+| Edge OT/robot (`otEdgeDispatch.ts`, A2) | `/api/v1/edge/node/runs/:id/authorize` → edge | uỷ quyền ký Ed25519 TTL 10 s, A2(o) `CONFIG_STALE`/`SAFETY_CONFIG_MISSING` chỉ chặn lệnh thường; **không cổng chế độ** | cờ tắt; đang làm | giữ; bổ sung cổng chế độ (Q6) |
+| **DỪNG dự phòng trung tâm** (`deviceOwnershipService.sendAdapterStop`) | chuyển sở hữu / quét ≤ 10 s / dự phòng dispatcher | **không HITL, không nghiệm thu, không interlock** — chỉ giá trị ghim + `OT_CONTROL_ENABLED`; WORM `central_stop_executions` | cờ tắt | giữ (ngoại lệ DỪNG, Q3) |
+| **Zmotion deployFile** (FFI `koffi`) | `programming.deployBuild` | sign‑off + TOTP; **né cả hai dispatcher** | không chạy được (thiếu dll) | 70 → qua `dispatch(kind=program)` hoặc tắt (Q4) |
+| `mqttClient.sendCommand` (CHECK_UPDATE/RESTART_APP) | tRPC, **không xác nhận** ở UI | `settings_factory` | sống | đóng băng cùng FactoryAlert (Q10 báo cáo) |
+
+SECS S2F41, FOCAS, Euromap, MTConnect: **không có đường ghi**. `lineController.command`, `machineRecipe` deploy, fleet: không chạm thiết bị (máy trạng thái/sổ cái).
+
+### 1.3 Dữ liệu `[đo]`
+
+| Bảng | Hàng | Ghi chú |
+|---|---|---|
+| `command_log` | **0** | sổ lệnh; `machineId` int không FK; naive; enum 8 trạng thái |
+| `scada_command_attempts` | **0** | WORM; tz |
+| `ai_pending_actions` | — | hàng chờ HITL (cả AI lẫn HMI `hmi.write_tag`); naive |
+| `device_tags` | 42, **`writable=false` 42/42**; `actuation_level` 1/3/4/5 (NULL = 5); `stop_value`, `write_min/max/step`, `channel_kind` | → 20 `tag` |
+| `scada_kenh_che_do` | **0** | ⇒ mọi máy LOCAL (D3) |
+| `scada_khoa_chon` | 0 | |
+| `interlock_rules` / `_events` | 1 / 3 | luật SIM `action=alert`; `approvedDefHash` TOFU 1 luật |
+| `safety_plc_configs` / `_trust` / `_poll_state` | 1 / 0 / 0 | |
+| `commissioning_records` / `robot_…` / `aoi_…` | 9 / 3 / 1 | |
+| `parameter_guardrails` | **0** | AI bị chặn mọi ghi tham số số học (trạng thái ĐÚNG, L‑7) |
+| `edge_nodes` | 3 (offline 3) | `edge_step_authorizations` 0, `central_stop_executions` 0, `device_owner_changes` 0 |
+| `totp_consumed` / `totp_khoa_sai` | 3 / 0 | |
+| `control_audit_log` | 3 | chuỗi băm |
+| `machine_recipes` / `recipe_deployments` / `changeover_requests` | 5 / 3 / 0 | FK machines RESTRICT |
+
+Kết luận đo: **chuỗi cổng 16 bước chưa từng chạy trên dữ liệu thật** (`command_log` 0, 0 tag writable, 0 kênh chế độ). Cái giữ an toàn hôm nay là dữ liệu chưa điền + cờ tắt, không phải vận hành đã kiểm (L‑7 phát hiện 2). Bench OpenPLC là bằng chứng duy nhất (24/24, có kịch bản rớt link lúc ghi).
+
+### 1.4 Frontend `[đo]`
+
+| Tệp | LOC | Route | Xác nhận | Chế độ | DỪNG | Màu thô |
+|---|---|---|---|---|---|---|
+| `components/scada/Faceplate.tsx` | 340 | `/scada/config/channels`, `/scada/diag` | lý do ≥ 5 → `request` → `HopThoaiLenh` | **có** (LOCAL ẩn ghi; không rõ = LOCAL) | `NutDungMay` — **bị hộp thoại lồng che** suốt pha xác nhận | 0 |
+| `components/scada/HopThoaiLenh.tsx` | 440 | con | TTL đếm từ lúc nhận, TOTP mức ≥ 4, `scada:cmd` | hiện real/simulated | — | 0 |
+| `components/scada/DungMay.tsx` | 574 | con | một bước, autofocus, sau 10 s mở "dùng E‑STOP cứng"; `BangEstopCung` | hiện cả khi LOCAL | **đúng chuẩn** | 0 |
+| `KhoiDungKhanCap.tsx` | 94 | màn đổi mật khẩu bắt buộc | — | — | có (mục 59) | 0 |
+| `KenhCheDoMay`, `BangKenh`, `HopKhaiHangLoat`, `BangTruyenThong`, `NganTagAdapter`, `DieuKienChoPhep`, `HopMaTotpTroLai` | 1 853 | `/scada/*` | lý do + TOTP | KenhCheDoMay quản lý | BangTruyenThong có NutDungMay/máy | 0 |
+| `pages/ScadaDiag/ScadaKenh/ScadaNhatKy` | 891 | `/scada/diag`, `/scada/config/channels`, `/scada/journal` | | | | 0 |
+| `pages/CommandConsole.tsx` (robot) | 429 | `/command-console` | gõ mã robot + preview interlock; **không TTL/OTP/hash**; STOP cũng phải gõ | **không** | hai bước (sai bất biến 5) | 3 |
+| `pages/RobotControl.tsx` + `EdgeResolutionPanel` | 918 | `/robot-control` | AlertDialog + lý do | không | hiển thị | 0 |
+| `pages/MachineCockpit.tsx` | 1 425 | `/machine/:id` | "Đề xuất" → `/control-plane?machineId=&command=` **ngõ cụt** (ControlPlane không đọc tham số) | không | không | 0 |
+| `LineCommandBar` | 245 | `/line-view` | `ConfirmWithReason` | FSM, không LOCAL/REMOTE | Hold | 0 |
+| `pages/InterlockRuleManagement.tsx` | 1 471 | `/interlock-rules` | `ConfirmWithReason` + TOTP | — | — | 7 |
+| `pages/SafetyWorkforce.tsx` + `SafetyPlcTrustPanel` + `SafetyLatchWarning` | 1 921 | `/safety-workforce` | AlertDialog; handshake/advancePhase **một bấm** | — | hiển thị | 69 |
+| `pages/ControlReadiness.tsx`, `ControlPlane.tsx`, `SystemHealth` (commissioning), `DeviceAdapterManagement` (stop pin) | 2 888 | | | | `PinnedStopTagsPanel` | 0 |
+| `OrchestrationStudio.tsx` | 3 141 | `/orchestration-studio` | step‑up OTP; ghim `defHash`+`bindingDigest`; Abort **một bấm** | không | "Gửi lại bước STOP" | 102 |
+| `EngineeringWorkspace.tsx`, `RollbackConfirm`, `ProgramReleasePanel`, `RecipeManagement`, `EquipmentIntegration`, `ChangeoverQueue` | 5 843 | | wizard + step‑up OTP / AlertDialog / `window.confirm` ×1 | không | không | 47 |
+| `ApprovalsInbox`, `AIActionInbox`, `ConfirmActionCard`, `AIGuidedActionCards`, `TechnicianCopilot` | 3 079 | | TTL + token (bản sao `useCountdown` ×2) | không | không | 76 |
+| `MqttClientManagement.tsx` | 2 035 | `/connectivity?tab=clients` | `sendCommand` **không xác nhận** | — | — | 0 |
+
+Phát hiện: **8 kiểu hộp xác nhận** (HopThoaiLenh, HopDungMay, ConfirmWithReason, StepUpOtpDialog, HopMaTotpTroLai/TruongTotp, typed‑confirm CommandConsole, ConfirmActionCard, ghim digest rời); **chỉ Faceplate biết LOCAL/REMOTE**; `AiChatFrame` nổi `z-50` **không ẩn trên `/scada/*`, `/command-console`, `/line-view`** (vi phạm bất biến 5); không có FAT page; không có thư viện ký hiệu/faceplate v2 (spec v3 §5.2/§6 chưa làm — pha 1d).
+
+### 1.5 Kết luận hiện trạng
+
+1. **Lõi đúng, đã nghiệm thu, đang tắt**: chuỗi cổng + HMI request→confirm + DỪNG là phần chín nhất của hệ; chỉ thiếu dữ liệu (tag writable, kênh chế độ, safety PLC thật) và cờ.
+2. **Ba đường né cổng**: DỪNG dự phòng trung tâm (chấp nhận được — ngoại lệ DỪNG có WORM), Zmotion FFI (không chấp nhận), edge OT không cổng chế độ (lỗ, A2).
+3. **Nhiều cửa trùng cho cùng một hành động**: AI tool OT có pending/TTL/2FA riêng (5 phút) song song với HMI (60 s); FOE/MELSEC/robot mỗi đường một bộ xác nhận; UI 8 hộp thoại.
+4. **Bất biến DỪNG bị UI vi phạm hai chỗ**: hộp thoại lồng trong Faceplate và `AiChatFrame`; robot STOP phải gõ mã.
+5. Sổ cái tách 4 bảng không FK (`command_log`, `scada_command_attempts`, `ai_pending_actions`, `robot_jobs`) + 3 bảng nghiệm thu + 2 bảng TOTP; naive/tz lẫn.
+
+---
+
+## 2. Mục tiêu: mô hình dữ liệu
+
+### 2.1 Quyết định thiết kế `[QĐ 2026-11-03]`
+
+1. **Giữ nguyên chuỗi cổng `dispatch()` và đường DỪNG HMI** như đã nghiệm thu (bench 24/24); module này không viết lại, chỉ **đổi tên/thêm FK bằng view tương thích sau A2(o)**.
+2. **Một yêu cầu lệnh = `command_request`** (= `ai_pending_actions` thu hẹp cho tool điều khiển): mọi nguồn (HMI, AI, luồng 70, nạp chương trình, interlock) tạo yêu cầu cùng khuôn `{kind, asset_id, tag_id, value, actor, preview, level, route, mode, hash, expires_at}`; **một TTL 60 s** cho người (AI đề xuất cũng 60 s kể từ khi hiện thẻ — bỏ 5 phút); `ai_pending_actions` giữ cho tool **không** chạm thiết bị (80).
+3. **Một sổ cái `command`** (= `command_log` + FK `asset_id/tag_id/request_id`, timestamptz) + **`command_attempt`** (= `scada_command_attempts` mở rộng cho mọi nguồn, WORM) + `robot_jobs` gộp vào `command(kind=robot)` khi robot mở lại.
+4. **Mức tác động là của tag** (20 `tag.actuation_level ∈ {1,3,4,5}`, **không có mức 2** — khớp mã và 20 §2.2) + `energy_direction`; mức hiệu lực = max(mức tool, mức kênh). 2FA theo mức: 1/3 không; 4 step‑up 10 phút; 5 TOTP mỗi lần — một middleware `xacThucTheoMuc` dùng cho **cả HMI lẫn AI lẫn luồng**.
+5. **DỪNG**: ba đường được phép — HMI `dungMay` (một bước), DỪNG dự phòng trung tâm (ngoại lệ, WORM), DỪNG edge không chữ ký; tất cả chỉ ghi giá trị ghim mức ≤ 1; `setStopPin` cần engineer + TOTP. Không đường DỪNG nào chờ đọc lại; "không rõ" là trạng thái hợp lệ ⇒ băng E‑STOP cứng + `raiseEvent(P1)`.
+6. **Interlock**: `interlock_rule` giữ (thêm `asset_id`/`line_id` FK, `approved_def_hash`); engine chạy ở worker trên LiveStore (30), cổng đọc cùng nguồn; mọi lần fire/chặn ⇒ `raiseEvent(kind=interlock)` (40) thay `andon` trực tiếp; `action=alert` chuyển thành `alarm_definition(condition=rule)` (40 Q3).
+7. **Safety PLC**: `safety_plc_config` (+ trust maker‑checker, poll state) giữ; `asset.safety_plc_id` (20) là điều kiện "ghi thật" (D9); không có PLC ⇒ chỉ mức ≤ 1 (DỪNG) — bỏ phương án miễn trừ `safety_waiver_level_max`.
+8. **Nghiệm thu**: ba bảng `commissioning_records/robot_/aoi_` → `commissioning` (asset_id, scope, signed_by, expires_at, revoked); readiness là **read‑model** từ asset/tag/connection/safety/commissioning/mode, không bảng.
+9. **Robot/AGV/VDA5050/ROS2**: tạm dừng (20 Q2); mã giữ; khi mở lại, `dispatchRobotJob` thành nhánh `kind=robot` trong `dispatch()` và **phải có cổng chế độ**.
+10. **Gỡ**: Sparkplug DCMD, REST v1 `/equipment/:id/commands` (cả robot), `adapterFacade.executeCommand`, `mqttClient.sendCommand` (đóng băng cùng FactoryAlert), Zmotion FFI trực tiếp (70 phải đi qua `dispatch(kind=program)`).
+
+### 2.2 Đặc tả bảng (mới/đổi)
+
+#### `command_request` (thay `ai_pending_actions` cho tool điều khiển)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| id | uuid | = token xác nhận (giữ cách làm hiện tại) |
+| site_id | bigint FK | RLS |
+| kind | varchar(16) | `write · stop · program · recipe · robot · interlock` |
+| asset_id / tag_id / connection_id | bigint FK | |
+| source | varchar(12) | `hmi · ai · flow · program · interlock · system` |
+| actor_kind / actor_id | | `user/ai/system` |
+| requested_value / after_formula | jsonb | giá trị sau công thức ra là giá trị bị băm |
+| payload_hash | varchar(80) | `sha256:` canonical (ép kiểu trước khi băm) |
+| level | smallint | 1/3/4/5 hiệu lực |
+| needs_totp | boolean | |
+| route | varchar(8) | `central · edge` |
+| mode | varchar(10) | `real · simulated` + `simulated_reasons text[]` (sửa P‑C5: người thấy trước khi bấm) |
+| preview | jsonb | máy, kênh, đơn vị, giá trị hiện tại {v,q,ageMs}, cảnh báo |
+| status | varchar(16) | `proposed · confirmed · executed · denied · expired · cancelled` |
+| confirmed_by / confirmed_at | | ≠ actor khi `source=ai` (bốn mắt) |
+| expires_at | timestamptz | +60 s |
+| idempotency_key | varchar(80) unique | |
+| reason | text | ≥ 5 ký tự khi người |
+| created_at | timestamptz | |
+
+#### `command` (= `command_log` + FK)
+
+Giữ mọi cột hiện có; thêm `request_id FK command_request`, `asset_id FK`, `tag_id FK`, `kind`, `origin`; `machineId/adapterId/tagKey` giữ tới khi 20‑A8; `sentAt/ackedAt/createdAt` → timestamptz. Sổ append‑only: INTENT + RESULT như hiện tại. View `command_log` tương thích một chu kỳ.
+
+#### `command_attempt` (= `scada_command_attempts` + `source`, `kind`, `asset_id`)
+
+WORM; mọi từ chối ở mọi cửa (không chỉ HMI) ghi một hàng `stage/outcome/reason_code`.
+
+#### Giữ nguyên tên, thêm FK/tz
+
+`scada_kenh_che_do` (→ `tag.id` thay `adapter_id+tag_key` sau 20‑A3), `scada_khoa_chon`, `interlock_rule(s)`, `interlock_event(s)` (+ `command_id`, `alarm_event_id`), `safety_plc_config(s)` + `_trust` + `_poll_state`, `commissioning` (gộp 3), `central_stop_executions`, `edge_step_authorizations`, `robot_motion_lock*` (đóng băng), `totp_consumed`, `totp_khoa_sai`, `control_audit_log` (chuỗi băm — giữ, là WORM của module), `device_owner_changes`, `parameter_guardrails` (→ 80 đọc; 50 kiểm ở cổng 3b khi `source=ai`).
+
+#### Kiểu dùng chung `shared/control/types.ts`
+
+```ts
+export type ActuationLevel = 1 | 3 | 4 | 5;               // không có 2 (khớp aiControlGate)
+export type CommandKind = 'write' | 'stop' | 'program' | 'recipe' | 'robot' | 'interlock';
+export type CommandSource = 'hmi' | 'ai' | 'flow' | 'program' | 'interlock' | 'system';
+export type CommandStatus = 'simulated' | 'sent' | 'acked' | 'failed' | 'timeout' | 'rejected' | 'acked_verified' | 'acked_unverified' | 'unknown'; // unknown = DỪNG không rõ (2a)
+export type CommandPreview = { asset: string; channel: string; unit?: string; current: { v: unknown; q: 'good'|'uncertain'|'bad'; ageMs: number }; requested: unknown; afterFormula: unknown; level: ActuationLevel; needsTotp: boolean; mode: 'real'|'simulated'; simulatedReasons: string[]; route: 'central'|'edge'; warnings: string[]; expiresAt: number };
+```
+
+---
+
+## 3. Mục tiêu: backend
+
+### 3.1 Cấu trúc `server/modules/control/`
+
+| Tệp | Vai trò |
+|---|---|
+| `request.ts` | `requestCommand(input)` — cửa **duy nhất** tạo `command_request` cho mọi nguồn: phạm vi `control` nút cây (10), kênh/kiểu/dải/bước (20), công thức ra (70 sandbox), dự đoán `mode/route`, tính `level` hiệu lực, băm; nguồn `ai` thêm L‑7 (`kiemCongAi`) + `parameter_guardrails`; nguồn `flow` thêm kiểm `asset_id` của bước = asset của tag (vá A2(i)) |
+| `confirm.ts` | `confirmCommand(requestId, totp?)` — `xacThucTheoMuc` theo `level`; CAS `proposed→confirmed`; nguồn `ai` bắt buộc `confirmed_by ≠ actor`; gọi `dispatch()` hiện có với `triggeredBy:{kind:'hitl', tool, actionId, requireBoundAction:true}` |
+| `stop.ts` | `dungMay` (giữ nguyên `lenhHmi.dungMayHmi`), `mayDungKhanCap` (danh sách), DỪNG dự phòng (ownership), `setStopPin` (engineer + TOTP); mọi kết quả `unknown` ⇒ `raiseEvent(P1, STOP_UNKNOWN)` |
+| `dispatcher/` | **= `services/ot/commandDispatcher.ts` + `otDeviceWrite.ts` di chuyển nguyên văn** (sau A2), thêm nhánh `kind=program` (70) và `kind=robot` (đóng băng) |
+| `interlock/` | = `services/interlock/*` di chuyển; engine ở worker trên LiveStore; `raiseEvent` thay `raiseAndon` |
+| `safety/` | = `services/safety/*` phần PLC (config, trust, poll, preflight); phần "workforce/collaboration" không chạm thiết bị → 90 hoặc gỡ (Q7) |
+| `mode.ts` | = `scada/cheDoMay.ts` + `kenhScada`; áp cho **cả edge** (Q6) |
+| `commissioning.ts` | gộp 3 bảng; readiness read‑model |
+| `ownership.ts` | = `robot/deviceOwnershipService.ts` phần OT (central↔edge) |
+| `l7.ts` | = `ot/aiControlGate.ts` + `.safety.ts`; **limiter chuyển sang Redis** (hiện RAM ⇒ N bản = N×5) |
+| `router.ts` | `control.*` |
+
+### 3.2 Procedure `control.*`
+
+| Procedure | Loại | Ghi chú |
+|---|---|---|
+| `control.command.request` | actuation hoặc operator mức 1–3 (`machine_control.canEdit` + phạm vi) | trả `{requestId, preview, expiresAt}`; thay `scadaCommands.request`, `aiCopilot.proposeSuggestedAction` (tool OT), FOE/MELSEC nội bộ |
+| `control.command.confirm` | như trên + `xacThucTheoMuc` | `{commandIds, status, ok, simulated, reason?}`; thay `scadaCommands.confirm`, `aiCopilot.confirmAction` (tool OT) |
+| `control.command.cancel` / `.status` / `.list` | protected / permission(control_view) | timeline từ `command` + `command_attempt` |
+| `control.stop.machine` | operator + `canEdit`; **miễn** mọi cổng phụ (đổi mật khẩu, limiter vé) | = `scadaCommands.dungMay` |
+| `control.stop.candidates` | protected | = `mayDungKhanCap` |
+| `control.stop.setPin` / `.pins` | engineer + TOTP | = `deviceAdapter.tags.setStopPin` |
+| `control.mode.list` / `.set` / `.clear` | engineer + TOTP | = `scadaKenh.cheDo.*` |
+| `control.interlock.rule.list/get/create/update/approve/enable/disable/archive/test` | `interlock_manage`; approve admin, băm định nghĩa | = `interlock.*` |
+| `control.interlock.events` / `.resolve` | `control_view` / `interlock_manage` | sự kiện mirror ở 40 |
+| `control.safety.plc.list/propose/approve/reject/state` | engineer; maker‑checker | = `safety.*SafetyPlcConfig*` |
+| `control.commissioning.list/create/revoke` | admin_system | |
+| `control.readiness.matrix` | `control_view` | read‑model: tag writable · kênh chế độ · safety PLC · nghiệm thu · cờ · driver; thay `ControlReadiness`/`ControlPlane` |
+| `control.ownership.list/transfer/resolveStop` | admin/supervisor | = `edgeResolution.*` + ownership |
+| `control.journal.list` | `control_view` | = `scadaKenh` journal (`ScadaNhatKy`) |
+
+Quyền: `control_view`, `machine_control.canEdit` (giữ tên vì 23 bề mặt dùng), `interlock_manage`, `safety_manage`, `commissioning_manage`; vai trò sàn mức 4–5 = `actuationProcedure`.
+
+Socket: giữ `scada:cmd` (phòng `user:{id}`) cho trạng thái lệnh; không thêm `socket.join`/`io.emit` (ràng buộc #22). Mọi `raiseEvent` tới 40 đi `alerts:stream`.
+
+### 3.3 Cờ
+
+Giữ: `OT_CONTROL_ENABLED` (chủ dự án; D9 — hiện `.env` cây chính từng =true, đã báo), `OT_COMMISSIONING_REQUIRED` (bật), `OT_SAFETY_PREFLIGHT_ENABLED` (bật), `SCADA_COMMANDS_ENABLED`, `SCADA_CONG_CHE_DO_ENABLED` (→ **mặc định bật** khi cổng chế độ áp mọi nguồn), `INTERLOCK_ENGINE_ENABLED`, `INTERLOCK_AUTO_BLOCK_ENABLED`, `AI_OT_CONTROL_ENABLED` (tắt), `PARAM_GUARDRAIL_STRICT` (bật), `OT_READBACK_ENABLED` (→ mặc định bật), `OT_CMD_SERIALIZE_ENABLED`. Gỡ: `SPARKPLUG_COMMAND_ENABLED`, `ROBOT_*`/`VDA5050_ENABLED`/`ROS2_BRIDGE_ENABLED` (đóng băng = false, không gỡ mã), `SECS_GEM_*`, `GEM300_ENABLED`, `FOE_ENABLED` (70 quyết), `ZMC_ENDPOINT`.
+
+---
+
+## 4. Mục tiêu: frontend
+
+### 4.1 Một hộp xác nhận, một nút DỪNG
+
+- **`CommandConfirmDialog`** (= `HopThoaiLenh` tổng quát hoá): nhận `CommandPreview`, TTL đếm từ lúc nhận, TOTP khi `needsTotp`, hiện `mode` real/simulated + lý do mô phỏng **trước khi bấm**, hiện `route` central/edge, giá trị hiện tại {v,q,age}; dùng cho HMI, thẻ AI (`ConfirmActionCard` tool OT), luồng (OrchestrationStudio bước OT), nạp chương trình (EngineeringWorkspace), recipe. Gỡ: typed‑confirm CommandConsole, 2 bản `useCountdown`, `window.confirm`.
+- Giữ riêng: `ConfirmWithReason` (hành động không chạm thiết bị: luật, rollback), `StepUpOtpDialog` (triển khai/duyệt), `HopDungMay` (DỪNG).
+- **`NutDungMay` là nút DỪNG duy nhất**: render trong **portal tầng trên cùng** (`z` cao hơn mọi Dialog/Sheet/toast), không bị hộp xác nhận lồng che; `AiChatFrame` ẩn trên mọi route có nút DỪNG (`/giam-sat/*`, `/scada/*`, `/ky-thuat/an-toan`); robot STOP (khi mở lại) cũng là `NutDungMay`, một bước.
+- Trạng thái DỪNG ba bước T6 (spec v3): Đang chạy / Đã gửi — chờ xác nhận / Đã dừng (đọc lại); "không rõ" ⇒ `BangEstopCung`.
+
+### 4.2 Màn
+
+| Màn | Route | Nội dung | Thay |
+|---|---|---|---|
+| **Faceplate v2** (L3) | tab "Hành động" của `/giam-sat/may/:id` + mở từ ký hiệu L2 | giá trị lớn + tuổi/chất lượng, spark 60 s (`TrendPanel` 30), vùng nhập + `DieuKienChoPhep` (chạy khô `control.command.request` dry‑run) + lý do, huy hiệu REMOTE/LOCAL (LOCAL ẩn ghi, fail‑closed), `NutDungMay` luôn hiện, nhãn nguồn đẩy/hỏi vòng/mô phỏng | `Faceplate`, tab actions của `MachineCockpit` (ngõ cụt), `CommandConsole` |
+| **Interlock & An toàn** | `/ky-thuat/an-toan` (tab: Interlock · Safety PLC · DỪNG & ghim · Nghiệm thu · Sẵn sàng · Sở hữu edge) | luật (tạo/duyệt/băm), sự kiện; cấu hình PLC maker‑checker + trạng thái poll; ghim STOP theo tag; nghiệm thu ký/hết hạn; ma trận sẵn sàng; chuyển sở hữu + giải STOP treo | `InterlockRuleManagement`, `SafetyWorkforce` phần PLC, `SafetyPlcTrustPanel`, `DeviceAdapterManagement` phần stop pin, `SystemHealth` phần commissioning, `ControlReadiness`, `ControlPlane`, `RobotControl`+`EdgeResolutionPanel` phần OT |
+| **Kênh & chế độ** | tab "Kết nối & tag" của `/tai-san/:id` (20) + `/ket-noi` (30) | khai kênh (`BangKenh`, `HopKhaiHangLoat`), kênh chế độ (`KenhCheDoMay`) | `ScadaKenh`, `ScadaDiag` (phần kênh); `/scada/diag` giữ làm L4 chẩn đoán tới khi `/ket-noi` xong |
+| **Nhật ký lệnh** | `/canh-bao?tab=lenh`… **không** — `/ky-thuat/an-toan?tab=nhat-ky` | `command` + `command_attempt` timeline, lọc theo asset/người/nguồn | `ScadaNhatKy` |
+| Hộp duyệt | `/duyet` (90) | yêu cầu lệnh nguồn AI/luồng chờ người thứ hai, dùng `CommandConfirmDialog` | `ApprovalsInbox`, `AIActionInbox` phần OT |
+
+Route cũ → redirect: `/scada/config/channels`, `/scada/journal`, `/interlock-rules`, `/control-readiness`, `/control-plane`, `/command-console`, `/robot-control` (khi robot tạm dừng: trang "Mô‑đun robot/AGV sẽ phát triển sau"), `/safety-workforce`.
+
+### 4.3 Hook/dữ liệu client
+
+`lib/control/useCommand()` (request → preview → confirm → status qua `scada:cmd`), `useMode(assetId)` (từ `useAssetLive` 30 — không poll 5 s riêng), `useStopCandidates`, `useReadiness`. i18n namespace `dieuKhien.*` (gộp `scada.*`, `console.*`, `interlockRules.*`, `controlReadiness.*`, `controlPlane.*`, `edgeResolution.*`, `safety.*` phần PLC). Màu thô trong `components/control/` = 0; mức tác động hiện bằng `AlarmBadge`‑style glyph (hình + số + chữ) dùng token `--alarm-p*`? **Không** — mức tác động dùng token riêng `--actuation-1/3/4/5` để không nhầm với ưu tiên cảnh báo.
+
+---
+
+## 5. Di trú từ hiện trạng
+
+Dải migration: **0530–0549** `[QĐ 2026-11-03: duyệt]`. Điều kiện tiên quyết: **A2(o) lên main**; 20‑A3 (tag/connection), 30‑T2 (LiveStore mọi tag), 40‑AL3 (`raiseEvent`). Mọi bước chạy bench OpenPLC (15 ca + kịch bản rớt link) + cổng đầy đủ (census + `check:tests`).
+
+| Bước | Việc | Nghiệm thu |
+|---|---|---|
+| **C0** | Vệ sinh không đụng lõi: gỡ Sparkplug DCMD, REST v1 `/equipment/:id/commands`, `adapterFacade.executeCommand`; `AiChatFrame` ẩn trên route điều khiển; `NutDungMay` lên portal; MachineCockpit bỏ "Đề xuất" ngõ cụt; CommandConsole/RobotControl thành trang "tạm dừng" | N5, N6; bench không đổi |
+| **C1** | `shared/control/types.ts`; `command_request`, `command_attempt` (mở rộng), `command` (+FK, tz, view `command_log`), `commissioning` gộp; RLS | DDL `--test-only`; census |
+| **C2** | `requestCommand/confirmCommand` bao `lenhHmi` + AI tool OT + FOE bước OT + MELSEC/Zmotion (kind=program); `xacThucTheoMuc` một middleware; L‑7 limiter Redis; `ai_pending_actions` chỉ còn tool không chạm thiết bị | N1–N4; đột biến trên từng cổng |
+| **C3** | Cổng chế độ áp mọi nguồn (edge gồm); `SCADA_CONG_CHE_DO_ENABLED` mặc định bật; `OT_READBACK_ENABLED` mặc định bật; interlock engine → worker + `raiseEvent`; safety/commissioning/readiness module | N7–N9 |
+| **C4** | UI: `CommandConfirmDialog`, Faceplate v2 (nhận 1b/1d của scada-master), `/ky-thuat/an-toan`, hộp duyệt; redirect 8 route | N10–N12 |
+| **C5** | Di chuyển mã `services/ot|scada|interlock|safety|edge` → `modules/control/*` (chỉ di chuyển, không đổi hành vi); gỡ cờ/robot door; `robot_jobs` đóng băng | census 0 import đường cũ; bench 24/24 |
+
+---
+
+## 6. Tiêu chí nghiệm thu module
+
+| # | Tiêu chí | Đo bằng |
+|---|---|---|
+| N1 | Một cửa: grep `writeTags(\|deployFile(\|publishInstantActions(` ngoài `modules/control/dispatcher/` = 0; `executeOtDeviceWrite` chỉ từ dispatcher + DỪNG dự phòng | grep + census `duongVong` (REST + tRPC + import động) |
+| N2 | Mọi `command` có `request_id` trừ `kind=stop` và `source=interlock`; mọi yêu cầu bị từ chối có `command_attempt` | SQL + đột biến |
+| N3 | Một TTL 60 s cho mọi nguồn người/AI; hết hạn ⇒ `expired`, không ghi | vitest clock giả |
+| N4 | 2FA theo mức một middleware: mức 5 không TOTP ⇒ từ chối ở **cả** HMI, AI, luồng | đột biến từng cửa |
+| N5 | DỪNG không bị che: Playwright mở hộp xác nhận lồng + AiChatFrame + 3 toast ⇒ `NutDungMay` vẫn bấm được ≤ 1 s | Playwright |
+| N6 | DỪNG một bước ở mọi bề mặt (không gõ mã, không TOTP); miễn cổng đổi mật khẩu/limiter vé | Playwright + vitest |
+| N7 | Cổng chế độ: tag không có kênh chế độ ⇒ lệnh thường từ chối `LOCAL` ở central **và** edge; DỪNG đi qua | vitest + harness edge |
+| N8 | Interlock thiếu dữ liệu ⇒ chặn (trừ `cho_qua`); luật đổi ⇒ `approved_def_hash` lệch ⇒ chặn tới khi duyệt lại; bước luồng nêu adapter máy khác ⇒ chặn (A2(i)) | đột biến |
+| N9 | Không safety PLC ⇒ chỉ mức ≤ 1 ghi thật; `SAFETY_UNKNOWN` từ chối | vitest |
+| N10 | Hộp xác nhận lệnh: 8 → 1 (`CommandConfirmDialog`) + 3 giữ (`ConfirmWithReason`, `StepUpOtpDialog`, `HopDungMay`) | grep |
+| N11 | Faceplate biết LOCAL/REMOTE ở mọi nơi có nút ghi; màu thô `components/control/` = 0 | grep + Playwright |
+| N12 | Bench OpenPLC 24/24 + kịch bản rớt link lúc ghi; không hồi quy sau C5 | bench |
+| N13 | L‑7 limiter dùng Redis: 2 tiến trình, 6 lệnh/60 s ⇒ lệnh 6 bị chặn | vitest 2 worker |
+
+---
+
+## 7. Câu hỏi mở — đã trả lời `[QĐ 2026-11-03]`
+
+| # | Câu hỏi | Quyết định | Hệ quả |
+|---|---|---|---|
+| 1 | Thứ tự di trú | **C0 làm ngay; C1–C5 chỉ sau A2(o) lên main** | §5; không đụng `services/scada|ot|edge` trước đó |
+| 2 | Mức tác động | **Xác nhận {1,3,4,5}, không có mức 2** | `shared/control/types.ts`; 20 §2.2 giữ |
+| 3 | DỪNG dự phòng trung tâm | **Giữ làm ngoại lệ né cổng** (chỉ giá trị ghim, WORM) + `raiseEvent(P1)` mỗi lần chạy | `stop.ts` |
+| 4 | Zmotion `deployFile` FFI | **Tắt hẳn** tới khi 70 nối qua `dispatch(kind=program)` | C0; 70 |
+| 5 | AI đề xuất lệnh thiết bị | **Dùng cùng `command_request` + TTL 60 s**; người xác nhận ≠ AI; mức ≥ 4 chặn cứng | C2; 80 |
+| 6 | Cổng chế độ LOCAL/REMOTE cho edge | **Giao scada-master làm trong A2** (hợp đồng edge đang mở) | ghi vào brief A2; N7 nghiệm thu ở 50‑C3 |
+| 7 | `SafetyWorkforce` cộng tác người‑robot | **Đóng băng cùng robot** | C0 (trang "tạm dừng"); phần PLC vào `/ky-thuat/an-toan` |
+| 8 | Dải migration 0530–0549 | **Đồng ý** | §5 |
+
+---
+
+## 8. Nhật ký
+
+| Ngày | Phiên | Việc | Số đo |
+|---|---|---|---|
+| 2026-11-03 | chủ dự án + chu-du-an-HST | **Duyệt v1.1**: 8 câu hỏi §7 theo khuyến nghị (C0 ngay/lõi sau A2; mức {1,3,4,5}; DỪNG dự phòng giữ + P1; Zmotion tắt; AI cùng command_request 60 s; cổng chế độ edge → A2; workforce đóng băng; mig 0530–0549) | — |
+| 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt 25a9de749` + DB live; nhận nguyên chuỗi cổng R0–A2 của scada-master | 16 cổng dispatcher; 1 `writeTags`; 13 cửa vào (4 chết, 6 cờ tắt); 3 đường né cổng; `command_log` 0, tag writable 0/42, kênh chế độ 0; UI 8 hộp xác nhận, DỪNG bị che 2 chỗ |
+| 2026-11-04 | chủ dự án + chu-du-an-HST | Mockup faceplate v2 (scada-ui): **"Dừng — chờ máy xác nhận" là huy hiệu tạm nhấp nháy cạnh nhãn PackML**, PackML chỉ hiện trạng thái đã đọc lại (T6); DỪNG MÁY trên portal cao hơn scrim `CommandConfirmDialog` (đã vẽ); ví dụ setpoint mức 4 phải ghi rõ "kỹ sư đã siết từ mức 3" | 20 ảnh |

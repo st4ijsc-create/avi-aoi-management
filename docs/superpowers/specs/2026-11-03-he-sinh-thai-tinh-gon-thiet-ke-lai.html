@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tinh gọn hệ sinh thái SYNAPSE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Tài liệu kỹ thuật để duyệt: chữ ~78ch, bảng và sơ đồ rộng hơn trong khung cuộn riêng. Nền xám thép theo ISA-101; màu chỉ dùng cho nhãn mức và ví dụ trạng thái. */
+:root{
+  --bg:#f3f4f5; --paper:#ffffff; --ink:#1b2126; --ink-2:#4a545c; --ink-3:#6f7981;
+  --line:#d6dadd; --line-2:#e7e9eb; --accent:#0e5f6b; --accent-soft:#e3eff1;
+  --keep:#2c7a4b; --merge:#0b5aa3; --freeze:#7a3fb0; --remove:#b4231f;
+  --a1:#d4232b; --a2:#f07c1a; --a3:#f2c418; --stale:#7a3fb0; --ok:#2c7a4b;
+  --f-display:"Archivo","Segoe UI",system-ui,sans-serif;
+  --f-body:"Be Vietnam Pro","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#15191c; --paper:#1c2125; --ink:#e4e7e9; --ink-2:#b0b8be; --ink-3:#8c969f;
+  --line:#323a40; --line-2:#272d32; --accent:#5fb7c4; --accent-soft:#1d3135;
+  --keep:#5fbf86; --merge:#6fb0f0; --freeze:#c59bf0; --remove:#f07a76; --ok:#5fbf86; --stale:#c59bf0; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#15191c; --paper:#1c2125; --ink:#e4e7e9; --ink-2:#b0b8be; --ink-3:#8c969f;
+  --line:#323a40; --line-2:#272d32; --accent:#5fb7c4; --accent-soft:#1d3135;
+  --keep:#5fbf86; --merge:#6fb0f0; --freeze:#c59bf0; --remove:#f07a76; --ok:#5fbf86; --stale:#c59bf0; color-scheme:dark;}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+h1,h2,h3,h4{font-family:var(--f-display);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:26px;font-weight:700;margin-top:56px;padding-top:16px;border-top:2px solid var(--ink)}
+h2 .no{color:var(--accent);margin-right:8px}
+h3{font-size:19px;font-weight:700;margin-top:32px}
+h4{font-size:15px;font-weight:700;margin-top:20px}
+p,li{max-width:78ch}
+p{margin:12px 0}
+ul,ol{padding-left:22px;margin:10px 0}
+li{margin:4px 0}
+a{color:var(--accent)}
+code,kbd{font-family:var(--f-mono);font-size:.9em;background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+pre{font-family:var(--f-mono);font-size:13px;line-height:1.5;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;overflow-x:auto}
+header.top{padding:40px 0 24px;border-bottom:1px solid var(--line)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--ink-2);font-size:13.5px;margin-top:14px}
+.meta b{color:var(--ink)}
+nav.toc{margin:28px 0 0;padding:16px 20px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r)}
+nav.toc ol{columns:2;column-gap:32px;margin:6px 0 0;padding-left:20px}
+nav.toc li{break-inside:avoid;margin:3px 0}
+.tbl{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:var(--r);background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line-2);vertical-align:top;text-align:left}
+th{background:var(--bg);font-family:var(--f-display);font-weight:600;font-size:12.5px;letter-spacing:.02em;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{display:inline-block;font-family:var(--f-display);font-size:11.5px;font-weight:700;letter-spacing:.04em;padding:1px 7px;border-radius:3px;color:#fff;white-space:nowrap}
+.tag.keep{background:var(--keep)} .tag.merge{background:var(--merge)} .tag.freeze{background:var(--freeze)} .tag.remove{background:var(--remove)}
+.tag.p0{background:var(--a1)} .tag.p1{background:var(--a2);color:#1b1200} .tag.p2{background:var(--a3);color:#1b1600} .tag.q{background:var(--accent)}
+.callout{margin:18px 0;padding:14px 18px;border-left:4px solid var(--accent);background:var(--paper);border-radius:0 var(--r) var(--r) 0}
+.callout.warn{border-left-color:var(--a2)}
+.callout.stop{border-left-color:var(--a1)}
+.callout p:first-child{margin-top:0}.callout p:last-child{margin-bottom:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.card h4{margin-top:0}
+.card .big{font-family:var(--f-display);font-size:30px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.card .sub{color:var(--ink-2);font-size:13px}
+figure{margin:20px 0;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+figure svg{max-width:100%;height:auto;display:block;margin:0 auto}
+figcaption{font-size:13px;color:var(--ink-2);margin-top:10px;max-width:none}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.two{grid-template-columns:1fr}nav.toc ol{columns:1}}
+.pros,.cons{padding:12px 16px;border-radius:var(--r);background:var(--paper);border:1px solid var(--line)}
+.pros h4{color:var(--keep)}.cons h4{color:var(--remove)}
+.dec{counter-reset:none;margin:12px 0;padding:14px 18px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r)}
+.dec h4{margin:0 0 6px;display:flex;gap:10px;align-items:baseline}
+.dec .rec{color:var(--accent);font-weight:600}
+small,.small{font-size:12.5px;color:var(--ink-3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12.5px;color:var(--ink-2);margin:6px 0}
+.src{font-size:12px;color:var(--ink-3)}
+hr{border:0;border-top:1px solid var(--line);margin:28px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Tinh gọn hệ sinh thái SYNAPSE: đánh giá, kiến trúc mục tiêu và bộ giao diện chuẩn</h1>
+  <div class="meta">
+    <span>Ngày <b>03/11/2026</b></span>
+    <span>Mốc đo <b>main 8685b60ef</b> (02/11)</span>
+    <span>Trạng thái <b>CHỜ CHỦ DỰ ÁN DUYỆT</b></span>
+    <span>Người lập: phiên <b>chu-du-an-HST</b></span>
+  </div>
+  <p style="margin-top:16px">Tài liệu này trả lời ba câu hỏi: hệ sinh thái hiện tại <em>mạnh và yếu ở đâu</em>, phần nào <em>không còn phù hợp</em> với năm mục tiêu (quản lý toàn diện, giám sát thời gian thực, lập trình và mô phỏng, thu thập và phân tích chất lượng, AI hỗ trợ lập trình, phân tích và hành động điều khiển), và <em>hình hài sau khi tinh gọn</em> trông ra sao từ dữ liệu, backend đến từng màn hình. Mọi con số là số đo trên mã và CSDL thật; chỗ nào là suy luận được ghi <code>[suy luận]</code>.</p>
+  <nav class="toc" aria-label="Mục lục">
+    <b>Mục lục</b>
+    <ol>
+      <li><a href="#tomtat">Tóm tắt cho người quyết định</a></li>
+      <li><a href="#phuongphap">Phương pháp và phạm vi đo</a></li>
+      <li><a href="#hientrang">Hiện trạng: ưu điểm và nhược điểm</a></li>
+      <li><a href="#phuhop">Độ hoàn thiện và phù hợp từng module</a></li>
+      <li><a href="#nguyentac">Nguyên tắc thiết kế lại</a></li>
+      <li><a href="#kientruc">Kiến trúc mục tiêu</a></li>
+      <li><a href="#dulieu">Thiết kế dữ liệu</a></li>
+      <li><a href="#backend">Thiết kế backend</a></li>
+      <li><a href="#frontend">Thiết kế frontend: IA, vỏ ứng dụng, hệ thiết kế</a></li>
+      <li><a href="#manhinh">Danh mục màn hình mục tiêu</a></li>
+      <li><a href="#lotrinh">Lộ trình và khớp với việc đang chạy</a></li>
+      <li><a href="#ruiro">Rủi ro, ràng buộc bắt buộc</a></li>
+      <li><a href="#quyetdinh">Quyết định cần duyệt</a></li>
+      <li><a href="#phuluc">Phụ lục: số đo chi tiết, tham chiếu</a></li>
+    </ol>
+  </nav>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="tomtat"><span class="no">1</span>Tóm tắt cho người quyết định</h2>
+
+<p><b>Kết luận.</b> SYNAPSE là một nền tảng có xương sống đúng (ISA-95, TimescaleDB, tRPC, hàng rào an toàn một cửa, AI cục bộ có người duyệt) nhưng đã phình thành một bộ sưu tập tính năng: 189 route sống trên 226 trang, 263 router tRPC, 443 bảng trong đó 53 % rỗng, ít nhất 8 hệ cảnh báo, 9 bộ tổng hợp dashboard, 16 màn "tổng quan" và 5 cửa ra lệnh xuống thiết bị. Vấn đề không nằm ở chất lượng từng mảnh mà ở <em>số mảnh</em> và việc thiếu một trục thiết kế chung. Khuyến nghị là <b>không viết lại</b>; thay vào đó cắt theo năm mục tiêu, gộp các hệ trùng về một bản canonical, và đặt một vỏ ứng dụng cùng một hệ thiết kế duy nhất lên trên.</p>
+
+<div class="grid">
+  <div class="card"><h4>Giao diện</h4><div class="big">189 → ~42</div><div class="sub">route sống → màn hình mục tiêu; 16 màn tổng quan → 2; 7 lớp điều hướng → 1</div></div>
+  <div class="card"><h4>Backend</h4><div class="big">579k → ~360k</div><div class="sub">LOC chạy thật; 263 router → ~120; 8 hệ cảnh báo → 1; 5 cửa lệnh → 1</div></div>
+  <div class="card"><h4>Dữ liệu</h4><div class="big">443 → ~200</div><div class="sub">bảng; 27 bảng cảnh báo → 1 events; 11 bảng cài đặt → 1; 10 bảng telemetry → 2–3</div></div>
+  <div class="card"><h4>Hệ thiết kế</h4><div class="big">2 → 1</div><div class="sub">design system (client + simulator) → một bộ token ISA-101, sáng mặc định cho vận hành</div></div>
+</div>
+
+<h3>Năm phát hiện quan trọng nhất</h3>
+<ol>
+  <li><b>Lõi đúng nhưng đang tắt, ngoại vi sai nhưng đang bật.</b> <code>OT_GATEWAY</code>, <code>INTERLOCK_ENGINE</code>, <code>SCADA_SOCKET</code> tắt; trong khi <code>ROBOT_CONTROL</code>, <code>VDA5050</code>, <code>SECS_GEM</code>, <code>FLEET_ORCH</code> bật ở <code>.env</code> thật. Robot, VDA5050 và SECS/GEM là ba cửa ra lệnh <em>không đi qua</em> <code>commandDispatcher</code> và <code>interlockGate</code> <code>[suy luận từ đồ thị import]</code>. Đây là việc an toàn, cần làm trước mọi việc thẩm mỹ.</li>
+  <li><b>Thiếu một "mô hình tài sản" chung.</b> Thiết bị được biểu diễn bằng 6 bảng (machines, device_adapters, robots, edge_nodes, equipment_3d_models, workstations), station và machine gần 1:1 (1 694/1 700), tag có 3 bảng, tenant có 2 kiểu khoá. Twin, SCADA, SPC, AI mỗi bên tự tra tên thiết bị theo cách riêng.</li>
+  <li><b>Giao diện không có trục.</b> 7 lớp cùng định nghĩa "đi đâu" (navigation.tsx 2 910 dòng, module-registry, apps.ts, roleLanding, COLLAPSED_INTO_HUB, sidebarGroups, ⌘K), 3 kiểu hub, ~8 kiểu header, 2 916 lớp màu thô, 690 cỡ chữ tuỳ ý, token ISA-101 có mà chỉ 8 chỗ dùng. Ảnh theme Glass/Warmth/Console chủ dự án đã xem thuộc về <em>simulator</em>, không phải client.</li>
+  <li><b>Nhiều mảng thương mại hoá và ngoại vi nằm trong lõi:</b> license/edition/plugin/devPortal, federation/sites, marketplace, robot/AGV/fleet (19,8k LOC), SECS/CFX/MTConnect/FOCAS/Euromap, MES mở rộng (ERP, NCR, stencil, feeder), FactoryAlertSystem (46k LOC) và app Tauri scaffold. Tổng cộng khoảng 75–80k LOC backend có thể đóng băng mà không chạm mục tiêu nào.</li>
+  <li><b>Nợ dữ liệu kỹ thuật cụ thể và đo được:</b> 87 % cột thời gian là <code>timestamp</code> naive (gốc lỗi −7 h); <code>audit_logs</code> được coi là WORM nhưng có retention tự xoá sau 365 ngày; <code>ot_telemetry</code> 69 GB trong đó 35 GB chưa nén vì job nén thất bại 44 lần; <code>machine_health_history</code> và <code>rul_estimates</code> 1,8 GB không phải hypertable, không retention; 26 bảng chỉ có trong SQL, Drizzle không còn là nguồn sự thật.</li>
+</ol>
+
+<h3>Điều chủ dự án cần quyết (chi tiết ở <a href="#quyetdinh">mục 13</a>)</h3>
+<p>Q1 phạm vi tinh gọn (bảng KEEP/MERGE/FREEZE/REMOVE) · Q2 tắt robot/AGV và đóng cửa lệnh phụ · Q3 IA 7 vùng, một Home theo vai, bỏ App Launcher và chế độ Đơn giản/Nâng cao · Q4 theme sáng ISA-101 mặc định cho vận hành, tối cho kỹ thuật/AI · Q5 mô hình tài sản canonical (gộp station vào machine) · Q6 lộ trình timestamptz và audit không tự xoá · Q7 thứ tự pha, không chen trước hàng an toàn A2 · Q8 vệ sinh repo (cookies.txt, 85 tệp gốc, 30 worktree, nhánh s7-parked 300 commit) · Q9 simulator dùng chung token · Q10 đóng băng toàn bộ mảng thương mại hoá.</p>
+
+<!-- ============================================================ -->
+<h2 id="phuongphap"><span class="no">2</span>Phương pháp và phạm vi đo</h2>
+<p>Năm cuộc khảo sát chỉ đọc chạy song song trên <code>main 8685b60ef</code> và CSDL thật <code>aoi_management@5434</code> (role <code>avi_app</code>, giao dịch read-only, chỉ SELECT). Không sửa tệp, không build, không chạy server, không đổi trạng thái git.</p>
+<div class="tbl"><table>
+<tr><th>Mảng</th><th>Nguồn đo</th><th>Cách đo</th></tr>
+<tr><td>Frontend</td><td><code>client/src</code> (App.tsx 926 dòng, navigation.tsx, 271 tệp pages, index.css 824 dòng)</td><td>Script đếm route/redirect/nav, grep màu thô, git log ngày commit cuối từng trang, xem 4 ảnh theme</td></tr>
+<tr><td>Backend</td><td><code>server/</code> 1 521 tệp không test, <code>shared/</code>, <code>contracts/</code>, <code>.env.example</code> 940 khoá</td><td>Đếm LOC, map 263 khoá router → số chỗ gọi client, quét import tĩnh, đọc boot + backgroundJobs, đọc đường lệnh</td></tr>
+<tr><td>Dữ liệu</td><td>97 tệp schema Drizzle, 422 SQL migration, DB live</td><td><code>count(*)</code> chính xác mọi bảng (n_live_tup không dùng được vì 462/471 bảng chưa analyze), hypertable/retention/RLS/grant/trigger</td></tr>
+<tr><td>Vệ tinh và luồng việc</td><td>apps/, FactoryAlertSystem/, vscode-extension/, tools/, deploy/, 30 worktree, docs/superpowers/specs, 23 tệp memory</td><td>Kích thước, commit cuối, có trong build không, ràng buộc đã duyệt</td></tr>
+<tr><td>Tham chiếu ngành</td><td>Web: ISA-95/UNS/Sparkplug 3.0, ISA-101, ISA-18.2, Siemens iX, Ignition, AVEVA, Litmus, Tulip, Siemens/Beckhoff/Rockwell copilot, CISA AI-in-OT 12/2025, OIP, Factory I/O, PLCSIM Advanced</td><td>Trích URL; nội dung tiêu chuẩn trả phí lấy từ nguồn thứ cấp, có ghi chú</td></tr>
+</table></div>
+<div class="callout warn">
+<p><b>Ba điều phát hiện khi đo, cần chủ dự án biết ngay.</b></p>
+<ul>
+<li><code>D:/SOURCES/avi-aoi-hmi-web</code> được ghi là worktree của <code>main</code> nhưng trên đĩa là sparse checkout lệch 66 063 mục (không có <code>client/</code>, <code>server/</code>), có thay đổi đã stage. Các khảo sát đã chuyển sang đọc <code>_ai8_wt</code> (detached đúng main, sạch) và <code>git show main:</code>. Nên kiểm tra lại worktree này.</li>
+<li><code>cookies.txt</code> ở gốc repo <b>đang được git theo dõi</b> và chứa JWT phiên <code>app_session_id</code> hạn 2027. Cần gỡ khỏi git và thu hồi phiên.</li>
+<li>Hai tệp <code>.env</code> (gốc và <code>_ai8_wt</code>) lệch nhau ở <code>OT_CONTROL_ENABLED</code>.</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="hientrang"><span class="no">3</span>Hiện trạng: ưu điểm và nhược điểm</h2>
+
+<h3>3.1 Nhìn toàn cục</h3>
+<div class="two">
+<div class="pros"><h4>Ưu điểm thật (đo được)</h4>
+<ul>
+<li><b>Xương sống đúng chuẩn:</b> cây ISA-95 corporates → factories → workshops → production_lines → stations → machines có dữ liệu thật (1 700 máy, 1 699 máy ghi dữ liệu 24 h qua); TimescaleDB 8 hypertable, pgvector; tRPC v11 + Zod; contracts canonical + CI contract-gate.</li>
+<li><b>An toàn điều khiển có thiết kế:</b> một cửa <code>commandDispatcher</code> (chỉ 2 điểm gọi <code>writeTags</code>, cùng chuỗi), HITL ràng buộc hash payload dùng một lần, <code>interlockGate</code>, 2FA theo mức, WORM bằng GRANT + 8 trigger, hàng rào AI L‑7 theo hướng năng lượng, fail-closed mức 5. Khớp hướng dẫn CISA 12/2025 "AI không tự quyết định an toàn".</li>
+<li><b>AI cục bộ là lợi thế cạnh tranh:</b> Siemens, Beckhoff, Rockwell đều phụ thuộc Azure OpenAI; SYNAPSE chạy Qwen trên RTX 5090, có MATIEC chấm ST, KB vector, agent có phiên, VS Code extension 0.5.2, MCP cục bộ chỉ đọc.</li>
+<li><b>Primitive giao diện đã có:</b> 53 primitive shadcn, 33 pattern (PageHeader, MetricCard, StatusBadge, isaStateBadges, chartTokens), 4 primitive workspace, 29 token ISA-101 trong index.css, ⌘K, FreshnessStrip socket-aware, ShellAlertChip. i18n 3 ngôn ngữ 21,8k khoá, 99,85 % parity.</li>
+<li><b>Kỷ luật kiểm định:</b> census ~88 tệp, đột biến bắt buộc, WORM test rollback, lưới đo tiết lộ 5 lần thiết bị đo tự sinh giả; văn hoá "đúng hơn nhanh".</li>
+</ul></div>
+<div class="cons"><h4>Nhược điểm cốt lõi</h4>
+<ul>
+<li><b>Phình theo chiều rộng:</b> mỗi đợt nâng cấp thêm route/router/bảng mà không gỡ cái cũ. 45 redirect, 28 router 0 chỗ gọi, 237 bảng rỗng, 98/226 trang không commit >90 ngày, ~3 300 dòng trang chết, 40 tệp server không ai import.</li>
+<li><b>Nhiều bản sao của cùng một khái niệm:</b> cảnh báo ×8 (22 bảng), OEE ×6 công thức, ingest ×10 đường, dashboard ×9, twin ×3, phiên AI ×6 bảng, model registry ×2, chunk vector ×3, cài đặt ×11 bảng (đều rỗng, cấu hình thật nằm trong .env).</li>
+<li><b>Thiếu trục giao diện:</b> 7 lớp điều hướng, 4–5 tầng nav, 3 kiểu hub, ~8 kiểu shell, 45 trang không header, 2 design system. Người dùng thấy "quá nhiều cấp menu" (doc 60) vì đúng là vậy.</li>
+<li><b>Cờ thay cho kiến trúc:</b> 267 tên <code>*_ENABLED</code>, 90 bật ở .env thật, 17 cờ <code>VITE_*</code> giữ biến thể UI cũ. Đọc boot không biết job nào đang chạy (133 <code>setInterval</code> trong 107 tệp).</li>
+<li><b>RBAC nặng:</b> quyền theo từng người (không có role → permission), >20 loại procedure, module gate, license gate, admin bỏ qua <code>requirePermission</code>.</li>
+<li><b>Nợ dữ liệu:</b> timestamp naive 87 %, audit tự xoá, nén thất bại, FK thiếu ở device_adapters/device_tags/robots, Drizzle không còn là nguồn sự thật.</li>
+</ul></div>
+</div>
+
+<h3>3.2 Theo tầng</h3>
+<div class="tbl"><table>
+<tr><th>Tầng</th><th>Điểm mạnh</th><th>Điểm yếu</th><th>Mức hoàn thiện <code>[suy luận]</code></th></tr>
+<tr><td><b>T1 Kết nối OT</b></td><td><code>ot/drivers</code> Modbus, OPC UA, S7, SLMP/MC, EIP; MQTT nhúng + ngoài; Sparkplug; store-forward; edge gateway có build riêng</td><td>OT_GATEWAY tắt ở dev; SECS/CFX/MTConnect/FOCAS/Euromap/IO-Link 7,4k LOC gần như không dùng; 3 bộ store-forward; mất kết nối không sinh mẫu bad (C1, đã trong hàng A2)</td><td>Khung 85 %, chạy thật 40 %</td></tr>
+<tr><td><b>T2 Mô hình và dữ liệu</b></td><td>ISA-95 có dữ liệu; Timescale; contracts canonical; UNS publisher</td><td>6 bảng thiết bị, 3 bảng tag, 2 khoá tenant, 10 bảng telemetry, không có template → instance (UDT) như Ignition/AVEVA; 26 bảng ngoài Drizzle</td><td>70 % / 55 %</td></tr>
+<tr><td><b>T3 Điều khiển và điều phối</b></td><td>Dispatcher một cửa, HITL, interlockGate, SCADA R0–A2 đang hoàn thiện, lệnh request→confirm TTL 60 s</td><td>Robot/VDA5050/SECS là cửa riêng; INTERLOCK_ENGINE tắt; FOE 12,5k LOC đóng vai orchestration chưa ai dùng; 3 khái niệm "vùng"</td><td>80 % / 35 %</td></tr>
+<tr><td><b>T4 Trí tuệ</b></td><td>Thợ Cả có phiên, agent con, harness, L‑7, KB, MATIEC, đa model theo vai; AI thị giác có router gộp</td><td>31 % mã backend là AI (179k LOC); ≥5 lớp gọi model; 10 bề mặt chat; 94 bảng AI trong đó 56 rỗng; aiSmartAlert 1 371 LOC không ai gọi; 18 router thị giác giữ cho tương thích</td><td>80 % / 50 %</td></tr>
+<tr><td><b>T5 Ứng dụng</b></td><td>Quality cockpit, history, product models, twin 3D đã nghiệm thu 5/5, reporting studio, device onboarding V2</td><td>16 màn tổng quan + 10 Home; 9 trang settings; 8 trang alarm; 4 trang bảo trì; ApiDocs 3,6k dòng trong app; ComponentShowcase 1,8k; TwinVanHanh 5k dòng; Dashboard 3,8k</td><td>75 % / 55 %</td></tr>
+<tr><td><b>Cắt ngang</b></td><td>2FA, WORM, RLS 43 bảng, OTel/Sentry/Prometheus/RUM, correlation id, CI grype/semgrep/gitleaks</td><td>RLS trơ khi chưa set biến phiên và không phủ machines/product_inspections/ot_telemetry; owner <code>aoi</code> superuser bypassrls; FORCE chỉ 2 bảng; cookies.txt trong git</td><td>65 % / 45 %</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="phuhop"><span class="no">4</span>Độ hoàn thiện và phù hợp từng module</h2>
+<p>Thước đo: module có phục vụ trực tiếp một trong năm mục tiêu không, có dữ liệu/người dùng thật không, có bản trùng không. Bốn hành động: <span class="tag keep">GIỮ LÕI</span> giữ và chuẩn hoá · <span class="tag merge">GỘP</span> gộp về một bản canonical · <span class="tag freeze">ĐÓNG BĂNG</span> tắt cờ, ẩn khỏi nav, giữ mã trong một thư mục <code>frozen/</code>, không nhận việc mới · <span class="tag remove">GỠ</span> xoá mã sau khi chủ dự án duyệt (luật: xoá tệp phải hỏi).</p>
+
+<h3>4.1 Bảng tổng hợp theo miền (FE + BE + DB)</h3>
+<div class="tbl"><table>
+<tr><th>Miền</th><th>Hiện có (FE trang / BE router / DB bảng)</th><th>Hành động</th><th>Lý do</th></tr>
+<tr><td>Giám sát realtime, SCADA, faceplate</td><td>45 trang · 8 router SCADA + 17 OT · 63 bảng OT</td><td><span class="tag keep">GIỮ LÕI</span></td><td>Mục tiêu 2. Đang có luồng A2 an toàn + spec "giao diện mượt" v3 đã duyệt. Thiết kế lại phải <em>nhận</em> spec này làm L2/L3.</td></tr>
+<tr><td>Cảnh báo, alarm, andon</td><td>8 trang · 8 hệ, 39 tệp 10,8k LOC · 27 bảng</td><td><span class="tag merge">GỘP</span></td><td>Một alarm engine theo ISA-18.2 (ưu tiên, trạng thái ack/shelve/suppress/out-of-service), một bảng <code>events</code>, một màn Cảnh báo.</td></tr>
+<tr><td>Tổng quan, dashboard, command center</td><td>16 trang + 10 Home · 9 bộ tổng hợp 7,9k LOC · 6 bảng dashboard rỗng</td><td><span class="tag merge">GỘP</span></td><td>Một read-model tổng quan theo phân cấp (nhà máy → line → máy) và 2 màn: Home theo vai, Phòng vận hành.</td></tr>
+<tr><td>OEE / KPI</td><td>~10 trang tự tính · ≥6 công thức</td><td><span class="tag merge">GỘP</span></td><td>Một công thức canonical trong <code>semantics/metricRegistry</code> + CAGG Timescale; mọi màn chỉ đọc.</td></tr>
+<tr><td>Kiểm tra AOI/AVI, lịch sử, truy xuất</td><td>16 trang · 18 router · 15 bảng (13 236 kết quả)</td><td><span class="tag keep">GIỮ LÕI</span> + gộp ingest</td><td>Mục tiêu 4. Gộp 10 đường ingest về 2 (telemetry → telemetryBus; inspection → 1 pipeline có WAL), 3 store-forward → 1.</td></tr>
+<tr><td>Chất lượng, SPC, Cpk, quality gate, MSA</td><td>13 trang · 29 router · 31 bảng (23 rỗng)</td><td><span class="tag keep">GIỮ LÕI</span> (SPC, Pareto, Cpk, gate) · <span class="tag freeze">ĐÓNG BĂNG</span> MSA nâng cao, stationTriangulation, thresholdSuggestion</td><td>Mục tiêu 4. Bảng SPC rỗng vì là cache; nên chuyển thành CAGG thay vì bảng mart.</td></tr>
+<tr><td>Sản phẩm, model, điểm đo, cây dạy</td><td>13 trang · 28 router · 56 bảng</td><td><span class="tag keep">GIỮ LÕI</span> · gộp 2 cây inspection song song</td><td>Dữ liệu chủ của mục tiêu 4. Gỡ 6 router 0 chỗ dùng (inspectionVariant, mpVariantSubform, measurementSamples…).</td></tr>
+<tr><td>Thiết bị, kết nối, onboarding, tag, UNS</td><td>DeviceHub, ConnectivityHub, Onboarding V2 · 17 router · 6 bảng thiết bị + 3 bảng tag</td><td><span class="tag merge">GỘP</span> về asset registry</td><td>Một <code>asset</code> (machine + robot có capability) → <code>connection</code> → <code>tag</code>, có FK. Template → instance.</td></tr>
+<tr><td>Twin 3D</td><td>7 trang (TwinVanHanh 5k dòng) · 3 router 8,4k LOC · 18 bảng</td><td><span class="tag keep">GIỮ LÕI</span> <code>twinCanh</code> + <code>services/twin</code> · <span class="tag merge">GỘP</span> <code>twin</code>, <code>digitalTwin</code> · <span class="tag remove">GỠ</span> <code>twinGov</code>, 4 bảng layout cũ</td><td>Đã nghiệm thu 5/5; tôn trọng QĐ-18/19/21/23 (/twin xem, /twin-studio sửa, 3 màn 3 canvas).</td></tr>
+<tr><td>Kỹ thuật: IR/POU/ST, recipe, interlock, orchestration studio</td><td>14 trang (OrchestrationStudio 3,1k, EngineeringWorkspace 2,2k, IrEditor 1,8k) · 6 router lập trình + 28 MES/điều phối</td><td><span class="tag keep">GIỮ LÕI</span> lập trình + recipe + interlock · <span class="tag freeze">ĐÓNG BĂNG</span> FOE/foeEngine 12,5k LOC, orderLifecycle, ERP, enterprise, reportingMart</td><td>Mục tiêu 3. Orchestration Studio gộp vào Studio lập trình như một chế độ "luồng".</td></tr>
+<tr><td>Mô phỏng</td><td>/rf-test-cell (không nav) · simulation, simTargets, monteCarloFlow · tools/machine-simulator 300k LOC .NET</td><td><span class="tag keep">GIỮ LÕI</span> simulator + 1 màn Mô phỏng trong Kỹ thuật · <span class="tag remove">GỠ</span> rf-test-cell, monteCarloFlow, simTargets</td><td>Mục tiêu 3. Mô phỏng chỉ kỹ sư + admin, nhãn thường trực, không ghi KPI (spec §7).</td></tr>
+<tr><td>AI Thợ Cả: chat, agent, coding, KB, luồng, model, VRAM</td><td>33 trang · 28 router LLM + 18 thị giác · 94 bảng (56 rỗng)</td><td><span class="tag keep">GIỮ LÕI</span> runtime Thợ Cả + HITL + VRAM + KB · <span class="tag merge">GỘP</span> 10 bề mặt chat → 1 workspace, 5 lớp gọi model → 1 gateway, 6 bảng phiên → ai_sessions/runs/messages, 3 chunk → 1 vector_chunks, 18 router thị giác → aiVision · <span class="tag remove">GỠ</span> aiVisionLanguage, aiSmartAlertRouting, kbVector, voiceRouter, trainingRouter/edgeRouter/abTestRouter chết</td><td>Mục tiêu 5. 33 trang AI → 6 màn. Không đụng harness/đợt 12 đang chạy; chỉ gộp bề mặt.</td></tr>
+<tr><td>Bảo trì, PdM, work order</td><td>4 trang cho 1 miền · PdM scheduler · machine_health_history 1 GB, rul_estimates 770 MB</td><td><span class="tag merge">GỘP</span> 4 → 1 màn · chuyển 2 bảng thành hypertable có retention</td><td>Thuộc "quản lý toàn diện" nhưng phụ; giữ ở mức một màn.</td></tr>
+<tr><td>Báo cáo, phân tích, so sánh</td><td>11 trang (7 báo cáo + 3 so sánh) · 29 router</td><td><span class="tag merge">GỘP</span> → Reporting Studio (đã có TabbedHub 5 tab) + 1 màn Phân tích</td><td>PdfReports, PowerPointExport, DataComparison, ProductComparison thành tab.</td></tr>
+<tr><td>Quản trị, cài đặt, audit</td><td>28 trang (9 settings, 5 audit) · 29 router · 11 bảng settings rỗng, >20 bảng audit</td><td><span class="tag merge">GỘP</span> → 4 màn: Người dùng & quyền, Cài đặt, Nhật ký, Hệ thống; 1 bảng <code>settings(scope,key,value)</code>; 1 <code>audit_trail</code> + bảng an toàn đặc thù</td><td>RBAC chuẩn hoá role → permission set, ngoại lệ theo người.</td></tr>
+<tr><td>Robot, AGV, fleet, ROS2, traffic, workforce</td><td>4 trang (FleetOrchestration 2,3k labs) · 4 router · 69 tệp 19,8k LOC</td><td><span class="tag freeze">ĐÓNG BĂNG</span> + tắt cờ ngay</td><td>Ngoài 5 mục tiêu; cửa lệnh riêng không qua interlockGate. Giữ RobotCockpit đã nhúng (không xoá) nhưng ẩn.</td></tr>
+<tr><td>Giao thức phụ: SECS/GEM, CFX, MTConnect, FOCAS, Euromap, IO-Link</td><td>25 tệp 7,4k LOC</td><td><span class="tag freeze">ĐÓNG BĂNG</span></td><td>SECS bật nhưng 1 chỗ dùng. Mở lại khi có thiết bị thật.</td></tr>
+<tr><td>Thương mại hoá: license, edition, plugin, devPortal, marketplace, federation, sites, SynapsePlatform, governance chỉ đọc</td><td>~12 trang · 17 router 42 chỗ dùng · 31 bảng (28 rỗng)</td><td><span class="tag freeze">ĐÓNG BĂNG</span> license (giữ cưỡng chế) · <span class="tag remove">GỠ</span> edition, plugin, devPortal, 5 router gov 0 chỗ dùng, 2 trang marketplace chết</td><td>Chưa có khách thứ hai; chi phí duy trì cao hơn giá trị. Kích hoạt lại khi có hợp đồng.</td></tr>
+<tr><td>FactoryAlertSystem (React Native)</td><td>186 tệp 46k LOC, /api/factory-alert + /api/external ~60 route</td><td><span class="tag freeze">ĐÓNG BĂNG</span> app · gộp /api/external → /api/v1</td><td>Kênh di động chỉ đọc (D7). Giữ chạy, không phát triển.</td></tr>
+<tr><td>apps/machine-shell (Tauri), programming-workspace, tools/trainer, _deploy, 3 jsonl monitoring</td><td>scaffold / README / LoRA đã bác</td><td><span class="tag remove">GỠ</span></td><td>Không có sản phẩm, không trong build.</td></tr>
+<tr><td>vscode-extension, edge gateway, contracts, knowledge, scripts/ai-eval, sim-factory</td><td>CORE support</td><td><span class="tag keep">GIỮ LÕI</span></td><td>Phục vụ mục tiêu 3 và 5 trực tiếp.</td></tr>
+</table></div>
+
+<h3>4.2 Mã chết và mồ côi (gỡ được ngay, không ảnh hưởng tính năng)</h3>
+<ul>
+<li><b>Trang:</b> AIHub, AIStudioHub, AILocalKnowledgeBasePage, DashboardTemplates, TemplateMarketplace, TestAnnotationPage, SPCAdvanced, AnnotationStatistics, lazy import <code>AnalyticsSettings</code> không route (~3 300 dòng); OEEDashboard 1 191 dòng chỉ để redirect.</li>
+<li><b>Router:</b> 28 khoá 0 chỗ gọi (trừ publicProductApi, machineApi, mappingAsCode có client ngoài); voiceRouter và 3 router trong aiAdvancedRouter bị comment dòng gắn.</li>
+<li><b>Tệp server không ai import:</b> ~40 tệp ~6,2k LOC (<code>_core/map.ts</code>, <code>imageGeneration.ts</code>, <code>dataApi.ts</code>, <code>imageAlignment.ts</code>, <code>instruments/*</code>, <code>distributedCache.ts</code>…).</li>
+<li><b>Bảng:</b> 4 bảng layout cũ, kb_chunks, alert_settings/alert_history, 11 bảng cài đặt, mqtt_message_history, mqtt_connection_*, ai_models/model_versions/ai_model_cards/training_*/ab_test_*/batch_inference_*, sites, workstations, w3_backup_* (không PK).</li>
+<li><b>Gốc repo:</b> 69 script một lần, 16 báo cáo .md, 11 playwright.*.config.ts, cookies.txt, login.json; 81 png và 14 log không track.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="nguyentac"><span class="no">5</span>Nguyên tắc thiết kế lại</h2>
+<ol>
+<li><b>Năm mục tiêu là bộ lọc.</b> Mọi màn, router, bảng phải chỉ ra nó phục vụ mục tiêu nào. Không chỉ ra được thì đóng băng.</li>
+<li><b>Một khái niệm, một bản.</b> Một mô hình tài sản, một alarm engine, một công thức OEE, một dispatcher, một agent runtime, một model gateway, một bảng audit, một bảng settings.</li>
+<li><b>Mẫu → thể hiện.</b> Thiết bị, tag, faceplate, mô hình 3D đều dẫn xuất từ <code>asset_class</code> (tương đương UDT của Ignition, element template của AVEVA). Sửa mẫu thì mọi thể hiện cập nhật.</li>
+<li><b>Trung thực trước đẹp.</b> Dữ liệu cũ hiện xám và dừng hoạt ảnh; thiếu tín hiệu ghi "không có tín hiệu"; mô phỏng có nhãn thường trực; không dùng xanh lá cho "bình thường" (ISA-101, D6/D10, spec mượt §5).</li>
+<li><b>Fail-closed ở mọi cửa.</b> Interlock thiếu dữ liệu thì chặn (D2); AI chạm thiết bị theo hướng năng lượng (L‑7); mobile không lệnh (D7); không cổng phụ nào che nút DỪNG.</li>
+<li><b>Một vỏ, một hệ thiết kế.</b> Application frame kiểu Siemens iX: menu 2 cấp, breadcrumb chỉ khi sâu hơn 2 cấp, cài đặt và theme ở vùng đáy không điều hướng. Token là nguồn màu duy nhất.</li>
+<li><b>Không viết lại; cắt, gộp, bọc.</b> Giữ React 19 + Vite + tRPC + Radix/Tailwind + Drizzle + Timescale. Trích <code>*Content</code> đã có, bọc vào shell mới, xoá trang cũ sau khi redirect đủ một chu kỳ.</li>
+<li><b>Đo trước, đo sau.</b> Mỗi pha có số đo vào (route, router, bảng, LOC, lớp màu thô, LCP, p95 frame) và số đo ra. Nghiệm thu bằng bằng chứng, không bằng lời khai.</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="kientruc"><span class="no">6</span>Kiến trúc mục tiêu</h2>
+<p>Bốn tầng thay cho năm tầng doc 44, vì "điều phối" (T3) và "trí tuệ" (T4) trong thực tế dùng chung một cửa hành động. Mỗi tầng có đúng một đường vào và một đường ra.</p>
+
+<figure>
+<svg viewBox="0 0 1100 560" role="img" aria-label="Bốn tầng kiến trúc mục tiêu: Thiết bị và kết nối, Mô hình và dữ liệu, Hành động và trí tuệ, Ứng dụng; mũi tên ghi rõ luồng dữ liệu đi lên và luồng lệnh đi xuống qua một cửa duy nhất" style="font-family:var(--f-body);font-size:12px">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<g fill="none" stroke="currentColor" stroke-width="1.2">
+<rect x="20" y="20" width="1060" height="110" rx="6"/>
+<rect x="20" y="150" width="1060" height="110" rx="6"/>
+<rect x="20" y="280" width="1060" height="120" rx="6"/>
+<rect x="20" y="420" width="1060" height="120" rx="6"/>
+</g>
+<g fill="currentColor" font-family="Archivo, sans-serif" font-weight="700" font-size="13">
+<text x="34" y="40">L4 ỨNG DỤNG (một vỏ, 7 vùng)</text>
+<text x="34" y="170">L3 HÀNH ĐỘNG VÀ TRÍ TUỆ (một cửa)</text>
+<text x="34" y="300">L2 MÔ HÌNH VÀ DỮ LIỆU</text>
+<text x="34" y="440">L1 THIẾT BỊ VÀ KẾT NỐI</text>
+</g>
+<!-- L4 boxes -->
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="40" y="55" width="130" height="56" rx="4"/><rect x="185" y="55" width="130" height="56" rx="4"/><rect x="330" y="55" width="130" height="56" rx="4"/><rect x="475" y="55" width="130" height="56" rx="4"/><rect x="620" y="55" width="130" height="56" rx="4"/><rect x="765" y="55" width="130" height="56" rx="4"/><rect x="910" y="55" width="150" height="56" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="105" y="79">Trang chủ</text><text x="105" y="95">Phòng vận hành</text>
+<text x="250" y="79">Giám sát</text><text x="250" y="95">SCADA · Twin</text>
+<text x="395" y="79">Sản xuất</text><text x="395" y="95">Chất lượng</text>
+<text x="540" y="79">Dữ liệu chủ</text><text x="540" y="95">Tài sản · Sản phẩm</text>
+<text x="685" y="79">Kỹ thuật</text><text x="685" y="95">Lập trình · Mô phỏng</text>
+<text x="830" y="79">Thợ Cả</text><text x="830" y="95">AI · HITL</text>
+<text x="985" y="79">Phân tích · Báo cáo</text><text x="985" y="95">Quản trị</text>
+</g>
+<!-- L3 boxes -->
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="40" y="185" width="230" height="56" rx="4"/>
+<rect x="300" y="185" width="230" height="56" rx="4" stroke="#0e5f6b" stroke-width="2"/>
+<rect x="560" y="185" width="230" height="56" rx="4"/>
+<rect x="820" y="185" width="240" height="56" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="155" y="209">Alarm engine ISA-18.2</text><text x="155" y="225">ưu tiên · ack · shelve · OOS</text>
+<text x="415" y="209" font-weight="700">Cửa lệnh duy nhất</text><text x="415" y="225">dispatcher → interlockGate → driver</text>
+<text x="675" y="209">Runtime Thợ Cả</text><text x="675" y="225">agent · HITL · L‑7 · model gateway</text>
+<text x="940" y="209">Lập trình và mô phỏng</text><text x="940" y="225">IR/ST · MATIEC · nhà máy ảo</text>
+</g>
+<!-- L2 boxes -->
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="40" y="315" width="190" height="66" rx="4"/><rect x="250" y="315" width="190" height="66" rx="4"/><rect x="460" y="315" width="190" height="66" rx="4"/><rect x="670" y="315" width="190" height="66" rx="4"/><rect x="880" y="315" width="180" height="66" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="135" y="338">Cấu hình · dữ liệu chủ</text><text x="135" y="354">cây ISA-95 · asset_class</text><text x="135" y="370">asset · connection · tag</text>
+<text x="345" y="338">Chuỗi thời gian</text><text x="345" y="354">signal_samples · inspection</text><text x="345" y="370">hypertable timestamptz</text>
+<text x="555" y="338">Sự kiện</text><text x="555" y="354">events (alarm/andon/…)</text><text x="555" y="370">notifications</text>
+<text x="765" y="338">Audit WORM</text><text x="765" y="354">audit_trail + bảng an toàn</text><text x="765" y="370">không tự xoá</text>
+<text x="970" y="338">AI</text><text x="970" y="354">sessions · runs · chunks</text><text x="970" y="370">model registry</text>
+</g>
+<!-- L1 boxes -->
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="40" y="455" width="240" height="66" rx="4"/><rect x="300" y="455" width="240" height="66" rx="4"/><rect x="560" y="455" width="240" height="66" rx="4"/><rect x="820" y="455" width="240" height="66" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="160" y="478">Driver OT</text><text x="160" y="494">Modbus · OPC UA · S7</text><text x="160" y="510">SLMP/MC · EIP · Sparkplug 3.0</text>
+<text x="420" y="478">Ingest kiểm tra</text><text x="420" y="494">máy AOI/AVI · gói ảnh</text><text x="420" y="510">một pipeline, một WAL</text>
+<text x="680" y="478">Edge gateway</text><text x="680" y="494">store-forward (1 bộ)</text><text x="680" y="510">safety PLC · STOP</text>
+<text x="940" y="478">Simulator</text><text x="940" y="494">Modbus 5020 · OPC UA 4840</text><text x="940" y="510">nhãn MÔ PHỎNG</text>
+</g>
+<!-- arrows -->
+<g stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar)">
+<path d="M160 455 V 400"/><path d="M420 455 V 400"/>
+<path d="M345 315 V 260"/><path d="M555 315 V 260"/>
+<path d="M155 185 V 130"/><path d="M675 185 V 130"/>
+</g>
+<g stroke="#0e5f6b" stroke-width="2" fill="none" marker-end="url(#ar)" color="#0e5f6b">
+<path d="M415 130 V 185"/><path d="M415 241 V 455" stroke-dasharray="6 4"/>
+</g>
+<g font-size="11" fill="currentColor">
+<text x="170" y="430">dữ liệu lên (chất lượng + tuổi)</text>
+<text x="430" y="300">lệnh xuống: HITL · 2FA · interlock · L‑7</text>
+</g>
+</svg>
+<figcaption>Dữ liệu đi lên qua hai đường ingest và luôn mang nhãn chất lượng + tuổi; lệnh đi xuống chỉ qua một cửa (xanh), bất kể nguồn là người, AI hay luồng tự động. Robot, VDA5050, SECS hiện đi vòng qua cửa này và phải đóng lại.</figcaption>
+</figure>
+
+<h3>6.1 Ba tiến trình, không thêm</h3>
+<ul>
+<li><code>api</code> (tRPC + REST v1 + socket + MCP cục bộ) · <code>worker</code> (scheduler, alarm engine, CAGG refresh, retention, Thợ Cả job) · <code>edge</code> (driver, store-forward, safety PLC). Gộp <code>/api/external/*</code> vào <code>/api/v1</code>; gỡ REST v1 lệnh (D8).</li>
+<li>Một bus nội bộ (NATS đã có) cho telemetry → alarm → socket; MQTT nhúng chỉ cho thiết bị. UNS topic theo <code>enterprise/site/area/line/cell/v1</code>, Sparkplug 3.0 (STATE JSON).</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="dulieu"><span class="no">7</span>Thiết kế dữ liệu</h2>
+
+<h3>7.1 Mô hình canonical</h3>
+<figure>
+<svg viewBox="0 0 1100 430" role="img" aria-label="Mô hình thực thể canonical: cây ISA-95 enterprise site area line asset, asset_class mẫu, connection và tag, product và measurement point, các bảng chuỗi thời gian và sự kiện tham chiếu asset và tag" style="font-family:var(--f-body);font-size:12px">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="20" y="30" width="110" height="40" rx="4"/><rect x="160" y="30" width="110" height="40" rx="4"/><rect x="290" y="30" width="110" height="40" rx="4"/><rect x="420" y="30" width="110" height="40" rx="4"/>
+<rect x="550" y="20" width="150" height="60" rx="4" stroke-width="2"/>
+<rect x="760" y="30" width="130" height="40" rx="4"/>
+<rect x="550" y="130" width="150" height="40" rx="4"/><rect x="760" y="130" width="130" height="40" rx="4"/>
+<rect x="920" y="30" width="160" height="60" rx="4"/>
+<rect x="20" y="130" width="150" height="40" rx="4"/><rect x="200" y="130" width="170" height="40" rx="4"/>
+<rect x="20" y="250" width="200" height="56" rx="4" stroke-dasharray="4 3"/><rect x="250" y="250" width="200" height="56" rx="4" stroke-dasharray="4 3"/><rect x="480" y="250" width="200" height="56" rx="4" stroke-dasharray="4 3"/><rect x="710" y="250" width="180" height="56" rx="4" stroke-dasharray="4 3"/><rect x="920" y="250" width="160" height="56" rx="4" stroke-dasharray="4 3"/>
+<rect x="20" y="350" width="330" height="56" rx="4"/><rect x="380" y="350" width="300" height="56" rx="4"/><rect x="710" y="350" width="370" height="56" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="75" y="54">enterprise</text><text x="215" y="54">site</text><text x="345" y="54">area</text><text x="475" y="54">line</text>
+<text x="625" y="44" font-weight="700">asset</text><text x="625" y="60">machine · robot · cell</text><text x="625" y="74" font-size="10.5">kind · class_id · line_id</text>
+<text x="825" y="54">connection</text>
+<text x="625" y="154">asset_class (mẫu)</text><text x="825" y="154">tag</text>
+<text x="1000" y="52">tag_template</text><text x="1000" y="68">vai trò: run/fault/count…</text>
+<text x="95" y="154">product_model</text><text x="285" y="154">measurement_point_def</text>
+<text x="120" y="272">signal_samples</text><text x="120" y="288">hypertable · tag_id · ts tz · q</text>
+<text x="350" y="272">inspection_results</text><text x="350" y="288">hypertable · asset_id · product</text>
+<text x="580" y="272">events</text><text x="580" y="288">alarm·andon·interlock·state</text>
+<text x="800" y="272">audit_trail</text><text x="800" y="288">WORM · hash chain</text>
+<text x="1000" y="272">ai_* · vector_chunks</text><text x="1000" y="288">sessions · runs</text>
+<text x="185" y="372">recipe · changeover · interlock_rule</text><text x="185" y="388">tham chiếu asset + tag</text>
+<text x="530" y="372">twin_* · equipment_3d_model</text><text x="530" y="388">tham chiếu asset (FK)</text>
+<text x="895" y="372">settings(scope,key,value) · user · role · permission_set</text><text x="895" y="388">một bảng cài đặt · role → quyền, ngoại lệ theo người</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar2)">
+<path d="M130 50 H160"/><path d="M270 50 H290"/><path d="M400 50 H420"/><path d="M530 50 H550"/><path d="M700 50 H760"/>
+<path d="M625 130 V 80"/><path d="M825 130 V 70"/><path d="M920 60 H890"/><path d="M1000 90 V 150 H890"/>
+<path d="M700 150 H760"/>
+<path d="M120 250 V 190 H825 V 170" stroke-dasharray="3 3"/>
+<path d="M350 250 V 200 H625 V 80" stroke-dasharray="3 3"/>
+</g>
+<g font-size="10.5" fill="currentColor"><text x="705" y="100">1 asset → n connection</text><text x="705" y="200">1 connection → n tag</text><text x="20" y="215">chấm: dẫn xuất từ mẫu; đứt: FK sang asset/tag</text></g>
+</svg>
+<figcaption>Một cây ISA-95 năm cấp; <code>asset</code> thay cho machines + stations + robots + workstations; <code>asset_class</code> và <code>tag_template</code> là mẫu để faceplate, twin, alarm và AI cùng hiểu vai trò tag (run, fault, count, mode…) mà không cần tra tên riêng. Mọi bảng thời gian/sự kiện trỏ FK về asset hoặc tag.</figcaption>
+</figure>
+
+<div class="tbl"><table>
+<tr><th>Quyết định</th><th>Hiện trạng</th><th>Đề xuất</th></tr>
+<tr><td>Thiết bị</td><td>machines 1 700 · stations 1 694 · robots 3 · workstations 0 · device_adapters 15 · edge_nodes 3</td><td><code>asset(kind)</code>; <code>stationCode</code> thành thuộc tính; <code>cell</code> tuỳ chọn khi một trạm có nhiều máy (hiện không có)</td></tr>
+<tr><td>Mẫu</td><td>device_types 31 · machine_template_versions 1 · twin_kich_thuoc_loai · alarm_taxonomy 175</td><td><code>asset_class</code> (tham số, mô hình 3D mặc định, faceplate mặc định) + <code>tag_template</code> (vai trò, đơn vị, deadband, alarm mặc định) + <code>alarm_taxonomy</code> giữ</td></tr>
+<tr><td>Kết nối và tag</td><td>device_adapters (không FK) · device_tags 42 (không FK) · uns_tag_mappings · mqtt_subscriptions</td><td><code>connection</code> FK asset · <code>tag</code> FK connection, có <code>role</code> từ template, <code>writable</code>, <code>energy_direction</code> (phục vụ L‑7)</td></tr>
+<tr><td>Tenant</td><td>corporateCode varchar 53 cột + factoryId 81 cột + 4 kiểu khác</td><td>một khoá <code>site_id int</code>; RLS phủ cả machines/inspection/telemetry; FORCE; app chỉ kết nối bằng <code>avi_app</code></td></tr>
+<tr><td>Chuỗi thời gian</td><td>10 bảng; 2 bảng 1,8 GB không hypertable</td><td><code>signal_samples</code> (= ot_telemetry mở rộng theo tag_id, gộp robot/heartbeat/health/energy) · <code>inspection_results</code> · <code>measurement_samples</code> · <code>process_results</code>; CAGG thay bảng mart <code>fact_*</code>, <code>daily_statistics</code>, <code>hourly_yield_cache</code>, <code>spc_*</code></td></tr>
+<tr><td>Sự kiện</td><td>27 bảng cảnh báo, không có bảng alarm chuẩn</td><td><code>events</code> hypertable: type, severity (4 mức ISA-18.2), source asset/tag, vòng đời <code>active → acked → cleared</code>, <code>shelved / suppressed_by_design / out_of_service</code>; <code>notifications</code>, <code>escalations</code> giữ</td></tr>
+<tr><td>Audit</td><td>>20 bảng; audit_logs hypertable retention 365 ngày</td><td><code>audit_trail</code> WORM hash chain, <b>không retention</b> (xuất lạnh trước khi drop) + giữ nguyên các bảng an toàn đặc thù đã WORM (scada_command_attempts, central_stop_executions, edge_*, ai_external_calls)</td></tr>
+<tr><td>Cài đặt</td><td>11 bảng rỗng, cấu hình thật trong .env</td><td><code>settings(scope, key, value jsonb, updated_by)</code>; .env chỉ còn bí mật và cờ hạ tầng; cờ tính năng chuyển vào settings có UI</td></tr>
+<tr><td>AI</td><td>94 bảng, 6 khái niệm phiên, 2 registry, 3 chunk</td><td>schema <code>ai</code> riêng: <code>sessions / runs / messages / pending_actions / model_registry / vector_chunks(corpus)</code>; giữ các bảng harness đợt 12 đang dùng</td></tr>
+<tr><td>Thời gian</td><td>953 naive / 141 tz; 7/8 hypertable naive</td><td>timestamptz cho mọi bảng mới; di trú hypertable naive bằng bảng mới + copy theo chunk; sửa 7 câu postgres.js còn lại</td></tr>
+<tr><td>Nguồn sự thật schema</td><td>26 bảng chỉ SQL; timescale/ và optional/ ngoài bộ đếm</td><td>Drizzle là nguồn duy nhất; mọi DDL qua migration có đánh số, <code>--strict</code> mặc định, một bộ đếm</td></tr>
+</table></div>
+
+<h3>7.2 Việc sửa ngay, không đợi kiến trúc</h3>
+<ol>
+<li>Điều tra job nén <code>ot_telemetry</code> (44 lần thất bại, 35 GB chưa nén) và job retention (67 lần).</li>
+<li>Chuyển <code>machine_health_history</code>, <code>rul_estimates</code> thành hypertable có retention, hoặc giảm tần suất ghi.</li>
+<li>Gỡ retention tự xoá khỏi <code>audit_logs</code> hoặc thêm bước xuất trước khi drop.</li>
+<li>Thêm FK: <code>device_adapters.machineId</code>, <code>device_tags.adapterId</code>, <code>robots.stationId</code>.</li>
+<li>Đưa 26 bảng chỉ SQL vào Drizzle; đưa <code>timescale/</code>, <code>optional/</code> vào <code>__applied_migrations</code>.</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="backend"><span class="no">8</span>Thiết kế backend</h2>
+
+<h3>8.1 Chín module lõi (thay cho 263 router rời)</h3>
+<div class="tbl"><table>
+<tr><th>Module</th><th>Router tRPC (namespace)</th><th>Gộp từ</th><th>Mục tiêu</th></tr>
+<tr><td><b>hierarchy</b></td><td><code>hierarchy.*</code></td><td>corporate, factory, workshop, line, station, factoryZone, sites</td><td>1</td></tr>
+<tr><td><b>asset</b></td><td><code>asset.*</code>, <code>asset.connection.*</code>, <code>asset.tag.*</code>, <code>asset.class.*</code></td><td>machine, deviceAdapter, equipment, equipmentStandards, equipmentIntegration, field, robots, edge nodes, deviceOnboarding, uns mapping</td><td>1, 2</td></tr>
+<tr><td><b>telemetry</b></td><td><code>telemetry.*</code> (read), <code>/api/ot/ingest</code>, socket <code>tag:*</code></td><td>ot, mqtt*, sensor, telemetryBus, 3 store-forward, simOtTelemetry; SCADA live cache + socket (hợp đồng 1a đang chờ)</td><td>2</td></tr>
+<tr><td><b>alarm</b></td><td><code>alarm.*</code>, <code>andon.*</code></td><td>8 hệ cảnh báo; giữ <code>alerts/decide*</code> làm lõi quyết định; aiSmartAlert gỡ</td><td>2</td></tr>
+<tr><td><b>control</b></td><td><code>control.command.*</code>, <code>control.interlock.*</code>, <code>control.stop.*</code>, <code>scada.*</code></td><td>commandDispatcher + otDeviceWrite + interlockGate + scada/* + mayDungKhanCap; robotCommandDispatcher/VDA5050/SECS đóng băng, nếu mở lại phải đi qua đây</td><td>2, 5</td></tr>
+<tr><td><b>inspection &amp; quality</b></td><td><code>inspection.*</code>, <code>quality.spc/pareto/cpk/gate.*</code>, <code>product.*</code>, <code>genealogy.*</code></td><td>18 router kiểm tra + 29 chất lượng + 28 sản phẩm, gỡ 9 router 0 chỗ dùng</td><td>4</td></tr>
+<tr><td><b>engineering</b></td><td><code>program.*</code> (IR/POU/ST, MATIEC), <code>recipe.*</code>, <code>simulation.*</code></td><td>programming, ir, edgeRuntime, recipes, changeover, simulation; orchestration studio thành chế độ "luồng" của program; FOE đóng băng</td><td>3</td></tr>
+<tr><td><b>ai (Thợ Cả)</b></td><td><code>ai.session.*</code>, <code>ai.agent.*</code>, <code>ai.action.*</code> (HITL), <code>ai.model.*</code>, <code>ai.kb.*</code>, <code>ai.flow.*</code>, <code>ai.vision.*</code></td><td>28 router LLM + 18 thị giác; một model gateway (llama-server) thay 5 lớp gọi; giữ harness đợt 12, VRAM broker, L‑7</td><td>5</td></tr>
+<tr><td><b>platform</b></td><td><code>auth.*</code>, <code>rbac.*</code>, <code>settings.*</code>, <code>audit.*</code>, <code>report.*</code>, <code>twin.*</code>, <code>maintenance.*</code></td><td>29 router nền tảng + báo cáo + twinCanh + PdM; license giữ cưỡng chế, ẩn UI</td><td>1</td></tr>
+</table></div>
+
+<h3>8.2 Đường lệnh và đường AI (giữ nguyên, đóng lỗ)</h3>
+<figure>
+<svg viewBox="0 0 1100 300" role="img" aria-label="Đường lệnh duy nhất: nguồn người, AI, luồng, STOP đi qua ai control gate, HITL confirm, 2FA theo mức, interlock gate, dispatcher, driver; robot VDA5050 SECS hiện đi vòng và bị gạch bỏ" style="font-family:var(--f-body);font-size:12px">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="20" y="30" width="120" height="40" rx="4"/><rect x="20" y="90" width="120" height="40" rx="4"/><rect x="20" y="150" width="120" height="40" rx="4"/><rect x="20" y="210" width="120" height="40" rx="4"/>
+<rect x="200" y="90" width="140" height="40" rx="4"/>
+<rect x="380" y="110" width="140" height="40" rx="4"/>
+<rect x="560" y="110" width="130" height="40" rx="4"/>
+<rect x="730" y="110" width="130" height="40" rx="4" stroke-width="2"/>
+<rect x="900" y="110" width="110" height="40" rx="4"/>
+<rect x="1030" y="110" width="50" height="40" rx="4"/>
+<rect x="380" y="220" width="300" height="40" rx="4" stroke="#b4231f" stroke-dasharray="5 3"/>
+</g>
+<g fill="currentColor" text-anchor="middle">
+<text x="80" y="54">Người (faceplate)</text>
+<text x="80" y="114">Thợ Cả (đề xuất)</text>
+<text x="80" y="174">Luồng AI</text>
+<text x="80" y="234">STOP / interlock</text>
+<text x="270" y="114">aiControlGate L‑7</text>
+<text x="450" y="134">HITL confirm</text>
+<text x="625" y="134">2FA theo mức</text>
+<text x="795" y="134" font-weight="700">interlockGate</text>
+<text x="955" y="134">dispatcher</text>
+<text x="1055" y="134">driver</text>
+<text x="530" y="244" fill="#b4231f">robot · VDA5050 · SECS/GEM: cửa riêng, phải đóng</text>
+</g>
+<g stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar3)">
+<path d="M140 50 H360 V 130 H380"/>
+<path d="M140 110 H200"/><path d="M140 170 H180 V 110 H200"/>
+<path d="M340 110 H380 V 130"/>
+<path d="M520 130 H560"/><path d="M690 130 H730"/><path d="M860 130 H900"/><path d="M1010 130 H1030"/>
+<path d="M140 230 H700 V 150 H730" stroke-dasharray="6 3"/>
+</g>
+<g font-size="10.5" fill="currentColor">
+<text x="150" y="275">STOP đi tắt tới interlockGate/dispatcher (hướng giảm năng lượng, không chờ đọc lại); mọi hướng tăng năng lượng mức 4–5 bị chặn cứng (L‑7).</text>
+</g>
+</svg>
+<figcaption>Hiện trạng đo được: <code>interlockGate</code> chỉ được import bởi commandDispatcher, interlockEngine và oversightRouter; robot/VDA5050/SECS không đi qua. Thiết kế mục tiêu giữ nguyên chuỗi đã có và chỉ đóng ba lỗ này, trước tiên bằng tắt cờ.</figcaption>
+</figure>
+
+<h3>8.3 RBAC, cờ, job</h3>
+<ul>
+<li><b>RBAC:</b> 8 vai → <code>role_permission_set</code>; bảng <code>permissions</code> theo người chỉ còn là ngoại lệ. Thu >20 loại procedure về 5: <code>public</code>, <code>protected</code>, <code>permission(x)</code>, <code>actuation(level)</code> (kèm TOTP tươi theo mức), <code>admin</code>. Admin không bypass <code>requirePermission</code> ở procedure actuation (đã có cờ RBAC_SCOPED_ADMIN, bật).</li>
+<li><b>Cờ:</b> 267 → ~40 cờ hạ tầng trong .env; cờ tính năng chuyển vào <code>settings</code> có UI, có audit. Trang "Hệ thống" hiển thị job nào đang chạy thật (đọc từ registry job, không từ cờ).</li>
+<li><b>Job:</b> 133 <code>setInterval</code> → một <code>jobRegistry</code> với tên, chu kỳ, leader-election (đã có), trạng thái lần chạy cuối; worker là nơi duy nhất chạy scheduler.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="frontend"><span class="no">9</span>Thiết kế frontend: IA, vỏ ứng dụng, hệ thiết kế</h2>
+
+<h3>9.1 Kiến trúc thông tin: 7 vùng, 2 cấp, 1 nguồn</h3>
+<p>Một tệp <code>ia.ts</code> duy nhất định nghĩa vùng → mục → quyền → route. Nav, ⌘K, breadcrumb, Home, mobile đều là phép chiếu của tệp này. Bỏ App Launcher, bỏ chế độ Đơn giản/Nâng cao, bỏ Labs; thay bằng lọc theo quyền (tập quyền rỗng thì ẩn, fail-closed) và theo "persona mặc định" (operator thấy ít hơn vì quyền ít hơn, không phải vì chế độ).</p>
+<div class="tbl"><table>
+<tr><th>#</th><th>Vùng (nhãn vi)</th><th>Mục cấp 2</th><th>Vai chính</th><th>Thay cho</th></tr>
+<tr><td>1</td><td><b>Trang chủ</b></td><td>Home theo vai (một trang, nội dung theo quyền) · Phòng vận hành</td><td>mọi vai</td><td>16 màn tổng quan + 10 Home + TodayPage</td></tr>
+<tr><td>2</td><td><b>Giám sát</b></td><td>Nhà máy (L1) · Line (L2) · Máy (L3 faceplate/cockpit) · Cảnh báo · Twin 3D · Kết nối</td><td>operator, supervisor, engineer</td><td>device-monitor, line-view, andon, alerts, alarm-kpi, sla, ops-console, connectivity, twin/*</td></tr>
+<tr><td>3</td><td><b>Sản xuất &amp; Chất lượng</b></td><td>Kiểm tra (lịch sử + chi tiết) · Chất lượng (SPC/Pareto/Cpk/Gate) · Truy xuất · Đơn hàng &amp; WIP</td><td>quality, supervisor</td><td>history, inspection, quality-cockpit, golden-samples, defect-*, nonconformance, rca, production-orders, wip, traceability</td></tr>
+<tr><td>4</td><td><b>Dữ liệu chủ</b></td><td>Tài sản (cây ISA-95 + lớp mẫu) · Sản phẩm &amp; điểm đo · Danh mục (lỗi, alarm, recipe)</td><td>engineer, admin</td><td>data-management, master-data, products, product-workspace, datasettings, component-library, equipment-standards, device-onboarding (thành wizard trong Tài sản)</td></tr>
+<tr><td>5</td><td><b>Kỹ thuật</b></td><td>Studio lập trình (IR/POU/ST/luồng) · Mô phỏng · Recipe &amp; Changeover · Interlock &amp; An toàn · Twin Studio</td><td>engineer</td><td>engineering-home/workspace, ir-editor, pou-studio, orchestration-studio, recipes, interlock-rules, safety, twin-studio, rf-test-cell</td></tr>
+<tr><td>6</td><td><b>Thợ Cả</b></td><td>Workspace (chat + agent + mã) · Hộp duyệt hành động · Luồng AI · Model &amp; VRAM · Tri thức (KB) · Thị giác</td><td>engineer, admin</td><td>33 trang AI</td></tr>
+<tr><td>7</td><td><b>Phân tích &amp; Quản trị</b></td><td>Reporting Studio · Phân tích · Bảo trì · Người dùng &amp; quyền · Cài đặt · Nhật ký · Hệ thống</td><td>manager, admin</td><td>11 báo cáo + 28 admin + 4 bảo trì</td></tr>
+</table></div>
+
+<h3>9.2 Vỏ ứng dụng (application frame)</h3>
+<figure>
+<svg viewBox="0 0 1100 520" role="img" aria-label="Wireframe vỏ ứng dụng: thanh đầu có phạm vi ISA-95, chip cảnh báo, độ tươi dữ liệu, nhãn chế độ, ⌘K, người dùng; rail trái 7 vùng thu gọn được với vùng đáy cài đặt và theme; vùng nội dung có breadcrumb khi sâu hơn 2 cấp, tiêu đề trang chuẩn, nội dung; ngăn ngữ cảnh phủ bên phải" style="font-family:var(--f-body);font-size:12px">
+<g fill="none" stroke="currentColor" stroke-width="1.2">
+<rect x="10" y="10" width="1080" height="500" rx="6"/>
+<rect x="10" y="10" width="1080" height="48"/>
+<rect x="10" y="58" width="64" height="452"/>
+<rect x="820" y="58" width="270" height="452" stroke-dasharray="5 3"/>
+</g>
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="24" y="20" width="110" height="28" rx="4"/><rect x="146" y="20" width="230" height="28" rx="4"/><rect x="390" y="20" width="90" height="28" rx="14"/><rect x="492" y="20" width="120" height="28" rx="4"/><rect x="624" y="20" width="110" height="28" rx="4"/><rect x="760" y="20" width="200" height="28" rx="4"/><rect x="972" y="20" width="106" height="28" rx="4"/>
+</g>
+<g fill="currentColor" text-anchor="middle" font-size="11">
+<text x="79" y="38">SYNAPSE</text>
+<text x="261" y="38">Nhà máy ▸ Xưởng A ▸ Line 3</text>
+<text x="435" y="38">⚠ 2 · ● 5</text>
+<text x="552" y="38">● sống · 0,8 s</text>
+<text x="679" y="38">THẬT</text>
+<text x="860" y="38">⌘K tìm màn, máy, tag…</text>
+<text x="1025" y="38">kỹ sư · vi</text>
+</g>
+<g fill="currentColor" font-size="10" text-anchor="middle">
+<text x="42" y="90">⌂</text><text x="42" y="104">Trang chủ</text>
+<text x="42" y="136">◉</text><text x="42" y="150">Giám sát</text>
+<text x="42" y="182">▣</text><text x="42" y="196">Sản xuất</text>
+<text x="42" y="228">▤</text><text x="42" y="242">Dữ liệu</text>
+<text x="42" y="274">⚙</text><text x="42" y="288">Kỹ thuật</text>
+<text x="42" y="320">✦</text><text x="42" y="334">Thợ Cả</text>
+<text x="42" y="366">▥</text><text x="42" y="380">Phân tích</text>
+<text x="42" y="460">☼</text><text x="42" y="474">Theme</text>
+<text x="42" y="494">Cài đặt</text>
+</g>
+<line x1="18" y1="430" x2="66" y2="430" stroke="currentColor" stroke-width="1"/>
+<g fill="none" stroke="currentColor" stroke-width="1">
+<rect x="90" y="72" width="716" height="22"/>
+<rect x="90" y="104" width="716" height="54"/>
+<rect x="90" y="170" width="716" height="330"/>
+<rect x="104" y="184" width="220" height="90" rx="4"/><rect x="338" y="184" width="220" height="90" rx="4"/><rect x="572" y="184" width="220" height="90" rx="4"/>
+<rect x="104" y="290" width="688" height="196" rx="4"/>
+</g>
+<g fill="currentColor" font-size="11">
+<text x="98" y="87">Giám sát / Line 3 / AOI-07   (breadcrumb chỉ khi sâu &gt; 2 cấp)</text>
+<text x="98" y="124" font-family="Archivo, sans-serif" font-weight="700" font-size="15">AOI-07 · Faceplate</text>
+<text x="98" y="146">Lớp: AOI quang 4 cam · Line 3 · Local · an toàn: không có PLC safety   [Hành động ▾]</text>
+<text x="112" y="204">Trạng thái PackML</text><text x="112" y="224" font-family="Archivo, sans-serif" font-weight="700" font-size="18">EXECUTE</text><text x="112" y="246">xác nhận 0,8 s trước</text>
+<text x="346" y="204">Yield ca</text><text x="346" y="224" font-family="Archivo, sans-serif" font-weight="700" font-size="18">97,4 %</text><text x="346" y="246">mục tiêu 97 · xu hướng ▁▂▃▅▆</text>
+<text x="580" y="204">Cảnh báo đang mở</text><text x="580" y="224" font-family="Archivo, sans-serif" font-weight="700" font-size="18">1 · mức 2</text><text x="580" y="246">Cam 3 mất tiêu điểm · 4 phút</text>
+<text x="112" y="310">Tab: Tổng quan · Tag · Cảnh báo · Recipe · Kết quả · Lịch sử · Thợ Cả</text>
+<text x="112" y="340">Nội dung tab trong khung cuộn riêng; mỗi tab &lt; 600 dòng, trích từ *Content đã có.</text>
+</g>
+<g fill="currentColor" font-size="11">
+<text x="832" y="80" font-family="Archivo, sans-serif" font-weight="700">Ngăn ngữ cảnh (phủ, không đẩy)</text>
+<text x="832" y="104">· Thợ Cả: tóm tắt máy, đề xuất</text>
+<text x="832" y="124">· Hành động chờ duyệt (HITL)</text>
+<text x="832" y="144">· Tag sống đã ghim</text>
+<text x="832" y="164">· Nhật ký lệnh gần đây</text>
+<text x="832" y="196">Đóng = Esc. Mở từ nút ở tiêu đề trang.</text>
+<text x="832" y="236">Nhãn chế độ ở thanh đầu là bất biến:</text>
+<text x="832" y="254">THẬT / MÔ PHỎNG / DỮ LIỆU CŨ</text>
+<text x="832" y="272">đổi màu nền thanh đầu khi ≠ THẬT.</text>
+</g>
+</svg>
+<figcaption>Một vỏ cho mọi màn. Thanh đầu mang 5 thứ bất biến: phạm vi ISA-95, chip cảnh báo (ShellAlertChip đã có), độ tươi (FreshnessStrip đã có), nhãn chế độ THẬT/MÔ PHỎNG, ⌘K. Rail trái 7 vùng, thu gọn 64 px, mở rộng 240 px; vùng đáy là cài đặt và theme, không điều hướng (theo iX). Ngăn ngữ cảnh phủ bên phải (ContextDrawer đã có), phù hợp panel 1280×800.</figcaption>
+</figure>
+
+<h3>9.3 Hệ thiết kế: một bộ token</h3>
+<div class="tbl"><table>
+<tr><th>Thành phần</th><th>Quyết định</th><th>Ghi chú</th></tr>
+<tr><td><b>Theme</b></td><td>2 theme: <b>Vận hành (sáng, xám ISA-101)</b> mặc định cho vùng Giám sát/Sản xuất; <b>Kỹ thuật (tối)</b> cho Kỹ thuật/Thợ Cả/Phân tích, người dùng đổi được. Pha 1 chỉ sáng (ràng buộc spec mượt §12A #4), tối thêm pha 2.</td><td>Glass/Warmth/Console của simulator bị gỡ; simulator đọc cùng token qua CSS variables.</td></tr>
+<tr><td><b>Màu</b></td><td>Nền <code>--isa-field</code> xám trung tính; chữ 3 mức; accent teal chỉ cho tương tác; màu ngữ nghĩa 4 mức alarm (đỏ/cam/vàng/tím theo AUD-08, có hình + số + chữ), trạng thái máy PackML tông trung tính, dữ liệu cũ tím gạch, uncertain viền chấm xám. <b>Không xanh lá cho bình thường.</b></td><td>Cấm lớp palette thô (<code>text-red-500</code>…) bằng ESLint rule; mục tiêu 2 916 → 0 ở pages/components.</td></tr>
+<tr><td><b>Chữ</b></td><td>Body: Be Vietnam Pro (dấu tiếng Việt tốt, đã dùng trong tài liệu này) hoặc giữ Geist; số: tabular-nums; mono: Geist Mono. Thang 6 bậc <code>.ds-h1…caption</code> bắt buộc; tối thiểu 11 px trên màn vận hành; cấm <code>text-[Npx]</code>.</td><td>Chủ dự án chọn font body (Q4).</td></tr>
+<tr><td><b>Mật độ</b></td><td>3 mức qua <code>DensityProvider</code> đã có: <code>comfortable</code> (panel cảm ứng 1280×800, target ≥48 px), <code>default</code>, <code>compact</code> (bảng dữ liệu kỹ sư, dòng 32 px kiểu Carbon xs).</td><td>Thay 30 lớp <code>.mobile-*</code> và ghi đè <code>.flex</code> toàn cục.</td></tr>
+<tr><td><b>Khung trang</b></td><td>Một <code>PageHeader</code> (tiêu đề, phụ đề ngữ cảnh, hành động, nút ngăn ngữ cảnh) + một <code>PageBody</code> + <code>TabbedHub</code> cho trang nhiều tab. Gỡ PageHeaderCompact, CockpitLayout, WorkbenchShell, EngineeringShell, PanelShell, WizardShell (hoặc làm biến thể của PageHeader).</td><td>45 trang không header → 0.</td></tr>
+<tr><td><b>Biểu đồ</b></td><td>Recharts qua <code>ThemedCharts/chartTokens</code> duy nhất; sparkline/gauge pattern đã có. Màu chuỗi lấy từ token.</td><td>31/32 trang đang bỏ qua chartTokens.</td></tr>
+<tr><td><b>Chuyển động</b></td><td>Gỡ framer-motion (0 chỗ dùng). Hoạt ảnh chỉ bằng CSS, tôn trọng <code>prefers-reduced-motion</code>; hoạt ảnh thiết bị trên SCADA theo spec mượt (dừng khi dữ liệu cũ).</td><td></td></tr>
+<tr><td><b>i18n</b></td><td>Namespace theo vùng (7) + chung; cấm mặc định tiếng Việt inline trong <code>t()</code> (3 907 chỗ) bằng rule; khoá sống giảm từ 21,8k xuống ước ~9k sau khi gỡ trang.</td><td>Giữ vi/en/zh.</td></tr>
+<tr><td><b>Cờ UI</b></td><td>17 <code>VITE_*</code> → 1 (<code>VITE_SHELL_V2</code> để quay lui trong pha chuyển).</td><td></td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="manhinh"><span class="no">10</span>Danh mục màn hình mục tiêu (42 màn)</h2>
+<p>Mỗi dòng: màn, route, nội dung chính, nguồn trích từ trang hiện có (để không viết lại), quyền. Màn có tab thì tab liệt kê trong ngoặc. ISA-101 cấp 1–4 ghi cho vùng Giám sát.</p>
+
+<h4>Vùng 1 · Trang chủ (2)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Home theo vai</td><td><code>/</code></td><td>Ô theo quyền: operator = máy được giao + andon + việc hôm nay; supervisor = line + yield + cảnh báo; engineer = máy có lỗi + phiên Thợ Cả + việc kỹ thuật; manager = KPI nhà máy; admin = sức khoẻ hệ thống. Một component, RoleTileGrid đã có.</td><td>OperatorHome, SupervisorHome, QualityHome, EngineeringHub, AdminHome, TodayPage</td><td>mọi vai</td></tr>
+<tr><td>Phòng vận hành</td><td><code>/van-hanh</code></td><td>ISA-101 cấp 1: lưới line theo nhà máy, trạng thái bất thường nổi, OEE/yield ca, 5 cảnh báo nặng nhất, dòng sự kiện. Persona Executive/Supervisor/Operations là bộ lọc, không phải trang riêng.</td><td>ControlTower (persona shell), CommandCenter, WarRoom, FactoryCommandView, Dashboard</td><td>machine_status</td></tr>
+</table></div>
+
+<h4>Vùng 2 · Giám sát (7)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Nhà máy (L1)</td><td><code>/giam-sat</code></td><td>Mimic 2D ISA-101 cấp 1 theo xưởng/line; mỗi line một ô trạng thái tổng hợp; dữ liệu cũ xám.</td><td>LineView, FactoryLiveMap, spec mượt L1 (pha sau)</td><td>machine_status</td></tr>
+<tr><td>Line (L2)</td><td><code>/giam-sat/line/:id</code></td><td>Mimic 2D cấp 2: các máy trên line theo thứ tự quy trình, ký hiệu SVG gắn tag, WIP, tắc nghẽn, cảnh báo theo máy. (Tab: Mimic · OEE · Cảnh báo · Sự kiện)</td><td>LineView, spec mượt L2, StationFlow, OEE tab</td><td>machine_status</td></tr>
+<tr><td>Máy (L3 faceplate/cockpit)</td><td><code>/giam-sat/may/:id</code></td><td>Faceplate chuẩn theo asset_class: trạng thái PackML đã xác nhận, tag sống, hành động (Local/Remote, lệnh request→confirm TTL 60 s, 2FA theo mức), kết quả kiểm tra gần nhất. (Tab: Tổng quan · Tag · Cảnh báo · Recipe · Kết quả · Lịch sử · Chẩn đoán L4 · Thợ Cả)</td><td>MachineCockpit (không xoá, nhúng), Faceplate, MachineWorkspace, StationAnalysis, RobotCockpit (ẩn)</td><td>machine_status / machine_control cho tab hành động</td></tr>
+<tr><td>Cảnh báo</td><td><code>/canh-bao</code></td><td>Một màn ISA-18.2: danh sách đang hoạt động theo ưu tiên 4 mức, ack/shelve/suppress/out-of-service, lịch sử, KPI alarm (tần suất, MTTA/MTTR, phân bổ ưu tiên 80/15/5), quy tắc leo thang. (Tab: Đang mở · Andon · Lịch sử · KPI · Quy tắc)</td><td>Alerts, AndonBoard, AlarmKpiDashboard, SlaCockpit, OpsConsole, MqttAlertRules</td><td>alerts_view / alerts_ack</td></tr>
+<tr><td>Twin 3D</td><td><code>/twin</code>, <code>/twin/line/:id</code>, <code>/twin/may/:id</code></td><td>Giữ nguyên 3 màn, 3 canvas (QĐ-19/21). Cửa vào từ Nhà máy/Line/Máy bằng nút "3D". Chân trang cố định "không phải hệ an toàn".</td><td>TwinVanHanh (tách 5 074 dòng thành 3 tệp), TwinLine, TwinMay</td><td>machine_status</td></tr>
+<tr><td>Kết nối</td><td><code>/ket-noi</code></td><td>Sức khoẻ adapter/edge/broker, chất lượng tag, UNS topic, chẩn đoán SCADA. (Tab: Adapter · Tag · UNS · Edge · Chẩn đoán)</td><td>ConnectivityHub, ScadaDiag, ScadaKenh, UnsMappingDesigner, FieldDevices, SystemHealth phần OT</td><td>connectivity_view</td></tr>
+</table></div>
+
+<h4>Vùng 3 · Sản xuất &amp; Chất lượng (5)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Kiểm tra</td><td><code>/kiem-tra</code></td><td>Lịch sử kết quả AOI/AVI với bộ lọc phạm vi ISA-95, mã sản phẩm, lỗi; gói AOI; ảnh.</td><td>History (3 315 dòng, tách), AOIPackages, HistoryExportContent</td><td>history_view</td></tr>
+<tr><td>Chi tiết kiểm tra</td><td><code>/kiem-tra/:id</code></td><td>Ảnh, điểm đo, lỗi, quyết định, truy xuất, sửa kết quả (correctResult).</td><td>InspectionDetail, RepairStation</td><td>history_view</td></tr>
+<tr><td>Chất lượng</td><td><code>/chat-luong</code></td><td>(Tab: SPC · Pareto · Cpk · Quality gate · Mẫu vàng · NCR/RCA · Chẩn đoán)</td><td>QualityCockpit (23 trigger → 7 tab), SPCAnalysis, ParetoAnalysis, QualityGates, GoldenSamples, Nonconformance, RootCauseAnalysis, DefectHeatmap</td><td>quality_view</td></tr>
+<tr><td>Truy xuất</td><td><code>/truy-xuat</code></td><td>Genealogy theo serial/lot, hành trình xuyên trạm (getFullHistory), component installations.</td><td>Traceability, tab Serial của cockpit</td><td>history_view</td></tr>
+<tr><td>Đơn hàng &amp; WIP</td><td><code>/don-hang</code></td><td>Đơn sản xuất, lịch, WIP theo line, kế hoạch vs thực tế.</td><td>ProductionOrders, ProductionScheduling, WIP, MESControlTower phần đơn</td><td>production_view</td></tr>
+</table></div>
+
+<h4>Vùng 4 · Dữ liệu chủ (3)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Tài sản</td><td><code>/tai-san</code></td><td>Master-detail: cây ISA-95 bên trái; chọn nút → chi tiết asset (lớp, kết nối, tag, mô hình 3D, recipe mặc định). Wizard thêm thiết bị (Onboarding V2) là ngăn phủ. Lớp mẫu (asset_class/tag_template) là tab.</td><td>DataManagementHub, DeviceOnboardingHubV2, MachineRegistration, EquipmentStandards, EquipmentIntegration, CorporateManagement, SitesRegistry</td><td>master_data</td></tr>
+<tr><td>Sản phẩm &amp; điểm đo</td><td><code>/san-pham</code></td><td>Model, biến thể, điểm đo, cây dạy từ máy, mapping máy–sản phẩm, so sánh sản phẩm.</td><td>ProductModels (3 129 dòng, tách), ProductWorkspaceHub, ComponentLibrary, ProductComparison</td><td>master_data</td></tr>
+<tr><td>Danh mục</td><td><code>/danh-muc</code></td><td>(Tab: Lỗi · Alarm taxonomy · Loại thiết bị · Đơn vị/ca/shift · Nhập/xuất)</td><td>DefectCatalog, MasterDataManagement (2 051 dòng), DataSettings, ImportExport, ProductionShifts</td><td>master_data</td></tr>
+</table></div>
+
+<h4>Vùng 5 · Kỹ thuật (5)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Studio lập trình</td><td><code>/ky-thuat/studio</code></td><td>Một IDE: cây dự án, editor IR/POU/ST (CodeMirror), luồng (xyflow) là một loại tệp, MATIEC + chấm hành vi, nạp xuống edge/PLC qua cửa lệnh. Thợ Cả trong ngăn ngữ cảnh.</td><td>EngineeringWorkspace, IrEditor, PouStudio, OrchestrationStudio (3 142 dòng, thành chế độ luồng), AICodingWorkspace phần editor</td><td>engineering</td></tr>
+<tr><td>Mô phỏng</td><td><code>/ky-thuat/mo-phong</code></td><td>Nhà máy ảo: chọn line/máy, nguồn = simulator (Modbus 5020/OPC UA), chạy kịch bản, so sánh với thật; nhãn MÔ PHỎNG thường trực; chỉ engineer + admin; không ghi KPI.</td><td>RfTestCellSim (gỡ), simulation router, tools/machine-simulator web</td><td>engineering (server kiểm)</td></tr>
+<tr><td>Recipe &amp; Changeover</td><td><code>/ky-thuat/recipe</code></td><td>Recipe theo asset_class, triển khai, hàng đợi đổi model duyệt 2 người (DEP-08), lịch sử nạp.</td><td>RecipeManagement, ProductChangeoverWizard, RecipeLoadHistory</td><td>engineering / actuation</td></tr>
+<tr><td>Interlock &amp; An toàn</td><td><code>/ky-thuat/an-toan</code></td><td>Quy tắc interlock (chặn khi thiếu dữ liệu), STOP trung tâm, trạng thái safety PLC, commissioning/FAT, control readiness.</td><td>InterlockRuleManagement, SafetyWorkforce (phần safety), ControlReadiness, EStop</td><td>engineering / actuation mức 5</td></tr>
+<tr><td>Twin Studio</td><td><code>/twin-studio</code></td><td>Giữ nguyên (QĐ-18): đặt mô hình, gắn tag, khuôn thiết bị (spec v2 pha 2).</td><td>TwinStudio, CorporateLayout (gỡ), Layout/:id</td><td>engineering</td></tr>
+</table></div>
+
+<h4>Vùng 6 · Thợ Cả (6)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Workspace</td><td><code>/tho-ca</code></td><td>Chat + phiên + agent con + đa tệp + thẻ duyệt (CURSOR-PARITY đã có); chế độ: trò chuyện, phân tích dữ liệu, lập trình, RCA. Ô chọn model.</td><td>AICodingWorkspace (3 924 dòng, tách), AIChatPage, AIAnalysisHub, SpecialistAgent, RcaCopilot, TechnicianCopilot</td><td>ai_use</td></tr>
+<tr><td>Hộp duyệt hành động</td><td><code>/tho-ca/duyet</code></td><td>HITL: mọi đề xuất chạm thiết bị/dữ liệu, mức L‑7, diff, TOTP theo mức, lịch sử duyệt. Cũng hiện trong ngăn ngữ cảnh mọi màn.</td><td>ApprovalsInbox, AIFlowsDuyet, aiCopilot.confirmAction</td><td>ai_approve / actuation</td></tr>
+<tr><td>Luồng AI</td><td><code>/tho-ca/luong</code></td><td>Thiết kế và chạy luồng (đợt 8), webhook, lịch, cổng OT qua aiControlGate.</td><td>AIFlows, AIFlowDetail</td><td>ai_flow</td></tr>
+<tr><td>Model &amp; VRAM</td><td><code>/tho-ca/model</code></td><td>Registry GGUF, vai → model, llama-server, VRAM broker, A/B kiểm định, cổng AI ngoài (đóng băng, ẩn).</td><td>AIModelManagement, AIGgufModels, ModelVersions, AIChonModel, AIKiemDinh, VRAM</td><td>admin</td></tr>
+<tr><td>Tri thức</td><td><code>/tho-ca/tri-thuc</code></td><td>KB tài liệu + KB mã + kho repo; ingest (PDF/OCR/video); câu hỏi kiểm tra.</td><td>AILocalKb, AIProgrammingKb, KbStudio, AIRepoDuAn</td><td>ai_kb</td></tr>
+<tr><td>Thị giác</td><td><code>/tho-ca/thi-giac</code></td><td>Classifier NTF, drift, chú thích, bootstrap, đánh giá.</td><td>AIVision*, Annotation*, DefectPrediction, RobotModelHealth (ẩn)</td><td>ai_vision</td></tr>
+</table></div>
+
+<h4>Vùng 7 · Phân tích &amp; Quản trị (7)</h4>
+<div class="tbl"><table>
+<tr><th>Màn</th><th>Route</th><th>Nội dung</th><th>Trích từ</th><th>Quyền</th></tr>
+<tr><td>Reporting Studio</td><td><code>/bao-cao</code></td><td>Giữ TabbedHub 5 tab (Tổng quan · Tạo · Lịch · Xuất PDF/PPTX · So sánh).</td><td>ReportingStudio + 6 *Content</td><td>reports_view</td></tr>
+<tr><td>Phân tích</td><td><code>/phan-tich</code></td><td>OEE/yield xu hướng, tương quan, năng lượng, drill-down theo phạm vi.</td><td>ProcessAnalytics, Correlation, Energy, DrillDownDashboard, ComparisonStudio</td><td>analytics_view</td></tr>
+<tr><td>Bảo trì</td><td><code>/bao-tri</code></td><td>(Tab: Work order · PdM/RUL · Lịch sử sức khoẻ)</td><td>WorkOrders, MaintenanceHub, MaintenanceWorkspaceHub, MachineHealthMonitoring</td><td>maintenance</td></tr>
+<tr><td>Người dùng &amp; quyền</td><td><code>/quan-tri/nguoi-dung</code></td><td>Người dùng, vai, permission set, phân công phạm vi, 2FA, API key, phiên.</td><td>Users, RoleBuilder, UserAssignments, ApiKeys, Permissions</td><td>admin</td></tr>
+<tr><td>Cài đặt</td><td><code>/quan-tri/cai-dat</code></td><td>Một màn, nhóm theo scope (nhà máy/line/máy/người dùng), đọc từ bảng settings; cờ tính năng có audit.</td><td>Settings, AdminSettings, SettingsHub, SystemConfiguration, MonitoringSettings, OEETargetSettings, AISettings, Profile</td><td>admin / user cho scope cá nhân</td></tr>
+<tr><td>Nhật ký</td><td><code>/quan-tri/nhat-ky</code></td><td>audit_trail + lệnh + AI gọi ngoài + SCADA, bộ lọc theo actor (người/AI), xuất.</td><td>AuditLogs, EnhancedAuditLogs, CommandAuditLog, MasterDataAudit, ScadaNhatKy</td><td>audit_view</td></tr>
+<tr><td>Hệ thống</td><td><code>/quan-tri/he-thong</code></td><td>Sức khoẻ dịch vụ, job registry (đang chạy thật), DB/Timescale (nén, retention), giấy phép (chỉ đọc, đóng băng), phiên bản.</td><td>SystemHealth, AdminMonitoring, License, SynapsePlatform, Modules</td><td>admin</td></tr>
+</table></div>
+
+<p>Tổng: 2 + 7 + 5 + 3 + 5 + 6 + 7 = <b>35 màn chính</b> cộng 7 màn hạ tầng (login, setup, 404, đổi mật khẩu, api-docs chuyển ra ngoài app, component-showcase chỉ dev, kiosk operator giữ riêng) = <b>42</b>. Mọi route cũ giữ <code>Redirect</code> ít nhất một chu kỳ phát hành rồi gỡ.</p>
+
+<!-- ============================================================ -->
+<h2 id="lotrinh"><span class="no">11</span>Lộ trình và khớp với việc đang chạy</h2>
+<p>Nguyên tắc xếp pha: <b>an toàn → nền → vỏ → gộp → dọn</b>. Không chen trước hàng A2 (SCADA an toàn) và cửa sổ GPU A/B (do-model). Việc frontend/dữ liệu chủ yếu chạy ở worktree riêng, gộp qua dieu-phoi, census đủ.</p>
+<div class="tbl"><table>
+<tr><th>Pha</th><th>Nội dung</th><th>Đầu ra đo được</th><th>Phụ thuộc</th><th>Ước lượng <code>[suy luận]</code></th></tr>
+<tr><td><b>0 · An toàn và vệ sinh</b></td><td>Tắt ROBOT_CONTROL/GATEWAY, VDA5050, SECS; thống nhất .env; gỡ cookies.txt + thu hồi phiên; sửa worktree hmi-web; sửa nén/retention ot_telemetry, audit_logs, 2 bảng 1,8 GB; gỡ mã chết đã liệt kê §4.2 (sau duyệt Q1).</td><td>0 cửa lệnh ngoài dispatcher; chunk chưa nén = 0; −3,3k dòng trang, −12k LOC server, −85 tệp gốc</td><td>Q2, Q8</td><td>1 tuần, không GPU</td></tr>
+<tr><td><b>1 · Nền dữ liệu</b></td><td>asset/asset_class/connection/tag có FK (bảng mới + view tương thích cho machines/stations); settings; events + alarm engine; audit_trail; Drizzle là nguồn duy nhất; timestamptz cho bảng mới.</td><td>Bảng 443 → ~330; 8 hệ cảnh báo đọc/ghi qua events; FK thiếu = 0</td><td>Q5, Q6; dải mig mới (đề xuất 0460–0499)</td><td>3–4 tuần</td></tr>
+<tr><td><b>2 · Vỏ và hệ thiết kế</b></td><td><code>ia.ts</code> một nguồn; AppFrame mới sau cờ <code>VITE_SHELL_V2</code>; token sáng ISA-101 + density; PageHeader duy nhất; ESLint cấm màu thô/text-[px]/t() mặc định; Home theo vai + Phòng vận hành; Cảnh báo một màn.</td><td>7 lớp nav → 1; 16 + 10 màn → 2; lớp màu thô ở components → 0; LCP /van-hanh &lt; 2 s trên panel</td><td>Q3, Q4; nhận spec mượt L2/L3 vào vùng Giám sát; dark theme sau pha 1 SCADA</td><td>4–5 tuần</td></tr>
+<tr><td><b>3 · Gộp theo vùng</b></td><td>Lần lượt: Giám sát (L1–L3, Kết nối) → Sản xuất &amp; Chất lượng → Dữ liệu chủ → Kỹ thuật (Studio gộp Orchestration) → Thợ Cả (6 màn) → Phân tích &amp; Quản trị. Mỗi vùng: trích *Content, bọc, redirect, đo, gỡ.</td><td>189 route → 42; 263 router → ~120; AI 33 trang → 6; OEE một công thức; ingest 2 đường</td><td>Theo thứ tự A2 với vùng Giám sát; cửa sổ GPU với Thợ Cả</td><td>8–10 tuần, song song 2 phiên</td></tr>
+<tr><td><b>4 · Dọn và đóng băng</b></td><td>Chuyển mã đóng băng vào <code>frozen/</code> với README điều kiện mở lại; gỡ redirect hết hạn; gỡ 17 cờ VITE; gộp /api/external vào v1; i18n dọn khoá chết; di trú timestamptz hypertable cũ; simulator dùng token chung.</td><td>LOC backend ~360k; bảng ~200; khoá i18n ~9k; .env cờ ~40</td><td>Q9, Q10</td><td>3–4 tuần</td></tr>
+</table></div>
+<div class="callout">
+<p><b>Khớp với luồng đang chạy.</b> SCADA A2/F5/1a tiếp tục ở <code>_scada_*_wt</code>; vùng Giám sát của thiết kế này <em>là</em> nơi đón L2/L3 của spec mượt v3, không thay thế. Thợ Cả đợt 12/cửa sổ GPU A+B tiếp tục; pha 3 chỉ gộp bề mặt UI sau khi B xong. Twin 3D giữ nguyên 3 màn và QĐ-18/19/21/23. :3000 vẫn đóng băng ở <code>db6cb00f9</code> cho tới khi cửa sổ GPU xong; mọi pha 0–2 làm ở worktree riêng, kiểm trên cổng khác.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="ruiro"><span class="no">12</span>Rủi ro và ràng buộc bắt buộc</h2>
+<div class="tbl"><table>
+<tr><th>Rủi ro</th><th>Mức</th><th>Giảm thiểu</th></tr>
+<tr><td>Gộp cảnh báo làm mất một quy tắc đang chạy thật (8 hệ, 22 bảng)</td><td><span class="tag p0">P0</span></td><td>Pha 1 chạy song song: events nhận bản sao từ mọi hệ cũ 2 tuần, so khớp số lượng/ưu tiên trước khi cắt nguồn cũ. Census + đột biến.</td></tr>
+<tr><td>Gộp asset làm vỡ FK mềm (machineId text, adapter code) ở telemetry 565 triệu hàng</td><td><span class="tag p0">P0</span></td><td>Không đổi khoá của ot_telemetry trong pha 1; asset giữ id = machines.id; view tương thích <code>machines</code>, <code>stations</code>.</td></tr>
+<tr><td>Vỏ mới làm mất deep-link, ⌘K, kiosk operator</td><td><span class="tag p1">P1</span></td><td>Route cũ giữ Redirect; ia.ts sinh bảng redirect; kiosk operator giữ riêng; Playwright 10 bề mặt như doc 59.</td></tr>
+<tr><td>Theme sáng mặc định gây phản ứng người dùng đã quen tối</td><td><span class="tag p2">P2</span></td><td>Theme theo vùng + người dùng đổi được; ISA-101 là lý do nghiệp vụ, trình bày rõ khi phát hành.</td></tr>
+<tr><td>Đóng băng robot/SECS mà có thiết bị thật đang dùng</td><td><span class="tag p1">P1</span></td><td>Kiểm log command_log/robot_telemetry 30 ngày trước khi tắt; robot_telemetry có 1,96 triệu hàng, cần xác minh nguồn là sim hay thật.</td></tr>
+<tr><td>Di trú timestamptz trên hypertable lớn</td><td><span class="tag p1">P1</span></td><td>Để pha 4; bảng mới + copy theo chunk ngoài giờ; postgres.js vá 7 câu trước.</td></tr>
+<tr><td>Nhiều phiên cùng sửa navigation/App.tsx</td><td><span class="tag p1">P1</span></td><td>ia.ts là tệp mới; pha 2 là phiên duy nhất đụng App.tsx; các phiên khác thêm màn qua ia.ts.</td></tr>
+</table></div>
+<p><b>23 ràng buộc bắt buộc</b> từ các quyết định đã duyệt (D1–D11 SCADA, spec mượt §12A, twin QĐ, L‑7, uỷ quyền AI Local, cơ cấu 4 phiên) được giữ nguyên và liệt kê đầy đủ trong <a href="#pl-rangbuoc">Phụ lục C</a>. Thiết kế này không mâu thuẫn với ràng buộc nào; hai chỗ cần lưu ý: dark theme chỉ sau pha 1 SCADA (#9) và không thêm <code>socket.join/io.emit</code> mới (#22).</p>
+
+<!-- ============================================================ -->
+<h2 id="quyetdinh"><span class="no">13</span>Quyết định cần chủ dự án duyệt</h2>
+
+<div class="dec"><h4><span class="tag q">Q1</span>Phạm vi tinh gọn</h4><p>Duyệt bảng §4.1 (GIỮ LÕI / GỘP / ĐÓNG BĂNG / GỠ) và danh sách mã chết §4.2. <span class="rec">Khuyến nghị:</span> duyệt toàn bộ; mục GỠ thực thi sau khi tôi gửi danh sách tệp cụ thể từng đợt (luật xoá phải hỏi).</p></div>
+<div class="dec"><h4><span class="tag q">Q2</span>Tắt robot/AGV/SECS và đóng cửa lệnh phụ ngay pha 0</h4><p>ROBOT_CONTROL_ENABLED, ROBOT_GATEWAY_ENABLED, VDA5050, SECS_GEM, FLEET_ORCH về false; mọi lệnh thiết bị phải qua dispatcher + interlockGate. <span class="rec">Khuyến nghị:</span> đồng ý, sau khi kiểm log 30 ngày xác nhận không có thiết bị thật.</p></div>
+<div class="dec"><h4><span class="tag q">Q3</span>IA 7 vùng, một Home theo vai, bỏ App Launcher và Đơn giản/Nâng cao/Labs</h4><p>Lọc chỉ theo quyền (fail-closed). <span class="rec">Khuyến nghị:</span> đồng ý; kiosk operator giữ riêng.</p></div>
+<div class="dec"><h4><span class="tag q">Q4</span>Hệ thiết kế: theme sáng ISA-101 mặc định cho Giám sát/Sản xuất, tối cho Kỹ thuật/Thợ Cả; font body</h4><p>Hai lựa chọn font body: (a) giữ Geist (đã tự phục vụ, latin tốt), (b) Be Vietnam Pro (dấu tiếng Việt cân hơn, như tài liệu này). <span class="rec">Khuyến nghị:</span> (b) cho vận hành vì nhãn tiếng Việt chiếm đa số; Geist Mono giữ cho mã.</p></div>
+<div class="dec"><h4><span class="tag q">Q5</span>Mô hình tài sản canonical</h4><p>asset (gộp machines + stations + robots + workstations), asset_class + tag_template, connection → tag có FK, một khoá tenant site_id. <span class="rec">Khuyến nghị:</span> đồng ý, với view tương thích trong pha 1–3.</p></div>
+<div class="dec"><h4><span class="tag q">Q6</span>Nợ dữ liệu: audit không tự xoá, timestamptz, nén telemetry</h4><p>Gỡ retention audit_logs (hoặc xuất lạnh trước), timestamptz cho mọi bảng mới và di trú hypertable cũ ở pha 4, sửa job nén ngay pha 0. <span class="rec">Khuyến nghị:</span> đồng ý.</p></div>
+<div class="dec"><h4><span class="tag q">Q7</span>Thứ tự pha 0→4 và quan hệ với A2 / cửa sổ GPU</h4><p>Pha 0–2 chạy ở worktree riêng không chạm hàng A2; vùng Giám sát gộp sau A2(o) và 1a; Thợ Cả gộp bề mặt sau cửa sổ B. <span class="rec">Khuyến nghị:</span> đồng ý; dải migration mới 0460–0499 cho luồng này.</p></div>
+<div class="dec"><h4><span class="tag q">Q8</span>Vệ sinh repo</h4><p>Gỡ cookies.txt + thu hồi phiên; chuyển 69 script + 16 báo cáo gốc vào scripts/legacy và docs/archive; gộp 11 playwright config; dọn worktree đã gộp (_twin_wt, _hmi_pr_wt, avi-aoi-synapse, _ai7_*); quyết nhánh s7-parked (300 commit simulator chưa gộp) và avi-aoi-fieldbus. <span class="rec">Khuyến nghị:</span> gỡ cookies ngay; s7-parked cần chủ dự án xem riêng vì có 140k dòng simulator.</p></div>
+<div class="dec"><h4><span class="tag q">Q9</span>Simulator dùng chung token</h4><p>Gỡ Glass/Warmth/Console; web của simulator đọc cùng CSS variables; HMI máy (hmi-aoi01) giữ bố cục nhưng đổi sang token chung. <span class="rec">Khuyến nghị:</span> đồng ý, làm ở pha 4.</p></div>
+<div class="dec"><h4><span class="tag q">Q10</span>Đóng băng toàn bộ mảng thương mại hoá</h4><p>license (giữ cưỡng chế, ẩn UI), edition, plugin, devPortal, marketplace, federation, sites, SynapsePlatform, governance chỉ đọc; FactoryAlertSystem đóng băng, /api/external gộp vào v1. <span class="rec">Khuyến nghị:</span> đồng ý; mở lại khi có khách thứ hai.</p></div>
+
+<p>Sau khi duyệt, bước tiếp theo là: (1) kế hoạch chi tiết pha 0 với danh sách tệp gỡ và SQL sửa nén/retention để dieu-phoi duyệt; (2) mockup 5 màn then chốt (Home, Phòng vận hành, Máy L3, Cảnh báo, Tài sản) ở cả hai theme trên 1280×800 và 1920×1080 trước khi viết mã vỏ.</p>
+
+<!-- ============================================================ -->
+<h2 id="phuluc"><span class="no">14</span>Phụ lục</h2>
+
+<h3 id="pl-so">A. Số đo chi tiết</h3>
+<div class="tbl"><table>
+<tr><th>Chỉ số</th><th class="num">Giá trị</th><th>Nguồn</th></tr>
+<tr><td>Route trong App.tsx / redirect / sống</td><td class="num">234 / 42+3 / 189</td><td>App.tsx:315–833</td></tr>
+<tr><td>Trang .tsx / dòng / trung vị / >1 000 / >2 000</td><td class="num">226 / 170 368 / 552 / 53 / 15</td><td>client/src/pages</td></tr>
+<tr><td>Trang không commit >90 ngày</td><td class="num">98</td><td>git log (đánh giá thấp vì quét cơ học 31/07)</td></tr>
+<tr><td>Nav: nhóm / lá / collapsed / beta</td><td class="num">10 / 162 / 14 / 14</td><td>navigation.tsx 2 910 dòng</td></tr>
+<tr><td>Lớp màu thô pages / components; hex; style=; text-[px]</td><td class="num">859 / 2 057; 659; 410; 690</td><td>grep</td></tr>
+<tr><td>Token ISA-101 dùng trong pages</td><td class="num">8</td><td>index.css + grep</td></tr>
+<tr><td>Khoá i18n / namespace / t() có mặc định vi</td><td class="num">21 851 ×3 / 366 / ~3 907</td><td>client/src/i18n</td></tr>
+<tr><td>Backend LOC không test / tệp / test</td><td class="num">579 500 / 1 521 / 2 133</td><td>server/</td></tr>
+<tr><td>Router gốc / 0 chỗ dùng / 1–2 chỗ</td><td class="num">263 / 28 / 34</td><td>routers.ts:235–816</td></tr>
+<tr><td>AI LOC / tỉ lệ</td><td class="num">~179k / 31 %</td><td>services/ai*, aiLocalTools, vram, flow, vision</td></tr>
+<tr><td>setInterval / start* export / cờ *_ENABLED trong mã / bật ở .env</td><td class="num">133 / 92 / 267 / 90</td><td>server/, .env</td></tr>
+<tr><td>Bảng DB / rỗng / hypertable / chunk / FK</td><td class="num">443 / 237 / 8 / 141 / 172</td><td>pg_catalog</td></tr>
+<tr><td>Dung lượng DB / ot_telemetry / chưa nén</td><td class="num">68 GB / 69,4 GB nén+chưa / 35+23 GB</td><td>pg_total_relation_size, timescaledb_information</td></tr>
+<tr><td>Cột timestamp naive / tz</td><td class="num">953 / 141</td><td>information_schema</td></tr>
+<tr><td>RLS bảng / policy / FORCE</td><td class="num">43 / 86 / 2</td><td>pg_policies</td></tr>
+<tr><td>Migration tệp / dải / trùng tiền tố / số trống</td><td class="num">422 / 0000–0450 / 23 / 52</td><td>drizzle/*.sql, __applied_migrations</td></tr>
+<tr><td>Worktree / gốc repo tệp track / png / script một lần</td><td class="num">30 / 137 / 81 / 69</td><td>git worktree list, ls</td></tr>
+</table></div>
+
+<h3 id="pl-rangbuoc">B. Tham chiếu ngành (có URL)</h3>
+<ul>
+<li>UNS và ISA-95 topic: HiveMQ <a href="https://docs.hivemq.com/hivemq-platform/contextualize/define-namespace.html">define-namespace</a>, <a href="https://www.hivemq.com/blog/designing-your-uns-semantic-information-hierarchy/">semantic hierarchy</a>; Sparkplug 3.0 = ISO/IEC 20237:2023, STATE JSON <a href="https://sparkplug.eclipse.org/specification/version/3.0/documents/sparkplug-specification-3.0.0.pdf">spec</a>.</li>
+<li>Mẫu → thể hiện: Ignition modules/UDT <a href="https://docs.inductiveautomation.com/docs/8.3/ignition-modules.md">docs</a>; AVEVA AF element template <a href="https://docs.aveva.com/bundle/pi-server-f-af-pse/page/1022495.html">docs</a>; Litmus Edge cấu trúc DeviceHub → Twins → DataHub → Flows → Analytics <a href="https://docs.litmus.io/litmusedge/2025">docs</a>.</li>
+<li>ISA-101 phân cấp 4 cấp và màu chỉ cho bất thường (nguồn thứ cấp) <a href="https://docs.tatsoft.com/display/FX/ISA-101+HMI+Compliance+How-to">tatsoft</a>; ISA-18.2 trạng thái shelved/suppressed/OOS <a href="https://documentation.iconics.com/v10.97.3/Content/Alarming/Alarm%20Server/Alarm%20References/alarm-state-transition-diagram.htm">iconics</a>; phân bổ 80/15/5 (EEMUA 191, tham khảo).</li>
+<li>Siemens iX (MIT): application menu 2 cấp, vùng đáy không điều hướng, thu gọn/mở rộng <a href="https://ix.siemens.io/docs/components/application-menu/guide">guide</a>; breadcrumb chỉ khi >2 cấp <a href="https://ix.siemens.io/docs/components/breadcrumb/guide">guide</a>; theming token <a href="https://ix.siemens.io/docs/styles/theming/usage-designers">theming</a>. Carbon data table 5 cỡ dòng <a href="https://carbondesignsystem.com/components/data-table/style">style</a>.</li>
+<li>AI copilot PLC: Siemens Industrial Copilot <a href="https://press.siemens.com/global/nl/node/6914">press</a>; Beckhoff TwinCAT Chat <a href="https://www.beckhoff.com/en-gb/company/press/twincat-chat-integrates-llms-into-the-automation-environment-2023-11.html">press</a>; Rockwell FactoryTalk Design Studio copilot <a href="https://www.rockwellautomation.com/en-us/products/software/factorytalk/design-studio.html">product</a>; LLM4PLC (MATIEC + nuXmv) <a href="https://arxiv.org/html/2401.05443v1">arXiv</a>; CISA nguyên tắc AI trong OT 12/2025 <a href="https://www.cisa.gov/resources-tools/resources/principles-secure-integration-artificial-intelligence-operational-technology">CISA</a>.</li>
+<li>Mô phỏng: Open Industry Project (MIT, Modbus/OPC UA/S7/SLMP, máy chủ OPC UA cho SCADA) <a href="https://github.com/Open-Industry-Project/Open-Industry-Project">GitHub</a>; Factory I/O drivers <a href="https://docs.factoryio.com/manual/drivers/">docs</a>; PLCSIM Advanced API đồng bộ chu kỳ <a href="https://assets.new.siemens.com/siemens/assets/api/uuid:3d8be3e0-00bf-49dc-b2c9-ed3c53f993ae/plcsimadvanced.pdf">pdf</a>.</li>
+</ul>
+
+<h3>C. 23 ràng buộc bắt buộc đã duyệt (tóm tắt, nguồn trong memory)</h3>
+<ol class="small" style="columns:2;column-gap:28px">
+<li>Interlock thiếu dữ liệu thì chặn; đọc giá trị sống (D2, D11).</li>
+<li>Chưa khai kênh chế độ = LOCAL; lệnh request→confirm TTL 60 s; 2FA theo mức (D3–D5).</li>
+<li>Di động không gửi lệnh (D7).</li>
+<li>Gỡ REST v1 lệnh; che phải quét REST + tRPC + import động (D8).</li>
+<li>Ghi thật chỉ khi có safety PLC; twin/mô phỏng không là hệ an toàn (D9).</li>
+<li>ISA-101 xám sáng, màu chỉ bất thường, hình + số + chữ, không xanh lá bình thường, ≥11 px, tương phản ≥4,5:1 (D6).</li>
+<li>Dữ liệu cũ tím gạch thắng màu cảnh báo; uncertain viền chấm xám; thiếu tag fault = "không có tín hiệu" (D10).</li>
+<li>Hoạt ảnh trung thực; STOP chỉ hiện khi xác nhận; nhãn poll/mô phỏng/cũ luôn thấy.</li>
+<li>Chế độ tối sau pha 1 SCADA.</li>
+<li>Mô phỏng chỉ kỹ sư + admin, server kiểm, không trộn tag, không ghi KPI, nút lệnh khoá.</li>
+<li>Không đổi poll 5 s; SLO &lt;300 ms chỉ tầng nóng; socket cần 2 cờ, chỉ chủ dự án sửa .env.</li>
+<li>Pha 1 SCADA UI = L2 + L3; không chen trước hàng A2.</li>
+<li>Không cổng phụ nào che nút DỪNG.</li>
+<li>/twin xem ≠ /twin-studio sửa; 3 màn 3 canvas; URL phân cấp; /twin là cửa vào.</li>
+<li>Không xoá MachineCockpit, RobotCockpit (DigitalTwinCenter đã di trú).</li>
+<li>Một lối vào một href; quyền rỗng thì ẩn; nhúng mảnh cũ = nhận nợ tenant của nó.</li>
+<li>AI chạm thiết bị theo hướng năng lượng, fail-closed; AI_OT_CONTROL tắt; không đo bằng admin.</li>
+<li>Đúng hơn nhanh; đổi model = 3 khoá .env; một llama-server 64k.</li>
+<li>Seed sai thì sửa seed; canh bất biến; báo trước khi xoá/seed lại; tách lỗi logic/dữ liệu/vận hành.</li>
+<li>Xoá tệp hoặc đổi kế hoạch hoàn toàn phải hỏi chủ dự án.</li>
+<li>Chỉ dieu-phoi gộp/push; SQL duyệt trước, áp --test-only trước; test không dùng owner aoi; census đủ + check:tests.</li>
+<li>Không thêm socket.join/io.emit mới; phòng robot:{id} chặn gương robot.</li>
+<li>OIP chỉ tham khảo: census tag và chấm ST theo hành vi.</li>
+</ol>
+
+<p class="src" style="margin-top:32px">Tệp nguồn: <code>docs/superpowers/specs/2026-11-03-he-sinh-thai-tinh-gon-thiet-ke-lai.html</code>. Báo cáo khảo sát chi tiết từng mảng (frontend, backend, dữ liệu, vệ tinh, tham chiếu) lưu trong transcript phiên và script đo ở scratchpad phiên; có thể trích thành phụ lục riêng khi cần.</p>
+
+</div>
+</body>
+</html>
