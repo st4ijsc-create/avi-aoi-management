@@ -11,6 +11,8 @@ import {
   LAN_GUI_LAI_KHOI_DONG,
   LY_DO_KHONG_GUI,
   STOP_BU_TRU_KHOI_DONG_HAN_MS,
+  BIEN_LUOT_GUI_MS,
+  HAN_GHI_KET_QUA_LUOT_MS,
   hanGuiLaiMs,
   hangCuaKetQua,
   phanLoaiBuTruBiNgat,
@@ -133,6 +135,23 @@ describe("A2(m2) fix round 1 — m-3 / m-4 (pure)", () => {
     expect(hangCuaKetQua([{ a: 1 }])).toEqual([{ a: 1 }]);
     expect(hangCuaKetQua({ rows: [{ a: 2 }] })).toEqual([{ a: 2 }]);
     for (const x of [{}, null, undefined, { rows: "x" }, 7]) expect(() => hangCuaKetQua(x), String(x)).toThrow(/unexpected database result shape/);
+  });
+  it("m-4 (fix round 2): the lease outlasts the longest attempt (its window bound + the outcome write); the claim is bounded and its time is taken off the window", () => {
+    expect(BIEN_LUOT_GUI_MS).toBeGreaterThan(HAN_GHI_KET_QUA_LUOT_MS);
+    const src = readFileSync(resolve(__dirname, "./foeEngine.ts"), "utf8").replace(/\r\n/g, "\n");
+    expect(src).toContain("const conLaiLuot = conLai - (performance.now() - tXetLai);");
+    expect(src).toContain("withDeadline(guiLaiBuTruLucKhoiDong(run.id, k, b.def, nonce, huy), Math.max(1, conLaiLuot)");
+    expect(src).toContain("        HAN_GHI_KET_QUA_LUOT_MS,\n        `FOE boot re-send run ${run.id} claim`,");
+  });
+  it("C-1 / I-1 (fix round 2): ownership of a live attempt = this process's boot nonce + its in-process registry; the abort handle exists before the attempt's first await", () => {
+    const src = readFileSync(resolve(__dirname, "./foeEngine.ts"), "utf8").replace(/\r\n/g, "\n");
+    expect(src).toContain("hienTai?.bootLuot === FOE_BOOT_NONCE && luotDangChay.has(dang)");
+    expect(src).toContain("const huy: HuyLuotGui = { expired: false, controller: new AbortController() };");
+    const i = src.indexOf("async function guiLaiBuTruLucKhoiDong(");
+    const body = src.slice(i, src.indexOf("\n}\n", i));
+    expect(body.indexOf("if (daHet()) return huyBo();")).toBeGreaterThan(-1);
+    expect(body.indexOf("if (daHet()) return huyBo();")).toBeLessThan(body.indexOf("await getDb()"));
+    expect(body).toContain("rc.controller = huy.controller;");
   });
   it("C-1: D stays 5 min, the single constant", () => {
     expect(STOP_BU_TRU_KHOI_DONG_HAN_MS).toBe(5 * 60_000);

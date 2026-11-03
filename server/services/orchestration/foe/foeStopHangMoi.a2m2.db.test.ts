@@ -305,7 +305,7 @@ async function kiemGiuKhongGui(tx: Tx, runId: number, pdu0: number, lyDo: string
   expect(dau(run)?.daThuGuiLai, lyDo).toBeUndefined(); // nothing attempted
   expect(mine, lyDo).toEqual([{ runId, compId: "undo", outcome: "held", reason: lyDo }]);
   expect((await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).length, lyDo).toBe(0); // no dispatch at all under the boot key
-  const a = canhBaoCua(runId);
+  const a = canhBaoCua(runId).filter((x) => x.kind !== "foe_stop_compensation_pending_at_boot");
   expect(a.map((x) => x.kind), lyDo).toEqual(["foe_compensation_interrupted_held"]);
   expect(a[0]!.khuTrungBenVung, lyDo).toEqual({});
   expect(String(a[0]!.dedupKey), lyDo).toMatch(new RegExp(`^foe_compensation_interrupted_held:${runId}:undo:\\d+$`)); // I-4: + the interruption
@@ -439,6 +439,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(String(a[0]!.dedupKey)).toMatch(new RegExp(`^foe_stop_compensation_resent_at_boot:${runId}:undo:\\d+$`));
       expect(String(a[0]!.title)).toContain("STOP re-sent at boot — check the machine state on site"); // C-3 (c)
       expect(String(a[0]!.message)).toContain("STOP re-sent at boot — check the machine state on site");
+      expect(String(a[0]!.message)).toMatch(/\[interruption of \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\]$/); // m-1 (fix round 2): an ISO time, not raw ms
       expect(a[0]!.khuTrungBenVung).toEqual({});
       expect((a[0]!.recipients as number[]).includes(OWNER)).toBe(true);
       const au = await auditCua(tx, runId);
@@ -779,13 +780,18 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
       expect(soPduGhi() - pdu0).toBe(0);
-      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "daGuiLaiMotLan" }]);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]); // fix round 2: its attempt never wrote an outcome
       const run = await trangThaiRun(tx, runId);
       expect(run.status).toBe("held");
-      expect(dau(run)).toMatchObject({ daThuGuiLai: true, ketQuaGuiLai: "daGuiLaiMotLan" });
+      expect(dau(run)).toMatchObject({ daThuGuiLai: true, ketQuaGuiLai: "luotTruocDungGiua" });
       expect(dau(run)?.dangGuiLai).toBeUndefined();
       expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0);
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      // the DECISION stopped it (the once check), not the claim's compare-and-set further on: no wait, no re-check, no claim attempted
+      const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
+      expect(md.claimLost).toBeUndefined();
+      expect(md.recheck).toBeUndefined();
+      expect(md.staleAttempt).toBe("dead-attempt");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -814,6 +820,10 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const { mine } = await khoiDongLai(runId);
       expect(soPduGhi() - pdu0).toBe(1);
       expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      const al = canhBaoCua(runId);
+      expect(al.map((x) => x.kind)).toEqual(["foe_stop_compensation_pending_at_boot", "foe_stop_compensation_resent_at_boot"]); // m-2: ONE early URGENT while it waits
+      expect(String(al[0]!.title)).toContain("STOP compensation pending at boot — waiting for the device connection");
+      expect(String(al[0]!.dedupKey)).toMatch(new RegExp(`^foe_stop_compensation_pending_at_boot:${runId}:undo:\\d+$`));
       const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
       expect(md.waitedMs).toBeGreaterThanOrEqual(1500);
       expect(md.recheck.cuaSo.conLaiMs).toBeGreaterThan(0);
@@ -831,6 +841,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
       await kiemGiuKhongGui(tx, runId, pdu0, "ketNoiChuaSan", mine); // incl. daThuGuiLai unset, no -a2 row
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_stop_compensation_pending_at_boot", "foe_compensation_interrupted_held"]); // m-2: early, then the outcome
       expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).waitedMs).toBeGreaterThanOrEqual(1500);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
@@ -853,6 +864,13 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect((await trangThaiRun(tx, runId)).status).toBe("held");
       expect(dau(await trangThaiRun(tx, runId))?.dangGuiLai).toBeUndefined();
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      // m-3 (fix round 2) — it WAS handed to the device: the texts say it may have gone out, never "did NOT go out"
+      const al = canhBaoCua(runId)[0]!;
+      expect(String(al.title)).toContain("MAY HAVE GONE OUT");
+      expect(String(al.message)).not.toContain("NOT re-sent");
+      const run = await trangThaiRun(tx, runId);
+      expect(run.error).toContain("MAY HAVE GONE OUT");
+      expect(run.error).not.toContain("did NOT go out");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -900,6 +918,47 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
+  it("★ Q11b (fix round 2, C-1) — the claim COMMITTED but its reply was lost: re-read, it is ours ⇒ the attempt goes on (1 PDU, URGENT 'resent'), never silent", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      _setBuTruBiNgatProbeForTests((stage) => {
+        if (stage === "claimSau") throw new Error("connection reset after commit (test)");
+      });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_stop_compensation_resent_at_boot"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q10c (fix round 2, I-1) — the deadline fires while the attempt is still BEFORE its run context (slow walk start): aborted ⇒ 0 PDU, held + URGENT 'did NOT go out' (true)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      await conLaiCuaSo(tx, runId, 800);
+      _setBuTruBiNgatProbeForTests(async (stage) => {
+        if (stage === "truocDiBo") await new Promise((r) => setTimeout(r, 1200)); // after the run read, before the run context — past the 800 ms left
+      });
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      await new Promise((r) => setTimeout(r, 2500)); // the late walk would have sent by now
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "khongXacNhan" }]);
+      const run = await trangThaiRun(tx, runId);
+      expect(run.status).toBe("held");
+      expect(run.error).toContain("did NOT go out"); // m-3: nothing was handed over — the text is true
+      expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0);
+      const al = canhBaoCua(runId);
+      expect(String(al[0]!.title)).toContain("NOT re-sent");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
   it("★ Q12 (I-4) — the REAL durable dedup: the same interruption seen by two boots ⇒ ONE URGENT; a second interruption of the same run ⇒ a second URGENT", async () => {
     await trongGiaoDich(async (tx) => {
       H.thatAlert = true;
@@ -930,21 +989,50 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
-  it("★ Q13 (I-5a) — another instance holds a LIVE attempt (marker + unexpired DB-clock lease): this boot's held write never wipes it ⇒ run stays 'compensating', marker kept, 0 PDU, no alert", async () => {
+  it("★ Q13 (fix round 2, C-1) — a LIVE-looking lease of ANOTHER boot (a previous boot claimed, then stopped): never silent ⇒ held + URGENT + audit 'a previous boot claimed …', 0 PDU, no second send", async () => {
     await trongGiaoDich(async (tx) => {
       const { m1, m2 } = await dungThietBi(tx);
       const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
       const [n] = (await tx.execute(sql`SELECT FLOOR(EXTRACT(EPOCH FROM now()) * 1000)::bigint AS ms`)) as unknown as Array<{ ms: string | number }>;
-      const dauSong = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "other-instance", hanLuotGuiMs: Number(n!.ms) + 60_000 };
-      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauSong });
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: Number(n!.ms) + 60_000 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauCu });
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
       expect(soPduGhi() - pdu0).toBe(0);
-      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "notOurs" }]);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]);
       const run = await trangThaiRun(tx, runId);
-      expect(run.status).toBe("compensating");
-      expect(dau(run)).toMatchObject({ daThuGuiLai: true, dangGuiLai: "other-instance" });
-      expect(canhBaoCua(runId)).toHaveLength(0);
+      expect(run.status).toBe("held"); // never stuck 'compensating'
+      expect(dau(run)).toMatchObject({ daThuGuiLai: true, ketQuaGuiLai: "luotTruocDungGiua" }); // the try stays spent
+      expect(dau(run)?.dangGuiLai).toBeUndefined();
+      expect(await hangUyQuyen(tx, `foe-run${runId}-undo-a2`)).toHaveLength(0); // no second send
+      const al = canhBaoCua(runId);
+      expect(al.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      expect(String(al[0]!.message)).toContain("a previous boot claimed the STOP re-send and then stopped: the STOP may or may not have reached the device — check the machine on site");
+      const au = await auditCua(tx, runId);
+      expect(au.map((x) => [x.det.metadata?.outcome, x.det.metadata?.reason, x.det.metadata?.staleAttempt])).toEqual([["held", "luotTruocDungGiua", "boot1-attempt"]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ Q13b (fix round 2, C-1) — a lease of a walker LIVE IN THIS PROCESS: a second scan leaves it to that walker (silent); the walker then reports (one URGENT)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      S7.treMs = 2500; // the first boot's STOP is in flight while the second scan runs
+      const p1 = khoiDongLai(runId);
+      let dang: string | null = null;
+      for (let i = 0; i < 100 && !dang; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        const [x] = (await tx.execute(sql`SELECT "contextJson"->'foeBuTruBiNgat'->>'dangGuiLai' AS n FROM orchestration_runs WHERE id = ${runId}`)) as unknown as Array<{ n: string | null }>;
+        dang = x?.n ?? null;
+      }
+      expect(dang).not.toBeNull(); // the first attempt claimed
+      const r2 = await rehydrateInterruptedRuns(); // a second scan in the same process
+      expect((r2.compensations ?? []).filter((c) => c.runId === runId)).toEqual([{ runId, compId: "undo", outcome: "held", reason: "notOurs" }]);
+      const { mine } = await p1;
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
+      expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_stop_compensation_resent_at_boot"]);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
