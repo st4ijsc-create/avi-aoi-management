@@ -232,3 +232,6 @@
 .demo button { min-height: 28px; padding: 0 var(--gap-3); border-radius: var(--radius-1); border: 1px solid var(--isa-rail-ink-2); background: transparent; color: var(--isa-surface); font: 600 12px/1 var(--font-body); cursor: pointer; }
 .demo button[aria-pressed="true"] { background: var(--isa-surface); color: var(--text-1); }
 body.shot .demo { display: none; }
+
+/* Giá trị cũ nằm trong dòng chữ: thêm đệm để vạch gạch xiên đọc được ở mọi cỡ */
+span.is-stale, .num.is-stale { display: inline-block; padding: 1px 6px; font-weight: 600; }
