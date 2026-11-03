@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { sql, type SQL } from "drizzle-orm";
-import { LoiNgoai } from "./loi";
+import { LoiNgoai, requestIdHopLe } from "./loi";
 import type { MucDuLieu } from "./phanLoai";
 
 export interface DbSo {
@@ -77,9 +77,9 @@ export async function ghiYDinh(db: DbSo, h: HangYDinh): Promise<number> {
 export async function ghiKetQua(db: DbSo, yDinhId: number, h: HangKetQua): Promise<void> {
   await db.execute(sql`
     INSERT INTO ai_external_calls ("factoryId", "nhaMayDuLieu", loai, "yDinhId", "userId", "flowId", "runId", "tuDong", "nhaCungCap", model, "mucDich",
-      "tokenVao", "tokenRa", "chiPhiUocUsd", "ketCuc", "maLoi", "bamTraLoi")
+      "tokenVao", "tokenRa", "chiPhiUocUsd", "ketCuc", "maLoi", "bamTraLoi", "requestId")
     SELECT "factoryId", "nhaMayDuLieu", 'ket-qua', id, "userId", "flowId", "runId", "tuDong", "nhaCungCap", model, "mucDich",
-      ${h.tokenVao}, ${h.tokenRa}, ${h.chiPhiUocUsd}, ${h.ketCuc}, ${cat(h.maLoi, 48)}, ${h.bamTraLoi ?? null}
+      ${h.tokenVao}, ${h.tokenRa}, ${h.chiPhiUocUsd}, ${h.ketCuc}, ${cat(h.maLoi, 48)}, ${h.bamTraLoi ?? null}, ${requestIdHopLe(h.requestId) ?? null}
     FROM ai_external_calls WHERE id = ${yDinhId} AND loai = 'y-dinh'
     ON CONFLICT ("yDinhId") WHERE loai = 'ket-qua' DO NOTHING`);
 }

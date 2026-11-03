@@ -41,6 +41,16 @@ describe("sổ AI ngoài (WORM)", () => {
     expect(kq).toEqual([{ ketCuc: "ok", tokenVao: 10 }]);
   });
 
+  it("★ Đợt 12 H3.3a — requestId hợp lệ được ghi; id BẨN (lọt lớp mạng) ⇒ hàng kết quả VẪN ghi với NULL (không mất sổ vì CHECK 0446)", async () => {
+    const d = await db();
+    const id1 = await ghiYDinh(d, yd());
+    await ghiKetQua(d, id1, { tokenVao: 1, tokenRa: 1, chiPhiUocUsd: null, ketCuc: "ok", requestId: "req_011CUjx7z:abc.def-9" });
+    const id2 = await ghiYDinh(d, yd());
+    await ghiKetQua(d, id2, { tokenVao: null, tokenRa: null, chiPhiUocUsd: null, ketCuc: "loi", maLoi: "X", requestId: "req\r\nX-Gia: 1" });
+    const kq = hang(await d.execute(sql`SELECT "yDinhId" AS y, "requestId" AS r FROM ai_external_calls WHERE loai = 'ket-qua' AND "yDinhId" IN (${id1}, ${id2}) ORDER BY "yDinhId"`));
+    expect(kq.map((h) => [Number(h.y), h.r])).toEqual([[id1, "req_011CUjx7z:abc.def-9"], [id2, null]]);
+  });
+
   it("avi_app KHÔNG sửa / xoá được sổ (42501)", async () => {
     const d = await db();
     const id = await ghiYDinh(d, yd());

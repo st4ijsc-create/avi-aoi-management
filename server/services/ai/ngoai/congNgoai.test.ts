@@ -184,6 +184,25 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
     expect(bamCauTraLoi(" a ")).toBe(bamCauTraLoi("a"));
   });
 
+  it("★ Đợt 12 H3.3a — requestId của nhà cung cấp vào hàng KẾT QUẢ: ok ⇒ có; lỗi HTTP (mỗi lần thử) ⇒ có; không gửi id ⇒ NULL; không ra KetQuaGoiNgoai", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok", requestId: "req_ok:1" }]);
+    const kq = await goiAiNgoai(yc(), dep(g));
+    expect(kq).not.toHaveProperty("requestId");
+    const [r] = await exec(sql`SELECT "requestId" AS r FROM ai_external_calls WHERE "yDinhId" = ${kq.callId} AND loai = 'ket-qua'`);
+    expect(r!.r).toBe("req_ok:1");
+    const gLoi = taoNhaCungCapGia([
+      { kieu: "loi", thongDiep: "429 chậm", thuLai: true, phanLoai: "RATE_LIMIT", requestId: "req_429-a" },
+      { kieu: "tra", noiDung: "ok", requestId: "req_ok-b" },
+    ]);
+    const kq2 = await goiAiNgoai(yc(), dep(gLoi, { soLanThu: 2, ngu: async () => undefined }));
+    const ds = await exec(sql`SELECT k."ketCuc" AS c, k."requestId" AS r FROM ai_external_calls k WHERE k.loai = 'ket-qua' AND k."yDinhId" IN (
+      SELECT id FROM ai_external_calls WHERE loai = 'y-dinh' AND "factoryId" = ${A} AND id <= ${kq2.callId} ORDER BY id DESC LIMIT 2) ORDER BY k.id`);
+    expect(ds).toEqual([{ c: "loi", r: "req_429-a" }, { c: "ok", r: "req_ok-b" }]);
+    const kq3 = await goiAiNgoai(yc(), dep(taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }])));
+    const [r3] = await exec(sql`SELECT "requestId" AS r FROM ai_external_calls WHERE "yDinhId" = ${kq3.callId} AND loai = 'ket-qua'`);
+    expect(r3!.r).toBeNull();
+  });
+
   it("★ 10.4b L0a — tinNhan KHÔNG do bộ dựng tạo (tự dựng / chép mảng đã ghép) ⇒ NGOAI_KHONG_QUA_BO_GHEP TRƯỚC mọi bước (không gọi, không giữ chỗ)", async () => {
     const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
     const truoc = await tokenGiu(A);
