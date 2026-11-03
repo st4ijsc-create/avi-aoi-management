@@ -56,3 +56,12 @@ Client không viết xong trước server: mọi nhánh `van-ban` đứng sau **
 1. Hình dạng input `van-ban` đúng như §2.4 chứ (`nguon:{loai:"van-ban", beMat:"bong-bong", cauHoi, traLoi}`; trần 16 KB tính trên `cauHoi+traLoi` hay từng trường)?
 2. Mã lỗi vượt cỡ/tốc độ: 413/429 trả qua `MaLoiNgoai` nào để UI nói đúng?
 3. Bong bóng + model ngoài: máy chủ giữ yêu cầu `conversationId` (như L1) hay muốn bề mặt bong bóng riêng? Client đề xuất **giữ L1** (tạo hội thoại thật) để lịch sử/dấu nguồn/UNTRUSTED dùng một đường.
+
+## 7. Quyết định + điều kiện của dieu-phoi (2026-11-03) — đã duyệt phía dieu-phoi; kiem-dinh còn chờ
+
+Chốt: **GIỮ đường `conversationId` của L1** cho bong bóng (một đường đã kiểm, không thêm bề mặt máy chủ). Điều kiện:
+1. **TRƯỚC khi sửa**: e2e (nhà cung cấp giả) tái hiện lỗi hiện tại — chọn model ngoài ở bong bóng ⇒ 400/404 — GHI mã lỗi quan sát được vào báo cáo; sau sửa cùng ca đó xanh (T3/T8).
+2. Hội thoại tạo từ bong bóng là hội thoại THẬT (hiện trong lịch sử chat). Chọn model cục bộ/`auto` ⇒ KHÔNG tạo hội thoại (giữ hành vi cũ); test ghim.
+3. Nhánh `van-ban` ẩn sau cờ / không render cho tới khi máy chủ có nguồn `van-ban` + `BeMatNgoai "bong-bong"` trên main. Test ghim: "nút chỉ hiện nhánh `chat` khi chưa có `van-ban`" (lượt chưa lưu ⇒ không hiện nút).
+4. Cắt ≤ 16 KB theo byte UTF-8, không cắt giữa ký tự nhiều byte; test emoji/tiếng Việt ở biên (T2).
+Bắt đầu viết mã phần không phụ thuộc `van-ban` **khi kiem-dinh đồng ý**.
