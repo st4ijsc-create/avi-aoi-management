@@ -47,6 +47,12 @@ export const ANH_XA_TOOL_AGENT_NGOAI: Readonly<Record<string, "read_file" | "lis
   list_dir: "list_files",
   grep: "grep_repo",
 });
+/**
+ * (L3c) `search_docs` — tài liệu SẢN PHẨM qua bộ đọc ngoài (`congCuDocNgoai`, bộ lọc L1). CHƯA quảng bá mặc định (dieu-phoi 03/11: tới khi
+ * gộp + ghim): chỉ khi `searchDocs` của cấu hình / env `AI_NGOAI_SEARCH_DOCS === "1"`. Trần số lần mỗi lượt.
+ */
+export const TOOL_TAI_LIEU_NGOAI = "search_docs";
+export const TRAN_TIM_TAI_LIEU_LUOT = 4;
 /** Tool lõi xử lý TRONG vòng (không qua bộ thực thi) — chỉ lập kế hoạch, không chạm đĩa / mạng. */
 const TOOL_LOI_TRONG_VONG = new Set(["todo_write"]);
 
@@ -66,6 +72,11 @@ const DINH_NGHIA_NGOAI: Readonly<Record<string, CongCuNgoai>> = Object.freeze({
     ten: "grep",
     moTa: "Search file contents with a regular expression. Returns matching lines with file path and line number.",
     schema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" } }, required: ["pattern"], additionalProperties: false },
+  },
+  search_docs: {
+    ten: "search_docs",
+    moTa: "Search the PRODUCT documentation (this system's docs / API reference) for a question. Returns short excerpts with their source path.",
+    schema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
   },
 });
 
@@ -109,6 +120,8 @@ export interface CauHinhAgentNgoai {
    * `AI_NGOAI_TOOL_GOC === "1"` đọc lúc tạo cặp (mặc định TẮT ⇒ byte gửi đi như trước H3.3b — đổi byte ⇒ đo trước khi bật).
    */
   toolGoc?: boolean;
+  /** (L3c) quảng bá + chạy `search_docs`. Vắng ⇒ env `AI_NGOAI_SEARCH_DOCS === "1"` (mặc định TẮT). */
+  searchDocs?: boolean;
 }
 
 /** (H3.3b) chuỗi `arguments` của lõi ⇒ tham số đối tượng (bộ chuyển tự phát bằng `JSON.stringify` — hỏng ⇒ đối tượng đánh dấu, không ném). */
@@ -137,10 +150,11 @@ function tinGoiTool(tc: WireToolCall): string {
 }
 
 /** Wire tool lõi ⇒ định nghĩa quảng bá ngoài: CHỈ tool trong tập (đọc + todo_write lấy đúng đặc tả lõi). */
-function congCuQuangBa(congCu: readonly WireTool[]): CongCuNgoai[] {
+function congCuQuangBa(congCu: readonly WireTool[], searchDocs: boolean): CongCuNgoai[] {
   const ra: CongCuNgoai[] = [];
   for (const t of congCu) {
     const ten = t.function.name;
+    if (ten === TOOL_TAI_LIEU_NGOAI && !searchDocs) continue;
     if (DINH_NGHIA_NGOAI[ten]) ra.push(DINH_NGHIA_NGOAI[ten]!);
     else if (TOOL_LOI_TRONG_VONG.has(ten)) ra.push({ ten, moTa: t.function.description ?? ten, schema: t.function.parameters ?? { type: "object" } });
   }
@@ -149,6 +163,8 @@ function congCuQuangBa(congCu: readonly WireTool[]): CongCuNgoai[] {
 
 export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
   const toolGoc = c.toolGoc ?? process.env.AI_NGOAI_TOOL_GOC === "1";
+  const searchDocs = c.searchDocs ?? process.env.AI_NGOAI_SEARCH_DOCS === "1";
+  let soLanTim = 0;
   const idDaPhat = new Set<string>();
   const lichSuKhoa = new Set(c.lichSu.map(khoaTin));
   const ids: number[] = [];
@@ -164,7 +180,10 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
       if (m.role === "system") continue;
       if (m.role === "tool") {
         if (typeof m.tool_call_id !== "string" || !idDaPhat.has(m.tool_call_id)) throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", "tool-khong-dang-ky");
-        ds.push({ vaiTro: "tool", tenTool: String(m.name ?? ""), phan: [{ loai: "ma-repo", noiDung: m.content }], ...(toolGoc ? { idGoiTool: m.tool_call_id } : {}) });
+        // (L3c) kết quả search_docs = tài liệu sản phẩm ⇒ phần `truy-hoi-kb` kho `api` (ky-thuat theo bảng L0a), không phải mã repo
+        const phan: TinGhep["phan"] =
+          m.name === TOOL_TAI_LIEU_NGOAI ? [{ loai: "truy-hoi-kb", loaiKho: "api", noiDung: m.content }] : [{ loai: "ma-repo", noiDung: m.content }];
+        ds.push({ vaiTro: "tool", tenTool: String(m.name ?? ""), phan, ...(toolGoc ? { idGoiTool: m.tool_call_id } : {}) });
         continue;
       }
       if (lichSuKhoa.has(khoaTin(m))) {
@@ -202,7 +221,7 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
       const vongCuoi = ++soVong === TRAN_VONG_AGENT_NGOAI;
       const g = ghepPhan(phanLoai(vao.tinNhan));
       if (c.lichSu.length > 0 && g.muc !== "van-hanh") throw new LoiNgoai("NGOAI_KHONG_QUA_BO_GHEP", "san-muc");
-      const congCu = congCuQuangBa(vao.congCu);
+      const congCu = congCuQuangBa(vao.congCu, searchDocs);
       const kq = await c.goi({
         dich: c.dich,
         tinNhan: g.tinNhan,
@@ -240,9 +259,15 @@ export function taoCapAgentNgoai(c: CauHinhAgentNgoai): CapAgentNgoai {
   const boThucThi: BoThucThi = {
     congCu(cheDo: CheDoAgent): WireTool[] {
       if (cheDo !== "hoi") return [];
-      return structuredClone(CONG_CU.filter((t) => t.function.name in ANH_XA_TOOL_AGENT_NGOAI));
+      return structuredClone(CONG_CU.filter((t) => t.function.name in ANH_XA_TOOL_AGENT_NGOAI || (searchDocs && t.function.name === TOOL_TAI_LIEU_NGOAI)));
     },
     async chay(goi, ctx): Promise<KetQuaToolLoi> {
+      if (goi.ten === TOOL_TAI_LIEU_NGOAI) {
+        if (ctx.cheDo !== "hoi" || !searchDocs) return { ok: false, ma: "NGOAI_TOOL_KHONG_CAP", choModel: `[TỪ CHỐI NGOAI_TOOL_KHONG_CAP ${goi.ten}]` };
+        if (++soLanTim > TRAN_TIM_TAI_LIEU_LUOT) return { ok: false, ma: "TRAN_SO_LAN_TIM", choModel: "[TỪ CHỐI TRAN_SO_LAN_TIM search_docs]" };
+        const r = await c.chayTool(TOOL_TAI_LIEU_NGOAI, { query: (goi.thamSo ?? {}).query }, { goc: c.goc, user: c.user, doc: c.doc });
+        return { ok: r.ok, choModel: r.noiDung, ...(r.maTuChoi ? { ma: r.maTuChoi } : {}), hienThi: { tool: goi.ten } };
+      }
       const dich = Object.prototype.hasOwnProperty.call(ANH_XA_TOOL_AGENT_NGOAI, goi.ten) ? ANH_XA_TOOL_AGENT_NGOAI[goi.ten] : undefined;
       if (ctx.cheDo !== "hoi" || !dich) return { ok: false, ma: "NGOAI_TOOL_KHONG_CAP", choModel: `[TỪ CHỐI NGOAI_TOOL_KHONG_CAP ${goi.ten}]` };
       const ts = goi.thamSo ?? {};

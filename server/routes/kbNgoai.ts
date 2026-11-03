@@ -23,41 +23,9 @@ import type { YeuCauGoiNgoai, KetQuaGoiNgoai, KiemTruocNgoai } from "../services
 import { ghepPhan, type PhanGhep, type TinGhep } from "../services/ai/ngoai/ghepPhan";
 import { LoiNgoai } from "../services/ai/ngoai/loi";
 
-/** loại nguồn (`sourceType` của kho KB) ⇒ loại kho cho `ghepPhan` — CHỈ tài liệu kỹ thuật chung của sản phẩm được gửi ra ngoài. */
-export const LOAI_KHO_THEO_NGUON: Readonly<Record<string, "api">> = Object.freeze({
-  doc: "api",
-  service: "api",
-  type: "api",
-  domain: "api",
-  router: "api",
-  feature: "api",
-  schema_table: "api",
-  route: "api",
-  module: "api",
-  nav: "api",
-  pattern: "api",
-});
-
-/**
- * ★ rà kiem-dinh L1 (4) — khoá THỨ HAI: `sourceType` có thể do bên ghi vào kho khai (`ingestKnowledgeRecord`), nên chunk còn phải nằm dưới
- * một thư mục TÀI LIỆU SẢN PHẨM đã biết (đo trên knowledge/chunks.jsonl 2026-10-30). `ingest/…`, `knowledge/operational*`, studio, mọi đường
- * khác ⇒ BỎ. Cả hai khoá phải cùng qua.
- */
-export const TIEN_TO_TAI_LIEU_SAN_PHAM: readonly string[] = [
-  "docs/",
-  "apidocs/",
-  "server/",
-  "client/src/",
-  "drizzle/schema/",
-  "shared/",
-  "knowledge/domain/",
-  "knowledge/features/",
-];
-export function laTaiLieuSanPham(t: { sourceType: string; sourcePath?: string | null }): boolean {
-  const p = String(t.sourcePath ?? "").replace(/\\/g, "/");
-  if (!(t.sourceType in LOAI_KHO_THEO_NGUON) || p.includes("..")) return false;
-  return TIEN_TO_TAI_LIEU_SAN_PHAM.some((tt) => p.startsWith(tt));
-}
+// (L3c) bộ lọc tài liệu sản phẩm chuyển sang `services/ai/ngoai/taiLieuSanPham.ts` — MỘT bộ cho L1 và `search_docs` của agent ngoài.
+import { LOAI_KHO_THEO_NGUON, laTaiLieuSanPham } from "../services/ai/ngoai/taiLieuSanPham";
+export { LOAI_KHO_THEO_NGUON, TIEN_TO_TAI_LIEU_SAN_PHAM, laTaiLieuSanPham } from "../services/ai/ngoai/taiLieuSanPham";
 
 export const NHIP_SONG_MS = 15_000;
 export const MAX_TOKENS_KB_NGOAI = 2000;
