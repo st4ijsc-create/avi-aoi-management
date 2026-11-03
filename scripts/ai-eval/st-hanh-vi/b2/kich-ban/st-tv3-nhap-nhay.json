@@ -1,0 +1,43 @@
+{
+  "id": "st-tv3-nhap-nhay",
+  "khoi": "NhapNhay",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau t=0 = dtMs 0; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "BAT": false, "T_SANG": 30, "T_TOI": 20 }, "dtMs": 0, "ky": { "DEN": false }, "nhan": "t=0 tat" },
+        { "vao": { "BAT": true }, "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=10 bat => sang ngay" },
+        { "dtMs": 10, "lan": 2, "nhan": "t=20..30" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=40 sang du 30ms => toi" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "BAT": false, "T_SANG": 30, "T_TOI": 20 }, "dtMs": 0, "ky": { "DEN": false }, "nhan": "t=0 tat" },
+        { "vao": { "BAT": true }, "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=10 sang" },
+        { "dtMs": 10, "lan": 2, "ky": { "DEN": true }, "nhan": "t=30 con sang" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=40 toi" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=50 con toi" },
+        { "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=60 sang lai" },
+        { "dtMs": 10, "lan": 2, "ky": { "DEN": true }, "nhan": "t=80 con sang" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=90 toi lan 2" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=100 con toi" },
+        { "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=110 sang lan 3" },
+        { "vao": { "BAT": false }, "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=120 BAT FALSE => tat ngay" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=130 van tat" },
+        { "vao": { "BAT": true }, "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=140 bat lai sang ngay" },
+        { "dtMs": 10, "lan": 2, "ky": { "DEN": true }, "nhan": "t=160 pha sang du 30ms moi" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=170 toi" },
+        { "vao": { "BAT": false }, "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=180 tat" },
+        { "vao": { "BAT": true }, "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=190 bat lai tu pha sang" },
+        { "dtMs": 10, "lan": 2, "ky": { "DEN": true }, "nhan": "t=210 con sang" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=220 toi" },
+        { "vao": { "BAT": true, "T_SANG": 10, "T_TOI": 10 }, "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=230 doi nhip, toi du 10ms => sang" },
+        { "dtMs": 10, "ky": { "DEN": false }, "nhan": "t=240 toi" },
+        { "dtMs": 10, "ky": { "DEN": true }, "nhan": "t=250 sang" }
+      ]
+    }
+  ]
+}

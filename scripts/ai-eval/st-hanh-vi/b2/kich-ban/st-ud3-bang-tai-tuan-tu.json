@@ -1,0 +1,51 @@
+{
+  "id": "st-ud3-bang-tai-tuan-tu",
+  "khoi": "BangTaiTuanTu",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhBang.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau cua an o t=10); lan goi dau hien_thi = dtMs 0. KT '460 tat het' (B1 OR B2 OR B3 = FALSE) tach thanh B1/B2/B3 = FALSE. BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao, khong phai chan cua khoi).",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "START": true, "STOP": false, "DUNG_KHAN": false, "QT1": false, "QT2": false, "QT3": false, "RESET": false, "T_TRE": 50 }, "dtMs": 0, "ky": { "B3": true, "B1": false, "TRANG_THAI": 1 }, "nhan": "start" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "START": false, "STOP": false, "DUNG_KHAN": false, "QT1": false, "QT2": false, "QT3": false, "RESET": false, "T_TRE": 50 }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "B3": false }, "nhan": "t=10 dung" },
+        { "vao": { "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "B3": true, "B2": false }, "nhan": "t=20 kd B3" },
+        { "dtMs": 10, "lan": 3, "ky": { "B2": false }, "nhan": "t=50 B2 chua" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 2, "B2": true, "B1": false }, "nhan": "t=70 kd B2" },
+        { "dtMs": 10, "lan": 4, "ky": { "B1": false }, "nhan": "t=110 B1 chua" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 3, "B1": true }, "nhan": "t=120 chay" },
+        { "dtMs": 10, "lan": 5, "nhan": "t=130..170" },
+        { "vao": { "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 4, "B1": false, "B2": true, "B3": true }, "nhan": "t=180 dung B1" },
+        { "vao": { "STOP": false }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 4 }, "nhan": "t=220 van dung B1" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 5, "B2": false, "B3": true }, "nhan": "t=230 dung B2" },
+        { "dtMs": 10, "lan": 4, "nhan": "t=240..270" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 0, "B3": false }, "nhan": "t=280 dung het" },
+        { "vao": { "START": true }, "dtMs": 10, "nhan": "t=290 kd B3" },
+        { "vao": { "START": false, "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 5, "B3": true }, "nhan": "t=300 stop tu kd B3" },
+        { "vao": { "STOP": false }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 5 }, "nhan": "t=340 van dung B2" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=350 dung" },
+        { "vao": { "START": true, "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=360 stop chan start" },
+        { "vao": { "START": false, "STOP": false }, "dtMs": 10, "nhan": "t=370" },
+        { "vao": { "START": true }, "dtMs": 10, "nhan": "t=380 kd B3" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 7, "nhan": "t=390..450" },
+        { "vao": { "QT2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9, "LOI": true, "MA_LOI": 12, "B1": false, "B2": false, "B3": false }, "nhan": "t=460 qua tai B2" },
+        { "vao": { "QT1": true }, "dtMs": 10, "ky": { "MA_LOI": 12 }, "nhan": "t=470 MA_LOI giu 12" },
+        { "vao": { "QT1": false, "RESET": true }, "dtMs": 10, "ky": { "LOI": true, "TRANG_THAI": 9 }, "nhan": "t=480 reset khi con QT" },
+        { "vao": { "QT2": false, "RESET": false }, "dtMs": 10, "lan": 2, "ky": { "LOI": true }, "nhan": "t=500 chua reset" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI": false, "TRANG_THAI": 0, "MA_LOI": 0 }, "nhan": "t=510 reset" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=520" },
+        { "vao": { "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1 }, "nhan": "t=530 khoi dong lai" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 10, "ky": { "TRANG_THAI": 3 }, "nhan": "t=630 chay" },
+        { "vao": { "DUNG_KHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9, "MA_LOI": 1, "B1": false }, "nhan": "t=640 dung khan" },
+        { "vao": { "DUNG_KHAN": false, "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=650 start khi loi" },
+        { "vao": { "START": false, "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=660 reset" },
+        { "vao": { "RESET": false, "START": true }, "dtMs": 10, "nhan": "t=670" },
+        { "vao": { "START": false, "DUNG_KHAN": true, "QT3": true }, "dtMs": 10, "ky": { "MA_LOI": 1 }, "nhan": "t=680 uu tien dung khan" }
+      ]
+    }
+  ]
+}

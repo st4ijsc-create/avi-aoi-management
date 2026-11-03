@@ -1,0 +1,58 @@
+{
+  "id": "st-tv2-dem-san-pham",
+  "khoi": "DemSanPham",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb + fb1); test khong dung KT_BUOC => moi lan goi = mot buoc dtMs 0; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "CAM_BIEN": false, "KICH_THUOC_LO": 5, "RESET": false }, "dtMs": 0, "nhan": "goi dau FALSE" },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "lan": 2, "nhan": "suon 1, giu TRUE" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 2, "XONG_LO": false, "SO_LO": 0 }, "nhan": "2 suon => DEM 2, chua du lo" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "CAM_BIEN": true, "KICH_THUOC_LO": 3, "RESET": false }, "dtMs": 0, "ky": { "DEM": 1 }, "nhan": "goi dau TRUE => DEM 1" },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 1 }, "nhan": "giu TRUE khong dem" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 2, "XONG_LO": false }, "nhan": "suon 2 chua xong" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "XONG_LO": true, "SO_LO": 1, "DEM": 0 }, "nhan": "suon 3 du lo => XONG_LO, SO_LO 1, DEM 0 ngay" },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "XONG_LO": false, "SO_LO": 1, "DEM": 0 }, "nhan": "XONG_LO dung 1 chu ky" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 1 }, "nhan": "san pham ke tiep = 1" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "SO_LO": 2, "XONG_LO": true }, "nhan": "lo 2 du" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true, "RESET": true }, "dtMs": 0, "ky": { "DEM": 0, "SO_LO": 0 }, "nhan": "reset cung suon => DEM 0, SO_LO 0" },
+        { "vao": { "CAM_BIEN": true, "RESET": false }, "dtMs": 0, "ky": { "DEM": 0 }, "nhan": "nha reset khi cam bien con TRUE => 0" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 2 }, "nhan": "DEM 2 truoc reset" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true, "RESET": true }, "dtMs": 0, "ky": { "XONG_LO": false, "SO_LO": 0, "DEM": 0 }, "nhan": "reset luc du lo => khong XONG_LO" },
+        { "vao": { "CAM_BIEN": false, "RESET": true }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true, "RESET": true }, "dtMs": 0, "ky": { "DEM": 0 }, "nhan": "reset giu => 0" },
+        { "vao": { "CAM_BIEN": false, "RESET": false }, "dtMs": 0 },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "DEM": 1 }, "nhan": "sau reset dem lai 1" }
+      ]
+    },
+    {
+      "ten": "an-fb1",
+      "buoc": [
+        { "vao": { "CAM_BIEN": false, "KICH_THUOC_LO": 1, "RESET": false }, "dtMs": 0, "ky": { "XONG_LO": false }, "nhan": "lo1 ban dau khong xong" },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "XONG_LO": true, "DEM": 0 }, "nhan": "lo1 suon 1 xong" },
+        { "vao": { "CAM_BIEN": false }, "dtMs": 0, "ky": { "XONG_LO": false }, "nhan": "lo1 het xung" },
+        { "vao": { "CAM_BIEN": true }, "dtMs": 0, "ky": { "SO_LO": 2 }, "nhan": "lo1 SO_LO 2" }
+      ]
+    }
+  ]
+}

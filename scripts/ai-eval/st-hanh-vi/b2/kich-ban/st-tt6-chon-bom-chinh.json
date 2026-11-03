@@ -1,0 +1,26 @@
+{
+  "id": "st-tt6-chon-bom-chinh",
+  "khoi": "ChonBomChinh",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb, cac nhom A..H); moi lan goi = mot buoc dtMs 0, GIO_CHAY / SAN_SANG truyen du 4 phan tu nhu test. Nhom A, B, D, F kiem du 4 phan tu THU_TU ⇒ ghi ca mang; noi test chi kiem MOT PHAN phan tu (hien_thi TT1+TT4; an C TT1+TT4, E TT1..TT3, G TT1+TT2, H TT2..TT4) dung khoa tung phan tu 'THU_TU[i]', khong tu tinh phan tu test khong kiem. Khong bo kiem nao (3/3 hien thi, 34/34 an)",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "GIO_CHAY": [500, 200, 300, 100], "SAN_SANG": [true, true, true, true] }, "dtMs": 0, "ky": { "BOM": 4, "THU_TU[1]": 4, "THU_TU[4]": 1 }, "nhan": "bom it gio nhat = 4, thu tu 1 = 4, thu tu 4 = 1" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "GIO_CHAY": [500, 200, 300, 100], "SAN_SANG": [true, true, true, true] }, "dtMs": 0, "ky": { "BOM": 4, "THU_TU": [4, 2, 3, 1] }, "nhan": "A" },
+        { "vao": { "GIO_CHAY": [500, 200, 300, 100], "SAN_SANG": [true, true, true, false] }, "dtMs": 0, "ky": { "BOM": 2, "THU_TU": [2, 3, 1, 0] }, "nhan": "B bom 4 khong san sang" },
+        { "vao": { "GIO_CHAY": [500, 200, 300, 100], "SAN_SANG": [false, false, false, false] }, "dtMs": 0, "ky": { "BOM": 0, "THU_TU[1]": 0, "THU_TU[4]": 0 }, "nhan": "C khong bom nao" },
+        { "vao": { "GIO_CHAY": [100, 100, 50, 100], "SAN_SANG": [true, true, true, true] }, "dtMs": 0, "ky": { "BOM": 3, "THU_TU": [3, 1, 2, 4] }, "nhan": "D hoa" },
+        { "vao": { "GIO_CHAY": [7, 7, 7, 7], "SAN_SANG": [false, true, false, true] }, "dtMs": 0, "ky": { "BOM": 2, "THU_TU[1]": 2, "THU_TU[2]": 4, "THU_TU[3]": 0 }, "nhan": "E chi 2 va 4" },
+        { "vao": { "GIO_CHAY": [4000000000, 3999999999, 0, 4294967295], "SAN_SANG": [true, true, false, true] }, "dtMs": 0, "ky": { "BOM": 2, "THU_TU": [2, 1, 4, 0] }, "nhan": "F UDINT lon" },
+        { "vao": { "GIO_CHAY": [4000000000, 3999999999, 0, 4294967295], "SAN_SANG": [false, false, true, false] }, "dtMs": 0, "ky": { "BOM": 3, "THU_TU[1]": 3, "THU_TU[2]": 0 }, "nhan": "G chi bom 3" },
+        { "vao": { "GIO_CHAY": [9, 5, 9, 5], "SAN_SANG": [true, true, true, true] }, "dtMs": 0, "ky": { "BOM": 2, "THU_TU[2]": 4, "THU_TU[3]": 1, "THU_TU[4]": 3 }, "nhan": "H hoa o cuoi" }
+      ]
+    }
+  ]
+}

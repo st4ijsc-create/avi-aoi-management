@@ -1,0 +1,43 @@
+{
+  "id": "st-tv7-canh-bao-xac-nhan",
+  "khoi": "CanhBaoXacNhan",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau t=0 = dtMs 0; chuoi buoc giong nhau khong kiem o giua gop bang lan; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "DIEU_KIEN": false, "XAC_NHAN": false, "T_TRE": 30 }, "dtMs": 0, "nhan": "t=0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 1, "NHAP_NHAY": true }, "nhan": "t=40 => 1, nhap nhay" },
+        { "vao": { "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2 }, "nhan": "t=50 xac nhan => 2" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "DIEU_KIEN": false, "XAC_NHAN": false, "T_TRE": 30 }, "dtMs": 0, "ky": { "TRANG_THAI": 0, "NHAP_NHAY": false, "CO_CANH_BAO": false }, "nhan": "t=0 => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 0 }, "nhan": "t=30 chua du tre => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "NHAP_NHAY": true, "CO_CANH_BAO": true }, "nhan": "t=40 => 1" },
+        { "vao": { "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2, "NHAP_NHAY": false, "CO_CANH_BAO": true }, "nhan": "t=50 xac nhan => 2" },
+        { "vao": { "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2 }, "nhan": "t=60 giu xac nhan => 2" },
+        { "vao": { "DIEU_KIEN": false, "XAC_NHAN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "CO_CANH_BAO": false }, "nhan": "t=70 2 het dk => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 3, "nhan": "t=80..100 dk ngan" },
+        { "vao": { "DIEU_KIEN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=110 dk ngan bi bo qua" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 1 }, "nhan": "t=150 => 1" },
+        { "vao": { "DIEU_KIEN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "NHAP_NHAY": true, "CO_CANH_BAO": false }, "nhan": "t=160 1 het dk => 3" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 3 }, "nhan": "t=170 dk lai chua du tre => 3" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 1 }, "nhan": "t=200 3 => 1" },
+        { "vao": { "DIEU_KIEN": false }, "dtMs": 10, "nhan": "t=210" },
+        { "vao": { "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "NHAP_NHAY": false }, "nhan": "t=220 3 xac nhan => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 1 }, "nhan": "t=260 xac nhan giu khong tinh => 1" },
+        { "vao": { "XAC_NHAN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 1 }, "nhan": "t=270 nha xac nhan => 1" },
+        { "vao": { "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2 }, "nhan": "t=280 suon xac nhan => 2" },
+        { "vao": { "DIEU_KIEN": false, "XAC_NHAN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=290 => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 1 }, "nhan": "t=330 => 1" },
+        { "vao": { "DIEU_KIEN": false, "XAC_NHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2 }, "nhan": "t=340 xac nhan uu tien => 2" },
+        { "vao": { "DIEU_KIEN": false }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=350 => 0" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 1 }, "nhan": "t=390 => 1 (XAC_NHAN van giu TRUE)" },
+        { "vao": { "DIEU_KIEN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1 }, "nhan": "t=400 xac nhan giu => van 1" }
+      ]
+    }
+  ]
+}

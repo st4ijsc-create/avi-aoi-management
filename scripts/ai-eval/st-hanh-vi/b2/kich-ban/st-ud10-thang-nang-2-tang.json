@@ -1,0 +1,56 @@
+{
+  "id": "st-ud10-thang-nang-2-tang",
+  "khoi": "ThangNang2Tang",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhThang.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau cua an o t=10); lan goi dau hien_thi = dtMs 0. Vong kin vi tri buong x (+10 khi LEN chu ky truoc, -10 khi XUONG, tru khi ket; CT_TANG_1 = x <= 0, CT_TANG_2 = x >= 100) duoc thay bang quy dao CT_TANG_1/CT_TANG_2 ho mo theo duong mong doi (khop cac gia tri x trong chu thich an.st). BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao) va 4 KT cua khoi phu KhoaDongCo goi rieng (kd) - khong phai khoi chinh.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "GOI_1": false, "GOI_2": false, "CT_TANG_1": true, "CT_TANG_2": false, "CUA_DONG": true, "DUNG_KHAN": false, "RESET": false, "T_DI_CHUYEN": 150 }, "dtMs": 0, "ky": { "TANG": 1 }, "nhan": "o tang 1" },
+        { "vao": { "GOI_2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "LEN": true }, "nhan": "goi tang 2 => di len" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "GOI_1": false, "GOI_2": false, "CT_TANG_1": true, "CT_TANG_2": false, "CUA_DONG": true, "DUNG_KHAN": false, "RESET": false, "T_DI_CHUYEN": 150 }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "TANG": 1 }, "nhan": "t=10 dung yen x 0" },
+        { "vao": { "GOI_2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "LEN": true }, "nhan": "t=20 goi tang 2" },
+        { "vao": { "GOI_2": false, "CT_TANG_1": false }, "dtMs": 10, "lan": 9, "ky": { "LEN": true }, "nhan": "t=110 x 90 van LEN" },
+        { "vao": { "CT_TANG_2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "LEN": false, "TANG": 2 }, "nhan": "t=120 x 100 tang 2" },
+        { "vao": { "GOI_2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=130 goi tang dang o" },
+        { "vao": { "GOI_2": false }, "dtMs": 10, "nhan": "t=140" },
+        { "vao": { "CUA_DONG": false, "GOI_1": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "XUONG": false }, "nhan": "t=150 cua mo" },
+        { "vao": { "GOI_1": false }, "dtMs": 10, "nhan": "t=160" },
+        { "vao": { "CUA_DONG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=170 khong nho loi goi" },
+        { "vao": { "GOI_1": true }, "dtMs": 10, "ky": { "TRANG_THAI": 2, "XUONG": true }, "nhan": "t=180 di xuong" },
+        { "vao": { "GOI_1": false, "CT_TANG_2": false }, "dtMs": 10, "lan": 3, "nhan": "t=190..210 x 90..70" },
+        { "vao": { "CUA_DONG": false }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "XUONG": false }, "nhan": "t=220 x 60 cua mo" },
+        { "dtMs": 10, "lan": 2, "nhan": "t=230,240" },
+        { "vao": { "CUA_DONG": true }, "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 0 }, "nhan": "t=260 khong tu chay lai" },
+        { "vao": { "GOI_1": true }, "dtMs": 10, "nhan": "t=270 x 60 di xuong" },
+        { "vao": { "GOI_1": false }, "dtMs": 10, "lan": 5, "ky": { "TRANG_THAI": 2 }, "nhan": "t=320 x 10 van di xuong" },
+        { "vao": { "CT_TANG_1": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "TANG": 1 }, "nhan": "t=330 x 0 tang 1" },
+        { "vao": { "GOI_2": true }, "dtMs": 10, "nhan": "t=340 di len nhung ket (x giu 0)" },
+        { "vao": { "GOI_2": false }, "dtMs": 10, "lan": 14, "ky": { "TRANG_THAI": 1, "LEN": true }, "nhan": "t=480 van di len" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 9, "MA_LOI": 1, "LEN": false }, "nhan": "t=490 loi qua gio" },
+        { "vao": { "GOI_1": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=500 goi khi loi" },
+        { "vao": { "GOI_1": false, "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "MA_LOI": 0 }, "nhan": "t=510 reset x 0" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=520" },
+        { "vao": { "GOI_2": true }, "dtMs": 10, "nhan": "t=530 di len tu x 0" },
+        { "vao": { "GOI_2": false, "CT_TANG_1": false }, "dtMs": 10, "lan": 3, "nhan": "t=540..560 x 10..30" },
+        { "vao": { "DUNG_KHAN": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9, "MA_LOI": 2, "LEN": false }, "nhan": "t=570 x 40 dung khan" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=580 reset khi dung khan con" },
+        { "vao": { "DUNG_KHAN": false, "RESET": false }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=590 chot loi" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "MA_LOI": 0, "TANG": 1 }, "nhan": "t=600 reset" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=610" },
+        { "vao": { "GOI_1": true, "GOI_2": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=620 goi ca hai" },
+        { "vao": { "GOI_1": false, "GOI_2": false }, "dtMs": 10, "nhan": "t=630" },
+        { "vao": { "GOI_1": true }, "dtMs": 10, "nhan": "t=640 x 40 di xuong" },
+        { "vao": { "GOI_1": false }, "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 2 }, "nhan": "t=670 x 10 van di xuong" },
+        { "vao": { "CT_TANG_1": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "XUONG": false }, "nhan": "t=680 x 0 dung" },
+        { "vao": { "DUNG_KHAN": true }, "dtMs": 10, "ky": { "MA_LOI": 2 }, "nhan": "t=690 dung khan khi dung yen" },
+        { "vao": { "DUNG_KHAN": false, "RESET": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=700 reset" }
+      ]
+    }
+  ]
+}

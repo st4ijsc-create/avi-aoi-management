@@ -1,0 +1,131 @@
+{
+  "id": "st-tt7-bcd",
+  "khoi": "BcdSangInt",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st, CHI cac lan goi BcdSangInt (khoi chinh = dinhDanh); moi lan goi = mot buoc dtMs 0; BCD hex doi sang thap phan, khong tinh lai. BO 15 kiem cua ham phu IntSangBcd (khong phai khoi chinh): hien_thi 1 ('9876 => 16#9876'), an 14 (I 0 .. I -32768). CANH BAO: bai la FUNCTION co VAR_OUTPUT LOI, ket qua chinh la GIA TRI TRA VE => khoa 'BcdSangInt' trong ky = gia tri tra ve (quy uoc de xuat); bo boc hien tai (docGiaoDien chi tim FUNCTION_BLOCK, maBoBoc khai 'fb : <Khoi>') chua ho tro FUNCTION nen kich ban nay CHUA cham duoc cho toi khi bo boc mo rong | do-model 03/11 (TRUOC khi chay loi giai): bo 8 kiem LOI - OIP khong gan duoc VAR_OUTPUT cua FUNCTION (\"a FUNCTION has no outputs to bind with =>\"), chi kiem gia tri tra ve.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        {
+          "vao": {
+            "BCD": 4660
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 1234
+          },
+          "nhan": "16#1234 => 1234"
+        },
+        {
+          "vao": {
+            "BCD": 240
+          },
+          "dtMs": 0,
+          "nhan": "16#00F0 => LOI"
+        }
+      ]
+    },
+    {
+      "ten": "an",
+      "buoc": [
+        {
+          "vao": {
+            "BCD": 0
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 0
+          },
+          "nhan": "B 0000"
+        },
+        {
+          "vao": {
+            "BCD": 39321
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 9999
+          },
+          "nhan": "B 9999"
+        },
+        {
+          "vao": {
+            "BCD": 66
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 42
+          },
+          "nhan": "B 0042"
+        },
+        {
+          "vao": {
+            "BCD": 4096
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 1000
+          },
+          "nhan": "B 1000"
+        },
+        {
+          "vao": {
+            "BCD": 2313
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 909
+          },
+          "nhan": "B 0909"
+        },
+        {
+          "vao": {
+            "BCD": 10
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 0
+          },
+          "nhan": "B 000A LOI tra 0"
+        },
+        {
+          "vao": {
+            "BCD": 5
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 5
+          },
+          "nhan": "B sau loi LOI F, 5"
+        },
+        {
+          "vao": {
+            "BCD": 40960
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 0
+          },
+          "nhan": "B A000 LOI tra 0"
+        },
+        {
+          "vao": {
+            "BCD": 4852
+          },
+          "dtMs": 0,
+          "ky": {
+            "BcdSangInt": 0
+          },
+          "nhan": "B 12F4 LOI tra 0"
+        },
+        {
+          "vao": {
+            "BCD": 65535
+          },
+          "dtMs": 0,
+          "nhan": "B FFFF LOI"
+        }
+      ]
+    }
+  ]
+}

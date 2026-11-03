@@ -1,0 +1,35 @@
+{
+  "id": "st-ud8-pi-chong-bao-hoa",
+  "khoi": "BoPI",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb; KT_BUOC(T#10ms) truoc lan goi dau => dtMs 10) va an/tests/an.st (KtCanhPI.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau o t=10). TS = 100 ms (TIME tinh bang mili giay o OIP; de bai dung TIME_TO_LINT nano giay - loi giai dung LINT co the bi OIP tu choi, xem boBocBai.ts). BO: 'bat bien U trong gioi han moi chu ky' (k.vi - bien dem cua bo bao) va 4 KT cua FUNCTION phu KepGioiHan goi rieng (1 o hien_thi, 3 o an) - khong phai khoi chinh.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "SP": 50.0, "PV": 40.0, "KP": 2.0, "TI": 1.0, "TS": 100, "U_MIN": 0.0, "U_MAX": 100.0, "MAN": false, "U_TAY": 0.0 }, "dtMs": 10, "ky": { "U": 20.0, "I_TP": 2.0 }, "nhan": "lan dau U 20 I 2" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "SP": 50.0, "PV": 40.0, "KP": 2.0, "TI": 1.0, "TS": 100, "U_MIN": 0.0, "U_MAX": 100.0, "MAN": false, "U_TAY": 0.0 }, "dtMs": 10, "ky": { "U": 20.0, "I_TP": 2.0 }, "nhan": "t=10 e 10" },
+        { "vao": { "PV": 45.0 }, "dtMs": 10, "lan": 9, "ky": { "U": 20.0, "I_TP": 2.0 }, "nhan": "t=100 giu" },
+        { "dtMs": 10, "ky": { "U": 12.0, "I_TP": 3.0 }, "nhan": "t=110 e 5" },
+        { "dtMs": 10, "lan": 10, "ky": { "U": 13.0, "I_TP": 4.0 }, "nhan": "t=210" },
+        { "vao": { "SP": 100.0, "PV": 0.0 }, "dtMs": 10, "lan": 10, "ky": { "U": 100.0, "BAO_HOA_CAO": true, "I_TP": 4.0 }, "nhan": "t=310 bao hoa cao" },
+        { "dtMs": 10, "lan": 10, "ky": { "I_TP": 4.0 }, "nhan": "t=410 I van 4" },
+        { "vao": { "SP": 50.0, "PV": 48.0 }, "dtMs": 10, "lan": 10, "ky": { "U": 8.0, "I_TP": 4.4, "BAO_HOA_CAO": false }, "nhan": "t=510 e 2" },
+        { "vao": { "SP": 0.0, "PV": 50.0 }, "dtMs": 10, "lan": 10, "ky": { "U": 0.0, "BAO_HOA_THAP": true, "I_TP": 4.4 }, "nhan": "t=610 bao hoa thap" },
+        { "vao": { "SP": 50.0, "PV": 40.0, "U_TAY": 60.0, "MAN": true }, "dtMs": 10, "ky": { "U": 60.0, "I_TP": 40.0, "BAO_HOA_THAP": false }, "nhan": "t=620 tay" },
+        { "vao": { "U_TAY": 70.0 }, "dtMs": 10, "lan": 3, "ky": { "U": 70.0, "I_TP": 50.0 }, "nhan": "t=650 tay" },
+        { "vao": { "MAN": false }, "dtMs": 10, "ky": { "U": 70.0 }, "nhan": "t=660 tu dong chua tinh" },
+        { "dtMs": 10, "lan": 8, "ky": { "U": 70.0 }, "nhan": "t=740 giu" },
+        { "dtMs": 10, "ky": { "U": 70.0, "I_TP": 52.0 }, "nhan": "t=750 bumpless" },
+        { "vao": { "PV": 60.0, "U_TAY": 100.0, "MAN": true }, "dtMs": 10, "ky": { "U": 100.0, "I_TP": 120.0 }, "nhan": "t=760 tay e -10" },
+        { "vao": { "PV": 55.0, "MAN": false }, "dtMs": 10, "lan": 10, "ky": { "U": 100.0, "BAO_HOA_CAO": true, "I_TP": 119.0 }, "nhan": "t=860 rut ve" },
+        { "vao": { "PV": 50.0, "U_TAY": 150.0, "MAN": true }, "dtMs": 10, "ky": { "U": 100.0, "I_TP": 100.0 }, "nhan": "t=870 tay kep tren" },
+        { "vao": { "U_TAY": -20.0 }, "dtMs": 10, "ky": { "U": 0.0 }, "nhan": "t=880 tay kep duoi" }
+      ]
+    }
+  ]
+}

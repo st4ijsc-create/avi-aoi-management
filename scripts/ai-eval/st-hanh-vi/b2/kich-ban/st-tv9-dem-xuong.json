@@ -1,0 +1,48 @@
+{
+  "id": "st-tv9-dem-xuong",
+  "khoi": "TonKho",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); test khong dung KT_BUOC => moi lan goi = mot buoc dtMs 0; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "LAY_RA": false, "NAP": true, "SO_NAP": 3, "NGUONG_THAP": 2 }, "dtMs": 0, "nhan": "nap 3" },
+        { "vao": { "NAP": false, "LAY_RA": true }, "dtMs": 0, "nhan": "lay 1" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 1, "SAP_HET": true, "HET": false }, "nhan": "nap 3, lay 2 => 1" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "LAY_RA": false, "NAP": false, "SO_NAP": 4, "NGUONG_THAP": 2 }, "dtMs": 0, "ky": { "TON": 0, "HET": true, "SAP_HET": true }, "nhan": "ban dau 0" },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 0 }, "nhan": "lay khi 0 => van 0" },
+        { "vao": { "LAY_RA": false, "NAP": true }, "dtMs": 0, "ky": { "TON": 4, "HET": false, "SAP_HET": false }, "nhan": "nap 4" },
+        { "vao": { "NAP": false, "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 3 }, "nhan": "lay => 3" },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 3, "SAP_HET": false }, "nhan": "giu lay khong tru them" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 2, "SAP_HET": true, "HET": false }, "nhan": "lay => 2" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0 },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 0, "HET": true }, "nhan": "lay het => 0" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 0 }, "nhan": "lay them khi 0 => 0" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 0, "HET": true }, "nhan": "lay them lan 2 khi 0 => 0" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true, "NAP": true, "SO_NAP": 5 }, "dtMs": 0, "ky": { "TON": 5 }, "nhan": "nap + lay cung chu ky => 5" },
+        { "vao": { "LAY_RA": true, "NAP": false }, "dtMs": 0, "ky": { "TON": 5 }, "nhan": "nha nap khi lay van giu => 5" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "TON": 4 }, "nhan": "lay => 4" },
+        { "vao": { "LAY_RA": false, "NAP": true }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true, "NAP": true }, "dtMs": 0, "ky": { "TON": 5 }, "nhan": "nap giu, lay => 5" },
+        { "vao": { "NAP": false }, "dtMs": 0, "ky": { "TON": 5 }, "nhan": "nha nap, lay giu => 5" },
+        { "vao": { "NGUONG_THAP": 4 }, "dtMs": 0, "ky": { "SAP_HET": false }, "nhan": "doi nguong 4: 5 > 4" },
+        { "vao": { "LAY_RA": false }, "dtMs": 0 },
+        { "vao": { "LAY_RA": true }, "dtMs": 0, "ky": { "SAP_HET": true }, "nhan": "4 <= 4 SAP_HET" },
+        { "vao": { "NAP": true, "SO_NAP": 0 }, "dtMs": 0, "ky": { "TON": 0, "HET": true }, "nhan": "nap 0 => HET" }
+      ]
+    }
+  ]
+}

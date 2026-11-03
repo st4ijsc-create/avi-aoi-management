@@ -1,0 +1,43 @@
+{
+  "id": "st-ud5-sao-tam-giac",
+  "khoi": "KhoiDongSaoTamGiac",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhSaoTG.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau cua an o t=10); lan goi dau hien_thi = dtMs 0. KT '420 cat het' (KM_CHINH OR KM_SAO OR KM_TAM_GIAC = FALSE) tach thanh ba KT = FALSE. BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao) va 6 KT cua khoi phu KhoaChuyenMach goi rieng (kc) - khong phai khoi chinh.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "START": true, "STOP": false, "QUA_TAI": false, "RESET": false, "T_SAO": 200, "T_KHE": 50 }, "dtMs": 0, "ky": { "KM_CHINH": true, "KM_SAO": true, "KM_TAM_GIAC": false }, "nhan": "start" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "START": false, "STOP": false, "QUA_TAI": false, "RESET": false, "T_SAO": 200, "T_KHE": 50 }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "KM_CHINH": false }, "nhan": "t=10 dung" },
+        { "vao": { "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1, "KM_CHINH": true, "KM_SAO": true, "KM_TAM_GIAC": false }, "nhan": "t=20 sao" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 19, "ky": { "TRANG_THAI": 1, "KM_SAO": true }, "nhan": "t=210 van sao" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 2, "KM_SAO": false, "KM_TAM_GIAC": false, "KM_CHINH": true }, "nhan": "t=220 khe" },
+        { "dtMs": 10, "lan": 4, "ky": { "TRANG_THAI": 2 }, "nhan": "t=260 van khe" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 3, "KM_TAM_GIAC": true, "KM_CHINH": true }, "nhan": "t=270 tam giac" },
+        { "dtMs": 10, "lan": 5, "nhan": "t=280..320" },
+        { "vao": { "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "KM_CHINH": false }, "nhan": "t=330 stop" },
+        { "vao": { "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=340 stop chan start" },
+        { "vao": { "START": false, "STOP": false }, "dtMs": 10, "nhan": "t=350" },
+        { "vao": { "START": true }, "dtMs": 10, "nhan": "t=360 sao" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 5, "nhan": "t=370..410" },
+        { "vao": { "QUA_TAI": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9, "LOI_QT": true, "KM_CHINH": false, "KM_SAO": false, "KM_TAM_GIAC": false }, "nhan": "t=420 qua tai" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI_QT": true, "TRANG_THAI": 9 }, "nhan": "t=430 reset khi con qua tai" },
+        { "vao": { "QUA_TAI": false, "RESET": false }, "dtMs": 10, "lan": 2, "ky": { "LOI_QT": true }, "nhan": "t=450 chot" },
+        { "vao": { "START": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=460 start khi loi" },
+        { "vao": { "START": false, "RESET": true }, "dtMs": 10, "ky": { "LOI_QT": false, "TRANG_THAI": 0 }, "nhan": "t=470 reset" },
+        { "vao": { "RESET": false }, "dtMs": 10, "nhan": "t=480" },
+        { "vao": { "START": true }, "dtMs": 10, "nhan": "t=490 sao" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 20, "ky": { "TRANG_THAI": 2 }, "nhan": "t=690 khe" },
+        { "vao": { "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=700 stop trong khe" },
+        { "vao": { "STOP": false, "START": true }, "dtMs": 10, "nhan": "t=710 sao" },
+        { "vao": { "START": false }, "dtMs": 10, "lan": 25, "ky": { "TRANG_THAI": 3 }, "nhan": "t=960 tam giac" },
+        { "vao": { "QUA_TAI": true, "STOP": true }, "dtMs": 10, "ky": { "TRANG_THAI": 9 }, "nhan": "t=970 qua tai uu tien" },
+        { "vao": { "QUA_TAI": false, "STOP": false }, "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 9 }, "nhan": "t=1000 van loi" }
+      ]
+    }
+  ]
+}

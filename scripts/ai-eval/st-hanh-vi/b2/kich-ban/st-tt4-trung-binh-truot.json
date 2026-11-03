@@ -1,0 +1,51 @@
+{
+  "id": "st-tt4-trung-binh-truot",
+  "khoi": "TrungBinhTruot",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb); moi lan goi fb(...) = mot buoc dtMs 0 (khong co KT_BUOC); RESET khong truyen o lan goi dau = FALSE (gia tri ban dau); KT_REAL cua test dung dung sai tuyet doi 0.001/0.0001, kich ban dung dung sai chung cua bo cham - gia tri ky vong chep nguyen; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "MAU": 10.0, "LAY_MAU": true, "RESET": false }, "dtMs": 0, "nhan": "nap 10" },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 20.0, "LAY_MAU": true }, "dtMs": 0, "nhan": "nap 20" },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "TB": 15.0, "SO_MAU": 2, "HOP_LE": false }, "nhan": "10, 20 => TB 15, hai mau, chua du 8" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "MAU": 5.0, "LAY_MAU": false, "RESET": false }, "dtMs": 0, "ky": { "TB": 0.0, "SO_MAU": 0, "HOP_LE": false }, "nhan": "rong" },
+        { "vao": { "MAU": 10.0, "LAY_MAU": true }, "dtMs": 0, "ky": { "SO_MAU": 1, "TB": 10.0 }, "nhan": "suon len nap ngay, 1 mau 10" },
+        { "vao": { "MAU": 77.0, "LAY_MAU": false }, "dtMs": 0, "ky": { "SO_MAU": 1 }, "nhan": "suon xuong khong nap" },
+        { "vao": { "MAU": 20.0, "LAY_MAU": true }, "dtMs": 0, "nhan": "nap 20" },
+        { "vao": { "MAU": 99.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "MAU": 99.0, "LAY_MAU": true }, "dtMs": 0, "ky": { "SO_MAU": 2, "TB": 15.0 }, "nhan": "giu TRUE chi nap 1; 10,20 => 15" },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 30.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 40.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 50.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 60.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": 70.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "SO_MAU": 7, "TB": 40.0, "HOP_LE": false }, "nhan": "7 mau TB 40" },
+        { "vao": { "MAU": 80.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "SO_MAU": 8, "TB": 45.0, "HOP_LE": true }, "nhan": "8 mau TB 45 HOP_LE" },
+        { "vao": { "MAU": 90.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "SO_MAU": 8, "TB": 55.0 }, "nhan": "90 thay 10 => TB 55" },
+        { "vao": { "MAU": 100.0, "LAY_MAU": true }, "dtMs": 0, "ky": { "TB": 65.0 }, "nhan": "100 thay 20 => TB 65" },
+        { "vao": { "MAU": 1000.0, "LAY_MAU": false }, "dtMs": 0, "ky": { "TB": 65.0, "HOP_LE": true }, "nhan": "khong suon => van 65" },
+        { "vao": { "MAU": 3.0, "LAY_MAU": true, "RESET": true }, "dtMs": 0, "ky": { "SO_MAU": 0, "TB": 0.0, "HOP_LE": false }, "nhan": "RESET cung suon len => xoa, khong nap" },
+        { "vao": { "RESET": false }, "dtMs": 0, "ky": { "SO_MAU": 0 }, "nhan": "nha reset khong suon moi" },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0 },
+        { "vao": { "MAU": -4.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "SO_MAU": 1, "TB": -4.0 }, "nhan": "sau reset 1 mau TB -4" },
+        { "vao": { "MAU": 6.0, "LAY_MAU": true }, "dtMs": 0 },
+        { "vao": { "LAY_MAU": false }, "dtMs": 0, "ky": { "TB": 1.0 }, "nhan": "-4, 6 => TB 1" }
+      ]
+    }
+  ]
+}

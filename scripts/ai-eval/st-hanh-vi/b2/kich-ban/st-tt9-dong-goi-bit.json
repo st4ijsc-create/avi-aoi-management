@@ -1,0 +1,25 @@
+{
+  "id": "st-tt9-dong-goi-bit",
+  "khoi": "DongGoiBit",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st, CHI cac lan goi DongGoiBit(b) (khoi chinh = dinhDanh); moi lan goi = mot buoc dtMs 0, BIT ghi du 16 phan tu theo trang thai mang b cua test (vong FOR trai ra); gia tri hex doi sang thap phan. BO 20 kiem cua khoi phu MoGoiBit (khong phai khoi chinh): hien_thi 2 (BIT[1], SO_BIT_1), an 18 (M 8001 .. M A5C3, gom ca 'khu hoi A5C3' vi dau vao DongGoiBit(m.BIT) la dau ra cua MoGoiBit). CANH BAO: bai la FUNCTION, ket qua la GIA TRI TRA VE, khong co VAR_OUTPUT => khoa 'DongGoiBit' trong ky = gia tri tra ve (quy uoc de xuat); bo boc hien tai (docGiaoDien chi tim FUNCTION_BLOCK, maBoBoc khai 'fb : <Khoi>') chua ho tro FUNCTION nen kich ban nay CHUA cham duoc cho toi khi bo boc mo rong",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        {"vao":{"BIT":[true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false]},"dtMs":0,"ky":{"DongGoiBit":5},"nhan":"bit 0 va 2 => 5"}
+      ]
+    },
+    {
+      "ten": "an",
+      "buoc": [
+        {"vao":{"BIT":[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]},"dtMs":0,"ky":{"DongGoiBit":0},"nhan":"D tat ca F => 0"},
+        {"vao":{"BIT":[true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false]},"dtMs":0,"ky":{"DongGoiBit":1},"nhan":"D chi bit 0 => 1"},
+        {"vao":{"BIT":[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true]},"dtMs":0,"ky":{"DongGoiBit":32768},"nhan":"D chi bit 15 => 8000"},
+        {"vao":{"BIT":[true,false,true,false,true,false,true,false,true,false,true,false,true,false,true,false]},"dtMs":0,"ky":{"DongGoiBit":21845},"nhan":"D bit chan => 5555"},
+        {"vao":{"BIT":[true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]},"dtMs":0,"ky":{"DongGoiBit":65535},"nhan":"D tat ca T => FFFF"},
+        {"vao":{"BIT":[true,false,false,false,true,false,false,false,true,false,false,false,true,false,false,false]},"dtMs":0,"ky":{"DongGoiBit":4369},"nhan":"D bit 0,4,8,12 => 1111"},
+        {"vao":{"BIT":[false,false,false,false,false,false,false,false,true,true,true,true,true,true,true,true]},"dtMs":0,"ky":{"DongGoiBit":65280},"nhan":"D byte cao => FF00"}
+      ]
+    }
+  ]
+}
