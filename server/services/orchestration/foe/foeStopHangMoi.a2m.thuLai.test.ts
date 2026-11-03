@@ -9,7 +9,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── mock the EXISTING dispatchers (E0 routes sendCommand here in dry-run) ──
-const { otDispatchMock, robotDispatchMock, phanLoaiMock } = vi.hoisted(() => ({
+const { otDispatchMock, robotDispatchMock, phanLoaiMock, alertMock } = vi.hoisted(() => ({
+  alertMock: vi.fn(async (_a: Record<string, unknown>) => undefined),
   phanLoaiMock: vi.fn(async (_db: unknown, _input: unknown) => ({ pinnedStop: false, loiDocGhim: null as string | null })),
   otDispatchMock: vi.fn(async () => ({
     ok: true,
@@ -26,6 +27,7 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   return { isStopCommandType: orig.isStopCommandType, dispatch: otDispatchMock, phanLoaiStopGhimChoFoe: phanLoaiMock };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: robotDispatchMock }));
+vi.mock("../../robot/criticalStopAlert", async (orig) => ({ ...((await orig()) as Record<string, unknown>), raiseCriticalStopAlert: alertMock }));
 
 // ── tiny in-memory drizzle stand-in (only the chains the engine uses) ──
 import { getTableName } from "drizzle-orm";
@@ -227,6 +229,8 @@ beforeEach(() => {
   otDispatchMock.mockReset();
   phanLoaiMock.mockReset();
   phanLoaiMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+  alertMock.mockReset();
+  alertMock.mockImplementation(async () => undefined);
 });
 
 const FAILED = { ok: false, simulated: false, status: "failed", results: [], commandLogIds: [] } as never;
@@ -280,5 +284,64 @@ describe("A2(m) fix 1 — pinned-STOP retry budget per attempt; the pause is awa
     phanLoaiMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
     await run(defStop("a2m-f1-d"));
     expect(stopCalls()).toHaveLength(1);
+  });
+});
+
+// ── kiem-dinh's surviving mutants of A2(m): r7 (alert for a non-STOP step) and e9 (stopGhim leaks into the outcome) ──
+const pinAlerts = () => alertMock.mock.calls.filter((c) => (c[0] as Record<string, unknown>).kind === "foe_stop_pin_unverified");
+const settle = () => new Promise<void>((r) => setTimeout(r, 60)); // the alert is raised fire-and-forget (dynamic import): let it land
+
+function defStart(ref: string): WorkflowDefinition {
+  return { ref, name: ref, steps: [{ id: "main", type: "command", machineId: 1, command: "start", args: { tagKey: "a", value: 1 } }] };
+}
+const OK = { ok: true, simulated: true, status: "simulated", results: [], commandLogIds: [1] } as never;
+
+describe("A2(m)-test r7 — the URGENT 'pin not verified' alert is for a STOP step only", () => {
+  it("★ a NON-STOP step whose pin read throws / reports an error ⇒ the step still runs, 0 URGENT alerts", async () => {
+    otDispatchMock.mockResolvedValue(OK);
+    for (const [i, impl] of [
+      async () => {
+        throw new Error("pins table gone");
+      },
+      async () => ({ pinnedStop: false, loiDocGhim: "connection reset" as string | null }),
+    ].entries()) {
+      phanLoaiMock.mockImplementation(impl as never);
+      const res = await run(defStart(`a2m-t-r7-${i}`));
+      expect(res.status).toBe("completed");
+    }
+    expect(phanLoaiMock).toHaveBeenCalled(); // the pin read really happened for the non-STOP step (else this proves nothing)
+    await settle();
+    expect(pinAlerts()).toHaveLength(0);
+  });
+
+  it("positive control: a STOP step with the SAME read error ⇒ exactly ONE URGENT alert (run / step / adapter)", async () => {
+    phanLoaiMock.mockImplementation(async () => {
+      throw new Error("pins table gone");
+    });
+    otDispatchMock.mockResolvedValue(OK);
+    const res = await run(defStop("a2m-t-r7-ctl"));
+    expect(res.status).toBe("completed");
+    await vi.waitFor(() => expect(pinAlerts()).toHaveLength(1));
+    await settle();
+    expect(pinAlerts()).toHaveLength(1);
+    const a = pinAlerts()[0]![0] as Record<string, any>;
+    expect(a.dedupKey).toBe(`foe_stop_pin_unverified:${res.runId}:main:501`);
+    expect(a.message).toMatch(/: pins table gone\./);
+  });
+});
+
+describe("A2(m)-test e9 — the stopGhim flag never leaves the step (outcome after the attempts are exhausted)", () => {
+  it("★ a pinned STOP whose 3 attempts all fail, inside a sequence: the container's own retry loop sees NO flag ⇒ exactly 3 sends (not 9)", async () => {
+    // execStep's outcome is only observable through its container: execSequence returns the child's outcome as is, and the CONTAINER's retry loop
+    // would treat a leaked `stopGhim: true` (unset maxAttempts) as 'pinned STOP' and re-run the whole child 3 times over.
+    phanLoaiMock.mockImplementation(async () => ({ pinnedStop: true, loiDocGhim: null }));
+    otDispatchMock.mockResolvedValue(FAILED);
+    const d: WorkflowDefinition = { ref: "a2m-t-e9", name: "a2m-t-e9", steps: [{ id: "seq", type: "sequence", steps: [{ id: "main", type: "command", machineId: 1, command: "stop", args: { tagKey: "a", value: 0 } }] }] };
+    const res = await run(d);
+    expect(res.status).toBe("failed");
+    expect(stopCalls()).toHaveLength(3);
+    const steps = (await getRun(res.runId!))?.steps ?? [];
+    expect(steps.find((s) => s.stepId === "main")?.attempt).toBe(3);
+    expect(steps.find((s) => s.stepId === "seq")?.attempt).toBe(1); // the container ran ONCE
   });
 });
