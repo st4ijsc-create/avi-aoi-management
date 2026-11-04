@@ -6,17 +6,21 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const giaHanMock = vi.hoisted(() => vi.fn(async () => 1));
-vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), giaHanPhienTaiCho: giaHanMock }));
+const phienMock = vi.hoisted(() => vi.fn(async (): Promise<unknown> => null));
+vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), giaHanPhienTaiCho: giaHanMock, getSessionByToken: phienMock }));
 
 import { HAN_PHIEN_VAI_CAO_MS, HAN_PHIEN_VAI_KHAC_MS, TRAN_TUYET_DOI_PHIEN_MS, hanGiaHanMoi, hanPhienMs, hanPhienTheoVaiMs } from "./hanPhien";
-import { giaHanPhienNeuCan } from "./sdk";
+import { chanNeuPhienDaThuHoi, giaHanPhienNeuCan } from "./sdk";
 
 const GIO = 60 * 60 * 1000;
 const NGAY = 24 * GIO;
 const T0 = Date.UTC(2026, 10, 4, 8, 0, 0);
 afterEach(() => {
   delete process.env.SESSION_TTL_DAYS;
-  giaHanMock.mockClear();
+  giaHanMock.mockReset();
+  giaHanMock.mockImplementation(async () => 1);
+  phienMock.mockReset();
+  phienMock.mockImplementation(async () => null);
 });
 
 describe("hạn theo vai", () => {
@@ -75,6 +79,35 @@ describe("nối dây", () => {
     await giaHanPhienNeuCan("tok", { isActive: false, expiresAt: new Date(bay + GIO), createdAt: new Date(bay) } as never, "operator");
     await giaHanPhienNeuCan("", hangCan, "operator");
     expect(giaHanMock).not.toHaveBeenCalled();
+  });
+  it("★★★ lỗi DB lúc gia hạn KHÔNG làm hỏng yêu cầu đã xác thực: giaHanPhienTaiCho ném ⇒ giaHanPhienNeuCan trả false, không ném (đột biến s4)", async () => {
+    const bay = Date.now();
+    giaHanMock.mockRejectedValueOnce(new Error("simulated DB fault (gia hạn)"));
+    const canhBao = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await expect(giaHanPhienNeuCan("tok", { isActive: true, expiresAt: new Date(bay + GIO), createdAt: new Date(bay - GIO) } as never, "operator")).resolves.toBe(false);
+    } finally {
+      canhBao.mockRestore();
+    }
+    expect(giaHanMock).toHaveBeenCalledTimes(1);
+  });
+  it("★★★ chanNeuPhienDaThuHoi TRẢ hàng sổ đã đọc (nguồn duy nhất cho gia hạn — đột biến s5 'return null' ⇒ không bao giờ gia hạn); thu hồi ⇒ ném; lỗi tra ⇒ null (fail-open giữ)", async () => {
+    const bay = Date.now();
+    const hangSong = { isActive: true, expiresAt: new Date(bay + GIO), createdAt: new Date(bay - GIO) };
+    phienMock.mockResolvedValueOnce(hangSong);
+    expect(await chanNeuPhienDaThuHoi("tok")).toBe(hangSong);
+    phienMock.mockResolvedValueOnce({ ...hangSong, isActive: false });
+    await expect(chanNeuPhienDaThuHoi("tok")).rejects.toThrow(/revoked/);
+    const canhBao = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      phienMock.mockRejectedValueOnce(new Error("simulated DB fault (tra sổ)"));
+      expect(await chanNeuPhienDaThuHoi("tok")).toBeNull();
+    } finally {
+      canhBao.mockRestore();
+    }
+    // nối hai đầu: hàng trả về ⇒ gia hạn chạy trên đúng hàng ấy
+    phienMock.mockResolvedValueOnce(hangSong);
+    expect(await giaHanPhienNeuCan("tok", await chanNeuPhienDaThuHoi("tok"), "operator")).toBe(true);
   });
   it("★★★ ghim nguồn: gia hạn CHỈ ở authenticateRequest SAU cổng đổi mật khẩu (đường bỏ qua cổng KHÔNG gia hạn); UPDATE chỉ SET expiresAt", () => {
     const sdk = readFileSync(join(__dirname, "sdk.ts"), "utf8");
