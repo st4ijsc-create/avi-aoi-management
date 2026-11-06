@@ -2059,11 +2059,36 @@ describe("R1b-2b-2a A2(n) fix round 3 — the edge: S-1, C-B", () => {
   });
 
   // write-only: GREEN under mutant S1a, RED under S1b (see the unit file)
-  it("S-1 edge: a container's non-STOP compensation is not sent", async () => {
+  it("S1W edge: a container's non-STOP compensation is not sent", async () => {
     const e = await denBuoc(def("n3-s", [gate(), box("box", [move("r1")], { compensation: ot("boxUndo") })]));
     h.timeoutDispatch.add("r1");
     await edgeSegment(e, 2);
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+  });
+
+  // a re-walk: the deciding branch is gone, only the state central derived says unknown; the container's own branches send its STOP
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown>): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as never;
+  const trangThai = (e: EdgeHarness, r: Record<string, unknown>) => void (runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), foeResumeState: r });
+  it("★ C-1 on a re-walk: the child held again by the walker, the container's STOP goes", async () => {
+    const e = await denBuoc(def("n3-w1", [gate(), box("box", [move("r1", { compensation: ot("c1") })], { compensation: robotStop("bs") })]));
+    trangThai(e, { r1: { state: "compensationHeld", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
+    await edgeSegment(e, 2);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
+  });
+  it("★ C-A on a re-walk: a gate beside the unknown branch, the container's STOP goes", async () => {
+    const e = await denBuoc(def("n3-w2", [gate(), par("p", [move("r1"), gate("g2")], { compensation: robotStop("bs") })]));
+    trangThai(e, { r1: { state: "doneFailed", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
+    const s = await edgeSegment(e, 2);
+    expect(s.out).toMatchObject({ outcome: "paused" });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
+  });
+  it("★ C-A on a re-walk: a sibling held for another reason, the container's STOP goes", async () => {
+    const e = await denBuoc(def("n3-w3", [gate(), par("p", [move("r1"), move("r2")], { compensation: robotStop("bs") })]));
+    trangThai(e, { r1: { state: "doneFailed", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
+    e.offlineSteps = new Set(["r2"]);
+    const s = await edgeSegment(e, 2);
+    expect(s.out).toMatchObject({ outcome: "held" });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
   });
 
   it("S-1 edge: a re-walk reads the latch from the resume state: a KNOWN failure of the segment is held, its compensation not sent", async () => {

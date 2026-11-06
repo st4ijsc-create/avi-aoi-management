@@ -917,6 +917,7 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
   // true at the first read, false once a person changed the machine (a param the test flips is read by the condition)
   const dk = (extra: Record<string, unknown> = {}) => ({ precondition: { source: "param", key: "ok", op: "eq", value: true }, ...extra });
   const seedParam = (runId: number, ok: boolean) => void (runRow(runId).paramsJson = { ...(runRow(runId).paramsJson ?? {}), ok });
+  const chayCuoi = (id: string) => step(rows("orchestration_runs").at(-1)!.id as number, id);
 
   it("C-A (a) a gate beside the unknown branch: the container's STOP goes before any approval, URGENT, the run waits at the gate; approving it never re-sends the STOP or the unknown command", async () => {
     const { runId, res } = await chay([par("box", [main(), gate("g2")], { compensation: stopComp("boxStop") })]);
@@ -1058,6 +1059,14 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
     expect(n).toBe(2);
     expect(res.status).toBe("held");
     expect(sent("reset")).toHaveLength(0);
+    expect((await chayCuoi("main"))?.error).toMatch(/^FOE_OUTCOME_UNKNOWN: /); // the flag stuck: the row says the class
+  });
+
+  it("C-A (b) a precondition-abort sibling and no compensation anywhere: the aborted end still tells a person", async () => {
+    const abortB = pause("b", { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "abort" });
+    await chay([par("box", [main(), abortB])]);
+    await waitAlerts(1);
+    expect(alertsOf("noCompensation")).toHaveLength(1);
   });
 
   it("M-5 a thrown context write never turns a held run 'failed' after the URGENT said Continue", async () => {
@@ -1118,17 +1127,17 @@ describe("A2(n) fix round 3 — S-1: the run is latched, one gate in front of ev
   const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
   const tiep = (runId: number, note = "checked") => resumeRun(runId, { approved: true, note }, ADMIN, {}, { scope: null });
 
-  // These three assert ONLY the write. They stay GREEN under mutant S1a (the flag deleted at every aggregator) and go RED under S1b (the same + no latch).
-  it("S-1 a container's non-STOP compensation is not written", async () => {
+  // S1W: these assert ONLY the write. They stay GREEN under mutant S1a (the flag deleted at every aggregator) and go RED under S1b (the same + no latch).
+  it("S1W a container's non-STOP compensation is not written", async () => {
     await chay([seq("box", [main()], resetComp("boxUndo"))]);
     expect(sent("reset")).toHaveLength(0);
   });
-  it("S-1 a parallel with a failed sibling: not written", async () => {
+  it("S1W a parallel with a failed sibling: not written", async () => {
     otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "pause" ? REJECTED : ACKED));
     await chay([par("box", [main(), pause("b")], { compensation: resetComp("boxUndo") })]);
     expect(sent("reset")).toHaveLength(0);
   });
-  it("S-1 a precondition-abort sibling: not written", async () => {
+  it("S1W a precondition-abort sibling: not written", async () => {
     await chay([par("box", [main(), pause("b", { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "abort" })], { compensation: resetComp("boxUndo") })]);
     expect(sent("reset")).toHaveLength(0);
   });
