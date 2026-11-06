@@ -3,7 +3,8 @@
  * aedes gọi `conn.read(null)` đúng một lần mỗi sự kiện 'readable' và coi là đã rút hết. Phần còn lại nằm trong buffer mà
  * `needReadable` đang false nên không có 'readable' nào nữa: gói bị kẹt đến khi đóng kết nối.
  * Triệu chứng đo được: mqtt.js gửi CONNECT thành 11 frame WebSocket ⇒ broker không bao giờ trả CONNACK, client "connack timeout".
- * TCP cũng có cùng rủi ro khi một gói bị chia thành nhiều chunk trong buffer. Image Docker chạy Node 20 nên không dính; máy DEV chạy Node 26.
+ * TCP cũng kẹt, đã đo: xác thực bất đồng bộ làm aedes ngừng đọc, PUBLISH chia 5 mảnh chất trong buffer ⇒ không có PUBACK (chia 2 mảnh thì không kẹt).
+ * Image Docker chạy Node 20 nên không dính; máy DEV chạy Node 26.
  */
 import type { Readable } from "node:stream";
 
