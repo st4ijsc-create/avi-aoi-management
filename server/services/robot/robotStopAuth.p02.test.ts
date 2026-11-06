@@ -1,5 +1,6 @@
 /**
- * ★ Pha 0 P0-2 (2026-11-04, kiểm định đột biến rs1/rs2) — STOP khi quyền KHÔNG kiểm được (DB chậm / mất):
+ * ★ Pha 0 P0-2 — GHIM CHÍNH THỨC quyết định chủ dự án 2026-11-05 "Same rule for everyone" (Nhật ký 90): đổi hành vi này = hỏi chủ dự án.
+ * STOP khi quyền KHÔNG kiểm được (DB chậm / mất):
  *   · mặc định (RBAC_SCOPED_ADMIN vắng / "true" / giá trị khác): admin KHÔNG god-mode ⇒ cần grant machine_control đã nhớ, như mọi vai;
  *   · RBAC_SCOPED_ADMIN=false (công tắc khẩn) ⇒ admin qua; vai khác không bao giờ qua theo nhánh này;
  *   · cùng nguồn với `checkPermission`: admin + hàng từ chối tường minh ⇒ qua ở checkPermission ĐÚNG KHI god-mode ở STOP.
