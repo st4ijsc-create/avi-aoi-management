@@ -163,21 +163,21 @@ describe("K2/K3 — MỌI thủ tục đưa danh tính xuống tầng dữ liệ
 describe("Q1 — `digitalTwinRouter` cũng đưa danh tính xuống tầng dữ liệu", () => {
   it("bộ quét tìm được số thủ tục HỢP LÝ, không phải 0", () => {
     // ⚠ G5 — bộ quét hỏng trả mảng RỖNG và mọi khẳng định bên dưới xanh trên tập rỗng.
-    expect(THU_TUC_DT.length).toBeGreaterThanOrEqual(6);
+    // Dọn vệ sinh E0-3 (2026-11-04): 4 thủ tục 0 caller (twinState · defectHeatmap · stationLoadHeatmap · predictionOverlay) đã GỠ ⇒ còn ĐÚNG hai.
+    expect(THU_TUC_DT.length).toBeGreaterThanOrEqual(2);
     const ten = THU_TUC_DT.map((x) => x.ten);
-    expect(ten).toContain("twinState");
     expect(ten).toContain("wipFlowState");
-    expect(ten).toContain("stationLoadHeatmap");
-    expect(ten).toContain("predictionOverlay");
-    expect(ten).toContain("defectHeatmap");
+    expect(ten).toContain("whatIf");
+    expect(ten.length).toBe(2);
   });
 
   it("★★★ bộ quét CẮT THÂN ĐÚNG — thân thủ tục này không nuốt thủ tục kế", () => {
     // Ca dương cho chính thiết bị đo: một `than` trải tới cuối tệp làm MỌI thủ tục
     // "có `phamViCua(ctx)`" nhờ hàng xóm, và phép phân đôi xanh vĩnh viễn (G5/G6).
-    const ts = THU_TUC_DT.find((x) => x.ten === "twinState")!;
-    expect(ts.than).toContain("colorForTwin");
-    expect(ts.than).not.toContain("defectHeatmap: protectedProcedure");
+    // Hai thủ tục còn lại đứng cạnh nhau (whatIf rồi wipFlowState): thân `whatIf` không được nuốt `wipFlowState`.
+    const wi = THU_TUC_DT.find((x) => x.ten === "whatIf")!;
+    expect(wi.than).toContain("simulateWhatIf");
+    expect(wi.than).not.toContain("wipFlowState: protectedProcedure");
   });
 
   it("★★★ PHÂN ĐÔI TOÀN TẬP: thủ tục nào cũng mang `phamViCua(ctx)`", () => {
@@ -199,17 +199,13 @@ describe("Q1 — `digitalTwinRouter` cũng đưa danh tính xuống tầng dữ 
     expect(khongBoc).toEqual([]);
   });
 
-  it("★★★ ba thủ tục nhận id TỰ KHAI phải kiểm id ấy, không chỉ lọc danh sách", () => {
+  it("★★★ thủ tục nhận id TỰ KHAI (wipFlowState) phải kiểm id ấy, không chỉ lọc danh sách", () => {
     // Phép đo RIÊNG, không suy được từ hai ô trên: một router có thể mang
     // `phamViCua(ctx)` ở đúng chỗ mà vẫn để `lineId`/`stationId` do client khai
     // đi thẳng xuống DB. Đây chính là hình dạng của lỗ ("hàng rào tenant lọc theo
     // cột CLIENT TỰ KHAI"), nên nó được ghim đích danh.
     const tim = (ten: string) => THU_TUC_DT.find((x) => x.ten === ten)!;
-    expect(tim("stationLoadHeatmap").than).toContain('trongPhamVi("line", input.lineId');
-    expect(tim("predictionOverlay").than).toContain('trongPhamVi("line", input.lineId');
-    // `twinState` đi lối khác: lọc theo TẬP id máy trong phạm vi (`stationId` lạ ⇒
-    // giao tập rỗng), nên nó phải mang cổng ấy chứ không phải `trongPhamVi`.
-    expect(tim("twinState").than).toContain('idsTrongPhamVi("machine"');
+    // (`stationLoadHeatmap` / `predictionOverlay` / `twinState` đã gỡ cùng 0 caller — dọn vệ sinh E0-3.)
     // `wipFlowState` cần CẢ HAI: chuyền được hỏi, và trạm trả về.
     expect(tim("wipFlowState").than).toContain('idsTrongPhamVi("line"');
     expect(tim("wipFlowState").than).toContain('idsTrongPhamVi("station"');

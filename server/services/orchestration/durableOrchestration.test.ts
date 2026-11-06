@@ -1,19 +1,11 @@
 /**
  * Durable orchestration tests — SYNAPSE §5.1/§5.3 (doc 33 F8 · H3).
- * DAG + topo/cycle · event-sourced replay + crash-resume · priority/SLA/four-eyes.
+ * DAG + topo/cycle · event-sourced replay + crash-resume. (priority/SLA/four-eyes: `slaPolicy` đã gỡ cùng orchestrationGov, dọn vệ sinh E0-3.)
  */
 import { describe, it, expect } from "vitest";
 
 import { validateDag, readySet, type DagNode } from "./dag";
 import { replayRun, resumePlan, type RunEvent } from "./eventSourcing";
-import {
-  effectivePriority,
-  orderQueue,
-  canPreempt,
-  requiresFourEyes,
-  DEFAULT_AGING_MS,
-  type PrioritizedTask,
-} from "./slaPolicy";
 
 describe("DAG — topological check", () => {
   const good: DagNode[] = [
@@ -107,36 +99,3 @@ describe("event-sourced replay + crash-resume", () => {
   });
 });
 
-describe("priority / SLA / four-eyes", () => {
-  const now = 1_000_000_000;
-  it("aging promotes a waiting task one band per window (anti-starvation)", () => {
-    const t: PrioritizedTask = { id: "a", priority: 3, createdTs: now - 2 * DEFAULT_AGING_MS };
-    expect(effectivePriority(t, now)).toBe(1); // P3 → promoted 2 bands → P1
-    const fresh: PrioritizedTask = { id: "b", priority: 3, createdTs: now };
-    expect(effectivePriority(fresh, now)).toBe(3);
-  });
-  it("orders P0 first, then EDF, then FIFO", () => {
-    const tasks: PrioritizedTask[] = [
-      { id: "p2", priority: 2, createdTs: now },
-      { id: "p0", priority: 0, createdTs: now },
-      { id: "p1-early", priority: 1, createdTs: now, deadlineTs: now + 1000 },
-      { id: "p1-late", priority: 1, createdTs: now, deadlineTs: now + 9000 },
-    ];
-    expect(orderQueue(tasks, now).map((t) => t.id)).toEqual(["p0", "p1-early", "p1-late", "p2"]);
-  });
-  it("preemption: higher band preempts only a preemptible running task", () => {
-    const p0: PrioritizedTask = { id: "p0", priority: 0, createdTs: now };
-    const p2Preempt: PrioritizedTask = { id: "p2", priority: 2, createdTs: now, preemptible: true };
-    const p2Fixed: PrioritizedTask = { id: "p2f", priority: 2, createdTs: now, preemptible: false };
-    expect(canPreempt(p0, p2Preempt, now)).toBe(true);
-    expect(canPreempt(p0, p2Fixed, now)).toBe(false);
-  });
-  it("four-eyes delegates to the F5 policy engine", () => {
-    // deny → approval required (blocking)
-    expect(requiresFourEyes({ action: "skip_step", step: { type: "AOI" }, product: { class: 3 } }).required).toBe(true);
-    // require_approval → four-eyes
-    expect(requiresFourEyes({ action: "manual_override", zone: { density: 0.9 } }).required).toBe(true);
-    // benign → no approval
-    expect(requiresFourEyes({ action: "skip_step", step: { type: "AOI" }, product: { class: 1 } }).required).toBe(false);
-  });
-});

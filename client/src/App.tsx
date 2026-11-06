@@ -187,7 +187,7 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 //   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
 // ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
 //   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
-//   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
+//   vì §13b 3g xếp nó NGOÀI Twin (đo AST 2026-11-04: chỉ 1 thủ tục tRPC, `orchestration.simulate` chạy khô, không ghi; bản cũ ghi "0 lời gọi tRPC" là SAI).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
 const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 // ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
@@ -207,7 +207,6 @@ const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control 
 const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 13 / F0: Multi-site Federation sites registry (admin)
 const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
 const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")); // Doc 13 / F3: read-only modules + license marketplace (admin)
-const SynapsePlatformPage = React.lazy(() => import("./pages/SynapsePlatformPage")); // doc 33: read-only SYNAPSE platform cockpit
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage")); // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run
 // doc 39 Wave 4 — device-monitoring surfaces (fleet list / health-OEE / field devices)
@@ -260,7 +259,6 @@ const LicenseManagement = React.lazy(() => import("./pages/LicenseManagement"));
 const MonitoringSettings = React.lazy(() => import("./pages/MonitoringSettings")); // doc64 S5-OPT: eager→lazy
 // doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
 const AdminMonitoring = React.lazy(() => import("./pages/AdminMonitoring")); // doc64 S5-OPT: eager→lazy
-const AnalyticsSettings = React.lazy(() => import("./pages/AnalyticsSettings")); // doc64 S5-OPT: eager→lazy
 const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc64 S5-OPT: eager→lazy
 const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
 const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy
@@ -621,7 +619,7 @@ function Router() {
           Bảng + test: lib/engineeringLegacyRedirects.tsx(.dom.test.tsx). */}
       {engineeringLegacyRoutes()}
       <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
-      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
+      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo AST 2026-11-04: chỉ `orchestration.simulate` chạy khô, không ghi — chú thích cũ "0 lời gọi tRPC" là SAI):
           nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
       <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       {/* ★ §13b 3f — phát lại workflow ĐÃ GỘP vào /twin (`orchestration.simulate`). */}
@@ -758,7 +756,7 @@ function Router() {
       <Route path="/sites"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SitesRegistry /></AIPageWrapper></RouteGuard></Route>
       <Route path="/federation-dashboard"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><FederationDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/modules"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><ModulesMarketplace /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/synapse-platform"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SynapsePlatformPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/synapse-platform"><Redirect to="/admin" /></Route> {/* trang SYNAPSE platform cockpit đã gỡ (dọn vệ sinh E0-3, chủ dự án chọn 2026-11-04) */}
       <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
       <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>

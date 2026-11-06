@@ -592,12 +592,6 @@ export const SO_CAI: Record<string, Muc> = {
   "server/routers/engineeringAssignmentRouter.ts#proc:assign": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
   "server/routers/engineeringAssignmentRouter.ts#proc:unassign": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
   "server/routers/engineeringAssignmentRouter.ts#proc:assignableUsers": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả danh sách người" },
-  "server/routers/orchestrationGovRouter.ts#proc:runEvents": {
-    dem: { dich_vu: 1 },
-    phanLoai: "mien_tru",
-    lyDo: "orchestration_run_events: mọi appendRunEvent chỉ mang { status } / { workflowRef, edgeNodeId } (foeEngine / foeRunStore) — không lỗi bước; " + MT_VISIBLE,
-  },
-  "server/routers/orchestrationGovRouter.ts#proc:replayRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "trạng thái suy từ cùng sổ sự kiện (không lỗi bước); " + MT_VISIBLE },
   "server/routers/oversightRouter.ts#proc:pendingSummary": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "mẫu run chỉ { id, workflowRef, status, currentStepId } + đếm; " + MT_VISIBLE },
   "server/routers/edgeResolutionRouter.ts#proc:list": {
     dem: { dich_vu: 1 },
@@ -692,7 +686,7 @@ export const SO_CAI: Record<string, Muc> = {
  *   • pha 0 · C0-1 (2026-11-04): { khoa 72, diemCham 105, che 14, mienTru 58 } — −1 khoá che: REST `POST /equipment/:id/commands` ĐÃ GỠ (410 GONE cố định, không còn
  *     kết quả lệnh nào trả cho khoá API); `cheKetQuaLenh` vẫn bắt buộc ở các bề mặt orchestration.
  */
-const GHIM = { khoa: 72, diemCham: 105, che: 14, mienTru: 58 };
+const GHIM = { khoa: 70, diemCham: 103, che: 14, mienTru: 56 }; // gộp: main gỡ orchestrationGov (−2 khoá, −2 điểm chạm, −2 miễn trừ) + pha 0 C0-1 gỡ REST commands (−1 khoá, −1 điểm chạm, −1 che); ĐO lại sau merge 2026-11-06
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;

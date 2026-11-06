@@ -165,25 +165,6 @@ export const orchestrationRouter = router({
         .limit(input?.limit ?? 100);
     }),
 
-  /** Get one workflow by id (with its full definition). */
-  getWorkflow: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input, ctx }) => {
-      const d = await db();
-      const [row] = await d
-        .select()
-        .from(orchestrationWorkflows)
-        .where(eq(orchestrationWorkflows.id, input.id))
-        .limit(1);
-      // doc 81 Đợt 5 task E2 — out of scope ⇒ the SAME NOT_FOUND as a missing id (scope resolved for both: same path).
-      const visible = await definitionVisibleTo(row?.definitionJson as WorkflowDefinition | undefined, scopeOf(ctx.user));
-      if (!row || !visible) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow ${input.id} not found`);
-      }
-      return row;
-    }),
 
   /**
    * Deploy (validate + persist) a workflow definition. Flag-gated by FOE_ENABLED.
@@ -238,26 +219,6 @@ export const orchestrationRouter = router({
       return filterVisibleBy(rows, (r) => r.definitionJson as WorkflowDefinition, scope);
     }),
 
-  /** W3-11 — get one version snapshot (with its full definition). Read-only. */
-  getVersion: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .use(foeSchemaGuard) // final wave F8 — migration 0367 missing ⇒ a clear refusal
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input, ctx }) => {
-      const d = await db();
-      const [row] = await d
-        .select()
-        .from(orchestrationWorkflowVersions)
-        .where(eq(orchestrationWorkflowVersions.id, input.id))
-        .limit(1);
-      // doc 81 Đợt 5 task E2 — the version's own definition AND its workflow's current one must be visible.
-      const scope = scopeOf(ctx.user);
-      const ownVisible = await definitionVisibleTo(row?.definitionJson as WorkflowDefinition | undefined, scope);
-      // doc 81 Đợt 7 I3 — `paramsJson: null` asks about the workflow's HEAD (this is a workflow-level check, not a run)
-      const headVisible = await runVisibleTo({ workflowId: row?.workflowId ?? -1, paramsJson: null }, scope);
-      if (!row || !ownVisible || !headVisible) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
-      return row;
-    }),
 
   /**
    * W3-11 — ROLL BACK a workflow to an earlier version by re-deploying that version's

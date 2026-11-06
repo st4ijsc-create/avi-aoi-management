@@ -30,6 +30,7 @@ import { CAC_MA_CO_THE_DA_BAY, coTheDaBayCua, moTaCoTheDaBay } from "./lenhTruoc
 import { equipmentRegistry } from "./equipmentAdapter";
 import { FOE_OUTCOME_UNKNOWN, ketCucLenhFoe, khongGuiLaiKhongRo } from "../orchestration/foe/foeEngine";
 import { idempotentReplay, PROCESS_RESTART_OUTCOME_UNKNOWN } from "../robot/robotCommandDispatcher";
+import { MA_HANG_FOE_DA_TIEU } from "../ot/commandDispatcher";
 
 const otCmd = { name: "start", adapterId: 7, machineId: 1, writes: [{ tagKey: "a", value: 5 }], idempotencyKey: "run1-main-a1", hitl: { actionId: "foe-run1-main-a1", requestedBy: 1, confirmedBy: 2 } };
 const robotCmd = { name: "run_job", robotId: 9, machineId: 1, job: { jobType: "pick", params: {} }, idempotencyKey: "run1-main-a1", hitl: { actionId: "foe-run1-main-a1", requestedBy: 1, confirmedBy: 2 } };
@@ -49,9 +50,27 @@ afterEach(() => {
 });
 
 describe("T3F — lớp 'lệnh trước có thể đã bay' ⇒ không rõ kết cục, không attempt key mới (non-STOP); STOP thử lại", () => {
-  it("bảng mã đúng bốn mã nguồn (T6d fix 1: + IDEMPOTENCY_KEY_REUSED); chuỗi robot = hằng PROCESS_RESTART_OUTCOME_UNKNOWN của dispatcher robot (ghim)", () => {
-    expect([...CAC_MA_CO_THE_DA_BAY].sort()).toEqual(["DUPLICATE_IN_FLIGHT", "IDEMPOTENCY_KEY_REUSED", "IDEMPOTENT_JOB_IN_PROGRESS", "process_restart_outcome_unknown"].sort());
+  it("bảng mã đúng năm mã nguồn (T6d fix 1: + IDEMPOTENCY_KEY_REUSED; A2(k): + FOE_ROW_SPENT_FOR_KEY); chuỗi robot = hằng PROCESS_RESTART_OUTCOME_UNKNOWN của dispatcher robot, chuỗi A2(k) = hằng MA_HANG_FOE_DA_TIEU của dispatcher OT (ghim)", () => {
+    expect([...CAC_MA_CO_THE_DA_BAY].sort()).toEqual(["DUPLICATE_IN_FLIGHT", "FOE_ROW_SPENT_FOR_KEY", "IDEMPOTENCY_KEY_REUSED", "IDEMPOTENT_JOB_IN_PROGRESS", "process_restart_outcome_unknown"].sort());
     expect(CAC_MA_CO_THE_DA_BAY).toContain(PROCESS_RESTART_OUTCOME_UNKNOWN);
+    expect(CAC_MA_CO_THE_DA_BAY).toContain(MA_HANG_FOE_DA_TIEU);
+  });
+
+  it("★ A2(k) — OT trung tâm: dispatcher `rejected` + FOE_ROW_SPENT_FOR_KEY (hàng FOE đúc cho CHÍNH khoá đã tiêu ở nơi khác — edge) qua mặt tiền THẬT ⇒ FOE_OUTCOME_UNKNOWN cho non-STOP (KHÔNG attempt key mới); STOP ⇒ null; câu nói THẬT (kiểm thiết bị)", async () => {
+    M.ot.mockResolvedValue({ ok: false, simulated: false, status: "rejected", reason: MA_HANG_FOE_DA_TIEU, results: [], commandLogIds: [13] });
+    const r = await equipmentRegistry.getAdapter("ot-s7").sendCommand(otCmd as never);
+    expect(coTheDaBayCua(r)).toBe("FOE_ROW_SPENT_FOR_KEY");
+    const c = chot(r, false);
+    expect(c).toMatchObject({ kind: "failed" });
+    expect(String((c as { error: string }).error)).toMatch(
+      new RegExp(`^${FOE_OUTCOME_UNKNOWN}: FOE_ROW_SPENT_FOR_KEY: command "start" — the orchestration authorisation minted for this very key was already used elsewhere \\(for example by an edge node\\) while central holds no write-ahead record of it — the command may already have reached the device; check the device before continuing; outcome unknown — not sent again; check the device\\.$`),
+    );
+    expect(chot(r, true)).toBeNull();
+    // đối chứng: NOT_CONFIRMED (hàng đã tiêu KHÔNG thuộc khoá này / STOP / tool khác …) vẫn là "chưa bay" ⇒ vòng thử lại quyết định như cũ
+    M.ot.mockResolvedValue({ ok: false, simulated: false, status: "rejected", reason: "NOT_CONFIRMED", results: [], commandLogIds: [14] });
+    const r2 = await equipmentRegistry.getAdapter("ot-s7").sendCommand(otCmd as never);
+    expect(coTheDaBayCua(r2)).toBeNull();
+    expect(chot(r2, false)).toBeNull();
   });
 
   it("★ OT trung tâm: dispatcher `rejected` + DUPLICATE_IN_FLIGHT qua mặt tiền THẬT ⇒ FOE_OUTCOME_UNKNOWN cho non-STOP; STOP ⇒ null (thử lại)", async () => {

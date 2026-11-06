@@ -101,7 +101,6 @@ let c!: {
   edge: ReturnType<typeof import("./edgeRuntimeRouter").edgeRuntimeRouter.createCaller>;
   fleet: ReturnType<typeof import("./fleetRouter").fleetRouter.createCaller>;
   twin: ReturnType<typeof import("./twinRouter").twinRouter.createCaller>;
-  guard: ReturnType<typeof import("./parameterGuardrailRouter").parameterGuardrailRouter.createCaller>;
   secs: ReturnType<typeof import("./secsGemRouter").secsGemRouter.createCaller>;
 };
 
@@ -141,7 +140,6 @@ beforeAll(async () => {
     edge: (await import("./edgeRuntimeRouter")).edgeRuntimeRouter.createCaller(ctx),
     fleet: (await import("./fleetRouter")).fleetRouter.createCaller(ctx),
     twin: (await import("./twinRouter")).twinRouter.createCaller(ctx),
-    guard: (await import("./parameterGuardrailRouter")).parameterGuardrailRouter.createCaller(ctx),
     secs: (await import("./secsGemRouter")).secsGemRouter.createCaller(ctx),
   };
 }, 120_000);
@@ -312,27 +310,16 @@ describe("field · secsGem · visionAdapter · hotFolder · edge · fleet · twi
     expect(l.map(ma)).toEqual([NF, NF, NF, NF, NF, NF, NF]);
     expect(await so(sql`SELECT count(*)::int AS n FROM hot_folder_configs WHERE id = ${B.hot}`)).toBe(1);
   });
-  it("xoá nút edge B / tạo biến thể chương trình cho dự án B / đăng ký lại mô hình 3D của B / lưu archive ⇒ NOT_FOUND; hàng rào tham số B + theo loại máy ⇒ NOT_FOUND", async () => {
+  it("xoá nút edge B / tạo biến thể chương trình cho dự án B ⇒ NOT_FOUND", async () => {
     const l = [
       await maLoi(() => c.edge.deleteNode({ id: B.edge })),
       await maLoi(() => c.fleet.createVariant({ programProjectId: B.prog, variant: "A" } as never)),
-      await maLoi(() => c.twin.models.archive({ id: B.model })),
-      await maLoi(() => c.twin.models.register({ modelKey: B.code + "-mk", modelUri: "/y.glb", machineId: A.mid })),
-      await maLoi(() => c.twin.models.register({ modelKey: `${RUN}-mk-moi`, modelUri: "/y.glb", machineId: B.mid })),
-      await maLoi(() => c.guard.set({ scope: "machine", machineId: B.mid, paramKey: `${RUN}-p`, minValue: 0, maxValue: 5 })),
-      await maLoi(() => c.guard.set({ scope: "machine_type", machineType: "AOI", paramKey: `${RUN}-pt2`, minValue: 0, maxValue: 5 })),
-      await maLoi(() => c.guard.delete({ id: B.guard })),
-      await maLoi(() => c.guard.delete({ id: guardType })),
     ];
-    expect(l.map(ma)).toEqual([NF, NF, NF, NF, NF, NF, NF, NF, NF]);
+    expect(l.map(ma)).toEqual([NF, NF]);
     expect(await so(sql`SELECT count(*)::int AS n FROM program_variants WHERE "programProjectId" = ${B.prog}`)).toBe(0);
     expect(await maLoi(() => c.fleet.createVariant({ programProjectId: A.prog, variant: "A" } as never))).toBeNull();
     expect(await so(sql`SELECT count(*)::int AS n FROM edge_nodes WHERE id = ${B.edge}`)).toBe(1);
-    expect(await so(sql`SELECT count(*)::int AS n FROM equipment_3d_models WHERE id = ${B.model} AND status = 'active' AND "machineId" = ${B.mid}`)).toBe(1);
-    expect(await so(sql`SELECT count(*)::int AS n FROM parameter_guardrails WHERE id IN (${B.guard}, ${guardType})`)).toBe(2);
     // đối chứng A→A
-    expect(await maLoi(() => c.guard.set({ scope: "machine", machineId: A.mid, paramKey: `${RUN}-pa`, minValue: 0, maxValue: 5 }))).toBeNull();
     expect(await maLoi(() => c.edge.deleteNode({ id: A.edge }))).toBeNull();
-    expect(await maLoi(() => c.twin.models.archive({ id: A.model }))).toBeNull();
   });
 });

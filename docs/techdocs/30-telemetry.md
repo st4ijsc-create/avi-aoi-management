@@ -101,7 +101,7 @@ Client `[đo]`: 241 `refetchInterval` trong 97 tệp. Faceplate poll **2 000 ms*
 1. **Một bảng tín hiệu thô `signal_sample`** (= `ot_telemetry` đổi tên, thêm cột). Gộp vào đây: `robot_telemetry` (metric `joint_*`, `mode`, `busy`…), `machine_sensor_readings`, `energy_readings`, và **điểm phái sinh** của PdM (`health_score`, `rul_days`) với `source='calc'` ⇒ cùng một retention và nén. `machine_heartbeats` gỡ. `machine_status_logs` thành sự kiện `state_change` ở module 40 (phái sinh từ metric `state`).
 2. **Mọi mẫu neo vào `tag_id`** (20). Mẫu từ máy tự gửi (AOI heartbeat, cycle_time…) neo vào **tag ảo** sinh từ `tag_template` của lớp với `connection.protocol='push'`; không còn `metric` tự do không tra được.
 3. **Ba cột chất lượng là cột thật**: `quality`, `reason`, `ts_source` (đưa từ `meta` lên để lọc/chỉ mục).
-4. **Một nguồn DDL Timescale**: migration trong `drizzle/` chính; gỡ `timescale/0003` (TSDB riêng), xoá 0118/0172 khỏi thứ tự áp (đã bị 0271 đè); `TSDB_URL` bỏ.
+4. **Một nguồn DDL Timescale**: migration trong `drizzle/` chính; **0118/0172 GIỮ trong thứ tự áp** (0172 là nơi duy nhất tạo hypertable `measurement_results` — đo do‑model 06/11); một migration hoà giải **0490** làm lời cuối (chuẩn hoá policy khi lệch, no‑op trên DEV/_test); gỡ `timescale/0003` (TSDB riêng, nơi duy nhất có `energy_readings`) + `TSDB_URL` ở **T1**.
 5. **Retention theo nguồn**: `site.origin=real` 90 d thô + CAGG 1m/1h/1d giữ 3 năm; `origin∈{sim,qa}` 7 d thô, không CAGG dài ⇒ chấm dứt 17,5 M hàng/ngày của simulator chiếm 65 GB.
 6. **Lớp sống là một kho RAM** `LiveStore` keyed `tag_id` cho **mọi** tín hiệu (không chỉ adapter OT trung tâm), nuôi bởi bus; ngưỡng cũ theo tag = `staleAfterMs` của 1a (một hàm `nguongCuMs`, một nguồn sự thật).
 7. **C1 mặc định bật**: mất kết nối ⇒ mỗi tag của connection nhận đúng một mẫu `bad/comm_lost` (ghi DB + lớp sống); cờ `OT_CHAT_LUONG_V2_ENABLED` bỏ.
@@ -252,7 +252,7 @@ Module này **tuân theo** spec v3 §3.6 và brief 1a (scada-master làm sau A2(
 
 ### 3.6 Gỡ / chuyển
 
-`simOtTelemetryService` giữ nhưng **chỉ ghi cho asset thuộc site `origin=sim`**, `reason='sim'`, chu kỳ 30 s giữ; `sensorIngestService`, `robotIngest` (phần ghi) → `ingestSignals`; `stateStore/*`, `unsStreamGateway` gỡ (kênh 1a thay); `streaming/*` đóng băng; `federation/unsSubscriber` đóng băng; `machinePresenceService` gỡ; `functions/cachedStatistics.ts` viết lại đọc CAGG; `timescale/0003`, `TSDB_URL`, `db/timescale.ts` gỡ.
+`simOtTelemetryService` **gỡ** (QĐ chủ dự án 2026‑11‑06, phương án B — chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5, khi simulator/sim‑factory đăng ký làm thiết bị ngoài `origin=sim` và gửi qua ingest); `sensorIngestService`, `robotIngest` (phần ghi) → `ingestSignals`; `stateStore/*`, `unsStreamGateway` gỡ (kênh 1a thay); `streaming/*` đóng băng; `federation/unsSubscriber` đóng băng; `machinePresenceService` gỡ; `functions/cachedStatistics.ts` viết lại đọc CAGG; `timescale/0003`, `TSDB_URL`, `db/timescale.ts` gỡ.
 
 ---
 
@@ -336,7 +336,7 @@ Dải migration: **0490–0509** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20-
 | 3 | Gộp `robot_telemetry` ngay | **Có** — tag ảo theo role `joint_*`/`mode`/`busy`; chỉ còn một bảng | T8; router robot vẫn tạm dừng (20 §7 Q2) |
 | 4 | NATS/lake/stateStore/unsStreamGateway | **`stateStore` + `unsStreamGateway` gỡ; `streaming/*` + `lakeSink` đóng băng** (tap tắt, giữ mã) | T4 (sau 1a), T7 |
 | 5 | Topic UNS legacy `avi/…` | **Gỡ hẳn ở T7, không alias**; trước T7 bật log subscriber trên aedes 1 chu kỳ (7 d) để chứng minh không consumer ngoài | T7; nếu log có subscriber ngoài ⇒ ghi Nhật ký và giữ alias thêm 14 d |
-| 6 | `UNS_BROKER_URL` không đặt dù `UNS_BRIDGE_ENABLED=true` | **Đo tại máy dev 2026-11-03: cổng 1884 không có tiến trình lắng nghe ⇒ tắt cờ ở T0**; bật lại chỉ khi có EMQX thật và đặt URL | T0 |
+| 6 | `UNS_BROKER_URL` không đặt dù `UNS_BRIDGE_ENABLED=true` | **GIỮ `UNS_BRIDGE_ENABLED=true`** — đính chính 06/11 (do‑model đo): EMQX docker đang chạy (`restart=unless-stopped`, 1884→1883) và `:3000` có kết nối; phép đo 03/11 của tôi ("không tiến trình lắng nghe 1884") sai tiền đề/thời điểm | T0‑1 bỏ; đặt `UNS_BROKER_URL` tường minh ở T7 |
 | 7 | Dải migration 0490–0509 | **Đồng ý** | §5 |
 | 8 | Chunk 1 ngày cho `signal_sample` | **Đồng ý** | §2.2 |
 
@@ -349,3 +349,5 @@ Dải migration: **0490–0509** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20-
 | 2026-11-03 | chủ dự án + chu-du-an-HST | **Duyệt v1.1**: 8 câu hỏi §7 theo khuyến nghị (sim 36 máy + 7 d; PdM xoá >90 d; gộp robot_telemetry; gỡ stateStore/unsStreamGateway; UNS legacy gỡ T7; UNS_BRIDGE tắt T0; mig 0490–0509; chunk 1 d) | cổng 1884/1883: không tiến trình lắng nghe (Get-NetTCPConnection) |
 | 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt c49f03c06` + DB live; nhận hợp đồng 1a (spec v3 §3.6) | 1 bus + 7 đường vào + 7 bảng lẻ; 576,9 M hàng/65 GB, 24 h = 17,5 M hàng 100 % simulator; 3 WAL; 5 ngưỡng tuổi; kênh SCADA tắt cờ, client poll 2 s |
 | 2026-11-04 | dieu-phoi | T0‑4: `machine_health_history` > 90 d xoá 77 798 (còn **2 801 600**), `rul_estimates` xoá 55 207 (còn **2 799 905**) — bảng vẫn ≈ 1 GB / 0,8 GB vì gần hết hàng là 90 ngày gần nhất (PdM mỗi giờ × 1 700 máy, phần lớn `origin=sim`) ⇒ mục tiêu < 200 MB chỉ đạt ở **T8** (chuyển sang `signal_sample(source=calc)` + retention 7 d cho sim); không xoá thêm trong pha 0 | 2,8 M / 2,8 M |
+| 2026-11-06 | do-model + dieu-phoi + chu-du-an-HST | Đo T0 trước khi làm ⇒ 4 chỉnh: (1) T0‑3 không bỏ 0118/0172, thêm mig 0490 hoà giải; (2) gỡ `timescale/0003` + `TSDB_URL` chuyển T1; (3) T0‑1 huỷ — EMQX đang chạy, giữ `UNS_BRIDGE_ENABLED=true`; (4) T0‑2: `topology.mjs` đã 36 máy, nguồn 1 699 máy là `simOtTelemetryService`. **Mâu thuẫn tôi gây ra**: §3 dòng "`simOtTelemetryService` giữ, chỉ ghi `origin=sim`" vs 70 "gỡ" — service là nguồn presence duy nhất của máy DEV ⇒ gộp eng‑ai tạm giữ, chờ chủ dự án chọn phương án | — |
+| 2026-11-06 | chủ dự án (qua dieu-phoi) | **Phương án B**: gỡ `simOtTelemetryService`; §3 bỏ câu "giữ, chỉ ghi `origin=sim`"; T0‑2 đóng sau khi eng‑ai lên main + `:3000` bản mới + đo 24 h | — |
