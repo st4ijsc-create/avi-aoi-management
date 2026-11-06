@@ -288,6 +288,7 @@ describe("T2B - no resend after an unknown outcome", () => {
     expect(res.status).toBe("failed");
     expect(otDispatchMock.mock.calls.filter((c: any) => c[0].commandType === "stop")).toHaveLength(3);
     const main = (await getRun(res.runId!))?.steps.find((s) => s.stepId === "main");
-    expect(String(main?.error)).not.toContain("FOE_OUTCOME_UNKNOWN");
+    // A2(n) fix round 4 (b, C-C): "never held back" is the 3 attempts above; the row of a step that stayed unknown says so, STOP-typed included (the durable fact)
+    expect(String(main?.error)).toContain("FOE_OUTCOME_UNKNOWN");
   });
 });
