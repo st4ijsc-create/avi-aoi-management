@@ -17,8 +17,28 @@
  * test (đã đo: 0 bản ghi kiểm / 0 OEE / 0 downtime), nên mọi con số dưới đây là ĐÚNG TUYỆT ĐỐI
  * chứ không phải "lớn hơn / nhỏ hơn".
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+
+/**
+ * ★ 2026-11-06 — DỮ LIỆU DỰNG NẰM TRONG MỘT GIAO DỊCH ROLLBACK (một kết nối duy nhất, `BEGIN` ở beforeAll,
+ * `ROLLBACK` ở afterAll). Lý do: cửa sổ tháng 11/2026 từng "sạch" nay đã có dữ liệu thật của mô phỏng
+ * (đo 292 thay vì 10 ở ca admin NG Visual) ⇒ phép đếm tuyệt đối của admin vỡ. Nay: (1) không để lại hàng
+ * nào trong `_test` (kể cả bảng WORM `product_inspections`); (2) ca admin đếm theo ĐỘ LỆCH so với mốc
+ * đo TRƯỚC khi dựng dữ liệu (cùng giao dịch), còn danh sách máy lọc theo TIỀN TỐ của chính tệp.
+ * Dịch vụ gọi `getDb()` ⇒ ép trỏ vào kết nối giao dịch này (mẫu của lechGioTruyVanTho.db.test.ts).
+ */
+const h = vi.hoisted(() => ({ db: null as unknown }));
+vi.mock("../db/connection", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/connection")>();
+  return {
+    ...actual,
+    getDb: async () => h.db,
+    getReadDb: async () => h.db,
+    getJobsDb: async () => h.db,
+  };
+});
 import { scheduledReportService } from "./scheduledReportService";
 import { generateNGVisualReport } from "./reportGenerator";
 
@@ -47,6 +67,9 @@ const ids = {
   resultIds: [] as number[],
 };
 
+/** Mốc nền admin đo TRƯỚC khi dựng dữ liệu của tệp. */
+const nen = { totalMachines: 0, totalDowntime: 0, ngInspections: 0, ngCount: 0 };
+
 const codeA = () => `NA-MC-A-${RUN}`;
 const codeB = () => `NA-MC-B-${RUN}`;
 
@@ -63,36 +86,36 @@ const reportRow = (createdBy: number, type: "oee" | "machine_health") => ({
   window: WINDOW,
 });
 
-/**
- * ⚠⚠ `product_inspections` là bảng WORM: vai `avi_app` chỉ có SELECT/INSERT/UPDATE, **KHÔNG có
- * DELETE** (đo 2026-08-17 trên `aoi_management_test`). Mọi lưới trong repo đang viết
- * `DELETE FROM product_inspections` ở `afterAll` đều KHÔNG dọn được gì — và vì `product_inspections`
- * có khoá ngoại trỏ tới `machines`, hàng sót lại còn CHẶN luôn việc xoá máy/trạm/chuyền/xưởng.
- * Đó là lý do CSDL test đang có 1.669 máy "đang hoạt động".
- *
- * Ở đây dọn bằng đúng quyền được cấp: **UPDATE** đẩy hàng sót ra KHỎI cửa sổ báo cáo (đó mới là
- * thứ làm hỏng phép đếm tuyệt đối ở lần chạy sau), rồi mới thử DELETE và nuốt lỗi. Máy được TẮT
- * thay vì xoá, để `getAllMachinesOEELive` của lần chạy sau không nhặt lại.
- */
-const PARKED = new Date("1990-01-01T00:00:00Z");
-
-/** Chạy một lệnh dọn, nuốt lỗi — dùng cho các lệnh có thể bị WORM/FK chặn. */
-async function safe(run: () => Promise<unknown>): Promise<void> {
-  try { await run(); } catch { /* WORM hoặc FK chặn — đã có đường dọn thay thế ở trên */ }
-}
-
 describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL THẬT", () => {
   beforeAll(async () => {
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
-    await sql`SET TIME ZONE 'UTC'`;
+    await sql`BEGIN`;
+    await sql`SET LOCAL TIME ZONE 'UTC'`;
+    h.db = drizzle(sql);
 
-    // TỰ CHỮA: đẩy mọi hàng sót của các lượt chạy TRƯỚC (kể cả lượt bị huỷ giữa chừng) ra khỏi
-    // cửa sổ. Không có bước này thì phép đếm TUYỆT ĐỐI bên dưới sẽ trôi dần theo số lần chạy —
-    // và một lưới trôi thì sớm muộn cũng bị nới lỏng thành `toBeGreaterThan`, tức mất khả năng
-    // phát hiện rò.
-    await safe(() => sql`
-      UPDATE product_inspections SET "inspectionTime" = ${PARKED}, "factoryCode" = NULL
-      WHERE "serialNumber" LIKE 'SN-NA%' AND "inspectionTime" >= ${WINDOW.start}`);
+    // Tài khoản dựng TRƯỚC để đo mốc nền của admin (dữ liệu có sẵn trong cửa sổ) trước khi dựng gì khác.
+    // Bốn tài khoản người TẠO LỊCH.
+    const mkUser = async (username: string, role: string, isActive = true) => {
+      const [r] = await sql`
+        INSERT INTO users ("openId", username, name, role, "isActive")
+        VALUES (${`na-${username}`}, ${username}, ${username}, ${role}, ${isActive}) RETURNING id`;
+      return r.id as number;
+    };
+    ids.userAdmin = await mkUser(`na-admin-${RUN}`, "admin");
+    ids.userEngA = await mkUser(`na-eng-a-${RUN}`, "engineer");
+    ids.userNoAssign = await mkUser(`na-noassign-${RUN}`, "supervisor");
+    ids.userDisabled = await mkUser(`na-disabled-${RUN}`, "engineer", false);
+
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.userEngA}, ${FAC_A})`;
+    // Người bị TẮT vẫn CÒN NGUYÊN gán nhà máy — đúng hình dạng nguy hiểm mà cổng phải chặn.
+    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.userDisabled}, ${FAC_A})`;
+
+    const nenOee = await scheduledReportService.generateOEEReportContent(reportRow(ids.userAdmin, "oee"));
+    const nenNg = await generateNGVisualReport({ startDate: WINDOW.start, endDate: WINDOW.end, actor: { id: ids.userAdmin, role: "admin" } });
+    nen.totalMachines = nenOee.summary.totalMachines;
+    nen.totalDowntime = nenOee.summary.totalDowntime;
+    nen.ngInspections = nenNg.summary.totalInspections;
+    nen.ngCount = nenNg.summary.totalNG;
 
     const mkHierarchy = async (facCode: string, tag: string) => {
       const [f] = await sql`INSERT INTO factories (code, name) VALUES (${facCode}, ${"NA factory " + tag}) RETURNING id`;
@@ -125,7 +148,7 @@ describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL
         INSERT INTO product_inspections
           ("machineId", "productModelId", "factoryCode", "serialNumber", "overallResult", "originalResult", "inspectionTime")
         VALUES (${machineId}, ${ids.product}, ${factoryCode}, ${`SN-${RUN}-${ids.inspIds.length}`}, ${overall},
-                ${overall}, ${T}) RETURNING id`;
+                ${overall}, ${T.toISOString()}) RETURNING id`;
       ids.inspIds.push(r.id);
       return r.id as number;
     };
@@ -155,7 +178,7 @@ describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL
         INSERT INTO oee_metrics
           ("machineId", "machineCode", timestamp, availability, performance, quality, oee,
            "plannedTime", "runTime", "idealCycleTime", "totalCount", "goodCount", "rejectCount")
-        VALUES (${machineId}, ${machineCode}, ${T}, 9000, 8000, 9500, ${oee}, 480, 400, 30, 100, 95, 5)`;
+        VALUES (${machineId}, ${machineCode}, ${T.toISOString()}, 9000, 8000, 9500, ${oee}, 480, 400, 30, 100, 95, 5)`;
     };
     await mkOee(ids.machineA, codeA(), 6800);
     await mkOee(ids.machineB, codeB(), 5000);
@@ -163,59 +186,16 @@ describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL
     const mkDowntime = async (machineId: number, machineCode: string, duration: number) => {
       await sql`
         INSERT INTO downtime_events ("machineId", "machineCode", category, reason, "startTime", duration)
-        VALUES (${machineId}, ${machineCode}, 'breakdown', ${"NA " + machineCode}, ${T}, ${duration})`;
+        VALUES (${machineId}, ${machineCode}, 'breakdown', ${"NA " + machineCode}, ${T.toISOString()}, ${duration})`;
     };
     await mkDowntime(ids.machineA, codeA(), 30);
     await mkDowntime(ids.machineB, codeB(), 45);
 
-    // Bốn tài khoản người TẠO LỊCH.
-    const mkUser = async (username: string, role: string, isActive = true) => {
-      const [r] = await sql`
-        INSERT INTO users ("openId", username, name, role, "isActive")
-        VALUES (${`na-${username}`}, ${username}, ${username}, ${role}, ${isActive}) RETURNING id`;
-      return r.id as number;
-    };
-    ids.userAdmin = await mkUser(`na-admin-${RUN}`, "admin");
-    ids.userEngA = await mkUser(`na-eng-a-${RUN}`, "engineer");
-    ids.userNoAssign = await mkUser(`na-noassign-${RUN}`, "supervisor");
-    ids.userDisabled = await mkUser(`na-disabled-${RUN}`, "engineer", false);
-
-    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.userEngA}, ${FAC_A})`;
-    // Người bị TẮT vẫn CÒN NGUYÊN gán nhà máy — đúng hình dạng nguy hiểm mà cổng phải chặn.
-    await sql`INSERT INTO user_factory_assignments ("userId", "factoryCode") VALUES (${ids.userDisabled}, ${FAC_A})`;
   }, 180_000);
 
   afterAll(async () => {
     try {
-      const users = [ids.userAdmin, ids.userEngA, ids.userNoAssign, ids.userDisabled].filter(Boolean);
-      const machines = [ids.machineA, ids.machineB].filter(Boolean);
-      if (users.length) await safe(() => sql`DELETE FROM user_factory_assignments WHERE "userId" IN ${sql(users)}`);
-      if (machines.length) {
-        await safe(() => sql`DELETE FROM downtime_events WHERE "machineId" IN ${sql(machines)}`);
-        await safe(() => sql`DELETE FROM oee_metrics WHERE "machineId" IN ${sql(machines)}`);
-      }
-      if (ids.resultIds.length) await safe(() => sql`DELETE FROM measurement_results WHERE id IN ${sql(ids.resultIds)}`);
-      if (ids.inspIds.length) {
-        // ① ĐẨY RA KHỎI CỬA SỔ trước (UPDATE được cấp quyền) — bước THẬT SỰ giữ phép đếm sạch.
-        await safe(() => sql`
-          UPDATE product_inspections SET "inspectionTime" = ${PARKED}, "factoryCode" = NULL
-          WHERE id IN ${sql(ids.inspIds)}`);
-        // ② rồi mới thử xoá; WORM sẽ chặn, và đó là điều đã lường trước.
-        await safe(() => sql`DELETE FROM product_inspections WHERE id IN ${sql(ids.inspIds)}`);
-      }
-      await safe(() => sql`DELETE FROM measurement_point_defs WHERE id IN ${sql([ids.pointA, ids.pointB].filter(Boolean))}`);
-      if (machines.length) {
-        // Hàng kiểm sót lại (WORM) giữ khoá ngoại trỏ vào máy ⇒ không xoá được. TẮT máy để lượt
-        // chạy sau không nhặt lại chúng qua `getAllMachinesOEELive`.
-        await safe(() => sql`UPDATE machines SET "isActive" = false WHERE id IN ${sql(machines)}`);
-        await safe(() => sql`DELETE FROM machines WHERE id IN ${sql(machines)}`);
-      }
-      if (ids.product) await safe(() => sql`DELETE FROM product_models WHERE id = ${ids.product}`);
-      await safe(() => sql`DELETE FROM stations WHERE id IN ${sql([ids.stationA, ids.stationB].filter(Boolean))}`);
-      await safe(() => sql`DELETE FROM production_lines WHERE id IN ${sql([ids.lineA, ids.lineB].filter(Boolean))}`);
-      await safe(() => sql`DELETE FROM workshops WHERE id IN ${sql([ids.workshopA, ids.workshopB].filter(Boolean))}`);
-      await safe(() => sql`DELETE FROM factories WHERE id IN ${sql([ids.factoryA, ids.factoryB].filter(Boolean))}`);
-      if (users.length) await safe(() => sql`DELETE FROM users WHERE id IN ${sql(users)}`);
+      await sql`ROLLBACK`; // không để lại gì — kể cả hàng WORM
     } finally {
       await sql?.end();
     }
@@ -241,9 +221,9 @@ describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL
     it("DƯƠNG: admin vẫn lấy TOÀN BỘ hai nhà máy (chống vá quá tay)", async () => {
       const c = await scheduledReportService.generateOEEReportContent(reportRow(ids.userAdmin, "oee"));
 
-      expect(c.machineOEE.map((m) => m.machineCode).sort()).toEqual([codeA(), codeB()].sort());
-      expect(c.summary.totalMachines).toBe(2);
-      expect(c.summary.totalDowntime).toBe(75); // 30 + 45
+      expect(c.machineOEE.map((m) => m.machineCode).filter((x) => x.endsWith(RUN)).sort()).toEqual([codeA(), codeB()].sort());
+      expect(c.summary.totalMachines).toBe(nen.totalMachines + 2);
+      expect(c.summary.totalDowntime).toBe(nen.totalDowntime + 75); // 30 + 45
       expect(c.scopeApplied).toBe(false);
       expect(c.scopeNote).toBeUndefined();
     });
@@ -315,8 +295,8 @@ describe.skipIf(!DB_URL)("Nhóm A — phạm vi báo cáo hẹn giờ trên CSDL
     it("DƯƠNG: admin đếm ĐỦ cả hai nhà máy (10 kết quả / 5 NG)", async () => {
       const d = await generateNGVisualReport({ ...win, actor: { id: ids.userAdmin, role: "admin" } });
 
-      expect(d.summary.totalInspections).toBe(10);
-      expect(d.summary.totalNG).toBe(5);
+      expect(d.summary.totalInspections).toBe(nen.ngInspections + 10);
+      expect(d.summary.totalNG).toBe(nen.ngCount + 5);
       expect(d.scopeApplied).toBe(false);
       expect(d.scopeNote).toBeUndefined();
     });
