@@ -2176,6 +2176,22 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(ids().filter((x) => x === "boxUndo")).toHaveLength(1);
   });
 
+  it("★ C-C the rider of the end is lost: the ROWS alone carry the latch across the hand-back", async () => {
+    const e = await denBuoc(def("n4-p1r", [gate(), par("box", [move("x", { compensation: ot("u") }), gate("g2")], { compensation: ot("boxUndo") })]));
+    h.failPlan.set("x", 1);
+    h.timeoutDispatch.add("u");
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    e.stripEndUnknown = false;
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeUndefined();
+    h.timeoutDispatch.delete("u");
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "u", ma: "FOE_OUTCOME_UNKNOWN" });
+    const s3 = await edgeSegment(e, 3);
+    expect(ids().filter((x) => x === "boxUndo")).toHaveLength(0);
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+  });
+
   it("★ (b) the fact is on the row at the moment of decision: the segment dies before its end, the rows already say it", async () => {
     const e = await denBuoc(def("n4-b", [gate(), move("x", { compensation: ot("u") })]));
     h.timeoutDispatch.add("x");
@@ -2189,8 +2205,13 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
   it("(b) a row of a step already decided keeps the code: a later row with no error does not wipe the fact", async () => {
     const e = await denBuoc(def("n4-b2", [gate(), box("b", [{ ...(robotStop("st") as object), maxAttempts: 2 } as never], {})]));
     h.timeoutDispatch.add("st");
-    await edgeSegment(e, 2);
+    const s = await edgeSegment(e, 2);
     expect(String(stepRows(e.runId).find((r) => r.stepId === "st")!.error)).toMatch(/OUTCOME_UNKNOWN/);
+    const r = s.segment.filter((v: any) => v.kind === "step" && v.stepId === "st") as any[];
+    const i = r.findIndex((v) => /OUTCOME_UNKNOWN/.test(String(v.error)));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(i).toBeLessThan(r.length - 1); // the later attempt wrote rows after the decision
+    for (const v of r.slice(i)) expect(String(v.error)).toMatch(/OUTCOME_UNKNOWN/); // a crash between any two of them leaves the fact on the row
   });
 
   it("(b) a report on the segment end is the fact even if the rows were lost (full journal): the latch is central's", async () => {
@@ -2240,6 +2261,20 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(ids().filter((x) => x === "rz")).toHaveLength(0);
     expect(ids().filter((x) => x === "rs")).toHaveLength(1);
     expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+  });
+
+  it("(a) an OT verified STOP passes the sink by the package's word: sent, never asked, no hold", async () => {
+    fake.seed(deviceTags, [
+      ...rows("device_tags"),
+      { id: 74, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true },
+    ]);
+    const e = await denBuoc(def("n4-otstop", [gate(), move("r1", { compensation: { id: "st", type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } } as never })]));
+    h.timeoutDispatch.add("r1");
+    const n = e.authorizeCalls.length;
+    const s = await edgeSegment(e, 2);
+    expect(ids()).toEqual(["r1", "st"]);
+    expect(e.authorizeCalls.slice(n).some((a) => a.stepId === "st")).toBe(false);
+    expect(s.out.outcome).toBe("failed");
   });
 
   it("(a) n6 on the edge: an unlatched compensation asks /authorize and goes as before", async () => {

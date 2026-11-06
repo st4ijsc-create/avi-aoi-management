@@ -1354,6 +1354,14 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     expect((runRow(runId).contextJson[KET_CUC_KHONG_RO_CTX_KEY] as { ds: unknown[] }).ds).toEqual([{ stepId: "b", compId: "uPar" }]);
   });
 
+  it("(a, C-1) a child held AT THE SINK in a container that does not hold the unknown step: that container's STOP still goes", async () => {
+    biTruocChot();
+    const { res } = await chay([par("p", [seq("box", [pause("b", { compensation: seq("uSeq", [delay("w", 200), resetComp("rz")]) })], stopComp("bs")), main()])]);
+    expect(res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+    expect(sent("stop")).toHaveLength(1);
+  });
+
   it("(a) n6: an UNLATCHED multi-step compensation walks exactly as before", async () => {
     otDispatchMock.mockImplementation(async (i) => (i.commandType === "pause" ? REJECTED : ACKED));
     const { res } = await chay([pause("b", { compensation: seq("uSeq", [delay("w", 5), resetComp("rz")]) })]);
@@ -1419,6 +1427,7 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     runRow(runId).contextJson = {};
     expect(rows("orchestration_run_steps").filter((r) => r.runId === runId && r.stepId === "main")[0]!.error).toMatch(/FOE_OUTCOME_UNKNOWN/);
     otDispatchMock.mockClear();
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : ACKED)); // the re-walk answers KNOWN: only the rows say unknown
     const c = await resumeRun(runId, { approved: true, note: "system" }, SYSTEM, {}, { scope: null });
     expect(c.status).toBe("held");
     expect(sent("reset")).toHaveLength(0);
@@ -1486,6 +1495,14 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     void chay([par("p", [main(), delay("slow", 5)])]);
     await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1), { timeout: 1_000 });
   });
+  it("R-4 an unknown known only from an earlier segment (no fresh decision, so no I-L): the end of the walk tells", async () => {
+    await chay([main()], (id) => {
+      runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeOutcomeUnknown: ["main"] };
+    });
+    expect(sent("start")).toHaveLength(0);
+    await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
+  });
+
   it("I-L told once, the end of the walk says nothing more; a compensation inside a body is not 'no compensation'", async () => {
     await chay([main()]);
     await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
@@ -1612,7 +1629,10 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     expect(k).toBeGreaterThan(j);
     const giua = src.slice(src.indexOf("\n", i), k).replace(/if \(cong\?\.kind === "giu"\) return giuTaiCong\(rc, cong\.chu, step\.id\);/, "");
     expect(giua).not.toMatch(/\bawait\b/);
-    expect(src).toMatch(/const dau = !rc\.khongRoChot;\n {2}rc\.khongRoChot = true;\n {2}if \(dau\) baoDangBay\(rc, step\.id, loi\);\n {2}if \(rc\.chiGuiStopGhim\) return;/); // m-L — the boot re-send latches, its row says so
+    // m-L — the boot re-send latches (nothing returns before the flag), its row says so
+    const chot = src.slice(src.indexOf("async function chotKhongRo("), src.indexOf("function baoDangBay("));
+    expect(chot.indexOf("rc.khongRoChot = true;")).toBeGreaterThan(0);
+    expect(chot.indexOf("rc.khongRoChot = true;")).toBeLessThan(chot.indexOf("rc.chiGuiStopGhim"));
     const au = readFileSync(resolve(__dirname, "../../edge/edgeAuthorizeCentral.ts"), "utf8");
     expect(au.indexOf("── 5. a verified STOP")).toBeLessThan(au.indexOf("buTruBiChanKhongRo(run.contextJson"));
     expect(au.indexOf("buTruBiChanKhongRo(run.contextJson")).toBeLessThan(au.indexOf("── 6. identity"));
