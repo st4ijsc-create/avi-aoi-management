@@ -733,6 +733,65 @@ describe("OrchestrationStudio — doc 81 Đợt 9 final wave: latch warning in t
   });
 });
 
+describe("OrchestrationStudio — R1b-2b-2a A2(n): a compensation held after an unknown outcome (R-1, m-8)", () => {
+  const giu = (id: number, ctx: Record<string, unknown>) => ({ ...run(id, "uo-flow", ctx, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "held" });
+  const nap = (r: ReturnType<typeof giu>, steps: unknown[] = []) => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [r] }));
+    setQueryOverride("orchestration.getRun", makeQuery({ data: { run: r, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps } }));
+  };
+  const MARK = { foeKetCucKhongRo: { stepId: "main", compId: "undo", ma: "FOE_OUTCOME_UNKNOWN", ds: [{ stepId: "main", compId: "undo" }] } };
+
+  it("★ the hold says what it is (badge + notice, NOT 'Approve'); Continue stays disabled until a reason is typed, and sends it", async () => {
+    nap(giu(70, MARK));
+    render(<OrchestrationStudio />);
+    const row = rowOf(70);
+    expect(within(row).getByTestId("outcome-unknown-held").textContent).toMatch(/outcome unknown/);
+    expect(within(row).getByTestId("outcome-unknown-notice").textContent).toMatch(/could not be confirmed as a STOP/);
+    expect(within(row).queryByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeNull();
+    const nut = within(row).getByRole("button", { name: /Continue: send the held compensation|studio\.outcomeUnknownContinue/ });
+    expect(nut).toBeDisabled();
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const u = userEvent.setup();
+    await u.type(within(row).getByTestId("outcome-unknown-reason"), "checked on site");
+    expect(nut).toBeEnabled();
+    await u.click(nut);
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 70, approved: true, note: "checked on site", expectedStepId: null, expectedDefHash: DEF_HASH, expectedBindingDigest: BINDING_DIGEST });
+  });
+
+  it("★ R-1 Abort never needs the reason, and sends it when given", async () => {
+    nap(giu(71, MARK));
+    render(<OrchestrationStudio />);
+    const row = rowOf(71);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const u = userEvent.setup();
+    const huy = within(row).getByRole("button", { name: /^(Abort|Stop|studio\.abort)$/i });
+    expect(huy).toBeEnabled();
+    await u.click(huy);
+    expect(mutateSpies["orchestration.abortRun"]).toHaveBeenLastCalledWith({ runId: 71 });
+    await u.type(within(row).getByTestId("outcome-unknown-reason"), "not safe");
+    await u.click(huy);
+    expect(mutateSpies["orchestration.abortRun"]).toHaveBeenLastCalledWith({ runId: 71, reason: "not safe" });
+  });
+
+  it("★ C-2 no marker (an edge crash): the failed row's code alone asks for the reason; an interrupted row's Continue dialog is disabled and says why", async () => {
+    nap(giu(72, { interrupted: true }), [{ stepId: "main", stepType: "command", status: "failed", attempt: 1, result: null, error: "EDGE_OUTCOME_UNKNOWN" }]);
+    render(<OrchestrationStudio />);
+    const row = rowOf(72);
+    expect(within(row).getByTestId("outcome-unknown-notice")).toBeInTheDocument();
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(within(row).getByRole("button", { name: /Continue…|studio\.continueRun/ }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByTestId("outcome-unknown-reason-needed")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Continue run|studio\.continueRunConfirm/ })).toBeDisabled();
+  });
+
+  it("an ordinary held run shows none of it", () => {
+    nap(giu(73, { interrupted: true }));
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(73)).queryByTestId("outcome-unknown-notice")).toBeNull();
+  });
+});
+
 describe("OrchestrationStudio — C2: lỗi bước dạng MÃ (người không phải kỹ sư) hiện câu dịch", () => {
   it("★ bước failed có error là mã ⇒ dòng step-error-code dịch; bước cổng / bước có appError ⇒ KHÔNG thêm dòng này", async () => {
     const i18next = (await import("i18next")).default;

@@ -34,6 +34,10 @@ const h = vi.hoisted(() => ({
   staleDispatch: new Set<string>(),
   /** A2(o) r3 F4 — these steps' NEXT dispatch is refused by the config gate with SAFETY_CONFIG_MISSING (nothing sent) */
   missingDispatch: new Set<string>(),
+  /** R1b-2b-2a A2(n) — these steps' dispatch answers `timeout` (sent, outcome unknown) */
+  timeoutDispatch: new Set<string>(),
+  /** A2(n) — the URGENT alerts raised (recorded) */
+  alerts: [] as Array<Record<string, any>>,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -41,6 +45,10 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, runningConnectionMatchesAdapterRow: async () => true, dispatch: vi.fn() };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
+vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
+  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, any>) => void h.alerts.push(a) };
+});
 vi.mock("../../edge/edgeCentralCommon", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../edge/edgeCentralCommon")>();
   const owned = (foreign: Set<number>) => async (_d: unknown, _node: number, ids: readonly number[]) => {
@@ -62,6 +70,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
       const stepId = m ? m[1] : "?";
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
+      if (h.timeoutDispatch.has(stepId)) return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
       if (h.staleDispatch.delete(stepId)) {
         // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "CONFIG_STALE", detail: { edge: true, stop: false, reason: "CONFIG_STALE", refusal: "central announced config v4 3 s ago; this edge still holds v3 (issued 95 s ago) — non-STOP writes are refused until the refresh succeeds (STOPs still go)" } };
@@ -182,6 +191,8 @@ beforeEach(() => {
   h.failPlan.clear();
   h.staleDispatch.clear();
   h.missingDispatch.clear();
+  h.timeoutDispatch.clear();
+  h.alerts.length = 0;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -271,6 +282,8 @@ interface EdgeHarness {
   unused?: Array<Record<string, any>>;
   /** R1b-2b-2a A2(n) N8 — the auth_unused journal / report FAILS (reportUnused answers false): the authorisation stays issued on central */
   unusedFails?: boolean;
+  /** A2(n) (I-5) — the events journal refuses (a full journal): the anomaly never leaves the edge */
+  eventsRefused?: boolean;
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
@@ -375,6 +388,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
         return { seq: x.records.length, durable: true };
       },
       async event(rec) {
+        if (x.eventsRefused) return { seq: null, dropped: true, reason: "journal_full" };
         x.events?.push(rec as Record<string, any>);
         return { seq: 1, durable: true };
       },
@@ -1791,5 +1805,120 @@ describe("doc 81 Đợt 10 C fix review 5 (R-10-bn) — an edge assignment names
     fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 502, machineId: 1, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A502" }]);
     expect(await startRun("own-a", {}, OWNER, { edgeNodeId: NODE })).toMatchObject({ ok: false, stepIds: ["m1"], message: expect.stringMatching(/cannot be resolved \(m1\)/) });
     expect(runsBefore()).toBe(n);
+  });
+});
+
+describe("R1b-2b-2a A2(n) fix round 1 — the edge routes of an unknown outcome (C-1, C-2 (b)(c)(d), I-5, R-2)", () => {
+  const box = (id: string, steps: WorkflowStep[], compensation: WorkflowStep): WorkflowStep => ({ id, type: "sequence", steps, compensation }) as never;
+  const par = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: true, steps }) as never;
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    return e;
+  }
+
+  it("★ C-1 + R-2 a robot STOP on the container goes out at once behind the held child; Continue (person + reason) sends only the child's compensation, the STOP never again", async () => {
+    const e = await denBuoc(def("n1-c1", [gate(), box("box", [move("r1", { compensation: ot("c1") })], robotStop("bs"))]));
+    h.timeoutDispatch.add("r1");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "bs"]); // ★ the STOP, no person; the reset-like c1 not
+    await continueOutcomeUnknown(e, "checked");
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "bs", "c1"]); // bs is not re-sent
+  });
+
+  it("★ R-2 a robot STOP compensation runs by itself on the edge too (no hold)", async () => {
+    const e = await denBuoc(def("n1-r2", [gate(), move("r1", { compensation: robotStop("bs") })]));
+    h.timeoutDispatch.add("r1");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "failed" });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "bs"]);
+  });
+
+  it("★ C-2 (b) a gate in a sibling branch: held(outcomeUnknown), not paused; the approval needs the check", async () => {
+    const e = await denBuoc(def("n1-b", [gate(), par("p", [move("r1", { compensation: ot("c1") }), gate("g2")])]));
+    h.timeoutDispatch.add("r1");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(runRow(e.runId).status).toBe("held");
+    grantMachineControl();
+    await expect(approveEdgeGate(e)).rejects.toThrow(/reason is required/);
+    expect(h.sent.some((x) => x.stepId === "c1")).toBe(false);
+  });
+
+  it("★ C-2 (c) a sibling's held reason never overwrites outcomeUnknown (one field, last write wins before): the marker and the check stay", async () => {
+    const e = await denBuoc(def("n1-c", [gate(), par("p", [move("r2"), move("r1", { compensation: ot("c1") })])]));
+    h.timeoutDispatch.add("r1");
+    e.offlineSteps = new Set(["r2"]);
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1" });
+    await expect(approveEdgeGate(e)).rejects.toThrow(/machine-control rights/);
+  });
+
+  it("★ C-2 (c) + I-5 a full journal during the hold: the run stream refused the compensation's row, the events journal the anomaly ⇒ still held(outcomeUnknown), the marker, the check, and the URGENT rides on the segment end", async () => {
+    const e = await denBuoc(def("n1-j", [gate(), move("r1", { compensation: ot("c1") })]));
+    h.timeoutDispatch.add("r1");
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "c1";
+    e.eventsRefused = true;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1", lan: "claim2" });
+    expect(String(runRow(e.runId).error)).not.toContain("[[A2N"); // stripped: never in the run's error
+    await waitFor(() => h.alerts.length > 0, "the URGENT");
+    expect(h.alerts[0]).toMatchObject({ kind: "foe_outcome_unknown_compensation_held", dedupKey: `foe_outcome_unknown_compensation_held:${e.runId}:r1:c1:claim2` });
+    expect(h.alerts[0]!.recipients).toContain(OWNER.id); // ★ it reaches a person
+    e.refuse = undefined;
+    await expect(approveEdgeGate(e)).rejects.toThrow(/machine-control rights/);
+    expect(h.sent.some((x) => x.stepId === "c1")).toBe(false);
+  });
+
+  it("★ the STOP case too: a full events journal does not lose 'STOP compensation sent' (the segment end carries it)", async () => {
+    const e = await denBuoc(def("n1-js", [gate(), move("r1", { compensation: robotStop("bs") })]));
+    h.timeoutDispatch.add("r1");
+    e.eventsRefused = true;
+    await edgeSegment(e, 2);
+    await waitFor(() => h.alerts.length > 0, "the URGENT");
+    expect(h.alerts[0]!.kind).toMatch(/^foe_outcome_unknown_stop_compensation_/);
+  });
+
+  it("★ C-2 (d) the node died after the step's failed row, before the compensation row: no marker, a plain interrupted hold ⇒ the Continue still needs person + reason; the walker writes it only then", async () => {
+    const e = await denBuoc(def("n1-d", [gate(), move("r1", { compensation: ot("c1") })]));
+    runRow(e.runId).status = "running";
+    await recordEdgeStepRows(fake as never, e.runId, [{ stepId: "r1", stepType: "command", status: "failed", attempt: 1, startedAt: null, finishedAt: new Date(), error: "EDGE_OUTCOME_UNKNOWN: command r1", result: undefined }]);
+    runRow(e.runId).status = "held";
+    runRow(e.runId).contextJson = { interrupted: true };
+    await expect(approveEdgeGate(e)).rejects.toThrow(/machine-control rights/);
+    grantMachineControl();
+    await expect(approveEdgeGate(e)).rejects.toThrow(/reason is required/);
+    expect(runRow(e.runId).status).toBe("held");
+    expect((await continueOutcomeUnknown(e, "checked: r1 did not move")).status).toBe("queued");
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRoDuyet).toMatchObject({ stepIds: ["r1"], by: OTHER.id });
+    await edgeSegment(e, 2);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["c1"]);
+  });
+
+  it("★ C-2 the walker keys on the same fact: a resume state that names a held compensation WITHOUT a Continue's approval is never written — it is split again", async () => {
+    const e = await denBuoc(def("n1-w", [gate(), move("r1", { compensation: ot("c1") })]));
+    runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), foeResumeState: { r1: { state: "compensationHeld", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } } };
+    const s = await edgeSegment(e, 2);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(h.sent.some((x) => x.stepId === "c1")).toBe(false);
+  });
+
+  it("★ I-4 edge: Continue writes the held compensation and nothing forward: a failed sibling with no compensation is doneFailed, not re-sent", async () => {
+    h.failPlan.set("r2", 1);
+    const e = await denBuoc(def("n1-f", [gate(), par("p", [move("r1", { compensation: ot("c1") }), move("r2")])]));
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    const n0 = h.sent.length;
+    await continueOutcomeUnknown(e, "checked");
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r2: { state: "doneFailed" }, r1: { state: "compensationHeld", khongRo: true } });
+    await edgeSegment(e, 3);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["c1"]);
   });
 });

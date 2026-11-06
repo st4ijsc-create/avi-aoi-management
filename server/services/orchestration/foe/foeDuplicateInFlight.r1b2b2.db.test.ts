@@ -61,6 +61,13 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
   };
 });
 
+// R1b-2b-2a A2(n) (m-11) — an unknown outcome now raises the URGENT: RECORDED here (never an inbox insert for every active admin of `_test`, which
+// would outlast the transaction and trip the getDb trap)
+vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
+  return { ...orig, raiseCriticalStopAlert: async () => undefined };
+});
+
 import * as conn from "../../../db/connection";
 import { aiPendingActions, commandLog, orchestrationRunSteps, orchestrationRuns } from "../../../../drizzle/schema";
 import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";

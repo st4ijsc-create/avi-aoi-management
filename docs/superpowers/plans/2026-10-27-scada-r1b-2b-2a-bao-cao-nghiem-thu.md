@@ -164,6 +164,11 @@ _(Task 11)_
 
 ### VẬN HÀNH
 
+- (A2(n), dieu-phoi I-6 — **thứ tự triển khai**) **Luôn triển khai trung tâm TRƯỚC các edge; không bao giờ lùi trung tâm về trước A2(n) khi còn edge mới
+  đang chạy.** Edge mới báo kết thúc đoạn `held` với lý do `outcomeUnknown`; trung tâm cũ từ chối (400) và lời báo bị bỏ, run nằm `running` đến khi lượt
+  nhận hết hạn rồi thành `held` thường: không URGENT, không dấu, và một Tiếp tục thường sẽ gửi bù trừ mà không cần lý do. Không có lệnh nào tự ghi xuống
+  thiết bị (an toàn về chiều tự động), nhưng mất cảnh báo và mất điều kiện n3. Giữ nguyên `EDGE_PROTOCOL_VERSION`: tăng số sẽ từ chối mọi node v2 cho tới
+  khi quản trị viên chuyển.
 - (A2(m2), dieu-phoi C-3 — **rủi ro còn lại được chấp nhận**) **Trong vòng 5 phút sau khi khởi động lại, một bù trừ STOP đang bay có thể được gửi
   lại, kể cả khi máy đã được khởi động tại chỗ.** Khi máy chủ sập lúc một run đang gửi bù trừ STOP ghim, lúc khởi động hệ thống gửi lại STOP đó
   ĐÚNG MỘT LẦN nếu: còn trong cửa sổ D = 5 phút tính từ thời điểm ý định STOP (đồng hồ CSDL), thiết bị không thuộc edge, không đổi chủ, và

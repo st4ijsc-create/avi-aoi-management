@@ -277,6 +277,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await choCanhBao("stopSent", runId, 1);
       const a = canhBao("stopSent", runId)[0]!;
       expect(a.title).toBe(`Run ${runId}: command "main" outcome unknown — machine state unknown — STOP compensation sent ("undo")`);
+      expect(String(a.message)).not.toContain("simulated");
       expect(String(a.dedupKey)).toMatch(new RegExp(`^foe_outcome_unknown_stop_compensation_sent:${runId}:main:undo:`));
       expect(a.recipients).toContain(OWNER);
       expect(canhBao("held", runId)).toHaveLength(0);
@@ -342,6 +343,89 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       expect((await runCua(tx, b.runId)).status).toBe("failed");
       expect((await buoc(tx, b.runId, "boxStop"))?.status).toBe("compensated");
       await choCanhBao("stopSent", b.runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-1 a held child never blocks the container's pinned STOP: 1 STOP PDU now, 0 reset, run held; Continue ⇒ the reset once, the STOP NOT re-sent", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [hop("box", [buocChinh(m2, buTruReset(m1, "undo"))], buTruStop(m1, "boxStop"))]);
+      expect(soPduGhi() - pdu0).toBe(1); // ★ the STOP, no person
+      expect((await runCua(tx, runId)).status).toBe("held");
+      expect((await buoc(tx, runId, "boxStop"))?.status).toBe("compensated");
+      expect((await buoc(tx, runId, "undo"))?.status).toBe("held");
+      await choCanhBao("stopSent", runId, 1);
+      await choCanhBao("held", runId, 1);
+      const r = await resumeRun(runId, { approved: true, note: "checked: the reset is safe" }, ADMIN, {}, { scope: null });
+      expect(r.status).toBe("failed");
+      expect(soPduGhi() - pdu0).toBe(2); // the reset; the STOP is not re-sent
+      expect((await soCuaKhoa(tx, `run${runId}-boxStop-`)).filter((x) => x.status === "acked")).toHaveLength(1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-2 (a) a gate in a sibling branch: the run is HELD, not awaiting_confirm; no resume without person + reason; 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [{ id: "p", type: "parallel", failFast: true, steps: [buocChinh(m2, buTruReset(m1)), { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep]);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      await expect(resumeRun(runId, { approved: true }, ADMIN, {}, { scope: null })).rejects.toThrow(/reason is required/);
+      await expect(resumeRun(runId, { approved: true, note: "x" }, OPERATOR, {}, { scope: null })).rejects.toThrow(/machine-control rights/);
+      expect(soPduGhi() - pdu0).toBe(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ I-4 Continue on a hold in a non-failFast parallel writes EXACTLY the held compensation: the run fails, nothing forward", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [{ id: "p", type: "parallel", steps: [buocChinh(m2, buTruReset(m1))] } as WorkflowStep, { id: "next", type: "command", machineId: m1, command: "reset", args: { tagKey: "u", value: 9 } } as WorkflowStep]);
+      const pdu0 = soPduGhi();
+      const r = await resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null });
+      expect(r.status).toBe("failed");
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(await buoc(tx, runId, "next")).toBeUndefined();
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ I-3 OT control OFF: a pinned STOP compensation is only SIMULATED ⇒ the URGENT says so, never 'sent'; 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.OT_CONTROL_ENABLED = "false";
+      const pdu0 = soPduGhi();
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buocChinh(d.m2, buTruStop(d.m1))]);
+      await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId)); // no dispatcher involved in the unknown
+      await khoiDong(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      await choCanhBao("stopSimulated", runId, 1);
+      expect(canhBao("stopSent", runId)).toHaveLength(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ R-4 an unknown outcome with no compensation due anywhere ⇒ URGENT, run failed, 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await giuSauKhongRo(tx, ({ m2 }) => [buocChinh(m2)]);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("failed");
+      await choCanhBao("noCompensation", runId, 1);
+      expect(String(canhBao("noCompensation", runId)[0]!.dedupKey)).toMatch(new RegExp(`^foe_outcome_unknown_no_compensation:${runId}:main:-:`));
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ m-9 a second interruption of the SAME (step, compensation) — the context lost before it persisted, a later re-walk — ⇒ a second URGENT: only the event differs", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [buocChinh(m2, buTruReset(m1))]);
+      await choCanhBao("held", runId, 1);
+      await tx.update(orchestrationRuns).set({ contextJson: {} }).where(eq(orchestrationRuns.id, runId));
+      await resumeRun(runId, { approved: true, note: "re-walk" }, { id: 0, role: "system", name: "a2n" } as never, {}, { scope: null });
+      await choCanhBao("held", runId, 2);
+      const keys = canhBao("held", runId).map((a) => String(a.dedupKey));
+      expect(keys[0]!.split(":").slice(0, 4)).toEqual(keys[1]!.split(":").slice(0, 4));
+      expect(keys[0]).not.toBe(keys[1]);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
