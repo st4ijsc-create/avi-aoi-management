@@ -204,6 +204,7 @@ import {
   CANH_BAO_KHONG_RO_KIND,
   KET_CUC_KHONG_RO_AUDIT_ACTION,
   KET_CUC_KHONG_RO_CTX_KEY,
+  KHONG_RO_DUYET_CTX_KEY,
   KHONG_RO_EDGE_ANOMALY,
   MA_KET_CUC_KHONG_RO,
   chiTietAnomalyKhongRo,
@@ -951,9 +952,10 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
   });
 
   it("I-A (a) a precondition 'skip' on the container is NOT re-read by a Continue: the held compensation is sent, the next forward step is not, the run is not 'completed'", async () => {
-    const r = await giuKhongRo([seq("box", [main(resetComp("undo"))]), pause("next")].map((s, i) => (i === 0 ? ({ ...s, ...dk({ onPreconditionFail: "skip" }), precondition: { source: "param", key: "unset", op: "eq", value: undefined } } as WorkflowStep) : s)));
+    const r = await chay([{ ...seq("box", [main(resetComp("undo"))]), ...dk({ onPreconditionFail: "skip" }) } as WorkflowStep, pause("next")], (id) => seedParam(id, true));
+    expect(r.res.status).toBe("held"); // the precondition held at the first walk
     otDispatchMock.mockClear();
-    seedParam(r.runId, false);
+    seedParam(r.runId, false); // the person changed the machine: a re-read would skip the box and go forward
     const c = await tiep(r.runId);
     expect(sent()).toEqual(["reset"]);
     expect(c.status).toBe("failed");
@@ -976,6 +978,41 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
     otDispatchMock.mockClear();
     await tiep(runId);
     expect(sent()).toEqual(["reset"]); // undo only
+    // … and when the container IS walked (a failed STOP inside it is re-sent, I-B) and fails again as a known failure: its compensation stays settled
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? REJECTED : ACKED));
+    otDispatchMock.mockClear();
+    const b = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep], resetComp("kUndo", 1))])]);
+    expect(sent("reset")).toHaveLength(1);
+    otDispatchMock.mockClear();
+    await tiep(b.runId);
+    expect(sent("reset")).toHaveLength(1); // undo; kUndo not a second time
+    expect(sent("stop").length).toBeGreaterThan(0); // the STOP re-sent, with its default of attempts
+  });
+
+  it("I-A a Continue that finds nothing to walk (an unreadable marker, no state) never reads 'completed': the run fails, nothing is sent", async () => {
+    const { runId } = await giuKhongRo();
+    runRow(runId).contextJson = { [KET_CUC_KHONG_RO_CTX_KEY]: { bad: 1 } };
+    rows("orchestration_run_steps").filter((x) => x.runId === runId && (x.stepId === "main" || x.stepId === "undo")).forEach((x) => (x.status = "skipped"));
+    otDispatchMock.mockClear();
+    const c = await tiep(runId);
+    expect(c.status).toBe("failed");
+    expect(sent()).toEqual([]);
+  });
+
+  it("I-A the approval is spent with its walk: not in the row after a Continue, and a stale one never makes a later gate walk compensation-only", async () => {
+    const a = await giuKhongRo([seq("box", [main(resetComp("undo"))], resetComp("boxUndo"))]);
+    await tiep(a.runId);
+    expect(runRow(a.runId).status).toBe("held");
+    expect(runRow(a.runId).contextJson[KHONG_RO_DUYET_CTX_KEY]).toBeUndefined();
+    otDispatchMock.mockImplementation(async () => ACKED);
+    const b = await chay([gate("g2"), pause("after")]);
+    runRow(b.runId).contextJson = { ...(runRow(b.runId).contextJson ?? {}), [KHONG_RO_DUYET_CTX_KEY]: { stepIds: ["nothing"] } };
+    otDispatchMock.mockClear();
+    const view = (await getRun(b.runId, { bindingDigest: true }))!;
+    await resumeRun(b.runId, { approved: true, expectedStepId: "g2", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest ?? undefined }, APPROVER, {}, { scope: null });
+    expect(sent()).toEqual(["pause"]);
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeExecutionAgent.ts"), "utf8");
+    expect(src).toContain('o.outcome === "aborted" || o.outcome === "paused") && o.error'); // C-A — the paused end carries its reports to central
   });
 
   it("I-A a thrown running row of a re-walked container stays on the unknown path", async () => {
