@@ -70,9 +70,9 @@
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
 | Q0‑1 | Gỡ router chết `inspectionVariant`, `mpVariantSubform`, `thresholdSuggestion`, `measurementSamples`, `spcConfig`; trang chết `SPCAdvanced`, `AnnotationStatistics`, `AnalyticsSettings`, mồ côi `ImageAnnotation`, `ImageComparison`, `BatchImageExport`, `ProductMachineMappingContent`, annotation helpers, `HistoryBatchOperations` (≈ 5 700 LOC) | 60‑N9 census |
-| Q0‑2 | Sửa 6 công thức lệch về `shared/kpiYield.ts`: `productionDashboardRouter:250,440,488`, `stationAnalysisRouter:832`, `dataComparisonService:267`, `federationRouter:266`, `aiSmartAlertRouter.detectYieldDrop`; nhãn "FPY" client đúng định nghĩa; ngưỡng yield ingest `< 90` cứng → đọc cấu hình | 60‑N3 so khớp 3 bề mặt |
+| Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
-| Q0‑4 | `qualityGateEvaluator` bỏ UPDATE `machines`; `acquisitionWorker` qua WAL (lỗ đã biết) | test |
+| Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
 | Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song

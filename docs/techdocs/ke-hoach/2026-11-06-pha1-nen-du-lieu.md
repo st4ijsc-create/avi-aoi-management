@@ -85,7 +85,7 @@ AL4 (engine trên LiveStore) cần 30‑T3 — cuối pha 1 nếu kịp, không 
 | Bước | Việc chính | Nghiệm thu |
 |---|---|---|
 | Q1 | `shared/quality/{kpi,spc}.ts`; CAGG `inspection_1h/_1d`, `item_point_1h`; `quality.kpi.*` | N3: 3 bề mặt bằng nhau tới 0,01 % trên cùng tập |
-| Q2 | hợp đồng `InspectionV3` + adapter v1.x/ZIP/hot‑folder/vision; `ingestInspection` một đường; tenant từ khoá máy; **ghi bóng 1 chu kỳ**, so khớp header/item | N1, N2, N5 |
+| Q2 | hợp đồng `InspectionV3` + adapter v1.x/ZIP/hot‑folder/vision; `ingestInspection` một đường; tenant từ khoá máy; **ghi bóng 1 chu kỳ**, so khớp header/item; **`acquisitionWorker` qua WAL (nhận từ pha 0 Q0‑4b): bản ghi WAL phải mang danh tính máy** để phát lại xác thực được | N1, N2, N5 |
 | Q3 | bảng `inspection`/`inspection_capture`/`inspection_item` + view tương thích; seed 13 236 **giữ** với `origin='qa'` (QĐ 04/11 — WORM); di trú `process_results`, 33 product, 114 điểm đo, 101 mã lỗi, 180 threshold | đếm khớp; 0 hàng thiếu FK |
 
 ### Lô 1G — sau A2(o) trọn (không ước lượng trong pha 1)
