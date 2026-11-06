@@ -246,7 +246,7 @@ describe.skipIf(!DB_URL)("A2(h) AMENDMENT 2 — hàng uỷ quyền ĐÃ TIÊU �
     for (const k of ENV_KEYS.slice(2)) delete process.env[k];
   });
 
-  it("★ (a) + rào: hàng FOE ĐÃ TIÊU gắn ĐÚNG lệnh, KHÔNG hàng sổ nào của khoá (sau giữ chỗ, trước ý định) ⇒ qua cổng (1), bước (2) không chặn ⇒ giữ chỗ TỪ CHỐI (chỉ nhận confirmed), 0 gói — hôm nay: lớp FOE \"chưa bay\" (lỗ có sẵn, A2(k))", async () => {
+  it("★ (a) + rào: hàng FOE ĐÃ TIÊU gắn ĐÚNG lệnh, KHÔNG hàng sổ nào của khoá (sau giữ chỗ, trước ý định) ⇒ qua cổng (1), bước (2) không chặn ⇒ giữ chỗ TỪ CHỐI (chỉ nhận confirmed), 0 gói — A2(k): FOE_ROW_SPENT_FOR_KEY, lớp FOE \"có thể đã bay\"", async () => {
     await trongGiaoDich(async (tx) => {
       const d = driverGia();
       const ad = await taoAdapter(tx, d);
@@ -260,14 +260,14 @@ describe.skipIf(!DB_URL)("A2(h) AMENDMENT 2 — hàng uỷ quyền ĐÃ TIÊU �
       expect(d.soGoi).toBe(0); // ★ rào: không bao giờ tới lệnh ghi thiết bị
       const hang = await tx.select().from(commandLog).where(and(eq(commandLog.adapterId, ad)));
       expect(r).toMatchObject({ ok: false, status: "rejected" });
-      expect(r.detail?.reason).toBe("NOT_CONFIRMED");
-      expect(hang.map((h) => String(h.errorText))).toEqual([expect.stringMatching(/^NOT_CONFIRMED: HITL action status is 'executed'/)]);
+      // R1b-2b-2a A2(k) — hàng FOE đúc cho CHÍNH khoá này (id = orchestrationActionId(key)), đã tiêu, khoá không hàng: ở trung tâm trạng thái này không thể
+      // có do sập (giữ chỗ tiêu hàng + ghi ý định trong MỘT giao dịch) ⇒ đã tiêu ở nơi khác (edge /authorize ghi hàng 'executed' cùng id) ⇒ có thể đã tới
+      // thiết bị ⇒ FOE_ROW_SPENT_FOR_KEY (lật khẳng định "chưa bay" / NOT_CONFIRMED trước A2(k)). Các điều kiện k1..k5: hangFoeDaTieu.a2k(.db).test.ts.
+      expect(r.detail?.reason).toBe("FOE_ROW_SPENT_FOR_KEY");
+      expect(hang.map((h) => String(h.errorText))).toEqual([expect.stringMatching(/^FOE_ROW_SPENT_FOR_KEY: orchestration action .* was minted for this very idempotency key and is already spent/)]);
       // hàng ghi bởi GIỮ CHỖ (không phải cổng (1)): mang khoá ghi (lienKetTuChoiTruocBuoc2 cho NULL)
       expect(hang[0]!.idempotencyKey).toBe(perWriteKey(key, "t", 0));
-      // ⚠ PRE-EXISTING HOLE on main, edge path (edgeAuthorizeCentral.ts:650-663 writes the row executed), see A2(k). Ghim ĐÚNG hành vi hôm nay
-      // (giống hệt main 0ee74e828): giữ chỗ từ chối NOT_CONFIRMED — lớp FOE "chưa bay" (thử lại dưới khoá mới). Ở trung tâm, trạng thái này không thể có do
-      // sập (giữ chỗ tiêu hàng + ghi ý định trong MỘT giao dịch) nên "chưa bay" là thật; hàng do edge uỷ quyền thì không. A2(k) lật khẳng định này.
-      expect(lopFoe(r)).toBe("chua_bay");
+      expect(lopFoe(r)).toBe("co_the_da_bay");
     });
   });
 

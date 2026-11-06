@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "Invalid value for {{field}}.",
     "INVALID_VALUE_WITH_REASON": "Invalid value for {{field}}. {{reason}}",
     "FEATURE_DISABLED": "The {{feature}} feature is not enabled on this system.",
+    "MODULE_PAUSED": "The {{module}} module is paused and will be developed later — the command was not sent.",
     "OPERATION_FAILED": "Could not complete: {{operation}}.",
     "OPERATION_FAILED_WITH_REASON": "Could not complete: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
@@ -16374,8 +16375,8 @@
     "trendDesc": "kWh and CO₂ by period"
   },
   "cockpit": {
-    "actionsGate": "Read-only cockpit. \"Propose\" opens the gated Control Plane — it never dispatches a command directly.",
-    "actionsHint": "Commands you MAY propose. Execution stays behind the existing gated (HITL / dry-run) control surface — nothing runs from here.",
+    "actionsGate": "Read-only cockpit. It never dispatches a command; commands go through the gated machine control surface.",
+    "actionsHint": "Commands this machine's capability profile supports — for reference only. Nothing runs from here.",
     "active": "Active",
     "adapterKind": "Adapter kind",
     "alarmsHint": "Per-machine ISA-18.2 normalized feed",
@@ -24676,9 +24677,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "Communication {{ketNoi}}/{{tong}}",
-        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
+        "nhan": "Communication {{ketNoi}} connected · {{khac}} off",
+        "dangNoi": "{{dangNoi}} reconnecting",
+        "mat": "{{mat}} lost",
+        "edge": "edge {{edge}}",
+        "moTaCu": "Read failed — figures from the previous read (updated at {{luc}}).",
+        "moTa": "Of {{tong}} adapters enabled in configuration (edge not counted): {{ketNoi}} connected · {{dangNoi}} reconnecting · {{mat}} lost · {{khac}} off or unknown — click to open communication diagnostics"
       }
     },
     "orchestration": {
@@ -24879,5 +24883,12 @@
     "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
     "tuChoi": "Don't send",
     "dongY": "Agree, send"
+  },
+  "robotTamDung": {
+    "tieuDe": "The robot/AGV module will be developed later",
+    "moTa": "Robot/AGV control is paused: this page only reports status and sends no command. Other machines and lines are unaffected.",
+    "moTaNgan": "View only — human↔robot coordination is paused until the robot/AGV module is developed.",
+    "dangKiemTra": "Checking module status…",
+    "veTrangChu": "Back to home"
   }
 }

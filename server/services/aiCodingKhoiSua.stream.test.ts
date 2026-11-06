@@ -22,6 +22,7 @@
  * ⚠ KHÔNG chạm CSDL thật: `../db/connection` bị chặn.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { datHangQuyenGia } from "../testing/dbGiaQuyen";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -66,9 +67,10 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 /**
  * ⚠ MOCK **BỘ PHẬN**: `read_file`/`list_files` chạy THẬT (hộp cát + RBAC + byte thật trên đĩa) — đó
@@ -184,6 +186,7 @@ const ENV = [
 beforeEach(() => {
   for (const k of ENV) delete process.env[k];
   process.env.AI_CODING_REPO_CONTEXT = "0";
+  datHangQuyenGia();
   h.manh = [];
   h.moiHeThong = [];
   h.moiPrompt = [];
@@ -553,6 +556,16 @@ describe("§4 — (iv) TỆP LỚN HƠN TRẦN CŨ **NAY SỬA ĐƯỢC**, và t
     expect(String(ad[0]!.modified)).toBe(dia.replace("  return x * 123 + 123;", "  return x * 123 + 1230;"));
     expect(dienDiff(String(ad[0]!.original), String(ad[0]!.modified)), "DIFF SẠCH trên tệp 2.800 dòng").toEqual({ khoi: 1, them: 1, xoa: 1, oversize: false });
     expect(r.events.some((e) => e.type === "pending_action"), "HITL nguyên vẹn").toBe(true);
+  });
+
+  it("★★★ P0-2 — admin có hàng `ai_repo_read` canView=false ⇒ bị chặn trước model, không đề xuất ghi", async () => {
+    datHangQuyenGia({ canView: false, canEdit: true });
+    h.manh = [khoi("  return x * 123 + 123;", "  return x * 123 + 1230;")];
+    const r = await trongRepoTam(`sửa ${R_LON}: hàm ham123 phải cộng 1230 thay vì 123`);
+    expect(r.chu).toContain("ai_repo_read/canView");
+    expect(h.moiPrompt.length, "chưa qua quyền đọc mà model đã thấy tệp").toBe(0);
+    expect(ghiNhan("apply_diff")).toEqual([]);
+    expect(r.events.some((e) => e.type === "pending_action")).toBe(false);
   });
 
   it("★★★ MỘT lượt gọi model, và trần RA là HẰNG — không phình theo tệp 40k", async () => {

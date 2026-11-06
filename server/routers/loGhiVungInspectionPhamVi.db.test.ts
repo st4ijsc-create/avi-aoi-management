@@ -15,12 +15,12 @@ const LOAI = INSPECTION_TYPES[0];
 
 const RUN = `l6w${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
-type C = { fv: any; iv: any; pdf: any };
+type C = { fv: any; pdf: any };
 let cA: C, cAdm: C, cRong: C;
 const caller = async (u: { id: number; role: string; name: string }): Promise<C> => {
   const ctx = { user: { ...u, twoFactorEnabled: true } } as never;
   const mk = async (p: string, k: string) => ((await import(p))[k] as any).createCaller(ctx);
-  return { fv: await mk("./feederVerifyRouter", "feederVerifyRouter"), iv: await mk("./inspectionVariantRouter", "inspectionVariantRouter"), pdf: await mk("./pdfReportRouter", "pdfReportRouter") };
+  return { fv: await mk("./feederVerifyRouter", "feederVerifyRouter"), pdf: await mk("./pdfReportRouter", "pdfReportRouter") };
 };
 async function loi(chay: () => Promise<unknown>): Promise<string | null> {
   try { await chay(); return null; } catch (e) {
@@ -56,19 +56,6 @@ describe("★★★ feederVerify.verifyScan — GHI theo máy / chuyền", () =>
     expect(await demXacMinh(H.B.mid)).toBe(truoc + 1);
     // người không gán nhà máy nào cũng không ghi được cho máy A
     expect(await loi(() => cRong.fv.verifyScan({ machineId: H.A.mid, slotCode: "S9", scannedComponentCode: "X" }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:machine");
-  });
-});
-
-describe("★★★ inspectionVariant — setVariant (GHI) + getVariant (ĐỌC)", () => {
-  it("lần kiểm tra của máy B ngoài phạm vi ≡ không tồn tại; lần kiểm tra của A qua cổng phạm vi", async () => {
-    const khong = await loi(() => cA.iv.setVariant({ inspectionId: 2147483000, inspectionType: LOAI, payload: {} }));
-    expect(khong).toBe("NOT_FOUND:ENTITY_NOT_FOUND:inspection");
-    expect(await loi(() => cA.iv.setVariant({ inspectionId: H.B.insp, inspectionType: LOAI, payload: {} }))).toBe(khong);
-    expect(await loi(() => cA.iv.setVariant({ inspectionId: H.A.insp, inspectionType: LOAI, payload: {} }))).not.toBe(khong);
-    expect(await loi(() => cAdm.iv.setVariant({ inspectionId: H.B.insp, inspectionType: LOAI, payload: {} }))).not.toBe(khong);
-    expect(await loi(() => cA.iv.getVariant({ inspectionId: H.B.insp }))).toBe(khong);
-    expect(await loi(() => cA.iv.getVariant({ inspectionId: H.A.insp }))).toBeNull();
-    expect(await loi(() => cAdm.iv.getVariant({ inspectionId: H.B.insp }))).toBeNull();
   });
 });
 

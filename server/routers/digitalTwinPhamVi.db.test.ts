@@ -205,47 +205,7 @@ describe.skipIf(!DB_URL)("Q1 — `digitalTwinRouter` lọc theo phạm vi tenant
     expect(g2).toHaveLength(0);
   });
 
-  describe("twinState", () => {
-    it("★★★ CHIỀU (+) — người gán A đọc được máy của A", async () => {
-      const rows = await goi(fx!.userTrongId).twinState({ limit: 500 });
-      expect(rows.map((r: any) => r.id)).toContain(fx!.mayTrongId);
-    });
-
-    it("★★★ CHIỀU (−) — CHÍNH người ấy KHÔNG đọc được máy của B", async () => {
-      const rows = await goi(fx!.userTrongId).twinState({ limit: 500 });
-      expect(rows.map((r: any) => r.id)).not.toContain(fx!.mayNgoaiId);
-    });
-
-    it("★★★ `stationId` TỰ KHAI của trạm NGOÀI phạm vi ⇒ RỖNG, không phải dữ liệu trạm ấy", async () => {
-      // Đây là cửa mà một số nguyên đoán được mở ra trước bản vá.
-      const rows = await goi(fx!.userTrongId).twinState({ stationId: fx!.tramNgoaiId, limit: 500 });
-      expect(rows).toEqual([]);
-    });
-
-    it("người 0 gán đọc được **0** máy — kể cả máy của chính trạm mình khai", async () => {
-      const rows = await goi(fx!.userKhongGanId).twinState({ limit: 500 });
-      expect(rows).toEqual([]);
-      const rows2 = await goi(fx!.userKhongGanId).twinState({ stationId: fx!.tramTrongId, limit: 500 });
-      expect(rows2).toEqual([]);
-    });
-
-    it("admin KHÔNG bị thu hẹp — chiều DƯƠNG của `PhamViNguoiXem` (toàn quyền ⇒ không lọc)", async () => {
-      // ⚠ Ô này KHÔNG chứng minh an toàn (admin bypass mọi cổng). Nó chặn bản vá
-      //   quá tay làm hỏng vai toàn quyền — lỗi đã có tên ở `_phamViNguoiXem.ts`.
-      //
-      // ⚠⚠ Hỏi theo TỪNG TRẠM, không lấy một trang 1000 hàng rồi tìm trong đó:
-      //   bản đầu của ô này ĐỎ vì `limit` cắt đúng 1000 hàng và máy fixture rơi
-      //   ra ngoài trang — một phép đo hỏng, không phải một bản vá hỏng. Lọc theo
-      //   `stationId` cho tập nhỏ và xác định, không phụ thuộc số hàng có sẵn.
-      const adm = goi(fx!.userTrongId, "admin");
-      const trong = await adm.twinState({ stationId: fx!.tramTrongId, limit: 500 });
-      const ngoai = await adm.twinState({ stationId: fx!.tramNgoaiId, limit: 500 });
-      expect(trong.map((r: any) => r.id)).toContain(fx!.mayTrongId);
-      // ★ Điểm mấu chốt: trạm NGOÀI phạm vi của `userTrongId` — admin vẫn đọc được.
-      expect(ngoai.map((r: any) => r.id)).toContain(fx!.mayNgoaiId);
-    });
-  });
-
+  
   describe("wipFlowState", () => {
     it("★★★ CHIỀU (+) — người gán A đếm được WIP của chuyền thuộc A", async () => {
       const r = await goi(fx!.userTrongId).wipFlowState({ lineId: fx!.lineTrongId });
@@ -274,32 +234,7 @@ describe.skipIf(!DB_URL)("Q1 — `digitalTwinRouter` lọc theo phạm vi tenant
     });
   });
 
-  describe("stationLoadHeatmap / predictionOverlay — `lineId` bắt buộc, TỰ KHAI", () => {
-    it("★★★ CHIỀU (−) — chuyền thuộc B ⇒ hình dạng rỗng hợp lệ, KHÔNG ném lỗi", async () => {
-      // Ngoài phạm vi phải như KHÔNG TỒN TẠI: một lỗi riêng vẫn xác nhận chuyền có thật.
-      const sl = await goi(fx!.userTrongId).stationLoadHeatmap({ lineId: fx!.lineNgoaiId, hours: 720 });
-      expect(sl.cells).toEqual([]);
-      expect(sl.bottleneckStationId).toBeNull();
-    });
-
-    it("★★★ `predictionOverlay` phân biệt 'ngoài phạm vi' với 'thiếu dữ liệu' (G47)", async () => {
-      // Gộp hai lý do vào một chuỗi là nói dối một trong hai. Chuyền TRONG phạm vi
-      // của fixture này có WIP nhưng <3 bucket ⇒ `insufficient_data`; chuyền ngoài
-      // phạm vi ⇒ `out_of_scope`. Hai câu khác nhau, hai chuỗi khác nhau.
-      const ngoai = await goi(fx!.userTrongId).predictionOverlay({ lineId: fx!.lineNgoaiId });
-      expect(ngoai.available).toBe(false);
-      expect((ngoai as any).reason).toBe("out_of_scope");
-
-      const trong = await goi(fx!.userTrongId).predictionOverlay({ lineId: fx!.lineTrongId });
-      expect((trong as any).reason).not.toBe("out_of_scope");
-    });
-
-    it("người 0 gán ⇒ `out_of_scope` kể cả cho chuyền có thật", async () => {
-      const r = await goi(fx!.userKhongGanId).predictionOverlay({ lineId: fx!.lineTrongId });
-      expect((r as any).reason).toBe("out_of_scope");
-    });
-  });
-
+  
   describe("whatIf — MIỄN TRỪ có lý do đo được", () => {
     it("thuần tính toán: KHÔNG chạm CSDL ⇒ người 0 gán vẫn mô phỏng được input của chính mình", async () => {
       // ⚠ Ô này ghim MIỄN TRỪ để nó là một quyết định nhìn thấy được, không phải

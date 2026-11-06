@@ -357,7 +357,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     await vi.waitFor(() => expect(audit.calls.some((c) => c.details?.metadata?.stage === "approve")).toBe(true));
   });
 
-  it("★ reads: out-of-scope rows are exactly 'not found' (getRun, getWorkflow, getVersion, simulate, duplicate, delete) or absent (listRuns, listWorkflows, listVersions)", async () => {
+  it("★ reads: out-of-scope rows are exactly 'not found' (getRun, simulate, duplicate, delete) or absent (listRuns, listWorkflows, listVersions)", async () => {
     const { deployWorkflow, startRun } = await engine();
     const rB = ref("read-b");
     const rA = ref("read-a");
@@ -385,8 +385,6 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     };
     const N = 2_000_000_000;
     await same(() => ua.getRun({ runId: runB }), () => ua.getRun({ runId: N }), String(runB), String(N));
-    await same(() => ua.getWorkflow({ id: wfB.id }), () => ua.getWorkflow({ id: N }), String(wfB.id), String(N));
-    await same(() => ua.getVersion({ id: Number(verB.id) }), () => ua.getVersion({ id: N }), String(verB.id), String(N));
     await same(() => ua.simulate({ workflowRef: rB, params: {} } as any), () => ua.simulate({ workflowRef: `${RUN}-zz`, params: {} } as any), rB, `${RUN}-zz`);
     await same(() => ua.duplicateWorkflow({ id: wfB.id, newRef: `${RUN}-dup` }), () => ua.duplicateWorkflow({ id: N, newRef: `${RUN}-dup` }), "", "");
     await same(() => ua.deleteWorkflow({ id: wfB.id }), () => ua.deleteWorkflow({ id: N }), "", "");
@@ -809,25 +807,6 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 5 task E2 — orchestration factory scop
     expect((await hub()).orchestration.degraded).toBe(false);
   });
 
-  it("★ R-5-d gov: runEvents / replayRun of another factory's run ⇒ the SAME answer as a missing run; the owner reads them", async () => {
-    const saved = process.env.FOE_DURABLE;
-    process.env.FOE_DURABLE = "true";
-    try {
-      const { deployWorkflow, startRun } = await engine();
-      const rB = ref("gov-b");
-      expect((await deployWorkflow(defOf(rB, [otStart("b", B)]), ADMIN)).ok).toBe(true);
-      const runB = (await startRun(rB, {}, userOf("ub"))).runId!;
-      const gov = async (key: string, role = "engineer") => (await import("./orchestrationGovRouter")).orchestrationGovRouter.createCaller(ctxOf(key, role));
-      const N = 2_000_000_000;
-      const ua = await gov("ua");
-      expect(await ua.runEvents({ runId: runB })).toEqual(await ua.runEvents({ runId: N }));
-      expect(JSON.stringify(await ua.replayRun({ runId: runB })).split(String(runB)).join("ID")).toBe(JSON.stringify(await ua.replayRun({ runId: N })).split(String(N)).join("ID"));
-      await vi.waitFor(async () => expect((await (await gov("ub")).runEvents({ runId: runB })).length).toBeGreaterThan(0));
-    } finally {
-      if (saved === undefined) delete process.env.FOE_DURABLE;
-      else process.env.FOE_DURABLE = saved;
-    }
-  });
 
   it("★ R-5-d oversight hub + 'mine': another factory's pending run is neither counted nor sampled for A; B's own user sees it", async () => {
     const { deployWorkflow, startRun, runIdVisibleTo } = await engine();

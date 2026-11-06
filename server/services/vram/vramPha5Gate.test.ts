@@ -247,6 +247,7 @@ const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM, ...FILE_PHA_TRONG_CON
  * ⚠ VÌ SAO CẦN: `DAU_KHAI_PHA` chỉ hỏi *"có chữ \`Pha N\` không"*. Khi cổng ra đời chữ ấy chỉ do công trình VRAM
  * dùng; về sau AOI ("Pha 1b"), Twin ("Pha 3"), hợp đồng ingest, i18n lỗi… cũng đánh số pha trong chú thích ⇒ 47 tệp
  * KHÔNG liên quan VRAM bị coi là "lưới VRAM tự khai mà nằm ngoài §Cổng kiểm chung" và cổng đỏ vĩnh viễn trên mã không hỏng.
+ * Chương trình TechDocs đặt tên giai đoạn "Pha 0" (2026-11) nên thêm 31 tệp; công trình VRAM không có Pha 0 (đo: 31 tệp chỉ khớp chữ "pha 0").
  * Thu hẹp lượng từ bằng NỘI DUNG (dấu "vram/broker…") đã được ĐO và BÁC: nó làm 18 lưới VỐN trong cổng (Pha 7–9: phiên/
  * xác thực, không nhắc VRAM) rơi khỏi bảo vệ, còn 6 tệp ngoài cổng vẫn bị bắt vì chú thích trích "bài học VRAM pha 4".
  * Không có dấu nội dung nào đúng cả hai chiều ⇒ khai TƯỜNG MINH theo công trình.
@@ -259,10 +260,24 @@ const FILE_CANH = [...new Set([...FILE_PHA5, ...FILE_VRAM, ...FILE_PHA_TRONG_CON
 const MIEN_TRU_CONG_TRINH_KHAC: ReadonlyArray<readonly [string, string]> = [
   ["server/contracts/", "AOI — hợp đồng dữ liệu máy / cap chuỗi (Khối C)"],
   ["client/src/components/twin3d/", "Twin 3D"],
+  ["client/src/components/robot/CongMoDunRobot.noiDay.unit.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["client/src/pages/MqttClientManagement.dongBang.unit.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/accessControl.p02.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/_core/dataErrorStringCensus.test.ts", "i18n lỗi (F1/F14)"],
   ["server/_core/deviceErrors.test.ts", "i18n lỗi (F1/F14)"],
   ["server/_core/entityDictionaryCoverage.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/_core/giaHanPhien.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/hanPhien.p011.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/hanStopHmi.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/moduleGate.boNho.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/originCheck.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/_core/rawErrorCensus.test.ts", "i18n lỗi (F1/F14)"],
+  ["server/_core/securityHeaders.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/_core/socketPhatCensus.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/api/v1/apiV1.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/api/v1/equipmentAssetsStatePhamViKhoa.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/api/v1/equipmentCommands.r1a.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/api/v1/equipmentCommandsChiTietKyThuat.c2polish.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/db/cayCauHinhBatBien.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/db/cayKetQuaSchema.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/db/connection.edgeTrap.dot10.test.ts", "Engineering doc 81 Đợt 10 (edge)"],
@@ -270,13 +285,16 @@ const MIEN_TRU_CONG_TRINH_KHAC: ReadonlyArray<readonly [string, string]> = [
   ["server/db/ingestV2KhuTrung.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/db/ingestV2XuyenSuot.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/db/ntfSourceNguoiXacNhan.db.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
+  ["server/db/timescaleChinhSach.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/routers/aoiPackageDeadCongDanHangNhat.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
   ["server/routers/aoiPackageHinhDangHopDongChoPhep.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
   ["server/routers/aoiPackageZipChotChanRetry.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
   ["server/routers/aoiPackageZipCuaNoiDoi.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
   ["server/routers/aoiPackageZipHinhDangMayThat.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
   ["server/routers/aoiZipMotDuongDanCensus.test.ts", "AOI — gói ảnh/ZIP (BG-87…)"],
+  ["server/routers/chiTietKyThuatBeMatCensus.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/routers/cuaIngestCensus.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/engineeringAssignment.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/routers/machineApiBatchIngest.test.ts", "AOI — ingest & hợp đồng máy"],
   ["server/routers/machineApiIngestCayV2.test.ts", "AOI — ingest & hợp đồng máy"],
   ["server/routers/machineApiThoiGianDaiThat.test.ts", "AOI — ingest & hợp đồng máy"],
@@ -284,12 +302,26 @@ const MIEN_TRU_CONG_TRINH_KHAC: ReadonlyArray<readonly [string, string]> = [
   ["server/routers/machineConfigSync.test.ts", "AOI — ingest & hợp đồng máy"],
   ["server/routers/machineContractRouter.test.ts", "AOI — ingest & hợp đồng máy"],
   ["server/routers/machineRecipeRouter.test.ts", "AOI — ingest & hợp đồng máy"],
+  ["server/routers/mqttClientSendCommand.tamDung.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/services/aiCopilotActions.apMotPhan.test.ts", "AI Copilot"],
+  ["server/services/al01.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/al01.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/fcmBulletin.al02.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/services/ingestCayKetQua.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/services/inspection/inspectionStoreForwardBaLoWal.test.ts", "AOI — cây kết quả 4 cấp / ingest v2 (Khối B)"],
   ["server/services/integrityScanBoKhongDo.test.ts", "Toàn vẹn dữ liệu chủ (W3-A)"],
+  ["server/services/ot/commandDispatcher.dot1b.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/pha0P06.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/services/predictiveMaintenanceService.timeframeGuard.test.ts", "Bảo trì dự báo"],
+  ["server/services/robot/robotAbortNeverOrder.dot1c.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/robot/robotStopAuth.p02.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/robot/robotStopExempt.dot1c.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/scada/r1bNghiemThu.db.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/uns/sparkplugCommand.khongGhi.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/uns/sparkplugCommand.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
+  ["server/services/unsPublisher.wiring.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
   ["server/utils/kpiCongThucCensus.test.ts", "KPI công thức"],
+  ["server/worker.smoke.test.ts", "Hệ sinh thái TechDocs — chương trình Pha 0, không phải lưới VRAM"],
 ];
 /** Một tệp có được miễn trừ khỏi lượng từ "tự khai pha phải nằm trong cổng" không. */
 const duocMienTru = (f: string, bang: ReadonlyArray<readonly [string, string]> = MIEN_TRU_CONG_TRINH_KHAC): boolean =>
@@ -684,7 +716,7 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     //   ("chạy từ Node khác: 413–467 ms, 0 lỗi") đo `run()`, KHÔNG đo `JSON.parse`. Lưới mới ghim
     //   đúng chuỗi đã đo, nên nó tất định và không đổi màu theo tiến trình đang chạy trên máy.
     //   Nó nằm dưới `server/services/vram/` ⇒ `CONG.length` KHÔNG đổi (vẫn 58).
-    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(131); // 2026-10-25 Đợt 9 tick tươi: +1 THEO TÊN — server/services/vram/vramTickTuoi.test.ts (broker đo thiết bị TƯƠI khi tick null; vram/ đã trong cổng ⇒ CONG.length KHÔNG đổi) · 2026-10-22 audit orphanHolders: +1 THEO TÊN — server/services/vram/adoption.congAI.test.ts (lưới MỚI khoá cổng AI :8091 khỏi đường nhận nuôi/SIGTERM; nằm dưới server/services/vram/ — đã là một đường của cổng ⇒ CONG.length KHÔNG đổi) · 2026-10-21 lưới đỏ: +3 THEO TÊN — client/src/lib/rawErrorMessageCensus.unit.test.ts (2026-08-21, trích 'Pha 4'; thư mục client/src/lib/ đã là một đường của cổng) · server/services/aiLocalTools/lenhSong.test.ts (2026-08-31, nhắc 'Pha 8'; aiLocalTools/ đã trong cổng) · server/services/vram/vramTranThietBi.test.ts (2026-09-21; vram/ đã trong cổng) ⇒ CONG.length KHÔNG đổi (58) · Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5 · Pha 10b: +1
+    expect(FILE_CANH.length, `danh sách lưới bị canh đã đổi:\n${FILE_CANH.join("\n")}`).toBe(132); // 2026-11-06 Pha 0 P0-8/9: +1 THEO NỘI DUNG — client/src/lib/aiCodingWorkspaceUx.unit.test.ts vốn trong cổng, nay có chữ "pha 0". // 2026-10-25 Đợt 9 tick tươi: +1 THEO TÊN — server/services/vram/vramTickTuoi.test.ts (broker đo thiết bị TƯƠI khi tick null; vram/ đã trong cổng ⇒ CONG.length KHÔNG đổi) · 2026-10-22 audit orphanHolders: +1 THEO TÊN — server/services/vram/adoption.congAI.test.ts (lưới MỚI khoá cổng AI :8091 khỏi đường nhận nuôi/SIGTERM; nằm dưới server/services/vram/ — đã là một đường của cổng ⇒ CONG.length KHÔNG đổi) · 2026-10-21 lưới đỏ: +3 THEO TÊN — client/src/lib/rawErrorMessageCensus.unit.test.ts (2026-08-21, trích 'Pha 4'; thư mục client/src/lib/ đã là một đường của cổng) · server/services/aiLocalTools/lenhSong.test.ts (2026-08-31, nhắc 'Pha 8'; aiLocalTools/ đã trong cổng) · server/services/vram/vramTranThietBi.test.ts (2026-09-21; vram/ đã trong cổng) ⇒ CONG.length KHÔNG đổi (58) · Pha 9 A5: +1 · Pha 9 B7a: +1 (quetKhongVoiToiSanXuat) · Pha 9 C-1: +1 · Pha 9 I-2: +2 · Pha 9 I-4: +1 · Pha 9 I-5: +1 (neoTenXacThuc) · Pha 10: +5 · Pha 10b: +1
   });
 
   it("★★★ Pha 6 Task 3 — bộ nhận diện THỨ BA bắt thêm thật, và KHÔNG BAO GIỜ đẩy file ra ngoài cổng", () => {
@@ -737,15 +769,15 @@ describe("★★★ I-1 + (E) — §Cổng kiểm chung phải PHỦ mọi lư�
     // (2) KHÔNG trùng cổng: tệp nằm trong cổng thì được canh rồi — miễn trừ nó là che một lưới có thể là VRAM.
     const trung = FILE_TU_KHAI_PHA.filter((f) => duocMienTru(f) && duocPhu(f, CONG));
     expect(trung.join("\n"), "tệp vừa nằm trong cổng vừa nằm trong bảng miễn trừ").toBe("");
-    // (3) số tệp thực sự được miễn trừ ghim = 47 (31 tệp khai riêng + 9 server/contracts + 7 twin3d).
+    // (3) số tệp thực sự được miễn trừ ghim = 78 (62 tệp khai riêng, gồm 31 của Pha 0 TechDocs, + 9 server/contracts + 7 twin3d).
     const duocMien = FILE_TU_KHAI_PHA.filter((f) => duocMienTru(f) && !duocPhu(f, CONG));
-    expect(duocMien.length, `danh sách miễn trừ đã đổi:\n${duocMien.join("\n")}`).toBe(47);
+    expect(duocMien.length, `danh sách miễn trừ đã đổi:\n${duocMien.join("\n")}`).toBe(78);
     // (4) ĐỘT BIẾN: tệp giả tự khai pha, ngoài cổng ∧ ngoài bảng ⇒ PHẢI bị bắt; tệp trong bảng ⇒ không; trong cổng ⇒ không.
     expect(tuKhaiNgoaiCaHai(["server/zzz/gia.test.ts"], CONG)).toEqual(["server/zzz/gia.test.ts"]);
     expect(tuKhaiNgoaiCaHai(["server/contracts/moi.test.ts", "client/src/components/twin3d/moi.unit.test.ts"], CONG)).toEqual([]);
     expect(tuKhaiNgoaiCaHai(["server/services/vram/moi.test.ts"], CONG)).toEqual([]);
     // bảng rỗng ⇒ phần bù LÀ chính tập ngoài cổng (chứng minh bảng có tác dụng thật, không phải trang trí).
-    expect(tuKhaiNgoaiCaHai(FILE_TU_KHAI_PHA, CONG, []).length).toBe(47);
+    expect(tuKhaiNgoaiCaHai(FILE_TU_KHAI_PHA, CONG, []).length).toBe(78);
   });
 
   it("★★ KHÔNG BẮT NHẦM — tập TỰ-KHAI phải RỘNG HƠN tập trong-cổng-cũ, và không nuốt file không khai gì", () => {

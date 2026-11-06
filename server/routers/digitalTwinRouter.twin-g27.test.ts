@@ -94,33 +94,4 @@ describe("wipFlowState", () => {
   });
 });
 
-describe("stationLoadHeatmap", () => {
-  it("returns load cells + bottleneck", async () => {
-    const res = await caller.stationLoadHeatmap({ lineId: 1, hours: 24 });
-    expect(res.cells).toHaveLength(2);
-    expect(res.bottleneckStationId).toBe(1);
-    const c1 = res.cells.find((c) => c.stationId === 1)!;
-    expect(c1.dominantState).toBe("starved");
-    expect(c1.color).toMatch(/^#[0-9a-f]{6}$/i);
-  });
-});
 
-describe("predictionOverlay", () => {
-  it("returns available overlay when >=3 points", async () => {
-    const res = await caller.predictionOverlay({ lineId: 1, horizonHours: 1 });
-    expect(res.available).toBe(true);
-    if (res.available) {
-      expect(res.cells.length).toBe(1);
-      expect(["low", "medium", "high"]).toContain(res.cells[0].congestionRisk);
-    }
-  });
-
-  it("forecast < 3 points → available:false (no throw)", async () => {
-    getWipCountSeriesMock.mockResolvedValueOnce([
-      { bucketStart: new Date().toISOString(), wipCount: 1 },
-    ] as any);
-    const res = await caller.predictionOverlay({ lineId: 1 });
-    expect(res.available).toBe(false);
-    expect(res.cells).toEqual([]);
-  });
-});

@@ -85,9 +85,6 @@ const NGUOI_GOI: Record<string, string> = {
     "MELSEC recipe_param_push: bảng tham số kỹ sư soạn (chuỗi), sau cổng DPC_DEPLOY_ENABLED + ký HITL; không thiết kế nào gửi giá trị lệch lưới.",
   "server/services/scada/lenhHmi.ts":
     "HMI write_tag (đã kiểm lưới thô cho MỌI tag ở request/confirm từ P1-3) + HMI STOP (giá trị ghim).",
-  "server/services/uns/sparkplugCommand.ts":
-    "Sparkplug DCMD: metric.value, requireBoundAction (giá trị phải băm khớp một hành động người đã xác nhận); DBIRTH khai tag int là Int64 ⇒ client gửi số nguyên kỹ thuật.",
-  "server/services/unsPublisher.ts": "nối Sparkplug DCMD: truyền `dispatch` vào sparkplugCommand (cùng nguồn giá trị ở trên).",
 };
 
 describe("T13 (A) — census người gọi dispatch(): ∀ tệp sản xuất lấy `dispatch` của commandDispatcher ∈ bảng (nguồn giá trị đã xếp loại)", () => {

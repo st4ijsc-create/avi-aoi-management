@@ -62,9 +62,10 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 /**
  * ⚠ MOCK **BỘ PHẬN**: `read_file`/`list_files` chạy THẬT (hộp cát + RBAC + byte thật trên đĩa) —

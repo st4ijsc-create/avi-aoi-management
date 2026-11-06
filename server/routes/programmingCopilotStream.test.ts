@@ -88,7 +88,10 @@ vi.mock("../services/auditTrailService", () => ({
     return { id: 1 };
   }),
 }));
-vi.mock("../db/connection", () => ({ getDb: async () => undefined }));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: async () => dbGiaChiCoBangQuyen() };
+});
 
 import { registerAiStreamingRoutes } from "./aiStreamingApi";
 

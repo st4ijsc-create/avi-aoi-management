@@ -27,7 +27,6 @@ import {
   Server,
   Activity,
   ScrollText,
-  FileText,
   Database,
   HardDrive,
   Upload,
@@ -49,7 +48,6 @@ import { useLocation, useSearch } from "wouter";
 // Import content components from existing pages
 import { RoleBuilderContent } from "@/pages/RoleBuilder";
 import { EnhancedAuditLogsContent } from "@/pages/EnhancedAuditLogs";
-import { ApiDocsContent } from "@/pages/ApiDocs";
 import { LicenseManagementContent } from "@/pages/LicenseManagement";
 import { AuditLogContent } from "@/pages/AuditLogs";
 import { SystemConfigContent } from "@/pages/SystemConfiguration";
@@ -168,7 +166,6 @@ export default function AdminSettings() {
       label: t("adminSettings.cat.systemTools"),
       icon: <Wrench className="h-4 w-4 text-red-500" />,
       items: [
-        { id: "api-docs", label: t("adminSettings.sidebar.apiDocs"), icon: <FileText className="h-4 w-4" /> },
         { id: "license", label: t("adminSettings.sidebar.license"), icon: <KeyRound className="h-4 w-4" /> },
         { id: "system-config", label: t("adminSettings.sidebar.systemConfig"), icon: <Settings className="h-4 w-4" /> },
         { id: "backup-restore", label: t("adminSettings.sidebar.backupRestore"), icon: <Archive className="h-4 w-4" /> },
@@ -374,9 +371,6 @@ export default function AdminSettings() {
                 </TabsContent>
 
                 {/* System Tools Tabs */}
-                <TabsContent value="api-docs" className="mt-0">
-                  <ErrorBoundary><ApiDocsContent /></ErrorBoundary>
-                </TabsContent>
                 <TabsContent value="license" className="mt-0">
                   <ErrorBoundary><LicenseManagementContent /></ErrorBoundary>
                 </TabsContent>

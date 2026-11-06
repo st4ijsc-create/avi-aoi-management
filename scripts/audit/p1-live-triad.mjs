@@ -54,7 +54,7 @@ const TIER1 = [
 
 // Toàn bộ màn thật (bỏ /login /setup /404 và các route cần :param bắt buộc).
 const FULL = [
-  "/", "/api-docs", "/dashboard", "/ops-console", "/andon", "/predictive-alerts",
+  "/", "/dashboard", "/ops-console", "/andon", "/predictive-alerts",
   "/dashboard-center", "/drill-down", "/corporate-dashboard", "/control-tower", "/executive",
   "/corporate-layout", "/production-dashboard", "/war-room", "/mes-control-tower", "/wip-dashboard",
   "/traceability", "/digital-twin", "/history", "/aoi-packages", "/production-orders",

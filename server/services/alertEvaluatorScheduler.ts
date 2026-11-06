@@ -5,9 +5,7 @@
  *   1. Evaluates every active legacy alertSetting (yield_rate / ng_count /
  *      machine_status / machine_offline) and fires on breach — bug #1 (rules
  *      had no evaluator, only a manual test button).
- *   2. Runs the smart-alert detectors detectDefectSpike (per active machine) and
- *      detectYieldDrop (per factory), routing any event through routeAlert —
- *      bug #2 (detectors were never called by any cron).
+ *   2. (GỠ ở Pha 0 AL0-1, 2026-11-04) bộ dò detectDefectSpike / detectYieldDrop KHÔNG còn chạy theo lịch — nguồn lũ thông báo.
  *   3. Runs processAutoEscalation() so unacknowledged alerts escalate — bug #2.
  *
  * Convention matches the existing setInterval schedulers in this repo
@@ -19,15 +17,8 @@
  */
 
 import { getDb } from "../db/connection";
-import { eq } from "drizzle-orm";
-import { machines, factories } from "../../drizzle/schema";
 import { evaluateActiveAlertSettings } from "../routers/alertRouters";
-import {
-  detectDefectSpike,
-  detectYieldDrop,
-  routeAlert,
-  processAutoEscalation,
-} from "./aiSmartAlertRouter";
+import { processAutoEscalation } from "./aiSmartAlertRouter";
 
 let timer: NodeJS.Timeout | null = null;
 let isRunning = false;
@@ -69,46 +60,11 @@ async function runCycle(): Promise<void> {
       console.error("[AlertEvaluator] legacy alertSettings eval failed:", (err as Error).message);
     }
 
-    // 2a) Defect-spike detection per active machine.
-    let spikes = 0;
-    try {
-      const activeMachines = await db
-        .select({ id: machines.id })
-        .from(machines)
-        .where(eq(machines.isActive, true));
-      for (const m of activeMachines) {
-        try {
-          const event = await detectDefectSpike(m.id);
-          if (event) {
-            await routeAlert(event);
-            spikes++;
-          }
-        } catch (err) {
-          console.error(`[AlertEvaluator] detectDefectSpike(#${m.id}) failed:`, (err as Error).message);
-        }
-      }
-    } catch (err) {
-      console.error("[AlertEvaluator] machine scan failed:", (err as Error).message);
-    }
-
-    // 2b) Yield-drop detection per factory.
-    let yieldDrops = 0;
-    try {
-      const allFactories = await db.select({ id: factories.id }).from(factories);
-      for (const f of allFactories) {
-        try {
-          const event = await detectYieldDrop(f.id);
-          if (event) {
-            await routeAlert(event);
-            yieldDrops++;
-          }
-        } catch (err) {
-          console.error(`[AlertEvaluator] detectYieldDrop(#${f.id}) failed:`, (err as Error).message);
-        }
-      }
-    } catch (err) {
-      console.error("[AlertEvaluator] factory scan failed:", (err as Error).message);
-    }
+    // 2) ★ Pha 0 AL0-1 (2026-11-04): BỘ DÒ detectDefectSpike / detectYieldDrop KHÔNG còn chạy theo lịch. Chúng là nguồn lũ đo được
+    //    (53 416 thông báo "CRITICAL Alert: DEFECT SPIKE" phát cho 5 người, 100 % chưa đọc — TechDocs 40 §1) và không có đường tắt theo
+    //    người nhận. Vẫn gọi tay được qua aiSmartAlertRouting.*; thay thế đúng nghĩa là alarm_event ở AL1+ (40 §2).
+    const spikes = 0;
+    const yieldDrops = 0;
 
     // 3) Auto-escalation of unacknowledged alerts.
     let escalated = 0;

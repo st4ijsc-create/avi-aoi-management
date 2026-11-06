@@ -423,22 +423,6 @@ export async function moHinh3dDangKyGhi(ctx: CoDanhTinh, o: { modelKey: string; 
 }
 
 /**
- * Hàng rào tham số (parameter_guardrails): phạm vi 'machine' ⇒ máy phải trong phạm vi người gọi; phạm vi 'machine_type' áp cho MỌI máy cùng loại ở mọi nhà máy
- * (nới dải ở đây là nới an toàn của máy nhà máy khác) ⇒ chỉ toàn quyền. KHÔNG đổi logic guardrail — chỉ thêm cổng phạm vi.
- */
-export async function hangRaoGhi(ctx: CoDanhTinh, o: { scope: "machine" | "machine_type"; machineId?: number | null }): Promise<void> {
-  if (await toanQuyen(ctx)) return;
-  if (o.scope !== "machine" || o.machineId == null) throw khongCo("parameterGuardrail");
-  await viTriHopLe(ctx, { machineId: o.machineId }, "parameterGuardrail");
-}
-export async function hangRaoTheoIdGhi(ctx: CoDanhTinh, id: number): Promise<void> {
-  if (await toanQuyen(ctx)) return;
-  const h = await hangDau(sql`SELECT scope AS s, machine_id AS m FROM parameter_guardrails WHERE id = ${id}`);
-  if (!h) throw khongCo("parameterGuardrail");
-  await hangRaoGhi(ctx, { scope: h.s as "machine" | "machine_type", machineId: n(h.m) });
-}
-
-/**
  * Lô huấn luyện AI (`ai_training_batches.batchId`, chuỗi) theo phạm vi: lô chỉ có "nhà máy" qua phản hồi của nó (ai_feedback.trainingBatchId → gợi ý → lần kiểm tra → máy).
  * Người hẹp thao tác được khi: lô tồn tại VÀ (mọi máy của phản hồi trong lô nằm trong phạm vi, có ≥ 1 phản hồi) HOẶC (lô RỖNG / chưa gom và do CHÍNH họ tạo).
  * Lô trộn máy ngoài phạm vi / không tồn tại ≡ NOT_FOUND "trainingBatch". Toàn quyền ⇒ không kiểm.

@@ -111,20 +111,6 @@ describe("khoaAnhChoPhep", () => {
 });
 
 describe("thủ tục AI nhận khoá ảnh — khoá ảnh nhà máy B bị từ chối TRƯỚC khi đọc tệp / gọi model", () => {
-  it("aiVisionLanguage: describeDefect · compareImages (một trong hai khoá) · generateReport (một ảnh trong lô)", async () => {
-    const { aiVisionLanguageRouter } = await import("./aiVisionLanguageRouter");
-    const { describeDefect, compareImages, generateQAReport } = await import("../services/aiVisionLanguage");
-    const c = aiVisionLanguageRouter.createCaller(ctxA);
-    expect(khongThayAnh(await maLoi(() => c.describeDefect({ imageKey: keyB })))).toBe(true);
-    expect(khongThayAnh(await maLoi(() => c.compareImages({ imageKeyA: keyA, imageKeyB: keyB })))).toBe(true);
-    expect(khongThayAnh(await maLoi(() => c.generateReport({ images: [{ imageKey: keyA }, { imageKey: keyB }] })))).toBe(true);
-    expect(vi.mocked(describeDefect)).not.toHaveBeenCalled();
-    expect(vi.mocked(compareImages)).not.toHaveBeenCalled();
-    expect(vi.mocked(generateQAReport)).not.toHaveBeenCalled();
-    // đối chứng: ảnh trong phạm vi ⇒ qua cổng, model được gọi
-    expect(await maLoi(() => c.describeDefect({ imageKey: keyA }))).toBeNull();
-    expect(vi.mocked(describeDefect)).toHaveBeenCalledTimes(1);
-  });
   it("aiAnalysisHub: imageDefectDescription · similarDefectSearch · quickQualityCheck; tìm ảnh tương tự chỉ trên máy trong phạm vi (machineIds)", async () => {
     const { aiAnalysisHubRouter } = await import("./aiAnalysisHubRouter");
     const { searchByImage } = await import("../services/aiImageEmbedding");
