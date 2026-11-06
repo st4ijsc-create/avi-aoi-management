@@ -189,6 +189,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
     await import("../../ot/adapterFacade");
     await import("../../ot/safetyTarget");
     await import("../../safety/plc/safetyPlcAdapter");
+    await import("../../robot/criticalStopAlert"); // the mock, once: concurrent first imports race its factory and one gets the REAL alert
     sim = await startS7commSim();
     sim.setFault(null);
     s7 = new S7Driver();

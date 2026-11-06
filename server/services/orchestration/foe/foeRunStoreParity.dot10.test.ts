@@ -13,7 +13,7 @@
  * branch, parallel, retry, compensation, abort sweep (+ the gate refusal text, the STOP that never asks, D5 held).
  * The equipment registry is replaced by a recording fake (the walker is under test, not the dispatchers — group D).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 
@@ -162,6 +162,11 @@ const resultKind = (r: unknown): string => {
   if ("approved" in v) return "approval";
   return Object.keys(v).sort().join(",");
 };
+
+// the mocked alert module is loaded ONCE before any walk: two concurrent first imports race the vi.mock factory and one gets the REAL alert
+beforeAll(async () => {
+  await import("../../robot/criticalStopAlert");
+});
 
 beforeEach(() => {
   h.foreignRobots.clear();

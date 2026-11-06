@@ -232,6 +232,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     await import("../../ot/adapterFacade");
     await import("../../ot/safetyTarget");
     await import("../../safety/plc/safetyPlcAdapter");
+    await import("../../robot/criticalStopAlert"); // the mock, once: concurrent first imports race its factory and one gets the REAL alert
     sim = await startS7commSim();
     sim.setFault(null);
     s7 = new S7Driver();
