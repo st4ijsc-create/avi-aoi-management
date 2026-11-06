@@ -132,7 +132,8 @@ import {
   edgePriorPictureOf,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
-import { findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
+import { chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, buTruBiChanKhongRo } from "./foeKetCucKhongRo";
 import { verifiedStopStepIds } from "./foeStepClass";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
@@ -356,6 +357,9 @@ function fakeAuthorize(x: EdgeHarness, d: WorkflowDefinition, primed?: Awaited<R
       if (x.stopped) return { ok: false, verdict: "stopped", code: "stopped" };
       // the real /authorize: one authorisation per (run, claim, step, attempt) — a second ask answers 409 already_authorized (edgeAuthorizeCentral)
       if ((fake.store.get("edge_step_authorizations") ?? []).some((a) => a.runId === x.runId && a.claimSeq === input.claimSeq && a.stepId === input.stepId && a.attempt === input.attempt)) return { ok: false, verdict: "refused", code: "already_authorized" };
+      // the real /authorize step 5b (A2(n) (b)): the same pure check, on central's context and rows (edgeAuthorizeCentral)
+      const chu = chuBuTruTrongDinhNghia(d.steps, input.stepId);
+      if (chu && buTruBiChanKhongRo(runRow(x.runId).contextJson, stepRows(x.runId) as never, chu.step.id, chu.comp.id)) return { ok: false, verdict: "refused", code: "outcome_unknown_held" };
       const found = primed ?? (await findSeparateGateApproval({ runId: x.runId, def: d, startedViaApi: false }));
       if ("reason" in found) return { ok: false, verdict: "refused", code: "gate_required", reason: found.reason };
       // central's authorisation ledger (0372) — B's /authorize writes it; resultReportedAt stays null until a result is applied
@@ -1951,8 +1955,9 @@ describe("R1b-2b-2a A2(n) fix round 2 — the edge: the unknown flag outranks a 
     const s2 = await edgeSegment(e, 2);
     expect(s2.out).toMatchObject({ outcome: "paused", gateStepId: "g2" });
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "bs"]); // ★ no approval needed
+    // two reports ride on this end (the I-L one too): both are read from the rider, because two concurrent first imports of the mocked alert in one test race the vi.mock factory (seen: the second gets the real one)
+    expect(String(s2.out.error)).toMatch(/"loai":"stop[A-Za-z]+","stepId":"p","compId":"bs"/);
     await waitFor(() => h.alerts.length > 0, "the URGENT");
-    expect(h.alerts[0]!.kind).toMatch(/^foe_outcome_unknown_stop_compensation_/);
     expect(String(runRow(e.runId).error ?? "")).not.toContain("[[A2N");
   });
 
@@ -1964,7 +1969,7 @@ describe("R1b-2b-2a A2(n) fix round 2 — the edge: the unknown flag outranks a 
     const s2 = await edgeSegment(e, 2);
     expect(s2.out).toMatchObject({ outcome: "held" });
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "bs"]);
-    expect(e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION")).toHaveLength(1);
+    expect(e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION" && !String(x.detail).includes('"noCompensation"'))).toHaveLength(1); // the I-L one goes too
   });
 
   it("★ I-E an unknown step with no compensation is NEVER re-sent on a new claim: gate sibling, approval, next segment", async () => {
@@ -2099,5 +2104,149 @@ describe("R1b-2b-2a A2(n) fix round 3 — the edge: S-1, C-B", () => {
     await edgeSegment(e, 3);
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]); // the approved one only
     expect(stepRows(e.runId).find((x) => x.stepId === "boxUndo")).toMatchObject({ status: "held" });
+  });
+});
+
+describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment boundary, THE sink is the same line, /authorize is the second check", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown>): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown>): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    return e;
+  }
+  const ids = () => h.sent.map((x) => x.stepId);
+  const baoCua = (e: EdgeHarness, loai: keyof typeof CANH_BAO_KHONG_RO_KIND) => (e.events ?? []).filter((v) => v.kind === "anomaly" && String(v.detail).includes(`"loai":"${loai}"`));
+  const dieuTiep = async (e: EdgeHarness) => {
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    return resumeRun(e.runId, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  };
+
+  it("★ C-C (P1) a compensation's own unknown beside a gate: the row has the code, the gate approval carries the latch, the container's compensation is HELD, a person told", async () => {
+    const e = await denBuoc(def("n4-p1", [gate(), par("box", [move("x", { compensation: ot("u") }), gate("g2")], { compensation: ot("boxUndo") })]));
+    h.failPlan.set("x", 1);
+    h.timeoutDispatch.add("u");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "paused" });
+    expect(String(stepRows(e.runId).find((r) => r.stepId === "u")!.error)).toMatch(/^FOE_OUTCOME_UNKNOWN/);
+    expect(baoCua(e, "compensationUnknown")).toHaveLength(1); // I-I on the edge
+    h.timeoutDispatch.delete("u");
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeTruthy();
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(ids()).toEqual(["x", "u"]);
+    expect(baoCua(e, "held")).toHaveLength(1);
+    expect(stepRows(e.runId).find((r) => r.stepId === "boxUndo")).toMatchObject({ status: "held" });
+  });
+
+  it("★ C-C (P2) a STOP-typed step unknown beside a gate; its next answer is known: the container's compensation is HELD", async () => {
+    const e = await denBuoc(def("n4-p2", [gate(), par("box", [robotStop("st"), gate("g2")], { compensation: ot("boxUndo") })]));
+    h.timeoutDispatch.add("st");
+    await edgeSegment(e, 2);
+    expect(String(stepRows(e.runId).find((r) => r.stepId === "st")!.error)).toMatch(/OUTCOME_UNKNOWN/);
+    h.timeoutDispatch.delete("st");
+    h.failPlan.set("st", 1);
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "st" });
+    const s3 = await edgeSegment(e, 3);
+    expect(ids().filter((x) => x === "boxUndo")).toHaveLength(0);
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+  });
+
+  it("★ C-C (P3) the same behind a held sibling and a PLAIN Continue: the compensation is held, a person told; its Continue needs the n3 check", async () => {
+    const e = await denBuoc(def("n4-p3", [gate(), par("box", [move("x", { compensation: ot("u") }), move("r2")], { compensation: ot("boxUndo") })]));
+    h.failPlan.set("x", 1);
+    h.timeoutDispatch.add("u");
+    e.offlineSteps = new Set(["r2"]);
+    await edgeSegment(e, 2);
+    h.timeoutDispatch.delete("u");
+    e.offlineSteps = undefined;
+    await dieuTiep(e);
+    const s3 = await edgeSegment(e, 3);
+    expect(ids().filter((x) => x === "boxUndo")).toHaveLength(0);
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(baoCua(e, "held").length).toBeGreaterThan(0);
+    await expect(dieuTiep(e)).rejects.toThrow(/machine-control rights/); // n3: no plain Continue past this hold
+    await continueOutcomeUnknown(e, "checked");
+    await edgeSegment(e, 4);
+    expect(ids().filter((x) => x === "boxUndo")).toHaveLength(1);
+  });
+
+  it("★ (b) the fact is on the row at the moment of decision: the segment dies before its end, the rows already say it", async () => {
+    const e = await denBuoc(def("n4-b", [gate(), move("x", { compensation: ot("u") })]));
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    const r = s.segment.filter((v: any) => v.kind === "step" && v.stepId === "x");
+    const i = r.findIndex((v: any) => /OUTCOME_UNKNOWN/.test(String(v.error)));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect((r[i] as any).status).toBe("running"); // the record of the decision, before the failed row
+  });
+
+  it("(b) a row of a step already decided keeps the code: a later row with no error does not wipe the fact", async () => {
+    const e = await denBuoc(def("n4-b2", [gate(), box("b", [{ ...(robotStop("st") as object), maxAttempts: 2 } as never], {})]));
+    h.timeoutDispatch.add("st");
+    await edgeSegment(e, 2);
+    expect(String(stepRows(e.runId).find((r) => r.stepId === "st")!.error)).toMatch(/OUTCOME_UNKNOWN/);
+  });
+
+  it("(b) a report on the segment end is the fact even if the rows were lost (full journal): the latch is central's", async () => {
+    const e = await denBuoc(def("n4-b3", [gate(), move("x", { compensation: ot("u") })]));
+    h.timeoutDispatch.add("x");
+    e.refuse = (rec) => rec.kind === "step" && /OUTCOME_UNKNOWN/.test(String((rec as { error?: unknown }).error));
+    await edgeSegment(e, 2);
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeTruthy();
+  });
+
+  it("★ (b) /authorize is the second check: the walker does not know (its package predates the row), central refuses, the walker holds + reports, nothing sent", async () => {
+    const e = await denBuoc(def("n4-a", [gate(), move("x", { compensation: ot("u") })]));
+    h.failPlan.set("x", 1);
+    const orig = e.authorizeCalls.length;
+    // a row with the code reaches central after the claim: the context the walker read says nothing
+    fake.store.get("orchestration_run_steps")!.push({ id: 99_001, runId: e.runId, stepId: "zz", stepType: "command", status: "failed", error: "FOE_OUTCOME_UNKNOWN: late row", attempt: 0, resultJson: null, startedAt: null, finishedAt: null });
+    const s = await edgeSegment(e, 2);
+    expect(e.authorizeCalls.slice(orig).some((a) => a.stepId === "u")).toBe(true);
+    expect(ids()).toEqual(["x"]);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(baoCua(e, "held")).toHaveLength(1);
+    await continueOutcomeUnknown(e, "checked");
+    await edgeSegment(e, 3);
+    expect(ids()).toEqual(["x", "u"]); // approved exactly: /authorize lets it through
+  });
+
+  it("★ C-D edge (U1): a compensation admitted before the latch is not sent after it; a verified STOP in the body goes + reported", async () => {
+    const e = await denBuoc(def("n4-d", [gate(), par("box", [move("b", { compensation: box("uS", [delay("w", 120), ot("rz")], {}) }), move("m")], {})]));
+    h.failPlan.set("b", 1);
+    h.timeoutDispatch.add("m");
+    const s = await edgeSegment(e, 2);
+    expect(ids().filter((x) => x === "rz")).toHaveLength(0);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    const e2 = await denBuoc(def("n4-d2", [gate(), par("box", [move("b2", { compensation: box("uS2", [delay("w2", 120), robotStop("rs")], {}) }), move("m2")], {})]));
+    h.failPlan.set("b2", 1);
+    h.timeoutDispatch.add("m2");
+    await edgeSegment(e2, 2);
+    expect(ids().filter((x) => x === "rs")).toHaveLength(1);
+    expect((e2.events ?? []).filter((v) => /"loai":"stop/.test(String(v.detail)))).toHaveLength(1); // the sink's own report
+  });
+
+  it("m-O edge: a verified STOP inside a multi-step compensation goes, the rest is held", async () => {
+    const e = await denBuoc(def("n4-o", [gate(), move("r1", { compensation: box("c", [ot("rz"), robotStop("rs")], {}) })]));
+    h.timeoutDispatch.add("r1");
+    const s = await edgeSegment(e, 2);
+    expect(ids().filter((x) => x === "rz")).toHaveLength(0);
+    expect(ids().filter((x) => x === "rs")).toHaveLength(1);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+  });
+
+  it("(a) n6 on the edge: an unlatched compensation asks /authorize and goes as before", async () => {
+    const e = await denBuoc(def("n4-n6", [gate(), move("x", { compensation: ot("u") })]));
+    h.failPlan.set("x", 1);
+    const s = await edgeSegment(e, 2);
+    expect(ids()).toEqual(["x", "u"]);
+    expect(s.out).toMatchObject({ outcome: "failed" });
   });
 });
