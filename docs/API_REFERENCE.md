@@ -805,6 +805,15 @@ khoá vĩnh viễn (`'dead'`) vì lệch hình dạng — nó ở lại `'failed
 không khớp thì **cả gói** bị từ chối, không âm thầm bỏ ảnh; mọi `images[].fileName`
 phải có tệp thật trong thư mục `images/` của ZIP.
 
+**Hai bất biến server áp khi commit gói (BG-94 — bên tích hợp máy PHẢI biết):**
+
+1. **Phán quyết và số đếm luôn CUỘN TỪ CÂY.** Server tính `overallResult` và mọi đếm OK/NG từ cây `surfaces[].positions[].captures[].components[]`. Trường `summary` máy khai chỉ được lưu nguyên văn và gắn cờ khi lệch với cây; `summary` KHÔNG BAO GIỜ là nguồn của phán quyết hay của số đếm — khai sai `summary` không đổi kết quả, chỉ để lại cờ lệch.
+2. **Hai điều kiện TỪ CHỐI CẢ GÓI (không âm thầm bỏ ảnh):**
+   - `images[].captureId` không có trong cây ⇒ gói bị TỪ CHỐI cả gói (captureId lạ).
+   - `images[].fileName` không có tệp thật trong thư mục `images/` của ZIP ⇒ gói bị TỪ CHỐI cả gói (thiếu tệp ảnh).
+
+   Gói bị từ chối ở bước này ở lại `'failed'` (không khoá vĩnh viễn), chờ Agent gửi lại đúng.
+
 ### 11.3 aoiPackage.commit
 Xác nhận package đã upload hoàn tất và parse dữ liệu.
 

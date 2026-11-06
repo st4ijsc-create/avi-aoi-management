@@ -47,7 +47,7 @@ import { machineDataContractV1 } from "./machineDataContract";
 const GOC = resolve(__dirname, "..", "..");
 
 // Pha 0 · C0-1/P0-8 (2026-11-04): trang /api-docs ĐÃ GỠ (client/src/components/apiDocs/*, gồm AoiPackageSection.tsx) — bề mặt công bố "chạy trong sản phẩm" này không còn.
-// Các bề mặt CÒN SỐNG: docs/API_REFERENCE.md, docs/UNIFIED_API_STRUCTURE.md, docs/examples/*. Mệnh đề hợp đồng giữ nguyên cho chúng (xem §5.3: nợ về lời văn "cuộn từ CÂY").
+// Các bề mặt CÒN SỐNG: docs/API_REFERENCE.md, docs/UNIFIED_API_STRUCTURE.md, docs/examples/*. Mệnh đề hợp đồng giữ nguyên cho chúng.
 const DUONG_META_EXAMPLE = "docs/examples/meta.json.example";
 const DUONG_META_LEGACY_EXAMPLE = "docs/examples/meta-legacy.json.example";
 const DUONG_API_REFERENCE = "docs/API_REFERENCE.md";
@@ -436,12 +436,23 @@ describe("§5.2 — LỜI VĂN: 0 khẳng định ĐÃ BỊ MÃ BÁC BỎ, trên
   });
 });
 
-describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict (nợ sau khi gỡ /api-docs, pha 0)", () => {
-  // Trước pha 0, trang API docs chạy trong sản phẩm (AoiPackageSection.tsx) là bề mặt DUY NHẤT mang các câu "cuộn từ CÂY", "summary … KHÔNG BAO GIỜ là nguồn",
-  // "captureId lạ / thiếu tệp ảnh ⇒ TỪ CHỐI cả gói". Trang đã gỡ; docs/API_REFERENCE.md, UNIFIED_API_STRUCTURE.md KHÔNG mang các câu đó (đo bằng grep, 0 khớp).
-  // ⇒ KHÔNG đổi sang tệp khác cho xanh giả: khai thẳng là nợ (cùng BG-94) tới khi có bề mặt công bố mới.
-  it.todo("★★★ nói rõ verdict/đếm CUỘN TỪ CÂY và `summary` KHÔNG BAO GIỜ là nguồn — chờ bề mặt công bố mới (nợ BG-94)");
-  it.todo("★ nói rõ HAI bất biến TỪ CHỐI CẢ GÓI (captureId lạ / thiếu tệp ảnh) — chờ bề mặt công bố mới (nợ BG-94)");
+describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict phải CÓ MẶT trong tài liệu API tĩnh (BG-94, pha 0)", () => {
+  // Trang /api-docs (AoiPackageSection.tsx) từng là bề mặt công bố các câu này; đã gỡ ở pha 0. Phán quyết dieu-phoi 2026-11-06:
+  // công bố ở docs/API_REFERENCE.md (§11.2, "Hai bất biến server áp khi commit gói") — tích hợp viên máy đọc tài liệu tĩnh.
+  it("★★★ nói rõ verdict/đếm CUỘN TỪ CÂY, và `summary` KHÔNG BAO GIỜ là nguồn", () => {
+    const nd = doc(DUONG_API_REFERENCE);
+    expect(/cu[ộo]n\s+từ\s+C[ÂA]Y/i.test(nd), "thiếu câu 'cuộn từ CÂY' — bất biến 3 không được công bố").toBe(true);
+    expect(
+      /summary[^\n]{0,120}KHÔNG BAO GIỜ/.test(nd),
+      "thiếu câu 'summary … KHÔNG BAO GIỜ là nguồn' — bên tích hợp sẽ tin summary quyết định phán quyết",
+    ).toBe(true);
+  });
+
+  it("★ nói rõ HAI bất biến TỪ CHỐI CẢ GÓI (captureId lạ / thiếu tệp ảnh) — thứ quyết định gói commit được hay không", () => {
+    const nd = doc(DUONG_API_REFERENCE);
+    expect(/captureId[^\n]{0,120}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
+    expect(/fileName[^\n]{0,160}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
+  });
 
   it("bề mặt đã gỡ KHÔNG còn trong danh sách canh (chống tham chiếu tệp ma)", () => {
     for (const duong of MOI_BE_MAT) expect(duong, duong).not.toMatch(/apiDocs\//);
