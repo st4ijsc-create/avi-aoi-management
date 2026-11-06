@@ -10,9 +10,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits } = vi.hoisted(() => ({
+const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits, HX } = vi.hoisted(() => ({
+  /** I-2 — this step-row write throws (a DB error on the unknown path); m-6 — the audit row is not written */
+  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), auditFails: false },
   otDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] }) as Record<string, unknown>),
-  robotDispatchMock: vi.fn(async () => ({ ok: true, status: "simulated" as const, jobId: 7 })),
+  robotDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, status: "done", jobId: 7 }) as Record<string, unknown>),
   /** the A2(h) predicate's verdict per call (adapterId, commandType) — scripted per test */
   ghimMock: vi.fn(async (_d: unknown, _i: { adapterId: number; commandType: string }) => ({ pinnedStop: false, loiDocGhim: null as string | null })),
   alerts: [] as Array<Record<string, any>>,
@@ -30,6 +32,7 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
 vi.mock("../../auditTrailService", () => ({
   createAuditContext: (x: { user?: { id: number } }) => ({ userId: x.user?.id }),
   logCrudOperation: vi.fn(async (ctx: Record<string, unknown>, e: Record<string, unknown>) => {
+    if (HX.auditFails) return { id: -1 }; // what logCrudOperation answers when it swallowed a failure
     audits.push({ ...e, userId: ctx.userId });
     return { id: audits.length };
   }),
@@ -144,6 +147,7 @@ const fakeDb = {
       onConflictDoUpdate(opts: any) {
         // upsert on (runId, stepId) for run_steps
         const list = rows(tableName);
+        for (const row of pending) if (HX.rowThrows?.(row)) return Promise.reject(new Error("step row write failed (test)"));
         for (const row of pending) {
           const existing = list.find((r) => r.runId === row.runId && r.stepId === row.stepId);
           if (existing) Object.assign(existing, opts.set);
@@ -206,7 +210,13 @@ import {
   loiLaKetCucKhongRo,
   maKetCucKhongRoCua,
   noiDungCanhBaoKhongRo,
+  KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP,
+  canhBaoKetCucKhongRo,
+  canhBaoTuAnomalyEdge,
+  ganBaoCaoKhongRoEdge,
+  tachBaoCaoKhongRoEdge,
 } from "./foeKetCucKhongRo";
+import { goiYRunDangGiu } from "../../../routers/oversightRouter";
 import { createEdgeRunStore } from "../../edge/edgeRunStore";
 import { EDGE_HELD_REASONS, type EdgeRunPackage } from "../../edge/edgeProtocol";
 
@@ -223,17 +233,22 @@ function seed() {
   store.set("machines", [
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
     { id: 3, machineType: "AUTOMATION", capabilities: null, code: "M3", name: "Auto-3", operationStatus: "stopped", stationId: 1 },
+    { id: 2, machineType: "ROBOT", capabilities: null, code: "R1", name: "Robot-1", operationStatus: "stopped", stationId: 1 },
   ]);
   store.set("device_adapters", [
     { id: 501, machineId: 1, isEnabled: true },
     { id: 503, machineId: 3, isEnabled: true },
   ]);
+  store.set("robots", [{ id: 2, code: "R2", vendor: "sim", endpoint: "tcp://10.0.0.2:1", connectionOptions: { port: 1 }, isEnabled: true, status: "online" }]);
 }
 
 beforeEach(() => {
   seed();
   otDispatchMock.mockReset();
-  otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : OK));
+  otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
+  robotDispatchMock.mockClear();
+  HX.rowThrows = null;
+  HX.auditFails = false;
   ghimMock.mockReset();
   ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }));
   alerts.length = 0;
@@ -244,6 +259,7 @@ beforeEach(() => {
 });
 
 const OK = { ok: true, simulated: true, status: "simulated", results: [], commandLogIds: [1] } as Record<string, unknown>;
+const ACKED = { ok: true, simulated: false, status: "acked", results: [], commandLogIds: [1] } as Record<string, unknown>;
 const TIMEOUT = { ok: false, simulated: false, status: "timeout", results: [], commandLogIds: [] } as Record<string, unknown>;
 const REJECTED = { ok: false, simulated: false, status: "rejected", results: [], commandLogIds: [] } as Record<string, unknown>;
 
@@ -294,6 +310,7 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     expect(alertsOf("held")).toHaveLength(0);
     const a = alertsOf("stopSent")[0]!;
     expect(a.title).toBe(`Run ${runId}: command "main" outcome unknown — machine state unknown — STOP compensation sent ("undo")`);
+    expect(String(a.message)).not.toContain("simulated");
     expect(a.dedupKey).toMatch(new RegExp(`^foe_outcome_unknown_stop_compensation_sent:${runId}:main:undo:`));
     expect(a.recipients).toContain(USER.id);
     expect(a.khuTrungBenVung).toEqual({});
@@ -328,6 +345,7 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     const a = alertsOf("held")[0]!;
     expect(a.title).toBe(`Run ${runId}: command "main" outcome unknown — machine state unknown — compensation "undo" waiting for a person`);
     expect(String(a.message)).toContain("NOT sent: the run is HELD");
+    expect(String(a.message)).toContain("could not be confirmed as a STOP"); // m-2 — never "not a STOP" when the pins may be unreadable
     void res;
   });
 
@@ -412,7 +430,7 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
   });
 
   it("N10 (n6) a KNOWN failure ⇒ its non-STOP compensation runs exactly as before (once), run failed, no A2(n) alert, no marker", async () => {
-    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : OK));
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : ACKED));
     const { runId, res } = await chay([main(resetComp(), { maxAttempts: 1 })]);
     expect(res.status).toBe("failed");
     expect(sent("start")).toHaveLength(2); // retried as before
@@ -547,7 +565,7 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     expect(KHONG_RO_EDGE_ANOMALY).toMatch(/^[A-Z_]{1,64}$/);
   });
 
-  it("N9 edge mirror: the held reason is in the protocol; the edge store's pinned-STOP answer = the package's VERIFIED OT stops only; its report = an anomaly + held(outcomeUnknown)", async () => {
+  it("N9 edge mirror: the held reason is in the protocol; the edge store's STOP answer = the package's VERIFIED stops; its report = an anomaly + held(outcomeUnknown)", async () => {
     expect(EDGE_HELD_REASONS).toContain("outcomeUnknown");
     const events: Array<Record<string, any>> = [];
     const pkg = {
@@ -566,7 +584,7 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     const s = createEdgeRunStore(pkg, { runId: 5, claimSeq: 2, claimToken: "t", sink: { run: async () => ({ seq: 1 }), event: async (r) => (events.push(r as never), { seq: 1 }) }, authorize: { authorize: async () => ({ ok: false, verdict: "unavailable", code: null }) } });
     const cmd = (id: string) => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
     expect(await s.buTruLaStopGhim({} as never, cmd("otStop"))).toBe(true);
-    expect(await s.buTruLaStopGhim({} as never, cmd("robotStop"))).toBe(false);
+    expect(await s.buTruLaStopGhim({} as never, cmd("robotStop"))).toBe(true); // R-2
     expect(await s.buTruLaStopGhim({} as never, cmd("unsure"))).toBe(false);
     expect(await s.buTruLaStopGhim({} as never, cmd("other"))).toBe(false);
     s.ketCucKhongRo({} as never, { loai: "held", stepId: "m", compId: "c", error: "FOE_OUTCOME_UNKNOWN: x", lan: "ignored" });
@@ -589,12 +607,265 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
   it("source pins: one split point (execStep's failed branch); the known path untouched; the pinned-only hand-over check in execCommand", () => {
     const src = readFileSync(resolve(__dirname, "./foeEngine.ts"), "utf8").replace(/\r\n/g, "\n");
     expect(src.split("buTruSauKetCucKhongRo(rc, step, step.compensation, loi)").length - 1).toBe(1);
-    expect(src).toContain('if (failedOutcome.kind === "failed" && failedOutcome.khongRo === true) {');
-    expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && auth.stopGhim !== true) {');
-    expect(src).toContain("if (KET_CUC_KHONG_RO_CTX_KEY in ctx) continue;");
+    expect(src).toContain('const khongRo = failedOutcome.kind === "failed" && failedOutcome.khongRo === true;');
+    expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {');
+    expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0) continue;");
     // the automatic STOP goes through the engine's own compensation path (runCompensation → execCommand → dispatcher), no shortcut
-    const body = src.slice(src.indexOf("async function buTruSauKetCucKhongRo("), src.indexOf("async function giuBuTruKhongRo("));
+    const body = src.slice(src.indexOf("async function guiStopKhongRo("), src.indexOf("function loaiGuiStop("));
     expect(body).toContain("c = await runCompensation(rc, step, loi);");
     expect(body).not.toMatch(/sendCommand|dispatch\(|getAdapter/);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, minors", () => {
+  const pause = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "pause", ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", steps, ...extra }) as WorkflowStep;
+  const gate = (id: string): WorkflowStep => ({ id, type: "hitl_gate", prompt: "x" }) as WorkflowStep;
+  const robotComp = (id: string, command: string, args: Record<string, unknown>): WorkflowStep => ({ id, type: "command", machineId: 2, command, args: { robotId: 2, ...args } }) as WorkflowStep;
+  const tiep = (runId: number, u: { id: number; role: string; name: string }, note?: string) => resumeRun(runId, { approved: true, note }, u, {}, { scope: null });
+
+  it("C-1 a held child never blocks an ancestor's STOP: seq(box){main{reset}} + STOP on box ⇒ 1 STOP now, 0 reset, run stays held, URGENT; Continue ⇒ the reset once, the STOP NOT re-sent", async () => {
+    const { runId } = await giuKhongRo([seq("box", [main(resetComp("undo"))], stopComp("boxStop"))]);
+    expect(sent("stop")).toHaveLength(1); // ★ without a person
+    expect(sent("reset")).toHaveLength(0);
+    expect(runRow(runId).status).toBe("held");
+    expect((await step(runId, "boxStop"))?.status).toBe("compensated");
+    await waitAlerts(2);
+    expect(alertsOf("stopSent").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:box:boxStop:`)]);
+    expect(alertsOf("held").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:main:undo:`)]);
+    otDispatchMock.mockClear();
+    const r = await tiep(runId, ADMIN, "checked: the reset is safe");
+    expect(r.status).toBe("failed");
+    expect(sent()).toEqual(["reset"]); // ★ the STOP is not sent again, hours later, over a machine someone restarted
+  });
+
+  it("C-1 the same behind a PARALLEL with a compensation; a NON-STOP ancestor stays due (not sent at the hold)", async () => {
+    const a = await giuKhongRo([par("p", [main(resetComp("undo"))], { failFast: true, compensation: stopComp("pStop") })]);
+    expect(sent("stop")).toHaveLength(1);
+    expect(runRow(a.runId).status).toBe("held");
+    otDispatchMock.mockClear();
+    await giuKhongRo([seq("box", [main(resetComp("undo"))], resetComp("boxUndo"))]);
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("C-2 (a) a gate in a SIBLING branch: the run is HELD (not awaiting_confirm), the approval needs the n3 check — role and reason — and nothing is written before", async () => {
+    const { runId } = await chay([par("p", [main(resetComp("undo")), gate("g2")], { failFast: true })]);
+    expect(runRow(runId).status).toBe("held");
+    otDispatchMock.mockClear();
+    await expect(tiep(runId, OPERATOR, "x")).rejects.toThrow(/machine-control rights/);
+    await expect(tiep(runId, ADMIN)).rejects.toThrow(/reason is required/);
+    await expect(tiep(runId, SYSTEM, "x")).rejects.toThrow(/machine-control rights/);
+    expect(sent()).toHaveLength(0);
+  });
+
+  it("C-2 the check keys on the RESUME STATE, whatever the status and with no marker: awaiting_confirm + a pending held compensation ⇒ refused without person + reason", async () => {
+    const { runId } = await giuKhongRo();
+    const r = runRow(runId);
+    const { [KET_CUC_KHONG_RO_CTX_KEY]: _sin, ...ctx } = r.contextJson;
+    r.contextJson = ctx;
+    r.status = "awaiting_confirm";
+    r.currentStepId = "gate0";
+    otDispatchMock.mockClear();
+    await expect(tiep(runId, ADMIN)).rejects.toThrow(/reason is required/);
+    await expect(tiep(runId, SYSTEM, "x")).rejects.toThrow(/machine-control rights/);
+    expect(sent()).toHaveLength(0);
+  });
+
+  it("I-1 a STOP-typed forward step whose outcome stays unknown (every attempt timed out) ⇒ its NON-STOP compensation is held too (0 reset), URGENT, the row carries the code", async () => {
+    otDispatchMock.mockImplementation(async () => TIMEOUT);
+    const { runId, res } = await chay([{ id: "main", type: "command", machineId: 1, command: "stop", maxAttempts: 2, compensation: resetComp() } as WorkflowStep]);
+    expect(res.status).toBe("held");
+    expect(sent("stop")).toHaveLength(3); // it keeps its retries (L-7)
+    expect(sent("reset")).toHaveLength(0);
+    expect((await step(runId, "main"))?.error).toMatch(/^FOE_OUTCOME_UNKNOWN: /);
+    await waitAlerts(1);
+    expect(alertsOf("held")).toHaveLength(1);
+  });
+
+  it("I-2 a thrown FAILED row write keeps the flag: the ancestor's reset is held, not sent as a known failure, URGENT", async () => {
+    HX.rowThrows = (r) => r.stepId === "main" && r.status === "failed";
+    const { runId, res } = await chay([seq("box", [main()], resetComp("boxUndo"))]);
+    expect(res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+    await waitAlerts(1);
+    expect(alertsOf("held").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:box:boxUndo:`)]);
+  });
+
+  it("I-2 a thrown HELD row write of the compensation: the run still ends held, the URGENT went; a thrown RESULT row of the unknown dispatch: not retried, still the class", async () => {
+    HX.rowThrows = (r) => r.stepId === "undo";
+    const a = await chay([main(resetComp())]);
+    expect(a.res.status).toBe("held");
+    expect(runRow(a.runId).contextJson.foeResumeState.main.state).toBe("compensationHeld");
+    await waitAlerts(1);
+    HX.rowThrows = (r) => r.stepId === "main" && r.status === "running" && r.resultJson != null;
+    otDispatchMock.mockClear();
+    const b = await chay([main(resetComp(), { maxAttempts: 2 })]);
+    expect(b.res.status).toBe("held");
+    expect(sent("start")).toHaveLength(1);
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("I-3 + m-1 the URGENT says what really happened: simulated ⇒ 'simulated — NOT sent' (never 'sent'); refused by the device ⇒ not confirmed; never handed over ⇒ 'NOT sent'", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : OK)); // OT control off: simulated
+    const a = await chay([main(stopComp())]);
+    await waitAlerts(1);
+    expect(alertsOf("stopSent")).toHaveLength(0);
+    expect(alertsOf("stopSimulated")).toHaveLength(1);
+    expect(alertsOf("stopSimulated")[0]!.title).toBe(`Run ${a.runId}: command "main" outcome unknown — machine state unknown — STOP compensation "undo" simulated — NOT sent (OT control off)`);
+    alerts.length = 0;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : REJECTED));
+    await chay([main(stopComp())]);
+    await waitAlerts(1);
+    expect(alertsOf("stopNotConfirmed")).toHaveLength(1);
+    alerts.length = 0;
+    // handed over never: the store's own refusal on the dispatch path (an unknown machine would not deploy; a throw in the walk does the same)
+    expect(noiDungCanhBaoKhongRo({ loai: "stopNotHanded", runId: 9, stepId: "X", compId: "Y", error: "e", lan: "L" }).message).not.toContain("handed to the dispatcher but");
+  });
+
+  it("I-4 a non-failFast parallel never swallows an unknown outcome: Continue sends the held compensation and NOTHING forward; the run fails, never 'completed'", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), pause("other")]), pause("nextForward")]);
+    expect(sent("pause")).toHaveLength(1); // the sibling ran; the step after the parallel did not
+    otDispatchMock.mockClear();
+    const r = await tiep(runId, ADMIN, "checked");
+    expect(r.status).toBe("failed");
+    expect(sent()).toEqual(["reset"]);
+    expect(await step(runId, "nextForward")).toBeUndefined();
+    // the same with no hold: an unknown branch with no compensation never lets the walk go forward (and the run does not read completed)
+    otDispatchMock.mockClear();
+    const b = await chay([par("p", [main(), pause("other")]), pause("nextForward")]);
+    expect(b.res.status).toBe("failed");
+    expect(await step(b.runId, "nextForward")).toBeUndefined();
+  });
+
+  it("I-4 Continue never re-walks a failed sibling forward (doneFailed) — a known failure's step is not sent again", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "pause" ? REJECTED : ACKED));
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), pause("b")], { failFast: true })]);
+    otDispatchMock.mockClear();
+    otDispatchMock.mockImplementation(async () => ACKED); // the refusal has cleared: a re-walk WOULD write
+    await tiep(runId, ADMIN, "checked");
+    expect(sent()).toEqual(["reset"]);
+    expect(runRow(runId).contextJson.foeResumeState.b).toMatchObject({ state: "doneFailed" });
+  });
+
+  it("I-5 central: the URGENT reaches a person (owner + active admins / supervisors), code only (m-4), retried until persisted (m-5)", async () => {
+    store.set("users", [{ id: 501, role: "admin", isActive: true }]);
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? { ...TIMEOUT, error: "connect ETIMEDOUT 10.9.8.7:5020" } : ACKED));
+    await giuKhongRo();
+    await waitAlerts(1);
+    const a = alerts[0]!;
+    expect(a.recipients).toEqual(expect.arrayContaining([USER.id, 501]));
+    expect(a.retryUntilPersisted).toEqual({ everyMs: 30_000, attempts: 20 });
+    expect(JSON.stringify(a)).not.toContain("10.9.8.7");
+    expect(String(a.message)).toContain("FOE_OUTCOME_UNKNOWN");
+  });
+
+  it("I-5 edge route: an anomaly of a run THIS node is assigned raises the same alert (owner, dedup by claim); foreign / unreadable ⇒ nothing; the branch is wired", async () => {
+    const detail = chiTietAnomalyKhongRo({ loai: "held", stepId: "m", compId: "c", error: "EDGE_OUTCOME_UNKNOWN: host 10.1.1.1", claimSeq: 4 });
+    expect(detail).not.toContain("10.1.1.1");
+    expect(await canhBaoTuAnomalyEdge({ code: "X", runId: 9, detail }, true, async () => 7)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, false, async () => 7)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail: "{" }, true, async () => 7)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, true, async () => 7)).toBe(true);
+    await waitAlerts(1);
+    expect(alerts[0]).toMatchObject({ kind: CANH_BAO_KHONG_RO_KIND.held, dedupKey: "foe_outcome_unknown_compensation_held:9:m:c:claim4", recipients: [7] });
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeReportsCentral.ts"), "utf8");
+    expect(src).toContain('await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async () => {');
+  });
+
+  it("I-5 (condition 3) NOBODY to send it to ⇒ still visible: the alert is raised (log + alert stream), an error line, a durable audit row", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await canhBaoKetCucKhongRo({ loai: "held", runId: 77, stepId: "m", compId: "c", error: "e", lan: "L", owner: null });
+    await vi.waitFor(() => expect(audits.filter((a) => a.details?.operation === KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP)).toHaveLength(1));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.recipients).toEqual([]);
+    expect(audits[0]).toMatchObject({ action: KET_CUC_KHONG_RO_AUDIT_ACTION, entityId: 77, status: "failure", details: { metadata: { stepId: "m", compId: "c" } } });
+    expect(err.mock.calls.some((c) => /NO recipient/.test(String(c[0])))).toBe(true);
+    err.mockRestore();
+  });
+
+  it("I-5 the end of a segment carries the reports: survives a full journal, is stripped before the run's error; too long ⇒ the text is never cut mid-JSON", () => {
+    const bao = [{ loai: "held" as const, stepId: "s", compId: "c", ma: "EDGE_OUTCOME_UNKNOWN" as const, claimSeq: 3 }];
+    const e = ganBaoCaoKhongRoEdge("the text", bao, 4_000);
+    expect(tachBaoCaoKhongRoEdge(e)).toEqual({ error: "the text", bao });
+    expect(tachBaoCaoKhongRoEdge("plain")).toEqual({ error: "plain", bao: [] });
+    expect(tachBaoCaoKhongRoEdge(undefined)).toEqual({ error: undefined, bao: [] });
+    const lon = ganBaoCaoKhongRoEdge("x".repeat(5000), bao, 4_000)!;
+    expect(lon.length).toBeLessThanOrEqual(4_000);
+    expect(tachBaoCaoKhongRoEdge(lon).bao).toEqual(bao);
+    expect(ganBaoCaoKhongRoEdge("t", bao, 10)).toBe("t");
+  });
+
+  it("R-2 a robot STOP compensation is a STOP (the robot dispatcher's own rule): sent by itself via the dispatcher + URGENT; a robot MOTION compensation is held", async () => {
+    const a = await chay([main(robotComp("undo", "abort", {}))]);
+    expect(a.res.status).toBe("failed");
+    expect(robotDispatchMock).toHaveBeenCalledTimes(1);
+    expect((await step(a.runId, "undo"))?.status).toBe("compensated");
+    await waitAlerts(1);
+    expect(alertsOf("stopSent")).toHaveLength(1);
+    robotDispatchMock.mockClear();
+    const b = await giuKhongRo([main(robotComp("undo", "run_job", { jobType: "move", params: { x: 1 } }))]);
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    expect((await step(b.runId, "undo"))?.status).toBe("held");
+  });
+
+  it("R-4 an unknown outcome with NO compensation due anywhere ⇒ URGENT (same key shape); a known failure ⇒ none; a resumed unknown ⇒ not told twice", async () => {
+    const { runId, res } = await chay([main()]);
+    expect(res.status).toBe("failed");
+    await waitAlerts(1);
+    expect(alertsOf("noCompensation").map((a) => a.dedupKey)).toEqual([expect.stringMatching(new RegExp(`^foe_outcome_unknown_no_compensation:${runId}:main:-:`))]);
+    alerts.length = 0;
+    otDispatchMock.mockImplementation(async () => REJECTED);
+    await chay([main()]);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(alerts.filter((a) => String(a.kind).startsWith("foe_outcome_unknown"))).toHaveLength(0);
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
+    const h = await giuKhongRo();
+    await waitAlerts(1);
+    alerts.length = 0;
+    expect((await tiep(h.runId, ADMIN, "checked")).status).toBe("failed");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(alertsOf("noCompensation")).toHaveLength(0);
+  });
+
+  it("m-3 two parallel holds: the marker lists both, one Continue sends both, ONE audit row per compensation", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("u1")), { ...main(resetComp("u2", 1)), id: "main2" } as WorkflowStep], { failFast: true })]);
+    expect(runRow(runId).contextJson[KET_CUC_KHONG_RO_CTX_KEY].ds).toEqual(expect.arrayContaining([{ stepId: "main", compId: "u1" }, { stepId: "main2", compId: "u2" }]));
+    otDispatchMock.mockClear();
+    await tiep(runId, ADMIN, "checked both");
+    expect(sent()).toEqual(["reset", "reset"]);
+    expect(audits.filter((a) => a.details?.operation === "foe_outcome_unknown_continue").map((a) => a.details.metadata.compId).sort()).toEqual(["u1", "u2"]);
+  });
+
+  it("m-6 the Continue's audit row cannot be written ⇒ NO write, the run stays held (not fail-open); an Abort is not refused for it", async () => {
+    const { runId } = await giuKhongRo();
+    otDispatchMock.mockClear();
+    HX.auditFails = true;
+    await expect(tiep(runId, ADMIN, "checked")).rejects.toThrow(/audit row of this Continue could not be written/);
+    expect(runRow(runId).status).toBe("held");
+    expect(sent()).toHaveLength(0);
+    await abortRun(runId, ADMIN, undefined, { scope: null });
+    expect(runRow(runId).status).toBe("aborted");
+  });
+
+  it("m-9 a second interruption of the SAME (step, compensation) — the crash before the context persisted, then a re-walk — ⇒ a second URGENT: only the EVENT tells them apart", async () => {
+    const { runId } = await giuKhongRo();
+    await waitAlerts(1);
+    const r = runRow(runId);
+    r.contextJson = {};
+    otDispatchMock.mockClear();
+    expect((await resumeRun(runId, { approved: true, note: "system re-walk" }, SYSTEM, {}, { scope: null })).status).toBe("held");
+    await waitAlerts(2);
+    const keys = alertsOf("held").map((a) => String(a.dedupKey));
+    expect(keys).toHaveLength(2);
+    expect(keys[0]!.split(":").slice(0, 4)).toEqual(keys[1]!.split(":").slice(0, 4));
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("m-10 the oversight hint says WHY", () => {
+    expect(goiYRunDangGiu({ status: "held", currentStepId: null, khongRo: "FOE_OUTCOME_UNKNOWN" })).toBe("held · outcome unknown (FOE_OUTCOME_UNKNOWN) — compensation waiting for a person");
+    expect(goiYRunDangGiu({ status: "awaiting_confirm", currentStepId: "g1", khongRo: null })).toBe("awaiting_confirm · g1");
   });
 });
