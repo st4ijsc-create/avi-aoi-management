@@ -36,6 +36,8 @@ const h = vi.hoisted(() => ({
   missingDispatch: new Set<string>(),
   /** R1b-2b-2a A2(n) — these steps' dispatch answers `timeout` (sent, outcome unknown) */
   timeoutDispatch: new Set<string>(),
+  /** A2(n) extension — these steps' NEXT dispatch alone answers `timeout` */
+  timeoutOnce: new Set<string>(),
   /** A2(n) — the URGENT alerts raised (recorded) */
   alerts: [] as Array<Record<string, any>>,
 }));
@@ -70,7 +72,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
       const stepId = m ? m[1] : "?";
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
-      if (h.timeoutDispatch.has(stepId)) return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
+      if (h.timeoutDispatch.has(stepId) || h.timeoutOnce.delete(stepId)) return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
       if (h.staleDispatch.delete(stepId)) {
         // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "CONFIG_STALE", detail: { edge: true, stop: false, reason: "CONFIG_STALE", refusal: "central announced config v4 3 s ago; this edge still holds v3 (issued 95 s ago) — non-STOP writes are refused until the refresh succeeds (STOPs still go)" } };
@@ -199,6 +201,7 @@ beforeEach(() => {
   h.staleDispatch.clear();
   h.missingDispatch.clear();
   h.timeoutDispatch.clear();
+  h.timeoutOnce.clear();
   h.alerts.length = 0;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
@@ -2386,6 +2389,15 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(ids()).toEqual(["x2"]);
     expect(e2.authorizeCalls.filter((a) => a.stepId === "r3").map((a) => a.attempt)).toEqual([1]);
     expect(hang(e2, "r3")).toMatchObject({ status: "failed", attempt: 1 });
+  });
+
+  it("★ a finding on the edge: a robot STOP unknown once, confirmed next, forward work dropped: a person IS told", async () => {
+    const e = await denBuoc(def("x-f", [gate(), { ...(robotStop("st") as object), maxAttempts: 1 } as never, move("r3")]));
+    h.timeoutOnce.add("st");
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["st", "st"]);
+    expect(String(hang(e, "r3")!.error)).toMatch(khongGui);
+    expect(baoCua(e, "forwardNotSent")).toHaveLength(1);
   });
 
   it("★ a refused forward step on a later segment: its compensation is not due (central's derived state: doneFailed), the run is not held for it, nothing is sent", async () => {

@@ -1672,14 +1672,15 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     const n = rows("ai_pending_actions").filter((a) => /-r3-a/.test(String(a.id))).length;
     expect(n).toBeLessThanOrEqual(1); // no `-a2` authorisation
     expect(rows("ai_pending_actions").some((a) => /-r3-a2/.test(String(a.id)))).toBe(false);
-    alerts.length = 0;
-    audits.length = 0;
-    otDispatchMock.mockClear();
-    await chay([par("p2", [main(), seq("b2", [delay("w2", 60), pause("r5")])], { failFast: false, maxAttempts: 2 })]);
-    await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1)); // one refusal: the parallel was not walked twice
+  });
+  it("★ (1) a container with a retry budget, whose only failure is the refusal: not walked again (no second attempt of its child)", async () => {
+    await chay([par("p2", [seq("b2", [delay("w2", 5), pause("r5")])], { failFast: false, maxAttempts: 2 })], (id) => {
+      runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
+    });
+    await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 20));
-    expect(auditBuoc()).toHaveLength(1);
-    expect(sent("start")).toHaveLength(1);
+    expect(auditBuoc()).toHaveLength(1); // one refusal: the parallel was not walked twice
+    expect(sent()).toHaveLength(0);
   });
   it("★ (1) a forward PINNED STOP after the latch IS sent (auth.stopGhim is set at that line), retried as a STOP; nothing waits", async () => {
     const { runId } = await chay([par("p", [main(), sau("b", stopFwd("st"))], { failFast: false })]);
@@ -1822,6 +1823,20 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     await kiemKhongRo(runId, "y");
     await kiemKhongRo(runId);
   });
+  it("★ the trap: only the latch names the step (its row was lost with the crash): stays unknown", async () => {
+    const runId = await chetSauChot([main()], (id) => store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== id || r.stepId !== "main")));
+    await autoResumeInterruptedRuns([runId]);
+    expect(sent()).toHaveLength(0);
+    await kiemKhongRo(runId);
+  });
+  it("★ the trap: central's list names a STOP-typed step that is not pinned (execStep lets a stop candidate through): stays unknown at the sink", async () => {
+    ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+    const { runId } = await chay([stopFwd("st")], (id) => {
+      runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeOutcomeUnknown: ["st"] };
+    });
+    expect(sent()).toHaveLength(0);
+    await kiemKhongRo(runId, "st");
+  });
   it("★ the trap: a code on a row the latch does not name, the row's status 'failed': stays unknown", async () => {
     const runId = await chetSauChot([par("p", [main(), pause("y")], { failFast: false })], (id) => {
       rows("orchestration_run_steps").push({ id: 99_003, runId: id, stepId: "y", stepType: "command", status: "failed", error: "FOE_OUTCOME_UNKNOWN: an earlier walk", attempt: 1, resultJson: null, startedAt: new Date(), finishedAt: null });
@@ -1837,6 +1852,27 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     expect(sent("stop")).toHaveLength(1);
     await kiemKhongRo(runId, "st");
     await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
+  });
+  it("★ a finding: a pinned STOP unknown on one attempt, confirmed on the next: nothing split, nobody told yet; forward work dropped ⇒ a person IS told, the run never ends silent", async () => {
+    let n = 0;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "stop" ? (n++ === 0 ? TIMEOUT : ACKED) : ACKED));
+    const { runId, res } = await chay([stopFwd("st"), pause("r3")]);
+    expect(n).toBe(2);
+    expect(res.status).toBe("failed");
+    expect(sent("pause")).toHaveLength(0);
+    expect((await step(runId, "r3"))!.error).toMatch(khongGui);
+    await vi.waitFor(() => expect(alertsOf("forwardNotSent")).toHaveLength(1));
+    expect(alerts).toHaveLength(1); // the only one: without it this run ends told to nobody
+    const a = alertsOf("forwardNotSent")[0]!;
+    expect(a.dedupKey).toContain(":r3:-:");
+    expect(a.title).toMatch(/NOT sent/);
+  });
+  it("(no extra URGENT: a walk that already told a person says nothing more about a refusal)", async () => {
+    const { runId } = await chay([par("p", [main(), sau("b", pause("r3"))], { failFast: false })]);
+    expect((await step(runId, "r3"))!.error).toMatch(khongGui);
+    await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(alertsOf("forwardNotSent")).toHaveLength(0);
   });
   it("(a known failure of an earlier walk is not 'may have gone out': the code, and it is not an unknown)", async () => {
     const { runId } = await chay([par("p", [pause("y")], { failFast: false })], (id) => {
