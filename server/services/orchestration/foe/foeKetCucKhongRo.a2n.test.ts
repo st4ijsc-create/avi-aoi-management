@@ -308,6 +308,8 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     await waitAlerts(1);
     expect(alertsOf("stopSent")).toHaveLength(1);
     expect(alertsOf("held")).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 50)); // a second alert would be in flight
+    expect(alertsOf("noCompensation")).toHaveLength(0); // the STOP's URGENT said it (R-4 is for nothing due)
     const a = alertsOf("stopSent")[0]!;
     expect(a.title).toBe(`Run ${runId}: command "main" outcome unknown — machine state unknown — STOP compensation sent ("undo")`);
     expect(String(a.message)).not.toContain("simulated");
@@ -719,8 +721,28 @@ describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, min
     await waitAlerts(1);
     expect(alertsOf("stopNotConfirmed")).toHaveLength(1);
     alerts.length = 0;
-    // handed over never: the store's own refusal on the dispatch path (an unknown machine would not deploy; a throw in the walk does the same)
     expect(noiDungCanhBaoKhongRo({ loai: "stopNotHanded", runId: 9, stepId: "X", compId: "Y", error: "e", lan: "L" }).message).not.toContain("handed to the dispatcher but");
+  });
+
+  it("m-1 an abort landing between the classification and the dispatch: nothing handed over ⇒ the URGENT says NOT sent, never 'handed to the dispatcher'", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
+    ghimMock.mockImplementation(async (_d, i) => {
+      if (i.commandType === "stop") {
+        const id = rows("orchestration_runs").at(-1)!.id as number;
+        await abortRun(id, ADMIN, "abort meanwhile", { scope: null });
+      }
+      return { pinnedStop: i.commandType === "stop", loiDocGhim: null };
+    });
+    const { runId } = await chay([main(stopComp())]);
+    await waitAlerts(1);
+    expect(alertsOf("stopNotHanded").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:main:undo:`)]);
+    expect(alertsOf("stopNotConfirmed")).toHaveLength(0);
+  });
+
+  it("m-4 the raw step error (a driver's host:port) is never in the URGENT, whatever its words", () => {
+    for (const loai of Object.keys(CANH_BAO_KHONG_RO_KIND) as Array<keyof typeof CANH_BAO_KHONG_RO_KIND>) {
+      expect(JSON.stringify(noiDungCanhBaoKhongRo({ loai, runId: 9, stepId: "X", compId: "Y", error: "FOE_OUTCOME_UNKNOWN: connect 10.9.8.7:5020", lan: "L" })), loai).not.toContain("10.9.8.7");
+    }
   });
 
   it("I-4 a non-failFast parallel never swallows an unknown outcome: Continue sends the held compensation and NOTHING forward; the run fails, never 'completed'", async () => {

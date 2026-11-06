@@ -1851,7 +1851,9 @@ describe("R1b-2b-2a A2(n) fix round 1 — the edge routes of an unknown outcome 
   });
 
   it("★ C-2 (c) a sibling's held reason never overwrites outcomeUnknown (one field, last write wins before): the marker and the check stay", async () => {
-    const e = await denBuoc(def("n1-c", [gate(), par("p", [move("r2"), move("r1", { compensation: ot("c1") })])]));
+    // the sibling's refusal comes AFTER the hold (a delay first), so a plain last-write-wins field would end on its reason
+    const later = { id: "later", type: "sequence", steps: [{ id: "w", type: "delay", ms: 80 }, move("r2")] } as never;
+    const e = await denBuoc(def("n1-c", [gate(), par("p", [later, move("r1", { compensation: ot("c1") })])]));
     h.timeoutDispatch.add("r1");
     e.offlineSteps = new Set(["r2"]);
     const s2 = await edgeSegment(e, 2);

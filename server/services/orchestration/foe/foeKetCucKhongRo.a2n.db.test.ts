@@ -77,6 +77,7 @@ import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { bamLenhOt, perWriteKey } from "../../ot/commandDispatcher";
+import { fetchOrchestrationHeld } from "../../../routers/oversightRouter";
 import { makeFoeGateRun } from "./__foeGateRunFixture";
 import { abortRun, autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction } from "./foeRunStore";
@@ -305,6 +306,9 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await choCanhBao("held", runId, 1);
       expect(canhBao("held", runId)[0]!.title).toBe(`Run ${runId}: command "main" outcome unknown — machine state unknown — compensation "undo" waiting for a person`);
       expect(canhBao("stopSent", runId)).toHaveLength(0);
+      // m-10 — the oversight hint says WHY (the real SQL over the marker)
+      const o = await fetchOrchestrationHeld(tx as never, [runId]);
+      expect(o.samples?.[0]?.hint).toBe("held · outcome unknown (FOE_OUTCOME_UNKNOWN) — compensation waiting for a person");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
