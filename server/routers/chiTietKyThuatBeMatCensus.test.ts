@@ -539,12 +539,6 @@ export const SO_CAI: Record<string, Muc> = {
     qua: ["cheRunView"],
     lyDo: "C2 fix 4 — steps[*].error / result.detail / run.error ⇒ mã cho khoá API (cheRunView(view, false)); adapter chỉ dùng nội bộ cho digest (" + MT_FOE + ")",
   },
-  "server/api/v1/router.ts#POST /equipment/:id/commands": {
-    dem: { ket_qua_lenh: 1 },
-    phanLoai: "che",
-    qua: ["cheKetQuaLenh"],
-    lyDo: "C2 polish — result.error ⇒ mã, result.detail ⇒ danh sách trắng chung với bước orchestration (cheKetQuaLenh(result, false)); khoá API không bao giờ là người xem",
-  },
   "server/api/v1/router.ts#POST /orchestration/runs": { dem: { dich_vu: 1, ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: "trả { runId, status, accepted }; webhook mang { runId, workflowRef, status } — " + MT_START_RUN },
   "server/api/v1/router.ts#orchestrationRunWebhookAudience": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "vị từ người nhận webhook — " + MT_VISIBLE },
   "server/api/v1/router.ts#POST /edge/sync": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: "khoá edge GHI kết quả run của chính nó (error do NÓ gửi lên); trả { runId, stepsApplied, abortRequested, stale } + message máy chủ" },
@@ -689,8 +683,10 @@ export const SO_CAI: Record<string, Muc> = {
  *     helper chỉ trả boolean).
  *   • SCADA 1a (đo 2026-11-03): { khoa 73, diemCham 106, che 15, mienTru 58 } — +1 khoá miễn trừ `socket.ts#initializeSocket` (dich_vu registerScadaHandlers:
  *     scada:tick đọc trạng thái kết nối RAM, chỉ trường `.tt`).
+ *   • pha 0 · C0-1 (2026-11-04): { khoa 72, diemCham 105, che 14, mienTru 58 } — −1 khoá che: REST `POST /equipment/:id/commands` ĐÃ GỠ (410 GONE cố định, không còn
+ *     kết quả lệnh nào trả cho khoá API); `cheKetQuaLenh` vẫn bắt buộc ở các bề mặt orchestration.
  */
-const GHIM = { khoa: 71, diemCham: 104, che: 15, mienTru: 56 }; // 2026-11-04 gỡ orchestrationGov (runEvents · replayRun): −2 khoá, −2 điểm chạm, −2 miễn trừ
+const GHIM = { khoa: 70, diemCham: 103, che: 14, mienTru: 56 }; // gộp: main gỡ orchestrationGov (−2 khoá, −2 điểm chạm, −2 miễn trừ) + pha 0 C0-1 gỡ REST commands (−1 khoá, −1 điểm chạm, −1 che); ĐO lại sau merge 2026-11-06
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;
@@ -741,7 +737,9 @@ describe("★★★ census — chi tiết kỹ thuật adapter (endpoint / activ
     for (const g of GOC_BE_MAT) expect(DO.soTep[g], `số tệp quét dưới ${g}`).toBeGreaterThanOrEqual(SAN_TEP[g]);
     expect(DO.dichVu.size, "số hàm dịch vụ nguồn").toBeGreaterThanOrEqual(SAN_NGUON_DICH_VU);
     const loai = new Set([...DO.dem.values()].flatMap((v) => Object.keys(v)));
-    for (const l of ["cot_ky_thuat", "nguyen_hang", "sql_tho", "ram", "dich_vu", "ham_cuc_bo", "ket_qua_lenh"]) expect(loai.has(l), `loại ${l}`).toBe(true);
+    // `ket_qua_lenh` KHÔNG còn trong danh sách BẮT BUỘC xuất hiện (pha 0 · C0-1: cửa REST `POST /equipment/:id/commands` đã gỡ ⇒ hiện 0 điểm chạm). Bộ phát hiện (dòng ~430)
+    // VẪN còn: ai thêm lại một lời gọi `<adapter>.sendCommand(…)` sẽ sinh khoá `ket_qua_lenh` chưa phân loại ⇒ ĐỎ cho tới khi được xếp loại (không thành lỗ hổng im lặng).
+    for (const l of ["cot_ky_thuat", "nguyen_hang", "sql_tho", "ram", "dich_vu", "ham_cuc_bo"]) expect(loai.has(l), `loại ${l}`).toBe(true);
     expect(DO.dem.size).toBeGreaterThan(0);
   });
 
