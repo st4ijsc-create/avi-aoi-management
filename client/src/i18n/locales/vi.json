@@ -24606,6 +24606,10 @@
       }
     },
     "dungMay": {
+      "lopNoi": {
+        "nhan": "Dừng máy khẩn cấp",
+        "nut": "DỪNG MÁY — {{may}}"
+      },
       "nut": "DỪNG MÁY",
       "tieuDe": "Dừng máy {{may}}?",
       "moTa": "Gửi STOP đã ghim tới {{n}} adapter.",
