@@ -24,7 +24,7 @@
 | P0‑4 | `moduleGate` cache 60 s (RAM) — 0 truy vấn DB/lần gọi; fail‑open giữ (đã duyệt giữ license RAM) | `server/license/moduleGate.ts:104-110,154-163` | đếm truy vấn: 135 chỗ gọi, 0 query sau cache ấm |
 | P0‑5 | Gỡ mã OTel/Sentry (không gói) + cờ `OTEL_*`, `SENTRY_*` | `_core/observability.ts:70-120` | grep = 0; `/metrics` Prometheus vẫn chạy |
 | P0‑6 | Retention mặc định bật (`DATA_RETENTION_ENABLED` gỡ cờ) + backup pg_dump theo lịch + `DR_VERIFY` bật; lịch chạy ở worker | `dataRetentionService.ts`, `backupService.ts`, `backgroundJobs.ts:113,255,409` | `uploads/backups/` có tệp sau 1 lịch; log job |
-| P0‑7 | `.env`: khoá trùng → 0 (kiem‑dinh đo "trước" 04/11: còn **1** `AI_PROGRAMMING_COPILOT_ENABLED` ×2, không phải 13); `.env.example` đồng bộ | `.env` (**chủ dự án sửa**, dieu‑phoi đưa diff) | script đếm khoá trùng = 0 |
+| P0‑7 | `.env` khoá trùng → 0 — **XONG 06/11** (chủ dự án xoá 2 dòng 747/756) | script đếm khoá trùng = 0 |
 | P0‑8 | `/api-docs` và `/component-showcase` ra khỏi app (docs tĩnh sinh từ `/api/v1/openapi.json`; Storybook/`vite --mode dev` cho showcase); route 404 | `client/src/pages/ApiDocs.tsx` 3 578, `ComponentShowcase.tsx` 1 833, `App.tsx` | 2 route public biến mất; bundle giảm |
 | P0‑9 | Gỡ 6 trang chết (`AIHub`, `AIStudioHub`, `AILocalKnowledgeBasePage`, `DashboardTemplates`, `TemplateMarketplace`, `TestAnnotationPage`) + `AIChatBox`, `AILocalKnowledgeBase` | 1 439 + 680 LOC | grep import = 0; redirect giữ |
 | P0‑10 | Gỡ `socket.ts:2797` `calculateOEE` chết (SQL sai cột) | `_core/socket.ts` | grep = 0 |
@@ -65,7 +65,7 @@
 | E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
 | E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
 | E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
-| F0‑1 | `vram_events` retention 30 d (job + xoá cũ hơn sau duyệt: ≈ 60k hàng) | 80‑N8 |
+| F0‑1 | `vram_events`: xoá một lần > 30 d **đã làm 04/11** (55 887, còn 10 556); mục retention có trong `dataRetentionService` nhưng **mặc định TẮT** — chủ dự án chọn để tắt 06/11 (khoá `RETENTION_VRAM_EVENTS_DAYS` chú thích) | 80‑N8 (theo cấu hình) |
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
 | Q0‑1 | Gỡ router chết `inspectionVariant`, `mpVariantSubform`, `thresholdSuggestion`, `measurementSamples`, `spcConfig`; trang chết `SPCAdvanced`, `AnnotationStatistics`, `AnalyticsSettings`, mồ côi `ImageAnnotation`, `ImageComparison`, `BatchImageExport`, `ProductMachineMappingContent`, annotation helpers, `HistoryBatchOperations` (≈ 5 700 LOC) | 60‑N9 census |
