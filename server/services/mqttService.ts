@@ -3247,25 +3247,23 @@ export async function publishBulletin(
     // Send FCM push notification to subscribed clients
     if (options.sendFcm) {
       try {
-        const { sendBulletinPushNotification } = await import('./fcmService') as any;
-        if (typeof sendBulletinPushNotification === 'function') {
-          const stats = payload.statistics || {};
-          const fcmResult = await sendBulletinPushNotification({
-            stationId,
-            stationName: payload.stationName || station[0].station.name,
-            totalCount: stats.totalCount || 0,
-            okCount: stats.okCount || 0,
-            ngCount: stats.ngCount || 0,
-            ntfCount: stats.ntfCount || 0,
-            yieldRate: stats.yieldRate || 0,
-            failPointsCount: (payload.failPoints || []).length,
-            period: payload.period,
-          });
-          console.log(`[FCM] Bulletin push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
-        }
+        const { sendBulletinPushNotification } = await import('./fcmService');
+        const stats = payload.statistics || {};
+        const fcmResult = await sendBulletinPushNotification({
+          stationId,
+          stationName: payload.stationName || station[0].station.name,
+          totalCount: stats.totalCount || 0,
+          okCount: stats.okCount || 0,
+          ngCount: stats.ngCount || 0,
+          ntfCount: stats.ntfCount || 0,
+          yieldRate: stats.yieldRate || 0,
+          failPointsCount: (payload.failPoints || []).length,
+          period: payload.period,
+        });
+        console.log(`[FCM] Bulletin push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
       } catch (fcmError) {
         // FCM is optional - don't fail bulletin if FCM fails
-        console.log('[FCM] Bulletin push notification skipped (function not available)');
+        console.log('[FCM] Bulletin push notification failed:', String(fcmError));
       }
     }
 

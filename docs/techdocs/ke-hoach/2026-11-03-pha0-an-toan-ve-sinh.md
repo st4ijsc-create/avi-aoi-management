@@ -60,7 +60,7 @@
 
 | # | Việc | Nghiệm thu |
 |---|---|---|
-| E0‑1 | Dừng job `twinFidelity` (`TWIN_FIDELITY_ENABLED=false`, gỡ lịch) + **xoá `simulation_runs` 80 941** (sau duyệt) | bảng 0 hàng, job không chạy |
+| E0‑1 | Dừng job `twinFidelity` + **xoá `simulation_runs`: XONG 06/11 — 84 127 → 0** (chủ dự án duyệt đúng số; job đã dừng) | bảng 0 hàng, job không chạy |
 | E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`); **giữ** 2 seeder dev chạy tay `seed.mjs`/`seed-production.mjs` (miễn trừ có tên, 70‑N1 sửa 04/11) | 70‑N1: grep INSERT trong `scripts/sim*` ∖ {2 seeder} = 0; không lịch/boot nào gọi seeder — **XONG 04/11** (tho-ca-agent) |
 | E0‑2b | `simOtTelemetryService`: **chủ dự án chọn B (06/11) — GỠ**, chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5 | gộp eng‑ai tiếp tục |
 | E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
@@ -70,9 +70,9 @@
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
 | Q0‑1 | Gỡ router chết `inspectionVariant`, `mpVariantSubform`, `thresholdSuggestion`, `measurementSamples`, `spcConfig`; trang chết `SPCAdvanced`, `AnnotationStatistics`, `AnalyticsSettings`, mồ côi `ImageAnnotation`, `ImageComparison`, `BatchImageExport`, `ProductMachineMappingContent`, annotation helpers, `HistoryBatchOperations` (≈ 5 700 LOC) | 60‑N9 census |
-| Q0‑2 | Sửa 6 công thức lệch về `shared/kpiYield.ts`: `productionDashboardRouter:250,440,488`, `stationAnalysisRouter:832`, `dataComparisonService:267`, `federationRouter:266`, `aiSmartAlertRouter.detectYieldDrop`; nhãn "FPY" client đúng định nghĩa; ngưỡng yield ingest `< 90` cứng → đọc cấu hình | 60‑N3 so khớp 3 bề mặt |
+| Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
-| Q0‑4 | `qualityGateEvaluator` bỏ UPDATE `machines`; `acquisitionWorker` qua WAL (lỗ đã biết) | test |
+| Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
 | Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song
@@ -115,6 +115,6 @@ route sống · trang không import · router 0 client · `notifications` 24 h *
 | F0‑1 `vram_events` > 30 d | 66 443 | 55 887 | 10 556 | chủ dự án đặt `RETENTION_VRAM_EVENTS_DAYS=30` sau gộp eng‑ai |
 | T0‑4a `machine_health_history` > 90 d | 2,88 M | 77 798 | 2 801 600 | vẫn ≈ 1 GB — < 200 MB chỉ ở 30‑T8 |
 | T0‑4b `rul_estimates` > 90 d | 2,86 M | 55 207 | 2 799 905 | như trên |
-| E0‑1 `simulation_runs` | 82 626 | 0 (hoãn) | 82 626 | xoá sau khi nhánh gỡ lịch lên main |
+| E0‑1 `simulation_runs` | 84 127 (duyệt 06/11) | 84 127 | 0 | xoá sau khi job fidelity dừng (`:3000` bản main 45ee3b777), đếm 2 lần cách 6 phút không đổi, khoá bằng số đã duyệt |
 | Q0‑5 seed `product_inspections` | 13 236 | 0 (giữ) | 13 236 | WORM; chủ dự án chọn giữ |
 | `machine_status_logs` | 95 971 | — | — | không đưa vào: OEE đang đọc |

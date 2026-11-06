@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "{{field}}的值无效。",
     "INVALID_VALUE_WITH_REASON": "{{field}}的值无效。{{reason}}",
     "FEATURE_DISABLED": "此系统尚未启用{{feature}}功能。",
+    "MODULE_PAUSED": "{{module}} 模块已暂停，将在后续开发 — 命令未发送。",
     "OPERATION_FAILED": "操作失败：{{operation}}。",
     "OPERATION_FAILED_WITH_REASON": "操作失败：{{operation}}。{{reason}}",
     "PERMISSION_DENIED": "您无权：{{action}}。",
@@ -17021,8 +17022,8 @@
     "trendDesc": "按周期的 kWh 与 CO₂"
   },
   "cockpit": {
-    "actionsGate": "只读驾驶舱。“提议”会打开受控的控制平面 — 它绝不直接下发命令。",
-    "actionsHint": "您可以提议的命令。执行仍处于既有的受控（人工在环 / 试运行）控制界面之后 — 此处不会运行任何命令。",
+    "actionsGate": "只读驾驶舱。不会从这里下发命令；命令走受控的机台控制界面。",
+    "actionsHint": "该机台能力档案支持的命令 — 仅供参考，此处不会运行任何命令。",
     "active": "活跃",
     "adapterKind": "适配器类型",
     "alarmsHint": "按机器的 ISA-18.2 归一化数据源",
@@ -24673,9 +24674,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "通信 {{ketNoi}}/{{tong}}",
-        "coEdge": "通信 {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "重连中 {{dangNoi}} · 已断开 {{mat}} · 其他 {{khac}} — 点击打开通信诊断"
+        "nhan": "通信 {{ketNoi}} 已连接 · {{khac}} 已关闭",
+        "dangNoi": "{{dangNoi}} 重连中",
+        "mat": "{{mat}} 已断开",
+        "edge": "edge {{edge}}",
+        "moTaCu": "读取失败 — 上一次的数字（更新于 {{luc}}）。",
+        "moTa": "配置中已启用的 {{tong}} 个适配器（不含 edge）：{{ketNoi}} 已连接 · {{dangNoi}} 重连中 · {{mat}} 已断开 · {{khac}} 已关闭或未知 — 点击打开通信诊断"
       }
     },
     "orchestration": {
@@ -24865,5 +24869,12 @@
     "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
     "tuChoi": "不发送",
     "dongY": "同意并发送"
+  },
+  "robotTamDung": {
+    "tieuDe": "机器人/AGV 模块将在后续开发",
+    "moTa": "机器人/AGV 控制已暂停：本页仅报告状态，不会下发任何命令。其他机台与产线不受影响。",
+    "moTaNgan": "仅查看 — 人机协作暂停，待机器人/AGV 模块开发后恢复。",
+    "dangKiemTra": "正在检查模块状态…",
+    "veTrangChu": "返回首页"
   }
 }

@@ -43,12 +43,10 @@ export const MIEN: Record<string, string> = {
   "server/services/equipment/equipmentAdapter.ts::OtEquipmentAdapter.sendCommand": "mặt tiền OT: chuyển reason MOT_PHAN + motPhan của dispatcher / edge vào detail (FOE xét); không thử lại",
   "server/services/equipment/equipmentAdapter.ts::RobotEquipmentAdapter.sendCommand": "robot: một job, không kết quả theo item ⇒ không thể một phần; không thử lại",
   // ── một lần gửi, kết cục về người gọi (không gửi lại tự động; reason MOT_PHAN tới người gọi) ──
-  "server/api/v1/router.ts::createV1Router": "API v1: một lần sendCommand, kết quả (detail.reason / detail.motPhan) trả về bên gọi API; không thử lại",
   "server/services/aiLocalTools/writeHandlers/machineControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả (reason MOT_PHAN) về người dùng; không thử lại",
   "server/services/aiLocalTools/writeHandlers/visionControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả về người dùng; không thử lại",
   "server/services/interlock/interlockEngine.ts::evaluateRule": "interlock tự chặn: một lần dispatch mỗi sự kiện, kết quả vào sổ + audit; không thử lại",
   "server/services/ot/adapterFacade.ts::createAdapterFacade": "lệnh canonical tag.write: MỘT write, một lần dispatch, ack mang reason (dispatchResultToAck); trùng khoá ⇒ ack cũ, không thực thi lại",
-  "server/services/uns/sparkplugCommand.ts::SparkplugCommandHandler.routeControlMetrics": "Sparkplug DCMD: một lần dispatch (tiêm) mỗi loại lệnh, kết quả ghi log; không thử lại",
   "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts::MitsubishiEngineeringAdapter.deploy": "đẩy tham số công thức MC (lô nhiều write): một lần dispatch, error = reason (MOT_PHAN) về người triển khai; không thử lại",
   // ── STOP: luôn gửi lại / gửi ngay (dừng là idempotent) ──
   "server/services/orchestration/foe/foeEngine.ts::runAbortStopSweep": "quét STOP khi huỷ run: chỉ gửi STOP ghim — dừng là idempotent",
@@ -328,12 +326,10 @@ export const MIEN_DA_BAY: Record<string, string> = {
   "server/services/equipment/equipmentAdapter.ts::OtEquipmentAdapter.sendCommand": "mặt tiền OT: chuyển detail.reason (+ detail.refusal của edge) của bên gửi vào kết quả nguyên vẹn (FOE xét); không thử lại",
   "server/services/equipment/equipmentAdapter.ts::RobotEquipmentAdapter.sendCommand": "mặt tiền robot: chuyển error (IDEMPOTENT_JOB_IN_PROGRESS / process_restart_outcome_unknown) + detail.reason/refusal của edge nguyên vẹn (FOE xét); không thử lại",
   // ── một lần gửi, kết cục về người gọi (không gửi lại TỰ ĐỘNG với khoá / attempt mới) ──
-  "server/api/v1/router.ts::createV1Router": "API v1: một lần sendCommand, kết quả (detail.reason) về bên gọi API; không thử lại",
   "server/services/aiLocalTools/writeHandlers/machineControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả (reason) về người dùng; không thử lại",
   "server/services/aiLocalTools/writeHandlers/visionControl.ts::runDispatch": "công cụ AI ghi: một lần dispatch sau HITL, kết quả về người dùng; không thử lại",
   "server/services/interlock/interlockEngine.ts::evaluateRule": "interlock tự chặn: một lần dispatch mỗi sự kiện, kết quả vào sổ + audit; không thử lại",
   "server/services/ot/adapterFacade.ts::createAdapterFacade": "lệnh canonical tag.write: một lần dispatch, ack mang reason; trùng khoá ⇒ ack cũ, không thực thi lại",
-  "server/services/uns/sparkplugCommand.ts::SparkplugCommandHandler.routeControlMetrics": "Sparkplug DCMD: một lần dispatch mỗi loại lệnh, kết quả ghi log; không thử lại",
   "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts::MitsubishiEngineeringAdapter.deploy": "đẩy tham số công thức MC: một lần dispatch, error = reason về người triển khai; không thử lại",
   "server/services/scada/lenhHmi.ts::xacNhanGhiTag": "HMI ghi tag: một lần dispatch sau xác nhận của người vận hành, kết quả (reasonCode) về màn hình; không thử lại",
   "server/routers/robotRouter.ts::<module>": "thủ tục robot (job từ người dùng): một lần dispatchRobotJob, kết quả (error) về người gọi; không thử lại",

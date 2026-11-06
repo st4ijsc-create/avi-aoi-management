@@ -1,64 +1,27 @@
 /**
- * Sprint F4 HITL — Sparkplug-B COMMAND direction (NCMD/DCMD) RECEIVE handler.
+ * Sparkplug-B COMMAND direction (NCMD/DCMD) — RECEIVE handler. Pha 0 · C0-1 (2026-11-04): CHỈ CÒN "Node Control/Rebirth".
  *
- * ════════════════════════════════════════════════════════════════════════════
- * Adds the previously-missing INBOUND control direction to the Sparkplug stack.
- * The publish side (NBIRTH/DBIRTH/DDATA/NDEATH in sparkplugNode/unsPublisher) is
- * unchanged; this module ONLY decodes inbound NCMD/DCMD and routes them safely.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Lịch sử: Sprint F4 từng thêm chiều NHẬN lệnh vào ngăn xếp Sparkplug: DCMD (lệnh thiết bị) → ánh xạ metric → `commandDispatcher.dispatch()` dưới HITL
+ * (`HITL/ActionId` + `sparkplug.command`). TechDocs 50 §C0: đó là CỬA CHẾT (không ai tạo pending `sparkplug.command`) — nên GỠ nhánh DCMD, quyết định chủ dự án
+ * qua dieu-phoi 2026-11-04 (chọn B): GIỮ NCMD "Node Control/Rebirth" (chỉ phát lại BIRTH, không ghi thiết bị — host Sparkplug bên thứ ba cần nó).
  *
- * SAFETY — ABSOLUTE:
- *   - A received DCMD (device command) is NEVER executed against hardware here.
- *     It is decoded (metric name + value), mapped to a platform machine, and
- *     handed to the EXISTING commandDispatcher.dispatch() under the SAME gates as
- *     any other control command:
- *       triggeredBy.kind = 'hitl' + requireBoundAction AND OT_CONTROL_ENABLED gate
- *       inside dispatch().
- *   - doc 81 Đợt 1B Task 6 (BE2 §3 S1 — anonymous MQTT client publishing DCMD): a
- *     command must carry a HITL actionId in the reserved string metric
- *     `HITL/ActionId` (SPARKPLUG_ACTION_ID_METRIC). The dispatcher then requires a
- *     'confirmed', unexpired ai_pending_actions row created for tool
- *     `sparkplug.command` whose canonical payload hash matches EXACTLY this
- *     adapter/machine/commandType/writes — on EVERY path (simulated too). No / invalid
- *     actionId ⇒ `rejected` ledger row, no driver call. No confirmer is fabricated
- *     (the old `confirmedBy = systemUserId` — 0 by default — is gone): the confirmer
- *     is the owner of the bound row. This closes S1 in code whatever
- *     SPARKPLUG_COMMAND_ENABLED says (the flag only decides whether we subscribe).
- *   - This module does NOT call driver.writeTags and does NOT edit/duplicate the
- *     dispatcher's HITL/dry-run logic — it CALLS dispatch() and nothing else.
- *   - The one safe auto-action Sparkplug expects is "Node Control/Rebirth": an
- *     NCMD asking the edge node to re-publish its BIRTH certificates. That is
- *     re-publish telemetry only (no device control) → handled via the injected
- *     `onRebirth` callback.
+ * BẤT BIẾN (census `sparkplugCommand.khongGhi.test.ts` canh bằng AST):
+ *   • Module này KHÔNG import `commandDispatcher` / `otDeviceWrite` / adapter / driver, KHÔNG có `dispatch`, `writeTags`, `deployFile`, `resolveTarget`, `metricToWrite`.
+ *   • DCMD ⇒ BỊ TỪ CHỐI (không bao giờ ghi/bay thiết bị), có log; mọi metric NCMD ngoài Rebirth ⇒ bỏ qua, có log.
+ *   • Rebirth là hành động an toàn duy nhất: gọi `onRebirth` (do publisher cung cấp) để phát lại NBIRTH/DBIRTH.
  *
- * FLAG: SPARKPLUG_COMMAND_ENABLED (default OFF). When off, subscribe() is a no-op
- *       and the platform stays publish-only (current behaviour).
- *
- * FAIL-SAFE: malformed payloads are logged + dropped; unknown metrics ignored;
- *            the MQTT message handler NEVER throws (every path is try/caught).
- *
- * PURE-ish: all I/O (subscribe, dispatch, rebirth, machine lookup) is injected so
- *           this module is testable offline (mock MQTT + mock dispatcher).
- * ════════════════════════════════════════════════════════════════════════════
+ * FLAG: SPARKPLUG_COMMAND_ENABLED (mặc định TẮT). Tắt ⇒ `start()` không subscribe, nền tảng chỉ publish (hành vi hiện tại).
+ * FAIL-SAFE: payload hỏng bị log + bỏ; handler MQTT KHÔNG BAO GIỜ ném.
+ * PURE-ish: mọi I/O (subscribe, rebirth) được tiêm ⇒ test offline.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import { decodePayload, type SparkplugMetric } from "./sparkplugEncoder";
 import { buildTopic } from "./topicBuilder";
-import type { DispatchInput, DispatchResult } from "../ot/commandDispatcher";
 
 /** Sparkplug well-known metric name for the rebirth request (NCMD). */
 export const REBIRTH_METRIC = "Node Control/Rebirth";
-
-/**
- * doc 81 Đợt 1B Task 6 — reserved metric carrying the HITL actionId (String) of a
- * command. It is NEVER mapped to a device write.
- */
-export const SPARKPLUG_ACTION_ID_METRIC = "HITL/ActionId";
-
-/**
- * doc 81 Đợt 1B Task 6 — the `ai_pending_actions.tool` a Sparkplug command's action must
- * have been created for (part of the canonical payload hash, otActionBinding.ts).
- */
-export const SPARKPLUG_COMMAND_TOOL = "sparkplug.command";
 
 /** A decoded inbound Sparkplug command (NCMD or DCMD), normalised. */
 export interface InboundCommand {
@@ -70,21 +33,6 @@ export interface InboundCommand {
   metrics: SparkplugMetric[];
 }
 
-/** Result of mapping a Sparkplug node/device → a platform OT target. */
-export interface MachineTarget {
-  machineId: number;
-  adapterId: number;
-}
-
-/**
- * Map a single decoded DCMD metric → a dispatcher write. Returns null to IGNORE
- * the metric (unknown / not a control intent). Keeps the Sparkplug→tag mapping
- * out of the dispatcher (which only knows tagKey/value).
- */
-export type MetricToWrite = (
-  metric: SparkplugMetric,
-) => { tagKey: string; value: unknown; commandType: string } | null;
-
 /** Injected dependencies — every side-effect is a callback (testable). */
 export interface SparkplugCommandDeps {
   /**
@@ -95,30 +43,11 @@ export interface SparkplugCommandDeps {
     topicFilters: string[],
     onMessage: (topic: string, payload: Buffer) => void,
   ) => void;
-  /** Reuse the EXISTING commandDispatcher.dispatch (HITL + dry-run gating). */
-  dispatch: (input: DispatchInput) => Promise<DispatchResult>;
   /**
    * Re-publish BIRTH certificates (NBIRTH + DBIRTH). The ONE safe auto-action.
    * Provided by the publisher which owns the MQTT client + SparkplugNode.
    */
   onRebirth: () => void;
-  /**
-   * Resolve a Sparkplug node/device → a platform machine + adapter. Returns null
-   * when the device is unknown (command is then dropped — never guessed).
-   */
-  resolveTarget: (
-    groupId: string,
-    edgeNodeId: string,
-    deviceId: string | undefined,
-  ) => Promise<MachineTarget | null> | MachineTarget | null;
-  /** Map one DCMD metric → a write (or null to ignore). */
-  metricToWrite: MetricToWrite;
-  /**
-   * System user id recorded as `requestedBy` on the dispatch (the inbound command has
-   * no interactive human). doc 81 Đợt 1B Task 6: it is NOT used as the confirmer any
-   * more — the confirmer is the owner of the bound HITL action.
-   */
-  systemUserId: number;
   /** Optional logger (defaults to console). */
   log?: Pick<Console, "warn" | "error" | "info">;
 }
@@ -131,7 +60,7 @@ export function isSparkplugCommandEnabled(): boolean {
 /** The NCMD/DCMD topic filters for one edge node (group + node wildcard for devices). */
 export function commandTopicFilters(groupId: string, edgeNodeId: string): string[] {
   // NCMD: spBv1.0/<group>/NCMD/<node>
-  // DCMD: spBv1.0/<group>/DCMD/<node>/<device>  (+ on any device under the node)
+  // DCMD: spBv1.0/<group>/DCMD/<node>/<device>  (+ on any device under the node) — vẫn subscribe để GHI LOG việc bị từ chối, không để lệnh im lặng.
   const ncmd = buildTopic(groupId, "NCMD", edgeNodeId);
   const dcmdNode = buildTopic(groupId, "DCMD", edgeNodeId);
   return [ncmd, `${dcmdNode}/+`];
@@ -199,7 +128,7 @@ export class SparkplugCommandHandler {
           this.log.error("[SparkplugCmd] handler error (dropped):", (err as Error)?.message ?? err);
         });
       });
-      this.log.info?.(`[SparkplugCmd] subscribed: ${filters.join(", ")}`);
+      this.log.info?.(`[SparkplugCmd] subscribed (Rebirth only): ${filters.join(", ")}`);
     } catch (err) {
       this.log.error("[SparkplugCmd] subscribe failed:", (err as Error)?.message ?? err);
     }
@@ -237,9 +166,9 @@ export class SparkplugCommandHandler {
 
     try {
       if (parsed.kind === "NCMD") {
-        await this.handleNcmd(cmd);
+        this.handleNcmd(cmd);
       } else {
-        await this.handleDcmd(cmd);
+        this.refuseDcmd(cmd);
       }
     } catch (err) {
       // Defense-in-depth: routing must never throw into the MQTT handler.
@@ -248,12 +177,8 @@ export class SparkplugCommandHandler {
     return cmd;
   }
 
-  /**
-   * NCMD: the only auto-action we honour is "Node Control/Rebirth" → re-publish
-   * BIRTH. Any other NCMD metric is a node-control intent → routed like a DCMD
-   * (HITL/dry-run) if mappable, else ignored.
-   */
-  private async handleNcmd(cmd: InboundCommand): Promise<void> {
+  /** NCMD: the ONLY honoured intent is "Node Control/Rebirth" → re-publish BIRTH. Every other metric is ignored (logged). */
+  private handleNcmd(cmd: InboundCommand): void {
     const rebirth = cmd.metrics.find((m) => m.name === REBIRTH_METRIC);
     if (rebirth && isTruthyCommand(rebirth.value)) {
       this.log.info?.(`[SparkplugCmd] NCMD Rebirth requested for ${cmd.groupId}/${cmd.edgeNodeId} → re-publishing BIRTH`);
@@ -262,85 +187,18 @@ export class SparkplugCommandHandler {
       } catch (err) {
         this.log.error(`[SparkplugCmd] rebirth failed: ${(err as Error)?.message ?? err}`);
       }
-      return;
     }
-    // Non-rebirth NCMD metrics: treat as node-level control → HITL/dry-run route.
-    await this.routeControlMetrics(cmd);
-  }
-
-  /** DCMD: a device control intent → route through the HITL dispatcher (dry-run). */
-  private async handleDcmd(cmd: InboundCommand): Promise<void> {
-    await this.routeControlMetrics(cmd);
-  }
-
-  /**
-   * Map each control metric → a dispatcher write and route it through the EXISTING
-   * commandDispatcher (HITL trigger, dry-run gated by OT_CONTROL_ENABLED). Unknown
-   * metrics are ignored. Never executes hardware here.
-   */
-  private async routeControlMetrics(cmd: InboundCommand): Promise<void> {
-    // doc 81 Đợt 1B Task 6 — the HITL actionId travels in a reserved metric; it is
-    // extracted here and never becomes a write.
-    let actionId: string | undefined;
-    const writes: Array<{ tagKey: string; value: unknown; commandType: string }> = [];
     for (const m of cmd.metrics) {
-      if (m.name === REBIRTH_METRIC) continue; // handled by rebirth path
-      if (m.name === SPARKPLUG_ACTION_ID_METRIC) {
-        if (typeof m.value === "string" && m.value.trim() !== "") actionId = m.value.trim();
-        continue;
-      }
-      let mapped: ReturnType<MetricToWrite>;
-      try {
-        mapped = this.deps.metricToWrite(m);
-      } catch {
-        mapped = null;
-      }
-      if (mapped) writes.push(mapped);
-      else this.log.info?.(`[SparkplugCmd] unknown metric ignored: ${String(m.name ?? m.alias)}`);
+      if (m.name === REBIRTH_METRIC) continue;
+      this.log.warn(`[SparkplugCmd] NCMD metric ignored (only Rebirth is supported): ${String(m.name ?? m.alias)}`);
     }
-    if (writes.length === 0) return;
+  }
 
-    const target = await this.deps.resolveTarget(cmd.groupId, cmd.edgeNodeId, cmd.deviceId);
-    if (!target) {
-      this.log.warn(
-        `[SparkplugCmd] no machine mapped for ${cmd.groupId}/${cmd.edgeNodeId}` +
-          `${cmd.deviceId ? "/" + cmd.deviceId : ""} — command dropped`,
-      );
-      return;
-    }
-
-    // Group writes by commandType so each dispatch carries a single command intent.
-    const byType = new Map<string, Array<{ tagKey: string; value: unknown }>>();
-    for (const w of writes) {
-      const list = byType.get(w.commandType) ?? [];
-      list.push({ tagKey: w.tagKey, value: w.value });
-      byType.set(w.commandType, list);
-    }
-
-    for (const [commandType, ws] of byType) {
-      const input: DispatchInput = {
-        adapterId: target.adapterId,
-        machineId: target.machineId,
-        commandType,
-        writes: ws,
-        // doc 81 Đợt 1B Task 6 — HITL trigger that REQUIRES a bound action on every path.
-        // No confirmedBy: nobody is fabricated as the confirmer; the dispatcher takes the
-        // owner of the bound, confirmed row (or rejects + ledgers when there is none).
-        // One actionId authorises ONE dispatch (it is consumed on the real path).
-        triggeredBy: {
-          kind: "hitl",
-          actionId,
-          tool: SPARKPLUG_COMMAND_TOOL,
-          requestedBy: this.deps.systemUserId,
-          requireBoundAction: true,
-        },
-        idempotencyKey: `spcmd-${target.machineId}-${cmd.kind}-${commandType}-${Date.now()}`,
-      };
-      const res = await this.deps.dispatch(input);
-      this.log.info?.(
-        `[SparkplugCmd] ${cmd.kind} ${commandType} → machine #${target.machineId}: ` +
-          `${res.status}${res.simulated ? " (DRY-RUN)" : ""}`,
-      );
-    }
+  /** DCMD: lệnh thiết bị qua Sparkplug đã GỠ (pha 0 · C0-1) — từ chối + ghi log, KHÔNG ghi/bay thiết bị, KHÔNG gọi dispatcher. */
+  private refuseDcmd(cmd: InboundCommand): void {
+    this.log.warn(
+      `[SparkplugCmd] DCMD REFUSED for ${cmd.groupId}/${cmd.edgeNodeId}/${cmd.deviceId ?? "?"} (${cmd.metrics.length} metric(s)): ` +
+        `device commands over Sparkplug were removed (pha 0 C0-1) — nothing was written`,
+    );
   }
 }

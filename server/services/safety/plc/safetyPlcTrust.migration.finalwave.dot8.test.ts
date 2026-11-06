@@ -10,7 +10,7 @@ vi.hoisted(() => {
   process.env.OAUTH_SERVER_URL ??= "http://127.0.0.1:9/oauth-unused";
 });
 
-const F = vi.hoisted(() => ({ code: "42P01" as string | undefined, cfgs: [] as Array<Record<string, unknown>>, trustOk: false }));
+const F = vi.hoisted(() => ({ code: "42P01" as string | undefined, cfgs: [] as Array<Record<string, unknown>>, trustOk: false, quyen: [] as Array<Record<string, unknown>> }));
 function dbError() {
   const cause = Object.assign(new Error('relation "safety_plc_config_trust" does not exist'), F.code ? { code: F.code } : {});
   return Object.assign(new Error("Failed query: insert into safety_plc_config_trust ..."), { cause });
@@ -26,6 +26,7 @@ vi.mock("../../../db/connection", () => ({
         // only the maker-checker table is missing; any other table (e.g. licenses for moduleGate) answers empty
         where: () => {
           const name = t?.[Symbol.for("drizzle:Name")];
+          if (name === "permissions") return { limit: async () => F.quyen }; // P0-2: admin đọc hàng quyền, mặc định không hàng
           if (name === "safety_plc_config_trust" && !F.trustOk) return Promise.reject(dbError());
           // F5 batch audit lookup (grouped): fails here when the trust rows are readable (undecidable SoD)
           if (name === "control_audit_log") return Object.assign(Promise.resolve([]), { groupBy: () => Promise.reject(new Error("audit read timeout")) });
@@ -45,6 +46,7 @@ beforeEach(() => {
   F.trustOk = false;
   F.code = "42P01";
   F.cfgs = [REAL, SIM];
+  F.quyen = [];
 });
 
 describe("final wave F3 / N-R4 — before migration 0368", () => {
@@ -96,6 +98,9 @@ describe("final wave F3 / N-R4 — before migration 0368", () => {
       await expect(caller.upsertSafetyPlcConfig({ code: "x", name: "x", backend: "modbus", endpoint: "tcp://192.0.2.4:502" } as never)).rejects.toMatchObject(want);
       await expect(caller.approveSafetyPlcConfig({ id: 4, expectedDigest: "0".repeat(64) })).rejects.toMatchObject(want);
       await expect(caller.rejectSafetyPlcConfig({ id: 4, expectedDigest: "0".repeat(64), reason: "wrong" })).rejects.toMatchObject(want);
+      // P0-2: hàng machine_control canCreate=false ràng buộc cả admin ⇒ dừng ở cổng quyền, không tới migration
+      F.quyen = [{ canCreate: false, expiresAt: null }];
+      await expect(caller.upsertSafetyPlcConfig({ code: "x", name: "x", backend: "modbus", endpoint: "tcp://192.0.2.4:502" } as never)).rejects.toMatchObject({ code: "FORBIDDEN" });
     } finally {
       if (saved === undefined) delete process.env.SAFETY_PLC_ADAPTER_ENABLED;
       else process.env.SAFETY_PLC_ADAPTER_ENABLED = saved;

@@ -31,6 +31,7 @@ import { sdk } from "./sdk";
 import { ENV } from "./env";
 import { createContext, type TrpcContext } from "./context";
 import { moduleProcedure, router } from "./trpc";
+import { xoaBoNhoGiayPhep } from "./moduleGate";
 import {
   _datLaiDemStopQuaHanChoTest,
   CUA_SO_DEM_STOP_QUA_HAN_MS,
@@ -104,6 +105,8 @@ beforeEach(() => {
   H.tenantMs = 0;
   vi.stubEnv("TENANT_RLS_ENABLED", "false");
   _datLaiDemStopQuaHanChoTest();
+  // Pha 0 P0-4: cổng giấy phép có bộ nhớ 60 s — mỗi ca đo ĐỦ 2 lượt getAllLicenses chậm như request lạnh.
+  xoaBoNhoGiayPhep();
 });
 afterEach(() => {
   vi.useRealTimers();

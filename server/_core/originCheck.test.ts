@@ -33,17 +33,18 @@ afterAll(() => quietSpies.forEach((s) => s.mockRestore()));
 const logCfg = buildOriginCheckConfig({ SEC_ORIGIN_CHECK_MODE: "log", NODE_ENV: "production" } as any);
 
 describe("getOriginCheckMode", () => {
-  it("default off; giá trị rác → off; log/enforce hợp lệ", () => {
-    expect(getOriginCheckMode({} as any)).toBe("off");
-    expect(getOriginCheckMode({ SEC_ORIGIN_CHECK_MODE: "yolo" } as any)).toBe("off");
+  it("★ Pha 0 P0-3 bước 1: mặc định log; giá trị rác → log; 'off' tường minh vẫn tắt; log/enforce hợp lệ", () => {
+    expect(getOriginCheckMode({} as any)).toBe("log");
+    expect(getOriginCheckMode({ SEC_ORIGIN_CHECK_MODE: "yolo" } as any)).toBe("log");
+    expect(getOriginCheckMode({ SEC_ORIGIN_CHECK_MODE: "off" } as any)).toBe("off");
     expect(getOriginCheckMode({ SEC_ORIGIN_CHECK_MODE: "log" } as any)).toBe("log");
     expect(getOriginCheckMode({ SEC_ORIGIN_CHECK_MODE: "Enforce" } as any)).toBe("enforce");
   });
 });
 
 describe("evaluateOrigin", () => {
-  it("mode off → luôn pass", () => {
-    const cfg = buildOriginCheckConfig({} as any);
+  it("mode off (tường minh) → luôn pass", () => {
+    const cfg = buildOriginCheckConfig({ SEC_ORIGIN_CHECK_MODE: "off" } as any);
     const v = evaluateOrigin(req({ headers: { host: "a", origin: "https://evil.example" } }), cfg);
     expect(v.allowed).toBe(true);
   });
@@ -151,11 +152,18 @@ describe("originCheckMiddleware", () => {
     return { nexted, statusCode, body };
   }
 
-  it("mode off (default): pass-through kể cả cross-origin, không đếm vi phạm", () => {
-    const r = run({}, { host: "a:1", origin: "https://evil.example" });
+  it("mode off (tường minh): pass-through kể cả cross-origin, không đếm vi phạm", () => {
+    const r = run({ SEC_ORIGIN_CHECK_MODE: "off" }, { host: "a:1", origin: "https://evil.example" });
     expect(r.nexted).toBe(true);
     expect(r.statusCode).toBeUndefined();
     expect(getOriginViolationCount()).toBe(0);
+  });
+
+  it("★ Pha 0 P0-3 bước 1 — MẶC ĐỊNH (không env) = log: cross-origin vẫn next() (không chặn) nhưng ĐẾM vi phạm", () => {
+    const r = run({ NODE_ENV: "production" }, { host: "a:1", origin: "https://evil.example" });
+    expect(r.nexted).toBe(true);
+    expect(r.statusCode).toBeUndefined();
+    expect(getOriginViolationCount()).toBe(1);
   });
 
   it("mode log: cross-origin vẫn next() nhưng ĐẾM vi phạm", () => {

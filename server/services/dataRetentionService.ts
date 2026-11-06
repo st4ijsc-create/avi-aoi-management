@@ -11,7 +11,7 @@
  * the two mechanisms never double-delete.
  *
  * SAFETY:
- *  - Disabled by default. Master switch DATA_RETENTION_ENABLED=true.
+ *  - ★ Pha 0 P0-6 (2026-11-04): BẬT MẶC ĐỊNH (DEV đã đặt true từ trước ⇒ không đổi hành vi DEV). Công tắc tắt khẩn: DATA_RETENTION_ENABLED=false.
  *  - DATA_RETENTION_DRY_RUN=true logs what WOULD be deleted without deleting —
  *    recommended for the first run in any environment.
  *  - Deletes in bounded batches (DATA_RETENTION_BATCH, default 5000) to avoid
@@ -273,9 +273,14 @@ export async function runRetentionOnce(): Promise<void> {
   }
 }
 
+/** ★ Pha 0 P0-6 — quét giữ dữ liệu + vòng đời ảnh BẬT mặc định; chỉ `DATA_RETENTION_ENABLED=false` tắt (khẩn / lưới). */
+export function retentionBat(): boolean {
+  return process.env.DATA_RETENTION_ENABLED !== "false";
+}
+
 export function startDataRetention(): void {
-  if (process.env.DATA_RETENTION_ENABLED !== "true") {
-    return; // feature-flagged off — no-op (safe default; this deletes data)
+  if (!retentionBat()) {
+    return; // tắt khẩn tường minh (DATA_RETENTION_ENABLED=false)
   }
   if (timer) return;
 

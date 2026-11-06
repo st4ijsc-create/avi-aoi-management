@@ -8,6 +8,7 @@
  * "không chứng nhận"); review mã an toàn bị chặn bởi `gate`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { dbGiaChiCoBangQuyen } from "../testing/dbGiaQuyen";
 
 const chatCompletionMock = vi.fn();
 const generateFimMock = vi.fn();
@@ -30,7 +31,7 @@ vi.mock("../services/aiLocalKnowledgeService", () => ({
 vi.mock("../services/aiGateway", () => ({
   planInference: vi.fn(async () => ({ decision: { modelId: "m" }, record: vi.fn() })),
 }));
-const mockGetDb = vi.fn(async (..._a: unknown[]) => undefined);
+const mockGetDb = vi.fn(async (..._a: unknown[]) => dbGiaChiCoBangQuyen());
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
 const importRouter = async () => (await import("./programmingRouter")).programmingRouter;

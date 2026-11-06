@@ -112,9 +112,10 @@ describe("census — không phát dữ liệu máy vào `global` / tới mọi s
     expect(bocChuThich(doc("server/_core/socketPhatTheoNhaMay.ts"))).not.toMatch(/["'`]global["'`]/);
   });
 
-  it("các điểm phát đã chuyển đều đi qua phatTheoNhaMay / phatMangTheoNhaMay (đếm ≥ 20 trong socket.ts + 3 dịch vụ)", () => {
+  it("các điểm phát đã chuyển đều đi qua phatTheoNhaMay / phatMangTheoNhaMay (đếm ≥ 19 trong socket.ts + 3 dịch vụ)", () => {
     const dem = (f: string) => (bocChuThich(doc(f)).match(/\bphat(Mang)?TheoNhaMay\(/g) ?? []).length;
-    expect(dem("server/_core/socket.ts")).toBeGreaterThanOrEqual(20);
+    // Pha 0 P0-10 (2026-11-04): 20 → 19 — điểm phát `oee:update` nằm trong khối OEE CHẾT đã gỡ (0 nơi gọi), không phải đổi sang phát toàn cục.
+    expect(dem("server/_core/socket.ts")).toBeGreaterThanOrEqual(19);
     expect(dem("server/services/machinePresenceService.ts")).toBeGreaterThanOrEqual(1);
     expect(dem("server/services/downtimeDetectionService.ts")).toBeGreaterThanOrEqual(2);
   });

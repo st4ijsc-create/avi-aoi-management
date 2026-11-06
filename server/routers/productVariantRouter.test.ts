@@ -46,9 +46,12 @@ const h = vi.hoisted(() => ({
   recordVariantOverrideVersion: vi.fn(async () => undefined),
 }));
 vi.mock("../db", () => h);
-// accessControl.checkPermission reads getDb() from ../db/connection — null ⇒ a
-// non-admin is denied (isAdmin=false) so the RBAC test resolves without a real DB.
-vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => null) }));
+// accessControl.checkPermission reads the permissions table — no row ⇒ a non-admin is denied,
+// an admin passes (real P0-2 rule), so the RBAC test resolves without a real DB.
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 // BG-113/I-3 — setOverride(action:'override') nay gọi assertThresholdEditAllowed
 // (cùng khuôn measurementPointWritePath.test.ts) — mặc định KHÔNG chặn (decision
 // 'direct') để các mệnh đề WIRING sẵn có không phải biết gì về cửa duyệt ngưỡng.
