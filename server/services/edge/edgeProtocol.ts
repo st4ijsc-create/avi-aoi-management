@@ -104,6 +104,8 @@ export const EDGE_ERROR_HTTP = Object.freeze({
   gate_required: 409,
   /** data: { gate: EdgeDeviceGate } */
   device_refused: 409,
+  /** R1b-2b-2a A2(n) (b) — a compensation of a latched run no Continue approved: nothing is authorised, the walker holds it */
+  outcome_unknown_held: 409,
   /** another nonce already holds the (run, claim, step, attempt) authorisation */
   already_authorized: 409,
   /** data: { expectedSeq } — resend from the cursor */

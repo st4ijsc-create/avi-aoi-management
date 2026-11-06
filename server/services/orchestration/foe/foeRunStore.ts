@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -130,14 +130,17 @@ export interface KetCucKhongRoBaoCao {
   error: string;
   /** the walk segment the event belongs to (central: the walk's identity; the edge store uses its claim) */
   lan: string;
+  /** m-K — `stepId`'s own failure is KNOWN; the doubt is another command's (the run is latched) */
+  biet?: boolean;
 }
 
 export type AuthorizeVerdict =
   /**
    * stopGhim (R1b-2b-2a A2(m)) — central only: the command is a PINNED STOP and rides on a fresh authorisation row (the walker's
    * retry loop gives such a step with no explicit maxAttempts its STOP default, foeEngine.soLanThuToiDa).
+   * stopXacMinh (A2(n) (a)) — edge only: a VERIFIED stop of the package. For the sink alone (no retry default: an edge's budget is unchanged).
    */
-  | { ok: true; cmd: EquipmentCommand; args: Record<string, unknown>; approval: FoeGateApproval | null; stopGhim?: true }
+  | { ok: true; cmd: EquipmentCommand; args: Record<string, unknown>; approval: FoeGateApproval | null; stopGhim?: true; stopXacMinh?: true }
   /** refused — the step fails with `error` (FOE_GATE_REQUIRED(<reason>) … for a gate refusal: the Studio keys on it) */
   | { ok: false; verdict: "refused"; error: string; reason?: string }
   /** central stopped the run (abort / rejection) — the walker sweeps locally (edge store only) */
@@ -1077,7 +1080,7 @@ export type EdgeSegmentEndResult = { ok: true; status: string; changed: boolean 
  * (foeKetCucKhongRo.loiGiuBuTruKhongRo), "?" when they cannot be read (still marked: fail-closed).
  */
 function dauKhongRoTuEdge(end: Pick<EdgeSegmentEndApply, "error" | "claimSeq">, at: string, bao: readonly BaoCaoKhongRoEdge[]): DauKetCucKhongRo {
-  const m = /command "([^"]{1,128})" outcome unknown — machine state unknown — compensation "([^"]{1,128})"/.exec(end.error ?? "");
+  const m = /(?:command|step) "([^"]{1,128})" (?:outcome unknown|failed; another command's outcome is unknown) — machine state unknown — compensation "([^"]{1,128})"/.exec(end.error ?? "");
   const ds = bao.filter((x) => x.loai === "held").map((x) => ({ stepId: x.stepId, compId: x.compId }));
   const dau = { stepId: m?.[1] ?? ds[0]?.stepId ?? "?", compId: m?.[2] ?? ds[0]?.compId ?? "?" };
   return { ...dau, ma: maKetCucKhongRoCua(end.error), at, lan: `claim${end.claimSeq}`, ds: ds.length ? ds : [dau] };
@@ -1119,10 +1122,24 @@ export function toTienCua(steps: readonly WorkflowStep[], stepId: string): Workf
   return [];
 }
 
-/** m-H — is this a report of the assigned definition: its step exists, paired with that step's own compensation (or none)? Pure. */
-export function baoCaoHopLe(def: Pick<WorkflowDefinition, "steps">, x: Pick<BaoCaoKhongRoEdge, "stepId" | "compId">): boolean {
-  const s = allStepsOf(def.steps).find((y) => y.id === x.stepId);
-  return s != null && (x.compId === KHONG_CO_BU_TRU || s.compensation?.id === x.compId);
+/** A2(n) (a) — a step inside a compensation and that compensation's owner, from the definition; null ⇔ a forward step. Pure. */
+export function chuBuTruTrongDinhNghia(steps: WorkflowStep[], stepId: string): { step: WorkflowStep; comp: WorkflowStep } | null {
+  for (const s of allStepsOf(steps)) {
+    if (s.compensation && buocTienCua(s.compensation).some((x) => x.id === stepId)) return { step: s, comp: s.compensation };
+  }
+  return null;
+}
+
+/**
+ * m-H — is this a report of the assigned definition: its step exists, paired with that step's own compensation or a step inside it (m-O) (or none);
+ * (c) an in-flight report names any command of the definition. Pure.
+ */
+export function baoCaoHopLe(def: Pick<WorkflowDefinition, "steps">, x: Pick<BaoCaoKhongRoEdge, "stepId" | "compId"> & { loai?: BaoCaoKhongRoEdge["loai"] }): boolean {
+  const tat = allStepsOf(def.steps);
+  const s = tat.find((y) => y.id === x.stepId);
+  if (s == null) return false;
+  if (x.loai === "inFlight") return tat.some((y) => y.id === x.compId && y.type === "command");
+  return x.compId === KHONG_CO_BU_TRU || (s.compensation != null && buocTienCua(s.compensation).some((y) => y.id === x.compId));
 }
 
 /**
@@ -1220,6 +1237,8 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const ok = await setRunStatusUnlessAbortedOn(db, runId, status, patch, LIVE);
     return { ok: true, status: ok ? status : run.status, changed: ok };
   };
+  // A2(n) (b, C-C) — a report on the end is the fact itself, whatever the rows lost (a full journal): the latch is central's from here on
+  const chotTuBao = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && baoKhongRo[0] ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: baoKhongRo[0].stepId, ma: baoKhongRo[0].ma, at: new Date().toISOString() } } : {};
   const held = (reason: string, error: string | undefined) => {
     const at = new Date().toISOString();
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
@@ -1242,6 +1261,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         // R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP: the SAME marker as
         // central's own walk (codes / ids only), so a Continue needs a person with machine-control rights and a reason (resumeRun)
         ...(reason === "outcomeUnknown" ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, baoKhongRo) } : {}),
+        ...chotTuBao,
       },
     });
   };
@@ -1259,7 +1279,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     case "paused": {
       const gate = end.gateStepId ? allStepsOf(end.def.steps).find((s) => s.id === end.gateStepId) : undefined;
       if (!gate || gate.type !== "hitl_gate") return held("pausedAtNonGate", `the edge reported a pause at "${end.gateStepId ?? "?"}", which is not a gate of the assigned definition`);
-      const out = await write("awaiting_confirm", { currentStepId: gate.id });
+      const out = await write("awaiting_confirm", { currentStepId: gate.id, ...(Object.keys(chotTuBao).length ? { contextJson: { ...ctx, ...chotTuBao } } : {}) });
       if (out.ok && out.changed) {
         const [prior] = await db
           .select()
@@ -1369,7 +1389,8 @@ export function edgeResumeStateOf(
     const truoc = state[s.id];
     const error = r?.error || truoc?.error || "";
     // R1b-2b-2a A2(n) — the rows hold only the error text: an unknown-outcome failure is told by its code (FOE_/EDGE_OUTCOME_UNKNOWN)
-    const kr = loiLaKetCucKhongRo(error) || truoc?.state === "outcomeUnknown" || (r?.status === "running" && c != null) ? { khongRo: true as const } : {};
+    // (C-C) — and a compensation row with the code: its own unknown, or a hold at the dispatch of a known failure's compensation (needs n3 all the same)
+    const kr = loiLaKetCucKhongRo(error) || loiLaKetCucKhongRo(c?.error) || truoc?.state === "outcomeUnknown" || (r?.status === "running" && c != null) ? { khongRo: true as const } : {};
     if (c == null) {
       if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error, ...kr }; // failed, compensation never started
       continue;

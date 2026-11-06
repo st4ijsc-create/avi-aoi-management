@@ -17,6 +17,8 @@
  *   4. ownership    — the target robot / adapter is owned by the caller (409 not_owned).
  *   5. not a STOP   — a robot abort or a PINNED OT stop needs no authorisation and gets none (400
  *                     stop_needs_no_authorization): central never gates a STOP (L-7). An unpinned stop-typed write is a write.
+ *   5b. A2(n) (b)   — a compensation of a run latched on an unknown outcome (context or rows), not approved exactly by a Continue that passed n3 ⇒ 409
+ *                     outcome_unknown_held: a second check, the walker's latch may have died with its memory. A STOP never gets here (L-7).
  *   6. approval     — deriveRunApprovalIdentity + evaluateWithPrograms(computeBindingDetail(def, pre)): `pre` is the node's
  *                     program checks of THIS request for its own adapters (stale ⇒ unreadable); any other adapter is
  *                     unreadable — central NEVER reads an edge-owned controller (D7). Refusal ⇒ 409 gate_required {reason}.
@@ -580,6 +582,19 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
         pins = null;
       }
       if ((await isPinnedOtStop(rb, pins)).pinned) return edgeError("stop_needs_no_authorization", `Step "${req.stepId}" is a pinned STOP — send it; a STOP needs no authorisation.`);
+    }
+
+    // ── 5b. R1b-2b-2a A2(n) (b) — the latch, read again here (cheap: a compensation's rows only) ──
+    {
+      const { chuBuTruTrongDinhNghia } = await import("../orchestration/foe/foeRunStore");
+      const chu = chuBuTruTrongDinhNghia(def.steps, req.stepId);
+      if (chu) {
+        const { buTruBiChanKhongRo } = await import("../orchestration/foe/foeKetCucKhongRo");
+        const hang = await d.select({ stepId: orchestrationRunSteps.stepId, error: orchestrationRunSteps.error }).from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+        if (buTruBiChanKhongRo(run.contextJson as Record<string, unknown> | null, hang, chu.step.id, chu.comp.id)) {
+          return edgeError("outcome_unknown_held", `Compensation step "${req.stepId}" of run ${runId}: a command's outcome is unknown and no Continue approved it — not authorised.`);
+        }
+      }
     }
 
     // ── 6. identity & approval (the existing rule; programs from THIS request, never read centrally) ──

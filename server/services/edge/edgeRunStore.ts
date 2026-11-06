@@ -48,7 +48,7 @@ import {
   type RunStoreUser,
 } from "../orchestration/foe/foeRunStore";
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
-import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, loiLaKetCucKhongRo, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
@@ -294,6 +294,8 @@ export class EdgeRunStore extends EdgeStoreBase {
   private khongRoGiu = false;
   /** A2(n) (I-5) — this segment's reports: they also ride on the segment end (a full journal must not lose the URGENT) */
   private readonly khongRoBao: BaoCaoKhongRoEdge[] = [];
+  /** A2(n) (b) — a step decided unknown: every later row of it keeps the code (a re-sent STOP's result row must not wipe the durable fact) */
+  private readonly maKhongRo = new Map<string, string>();
 
   constructor(
     readonly pkg: EdgeRunPackage,
@@ -336,6 +338,7 @@ export class EdgeRunStore extends EdgeStoreBase {
 
   async upsertStep(runId: number, stepId: string, stepType: string, patch: RunStepPatch): Promise<void> {
     this.mirror(stepId, patch);
+    if (loiLaKetCucKhongRo(patch.error)) this.maKhongRo.set(stepId, patch.error as string);
     // a gate row is central's own (written when central applies the paused segment end / the approval) — never reported
     if (stepType === "hitl_gate") return;
     if (stepId.startsWith(ABORT_ROW_PREFIX)) {
@@ -363,7 +366,7 @@ export class EdgeRunStore extends EdgeStoreBase {
         attempt: patch.attempt ?? 0,
         startedAt: ms(patch.startedAt ?? null),
         finishedAt: ms(patch.finishedAt ?? null),
-        error: clip(patch.error ?? null, 4_000),
+        error: clip(patch.error ?? this.maKhongRo.get(stepId) ?? null, 4_000),
         // no result in the patch ⇒ null ⇒ central KEEPS the stored result (the upsertStep rule)
         result: patch.result ?? null,
         jti: isStop ? null : this.jtiByStep.get(stepId) ?? null,
@@ -392,7 +395,7 @@ export class EdgeRunStore extends EdgeStoreBase {
     const probe = buildEquipmentCommand(x.descriptor, x.cap, step.machineId, args, x.idempotencyKey, rc.user);
     const run = { runId: this.io.runId, claimSeq: this.io.claimSeq, stepId: step.id, attempt };
     // L-7 — a VERIFIED STOP (robot abort / pinned OT stop, verified centrally into the package) never asks anyone.
-    if (this.verifiedStopIds.has(step.id) || (x.robotKind && x.isStop)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null };
+    if (this.verifiedStopIds.has(step.id) || (x.robotKind && x.isStop)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null, stopXacMinh: true };
     // Everything else (an UNPINNED stop-typed write included — not a STOP, R-5-j) needs a fresh, single-use authorisation.
     if (this.journalRefused !== null || this.outcomeUnknown.has(step.id)) return this.unavailable(step.id, "journalFull");
     if (this.io.consume && this.io.consume.admitNonStop() === false) return this.unavailable(step.id, "journalFull");
@@ -425,6 +428,11 @@ export class EdgeRunStore extends EdgeStoreBase {
         source: "local",
       });
       return { ok: true, cmd, args, approval };
+    }
+    // A2(n) (b) — central's second check: the run is latched, this compensation not approved. Nothing sent; the walker holds it (foeEngine.execCommand)
+    if (out.code === "outcome_unknown_held") {
+      // data-raw-ok: machine-readable code first (central derives the class from the row)
+      return { ok: false, verdict: "unavailable", heldReason: "outcomeUnknown", error: `FOE_OUTCOME_UNKNOWN: central refused compensation step "${step.id}": this run has an unknown outcome and no Continue approved it — NOT sent.` };
     }
     switch (out.verdict) {
       case "stopped":
