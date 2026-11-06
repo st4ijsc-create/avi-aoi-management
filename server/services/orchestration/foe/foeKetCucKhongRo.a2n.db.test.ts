@@ -422,6 +422,24 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
+  it("★ C-D a compensation admitted BEFORE the latch: its write after the latch is NOT handed over (0 PDU), held, URGENT (fix round 4 (a): the sink at the dispatch)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const b = { id: "b", type: "command", machineId: d.m2, command: "start", args: { tagKey: "khongCo", value: 1 }, compensation: { id: "uSeq", type: "sequence", steps: [{ id: "w", type: "delay", ms: 500 }, buTruReset(d.m1, "rz")] } } as unknown as WorkflowStep;
+      const sau = { id: "s", type: "sequence", steps: [{ id: "d0", type: "delay", ms: 150 }, buocChinh(d.m2)] } as unknown as WorkflowStep;
+      const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, steps: [b, sau] } as WorkflowStep]);
+      await yDinhTruoc(tx, { ...d, runId });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      await chacKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      expect((await ctxCua(tx, runId)).foeResumeState?.b).toMatchObject({ state: "compensationHeld", khongRo: true });
+      await choCanhBao("held", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
   it("★ C-A (b) a precondition-abort sibling: the container's reset is NOT written, held, URGENT", async () => {
     await trongGiaoDich(async (tx) => {
       const d = await dungThietBi(tx);
