@@ -24691,6 +24691,7 @@
       "maLoi": {
         "FOE_OUTCOME_UNKNOWN": "结果未知：命令可能已应用到设备 — 重新运行前请检查设备；切勿自动重发。",
         "FOE_OUTCOME_PARTIAL": "部分已应用：部分命令已到达设备，部分未到达 — 请检查设备；切勿整批重发。",
+        "FOE_NOT_SENT_RUN_LATCHED": "未发送：本次运行的另一条命令结果未知，因此不再继续执行。此步骤未到达设备，也不会重发。",
         "EDGE_OUTCOME_UNKNOWN": "edge 上结果未知：edge 节点可能已应用命令 — 重新运行前请检查设备。",
         "REJECTED": "命令被拒绝 — 未向设备写入任何内容。",
         "PRECONDITION_FAILED": "步骤前置条件（互锁）未满足 — 未向设备写入任何内容。"

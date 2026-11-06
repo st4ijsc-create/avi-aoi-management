@@ -55,6 +55,8 @@ import {
   INTERRUPTED_EARLIER_CTX_KEY,
   RESUME_STATE_CTX_KEY,
   edgeResumeStateOf,
+  laLoiKhongGuiChot,
+  loiKhongGuiChot,
   themBuocHongKhiTiepTuc,
   buocTienCua,
   duongToiBuoc,
@@ -81,8 +83,8 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, KHONG_RO_DUYET_CTX_KEY, buTruKhongRoCho, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, runDaChotKhongRo, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
-export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, KHONG_RO_DUYET_CTX_KEY, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, runDaChotKhongRo, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
+export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
 import type { EdgeRunPackage, EdgeSweepPicture } from "../../edge/edgeProtocol"; // doc 81 Đợt 10 C — types only (the edge walk)
@@ -627,6 +629,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   chuBuTru?: Map<string, ChuBuTru>;
   /** A2(n) (a) — compensations already held at the dispatch in this walk (a parallel body reaches the sink twice). */
   buTruDaGiu?: Set<string>;
+  /** A2(n) extension — central: the steps whose rows say they may have gone out (a crash can lose the rest). An edge's are in its resume state. */
+  khongRoHang?: Set<string>;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -661,8 +665,10 @@ type StepOutcome =
    * whose last attempt stayed unknown — I-1). Set by execStep (never by execCommand) and KEPT on the way up: the failed branch of execStep — of
    * the step and of every container around it — then sends a due compensation by itself only if it is a STOP (else the run is held for a person).
    * A known failure never carries it (n6).
+   * khongGuiChot (A2(n) extension): the sink refused a forward step, FOE_NOT_SENT_RUN_LATCHED. Final, like khongRo: no further attempt of the step or of a container
+   * around it (no `-a2` key), and a parallel never swallows it. It rises with the failure.
    */
-  | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan; stopGhim?: true; khongRo?: true }
+  | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan; stopGhim?: true; khongRo?: true; khongGuiChot?: true }
   | { kind: "aborted"; error: string; khongRoLoi?: string }
   /**
    * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
@@ -684,7 +690,7 @@ async function db() {
  * Dùng cho RESUME idempotent: execStep bỏ qua các bước này. Fail-safe: DB lỗi → tập rỗng
  * (walk sẽ chạy lại — an toàn hơn là bỏ sót bước; với control OFF mọi dispatch là dry-run).
  */
-async function loadCompletedSteps(runId: number): Promise<{ completed: Set<string>; prior: PriorSteps; khongRoChotHang?: boolean }> {
+async function loadCompletedSteps(runId: number): Promise<{ completed: Set<string>; prior: PriorSteps; khongRoChotHang?: boolean; khongRoHang?: Set<string> }> {
   const set = new Set<string>();
   const d = await getDb();
   if (!d) return { completed: set, prior: { ...priorStepsOf([]), unknown: true } }; // fix 2 (R-6-c): unknown, not empty
@@ -696,7 +702,7 @@ async function loadCompletedSteps(runId: number): Promise<{ completed: Set<strin
     if (r.status === "completed" || r.status === "skipped") set.add(r.stepId);
   }
   // doc 81 Đợt 6 — same read, the abort sweep's picture; A2(n) (b) — a row with the unknown code latches the run even if the context lost it (a crash)
-  return { completed: set, prior: priorStepsOf(rows), ...(chotTuHang(rows) ? { khongRoChotHang: true } : {}) };
+  return { completed: set, prior: priorStepsOf(rows), ...(chotTuHang(rows) ? { khongRoChotHang: true } : {}), khongRoHang: buocCoTheDaBayTuHang(rows) };
 }
 
 async function setRunStatus(
@@ -908,7 +914,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     // A2(n) (m-J) — on a re-walk too: the containers' STOPs go from here, never behind a slower sibling
     if (kr.khongRo && !rc.aborting) await stopToTienMoi(rc, step, loiCoMaKhongRo(rs.error));
     if (giuLai) return giuLai;
-    return { kind: "failed", error: rs.error || `Step "${step.id}" failed in an earlier segment.`, ...kr };
+    return { kind: "failed", error: rs.error || `Step "${step.id}" failed in an earlier segment.`, ...kr, ...(laLoiKhongGuiChot(rs.error) ? { khongGuiChot: true as const } : {}) };
   }
 
   // R1b-2b-2a A2(n) (I-A) — a walk under a Continue that passed n3 writes the held compensation(s) and nothing forward: a step off the way to an
@@ -995,7 +1001,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     const ghimMacDinh = outcome.kind === "failed" && outcome.stopGhim === true && step.maxAttempts === undefined;
     // A2(n) (C-B) — every step type comes through this loop: an unknown failure of a CONTAINER is never walked again (the second pass would answer a
     // known refusal and lose the flag); a STOP's own retries stay above, in its own loop
-    if (outcome.kind === "failed" && outcome.khongRo === true) break;
+    if (outcome.kind === "failed" && (outcome.khongRo === true || outcome.khongGuiChot === true)) break; // extension — a refusal at the sink is final too
     if (outcome.kind !== "failed" || attempt >= soLanThuToiDa(step, ghimMacDinh)) break;
     if (ghimMacDinh) await sleep(stopGhimLuiMs(attempt + 1), rc.controller.signal); // an abort wakes it: the next attempt answers 'aborted'
   }
@@ -1073,7 +1079,9 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     // saga compensation (which issues commands) is NOT run while the run is aborting.
     // doc 81 Đợt 6 — the abort's sweep sends the STOP compensations that are due (only those), not this walk.
     let giu: StepOutcome | undefined;
-    if (step.compensation && !rc.aborting) {
+    // A2(n) extension — a command the sink refused and that no walk ever handed over: nothing of its own to undo, not even a STOP (the failure rises: the containers split theirs)
+    const khongHeGui = step.type === "command" && failedOutcome.kind === "failed" && failedOutcome.khongGuiChot === true && !rc.attempted.has(step.id) && !rc.prior.attempted.has(step.id);
+    if (step.compensation && !rc.aborting && !khongHeGui) {
       const c = await congBuTru(rc, step, step.compensation, khongRoLoi !== undefined ? loiCoMaKhongRo(khongRoLoi) : loiHang ?? "");
       if (c?.kind === "held" || c?.kind === "paused") giu = c; // R-10-y — the run is held AT the compensation (Continue resumes it)
     }
@@ -1082,6 +1090,8 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     if (giu) return giu;
     // A2(n) (I-E) — an unknown command is never sent again by a later walk (a gate approval re-walks): central's own resume state; a STOP keeps being re-sent
     if (khongRo && !stop && step.type === "command" && rc.store.kind === "central") datTrangThaiTiepTuc(rc, step.id, { state: "doneFailed", error: loiHang ?? "", khongRo: true });
+    // extension — nor is a refused one looked at again (a later row would read as handed over, and its compensation as due)
+    if (khongHeGui && rc.store.kind === "central") datTrangThaiTiepTuc(rc, step.id, { state: "doneFailed", error: loiHang ?? "" });
   }
   return outcome;
 }
@@ -1142,7 +1152,7 @@ async function coStopDaThu(rc: RunContext, step: WorkflowStep): Promise<boolean>
  * R1b-2b-2a A2(n) (S-1) — the sorting in front of a compensation a walk enters (the failed branch, the resume branch). It decides what can be decided at
  * the door: an unlatched run ⇒ runCompensation, as always (n6); a latched one: settled ⇒ nothing; approved by a Continue that passed n3, exactly this
  * compensation ⇒ sent, its interlock read (d, I-K), told when not confirmed (m-F); otherwise the split below. THE guarantee is not here: it is the sink at the
- * dispatch (xetCongBuTru), which a compensation admitted before the latch still has to pass. The callers of runCompensation are this function,
+ * dispatch (xetCongBuTru), which a compensation admitted before the latch, and every forward step, still has to pass. The callers of runCompensation are this function,
  * guiStopKhongRo and the boot re-send of A2(m2) (rc.chiGuiStopGhim: a pinned STOP or nothing).
  */
 async function congBuTru(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string): Promise<StepOutcome | undefined> {
@@ -1174,27 +1184,54 @@ async function congBuTru(rc: RunContext, step: WorkflowStep, comp: WorkflowStep,
 }
 
 /**
- * R1b-2b-2a A2(n) (a) — THE SINK, read in the same tick as the hand-over to the dispatcher (execCommand). A step of a compensation on a latched run:
+ * R1b-2b-2a A2(n) (a) — THE SINK, read in the same tick as the hand-over to the dispatcher (execCommand). On a latched run a forward step that is not a STOP for this
+ * dispatch (`laStop`) ⇒ "khongGui": not handed over (the owner's ruling; khongGuiBuocTien); a forward STOP goes, stopping never waits. A step of a compensation:
  *   • a pinned STOP (`laStop`: central's verdict for THIS dispatch, a robot stop job, the package's verified stop) ⇒ goes; "stop": it entered before the
  *     latch or inside a body, so nobody has told a person yet (the split's own STOP, rc.chiStopGhimIds, and the boot re-send report for themselves);
  *   • anything else ⇒ "giu": NOT handed over, held + URGENT, unless a Continue that passed n3 approved exactly this step + compensation.
- * Whatever the caller, the body's depth or how the compensation was admitted. null ⇔ not a compensation, or not latched. No await.
+ * Whatever the caller, the body's depth or how the compensation was admitted. null ⇔ handed over as usual. No await.
  */
-function xetCongBuTru(rc: RunContext, stepId: string, laStop: boolean): { kind: "giu" | "stop"; chu: ChuBuTru } | null {
+function xetCongBuTru(rc: RunContext, stepId: string, laStop: boolean): { kind: "giu" | "stop"; chu: ChuBuTru } | { kind: "khongGui" } | null {
+  if (!daChotKhongRo(rc)) return null;
   const chu = chuBuTruCua(rc, stepId);
-  if (!chu || !daChotKhongRo(rc)) return null;
+  if (!chu) return laStop ? null : { kind: "khongGui" };
   if (laStop) return rc.chiGuiStopGhim || rc.chiStopGhimIds?.has(stepId) ? null : { kind: "stop", chu };
   return daDuyetBuTruKhongRo(rc.context, chu.step.id, chu.comp.id) ? null : { kind: "giu", chu };
 }
 
+/**
+ * A2(n) extension — may this step have gone out already? Then it is NEVER labelled "not sent". What this walk decided (a STOP-typed step's next attempt), the latch's own step,
+ * the state central derived, what the rows say (central), a step started by an earlier walk that left no last word (an edge's). A step that only failed known is not one.
+ */
+function ketCucRiengKhongRo(rc: RunContext, stepId: string): boolean {
+  const chot = rc.context[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown } | undefined;
+  return rc.khongRoTai?.has(stepId) === true || chot?.stepId === stepId || outcomeUnknownOf(rc, stepId) !== null || rc.khongRoHang?.has(stepId) === true || (rc.prior.attempted.has(stepId) && !rc.prior.settled.has(stepId));
+}
+
+/**
+ * A2(n) extension — what the sink answers for a forward step on a latched run. Nothing is handed over, and an authorisation it holds is reported unused.
+ *   • it may have gone out already (ketCucRiengKhongRo) ⇒ it STAYS unknown: outcomeUnknown, so execStep latches, words and splits it as a fresh unknown; no "not sent" anywhere;
+ *   • otherwise ⇒ failed FOE_NOT_SENT_RUN_LATCHED + khongGuiChot + the audit row. No URGENT of its own: the latch has raised one (R-4, I-I, the split).
+ */
+async function khongGuiBuocTien(rc: RunContext, stepId: string, attempt: number): Promise<StepOutcome> {
+  await rc.store.uyQuyenKhongDung?.(stepId);
+  if (ketCucRiengKhongRo(rc, stepId)) return { kind: "failed", error: `command step "${stepId}" has no recorded outcome from an earlier attempt`, outcomeUnknown: true, khongRo: true };
+  rc.store.auditAbort(rc.user, rc.runId, "notSentRunLatched", { stepId, attempt });
+  return { kind: "failed", error: loiKhongGuiChot(stepId), khongGuiChot: true };
+}
+
 /** A2(n) (a) — the hold at the sink: the same hold as the split's, once per compensation; the pinned STOPs of the rest of its body still go (m-O). */
 async function giuTaiCong(rc: RunContext, chu: ChuBuTru, stepId: string): Promise<StepOutcome> {
+  const baoKhongDung = rc.store.uyQuyenKhongDung?.(stepId); // extension (4) — awaited last: a STOP in the rest of the body never waits on the journal
   const loi = rc.loiBuTru?.get(chu.comp.id) ?? "";
   const lan = luotDiCua(rc);
-  if (rc.buTruDaGiu?.has(chu.comp.id)) return { kind: "held", stepId, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(chu.step.id, chu.comp.id, loi) };
-  (rc.buTruDaGiu ??= new Set()).add(chu.comp.id);
-  const h = await giuBuTruKhongRo(rc, chu.step, chu.comp, loi, lan);
-  await stopTrongThan(rc, chu.step, chu.comp, loi, lan);
+  let h: StepOutcome = { kind: "held", stepId, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(chu.step.id, chu.comp.id, loi) };
+  if (!rc.buTruDaGiu?.has(chu.comp.id)) {
+    (rc.buTruDaGiu ??= new Set()).add(chu.comp.id);
+    h = await giuBuTruKhongRo(rc, chu.step, chu.comp, loi, lan);
+    await stopTrongThan(rc, chu.step, chu.comp, loi, lan);
+  }
+  await baoKhongDung;
   return h;
 }
 
@@ -2376,6 +2413,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // R1b-2b-2a A2(n) (a) — THE SINK: from here to the hand-over there is no await
   const laStopGiao = auth.stopGhim === true || auth.stopXacMinh === true || (robotKind && isStop);
   const cong = xetCongBuTru(rc, step.id, laStopGiao);
+  if (cong?.kind === "khongGui") return khongGuiBuocTien(rc, step.id, attempt);
   if (cong?.kind === "giu") return giuTaiCong(rc, cong.chu, step.id);
 
   // ROUTE THROUGH E0 → existing HITL/dry-run dispatcher. NEVER a direct device path.
@@ -2458,13 +2496,14 @@ async function execParallel(rc: RunContext, steps: WorkflowStep[], failFast: boo
   if (aborted) return mang(aborted);
   const held = outcomes.find((o) => o.kind === "held"); // doc 81 Đợt 10 C (D5) — a held branch holds the run
   if (held) return mang(held);
-  const failures = outcomes.filter((o) => o.kind === "failed") as Array<{ kind: "failed"; error: string; khongRo?: true }>;
+  const failures = outcomes.filter((o) => o.kind === "failed") as Array<{ kind: "failed"; error: string; khongRo?: true; khongGuiChot?: true }>;
   if (failures.length > 0) {
     // R1b-2b-2a A2(n) (I-4) — a branch failed on an UNKNOWN outcome ⇒ so did the parallel, failFast or not: never swallowed into a walk that goes
     // forward (its compensation splits too); a known failure is unchanged (n6)
     const khongRo = failures.some((f) => f.khongRo === true);
-    if (failFast || failures.length === outcomes.length || khongRo) {
-      return { kind: "failed", error: `Parallel branch failed: ${failures.map((f) => f.error).join("; ")}`, ...(khongRo ? { khongRo: true as const } : {}) };
+    const khongGui = failures.some((f) => f.khongGuiChot === true); // extension — work dropped by the sink never reads as a walk that went on (a run "completed")
+    if (failFast || failures.length === outcomes.length || khongRo || khongGui) {
+      return { kind: "failed", error: `Parallel branch failed: ${failures.map((f) => f.error).join("; ")}`, ...(khongRo ? { khongRo: true as const } : {}), ...(khongGui ? { khongGuiChot: true as const } : {}) };
     }
   }
   return { kind: "ok" };
@@ -2691,10 +2730,11 @@ async function buildRunContext(
   const states = new Map<number, string>(
     Object.entries((context.states as Record<string, string>) ?? {}).map(([k, v]) => [Number(k), v]),
   );
-  const { completed, prior, khongRoChotHang } = await loadCompletedSteps(run.id);
+  const { completed, prior, khongRoChotHang, khongRoHang } = await loadCompletedSteps(run.id);
   return {
     runId: run.id,
     ...(khongRoChotHang ? { khongRoChotHang } : {}),
+    ...(khongRoHang ? { khongRoHang } : {}),
     def,
     params: (run.paramsJson as Record<string, unknown>) ?? {},
     context,
@@ -4137,9 +4177,9 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       if (ctx.interrupted !== true) continue; // NEVER auto-resume a human gate
       // R1b-2b-2a A2(m2) — a run held because a COMPENSATION was interrupted: only the guarded boot re-send (b1–b4) or a person continues it
       if (BU_TRU_BI_NGAT_CTX_KEY in ctx) continue;
-      // R1b-2b-2a A2(n) — a run held because a command's outcome is unknown waits for a PERSON (resumeRun refuses a system Continue anyway)
-      // (m-M) — so does ANY latched run: a crash before the split leaves a latch and no marker, and a forward walk with no person is not what it needs
-      if (buTruKhongRoCho(ctx).length > 0 || runDaChotKhongRo(ctx)) continue;
+      // R1b-2b-2a A2(n) — a run held because a command's outcome is unknown waits for a PERSON (resumeRun refuses a system Continue anyway).
+      // A latched run with no hold yet (a crash before the split) IS walked: the forward sink writes nothing forward, and the walk sends the STOP and raises the URGENT
+      if (buTruKhongRoCho(ctx).length > 0) continue;
       // doc 81 Đợt 9 task S2 — an edge run interrupted on its node waits for a person's Continue (undecidable ⇒ skipped)
       const onEdge = await readEdgeAssignment(d, runId).catch(() => "unknown" as const);
       if (onEdge !== null) continue;

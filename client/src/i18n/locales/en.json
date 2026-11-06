@@ -24694,6 +24694,7 @@
       "maLoi": {
         "FOE_OUTCOME_UNKNOWN": "Outcome unknown: the command may have been applied to the device — check the device before running again; do NOT resend automatically.",
         "FOE_OUTCOME_PARTIAL": "Partially applied: some commands reached the device and some did not — check the device; do NOT resend the whole batch.",
+        "FOE_NOT_SENT_RUN_LATCHED": "Not sent: another command of this run has an unknown outcome, so nothing further goes forward. This step did not reach the device and is not sent again.",
         "EDGE_OUTCOME_UNKNOWN": "Outcome unknown on the edge: the edge node may have applied the command — check the device before running again.",
         "REJECTED": "The command was rejected — nothing was written to the device.",
         "PRECONDITION_FAILED": "The step's precondition (interlock) was not met — nothing was written to the device."

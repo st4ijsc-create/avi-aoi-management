@@ -24,6 +24,11 @@
  * the step row (the code on it, journaled at once). A code on ANY row of the run is the fact: a compensation's own unknown and a STOP-typed step's included
  * (chotTuHang). Central turns it into the latch at every hand-back, /authorize reads it again (buTruBiChanKhongRo). Nothing clears it.
  *
+ * THE FORWARD SINK (A2(n) extension, owner's ruling) — the same check, at the same line: a forward step on a latched run that is not a STOP for this dispatch is not handed
+ * over either. Its row is failed, FOE_NOT_SENT_RUN_LATCHED, final (no retry, nothing of its own to undo), and the failure rises so the containers' compensations take the
+ * split. Sibling branches on other devices stop too (accepted). A step that MAY have gone out (buocCoTheDaBayTuHang, the latch's own step) never reads "not sent": it stays
+ * unknown and takes the path of a fresh unknown. So a walk on a latched run writes nothing forward and needs no person: the auto-resume walks one (a crash before the split).
+ *
  * WHAT CANNOT BE RECALLED (c) — a write handed to a dispatcher BEFORE the latch: it leaves a trace, an URGENT and an audit row ("in flight at latch time").
  *
  * Resume v1 (n3) — THE rule (C-2): a pending `compensationHeld` carrying the unknown flag is what requires the check, not a marker and not a run
@@ -164,6 +169,14 @@ export function chotTuHang(
 }
 
 /**
+ * A2(n) extension — the steps the rows say may have gone out with no last word: the code on the row, or a row left running (a walk died around the hand-over; its result
+ * row may even be there). Such a step is never labelled "not sent". Central's walk only: an edge's are in the resume state central derived. Pure.
+ */
+export function buocCoTheDaBayTuHang(rows: ReadonlyArray<{ stepId: string; status: string; error?: string | null }>): Set<string> {
+  return new Set(rows.filter((r) => !r.stepId.startsWith("abort:") && (r.status === "running" || loiLaKetCucKhongRo(r.error))).map((r) => r.stepId));
+}
+
+/**
  * A2(n) (b) — /authorize's own check, a second line on the edge path (the walker's latch may have died with its memory): a compensation of a run latched by its
  * context OR its rows is refused unless a Continue that passed n3 approved exactly that step + compensation. A STOP never gets here (L-7). Pure.
  */
@@ -244,7 +257,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       noCompensation: [`no compensation of its own`, `It has no compensation of its own and it is never sent again; a compensation of a step around it may still be due. Check the device on site before running again.`],
       approvedNotConfirmed: [`compensation ${c} NOT confirmed`, `Its compensation ${c}, approved by a Continue, failed or got no answer: it may or may not have reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       approvedNotSent: [`compensation ${c} NOT sent`, `Its compensation ${c}, approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher. Nothing reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
-      compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
+      compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment may have sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>

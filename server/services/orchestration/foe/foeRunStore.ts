@@ -176,7 +176,9 @@ export type AbortAuditOp =
   /** fix 3 (M2) — one row per re-send REQUEST (started / refused too old), even when it sends nothing. */
   | "abortStopResend"
   /** doc 81 Đợt 7 I6 — a rejection whose claim failed late could not re-read the run: not finished (abort it to send its STOPs). */
-  | "rejectClaimUndecided";
+  | "rejectClaimUndecided"
+  /** A2(n) extension — not the sweep's: a forward command not handed over because the run is latched (the one audit both stores carry; nothing is silent). */
+  | "notSentRunLatched";
 
 /** How an edge walk segment ended (edgeProtocol edgeCompleteRequest outcome); null ⇔ the walker let go of the run (stale claim). */
 export interface EdgeSegmentEnd {
@@ -237,6 +239,11 @@ export interface RunStore {
   buTruLaStopGhim?(rc: RunStoreContext, comp: WorkflowStep): Promise<boolean>;
   /** R1b-2b-2a A2(n) — tell a person (central: URGENT alert; edge: an anomaly central turns into that alert). Never throws, never awaited. */
   ketCucKhongRo?(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void;
+  /**
+   * A2(n) extension (4) — EDGE only: the authorisation `stepId` holds was never used (the sink refused the hand-over). Central supersedes it, so nothing reads the
+   * step as possibly sent. The rows stop quoting it from the call (its synchronous part: a quoted jti is evidence of use). Never rejects. The central store has none.
+   */
+  uyQuyenKhongDung?(stepId: string): Promise<void>;
 }
 
 // ── shared pure helpers (both stores) ───────────────────────────────────────────────────────────────────────────────
@@ -298,6 +305,20 @@ export async function stopBoundedWrite(stop: boolean, runId: number, stepId: str
 
 /** doc 81 Đợt 4 Task A5 — step error code (prefix) the Studio translates (studio.gateRequired). */
 export const FOE_GATE_REQUIRED = "FOE_GATE_REQUIRED";
+
+/**
+ * R1b-2b-2a A2(n) extension (owner's ruling) — machine-readable code of a forward non-STOP command step NOT handed to a dispatcher because its run is latched
+ * (foeEngine.xetCongBuTru). Its outcome IS known: this attempt was not sent. Never of the class "may have gone out" (a step that may have keeps FOE_OUTCOME_UNKNOWN).
+ * Here, not beside FOE_OUTCOME_UNKNOWN: edgeResumeStateOf reads it and foeRunStore never imports the engine (foeEngine re-exports it).
+ */
+export const FOE_NOT_SENT_RUN_LATCHED = "FOE_NOT_SENT_RUN_LATCHED";
+/** The row of such a step: the code first (the Studio and a masked viewer key on it). */
+export function loiKhongGuiChot(stepId: string): string {
+  // data-raw-ok: machine-readable code first (known code, MA_LOI_DA_BIET); ids are the workflow's own
+  return `${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched — command step "${stepId}" was not handed to a dispatcher: another command of this run has an unknown outcome. It is not sent again.`;
+}
+/** Does a stored error say that? Only a row or resume state can (the walk carries khongGuiChot itself). */
+export const laLoiKhongGuiChot = (error: string | null | undefined): boolean => typeof error === "string" && error.startsWith(`${FOE_NOT_SENT_RUN_LATCHED}:`);
 
 /** doc 81 Đợt 4 fix round 1 (finding 7) — the step error per reason; the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
 export function gateRequiredError(stepId: string, reason: GateRequiredReason): string {
@@ -856,6 +877,10 @@ function abortAuditModule(): Promise<typeof import("../../auditTrailService")> {
 
 /** The console line of an abort-sweep decision (both stores): always, synchronous. */
 export function logAbortStop(user: RunStoreUser, runId: number, operation: AbortAuditOp, metadata: Record<string, unknown>): void {
+  if (operation === "notSentRunLatched") {
+    console.warn(`[FOE] run ${runId}: command not sent, run latched ${JSON.stringify(metadata)}`);
+    return;
+  }
   const line = `[FOE] abort of run ${runId} by user ${user.id || 0} (${user.role}): ${operation} ${JSON.stringify(metadata)}`;
   if (abortAuditSuccess(operation, metadata)) console.log(line);
   else console.error(`${line} — to stop that equipment now, use the machine's direct STOP / E-STOP.`);
@@ -1392,7 +1417,8 @@ export function edgeResumeStateOf(
     // (C-C) — and a compensation row with the code: its own unknown, or a hold at the dispatch of a known failure's compensation (needs n3 all the same)
     const kr = loiLaKetCucKhongRo(error) || loiLaKetCucKhongRo(c?.error) || truoc?.state === "outcomeUnknown" || (r?.status === "running" && c != null) ? { khongRo: true as const } : {};
     if (c == null) {
-      if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error, ...kr }; // failed, compensation never started
+      // A2(n) extension — a step the sink refused was never sent: nothing of its own to undo
+      if (r?.status === "failed") state[s.id] = laLoiKhongGuiChot(error) ? { state: "doneFailed", error } : { state: "compensationHeld", error, ...kr }; // failed, compensation never started
       continue;
     }
     if (!failedForward) {

@@ -516,6 +516,26 @@ export class EdgeRunStore extends EdgeStoreBase {
   }
 
   /**
+   * A2(n) extension (4) — the sink refused the hand-over (a forward step, or a compensation held): the authorisation was never used. Journaled + reported as
+   * `heldByDispatch` does, reason `run_latched`, so central supersedes it and never reads the step as possibly sent. Not reported (journal, no reporter) ⇒ central reads
+   * it as it always did, the safe way; the step is not sent either way. Forgotten at once: a later row of the step must not quote a jti (central's evidence of use).
+   */
+  async uyQuyenKhongDung(stepId: string): Promise<void> {
+    const jti = this.jtiByStep.get(stepId) ?? null;
+    const attempt = this.attemptByStep.get(stepId) ?? null;
+    this.jtiByStep.delete(stepId);
+    this.attemptByStep.delete(stepId);
+    if (jti === null || attempt === null) return;
+    let ok = false;
+    try {
+      ok = (await this.io.reportUnused?.({ runId: this.io.runId, claimSeq: this.io.claimSeq, jti, stepId, attempt, reason: "run_latched" })) === true;
+    } catch {
+      ok = false;
+    }
+    if (!ok) console.warn(`[EdgeRunStore] run ${this.io.runId} step ${stepId}: an authorisation the sink did not use could not be reported unused`);
+  }
+
+  /**
    * R1b-2b-2a A2(n) (n5, R-2) — the edge mirror of central's STOP check of a compensation due after an unknown outcome: a stop the package
    * lists as VERIFIED (OT: central ran the A2(h) predicate + the running-connection check over its pins, edgeRunAnalysis; robot: the stop-job
    * rule, also applied locally). Anything else — an unpinned / unsure stop, a step the package does not list — ⇒ held (as central).

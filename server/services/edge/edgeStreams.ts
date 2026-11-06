@@ -86,7 +86,7 @@ export function createEdgeAuthUnusedReporter(
   return async (u) => {
     const j = await journal.markAuthorizationUnused(u);
     if (!j.ok) {
-      console.warn(`[EdgeJournal] ${u.reason === "config_stale" ? "stale-config" : "late"} authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
+      console.warn(`[EdgeJournal] ${u.reason === "config_stale" ? "stale-config" : u.reason === "run_latched" ? "run-latched" : "late"} authorisation of run ${u.runId} step ${u.stepId} NOT reported unused (${j.reason})`);
       return false;
     }
     const accepts = (token: string): boolean => {
