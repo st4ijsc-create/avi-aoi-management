@@ -199,10 +199,11 @@ vi.mock("../../../db/connection", () => ({
 import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
-import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, themBuocHongKhiTiepTuc } from "./foeRunStore";
+import { baoCaoHopLe, baoCaoKhongRoTuHang, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
 import {
   CANH_BAO_KHONG_RO_KIND,
   KET_CUC_KHONG_RO_AUDIT_ACTION,
+  KET_CUC_KHONG_RO_CHOT_CTX_KEY,
   KET_CUC_KHONG_RO_CTX_KEY,
   KHONG_RO_DUYET_CTX_KEY,
   KHONG_RO_EDGE_ANOMALY,
@@ -618,7 +619,9 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
 
   it("source pins: one split point (execStep's failed branch); the known path untouched; the pinned-only hand-over check in execCommand", () => {
     const src = readFileSync(resolve(__dirname, "./foeEngine.ts"), "utf8").replace(/\r\n/g, "\n");
-    expect(src.split("buTruSauKetCucKhongRo(rc, step, step.compensation, loi)").length - 1).toBe(1);
+    // S-1 — two callers of the one gate; runCompensation's callers are the gate, the STOP send and the boot re-send (a pinned STOP or nothing)
+    expect(src.split("await congBuTru(rc, step, step.compensation,").length - 1).toBe(2);
+    expect(src.split("runCompensation(rc,").length - 1).toBe(5); // congBuTru ×3, guiStopKhongRo, the boot re-send
     expect(src).toContain("const khongRoLoi = loiKhongRoCua(failedOutcome);");
     expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {');
     expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0) continue;");
@@ -796,14 +799,17 @@ describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, min
   it("I-5 edge route: an anomaly of a run THIS node is assigned raises the same alert (owner, dedup by claim); foreign / unreadable ⇒ nothing; the branch is wired", async () => {
     const detail = chiTietAnomalyKhongRo({ loai: "held", stepId: "m", compId: "c", error: "EDGE_OUTCOME_UNKNOWN: host 10.1.1.1", claimSeq: 4 });
     expect(detail).not.toContain("10.1.1.1");
-    expect(await canhBaoTuAnomalyEdge({ code: "X", runId: 9, detail }, true, async () => 7)).toBe(false);
-    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, false, async () => 7)).toBe(false);
-    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail: "{" }, true, async () => 7)).toBe(false);
-    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, true, async () => 7)).toBe(true);
+    const ok = async () => ({ owner: 7 });
+    expect(await canhBaoTuAnomalyEdge({ code: "X", runId: 9, detail }, true, ok)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, false, ok)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail: "{" }, true, ok)).toBe(false);
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, true, async () => null)).toBe(false); // m-H — not valid
+    expect(await canhBaoTuAnomalyEdge({ code: KHONG_RO_EDGE_ANOMALY, runId: 9, detail }, true, ok)).toBe(true);
     await waitAlerts(1);
     expect(alerts[0]).toMatchObject({ kind: CANH_BAO_KHONG_RO_KIND.held, dedupKey: "foe_outcome_unknown_compensation_held:9:m:c:claim4", recipients: [7] });
     const src = readFileSync(resolve(__dirname, "../../edge/edgeReportsCentral.ts"), "utf8");
-    expect(src).toContain('await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async () => {');
+    expect(src).toContain('await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async (x) => {');
+    expect(src).toContain("x.claimSeq > Number(a.claimSeq ?? 0) || !baoCaoHopLe(def, x)");
   });
 
   it("I-5 (condition 3) NOBODY to send it to ⇒ still visible: the alert is raised (log + alert stream), an error line, a durable audit row", async () => {
@@ -972,14 +978,16 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
   });
 
   it("I-A a compensation-only walk lets no other compensation go by itself: a known-failure container's compensation already ran, it does not run again", async () => {
-    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "pause" ? REJECTED : ACKED));
+    // the unknown answer comes last: the sibling's known failure and its compensation are over before the run is latched
+    const treTimeout = async (ms: number) => (await new Promise((r) => setTimeout(r, ms)), TIMEOUT);
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? treTimeout(60) : i.commandType === "pause" ? REJECTED : ACKED));
     const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [pause("b")], resetComp("kUndo", 1))])]);
     expect(sent("reset")).toHaveLength(1); // kUndo: a known failure, as before
     otDispatchMock.mockClear();
     await tiep(runId);
     expect(sent()).toEqual(["reset"]); // undo only
     // … and when the container IS walked (a failed STOP inside it is re-sent, I-B) and fails again as a known failure: its compensation stays settled
-    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? REJECTED : ACKED));
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? treTimeout(1_100) : i.commandType === "stop" ? REJECTED : ACKED));
     otDispatchMock.mockClear();
     const b = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep], resetComp("kUndo", 1))])]);
     expect(sent("reset")).toHaveLength(1);
@@ -1099,5 +1107,167 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
     expect(tachBaoCaoKhongRoEdge(e).bao).toEqual([]);
     expect(tachBaoCaoKhongRoEdge(e).error).toBe(gia);
     expect(tachBaoCaoKhongRoEdge(ganBaoCaoKhongRoEdge("t", [that], 4_000), (x) => x.claimSeq === 9).bao).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) fix round 3 — S-1: the run is latched, one gate in front of every compensation", () => {
+  const pause = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "pause", ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as WorkflowStep;
+  const gate = (id: string): WorkflowStep => ({ id, type: "hitl_gate", prompt: "x" }) as WorkflowStep;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
+  const tiep = (runId: number, note = "checked") => resumeRun(runId, { approved: true, note }, ADMIN, {}, { scope: null });
+
+  // These three assert ONLY the write. They stay GREEN under mutant S1a (the flag deleted at every aggregator) and go RED under S1b (the same + no latch).
+  it("S-1 a container's non-STOP compensation is not written", async () => {
+    await chay([seq("box", [main()], resetComp("boxUndo"))]);
+    expect(sent("reset")).toHaveLength(0);
+  });
+  it("S-1 a parallel with a failed sibling: not written", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "pause" ? REJECTED : ACKED));
+    await chay([par("box", [main(), pause("b")], { compensation: resetComp("boxUndo") })]);
+    expect(sent("reset")).toHaveLength(0);
+  });
+  it("S-1 a precondition-abort sibling: not written", async () => {
+    await chay([par("box", [main(), pause("b", { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "abort" })], { compensation: resetComp("boxUndo") })]);
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("S-1 the latch is written the moment it is decided, in the row, before the compensation is even classified; a failed write leaves the walk held", async () => {
+    let chot: unknown = "?";
+    ghimMock.mockImplementation(async (_d, i) => {
+      if (i.commandType === "reset") chot = rows("orchestration_runs").at(-1)!.contextJson?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+      return { pinnedStop: false, loiDocGhim: null };
+    });
+    const { runId } = await giuKhongRo();
+    expect(chot).toMatchObject({ stepId: "main", ma: "FOE_OUTCOME_UNKNOWN" });
+    expect(runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeTruthy();
+    const b = await chay([seq("box", [main()], resetComp("boxUndo"))], () => void (HX.contextThrows = true));
+    expect(b.res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("S-1 the latch outlives the walk: a KNOWN failure later on the same run is held too, and a re-walk with the marker and the resume state gone still writes nothing", async () => {
+    const { runId } = await giuKhongRo();
+    const chot = runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+    runRow(runId).contextJson = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot };
+    otDispatchMock.mockClear();
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : ACKED));
+    const c = await resumeRun(runId, { approved: true, note: "system" }, SYSTEM, {}, { scope: null });
+    expect(c.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("S-1 an approval covers exactly THAT compensation: another compensation of the same run is split, not sent", async () => {
+    const { runId } = await giuKhongRo([seq("box", [main(resetComp("undo"))], resetComp("boxUndo"))]);
+    otDispatchMock.mockClear();
+    const c = await tiep(runId);
+    expect(c.status).toBe("held");
+    expect(sent()).toEqual(["reset"]);
+    expect(await step(runId, "boxUndo")).toMatchObject({ status: "held" });
+  });
+
+  it("S-1 a compensation whose OWN outcome is unknown latches the run: the container above it is held", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : i.commandType === "reset" ? TIMEOUT : ACKED));
+    const { res } = await chay([seq("box", [main(resetComp("undo", 1))], resetComp("boxUndo"))]);
+    expect(res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(1);
+  });
+
+  it("C-B a container with a retry budget: the STOP-typed child goes unknown, a second pass would answer known: NOT walked again, its reset held", async () => {
+    let n = 0;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "stop" ? (++n === 1 ? TIMEOUT : REJECTED) : ACKED));
+    const { res } = await chay([{ ...seq("box", [{ id: "st", type: "command", machineId: 1, command: "stop", maxAttempts: 0 } as WorkflowStep], resetComp("boxUndo")), maxAttempts: 1 } as WorkflowStep]);
+    expect(n).toBe(1); // ★ one pass
+    expect(res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("I-F the container's STOP goes at once, not behind a slow sibling", async () => {
+    const t0 = Date.now();
+    void chay([par("box", [main(), delay("slow", 4_000)], { compensation: stopComp("boxStop") })]);
+    await vi.waitFor(() => expect(sent("stop")).toHaveLength(1), { timeout: 2_000 });
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    await waitAlerts(1);
+    expect(alertsOf("stopSent")).toHaveLength(1);
+  });
+
+  it("I-F a sibling's HUNG row write does not hold the STOP or its URGENT", async () => {
+    HX.rowHangs = (r) => r.stepId === "slow" && r.status === "completed";
+    void chay([par("box", [main(), pause("slow")], { compensation: stopComp("boxStop") })]);
+    await vi.waitFor(() => expect(sent("stop")).toHaveLength(1), { timeout: 3_000 });
+    await waitAlerts(1);
+  });
+
+  it("I-F two branches reaching the same container: the STOP goes once", async () => {
+    await chay([par("box", [main(), { ...main(), id: "main2" } as WorkflowStep], { compensation: stopComp("boxStop") })]);
+    expect(sent("stop")).toHaveLength(1);
+  });
+
+  it("G-1 a gate inside the held compensation is ASKED: the Continue pauses at it, nothing after it goes; approving it sends the compensation", async () => {
+    const { runId } = await giuKhongRo([main(seq("cmp", [gate("gc"), resetComp("rz")]))]);
+    otDispatchMock.mockClear();
+    const c = await tiep(runId);
+    expect(c.status).toBe("awaiting_confirm");
+    expect(runRow(runId).currentStepId).toBe("gc");
+    expect(await step(runId, "gc")).toMatchObject({ status: "awaiting_confirm" });
+    expect(sent()).toEqual([]);
+    expect((await tiep(runId, "the gate: yes")).status).toBe("failed");
+    expect(sent()).toEqual(["reset"]);
+  });
+
+  it("G-2 the audit names the sibling gate a Continue does not ask", async () => {
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), gate("g2")])]);
+    await tiep(runId);
+    expect(audits.find((a) => a.details?.operation === "foe_outcome_unknown_continue")?.details.metadata.gatesSkipped).toEqual(["gate g2 skipped because the run failed"]);
+    expect(runRow(runId).status).toBe("failed");
+  });
+
+  it("m-F an approved compensation that is refused raises the URGENT", async () => {
+    const { runId } = await giuKhongRo();
+    otDispatchMock.mockImplementation(async () => REJECTED);
+    alerts.length = 0;
+    await tiep(runId);
+    await waitAlerts(1);
+    expect(alertsOf("approvedNotConfirmed").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:main:undo:`)]);
+  });
+
+  it("m-A m-C m-E the words: no false 'no compensation due'; a failed run never says HELD; a Continue that sent nothing does not say it ran", async () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "noCompensation", runId: 9, stepId: "X", compId: "-", error: "e", lan: "L" });
+    expect(n.title).not.toContain("no compensation due");
+    expect(n.message).toContain("may still be due");
+    const f = noiDungCanhBaoKhongRo({ loai: "failedNotSent", runId: 9, stepId: "X", compId: "Y", error: "e", lan: "L" });
+    expect(f.message).toContain("FAILED");
+    expect(f.message).not.toMatch(/HELD|Continue/);
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeExecutionCentral.ts"), "utf8");
+    expect(src).toContain('x.loai === "held" ? { ...x, loai: "failedNotSent" as const } : x');
+    const { runId } = await giuKhongRo();
+    runRow(runId).contextJson = { [KET_CUC_KHONG_RO_CTX_KEY]: { bad: 1 } };
+    rows("orchestration_run_steps").filter((x) => x.runId === runId && (x.stepId === "main" || x.stepId === "undo")).forEach((x) => (x.status = "skipped"));
+    await tiep(runId);
+    expect(String(runRow(runId).error)).toContain("found no held compensation");
+  });
+
+  it("I-G the node died while the command was out: authorised, a running row, no result ⇒ a person is called; a STOP is not unknown", () => {
+    const d = { ref: "x", name: "x", steps: [main(resetComp()), { id: "free", type: "command", machineId: 1, command: "start" } as WorkflowStep, { id: "st", type: "command", machineId: 1, command: "stop" } as WorkflowStep] } as WorkflowDefinition;
+    const r = (stepId: string, status: string) => ({ stepId, status, resultJson: null, error: null });
+    const bao = baoCaoKhongRoTuHang(d, [r("main", "running"), r("free", "running"), r("st", "running")], 5, new Set(["main", "free", "st"]), new Set(["st"]));
+    expect(bao.map((x) => [x.loai, x.stepId, x.compId])).toEqual([["held", "main", "undo"], ["noCompensation", "free", "-"]]);
+    expect(baoCaoKhongRoTuHang(d, [r("main", "running")], 5)).toEqual([]); // no result and no authorisation: never sent
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeExecutionCentral.ts"), "utf8");
+    expect(src).toContain("tx.select().from(edgeStepAuthorizations)");
+  });
+
+  it("m-B a STOP whose final row was lost does not hide in a failed container; m-H a report is paired; the containers around a step, innermost first", () => {
+    const stopX = { id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep;
+    const c = { ref: "y", name: "y", steps: [seq("s1", [stopX])] } as WorkflowDefinition;
+    const r = (stepId: string, status: string) => ({ stepId, status, resultJson: null, error: null });
+    expect(themBuocHongKhiTiepTuc(c, [r("s1", "failed"), r("stopX", "running")], {}, new Set(["stopX"]))).toEqual({});
+    const d = { ref: "z", name: "z", steps: [seq("a", [seq("b", [main(resetComp())])])] } as WorkflowDefinition;
+    expect(baoCaoHopLe(d, { stepId: "main", compId: "undo" })).toBe(true);
+    expect(baoCaoHopLe(d, { stepId: "main", compId: "-" })).toBe(true);
+    expect(baoCaoHopLe(d, { stepId: "b", compId: "undo" })).toBe(false); // not ITS compensation
+    expect(baoCaoHopLe(d, { stepId: "forged", compId: "-" })).toBe(false);
+    expect(toTienCua(d.steps, "main").map((s) => s.id)).toEqual(["b", "a"]);
   });
 });

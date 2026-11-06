@@ -65,6 +65,9 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
     getActiveConnectionFingerprint: (adapterId: number) => H.fingerprints.get(adapterId),
   };
 });
+// I-H — appendRunEvent takes a savepoint + max(seq)+1: on the test's ONE connection two branches writing in the same tick collide on (runId, seq), and the failed
+// savepoint aborts whatever else was pipelined (25P02) ⇒ a branch reads a KNOWN failure before the dispatcher. A real pool has no such collision. No case reads run events.
+vi.mock("../runEventStore", () => ({ appendRunEvent: async () => undefined }));
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
   return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a) };
@@ -222,6 +225,13 @@ async function giuSauKhongRo(tx: Tx, mk: (d: Awaited<ReturnType<typeof dungThiet
   return { ...d, runId };
 }
 
+/** I-H — a case that never reached the unknown state must not pass or mislead: `main` failed on its outcome, FIRST. */
+async function chacKhongRo(tx: Tx, runId: number, stepId = "main") {
+  const b = await buoc(tx, runId, stepId);
+  expect(b?.status, `${stepId}: ${b?.status} attempt ${b?.attempt}: ${b?.error}`).toBe("failed");
+  expect(String(b?.error)).toMatch(/\b(FOE|EDGE)_OUTCOME_UNKNOWN\b/);
+}
+
 const ENV_KEYS = ["FOE_ENABLED", "FOE_DURABLE", "OT_CONTROL_ENABLED", "OT_COMMISSIONING_REQUIRED", "OT_SAFETY_PREFLIGHT_ENABLED", "OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "AI_OT_CONTROL_ENABLED", "PARAM_GUARDRAIL_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED", "RBAC_SCOPED_ADMIN"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -374,9 +384,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     await trongGiaoDich(async (tx) => {
       const pdu0 = soPduGhi();
       const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [{ id: "p", type: "parallel", failFast: true, steps: [buocChinh(m2, buTruReset(m1)), { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep]);
-      // the first DB run saw awaiting_confirm here: the message says whether `main` really failed on an unknown outcome (see the next case)
-      const main = await buoc(tx, runId, "main");
-      expect((await runCua(tx, runId)).status, `main: ${main?.status} attempt ${main?.attempt}: ${main?.error}`).toBe("held");
+      await chacKhongRo(tx, runId);
+      expect((await runCua(tx, runId)).status).toBe("held");
       await expect(resumeRun(runId, { approved: true }, ADMIN, {}, { scope: null })).rejects.toThrow(/reason is required/);
       await expect(resumeRun(runId, { approved: true, note: "x" }, OPERATOR, {}, { scope: null })).rejects.toThrow(/machine-control rights/);
       expect(soPduGhi() - pdu0).toBe(0);
@@ -391,8 +400,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId));
       const pdu0 = soPduGhi();
       await khoiDong(runId);
-      const main = await buoc(tx, runId, "main");
-      expect((await runCua(tx, runId)).status, `main: ${main?.status}: ${main?.error}`).toBe("held");
+      await chacKhongRo(tx, runId);
+      expect((await runCua(tx, runId)).status).toBe("held");
       expect(soPduGhi() - pdu0).toBe(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
@@ -405,8 +414,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await yDinhTruoc(tx, { ...d, runId });
       const pdu0 = soPduGhi();
       await khoiDong(runId);
-      const main = await buoc(tx, runId, "main");
-      expect(soPduGhi() - pdu0, `main: ${main?.status}: ${main?.error}`).toBe(1);
+      await chacKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(1);
       expect((await runCua(tx, runId)).status).toBe("awaiting_confirm");
       await choCanhBao("stopSent", runId, 1);
     });
@@ -421,9 +430,40 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await yDinhTruoc(tx, { ...d, runId });
       const pdu0 = soPduGhi();
       await khoiDong(runId);
+      await chacKhongRo(tx, runId); // the first DB run wrote boxUndo here: `main` had gone KNOWN on the harness's 25P02; proved by this line now
       expect(soPduGhi() - pdu0).toBe(0);
       expect((await runCua(tx, runId)).status).toBe("held");
       await choCanhBao("held", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-B a container with maxAttempts never walks an unknown failure again: the forward key is not re-issued, its reset is NOT written, held", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([{ id: "box", type: "sequence", maxAttempts: 2, steps: [{ ...buocChinh(d.m2), maxAttempts: 0 }], compensation: buTruReset(d.m1, "boxUndo") } as unknown as WorkflowStep]);
+      await yDinhTruoc(tx, { ...d, runId });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      await chacKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      expect((await buoc(tx, runId, "box"))?.attempt ?? 0).toBeLessThanOrEqual(1);
+      await choCanhBao("held", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ S-1 the latch is in the row BEFORE the walk ends, and it outlives a lost marker: a re-walk with the flag gone still writes no non-STOP compensation", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [buocChinh(m2, buTruReset(m1))]);
+      const ctx = await ctxCua(tx, runId);
+      expect(ctx.foeKetCucKhongRoChot).toMatchObject({ stepId: "main", ma: "FOE_OUTCOME_UNKNOWN" });
+      await tx.update(orchestrationRuns).set({ contextJson: { foeKetCucKhongRoChot: ctx.foeKetCucKhongRoChot } }).where(eq(orchestrationRuns.id, runId));
+      const pdu0 = soPduGhi();
+      await resumeRun(runId, { approved: true, note: "system re-walk" }, { id: 0, role: "system", name: "a2n" } as never, {}, { scope: null });
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });

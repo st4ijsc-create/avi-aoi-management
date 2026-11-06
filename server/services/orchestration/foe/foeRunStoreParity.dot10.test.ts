@@ -354,6 +354,8 @@ function fakeAuthorize(x: EdgeHarness, d: WorkflowDefinition, primed?: Awaited<R
       x.authorizeCalls.push(input);
       if (x.offline || x.offlineSteps?.has(input.stepId)) return { ok: false, verdict: "unavailable", code: "network" };
       if (x.stopped) return { ok: false, verdict: "stopped", code: "stopped" };
+      // the real /authorize: one authorisation per (run, claim, step, attempt) — a second ask answers 409 already_authorized (edgeAuthorizeCentral)
+      if ((fake.store.get("edge_step_authorizations") ?? []).some((a) => a.runId === x.runId && a.claimSeq === input.claimSeq && a.stepId === input.stepId && a.attempt === input.attempt)) return { ok: false, verdict: "refused", code: "already_authorized" };
       const found = primed ?? (await findSeparateGateApproval({ runId: x.runId, def: d, startedViaApi: false }));
       if ("reason" in found) return { ok: false, verdict: "refused", code: "gate_required", reason: found.reason };
       // central's authorisation ledger (0372) — B's /authorize writes it; resultReportedAt stays null until a result is applied
@@ -2033,5 +2035,44 @@ describe("R1b-2b-2a A2(n) fix round 2 — the edge: the unknown flag outranks a 
     await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "failed", error: gia, nodeCode: "EDGE-A", claimSeq: 2, def: d });
     await new Promise((r) => setTimeout(r, 30));
     expect(h.alerts).toEqual([]);
+  });
+});
+
+describe("R1b-2b-2a A2(n) fix round 3 — the edge: S-1, C-B", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown>): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    return e;
+  }
+
+  it("★ C-B a container with a retry budget: r1 is not asked again, its reset is NOT sent, held(outcomeUnknown), the row keeps the code", async () => {
+    const e = await denBuoc(def("n3-b", [gate(), box("box", [move("r1")], { maxAttempts: 1, compensation: ot("boxUndo") })]));
+    h.timeoutDispatch.add("r1");
+    e.events = [];
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r1" && a.claimSeq === 2)).toHaveLength(1);
+    expect(String(stepRows(e.runId).find((x) => x.stepId === "r1")!.error)).toMatch(/OUTCOME_UNKNOWN/);
+  });
+
+  // write-only: GREEN under mutant S1a, RED under S1b (see the unit file)
+  it("S-1 edge: a container's non-STOP compensation is not sent", async () => {
+    const e = await denBuoc(def("n3-s", [gate(), box("box", [move("r1")], { compensation: ot("boxUndo") })]));
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
+  });
+
+  it("S-1 edge: a re-walk reads the latch from the resume state: a KNOWN failure of the segment is held, its compensation not sent", async () => {
+    const e = await denBuoc(def("n3-r", [gate(), box("box", [move("r1", { compensation: ot("c1") })], { compensation: ot("boxUndo") })]));
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    await continueOutcomeUnknown(e, "checked");
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]); // the approved one only
+    expect(stepRows(e.runId).find((x) => x.stepId === "boxUndo")).toMatchObject({ status: "held" });
   });
 });
