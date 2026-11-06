@@ -721,7 +721,7 @@ describe("ScadaDiag — chip Truyền thông n/m (B-T7)", () => {
     srv.tomTat = { ketNoi: 2, dangNoi: 0, mat: 1, khac: 0, tong: 3, edge: 0, tinhLuc: "2026-10-31T00:00:00.000Z" };
     render(<ScadaDiag />);
     const chip = screen.getByTestId("chip-truyen-thong");
-    expect(chip).toHaveTextContent("Truyền thông 2/3");
+    expect(chip).toHaveTextContent("Truyền thông 2 nối · 0 tắt · 1 mất");
     expect(chip).toHaveAttribute("href", "/scada/diag");
   });
 });

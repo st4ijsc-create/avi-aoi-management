@@ -4,7 +4,7 @@
  * Renders a controlled form from a JSON-Schema object (draft 2020-12) — the exact
  * shape produced by `zodToConfigForm` for OT connector manifests
  * (host/port/unitId/pollIntervalMs/timeoutMs/readOnly, port carrying a `default`).
- * This is the real "auto-form" that `SynapsePlatformPage` only advertised with a
+ * This is the real "auto-form" that trang SYNAPSE platform (đã gỡ) only advertised with a
  * Badge: add a new vendor manifest → its config UI appears here for free, no core edit.
  *
  * Presentational + controlled: parent owns the value object; `onChange` returns the

@@ -1,6 +1,6 @@
 /**
  * doc 81 Đợt 1B Task 6 — OT dispatcher: HITL gắn đúng lệnh + tiêu thụ một lần, sổ ghi TRƯỚC
- * thiết bị, safety UNKNOWN chặn, Sparkplug DCMD bắt buộc actionId. CSDL THẬT (`_test`, ép bởi
+ * thiết bị, safety UNKNOWN chặn, hitl+requireBoundAction (từng do Sparkplug DCMD dùng) bắt buộc actionId — nay gọi dispatch() trực tiếp (pha 0 · C0-1). CSDL THẬT (`_test`, ép bởi
  * vitest.setup) — FOR UPDATE / CAS / pg_advisory_xact_lock / WORM chỉ kiểm được trên Postgres thật.
  *
  * Thiết bị: MỘT driver giả trong tiến trình (không socket, không cổng) thay `getActiveDriver`
@@ -80,8 +80,6 @@ import { dongDauDuyetLuat } from "../../testing/dauDuyetInterlock";
 import { dispatch, NO_CONFIRMER, perWriteKey, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { makeFoeGateRun } from "../orchestration/foe/__foeGateRunFixture";
-import { SparkplugCommandHandler, SPARKPLUG_ACTION_ID_METRIC, SPARKPLUG_COMMAND_TOOL } from "../uns/sparkplugCommand";
-import { encodePayload } from "../uns/sparkplugEncoder";
 
 const DB_URL = process.env.DATABASE_URL;
 // N4 — `-<pid>`: hai tiến trình vitest khởi cùng mili-giây vẫn khác DAU (mã adapter UNIQUE, khoá idempotency, id action).
@@ -549,26 +547,35 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     expect(writeCalls).toBe(0);
   });
 
-  // ═════════════════ Sparkplug DCMD ═════════════════
-  function sparkplugHandler() {
-    return new SparkplugCommandHandler({
-      subscribe: () => {},
-      dispatch,
-      onRebirth: () => {},
-      resolveTarget: () => ({ machineId: MACHINE, adapterId }),
-      metricToWrite: (m) => (typeof m.name === "string" && m.name ? { tagKey: m.name, value: m.value, commandType: "sparkplug.dcmd" } : null),
-      systemUserId: 0,
-      log: { warn: () => {}, error: () => {}, info: () => {} },
+  // ═════════════════ "Sparkplug DCMD" → cửa SỐNG: dispatch() trực tiếp (pha 0 · C0-1) ═════════════════
+  // Nhánh DCMD của Sparkplug ĐÃ GỠ (uns/sparkplugCommand.ts nay chỉ còn NCMD Rebirth; DCMD bị từ chối trước dispatcher). Các ca dưới đây chưa bao giờ đo handler Sparkplug —
+  // chúng đo CỔNG HITL-BINDING CỦA DISPATCHER, với handler chỉ là bên gọi. Tính chất thuộc về dispatcher nên được GIỮ NGUYÊN, chuyển sang gọi `dispatch()` đúng hình dạng
+  // input mà handler từng dựng: `triggeredBy {kind:"hitl", actionId?, tool:"sparkplug.command", requestedBy:0, requireBoundAction:true}` + khoá `spcmd-…`.
+  // BẢNG ĐỐI CHỨNG (ca Sparkplug cũ → ca cửa sống):
+  //   │ DCMD không actionId, OT_CONTROL_ENABLED=true/false ⇒ rejected + ghi sổ, driver 0, confirmedBy ≠ 0   │ dispatch() hitl+requireBoundAction không actionId — cùng khẳng định, cùng sổ     │
+  //   │ DCMD actionId gắn tool khác ⇒ ACTION_BINDING_MISMATCH, kể cả đường mô phỏng                            │ dispatch() với hàng tool khác — đọc thẳng res.status/reason                      │
+  //   │ DCMD actionId đã 'executed' ⇒ NOT_CONFIRMED                                                            │ dispatch() với hàng executed                                                      │
+  //   │ DCMD actionId đúng ⇒ ghi 1 lần, confirmedBy = chủ hàng; dùng lại ⇒ từ chối                            │ dispatch() hai lần cùng actionId                                                  │
+  //   (bỏ riêng khẳng định "metric HITL/ActionId không bao giờ thành lệnh ghi" — metric đã biến mất cùng handler DCMD; tính chất đó nay là census AST
+  //    `uns/sparkplugCommand.khongGhi.test.ts` + test DCMD-bị-từ-chối ở `uns/sparkplugCommand.test.ts`.)
+  const TOOL_DCMD_CU = "sparkplug.command"; // hằng cục bộ: tên tool mà hành động HITL của lệnh Sparkplug từng gắn (module đã gỡ)
+  async function dispatchNhuDcmd(o: { actionId?: string; writes: Writes }) {
+    return dispatch({
+      adapterId,
+      machineId: MACHINE,
+      commandType: "sparkplug.dcmd",
+      writes: o.writes,
+      triggeredBy: { kind: "hitl", actionId: o.actionId, tool: TOOL_DCMD_CU, requestedBy: 0, requireBoundAction: true },
+      idempotencyKey: `spcmd-${MACHINE}-DCMD-sparkplug.dcmd-${Date.now()}`,
     });
   }
 
   it.each([["true"], ["false"]])(
-    "★ Sparkplug DCMD KHÔNG có actionId (OT_CONTROL_ENABLED=%s) ⇒ rejected + ghi sổ, driver 0 lần, confirmedBy KHÔNG phải 0",
+    "★ [cửa sống thay ca Sparkplug DCMD] hitl+requireBoundAction KHÔNG có actionId (OT_CONTROL_ENABLED=%s) ⇒ rejected + ghi sổ, driver 0 lần, confirmedBy KHÔNG phải 0",
     async (ctl) => {
       process.env.OT_CONTROL_ENABLED = ctl;
       const before = Date.now();
-      const payload = encodePayload({ metrics: [{ name: "cmd_run", type: "Boolean", value: true }] });
-      await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
+      await dispatchNhuDcmd({ writes: [{ tagKey: "cmd_run", value: true }] });
       expect(writeCalls).toBe(0);
       // R1b-2b-2a A2(g) — từ chối ở cổng (1) ⇒ khoá sổ NULL, khoá gốc `spcmd-…` ở ackValue.khoaGoc (trước: `v2:%:spcmd-…` ở idempotencyKey)
       const rows = (await (await d()).select().from(commandLog).where(sql`${commandLog.ackValue}->>'khoaGoc' LIKE ${`spcmd-${MACHINE}-DCMD-%`}`)).filter(
@@ -584,62 +591,30 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     },
   );
 
-  it("Sparkplug DCMD mang actionId KHÔNG gắn (hàng của tool khác) ⇒ rejected, driver 0 lần — cả khi đường mô phỏng", async () => {
+  it("[cửa sống thay ca Sparkplug DCMD] actionId KHÔNG gắn (hàng của tool khác) ⇒ rejected ACTION_BINDING_MISMATCH, driver 0 lần — cả khi đường mô phỏng", async () => {
     process.env.OT_CONTROL_ENABLED = "false";
     const actionId = await makeAction({ tool: TOOL }); // tool ≠ sparkplug.command
-    const payload = encodePayload({
-      metrics: [
-        { name: "cmd_run", type: "Boolean", value: true },
-        { name: SPARKPLUG_ACTION_ID_METRIC, type: "String", value: actionId },
-      ],
-    });
-    const spy = vi.fn(dispatch);
-    const h = new SparkplugCommandHandler({
-      subscribe: () => {},
-      dispatch: spy,
-      onRebirth: () => {},
-      resolveTarget: () => ({ machineId: MACHINE, adapterId }),
-      metricToWrite: (m) => (typeof m.name === "string" && m.name ? { tagKey: m.name, value: m.value, commandType: "sparkplug.dcmd" } : null),
-      systemUserId: 0,
-      log: { warn: () => {}, error: () => {}, info: () => {} },
-    });
-    await h.handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
-    expect(spy).toHaveBeenCalledTimes(1);
-    const res = await spy.mock.results[0]!.value;
+    const res = await dispatchNhuDcmd({ actionId, writes: [{ tagKey: "cmd_run", value: true }] });
     expect(res.status).toBe("rejected");
     expect(res.reason).toBe("ACTION_BINDING_MISMATCH");
     expect(writeCalls).toBe(0);
-    // metric actionId KHÔNG bao giờ thành một lệnh ghi
-    expect(spy.mock.calls[0]![0].writes).toEqual([{ tagKey: "cmd_run", value: true }]);
   });
 
-  it("Sparkplug DCMD mang actionId gắn đúng nhưng ĐÃ 'executed' ⇒ rejected NOT_CONFIRMED ngay cả trên đường mô phỏng", async () => {
+  it("[cửa sống thay ca Sparkplug DCMD] actionId gắn đúng nhưng ĐÃ 'executed' ⇒ rejected NOT_CONFIRMED ngay cả trên đường mô phỏng", async () => {
     process.env.OT_CONTROL_ENABLED = "false";
     const writes = [{ tagKey: "cmd_run", value: true }];
-    const actionId = await makeAction({ status: "executed", tool: SPARKPLUG_COMMAND_TOOL, bind: { commandType: "sparkplug.dcmd", writes } });
-    const payload = encodePayload({
-      metrics: [
-        { name: "cmd_run", type: "Boolean", value: true },
-        { name: SPARKPLUG_ACTION_ID_METRIC, type: "String", value: actionId },
-      ],
-    });
-    await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
+    const actionId = await makeAction({ status: "executed", tool: TOOL_DCMD_CU, bind: { commandType: "sparkplug.dcmd", writes } });
+    await dispatchNhuDcmd({ actionId, writes });
     const rows = await (await d()).select().from(commandLog).where(eq(commandLog.actionId, actionId));
     expect(rows.map((r) => r.status)).toEqual(["rejected"]);
     expect(rows[0]!.errorText).toMatch(/^NOT_CONFIRMED/);
     expect(writeCalls).toBe(0);
   });
 
-  it("Sparkplug DCMD mang actionId gắn đúng (tool sparkplug.command, confirmed) ⇒ ghi 1 lần, confirmedBy = chủ hàng; dùng lại ⇒ từ chối", async () => {
+  it("[cửa sống thay ca Sparkplug DCMD] actionId gắn đúng (tool sparkplug.command, confirmed) ⇒ ghi 1 lần, confirmedBy = chủ hàng; dùng lại ⇒ từ chối", async () => {
     const writes = [{ tagKey: "cmd_run", value: true }];
-    const actionId = await makeAction({ tool: SPARKPLUG_COMMAND_TOOL, bind: { commandType: "sparkplug.dcmd", writes } });
-    const payload = encodePayload({
-      metrics: [
-        { name: "cmd_run", type: "Boolean", value: true },
-        { name: SPARKPLUG_ACTION_ID_METRIC, type: "String", value: actionId },
-      ],
-    });
-    await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
+    const actionId = await makeAction({ tool: TOOL_DCMD_CU, bind: { commandType: "sparkplug.dcmd", writes } });
+    await dispatchNhuDcmd({ actionId, writes });
     expect(writeCalls).toBe(1);
     expect(await pendingStatus(actionId)).toBe("executed");
     const rows = await (await d()).select().from(commandLog).where(eq(commandLog.actionId, actionId));
@@ -647,7 +622,7 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     expect(rows.every((r) => r.confirmedBy === OWNER)).toBe(true);
 
     await new Promise((r) => setTimeout(r, 5)); // khoá spcmd dùng Date.now()
-    await sparkplugHandler().handleMessage(`spBv1.0/${DAU}/DCMD/node1/dev1`, payload);
+    await dispatchNhuDcmd({ actionId, writes });
     expect(writeCalls).toBe(1);
   });
 

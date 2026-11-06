@@ -1,6 +1,6 @@
 /**
  * CỔNG CSDL THẬT — lô L6c-C1 (rà bảo mật tRPC, 2026-10-25): đọc theo TRỤC MÁY / robot / adapter của vùng OT:
- * aoiOnboarding ×4 · feederVerify ×3 · machineApi.listKeys · hotFolder ×3 · parameterGuardrail ×4 · equipmentStandards.complianceMetrics ·
+ * aoiOnboarding ×4 · feederVerify ×3 · machineApi.listKeys · hotFolder ×3 · equipmentStandards.complianceMetrics ·
  * simulation.fromScene · field.health/healthSummary · systemHealth.connectionSupervisors.
  * Luật: ngoài phạm vi ≡ không tồn tại (NOT_FOUND máy / [] / null); hàng guardrail theo LOẠI máy (machine_type) vẫn thấy; admin không đổi.
  */
@@ -32,7 +32,6 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
     fv: await mk("./feederVerifyRouter", "feederVerifyRouter"),
     ma: await mk("./machineApiRouters", "machineApiRouter"),
     hf: await mk("./hotFolderRouter", "hotFolderRouter"),
-    pg: await mk("./parameterGuardrailRouter", "parameterGuardrailRouter"),
     es: await mk("./equipmentStandardsRouter", "equipmentStandardsRouter"),
     sim: await mk("./simulationRouter", "simulationRouter"),
     fd: await mk("./fieldRouter", "fieldRouter"),
@@ -135,27 +134,6 @@ describe("★★★ hotFolder ×3", () => {
     expect(await cA.hf.recentFiles({ configId: ad.hcB })).toEqual([]);
     expect((await cA.hf.recentFiles({ configId: ad.hcA })).length).toBe(1);
     expect((await cAdm.hf.recentFiles({ configId: ad.hcB })).length).toBe(1);
-  });
-});
-
-describe("★★★ parameterGuardrail", () => {
-  it("list/changeLog: hàng máy B ẩn; hàng theo LOẠI máy vẫn thấy; admin thấy hết", async () => {
-    const ds = J(await cA.pg.list({}));
-    expect(ds).toContain(RUN + "pkA");
-    expect(ds).not.toContain(RUN + "pkB");
-    expect(ds).toContain(RUN + "pkT");
-    expect(J(await cAdm.pg.list({}))).toContain(RUN + "pkB");
-    const nk = J(await cA.pg.changeLog({}));
-    expect(nk).toContain(RUN + "pkA");
-    expect(nk).not.toContain(RUN + "pkB");
-    expect(J(await cAdm.pg.changeLog({}))).toContain(RUN + "pkB");
-  });
-  it("get theo id: hàng máy B ⇒ null", async () => {
-    const [b] = await H.dung(sql`SELECT id FROM parameter_guardrails WHERE param_key = ${RUN + "pkB"}`);
-    const [a] = await H.dung(sql`SELECT id FROM parameter_guardrails WHERE param_key = ${RUN + "pkA"}`);
-    expect(await cA.pg.get({ id: b.id })).toBeNull();
-    expect((await cA.pg.get({ id: a.id }))?.id).toBe(a.id);
-    expect((await cAdm.pg.get({ id: b.id }))?.id).toBe(b.id);
   });
 });
 

@@ -52,7 +52,6 @@ vi.mock("../services/robot/robotCommandDispatcher", () => ({
     dispatch.calls.push(input);
     return { ok: true, status: "simulated", jobId: 1 };
   }),
-  robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
 
 // doc 81 Đợt 10 D fix review 5 (R-10-bc) — robot.actuate MOTION now requires the caller's factory scope (DB, fail-closed):

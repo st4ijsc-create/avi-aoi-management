@@ -1,5 +1,5 @@
 // Disaster-Recovery verify-restore service (Giai đoạn 3 — G12)
-// Code-only, feature-flag DR_VERIFY_ENABLED. No-op khi cờ tắt hoặc DB chưa sẵn sàng.
+// ★ Pha 0 P0-6 (2026-11-04): BẬT MẶC ĐỊNH; chỉ DR_VERIFY_ENABLED=false tắt. No-op khi DB chưa sẵn sàng.
 // Khi bật: định kỳ ghi một bản ghi verify-restore (đo RPO/RTO ước lượng) vào dr_restore_checks.
 // Việc khôi phục thật (WAL replay/restore từ S3) phụ thuộc hạ tầng — service chỉ ghi nhật ký.
 import { getDb } from "../db";
@@ -11,7 +11,7 @@ let _timer: ReturnType<typeof setInterval> | null = null;
 let _running = false;
 
 export function isDisasterRecoveryEnabled(): boolean {
-  return process.env.DR_VERIFY_ENABLED === "true";
+  return process.env.DR_VERIFY_ENABLED !== "false";
 }
 
 export function isDisasterRecoveryRunning(): boolean {
@@ -54,7 +54,7 @@ export async function runDrVerifyCycle(): Promise<number | null> {
 
 export function startDisasterRecoveryService(): void {
   if (!isDisasterRecoveryEnabled()) {
-    console.log("[DR] disabled (DR_VERIFY_ENABLED != true) — no-op");
+    console.log("[DR] disabled (DR_VERIFY_ENABLED=false) — no-op");
     return;
   }
   if (_timer) return;

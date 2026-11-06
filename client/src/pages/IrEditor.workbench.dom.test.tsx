@@ -9,7 +9,7 @@
 //   - Giữ: lint dịch lỗi qua mapTrpcError, cổng Lưu/Build như cũ, một lời gọi mỗi lần bấm (R-2-n), phím tắt.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, configure, fireEvent, getConfig, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
 import { forceNarrowHeader } from "@/components/patterns/layoutKitTestHeaderFold";
@@ -197,7 +197,12 @@ function fetchGia(_url: string, init: RequestInit): Promise<Response> {
 const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
 
 let undoShim: (() => void) | null = null;
+// Chờ bất đồng bộ mặc định của RTL = 1000 ms; trang IDE + panel Copilot mount rất nặng (đo 640–870 ms chỉ cho `findByPlaceholderText` trên máy rảnh) ⇒ khi chạy cả
+// `client/src` dưới tải cao ca "Copilot mở ⇒ panel TRONG inspector…" đỏ giả (2026-11-03, 1/2 lượt chạy đầy đủ). Nâng TRẦN chờ lên 15 s: ca xanh không chậm hơn,
+// ca đỏ thật chỉ báo muộn hơn, KHÔNG nới điều khẳng định nào (cùng cách với EngineeringWorkspace.workbench.dom.test.tsx).
+const ASYNC_UTIL_TIMEOUT_CU = getConfig().asyncUtilTimeout;
 beforeAll(async () => {
+  configure({ asyncUtilTimeout: 15_000 });
   await initLayoutKitTestI18n();
   undoShim = installResizeHandleHitAreaShim();
   installMatchMedia();
@@ -227,7 +232,10 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-afterAll(() => undoShim?.());
+afterAll(() => {
+  undoShim?.();
+  configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_CU });
+});
 
 const mainEl = () => document.querySelector('[data-layout-main="ir-canvas"]') as HTMLElement;
 const statusBar = () => document.querySelector("[data-workbench-statusbar]") as HTMLElement;

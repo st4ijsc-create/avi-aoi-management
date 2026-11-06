@@ -571,7 +571,8 @@ describe("Copilot (dock thật) — binding của trang, stream + Huỷ, Apply c
   // cố định đã gỡ khỏi mã — renderPage() không còn vẽ kèm nó).
   async function moDock() {
     fireEvent.click(screen.getByRole("tab", { name: /Copilot/ }));
-    await screen.findByPlaceholderText(/Describe what to generate/);
+    // panel Copilot mount nặng: mặc định 1000 ms của RTL có lúc không đủ khi tải cao (đo 640–870 ms trên máy rảnh) ⇒ trần chờ tường minh (như PouStudio.workbench).
+    await screen.findByPlaceholderText(/Describe what to generate/, undefined, { timeout: 15_000 });
   }
   async function chay(req: string) {
     fireEvent.change(screen.getByPlaceholderText(/Describe what to generate/), { target: { value: req } });

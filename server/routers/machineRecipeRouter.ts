@@ -304,28 +304,7 @@ export const machineRecipeRouter = router({
         return listRecipeVersions(input.code);
       }),
 
-    get: protectedProcedure
-      .use(requirePermission("machine_control", "canView"))
-      .input(z.object({ id: z.number().int().positive() }))
-      .query(async ({ input }) => {
-        const row = await getRecipeById(input.id);
-        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
-        return row;
-      }),
 
-    getActive: protectedProcedure
-      .use(requirePermission("machine_control", "canView"))
-      .input(z.object({
-        code: z.string().min(1).max(64).optional(),
-        machineId: z.number().int().positive().optional(),
-      }))
-      .query(async ({ input, ctx }) => {
-        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
-        if (input.code == null && input.machineId == null) {
-          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "codeOrMachineId" }, "Cần code hoặc machineId.");
-        }
-        return (await getActiveRecipe({ code: input.code, machineId: input.machineId })) ?? null;
-      }),
 
     create: protectedProcedure
       .use(requirePermission("machine_control", "canCreate"))

@@ -1,5 +1,5 @@
 /**
- * CỔNG CSDL THẬT — lô L6a-3 (rà bảo mật tRPC, 2026-10-25): ĐỌC của energy (5 + enpi) · realtimeReport · goldenSample (5) · thresholdSuggestion (2) · componentLibrary.linkStats · dashboardStats.overviewCounts · semantics.compute theo PHẠM VI người dùng.
+ * CỔNG CSDL THẬT — lô L6a-3 (rà bảo mật tRPC, 2026-10-25): ĐỌC của energy (5 + enpi) · realtimeReport · goldenSample (5) · componentLibrary.linkStats · dashboardStats.overviewCounts · semantics.compute theo PHẠM VI người dùng.
  * Lỗ: người nhà máy A đọc công suất / EnPI / sức khoẻ máy, golden sample (ảnh chuẩn), ngưỡng gợi ý theo điểm đo, thống kê vật liệu, số lượng nhà máy-chuyền-máy và chỉ số KPI của MỌI nhà máy.
  * Luật: dữ liệu theo máy ⇒ chỉ máy trong phạm vi; golden / điểm đo theo sản phẩm ⇒ sản phẩm trong phạm vi; vật liệu theo mã nhà máy; ngoài phạm vi ≡ không tồn tại; admin không đổi.
  */
@@ -13,23 +13,22 @@ import { readAppErrorMeta } from "../_core/appError";
 
 const RUN = `l6e${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
-type C = { energy: any; rt: any; golden: any; thr: any; lib: any; dash: any; sem: any };
+type C = { energy: any; rt: any; golden: any; lib: any; dash: any; sem: any };
 let cA: C, cAdm: C, cRong: C;
 let pmA = 0, pmB = 0, pdA = 0, pdB = 0, gA = 0, gB = 0, gAma = 0, gBma = 0, gKhong = 0, goiId = 0;
 const homQua = new Date(Date.now() - 86_400_000);
 const ngayMai = new Date(Date.now() + 86_400_000);
 const caller = async (u: { id: number; role: string; name: string }): Promise<C> => {
   const ctx = { user: { ...u, twoFactorEnabled: true } } as never;
-  const [e, r, g, t, l, d, s] = await Promise.all([
+  const [e, r, g, l, d, s] = await Promise.all([
     import("./energyRouter").then((x) => x.energyRouter.createCaller(ctx)),
     import("./realtimeReportRouter").then((x) => x.realtimeReportRouter.createCaller(ctx)),
     import("./goldenSampleRouter").then((x) => x.goldenSampleRouter.createCaller(ctx)),
-    import("./thresholdSuggestionRouter").then((x) => x.thresholdSuggestionRouter.createCaller(ctx)),
     import("./componentLibraryRouter").then((x) => x.componentLibraryRouter.createCaller(ctx)),
     import("./dashboardStatsRouters").then((x) => x.dashboardRouter.createCaller(ctx)),
     import("./semanticsRouter").then((x) => x.semanticsRouter.createCaller(ctx)),
   ]);
-  return { energy: e, rt: r, golden: g, thr: t, lib: l, dash: d, sem: s };
+  return { energy: e, rt: r, golden: g, lib: l, dash: d, sem: s };
 };
 async function loi(chay: () => Promise<unknown>): Promise<string | null> {
   try { await chay(); return null; } catch (e) {
@@ -139,7 +138,7 @@ describe("★★★ energy + realtimeReport — ĐỌC theo phạm vi", () => {
   });
 });
 
-describe("★★★ goldenSample + thresholdSuggestion — ĐỌC theo SẢN PHẨM trong phạm vi", () => {
+describe("★★★ goldenSample — ĐỌC theo SẢN PHẨM trong phạm vi", () => {
   it("listManaged / listForProduct / listByProduct — golden của sản phẩm B ẩn với A", async () => {
     const ids = (rows: { id: number }[]) => rows.map((x) => x.id);
     const a = ids(await cA.golden.listForProduct({ productCode: RUN + "-PMB", activeOnly: false }));
@@ -168,14 +167,6 @@ describe("★★★ goldenSample + thresholdSuggestion — ĐỌC theo SẢN PH�
     expect((await cA.golden.getActiveForKey({ productCode: RUN + "-PMA" })).found).toBe(true);
     const khong = await loi(() => cA.golden.getThumbnail({ id: 2147483000 }));
     expect(await loi(() => cA.golden.getThumbnail({ id: gB }))).toBe(khong);
-  });
-  it("suggestForPoint / suggestForProductModel — điểm đo & sản phẩm B ẩn với A; sản phẩm A hiện", async () => {
-    expect(await loi(() => cA.thr.suggestForPoint({ pointDefId: pdB }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:measurementPoint");
-    expect(await loi(() => cA.thr.suggestForPoint({ pointDefId: pdA }))).toBeNull();
-    expect(await loi(() => cAdm.thr.suggestForPoint({ pointDefId: pdB }))).toBeNull();
-    expect((await cA.thr.suggestForProductModel({ productModelId: pmB })).count).toBe(0);
-    expect((await cAdm.thr.suggestForProductModel({ productModelId: pmB })).count).toBeGreaterThan(0);
-    expect((await cA.thr.suggestForProductModel({ productModelId: pmA })).count).toBeGreaterThan(0);
   });
 });
 

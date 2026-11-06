@@ -340,6 +340,7 @@ const SO_CAI: Record<string, [Dem, PhanLoai, string]> = {
   "server/services/ot/commandDispatcher.ts#auditPinnedStopOverride": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],
   "server/services/ot/commandDispatcher.ts#khiLoiAuditStopGhim": [{ sql_tho: 1 }, "noi_bo", "chuỗi log `command_log #id`"],
   "server/services/ot/ghiTreoCoTran.ts#bo": [{ sql_tho: 1 }, "noi_bo", "chuỗi log nhắc tên bảng"],
+  "server/services/orchestration/foe/foeBuTruBiNgat.ts#docLenhSau": [{ sql_tho: 1 }, "noi_bo", "R1b-2b-2a A2(m2) b3 (fix round 1: one reader for the decision and the re-check before the hand-over) — boot check: id / status::text / actionId of OTHER commands to the adapter since the STOP intent (no errorText / ackValue); kept as audit evidence for admins, never returned to a caller"],
   "server/services/ops/wormTableSizeMonitor.ts#<tep>": [{ sql_tho: 1 }, "noi_bo", "danh sách tên bảng WORM để đo kích thước"],
   // ── lenhHmi ──
   "server/services/scada/lenhHmi.ts#trangThaiYeuCauGhi": [{ cot_an_toan: 11, cot_ky_thuat: 2, doc_chieu: 1 }, "suy_ra", "chủ yêu cầu: ma = mã tiền tố errorText; ledger = ackValue.ledger — không trả nguyên cột"],

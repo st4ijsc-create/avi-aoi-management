@@ -47,6 +47,7 @@ Không tạo đối tượng `BT12-` (dieu-phoi quyết định không tạo d�
 ## 4. Quan sát và giới hạn
 - `scadaKenh.cheDo.danhSach` vẫn bị gọi ở `/scada/diag` và `/scada/journal` khi người dùng không có `machine_control.canView` ⇒ 403 ×3 trong ~10 s, lỗi ra console (operator1). Không phải thủ tục B-T4 ghim. Backlog (việc nhỏ sau B-T12): chặn query theo quyền ở client + thêm test.
 - Chip "m" đếm adapter có `is_enabled=true` (hợp đồng C2), nên DEV hiện 0/15 dù bảng ghi cả 15 là "Đã tắt" (trạng thái chạy, không phải cờ bật). Đúng hợp đồng nhưng có thể gây hiểu nhầm; cần chủ dự án quyết nhãn.
+  - **Đã xử lý 2026-11-04 (quyết định chủ dự án):** chip đổi nhãn `0/15` → "Truyền thông N nối · M tắt" (+ nối lại / mất / edge khi > 0); hợp đồng C2 giữ nguyên. Commit c84786850 (nhánh feat/scada-chip-bat-tat), chờ kiem-dinh. Mục "1 chip" ở bảng live trên đây phản ánh nhãn cũ.
 - Phần live còn thiếu dữ liệu (nhật ký, kênh/tag ghi được, adapter lỗi/edge, STOP_QUA_HAN): ghi "không có dữ liệu trên DEV — đợi Pha 0 (_sim, :3071)".
 
 ## 5. LOGIC · DỮ LIỆU · VẬN HÀNH

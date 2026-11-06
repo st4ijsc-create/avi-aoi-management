@@ -114,56 +114,8 @@ export const twinRouter = router({
 
   // ── EQUIPMENT 3D MODELS ────────────────────────────────────────────────────
   models: router({
-    list: protectedProcedure
-      .use(requirePermission("machine_monitoring", "canView"))
-      .input(
-        z
-          .object({
-            equipmentClass: z.string().max(64).optional(),
-            status: z.enum(["active", "archived"]).optional(),
-            limit: z.number().int().min(1).max(1000).default(200),
-          })
-          .optional(),
-      )
-      .query(async ({ input, ctx }) => listModels(input, await locMoHinhNhin(ctx))),
 
-    /** Resolve the best model for an equipment/class (most-specific wins). */
-    resolve: protectedProcedure
-      .use(requirePermission("machine_monitoring", "canView"))
-      .input(
-        z.object({
-          machineId: z.number().int().positive().optional(),
-          equipmentId: z.string().max(128).optional(),
-          equipmentClass: z.string().max(64).optional(),
-        }),
-      )
-      .query(async ({ input, ctx }) => resolveModel(input, await locMoHinhNhin(ctx))),
 
-    /** Register (or re-register, version-bumped) an already-converted model URI. */
-    register: protectedProcedure
-      .use(requirePermission("machine_control", "canCreate"))
-      .input(
-        z.object({
-          modelKey: z.string().min(1).max(128),
-          modelUri: z.string().min(1),
-          machineId: z.number().int().positive().optional(),
-          equipmentId: z.string().max(128).optional(),
-          equipmentClass: z.string().max(64).optional(),
-          modelKind: z.enum(["gltf", "urdf"]).optional(),
-          sourceFormat: z.enum(["step", "iges", "urdf", "gltf"]).optional(),
-          conversionStatus: z.enum(["pending", "converting", "ready", "failed", "external"]).optional(),
-          bounds: z.record(z.string(), z.unknown()).optional(),
-          scope: z.string().max(64).optional(),
-          notes: z.string().max(2000).optional(),
-          corporateCode: z.string().max(50).optional(),
-          factoryId: z.number().int().positive().optional(),
-        }),
-      )
-      .mutation(async ({ input, ctx }) => {
-        requireFlag();
-        await moHinh3dDangKyGhi(ctx, input); // phạm vi nhà máy (W14b): đích mới + không ghi đè modelKey của nhà máy khác
-        return registerModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
-      }),
 
     /**
      * UPLOAD a .glb/.gltf from the UI and register it for a machine in ONE call.
@@ -234,106 +186,8 @@ export const twinRouter = router({
         return { ok: res.ok, modelUri, id: res.id, version: res.version, sizeBytes: v.size ?? buf.length };
       }),
 
-    archive: protectedProcedure
-      .use(requirePermission("machine_control", "canCreate"))
-      .input(z.object({ id: z.number().int().positive() }))
-      .mutation(async ({ input, ctx }) => {
-        requireFlag();
-        await moHinh3dTheoIdGhi(ctx, input.id); // phạm vi nhà máy (W14b)
-        return archiveModel(input.id);
-      }),
   }),
 
-  // ── T2a MODEL PIPELINE (URDF→glTF conversion → registry 'ready') ───────────
-  //   reads → machine_monitoring/canView ; mutations → machine_control/canCreate
-  //   + requireFlag(MODEL_PIPELINE_ENABLED). Opens NO device path (pure conversion).
-  pipeline: router({
-    /** UI gating hint — is the model pipeline flag on? */
-    status: protectedProcedure
-      .use(requirePermission("machine_monitoring", "canView"))
-      .query(() => ({ enabled: modelPipelineEnabled() })),
-
-    /** List the built-in convertible URDF sample sources (name + kind). */
-    sampleSources: protectedProcedure
-      .use(requirePermission("machine_monitoring", "canView"))
-      .query(() => [
-        { key: "sample-3dof-arm", name: "sample_3dof_arm", format: "urdf", dof: 3 },
-        { key: "sample-2dof-planar", name: "sample_2dof_planar", format: "urdf", dof: 2 },
-      ]),
-
-    /** Convert a URDF source → glTF asset + registry 'ready' row. Gated. */
-    convertUrdf: protectedProcedure
-      .use(requirePermission("machine_control", "canCreate"))
-      .input(
-        z.object({
-          modelKey: z.string().min(1).max(128),
-          // Either paste URDF XML directly, or pick a built-in sample by key.
-          urdfSource: z.string().min(1).optional(),
-          sample: z.enum(["sample-3dof-arm", "sample-2dof-planar"]).optional(),
-          machineId: z.number().int().positive().optional(),
-          equipmentId: z.string().max(128).optional(),
-          equipmentClass: z.string().max(64).optional(),
-          scope: z.string().max(64).optional(),
-          corporateCode: z.string().max(50).optional(),
-          factoryId: z.number().int().positive().optional(),
-        }),
-      )
-      .mutation(async ({ input, ctx }) => {
-        requireModelPipelineFlag();
-        // phạm vi nhà máy (rà bảo mật 2026-10-24): máy / nhà máy khai kèm phải trong phạm vi người gọi; ngoài phạm vi ≡ không tồn tại
-        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId);
-        if (input.factoryId != null) await assertTwinFactoryInScope(ctx, input.factoryId);
-        const urdfSource =
-          input.urdfSource ??
-          (input.sample === "sample-3dof-arm"
-            ? SAMPLE_URDF_3DOF_ARM
-            : input.sample === "sample-2dof-planar"
-              ? SAMPLE_URDF_2DOF_PLANAR
-              : undefined);
-        if (!urdfSource) {
-          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "urdfSource" }, "Provide urdfSource or a sample key.");
-        }
-        return convertUrdfModel({
-          urdfSource,
-          modelKey: input.modelKey,
-          machineId: input.machineId ?? null,
-          equipmentId: input.equipmentId ?? null,
-          equipmentClass: input.equipmentClass ?? null,
-          scope: input.scope ?? null,
-          corporateCode: input.corporateCode ?? null,
-          factoryId: input.factoryId ?? null,
-          createdBy: (ctx as any).user?.id ?? null,
-        });
-      }),
-
-    /**
-     * STEP/IGES → glTF via occt-import-js (T4). With `stepSource` (raw CAD text or base64) it
-     * converts real CAD → a 'ready' registry row; without it, the honest 'pending' seam is kept.
-     * A bad file / unavailable kernel → 'failed' + reason. Never fabricates geometry. Gated.
-     */
-    convertStep: protectedProcedure
-      .use(requirePermission("machine_control", "canCreate"))
-      .input(
-        z.object({
-          modelKey: z.string().min(1).max(128),
-          sourceFormat: z.enum(["step", "iges"]),
-          // Raw STEP/IGES file contents (ISO-10303 text) or base64. Optional — omit to keep the seam.
-          stepSource: z.string().min(1).max(50_000_000).optional(),
-          machineId: z.number().int().positive().optional(),
-          equipmentId: z.string().max(128).optional(),
-          equipmentClass: z.string().max(64).optional(),
-          scope: z.string().max(64).optional(),
-          corporateCode: z.string().max(50).optional(),
-          factoryId: z.number().int().positive().optional(),
-        }),
-      )
-      .mutation(async ({ input, ctx }) => {
-        requireModelPipelineFlag();
-        if (input.machineId != null) await mayTrongPhamVi(ctx, input.machineId); // phạm vi nhà máy (rà bảo mật 2026-10-24)
-        if (input.factoryId != null) await assertTwinFactoryInScope(ctx, input.factoryId);
-        return convertStepModel({ ...input, createdBy: (ctx as any).user?.id ?? null });
-      }),
-  }),
 
   // ── SCENE GRAPH (read-only) ────────────────────────────────────────────────
   sceneGraph: protectedProcedure

@@ -27,7 +27,15 @@ export interface PhuThuocHoiNgoai {
 }
 
 export type KetQuaHoiNgoai =
-  | { loai: "xong"; traLoi: string; ngoai: { nhaCungCap: string; model: string } | null; vet: VetNgoaiRut | null; canhBao: string | null }
+  | {
+      loai: "xong";
+      traLoi: string;
+      ngoai: { nhaCungCap: string; model: string } | null;
+      vet: VetNgoaiRut | null;
+      canhBao: string | null;
+      /** ★ 0.6.0 — máy chủ đã lưu lượt (`done.daLuu`): id hội thoại máy chủ + id tin trả lời ⇒ nút kiểm định dùng nguồn THEO ID `chat`. */
+      daLuu: { cuocTroChuyenId: number; tinNhanId: number } | null;
+    }
   | { loai: "tu-choi-dong-y" }
   | { loai: "loi"; thongDiep: string };
 
@@ -37,6 +45,7 @@ export async function chayHoiNgoai(d: PhuThuocHoiNgoai): Promise<KetQuaHoiNgoai>
     let traLoi = "";
     let ngoai: { nhaCungCap: string; model: string } | null = null;
     let vet: VetNgoaiRut | null = null;
+    let daLuu: { cuocTroChuyenId: number; tinNhanId: number } | null = null;
     let daNhanDone = false;
     let loiSse: string | null = null;
     let hongSo = 0;
@@ -58,6 +67,8 @@ export async function chayHoiNgoai(d: PhuThuocHoiNgoai): Promise<KetQuaHoiNgoai>
           } else if (sk.type === "done") {
             daNhanDone = true;
             vet = docVet(sk.vet);
+            const l = sk.daLuu && typeof sk.daLuu === "object" ? (sk.daLuu as Record<string, unknown>).tinTraLoiId : undefined;
+            if (typeof l === "number" && Number.isInteger(l) && l > 0) daLuu = { cuocTroChuyenId: id, tinNhanId: l };
           } else if (sk.type === "error") {
             loiSse = thongDiepLoiNgoai(typeof sk.code === "string" ? sk.code : "KHONG_RO", typeof sk.tranVuot === "string" ? sk.tranVuot : undefined);
           }
@@ -81,7 +92,7 @@ export async function chayHoiNgoai(d: PhuThuocHoiNgoai): Promise<KetQuaHoiNgoai>
     const ghiChu: string[] = [];
     if (!daNhanDone) ghiChu.push("Câu trả lời có thể đã bị CẮT NGANG — luồng kết thúc mà không có tín hiệu hoàn tất.");
     if (hongSo > 0) ghiChu.push(`${hongSo} khung dữ liệu lỗi không đọc được, đã bỏ qua.`);
-    return { loai: "xong", traLoi, ngoai, vet, canhBao: ghiChu.length ? ghiChu.join(" ") : null };
+    return { loai: "xong", traLoi, ngoai, vet, canhBao: ghiChu.length ? ghiChu.join(" ") : null, daLuu };
   }
   return { loai: "loi", thongDiep: "Không xác nhận được việc gửi dữ liệu — hủy lượt hỏi." };
 }

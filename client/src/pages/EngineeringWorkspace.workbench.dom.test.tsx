@@ -13,7 +13,7 @@
 //     trang (R-2-q); mỗi lượt xác nhận gửi ĐÚNG đích/cổng/expectedProjectId như thẻ cũ (R-2-n, R-2-r).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, configure, fireEvent, getConfig, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
@@ -187,7 +187,13 @@ function fetchGia(_url: string, init: RequestInit): Promise<Response> {
 const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
 
 let undoShim: (() => void) | null = null;
+// Chờ bất đồng bộ (findBy*/waitFor) mặc định của RTL = 1000 ms. Trang này mount RẤT nặng (IDE + panel + Copilot): đo 2026-11-03 trên máy rảnh,
+// ca "Copilot mở ⇒ KHÔNG dock…" mất 640–870 ms chỉ riêng `findByPlaceholderText` (+1,2–1,4 s render đồng bộ) khi nó là lần mount đầu của worker
+// ⇒ chỉ còn 130–360 ms dự phòng; khi tải cao (chạy cả `client/src`) thỉnh thoảng vượt 1000 ms ⇒ đỏ giả (scada-ui gặp 1/8178). Nâng TRẦN chờ lên 15 s:
+// chỉ ảnh hưởng thời gian chờ TỐI ĐA — ca xanh vẫn xong ngay khi phần tử xuất hiện, ca đỏ thật chỉ báo muộn hơn; KHÔNG nới điều khẳng định nào.
+const ASYNC_UTIL_TIMEOUT_CU = getConfig().asyncUtilTimeout;
 beforeAll(() => {
+  configure({ asyncUtilTimeout: 15_000 });
   undoShim = installResizeHandleHitAreaShim();
   installMatchMedia();
 });
@@ -212,7 +218,10 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-afterAll(() => undoShim?.());
+afterAll(() => {
+  undoShim?.();
+  configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_CU });
+});
 
 const btn = (re: RegExp) => screen.getByRole("button", { name: re });
 const versionBtn = () => screen.getByText(/^v1 · main/, { selector: "button" });

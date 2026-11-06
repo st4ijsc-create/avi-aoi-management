@@ -32,7 +32,6 @@ const LOCALES = resolve(CLIENT_SRC, "i18n/locales");
 const FILES_KHOA_DU_LIEU = [
   "lib/navigation.tsx",
   "pages/AIHome.tsx",
-  "pages/AIStudioHub.tsx",
   "pages/DataManagementHub.tsx",
   // 2026-10-04 doc 81 Đợt 2 Task 15 — EngineeringStudioHub.tsx ĐÃ XOÁ (Studio gộp vào Hub); danh mục của nó (kèm
   // các mục `label: "engineeringHome.tools.*"`) nay nằm trong EngineeringHub.tsx ⇒ lưới quét tệp đó thay thế.
@@ -47,18 +46,13 @@ const FILES_KHOA_DU_LIEU = [
   "pages/UserGuide.tsx",
   // F13 lô 4 — `headerKey` (nhãn cột hiển thị; `header` vẫn là khoá khớp Excel)
   "pages/ProductModels.tsx",
-  "pages/ComponentShowcase.tsx",
-  // F13 lô 5 — gợi ý câu hỏi AI (`question` cũng là khoá: nó được GỬI cho trợ lý)
-  "components/AILocalKnowledgeBase.tsx",
   // F13 lô 6 — QUICK_PROMPTS là hằng số cấp module: gọi t() ở đó sẽ ĐÓNG BĂNG ngôn
   // ngữ lúc import, nên mảng giữ KHOÁ và dịch lúc render ⇒ khoá BẮT BUỘC phải tồn tại.
   "components/DashboardAIWidget.tsx",
   // F13 lô 8 — hằng số CẤP MODULE giữ KHOÁ, bọc t() ở nơi tiêu thụ đích danh
   "pages/ControlReadiness.tsx",
   "components/EmbeddedDashboardTemplates.tsx",
-  // F13 lô 9 — ★ DashboardTemplates render t(descriptionKey) mà CẢ SÁU khoá không
-  // tồn tại ở locale nào: người dùng thấy nguyên chuỗi khoá, ở MỌI ngôn ngữ.
-  "pages/DashboardTemplates.tsx",
+  // F13 lô 9 — (đã gỡ trang DashboardTemplates ở pha 0 · P0-9; nó từng render t(descriptionKey) mà CẢ SÁU khoá không tồn tại)
   "components/WidgetStyleEditor.tsx",
   "pages/AIBrainDashboard.tsx",
   // F13 lô 10 — bản đồ nhãn cấp module (khoảng thời gian · ngành · PackML)

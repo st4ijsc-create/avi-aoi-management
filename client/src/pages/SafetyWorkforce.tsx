@@ -63,6 +63,8 @@ import { LegacyTabRedirectGate, PRODUCTION_SHIFTS_PATH } from "@/lib/engineering
 import { getRequiredPermissionForHref } from "@/lib/navigation";
 import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
+import { useRobotModuleTrang } from "@/hooks/useRobotModuleTamDung";
+import { DaiRobotTamDung } from "@/components/robot/CongMoDunRobot";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -211,6 +213,8 @@ interface SafetyCtxValue {
   safetyCanControl: boolean;
   safetyControlReason: string | undefined;
   workforceCanControl: boolean;
+  /** Pha 0 · C0-5: mô-đun robot/AGV tạm dừng (hoặc chưa đọc được cờ) ⇒ ẩn việc bắt đầu phối hợp người↔robot. */
+  robotTamDung: boolean;
   workforceControlReason: string | undefined;
   safetyAuditStatus: FeatureStatus;
   workforceStatus: FeatureStatus;
@@ -330,6 +334,7 @@ function SafetyWorkforcePage({ canOpenShifts }: { canOpenShifts: boolean }) {
   const workforceControlReason = permReason
     ?? (workforceUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
   const workforceCanControl = canControl && !workforceUnsettled;
+  const robotTamDung = useRobotModuleTrang() !== "bat"; // ngoài Provider = "bat" ⇒ không đổi hành vi cũ
 
   // Giữ NGUYÊN tập làm mới (kể cả currentBoard/listAssignments mà Sản xuất › Ca đọc) — Review Focus 1.
   const refetchAll = () => {
@@ -472,7 +477,10 @@ function SafetyWorkforcePage({ canOpenShifts }: { canOpenShifts: boolean }) {
       size: "md",
       title: t("workforce.startCollabTitle", "Start human↔robot collaboration"),
       render: () =>
-        workforceUnsettled ? (
+        robotTamDung ? (
+          // Pha 0 · C0-5 — mô-đun robot/AGV tạm dừng: KHÔNG có form, KHÔNG có mutation phối hợp người↔robot.
+          <DaiRobotTamDung />
+        ) : workforceUnsettled ? (
           unsettledBody(
             workforceStatus,
             t("workforce.flagStatusError", "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed."),
@@ -531,6 +539,7 @@ function SafetyWorkforcePage({ canOpenShifts }: { canOpenShifts: boolean }) {
     safetyCanControl,
     safetyControlReason,
     workforceCanControl,
+    robotTamDung,
     workforceControlReason,
     safetyAuditStatus,
     workforceStatus,
@@ -1139,13 +1148,14 @@ function CollaborationPanel() {
           size="sm"
           variant="outline"
           className="h-7 shrink-0 text-xs"
-          disabled={!ctx.workforceCanControl}
-          title={ctx.workforceControlReason}
+          disabled={!ctx.workforceCanControl || ctx.robotTamDung}
+          title={ctx.robotTamDung ? t("robotTamDung.moTaNgan") : ctx.workforceControlReason}
           onClick={() => flyout.open("collab-start")}
         >
           <HandMetal className="mr-1 h-3.5 w-3.5" />{t("workforce.startCollab", "Start collaboration")}
         </Button>
       </div>
+      {ctx.robotTamDung && <DaiRobotTamDung nho />}
       {ctx.collabsLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
       {!ctx.collabsLoading && collabs.length === 0 && (
         <p className="py-6 text-center text-sm text-muted-foreground">

@@ -241,7 +241,6 @@ export function MqttClientManagementContent() {
       autoCheckUpdate: true,
     },
     // Post-configure action
-    restartAfterConfigure: false,
   });
 
   const sendBulkConfigureMutation = trpc.mqttClient.sendBulkConfigure.useMutation({
@@ -251,16 +250,7 @@ export function MqttClientManagementContent() {
       } else {
         toast.success(t('mqtt.clientMgmt.bulkConfigSuccess', { count: result.succeeded }));
       }
-      // Restart apps after configure if requested
-      if (bulkConfig.restartAfterConfigure) {
-        const succeededDevices = result.results.filter((r: any) => r.success).map((r: any) => r.deviceId);
-        for (const deviceId of succeededDevices) {
-          sendCommandMutation.mutate({ deviceId, command: 'RESTART_APP' });
-        }
-        if (succeededDevices.length > 0) {
-          toast.info(t('mqtt.clientMgmt.restartCommandSent', { count: succeededDevices.length }));
-        }
-      }
+      // Pha 0 · C0-6 — "khởi động lại app sau khi áp dụng" (RESTART_APP) đã ĐÓNG BĂNG cùng FactoryAlert: máy chủ trả MODULE_PAUSED nên UI không gửi nữa.
       setBulkConfigOpen(false);
       setSingleConfigClient(null);
       setSelectedDeviceIds(new Set());
@@ -268,12 +258,7 @@ export function MqttClientManagementContent() {
     onError: (error) => toastTrpcError(error),
   });
 
-  const sendCommandMutation = trpc.mqttClient.sendCommand.useMutation({
-    onSuccess: () => {
-      toast.success(t('mqtt.clientMgmt.commandSent'));
-    },
-    onError: (error) => toastTrpcError(error),
-  });
+  // Pha 0 · C0-6 — KHÔNG còn `mqttClient.sendCommand` ở trang này (CHECK_UPDATE / RESTART_APP đóng băng cùng FactoryAlert; máy chủ trả MODULE_PAUSED).
 
   // Manual Connection Mutations
   const createManualMutation = trpc.manualMapping.create.useMutation({
@@ -877,7 +862,6 @@ export function MqttClientManagementContent() {
                                       mqttEnabled: false,
                                       notifEnabled: false,
                                       appEnabled: false,
-                                      restartAfterConfigure: false,
                                     }));
                                     setSingleConfigClient(client);
                                     setBulkConfigOpen(true);
@@ -895,17 +879,6 @@ export function MqttClientManagementContent() {
                                   title={t('mqtt.clientMgmt.disconnectReset')}
                                 >
                                   <Link2Off className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    sendCommandMutation.mutate({ deviceId: client.deviceId, command: 'CHECK_UPDATE' });
-                                  }}
-                                  className="text-success hover:text-success/80"
-                                  title={t('mqtt.clientMgmt.pushUpdateToDevice')}
-                                >
-                                  <Download className="w-4 h-4" />
                                 </Button>
                               </>
                             )}
@@ -1975,14 +1948,6 @@ export function MqttClientManagementContent() {
               </Tabs>
             </ScrollArea>
             <DialogFooter className="pt-4 border-t">
-              <div className="flex items-center space-x-2 mr-auto">
-                <Checkbox
-                  id="bulkRestartAfter"
-                  checked={bulkConfig.restartAfterConfigure}
-                  onCheckedChange={(v) => setBulkConfig(c => ({ ...c, restartAfterConfigure: v as boolean }))}
-                />
-                <Label htmlFor="bulkRestartAfter" className="text-sm">{t('mqtt.clientMgmt.restartAfterConfigure')}</Label>
-              </div>
               <Button variant="outline" onClick={() => { setBulkConfigOpen(false); setSingleConfigClient(null); }}>{t('common.cancel')}</Button>
               <Button
                 onClick={handleBulkConfigure}

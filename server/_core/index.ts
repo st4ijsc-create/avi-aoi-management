@@ -175,8 +175,7 @@ async function startServer() {
   // Đợt 10.3 (§12) — đường "forge" của khung gốc ra ngoài KHÔNG qua cổng AI ngoài ⇒ cảnh báo MỘT lần khi URL được đặt.
   (await import("./forgeNgoai")).canhBaoForgeKhiKhoiDong();
 
-  // QW4 — Observability bootstrap (Sentry / OpenTelemetry). No-op unless the
-  // corresponding env vars and packages are present. Must run before app init.
+  // QW4 — Observability bootstrap (bộ đánh giá SLO; khung vết ngoài đã gỡ ở Pha 0 P0-5). Must run before app init.
   try {
     const { initObservability } = await import("./observability");
     await initObservability();
@@ -350,12 +349,12 @@ async function startServer() {
 
   // Security headers
   app.use(helmet({
-    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default off)
+    contentSecurityPolicy: false, // CSP handled by securityHeaders.ts below (SEC_CSP_MODE, default report-only — Pha 0 P0-3)
     crossOriginEmbedderPolicy: false, // Allow cross-origin resources for LAN devices
   }));
 
   // W0-I (doc 44 G5.7a) — CSP theo SEC_CSP_MODE (off|report-only|enforce, default
-  // off = hành vi cũ) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
+  // report-only — Pha 0 P0-3 bước 1: thu vi phạm, không chặn) + Permissions-Policy/Referrer-Policy bổ sung (chỉ khi helmet
   // chưa set). Mount NGAY SAU helmet. Fail-safe: lỗi wiring không chặn boot.
   try {
     const { securityHeadersMiddleware } = await import("./securityHeaders");
@@ -563,7 +562,7 @@ async function startServer() {
   // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
   // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
   // rate-limit chung. Origin-check: SEC_ORIGIN_CHECK_MODE off|log|enforce (default
-  // off — pass-through, zero behaviour change). Fail-safe wiring.
+  // log — Pha 0 P0-3 bước 1: đếm lượt lệch, không chặn). Fail-safe wiring.
   try {
     const { registerCspReportEndpoint } = await import("./securityHeaders");
     registerCspReportEndpoint(app);
@@ -3861,20 +3860,6 @@ async function startServer() {
     // boot inside startBackgroundSchedulers() above (backgroundJobs.ts, with its stop
     // counterpart). It self-gates MACHINE_PRESENCE_ENABLED (default OFF) + is idempotent,
     // so it is NOT re-called here — backgroundJobs.ts owns its start/stop lifecycle.
-
-    // doc 54 §11 P1.1 ⭐ — Full-Sim OT telemetry emitter. Periodically pushes synthetic
-    // heartbeat/state/cycle/temp telemetry for each ACTIVE machine THROUGH the real
-    // unified telemetry bus (→ ot_telemetry), so the (already-wired) machine presence
-    // sweep flips those machines ONLINE without real hardware. Self-gates
-    // SIM_OT_TELEMETRY_ENABLED (default OFF) + is idempotent + never throws (DB-missing
-    // = no-op). ⚠ Full-Sim ONLY — do NOT enable where ot_telemetry comes from real
-    // adapters/machines (see .env).
-    try {
-      const { startSimOtTelemetry } = await import("../services/simOtTelemetryService");
-      startSimOtTelemetry();
-    } catch (err) {
-      console.error("[simOtTelemetry] start failed:", (err as any)?.message || err);
-    }
   }
 
   // Initialize MQTT broker (if enabled)
@@ -3915,9 +3900,11 @@ async function startServer() {
     rehydrateInterruptedRuns()
       .then((r) => {
         if (r.scanned > 0) {
+          // R1b-2b-2a A2(m2) fix round 1 (m-8) — a STOP compensation re-sent at boot ends its run 'failed' (as its step): counted on its own
+          const resent = (r.compensations ?? []).filter((c) => c.outcome === "sent").length;
           console.log(
-            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted} held(resumable), ` +
-              `${r.failed} failed. ids=${r.runIds.join(",")}`,
+            `[FOE] Rehydrate: ${r.scanned} interrupted run(s) — ${r.interrupted - resent} held(resumable), ` +
+              `${resent} STOP compensation(s) re-sent at boot, ${r.failed} failed. ids=${r.runIds.join(",")}`,
           );
         }
       })
@@ -4549,11 +4536,6 @@ async function startServer() {
     // flag was off / it never started). Started in the ROLE!=api block above.
     import("../services/liveStatsRollupService")
       .then((m) => m.stopLiveStatsRollup())
-      .catch(() => {});
-    // doc 54 §11 P1.1 — stop Full-Sim OT telemetry emitter (idempotent no-op if the
-    // flag was off / it never started). Started in the ROLE!=api block above.
-    import("../services/simOtTelemetryService")
-      .then((m) => m.stopSimOtTelemetry())
       .catch(() => {});
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC

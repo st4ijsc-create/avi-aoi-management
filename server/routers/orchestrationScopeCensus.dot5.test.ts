@@ -159,13 +159,6 @@ const CLASSIFIED: Record<string, Kind> = {
       /const scoped = runInScope \? await resolveTargetForAssigner\(/,
     ],
   },
-  "server/routers/orchestrationGovRouter.ts": {
-    kind: "router",
-    allow: {
-      validateDag: "`id` of DAG NODES in the request body (a pure check over caller data), not a run / workflow id",
-      orderQueue: "`id` of queue TASKS in the request body (pure ordering of caller data), not a run / workflow id",
-    },
-  },
   "server/routers/orchestrationRouter.ts": { kind: "router" },
   "server/routers/oversightRouter.ts": {
     kind: "router",
@@ -238,6 +231,8 @@ const CLASSIFIED: Record<string, Kind> = {
   },
   "server/services/orchestration/foe/__foeGateRunFixture.ts": { kind: "allow", reason: "test fixture (_test only), not imported by product code" },
   "server/services/orchestration/foe/foeEngine.ts": { kind: "engine" },
+  // 2026-11-03 R1b-2b-2a A2(m2) — the boot decision about ONE interrupted compensation (called only by the engine boot hook rehydrateInterruptedRuns)
+  "server/services/orchestration/foe/foeBuTruBiNgat.ts": { kind: "allow", reason: "boot only: read-only facts (step rows, adapter, owner changes, command_log) of a run the FOE boot hook already holds; system principal, no caller identity, no run id from a caller, returns no run to anyone" },
   // 2026-10-12 doc 81 Đợt 10 task C — the engine's CENTRAL RunStore (persistence / gate functions moved out of foeEngine unchanged)
   // + the appliers of an edge segment (recordEdgeStepRows / applyEdgeSegmentEnd, called by B's node endpoints after their
   // assignment + node-scope check). edgeRunGuard.ts was deleted (the per-step /authorize replaces it).
@@ -328,8 +323,12 @@ describe("doc 81 Đợt 5 E2 fix (R-5-d) + E fix 1 — every orchestration id-ta
     };
     const gov = at("server/routers/orchestrationGovRouter.ts");
     if (gov === null) return;
-    const govK = CLASSIFIED["server/routers/orchestrationGovRouter.ts"] as Extract<Kind, { kind: "router" }>;
-    expect(unscopedProcedures(gov, govK.allow ?? {})).toEqual(["runEvents", "replayRun"]);
+    // orchestrationGovRouter đã GỠ khỏi cây (dọn vệ sinh E0-3, 2026-11-04) — bản ở BASE vẫn được phát lại từ git; bảng allow giữ nguyên như lúc phân loại.
+    const govAllow = {
+      validateDag: "`id` of DAG NODES in the request body (a pure check over caller data), not a run / workflow id",
+      orderQueue: "`id` of queue TASKS in the request body (pure ordering of caller data), not a run / workflow id",
+    };
+    expect(unscopedProcedures(gov, govAllow)).toEqual(["runEvents", "replayRun"]);
     const ov = at("server/routers/oversightRouter.ts")!;
     const ovK = CLASSIFIED["server/routers/oversightRouter.ts"] as Extract<Kind, { kind: "router" }>;
     expect((ovK.requires ?? []).filter((r) => !r.test(ov)).length).toBe(3);

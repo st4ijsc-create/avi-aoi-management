@@ -44,7 +44,6 @@ vi.mock("../_core/accessControl", () => ({
 
 vi.mock("../services/robot/robotCommandDispatcher", () => ({
   dispatchRobotJob: vi.fn(async () => ({ ok: true, status: "simulated", jobId: 1 })),
-  robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
 
 // Driver giả có khoá chuyển động; robot 5 đang active, robot 6 active nhưng driver không có khoá.

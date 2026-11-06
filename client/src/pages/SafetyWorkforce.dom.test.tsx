@@ -190,6 +190,37 @@ describe("SafetyWorkforce — 'Start collaboration' (tab Collaboration) cùng wo
   });
 });
 
+// Pha 0 · C0-5 — mô-đun robot/AGV tạm dừng: phối hợp người↔robot KHÔNG bắt đầu được, kể cả khi cờ workforce bật.
+describe("SafetyWorkforce — C0-5 mô-đun robot/AGV tạm dừng (phối hợp người↔robot)", () => {
+  const trongNguCanh = async (trang: "tam-dung" | "dang-tai" | "bat") => {
+    const { RobotModuleContext } = await import("@/hooks/useRobotModuleTamDung");
+    setQueryOverride("safety.status", makeQuery({ data: { safetyAudit: true, workforce: true } }));
+    render(
+      <RobotModuleContext.Provider value={trang}>
+        <SafetyWorkforce />
+      </RobotModuleContext.Provider>,
+    );
+    await openCollaborationTab();
+  };
+
+  it("tạm dừng ⇒ 'Start collaboration' khoá + dải 'tạm dừng' hiện, dù workforce BẬT", async () => {
+    await trongNguCanh("tam-dung");
+    expect(screen.getByRole("button", { name: "Start collaboration" })).toBeDisabled();
+    expect(screen.getByTestId("dai-robot-tam-dung")).toBeInTheDocument();
+  });
+
+  it("chưa đọc được cờ (dang-tai) ⇒ cũng khoá (đóng mặc định)", async () => {
+    await trongNguCanh("dang-tai");
+    expect(screen.getByRole("button", { name: "Start collaboration" })).toBeDisabled();
+  });
+
+  it("cờ bật ⇒ như cũ: nút bật, KHÔNG có dải", async () => {
+    await trongNguCanh("bat");
+    expect(screen.getByRole("button", { name: "Start collaboration" })).not.toBeDisabled();
+    expect(screen.queryByTestId("dai-robot-tam-dung")).not.toBeInTheDocument();
+  });
+});
+
 // ══════════════════════════════════════════════════════════════════════════════════════
 // doc 80 Đợt 1 Task 4 — SAF-02 panel NGUỒN (safety.sourceHealth) + X-01 badge assignment
 // ══════════════════════════════════════════════════════════════════════════════════════

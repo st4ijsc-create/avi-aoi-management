@@ -108,6 +108,8 @@ export const aiExternalCalls = pgTable("ai_external_calls", {
   taoLuc: tz("taoLuc").notNull().defaultNow(),
   /** ★ 10.4b L0a' (0417) — sha256 nội dung TRẢ VỀ (hàng `ket-qua`) — đối chiếu dấu nguồn tin chat do client lưu. */
   bamTraLoi: char("bamTraLoi", { length: 64 }),
+  /** ★ Đợt 12 H3.3a (0446) — id yêu cầu của NHÀ CUNG CẤP (tiêu đề phản hồi; chỉ hàng `ket-qua`; mã kiểm `requestIdHopLe` + CHECK ở DB). */
+  requestId: text("requestId"),
 });
 
 /** Nội dung ĐÃ CHE (chỉ khi nhà máy bật `luuNguyenVan`), xoá khi hết hạn. */

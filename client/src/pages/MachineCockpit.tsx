@@ -64,7 +64,7 @@ import { PackmlStateBadge } from "@/components/patterns/isaStateBadges";
 import { isIsa101V2 } from "@/lib/hmiFlags";
 import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
-  Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
+  Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, Info,
   ScrollText, Radio, Upload, Waves, History, Timer, Package, FileText, ChevronRight,
   ClipboardList,
 } from "lucide-react";
@@ -1374,11 +1374,11 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
               <SectionCard
                 icon={<Wrench className="h-4 w-4" />}
                 title={t("cockpit.tabActions", "Actions")}
-                description={t("cockpit.actionsHint", "Commands you MAY propose. Execution stays behind the existing gated (HITL / dry-run) control surface — nothing runs from here.")}
+                description={t("cockpit.actionsHint", "Commands this machine's capability profile supports — for reference only. Nothing runs from here.")}
               >
                 <div className="mb-3 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   <ShieldAlert className="h-4 w-4 shrink-0" />
-                  {t("cockpit.actionsGate", "Read-only cockpit. \"Propose\" opens the gated Control Plane — it never dispatches a command directly.")}
+                  {t("cockpit.actionsGate", "Read-only cockpit. It never dispatches a command; commands go through the gated machine control surface.")}
                 </div>
                 {d.gatedActions.length === 0 ? (
                   <EmptyState title={t("cockpit.noActions", "No commands")} description={t("cockpit.noActionsHint", "This machine's capability profile exposes no proposable commands.")} />
@@ -1393,13 +1393,6 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           <span className="text-[11px] text-muted-foreground">{t("cockpit.requires", "Requires")}: {a.requiredPermission}</span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setLocation(`/control-plane?machineId=${machineId}&command=${encodeURIComponent(a.name)}`)}
-                          >
-                            <ExternalLink className="mr-1 h-3.5 w-3.5" /> {t("cockpit.propose", "Propose")}
-                          </Button>
                         </div>
                       </div>
                     ))}

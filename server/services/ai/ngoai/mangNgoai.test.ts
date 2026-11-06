@@ -136,6 +136,35 @@ describe("máy chủ thật trong tiến trình (localhost đã khai)", () => {
     }
   });
 
+  it("(H3.3a, rà kiem-dinh a7) đường HTTP THẬT: request-id / x-request-id / x-goog-request-id (tên tiêu đề hoa-thường bất kỳ) ⇒ requestId; bẩn / vắng ⇒ không có", async () => {
+    const { s, cong } = await moMayChu((req, res) => {
+      const u = req.url ?? "";
+      const h: Record<string, string> = { "content-type": "application/json" };
+      if (u.startsWith("/anthropic")) h["Request-Id"] = "req_011CUjx7z";
+      else if (u.startsWith("/openai")) h["X-Request-ID"] = "req_abc-1";
+      else if (u.startsWith("/gemini")) h["x-goog-request-id"] = "g.1:2";
+      else if (u.startsWith("/ca-hai")) Object.assign(h, { "request-id": "req_a", "x-request-id": "req_b" });
+      else if (u.startsWith("/ban")) h["request-id"] = "a b";
+      res.writeHead(u.startsWith("/429") ? 429 : 200, u.startsWith("/429") ? { ...h, "x-request-id": "req_429" } : h);
+      res.end("{}");
+    });
+    try {
+      dns.localhost = "127.0.0.1";
+      const mang = taoMangNgoai({ hostNoiBo: new Set([`localhost:${cong}`]) });
+      const rid = async (p: string) => (await mang.goiJson(`http://localhost:${cong}${p}`, INIT)).requestId;
+      expect(await rid("/anthropic")).toBe("req_011CUjx7z");
+      expect(await rid("/openai")).toBe("req_abc-1");
+      expect(await rid("/gemini")).toBe("g.1:2");
+      expect(await rid("/ca-hai")).toBe("req_a");
+      expect(await rid("/ban")).toBeUndefined();
+      expect(await rid("/vang")).toBeUndefined();
+      const r429 = await mang.goiJson(`http://localhost:${cong}/429`, INIT);
+      expect(r429).toMatchObject({ status: 429, requestId: "req_429" });
+    } finally {
+      s.close();
+    }
+  });
+
   let coOpenssl = true;
   try {
     execFileSync("openssl", ["version"], { stdio: "ignore" });

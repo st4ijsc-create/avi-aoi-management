@@ -32,6 +32,7 @@ const CODES = [
   "robot not active/connected",
   "MOTION_LOCKED",
   "ROBOT_DISABLED", // final wave R-4-x
+  "ROBOT_CHUA_DINH_VI", // SCADA R1b-2b-2a A2(l) — robotCommandDispatcher 4b (unplaced robot, motion only)
   "SAFETY_BLOCKED",
   "SAFETY_UNKNOWN",
   "SAFETY_SIM_ONLY",

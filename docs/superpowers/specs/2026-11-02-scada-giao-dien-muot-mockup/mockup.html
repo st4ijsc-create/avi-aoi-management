@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>SCADA giao diện mượt — mockup (không phải sản phẩm)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#d6d9dc; --panel:#eceef0; --line:#8a929a; --ink:#262b30; --mute:#5d666e;
+  --eq-off:#f4f5f6; --eq-on:#5b6670;
+  --a-low:#d9a400; --a-high:#e8710a; --a-crit:#c62828; --stale:#6f3fb0; --sim:#0b6e8a;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#bfc3c7;color:var(--ink);font-size:14px}
+header.top{background:#2b3137;color:#e9ecef;padding:10px 18px;display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+header.top h1{font-size:16px;margin:0;font-weight:600}
+header.top small{color:#aab2ba}
+.bar{display:flex;gap:8px;flex-wrap:wrap;padding:10px 18px;background:#e3e5e8;border-bottom:1px solid #aeb3b8;align-items:center}
+.bar b{margin-right:4px}
+.bar button{font:inherit;padding:6px 12px;border:1px solid #7b838b;background:#f7f8f9;border-radius:4px;cursor:pointer}
+.bar button[aria-pressed=true]{background:#2b3137;color:#fff;border-color:#2b3137}
+.note{padding:8px 18px;font-size:12.5px;color:#39424a;background:#f3ecd0;border-bottom:1px solid #d7c98a}
+main{display:grid;grid-template-columns:minmax(620px,1fr) 360px;gap:14px;padding:14px 18px;align-items:start}
+@media(max-width:1100px){main{grid-template-columns:1fr}}
+.screen{background:var(--bg);border:1px solid #8c939a;border-radius:6px;overflow:hidden;position:relative}
+.screen.sim{outline:4px solid var(--sim);outline-offset:-4px}
+.hdr{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;background:#c4c8cc;border-bottom:1px solid #a2a8ae;font-size:13px;flex-wrap:wrap}
+.crumb span{color:var(--mute)}
+.link{display:flex;gap:10px;align-items:center}
+.pill{display:inline-flex;gap:6px;align-items:center;border:1px solid #7b838b;border-radius:99px;padding:1px 9px;background:#f4f5f6;font-size:12px}
+.pill.live::before{content:"";width:8px;height:8px;border-radius:50%;background:#5b6670}
+.pill.stale{border-color:var(--stale);color:var(--stale);background:#f1eaf9}
+.pill.sim{border-color:var(--sim);color:#fff;background:var(--sim)}
+.banner{display:none;padding:6px 12px;font-weight:600;font-size:13px}
+.banner.stale{background:repeating-linear-gradient(135deg,#ece2f7 0 10px,#e2d4f2 10px 20px);color:var(--stale);border-bottom:1px solid var(--stale)}
+.banner.sim{background:repeating-linear-gradient(135deg,#d2eaf1 0 10px,#bfe0ea 10px 20px);color:#06475a;border-bottom:1px solid var(--sim)}
+.alarms{min-height:34px;padding:6px 12px;background:#e8eaec;border-bottom:1px solid #a2a8ae;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px}
+.alarms .none{color:var(--mute)}
+.al{display:inline-flex;gap:7px;align-items:center;padding:2px 9px 2px 3px;border:1.5px solid;border-radius:3px;background:#fff;font-weight:600}
+.al i{display:inline-grid;place-items:center;width:20px;height:20px;color:#fff;font-style:normal;font-size:12px}
+.al.p1{border-color:var(--a-crit)} .al.p1 i{background:var(--a-crit);clip-path:none;border-radius:2px}
+.al.p2{border-color:var(--a-high)} .al.p2 i{background:var(--a-high);clip-path:polygon(50% 0,100% 100%,0 100%);padding-top:5px}
+.al.p3{border-color:var(--a-low)} .al.p3 i{background:var(--a-low);clip-path:polygon(50% 100%,100% 0,0 0);padding-bottom:4px}
+svg{display:block;width:100%;height:auto}
+text{font-family:"Segoe UI",system-ui,sans-serif}
+.tag{font-size:11px;fill:#4b545c;letter-spacing:.2px}
+.vbox rect{fill:#f7f8f9;stroke:#8a929a}
+.vbox text.v{font-size:15px;font-weight:600;fill:#262b30;font-variant-numeric:tabular-nums}
+.vbox text.u{font-size:11px;fill:#5d666e}
+.vbox.isstale rect{stroke:var(--stale);stroke-dasharray:4 3;fill:#f1eaf9}
+.vbox.isstale text.v{fill:var(--stale);text-decoration:line-through}
+.vbox .age{display:none;font-size:10.5px;fill:var(--stale);font-weight:600}
+.vbox.isstale .age{display:block}
+.legend{padding:8px 12px;font-size:12px;color:#39424a;background:#e8eaec;border-top:1px solid #a2a8ae;display:flex;gap:16px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:-1px;border:1.5px solid #5b6670;background:#f4f5f6}
+.legend span.on::before{background:#5b6670}
+.legend span.st::before{border-color:var(--stale);background:repeating-linear-gradient(135deg,#f1eaf9 0 3px,#d9c6ef 3px 6px)}
+/* faceplate */
+.fp{background:var(--panel);border:1px solid #8c939a;border-radius:6px;overflow:hidden}
+.fp header{padding:10px 12px;background:#c4c8cc;border-bottom:1px solid #a2a8ae}
+.fp header h2{margin:0;font-size:15px}
+.fp header div{font-size:12px;color:#39424a;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fp section{padding:12px;border-bottom:1px solid #d0d4d8}
+.fp .pv{display:flex;align-items:baseline;gap:8px}
+.fp .pv b{font-size:34px;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.5px}
+.fp .pv span{color:var(--mute)}
+.fp.isstale .pv b{color:var(--stale);text-decoration:line-through}
+.meta{font-size:12px;color:var(--mute);margin-top:3px}
+.fp.isstale .meta{color:var(--stale);font-weight:600}
+.spark{margin-top:8px;border:1px solid #b3b8bd;background:#f7f8f9}
+.lbl{font-size:12px;color:#39424a;display:block;margin-bottom:3px}
+.row{display:flex;gap:8px;align-items:center}
+.fp input[type=text]{flex:1;padding:6px 8px;border:1px solid #7b838b;border-radius:3px;font:inherit}
+.fp button.do{padding:7px 14px;border:1px solid #2b3137;background:#2b3137;color:#fff;border-radius:3px;font:inherit;cursor:pointer}
+.fp button:disabled{opacity:.45;cursor:not-allowed}
+.cond{margin-top:7px;font-size:12.5px;padding:6px 8px;border-left:3px solid #5b6670;background:#e3e6e9}
+.cond.no{border-color:var(--a-high);background:#fbeede}
+.stop{width:100%;padding:11px;border:2px solid var(--a-crit);color:var(--a-crit);background:#fff;font:inherit;font-weight:700;letter-spacing:.4px;border-radius:3px;cursor:pointer}
+.stop:disabled{border-color:#9aa1a8;color:#7b838b}
+.stopstate{margin-top:7px;font-size:12.5px;display:flex;gap:8px;align-items:center}
+.tick{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#5b6670;color:#fff;font-size:11px}
+.tick.wait{background:#fff;border:2px dashed #5b6670;color:#5b6670}
+.mode{padding:1px 8px;border:1px solid #5b6670;border-radius:3px;background:#fff;font-size:11.5px;font-weight:600}
+.simnote{display:none;margin:0 12px 10px;padding:6px 8px;background:#d2eaf1;border:1px solid var(--sim);font-size:12px;color:#06475a}
+.explain{max-width:1500px;margin:0 auto;padding:6px 18px 30px;font-size:13px;color:#2a3138}
+.explain h3{margin:16px 0 6px;font-size:14px}
+.explain ul{margin:4px 0 4px 18px;padding:0}
+.explain li{margin:3px 0}
+.p2{max-width:none;padding:6px 18px 10px}
+.p2 h2{font-size:15px;margin:10px 0}
+.grid3{display:grid;grid-template-columns:minmax(420px,1fr) minmax(420px,1fr);gap:14px}
+@media(max-width:1000px){.grid3{grid-template-columns:1fr}}
+.axt{width:100%;border-collapse:collapse;font-size:12.5px;background:#f7f8f9}
+.axt th,.axt td{border-top:1px solid #c4c8cc;padding:4px 8px;text-align:left;font-variant-numeric:tabular-nums}
+.axt th{background:#e8eaec;font-weight:600}
+.axt tr.cu td{color:var(--stale);background:#f1eaf9}.axt tr.cu td.v{text-decoration:line-through}
+.foot{padding:6px 12px;font-size:11.5px;color:#39424a;background:#e8eaec;border-top:1px solid #a2a8ae}
+.fam{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:10px}
+.fc{background:#f7f8f9;border:1px solid #9aa1a8;border-radius:4px;padding:8px;font-size:12px;display:flex;flex-direction:column;gap:3px}
+.fc svg{width:60px;height:44px}.fc span{color:var(--mute)}
+.fc i.new{color:#b45309;font-style:normal;font-weight:600}
+.params{padding:10px 12px;font-size:12.5px;background:#eceef0;border-top:1px solid #a2a8ae}
+.params div{margin-top:4px}.roles code{background:#dfe2e5;padding:0 4px}
+@media (prefers-reduced-motion: reduce){ .pill.live::before{animation:none} }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>SCADA giao diện mượt — MOCKUP để duyệt (chưa phải mã sản phẩm)</h1>
+  <small>Bản vẽ minh hoạ: số liệu là giả lập 1 mẫu/giây để thấy cách nội suy và xử lý dữ liệu cũ.</small>
+</header>
+<div class="bar" role="group" aria-label="Chọn trạng thái minh hoạ">
+  <b>Trạng thái:</b>
+  <button data-st="normal" aria-pressed="true">1 · Bình thường</button>
+  <button data-st="alarm" aria-pressed="false">2 · Cảnh báo / sự cố</button>
+  <button data-st="stale" aria-pressed="false">3 · Dữ liệu cũ (mất mẫu)</button>
+  <button data-st="sim" aria-pressed="false">4 · Chế độ MÔ PHỎNG</button>
+  <button id="stopBtn" style="margin-left:auto" title="Chỉ minh hoạ nhãn 'chờ xác nhận' → 'đã xác nhận'">Mô phỏng bấm DỪNG MÁY</button>
+</div>
+<div class="note">Màu chỉ xuất hiện khi có bất thường (vàng · cam · đỏ = mức ưu tiên, kèm HÌNH + SỐ + chữ, không chỉ màu). Tím gạch = dữ liệu cũ / không tin được (theo quy ước D10 đã có trong mã). Xanh dương ngọc = MÔ PHỎNG. Thiết bị chạy / dừng phân biệt bằng độ đậm, không bằng xanh / đỏ.</div>
+
+<main>
+<section>
+  <div class="screen" id="screen">
+    <div class="hdr">
+      <div class="crumb"><b>Dây chuyền 1</b> <span>›</span> Cấp liệu &amp; băng tải <span>›</span> <span>Màn quá trình (L2)</span></div>
+      <div class="link"><span class="pill live" id="linkPill">Đẩy trực tiếp · trễ <span id="lat">—</span> ms</span><span id="clock">--:--:--</span></div>
+    </div>
+    <div class="banner stale" id="bStale"></div>
+    <div class="banner sim" id="bSim">MÔ PHỎNG — dữ liệu này KHÔNG phải thiết bị thật. Mọi lệnh bị khoá. Không ghi vào lịch sử sản xuất.</div>
+    <div class="alarms" id="alarms"></div>
+
+    <svg viewBox="0 0 960 470" role="img" aria-label="Bồn T-101, van XV-101, phễu, băng tải CV-201, motor M-201">
+      <defs>
+        <pattern id="chev" width="28" height="32" patternUnits="userSpaceOnUse" patternTransform="translate(0 0)">
+          <path d="M4 6 L14 16 L4 26" fill="none" stroke="#7d868e" stroke-width="2.2"/>
+        </pattern>
+        <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="8" height="8" fill="#efe6f8"/><line x1="0" y1="0" x2="0" y2="8" stroke="#c9b2e3" stroke-width="3"/>
+        </pattern>
+        <clipPath id="beltClip"><rect x="380" y="360" width="470" height="34" rx="17"/></clipPath>
+        <clipPath id="tankClip"><rect x="70" y="70" width="130" height="190" rx="8"/></clipPath>
+      </defs>
+
+      <!-- ĐƯỜNG ỐNG tank -> van -> phễu -->
+      <path d="M200 232 H330" stroke="#7d868e" stroke-width="10" fill="none"/>
+      <path d="M370 232 H470 V300" stroke="#7d868e" stroke-width="10" fill="none"/>
+      <path d="M462 296 L470 312 L478 296 Z" fill="#7d868e"/>
+      <!-- phễu -->
+      <path d="M430 300 H510 L486 340 H454 Z" fill="#e9ebed" stroke="#8a929a" stroke-width="2"/>
+      <text class="tag" x="520" y="322">Phễu H-101</text>
+
+      <!-- BỒN T-101 -->
+      <rect id="tankBody" x="70" y="70" width="130" height="190" rx="8" fill="#f1f2f3" stroke="#6b747c" stroke-width="3"/>
+      <g clip-path="url(#tankClip)"><rect id="tankFill" x="70" y="120" width="130" height="140" fill="#aeb5bb"/></g>
+      <g stroke="#6b747c" stroke-width="1.5">
+        <line x1="200" y1="85" x2="212" y2="85"/><line x1="200" y1="135" x2="212" y2="135"/><line x1="200" y1="165" x2="212" y2="165"/><line x1="200" y1="215" x2="212" y2="215"/><line x1="200" y1="255" x2="212" y2="255"/>
+      </g>
+      <line id="lahLine" x1="70" y1="102" x2="200" y2="102" stroke="#6b747c" stroke-dasharray="5 4"/>
+      <text class="tag" x="216" y="106">LAH 85 %</text>
+      <text class="tag" x="70" y="58">T-101  Bồn nguyên liệu</text>
+      <g class="vbox" id="vLevel" transform="translate(70 272)">
+        <rect width="130" height="40" rx="3"/><text class="v" x="8" y="26" id="vLevelT">62.4</text><text class="u" x="76" y="26">% mức</text><text class="age" x="8" y="37" id="ageLevel"></text>
+      </g>
+      <text class="tag" x="70" y="332">LI-101</text>
+
+      <!-- VAN XV-101 -->
+      <g id="valve" transform="translate(350 232)">
+        <path id="valveShape" d="M-20 -16 L20 16 V-16 L-20 16 Z" fill="#5b6670" stroke="#3b434a" stroke-width="2"/>
+        <line x1="0" y1="0" x2="0" y2="-34" stroke="#6b747c" stroke-width="3"/><rect x="-11" y="-44" width="22" height="12" fill="#e9ebed" stroke="#6b747c"/>
+      </g>
+      <text class="tag" x="324" y="270">XV-101 Van cấp</text>
+      <text class="tag" id="valveTxt" x="324" y="284">MỞ</text>
+
+      <!-- BĂNG TẢI CV-201 -->
+      <rect x="380" y="360" width="470" height="34" rx="17" fill="#e9ebed" stroke="#6b747c" stroke-width="3"/>
+      <g clip-path="url(#beltClip)"><rect id="belt" x="352" y="360" width="560" height="34" fill="url(#chev)"/></g>
+      <circle cx="397" cy="377" r="22" fill="#f4f5f6" stroke="#6b747c" stroke-width="3"/>
+      <circle cx="833" cy="377" r="22" fill="#f4f5f6" stroke="#6b747c" stroke-width="3"/>
+      <text class="tag" x="380" y="420">CV-201 Băng tải</text>
+      <!-- cảm biến quang PE-201 -->
+      <g transform="translate(700 340)"><path d="M0 -10 L10 0 L0 10 L-10 0 Z" fill="#f4f5f6" stroke="#6b747c" stroke-width="2"/></g>
+      <text class="tag" x="676" y="322">PE-201</text>
+      <g class="vbox" id="vSpeed" transform="translate(530 424)">
+        <rect width="150" height="40" rx="3"/><text class="v" x="8" y="26" id="vSpeedT">0.82</text><text class="u" x="68" y="26">m/s tốc độ</text><text class="age" x="8" y="37" id="ageSpeed"></text>
+      </g>
+
+      <!-- MOTOR M-201 -->
+      <line x1="855" y1="377" x2="893" y2="377" stroke="#6b747c" stroke-width="6"/>
+      <circle id="motor" cx="920" cy="377" r="30" fill="#5b6670" stroke="#3b434a" stroke-width="3"/>
+      <text id="motorM" x="920" y="384" text-anchor="middle" font-size="22" font-weight="700" fill="#fff">M</text>
+      <text class="tag" x="950" y="428" text-anchor="end">M-201 Motor băng tải</text>
+      <g class="vbox" id="vCur" transform="translate(850 436)">
+        <rect width="104" height="30" rx="3"/><text class="v" x="8" y="21" id="vCurT" style="font-size:13px">7.1</text><text class="u" x="58" y="21">A dòng</text>
+      </g>
+    </svg>
+    <div class="legend"><span>Thiết bị dừng / van đóng</span><span class="on">Thiết bị chạy / van mở</span><span class="st">Dữ liệu cũ — số bị gạch, băng tải đứng yên</span></div>
+  </div>
+</section>
+
+<aside>
+  <div class="fp" id="fp">
+    <header>
+      <h2>M-201 · Motor băng tải CV-201</h2>
+      <div><span class="mode">REMOTE</span><span>Dây chuyền 1</span><span class="pill live" id="fpPill">tươi</span></div>
+    </header>
+    <section>
+      <label class="lbl">Tốc độ băng tải (đo)</label>
+      <div class="pv"><b id="fpPv">0.82</b><span>m/s</span></div>
+      <div class="meta" id="fpMeta">mẫu 0.3 s trước · chất lượng tốt</div>
+      <svg class="spark" viewBox="0 0 320 70" id="spark" aria-label="Xu hướng 60 giây"></svg>
+      <div class="meta">60 giây gần nhất. Khoảng tím gạch = không có mẫu, KHÔNG nối đường.</div>
+    </section>
+    <section>
+      <label class="lbl" for="sp">Đặt tốc độ mới (0.20 – 1.50 m/s, bước 0.05)</label>
+      <div class="row"><input type="text" id="sp" value="1.10" inputmode="decimal"><button class="do" id="doBtn">Đổi…</button></div>
+      <div class="cond" id="cond">Được phép — mức 2, không cần mã xác thực.</div>
+      <label class="lbl" for="why" style="margin-top:8px">Lý do (≥ 5 ký tự)</label>
+      <input type="text" id="why" value="Tăng nhịp ca chiều" style="width:100%">
+    </section>
+    <section>
+      <button class="stop" id="stopB">DỪNG MÁY</button>
+      <div class="stopstate" id="stopState"><span class="tick">✓</span><span>Trạng thái đã xác nhận: <b>ĐANG CHẠY</b> · đọc lại từ thiết bị 0.3 s trước</span></div>
+    </section>
+    <div class="simnote" id="simNote">MÔ PHỎNG: faceplate chỉ đọc. Nút Đổi / DỪNG bị khoá.</div>
+  </div>
+</aside>
+</main>
+
+<div class="p2">
+  <h2>PHA 2 — Mô hình động học &amp; thư viện khuôn (mockup §7B / §7C)</h2>
+  <div class="grid3">
+    <div class="screen" id="mirror">
+      <div class="hdr"><div><b>Máy 3 trục XYZ</b> · chế độ <b>GƯƠNG</b></div><div class="link"><span class="pill live" id="mPill">gương · 25 Hz</span></div></div>
+      <div class="banner stale" id="mStale"></div>
+      <svg viewBox="0 0 440 250" aria-label="Giàn XYZ ở chế độ gương">
+        <rect x="20" y="210" width="400" height="14" fill="#e9ebed" stroke="#6b747c" stroke-width="2"/>
+        <text class="tag" x="24" y="240">Ray X (0–380 mm)</text>
+        <g id="gX"><rect x="-8" y="60" width="16" height="160" fill="#c9cdd1" stroke="#6b747c" stroke-width="2"/><rect x="-8" y="60" width="16" height="16" fill="#5b6670"/>
+          <rect x="-62" y="62" width="124" height="12" fill="#dfe2e5" stroke="#6b747c" stroke-width="2"/>
+          <g id="gY"><rect x="-14" y="56" width="28" height="24" fill="#aeb5bb" stroke="#6b747c" stroke-width="2"/>
+            <g id="gZ"><rect x="-4" y="80" width="8" height="48" fill="#5b6670" stroke="#3b434a"/><polygon points="-7,128 7,128 0,140" fill="#3b434a"/></g></g></g>
+        <rect x="150" y="196" width="120" height="14" fill="#e9ebed" stroke="#8a929a" stroke-dasharray="3 3"/>
+        <text class="tag" x="156" y="192">phôi</text>
+      </svg>
+      <table class="axt" id="axT"><thead><tr><th>Trục</th><th>Vị trí thực</th><th>Tuổi mẫu</th><th>Chất lượng</th></tr></thead><tbody></tbody></table>
+      <div class="legend"><span class="st">Cũ ⇒ trục đứng + số gạch tím</span><span>Hình = minh hoạ; <b>số là sự thật</b></span></div>
+      <div class="foot">Twin KHÔNG phải hệ an toàn. An toàn thuộc PLC / safety PLC. Tần số mẫu thực <span id="mHz">25</span> Hz.</div>
+    </div>
+
+    <div class="screen">
+      <div class="hdr"><div><b>Thư viện khuôn thiết bị</b></div><div class="link"><span class="pill">3 lớp: họ · khuôn · cổng</span></div></div>
+      <div class="fam">
+        <div class="fc"><svg viewBox="0 0 60 44"><path d="M8 38 L24 20 L38 28 L52 8" fill="none" stroke="#3b434a" stroke-width="4" stroke-linecap="round"/><circle cx="8" cy="38" r="5" fill="#5b6670"/><circle cx="24" cy="20" r="4" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/><circle cx="38" cy="28" r="4" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/></svg><b>Nối tiếp</b><span>6 trục · SCARA · cobot<br>URDF/DH — <i>có sẵn bộ giải</i></span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><polygon points="30,6 8,14 52,14" fill="#c9cdd1" stroke="#3b434a" stroke-width="2"/><line x1="12" y1="14" x2="26" y2="34" stroke="#3b434a" stroke-width="3"/><line x1="48" y1="14" x2="34" y2="34" stroke="#3b434a" stroke-width="3"/><line x1="30" y1="12" x2="30" y2="34" stroke="#3b434a" stroke-width="3"/><circle cx="30" cy="36" r="6" fill="#5b6670"/></svg><b>Delta (nhện)</b><span>3 tay song song<br><i class="new">CHƯA có bộ giải</i></span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><rect x="6" y="34" width="48" height="5" fill="#8a929a"/><rect x="10" y="10" width="40" height="5" fill="#8a929a"/><rect x="26" y="10" width="8" height="5" fill="#3b434a"/><line x1="30" y1="15" x2="30" y2="28" stroke="#3b434a" stroke-width="3"/></svg><b>Giàn Cartesian</b><span>2 / 3 trục tịnh tiến<br>chuỗi trục</span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><path d="M4 36 H28 A14 14 0 0 0 42 22 V8" fill="none" stroke="#8a929a" stroke-width="9"/><path d="M4 36 H28 A14 14 0 0 0 42 22 V8" fill="none" stroke="#f4f5f6" stroke-width="2" stroke-dasharray="3 3"/></svg><b>Băng tải theo đường</b><span>thẳng · cung · nghiêng · nhập · rẽ<br><i class="new">sinh tham số</i> · belt/con lăn</span></div>
+        <div class="fc"><svg viewBox="0 0 60 44"><ellipse cx="30" cy="30" rx="20" ry="7" fill="#dfe2e5" stroke="#3b434a" stroke-width="2"/><rect x="26" y="10" width="8" height="20" fill="#5b6670"/></svg><b>Họ nhỏ</b><span>bàn xoay · bàn chuyển · thang nâng</span></div>
+      </div>
+      <div class="legend"><span>khuôn = họ + tham số + mô hình 3D + vai trò tag</span></div>
+      <div class="params"><b>Ví dụ khuôn: Băng tải con lăn cong</b>
+        <div>dài vào 1200 mm · bán kính 800 mm · góc 90° · rộng 500 mm · bước con lăn 75 mm · nghiêng 0°</div>
+        <div class="roles">Vai trò tag: <code>toc_do</code> (bắt buộc, thực) · <code>chay</code> · <code>cam_bien[1..2]</code> — tên theo census C-tag</div></div>
+    </div>
+  </div>
+
+  <div class="screen" style="margin-top:14px">
+    <div class="hdr"><div><b>Cảnh ghép:</b> Băng tải → Robot → Máy (đặt + cổng nối)</div><div class="link"><span class="pill">kết nối <b>suy từ hình học</b></span></div></div>
+    <svg viewBox="0 0 1120 300" aria-label="Cảnh ghép có cổng nối">
+      <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#3b434a"/></marker></defs>
+      <!-- băng tải cong -->
+      <path d="M40 220 H230 A70 70 0 0 0 300 150 V120" fill="none" stroke="#c9cdd1" stroke-width="46" stroke-linecap="butt"/>
+      <path d="M40 220 H230 A70 70 0 0 0 300 150 V120" fill="none" stroke="#6b747c" stroke-width="2" stroke-dasharray="1 9"/>
+      <text class="tag" x="44" y="258">CV-301 con lăn cong (R 800)</text>
+      <!-- cảm biến -->
+      <g><path d="M120 196 l8 8 l-8 8 l-8 -8z" fill="#f4f5f6" stroke="#6b747c" stroke-width="2"/><text class="tag" x="96" y="190">PE-1</text></g>
+      <g><path d="M300 170 l8 8 l-8 8 l-8 -8z" fill="#5b6670" stroke="#3b434a" stroke-width="2"/><text class="tag" x="316" y="182">PE-2 (đang báo)</text></g>
+      <!-- vật ước lượng giữa hai cảm biến -->
+      <rect x="196" y="206" width="34" height="28" fill="none" stroke="#5d666e" stroke-width="2" stroke-dasharray="4 3"/>
+      <text class="tag" x="186" y="250" style="fill:#5d666e">vật "ước lượng"</text>
+      <!-- vật thật tại PE-2 -->
+      <rect x="283" y="150" width="34" height="28" fill="#dfe2e5" stroke="#3b434a" stroke-width="2"/>
+      <!-- cổng ra băng tải -->
+      <g><circle cx="300" cy="118" r="9" fill="#fff" stroke="#3b434a" stroke-width="2.5"/><line x1="300" y1="118" x2="300" y2="96" stroke="#3b434a" stroke-width="2.5" marker-end="url(#arr)"/></g>
+      <text class="tag" x="130" y="98">cổng ra · h=820 · ↑</text>
+      <!-- robot -->
+      <g><rect x="360" y="40" width="70" height="20" fill="#5b6670"/><rect x="383" y="60" width="24" height="26" fill="#8a929a" stroke="#3b434a" stroke-width="2"/>
+        <path d="M395 40 L420 8 L470 22" fill="none" stroke="#3b434a" stroke-width="9" stroke-linecap="round"/><circle cx="395" cy="40" r="7" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/><circle cx="420" cy="8" r="6" fill="#f4f5f6" stroke="#3b434a" stroke-width="2"/></g>
+      <text class="tag" x="360" y="100">UR-01 robot 6 trục (họ nối tiếp)</text>
+      <g><circle cx="470" cy="22" r="8" fill="#fff" stroke="#3b434a" stroke-width="2.5"/></g>
+      <text class="tag" x="486" y="26">bích dụng cụ</text>
+      <!-- đường gắp -->
+      <path d="M470 30 Q 520 90 560 120" fill="none" stroke="#8a929a" stroke-dasharray="5 4" stroke-width="2"/>
+      <!-- máy -->
+      <rect x="560" y="110" width="200" height="130" rx="6" fill="#e9ebed" stroke="#6b747c" stroke-width="3"/>
+      <text class="tag" x="570" y="130">M-401 Máy gia công</text>
+      <g><circle cx="560" cy="170" r="9" fill="#fff" stroke="#3b434a" stroke-width="2.5"/><line x1="540" y1="170" x2="551" y2="170" stroke="#3b434a" stroke-width="2.5" marker-end="url(#arr)"/></g>
+      <text class="tag" x="430" y="212">cổng nạp · h=860 · →</text>
+      <!-- cảnh báo lệch -->
+      <g><rect x="780" y="120" width="320" height="86" rx="4" fill="#fbeede" stroke="var(--a-high)" stroke-width="2"/>
+        <text x="782" y="142" font-size="12" font-weight="700" fill="#262b30">Cổng ra CV-301 → cổng nạp M-401</text>
+        <text x="782" y="162" font-size="12" fill="#262b30">Lệch cao độ 40 mm (820 ↔ 860).</text>
+        <text x="782" y="180" font-size="12" fill="#262b30">Không hít. Nâng chân băng tải 40 mm</text>
+        <text x="782" y="196" font-size="12" fill="#262b30">hoặc đổi cổng (dung sai ±10 mm).</text></g>
+      <g><rect x="640" y="24" width="460" height="64" rx="4" fill="#eceef0" stroke="#8a929a"/>
+        <text x="650" y="50" font-size="12" font-weight="700" fill="#262b30">Kết nối suy ra (placement-as-truth)</text>
+        <text x="650" y="68" font-size="12" fill="#262b30">CV-301.ra → UR-01 (khay gắp): hít OK, cao độ khớp</text>
+        <text x="650" y="84" font-size="12" fill="#262b30">UR-01 → M-401.nạp: <tspan fill="#b45309" font-weight="700">chưa nối (lệch cao độ)</tspan></text></g>
+    </svg>
+    <div class="legend"><span>Cổng: vòng + mũi tên hướng + cao độ</span><span>Nét đứt = "ước lượng" giữa hai cảm biến (chỉ minh hoạ, tắt khi cũ)</span><span class="on">Đặc = cảm biến đang báo (vật thật)</span></div>
+  </div>
+</div>
+
+<div class="explain">
+  <h3>Cách đọc mockup</h3>
+  <ul>
+    <li><b>Mượt nhưng trung thực:</b> số trên màn hình chỉ <i>làm mượt về phía mẫu đã nhận</i> (≤ 250 ms), không đoán trước giá trị tiếp theo. Băng tải chạy theo tốc độ <i>đo được</i>; hết mẫu tươi thì đứng yên và đổi sang tím gạch (trạng thái 3).</li>
+    <li><b>Đứng yên vì tốc độ = 0 (trạng thái 2)</b> khác <b>đứng yên vì mất dữ liệu (trạng thái 3)</b>: ở trạng thái 2 số vẫn rõ "0.00 m/s" và có cảnh báo; ở trạng thái 3 số bị gạch kèm tuổi mẫu.</li>
+    <li><b>DỪNG MÁY</b>: chỉ hiện "đã dừng" khi chính thiết bị xác nhận (đọc lại). Giữa chừng hiện "Đã gửi lệnh — chờ xác nhận". Bấm nút trên thanh để xem hai bước.</li>
+    <li>Chưa vẽ vật thể trên băng tải: chỉ cuộn nền băng theo tốc độ đo. Vật thể chỉ xuất hiện khi có cảm biến báo (PE-201) — tránh "bịa" vị trí sản phẩm.</li>
+    <li>Màn này là <b>L2</b> (một khu). Cấp L1 = tổng quan nhà máy, L3 = chi tiết thiết bị (faceplate), L4 = chẩn đoán — xem đặc tả mục 6.</li>
+  </ul>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let st = "normal";
+  const STALE_AFTER = 3000;            // ms: ngưỡng cũ minh hoạ (thật: theo từng tag từ máy chủ)
+  let lastSampleAt = performance.now(); // thời điểm nhận mẫu cuối
+  let target = { speed: 0.82, level: 62.4, cur: 7.1 };
+  let shown  = { speed: 0.82, level: 62.4, cur: 7.1 };
+  const samples = [];                  // {t, v} cho xu hướng
+  let stopPhase = "running";           // running | pending | stopped
+  let beltX = 0, last = performance.now();
+  const alarmsEl = $("alarms");
+
+  function setSt(s){
+    st = s; window.__st = s;
+    document.querySelectorAll(".bar button[data-st]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.st === s)));
+    $("screen").classList.toggle("sim", s === "sim");
+    $("bSim").style.display = s === "sim" ? "block" : "none";
+    $("simNote").style.display = s === "sim" ? "block" : "none";
+    const sim = s === "sim";
+    $("doBtn").disabled = sim || s === "stale"; $("stopB").disabled = sim; $("sp").disabled = sim;
+    if (s === "alarm"){ target = { speed: 0, level: 91.3, cur: 0 }; }
+    else { target = { speed: 0.82, level: 62.4, cur: 7.1 }; if (s !== "stale") lastSampleAt = performance.now(); }
+    if (s === "stale") { /* ngừng nhận mẫu: lastSampleAt giữ nguyên, sẽ cũ dần */ lastSampleAt = performance.now() - 1500; }
+    stopPhase = s === "alarm" ? "stopped" : "running";
+    renderStop();
+  }
+  document.querySelectorAll(".bar button[data-st]").forEach(b => b.onclick = () => setSt(b.dataset.st));
+
+  // mẫu đến mỗi ~1 s (có jitter) trừ khi dữ liệu cũ
+  setInterval(() => {
+    if (st === "stale") return;
+    lastSampleAt = performance.now();
+    const j = (Math.random() - .5) * 0.04;
+    if (st === "alarm") { target.speed = 0; target.cur = 0; target.level = Math.min(94, target.level + .2); }
+    else if (stopPhase === "stopped") { target.speed = 0; target.cur = 0; }
+    else { target.speed = 0.82 + j; target.cur = 7.1 + j * 6; target.level = 62.4 + (Math.random() - .5) * 0.6; }
+    samples.push({ t: lastSampleAt, v: target.speed });
+    while (samples.length && performance.now() - samples[0].t > 60000) samples.shift();
+  }, 1000);
+
+  function alarmsHtml(){
+    if (st === "alarm") return `<span class="al p1"><i>1</i>M-201 Quá tải — đã ngắt</span><span class="al p2"><i>2</i>LAH-101 Mức bồn cao 91 %</span>`;
+    return `<span class="none">Không có cảnh báo đang hoạt động</span>`;
+  }
+
+  function fmtAge(ms){ return ms < 10000 ? (ms/1000).toFixed(1) + " s" : Math.round(ms/1000) + " s"; }
+
+  function frame(now){
+    const dt = Math.min(100, now - last); last = now;
+    const age = now - lastSampleAt;
+    const stale = st === "stale" && age > STALE_AFTER;
+    // nội suy về phía mẫu ĐÃ NHẬN (không ngoại suy); dữ liệu cũ thì đóng băng
+    if (!stale){
+      const k = 1 - Math.exp(-dt / 90);
+      for (const key of ["speed","level","cur"]) shown[key] += (target[key] - shown[key]) * k;
+    }
+    // băng tải chỉ chạy khi mẫu tươi và tốc độ đo > 0
+    if (!stale) beltX = (beltX + shown.speed * 70 * dt / 1000) % 28;
+    $("belt").setAttribute("x", String(352 + beltX));
+    // bồn
+    const lv = Math.max(0, Math.min(100, shown.level));
+    const h = 190 * lv / 100; $("tankFill").setAttribute("y", String(260 - h)); $("tankFill").setAttribute("height", String(h));
+    const hi = st === "alarm";
+    $("tankBody").setAttribute("stroke", hi ? "#e8710a" : "#6b747c"); $("tankBody").setAttribute("stroke-width", hi ? "5" : "3");
+    // motor / van
+    const run = !stale ? (shown.speed > 0.05) : false;
+    $("motor").setAttribute("fill", stale ? "#efe6f8" : (st === "alarm" ? "#f4f5f6" : "#5b6670"));
+    $("motor").setAttribute("stroke", stale ? "#6f3fb0" : (st === "alarm" ? "#c62828" : "#3b434a")); $("motor").setAttribute("stroke-width", st === "alarm" ? "5" : "3");
+    $("motorM").setAttribute("fill", stale ? "#6f3fb0" : (st === "alarm" ? "#262b30" : "#fff"));
+    $("valveShape").setAttribute("fill", stale ? "#efe6f8" : (st === "alarm" ? "#f4f5f6" : "#5b6670"));
+    $("valveShape").setAttribute("stroke", stale ? "#6f3fb0" : "#3b434a");
+    $("valveTxt").textContent = stale ? "?" : (st === "alarm" ? "ĐÓNG (khoá mức cao)" : "MỞ");
+    // ô giá trị
+    const set = (id, val, ageId, unit, dec) => {
+      const el = $(id); const g = el.parentNode; g.classList.toggle("isstale", stale);
+      el.textContent = (stale ? "~" : "") + val.toFixed(dec);
+      if (ageId) $(ageId).textContent = stale ? "cũ " + fmtAge(age) : "";
+    };
+    set("vLevelT", shown.level, "ageLevel", "%", 1); set("vSpeedT", shown.speed, "ageSpeed", "", 2);
+    $("vCurT").textContent = shown.cur.toFixed(1); $("vCurT").parentNode.classList.toggle("isstale", stale);
+    // thanh trạng thái liên kết
+    $("alarms").innerHTML = alarmsHtml();
+    const pill = $("linkPill");
+    if (stale){
+      pill.className = "pill stale"; pill.innerHTML = "DỮ LIỆU CŨ " + fmtAge(age);
+      $("bStale").style.display = "block"; $("bStale").textContent = "DỮ LIỆU CŨ " + fmtAge(age) + " — số đang hiện là mẫu cuối, KHÔNG phải giá trị hiện tại. Băng tải đứng yên vì mất dữ liệu, chưa chắc đã dừng.";
+    } else {
+      pill.className = "pill " + (st === "sim" ? "sim" : "live"); pill.innerHTML = (st === "sim" ? "MÔ PHỎNG · " : "Đẩy trực tiếp · ") + "trễ <span id='lat'>" + (150 + (Math.floor(now / 1500) % 5) * 17) + "</span> ms";
+      $("bStale").style.display = "none";
+    }
+    $("clock").textContent = new Date().toLocaleTimeString("vi-VN");
+    // faceplate
+    const fp = $("fp"); fp.classList.toggle("isstale", stale);
+    $("fpPv").textContent = (stale ? "~" : "") + shown.speed.toFixed(2);
+    $("fpMeta").textContent = stale ? "mẫu cuối " + fmtAge(age) + " trước · chất lượng KHÔNG TIN ĐƯỢC" : "mẫu " + fmtAge(age) + " trước · chất lượng tốt";
+    const fpp = $("fpPill"); fpp.className = "pill " + (stale ? "stale" : (st === "sim" ? "sim" : "live")); fpp.textContent = stale ? "cũ" : (st === "sim" ? "mô phỏng" : "tươi");
+    drawSpark(now, stale);
+    // điều kiện cho phép (minh hoạ)
+    const v = parseFloat(String($("sp").value).replace(",", "."));
+    const c = $("cond");
+    if (stale) { c.className = "cond no"; c.textContent = "Chưa đánh giá — dữ liệu cũ. Máy chủ vẫn là nơi quyết định cuối cùng."; }
+    else if (isNaN(v) || v < 0.2 || v > 1.5) { c.className = "cond no"; c.textContent = "Không được phép: ngoài dải 0.20 – 1.50 m/s. (Nút Đổi vẫn bấm được — máy chủ quyết định.)"; }
+    else if (Math.abs(v * 20 - Math.round(v * 20)) > 1e-6) { c.className = "cond no"; c.textContent = "Không được phép: lệch bước 0.05 (gợi ý " + (Math.round(v*20)/20).toFixed(2) + ")."; }
+    else { c.className = "cond"; c.textContent = v > 1.2 ? "Được phép — mức 4, cần mã xác thực 6 số." : "Được phép — mức 2, không cần mã xác thực."; }
+    requestAnimationFrame(frame);
+  }
+
+  function drawSpark(now, stale){
+    const W = 320, H = 70, span = 60000, lo = 0, hi = 1.5;
+    const X = (t) => W - ((now - t) / span) * W, Y = (v) => H - 6 - (v - lo) / (hi - lo) * (H - 12);
+    let svg = `<rect width="${W}" height="${H}" fill="#f7f8f9"/><line x1="0" x2="${W}" y1="${Y(1.1)}" y2="${Y(1.1)}" stroke="#c4c8cc" stroke-dasharray="3 3"/>`;
+    const pts = samples.filter(p => now - p.t < span);
+    if (pts.length) {
+      svg += `<polyline fill="none" stroke="#3b434a" stroke-width="1.8" points="${pts.map(p => X(p.t).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ")}"/>`;
+      const lastT = pts[pts.length - 1].t;
+      if (stale || now - lastT > STALE_AFTER) svg += `<rect x="${X(lastT).toFixed(1)}" y="0" width="${(W - X(lastT)).toFixed(1)}" height="${H}" fill="url(#hatch)" opacity=".9"/>`;
+    }
+    $("spark").innerHTML = `<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#efe6f8"/><line x1="0" y1="0" x2="0" y2="8" stroke="#c9b2e3" stroke-width="3"/></pattern></defs>` + svg;
+  }
+
+  function renderStop(){
+    const e = $("stopState");
+    if (st === "stale") e.innerHTML = `<span class="tick wait">?</span><span>Không biết: dữ liệu cũ. Không thể khẳng định máy đang chạy hay đã dừng.</span>`;
+    else if (stopPhase === "pending") e.innerHTML = `<span class="tick wait">…</span><span>Đã gửi lệnh DỪNG — <b>chờ thiết bị xác nhận</b> (chưa được coi là đã dừng)</span>`;
+    else if (stopPhase === "stopped") e.innerHTML = `<span class="tick">✓</span><span>Trạng thái đã xác nhận: <b>ĐÃ DỪNG</b> · đọc lại từ thiết bị</span>`;
+    else e.innerHTML = `<span class="tick">✓</span><span>Trạng thái đã xác nhận: <b>ĐANG CHẠY</b> · đọc lại từ thiết bị</span>`;
+  }
+  function demoStop(){
+    if (st === "stale" || st === "sim") return;
+    stopPhase = "pending"; renderStop();
+    setTimeout(() => { if (st === "normal") { stopPhase = "stopped"; target.speed = 0; target.cur = 0; renderStop(); } }, 1800);
+  }
+  $("stopBtn").onclick = demoStop; $("stopB").onclick = demoStop;
+  $("sp").addEventListener("input", () => {});
+  for (let i = 45; i >= 1; i--) samples.push({ t: performance.now() - i * 1000, v: 0.82 + (Math.random() - .5) * 0.04 });
+  setSt("normal");
+  requestAnimationFrame(frame);
+
+  // ── PHA 2: máy 3 trục, chế độ GƯƠNG — mẫu giả lập 25 Hz; hiển thị chỉ làm mượt VỀ phía mẫu đã nhận (không ngoại suy) ──
+  const AX = [
+    { id: "X", min: 0, max: 380, du: "mm" }, { id: "Y", min: 0, max: 200, du: "mm" }, { id: "Z", min: 0, max: 90, du: "mm" } ];
+  const mt = { tgt: [190, 100, 20], sh: [190, 100, 20], at: performance.now() };
+  setInterval(() => {
+    if (window.__st === "stale") return;                       // mất mẫu: không cập nhật, mẫu cuối giữ nguyên
+    const t = performance.now() / 1000;
+    mt.tgt = [190 + 150 * Math.sin(t * 0.7), 100 + 80 * Math.sin(t * 1.1 + 1), 45 + 40 * Math.sin(t * 1.9)];
+    mt.at = performance.now();
+  }, 40);
+  let ml = performance.now();
+  const tb = document.querySelector("#axT tbody");
+  function mframe(now) {
+    const dt = Math.min(80, now - ml); ml = now;
+    const age = now - mt.at, stale = window.__st === "stale" && age > 3000;
+    if (!stale) { const k = 1 - Math.exp(-dt / 30); for (let i = 0; i < 3; i++) mt.sh[i] += (mt.tgt[i] - mt.sh[i]) * k; }
+    document.getElementById("gX").setAttribute("transform", `translate(${60 + mt.sh[0] * 0.8} 0)`);
+    document.getElementById("gY").setAttribute("transform", `translate(${(mt.sh[1] - 100) * 0.4} 0)`);
+    document.getElementById("gZ").setAttribute("transform", `translate(0 ${mt.sh[2] - 20})`);
+    const stroke = stale ? "#6f3fb0" : "#6b747c";
+    document.querySelectorAll("#gX rect, #gY rect, #gZ rect").forEach(r => r.style.stroke = stroke);
+    const sim = window.__st === "sim";
+    const p = document.getElementById("mPill"); p.className = "pill " + (stale ? "stale" : sim ? "sim" : "live");
+    p.textContent = stale ? "DỮ LIỆU CŨ " + (age / 1000).toFixed(1) + " s" : sim ? "MÔ PHỎNG · 25 Hz" : "gương · 25 Hz";
+    const b = document.getElementById("mStale"); b.style.display = stale ? "block" : "none";
+    if (stale) b.textContent = "DỮ LIỆU CŨ " + (age / 1000).toFixed(1) + " s — hình đứng yên ở mẫu cuối, KHÔNG phải vị trí hiện tại.";
+    tb.innerHTML = AX.map((a, i) => `<tr class="${stale ? "cu" : ""}"><td>${a.id}</td><td class="v">${stale ? "~" : ""}${mt.sh[i].toFixed(1)} ${a.du}</td><td>${age < 100 ? "< 0.1" : (age / 1000).toFixed(1)} s</td><td>${stale ? "không tin được" : "tốt"}</td></tr>`).join("");
+    requestAnimationFrame(mframe);
+  }
+  requestAnimationFrame(mframe);
+})();
+</script>
+</body>
+</html>

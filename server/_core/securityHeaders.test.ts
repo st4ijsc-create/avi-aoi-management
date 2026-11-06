@@ -28,10 +28,11 @@ function fakeRes() {
 const fakeReq = {} as any;
 
 describe("getCspMode", () => {
-  it("defaults to off (không có env / env rác)", () => {
-    expect(getCspMode({} as any)).toBe("off");
-    expect(getCspMode({ SEC_CSP_MODE: "banana" } as any)).toBe("off");
-    expect(getCspMode({ SEC_CSP_MODE: "" } as any)).toBe("off");
+  it("★ Pha 0 P0-3 bước 1: mặc định report-only (không có env / env rác / rỗng); 'off' tường minh vẫn tắt", () => {
+    expect(getCspMode({} as any)).toBe("report-only");
+    expect(getCspMode({ SEC_CSP_MODE: "banana" } as any)).toBe("report-only");
+    expect(getCspMode({ SEC_CSP_MODE: "" } as any)).toBe("report-only");
+    expect(getCspMode({ SEC_CSP_MODE: "OFF" } as any)).toBe("off");
   });
   it("nhận report-only + enforce (case-insensitive)", () => {
     expect(getCspMode({ SEC_CSP_MODE: "report-only" } as any)).toBe("report-only");
@@ -67,8 +68,16 @@ describe("buildCspDirectives", () => {
 });
 
 describe("securityHeadersMiddleware", () => {
-  it("mode off (default): KHÔNG phát header CSP nào — hành vi cũ giữ nguyên", () => {
+  it("mặc định (không env): phát Report-Only, KHÔNG phát header enforce (không chặn gì)", () => {
     const mw = securityHeadersMiddleware({} as any);
+    const res = fakeRes();
+    mw(fakeReq, res, () => undefined);
+    expect(String(res.getHeader("Content-Security-Policy-Report-Only"))).toContain("report-uri /api/csp-report");
+    expect(res.getHeader("Content-Security-Policy")).toBeUndefined();
+  });
+
+  it("mode off (tường minh): KHÔNG phát header CSP nào", () => {
+    const mw = securityHeadersMiddleware({ SEC_CSP_MODE: "off" } as any);
     const res = fakeRes();
     let nexted = false;
     mw(fakeReq, res, () => { nexted = true; });

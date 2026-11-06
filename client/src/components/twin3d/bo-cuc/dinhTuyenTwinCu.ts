@@ -80,7 +80,7 @@ export const DICH_TWIN_CU: Readonly<Record<string, string>> = {
   "/digital-twin?tab=layout": "/twin-studio",
   // ★ Xem "HAI ĐIỀU §13b NÓI MÀ ĐỢT NÀY LÀM KHÁC" mục 2: KHÔNG `?thu=moPhong`.
   "/digital-twin?tab=cell": "/twin",
-  // ★ §13b: RF là mô phỏng thuần (đo được **0 lời gọi tRPC** trong 792 dòng) —
+  // ★ §13b: RF là mô phỏng thuần (đo AST 2026-11-04: chỉ `orchestration.simulate` chạy khô, không ghi — chú thích cũ "0 lời gọi tRPC" là SAI) —
   //   nó không trả lời "nhà máy đang thế nào", nên đứng RIÊNG ngoài Twin.
   "/digital-twin?tab=rf": "/rf-test-cell",
 

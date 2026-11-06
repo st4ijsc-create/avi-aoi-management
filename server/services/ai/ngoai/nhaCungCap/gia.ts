@@ -1,12 +1,12 @@
 /**
  * ★ Đợt 10.3 — nhà cung cấp GIẢ cho lưới: GHI LẠI mọi yêu cầu + khoá nhận được, trả kịch bản (chữ / toolCalls / lỗi). KHÔNG mạng.
  */
-import { LoiNgoai, type PhanLoaiLoiNgoai } from "../loi";
+import { LoiNgoai, requestIdHopLe, type PhanLoaiLoiNgoai } from "../loi";
 import type { KetQuaNhaCungCap, NhaCungCapAi, YeuCauNhaCungCap } from "./kieu";
 
 export type KichBanGia =
-  | { kieu: "tra"; noiDung?: string; toolCalls?: KetQuaNhaCungCap["toolCalls"]; tokenVao?: number | null; tokenRa?: number | null }
-  | { kieu: "loi"; thongDiep: string; thuLai?: boolean; chuaGui?: boolean; phanLoai?: PhanLoaiLoiNgoai; choMs?: number };
+  | { kieu: "tra"; noiDung?: string; toolCalls?: KetQuaNhaCungCap["toolCalls"]; tokenVao?: number | null; tokenRa?: number | null; requestId?: string }
+  | { kieu: "loi"; thongDiep: string; thuLai?: boolean; chuaGui?: boolean; phanLoai?: PhanLoaiLoiNgoai; choMs?: number; requestId?: string };
 
 export interface NhaCungCapGia extends NhaCungCapAi {
   nhan: Array<{ yc: YeuCauNhaCungCap; khoa: string }>;
@@ -28,8 +28,16 @@ export function taoNhaCungCapGia(kichBan: KichBanGia[] = [{ kieu: "tra", noiDung
           thuLai: kb.thuLai === true,
           ...(kb.phanLoai ? { phanLoai: kb.phanLoai } : {}),
           ...(kb.choMs !== undefined ? { choMs: kb.choMs } : {}),
+          ...(kb.requestId !== undefined ? { requestId: kb.requestId } : {}),
         });
-      return { noiDung: kb.noiDung ?? "", toolCalls: kb.toolCalls ?? [], tokenVao: kb.tokenVao === undefined ? 10 : kb.tokenVao, tokenRa: kb.tokenRa === undefined ? 5 : kb.tokenRa };
+      return {
+        noiDung: kb.noiDung ?? "",
+        toolCalls: kb.toolCalls ?? [],
+        tokenVao: kb.tokenVao === undefined ? 10 : kb.tokenVao,
+        tokenRa: kb.tokenRa === undefined ? 5 : kb.tokenRa,
+        // (H3.3a) như bản thật: id bẩn không qua khỏi lớp mạng
+        ...(requestIdHopLe(kb.requestId) ? { requestId: kb.requestId } : {}),
+      };
     },
   };
   return g;

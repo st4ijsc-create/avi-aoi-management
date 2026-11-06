@@ -47,8 +47,6 @@ const MIEN_TRU_VI_TRI: Record<string, number[]> = {
 };
 /** Điểm gọi được miễn CẢ điểm (tệp#hàm-bao#điểm) — lý do bắt buộc. */
 const DIEM_MIEN_TRU: Record<string, string> = {
-  "server/api/v1/router.ts#createV1Router#sendCommand":
-    "REST v1 POST /equipment/:id/commands — CHỈ robot (mọi lệnh không phải robot ⇒ 501 TRƯỚC idempotencyKey / dispatcher, SCADA R1b-1 T5 D8): khoá vào robot_jobs (không gian khoá riêng, không phải command_log) và chốt R-1C-i của robot (cùng robot + jobType, IDEMPOTENCY_KEY_REUSED, STOP vẫn gửi)",
 };
 
 /** (A) Điểm gọi (tệp#hàm-bao#điểm) có khoá bên gọi ĐÃ đặt miền — đo lúc viết T6d. */
@@ -75,7 +73,6 @@ const SO_CAI_DISPATCH: Record<string, [NguonKhoa, string]> = {
   "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts#deploy": ["mien_lap_trinh", "khoaDispatchLapTrinh(opts.idempotencyKey, requestedBy) — miền `pd:u<người yêu cầu>:`"],
   "server/services/scada/lenhHmi.ts#xacNhanGhiTag": ["may_chu", "`hmi:<requestId uuid>` (yêu cầu ghi tag máy chủ tạo)"],
   "server/services/scada/lenhHmi.ts#guiStopMotAdapter": ["may_chu", "`hmistop:<actionId uuid>`"],
-  "server/services/unsPublisher.ts#startCommandHandler": ["may_chu", "tiêm vào sparkplugCommand: `spcmd-<máy>-<loại>-<lệnh>-<Date.now()>`"],
 };
 
 function liet(dir: string, ra: string[] = []): string[] {

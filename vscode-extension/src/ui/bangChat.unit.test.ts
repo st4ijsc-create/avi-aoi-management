@@ -1371,7 +1371,7 @@ describe("ĐỢT F / TASK 2 — lưu hội thoại BỀN qua workspaceState", ()
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi từ phiên trước" },
-      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước", cay: expect.any(Array) },
+      { vaiTro: "assistant", noiDung: "Trả lời từ phiên trước", cay: expect.any(Array), maBong: expect.any(String) },
     ]);
   });
 
@@ -1712,7 +1712,7 @@ describe("ĐỢT F / TASK 3 / B4 — 'Lịch sử'", () => {
     expect(khoiPhuc).toHaveLength(1);
     expect(khoiPhuc[0]!.luot).toEqual([
       { vaiTro: "user", noiDung: "Câu hỏi A" },
-      { vaiTro: "assistant", noiDung: "Trả lời A", cay: expect.any(Array) },
+      { vaiTro: "assistant", noiDung: "Trả lời A", cay: expect.any(Array), maBong: expect.any(String) },
     ]);
     // Không một mẩu nào của hội thoại B (KHÔNG được chọn) lọt vào tin nạp lại.
     expect(JSON.stringify(khoiPhuc)).not.toContain("Câu hỏi B");
