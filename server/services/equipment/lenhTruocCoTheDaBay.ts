@@ -23,6 +23,10 @@ const LY_DO_CO_THE_DA_BAY: ReadonlyMap<string, string> = new Map([
   // thiết bị ⇒ FOE KHÔNG BAO GIỜ thử lại với attempt key mới (STOP vẫn gửi lại). Câu cho người vận hành nói THẬT: không rõ lệnh trước đã áp chưa —
   // kiểm thiết bị (không phải "khoá trùng" khó hiểu).
   ["IDEMPOTENCY_KEY_REUSED", "an earlier, different command already used the same key — it is unknown whether that earlier command was applied to the device; check the device before continuing"],
+  // R1b-2b-2a A2(k) (phòng thủ chiều sâu) — ot/commandDispatcher.ts reserveRealWrite `MA_HANG_FOE_DA_TIEU` (chuỗi ghim bằng test; không nhập dispatcher
+  // nặng vào đây): hàng uỷ quyền FOE đúc cho CHÍNH khoá này đã tiêu mà khoá không có hàng nào ⇒ đã tiêu ở nơi khác (edge /authorize) — lệnh có thể đã
+  // tới thiết bị qua đường ấy. Không gửi lại với attempt key mới; STOP không bao giờ nhận mã này (dispatcher loại STOP).
+  ["FOE_ROW_SPENT_FOR_KEY", "the orchestration authorisation minted for this very key was already used elsewhere (for example by an edge node) while central holds no write-ahead record of it — the command may already have reached the device; check the device before continuing"],
 ]);
 
 /** Edge: uỷ quyền của lần gửi này ĐÃ bị tiêu thụ (`jti_consumed`) — một lệnh mang nó có thể đã đi (consume được fsync TRƯỚC lời gọi driver). */
