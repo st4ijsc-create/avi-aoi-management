@@ -44,6 +44,8 @@ import { getDb } from "../../db/connection";
 import { orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows } from "../../../drizzle/schema";
 import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
 import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
+import { KET_CUC_KHONG_RO_CTX_KEY, canhBaoTuBaoCaoEdge, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n) (I-D)
+import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao } from "../orchestration/foe/foeRunStore";
 import type { FoeScope } from "../orchestration/foe/foeScope";
 import { centralStopped, edgeRuntimeEnabled as edgeRuntimeEnabledNow } from "./edgeCoordinator";
 import { runEdgeAssignments, isEdgeSchemaMissing, type RunEdgeAssignment } from "./edgeExecutionSchema";
@@ -658,18 +660,26 @@ export async function interruptedForNode(node: EdgeNodePrincipal, runId: number,
     if (last && new Date(last).getTime() >= Date.now() - edgeClaimStaleMs()) {
       return { http: 409, code: "claim_live", message: `Run ${runId}: the claim reported progress less than ${edgeClaimStaleMs()} ms ago — not interrupted.` };
     }
+    // R1b-2b-2a A2(n) (I-D) — what the dead segment left: a pending compensation of an unknown outcome, or an unknown step with none: a person is
+    // called (the same event as the walker's own report ⇒ the same dedup key), with the marker; there is no walker left to send anything
+    let baoKhongRo: BaoCaoKhongRoEdge[] = [];
+    let chuRun: number | null = null;
     const out = await d.transaction(async (tx) => {
-      const [run] = await tx.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
+      const [run] = await tx.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson, startedBy: orchestrationRuns.startedBy }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
       if (!run) return notFound(runId);
       let status = run.status as string;
       if (run.status === "running" || run.status === "compensating") {
         status = run.status === "running" ? "held" : "failed";
+        const defKhongRo = await assignedDefinition(tx as never, a);
+        if (defKhongRo) baoKhongRo = baoCaoKhongRoTuHang(defKhongRo, await tx.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId)), a.claimSeq as number);
+        chuRun = run.startedBy ?? null;
+        const dauKhongRo = status === "held" ? dauKhongRoTuBaoCao(baoKhongRo, new Date().toISOString()) : null;
         await tx
           .update(orchestrationRuns)
           .set({
             status: status as never,
             error: `Interrupted on edge node ${node.nodeCode} (was ${run.status}); ${status === "held" ? "awaiting manual resume" : "not auto-resumed"}.`,
-            contextJson: interruptedContext(run.contextJson, run.status, "edge restart"),
+            contextJson: { ...interruptedContext(run.contextJson, run.status, "edge restart"), ...(dauKhongRo ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRo } : {}) },
             ...(status === "failed" ? { finishedAt: new Date() } : {}),
             updatedAt: new Date(),
           })
@@ -679,6 +689,7 @@ export async function interruptedForNode(node: EdgeNodePrincipal, runId: number,
       return { http: 200, data: { status } } as EdgeAnswer<{ status: string }>;
     });
     if (out.http === 200) await auditEdge(node, "EDGE_RUN_INTERRUPTED", runId, { claimSeq: a.claimSeq, status: (out.data as { status: string }).status });
+    if (out.http === 200) for (const x of baoKhongRo) void canhBaoTuBaoCaoEdge(runId, x, chuRun);
     return out as EdgeAnswer<{ status: string }>;
   } catch (err) {
     if (!isEdgeSchemaMissing(err)) console.error(`[EdgeExec] interrupted of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);

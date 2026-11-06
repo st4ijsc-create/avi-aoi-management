@@ -171,12 +171,12 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
   const c = `"${a.compId}"`;
   const [duoi, than] = (
     {
-      held: [`compensation ${c} ${CHO_NGUOI_TIEU_DE}`, `Its compensation ${c} could not be confirmed as a STOP, so it was NOT sent: the run is HELD and the compensation is ${CHO_NGUOI_TIEU_DE}. Check the device on site, then Continue (sends only that compensation; a reason is required) or Abort (no compensation that is not a STOP is sent).`],
+      held: [`compensation ${c} ${CHO_NGUOI_TIEU_DE}`, `Its compensation ${c} could not be confirmed as a STOP, so it was NOT sent: the run is HELD and the compensation is ${CHO_NGUOI_TIEU_DE}. Check the device on site, then Continue (sends only that compensation; a reason is required) or Abort (sends the run's STOPs, no reason needed; no compensation that is not a STOP is sent).`],
       stopSent: [`${STOP_DA_GUI_TIEU_DE} (${c})`, `Its compensation ${c} is a STOP and was sent automatically (stopping never waits for a person): ${STOP_DA_GUI_TIEU_DE}. Check the machine state on site.`],
       stopSimulated: [`STOP compensation ${c} simulated — NOT sent (OT control off)`, `Its STOP compensation ${c} was only SIMULATED (OT control off): nothing reached the device. Check on site and use the machine's direct STOP / E-STOP if needed.`],
       stopNotConfirmed: [`STOP compensation ${c} sent but NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but NOT confirmed — check on site and use the machine's direct STOP / E-STOP if needed.`],
       stopNotHanded: [`STOP compensation ${c} NOT sent`, `Its STOP compensation ${c} was never handed to a dispatcher — check on site and use the machine's direct STOP / E-STOP if needed.`],
-      noCompensation: [`no compensation due — run failed`, `No compensation is due anywhere: the run failed and nothing else was sent. Check the device on site before running again.`],
+      noCompensation: [`no compensation due`, `No compensation is due for it and it is never sent again. Check the device on site before running again.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
   return { kind, title: `Run ${a.runId}: ${dau} — ${duoi}`, message: `${mo} ${than} [event ${a.lan}]`, dedupKey: `${kind}:${a.runId}:${a.stepId}:${a.compId}:${a.lan}` };
@@ -270,20 +270,21 @@ const BAO_CAO_CUOI = "]]";
 /**
  * I-5 — a full journal must not lose the URGENT: every report of a segment also rides on its end (`error`, the one free field of the strict
  * complete request — no protocol change), after the text, never cutting it. Central strips it (tachBaoCaoKhongRoEdge) before it stores the error.
+ * M-2 — ALWAYS appended, even empty: the LAST rider is the edge's own, so text inside a device's error can never pose as one.
  */
 export function ganBaoCaoKhongRoEdge(error: string | undefined, bao: readonly BaoCaoKhongRoEdge[], toiDa: number): string | undefined {
-  if (bao.length === 0) return error;
   const s = `${BAO_CAO_DAU}${JSON.stringify(bao)}${BAO_CAO_CUOI}`;
   if (s.length > toiDa) return error; // the anomalies are the first route; never a cut JSON
   return `${(error ?? "").slice(0, toiDa - s.length)}${s}`;
 }
-export function tachBaoCaoKhongRoEdge(error: string | undefined): { error: string | undefined; bao: BaoCaoKhongRoEdge[] } {
+/** M-2 — `hopLe`: central's check of each report (this claim; a step / compensation of the assigned definition). */
+export function tachBaoCaoKhongRoEdge(error: string | undefined, hopLe: (x: BaoCaoKhongRoEdge) => boolean = () => true): { error: string | undefined; bao: BaoCaoKhongRoEdge[] } {
   if (typeof error !== "string") return { error, bao: [] };
   const i = error.lastIndexOf(BAO_CAO_DAU);
   if (i < 0 || !error.endsWith(BAO_CAO_CUOI)) return { error, bao: [] };
   try {
     const v = JSON.parse(error.slice(i + BAO_CAO_DAU.length, -BAO_CAO_CUOI.length)) as unknown;
-    const bao = Array.isArray(v) ? v.map((x) => docAnomalyKhongRo(JSON.stringify(x))).filter((x): x is BaoCaoKhongRoEdge => x !== null) : [];
+    const bao = Array.isArray(v) ? v.map((x) => docAnomalyKhongRo(JSON.stringify(x))).filter((x): x is BaoCaoKhongRoEdge => x !== null && hopLe(x)) : [];
     return { error: error.slice(0, i) || undefined, bao };
   } catch {
     return { error, bao: [] };

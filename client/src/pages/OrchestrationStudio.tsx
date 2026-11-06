@@ -2902,12 +2902,12 @@ function RunRow({
     ? (detailQ.data.run.currentStepId ?? null)
     : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
-  // SCADA R1b-2b-2a A2(n) — a compensation is held because a command's outcome is unknown (server marker foeKetCucKhongRo; an edge run may have
-  // only the rows to say so — a step failed with the code): Continue sends it to a device whose state is unknown ⇒ a REASON is required (the
-  // server refuses without one). Abort: the reason is sent when given, never required (R-1).
-  const outcomeUnknownHeld =
-    (status === "held" || status === "awaiting_confirm") &&
-    (edgeUnreachableCtx?.foeKetCucKhongRo != null || steps.some((s) => s.status === "failed" && /\b(FOE|EDGE)_OUTCOME_UNKNOWN\b/.test(String(s.error ?? ""))));
+  // SCADA R1b-2b-2a A2(n) (M-4) — a compensation is held because a command's outcome is unknown: the SERVER's fact (getRun().khongRoCho — the same
+  // check resumeRun applies; the marker until the detail is loaded), never "a failed row with the code": a real gate must not read "send the held
+  // compensation". Continue sends it to a device whose state is unknown ⇒ a REASON is required (the server refuses without one). Abort: the reason
+  // is sent when given, never required (R-1).
+  const outcomeUnknownSteps = (detailQ.data as { khongRoCho?: string[] } | undefined)?.khongRoCho;
+  const outcomeUnknownHeld = (status === "held" || status === "awaiting_confirm") && (outcomeUnknownSteps ? outcomeUnknownSteps.length > 0 : edgeUnreachableCtx?.foeKetCucKhongRo != null);
   const outcomeUnknownBlocked = outcomeUnknownHeld && outcomeUnknownNote.trim() === "";
   const continueNote = outcomeUnknownHeld ? outcomeUnknownNote.trim() : undefined;
   // doc 81 Đợt 4 fix round 2 (R-4-k) — the definition this screen shows; Approve / Continue wait for it.

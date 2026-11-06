@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { KET_CUC_KHONG_RO_CTX_KEY, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1083,6 +1083,52 @@ function dauKhongRoTuEdge(end: Pick<EdgeSegmentEndApply, "error" | "claimSeq">, 
   return { ...dau, ma: maKetCucKhongRoCua(end.error), at, lan: `claim${end.claimSeq}`, ds: ds.length ? ds : [dau] };
 }
 
+/** A step and the forward steps inside it (never a compensation). Pure. */
+export function buocTienCua(step: WorkflowStep): WorkflowStep[] {
+  const n = step as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
+  return [step, ...[...(n.steps ?? []), ...(n.then ?? []), ...(n.else ?? [])].flatMap(buocTienCua)];
+}
+
+/**
+ * R1b-2b-2a A2(n) (I-A) — the steps of a compensation-only walk: the approved steps and the containers on the way to them. Pure.
+ * Forward steps only: a compensation is reached through its step.
+ */
+export function duongToiBuoc(steps: readonly WorkflowStep[], ids: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>();
+  const di = (s: WorkflowStep): boolean => {
+    const n = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
+    // every child is visited (no short-circuit): each may lead to its own approved step
+    const coCon = [...(n.steps ?? []), ...(n.then ?? []), ...(n.else ?? [])].map(di).some(Boolean);
+    if (coCon || ids.has(s.id)) out.add(s.id);
+    return coCon || ids.has(s.id);
+  };
+  steps.forEach(di);
+  return out;
+}
+
+/**
+ * R1b-2b-2a A2(n) (I-D) — what a crashed edge segment leaves for a person, from its rows alone: a pending compensation of an unknown outcome
+ * (held), or an unknown step with no compensation. The same reports a live walker would have made, so a late anomaly dedups with them.
+ */
+export function baoCaoKhongRoTuHang(def: Pick<WorkflowDefinition, "steps">, rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>, claimSeq: number): BaoCaoKhongRoEdge[] {
+  const { state } = edgeResumeStateOf(def, rows, new Set());
+  const out: BaoCaoKhongRoEdge[] = [];
+  for (const s of allStepsOf(def.steps)) {
+    const e = state[s.id];
+    if (!e?.khongRo) continue;
+    const ma = maKetCucKhongRoCua(e.error);
+    if (e.state === "compensationHeld" && s.compensation) out.push({ loai: "held", stepId: s.id, compId: s.compensation.id, ma, claimSeq });
+    else if (e.state === "doneFailed" && !s.compensation) out.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma, claimSeq });
+  }
+  return out;
+}
+
+/** R1b-2b-2a A2(n) (I-D) — the marker of those holds (the same shape as a walker's). */
+export function dauKhongRoTuBaoCao(bao: readonly BaoCaoKhongRoEdge[], at: string): DauKetCucKhongRo | null {
+  const ds = bao.filter((x) => x.loai === "held").map((x) => ({ stepId: x.stepId, compId: x.compId }));
+  return ds.length ? { ...ds[0]!, ma: bao[0]!.ma, at, lan: `claim${bao[0]!.claimSeq}`, ds } : null;
+}
+
 /**
  * R1b-2b-2a A2(n) (I-4) — Continue on an outcome-unknown hold writes EXACTLY the held compensation(s), nothing forward: every other FAILED step
  * of the run (a failed sibling of a parallel, central or edge) becomes doneFailed, so the re-walk never runs it forward again. `state` wins (a
@@ -1101,6 +1147,8 @@ export function themBuocHongKhiTiepTuc(
   for (const s of all) {
     const r = by.get(s.id);
     if (r?.status !== "failed" || out[s.id] || comps.has(s.id) || stops.has(s.id)) continue;
+    // I-B — marked per leaf: a failed container that holds a failed STOP is walked, or the STOP inside it would never be re-sent
+    if (buocTienCua(s).some((x) => x.id !== s.id && stops.has(x.id) && by.get(x.id)?.status === "failed")) continue;
     const error = r.error ?? "";
     out[s.id] = { state: "doneFailed", error, ...(loiLaKetCucKhongRo(error) ? { khongRo: true as const } : {}) };
   }
@@ -1128,7 +1176,9 @@ export { EDGE_HELD_CTX_KEY };
 export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: EdgeSegmentEndApply): Promise<EdgeSegmentEndResult> {
   // R1b-2b-2a A2(n) (I-5) — the segment's outcome-unknown reports ride on its end (never stored in the run's error): a full journal that lost
   // the anomaly does not lose the URGENT; the same event as the anomaly route ⇒ the same dedup key
-  const { error: loiEnd, bao: baoKhongRo } = tachBaoCaoKhongRoEdge(endTho.error);
+  const buocDinhNghia = new Set(allStepsOf(endTho.def.steps).map((s) => s.id));
+  // M-2 — a report counts only for THIS claim and for a step / compensation of the assigned definition
+  const { error: loiEnd, bao: baoKhongRo } = tachBaoCaoKhongRoEdge(endTho.error, (x) => x.claimSeq === endTho.claimSeq && buocDinhNghia.has(x.stepId) && (x.compId === KHONG_CO_BU_TRU || buocDinhNghia.has(x.compId)));
   const end: EdgeSegmentEndApply = { ...endTho, error: loiEnd };
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };
@@ -1268,7 +1318,11 @@ export function edgeResumeStateOf(
   for (const s of all) {
     if (s.type !== "command" || stops.has(s.id)) continue; // N2 — a STOP is always sent again on a Continue (L-7)
     const r = byId.get(s.id);
-    if (r && FINAL.has(r.status)) continue;
+    if (r && FINAL.has(r.status)) {
+      // R1b-2b-2a A2(n) (I-E, T2B) — an unknown outcome is never sent again, compensation or not: a new claim would get a new authorisation
+      if (r.status === "failed" && !s.compensation && loiLaKetCucKhongRo(r.error)) state[s.id] = { state: "doneFailed", error: r.error ?? "", khongRo: true };
+      continue;
+    }
     if (sent(s.id) || hintUnknown.includes(s.id)) {
       state[s.id] = { state: "outcomeUnknown", error: `EDGE_OUTCOME_UNKNOWN: command step "${s.id}" was sent by the edge node but its result was not recorded — it is NOT sent again; check the equipment.` };
     }
@@ -1282,9 +1336,11 @@ export function edgeResumeStateOf(
     // A2(n) (C-1) — a CONTAINER held behind a child's hold whose STOP compensation already went: not ambiguous, the re-walk descends and the
     // failure reaching it finds its compensation settled (foeEngine.buTruSauKetCucKhongRo)
     if (r?.status === "held" && c != null && s.type !== "command") continue;
-    const error = r?.error ?? "";
+    // M-1 — a `running` row (its final row lost) has no text: the first loop's verdict, and the doubt itself, keep the flag
+    const truoc = state[s.id];
+    const error = r?.error || truoc?.error || "";
     // R1b-2b-2a A2(n) — the rows hold only the error text: an unknown-outcome failure is told by its code (FOE_/EDGE_OUTCOME_UNKNOWN)
-    const kr = loiLaKetCucKhongRo(error) ? { khongRo: true as const } : {};
+    const kr = loiLaKetCucKhongRo(error) || truoc?.state === "outcomeUnknown" || (r?.status === "running" && c != null) ? { khongRo: true as const } : {};
     if (c == null) {
       if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error, ...kr }; // failed, compensation never started
       continue;

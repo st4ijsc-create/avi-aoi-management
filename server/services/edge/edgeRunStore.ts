@@ -565,8 +565,9 @@ export class EdgeRunStore extends EdgeStoreBase {
   /** How the segment ended (POST complete); null ⇔ the walk has not ended (or let go of a stale claim). */
   segmentEnd(): EdgeSegmentEnd | null {
     const e = this.segmentEndGoc();
-    // A2(n) (I-5) — the reports ride on the end (an end with no error field — completed, paused — carries none: the anomaly is their route)
-    if (e && this.khongRoBao.length > 0 && (e.outcome === "failed" || e.outcome === "held" || e.outcome === "aborted")) return { ...e, error: ganBaoCaoKhongRoEdge(e.error, this.khongRoBao, 4_000) };
+    // A2(n) (I-5, C-A, M-2) — the reports ride on every end that can carry them, always (even none: the last rider is the edge's own); a
+    // `completed` end cannot follow an unknown outcome
+    if (e && e.outcome !== "completed") return { ...e, error: ganBaoCaoKhongRoEdge(e.error, this.khongRoBao, 4_000) };
     return e;
   }
 

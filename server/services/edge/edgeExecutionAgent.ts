@@ -218,7 +218,7 @@ export type EdgeSegmentOutcome =
   | { outcome: "completed" }
   | { outcome: "failed"; error?: string }
   | { outcome: "aborted"; error?: string }
-  | { outcome: "paused"; gateStepId: string }
+  | { outcome: "paused"; gateStepId: string; error?: string } // A2(n) (C-A) — the error field carries the segment's outcome-unknown reports
   | { outcome: "held"; heldReason: EdgeHeldReason; error?: string }
   /** the package cannot be executed here: the claim is released, nothing was sent */
   | { refused: string };
@@ -1119,7 +1119,7 @@ export class EdgeExecutionAgent {
         outcome: o.outcome,
         ...(o.outcome === "paused" ? { gateStepId: o.gateStepId } : {}),
         ...(o.outcome === "held" ? { heldReason: o.heldReason } : {}),
-        ...((o.outcome === "failed" || o.outcome === "held" || o.outcome === "aborted") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
+        ...((o.outcome === "failed" || o.outcome === "held" || o.outcome === "aborted" || o.outcome === "paused") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
         epoch: this.deps.journal.epoch,
         reportedThrough: this.deps.journal.ackedSeq(stream),
       },
@@ -1159,7 +1159,7 @@ function normaliseOutcome(o: unknown): EdgeSegmentOutcome {
     case "failed":
       return { outcome: "failed", ...(typeof v.error === "string" ? { error: v.error } : {}) };
     case "paused":
-      if (typeof v.gateStepId === "string" && v.gateStepId) return { outcome: "paused", gateStepId: v.gateStepId };
+      if (typeof v.gateStepId === "string" && v.gateStepId) return { outcome: "paused", gateStepId: v.gateStepId, ...(typeof v.error === "string" ? { error: v.error } : {}) };
       break;
     case "held":
       if ((EDGE_HELD_REASONS as readonly unknown[]).includes(v.heldReason)) return { outcome: "held", heldReason: v.heldReason as EdgeHeldReason, ...(typeof v.error === "string" ? { error: v.error } : {}) };

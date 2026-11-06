@@ -56,6 +56,8 @@ import {
   RESUME_STATE_CTX_KEY,
   edgeResumeStateOf,
   themBuocHongKhiTiepTuc,
+  buocTienCua,
+  duongToiBuoc,
 } from "./foeRunStore";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
 // R1b-2b-2a A2(m2) — a run interrupted while compensating: which compensation was in flight, and may the boot re-send it (b1–b3)
@@ -433,6 +435,8 @@ async function apiKeyViewOf(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, r
 }
 
 export interface RunView {
+  /** R1b-2b-2a A2(n) (M-4) — steps whose held compensation (unknown outcome) a Continue would write: it needs a person and a reason. */
+  khongRoCho?: string[];
   run: OrchestrationRun;
   /**
    * doc 81 Đợt 4 fix round 2 (R-4-k) — hash of the definition currently deployed for this run's workflow (what the
@@ -599,6 +603,11 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongRoDaBao?: boolean;
   /** A2(n) (R-4) — the command steps of this walk that ended on an unknown outcome. */
   khongRoGoc?: Set<string>;
+  /**
+   * A2(n) (I-A) — a walk under a Continue that passed n3 is a COMPENSATION-ONLY walk: the approved steps and the containers on the way to them
+   * (duongBuTruCua, from the approval). undefined ⇔ not computed yet, null ⇔ an ordinary walk.
+   */
+  duongBuTru?: Set<string> | null;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -614,7 +623,11 @@ export const FOE_OUTCOME_PARTIAL = "FOE_OUTCOME_PARTIAL";
 type StepOutcome =
   | { kind: "ok" }
   | { kind: "skipped" }
-  | { kind: "paused"; stepId: string } // hitl_gate / held → run pauses
+  /**
+   * khongRoLoi (R1b-2b-2a A2(n), C-A): on a paused / held / aborted outcome — a sibling branch FAILED on an unknown outcome (its error). The flag
+   * outranks every sibling state: a container splits its own compensation, and the walk's end tells a person, whatever the parallel answered.
+   */
+  | { kind: "paused"; stepId: string; khongRoLoi?: string } // hitl_gate / held → run pauses
   /**
    * outcomeUnknown (R1b-2b-2a T2B): set ONLY by execCommand when the dispatch status was "timeout" (sent, outcome unknown), or (T3F) the
    * dispatcher refused because the previous command with the same key may be in flight or already applied (coTheDaBayCua).
@@ -628,13 +641,13 @@ type StepOutcome =
    * A known failure never carries it (n6).
    */
   | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan; stopGhim?: true; khongRo?: true }
-  | { kind: "aborted"; error: string }
+  | { kind: "aborted"; error: string; khongRoLoi?: string }
   /**
    * doc 81 Đợt 10 C (design §2.10, D5) — an EDGE store could not obtain the authorisation of a NON-STOP command (central
    * unreachable, journal full …): nothing was sent, the step is held, NO compensation; the run ends the segment 'held'
    * (Continue later). The central store never answers it.
    */
-  | { kind: "held"; stepId: string; reason: RunStoreHeldReason; error: string };
+  | { kind: "held"; stepId: string; reason: RunStoreHeldReason; error: string; khongRoLoi?: string };
 
 // ── db helpers (fail-safe) ───────────────────────────────────────────────────────
 
@@ -801,7 +814,8 @@ async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<bo
  *   its default of attempts waits ≤ D before the next one (stopGhimLuiMs: 250 ms, then 500 ms).
  *   R1b-2b-2a A2(n) — a STOP compensation due after an UNKNOWN outcome is classified first (rc.store.buTruLaStopGhim: the adapter lookup + the pin
  *   read, one bound of 2·D, buTruLaStopGhimTrungTam): ≤ 8·D after the failing step's body returns, on that path only. A STOP compensation of a
- *   CONTAINER behind a held child: its row 'held' (≤ D) + the same 8·D, after the child's hold (≤ D per row of that hold).
+ *   CONTAINER behind a child's unknown outcome: the rows before it are bounded too (giuCoKhongRo: the child's failed row ≤ D, its compensation's split
+ *   ≤ 2·D, its held row ≤ D, one held row ≤ D per container up to this one, level L) ⇒ dispatched within (L + 12)·D of the child's body returning.
  */
 async function stopBoundedReadbacks(stop: boolean, rc: RunContext, stepId: string, c: Condition | undefined): Promise<void> {
   if (!stop) return refreshConditionReadbacks(rc, c);
@@ -872,12 +886,18 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     return { kind: "failed", error: rs.error || `Step "${step.id}" failed in an earlier segment.`, ...kr };
   }
 
+  // R1b-2b-2a A2(n) (I-A) — a walk under a Continue that passed n3 writes the held compensation(s) and nothing forward: a step off the way to an
+  // approved step does nothing (no row, no precondition, no gate), except what was never a forward write: a command already known unknown
+  // (it fails here, unsent) and a STOP already attempted (re-sent, L-7).
+  const duong = duongBuTruCua(rc);
+  if (duong && !duong.has(step.id) && outcomeUnknownOf(rc, step.id) === null && !(await coStopDaThu(rc, step))) return { kind: "skipped" };
+
   // doc 81 Đợt 5 task E4 (item 36) + E fix 1 — on a STOP's path (a STOP step, or a container holding one) the step's own
   // bookkeeping never waits on a hung DB / device: bounded (L-7). Classified FIRST (no DB).
   const stop = await isStopCommandStep(rc, step);
 
-  // Precondition / interlock
-  const pre = await checkPrecondition(rc, step, stop);
+  // Precondition / interlock (A2(n) I-A — never re-read under a compensation-only walk: a person has just changed what it reads)
+  const pre = duong ? null : await checkPrecondition(rc, step, stop);
   if (pre) {
     if (pre.kind === "skipped") {
       rc.settled.add(step.id); // doc 81 Đợt 6
@@ -898,12 +918,18 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   }
 
   rc.startOrder.push(step.id); // doc 81 Đợt 6 — its compensation is due on an abort from here on
-  await stopBoundedWrite(stop, rc.runId, step.id, "running row", () =>
-    rc.store.upsertStep(rc.runId, step.id, step.type, { status: "running", startedAt: new Date() }),
+  await giuCoKhongRo(
+    duong !== null,
+    rc,
+    step.id,
+    stopBoundedWrite(stop, rc.runId, step.id, "running row", () =>
+      rc.store.upsertStep(rc.runId, step.id, step.type, { status: "running", startedAt: new Date() }),
+    ),
   );
 
   let outcome: StepOutcome;
   let attempt = 0;
+  let tungKhongRo = false; // A2(n) (M-3) — an unknown attempt stays unknown, whatever a later attempt answers
   // doc 81 Đợt 10 C fix review 1 — a command an edge SENT but whose result its journal refused (outcome unknown, recorded by
   // central at that segment's end): NEVER sent again — it is a failure (its compensation, if any, follows as for any failure).
   const unknown = outcomeUnknownOf(rc, step.id);
@@ -913,6 +939,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   else while (true) {
     attempt += 1;
     outcome = await runStepBody(rc, step, attempt, stop);
+    if (outcome.kind === "failed" && outcome.outcomeUnknown) tungKhongRo = true;
     // R1b-2b-2a T2B (backlog 78) — a NON-STOP command whose dispatch timed out (sent, outcome unknown) is NEVER sent again
     // (precedent: outcomeUnknownOf). A STOP keeps the old retry (never held back as "unknown"); a real "failed" is retried.
     // R1b-2b-2a T3F (backlog 91) — the same for a refusal meaning "the previous command with this key may be in flight or already applied"
@@ -942,7 +969,7 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     outcome = conLai;
   }
   // R1b-2b-2a A2(n) (I-1) — a STOP-typed step whose LAST attempt stayed unknown (it keeps its retries, so khongGuiLaiKhongRo left it): the same class
-  if (outcome.kind === "failed" && outcome.outcomeUnknown) {
+  if (outcome.kind === "failed" && (outcome.outcomeUnknown || tungKhongRo)) {
     const { outcomeUnknown: _boCo, ...conLai } = outcome;
     outcome = { ...conLai, khongRo: true };
   }
@@ -961,10 +988,12 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     );
   } else if (outcome.kind === "paused") {
     // step-level status already set by the body (awaiting_confirm)
+    // A2(n) (C-A) — a branch failed on an unknown outcome beside the gate: this container's STOP never waits for that approval
+    if (outcome.khongRoLoi !== undefined && step.compensation && !rc.aborting) await stopToTienSauGiu(rc, step, step.compensation, outcome.khongRoLoi);
   } else if (outcome.kind === "held") {
     // doc 81 Đợt 10 C (D5) — nothing was sent: the step waits for a Continue; no compensation (it did not act).
     const heldOutcome = outcome;
-    const khongRoGiu = heldOutcome.reason === "outcomeUnknown";
+    const khongRoGiu = heldOutcome.reason === "outcomeUnknown" || heldOutcome.khongRoLoi !== undefined;
     await giuCoKhongRo(
       khongRoGiu,
       rc,
@@ -975,12 +1004,13 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     );
     // R1b-2b-2a A2(n) (C-1) — a container behind a child held for an unknown outcome: a STOP compensation NEVER waits for a person: it goes NOW
     // (recorded by its row: the failure a later Continue brings up finds it settled); a non-STOP one stays due until that Continue
-    if (khongRoGiu && step.compensation && !rc.aborting) await stopToTienSauGiu(rc, step, step.compensation, heldOutcome.error);
+    if (khongRoGiu && step.compensation && !rc.aborting) await stopToTienSauGiu(rc, step, step.compensation, heldOutcome.khongRoLoi ?? heldOutcome.error);
   } else {
     // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too). E fix 2 (review N1) — a
     // step whose COMPENSATION holds a STOP: its failed row is on that STOP's path ⇒ bounded as well.
     const failedOutcome = outcome;
-    const khongRo = failedOutcome.kind === "failed" && failedOutcome.khongRo === true;
+    const khongRoLoi = loiKhongRoCua(failedOutcome); // A2(n) (C-A) — also an 'aborted' beside a branch that failed on an unknown outcome
+    const khongRo = khongRoLoi !== undefined;
     if (khongRo && step.type === "command") (rc.khongRoGoc ??= new Set()).add(step.id); // R-4
     // A2(n) (I-1) — with a compensation due the row says the class itself: central reads an edge run's rows at the Continue (edgeResumeStateOf)
     const loiHang = "error" in failedOutcome ? (khongRo && step.compensation ? loiCoMaKhongRo(failedOutcome.error) : failedOutcome.error) : null;
@@ -1002,9 +1032,10 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     // saga compensation (which issues commands) is NOT run while the run is aborting.
     // doc 81 Đợt 6 — the abort's sweep sends the STOP compensations that are due (only those), not this walk.
     if (step.compensation && !rc.aborting) {
-      const loi = loiHang ?? "";
-      if (khongRo) {
-        // R1b-2b-2a A2(n) (n1) — the outcome is UNKNOWN: a STOP compensation is sent by itself, any other one is held for a person
+      const loi = khongRoLoi !== undefined ? loiCoMaKhongRo(khongRoLoi) : loiHang ?? "";
+      if (khongRo || duong) {
+        // R1b-2b-2a A2(n) (n1) — the outcome is UNKNOWN (or the walk is compensation-only, I-A: no compensation goes out by itself there either):
+        // a STOP compensation is sent by itself, any other one is held for a person
         const giu = await buTruSauKetCucKhongRo(rc, step, step.compensation, loi);
         if (giu) return giu;
       } else {
@@ -1013,8 +1044,33 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
         if (c?.kind === "held") return c; // R-10-y — the run is held AT the compensation (Continue resumes it)
       }
     }
+    // A2(n) (I-E) — an unknown command is never sent again by a later walk (a gate approval re-walks): central's own resume state; a STOP keeps being re-sent
+    if (khongRo && !stop && step.type === "command" && rc.store.kind === "central") datTrangThaiTiepTuc(rc, step.id, { state: "doneFailed", error: loiHang ?? "", khongRo: true });
   }
   return outcome;
+}
+
+/** A2(n) (C-A) — the unknown failure an outcome carries: its own, or a sibling's on a paused / held / aborted one. */
+function loiKhongRoCua(o: StepOutcome): string | undefined {
+  if (o.kind === "failed") return o.khongRo === true ? o.error : undefined;
+  return o.kind === "paused" || o.kind === "held" || o.kind === "aborted" ? o.khongRoLoi : undefined;
+}
+
+/** A2(n) (I-A) — the steps of a compensation-only walk, from the approval a Continue recorded; null ⇔ an ordinary walk. */
+function duongBuTruCua(rc: RunContext): Set<string> | null {
+  if (rc.duongBuTru === undefined) {
+    const v = rc.context[KHONG_RO_DUYET_CTX_KEY] as { stepIds?: unknown } | undefined;
+    rc.duongBuTru = Array.isArray(v?.stepIds) && v.stepIds.length > 0 ? duongToiBuoc(rc.def.steps, new Set(v.stepIds.map(String))) : null;
+  }
+  return rc.duongBuTru;
+}
+
+/** A2(n) (I-A, I-B) — does this step hold a STOP already attempted and not completed? Re-sent under any walk (L-7). A step never reached is not one. */
+async function coStopDaThu(rc: RunContext, step: WorkflowStep): Promise<boolean> {
+  for (const x of buocTienCua(step)) {
+    if (x.type === "command" && rc.prior.attempted.has(x.id) && !rc.completed.has(x.id) && (await isStopCandidate(x, rc.machineById))) return true;
+  }
+  return false;
 }
 
 /**
@@ -1101,10 +1157,15 @@ async function giuBuTruKhongRo(rc: RunContext, step: WorkflowStep, comp: Workflo
   return { kind: "held", stepId: comp.id, reason: "outcomeUnknown", error };
 }
 
-/** A2(n) (I-2) — a row write on the unknown path: a throw must not lose the flag (a parent's catch would turn it into a KNOWN failure, whose compensation runs). */
+/**
+ * A2(n) (I-2, I-C) — a row write on the unknown path: a throw must not lose the flag (a parent's catch would turn it into a KNOWN failure, whose
+ * compensation runs) and a hung DB must not hold up an ancestor's STOP or the URGENT: bounded by D, like the rest of a STOP's path.
+ */
 async function giuCoKhongRo(khongRo: boolean, rc: RunContext, stepId: string, ghi: Promise<void>): Promise<void> {
   if (!khongRo) return ghi;
-  await ghi.catch((err: unknown) => console.error(`[FOE] run ${rc.runId} step ${stepId}: row write failed on the outcome-unknown path — the run still splits: ${(err as Error)?.message ?? err}`));
+  await withDeadline(ghi, STOP_DB_STEP_DEADLINE_MS, `FOE run ${rc.runId} step ${stepId} row on the outcome-unknown path`).catch((err: unknown) =>
+    console.error(`[FOE] run ${rc.runId} step ${stepId}: row write failed on the outcome-unknown path — the run still splits: ${(err as Error)?.message ?? err}`),
+  );
 }
 
 /** R1b-2b-2a A2(n) — the store's report (central: URGENT alert; edge: anomaly). Never throws, never awaited. */
@@ -1196,9 +1257,12 @@ async function runStepBody(rc: RunContext, step: WorkflowStep, attempt: number, 
         // GIỮ nguyên nhánh đó để re-enter đúng đường-dẫn đã đi (idempotent), không đánh giá
         // lại điều kiện (telemetry có thể đã đổi → tránh nhảy sang nhánh khác nửa chừng).
         const prior = rc.context[`branch:${step.id}`];
+        const duongNhanh = duongBuTruCua(rc); // A2(n) (I-A) — a compensation-only walk reads no condition: it goes to the approved step
         let take: boolean;
         if (prior === "then" || prior === "else") {
           take = prior === "then";
+        } else if (duongNhanh?.has(step.id)) {
+          take = step.then.some((s) => duongNhanh.has(s.id));
         } else {
           await stopBoundedReadbacks(stop, rc, step.id, step.condition); // E fix 1 — bounded when a STOP is inside
           take = evaluateCondition(step.condition, evalCtxOf(rc));
@@ -2174,15 +2238,18 @@ async function execParallel(rc: RunContext, steps: WorkflowStep[], failFast: boo
     r.status === "fulfilled" ? r.value : { kind: "failed", error: String(r.reason) },
   );
   // R1b-2b-2a A2(n) (C-2) — a compensation held for an unknown outcome outranks a gate of a sibling: the run says what it waits for
+  // (C-A) — and a branch that FAILED on an unknown outcome outranks every sibling state: its flag rides on whatever the parallel answers
   const heldKhongRo = outcomes.find((o) => o.kind === "held" && o.reason === "outcomeUnknown");
   if (heldKhongRo) return heldKhongRo;
+  const khongRoLoi = outcomes.map(loiKhongRoCua).find((x) => x !== undefined);
+  const mang = <T extends StepOutcome>(o: T): T => (khongRoLoi === undefined ? o : { ...o, khongRoLoi });
   // A hitl_gate inside a parallel branch pauses the whole run.
   const paused = outcomes.find((o) => o.kind === "paused");
-  if (paused) return paused;
+  if (paused) return mang(paused);
   const aborted = outcomes.find((o) => o.kind === "aborted");
-  if (aborted) return aborted;
+  if (aborted) return mang(aborted);
   const held = outcomes.find((o) => o.kind === "held"); // doc 81 Đợt 10 C (D5) — a held branch holds the run
-  if (held) return held;
+  if (held) return mang(held);
   const failures = outcomes.filter((o) => o.kind === "failed") as Array<{ kind: "failed"; error: string; khongRo?: true }>;
   if (failures.length > 0) {
     // R1b-2b-2a A2(n) (I-4) — a branch failed on an UNKNOWN outcome ⇒ so did the parallel, failFast or not: never swallowed into a walk that goes
@@ -2330,7 +2397,14 @@ async function withLiveRun(
  * status <> 'aborted'): if the run was aborted meanwhile the write is refused and the driver
  * reports 'aborted' — the abort is NEVER overwritten by completed/failed/awaiting_confirm.
  */
-async function finishWalk(rc: RunContext, out: StepOutcome): Promise<OrchestrationRun["status"]> {
+async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<OrchestrationRun["status"]> {
+  // R1b-2b-2a A2(n) (I-A) — a compensation-only walk never reads "completed": nothing forward was done
+  const out: StepOutcome =
+    (ketQuaDi.kind === "ok" || ketQuaDi.kind === "skipped") && duongBuTruCua(rc)
+      ? { kind: "failed", error: `Run ${rc.runId}: the Continue ran only the held compensations; nothing forward was sent.` }
+      : ketQuaDi;
+  // the approval is spent with its walk: a later gate approval is an ordinary walk (an edge run's is replaced by central at every Continue)
+  if (rc.store.kind === "central") delete rc.context[KHONG_RO_DUYET_CTX_KEY];
   // doc 81 Đợt 9 task S3 — an edge walker whose claim went stale owns nothing any more: no run-level write (it would overwrite
   // the segment that now owns the run, or a run a person holds).
   if (rc.edgeDetached) return "held";
@@ -2342,9 +2416,11 @@ async function finishWalk(rc: RunContext, out: StepOutcome): Promise<Orchestrati
     return "aborted";
   }
   // R1b-2b-2a A2(n) (R-4) — an unknown outcome with no compensation due anywhere: nothing was split, nobody was told yet
-  if (out.kind === "failed" && out.khongRo === true && !rc.khongRoDaBao) {
+  // (C-A) — the same on a paused / held / aborted end: the flag rode on it
+  const loiKhongRoKet = loiKhongRoCua(out);
+  if (loiKhongRoKet !== undefined && !rc.khongRoDaBao) {
     const lan = luotDiCua(rc);
-    for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: out.error, lan });
+    for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiKhongRoKet, lan });
   }
   let status: OrchestrationRun["status"];
   let patch: Partial<OrchestrationRun>;
@@ -2363,7 +2439,13 @@ async function finishWalk(rc: RunContext, out: StepOutcome): Promise<Orchestrati
     patch = { finishedAt: new Date() };
   }
   const written = await rc.store.setStatusUnlessAborted(rc.runId, status, patch);
-  await rc.store.persistContext(rc);
+  // A2(n) (M-5) — held (or paused) over an unknown outcome: the URGENT already said Continue. A lost context never turns that into 'failed': the
+  // run stays as it is, a Continue re-walks and splits again (the forward key is replayed, never a new attempt)
+  if ((out.kind === "held" && out.reason === "outcomeUnknown") || (out.kind !== "failed" && loiKhongRoKet !== undefined)) {
+    await rc.store.persistContext(rc).catch((err: unknown) => console.error(`[FOE] run ${rc.runId}: context not persisted on an outcome-unknown hold: ${(err as Error)?.message ?? err}`));
+  } else {
+    await rc.store.persistContext(rc);
+  }
   return written ? status : "aborted";
 }
 
@@ -3064,7 +3146,7 @@ async function auditTiepTucKhongRo(user: FoeUser, runId: number, def: WorkflowDe
     const compId = findStepDeep(def.steps, stepId)?.compensation?.id ?? dau?.ds?.find((x) => x.stepId === stepId)?.compId ?? "?";
     const ok = await ghiAuditKetCucKhongRo(user, runId, "continue", { stepId, compId, ma: dau?.ma ?? null, reason: lyDo, role: user.role, ...extra });
     if (!ok) {
-      throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "resumeOrchestrationRun", reason: "auditNotWritten" }, `Run ${runId}: the audit row of this Continue could not be written — nothing was sent; retry.`);
+      throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "resumeOrchestrationRun", reason: "auditNotWritten" }, `Run ${runId}: the audit row of this Continue could not be written — nothing was sent; retry, or Abort, which sends the run's STOPs.`);
     }
   }
 }
@@ -3121,8 +3203,8 @@ export async function getRun(
   // doc 81 Đợt 10 C (D7) — an EDGE run's digest from its node's reports; the assignment unreadable ⇒ no digest (fail-closed,
   // never a central read of what may be an edge run's controller).
   let binding: { digest: string | null; programs: ProgramCheck[] } | null = null;
+  let onEdge: Awaited<ReturnType<typeof readEdgeAssignment>> | undefined;
   if (usable && opts.bindingDigest === true && (run.status === "awaiting_confirm" || run.status === "held")) {
-    let onEdge: Awaited<ReturnType<typeof readEdgeAssignment>> | undefined;
     try {
       onEdge = await readEdgeAssignment(d, run.id);
     } catch {
@@ -3135,8 +3217,14 @@ export async function getRun(
           ? await edgeBindingDetail(d, onEdge.edgeNodeId, usable, { display: true })
           : await computeBindingDetail(d, usable, undefined, { display: true }); // Đợt 9 R-9-b — screen only: display cache allowed
   }
+  // R1b-2b-2a A2(n) (M-4) — THE fact for the approver's screen: the steps whose held compensation a Continue would write (an edge run's rows too:
+  // a crash or a lost marker), so the Studio never asks for a reason on a real gate and never misses one
+  const paused = run.status === "awaiting_confirm" || run.status === "held";
+  const ctxKhongRo = (run.contextJson as Record<string, unknown> | null) ?? {};
+  const khongRoCho = !paused ? [] : [...new Set([...buTruKhongRoCho(ctxKhongRo), ...(usable && onEdge ? buTruKhongRoCho({ foeResumeState: edgeResumeStateOf(usable, stepRows, new Set()).state }) : [])])];
   return {
     run,
+    khongRoCho,
     defHash: usable ? hashWorkflowDefinition(usable) : null,
     bindingDigest: binding ? binding.digest : null,
     programChecks: binding ? binding.programs : null,
@@ -3584,6 +3672,7 @@ export async function resumeRun(
     // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed
     // ở trên + mọi bước đã xong lần trước) → execStep bỏ qua chúng khi đi lại.
     const rc = await buildRunContext(run, def, user);
+    delete rc.context[KHONG_RO_DUYET_CTX_KEY]; // only THIS Continue's approval counts (a crash can leave an older one in the row)
     if (lyDoKhongRo !== null) {
       // R1b-2b-2a A2(n) — the Continue passed its checks and won the claim: the approval recorded, the marker cleared (persisted with the walk's
       // context; a crash before that keeps it ⇒ the run comes back needing a person again — fail-safe). I-4 — the other failed steps are done:
