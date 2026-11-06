@@ -106,7 +106,7 @@ Phát hiện: **11 con số yield/NG khác công thức** trên UI; SPC/Cpk từ
 10. **Giới hạn chỉ đổi qua `threshold_approval`** (SoD: `decided_by ≠ requested_by`; AI đề xuất không tự duyệt) — gom 4 đường ghi tay (`productRouters`, `measurementPointImport`, `dataRouters`, AI `writeHandlers/measurementPoint`) về `measurementPointLimitGate` (Khối C).
 11. **`process_result` giữ riêng** (bước ICT/FCT/torque không phải kiểm tra ảnh) + FK `asset_id`, idempotency giữ, cùng WAL; `genealogy_chain` giữ (băm), thêm `asset_id`.
 12. **Ảnh**: khoá `inspection/{site}/{yyyy}/{mm}/{inspection_id}/{item_id}.{ext}`; ZIP gốc giữ 30 d rồi xoá (ảnh đã bóc); retention 12 tháng (doc 27 QĐ2) **mặc định bật** cho `origin=real`, 7 d cho `sim/qa`; thumbnail on‑the‑fly giữ; `/uploads` phải qua uỷ quyền theo `site_id` (hiện chỉ xác thực).
-13. **Dữ liệu seed 13 236 kết quả xoá** (không model, không line, một ngày) thay vì backfill; demo dùng simulator sinh `origin=sim` qua chính pipeline V3. `[QĐ 2026-11-03]`
+13. **Dữ liệu seed 13 236 kết quả: GIỮ** — `product_inspections` là sổ WORM (mig 0279 REVOKE DELETE), chủ dự án chọn giữ 2026‑11‑04 (đảo quyết định 03/11); ở Q3 di trú sang `inspection` với `origin='qa'`, `product_id` null, không vào KPI real; demo dùng simulator sinh `origin=sim` qua pipeline V3. `[QĐ 2026-11-04]`
 
 ### 2.2 Đặc tả bảng (tóm tắt — chi tiết cột lõi)
 
@@ -208,7 +208,7 @@ Dải migration: **0550–0569** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 10�
 | **Q0** | Gỡ chết: 5 router, ≈ 5 700 LOC client, `AnalyticsSettings`; sửa 6 công thức lệch server về canonical + nhãn "FPY" client; `History` KPI → server; ngưỡng yield đọc cấu hình; `qualityGateEvaluator` bỏ UPDATE `machines`; `acquisitionWorker` qua WAL | N3, N4; census 0 import chết |
 | **Q1** | `shared/quality/{kpi,spc}.ts`; CAGG `inspection_1h/_1d`, `item_point_1h`; `quality.kpi.*` | N3 (so khớp 3 công thức cũ‑mới trên cùng tập; chênh phải giải thích bằng định nghĩa) |
 | **Q2** | Hợp đồng V3 + adapter v1.x/ZIP/hot‑folder/vision; `ingestInspection` một đường; tenant từ khoá; `DurableBuffer`; chạy **song song** 1 chu kỳ (v1.x cũ vẫn ghi, V3 ghi bóng, so khớp header/item) | N1, N2, N5 |
-| **Q3** | Bảng mới `inspection`/`inspection_capture`/`inspection_item` + đổi tên sản phẩm/chất lượng (view tương thích); **xoá seed 13 236** (Q1 §7); di trú `process_results`, `genealogy`, 33 product, 114 điểm đo, 101 mã lỗi, 180 threshold | đếm khớp; 0 hàng không FK |
+| **Q3** | Bảng mới `inspection`/`inspection_capture`/`inspection_item` + đổi tên sản phẩm/chất lượng (view tương thích); **seed 13 236 GIỮ, gắn `origin='qa'`** (QĐ 04/11 — WORM); di trú `process_results`, `genealogy`, 33 product, 114 điểm đo, 101 mã lỗi, 180 threshold | đếm khớp; 0 hàng không FK |
 | **Q4** | Worker: side‑effects, SPC engine, gate, `raiseEvent`; gỡ scheduler cũ + 8 cờ | N6–N8 |
 | **Q5** | UI 4 màn + component dùng chung; redirect; `ImageViewer` một bộ | N9–N11 |
 | **Q6** | Gỡ bảng §2.3 + 24 phân vùng; retention bật; `/uploads` uỷ quyền theo site | N12 |
@@ -255,3 +255,4 @@ Dải migration: **0550–0569** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 10�
 |---|---|---|---|
 | 2026-11-03 | chủ dự án + chu-du-an-HST | **Duyệt v1.1**: 8 câu hỏi §7 theo khuyến nghị (xoá seed; gộp cây kết quả; điểm đo jsonb; v1.x 2 chu kỳ; retention 12 tháng bật; MQTT không ingest; ranh giới 60/80; mig 0550–0569) | — |
 | 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt b305aa350` + DB live; kế thừa doc 27/31 và Khối B/C | 126 bảng (87 rỗng); 13 236 kết quả seed 100 % thiếu model/line; 2 hợp đồng ingest khác hành vi; 1 KPI canonical + 6 lệch server + 11 lệch client; Cpk ×4; 9 viewer ảnh; ≈ 5 700 LOC client chết; 24 phân vùng rỗng |
+| 2026-11-04 | chủ dự án + dieu-phoi | Q0‑5: `product_inspections` là WORM (0279 REVOKE DELETE) ⇒ **giữ 13 236 hàng seed**, đảo §7 Q1; `VACUUM FULL inspection_packages` vẫn làm | — |

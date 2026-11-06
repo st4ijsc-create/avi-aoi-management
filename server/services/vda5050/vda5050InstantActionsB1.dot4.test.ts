@@ -14,6 +14,12 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 // doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
+// SCADA R1b-2b-2a A2(l) — WHERE the robot is is measured by tapMayChoRobot.a2l(.db).test.ts; this suite's fake DB does not model robots /
+// stations / machines, so the robot is placed (a station with one machine) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [1] }),
+}));
 vi.mock("../robot/robotEnabledGate", () => ({ readRobotEnabledForMotion: async () => true }));
 import net from "node:net";
 import Aedes from "aedes";

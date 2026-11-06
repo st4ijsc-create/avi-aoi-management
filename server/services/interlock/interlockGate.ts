@@ -307,15 +307,17 @@ export interface InterlockGateResult {
 }
 
 /**
- * Đích máy của lệnh khi hỏi cổng. `machineId` = MỘT id (dạng cũ — cổng robot giữ `machineId = robotId`, robotInterlockTarget);
- * `machineIds` = TẬP máy (A2(i)(1): đường OT truyền `tapMayChoInterlock(máy của adapter, máy bên gọi)`). Luật `targetMachineId` khớp nếu
- * nằm trong HỢP của hai trường (null / vắng bị bỏ).
+ * Đích máy của lệnh khi hỏi cổng. `machineId` = MỘT id máy (dạng cũ); `machineIds` = TẬP máy (A2(i)(1): đường OT truyền
+ * `tapMayChoInterlock(máy của adapter, máy bên gọi)`; A2(l): cổng robot truyền máy NƠI robot đứng — `tapMayChoRobot`, KHÔNG BAO GIỜ id robot).
+ * Luật `targetMachineId` khớp nếu nằm trong HỢP của hai trường (null / vắng bị bỏ).
+ * `robotId` (A2(l)) — CHỈ để gọi tên robot trong cảnh báo vượt trần (khoá khử trùng + entityId); KHÔNG tham gia khớp luật.
  */
 export interface InterlockGateTarget {
   adapterId: number;
   machineId?: number | null;
   machineIds?: readonly number[];
   tagKeys: string[];
+  robotId?: number;
 }
 
 /** Rule có nhắm tới đúng thiết bị/máy của lệnh này không (theo targetAdapterId/targetMachineId/commandTag). */
@@ -371,7 +373,7 @@ function tapMayCuaDich(params: InterlockGateTarget): number[] {
  *   • approved: `approvedBy IS NOT NULL` ≡ `r.approvedBy != null` (raw, deliberately — see evaluateInterlockGate);
  *   • action: `action IN INTERLOCK_GATE_ACTIONS` ≡ `.has(r.action)`;
  *   • byAdapter: `targetAdapterId = adapterId` (NULL never equal) — only for a safe-integer adapterId (anything else can equal no integer);
- *   • byMachine: `targetMachineId IN {machineId} ∪ machineIds` — omitted when that set is empty (robot gate: machineId = robotId; OT: tapMayChoInterlock);
+ *   • byMachine: `targetMachineId IN {machineId} ∪ machineIds` — omitted when that set is empty (robot gate: tapMayChoRobot; OT: tapMayChoInterlock);
  *   • byTag: `commandTag IN tagKeys AND targetAdapterId IS NULL` — the `targetAdapterId = adapterId` half of JS byTag is already byAdapter; omitted
  *     when there is no tag key (robot gate).
  * A rule with no targetAdapterId, no targetMachineId and no commandTag is targeted by NOTHING in JS, so no SQL branch returns it. The JS filter
@@ -400,9 +402,18 @@ export function _quenCanhBaoTranLuatChoTest(): void {
   tranDaBao.clear();
 }
 
-/** The dedup key of the cap alert: the adapter AND the machine set (the robot gate passes adapterId -1 for every robot — its robot id is the machine). */
+/** The robot id named by a target (A2(l): passed separately — never one of its machines), or null. */
+function robotCuaDich(params: InterlockGateTarget): number | null {
+  return typeof params.robotId === "number" && Number.isSafeInteger(params.robotId) ? params.robotId : null;
+}
+
+/**
+ * The dedup key of the cap alert: the adapter AND the machine set, plus the robot (A2(l): the robot gate passes adapterId -1 for every robot and
+ * the machines of its place — two robots on one line share the set, so the robot id is part of the key).
+ */
 export function khoaCanhBaoTranLuat(params: InterlockGateTarget): string {
-  return `interlock_tran_luat:adapter:${params.adapterId}:may:${tapMayCuaDich(params).join(",")}`;
+  const robot = robotCuaDich(params);
+  return `interlock_tran_luat:adapter:${params.adapterId}:may:${tapMayCuaDich(params).join(",")}${robot !== null ? `:robot:${robot}` : ""}`;
 }
 
 /**
@@ -418,9 +429,11 @@ function baoVuotTranLuat(params: InterlockGateTarget, tran: number): void {
   if (tranDaBao.size >= 5_000) tranDaBao.clear();
   tranDaBao.set(key, now);
   const tapMay = tapMayCuaDich(params);
-  const dich = params.adapterId >= 0 ? `adapter ${params.adapterId}` : `robot ${tapMay.join(",") || "?"}`;
+  // A2(l) — the robot is named by its OWN id (params.robotId), never by one of its machines (it used tapMay[0])
+  const robot = robotCuaDich(params);
+  const dich = params.adapterId >= 0 ? `adapter ${params.adapterId}` : `robot ${robot ?? "?"}`;
   const message =
-    `The interlock rules aimed at ${dich}${tapMay.length && params.adapterId >= 0 ? ` (machines ${tapMay.join(", ")})` : ""} exceed ${tran} ` +
+    `The interlock rules aimed at ${dich}${tapMay.length ? ` (machines ${tapMay.join(", ")})` : ""} exceed ${tran} ` +
     `(enabled, approved, blocking). The inline interlock gate refuses every command to it (fail-closed) until the rule set is reduced; ` +
     `a pinned OT STOP is still sent (R-1D-c). Review the interlock rules of this target.`;
   void (async () => {
@@ -442,7 +455,7 @@ function baoVuotTranLuat(params: InterlockGateTarget, tran: number): void {
         dedupKey: key,
         source: params.adapterId >= 0 ? "ot" : "robot",
         entityType: params.adapterId >= 0 ? "device_adapter" : "robot",
-        entityId: params.adapterId >= 0 ? params.adapterId : tapMay[0],
+        entityId: params.adapterId >= 0 ? params.adapterId : (robot ?? undefined),
         khuTrungBenVung: {},
       });
     } catch (err) {

@@ -417,11 +417,20 @@ describe("A2(j) J3 — cap + 1 ⇒ fail-closed + ONE deduped alert; never a part
     expect(alertMock).not.toHaveBeenCalled();
   });
 
-  it("robot target (adapterId -1, machineId = robotId): the dedup key carries the robot id", async () => {
+  it("A2(l) robot target (adapterId -1, machines of the robot's place, robotId separately): the alert names the ROBOT id, never one of its machines", async () => {
     _datTranLuatInterlockChoTest(1);
-    H.rules.push(luat(1, { targetMachineId: 4242 }), luat(2, { targetMachineId: 4242 }));
-    expect((await evaluateInterlockGate({ adapterId: -1, machineId: 4242, tagKeys: [] })).vuotTran).toEqual({ tran: 1 });
+    H.rules.push(luat(1, { targetMachineId: 4242 }), luat(2, { targetMachineId: 4243 }));
+    expect((await evaluateInterlockGate({ adapterId: -1, machineIds: [4242, 4243], tagKeys: [], robotId: 7 })).vuotTran).toEqual({ tran: 1 });
     await vi.waitFor(() => expect(alertMock).toHaveBeenCalledTimes(1));
-    expect((alertMock.mock.calls[0]![0] as { dedupKey: string; source: string }).dedupKey).toBe("interlock_tran_luat:adapter:-1:may:4242");
+    const a = alertMock.mock.calls[0]![0] as { dedupKey: string; source: string; entityType: string; entityId: unknown; title: string; message: string };
+    expect(a.dedupKey).toBe("interlock_tran_luat:adapter:-1:may:4242,4243:robot:7");
+    expect(a).toMatchObject({ source: "robot", entityType: "robot", entityId: 7 });
+    expect(a.title).toContain("robot 7");
+    expect(a.title).not.toContain("4242");
+    expect(a.message).toContain("(machines 4242, 4243)");
+    // two robots on the same line share the machine set — each gets its own alert
+    expect((await evaluateInterlockGate({ adapterId: -1, machineIds: [4242, 4243], tagKeys: [], robotId: 8 })).vuotTran).toEqual({ tran: 1 });
+    await vi.waitFor(() => expect(alertMock).toHaveBeenCalledTimes(2));
+    expect((alertMock.mock.calls[1]![0] as { entityId: unknown }).entityId).toBe(8);
   });
 });

@@ -138,10 +138,12 @@ export default function CommandConsole() {
     return m;
   }, [detailQ.data]);
 
-  // Interlock preview (read-only) — exactly what the dispatcher will evaluate. Live in dialog.
+  // Interlock preview (read-only) — exactly what the dispatcher will evaluate for a MOTION. Live in dialog.
+  // SCADA R1b-2b-2a A2(l) fix round 1 (m5, L-7) — a STOP / abort is never gated by interlocks: no preview query, no red "will refuse" banner.
+  const laLenhDung = command === "stop" || command === "abort";
   const interlockQ = trpc.robot.interlockPreview.useQuery(
     { robotId: robotId ?? 0 },
-    { enabled: dialogOpen && robotId != null, refetchInterval: dialogOpen ? 4000 : false, retry: false },
+    { enabled: dialogOpen && robotId != null && !laLenhDung, refetchInterval: dialogOpen && !laLenhDung ? 4000 : false, retry: false },
   );
 
   // Append-only job log (live) — closes the loop: pending→done shows here.
@@ -181,7 +183,9 @@ export default function CommandConsole() {
   const consoleStop = trpc.robot.consoleStop.useMutation({ onSuccess: onActuated, onError: (err) => toastTrpcError(err) });
 
   const chosenRisk = command ? (gatedByName.get(command)?.riskLevel ?? COMMAND_META[command].defaultRisk) : "high";
-  const interlockBlocked = interlockQ.data?.blocked === true;
+  const interlockBlocked = !laLenhDung && interlockQ.data?.blocked === true;
+  // m3 — placed robot with an EMPTY machine set (no machine at its station nor on its line): nothing to check — never shown as "clear"
+  const interlockKhongCoMay = !laLenhDung && !interlockBlocked && interlockQ.data?.khongCoMay === true;
   const confirmMatches = !!robot && confirmText.trim() === robot.code;
   const canSend = canControl && !!robot && !!command && confirmMatches && !actuate.isPending && !consoleStop.isPending;
 
@@ -370,29 +374,51 @@ export default function CommandConsole() {
                 <StatusBadge status={chosenRisk} tone={riskTone(chosenRisk)} className="px-1.5 py-0 text-[10px] capitalize" label={chosenRisk} />
               </div>
 
-              {/* Interlock preview (read-only, live) */}
-              <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${
+              {/* Interlock preview (read-only, live) — MOTION only; a STOP / abort gets a neutral note (m5, L-7: a STOP is never refused) */}
+              {laLenhDung ? (
+              <div data-testid="interlock-preview-stop" className="flex items-start gap-2 rounded-md border border-muted px-3 py-2 text-xs text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                <div>{t("console.interlockStopNeverBlocked", "Interlocks gate motion only — a STOP is never blocked.")}</div>
+              </div>
+              ) : (
+              <div data-testid="interlock-preview" className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${
                 interlockQ.isLoading ? "border-muted text-muted-foreground"
                   : interlockBlocked ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : interlockKhongCoMay ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
                   : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
               }`}>
-                {interlockBlocked ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
+                {interlockBlocked || interlockKhongCoMay ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
                 <div>
                   <div className="font-medium">
                     {interlockQ.isLoading ? t("console.interlockChecking", "Checking interlocks…")
                       : interlockBlocked ? t("console.interlockBlocked", "Interlock BLOCKED — the dispatcher will refuse a real run.")
+                      : interlockKhongCoMay ? t("console.interlockNoMachines", "No machines to check — no interlock rule can guard this robot's station or line.")
                       : t("console.interlockClear", "Interlock clear.")}
                   </div>
+                  {interlockQ.data?.tramKhongMay && interlockQ.data?.lineId != null && (
+                    <div className="mt-0.5">{t("console.interlockStationNoMachines", "This station has no machines — the rules on line {{line}} apply.").replace("{{line}}", `#${interlockQ.data.lineId}`)}</div>
+                  )}
                   {interlockBlocked && (interlockQ.data?.violations?.length ?? 0) > 0 && (
                     <div className="mt-0.5">
-                      {(interlockQ.data?.violations ?? []).map((v) => `#${v.ruleId} (${v.action})`).join(", ")}
+                      {/* SCADA R1b-2b-2a A2(l) — the robot is gated by the machines WHERE it is: name the rule's machine (same station / same line) */}
+                      {(interlockQ.data?.violations ?? [])
+                        .map((v) => {
+                          const may = v.machineCode ?? (v.machineId != null ? `#${v.machineId}` : null);
+                          const noi = may == null ? "" : ` — ${(v.cungChuyen ? t("console.interlockSameLine", "rule on machine {{machine}} (same line)") : t("console.interlockSameStation", "rule on machine {{machine}} (same station)")).replace("{{machine}}", may)}`;
+                          return `#${v.ruleId} (${v.action})${noi}`;
+                        })
+                        .join(", ")}
                     </div>
+                  )}
+                  {interlockQ.data?.maTuChoi && (
+                    <div className="mt-0.5">{translateRobotRefusal(interlockQ.data.maTuChoi, interlockQ.data.maTuChoi)}</div>
                   )}
                   {interlockQ.data?.failClosed && (
                     <div className="mt-0.5">{t("console.interlockFailClosed", "Evaluation error — fail-closed (no run).")}</div>
                   )}
                 </div>
               </div>
+              )}
 
               {/* doc 81 Đợt 9 final wave (R-9-e) — a set e-stop LATCH on a PLC guarding this robot: non-blocking warning; never for a STOP */}
               <SafetyLatchWarning target={{ robotId: robot.id }} isStop={command === "stop" || command === "abort"} enabled={dialogOpen} />
