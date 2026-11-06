@@ -52,6 +52,7 @@ import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
 import { canhBaoTuAnomalyEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { baoCaoHopLe } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
 
 export class StreamAnswer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -729,9 +730,13 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
         audits.push({ action: "EDGE_ANOMALY", entity, details: { anomaly: rec.code, reportedByEdge: true, runId: rec.runId, detail: rec.detail, at: rec.at }, status: "failure" });
         // R1b-2b-2a A2(n) (n2, n5) — the edge walker split a compensation after an unknown outcome (held for a person / STOP sent): the SAME
         // URGENT alert as central's own walk — only for a run this node is assigned (runEntity), deduped per run / step / compensation / claim
-        await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async () => {
+        await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async (x) => {
+          // m-H — a claim this run has had (a late anomaly of an earlier claim still counts), a step of the assigned definition with its own compensation
+          const [a] = await tx.select().from(runEdgeAssignments).where(and(eq(runEdgeAssignments.runId, rec.runId as number), eq(runEdgeAssignments.edgeNodeId, node.nodeId))).limit(1);
+          const def = a ? await assignedDefinition(tx, a) : null;
+          if (!a || !def || x.claimSeq > Number(a.claimSeq ?? 0) || !baoCaoHopLe(def, x)) return null;
           const [r] = await tx.select({ startedBy: orchestrationRuns.startedBy }).from(orchestrationRuns).where(eq(orchestrationRuns.id, rec.runId as number)).limit(1);
-          return r?.startedBy ?? null;
+          return { owner: r?.startedBy ?? null };
         });
         // R1b-2b-2a A2(o) AMENDMENT 2 — a write refused for a MISSING safety PLC ⇒ URGENT alert (24 h dedup); EDGE_CONFIG_STALE stays this audit
         const { alertForEdgeAnomaly, alertRecipients } = await import("./edgeConfigCentral");

@@ -12206,7 +12206,7 @@
     "edgeUnreachable": "边缘节点不可达",
     "edgeUnreachableHint": "边缘节点 {{node}} 未及时认领此运行（不可达，或其检查持续拒绝）。“继续”会将其重新排队给该节点；“取消运行”将中止它。",
     "outcomeUnknownHeld": "结果未知 — 等待人工处理",
-    "outcomeUnknownHint": "某条命令的结果未知 — 机器状态未知。其补偿无法确认为 STOP，因此未发送：正在等待人工处理。这不是审批：请到现场检查设备。“继续”仅发送该补偿（必须填写原因）；“中止”不会发送任何非 STOP 的补偿（原因可选）。",
+    "outcomeUnknownHint": "某条命令的结果未知 — 机器状态未知。其补偿无法确认为 STOP，因此未发送：正在等待人工处理。这不是审批：请到现场检查设备。“继续”仅发送该补偿（必须填写原因）；之后运行以失败结束，旁边未处理的审批门将被放弃。“中止”不会发送任何非 STOP 的补偿（原因可选）。",
     "outcomeUnknownReason": "原因（继续时必填，中止时可选）：您在设备上检查了什么",
     "outcomeUnknownReasonPlaceholder": "例如：已现场检查，第一条命令未生效",
     "outcomeUnknownContinue": "继续：发送被保留的补偿",

@@ -15,6 +15,11 @@
  * The unknown flag travels with the failure (`khongRo`), survives a failed row write (I-2) and is never swallowed by a parallel (I-4).
  * A KNOWN failure is unchanged (n6). An unknown outcome with no compensation due anywhere ⇒ URGENT too (R-4).
  *
+ * S-1 (the SINK) — the aggregators may lose the flag, so the guarantee does not live there. The moment an unknown outcome is decided the RUN is latched
+ * (KET_CUC_KHONG_RO_CHOT_CTX_KEY, persisted first, the in-memory flag holds if that write fails; a re-walk also reads the resume state), and EVERY
+ * compensation of a walk passes ONE function (foeEngine.congBuTru): on a latched run a STOP goes + URGENT, anything else is held + URGENT unless a
+ * Continue that passed n3 approved exactly that compensation. The boot re-send of A2(m2) has its own stricter gate (a pinned STOP only).
+ *
  * Resume v1 (n3) — THE rule (C-2): a pending `compensationHeld` carrying the unknown flag is what requires the check, not a marker and not a run
  * status. Continue (sends ONLY the held compensation(s), nothing forward — I-4): a person with machine-control rights (the router's own floor,
  * re-checked because the engine has other callers), a REQUIRED reason, an audit row that must land first (m-6); out of scope ⇒ "not found"
@@ -115,9 +120,26 @@ export function buTruKhongRoCho(ctx: Record<string, unknown> | null | undefined,
  * does not write a held compensation, it splits it again.
  */
 export const KHONG_RO_DUYET_CTX_KEY = "foeKetCucKhongRoDuyet";
-export function daDuyetBuTruKhongRo(ctx: Record<string, unknown> | null | undefined, stepId: string): boolean {
-  const v = ctx?.[KHONG_RO_DUYET_CTX_KEY] as { stepIds?: unknown } | null | undefined;
-  return Array.isArray(v?.stepIds) && v.stepIds.includes(stepId);
+/** S-1 — did the Continue approve exactly THIS compensation of THIS step? */
+export function daDuyetBuTruKhongRo(ctx: Record<string, unknown> | null | undefined, stepId: string, compId: string): boolean {
+  const v = ctx?.[KHONG_RO_DUYET_CTX_KEY] as { buTru?: unknown } | null | undefined;
+  return Array.isArray(v?.buTru) && (v.buTru as Array<{ stepId?: unknown; compId?: unknown }>).some((x) => x?.stepId === stepId && x?.compId === compId);
+}
+
+/** S-1 — run-context key (central-written, the moment an unknown outcome is decided): { stepId, ma, at }. Codes and ids only. Never cleared: the doubt stays with the run. */
+export const KET_CUC_KHONG_RO_CHOT_CTX_KEY = "foeKetCucKhongRoChot";
+/**
+ * S-1 — is this run latched, from its context alone? The latch, a marker, the central-written list of an edge's unknown steps, or any resume state saying
+ * so (an edge run's are central's to derive: the edge walker never writes the latch key). The walker adds its in-memory flag (rc.khongRoChot).
+ */
+export function runDaChotKhongRo(ctx: Record<string, unknown> | null | undefined): boolean {
+  if (!ctx) return false;
+  if (ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null || ctx[KET_CUC_KHONG_RO_CTX_KEY] != null) return true;
+  const ds = ctx.foeOutcomeUnknown;
+  if (Array.isArray(ds) && ds.length > 0) return true;
+  const rs = ctx.foeResumeState;
+  if (!rs || typeof rs !== "object" || Array.isArray(rs)) return false;
+  return Object.values(rs as Record<string, { state?: unknown; khongRo?: unknown; error?: unknown }>).some((e) => e?.state === "outcomeUnknown" || e?.khongRo === true || loiLaKetCucKhongRo(typeof e?.error === "string" ? e.error : null));
 }
 
 // ── the run's / step rows' texts ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -134,9 +156,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
 /**
  * held — a compensation not confirmed as a STOP, held (nothing sent); stopSent — a STOP compensation the dispatcher accepted, not simulated;
  * stopSimulated — answered simulated: NOTHING reached the device (I-3); stopNotConfirmed — handed to the dispatcher, not confirmed;
- * stopNotHanded — never handed to a dispatcher (m-1); noCompensation — an unknown outcome with no compensation due anywhere (R-4).
+ * stopNotHanded — never handed to a dispatcher (m-1); noCompensation — an unknown outcome with no compensation of its own (R-4);
+ * approvedNotConfirmed — a compensation a Continue approved failed or got no answer (m-F); failedNotSent — the run is FAILED, its compensation was not sent (m-C).
  */
-export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation";
+export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "failedNotSent";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -144,6 +167,8 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   stopNotConfirmed: "foe_outcome_unknown_stop_compensation_unconfirmed",
   stopNotHanded: "foe_outcome_unknown_stop_compensation_not_handed",
   noCompensation: "foe_outcome_unknown_no_compensation",
+  approvedNotConfirmed: "foe_outcome_unknown_approved_compensation_unconfirmed",
+  failedNotSent: "foe_outcome_unknown_compensation_not_sent_run_failed",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -176,7 +201,9 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       stopSimulated: [`STOP compensation ${c} simulated — NOT sent (OT control off)`, `Its STOP compensation ${c} was only SIMULATED (OT control off): nothing reached the device. Check on site and use the machine's direct STOP / E-STOP if needed.`],
       stopNotConfirmed: [`STOP compensation ${c} sent but NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but NOT confirmed — check on site and use the machine's direct STOP / E-STOP if needed.`],
       stopNotHanded: [`STOP compensation ${c} NOT sent`, `Its STOP compensation ${c} was never handed to a dispatcher — check on site and use the machine's direct STOP / E-STOP if needed.`],
-      noCompensation: [`no compensation due`, `No compensation is due for it and it is never sent again. Check the device on site before running again.`],
+      noCompensation: [`no compensation of its own`, `It has no compensation of its own and it is never sent again; a compensation of a step around it may still be due. Check the device on site before running again.`],
+      approvedNotConfirmed: [`compensation ${c} NOT confirmed`, `Its compensation ${c}, approved by a Continue, failed or got no answer: it may or may not have reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
+      failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
   return { kind, title: `Run ${a.runId}: ${dau} — ${duoi}`, message: `${mo} ${than} [event ${a.lan}]`, dedupKey: `${kind}:${a.runId}:${a.stepId}:${a.compId}:${a.lan}` };
@@ -253,15 +280,17 @@ export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: 
   return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner });
 }
 /**
- * I-5 — what central does with an EDGE anomaly: an A2(n) report of a run THIS node is assigned ⇒ the URGENT; anything else ⇒ nothing beyond the
- * EDGE_ANOMALY audit its caller writes. `chuRun` reads the run's owner. true ⇔ an alert was raised. Never throws.
+ * I-5, m-H — what central does with an EDGE anomaly: an A2(n) report of a run THIS node is assigned, that `kiem` finds valid (a claim of the run; a step of
+ * the assigned definition paired with its own compensation) ⇒ the URGENT; anything else ⇒ nothing beyond the EDGE_ANOMALY audit its caller writes.
+ * `kiem` answers the run's owner, or null when the report is not valid. true ⇔ an alert was raised. Never throws.
  */
-export async function canhBaoTuAnomalyEdge(rec: { code: string; runId: number | null; detail?: string | null }, runCuaNode: boolean, chuRun: () => Promise<number | null>): Promise<boolean> {
+export async function canhBaoTuAnomalyEdge(rec: { code: string; runId: number | null; detail?: string | null }, runCuaNode: boolean, kiem: (x: BaoCaoKhongRoEdge) => Promise<{ owner: number | null } | null>): Promise<boolean> {
   if (rec.code !== KHONG_RO_EDGE_ANOMALY || !runCuaNode || rec.runId == null) return false;
   const x = docAnomalyKhongRo(rec.detail);
   if (!x) return false;
-  const owner = await chuRun().catch(() => null);
-  void canhBaoTuBaoCaoEdge(rec.runId, x, owner);
+  const hop = await kiem(x).catch(() => null);
+  if (!hop) return false;
+  void canhBaoTuBaoCaoEdge(rec.runId, x, hop.owner);
   return true;
 }
 

@@ -46,6 +46,8 @@ import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/f
 import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import { KET_CUC_KHONG_RO_CTX_KEY, canhBaoTuBaoCaoEdge, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n) (I-D)
 import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao } from "../orchestration/foe/foeRunStore";
+import { allStepsOf, isStopCandidate } from "../orchestration/foe/foeStepClass";
+import { edgeStepAuthorizations } from "./edgeControlSchema";
 import type { FoeScope } from "../orchestration/foe/foeScope";
 import { centralStopped, edgeRuntimeEnabled as edgeRuntimeEnabledNow } from "./edgeCoordinator";
 import { runEdgeAssignments, isEdgeSchemaMissing, type RunEdgeAssignment } from "./edgeExecutionSchema";
@@ -671,7 +673,17 @@ export async function interruptedForNode(node: EdgeNodePrincipal, runId: number,
       if (run.status === "running" || run.status === "compensating") {
         status = run.status === "running" ? "held" : "failed";
         const defKhongRo = await assignedDefinition(tx as never, a);
-        if (defKhongRo) baoKhongRo = baoCaoKhongRoTuHang(defKhongRo, await tx.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId)), a.claimSeq as number);
+        if (defKhongRo) {
+          // I-G — the ledger too (an authorisation with no result = the command may be out) and the STOPs (never unknown): the same inputs as a Continue
+          const hangBuoc = await tx.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+          const uyQuyen = (await tx.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; supersededAt: unknown }>;
+          const mayDinh = await loadMachineMap(tx as never, defKhongRo);
+          const stopIds = new Set<string>();
+          for (const s of allStepsOf(defKhongRo.steps)) if (s.type === "command" && (await isStopCandidate(s, mayDinh))) stopIds.add(s.id);
+          baoKhongRo = baoCaoKhongRoTuHang(defKhongRo, hangBuoc, a.claimSeq as number, new Set(uyQuyen.filter((u) => u.supersededAt == null).map((u) => u.stepId)), stopIds);
+          // m-C — a 'compensating' crash ends 'failed': the words must not say HELD / Continue
+          if (status === "failed") baoKhongRo = baoKhongRo.map((x) => (x.loai === "held" ? { ...x, loai: "failedNotSent" as const } : x));
+        }
         chuRun = run.startedBy ?? null;
         const dauKhongRo = status === "held" ? dauKhongRoTuBaoCao(baoKhongRo, new Date().toISOString()) : null;
         await tx

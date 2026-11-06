@@ -1091,7 +1091,7 @@ export function buocTienCua(step: WorkflowStep): WorkflowStep[] {
 
 /**
  * R1b-2b-2a A2(n) (I-A) — the steps of a compensation-only walk: the approved steps and the containers on the way to them. Pure.
- * Forward steps only: a compensation is reached through its step.
+ * The body of an approved step's compensation is on the way too: a gate inside it is walked and ASKED (G-1), its commands are what the person approved.
  */
 export function duongToiBuoc(steps: readonly WorkflowStep[], ids: ReadonlySet<string>): Set<string> {
   const out = new Set<string>();
@@ -1099,6 +1099,7 @@ export function duongToiBuoc(steps: readonly WorkflowStep[], ids: ReadonlySet<st
     const n = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
     // every child is visited (no short-circuit): each may lead to its own approved step
     const coCon = [...(n.steps ?? []), ...(n.then ?? []), ...(n.else ?? [])].map(di).some(Boolean);
+    if (ids.has(s.id) && s.compensation) for (const x of buocTienCua(s.compensation)) out.add(x.id);
     if (coCon || ids.has(s.id)) out.add(s.id);
     return coCon || ids.has(s.id);
   };
@@ -1106,19 +1107,47 @@ export function duongToiBuoc(steps: readonly WorkflowStep[], ids: ReadonlySet<st
   return out;
 }
 
+/** A2(n) (S-1, I-F) — the containers around a step, innermost first. Pure. */
+export function toTienCua(steps: readonly WorkflowStep[], stepId: string): WorkflowStep[] {
+  for (const s of steps) {
+    const n = s as { steps?: WorkflowStep[]; then?: WorkflowStep[]; else?: WorkflowStep[] };
+    const con = [...(n.steps ?? []), ...(n.then ?? []), ...(n.else ?? [])];
+    if (con.some((x) => x.id === stepId)) return [s];
+    const sau = toTienCua(con, stepId);
+    if (sau.length > 0) return [...sau, s];
+  }
+  return [];
+}
+
+/** m-H — is this a report of the assigned definition: its step exists, paired with that step's own compensation (or none)? Pure. */
+export function baoCaoHopLe(def: Pick<WorkflowDefinition, "steps">, x: Pick<BaoCaoKhongRoEdge, "stepId" | "compId">): boolean {
+  const s = allStepsOf(def.steps).find((y) => y.id === x.stepId);
+  return s != null && (x.compId === KHONG_CO_BU_TRU || s.compensation?.id === x.compId);
+}
+
 /**
- * R1b-2b-2a A2(n) (I-D) — what a crashed edge segment leaves for a person, from its rows alone: a pending compensation of an unknown outcome
- * (held), or an unknown step with no compensation. The same reports a live walker would have made, so a late anomaly dedups with them.
+ * R1b-2b-2a A2(n) (I-D, I-G) — what a crashed edge segment leaves for a person, from its rows and central's authorisation ledger: a pending compensation
+ * of an unknown outcome (held) or an unknown step with no compensation of its own, whether it failed on a row or the node died while the command
+ * was out (`outcomeUnknown`: authorised, maybe sent, no result — the likeliest crash). The same reports a live walker would have made, so a late
+ * anomaly dedups with them. STOP steps are not unknown (they are sent again, L-7).
  */
-export function baoCaoKhongRoTuHang(def: Pick<WorkflowDefinition, "steps">, rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>, claimSeq: number): BaoCaoKhongRoEdge[] {
-  const { state } = edgeResumeStateOf(def, rows, new Set());
+export function baoCaoKhongRoTuHang(
+  def: Pick<WorkflowDefinition, "steps">,
+  rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>,
+  claimSeq: number,
+  authorised: ReadonlySet<string> = new Set(),
+  stops: ReadonlySet<string> = new Set(),
+): BaoCaoKhongRoEdge[] {
+  const { state } = edgeResumeStateOf(def, rows, authorised, [], stops);
   const out: BaoCaoKhongRoEdge[] = [];
   for (const s of allStepsOf(def.steps)) {
     const e = state[s.id];
-    if (!e?.khongRo) continue;
+    if (!e) continue;
+    const laKhongRo = e.state === "outcomeUnknown" || e.khongRo === true;
+    if (!laKhongRo) continue;
     const ma = maKetCucKhongRoCua(e.error);
-    if (e.state === "compensationHeld" && s.compensation) out.push({ loai: "held", stepId: s.id, compId: s.compensation.id, ma, claimSeq });
-    else if (e.state === "doneFailed" && !s.compensation) out.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma, claimSeq });
+    if ((e.state === "compensationHeld" || e.state === "outcomeUnknown") && s.compensation) out.push({ loai: "held", stepId: s.id, compId: s.compensation.id, ma, claimSeq });
+    else if (!s.compensation && (e.state === "doneFailed" || e.state === "outcomeUnknown")) out.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma, claimSeq });
   }
   return out;
 }
@@ -1148,7 +1177,8 @@ export function themBuocHongKhiTiepTuc(
     const r = by.get(s.id);
     if (r?.status !== "failed" || out[s.id] || comps.has(s.id) || stops.has(s.id)) continue;
     // I-B — marked per leaf: a failed container that holds a failed STOP is walked, or the STOP inside it would never be re-sent
-    if (buocTienCua(s).some((x) => x.id !== s.id && stops.has(x.id) && by.get(x.id)?.status === "failed")) continue;
+    // m-B — not only 'failed': a STOP whose final row was lost reads 'running'
+    if (buocTienCua(s).some((x) => { const h = by.get(x.id); return x.id !== s.id && stops.has(x.id) && h != null && h.status !== "completed"; })) continue;
     const error = r.error ?? "";
     out[s.id] = { state: "doneFailed", error, ...(loiLaKetCucKhongRo(error) ? { khongRo: true as const } : {}) };
   }
@@ -1176,9 +1206,8 @@ export { EDGE_HELD_CTX_KEY };
 export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: EdgeSegmentEndApply): Promise<EdgeSegmentEndResult> {
   // R1b-2b-2a A2(n) (I-5) — the segment's outcome-unknown reports ride on its end (never stored in the run's error): a full journal that lost
   // the anomaly does not lose the URGENT; the same event as the anomaly route ⇒ the same dedup key
-  const buocDinhNghia = new Set(allStepsOf(endTho.def.steps).map((s) => s.id));
-  // M-2 — a report counts only for THIS claim and for a step / compensation of the assigned definition
-  const { error: loiEnd, bao: baoKhongRo } = tachBaoCaoKhongRoEdge(endTho.error, (x) => x.claimSeq === endTho.claimSeq && buocDinhNghia.has(x.stepId) && (x.compId === KHONG_CO_BU_TRU || buocDinhNghia.has(x.compId)));
+  // M-2, m-H — a report counts only for THIS claim and for a step of the assigned definition paired with its own compensation
+  const { error: loiEnd, bao: baoKhongRo } = tachBaoCaoKhongRoEdge(endTho.error, (x) => x.claimSeq === endTho.claimSeq && baoCaoHopLe(endTho.def, x));
   const end: EdgeSegmentEndApply = { ...endTho, error: loiEnd };
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };

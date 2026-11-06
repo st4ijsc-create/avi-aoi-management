@@ -3031,7 +3031,7 @@ function RunRow({
           <p>
             {t(
               "studio.outcomeUnknownHint",
-              "A command's outcome is UNKNOWN — the machine state is unknown. Its compensation could not be confirmed as a STOP, so it was NOT sent: it is waiting for a person. This is not an approval: check the device on site. Continue sends ONLY that compensation (a reason is required); Abort sends no compensation that is not a STOP (a reason is optional).",
+              "A command's outcome is UNKNOWN — the machine state is unknown. Its compensation could not be confirmed as a STOP, so it was NOT sent: it is waiting for a person. This is not an approval: check the device on site. Continue sends ONLY that compensation (a reason is required); the run then ends failed, and an open gate beside it is dropped. Abort sends no compensation that is not a STOP (a reason is optional).",
             )}
           </p>
           {canControl && (

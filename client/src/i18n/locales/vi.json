@@ -12431,7 +12431,7 @@
     "edgeUnreachable": "không liên lạc được nút biên",
     "edgeUnreachableHint": "Nút biên {{node}} không nhận lượt chạy này kịp thời (không liên lạc được, hoặc phép kiểm tra của nó liên tục từ chối). Tiếp tục sẽ xếp lại lượt chạy cho nút đó; Huỷ lượt chạy sẽ dừng hẳn.",
     "outcomeUnknownHeld": "kết cục không rõ — chờ người xử lý",
-    "outcomeUnknownHint": "Kết cục của một lệnh KHÔNG RÕ — trạng thái máy không rõ. Bù trừ của nó chưa xác nhận được là STOP nên KHÔNG được gửi: đang chờ người xử lý. Đây không phải phê duyệt: hãy kiểm tra thiết bị tại chỗ. Tiếp tục CHỈ gửi bù trừ đó (bắt buộc ghi lý do); Huỷ không gửi bù trừ nào không phải STOP (lý do không bắt buộc).",
+    "outcomeUnknownHint": "Kết cục của một lệnh KHÔNG RÕ — trạng thái máy không rõ. Bù trừ của nó chưa xác nhận được là STOP nên KHÔNG được gửi: đang chờ người xử lý. Đây không phải phê duyệt: hãy kiểm tra thiết bị tại chỗ. Tiếp tục CHỈ gửi bù trừ đó (bắt buộc ghi lý do); sau đó lượt chạy kết thúc thất bại, cổng duyệt đang mở bên cạnh bị bỏ. Huỷ không gửi bù trừ nào không phải STOP (lý do không bắt buộc).",
     "outcomeUnknownReason": "Lý do (bắt buộc khi tiếp tục, tuỳ chọn khi huỷ): bạn đã kiểm tra gì trên thiết bị",
     "outcomeUnknownReasonPlaceholder": "vd. đã kiểm tra tại chỗ: lệnh đầu chưa được áp",
     "outcomeUnknownContinue": "Tiếp tục: gửi bù trừ đang giữ",
