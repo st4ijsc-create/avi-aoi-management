@@ -228,8 +228,8 @@ describe("final wave F8 — the router gates workflow MANAGEMENT only, never a s
     const ends = [".input(", ".query(", ".mutation("].map((k) => SRC.indexOf(k, i)).filter((x) => x > i);
     return SRC.slice(i, Math.min(...ends));
   };
-  it("★ guarded: list / get / deploy / versions / rollback / start / simulate / delete / duplicate", () => {
-    for (const p of ["listWorkflows", "getWorkflow", "deployWorkflow", "listVersions", "getVersion", "rollbackWorkflow", "startRun", "simulate", "deleteWorkflow", "duplicateWorkflow"]) {
+  it("★ guarded: list / deploy / versions / rollback / start / simulate / delete / duplicate (getWorkflow · getVersion đã gỡ, 0 caller)", () => {
+    for (const p of ["listWorkflows", "deployWorkflow", "listVersions", "rollbackWorkflow", "startRun", "simulate", "deleteWorkflow", "duplicateWorkflow"]) {
       expect(head(p), p).toContain(".use(foeSchemaGuard)");
     }
   });
