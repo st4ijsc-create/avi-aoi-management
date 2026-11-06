@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 describe("AL0-2 — push bản tin định kỳ", () => {
-  it("★★★ gửi THẬT tới từng token client offline, đúng nội dung; mọi giá trị data là CHUỖI (FCM từ chối giá trị khác)", async () => {
+  it("★★★ gửi THẬT tới từng token client offline, đúng nội dung và ĐÚNG từng trường data", async () => {
     may.clients = [{ fcmToken: "t1" }, { fcmToken: null }, { fcmToken: "t2" }];
     expect(await sendBulletinPushNotification(banTin)).toEqual({ sent: 2, failed: 0 });
     expect(may.goi.map((g) => g.body.message.token)).toEqual(["t1", "t2"]);
@@ -56,8 +56,8 @@ describe("AL0-2 — push bản tin định kỳ", () => {
     expect(m.notification.title).toContain("Trạm A");
     expect(m.notification.body).toContain("100 kiểm tra: 90 OK, 8 NG, 2 NTF");
     expect(m.notification.body).toContain("3 điểm lỗi");
-    expect(m.data).toMatchObject({ type: "PERIODIC_BULLETIN", stationId: "7", periodStart: banTin.period.start, periodEnd: banTin.period.end });
-    for (const [k, v] of Object.entries(m.data)) expect(typeof v, k).toBe("string");
+    // kiểu chuỗi do sendFCMv1Notification ép (String(v)); ở đây ghim GIÁ TRỊ — period là object nên ép mù sẽ thành "[object Object]"
+    expect(m.data).toEqual({ type: "PERIODIC_BULLETIN", stationId: "7", totalCount: "100", ngCount: "8", yieldRate: "92", periodStart: banTin.period.start, periodEnd: banTin.period.end, timestamp: expect.any(String) });
   });
   it("★★ không có token ⇒ {0,0}, 0 lượt gọi mạng; FCM từ chối ⇒ đếm failed, không ném", async () => {
     expect(await sendBulletinPushNotification(banTin)).toEqual({ sent: 0, failed: 0 });

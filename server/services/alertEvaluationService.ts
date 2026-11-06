@@ -156,6 +156,7 @@ export async function evaluateAlertRules(rules: any[]): Promise<AlertEvaluationR
 
 /** Chỉ lưới (Pha 0 AL0-1). */
 export const __danhGiaLuatChoTest = (rule: any, pv?: PhamViTram) => evaluateRule(rule, pv);
+export const __coMessageTruocCuaSoChoTest = coMessageTruocCuaSo;
 
 async function evaluateRule(rule: any, pv?: PhamViTram): Promise<AlertEvaluationResult> {
   const { id, name, ruleType, thresholdValue, comparisonOperator, timeWindowMinutes } = rule;
@@ -410,8 +411,8 @@ async function getThroughput(minutes: number, pv?: PhamViTram): Promise<number> 
 }
 
 /** ★ Pha 0 AL0-1 — có ít nhất một message trong 24 h TRƯỚC cửa sổ đánh giá (luồng từng sống) không. */
-async function coMessageTruocCuaSo(minutes: number, pv?: PhamViTram): Promise<boolean> {
-  const db = await getDb();
+async function coMessageTruocCuaSo(minutes: number, pv?: PhamViTram, dbDung?: Awaited<ReturnType<typeof getDb>>): Promise<boolean> {
+  const db = dbDung ?? (await getDb());
   if (!db) return false;
   const den = new Date(Date.now() - minutes * 60 * 1000).toISOString();
   const tu = new Date(Date.now() - minutes * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString();

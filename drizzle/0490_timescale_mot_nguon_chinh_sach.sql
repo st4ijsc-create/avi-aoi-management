@@ -11,7 +11,9 @@
 -- Vì sao KHÔNG bỏ 0118/0172 khỏi thứ tự áp: 0172 là nơi tạo hypertable measurement_results /
 -- product_inspections / ... ; bỏ đi thì DB mới không có hypertable. Migration này là lời cuối, không xoá lịch sử.
 --
--- Chỉ hoà giải KHI LỆCH. Không đụng dữ liệu, không tạo hypertable, không đụng audit_logs (90) và CAGG.
+-- Chỉ hoà giải KHI LỆCH, và CHỈ cấu hình NÉN. Không đụng dữ liệu, không tạo hypertable, không đụng audit_logs (90) và CAGG.
+-- ⚠ Chính sách GIỮ dữ liệu chỉ ĐỐI CHIẾU, KHÔNG BAO GIỜ tạo/sửa: thêm hoặc rút ngắn nó là XOÁ chunk theo tuổi một cách im lặng
+--   (product_inspections, measurement_results là dữ liệu truy xuất). Lệch ⇒ WARNING + db_feature_status 'partial' để người quyết.
 -- Không có extension ⇒ no-op (NOTICE), như 0118/0172/0271.
 -- ============================================================================
 DO $$
@@ -25,6 +27,7 @@ DECLARE
   khop boolean;
   so_thieu int := 0;
   so_sua int := 0;
+  so_lech_giu int := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
     RAISE NOTICE '[0490] timescaledb extension not installed — skipped.';
@@ -79,27 +82,25 @@ BEGIN
       so_sua := so_sua + 1;
     END IF;
 
-    -- ── chính sách giữ dữ liệu ──
+    -- ── chính sách giữ dữ liệu: CHỈ đối chiếu (xem đầu tệp) ──
     SELECT count(*), coalesce(bool_and((j.config->>'drop_after')::interval = r.giu), false) INTO so_job, khop
       FROM timescaledb_information.jobs j
       WHERE j.proc_name = 'policy_retention' AND j.hypertable_schema = 'public' AND j.hypertable_name = r.ten;
     IF so_job <> 1 OR NOT khop THEN
-      PERFORM remove_retention_policy(bang, if_exists => TRUE);
-      PERFORM add_retention_policy(bang, r.giu);
-      RAISE NOTICE '[0490] % retention policy reconciled (%).', r.ten, r.giu;
-      so_sua := so_sua + 1;
+      RAISE WARNING '[0490] % retention policy differs from % (% job) — NOT changed, needs a human decision.', r.ten, r.giu, so_job;
+      so_lech_giu := so_lech_giu + 1;
     END IF;
   END LOOP;
 
   INSERT INTO db_feature_status ("feature", "status", "detail", "checkedAt")
   VALUES (
     'timescaledb_mot_nguon_chinh_sach',
-    CASE WHEN so_thieu = 0 THEN 'ok' ELSE 'partial' END,
-    format('0490: reconciled %s item(s); %s table(s) not hypertable', so_sua, so_thieu),
+    CASE WHEN so_thieu = 0 AND so_lech_giu = 0 THEN 'ok' ELSE 'partial' END,
+    format('0490: reconciled %s item(s); %s table(s) not hypertable; %s retention mismatch(es) left for a human', so_sua, so_thieu, so_lech_giu),
     now()
   )
   ON CONFLICT ("feature") DO UPDATE
     SET "status" = EXCLUDED."status", "detail" = EXCLUDED."detail", "checkedAt" = now();
 
-  RAISE NOTICE '[0490] done: reconciled %, missing %.', so_sua, so_thieu;
+  RAISE NOTICE '[0490] done: reconciled %, missing %, retention mismatch %.', so_sua, so_thieu, so_lech_giu;
 END $$;

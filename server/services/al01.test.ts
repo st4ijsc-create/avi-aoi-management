@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const may = vi.hoisted(() => ({ goiDo: [] as string[], soLeoThang: 0, traVe: [] as unknown[] }));
+const may = vi.hoisted(() => ({ goiDo: [] as string[], soLeoThang: 0, traVe: [] as unknown[], khongDb: false }));
 vi.mock("./aiSmartAlertRouter", () => ({
   detectDefectSpike: async () => (may.goiDo.push("spike"), { id: 1 }),
   detectYieldDrop: async () => (may.goiDo.push("yield"), { id: 2 }),
@@ -16,15 +16,16 @@ vi.mock("./aiSmartAlertRouter", () => ({
 }));
 vi.mock("../routers/alertRouters", () => ({ evaluateActiveAlertSettings: async () => 0 }));
 vi.mock("../db/connection", () => ({ getDb: async () => ({ select: () => ({ from: () => ({ where: async () => [{ id: 1 }], then: undefined }) }) }) }));
-vi.mock("../db", () => ({ getDb: async () => ({ execute: async () => may.traVe.shift() ?? [] }) }));
+vi.mock("../db", () => ({ getDb: async () => (may.khongDb ? null : { execute: async () => may.traVe.shift() ?? [] }) }));
 
 import { triggerAlertEvaluatorCycle } from "./alertEvaluatorScheduler";
-import { __danhGiaLuatChoTest } from "./alertEvaluationService";
+import { __coMessageTruocCuaSoChoTest, __danhGiaLuatChoTest } from "./alertEvaluationService";
 
 beforeEach(() => {
   may.goiDo = [];
   may.soLeoThang = 0;
   may.traVe = [];
+  may.khongDb = false;
 });
 
 describe("AL0-1 (1) — AlertEvaluator không chạy bộ dò spike / yield", () => {
@@ -36,6 +37,21 @@ describe("AL0-1 (1) — AlertEvaluator không chạy bộ dò spike / yield", ()
   it("★★ ghim nguồn: tệp lịch không còn GỌI hai bộ dò", () => {
     const src = readFileSync(join(__dirname, "alertEvaluatorScheduler.ts"), "utf8").replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
     expect(src).not.toMatch(/detectDefectSpike\s*\(|detectYieldDrop\s*\(|routeAlert\s*\(/);
+  });
+});
+
+describe("AL0-1 — coMessageTruocCuaSo đọc kết quả (SQL thật: al01.db.test.ts)", () => {
+  it("★★ boolean / 't' / 'true' ⇒ true; 'f' / false / rỗng ⇒ false; không có DB ⇒ false (không bắn mù)", async () => {
+    for (const co of [true, "t", "true"]) {
+      may.traVe = [[{ co }]];
+      expect(await __coMessageTruocCuaSoChoTest(30), String(co)).toBe(true);
+    }
+    for (const r of [[{ co: false }], [{ co: "f" }], []]) {
+      may.traVe = [r];
+      expect(await __coMessageTruocCuaSoChoTest(30), JSON.stringify(r)).toBe(false);
+    }
+    may.khongDb = true;
+    expect(await __coMessageTruocCuaSoChoTest(30)).toBe(false);
   });
 });
 
