@@ -52,7 +52,7 @@
 | AL0‑2 | Sửa import `sendBulletinPushNotification` không tồn tại (`mqttService.ts:3250`) hoặc tắt bulletin | lỗi import = 0 |
 | AL0‑3 | **Xoá dữ liệu lũ** (sau duyệt chủ dự án, số đếm trước/sau): `notifications` 56 433, `alert_escalations` 7 779, `predictive_alerts` + `_occurrences` 992 + 1 635, `mqtt_alert_history` 3 183; `machine_status_logs` 95 971 **chỉ sau khi 90 xác nhận OEE không đọc** `[cần kiểm]` | SQL đếm |
 | T0‑1 | **HUỶ** (06/11): EMQX docker đang chạy (1884→1883), `:3000` có kết nối ⇒ giữ `UNS_BRIDGE_ENABLED=true`; tiền đề "không có broker" sai | — |
-| T0‑2 | `topology.mjs` đã là 36 máy; nguồn 1 699 máy × 30 s là `simOtTelemetryService` ⇒ **phụ thuộc quyết định về service này** (chờ chủ dự án: giữ thu hẹp / gỡ); sau quyết định đo lại 24 h | 24 h `ot_telemetry` sim giảm theo phương án chọn |
+| T0‑2 | `topology.mjs` đã 36 máy; nguồn 1 699 máy × 30 s là `simOtTelemetryService` (gỡ ở E0‑2) ⇒ **đóng sau khi eng‑ai lên main + `:3000` bản mới + đo 24 h** | 24 h `ot_telemetry` giảm về mức 36 máy topology (hiện 18,97 M hàng/24 h) |
 | T0‑3 | Một nguồn DDL Timescale: **không bỏ 0118/0172** (0172 tạo hypertable `measurement_results`); mig **0490** hoà giải làm lời cuối (no‑op trên DEV/_test); gỡ `timescale/0003` + `TSDB_URL` **chuyển sang 30‑T1** (pha 1) | migration `--test-only` xanh; `timescaledb_information.jobs` một bộ chính sách/bảng |
 | T0‑4 | `machine_health_history` + `rul_estimates` (1,8 GB): thêm retention 90 d **sau duyệt** (xoá cũ hơn) | kích thước < 200 MB |
 
@@ -62,7 +62,7 @@
 |---|---|---|
 | E0‑1 | Dừng job `twinFidelity` (`TWIN_FIDELITY_ENABLED=false`, gỡ lịch) + **xoá `simulation_runs` 80 941** (sau duyệt) | bảng 0 hàng, job không chạy |
 | E0‑2 | Gỡ `scripts/sim-factory/sim-live-daemon.mjs` INSERT thẳng DB + `simOtTelemetryService` (cờ `SIM_OT_TELEMETRY_*`); **giữ** 2 seeder dev chạy tay `seed.mjs`/`seed-production.mjs` (miễn trừ có tên, 70‑N1 sửa 04/11) | 70‑N1: grep INSERT trong `scripts/sim*` ∖ {2 seeder} = 0; không lịch/boot nào gọi seeder — **XONG 04/11** (tho-ca-agent) |
-| E0‑2b | ⚠ **`simOtTelemetryService` — TẠM GIỮ gộp** (06/11): đây là nguồn presence duy nhất của máy DEV; gỡ ⇒ có thể toàn bộ máy offline trên twin/dashboard. tho‑ca‑agent đo tác động; dieu‑phoi trình chủ dự án phương án | quyết định chủ dự án |
+| E0‑2b | `simOtTelemetryService`: **chủ dự án chọn B (06/11) — GỠ**, chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5 | gộp eng‑ai tiếp tục |
 | E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
 | E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
 | E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |

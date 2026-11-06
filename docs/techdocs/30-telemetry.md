@@ -252,7 +252,7 @@ Module này **tuân theo** spec v3 §3.6 và brief 1a (scada-master làm sau A2(
 
 ### 3.6 Gỡ / chuyển
 
-`simOtTelemetryService` giữ nhưng **chỉ ghi cho asset thuộc site `origin=sim`**, `reason='sim'`, chu kỳ 30 s giữ; `sensorIngestService`, `robotIngest` (phần ghi) → `ingestSignals`; `stateStore/*`, `unsStreamGateway` gỡ (kênh 1a thay); `streaming/*` đóng băng; `federation/unsSubscriber` đóng băng; `machinePresenceService` gỡ; `functions/cachedStatistics.ts` viết lại đọc CAGG; `timescale/0003`, `TSDB_URL`, `db/timescale.ts` gỡ.
+`simOtTelemetryService` **gỡ** (QĐ chủ dự án 2026‑11‑06, phương án B — chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5, khi simulator/sim‑factory đăng ký làm thiết bị ngoài `origin=sim` và gửi qua ingest); `sensorIngestService`, `robotIngest` (phần ghi) → `ingestSignals`; `stateStore/*`, `unsStreamGateway` gỡ (kênh 1a thay); `streaming/*` đóng băng; `federation/unsSubscriber` đóng băng; `machinePresenceService` gỡ; `functions/cachedStatistics.ts` viết lại đọc CAGG; `timescale/0003`, `TSDB_URL`, `db/timescale.ts` gỡ.
 
 ---
 
@@ -350,3 +350,4 @@ Dải migration: **0490–0509** `[QĐ 2026-11-03: duyệt]`. Phụ thuộc: 20-
 | 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt c49f03c06` + DB live; nhận hợp đồng 1a (spec v3 §3.6) | 1 bus + 7 đường vào + 7 bảng lẻ; 576,9 M hàng/65 GB, 24 h = 17,5 M hàng 100 % simulator; 3 WAL; 5 ngưỡng tuổi; kênh SCADA tắt cờ, client poll 2 s |
 | 2026-11-04 | dieu-phoi | T0‑4: `machine_health_history` > 90 d xoá 77 798 (còn **2 801 600**), `rul_estimates` xoá 55 207 (còn **2 799 905**) — bảng vẫn ≈ 1 GB / 0,8 GB vì gần hết hàng là 90 ngày gần nhất (PdM mỗi giờ × 1 700 máy, phần lớn `origin=sim`) ⇒ mục tiêu < 200 MB chỉ đạt ở **T8** (chuyển sang `signal_sample(source=calc)` + retention 7 d cho sim); không xoá thêm trong pha 0 | 2,8 M / 2,8 M |
 | 2026-11-06 | do-model + dieu-phoi + chu-du-an-HST | Đo T0 trước khi làm ⇒ 4 chỉnh: (1) T0‑3 không bỏ 0118/0172, thêm mig 0490 hoà giải; (2) gỡ `timescale/0003` + `TSDB_URL` chuyển T1; (3) T0‑1 huỷ — EMQX đang chạy, giữ `UNS_BRIDGE_ENABLED=true`; (4) T0‑2: `topology.mjs` đã 36 máy, nguồn 1 699 máy là `simOtTelemetryService`. **Mâu thuẫn tôi gây ra**: §3 dòng "`simOtTelemetryService` giữ, chỉ ghi `origin=sim`" vs 70 "gỡ" — service là nguồn presence duy nhất của máy DEV ⇒ gộp eng‑ai tạm giữ, chờ chủ dự án chọn phương án | — |
+| 2026-11-06 | chủ dự án (qua dieu-phoi) | **Phương án B**: gỡ `simOtTelemetryService`; §3 bỏ câu "giữ, chỉ ghi `origin=sim`"; T0‑2 đóng sau khi eng‑ai lên main + `:3000` bản mới + đo 24 h | — |
