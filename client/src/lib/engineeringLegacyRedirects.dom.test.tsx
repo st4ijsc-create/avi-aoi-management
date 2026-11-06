@@ -301,7 +301,7 @@ describe("chuyển hướng (Đợt 3 Task 5): /fleet-orchestration → /labs/fl
     expect(r).toEqual({ from: "/fleet-orchestration", to: "/labs/fleet-orchestration", add: {}, rename: true });
   });
 
-  it("App.tsx: route mới có RouteGuard navHref của CHÍNH nó + AIPageWrapper + CongMoDunRobot + FleetOrchestration; KHÔNG còn route trang ở URL cũ", () => {
+  it("App.tsx: route mới có RouteGuard navHref của CHÍNH nó + AIPageWrapper + cổng CongMoDunRobot (pha 0 C0-5) + FleetOrchestration, lồng đúng thứ tự; KHÔNG còn route trang ở URL cũ", () => {
     expect(APP_SRC).toMatch(
       /<Route path="\/labs\/fleet-orchestration"><RouteGuard navHref="\/labs\/fleet-orchestration"><AIPageWrapper><CongMoDunRobot><FleetOrchestration \/><\/CongMoDunRobot><\/AIPageWrapper><\/RouteGuard><\/Route>/,
     );
