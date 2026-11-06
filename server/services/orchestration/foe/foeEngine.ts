@@ -856,7 +856,6 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     if (!rc.prior.startOrder.includes(step.id) && !rc.startOrder.includes(step.id)) rc.startOrder.push(step.id);
     // R1b-2b-2a A2(n) — a step that failed on an UNKNOWN outcome keeps saying so (its containers' compensations split again)
     const kr = rs.khongRo || loiLaKetCucKhongRo(rs.error) ? { khongRo: true as const } : {};
-    if (kr.khongRo) rc.khongRoDaBao = true; // R-4 — already told at the hold
     if (rs.state === "compensationHeld" && step.compensation && !rc.aborting) {
       if (kr.khongRo && !daDuyetBuTruKhongRo(rc.context, step.id)) {
         // A2(n) (C-2) — the write keys on the same fact as the check: no approval of THIS step recorded by a Continue ⇒ it is split again

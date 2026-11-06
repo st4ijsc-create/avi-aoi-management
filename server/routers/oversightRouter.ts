@@ -242,7 +242,7 @@ export function goiYRunDangGiu(r: { status: string; currentStepId: string | null
 }
 
 // ── orchestration run đang giữ / chờ xác nhận (KHÔNG đổi hành vi) ──────────────
-async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<CategoryCount> {
+export async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<CategoryCount> {
   try {
     // doc 81 Đợt 5 task E fix 1 (R-5-d, review #2) — count AND samples only over runs the caller may see; filtered in SQL,
     // so the count is the caller's count. doc 81 Đợt 7 task I3 — by RUN (the pending runs visible by the definition versions
