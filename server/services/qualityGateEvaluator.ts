@@ -32,7 +32,6 @@ import {
   qualityGateEvents,
   productInspections,
   cpkHistory,
-  machines,
   type QualityGate,
 } from "../../drizzle/schema";
 
@@ -161,26 +160,10 @@ async function evaluateSingleGate(
       `action=${action}; eventId=${event?.id}`,
   );
 
-  // ── Enforce the configured action ─────────────────────────────────────────
-  // pause/stop persist the machine operational state so the consequence is real,
-  // not just metadata. Each step is independently guarded so a socket/DB hiccup
-  // can't prevent the others.
-  if (action === "pause" || action === "stop") {
-    try {
-      // operationStatusEnum has no dedicated "paused"; map pause→maintenance
-      // (operator-attended hold) and stop→stopped.
-      const newStatus = action === "stop" ? "stopped" : "maintenance";
-      await db
-        .update(machines)
-        .set({ operationStatus: newStatus as any, updatedAt: new Date() })
-        .where(eq(machines.id, ctx.machineId));
-    } catch (err) {
-      console.error(
-        `[QualityGate] Failed to persist ${action} state for machine #${ctx.machineId}:`,
-        (err as Error)?.message ?? err,
-      );
-    }
-  }
+  // ── Hành động cấu hình (pause / stop) — KHÔNG còn ghi `machines.operationStatus` (dọn vệ sinh Q0-4, 2026-11-04) ──
+  // Cổng chất lượng chỉ GHI sự kiện (`quality_gate_events.action`) + phát realtime + nâng cảnh báo; trạng thái vận hành của máy
+  // thuộc đường điều khiển/presence có kiểm soát, không do bộ đánh giá chất lượng tự ý UPDATE (hai nguồn sự thật cho một trường).
+  // Hệ quả có chủ đích: gate `pause`/`stop` hiện là KHUYẾN CÁO (event + alert), không tự đổi trạng thái máy.
 
   // ── Realtime + alert path ─────────────────────────────────────────────────
   emitGateEvent(gate, evalResult, ctx, event?.id);

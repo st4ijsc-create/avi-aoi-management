@@ -1016,7 +1016,8 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   A 35→32 · C 459→448 · D 1224→1210 · S 722→716 · tong 2448→2414 (−34) trùng congGiayPhepAiCensus#GHIM.tong; miễn trừ 34→31 (ntfClassifier.list|status · simTargets.ursimPing).
 // ★★ 2026-11-04 · dọn vệ sinh lô A2 + gỡ orchestrationGov/twinGov (chủ dự án chọn) — tho-ca-agent: thêm −77 thủ tục (A2 −68: parameterGuardrail, measurementSamples, spcConfig, aiAdvanced đã comment, 21 thủ tục lẻ… ; gỡ Gov −9). ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
 //   A 32→31 · C 448→431 · D 1210→1179 · S 716→688 · tong 2414→2337 trùng congGiayPhepAiCensus#GHIM.tong; miễn trừ 31→30.
-const GHIM = { A: 31, B: 8, C: 431, D: 1179, S: 688, tong: 2337 } as const;
+// 2026-11-05 dọn vệ sinh Q0-3: +1 `inspection.searchKpi` (nhóm S: lọc theo phạm vi người dùng qua resolveDataScope trong summarizeInspections) ⇒ S 688→689, tong 2337→2338 trùng congGiayPhepAiCensus#GHIM.tong.
+const GHIM = { A: 31, B: 8, C: 431, D: 1179, S: 689, tong: 2338 } as const;
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
