@@ -55,6 +55,7 @@ import {
   INTERRUPTED_EARLIER_CTX_KEY,
   RESUME_STATE_CTX_KEY,
   edgeResumeStateOf,
+  themBuocHongKhiTiepTuc,
 } from "./foeRunStore";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
 // R1b-2b-2a A2(m2) — a run interrupted while compensating: which compensation was in flight, and may the boot re-send it (b1–b3)
@@ -77,7 +78,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { KET_CUC_KHONG_RO_CTX_KEY, dauKetCucKhongRoCua, ghiAuditKetCucKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo } from "./foeKetCucKhongRo";
+import { KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, KHONG_RO_DUYET_CTX_KEY, buTruKhongRoCho, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -592,6 +593,12 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   chiStopGhimIds?: Set<string>;
   /** R1b-2b-2a A2(n) — the identity of this walk segment (the outcome-unknown alerts' dedup); set on first use. */
   luotDi?: string;
+  /** A2(n) (I-3, m-1) — what the dispatcher answered for a compensation sent by itself (the words of the URGENT come from this, not from "ok"). */
+  ketQuaBuTru?: Map<string, { accepted: boolean; simulated: boolean }>;
+  /** A2(n) (R-4) — this walk reported something about an unknown outcome, or resumed one (no "no compensation due" alert then). */
+  khongRoDaBao?: boolean;
+  /** A2(n) (R-4) — the command steps of this walk that ended on an unknown outcome. */
+  khongRoGoc?: Set<string>;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -615,9 +622,10 @@ type StepOutcome =
    * execStep's retry loop, which rewrites the outcome (flag dropped) before it leaves.
    * stopGhim (R1b-2b-2a A2(m)): set ONLY by execCommand when the central store authorised the command as a PINNED STOP (fresh row);
    * read only by execStep's retry loop (the STOP default of attempts, soLanThuToiDa), which drops it before the outcome leaves.
-   * khongRo (R1b-2b-2a A2(n)): the step FAILED because its outcome is UNKNOWN (FOE_OUTCOME_UNKNOWN / EDGE_OUTCOME_UNKNOWN). Set by execStep
-   * (never by execCommand) and KEPT on the way up: the failed branch of execStep — of the step and of every container around it — then sends a
-   * due compensation by itself only if it is a pinned STOP (else the run is held for a person). A known failure never carries it (n6).
+   * khongRo (R1b-2b-2a A2(n)): the step FAILED because its outcome is UNKNOWN (FOE_OUTCOME_UNKNOWN / EDGE_OUTCOME_UNKNOWN, or a STOP-typed step
+   * whose last attempt stayed unknown — I-1). Set by execStep (never by execCommand) and KEPT on the way up: the failed branch of execStep — of
+   * the step and of every container around it — then sends a due compensation by itself only if it is a STOP (else the run is held for a person).
+   * A known failure never carries it (n6).
    */
   | { kind: "failed"; error: string; outcomeUnknown?: true; motPhan?: MotPhan; stopGhim?: true; khongRo?: true }
   | { kind: "aborted"; error: string }
@@ -791,6 +799,9 @@ async function isStopCommandStep(rc: RunContext, step: WorkflowStep): Promise<bo
  *   R1b-2b-2a A2(m) — an OT STOP's pin check (foeRunStore.laStopGhimChoHangFoe, ≤ D, between the lookups and its authorisation
  *   row) adds one D per STOP to every figure above: (L + 5)·D, (L + 5 + 7·(k − 1))·D, ≤ 6·D. A failed attempt of a PINNED STOP on
  *   its default of attempts waits ≤ D before the next one (stopGhimLuiMs: 250 ms, then 500 ms).
+ *   R1b-2b-2a A2(n) — a STOP compensation due after an UNKNOWN outcome is classified first (rc.store.buTruLaStopGhim: the adapter lookup + the pin
+ *   read, one bound of 2·D, buTruLaStopGhimTrungTam): ≤ 8·D after the failing step's body returns, on that path only. A STOP compensation of a
+ *   CONTAINER behind a held child: its row 'held' (≤ D) + the same 8·D, after the child's hold (≤ D per row of that hold).
  */
 async function stopBoundedReadbacks(stop: boolean, rc: RunContext, stepId: string, c: Condition | undefined): Promise<void> {
   if (!stop) return refreshConditionReadbacks(rc, c);
@@ -845,10 +856,17 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     if (!rc.prior.startOrder.includes(step.id) && !rc.startOrder.includes(step.id)) rc.startOrder.push(step.id);
     // R1b-2b-2a A2(n) — a step that failed on an UNKNOWN outcome keeps saying so (its containers' compensations split again)
     const kr = rs.khongRo || loiLaKetCucKhongRo(rs.error) ? { khongRo: true as const } : {};
+    if (kr.khongRo) rc.khongRoDaBao = true; // R-4 — already told at the hold
     if (rs.state === "compensationHeld" && step.compensation && !rc.aborting) {
-      // a person's Continue (A2(n): resumeRun checked the role and the reason) — the held compensation is sent, through every gate
-      const c = await runCompensation(rc, step, rs.error);
-      if (c?.kind === "held") return c;
+      if (kr.khongRo && !daDuyetBuTruKhongRo(rc.context, step.id)) {
+        // A2(n) (C-2) — the write keys on the same fact as the check: no approval of THIS step recorded by a Continue ⇒ it is split again
+        const giu = await buTruSauKetCucKhongRo(rc, step, step.compensation, rs.error);
+        if (giu) return giu;
+      } else {
+        // a Continue that passed n3 (or a known failure's held compensation) — sent, through every gate
+        const c = await runCompensation(rc, step, rs.error);
+        if (c?.kind === "held") return c;
+      }
       // A2(n) — sent now: a later Continue never sends it again
       if (kr.khongRo && rc.store.kind === "central") datTrangThaiTiepTuc(rc, step.id, { state: "doneFailed", error: rs.error, khongRo: true });
     }
@@ -924,6 +942,11 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     const { stopGhim: _boCo, ...conLai } = outcome;
     outcome = conLai;
   }
+  // R1b-2b-2a A2(n) (I-1) — a STOP-typed step whose LAST attempt stayed unknown (it keeps its retries, so khongGuiLaiKhongRo left it): the same class
+  if (outcome.kind === "failed" && outcome.outcomeUnknown) {
+    const { outcomeUnknown: _boCo, ...conLai } = outcome;
+    outcome = { ...conLai, khongRo: true };
+  }
 
   // doc 81 Đợt 6 — finished, or failed ON ITS OWN (an 'aborted' outcome is the abort's: the sweep decides about it)
   if (outcome.kind === "ok" || outcome.kind === "skipped" || outcome.kind === "failed") rc.settled.add(step.id);
@@ -942,29 +965,47 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
   } else if (outcome.kind === "held") {
     // doc 81 Đợt 10 C (D5) — nothing was sent: the step waits for a Continue; no compensation (it did not act).
     const heldOutcome = outcome;
-    await stopBoundedWrite(stop, rc.runId, step.id, "held row", () =>
-      rc.store.upsertStep(rc.runId, step.id, step.type, { status: "held", attempt, error: heldOutcome.error, finishedAt: new Date() }),
+    const khongRoGiu = heldOutcome.reason === "outcomeUnknown";
+    await giuCoKhongRo(
+      khongRoGiu,
+      rc,
+      step.id,
+      stopBoundedWrite(stop, rc.runId, step.id, "held row", () =>
+        rc.store.upsertStep(rc.runId, step.id, step.type, { status: "held", attempt, error: heldOutcome.error, finishedAt: new Date() }),
+      ),
     );
+    // R1b-2b-2a A2(n) (C-1) — a container behind a child held for an unknown outcome: a STOP compensation NEVER waits for a person: it goes NOW
+    // (recorded by its row: the failure a later Continue brings up finds it settled); a non-STOP one stays due until that Continue
+    if (khongRoGiu && step.compensation && !rc.aborting) await stopToTienSauGiu(rc, step, step.compensation, heldOutcome.error);
   } else {
     // failed / aborted → run compensation if declared (E4: a STOP's failure row is bounded too). E fix 2 (review N1) — a
     // step whose COMPENSATION holds a STOP: its failed row is on that STOP's path ⇒ bounded as well.
     const failedOutcome = outcome;
+    const khongRo = failedOutcome.kind === "failed" && failedOutcome.khongRo === true;
+    if (khongRo && step.type === "command") (rc.khongRoGoc ??= new Set()).add(step.id); // R-4
+    // A2(n) (I-1) — with a compensation due the row says the class itself: central reads an edge run's rows at the Continue (edgeResumeStateOf)
+    const loiHang = "error" in failedOutcome ? (khongRo && step.compensation ? loiCoMaKhongRo(failedOutcome.error) : failedOutcome.error) : null;
     const compStop = step.compensation ? await isStopCommandStep(rc, step.compensation) : false;
-    await stopBoundedWrite(stop || compStop, rc.runId, step.id, "failed row", () =>
-      rc.store.upsertStep(rc.runId, step.id, step.type, {
-        status: "failed",
-        attempt,
-        error: "error" in failedOutcome ? failedOutcome.error : null,
-        finishedAt: new Date(),
-      }),
+    await giuCoKhongRo(
+      khongRo,
+      rc,
+      step.id,
+      stopBoundedWrite(stop || compStop, rc.runId, step.id, "failed row", () =>
+        rc.store.upsertStep(rc.runId, step.id, step.type, {
+          status: "failed",
+          attempt,
+          error: loiHang,
+          finishedAt: new Date(),
+        }),
+      ),
     );
     // doc 80 ORC-01 — a USER abort must not dispatch anything after the abort instant, so the
     // saga compensation (which issues commands) is NOT run while the run is aborting.
     // doc 81 Đợt 6 — the abort's sweep sends the STOP compensations that are due (only those), not this walk.
     if (step.compensation && !rc.aborting) {
-      const loi = "error" in failedOutcome ? failedOutcome.error : "";
-      if (failedOutcome.kind === "failed" && failedOutcome.khongRo === true) {
-        // R1b-2b-2a A2(n) (n1) — the outcome is UNKNOWN: a pinned STOP compensation is sent by itself, any other one is held for a person
+      const loi = loiHang ?? "";
+      if (khongRo) {
+        // R1b-2b-2a A2(n) (n1) — the outcome is UNKNOWN: a STOP compensation is sent by itself, any other one is held for a person
         const giu = await buTruSauKetCucKhongRo(rc, step, step.compensation, loi);
         if (giu) return giu;
       } else {
@@ -979,56 +1020,97 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
 
 /**
  * R1b-2b-2a A2(n) (n1, n2) — the compensation `comp` of `step`, due because `step` (or a step inside it) FAILED on an UNKNOWN outcome:
- *   • a PINNED STOP (rc.store.buTruLaStopGhim — central: the A2(h) shared predicate; edge: the package's verified OT stops) ⇒ sent NOW, by
- *     the engine's own compensation path (runCompensation → execCommand → the store's authorisation → equipmentRegistry → commandDispatcher,
- *     every gate) — handed over only if the central store authorises it as a pinned STOP for that dispatch (rc.chiStopGhimIds) — then
- *     URGENT "STOP compensation sent" (or "not confirmed"); the step's failure goes on (null: the caller returns it — the run fails as before
- *     and the containers around it split their own compensations);
+ *   • already settled in an earlier walk (a STOP that went behind a held child — C-1; a result on its row) ⇒ never sent again;
+ *   • a STOP (rc.store.buTruLaStopGhim: OT pinned / robot stop job) ⇒ sent NOW (guiStopKhongRo) — the step's failure goes on (null: the caller
+ *     returns it — the run fails as before and the containers around it split their own compensations);
  *   • anything else, a classification that cannot be made, or a "pinned" one the dispatch did not authorise as one ⇒ NOTHING is sent: the
  *     compensation row `held`, the run held (resume state compensationHeld for `step` + the A2(n) marker, central only — an edge run's
  *     resume state is derived from its rows), URGENT "… waiting for a person".
- * The URGENT never delays a STOP: it is raised after the dispatch, never awaited.
  */
 async function buTruSauKetCucKhongRo(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string): Promise<StepOutcome | null> {
-  const lan = (rc.luotDi ??= `${new Date().toISOString()}#${randomBytes(4).toString("hex")}`);
-  let ghim = false;
-  try {
-    ghim = rc.store.buTruLaStopGhim ? (await rc.store.buTruLaStopGhim(rc, comp)) === true : false;
-  } catch {
-    ghim = false; // undecidable ⇒ not a pinned STOP ⇒ held (fail-safe)
+  if (rc.prior.settled.has(comp.id)) {
+    rc.khongRoDaBao = true; // R-4 — it was split and told when it went
+    return null;
   }
-  if (ghim) {
-    (rc.chiStopGhimIds ??= new Set()).add(comp.id);
-    let c: StepOutcome | undefined;
-    try {
-      c = await runCompensation(rc, step, loi);
-    } finally {
-      rc.chiStopGhimIds.delete(comp.id);
-    }
-    if (c?.kind !== "held") {
-      baoKetCucKhongRo(rc, { loai: c?.kind === "ok" ? "stopSent" : "stopNotConfirmed", stepId: step.id, compId: comp.id, error: loi, lan });
-      return null;
-    }
+  const lan = luotDiCua(rc);
+  if (await laBuTruStop(rc, comp)) {
+    if (!(await guiStopKhongRo(rc, step, comp, loi, lan))) return null;
     // the dispatch did not authorise it as a pinned STOP (nothing handed over): held like any other compensation
   }
   return giuBuTruKhongRo(rc, step, comp, loi, lan);
 }
 
-/** R1b-2b-2a A2(n) — hold the run at `comp` (nothing sent). See buTruSauKetCucKhongRo. */
+/**
+ * A2(n) (C-1) — the compensation of a CONTAINER whose child is held for an unknown outcome: settled ⇒ nothing; a STOP ⇒ sent now, the run stays
+ * held for the child; any other ⇒ nothing now (it stays due: the failure a Continue brings up splits it).
+ */
+async function stopToTienSauGiu(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string): Promise<void> {
+  if (rc.prior.settled.has(comp.id) || !(await laBuTruStop(rc, comp))) return;
+  const lan = luotDiCua(rc);
+  if (await guiStopKhongRo(rc, step, comp, loi, lan)) baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: comp.id, error: loi, lan });
+}
+
+function luotDiCua(rc: RunContext): string {
+  return (rc.luotDi ??= `${new Date().toISOString()}#${randomBytes(4).toString("hex")}`);
+}
+
+async function laBuTruStop(rc: RunContext, comp: WorkflowStep): Promise<boolean> {
+  try {
+    return rc.store.buTruLaStopGhim ? (await rc.store.buTruLaStopGhim(rc, comp)) === true : false;
+  } catch {
+    return false; // undecidable ⇒ not a STOP ⇒ held (fail-safe)
+  }
+}
+
+/**
+ * A2(n) — send a STOP compensation by the engine's own path (runCompensation → execCommand → the store's authorisation → equipmentRegistry → the
+ * dispatcher, every gate; an OT one handed over only if the central store authorises it as a pinned STOP for that dispatch, rc.chiStopGhimIds),
+ * then the URGENT in words that are true (I-3, m-1). Raised after the dispatch, never awaited: it never delays a STOP. true ⇔ NOT handed over
+ * because the dispatch did not see a STOP (the caller treats it as held; no URGENT here).
+ */
+async function guiStopKhongRo(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string, lan: string): Promise<boolean> {
+  (rc.chiStopGhimIds ??= new Set()).add(comp.id);
+  let c: StepOutcome | undefined;
+  try {
+    c = await runCompensation(rc, step, loi);
+  } finally {
+    rc.chiStopGhimIds.delete(comp.id);
+  }
+  if (c?.kind === "held") return true;
+  baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, comp.id, c), stepId: step.id, compId: comp.id, error: loi, lan });
+  return false;
+}
+
+function loaiGuiStop(rc: RunContext, compId: string, c: StepOutcome | undefined): LoaiCanhBaoKhongRo {
+  const kq = rc.ketQuaBuTru?.get(compId);
+  if (kq?.simulated) return "stopSimulated";
+  if (c?.kind === "ok" && kq?.accepted) return "stopSent";
+  return rc.attempted.has(compId) ? "stopNotConfirmed" : "stopNotHanded";
+}
+
+/** R1b-2b-2a A2(n) — hold the run at `comp` (nothing sent). See buTruSauKetCucKhongRo. The URGENT goes FIRST and a failed row write never loses the hold (I-2). */
 async function giuBuTruKhongRo(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string, lan: string): Promise<StepOutcome> {
   const error = loiGiuBuTruKhongRo(step.id, comp.id, loi);
-  await rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "held", error, finishedAt: new Date() });
+  baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: comp.id, error: loi, lan });
   if (rc.store.kind === "central") {
     // central's own resume state + marker (persisted with the context when the walk ends held); an edge run's are central's to derive
     datTrangThaiTiepTuc(rc, step.id, { state: "compensationHeld", error: loi, khongRo: true });
-    rc.context[KET_CUC_KHONG_RO_CTX_KEY] = { stepId: step.id, compId: comp.id, ma: maKetCucKhongRoCua(loi), at: new Date().toISOString(), lan };
+    const truoc = dauKetCucKhongRoCua(rc.context)?.ds ?? [];
+    rc.context[KET_CUC_KHONG_RO_CTX_KEY] = { stepId: step.id, compId: comp.id, ma: maKetCucKhongRoCua(loi), at: new Date().toISOString(), lan, ds: [...truoc, { stepId: step.id, compId: comp.id }] };
   }
-  baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: comp.id, error: loi, lan });
+  await giuCoKhongRo(true, rc, comp.id, rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "held", error, finishedAt: new Date() }));
   return { kind: "held", stepId: comp.id, reason: "outcomeUnknown", error };
+}
+
+/** A2(n) (I-2) — a row write on the unknown path: a throw must not lose the flag (a parent's catch would turn it into a KNOWN failure, whose compensation runs). */
+async function giuCoKhongRo(khongRo: boolean, rc: RunContext, stepId: string, ghi: Promise<void>): Promise<void> {
+  if (!khongRo) return ghi;
+  await ghi.catch((err: unknown) => console.error(`[FOE] run ${rc.runId} step ${stepId}: row write failed on the outcome-unknown path — the run still splits: ${(err as Error)?.message ?? err}`));
 }
 
 /** R1b-2b-2a A2(n) — the store's report (central: URGENT alert; edge: anomaly). Never throws, never awaited. */
 function baoKetCucKhongRo(rc: RunContext, a: Parameters<NonNullable<RunStore["ketCucKhongRo"]>>[1]): void {
+  rc.khongRoDaBao = true;
   try {
     rc.store.ketCucKhongRo?.(rc, a);
   } catch (err) {
@@ -2019,9 +2101,10 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     }
   }
   const cmd = auth.cmd;
-  // R1b-2b-2a A2(n) — a compensation sent by itself after an unknown outcome because it was classified a PINNED STOP: handed over only if the
-  // central store authorised it as one for THIS dispatch (the pins may have changed since) — else nothing is sent, the run is held for a person
-  if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && auth.stopGhim !== true) {
+  // R1b-2b-2a A2(n) — an OT compensation sent by itself after an unknown outcome because it was classified a PINNED STOP: handed over only if the
+  // central store authorised it as one for THIS dispatch (the pins may have changed since) — else nothing is sent, the run is held for a person.
+  // A robot stop job has no pins (R-2: the classifier is the step itself, the robot dispatcher's own rule); the edge's list is the package's.
+  if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {
     return { kind: "held", stepId: step.id, reason: "outcomeUnknown", error: `${FOE_OUTCOME_UNKNOWN}: the compensation "${step.id}" is not a pinned STOP for this dispatch (its pins changed) — not sent; held for a person.` };
   }
   // R1b-2b-2a A2(m2) (b1) — the boot re-send hands ONLY a pinned STOP (the central store's verdict for THIS dispatch) to a dispatcher
@@ -2043,6 +2126,8 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const already = Array.isArray(rc.context[DISPATCHED_CTX_KEY]) ? (rc.context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : [];
   if (!already.includes(step.id)) rc.context[DISPATCHED_CTX_KEY] = [...already, step.id];
   const result: EquipmentCommandResult = await adapter.sendCommand(cmd);
+  // A2(n) (I-3) — what really came back for a compensation sent by itself: a simulated dispatch never reads "sent"
+  if (rc.chiStopGhimIds?.has(step.id)) (rc.ketQuaBuTru ??= new Map()).set(step.id, { accepted: result.ok, simulated: result.status === "simulated" || result.detail?.simulated === true });
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
   // R1b-2b-2a A2(o) AMENDMENT 2 — the edge refused it because its config went STALE after the authorisation (nothing sent, the
@@ -2050,21 +2135,27 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   const heldBy = result.ok || !rc.store.heldByDispatch ? null : await rc.store.heldByDispatch(step.id, { ok: result.ok, detail: (result.detail ?? null) as Record<string, unknown> | null });
   if (heldBy) return { kind: "held", stepId: step.id, reason: heldBy.reason, error: heldBy.error };
 
+  const ketCuc = ketCucLenhFoe(result, step.command);
   // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).
-  await stopBoundedWrite(isStop, rc.runId, step.id, "result row", () =>
-    rc.store.upsertStep(rc.runId, step.id, step.type, {
-      status: "running",
-      result: {
-        routedTo: result.routedTo,
-        status: result.status,
-        accepted: result.ok,
-        simulated: result.detail?.simulated ?? undefined,
-        detail: result.detail ?? null,
-      },
-    }),
+  // A2(n) (I-2) — an unknown outcome survives a failed write of this row (its throw would read as a KNOWN failure: retried, compensated)
+  await giuCoKhongRo(
+    ketCuc.kind === "failed" && ketCuc.outcomeUnknown === true,
+    rc,
+    step.id,
+    stopBoundedWrite(isStop, rc.runId, step.id, "result row", () =>
+      rc.store.upsertStep(rc.runId, step.id, step.type, {
+        status: "running",
+        result: {
+          routedTo: result.routedTo,
+          status: result.status,
+          accepted: result.ok,
+          simulated: result.detail?.simulated ?? undefined,
+          detail: result.detail ?? null,
+        },
+      }),
+    ),
   );
 
-  const ketCuc = ketCucLenhFoe(result, step.command);
   // R1b-2b-2a A2(m) — a PINNED STOP that failed: execStep's retry loop gives it the STOP default of attempts (soLanThuToiDa)
   return auth.stopGhim && ketCuc.kind === "failed" ? { ...ketCuc, stopGhim: true } : ketCuc;
 }
@@ -2083,6 +2174,9 @@ async function execParallel(rc: RunContext, steps: WorkflowStep[], failFast: boo
   const outcomes: StepOutcome[] = results.map((r) =>
     r.status === "fulfilled" ? r.value : { kind: "failed", error: String(r.reason) },
   );
+  // R1b-2b-2a A2(n) (C-2) — a compensation held for an unknown outcome outranks a gate of a sibling: the run says what it waits for
+  const heldKhongRo = outcomes.find((o) => o.kind === "held" && o.reason === "outcomeUnknown");
+  if (heldKhongRo) return heldKhongRo;
   // A hitl_gate inside a parallel branch pauses the whole run.
   const paused = outcomes.find((o) => o.kind === "paused");
   if (paused) return paused;
@@ -2092,9 +2186,11 @@ async function execParallel(rc: RunContext, steps: WorkflowStep[], failFast: boo
   if (held) return held;
   const failures = outcomes.filter((o) => o.kind === "failed") as Array<{ kind: "failed"; error: string; khongRo?: true }>;
   if (failures.length > 0) {
-    if (failFast || failures.length === outcomes.length) {
-      // R1b-2b-2a A2(n) — a branch failed on an UNKNOWN outcome ⇒ so did the parallel (its compensation splits too)
-      return { kind: "failed", error: `Parallel branch failed: ${failures.map((f) => f.error).join("; ")}`, ...(failures.some((f) => f.khongRo === true) ? { khongRo: true as const } : {}) };
+    // R1b-2b-2a A2(n) (I-4) — a branch failed on an UNKNOWN outcome ⇒ so did the parallel, failFast or not: never swallowed into a walk that goes
+    // forward (its compensation splits too); a known failure is unchanged (n6)
+    const khongRo = failures.some((f) => f.khongRo === true);
+    if (failFast || failures.length === outcomes.length || khongRo) {
+      return { kind: "failed", error: `Parallel branch failed: ${failures.map((f) => f.error).join("; ")}`, ...(khongRo ? { khongRo: true as const } : {}) };
     }
   }
   return { kind: "ok" };
@@ -2245,6 +2341,11 @@ async function finishWalk(rc: RunContext, out: StepOutcome): Promise<Orchestrati
     await rc.store.setStatusUnlessAborted(rc.runId, "aborted", { finishedAt: new Date(), error: "Run aborted by request." });
     await rc.store.persistContext(rc);
     return "aborted";
+  }
+  // R1b-2b-2a A2(n) (R-4) — an unknown outcome with no compensation due anywhere: nothing was split, nobody was told yet
+  if (out.kind === "failed" && out.khongRo === true && !rc.khongRoDaBao) {
+    const lan = luotDiCua(rc);
+    for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: out.error, lan });
   }
   let status: OrchestrationRun["status"];
   let patch: Partial<OrchestrationRun>;
@@ -2951,7 +3052,22 @@ async function edgeResumeStateFor(d: NonNullable<Awaited<ReturnType<typeof getDb
   const map = await loadMachines(validateWorkflow(def, null).referencedMachineIds);
   const stops = new Set<string>();
   for (const s of allStepsOf(def.steps)) if (s.type === "command" && (await isStopCandidate(s, map))) stops.add(s.id);
-  return edgeResumeStateOf(def, rows, authorised, hintUnknown, stops);
+  return { ...edgeResumeStateOf(def, rows, authorised, hintUnknown, stops), rows, stops };
+}
+
+/**
+ * R1b-2b-2a A2(n) (m-3, m-6) — one audit row per compensation a Continue releases, BEFORE the claim: a person-gated WRITE never goes out without
+ * its audit row (a failed audit refuses the Continue, nothing changed; a claim lost afterwards leaves an audit of an attempt, which is true).
+ */
+async function auditTiepTucKhongRo(user: FoeUser, runId: number, def: WorkflowDefinition, stepIds: readonly string[], lyDo: string, ctx: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<void> {
+  const dau = dauKetCucKhongRoCua(ctx);
+  for (const stepId of stepIds) {
+    const compId = findStepDeep(def.steps, stepId)?.compensation?.id ?? dau?.ds?.find((x) => x.stepId === stepId)?.compId ?? "?";
+    const ok = await ghiAuditKetCucKhongRo(user, runId, "continue", { stepId, compId, ma: dau?.ma ?? null, reason: lyDo, role: user.role, ...extra });
+    if (!ok) {
+      throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "resumeOrchestrationRun", reason: "auditNotWritten" }, `Run ${runId}: the audit row of this Continue could not be written — nothing was sent; retry.`);
+    }
+  }
 }
 
 /** The binding detail of an edge run: its node's program reports (D7). A read error ⇒ no digest (fail-closed). */
@@ -3118,14 +3234,16 @@ export async function resumeRun(
     }
     const pinnedStepId = run.currentStepId ?? null;
 
-    // R1b-2b-2a A2(n) (n3) — a run HELD because a command's outcome is unknown and the compensation due is not a pinned STOP. A Continue
-    // sends that compensation to a device whose state is unknown ⇒ ONLY a person with machine-control rights (the router's floor, re-checked:
-    // the engine has system callers too — auto-resume, the QT pump — which are refused) and a REQUIRED reason; audited below once the claim
-    // won. Out of scope was already answered "not found" above. A rejection (= abort) is never refused here (L-7: it only sends STOPs).
-    const dauKhongRo = run.status === "held" ? dauKetCucKhongRoCua(run.contextJson as Record<string, unknown> | null) : null;
-    const lyDoKhongRo = dauKhongRo && decision.approved ? await xetTiepTucKetCucKhongRo(user, decision.note) : null;
-    if (dauKhongRo && !decision.approved) {
-      void ghiAuditKetCucKhongRo(user, runId, "abort", { via: "reject", stepId: dauKhongRo.stepId, compId: dauKhongRo.compId, ma: dauKhongRo.ma, reason: decision.note?.trim() || null });
+    // R1b-2b-2a A2(n) (n3, C-2) — THE fact: a pending held compensation of an unknown outcome, at ANY resumable status, on any route. A resume
+    // would send it to a device whose state is unknown ⇒ ONLY a person with machine-control rights (the router's floor, re-checked: the engine
+    // has system callers too — auto-resume, the QT pump — which are refused) and a REQUIRED reason, audited. An edge run's rows may add steps
+    // the context does not name (crash, lost marker): checked again on its branch below. Out of scope was already answered "not found" above. A
+    // rejection (= abort) is never refused here (R-1: reason optional, it only sends STOPs).
+    const ctxKhongRo = (run.contextJson as Record<string, unknown> | null) ?? {};
+    const khongRoCho = buTruKhongRoCho(ctxKhongRo);
+    let lyDoKhongRo = khongRoCho.length > 0 && decision.approved ? await xetTiepTucKetCucKhongRo(user, decision.note) : null;
+    if (khongRoCho.length > 0 && !decision.approved) {
+      void ghiAuditKetCucKhongRo(user, runId, "abort", { via: "reject", stepIds: khongRoCho, reason: decision.note?.trim() || null });
     }
 
     if (!decision.approved) {
@@ -3344,8 +3462,12 @@ export async function resumeRun(
       // and its own authorisation ledger (a context mark may only ADD an outcome-unknown step). Ambiguous rows ⇒ the Continue /
       // approval is REFUSED (never a guess that could re-send motion). A read error ⇒ refused too.
       let resume: ResumeStateMap;
+      let derivedRows: Awaited<ReturnType<typeof edgeResumeStateFor>>["rows"];
+      let derivedStops: ReadonlySet<string>;
       try {
         const derived = await edgeResumeStateFor(d, runId, def, Array.isArray(ctx0[OUTCOME_UNKNOWN_CTX_KEY]) ? (ctx0[OUTCOME_UNKNOWN_CTX_KEY] as unknown[]).map(String) : []);
+        derivedRows = derived.rows;
+        derivedStops = derived.stops;
         if (derived.ambiguous.length) {
           // data-raw-ok: an operator-facing refusal naming the steps (machine-readable prefix EDGE_RESUME_AMBIGUOUS)
           return { ok: false, enabled: true, runId, status: run.status, message: `EDGE_RESUME_AMBIGUOUS(${derived.ambiguous.join(",")}): the step rows of run ${runId} do not say whether these steps failed before their compensation ran — it is NOT continued (nothing would be re-sent on a guess). Abort the run, or check the equipment.` };
@@ -3354,8 +3476,18 @@ export async function resumeRun(
       } catch {
         return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: its step rows could not be read to continue it safely — retry.` };
       }
-      // R1b-2b-2a A2(n) — the outcome-unknown marker is cleared by the Continue that passed its checks (lyDoKhongRo)
-      const marked = EDGE_HOLD_MARK_KEYS.some((k) => k in ctx0) || (lyDoKhongRo !== null && KET_CUC_KHONG_RO_CTX_KEY in ctx0);
+      // R1b-2b-2a A2(n) (C-2) — the FACT on an edge run: what the rows say the re-walk would write, whatever the hold's reason, the marker or the
+      // route (a gate approval, journalFull, a sibling's reason, a crash before the compensation row): the same check, before any change
+      const khongRoEdge = [...new Set([...khongRoCho, ...buTruKhongRoCho({ foeResumeState: resume })])];
+      if (khongRoEdge.length > 0) {
+        lyDoKhongRo ??= await xetTiepTucKetCucKhongRo(user, decision.note);
+        resume = themBuocHongKhiTiepTuc(def, derivedRows, resume, derivedStops); // I-4 — nothing forward
+        await auditTiepTucKhongRo(user, runId, def, khongRoEdge, lyDoKhongRo, ctx0, { edgeNodeId: edgeAssigned.edgeNodeId });
+      }
+      // R1b-2b-2a A2(n) — the outcome-unknown marker is cleared by the Continue that passed its checks (lyDoKhongRo); the approval it records is the
+      // only thing that lets the walker write a held compensation (replaced at every Continue)
+      const khongRoDuyet = khongRoEdge.length > 0 ? { [KHONG_RO_DUYET_CTX_KEY]: { stepIds: khongRoEdge, by: user.id, at: new Date().toISOString() } } : {};
+      const marked = EDGE_HOLD_MARK_KEYS.some((k) => k in ctx0) || (lyDoKhongRo !== null && KET_CUC_KHONG_RO_CTX_KEY in ctx0) || KHONG_RO_DUYET_CTX_KEY in ctx0;
       // fix review 4 (B F-B2-1) — a Continue of a HELD edge run records WHO continued it (central-only key — the edge context
       // filter refuses it): central's /authorize evaluates the engine policy with that user's role, as central's own resumed walk
       // would (rc.user = the resumer). A gate approval records nothing here (the approver is the gate row's).
@@ -3364,10 +3496,11 @@ export async function resumeRun(
         marked || Object.keys(resume).length || RESUME_STATE_CTX_KEY in ctx0 || Object.keys(resumedBy).length
           ? {
               contextJson: {
-                ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k) && k !== RESUME_STATE_CTX_KEY && !(lyDoKhongRo !== null && k === KET_CUC_KHONG_RO_CTX_KEY))),
+                ...Object.fromEntries(Object.entries(ctx0).filter(([k]) => !EDGE_HOLD_MARK_KEYS.includes(k) && k !== RESUME_STATE_CTX_KEY && k !== KHONG_RO_DUYET_CTX_KEY && !(lyDoKhongRo !== null && k === KET_CUC_KHONG_RO_CTX_KEY))),
                 ...(ctx0.interrupted === true || ctx0[INTERRUPTED_EARLIER_CTX_KEY] === true ? { [INTERRUPTED_EARLIER_CTX_KEY]: true } : {}),
                 ...(Object.keys(resume).length ? { [RESUME_STATE_CTX_KEY]: resume } : {}),
                 ...resumedBy,
+                ...khongRoDuyet,
               },
             }
           : {};
@@ -3417,10 +3550,11 @@ export async function resumeRun(
       });
       if (out.gateWritten && gateStepId) void appendRunEvent(runId, "TASK_COMPLETED", { taskId: gateStepId, ts: Date.now() });
       if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
-      if (dauKhongRo && lyDoKhongRo !== null) await ghiAuditKetCucKhongRo(user, runId, "continue", { stepId: dauKhongRo.stepId, compId: dauKhongRo.compId, ma: dauKhongRo.ma, reason: lyDoKhongRo, role: user.role, edgeNodeId: edgeAssigned.edgeNodeId }); // A2(n)
       return { ok: true, enabled: true, runId, status: "queued", edgeNodeId: edgeAssigned.edgeNodeId };
     }
 
+    // R1b-2b-2a A2(n) (m-6) — the audit row first: no write of a held compensation without it
+    if (lyDoKhongRo !== null) await auditTiepTucKhongRo(user, runId, def, khongRoCho, lyDoKhongRo, ctxKhongRo);
     await claimPausedRun(runId, "running", { currentStepId: null, ...versionPatch }, pinnedStepId);
     if (approvalStopOnlyOut) auditStopOutOfScope(user, def, runId, "approve", approvalStopOnlyOut); // E2 (L-7: allowed, audited)
 
@@ -3451,10 +3585,15 @@ export async function resumeRun(
     // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed
     // ở trên + mọi bước đã xong lần trước) → execStep bỏ qua chúng khi đi lại.
     const rc = await buildRunContext(run, def, user);
-    if (dauKhongRo && lyDoKhongRo !== null) {
-      // R1b-2b-2a A2(n) — the Continue passed its checks and won the claim: audited, the marker cleared (persisted with the walk's context;
-      // a crash before that keeps it ⇒ the run comes back needing a person again — fail-safe)
-      await ghiAuditKetCucKhongRo(user, runId, "continue", { stepId: dauKhongRo.stepId, compId: dauKhongRo.compId, ma: dauKhongRo.ma, reason: lyDoKhongRo, role: user.role });
+    if (lyDoKhongRo !== null) {
+      // R1b-2b-2a A2(n) — the Continue passed its checks and won the claim: the approval recorded, the marker cleared (persisted with the walk's
+      // context; a crash before that keeps it ⇒ the run comes back needing a person again — fail-safe). I-4 — the other failed steps are done:
+      // the re-walk writes exactly the held compensation(s), nothing forward.
+      const hangBuoc = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+      const stopIds = new Set<string>();
+      for (const s of allStepsOf(def.steps)) if (s.type === "command" && (await isStopCandidate(s, rc.machineById))) stopIds.add(s.id);
+      rc.context[RESUME_STATE_CTX_KEY] = themBuocHongKhiTiepTuc(def, hangBuoc, (rc.context[RESUME_STATE_CTX_KEY] as ResumeStateMap | undefined) ?? {}, stopIds);
+      rc.context[KHONG_RO_DUYET_CTX_KEY] = { stepIds: khongRoCho, by: user.id, at: new Date().toISOString() };
       delete rc.context[KET_CUC_KHONG_RO_CTX_KEY];
     }
     const status = await driveRunFromResume(rc);
@@ -3675,7 +3814,7 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       // R1b-2b-2a A2(m2) — a run held because a COMPENSATION was interrupted: only the guarded boot re-send (b1–b4) or a person continues it
       if (BU_TRU_BI_NGAT_CTX_KEY in ctx) continue;
       // R1b-2b-2a A2(n) — a run held because a command's outcome is unknown waits for a PERSON (resumeRun refuses a system Continue anyway)
-      if (KET_CUC_KHONG_RO_CTX_KEY in ctx) continue;
+      if (buTruKhongRoCho(ctx).length > 0) continue;
       // doc 81 Đợt 9 task S2 — an edge run interrupted on its node waits for a person's Continue (undecidable ⇒ skipped)
       const onEdge = await readEdgeAssignment(d, runId).catch(() => "unknown" as const);
       if (onEdge !== null) continue;
@@ -5045,7 +5184,7 @@ export async function abortRun(
       return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: `Run ${runId} already terminal.` };
     }
     // R1b-2b-2a A2(n) — read BEFORE the 'aborted' write (the row as the abort found it)
-    const dauKhongRoHuy = run.status === "held" ? dauKetCucKhongRoCua(run.contextJson as Record<string, unknown> | null) : null;
+    const khongRoHuy = run.status === "held" || run.status === "awaiting_confirm" ? buTruKhongRoCho(run.contextJson as Record<string, unknown> | null) : [];
     const live = liveRuns.get(runId);
     if (live) {
       live.aborting = true;
@@ -5098,9 +5237,7 @@ export async function abortRun(
     }
     if (confirmed === true) void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
     // R1b-2b-2a A2(n) (n3) — the Abort of a run held for an unknown outcome: never refused (L-7), audited (never awaited: the STOP sweep goes on)
-    if (dauKhongRoHuy) {
-      void ghiAuditKetCucKhongRo(user, runId, "abort", { via: "abort", stepId: dauKhongRoHuy.stepId, compId: dauKhongRoHuy.compId, ma: dauKhongRoHuy.ma, reason: reason?.trim() || null, confirmed });
-    }
+    if (khongRoHuy.length > 0) void ghiAuditKetCucKhongRo(user, runId, "abort", { via: "abort", stepIds: khongRoHuy, reason: reason?.trim() || null, confirmed });
     // doc 81 Đợt 6 — skip every non-STOP step, still send the remaining STOP steps and the due STOP compensations.
     const abortStops = await abortStopSweep(runId, run, lateLive ?? live ?? null, user, scopeFor(user, opts.scope));
     if (confirmed === "unknown") {

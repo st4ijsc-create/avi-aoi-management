@@ -81,6 +81,7 @@ import { forgeNgoaiBat } from "../_core/forgeNgoai";
 import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
 import { resolveVisiblePendingRunIds } from "../services/orchestration/foe/foeEngine"; // doc 81 Đợt 5 task E fix 1/2; Đợt 7 I3
 import { resolveUserFoeScope } from "../services/orchestration/foe/foeScope";
+import { KET_CUC_KHONG_RO_CTX_KEY } from "../services/orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n) (m-10)
 import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -234,6 +235,12 @@ async function fetchInterlockEventsOpen(d: Db, showNames: boolean): Promise<Cate
   }
 }
 
+/** R1b-2b-2a A2(n) (m-10, R-3) — the oversight hint of a pending run says WHY when a compensation waits after an unknown outcome. Pure. */
+export function goiYRunDangGiu(r: { status: string; currentStepId: string | null; khongRo?: string | null }): string {
+  const co = r.currentStepId ? `${r.status} · ${r.currentStepId}` : r.status;
+  return r.khongRo ? `${co} · outcome unknown (${r.khongRo}) — compensation waiting for a person` : co;
+}
+
 // ── orchestration run đang giữ / chờ xác nhận (KHÔNG đổi hành vi) ──────────────
 async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<CategoryCount> {
   try {
@@ -251,6 +258,8 @@ async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<C
         workflowRef: orchestrationRuns.workflowRef,
         status: orchestrationRuns.status,
         currentStepId: orchestrationRuns.currentStepId,
+        // R1b-2b-2a A2(n) (m-10) — WHY it is held: a code from the run's server-written marker (foeKetCucKhongRo), no free text
+        khongRo: sql<string | null>`${orchestrationRuns.contextJson} -> ${KET_CUC_KHONG_RO_CTX_KEY} ->> 'ma'`,
       })
       .from(orchestrationRuns)
       .where(cond)
@@ -262,7 +271,7 @@ async function fetchOrchestrationHeld(d: Db, runIds: number[] | null): Promise<C
       samples: rows.map((r) => ({
         id: r.id,
         label: r.workflowRef ?? `run #${r.id}`,
-        hint: r.currentStepId ? `${r.status} · ${r.currentStepId}` : r.status,
+        hint: goiYRunDangGiu(r),
       })),
     };
   } catch (err) {

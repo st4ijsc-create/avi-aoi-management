@@ -48,7 +48,7 @@ import {
   type RunStoreUser,
 } from "../orchestration/foe/foeRunStore";
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
-import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
@@ -290,6 +290,10 @@ export class EdgeRunStore extends EdgeStoreBase {
   private readonly jtiByStep = new Map<string, string>();
   /** A2(o) — the attempt each of those authorisations was issued for (an unused report names it) */
   private readonly attemptByStep = new Map<string, number>();
+  /** R1b-2b-2a A2(n) (C-2) — a compensation was held for an unknown outcome: the segment ends held(outcomeUnknown) whatever else held or refused */
+  private khongRoGiu = false;
+  /** A2(n) (I-5) — this segment's reports: they also ride on the segment end (a full journal must not lose the URGENT) */
+  private readonly khongRoBao: BaoCaoKhongRoEdge[] = [];
 
   constructor(
     readonly pkg: EdgeRunPackage,
@@ -452,7 +456,7 @@ export class EdgeRunStore extends EdgeStoreBase {
    * (central's URGENT alert) for it; the step error still says why.
    */
   private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
-    this.heldReason = "configStale";
+    if (!this.khongRoGiu) this.heldReason = "configStale"; // A2(n) (C-2) — one field, a sibling's reason never overwrites outcomeUnknown
     if (cause === EDGE_CONFIG_STALE) {
       this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
     }
@@ -498,18 +502,18 @@ export class EdgeRunStore extends EdgeStoreBase {
   }
 
   private unavailable(stepId: string, reason: RunStoreHeldReason): AuthorizeVerdict {
-    this.heldReason = reason;
+    if (!this.khongRoGiu) this.heldReason = reason; // A2(n) (C-2) — see heldForStaleConfig
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
     return { ok: false, verdict: "unavailable", heldReason: reason, error: `EDGE_HELD(${reason}): command step "${stepId}" was not sent — no authorisation could be obtained from central; the run is held (Continue it once the edge is reachable again).` };
   }
 
   /**
-   * R1b-2b-2a A2(n) (n5) — the edge mirror of central's pinned-STOP check of a compensation due after an unknown outcome: an OT stop the
-   * package lists as VERIFIED (central ran the A2(h) predicate + the running-connection check over its pins, edgeRunAnalysis). Anything
-   * else — a robot job, an unpinned / unsure stop, a step the package does not list — is NOT a pinned STOP ⇒ held (as central).
+   * R1b-2b-2a A2(n) (n5, R-2) — the edge mirror of central's STOP check of a compensation due after an unknown outcome: a stop the package
+   * lists as VERIFIED (OT: central ran the A2(h) predicate + the running-connection check over its pins, edgeRunAnalysis; robot: the stop-job
+   * rule, also applied locally). Anything else — an unpinned / unsure stop, a step the package does not list — ⇒ held (as central).
    */
   async buTruLaStopGhim(_rc: RunStoreContext, comp: WorkflowStep): Promise<boolean> {
-    return comp.type === "command" && this.pkg.verifiedStops.some((s) => s.stepId === comp.id && s.kind === "ot");
+    return comp.type === "command" && this.verifiedStopIds.has(comp.id);
   }
 
   /**
@@ -518,8 +522,14 @@ export class EdgeRunStore extends EdgeStoreBase {
    * segment end held(outcomeUnknown).
    */
   ketCucKhongRo(_rc: RunStoreContext, a: KetCucKhongRoBaoCao): void {
-    if (a.loai === "held") this.heldReason = "outcomeUnknown";
-    this.event({ kind: "anomaly", code: KHONG_RO_EDGE_ANOMALY, runId: this.io.runId, detail: chiTietAnomalyKhongRo({ ...a, claimSeq: this.io.claimSeq }), at: Date.now() });
+    if (a.loai === "held") {
+      this.khongRoGiu = true;
+      this.heldReason = "outcomeUnknown";
+    }
+    const detail = chiTietAnomalyKhongRo({ ...a, claimSeq: this.io.claimSeq });
+    const bao = docAnomalyKhongRo(detail);
+    if (bao) this.khongRoBao.push(bao);
+    this.event({ kind: "anomaly", code: KHONG_RO_EDGE_ANOMALY, runId: this.io.runId, detail, at: Date.now() });
   }
 
   /** An abort STOP never asks (L-7): it is bound to this run segment for the edge dispatch's ledger, nothing else. */
@@ -554,14 +564,24 @@ export class EdgeRunStore extends EdgeStoreBase {
 
   /** How the segment ended (POST complete); null ⇔ the walk has not ended (or let go of a stale claim). */
   segmentEnd(): EdgeSegmentEnd | null {
+    const e = this.segmentEndGoc();
+    // A2(n) (I-5) — the reports ride on the end (an end with no error field — completed, paused — carries none: the anomaly is their route)
+    if (e && this.khongRoBao.length > 0 && (e.outcome === "failed" || e.outcome === "held" || e.outcome === "aborted")) return { ...e, error: ganBaoCaoKhongRoEdge(e.error, this.khongRoBao, 4_000) };
+    return e;
+  }
+
+  private segmentEndGoc(): EdgeSegmentEnd | null {
     if (!this.ended) return null;
     if (this.journalRefused !== null && this.status !== "aborted") {
       const unknown = [...this.outcomeUnknown];
+      // A2(n) (C-2) — a held compensation outranks journalFull: the Continue needs a person + a reason, and the held text names it
+      const giu = typeof this.lastPatch.error === "string" ? this.lastPatch.error : undefined;
+      if (this.khongRoGiu && giu) return { outcome: "held", heldReason: "outcomeUnknown", error: clip(giu, 4_000) ?? undefined, ...(unknown.length ? { outcomeUnknown: unknown } : {}) };
       // data-raw-ok: machine-readable prefixes (EDGE_OUTCOME_UNKNOWN(<steps>) / EDGE_HELD(journalFull)) — central parses the first
       const error = unknown.length
         ? `EDGE_OUTCOME_UNKNOWN(${unknown.join(",")}): sent, but the result could not be recorded (journal: ${this.journalRefused}) — never sent again; the run is held.`
         : `EDGE_HELD(journalFull): the journal refused a record (${this.journalRefused}) — nothing further was sent; the run is held.`;
-      return { outcome: "held", heldReason: "journalFull", error: clip(error, 4_000) ?? undefined, ...(unknown.length ? { outcomeUnknown: unknown } : {}) };
+      return { outcome: "held", heldReason: this.khongRoGiu ? "outcomeUnknown" : "journalFull", error: clip(error, 4_000) ?? undefined, ...(unknown.length ? { outcomeUnknown: unknown } : {}) };
     }
     const error = typeof this.lastPatch.error === "string" ? this.lastPatch.error : undefined;
     switch (this.status) {

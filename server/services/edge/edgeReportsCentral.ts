@@ -51,7 +51,7 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { KHONG_RO_EDGE_ANOMALY, canhBaoKetCucKhongRo, docAnomalyKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { canhBaoTuAnomalyEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 
 export class StreamAnswer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -729,13 +729,10 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
         audits.push({ action: "EDGE_ANOMALY", entity, details: { anomaly: rec.code, reportedByEdge: true, runId: rec.runId, detail: rec.detail, at: rec.at }, status: "failure" });
         // R1b-2b-2a A2(n) (n2, n5) — the edge walker split a compensation after an unknown outcome (held for a person / STOP sent): the SAME
         // URGENT alert as central's own walk — only for a run this node is assigned (runEntity), deduped per run / step / compensation / claim
-        if (rec.code === KHONG_RO_EDGE_ANOMALY && entity.type === "orchestration_run" && rec.runId != null) {
-          const x = docAnomalyKhongRo(rec.detail);
-          if (x) {
-            const [r] = await tx.select({ startedBy: orchestrationRuns.startedBy }).from(orchestrationRuns).where(eq(orchestrationRuns.id, rec.runId)).limit(1);
-            void canhBaoKetCucKhongRo({ loai: x.loai, runId: rec.runId, stepId: x.stepId, compId: x.compId, error: x.error, lan: `edge${node.nodeId}-claim${x.claimSeq}`, owner: r?.startedBy ?? null });
-          }
-        }
+        await canhBaoTuAnomalyEdge(rec, entity.type === "orchestration_run", async () => {
+          const [r] = await tx.select({ startedBy: orchestrationRuns.startedBy }).from(orchestrationRuns).where(eq(orchestrationRuns.id, rec.runId as number)).limit(1);
+          return r?.startedBy ?? null;
+        });
         // R1b-2b-2a A2(o) AMENDMENT 2 — a write refused for a MISSING safety PLC ⇒ URGENT alert (24 h dedup); EDGE_CONFIG_STALE stays this audit
         const { alertForEdgeAnomaly, alertRecipients } = await import("./edgeConfigCentral");
         alertForEdgeAnomaly(node, { code: rec.code, detail: rec.detail }, async () => alertRecipients(await centralDb()));

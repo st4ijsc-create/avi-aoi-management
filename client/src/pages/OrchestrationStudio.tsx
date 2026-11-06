@@ -2301,7 +2301,7 @@ export default function OrchestrationStudio() {
       onResume={(approved, note, expectedStepId, expectedDefHash, expectedBindingDigest) =>
         resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId, expectedDefHash, expectedBindingDigest })
       }
-      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+      onAbort={(reason) => abortM.mutate({ runId: Number(r.id), ...(reason ? { reason } : {}) })}
       abortPending={abortM.isPending && abortM.variables?.runId === Number(r.id)}
       t={t}
     />
@@ -2856,7 +2856,8 @@ function RunRow({
   /** doc 81 Đợt 4 fix round 2 (R-4-k) — `expectedDefHash` = getRun().defHash the screen loaded; required to approve. */
   /** doc 81 Đợt 7 task I2 — `expectedBindingDigest` = getRun().bindingDigest the screen loaded (device configuration); required to approve. */
   onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null, expectedDefHash?: string, expectedBindingDigest?: string) => void;
-  onAbort: () => void;
+  /** R1b-2b-2a A2(n) (R-1) — the reason of an outcome-unknown hold's Abort, when one was typed: OPTIONAL (no STOP waits on a text field). */
+  onAbort: (reason?: string) => void;
   /** doc 81 Đợt 6 fix 3 (M1) — an abort / re-send request for THIS run is in flight ⇒ "Send STOP steps again" is disabled. */
   abortPending?: boolean;
   t: TFunction;
@@ -2880,12 +2881,7 @@ function RunRow({
   const edgeUnreachableCtx = (run.contextJson as Record<string, unknown> | null | undefined) ?? null;
   const edgeUnreachable = edgeUnreachableCtx?.edgeUnreachable === true;
   const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
-  // SCADA R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP (server marker
-  // foeKetCucKhongRo): Continue sends that compensation to a device whose state is unknown ⇒ a REASON is required (the server refuses without one).
-  const outcomeUnknownHeld = status === "held" && edgeUnreachableCtx?.foeKetCucKhongRo != null;
   const [outcomeUnknownNote, setOutcomeUnknownNote] = useState("");
-  const outcomeUnknownBlocked = outcomeUnknownHeld && outcomeUnknownNote.trim() === "";
-  const continueNote = outcomeUnknownHeld ? outcomeUnknownNote.trim() : undefined;
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -2906,6 +2902,14 @@ function RunRow({
     ? (detailQ.data.run.currentStepId ?? null)
     : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
+  // SCADA R1b-2b-2a A2(n) — a compensation is held because a command's outcome is unknown (server marker foeKetCucKhongRo; an edge run may have
+  // only the rows to say so — a step failed with the code): Continue sends it to a device whose state is unknown ⇒ a REASON is required (the
+  // server refuses without one). Abort: the reason is sent when given, never required (R-1).
+  const outcomeUnknownHeld =
+    (status === "held" || status === "awaiting_confirm") &&
+    (edgeUnreachableCtx?.foeKetCucKhongRo != null || steps.some((s) => s.status === "failed" && /\b(FOE|EDGE)_OUTCOME_UNKNOWN\b/.test(String(s.error ?? ""))));
+  const outcomeUnknownBlocked = outcomeUnknownHeld && outcomeUnknownNote.trim() === "";
+  const continueNote = outcomeUnknownHeld ? outcomeUnknownNote.trim() : undefined;
   // doc 81 Đợt 4 fix round 2 (R-4-k) — the definition this screen shows; Approve / Continue wait for it.
   // fix round 3 (R-4-p) — PINNED at the first view of the gate (per gate step): a later poll with another hash never
   // replaces it silently; the row says "definition changed, reload" and Approve / Continue stay disabled.
@@ -2962,7 +2966,7 @@ function RunRow({
             <Button size="sm" variant="outline" className="h-7" onClick={() => setConfirmContinue(true)}>
               {t("studio.continueRun", "Continue…")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={() => onAbort(outcomeUnknownNote.trim() || undefined)} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.cancelRun", "Cancel run")}
             </Button>
           </div>
@@ -2972,7 +2976,7 @@ function RunRow({
             size="sm"
             variant="outline"
             className="h-7"
-            onClick={onAbort}
+            onClick={() => onAbort()}
             disabled={abortPending || resendTooOld}
             title={
               resendTooOld
@@ -2984,19 +2988,19 @@ function RunRow({
           </Button>
         )}
         {abortable && canControl && (
-          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
+          <Button size="sm" variant="destructive" className="h-7" onClick={() => onAbort(outcomeUnknownNote.trim() || undefined)} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
             {t("studio.abort", "Abort")}
           </Button>
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked || outcomeUnknownBlocked} onClick={() => onResume(true, continueNote, shownStepId, defHash, bindingDigest)}>
-              {t("studio.approve", "Approve")}
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked || outcomeUnknownBlocked} title={outcomeUnknownBlocked ? t("studio.outcomeUnknownReasonNeeded", "Write the reason first: what you checked on the device") : undefined} onClick={() => onResume(true, continueNote, shownStepId, defHash, bindingDigest)}>
+              {outcomeUnknownHeld ? t("studio.outcomeUnknownContinue", "Continue: send the held compensation") : t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.reject", "Reject")}
             </Button>
-            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
+            <Button size="sm" variant="destructive" className="h-7" onClick={() => onAbort(outcomeUnknownNote.trim() || undefined)} title={t("studio.abortHint", "Abort: the remaining non-STOP steps are skipped. If the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
               {t("studio.abort", "Abort")}
             </Button>
           </div>
@@ -3027,12 +3031,12 @@ function RunRow({
           <p>
             {t(
               "studio.outcomeUnknownHint",
-              "A command's outcome is UNKNOWN — the machine state is unknown. Its compensation is not a pinned STOP, so it was NOT sent: it is waiting for a person. Check the device on site. Continue sends ONLY that compensation (a reason is required); Abort sends no compensation that is not a STOP.",
+              "A command's outcome is UNKNOWN — the machine state is unknown. Its compensation could not be confirmed as a STOP, so it was NOT sent: it is waiting for a person. This is not an approval: check the device on site. Continue sends ONLY that compensation (a reason is required); Abort sends no compensation that is not a STOP (a reason is optional).",
             )}
           </p>
           {canControl && (
             <>
-              <Label className="text-[11px]">{t("studio.outcomeUnknownReason", "Reason (required): what you checked on the device")}</Label>
+              <Label className="text-[11px]">{t("studio.outcomeUnknownReason", "Reason (required to continue, optional to abort): what you checked on the device")}</Label>
               <Input
                 data-testid="outcome-unknown-reason"
                 value={outcomeUnknownNote}
@@ -3062,6 +3066,11 @@ function RunRow({
           </AlertDialogHeader>
           {/* doc 81 Đợt 9 final wave (R-9-e) — Continue resumes actuation: a set e-stop latch is warned (non-blocking) */}
           <SafetyLatchWarning enabled={confirmContinue} />
+          {outcomeUnknownBlocked && (
+            <p data-testid="outcome-unknown-reason-needed" className="text-xs text-red-700 dark:text-red-300">
+              {t("studio.outcomeUnknownReasonNeeded", "Write the reason first: what you checked on the device")}
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction disabled={approveBlocked || outcomeUnknownBlocked} onClick={() => { setConfirmContinue(false); onResume(true, continueNote, shownStepId, defHash, bindingDigest); }}>
