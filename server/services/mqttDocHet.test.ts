@@ -10,7 +10,6 @@ import { Duplex } from "node:stream";
 import Aedes from "aedes";
 import { createServer } from "aedes-server-factory";
 import mqtt from "mqtt";
-import mqttPacket from "mqtt-packet";
 import { boDocHetVaoBroker, docHetMoiLan } from "./mqttDocHet";
 
 type XacThuc = ConstructorParameters<typeof Aedes>[0];
@@ -69,8 +68,10 @@ async function publishNhieuManhQuaTcp(boc: boolean): Promise<"PUBACK" | "ket"> {
     await new Promise<void>((r) => server.close(() => r()));
   });
   const { port } = server.address() as { port: number };
-  const goiKetNoi = mqttPacket.generate({ cmd: "connect", protocolId: "MQTT", protocolVersion: 4, clean: true, clientId: "doc-het", keepalive: 60, username: "u" });
-  const goiPublish = mqttPacket.generate({ cmd: "publish", topic: "a/b", payload: Buffer.alloc(300, 1), qos: 1, messageId: 7, retain: false, dup: false });
+  // Byte MQTT 3.1.1 viết tay: CONNECT (clean, username "u", clientId "doc-het"); PUBLISH QoS1 topic "a/b", id 7, 300 byte.
+  const goiKetNoi = Buffer.concat([Buffer.from([0x10, 22, 0, 4]), Buffer.from("MQTT"), Buffer.from([4, 0x82, 0, 60, 0, 7]), Buffer.from("doc-het"), Buffer.from([0, 1]), Buffer.from("u")]);
+  const goiPublish = Buffer.concat([Buffer.from([0x32, 0xb3, 0x02, 0, 3]), Buffer.from("a/b"), Buffer.from([0, 7]), Buffer.alloc(300, 1)]);
+  const PUBACK = Buffer.from([0x40, 2, 0, 7]);
   const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
   return new Promise((resolve) => {
     const s = ketNoiTcp(port, "127.0.0.1");
@@ -80,14 +81,14 @@ async function publishNhieuManhQuaTcp(boc: boolean): Promise<"PUBACK" | "ket"> {
       s.destroy();
       resolve("ket");
     }, 800);
-    const parser = mqttPacket.parser({ protocolVersion: 4 });
-    parser.on("packet", (g) => {
-      if (g.cmd !== "puback") return;
+    let nhan = Buffer.alloc(0);
+    s.on("data", (d) => {
+      nhan = Buffer.concat([nhan, d]);
+      if (!nhan.includes(PUBACK)) return;
       clearTimeout(hetGio);
       s.destroy();
       resolve("PUBACK");
     });
-    s.on("data", (d) => parser.parse(d));
     s.on("connect", async () => {
       s.write(goiKetNoi);
       await cho(10);
@@ -113,6 +114,28 @@ describe("docHetMoiLan", () => {
     const s = docHetMoiLan(dongCoNhieuChunk());
     expect(s.read(3)?.length).toBe(3);
     expect(s.readableLength).toBe(5);
+  });
+});
+
+describe("boDocHetVaoBroker", () => {
+  it("★★★ chuyển nguyên conn + req (aedes lấy IP, header ws từ req), giữ this, trả đúng kết quả của handle", () => {
+    const conn = dongCoNhieuChunk();
+    const req = { connDetails: { ipAddress: "10.0.0.1" } };
+    const client = { id: "c" };
+    const ghi: unknown[][] = [];
+    const broker = {
+      handle(this: unknown, c: Duplex, r?: typeof req) {
+        ghi.push([this, c, r]);
+        return client;
+      },
+    };
+    boDocHetVaoBroker(broker);
+    expect(broker.handle(conn, req)).toBe(client);
+    expect(ghi).toHaveLength(1);
+    expect(ghi[0]![0]).toBe(broker);
+    expect(ghi[0]![1]).toBe(conn);
+    expect(ghi[0]![2]).toBe(req);
+    expect(conn.read(null as never)?.length, "conn tới aedes phải đã được bọc").toBe(8);
   });
 });
 
