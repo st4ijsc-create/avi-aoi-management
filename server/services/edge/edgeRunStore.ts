@@ -40,6 +40,7 @@ import {
   type AuthorizeInput,
   type AuthorizeVerdict,
   type EdgeSegmentEnd,
+  type KetCucKhongRoBaoCao,
   type RunStepPatch,
   type RunStore,
   type RunStoreContext,
@@ -47,6 +48,7 @@ import {
   type RunStoreUser,
 } from "../orchestration/foe/foeRunStore";
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
+import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
@@ -499,6 +501,25 @@ export class EdgeRunStore extends EdgeStoreBase {
     this.heldReason = reason;
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
     return { ok: false, verdict: "unavailable", heldReason: reason, error: `EDGE_HELD(${reason}): command step "${stepId}" was not sent — no authorisation could be obtained from central; the run is held (Continue it once the edge is reachable again).` };
+  }
+
+  /**
+   * R1b-2b-2a A2(n) (n5) — the edge mirror of central's pinned-STOP check of a compensation due after an unknown outcome: an OT stop the
+   * package lists as VERIFIED (central ran the A2(h) predicate + the running-connection check over its pins, edgeRunAnalysis). Anything
+   * else — a robot job, an unpinned / unsure stop, a step the package does not list — is NOT a pinned STOP ⇒ held (as central).
+   */
+  async buTruLaStopGhim(_rc: RunStoreContext, comp: WorkflowStep): Promise<boolean> {
+    return comp.type === "command" && this.pkg.verifiedStops.some((s) => s.stepId === comp.id && s.kind === "ot");
+  }
+
+  /**
+   * R1b-2b-2a A2(n) (n2, n5) — no database here: the event is journaled as an anomaly (events stream) and CENTRAL raises the URGENT alert
+   * (edgeReportsCentral → foeKetCucKhongRo.canhBaoKetCucKhongRo, dedup per run / step / compensation / claim). A held compensation makes the
+   * segment end held(outcomeUnknown).
+   */
+  ketCucKhongRo(_rc: RunStoreContext, a: KetCucKhongRoBaoCao): void {
+    if (a.loai === "held") this.heldReason = "outcomeUnknown";
+    this.event({ kind: "anomaly", code: KHONG_RO_EDGE_ANOMALY, runId: this.io.runId, detail: chiTietAnomalyKhongRo({ ...a, claimSeq: this.io.claimSeq }), at: Date.now() });
   }
 
   /** An abort STOP never asks (L-7): it is bound to this run segment for the edge dispatch's ledger, nothing else. */

@@ -44,7 +44,8 @@ import {
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
-import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
+import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
+import { KET_CUC_KHONG_RO_CTX_KEY, canhBaoKetCucKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -113,8 +114,23 @@ export interface AuthorizeInput {
   idempotencyKey: string;
 }
 
-/** Why an edge segment ends `held` (design §2.10, D5) — the edge store's only non-central verdict (edgeProtocol EDGE_HELD_REASONS). */
-export type RunStoreHeldReason = "centralUnreachable" | "journalFull" | "keysetUnknown" | "configStale";
+/**
+ * Why an edge segment ends `held` (design §2.10, D5) — the edge store's only non-central verdict (edgeProtocol EDGE_HELD_REASONS).
+ * R1b-2b-2a A2(n) — `outcomeUnknown`: a command's outcome is unknown and the compensation due is not a pinned STOP ⇒ held for a person
+ * (both stores; the walker's own verdict, foeEngine.execStep).
+ */
+export type RunStoreHeldReason = "centralUnreachable" | "journalFull" | "keysetUnknown" | "configStale" | "outcomeUnknown";
+
+/** R1b-2b-2a A2(n) — what the walker reports about a compensation split after an unknown outcome (alert / anomaly — the store's way). */
+export interface KetCucKhongRoBaoCao {
+  loai: LoaiCanhBaoKhongRo;
+  stepId: string;
+  compId: string;
+  /** the failed step's error */
+  error: string;
+  /** the walk segment the event belongs to (central: the walk's identity; the edge store uses its claim) */
+  lan: string;
+}
 
 export type AuthorizeVerdict =
   /**
@@ -209,6 +225,14 @@ export interface RunStore {
   auditAbort(user: RunStoreUser, runId: number, operation: AbortAuditOp, metadata: Record<string, unknown>): void;
   /** EDGE only — how the segment walked under this store ended (null ⇔ not ended, or the walker let go). */
   segmentEnd?(): EdgeSegmentEnd | null;
+  /**
+   * R1b-2b-2a A2(n) — is this COMPENSATION a PINNED STOP (the A2(h) shared predicate)? Central: the dispatcher's own
+   * phanLoaiStopGhimChoFoe over the adapter the compensation resolves to (bounded; pins unreadable / no adapter / robot ⇒ false);
+   * edge: an OT stop the package lists as VERIFIED (central verified its pins). Absent ⇒ false (held — the fail-safe direction).
+   */
+  buTruLaStopGhim?(rc: RunStoreContext, comp: WorkflowStep): Promise<boolean>;
+  /** R1b-2b-2a A2(n) — tell a person (central: URGENT alert; edge: an anomaly central turns into that alert). Never throws, never awaited. */
+  ketCucKhongRo?(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void;
 }
 
 // ── shared pure helpers (both stores) ───────────────────────────────────────────────────────────────────────────────
@@ -748,6 +772,39 @@ async function laStopGhimChoHangFoe(rc: RunStoreContext, step: Extract<WorkflowS
   return kq.pinnedStop;
 }
 
+/**
+ * R1b-2b-2a A2(n) (n1) — central: is the compensation `comp` a PINNED STOP? The SAME reads as A2(m2)'s b1 (xetGuiLaiBuTruBiNgat): the
+ * machine's capability ⇒ an OT command (a robot job ⇒ false), the adapter it resolves to (withResolvedAdapter — none / several ⇒ false),
+ * the command it would send, then the dispatcher's own predicate `phanLoaiStopGhimChoFoe` (gate (1)'s function; never laStopChoKhoa). The
+ * pins could not be read, the DB is unavailable, anything throws, or the bound (2·D: the adapter lookup + the pin read, on a STOP's path)
+ * passes ⇒ false: the compensation is HELD (fail-safe). The dispatch re-decides with its own reads (execCommand: a compensation chosen
+ * here as pinned is handed over only if the central store authorises it as a pinned STOP for THAT dispatch).
+ */
+export async function buTruLaStopGhimTrungTam(rc: RunStoreContext, comp: WorkflowStep): Promise<boolean> {
+  if (comp.type !== "command") return false;
+  const c = commandOf(comp, rc.machineById);
+  if (!c || isRobotKind(c.cap.adapterKind)) return false;
+  try {
+    return await withDeadline(
+      (async () => {
+        const args = await withResolvedAdapter(c.cap.adapterKind, comp.machineId, comp.args ?? {});
+        const cmd = buildEquipmentCommand(c.descriptor, c.cap, comp.machineId, args, `run${rc.runId}-${comp.id}-a1`, rc.user);
+        if (cmd.adapterId == null) return false;
+        const d = await getDb();
+        if (!d) return false;
+        const { phanLoaiStopGhimChoFoe } = await import("../../ot/commandDispatcher");
+        const g = await phanLoaiStopGhimChoFoe(d, { adapterId: cmd.adapterId, commandType: cmd.name, writes: cmd.writes ?? [] });
+        return g.loiDocGhim === null && g.pinnedStop === true;
+      })(),
+      2 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${rc.runId} compensation ${comp.id} pin check`,
+    );
+  } catch (err) {
+    console.warn(`[FOE] run ${rc.runId} compensation ${comp.id}: pinned-STOP check not answered — treated as NOT a pinned STOP (held): ${(err as Error)?.message ?? err}`);
+    return false;
+  }
+}
+
 /** A2(m) AMENDMENT 1 (M11) — the URGENT alert of a STOP step whose pins could not be verified (never throws, never awaited). */
 function canhBaoGhimStopKhongXacMinh(rc: RunStoreContext, stepId: string, adapterId: number, loi: string): void {
   const recipients = [...new Set([rc.runOwner ?? 0, rc.user.id || 0])].filter((u) => Number.isSafeInteger(u) && u > 0);
@@ -947,6 +1004,10 @@ export const centralRunStore: RunStore = Object.freeze({
   },
   verifyStops: verifyStopsForAbort,
   auditAbort: auditAbortStop,
+  buTruLaStopGhim: buTruLaStopGhimTrungTam, // R1b-2b-2a A2(n)
+  ketCucKhongRo(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void {
+    void canhBaoKetCucKhongRo({ ...a, runId: rc.runId, owner: rc.runOwner });
+  },
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1008,6 +1069,15 @@ export function edgeOutcomeUnknownOf(end: Pick<EdgeSegmentEndApply, "outcomeUnkn
 }
 export type EdgeSegmentEndResult = { ok: true; status: string; changed: boolean } | { ok: false; code: "not_finished"; message: string };
 
+/**
+ * R1b-2b-2a A2(n) — the marker of an edge segment held for an unknown outcome: the step / compensation named by the walker's held text
+ * (foeKetCucKhongRo.loiGiuBuTruKhongRo), "?" when they cannot be read (still marked: fail-closed).
+ */
+function dauKhongRoTuEdge(end: Pick<EdgeSegmentEndApply, "error" | "claimSeq">, at: string): DauKetCucKhongRo {
+  const m = /command "([^"]{1,128})" outcome unknown — machine state unknown — compensation "([^"]{1,128})"/.exec(end.error ?? "");
+  return { stepId: m?.[1] ?? "?", compId: m?.[2] ?? "?", ma: maKetCucKhongRoCua(end.error), at, lan: `claim${end.claimSeq}` };
+}
+
 /** foeEngine.OUTCOME_UNKNOWN_CTX_KEY (kept here as a literal: foeRunStore never imports the engine). */
 const OUTCOME_UNKNOWN_KEY = "foeOutcomeUnknown";
 
@@ -1046,7 +1116,20 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, end: EdgeSeg
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
       error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""} — nothing further was sent; Continue to resume it.`,
-      contextJson: { ...ctx, [EDGE_HELD_CTX_KEY]: reason, [`${EDGE_HELD_CTX_KEY}At`]: at, [`${EDGE_HELD_CTX_KEY}Node`]: end.nodeCode, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: `edge held: ${reason}`, ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}) },
+      contextJson: {
+        ...ctx,
+        [EDGE_HELD_CTX_KEY]: reason,
+        [`${EDGE_HELD_CTX_KEY}At`]: at,
+        [`${EDGE_HELD_CTX_KEY}Node`]: end.nodeCode,
+        interrupted: true,
+        interruptedAt: at,
+        interruptedFrom: run.status,
+        interruptedBy: `edge held: ${reason}`,
+        ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}),
+        // R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP: the SAME marker as
+        // central's own walk (codes / ids only), so a Continue needs a person with machine-control rights and a reason (resumeRun)
+        ...(reason === "outcomeUnknown" ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at) } : {}),
+      },
     });
   };
   switch (end.outcome) {
@@ -1116,7 +1199,8 @@ export function edgePriorPictureOf(
 /** The run-context key central writes at a Continue / approval of an edge run (never an edge context patch). */
 export const RESUME_STATE_CTX_KEY = "foeResumeState";
 export type ResumeStepState = "compensationHeld" | "outcomeUnknown" | "doneFailed";
-export type ResumeStateMap = Record<string, { state: ResumeStepState; error: string }>;
+/** R1b-2b-2a A2(n) — `khongRo`: the step failed because its outcome is UNKNOWN (its failure carries the flag on: ancestor compensations split). */
+export type ResumeStateMap = Record<string, { state: ResumeStepState; error: string; khongRo?: true }>;
 
 /**
  * R-10-ae — derived ONLY from the rows central wrote (and its own authorisation ledger), never from an edge context mark:
@@ -1162,16 +1246,18 @@ export function edgeResumeStateOf(
     const c = byId.get(comp.id);
     const failedForward = r != null && (r.status === "failed" || (r.status === "running" && c != null));
     const error = r?.error ?? "";
+    // R1b-2b-2a A2(n) — the rows hold only the error text: an unknown-outcome failure is told by its code (FOE_/EDGE_OUTCOME_UNKNOWN)
+    const kr = loiLaKetCucKhongRo(error) ? { khongRo: true as const } : {};
     if (c == null) {
-      if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error }; // failed, compensation never started
+      if (r?.status === "failed") state[s.id] = { state: "compensationHeld", error, ...kr }; // failed, compensation never started
       continue;
     }
     if (!failedForward) {
       ambiguous.push(s.id); // a compensation row, but the forward step's row does not say it failed
       continue;
     }
-    if (c.status === "compensated" || c.status === "failed") state[s.id] = { state: "doneFailed", error };
-    else state[s.id] = { state: "compensationHeld", error }; // held / running (not sent ⇒ resumed; sent ⇒ comp is outcomeUnknown, not re-sent)
+    if (c.status === "compensated" || c.status === "failed") state[s.id] = { state: "doneFailed", error, ...kr };
+    else state[s.id] = { state: "compensationHeld", error, ...kr }; // held / running (not sent ⇒ resumed; sent ⇒ comp is outcomeUnknown, not re-sent)
   }
   return { state, ambiguous };
 }

@@ -2880,6 +2880,12 @@ function RunRow({
   const edgeUnreachableCtx = (run.contextJson as Record<string, unknown> | null | undefined) ?? null;
   const edgeUnreachable = edgeUnreachableCtx?.edgeUnreachable === true;
   const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
+  // SCADA R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP (server marker
+  // foeKetCucKhongRo): Continue sends that compensation to a device whose state is unknown ⇒ a REASON is required (the server refuses without one).
+  const outcomeUnknownHeld = status === "held" && edgeUnreachableCtx?.foeKetCucKhongRo != null;
+  const [outcomeUnknownNote, setOutcomeUnknownNote] = useState("");
+  const outcomeUnknownBlocked = outcomeUnknownHeld && outcomeUnknownNote.trim() === "";
+  const continueNote = outcomeUnknownHeld ? outcomeUnknownNote.trim() : undefined;
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -2939,6 +2945,11 @@ function RunRow({
           {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
           <ProvenanceBadge row={run} />
           <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
+          {outcomeUnknownHeld && (
+            <Badge variant="outline" data-testid="outcome-unknown-held" className="border-red-500/60 text-[10px] text-red-700 dark:text-red-400">
+              {t("studio.outcomeUnknownHeld", "outcome unknown — waiting for a person")}
+            </Badge>
+          )}
           {edgeUnreachable && (
             <Badge variant="outline" data-testid="edge-unreachable" className="border-orange-500/60 text-[10px] text-orange-700 dark:text-orange-400">
               {t("studio.edgeUnreachable", "edge unreachable")}
@@ -2979,7 +2990,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked} onClick={() => onResume(true, undefined, shownStepId, defHash, bindingDigest)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" disabled={approveBlocked || outcomeUnknownBlocked} onClick={() => onResume(true, continueNote, shownStepId, defHash, bindingDigest)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)} title={t("studio.rejectHint", "Reject: the run is aborted. The remaining non-STOP steps are skipped; if the run has already acted on a machine, its remaining STOP steps and due STOP compensations are still sent.")}>
@@ -3011,6 +3022,29 @@ function RunRow({
           {t("studio.bindingUnknown", "The device configuration this approval covers (or the program checksum of a controller) could not be read — approval is not possible until it can. Retry in a moment.")}
         </div>
       )}
+      {outcomeUnknownHeld && (
+        <div data-testid="outcome-unknown-notice" role="alert" className="space-y-1.5 border-t bg-red-500/5 px-2 py-1.5 text-xs text-red-800 dark:text-red-200">
+          <p>
+            {t(
+              "studio.outcomeUnknownHint",
+              "A command's outcome is UNKNOWN — the machine state is unknown. Its compensation is not a pinned STOP, so it was NOT sent: it is waiting for a person. Check the device on site. Continue sends ONLY that compensation (a reason is required); Abort sends no compensation that is not a STOP.",
+            )}
+          </p>
+          {canControl && (
+            <>
+              <Label className="text-[11px]">{t("studio.outcomeUnknownReason", "Reason (required): what you checked on the device")}</Label>
+              <Input
+                data-testid="outcome-unknown-reason"
+                value={outcomeUnknownNote}
+                onChange={(e) => setOutcomeUnknownNote(e.target.value)}
+                placeholder={t("studio.outcomeUnknownReasonPlaceholder", "e.g. checked on site: the first command was not applied")}
+                className="h-7 text-xs"
+                maxLength={1000}
+              />
+            </>
+          )}
+        </div>
+      )}
       {interrupted && (
         <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground" data-testid={edgeUnreachable ? "edge-unreachable-hint" : undefined}>
           {edgeUnreachable
@@ -3030,7 +3064,7 @@ function RunRow({
           <SafetyLatchWarning enabled={confirmContinue} />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={approveBlocked} onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId, defHash, bindingDigest); }}>
+            <AlertDialogAction disabled={approveBlocked || outcomeUnknownBlocked} onClick={() => { setConfirmContinue(false); onResume(true, continueNote, shownStepId, defHash, bindingDigest); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>

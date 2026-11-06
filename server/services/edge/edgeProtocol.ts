@@ -136,7 +136,7 @@ export const EDGE_DEVICE_GATES = [
 export type EdgeDeviceGate = (typeof EDGE_DEVICE_GATES)[number];
 
 /** Why an edge segment ended `held` (D5: an offline non-STOP step is held, never failed + compensated). */
-export const EDGE_HELD_REASONS = ["centralUnreachable", "journalFull", "keysetUnknown", "configStale"] as const;
+export const EDGE_HELD_REASONS = ["centralUnreachable", "journalFull", "keysetUnknown", "configStale", "outcomeUnknown"] as const; // R1b-2b-2a A2(n) — outcomeUnknown: held for a person (a non-STOP compensation after an unknown outcome)
 export type EdgeHeldReason = (typeof EDGE_HELD_REASONS)[number];
 
 /** The answer shape every central node handler returns (the route maps it to the /api/v1 envelope). */
