@@ -179,9 +179,10 @@ vi.mock("./flow/lib/bienDichST", async (goc) => {
   };
 });
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 /**
  * ⚠ MOCK **BỘ PHẬN**, không phải toàn bộ: `read_file`/`list_files` phải chạy THẬT (hộp cát + RBAC +

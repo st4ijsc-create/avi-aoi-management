@@ -135,6 +135,16 @@ export function adminQuaKhiQuyenSuyGiam(role: string | null | undefined): boolea
   return role === "admin" && process.env.RBAC_SCOPED_ADMIN === "false";
 }
 
+/**
+ * ★ Pha 0 P0-2 — quyền STOP. `getDb()` null là "KHÔNG KIỂM ĐƯỢC", không phải "không có quyền": `checkPermission` trả false cho trường hợp ấy, nên
+ * ném ở đây để lượt quyền rơi vào đường suy giảm R-10-bb (grant đã nhớ ≤ 15 phút, cảnh báo) thay vì thành một lời từ chối chắc chắn.
+ */
+export async function kiemQuyenStop(u: { id: number; role: unknown }): Promise<boolean> {
+  if (!(await getDb())) throw new DbUnavailableError("database unavailable (STOP permission)");
+  const { checkPermission } = await import("../../_core/accessControl");
+  return checkPermission(u.id, String(u.role), "machine_control", "canEdit");
+}
+
 /** fix review 6 (NF5-4) — a definite auth refusal as a tRPC answer (401 / 403), never INTERNAL_SERVER_ERROR */
 function refusalAsTrpc(err: unknown): unknown {
   if (err instanceof TRPCError) return err;
@@ -179,12 +189,7 @@ const stopAuthMiddleware = async (opts: any) => {
     if (auth.leg.v.state === "failed" && isDefiniteRefusal(auth.leg.v.error)) noteDefiniteRefusal(token);
   });
   const startPerm = (u: RememberedUser) =>
-    track(
-      (async () => {
-        const { checkPermission } = await import("../../_core/accessControl");
-        return checkPermission(u.id, String(u.role), "machine_control", "canEdit");
-      })(),
-    );
+    track(kiemQuyenStop(u));
   const startScope = (u: RememberedUser) => track(userFactoryIds(u));
   let permFor: RememberedUser | null = remembered;
   let perm: ReturnType<typeof startPerm> = remembered ? startPerm(remembered) : { leg: { v: { state: "pending" } }, done: new Promise<void>(() => undefined) };

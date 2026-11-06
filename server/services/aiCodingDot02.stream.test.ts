@@ -107,9 +107,10 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 const HITL_GIA = {
   actionId: "act-test",
