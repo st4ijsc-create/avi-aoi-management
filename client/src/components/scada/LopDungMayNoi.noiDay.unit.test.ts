@@ -1,5 +1,5 @@
 /**
- * Pha 0 · C0-3 — NỐI DÂY lớp DỪNG MÁY nổi (kiem-dinh 2026-11-06, đột biến w1: xoá `<LopDungMayNoi />` khỏi App.tsx ⇒ 124/124 test vẫn xanh,
+ * C0-3 — NỐI DÂY lớp DỪNG MÁY nổi (kiem-dinh 2026-11-06, đột biến w1: xoá `<LopDungMayNoi />` khỏi App.tsx ⇒ 124/124 test vẫn xanh,
  * vì lớp chỉ được test ở mức component). Lưới NGUỒN này ghim phần nối (mẫu: CongMoDunRobot.noiDay.unit.test.ts):
  *   • App.tsx import `LopDungMayNoi` từ "@/components/scada/LopDungMayNoi" và render ĐÚNG MỘT `<LopDungMayNoi />`;
  *   • nó nằm TRƯỚC `<Router />` (ngoài Suspense / Switch của route ⇒ không bị route nào gỡ);

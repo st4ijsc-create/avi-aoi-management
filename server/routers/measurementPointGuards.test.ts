@@ -113,7 +113,8 @@ describe("measurementPoint.delete — soft + audit", () => {
     // Doc 51 P1: delete now also returns the config version that retired the point.
     expect(res).toEqual({ success: true, pointsConfigVersion: 8 });
     expect(deletePointSpy).toHaveBeenCalledWith(501);
-    const audit = auditSpy.mock.calls[0][0] as any;
+    // Audit của ca trước ghi trễ có thể rơi vào đây khi máy tải nặng, nên tìm theo action thay vì lấy calls[0].
+    const audit = auditSpy.mock.calls.map((c) => c[0] as any).find((x) => x?.action === "measurementPoint.delete");
     expect(audit).toMatchObject({ action: "measurementPoint.delete", entityName: "MP-1" });
     expect(audit.details).toMatchObject({ soft: true, productModelId: 1 });
   });
@@ -152,7 +153,7 @@ describe("measurementPoint.remapUnmapped — __UNMAPPED__ guards (MP3/WB-2)", ()
     expect(remapSpy).toHaveBeenCalledWith({
       pointDefIds: [1, 2], targetProductModelId: 5, unmappedModelId: 99, targetMachineId: 3,
     });
-    expect(auditSpy.mock.calls[0][0]).toMatchObject({ action: "measurementPoint.remapUnmapped", entityName: "PCB-REAL" });
+    expect(auditSpy.mock.calls.map((x) => x[0] as any).find((x) => x?.action === "measurementPoint.remapUnmapped")).toMatchObject({ action: "measurementPoint.remapUnmapped", entityName: "PCB-REAL" });
   });
 });
 
