@@ -15,6 +15,10 @@ import vi_ from "@/i18n/locales/vi.json";
 import en_ from "@/i18n/locales/en.json";
 import zh_ from "@/i18n/locales/zh.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
+import { BIEN_MAU_GACH_TIM, BIEN_MAU_TONE } from "./chatLuongHienThi";
+
+/** Màu CHỮ của chip (không lẫn text-decoration-color): `color: var(--x)` đứng đầu style hoặc sau `;`. */
+const mauChu = (el: Element): string | undefined => /(?:^|;)\s*color:\s*var\((--[\w-]+)\)/.exec(el.getAttribute("style") ?? "")?.[1];
 
 const srv = vi.hoisted(() => ({
   data: undefined as unknown,
@@ -69,9 +73,11 @@ describe("ChipTruyenThong", () => {
     const { rerender } = render(<ChipTruyenThong />);
     expect(screen.getByRole("link")).toHaveTextContent(/^Truyền thông 3 nối · 0 tắt · 1 đang nối lại$/);
     expect(screen.getByRole("link")).toHaveAttribute("data-tone", "dang_noi");
+    expect(mauChu(screen.getByRole("link"))).toBe(BIEN_MAU_TONE.warn);
     srv.data = { ...TOM, mat: 0, dangNoi: 0, ketNoi: 4, tong: 4, edge: 0 };
     rerender(<ChipTruyenThong />);
     expect(screen.getByRole("link")).toHaveAttribute("data-tone", "trung_tinh");
+    expect(mauChu(screen.getByRole("link"))).toBe(BIEN_MAU_TONE.ok);
   });
 
   it("lỗi query / đang tải / không có adapter nào ⇒ không render", () => {
@@ -110,6 +116,8 @@ describe("ChipTruyenThong", () => {
     expect(chip).toHaveTextContent("Truyền thông 3 nối · 1 tắt");
     expect(chip).toHaveAttribute("data-tone", "cu");
     expect(chip.getAttribute("style") ?? "").toMatch(/line-through/);
+    expect(mauChu(chip), "số cũ KHÔNG được trông xanh: chữ dùng màu tím gạch").toBe(BIEN_MAU_GACH_TIM);
+    expect(mauChu(chip)).not.toBe(BIEN_MAU_TONE.ok);
     const title = chip.getAttribute("title") ?? "";
     expect(title).toMatch(/^Đọc lỗi — số của lần trước \(cập nhật lúc \d{1,2}:\d{2}.*\)\./);
     expect(title).toMatch(/Trong 4 adapter đã bật cấu hình/);
