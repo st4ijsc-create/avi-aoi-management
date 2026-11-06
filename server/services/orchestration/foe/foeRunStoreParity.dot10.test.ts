@@ -2391,6 +2391,14 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(hang(e2, "r3")).toMatchObject({ status: "failed", attempt: 1 });
   });
 
+  it("★ a container with a retry budget, whose only failure is the refusal, is not walked again on the edge: one /authorize (central's walk has the resume state too)", async () => {
+    const e = await denBuoc(def("x-r", [gate(), parF("p", [box("b", [move("r5")], {})], false, { maxAttempts: 2 })]));
+    runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "zz", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual([]);
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r5")).toHaveLength(1);
+  });
+
   it("★ a finding on the edge: a robot STOP unknown once, confirmed next, forward work dropped: a person IS told", async () => {
     const e = await denBuoc(def("x-f", [gate(), { ...(robotStop("st") as object), maxAttempts: 1 } as never, move("r3")]));
     h.timeoutOnce.add("st");
