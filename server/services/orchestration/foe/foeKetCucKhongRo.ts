@@ -203,9 +203,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * stopNotHanded — never handed to a dispatcher (m-1); noCompensation — an unknown outcome with no compensation of its own (R-4);
  * approvedNotConfirmed — a compensation a Continue approved failed or got no answer (m-F); approvedNotSent — the same, nothing was handed over (its interlock, I-K);
  * failedNotSent — the run is FAILED, its compensation was not sent (m-C); compensationUnknown — a compensation's OWN outcome is unknown (I-I, m-P);
- * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c).
+ * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c);
+ * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split).
  */
-export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight";
+export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -218,6 +219,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   failedNotSent: "foe_outcome_unknown_compensation_not_sent_run_failed",
   compensationUnknown: "foe_outcome_unknown_compensation_outcome_unknown",
   inFlight: "foe_outcome_unknown_write_in_flight_at_latch",
+  forwardNotSent: "foe_outcome_unknown_forward_not_sent",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -259,6 +261,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       approvedNotSent: [`compensation ${c} NOT sent`, `Its compensation ${c}, approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher. Nothing reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment may have sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
+      forwardNotSent: [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];

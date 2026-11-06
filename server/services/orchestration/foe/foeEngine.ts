@@ -631,6 +631,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   buTruDaGiu?: Set<string>;
   /** A2(n) extension — central: the steps whose rows say they may have gone out (a crash can lose the rest). An edge's are in its resume state. */
   khongRoHang?: Set<string>;
+  /** A2(n) extension — the first step the sink refused in this walk. */
+  khongGuiDau?: string;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -1211,12 +1213,14 @@ function ketCucRiengKhongRo(rc: RunContext, stepId: string): boolean {
 /**
  * A2(n) extension — what the sink answers for a forward step on a latched run. Nothing is handed over, and an authorisation it holds is reported unused.
  *   • it may have gone out already (ketCucRiengKhongRo) ⇒ it STAYS unknown: outcomeUnknown, so execStep latches, words and splits it as a fresh unknown; no "not sent" anywhere;
- *   • otherwise ⇒ failed FOE_NOT_SENT_RUN_LATCHED + khongGuiChot + the audit row. No URGENT of its own: the latch has raised one (R-4, I-I, the split).
+ *   • otherwise ⇒ failed FOE_NOT_SENT_RUN_LATCHED + khongGuiChot + the audit row. No URGENT of its own: the latch has raised one (R-4, I-I, the split); if this walk's has
+ *     not (a STOP unknown once, then confirmed: nothing to split), finishWalk raises forwardNotSent.
  */
 async function khongGuiBuocTien(rc: RunContext, stepId: string, attempt: number): Promise<StepOutcome> {
   await rc.store.uyQuyenKhongDung?.(stepId);
   if (ketCucRiengKhongRo(rc, stepId)) return { kind: "failed", error: `command step "${stepId}" has no recorded outcome from an earlier attempt`, outcomeUnknown: true, khongRo: true };
   rc.store.auditAbort(rc.user, rc.runId, "notSentRunLatched", { stepId, attempt });
+  rc.khongGuiDau ??= stepId;
   return { kind: "failed", error: loiKhongGuiChot(stepId), khongGuiChot: true };
 }
 
@@ -2683,6 +2687,8 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     const lan = luotDiCua(rc);
     for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
   }
+  // A2(n) extension — forward work dropped and this walk told nobody: never a silent end
+  if (rc.khongGuiDau !== undefined && !rc.khongRoDaBao) baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: rc.khongGuiDau, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(rc.khongGuiDau), lan: luotDiCua(rc) });
   let status: OrchestrationRun["status"];
   let patch: Partial<OrchestrationRun>;
   if (out.kind === "paused") {
