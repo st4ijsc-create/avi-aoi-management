@@ -12,6 +12,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const so = vi.hoisted(() => ({ tao: [] as Array<Record<string, unknown>>, capNhat: [] as Array<{ userId: number; id: string; anh: Record<string, unknown> }> }));
+// P0-2: admin đọc bảng permissions; DB giả "không có hàng" (luật thật, không god-mode) để lưới không chạm CSDL.
+vi.mock("../../../db/connection", async (goc) => {
+  const { dbGiaChiCoBangQuyen } = await import("../../../testing/dbGiaQuyen");
+  return { ...(await goc<typeof import("../../../db/connection")>()), getDb: async () => dbGiaChiCoBangQuyen() };
+});
 vi.mock("../../../db/aiAgentRuns", async (goc) => {
   const that = await goc<typeof import("../../../db/aiAgentRuns")>();
   return {

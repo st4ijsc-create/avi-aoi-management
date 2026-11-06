@@ -3,12 +3,18 @@
  * qua `tryExecuteCodingTool` PHẢI gọi `read_file` và trả về NỘI DUNG THẬT của tệp — KHÔNG phải một
  * chunk RAG. Đây là bản sao tất định của phép đo Playwright đã ĐỎ hôm nay (doc 79 §0).
  *
- * ⚠ Dùng execCtx `admin` — `accessControl.checkPermission` short-circuit `true` cho admin (không phụ
+ * ⚠ Dùng execCtx `admin` không có hàng quyền — `accessControl.checkPermission` cho qua (không phụ
  * thuộc hàng quyền được seed), nên ca này đo ĐÚNG đường tool, không đo trạng thái RBAC của môi trường.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import "./index"; // đăng ký toàn bộ tool
 import { tryExecuteCodingTool } from "./index";
+
+// P0-2: admin đọc bảng permissions; DB giả "không có hàng" (luật thật, không god-mode) để lưới không chạm CSDL.
+vi.mock("../../db/connection", async (goc) => {
+  const { dbGiaChiCoBangQuyen } = await import("../../testing/dbGiaQuyen");
+  return { ...(await goc<typeof import("../../db/connection")>()), getDb: async () => dbGiaChiCoBangQuyen() };
+});
 
 const ADMIN = { user: { id: 1, role: "admin", name: "T" }, lang: "vi" as const };
 

@@ -9,15 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const hang = vi.hoisted(() => ({ ds: [] as unknown[] }));
+const hang = vi.hoisted(() => ({ ds: [] as unknown[], khongDb: false }));
 vi.mock("../../db/connection", async (orig) => ({
   ...(await orig<typeof import("../../db/connection")>()),
-  getDb: async () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => hang.ds }) }) }),
-  }),
+  getDb: async () => (hang.khongDb ? null : { select: () => ({ from: () => ({ where: () => ({ limit: async () => hang.ds }) }) }) }),
 }));
 
-import { adminQuaKhiQuyenSuyGiam } from "./robotStopAuth";
+import { adminQuaKhiQuyenSuyGiam, kiemQuyenStop } from "./robotStopAuth";
 import { checkPermission } from "../../_core/accessControl";
 
 const giu = process.env.RBAC_SCOPED_ADMIN;
@@ -25,10 +23,24 @@ afterEach(() => {
   if (giu === undefined) delete process.env.RBAC_SCOPED_ADMIN;
   else process.env.RBAC_SCOPED_ADMIN = giu;
   hang.ds = [];
+  hang.khongDb = false;
 });
 const datCo = (v: string | undefined) => (v === undefined ? delete process.env.RBAC_SCOPED_ADMIN : (process.env.RBAC_SCOPED_ADMIN = v));
 
 describe("P0-2 — admin trên STOP khi quyền suy giảm", () => {
+  it("★★★ getDb() null ⇒ checkPermission từ chối mọi vai, nhưng quyền STOP là KHÔNG KIỂM ĐƯỢC (ném ⇒ đường suy giảm), không phải một lời từ chối", async () => {
+    hang.khongDb = true;
+    for (const vai of ["admin", "engineer"]) {
+      expect(await checkPermission(1, vai, "machine_control", "canEdit"), vai).toBe(false);
+      await expect(kiemQuyenStop({ id: 1, role: vai }), vai).rejects.toThrow(/database unavailable/);
+    }
+  });
+  it("★★ có DB ⇒ kiemQuyenStop trả đúng checkPermission (hàng false ràng buộc admin)", async () => {
+    expect(await kiemQuyenStop({ id: 1, role: "admin" })).toBe(true);
+    expect(await kiemQuyenStop({ id: 2, role: "engineer" })).toBe(false);
+    hang.ds = [{ canEdit: false, expiresAt: null }];
+    expect(await kiemQuyenStop({ id: 1, role: "admin" })).toBe(false);
+  });
   it("★★★ vắng cờ ⇒ admin KHÔNG qua (cần grant đã nhớ); RBAC_SCOPED_ADMIN=false ⇒ admin qua", () => {
     datCo(undefined);
     expect(adminQuaKhiQuyenSuyGiam("admin")).toBe(false);

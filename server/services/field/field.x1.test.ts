@@ -9,7 +9,13 @@
  *     are all no-ops / pass-throughs unless FIELD_V2_ENABLED.
  *   • DISCOVERY honesty: opcua=real-shape, mdns/others=seam (no fabricated results).
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { datHangQuyenGia } from "../../testing/dbGiaQuyen";
+// P0-2: admin đọc bảng permissions; DB giả "không có hàng" (luật thật, không god-mode) để lưới không chạm CSDL.
+vi.mock("../../db/connection", async (goc) => {
+  const { dbGiaChiCoBangQuyen } = await import("../../testing/dbGiaQuyen");
+  return { ...(await goc<typeof import("../../db/connection")>()), getDb: async () => dbGiaChiCoBangQuyen() };
+});
 
 describe("X1-b — heartbeat TTL liveness classifier (pure)", () => {
   it("classifies by heartbeat age against TTL + lost factor", async () => {
@@ -173,12 +179,15 @@ describe("X1-e — command-level authorization", () => {
   it("flag ON → admin passes; non-admin without perm is DENIED", async () => {
     process.env.FIELD_V2_ENABLED = "true";
     const { authorizeCommand } = await import("./commandAuthz");
-    // admin always passes (checkPermission short-circuits on role 'admin' without DB).
+    // P0-2: admin không có hàng quyền ⇒ qua; hàng từ chối tường minh ⇒ bị chặn như mọi vai (ca ngay dưới).
     const admin = await authorizeCommand({ equipmentClass: "ROBOT", verb: "run_job", userId: 1, userRole: "admin" });
     expect(admin.ok).toBe(true);
     expect(admin.skipped).toBe(false);
-    // non-admin: checkPermission needs a DB; in this headless test there is none →
-    // checkPermission returns false → DENIED (fail-closed under the strict flag).
+    datHangQuyenGia({ canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false });
+    const adminBiChan = await authorizeCommand({ equipmentClass: "ROBOT", verb: "run_job", userId: 1, userRole: "admin" });
+    datHangQuyenGia();
+    expect(adminBiChan.ok).toBe(false);
+    // non-admin without a row: checkPermission returns false → DENIED (fail-closed under the strict flag).
     const denied = await authorizeCommand({ equipmentClass: "ROBOT", verb: "run_job", userId: 42, userRole: "user" });
     expect(denied.ok).toBe(false);
     expect(denied.requiredPermission).toBe("machine_control/canCreate");

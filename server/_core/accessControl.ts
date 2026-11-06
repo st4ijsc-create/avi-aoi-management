@@ -181,13 +181,14 @@ export async function getAccessFilterConditions(
  * check (`admin=god`), so admin authority could never be scoped or audited per
  * module. When RBAC_SCOPED_ADMIN=true, admin is instead subject to EXPLICIT
  * restriction: an admin still passes a module UNLESS a permission row exists that
- * denies that action (row present with action=false). No row / expired row /
- * DB-down → admin still passes (never lock an admin out of an unconfigured
- * module). This makes admin authority restrictable + auditable without any
- * lockout risk, and is a no-op for non-admins.
+ * denies that action (row present with action=false). No row / expired row →
+ * admin still passes (an unconfigured module stays reachable). When the check
+ * cannot run, every role gets the same answer: `getDb()` null ⇒ denied, a query
+ * that THROWS ⇒ propagates and callers fail closed. This makes admin authority
+ * restrictable + auditable, and is a no-op for non-admins.
  * ★ Pha 0 P0-2 (2026-11-04): BẬT MẶC ĐỊNH (admin hết bypass `requirePermission`). Chỉ `RBAC_SCOPED_ADMIN=false` trả lại chế độ cũ
  * (công tắc khẩn). Đo DEV trước khi bật (chỉ đọc): 10 admin; 3 có hàng quyền (`ai_repo_read`, `ai_repo_exec`) với vài hành động FALSE —
- * mã chỉ đòi `ai_repo_read.canView` + `ai_repo_exec.canCreate`, cả hai TRUE ở các hàng ấy ⇒ không admin nào mất truy cập.
+ * mã đòi `ai_repo_read.canView` + `ai_repo_read.canEdit` + `ai_repo_exec.canCreate`, cả ba TRUE ở các hàng ấy ⇒ không admin nào mất truy cập (đo lại 2026-11-06).
  */
 function scopedAdminEnabled(): boolean {
   return process.env.RBAC_SCOPED_ADMIN !== 'false';
@@ -209,8 +210,9 @@ export async function checkPermission(
   if (isAdmin && !scopedAdminEnabled()) return true;
 
   const db = await getDb();
-  // DB unavailable: deny non-admins (unchanged); never lock a scoped-admin out.
-  if (!db) return isAdmin;
+  // Không có DB ⇒ không kiểm được ⇒ từ chối, mọi vai như nhau (Pha 0 "cùng luật mọi vai"; 01-QUY-UOC cấm admin bypass ở actuation).
+  // Công tắc khẩn RBAC_SCOPED_ADMIN=false ở trên vẫn cho admin qua. STOP robot có đường suy giảm riêng (`kiemQuyenStop`).
+  if (!db) return false;
 
   // doc 40 — áp alias: `machine_monitoring` (category dùng nhầm làm module) → `machine_status`.
   const resolvedModule = resolvePermissionModule(moduleName);

@@ -5,11 +5,9 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const hang = vi.hoisted(() => ({ ds: [] as unknown[] }));
+const hang = vi.hoisted(() => ({ ds: [] as unknown[], khongDb: false }));
 vi.mock("../db/connection", () => ({
-  getDb: async () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => hang.ds }) }) }),
-  }),
+  getDb: async () => (hang.khongDb ? null : { select: () => ({ from: () => ({ where: () => ({ limit: async () => hang.ds }) }) }) }),
 }));
 
 import { checkPermission } from "./accessControl";
@@ -19,6 +17,7 @@ afterEach(() => {
   if (giu === undefined) delete process.env.RBAC_SCOPED_ADMIN;
   else process.env.RBAC_SCOPED_ADMIN = giu;
   hang.ds = [];
+  hang.khongDb = false;
 });
 const quyen = (o: Record<string, boolean>) => [{ canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false, expiresAt: null, ...o }];
 
@@ -45,10 +44,20 @@ describe("P0-2 — admin hạn quyền mặc định", () => {
     hang.ds = [];
     expect(await checkPermission(2, "engineer", "machine_status", "canView")).toBe(false);
   });
+  it("★★★ getDb() null ⇒ từ chối MỌI vai, gồm admin; chỉ công tắc khẩn RBAC_SCOPED_ADMIN=false cho admin qua", async () => {
+    hang.khongDb = true;
+    delete process.env.RBAC_SCOPED_ADMIN;
+    expect(await checkPermission(1, "admin", "machine_status", "canView")).toBe(false);
+    expect(await checkPermission(2, "engineer", "machine_status", "canView")).toBe(false);
+    process.env.RBAC_SCOPED_ADMIN = "false";
+    expect(await checkPermission(1, "admin", "machine_status", "canView")).toBe(true);
+    expect(await checkPermission(2, "engineer", "machine_status", "canView")).toBe(false);
+  });
   it("★★ các hàng thật của admin DEV (đo 2026-11-04): hành động MÃ ĐÒI vẫn TRUE ⇒ không mất truy cập", async () => {
     delete process.env.RBAC_SCOPED_ADMIN;
     hang.ds = quyen({ canView: true, canEdit: true }); // ai_repo_read của admin 1 / 167
     expect(await checkPermission(1, "admin", "ai_repo_read", "canView")).toBe(true);
+    expect(await checkPermission(1, "admin", "ai_repo_read", "canEdit"), "apply_diff / xoá / đổi tên đòi bit này").toBe(true);
     hang.ds = quyen({ canCreate: true }); // ai_repo_exec
     expect(await checkPermission(1, "admin", "ai_repo_exec", "canCreate")).toBe(true);
   });
