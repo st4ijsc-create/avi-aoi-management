@@ -81,7 +81,6 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
   "server/services/ai/napServerNgoai.ts": { so: 1, lyDo: "thăm /v1/models của máy suy luận do quản trị khai cho Studio (tên 'ngoài' = ngoài tiến trình, không phải AI ngoài) — GET, không gửi dữ liệu" },
   "server/services/ai/ollamaLui.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài" },
   "server/services/ai/soModel/kheNangMacDinh.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài" },
-  "server/services/aiEdgeDeployment.ts": { so: 1, lyDo: "triển khai model tới thiết bị edge trong nhà máy (IP đã đăng ký)" },
   "server/services/aiEdgeEnhanced.ts": { so: 1, lyDo: "thiết bị edge trong nhà máy (IP đã đăng ký)" },
   "server/services/aiImageEmbedding.ts": { so: 1, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài (embedding ảnh)" },
   "server/services/aiLlamaServerClient.ts": { so: 8, lyDo: "máy suy luận CỤC BỘ (llama-server / Ollama 127.0.0.1, URL từ env của quản trị) — không phải máy chủ AI ngoài; +1 Đợt 12 H3.2b GET /props n_ctx (đệm 10 phút)" },
@@ -125,7 +124,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
 // 2026-11-02 (A2 test scada): + server/services/edge/__edgeE2eSweep.dot10.ts (1 điểm import:net, dò cổng loopback của harness, test-only) ⇒ 64→65 tệp, 97→98 điểm.
 // 2026-11-01 gộp main: H4.1 (+1 tệp, +1 điểm: server/testing/llmGia.ts) + Đợt 12 H3.2b (+1 điểm: aiLlamaServerClient GET /props n_ctx).
 // 2026-11-03 gộp H3.2 vào main: 65 tệp (main) + H3.2b +1 điểm (/props) ⇒ 65 tệp, 99 điểm.
-const GHIM = { tep: 65, diem: 99 } as const;
+const GHIM = { tep: 64, diem: 98 } as const; // 2026-11-04: gỡ services/aiEdgeDeployment.ts (−1 tệp, −1 điểm)
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};

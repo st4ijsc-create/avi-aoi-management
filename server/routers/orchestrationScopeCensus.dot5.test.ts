@@ -159,13 +159,6 @@ const CLASSIFIED: Record<string, Kind> = {
       /const scoped = runInScope \? await resolveTargetForAssigner\(/,
     ],
   },
-  "server/routers/orchestrationGovRouter.ts": {
-    kind: "router",
-    allow: {
-      validateDag: "`id` of DAG NODES in the request body (a pure check over caller data), not a run / workflow id",
-      orderQueue: "`id` of queue TASKS in the request body (pure ordering of caller data), not a run / workflow id",
-    },
-  },
   "server/routers/orchestrationRouter.ts": { kind: "router" },
   "server/routers/oversightRouter.ts": {
     kind: "router",
@@ -330,8 +323,12 @@ describe("doc 81 Đợt 5 E2 fix (R-5-d) + E fix 1 — every orchestration id-ta
     };
     const gov = at("server/routers/orchestrationGovRouter.ts");
     if (gov === null) return;
-    const govK = CLASSIFIED["server/routers/orchestrationGovRouter.ts"] as Extract<Kind, { kind: "router" }>;
-    expect(unscopedProcedures(gov, govK.allow ?? {})).toEqual(["runEvents", "replayRun"]);
+    // orchestrationGovRouter đã GỠ khỏi cây (dọn vệ sinh E0-3, 2026-11-04) — bản ở BASE vẫn được phát lại từ git; bảng allow giữ nguyên như lúc phân loại.
+    const govAllow = {
+      validateDag: "`id` of DAG NODES in the request body (a pure check over caller data), not a run / workflow id",
+      orderQueue: "`id` of queue TASKS in the request body (pure ordering of caller data), not a run / workflow id",
+    };
+    expect(unscopedProcedures(gov, govAllow)).toEqual(["runEvents", "replayRun"]);
     const ov = at("server/routers/oversightRouter.ts")!;
     const ovK = CLASSIFIED["server/routers/oversightRouter.ts"] as Extract<Kind, { kind: "router" }>;
     expect((ovK.requires ?? []).filter((r) => !r.test(ov)).length).toBe(3);

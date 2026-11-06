@@ -515,15 +515,6 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[LineController] init failed:", (err as any)?.message || err);
   }
 
-  // Doc 44 W5-A1 (G4.1) — Twin fidelity loop: so DES-dự-đoán vs line_balance-thực
-  // → tự vô hiệu twin khi lệch ≥N lần liên tiếp (TWIN_FIDELITY_ENABLED, OFF → no-op).
-  try {
-    const { startTwinFidelitySweep } = await import("../services/twin/twinFidelityService");
-    startTwinFidelitySweep();
-  } catch (err) {
-    console.error("[TwinFidelity] start failed:", (err as any)?.message || err);
-  }
-
   // Doc 44 W5-A2 (G4.20) — Parameter closed-loop verify sweep: sau verify_after so
   // metrics_before (Cpk/NG-rate máy) vs hiện tại → improved|degraded|neutral; degraded
   // → Andon (routeAlert) kèm old_value. Opt in via PARAM_VERIFY_ENABLED=true (WRITES

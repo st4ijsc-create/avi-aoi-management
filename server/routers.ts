@@ -27,11 +27,11 @@ import { aoiPackageRouter } from "./routers/aoiPackageRouter";
 import { permissionsRouter } from "./routers/permissionsRouter";
 import { backupRouter } from "./routers/backupRouter";
 import { webhookRouter } from "./routers/webhookRouter";
-import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolationRouter, cpkTrendRouter, qualityGateRouter } from "./routers/spcAdvancedRouter";
+import { workstationSpcRouter, correlationRouter, spcRuleViolationRouter, cpkTrendRouter, qualityGateRouter } from "./routers/spcAdvancedRouter";
 
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
-import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
 // Khối C Task 9 (QĐ-6) — đường ĐỌC cây dạy (surface→position→capture→component)
 // kèm trạng thái giới hạn; tiêu thụ bởi tab "Cây dạy" (Task 10/11).
 import { cayDayRouter } from "./routers/cayDayRouter";
@@ -85,9 +85,7 @@ import { securityRouter } from "./routers/securityRouter"; // doc 33 F5 (SYNAPSE
 import { securityIdentityRouter } from "./services/security/securityIdentityRouter"; // doc 37 C2: device X.509 PKI + service (SPIFFE-lite) identity — admin issue/verify/rotate/revoke (flags DEVICE_PKI_ENABLED/SERVICE_MTLS_ENABLED OFF)
 import { observabilityRouter } from "./routers/observabilityRouter"; // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO/burn-rate + decision-trace
 import { contractsRouter } from "./routers/contractsRouter"; // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema BACKWARD gate + reconciliation
-import { orchestrationGovRouter } from "./routers/orchestrationGovRouter"; // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG validate + priority/SLA + four-eyes
 import { trafficGovRouter } from "./routers/trafficGovRouter"; // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
-import { twinGovRouter } from "./routers/twinGovRouter"; // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
 import { devPortalRouter } from "./routers/devPortalRouter"; // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold + sandbox)
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
@@ -97,11 +95,7 @@ import { genealogyRouter } from "./routers/genealogyRouter";
 import { processResultRouter } from "./routers/processResultRouter";
 import { bomRouter } from "./routers/bomRouter"; // G2.4: BOM + Feeder + component genealogy (no machine write)
 import { energyRouter } from "./routers/energyRouter"; // G2.6a: advanced energy analytics (read + telemetry, no machine write)
-import { thresholdSuggestionRouter } from "./routers/thresholdSuggestionRouter";
 import { thresholdApprovalRouter } from "./routers/thresholdApprovalRouter";
-import { monteCarloFlowRouter } from "./routers/monteCarloFlowRouter";
-import { inspectionVariantRouter } from "./routers/inspectionVariantRouter";
-import { mpVariantSubformRouter } from "./routers/mpVariantSubformRouter";
 import { ipcAcceptanceRouter } from "./routers/ipcAcceptanceRouter";
 import { hierarchyTreeRouter } from "./routers/hierarchyTreeRouter";
 import { mqttNgAlertSettingsRouter } from "./routers/mqttNgAlertSettingsRouter";
@@ -109,12 +103,10 @@ import { mqttSoftwareVersionRouter } from "./routers/mqttSoftwareVersionRouter";
 import { aiModelRouter } from "./routers/aiModelRouter";
 import { aiAdvancedRouter } from "./routers/aiAdvancedRouter";
 import { aiQualityGateRouter } from "./routers/aiQualityGateRouter";
-import { aiVisionLanguageRouter } from "./routers/aiVisionLanguageRouter";
 import { aiImageSearchRouter } from "./routers/aiImageSearchRouter";
 import { aiActiveLearningRouter } from "./routers/aiActiveLearningRouter";
 import { aiTimeSeriesRouter } from "./routers/aiTimeSeriesRouter";
 import { aiReportRouter } from "./routers/aiReportRouter";
-import { aiSmartAlertRoutingRouter } from "./routers/aiSmartAlertRoutingRouter";
 import { edgeDeploymentRouter } from "./routers/edgeDeploymentRouter"; // WS-2: edge deployment control plane (new, migration-safe)
 import { aiLocalTrainingRouter } from "./routers/aiLocalTrainingRouter"; // WS-1: re-enabled (schema-mismatch fixed)
 import { aiEvalRouter } from "./routers/aiEvalRouter"; // WS-1: eval + auto active-learning
@@ -178,7 +170,6 @@ import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/
 import { edgeResolutionRouter } from "./routers/edgeResolutionRouter"; // doc 81 Dot 10 F2 (R-10-af / R-10-ax): resolve STOP / orphaned write intent
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
-import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
 import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
 import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
 import { twinCanhRouter } from "./routers/twinCanhRouter"; // Twin 3D Đợt 3 (§10A): dựng nhà xưởng — toà nhà/tầng/ảnh nền/tường bao. Quyền §6.4: settings_factory HOẶC machine_control
@@ -191,7 +182,6 @@ import { aiRobotAnomalyRouter } from "./routers/aiRobotAnomalyRouter"; // I2 (do
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
-import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
 import { kbIngestRouter } from "./routers/kbIngestRouter"; // doc69 Giai đoạn 5/Wave E3 (E3-1): Training Studio doc ingest upload (pdf/docx/md/txt, admin/engineer, KB_STUDIO_ENABLED)
 import { kbStudioRouter } from "./routers/kbStudioRouter"; // doc69 Giai đoạn 5/Wave E3 (E3-2): Training Studio corpus/job registry + job-tracked ingest + corpus preview (wraps kbIngest, admin/engineer, deleteCorpus admin-only)
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
@@ -224,8 +214,6 @@ import { warRoomRouter } from "./routers/warRoomRouter"; // doc 40 Wave 4c (§11
 import { maintenanceScheduleRouter } from "./routers/maintenanceScheduleRouter"; // doc 40 Wave 4c (§11): CMMS PM-schedule CRUD (maintenance_schedules; read machine_status, write machine_control; no auto-gen)
 import { rumRouter } from "./routers/rumRouter"; // doc 44 G5.9: client RUM web-vitals ingest (public, zod-strict + per-IP throttle) → Prometheus histograms
 import { semanticsRouter } from "./routers/semanticsRouter"; // doc 44 W2-A4 (G2.14/G2.15): semantic metric registry — as-code versioned definitions (contracts/metrics/*.yaml) + MetricResult compute qua hàm canonical (read-only)
-import { parameterGuardrailRouter } from "./routers/parameterGuardrailRouter"; // doc 44 W5-A2 (G4.18-G4.21): engineer min-max guardrails CRUD + change log + material time-to-empty forecast
-import { ntfClassifierRouter } from "./routers/ntfClassifierRouter"; // doc 44 W5-B1 (G4.12): trained NTF/false-call classifier lifecycle (train/eval-gate/activate) + serve method
 import { doraRouter } from "./routers/doraRouter"; // doc 44 W6-4 (G5.20): DORA metrics (deploy-freq/lead-time/change-fail/MTTR) — read + admin record (DORA_ENABLED OFF)
 import { sopRouter } from "./routers/sopRouter"; // doc 44 W6-1 (G5.14): e-SOP CRUD + execution (start/confirm-step/finish) — LDS-L5 §6.2
 import { alarmKpiRouter } from "./routers/alarmKpiRouter"; // doc 44 W6-1 (G5.11 đo): READ-ONLY ISA-18.2 alarm KPI (rate/flood/standing/bad-actors/distribution)
@@ -442,7 +430,6 @@ export const appRouter = router({
   instrumentMsaRecord: instrumentMsaRecordRouter,
   mpLightingProfile: mpLightingProfileRouter,
   // P4.B G14
-  measurementSamples: measurementSamplesRouter,
   spcAlerts: spcAlertsRouter,
   // P4.B G10
   mpDefectStats: mpDefectStatsRouter,
@@ -535,8 +522,6 @@ export const appRouter = router({
   ncr: ncrRouter, // doc 35 W4-B
   feederVerify: feederVerifyRouter, // doc 35 W4-C
   lineController: lineControllerRouter, // doc 44 W3-A2 — Line Controller FSM (G3.1)
-  parameterGuardrail: parameterGuardrailRouter, // doc 44 W5-A2 — engineer min-max guardrails + change log + material time-to-empty forecast (G4.18-G4.21)
-  ntfClassifier: ntfClassifierRouter, // doc 44 W5-B1 — trained NTF/false-call classifier (G4.12)
   sop: sopRouter, // doc 44 W6-1 — e-SOP CRUD + execution (LDS-L5 §6.2, G5.14)
   alarmKpi: alarmKpiRouter, // doc 44 W6-1 — ISA-18.2 alarm KPI dashboard aggregation (G5.11 đo)
   orderLifecycle: orderLifecycleRouter, // doc 44 W3-A3 — order lifecycle §13.1 (G3.6/G3.7)
@@ -586,7 +571,6 @@ export const appRouter = router({
   edgeResolution: edgeResolutionRouter, // doc 81 Dot 10 F2: pending STOPs + orphaned OT write intents (list / resolve, audited)
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
-  simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
   fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
   twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
   twinCanh: twinCanhRouter, // Twin 3D Đợt 3 (§10A): dựng nhà xưởng (twin_toa_nha/twin_tang/twin_vat_the). KHÁC `twin` ở trên — đó là twin realtime cũ (doc 16), đây là cảnh 3D mới của spec 2026-09-06
@@ -602,7 +586,6 @@ export const appRouter = router({
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,
-  kbVector: kbVectorRouter,
   kbIngest: kbIngestRouter, // doc69 GĐ5/Wave E3 (E3-1): Training Studio doc ingest upload — separate from kbVector (kb_chunks, mig 0121)
   kbStudio: kbStudioRouter, // doc69 GĐ5/Wave E3 (E3-2): Training Studio corpus/job registry (kb_corpora/kb_ingest_jobs, mig 0305) + job-tracked ingest wrapping kbIngest + corpus preview
 
@@ -657,7 +640,6 @@ export const appRouter = router({
   webhook: webhookRouter,
 
   // SPC Advanced & Quality Gate
-  spcConfig: spcConfigRouter,
   workstationSpc: workstationSpcRouter,
   correlation: correlationRouter,
   spcRuleViolation: spcRuleViolationRouter,
@@ -685,9 +667,7 @@ export const appRouter = router({
   observability: observabilityRouter, // doc 33 F6 (SYNAPSE §5.12): READ-ONLY SLO + decision-trace
   dora: doraRouter, // doc 44 W6-4 (G5.20): DORA metrics — deploy-freq/lead-time/change-fail/MTTR (read) + admin record (DORA_ENABLED OFF)
   contracts: contractsRouter, // doc 33 F7 (SYNAPSE §5.6/§8): READ-ONLY OpenAPI/AsyncAPI + schema gate
-  orchestrationGov: orchestrationGovRouter, // doc 33 F8 (SYNAPSE §5.1/§5.3): READ-ONLY DAG + priority/SLA + four-eyes
   trafficGov: trafficGovRouter, // doc 33 H4 (SYNAPSE §5.4): READ-ONLY space-time route preview
-  twinGov: twinGovRouter, // doc 33 H6 (SYNAPSE §5.7/§5.8): READ-ONLY twin-drift + RL advice preview
   devPortal: devPortalRouter, // doc 33 P6 (SYNAPSE R3): READ-ONLY developer portal (specs + plugin scaffold)
 
 
@@ -709,11 +689,7 @@ export const appRouter = router({
   // W8-B (doc 29 §3): operator/badge master (badgeCode → users.id, time-windowed)
   operatorBadge: operatorBadgeRouter,
   energy: energyRouter,
-  thresholdSuggestion: thresholdSuggestionRouter,
   thresholdApproval: thresholdApprovalRouter,
-  monteCarloFlow: monteCarloFlowRouter,
-  inspectionVariant: inspectionVariantRouter,
-  mpVariantSubform: mpVariantSubformRouter,
   ipcAcceptance: ipcAcceptanceRouter,
 
   // Hierarchy Tree & MQTT Subscription Setup
@@ -735,7 +711,6 @@ export const appRouter = router({
   aiQualityGate: aiQualityGateRouter,
 
   // AI Vision-Language Model
-  aiVisionLanguage: aiVisionLanguageRouter,
 
   // AI Image Similarity Search (pgvector)
   aiImageSearch: aiImageSearchRouter,
@@ -749,7 +724,6 @@ export const appRouter = router({
   // AI-powered Reports
   aiReport: aiReportRouter,
   // AI Smart Alert Routing
-  aiSmartAlertRouting: aiSmartAlertRoutingRouter,
   // WS-2: Edge Deployment control plane (admin) — migration-safe new router
   edgeDeployment: edgeDeploymentRouter,
   // AI Local Training (Phase 4.2) — WS-1: re-enabled after schema-mismatch fix
