@@ -41,6 +41,13 @@ const CALLABLE = new Set([
   "edge_robot_trust_revoke",
   "edge_robot_trust_is_approved",
 ]);
+/**
+ * F5 (2026-11-02, mig 0435, SQL approved verbatim by the coordinator): `socket_pham_vi_payload` is a PURE IMMUTABLE payload function
+ * (reads no table, writes nothing) that avi_app may EXECUTE by design — the apply script verifies it in a ROLLBACK SELECT
+ * (`scripts/apply-migration-0435.mjs`, `callableByDesign`). Its trigger function `socket_pham_vi_notify` stays executable by nobody.
+ * Listed apart from CALLABLE (2026-11-04, diagnosis edge-search-path-0376-chan-doan.md): this census went red at f429390ff.
+ */
+const CALLABLE_BY_DESIGN_0435 = new Set(["socket_pham_vi_payload"]);
 
 /**
  * 0125's SECURITY DEFINER RLS helpers, re-pinned by 0376 with ALTER FUNCTION: RLS policies call them as WHICHEVER role reads the
@@ -354,7 +361,7 @@ describe.skipIf(!onTest)("R-10-h — catalog: every function of the migrations �
         return out;
       }
       if (r[0].pub) out.push(`${name}: PUBLIC EXECUTE`);
-      if (r[0].app !== CALLABLE.has(name)) out.push(`${name}: avi_app EXECUTE ${r[0].app}`);
+      if (r[0].app !== (CALLABLE.has(name) || CALLABLE_BY_DESIGN_0435.has(name))) out.push(`${name}: avi_app EXECUTE ${r[0].app}`);
       return out;
     });
     expect(bad).toEqual([]);

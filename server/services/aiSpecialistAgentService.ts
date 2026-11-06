@@ -830,7 +830,6 @@ const MODULE_AUDIT_PRESETS: Record<string, ModuleAuditPreset> = {
     description: "Audit VLM router: path security, multimodal pipeline, error handling",
     moduleName: "ai-vision-language",
     files: [
-      "server/routers/aiVisionLanguageRouter.ts",
       "server/services/aiVisionLanguage.ts",
       "server/utils/safeImagePath.ts",
     ],

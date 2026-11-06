@@ -21,11 +21,21 @@ import {
 // License CRUD
 // =====================================================
 
+/** ★ Pha 0 P0-4 — hàng giấy phép vừa đổi ⇒ bỏ bộ nhớ 60 s của cổng module (`moduleGate.xoaBoNhoGiayPhep`), có hiệu lực ngay. */
+async function boBoNhoCongModule(): Promise<void> {
+  try {
+    (await import("../_core/moduleGate")).xoaBoNhoGiayPhep();
+  } catch {
+    /* best-effort: bộ nhớ tự hết hạn sau 60 s */
+  }
+}
+
 export async function createLicense(data: InsertLicense) {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
 
   const [result] = await db.insert(licenses).values(data).returning();
+  await boBoNhoCongModule();
   return result;
 }
 
@@ -84,6 +94,7 @@ export async function updateLicense(id: number, data: Partial<InsertLicense>) {
     .set({ ...data, updatedAt: new Date() })
     .where(eq(licenses.id, id))
     .returning();
+  await boBoNhoCongModule();
   return result;
 }
 
@@ -95,6 +106,7 @@ export async function updateLicenseByKey(licenseKey: string, data: Partial<Inser
     .set({ ...data, updatedAt: new Date() })
     .where(eq(licenses.licenseKey, licenseKey))
     .returning();
+  await boBoNhoCongModule();
   return result;
 }
 
@@ -103,6 +115,7 @@ export async function deleteLicense(id: number) {
   if (!db) throw new DbUnavailableError();
 
   await db.delete(licenses).where(eq(licenses.id, id));
+  await boBoNhoCongModule();
 }
 
 // =====================================================
@@ -231,6 +244,7 @@ export async function revokeLicense(data: InsertLicenseRevocation) {
 
   // Deactivate all activations
   await deactivateAllActivations(data.licenseKey);
+  await boBoNhoCongModule();
 
   return result;
 }
@@ -243,6 +257,7 @@ export async function unrevokeLicense(licenseKey: string) {
   await db.update(licenses)
     .set({ status: 'active', updatedAt: new Date() })
     .where(eq(licenses.licenseKey, licenseKey));
+  await boBoNhoCongModule();
 }
 
 export async function getRevokedKeys() {

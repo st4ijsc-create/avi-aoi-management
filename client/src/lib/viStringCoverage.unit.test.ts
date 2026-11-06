@@ -73,14 +73,14 @@ import { demHinhDangBa } from "../../../scripts/viStringScan.mjs";
  * CanonicalSample (`ts`, `deviceId`) nay qua t() (`apiFeeds.fieldTsDesc`/`fieldDeviceIdDesc`, vi/en/zh) vì
  * nội dung cũ dạy sai (offset "khuyến nghị" — nay bắt buộc; không nhắc allowlist gateway).
  */
-const ALLOWED_RAW_VI_STRINGS = 423;
+const ALLOWED_RAW_VI_STRINGS = 0; // 423 → 0 (2026-11-04, pha 0 · P0-8): cả 8 tệp ApiDocs (423 chuỗi tham chiếu API) đã ra khỏi app — tài liệu API tĩnh sinh từ /api/v1/openapi.json
 
 /**
  * Trần riêng cho nhóm ApiDocs. Tồn tại để hai con số không thể bù trừ cho nhau:
  * nếu ai đó dịch bớt ApiDocs mà thêm nhãn trần vào màn vận hành, tổng vẫn 410 và
  * cổng trên sẽ xanh — chính là lớp lỗi "ngân sách tự thoả" đã trả giá ở Pha 7.
  */
-const ALLOWED_RAW_VI_APIDOCS = 423; // 424 → 425 (Lô 8 Mục 1 review, BG-116); 425 → 423 (Đợt 5 G2) — xem chú thích ở trần tổng.
+const ALLOWED_RAW_VI_APIDOCS = 0; // nhóm ApiDocs không còn trong app (P0-8); giữ trần 0 để ai thêm lại đều ĐỎ; // 424 → 425 (Lô 8 Mục 1 review, BG-116); 425 → 423 (Đợt 5 G2) — xem chú thích ở trần tổng.
 
 const CLIENT_SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCALES = resolve(CLIENT_SRC, "i18n/locales");

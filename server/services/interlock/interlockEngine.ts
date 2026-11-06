@@ -33,11 +33,35 @@ import { getDb } from "../../db/connection";
 import {
   interlockRules,
   interlockEvents,
+  machines,
+  stations,
   type InterlockRule,
 } from "../../../drizzle/schema";
 import { raiseAndon, type AndonState } from "../andon/andonService";
 import { dispatch, isInterlockAutoBlockEnabled, isOtControlEnabled } from "../ot/commandDispatcher";
 import { giaTriLenhInterlock } from "./giaTriLenh";
+
+/**
+ * SCADA R1b-2b-2a A2(l) fix round 1 (m2) — the station / line of a machine (machines."stationId" → stations."lineId"), for the advisory
+ * safety-audit row of a rule that names no line / station: the row stays visible to the factory scope of that machine (the feed scope needs a
+ * locator). null on no machine, no row or any error — the row is then written without a locator, as before (never throws).
+ */
+async function viTriCuaMay(machineId: number | null | undefined): Promise<{ stationId: number; lineId: number } | null> {
+  if (machineId == null || !Number.isSafeInteger(machineId)) return null;
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const [r] = await db
+      .select({ stationId: machines.stationId, lineId: stations.lineId })
+      .from(machines)
+      .innerJoin(stations, eq(stations.id, machines.stationId))
+      .where(eq(machines.id, machineId))
+      .limit(1);
+    return r && r.stationId != null && r.lineId != null ? { stationId: Number(r.stationId), lineId: Number(r.lineId) } : null;
+  } catch {
+    return null;
+  }
+}
 // kiem-dinh R1b-1 I1 (a) — duyệt chỉ còn hiệu lực khi bám định nghĩa tag nguồn / đích khớp bám chụp lúc duyệt (fail-closed)
 import { luatDuyetConHieuLuc } from "./dinhNghiaDuyet";
 // Đánh giá luật ĐÃ CHUYỂN sang interlockGate (dùng chung với cổng inline của dispatcher): danhGiaLuatChiTiet.
@@ -280,17 +304,24 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
       status === "fired" ? (action === "reduce_speed" ? "reduced_speed" : "stopped") : "logged_only";
     const safetyType = action === "reduce_speed" ? "speed_violation" : "intrusion";
     void import("../safety/safetyAuditService")
-      .then((m) => m.record({
+      .then(async (m) => {
+        // m2 — a rule with neither line nor station: locate the row by the rule's (target, else source) machine
+        const viTri = rule.lineId == null && rule.stationId == null ? await viTriCuaMay(rule.targetMachineId ?? rule.machineId) : null;
+        return m.record({
         eventType: safetyType,
-        robotId: rule.targetMachineId ?? rule.machineId ?? null,
-        lineId: rule.lineId ?? null,
-        stationId: rule.stationId ?? null,
+        // SCADA R1b-2b-2a A2(l) (3) — was `rule.targetMachineId ?? rule.machineId`: a MACHINE id stored as the robot id (the same id confusion
+        // as the old robot gate). The engine fires a RULE; it gates no particular robot here, so no robot id is known ⇒ null. The machines are
+        // recorded separately (notes) — never as a robot.
+        robotId: null,
+        lineId: rule.lineId ?? viTri?.lineId ?? null,
+        stationId: rule.stationId ?? viTri?.stationId ?? null,
         sourceInterlockEventId: event.id,
         detectedBy: "interlock",
         handledBy: "interlock_engine",
         outcome: safetyOutcome,
-        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop)`,
-      }))
+        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop); target machine ${rule.targetMachineId ?? "-"}, source machine ${rule.machineId ?? "-"}`,
+        });
+      })
       .catch((e) => console.error(`[Interlock] safety-audit hook failed for rule #${rule.id}:`, (e as Error)?.message || e));
   }
 

@@ -245,8 +245,8 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         scopeDoc +
         "\n\nWebhook events: " +
         V1_WEBHOOK_EVENTS.map((e) => `\`${e}\``).join(", ") +
-        ".\n\nSAFETY: the API never performs a direct device write. The device-command route is not published here (R1a D8); " +
-        "it answers 501 for every non-robot (OT) command before the dispatcher (R1b-1 D8; use the SCADA HMI), and only the robot STOP path (abort/e_stop) still runs.",
+        ".\n\nSAFETY: the API never performs a direct device write. The former device-command route was removed (pha 0 C0-1): " +
+        "it answers 410 Gone for every command, robot included — use the SCADA HMI (confirmed commands) instead.",
     },
     servers: [{ url: serverUrl }],
     tags: [
@@ -364,11 +364,8 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses({ "404": { description: "Machine not found", content: jsonErr() } }) },
         },
       },
-      // SCADA R1a Task 11 (K10 / D8) — `POST /api/v1/equipment/{id}/commands` is deliberately NOT published here. The route still runs
-      // (robot STOP callers) but every non-STOP command is refused by the dispatcher without a confirmed HITL action; see
-      // server/api/v1/equipmentCommands.r1a.db.test.ts for the measured behaviour.
-      // C2 polish (2026-11-01): if it is ever published, document `detail` / `error` as MASKED for every API key — `error` is a sanitised CODE
-      // (never driver text), `detail` is the whitelist of cheKetQuaLenh (server/routers/_chiTietKyThuat.ts); use the code.
+      // `POST /api/v1/equipment/{id}/commands` — KHÔNG công bố và ĐÃ GỠ (pha 0 · C0-1): route trả 410 GONE cho mọi lệnh (kể cả robot); xem
+      // server/api/v1/apiV1.test.ts (describe "commands — ĐÃ GỠ"). Lệnh thiết bị chỉ đi qua tRPC/dispatcher có người xác nhận.
       "/api/v1/ingest/inspection": {
         post: {
           tags: ["Ingest"],

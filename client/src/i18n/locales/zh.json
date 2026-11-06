@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "{{field}}的值无效。",
     "INVALID_VALUE_WITH_REASON": "{{field}}的值无效。{{reason}}",
     "FEATURE_DISABLED": "此系统尚未启用{{feature}}功能。",
+    "MODULE_PAUSED": "{{module}} 模块已暂停，将在后续开发 — 命令未发送。",
     "OPERATION_FAILED": "操作失败：{{operation}}。",
     "OPERATION_FAILED_WITH_REASON": "操作失败：{{operation}}。{{reason}}",
     "PERMISSION_DENIED": "您无权：{{action}}。",
@@ -4405,7 +4406,8 @@
       "ledgerWriteFailed": "无法写入机器人指令日志——运动被拒绝，未发送任何内容。",
       "idempotentJobInProgress": "具有相同幂等键的指令仍在执行——不会重复执行。",
       "idempotencyKeyReused": "该幂等键已用于其他机器人或作业——本次运动未启动。先前的作业可能已经执行：再次下达指令前，请检查机器人、其位置以及先前作业的状态。",
-      "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
+      "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。",
+      "robotChuaDinhVi": "机器人尚未定位（没有工位/产线，或其工位/产线不存在或相互矛盾）——无法确定哪些设备的联锁规则适用于它，因此运动被拒绝。停止指令仍会发送。请将机器人分配到工位或产线。"
     },
     "reason": {
       "can-nha-may": "密钥需先关联工厂才能启用",
@@ -17020,8 +17022,8 @@
     "trendDesc": "按周期的 kWh 与 CO₂"
   },
   "cockpit": {
-    "actionsGate": "只读驾驶舱。“提议”会打开受控的控制平面 — 它绝不直接下发命令。",
-    "actionsHint": "您可以提议的命令。执行仍处于既有的受控（人工在环 / 试运行）控制界面之后 — 此处不会运行任何命令。",
+    "actionsGate": "只读驾驶舱。不会从这里下发命令；命令走受控的机台控制界面。",
+    "actionsHint": "该机台能力档案支持的命令 — 仅供参考，此处不会运行任何命令。",
     "active": "活跃",
     "adapterKind": "适配器类型",
     "alarmsHint": "按机器的 ISA-18.2 归一化数据源",
@@ -20453,7 +20455,12 @@
     "queuedOnEdge": "STOP 已发送到机器人的边缘节点 — 正在等待其确认（见作业日志）。",
     "queuedEdgeUnreachable": "STOP 已排队，但机器人的边缘节点无法连接 — 中心已尝试自行发送 STOP 并发出严重告警。如机器人仍在运动，请使用硬件急停 (E-STOP)。",
     "rejected": "命令未执行：{{status}}",
-    "pickRobot": "请先选择机器人。"
+    "pickRobot": "请先选择机器人。",
+    "interlockSameLine": "设备 {{machine}} 上的规则（同一产线）",
+    "interlockSameStation": "设备 {{machine}} 上的规则（同一工位）",
+    "interlockStopNeverBlocked": "联锁只限制运动——停止指令永远不会被阻止。",
+    "interlockNoMachines": "没有可检查的设备——没有任何联锁规则能保护该机器人的工位或产线。",
+    "interlockStationNoMachines": "该工位没有设备——适用产线 {{line}} 的规则。"
   },
   "analysisHub": {
     "title": "AI 分析中心",
@@ -24667,9 +24674,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "通信 {{ketNoi}}/{{tong}}",
-        "coEdge": "通信 {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "重连中 {{dangNoi}} · 已断开 {{mat}} · 其他 {{khac}} — 点击打开通信诊断"
+        "nhan": "通信 {{ketNoi}} 已连接 · {{khac}} 已关闭",
+        "dangNoi": "{{dangNoi}} 重连中",
+        "mat": "{{mat}} 已断开",
+        "edge": "edge {{edge}}",
+        "moTaCu": "读取失败 — 上一次的数字（更新于 {{luc}}）。",
+        "moTa": "配置中已启用的 {{tong}} 个适配器（不含 edge）：{{ketNoi}} 已连接 · {{dangNoi}} 重连中 · {{mat}} 已断开 · {{khac}} 已关闭或未知 — 点击打开通信诊断"
       }
     },
     "orchestration": {
@@ -24859,5 +24869,12 @@
     "moTa": "这是运营助手：您输入的内容视为运营数据。内容在按规则屏蔽敏感数据后发送给外部（付费）模型。每次对话仅询问一次。",
     "tuChoi": "不发送",
     "dongY": "同意并发送"
+  },
+  "robotTamDung": {
+    "tieuDe": "机器人/AGV 模块将在后续开发",
+    "moTa": "机器人/AGV 控制已暂停：本页仅报告状态，不会下发任何命令。其他机台与产线不受影响。",
+    "moTaNgan": "仅查看 — 人机协作暂停，待机器人/AGV 模块开发后恢复。",
+    "dangKiemTra": "正在检查模块状态…",
+    "veTrangChu": "返回首页"
   }
 }

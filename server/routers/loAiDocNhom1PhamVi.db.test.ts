@@ -14,7 +14,7 @@ import { readAppErrorMeta } from "../_core/appError";
 
 const RUN = `l6g${process.pid}${Date.now().toString(36)}`;
 let H!: HaiNhaMayDo;
-type C = { al: any; fb: any; md: any; qg: any; sg: any; tr: any; ed: any; ev: any };
+type C = { al: any; fb: any; md: any; qg: any; sg: any; ev: any };
 let cA: C, cAdm: C, cRong: C;
 let M = 0, pmB = 0;
 const ids: Record<string, number> = {};
@@ -27,8 +27,6 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
     md: await mk("./aiModelRouter", "aiModelRouter"),
     qg: await mk("./aiQualityGateRouter", "aiQualityGateRouter"),
     sg: await mk("./aiSegmentationRouter", "aiSegmentationRouter"),
-    tr: await mk("./aiAdvancedRouter", "trainingRouter"),
-    ed: await mk("./aiAdvancedRouter", "edgeRouter"),
     ev: await mk("./aiEvalRouter", "aiEvalRouter"),
   };
 };
@@ -214,32 +212,8 @@ describe("★★★ aiSegmentation.listMasks", () => {
   });
 });
 
-describe("★★★ aiAdvanced — edge + số liệu huấn luyện; aiEval.autoRetrainCheck", () => {
-  it("edge.list / getById / deviceDeployments / staleDeployments / inferenceResults", async () => {
-    const a = idsOf(await cA.ed.list({ limit: 200 }));
-    expect(a).toContain(ids.eA);
-    expect(a).not.toContain(ids.eB);
-    expect(a).not.toContain(ids.eNull);
-    const adm = idsOf(await cAdm.ed.list({ limit: 200 }));
-    for (const k of ["eA", "eB", "eNull"]) expect(adm).toContain(ids[k]);
-    const khong = await loi(() => cA.ed.getById({ id: 2147483000 }));
-    expect(await loi(() => cA.ed.getById({ id: ids.eB }))).toBe(khong);
-    expect(await loi(() => cA.ed.getById({ id: ids.eA }))).toBeNull();
-    expect(await cA.ed.deviceDeployments({ deviceId: RUN + "eB" })).toEqual([]);
-    expect((await cAdm.ed.deviceDeployments({ deviceId: RUN + "eB" })).length).toBe(1);
-    const st = idsOf(await cA.ed.staleDeployments({ thresholdMinutes: 60 }));
-    expect(st).toContain(ids.eA);
-    expect(st).not.toContain(ids.eB);
-    const sy = idsOf(await cA.ed.inferenceResults({ limit: 200 }));
-    expect(sy).toContain(ids.seA);
-    expect(sy).not.toContain(ids.seB);
-    expect(idsOf(await cAdm.ed.inferenceResults({ limit: 200 }))).toEqual(expect.arrayContaining([ids.seA, ids.seB]));
-  });
-  it("training.getDataStats / checkAutoRetrain / aiEval.autoRetrainCheck — số mẫu gán nhãn của A = 1, admin = 2", async () => {
-    expect((await cA.tr.getDataStats({ modelId: M })).labeledCount).toBe(1);
-    expect((await cAdm.tr.getDataStats({ modelId: M })).labeledCount).toBe(2);
-    expect((await cA.tr.checkAutoRetrain({ modelId: M })).labeledCount).toBe(1);
-    expect((await cAdm.tr.checkAutoRetrain({ modelId: M })).labeledCount).toBe(2);
+describe("★★★ aiEval.autoRetrainCheck", () => {
+  it("autoRetrainCheck — số mẫu gán nhãn của A = 1, không phạm vi = 0", async () => {
     expect((await cA.ev.autoRetrainCheck({ modelId: M })).labeledCount).toBe(1);
     expect((await cRong.ev.autoRetrainCheck({ modelId: M })).labeledCount).toBe(0);
   });

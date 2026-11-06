@@ -12,7 +12,7 @@
  *
  * Pure, in its own module ON PURPOSE: many unit suites replace `./interlockGate` with a factory mock that would not carry this export. Both OT call
  * sites (commandDispatcher 5a-interlock, edgeAuthorizeCentral.otGates) call THIS function — pinned by tapMayChoInterlock.a2i1.test.ts (source scan).
- * NOT for the robot gate: it keys `machineId = robotId` (robotInterlockTarget) and keeps the single-id form.
+ * NOT for the robot gate: a robot has no adapter — its set is the machines WHERE it is (tapMayChoRobot.ts, A2(l)); a robot id is never a machine id.
  * The HITL binding hash keeps the CALLER's machine (what the human confirmed) — this set is for rule matching only.
  */
 export function tapMayChoInterlock(adapterMachineId: number | null | undefined, callerMachineId: number | null | undefined): number[] {

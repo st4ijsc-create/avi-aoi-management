@@ -7,7 +7,6 @@
  */
 import { and, desc, eq, gte } from "drizzle-orm";
 import { setDecisionSink, type DecisionTrace } from "./decisionTrace";
-import { emitDecisionSpan } from "./otelBridge"; // doc 33 §11 — bridge each decision to an OTel span
 import { getDb } from "../../db/connection";
 import { decisionTraces, type DecisionTraceRow } from "../../../drizzle/schema/synapseObservability";
 
@@ -42,7 +41,6 @@ export function registerDecisionPersistence(): void {
     void persist(t).catch(() => {
       /* best-effort */
     });
-    emitDecisionSpan(t); // OTel span (no-op unless OBSERVABILITY + an OTel SDK are present)
   });
 }
 

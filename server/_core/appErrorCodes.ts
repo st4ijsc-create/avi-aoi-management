@@ -24,6 +24,7 @@ export const APP_ERROR_CODES = [
                           // truyền `reason`. `reason` PHẢI là khoá camelCase vào `errors.reason.*`
                           // (client/src/lib/errorCodes.ts), KHÔNG phải câu tiếng Việt/Anh viết tay.
   "FEATURE_DISABLED",     // params: { feature }
+  "MODULE_PAUSED",        // params: { module } — pha 0 · C0-6: mô-đun ĐÃ ĐÓNG BĂNG có chủ đích (không có công tắc để bật; KHÁC FEATURE_DISABLED = có công tắc, ai đó tắt).
   "OPERATION_FAILED",     // params: { operation, reason? } — cùng cơ chế `reason?` với
                           // INVALID_VALUE ở trên (khoá `_WITH_REASON` riêng, xem doc 71 Task 5).
   "PERMISSION_DENIED",    // params: { action, reason? } — `action` vẫn BẮT BUỘC (cổng

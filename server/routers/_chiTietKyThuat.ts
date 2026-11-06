@@ -69,12 +69,14 @@ export const MA_LOI_DU_PHONG = ["TIMEOUT", "EDGE_REPORTED", "READBACK_UNAVAILABL
  * + `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE`, `IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE` (R1b-2b-2a A2(a): lệnh không phải STOP KHÔNG có
  *   khoá idempotency ⇒ không gửi; biến thể ghi tag ghim STOP mà không phải STOP / không đọc được ghim kèm cảnh báo khẩn; hằng `MA_THIEU_KHOA*` ở commandDispatcher.ts.
  *   KHÔNG thuộc lớp "có thể đã bay" — lệnh chắc chắn chưa gửi).
+ * + `FOE_ROW_SPENT_FOR_KEY` (R1b-2b-2a A2(k): giữ chỗ — hàng uỷ quyền FOE đúc cho CHÍNH khoá đã tiêu mà khoá không có hàng nào ⇒ lệnh có thể đã tới thiết
+ *   bị qua đường khác (edge); thuộc lớp "có thể đã bay"; hằng `MA_HANG_FOE_DA_TIEU` ở commandDispatcher.ts; cũng ở `MA_NHOM_AN_TOAN`).
  */
 export const MA_LOI_DA_BIET: readonly string[] = Object.freeze([
   "ACKED", "ACKED_UNVERIFIED", "ACKED_VERIFIED", "ACTION_BINDING_MISMATCH", "ADAPTER_DISABLED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "BUSY",
   "CHANNEL_READ_ONLY", "CHUA_GHIM_STOP", "DANG_DUOC_CHON", "DA_XU_LY", "DB_UNAVAILABLE", "DIEU_TIET", "DISPATCH_LOI", "DRIVER_WRITE_FAILED",
   "DUPLICATE_IN_FLIGHT", "EDGE_CHUA_HO_TRO", "EDGE_OUTCOME_UNKNOWN", "EDGE_REPORTED", "EDGE_STOP_NOT_PINNED", "FAILED", "FEATURE_DISABLED",
-  "FOE_GATE_REQUIRED", "FOE_OUTCOME_PARTIAL", "FOE_OUTCOME_UNKNOWN", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
+  "FOE_GATE_REQUIRED", "FOE_OUTCOME_PARTIAL", "FOE_OUTCOME_UNKNOWN", "FOE_ROW_SPENT_FOR_KEY", "GHIM_LOI_DOC", "GHIM_MUC_CAO",
   "HET_HAN", "IDEMPOTENCY_KEY_REQUIRED", "IDEMPOTENCY_KEY_REQUIRED_PIN_UNREADABLE", "IDEMPOTENCY_KEY_REQUIRED_STOP_LIKE", "IDEMPOTENCY_KEY_REUSED", "INTERLOCK_ACTION_NOT_ALLOWED", "INTERLOCK_AUTO_BLOCK_DISABLED", "INTERLOCK_BLOCKED", "INTERLOCK_COMMAND_MISMATCH",
   "INTERLOCK_EVENT_INVALID", "INTERLOCK_NOT_APPROVED", "INTERLOCK_REQUIRES_HUMAN_CONFIRM", "INTERLOCK_RULE_DISABLED", "INTERLOCK_RULE_NOT_FOUND",
   "INTERLOCK_TAG_MISMATCH", "INTERLOCK_TARGET_MISMATCH", "INTERLOCK_VALUE_MISMATCH", "INTERLOCK_WRITES_MISMATCH", "KHOA_CHON_LOI", "KHOA_MAT",
@@ -228,7 +230,8 @@ const RE_CONG_TRONG_CHUOI = new RegExp(`${BIEN_TRAI}(FOE_GATE_REQUIRED)\\(([a-zA
  * C2 polish (c, kiem-dinh 2026-11-01) — khi có NHIỀU mã đã biết, ưu tiên NHÓM AN TOÀN (kết cục thiết bị không chắc: người gọi phải kiểm thiết bị);
  * trong nhóm: xuất hiện đầu tiên thắng; ngoài nhóm: mã đã biết đầu tiên (như trước). `FOE_GATE_REQUIRED(<lý do>)` do `maLoiBuocFoe` xử lý trước.
  */
-const MA_NHOM_AN_TOAN: ReadonlySet<string> = new Set(["FOE_OUTCOME_UNKNOWN", "FOE_OUTCOME_PARTIAL", "EDGE_OUTCOME_UNKNOWN", "MOT_PHAN", "TIMEOUT"]);
+// R1b-2b-2a A2(k) — + `FOE_ROW_SPENT_FOR_KEY` (lệnh có thể đã tới thiết bị qua edge): người bị che vẫn thấy tín hiệu "kiểm thiết bị".
+const MA_NHOM_AN_TOAN: ReadonlySet<string> = new Set(["FOE_OUTCOME_UNKNOWN", "FOE_OUTCOME_PARTIAL", "EDGE_OUTCOME_UNKNOWN", "FOE_ROW_SPENT_FOR_KEY", "MOT_PHAN", "TIMEOUT"]);
 export function maDaBietDauTien(text: string | null | undefined): string | null {
   let dauTien: string | null = null;
   for (const m of (text ?? "").matchAll(RE_MA_TRONG_CHUOI)) {

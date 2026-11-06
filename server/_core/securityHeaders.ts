@@ -5,8 +5,8 @@
  * → hoàn toàn không có CSP. Module này thêm CSP theo 3 chế độ qua env
  * `SEC_CSP_MODE`:
  *
- *   off         (DEFAULT) — hành vi hiện tại, không phát header CSP nào.
- *   report-only           — phát `Content-Security-Policy-Report-Only` + report-uri
+ *   off                   — không phát header CSP nào (công tắc tắt khẩn).
+ *   report-only (DEFAULT — ★ Pha 0 P0-3 bước 1, 2026-11-04) — phát `Content-Security-Policy-Report-Only` + report-uri
  *                           /api/csp-report. KHÔNG chặn gì — chỉ thu thập vi phạm
  *                           để tinh chỉnh policy trước khi enforce.
  *   enforce               — phát `Content-Security-Policy` thật.
@@ -44,12 +44,13 @@ export type CspMode = "off" | "report-only" | "enforce";
 export const CSP_REPORT_PATH = "/api/csp-report";
 
 export function getCspMode(env: NodeJS.ProcessEnv = process.env): CspMode {
-  const raw = (env.SEC_CSP_MODE ?? "off").trim().toLowerCase();
-  if (raw === "report-only" || raw === "enforce") return raw;
-  if (raw && raw !== "off") {
-    console.warn(`[Security] SEC_CSP_MODE="${raw}" không hợp lệ (off|report-only|enforce) — coi như "off"`);
+  // ★ Pha 0 P0-3 bước 1: mặc định REPORT-ONLY (thu vi phạm thật ≥ 1 ngày rồi mới enforce); "off" chỉ còn là công tắc tắt khẩn.
+  const raw = (env.SEC_CSP_MODE ?? "report-only").trim().toLowerCase();
+  if (raw === "off" || raw === "report-only" || raw === "enforce") return raw;
+  if (raw) {
+    console.warn(`[Security] SEC_CSP_MODE="${raw}" không hợp lệ (off|report-only|enforce) — coi như "report-only"`);
   }
-  return "off";
+  return "report-only";
 }
 
 /**

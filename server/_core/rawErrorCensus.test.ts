@@ -173,7 +173,7 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   + bit đã-phát cho tầng agent). Message GIỮ NGUYÊN VĂN. ĐO trên nhánh (đã gộp H4.1 6a99cc1ef — llmGia.ts dùng assert.fail, 0 điểm) ra
  *   **460**, không dư.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 460;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 455; // 2026-11-04 dọn vệ sinh lô A2: 460 → 455 (gỡ mã chết: simOtTelemetryService, aiEdgeDeployment, slaPolicy… — đo: ngân sách cũ đỏ ĐÚNG 5)
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

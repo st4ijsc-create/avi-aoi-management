@@ -112,6 +112,12 @@ vi.mock("./robotManager", () => ({
 }));
 
 // Cô lập gate 4b (interlock có test riêng): pass để PERMIT chảy tới driver.
+// SCADA R1b-2b-2a A2(l) — WHERE the robot is is measured by tapMayChoRobot.a2l(.db).test.ts; this suite's fake DB does not model robots /
+// stations / machines, so the robot is placed (a station with one machine) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [1] }),
+}));
 vi.mock("../interlock/interlockGate", () => ({
   evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
 }));

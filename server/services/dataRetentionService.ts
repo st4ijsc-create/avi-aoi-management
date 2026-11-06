@@ -11,7 +11,7 @@
  * the two mechanisms never double-delete.
  *
  * SAFETY:
- *  - Disabled by default. Master switch DATA_RETENTION_ENABLED=true.
+ *  - ★ Pha 0 P0-6 (2026-11-04): BẬT MẶC ĐỊNH (DEV đã đặt true từ trước ⇒ không đổi hành vi DEV). Công tắc tắt khẩn: DATA_RETENTION_ENABLED=false.
  *  - DATA_RETENTION_DRY_RUN=true logs what WOULD be deleted without deleting —
  *    recommended for the first run in any environment.
  *  - Deletes in bounded batches (DATA_RETENTION_BATCH, default 5000) to avoid
@@ -130,6 +130,9 @@ const TARGETS: RetentionTarget[] = [
   { table: "mqtt_connection_logs",       column: "timestamp",   envKey: "RETENTION_MQTT_CONNECTION_LOGS_DAYS",  defaultDays: 365 },
   { table: "mqtt_reconnect_logs",        column: "timestamp",   envKey: "RETENTION_MQTT_RECONNECT_LOGS_DAYS",   defaultDays: 365 },
   { table: "package_activity_logs",      column: "createdAt",   envKey: "RETENTION_PACKAGE_ACTIVITY_LOGS_DAYS", defaultDays: 365 },
+  // F0-1 (dọn vệ sinh 2026-11-04): sổ sự kiện VRAM tăng ≈ 745 hàng/ngày và trước đây KHÔNG mã nào xoá (66 423 hàng / 87 MB). 30 ngày là đủ cho chẩn đoán; KHÔNG phải sổ tuân thủ.
+  // ⚠ defaultDays = 0 CỐ Ý (vắng biến ⇒ KHÔNG xoá): lần chạy đầu với cửa sổ 30 ngày sẽ xoá ≈ 60 k hàng trên DEV = một lần xoá cần chủ dự án duyệt. Chủ dự án đặt RETENTION_VRAM_EVENTS_DAYS=30 SAU khi duyệt số đếm.
+  { table: "vram_events",                column: "createdAt",   envKey: "RETENTION_VRAM_EVENTS_DAYS",           defaultDays: 0 },
 ];
 
 /** Exposed for tests/inspection — do not mutate. */
@@ -270,9 +273,14 @@ export async function runRetentionOnce(): Promise<void> {
   }
 }
 
+/** ★ Pha 0 P0-6 — quét giữ dữ liệu + vòng đời ảnh BẬT mặc định; chỉ `DATA_RETENTION_ENABLED=false` tắt (khẩn / lưới). */
+export function retentionBat(): boolean {
+  return process.env.DATA_RETENTION_ENABLED !== "false";
+}
+
 export function startDataRetention(): void {
-  if (process.env.DATA_RETENTION_ENABLED !== "true") {
-    return; // feature-flagged off — no-op (safe default; this deletes data)
+  if (!retentionBat()) {
+    return; // tắt khẩn tường minh (DATA_RETENTION_ENABLED=false)
   }
   if (timer) return;
 

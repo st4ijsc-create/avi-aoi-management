@@ -26,7 +26,6 @@ const factories: string[] = [];
 const eqCu = process.env.EQ_GOVERN_ENABLED;
 let eng!: {
   rt: ReturnType<typeof import("./routingRouter").routingRouter.createCaller>;
-  cfg: ReturnType<typeof import("./spcAdvancedRouter").spcConfigRouter.createCaller>;
   qg: ReturnType<typeof import("./spcAdvancedRouter").qualityGateRouter.createCaller>;
   vio: ReturnType<typeof import("./spcAdvancedRouter").spcRuleViolationRouter.createCaller>;
   mq: ReturnType<typeof import("./mqttOeeRouters").mqttClientRouter.createCaller>;
@@ -97,7 +96,6 @@ beforeAll(async () => {
   const mqo = await import("./mqttOeeRouters");
   eng = {
     rt: (await import("./routingRouter")).routingRouter.createCaller(ce),
-    cfg: spc.spcConfigRouter.createCaller(ce),
     qg: spc.qualityGateRouter.createCaller(ce),
     vio: spc.spcRuleViolationRouter.createCaller(ce),
     mq: mqo.mqttClientRouter.createCaller(ce),
@@ -171,16 +169,12 @@ describe("routing — theo luật sản phẩm", () => {
 });
 
 describe("spcAdvanced — cấu hình · cổng chất lượng · vi phạm", () => {
-  it("tạo cấu hình / cổng nhắm máy hoặc sản phẩm B ⇒ NOT_FOUND; không nêu khoá nào ⇒ BAD_REQUEST; máy A qua cổng", async () => {
+  it("tạo cổng nhắm máy hoặc chuyền B ⇒ NOT_FOUND", async () => {
     const l = [
-      await maLoi(() => eng.cfg.create({ machineId: B.mid } as never)),
-      await maLoi(() => eng.cfg.create({ productModelId: pm.b! } as never)),
-      await maLoi(() => eng.cfg.create({} as never)),
       await maLoi(() => eng.qg.create({ name: `${RUN}-gb`, machineId: B.mid, gateType: "yield_rate", threshold: 90 } as never)),
       await maLoi(() => eng.qg.create({ name: `${RUN}-gl`, lineId: B.lid, gateType: "yield_rate", threshold: 90 } as never)),
     ];
-    expect(l).toEqual([NF, NF, "BAD_REQUEST", NF, NF]);
-    expect(await maLoi(() => eng.cfg.create({ machineId: A.mid } as never))).toBeNull();
+    expect(l).toEqual([NF, NF]);
     expect(await dem(sql`SELECT count(*)::int AS n FROM quality_gates WHERE name LIKE ${RUN + "-g%"}`)).toBe(0);
   });
   it("sửa / xoá cấu hình & cổng của máy B; xác nhận vi phạm và sự kiện cổng của B ⇒ NOT_FOUND", async () => {
@@ -190,8 +184,6 @@ describe("spcAdvanced — cấu hình · cổng chất lượng · vi phạm", (
     const [pt] = await dung(sql`INSERT INTO measurement_point_defs ("productModelId", code, name, "measurementType", "positionX", "positionY") VALUES (${pm.b}, ${RUN + "-pt"}, 'pt', 'DIMENSION', 1, 1) RETURNING id`);
     const [vb] = await dung(sql`INSERT INTO spc_rule_violations ("measurementPointDefId", "ruleType", "ruleName") VALUES (${pt.id}, 'rule1_beyond_3sigma', ${RUN + "-v"}) RETURNING id`).catch(async () => dung(sql`SELECT 0 AS id`));
     const l = [
-      await maLoi(() => eng.cfg.update({ id: Number(cb.id), subgroupSize: 9 } as never)),
-      await maLoi(() => eng.cfg.delete({ id: Number(cb.id) } as never)),
       await maLoi(() => eng.qg.update({ id: Number(gb.id), threshold: 1 } as never)),
       await maLoi(() => eng.qg.delete({ id: Number(gb.id) } as never)),
       await maLoi(() => eng.qg.triggerEvent({ qualityGateId: Number(gb.id), triggerValue: 1 } as never)),
@@ -200,7 +192,7 @@ describe("spcAdvanced — cấu hình · cổng chất lượng · vi phạm", (
       ...(Number(vb.id) > 0 ? [await maLoi(() => eng.vio.acknowledge({ id: Number(vb.id) } as never)), await maLoi(() => eng.vio.resolve({ id: Number(vb.id) } as never))] : [NF, NF]),
     ];
     const con = await dem(sql`SELECT count(*)::int AS n FROM spc_configurations WHERE id = ${cb.id}`) + (await dem(sql`SELECT count(*)::int AS n FROM quality_gates WHERE id = ${gb.id} AND threshold = 90`));
-    expect({ l, con }).toEqual({ l: Array(9).fill(NF), con: 2 });
+    expect({ l, con }).toEqual({ l: Array(7).fill(NF), con: 2 });
   });
 });
 

@@ -322,6 +322,7 @@ async function yDinhTruoc(tx: Tx, runId: number, truocMs: number) {
 const conLaiCuaSo = (tx: Tx, runId: number, conMs: number) => yDinhTruoc(tx, runId, STOP_BU_TRU_KHOI_DONG_HAN_MS - conMs);
 /** The adapter's session is not up yet (as on a real boot before startOt); `sauMs` later it comes up (the real fingerprint), or never. */
 function ketNoiSau(a1: number, sauMs: number | null) {
+  const mocSan: { daSan: boolean; pduLucSan: number | null } = { daSan: false, pduLucSan: null }; // the moment the fake session came up: how many STOP PDUs were already written
   const drv = H.drivers.get(a1);
   const fp = H.fingerprints.get(a1);
   H.drivers.delete(a1);
@@ -330,8 +331,11 @@ function ketNoiSau(a1: number, sauMs: number | null) {
     setTimeout(() => {
       H.drivers.set(a1, drv);
       H.fingerprints.set(a1, fp!);
+      mocSan.daSan = true;
+      mocSan.pduLucSan = soPduGhi();
     }, sauMs);
   }
+  return mocSan;
 }
 const soThongBao = async (tx: Tx, runId: number, kind: string) =>
   Number(((await tx.execute(sql`SELECT count(*)::int AS n FROM notifications WHERE "userId" = ${OWNER} AND metadata->>'dedupKey' LIKE ${`${kind}:${runId}:%`}`)) as unknown as Array<{ n: number }>)[0]!.n);
@@ -823,9 +827,11 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const { m1, m2, a1 } = await dungThietBi(tx);
       const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
       await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
-      ketNoiSau(a1, 2000);
+      const moc = ketNoiSau(a1, 2000);
       const pdu0 = soPduGhi();
       const { mine } = await khoiDongLai(runId);
+      expect(moc.daSan).toBe(true); // the boot returned only after the session came up
+      expect(moc.pduLucSan! - pdu0, "no STOP PDU before the session was ready").toBe(0);
       expect(soPduGhi() - pdu0).toBe(1);
       expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
       const al = canhBaoCua(runId);
@@ -833,7 +839,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(String(al[0]!.title)).toContain("STOP compensation pending at boot — waiting for the device connection");
       expect(String(al[0]!.dedupKey)).toMatch(new RegExp(`^foe_stop_compensation_pending_at_boot:${runId}:undo:\\d+$`));
       const md = (await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>;
-      expect(md.waitedMs).toBeGreaterThanOrEqual(1500);
+      expect(md.waitedMs).toBeGreaterThan(0); // it waited (load-independent: the ordering vs the ready moment is asserted above)
       expect(md.recheck.cuaSo.conLaiMs).toBeGreaterThan(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
@@ -850,7 +856,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       const { mine } = await khoiDongLai(runId);
       await kiemGiuKhongGui(tx, runId, pdu0, "ketNoiChuaSan", mine); // incl. daThuGuiLai unset, no -a2 row
       expect(canhBaoCua(runId).map((x) => x.kind)).toEqual(["foe_stop_compensation_pending_at_boot", "foe_compensation_interrupted_held"]); // m-2: early, then the outcome
-      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).waitedMs).toBeGreaterThanOrEqual(1500);
+      expect(((await auditCua(tx, runId))[0]!.det.metadata as Record<string, any>).waitedMs).toBeGreaterThan(0); // the audit metadata carries no window-end field, only waitedMs; wall-clock ms are load-dependent
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });

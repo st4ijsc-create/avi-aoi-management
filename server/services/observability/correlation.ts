@@ -2,8 +2,7 @@
  * Correlation-id backbone — SYNAPSE §5.12.1 (doc 33 §3.4 / F6 · H2).
  *
  * A single correlation_id flowing order → work-order → task → assignment → robot-command → ack
- * (SDD §5.12.1) — implemented with Node's built-in AsyncLocalStorage, so it works WITHOUT the
- * heavy OpenTelemetry SDK (full OTLP export to Tempo/Jaeger is a later wave). Non-breaking:
+ * (SDD §5.12.1) — implemented with Node's built-in AsyncLocalStorage (không SDK vết ngoài nào). Non-breaking:
  * callers opt in via `withCorrelation`; code that never calls it is unaffected.
  */
 import { AsyncLocalStorage } from "node:async_hooks";

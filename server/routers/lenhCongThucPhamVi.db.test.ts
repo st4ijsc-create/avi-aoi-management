@@ -189,8 +189,7 @@ describe("★★★ machineRecipe — đổi công thức của máy nhà máy k
   it("recipes.rollback(máy của A) ⇒ NOT_FOUND", async () => {
     expect(await maLoi(() => userB.machineRecipe.recipes.rollback({ machineId: A.mid }))).toBe("NOT_FOUND");
   });
-  it("recipes.getActive(máy của A) ⇒ NOT_FOUND; deployments.list chỉ hàng của máy trong phạm vi; machines.list chỉ máy trong phạm vi", async () => {
-    expect(await maLoi(() => userB.machineRecipe.recipes.getActive({ machineId: A.mid, code: `${RUN}-rc-a` }))).toBe("NOT_FOUND");
+  it("deployments.list chỉ hàng của máy trong phạm vi; machines.list chỉ máy trong phạm vi", async () => {
     const may = (await userB.machineRecipe.machines.list()).map((m: { id: number }) => m.id);
     expect(may).toContain(B.mid);
     expect(may).not.toContain(A.mid);

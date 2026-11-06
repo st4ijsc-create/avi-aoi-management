@@ -321,16 +321,6 @@ export const programmingRouter = router({
       return d.select().from(programProjects).where(cong).orderBy(desc(programProjects.updatedAt)).limit(input?.limit ?? 200);
     }),
 
-  getProject: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input, ctx }) => {
-      const d = await db();
-      const cong = await dieuKienDuAn(ctx); // phạm vi người dùng (L3 2026-10-25): dự án ngoài phạm vi ≡ không tồn tại
-      const [row] = await d.select().from(programProjects).where(cong ? and(eq(programProjects.id, input.id), cong) : eq(programProjects.id, input.id)).limit(1);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
-      return row;
-    }),
 
   createProject: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -442,16 +432,6 @@ export const programmingRouter = router({
       return input.branch ? rows.filter((r) => r.branch === input.branch) : rows;
     }),
 
-  getArtifact: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input, ctx }) => {
-      const d = await db();
-      await chanArtifact(ctx, input.id); // phạm vi người dùng (L3 2026-10-25)
-      const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.id)).limit(1);
-      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.id} not found`);
-      return row;
-    }),
 
   /** Create a NEW version of a project's program on a branch (append-version). */
   createArtifact: writeProcedure
@@ -1065,36 +1045,8 @@ export const programmingRouter = router({
       return { ok: true as const };
     }),
 
-  // ── AI Engineering Copilot (D7) — ADVISORY ONLY (HITL absolute; no deploy path) ──
-  copilotStatus: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .query(() => ({ enabled: copilotEnabled() })),
 
-  /** Propose a VALIDATED skeleton program. The human reviews + saves it as a version. */
-  copilotSuggest: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ kind: KIND, intent: z.string().min(1).max(2000), lang: z.enum(["vi", "en", "zh"]).optional() }))
-    .mutation(async ({ input }) => suggestProgram(input)),
 
-  copilotExplain: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ kind: KIND, source: z.string().max(2_000_000), lang: z.enum(["vi", "en", "zh"]).optional() }))
-    .query(({ input }) => {
-      const res = explainProgram(input.kind, input.source, input.lang);
-      // Doc 54 P3.4 (#1) — dù đây chỉ là mô tả cấu trúc (không phải model), KHÔNG được để bị hiểu
-      // là "chứng nhận": mã liên quan an toàn ⇒ gắn cờ yêu cầu người kiểm định an toàn.
-      if (isSafetyRelevantProgram(input.source)) {
-        return {
-          ...res,
-          safetyReviewRequired: true as const,
-          certified: false as const,
-          safetyNote:
-            "Chương trình chứa logic liên quan AN TOÀN — bản mô tả cấu trúc này KHÔNG phải chứng nhận. " +
-            "Yêu cầu KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận.",
-        };
-      }
-      return res;
-    }),
 
   /**
    * Doc 34 · P2 — LLM CODE COPILOT (generate / complete / translate / review / explain).

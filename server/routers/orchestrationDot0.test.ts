@@ -65,7 +65,6 @@ vi.mock("../_core/moduleGate", async (orig) => {
 
 import { orchestrationWorkflows } from "../../drizzle/schema";
 import { orchestrationRouter } from "./orchestrationRouter";
-import { orchestrationGovRouter } from "./orchestrationGovRouter";
 import { startRun } from "../services/orchestration/foe/foeEngine";
 
 const ENGINEER = { id: 10, role: "engineer", name: "eng" };
@@ -138,31 +137,3 @@ describe("ORC-06 — duplicateWorkflow tạo bản NHÁP không chạy được"
 // ════════════════════════════════════════════════════════════════════════════════
 // ORC-11 — orchestrationGov RBAC + module gate
 // ════════════════════════════════════════════════════════════════════════════════
-describe("ORC-11 — orchestrationGov: mọi thủ tục có RBAC đọc + cổng module", () => {
-  const CALLS: Array<[string, (c: ReturnType<typeof orchestrationGovRouter.createCaller>) => Promise<unknown>]> = [
-    ["validateDag", (c) => c.validateDag({ nodes: [{ id: "a", deps: [] }] })],
-    ["orderQueue", (c) => c.orderQueue({ now: 1, tasks: [{ id: "t", priority: 1, createdTs: 0 }] })],
-    ["fourEyesCheck", (c) => c.fourEyesCheck({ context: { action: "x" } })],
-    ["runEvents", (c) => c.runEvents({ runId: 1 })],
-    ["replayRun", (c) => c.replayRun({ runId: 1 })],
-  ];
-
-  it.each(CALLS)("%s — thiếu machine_monitoring/canView ⇒ FORBIDDEN", async (_name, call) => {
-    perm.deny.add("machine_monitoring.canView");
-    const err = await call(orchestrationGovRouter.createCaller(ctxOf(ENGINEER))).catch((e) => e);
-    expect(codeOf(err)).toBe("FORBIDDEN");
-  });
-
-  it.each(CALLS)("%s — module MOD_ENGINEERING không có giấy phép ⇒ FORBIDDEN", async (_name, call) => {
-    gate.deny.add("MOD_ENGINEERING");
-    const err = await call(orchestrationGovRouter.createCaller(ctxOf(ENGINEER))).catch((e) => e);
-    expect(codeOf(err)).toBe("FORBIDDEN");
-  });
-
-  it("có quyền ⇒ chạy bình thường và kiểm đúng machine_monitoring/canView", async () => {
-    const c = orchestrationGovRouter.createCaller(ctxOf(ENGINEER));
-    const r = await c.validateDag({ nodes: [{ id: "a", deps: [] }, { id: "b", deps: ["a"] }] });
-    expect((r as { valid: boolean }).valid).toBe(true);
-    expect(perm.calls).toContain("machine_monitoring.canView");
-  });
-});

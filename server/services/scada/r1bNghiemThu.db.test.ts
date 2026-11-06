@@ -642,8 +642,10 @@ describe.skipIf(!CHAY_NGHIEM_THU)("nghiệm thu R1b-1 — S1–S6, C1, R1, W1, B
     expect(t.ly_do).toContain("E-STOP");
   });
 
-  // ═════════ R1 — REST v1 lệnh OT ⇒ 501, 0 command_log ═════════
-  it("R1 — REST v1 POST /equipment/:id/commands trên máy OT (AUTOMATION): write_tag / set_machine_param / stop (ghim & trần) ⇒ 501 not_implemented; command_log 0; thiết bị 0 lần", async () => {
+  // ═════════ R1 — REST v1 lệnh OT ⇒ 0 command_log, 0 ghi (pha 0 · C0-1: cửa REST đã GỠ ⇒ kết cục 501 → 410; ORACLE GIỮ NGUYÊN) ═════════
+  // Tính chất "REST không bao giờ ghi thiết bị OT" vẫn đo bằng CHÍNH các oracle cũ (attempts / command_log / stub ghi / dispatchCalls = 0). Việc ghi OT CÓ kiểm soát
+  // (HITL, ghim STOP, trần) do cửa SỐNG chứng minh ngay trong tệp này: `dungMay` (R-STOP), `request/confirm` (R2…) qua scadaCommands/dispatcher.
+  it("R1 — REST v1 POST /equipment/:id/commands trên máy OT (AUTOMATION): write_tag / set_machine_param / stop (ghim & trần) ⇒ 410 gone (cửa đã gỡ); command_log 0; thiết bị 0 lần", async () => {
     const app = express();
     app.use(express.json());
     app.use("/api/v1", (await import("../../api/v1/router")).createV1Router());
@@ -672,8 +674,8 @@ describe.skipIf(!CHAY_NGHIEM_THU)("nghiệm thu R1b-1 — S1–S6, C1, R1, W1, B
           body: JSON.stringify({ ...b, idempotencyKey: k }),
         });
         const body = (await res.json()) as { ok?: boolean; error?: { code?: string } };
-        expect(res.status, `${b.command}: ${JSON.stringify(body)}`).toBe(501);
-        expect(body).toMatchObject({ ok: false, error: { code: "not_implemented" } });
+        expect(res.status, `${b.command}: ${JSON.stringify(body)}`).toBe(410);
+        expect(body).toMatchObject({ ok: false, error: { code: "gone" } });
       }
       expect(await tang(truoc, AD.adAuto)).toEqual({ attempts: 0, commandLog: 0 });
       const ds = sql.join(keys.map((k) => sql`${"%" + k + "%"}`), sql`, `);

@@ -154,6 +154,10 @@ export async function evaluateAlertRules(rules: any[]): Promise<AlertEvaluationR
   return results;
 }
 
+/** Chỉ lưới (Pha 0 AL0-1). */
+export const __danhGiaLuatChoTest = (rule: any, pv?: PhamViTram) => evaluateRule(rule, pv);
+export const __coMessageTruocCuaSoChoTest = coMessageTruocCuaSo;
+
 async function evaluateRule(rule: any, pv?: PhamViTram): Promise<AlertEvaluationResult> {
   const { id, name, ruleType, thresholdValue, comparisonOperator, timeWindowMinutes } = rule;
 
@@ -180,11 +184,18 @@ async function evaluateRule(rule: any, pv?: PhamViTram): Promise<AlertEvaluation
       message = `Tỷ lệ message thất bại ${currentValue.toFixed(2)}% ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue}%`;
       break;
 
-    case "THROUGHPUT_LOW":
+    case "THROUGHPUT_LOW": {
       currentValue = await getThroughput(timeWindowMinutes, pv);
-      triggered = compareValues(currentValue, thresholdValue, comparisonOperator);
-      message = `Throughput ${currentValue.toFixed(0)} msg/min ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue} msg/min`;
+      // ★ Pha 0 AL0-1 (2026-11-04): "throughput thấp" chỉ có nghĩa khi LUỒNG TỪNG SỐNG — không một message nào trong 24 h trước cửa sổ
+      //   nghĩa là KHÔNG CÓ NGUỒN (chưa nối thiết bị / broker), không phải throughput rơi. Trước bản vá: 3 183 lần bắn mù mỗi 30 phút
+      //   (TechDocs 40 §1). Mất nguồn là việc của trạng thái kết nối (20 `connection_status`), không phải luật này.
+      const luongTungSong = await coMessageTruocCuaSo(timeWindowMinutes, pv);
+      triggered = luongTungSong && compareValues(currentValue, thresholdValue, comparisonOperator);
+      message = luongTungSong
+        ? `Throughput ${currentValue.toFixed(0)} msg/min ${getOperatorText(comparisonOperator)} ngưỡng ${thresholdValue} msg/min`
+        : `Không có message MQTT nào trong 24 h — không có nguồn để đánh giá throughput (không cảnh báo)`;
       break;
+    }
 
     case "THROUGHPUT_HIGH":
       currentValue = await getThroughput(timeWindowMinutes, pv);
@@ -397,6 +408,24 @@ async function getThroughput(minutes: number, pv?: PhamViTram): Promise<number> 
   const count = parseInt(rows[0]?.count || "0");
   
   return count / minutes; // messages per minute
+}
+
+/** ★ Pha 0 AL0-1 — có ít nhất một message trong 24 h TRƯỚC cửa sổ đánh giá (luồng từng sống) không. */
+async function coMessageTruocCuaSo(minutes: number, pv?: PhamViTram, dbDung?: Awaited<ReturnType<typeof getDb>>): Promise<boolean> {
+  const db = dbDung ?? (await getDb());
+  if (!db) return false;
+  const den = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const tu = new Date(Date.now() - minutes * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString();
+  const dkTram = dieuKienTram(pv);
+  const result = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM mqtt_message_logs
+      WHERE "createdAt" >= ${tu} AND "createdAt" < ${den}
+        ${dkTram ? sql`AND ${dkTram}` : sql``}
+    ) AS co
+  `);
+  const v = hangKetQua(result)[0]?.co;
+  return v === true || v === "t" || v === "true";
 }
 
 async function getClientOfflineDuration(): Promise<number> {
