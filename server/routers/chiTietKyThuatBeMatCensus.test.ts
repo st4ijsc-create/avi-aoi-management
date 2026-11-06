@@ -598,12 +598,6 @@ export const SO_CAI: Record<string, Muc> = {
   "server/routers/engineeringAssignmentRouter.ts#proc:assign": { dem: { dich_vu: 2 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
   "server/routers/engineeringAssignmentRouter.ts#proc:unassign": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả bản ghi giao việc" },
   "server/routers/engineeringAssignmentRouter.ts#proc:assignableUsers": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: MT_VISIBLE + "; trả danh sách người" },
-  "server/routers/orchestrationGovRouter.ts#proc:runEvents": {
-    dem: { dich_vu: 1 },
-    phanLoai: "mien_tru",
-    lyDo: "orchestration_run_events: mọi appendRunEvent chỉ mang { status } / { workflowRef, edgeNodeId } (foeEngine / foeRunStore) — không lỗi bước; " + MT_VISIBLE,
-  },
-  "server/routers/orchestrationGovRouter.ts#proc:replayRun": { dem: { dich_vu: 1 }, phanLoai: "mien_tru", lyDo: "trạng thái suy từ cùng sổ sự kiện (không lỗi bước); " + MT_VISIBLE },
   "server/routers/oversightRouter.ts#proc:pendingSummary": { dem: { dich_vu: 1, ham_cuc_bo: 1 }, phanLoai: "mien_tru", lyDo: "mẫu run chỉ { id, workflowRef, status, currentStepId } + đếm; " + MT_VISIBLE },
   "server/routers/oversightRouter.ts#fetchOrchestrationHeld": { dem: { cot_ky_thuat: 1 }, phanLoai: "mien_tru", lyDo: "R1b-2b-2a A2(n) m-10 — chỉ đọc MÃ từ dấu máy chủ ghi (contextJson -> foeKetCucKhongRo ->> ma), không trả contextJson; gợi ý = mã, không văn bản driver" },
   "server/routers/edgeResolutionRouter.ts#proc:list": {
@@ -697,7 +691,7 @@ export const SO_CAI: Record<string, Muc> = {
  *   • SCADA 1a (đo 2026-11-03): { khoa 73, diemCham 106, che 15, mienTru 58 } — +1 khoá miễn trừ `socket.ts#initializeSocket` (dich_vu registerScadaHandlers:
  *     scada:tick đọc trạng thái kết nối RAM, chỉ trường `.tt`).
  */
-const GHIM = { khoa: 74, diemCham: 108, che: 15, mienTru: 59 };
+const GHIM = { khoa: 72, diemCham: 106, che: 15, mienTru: 57 }; // 2026-11-04 gỡ orchestrationGov (runEvents · replayRun): −2 khoá, −2 điểm chạm, −2 miễn trừ; R1b-2b-2a A2(n) m-10: +1 khoá miễn trừ fetchOrchestrationHeld, +2 điểm chạm
 /** Bảo vệ "đi rỗng" (đo 2026-11-01: api 30, routes 26, routers 239, _core 82 tệp; nguồn dịch vụ 80 hàm sau fix 4 — 55 ở fix 3). Ngưỡng dưới ~85 % số đo. */
 const SAN_TEP: Record<(typeof GOC_BE_MAT)[number], number> = { "server/api": 25, "server/routes": 22, "server/routers": 200, "server/_core": 70 };
 const SAN_NGUON_DICH_VU = 68;

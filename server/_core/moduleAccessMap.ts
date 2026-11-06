@@ -129,7 +129,6 @@ export const MODULE_ACCESS_MAP: Record<string, ModuleCode> = {
   aiSpecialistAgent: MOD.AI,
   aiTimeSeries: MOD.AI,
   aiVision: MOD.AI,
-  aiVisionLanguage: MOD.AI,
   repoWorkspace: MOD.AI,
   // ⚠⚠⚠ **KHÔNG** có mặt ở đây, CỐ Ý — mười router mang tên `ai…` nhưng phục vụ dữ liệu VẬN HÀNH
   //     mà khách KHÔNG mua AI vẫn phải dùng: `aiInbox` · `aiInsight` · `aiInspectionAnalytics` ·

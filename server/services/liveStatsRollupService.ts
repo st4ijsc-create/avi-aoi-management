@@ -2,7 +2,7 @@
  * doc 54 §11 P1.2 ⭐ — LIVE daily-statistics rollup writer.
  * ═══════════════════════════════════════════════════════════════════════════════
  * VẤN ĐỀ (đòn bẩy §11.2): `daily_statistics` (nguồn cho getAllOEE / OEE dashboards /
- * warRoom line-OEE) chỉ được ghi bởi `scripts/sim-factory/sim-live-daemon.mjs`.
+ * warRoom line-OEE) từng chỉ được ghi bởi `scripts/sim-factory/sim-live-daemon.mjs` (đã gỡ 2026-11-04, Pha 0 E0-2).
  * `upsertDailyStatistics` (server/db/statistics.ts) có ZERO live caller, nên với MÁY
  * THẬT (ingest qua product_inspections) bảng này RỖNG → OEE/health/monitoring "rỗng".
  *
@@ -41,7 +41,7 @@
  * inspectionTime dạng "fake-UTC" (giờ tường nhà máy đọc như UTC) nên biên UTC-day
  * khớp đúng ngày-nhà-máy — cùng logic với sibling gần nhất đọc product_inspections.
  *
- * ⚠ DOUBLE-WRITE (xem .env / .env.example): sim-live-daemon cộng dồn vào cùng bảng.
+ * ⚠ DOUBLE-WRITE (xem .env / .env.example): (daemon cũ đã gỡ) từng cộng dồn vào cùng bảng.
  * KHÔNG bật LIVE_STATS_ROLLUP_ENABLED trên env Full-Sim (sẽ đè/đá nhau — cumulative
  * vs absolute). Ở PRODUCTION tắt sim-daemon và bật cờ này (hai nguồn LOẠI TRỪ nhau).
  *

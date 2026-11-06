@@ -1,5 +1,5 @@
 /**
- * CỔNG CSDL THẬT — lô L6c-C3 (rà bảo mật tRPC, 2026-10-25): hierarchyTree ×4 · federation ×7 (+ quyền admin_system) · equipmentStandards (đọc danh mục) · twin.models list|resolve · ecosystemAdmin.softRefIntegrity.
+ * CỔNG CSDL THẬT — lô L6c-C3 (rà bảo mật tRPC, 2026-10-25): hierarchyTree ×4 · federation ×7 (+ quyền admin_system) · equipmentStandards (đọc danh mục) · ecosystemAdmin.softRefIntegrity.
  * Luật: nhà máy ngoài phạm vi ≡ không tồn tại; trang liên bang theo MÃ tập đoàn, trang cục bộ (isLocal) chỉ toàn quyền; hàng chuẩn có thẻ tenant của nhà máy khác ẩn, hàng không thẻ / SEED dùng chung;
  * mô hình 3D không gắn gì = dùng chung; softRef: người hẹp chỉ thấy số đếm (mẫu rỗng); admin không đổi.
  */
@@ -27,7 +27,6 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
     ht: await mk("./hierarchyTreeRouter", "hierarchyTreeRouter"),
     fed: await mk("./federationRouter", "federationRouter"),
     es: await mk("./equipmentStandardsRouter", "equipmentStandardsRouter"),
-    tw: await mk("./twinRouter", "twinRouter"),
     eco: await mk("./ecosystemAdminRouter", "ecosystemAdminRouter"),
   };
 };
@@ -197,22 +196,6 @@ describe("★★★ equipmentStandards — đọc danh mục", () => {
   });
 });
 
-describe("★★★ twin.models list|resolve", () => {
-  it("mô hình gắn máy / nhà máy B ẩn; mô hình không gắn gì dùng chung; admin thấy hết", async () => {
-    const ds = J(await cA.tw.models.list({ limit: 1000 }));
-    expect(ds).toContain(RUN + "mdA");
-    expect(ds).toContain(RUN + "mdN");
-    expect(ds).not.toContain(RUN + "mdB");
-    expect(ds).not.toContain(RUN + "mdFB");
-    const adm = J(await cAdm.tw.models.list({ limit: 1000 }));
-    expect(adm).toContain(RUN + "mdB");
-    expect(adm).toContain(RUN + "mdFB");
-    expect((await cA.tw.models.resolve({ machineId: H.B.mid }))?.modelKey ?? null).not.toBe(RUN + "mdB");
-    expect((await cAdm.tw.models.resolve({ machineId: H.B.mid }))?.modelKey).toBe(RUN + "mdB");
-    expect((await cA.tw.models.resolve({ machineId: H.A.mid }))?.modelKey).toBe(RUN + "mdA");
-    expect((await cA.tw.models.resolve({ equipmentClass: RUN + "cls" }))?.modelKey).toBe(RUN + "mdN");
-  });
-});
 
 describe("★★★ ecosystemAdmin.softRefIntegrity", () => {
   it("admin thấy mẫu mồ côi; người hẹp chỉ số đếm (mẫu rỗng) và số đếm vẫn khớp", async () => {

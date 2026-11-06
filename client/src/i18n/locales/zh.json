@@ -24679,9 +24679,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "通信 {{ketNoi}}/{{tong}}",
-        "coEdge": "通信 {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "重连中 {{dangNoi}} · 已断开 {{mat}} · 其他 {{khac}} — 点击打开通信诊断"
+        "nhan": "通信 {{ketNoi}} 已连接 · {{khac}} 已关闭",
+        "dangNoi": "{{dangNoi}} 重连中",
+        "mat": "{{mat}} 已断开",
+        "edge": "edge {{edge}}",
+        "moTaCu": "读取失败 — 上一次的数字（更新于 {{luc}}）。",
+        "moTa": "配置中已启用的 {{tong}} 个适配器（不含 edge）：{{ketNoi}} 已连接 · {{dangNoi}} 重连中 · {{mat}} 已断开 · {{khac}} 已关闭或未知 — 点击打开通信诊断"
       }
     },
     "orchestration": {

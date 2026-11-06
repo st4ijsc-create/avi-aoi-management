@@ -70,7 +70,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/maintenanceRouter.ts (4) ──
   // ── server/routers/maintenanceScheduleRouter.ts (4) ──
   // ── server/routers/mesControlTowerRouter.ts (3) ──
-  // ── server/routers/mpVariantSubformRouter.ts (1) ──
   // ── server/routers/mqttBulletinRouter.ts (7) ──
   // ── server/routers/mqttClientManagementRouter.ts (7) ──
   // ── server/routers/mqttNgAlertSettingsRouter.ts (4) ──
@@ -78,7 +77,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/ngRateThresholdRouter.ts (5) ──
   // ── server/routers/notificationRouters.ts (2) ──
   // ── server/routers/operatorBadgeRouter.ts (2) ──
-  // ── server/routers/parameterGuardrailRouter.ts (2) ──
   // ── server/routers/processResultRouter.ts (1) ──
   // ── server/routers/processRouter.ts (7) ──
   // ── server/routers/productOnboardingRouter.ts (3) ──
@@ -91,13 +89,11 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
   // ── server/routers/secsGemRouter.ts (1) ──
   // ── server/routers/sessionRouter.ts (1) ──
   // ── server/routers/shiftConfigRouter.ts (3) ──
-  // ── server/routers/simTargetsRouter.ts (1) ──
   // ── server/routers/stationTriangulationRouter.ts (2) ──
   // ── server/routers/stencilRouter.ts (1) ──
   // ── server/routers/systemRouters.ts (5) ──
   // ── server/routers/thresholdApprovalRouter.ts (6) ──
   // ── server/routers/trainingBatchCommentsRouter.ts (7) ──
-  // ── server/routers/twinGovRouter.ts (1) ──
   // ── server/routers/twinRouter.ts (3) ──
   // ── server/routers/userRouters.ts (2) ──
   // ── server/routers/vda5050Router.ts (2) ──
@@ -111,9 +107,6 @@ export const NO_PHAM_VI_GHI: readonly string[] = [
  * (c) không đồng thời nằm trong sổ nợ. Thêm mục = lời khai công khai, người review phải thấy.
  */
 export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
-  // ── W17 (kiểm định phamViGhi, 2026-10-25): router không mount ──
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.runInference": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
-  "server/routers/aiAdvancedRouter.ts#abTestRouter.submitFeedback": "router abTest KHÔNG ĐƯỢC MOUNT: `aiAdvancedRouter` chỉ gắn batch + monitoring (training / abTest / edge đã tắt khi chuyển sang AI cục bộ, các dòng `abTest: abTestRouter` nằm trong chú thích) ⇒ không có đường gọi tới thủ tục này. Census §5d ĐỎ nếu training / abTest / edge xuất hiện lại trong aiAdvanced (phải gắn cổng phạm vi cho thủ tục ghi RỒI mới gỡ miễn trừ) — W17 kiểm định phamViGhi 2026-10-25",
   // ── W14c (kiểm định phamViGhi, 2026-10-25): bình luận sở hữu theo người dùng ──
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.updateComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ (comment.userId === ctx.user.id) hoặc admin sửa — kiểm TRƯỚC khi ghi (trainingBatchCommentsRouter.ts); bình luận chỉ thêm được vào lô trong phạm vi (addComment có cổng + test phamViGhiDoW14c) — W14c",
   "server/routers/trainingBatchCommentsRouter.ts#trainingBatchCommentsRouter.deleteComment": "bình luận SỞ HỮU THEO NGƯỜI DÙNG: chỉ chủ hoặc admin xoá (xem updateComment) — W14c",
@@ -128,7 +121,6 @@ export const MIEN_TRU_GHI: Readonly<Record<string, string>> = {
   "server/routers/sessionRouter.ts#sessionRouter.revoke": "thu hồi phiên của CHÍNH người gọi: db.revokeSession(sessionId, ctx.user.id) kiểm sở hữu trong db — W14b",
   "server/routers/userRouters.ts#userRouter.revokeSession": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
   "server/routers/userRouters.ts#userSettingsRouter.setUiPrefs": "dữ liệu của CHÍNH người gọi: revokeSession(sessionId, ctx.user.id) kiểm sở hữu; setUiPrefs từ chối khi expectedUserId ≠ ctx.user.id — W14b",
-  "server/routers/simTargetsRouter.ts#simTargetsRouter.validateUrscript": "targetId = id bàn thử do MÁY CHỦ đăng ký (resolveSimTarget: chỉ 'default' = URSIM_HOST, từ chối khi host là robot/adapter thật); chạy trên URSim ảo, cờ URSIM_ENABLED + machine_control.canCreate — không phải thực thể nhà máy — W14b",
   "server/_core/systemRouter.ts#systemRouter.marketplace.download": "chợ mẫu bảng điều khiển CÔNG KHAI: chỉ tăng bộ đếm tải và trả mẫu giao diện (getDashboardTemplateById) — KHÔNG đẩy gì xuống thiết bị, không dữ liệu nhà máy (đọc mã 2026-10-25) — W14",
   // ── W14 (kiểm định phamViGhi, 2026-10-25): danh mục dùng chung · dữ liệu của chính người gọi · cấu hình toàn cục ──
   "server/routers/componentLibraryRouter.ts#componentLibraryRouter.packages.update": "danh mục linh kiện (gói · footprint · liên kết vật tư) DANH MỤC DÙNG CHUNG toàn tập đoàn, KHÔNG phải kho (chủ dự án 2026-10-25, W14-Q2/W16: tồn kho theo nhà máy nằm ở spare_parts_inventory / material_receipts / supplier_lots, còn thư viện linh kiện là catalog chung) — component_packages / component_footprints không có cột nhà máy; giữ bằng quyền module",
