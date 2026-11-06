@@ -16,10 +16,12 @@ const { otDispatchMock, robotDispatchMock } = vi.hoisted(() => ({
   })),
   robotDispatchMock: vi.fn(async () => ({ ok: true, status: "simulated" as const, jobId: 7 })),
 }));
-// the REAL stop-type predicate (the engine classifies a STOP with it); only dispatch is mocked
+// the REAL stop-type predicate (the engine classifies a STOP with it); only dispatch is mocked.
+// R1b-2b-2a A2(n) — the pinned-STOP predicate (A2(h)) answers "pinned" for a `stop` (no pins table in this stand-in): after an UNKNOWN outcome
+// only a PINNED STOP compensation is sent by itself (a non-STOP one is held for a person — foeKetCucKhongRo.a2n.test.ts).
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
-  return { isStopCommandType: orig.isStopCommandType, dispatch: otDispatchMock };
+  return { isStopCommandType: orig.isStopCommandType, dispatch: otDispatchMock, phanLoaiStopGhimChoFoe: async (_d: unknown, i: { commandType: string }) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }) };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: robotDispatchMock }));
 
@@ -256,7 +258,7 @@ async function run(d: WorkflowDefinition) {
 }
 
 describe("T2B - no resend after an unknown outcome", () => {
-  it("non-STOP + dispatch timeout => dispatched EXACTLY once, failed with FOE_OUTCOME_UNKNOWN, compensation once", async () => {
+  it("non-STOP + dispatch timeout => dispatched EXACTLY once, failed with FOE_OUTCOME_UNKNOWN, (pinned STOP) compensation once", async () => {
     otDispatchMock.mockResolvedValue(TIMEOUT);
     // the compensation (a stop) also times out - it is a STOP and keeps its own behaviour; count only the main command
     const res = await run(def("t2b-1", "start", true));

@@ -435,7 +435,7 @@ describe.skipIf(!DB_URL)("A2(k) — engine FOE thật: bước gặp FOE_ROW_SPE
     H.bay = 0;
   });
 
-  it("★ K1 (engine) bước KHÔNG phải STOP (maxAttempts 2), hàng a1 đúc cho chính khoá đã tiêu ở nơi khác, không ý định ⇒ dựng lại ⇒ 0 gói, KHÔNG attempt key a2, failed FOE_OUTCOME_UNKNOWN (FOE_ROW_SPENT_FOR_KEY), bù trừ ĐÚNG 1 lần, run failed", async () => {
+  it("★ K1 (engine) bước KHÔNG phải STOP (maxAttempts 2), hàng a1 đúc cho chính khoá đã tiêu ở nơi khác, không ý định ⇒ dựng lại ⇒ 0 gói, KHÔNG attempt key a2, failed FOE_OUTCOME_UNKNOWN (FOE_ROW_SPENT_FOR_KEY); A2(n): bù trừ KHÔNG-STOP bị GIỮ (0 lần ghi), run held", async () => {
     await trongGiaoDich(async (tx) => {
       const d1 = driverGia();
       const d2 = driverGia();
@@ -458,7 +458,7 @@ describe.skipIf(!DB_URL)("A2(k) — engine FOE thật: bước gặp FOE_ROW_SPE
 
       expect(d1.soGoi).toBe(0); // ★ thiết bị KHÔNG bị ghi
       const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId));
-      expect(run!.status).toBe("failed");
+      expect(run!.status).toBe("held"); // R1b-2b-2a A2(n) — was "failed" after the automatic reset below
       const b = await buocRun(tx, runId, "main");
       expect(b?.status).toBe("failed");
       expect(b?.attempt).toBe(1);
@@ -468,11 +468,10 @@ describe.skipIf(!DB_URL)("A2(k) — engine FOE thật: bước gặp FOE_ROW_SPE
       const soMain = await hangAdapter(tx, a1);
       expect(soMain.map((h) => [h.idempotencyKey, h.status, String(h.errorText).split(":")[0]])).toEqual([[perWriteKey(`run${runId}-main-a1`, "a", 0), "rejected", "FOE_ROW_SPENT_FOR_KEY"]]);
       giongHang(await hangUyQuyen(tx, orchestrationActionId(`run${runId}-main-a1`)), truoc);
-      // bù trừ chạy ĐÚNG 1 lần
-      expect(d2.soGoi).toBe(1);
-      expect((await buocRun(tx, runId, "undo"))?.status).toBe("compensated");
-      // hàng KẾT QUẢ của bù trừ (khoá v2; hàng ý định `intent:` của nó đứng riêng) — đúng một lần, acked
-      expect((await hangAdapter(tx, a2)).filter((x) => String(x.idempotencyKey).startsWith("v2:")).map((x) => [x.idempotencyKey, x.status])).toEqual([[perWriteKey(`run${runId}-undo-a1`, "c", 0), "acked"]]);
+      // R1b-2b-2a A2(n) — the compensation (reset on another machine, not a pinned STOP) is NOT written after the unknown outcome: held
+      expect(d2.soGoi).toBe(0);
+      expect((await buocRun(tx, runId, "undo"))?.status).toBe("held");
+      expect(await hangAdapter(tx, a2)).toEqual([]);
     });
     expect(H.bay).toBe(0);
   });

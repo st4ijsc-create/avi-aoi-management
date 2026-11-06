@@ -216,7 +216,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
     ghiBuTru = 0;
   });
 
-  it("★ (1) bước KHÔNG phải STOP (maxAttempts 2 = 3 lần): sập sau khi thiết bị đã ghi ⇒ dựng lại ⇒ 0 PDU gửi lại, KHÔNG attempt key a2, failed FOE_OUTCOME_UNKNOWN (DUPLICATE_IN_FLIGHT), bù trừ ĐÚNG 1 lần", async () => {
+  it("★ (1) bước KHÔNG phải STOP (maxAttempts 2 = 3 lần): sập sau khi thiết bị đã ghi ⇒ dựng lại ⇒ 0 PDU gửi lại, KHÔNG attempt key a2, failed FOE_OUTCOME_UNKNOWN (DUPLICATE_IN_FLIGHT), bù trừ KHÔNG-STOP bị GIỮ (A2(n): 0 lần ghi, run held)", async () => {
     await trongGiaoDich(async (tx) => {
       const { m1, m2 } = await dungThietBi(tx);
       const runId = await dungRun({
@@ -241,7 +241,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       await khoiDong(runId);
       expect(soPduGhi() - pdu1).toBe(0); // ★ 0 gói gửi lại
       const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId));
-      expect(run!.status).toBe("failed");
+      expect(run!.status).toBe("held"); // R1b-2b-2a A2(n) — the non-STOP compensation waits for a person (was: failed after an automatic write)
       const main = await buoc(tx, runId, "main");
       expect(main?.status).toBe("failed");
       expect(String(main?.error)).toMatch(new RegExp(`^${FOE_OUTCOME_UNKNOWN}: DUPLICATE_IN_FLIGHT: command "start" — .*outcome unknown — not sent again; check the device\\.$`));
@@ -253,10 +253,12 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       const tuChoi = await tx.select().from(commandLog).where(and(eq(commandLog.status, "rejected"), like(commandLog.errorText, `DUPLICATE_IN_FLIGHT: idempotency key already has a write-ahead intent (#${sauSap[0]!.id})%`)));
       expect(tuChoi).toHaveLength(1);
 
-      // bù trừ chạy ĐÚNG 1 lần
-      expect(ghiBuTru).toBe(1);
-      expect((await buoc(tx, runId, "undo"))?.status).toBe("compensated");
-      expect((await ketQuaCuaKhoa(tx, `run${runId}-undo-`)).map((x) => [x.idempotencyKey, x.status])).toEqual([[perWriteKey(`run${runId}-undo-a1`, "c", 0), "acked"]]);
+      // R1b-2b-2a A2(n) — the compensation (a reset on ANOTHER machine — not a pinned STOP) is NOT written to a device whose state is unknown:
+      // held, resume state compensationHeld (a person's Continue sends it — foeKetCucKhongRo.a2n.db.test.ts N6)
+      expect(ghiBuTru).toBe(0);
+      expect((await buoc(tx, runId, "undo"))?.status).toBe("held");
+      expect(await ketQuaCuaKhoa(tx, `run${runId}-undo-`)).toEqual([]);
+      expect((run!.contextJson as Record<string, any>).foeResumeState).toMatchObject({ main: { state: "compensationHeld", khongRo: true } });
     });
     expect(H.bay).toBe(0);
   });
