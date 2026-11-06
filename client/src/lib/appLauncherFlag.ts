@@ -75,7 +75,6 @@ const CHROMELESS_SHELL_ROUTES = new Set<string>([
   "/setup",
   "/andon",
   "/inbox",
-  "/component-showcase",
   "/404",
 ]);
 

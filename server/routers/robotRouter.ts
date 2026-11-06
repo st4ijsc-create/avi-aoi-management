@@ -15,7 +15,7 @@ import { phamViCua } from "./_phamViNguoiXem"; // doc 81 Đợt 7 I fix 1 (M-4)
 import { idsTrongPhamVi } from "../db/hierarchy";
 import { eq, desc, inArray, or, type SQL } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
-import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
+import { dispatchRobotJob } from "../services/robot/robotCommandDispatcher";
 import { getActiveRobot } from "../services/robot/robotManager";
 import { MotionLockConflictError, OPERATOR_MOTION_LOCK_REASON_CODE, type MotionLockState, type RobotJobType } from "../services/robot/robotDriver";
 import { CONSOLE_STOP_REPLY_BOUND_MS, edgeDeviceRequestErrorCode, edgeDeviceRequestPort, robotOwnerRead, sendConsoleStopForEdgeRobot, sendConsoleStopNoSession } from "../services/robot/robotEdgeCommandPort";
@@ -759,19 +759,30 @@ export const robotRouter = router({
     }),
 
   // ENG-F1 (doc 40) — INTERLOCK PREVIEW (read-only). Chạy CHÍNH XÁC phép đánh giá interlock
-  // mà dispatcher sẽ dùng cho robot này (robotInterlockTarget: machineId=robotId) nhưng
-  // KHÔNG ghi gì — để Command Console hiển thị interlock-check TRƯỚC khi gửi. Đây chỉ là bản
-  // xem trước; gate THẬT vẫn nằm trong robotCommandDispatcher (fail-closed, đồng bộ).
+  // mà dispatcher sẽ dùng cho MỘT CHUYỂN ĐỘNG của robot này nhưng KHÔNG ghi gì — để Command
+  // Console hiển thị interlock-check TRƯỚC khi gửi. Đây chỉ là bản xem trước; gate THẬT vẫn
+  // nằm trong robotCommandDispatcher (fail-closed, đồng bộ).
+  // SCADA R1b-2b-2a A2(l) — CÙNG bộ giải với cổng thật: danhGiaInterlockRobot(await tapMayChoRobot(db, robotId)) — máy NƠI robot đứng,
+  // không còn machineId=robotId. Robot chưa định vị ⇒ blocked + maTuChoi ROBOT_CHUA_DINH_VI; robot cấp chuyền bị chặn bởi luật trên một máy
+  // của chuyền ⇒ mỗi vi phạm mang máy + cungChuyen (Bảng lệnh hiện "luật trên máy X (cùng chuyền)").
   interlockPreview: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
     .input(z.object({ robotId: z.number() }))
     .query(async ({ input, ctx }) => {
-      const { evaluateInterlockGate } = await import("../services/interlock/interlockGate");
-      // phạm vi người dùng (L4 2026-10-25): robot ngoài phạm vi ≡ robot không tồn tại ⇒ đánh giá trên khoá KHÔNG có luật (-1), không lộ luật interlock của nhà máy khác
+      const { tapMayChoRobot, danhGiaInterlockRobot, lyDoViPhamRobot, ghiChuViTri } = await import("../services/interlock/tapMayChoRobot");
+      // phạm vi người dùng (L4 2026-10-25): robot ngoài phạm vi ≡ robot không tồn tại (-1 ⇒ khong_co_robot), không lộ luật interlock của nhà máy khác
       const mucTieu = (await robotThayDuoc(ctx, input.robotId)) ? input.robotId : -1;
-      // doc 81 Đợt 1B Task 5 — CÙNG khoá với cổng thật (robotInterlockTarget), không hai định nghĩa.
-      const gate = await evaluateInterlockGate(robotInterlockTarget(mucTieu));
-      return { blocked: gate.blocked, failClosed: gate.failClosed, violations: gate.violations };
+      const db = await getDb();
+      const gate = await danhGiaInterlockRobot(await tapMayChoRobot(db, mucTieu));
+      const lyDo = await lyDoViPhamRobot(db, gate);
+      return {
+        blocked: gate.blocked,
+        failClosed: gate.failClosed,
+        maTuChoi: gate.maTuChoi ?? null,
+        viTri: gate.viTri.loai,
+        ...ghiChuViTri(gate.viTri), // fix round 1 (m3): khongCoMay / tramKhongMay / lineId
+        violations: gate.violations.map((v, i) => ({ ...v, machineId: lyDo[i]?.machineId ?? null, machineCode: lyDo[i]?.machineCode ?? null, cungChuyen: lyDo[i]?.cungChuyen ?? false })),
+      };
     }),
 
   // ENG-F1 (doc 40) — GATED COMMAND CONSOLE: phát MỘT lệnh đơn lẻ (start/stop/home/reset/

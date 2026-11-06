@@ -22,8 +22,8 @@
  * nghĩa với auth "ambient" (cookie); API key phải do caller chủ động đính kèm.
  *
  * Chế độ qua env `SEC_ORIGIN_CHECK_MODE`:
- *   off     (DEFAULT) — middleware pass-through, không log.
- *   log               — chỉ log (throttled) + đếm metric, KHÔNG chặn.
+ *   off               — middleware pass-through, không log (công tắc tắt khẩn).
+ *   log     (DEFAULT — ★ Pha 0 P0-3 bước 1, 2026-11-04) — chỉ log (throttled) + đếm metric, KHÔNG chặn.
  *   enforce           — 403 JSON { reason_code: "ORIGIN_MISMATCH" }.
  *
  * Trade-off chuẩn (ghi rõ): request KHÔNG có cả Origin lẫn Referer (curl,
@@ -39,12 +39,13 @@ import { duongDinhTuyen, duongKhopChinhXac } from "./duongDinhTuyen";
 export type OriginCheckMode = "off" | "log" | "enforce";
 
 export function getOriginCheckMode(env: NodeJS.ProcessEnv = process.env): OriginCheckMode {
-  const raw = (env.SEC_ORIGIN_CHECK_MODE ?? "off").trim().toLowerCase();
-  if (raw === "log" || raw === "enforce") return raw;
-  if (raw && raw !== "off") {
-    console.warn(`[Security] SEC_ORIGIN_CHECK_MODE="${raw}" không hợp lệ (off|log|enforce) — coi như "off"`);
+  // ★ Pha 0 P0-3 bước 1: mặc định LOG (đếm lượt lệch thật ≥ 1 ngày rồi mới enforce); "off" chỉ còn là công tắc tắt khẩn.
+  const raw = (env.SEC_ORIGIN_CHECK_MODE ?? "log").trim().toLowerCase();
+  if (raw === "off" || raw === "log" || raw === "enforce") return raw;
+  if (raw) {
+    console.warn(`[Security] SEC_ORIGIN_CHECK_MODE="${raw}" không hợp lệ (off|log|enforce) — coi như "log"`);
   }
-  return "off";
+  return "log";
 }
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

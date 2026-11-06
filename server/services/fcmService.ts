@@ -401,6 +401,62 @@ export async function sendSummaryPushNotification(data: {
 }
 
 /**
+ * ★ Pha 0 AL0-2 — push bản tin định kỳ của trạm (mqttService.publishPeriodicBulletin, `sendFcm`).
+ * Cùng tập người nhận với các push khác của trạm: client offline có FCM token.
+ */
+export async function sendBulletinPushNotification(data: {
+  stationId: number;
+  stationName?: string;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  yieldRate: number;
+  failPointsCount: number;
+  period?: { start: string; end: string; intervalMinutes: number };
+}): Promise<{ sent: number; failed: number }> {
+  const offlineClients = await db.getOfflineMqttClientsWithFcmToken(data.stationId);
+  const tokens = offlineClients
+    .map(c => c.fcmToken)
+    .filter((token): token is string => !!token);
+
+  if (tokens.length === 0) {
+    return { sent: 0, failed: 0 };
+  }
+
+  const notification = {
+    title: `📋 Bản tin - ${data.stationName || `Station ${data.stationId}`}`,
+    body: `${data.totalCount} kiểm tra: ${data.okCount} OK, ${data.ngCount} NG, ${data.ntfCount} NTF · yield ${data.yieldRate}%${data.failPointsCount > 0 ? ` · ${data.failPointsCount} điểm lỗi` : ''}`,
+  };
+
+  const messageData = {
+    type: 'PERIODIC_BULLETIN',
+    stationId: String(data.stationId),
+    totalCount: String(data.totalCount),
+    ngCount: String(data.ngCount),
+    yieldRate: String(data.yieldRate),
+    periodStart: data.period?.start ?? '',
+    periodEnd: data.period?.end ?? '',
+    timestamp: new Date().toISOString(),
+  };
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const token of tokens) {
+    const success = await sendFCMv1Notification(token, notification, messageData);
+    if (success) {
+      sent++;
+    } else {
+      failed++;
+    }
+  }
+
+  console.log(`[FCM] Bulletin sent: ${sent} success, ${failed} failed`);
+  return { sent, failed };
+}
+
+/**
  * Gửi custom push notification
  */
 export async function sendCustomPushNotification(

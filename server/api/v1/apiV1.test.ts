@@ -47,7 +47,7 @@ const MACHINE = {
   stationId: 5,
   apiKey: "MACHINE_KEY",
 };
-// R1b-1 T5 (D8): máy robot id 2 — đường robot của POST /equipment/:id/commands vẫn tới adapter.
+// R1b-1 T5 (D8): máy robot id 2 — (pha 0 · C0-1) POST /equipment/:id/commands nay 410 cho cả robot; giữ máy mẫu để chứng minh KHÔNG tới adapter.
 const ROBOT_MACHINE = { ...MACHINE, id: 2, code: "ROBOT-01", name: "Robot One", machineType: "ROBOT", apiKey: "ROBOT_KEY" };
 // R1b-1 T5 fix round 1: override `capabilities.adapterKind` không quyết định robot.
 const SPOOF_MACHINE = { ...MACHINE, id: 3, code: "AUTO-SPOOF", name: "Spoof", machineType: "AUTOMATION", apiKey: "SPOOF_KEY", capabilities: { adapterKind: "robot" } };
@@ -211,60 +211,63 @@ describe("/api/v1 reads", () => {
   });
 });
 
-describe("/api/v1 commands → robot đi dispatcher; OT/không-robot ⇒ 501 (R1b-1 D8)", () => {
-  it("máy KHÔNG phải robot (AOI) ⇒ 501 not_implemented, KHÔNG tới sendCommand", async () => {
+describe("/api/v1 commands — ĐÃ GỠ (pha 0 · C0-1): 410 GONE cho MỌI lệnh, kể cả robot", () => {
+  const goi = (id: number, body: unknown, key = "MASTER") => call(`/api/v1/equipment/${id}/commands`, { key, method: "POST", body: JSON.stringify(body) });
+
+  it("máy KHÔNG phải robot (AOI) ⇒ 410 gone, KHÔNG tới sendCommand", async () => {
     h.sendCommandMock.mockClear();
-    const res = await call("/api/v1/equipment/1/commands", {
-      key: "MASTER",
-      method: "POST",
-      body: JSON.stringify({ command: "start", idempotencyKey: "k1" }),
-    });
-    expect(res.status).toBe(501);
+    const res = await goi(1, { command: "start", idempotencyKey: "k1" });
+    expect(res.status).toBe(410);
     const body = await res.json();
     expect(body.ok).toBe(false);
-    expect(body.error.code).toBe("not_implemented");
+    expect(body.error.code).toBe("gone");
     expect(h.sendCommandMock).not.toHaveBeenCalled();
   });
 
-  it("máy robot ⇒ vẫn tới sendCommand (đường robot giữ nguyên), kèm HITL provenance", async () => {
+  it("★ máy ROBOT (abort) ⇒ 410 gone, KHÔNG tới sendCommand (nhánh robot cũng gỡ)", async () => {
     h.sendCommandMock.mockClear();
-    const res = await call("/api/v1/equipment/2/commands", {
-      key: "MASTER",
-      method: "POST",
-      body: JSON.stringify({ command: "abort", idempotencyKey: "k2" }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.data.status).toBe("simulated");
-    expect(h.sendCommandMock).toHaveBeenCalledTimes(1);
-    const arg = h.sendCommandMock.mock.calls[0][0] as any;
-    expect(arg.hitl.actionId).toContain("apiv1-");
-  });
-
-  it("★ AUTOMATION với override {adapterKind:'robot'} ⇒ 501, KHÔNG tới sendCommand (không giả mạo robot)", async () => {
-    h.sendCommandMock.mockClear();
-    const res = await call("/api/v1/equipment/3/commands", { key: "MASTER", method: "POST", body: JSON.stringify({ command: "start", idempotencyKey: "k3" }) });
-    expect(res.status).toBe(501);
+    const res = await goi(2, { command: "abort", idempotencyKey: "k2" });
+    expect(res.status).toBe(410);
+    expect((await res.json()).error.code).toBe("gone");
     expect(h.sendCommandMock).not.toHaveBeenCalled();
   });
 
-  it("★ ROBOT với override {adapterKind:'ot-opcua'} ⇒ abort vẫn tới sendCommand", async () => {
+  it("★ robot thiếu args.robotId ⇒ KHÔNG còn trộn id máy thành robotId (không có lệnh nào tới adapter)", async () => {
     h.sendCommandMock.mockClear();
-    const res = await call("/api/v1/equipment/4/commands", { key: "MASTER", method: "POST", body: JSON.stringify({ command: "abort", idempotencyKey: "k4" }) });
-    expect(res.status).toBe(200);
-    expect(h.sendCommandMock).toHaveBeenCalledTimes(1);
+    const res = await goi(2, { command: "run_job", args: { jobType: "pick" }, idempotencyKey: "k-id" });
+    expect(res.status).toBe(410);
+    expect(h.sendCommandMock).not.toHaveBeenCalled();
   });
 
-  it("unsupported command → 400", async () => {
-    const res = await call("/api/v1/equipment/1/commands", {
-      key: "MASTER",
-      method: "POST",
-      body: JSON.stringify({ command: "frobnicate" }),
-    });
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error.code).toBe("unsupported_command");
+  it("★ AUTOMATION giả mạo override {adapterKind:'robot'} ⇒ 410, KHÔNG tới sendCommand", async () => {
+    h.sendCommandMock.mockClear();
+    const res = await goi(3, { command: "start", idempotencyKey: "k3" });
+    expect(res.status).toBe(410);
+    expect(h.sendCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("★ ROBOT override {adapterKind:'ot-opcua'} ⇒ abort cũng 410 (không còn cửa REST nào)", async () => {
+    h.sendCommandMock.mockClear();
+    const res = await goi(4, { command: "abort", idempotencyKey: "k4" });
+    expect(res.status).toBe(410);
+    expect(h.sendCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("lệnh lạ / máy không tồn tại ⇒ cùng 410 (không đọc máy, không phân tích thân)", async () => {
+    h.sendCommandMock.mockClear();
+    expect((await goi(1, { command: "frobnicate" })).status).toBe(410);
+    expect((await goi(999, { command: "start" })).status).toBe(410);
+    expect(h.sendCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("chưa xác thực ⇒ 401 (cổng xác thực/phạm vi vẫn đứng TRƯỚC, không lộ rằng cửa đã gỡ)", async () => {
+    const res = await call("/api/v1/equipment/1/commands", { method: "POST", body: JSON.stringify({ command: "start" }) });
+    expect(res.status).toBe(401);
+  });
+
+  it("route đọc cùng máy vẫn hoạt động (GET state) — chỉ cửa LỆNH bị gỡ", async () => {
+    const res = await call("/api/v1/equipment/1/state", { key: "MASTER" });
+    expect(res.status).toBe(200);
   });
 });
 

@@ -4,13 +4,11 @@
  * Mocks generateFim (server/services/aiGgufEngine.ts) — no GGUF load — and drives the REAL
  * router (`createCaller`) so this covers the whole path: read-gate → copilotEnabled() gate →
  * completeInline() → generateFim(). Also mocks `../db/connection` (`getDb`) so the
- * read-gate test never needs a live DB: for a non-admin caller, `checkPermission` calls
- * `getDb()`; with it mocked to resolve `undefined` (DB "down"), a non-admin is denied
- * (accessControl.ts: `if (!db) return isAdmin;`) while an admin still short-circuits the
- * gate WITHOUT touching the DB at all — so admin-role assertions below are unaffected by
- * this mock (same pattern as aiChatRouter.tools.test.ts / aiAnalyticsScope.test.ts).
+ * read-gate test never needs a live DB: `checkPermission` reads a fake permissions table with
+ * no row, so a non-admin is denied and an admin passes by the real P0-2 rule.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { dbGiaChiCoBangQuyen } from "../testing/dbGiaQuyen";
 
 const mockGenerateFim = vi.fn();
 vi.mock("../services/aiGgufEngine", () => ({
@@ -18,7 +16,7 @@ vi.mock("../services/aiGgufEngine", () => ({
   stripThinking: (t: string) => ({ answer: t, thinking: "" }),
 }));
 
-const mockGetDb = vi.fn(async () => undefined);
+const mockGetDb = vi.fn(async (..._a: unknown[]) => dbGiaChiCoBangQuyen());
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a) }));
 
 const importRouter = async () => (await import("./programmingRouter")).programmingRouter;
@@ -88,6 +86,7 @@ describe("programming.copilotComplete", () => {
   });
 
   it("read-gate REJECTS an unauthorized user (non-admin, no permission row / DB down)", async () => {
+    mockGetDb.mockResolvedValueOnce(undefined as never); // DB down at the gate: every role is denied
     const caller = (await importRouter()).createCaller(ctxFor(999999, "operator"));
 
     await expect(caller.copilotComplete({ prefix: "x" })).rejects.toThrow(/FORBIDDEN|quyền/i);

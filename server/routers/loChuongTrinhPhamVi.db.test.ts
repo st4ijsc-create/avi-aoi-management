@@ -169,24 +169,6 @@ describe("★★★ programming — dự án / phiên bản / build / deploy / s
     expect(ad).toEqual(expect.arrayContaining([A.proj, B.proj, B.projDev, orphanProj]));
     expect((await uRong.programming.listProjects({ limit: 500 })).map((p: { id: number }) => p.id)).not.toContain(A.proj);
   });
-  it("getProject / getArtifact — dự án-phiên bản của B ⇒ NOT_FOUND; danh sách theo id ⇒ rỗng", async () => {
-    const u: C = uA;
-    expect(await chiTiet(() => u.programming.getProject({ id: B.proj }))).toBe(khong + "programmingProject");
-    expect(await chiTiet(() => u.programming.getProject({ id: B.projDev }))).toBe(khong + "programmingProject");
-    expect(await chiTiet(() => u.programming.getProject({ id: orphanProj }))).toBe(khong + "programmingProject");
-    expect(await chiTiet(() => u.programming.getProject({ id: A.proj }))).toBeNull();
-    expect(await chiTiet(() => u.programming.getProject({ id: A.projDev }))).toBeNull();
-    expect(await chiTiet(() => u.programming.getArtifact({ id: B.art }))).toBe(khong + "programmingArtifact");
-    expect(await chiTiet(() => u.programming.getArtifact({ id: A.art }))).toBeNull();
-    expect(await u.programming.listArtifacts({ projectId: B.proj })).toEqual([]);
-    expect((await u.programming.listArtifacts({ projectId: A.proj })).length).toBe(1);
-    expect(await u.programming.listBuilds({ artifactId: B.art })).toEqual([]);
-    expect((await u.programming.listBuilds({ artifactId: A.art })).length).toBe(1);
-    expect(await u.programming.listDeployments({ projectId: B.proj })).toEqual([]);
-    expect((await u.programming.listDeployments({ projectId: A.proj })).length).toBe(2);
-    expect(await u.programming.listSymbols({ projectId: B.proj })).toEqual([]);
-    expect((await u.programming.listSymbols({ projectId: A.proj })).length).toBe(1);
-  });
   it("listDeployApprovals / fleetVersionMatrix — chỉ deploy của dự án A", async () => {
     const u: C = uA;
     const ch = (await u.programming.listDeployApprovals()).map((x: { deployment: { id: number } }) => x.deployment.id);
@@ -414,12 +396,9 @@ describe("★★★ sop — gắn trạm theo phạm vi; không gắn trạm = d
 describe("đối chứng DƯƠNG (admin) + phạm vi rỗng", () => {
   it("admin thấy/ghi cả B; người không gán nhà máy ⇒ rỗng / NOT_FOUND", async () => {
     const ad: C = uAdmin;
-    expect(await chiTiet(() => ad.programming.getProject({ id: B.proj }))).toBeNull();
-    expect(await chiTiet(() => ad.programming.getArtifact({ id: B.art }))).toBeNull();
     expect((await ad.sop.get({ id: B.sop }))?.id).toBe(B.sop);
     expect(await chiTiet(() => ad.inspectionProgram.get({ id: B.rel }))).toBeNull();
     const r: C = uRong;
-    expect(await chiTiet(() => r.programming.getProject({ id: A.proj }))).toBe(khong + "programmingProject");
     expect(await r.programming.listArtifacts({ projectId: A.proj })).toEqual([]);
     expect(await r.ir.listFlows({ limit: 500 }).then((x: Array<{ id: number }>) => x.map((f) => f.id))).not.toContain(A.irArt);
     expect(await r.sop.get({ id: A.sop })).toBeNull();

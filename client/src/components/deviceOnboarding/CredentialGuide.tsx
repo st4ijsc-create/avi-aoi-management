@@ -35,7 +35,7 @@ import CredentialShowOnceDialog, {
 } from "@/components/machineRegistration/CredentialShowOnceDialog";
 import {
   ADAPTER_SDK_PATH,
-  API_DOCS_ROUTE,
+  API_DOCS_URL,
   ENROLLMENT_TOKENS_ROUTE,
 } from "./types";
 
@@ -139,7 +139,7 @@ export function CredentialGuide({
           <ExternalLink className="h-3.5 w-3.5 mr-1" />
           {t("deviceOnboarding.credential.openEnrollTab")}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => navigate(API_DOCS_ROUTE)}>
+        <Button variant="outline" size="sm" onClick={() => window.open(API_DOCS_URL, "_blank", "noopener,noreferrer")}>
           <BookOpen className="h-3.5 w-3.5 mr-1" />
           {t("deviceOnboarding.credential.openApiDocs")}
         </Button>

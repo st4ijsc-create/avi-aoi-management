@@ -3638,6 +3638,7 @@
     "INVALID_VALUE": "Giá trị không hợp lệ ở {{field}}.",
     "INVALID_VALUE_WITH_REASON": "Giá trị không hợp lệ ở {{field}}. {{reason}}",
     "FEATURE_DISABLED": "Tính năng {{feature}} chưa được bật trên hệ thống này.",
+    "MODULE_PAUSED": "Mô-đun {{module}} đang tạm dừng và sẽ phát triển sau — lệnh không được gửi.",
     "OPERATION_FAILED": "Không thực hiện được: {{operation}}.",
     "OPERATION_FAILED_WITH_REASON": "Không thực hiện được: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "Bạn không có quyền: {{action}}.",
@@ -4405,7 +4406,8 @@
       "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
       "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
       "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — chuyển động KHÔNG được bắt đầu. Lệnh trước đó có thể đã chạy: kiểm tra robot, vị trí và trạng thái lệnh trước đó trước khi ra lệnh lại.",
-      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
+      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát.",
+      "robotChuaDinhVi": "Robot CHƯA ĐƯỢC ĐỊNH VỊ (không có trạm/chuyền, hoặc trạm/chuyền không tồn tại hay mâu thuẫn) — không biết máy nào có luật khoá liên động áp cho nó, nên lệnh chuyển động bị từ chối. Lệnh DỪNG vẫn được gửi. Gán robot vào một trạm hoặc một chuyền."
     },
     "reason": {
       "can-nha-may": "khoá cần gắn nhà máy trước khi kích hoạt",
@@ -16373,8 +16375,8 @@
     "trendDesc": "kWh và CO₂ theo kỳ"
   },
   "cockpit": {
-    "actionsGate": "Cockpit chỉ đọc. \"Đề xuất\" mở Control Plane có kiểm soát — không bao giờ phát lệnh trực tiếp.",
-    "actionsHint": "Các lệnh bạn CÓ THỂ đề xuất. Việc thực thi vẫn nằm sau lớp điều khiển có kiểm soát (HITL / chạy thử) — không có gì chạy từ đây.",
+    "actionsGate": "Cockpit chỉ đọc. Không phát lệnh từ đây; lệnh đi qua màn điều khiển máy có kiểm soát.",
+    "actionsHint": "Các lệnh mà hồ sơ năng lực của máy này hỗ trợ — chỉ để tham khảo. Không có lệnh nào chạy từ đây.",
     "active": "Hoạt động",
     "adapterKind": "Loại adapter",
     "alarmsHint": "Nguồn cảnh báo chuẩn hóa ISA-18.2 theo từng máy",
@@ -20453,7 +20455,12 @@
     "queuedOnEdge": "Đã gửi lệnh STOP tới nút biên của robot — đang chờ nút biên xác nhận (xem nhật ký lệnh).",
     "queuedEdgeUnreachable": "Lệnh STOP đã xếp hàng nhưng KHÔNG LIÊN LẠC ĐƯỢC nút biên của robot — trung tâm đã thử tự gửi STOP và phát cảnh báo nghiêm trọng. Dùng nút E-STOP phần cứng nếu robot vẫn chuyển động.",
     "rejected": "Lệnh không thực thi: {{status}}",
-    "pickRobot": "Chọn robot trước."
+    "pickRobot": "Chọn robot trước.",
+    "interlockSameLine": "luật trên máy {{machine}} (cùng chuyền)",
+    "interlockSameStation": "luật trên máy {{machine}} (cùng trạm)",
+    "interlockStopNeverBlocked": "Khoá liên động chỉ chặn chuyển động — lệnh DỪNG không bao giờ bị chặn.",
+    "interlockNoMachines": "Không có máy nào để kiểm tra — không luật khoá liên động nào bảo vệ được trạm hay chuyền của robot này.",
+    "interlockStationNoMachines": "Trạm này không có máy — áp các luật của chuyền {{line}}."
   },
   "analysisHub": {
     "title": "Trung tâm phân tích AI",
@@ -24671,9 +24678,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "Truyền thông {{ketNoi}}/{{tong}}",
-        "coEdge": "Truyền thông {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "Đang nối lại {{dangNoi}} · mất kết nối {{mat}} · khác {{khac}} — bấm để mở chẩn đoán truyền thông"
+        "nhan": "Truyền thông {{ketNoi}} nối · {{khac}} tắt",
+        "dangNoi": "{{dangNoi}} đang nối lại",
+        "mat": "{{mat}} mất",
+        "edge": "edge {{edge}}",
+        "moTaCu": "Đọc lỗi — số của lần trước (cập nhật lúc {{luc}}).",
+        "moTa": "Trong {{tong}} adapter đã bật cấu hình (không tính edge): {{ketNoi}} đang nối · {{dangNoi}} nối lại · {{mat}} mất kết nối · {{khac}} tắt hoặc chưa rõ — bấm để mở chẩn đoán truyền thông"
       }
     },
     "orchestration": {
@@ -24863,5 +24873,12 @@
     "moTa": "Đây là trợ lý vận hành: câu bạn gõ được coi là DỮ LIỆU VẬN HÀNH. Gửi tới model bên ngoài (trả phí) sau khi che dữ liệu nhạy cảm theo mẫu. Hỏi một lần cho cuộc trò chuyện này.",
     "tuChoi": "Không gửi",
     "dongY": "Đồng ý, gửi"
+  },
+  "robotTamDung": {
+    "tieuDe": "Mô-đun robot/AGV sẽ phát triển sau",
+    "moTa": "Điều khiển robot/AGV đang tạm dừng: trang này chỉ để báo trạng thái và không gửi lệnh nào. Máy và dây chuyền khác không bị ảnh hưởng.",
+    "moTaNgan": "Chỉ xem — phối hợp người↔robot tạm dừng cho đến khi mô-đun robot/AGV được phát triển.",
+    "dangKiemTra": "Đang kiểm tra trạng thái mô-đun…",
+    "veTrangChu": "Về trang chủ"
   }
 }

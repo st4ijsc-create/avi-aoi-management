@@ -14,6 +14,12 @@ import Aedes from "aedes";
 import mqtt, { type MqttClient } from "mqtt";
 
 const H = vi.hoisted(() => ({ entry: null as unknown, robotRow: [] as Array<{ isEnabled: boolean }> }));
+// SCADA R1b-2b-2a A2(l) — WHERE the robot is is measured by tapMayChoRobot.a2l(.db).test.ts; this suite's fake DB does not model robots /
+// stations / machines, so the robot is placed (a station with one machine) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [1] }),
+}));
 vi.mock("../../db/connection", () => ({
   getDb: vi.fn(async () => ({
     insert: () => ({

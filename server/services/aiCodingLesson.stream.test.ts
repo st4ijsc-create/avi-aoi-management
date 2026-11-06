@@ -74,9 +74,10 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 /**
  * ⚠ Kho bài học giả — **không** phân phạm vi, chỉ GHI LẠI danh tính được truyền xuống. Logic làm

@@ -136,9 +136,9 @@ const SEED_MODULES: SystemModule[] = [
     routes: [
       "/admin", "/admin-home", "/users", "/role-builder",
       "/enhanced-audit", "/audit-logs", "/command-audit",
-      "/api-docs", "/api-keys", "/user-guide", "/license",
+      "/api-keys", "/user-guide", "/license",
       "/backup-restore", "/sessions", "/user-assignments",
-      "/admin-setting", "/import-export", "/synapse-platform",
+      "/admin-setting", "/import-export",
       // doc 36 W3 — the modules marketplace is the UPSELL target; keep it core so a
       // license-blocked user can always reach it to upgrade (never a lock-out trap).
       "/modules",

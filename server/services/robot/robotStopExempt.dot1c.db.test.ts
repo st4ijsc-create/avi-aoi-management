@@ -14,6 +14,17 @@
  * Môi trường THÙ ĐỊCH có chủ đích: safety-PLC báo BLOCKED (e-stop), interlock đang vi phạm, driver đang KHOÁ
  * chuyển động, và (một ca) một chuyển động đang bay giữ slot R14 — lệnh dừng vẫn phải tới driver ĐÚNG MỘT lần,
  * dưới dạng job `abort`. CSDL THẬT (`_test`); driver giả đếm từng job nó nhận (oracle độc lập).
+ *
+ * PHA 0 · C0-1 (2026-11-04) — cửa REST v1 `POST /equipment/:id/commands` ĐÃ GỠ (410 GONE). Các ca từng gọi REST chứng minh tính chất AN TOÀN "STOP không bao giờ bị chặn,
+ * chuyển động vẫn bị chặn"; KHÔNG chỉ đổi thành assert 410 — mỗi ca được CHUYỂN sang cửa SỐNG (dispatcher robot — đích chung của tRPC robot / FOE / adapter), cùng khẳng định:
+ *   BẢNG ĐỐI CHỨNG (ca REST cũ → ca cửa sống):
+ *   │ api/v1 abort (requestedBy 0, không confirmedBy) → driver đúng 1 lần, sổ requestedBy 0   │ dispatchRobotJob hitl abort requestedBy 0, actionId không tồn tại (cùng khẳng định)  │
+ *   │ api/v1 e_stop → job `abort` (không phải `custom`)                                         │ toRobotJob({e_stop}) đưa vào dispatchRobotJob ⇒ driver nhận `abort`; + ca FOE e_stop │
+ *   │ api/v1 start trong môi trường thù địch ⇒ rejected, 0 job                                  │ toRobotJob({start}) (= `custom`) vào dispatchRobotJob hitl không xác nhận ⇒ rejected  │
+ *   │ api/v1 e_stop + REQUIRE_APPROVAL ⇒ STOP vẫn tới driver, override require_approval        │ cùng job e_stop → dispatchRobotJob, policy REQUIRE_APPROVAL ⇒ done + override         │
+ *   │ api/v1 abort khoá 120 ký tự: actionId `apiv1-<khoá>` 126 ký tự được băm ≤ 64; phát lại   │ dispatchRobotJob với đúng actionId 126 ký tự + khoá 120 ký tự; phát lại cùng jobId    │
+ *   │ slot R14: e_stop khi chuyển động đang bay                                                 │ dispatchRobotJob e_stop khi `home` đang giữ slot ⇒ tới driver ngay                    │
+ *   + ca MỚI: REST abort / e_stop / start ⇒ 410 và 0 job tới driver (cửa gỡ thật).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 // doc 81 Đợt 4 final wave R-4-x — this suite does not measure the motion "robot enabled" gate (robotEnabledGate.dot4.test.ts does).
@@ -38,6 +49,12 @@ const env = vi.hoisted(() => ({
   policyCalls: [] as string[],
 }));
 
+// SCADA R1b-2b-2a A2(l) — this suite's robot has no robots row (fake id); WHERE a robot is is measured by tapMayChoRobot.a2l(.db).test.ts,
+// so the robot is placed (a station with one machine id no rule targets) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [-990_912_499] }),
+}));
 vi.mock("./robotManager", () => ({
   getActiveRobot: (id: number) =>
     id === ROBOT_ID_HOISTED.id
@@ -147,6 +164,10 @@ async function jobRow(jobId: number | undefined) {
   const [row] = await (await d()).select().from(robotJobs).where(eq(robotJobs.id, jobId)).limit(1);
   return row;
 }
+/** Cửa SỐNG tương đương cuộc gọi REST cũ: `hitl` + actionId `apiv1-…` (không tồn tại) + requestedBy 0, KHÔNG confirmedBy — đúng hình dạng `buildCommand` từng dựng. */
+async function dispatchNhuRest(command: string, idem: string, actionId = `apiv1-${idem}`) {
+  return dispatchRobotJob({ robotId: ROBOT, job: toRobotJob({ name: command }), triggerKind: "hitl", actionId, requestedBy: 0, idempotencyKey: idem });
+}
 async function postCommand(command: string, idem: string) {
   const res = await fetch(`${base}/api/v1/equipment/${MACHINE}/commands`, {
     method: "POST",
@@ -247,27 +268,34 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
   });
 
-  it("★ api/v1 POST abort (khoá API, requestedBy 0, không confirmedBy) ⇒ tới driver ĐÚNG MỘT lần; sổ ghi abort", async () => {
-    const { status, body } = await postCommand("abort", `${DAU}-api-abort`);
-    expect(status).toBe(200);
-    expect(body.data.status).toBe("done");
+  it("★ [cửa sống thay ca api/v1 abort] hitl abort requestedBy 0, actionId không tồn tại, KHÔNG confirmedBy ⇒ tới driver ĐÚNG MỘT lần; sổ ghi abort, requestedBy 0", async () => {
+    const r = await dispatchNhuRest("abort", `${DAU}-api-abort`);
+    expect(r.status).toBe("done");
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
-    const row = await jobRow(body.data.detail?.jobId);
+    const row = await jobRow(r.jobId);
     expect(row?.jobType).toBe("abort");
     expect(row?.requestedBy).toBe(0);
   });
 
-  it("★ api/v1 POST e_stop ⇒ tới driver dưới dạng job `abort` (không phải `custom`)", async () => {
-    const { status, body } = await postCommand("e_stop", `${DAU}-api-estop`);
-    expect(status).toBe(200);
-    expect(body.data.status).toBe("done");
+  it("★ [cửa sống thay ca api/v1 e_stop] e_stop ⇒ job `abort` (không phải `custom`) tới driver", async () => {
+    const r = await dispatchNhuRest("e_stop", `${DAU}-api-estop`);
+    expect(r.status).toBe("done");
     expect(env.jobs).toHaveLength(1);
     expect(env.jobs[0].jobType).toBe("abort");
   });
 
-  it("api/v1 POST start (chuyển động) trong môi trường thù địch ⇒ vẫn bị từ chối, 0 job — miễn trừ CHỈ cho lệnh dừng", async () => {
-    const { body } = await postCommand("start", `${DAU}-api-start`);
-    expect(body.data.status).toBe("rejected");
+  it("[cửa sống thay ca api/v1 start] start (chuyển động `custom`) trong môi trường thù địch, hitl không xác nhận ⇒ vẫn bị từ chối, 0 job — miễn trừ CHỈ cho lệnh dừng", async () => {
+    const r = await dispatchNhuRest("start", `${DAU}-api-start`);
+    expect(r.status).toBe("rejected");
+    expect(env.jobs).toHaveLength(0);
+  });
+
+  it("★ MỚI (C0-1): REST v1 abort / e_stop / start ⇒ 410 gone; 0 job tới driver (cửa gỡ thật — đường dừng khẩn nay CHỈ ở dispatcher/tRPC/FOE)", async () => {
+    for (const command of ["abort", "e_stop", "start"]) {
+      const { status, body } = await postCommand(command, `${DAU}-gone-${command}`);
+      expect(status, command).toBe(410);
+      expect(body.error.code).toBe("gone");
+    }
     expect(env.jobs).toHaveLength(0);
   });
 
@@ -309,13 +337,13 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     expect(audits[0].afterJson).toMatchObject({ effect: "deny", policyRef: "p-t3-deny" });
   });
 
-  it("fix round 2 (b) — REQUIRE_APPROVAL cho `robot.command.abort` (api/v1 e_stop) ⇒ STOP vẫn tới driver, override ghi effect require_approval", async () => {
+  it("fix round 2 (b) — [cửa sống thay ca api/v1 e_stop] REQUIRE_APPROVAL cho `robot.command.abort` ⇒ STOP vẫn tới driver, override ghi effect require_approval", async () => {
     env.policyOn = true;
     env.policyVerdict = { "robot.command.abort": "require_approval" };
-    const { body } = await postCommand("e_stop", `${DAU}-api-estop-policy`);
-    expect(body.data.status).toBe("done");
+    const r = await dispatchNhuRest("e_stop", `${DAU}-api-estop-policy`);
+    expect(r.status).toBe("done");
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
-    const row = await jobRow(body.data.detail?.jobId);
+    const row = await jobRow(r.jobId);
     expect((row?.result as Record<string, any> | null)?.policyOverride).toMatchObject({ effect: "require_approval", ruling: "R-1C-c" });
   });
 
@@ -330,22 +358,22 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
   });
 
   // ─── Fix round 2 (ruling (e)) — khoá idempotency dài không làm hỏng sổ ghi ⇒ không từ chối STOP ────────
-  it("★ fix round 2 (e) — api/v1 abort với idempotencyKey 120 ký tự ⇒ tới driver; sổ ghi lưu khoá/actionId ĐÃ BĂM vừa cột; gửi lại cùng khoá ⇒ phát lại (d), không gửi lần hai", async () => {
+  it("★ fix round 2 (e) — [cửa sống thay ca api/v1 abort] idempotencyKey 120 ký tự + actionId `apiv1-<khoá>` 126 ký tự ⇒ tới driver; sổ lưu khoá/actionId ĐÃ BĂM vừa cột; gửi lại cùng khoá ⇒ phát lại (d), không gửi lần hai", async () => {
     const key = `${DAU}-`.padEnd(120, "x");
     expect(key).toHaveLength(120);
-    const first = await postCommand("abort", key);
-    expect(first.body.data.status).toBe("done");
+    const first = await dispatchNhuRest("abort", key);
+    expect(first.status).toBe("done");
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
-    const row = await jobRow(first.body.data.detail?.jobId);
-    // 120 ký tự VỪA cột idempotencyKey (128) ⇒ giữ nguyên từng byte; actionId `apiv1-<key>` (126) thì KHÔNG vừa
-    // cột actionId (64) — chính nó làm INSERT hỏng trước fix round 2 ⇒ nay được băm, ≤ 64.
+    const row = await jobRow(first.jobId);
+    // 120 ký tự VỪA cột idempotencyKey (128) ⇒ giữ nguyên từng byte; actionId `apiv1-<key>` (126) thì KHÔNG vừa cột actionId (64) — chính nó làm INSERT hỏng
+    // trước fix round 2 ⇒ nay được băm, ≤ 64.
     expect(row?.idempotencyKey).toBe(key);
     expect(row?.actionId?.length).toBeLessThanOrEqual(64);
     expect(row?.actionId).toMatch(/^h-sha256-/);
     // (d) giữ nguyên: cùng khoá = cùng lệnh ⇒ phát lại kết quả cũ, driver không nhận lần hai.
-    const again = await postCommand("abort", key);
-    expect(again.body.data.status).toBe("done");
-    expect(again.body.data.detail?.jobId).toBe(first.body.data.detail?.jobId);
+    const again = await dispatchNhuRest("abort", key);
+    expect(again.status).toBe("done");
+    expect(again.jobId).toBe(first.jobId);
     expect(env.jobs).toHaveLength(1);
   });
 
@@ -361,17 +389,18 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort", "abort", "home"]);
   });
 
-  it("slot R14: một chuyển động đang bay ⇒ api/v1 e_stop vẫn tới driver ngay (không chờ, không ROBOT_MOTION_IN_PROGRESS)", async () => {
+  it("slot R14: một chuyển động đang bay ⇒ [cửa sống thay ca api/v1] e_stop vẫn tới driver ngay (không chờ, không ROBOT_MOTION_IN_PROGRESS)", async () => {
     env.hostile = false;
     env.holdMotion = true;
     const motion = dispatchRobotJob({ robotId: ROBOT, job: { jobType: "home", params: {} }, triggerKind: "manual", requestedBy: OWNER, confirmedBy: OWNER });
     for (let i = 0; i < 100 && env.jobs.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
     expect(env.jobs.map((j) => j.jobType)).toEqual(["home"]);
     env.hostile = true;
-    const stop = await postCommand("e_stop", `${DAU}-api-estop-slot`);
-    expect(stop.body.data.status).toBe("done");
+    const stop = await dispatchNhuRest("e_stop", `${DAU}-api-estop-slot`);
+    expect(stop.status).toBe("done");
     expect(env.jobs.map((j) => j.jobType)).toEqual(["home", "abort"]);
     env.releaseMotion?.();
     expect((await motion).status).toBe("done");
   });
+
 });

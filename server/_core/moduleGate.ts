@@ -141,6 +141,30 @@ async function resolveEntitlement(): Promise<Entitlement> {
 }
 
 /**
+ * ★ Pha 0 P0-4 (2026-11-04) — BỘ NHỚ RAM 60 s cho kết quả giấy phép: mỗi lượt gọi cổng (≈ 135 thủ tục `moduleProcedure` / `isModuleLicensed`)
+ * trước đây chạy 2 lượt `getAllLicenses` ⇒ nay 0 truy vấn khi bộ nhớ ấm. Lưu PROMISE (lượt đồng thời dùng chung một lượt đọc). Lượt đọc
+ * NÉM ⇒ KHÔNG lưu (lượt sau đọc lại; cổng vẫn fail-safe allow như cũ). Giấy phép đổi có hiệu lực ≤ 60 s (hoặc ngay khi gọi
+ * `xoaBoNhoGiayPhep()` sau khi kích hoạt / thu hồi).
+ */
+export const TTL_GIAY_PHEP_MS = 60_000;
+let boNhoGiayPhep: { het: number; gt: Promise<Entitlement> } | null = null;
+function layEntitlement(): Promise<Entitlement> {
+  const bayGio = Date.now();
+  if (boNhoGiayPhep && boNhoGiayPhep.het > bayGio) return boNhoGiayPhep.gt;
+  const gt = resolveEntitlement();
+  const muc = { het: bayGio + TTL_GIAY_PHEP_MS, gt };
+  boNhoGiayPhep = muc;
+  gt.catch(() => {
+    if (boNhoGiayPhep === muc) boNhoGiayPhep = null;
+  });
+  return gt;
+}
+/** Bỏ bộ nhớ giấy phép (gọi sau khi giấy phép đổi; lưới dùng giữa các ca). */
+export function xoaBoNhoGiayPhep(): void {
+  boNhoGiayPhep = null;
+}
+
+/**
  * doc69 G2-4 — ctx-independent version of the EXACT SAME entitlement decision `moduleGate`
  * makes below, for non-tRPC callers that want to gate a feature by the same license/edition
  * rule without a tRPC middleware context (e.g. `aiGateway.planInference`, which is called
@@ -159,7 +183,7 @@ export async function isModuleLicensed(moduleCode: string): Promise<boolean> {
   if (!mod || mod.isCore) return true;
 
   try {
-    const entitlement = await resolveEntitlement();
+    const entitlement = await layEntitlement();
     if (!entitlement.configured) return true; // no-brick: unconfigured deployment → allow
     return entitlement.allowed.includes(moduleCode);
   } catch (err) {
@@ -207,7 +231,7 @@ export function moduleGate(moduleCode: string) {
     try {
       // SCADA R1b-2a T4 fix round 1 (I-1) — request STOP HMI (`ctx.hanChotStopHmi`): 2 lượt getAllLicenses chờ trong phần CÒN LẠI của hạn
       // tổng; hết hạn ⇒ NÉM từ chối "dùng E-STOP cứng" (là TRPCError ⇒ catch dưới chuyển tiếp, không rơi về fail-safe allow). Không hạn ⇒ như cũ.
-      const entitlement = await trongHanYeuCauStopHmi(resolveEntitlement(), ctx.hanChotStopHmi, "giay_phep", "truoc_gui", undefined, path);
+      const entitlement = await trongHanYeuCauStopHmi(layEntitlement(), ctx.hanChotStopHmi, "giay_phep", "truoc_gui", undefined, path);
       // No-brick: SKU never configured → allow (never lock an unconfigured system).
       if (!entitlement.configured) {
         return next({ ctx });

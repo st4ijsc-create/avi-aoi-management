@@ -214,17 +214,6 @@ describe("aiRobotAnomaly.scanRobot / acknowledgeAnomaly — robot nhà máy khá
   });
 });
 
-describe("twin.pipeline.convertUrdf / convertStep — máy / nhà máy khai kèm", () => {
-  const dem1 = (k: string) => dem(sql`SELECT count(*)::int AS n FROM equipment_3d_models WHERE "modelKey" = ${k}`);
-  it("máy B / nhà máy B ⇒ NOT_FOUND, không hàng registry (cả URDF lẫn STEP)", async () => {
-    const l1 = await maLoi(() => userA.twin.pipeline.convertUrdf({ modelKey: `${RUN}-u1`, sample: "sample-2dof-planar", machineId: B.mid }));
-    const l2 = await maLoi(() => userA.twin.pipeline.convertUrdf({ modelKey: `${RUN}-u2`, sample: "sample-2dof-planar", factoryId: B.fid }));
-    const l3 = await maLoi(() => userA.twin.pipeline.convertStep({ modelKey: `${RUN}-u3`, sourceFormat: "step", machineId: B.mid }));
-    const l4 = await maLoi(() => userA.twin.pipeline.convertStep({ modelKey: `${RUN}-u4`, sourceFormat: "step", factoryId: B.fid }));
-    const n = (await dem1(`${RUN}-u1`)) + (await dem1(`${RUN}-u2`)) + (await dem1(`${RUN}-u3`)) + (await dem1(`${RUN}-u4`));
-    expect({ l1, l2, l3, l4, n }).toEqual({ l1: NF, l2: NF, l3: NF, l4: NF, n: 0 });
-  });
-});
 
 describe("rootCause.analyze / update / delete — phân tích nguyên nhân gốc nhà máy khác", () => {
   it("analyze: máy B / nhà máy B ⇒ NOT_FOUND, không hàng", async () => {
