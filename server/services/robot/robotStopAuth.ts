@@ -125,6 +125,16 @@ async function auditLater(entry: { userId: number | null; userName: string | nul
 /** fix review 6 (NF5-6) — the ONLY verbs this procedure ever lets through (checked on the raw input, before anything else) */
 export const STOP_ONLY_VERBS: ReadonlySet<string> = new Set(["stop", "abort"]);
 
+/**
+ * ★ Pha 0 P0-2 — admin qua cổng quyền STOP khi quyền KHÔNG kiểm được (DB chậm / mất) và phiên KHÔNG có grant machine_control được nhớ:
+ * CHỈ khi `RBAC_SCOPED_ADMIN=false` (công tắc khẩn) — cùng ngữ nghĩa `scopedAdminEnabled()` của `_core/accessControl` (ở đây nạp động nên
+ * không import tĩnh; `robotStopAuth.p02.test.ts` đối chiếu hai bên). Mặc định (hạn quyền) admin như mọi vai: cần grant đã chứng minh,
+ * nếu không ⇒ từ chối + dùng E-STOP cứng (01-QUY-UOC: admin không bypass permission ở procedure actuation).
+ */
+export function adminQuaKhiQuyenSuyGiam(role: string | null | undefined): boolean {
+  return role === "admin" && process.env.RBAC_SCOPED_ADMIN === "false";
+}
+
 /** fix review 6 (NF5-4) — a definite auth refusal as a tRPC answer (401 / 403), never INTERNAL_SERVER_ERROR */
 function refusalAsTrpc(err: unknown): unknown {
   if (err instanceof TRPCError) return err;
@@ -232,8 +242,8 @@ const stopAuthMiddleware = async (opts: any) => {
     if (p.value !== true) throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "insufficientRole" }, "STOP refused: machine_control:canEdit is required");
   } else {
     reasons.push(p.state === "failed" ? `permission check failed (${errText(p.error)})` : "permission not verified in time");
-    const adminGodMode = user.role === "admin" && process.env.RBAC_SCOPED_ADMIN !== "true";
-    if (!adminGodMode && !rememberedMachineControlGrant(token, user.id)) {
+    // ★ Pha 0 P0-2: chế độ admin hạn quyền BẬT mặc định ⇒ god-mode chỉ khi RBAC_SCOPED_ADMIN=false (công tắc khẩn).
+    if (!adminQuaKhiQuyenSuyGiam(user.role) && !rememberedMachineControlGrant(token, user.id)) {
       void raiseDegradedAlert(user, robotId, `STOP REFUSED on degraded auth: user #${user.id}'s session holds no remembered machine_control grant (${reasons.join("; ")}) — use the hardware E-STOP`);
       throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "insufficientRole" }, "STOP refused: permission could not be verified (database unavailable) — use the hardware E-STOP");
     }

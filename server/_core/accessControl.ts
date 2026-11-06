@@ -184,11 +184,13 @@ export async function getAccessFilterConditions(
  * denies that action (row present with action=false). No row / expired row /
  * DB-down → admin still passes (never lock an admin out of an unconfigured
  * module). This makes admin authority restrictable + auditable without any
- * lockout risk, and is a no-op for non-admins. Default OFF preserves the exact
- * legacy behaviour.
+ * lockout risk, and is a no-op for non-admins.
+ * ★ Pha 0 P0-2 (2026-11-04): BẬT MẶC ĐỊNH (admin hết bypass `requirePermission`). Chỉ `RBAC_SCOPED_ADMIN=false` trả lại chế độ cũ
+ * (công tắc khẩn). Đo DEV trước khi bật (chỉ đọc): 10 admin; 3 có hàng quyền (`ai_repo_read`, `ai_repo_exec`) với vài hành động FALSE —
+ * mã chỉ đòi `ai_repo_read.canView` + `ai_repo_exec.canCreate`, cả hai TRUE ở các hàng ấy ⇒ không admin nào mất truy cập.
  */
 function scopedAdminEnabled(): boolean {
-  return process.env.RBAC_SCOPED_ADMIN === 'true';
+  return process.env.RBAC_SCOPED_ADMIN !== 'false';
 }
 
 /**

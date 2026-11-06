@@ -68,6 +68,55 @@ const MS_MOT_NGAY = 24 * 60 * 60 * 1000;
  *   và **không** cho ra một hạn 0 giây: một cấu hình gõ sai không được biến thành một nhà tù.
  */
 export function hanPhienMs(): number {
+  // ★ Pha 0 P0-11: nay là TRẦN TUYỆT ĐỐI của vé / cookie (30 ngày, hoặc SESSION_TTL_DAYS nếu nhỏ hơn); hạn THẬT theo vai nằm ở sổ
+  //   (`hanPhienTheoVaiMs`) và trượt theo hoạt động (`hanGiaHanMoi`). Trước P0-11 SESSION_TTL_DAYS lớn hơn 30 cũng được nhận.
   const ngay = Number(process.env.SESSION_TTL_DAYS);
-  return Number.isFinite(ngay) && ngay > 0 ? ngay * MS_MOT_NGAY : HAN_PHIEN_MAC_DINH_NGAY * MS_MOT_NGAY;
+  return Number.isFinite(ngay) && ngay > 0 ? Math.min(ngay * MS_MOT_NGAY, HAN_PHIEN_MAC_DINH_NGAY * MS_MOT_NGAY) : HAN_PHIEN_MAC_DINH_NGAY * MS_MOT_NGAY;
+}
+
+/**
+ * ★ Pha 0 P0-11 (2026-11-04, dieu-phoi duyệt thiết kế "gia hạn TẠI CHỖ") — HẠN THEO VAI + GIA HẠN TRƯỢT, KHÔNG xoay hàng sổ.
+ *
+ *   · Hạn của một phiên (cột `user_sessions."expiresAt"` — sổ được tra MỌI lượt, cả nhánh Bearer) theo VAI: admin / engineer 7 ngày,
+ *     MỌI vai khác (operator / supervisor / …) 12 giờ.
+ *   · Vé JWT + cookie mang TRẦN TUYỆT ĐỐI 30 ngày (`hanPhienMs()`), không đổi khi gia hạn ⇒ không đúc lại vé, không Set-Cookie, không
+ *     hàng sổ mới, không lật `isActive` (trigger 0435 `socket_pham_vi` KHÔNG bắn ⇒ socket HMI không bị ngắt).
+ *   · Gia hạn trượt: lượt có xác thực (cookie, không phải đường đổi mật khẩu) mà phiên còn < 50 % hạn của vai ⇒ UPDATE `expiresAt` =
+ *     min(bây giờ + hạn vai, `createdAt` + trần tuyệt đối). Phiên bị thu hồi / hết hạn / tài khoản tắt / phải đổi mật khẩu đã bị chặn
+ *     TRƯỚC bước này; UPDATE còn điều kiện `isActive` nên phiên vừa thu hồi giữa chừng không "sống lại".
+ *   · `SESSION_TTL_DAYS` (nếu đặt, hợp lệ) là TRẦN TRÊN của cả hai — nhỏ hơn thì nó thắng.
+ */
+export const HAN_PHIEN_VAI_CAO_MS = 7 * MS_MOT_NGAY;
+export const HAN_PHIEN_VAI_KHAC_MS = 12 * 60 * 60 * 1000;
+export const TRAN_TUYET_DOI_PHIEN_MS = HAN_PHIEN_MAC_DINH_NGAY * MS_MOT_NGAY;
+const VAI_HAN_DAI: ReadonlySet<string> = new Set(["admin", "engineer"]);
+
+function tranEnvMs(): number {
+  const ngay = Number(process.env.SESSION_TTL_DAYS);
+  return Number.isFinite(ngay) && ngay > 0 ? ngay * MS_MOT_NGAY : Number.POSITIVE_INFINITY;
+}
+
+/** Hạn (ms) của phiên theo vai — áp vào `user_sessions."expiresAt"` lúc đăng nhập và mỗi lần gia hạn. */
+export function hanPhienTheoVaiMs(vai: string | null | undefined): number {
+  const coSo = VAI_HAN_DAI.has(String(vai ?? "").toLowerCase()) ? HAN_PHIEN_VAI_CAO_MS : HAN_PHIEN_VAI_KHAC_MS;
+  return Math.min(coSo, tranEnvMs(), TRAN_TUYET_DOI_PHIEN_MS);
+}
+
+/**
+ * Hạn MỚI nếu phiên cần gia hạn trượt, ngược lại `null`. Thuần (không DB) — `bayGio` truyền vào để đo được.
+ * Không gia hạn: phiên không hoạt động / đã hết hạn / còn ≥ 50 % hạn vai / đã chạm trần tuyệt đối tính từ `createdAt`.
+ */
+export function hanGiaHanMoi(
+  hang: { isActive: boolean; expiresAt: Date | string | null; createdAt: Date | string | null } | null | undefined,
+  vai: string | null | undefined,
+  bayGio = Date.now(),
+): Date | null {
+  if (!hang || hang.isActive !== true || hang.expiresAt == null || hang.createdAt == null) return null;
+  const het = new Date(hang.expiresAt).getTime();
+  const tao = new Date(hang.createdAt).getTime();
+  if (!Number.isFinite(het) || !Number.isFinite(tao) || het <= bayGio) return null;
+  const han = hanPhienTheoVaiMs(vai);
+  if (het - bayGio >= han / 2) return null;
+  const moi = Math.min(bayGio + han, tao + Math.min(TRAN_TUYET_DOI_PHIEN_MS, tranEnvMs()));
+  return moi > het ? new Date(moi) : null;
 }

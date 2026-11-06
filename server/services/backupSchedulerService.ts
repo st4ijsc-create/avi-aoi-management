@@ -185,10 +185,44 @@ export function stopScheduledBackup(id: number): void {
   }
 }
 
+/**
+ * ★ Pha 0 P0-6 (2026-11-04) — SAO LƯU MẶC ĐỊNH theo lịch khi CHƯA có lịch nào được bật trong `scheduled_backups`: pg_dump hằng ngày
+ * 02:30 các bảng cấu hình / người dùng / chất lượng / AI / sản xuất (mọi nhóm của `TABLE_CATEGORIES` TRỪ nhóm `inspections` và các bảng
+ * chuỗi thời gian lớn), giữ 7 tệp gần nhất (`backup_mac_dinh_*`). Không ghi hàng `scheduled_backups` (lịch người dùng tạo vẫn là nguồn
+ * chính; có lịch bật ⇒ mặc định KHÔNG chạy). Tắt: BACKUP_MAC_DINH=false.
+ */
+export const NHAN_SAO_LUU_MAC_DINH = "mac_dinh";
+export const GIU_SAO_LUU_MAC_DINH = 7;
+export const CRON_SAO_LUU_MAC_DINH = "30 2 * * *";
+const BANG_LON_BO_QUA = new Set(["machine_health_history", "machine_heartbeats", "machine_status_logs"]);
+export function bangSaoLuuMacDinh(): string[] {
+  return Object.entries(TABLE_CATEGORIES)
+    .filter(([nhom]) => nhom !== "inspections")
+    .flatMap(([, bang]) => bang)
+    .filter((b) => !BANG_LON_BO_QUA.has(b));
+}
+let jobMacDinh: ScheduledTask | null = null;
+export async function chaySaoLuuMacDinh(): Promise<{ fileName: string } | null> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return null;
+  const r = await createPgDump({ databaseUrl, tables: bangSaoLuuMacDinh(), label: NHAN_SAO_LUU_MAC_DINH });
+  enforceRetention(NHAN_SAO_LUU_MAC_DINH, GIU_SAO_LUU_MAC_DINH);
+  return { fileName: r.fileName };
+}
+export function laSaoLuuMacDinhDangLich(): boolean {
+  return jobMacDinh !== null;
+}
+
 export async function initializeScheduledBackups(): Promise<void> {
   try {
     const list = await db.listScheduledBackups?.(true);
     if (!Array.isArray(list)) return;
+    if (list.length === 0 && process.env.BACKUP_MAC_DINH !== "false" && !jobMacDinh) {
+      jobMacDinh = cron.schedule(CRON_SAO_LUU_MAC_DINH, () => {
+        chaySaoLuuMacDinh().catch((e) => console.error("[BackupScheduler] sao lưu mặc định thất bại:", e?.message ?? e));
+      });
+      console.log(`[BackupScheduler] chưa có lịch nào bật ⇒ sao lưu MẶC ĐỊNH (${CRON_SAO_LUU_MAC_DINH}, giữ ${GIU_SAO_LUU_MAC_DINH} tệp)`);
+    }
     for (const cfg of list) {
       scheduleBackup({
         id: cfg.id,
@@ -207,4 +241,6 @@ export async function initializeScheduledBackups(): Promise<void> {
 export function shutdownScheduledBackups(): void {
   for (const [, task] of activeJobs) task.stop();
   activeJobs.clear();
+  jobMacDinh?.stop();
+  jobMacDinh = null;
 }
