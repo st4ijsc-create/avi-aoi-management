@@ -28,6 +28,9 @@ const H = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
   alerts: [] as Array<Record<string, unknown>>,
+  /** A2(n) extension — the process "dies" the moment the latch reached the DB (chotRoiChet) */
+  chetSauChot: false,
+  chet: false,
 }));
 
 vi.mock("../../../db/connection", async (importOriginal) => {
@@ -73,6 +76,28 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a) };
 });
 
+// A2(n) extension — the crash boundary: the real central store up to the latch's write; after it the store answers as a dead process (nothing lands, nobody is told, no STOP).
+// centralRunStore is frozen, so the walker's handle is wrapped here, never spied on.
+vi.mock("./foeRunStore", async (importOriginal) => {
+  const o = await importOriginal<typeof import("./foeRunStore")>();
+  const s = o.centralRunStore;
+  return {
+    ...o,
+    centralRunStore: {
+      ...s,
+      upsertStep: async (...a: Parameters<typeof s.upsertStep>) => (H.chet ? undefined : s.upsertStep(...a)),
+      setStatusUnlessAborted: async (...a: Parameters<typeof s.setStatusUnlessAborted>) => (H.chet ? true : s.setStatusUnlessAborted(...a)),
+      persistContext: async (rc: Parameters<typeof s.persistContext>[0]) => {
+        if (H.chet) return;
+        await s.persistContext(rc);
+        if (H.chetSauChot && rc.context.foeKetCucKhongRoChot != null) H.chet = true; // the literal of KET_CUC_KHONG_RO_CHOT_CTX_KEY: a hoisted factory
+      },
+      buTruLaStopGhim: async (...a: Parameters<NonNullable<typeof s.buTruLaStopGhim>>) => (H.chet ? false : s.buTruLaStopGhim!(...a)),
+      ketCucKhongRo: (...a: Parameters<NonNullable<typeof s.ketCucKhongRo>>) => (H.chet ? undefined : s.ketCucKhongRo!(...a)),
+    },
+  };
+});
+
 import * as conn from "../../../db/connection";
 import { aiPendingActions, auditLogs, commandLog, orchestrationRunSteps, orchestrationRuns } from "../../../../drizzle/schema";
 import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
@@ -85,7 +110,7 @@ import { makeFoeGateRun } from "./__foeGateRunFixture";
 import { abortRun, autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction } from "./foeRunStore";
 import { buildEquipmentCommand, orchestrationActionId } from "./foeStepClass";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_AUDIT_ACTION, KET_CUC_KHONG_RO_CTX_KEY } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_AUDIT_ACTION, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY } from "./foeKetCucKhongRo";
 import type { WorkflowStep } from "./workflowModel";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -270,6 +295,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     H.bay = 0;
     H.bayStack.length = 0;
     H.alerts.length = 0;
+    H.chet = false;
+    H.chetSauChot = false;
     ghiChinh = 0;
   });
 
@@ -678,6 +705,78 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       expect(out.runIds).toEqual([]);
       expect(soPduGhi() - pdu0).toBe(0);
       expect((await runCua(tx, runId)).status).toBe("held");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  // A2(n) extension — Latch-then-crash on the REAL path: a real unknown (DUPLICATE_IN_FLIGHT) persists the latch through the real central store; from there on the store
+  // answers as a dead process does (H.chet: no row, no status, no context, no URGENT, no STOP): what is left on the DB is what a crash before the split leaves. Then a boot.
+  async function chotRoiChet(tx: Tx, mk: (d: Awaited<ReturnType<typeof dungThietBi>>) => WorkflowStep[]) {
+    const d = await dungThietBi(tx);
+    const runId = await dungRun(mk(d));
+    await yDinhTruoc(tx, { ...d, runId });
+    H.chetSauChot = true;
+    await khoiDong(runId);
+    expect(H.chet, "the walk never latched").toBe(true);
+    H.chet = false;
+    H.chetSauChot = false;
+    // the crash left this: running, the latch on the context, no split, nobody told
+    const truoc = await runCua(tx, runId);
+    expect(truoc.status).toBe("running");
+    expect((truoc.contextJson as Record<string, any>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "main" });
+    expect((truoc.contextJson as Record<string, any>)[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
+    expect((await buoc(tx, runId, "main"))?.status).toBe("running");
+    expect(H.alerts).toHaveLength(0);
+    return { ...d, runId };
+  }
+  const vanKhongRo = async (tx: Tx, runId: number) => {
+    await chacKhongRo(tx, runId);
+    expect(String((await buoc(tx, runId, "main"))?.error)).not.toMatch(/not sent: run latched|FOE_NOT_SENT_RUN_LATCHED/);
+  };
+
+  it("★ X1 latch, crash before the split, STOP compensation: the boot walks it: STOP sent exactly once, URGENT, main still unknown (never 'not sent'), 0 non-STOP writes", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await chotRoiChet(tx, ({ m1, m2 }) => [buocChinh(m2, buTruStop(m1))]);
+      expect(soPduGhi() - pdu0).toBe(0);
+      await khoiDong(runId);
+      await vanKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(ghiChinh).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("failed");
+      await choCanhBao("stopSent", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ X2 latch, crash before the split, non-STOP compensation: held + URGENT + marker, main still unknown, 0 writes; a second boot finds the marker and skips", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await chotRoiChet(tx, ({ m1, m2 }) => [buocChinh(m2, buTruReset(m1))]);
+      await khoiDong(runId);
+      await vanKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(ghiChinh).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      expect((await ctxCua(tx, runId))[KET_CUC_KHONG_RO_CTX_KEY]).toMatchObject({ stepId: "main", compId: "undo" });
+      await choCanhBao("held", runId, 1);
+      expect(await khoiDong(runId)).toMatchObject({ resumed: 0 });
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(ghiChinh).toBe(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ X3 latch, crash before the split, no compensation: R-4 URGENT, the run ends failed, main still unknown, 0 writes", async () => {
+    await trongGiaoDich(async (tx) => {
+      const pdu0 = soPduGhi();
+      const { runId } = await chotRoiChet(tx, ({ m2 }) => [buocChinh(m2)]);
+      await khoiDong(runId);
+      await vanKhongRo(tx, runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(ghiChinh).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("failed");
+      await choCanhBao("noCompensation", runId, 1);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });

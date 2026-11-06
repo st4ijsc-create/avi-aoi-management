@@ -134,6 +134,7 @@ import {
 } from "./foeEngine";
 import { chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
 import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, buTruBiChanKhongRo } from "./foeKetCucKhongRo";
+import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
@@ -290,6 +291,8 @@ interface EdgeHarness {
   unusedFails?: boolean;
   /** A2(n) (I-5) — the events journal refuses (a full journal): the anomaly never leaves the edge */
   eventsRefused?: boolean;
+  /** A2(n) extension — /authorize answers these steps this many ms later */
+  authorizeDelay?: Map<string, number>;
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
@@ -353,6 +356,8 @@ function fakeAuthorize(x: EdgeHarness, d: WorkflowDefinition, primed?: Awaited<R
   return {
     async authorize(input: EdgeStepAuthorizeRequest): Promise<EdgeStepAuthorizeOutcome> {
       x.authorizeCalls.push(input);
+      const tre = x.authorizeDelay?.get(input.stepId);
+      if (tre) await new Promise((r) => setTimeout(r, tre));
       if (x.offline || x.offlineSteps?.has(input.stepId)) return { ok: false, verdict: "unavailable", code: "network" };
       if (x.stopped) return { ok: false, verdict: "stopped", code: "stopped" };
       // the real /authorize: one authorisation per (run, claim, step, attempt) — a second ask answers 409 already_authorized (edgeAuthorizeCentral)
@@ -1707,7 +1712,7 @@ describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a n
     await approveEdgeGate(e);
     expect(runRow(e.runId).contextJson.foeResumeState?.s1).toBeUndefined();
     await edgeSegment(e, 3);
-    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "s1", "s1", "r2"]); // the STOP again; r1 never
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "s1", "s1"]); // the STOP again; r1 never; r2 not sent: the end named a command unknown, the run is latched (A2(n) extension)
     const { edgeResumeStateOf } = await import("./foeRunStore");
     const d = def("y", [robotStop("s9")]);
     expect(edgeResumeStateOf(d, [{ stepId: "s9", status: "running", resultJson: { routedTo: "robot-dispatcher" } }], new Set(["s9"]), ["s9"], new Set(["s9"])).state).toEqual({});
@@ -2283,5 +2288,198 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     const s = await edgeSegment(e, 2);
     expect(ids()).toEqual(["x", "u"]);
     expect(s.out).toMatchObject({ outcome: "failed" });
+  });
+
+  // ── A2(n) extension (owner's ruling): the forward sink. Probes A, B, C of the brief ──
+  const khongGui = new RegExp(`^${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched`);
+  const hang = (e: { runId: number }, id: string) => stepRows(e.runId).find((r) => r.stepId === id);
+  const parF = (id: string, steps: WorkflowStep[], failFast: boolean, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast, steps, ...extra }) as never;
+  const stopTyped = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "speed", value: 0 }, ...extra }) as never;
+
+  it("★ probe A edge: r2 offline held, a PLAIN Continue, the next segment does NOT send r2: failed with the code, the run ends failed", async () => {
+    const e = await denBuoc(def("x-a", [gate(), par("box", [move("x", { compensation: ot("u") }), move("r2")], {})]));
+    h.failPlan.set("x", 1);
+    h.timeoutDispatch.add("u");
+    e.offlineSteps = new Set(["r2"]);
+    await edgeSegment(e, 2);
+    e.offlineSteps = undefined;
+    h.timeoutDispatch.delete("u");
+    await dieuTiep(e);
+    const n = e.authorizeCalls.filter((a) => a.stepId === "r2").length;
+    const s3 = await edgeSegment(e, 3);
+    expect(ids()).toEqual(["x", "u"]);
+    expect(String(hang(e, "r2")!.error)).toMatch(khongGui);
+    expect(hang(e, "r2")).toMatchObject({ status: "failed" });
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").length).toBe(n + 1); // one attempt, no retry
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+  });
+
+  for (const failFast of [true, false]) {
+    it(`★ probe B edge, failFast ${failFast}: r3 behind a delay is NOT sent after x went unknown; failed with the code; an edge audit; its authorisation reported unused`, async () => {
+      const e = await denBuoc(def(`x-b${failFast}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3")], {})], failFast)]));
+      e.unused = [];
+      h.timeoutDispatch.add("x");
+      const s = await edgeSegment(e, 2);
+      expect(ids()).toEqual(["x"]);
+      expect(String(hang(e, "r3")!.error)).toMatch(khongGui);
+      expect(hang(e, "r3")).toMatchObject({ status: "failed" });
+      expect(s.out).toMatchObject({ outcome: "failed" });
+      expect(e.authorizeCalls.filter((a) => a.stepId === "r3")).toHaveLength(1);
+      expect((e.events ?? []).filter((v) => v.kind === "anomaly" && v.code === "notSentRunLatched")).toHaveLength(1);
+      expect(e.unused).toEqual([expect.objectContaining({ stepId: "r3", reason: "run_latched" })]); // (4) — the forward authorisation is superseded too
+      expect(e.records.filter((r) => r.kind === "step" && r.stepId === "r3" && r.status === "failed").map((r) => (r as { jti?: unknown }).jti)).toEqual([null]); // a quoted jti is evidence of use
+      expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.stepId === "r3")!.supersededAt).toBeInstanceOf(Date);
+    });
+    it(`★ probe B central, failFast ${failFast}: the same one line`, async () => {
+      const d = def(`x-bc${failFast}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3")], {})], failFast)]);
+      h.timeoutDispatch.add("x");
+      const runId = await centralRun(d, 1);
+      expect(ids()).toEqual(["x"]);
+      expect(String(stepRows(runId).find((r) => r.stepId === "r3")!.error)).toMatch(khongGui);
+      expect(runRow(runId).status).toBe("failed");
+    });
+  }
+
+  it("★ probe C edge: a sequential sibling: r3 refused, r4 behind it is never reached, neither sent", async () => {
+    const e = await denBuoc(def("x-c", [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3"), move("r4")], {})], false)]));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["x"]);
+    expect(String(hang(e, "r3")!.error)).toMatch(khongGui);
+    expect(hang(e, "r4")).toBeUndefined();
+  });
+  it("★ probe C central: the same", async () => {
+    h.timeoutDispatch.add("x");
+    const runId = await centralRun(def("x-cc", [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3"), move("r4")], {})], false)]), 1);
+    expect(ids()).toEqual(["x"]);
+    expect(stepRows(runId).some((r) => r.stepId === "r4")).toBe(false);
+  });
+
+  it("★ a forward robot stop job after the latch IS sent, central and edge; a forward OT verified STOP IS sent on the edge (stopXacMinh is set at that line)", async () => {
+    const e = await denBuoc(def("x-s", [gate(), parF("p", [move("x"), box("b", [delay("w", 60), robotStop("rs")], {})], false)]));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["x", "rs"]);
+    h.sent.length = 0;
+    h.timeoutDispatch.clear();
+    h.timeoutDispatch.add("x2");
+    await centralRun(def("x-sc", [gate(), parF("p", [move("x2"), box("b", [delay("w", 60), robotStop("rs2")], {})], false)]), 1);
+    expect(ids()).toEqual(["x2", "rs2"]);
+    h.sent.length = 0;
+    fake.seed(deviceTags, [...rows("device_tags"), { id: 75, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true }]);
+    const e3 = await denBuoc(def("x-so", [gate(), parF("p", [move("x3"), box("b", [delay("w", 60), { id: "st", type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } } as never], {})], false)]));
+    h.timeoutDispatch.add("x3");
+    await edgeSegment(e3, 2);
+    expect(ids()).toEqual(["x3", "st"]);
+  });
+
+  it("★ a forward STOP-typed step that is not verified: not sent, the code; maxAttempts: 3 on a forward step: 0 hand-overs, one authorisation, no a2", async () => {
+    const e = await denBuoc(def("x-u", [gate(), parF("p", [move("x"), box("b", [delay("w", 60), stopTyped("st")], {})], false)]));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["x"]);
+    expect(String(hang(e, "st")!.error)).toMatch(khongGui);
+    h.sent.length = 0;
+    const e2 = await denBuoc(def("x-m", [gate(), parF("p", [move("x2"), box("b", [delay("w", 60), move("r3", { maxAttempts: 3 })], {})], false)]));
+    h.timeoutDispatch.add("x2");
+    await edgeSegment(e2, 2);
+    expect(ids()).toEqual(["x2"]);
+    expect(e2.authorizeCalls.filter((a) => a.stepId === "r3").map((a) => a.attempt)).toEqual([1]);
+    expect(hang(e2, "r3")).toMatchObject({ status: "failed", attempt: 1 });
+  });
+
+  it("★ a refused forward step on a later segment: its compensation is not due (central's derived state: doneFailed), the run is not held for it, nothing is sent", async () => {
+    const e = await denBuoc(def("x-g", [gate(), parF("p", [move("x"), gate("g2"), box("b", [delay("w", 60), move("r3", { compensation: ot("c3") })], {})], false)]));
+    h.timeoutDispatch.add("x");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "paused" });
+    h.timeoutDispatch.delete("x");
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState?.r3).toMatchObject({ state: "doneFailed" });
+    const s3 = await edgeSegment(e, 3);
+    expect(ids()).toEqual(["x"]);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(hang(e, "c3")).toBeUndefined();
+    const d = def("y", [move("a", { compensation: ot("b") })]);
+    const r = (stepId: string, error: string) => ({ stepId, status: "failed", resultJson: null, error });
+    expect(edgeResumeStateOf(d, [r("a", `${FOE_NOT_SENT_RUN_LATCHED}: not sent`)], new Set()).state.a).toEqual({ state: "doneFailed", error: `${FOE_NOT_SENT_RUN_LATCHED}: not sent` });
+    expect(edgeResumeStateOf(d, [r("a", "rejected")], new Set()).state.a).toMatchObject({ state: "compensationHeld" }); // n6
+  });
+
+  it("★ the trap on the edge: a STOP-typed step, not verified, whose attempt went unknown: the next attempt is not sent, it stays unknown, never 'not sent'", async () => {
+    const e = await denBuoc(def("x-t", [gate(), stopTyped("st", { maxAttempts: 1 })]));
+    h.timeoutDispatch.add("st");
+    e.unused = [];
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["st"]);
+    expect(String(hang(e, "st")!.error)).toMatch(/^FOE_OUTCOME_UNKNOWN/);
+    expect(String(hang(e, "st")!.error)).not.toMatch(/not sent: run latched/);
+    expect(e.unused.map((u) => [u.stepId, u.attempt])).toEqual([["st", 2]]); // the second authorisation only: the first may have been used
+  });
+  it("★ the trap on the edge: a row left running by an earlier segment (central does not derive a STOP-typed step): stays unknown, not sent", async () => {
+    const e = await denBuoc(def("x-t2", [gate(), parF("p", [move("x"), stopTyped("st")], false)]));
+    h.timeoutDispatch.add("x");
+    e.offlineSteps = new Set(["st"]);
+    await edgeSegment(e, 2);
+    e.offlineSteps = undefined;
+    Object.assign(hang(e, "st")!, { status: "running", error: null });
+    await dieuTiep(e);
+    await edgeSegment(e, 3);
+    expect(ids()).toEqual(["x"]);
+    expect(String(hang(e, "st")!.error)).toMatch(/^FOE_OUTCOME_UNKNOWN/);
+  });
+
+  it("★ not stuck on the edge: Continue (n3) sends the compensation only, the forward work is dropped, the run ends failed", async () => {
+    const e = await denBuoc(def("x-n", [gate(), parF("p", [move("x", { compensation: ot("u") }), box("b", [delay("w", 60), move("r3")], {})], false)]));
+    h.timeoutDispatch.add("x");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    h.timeoutDispatch.delete("x");
+    await continueOutcomeUnknown(e, "checked");
+    const s3 = await edgeSegment(e, 3);
+    expect(ids()).toEqual(["x", "u"]);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+  it("★ not stuck on the edge: Abort ends the same run, nothing forward", async () => {
+    const e = await denBuoc(def("x-na", [gate(), parF("p", [move("x", { compensation: ot("u") }), box("b", [delay("w", 60), move("r3")], {})], false)]));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await abortRun(e.runId, OWNER, "checked");
+    expect(runRow(e.runId).status).toBe("aborted");
+    expect(ids()).toEqual(["x"]);
+  });
+
+  // (4) — a compensation authorised before the latch and held at the sink: the authorisation is reported never used
+  const autDuocTruocChot = async (ref: string) => {
+    const e = await denBuoc(def(ref, [gate(), par("box", [move("b", { compensation: ot("rz") }), move("m")], {})]));
+    h.failPlan.set("b", 1);
+    h.timeoutDispatch.add("m");
+    e.unused = [];
+    e.authorizeDelay = new Map([["m", 30], ["rz", 90]]); // rz is admitted and asks before m's outcome is known, and answers after it
+    return e;
+  };
+  it("★ (4) held at the sink after its authorisation: reported unused (run_latched), central supersedes it, no 'an earlier segment sent it'; the Continue sends it once", async () => {
+    const e = await autDuocTruocChot("x-4");
+    const s = await edgeSegment(e, 2);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(ids().filter((x) => x === "rz")).toHaveLength(0);
+    expect(e.unused).toEqual([expect.objectContaining({ stepId: "rz", reason: "run_latched", attempt: 1 })]);
+    expect(new Set(e.records.filter((r) => r.kind === "step" && r.stepId === "rz" && r.status === "held").map((r) => (r as { jti?: unknown }).jti))).toEqual(new Set([null]));
+    await continueOutcomeUnknown(e, "checked");
+    e.events = [];
+    await edgeSegment(e, 3);
+    expect(ids().filter((x) => x === "rz")).toHaveLength(1);
+    expect(baoCua(e, "compensationUnknown")).toHaveLength(0);
+  });
+  it("(4) the report failed: central still reads it the safe way (never sent again) and the words say 'may have'", async () => {
+    const e = await autDuocTruocChot("x-4b");
+    e.unusedFails = true;
+    await edgeSegment(e, 2);
+    await continueOutcomeUnknown(e, "checked");
+    e.events = [];
+    await edgeSegment(e, 3);
+    expect(ids().filter((x) => x === "rz")).toHaveLength(0);
+    expect(baoCua(e, "compensationUnknown").length).toBeGreaterThan(0);
   });
 });

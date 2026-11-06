@@ -203,7 +203,7 @@ vi.mock("../../../db/connection", () => ({
 
 import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
-import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
+import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
 import { baoCaoHopLe, baoCaoKhongRoTuHang, chuBuTruTrongDinhNghia, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
 import {
   KHONG_RO_DANG_BAY_AUDIT_OP,
@@ -633,7 +633,7 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     expect(src.split("runCompensation(rc,").length - 1).toBe(5); // congBuTru ×3, guiStopKhongRo, the boot re-send
     expect(src).toContain("const khongRoLoi = loiKhongRoRun(rc, step, failedOutcome);");
     expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {');
-    expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0 || runDaChotKhongRo(ctx)) continue;");
+    expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0) continue;"); // extension (2): a latched run with no hold is walked (the forward sink), the marker skips
     // the automatic STOP goes through the engine's own compensation path (runCompensation → execCommand → dispatcher), no shortcut
     const body = src.slice(src.indexOf("async function guiStopKhongRo("), src.indexOf("function loaiGuiStop("));
     expect(body).toContain("c = await runCompensation(rc, step, loi);");
@@ -1544,15 +1544,6 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     expect(a.title).not.toMatch(/command "x" outcome unknown/);
     expect(a.message).not.toMatch(/The outcome of command step "x"/);
   });
-  it("m-M a latched run with no marker is not auto-resumed", async () => {
-    process.env.FOE_DURABLE = "true";
-    const { runId } = await giuKhongRo();
-    const chot = runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
-    runRow(runId).contextJson = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot, interrupted: true };
-    otDispatchMock.mockClear();
-    expect(await autoResumeInterruptedRuns([runId])).toMatchObject({ resumed: 0 });
-    expect(sent()).toHaveLength(0);
-  });
   it("m-N a thrown context write at a gate inside a compensation leaves the run waiting, never 'failed' with the compensation due", async () => {
     const { runId } = await giuKhongRo([main(seq("c", [gate("gc"), resetComp("rz")]))]);
     HX.contextThrows = true;
@@ -1586,7 +1577,10 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? REJECTED : ACKED));
     await chay([main(resetComp("c9"))], (id) => {
       runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeOutcomeUnknown: ["c9"] };
+      // extension — main failed on a walk before the latch: its compensation is due, the sink lets nothing forward go now
+      rows("orchestration_run_steps").push({ id: 99_001, runId: id, stepId: "main", stepType: "command", status: "failed", error: "rejected", attempt: 1, resultJson: null, startedAt: null, finishedAt: null });
     });
+    expect(sent("start")).toHaveLength(0);
     expect(sent("reset")).toHaveLength(0);
     await vi.waitFor(() => expect(alertsOf("compensationUnknown").some((a) => a.dedupKey.includes(":main:c9:"))).toBe(true));
   });
@@ -1636,5 +1630,228 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     const au = readFileSync(resolve(__dirname, "../../edge/edgeAuthorizeCentral.ts"), "utf8");
     expect(au.indexOf("── 5. a verified STOP")).toBeLessThan(au.indexOf("buTruBiChanKhongRo(run.contextJson"));
     expect(au.indexOf("buTruBiChanKhongRo(run.contextJson")).toBeLessThan(au.indexOf("── 6. identity"));
+  });
+});
+
+describe("A2(n) extension (owner's ruling) — central: a forward write never leaves a latched run; a step that may have gone out never reads 'not sent'; the auto-resume walks a latched run", () => {
+  const pause = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "pause", ...extra }) as WorkflowStep;
+  const stopFwd = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as WorkflowStep;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
+  const sau = (id: string, s: WorkflowStep, ms = 60): WorkflowStep => seq(id, [delay(`${id}w`, ms), s]);
+  const tiep = (runId: number, note = "checked") => resumeRun(runId, { approved: true, note }, ADMIN, {}, { scope: null });
+  const khongGui = new RegExp(`^${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched`);
+  const auditBuoc = () => audits.filter((a) => (a.details as { operation?: string })?.operation === "notSentRunLatched");
+
+  it("★ (1) a forward step behind a delay, failFast true and false: not handed over, failed with the code, an audit row, the run never 'completed'", async () => {
+    for (const failFast of [true, false]) {
+      alerts.length = 0;
+      audits.length = 0;
+      otDispatchMock.mockClear();
+      const { runId, res } = await chay([par("p", [main(), sau("b", pause("r3"))], { failFast })]);
+      expect(res.status).toBe("failed");
+      expect(sent("pause")).toHaveLength(0);
+      expect(await step(runId, "r3")).toMatchObject({ status: "failed" });
+      expect((await step(runId, "r3"))!.error).toMatch(khongGui);
+      await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1));
+      expect((auditBuoc()[0]!.details as { metadata: Record<string, unknown> }).metadata).toMatchObject({ stepId: "r3", attempt: 1 });
+    }
+  });
+  it("★ (1) a parallel with failFast false whose ONLY failure is the refusal does not swallow it: the run ends failed, never 'completed'", async () => {
+    const { runId, res } = await chay([par("p", [sau("b", pause("r3")), delay("d2", 5)], { failFast: false })], (id) => {
+      runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
+    });
+    expect(res.status).toBe("failed");
+    expect(sent()).toHaveLength(0);
+    expect((await step(runId, "r3"))!.error).toMatch(khongGui);
+  });
+  it("★ (1) maxAttempts: 3 ⇒ exactly 0 hand-overs and no second attempt; a container's retry is not walked again either", async () => {
+    const { runId } = await chay([par("p", [main(), sau("b", pause("r3", { maxAttempts: 3 }))], { failFast: false })]);
+    expect(sent("pause")).toHaveLength(0);
+    expect(await step(runId, "r3")).toMatchObject({ attempt: 1 });
+    const n = rows("ai_pending_actions").filter((a) => /-r3-a/.test(String(a.id))).length;
+    expect(n).toBeLessThanOrEqual(1); // no `-a2` authorisation
+    expect(rows("ai_pending_actions").some((a) => /-r3-a2/.test(String(a.id)))).toBe(false);
+    alerts.length = 0;
+    audits.length = 0;
+    otDispatchMock.mockClear();
+    await chay([par("p2", [main(), seq("b2", [delay("w2", 60), pause("r5")])], { failFast: false, maxAttempts: 2 })]);
+    await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1)); // one refusal: the parallel was not walked twice
+    await new Promise((r) => setTimeout(r, 20));
+    expect(auditBuoc()).toHaveLength(1);
+    expect(sent("start")).toHaveLength(1);
+  });
+  it("★ (1) a forward PINNED STOP after the latch IS sent (auth.stopGhim is set at that line), retried as a STOP; nothing waits", async () => {
+    const { runId } = await chay([par("p", [main(), sau("b", stopFwd("st"))], { failFast: false })]);
+    expect(sent("stop")).toHaveLength(1);
+    expect((await step(runId, "st"))!.error ?? "").not.toMatch(/not sent/);
+  });
+  it("★ (1) a forward STOP-typed step whose pins do not pin it: not sent, the code", async () => {
+    ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+    const { runId } = await chay([par("p", [main(), sau("b", stopFwd("st"))], { failFast: false })]);
+    expect(sent("stop")).toHaveLength(0);
+    expect((await step(runId, "st"))!.error).toMatch(khongGui);
+  });
+  it("★ (1) the refused step's own compensation is not due, not even a STOP: it was never sent; the container's still takes the split (STOP at once, non-STOP held)", async () => {
+    const a = await chay([par("p", [main(), seq("b", [delay("w", 60), pause("r3", { compensation: resetComp("c3") })], stopComp("bs"))], { failFast: false })]);
+    expect(sent("reset")).toHaveLength(0);
+    expect(await step(a.runId, "c3")).toBeUndefined();
+    expect(sent("stop")).toHaveLength(1); // the container's
+    expect(a.res.status).toBe("failed");
+    otDispatchMock.mockClear();
+    const b = await chay([par("p", [main(), seq("b", [delay("w", 60), pause("r4", { compensation: stopComp("c4") })], resetComp("bu"))], { failFast: false })]);
+    expect(sent("stop")).toHaveLength(0); // r4's own STOP: nothing to undo
+    expect(sent("reset")).toHaveLength(0);
+    expect(b.res.status).toBe("held");
+    expect(await step(b.runId, "bu")).toMatchObject({ status: "held" });
+  });
+  it("(1) a step really handed over earlier in this walk, then refused on its retry: its compensation IS still due (the split), the row says only this attempt", async () => {
+    let n = 0;
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "pause") return (n++, await new Promise((r) => setTimeout(r, 80)), REJECTED);
+      if (i.commandType === "start") return (await new Promise((r) => setTimeout(r, 30)), TIMEOUT);
+      return ACKED;
+    });
+    const { runId, res } = await chay([par("p", [main(), pause("r6", { maxAttempts: 2, compensation: resetComp("c6") })], { failFast: false })]);
+    expect(n).toBe(1); // attempt 1 was handed over; attempt 2 met the latch
+    expect((await step(runId, "r6"))!.error).toMatch(khongGui);
+    expect(res.status).toBe("held");
+    expect(await step(runId, "c6")).toMatchObject({ status: "held" });
+  });
+  it("(1) a refused step is not looked at again on a later walk: its compensation is not held, a Continue-free gate approval sends nothing forward", async () => {
+    const { runId, res } = await chay([par("p", [main(), { id: "g2", type: "hitl_gate", prompt: "x" } as WorkflowStep, sau("b", pause("r3", { compensation: resetComp("c3") }))], { failFast: false })]);
+    expect(res.status).toBe("awaiting_confirm");
+    expect(runRow(runId).contextJson.foeResumeState.r3).toMatchObject({ state: "doneFailed" });
+    otDispatchMock.mockClear();
+    const r = await resumeRun(runId, { approved: true }, APPROVER);
+    expect(r.status).toBe("failed");
+    expect(sent()).toHaveLength(0);
+    expect(await step(runId, "c3")).toBeUndefined();
+  });
+
+  it("(1) a refusal read back from the resume state stays final: a parallel with failFast false does not read it as a walk that went on", async () => {
+    const { runId, res } = await chay([par("p", [pause("r3"), delay("d2", 5)], { failFast: false })], (id) => {
+      runRow(id).contextJson = {
+        ...(runRow(id).contextJson ?? {}),
+        foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "t" },
+        foeResumeState: { r3: { state: "doneFailed", error: `${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched` } },
+      };
+    });
+    expect(res.status).toBe("failed");
+    expect(runRow(runId).status).toBe("failed");
+    expect(sent()).toHaveLength(0);
+  });
+
+  it("★ not stuck: after a refusal a held run is ended by a Continue (n3): compensation only, the forward work dropped, 'failed'", async () => {
+    const { runId, res } = await chay([par("p", [main(resetComp("u")), sau("b", pause("r3"))], { failFast: false })]);
+    expect(res.status).toBe("held");
+    otDispatchMock.mockClear();
+    expect((await tiep(runId)).status).toBe("failed");
+    expect(sent()).toEqual(["reset"]);
+    expect(runRow(runId).status).toBe("failed");
+  });
+  it("★ not stuck: the same run is ended by an Abort, nothing written", async () => {
+    const { runId, res } = await chay([par("p", [main(resetComp("u")), sau("b", pause("r3"))], { failFast: false })]);
+    expect(res.status).toBe("held");
+    otDispatchMock.mockClear();
+    await abortRun(runId, ADMIN, "checked", { scope: null } as never);
+    expect(runRow(runId).status).toBe("aborted");
+    expect(sent("reset")).toHaveLength(0);
+    expect(sent("pause")).toHaveLength(0);
+  });
+
+  // ── the truthfulness trap ──
+  /** a crash the moment the latch landed: what the walk really left of it, the rest of its writes undone (the real path is on the DB: Latch-then-crash) */
+  async function chetSauChot(steps: WorkflowStep[], sua?: (runId: number) => void) {
+    process.env.FOE_DURABLE = "true";
+    const { runId } = await chay(steps);
+    const chot = runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+    expect(chot).toMatchObject({ stepId: "main" });
+    store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== runId || r.stepId === "gate0" || r.stepId === "main"));
+    Object.assign(rows("orchestration_run_steps").find((r) => r.runId === runId && r.stepId === "main")!, { status: "running", error: null, finishedAt: null });
+    Object.assign(runRow(runId), { status: "held", finishedAt: null, error: null, contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot, interrupted: true } });
+    sua?.(runId);
+    otDispatchMock.mockClear();
+    alerts.length = 0;
+    return runId;
+  }
+  const kiemKhongRo = async (runId: number, id = "main") => {
+    const e = String((await step(runId, id))!.error);
+    expect(e).toMatch(/^FOE_OUTCOME_UNKNOWN/);
+    expect(e).not.toMatch(/not sent: run latched/);
+    expect(e).not.toContain(FOE_NOT_SENT_RUN_LATCHED);
+  };
+
+  // m-M reversed (extension (2)): "resumed" counts an ok end, so a run walked to 'failed' is not counted; what it did is the oracle
+  it("★ the trap, m-M reversed: a latch and a crash before the split, STOP compensation: IS auto-resumed, 0 non-STOP writes, the STOP once + URGENT, main stays unknown", async () => {
+    const runId = await chetSauChot([main(stopComp())]);
+    await autoResumeInterruptedRuns([runId]);
+    expect(sent()).toEqual(["stop"]);
+    await kiemKhongRo(runId);
+    await vi.waitFor(() => expect(alertsOf("stopSent")).toHaveLength(1));
+    expect(runRow(runId).status).toBe("failed");
+  });
+  it("★ the trap: the same with a non-STOP compensation: held + URGENT + marker, 0 writes; a second boot finds the marker and skips (no loop); the system never approved anything", async () => {
+    const runId = await chetSauChot([main(resetComp())]);
+    expect(await autoResumeInterruptedRuns([runId])).toMatchObject({ resumed: 1 });
+    expect(sent()).toHaveLength(0);
+    await kiemKhongRo(runId);
+    expect(runRow(runId).status).toBe("held");
+    expect(runRow(runId).contextJson[KET_CUC_KHONG_RO_CTX_KEY]).toMatchObject({ stepId: "main", compId: "undo" });
+    expect(runRow(runId).contextJson[KHONG_RO_DUYET_CTX_KEY]).toBeUndefined();
+    await vi.waitFor(() => expect(alertsOf("held")).toHaveLength(1));
+    runRow(runId).contextJson = { ...runRow(runId).contextJson, interrupted: true };
+    expect(await autoResumeInterruptedRuns([runId])).toMatchObject({ resumed: 0 });
+    expect(sent()).toHaveLength(0);
+  });
+  it("★ the trap: the same with no compensation: R-4 URGENT at once, the run ends failed, 0 writes", async () => {
+    const runId = await chetSauChot([main()]);
+    await autoResumeInterruptedRuns([runId]);
+    expect(sent()).toHaveLength(0);
+    await kiemKhongRo(runId);
+    await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
+    expect(runRow(runId).status).toBe("failed");
+  });
+  it("★ the trap: a sibling left running by the crash (it may have gone out, the latch names another step): never 'not sent', unknown, not sent again", async () => {
+    const runId = await chetSauChot([par("p", [main(), pause("y")], { failFast: false })], (id) => {
+      // its dispatch result is on the row: handed over for certain, no last word
+      rows("orchestration_run_steps").push({ id: 99_002, runId: id, stepId: "y", stepType: "command", status: "running", error: null, attempt: 1, resultJson: { routedTo: "ot-dispatcher" }, startedAt: new Date(), finishedAt: null });
+    });
+    await autoResumeInterruptedRuns([runId]);
+    expect(sent("pause")).toHaveLength(0);
+    await kiemKhongRo(runId, "y");
+    await kiemKhongRo(runId);
+  });
+  it("★ the trap: a code on a row the latch does not name, the row's status 'failed': stays unknown", async () => {
+    const runId = await chetSauChot([par("p", [main(), pause("y")], { failFast: false })], (id) => {
+      rows("orchestration_run_steps").push({ id: 99_003, runId: id, stepId: "y", stepType: "command", status: "failed", error: "FOE_OUTCOME_UNKNOWN: an earlier walk", attempt: 1, resultJson: null, startedAt: new Date(), finishedAt: null });
+    });
+    await autoResumeInterruptedRuns([runId]);
+    expect(sent("pause")).toHaveLength(0);
+    await kiemKhongRo(runId, "y");
+  });
+  it("★ the trap: a STOP-typed step, not pinned, whose attempt went unknown: its next attempt is not sent and it stays unknown in the SAME walk", async () => {
+    ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+    otDispatchMock.mockImplementation(async () => TIMEOUT);
+    const { runId } = await chay([stopFwd("st", { maxAttempts: 2 })]);
+    expect(sent("stop")).toHaveLength(1);
+    await kiemKhongRo(runId, "st");
+    await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
+  });
+  it("(a known failure of an earlier walk is not 'may have gone out': the code, and it is not an unknown)", async () => {
+    const { runId } = await chay([par("p", [pause("y")], { failFast: false })], (id) => {
+      runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeKetCucKhongRoChot: { stepId: "zz", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
+      rows("orchestration_run_steps").push({ id: 99_004, runId: id, stepId: "y", stepType: "command", status: "failed", error: "rejected", attempt: 1, resultJson: null, startedAt: new Date(), finishedAt: null });
+    });
+    expect(sent("pause")).toHaveLength(0);
+    expect((await step(runId, "y"))!.error).toMatch(khongGui);
+  });
+
+  it("(4) pure: the URGENT of a compensation unknown never says an earlier segment DID send it; a known code is known to the code filter's constant", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "compensationUnknown", runId: 1, stepId: "s", compId: "c", error: "FOE_OUTCOME_UNKNOWN: x", lan: "l" });
+    expect(n.message).toContain("may have sent it");
+    expect(n.message).not.toMatch(/an earlier segment sent it/);
+    expect(loiLaKetCucKhongRo(`${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched`)).toBe(false);
+    expect(chotTuHang([{ stepId: "a", status: "failed", resultJson: null, error: `${FOE_NOT_SENT_RUN_LATCHED}: x` }] as never)).toBeNull();
   });
 });

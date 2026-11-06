@@ -21,7 +21,9 @@ import { FakeCentral, KIT_TOKEN } from "./edgeFakeCentral.testkit";
 import { EdgeJournal } from "./edgeJournal";
 import {
   EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE,
+  EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED,
   EDGE_ANSWER_SCHEMAS,
+  EDGE_CENTRAL_ACCEPTS,
   EDGE_CENTRAL_ACCEPTS_HEADER,
   edgeAbortStopRecordSchema,
   edgeAuthUnusedRecordSchema,
@@ -207,6 +209,12 @@ describe("A2(o) r3 F2 — a stale-config authorisation reported unused: new edge
     const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: (async () => new Response("{}")) as never, log: () => undefined });
     expect(client.centralAccepts(EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE)).toBe(false);
     expect(edgeAuthUnusedWireReason("config_stale", () => false)).toBe("expired_before_use");
+    // R1b-2b-2a A2(n) extension — `run_latched` the same way, on its OWN token: a central that knows only config_stale must not get it
+    expect(edgeAuthUnusedWireReason("run_latched", () => false)).toBe("expired_before_use");
+    expect(edgeAuthUnusedWireReason("run_latched", (t) => t === EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE)).toBe("expired_before_use");
+    expect(edgeAuthUnusedWireReason("run_latched", (t) => t === EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED)).toBe("run_latched");
+    expect(EDGE_CENTRAL_ACCEPTS).toContain(EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED);
+    expect(oldAuthUnused.safeParse({ kind: "auth_unused", seq: 1, stepId: "s", attempt: 1, jti: JTI, reason: edgeAuthUnusedWireReason("run_latched", () => false), at: 1 }).success).toBe(true);
     expect(edgeAuthUnusedWireReason("config_stale", (t) => t === EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE)).toBe("config_stale");
     expect(edgeAuthUnusedWireReason("expired_before_use", () => false)).toBe("expired_before_use");
     expect(edgeAuthUnusedWireReason("expired_before_use", () => true)).toBe("expired_before_use");
@@ -223,7 +231,7 @@ describe("A2(o) r3 F2 — the other direction: OLD edge + NEW central keeps work
     // what an OLD edge does with a new central's answer: the same strict body parse — the header is outside the body
     const central = new FakeCentral();
     const res = await central.fetchImpl("http://central.test/api/v1/edge/node/pull", { method: "POST", body: "{}", headers: {} } as never);
-    expect(res.headers.get(EDGE_CENTRAL_ACCEPTS_HEADER)).toBe(EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE);
+    expect(res.headers.get(EDGE_CENTRAL_ACCEPTS_HEADER)).toBe(`${EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE},${EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED}`);
     const json = (await res.json()) as { ok: boolean; data: unknown };
     expect(EDGE_ANSWER_SCHEMAS.pull.safeParse(json.data).success).toBe(true);
   });
