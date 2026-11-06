@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   goi: [] as unknown[],
   cheDo: "thanh-cong" as "thanh-cong" | "loi" | "dang-chay",
   tra: undefined as unknown,
+  loiMa: undefined as string | undefined,
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -41,7 +42,7 @@ vi.mock("@/lib/trpc", async () => {
                 h.goi.push(v);
                 if (h.cheDo === "dang-chay") set({ isPending: true, isSuccess: false, isError: false });
                 else if (h.cheDo === "loi") {
-                  set({ isPending: false, isSuccess: false, isError: true, error: new Error("hết trần") });
+                  set({ isPending: false, isSuccess: false, isError: true, error: Object.assign(new Error("hết trần"), h.loiMa ? { data: { code: h.loiMa } } : {}) });
                   o.onSettled?.();
                 } else {
                   set({ isPending: false, isSuccess: true, isError: false, data: h.tra });
@@ -75,6 +76,7 @@ const XEM_OK = {
 };
 const KET_QUA = { ketLuan: "can-sua", diem: 60, banChuanHoa: "<img src=x onerror=alert(1)>", loi: [{ muc: "vua", moTa: "<script>alert(1)</script>", viTri: "../../etc/passwd" }], baiHocDeXuat: [] };
 const VET = { nhaCungCap: "openai_compat", model: "gpt-x", tokenVao: 100, tokenRa: 50, chiPhiUocUsd: 0.01, soLanGoi: 1 };
+const VAN_BAN: NguonKiemDinh = { loai: "van-ban", beMat: "bong-bong", cauHoi: "câu hỏi mẫu", traLoi: "câu trả lời mẫu" };
 const CHAT: NguonKiemDinh = { loai: "chat", cuocTroChuyenId: 3, tinNhanId: 9 };
 
 beforeEach(() => {
@@ -256,5 +258,38 @@ describe("rà kiem-dinh 10.4 (NÊN #3) — cảnh báo ô tiêu chí", () => {
     render(<NutKiemDinhNgoai nguon={CHAT} />);
     mo();
     expect(screen.getByTestId("kdnh-tieu-chi-canh-bao").textContent).toContain("Không dán dữ liệu vận hành");
+  });
+});
+
+describe("nguồn van-ban (bong bóng, L4)", () => {
+  it("hộp xem trước ĐÚNG chuỗi sẽ gửi (câu hỏi + trả lời), nhắc 'chưa lưu'; không báo cắt khi vừa", () => {
+    render(<NutKiemDinhNgoai nguon={VAN_BAN} daCat={false} />);
+    mo();
+    expect(screen.getByTestId("kdnh-van-ban-cau-hoi").textContent).toBe("câu hỏi mẫu");
+    expect(screen.getByTestId("kdnh-van-ban-tra-loi").textContent).toBe("câu trả lời mẫu");
+    expect(screen.queryByTestId("kdnh-van-ban-da-cat")).not.toBeInTheDocument();
+  });
+  it("T11 — daCat ⇒ cảnh báo 'đã cắt'; nguồn gửi đi nguyên hình dạng (xemTruoc + chay), không thêm khoá", () => {
+    render(<NutKiemDinhNgoai nguon={VAN_BAN} daCat />);
+    mo();
+    expect(screen.getByTestId("kdnh-van-ban-da-cat")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("kdnh-gui"));
+    expect((h.goi[0] as { nguon: unknown }).nguon).toEqual(VAN_BAN);
+    expect((h.xemDauVao[0] as { nguon: unknown }).nguon).toEqual(VAN_BAN);
+  });
+  it("T14 — 413/403/429/409 ⇒ câu báo theo mã, KHÔNG in message thô", () => {
+    const mong: Record<string, string> = { PAYLOAD_TOO_LARGE: "quá lớn", NOT_FOUND: "chưa bật", FORBIDDEN: "chưa bật", TOO_MANY_REQUESTS: "vượt trần", CONFLICT: "đang được kiểm định" };
+    for (const [code, cau] of Object.entries(mong)) {
+      h.cheDo = "loi";
+      h.loiMa = code;
+      render(<NutKiemDinhNgoai nguon={VAN_BAN} />);
+      mo();
+      fireEvent.click(screen.getByTestId("kdnh-gui"));
+      const chu = screen.getByTestId("kdnh-loi").textContent ?? "";
+      expect(chu, code).toContain(cau);
+      expect(chu, code).not.toContain("hết trần");
+      cleanup();
+    }
+    h.loiMa = undefined;
   });
 });

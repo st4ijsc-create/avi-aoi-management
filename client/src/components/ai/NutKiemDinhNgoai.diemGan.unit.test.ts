@@ -45,7 +45,8 @@ describe("census — điểm gắn NutKiemDinhNgoai", () => {
       const s = readFileSync(f, "utf8");
       if (rel.endsWith("components/ai/NutKiemDinhNgoai.tsx")) continue;
       if (s.includes("<NutKiemDinhNgoai")) dung.push(rel);
-      expect(/loai:\s*["']van-ban["']/.test(s), `${rel} dùng nguồn van-ban`).toBe(false);
+      // 10.4b L4 nhánh van-ban: CHỈ bong bóng (qua `dungNguonVanBan` trong bongBongNgoai.ts) được dựng nguồn này.
+      if (rel !== "client/src/components/ai/bongBongNgoai.ts") expect(/loai:\s*["']van-ban["']/.test(s), `${rel} dùng nguồn van-ban`).toBe(false);
     }
     expect(dung.sort()).toEqual([
       "client/src/components/AILocalChatBubble.tsx",
