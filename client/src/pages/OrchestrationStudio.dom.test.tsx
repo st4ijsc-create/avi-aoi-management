@@ -735,9 +735,9 @@ describe("OrchestrationStudio — doc 81 Đợt 9 final wave: latch warning in t
 
 describe("OrchestrationStudio — R1b-2b-2a A2(n): a compensation held after an unknown outcome (R-1, m-8)", () => {
   const giu = (id: number, ctx: Record<string, unknown>) => ({ ...run(id, "uo-flow", ctx, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "held" });
-  const nap = (r: ReturnType<typeof giu>, steps: unknown[] = []) => {
+  const nap = (r: ReturnType<typeof giu>, steps: unknown[] = [], khongRoCho?: string[]) => {
     setQueryOverride("orchestration.listRuns", makeQuery({ data: [r] }));
-    setQueryOverride("orchestration.getRun", makeQuery({ data: { run: r, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps } }));
+    setQueryOverride("orchestration.getRun", makeQuery({ data: { run: r, defHash: DEF_HASH, bindingDigest: BINDING_DIGEST, steps, khongRoCho } }));
   };
   const MARK = { foeKetCucKhongRo: { stepId: "main", compId: "undo", ma: "FOE_OUTCOME_UNKNOWN", ds: [{ stepId: "main", compId: "undo" }] } };
 
@@ -773,8 +773,16 @@ describe("OrchestrationStudio — R1b-2b-2a A2(n): a compensation held after an 
     expect(mutateSpies["orchestration.abortRun"]).toHaveBeenLastCalledWith({ runId: 71, reason: "not safe" });
   });
 
-  it("★ C-2 no marker (an edge crash): the failed row's code alone asks for the reason; an interrupted row's Continue dialog is disabled and says why", async () => {
-    nap(giu(72, { interrupted: true }), [{ stepId: "main", stepType: "command", status: "failed", attempt: 1, result: null, error: "EDGE_OUTCOME_UNKNOWN" }]);
+  it("★ M-4 a REAL gate: a failed row with the code but nothing pending on the server ⇒ plain Approve, no reason asked", () => {
+    const r = { ...giu(74, {}), status: "awaiting_confirm", currentStepId: "g2" };
+    nap(r as never, [{ stepId: "main", stepType: "command", status: "failed", attempt: 1, result: null, error: "FOE_OUTCOME_UNKNOWN" }], []);
+    render(<OrchestrationStudio />);
+    expect(within(rowOf(74)).queryByTestId("outcome-unknown-notice")).toBeNull();
+    expect(within(rowOf(74)).getByRole("button", { name: /^(Approve|studio\.approve)$/i })).toBeInTheDocument();
+  });
+
+  it("★ C-2 no marker (an edge crash): the server's fact asks for the reason; an interrupted row's Continue dialog is disabled and says why", async () => {
+    nap(giu(72, { interrupted: true }), [{ stepId: "main", stepType: "command", status: "failed", attempt: 1, result: null, error: "EDGE_OUTCOME_UNKNOWN" }], ["main"]);
     render(<OrchestrationStudio />);
     const row = rowOf(72);
     expect(within(row).getByTestId("outcome-unknown-notice")).toBeInTheDocument();

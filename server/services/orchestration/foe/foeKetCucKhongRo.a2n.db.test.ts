@@ -374,10 +374,74 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     await trongGiaoDich(async (tx) => {
       const pdu0 = soPduGhi();
       const { runId } = await giuSauKhongRo(tx, ({ m1, m2 }) => [{ id: "p", type: "parallel", failFast: true, steps: [buocChinh(m2, buTruReset(m1)), { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep]);
-      expect((await runCua(tx, runId)).status).toBe("held");
+      // the first DB run saw awaiting_confirm here: the message says whether `main` really failed on an unknown outcome (see the next case)
+      const main = await buoc(tx, runId, "main");
+      expect((await runCua(tx, runId)).status, `main: ${main?.status} attempt ${main?.attempt}: ${main?.error}`).toBe("held");
       await expect(resumeRun(runId, { approved: true }, ADMIN, {}, { scope: null })).rejects.toThrow(/reason is required/);
       await expect(resumeRun(runId, { approved: true, note: "x" }, OPERATOR, {}, { scope: null })).rejects.toThrow(/machine-control rights/);
       expect(soPduGhi() - pdu0).toBe(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-2 (a) the same on the aggregation alone: the unknown outcome comes from the run context, no dispatcher, no statement shares the test's one connection with a gate write ⇒ HELD", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, steps: [buocChinh(d.m2, buTruReset(d.m1)), { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep]);
+      await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId));
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      const main = await buoc(tx, runId, "main");
+      expect((await runCua(tx, runId)).status, `main: ${main?.status}: ${main?.error}`).toBe("held");
+      expect(soPduGhi() - pdu0).toBe(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-A (a) a gate beside a failed unknown branch: the container's pinned STOP goes before any approval (1 PDU), the run waits at the gate, URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, compensation: buTruStop(d.m1, "boxStop"), steps: [buocChinh(d.m2), { id: "w", type: "sequence", steps: [{ id: "d0", type: "delay", ms: 400 } as WorkflowStep, { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep] } as WorkflowStep]);
+      await yDinhTruoc(tx, { ...d, runId });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      const main = await buoc(tx, runId, "main");
+      expect(soPduGhi() - pdu0, `main: ${main?.status}: ${main?.error}`).toBe(1);
+      expect((await runCua(tx, runId)).status).toBe("awaiting_confirm");
+      await choCanhBao("stopSent", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ C-A (b) a precondition-abort sibling: the container's reset is NOT written, held, URGENT", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const abortB = { id: "b", type: "command", machineId: d.m1, command: "reset", args: { tagKey: "u", value: 2 }, precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "abort" } as unknown as WorkflowStep;
+      const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, compensation: buTruReset(d.m1, "boxUndo"), steps: [buocChinh(d.m2), abortB] } as WorkflowStep]);
+      await yDinhTruoc(tx, { ...d, runId });
+      const pdu0 = soPduGhi();
+      await khoiDong(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      await choCanhBao("held", runId, 1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ I-A (a) a Continue does not re-read a container's 'skip' precondition: the held compensation goes (1 PDU), the next forward step does not", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const next = { id: "next", type: "command", machineId: d.m1, command: "reset", args: { tagKey: "u", value: 9 } } as WorkflowStep;
+      const runId = await dungRun([{ id: "box", type: "sequence", steps: [buocChinh(d.m2, buTruReset(d.m1))], precondition: { source: "context", key: "allow", op: "eq", value: true }, onPreconditionFail: "skip" } as unknown as WorkflowStep, next]);
+      await tx.update(orchestrationRuns).set({ contextJson: { allow: true } }).where(eq(orchestrationRuns.id, runId));
+      await yDinhTruoc(tx, { ...d, runId });
+      await khoiDong(runId);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      await tx.update(orchestrationRuns).set({ contextJson: { ...(await ctxCua(tx, runId)), allow: false } }).where(eq(orchestrationRuns.id, runId));
+      const pdu0 = soPduGhi();
+      expect((await resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null })).status).toBe("failed");
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(await buoc(tx, runId, "next")).toBeUndefined();
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });

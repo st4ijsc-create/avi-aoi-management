@@ -1929,3 +1929,109 @@ describe("R1b-2b-2a A2(n) fix round 1 — the edge routes of an unknown outcome 
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["c1"]);
   });
 });
+
+describe("R1b-2b-2a A2(n) fix round 2 — the edge: the unknown flag outranks a sibling, a Continue walks the held compensations only (C-A, I-A, I-E)", () => {
+  const box = (id: string, steps: WorkflowStep[], compensation?: WorkflowStep): WorkflowStep => ({ id, type: "sequence", steps, ...(compensation ? { compensation } : {}) }) as never;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as never;
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    return e;
+  }
+  const lai = { id: "w", type: "delay", ms: 60 } as never;
+
+  it("★ C-A (a) a gate beside the unknown branch: the container's robot STOP goes at once, the segment ends paused, and the paused end carries the URGENT on a full events journal", async () => {
+    const e = await denBuoc(def("n2-a", [gate(), par("p", [move("r1"), gate("g2")], { compensation: robotStop("bs") })]));
+    h.timeoutDispatch.add("r1");
+    e.eventsRefused = true;
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "paused", gateStepId: "g2" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "bs"]); // ★ no approval needed
+    await waitFor(() => h.alerts.length > 0, "the URGENT");
+    expect(h.alerts[0]!.kind).toMatch(/^foe_outcome_unknown_stop_compensation_/);
+    expect(String(runRow(e.runId).error ?? "")).not.toContain("[[A2N");
+  });
+
+  it("★ C-A (c) a sibling held for ANOTHER reason: the container's STOP still goes, and it is told", async () => {
+    const e = await denBuoc(def("n2-c", [gate(), par("p", [move("r1"), box("later", [lai, move("r2")])], { compensation: robotStop("bs") })]));
+    h.timeoutDispatch.add("r1");
+    e.offlineSteps = new Set(["r2"]);
+    e.events = [];
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "bs"]);
+    expect(e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION")).toHaveLength(1);
+  });
+
+  it("★ I-E an unknown step with no compensation is NEVER re-sent on a new claim: gate sibling, approval, next segment", async () => {
+    const e = await denBuoc(def("n2-e", [gate(), par("p", [move("r1"), gate("g2")]), move("r9")]));
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    h.timeoutDispatch.clear();
+    await approveEdgeGate(e);
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "doneFailed", khongRo: true } });
+    const n1 = h.sent.length;
+    const s3 = await edgeSegment(e, 3);
+    expect(h.sent.slice(n1).map((x) => x.stepId)).toEqual([]); // ★ neither r1 again nor forward
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+  });
+
+  it("★ I-E the walker's crash after the failed row, a plain Continue: r1 is not re-sent (the first review's second shape)", async () => {
+    const e = await denBuoc(def("n2-e2", [gate(), move("r1")]));
+    runRow(e.runId).status = "running";
+    await recordEdgeStepRows(fake as never, e.runId, [{ stepId: "r1", stepType: "command", status: "failed", attempt: 1, startedAt: null, finishedAt: new Date(), error: "FOE_OUTCOME_UNKNOWN: command r1", result: undefined }]);
+    runRow(e.runId).status = "held";
+    runRow(e.runId).contextJson = { interrupted: true };
+    await approveEdgeGate(e); // no compensation pending: an ordinary Continue
+    await edgeSegment(e, 2);
+    expect(h.sent.map((x) => x.stepId)).toEqual([]);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  it("★ I-A the walk under a Continue reads no precondition and sends nothing forward: a sibling held by the edge stays unsent, the next step too", async () => {
+    const e = await denBuoc(def("n2-i", [gate(), par("p", [move("r1", { compensation: ot("c1") }), box("later", [lai, move("r2")])]), move("r9")]));
+    h.timeoutDispatch.add("r1");
+    e.offlineSteps = new Set(["r2"]);
+    await edgeSegment(e, 2);
+    e.offlineSteps = undefined;
+    h.timeoutDispatch.clear();
+    const n1 = h.sent.length;
+    await continueOutcomeUnknown(e, "checked");
+    const s3 = await edgeSegment(e, 3);
+    expect(h.sent.slice(n1).map((x) => x.stepId)).toEqual(["c1"]);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+  });
+
+  it("★ M-1 a lost final row: running + a held compensation row keeps the flag, the Continue needs person + reason", async () => {
+    const e = await denBuoc(def("n2-m", [gate(), move("r1", { compensation: ot("c1") })]));
+    runRow(e.runId).status = "running";
+    await recordEdgeStepRows(fake as never, e.runId, [
+      { stepId: "r1", stepType: "command", status: "running", attempt: 1, startedAt: new Date(), finishedAt: null, error: null, result: undefined },
+      { stepId: "c1", stepType: "command", status: "held", attempt: 0, startedAt: null, finishedAt: new Date(), error: "x", result: undefined },
+    ]);
+    runRow(e.runId).status = "held";
+    runRow(e.runId).contextJson = { interrupted: true };
+    await expect(approveEdgeGate(e)).rejects.toThrow(/machine-control rights/);
+    expect(h.sent).toEqual([]);
+  });
+
+  it("★ M-2 a forged report on the end never raises an alert: another claim, a step that is not in the definition", async () => {
+    const e = await denBuoc(def("n2-f", [gate(), move("r1")]));
+    runRow(e.runId).status = "running";
+    const { ganBaoCaoKhongRoEdge } = await import("./foeKetCucKhongRo");
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    const gia = ganBaoCaoKhongRoEdge(
+      "x",
+      [
+        { loai: "held", stepId: "forged", compId: "c", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 2 },
+        { loai: "held", stepId: "r1", compId: "-", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 9 },
+      ],
+      4_000,
+    );
+    await applyEdgeSegmentEnd(fake as never, e.runId, { outcome: "failed", error: gia, nodeCode: "EDGE-A", claimSeq: 2, def: d });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(h.alerts).toEqual([]);
+  });
+});

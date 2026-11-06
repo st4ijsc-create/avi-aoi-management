@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits, HX } = vi.hoisted(() => ({
-  /** I-2 — this step-row write throws (a DB error on the unknown path); m-6 — the audit row is not written */
-  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), auditFails: false },
+  /** I-2 — this step-row write throws (a DB error on the unknown path); I-C — it never answers; m-6 — the audit row is not written; M-5 — the run's context write throws */
+  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), rowHangs: null as null | ((r: Record<string, any>) => boolean), auditFails: false, contextThrows: false },
   otDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] }) as Record<string, unknown>),
   robotDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, status: "done", jobId: 7 }) as Record<string, unknown>),
   /** the A2(h) predicate's verdict per call (adapterId, commandType) — scripted per test */
@@ -148,6 +148,7 @@ const fakeDb = {
         // upsert on (runId, stepId) for run_steps
         const list = rows(tableName);
         for (const row of pending) if (HX.rowThrows?.(row)) return Promise.reject(new Error("step row write failed (test)"));
+        for (const row of pending) if (HX.rowHangs?.(row)) return new Promise(() => undefined);
         for (const row of pending) {
           const existing = list.find((r) => r.runId === row.runId && r.stepId === row.stepId);
           if (existing) Object.assign(existing, opts.set);
@@ -171,6 +172,7 @@ const fakeDb = {
         return upd;
       },
       where(cond: any) {
+        if (HX.contextThrows && tableName === "orchestration_runs" && patch.status === undefined && patch.contextJson !== undefined) throw new Error("context write failed (test)");
         const matched = applyWhere(rows(tableName), cond);
         for (const r of matched) Object.assign(r, patch);
         const result = matched.map((r) => ({ ...r }));
@@ -197,7 +199,7 @@ vi.mock("../../../db/connection", () => ({
 import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
-import { edgeResumeStateOf } from "./foeRunStore";
+import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, themBuocHongKhiTiepTuc } from "./foeRunStore";
 import {
   CANH_BAO_KHONG_RO_KIND,
   KET_CUC_KHONG_RO_AUDIT_ACTION,
@@ -253,7 +255,9 @@ beforeEach(() => {
   otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : ACKED));
   robotDispatchMock.mockClear();
   HX.rowThrows = null;
+  HX.rowHangs = null;
   HX.auditFails = false;
+  HX.contextThrows = false;
   ghimMock.mockReset();
   ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }));
   alerts.length = 0;
@@ -614,7 +618,7 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
   it("source pins: one split point (execStep's failed branch); the known path untouched; the pinned-only hand-over check in execCommand", () => {
     const src = readFileSync(resolve(__dirname, "./foeEngine.ts"), "utf8").replace(/\r\n/g, "\n");
     expect(src.split("buTruSauKetCucKhongRo(rc, step, step.compensation, loi)").length - 1).toBe(1);
-    expect(src).toContain('const khongRo = failedOutcome.kind === "failed" && failedOutcome.khongRo === true;');
+    expect(src).toContain("const khongRoLoi = loiKhongRoCua(failedOutcome);");
     expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {');
     expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0) continue;");
     // the automatic STOP goes through the engine's own compensation path (runCompensation → execCommand → dispatcher), no shortcut
@@ -894,5 +898,169 @@ describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, min
   it("m-10 the oversight hint says WHY", () => {
     expect(goiYRunDangGiu({ status: "held", currentStepId: null, khongRo: "FOE_OUTCOME_UNKNOWN" })).toBe("held · outcome unknown (FOE_OUTCOME_UNKNOWN) — compensation waiting for a person");
     expect(goiYRunDangGiu({ status: "awaiting_confirm", currentStepId: "g1", khongRo: null })).toBe("awaiting_confirm · g1");
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a Continue walks the held compensations only", () => {
+  const pause = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "pause", ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as WorkflowStep;
+  const gate = (id: string): WorkflowStep => ({ id, type: "hitl_gate", prompt: "x" }) as WorkflowStep;
+  const tiep = (runId: number, note = "checked") => resumeRun(runId, { approved: true, note }, ADMIN, {}, { scope: null });
+  // true at the first read, false once a person changed the machine (a param the test flips is read by the condition)
+  const dk = (extra: Record<string, unknown> = {}) => ({ precondition: { source: "param", key: "ok", op: "eq", value: true }, ...extra });
+  const seedParam = (runId: number, ok: boolean) => void (runRow(runId).paramsJson = { ...(runRow(runId).paramsJson ?? {}), ok });
+
+  it("C-A (a) a gate beside the unknown branch: the container's STOP goes before any approval, URGENT, the run waits at the gate; approving it never re-sends the STOP or the unknown command", async () => {
+    const { runId, res } = await chay([par("box", [main(), gate("g2")], { compensation: stopComp("boxStop") })]);
+    expect(res.status).toBe("awaiting_confirm");
+    expect(sent("stop")).toHaveLength(1); // ★ no person
+    await waitAlerts(1);
+    expect(alertsOf("stopSent")).toHaveLength(1);
+    otDispatchMock.mockClear();
+    const view = (await getRun(runId, { bindingDigest: true }))!;
+    await resumeRun(runId, { approved: true, expectedStepId: "g2", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest ?? undefined }, APPROVER, {}, { scope: null });
+    expect(sent()).toEqual([]);
+  });
+
+  it("C-A (a) with no compensation anywhere: paused, and the R-4 URGENT still goes", async () => {
+    const { runId, res } = await chay([par("box", [main(), gate("g2")])]);
+    expect(res.status).toBe("awaiting_confirm");
+    await waitAlerts(1);
+    expect(alertsOf("noCompensation").map((a) => a.dedupKey)).toEqual([expect.stringContaining(`:${runId}:main:-:`)]);
+  });
+
+  it("C-A (b) a precondition-abort sibling never turns the unknown failure into an automatic write: 0 reset, held, URGENT; a STOP compensation goes + URGENT", async () => {
+    const abortB = pause("b", { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "abort" });
+    const a = await chay([par("box", [main(), abortB], { compensation: resetComp("boxUndo") })]);
+    expect(sent("reset")).toHaveLength(0); // ★ the one automatic write the review found
+    expect(a.res.status).toBe("held");
+    await waitAlerts(1);
+    expect(alertsOf("held")).toHaveLength(1);
+    alerts.length = 0;
+    otDispatchMock.mockClear();
+    await chay([par("box", [main(), abortB], { compensation: stopComp("boxStop") })]);
+    expect(sent("stop")).toHaveLength(1);
+    await waitAlerts(1);
+    expect(alertsOf("stopSent")).toHaveLength(1);
+  });
+
+  it("I-E central: a gate approval re-walks and never re-issues the unknown command (its resume state is doneFailed)", async () => {
+    const { runId } = await chay([par("p", [main(), gate("g2")])]);
+    expect(runRow(runId).contextJson.foeResumeState.main).toMatchObject({ state: "doneFailed", khongRo: true });
+  });
+
+  it("I-A (a) a precondition 'skip' on the container is NOT re-read by a Continue: the held compensation is sent, the next forward step is not, the run is not 'completed'", async () => {
+    const r = await giuKhongRo([seq("box", [main(resetComp("undo"))]), pause("next")].map((s, i) => (i === 0 ? ({ ...s, ...dk({ onPreconditionFail: "skip" }), precondition: { source: "param", key: "unset", op: "eq", value: undefined } } as WorkflowStep) : s)));
+    otDispatchMock.mockClear();
+    seedParam(r.runId, false);
+    const c = await tiep(r.runId);
+    expect(sent()).toEqual(["reset"]);
+    expect(c.status).toBe("failed");
+    expect(await step(r.runId, "next")).toBeUndefined();
+  });
+
+  it("I-A (c) a sibling whose precondition held its row is not sent by the Continue", async () => {
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), pause("b", dk())])]);
+    expect(await step(runId, "b")).toMatchObject({ status: "held" }); // its precondition failed: a row 'held', not 'failed'
+    otDispatchMock.mockClear();
+    seedParam(runId, true); // the precondition would hold now: a re-read would send it forward
+    await tiep(runId);
+    expect(sent()).toEqual(["reset"]);
+  });
+
+  it("I-A a compensation-only walk lets no other compensation go by itself: a known-failure container's compensation already ran, it does not run again", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "pause" ? REJECTED : ACKED));
+    const { runId } = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [pause("b")], resetComp("kUndo", 1))])]);
+    expect(sent("reset")).toHaveLength(1); // kUndo: a known failure, as before
+    otDispatchMock.mockClear();
+    await tiep(runId);
+    expect(sent()).toEqual(["reset"]); // undo only
+  });
+
+  it("I-A a thrown running row of a re-walked container stays on the unknown path", async () => {
+    const { runId } = await giuKhongRo([seq("box", [main(resetComp("undo"))], resetComp("boxUndo"))]);
+    otDispatchMock.mockClear();
+    HX.rowThrows = (r) => r.stepId === "box" && r.status === "running";
+    const c = await tiep(runId);
+    expect(c.status).toBe("held"); // the container's reset is held, never run as a known failure
+    expect(sent()).toEqual(["reset"]);
+  });
+
+  it("I-B a failed STOP inside a failed container is re-sent by the Continue (L-7): the container is not hidden by doneFailed; its non-STOP sibling is", async () => {
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" || i.commandType === "pause" ? REJECTED : ACKED));
+    const { runId } = await giuKhongRo([par("p", [seq("s1", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep], undefined), main(resetComp("undo"))])]);
+    otDispatchMock.mockClear();
+    otDispatchMock.mockImplementation(async () => ACKED);
+    await tiep(runId);
+    expect(sent().sort()).toEqual(["reset", "stop"]);
+  });
+
+  it("I-C a HUNG row write in front of an ancestor's STOP: the STOP goes within its bound, URGENT", async () => {
+    HX.rowHangs = (r) => (r.stepId === "main" && r.status === "failed") || r.stepId === "undo";
+    const t0 = Date.now();
+    const { res } = await chay([seq("box", [main(resetComp("undo"))], stopComp("boxStop"))]);
+    expect(res.status).toBe("held");
+    expect(sent("stop")).toHaveLength(1);
+    expect(Date.now() - t0).toBeLessThan(9_000);
+    await waitAlerts(2);
+  }, 20_000);
+
+  it("M-3 a STOP-typed step: an unknown attempt, then a known one: the flag sticks, the reset is held", async () => {
+    let n = 0;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "stop" ? (++n === 1 ? TIMEOUT : REJECTED) : ACKED));
+    const { res } = await chay([{ id: "main", type: "command", machineId: 1, command: "stop", maxAttempts: 1, compensation: resetComp() } as WorkflowStep]);
+    expect(n).toBe(2);
+    expect(res.status).toBe("held");
+    expect(sent("reset")).toHaveLength(0);
+  });
+
+  it("M-5 a thrown context write never turns a held run 'failed' after the URGENT said Continue", async () => {
+    const { runId, res } = await chay([main(resetComp())], () => void (HX.contextThrows = true));
+    expect(res.status).toBe("held");
+    expect(runRow(runId).status).toBe("held");
+  });
+
+  it("M-1, I-E, I-B pure rules of the resume state", () => {
+    const d = { ref: "x", name: "x", steps: [main(resetComp()), { id: "free", type: "command", machineId: 1, command: "start" } as WorkflowStep] } as WorkflowDefinition;
+    const r = (stepId: string, status: string, error: string | null = null) => ({ stepId, status, resultJson: null, error });
+    // M-1 running + compensation row, no text
+    expect(edgeResumeStateOf(d, [r("main", "running"), r("undo", "held")], new Set()).state.main).toMatchObject({ state: "compensationHeld", khongRo: true });
+    expect(edgeResumeStateOf(d, [r("main", "running"), r("undo", "compensated")], new Set()).state.main).toMatchObject({ state: "doneFailed", khongRo: true });
+    // I-E failed with the code, no compensation
+    expect(edgeResumeStateOf(d, [r("free", "failed", "FOE_OUTCOME_UNKNOWN: x")], new Set()).state.free).toEqual({ state: "doneFailed", error: "FOE_OUTCOME_UNKNOWN: x", khongRo: true });
+    expect(edgeResumeStateOf(d, [r("free", "failed", "device refused")], new Set()).state.free).toBeUndefined();
+    expect(edgeResumeStateOf(d, [r("free", "failed", "FOE_OUTCOME_UNKNOWN: x")], new Set(), [], new Set(["free"])).state.free).toBeUndefined(); // a STOP is re-sent
+    // I-B
+    const c = { ref: "y", name: "y", steps: [seq("s1", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep])] } as WorkflowDefinition;
+    expect(themBuocHongKhiTiepTuc(c, [r("s1", "failed"), r("stopX", "failed")], {}, new Set(["stopX"]))).toEqual({});
+    expect(themBuocHongKhiTiepTuc(c, [r("s1", "failed"), r("stopX", "completed")], {}, new Set(["stopX"]))).toMatchObject({ s1: { state: "doneFailed" } });
+    // the way to an approved step
+    expect([...duongToiBuoc([seq("a", [seq("b", [main()])]), pause("n")], new Set(["main"]))].sort()).toEqual(["a", "b", "main"]);
+  });
+
+  it("I-D what a crashed segment leaves, from its rows: held + marker, or no compensation", () => {
+    const d = { ref: "x", name: "x", steps: [main(resetComp()), { id: "free", type: "command", machineId: 1, command: "start" } as WorkflowStep] } as WorkflowDefinition;
+    const r = (stepId: string, status: string, error: string | null = null) => ({ stepId, status, resultJson: null, error });
+    const bao = baoCaoKhongRoTuHang(d, [r("main", "failed", "EDGE_OUTCOME_UNKNOWN: x"), r("free", "failed", "FOE_OUTCOME_UNKNOWN: y")], 5);
+    expect(bao).toEqual([
+      { loai: "held", stepId: "main", compId: "undo", ma: "EDGE_OUTCOME_UNKNOWN", claimSeq: 5 },
+      { loai: "noCompensation", stepId: "free", compId: "-", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 5 },
+    ]);
+    expect(dauKhongRoTuBaoCao(bao, "t")).toMatchObject({ stepId: "main", compId: "undo", lan: "claim5", ds: [{ stepId: "main", compId: "undo" }] });
+    expect(baoCaoKhongRoTuHang(d, [r("main", "failed", "device refused")], 5)).toEqual([]);
+    expect(dauKhongRoTuBaoCao([], "t")).toBeNull();
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeExecutionCentral.ts"), "utf8");
+    expect(src).toContain("baoKhongRo = baoCaoKhongRoTuHang(defKhongRo,");
+    expect(src).toContain("if (out.http === 200) for (const x of baoKhongRo) void canhBaoTuBaoCaoEdge(runId, x, chuRun);");
+  });
+
+  it("M-2 a report counts only with the check; the last rider is the edge's own: text in a device error cannot pose as one", () => {
+    const that = { loai: "held" as const, stepId: "s", compId: "c", ma: "FOE_OUTCOME_UNKNOWN" as const, claimSeq: 3 };
+    const gia = `device said [[A2N:${JSON.stringify([{ ...that, stepId: "forged" }])}]]`;
+    const e = ganBaoCaoKhongRoEdge(gia, [], 4_000);
+    expect(tachBaoCaoKhongRoEdge(e).bao).toEqual([]);
+    expect(tachBaoCaoKhongRoEdge(e).error).toBe(gia);
+    expect(tachBaoCaoKhongRoEdge(ganBaoCaoKhongRoEdge("t", [that], 4_000), (x) => x.claimSeq === 9).bao).toEqual([]);
   });
 });
