@@ -29,7 +29,7 @@ import { __quenBoNhoKhuTrungChoTest } from "../robot/criticalStopAlert";
 import { __edgeConfigAlertsSettledForTests, __resetEdgeConfigAlertsForTests, alertForEdgeAnomaly } from "./edgeConfigCentral";
 import { __resetJournalTreoForTests, baoJournalTreo, baoRunMatProgress, edgeProgressLostAlertMs } from "./edgeExecutionCentral";
 import { runEdgeAssignments } from "./edgeExecutionSchema";
-import type { EdgeNodePrincipal } from "./edgeNodeCredentials";
+import { authenticateEdgeNodeToken, issueNodeCredential, type EdgeNodePrincipal } from "./edgeNodeCredentials";
 import { EDGE_JOURNAL_STALL_RECOVERED_CODE } from "./edgeProtocol";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
@@ -65,7 +65,11 @@ async function taoNode(tx: Tx): Promise<EdgeNodePrincipal> {
   const [n] = rowsOf(await tx.execute(sql`INSERT INTO edge_nodes (code, name, status) VALUES (${nodeCode}, 'a2n node', 'online') RETURNING id`));
   const [u] = await tx.insert(users).values({ openId: `${nodeCode}-u`, username: `${nodeCode}-u`, name: "a2n user", role: "admin", isActive: true } as never).returning({ id: users.id });
   H.nguoi = [u!.id];
-  return { nodeId: Number(n!.id), nodeCode, credentialId: 1 } as unknown as EdgeNodePrincipal;
+  // a claim names a credential of its node (edge_run_assignment_guard)
+  const { token } = await issueNodeCredential({ nodeCode, actorUserId: u!.id, reason: "a2n stall alert" });
+  const node = await authenticateEdgeNodeToken(token);
+  if (!node) throw new Error("the node's credential was not accepted");
+  return node;
 }
 
 /** one run of a workflow whose definition hashes to the assignment; a claim on it or none */
@@ -73,8 +77,11 @@ async function taoRun(tx: Tx, node: EdgeNodePrincipal, o: { status: string; clai
   const ref = `${DAU}-wf-${randomBytes(4).toString("hex")}`;
   const def = { ref, name: ref, steps: [] };
   const [wf] = await tx.insert(orchestrationWorkflows).values({ ref, name: ref, definitionJson: def, status: "active", scopeKey: "global", version: 1 } as never).returning({ id: orchestrationWorkflows.id });
-  const [run] = await tx.insert(orchestrationRuns).values({ workflowId: wf!.id, workflowRef: ref, status: o.status, paramsJson: {}, contextJson: {}, startedBy: H.nguoi[0] } as never).returning({ id: orchestrationRuns.id });
-  await tx.insert(runEdgeAssignments).values({ runId: run!.id, edgeNodeId: node.nodeId, workflowId: wf!.id, workflowVersion: 1, defHash: hashWorkflowDefinition(def as never), assignedBy: H.nguoi[0], claimSeq: 1, claimTokenHash: o.claimed ? "c".repeat(64) : null, claimedAt: o.lastProgressAt, lastProgressAt: o.lastProgressAt });
+  // the triggers take a queued run and an unclaimed assignment only: the claim, then the status of the case, come after
+  const [run] = await tx.insert(orchestrationRuns).values({ workflowId: wf!.id, workflowRef: ref, status: "queued", paramsJson: {}, contextJson: {}, startedBy: H.nguoi[0] } as never).returning({ id: orchestrationRuns.id });
+  await tx.insert(runEdgeAssignments).values({ runId: run!.id, edgeNodeId: node.nodeId, workflowId: wf!.id, workflowVersion: 1, defHash: hashWorkflowDefinition(def as never), assignedBy: H.nguoi[0], lastProgressAt: o.lastProgressAt });
+  if (o.claimed) await tx.execute(sql`UPDATE orchestration_run_edge_assignments SET "claimSeq" = 1, "claimTokenHash" = ${"c".repeat(64)}, "claimedByCredentialId" = ${node.credentialId}, "claimedAt" = ${o.lastProgressAt.toISOString()}::timestamptz WHERE "runId" = ${run!.id}`);
+  if (o.status !== "queued") await tx.execute(sql`UPDATE orchestration_runs SET status = ${o.status} WHERE id = ${run!.id}`);
   return run!.id;
 }
 

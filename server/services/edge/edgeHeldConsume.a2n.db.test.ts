@@ -21,7 +21,9 @@ const H = vi.hoisted(() => ({ tx: null as unknown }));
 
 vi.mock("../../db/connection", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../db/connection")>();
-  return { ...real, getDb: (async () => (H.tx ? H.tx : null)) as typeof real.getDb, __realGetDb: real.getDb };
+  // getReadDb too: the node's factory scope resolves through it (reportAggregators), and a separate connection does not see this transaction's rows
+  const trongTx = (async () => (H.tx ? H.tx : null)) as typeof real.getDb;
+  return { ...real, getDb: trongTx, getReadDb: trongTx as unknown as typeof real.getReadDb, getJobsDb: trongTx as unknown as typeof real.getJobsDb, __realGetDb: real.getDb };
 });
 
 import * as conn from "../../db/connection";
@@ -217,13 +219,10 @@ describe.skipIf(!onTest)("a2n round C — the held cycle (real _test DB, ROLLBAC
       const a = (await abortRun(r.runId, HE_THONG, "a2n")) as unknown as { ok: boolean; abortStops?: { sent: string[]; failed: string[]; pending: string[] } };
       expect(a.ok, JSON.stringify(a)).toBe(true);
       expect((await hangRun(tx, r.runId)).status).toBe("aborted");
-      const da = [...(a.abortStops?.sent ?? []), ...(a.abortStops?.failed ?? []), ...(a.abortStops?.pending ?? [])];
-      expect(da).toContain("s1");
-      expect(da).not.toContain("c1");
-      if ((a.abortStops?.failed ?? []).includes("s1")) {
-        const ds = await docRunAbortCanGuiLaiStop(tx as never, the.node);
-        expect(ds.hang.map((x) => x.a.runId)).toContain(r.runId);
-      }
+      // measured on real rows: central has no driver for the node's robot, so its own try fails and the node's re-send carries s1
+      expect(a.abortStops).toMatchObject({ sent: [], failed: ["s1"], pending: [] });
+      const ds = await docRunAbortCanGuiLaiStop(tx as never, the.node);
+      expect(ds.hang.map((x) => x.a.runId)).toContain(r.runId);
     });
   });
 
