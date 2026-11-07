@@ -85,9 +85,15 @@ export function raiseCriticalStopAlert(a: {
    * ở CSDL test). Cảnh báo THEO LẦN (`dedupKey` có `Date.now()`) KHÔNG đặt cờ này — luôn ghi. Lỗi kiểm trùng ⇒ gửi như thường.
    */
   khuTrungBenVung?: { windowMs?: number };
+  /**
+   * A2(n) T2 — told once, when the first try ended (its deadline included): is the URGENT stored? true ⇔ there is at least one recipient (M4: nobody to tell is not durable) and
+   * every recipient has the row, written now or found by the dedup. A late row does not answer again. Another call writing the same row is no proof (Q-7): false.
+   */
+  baoBen?: (ben: boolean) => void;
 }): Promise<void> {
   console.error(`[StopAlert] CRITICAL: ${a.message}`);
   const pending = new Set([...new Set(a.recipients)].filter((u) => Number.isSafeInteger(u) && u > 0));
+  const coNguoiNhan = pending.size > 0;
   const persist = async (attempt: number) => {
     const { sendNotification } = await import("../notificationService");
     if (attempt === 0 && a.khuTrungBenVung) {
@@ -96,13 +102,16 @@ export function raiseCriticalStopAlert(a: {
       for (const u of da) pending.delete(u);
     }
     for (const userId of [...pending]) {
-      const khoaGhi = a.khuTrungBenVung && attempt === 0 ? `${userId}|${a.dedupKey}` : null;
+      const khoa = a.khuTrungBenVung ? `${userId}|${a.dedupKey}` : null;
+      const luc = khoa ? vuaGhi.get(khoa) : undefined;
+      if (luc !== undefined && Date.now() - luc < (a.khuTrungBenVung?.windowMs ?? cuaSoKhuTrungMs())) {
+        pending.delete(userId); // hàng này đã ghi xong, ở lượt nào cũng vậy
+        continue;
+      }
+      // chỉ lần đầu giữ khoá: lần thử lại không được chờ một lần ghi có thể không bao giờ trả lời
+      const khoaGhi = attempt === 0 ? khoa : null;
       if (khoaGhi) {
-        const luc = vuaGhi.get(khoaGhi);
-        if (dangGhi.has(khoaGhi) || (luc !== undefined && Date.now() - luc < (a.khuTrungBenVung?.windowMs ?? cuaSoKhuTrungMs()))) {
-          pending.delete(userId); // lượt khác đang ghi / vừa ghi đúng hàng này
-          continue;
-        }
+        if (dangGhi.has(khoaGhi)) continue; // Q-7: lượt khác ĐANG ghi chưa phải bằng chứng đã có hàng; người này còn trong `pending` (chưa bền), lần thử lại xem lại
         dangGhi.add(khoaGhi);
       }
       const row = await sendNotification(
@@ -116,9 +125,9 @@ export function raiseCriticalStopAlert(a: {
         });
       if (row) {
         pending.delete(userId);
-        if (khoaGhi) {
+        if (khoa) {
           if (vuaGhi.size >= VUA_GHI_TOI_DA) vuaGhi.clear();
-          vuaGhi.set(khoaGhi, Date.now());
+          vuaGhi.set(khoa, Date.now());
         }
       }
     }
@@ -145,5 +154,12 @@ export function raiseCriticalStopAlert(a: {
     .catch((err) => {
       console.error(`[StopAlert] ${a.kind} alert failed or is stuck: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
     })
-    .finally(() => retry(1));
+    .finally(() => {
+      try {
+        a.baoBen?.(coNguoiNhan && pending.size === 0);
+      } catch (err) {
+        console.error(`[StopAlert] ${a.kind}: baoBen threw: ${String((err as Error)?.message ?? err).slice(0, 160)}`);
+      }
+      retry(1);
+    });
 }
