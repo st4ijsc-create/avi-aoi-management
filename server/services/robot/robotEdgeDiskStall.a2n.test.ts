@@ -608,6 +608,28 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     expect(ket[83]).toBe("failed");
   }, 20_000);
 
+  it("★ the narrow case with another refusal: a run refused MOTION_LOCKED while another run's consume overran does not count, it ends failed", async () => {
+    process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "true";
+    const x = await dungThat();
+    let tha: () => void = () => undefined;
+    H.preflight = new Promise<void>((r) => (tha = r));
+    themRun(x.central, 88, [move("b1"), stop("s1")], ["s1"]);
+    await x.agent.tick();
+    await choDen(() => H.preflight === null, "run 88 waits in its preflight, past the admission");
+    themRun(x.central, 89, [move("m2")], []);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "run 89's consume overran");
+    expect(x.journal.consumeOverran()).toBe(true);
+    (H.robot as Row).driver.lockMotion("test", "locked while run 88 waited");
+    tha();
+    await nghi(60);
+    await hetDoan(x, 2);
+    const ket = Object.fromEntries(x.central.callsTo("complete").map((c) => [c.runId, c.body]));
+    expect(ket[88]).toMatchObject({ outcome: "failed", error: "MOTION_LOCKED" });
+    expect(ket[89]).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+  }, 20_000);
+
   it("★ B5 stays as it is: Continue fails the step and sends no STOP, and the run's text says use Abort before that", async () => {
     const dir = await tam.mk();
     const steps = [move("m1"), stop("s1")];

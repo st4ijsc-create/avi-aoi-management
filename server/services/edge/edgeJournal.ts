@@ -819,7 +819,7 @@ export class EdgeJournal {
     const synced = (async () => (await written) && (await this.syncChained()))();
     const ok = await this.bounded(synced, this.authSyncTimeoutMs);
     if (!ok) {
-      this.consumeOverrunSeen ||= !this.ioFailed;
+      this.consumeOverrunSeen = true;
       if (!this.ioFailed) this.overrun(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`);
       return { ok: false, reason: "io_error" }; // the jti stays consumed (fail-closed)
     }
