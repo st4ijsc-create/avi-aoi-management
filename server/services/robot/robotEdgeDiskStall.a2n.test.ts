@@ -6,7 +6,9 @@
  *   C1  the driver took a real `move`, the dispatcher waits on its ledger record, the walker stands ⇒ URGENT; Abort sends the STOP with the disk still hung;
  *   the real consumeAuthorization past its bound ⇒ nothing reaches the driver, non-STOP closed until restart, the run still reports and ends once the disk
  *   returns, the URGENT of the end says so;
- *   Continue on that node after a restart ⇒ the run is walked again.
+ *   a restarted node takes the run again (a fresh central: not central's real Continue, see that case);
+ *   a STOP in a compensation on the failing path reaches the driver once the disk returns, the run stays failed: locked. A forward STOP behind that step does NOT,
+ *   and Abort then answers "already terminal": measured in the round 2 report, not fixed here, the coordinator decides.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -279,7 +281,9 @@ describe("a2n — the real consumeAuthorization past its bound", () => {
     expect(x.central.callsTo("claim").filter((c) => c.runId === 64)).toHaveLength(1);
     expect(ten()).toEqual([]);
 
-    // the restart: everything down, the same journal directory, a new epoch; the run is queued again, its STOP not yet sent
+    // the restart: everything down, the same journal directory, a new epoch; the run is queued again, its STOP not yet sent. A FRESH central on purpose: this measures that
+    // a restarted node takes and walks a run. It is NOT central's real Continue: there the authorisation m1 got, never reported, is in the ledger, edgeResumeStateOf
+    // answers outcomeUnknown, and the re-walk fails m1 without reaching s1 (measured, round 2 report).
     await don.pop()!();
     const c2 = new FakeCentral();
     d.store.clear();
@@ -296,5 +300,48 @@ describe("a2n — the real consumeAuthorization past its bound", () => {
     await y.agent.tick();
     await choDen(() => c2.callsTo("complete").length === 1, "complete");
     expect(c2.callsTo("complete")[0].body.outcome).toBe("completed");
+  }, 20_000);
+});
+
+describe("a2n — consumeAuthorization past its bound with a STOP in a compensation: locked, the STOP reaches the driver and the run stays failed", () => {
+  const HANG_M2 = /"k":"auth\.consumed".*"stepId":"m2"/;
+  const sauKhiDiaVe = async (x: EdgeTrenDiaGia) => {
+    x.dia.tha();
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await choDen(() => x.agent.liveRunIds().length === 0, "the walker ended");
+    await x.agent.tick();
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await x.agent.tick();
+    await choDen(() => x.central.callsTo("complete").length === 1, "complete");
+  };
+
+  it("★ the failing step's own compensation: nothing past m1 while the disk hangs; the disk returns, the STOP goes, the run ends failed", async () => {
+    const x = await dung();
+    themRun(x.central, 65, [move("m1"), { ...move("m2"), compensation: stop("c1") }], ["c1"]);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "the consume overran");
+    await nghi(60);
+    expect(ten()).toEqual(["move"]);
+    await sauKhiDiaVe(x);
+    expect(ten()).toEqual(["move", "abort"]);
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "JOURNAL_CONSUME_FAILED" });
+    await x.shipper.flushAll();
+    expect(x.central.received.report.some((r: Row) => r.kind === "step" && r.stepId === "c1" && r.status === "compensated")).toBe(true);
+  }, 20_000);
+
+  it("★ the compensation of the container around it: the same", async () => {
+    const x = await dung();
+    themRun(x.central, 66, [{ id: "q", type: "sequence", steps: [move("m1"), move("m2")], compensation: stop("c1") }], ["c1"]);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "the consume overran");
+    await nghi(60);
+    expect(ten()).toEqual(["move"]);
+    await sauKhiDiaVe(x);
+    expect(ten()).toEqual(["move", "abort"]);
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "JOURNAL_CONSUME_FAILED" });
   }, 20_000);
 });

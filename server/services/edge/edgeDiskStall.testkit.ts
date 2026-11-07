@@ -24,8 +24,8 @@ export interface DiskGia {
   treoAtomic(): void;
   /** the next call of this kind, and every later one, hangs */
   treoOp(op: "close" | "open" | "unlink"): void;
-  /** every `sync` hangs from the first line holding `s` that is written (the line itself reaches the file) */
-  treoSauKhiGhi(s: string): void;
+  /** every `sync` hangs from the first line holding `s` (or matching it) that is written (the line itself reaches the file) */
+  treoSauKhiGhi(s: string | RegExp): void;
   /** the next `sync` rejects, once (a real IO error) */
   loiSync(): void;
   /** the next `write` rejects, once (a real IO error) */
@@ -36,7 +36,7 @@ export interface DiskGia {
 export function diskGia(): DiskGia {
   const treo = { sync: false, write: false, atomic: false, close: false, open: false, unlink: false };
   const loi = { sync: false, write: false };
-  let sauKhiGhi: string | null = null;
+  let sauKhiGhi: string | RegExp | null = null;
   let mo: () => void = () => undefined;
   let cho = new Promise<void>((r) => (mo = r));
   const dem = { write: 0, sync: 0, atomic: 0, close: 0, open: 0, unlink: 0 };
@@ -55,7 +55,7 @@ export function diskGia(): DiskGia {
           }
           if (treo.write) await cho;
           await f.write(data);
-          if (sauKhiGhi !== null && data.includes(sauKhiGhi)) treo.sync = true;
+          if (sauKhiGhi !== null && (typeof sauKhiGhi === "string" ? data.includes(sauKhiGhi) : sauKhiGhi.test(data))) treo.sync = true;
         },
         async sync() {
           dem.sync++;
