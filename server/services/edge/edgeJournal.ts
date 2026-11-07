@@ -16,7 +16,9 @@
  * succeeded; pending() returns only the durable prefix of a stream, so central never holds a record the edge could lose (and a
  * crash can never make the edge send different content under a seq central already has).
  *   • `auth.consumed` — fsynced BEFORE consumeAuthorization() resolves (the driver call comes after); a sync that fails / overruns
- *     ⇒ io_error, the jti stays consumed, the journal unhealthy (fail-closed).
+ *     ⇒ io_error, the jti stays consumed, the journal unhealthy (fail-closed). a2n: FAILS and OVERRUNS differ past that point — a failed
+ *     fsync stops the writing (ioFailed); an overrun is a disk that may still return: no new non-STOP work until restart either way
+ *     (fsyncOverrun), but the records queued behind it are written once it does, so a run can report and end instead of sticking in `running`.
  *   • `lock` events — fsynced at once (the motion-lock state must survive a crash; a STOP-confirmed clear bounded like a STOP).
  *   • everything else — group commit (one fsync per window, default 50 ms); `{stop:true}` bounds the wait by
  *     STOP_DB_STEP_DEADLINE_MS (L-7: a STOP never waits on the disk beyond it — the record becomes durable / shipped later).
@@ -261,6 +263,12 @@ export class EdgeJournal {
   private unsynced: Pending[] = [];
   private queuedBytes = 0;
   private ioFailed = false;
+  /** a2n — an fsync overran its bound: closed to non-STOP work until restart, as ioFailed; but the disk may return, and takes the queued records */
+  private fsyncOverrun = false;
+  /** a2n round C — the overrun was an `auth.consumed` one (an `auth.unused` overrun leaves it false) */
+  private consumeOverrunSeen = false;
+  /** a2n — when the write / fsync now in the chain started. The chain is serial: at most one */
+  private ioStartedAt: number | null = null;
   private closed = false;
   private droppedRobotStates = 0;
   private compactScheduled = false;
@@ -571,10 +579,18 @@ export class EdgeJournal {
   }
   /** May NEW non-STOP actuation start? false when full, unhealthy (an IO error) or closed. STOP never asks. */
   admitNonStop(): boolean {
-    return !this.closed && !this.ioFailed && !this.isFull();
+    return !this.closed && !this.unhealthy && !this.isFull();
   }
   isJtiConsumed(jti: string): boolean {
     return this.jtis.has(jti);
+  }
+  /** a2n round C — a consumeAuthorization ran past its bound and no real IO error came after it. Never true for an `auth.unused` overrun. */
+  consumeOverran(): boolean {
+    return this.consumeOverrunSeen && !this.ioFailed;
+  }
+  /** a2n — since when the write / fsync now in the chain has been running (this journal's clock); null ⇔ none. The age of ONE call, not of a queue. */
+  stalledSince(): number | null {
+    return this.ioStartedAt;
   }
   ackedSeq(stream: string, epoch: string = this.epochValue): number {
     return this.streams.get(key(epoch, stream))?.ackedSeq ?? 0;
@@ -607,7 +623,7 @@ export class EdgeJournal {
       bytes: this.bytesOnDisk() + this.queuedBytes,
       maxBytes: this.maxBytes,
       full: this.isFull(),
-      healthy: !this.ioFailed && !this.closed,
+      healthy: !this.unhealthy && !this.closed,
       droppedRobotStates: this.droppedRobotStates,
       segments: this.segments.length,
       opened: this.openedValue.kind,
@@ -662,6 +678,27 @@ export class EdgeJournal {
 
   // ── writing ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+  /** a2n — no NEW non-STOP actuation until restart: an IO error, or an fsync that overran its bound. Never reopened in this process. */
+  private get unhealthy(): boolean {
+    return this.ioFailed || this.fsyncOverrun;
+  }
+
+  /** a2n — one call into the chain's io, with its age visible to stalledSince(). */
+  private async timed<T>(work: () => Promise<T>): Promise<T> {
+    this.ioStartedAt = Math.max(0, Math.trunc(this.now()));
+    try {
+      return await work();
+    } finally {
+      this.ioStartedAt = null;
+    }
+  }
+
+  /** a2n — an fsync overran its bound: as fail() for admission, but a disk that returns still takes the queued records. */
+  private overrun(what: string): void {
+    if (!this.fsyncOverrun) this.log(`[EdgeJournal] ${what} — the journal is UNHEALTHY: no new non-STOP actuation until restart`);
+    this.fsyncOverrun = true;
+  }
+
   private fail(err: unknown): void {
     if (!this.ioFailed) this.log(`[EdgeJournal] IO error — the journal is UNHEALTHY: no new non-STOP actuation until restart (${(err as Error)?.message ?? err})`);
     this.ioFailed = true;
@@ -682,8 +719,9 @@ export class EdgeJournal {
     const written = this.chain.then(async () => {
       this.queuedBytes -= len;
       if (this.ioFailed || !this.fh) return false;
+      const fh = this.fh;
       try {
-        await this.fh.write(line);
+        await this.timed(() => fh.write(line));
         const seg = this.segments[this.segments.length - 1];
         seg.bytes += len;
         if (reportable) seg.maxSeq.set(k, Math.max(seg.maxSeq.get(k) ?? 0, seq));
@@ -702,13 +740,14 @@ export class EdgeJournal {
   /** Inside the chain: fsync + close the active segment, open the next one. */
   private async roll(): Promise<void> {
     if (!this.fh) return;
-    await this.fh.sync();
+    const fh = this.fh;
+    await this.timed(() => fh.sync());
     this.markDurable(this.unsynced.splice(0));
-    await this.fh.close().catch(() => undefined);
+    await this.timed(() => fh.close()).catch(() => undefined);
     const n = this.segments[this.segments.length - 1].n + 1;
-    await this.io.writeFileAtomic(path.join(this.dir, segName(n)), "");
+    await this.timed(() => this.io.writeFileAtomic(path.join(this.dir, segName(n)), ""));
     this.segments.push({ n, bytes: 0, maxSeq: new Map() });
-    this.fh = await this.io.openAppend(path.join(this.dir, segName(n)));
+    this.fh = await this.timed(() => this.io.openAppend(path.join(this.dir, segName(n))));
     this.maybeCompact();
   }
 
@@ -719,9 +758,10 @@ export class EdgeJournal {
   private syncChained(): Promise<boolean> {
     const p = this.chain.then(async () => {
       if (this.ioFailed || !this.fh) return false;
+      const fh = this.fh;
       const batch = this.unsynced.splice(0);
       try {
-        await this.fh.sync();
+        await this.timed(() => fh.sync());
         this.markDurable(batch);
         return true;
       } catch (err) {
@@ -772,14 +812,15 @@ export class EdgeJournal {
     if (this.closed) return { ok: false, reason: "closed" };
     if (typeof c?.jti !== "string" || c.jti.length === 0 || c.jti.length > 64) return { ok: false, reason: "io_error" };
     if (this.jtis.has(c.jti)) return { ok: false, reason: "jti_consumed" };
-    if (this.ioFailed) return { ok: false, reason: "io_error" };
+    if (this.unhealthy) return { ok: false, reason: "io_error" };
     if (this.isFull()) return { ok: false, reason: "journal_full" };
     this.jtis.set(c.jti, Math.max(0, Math.trunc(this.now()))); // at once: a concurrent second use is refused
     const { written } = this.enqueue(EDGE_JOURNAL_AUTH_STREAM, "auth.consumed", { jti: c.jti, runId: c.runId, claimSeq: c.claimSeq, stepId: c.stepId, attempt: c.attempt }, false);
     const synced = (async () => (await written) && (await this.syncChained()))();
     const ok = await this.bounded(synced, this.authSyncTimeoutMs);
     if (!ok) {
-      if (!this.ioFailed) this.fail(new Error(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`));
+      this.consumeOverrunSeen = true;
+      if (!this.ioFailed) this.overrun(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`);
       return { ok: false, reason: "io_error" }; // the jti stays consumed (fail-closed)
     }
     return { ok: true };
@@ -796,13 +837,13 @@ export class EdgeJournal {
     if (this.closed) return { ok: false, reason: "closed" };
     if (typeof c?.jti !== "string" || c.jti.length === 0 || c.jti.length > 64) return { ok: false, reason: "invalid" };
     if (this.jtis.has(c.jti)) return { ok: false, reason: "jti_consumed" };
-    if (this.ioFailed) return { ok: false, reason: "io_error" };
+    if (this.unhealthy) return { ok: false, reason: "io_error" };
     this.jtis.set(c.jti, Math.max(0, Math.trunc(this.now()))); // at once: a concurrent use is refused
     const { written } = this.enqueue(EDGE_JOURNAL_AUTH_STREAM, "auth.unused", { jti: c.jti, runId: c.runId, claimSeq: c.claimSeq, stepId: c.stepId, attempt: c.attempt, reason: c.reason }, false);
     const synced = (async () => (await written) && (await this.syncChained()))();
     const ok = await this.bounded(synced, this.authSyncTimeoutMs);
     if (!ok) {
-      if (!this.ioFailed) this.fail(new Error(`auth.unused fsync did not finish within ${this.authSyncTimeoutMs} ms`));
+      if (!this.ioFailed) this.overrun(`auth.unused fsync did not finish within ${this.authSyncTimeoutMs} ms`);
       return { ok: false, reason: "io_error" }; // the jti stays consumed (never usable)
     }
     return { ok: true };
@@ -850,12 +891,12 @@ export class EdgeJournal {
   /** A robot state sample — dropped (counted) while the journal is full or unhealthy. */
   appendRobotState(rec: EdgeRobotStateInput): Promise<EdgeAppendResult> {
     if (this.closed) return Promise.resolve({ seq: null, dropped: true, reason: "closed" });
-    if (this.isFull() || this.ioFailed) {
+    if (this.isFull() || this.unhealthy) {
       this.droppedRobotStates++;
       if (this.droppedRobotStates === 1 || this.droppedRobotStates % 1_000 === 0) {
-        this.log(`[EdgeJournal] robot state dropped (journal ${this.ioFailed ? "unhealthy" : "full"}) — ${this.droppedRobotStates} so far`);
+        this.log(`[EdgeJournal] robot state dropped (journal ${this.unhealthy ? "unhealthy" : "full"}) — ${this.droppedRobotStates} so far`);
       }
-      return Promise.resolve({ seq: null, dropped: true, reason: this.ioFailed ? "unhealthy" : "journal_full" });
+      return Promise.resolve({ seq: null, dropped: true, reason: this.unhealthy ? "unhealthy" : "journal_full" });
     }
     const p = edgeRobotStateRecordSchema.safeParse({ ...rec, seq: 1 });
     if (!p.success) return Promise.resolve({ seq: null, dropped: true, reason: "invalid" });
@@ -895,8 +936,8 @@ export class EdgeJournal {
       while (drop < this.segments.length - 1 && this.droppable(this.segments[drop])) drop++;
       try {
         const gone = this.segments.splice(0, drop);
-        await this.writeSnapshot(true);
-        for (const s of gone) await this.io.unlink(path.join(this.dir, segName(s.n))).catch(() => undefined);
+        await this.timed(() => this.writeSnapshot(true));
+        for (const s of gone) await this.timed(() => this.io.unlink(path.join(this.dir, segName(s.n)))).catch(() => undefined);
       } catch (err) {
         this.fail(err);
       }

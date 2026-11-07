@@ -17,18 +17,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { useDanhMucModel } from "@/hooks/useDanhMucModel";
+import { maLoiVanBan } from "./bongBongNgoai";
 import { HienThiKetQuaNgoai, type VetKiemDinh } from "./HienThiKetQuaNgoai";
 
 export type NguonKiemDinh =
   | { loai: "chat"; cuocTroChuyenId: number; tinNhanId: number }
   | { loai: "agent"; runId: string }
-  | { loai: "coding"; phienId: string; chiSoLuot: number };
+  | { loai: "coding"; phienId: string; chiSoLuot: number }
+  | { loai: "van-ban"; beMat: "bong-bong"; cauHoi: string; traLoi: string };
 
 const TRAN_TIEU_CHI = 2000;
 
 const fmt = (n: number | null | undefined, donVi = ""): string => (n === null || n === undefined ? "—" : `${n.toLocaleString("vi-VN")}${donVi}`);
 
-export function NutKiemDinhNgoai({ nguon, className }: { nguon: NguonKiemDinh | null; className?: string }) {
+export function NutKiemDinhNgoai({ nguon, className, daCat }: { nguon: NguonKiemDinh | null; className?: string; daCat?: boolean }) {
   const { t } = useTranslation();
   const { danhMuc } = useDanhMucModel();
   const [mo, setMo] = useState(false);
@@ -49,12 +51,12 @@ export function NutKiemDinhNgoai({ nguon, className }: { nguon: NguonKiemDinh | 
         <ShieldCheck className="h-3 w-3" />
         {t("kiemDinhNgoai.nut.nhan", "Nhờ AI ngoài kiểm định")}
       </Button>
-      {mo && nguon !== null && <HopKiemDinhNgoai nguon={nguon} modelNgoai={modelNgoai.map((m) => ({ ma: m.ma, nhan: m.nhan }))} dong={() => setMo(false)} />}
+      {mo && nguon !== null && <HopKiemDinhNgoai nguon={nguon} daCat={daCat === true} modelNgoai={modelNgoai.map((m) => ({ ma: m.ma, nhan: m.nhan }))} dong={() => setMo(false)} />}
     </>
   );
 }
 
-function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; modelNgoai: { ma: string; nhan: string }[]; dong: () => void }) {
+function HopKiemDinhNgoai({ nguon, modelNgoai, dong, daCat }: { nguon: NguonKiemDinh; modelNgoai: { ma: string; nhan: string }[]; dong: () => void; daCat: boolean }) {
   const { t } = useTranslation();
   const [model, setModel] = useState(modelNgoai[0]?.ma ?? "");
   const [tieuChi, setTieuChi] = useState("");
@@ -62,6 +64,22 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
   const xem = trpc.aiKiemDinh.xemTruoc.useQuery({ chonModel: model, nguon }, { enabled: model !== "", retry: false, refetchOnWindowFocus: false, staleTime: 0 });
   const chay = trpc.aiKiemDinh.chay.useMutation({ onSettled: () => (dangGui.current = false) });
   const x = xem.data;
+  // Nhánh `van-ban`: 413/403/429/409 nói đúng theo MÃ (không in message thô); nguồn khác dùng bộ dịch chung.
+  const thongDiepLoi = (e: unknown): string => {
+    const m = nguon.loai === "van-ban" ? maLoiVanBan(e) : null;
+    switch (m) {
+      case "loiQuaLon":
+        return t("kiemDinhNgoai.vanBan.loiQuaLon", "Văn bản quá lớn (trần 16 KB) nên máy chủ từ chối. Hãy kiểm định đoạn ngắn hơn.");
+      case "loiKhongCo":
+        return t("kiemDinhNgoai.vanBan.loiKhongCo", "Không gửi được: nhà máy chưa bật kiểm định từ bong bóng, hoặc bạn không có quyền.");
+      case "loiVuotTran":
+        return t("kiemDinhNgoai.vanBan.loiVuotTran", "Đã vượt trần chi phí/tốc độ của AI ngoài. Thử lại sau hoặc hỏi quản trị viên.");
+      case "loiDangChay":
+        return t("kiemDinhNgoai.vanBan.loiDangChay", "Văn bản này đang được kiểm định — vui lòng chờ kết quả.");
+      default:
+        return mapTrpcError(e);
+    }
+  };
   const khoa = !x || !x.duocPhep || x.kichThuocByte > x.tranByte || chay.isPending || chay.isSuccess;
   const gui = () => {
     if (dangGui.current || khoa) return;
@@ -96,6 +114,28 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
                 {t("kiemDinhNgoai.hop.tieuChiCanhBao", "Không dán dữ liệu vận hành (số liệu, tên khách hàng, khoá…) vào ô này — máy chủ chỉ che theo mẫu, không phân loại được nội dung bạn gõ.")}
               </span>
             </label>
+
+            {nguon.loai === "van-ban" && (
+              <div data-testid="kdnh-van-ban" className="space-y-1 rounded border p-2 text-xs">
+                <p className="font-medium">{t("kiemDinhNgoai.vanBan.xemTruoc", "Văn bản sẽ gửi (đúng chuỗi này, sau khi cắt)")}</p>
+                <p className="text-muted-foreground">{t("kiemDinhNgoai.vanBan.chuaLuu", "Lượt này chưa được lưu trên máy chủ — hệ thống gửi đúng đoạn chữ hiển thị ở đây, không đọc kho.")}</p>
+                {daCat && (
+                  <p role="alert" data-testid="kdnh-van-ban-da-cat" className="text-amber-700">
+                    {t("kiemDinhNgoai.vanBan.daCat", "Văn bản dài hơn 16 KB nên đã bị cắt bớt (ưu tiên giữ câu trả lời, cắt câu hỏi trước).")}
+                  </p>
+                )}
+                {nguon.cauHoi !== "" && (
+                  <div>
+                    <b>{t("kiemDinhNgoai.vanBan.cauHoi", "Câu hỏi")}</b>
+                    <pre data-testid="kdnh-van-ban-cau-hoi" className="max-h-24 overflow-auto whitespace-pre-wrap break-words">{nguon.cauHoi}</pre>
+                  </div>
+                )}
+                <div>
+                  <b>{t("kiemDinhNgoai.vanBan.traLoi", "Câu trả lời")}</b>
+                  <pre data-testid="kdnh-van-ban-tra-loi" className="max-h-32 overflow-auto whitespace-pre-wrap break-words">{nguon.traLoi}</pre>
+                </div>
+              </div>
+            )}
 
             {xem.isError && (
               <p role="alert" data-testid="kdnh-loi-xem" className="rounded border border-red-500 p-2 text-xs text-red-700">
@@ -162,7 +202,7 @@ function HopKiemDinhNgoai({ nguon, modelNgoai, dong }: { nguon: NguonKiemDinh; m
 
             {chay.isError && (
               <p role="alert" data-testid="kdnh-loi" className="rounded border border-red-500 p-2 text-xs text-red-700">
-                {mapTrpcError(chay.error)}
+                {thongDiepLoi(chay.error)}
               </p>
             )}
             <div className="flex justify-end gap-2">
