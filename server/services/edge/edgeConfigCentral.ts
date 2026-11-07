@@ -262,7 +262,7 @@ export function alertJournalStalled(node: Pick<EdgeNodePrincipal, "nodeId" | "no
       kind: "edge_journal_stalled",
       dedupKey: `edge_journal_stalled:${node.nodeId}:${x.sinceMs}`,
       title: `Edge node ${node.nodeCode}: disk not answering, runs are standing`,
-      message: `Edge node ${node.nodeCode}: its journal disk has not answered since ${new Date(x.sinceMs).toISOString()} (edge clock). ${list || "No run listed"}. These runs still show running; a STOP behind a standing step waits for the disk. Abort sends the STOPs now.`,
+      message: `Edge node ${node.nodeCode}: its journal disk has not answered since ${new Date(x.sinceMs).toISOString()} (edge clock). ${list || "No run listed"}. These runs still show running; a STOP behind a standing step waits for the disk. Abort reaches the node only while the node can still call central. If an alert then says a run stopped reporting, use the machine's direct STOP / E-STOP.`,
       nodeId: node.nodeId,
     },
     recipients,

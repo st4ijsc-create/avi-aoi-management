@@ -165,6 +165,16 @@ describe("a2n layer 1 — the real line in progressForNodeV2", () => {
     expect(a).toMatchObject({ source: "ot", entityType: "edge_node", entityId: 7, khuTrungBenVung: {}, recipients: [1, 2] });
   });
 
+  it("★ the text promises no STOP it cannot keep: Abort reaches the node only while the node can still call central; once an alert says a run stopped reporting, the direct STOP / E-STOP", async () => {
+    themRun(41, { stops: ["s1"] });
+    await progressForNodeV2(NODE, 41, body(41, 2, T));
+    await settled();
+    const m = String(treo()[0].message);
+    expect(m).not.toContain("Abort sends the STOPs now");
+    expect(m).toContain("Abort reaches the node only while the node can still call central.");
+    expect(m).toContain("If an alert then says a run stopped reporting, use the machine's direct STOP / E-STOP.");
+  });
+
   it("★ no field, no URGENT; a refused progress (replay) raises none either", async () => {
     themRun(41);
     await progressForNodeV2(NODE, 41, body(41, 2));
