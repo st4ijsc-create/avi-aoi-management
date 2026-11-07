@@ -167,6 +167,8 @@ export interface AbortSweepSource {
   mayHaveActuated: (stepId: string) => boolean;
   /** #2 — STOPs an earlier sweep of this run CONFIRMED sent (`abort:<id>` row completed): never sent again. */
   sentBefore: Set<string>;
+  /** A2(n) — the rows as read (central), for the one reading of the evidence after the latch; absent on an edge, whose rows of earlier segments are its package's picture. */
+  hang?: ReadonlyArray<{ stepId: string; status: string; error?: string | null; resultJson?: unknown }> | null;
 }
 
 /** The audit operations of the abort sweep (foeEngine). */
@@ -248,6 +250,8 @@ export interface RunStore {
    * step as possibly sent. The rows stop quoting it from the call (its synchronous part: a quoted jti is evidence of use). Never rejects. The central store has none.
    */
   uyQuyenKhongDung?(stepId: string): Promise<void>;
+  /** A2(n) — may a stop-typed step refused at the sink ask its authorisation again, now latched? Absent: yes (central re-reads its pins). */
+  stopHoiLaiDuoc?(stepId: string): boolean;
 }
 
 // ── shared pure helpers (both stores) ───────────────────────────────────────────────────────────────────────────────
@@ -938,6 +942,7 @@ async function liveSweepSource(rc: RunStoreContext): Promise<AbortSweepSource> {
     startOrder: [...rc.prior.startOrder, ...rc.startOrder],
     mayHaveActuated: (id) => rc.prior.unknown || rc.attempted.has(id) || rc.prior.attempted.has(id) || !!fromRows?.attempted.has(id),
     sentBefore: abortSentOf(rows),
+    hang: rows,
   };
 }
 
@@ -982,6 +987,7 @@ async function storedSweepSource(run: OrchestrationRun, hasLiveDriver: (runId: n
     startOrder: prior.startOrder,
     mayHaveActuated: (id) => undecidable || prior.attempted.has(id) || ctxDispatched.has(id),
     sentBefore: abortSentOf(rows),
+    hang: rows,
   };
 }
 

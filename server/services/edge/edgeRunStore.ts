@@ -172,6 +172,15 @@ interface LocalRow {
   startedAt: Date | null;
 }
 
+/**
+ * A2(n) (C-5) — this segment's OWN last word on a step, for the reading after the latch: only a row that FINISHED here. A step with no such row stays what the package's picture says
+ * (foeEngine.bangChungSauChot, hongTruoc), so a STOP that failed in an earlier segment is still due again.
+ */
+const HANG_CUOI_DOAN: ReadonlySet<string> = new Set(["completed", "compensated", "skipped", "held"]);
+export function gopHangCucBo(rows: ReadonlyArray<LocalRow>): LocalRow[] {
+  return rows.filter((r) => HANG_CUOI_DOAN.has(r.status) && !r.stepId.startsWith(ABORT_ROW_PREFIX));
+}
+
 /** The robot STOP steps of a definition by the walker's own classifier (foeStepClass.isRobotStopStep) — no DB. */
 function localRobotStops(p: { definition: unknown; machines: ReadonlyArray<{ id: number; machineType: string; capabilities: unknown }> }): string[] {
   const def = p.definition as { steps?: WorkflowStep[] } | null;
@@ -528,6 +537,14 @@ export class EdgeRunStore extends EdgeStoreBase {
    * `heldByDispatch` does, reason `run_latched`, so central supersedes it and never reads the step as possibly sent. Not reported (journal, no reporter) ⇒ central reads
    * it as it always did, the safe way; the step is not sent either way. Forgotten at once: a later row of the step must not quote a jti (central's evidence of use).
    */
+  /**
+   * A2(n) — no: the same attempt asked twice answers `already_authorized`, which would read as a refusal and lose the hold, and the package's verified list does not change
+   * inside a segment. A stop-typed step refused at this sink stays refused until it has a route that does not ask.
+   */
+  stopHoiLaiDuoc(): boolean {
+    return false;
+  }
+
   async uyQuyenKhongDung(stepId: string): Promise<void> {
     const jti = this.jtiByStep.get(stepId) ?? null;
     const attempt = this.attemptByStep.get(stepId) ?? null;
@@ -595,6 +612,7 @@ export class EdgeRunStore extends EdgeStoreBase {
       startOrder: [...rc.prior.startOrder, ...rc.startOrder],
       mayHaveActuated: (id) => rc.prior.unknown || rc.attempted.has(id) || rc.prior.attempted.has(id) || fromRows.attempted.has(id),
       sentBefore,
+      hang: gopHangCucBo(rows),
     };
   }
 

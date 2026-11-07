@@ -243,9 +243,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * failedNotSent — the run is FAILED, its compensation was not sent (m-C); compensationUnknown — a compensation's OWN outcome is unknown (I-I, m-P);
  * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c);
  * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split);
- * runEnd — A2(n) T2: the one URGENT of a latched run's end, `stepId` = the latch step, under the fixed event "chot". Check on site (H2): by then Abort may answer "already terminal".
+ * runEnd — A2(n) T2: the one URGENT of a latched run's end, `stepId` = the latch step, under the fixed event "chot". Check on site (H2): by then Abort may answer "already terminal";
+ * stopUntakenBranch — A2(n) M1: `stepId` is a STOP in a branch the run never evaluated: listed, never sent, under the fixed event "chot".
  */
-export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd";
+export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -260,6 +261,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   inFlight: "foe_outcome_unknown_write_in_flight_at_latch",
   forwardNotSent: "foe_outcome_unknown_forward_not_sent",
   runEnd: "foe_outcome_unknown_run_end",
+  stopUntakenBranch: "foe_outcome_unknown_stop_untaken_branch",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -284,10 +286,13 @@ export interface CanhBaoKhongRo {
 export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title: string; message: string; dedupKey: string } {
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
-  const dau = a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
-  const mo = a.biet
-    ? `Step "${a.stepId}" of run ${a.runId} failed, but another command of this run has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
-    : `The outcome of command step "${a.stepId}" of run ${a.runId} is UNKNOWN (${ma}); the state of the machine is unknown.`;
+  const nhanh = a.loai === "stopUntakenBranch"; // `stepId` is the listed STOP: nothing happened to it
+  const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
+  const mo = nhanh
+    ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
+    : a.biet
+      ? `Step "${a.stepId}" of run ${a.runId} failed, but another command of this run has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
+      : `The outcome of command step "${a.stepId}" of run ${a.runId} is UNKNOWN (${ma}); the state of the machine is unknown.`;
   const c = `"${a.compId}"`;
   const [duoi, than] = (
     {
@@ -303,6 +308,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
       forwardNotSent: [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
       runEnd: [`nothing further goes forward, check the machine on site`, `The run has ended or is waiting; nothing further goes forward. A STOP this run sent, if any, could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
+      stopUntakenBranch: [`STOP "${a.stepId}" in a branch never taken: NOT sent`, `STOP step "${a.stepId}" sits in a branch this run never evaluated, so it was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
