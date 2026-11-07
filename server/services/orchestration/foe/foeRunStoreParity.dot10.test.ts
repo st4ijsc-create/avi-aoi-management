@@ -3006,6 +3006,18 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await wait(30);
     expect(String(hang(c, "y")!.error)).toBe("device said no");
   });
+  it("C3b a container with its last word from an earlier walk: not walked again, its row keeps it", async () => {
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("y", 1);
+    const c = await centralRun(def("c3d", [gate(), parF("p", [move("x", { compensation: ot("u") }), box("b", [move("y")])])]), 1);
+    chet(c, ["g1", "p", "x", "b", "y"], () => {
+      Object.assign(hang(c, "y")!, { status: "failed", error: "device said no" });
+      Object.assign(hang(c, "b")!, { status: "failed", error: "device said no" });
+    });
+    await autoResumeInterruptedRuns([c]);
+    await wait(30);
+    expect(String(hang(c, "b")!.error)).toBe("device said no");
+  });
   it("C4 central: a command past the door when the latch falls: the sink keeps it, 0 hand-overs, its own STOP compensation goes (F11)", async () => {
     h.ghim = async (_d, i) => {
       if (i.commandType === "start") await wait(80);
@@ -3732,6 +3744,25 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
     h.timeoutDispatch.add("x");
     const c = await centralRun(def("k2than", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: box("cb", [otStop("cs")]) })])])]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "cs")).toMatchObject({ status: "held" });
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    const r = await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+    expect(String(r.message ?? "")).not.toMatch(/not resumable|already terminal/);
+    await waitFor(() => ids().includes("cs"), "the STOP");
+    await wait(20);
+    expect(ids()).toEqual(["cs"]);
+  });
+  it("THAN-GIU a STOP behind a failed step of a body, not pinned at its dispatch: its row held, the run holds; the read recovered, a Continue sends that STOP and nothing of the body before it", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    const c = await centralRun(dinhThan("thangiu", [move("q"), otStop("cs")]), 1);
     await wait(30);
     expect(runRow(c).status).toBe("held");
     expect(hang(c, "cs")).toMatchObject({ status: "held" });

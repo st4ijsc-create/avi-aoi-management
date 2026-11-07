@@ -1395,17 +1395,14 @@ function bangChungSauChot(rc: RunContext, hang: AbortSweepSource["hang"]): Map<s
 }
 
 /**
- * A2(n) — whose compensation is due on a latched run. At the latch (`nhan` null): the containers around the unknown step, a command's own being split by its failed branch right now.
- * At the end: also a failure, what may have gone out, a refused step (F11).
+ * A2(n) — whose compensation is due on a latched run. At the latch (`nhan` null): the unknown step's and the containers' around it. At the end: also a failure, what may have gone out,
+ * a refused step (F11).
  */
 function chuDenHan(rc: RunContext, nhan: ReadonlyMap<string, NhanSauChot> | null): Set<string> {
   const chot = rc.context[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown } | undefined;
   const den = (id: string) => rc.khongRoTai?.has(id) === true || chot?.stepId === id || (nhan !== null && ["coTheDaGui", "giuNguyen", "chuaGui"].includes(nhan.get(id) ?? ""));
   const out = new Set<string>();
-  for (const s of mainTreeSteps(rc.def.steps)) {
-    if (nhan === null && s.type === "command") continue;
-    if (buocTienCua(s).some((x) => den(x.id))) out.add(s.id);
-  }
+  for (const s of mainTreeSteps(rc.def.steps)) if (buocTienCua(s).some((x) => den(x.id))) out.add(s.id);
   return out;
 }
 

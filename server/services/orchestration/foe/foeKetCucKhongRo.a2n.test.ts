@@ -448,12 +448,12 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
           otDispatchMock.mockClear();
           const { runId } = await denK2(dang, ms);
           await new Promise((r) => setTimeout(r, 60));
-          const k = `run=${runRow(runId).status} stop=${sent("stop").length} undo=${(await step(runId, "undo"))?.status}`;
+          const k = `run=${runRow(runId).status} stop=${sent("stop").length} undo=${(await step(runId, "undo"))?.status} ds=${dauKetCucKhongRoCua(runRow(runId).contextJson)?.ds?.length}`;
           dem.set(k, (dem.get(k) ?? 0) + 1);
         }
       }
       console.log(`[PROBE K2-dua ${dang}]`, JSON.stringify([...dem]));
-      expect([...dem]).toEqual([["run=held stop=0 undo=held", 30]]);
+      expect([...dem]).toEqual([["run=held stop=0 undo=held ds=1", 30]]); // ds: one hold, whichever way it came
     });
     {
       it(`K2 ${dang}, Continue: the URGENT names it: the read recovered, it works, the STOP goes once, no 'not resumable', no 'already terminal'`, async () => {
@@ -474,6 +474,27 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
       });
     }
   }
+  it("K2a-cham the door's refused step, its failed row slow: the pass holds its compensation first; the row's late 'not looked at again' does not bury that hold: Continue sends the STOP", async () => {
+    let n = 0;
+    let hoi = false;
+    ghimMock.mockImplementation(async (_d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      return { pinnedStop: hoi || ++n === 1, loiDocGhim: null };
+    });
+    HX.rowSlowMs = (r) => (r.stepId === "r3" && r.status === "failed" ? 60 : 0);
+    const r3 = { id: "r3", type: "command", machineId: 1, command: "pause", compensation: stopComp() } as WorkflowStep;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? (await new Promise((r) => setTimeout(r, 10)), TIMEOUT) : ACKED));
+    const { runId } = await chay([{ id: "p", type: "parallel", failFast: false, steps: [main(), seq("b", [{ id: "w", type: "delay", ms: 40 } as WorkflowStep, r3])] } as WorkflowStep]);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(runRow(runId).status).toBe("held");
+    expect(runRow(runId).contextJson.foeResumeState.r3).toMatchObject({ state: "compensationHeld" });
+    hoi = true;
+    HX.rowSlowMs = null;
+    otDispatchMock.mockClear();
+    grant(APPROVER);
+    await resumeRun(runId, { approved: true, note: "checked on site" }, APPROVER);
+    await vi.waitFor(() => expect(sent("stop")).toHaveLength(1));
+  });
   it("K2 đối chứng: pinned at both reads: the STOP goes, the run ends failed, not held", async () => {
     const { runId } = await denK2("khongGhim", 30, () => true);
     await new Promise((r) => setTimeout(r, 60));
