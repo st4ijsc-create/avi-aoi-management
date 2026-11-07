@@ -265,6 +265,8 @@ export class EdgeJournal {
   private ioFailed = false;
   /** a2n — an fsync overran its bound: closed to non-STOP work until restart, as ioFailed; but the disk may return, and takes the queued records */
   private fsyncOverrun = false;
+  /** a2n round C — the overrun was an `auth.consumed` one (an `auth.unused` overrun leaves it false) */
+  private consumeOverrunSeen = false;
   /** a2n — when the write / fsync now in the chain started. The chain is serial: at most one */
   private ioStartedAt: number | null = null;
   private closed = false;
@@ -582,6 +584,10 @@ export class EdgeJournal {
   isJtiConsumed(jti: string): boolean {
     return this.jtis.has(jti);
   }
+  /** a2n round C — a consumeAuthorization ran past its bound and no real IO error came after it. Never true for an `auth.unused` overrun. */
+  consumeOverran(): boolean {
+    return this.consumeOverrunSeen && !this.ioFailed;
+  }
   /** a2n — since when the write / fsync now in the chain has been running (this journal's clock); null ⇔ none. The age of ONE call, not of a queue. */
   stalledSince(): number | null {
     return this.ioStartedAt;
@@ -813,6 +819,7 @@ export class EdgeJournal {
     const synced = (async () => (await written) && (await this.syncChained()))();
     const ok = await this.bounded(synced, this.authSyncTimeoutMs);
     if (!ok) {
+      this.consumeOverrunSeen ||= !this.ioFailed;
       if (!this.ioFailed) this.overrun(`auth.consumed fsync did not finish within ${this.authSyncTimeoutMs} ms`);
       return { ok: false, reason: "io_error" }; // the jti stays consumed (fail-closed)
     }

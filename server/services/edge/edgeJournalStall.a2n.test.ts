@@ -175,6 +175,48 @@ describe("a2n fsyncOverrun — non-STOP closed until restart, records keep flowi
     expect(j.undurableCount("run:9:1")).toBe(0);
   });
 
+  it("★ consumeOverran names only a consume past its bound: not before it, still after the disk returned, for a later consume refused on the unhealthy check too", async () => {
+    const { j, dia } = await moJournal();
+    expect(j.consumeOverran()).toBe(false);
+    dia.treoSync();
+    await j.consumeAuthorization(J);
+    expect(j.consumeOverran()).toBe(true);
+    expect(await j.consumeAuthorization({ ...J, jti: "jti-b" })).toEqual({ ok: false, reason: "io_error" });
+    expect(j.consumeOverran()).toBe(true);
+    dia.tha();
+    await j.flush();
+    expect(j.consumeOverran()).toBe(true);
+  });
+
+  it("★ consumeOverran stays false after an auth.unused past its bound, though the journal is just as closed", async () => {
+    const { j, dia } = await moJournal();
+    dia.treoSync();
+    await j.markAuthorizationUnused({ ...J, reason: "expired_before_use" });
+    expect(j.admitNonStop()).toBe(false);
+    expect(j.consumeOverran()).toBe(false);
+    expect(await j.consumeAuthorization({ ...J, jti: "jti-b" })).toEqual({ ok: false, reason: "io_error" });
+    expect(j.consumeOverran()).toBe(false);
+    dia.tha();
+  });
+
+  it("★ consumeOverran stays false after a REAL io error on the consume's fsync, and an io error after an overrun takes it back", async () => {
+    const a = await moJournal();
+    a.dia.loiSync();
+    await a.j.consumeAuthorization(J);
+    expect(a.j.admitNonStop()).toBe(false);
+    expect(a.j.consumeOverran()).toBe(false);
+    const b = await moJournal();
+    b.dia.treoSync();
+    await b.j.consumeAuthorization(J);
+    expect(b.j.consumeOverran()).toBe(true);
+    b.dia.tha();
+    await b.j.flush();
+    b.dia.loiWrite();
+    await b.j.appendEvent(ev());
+    await b.j.flush().catch(() => undefined);
+    expect(b.j.consumeOverran()).toBe(false);
+  });
+
   it("★ markAuthorizationUnused past its bound: the same state; refused after it", async () => {
     const { j, dia } = await moJournal();
     dia.treoSync();

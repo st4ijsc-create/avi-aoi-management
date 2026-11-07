@@ -7,8 +7,8 @@
  *   the real consumeAuthorization past its bound ⇒ nothing reaches the driver, non-STOP closed until restart, the run still reports and ends once the disk
  *   returns, the URGENT of the end says so;
  *   a restarted node takes the run again (a fresh central: not central's real Continue, see that case);
- *   a STOP in a compensation on the failing path reaches the driver once the disk returns, the run stays failed: locked. A forward STOP behind that step does NOT,
- *   and Abort then answers "already terminal": measured in the round 2 report, not fixed here, the coordinator decides.
+ *   a STOP in a compensation on the failing path reaches the driver once the disk returns; a forward STOP behind that step does not, as for any failed step of a run;
+ *   round C: the walker as it was, the END of such a segment says held(journalFull) instead of failed, so Abort stays open.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,9 @@ const H = vi.hoisted(() => ({
   stops: new Map<number, string[]>(),
   /** the edge's config staleness (A2(o)): a step refused CONFIG_STALE is held and its authorisation reported unused: the B5 shape */
   stale: null as null | { centralVersion: number; localVersion: number; sinceMs: number; configIssuedAt: number | null },
+  defs: new Map<number, unknown>(),
+  /** the next safety preflight waits on this: a dispatch that passed the journal's admission and has not reached its consume yet */
+  preflight: null as null | Promise<void>,
 }));
 vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
@@ -31,32 +34,50 @@ vi.mock("drizzle-orm", async (orig) => {
     inArray: (c: { name: string }, vs: unknown[]) => (r: R) => vs.includes(r[c.name]),
     and: (...cs: unknown[]) => (r: R) => cs.every((x) => typeof x !== "function" || (x as (q: R) => boolean)(r)),
     asc: (c: { name: string }) => ({ name: c.name, dir: "asc" }),
+    notInArray: (c: { name: string }, vs: unknown[]) => (r: R) => !vs.includes(r[c.name]),
   };
 });
 vi.mock("../../db/connection", () => ({ getDb: async () => H.db, isEdgeProcessRole: () => true }));
 vi.mock("./robotManager", () => ({ getActiveRobot: () => H.robot ?? undefined }));
-vi.mock("../ot/adapterFacade", () => ({ createAdapterFacade: () => ({ getSafetyStatus: async () => ({ state: "OK", source: "test", ts: new Date().toISOString() }) }) }));
+vi.mock("../ot/adapterFacade", () => ({
+  createAdapterFacade: () => ({
+    getSafetyStatus: async () => {
+      const g = H.preflight;
+      H.preflight = null;
+      if (g) await g;
+      return { state: "OK", source: "test", ts: new Date().toISOString() };
+    },
+  }),
+}));
 vi.mock("./criticalStopAlert", async (orig) => ({
   ...(await orig<typeof import("./criticalStopAlert")>()),
   raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a),
 }));
-vi.mock("../edge/edgeCentralCommon", async (orig) => ({ ...(await orig<typeof import("../edge/edgeCentralCommon")>()), nodeProtocolVersion: async () => 2 }));
+vi.mock("../edge/edgeCentralCommon", async (orig) => ({ ...(await orig<typeof import("../edge/edgeCentralCommon")>()), nodeProtocolVersion: async () => 2, centralSigner: () => ({}) }));
 vi.mock("../edge/edgeNodeCommands", async (orig) => ({ ...(await orig<typeof import("../edge/edgeNodeCommands")>()), commandsForNode: async () => ({ signed: [], unsignedStops: [], incomplete: false }) }));
 vi.mock("../edge/edgeRunAnalysis", async (orig) => ({
   ...(await orig<typeof import("../edge/edgeRunAnalysis")>()),
   loadMachineMap: async () => new Map(),
   analyseDefinition: async (_d: unknown, runId: number) => ({ verifiedStops: (H.stops.get(runId) ?? []).map((stepId) => ({ kind: "robot", stepId, robotId: 12 })), stopsUnsure: [], resolvedAdapters: [], robotIds: [], adapterIds: [], unresolved: [] }),
 }));
-vi.mock("../edge/edgeReportsCentral", async (orig) => ({ ...(await orig<typeof import("../edge/edgeReportsCentral")>()), assignedDefinition: async () => ({ steps: [] }) }));
+vi.mock("../edge/edgeReportsCentral", async (orig) => ({
+  ...(await orig<typeof import("../edge/edgeReportsCentral")>()),
+  assignedDefinition: async (_d: unknown, a: { runId: number }) => H.defs.get(a.runId) ?? { steps: [] },
+  cursorLastSeq: async () => Number.MAX_SAFE_INTEGER, // the shipper's acks are FakeCentral's: complete only asks that the run was reported through
+}));
 
 import { FakeDb } from "../../routers/__otFakeDb";
 import { __edgeConfigAlertsSettledForTests, __resetEdgeConfigAlertsForTests, alertForEdgeAnomaly } from "../edge/edgeConfigCentral";
 import { _resetEdgeDeviceRuntimeForTests, installEdgeDeviceRuntime } from "../edge/edgeDeviceRuntime";
 import { choDen, diskGia, edgeTrenDiaGia, nghi, thuMucTam, type DiskGia, type EdgeTrenDiaGia } from "../edge/edgeDiskStall.testkit";
 import { EDGE_JOURNAL_STALL_ALERT_MS, loadDefaultEdgeWalker } from "../edge/edgeExecutionAgent";
-import { __resetJournalTreoForTests, progressForNodeV2 } from "../edge/edgeExecutionCentral";
-import { FakeCentral } from "../edge/edgeFakeCentral.testkit";
+import { __resetJournalTreoForTests, completeForNodeV2, progressForNodeV2 } from "../edge/edgeExecutionCentral";
+import { FakeCentral, kitHashDefinition } from "../edge/edgeFakeCentral.testkit";
 import { hashEdgeSecret, type EdgeNodePrincipal } from "../edge/edgeNodeCredentials";
+import { orchestrationRunSteps } from "../../../drizzle/schema";
+import { equipmentRegistry } from "../equipment/equipmentAdapter";
+import { abortRun, applyEdgeSegmentEnd, edgePriorPictureOf, recordEdgeStepRows, resumeRun } from "../orchestration/foe/foeEngine";
+import { RESUME_STATE_CTX_KEY } from "../orchestration/foe/foeRunStore";
 import type { RobotJobSpec } from "./robotDriver";
 import { MotionLock } from "./robotDriver";
 
@@ -106,6 +127,8 @@ beforeEach(() => {
   H.alerts.length = 0;
   H.stops.clear();
   H.stale = null;
+  H.defs.clear();
+  H.preflight = null;
   jobs = [];
   runJobImpl = async () => ({ ok: true, status: "done" });
   const lock = new MotionLock();
@@ -134,6 +157,7 @@ afterEach(async () => {
   await tam.don();
   delete process.env.AVI_PROCESS_ROLE;
   delete process.env.ROBOT_CONTROL_TIMEOUT_MS;
+  delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
   vi.restoreAllMocks();
 });
 
@@ -166,6 +190,7 @@ async function dung(o: { central?: FakeCentral; dir?: string; dia?: DiskGia; aut
 function themRun(c: FakeCentral, runId: number, steps: unknown[], stops: string[]) {
   c.addRun(runId, { ref: `r${runId}`, name: `r${runId}`, steps });
   c.packageOver.set(runId, { machines: MACHINES as never, verifiedStops: stops.map((stepId) => ({ kind: "robot" as const, stepId, robotId: 12 })) });
+  H.defs.set(runId, { ref: `r${runId}`, name: `r${runId}`, steps });
   d.store.set("orchestration_runs", [...(d.store.get("orchestration_runs") ?? []), { id: runId, status: "running", contextJson: null }]);
   d.store.set("orchestration_run_edge_assignments", [...(d.store.get("orchestration_run_edge_assignments") ?? []), { runId, edgeNodeId: 7, workflowId: 1, workflowVersion: 1, defHash: "d", claimSeq: 0, claimTokenHash: "x", claimedAt: new Date(), progressSeq: 0, lastProgressAt: new Date() }]);
   H.stops.set(runId, stops);
@@ -238,7 +263,9 @@ describe("a2n — the real consumeAuthorization past its bound", () => {
     await choDen(() => x.central.callsTo("complete").length === 1, "complete after the disk returned");
     expect(ten().filter((j) => j === "move")).toEqual([]);
     expect(x.journal.admitNonStop()).toBe(false);
-    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "JOURNAL_CONSUME_FAILED" });
+    // pin changed in round C: a consume past its bound no longer ends a run failed, Abort has to stay open
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(String(x.central.callsTo("complete")[0].body.error)).toContain("JOURNAL_CONSUME_FAILED");
 
     themRun(x.central, 63, [move("m2")], []);
     await x.agent.tick();
@@ -303,7 +330,7 @@ describe("a2n — the real consumeAuthorization past its bound", () => {
   }, 20_000);
 });
 
-describe("a2n — consumeAuthorization past its bound with a STOP in a compensation: locked, the STOP reaches the driver and the run stays failed", () => {
+describe("a2n — consumeAuthorization past its bound with a STOP in a compensation: locked, the STOP reaches the driver; held, not failed, so Abort stays open", () => {
   const HANG_M2 = /"k":"auth\.consumed".*"stepId":"m2"/;
   const sauKhiDiaVe = async (x: EdgeTrenDiaGia) => {
     x.dia.tha();
@@ -317,7 +344,7 @@ describe("a2n — consumeAuthorization past its bound with a STOP in a compensat
     await choDen(() => x.central.callsTo("complete").length === 1, "complete");
   };
 
-  it("★ the failing step's own compensation: nothing past m1 while the disk hangs; the disk returns, the STOP goes, the run ends failed", async () => {
+  it("★ the failing step's own compensation: nothing past m1 while the disk hangs; the disk returns, the STOP goes, the run ends held", async () => {
     const x = await dung();
     themRun(x.central, 65, [move("m1"), { ...move("m2"), compensation: stop("c1") }], ["c1"]);
     x.dia.treoSauKhiGhi(HANG_M2);
@@ -327,7 +354,7 @@ describe("a2n — consumeAuthorization past its bound with a STOP in a compensat
     expect(ten()).toEqual(["move"]);
     await sauKhiDiaVe(x);
     expect(ten()).toEqual(["move", "abort"]);
-    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "JOURNAL_CONSUME_FAILED" });
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "held", heldReason: "journalFull" }); // pin changed in round C, as above
     await x.shipper.flushAll();
     expect(x.central.received.report.some((r: Row) => r.kind === "step" && r.stepId === "c1" && r.status === "compensated")).toBe(true);
   }, 20_000);
@@ -342,6 +369,285 @@ describe("a2n — consumeAuthorization past its bound with a STOP in a compensat
     expect(ten()).toEqual(["move"]);
     await sauKhiDiaVe(x);
     expect(ten()).toEqual(["move", "abort"]);
-    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "JOURNAL_CONSUME_FAILED" });
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "held", heldReason: "journalFull" }); // pin changed in round C, as above
+  }, 20_000);
+});
+
+/**
+ * Round C: the walker is as it was (m2 failed, compensations and parallels as ever); only the END of a segment that had a consume past its bound says held(journalFull)
+ * where it would say failed. Central's half is real from here on, over FakeDb: rows through recordEdgeStepRows, the end through completeForNodeV2 and applyEdgeSegmentEnd,
+ * Abort through abortRun with central's own sweep (its dispatcher answers as central does for a device it cannot reach), the Continue through resumeRun. Still fake: FakeCentral's
+ * /authorize, its signature on the sweep picture, the rows' SQL. Those run on real rows in edgeHeldConsume.a2n.db.test.
+ */
+describe("a2n round C — a consume past its bound ends the segment held", () => {
+  const HANG_M2 = /"k":"auth\.consumed".*"stepId":"m2"/;
+  const NGUOI = { id: 0, role: "system", name: "a2n" } as never;
+  const moveC = (id: string, c: unknown) => ({ ...move(id), compensation: c });
+  const hangBuoc = (runId: number) => ((d.store.get("orchestration_run_steps") ?? []) as Row[]).filter((r) => r.runId === runId).map((r) => ({ ...r }));
+  const trangThai = (runId: number) => Object.fromEntries(hangBuoc(runId).map((r) => [r.stepId, r.status]));
+
+  async function chepHang(x: EdgeTrenDiaGia, runId: number) {
+    const recs = x.central.received.report.filter((r: Row) => r.kind === "step");
+    await recordEdgeStepRows(d as never, runId, recs.map((r: Row) => ({ stepId: r.stepId, stepType: r.stepType, status: r.status, attempt: r.attempt ?? 0, startedAt: r.startedAt ? new Date(r.startedAt) : null, finishedAt: r.finishedAt ? new Date(r.finishedAt) : null, error: r.error ?? null, result: r.result ?? undefined })));
+  }
+  /** the real end of a segment: its rows, then the real complete */
+  async function dungThat(o: Parameters<typeof dung>[0] = {}): Promise<EdgeTrenDiaGia> {
+    const x = await dung(o);
+    d.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
+    x.central.handlers.complete = async (b, runId) => {
+      await chepHang(x, runId as number);
+      hangClaim(runId as number).claimTokenHash = hashEdgeSecret(b.claimToken);
+      hangClaim(runId as number).claimSeq = b.claimSeq;
+      const r = await completeForNodeV2(NODE, runId as number, b);
+      return r.http === 200 ? { status: 200, data: r.data } : { status: r.http, code: r.code };
+    };
+    return x;
+  }
+  async function hetDoan(x: EdgeTrenDiaGia, n = 1) {
+    x.dia.tha();
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await choDen(() => x.agent.liveRunIds().length === 0, "the walker ended");
+    await x.agent.tick();
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await x.agent.tick();
+    await choDen(() => x.central.callsTo("complete").length === n, "complete");
+  }
+  async function chayTreo(runId: number, steps: unknown[], stops: string[], dir?: string) {
+    const x = await dungThat({ dir });
+    themRun(x.central, runId, steps, stops);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "the consume overran");
+    await nghi(60);
+    await hetDoan(x);
+    return x;
+  }
+  /** what central holds besides the rows: the workflow, the machine, the authorisations it issued (FakeCentral's /authorize calls), none superseded */
+  function hatGiong(x: EdgeTrenDiaGia, runId: number) {
+    d.store.set("orchestration_workflows", [{ id: 1, ref: `r${runId}`, name: `r${runId}`, definitionJson: H.defs.get(runId), version: 1, status: "active", scopeKey: "global" }]);
+    d.store.set("machines", MACHINES.map((m) => ({ ...m, name: "m", code: "m" })));
+    d.store.set("edge_step_authorizations", x.central.callsTo("authorize").map((c) => ({ runId, claimSeq: 1, stepId: (c.body as { stepId: string }).stepId, supersededAt: null })));
+    Object.assign(hangRun(runId), { workflowId: 1, workflowRef: `r${runId}`, paramsJson: {}, startedBy: 4 });
+  }
+  /** a person presses Abort: the real abortRun and central's real sweep; then what the node re-sends from a sweep picture holding the real prior of those rows */
+  async function abortRoiGuiLai(x: EdgeTrenDiaGia, runId: number, stops: string[]) {
+    hatGiong(x, runId);
+    const prior = edgePriorPictureOf(hangBuoc(runId) as never);
+    const spy = vi.spyOn(equipmentRegistry, "getAdapter").mockImplementation((() => ({ sendCommand: async () => ({ ok: false, status: "rejected", routedTo: "central", error: "central cannot reach this device" }) })) as never);
+    const a = (await abortRun(runId, NGUOI, "a2n")) as unknown as { ok: boolean; abortStops?: { failed: string[]; sent: string[] } };
+    spy.mockRestore();
+    const def = H.defs.get(runId) as Record<string, unknown>;
+    const n0 = jobs.length;
+    x.central.stopsUnconfirmed = [{ runId, picture: x.central.sign("runpkg", x.central.sweepPicture(runId, { definition: def as never, defHash: kitHashDefinition(def), machines: MACHINES as never, verifiedStops: stops.map((stepId) => ({ kind: "robot" as const, stepId, robotId: 12 })), prior })) }];
+    await x.agent.tick();
+    await nghi(30);
+    return { a, moi: jobs.slice(n0).map((j) => j.jobType) };
+  }
+  /** the restart, then the real Continue: everything down, the same journal directory; the package carries the context resumeRun wrote */
+  async function tiepTuc(x: EdgeTrenDiaGia, dir: string, runId: number, steps: unknown[], stops: string[]) {
+    hatGiong(x, runId);
+    const hang = hangBuoc(runId);
+    const r = await resumeRun(runId, { approved: true } as never, NGUOI);
+    expect(r).toMatchObject({ ok: true, status: "queued" });
+    expect(hangClaim(runId).claimTokenHash).toBeNull();
+    const ctx = (hangRun(runId).contextJson ?? {}) as Row;
+    const rs = (ctx[RESUME_STATE_CTX_KEY] ?? {}) as Row;
+    await don.pop()!();
+    const c2 = new FakeCentral();
+    jobs = [];
+    d.store.clear();
+    const y = await dung({ central: c2, dir, dia: diskGia() });
+    themRun(c2, runId, steps, stops);
+    c2.packageOver.set(runId, { ...(c2.packageOver.get(runId) as Record<string, unknown>), context: ctx, prior: edgePriorPictureOf(hang as never) } as never);
+    await y.agent.tick();
+    await choDen(() => c2.callsTo("claim").length === 1, "claimed");
+    await choDen(() => y.agent.liveRunIds().length === 0, "the walker ended");
+    await y.journal.flush();
+    await y.shipper.flushAll();
+    await y.agent.tick();
+    await choDen(() => c2.callsTo("complete").length === 1, "complete");
+    return { rs, ket: c2.callsTo("complete")[0].body as Row };
+  }
+
+  it("★ O1: m2 stays failed, the run is held at central, no STOP on its own; Abort answers ok and only s1 goes", async () => {
+    const x = await chayTreo(71, [move("m1"), move("m2"), stop("s1")], ["s1"]);
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(hangRun(71).status).toBe("held");
+    expect(trangThai(71)).toEqual({ m1: "completed", m2: "failed" });
+    expect(ten()).toEqual(["move"]);
+    const { a, moi } = await abortRoiGuiLai(x, 71, ["s1"]);
+    expect(a.ok).toBe(true);
+    expect(a.abortStops?.failed).toEqual(["s1"]); // central's sweep tried s1 and only s1, and could not reach it: the failed row is what the node re-sends
+    expect(hangRun(71).status).toBe("aborted");
+    expect(hangBuoc(71).find((r) => r.stepId === "abort:s1")?.status).toBe("failed");
+    expect(moi).toEqual(["abort"]);
+  }, 20_000);
+
+  it("★ O1 Continue after the restart: m2 is not unknown, it is authorised anew, s1 goes, completed", async () => {
+    const dir = await tam.mk();
+    const steps = [move("m1"), move("m2"), stop("s1")];
+    const x = await chayTreo(72, steps, ["s1"], dir);
+    const { rs, ket } = await tiepTuc(x, dir, 72, steps, ["s1"]);
+    expect(rs).toEqual({});
+    expect(ten()).toEqual(["move", "abort"]);
+    expect(ket.outcome).toBe("completed");
+  }, 20_000);
+
+  it("★ O2: the STOP of the compensation went on its own; Abort answers ok and sends nothing again", async () => {
+    const x = await chayTreo(73, [move("m1"), moveC("m2", stop("c1"))], ["c1"]);
+    expect(hangRun(73).status).toBe("held");
+    expect(trangThai(73)).toEqual({ m1: "completed", m2: "failed", c1: "compensated" });
+    expect(ten()).toEqual(["move", "abort"]);
+    const { a, moi } = await abortRoiGuiLai(x, 73, ["c1"]);
+    expect(a.ok).toBe(true);
+    expect(a.abortStops?.failed).toEqual([]);
+    expect(moi).toEqual([]);
+  }, 20_000);
+
+  it("★ MIX, Abort: c1 went on its own, Abort sends one STOP more, never c1 again", async () => {
+    const x = await chayTreo(74, [move("m1"), moveC("m2", stop("c1")), stop("s1")], ["c1", "s1"]);
+    expect(ten()).toEqual(["move", "abort"]);
+    expect(hangRun(74).status).toBe("held");
+    const { a, moi } = await abortRoiGuiLai(x, 74, ["c1", "s1"]);
+    expect(a.ok).toBe(true);
+    expect(a.abortStops?.failed).toEqual(["s1"]); // never c1: it went on its own
+    expect(moi).toEqual(["abort"]);
+  }, 20_000);
+
+  it("★ MIX, Continue instead of Abort: s1 is lost, and the run's text said so before the button was pressed", async () => {
+    const dir = await tam.mk();
+    const steps = [move("m1"), moveC("m2", stop("c1")), stop("s1")];
+    const x = await chayTreo(75, steps, ["c1", "s1"], dir);
+    const { rs, ket } = await tiepTuc(x, dir, 75, steps, ["c1", "s1"]);
+    expect(rs).toMatchObject({ m2: { state: "doneFailed" } });
+    expect(ten()).toEqual([]); // not c1 again, not s1
+    expect(ket.outcome).toBe("failed");
+  }, 20_000);
+
+  it("★ PAR: the walk went on past m2 and completed: nothing to hold, the end is left alone", async () => {
+    const x = await chayTreo(76, [{ id: "p", type: "parallel", steps: [{ id: "w1", type: "delay", ms: 5 }, move("m2")] }, stop("s1")], ["s1"]);
+    expect(x.central.callsTo("complete")[0].body.outcome).toBe("completed");
+    expect(hangRun(76).status).toBe("completed");
+    expect(ten()).toEqual(["abort"]);
+  }, 20_000);
+
+  it("★ an Abort during the hang stays an abort: the end is aborted, not held", async () => {
+    const x = await dungThat();
+    themRun(x.central, 77, [move("m1"), move("m2"), stop("s1")], ["s1"]);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "the consume overran");
+    hangRun(77).status = "aborted";
+    await choDen(() => ten().includes("abort"), "the STOP reaches the driver");
+    await hetDoan(x);
+    expect(x.central.callsTo("complete")[0].body.outcome).toBe("aborted");
+  }, 20_000);
+
+  it("★ no disk in it: an ordinary refusal before the driver ends failed, Abort already terminal: the end only moves for a consume past its bound", async () => {
+    const x = await dungThat();
+    themRun(x.central, 78, [move("m1"), move("m2"), stop("s1")], ["s1"]);
+    runJobImpl = async () => {
+      (H.robot as Row).driver.lockMotion("test", "locked after m1");
+      return { ok: true, status: "done" };
+    };
+    await x.agent.tick();
+    await hetDoan(x);
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "MOTION_LOCKED" });
+    expect(hangRun(78).status).toBe("failed");
+    expect(ten()).toEqual(["move"]);
+    expect((await abortRun(78, NGUOI, "a2n")).message).toContain("already terminal");
+  }, 20_000);
+
+  it("★ the narrow case, measured: a run past the admission when another run's consume overran is refused on the unhealthy check: it counts, it ends held", async () => {
+    process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "true";
+    const x = await dungThat();
+    let tha: () => void = () => undefined;
+    H.preflight = new Promise<void>((r) => (tha = r));
+    themRun(x.central, 81, [move("b1"), stop("s1")], ["s1"]);
+    await x.agent.tick();
+    await choDen(() => H.preflight === null, "run 81 waits in its preflight, past the admission");
+    expect(x.journal.admitNonStop()).toBe(true);
+    themRun(x.central, 82, [move("m2")], []);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "run 82's consume overran");
+    tha();
+    await nghi(60);
+    await hetDoan(x, 2);
+    const ket = Object.fromEntries(x.central.callsTo("complete").map((c) => [c.runId, c.body.outcome]));
+    expect(ket).toEqual({ 81: "held", 82: "held" });
+    expect(ten()).toEqual([]);
+  }, 20_000);
+
+  it("★ the narrow case with an auth.unused past its bound behind it: it does not count, the run ends failed", async () => {
+    process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "true";
+    const x = await dungThat();
+    let tha: () => void = () => undefined;
+    H.preflight = new Promise<void>((r) => (tha = r));
+    themRun(x.central, 83, [move("b1"), stop("s1")], ["s1"]);
+    await x.agent.tick();
+    await choDen(() => H.preflight === null, "run 83 waits in its preflight, past the admission");
+    H.stale = { centralVersion: 2, localVersion: 1, sinceMs: 1_000, configIssuedAt: null };
+    themRun(x.central, 84, [move("m2")], []);
+    x.dia.treoSauKhiGhi("auth.unused");
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "run 84's auth.unused overran");
+    H.stale = null;
+    tha();
+    await nghi(60);
+    await hetDoan(x, 2);
+    const ket = Object.fromEntries(x.central.callsTo("complete").map((c) => [c.runId, c.body.outcome]));
+    expect(ket[83]).toBe("failed");
+  }, 20_000);
+
+  it("★ B5 stays as it is: Continue fails the step and sends no STOP, and the run's text says use Abort before that", async () => {
+    const dir = await tam.mk();
+    const steps = [move("m1"), stop("s1")];
+    const x = await dungThat({ dir });
+    themRun(x.central, 85, steps, ["s1"]);
+    H.stale = { centralVersion: 2, localVersion: 1, sinceMs: 1_000, configIssuedAt: null };
+    x.dia.treoSauKhiGhi("auth.unused");
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "auth.unused overran");
+    H.stale = null;
+    await hetDoan(x);
+    expect(hangRun(85).status).toBe("held");
+    const { rs, ket } = await tiepTuc(x, dir, 85, steps, ["s1"]);
+    expect(rs).toMatchObject({ m1: { state: "outcomeUnknown" } });
+    expect(ten()).toEqual([]);
+    expect(ket).toMatchObject({ outcome: "failed" });
+    expect(String(ket.error)).toContain("EDGE_OUTCOME_UNKNOWN");
+  }, 20_000);
+
+  it("★ another journalFull hold keeps its text: an end without the mark, the real central wording", async () => {
+    const x = await dung();
+    themRun(x.central, 86, [move("m1")], []);
+    await applyEdgeSegmentEnd(d as never, 86, { outcome: "held", heldReason: "journalFull", error: "EDGE_HELD(journalFull): the journal refused a record (full)", nodeCode: "edge-a", claimSeq: 1, def: { steps: [] } as never });
+    expect(String(hangRun(86).error)).toContain("nothing further was sent; Continue to resume it.");
+    expect(String(hangRun(86).error)).not.toContain("use Abort");
+  }, 20_000);
+
+  it("★ the words STOPs and Abort still go stay true on a held run: the URGENT of the end says them, the real Abort answers ok and the STOP goes", async () => {
+    const x = await dungThat();
+    themRun(x.central, 87, [move("m1"), move("m2"), stop("s1")], ["s1"]);
+    x.dia.treoSauKhiGhi(HANG_M2);
+    await x.agent.tick();
+    await choDen(() => x.journal.admitNonStop() === false, "the consume overran");
+    x.clock.t += EDGE_JOURNAL_STALL_ALERT_MS;
+    await choDen(() => canhBao("edge_journal_stalled").length === 1, "the URGENT");
+    await hetDoan(x);
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await x.agent.tick();
+    await x.journal.flush();
+    await x.shipper.flushAll();
+    await choDen(() => canhBao("edge_journal_stall_recovered").length === 1, "the URGENT of the end");
+    expect(canhBao("edge_journal_stall_recovered")[0].message).toContain("STOPs and Abort still go.");
+    expect(hangRun(87).status).toBe("held");
+    const { a, moi } = await abortRoiGuiLai(x, 87, ["s1"]);
+    expect(a.ok).toBe(true);
+    expect(moi).toEqual(["abort"]);
   }, 20_000);
 });

@@ -122,6 +122,14 @@ export const EDGE_WAITING_CTX_KEY = "edgeWaiting";
 /** held by its node at a segment end (D5: centralUnreachable / journalFull …) — foeRunStore.applyEdgeSegmentEnd */
 export const EDGE_HELD_CTX_KEY = "edgeHeld";
 /**
+ * a2n round C — marks inside the `error` of a held segment end, for the two holds a Continue does not get out of: central words the run's error from them
+ * (foeRunStore.applyEdgeSegmentEnd). Free text on an existing field: a central that does not know them shows them and keeps its usual wording.
+ *   CONSUME_OVERRUN — a consumeAuthorization ran past its bound in the segment: the step failed, compensations may have run, what is behind it was not walked.
+ *   UNUSED_NOT_REPORTED — B5: the authorisation of a held step could not be reported unused, so central counts the step as possibly sent.
+ */
+export const EDGE_HOLD_CONSUME_OVERRUN = "EDGE_CONSUME_OVERRUN";
+export const EDGE_HOLD_UNUSED_NOT_REPORTED = "EDGE_UNUSED_NOT_REPORTED";
+/**
  * fix review 4 (B F-B2-1) — `{ userId, at }` of the user who CONTINUED a held edge run last (foeEngine.resumeRun, central-only;
  * edgeContextPolicy refuses it from an edge patch). B's /authorize (edgeAuthorizeCentral.EDGE_RESUMED_BY_CTX_KEY, the same name)
  * uses that user's role for the engine policy on the held path.
