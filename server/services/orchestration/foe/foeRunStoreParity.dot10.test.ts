@@ -111,7 +111,9 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({
   getDb: vi.fn(async () => {
     if (h.dbThrows) {
-      h.dbCalls++;
+      // A2(n) F10 / T0 — the REAL alert still runs in this harness for an alert raised through foeKetCucKhongRo (the mock below does not reach it, measured, cause not found: a
+      // full stub of the module and a stub of sendNotification do not stop it either). Its inbox work outlives its case and lands here; it is central's work, never the edge walk's.
+      if (!/criticalStopAlert\.ts/.test(new Error().stack ?? "")) h.dbCalls++;
       throw new Error("EDGE: this process has no database");
     }
     return fake;
@@ -140,6 +142,7 @@ import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
+import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import type { EdgeRunPackage } from "../../edge/edgeProtocol";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -292,6 +295,8 @@ interface EdgeHarness {
   unused?: Array<Record<string, any>>;
   /** R1b-2b-2a A2(n) N8 — the auth_unused journal / report FAILS (reportUnused answers false): the authorisation stays issued on central */
   unusedFails?: boolean;
+  /** A2(n) F10 — the report never answers (a stalled journal) */
+  unusedHangs?: boolean;
   /** A2(n) (I-5) — the events journal refuses (a full journal): the anomaly never leaves the edge */
   eventsRefused?: boolean;
   /** A2(n) extension — /authorize answers these steps this many ms later */
@@ -416,6 +421,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
     authorize: fakeAuthorize(x, d, primed),
     ...(x.staleness ? { config: { staleness: x.staleness } } : {}),
     async reportUnused(u) {
+      if (x.unusedHangs) await new Promise<void>(() => undefined);
       if (x.unusedFails) return false;
       x.unused?.push({ ...u });
       for (const r of fake.store.get("edge_step_authorizations") ?? []) if (r.jti === u.jti && r.resultReportedAt == null) r.supersededAt = new Date();
@@ -2501,5 +2507,39 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     await edgeSegment(e, 3);
     expect(ids().filter((x) => x === "rz")).toHaveLength(0);
     expect(baoCua(e, "compensationUnknown").length).toBeGreaterThan(0);
+  });
+
+  // F10 — the report of an unused authorisation is bounded: a stalled journal holds neither the walk nor a STOP behind it
+  const trong = (p: Promise<unknown>, ms: number) => Promise.race([p.then(() => "ended"), new Promise((r) => setTimeout(() => r("blocked"), ms))]);
+  const tuChoiCoStopBen = (ref: string) => denBuoc(def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), move("r3")], { compensation: robotStop("bs") })], false)]));
+  it("★ F10 (R3) the report hangs at the sink's refusal: the segment ends and the container's STOP goes", async () => {
+    const e = await tuChoiCoStopBen("f10-r3");
+    h.timeoutDispatch.add("x");
+    e.unusedHangs = true;
+    try {
+      expect(await trong(edgeSegment(e, 2), 3 * STOP_DB_STEP_DEADLINE_MS), "the segment stood on the report").toBe("ended");
+    } finally {
+      h.dbThrows = false;
+    }
+    expect(ids()).toEqual(["x", "bs"]);
+  });
+  it("F10 (R3b) the report answers false at the sink's refusal: as above, nothing stands", async () => {
+    const e = await tuChoiCoStopBen("f10-r3b");
+    h.timeoutDispatch.add("x");
+    e.unusedFails = true;
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["x", "bs"]);
+  });
+  it("★ F10 the report hangs while held at the sink: the segment ends held, the compensation not sent", async () => {
+    const e = await autDuocTruocChot("f10-giu");
+    e.unusedHangs = true;
+    const seg = edgeSegment(e, 2);
+    try {
+      expect(await trong(seg, 3 * STOP_DB_STEP_DEADLINE_MS), "the segment stood on the report").toBe("ended");
+    } finally {
+      h.dbThrows = false;
+    }
+    expect((await seg).out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(ids().filter((x) => x === "rz")).toHaveLength(0);
   });
 });

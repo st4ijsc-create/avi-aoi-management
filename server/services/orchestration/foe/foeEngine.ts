@@ -1064,8 +1064,9 @@ async function execStep(rc: RunContext, step: WorkflowStep): Promise<StepOutcome
     // A2(n) (I-1, C-C) — every unknown row says the class itself: central reads an edge run's rows at every hand-back (chotTuHang, edgeResumeStateOf)
     const loiHang = "error" in failedOutcome ? (khongRo ? loiCoMaKhongRo(failedOutcome.error) : failedOutcome.error) : null;
     const compStop = step.compensation ? await isStopCommandStep(rc, step.compensation) : false;
+    // F10 — the row of a step refused at the sink is bounded like an unknown one: a hung write must not stand between the refusal and an ancestor's STOP
     await giuCoKhongRo(
-      khongRo,
+      khongRo || (failedOutcome.kind === "failed" && failedOutcome.khongGuiChot === true),
       rc,
       step.id,
       stopBoundedWrite(stop || compStop, rc.runId, step.id, "failed row", () =>
@@ -1210,6 +1211,13 @@ function ketCucRiengKhongRo(rc: RunContext, stepId: string): boolean {
   return rc.khongRoTai?.has(stepId) === true || chot?.stepId === stepId || outcomeUnknownOf(rc, stepId) !== null || rc.khongRoHang?.has(stepId) === true || (rc.prior.attempted.has(stepId) && !rc.prior.settled.has(stepId));
 }
 
+/** A2(n) F10 — the report of an unused authorisation never holds a walk longer than D: a stalled journal must not stand between a refusal and the STOP behind it. Not reported ⇒ central reads the step the safe way. */
+function baoKhongDungCoHan(rc: RunContext, stepId: string): Promise<void> {
+  return withDeadline(rc.store.uyQuyenKhongDung?.(stepId) ?? Promise.resolve(), STOP_DB_STEP_DEADLINE_MS, `FOE run ${rc.runId} step ${stepId} unused authorisation report`).catch((err: unknown) =>
+    console.warn(`[FOE] run ${rc.runId} step ${stepId}: unused authorisation not reported in time: ${(err as Error)?.message ?? err}`),
+  );
+}
+
 /**
  * A2(n) extension — what the sink answers for a forward step on a latched run. Nothing is handed over, and an authorisation it holds is reported unused.
  *   • it may have gone out already (ketCucRiengKhongRo) ⇒ it STAYS unknown: outcomeUnknown, so execStep latches, words and splits it as a fresh unknown; no "not sent" anywhere;
@@ -1217,7 +1225,7 @@ function ketCucRiengKhongRo(rc: RunContext, stepId: string): boolean {
  *     not (a STOP unknown once, then confirmed: nothing to split), finishWalk raises forwardNotSent.
  */
 async function khongGuiBuocTien(rc: RunContext, stepId: string, attempt: number): Promise<StepOutcome> {
-  await rc.store.uyQuyenKhongDung?.(stepId);
+  await baoKhongDungCoHan(rc, stepId);
   if (ketCucRiengKhongRo(rc, stepId)) return { kind: "failed", error: `command step "${stepId}" has no recorded outcome from an earlier attempt`, outcomeUnknown: true, khongRo: true };
   rc.store.auditAbort(rc.user, rc.runId, "notSentRunLatched", { stepId, attempt });
   rc.khongGuiDau ??= stepId;
@@ -1226,7 +1234,7 @@ async function khongGuiBuocTien(rc: RunContext, stepId: string, attempt: number)
 
 /** A2(n) (a) — the hold at the sink: the same hold as the split's, once per compensation; the pinned STOPs of the rest of its body still go (m-O). */
 async function giuTaiCong(rc: RunContext, chu: ChuBuTru, stepId: string): Promise<StepOutcome> {
-  const baoKhongDung = rc.store.uyQuyenKhongDung?.(stepId); // extension (4) — awaited last: a STOP in the rest of the body never waits on the journal
+  const baoKhongDung = baoKhongDungCoHan(rc, stepId); // extension (4) — awaited last: a STOP in the rest of the body never waits on the journal
   const loi = rc.loiBuTru?.get(chu.comp.id) ?? "";
   const lan = luotDiCua(rc);
   let h: StepOutcome = { kind: "held", stepId, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(chu.step.id, chu.comp.id, loi) };

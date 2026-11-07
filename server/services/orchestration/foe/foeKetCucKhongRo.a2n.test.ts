@@ -231,6 +231,7 @@ import {
 import { goiYRunDangGiu } from "../../../routers/oversightRouter";
 import { createEdgeRunStore } from "../../edge/edgeRunStore";
 import { EDGE_HELD_REASONS, type EdgeRunPackage } from "../../edge/edgeProtocol";
+import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 
 const USER = { id: 42, role: "admin", name: "owner" };
 const APPROVER = { id: 77, role: "admin", name: "approver" };
@@ -1889,5 +1890,20 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     expect(n.message).not.toMatch(/an earlier segment sent it/);
     expect(loiLaKetCucKhongRo(`${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched`)).toBe(false);
     expect(chotTuHang([{ stepId: "a", status: "failed", resultJson: null, error: `${FOE_NOT_SENT_RUN_LATCHED}: x` }] as never)).toBeNull();
+  });
+});
+
+describe("A2(n) F10 — a refused step's own bookkeeping never holds a walk longer than D", () => {
+  const pause = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "pause", ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: true, steps, ...extra }) as WorkflowStep;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
+  const trong = (p: Promise<unknown>, ms: number) => Promise.race([p.then(() => "ended"), new Promise((r) => setTimeout(() => r("blocked"), ms))]);
+
+  it("★ F10 (Q6) the refused step's failed row hangs: the walk ends and the container's STOP compensation goes", async () => {
+    HX.rowHangs = (r) => r.stepId === "r3" && r.status === "failed";
+    const p = chay([par("p", [main(), seq("b", [delay("w", 60), pause("r3")], stopComp("bs"))], { failFast: false })]);
+    expect(await trong(p, 3 * STOP_DB_STEP_DEADLINE_MS), "the walk stood on the row of a refused step").toBe("ended");
+    expect(sent("pause")).toHaveLength(0);
+    expect(sent("stop")).toHaveLength(1);
   });
 });
