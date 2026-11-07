@@ -305,7 +305,7 @@ describe("★★★ T3E — census: mọi chỗ gửi lệnh phải xét MOT_PHA
   const guiThem = `await equipmentRegistry.getAdapter("ot-opcua" as never).sendCommand({} as never);`;
   it("★ đột biến (tệp ảo): thêm một lần gửi trong execCommand (bọc ngoài, không xét) ⇒ ĐỎ, nêu tên", () => {
     const f = TAT_CA.find((x) => x.rel === FOE_TEP)!;
-    const neo = "  const giao: { xong: ((o: StepOutcome) => void) | null } = { xong: null };\n  let daOk = false;";
+    const neo = "  const giao: { xong: ((o: StepOutcome) => void) | null } = { xong: null };\n  const tt: ThongTinLenh = {};";
     expect(f.van).toContain(neo);
     const cho = [...CHO.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, f.van.replace(neo, `${guiThem}\n${neo}`))];
     const k = kiem(cho, MIEN);

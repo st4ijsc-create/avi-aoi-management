@@ -41,6 +41,7 @@ import {
   type AuthorizeVerdict,
   type EdgeSegmentEnd,
   type KetCucKhongRoBaoCao,
+  type LaStop,
   type RunStepPatch,
   type RunStore,
   type RunStoreContext,
@@ -194,6 +195,9 @@ function localRobotStops(p: { definition: unknown; machines: ReadonlyArray<{ id:
   return out;
 }
 
+/** A2(n) T5 (C2) — otEdgeDispatch's own "I could not decide" (classifyEdgeOtStop, in the existing `refusal` detail): the snapshot does not name the adapter, or the running connection is not the snapshot's. */
+const LY_DO_KHONG_QUYET_DUOC: ReadonlySet<string> = new Set(["stop_not_pinned:no_snapshot_adapter", "stop_not_pinned:adapter_connection_stale"]);
+
 /** Shared by the segment store and the sweep-picture store. */
 abstract class EdgeStoreBase implements RunStore {
   readonly kind = "edge" as const;
@@ -311,6 +315,8 @@ export class EdgeRunStore extends EdgeStoreBase {
   private readonly khongRoBao: BaoCaoKhongRoEdge[] = [];
   /** A2(n) (b) — a step decided unknown: every later row of it keeps the code (a re-sent STOP's result row must not wipe the durable fact) */
   private readonly maKhongRo = new Map<string, string>();
+  /** A2(n) T5 — stop-typed steps handed over with no authorisation (the route of a STOP the package could not verify): see baoCaoKetQua */
+  private readonly khongUyQuyen = new Set<string>();
 
   constructor(
     readonly pkg: EdgeRunPackage,
@@ -383,11 +389,21 @@ export class EdgeRunStore extends EdgeStoreBase {
         finishedAt: ms(patch.finishedAt ?? null),
         error: clip(patch.error ?? this.maKhongRo.get(stepId) ?? null, 4_000),
         // no result in the patch ⇒ null ⇒ central KEEPS the stored result (the upsertStep rule)
-        result: patch.result ?? null,
+        result: this.baoCaoKetQua(stepId, patch.result) ?? null,
         jti: isStop ? null : this.jtiByStep.get(stepId) ?? null,
       },
       isStop,
     );
+  }
+
+  /**
+   * A2(n) T5 — central reads `routedTo` on a command with no jti as an actuation nobody authorised, and refuses the whole report (edgeReportsCentral, 409 unauthorised_actuation), so a STOP of the route
+   * its dispatcher REFUSED would wedge the stream. Nothing actuated: the row says so by not naming a route. The record, its fields and central's check are unchanged.
+   */
+  private baoCaoKetQua(stepId: string, result: RunStepPatch["result"]): RunStepPatch["result"] {
+    if (!result || !this.khongUyQuyen.has(stepId) || result.accepted !== false) return result;
+    const { routedTo: _bo, ...conLai } = result;
+    return conLai;
   }
 
   /** central's setRunStatusUnlessAborted on the segment's own status (central applies the END: applyEdgeSegmentEnd). */
@@ -411,6 +427,12 @@ export class EdgeRunStore extends EdgeStoreBase {
     const run = { runId: this.io.runId, claimSeq: this.io.claimSeq, stepId: step.id, attempt };
     // L-7 — a VERIFIED STOP (robot abort / pinned OT stop, verified centrally into the package) never asks anyone.
     if (this.verifiedStopIds.has(step.id) || (x.robotKind && x.isStop)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null, stopXacMinh: true };
+    // A2(n) T5 (F4) — stop-typed, on a latched run, the package could not verify it: NO authorisation at all, so the edge dispatcher sends it only if its own signed snapshot says pinned
+    // (classifyEdgeOtStop); anything else there answers AUTHORIZATION_REQUIRED. Nothing else comes through here.
+    if (x.daChot === true && x.isStop && !x.robotKind && this.unsureStopIds.has(step.id)) {
+      this.khongUyQuyen.add(step.id);
+      return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null, stopChuaDocGhim: true, ghimKhongDoc: true };
+    }
     // Everything else (an UNPINNED stop-typed write included — not a STOP, R-5-j) needs a fresh, single-use authorisation.
     if (this.journalRefused !== null || this.outcomeUnknown.has(step.id)) return this.unavailable(step.id, "journalFull");
     if (this.io.consume && this.io.consume.admitNonStop() === false) return this.unavailable(step.id, "journalFull");
@@ -442,7 +464,7 @@ export class EdgeRunStore extends EdgeStoreBase {
         run,
         source: "local",
       });
-      return { ok: true, cmd, args, approval };
+      return { ok: true, cmd, args, approval, ...(x.isStop && this.unsureStopIds.has(step.id) ? { ghimKhongDoc: true as const } : {}) };
     }
     // A2(n) (b) — central's second check: the run is latched, this compensation not approved. Nothing sent; the walker holds it (foeEngine.execCommand)
     if (out.code === "outcome_unknown_held") {
@@ -538,11 +560,26 @@ export class EdgeRunStore extends EdgeStoreBase {
    * it as it always did, the safe way; the step is not sent either way. Forgotten at once: a later row of the step must not quote a jti (central's evidence of use).
    */
   /**
-   * A2(n) — no: the same attempt asked twice answers `already_authorized`, which would read as a refusal and lose the hold, and the package's verified list does not change
-   * inside a segment. A stop-typed step refused at this sink stays refused until it has a route that does not ask.
+   * A2(n) T5 — only a step the package could not verify: its second ask never reaches /authorize (the marked route asks nobody, `already_authorized` cannot lose the hold). A step the package read
+   * and found no STOP has nothing to ask: the verified list does not change inside a segment.
    */
-  stopHoiLaiDuoc(): boolean {
-    return false;
+  stopHoiLaiDuoc(stepId: string): boolean {
+    return this.unsureStopIds.has(stepId);
+  }
+
+  dispatcherKhongQuyetDuoc(result: { ok: boolean; detail?: Record<string, unknown> | null }): boolean {
+    const d = (result.detail ?? null) as { edge?: unknown; refusal?: unknown } | null;
+    return !result.ok && d?.edge === true && LY_DO_KHONG_QUYET_DUOC.has(String(d.refusal ?? ""));
+  }
+
+  dispatcherNoiKhongGhim(result: { ok: boolean; detail?: Record<string, unknown> | null }): boolean {
+    const d = (result.detail ?? null) as { edge?: unknown; refusal?: unknown } | null;
+    const ly = String(d?.refusal ?? "");
+    return !result.ok && d?.edge === true && ly.startsWith("stop_not_pinned:") && !LY_DO_KHONG_QUYET_DUOC.has(ly);
+  }
+
+  stopDocDuocKhongGhim(stepId: string): boolean {
+    return !this.verifiedStopIds.has(stepId) && !this.unsureStopIds.has(stepId);
   }
 
   async uyQuyenKhongDung(stepId: string): Promise<void> {
@@ -565,8 +602,10 @@ export class EdgeRunStore extends EdgeStoreBase {
    * lists as VERIFIED (OT: central ran the A2(h) predicate + the running-connection check over its pins, edgeRunAnalysis; robot: the stop-job
    * rule, also applied locally). Anything else — an unpinned / unsure stop, a step the package does not list — ⇒ held (as central).
    */
-  async buTruLaStopGhim(_rc: RunStoreContext, comp: WorkflowStep): Promise<boolean> {
-    return comp.type === "command" && this.verifiedStopIds.has(comp.id);
+  async buTruLaStopGhim(_rc: RunStoreContext, comp: WorkflowStep): Promise<LaStop> {
+    if (comp.type !== "command") return "khong";
+    if (this.verifiedStopIds.has(comp.id)) return "stop";
+    return this.unsureStopIds.has(comp.id) ? "chuaDoc" : "khong"; // A2(n) T5 (C-2) — central could not read its pins: the edge dispatcher's signed snapshot decides
   }
 
   /**
@@ -575,7 +614,7 @@ export class EdgeRunStore extends EdgeStoreBase {
    * segment end held(outcomeUnknown).
    */
   ketCucKhongRo(_rc: RunStoreContext, a: KetCucKhongRoBaoCao): void {
-    if (a.loai === "held") {
+    if (a.loai === "held" || a.loai === "stopNotSent") { // A2(n) T5 — state C holds the segment too
       this.khongRoGiu = true;
       this.heldReason = "outcomeUnknown";
     }

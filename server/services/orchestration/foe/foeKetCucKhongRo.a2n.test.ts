@@ -381,22 +381,22 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     void res;
   });
 
-  it("N3 pins UNREADABLE (predicate error / throws) ⇒ treated as non-STOP ⇒ held, 0 writes of the STOP compensation", async () => {
+  it("N3 pins UNREADABLE (predicate error / throws) ⇒ T5 (decisions 2, A): not 'not a STOP': the marked fresh row, its dispatcher decides", async () => {
     ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: "pin read down (test)" }));
-    const a = await giuKhongRo([main(stopComp())]);
-    expect(sent("stop")).toHaveLength(0);
-    expect(runRow(a.runId).contextJson.foeResumeState.main.state).toBe("compensationHeld");
-    // decided BEFORE any authorisation: no authorisation row was ever minted for the held compensation
-    expect(rows("ai_pending_actions").filter((r) => String(r.id).startsWith(`foe-run${a.runId}-undo-`))).toEqual([]);
+    const a = await chay([main(stopComp())]);
+    expect(sent("stop")).toHaveLength(1);
+    expect(a.res.status).toBe("failed");
+    expect(rows("ai_pending_actions").filter((r) => JSON.stringify(r.previewJson ?? {}).includes("hangMoiStopGhim"))).toHaveLength(1);
     ghimMock.mockImplementation(async () => {
       throw new Error("db down (test)");
     });
-    const b = await giuKhongRo([main(stopComp())]);
-    expect(sent("stop")).toHaveLength(0);
-    expect(runRow(b.runId).status).toBe("held");
-    expect(rows("ai_pending_actions").filter((r) => String(r.id).startsWith(`foe-run${b.runId}-undo-`))).toEqual([]);
-    // a stop-typed write the predicate says is NOT pinned (no pins on the tag) ⇒ held too
+    otDispatchMock.mockClear();
+    const b = await chay([main(stopComp())]);
+    expect(sent("stop")).toHaveLength(1);
+    expect(runRow(b.runId).status).toBe("failed");
+    // a stop-typed write the predicate says is NOT pinned (no pins on the tag) ⇒ held
     ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+    otDispatchMock.mockClear();
     await giuKhongRo([main(stopComp())]);
     expect(sent("stop")).toHaveLength(0);
   });
@@ -453,9 +453,10 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
         }
       }
       console.log(`[PROBE K2-dua ${dang}]`, JSON.stringify([...dem]));
-      expect([...dem]).toEqual([["run=held stop=0 undo=held ds=1", 30]]); // ds: one hold, whichever way it came
+      // ds: one hold, whichever way it came. T5 — a read that failed takes the marked route: it goes, nothing is held
+      expect([...dem]).toEqual([[dang === "khongGhim" ? "run=held stop=0 undo=held ds=1" : "run=failed stop=1 undo=compensated ds=undefined", 30]]);
     });
-    {
+    if (dang === "khongGhim") {
       it(`K2 ${dang}, Continue: the URGENT names it: the read recovered, it works, the STOP goes once, no 'not resumable', no 'already terminal'`, async () => {
         let hoi = false;
         const { runId } = await denK2(dang, 30, () => hoi);
@@ -717,10 +718,10 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     } as unknown as EdgeRunPackage;
     const s = createEdgeRunStore(pkg, { runId: 5, claimSeq: 2, claimToken: "t", sink: { run: async () => ({ seq: 1 }), event: async (r) => (events.push(r as never), { seq: 1 }) }, authorize: { authorize: async () => ({ ok: false, verdict: "unavailable", code: null }) } });
     const cmd = (id: string) => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
-    expect(await s.buTruLaStopGhim({} as never, cmd("otStop"))).toBe(true);
-    expect(await s.buTruLaStopGhim({} as never, cmd("robotStop"))).toBe(true); // R-2
-    expect(await s.buTruLaStopGhim({} as never, cmd("unsure"))).toBe(false);
-    expect(await s.buTruLaStopGhim({} as never, cmd("other"))).toBe(false);
+    expect(await s.buTruLaStopGhim({} as never, cmd("otStop"))).toBe("stop");
+    expect(await s.buTruLaStopGhim({} as never, cmd("robotStop"))).toBe("stop"); // R-2
+    expect(await s.buTruLaStopGhim({} as never, cmd("unsure"))).toBe("chuaDoc"); // A2(n) T5 — not "khong": central could not read its pins
+    expect(await s.buTruLaStopGhim({} as never, cmd("other"))).toBe("khong");
     s.ketCucKhongRo({} as never, { loai: "held", stepId: "m", compId: "c", error: "FOE_OUTCOME_UNKNOWN: x", lan: "ignored" });
     await s.setStatusUnlessAborted(5, "held", { error: "e" });
     expect(s.segmentEnd()).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
@@ -744,11 +745,11 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     expect(src.split("await congBuTru(rc, step, step.compensation,").length - 1).toBe(2);
     expect(src.split("runCompensation(rc,").length - 1).toBe(5); // congBuTru ×3, guiStopKhongRo, the boot re-send
     expect(src).toContain("const khongRoLoi = loiKhongRoRun(rc, step, failedOutcome);");
-    expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true) {');
+    expect(src).toContain('if (rc.chiStopGhimIds?.has(step.id) && rc.store.kind === "central" && !robotKind && auth.stopGhim !== true && auth.stopChuaDocGhim !== true) {');
     expect(src).toContain("if (buTruKhongRoCho(ctx).length > 0) continue;"); // extension (2): a latched run with no hold is walked (the forward sink), the marker skips
     // the automatic STOP goes through the engine's own compensation path (runCompensation → execCommand → dispatcher), no shortcut
     const body = src.slice(src.indexOf("async function guiStopKhongRo("), src.indexOf("function loaiGuiStop("));
-    expect(body).toContain("c = await runCompensation(rc, step, loi);");
+    expect(body).toContain("c = await runCompensation(rc, step, loi, { attempt: thu });");
     expect(body).not.toMatch(/sendCommand|dispatch\(|getAdapter/);
   });
 });
@@ -842,7 +843,7 @@ describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, min
     expect(sent("reset")).toHaveLength(0);
   });
 
-  it("I-3 + m-1 the URGENT says what really happened: simulated ⇒ 'simulated — NOT sent' (never 'sent'); refused by the device ⇒ not confirmed; never handed over ⇒ 'NOT sent'", async () => {
+  it("I-3 + m-1 the URGENT says what really happened: simulated ⇒ 'simulated — NOT sent' (never 'sent'); refused ⇒ state C, 'did NOT go out' (T5, H1); never handed over ⇒ 'NOT sent'", async () => {
     otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : OK)); // OT control off: simulated
     const a = await chay([main(stopComp())]);
     await waitAlerts(1);
@@ -853,7 +854,8 @@ describe("A2(n) fix round 1 — review C-1, C-2, I-1..I-5, rulings R-1..R-4, min
     otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : REJECTED));
     await chay([main(stopComp())]);
     await waitAlerts(1);
-    expect(alertsOf("stopNotConfirmed")).toHaveLength(1);
+    expect(alertsOf("stopNotSent")).toHaveLength(1);
+    expect(alertsOf("stopNotConfirmed")).toHaveLength(0);
     alerts.length = 0;
     expect(noiDungCanhBaoKhongRo({ loai: "stopNotHanded", runId: 9, stepId: "X", compId: "Y", error: "e", lan: "L" }).message).not.toContain("handed to the dispatcher but");
   });
@@ -2080,12 +2082,7 @@ describe("A2(n) T1 — nhanBuocSauChot, the F12 table by row shape", () => {
   it.todo("F12-27 gap: the row stays running at the end of an edge segment — T11");
   it.todo("F12-30a gap Q-5: hong counts running with or without routedTo, S-R — T10");
   it.todo("F12-31 gap: Continue hands over again under -a1 (M2), F8-DUP — T6, DB at T15");
-  it.todo("F12-30b gap C-3: adapter unresolved, state C, B12, F4-C3 — T5");
-  it.todo("F12-39 gap C-2: a refused step's STOP compensation with unreadable pins, B11, F4-COMP, F4-COMP-C — T5");
   // rows of the table with no label of this function
-  it.todo("F12-24 unverifiable forward step goes to the dispatcher (F4), B-unverified, F2a — T5");
-  it.todo("F12-25 unverifiable compensation follows laBuTruStop, F2c, a2n N3 — T5");
-  it.todo("F12-30c pins unreadable by FOE and dispatcher, no approval: state C, F4-C2, F4-C2b — T5");
   // D. the same rows at each moment: the fixtures that build rows for the real walk, central and edge
   it.todo("F12-D walking: memory + rows — T13");
   it.todo("F12-D boot: rows + context, no memory — T10, T13");

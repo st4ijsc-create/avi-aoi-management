@@ -29,7 +29,7 @@ import type { StopPin, StopPinTagRow } from "../../ot/stopPin"; // types only â€
 import { getCapabilitiesForMachine, type CommandDescriptor, type EquipmentCapability } from "../../equipment/capabilityModel";
 import type { EquipmentCommand } from "../../equipment/equipmentAdapter";
 import { toRobotJob } from "../../equipment/robotJobMapping";
-import { isStopJob } from "../../robot/stopJob";
+import { isStopJob, isStopJobType } from "../../robot/stopJob";
 import { FOE_ENGINE_TOOL, type FoeGateApproval } from "../../ot/otActionBinding";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "./workflowModel";
 import { napMotLan } from "./foeNapMotLan";
@@ -177,6 +177,13 @@ export async function isStopCandidate(step: WorkflowStep, machineMap: Map<number
   if (!c) return false;
   if (isRobotKind(c.cap.adapterKind)) return isRobotStopStep(c);
   return isOtStopCommandType(c.descriptor.name);
+}
+
+/** A2(n) T5 (H1) â€” stop-typed, from the step alone. A step whose machine or command cannot be resolved is read by its own name: that it cannot be resolved does not make it no STOP. No DB. */
+export async function laStopTheoBuoc(step: WorkflowStep, machineMap: Map<number, MachineForValidation>): Promise<boolean> {
+  if (await isStopCandidate(step, machineMap)) return true;
+  if (step.type !== "command" || commandOf(step, machineMap)) return false;
+  return (await isOtStopCommandType(step.command)) || isStopJobType(step.args?.jobType ?? step.command);
 }
 
 /** Does a subtree (the step itself, its children, branches, compensation) contain a stop CANDIDATE? */

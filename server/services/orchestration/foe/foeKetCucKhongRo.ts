@@ -244,9 +244,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c);
  * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split);
  * runEnd — A2(n) T2: the one URGENT of a latched run's end, `stepId` = the latch step, under the fixed event "chot". Check on site (H2): by then Abort may answer "already terminal";
- * stopUntakenBranch — A2(n) M1: `stepId` is a STOP in a branch the run never evaluated: listed, never sent, under the fixed event "chot".
+ * stopUntakenBranch — A2(n) M1: `stepId` is a STOP in a branch the run never evaluated: listed, never sent, under the fixed event "chot";
+ * stopNotSent — A2(n) T5, state C: a STOP that stays owed (`vi` says why): the run is held so an Abort can send it. A forward STOP: `stepId` is the STOP, `compId` "-"; a compensation: its owner and the STOP.
  */
-export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch";
+export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -262,6 +263,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   forwardNotSent: "foe_outcome_unknown_forward_not_sent",
   runEnd: "foe_outcome_unknown_run_end",
   stopUntakenBranch: "foe_outcome_unknown_stop_untaken_branch",
+  stopNotSent: "foe_outcome_unknown_stop_not_sent",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -280,6 +282,22 @@ export interface CanhBaoKhongRo {
   lan: string;
   /** m-K — `stepId`'s own failure is KNOWN; the doubt is another command's (the run is latched) */
   biet?: boolean;
+  /** A2(n) T5 — stopNotSent: why. A code, never a driver's text */
+  vi?: ViChuaRa;
+}
+
+/** The STOP of state C, as the words name it. */
+const stopCua = (a: Pick<CanhBaoKhongRo, "stepId" | "compId">): string => (a.compId === KHONG_CO_BU_TRU ? a.stepId : a.compId);
+
+/** A2(n) T5 (H11) — the two sides of the words of state C: true of the source. "did NOT go out" only where nothing reached a driver; "once the read recovers" only where a read failed. */
+function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [string, string] {
+  const id = `"${stopCua(a)}"`;
+  const giu = "The run is held";
+  const tay = "Use the machine's direct STOP / E-STOP if needed";
+  if (a.vi?.nguon === "driverLoi") return [`STOP ${id} NOT confirmed out`, `STOP ${id} is not confirmed out: it reached its driver, which answered failed (${a.vi.ma}), so it may or may not have reached the device. ${giu}: Abort sends it again. ${tay}.`];
+  if (a.vi?.nguon === "tuChoi") return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: it was refused before it reached a driver (${a.vi.ma}). ${giu}: Abort sends it again. ${tay}.`];
+  const ma = a.vi ? ` (${a.vi.ma})` : "";
+  return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: nobody could read its pins${ma}. ${giu}: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent. ${tay}.`];
 }
 
 /** The alert of one event (pure; exported for the unit test). Dedup key `<kind>:<run>:<step>:<comp>:<event>`. */
@@ -309,6 +327,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       forwardNotSent: [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
       runEnd: [`nothing further goes forward, check the machine on site`, `The run has ended or is waiting; nothing further goes forward. A STOP this run sent, if any, could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopUntakenBranch: [`STOP "${a.stepId}" in a branch never taken: NOT sent`, `STOP step "${a.stepId}" sits in a branch this run never evaluated, so it was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
+      stopNotSent: chuStopChuaRa(a),
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
@@ -366,6 +385,61 @@ export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number |
 
 /** The anomaly code an EDGE walker journals for an A2(n) event (events stream → edgeReportsCentral → canhBaoTuAnomalyEdge). */
 export const KHONG_RO_EDGE_ANOMALY = "FOE_OUTCOME_UNKNOWN_COMPENSATION";
+/**
+ * A2(n) T5 (H1, H11) — why a STOP stays owed. `doc`: nobody could read its pins, or no dispatcher could be asked; `tuChoi`: answered, and nothing reached a driver; `driverLoi`: a driver was
+ * called, or the hand-over threw: it may have gone. `ma` is a code (m-4): never a driver's text.
+ */
+export type NguonChuaRa = "doc" | "tuChoi" | "driverLoi";
+export interface ViChuaRa {
+  nguon: NguonChuaRa;
+  ma: string;
+}
+const RE_MA = /^[A-Z][A-Z0-9_]{2,63}$/;
+/**
+ * A2(n) T5 — the code of a refusal: the dispatcher's own reason, else the code a text opens with, else its status. Only this leaves the walker (m-4). Pure.
+ */
+export function maTuChoiCua(r: { error?: string | null; status?: string | null; detail?: { reason?: unknown } | null }): string {
+  const lyDo = typeof r.detail?.reason === "string" ? r.detail.reason : "";
+  if (RE_MA.test(lyDo)) return lyDo;
+  const dau = /^[A-Z][A-Z0-9_]{2,63}(?=$|[:\s(])/.exec(r.error ?? "")?.[0];
+  if (dau) return dau;
+  const tt = String(r.status ?? "").toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  return RE_MA.test(tt) ? tt : "REFUSED";
+}
+/**
+ * R1b-2b-2a A2(n) T5 (decisions C, H1) — state C: a STOP that did not go, or may not have, and stays owed: nobody could decide it, or its dispatcher refused it. NOT "not sent, final": its row is
+ * not settled, the run is held, an Abort sends it. Known code (MA_LOI_DA_BIET). Here: the pure functions spell the row, and this module does not import the store.
+ */
+export const FOE_STOP_NOT_SENT = "FOE_STOP_NOT_SENT";
+/** H11 — an OT `failed` that never reached a driver: its dispatcher stopped before the write (commandDispatcher, otEdgeDispatch). Every other `failed` was a driver's. */
+export const MA_CHUA_GHI: ReadonlySet<string> = new Set(["ADAPTER_OFFLINE", "DB_UNAVAILABLE", "LEDGER_INTENT_FAILED"]);
+/** H11 — the source of a dispatcher's answer on a STOP. `rejected` never reached a driver; a robot's `failed` did, whatever the code. */
+export function nguonCuaKetQua(status: string, ma: string, robot: boolean): NguonChuaRa {
+  return status === "rejected" || (!robot && MA_CHUA_GHI.has(ma)) ? "tuChoi" : "driverLoi";
+}
+/** The row of a STOP in state C: the code first, then its source, so a later walk and a person read the same thing. No driver text. */
+export function loiChuaRaStop(stopId: string, attempt: number, vi: ViChuaRa): string {
+  if (vi.nguon === "driverLoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" is not confirmed out (attempt ${attempt}): failed at its driver [${vi.ma}].`;
+  if (vi.nguon === "tuChoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (attempt ${attempt}): refused before a driver [${vi.ma}].`;
+  return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (attempt ${attempt}): nobody could decide it [${vi.ma}].`;
+}
+/** The source, read back from such a row: a later walk has no memory of the one that wrote it. undefined ⇔ not one. Pure. */
+export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | undefined {
+  const m = /(refused before a driver|failed at its driver|nobody could decide it) \[([A-Za-z0-9_]{1,64})\]/.exec(String(error ?? ""));
+  if (!m) return undefined;
+  return { nguon: m[1] === "failed at its driver" ? "driverLoi" : m[1] === "nobody could decide it" ? "doc" : "tuChoi", ma: m[2] as string };
+}
+/** The run's error while a STOP stays owed: the code first, the way out: Abort, never Continue. */
+export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined): string {
+  const dau = `${FOE_STOP_NOT_SENT}: STOP "${stopId}"`;
+  if (vi?.nguon === "driverLoi") return `${dau} is not confirmed out: its driver answered failed (${vi.ma}). The run is held: Abort sends it again.`;
+  if (vi?.nguon === "tuChoi") return `${dau} did NOT go out: it was refused before it reached a driver (${vi.ma}). The run is held: Abort sends it again.`;
+  return `${dau} did NOT go out: nobody could read its pins. The run is held: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent.`;
+}
+const docViChuaRa = (v: unknown): ViChuaRa | undefined => {
+  const x = v as { nguon?: unknown; ma?: unknown } | null | undefined;
+  return (x?.nguon === "doc" || x?.nguon === "tuChoi" || x?.nguon === "driverLoi") && typeof x.ma === "string" && /^[A-Za-z0-9_]{1,64}$/.test(x.ma) ? { nguon: x.nguon, ma: x.ma } : undefined;
+};
 export interface BaoCaoKhongRoEdge {
   loai: LoaiCanhBaoKhongRo;
   stepId: string;
@@ -375,25 +449,27 @@ export interface BaoCaoKhongRoEdge {
   claimSeq: number;
   /** m-K */
   biet?: boolean;
+  /** A2(n) T5 — a code, same rule as `ma` */
+  vi?: ViChuaRa;
 }
 const LOAI_KHONG_RO: ReadonlySet<string> = new Set(Object.keys(CANH_BAO_KHONG_RO_KIND));
 /** The anomaly's detail (≤ 1 000 characters, JSON: what central needs to raise the same alert; codes and ids only). */
-export function chiTietAnomalyKhongRo(a: { loai: LoaiCanhBaoKhongRo; stepId: string; compId: string; error: string; claimSeq: number; biet?: boolean }): string {
-  return JSON.stringify({ loai: a.loai, stepId: a.stepId.slice(0, 128), compId: a.compId.slice(0, 128), ma: maKetCucKhongRoCua(a.error), claimSeq: a.claimSeq, ...(a.biet ? { biet: true } : {}) } satisfies BaoCaoKhongRoEdge);
+export function chiTietAnomalyKhongRo(a: { loai: LoaiCanhBaoKhongRo; stepId: string; compId: string; error: string; claimSeq: number; biet?: boolean; vi?: ViChuaRa }): string {
+  return JSON.stringify({ loai: a.loai, stepId: a.stepId.slice(0, 128), compId: a.compId.slice(0, 128), ma: maKetCucKhongRoCua(a.error), claimSeq: a.claimSeq, ...(a.biet ? { biet: true } : {}), ...(a.vi ? { vi: { nguon: a.vi.nguon, ma: a.vi.ma.slice(0, 64) } } : {}) } satisfies BaoCaoKhongRoEdge);
 }
 /** Central's reading of that detail; null ⇔ not one (the EDGE_ANOMALY audit still records it). */
 export function docAnomalyKhongRo(detail: string | null | undefined): BaoCaoKhongRoEdge | null {
   try {
     const v = JSON.parse(String(detail ?? "")) as Record<string, unknown>;
     if (typeof v.loai !== "string" || !LOAI_KHONG_RO.has(v.loai) || typeof v.stepId !== "string" || typeof v.compId !== "string" || !Number.isSafeInteger(v.claimSeq)) return null;
-    return { loai: v.loai as LoaiCanhBaoKhongRo, stepId: v.stepId, compId: v.compId, ma: v.ma === "EDGE_OUTCOME_UNKNOWN" ? v.ma : "FOE_OUTCOME_UNKNOWN", claimSeq: v.claimSeq as number, ...(v.biet === true ? { biet: true } : {}) };
+    return { loai: v.loai as LoaiCanhBaoKhongRo, stepId: v.stepId, compId: v.compId, ma: v.ma === "EDGE_OUTCOME_UNKNOWN" ? v.ma : "FOE_OUTCOME_UNKNOWN", claimSeq: v.claimSeq as number, ...(v.biet === true ? { biet: true } : {}), ...(docViChuaRa(v.vi) ? { vi: docViChuaRa(v.vi) } : {}) };
   } catch {
     return null;
   }
 }
 /** I-5 — the same event for both edge routes (the anomaly and the segment end): the same dedup key, the same text ⇒ one inbox row. */
 export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: number | null): Promise<boolean> {
-  return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner, ...(x.biet ? { biet: true } : {}) });
+  return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner, ...(x.biet ? { biet: true } : {}), ...(x.vi ? { vi: x.vi } : {}) });
 }
 /**
  * I-5, m-H — what central does with an EDGE anomaly: an A2(n) report of a run THIS node is assigned, that `kiem` finds valid (a claim of the run; a step of

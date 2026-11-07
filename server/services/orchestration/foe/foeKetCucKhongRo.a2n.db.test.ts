@@ -92,7 +92,7 @@ vi.mock("./foeRunStore", async (importOriginal) => {
         await s.persistContext(rc);
         if (H.chetSauChot && rc.context.foeKetCucKhongRoChot != null) H.chet = true; // the literal of KET_CUC_KHONG_RO_CHOT_CTX_KEY: a hoisted factory
       },
-      buTruLaStopGhim: async (...a: Parameters<NonNullable<typeof s.buTruLaStopGhim>>) => (H.chet ? false : s.buTruLaStopGhim!(...a)),
+      buTruLaStopGhim: async (...a: Parameters<NonNullable<typeof s.buTruLaStopGhim>>) => (H.chet ? ("khong" as const) : s.buTruLaStopGhim!(...a)),
       ketCucKhongRo: (...a: Parameters<NonNullable<typeof s.ketCucKhongRo>>) => (H.chet ? undefined : s.ketCucKhongRo!(...a)),
     },
   };
