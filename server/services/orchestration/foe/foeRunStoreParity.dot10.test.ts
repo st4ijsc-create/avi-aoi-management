@@ -3920,6 +3920,14 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(buocBo()).not.toContain("a");
   });
   it.todo("MAT-HET-CS the same with the dispatched list lost too: no evidence the container began: cs does not go, no URGENT names it, forward_not_sent says a was not handed over (measured, reported to the coordinator, task not decided)");
+  it("TEN-LOI a begun container, its row lost, a step with a device's error in it: the step behind it is named, not the one that answered", async () => {
+    const c = await denG2("tl", [move("a"), gate("g2"), move("y"), move("m")]);
+    fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 99_200, runId: c, stepId: "y", stepType: "command", status: "failed", attempt: 1, startedAt: new Date(), finishedAt: new Date(), error: "device said no", resultJson: null }]);
+    await bootMat(c, ["b"]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    await wait(30);
+    expect(buocBo()).toEqual(["m"]);
+  });
   it("TEN-NOTPIN phủ định: a stop-typed step that is no STOP stands at the door: it never went: named", async () => {
     h.slow.set("x", 10);
     h.timeoutDispatch.add("x");
@@ -4083,11 +4091,13 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
       return PIN_OK(d, i);
     };
     h.timeoutDispatch.add("x");
-    const c = await centralRun(def("k2h2", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })]), box("e", [delay("w2", 30), move("r4", { compensation: otStop("cs2", { args: { tagKey: "halt", value: false } }) })])])]), 1);
+    const c = await centralRun(def("k2h2", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })]), box("e", [delay("w2", 60), move("r4", { compensation: otStop("cs2", { args: { tagKey: "halt", value: false } }) })])])]), 1);
     await wait(30);
     expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
     expect(ids().filter((x) => x === "cs2")).toEqual([]);
     expect(runRow(c).status).toBe("held");
+    expect(urgentCua("held").filter((a) => a.dedupKey.includes(":r4:cs2:")).length, "the second hold told nobody").toBeGreaterThan(0);
+    expect(runRow(c).contextJson.foeResumeState?.r4).toMatchObject({ state: "compensationHeld" });
   });
   it("X4-TO-TIEN the hold lifted, but a container around it still owes a compensation that is no STOP: the run stays held, it is not lost", async () => {
     seedHalt();

@@ -1613,7 +1613,8 @@ async function stopToTienSauGiu(rc: RunContext, step: WorkflowStep, comp: Workfl
   if (!(await laBuTruStop(rc, comp))) return;
   const lan = luotDiCua(rc);
   if (!(await guiStopKhongRo(rc, step, comp, loi, lan)) || rc.buTruDaGiu?.has(comp.id)) return;
-  rc.giuNen ??= (await giuBuTruKhongRo(rc, step, comp, loi, lan)) as Extract<StepOutcome, { kind: "held" }>; // F2 — not handed over: the run is held for it, its failure may already have gone by
+  const giu = (await giuBuTruKhongRo(rc, step, comp, loi, lan)) as Extract<StepOutcome, { kind: "held" }>; // F2 — not handed over: the run is held for it, its failure may already have gone by
+  rc.giuNen ??= giu;
 }
 
 function luotDiCua(rc: RunContext): string {
