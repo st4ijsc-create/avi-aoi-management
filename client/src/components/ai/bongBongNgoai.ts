@@ -68,3 +68,56 @@ export function catVanBan(a: { cauHoi: string; traLoi: string }, tran = TRAN_VAN
   const ch = catTheoByte(a.cauHoi, tran - demByte(tl.text));
   return { cauHoi: ch.text, traLoi: tl.text, daCat: tl.daCat || ch.daCat };
 }
+
+/**
+ * Nhánh `van-ban` của nút kiểm định ở bong bóng (hợp đồng §7.3/§9, T9): cờ MẶC ĐỊNH TẮT — chỉ bật khi triển khai đặt `VITE_AI_BONG_BONG_VAN_BAN=true`
+ * (nhà máy đã bật nguồn `van-ban` + bề mặt `bong-bong` phía máy chủ). Tắt ⇒ lượt chưa lưu KHÔNG có nút (hành vi L4 gốc).
+ */
+export function vanBanBongBongBat(): boolean {
+  return import.meta.env.VITE_AI_BONG_BONG_VAN_BAN === "true";
+}
+
+/** Lượt trợ lý + lượt người dùng liền trước (đủ để dựng nguồn `van-ban`). */
+export interface LuotVanBan extends LuotBongBong {
+  id?: number | string;
+  tinTraLoiId?: number;
+}
+
+/**
+ * Dựng nguồn `van-ban` cho lượt `chi` của bong bóng, hoặc `null` (T13):
+ *   • chỉ lượt trợ lý do model NGOÀI sinh (`ngoaiConvId` có), KHÔNG đang stream (kể cả đã abort giữa chừng — `streaming` còn true thì không gửi `traLoi` dở),
+ *     nội dung không rỗng;
+ *   • lượt ĐÃ LƯU (`tinTraLoiId`) đi nhánh `chat` theo ID — KHÔNG dùng `van-ban`;
+ *   • `cauHoi` = lượt người dùng liền trước (rỗng nếu không có); cắt theo TỔNG byte UTF-8 (`catVanBan`), nói rõ `daCat`.
+ */
+export function dungNguonVanBan(messages: readonly LuotVanBan[], chi: number): { nguon: { loai: "van-ban"; beMat: "bong-bong"; cauHoi: string; traLoi: string }; daCat: boolean } | null {
+  const m = messages[chi];
+  if (!m || m.type !== "assistant" || m.streaming || m.ngoaiConvId === undefined || m.tinTraLoiId !== undefined) return null;
+  if (m.content.trim() === "") return null;
+  const truoc = messages[chi - 1];
+  const cauHoi = truoc && truoc.type === "user" ? truoc.content : "";
+  const c = catVanBan({ cauHoi, traLoi: m.content });
+  if (c.traLoi.trim() === "") return null;
+  return { nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: c.cauHoi, traLoi: c.traLoi }, daCat: c.daCat };
+}
+
+/**
+ * Câu báo lỗi cho nhánh `van-ban` theo MÃ tRPC (T14) — KHÔNG bao giờ in `error.message` thô (thân lỗi có thể mang chữ nhà cung cấp).
+ * Mã khác ⇒ `null` để nơi gọi dùng bộ dịch chung.
+ */
+export function maLoiVanBan(error: unknown): "loiQuaLon" | "loiKhongCo" | "loiVuotTran" | "loiDangChay" | null {
+  const data = (error as { data?: { code?: unknown } } | null)?.data;
+  switch (typeof data?.code === "string" ? data.code : "") {
+    case "PAYLOAD_TOO_LARGE":
+      return "loiQuaLon";
+    case "NOT_FOUND":
+    case "FORBIDDEN":
+      return "loiKhongCo";
+    case "TOO_MANY_REQUESTS":
+      return "loiVuotTran";
+    case "CONFLICT":
+      return "loiDangChay";
+    default:
+      return null;
+  }
+}

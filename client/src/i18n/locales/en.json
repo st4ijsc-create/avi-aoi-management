@@ -24744,6 +24744,17 @@
     "nhanNgoai": "external · sends data to"
   },
   "kiemDinhNgoai": {
+    "vanBan": {
+      "xemTruoc": "Text that will be sent (exactly this string, after truncation)",
+      "cauHoi": "Question",
+      "traLoi": "Answer",
+      "daCat": "The text exceeds 16 KB so it was truncated (the answer is kept, the question is cut first).",
+      "chuaLuu": "This turn is not saved on the server — exactly the text shown here is sent; the store is not read.",
+      "loiQuaLon": "The text is too large (16 KB limit) and the server refused it. Verify a shorter passage.",
+      "loiKhongCo": "Cannot send: the plant has not enabled verification from the bubble, or you lack permission.",
+      "loiVuotTran": "The external AI cost/rate cap has been reached. Retry later or ask an administrator.",
+      "loiDangChay": "This text is already being verified — please wait for the result."
+    },
     "khongHopLe": "The review result has an invalid format and is not shown.",
     "daChep": "Standardised version copied.",
     "chepLoi": "Could not copy — select the text and copy it manually.",
