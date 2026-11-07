@@ -365,10 +365,12 @@ describe("a2n layer 2 — a running run whose node stopped reporting (baoRunMatP
   it("★ a node that goes down by the book is quiet: restart ⇒ claim stale ⇒ interrupted before the threshold ⇒ held, claim cleared", async () => {
     const { interruptedForNode } = await import("./edgeExecutionCentral");
     themRun(41, { lastProgressAt: new Date(Date.now() - edgeClaimStaleMs() - 1) });
+    const sau = Date.now() + nguong();
+    expect(await baoRunMatProgress(sau, sau - 3_600_000)).toEqual([41]); // the control: left alone, this claim speaks
     expect(await interruptedForNode(NODE, 41, { claimSeq: 1 })).toMatchObject({ http: 200, data: { status: "held" } });
     expect(hangRun(41).status).toBe("held");
     expect(hangClaim(41).claimTokenHash).toBeNull();
-    expect(await baoRunMatProgress(Date.now() + nguong(), lau)).toEqual([]);
+    expect(await baoRunMatProgress(sau, sau - 3_600_000)).toEqual([]);
   });
 
   it("★ a degraded node whose walker still reports is quiet: the sweep reads progress, not the node's mood", async () => {
