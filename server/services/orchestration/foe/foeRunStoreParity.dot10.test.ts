@@ -84,6 +84,8 @@ const h = vi.hoisted(() => ({
   dispatcherKhongDoc: false,
   /** A2(n) T5 — runs once, the moment a step answers `timeout`: what changes right after the latch */
   sauTimeout: null as null | (() => void),
+  /** A2(n) T5 — runningConnectionMatchesAdapterRow waits for this: a STOP pass stands before its verifier */
+  connCho: null as null | Promise<void>,
   /** A2(n) T5 — evaluateActionPolicy denies these steps; empty ⇒ SEC_PLATFORM off */
   policyTuChoi: new Set<string>(),
 }));
@@ -99,6 +101,7 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
     },
     runningConnectionMatchesAdapterRow: async () => {
       h.connLan++;
+      await h.connCho;
       return h.connOk;
     },
     phanLoaiStopGhimChoFoe: async (d: unknown, i: { commandType: string }) => {
@@ -364,6 +367,7 @@ beforeEach(() => {
   h.dispatcherKhongDoc = false;
   h.policyTuChoi.clear();
   h.sauTimeout = null;
+  h.connCho = null;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -4763,6 +4767,17 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
       expect(runRow(c).status).not.toBe("completed");
     });
   }
+  it("R2-race a stop-typed step asked before the latch, read fine, not pinned, still so at the second ask: not on the route, not sent", async () => {
+    seedHalt();
+    h.ghim = hoiTruocChot(KHONG, KHONG);
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(dDua("r2r", stopTyped("nt")), 1);
+    await hetCho(c);
+    expect(sentOf("nt")).toEqual([]);
+    expect(hangDau()).toEqual([]);
+    expect(noCua(c).size).toBe(0);
+  });
   it("F4-D-race a non-STOP asks before the latch: 0 hand-overs, its row says so, no mark", async () => {
     h.ghim = hoiTruocChot(BAD, BAD, "start");
     h.slow.set("x", 10);
@@ -4824,6 +4839,36 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     const c = await centralRun(dDua("fr2b"), 1);
     await hetCho(c);
     expect(sentOf("st")).toEqual(["st"]);
+  });
+  it("F4-R2c the sink refuses the STOP twice BEFORE the first pass looks: the pass still sends it, exactly once", async () => {
+    seedHalt();
+    h.dispatcherThat = true;
+    let mo = () => undefined as void;
+    h.sauTimeout = () => {
+      h.connCho = new Promise<void>((ok) => (mo = ok)); // from the latch on: a deploy and a start have read the connection before it
+    };
+    let n = 0;
+    h.ghim = async (_d, i) => {
+      if (i.commandType !== "stop") return KHONG;
+      n++;
+      if (n === 1) {
+        await waitFor(() => h.traTimeout > 0, "the latch", 1_000);
+        await wait(5);
+        return BAD;
+      }
+      if (n === 2) {
+        setTimeout(mo, 10); // the sink has refused twice: the first pass may look now
+        return KHONG;
+      }
+      return { pinnedStop: true, loiDocGhim: null };
+    };
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(dDua("fr2c"), 1);
+    await hetCho(c);
+    expect(n).toBeGreaterThan(2);
+    expect(sentOf("st")).toEqual(["st"]);
+    expect(hang(c, "st")).toMatchObject({ status: "completed" });
   });
   it("COMP-RACE central, pins unreadable for good: the marked row, the dispatcher decides, 0 PDU if not pinned", async () => {
     seedHalt();
@@ -4936,6 +4981,25 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(urgentC().map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["x", "cs"]]);
     await abortGui(e.runId);
     expect(ids()).toEqual(["cs"]);
+  });
+  it("C-NGAY state C is told when it is decided, never behind a sibling that hangs", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 10);
+    h.slow.set("treo", 350);
+    h.tuChoi.set("st", REF);
+    const d = def("cngay", [gate(), parF("p", [move("x"), move("treo"), box("b", [delay("w", 40), otStop("st", { maxAttempts: 0 })])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    const view = (await getRun(s.runId!, { bindingDigest: true }))!;
+    const di = resumeRun(s.runId!, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => urgentC().length > 0, "the URGENT, the sibling still hanging", 250);
+    expect(runRow(s.runId!).status).not.toBe("held");
+    await di;
+    await hetCho(s.runId!);
+    expect(urgentC()).toHaveLength(1);
+    expect(runRow(s.runId!).status).toBe("held");
   });
   it("V-REF a retry that goes: no debt, no hold, no URGENT of state C", async () => {
     seedHalt();
@@ -5462,6 +5526,61 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(hang(c, "st")).toMatchObject({ status: "completed" });
     expect(runRow(c).status).not.toBe("held");
   });
+  it("C2-song an Abort while the walker lives, a STOP in state C behind a container that failed: the sweep reaches it", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    h.slow.set("treo", 400);
+    h.tuChoi.set("st", REF);
+    const d = def("c2song", [gate(), parF("p", [move("x"), move("treo"), box("b", [delay("w", 20), otStop("st", { maxAttempts: 0 })])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    const view = (await getRun(s.runId!, { bindingDigest: true }))!;
+    const di = resumeRun(s.runId!, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => stepRows(s.runId!).some((r) => r.stepId === "b" && r.status === "failed"), "the container's failure", 300);
+    h.tuChoi.clear();
+    h.sent.length = 0;
+    const a = await abortRun(s.runId!, OWNER, "press");
+    await di;
+    await wait(30);
+    expect(a.abortStops?.sent).toContain("st");
+    expect(sentOf("st")).toEqual(["st"]);
+  });
+  it("C-EDGE-COMP an edge run held on a compensation in state C, a Continue: the next segment sends it", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await denBuoc(dC("cedc"));
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("cs", { ...REF, detail: { edge: true } });
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(runRow(e.runId).status).toBe("held");
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    await continueOutcomeUnknown(e, "checked on site");
+    await edgeSegment(e, 3);
+    await wait(30);
+    expect(ids()).toEqual(["cs"]);
+    expect(noCua(e.runId).size).toBe(0);
+  });
+  it("C-COMP-CONT central, the same: a Continue sends the compensation in state C", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("cs", REF);
+    const c = await centralRun(dC("ccc"), 1);
+    await hetCho(c);
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    await resumeRun(c, { approved: true, note: "go" }, OTHER).catch(() => undefined);
+    await hetCho(c);
+    expect(ids()).toEqual(["cs"]);
+    expect(noCua(c).size).toBe(0);
+    expect(runRow(c).status).not.toBe("held");
+  });
   it("C-EDGE-CONT an edge run held on state C, a Continue: the next segment sends it", async () => {
     seedHalt();
     h.ghim = PIN_OK;
@@ -5662,6 +5781,22 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     await resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
     await hetCho(c);
     expect(ids()).toContain("cs");
+  });
+  it("C-TRUOC đối chứng: a STOP compensation that may have gone out in an earlier walk is not sent again by the planner", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.failPlan.set("f", Infinity);
+    h.timeoutDispatch.add("cs");
+    const c = await centralRun(def("ctruoc2", [gate(), parF("p", [ot("f", { compensation: otStop("cs") }), delay("w", 1)]), gate("g2"), move("x")]), 1);
+    await hetCho(c);
+    if (runRow(c).status === "awaiting_confirm") {
+      h.sent.length = 0;
+      h.timeoutDispatch.add("x");
+      const view = (await getRun(c, { bindingDigest: true }))!;
+      await resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+      await hetCho(c);
+    }
+    expect(sentOf("cs").length).toBeLessThanOrEqual(1);
   });
   it("EDGE-UNCHANGED the route never opens on an unlatched edge segment: a stop-typed step the package could not verify asks /authorize", async () => {
     seedHalt();

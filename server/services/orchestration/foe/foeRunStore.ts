@@ -346,8 +346,8 @@ export const laLoiKhongGuiChot = (error: string | null | undefined): boolean => 
 export { FOE_STOP_NOT_SENT };
 /** A2(n) T5 (C-2) — "chuaDoc" is NOT "khong": unreadable is never "not pinned" (decision 2, A). Only a stop-typed step can answer it. */
 export type LaStop = "stop" | "khong" | "chuaDoc";
-/** THE row of state C: the STOP's own (a container around it carries the same words, F-DB1). */
-const laHangChuaRa = (r: { stepId: string; error?: string | null }): boolean => typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${r.stepId.startsWith(ABORT_ROW_PREFIX) ? r.stepId.slice(ABORT_ROW_PREFIX.length) : r.stepId}"`);
+/** THE row of state C: the STOP's own (a container around it carries the same words, F-DB1). `id` the step's id: an `abort:` row's is shortened when long, its result has the whole one. */
+const laHangChuaRa = (r: { stepId: string; error?: string | null }, id = r.stepId): boolean => typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
 /** A2(n) T5 — MỘT định nghĩa of "still owed": the STOPs the rows hold in state C. An `abort:` row that went (or a read that found it no STOP) settles it. Pure. */
 export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined): Set<string> {
   const no = new Set<string>();
@@ -355,7 +355,7 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: 
   for (const r of rows ?? []) {
     const abort = r.stepId.startsWith(ABORT_ROW_PREFIX);
     const id = abort ? String((r.resultJson as { stepId?: unknown } | null | undefined)?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length)) : r.stepId;
-    if (laHangChuaRa(r)) no.add(id);
+    if (laHangChuaRa(r, id)) no.add(id);
     if (abort && (r.status === "completed" || r.status === "skipped")) xong.add(id);
   }
   for (const id of xong) no.delete(id);

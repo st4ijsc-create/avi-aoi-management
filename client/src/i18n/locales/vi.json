@@ -24697,7 +24697,7 @@
         "FOE_OUTCOME_UNKNOWN": "Chưa rõ kết quả: lệnh có thể đã được áp xuống thiết bị — kiểm tra thiết bị trước khi chạy lại; KHÔNG tự gửi lại.",
         "FOE_OUTCOME_PARTIAL": "Áp một phần: một số lệnh đã tới thiết bị, một số thì không — kiểm tra thiết bị; KHÔNG gửi lại cả lô.",
         "FOE_NOT_SENT_RUN_LATCHED": "Không gửi: một lệnh khác của lượt chạy này chưa rõ kết quả nên không đi tiếp. Bước này chưa tới thiết bị và sẽ không được gửi lại.",
-        "FOE_STOP_NOT_SENT": "Lệnh STOP chưa ra hoặc chưa xác nhận đã ra: lượt chạy đang giữ và còn nợ lệnh này. Bấm Hủy để gửi.",
+        "FOE_STOP_NOT_SENT": "Lệnh STOP chưa ra hoặc chưa xác nhận đã ra: lượt chạy đang giữ và còn nợ lệnh này. Bấm Hủy lượt chạy để gửi.",
         "EDGE_OUTCOME_UNKNOWN": "Chưa rõ kết quả trên edge: node edge có thể đã áp lệnh — kiểm tra thiết bị trước khi chạy lại.",
         "REJECTED": "Lệnh bị từ chối — không có gì được ghi xuống thiết bị.",
         "PRECONDITION_FAILED": "Điều kiện trước của bước (interlock) không thoả — không có gì được ghi xuống thiết bị."

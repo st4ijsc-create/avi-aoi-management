@@ -1313,7 +1313,7 @@ async function stopTrongThan(rc: RunContext, step: WorkflowStep, comp: WorkflowS
 
 /** A2(n) (m-O) — one STOP inside a compensation of several steps. Handed over by nobody: its row says held, a person is told, the run holds (F2); the rest of the body is not the hold's. */
 async function stopTrongBuTru(rc: RunContext, step: WorkflowStep, x: WorkflowStep, loi: string, lan: string, keHoach = false): Promise<void> {
-  if (rc.aborting || (keHoach ? rc.buTruDaGui?.has(x.id) : daXongBuTru(rc, x.id)) || (await laBuTruStop(rc, x)) === "khong") return; // A2(n) T5 — unreadable goes by the marked route (THAN-DOC): never no row and nobody told
+  if (rc.aborting || daGuiHoacXong(rc, x.id, keHoach) || (await laBuTruStop(rc, x)) === "khong") return; // A2(n) T5 — unreadable goes by the marked route (THAN-DOC): never no row and nobody told
   if (!(await guiStopKhongRo(rc, { ...step, compensation: x }, x, loi, lan))) return;
   baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: x.id, error: loi, lan });
   (rc.buTruDaGiu ??= new Set()).add(x.id);
@@ -1649,6 +1649,14 @@ function daXongBuTru(rc: RunContext, compId: string): boolean {
   return rc.prior.settled.has(compId) || rc.buTruDaGui?.has(compId) === true;
 }
 
+/**
+ * A2(n) T5 — `keHoach`: the planner has this compensation due: a known failure of an earlier walk is no last word for a STOP (C-TRUOC, nobody told otherwise). One that may have gone out still is:
+ * it is never sent again here (F7, F8). Sent in this walk is, whoever asks.
+ */
+function daGuiHoacXong(rc: RunContext, compId: string, keHoach: boolean): boolean {
+  return keHoach && !rc.khongRoHang?.has(compId) ? rc.buTruDaGui?.has(compId) === true : daXongBuTru(rc, compId);
+}
+
 /** A2(n) (I-F) — the containers around `step`, innermost first: each STOP compensation goes at once. A non-STOP one stays for the failure to reach it. */
 async function stopToTienMoi(rc: RunContext, step: WorkflowStep, loi: string): Promise<void> {
   for (const hop of toTienCua(rc.def.steps, step.id)) {
@@ -1685,8 +1693,7 @@ async function buTruSauKetCucKhongRo(rc: RunContext, step: WorkflowStep, comp: W
  * held for the child; any other ⇒ nothing now (it stays due: the failure a Continue brings up splits it).
  */
 async function stopToTienSauGiu(rc: RunContext, step: WorkflowStep, comp: WorkflowStep, loi: string, keHoach = false): Promise<void> {
-  // A2(n) T5 — `keHoach`: the planner has it due: a row of an earlier walk that failed is no last word for it (C-TRUOC). Sent in this walk is, whoever asks
-  if (keHoach ? rc.buTruDaGui?.has(comp.id) : daXongBuTru(rc, comp.id)) return;
+  if (daGuiHoacXong(rc, comp.id, keHoach)) return;
   if (comp.type !== "command") return stopTrongThan(rc, step, comp, loi, luotDiCua(rc)); // m-O
   if ((await laBuTruStop(rc, comp)) === "khong") return;
   const lan = luotDiCua(rc);
