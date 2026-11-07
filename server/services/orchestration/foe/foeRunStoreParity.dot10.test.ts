@@ -55,6 +55,8 @@ const h = vi.hoisted(() => ({
   acked: false,
   /** A2(n) T0 — what the alert reports through `baoBen`: was the URGENT stored? */
   alertDurable: true,
+  /** A2(n) T0 — these steps' dispatch is refused by a consumeAuthorization past its bound (the disk lot's round C): nothing sent, the journal says it overran */
+  consumeQuaHan: new Set<string>(),
   /** A2(n) T0 — the REAL alert ran (its CRITICAL line): a mock that did not reach its target. Stays 0 */
   canhBaoThat: 0,
 }));
@@ -113,6 +115,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
       const cham = h.slow.get(stepId);
       if (cham) await new Promise((r) => setTimeout(r, cham));
+      if (h.consumeQuaHan.has(stepId)) return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: "JOURNAL_CONSUME_FAILED", detail: { edge: true, stop: false, reason: "JOURNAL_CONSUME_FAILED", refusal: "io_error" } };
       if (h.timeoutDispatch.has(stepId) || h.timeoutOnce.delete(stepId)) return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
       if (h.staleDispatch.delete(stepId)) {
         // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
@@ -176,8 +179,8 @@ import {
   edgePriorPictureOf,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
-import { buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, buTruBiChanKhongRo, canhBaoKetCucKhongRo } from "./foeKetCucKhongRo";
+import { EDGE_HELD_CTX_KEY, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
@@ -268,6 +271,7 @@ beforeEach(() => {
   h.slow.clear();
   h.acked = false;
   h.alertDurable = true;
+  h.consumeQuaHan.clear();
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -485,7 +489,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
         return { seq: 1, durable: true };
       },
     },
-    consume: { admitNonStop: () => true },
+    consume: { admitNonStop: () => true, consumeOverran: () => h.consumeQuaHan.size > 0 },
     authorize: fakeAuthorize(x, d, primed),
     ...(x.staleness ? { config: { staleness: x.staleness } } : {}),
     async reportUnused(u) {
@@ -2746,5 +2750,90 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
     expect(await chay("t0-a")).toBe("acked");
     h.acked = false;
     expect(await chay("t0-b")).toBe("simulated");
+  });
+});
+
+/**
+ * A2(n) T0 — the disk lot's round C (a consumeAuthorization past its bound turns a `failed` segment into held(journalFull)) stops at the latch. On a latched run held(journalFull) has no
+ * KET_CUC_KHONG_RO mark, so the Continue would ask no person and no reason (resumeRun, M-4). A latched segment ends as the latched path ends it. An unlatched one keeps round C:
+ * these cases and robotEdgeDiskStall.a2n.test.ts.
+ */
+describe("A2(n) T0 — the disk lot's round C applies only to a segment not latched", () => {
+  const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    return e;
+  }
+  const ctxCua = (e: EdgeHarness) => runRow(e.runId).contextJson as Record<string, unknown>;
+  const dieuTiepTran = async (e: EdgeHarness) => {
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    return resumeRun(e.runId, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  };
+
+  it("★ C-KHOA failed: x unknown, m2's consume past its bound: the segment ends as without the overrun, not held(journalFull); the code stays on the rows; no Continue past it", async () => {
+    const e = await denBuoc(def("c-khoa", [gate(), parF("p", [move("x"), move("m2")])]));
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    h.consumeQuaHan.add("m2");
+    const { out } = await edgeSegment(e, 2);
+    expect.soft(out).toMatchObject({ outcome: "failed" });
+    expect.soft(out.heldReason).toBeUndefined();
+    expect.soft(runRow(e.runId).status).toBe("failed");
+    expect.soft(EDGE_HELD_CTX_KEY in ctxCua(e)).toBe(false);
+    expect.soft(chotTuHang(stepRows(e.runId) as never)).not.toBeNull();
+    grantMachineControl();
+    const tiep = await dieuTiepTran(e).catch((err: Error) => ({ ok: false, message: err.message }));
+    expect.soft(tiep.ok, "a Continue with no person's reason went through").toBe(false);
+    expect.soft(h.sent.map((x) => x.stepId).sort()).toEqual(["m2", "x"]);
+  });
+
+  it("đối chứng C-KHOA: the same run with an ordinary refusal of m2 ends the same way", async () => {
+    const e = await denBuoc(def("c-khoa-dc", [gate(), parF("p", [move("x"), move("m2")])]));
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("m2", 1);
+    const { out } = await edgeSegment(e, 2);
+    expect(out).toMatchObject({ outcome: "failed" });
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  it("★ C-KHOA held: a compensation held for x, m2's consume past its bound: held(outcomeUnknown), the mark stands, the Continue asks a person and a reason", async () => {
+    const e = await denBuoc(def("c-khoa-h", [gate(), parF("p", [move("x", { compensation: ot("u") }), move("m2")])]));
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    h.consumeQuaHan.add("m2");
+    const { out } = await edgeSegment(e, 2);
+    expect(out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(runRow(e.runId).status).toBe("held");
+    expect(KET_CUC_KHONG_RO_CTX_KEY in ctxCua(e)).toBe(true);
+    await expect(dieuTiepTran(e)).rejects.toThrow(/machine-control|reason/);
+    await expect(continueOutcomeUnknown(e, "")).rejects.toThrow(/reason/);
+    expect((await continueOutcomeUnknown(e, "checked on site")).ok).toBe(true);
+  });
+
+  it("★ C-KHOA next segment: latched by an earlier segment (central's context), the approved compensation's consume past its bound: failed, not held(journalFull)", async () => {
+    const e = await denBuoc(def("c-khoa-s", [gate(), move("x", { compensation: ot("u") })]));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    expect(runRow(e.runId).status).toBe("held");
+    await continueOutcomeUnknown(e, "checked on site");
+    h.consumeQuaHan.add("u");
+    const { out } = await edgeSegment(e, 3);
+    expect.soft(out).toMatchObject({ outcome: "failed" });
+    expect.soft(runRow(e.runId).status).toBe("failed");
+    expect.soft(EDGE_HELD_CTX_KEY in ctxCua(e)).toBe(false);
+  });
+
+  it("đối chứng C: a segment not latched keeps held(journalFull) and the disk lot's mark", async () => {
+    const e = await denBuoc(def("c-tu-do", [gate(), move("m2")]));
+    h.consumeQuaHan.add("m2");
+    const { out } = await edgeSegment(e, 2);
+    expect(out).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(String(out.error)).toContain("EDGE_HELD(journalFull)");
+    expect(runRow(e.runId).status).toBe("held");
+    expect(ctxCua(e)[EDGE_HELD_CTX_KEY]).toBe("journalFull");
+    expect(KET_CUC_KHONG_RO_CTX_KEY in ctxCua(e)).toBe(false);
   });
 });

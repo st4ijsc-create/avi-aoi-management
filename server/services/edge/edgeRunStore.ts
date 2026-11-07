@@ -48,7 +48,7 @@ import {
   type RunStoreUser,
 } from "../orchestration/foe/foeRunStore";
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
-import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, loiLaKetCucKhongRo, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, loiLaKetCucKhongRo, runDaChotKhongRo, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
@@ -607,6 +607,11 @@ export class EdgeRunStore extends EdgeStoreBase {
     return e;
   }
 
+  /** A2(n) T0 — is this segment's run latched? The walker's two facts, as the store holds them: a row of this segment carries the code (rc.khongRoChot), or central's context says so (runDaChotKhongRo). */
+  private daChot(): boolean {
+    return this.maKhongRo.size > 0 || runDaChotKhongRo(this.pkg.context);
+  }
+
   private segmentEndGoc(): EdgeSegmentEnd | null {
     if (!this.ended) return null;
     if (this.journalRefused !== null && this.status !== "aborted") {
@@ -622,7 +627,8 @@ export class EdgeRunStore extends EdgeStoreBase {
     }
     const error = typeof this.lastPatch.error === "string" ? this.lastPatch.error : undefined;
     // a2n round C — `failed` would close Abort on a run whose STOPs behind the refused step never went: held keeps it open. Only `failed`: a walk that went on and completed, or an abort, stays what it is.
-    if (this.consumeOverran && this.status === "failed") {
+    // A2(n) T0 — and only a run not latched: held(journalFull) carries no KET_CUC_KHONG_RO mark, so a latched run would lose the person and the reason its Continue needs. It ends as the latched path ends it.
+    if (this.consumeOverran && this.status === "failed" && !this.daChot()) {
       // data-raw-ok: machine-readable mark (EDGE_HOLD_CONSUME_OVERRUN): central words the run's error from it
       return { outcome: "held", heldReason: "journalFull", error: clip(`EDGE_HELD(journalFull): ${EDGE_HOLD_CONSUME_OVERRUN}: a step's authorisation could not be recorded in time on the edge's disk (${error ?? "unknown"}); that step was not sent.`, 4_000) ?? undefined };
     }
