@@ -38,6 +38,11 @@
  * recorded for this Continue (KHONG_RO_DUYET_CTX_KEY); otherwise it is split again. Abort: reason optional (R-1 — no STOP waits on a text
  * field), audited. Nothing expires into a write.
  *
+ * STATE C (T5, decisions 2, A, C, H1) — on a latched run a stop-typed step that nobody could decide, or that was refused with a clear answer, stays OWED (FOE_STOP_NOT_SENT): not "not sent, final". Pins
+ * unreadable is not "not pinned": it goes by the marked route (a fresh marked row; on an edge no authorisation at all), so only the dispatcher's own verdict sends it. One layer at foeEngine.execCommand
+ * (lopChuaRa), whatever said no; a robot's budget stays its own. The row carries it (foeRunStore.stopChuaRaTuHang), it is not settled, the run ends held, an Abort sends it. Not state C: a read that
+ * answered "not pinned", a non-STOP, an attempt with no answer (the last word decides; "may have gone out" is H2).
+ *
  * No migration, no flag (AI_OT_CONTROL_ENABLED unchanged): the run / step statuses exist; the marker and the resume state are context JSON;
  * the alert kind and the audit action are free text.
  */

@@ -4596,6 +4596,23 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(e.unused.map((u) => u.stepId)).toContain("r3");
   });
 
+  it("R6c edge: an APPROVED non-STOP compensation the package wrongly lists unsure: it asks /authorize and carries the authorisation, never the route", async () => {
+    const e = await denBuoc(dC("r6c", ot("u")));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(runRow(e.runId).status).toBe("held");
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    h.duocSauKhoa.add("u");
+    await continueOutcomeUnknown(e, "checked on site");
+    e.suaGoi = (p) => ({ ...p, stopsUnsure: ["u"] });
+    await edgeSegment(e, 3);
+    expect(sentOf("u")).toEqual(["u"]);
+    expect(authCua(e, "u")).toBe(1);
+    expect((h.sent.find((x) => x.stepId === "u")?.edge as { authorization?: unknown } | null)?.authorization).toBeTruthy();
+  });
+
   // ── B11, B12 ───────────────────────────────────────────────────────────────────────────────────────────────────────
   it("B11 + F12-39 central: a refused step's STOP compensation, pins unreadable: the marked route, it goes", async () => {
     seedHalt();
@@ -4629,6 +4646,22 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     await hetCho(c);
     expect(sentOf("cs")).toEqual(["cs"]);
     expect(hangDau().length).toBe(1);
+    expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
+  });
+  it("F12-25-TACH the split ahead of the pass, pins unreadable: not held for a person, it goes by the marked route", async () => {
+    seedHalt();
+    h.dispatcherThat = true;
+    h.ghim = PIN_BAD;
+    let mo = () => undefined as void;
+    h.sauTimeout = () => {
+      h.connCho = new Promise<void>((ok) => (mo = ok)); // the first pass stands before its verifier: the walker's own split decides first
+      setTimeout(() => mo(), 60);
+    };
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(dC("f4tach"), 1);
+    await hetCho(c);
+    expect(sentOf("cs")).toEqual(["cs"]);
+    expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.held)).toEqual([]);
     expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
   });
   it("F4-COMP-C the same, the dispatcher cannot read either, no approval: state C with its budget, -a1..a3; Abort sends it after the read recovers", async () => {
@@ -4904,6 +4937,7 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(sentOf("cs")).toEqual(["cs"]);
     expect(authCua(e, "cs")).toBe(1);
     expect(h.sent.find((x) => x.stepId === "cs")?.edge).toMatchObject({ authorization: null });
+    expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.held), "asked again at the sink: no hold, nobody sent to a person for a STOP that went").toEqual([]);
   });
 
   // ── V-REF: a clear refusal ─────────────────────────────────────────────────────────────────────────────────────────
@@ -5196,6 +5230,16 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     await wait(30);
     expect(urgentC()).toEqual([]);
     expect(noCua(e.runId).size).toBe(0);
+  });
+  it("H1 a stop-typed step nothing resolves, unverified: the pass sends it to the layer all the same: state C", async () => {
+    fake.seed(machines, [...rows("machines"), { id: 3, machineType: "ROBOT", capabilities: null, code: "R3", name: "Robot-3", operationStatus: "stopped", stationId: 1 }]);
+    const e = await denBuoc(dV("h1uv", buocMayMat("st")));
+    e.suaGoi = (p) => ({ ...p, machines: p.machines.filter((m) => m.id !== 3), verifiedStops: p.verifiedStops.filter((v) => v.stepId !== "st"), stopsUnsure: ["st"] });
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    await wait(30);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(String(hang(e.runId, "st")?.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
   });
   it("H1 authorizeCommand throws on a latched run (edge): state C, not confirmed out; a refusal at /authorize of a STOP the package could not verify: state C", async () => {
     seedHalt();
@@ -5785,18 +5829,39 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
   it("C-TRUOC đối chứng: a STOP compensation that may have gone out in an earlier walk is not sent again by the planner", async () => {
     seedHalt();
     h.ghim = PIN_OK;
-    h.failPlan.set("f", Infinity);
+    h.timeoutDispatch.add("x");
+    h.timeoutDispatch.add("y");
     h.timeoutDispatch.add("cs");
-    const c = await centralRun(def("ctruoc2", [gate(), parF("p", [ot("f", { compensation: otStop("cs") }), delay("w", 1)]), gate("g2"), move("x")]), 1);
+    const c = await centralRun(def("ctruoc2", [gate(), parF("p", [move("x", { compensation: otStop("cs") }), move("y", { compensation: ot("u") })])]), 1);
     await hetCho(c);
-    if (runRow(c).status === "awaiting_confirm") {
-      h.sent.length = 0;
-      h.timeoutDispatch.add("x");
-      const view = (await getRun(c, { bindingDigest: true }))!;
-      await resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
-      await hetCho(c);
-    }
-    expect(sentOf("cs").length).toBeLessThanOrEqual(1);
+    expect(runRow(c).status).toBe("held");
+    expect(String(hang(c, "cs")!.error)).toMatch(khongRo);
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    h.duocSauKhoa.add("u");
+    await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+    await waitFor(() => ids().includes("u"), "the approved compensation");
+    await wait(30);
+    expect(sentOf("cs")).toEqual([]);
+  });
+  it("XEP-CUOI the verifier says not pinned, the split's own read fails at the last pass: no answer, so neither 'not pinned' nor 'not sent': the marked route, 0 PDU, state C", async () => {
+    seedHalt();
+    h.dispatcherThat = true;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 10);
+    h.slow.set("treo", 60);
+    let lan = 0;
+    h.ghim = async (_d, i) => {
+      if (i.commandType !== "stop") return KHONG;
+      return ++lan === 1 ? KHONG : BAD;
+    };
+    const c = await centralRun(def("xepc", [gate(), parF("p", [move("x"), move("treo"), box("b", [delay("w", 30), stopTyped("nt")])])]), 1);
+    await hetCho(c);
+    expect(h.sent.filter((x) => x.stepId === "nt").every((x) => x.khongGhi === true)).toBe(true);
+    expect(String(hang(c, "nt")!.error)).toMatch(/^FOE_STOP_NOT_SENT: /);
+    await wait(10);
+    const audit = vi.mocked(logCrudOperation).mock.calls.map((x) => (x[1] as { details?: { operation?: string; metadata?: { stepIds?: string[] } } }).details).filter((d) => d?.operation === "abortStopNotPinned");
+    expect(audit.flatMap((d) => d?.metadata?.stepIds ?? [])).not.toContain("nt");
   });
   it("EDGE-UNCHANGED the route never opens on an unlatched edge segment: a stop-typed step the package could not verify asks /authorize", async () => {
     seedHalt();

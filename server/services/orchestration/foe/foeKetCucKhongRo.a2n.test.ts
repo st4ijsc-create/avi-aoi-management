@@ -212,7 +212,7 @@ import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
 import { baoCaoHopLe, baoCaoKhongRoTuHang, chuBuTruTrongDinhNghia, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, loiKhongGuiChot, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
-import {
+import { FOE_STOP_NOT_SENT, MA_CHUA_GHI, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi,
   KHONG_RO_DANG_BAY_AUDIT_OP,
   buTruBiChanKhongRo,
   chotTuHang,
@@ -2158,5 +2158,61 @@ describe("A2(n) T2 — runEnd and the words of H2", () => {
 
   it("the kinds that must not change: a dedup key already in the inbox stays the same", () => {
     expect(noiDungCanhBaoKhongRo({ ...x, loai: "stopNotConfirmed", compId: "undo", lan: "L" }).dedupKey).toBe("foe_outcome_unknown_stop_compensation_unconfirmed:9:m:undo:L");
+  });
+});
+
+describe("A2(n) T5 — state C, the pure parts", () => {
+  it("maTuChoiCua: the dispatcher's reason, else the code a text opens with, else the status; never a driver's text", () => {
+    expect(maTuChoiCua({ error: "socket hang up 10.1.2.3", status: "failed", detail: { reason: "DRIVER_ERROR" } })).toBe("DRIVER_ERROR");
+    expect(maTuChoiCua({ error: "INTERLOCK_NOT_MET: rule 7 at 10.1.2.3", status: "rejected" })).toBe("INTERLOCK_NOT_MET");
+    expect(maTuChoiCua({ error: "EDGE_DEVICE_REFUSED(x): step", status: "rejected" })).toBe("EDGE_DEVICE_REFUSED");
+    expect(maTuChoiCua({ error: "socket hang up 10.1.2.3", status: "failed" })).toBe("FAILED");
+    expect(maTuChoiCua({ error: "a sentence", detail: { reason: "not a code 10.1.2.3" } })).toBe("REFUSED");
+  });
+  it("nguonCuaKetQua (H11): rejected never reached a driver; an OT failed only in the list; a robot's failed always did", () => {
+    expect(nguonCuaKetQua("rejected", "BUSY", false)).toBe("tuChoi");
+    expect(nguonCuaKetQua("rejected", "ROBOT_REFUSED", true)).toBe("tuChoi");
+    for (const ma of MA_CHUA_GHI) {
+      expect(nguonCuaKetQua("failed", ma, false)).toBe("tuChoi");
+      expect(nguonCuaKetQua("failed", ma, true)).toBe("driverLoi");
+    }
+    expect(nguonCuaKetQua("failed", "MOT_PHAN", false)).toBe("driverLoi");
+    expect(nguonCuaKetQua("failed", "DRIVER_WRITE_FAILED", false)).toBe("driverLoi");
+  });
+  it("the row and its source: read back the same, for every source, under the known code", () => {
+    for (const vi of [{ nguon: "doc", ma: "ADAPTER_UNRESOLVED" }, { nguon: "tuChoi", ma: "BUSY" }, { nguon: "driverLoi", ma: "DRIVER_ERROR" }] as const) {
+      const loi = loiChuaRaStop("st", 2, vi);
+      expect(loi.startsWith(`${FOE_STOP_NOT_SENT}: STOP "st"`)).toBe(true);
+      expect(viChuaRaCuaLoi(loi)).toEqual(vi);
+      expect(loiLaKetCucKhongRo(loi), "state C is not an unknown outcome").toBe(false);
+    }
+    expect(viChuaRaCuaLoi("Command rejected")).toBeUndefined();
+    expect(viChuaRaCuaLoi(null)).toBeUndefined();
+  });
+  it("the URGENT and the hold say what is true of the source", () => {
+    const t = (vi?: { nguon: "doc" | "tuChoi" | "driverLoi"; ma: string }) => noiDungCanhBaoKhongRo({ loai: "stopNotSent", runId: 9, stepId: "st", compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: "chot", biet: true, ...(vi ? { vi } : {}) });
+    expect(t({ nguon: "driverLoi", ma: "X_Y" }).title).toContain('STOP "st" NOT confirmed out');
+    expect(t({ nguon: "driverLoi", ma: "X_Y" }).message).not.toContain("did NOT go out");
+    expect(t({ nguon: "driverLoi", ma: "X_Y" }).message).not.toContain("read recovers");
+    expect(t({ nguon: "tuChoi", ma: "X_Y" }).message).toContain("did NOT go out");
+    expect(t({ nguon: "tuChoi", ma: "X_Y" }).message).toContain("X_Y");
+    expect(t({ nguon: "tuChoi", ma: "X_Y" }).message).not.toContain("read recovers");
+    expect(t({ nguon: "doc", ma: "X_Y" }).message).toContain("once the read recovers");
+    expect(t().message).toContain("once the read recovers");
+    expect(t({ nguon: "tuChoi", ma: "X_Y" }).dedupKey).toBe("foe_outcome_unknown_stop_not_sent:9:st:-:chot");
+    const c = noiDungCanhBaoKhongRo({ loai: "stopNotSent", runId: 9, stepId: "x", compId: "cs", error: "FOE_OUTCOME_UNKNOWN", lan: "chot", vi: { nguon: "tuChoi", ma: "X_Y" } });
+    expect(c.message).toContain('STOP "cs" did NOT go out');
+    expect(loiGiuChuaRa("st", { nguon: "driverLoi", ma: "X_Y" })).not.toContain("did NOT go out");
+    expect(loiGiuChuaRa("st", { nguon: "tuChoi", ma: "X_Y" })).toContain("Abort sends it again");
+    expect(loiGiuChuaRa("st", undefined)).toContain("once the read recovers");
+    for (const vi of [undefined, { nguon: "tuChoi", ma: "X" }, { nguon: "driverLoi", ma: "X" }, { nguon: "doc", ma: "X" }] as const) expect(loiGiuChuaRa("st", vi)).not.toContain("Continue");
+  });
+  it("the edge's report carries the source; what is not a code does not cross", () => {
+    const d = chiTietAnomalyKhongRo({ loai: "stopNotSent", stepId: "st", compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", claimSeq: 2, biet: true, vi: { nguon: "tuChoi", ma: "BUSY" } });
+    expect(docAnomalyKhongRo(d)).toMatchObject({ loai: "stopNotSent", vi: { nguon: "tuChoi", ma: "BUSY" }, biet: true });
+    const lau = JSON.stringify({ loai: "stopNotSent", stepId: "st", compId: "-", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 2, vi: { nguon: "tuChoi", ma: "socket 10.1.2.3 closed" } });
+    expect(docAnomalyKhongRo(lau)?.vi).toBeUndefined();
+    const nguon = JSON.stringify({ loai: "stopNotSent", stepId: "st", compId: "-", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 2, vi: { nguon: "khac", ma: "BUSY" } });
+    expect(docAnomalyKhongRo(nguon)?.vi).toBeUndefined();
   });
 });
