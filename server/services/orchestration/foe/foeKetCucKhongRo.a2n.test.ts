@@ -204,7 +204,7 @@ vi.mock("../../../db/connection", () => ({
 import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
-import { baoCaoHopLe, baoCaoKhongRoTuHang, chuBuTruTrongDinhNghia, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
+import { baoCaoHopLe, baoCaoKhongRoTuHang, chuBuTruTrongDinhNghia, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, loiKhongGuiChot, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
 import {
   KHONG_RO_DANG_BAY_AUDIT_OP,
   buTruBiChanKhongRo,
@@ -227,6 +227,9 @@ import {
   canhBaoTuAnomalyEdge,
   ganBaoCaoKhongRoEdge,
   tachBaoCaoKhongRoEdge,
+  nhanBuocSauChot,
+  type BangChungBuoc,
+  type NhanSauChot,
 } from "./foeKetCucKhongRo";
 import { goiYRunDangGiu } from "../../../routers/oversightRouter";
 import { createEdgeRunStore } from "../../edge/edgeRunStore";
@@ -1901,4 +1904,81 @@ describe("A2(n) F10 — a refused step's own bookkeeping never holds a walk long
     expect(sent("pause")).toHaveLength(0);
     expect(sent("stop")).toHaveLength(1);
   });
+});
+
+// bang-ca-f12.md, row by row: the number in each case's name is the table's. Rows that are no label of this function, and gaps, are it.todo naming the task that closes them.
+describe("A2(n) T1 — nhanBuocSauChot, the F12 table by row shape", () => {
+  const bang = (x: Partial<BangChungBuoc>): BangChungBuoc => ({ status: null, routedTo: false, khongRo: false, daGiao: false, uyQuyenSong: false, ...x });
+  const MA = "FOE_OUTCOME_UNKNOWN: dispatch timed out";
+  const KHONG_GUI = loiKhongGuiChot("s"); // the writer's own text: a change of the code cannot leave this table behind
+  const TRUONG_HOP: Array<[string, Partial<BangChungBuoc>, NhanSauChot]> = [
+    // A. forward step
+    ["F12-1 no row, no trace", {}, "chuaDen"],
+    ["F12-2 no row, dispatched", { daGiao: true }, "coTheDaGui"],
+    ["F12-3 no row, a live authorisation", { uyQuyenSong: true }, "coTheDaGui"],
+    ["F12-4 running, no routedTo, no trace", { status: "running" }, "coTheDaGui"],
+    ["F12-5 running + routedTo", { status: "running", routedTo: true }, "coTheDaGui"],
+    ["F12-6 running with the code", { status: "running", error: MA }, "coTheDaGui"],
+    ["F12-6b running with FOE_NOT_SENT: running proves nothing, never 'not sent'", { status: "running", error: KHONG_GUI }, "coTheDaGui"],
+    ["F12-7 failed FOE_OUTCOME_UNKNOWN", { status: "failed", error: MA }, "coTheDaGui"],
+    ["F12-8 failed FOE_OUTCOME_PARTIAL, routedTo", { status: "failed", error: "FOE_OUTCOME_PARTIAL: 1 of 2", routedTo: true }, "giuNguyen"],
+    ["F12-9 failed with a device's error, routedTo", { status: "failed", error: 'Command "pause" rejected', routedTo: true }, "giuNguyen"],
+    ["F12-10 failed, refused before the hand-over (FOE_GATE_REQUIRED)", { status: "failed", error: "FOE_GATE_REQUIRED: no approval" }, "giuNguyen"],
+    ["F12-11 failed FOE_NOT_SENT, no trace at all", { status: "failed", error: KHONG_GUI }, "chuaGui"],
+    ["F12-12 failed FOE_NOT_SENT with routedTo", { status: "failed", error: KHONG_GUI, routedTo: true }, "coTheDaGui"],
+    ["F12-13 failed FOE_NOT_SENT, dispatched", { status: "failed", error: KHONG_GUI, daGiao: true }, "coTheDaGui"],
+    ["F12-14 completed, routedTo", { status: "completed", routedTo: true }, "xong"],
+    ["F12-15 skipped", { status: "skipped" }, "xong"],
+    ["F12-16 held, no trace", { status: "held" }, "chuaGui"],
+    ["F12-17 held, a live authorisation", { status: "held", uyQuyenSong: true }, "giuNguyen"],
+    ["F12-17b pending", { status: "pending" }, "coTheDaGui"],
+    ["F12-17b queued", { status: "queued" }, "coTheDaGui"],
+    ["F12-17b awaiting_confirm", { status: "awaiting_confirm" }, "coTheDaGui"],
+    ["F12-17c skipped + khongRo: reviewed at T1, unknown wins over a skip written by an old walk", { status: "skipped", khongRo: true }, "coTheDaGui"],
+    ["F12-17c skipped with the code on the row", { status: "skipped", error: MA }, "coTheDaGui"],
+    // B. STOP
+    ["F12-18 verified STOP, no row", {}, "chuaDen"],
+    ["F12-19 verified STOP, failed on an earlier walk, not confirmed", { status: "failed", error: "device said no", routedTo: true }, "giuNguyen"],
+    ["F12-21 verified STOP, running, no result", { status: "running" }, "coTheDaGui"],
+    ["F12-22 verified STOP, completed, confirmed before", { status: "completed", routedTo: true, khongRo: true }, "xong"],
+    ["F12-23 verified STOP, completed, not confirmed", { status: "completed", routedTo: true, khongRo: true }, "xong"],
+    ["F12-26 stop-typed, pins read, not pinned, not reached", {}, "chuaDen"],
+    ["F12-27 stop-typed, handed over, running + routedTo", { status: "running", routedTo: true }, "coTheDaGui"],
+    ["F12-28 stop-typed, handed over, failed with the code", { status: "failed", error: MA, routedTo: true }, "coTheDaGui"],
+    ["F12-29 stop-typed, row lost, dispatched", { daGiao: true }, "coTheDaGui"],
+    ["F12-30 stop-typed, row lost, a live authorisation", { uyQuyenSong: true }, "coTheDaGui"],
+    ["F12-30a verified STOP, running + routedTo, a result of an earlier attempt", { status: "running", routedTo: true }, "coTheDaGui"],
+    // C. compensation: the row's label; what the walk does with it is its own task
+    ["F12-31 compensation running, no result", { status: "running" }, "coTheDaGui"],
+    ["F12-32 compensation running + routedTo", { status: "running", routedTo: true }, "coTheDaGui"],
+    ["F12-33 no row, it is the latch step itself", { khongRo: true }, "coTheDaGui"],
+    ["F12-34 compensation held, nothing handed over", { status: "held" }, "chuaGui"],
+    ["F12-35 compensated", { status: "compensated" }, "xong"],
+    ["F12-36 compensation failed with the code", { status: "failed", error: MA }, "coTheDaGui"],
+  ];
+  it.each(TRUONG_HOP)("%s", (_ten, x, nhan) => {
+    expect(nhanBuocSauChot(bang(x))).toBe(nhan);
+  });
+
+  // the gaps of the table, closed by the task named
+  it.todo("F12-16 gap edge: the central picture has no held row (parity 2314) — T11");
+  it.todo("F12-17a gap: completed in the current edge segment must read xong, the edge reads coTheDaGui (C-5, S3, B7-edge) — T11, gopHangCucBo");
+  it.todo("F12-27 gap: the row stays running at the end of an edge segment — T11");
+  it.todo("F12-30a gap Q-5: hong counts running with or without routedTo, S-R — T10");
+  it.todo("F12-31 gap: Continue hands over again under -a1 (M2), F8-DUP — T6, DB at T15");
+  it.todo("F12-30b gap C-3: adapter unresolved, state C, B12, F4-C3 — T5");
+  it.todo("F12-39 gap C-2: a refused step's STOP compensation with unreadable pins, B11, F4-COMP, F4-COMP-C — T5");
+  // rows of the table with no label of this function
+  it.todo("F12-20 verified STOP, failed on this very walk: not sent again, B-notNeeded — T3+T4");
+  it.todo("F12-24 unverifiable forward step goes to the dispatcher (F4), B-unverified, F2a — T5");
+  it.todo("F12-25 unverifiable compensation follows laBuTruStop, F2c, a2n N3 — T5");
+  it.todo("F12-30c pins unreadable by FOE and dispatcher, no approval: state C, F4-C2, F4-C2b — T5");
+  it.todo("F12-37 a body of several steps running: the walker goes, the plan does not send twice — T3+T4");
+  it.todo("F12-38 refused step's STOP compensation, pins read: sent (F11), F3, B10 — T3+T4");
+  it.todo("F12-40 refused step's non-STOP compensation: not due — T3+T4");
+  // D. the same rows at each moment: the fixtures that build rows for the real walk, central and edge
+  it.todo("F12-D walking: memory + rows — T13");
+  it.todo("F12-D boot: rows + context, no memory — T10, T13");
+  it.todo("F12-D Continue: rows + context + approval — T6, T13");
+  it.todo("F12-D edge segment: the prior picture, no held, no running + routedTo (rows 16, 27) — T11");
 });

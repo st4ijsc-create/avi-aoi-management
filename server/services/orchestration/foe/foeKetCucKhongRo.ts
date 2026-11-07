@@ -182,6 +182,39 @@ export function buocCoTheDaBayTuHang(rows: ReadonlyArray<{ stepId: string; statu
 }
 
 /**
+ * A2(n) T1 — what the evidence says about one step after the latch. "chuaGui" only when proven; "chuaDen" = nothing says it started; "giuNguyen" = a known last word stays as it is;
+ * "coTheDaGui" = no last word, the safe side. Table: bang-ca-f12.md.
+ */
+export type NhanSauChot = "xong" | "coTheDaGui" | "chuaGui" | "chuaDen" | "giuNguyen";
+export interface BangChungBuoc {
+  /** the row's status; null ⇔ no row */
+  status: string | null;
+  error?: string | null;
+  routedTo: boolean;
+  /** the latch's own step, an unknown this walk decided, or a state central derived */
+  khongRo: boolean;
+  /** foeDispatchedSteps, or handed over in this walk */
+  daGiao: boolean;
+  /** edge: an authorisation neither reported nor superseded */
+  uyQuyenSong: boolean;
+}
+/** The prefix foeRunStore.loiKhongGuiChot writes. Spelled here: foeRunStore imports this module, a pure function must not pull the store in. F12-11 builds its row with the writer. */
+const DAU_KHONG_GUI_CHOT = "FOE_NOT_SENT_RUN_LATCHED:";
+
+export function nhanBuocSauChot(x: BangChungBuoc): NhanSauChot {
+  if (x.status === "completed" || x.status === "compensated") return "xong";
+  const khongRo = x.khongRo || loiLaKetCucKhongRo(x.error);
+  if (x.status === "skipped") return khongRo ? "coTheDaGui" : "xong"; // N-1: a skip an old walk wrote over an unknown is no last word on it
+  if (khongRo) return "coTheDaGui";
+  const dauVet = x.routedTo || x.daGiao || x.uyQuyenSong;
+  if (x.status === "failed" && typeof x.error === "string" && x.error.startsWith(DAU_KHONG_GUI_CHOT)) return dauVet ? "coTheDaGui" : "chuaGui";
+  if (x.status === "held") return dauVet ? "giuNguyen" : "chuaGui"; // held at a gate of the walk, nothing handed over
+  if (x.status === "failed") return "giuNguyen"; // a device's own error, FOE_OUTCOME_PARTIAL, a known refusal: never overwritten
+  if (x.status !== null) return "coTheDaGui"; // running is written BEFORE the hand-over and proves nothing either way; pending, queued, awaiting_confirm: no row says it stayed unsent (N-1)
+  return dauVet ? "coTheDaGui" : "chuaDen";
+}
+
+/**
  * A2(n) (b) — /authorize's own check, a second line on the edge path (the walker's latch may have died with its memory): a compensation of a run latched by its
  * context OR its rows is refused unless a Continue that passed n3 approved exactly that step + compensation. A STOP never gets here (L-7). Pure.
  */
