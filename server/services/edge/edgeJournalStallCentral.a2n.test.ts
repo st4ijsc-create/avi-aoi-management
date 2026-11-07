@@ -383,7 +383,7 @@ describe("a2n layer 2 — a running run whose node stopped reporting (baoRunMatP
     expect(await baoRunMatProgress(T, lau)).toEqual([41, 42]);
     await settled();
     expect(mat()).toHaveLength(2);
-    expect(mat().find((a) => a.message.includes("Run 41")).message).toContain("unknown");
+    expect(mat().find((a) => a.message.includes("Run 41"))!.message).toContain("unknown");
   });
 
   it("a sweep that cannot read the claims throws to its caller (the scheduler logs it); nothing is raised", async () => {

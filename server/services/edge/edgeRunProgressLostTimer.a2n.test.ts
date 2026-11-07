@@ -1,6 +1,6 @@
 /**
  * Đĩa edge treo (a2n) — layer 2 runs on central's own: the node-health pass calls the lost-progress sweep (edgeExecutionCentral.baoRunMatProgress) and it stops
- * with the checker. Measured on the running timer: the sweep is the only reader that selects `nodeCode` (a stub database counts it). A sweep that fails is
+ * with the checker. Measured on the running timer: the sweep is the only reader that selects both `a` and `nodeCode` (a stub database counts it). A sweep that fails is
  * logged, never thrown into the timer, and the pass goes on; a missing migration 0370 is silent.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ vi.mock("../../db/connection", () => ({
       const b: Record<string, unknown> = {};
       for (const k of ["from", "innerJoin", "where", "orderBy", "limit"]) b[k] = () => b;
       b.then = (res: (v: unknown[]) => unknown, rej: (e: unknown) => unknown) => {
-        if (!p || !("nodeCode" in p)) return Promise.resolve([]).then(res, rej);
+        if (!p || !("a" in p && "nodeCode" in p)) return Promise.resolve([]).then(res, rej); // holdUnclaimedEdgeRuns selects a `nodeCode` too, never an `a`
         S.sweeps++;
         return (S.fail ? Promise.reject(S.fail) : Promise.resolve([])).then(res, rej);
       };

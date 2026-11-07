@@ -67,10 +67,11 @@ describe("a2n stalledSince — the age of the write / fsync now running", () => 
   it("★ the writeFileAtomic of a segment ROLL shows it too: every record behind it waits on it", async () => {
     let t = 1_000;
     const { j, dia } = await moJournal({ now: () => t, segmentMaxBytes: 100 });
+    const n = dia.dem.atomic; // the open wrote files too
     dia.treoAtomic();
     t = 4_000;
     const p = j.appendEvent(ev("y".repeat(200)));
-    await choDen(() => dia.dem.atomic > 0, "roll reached writeFileAtomic");
+    await choDen(() => dia.dem.atomic > n, "roll reached writeFileAtomic");
     t = 9_500;
     expect(j.stalledSince()).toBe(4_000);
     dia.tha();
@@ -81,10 +82,11 @@ describe("a2n stalledSince — the age of the write / fsync now running", () => 
   it("★ the writeFileAtomic of COMPACT shows it too", async () => {
     let t = 1_000;
     const { j, dia } = await moJournal({ now: () => t });
+    const n = dia.dem.atomic; // the open wrote files too
     dia.treoAtomic();
     t = 5_000;
     const p = j.compact();
-    await choDen(() => dia.dem.atomic > 0, "compact reached writeFileAtomic");
+    await choDen(() => dia.dem.atomic > n, "compact reached writeFileAtomic");
     t = 11_000;
     expect(j.stalledSince()).toBe(5_000);
     dia.tha();
@@ -178,8 +180,10 @@ describe("a2n fsyncOverrun — non-STOP closed until restart, records keep flowi
     dia.treoSync();
     expect(await j.markAuthorizationUnused({ ...J, reason: "expired_before_use" })).toEqual({ ok: false, reason: "io_error" });
     expect(j.admitNonStop()).toBe(false);
-    expect(await j.markAuthorizationUnused({ ...J, jti: "jti-d", reason: "expired_before_use" })).toEqual({ ok: false, reason: "io_error" });
     dia.tha();
+    await j.flush();
+    expect(await j.markAuthorizationUnused({ ...J, jti: "jti-d", reason: "expired_before_use" })).toEqual({ ok: false, reason: "io_error" }); // the disk is back: still refused
+    expect(j.isJtiConsumed("jti-d")).toBe(false);
   });
 
   it("★ a robot state sample is dropped as UNHEALTHY during an overrun, never as `journal_full`", async () => {
