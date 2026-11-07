@@ -1980,13 +1980,9 @@ describe("A2(n) T1 — nhanBuocSauChot, the F12 table by row shape", () => {
   it.todo("F12-30b gap C-3: adapter unresolved, state C, B12, F4-C3 — T5");
   it.todo("F12-39 gap C-2: a refused step's STOP compensation with unreadable pins, B11, F4-COMP, F4-COMP-C — T5");
   // rows of the table with no label of this function
-  it.todo("F12-20 verified STOP, failed on this very walk: not sent again, B-notNeeded — T3+T4");
   it.todo("F12-24 unverifiable forward step goes to the dispatcher (F4), B-unverified, F2a — T5");
   it.todo("F12-25 unverifiable compensation follows laBuTruStop, F2c, a2n N3 — T5");
   it.todo("F12-30c pins unreadable by FOE and dispatcher, no approval: state C, F4-C2, F4-C2b — T5");
-  it.todo("F12-37 a body of several steps running: the walker goes, the plan does not send twice — T3+T4");
-  it.todo("F12-38 refused step's STOP compensation, pins read: sent (F11), F3, B10 — T3+T4");
-  it.todo("F12-40 refused step's non-STOP compensation: not due — T3+T4");
   // D. the same rows at each moment: the fixtures that build rows for the real walk, central and edge
   it.todo("F12-D walking: memory + rows — T13");
   it.todo("F12-D boot: rows + context, no memory — T10, T13");
