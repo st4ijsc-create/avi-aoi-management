@@ -520,6 +520,12 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     const dir = await tam.mk();
     const steps = [move("m1"), moveC("m2", stop("c1")), stop("s1")];
     const x = await chayTreo(75, steps, ["c1", "s1"], dir);
+    const chu = String(hangRun(75).error);
+    expect(chu).toContain("A compensation may already have run.");
+    expect(chu).toContain("use Abort");
+    expect(chu).toContain("Continue may end the run without sending it.");
+    expect(chu).not.toContain("nothing further was sent");
+    expect(chu).not.toContain("Continue to resume it");
     const { rs, ket } = await tiepTuc(x, dir, 75, steps, ["c1", "s1"]);
     expect(rs).toMatchObject({ m2: { state: "doneFailed" } });
     expect(ten()).toEqual([]); // not c1 again, not s1
@@ -614,6 +620,12 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     H.stale = null;
     await hetDoan(x);
     expect(hangRun(85).status).toBe("held");
+    const chu = String(hangRun(85).error);
+    expect(chu).toContain("Continue fails that step and does not send the STOPs behind it.");
+    expect(chu).toContain("Use Abort to send them.");
+    expect(chu).not.toContain("nothing further was sent");
+    expect(chu).not.toContain("Continue to resume it");
+    expect(chu).not.toContain("Continue it once");
     const { rs, ket } = await tiepTuc(x, dir, 85, steps, ["s1"]);
     expect(rs).toMatchObject({ m1: { state: "outcomeUnknown" } });
     expect(ten()).toEqual([]);

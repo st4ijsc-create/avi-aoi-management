@@ -43,7 +43,7 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
-import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
+import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1015,6 +1015,18 @@ const OUTCOME_UNKNOWN_KEY = "foeOutcomeUnknown";
 export { EDGE_HELD_CTX_KEY };
 
 /**
+ * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except the two a Continue does not get out of (measured:
+ * MIX ends failed without its forward STOP, B5 fails the step): those say Abort, because Abort is the way out there.
+ */
+function heldAdvice(error: string | undefined): string {
+  // data-raw-ok: the run's error (shown on the run), as the rest of it
+  if (error?.includes(EDGE_HOLD_CONSUME_OVERRUN)) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
+  // data-raw-ok: as above
+  if (error?.includes(EDGE_HOLD_UNUSED_NOT_REPORTED)) return " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
+  return " — nothing further was sent; Continue to resume it.";
+}
+
+/**
  * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
  * transaction). Never from 'aborted' or a centrally STOPPED run (a rejection's claim token) — only from 'running' /
  * 'compensating' (the bound write P-E2 uses), so a late report never regresses a run. The run row decides, never the report:
@@ -1045,7 +1057,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, end: EdgeSeg
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""} — nothing further was sent; Continue to resume it.`,
+      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""}${heldAdvice(error)}`,
       contextJson: { ...ctx, [EDGE_HELD_CTX_KEY]: reason, [`${EDGE_HELD_CTX_KEY}At`]: at, [`${EDGE_HELD_CTX_KEY}Node`]: end.nodeCode, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: `edge held: ${reason}`, ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}) },
     });
   };

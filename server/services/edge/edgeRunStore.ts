@@ -51,7 +51,7 @@ import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
 import { EDGE_CONFIG_STALE, EDGE_SAFETY_CONFIG_MISSING, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
-import { EDGE_HOLD_CONSUME_OVERRUN } from "./edgeProgramReportRule";
+import { EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED } from "./edgeProgramReportRule";
 import type { EdgeAuthUnusedReason } from "./edgeProtocol";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -455,13 +455,13 @@ export class EdgeRunStore extends EdgeStoreBase {
    * CAUSED by a missing safety-PLC config writes no EDGE_CONFIG_STALE — the dispatch gate already journaled EDGE_SAFETY_CONFIG_MISSING
    * (central's URGENT alert) for it; the step error still says why.
    */
-  private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
+  private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE, continueOk = true): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
     this.heldReason = "configStale";
     if (cause === EDGE_CONFIG_STALE) {
       this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
     }
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
-    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held (Continue it once the edge has its new config).` };
+    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held${continueOk ? " (Continue it once the edge has its new config)" : ""}.` };
   }
 
   /**
@@ -496,8 +496,9 @@ export class EdgeRunStore extends EdgeStoreBase {
           : "the edge's config is older than the one central announced";
     const h = this.heldForStaleConfig(
       stepId,
-      `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`,
+      `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : `could NOT be reported unused (${EDGE_HOLD_UNUSED_NOT_REPORTED}: a Continue treats the step as possibly sent)`}`,
       d.reason === EDGE_SAFETY_CONFIG_MISSING ? EDGE_SAFETY_CONFIG_MISSING : EDGE_CONFIG_STALE,
+      reported,
     );
     return { reason: h.heldReason, error: h.error };
   }
