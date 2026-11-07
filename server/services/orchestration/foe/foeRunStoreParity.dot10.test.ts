@@ -475,6 +475,8 @@ interface EdgeHarness {
   suaGoi?: (p: EdgeRunPackage) => EdgeRunPackage;
   /** A2(n) T5 — the store's authorizeCommand throws for these steps */
   authNem?: Set<string>;
+  /** A2(n) T5 — the store's own STOP check of a compensation throws */
+  laStopNem?: boolean;
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
@@ -610,6 +612,11 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
     store.authorizeCommand = async (rc, s, a, i) => {
       if (x.authNem?.has(s.id)) throw new Error("authorize threw (test)");
       return goc(rc, s, a, i);
+    };
+  }
+  if (x.laStopNem) {
+    store.buTruLaStopGhim = async () => {
+      throw new Error("the STOP check threw (test)");
     };
   }
   // ★ the edge walk (and a local abort sweep) run against a database that THROWS — and is never even asked
@@ -4648,6 +4655,17 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(hangDau().length).toBe(1);
     expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
   });
+  it("F12-25-NEM the store's STOP check throws: no answer is no 'not a STOP': the compensation is not held, it goes", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await denBuoc(dC("f4nem"));
+    e.laStopNem = true;
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(sentOf("cs")).toEqual(["cs"]);
+    expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.held)).toEqual([]);
+  });
   it("F12-25-TACH the split ahead of the pass, pins unreadable: not held for a person, it goes by the marked route", async () => {
     seedHalt();
     h.dispatcherThat = true;
@@ -4937,6 +4955,7 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(sentOf("cs")).toEqual(["cs"]);
     expect(authCua(e, "cs")).toBe(1);
     expect(h.sent.find((x) => x.stepId === "cs")?.edge).toMatchObject({ authorization: null });
+    await wait(30);
     expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.held), "asked again at the sink: no hold, nobody sent to a person for a STOP that went").toEqual([]);
   });
 
