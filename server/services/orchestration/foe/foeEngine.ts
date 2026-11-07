@@ -607,8 +607,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   chiStopGhimIds?: Set<string>;
   /** R1b-2b-2a A2(n) — the identity of this walk segment (the outcome-unknown alerts' dedup); set on first use. */
   luotDi?: string;
-  /** A2(n) (I-3, m-1) — what the dispatcher answered for a compensation sent by itself (the words of the URGENT come from this, not from "ok"). */
-  ketQuaBuTru?: Map<string, { accepted: boolean; simulated: boolean }>;
+  /** A2(n) (I-3, m-1) — what the dispatcher answered for a compensation sent by itself (the words of the URGENT come from this, not from "ok"). xacNhan (D): acked_verified. */
+  ketQuaBuTru?: Map<string, { accepted: boolean; simulated: boolean; xacNhan: boolean }>;
   /** A2(n) (R-4) — this walk reported something about an unknown outcome, or resumed one (no "no compensation due" alert then). */
   khongRoDaBao?: boolean;
   /** A2(n) (R-4) — the command steps of this walk that ended on an unknown outcome. */
@@ -656,6 +656,10 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   nhanhDaBao?: Set<string>;
   /** A2(n) (F2) — a compensation held beside the walk, by a pass or at the door: a held row holds the run, whatever the walk answers and whenever it answers. */
   giuNen?: Extract<StepOutcome, { kind: "held" }>;
+  /** A2(n) (R5) — compensations that did go, each with whether its going may end the run: confirmed, or told in a durable URGENT (H2). */
+  buTruDaDi?: Map<string, Promise<boolean>>;
+  /** A2(n) (R4) — where the door dropped forward work: what stayed unsent in here is named at the end of the walk. */
+  cuaDung?: WorkflowStep[];
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -1294,6 +1298,7 @@ async function stopTrongBuTru(rc: RunContext, step: WorkflowStep, x: WorkflowSte
   if (rc.aborting || daXongBuTru(rc, x.id) || !(await laBuTruStop(rc, x))) return;
   if (!(await guiStopKhongRo(rc, { ...step, compensation: x }, x, loi, lan))) return;
   baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: x.id, error: loi, lan });
+  (rc.buTruDaGiu ??= new Set()).add(x.id);
   rc.giuNen ??= { kind: "held", stepId: x.id, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(step.id, x.id, loi) };
 }
 
@@ -1316,6 +1321,23 @@ function chayStopNen(rc: RunContext, viec: () => Promise<unknown>): void {
   );
 }
 
+/**
+ * A2(n) (decision 3, R4) — the first step the door dropped, once the STOPs have answered. A STOP that went, a step that finished, a step with a last word of its own were not dropped; a STOP
+ * that did not go was, and so was a stop-typed step that is no STOP. undefined ⇔ nothing forward was dropped.
+ */
+async function buocTienBiBo(rc: RunContext): Promise<string | undefined> {
+  const daGiao = Array.isArray(rc.context[DISPATCHED_CTX_KEY]) ? (rc.context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : [];
+  for (const hop of rc.cuaDung ?? []) {
+    for (const x of buocTienCua(hop)) {
+      if (x.type !== "command" || rc.completed.has(x.id)) continue;
+      if (await isStopCandidate(x, rc.machineById)) {
+        if (!rc.stopDangGiao?.has(x.id)) return x.id; // kept only for a STOP that answered ok
+      } else if (!rc.prior.settled.has(x.id) && !rc.settled.has(x.id) && !rc.attempted.has(x.id) && !daGiao.includes(x.id)) return x.id;
+    }
+  }
+  return undefined;
+}
+
 /** A2(n) (F11, I-F) — the STOP compensation of a step that never went (`stopToTienSauGiu`: a container's body too; anything else stays where it is). */
 function datStopCuaBuoc(rc: RunContext, step: WorkflowStep): void {
   const comp = step.compensation;
@@ -1331,12 +1353,12 @@ function batDauLuotStop(rc: RunContext): void {
 
 /**
  * A2(n) — does the door stop this step? Not a non-STOP command that may already have gone out, nor a container with such a step or a resume state inside it, nor a container an earlier
- * walk began and left with no last word (F1): the rows say so, a boot and an edge segment have no memory of it. Its children meet the door one by one, so what was dropped gets its row
- * and the failure its compensation splits on. A container nobody began stays out: nothing of it ran.
+ * walk began and left with no last word (F1): its row or the row of anything inside it, at any depth, says so (a row is a bounded write, it can be the one lost); a boot and an edge segment
+ * have no memory of it. Its children meet the door one by one, so what was dropped gets its row and the failure its compensation splits on. A container nobody began stays out: nothing of it ran.
  */
 async function dungTaiCua(rc: RunContext, step: WorkflowStep): Promise<boolean> {
   if (step.type === "command") return !ketCucRiengKhongRo(rc, step.id) || (await isStopCandidate(step, rc.machineById));
-  if ((step.type === "sequence" || step.type === "parallel" || step.type === "branch") && rc.prior.startOrder.includes(step.id) && !rc.prior.settled.has(step.id)) return false;
+  if ((step.type === "sequence" || step.type === "parallel" || step.type === "branch") && buocTienCua(step).some((x) => rc.prior.startOrder.includes(x.id)) && !rc.prior.settled.has(step.id)) return false;
   return !buocTienCua(step).some((x) => x.id !== step.id && (resumeStateOf(rc, x.id) !== null || (x.type === "command" && ketCucRiengKhongRo(rc, x.id))));
 }
 
@@ -1344,10 +1366,13 @@ async function dungTaiCua(rc: RunContext, step: WorkflowStep): Promise<boolean> 
 async function ngatSauChot(rc: RunContext, step: WorkflowStep): Promise<StepOutcome> {
   const error = loiKhongGuiChot(step.id);
   const tuChoi: StepOutcome = { kind: "failed", error, khongGuiChot: true };
-  if (step.type !== "command") {
-    rc.khongGuiDau ??= buocTienCua(step).find((x) => x.type === "command")?.id ?? step.id; // forward work dropped here too (decision 3)
+  if (step.type === "sequence" || step.type === "parallel" || step.type === "branch") {
+    if (!rc.prior.settled.has(step.id)) (rc.cuaDung ??= []).push(step); // a last word of its own keeps its meaning
     return tuChoi;
   }
+  const hop = toTienCua(rc.def.steps, step.id)[0];
+  (rc.cuaDung ??= []).push(...(hop ? [hop] : rc.def.steps)); // a sequence stops here: what stands behind this step is dropped with it
+  if (step.type !== "command") return tuChoi;
   if (await isStopCandidate(step, rc.machineById)) {
     (rc.denCuaStop ??= new Set()).add(step.id);
     return tuChoi;
@@ -1484,7 +1509,27 @@ async function duongKetThuc(rc: RunContext, out: StepOutcome): Promise<StepOutco
   await Promise.allSettled(rc.stopNen ?? []);
   await guiStopSauChot(rc, true).catch((err: unknown) => console.error(`[FOE] run ${rc.runId}: final STOP pass failed: ${(err as Error)?.message ?? err}`));
   await Promise.allSettled(rc.stopNen ?? []);
-  return rc.giuNen && (out.kind === "failed" || out.kind === "ok" || out.kind === "skipped") ? rc.giuNen : out;
+  rc.khongGuiDau ??= await buocTienBiBo(rc);
+  const ket = await goGiuDaDi(rc, out);
+  return rc.giuNen && (ket.kind === "failed" || ket.kind === "ok" || ket.kind === "skipped") ? rc.giuNen : ket;
+}
+
+/**
+ * A2(n) (R5) — a hold whose STOP went at a later pass of this walk ends with it, by what really came back: confirmed, or handed over and told in a durable URGENT (H2). Nothing is sent again.
+ * It did not go, or no answer, or nothing durable: the hold stands. A hold the walk returned gives way to its failure only if no container around it still owes a compensation.
+ */
+async function goGiuDaDi(rc: RunContext, out: StepOutcome): Promise<StepOutcome> {
+  let go = false;
+  for (const [id, chuan] of rc.buTruDaDi ?? []) {
+    if (!rc.buTruDaGiu?.has(id)) continue;
+    if (await withDeadline(chuan, 5 * STOP_DB_STEP_DEADLINE_MS, `FOE run ${rc.runId} URGENT of ${id}`).catch(() => false)) go = rc.buTruDaGiu.delete(id);
+  }
+  if (!go || rc.buTruDaGiu?.size) return out;
+  rc.giuNen = undefined;
+  if (out.kind !== "held" || out.reason !== "outcomeUnknown" || !rc.buTruDaDi?.has(out.stepId)) return out;
+  const chu = chuBuTruCua(rc, out.stepId);
+  const conNo = chu !== null && toTienCua(rc.def.steps, chu.step.id).some((h) => h.compensation && !daXongBuTru(rc, h.compensation.id));
+  return conNo ? out : { kind: "failed", error: loiCuaChot(rc) };
 }
 
 /** A2(n) (S-1) — is the run latched? This walk decided an unknown outcome, or its context says so. */
@@ -1603,7 +1648,9 @@ async function guiStopKhongRo(rc: RunContext, step: WorkflowStep, comp: Workflow
     rc.buTruDaGui.delete(comp.id); // not handed over: still due
     return true;
   }
-  baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, comp.id, c), stepId: step.id, compId: comp.id, error: loi, lan });
+  const ben = baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, comp.id, c), stepId: step.id, compId: comp.id, error: loi, lan });
+  // R5 — it went: confirmed ends a hold by itself, handed over only with a durable URGENT (H2; an edge's durable word is central's, at its segment end)
+  if (c?.kind === "ok") (rc.buTruDaDi ??= new Map()).set(comp.id, rc.ketQuaBuTru?.get(comp.id)?.xacNhan === true || rc.store.kind !== "central" ? Promise.resolve(true) : (ben ?? Promise.resolve(false)));
   return false;
 }
 
@@ -1640,14 +1687,15 @@ async function giuCoKhongRo(khongRo: boolean, rc: RunContext, stepId: string, gh
   );
 }
 
-/** R1b-2b-2a A2(n) — the store's report (central: URGENT alert; edge: anomaly). Never throws, never awaited. */
-function baoKetCucKhongRo(rc: RunContext, a: Parameters<NonNullable<RunStore["ketCucKhongRo"]>>[1]): void {
+/** R1b-2b-2a A2(n) — the store's report (central: URGENT alert; edge: anomaly). Never throws, never awaited on a STOP's path. Central answers whether it landed. */
+function baoKetCucKhongRo(rc: RunContext, a: Parameters<NonNullable<RunStore["ketCucKhongRo"]>>[1]): Promise<boolean> | undefined {
   rc.khongRoDaBao = true;
   try {
     // m-K — a failure whose own outcome is KNOWN, on a latched run: the words say so
-    rc.store.ketCucKhongRo?.(rc, loiLaKetCucKhongRo(a.error) ? a : { ...a, biet: true });
+    return rc.store.ketCucKhongRo?.(rc, loiLaKetCucKhongRo(a.error) ? a : { ...a, biet: true }) ?? undefined;
   } catch (err) {
     console.error(`[FOE] run ${rc.runId}: outcome-unknown report failed: ${(err as Error)?.message ?? err}`);
+    return undefined;
   }
 }
 
@@ -2713,7 +2761,7 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
     rc.dangGui.delete(step.id);
   }
   // A2(n) (I-3) — what really came back for a compensation sent by itself: a simulated dispatch never reads "sent"
-  if (rc.chiStopGhimIds?.has(step.id) || cong) (rc.ketQuaBuTru ??= new Map()).set(step.id, { accepted: result.ok, simulated: result.status === "simulated" || result.detail?.simulated === true });
+  if (rc.chiStopGhimIds?.has(step.id) || cong) (rc.ketQuaBuTru ??= new Map()).set(step.id, { accepted: result.ok, simulated: result.status === "simulated" || result.detail?.simulated === true, xacNhan: result.ok && result.status === "acked_verified" && result.detail?.simulated !== true });
   // A2(n) (a) — a pinned STOP that passed the sink on its own (a body, or admitted before the latch): URGENT, after the dispatch, never awaited
   if (cong) baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, step.id, result.ok ? { kind: "ok" } : undefined), stepId: cong.chu.step.id, compId: step.id, error: rc.loiBuTru?.get(cong.chu.comp.id) ?? "", lan: luotDiCua(rc) });
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.

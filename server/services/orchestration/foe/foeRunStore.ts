@@ -244,7 +244,7 @@ export interface RunStore {
    */
   buTruLaStopGhim?(rc: RunStoreContext, comp: WorkflowStep): Promise<boolean>;
   /** R1b-2b-2a A2(n) — tell a person (central: URGENT alert; edge: an anomaly central turns into that alert). Never throws, never awaited. */
-  ketCucKhongRo?(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void;
+  ketCucKhongRo?(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void | Promise<boolean>;
   /**
    * A2(n) extension (4) — EDGE only: the authorisation `stepId` holds was never used (the sink refused the hand-over). Central supersedes it, so nothing reads the
    * step as possibly sent. The rows stop quoting it from the call (its synchronous part: a quoted jti is evidence of use). Never rejects. The central store has none.
@@ -1039,8 +1039,8 @@ export const centralRunStore: RunStore = Object.freeze({
   verifyStops: verifyStopsForAbort,
   auditAbort: auditAbortStop,
   buTruLaStopGhim: buTruLaStopGhimTrungTam, // R1b-2b-2a A2(n)
-  ketCucKhongRo(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void {
-    void canhBaoKetCucKhongRo({ ...a, runId: rc.runId, owner: rc.runOwner });
+  ketCucKhongRo(rc: RunStoreContext, a: KetCucKhongRoBaoCao): Promise<boolean> {
+    return canhBaoKetCucKhongRo({ ...a, runId: rc.runId, owner: rc.runOwner });
   },
 });
 

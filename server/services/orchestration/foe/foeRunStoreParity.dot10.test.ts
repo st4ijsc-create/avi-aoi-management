@@ -61,6 +61,8 @@ const h = vi.hoisted(() => ({
   canhBaoThat: 0,
   /** A2(n) T3+T4 — answers of `timeout` given so far: from the first one the latch can fall; a command that reaches the fake after it is marked `sauKhoa` */
   traTimeout: 0,
+  /** A2(n) T3+T4 — with h.acked: the status of the answer (the read-back's acked_verified) */
+  ackStatus: "acked",
   /** A2(n) T3+T4 — what a case allows after the latch beyond a STOP: a compensation a person approved */
   duocSauKhoa: new Set<string>(),
 }));
@@ -138,7 +140,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
         h.failPlan.set(stepId, left - 1);
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `scripted failure of ${stepId}` };
       }
-      if (h.acked) return { ok: true, status: "acked", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: {} };
+      if (h.acked) return { ok: true, status: h.ackStatus, routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: {} };
       return { ok: true, status: "simulated", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: { simulated: true } };
     },
     async getState() {
@@ -282,6 +284,7 @@ beforeEach(() => {
   h.alertDurable = true;
   h.consumeQuaHan.clear();
   h.traTimeout = 0;
+  h.ackStatus = "acked";
   h.duocSauKhoa.clear();
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
@@ -3561,11 +3564,11 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     return resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
   };
   const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
-  async function denG2(ref: string, cac = CAC(), comp?: WorkflowStep) {
+  async function denG2(ref: string, cac = CAC(), comp?: WorkflowStep, stop: string[] = []) {
     h.slow.set("x", 40);
     h.timeoutDispatch.add("x");
     const c = await centralRun(khung(ref, cac, comp), 1);
-    expect(ids().sort()).toEqual(["a", "x"]);
+    expect(ids().filter((x) => !stop.includes(x)).sort()).toEqual(["a", "x"]); // a STOP of the container went at the latch
     h.sent.length = 0;
     h.alerts.length = 0;
     h.timeoutDispatch.clear();
@@ -3775,6 +3778,332 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await waitFor(() => ids().includes("cs"), "the STOP");
     await wait(20);
     expect(ids()).toEqual(["cs"]);
+  });
+  // ── lượt sửa 2 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  const denThanGiu = async (ref: string) => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    const c = await centralRun(dinhThan(ref, [move("q"), otStop("cs")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    return c;
+  };
+  it("THAN-GIU-ABORT-T7b the same held STOP, the read recovered, Abort: the URGENT named Abort, the sweep must reach it", async () => {
+    const c = await denThanGiu("tg-ab");
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    await abortRun(c, OWNER, "checked on site");
+    await wait(30);
+    expect(ids()).toEqual(["cs"]);
+    expect(hang(c, "cs")?.status).not.toBe("held");
+  });
+  it("THAN-GIU-ABORT-TUCHOI-T7b the same, the dispatcher refuses the Abort's STOP: abort:cs stays owed, a second Abort sends it", async () => {
+    const c = await denThanGiu("tg-at");
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    h.failPlan.set("cs", 1);
+    await abortRun(c, OWNER, "checked on site");
+    await wait(30);
+    expect(ids()).toEqual(["cs"]);
+    expect(hang(c, "abort:cs")).toMatchObject({ status: "failed" });
+    await abortRun(c, OWNER, "again");
+    await wait(30);
+    expect(ids()).toEqual(["cs", "cs"]);
+    expect(hang(c, "abort:cs")).toMatchObject({ status: "completed" });
+  });
+  it("THAN-GIU-CONTINUE-T9 a Continue that only sends a STOP asks no reason and sends no non-STOP; the URGENT says so, no 'a reason is required', no 'waiting for a person'", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    const c = await centralRun(dinhThan("tg-co", [move("q"), move("z"), otStop("cs")]), 1);
+    await wait(30);
+    const chu = urgentCua("held").map((a) => `${a.title} ${a.message}`).join(" ");
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => ids().includes("cs"), "the STOP");
+    await wait(20);
+    expect(ids()).toEqual(["cs"]);
+    expect(chu).not.toBe("");
+    expect(chu).not.toContain("a reason is required");
+    expect(chu).not.toContain("waiting for a person");
+  });
+  it("THAN-GIU-BOOT-T10 a boot on the same hold goes through congBootStop: inside the bound from the durable latch mark it goes; past it, nothing goes, state C, an URGENT, a person decides", async () => {
+    const chay = async (ref: string, luc: string) => {
+      const c = await denThanGiu(ref);
+      process.env.FOE_DURABLE = "true";
+      const ctx = runRow(c).contextJson as Record<string, unknown>;
+      Object.assign(runRow(c), { status: "held", error: null, contextJson: { ...ctx, interrupted: true, [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as object), at: luc } } });
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.clear();
+      h.sent.length = 0;
+      h.alerts.length = 0;
+      await autoResumeInterruptedRuns([c]);
+      await wait(40);
+      return c;
+    };
+    await chay("tg-bt", new Date().toISOString());
+    expect(ids()).toEqual(["cs"]);
+    const c = await chay("tg-bq", new Date(Date.now() - 3_600_000).toISOString());
+    expect(ids(), "past the bound a boot sends nothing by itself").toEqual([]);
+    expect(runRow(c).status).toBe("held");
+    expect(h.alerts.length).toBeGreaterThan(0);
+  });
+  it("THAN-DOC-T5 a STOP behind a failed step of a body, its pins unreadable from the start: a row with the mark, owed, an URGENT naming it, the run held", async () => {
+    seedHalt();
+    h.ghim = PIN_BAD;
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    const c = await centralRun(dinhThan("tdoc", [move("q"), otStop("cs")]), 1);
+    await wait(30);
+    expect(hang(c, "cs"), "no row, nobody told").toBeDefined();
+    expect(h.alerts.filter((a) => String(a.message).includes('"cs"')).length).toBeGreaterThan(0);
+    expect(runRow(c).status).toBe("held");
+  });
+  it("MAT-HANG-B boot, the container's own row lost, its children's rows there: it was begun: walked, the STOP goes, r3 is what was dropped, not a", async () => {
+    const c = await denG2("mhb");
+    process.env.FOE_DURABLE = "true";
+    Object.assign(runRow(c), { status: "held", finishedAt: null, error: null, currentStepId: null, contextJson: { ...runRow(c).contextJson, interrupted: true } });
+    Object.assign(hang(c, "g2")!, { status: "completed" });
+    fake.store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== c || r.stepId !== "b"));
+    await autoResumeInterruptedRuns([c]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(ids()).toEqual(["cs"]);
+    expect(String(hang(c, "r3")!.error)).toMatch(khongGui);
+    expect(urgentCua("forwardNotSent").map((a) => a.dedupKey.split(":")[2])).toEqual(["r3"]);
+  });
+  const buocBo = () => urgentCua("forwardNotSent").map((a) => a.dedupKey.split(":")[2]);
+  const bootMat = async (c: number, mat: string[], sua?: () => void) => {
+    process.env.FOE_DURABLE = "true";
+    Object.assign(runRow(c), { status: "held", finishedAt: null, error: null, currentStepId: null, contextJson: { ...runRow(c).contextJson, interrupted: true } });
+    if (hang(c, "g2")) Object.assign(hang(c, "g2")!, { status: "completed" });
+    fake.store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== c || !mat.includes(r.stepId)));
+    sua?.();
+    await autoResumeInterruptedRuns([c]);
+  };
+  it("MAT-HANG-SAU the row that proves it is a child two levels down, both containers' rows lost: begun, walked, the STOP goes", async () => {
+    const c = await denG2("mhs", [box("c", [move("a"), gate("g2"), move("r3")])]);
+    await bootMat(c, ["b", "c"]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(ids()).toEqual(["cs"]);
+    expect(buocBo()).toEqual(["r3"]);
+  });
+  it("MAT-HANG-B phủ định: what is left behind the lost row is a STOP its dispatcher refuses: forwardNotSent still names it, never silent", async () => {
+    h.failPlan.set("s", Infinity);
+    const c = await denG2("mhp", [move("a"), gate("g2"), robotStop("s")], undefined, ["s", "cs"]); // s failed: its container's STOP went with the walk
+    await bootMat(c, ["b"]);
+    await waitFor(() => ids().includes("s"), "the STOP");
+    await wait(30);
+    expect(buocBo()).toEqual(["s"]);
+  });
+  it("MAT-HANG-B phủ định: nothing left behind the lost row: no forwardNotSent", async () => {
+    const c = await denG2("mhn", [move("a"), gate("g2")]);
+    await bootMat(c, ["b"]);
+    await wait(40);
+    expect(buocBo()).toEqual([]);
+  });
+  it("MAT-HET every row of the container and its children lost, the context's dispatched list kept: that list is the proof: the STOP goes, a is not called unsent", async () => {
+    const c = await denG2("mhk");
+    await bootMat(c, ["b", "a", "g2"]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    await wait(30);
+    expect(ids()).toEqual(["cs"]);
+    expect(buocBo()).not.toContain("a");
+  });
+  it.todo("MAT-HET-CS the same with the dispatched list lost too: no evidence the container began: cs does not go, no URGENT names it, forward_not_sent says a was not handed over (measured, reported to the coordinator, task not decided)");
+  it("TEN-NOTPIN phủ định: a stop-typed step that is no STOP stands at the door: it never went: named", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("tnp", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), stopTyped("nt")])])]), 1);
+    await wait(30);
+    expect(ids()).toEqual(["x"]);
+    expect(buocBo()).toEqual(["nt"]);
+  });
+  it("TEN-TUCHOI phủ định: a STOP at the door its dispatcher refuses: it did not go: named", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("s", Infinity);
+    await centralRun(def("ttc", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), robotStop("s")])])]), 1);
+    await wait(30);
+    expect(buocBo()).toEqual(["s"]);
+  });
+  it("TEN-STOP a container never begun holding only a STOP the pass sends: nothing forward was dropped: no forwardNotSent", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("ts", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c", [robotStop("s")])])])]), 1);
+    await wait(30);
+    expect(ids()).toEqual(["x", "s"]);
+    expect(buocBo()).toEqual([]);
+  });
+  it("TEN-STOP-M a STOP at the door with a command behind it: the command is what was dropped", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("tsm", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), robotStop("s"), move("m")])])]), 1);
+    await wait(30);
+    expect(ids()).toEqual(["x", "s"]);
+    expect(buocBo()).toEqual(["m"]);
+  });
+  it("TEN-DELAY a delay at the door, no command behind it: nothing forward was dropped", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("td", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), delay("w2", 10)])])]), 1);
+    await wait(30);
+    expect(buocBo()).toEqual([]);
+  });
+  it("TEN-XONG a container at the door with a finished step and a STOP in it, then a command: the command is named, never the finished step", async () => {
+    const c = await denG2("tx", [move("a"), gate("g2"), delay("w", 5_000), robotStop("s"), move("m")], undefined, ["s"]);
+    await duyetG2(c);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(buocBo()).toEqual(["m"]);
+  });
+  it("KTB a container with a device's error from an earlier walk: its failure keeps its meaning, no forwardNotSent over it", async () => {
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("y", 1);
+    const c = await centralRun(def("ktb", [gate(), parF("p", [move("x", { compensation: ot("u") }), box("b", [move("y"), move("m")])])]), 1);
+    chet(c, ["g1", "p", "x", "b", "y"], () => {
+      Object.assign(hang(c, "y")!, { status: "failed", error: "device said no" });
+      Object.assign(hang(c, "b")!, { status: "failed", error: "device said no" });
+    });
+    await autoResumeInterruptedRuns([c]);
+    await wait(30);
+    expect(buocBo()).toEqual([]);
+  });
+  // R5: a STOP that went at the last pass lifts the hold it was the reason of
+  it("X4-ba a hold at the sink, the STOP went at the last pass: the run ends by its walk, failed, no hold left, nothing more to send", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      await wait(80);
+      return n++ < 2 ? PIN_BAD() : PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.failPlan.set("f", 1);
+    const c = await centralRun(dinhComp("x4ba2", otStop("cs")), 1);
+    await wait(20);
+    expect(runRow(c).status).toBe("failed");
+    expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  it("K2-HOI a hold by a pass, the last pass reads it pinned: failed, compensated, one STOP", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if (++n === 2) return (await wait(10), { pinnedStop: false, loiDocGhim: null });
+      return PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(k2a("k2h"), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("failed");
+    expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  it("K2-HOI đối chứng: the last attempt does not go either: held", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n % 2 === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(k2a("k2hd"), 1);
+    await wait(30);
+    expect(ids()).toEqual(["x"]);
+    expect(runRow(c).status).toBe("held");
+  });
+  it("K2-HOI đối chứng: the last attempt goes and the dispatcher refuses: held", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if (++n === 2) return (await wait(10), { pinnedStop: false, loiDocGhim: null });
+      return PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("cs", Infinity);
+    const c = await centralRun(k2a("k2hr"), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+  });
+  const denHoi = async (ref: string) => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if (++n === 2) return (await wait(10), { pinnedStop: false, loiDocGhim: null });
+      return PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(k2a(ref), 1);
+    await wait(30);
+    return c;
+  };
+  it("K2-HOI H2: handed over, not confirmed, the URGENT not durable: held, not sent again", async () => {
+    h.alertDurable = false;
+    const c = await denHoi("k2hb");
+    expect(runRow(c).status).toBe("held");
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  it("K2-HOI confirmed: acked_verified with no durable URGENT: the run ends, by the one path, one STOP", async () => {
+    h.acked = true;
+    h.ackStatus = "acked_verified";
+    h.alertDurable = false;
+    const c = await denHoi("k2hx");
+    expect(runRow(c).status).toBe("failed");
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  it("K2-HOI no answer at the last attempt: not known to have gone: held", async () => {
+    h.timeoutDispatch.add("cs");
+    const c = await denHoi("k2ht");
+    expect(runRow(c).status).toBe("held");
+  });
+  it("HELD-CU-T9 the URGENT that said NOT sent, once the STOP went: a later word corrects it (T9)", async () => {
+    await denHoi("k2hc");
+    const sau = h.alerts.findIndex((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopSimulated || a.kind === CANH_BAO_KHONG_RO_KIND.stopSent);
+    expect(sau).toBeGreaterThanOrEqual(0);
+    expect(urgentCua("held").map((a) => String(a.title)).filter((t) => t.includes('"cs"')), "the held URGENT stands uncorrected").toEqual([]);
+  });
+  it("K2-HOI two holds, one STOP goes at the last pass, the other does not: the run stays held", async () => {
+    seedHalt();
+    let n = 0;
+    let m = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if ((i as unknown as { writes: Array<{ value: unknown }> }).writes[0].value === false) return { pinnedStop: ++m % 2 === 1, loiDocGhim: null };
+      if (++n === 2) return (await wait(10), { pinnedStop: false, loiDocGhim: null });
+      return PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("k2h2", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })]), box("e", [delay("w2", 30), move("r4", { compensation: otStop("cs2", { args: { tagKey: "halt", value: false } }) })])])]), 1);
+    await wait(30);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+    expect(ids().filter((x) => x === "cs2")).toEqual([]);
+    expect(runRow(c).status).toBe("held");
+  });
+  it("X4-TO-TIEN the hold lifted, but a container around it still owes a compensation that is no STOP: the run stays held, it is not lost", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      await wait(80);
+      return n++ < 2 ? PIN_BAD() : PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.failPlan.set("f", 1);
+    const c = await centralRun(def("x4tt", [gate(), box("o", [parF("p", [move("x"), ot("f", { compensation: otStop("cs") })])], { compensation: ot("u", { args: { tagKey: "speed", value: 1 } }) })]), 1);
+    await wait(20);
+    expect(ids()).not.toContain("u");
+    expect(runRow(c).status).toBe("held");
   });
   it("K2a đối chứng: the STOP goes at its dispatch: the run ends, it is not held", async () => {
     seedHalt();
