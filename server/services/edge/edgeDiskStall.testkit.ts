@@ -15,13 +15,15 @@ import { EdgeProgramChecks, EdgeStreamShipper, createEdgeAuthUnusedReporter, cre
 
 export interface DiskGia {
   io: EdgeJournalIo;
-  dem: { write: number; sync: number; atomic: number };
+  dem: { write: number; sync: number; atomic: number; close: number; open: number; unlink: number };
   /** the next `sync` and every later one hang */
   treoSync(): void;
   /** the next `write` and every later one hang */
   treoWrite(): void;
   /** the next `writeFileAtomic` and every later one hang */
   treoAtomic(): void;
+  /** the next call of this kind, and every later one, hangs */
+  treoOp(op: "close" | "open" | "unlink"): void;
   /** every `sync` hangs from the first line holding `s` that is written (the line itself reaches the file) */
   treoSauKhiGhi(s: string): void;
   /** the next `sync` rejects, once (a real IO error) */
@@ -32,15 +34,17 @@ export interface DiskGia {
 }
 
 export function diskGia(): DiskGia {
-  const treo = { sync: false, write: false, atomic: false };
+  const treo = { sync: false, write: false, atomic: false, close: false, open: false, unlink: false };
   const loi = { sync: false, write: false };
   let sauKhiGhi: string | null = null;
   let mo: () => void = () => undefined;
   let cho = new Promise<void>((r) => (mo = r));
-  const dem = { write: 0, sync: 0, atomic: 0 };
+  const dem = { write: 0, sync: 0, atomic: 0, close: 0, open: 0, unlink: 0 };
   const io: EdgeJournalIo = {
     ...nodeEdgeJournalIo,
     async openAppend(p: string): Promise<EdgeJournalFile> {
+      dem.open++;
+      if (treo.open) await cho;
       const f = await nodeEdgeJournalIo.openAppend(p);
       return {
         async write(data: string) {
@@ -62,8 +66,17 @@ export function diskGia(): DiskGia {
           if (treo.sync) await cho;
           await f.sync();
         },
-        close: () => f.close(),
+        async close() {
+          dem.close++;
+          if (treo.close) await cho;
+          await f.close();
+        },
       };
+    },
+    async unlink(file: string) {
+      dem.unlink++;
+      if (treo.unlink) await cho;
+      await nodeEdgeJournalIo.unlink(file);
     },
     async writeFileAtomic(file: string, data: string) {
       dem.atomic++;
@@ -77,11 +90,12 @@ export function diskGia(): DiskGia {
     treoSync: () => void (treo.sync = true),
     treoWrite: () => void (treo.write = true),
     treoAtomic: () => void (treo.atomic = true),
+    treoOp: (op) => void (treo[op] = true),
     treoSauKhiGhi: (s) => void (sauKhiGhi = s),
     loiSync: () => void (loi.sync = true),
     loiWrite: () => void (loi.write = true),
     tha: () => {
-      treo.sync = treo.write = treo.atomic = false;
+      treo.sync = treo.write = treo.atomic = treo.close = treo.open = treo.unlink = false;
       sauKhiGhi = null;
       mo();
       cho = new Promise<void>((r) => (mo = r));
@@ -123,6 +137,9 @@ export interface EdgeTrenDiaGia {
   agent: EdgeExecutionAgent;
   shipper: EdgeStreamShipper;
   sink: ReturnType<typeof createEdgeReportSink>;
+  client: EdgeCentralClient;
+  config: EdgeConfigSource;
+  authorize: ReturnType<typeof createEdgeAuthorizeClient>;
   /** the standing walker's outcome (absent when the caller gave its own walker) */
   tha(o: EdgeSegmentOutcome): void;
   /** everything down, the disk let go first; call once, in afterEach */
@@ -175,6 +192,9 @@ export async function edgeTrenDiaGia(
     agent,
     shipper,
     sink,
+    client,
+    config,
+    authorize,
     tha: (x) => tha(x),
     dong: async () => {
       dia.tha();

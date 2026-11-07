@@ -92,6 +92,39 @@ describe("a2n stalledSince — the age of the write / fsync now running", () => 
     expect(j.stalledSince()).toBeNull();
   });
 
+  it.each(["sync", "close", "open"] as const)("★ every call of a segment roll shows its age: %s", async (op) => {
+    let t = 1_000;
+    const { j, dia } = await moJournal({ now: () => t, segmentMaxBytes: 100 });
+    const n = { ...dia.dem };
+    if (op === "sync") dia.treoSync();
+    else dia.treoOp(op);
+    t = 4_000;
+    const p = j.appendEvent(ev("y".repeat(200)));
+    await choDen(() => dia.dem[op] > n[op], `roll reached ${op}`);
+    t = 9_500;
+    expect(j.stalledSince()).toBe(4_000);
+    dia.tha();
+    await p;
+    await j.flush();
+    expect(j.stalledSince()).toBeNull();
+  });
+
+  it("★ the unlink of COMPACT shows its age too", async () => {
+    let t = 1_000;
+    const { j, dia } = await moJournal({ now: () => t, segmentMaxBytes: 100 });
+    await j.appendEvent(ev("y".repeat(200))); // rolls: the first segment holds only this record
+    await j.flush();
+    dia.treoOp("unlink");
+    t = 6_000;
+    j.ack("events", 1); // central took it: that segment can go
+    await choDen(() => dia.dem.unlink > 0, "compact reached unlink");
+    t = 12_000;
+    expect(j.stalledSince()).toBe(6_000);
+    dia.tha();
+    await j.compact();
+    expect(j.stalledSince()).toBeNull();
+  });
+
   it("a write that failed leaves no age behind", async () => {
     const { j, dia } = await moJournal();
     dia.loiWrite();
