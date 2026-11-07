@@ -187,7 +187,9 @@ describe("A2(m2) — source pins", () => {
     expect(gui).toContain("rc.chiGuiStopGhim = true;");
     expect(gui).toContain("{ attempt: LAN_GUI_LAI_KHOI_DONG }");
     expect(gui).not.toMatch(/getActiveDriver|writeTags|dispatch\(/); // never a shortcut around the dispatcher
-    const exec = fnBody(src, "async function execCommand(");
+    // A2(n) Q-6: execCommand is the one hand-over around the body; the body is the only way in, so the check still stands on every dispatch
+    expect(fnBody(src, "async function execCommand(")).toContain("await execCommandMot(rc, step, attempt, giao)");
+    const exec = fnBody(src, "async function execCommandMot(");
     expect(exec).toContain("if (rc.chiGuiStopGhim && auth.stopGhim !== true) {");
   });
 });

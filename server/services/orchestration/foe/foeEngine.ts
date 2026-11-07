@@ -2602,7 +2602,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
     daOk = o.kind === "ok";
     return o;
   } catch (err) {
-    giao.xong?.({ kind: "failed", error: err instanceof Error ? err.message : String(err) });
+    giao.xong?.({ kind: "failed", error: `command step "${step.id}": its first runner threw at the hand-over` }); // the words of the throw are that runner's (runStepBody)
     throw err;
   } finally {
     if (giao.xong && !daOk) rc.stopDangGiao?.delete(step.id);

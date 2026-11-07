@@ -224,13 +224,18 @@ function tepSanPham(): string[] {
   return ra;
 }
 
-/** Vi phạm: chỗ không xét mà không miễn; miễn không còn chỗ (cũ); FOE (chỗ thử lại thật duy nhất) không được miễn. */
-export function kiem(cho: ChoGui[], mien: Record<string, string>): { khongXet: string[]; mienCu: string[]; foeBiMien: boolean } {
+/** A2(n) Q-6 — hai hàm của một đường gửi FOE: `execCommand` là một hand-over bọc ngoài, `execCommandMot` là thân giữ lần gửi duy nhất. */
+const FOE_TEP = "server/services/orchestration/foe/foeEngine.ts";
+const FOE_HAM = ["execCommand", "execCommandMot"] as const;
+const choFoe = (cho: ChoGui[]) => cho.filter((c) => c.tep === FOE_TEP && (FOE_HAM as readonly string[]).includes(c.ham));
+
+/** Vi phạm: chỗ không xét mà không miễn; miễn không còn chỗ (cũ); FOE (chỗ thử lại thật duy nhất) không được miễn, ở cả hai hàm; đúng một lần gửi trên đường FOE. */
+export function kiem(cho: ChoGui[], mien: Record<string, string>): { khongXet: string[]; mienCu: string[]; foeBiMien: boolean; foeSoLanGui: number } {
   const khoa = (c: ChoGui) => `${c.tep}::${c.ham}`;
   const khongXet = [...new Set(cho.filter((c) => !c.xet && !(khoa(c) in mien)).map((c) => `${khoa(c)} (${c.ten} :${c.dong})`))];
   const co = new Set(cho.map(khoa));
   const mienCu = Object.keys(mien).filter((k) => !co.has(k));
-  return { khongXet, mienCu, foeBiMien: "server/services/orchestration/foe/foeEngine.ts::execCommand" in mien };
+  return { khongXet, mienCu, foeBiMien: FOE_HAM.some((h) => `${FOE_TEP}::${h}` in mien), foeSoLanGui: choFoe(cho).length };
 }
 
 const rel = (p: string) => relative(GOC, p).replace(/\\/g, "/");
@@ -240,8 +245,8 @@ const CHO = TAT_CA.flatMap((f) => quetTep(f.rel, f.van));
 describe("★★★ T3E — census: mọi chỗ gửi lệnh phải xét MOT_PHAN (hoặc miễn có lý do)", () => {
   it("có chỗ để xét (bộ quét không rỗng): FOE execCommand (.sendCommand) được tìm thấy và XÉT", () => {
     expect(CHO.length).toBeGreaterThan(10);
-    const foe = CHO.filter((c) => c.tep === "server/services/orchestration/foe/foeEngine.ts" && c.ham === "execCommand");
-    expect(foe).toHaveLength(1);
+    const foe = choFoe(CHO);
+    expect(foe.map((c) => c.ham)).toEqual(["execCommandMot"]);
     expect(foe[0]!.xet).toBe(true);
   });
 
@@ -250,6 +255,7 @@ describe("★★★ T3E — census: mọi chỗ gửi lệnh phải xét MOT_PHA
     expect(k.khongXet, `chỗ gửi lệnh chưa xét MOT_PHAN: ${k.khongXet.join(" | ")}`).toEqual([]);
     expect(k.mienCu, `miễn không còn chỗ: ${k.mienCu.join(" | ")}`).toEqual([]);
     expect(k.foeBiMien).toBe(false);
+    expect(k.foeSoLanGui, "đường FOE có đúng một lần gửi").toBe(1);
   });
 
   it("lưới thô: tệp nhắc mô-đun gửi (văn bản) + có lời gọi mang TÊN gửi (AST, mọi callee — không qua bộ phân giải import) ⇒ bộ phân giải thấy ≥ 1 chỗ", () => {
@@ -287,13 +293,36 @@ describe("★★★ T3E — census: mọi chỗ gửi lệnh phải xét MOT_PHA
     expect(/\bkhongGuiLaiMotPhan\(\s*outcome\s*,\s*stop\s*\)/.test(execStep!.getText())).toBe(true);
   });
 
-  it("★ đột biến (tệp ảo): bỏ motPhanCua khỏi ketCucLenhFoe ⇒ chỗ FOE execCommand ĐỎ, nêu tên", () => {
+  it("★ đột biến (tệp ảo): bỏ motPhanCua khỏi ketCucLenhFoe ⇒ chỗ FOE execCommandMot ĐỎ, nêu tên", () => {
     const f = TAT_CA.find((x) => x.rel === "server/services/orchestration/foe/foeEngine.ts")!;
     expect(f.van).toContain("motPhanCua(result.detail?.motPhan)");
     const dotBien = f.van.replace("motPhanCua(result.detail?.motPhan)", "null as never");
     const cho = [...CHO.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, dotBien)];
     const k = kiem(cho, MIEN);
-    expect(k.khongXet.some((x) => x.startsWith("server/services/orchestration/foe/foeEngine.ts::execCommand "))).toBe(true);
+    expect(k.khongXet.some((x) => x.startsWith("server/services/orchestration/foe/foeEngine.ts::execCommandMot "))).toBe(true);
+  });
+
+  const guiThem = `await equipmentRegistry.getAdapter("ot-opcua" as never).sendCommand({} as never);`;
+  it("★ đột biến (tệp ảo): thêm một lần gửi trong execCommand (bọc ngoài, không xét) ⇒ ĐỎ, nêu tên", () => {
+    const f = TAT_CA.find((x) => x.rel === FOE_TEP)!;
+    const neo = "  const giao: { xong: ((o: StepOutcome) => void) | null } = { xong: null };\n  let daOk = false;";
+    expect(f.van).toContain(neo);
+    const cho = [...CHO.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, f.van.replace(neo, `${guiThem}\n${neo}`))];
+    const k = kiem(cho, MIEN);
+    expect(k.khongXet.some((x) => x.startsWith(`${FOE_TEP}::execCommand `))).toBe(true);
+    expect(k.foeSoLanGui).toBe(2);
+  });
+
+  it("★ đột biến (tệp ảo): thêm một lần gửi trong execCommandMot (cùng hàm đã xét, nên `xet` không thấy) ⇒ ĐỎ qua số lần gửi", () => {
+    const f = TAT_CA.find((x) => x.rel === FOE_TEP)!;
+    const neo = "    result = await adapter.sendCommand(cmd);";
+    expect(f.van).toContain(neo);
+    const cho = [...CHO.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, f.van.replace(neo, `${guiThem}\n${neo}`))];
+    expect(kiem(cho, MIEN).foeSoLanGui).toBe(2);
+  });
+
+  it("★ đột biến (bản đồ miễn): miễn cả hai hàm FOE đều bị bắt", () => {
+    for (const h of FOE_HAM) expect(kiem(CHO, { ...MIEN, [`${FOE_TEP}::${h}`]: "thử" }).foeBiMien).toBe(true);
   });
 
   it("đột biến (tệp ảo): một chỗ gửi MỚI không xét ⇒ ĐỎ, nêu tên; miễn cho nó ⇒ xanh; miễn còn lại khi chỗ biến mất ⇒ ĐỎ (cũ)", () => {
@@ -352,8 +381,8 @@ const CHO_DA_BAY = TAT_CA.flatMap((f) => quetTep(f.rel, f.van, TEN_XET_DA_BAY));
 describe("★★★ T3F — census: mọi chỗ gửi lệnh phải xét 'lệnh trước có thể đã bay' (hoặc miễn có lý do)", () => {
   it("cùng tập chỗ với T3E (cùng bộ quét); FOE execCommand XÉT (qua ketCucLenhFoe → coTheDaBayCua)", () => {
     expect(CHO_DA_BAY.map((c) => `${c.tep}::${c.ham}:${c.dong}`)).toEqual(CHO.map((c) => `${c.tep}::${c.ham}:${c.dong}`));
-    const foe = CHO_DA_BAY.filter((c) => c.tep === "server/services/orchestration/foe/foeEngine.ts" && c.ham === "execCommand");
-    expect(foe).toHaveLength(1);
+    const foe = choFoe(CHO_DA_BAY);
+    expect(foe.map((c) => c.ham)).toEqual(["execCommandMot"]);
     expect(foe[0]!.xet).toBe(true);
   });
 
@@ -372,13 +401,13 @@ describe("★★★ T3F — census: mọi chỗ gửi lệnh phải xét 'lệnh
     expect(/const khongRoChot = khongGuiLaiKhongRo\(\s*outcome\s*,\s*stop\s*\);\s*if \(khongRoChot\) \{\s*outcome = khongRoChot;\s*break;\s*\}/.test(execStep!.getText())).toBe(true);
   });
 
-  it("★ đột biến (tệp ảo): bỏ coTheDaBayCua khỏi ketCucLenhFoe ⇒ chỗ FOE execCommand ĐỎ, nêu tên", () => {
+  it("★ đột biến (tệp ảo): bỏ coTheDaBayCua khỏi ketCucLenhFoe ⇒ chỗ FOE execCommandMot ĐỎ, nêu tên", () => {
     const f = TAT_CA.find((x) => x.rel === "server/services/orchestration/foe/foeEngine.ts")!;
     expect(f.van).toContain("const daBay = coTheDaBayCua(result);");
     const dotBien = f.van.replace("const daBay = coTheDaBayCua(result);", "const daBay = null as string | null;");
     const cho = [...CHO_DA_BAY.filter((c) => c.tep !== f.rel), ...quetTep(f.rel, dotBien, TEN_XET_DA_BAY)];
     const k = kiem(cho, MIEN_DA_BAY);
-    expect(k.khongXet.some((x) => x.startsWith("server/services/orchestration/foe/foeEngine.ts::execCommand "))).toBe(true);
+    expect(k.khongXet.some((x) => x.startsWith("server/services/orchestration/foe/foeEngine.ts::execCommandMot "))).toBe(true);
   });
 
   it("đột biến (tệp ảo): chỗ gửi MỚI có vòng thử lại mà không xét ⇒ ĐỎ, nêu tên; xét qua MỘT bước trong tệp ⇒ xanh", () => {

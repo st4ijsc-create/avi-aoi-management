@@ -3919,7 +3919,56 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(ids()).toEqual(["cs"]);
     expect(buocBo()).not.toContain("a");
   });
-  it.todo("MAT-HET-CS the same with the dispatched list lost too: no evidence the container began: cs does not go, no URGENT names it, forward_not_sent says a was not handed over (measured, reported to the coordinator, task not decided)");
+  it("MAT-HET-CS-T9 the same with the dispatched list lost too: nothing says the container began: the URGENT does not say NOT handed: it says there is no record, names the STOP compensation the container declares, sends the person to the machine", async () => {
+    const c = await denG2("mhc");
+    await bootMat(c, ["b", "a", "g2"], () => delete (runRow(c).contextJson as Record<string, unknown>).foeDispatchedSteps);
+    await wait(60);
+    const chu = urgentCua("forwardNotSent").map((a) => `${a.title} ${a.message}`).join(" ");
+    expect(chu).not.toBe("");
+    expect(chu).not.toContain("NOT handed");
+    expect(chu).toMatch(/no record/i);
+    expect(chu).toContain('"cs"');
+    expect(chu).toMatch(/check the machine/i);
+  });
+  const buocPhai = (ten: string) => expect(buocBo(), `${ten}: forward work dropped, nobody told`).toContain(ten);
+  it("IM-SAU a door-stopped container with only a STOP, a command behind it in the same sequence: the command is named", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("ims", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c", [robotStop("s")]), move("m")])])]), 1);
+    await wait(30);
+    expect(ids()).not.toContain("m");
+    buocPhai("m");
+  });
+  it("IM-TAIL a delay at the door in an inner box, a command behind that box: the command is named", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("imt", [gate(), parF("p", [move("x"), box("v", [box("o", [delay("w", 30), delay("w2", 10)]), move("m")])])]), 1);
+    await wait(30);
+    buocPhai("m");
+  });
+  it("IM-GATE a gate at the door, a top-level command behind the parallel: the command is named", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("img", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), gate("g3")])]), move("tail")]), 1);
+    await wait(30);
+    buocPhai("tail");
+  });
+  it("IM-KHUNG a real re-walk: a box never begun at the door, a command behind it: the command is named", async () => {
+    const c = await denG2("imk", [move("a"), gate("g2"), box("o", [delay("w", 5)]), move("m")]);
+    await duyetG2(c);
+    await wait(40);
+    expect(ids()).toEqual(["cs"]);
+    buocPhai("m");
+  });
+  it("IM-STOP-T5 a STOP behind a door-stopped container, its dispatcher refuses it: an URGENT names it, the run is held", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("s2", Infinity);
+    const c = await centralRun(def("imst", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c", [robotStop("s")]), robotStop("s2")])])]), 1);
+    await wait(30);
+    expect(h.alerts.filter((a) => String(a.message).includes('"s2"')).length, "a refused STOP nobody names").toBeGreaterThan(0);
+    expect(runRow(c).status).toBe("held");
+  });
   it("TEN-LOI a begun container, its row lost, a step with a device's error in it: the step behind it is named, not the one that answered", async () => {
     const c = await denG2("tl", [move("a"), gate("g2"), move("y"), move("m")]);
     fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 99_200, runId: c, stepId: "y", stepType: "command", status: "failed", attempt: 1, startedAt: new Date(), finishedAt: new Date(), error: "device said no", resultJson: null }]);
@@ -4069,16 +4118,57 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(runRow(c).status).toBe("failed");
     expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
   });
-  it("K2-HOI no answer at the last attempt: not known to have gone: held", async () => {
+  it("K2-HOI no answer at the last attempt: handed over, not confirmed, a durable URGENT: the run ends (H2)", async () => {
     h.timeoutDispatch.add("cs");
     const c = await denHoi("k2ht");
-    expect(runRow(c).status).toBe("held");
+    expect(runRow(c).status).toBe("failed");
   });
   it("HELD-CU-T9 the URGENT that said NOT sent, once the STOP went: a later word corrects it (T9)", async () => {
     await denHoi("k2hc");
-    const sau = h.alerts.findIndex((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopSimulated || a.kind === CANH_BAO_KHONG_RO_KIND.stopSent);
-    expect(sau).toBeGreaterThanOrEqual(0);
-    expect(urgentCua("held").map((a) => String(a.title)).filter((t) => t.includes('"cs"')), "the held URGENT stands uncorrected").toEqual([]);
+    // held is raised before anyone knows whether the STOP will go: it cannot be avoided, only corrected. Closed when an URGENT AFTER it names cs and says that hold is over
+    const dau = h.alerts.findIndex((a) => a.kind === CANH_BAO_KHONG_RO_KIND.held && String(a.title).includes('"cs"'));
+    expect(dau).toBeGreaterThanOrEqual(0);
+    const sau = h.alerts.slice(dau + 1).filter((a) => String(a.message).includes('"cs"')).map((a) => String(a.message)).join(" ");
+    expect(sau).toMatch(/no longer held|hold is over|replaces the earlier/i);
+  });
+  it("S3 three holds' sibling: the run's error names a hold that stands, never the one lifted", async () => {
+    seedHalt();
+    let n = 0;
+    let m = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if ((i as unknown as { writes: Array<{ value: unknown }> }).writes[0].value === false) return { pinnedStop: ++m % 2 === 1, loiDocGhim: null };
+      if (++n === 2) return (await wait(10), { pinnedStop: false, loiDocGhim: null });
+      return PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("s3", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })]), box("e", [delay("w2", 60), move("r4", { compensation: otStop("cs2", { args: { tagKey: "halt", value: false } }) })])])]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(String(runRow(c).error)).not.toContain('"cs"');
+    expect(String(runRow(c).error)).toContain('"cs2"');
+  });
+  it("S4 a one-STOP body held at the sink, its STOP goes at the last pass: its row says so, the run ends, a Continue does not send it a second time (count)", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      await wait(80);
+      return n++ < 2 ? PIN_BAD() : PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.failPlan.set("f", 1);
+    const c = await centralRun(dinhComp("s4", box("cb", [otStop("cs")])), 1);
+    await wait(30);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+    const hangCs = hang(c, "cs")?.status;
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    if (runRow(c).status === "held") await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site").catch(() => undefined);
+    await wait(30);
+    expect(ids().filter((x) => x === "cs"), "sent a second time").toEqual(["cs"]);
+    expect(hangCs).not.toBe("held");
   });
   it("K2-HOI two holds, one STOP goes at the last pass, the other does not: the run stays held", async () => {
     seedHalt();
