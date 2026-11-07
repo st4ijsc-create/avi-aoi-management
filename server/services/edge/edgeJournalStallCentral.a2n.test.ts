@@ -17,6 +17,8 @@ const H = vi.hoisted(() => ({
   raiseThrows: false,
   /** verified STOPs of each run (edgeRunAnalysis stub) */
   stops: new Map<number, string[]>(),
+  /** A2(n) T5 fix 1 — what the assigned definition holds (default: nothing) */
+  dinhNghia: null as null | { steps: unknown[] },
   analysisThrows: new Set<number>(),
   docClaimLoi: false,
   docClaimTreo: null as null | Promise<void>,
@@ -53,7 +55,7 @@ vi.mock("./edgeRunAnalysis", async (orig) => ({
     return { verifiedStops: (H.stops.get(runId) ?? []).map((stepId) => ({ kind: "robot", stepId, robotId: 12 })), stopsUnsure: [], resolvedAdapters: [], robotIds: [], adapterIds: [], unresolved: [] };
   },
 }));
-vi.mock("./edgeReportsCentral", async (orig) => ({ ...(await orig<typeof import("./edgeReportsCentral")>()), assignedDefinition: async () => ({ steps: [] }) }));
+vi.mock("./edgeReportsCentral", async (orig) => ({ ...(await orig<typeof import("./edgeReportsCentral")>()), assignedDefinition: async () => H.dinhNghia ?? { steps: [] } }));
 
 import { orchestrationRunSteps } from "../../../drizzle/schema";
 import { FakeDb, resetSeq } from "../../routers/__otFakeDb";
@@ -135,6 +137,7 @@ beforeEach(() => {
   H.alerts.length = 0;
   H.raiseThrows = false;
   H.stops.clear();
+  H.dinhNghia = null;
   H.analysisThrows.clear();
   H.docClaimLoi = false;
   H.docClaimTreo = null;
@@ -336,6 +339,25 @@ describe("a2n layer 2 — a running run whose node stopped reporting (baoRunMatP
     expect(a).toMatchObject({ source: "ot", entityType: "edge_node", entityId: 7, khuTrungBenVung: {} });
   });
 
+  it("T5 fix 1 a STOP of the definition central cannot verify, no evidence it went: named, never (none); a row central could not confirm is no evidence", async () => {
+    H.dinhNghia = { steps: [{ id: "s2", type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } }, { id: "s3", type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } }, { id: "m", type: "command", machineId: 1, command: "start", args: {} }] };
+    themRun(41, { lastProgressAt: new Date(T - nguong()), stops: [] });
+    d.store.set("orchestration_run_steps", [{ runId: 41, stepId: "s3", status: "completed", resultJson: { stopKhongXacNhan: "ghimLech" } }]);
+    await baoRunMatProgress(T, lau);
+    await settled();
+    expect(String(mat()[0].message)).not.toContain("(none)");
+    expect(String(mat()[0].message)).toContain("s2");
+    expect(String(mat()[0].message)).toContain("s3");
+    expect(String(mat()[0].message)).not.toMatch(/\bm\b,/);
+  });
+  it("T5 fix 1 đối chứng: a STOP confirmed on its own row is not named", async () => {
+    H.dinhNghia = { steps: [{ id: "s2", type: "command", machineId: 1, command: "stop", args: {} }] };
+    themRun(41, { lastProgressAt: new Date(T - nguong()), stops: ["s2"] });
+    d.store.set("orchestration_run_steps", [{ runId: 41, stepId: "s2", status: "completed", resultJson: null }]);
+    await baoRunMatProgress(T, lau);
+    await settled();
+    expect(String(mat()[0].message)).toContain("(none)");
+  });
   it("★ the text says plainly that central cannot tell a lost network from a hung disk: a node that lost its network is told apart from nothing, and is not a false alarm", async () => {
     themRun(41, { lastProgressAt: new Date(T - nguong()), stops: ["s1"] });
     await baoRunMatProgress(T, lau);

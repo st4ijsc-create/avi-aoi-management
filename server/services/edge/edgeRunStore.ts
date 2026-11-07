@@ -49,7 +49,7 @@ import {
   type RunStoreUser,
 } from "../orchestration/foe/foeRunStore";
 import type { GateRequiredReason } from "../orchestration/foe/foeGateApproval";
-import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, loiLaKetCucKhongRo, runDaChotKhongRo, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KHONG_RO_EDGE_ANOMALY, chiTietAnomalyKhongRo, docAnomalyKhongRo, ganBaoCaoKhongRoEdge, loiLaKetCucKhongRo, maTuChoiCua, nguonCuaKetQua, runDaChotKhongRo, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
@@ -397,11 +397,13 @@ export class EdgeRunStore extends EdgeStoreBase {
   }
 
   /**
-   * A2(n) T5 — central reads `routedTo` on a command with no jti as an actuation nobody authorised, and refuses the whole report (edgeReportsCentral, 409 unauthorised_actuation), so a STOP of the route
-   * its dispatcher REFUSED would wedge the stream. Nothing actuated: the row says so by not naming a route. The record, its fields and central's check are unchanged.
+   * A2(n) T5 (H17) — a STOP of the route that certainly did not go out names no route: central reads `routedTo` with no jti as something handed over, and marks it for a person. Only then, by H11: a
+   * driver's failure, a partial batch, a timeout may have gone out and keep it. The record and its fields are unchanged.
    */
   private baoCaoKetQua(stepId: string, result: RunStepPatch["result"]): RunStepPatch["result"] {
     if (!result || !this.khongUyQuyen.has(stepId) || result.accepted !== false) return result;
+    const status = String(result.status ?? "");
+    if (nguonCuaKetQua(status, maTuChoiCua({ status, detail: result.detail as { reason?: unknown } | null | undefined }), false) !== "tuChoi") return result;
     const { routedTo: _bo, ...conLai } = result;
     return conLai;
   }

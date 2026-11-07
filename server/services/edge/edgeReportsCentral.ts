@@ -17,6 +17,7 @@
  *     the engine's guards (edgeEngineSink: running never overwrites a finished row; a completed abort row is never failed);
  *   • a NON-STOP command's result (a dispatcher result recorded, or the step completed) must quote a jti central issued for
  *     (this node, run, claim, step[, attempt]) — else 409 unauthorised_actuation + EDGE_ANOMALY audit (nothing applied);
+ *     A2(n) T5 (H16): a STOP step by the definition that central cannot verify is not that: its row is written with the mark foeRunStore.DAU_KHONG_XAC_NHAN, read never from the record (dangKhongXacNhan);
  *   • ledger records: central writes robot_jobs / command_log itself (result.edge = {nodeId, jti}), ONE per jti (a second
  *     report of the same jti ⇒ 409 replayed); a STOP needs no jti and is recorded as source edge:<node>; a device the node
  *     does not own (now) is never written (anomaly, skipped);
@@ -51,8 +52,9 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { canhBaoTuAnomalyEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
-import { baoCaoHopLe } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
+import { KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, chuBuTruTrongDinhNghia, dauKhongXacNhan, laHangChuaRa, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
+import { laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
 export class StreamAnswer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -237,6 +239,16 @@ async function jtiFor(tx: Db, node: EdgeNodePrincipal, runId: number, claimSeq: 
   return row;
 }
 
+/**
+ * A2(n) T5 (H16) — a command's result with no authorisation, on a step central does not hold a verified STOP: is it a STOP step at all? The definition's snapshot says, by the classifier of the split
+ * (laStopTheoBuoc over isStopCandidate: no read of its own), nothing of the record. null ⇔ no: unauthorised, as ever. The analysis read the pins: unreadable ⇒ docLoi; read, and this step is no verified
+ * STOP (pins changed, or no adapter resolves it) ⇒ ghimLech.
+ */
+async function dangKhongXacNhan(step: WorkflowStep, machineMap: Awaited<ReturnType<typeof loadMachineMap>>, an: { stopsUnsure: readonly string[] }): Promise<DangKhongXacNhan | null> {
+  if (!(await laStopTheoBuoc(step, machineMap))) return null;
+  return an.stopsUnsure.includes(step.id) ? "docLoi" : "ghimLech";
+}
+
 function unauthorised(runId: number, stepId: string, audits: Audit[], detail: Record<string, unknown>): never {
   audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "unauthorised_actuation", stepId, ...detail }, status: "failure" });
   throw new StreamAnswer(edgeError("unauthorised_actuation", `Run ${runId} step "${stepId}": a non-STOP command result without an authorisation issued for it — refused and recorded.`));
@@ -275,15 +287,18 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     const { centralStopped } = await import("./edgeCoordinator");
     const stopped = centralStopped(run);
     const edgeMark = (jti: string | null) => ({ nodeId: node.nodeId, claimSeq: req.claimSeq, ...(jti ? { jti } : {}) });
+    const khongXacNhan = new Map<string, DangKhongXacNhan>(); // A2(n) T5 — told after the commit: a batch that rolls back told nobody
 
-    return await applyStream<EdgeRunReportRecord>(d, node, req.stream, req.epoch, req.records, async (tx, rec, audits) => {
+    const traLoi = await applyStream<EdgeRunReportRecord>(d, node, req.stream, req.epoch, req.records, async (tx, rec, audits) => {
       if (rec.kind === "step") {
         const step = rec.stepId.startsWith("abort:") ? undefined : findStep(def.steps, rec.stepId);
         if (!step || step.type === "hitl_gate") {
           audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: step ? "gate_row_from_edge" : "unknown_step", stepId: rec.stepId, seq: rec.seq }, status: "failure" });
           return; // never written (a gate row is central's; an unknown step is not this run's)
         }
-        const result = rec.result ?? undefined;
+        // A2(n) T5 — the mark is central's: an edge's word for it is dropped
+        const { [DAU_KHONG_XAC_NHAN]: _tuEdge, ...ketQua } = (rec.result ?? {}) as Record<string, unknown>;
+        const result = rec.result ? ketQua : undefined;
         const isCommand = step.type === "command";
         if (isCommand) {
           const regress = await stepRegression(tx, runId, step.id, rec.attempt, rec.status);
@@ -293,9 +308,19 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           }
         }
         const actuated = rec.status === "completed" || typeof (result as { routedTo?: unknown } | undefined)?.routedTo === "string";
+        const [cu] = isCommand ? await tx.select().from(orchestrationRunSteps).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, step.id))).limit(1) : [];
+        let dau = dauKhongXacNhan(cu?.resultJson);
         if (isCommand && !verifiedStopIds.has(step.id) && actuated) {
           const row = await jtiFor(tx, node, runId, req.claimSeq, step.id, rec.attempt, rec.jti);
-          if (!row) unauthorised(runId, step.id, audits, { seq: rec.seq, jti: rec.jti, status: rec.status });
+          if (!row) {
+            const dang = await dangKhongXacNhan(step, machineMap, analysis);
+            if (!dang) unauthorised(runId, step.id, audits, { seq: rec.seq, jti: rec.jti, status: rec.status });
+            if (dau !== dang) {
+              audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: dang === "docLoi" ? "stop_unconfirmed_read" : "stop_pin_mismatch", stepId: step.id, seq: rec.seq, status: rec.status }, status: "failure" });
+              khongXacNhan.set(step.id, dang);
+            }
+            dau = dang;
+          }
         }
         const write: EdgeStepRowWrite = {
           stepId: step.id,
@@ -304,8 +329,9 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           attempt: rec.attempt,
           startedAt: rec.startedAt == null ? null : new Date(rec.startedAt),
           finishedAt: rec.finishedAt == null ? null : new Date(rec.finishedAt),
-          error: rec.error,
-          result: result === undefined ? undefined : { ...result, approvalSource: "edge", edge: edgeMark(rec.jti) },
+          // A2(n) T5 — what central could not verify clears no debt
+          error: rec.error ?? (dau && cu && laHangChuaRa(cu) ? cu.error : rec.error),
+          result: result === undefined ? (dau && dauKhongXacNhan(cu?.resultJson) !== dau ? { ...((cu?.resultJson ?? {}) as Record<string, unknown>), [DAU_KHONG_XAC_NHAN]: dau } : undefined) : { ...result, approvalSource: "edge", edge: edgeMark(rec.jti), ...(dau ? { [DAU_KHONG_XAC_NHAN]: dau } : {}) },
         };
         await sink.recordEdgeStepRows(tx, runId, [write]);
         return;
@@ -346,6 +372,16 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
       // ledger
       await applyLedger(tx, node, runId, req.claimSeq, run.startedBy ?? null, rec, audits, edgeMark, verifiedStops);
     });
+    // A2(n) T5 (H16) — after the commit, once per step and form: a replayed record never reaches the handler, a later record of a marked step adds nothing. A mismatch is a person's: what went out may not be a STOP
+    if (traLoi.http === 200) {
+      for (const [id, dang] of khongXacNhan) {
+        const chu = chuBuTruTrongDinhNghia(def.steps, id);
+        void canhBaoKetCucKhongRo({ loai: dang === "docLoi" ? "stopKhongXacNhanDoc" : "stopGhimLech", runId, stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: `claim${req.claimSeq}`, biet: true, owner: run.startedBy ?? null }).then((ben) => {
+          if (!ben) console.error(`[EdgeReports] run ${runId} step ${id}: the URGENT of a STOP central could not verify (${dang}) is not stored`);
+        });
+      }
+    }
+    return traLoi;
   } catch (err) {
     if (err instanceof StreamAnswer) return err.answer;
     if (!isEdgeUnavailableError(err)) console.error(`[EdgeReports] report of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);

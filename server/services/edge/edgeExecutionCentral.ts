@@ -45,8 +45,8 @@ import { orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows } from
 import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
 import type { WorkflowDefinition } from "../orchestration/foe/workflowModel";
 import { KET_CUC_KHONG_RO_CTX_KEY, canhBaoTuBaoCaoEdge, type BaoCaoKhongRoEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n) (I-D)
-import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao } from "../orchestration/foe/foeRunStore";
-import { allStepsOf, isStopCandidate } from "../orchestration/foe/foeStepClass";
+import { baoCaoKhongRoTuHang, dauKhongRoTuBaoCao, dauKhongXacNhan } from "../orchestration/foe/foeRunStore";
+import { allStepsOf, isStopCandidate, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 import { edgeStepAuthorizations } from "./edgeControlSchema";
 import type { FoeScope } from "../orchestration/foe/foeScope";
 import { centralStopped, edgeRuntimeEnabled as edgeRuntimeEnabledNow } from "./edgeCoordinator";
@@ -1052,7 +1052,8 @@ export async function progressForNodeV2(node: EdgeNodePrincipal, runId: number, 
 const RUN_CON_DI = new Set(["running", "compensating"]);
 
 /**
- * a2n — the STOPs central cannot confirm for a run: the verified STOPs of its assigned definition without a completed row of their own or of `abort:<id>`.
+ * a2n — the STOPs central cannot confirm for a run: the STOP steps of its assigned definition, verified or not, without a confirmed completed row of their own or of `abort:<id>`.
+ * A2(n) T5 — "verified" alone wrote (none) while a STOP central could not verify stood there. Same classifier as the split (laStopTheoBuoc), and a row central could not verify is no evidence.
  * This is central's view: rows lag a hung disk, so a STOP already sent on the edge can still be named ("not confirmed", not "not sent"). null ⇔ unreadable:
  * an alert must not be lost to its own detail.
  */
@@ -1061,9 +1062,12 @@ async function stopChuaXacNhan(d: Awaited<ReturnType<typeof db>>, a: RunEdgeAssi
     const def = await assignedDefinition(d as never, a);
     if (!def) return null;
     const an = await analyseDefinition(d as never, a.runId, def, await loadMachineMap(d as never, def));
-    const rows = await d.select({ stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status }).from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, a.runId));
-    const xong = new Set(rows.filter((r) => r.status === "completed").map((r) => r.stepId));
-    return an.verifiedStops.map((s) => s.stepId).filter((id) => !xong.has(id) && !xong.has(`abort:${id}`));
+    const rows = await d.select({ stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status, resultJson: orchestrationRunSteps.resultJson }).from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, a.runId));
+    const xong = new Set(rows.filter((r) => r.status === "completed" && dauKhongXacNhan(r.resultJson) === null).map((r) => r.stepId));
+    const may = await loadMachineMap(d as never, def);
+    const theoDinhNghia: string[] = [];
+    for (const s of allStepsOf(def.steps)) if (await laStopTheoBuoc(s, may)) theoDinhNghia.push(s.id);
+    return [...new Set([...an.verifiedStops.map((s) => s.stepId), ...an.stopsUnsure, ...theoDinhNghia])].filter((id) => !xong.has(id) && !xong.has(`abort:${id}`));
   } catch (err) {
     console.error(`[EdgeExec] STOPs of run ${a.runId} could not be read for an alert: ${(err as Error)?.message ?? err}`);
     return null;

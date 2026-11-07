@@ -289,7 +289,8 @@ export function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; 
     if (r.stepId.startsWith(ABORT_ROW_PREFIX)) continue;
     const result = (r.resultJson ?? null) as Record<string, unknown> | null;
     // A2(n) T5 — a row in state C is no last word: an Abort and a later walk still have this STOP to send
-    if (!laHangChuaRa(r) && (["completed", "skipped", "compensated", "failed"].includes(r.status) || typeof result?.routedTo === "string")) settled.add(r.stepId);
+    // T5 (H16) — nor is a row central could not verify: it says what an edge reported, not that a STOP went
+    if (!laHangChuaRa(r) && dauKhongXacNhan(result) === null && (["completed", "skipped", "compensated", "failed"].includes(r.status) || typeof result?.routedTo === "string")) settled.add(r.stepId);
     if (["running", "completed", "failed", "compensated"].includes(r.status) || typeof result?.routedTo === "string") attempted.add(r.stepId);
     if (result?.branch === "then" || result?.branch === "else") branches.set(r.stepId, result.branch);
     if (r.startedAt || ["running", "completed", "failed", "compensated"].includes(r.status)) {
@@ -347,7 +348,19 @@ export { FOE_STOP_NOT_SENT };
 /** A2(n) T5 (C-2) — "chuaDoc" is NOT "khong": unreadable is never "not pinned" (decision 2, A). Only a stop-typed step can answer it. */
 export type LaStop = "stop" | "khong" | "chuaDoc";
 /** THE row of state C: the STOP's own (a container around it carries the same words, F-DB1). `id` the step's id: an `abort:` row's is shortened when long, its result has the whole one. */
-const laHangChuaRa = (r: { stepId: string; error?: string | null }, id = r.stepId): boolean => typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
+export const laHangChuaRa = (r: { stepId: string; error?: string | null }, id = r.stepId): boolean => typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
+/**
+ * A2(n) T5 (H16) — THE mark on a step row central could not verify: an edge reported a STOP step handed over with no authorisation, and central's own reading did not make it a verified STOP. `docLoi`:
+ * the pins could not be read; `ghimLech`: they were read and they differ, or nothing resolves the step. Written only by edgeReportsCentral, never taken from a record. It is no confirmation: not
+ * settled, not completed for a walk, it clears no URGENT and no debt. Not `acked_unverified`, which is a device's answer: this is what central does not know.
+ */
+export const DAU_KHONG_XAC_NHAN = "stopKhongXacNhan";
+export type DangKhongXacNhan = "docLoi" | "ghimLech";
+export function dauKhongXacNhan(result: unknown): DangKhongXacNhan | null {
+  const v = (result as Record<string, unknown> | null | undefined)?.[DAU_KHONG_XAC_NHAN];
+  return v === "docLoi" || v === "ghimLech" ? v : null;
+}
+
 /** A2(n) T5 — MỘT định nghĩa of "still owed": the STOPs the rows hold in state C. An `abort:` row that went (or a read that found it no STOP) settles it. Pure. */
 export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined): Set<string> {
   const no = new Set<string>();
@@ -1263,7 +1276,7 @@ export function dauKhongRoTuBaoCao(bao: readonly BaoCaoKhongRoEdge[], at: string
  */
 export function themBuocHongKhiTiepTuc(
   def: Pick<WorkflowDefinition, "steps">,
-  rows: ReadonlyArray<{ stepId: string; status: string; error?: string | null }>,
+  rows: ReadonlyArray<{ stepId: string; status: string; error?: string | null; resultJson?: unknown }>,
   state: ResumeStateMap,
   stops: ReadonlySet<string> = new Set(),
 ): ResumeStateMap {
@@ -1276,7 +1289,7 @@ export function themBuocHongKhiTiepTuc(
     if (r?.status !== "failed" || out[s.id] || comps.has(s.id) || stops.has(s.id)) continue;
     // I-B — marked per leaf: a failed container that holds a failed STOP is walked, or the STOP inside it would never be re-sent
     // m-B — not only 'failed': a STOP whose final row was lost reads 'running'
-    if (buocTienCua(s).some((x) => { const h = by.get(x.id); return x.id !== s.id && stops.has(x.id) && h != null && h.status !== "completed"; })) continue;
+    if (buocTienCua(s).some((x) => { const h = by.get(x.id); return x.id !== s.id && stops.has(x.id) && h != null && (h.status !== "completed" || dauKhongXacNhan(h.resultJson) !== null); })) continue;
     const error = r.error ?? "";
     out[s.id] = { state: "doneFailed", error, ...(loiLaKetCucKhongRo(error) ? { khongRo: true as const } : {}) };
   }
@@ -1414,7 +1427,7 @@ export function edgePriorPictureOf(
   if (rows === null) return { completed: [], settled: [], attempted: [], startOrder: [], branches: [], abortSentBefore: [], unknown: true };
   const p = priorStepsOf(rows);
   return {
-    completed: rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && (r.status === "completed" || r.status === "skipped")).map((r) => r.stepId),
+    completed: rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && (r.status === "completed" || r.status === "skipped") && dauKhongXacNhan(r.resultJson) === null).map((r) => r.stepId),
     settled: [...p.settled],
     attempted: [...p.attempted],
     startOrder: p.startOrder,

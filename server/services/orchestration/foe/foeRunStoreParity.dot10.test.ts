@@ -86,6 +86,8 @@ const h = vi.hoisted(() => ({
   sauTimeout: null as null | (() => void),
   /** A2(n) T5 — runningConnectionMatchesAdapterRow waits for this: a STOP pass stands before its verifier */
   connCho: null as null | Promise<void>,
+  /** A2(n) T5 fix 1 — what the report path audited */
+  audit: [] as Array<Record<string, unknown>>,
   /** A2(n) T5 — evaluateActionPolicy denies these steps; empty ⇒ SEC_PLATFORM off */
   policyTuChoi: new Set<string>(),
 }));
@@ -128,7 +130,7 @@ vi.mock("../../edge/edgeCentralCommon", async (importOriginal) => {
     if (h.ownershipThrows) throw new Error("ownership unreadable");
     return new Set(ids.filter((id) => !foreign.has(id)));
   };
-  return { ...orig, ownedRobotIds: owned(h.foreignRobots), ownedAdapterIds: owned(h.foreignAdapters) };
+  return { ...orig, ownedRobotIds: owned(h.foreignRobots), ownedAdapterIds: owned(h.foreignAdapters), runInNodeScope: async () => true, auditNode: async (_n: unknown, action: string, _e: unknown, details: Record<string, unknown>) => { h.audit.push({ action, details }); }, adapterOwners: async (_d: unknown, ids: readonly number[]) => new Map(ids.map((i) => [i, { edgeNodeId: 7, ownerEpoch: 1 }])), robotOwners: async (_d: unknown, ids: readonly number[]) => new Map(ids.map((i) => [i, { edgeNodeId: 7, ownerEpoch: 1 }])) };
 });
 vi.mock("../../auditTrailService", () => ({ createAuditContext: (x: unknown) => x, logCrudOperation: vi.fn(async () => ({ id: 1 })) }));
 vi.mock("../../security/policyGate", async (importOriginal) => {
@@ -232,7 +234,7 @@ vi.mock("drizzle-orm", async (orig) => {
   const inArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => vs.includes(row[col.name]);
   const notInArray = (col: { name: string }, vs: unknown[]) => (row: Record<string, unknown>) => !vs.includes(row[col.name]);
   const isNull = (col: { name: string }) => (row: Record<string, unknown>) => row[col.name] == null;
-  return { ...actual, eq: makeEq, and: makeAnd, ne, inArray, notInArray, isNull };
+  return { ...actual, eq: makeEq, and: (...c: any[]) => makeAnd(...c.filter((x) => typeof x === "function")), ne, inArray, notInArray, isNull };
 });
 vi.mock("../../../db/connection", () => ({
   getDb: vi.fn(async () => {
@@ -261,8 +263,13 @@ import {
   autoResumeInterruptedRuns,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
-import { EDGE_HELD_CTX_KEY, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, findSeparateGateApproval, priorStepsOf, stopChuaRaTuHang, withResolvedAdapter } from "./foeRunStore";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
+import { EDGE_HELD_CTX_KEY, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, stopChuaRaTuHang, themBuocHongKhiTiepTuc, withResolvedAdapter } from "./foeRunStore";
+import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
+import { EdgeStreamShipper } from "../../edge/edgeStreams";
+import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
+import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
+import { edgeRunStream } from "../../edge/edgeProtocol";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
@@ -477,6 +484,8 @@ interface EdgeHarness {
   authNem?: Set<string>;
   /** A2(n) T5 — the store's own STOP check of a compensation throws */
   laStopNem?: boolean;
+  /** A2(n) T5 fix 1 — nothing is applied by the harness: only the report path writes */
+  quaBaoCao?: boolean;
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
@@ -639,17 +648,17 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
       ? { stepId: r.stepId, stepType: r.stepType, status: r.status, attempt: r.attempt, startedAt: r.startedAt == null ? null : new Date(r.startedAt), finishedAt: r.finishedAt == null ? null : new Date(r.finishedAt), error: r.error, result: r.result ?? undefined }
       : { stepId: `abort:${r.stepId}`, stepType: "command", status: r.status, attempt: 0, startedAt: new Date(r.at), finishedAt: new Date(r.at), error: null, result: { ...(r.result ?? {}), stepId: r.stepId } },
   );
-  await recordEdgeStepRows(fake as never, x.runId, write);
+  if (!x.quaBaoCao) await recordEdgeStepRows(fake as never, x.runId, write);
   // fix review 2 — through THE context filter (edgeContextPolicy — the one B's report endpoint uses), and only while the run is
   // live (as edgeReportsCentral: a context record of a stopped / ended run is evidence only)
-  for (const r of seg) {
+  for (const r of x.quaBaoCao ? [] : seg) {
     if (r.kind !== "context") continue;
     const row = runRow(x.runId);
     if (row.status !== "running" && row.status !== "compensating") continue;
     row.contextJson = { ...(row.contextJson ?? {}), ...edgeContextPatchOf(r.patch, row.contextJson).patch };
   }
   const end = x.stripEndUnknown && out.outcome ? { ...out, outcomeUnknown: undefined, error: undefined } : out;
-  if (end.outcome) await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
+  if (end.outcome && !x.quaBaoCao) await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
   return { out, segment: seg };
 }
 
@@ -5891,4 +5900,528 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(hang(e.runId, "st")).toBeDefined();
     void lech;
   });
+});
+
+// ═══ A2(n) T5, fix round 1: the real report path (reportForNode, applyStream, EdgeStreamShipper), FakeDb with a real rollback ═══
+describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verify", () => {
+  const TOKEN = "ect_" + "a".repeat(43);
+  const NUT = { nodeId: NODE, nodeCode: "EDGE-A", credentialId: 1, factoryCode: "F1" } as never;
+  const EPOCH = "e".repeat(32);
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const OFFLINE = { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, stop: true, pinnedStop: true, reason: "ADAPTER_OFFLINE" } };
+  const d2 = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("s1"), otStop("s2")])])]);
+  const dMot = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("s1")])])]);
+  const hang = (c: number, id: string) => stepRows(c).find((r) => r.stepId === id);
+  const dau = (c: number, id: string) => (hang(c, id)?.resultJson as Record<string, unknown> | null | undefined)?.stopKhongXacNhan;
+  const loaiCB = (k: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[k]);
+  let pinDown = false;
+  let bangDown: string | null = null;
+  beforeEach(() => {
+    pinDown = false;
+    bangDown = null;
+    h.audit = [];
+    // the batch's transaction really rolls back (FakeDb's does not), as the report path relies on
+    (fake as any).transaction = async (fn: (t: unknown) => Promise<unknown>) => {
+      const anh = new Map([...fake.store].map(([k, v]) => [k, v.map((r) => ({ ...r }))] as const));
+      try {
+        return await fn(fake);
+      } catch (e) {
+        fake.store.clear();
+        for (const [k, v] of anh) fake.store.set(k, v);
+        throw e;
+      }
+    };
+    const ins = (fake as any).insert;
+    (fake as any).insert = (t: any) => {
+      const q = ins(t);
+      const val = q.values.bind(q);
+      q.values = (x: unknown) => {
+        const r = val(x);
+        r.onConflictDoNothing = () => r;
+        return r;
+      };
+      return q;
+    };
+    const sel = FakeDb.prototype.select.bind(fake);
+    (fake as any).select = (p?: Record<string, unknown>) => {
+      const b = sel(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        // only the report's own pin read carries a projection with stopValue
+        if (pinDown && t?.[Symbol.for("drizzle:Name")] === "device_tags" && p && "stopValue" in p) throw new Error("pin read down at report (test)");
+        if (bangDown === t?.[Symbol.for("drizzle:Name")]) throw new Error("read down at report (test)");
+        return from(t);
+      };
+      return b;
+    };
+  });
+  afterEach(() => {
+    delete (fake as any).transaction;
+    delete (fake as any).select;
+    h.dispatcherThat = false;
+  });
+
+  /** the journal of one edge: the same records, the same seq the shipper would send */
+  function nhatKy() {
+    const dong = new Map<string, { recs: Array<{ seq: number; record: Record<string, unknown> }>; acked: number }>();
+    const cua = (s: string) => dong.get(s) ?? (dong.set(s, { recs: [], acked: 0 }), dong.get(s)!);
+    return {
+      epoch: EPOCH,
+      them(s: string, r: Record<string, unknown>) {
+        const c = cua(s);
+        const seq = c.recs.length + 1;
+        c.recs.push({ seq, record: { ...r, seq } });
+      },
+      pending: (s: string, n: number) => cua(s).recs.filter((r) => r.seq > cua(s).acked).slice(0, n),
+      ack(s: string, q: number) {
+        cua(s).acked = Math.max(cua(s).acked, q);
+      },
+      ackedSeq: (s: string) => cua(s).acked,
+      pendingStreams: () => [],
+      appendEvent: async () => ({ seq: 1 }),
+      veLai(s: string) {
+        cua(s).acked = 0;
+      },
+    };
+  }
+  const traLoi: Array<{ http: number; code?: string }> = [];
+  function trungTam(runId: number) {
+    return {
+      async post(route: string, body: unknown) {
+        const a = (route === "report" ? await reportForNode(NUT, runId, body) : await eventsForNode(NUT, body)) as Record<string, any>;
+        traLoi.push({ http: a.http, code: a.code });
+        return a.http === 200 ? { ok: true, status: 200, data: a.data } : { ok: false, status: a.http, code: a.code, data: a.data, unavailable: a.http === 503 };
+      },
+    };
+  }
+  async function chuanBi(e: EdgeHarness, claimSeq: number) {
+    fake.seed(edgeNodeProtocol, [{ id: NODE, protocolVersion: 2, v: 2 }]); // FakeDb ignores a projection: its alias is a field here
+    for (const w of rows("orchestration_workflows")) w.def = w.definitionJson;
+    fake.store.delete("edge_node_report_cursors");
+    fake.store.delete("edge_node_report_records");
+    for (const r of rows("edge_step_authorizations")) r.edgeNodeId = NODE;
+    const [a] = rows("orchestration_run_edge_assignments").filter((r) => r.runId === e.runId);
+    a.claimTokenHash = hashEdgeSecret(TOKEN);
+    a.claimSeq = claimSeq;
+    a.edgeNodeId = NODE;
+  }
+  async function chayGiua(d: WorkflowDefinition, sua?: (e: EdgeHarness) => void, unsure = true) {
+    seedHalt();
+    h.connOk = true;
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.quaBaoCao = true; // nothing applied by the harness from here: only the report path writes
+    h.connOk = !unsure; // central could not verify at the claim: stopsUnsure
+    h.dispatcherThat = true;
+    h.timeoutDispatch.add("x");
+    sua?.(e);
+    const moc = e.records.length;
+    const s = await edgeSegment(e, 2);
+    await wait(40);
+    h.connOk = true;
+    return { e, s, moc, d };
+  }
+  /** ship the run stream through the real shipper; `ket`: the segment end once the stream is empty, as the agent does */
+  async function giao(x: Awaited<ReturnType<typeof chayGiua>>, trangThai: "doc" | "lech" | "khop") {
+    const { e, s, moc, d } = x;
+    await chuanBi(e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(e.runId, 2);
+    for (const r of e.records.slice(moc)) J.them(S, r as never);
+    for (const r of e.events ?? []) J.them("events", r);
+    const sh = new EdgeStreamShipper(J as never, trungTam(e.runId) as never, { log: () => undefined });
+    sh.setClaim(e.runId, 2, TOKEN);
+    pinDown = trangThai === "doc";
+    if (trangThai === "lech") for (const t of rows("device_tags")) if (t.tagKey === "halt") t.stopValue = null;
+    traLoi.length = 0;
+    await sh.flush(S);
+    await sh.flush("events");
+    await wait(20);
+    const con = J.pending(S, 1).length;
+    if (con === 0 && s.out.outcome) await applyEdgeSegmentEnd(fake as never, e.runId, { ...(s.out as any), nodeCode: "EDGE-A", claimSeq: 2, def: d });
+    await wait(20);
+    return { J, S, sh, con };
+  }
+  const tatCaChu = () => h.alerts.map((a) => `${a.title} ${a.message}`).join(" | ");
+
+  it("BC-DOC the read fails at the report: the stream runs, s1 carries the mark 'docLoi', s2's refusal reaches central, the run is held, a visible alert, not the mismatch one", async () => {
+    const x = await chayGiua(d2("bcdoc"), () => h.tuChoi.set("s2", OFFLINE));
+    const { con } = await giao(x, "doc");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(con).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("docLoi");
+    expect(String(hang(x.e.runId, "s2")!.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "s2"/);
+    expect(runRow(x.e.runId).status).toBe("held");
+    expect(loaiCB("stopKhongXacNhanDoc").map((a) => a.dedupKey.split(":")[2])).toEqual(["s1"]);
+    expect(loaiCB("stopGhimLech")).toEqual([]);
+  });
+  it("BC-LECH central reads the pins and they differ: no 409, the mark 'ghimLech', a URGENT of its own: check the machine on site, what went out may be no STOP", async () => {
+    const x = await chayGiua(d2("bclech"), () => h.tuChoi.set("s2", OFFLINE));
+    const { con } = await giao(x, "lech");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(con).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+    expect(runRow(x.e.runId).status).toBe("held");
+    const u = loaiCB("stopGhimLech");
+    expect(u.map((a) => a.dedupKey.split(":")[2])).toEqual(["s1"]);
+    expect(String(u[0]!.message)).toContain("may not have been a STOP");
+    expect(String(u[0]!.message)).toContain("on site");
+    expect(u[0]!.khuTrungBenVung, "the durable dedup of the alert").toEqual({});
+    expect(loaiCB("stopKhongXacNhanDoc")).toEqual([]);
+  });
+  it("BC-BEN the URGENT of a mismatch answers whether it is stored: nobody to tell is not durable", async () => {
+    const d = await canhBaoKetCucKhongRo({ loai: "stopGhimLech", runId: 1, stepId: "s1", compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: "claim2", biet: true, owner: 10 });
+    expect(d).toBe(true);
+    h.alertDurable = false;
+    expect(await canhBaoKetCucKhongRo({ loai: "stopGhimLech", runId: 1, stepId: "s1", compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: "claim2", biet: true, owner: 10 })).toBe(false);
+  });
+  it("BC-P3 the three faults at once: unverified at the claim, the pins differ for good, the events journal full: the stream runs, the rider of the end names s2, the run is held", async () => {
+    const x = await chayGiua(d2("bcp3"), (e) => {
+      h.tuChoi.set("s2", OFFLINE);
+      e.eventsRefused = true;
+    });
+    const { con } = await giao(x, "lech");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(con).toBe(0);
+    expect(hang(x.e.runId, "s2")).toMatchObject({ status: "failed" });
+    expect(runRow(x.e.runId).status).toBe("held");
+    expect(loaiCB("stopNotSent").map((a) => a.dedupKey.split(":")[2])).toContain("s2");
+  });
+  it("BC-NEN verified at the claim, the pins differ at the report: the old 409 is gone, the same three outcomes", async () => {
+    const x = await chayGiua(d2("bcnen"), (e) => {
+      h.tuChoi.set("s2", OFFLINE);
+      e.eventsRefused = true;
+    }, false);
+    const { con } = await giao(x, "lech");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(con).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+    expect(runRow(x.e.runId).status).toBe("held");
+  });
+  it("BC-KHOP the read back, the pins as they were: verified, no mark, no URGENT of this kind", async () => {
+    const x = await chayGiua(d2("bckhop"), () => h.tuChoi.set("s2", OFFLINE));
+    await giao(x, "khop");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(dau(x.e.runId, "s1")).toBeUndefined();
+    expect(loaiCB("stopGhimLech")).toEqual([]);
+    expect(loaiCB("stopKhongXacNhanDoc")).toEqual([]);
+  });
+  const stepRec = (stepId: string, o: Record<string, unknown> = {}) => ({ kind: "step", stepId, stepType: "command", status: "running", attempt: 1, startedAt: Date.now(), finishedAt: null, error: null, result: { routedTo: "robot-dispatcher", status: "acked", accepted: true }, jti: null, ...o });
+  it("BC-409 a non-STOP result with no jti: 409 as before, nothing applied, the audit; a word of the record does not make it a STOP", async () => {
+    const x = await chayGiua(dMot("bc409"));
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    J.them(S, stepRec("x", { result: { routedTo: "robot-dispatcher", accepted: true, stop: true, pinnedStop: true, stopKhongXacNhan: "docLoi", detail: { edge: true, stop: true, pinnedStop: true } } }));
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    traLoi.length = 0;
+    const truoc = JSON.stringify(hang(x.e.runId, "x") ?? null);
+    await sh.flush(S);
+    expect(traLoi[0]).toMatchObject({ http: 409, code: "unauthorised_actuation" });
+    expect(JSON.stringify(hang(x.e.runId, "x") ?? null)).toBe(truoc);
+    expect(J.pending(S, 1).length).toBe(1);
+  });
+  it("BC-GIA the mark is central's: an edge's own word on a verified STOP's row is dropped", async () => {
+    const x = await chayGiua(dMot("bcgia"));
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    J.them(S, stepRec("s1", { result: { routedTo: "ot-dispatcher", accepted: true, stopKhongXacNhan: "ghimLech" } }));
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    await sh.flush(S);
+    expect(dau(x.e.runId, "s1")).toBeUndefined();
+  });
+  it("BC-PHAT-LAI the same records again, and a later record of the same step: one row, one URGENT", async () => {
+    const x = await chayGiua(dMot("bcpl"));
+    const { J, S, sh } = await giao(x, "lech");
+    await wait(20);
+    expect(loaiCB("stopGhimLech")).toHaveLength(1);
+    const dong = stepRows(x.e.runId).filter((r) => r.stepId === "s1").length;
+    J.veLai(S);
+    await sh.flush(S);
+    await wait(20);
+    expect(loaiCB("stopGhimLech")).toHaveLength(1);
+    expect(stepRows(x.e.runId).filter((r) => r.stepId === "s1").length).toBe(dong);
+    J.them(S, stepRec("s1", { status: "completed", result: null, finishedAt: Date.now() }));
+    await sh.flush(S);
+    await wait(20);
+    expect(loaiCB("stopGhimLech")).toHaveLength(1);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+  });
+  it("BC-THEO later records of a marked step do not lose the mark; a debt on the row outlives a 'completed' central cannot verify", async () => {
+    const x = await chayGiua(dMot("bctheo"));
+    await chuanBi(x.e, 2);
+    const loi = 'FOE_STOP_NOT_SENT: STOP "s1" did NOT go out (attempt 1): refused before a driver [BUSY].';
+    fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 99_500, runId: x.e.runId, stepId: "s1", stepType: "command", status: "failed", attempt: 1, startedAt: new Date(), finishedAt: new Date(), error: loi, resultJson: null }]);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    J.them(S, stepRec("s1", { attempt: 2, status: "completed", finishedAt: Date.now() }));
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    pinDown = true;
+    await sh.flush(S);
+    expect(traLoi.at(-1)).toMatchObject({ http: 200 });
+    expect(hang(x.e.runId, "s1")).toMatchObject({ status: "completed" });
+    expect(dau(x.e.runId, "s1")).toBe("docLoi");
+    expect([...stopChuaRaTuHang(stepRows(x.e.runId) as never)], "an unverified word does not clear a debt").toEqual(["s1"]);
+    J.them(S, stepRec("s1", { attempt: 3, status: "failed", result: { accepted: false, status: "rejected" }, error: null, finishedAt: Date.now() }));
+    await sh.flush(S);
+    expect(dau(x.e.runId, "s1"), "a later record of the step without a route").toBe("docLoi");
+  });
+  it("BC-DOC-CA every reader of a marked row: not settled, not completed, not 'xong', no debt cleared, the alert's list still names it", async () => {
+    const hangDau = { stepId: "s1", status: "completed", error: null, resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "acked_unverified", stopKhongXacNhan: "ghimLech" } };
+    const p = priorStepsOf([hangDau]);
+    expect(p.settled.has("s1")).toBe(false);
+    expect(p.attempted.has("s1")).toBe(true);
+    expect(edgePriorPictureOf([hangDau]).completed).toEqual([]);
+    expect(nhanBuocSauChot({ status: "completed", error: null, routedTo: true, khongRo: false, daGiao: true, uyQuyenSong: false, khongXacNhan: true })).toBe("coTheDaGui");
+    expect(nhanBuocSauChot({ status: "completed", error: null, routedTo: true, khongRo: false, daGiao: true, uyQuyenSong: false })).toBe("xong");
+    expect(stopChuaRaTuHang([hangDau])).toEqual(new Set());
+    expect(dauKhongXacNhan(hangDau.resultJson)).toBe("ghimLech");
+    expect(dauKhongXacNhan({ status: "acked_unverified" }), "not the same word as acked_unverified").toBeNull();
+    expect(dauKhongXacNhan({ stopKhongXacNhan: "khac" })).toBeNull();
+    expect(themBuocHongKhiTiepTuc({ steps: [box("b", [otStop("s1")])] }, [{ stepId: "b", status: "failed", error: "x" }, hangDau], {}, new Set(["s1"])).b, "a failed container holding it is walked").toBeUndefined();
+  });
+  const doiCo = async (x: Awaited<ReturnType<typeof chayGiua>>) => {
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    for (const r of x.e.records.slice(x.moc)) J.them(S, r as never);
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    traLoi.length = 0;
+    return { J, S, sh };
+  };
+  it("BC-MAY the step's machine is gone at central: nothing resolves it, its own name says STOP: read, no pin matches: the mismatch, no 409", async () => {
+    fake.seed(machines, [...rows("machines"), { id: 3, machineType: "ROBOT", capabilities: null, code: "R3", name: "Robot-3", operationStatus: "stopped", stationId: 1 }]);
+    const st: WorkflowStep = { id: "s1", type: "command", machineId: 3, command: "abort", args: { robotId: 2 } } as never;
+    const x = await chayGiua(def("bcmay", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), st])])]));
+    const { J, S, sh } = await doiCo(x);
+    fake.store.set("machines", rows("machines").filter((m) => m.id !== 3));
+    await sh.flush(S);
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(J.pending(S, 1).length).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+  });
+  it("BC-KHONG-ADAPTER no adapter resolves the step at central: read, not a pin: the mismatch, no 409", async () => {
+    const x = await chayGiua(dMot("bcad"), undefined, false);
+    const { J, S, sh } = await doiCo(x);
+    fake.store.set("device_adapters", []);
+    await sh.flush(S);
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(J.pending(S, 1).length).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+  });
+  it("BC-DB-MAY the machines cannot be read at the report: no classifier: 503, nothing applied, no mark, the same batch goes when the read is back", async () => {
+    const x = await chayGiua(dMot("bcdbm"));
+    const { J, S, sh } = await doiCo(x);
+    bangDown = "machines";
+    await sh.flush(S);
+    expect(traLoi[0]).toMatchObject({ http: 503 });
+    expect(J.ackedSeq(S)).toBe(0);
+    bangDown = null;
+    pinDown = true;
+    await sh.flush(S);
+    expect(traLoi.at(-1)).toMatchObject({ http: 200 });
+    expect(J.pending(S, 1).length).toBe(0);
+    expect(dau(x.e.runId, "s1")).toBe("docLoi");
+  });
+  it("BC-DB-ADAPTER the adapter read fails at the report: the same: 503, then it goes", async () => {
+    const x = await chayGiua(dMot("bcdba"));
+    const { J, S, sh } = await doiCo(x);
+    bangDown = "device_adapters";
+    await sh.flush(S);
+    expect(traLoi[0]).toMatchObject({ http: 503 });
+    bangDown = null;
+    await sh.flush(S);
+    expect(traLoi.at(-1)).toMatchObject({ http: 200 });
+    expect(dau(x.e.runId, "s1")).toBeUndefined();
+  });
+  it("BC-NON-STOP-MAY a non-STOP whose machine is gone, no jti: no STOP by any reading: the old 409", async () => {
+    fake.seed(machines, [...rows("machines"), { id: 3, machineType: "ROBOT", capabilities: null, code: "R3", name: "Robot-3", operationStatus: "stopped", stationId: 1 }]);
+    const mv: WorkflowStep = { id: "m3", type: "command", machineId: 3, command: "run_job", args: { robotId: 2, jobType: "move", params: { x: 1 } } } as never;
+    const x = await chayGiua(def("bcnm", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("s1")]), mv])]));
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    J.them(S, stepRec("m3"));
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    fake.store.set("machines", rows("machines").filter((m) => m.id !== 3));
+    traLoi.length = 0;
+    await sh.flush(S);
+    expect(traLoi[0]).toMatchObject({ http: 409, code: "unauthorised_actuation" });
+  });
+  it("BC-HET a run that was never latched, a verified STOP, the pins differ at the report: the row marked, a URGENT told: the end as the walk went, nothing says it is confirmed", async () => {
+    const x = await chayGiua(def("bchet", [gate(), otStop("s1")]), undefined, false);
+    await giao(x, "lech");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+    expect(runRow(x.e.runId).status).toBe("completed");
+    expect(loaiCB("stopGhimLech")).toHaveLength(1);
+  });
+  it("BC-AUDIT the two forms apart in the audit too", async () => {
+    const a = await chayGiua(dMot("bcau1"));
+    await giao(a, "doc");
+    expect(h.audit.some((x) => JSON.stringify(x).includes("stop_unconfirmed_read"))).toBe(true);
+    expect(h.audit.some((x) => JSON.stringify(x).includes("stop_pin_mismatch"))).toBe(false);
+  });
+  it("BC-WALK a later walk does not read the marked row as a STOP that went: it is sent again, by a person's Continue", async () => {
+    const x = await chayGiua(d2("bcwalk"), () => h.tuChoi.set("s2", OFFLINE));
+    await giao(x, "doc");
+    pinDown = false;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    await continueOutcomeUnknown(x.e, "checked on site");
+    await edgeSegment(x.e, 3);
+    await wait(30);
+    expect(h.sent.map((a) => a.stepId).sort()).toEqual(["s1", "s2"]);
+  });
+  // ── việc 2 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  const CA: Array<[string, Record<string, any>, boolean]> = [
+    ["tu_choi", { status: "rejected", error: "AUTHORIZATION_REQUIRED", detail: { edge: true, stop: false, reason: "AUTHORIZATION_REQUIRED", refusal: "stop_not_pinned:no_snapshot_adapter" } }, false],
+    ["offline", OFFLINE, false],
+    ["busy", { status: "rejected", error: "BUSY", detail: { edge: true, stop: true, pinnedStop: true, reason: "BUSY" } }, false],
+    ["driver_failed", { status: "failed", error: "DRIVER_WRITE_FAILED", detail: { edge: true, stop: true, pinnedStop: true, reason: "DRIVER_WRITE_FAILED" } }, true],
+    ["mot_phan", { status: "failed", error: "MOT_PHAN", detail: { edge: true, stop: true, pinnedStop: true, reason: "MOT_PHAN", motPhan: { daAp: ["a"], khongAp: ["b"] } } }, true],
+    ["timeout", { status: "timeout", error: "no answer", detail: { edge: true, stop: true, pinnedStop: true } }, true],
+  ];
+  for (const [ten, kq, giu] of CA) {
+    it(`BC-ROUTE ${ten}: routedTo ${giu ? "kept: it may have gone" : "dropped: it certainly did not"}; through the report, read down: no 409, every record applied`, async () => {
+      const x = await chayGiua(dMot(`bcr${ten.length}${giu}`), () => h.tuChoi.set("s1", kq));
+      const rec = x.e.records.slice(x.moc).filter((r: any) => r.kind === "step" && r.stepId === "s1" && r.result).map((r: any) => r.result);
+      expect(rec.length).toBeGreaterThan(0);
+      expect(rec.every((r: any) => (typeof r.routedTo === "string") === giu)).toBe(true);
+      const { con } = await giao(x, "doc");
+      expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+      expect(con).toBe(0);
+      expect(dau(x.e.runId, "s1")).toBe(giu ? "docLoi" : undefined);
+    });
+  }
+  // ── việc 4 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  it("VIEC-4 the P3 shape: no URGENT says the run is held while central still shows it running", async () => {
+    const x = await chayGiua(d2("v4"), () => h.tuChoi.set("s2", OFFLINE));
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    for (const r of x.e.records.slice(x.moc)) J.them(S, r as never);
+    for (const r of x.e.events ?? []) J.them("events", r);
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    await sh.flush("events");
+    await wait(20);
+    expect(runRow(x.e.runId).status).toBe("running");
+    expect(h.alerts.length).toBeGreaterThan(0);
+    expect(tatCaChu()).not.toMatch(/the run is held/i);
+  });
+  // ── việc 5, 6: central ─────────────────────────────────────────────────────────────────────────────────────────────
+  const dV = (ref: string, st: WorkflowStep = otStop("st")) => def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), st])])]);
+  const dC = (ref: string, cs: WorkflowStep = otStop("cs")) => def(ref, [gate(), move("x", { compensation: cs })]);
+  const hetCho = async (runId: number, ms = 2_500) => {
+    await waitFor(() => !["running", "compensating", "queued"].includes(String(runRow(runId).status)), "the end of the walk", ms);
+    await wait(30);
+  };
+  const DRV = { status: "failed", error: "connection reset by 10.1.2.3", detail: { reason: "DRIVER_WRITE_FAILED" } };
+  const OFF = { status: "failed", detail: { reason: "ADAPTER_OFFLINE" } };
+  const MP = { status: "failed", error: "MOT_PHAN", detail: { reason: "MOT_PHAN", motPhan: { daAp: ["halt"], khongAp: ["b"] } } };
+  const BUSY = { status: "rejected", detail: { reason: "BUSY" } };
+  const chuC = () => loaiCB("stopNotSent").map((a) => `${a.title} ${a.message}`).join(" | ");
+  for (const [ten, lan, buTru] of [
+    ["driver, then offline ×2", [DRV, OFF, OFF], false],
+    ["MOT_PHAN, then BUSY ×2", [MP, BUSY, BUSY], false],
+    ["compensation: driver, then offline ×2", [DRV, OFF, OFF], true],
+    ["compensation: MOT_PHAN, then BUSY ×2", [MP, BUSY, BUSY], true],
+  ] as const) {
+    it(`P1 ${ten}: it may have gone out: 'not confirmed out', never 'did NOT go out'; the last attempt decides the state: held, Abort sends; C-CLR never writes 'not sent' over it`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.add("x");
+      const id = buTru ? "cs" : "st";
+      h.tuChoiLan.set(id, lan.map((a) => ({ ...a })));
+      const c = await centralRun(buTru ? dC(`p1${ten.length}${buTru}`) : dV(`p1${ten.length}${buTru}`), 1);
+      await hetCho(c);
+      expect(String(hang(c, id)!.error)).toMatch(new RegExp(`^FOE_STOP_NOT_SENT: STOP "${id}" is not confirmed out`));
+      expect(viChuaRaCuaLoi(hang(c, id)!.error)?.nguon).toBe("driverLoi");
+      expect(String(hang(c, id)!.error)).not.toContain("10.1.2.3");
+      expect(chuC()).toContain("not confirmed out");
+      expect(chuC()).not.toContain("did NOT go out");
+      expect(runRow(c).status).toBe("held");
+      // C-CLR: the read recovers, it says not pinned
+      for (const t of rows("device_tags")) if (t.tagKey === "halt") t.stopValue = null;
+      h.ghim = async () => ({ pinnedStop: false, loiDocGhim: null });
+      h.timeoutDispatch.clear();
+      h.sent.length = 0;
+      await resumeRun(c, { approved: true, note: "not pinned" }, OTHER).catch(() => undefined);
+      await hetCho(c);
+      expect(String(hang(c, id)!.error)).not.toMatch(/^FOE_NOT_SENT_RUN_LATCHED/);
+      expect(h.sent.filter((a) => a.stepId === id)).toEqual([]);
+    });
+  }
+  it("P1-LUOT the mark crosses a walk, from the row: driver at the first walk; the next walk's STOP refused, BUSY: still 'not confirmed out', and Abort sends it", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("st", DRV);
+    const c = await centralRun(dV("p1lt"), 1);
+    await hetCho(c);
+    expect(viChuaRaCuaLoi(hang(c, "st")!.error)?.nguon).toBe("driverLoi");
+    h.tuChoi.set("st", BUSY);
+    h.timeoutDispatch.clear();
+    await resumeRun(c, { approved: true, note: "again" }, OTHER).catch(() => undefined);
+    await hetCho(c);
+    expect(String(hang(c, "st")!.error)).toMatch(/is not confirmed out/);
+    expect(runRow(c).status).toBe("held");
+    h.tuChoi.clear();
+    h.sent.length = 0;
+    await abortRun(c, OWNER, "press");
+    await wait(30);
+    expect(h.sent.map((a) => a.stepId)).toEqual(["st"]);
+  });
+  it("P1-DOI-CHUNG refused on every attempt, offline ×3: 'did NOT go out' stands", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoiLan.set("st", [{ ...OFF }, { ...OFF }, { ...OFF }]);
+    const c = await centralRun(dV("p1dc"), 1);
+    await hetCho(c);
+    expect(String(hang(c, "st")!.error)).toMatch(/did NOT go out/);
+  });
+  it("P1-EDGE inside one segment: driver, then offline ×2: 'not confirmed out'", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(dV("p1e"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    h.timeoutDispatch.add("x");
+    const ed = { edge: true, stop: true, pinnedStop: true };
+    h.tuChoiLan.set("st", [{ ...DRV, detail: { ...ed, ...DRV.detail } }, { ...OFF, detail: { ...ed, ...OFF.detail } }, { ...OFF, detail: { ...ed, ...OFF.detail } }]);
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(String(hang(e.runId, "st")!.error)).toMatch(/is not confirmed out/);
+  });
+  const QUEUED = { status: "rejected", error: "the node has it", detail: { reason: "ADAPTER_OWNED_BY_EDGE" } };
+  for (const [ten, buTru] of [["forward", false], ["compensation", true]] as const) {
+    it(`P2 ${ten}: ADAPTER_OWNED_BY_EDGE: queued for the node or sent by the fallback: 'not confirmed out', state C, held`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.add("x");
+      const id = buTru ? "cs" : "st";
+      h.tuChoi.set(id, QUEUED);
+      const c = await centralRun(buTru ? dC("p2c") : dV("p2f"), 1);
+      await hetCho(c);
+      expect(String(hang(c, id)!.error)).toMatch(new RegExp(`^FOE_STOP_NOT_SENT: STOP "${id}" is not confirmed out`));
+      expect(chuC()).toContain("not confirmed out");
+      expect(chuC()).not.toContain("did NOT go out");
+      expect(runRow(c).status).toBe("held");
+    });
+  }
 });

@@ -62,6 +62,8 @@ import {
   duongToiBuoc,
   toTienCua,
   type LaStop,
+  dauKhongXacNhan,
+  laHangChuaRa,
 } from "./foeRunStore";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
 // R1b-2b-2a A2(m2) — a run interrupted while compensating: which compensation was in flight, and may the boot re-send it (b1–b3)
@@ -664,6 +666,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   cuaDung?: WorkflowStep[];
   /** A2(n) T5 (C) — the STOPs this walk left in state C, and why: not settled, the run ends held. Bound by the LAST attempt (V-MIX). A later walk reads them from the rows (src.chuaRa). */
   chuaRaStop?: Map<string, ViChuaRa>;
+  /** A2(n) T5 (H17) — STOPs an attempt may have sent: step ⇒ the code of that attempt. One way: a later refusal says nothing of it. From memory, and from the rows of earlier walks (central). */
+  stopCoTheRa?: Map<string, string>;
   /** A2(n) T5 — state C told in this walk: once per STOP. */
   chuaRaDaBao?: Set<string>;
   /** A2(n) T5 (H1, race) — a STOP that failed before the latch with no code: duongKetThuc puts it in state C if the run latches after all. Not sent again. */
@@ -729,7 +733,7 @@ async function db() {
  * Dùng cho RESUME idempotent: execStep bỏ qua các bước này. Fail-safe: DB lỗi → tập rỗng
  * (walk sẽ chạy lại — an toàn hơn là bỏ sót bước; với control OFF mọi dispatch là dry-run).
  */
-async function loadCompletedSteps(runId: number): Promise<{ completed: Set<string>; prior: PriorSteps; khongRoChotHang?: boolean; khongRoHang?: Set<string> }> {
+async function loadCompletedSteps(runId: number): Promise<{ completed: Set<string>; prior: PriorSteps; khongRoChotHang?: boolean; khongRoHang?: Set<string>; stopCoTheRa?: Map<string, string> }> {
   const set = new Set<string>();
   const d = await getDb();
   if (!d) return { completed: set, prior: { ...priorStepsOf([]), unknown: true } }; // fix 2 (R-6-c): unknown, not empty
@@ -738,10 +742,14 @@ async function loadCompletedSteps(runId: number): Promise<{ completed: Set<strin
     .from(orchestrationRunSteps)
     .where(eq(orchestrationRunSteps.runId, runId));
   for (const r of rows) {
-    if (r.status === "completed" || r.status === "skipped") set.add(r.stepId);
+    if ((r.status === "completed" || r.status === "skipped") && dauKhongXacNhan(r.resultJson) === null) set.add(r.stepId); // T5 (H16) — a row central could not verify is no finished step
   }
   // doc 81 Đợt 6 — same read, the abort sweep's picture; A2(n) (b) — a row with the unknown code latches the run even if the context lost it (a crash)
-  return { completed: set, prior: priorStepsOf(rows), ...(chotTuHang(rows) ? { khongRoChotHang: true } : {}), khongRoHang: buocCoTheDaBayTuHang(rows) };
+  const stopCoTheRa = new Map(rows.flatMap((r) => {
+    const vi = viChuaRaCuaLoi(r.error);
+    return laHangChuaRa(r) && vi?.nguon === "driverLoi" ? [[r.stepId, vi.ma] as const] : [];
+  }));
+  return { completed: set, prior: priorStepsOf(rows), ...(chotTuHang(rows) ? { khongRoChotHang: true } : {}), khongRoHang: buocCoTheDaBayTuHang(rows), stopCoTheRa };
 }
 
 async function setRunStatus(
@@ -1431,6 +1439,7 @@ function bangChungSauChot(rc: RunContext, hang: AbortSweepSource["hang"]): Map<s
         khongRo: chot?.stepId === s.id || rc.khongRoTai?.has(s.id) === true || outcomeUnknownOf(rc, s.id) !== null || rs?.khongRo === true,
         daGiao: daGiao.has(s.id) || rc.attempted.has(s.id),
         uyQuyenSong: false,
+        khongXacNhan: dauKhongXacNhan(r?.resultJson) !== null,
       }),
     );
   }
@@ -1516,7 +1525,7 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
       const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi((src.hang ?? []).find((r) => r.stepId === id)?.error);
       datChuaRa(rc, id, undefined);
       // read, not a STOP: not sent. One that may already have gone out never reads so; a row in state C says itself whether it did (an earlier walk's unsettled row is not "no last word")
-      const coTheDaRa = chuaRa ? vi?.nguon === "driverLoi" : ketCucRiengKhongRo(rc, id);
+      const coTheDaRa = chuaRa ? vi?.nguon === "driverLoi" || rc.stopCoTheRa?.has(id) === true : ketCucRiengKhongRo(rc, id);
       const error = coTheDaRa ? loiCoMaKhongRo(`command step "${id}" has no recorded outcome from an earlier attempt`) : loiKhongGuiChot(id);
       await giuCoKhongRo(true, rc, id, rc.store.upsertStep(rc.runId, id, "command", { status: "failed", error, finishedAt: new Date() }));
     }
@@ -1727,14 +1736,18 @@ async function lopChuaRa(rc: RunContext, step: Extract<WorkflowStep, { type: "co
     return o;
   }
   if (!tt.vi || !(await laStopTheoBuoc(step, rc.machineById))) return o;
+  // H17 — one way: an attempt that may have gone out stays so, whatever a later attempt was refused. The last attempt decides the state (V-MIX), never these words
+  if (tt.vi.nguon === "driverLoi" && !rc.stopCoTheRa?.has(step.id)) (rc.stopCoTheRa ??= new Map()).set(step.id, tt.vi.ma);
+  const maRa = rc.stopCoTheRa?.get(step.id);
+  const vi: ViChuaRa = maRa !== undefined ? { nguon: "driverLoi", ma: maRa } : tt.vi;
   if (!daChotKhongRo(rc)) {
-    (rc.stopTuChoiTruocKhoa ??= new Map()).set(step.id, { attempt, vi: tt.vi });
+    (rc.stopTuChoiTruocKhoa ??= new Map()).set(step.id, { attempt, vi });
     return o;
   }
   rc.stopTuChoiTruocKhoa?.delete(step.id);
   // an OT STOP keeps a pinned STOP's budget, -a1..a3; a robot STOP its own: state C adds no attempt
   const c = commandOf(step, rc.machineById);
-  return { kind: "failed", error: loiChuaRaStop(step.id, attempt, tt.vi), chuaRaStop: tt.vi, ...(c && !isRobotKind(c.cap.adapterKind) ? { stopGhim: true as const } : {}) };
+  return { kind: "failed", error: loiChuaRaStop(step.id, attempt, vi), chuaRaStop: vi, ...(c && !isRobotKind(c.cap.adapterKind) ? { stopGhim: true as const } : {}) };
 }
 
 /** A2(n) T5 — what the layer needs from the attempt: why it failed; `khongGhim`: a read answered and this is no pinned STOP. */
@@ -3217,11 +3230,12 @@ async function buildRunContext(
   const states = new Map<number, string>(
     Object.entries((context.states as Record<string, string>) ?? {}).map(([k, v]) => [Number(k), v]),
   );
-  const { completed, prior, khongRoChotHang, khongRoHang } = await loadCompletedSteps(run.id);
+  const { completed, prior, khongRoChotHang, khongRoHang, stopCoTheRa } = await loadCompletedSteps(run.id);
   return {
     runId: run.id,
     ...(khongRoChotHang ? { khongRoChotHang } : {}),
     ...(khongRoHang ? { khongRoHang } : {}),
+    ...(stopCoTheRa ? { stopCoTheRa } : {}),
     def,
     params: (run.paramsJson as Record<string, unknown>) ?? {},
     context,
