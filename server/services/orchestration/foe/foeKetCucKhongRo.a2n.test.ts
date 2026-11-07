@@ -413,6 +413,20 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     expect(alertsOf("stopSent")).toHaveLength(0);
   });
 
+  it("K1 a first STOP pass never takes a command's own compensation: pinned when classified, not at its dispatch, its failed branch slow: the split holds it, the run ends held", async () => {
+    let n = 0;
+    ghimMock.mockImplementation(async (_d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if (++n === 1) return { pinnedStop: true, loiDocGhim: null };
+      await new Promise((r) => setTimeout(r, 40));
+      return { pinnedStop: false, loiDocGhim: null };
+    });
+    HX.rowSlowMs = (r) => (r.stepId === "main" && r.status === "failed" ? 30 : 0);
+    const { runId } = await giuKhongRo([main(stopComp())]);
+    expect(sent("stop")).toHaveLength(0);
+    expect(await step(runId, "undo")).toMatchObject({ status: "held" });
+  });
+
   it("N4 ANCESTOR container: non-STOP compensation ⇒ held; pinned-STOP one ⇒ runs; child STOP sent AND ancestor non-STOP held", async () => {
     const a = await giuKhongRo([seq("box", [main()], resetComp("boxUndo"))]);
     expect(sent("reset")).toHaveLength(0);

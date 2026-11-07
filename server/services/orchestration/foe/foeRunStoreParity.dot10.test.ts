@@ -3148,6 +3148,7 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(ids()).toEqual(["x"]);
     expect(runRow(c).status).toBe("held");
     expect(hang(c, "cs")).toMatchObject({ status: "held" });
+    expect(hangUyQuyen("cs")).toBe(0); // the split's own predicate stopped it: it never went as far as an authorisation
   });
   it("B4 central: a branch never evaluated: its STOPs are NOT sent, each is named in an URGENT (M1)", async () => {
     h.timeoutDispatch.add("x");
@@ -3421,6 +3422,23 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(ids().filter((x) => x === "st")).toEqual(["st"]);
     expect(hang(c, "st")).toMatchObject({ status: "completed" });
   });
+  it("FWD-RACE the walker's first read and the pass's both fail: the ask again at the sink reads pinned, one hand-over", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      const lan = n++;
+      await wait(70);
+      return lan < 2 ? PIN_BAD() : PIN_OK(d, i);
+    };
+    h.slow.set("x", 15);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("fwd2", [gate(), parF("p", [move("x"), otStop("st")])]), 1);
+    await wait(30);
+    expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+    expect(hang(c, "st")).toMatchObject({ status: "completed" });
+  });
+  it.todo("K2 a container's STOP compensation a pass holds while the container's failure arrives, not pinned at its dispatch: the run must end held, it ends failed with the URGENT — T6, the final split of duongKetThuc");
   it("DONE-FAILED a STOP the sink refused in an earlier walk: a later walk's STOP pass goes through its resume state; it is sent", async () => {
     seedHalt();
     h.ghim = PIN_BAD;
