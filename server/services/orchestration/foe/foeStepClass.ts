@@ -183,7 +183,8 @@ export async function isStopCandidate(step: WorkflowStep, machineMap: Map<number
 export async function laStopTheoBuoc(step: WorkflowStep, machineMap: Map<number, MachineForValidation>): Promise<boolean> {
   if (await isStopCandidate(step, machineMap)) return true;
   if (step.type !== "command" || commandOf(step, machineMap)) return false;
-  return (await isOtStopCommandType(step.command)) || isStopJobType(step.args?.jobType ?? step.command);
+  // T5 fix 2 (N2) — buildEquipmentCommand reads args.jobType for run_job only: so does this, or a `start` carrying one would read as a STOP
+  return (await isOtStopCommandType(step.command)) || isStopJobType(step.command === "run_job" ? step.args?.jobType : step.command);
 }
 
 /** Does a subtree (the step itself, its children, branches, compensation) contain a stop CANDIDATE? */

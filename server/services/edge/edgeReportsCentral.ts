@@ -52,9 +52,9 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, maTuChoiCua, nguonCuaKetQua } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, chuBuTruTrongDinhNghia, dauKhongXacNhan, laHangChuaRa, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
-import { laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
+import { commandOf, isRobotKind, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
 export class StreamAnswer extends Error {
   constructor(public readonly answer: EdgeAnswer<never>) {
@@ -249,6 +249,15 @@ async function dangKhongXacNhan(step: WorkflowStep, machineMap: Awaited<ReturnTy
   return an.stopsUnsure.includes(step.id) ? "docLoi" : "ghimLech";
 }
 
+/** T5 fix 2 (N1, H11) — did the edge report it handed over? A refusal before a driver did not go out, whatever route it names: it is state C, not something to verify. */
+function coTheDaRa(status: string, result: unknown, step: WorkflowStep, machineMap: Awaited<ReturnType<typeof loadMachineMap>>): boolean {
+  if (status === "completed") return true;
+  const r = (result ?? {}) as { status?: unknown; detail?: { reason?: unknown } | null };
+  const st = String(r.status ?? "");
+  const c = commandOf(step, machineMap);
+  return nguonCuaKetQua(st, maTuChoiCua({ status: st, detail: r.detail }), c != null && isRobotKind(c.cap.adapterKind)) !== "tuChoi";
+}
+
 function unauthorised(runId: number, stepId: string, audits: Audit[], detail: Record<string, unknown>): never {
   audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "unauthorised_actuation", stepId, ...detail }, status: "failure" });
   throw new StreamAnswer(edgeError("unauthorised_actuation", `Run ${runId} step "${stepId}": a non-STOP command result without an authorisation issued for it — refused and recorded.`));
@@ -315,11 +324,11 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           if (!row) {
             const dang = await dangKhongXacNhan(step, machineMap, analysis);
             if (!dang) unauthorised(runId, step.id, audits, { seq: rec.seq, jti: rec.jti, status: rec.status });
-            if (dau !== dang) {
+            if (coTheDaRa(rec.status, result, step, machineMap) && dau !== dang) {
               audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: dang === "docLoi" ? "stop_unconfirmed_read" : "stop_pin_mismatch", stepId: step.id, seq: rec.seq, status: rec.status }, status: "failure" });
               khongXacNhan.set(step.id, dang);
             }
-            dau = dang;
+            if (coTheDaRa(rec.status, result, step, machineMap)) dau = dang;
           }
         }
         const write: EdgeStepRowWrite = {

@@ -6424,4 +6424,158 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
       expect(runRow(c).status).toBe("held");
     });
   }
+  const authCuaF = (e: EdgeHarness, id: string) => e.authorizeCalls.filter((a) => a.stepId === id).length;
+  // ═══ lượt sửa 2 ═══════════════════════════════════════════════════════════════════════════════════════════════════
+  const loaiTom = () => h.alerts.map((a) => `${String(a.kind).replace("foe_outcome_unknown_", "")}:${String(a.dedupKey).split(":")[2]}`);
+  for (const [ten, dinh, id] of [["one STOP", "mot", "s1"], ["RA2-1 NEN, s2", "hai", "s2"]] as const) {
+    it(`N1 ${ten}: verified at the claim, refused ADAPTER_OFFLINE ×3, the pins differ at the report: no mark, 0 mismatch URGENT, one stop_not_sent`, async () => {
+      const x = await chayGiua(dinh === "mot" ? dMot(`n1${dinh}`) : d2(`n1${dinh}`), () => h.tuChoi.set(id, OFFLINE), false);
+      await giao(x, "lech");
+      await wait(20);
+      expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+      expect(dau(x.e.runId, id)).toBeUndefined();
+      expect(loaiTom().filter((k) => k === `stop_pin_mismatch:${id}`)).toEqual([]);
+      expect(new Set(loaiTom().filter((k) => k === `stop_not_sent:${id}`)).size).toBe(1);
+      expect(String(hang(x.e.runId, id)!.error)).toMatch(new RegExp(`^FOE_STOP_NOT_SENT: STOP "${id}"`));
+    });
+  }
+  it("N1 docLoi: the same refusal, the read down at the report: no mark, no URGENT of a read", async () => {
+    const x = await chayGiua(dMot("n1doc"), () => h.tuChoi.set("s1", OFFLINE), false);
+    await giao(x, "doc");
+    await wait(20);
+    expect(dau(x.e.runId, "s1")).toBeUndefined();
+    expect(loaiCB("stopKhongXacNhanDoc")).toEqual([]);
+  });
+  it("N1-DO the p9 shape, measured: the pin read was still failing at the CLAIM of its second run, so s1 was not verified there: the route, the refusal certain, routedTo dropped: no mark is the rule, not N1", async () => {
+    pinDown = true; // what p9 left behind: its first sub-case set it, its loop's next claim read the pins through it
+    const x = await chayGiua(dMot("n1p9"), () => h.tuChoi.set("s1", OFFLINE), false);
+    const ghi = x.e.records.slice(x.moc).filter((r: any) => r.kind === "step" && r.stepId === "s1").map((r: any) => `${r.result?.status ?? "-"}:${typeof r.result?.routedTo === "string" ? "R" : "-"}:${r.jti ?? "-"}`);
+    console.log("[PROBE N1-DO]", JSON.stringify({ authorize: authCuaF(x.e, "s1"), ghi }));
+    await giao(x, "doc");
+    expect(authCuaF(x.e, "s1"), "the route asks nobody").toBe(0);
+    expect(ghi.filter((g) => g.includes(":R:"))).toEqual([]);
+    expect(dau(x.e.runId, "s1")).toBeUndefined();
+  });
+  // N2: the classifier follows buildEquipmentCommand: jobType only for run_job
+  const N2: Array<[string, Record<string, unknown>, boolean, number | null]> = [
+    ["start", { command: "start", args: { tagKey: "run", value: 1 }, machineId: 1 }, false, 409],
+    ["start, machine gone", { command: "start", args: { tagKey: "run", value: 1 }, machineId: 3 }, true, 409],
+    ["start jobType abort", { command: "start", args: { tagKey: "run", value: 1, jobType: "abort" }, machineId: 1 }, false, 409],
+    ["start jobType abort, machine gone", { command: "start", args: { tagKey: "run", value: 1, jobType: "abort" }, machineId: 3 }, true, 409],
+    ["stop run=1", { command: "stop", args: { tagKey: "run", value: 1 }, machineId: 1 }, false, 200],
+    ["stop, machine gone", { command: "stop", args: { tagKey: "halt", value: true }, machineId: 3 }, true, 200],
+    ["robot run_job move, machine gone", { command: "run_job", args: { robotId: 2, jobType: "move", params: { x: 1 } }, machineId: 3 }, true, 409],
+    ["robot abort, machine gone", { command: "abort", args: { robotId: 2 }, machineId: 3 }, true, 200],
+    ["robot run_job abort, machine gone", { command: "run_job", args: { robotId: 2, jobType: "abort" }, machineId: 3 }, true, 200],
+  ];
+  for (const [ten, buoc, mat, http] of N2) {
+    it(`N2 ${ten}: ${http === 409 ? "no STOP by the definition: 409" : "a STOP by the definition: the mark"}`, async () => {
+      fake.seed(machines, [...rows("machines"), { id: 3, machineType: String(buoc.command).startsWith("st") ? "AUTOMATION" : "ROBOT", capabilities: null, code: "M3", name: "M-3", operationStatus: "stopped", stationId: 1 }]);
+      fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 503, machineId: 3, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A503" }]);
+      fake.seed(deviceTags, [...rows("device_tags"), { id: 81, adapterId: 503, tagKey: "run", address: "40001", dataType: "int16", scale: "1", offset: "0", updatedAt: T0, writable: true, isEnabled: true }, { id: 82, adapterId: 503, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true }]);
+      const st = { id: "q", type: "command", ...buoc } as unknown as WorkflowStep;
+      const x = await chayGiua(def(`n2${ten.length}${mat}${http}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("s1")]), st])]));
+      await chuanBi(x.e, 2);
+      const J = nhatKy();
+      const S = edgeRunStream(x.e.runId, 2);
+      J.them(S, stepRec("q"));
+      const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+      sh.setClaim(x.e.runId, 2, TOKEN);
+      if (mat) fake.store.set("machines", rows("machines").filter((m) => m.id !== 3));
+      traLoi.length = 0;
+      await sh.flush(S);
+      expect(traLoi[0]?.http).toBe(http);
+      if (http === 200) expect(dau(x.e.runId, "q")).toBe("ghimLech");
+    });
+  }
+  it("N2 engine: a latched run, a 'start' with args.jobType abort whose machine nothing resolves: never in a STOP plan, never 'Abort sends it again', 0 dispatches, an Abort after it too", async () => {
+    fake.seed(machines, [...rows("machines"), { id: 3, machineType: "AUTOMATION", capabilities: null, code: "M3", name: "M-3", operationStatus: "stopped", stationId: 1 }]);
+    fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 503, machineId: 3, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A503" }]);
+    fake.seed(deviceTags, [...rows("device_tags"), { id: 81, adapterId: 503, tagKey: "run", address: "40001", dataType: "int16", scale: "1", offset: "0", updatedAt: T0, writable: true, isEnabled: true }]);
+    const q = { id: "q", type: "command", machineId: 3, command: "start", args: { tagKey: "run", value: 1, jobType: "abort" } } as unknown as WorkflowStep;
+    const e = await edgeAssignedRun(def("n2eng", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), q])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.suaGoi = (p) => ({ ...p, machines: p.machines.filter((m) => m.id !== 3) });
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(h.sent.filter((s) => s.stepId === "q")).toEqual([]);
+    expect(String(hang(e.runId, "q")?.error ?? "")).not.toMatch(/FOE_STOP_NOT_SENT/);
+    expect(h.alerts.filter((a) => String(a.message).includes('"q"') && /Abort sends it again/.test(String(a.message)))).toEqual([]);
+    expect(stopChuaRaTuHang(stepRows(e.runId) as never).has("q")).toBe(false);
+    h.timeoutDispatch.clear();
+    await abortRun(e.runId, OWNER, "press");
+    await wait(30);
+    expect(h.sent.filter((s) => s.stepId === "q"), "the Abort after it").toEqual([]);
+  });
+  // ── two named reds, each closed by its task ────────────────────────────────────────────────────────────────────────
+  it("URGENT-LECH-MAT-T8 the mismatch URGENT lost between the commit and the raise: the records again, the segment end: a durable stop_pin_mismatch is owed", async () => {
+    const x = await chayGiua(dMot("ulm"), undefined, false);
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(x.e.runId, 2);
+    for (const r of x.e.records.slice(x.moc)) J.them(S, r as never);
+    const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
+    sh.setClaim(x.e.runId, 2, TOKEN);
+    for (const t of rows("device_tags")) if (t.tagKey === "halt") t.stopValue = null;
+    const goc = h.alerts.push.bind(h.alerts);
+    let chet = true; // the process dies after the commit: the raise never lands
+    (h.alerts as any).push = (...a: any[]) => (chet ? 0 : goc(...a));
+    await sh.flush(S);
+    await wait(30);
+    chet = false;
+    J.veLai(S);
+    await sh.flush(S);
+    await applyEdgeSegmentEnd(fake as never, x.e.runId, { ...(x.s.out as any), nodeCode: "EDGE-A", claimSeq: 2, def: x.d });
+    await wait(40);
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+    expect(loaiCB("stopGhimLech"), "T8: the obligation of a durable URGENT lists the kind ghimLech").toHaveLength(1);
+  });
+  it("BC-HET-KHONG-BEN-T7 a run with a marked row ends only on a durable URGENT: not durable (nobody to tell), and the sink throwing: held, at the end gate", async () => {
+    const ket: string[] = [];
+    for (const dang of ["khongBen", "nem"] as const) {
+      h.alerts.length = 0;
+      if (dang === "khongBen") h.alertDurable = false;
+      const goc = h.alerts.push.bind(h.alerts);
+      if (dang === "nem") {
+        (h.alerts as any).push = (...a: any[]) => {
+          if (/pin_mismatch/.test(String(a[0]?.kind))) throw new Error("sendNotification threw (test)");
+          return goc(...a);
+        };
+      }
+      const x = await chayGiua(def(`bchkb${dang}`, [gate(), otStop("s1")]), undefined, false);
+      await giao(x, "lech");
+      await wait(30);
+      ket.push(`${dang}:${dau(x.e.runId, "s1")}:${runRow(x.e.runId).status}`);
+      h.alertDurable = true;
+      (h.alerts as any).push = goc;
+      h.sent.length = 0;
+      h.traTimeout = 0;
+    }
+    expect(ket, "T7: the end gate holds a run whose unconfirmed STOP has no durable URGENT").toEqual(["khongBen:ghimLech:held", "nem:ghimLech:held"]);
+  });
+  // ── N-walkBang ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  it("WALK-BANG a central walk reads the mark: a STOP row central could not verify is no last word: the STOP compensation of its container is due at the last pass", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.slow.set("x", 30);
+    h.timeoutDispatch.add("x");
+    let runId = 0;
+    h.sauTimeout = () => {
+      // the mark only an edge report writes, on the row of a central run: what the last pass reads of it
+      const r = stepRows(runId).find((s) => s.stepId === "st");
+      if (r) r.resultJson = { ...(r.resultJson ?? {}), stopKhongXacNhan: "ghimLech" };
+    };
+    const d = def("wbang", [gate(), parF("p", [{ ...box("b", [otStop("st")]), compensation: otStop("cs") } as never, move("x")])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    runId = s.runId!;
+    const view = (await getRun(runId, { bindingDigest: true }))!;
+    await resumeRun(runId, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await wait(60);
+    expect(hang(runId, "st")).toMatchObject({ status: "completed" });
+    expect(h.sent.map((a) => a.stepId)).toContain("cs");
+  });
 });
