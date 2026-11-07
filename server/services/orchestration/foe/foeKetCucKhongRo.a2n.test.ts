@@ -474,6 +474,13 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
       });
     }
   }
+  it("K2-ds a compensation held by the walk, classified pinned again at the last pass, not pinned at that dispatch either: one hold, one entry for a Continue", async () => {
+    let n = 0;
+    ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n % 2 === 1, loiDocGhim: null }));
+    const { runId } = await giuKhongRo([main(stopComp())]);
+    expect(sent("stop")).toHaveLength(0);
+    expect(dauKetCucKhongRoCua(runRow(runId).contextJson)?.ds).toHaveLength(1);
+  });
   it("K2a-cham the door's refused step, its failed row slow: the pass holds its compensation first; the row's late 'not looked at again' does not bury that hold: Continue sends the STOP", async () => {
     let n = 0;
     let hoi = false;

@@ -3766,6 +3766,7 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await wait(30);
     expect(runRow(c).status).toBe("held");
     expect(hang(c, "cs")).toMatchObject({ status: "held" });
+    expect(runRow(c).contextJson.foeResumeState?.f, "the hold is that STOP's, not the body's: a Continue must not walk the body again").toBeUndefined();
     h.ghim = PIN_OK;
     h.timeoutDispatch.clear();
     h.sent.length = 0;
