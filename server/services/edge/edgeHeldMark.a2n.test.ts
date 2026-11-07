@@ -29,7 +29,7 @@ import { EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, edgeHoldMarkO
 
 const CU = " — nothing further was sent; Continue to resume it.";
 const CHU_C = " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
-const CHU_B5 = " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
+const CHU_B5 = " Central counts that step as possibly sent. Continue fails that step, sends nothing forward, and sends the verified STOPs behind it. Abort sends them too.";
 
 let d: FakeDb;
 beforeEach(() => {

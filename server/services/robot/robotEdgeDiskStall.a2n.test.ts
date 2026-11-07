@@ -631,7 +631,7 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     expect(ket[89]).toMatchObject({ outcome: "held", heldReason: "journalFull" });
   }, 20_000);
 
-  it("★ B5 stays as it is: Continue fails the step and sends no STOP, and the run's text says use Abort before that", async () => {
+  it("★ B5: Continue fails the step, nothing forward goes, the verified STOP behind it goes, and the run's text says so", async () => {
     const dir = await tam.mk();
     const steps = [move("m1"), stop("s1")];
     const x = await dungThat({ dir });
@@ -645,14 +645,14 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     expect(String(x.central.callsTo("complete")[0].body.error)).toMatch(/^EDGE_HELD\(configStale\): EDGE_UNUSED_NOT_REPORTED: /); // the string contract, the sending side, literally
     expect(hangRun(85).status).toBe("held");
     const chu = String(hangRun(85).error);
-    expect(chu).toContain("Continue fails that step and does not send the STOPs behind it.");
-    expect(chu).toContain("Use Abort to send them.");
+    expect(chu).toContain("Continue fails that step, sends nothing forward, and sends the verified STOPs behind it.");
+    expect(chu).toContain("Abort sends them too.");
     expect(chu).not.toContain("nothing further was sent");
     expect(chu).not.toContain("Continue to resume it");
     expect(chu).not.toContain("Continue it once");
     const { rs, ket } = await tiepTuc(x, dir, 85, steps, ["s1"]);
     expect(rs).toMatchObject({ m1: { state: "outcomeUnknown" } });
-    expect(ten()).toEqual([]);
+    expect(ten()).toEqual(["abort"]);
     expect(ket).toMatchObject({ outcome: "failed" });
     expect(String(ket.error)).toContain("EDGE_OUTCOME_UNKNOWN");
   }, 20_000);

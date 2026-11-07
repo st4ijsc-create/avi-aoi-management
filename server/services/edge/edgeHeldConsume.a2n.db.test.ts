@@ -248,7 +248,7 @@ describe.skipIf(!onTest)("a2n round C — the held cycle (real _test DB, ROLLBAC
       const loi = `EDGE_HELD(configStale): ${EDGE_HOLD_UNUSED_NOT_REPORTED}: command step "m1" was not sent — stale; its authorisation could NOT be reported unused (a Continue treats the step as possibly sent); the run is held.`;
       expect((await completeForNodeV2(the.node, r.runId, ketHeld(r, "configStale", loi))).http).toBe(200);
       const held = await hangRun(tx, r.runId);
-      expect(String(held.error)).toContain("Use Abort to send them.");
+      expect(String(held.error)).toContain("Abort sends them too.");
       expect(String(held.error)).not.toContain("Continue to resume it");
       expect(await resumeRun(r.runId, { approved: true } as never, HE_THONG)).toMatchObject({ ok: true, status: "queued" });
       const ctx = (await hangRun(tx, r.runId)).contextJson as Record<string, unknown>;

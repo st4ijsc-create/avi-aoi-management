@@ -1237,15 +1237,15 @@ const OUTCOME_UNKNOWN_KEY = "foeOutcomeUnknown";
 export { EDGE_HELD_CTX_KEY };
 
 /**
- * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except the two a Continue does not get out of (measured:
- * MIX ends failed without its forward STOP, B5 fails the step): those say Abort, because Abort is the way out there.
+ * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except two. MIX ends failed without its forward STOP: it says
+ * Abort, because Abort is the way out there. B5 fails the step, the run is latched by it and the walk's STOP pass sends the verified STOPs behind it (measured): it says so.
  */
 function heldAdvice(error: string | undefined): string {
   const mark = edgeHoldMarkOf(error);
   // data-raw-ok: the run's error (shown on the run), as the rest of it
   if (mark === EDGE_HOLD_CONSUME_OVERRUN) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
   // data-raw-ok: as above
-  if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
+  if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step, sends nothing forward, and sends the verified STOPs behind it. Abort sends them too.";
   return " — nothing further was sent; Continue to resume it.";
 }
 
