@@ -122,6 +122,20 @@ export const EDGE_WAITING_CTX_KEY = "edgeWaiting";
 /** held by its node at a segment end (D5: centralUnreachable / journalFull …) — foeRunStore.applyEdgeSegmentEnd */
 export const EDGE_HELD_CTX_KEY = "edgeHeld";
 /**
+ * a2n round C — marks in the `error` of a held segment end, for the two holds a Continue does not get out of: central words the run's error from them
+ * (foeRunStore.applyEdgeSegmentEnd). An implicit string contract, additive: free text on an existing field, an old central shows it and keeps its usual wording, an old edge sends
+ * none and gets that wording. The form is `EDGE_HELD(<reason>): <MARK>: <text>`: first in the string, so that no cut (500 at central, 4 000 on the wire) loses it and no device's
+ * words further on can pass for it. Both values are pinned word for word in edgeHeldMark.a2n.test.
+ *   CONSUME_OVERRUN — a consumeAuthorization ran past its bound in the segment: the step failed, compensations may have run, what is behind it was not walked.
+ *   UNUSED_NOT_REPORTED — B5: the authorisation of a held step could not be reported unused, so central counts the step as possibly sent.
+ */
+export const EDGE_HOLD_CONSUME_OVERRUN = "EDGE_CONSUME_OVERRUN";
+export const EDGE_HOLD_UNUSED_NOT_REPORTED = "EDGE_UNUSED_NOT_REPORTED";
+/** The mark of a held segment end's error, read at the head of the string only; null ⇔ none. */
+export function edgeHoldMarkOf(error: string | null | undefined): string | null {
+  return /^EDGE_HELD\([A-Za-z]+\): ([A-Z_]+):/.exec(error ?? "")?.[1] ?? null;
+}
+/**
  * fix review 4 (B F-B2-1) — `{ userId, at }` of the user who CONTINUED a held edge run last (foeEngine.resumeRun, central-only;
  * edgeContextPolicy refuses it from an edge patch). B's /authorize (edgeAuthorizeCentral.EDGE_RESUMED_BY_CTX_KEY, the same name)
  * uses that user's role for the engine policy on the held path.

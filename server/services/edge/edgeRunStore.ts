@@ -51,6 +51,7 @@ import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "../
 import type { EdgeAuthorizeCommand, EdgeRunPackage, EdgeRunReportRecord, EdgeSweepPicture, EdgeEventRecord, EdgeSignedEnvelope } from "./edgeProtocol";
 import { EdgeContractError } from "./edgeSigning";
 import { EDGE_CONFIG_STALE, EDGE_SAFETY_CONFIG_MISSING, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
+import { EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED } from "./edgeProgramReportRule";
 import type { EdgeAuthUnusedReason } from "./edgeProtocol";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -96,7 +97,7 @@ export interface EdgeRunStoreIo {
     event?(rec: EdgeEventRecordIn, opts?: { stop?: boolean }): Promise<EdgeAppendLike>;
   };
   /** admission of NEW non-STOP work (false: journal full / unhealthy — a STOP never asks) */
-  consume?: { admitNonStop(): boolean };
+  consume?: { admitNonStop(): boolean; consumeOverran?(): boolean };
   authorize: { authorize(input: EdgeStepAuthorizeRequest): Promise<EdgeStepAuthorizeOutcome> };
   /**
    * R1b-2b-2a A2(o) AMENDMENT 2 — the edge's config source (the agent passes its EdgeConfigSource): central announced a newer
@@ -279,6 +280,11 @@ export class EdgeRunStore extends EdgeStoreBase {
   private readonly statuses: string[] = [];
   /** fix review 1 — the journal refused a non-STOP record (its reason): nothing further is authorised; the segment ends held */
   private journalRefused: string | null = null;
+  /**
+   * a2n round C — a dispatch of this segment was refused by a consumeAuthorization past its bound. Nothing changes in the walk (the step fails, compensations and parallels
+   * run as for any failure); only segmentEnd reads it. NOT journalRefused: that one also turns a segment that completed into held, and PAR completed is left alone.
+   */
+  private consumeOverran = false;
   /** commands whose dispatch result reached the journal (a later refused record of theirs ⇒ outcome unknown) */
   private readonly sentSteps = new Set<string>();
   /** commands SENT whose result could not be recorded — never sent again */
@@ -449,13 +455,13 @@ export class EdgeRunStore extends EdgeStoreBase {
    * CAUSED by a missing safety-PLC config writes no EDGE_CONFIG_STALE — the dispatch gate already journaled EDGE_SAFETY_CONFIG_MISSING
    * (central's URGENT alert) for it; the step error still says why.
    */
-  private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
+  private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE, continueOk = true): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
     this.heldReason = "configStale";
     if (cause === EDGE_CONFIG_STALE) {
       this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
     }
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
-    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held (Continue it once the edge has its new config).` };
+    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): ${continueOk ? "" : `${EDGE_HOLD_UNUSED_NOT_REPORTED}: `}command step "${stepId}" was not sent — ${why}; the run is held${continueOk ? " (Continue it once the edge has its new config)" : ""}.` };
   }
 
   /**
@@ -468,6 +474,7 @@ export class EdgeRunStore extends EdgeStoreBase {
    */
   async heldByDispatch(stepId: string, result: { ok: boolean; detail?: Record<string, unknown> | null }): Promise<{ reason: RunStoreHeldReason; error: string } | null> {
     const d = (result.detail ?? null) as { edge?: unknown; reason?: unknown; refusal?: unknown } | null;
+    if (!result.ok && d?.edge === true && d.reason === "JOURNAL_CONSUME_FAILED" && d.refusal === "io_error" && this.io.consume?.consumeOverran?.() === true) this.consumeOverran = true;
     if (result.ok || !d || d.edge !== true || (d.reason !== EDGE_CONFIG_STALE && d.reason !== EDGE_SAFETY_CONFIG_MISSING)) return null;
     // the authorisation it was refused under was NEVER used (the gate runs before the consume): journaled + reported unused, so
     // it can never be used later and central supersedes it ⇒ the Continue RE-AUTHORISES the step under the new config
@@ -491,6 +498,7 @@ export class EdgeRunStore extends EdgeStoreBase {
       stepId,
       `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`,
       d.reason === EDGE_SAFETY_CONFIG_MISSING ? EDGE_SAFETY_CONFIG_MISSING : EDGE_CONFIG_STALE,
+      reported,
     );
     return { reason: h.heldReason, error: h.error };
   }
@@ -543,6 +551,11 @@ export class EdgeRunStore extends EdgeStoreBase {
       return { outcome: "held", heldReason: "journalFull", error: clip(error, 4_000) ?? undefined, ...(unknown.length ? { outcomeUnknown: unknown } : {}) };
     }
     const error = typeof this.lastPatch.error === "string" ? this.lastPatch.error : undefined;
+    // a2n round C — `failed` would close Abort on a run whose STOPs behind the refused step never went: held keeps it open. Only `failed`: a walk that went on and completed, or an abort, stays what it is.
+    if (this.consumeOverran && this.status === "failed") {
+      // data-raw-ok: machine-readable mark (EDGE_HOLD_CONSUME_OVERRUN): central words the run's error from it
+      return { outcome: "held", heldReason: "journalFull", error: clip(`EDGE_HELD(journalFull): ${EDGE_HOLD_CONSUME_OVERRUN}: a step's authorisation could not be recorded in time on the edge's disk (${error ?? "unknown"}); that step was not sent.`, 4_000) ?? undefined };
+    }
     switch (this.status) {
       case "completed":
         return { outcome: "completed" };
