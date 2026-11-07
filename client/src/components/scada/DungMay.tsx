@@ -21,6 +21,7 @@
  *     Trạng thái lệnh vẫn không dùng màu cảnh báo: băng dùng token DỪNG `--packml-abort` (Global Constraints, preflight D6).
  */
 import { useEffect, useRef, useState } from "react";
+import { dangKyNutDungMay } from "./dungMayNoi";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError } from "@/lib/trpcErrors";
@@ -549,8 +550,21 @@ export function NutDungMay({ coGhimStop, ...hop }: NutDungMayProps) {
   const [mo, setMo] = useState(false);
   /** R1b-2a T4 — băng đỏ Ở LẠI sau khi đóng hộp, tới khi người vận hành bấm "Đã hiểu" */
   const [bang, setBang] = useState<BangEstop | null>(null);
+  // PHA 0 · C0-3 — đăng ký vào kho để `LopDungMayNoi` dựng nút DỪNG NỔI khi hộp thoại lồng che nút này (xem dungMayNoi.ts)
+  const goc = useRef<HTMLDivElement>(null);
+  const { machineId, tenMay } = hop;
+  useEffect(
+    () =>
+      dangKyNutDungMay({
+        machineId,
+        tenMay,
+        nut: () => goc.current?.querySelector<HTMLElement>('[data-testid="nut-dung-may"]') ?? null,
+        mo: () => setMo(true),
+      }),
+    [machineId, tenMay],
+  );
   return (
-    <div className="space-y-2" data-testid="khoi-dung-may">
+    <div ref={goc} className="space-y-2" data-testid="khoi-dung-may">
       <Button
         type="button"
         data-testid="nut-dung-may"

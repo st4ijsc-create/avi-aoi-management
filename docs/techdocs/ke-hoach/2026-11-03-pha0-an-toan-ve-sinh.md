@@ -28,7 +28,7 @@
 | P0‑8 | `/api-docs` và `/component-showcase` ra khỏi app (docs tĩnh sinh từ `/api/v1/openapi.json`; Storybook/`vite --mode dev` cho showcase); route 404 | `client/src/pages/ApiDocs.tsx` 3 578, `ComponentShowcase.tsx` 1 833, `App.tsx` | 2 route public biến mất; bundle giảm |
 | P0‑9 | Gỡ 6 trang chết (`AIHub`, `AIStudioHub`, `AILocalKnowledgeBasePage`, `DashboardTemplates`, `TemplateMarketplace`, `TestAnnotationPage`) + `AIChatBox`, `AILocalKnowledgeBase` | 1 439 + 680 LOC | grep import = 0; redirect giữ |
 | P0‑10 | Gỡ `socket.ts:2797` `calculateOEE` chết (SQL sai cột) | `_core/socket.ts` | grep = 0 |
-| P0‑11 | Phiên theo vai: TTL 12 h operator/supervisor, 7 d engineer/admin, gia hạn trượt | `_core/hanPhien.ts:57` | test TTL theo vai |
+| P0‑11 | Phiên theo vai: TTL 12 h operator/supervisor, 7 d engineer/admin, gia hạn trượt | `_core/hanPhien.ts:57` — trên main a9a8c9405; hiệu lực sau khi `:3000` restart (sau 15:08 07/11) | test TTL theo vai |
 | **Chủ dự án** | gỡ `cookies.txt` khỏi git (+ `.gitignore`) và **thu hồi mọi phiên** (`user_sessions` revoke) sau khi P0‑11 lên; đặt `OT_CONTROL_ENABLED=false` (D9) | | |
 
 ## 2. 50‑C0 (UI + vệ sinh, không chạm lõi) — luong‑ui / scada‑ui
@@ -53,7 +53,7 @@
 | AL0‑3 | **Xoá dữ liệu lũ** (sau duyệt chủ dự án, số đếm trước/sau): `notifications` 56 433, `alert_escalations` 7 779, `predictive_alerts` + `_occurrences` 992 + 1 635, `mqtt_alert_history` 3 183; `machine_status_logs` 95 971 **chỉ sau khi 90 xác nhận OEE không đọc** `[cần kiểm]` | SQL đếm |
 | T0‑1 | **HUỶ** (06/11): EMQX docker đang chạy (1884→1883), `:3000` có kết nối ⇒ giữ `UNS_BRIDGE_ENABLED=true`; tiền đề "không có broker" sai | — |
 | T0‑2 | `topology.mjs` đã 36 máy; nguồn 1 699 máy × 30 s là `simOtTelemetryService` (gỡ ở E0‑2) ⇒ **đóng sau khi eng‑ai lên main + `:3000` bản mới + đo 24 h** | 24 h `ot_telemetry` giảm về mức 36 máy topology (hiện 18,97 M hàng/24 h) |
-| T0‑3 | Một nguồn DDL Timescale: **không bỏ 0118/0172** (0172 tạo hypertable `measurement_results`); mig **0490** hoà giải làm lời cuối (no‑op trên DEV/_test); gỡ `timescale/0003` + `TSDB_URL` **chuyển sang 30‑T1** (pha 1) | migration `--test-only` xanh; `timescaledb_information.jobs` một bộ chính sách/bảng |
+| T0‑3 | Một nguồn DDL Timescale: **không bỏ 0118/0172** (0172 tạo hypertable `measurement_results`); mig **0490** hoà giải làm lời cuối (no‑op trên DEV/_test); gỡ `timescale/0003` + `TSDB_URL` **chuyển sang 30‑T1** (pha 1) — **XONG 06/11**: mig 0490 áp DEV (reconciled 0, retention mismatch 0, 14 `job_id` không đổi), main a9a8c9405 | migration `--test-only` xanh; `timescaledb_information.jobs` một bộ chính sách/bảng |
 | T0‑4 | `machine_health_history` + `rul_estimates` (1,8 GB): thêm retention 90 d **sau duyệt** (xoá cũ hơn) | kích thước < 200 MB |
 
 ## 4. 70‑E0 + 80‑F0 + 60‑Q0 — tho‑ca‑agent / phiên nền

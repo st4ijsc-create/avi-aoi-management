@@ -22,7 +22,7 @@ vi.mock("../db/connection", async (importOriginal) => ({ ...(await importOrigina
 // `requirePermission` thật qua `importOriginal`). `requirePermission`'s middleware gọi
 // `checkPermission` qua CLOSURE nội bộ của chính `accessControl.ts` — KHÔNG đi qua mock
 // này (mock chỉ thay named export mà `oversightRouter.ts` tự `import`) — nên gate
-// `machine_monitoring` vẫn chạy checkPermission THẬT (admin bypass, không chạm DB) trong
+// `machine_monitoring` vẫn chạy checkPermission THẬT (từ P0-2 admin ĐỌC bảng permissions; `fakeDb` trả `hangQuyen`) trong
 // khi `canSeeNamesSafe` (dùng `checkPermission` NHẬP TỪ NGOÀI) nhận đúng bản mock.
 const checkPermissionMock = vi.fn(async (..._a: unknown[]) => true);
 vi.mock("../_core/accessControl", async (importOriginal) => {
@@ -43,16 +43,21 @@ vi.mock("../db/hierarchy", async (importOriginal) => {
 
 import { oversightRouter, _internal } from "./oversightRouter";
 
+/** Hàng `permissions` mà cổng `machine_monitoring` đọc được; mặc định không hàng (admin qua theo luật P0-2, như 7/10 admin DEV). */
+const hangQuyen: { rows: Array<Record<string, unknown>> } = { rows: [] };
+
 /**
  * Chuỗi drizzle giả: `.select().from().where()...` đều trả về CHÍNH nó; `.then()` trả
  * PHẦN TỬ KẾ TIẾP của `queue` theo đúng THỨ TỰ mỗi nhánh await (đếm trước, mẫu sau).
  * Một `Error` trong hàng đợi ⇒ `.then()` reject đúng lỗi đó (mô phỏng query ném).
+ * Bảng `permissions` (cổng RBAC) KHÔNG tiêu hàng đợi: trả `hangQuyen.rows`.
  */
 function fakeDb(queue: unknown[]): { db: any; calls: () => number } {
   let i = 0;
   const chain: any = {
     select: () => chain,
-    from: () => chain,
+    from: (bang: Record<symbol, unknown>) =>
+      bang?.[Symbol.for("drizzle:Name")] === "permissions" ? { where: () => ({ limit: async () => hangQuyen.rows }) } : chain,
     where: () => chain,
     orderBy: () => chain,
     limit: () => chain,
@@ -74,6 +79,7 @@ function fakeDb(queue: unknown[]): { db: any; calls: () => number } {
 }
 
 beforeEach(() => {
+  hangQuyen.rows = [];
   mockGetDb.mockReset();
   mockGetDb.mockResolvedValue(undefined);
   detectDeadlocksMock.mockReset();
@@ -242,10 +248,32 @@ describe("oversightRouter._internal — MỖI NHÁNH degraded khi query ném (HU
   });
 });
 
-describe("oversightRouter.pendingSummary (createCaller, admin — bỏ qua bảng permissions)", () => {
+describe("oversightRouter.pendingSummary (createCaller, admin — không có hàng permissions)", () => {
   const admin = () => ({ user: { id: 1, role: "admin" } }) as never;
 
-  it("DB chưa kết nối ⇒ shape 0 ổn định cho ĐỦ chín nhánh, không throw", async () => {
+  it("★★★ P0-2 — admin có hàng machine_status canView=false ⇒ FORBIDDEN, không đọc dữ liệu nào", async () => {
+    hangQuyen.rows = [{ canView: false, expiresAt: null }];
+    const { db, calls } = fakeDb([]);
+    mockGetDb.mockResolvedValue(db);
+    await expect(oversightRouter.createCaller(admin()).pendingSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(oversightRouter.createCaller(admin()).posture()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(calls()).toBe(0);
+  });
+
+  it("★ P0-2 — hàng canView=false đã HẾT HẠN không còn ràng buộc admin", async () => {
+    hangQuyen.rows = [{ canView: false, expiresAt: new Date(Date.now() - 1000) }];
+    const db = fakeDb(Array.from({ length: 40 }, () => [{ c: 0 }])).db;
+    mockGetDb.mockResolvedValue(db);
+    await expect(oversightRouter.createCaller(admin()).pendingSummary()).resolves.toMatchObject({ total: 0 });
+  });
+
+  it("★ P0-2 — không có DB ở cổng quyền ⇒ FORBIDDEN cho cả admin", async () => {
+    mockGetDb.mockResolvedValue(undefined);
+    await expect(oversightRouter.createCaller(admin()).pendingSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("DB mất NGAY SAU cổng quyền ⇒ shape 0 ổn định cho ĐỦ chín nhánh, không throw", async () => {
+    mockGetDb.mockResolvedValueOnce(fakeDb([]).db); // cổng quyền đọc được, thân thủ tục thì không
     mockGetDb.mockResolvedValue(undefined);
     const caller = oversightRouter.createCaller(admin());
     const r = await caller.pendingSummary();
@@ -284,7 +312,8 @@ describe("doc 81 Đợt 3 Task 4 — pendingSummary.mine (fail-safe + luật tê
   const admin = () => ({ user: { id: 1, role: "admin" } }) as never;
   const MINE_KEYS = ["ecn", "recipes", "interlock", "changeover", "orchestration"];
 
-  it("DB chưa kết nối ⇒ `mine` có ĐÚNG năm nhóm giao được, mỗi nhóm 0 — không throw", async () => {
+  it("DB mất NGAY SAU cổng quyền ⇒ `mine` có ĐÚNG năm nhóm giao được, mỗi nhóm 0 — không throw", async () => {
+    mockGetDb.mockResolvedValueOnce(fakeDb([]).db); // cổng quyền đọc được, thân thủ tục thì không
     mockGetDb.mockResolvedValue(undefined);
     const r = await oversightRouter.createCaller(admin()).pendingSummary();
     expect(Object.keys(r.mine).sort()).toEqual([...MINE_KEYS].sort());

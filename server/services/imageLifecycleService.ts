@@ -828,7 +828,8 @@ let aoiCacheTimer: NodeJS.Timeout | null = null;
  * STORAGE_MODE=local (decision #5 — local FS blob backend).
  */
 export function startImageLifecycle(): void {
-  if (process.env.DATA_RETENTION_ENABLED !== "true") return;
+  // ★ Pha 0 P0-6 — cùng công tắc chủ với quét hàng (`retentionBat`): BẬT mặc định, chỉ `DATA_RETENTION_ENABLED=false` tắt.
+  if (process.env.DATA_RETENTION_ENABLED === "false") return;
   if (!isLocalStorage()) {
     console.log("[ImageLifecycle] STORAGE_MODE is not 'local' — image lifecycle inactive");
     return;

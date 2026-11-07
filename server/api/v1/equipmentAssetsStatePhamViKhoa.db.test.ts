@@ -117,11 +117,12 @@ describe.skipIf(!DB_URL)("equipment + assets + state — phạm vi KHOÁ API", (
         expect((await goi(`/api/v1/equipment/${B.machineId}/${p}`)).status, `B ${p}`).toBe(404);
       }
     });
-    it("★★★ POST /equipment/:id/commands — máy B ⇒ 404 TRƯỚC khi chạm dispatcher; máy A qua cổng phạm vi (400 lệnh không hỗ trợ, không phải 404)", async () => {
+    it("★★★ POST /equipment/:id/commands — ĐÃ GỠ (pha 0 · C0-1): máy A VÀ máy B đều 410 CÙNG hình dạng ⇒ không còn nhánh đọc máy, không lộ máy B có tồn tại hay không", async () => {
+      // Tính chất phạm vi (máy B ⇒ 404, máy A ⇒ 200) vẫn được chứng minh ở bề mặt SỐNG ngay trên đây: GET /equipment/:id/{capabilities,telemetry,state}.
       const b = await gui("POST", `/api/v1/equipment/${B.machineId}/commands`, { command: "start" });
-      expect(b.status).toBe(404);
       const a = await gui("POST", `/api/v1/equipment/${A.machineId}/commands`, { command: "khong-co-lenh-nay" });
-      expect(a.status).not.toBe(404);
+      expect(b.status).toBe(410);
+      expect(a.status).toBe(410);
     });
     it("★★★ GET /assets — chỉ tài sản của A", async () => {
       expect(await dsTs("A")).toEqual([A.machineId]);

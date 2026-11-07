@@ -127,6 +127,9 @@ function tuChoiKhiKhongKiemMatKhau(mqttRequirePassword: () => boolean, what: str
 // ============================================================
 // MQTT Client Router (lines 3859-4379)
 // ============================================================
+/** Pha 0 · C0-6 — HẰNG, không phải cờ env: lệnh từ xa FactoryAlert đóng băng cho tới khi chủ dự án mở lại ứng dụng FactoryAlert (đổi hằng này = quyết định phải nói trong review). */
+export const MQTT_CLIENT_COMMANDS_PAUSED = true;
+
 export const mqttClientRouter = router({
   // List all MQTT clients with optional filters
   list: protectedProcedure
@@ -1323,6 +1326,11 @@ export const mqttClientRouter = router({
       data: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ input }) => {
+      // Pha 0 · C0-6 (TechDocs 50 §C0): lệnh từ xa tới thiết bị FactoryAlert (RESTART_APP / CHECK_UPDATE / FORCE_UPDATE) ĐÓNG BĂNG cùng ứng dụng FactoryAlert —
+      // KHÔNG gửi gì lên MQTT. Mã dưới đây giữ nguyên (không gỡ) để mở lại khi FactoryAlert được phát triển tiếp; UI đã ẩn nút.
+      if (MQTT_CLIENT_COMMANDS_PAUSED) {
+        throw appError("PRECONDITION_FAILED", "MODULE_PAUSED", { module: "factoryAlert" }, "MODULE_PAUSED: FactoryAlert remote commands are frozen");
+      }
       // SOFTWARE_UPDATE commands use dedicated message type
       if (input.command === 'CHECK_UPDATE' || input.command === 'FORCE_UPDATE') {
         const { sendSoftwareUpdateCommand } = await import('../services/mqttService');

@@ -48,9 +48,10 @@ vi.mock("./aiGgufEngine", () => ({
   },
 }));
 
-vi.mock("../db/connection", () => ({
-  getDb: vi.fn(async () => ({ insert: () => ({ values: async () => undefined }) })),
-}));
+vi.mock("../db/connection", async () => {
+  const { dbGiaChiCoBangQuyen } = await import("../testing/dbGiaQuyen");
+  return { getDb: vi.fn(async () => dbGiaChiCoBangQuyen()) };
+});
 
 /** ⚠ MOCK BỘ PHẬN: `read_file` chạy THẬT (điều kiện để "đã kiểm CHƯA-tồn-tại" có nghĩa); chỉ chặn tool GHI. */
 vi.mock("./aiLocalTools", async (goc) => {

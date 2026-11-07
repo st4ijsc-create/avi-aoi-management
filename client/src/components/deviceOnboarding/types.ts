@@ -38,8 +38,8 @@ export function isDeviceOnboardWizardV2Enabled(): boolean {
 // ── Tham chiếu tài liệu / endpoint (doc 57) ──────────────────────────────────
 export const DOC57_PATH = "docs/ECOSYSTEM/57_ST4I_STANDARD_PROCESS_FEED_SPEC.md";
 export const ADAPTER_SDK_PATH = "examples/device-client/";
-/** Route in-app tài liệu API (ApiDocs) + tab Mã gia nhập thiết bị (Factory Config). */
-export const API_DOCS_ROUTE = "/api-docs";
+/** Tài liệu API: trang `/api-docs` đã ra khỏi app (pha 0 · P0-8); hợp đồng công bố ở `/api/v1/openapi.json` (công khai, chỉ mô tả) + tab Mã gia nhập thiết bị (Factory Config). */
+export const API_DOCS_URL = "/api/v1/openapi.json";
 export const ENROLLMENT_TOKENS_ROUTE = "/datasettings?tab=enrollment-tokens";
 
 export const INGEST_PROCESS_RESULT_ENDPOINT = "/api/v1/ingest/process-result";

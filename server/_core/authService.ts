@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { COOKIE_NAME } from "@shared/const";
 // ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
-import { hanPhienMs } from "./hanPhien";
+import { hanPhienMs, hanPhienTheoVaiMs } from "./hanPhien";
 import type { Request, Response } from "express";
 import * as db from "../db";
 import type { User } from "../../drizzle/schema";
@@ -371,8 +371,11 @@ export async function ghiSoPhienChoOpenId(
   hanMs: number,
 ): Promise<number | null> {
   let userId: number | undefined;
+  let vai: string | null | undefined;
   try {
-    userId = (await db.getUserByOpenId(openId))?.id;
+    const u = await db.getUserByOpenId(openId);
+    userId = u?.id;
+    vai = u?.role;
   } catch (err) {
     console.error("[Auth] GHI SỔ PHIÊN: không tra được `users` theo openId", { openId, loi: String(err) });
   }
@@ -391,7 +394,8 @@ export async function ghiSoPhienChoOpenId(
     sessionToken,
     ipAddress: audit.ipAddress ?? undefined,
     deviceName: audit.userAgent ?? undefined,
-    expiresAt: new Date(Date.now() + hanMs),
+    // ★ Pha 0 P0-11 — sổ mang HẠN THEO VAI (không quá `hanMs` — trần vé / cookie của người gọi).
+    expiresAt: new Date(Date.now() + Math.min(hanMs, hanPhienTheoVaiMs(vai))),
   });
 }
 
@@ -426,7 +430,8 @@ export async function establishSession(
     ipAddress: audit.ipAddress ?? undefined,
     // Minimal device hint; richer UA parsing can be layered in later.
     deviceName: audit.userAgent ?? undefined,
-    expiresAt: new Date(Date.now() + hanMs),
+    // ★ Pha 0 P0-11 — sổ mang HẠN THEO VAI (12 h / 7 ngày, gia hạn trượt); vé + cookie mang trần tuyệt đối `hanMs`.
+    expiresAt: new Date(Date.now() + hanPhienTheoVaiMs(user.role)),
   });
 
   const cookieOptions = getSessionCookieOptions(req);

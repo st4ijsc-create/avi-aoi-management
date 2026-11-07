@@ -773,6 +773,10 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
         } finally {
           if (prev === undefined) delete process.env.RBAC_SCOPED_ADMIN; else process.env.RBAC_SCOPED_ADMIN = prev;
           await sql`UPDATE permissions SET "expiresAt" = NULL WHERE "userId" = ${uid.engViewer2} AND "moduleName" = 'interlock'`;
+          // Pha 0 P0-2: hạn quyền admin là MẶC ĐỊNH ⇒ hàng từ chối biên này phải VÔ HIỆU, không thì rò sang §10 (adminA bị chặn interlock canView).
+          // Cho HẾT HẠN (hàng hết hạn ⇒ admin qua) thay vì DELETE mới; hàng do afterAll (DELETE theo người gieo, có sẵn) dọn như mọi hàng PERMS.
+          // Không bọc giao dịch hoàn tác được: checkPermission đọc qua pool của app, không thấy hàng chưa commit của kết nối `sql`.
+          await sql`UPDATE permissions SET "expiresAt" = now() - interval '1 day' WHERE "userId" = ${uid.adminA} AND "moduleName" = 'interlock'`;
         }
       });
     }

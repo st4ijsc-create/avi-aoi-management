@@ -80,8 +80,8 @@ export interface AuthorizeResult {
 /**
  * Authorize a command at the dispatcher boundary. NEVER throws.
  *   • flag off → { ok:true, skipped:true } (current behaviour, no denial).
- *   • flag on  → resolve descriptor permission; admin always passes; otherwise consult
- *     checkPermission(); deny with a clear reason when the caller lacks it.
+ *   • flag on  → resolve descriptor permission; consult checkPermission() for EVERY role
+ *     (P0-2: an explicit deny row binds admin too); deny with a clear reason when it says no.
  *   • a verb with no descriptor permission → allow (nothing extra to enforce).
  */
 export async function authorizeCommand(input: AuthorizeInput): Promise<AuthorizeResult> {
