@@ -2926,8 +2926,14 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     delete process.env.FOE_DURABLE;
     const sau = h.sent.filter((x) => x.sauKhoa === true);
     BANG.push(`${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 70)} | ${sau.map((x) => `${String(x.stepId)}:${String(x.name)}`).join(" ") || "-"}`);
-    const la = sau.filter((x) => !LA_STOP.has(String(x.name)) && !h.duocSauKhoa.has(String(x.stepId)));
-    expect(la.map((x) => x.stepId), "a command that is no STOP reached the dispatcher after the latch").toEqual([]);
+    // by the PIN, not by the command's name: an OT `stop` counts only when every write it carries is a pin of its adapter; a robot's `abort` is the robot rule
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && !h.duocSauKhoa.has(String(x.stepId)));
+    expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached the dispatcher after the latch").toEqual([]);
   });
   afterAll(() => {
     for (const l of BANG) console.log(`[PROBE sau-khoa] ${l}`);
@@ -3226,18 +3232,89 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     h.slow.set("x", 30);
     h.timeoutDispatch.add("x");
     h.failPlan.set("f", 1);
-    await centralRun(def("b9", [gate(), parF("p", [move("x"), move("f", { compensation: box("cb", [delay("w", 60), robotStop("cs")]) })])]), 1);
+    const c = await centralRun(def("b9", [gate(), parF("p", [move("x"), move("f", { compensation: box("cb", [delay("w", 60), robotStop("cs")]) })])]), 1);
     await wait(30);
     expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+    expect((centralWrites.get(c) ?? []).filter((w) => w.stepId === "cs" && w.status === "running" && w.result === "-"), "the plan walked it a second time").toHaveLength(1);
   });
-  it("B9 a body that ended before its STOP walked itself: the plan does not reach into it", async () => {
+  const thanHong = (ref: string) => def(ref, [gate(), parF("p", [move("x"), move("f", { compensation: box("cb", [move("q"), robotStop("cs")]) })])]);
+  it("B9-truoc a body whose step failed before the latch: the pinned STOP behind that step goes, once, on the latched run", async () => {
     h.slow.set("x", 30);
     h.timeoutDispatch.add("x");
     h.failPlan.set("f", 1);
     h.failPlan.set("q", 1);
-    await centralRun(def("b9b", [gate(), parF("p", [move("x"), move("f", { compensation: box("cb", [move("q"), robotStop("cs")]) })])]), 1);
+    await centralRun(thanHong("b9t"), 1);
     await wait(30);
-    expect(ids().filter((x) => x === "cs")).toEqual([]);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  it("B9-sau the same, the body's step fails after the latch", async () => {
+    h.slow.set("x", 20);
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("f", 1);
+    h.failPlan.set("q", 1);
+    h.slow.set("q", 60);
+    await centralRun(thanHong("b9s"), 1);
+    await wait(30);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+  const dinhThan = (ref: string, cac: WorkflowStep[]) => def(ref, [gate(), move("f", { compensation: box("cb", cac) })]);
+  it("THAN-KR central: a body's command goes unknown, the STOP behind it goes; the non-STOP step between stays", async () => {
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    const c = await centralRun(dinhThan("thankr", [move("q"), move("z"), robotStop("cs")]), 1);
+    await waitFor(() => ids().includes("cs"), "the STOP behind the body's step");
+    expect(ids()).toEqual(["f", "q", "cs"]);
+    expect(hang(c, "z")).toBeUndefined();
+  });
+  it("THAN-KR edge: the same", async () => {
+    const e = await denBuoc(dinhThan("thankre", [move("q"), move("z"), robotStop("cs")]));
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    await edgeSegment(e, 2);
+    expect(ids()).toEqual(["f", "q", "cs"]);
+    expect(authCua(e, "z")).toBe(0);
+  });
+  it("đối chứng O4: a body's step fails known on a run NOT latched: nothing changes, the STOP behind it stays unsent", async () => {
+    h.failPlan.set("f", 1);
+    h.failPlan.set("q", 1);
+    const c = await centralRun(dinhThan("than-o4", [move("q"), robotStop("cs")]), 1);
+    await wait(20);
+    expect(ids()).toEqual(["f", "q"]);
+    expect(hang(c, "cs")).toBeUndefined();
+    expect(h.alerts).toEqual([]);
+  });
+  it("THAN-2-THU-TU a Continue's body and a pass reach one STOP: the pass first, the body takes its answer, one hand-over", async () => {
+    seedHalt();
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("than2", [gate(), box("b", [move("x")], { compensation: box("cb", [ot("u"), delay("w", 40), otStop("cs")]) })]), 1);
+    expect(runRow(c).status).toBe("held");
+    expect(ids()).toEqual(["x"]);
+    h.ghim = PIN_OK;
+    h.sent.length = 0;
+    h.timeoutDispatch.clear();
+    h.duocSauKhoa.add("u");
+    await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+    await wait(30);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+    expect(ids()).toContain("u");
+  });
+  it("THAN-TUCHOI a body's STOP refused by its dispatcher: a row with the failure, an URGENT naming it; never no row and nobody told", async () => {
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    h.failPlan.set("cs", Infinity);
+    const c = await centralRun(dinhThan("thantc", [move("q"), robotStop("cs")]), 1);
+    await waitFor(() => ids().includes("cs"), "the STOP");
+    await wait(20);
+    expect(hang(c, "cs")).toMatchObject({ status: "failed" });
+    expect(h.alerts.filter((a) => String(a.message).includes('"cs"')).length).toBeGreaterThan(0);
+  });
+  it("THAN-TUCHOI-T5 the same: the refused STOP is owed: the row carries the mark, the run is held, Abort sends it (state C)", async () => {
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("q");
+    h.failPlan.set("cs", Infinity);
+    const c = await centralRun(dinhThan("thant5", [move("q"), robotStop("cs")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
   });
   const hoiTreo = (ref: string, comp: WorkflowStep) => def(ref, [gate(), parF("p", [move("x"), move("hang"), box("b", [delay("w", 30), move("r3", { compensation: comp })])])]);
   it("B10 + F12-38 central: a step stopped at the door, its own STOP compensation goes while a sibling hangs", async () => {
@@ -3438,7 +3515,244 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(ids().filter((x) => x === "st")).toEqual(["st"]);
     expect(hang(c, "st")).toMatchObject({ status: "completed" });
   });
-  it.todo("K2 a container's STOP compensation a pass holds while the container's failure arrives, not pinned at its dispatch: the run must end held, it ends failed with the URGENT — T6, the final split of duongKetThuc");
+  it("X4-ba a STOP compensation read wrong at the first ask AND at the ask again: the last pass reads it right, it goes", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      await wait(80);
+      return n++ < 2 ? PIN_BAD() : PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.failPlan.set("f", 1);
+    const c = await centralRun(dinhComp("x4ba", otStop("cs")), 1);
+    await wait(20);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+    expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
+  });
+  it("B14 two STOPs in one container compensation: the slow first one holds the second back no longer than the sibling", async () => {
+    h.slow.set("x", 15);
+    h.timeoutDispatch.add("x");
+    h.slow.set("hang", 500);
+    h.slow.set("cs1", 350);
+    const { di } = await diKhongCho(hoiTreo("b14h", box("cb", [robotStop("cs1"), robotStop("cs2")])));
+    await trongLuc(di, () => ids().includes("cs2"), "the second STOP", 200);
+    expect(ids().sort()).toEqual(["cs1", "cs2", "hang", "x"]);
+  });
+
+  // ── a container begun, the walk comes back ─────────────────────────────────────────────────────────────────────────
+  const khung = (ref: string, cac: WorkflowStep[], comp: WorkflowStep = robotStop("cs")) => def(ref, [gate(), parF("p", [move("x"), box("b", cac, { compensation: comp })])]);
+  const CAC = () => [move("a"), gate("g2"), move("r3")];
+  const duyetG2 = async (c: number) => {
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    return resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  };
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  async function denG2(ref: string, cac = CAC(), comp?: WorkflowStep) {
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(khung(ref, cac, comp), 1);
+    expect(ids().sort()).toEqual(["a", "x"]);
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.timeoutDispatch.clear();
+    return c;
+  }
+  const dangDo = (c: number) => {
+    expect(ids()).toEqual(["cs"]);
+    expect(hang(c, "b")).toMatchObject({ status: "failed" });
+    expect(String(hang(c, "r3")!.error)).toMatch(khongGui);
+    expect(urgentCua("forwardNotSent").length, "forward work dropped: decision 3").toBeGreaterThan(0);
+  };
+  it("KHUNG g2 central: a container begun, its gate approved on a latched run: walked unread, r3 refused, the container's STOP goes, forwardNotSent", async () => {
+    const c = await denG2("khung-g");
+    await duyetG2(c);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    dangDo(c);
+  });
+  it("KHUNG boot central: the same, the walk comes from a boot with no memory of it", async () => {
+    const c = await denG2("khung-b");
+    process.env.FOE_DURABLE = "true";
+    Object.assign(runRow(c), { status: "held", finishedAt: null, error: null, currentStepId: null, contextJson: { ...runRow(c).contextJson, interrupted: true } });
+    Object.assign(hang(c, "g2")!, { status: "completed" });
+    await autoResumeInterruptedRuns([c]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    dangDo(c);
+  });
+  it("KHUNG edge: the same, the next segment", async () => {
+    const e = await denBuoc(khung("khung-e", CAC()));
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.timeoutDispatch.clear();
+    await approveEdgeGate(e);
+    await edgeSegment(e, 3);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(ids()).toEqual(["cs"]);
+    expect(authCua(e, "r3")).toBe(0);
+    expect(hang(e.runId, "b")).toMatchObject({ status: "failed" });
+    expect(String(hang(e.runId, "r3")!.error)).toMatch(khongGui);
+    expect((e.events ?? []).filter((v) => v.kind === "anomaly" && String(v.detail).includes('"loai":"forwardNotSent"')).length).toBeGreaterThan(0);
+  });
+  it("KHUNG a gate and a long delay behind r3: the STOP waits for neither, neither gets a row", async () => {
+    const c = await denG2("khung-s", [move("a"), gate("g2"), move("r3"), gate("g3"), delay("w", 5_000)]);
+    const t0 = Date.now();
+    await duyetG2(c);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(hang(c, "g3")).toBeUndefined();
+    expect(runRow(c).status).toBe("failed");
+  });
+  it("KHUNG a delay never started in front of r3: the door stops it, the STOP does not sleep through it, forwardNotSent", async () => {
+    const c = await denG2("khung-d", [move("a"), gate("g2"), delay("w", 5_000), move("r3")]);
+    const t0 = Date.now();
+    await duyetG2(c);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(urgentCua("forwardNotSent").length).toBeGreaterThan(0);
+  });
+  it("KHUNG non-STOP compensation: held for a person, nothing sent, no /authorize of a child", async () => {
+    const c = await denG2("khung-n", CAC(), ot("cn", { args: { tagKey: "speed", value: 5 } }));
+    await duyetG2(c);
+    await wait(40);
+    expect(ids()).toEqual([]);
+    expect(hangUyQuyen("r3")).toBe(0);
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "cn")).toMatchObject({ status: "held" });
+  });
+  it("KHUNG boot a delay left running by a crash: a delay is no container: the door stops it, the STOP does not sleep through it", async () => {
+    const c = await denG2("khung-r", [move("a"), gate("g2"), delay("w", 5_000), move("r3")]);
+    process.env.FOE_DURABLE = "true";
+    Object.assign(runRow(c), { status: "held", finishedAt: null, error: null, currentStepId: null, contextJson: { ...runRow(c).contextJson, interrupted: true } });
+    Object.assign(hang(c, "g2")!, { status: "completed" });
+    fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 99_100, runId: c, stepId: "w", stepType: "delay", status: "running", attempt: 0, startedAt: new Date(), finishedAt: null, error: null, resultJson: null }]);
+    const t0 = Date.now();
+    await autoResumeInterruptedRuns([c]);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+  it("KHUNG a nested container never started: still stopped at the door: no row, no authorisation; the outer container's STOP goes", async () => {
+    const c = await denG2("khung-l", [move("a"), gate("g2"), box("c", [move("r4")])]);
+    await duyetG2(c);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    expect(hang(c, "c")).toBeUndefined();
+    expect(hang(c, "r4")).toBeUndefined();
+    expect(hangUyQuyen("r4")).toBe(0);
+    expect(urgentCua("forwardNotSent").length).toBeGreaterThan(0);
+  });
+  it("KHUNG a container not begun on a latched run: stopped at the door, its STOP compensation not due (nothing of it ran)", async () => {
+    h.slow.set("x", 15);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("khung-c", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("b", [move("r3")], { compensation: robotStop("cs") })])])]), 1);
+    await wait(20);
+    expect(ids()).toEqual(["x"]);
+    expect(hang(c, "b")).toBeUndefined();
+  });
+  it("B7-sau a container finished before the latch: its STOP compensation stays unsent on the walk that comes back", async () => {
+    h.slow.set("x", 30);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("b7s", [gate(), parF("p", [move("x"), box("b", [move("a")], { compensation: robotStop("cs") })]), gate("g3")]), 1);
+    await wait(20);
+    expect(ids().sort()).toEqual(["a", "x"]);
+    expect(hang(c, "b")).toMatchObject({ status: "completed" });
+  });
+
+  // ── K2a: a held compensation of a step the door refused holds the run ──────────────────────────────────────────────
+  const k2a = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })])])]);
+  for (const dang of ["khongGhim", "docLoi"] as const) {
+    const sau = () => (dang === "khongGhim" ? { pinnedStop: false, loiDocGhim: null } : { pinnedStop: false, loiDocGhim: "pin read timed out (test)" });
+    const denK2a = async (ref: string) => {
+      seedHalt();
+      let n = 0;
+      h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : sau());
+      h.timeoutDispatch.add("x");
+      const c = await centralRun(k2a(ref), 1);
+      await wait(30);
+      expect(ids()).toEqual(["x"]);
+      expect(runRow(c).status).toBe("held");
+      expect(hang(c, "cs")).toMatchObject({ status: "held" });
+      expect(urgentCua("held").length).toBeGreaterThan(0);
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.clear();
+      h.sent.length = 0;
+      return c;
+    };
+    it(`K2a ${dang}, Continue: the URGENT said Continue: the read recovered, it works, the STOP goes once`, async () => {
+      const c = await denK2a(`k2ac-${dang}`);
+      const r = await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+      expect(String(r.message ?? "")).not.toMatch(/not resumable|already terminal/);
+      await waitFor(() => ids().includes("cs"), "the STOP");
+      await wait(20);
+      expect(ids()).toEqual(["cs"]);
+      expect(hang(c, "cs")).toMatchObject({ status: "compensated" });
+    });
+    it(`K2a ${dang}, Abort: the URGENT said Abort: the read recovered, it works, the STOP goes once`, async () => {
+      const c = await denK2a(`k2ab-${dang}`);
+      const r = await abortRun(c, OWNER, "checked on site");
+      expect(r.ok).toBe(true);
+      await waitFor(() => ids().includes("cs"), "the STOP");
+      await wait(20);
+      expect(ids()).toEqual(["cs"]);
+      expect(runRow(c).status).toBe("aborted");
+    });
+  }
+  // K2 race, parity: the pass holds the container's STOP compensation; the a2n harness has no classifyOtStop, an Abort sweep verifies nothing there
+  for (const dang of ["khongGhim", "docLoi"] as const) {
+    it(`K2 ${dang}, Abort: the URGENT names Abort: the read recovered, it works, the STOP goes once, no 'already terminal'`, async () => {
+      seedHalt();
+      let n = 0;
+      h.ghim = async (d, i) => {
+        if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+        if (++n === 1) return PIN_OK(d, i);
+        await wait(40);
+        return dang === "khongGhim" ? { pinnedStop: false, loiDocGhim: null } : PIN_BAD();
+      };
+      h.timeoutDispatch.add("x");
+      const c = await centralRun(def(`k2ab-${dang}`, [gate(), box("b", [move("x")], { compensation: otStop("cs") })]), 1);
+      await wait(70);
+      expect(runRow(c).status).toBe("held");
+      expect(ids()).toEqual(["x"]);
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.clear();
+      h.sent.length = 0;
+      const r = await abortRun(c, OWNER, "checked on site");
+      expect(r.ok, r.message).toBe(true);
+      await waitFor(() => ids().includes("cs"), "the STOP");
+      await wait(20);
+      expect(ids()).toEqual(["cs"]);
+      expect(runRow(c).status).toBe("aborted");
+    });
+  }
+  it("K2-THAN a container compensation of a door-refused step, its STOP not pinned at dispatch: held, the run holds; the read recovered, a Continue sends it once", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("k2than", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: box("cb", [otStop("cs")]) })])])]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "cs")).toMatchObject({ status: "held" });
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.clear();
+    h.sent.length = 0;
+    const r = await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+    expect(String(r.message ?? "")).not.toMatch(/not resumable|already terminal/);
+    await waitFor(() => ids().includes("cs"), "the STOP");
+    await wait(20);
+    expect(ids()).toEqual(["cs"]);
+  });
+  it("K2a đối chứng: the STOP goes at its dispatch: the run ends, it is not held", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(k2a("k2a-dc"), 1);
+    await wait(30);
+    expect(ids().sort()).toEqual(["cs", "x"]);
+    expect(runRow(c).status).toBe("failed");
+  });
   it("DONE-FAILED a STOP the sink refused in an earlier walk: a later walk's STOP pass goes through its resume state; it is sent", async () => {
     seedHalt();
     h.ghim = PIN_BAD;
@@ -3484,12 +3798,13 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await waitFor(() => ids().includes("st"), "the STOP");
     expect(ids().filter((x) => x === "st")).toEqual(["st"]);
   });
-  it("Q-5 no routedTo: the same", async () => {
+  it("Q-5 no routedTo: the row left running proves nothing: boot sends it, its row ends completed", async () => {
     h.timeoutDispatch.add("x");
     const c = await centralRun(def("q5b", [gate(), parF("p", [move("x"), robotStop("st")])]), 1);
     chet(c, ["g1", "x", "st"], () => Object.assign(hang(c, "st")!, { status: "running", error: null, finishedAt: null, resultJson: null }));
     await autoResumeInterruptedRuns([c]);
     await waitFor(() => ids().includes("st"), "the STOP");
     expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+    await waitFor(() => hang(c, "st")?.status === "completed", "the STOP's row");
   });
 });

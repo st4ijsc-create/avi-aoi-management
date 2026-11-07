@@ -427,6 +427,66 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
     expect(await step(runId, "undo")).toMatchObject({ status: "held" });
   });
 
+  // K2: a pass holds a container's STOP compensation while the container's failure arrives (ms = 30: in flight), or after it answered (ms = 90), or the failure first (ms = 0)
+  const denK2 = (dang: "khongGhim" | "docLoi", ms: number, ghimDung: () => boolean = () => false) => {
+    let n = 0;
+    ghimMock.mockImplementation(async (_d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      if (ghimDung() || ++n === 1) return { pinnedStop: true, loiDocGhim: null };
+      await new Promise((r) => setTimeout(r, 40));
+      return dang === "khongGhim" ? { pinnedStop: false, loiDocGhim: null } : { pinnedStop: false, loiDocGhim: "pin read timed out (test)" };
+    });
+    HX.rowSlowMs = (r) => (r.stepId === "main" && r.status === "failed" ? ms : 0);
+    return chay([seq("box", [main()], stopComp())]);
+  };
+  for (const dang of ["khongGhim", "docLoi"] as const) {
+    it(`K2 ${dang}, both orders, 10 laps: the compensation's held row holds the run: a late failure never ends it`, async () => {
+      const dem = new Map<string, number>();
+      for (const ms of [0, 30, 90]) {
+        for (let lap = 0; lap < 10; lap++) {
+          alerts.length = 0;
+          otDispatchMock.mockClear();
+          const { runId } = await denK2(dang, ms);
+          await new Promise((r) => setTimeout(r, 60));
+          const k = `run=${runRow(runId).status} stop=${sent("stop").length} undo=${(await step(runId, "undo"))?.status}`;
+          dem.set(k, (dem.get(k) ?? 0) + 1);
+        }
+      }
+      console.log(`[PROBE K2-dua ${dang}]`, JSON.stringify([...dem]));
+      expect([...dem]).toEqual([["run=held stop=0 undo=held", 30]]);
+    });
+    {
+      it(`K2 ${dang}, Continue: the URGENT names it: the read recovered, it works, the STOP goes once, no 'not resumable', no 'already terminal'`, async () => {
+        let hoi = false;
+        const { runId } = await denK2(dang, 30, () => hoi);
+        await new Promise((r) => setTimeout(r, 60));
+        expect(runRow(runId).status).toBe("held");
+        expect(alertsOf("held").length).toBeGreaterThan(0);
+        hoi = true;
+        HX.rowSlowMs = null;
+        otDispatchMock.mockClear();
+        grant(APPROVER);
+        const r = await resumeRun(runId, { approved: true, note: "checked on site" }, APPROVER);
+        expect(String(r.message ?? "")).not.toMatch(/not resumable|already terminal/);
+        await vi.waitFor(() => expect(sent("stop")).toHaveLength(1));
+        await new Promise((r2) => setTimeout(r2, 30));
+        expect(sent("stop")).toHaveLength(1);
+      });
+    }
+  }
+  it("K2 đối chứng: pinned at both reads: the STOP goes, the run ends failed, not held", async () => {
+    const { runId } = await denK2("khongGhim", 30, () => true);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(sent("stop")).toHaveLength(1);
+    expect(runRow(runId).status).toBe("failed");
+  });
+  it("K2-DOC-T5 pins unreadable at the dispatch of a split STOP on a latched run: it goes to the dispatcher on the marked row, it is not held (foeEngine chiStopGhimIds check; T5)", async () => {
+    const { runId } = await denK2("docLoi", 30);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(sent("stop")).toHaveLength(1);
+    expect(runRow(runId).status).toBe("failed");
+  });
+
   it("N4 ANCESTOR container: non-STOP compensation ⇒ held; pinned-STOP one ⇒ runs; child STOP sent AND ancestor non-STOP held", async () => {
     const a = await giuKhongRo([seq("box", [main()], resetComp("boxUndo"))]);
     expect(sent("reset")).toHaveLength(0);
@@ -1687,7 +1747,8 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     });
     expect(res.status).toBe("failed");
     expect(sent()).toHaveLength(0);
-    expect((await step(runId, "r3"))!.error).toMatch(khongGui);
+    expect(await step(runId, "r3")).toBeUndefined(); // latched before the container began: stopped at the door, whole
+    await vi.waitFor(() => expect(alertsOf("forwardNotSent")).toHaveLength(1));
   });
   it("★ (1) maxAttempts: 3 ⇒ exactly 0 hand-overs and no second attempt; a container's retry is not walked again either", async () => {
     const { runId } = await chay([par("p", [main(), sau("b", pause("r3", { maxAttempts: 3 }))], { failFast: false })]);
@@ -1701,9 +1762,9 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     await chay([par("p2", [seq("b2", [delay("w2", 5), pause("r5")])], { failFast: false, maxAttempts: 2 })], (id) => {
       runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
     });
-    await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1));
+    await vi.waitFor(() => expect(alertsOf("forwardNotSent")).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 20));
-    expect(auditBuoc()).toHaveLength(1); // one refusal: the parallel was not walked twice
+    expect(auditBuoc()).toHaveLength(0); // latched before it began: the door stopped the container, whole, once
     expect(sent()).toHaveLength(0);
   });
   it("★ (1) a forward PINNED STOP after the latch IS sent (auth.stopGhim is set at that line), retried as a STOP; nothing waits", async () => {
@@ -1891,12 +1952,12 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     expect(a.dedupKey).toContain(":r3:-:");
     expect(a.title).toMatch(/NOT sent/);
   });
-  it("(no extra URGENT: a walk that already told a person says nothing more about a refusal)", async () => {
+  it("(decision 3: forward work dropped is said in its own words, one URGENT, beside the walk's other URGENT)", async () => {
     const { runId } = await chay([par("p", [main(), sau("b", pause("r3"))], { failFast: false })]);
     expect((await step(runId, "r3"))!.error).toMatch(khongGui);
     await vi.waitFor(() => expect(alertsOf("noCompensation")).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 20));
-    expect(alertsOf("forwardNotSent")).toHaveLength(0);
+    expect(alertsOf("forwardNotSent")).toHaveLength(1);
   });
   it("(a known failure of an earlier walk is not 'may have gone out': the code, and it is not an unknown)", async () => {
     const { runId } = await chay([par("p", [pause("y")], { failFast: false })], (id) => {
