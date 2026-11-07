@@ -78,6 +78,18 @@ export function startEdgeNodeHealthChecker(): void {
         }
       })
       .catch(() => undefined);
+    // a2n — layer 2 of a stalled edge disk: a run still walking at central whose node stopped reporting ⇒ URGENT. Migration 0370 missing ⇒ silent.
+    void import("./edgeExecutionCentral")
+      .then(async (m) => {
+        const { isEdgeSchemaMissing } = await import("./edgeExecutionSchema");
+        try {
+          const lost = await m.baoRunMatProgress();
+          if (lost.length > 0) console.error(`[EdgeNodeHealth] ${lost.length} edge run(s) stopped reporting: ${lost.join(", ")}`);
+        } catch (err) {
+          if (!isEdgeSchemaMissing(err)) console.error("[EdgeNodeHealth] lost-progress sweep failed:", (err as Error)?.message || err);
+        }
+      })
+      .catch(() => undefined);
     // doc 81 Đợt 10 task B — central → edge lock / clear / stop requests past their expiry (or stale: owner changed before
     // delivery) are expired, so the queue never re-delivers them. Migration 0374 missing ⇒ nothing to do (silent).
     void import("./edgeNodeCommands")

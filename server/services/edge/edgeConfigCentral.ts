@@ -31,6 +31,7 @@ import {
   edgeConfigSafetyPlcSchema,
   edgeConfigSnapshotSchema,
   edgeConfigRequestSchema,
+  EDGE_JOURNAL_STALL_RECOVERED_CODE,
   parseEdgeBody,
   type EdgeAnswer,
   type EdgeConfigAnswer,
@@ -222,10 +223,13 @@ function rearmConfigAlerts(nodeId: number): void {
  * R1b-2b-2a A2(o) AMENDMENT 2 — what central raises for an anomaly an EDGE reported (events stream, edgeReportsCentral):
  *   • EDGE_SAFETY_CONFIG_MISSING (a write refused: a safety PLC the authorisation was signed for is not in the edge's config) ⇒
  *     ONE URGENT alert per (node, sorted ids) — per process and durably for 24 h (raiseEdgeConfigAlert);
+ *   • EDGE_JOURNAL_STALL_RECOVERED (a2n: a disk stall `progress` reported has ended) ⇒ one URGENT per (node, stall), saying whether the node still
+ *     refuses non-STOP work until a restart;
  *   • EDGE_CONFIG_STALE and every other code ⇒ nothing beyond the EDGE_ANOMALY audit the caller writes.
  * true ⇔ an alert was raised now. Never throws.
  */
 export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { code: string; detail?: string | null }, recipients: () => Promise<number[]>): boolean {
+  if (rec.code === EDGE_JOURNAL_STALL_RECOVERED_CODE) return alertJournalStallRecovered(node, String(rec.detail ?? ""), recipients);
   if (rec.code !== "EDGE_SAFETY_CONFIG_MISSING") return false;
   const detail = String(rec.detail ?? "");
   const listed = /signed safety-PLC config\(s\) ([#0-9, ]+)/.exec(detail)?.[1] ?? "";
@@ -237,6 +241,58 @@ export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "no
       dedupKey: `edge_safety_plc_missing:${node.nodeId}:${ids.length ? ids.join(",") : "unnamed"}`,
       title: `Edge node ${node.nodeCode}: a write was refused — safety-PLC config missing on the edge`,
       message: `Edge node ${node.nodeCode} refused a non-STOP write: the safety-PLC config(s) ${idText} guarding the device are not in the config it holds, so its preflight could not consult them (nothing was sent; the edge asked for a refresh). If this repeats, check that central can build and serve the node's config.`,
+      nodeId: node.nodeId,
+    },
+    recipients,
+  );
+}
+const TRAN_STOP_TRONG_TIN = 12;
+/** a2n — the STOPs of a run in an alert's text; null ⇔ central could not read them. Bounded: an alert names, it does not list. */
+const stopText = (stops: readonly string[] | null): string =>
+  stops === null ? "unknown" : stops.length === 0 ? "none" : stops.length > TRAN_STOP_TRONG_TIN ? `${stops.slice(0, TRAN_STOP_TRONG_TIN).join(", ")} +${stops.length - TRAN_STOP_TRONG_TIN} more` : stops.join(", ");
+
+/**
+ * a2n — LAYER 1 of a stalled edge disk: one URGENT per (node, stall). Nothing the edge writes reaches central during it; only `progress` does. The start of
+ * the stall is IN the text: the durable dedup also matches an equal (kind, message), which must never swallow a later stall.
+ */
+export function alertJournalStalled(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, x: { sinceMs: number; runs: ReadonlyArray<{ runId: number; stops: readonly string[] | null }> }, recipients: () => Promise<number[]>): boolean {
+  const list = x.runs.map((r) => `run ${r.runId} (STOP not confirmed: ${stopText(r.stops)})`).join("; ");
+  return raiseEdgeConfigAlert(
+    {
+      kind: "edge_journal_stalled",
+      dedupKey: `edge_journal_stalled:${node.nodeId}:${x.sinceMs}`,
+      title: `Edge node ${node.nodeCode}: disk not answering, runs are standing`,
+      message: `Edge node ${node.nodeCode}: its journal disk has not answered since ${new Date(x.sinceMs).toISOString()} (edge clock). ${list || "No run listed"}. These runs still show running; a STOP behind a standing step waits for the disk. Abort sends the STOPs now.`,
+      nodeId: node.nodeId,
+    },
+    recipients,
+  );
+}
+function alertJournalStallRecovered(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, detail: string, recipients: () => Promise<number[]>): boolean {
+  const since = /since (\d+)/.exec(detail)?.[1] ?? "unknown";
+  const closed = /healthy=false/.test(detail);
+  return raiseEdgeConfigAlert(
+    {
+      kind: "edge_journal_stall_recovered",
+      dedupKey: `edge_journal_stall_recovered:${node.nodeId}:${since}`,
+      title: `Edge node ${node.nodeCode}: disk answering again`,
+      message: `Edge node ${node.nodeCode}: its journal disk answers again (${detail.slice(0, 200)}). ${closed ? "The node still refuses non-STOP commands until it is restarted: it starts no new run and a held run cannot continue on it before that. STOPs and Abort still go." : "Runs go on."}`,
+      nodeId: node.nodeId,
+    },
+    recipients,
+  );
+}
+/**
+ * a2n — LAYER 2: a run central holds as running whose node stopped reporting (baoRunMatProgress). Central cannot tell why, and says so. One URGENT per
+ * (node, run, claim, last progress): an outage has one last progress, a later one another; it is in the text for the same reason as above.
+ */
+export function alertRunProgressLost(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, x: { runId: number; claimSeq: number; status: string; lastProgressMs: number; stops: readonly string[] | null }, recipients: () => Promise<number[]>): boolean {
+  return raiseEdgeConfigAlert(
+    {
+      kind: "edge_run_progress_lost",
+      dedupKey: `edge_run_progress_lost:${node.nodeId}:${x.runId}:${x.claimSeq}:${x.lastProgressMs}`,
+      title: `Edge node ${node.nodeCode}: run ${x.runId} stopped reporting`,
+      message: `Run ${x.runId} on edge node ${node.nodeCode} shows ${x.status} at central but has reported no progress since ${new Date(x.lastProgressMs).toISOString()}. The node's disk, process or connection may be down; central cannot tell which, and cannot confirm its STOPs (${stopText(x.stops)}). Abort; if the node does not answer, use the machine's direct STOP / E-STOP.`,
       nodeId: node.nodeId,
     },
     recipients,

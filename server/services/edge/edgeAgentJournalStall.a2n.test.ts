@@ -8,14 +8,9 @@
  *   • an idle node reports nothing: no run stands on its disk.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EdgeCentralClient, createEdgeAuthorizeClient } from "./edgeCentralClient";
-import { EdgeConfigSource } from "./edgeConfigSource";
-import { choDen, diskGia, nghi, thuMucTam } from "./edgeDiskStall.testkit";
-import { EDGE_JOURNAL_STALL_ALERT_MS, EdgeExecutionAgent, type EdgeAgentConfig, type EdgeSegmentOutcome, type EdgeWalker } from "./edgeExecutionAgent";
-import { FakeCentral, KIT_TOKEN, kitHashDefinition } from "./edgeFakeCentral.testkit";
-import { EdgeJournal } from "./edgeJournal";
+import { choDen, edgeTrenDiaGia, nghi, thuMucTam } from "./edgeDiskStall.testkit";
+import { EDGE_JOURNAL_STALL_ALERT_MS } from "./edgeExecutionAgent";
 import { EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE, EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL, EDGE_CENTRAL_ACCEPTS, EDGE_JOURNAL_STALL_RECOVERED_CODE, edgeProgressRequestSchema } from "./edgeProtocol";
-import { EdgeProgramChecks, EdgeStreamShipper, createEdgeAuthUnusedReporter, createEdgeJournalConsume, createEdgeReportSink } from "./edgeStreams";
 
 const tam = thuMucTam();
 const don: Array<() => Promise<void>> = [];
@@ -29,44 +24,9 @@ afterEach(async () => {
 });
 
 async function dung(o: { accepts?: readonly string[] | null } = {}) {
-  const central = new FakeCentral();
-  if (o.accepts !== undefined) central.accepts = o.accepts;
-  const dia = diskGia();
-  const clock = { t: 1_800_000_000_000 };
-  const now = () => clock.t;
-  const journal = await EdgeJournal.open({ dir: await tam.mk(), io: dia.io, now, groupCommitMs: 0, authSyncTimeoutMs: 30, stopBoundMs: 30, log: () => undefined });
-  const client = new EdgeCentralClient({ centralUrl: "http://central.test", credential: KIT_TOKEN, requestTimeoutMs: 2_000, fetchImpl: central.fetchImpl, log: () => undefined });
-  const config = await EdgeConfigSource.create({ client, pin: central.pin as never, nodeId: central.nodeId, credentialId: central.credentialId, credential: KIT_TOKEN, dir: await tam.mk() });
-  expect(await config.refresh()).toMatchObject({ ok: true });
-  const shipper = new EdgeStreamShipper(journal, client);
-  const sink = createEdgeReportSink(journal, (s) => shipper.nudge(s));
-  const consume = createEdgeJournalConsume(journal);
-  const programChecks = new EdgeProgramChecks({ config, client, read: async () => ({ status: "unsupported", source: "stub" }) });
-  const authorize = createEdgeAuthorizeClient({
-    client,
-    trust: () => config.trust(),
-    credentialId: () => config.credentialId(),
-    maxTtlMs: () => 10_000,
-    isJtiConsumed: (j) => journal.isJtiConsumed(j),
-    programChecks: () => programChecks.latest(),
-    anomaly: () => undefined,
-    unused: createEdgeAuthUnusedReporter(journal, sink),
-  });
-  let tha: (o: EdgeSegmentOutcome) => void = () => undefined;
-  const dungYen = new Promise<EdgeSegmentOutcome>((r) => (tha = r));
-  const walker: EdgeWalker = { drive: () => dungYen, abortLive: async () => ({ live: true }) };
-  const devices = { stopRobot: async () => ({ outcome: "sent" as const }), stopAdapter: async () => ({ outcome: "sent" as const }), lockRobot: async () => ({ ok: true, generation: 1 }), clearRobot: async () => ({ ok: true as const, generation: 1 }) };
-  const cfg: EdgeAgentConfig = { centralUrl: "http://central.test", credential: KIT_TOKEN, pullIntervalMs: 200, progressMs: 10, maxConcurrent: 2, requestTimeoutMs: 100, stopResendMinMs: 1_000, now };
-  const agent = new EdgeExecutionAgent(cfg, { client, config, journal, shipper, sink, consume, authorize, programChecks, walker, devices: devices as never, hashDefinition: kitHashDefinition });
-  don.push(async () => {
-    dia.tha();
-    tha({ outcome: "completed" });
-    await agent.stop();
-    await shipper.stop();
-    await agent.idle();
-    await journal.close();
-  });
-  return { central, dia, clock, journal, agent, shipper, tha: (x: EdgeSegmentOutcome) => tha(x) };
+  const x = await edgeTrenDiaGia(tam, o);
+  don.push(x.dong);
+  return x;
 }
 type H = Awaited<ReturnType<typeof dung>>;
 
