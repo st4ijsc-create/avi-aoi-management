@@ -43,6 +43,11 @@ const giu = async (heldReason: string, error: string | undefined) => {
 };
 
 describe("a2n round C — the two marks", () => {
+  it("★ the values, word for word: a change on one side is a change of the contract", () => {
+    expect(EDGE_HOLD_CONSUME_OVERRUN).toBe("EDGE_CONSUME_OVERRUN");
+    expect(EDGE_HOLD_UNUSED_NOT_REPORTED).toBe("EDGE_UNUSED_NOT_REPORTED");
+  });
+
   it("★ the form: read at the head only", () => {
     expect(edgeHoldMarkOf("EDGE_HELD(journalFull): EDGE_CONSUME_OVERRUN: text")).toBe("EDGE_CONSUME_OVERRUN");
     expect(edgeHoldMarkOf("EDGE_HELD(configStale): EDGE_UNUSED_NOT_REPORTED: text")).toBe("EDGE_UNUSED_NOT_REPORTED");

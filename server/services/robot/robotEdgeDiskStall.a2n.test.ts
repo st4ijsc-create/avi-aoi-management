@@ -474,6 +474,7 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
   it("★ O1: m2 stays failed, the run is held at central, no STOP on its own; Abort answers ok and only s1 goes", async () => {
     const x = await chayTreo(71, [move("m1"), move("m2"), stop("s1")], ["s1"]);
     expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(String(x.central.callsTo("complete")[0].body.error)).toMatch(/^EDGE_HELD\(journalFull\): EDGE_CONSUME_OVERRUN: /); // the string contract, the sending side, literally
     expect(hangRun(71).status).toBe("held");
     expect(trangThai(71)).toEqual({ m1: "completed", m2: "failed" });
     expect(ten()).toEqual(["move"]);
@@ -641,6 +642,7 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     await choDen(() => x.journal.admitNonStop() === false, "auth.unused overran");
     H.stale = null;
     await hetDoan(x);
+    expect(String(x.central.callsTo("complete")[0].body.error)).toMatch(/^EDGE_HELD\(configStale\): EDGE_UNUSED_NOT_REPORTED: /); // the string contract, the sending side, literally
     expect(hangRun(85).status).toBe("held");
     const chu = String(hangRun(85).error);
     expect(chu).toContain("Continue fails that step and does not send the STOPs behind it.");
