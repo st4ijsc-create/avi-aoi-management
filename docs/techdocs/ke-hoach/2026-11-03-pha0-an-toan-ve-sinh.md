@@ -18,7 +18,7 @@
 
 | # | Việc | Tệp/chỗ `[đo]` | Nghiệm thu |
 |---|---|---|---|
-| P0‑1 | App kết nối DB bằng `avi_app` — kiem‑dinh đo "trước" 04/11: `.env` cây chính ĐÃ dùng `avi_app` (rolsuper/bypassrls = false); việc còn lại = xác minh env của tiến trình :3000 và mọi worktree/`.env` khác, cấp quyền idempotent; kiểm quyền CRUD của `avi_app` đủ cho mọi bảng app dùng (mig 0224 + `scripts/mcp-cuc-bo-vai-tro.mjs` kiểu idempotent cho avi_app); migration vẫn bằng `aoi` | `server/db/connection.ts`, script cấp quyền mới `scripts/cap-quyen-avi-app.mjs --test-only|--dev-only` | 90‑N1: trong app `select rolsuper, rolbypassrls` = false/false; suite DB xanh với `avi_app` |
+| P0‑1 | App kết nối DB bằng `avi_app` — kiem‑dinh đo "trước" 04/11: `.env` cây chính ĐÃ dùng `avi_app` (rolsuper/bypassrls = false); việc còn lại = xác minh env của tiến trình :3000 và mọi worktree/`.env` khác, cấp quyền idempotent; kiểm quyền CRUD của `avi_app` đủ cho mọi bảng app dùng (mig 0224 + `scripts/mcp-cuc-bo-vai-tro.mjs` kiểu idempotent cho avi_app); migration vẫn bằng `aoi` | `server/db/connection.ts`, script cấp quyền mới `scripts/cap-quyen-avi-app.mjs --test-only|--dev-only` — 08/11: `:3000` chạy `avi_app` (đo current_user), script `cap-quyen-avi-app.mjs` 8613a0154; **còn mở**: kiểm `.env` các worktree khác — kiem-dinh đóng cùng lượt đo "sau" | 90‑N1: trong app `select rolsuper, rolbypassrls` = false/false; suite DB xanh với `avi_app` |
 | P0‑2 | Admin hết bypass `requirePermission`: `RBAC_SCOPED_ADMIN` thành mặc định, gỡ cờ; cấp đủ quyền cho 10 tài khoản admin qua seed/`permissions` (không mất truy cập) | `server/_core/accessControl.ts:207`, seed quyền — **có hiệu lực trên `:3000` từ 15:11 07/11**; chờ chủ dự án đăng nhập admin 1 lần | 90‑N2 ma trận 10 module bằng vai không‑admin; không admin nào bị khoá ngoài (kiểm đăng nhập 10 admin) |
 | P0‑3 | CSP + origin‑check `enforce` mặc định (dev cho phép localhost/cổng dev); gỡ `SEC_CSP_MODE`/`SEC_ORIGIN_CHECK_MODE` | `securityHeaders.ts:46`, `originCheck.ts:41` — bước 1 report **có hiệu lực từ 15:11 07/11**; bước 2 enforce sớm nhất 15:11 08/11 và sau đăng nhập admin | Playwright: app chạy, không lỗi CSP console; POST không Origin bị 403 trừ `/api/v1|machine|aoi` |
 | P0‑4 | `moduleGate` cache 60 s (RAM) — 0 truy vấn DB/lần gọi; fail‑open giữ (đã duyệt giữ license RAM) | `server/license/moduleGate.ts:104-110,154-163` | đếm truy vấn: 135 chỗ gọi, 0 query sau cache ấm |
@@ -29,7 +29,7 @@
 | P0‑9 | Gỡ 6 trang chết (`AIHub`, `AIStudioHub`, `AILocalKnowledgeBasePage`, `DashboardTemplates`, `TemplateMarketplace`, `TestAnnotationPage`) + `AIChatBox`, `AILocalKnowledgeBase` | 1 439 + 680 LOC | grep import = 0; redirect giữ |
 | P0‑10 | Gỡ `socket.ts:2797` `calculateOEE` chết (SQL sai cột) | `_core/socket.ts` | grep = 0 |
 | P0‑11 | Phiên theo vai: TTL 12 h operator/supervisor, 7 d engineer/admin, gia hạn trượt | `_core/hanPhien.ts:57` — trên main a9a8c9405; hiệu lực sau khi `:3000` restart (sau 15:08 07/11) | test TTL theo vai |
-| **Chủ dự án** | gỡ `cookies.txt` khỏi git (+ `.gitignore`) và **thu hồi mọi phiên** (`user_sessions` revoke) sau khi P0‑11 lên; đặt `OT_CONTROL_ENABLED=false` (D9) | | |
+| **Chủ dự án** | gỡ `cookies.txt` khỏi git (+ `.gitignore`) và **thu hồi mọi phiên** (`user_sessions` revoke) sau khi P0‑11 lên; đặt `OT_CONTROL_ENABLED=false` (D9) | 08/11: `OT_CONTROL_ENABLED=false` **XONG**; `cookies.txt` **VẪN CÒN** ở gốc và được git theo dõi (433 B, 14/09) — đã nằm trong lịch sử remote ⇒ coi phiên trong đó là lộ, thu hồi phiên là bắt buộc | |
 
 ## 2. 50‑C0 (UI + vệ sinh, không chạm lõi) — luong‑ui / scada‑ui
 
@@ -65,7 +65,7 @@
 | E0‑2b | `simOtTelemetryService`: **chủ dự án chọn B (06/11) — GỠ**, chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5 | gộp eng‑ai tiếp tục |
 | E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
 | E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
-| E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
+| E0‑5 — 08/11: **chưa có commit**, mục mở nhỏ (luong-ui/eng-ai) | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
 | F0‑1 | `vram_events`: xoá một lần > 30 d **đã làm 04/11** (55 887, còn 10 556); mục retention có trong `dataRetentionService` nhưng **mặc định TẮT** — chủ dự án chọn để tắt 06/11 (khoá `RETENTION_VRAM_EVENTS_DAYS` chú thích) | 80‑N8 (theo cấu hình) |
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
@@ -73,7 +73,7 @@
 | Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
 | Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
-| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) | kích thước `inspection_packages` |
+| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) — 08/11: VACUUM FULL **chưa chạy** (18 MB/0 hàng); dieu-phoi làm theo uỷ quyền: đếm lại 0 hàng, owner `aoi`, khoá vài giây, ghi kích thước sau | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song
 
