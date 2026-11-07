@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import { LopDungMayNoi } from "@/components/scada/LopDungMayNoi";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
@@ -878,6 +879,8 @@ function App() {
               {/* doc 81 Đợt 4 Task D1 — sở thích giao diện theo tài khoản (localStorage ⇄ user_settings.uiPrefs). */}
               <UiPrefsSync />
               <Toaster />
+              {/* PHA 0 · C0-3 — nút DỪNG MÁY nổi ở tầng trên cùng khi hộp thoại lồng che nút DỪNG trong faceplate (dungMayNoi.ts) */}
+              <LopDungMayNoi />
               {/* Pha 0 · C0-5 — cờ mô-đun robot/AGV (nguồn: máy chủ) cho CongMoDunRobot + SafetyWorkforce. */}
               <RobotModuleProvider>
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any

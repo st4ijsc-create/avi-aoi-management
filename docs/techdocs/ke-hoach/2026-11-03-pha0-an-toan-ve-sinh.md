@@ -18,9 +18,9 @@
 
 | # | Việc | Tệp/chỗ `[đo]` | Nghiệm thu |
 |---|---|---|---|
-| P0‑1 | App kết nối DB bằng `avi_app` — kiem‑dinh đo "trước" 04/11: `.env` cây chính ĐÃ dùng `avi_app` (rolsuper/bypassrls = false); việc còn lại = xác minh env của tiến trình :3000 và mọi worktree/`.env` khác, cấp quyền idempotent; kiểm quyền CRUD của `avi_app` đủ cho mọi bảng app dùng (mig 0224 + `scripts/mcp-cuc-bo-vai-tro.mjs` kiểu idempotent cho avi_app); migration vẫn bằng `aoi` | `server/db/connection.ts`, script cấp quyền mới `scripts/cap-quyen-avi-app.mjs --test-only|--dev-only` | 90‑N1: trong app `select rolsuper, rolbypassrls` = false/false; suite DB xanh với `avi_app` |
-| P0‑2 | Admin hết bypass `requirePermission`: `RBAC_SCOPED_ADMIN` thành mặc định, gỡ cờ; cấp đủ quyền cho 10 tài khoản admin qua seed/`permissions` (không mất truy cập) | `server/_core/accessControl.ts:207`, seed quyền | 90‑N2 ma trận 10 module bằng vai không‑admin; không admin nào bị khoá ngoài (kiểm đăng nhập 10 admin) |
-| P0‑3 | CSP + origin‑check `enforce` mặc định (dev cho phép localhost/cổng dev); gỡ `SEC_CSP_MODE`/`SEC_ORIGIN_CHECK_MODE` | `securityHeaders.ts:46`, `originCheck.ts:41` | Playwright: app chạy, không lỗi CSP console; POST không Origin bị 403 trừ `/api/v1|machine|aoi` |
+| P0‑1 | App kết nối DB bằng `avi_app` — kiem‑dinh đo "trước" 04/11: `.env` cây chính ĐÃ dùng `avi_app` (rolsuper/bypassrls = false); việc còn lại = xác minh env của tiến trình :3000 và mọi worktree/`.env` khác, cấp quyền idempotent; kiểm quyền CRUD của `avi_app` đủ cho mọi bảng app dùng (mig 0224 + `scripts/mcp-cuc-bo-vai-tro.mjs` kiểu idempotent cho avi_app); migration vẫn bằng `aoi` | `server/db/connection.ts`, script cấp quyền mới `scripts/cap-quyen-avi-app.mjs --test-only|--dev-only` — 08/11: `:3000` chạy `avi_app` (đo current_user), script `cap-quyen-avi-app.mjs` 8613a0154; **còn mở**: kiểm `.env` các worktree khác — kiem-dinh đóng cùng lượt đo "sau" | 90‑N1: trong app `select rolsuper, rolbypassrls` = false/false; suite DB xanh với `avi_app` |
+| P0‑2 | Admin hết bypass `requirePermission`: `RBAC_SCOPED_ADMIN` thành mặc định, gỡ cờ; cấp đủ quyền cho 10 tài khoản admin qua seed/`permissions` (không mất truy cập) | `server/_core/accessControl.ts:207`, seed quyền — **có hiệu lực trên `:3000` từ 15:11 07/11**; chờ chủ dự án đăng nhập admin 1 lần | 90‑N2 ma trận 10 module bằng vai không‑admin; không admin nào bị khoá ngoài (kiểm đăng nhập 10 admin) |
+| P0‑3 | CSP + origin‑check `enforce` mặc định (dev cho phép localhost/cổng dev); gỡ `SEC_CSP_MODE`/`SEC_ORIGIN_CHECK_MODE` | `securityHeaders.ts:46`, `originCheck.ts:41` — bước 1 report **có hiệu lực từ 15:11 07/11**; bước 2 enforce sớm nhất 15:11 08/11 và sau đăng nhập admin | Playwright: app chạy, không lỗi CSP console; POST không Origin bị 403 trừ `/api/v1|machine|aoi` |
 | P0‑4 | `moduleGate` cache 60 s (RAM) — 0 truy vấn DB/lần gọi; fail‑open giữ (đã duyệt giữ license RAM) | `server/license/moduleGate.ts:104-110,154-163` | đếm truy vấn: 135 chỗ gọi, 0 query sau cache ấm |
 | P0‑5 | Gỡ mã OTel/Sentry (không gói) + cờ `OTEL_*`, `SENTRY_*` | `_core/observability.ts:70-120` | grep = 0; `/metrics` Prometheus vẫn chạy |
 | P0‑6 | Retention mặc định bật (`DATA_RETENTION_ENABLED` gỡ cờ) + backup pg_dump theo lịch + `DR_VERIFY` bật; lịch chạy ở worker | `dataRetentionService.ts`, `backupService.ts`, `backgroundJobs.ts:113,255,409` | `uploads/backups/` có tệp sau 1 lịch; log job |
@@ -29,7 +29,7 @@
 | P0‑9 | Gỡ 6 trang chết (`AIHub`, `AIStudioHub`, `AILocalKnowledgeBasePage`, `DashboardTemplates`, `TemplateMarketplace`, `TestAnnotationPage`) + `AIChatBox`, `AILocalKnowledgeBase` | 1 439 + 680 LOC | grep import = 0; redirect giữ |
 | P0‑10 | Gỡ `socket.ts:2797` `calculateOEE` chết (SQL sai cột) | `_core/socket.ts` | grep = 0 |
 | P0‑11 | Phiên theo vai: TTL 12 h operator/supervisor, 7 d engineer/admin, gia hạn trượt | `_core/hanPhien.ts:57` — trên main a9a8c9405; hiệu lực sau khi `:3000` restart (sau 15:08 07/11) | test TTL theo vai |
-| **Chủ dự án** | gỡ `cookies.txt` khỏi git (+ `.gitignore`) và **thu hồi mọi phiên** (`user_sessions` revoke) sau khi P0‑11 lên; đặt `OT_CONTROL_ENABLED=false` (D9) | | |
+| **Chủ dự án** | gỡ `cookies.txt` khỏi git (+ `.gitignore`) và **thu hồi mọi phiên** (`user_sessions` revoke) sau khi P0‑11 lên; đặt `OT_CONTROL_ENABLED=false` (D9) | 08/11: `OT_CONTROL_ENABLED=false` **XONG**; `cookies.txt` **VẪN CÒN** ở gốc và được git theo dõi (433 B, 14/09) — đã nằm trong lịch sử remote ⇒ coi phiên trong đó là lộ, thu hồi phiên là bắt buộc | |
 
 ## 2. 50‑C0 (UI + vệ sinh, không chạm lõi) — luong‑ui / scada‑ui
 
@@ -52,7 +52,7 @@
 | AL0‑2 | Sửa import `sendBulletinPushNotification` không tồn tại (`mqttService.ts:3250`) hoặc tắt bulletin | lỗi import = 0 |
 | AL0‑3 | **Xoá dữ liệu lũ** (sau duyệt chủ dự án, số đếm trước/sau): `notifications` 56 433, `alert_escalations` 7 779, `predictive_alerts` + `_occurrences` 992 + 1 635, `mqtt_alert_history` 3 183; `machine_status_logs` 95 971 **chỉ sau khi 90 xác nhận OEE không đọc** `[cần kiểm]` | SQL đếm |
 | T0‑1 | **HUỶ** (06/11): EMQX docker đang chạy (1884→1883), `:3000` có kết nối ⇒ giữ `UNS_BRIDGE_ENABLED=true`; tiền đề "không có broker" sai | — |
-| T0‑2 | `topology.mjs` đã 36 máy; nguồn 1 699 máy × 30 s là `simOtTelemetryService` (gỡ ở E0‑2) ⇒ **đóng sau khi eng‑ai lên main + `:3000` bản mới + đo 24 h** | 24 h `ot_telemetry` giảm về mức 36 máy topology (hiện 18,97 M hàng/24 h) |
+| T0‑2 | Nguồn 1 699 máy × 30 s (`simOtTelemetryService`) gỡ ở E0‑2 — **07/11: 24 h sau 15:07:50 06/11 = 0 hàng**. Tiêu chí "36 máy" sai (36 = tag sống trên 9 thiết bị). **08/11 chủ dự án**: bật `OT_GATEWAY_ENABLED=true` trong `.env`, chạy `simulator.mjs`, đo rút ngắn (2 h, ngoại suy), rồi dừng simulator — **ĐẠT 08/11 (đo 2 h)**: 46 218 hàng/giờ, 9 `deviceId`, 0 lạ; L2/L3‑ASSY 100 % `bad` do simulator unitID (backlog 70‑E5 + supervisor suy giảm); simulator dừng 06:10 | đúng 9 `deviceId`, không `deviceId` ngoài 15 adapter, ≤ 65 000 hàng/giờ (≈ 1,56 M/24 h; trước 18,97 M/24 h) |
 | T0‑3 | Một nguồn DDL Timescale: **không bỏ 0118/0172** (0172 tạo hypertable `measurement_results`); mig **0490** hoà giải làm lời cuối (no‑op trên DEV/_test); gỡ `timescale/0003` + `TSDB_URL` **chuyển sang 30‑T1** (pha 1) — **XONG 06/11**: mig 0490 áp DEV (reconciled 0, retention mismatch 0, 14 `job_id` không đổi), main a9a8c9405 | migration `--test-only` xanh; `timescaledb_information.jobs` một bộ chính sách/bảng |
 | T0‑4 | `machine_health_history` + `rul_estimates` (1,8 GB): thêm retention 90 d **sau duyệt** (xoá cũ hơn) | kích thước < 200 MB |
 
@@ -65,7 +65,7 @@
 | E0‑2b | `simOtTelemetryService`: **chủ dự án chọn B (06/11) — GỠ**, chấp nhận ~1 660 máy DEV offline trên twin/dashboard tới 70‑E5 | gộp eng‑ai tiếp tục |
 | E0‑3 | Gỡ router/procedure 0 caller — **đã gỡ 21** (04/11). **Giữ có lý do**: `orchestrationGov`/`twinGov` (có caller /synapse-platform — **chủ dự án chọn (a) 04/11: GỠ cả trang `/synapse-platform` + route + 2 router + `slaPolicy`/`dag`/`driftDetector`; redirect route cũ → 404/`/quan-tri/he-thong`**), `programming.deleteProject` (máy thử test phân quyền VRAM), `twin.status/twin.replay` (nợ Đợt 62 được ghim) | census 0 client‑caller trừ danh sách giữ |
 | E0‑4 | **HOÃN sang pha 1 (70‑E1, cùng việc edge)**: `orchestration_run_edge_assignments` vào drizzle nằm trong `services/edge` (vùng cấm A2(o)); `runApiKeyIdentity.ts` là phép chiếu hẹp CÓ Ý, không phải khai trùng | — (dieu‑phoi 04/11) |
-| E0‑5 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
+| E0‑5 — **XONG**: bình luận sai đã gỡ từ lô A2 937c7d909 (trên main), xác minh 08/11 grep 0 khớp, trang gọi `orchestration.simulate` thật; giữ trang tới E2 | `RfTestCellSim` → một `sim_scenario` sau (giữ trang tới E2; xoá bình luận sai "0 lời gọi tRPC") | |
 | F0‑1 | `vram_events`: xoá một lần > 30 d **đã làm 04/11** (55 887, còn 10 556); mục retention có trong `dataRetentionService` nhưng **mặc định TẮT** — chủ dự án chọn để tắt 06/11 (khoá `RETENTION_VRAM_EVENTS_DAYS` chú thích) | 80‑N8 (theo cấu hình) |
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
@@ -73,7 +73,7 @@
 | Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
 | Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
-| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) | kích thước `inspection_packages` |
+| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) — 08/11: VACUUM FULL **chưa chạy** (18 MB/0 hàng); **XONG 06:16:46 08/11** (uỷ quyền): đếm lại 0 hàng, owner `aoi`, lock_timeout 5 s, `VACUUM (FULL, ANALYZE)` 13 ms, **18 MB → 80 kB**, vẫn 0 hàng, readyz 200 | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song
 
@@ -117,4 +117,5 @@ route sống · trang không import · router 0 client · `notifications` 24 h *
 | T0‑4b `rul_estimates` > 90 d | 2,86 M | 55 207 | 2 799 905 | như trên |
 | E0‑1 `simulation_runs` | 84 127 (duyệt 06/11) | 84 127 | 0 | xoá sau khi job fidelity dừng (`:3000` bản main 45ee3b777), đếm 2 lần cách 6 phút không đổi, khoá bằng số đã duyệt |
 | Q0‑5 seed `product_inspections` | 13 236 | 0 (giữ) | 13 236 | WORM; chủ dự án chọn giữ |
+| Q0‑5 `inspection_packages` VACUUM FULL | 0 hàng / 18 382 848 B | 0 hàng (chỉ trả chỗ) | 0 hàng / 81 920 B | 08/11 06:16, owner `aoi`, 13 ms |
 | `machine_status_logs` | 95 971 | — | — | không đưa vào: OEE đang đọc |

@@ -55,6 +55,8 @@ export interface EdgeJournalConsume {
   consumeAuthorization(c: { jti: string; runId: number; claimSeq: number; stepId: string; attempt: number }): Promise<EdgeConsumeResult>;
   isJtiConsumed(jti: string): boolean;
   admitNonStop(): boolean;
+  /** a2n round C — see EdgeJournal.consumeOverran */
+  consumeOverran?(): boolean;
 }
 
 export function createEdgeJournalConsume(journal: EdgeJournal): EdgeJournalConsume {
@@ -62,6 +64,7 @@ export function createEdgeJournalConsume(journal: EdgeJournal): EdgeJournalConsu
     consumeAuthorization: (c) => journal.consumeAuthorization(c),
     isJtiConsumed: (jti) => journal.isJtiConsumed(jti),
     admitNonStop: () => journal.admitNonStop(),
+    consumeOverran: () => journal.consumeOverran(),
   };
 }
 

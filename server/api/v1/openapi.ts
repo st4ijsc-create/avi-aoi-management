@@ -734,7 +734,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           tags: ["Edge"],
           summary: "Edge node: report progress (claim-bound, strictly increasing seq)",
           description:
-            "Body `{ claimSeq, claimToken, seq, status }`; a replayed / older seq ⇒ 409 `replayed`. Answer: `abortRequested`." +
+            "Body `{ claimSeq, claimToken, seq, status }`, optional `journalStalledSinceMs` (edge clock: the node's journal disk has not answered since then; only when central advertises `progress.journal_stall`, raises one URGENT per stall); a replayed / older seq ⇒ 409 `replayed`. Answer: `abortRequested`." +
             " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
             "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
           security: [{ bearerAuth: [] }],
