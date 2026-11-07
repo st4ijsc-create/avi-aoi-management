@@ -561,7 +561,7 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     };
     await x.agent.tick();
     await hetDoan(x);
-    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: "MOTION_LOCKED" });
+    expect(x.central.callsTo("complete")[0].body).toMatchObject({ outcome: "failed", error: expect.stringMatching(/^MOTION_LOCKED/) }); // A2(n): every end that is not `completed` carries its report rider
     expect(hangRun(78).status).toBe("failed");
     expect(ten()).toEqual(["move"]);
     expect((await abortRun(78, NGUOI, "a2n")).message).toContain("already terminal");
@@ -627,7 +627,7 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     await nghi(60);
     await hetDoan(x, 2);
     const ket = Object.fromEntries(x.central.callsTo("complete").map((c) => [c.runId, c.body]));
-    expect(ket[88]).toMatchObject({ outcome: "failed", error: "MOTION_LOCKED" });
+    expect(ket[88]).toMatchObject({ outcome: "failed", error: expect.stringMatching(/^MOTION_LOCKED/) });
     expect(ket[89]).toMatchObject({ outcome: "held", heldReason: "journalFull" });
   }, 20_000);
 
