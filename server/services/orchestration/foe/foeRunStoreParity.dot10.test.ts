@@ -13,7 +13,7 @@
  * branch, parallel, retry, compensation, abort sweep (+ the gate refusal text, the STOP that never asks, D5 held).
  * The equipment registry is replaced by a recording fake (the walker is under test, not the dispatchers — group D).
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 
@@ -40,16 +40,55 @@ const h = vi.hoisted(() => ({
   timeoutOnce: new Set<string>(),
   /** A2(n) — the URGENT alerts raised (recorded) */
   alerts: [] as Array<Record<string, any>>,
+  /** A2(n) T0 — phanLoaiStopGhimChoFoe's scripted answer (null ⇒ read fine, not pinned); ghimLan: the questions that reached it */
+  ghim: null as null | ((d: unknown, i: { commandType: string }) => Promise<{ pinnedStop: boolean; loiDocGhim: string | null }>),
+  ghimLan: [] as string[],
+  /** A2(n) T0 — classifyOtStop throws, as the pin read of a verifier; classifyLan: the calls that reached it */
+  classifyLoi: false,
+  classifyLan: 0,
+  /** A2(n) T0 — runningConnectionMatchesAdapterRow's answer; connLan: the calls that reached it */
+  connOk: true,
+  connLan: 0,
+  /** A2(n) T0 — these steps' dispatch answers this many ms later */
+  slow: new Map<string, number>(),
+  /** A2(n) T0 — a dispatch that went answers `acked` (a real device path) instead of `simulated` */
+  acked: false,
+  /** A2(n) T0 — what the alert reports through `baoBen`: was the URGENT stored? */
+  alertDurable: true,
+  /** A2(n) T0 — the REAL alert ran (its CRITICAL line): a mock that did not reach its target. Stays 0 */
+  canhBaoThat: 0,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
-  return { isStopCommandType: orig.isStopCommandType, classifyOtStop: orig.classifyOtStop, runningConnectionMatchesAdapterRow: async () => true, dispatch: vi.fn() };
+  return {
+    isStopCommandType: orig.isStopCommandType,
+    classifyOtStop: (...a: Parameters<typeof orig.classifyOtStop>) => {
+      h.classifyLan++;
+      if (h.classifyLoi) throw new Error("pin read down (test)");
+      return orig.classifyOtStop(...a);
+    },
+    runningConnectionMatchesAdapterRow: async () => {
+      h.connLan++;
+      return h.connOk;
+    },
+    phanLoaiStopGhimChoFoe: async (d: unknown, i: { commandType: string }) => {
+      h.ghimLan.push(i.commandType);
+      return h.ghim ? h.ghim(d, i) : { pinnedStop: false, loiDocGhim: null };
+    },
+    dispatch: vi.fn(),
+  };
 });
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: vi.fn() }));
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
-  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, any>) => void h.alerts.push(a) };
+  return {
+    ...orig,
+    raiseCriticalStopAlert: async (a: Record<string, any>) => {
+      h.alerts.push(a);
+      a.baoBen?.(h.alertDurable);
+    },
+  };
 });
 vi.mock("../../edge/edgeCentralCommon", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../edge/edgeCentralCommon")>();
@@ -72,6 +111,8 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
       const stepId = m ? m[1] : "?";
       h.sent.push({ kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl });
+      const cham = h.slow.get(stepId);
+      if (cham) await new Promise((r) => setTimeout(r, cham));
       if (h.timeoutDispatch.has(stepId) || h.timeoutOnce.delete(stepId)) return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
       if (h.staleDispatch.delete(stepId)) {
         // exactly what equipmentAdapter's edge route returns for edgeNonStopConfigGate's CONFIG_STALE (before driver / consume)
@@ -87,6 +128,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
         h.failPlan.set(stepId, left - 1);
         return { ok: false, status: "rejected", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `scripted failure of ${stepId}` };
       }
+      if (h.acked) return { ok: true, status: "acked", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: {} };
       return { ok: true, status: "simulated", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: { simulated: true } };
     },
     async getState() {
@@ -111,9 +153,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({
   getDb: vi.fn(async () => {
     if (h.dbThrows) {
-      // A2(n) F10 / T0 — the REAL alert still runs in this harness for an alert raised through foeKetCucKhongRo (the mock below does not reach it, measured, cause not found: a
-      // full stub of the module and a stub of sendNotification do not stop it either). Its inbox work outlives its case and lands here; it is central's work, never the edge walk's.
-      if (!/criticalStopAlert\.ts/.test(new Error().stack ?? "")) h.dbCalls++;
+      h.dbCalls++;
       throw new Error("EDGE: this process has no database");
     }
     return fake;
@@ -136,8 +176,10 @@ import {
   edgePriorPictureOf,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
-import { chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, buTruBiChanKhongRo } from "./foeKetCucKhongRo";
+import { buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, findSeparateGateApproval, withResolvedAdapter } from "./foeRunStore";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, buTruBiChanKhongRo, canhBaoKetCucKhongRo } from "./foeKetCucKhongRo";
+import { getDb } from "../../../db/connection";
+import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
@@ -170,9 +212,20 @@ const resultKind = (r: unknown): string => {
   return Object.keys(v).sort().join(",");
 };
 
-// the mocked alert module is loaded ONCE before any walk: two concurrent first imports race the vi.mock factory and one gets the REAL alert
-beforeAll(async () => {
-  await import("../../robot/criticalStopAlert");
+/**
+ * A2(n) T0 — a mock that did not reach its target. Two concurrent `import()` of one mocked module from one importer: vitest 2.1.9 (requestWithMock) hands the later one the REAL module,
+ * not only on the first load, so loading the mock early does not help. The engine's modules go through napMotLan (foeNapMotLan.ts) and foeNapMotLan.test.ts holds them to it; the
+ * real alert's CRITICAL line is counted here, so a leak is a red case, not a noise in the log. Fire-and-forget: the case that follows a leak may be the one that shows it.
+ */
+beforeAll(() => {
+  const goc = console.error;
+  console.error = (...a: unknown[]) => {
+    if (String(a[0]).startsWith("[StopAlert] CRITICAL")) h.canhBaoThat++;
+    goc(...a);
+  };
+});
+afterEach(() => {
+  expect(h.canhBaoThat, "the REAL alert ran: a mock did not reach its target").toBe(0);
 });
 
 beforeEach(() => {
@@ -206,6 +259,15 @@ beforeEach(() => {
   h.timeoutDispatch.clear();
   h.timeoutOnce.clear();
   h.alerts.length = 0;
+  h.ghim = null;
+  h.ghimLan.length = 0;
+  h.classifyLoi = false;
+  h.classifyLan = 0;
+  h.connOk = true;
+  h.connLan = 0;
+  h.slow.clear();
+  h.acked = false;
+  h.alertDurable = true;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -256,6 +318,12 @@ const ot = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({
 const move = (id: string, extra: Record<string, unknown> = {}): WorkflowStep =>
   ({ id, type: "command", machineId: 2, command: "run_job", args: { robotId: 2, jobType: "move", params: { x: 1 } }, ...extra }) as never;
 const robotStop = (id: string): WorkflowStep => ({ id, type: "command", machineId: 2, command: "abort", args: { robotId: 2 } }) as never;
+/** A2(n) T0 — an OT STOP on the pinned tag of seedHalt(): verified, a stop for the dispatcher */
+const otStop = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true }, ...extra }) as never;
+const seedHalt = () => fake.seed(deviceTags, [...rows("device_tags"), { id: 75, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true }]);
+/** A2(n) T0 — answers of h.ghim: a STOP on a readable pin; the pins not readable */
+const PIN_OK = async (_d: unknown, i: { commandType: string }) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null });
+const PIN_BAD = async () => ({ pinnedStop: false, loiDocGhim: "pin read timed out (test)" });
 const def = (ref: string, steps: WorkflowStep[]): WorkflowDefinition => ({ ref, name: ref, steps }) as never;
 
 // ── the central walk ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -972,13 +1040,16 @@ describe("doc 81 Đợt 10 C — the edge store in detail (no DB, fail-closed)",
     expect(store.segmentEnd()).toBeNull();
   });
 
-  it("★ a stale claim WITH abortRequested ⇒ stopped: the local sweep (the walk never actuated ⇒ its STOP is not needed, said)", async () => {
+  // A2(n) T0 — this case used to end on `expect(h.sent).toEqual([])`, right after the walk, under "the walk never actuated, its STOP is not needed". The sweep is not awaited: the STOP went
+  // every time (its abortStopSent line stands in the old logs), a slow import() only kept it behind the assertion. m1's `running` row counts as acted (R-6-b reads the rows too).
+  it("★ a stale claim WITH abortRequested ⇒ stopped: the local sweep sends the STOP (m1's running row counts as acted)", async () => {
     const { e, pkg } = await pkgOf([ot("m1"), robotStop("s1")], "stale2-e");
     const t = io({ authorize: async () => ({ ok: false, verdict: "stale", code: "claim_stale", abortRequested: true }) });
     const store = createEdgeRunStore(pkg, { ...t.io, runId: e.runId });
     const r = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, store)) as Record<string, any>;
     expect(r).toMatchObject({ outcome: "aborted" });
-    expect(h.sent).toEqual([]);
+    await waitFor(() => h.sent.length > 0, "the local sweep's STOP");
+    expect(h.sent.map((s) => s.stepId)).toEqual(["s1"]);
   });
 
   it("★ a journal that refuses a NON-STOP record stops the walk (nothing sent after it); a STOP's refused record never holds the STOP", async () => {
@@ -2541,5 +2612,139 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     }
     expect((await seg).out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
     expect(ids().filter((x) => x === "rz")).toHaveLength(0);
+  });
+});
+
+/**
+ * A2(n) T0 — an injection counts only if it reaches its target: on, the target throws or answers the other way; off, it does not. The targets behind an `import()` are asked by
+ * DONG_THOI concurrent callers from one module, the shape that lost a mock to the real module; every question must arrive, in each of VONG rounds. The dispatch's injections sit on
+ * a static import (equipmentRegistry): their own cases below and the cases of the sections above prove them.
+ */
+describe("A2(n) T0 — every injection of this harness reaches its target", () => {
+  const VONG = 10;
+  const DONG_THOI = 6;
+  const dongThoi = <T>(f: (i: number) => Promise<T>) => Promise.all(Array.from({ length: DONG_THOI }, (_, i) => f(i)));
+  const mayMap = () => new Map<number, MachineForValidation>(rows("machines").map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities }] as const));
+  const rc = () => ({ runId: 1, machineById: mayMap(), user: OWNER }) as never;
+  const hoi = (st: WorkflowStep) => dongThoi(() => verifiedStopStepIds(def("t0", [st]), mayMap(), fake as never));
+
+  it("★ classifyOtStop (the verifier): on, the read throws and the STOP is only unsure; off, verified; 6 concurrent questions arrive, 10 rounds", async () => {
+    seedHalt();
+    for (let v = 0; v < VONG; v++) {
+      h.classifyLoi = true;
+      h.classifyLan = 0;
+      for (const r of await hoi(otStop("st"))) expect(r).toMatchObject({ failed: true, ids: new Set(), unsure: new Set(["st"]) });
+      expect(h.classifyLan).toBe(DONG_THOI);
+      h.classifyLoi = false;
+      h.classifyLan = 0;
+      for (const r of await hoi(otStop("st"))) expect(r).toMatchObject({ failed: false, ids: new Set(["st"]) });
+      expect(h.classifyLan).toBe(DONG_THOI);
+    }
+  });
+
+  it("★ h.connOk (the running connection): on, the pinned STOP is not verified; off, it is; 6 concurrent questions arrive, 10 rounds", async () => {
+    seedHalt();
+    for (let v = 0; v < VONG; v++) {
+      h.connOk = false;
+      h.connLan = 0;
+      for (const r of await hoi(otStop("st"))) expect(r).toMatchObject({ ids: new Set(), unsure: new Set(["st"]) });
+      expect(h.connLan).toBe(DONG_THOI);
+      h.connOk = true;
+      h.connLan = 0;
+      for (const r of await hoi(otStop("st"))) expect(r).toMatchObject({ ids: new Set(["st"]) });
+      expect(h.connLan).toBe(DONG_THOI);
+    }
+  });
+
+  it("★ h.ghim (phanLoaiStopGhimChoFoe): throws, unreadable, not pinned ⇒ not a pinned STOP; pinned ⇒ one; 6 concurrent questions arrive, 10 rounds", async () => {
+    seedHalt();
+    const st = otStop("st");
+    const lan = async (ghim: typeof h.ghim, ky: boolean) => {
+      h.ghim = ghim;
+      h.ghimLan.length = 0;
+      expect(await dongThoi(() => buTruLaStopGhimTrungTam(rc(), st))).toEqual(Array(DONG_THOI).fill(ky));
+      expect(h.ghimLan).toEqual(Array(DONG_THOI).fill("stop"));
+    };
+    for (let v = 0; v < VONG; v++) {
+      await lan(async () => {
+        throw new Error("pin read down (test)");
+      }, false);
+      await lan(PIN_BAD, false);
+      await lan(null, false);
+      await lan(PIN_OK, true);
+    }
+  });
+
+  it("★ the alert: 6 concurrent URGENTs of foeKetCucKhongRo all reach the mock, none reaches the real one, 10 rounds", async () => {
+    for (let v = 0; v < VONG; v++) {
+      h.alerts.length = 0;
+      await dongThoi((i) => canhBaoKetCucKhongRo({ loai: "held", runId: 77, stepId: `m${i}`, compId: "c", error: "e", lan: `L${v}`, owner: OWNER.id }));
+      expect(h.alerts).toHaveLength(DONG_THOI);
+    }
+    expect(h.canhBaoThat).toBe(0);
+  });
+
+  it("h.alertDurable: the mock's answer through baoBen, off and on, 10 rounds (the engine asks for it from T2 on)", async () => {
+    for (let v = 0; v < VONG; v++) {
+      const nghe: boolean[] = [];
+      h.alertDurable = false;
+      await raiseCriticalStopAlert({ baoBen: (b: boolean) => nghe.push(b) } as never);
+      h.alertDurable = true;
+      await raiseCriticalStopAlert({ baoBen: (b: boolean) => nghe.push(b) } as never);
+      expect(nghe).toEqual([false, true]);
+    }
+  });
+
+  it("h.ownershipThrows (edgeCentralCommon, behind an import()): on, 6 concurrent assignments are all refused; off, they all go, 10 rounds", async () => {
+    const d = def("t0-o", [move("r1")]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    for (let v = 0; v < VONG; v++) {
+      h.ownershipThrows = true;
+      for (const r of await dongThoi(() => startRun(d.ref, {}, OWNER, { edgeNodeId: NODE }))) expect(r.ok).toBe(false);
+      h.ownershipThrows = false;
+      for (const r of await dongThoi(() => startRun(d.ref, {}, OWNER, { edgeNodeId: NODE }))) expect(r.ok).toBe(true);
+    }
+  });
+
+  it("h.dbThrows: on, getDb throws and counts; off, it answers, and counts nothing, 10 rounds", async () => {
+    try {
+      for (let v = 0; v < VONG; v++) {
+        h.dbThrows = true;
+        h.dbCalls = 0;
+        await expect(getDb()).rejects.toThrow("no database");
+        expect(h.dbCalls).toBe(1);
+        h.dbThrows = false;
+        expect(await getDb()).toBe(fake);
+        expect(h.dbCalls).toBe(1);
+      }
+    } finally {
+      h.dbThrows = false;
+    }
+  });
+
+  it("h.slow: on, the dispatch answers that much later; off, it does not wait", async () => {
+    const CHAM = 120;
+    const chay = async (ref: string) => {
+      const t = performance.now();
+      await centralRun(def(ref, [gate(), ot("m1")]), 1);
+      return performance.now() - t;
+    };
+    for (let v = 0; v < VONG; v++) {
+      h.slow.set("m1", CHAM);
+      expect(await chay(`t0-s${v}`)).toBeGreaterThanOrEqual(CHAM - 5);
+      h.slow.clear();
+      expect(await chay(`t0-n${v}`)).toBeLessThan(CHAM);
+    }
+  });
+
+  it("h.acked: on, the dispatch answers acked; off, simulated", async () => {
+    const chay = async (ref: string) => {
+      const c = await centralRun(def(ref, [gate(), ot("m1")]), 1);
+      return (stepRows(c).find((r) => r.stepId === "m1")!.resultJson as Row).status;
+    };
+    h.acked = true;
+    expect(await chay("t0-a")).toBe("acked");
+    h.acked = false;
+    expect(await chay("t0-b")).toBe("simulated");
   });
 });

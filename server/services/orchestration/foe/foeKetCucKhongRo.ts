@@ -47,6 +47,11 @@ import { users } from "../../../../drizzle/schema";
 import { appError } from "../../../_core/appError";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { withDeadline } from "../../ot/drivers/boundedClose";
+import { napMotLan } from "./foeNapMotLan";
+
+const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
+const napAudit = napMotLan(() => import("../../auditTrailService"));
+const napQuyen = napMotLan(() => import("../../../_core/accessControl"));
 
 /** The two machine-readable codes of the class (foeEngine.FOE_OUTCOME_UNKNOWN; the edge's EDGE_OUTCOME_UNKNOWN). Pinned by the unit test. */
 export const MA_KET_CUC_KHONG_RO = ["FOE_OUTCOME_UNKNOWN", "EDGE_OUTCOME_UNKNOWN"] as const;
@@ -298,7 +303,7 @@ export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number |
     }
     const recipients = [...new Set([a.owner ?? 0, ...nguoi])].filter((u) => Number.isSafeInteger(u) && u > 0);
     const n = noiDungCanhBaoKhongRo(a);
-    const { raiseCriticalStopAlert } = await import("../../robot/criticalStopAlert");
+    const { raiseCriticalStopAlert } = await napCanhBao();
     await raiseCriticalStopAlert({ ...n, recipients, source: "ot", entityType: a.entityType ?? "orchestration_run", entityId: a.runId, khuTrungBenVung: {}, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } });
     // (c) — what cannot be recalled is on the audit trail too, central's walk and an edge's report alike
     if (a.loai === "inFlight") await ghiAuditHeThongKhongRo(a.runId, { kind: n.kind, dedupKey: n.dedupKey, stepId: a.stepId, compId: a.compId }, KHONG_RO_DANG_BAY_AUDIT_OP, true);
@@ -401,7 +406,7 @@ export async function xetTiepTucKetCucKhongRo(user: { id: number; role: string }
   const vaiDuoc = (ACTUATION_ROLES as readonly string[]).includes(String(user.role));
   let quyen = false;
   if (nguoiThat && vaiDuoc) {
-    const { checkPermission } = await import("../../../_core/accessControl");
+    const { checkPermission } = await napQuyen();
     quyen = await checkPermission(user.id, String(user.role), "machine_control", "canCreate").catch(() => false);
   }
   if (!quyen) {
@@ -428,7 +433,7 @@ export async function ghiAuditKetCucKhongRo(user: { id: number; name?: string | 
   try {
     return await withDeadline(
       (async () => {
-        const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+        const { logCrudOperation, createAuditContext } = await napAudit();
         const r = await logCrudOperation(createAuditContext({ user: { id: user.id, name: user.name ?? null } }), {
           action: KET_CUC_KHONG_RO_AUDIT_ACTION,
           entityType: "orchestration_run",
@@ -452,7 +457,7 @@ async function ghiAuditHeThongKhongRo(runId: number, metadata: Record<string, un
   try {
     await withDeadline(
       (async () => {
-        const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+        const { logCrudOperation, createAuditContext } = await napAudit();
         await logCrudOperation(createAuditContext({ user: { id: 0, name: "FOE" } }), {
           action: KET_CUC_KHONG_RO_AUDIT_ACTION,
           entityType: "orchestration_run",

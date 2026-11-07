@@ -32,6 +32,9 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { isStopJob } from "../../robot/stopJob";
 import { FOE_ENGINE_TOOL, type FoeGateApproval } from "../../ot/otActionBinding";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "./workflowModel";
+import { napMotLan } from "./foeNapMotLan";
+
+const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
 
 /** Every step of a tree, depth-first (children, branches, compensation). THE walk. */
 export function allStepsOf(steps: WorkflowStep[] | undefined, out: WorkflowStep[] = []): WorkflowStep[] {
@@ -146,7 +149,7 @@ export function buildEquipmentCommand(
  */
 export async function isOtStopCommandType(name: string): Promise<boolean> {
   try {
-    const mod = await import("../../ot/commandDispatcher");
+    const mod = await napDispatcher();
     return typeof mod.isStopCommandType === "function" && mod.isStopCommandType(name) === true;
   } catch {
     return false;
@@ -238,7 +241,7 @@ export async function makeStopVerifier(
     if (!db) batchFailed = true;
     else {
       try {
-        const disp = await import("../../ot/commandDispatcher");
+        const disp = await napDispatcher();
         const { stopPinsFromTagRows } = await import("../../ot/stopPin");
         fns.classifyOtStop = disp.classifyOtStop as never;
         fns.connectionCheck = disp.runningConnectionMatchesAdapterRow as never;

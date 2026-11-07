@@ -33,6 +33,10 @@ import { FOE_REJECT_CLAIM_CTX_KEY } from "./foeGateApproval";
 import { ABORT_ROW_PREFIX, FOE_ACTION_TTL_MS, loadMachines, withResolvedAdapter } from "./foeRunStore";
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind } from "./foeStepClass";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
+import { napMotLan } from "./foeNapMotLan";
+
+const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
+const napOtManager = napMotLan(() => import("../../ot/otManager"));
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -387,7 +391,7 @@ export async function xetGuiLaiBuTruBiNgat(
     const cmd = buildEquipmentCommand(c.descriptor, c.cap, comp.machineId, args, `run${x.runId}-${comp.id}-a${LAN_GUI_LAI_KHOI_DONG}`, { id: 0, role: "system" });
     bc.b1 = { laLenh: true, robot: false, adapterId: cmd.adapterId ?? null, machineId: comp.machineId, commandType: cmd.name, pinnedStop: null, loiDocGhim: null };
     if (cmd.adapterId == null) return xong();
-    const { phanLoaiStopGhimChoFoe } = await import("../../ot/commandDispatcher");
+    const { phanLoaiStopGhimChoFoe } = await napDispatcher();
     const ghim = await phanLoaiStopGhimChoFoe(d, { adapterId: cmd.adapterId, commandType: cmd.name, writes: cmd.writes ?? [] });
     bc.b1.pinnedStop = ghim.pinnedStop;
     bc.b1.loiDocGhim = ghim.loiDocGhim;
@@ -441,8 +445,8 @@ export async function choKetNoiSanSang(
   khiPhaiCho?: (conMs: number) => void,
 ): Promise<{ sanSang: boolean; choMs: number }> {
   const t0 = performance.now();
-  const om = await import("../../ot/otManager");
-  const { runningConnectionMatchesAdapterRow } = await import("../../ot/commandDispatcher");
+  const om = await napOtManager();
+  const { runningConnectionMatchesAdapterRow } = await napDispatcher();
   let danhThuc: (() => void) | null = null;
   const boNghe = om.onOtGatewayStarted(() => danhThuc?.());
   try {

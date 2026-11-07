@@ -46,6 +46,10 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { napMotLan } from "./foeNapMotLan";
+
+const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
+const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -784,7 +788,7 @@ async function laStopGhimChoHangFoe(rc: RunStoreContext, step: Extract<WorkflowS
   const hoi = (async (): Promise<{ pinnedStop: boolean; loiDocGhim: string | null }> => {
     const d = await getDb();
     if (!d) return { pinnedStop: false, loiDocGhim: "database unavailable" };
-    const { phanLoaiStopGhimChoFoe } = await import("../../ot/commandDispatcher");
+    const { phanLoaiStopGhimChoFoe } = await napDispatcher();
     return phanLoaiStopGhimChoFoe(d, { adapterId, commandType: cmd.name, writes: cmd.writes ?? [] });
   })();
   let kq: { pinnedStop: boolean; loiDocGhim: string | null };
@@ -819,7 +823,7 @@ export async function buTruLaStopGhimTrungTam(rc: RunStoreContext, comp: Workflo
         if (cmd.adapterId == null) return false;
         const d = await getDb();
         if (!d) return false;
-        const { phanLoaiStopGhimChoFoe } = await import("../../ot/commandDispatcher");
+        const { phanLoaiStopGhimChoFoe } = await napDispatcher();
         const g = await phanLoaiStopGhimChoFoe(d, { adapterId: cmd.adapterId, commandType: cmd.name, writes: cmd.writes ?? [] });
         return g.loiDocGhim === null && g.pinnedStop === true;
       })(),
@@ -836,7 +840,7 @@ export async function buTruLaStopGhimTrungTam(rc: RunStoreContext, comp: Workflo
 function canhBaoGhimStopKhongXacMinh(rc: RunStoreContext, stepId: string, adapterId: number, loi: string): void {
   const recipients = [...new Set([rc.runOwner ?? 0, rc.user.id || 0])].filter((u) => Number.isSafeInteger(u) && u > 0);
   const message = `STOP pin could not be verified — the STOP may not be re-sendable (run ${rc.runId}, step "${stepId}", adapter ${adapterId}): ${loi.slice(0, 200)}. It was sent on its ordinary authorisation; after a crash or a resume it may be refused. Check the adapter's stop pins, and use the machine's direct STOP / E-STOP if needed.`;
-  void import("../../robot/criticalStopAlert")
+  void napCanhBao()
     .then(({ raiseCriticalStopAlert }) =>
       raiseCriticalStopAlert({
         kind: "foe_stop_pin_unverified",
@@ -866,14 +870,7 @@ export const WF_CORE_COLS = {
 };
 
 /** The audit module, imported ONCE per process for the sweep's several concurrent audit writes (a failed import is retried). */
-let abortAuditModulePromise: Promise<typeof import("../../auditTrailService")> | undefined;
-function abortAuditModule(): Promise<typeof import("../../auditTrailService")> {
-  abortAuditModulePromise ??= import("../../auditTrailService").catch((err: unknown) => {
-    abortAuditModulePromise = undefined;
-    throw err;
-  });
-  return abortAuditModulePromise;
-}
+const abortAuditModule = napMotLan(() => import("../../auditTrailService"));
 
 /** The console line of an abort-sweep decision (both stores): always, synchronous. */
 export function logAbortStop(user: RunStoreUser, runId: number, operation: AbortAuditOp, metadata: Record<string, unknown>): void {

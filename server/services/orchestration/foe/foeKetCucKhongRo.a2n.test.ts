@@ -6,7 +6,7 @@
  * dispatcher mock: every write that would leave the engine passes through it. The DB half (real dispatcher, S7 sim PDUs):
  * foeKetCucKhongRo.a2n.db.test.ts.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -254,11 +254,6 @@ function seed() {
   ]);
   store.set("robots", [{ id: 2, code: "R2", vendor: "sim", endpoint: "tcp://10.0.0.2:1", connectionOptions: { port: 1 }, isEnabled: true, status: "online" }]);
 }
-
-// the mocked alert module is loaded ONCE before any walk: two concurrent first imports race the vi.mock factory and one gets the REAL alert
-beforeAll(async () => {
-  await import("../../robot/criticalStopAlert");
-});
 
 beforeEach(() => {
   seed();

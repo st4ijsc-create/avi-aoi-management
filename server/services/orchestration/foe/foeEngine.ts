@@ -170,6 +170,13 @@ export type { FoeScope } from "./foeScope";
 // doc 81 Đợt 9 task S2/S3 — the edge assignment of a run (mig 0370, narrow projections): runs a node executes
 import { edgeAssignedRunIdsAmong, readEdgeAssignment, runEdgeAssignments } from "../../edge/edgeExecutionSchema";
 import { orchestrationRunsWithApiKey as edgeRunInsertWithApiKey } from "./runApiKeyIdentity"; // S2 — the key IN the insert (mig 0369)
+import { napMotLan } from "./foeNapMotLan";
+
+const napAudit = napMotLan(() => import("../../auditTrailService"));
+const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
+const napPolicy = napMotLan(() => import("../../security/policyGate"));
+const napEdgeChung = napMotLan(() => import("../../edge/edgeCentralCommon"));
+const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -241,7 +248,7 @@ async function auditDeploySimGate(
   reason: string | null,
 ): Promise<void> {
   try {
-    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    const { logCrudOperation, createAuditContext } = await napAudit();
     await logCrudOperation(
       createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }),
       {
@@ -1790,7 +1797,7 @@ async function scopeDecisionProbe(d: NonNullable<Awaited<ReturnType<typeof getDb
  * "scope not verified" answer, not "not found" (no existence oracle). false (or a rejection) on any failure.
  */
 async function stopClassifierProbe(d: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<boolean> {
-  const [disp, pin] = await Promise.all([import("../../ot/commandDispatcher"), import("../../ot/stopPin")]);
+  const [disp, pin] = await Promise.all([napDispatcher(), import("../../ot/stopPin")]);
   if (typeof disp.classifyOtStop !== "function" || typeof disp.runningConnectionMatchesAdapterRow !== "function" || typeof pin.stopPinsFromTagRows !== "function") {
     return false; // the classifier cannot run ⇒ the probe fails (undecided), like a failed read
   }
@@ -1877,7 +1884,7 @@ function scopeUnverifiedAnswer(runId: number): StartRunResult {
 async function auditScopeUnverified(user: FoeUser, runId: number, action: "abort" | "reject"): Promise<void> {
   console.error(`[FOE] ${action} of run ${runId} by user ${user.id || 0} (${user.role}) REFUSED: factory scope not verified within ${STOP_DB_STEP_DEADLINE_MS} ms (R-5-l)`);
   const write = (async () => {
-    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    const { logCrudOperation, createAuditContext } = await napAudit();
     await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
       action: "config_change",
       entityType: "orchestration_run",
@@ -2293,7 +2300,7 @@ function auditStopOutOfScope(user: FoeUser, def: WorkflowDefinition, runId: numb
   if (isOutOfScopeEmpty(out)) return;
   void (async () => {
     try {
-      const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+      const { logCrudOperation, createAuditContext } = await napAudit();
       await logCrudOperation(createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }), {
         action: "config_change",
         entityType: "orchestration_run",
@@ -2326,7 +2333,7 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // kênh phê duyệt per-step ngoài hitl_gate khai báo trong workflow ⇒ reject honest
   // POLICY_APPROVAL_REQUIRED (tác giả workflow thêm hitl_gate TRƯỚC bước lệnh nếu muốn).
   {
-    const { evaluateActionPolicy, secPlatformEnabled } = await import("../../security/policyGate");
+    const { evaluateActionPolicy, secPlatformEnabled } = await napPolicy();
     if (secPlatformEnabled()) {
       const verdict = evaluateActionPolicy(
         `foe-run:${rc.runId}`,
@@ -3162,7 +3169,7 @@ async function auditRollback(
   reason: string,
 ): Promise<void> {
   try {
-    const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+    const { logCrudOperation, createAuditContext } = await napAudit();
     await logCrudOperation(
       createAuditContext({ user: { id: user.id || 0, name: user.name ?? user.role } }),
       {
@@ -4891,7 +4898,7 @@ async function ghiAuditBuTru(runId: number, ok: boolean, metadata: Record<string
   try {
     await withDeadline(
       (async () => {
-        const { logCrudOperation, createAuditContext } = await import("../../auditTrailService");
+        const { logCrudOperation, createAuditContext } = await napAudit();
         await logCrudOperation(createAuditContext({ user: { id: 0, name: SYSTEM_FOE_BOOT_USER.name } }), {
           action: FOE_BU_TRU_KHOI_DONG_AUDIT_ACTION,
           entityType: "orchestration_run",
@@ -4986,7 +4993,7 @@ async function canhBaoBuTruBiNgat(
     // I-4 — the interruption is named in the TEXT too: the durable dedup also matches a pre-patch row by (kind + identical message), which would
     // swallow a second interruption of the same run with the same reason. (fix round 2, m-1: an ISO time, not raw ms)
     const lan = /^\d+$/.test(a.dauLan) ? new Date(Number(a.dauLan)).toISOString() : a.dauLan;
-    const { raiseCriticalStopAlert } = await import("../../robot/criticalStopAlert");
+    const { raiseCriticalStopAlert } = await napCanhBao();
     await raiseCriticalStopAlert({
       kind,
       title,
@@ -5275,7 +5282,7 @@ async function prepareAbortStop(
     }
     store.bindAbortStop?.(runId, step, cmd); // doc 81 Đợt 10 C — edge only (synchronous): the run binding for the edge dispatch
     // the SAME policy seam as a run's own command step (SEC_PLATFORM off by default ⇒ nothing)
-    const { evaluateActionPolicy, secPlatformEnabled } = await import("../../security/policyGate");
+    const { evaluateActionPolicy, secPlatformEnabled } = await napPolicy();
     if (secPlatformEnabled()) {
       const verdict = evaluateActionPolicy(`foe-run:${runId}`, `foe.command.${step.command}`, `machine:${step.machineId}`, {
         runId,
@@ -5750,7 +5757,7 @@ async function edgeAssignmentOwnershipRefusal(
 ): Promise<{ message: string; stepIds: string[] } | null> {
   try {
     const { analyseDefinition, loadMachineMap } = await import("../../edge/edgeRunAnalysis");
-    const { ownedRobotIds, ownedAdapterIds } = await import("../../edge/edgeCentralCommon");
+    const { ownedRobotIds, ownedAdapterIds } = await napEdgeChung();
     const map = await loadMachineMap(d as never, def);
     const an = await analyseDefinition(d as never, 0, def, map);
     const unresolved = new Set(an.unresolved);
