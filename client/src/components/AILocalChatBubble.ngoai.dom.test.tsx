@@ -8,6 +8,7 @@
 //   T6  nút kiểm định: chỉ nhánh `chat` khi lượt đã lưu (daLuu); lượt chưa lưu ⇒ KHÔNG nút (van-ban ẩn).
 //   T10 nhánh cục bộ/auto: body GIỮ NGUYÊN (khoá + không conversationId) và KHÔNG tạo hội thoại.
 //   T13 đang stream ⇒ không nút kiểm định.
+//   T9/T13 van-ban: cờ TẮT mặc định ⇒ lượt chưa lưu không nút; cờ BẬT ⇒ nút nhánh van-ban, đang stream ⇒ không.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
@@ -225,6 +226,36 @@ describe("AILocalChatBubble — model ngoài (L4)", () => {
     await moVaGui("lưu được");
     expect(await screen.findByTestId("nut-kiem-dinh-ngoai")).toBeInTheDocument();
     expect(H.saveStreamed).not.toHaveBeenCalled();
+  });
+
+  it("T9 — cờ van-ban TẮT (mặc định) ⇒ lượt chưa lưu KHÔNG nút; BẬT ⇒ nút hiện (nhánh van-ban), lượt đang stream vẫn KHÔNG nút", async () => {
+    luuChon("chat", MA);
+    datDongYNgoai(MA);
+    datXacNhanVanHanh("42", MA);
+    fetchSpy.mockResolvedValue(sse(...khungNgoai("chưa lưu", false)));
+    await moVaGui("hỏi chưa lưu");
+    await screen.findByTestId("noi-dung-tra-loi-ngoai");
+    expect(screen.queryByTestId("nut-kiem-dinh-ngoai")).not.toBeInTheDocument();
+    cleanup();
+    resetAiEntryForTest();
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "true");
+    try {
+      localStorage.setItem(
+        "ai_chat_messages_v2",
+        JSON.stringify([
+          { id: "u1", type: "user", content: "hỏi", timestamp: new Date().toISOString(), ngoaiConvId: 7 },
+          { id: "a1", type: "assistant", content: "đáp xong", timestamp: new Date().toISOString(), ngoaiConvId: 7 },
+          { id: "u2", type: "user", content: "hỏi tiếp", timestamp: new Date().toISOString(), ngoaiConvId: 7 },
+          { id: "a2", type: "assistant", content: "đang gõ", timestamp: new Date().toISOString(), ngoaiConvId: 7, streaming: true },
+        ]),
+      );
+      render(<AILocalChatBubble />);
+      act(() => setAiChatOpen(true));
+      expect(await screen.findByText("đang gõ")).toBeInTheDocument();
+      expect(screen.getAllByTestId("nut-kiem-dinh-ngoai")).toHaveLength(1); // chỉ lượt đã xong; lượt đang stream không có
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("T10 — model cục bộ/auto: KHÔNG tạo hội thoại, body giữ khoá cũ (route trang, máy, KHÔNG conversationId), nhánh ngoài không chạy", async () => {

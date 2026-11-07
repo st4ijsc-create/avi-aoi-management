@@ -594,7 +594,14 @@ export type EdgeClaimAnswer = z.infer<typeof edgeClaimAnswerSchema>;
 
 // ── POST runs/:id/progress ──────────────────────────────────────────────────────────────────────────────────────────
 
-export const edgeProgressRequestSchema = z.strictObject({ ...zClaimRef, seq: zSeq, status: zRunStatus.optional(), currentStepId: zStepId.nullable().optional() });
+export const edgeProgressRequestSchema = z.strictObject({
+  ...zClaimRef,
+  seq: zSeq,
+  status: zRunStatus.optional(),
+  currentStepId: zStepId.nullable().optional(),
+  /** a2n — when the journal's write / fsync now running started (edge clock); sent only to a central advertising EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL */
+  journalStalledSinceMs: zEpochMs.optional(),
+});
 export const edgeProgressAnswerSchema = z.strictObject({
   abortRequested: z.boolean(),
   status: zRunStatus,
@@ -710,7 +717,11 @@ export type EdgeAuthUnusedReason = (typeof EDGE_AUTH_UNUSED_REASONS)[number];
 export const EDGE_CENTRAL_ACCEPTS_HEADER = "x-edge-central-accepts";
 export const EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE = "auth_unused.config_stale";
 export const EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED = "auth_unused.run_latched";
-export const EDGE_CENTRAL_ACCEPTS: readonly string[] = Object.freeze([EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE, EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED]);
+/** a2n — `progress` may carry journalStalledSinceMs. The request schema is strict: an old central answers 400 to the field. */
+export const EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL = "progress.journal_stall";
+export const EDGE_CENTRAL_ACCEPTS: readonly string[] = Object.freeze([EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE, EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED, EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL]);
+/** a2n — anomaly code on the events stream: a stall `progress` reported has ended. Its detail: `... since <ms> ...; healthy=<bool>`. */
+export const EDGE_JOURNAL_STALL_RECOVERED_CODE = "EDGE_JOURNAL_STALL_RECOVERED";
 /** The header value central sends (comma-separated tokens). */
 export const edgeCentralAcceptsHeaderValue = (): string => EDGE_CENTRAL_ACCEPTS.join(",");
 /** Parse the header (null / garbage ⇒ the empty set: an old central). Tokens are bounded and lower-case [a-z0-9._-]. */

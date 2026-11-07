@@ -1,7 +1,7 @@
 /**
  * Đợt 10.4b L4 — phần thuần của bong bóng khi dùng model ngoài (hợp đồng docs/HOP_DONG_10_4B_L4_BONG_BONG.md: T1, T2, T3b, T11, T16).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { dungNguCanhKb } from "@/hooks/useKbChatStream";
 import {
   KHOA_NGU_CANH_NGOAI,
@@ -11,6 +11,9 @@ import {
   catVanBan,
   demByte,
   dungNguCanhNgoai,
+  dungNguonVanBan,
+  maLoiVanBan,
+  vanBanBongBongBat,
   laModelNgoai,
   lichSuNgoai,
   type LuotBongBong,
@@ -136,5 +139,52 @@ describe("catVanBan — trần TỔNG 16 KB; giữ traLoi, cắt cauHoi trước
     const kq = catVanBan({ cauHoi: "😀".repeat(5000), traLoi: "ệ".repeat(5000) });
     expect(kq.cauHoi + kq.traLoi).not.toContain("�");
     expect(demByte(kq.cauHoi) + demByte(kq.traLoi)).toBeLessThanOrEqual(TRAN_VAN_BAN_BYTE);
+  });
+});
+
+describe("nhánh van-ban của bong bóng (T9/T11/T13/T14)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const L = (o: Partial<LuotBongBong> & { tinTraLoiId?: number }): LuotBongBong & { tinTraLoiId?: number } => ({ type: "assistant", content: "đáp", ...o });
+  const hoi = L({ type: "user", content: "hỏi gì" });
+
+  it("T9 — cờ MẶC ĐỊNH TẮT; chỉ chuỗi đúng 'true' mới bật", () => {
+    expect(vanBanBongBongBat()).toBe(false);
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "1");
+    expect(vanBanBongBongBat()).toBe(false);
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "true");
+    expect(vanBanBongBongBat()).toBe(true);
+  });
+  it("lượt ngoài chưa lưu, xong ⇒ nguồn van-ban đúng hình dạng (cauHoi = lượt người dùng liền trước)", () => {
+    const r = dungNguonVanBan([hoi, L({ ngoaiConvId: 4 })], 1);
+    expect(r).toEqual({ nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "hỏi gì", traLoi: "đáp" }, daCat: false });
+  });
+  it("T13 — đang stream (kể cả đã abort giữa chừng) ⇒ null, không gửi traLoi dở", () => {
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, streaming: true })], 1)).toBeNull();
+  });
+  it("lượt đã lưu (nhánh chat) / lượt cục bộ / người dùng / rỗng ⇒ null", () => {
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, tinTraLoiId: 9 })], 1)).toBeNull();
+    expect(dungNguonVanBan([hoi, L({})], 1)).toBeNull(); // không ngoaiConvId = lượt cục bộ
+    expect(dungNguonVanBan([hoi], 0)).toBeNull();
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, content: "  \n " })], 1)).toBeNull();
+    expect(dungNguonVanBan([hoi], 5)).toBeNull();
+  });
+  it("T11 — quá trần ⇒ daCat=true, tổng byte ≤ 16 KB, traLoi giữ; vắng lượt người dùng liền trước ⇒ cauHoi rỗng", () => {
+    const r = dungNguonVanBan([L({ type: "user", content: "h".repeat(20_000) }), L({ ngoaiConvId: 4, content: "đ".repeat(3000) })], 1)!;
+    expect(r.daCat).toBe(true);
+    expect(demByte(r.nguon.cauHoi) + demByte(r.nguon.traLoi)).toBeLessThanOrEqual(TRAN_VAN_BAN_BYTE);
+    expect(r.nguon.traLoi).toBe("đ".repeat(3000));
+    const r2 = dungNguonVanBan([L({ ngoaiConvId: 4 })], 0)!;
+    expect(r2.nguon.cauHoi).toBe("");
+  });
+  it("T14 — mã tRPC ⇒ khoá câu báo; mã lạ ⇒ null (dùng bộ dịch chung); KHÔNG đọc message", () => {
+    const e = (code: string) => Object.assign(new Error("ban-than-chua-bi-mat sk-123"), { data: { code } });
+    expect(maLoiVanBan(e("PAYLOAD_TOO_LARGE"))).toBe("loiQuaLon");
+    expect(maLoiVanBan(e("NOT_FOUND"))).toBe("loiKhongCo");
+    expect(maLoiVanBan(e("FORBIDDEN"))).toBe("loiKhongCo");
+    expect(maLoiVanBan(e("TOO_MANY_REQUESTS"))).toBe("loiVuotTran");
+    expect(maLoiVanBan(e("CONFLICT"))).toBe("loiDangChay");
+    expect(maLoiVanBan(e("BAD_GATEWAY"))).toBeNull();
+    expect(maLoiVanBan(new Error("x"))).toBeNull();
+    expect(maLoiVanBan(null)).toBeNull();
   });
 });

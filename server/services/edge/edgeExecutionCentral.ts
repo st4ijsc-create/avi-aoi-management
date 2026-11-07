@@ -96,7 +96,7 @@ import { edgeNodeProgramReports } from "./edgeControlSchema";
 import { analyseDefinition, loadMachineMap, readPriorPicture } from "./edgeRunAnalysis";
 import { assignedDefinition, cursorLastSeq } from "./edgeReportsCentral";
 import { resolveEngineSink } from "./edgeEngineSink";
-import { commandsForNode, noteEdgeNodePull, type EdgeUnsignedStop as EdgeUnsignedStopEnvelope } from "./edgeNodeCommands";
+import { commandsForNode, edgeNodePullMs, noteEdgeNodePull, type EdgeUnsignedStop as EdgeUnsignedStopEnvelope } from "./edgeNodeCommands";
 import type { EdgeSignedEnvelope } from "./edgeSigning";
 
 export const EDGE_PULL_LIMIT = 20;
@@ -1039,11 +1039,119 @@ export async function progressForNodeV2(node: EdgeNodePrincipal, runId: number, 
     if (refused) return refused;
     const r = await progressForNode(node, runId, parsed.data);
     if (r.http !== 200 || !r.data) return r as EdgeAnswer<never>;
+    // a2n — never awaited: a slow or failing alert is no reason to hold or fail the tick that carries abortRequested and the node's STOPs
+    if (parsed.data.journalStalledSinceMs !== undefined) void baoJournalTreo(d, node, parsed.data.journalStalledSinceMs).catch((err) => console.error(`[EdgeExec] journal stall alert of node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`));
     return { http: 200, data: { abortRequested: r.data.abortRequested, status: r.data.status as EdgeProgressAnswer["status"], consistent: r.data.consistent, ...(await commandFields(node)) } };
   } catch (err) {
     if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 progress of run ${runId} failed: ${(err as Error)?.message ?? err}`);
     return edgeUnavailableV2;
   }
+}
+
+/** a2n — the statuses at which a walker of the run is live on its node. */
+const RUN_CON_DI = new Set(["running", "compensating"]);
+
+/**
+ * a2n — the STOPs central cannot confirm for a run: the verified STOPs of its assigned definition without a completed row of their own or of `abort:<id>`.
+ * This is central's view: rows lag a hung disk, so a STOP already sent on the edge can still be named ("not confirmed", not "not sent"). null ⇔ unreadable:
+ * an alert must not be lost to its own detail.
+ */
+async function stopChuaXacNhan(d: Awaited<ReturnType<typeof db>>, a: RunEdgeAssignment): Promise<string[] | null> {
+  try {
+    const def = await assignedDefinition(d as never, a);
+    if (!def) return null;
+    const an = await analyseDefinition(d as never, a.runId, def, await loadMachineMap(d as never, def));
+    const rows = await d.select({ stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status }).from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, a.runId));
+    const xong = new Set(rows.filter((r) => r.status === "completed").map((r) => r.stepId));
+    return an.verifiedStops.map((s) => s.stepId).filter((id) => !xong.has(id) && !xong.has(`abort:${id}`));
+  } catch (err) {
+    console.error(`[EdgeExec] STOPs of run ${a.runId} could not be read for an alert: ${(err as Error)?.message ?? err}`);
+    return null;
+  }
+}
+
+/** key → when its runs were last read. Only spares a read per tick: the alert's own dedup (raiseEdgeConfigAlert) decides what is sent. */
+const journalTreoDocLuc = new Map<string, number>();
+const JOURNAL_TREO_DOC_LAI_MS = 60_000;
+/** Tests only. */
+export function __resetJournalTreoForTests(): void {
+  journalTreoDocLuc.clear();
+}
+
+/** a2n — LAYER 1 of a stalled edge disk: `progress` said so. One URGENT per (node, stall), naming the node's live runs. Throws only if the runs cannot be listed. */
+export async function baoJournalTreo(d: Awaited<ReturnType<typeof db>>, node: EdgeNodePrincipal, sinceMs: number): Promise<void> {
+  const khoa = `${node.nodeId}:${sinceMs}`;
+  const now = Date.now();
+  const luc = journalTreoDocLuc.get(khoa);
+  if (luc !== undefined && now - luc < JOURNAL_TREO_DOC_LAI_MS) return;
+  if (journalTreoDocLuc.size >= 5_000) journalTreoDocLuc.clear();
+  journalTreoDocLuc.set(khoa, now);
+  try {
+    const { hang } = await docClaimCuaNode(d, node);
+    const runs: Array<{ runId: number; stops: string[] | null }> = [];
+    for (const { a, run } of hang) if (RUN_CON_DI.has(run.status)) runs.push({ runId: a.runId, stops: await stopChuaXacNhan(d, a) });
+    const { alertJournalStalled, alertRecipients } = await import("./edgeConfigCentral");
+    alertJournalStalled(node, { sinceMs, runs }, () => alertRecipients(d as never));
+  } catch (err) {
+    journalTreoDocLuc.delete(khoa); // the next tick tries again
+    throw err;
+  }
+}
+
+/**
+ * a2n — how long a live run may report nothing before LAYER 2 speaks: past EDGE_CLAIM_STALE_MS plus three pulls, so a node that restarted has seen its
+ * claim stale and declared it interrupted first (run held, claim cleared): the book, not an alarm.
+ */
+export function edgeProgressLostAlertMs(): number {
+  return edgeClaimStaleMs() + 3 * edgeNodePullMs();
+}
+
+/** When this process started: a central that was down heard no progress from anyone, so the wait of every claim counts from here at the earliest. */
+const TRUNG_TAM_KHOI_DONG_LUC = Date.now();
+
+/**
+ * a2n — LAYER 2 (health checker, central side): every claim of a run still walking at central that has reported nothing for edgeProgressLostAlertMs ⇒ one
+ * URGENT per outage. It asks nothing of the edge, so it holds where `progress` cannot: every libuv thread of the node held (`fetch` by name fails: no
+ * progress, no pull, no heartbeat) and a walker that ended while `complete` waits on the disk (no segment, no tick). Quiet without a claim, once the run
+ * left running (held, ended, awaiting a gate: the claim is cleared with it) and for a node that keeps reporting whatever its health. Returns the run ids
+ * past the threshold; throws when the claims cannot be read (the caller logs it).
+ */
+export async function baoRunMatProgress(now: number = Date.now(), khoiDongLuc: number = TRUNG_TAM_KHOI_DONG_LUC): Promise<number[]> {
+  const d = await db();
+  const { edgeNodes } = await import("../../../drizzle/schema");
+  const { docHetTheoTrang, baoDocCatBot } = await import("./docHetTheoTrang");
+  type Hang = ClaimRow & { nodeCode: string };
+  const { hang, catBot } = await docHetTheoTrang<Hang>(
+    (sau, n) =>
+      d
+        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }, nodeCode: edgeNodes.code })
+        .from(runEdgeAssignments)
+        .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
+        .innerJoin(edgeNodes, eq(edgeNodes.id, runEdgeAssignments.edgeNodeId))
+        .where(and(isNotNull(runEdgeAssignments.claimTokenHash), inArray(orchestrationRuns.status, [...RUN_CON_DI] as never), sau === null ? undefined : gt(runEdgeAssignments.runId, sau)))
+        .orderBy(asc(runEdgeAssignments.runId))
+        .limit(n) as Promise<Hang[]>,
+    (x) => x.a.runId,
+  );
+  if (catBot) {
+    baoDocCatBot({
+      kind: "edge_progress_list_cut",
+      title: "Edge claims: the lost-progress sweep could not read to the end",
+      message: `The sweep for edge runs that stopped reporting stopped at its page budget after ${hang.length} rows: every row read was checked, the rest was not.`,
+      dedupKey: "edge_progress_list_cut",
+    });
+  }
+  const nguong = edgeProgressLostAlertMs();
+  const out: number[] = [];
+  const { alertRunProgressLost, alertRecipients } = await import("./edgeConfigCentral");
+  for (const { a, run, nodeCode } of hang) {
+    const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
+    const lastMs = last ? new Date(last).getTime() : NaN;
+    if (!Number.isFinite(lastMs) || now - Math.max(lastMs, khoiDongLuc) < nguong) continue;
+    out.push(a.runId);
+    alertRunProgressLost({ nodeId: a.edgeNodeId, nodeCode }, { runId: a.runId, claimSeq: a.claimSeq, status: run.status, lastProgressMs: lastMs, stops: await stopChuaXacNhan(d, a) }, () => alertRecipients(d as never));
+  }
+  return out;
 }
 
 /**

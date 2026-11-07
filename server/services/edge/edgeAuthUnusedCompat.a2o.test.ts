@@ -231,7 +231,9 @@ describe("A2(o) r3 F2 — the other direction: OLD edge + NEW central keeps work
     // what an OLD edge does with a new central's answer: the same strict body parse — the header is outside the body
     const central = new FakeCentral();
     const res = await central.fetchImpl("http://central.test/api/v1/edge/node/pull", { method: "POST", body: "{}", headers: {} } as never);
-    expect(res.headers.get(EDGE_CENTRAL_ACCEPTS_HEADER)).toBe(`${EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE},${EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED}`);
+    // a2n — the header is a LIST now (progress.journal_stall joined it): the token is read off the list, as the edge reads it
+    expect(parseEdgeCentralAccepts(res.headers.get(EDGE_CENTRAL_ACCEPTS_HEADER)).has(EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE)).toBe(true);
+    expect(parseEdgeCentralAccepts(res.headers.get(EDGE_CENTRAL_ACCEPTS_HEADER)).has(EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED)).toBe(true);
     const json = (await res.json()) as { ok: boolean; data: unknown };
     expect(EDGE_ANSWER_SCHEMAS.pull.safeParse(json.data).success).toBe(true);
   });

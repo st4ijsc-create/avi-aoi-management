@@ -24748,6 +24748,17 @@
     "nhanNgoai": "ngoài · gửi dữ liệu ra"
   },
   "kiemDinhNgoai": {
+    "vanBan": {
+      "xemTruoc": "Văn bản sẽ gửi (đúng chuỗi này, sau khi cắt)",
+      "cauHoi": "Câu hỏi",
+      "traLoi": "Câu trả lời",
+      "daCat": "Văn bản dài hơn 16 KB nên đã bị cắt bớt (ưu tiên giữ câu trả lời, cắt câu hỏi trước).",
+      "chuaLuu": "Lượt này chưa được lưu trên máy chủ — hệ thống gửi đúng đoạn chữ hiển thị ở đây, không đọc kho.",
+      "loiQuaLon": "Văn bản quá lớn (trần 16 KB) nên máy chủ từ chối. Hãy kiểm định đoạn ngắn hơn.",
+      "loiKhongCo": "Không gửi được: nhà máy chưa bật kiểm định từ bong bóng, hoặc bạn không có quyền.",
+      "loiVuotTran": "Đã vượt trần chi phí/tốc độ của AI ngoài. Thử lại sau hoặc hỏi quản trị viên.",
+      "loiDangChay": "Văn bản này đang được kiểm định — vui lòng chờ kết quả."
+    },
     "khongHopLe": "Kết quả kiểm định không đúng định dạng nên không hiển thị.",
     "daChep": "Đã chép bản chuẩn hoá.",
     "chepLoi": "Không chép được — hãy bôi đen và chép tay.",

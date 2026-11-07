@@ -33,7 +33,9 @@ import type { EdgeConfigSource } from "./edgeConfigSource";
 import type { EdgeJournal } from "./edgeJournal";
 import { EDGE_NODE_TOKEN_RE } from "./edgeNodeCredentials";
 import {
+  EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL,
   EDGE_HELD_REASONS,
+  EDGE_JOURNAL_STALL_RECOVERED_CODE,
   edgeRunStream,
   edgeSweepPictureSchema,
   type EdgeCommand,
@@ -187,6 +189,12 @@ export const EDGE_NOT_OWNED_HERE_MIN_MS = 60_000;
 export const EDGE_STOP_MEMORY_MAX_AGE_MS = 3_600_000;
 /** fix review 3 (F-1) — a STOP pending on an unknown target this long ⇒ an edge alert */
 export const EDGE_STOP_PENDING_ALERT_MS = 30_000;
+
+/**
+ * a2n — a journal write / fsync running this long is reported on `progress`. The journal's own authSyncTimeoutMs: past it a non-STOP command is refused
+ * anyway. It ages ONE call, not the wait of a record, so a slow disk under it never reports (measured: 3 s and 4.5 s fsyncs, 0 reports).
+ */
+export const EDGE_JOURNAL_STALL_ALERT_MS = 5_000;
 
 /** The principal an edge-side abort is recorded under (never a person). */
 export const EDGE_AGENT_ABORT_USER = { id: 0, role: "system", name: "edge: central abort" } as const;
@@ -374,6 +382,8 @@ export class EdgeExecutionAgent {
    * answer without it. STOPs, aborts named by central and STOP re-sends still go. Missing run data is never read as "no abort".
    */
   private runStateHold = false;
+  /** a2n — the `since` of the stall central last took on a `progress`; null ⇔ nothing to announce the end of */
+  private stallReported: number | null = null;
 
   constructor(
     private readonly cfg: EdgeAgentConfig,
@@ -474,9 +484,26 @@ export class EdgeExecutionAgent {
     return p;
   }
 
+  /** a2n — the `progress` field of a stalled journal; only to a central that advertised it (the request schema is strict). */
+  private journalStallField(): { journalStalledSinceMs?: number } {
+    const since = this.deps.journal.stalledSince();
+    if (since === null || this.now() - since < EDGE_JOURNAL_STALL_ALERT_MS) return {};
+    if (this.deps.client.centralAccepts?.(EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL) !== true) return {};
+    return { journalStalledSinceMs: since };
+  }
+
+  /** a2n — a stall central took has ended: one anomaly on the events stream, so a person hears the end too and whether the node still refuses non-STOP. */
+  private noteStallEnded(): void {
+    const since = this.stallReported;
+    if (since === null || this.deps.journal.stalledSince() === since) return;
+    this.stallReported = null;
+    this.anomaly(EDGE_JOURNAL_STALL_RECOVERED_CODE, null, `journal stall since ${since} ended after ${this.now() - since} ms; healthy=${this.deps.journal.stats().healthy}`);
+  }
+
   private async pullOnce(): Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number; deferred?: unknown[] }> {
     const cycle = ++this.cycleSeq;
     this.pruneMemories();
+    this.noteStallEnded();
     const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
     const pulled = await this.deps.client.post("pull", {});
     if (!pulled.ok) {
@@ -1035,7 +1062,9 @@ export class EdgeExecutionAgent {
     let inFlight: Promise<void> | null = null;
     const tick = async () => {
       if (stopped) return;
-      const r = await this.deps.client.post("progress", { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq }, { runId: seg.runId });
+      const stall = this.journalStallField();
+      const r = await this.deps.client.post("progress", { claimSeq: seg.claimSeq, claimToken: seg.token, seq: ++seg.seq, ...stall }, { runId: seg.runId });
+      if (r.ok && stall.journalStalledSinceMs !== undefined) this.stallReported = stall.journalStalledSinceMs;
       if (stopped) return;
       if (r.ok) {
         const cmds = [...r.data.commands, ...unsignedStopsOf(r.data)];

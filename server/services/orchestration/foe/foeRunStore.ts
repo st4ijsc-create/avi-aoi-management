@@ -43,7 +43,7 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
-import { EDGE_HELD_CTX_KEY, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
+import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 
@@ -1234,6 +1234,19 @@ const OUTCOME_UNKNOWN_KEY = "foeOutcomeUnknown";
 export { EDGE_HELD_CTX_KEY };
 
 /**
+ * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except the two a Continue does not get out of (measured:
+ * MIX ends failed without its forward STOP, B5 fails the step): those say Abort, because Abort is the way out there.
+ */
+function heldAdvice(error: string | undefined): string {
+  const mark = edgeHoldMarkOf(error);
+  // data-raw-ok: the run's error (shown on the run), as the rest of it
+  if (mark === EDGE_HOLD_CONSUME_OVERRUN) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
+  // data-raw-ok: as above
+  if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
+  return " — nothing further was sent; Continue to resume it.";
+}
+
+/**
  * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
  * transaction). Never from 'aborted' or a centrally STOPPED run (a rejection's claim token) — only from 'running' /
  * 'compensating' (the bound write P-E2 uses), so a late report never regresses a run. The run row decides, never the report:
@@ -1272,7 +1285,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""} — nothing further was sent; Continue to resume it.`,
+      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${error ? `: ${error.slice(0, 500)}` : ""}${heldAdvice(error)}`,
       contextJson: {
         ...ctx,
         [EDGE_HELD_CTX_KEY]: reason,

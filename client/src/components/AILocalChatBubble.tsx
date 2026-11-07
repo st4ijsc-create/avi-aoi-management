@@ -13,7 +13,7 @@ import { daDongYNgoai, daXacNhanVanHanh, datDongYNgoai } from "@/lib/dongYNgoai"
 import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
 import { NoiDungTraLoiNgoai } from "@/components/ai/NoiDungTraLoiNgoai";
 import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
-import { dungNguCanhNgoai, laModelNgoai, lichSuNgoai } from "@/components/ai/bongBongNgoai";
+import { dungNguCanhNgoai, dungNguonVanBan, laModelNgoai, lichSuNgoai, vanBanBongBongBat } from "@/components/ai/bongBongNgoai";
 import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -1448,7 +1448,7 @@ export function AILocalChatBubble() {
               </div>
             ) : (
               <div className="space-y-3">
-                {messages.map((msg) => (
+                {messages.map((msg, chiMuc) => (
                   <div key={msg.id} className={cn("flex gap-2", msg.type === "user" ? "flex-row-reverse" : "flex-row")}>
                     <div
                       className={cn(
@@ -1554,10 +1554,15 @@ export function AILocalChatBubble() {
                                     {msg.streaming && <span className="inline-block size-1.5 rounded-full bg-muted-foreground animate-pulse ml-0.5" />}
                                   </div>
                                   {!msg.streaming && msg.vet && <HuyHieuNgoai vet={msg.vet} />}
-                                  {/* Nhánh `chat` (lượt đã lưu) — nhánh `van-ban` ẨN cho tới khi máy chủ có nguồn đó (hợp đồng §7.3). */}
+                                  {/* Nhánh `chat` (lượt đã lưu, cặp id do MÁY CHỦ trả). */}
                                   {!msg.streaming && msg.content.trim() !== "" && msg.tinTraLoiId !== undefined && (
                                     <NutKiemDinhNgoai nguon={{ loai: "chat", cuocTroChuyenId: msg.ngoaiConvId, tinNhanId: msg.tinTraLoiId }} />
                                   )}
+                                  {/* Nhánh `van-ban` (lượt KHÔNG có bản lưu) — sau cờ MẶC ĐỊNH TẮT (hợp đồng §9 T9); hộp xác nhận xem trước ĐÚNG chuỗi sẽ gửi + nói rõ "đã cắt". */}
+                                  {vanBanBongBongBat() && msg.tinTraLoiId === undefined && (() => {
+                                    const vb = dungNguonVanBan(messages, chiMuc);
+                                    return vb ? <NutKiemDinhNgoai nguon={vb.nguon} daCat={vb.daCat} /> : null;
+                                  })()}
                                 </>
                               ) : (
                                 <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed">
