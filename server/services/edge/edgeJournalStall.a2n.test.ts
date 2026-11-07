@@ -178,6 +178,8 @@ describe("a2n fsyncOverrun — non-STOP closed until restart, records keep flowi
   it("★ consumeOverran names only a consume past its bound: not before it, still after the disk returned, for a later consume refused on the unhealthy check too", async () => {
     const { j, dia } = await moJournal();
     expect(j.consumeOverran()).toBe(false);
+    expect(await j.consumeAuthorization({ ...J, jti: "jti-z" })).toEqual({ ok: true });
+    expect(j.consumeOverran()).toBe(false); // a consume that finished in time is not one
     dia.treoSync();
     await j.consumeAuthorization(J);
     expect(j.consumeOverran()).toBe(true);
