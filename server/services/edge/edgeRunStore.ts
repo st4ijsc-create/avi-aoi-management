@@ -461,7 +461,7 @@ export class EdgeRunStore extends EdgeStoreBase {
       this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
     }
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
-    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): command step "${stepId}" was not sent — ${why}; the run is held${continueOk ? " (Continue it once the edge has its new config)" : ""}.` };
+    return { ok: false, verdict: "unavailable", heldReason: "configStale", error: `EDGE_HELD(configStale): ${continueOk ? "" : `${EDGE_HOLD_UNUSED_NOT_REPORTED}: `}command step "${stepId}" was not sent — ${why}; the run is held${continueOk ? " (Continue it once the edge has its new config)" : ""}.` };
   }
 
   /**
@@ -496,7 +496,7 @@ export class EdgeRunStore extends EdgeStoreBase {
           : "the edge's config is older than the one central announced";
     const h = this.heldForStaleConfig(
       stepId,
-      `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : `could NOT be reported unused (${EDGE_HOLD_UNUSED_NOT_REPORTED}: a Continue treats the step as possibly sent)`}`,
+      `${why}; its authorisation ${reported ? "was reported unused (a Continue re-authorises it)" : "could NOT be reported unused (a Continue treats the step as possibly sent)"}`,
       d.reason === EDGE_SAFETY_CONFIG_MISSING ? EDGE_SAFETY_CONFIG_MISSING : EDGE_CONFIG_STALE,
       reported,
     );

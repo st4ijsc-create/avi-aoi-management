@@ -43,7 +43,7 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
-import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
+import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, isRobotKind, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 
 // ── the port ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1019,10 +1019,11 @@ export { EDGE_HELD_CTX_KEY };
  * MIX ends failed without its forward STOP, B5 fails the step): those say Abort, because Abort is the way out there.
  */
 function heldAdvice(error: string | undefined): string {
+  const mark = edgeHoldMarkOf(error);
   // data-raw-ok: the run's error (shown on the run), as the rest of it
-  if (error?.includes(EDGE_HOLD_CONSUME_OVERRUN)) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
+  if (mark === EDGE_HOLD_CONSUME_OVERRUN) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
   // data-raw-ok: as above
-  if (error?.includes(EDGE_HOLD_UNUSED_NOT_REPORTED)) return " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
+  if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step and does not send the STOPs behind it. Use Abort to send them.";
   return " — nothing further was sent; Continue to resume it.";
 }
 

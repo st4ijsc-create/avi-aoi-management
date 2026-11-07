@@ -245,7 +245,7 @@ describe.skipIf(!onTest)("a2n round C — the held cycle (real _test DB, ROLLBAC
       const r = await moRun(tx, the, [chay(the, "m1"), dung(the, "s1")]);
       expect((await authorizeForNode(the.node, r.runId, thanUyQuyen(the, r, "m1"))).http).toBe(200);
       await recordEdgeStepRows(tx as never, r.runId, [hang("m1", "held")] as never);
-      const loi = `EDGE_HELD(configStale): command step "m1" was not sent — stale; its authorisation could NOT be reported unused (${EDGE_HOLD_UNUSED_NOT_REPORTED}: a Continue treats the step as possibly sent); the run is held.`;
+      const loi = `EDGE_HELD(configStale): ${EDGE_HOLD_UNUSED_NOT_REPORTED}: command step "m1" was not sent — stale; its authorisation could NOT be reported unused (a Continue treats the step as possibly sent); the run is held.`;
       expect((await completeForNodeV2(the.node, r.runId, ketHeld(r, "configStale", loi))).http).toBe(200);
       const held = await hangRun(tx, r.runId);
       expect(String(held.error)).toContain("Use Abort to send them.");
