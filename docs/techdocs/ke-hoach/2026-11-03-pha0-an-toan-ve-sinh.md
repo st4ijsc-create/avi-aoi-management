@@ -73,7 +73,7 @@
 | Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
 | Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
-| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) — 08/11: VACUUM FULL **chưa chạy** (18 MB/0 hàng); dieu-phoi làm theo uỷ quyền: đếm lại 0 hàng, owner `aoi`, khoá vài giây, ghi kích thước sau | kích thước `inspection_packages` |
+| Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) — 08/11: VACUUM FULL **chưa chạy** (18 MB/0 hàng); **XONG 06:16:46 08/11** (uỷ quyền): đếm lại 0 hàng, owner `aoi`, lock_timeout 5 s, `VACUUM (FULL, ANALYZE)` 13 ms, **18 MB → 80 kB**, vẫn 0 hàng, readyz 200 | kích thước `inspection_packages` |
 
 ## 5. Thứ tự và song song
 
@@ -117,4 +117,5 @@ route sống · trang không import · router 0 client · `notifications` 24 h *
 | T0‑4b `rul_estimates` > 90 d | 2,86 M | 55 207 | 2 799 905 | như trên |
 | E0‑1 `simulation_runs` | 84 127 (duyệt 06/11) | 84 127 | 0 | xoá sau khi job fidelity dừng (`:3000` bản main 45ee3b777), đếm 2 lần cách 6 phút không đổi, khoá bằng số đã duyệt |
 | Q0‑5 seed `product_inspections` | 13 236 | 0 (giữ) | 13 236 | WORM; chủ dự án chọn giữ |
+| Q0‑5 `inspection_packages` VACUUM FULL | 0 hàng / 18 382 848 B | 0 hàng (chỉ trả chỗ) | 0 hàng / 81 920 B | 08/11 06:16, owner `aoi`, 13 ms |
 | `machine_status_logs` | 95 971 | — | — | không đưa vào: OEE đang đọc |
