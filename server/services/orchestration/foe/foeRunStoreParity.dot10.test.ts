@@ -2699,6 +2699,17 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
     }
   });
 
+  it("h.alertDurable reaches the engine's alert (T2): 6 concurrent calls, off false, on true, 10 rounds", async () => {
+    const goi = (v: number, lan: string) => dongThoi((i) => canhBaoKetCucKhongRo({ loai: "held", runId: 78, stepId: `m${i}`, compId: "c", error: "e", lan: `${lan}${v}`, owner: OWNER.id }));
+    for (let v = 0; v < VONG; v++) {
+      h.alertDurable = false;
+      expect(await goi(v, "tat")).toEqual(Array(DONG_THOI).fill(false));
+      h.alertDurable = true;
+      expect(await goi(v, "bat")).toEqual(Array(DONG_THOI).fill(true));
+    }
+    expect(h.canhBaoThat).toBe(0);
+  });
+
   it("h.ownershipThrows (edgeCentralCommon, behind an import()): on, 6 concurrent assignments are all refused; off, they all go, 10 rounds", async () => {
     const d = def("t0-o", [move("r1")]);
     expect((await deployWorkflow(d, OWNER)).ok).toBe(true);

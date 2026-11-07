@@ -242,9 +242,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * approvedNotConfirmed — a compensation a Continue approved failed or got no answer (m-F); approvedNotSent — the same, nothing was handed over (its interlock, I-K);
  * failedNotSent — the run is FAILED, its compensation was not sent (m-C); compensationUnknown — a compensation's OWN outcome is unknown (I-I, m-P);
  * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c);
- * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split).
+ * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split);
+ * runEnd — A2(n) T2: the one URGENT of a latched run's end, `stepId` = the latch step, under the fixed event "chot". Check on site (H2): by then Abort may answer "already terminal".
  */
-export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent";
+export type LoaiCanhBaoKhongRo = "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -258,6 +259,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   compensationUnknown: "foe_outcome_unknown_compensation_outcome_unknown",
   inFlight: "foe_outcome_unknown_write_in_flight_at_latch",
   forwardNotSent: "foe_outcome_unknown_forward_not_sent",
+  runEnd: "foe_outcome_unknown_run_end",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -292,7 +294,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       held: [`compensation ${c} ${CHO_NGUOI_TIEU_DE}`, `Its compensation ${c} could not be confirmed as a STOP, so it was NOT sent: the run is HELD and the compensation is ${CHO_NGUOI_TIEU_DE}. Check the device on site, then Continue (sends only that compensation; a reason is required) or Abort (sends the run's STOPs, no reason needed; no compensation that is not a STOP is sent).`],
       stopSent: [`${STOP_DA_GUI_TIEU_DE} (${c})`, `Its compensation ${c} is a STOP and was sent automatically (stopping never waits for a person): ${STOP_DA_GUI_TIEU_DE}. Check the machine state on site.`],
       stopSimulated: [`STOP compensation ${c} simulated — NOT sent (OT control off)`, `Its STOP compensation ${c} was only SIMULATED (OT control off): nothing reached the device. Check on site and use the machine's direct STOP / E-STOP if needed.`],
-      stopNotConfirmed: [`STOP compensation ${c} sent but NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but NOT confirmed — check on site and use the machine's direct STOP / E-STOP if needed.`],
+      stopNotConfirmed: [`STOP compensation ${c} handed over, NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopNotHanded: [`STOP compensation ${c} NOT sent`, `Its STOP compensation ${c} was never handed to a dispatcher — check on site and use the machine's direct STOP / E-STOP if needed.`],
       noCompensation: [`no compensation of its own`, `It has no compensation of its own and it is never sent again; a compensation of a step around it may still be due. Check the device on site before running again.`],
       approvedNotConfirmed: [`compensation ${c} NOT confirmed`, `Its compensation ${c}, approved by a Continue, failed or got no answer: it may or may not have reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
@@ -300,6 +302,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment may have sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
       forwardNotSent: [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
+      runEnd: [`nothing further goes forward, check the machine on site`, `The run has ended or is waiting; nothing further goes forward. A STOP this run sent, if any, could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
@@ -317,8 +320,9 @@ export const KHONG_RO_DANG_BAY_AUDIT_OP = "foe_outcome_unknown_in_flight_at_latc
  * NOBODY to send it to (no owner, no active admin / supervisor, or the list unreadable) ⇒ still visible: raiseCriticalStopAlert's CRITICAL log
  * line + the critical anomaly on the alert stream (it publishes whatever the list), an explicit error line, and a durable audit row
  * (KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP, action KET_CUC_KHONG_RO_AUDIT_ACTION). Bounded; never throws. Callers do not await it on a STOP's path.
+ * A2(n) T2 — true ⇔ the URGENT is stored: the alert said so (no word is not a yes) and there was somebody to tell (M4: the log, the stream and the audit row are no URGENT).
  */
-export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number | null; entityType?: string }): Promise<void> {
+export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number | null; entityType?: string }): Promise<boolean> {
   try {
     let nguoi: number[] = [];
     try {
@@ -337,15 +341,18 @@ export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number |
     const recipients = [...new Set([a.owner ?? 0, ...nguoi])].filter((u) => Number.isSafeInteger(u) && u > 0);
     const n = noiDungCanhBaoKhongRo(a);
     const { raiseCriticalStopAlert } = await napCanhBao();
-    await raiseCriticalStopAlert({ ...n, recipients, source: "ot", entityType: a.entityType ?? "orchestration_run", entityId: a.runId, khuTrungBenVung: {}, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } });
+    let ben = false;
+    await raiseCriticalStopAlert({ ...n, recipients, source: "ot", entityType: a.entityType ?? "orchestration_run", entityId: a.runId, khuTrungBenVung: {}, retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, baoBen: (b) => (ben = b) });
     // (c) — what cannot be recalled is on the audit trail too, central's walk and an edge's report alike
     if (a.loai === "inFlight") await ghiAuditHeThongKhongRo(a.runId, { kind: n.kind, dedupKey: n.dedupKey, stepId: a.stepId, compId: a.compId }, KHONG_RO_DANG_BAY_AUDIT_OP, true);
     if (recipients.length === 0) {
       console.error(`[FOE] run ${a.runId}: outcome-unknown URGENT has NO recipient (no owner, no active admin / supervisor): ${n.title}`);
       await ghiAuditHeThongKhongRo(a.runId, { kind: n.kind, dedupKey: n.dedupKey, stepId: a.stepId, compId: a.compId });
     }
+    return ben && recipients.length > 0;
   } catch (err) {
     console.error(`[FOE] run ${a.runId}: outcome-unknown alert failed: ${(err as Error)?.message ?? err}`);
+    return false;
   }
 }
 
@@ -379,7 +386,7 @@ export function docAnomalyKhongRo(detail: string | null | undefined): BaoCaoKhon
   }
 }
 /** I-5 — the same event for both edge routes (the anomaly and the segment end): the same dedup key, the same text ⇒ one inbox row. */
-export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: number | null): Promise<void> {
+export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: number | null): Promise<boolean> {
   return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner, ...(x.biet ? { biet: true } : {}) });
 }
 /**

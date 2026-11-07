@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits, HX } = vi.hoisted(() => ({
-  /** I-2 — this step-row write throws (a DB error on the unknown path); I-C — it never answers; m-6 — the audit row is not written; M-5 — the run's context write throws */
-  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), rowHangs: null as null | ((r: Record<string, any>) => boolean), rowSlowMs: null as null | ((r: Record<string, any>) => number), auditFails: false, contextThrows: false },
+  /** T2 — alertBen: what the alert reports through baoBen, null ⇔ it says nothing; alertNem: it throws. I-2 — this step-row write throws (a DB error on the unknown path); I-C — it never answers; m-6 — the audit row is not written; M-5 — the run's context write throws */
+  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), rowHangs: null as null | ((r: Record<string, any>) => boolean), rowSlowMs: null as null | ((r: Record<string, any>) => number), auditFails: false, contextThrows: false, alertBen: true as boolean | null, alertNem: false },
   otDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] }) as Record<string, unknown>),
   robotDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, status: "done", jobId: 7 }) as Record<string, unknown>),
   /** the A2(h) predicate's verdict per call (adapterId, commandType) — scripted per test */
@@ -27,7 +27,14 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
 vi.mock("../../robot/robotCommandDispatcher", () => ({ dispatchRobotJob: robotDispatchMock }));
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
-  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void alerts.push(a) };
+  return {
+    ...orig,
+    raiseCriticalStopAlert: async (a: Record<string, any>) => {
+      alerts.push(a);
+      if (HX.alertNem) throw new Error("alert down (test)");
+      if (HX.alertBen !== null) a.baoBen?.(HX.alertBen);
+    },
+  };
 });
 vi.mock("../../auditTrailService", () => ({
   createAuditContext: (x: { user?: { id: number } }) => ({ userId: x.user?.id }),
@@ -225,7 +232,9 @@ import {
   KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP,
   canhBaoKetCucKhongRo,
   canhBaoTuAnomalyEdge,
+  canhBaoTuBaoCaoEdge,
   ganBaoCaoKhongRoEdge,
+  KHONG_CO_BU_TRU,
   tachBaoCaoKhongRoEdge,
   nhanBuocSauChot,
   type BangChungBuoc,
@@ -268,6 +277,8 @@ beforeEach(() => {
   HX.rowSlowMs = null;
   HX.auditFails = false;
   HX.contextThrows = false;
+  HX.alertBen = true;
+  HX.alertNem = false;
   ghimMock.mockReset();
   ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }));
   alerts.length = 0;
@@ -1981,4 +1992,75 @@ describe("A2(n) T1 — nhanBuocSauChot, the F12 table by row shape", () => {
   it.todo("F12-D boot: rows + context, no memory — T10, T13");
   it.todo("F12-D Continue: rows + context + approval — T6, T13");
   it.todo("F12-D edge segment: the prior picture, no held, no running + routedTo (rows 16, 27) — T11");
+});
+
+describe("A2(n) T2 — canhBaoKetCucKhongRo answers: is the URGENT stored?", () => {
+  const a = { loai: "held", runId: 9, stepId: "m", compId: "c", error: "FOE_OUTCOME_UNKNOWN", lan: "L", owner: 7 } as const;
+
+  it("the alert says stored: true", async () => {
+    expect(await canhBaoKetCucKhongRo(a)).toBe(true);
+  });
+
+  it("the alert says not stored: false", async () => {
+    HX.alertBen = false;
+    expect(await canhBaoKetCucKhongRo(a)).toBe(false);
+  });
+
+  it("the alert says nothing: false, never assumed stored", async () => {
+    HX.alertBen = null;
+    expect(await canhBaoKetCucKhongRo(a)).toBe(false);
+  });
+
+  it("the alert throws: false, and it does not throw", async () => {
+    HX.alertNem = true;
+    await expect(canhBaoKetCucKhongRo(a)).resolves.toBe(false);
+  });
+
+  it("M4 recipients=0: false even when the alert says stored, the audit row still goes", async () => {
+    expect(await canhBaoKetCucKhongRo({ ...a, owner: null })).toBe(false);
+    expect(alerts[0]!.recipients).toEqual([]);
+    expect(audits.map((x) => x.details.operation)).toEqual([KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP]);
+  });
+
+  it("no owner, an active admin to tell: true", async () => {
+    store.set("users", [{ id: 501, role: "admin", isActive: true }]);
+    expect(await canhBaoKetCucKhongRo({ ...a, owner: null })).toBe(true);
+    expect(alerts[0]!.recipients).toEqual([501]);
+  });
+
+  it("the edge route answers the same", async () => {
+    const x = { loai: "held", stepId: "m", compId: "c", ma: "EDGE_OUTCOME_UNKNOWN", claimSeq: 4 } as const;
+    expect(await canhBaoTuBaoCaoEdge(9, x, 7)).toBe(true);
+    HX.alertBen = false;
+    expect(await canhBaoTuBaoCaoEdge(9, x, 7)).toBe(false);
+  });
+});
+
+describe("A2(n) T2 — runEnd and the words of H2", () => {
+  const x = { runId: 9, stepId: "m", error: "FOE_OUTCOME_UNKNOWN", owner: 7 };
+
+  it("runEnd: the fixed key foe_outcome_unknown_run_end:<run>:<latch step>:-:chot", () => {
+    const n = noiDungCanhBaoKhongRo({ ...x, loai: "runEnd", compId: KHONG_CO_BU_TRU, lan: "chot" });
+    expect(n.kind).toBe("foe_outcome_unknown_run_end");
+    expect(n.dedupKey).toBe("foe_outcome_unknown_run_end:9:m:-:chot");
+  });
+
+  it("H2 runEnd says check on site, promises no Abort, and does not say the run ended: a held run raises it too", () => {
+    const n = noiDungCanhBaoKhongRo({ ...x, loai: "runEnd", compId: KHONG_CO_BU_TRU, lan: "chot" });
+    expect(n.message).toContain("A STOP this run sent, if any, could not be confirmed: check the machine on site");
+    expect(`${n.title} ${n.message}`).not.toMatch(/abort|continue/i);
+    expect(n.title).not.toMatch(/run ended/i);
+  });
+
+  it("H2 stopNotConfirmed: handed over, not confirmed, check on site; no 'sent' in the title, no Abort", () => {
+    const n = noiDungCanhBaoKhongRo({ ...x, loai: "stopNotConfirmed", compId: "undo", lan: "L" });
+    expect(n.message).toContain("handed to the dispatcher but could not be confirmed: check the machine on site");
+    expect(n.title).not.toMatch(/\bsent\b/i);
+    expect(n.title).toMatch(/NOT confirmed/);
+    expect(`${n.title} ${n.message}`).not.toMatch(/abort|continue/i);
+  });
+
+  it("the kinds that must not change: a dedup key already in the inbox stays the same", () => {
+    expect(noiDungCanhBaoKhongRo({ ...x, loai: "stopNotConfirmed", compId: "undo", lan: "L" }).dedupKey).toBe("foe_outcome_unknown_stop_compensation_unconfirmed:9:m:undo:L");
+  });
 });
