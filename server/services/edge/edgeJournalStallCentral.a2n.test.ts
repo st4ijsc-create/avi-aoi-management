@@ -8,6 +8,7 @@
  *   LAYER 2 — baoRunMatProgress: a run central holds as running whose node stopped reporting. It needs nothing from the edge, so it speaks in the two
  *             shapes layer 1 cannot: every libuv thread held (no `progress`, no `pull`) and a walker that ended while `complete` waits on the disk. It stays
  *             quiet for a node that went down by the book (restart ⇒ interrupted; held ⇒ claim cleared), no claim, an ended run, a central that just booted.
+ *             A node that lost its network (D5) speaks too: central cannot tell it from a hung disk, and says so. It only speaks: the run is left as it is.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -323,6 +324,22 @@ describe("a2n layer 2 — a running run whose node stopped reporting (baoRunMatP
     expect(a.message).toContain("Abort");
     expect(a.message).toContain("E-STOP");
     expect(a).toMatchObject({ source: "ot", entityType: "edge_node", entityId: 7, khuTrungBenVung: {} });
+  });
+
+  it("★ the text says plainly that central cannot tell a lost network from a hung disk: a node that lost its network is told apart from nothing, and is not a false alarm", async () => {
+    themRun(41, { lastProgressAt: new Date(T - nguong()), stops: ["s1"] });
+    await baoRunMatProgress(T, lau);
+    await settled();
+    expect(String(mat()[0].message)).toContain("Central cannot tell a lost network from a hung disk");
+  });
+
+  it("★ layer 2 only speaks: the run row and its claim are exactly as they were, the next pass finds them again", async () => {
+    themRun(41, { lastProgressAt: new Date(T - nguong()), stops: ["s1"] });
+    const truoc = JSON.stringify([hangRun(41), hangClaim(41)]);
+    expect(await baoRunMatProgress(T, lau)).toEqual([41]);
+    await settled();
+    expect(JSON.stringify([hangRun(41), hangClaim(41)])).toBe(truoc);
+    expect(await baoRunMatProgress(T + 30_000, lau)).toEqual([41]);
   });
 
   it("★ the threshold leaves room for the book: stale first, then the node's interrupted, only then an alert", () => {

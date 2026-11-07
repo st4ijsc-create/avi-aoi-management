@@ -283,8 +283,9 @@ function alertJournalStallRecovered(node: Pick<EdgeNodePrincipal, "nodeId" | "no
   );
 }
 /**
- * a2n — LAYER 2: a run central holds as running whose node stopped reporting (baoRunMatProgress). Central cannot tell why, and says so. One URGENT per
- * (node, run, claim, last progress): an outage has one last progress, a later one another; it is in the text for the same reason as above.
+ * a2n — LAYER 2: a run central holds as running whose node stopped reporting (baoRunMatProgress). Central cannot tell why, and says so: a node that lost its
+ * network (D5) lands here too, and that is not a false alarm. It only tells: the run keeps its status. One URGENT per (node, run, claim, last progress): an
+ * outage has one last progress, a later one another; it is in the text for the same reason as above.
  */
 export function alertRunProgressLost(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, x: { runId: number; claimSeq: number; status: string; lastProgressMs: number; stops: readonly string[] | null }, recipients: () => Promise<number[]>): boolean {
   return raiseEdgeConfigAlert(
@@ -292,7 +293,7 @@ export function alertRunProgressLost(node: Pick<EdgeNodePrincipal, "nodeId" | "n
       kind: "edge_run_progress_lost",
       dedupKey: `edge_run_progress_lost:${node.nodeId}:${x.runId}:${x.claimSeq}:${x.lastProgressMs}`,
       title: `Edge node ${node.nodeCode}: run ${x.runId} stopped reporting`,
-      message: `Run ${x.runId} on edge node ${node.nodeCode} shows ${x.status} at central but has reported no progress since ${new Date(x.lastProgressMs).toISOString()}. The node's disk, process or connection may be down; central cannot tell which, and cannot confirm its STOPs (${stopText(x.stops)}). Abort; if the node does not answer, use the machine's direct STOP / E-STOP.`,
+      message: `Run ${x.runId} on edge node ${node.nodeCode} shows ${x.status} at central but has reported no progress since ${new Date(x.lastProgressMs).toISOString()}. Central cannot tell a lost network from a hung disk or a stopped process, and cannot confirm its STOPs (${stopText(x.stops)}). Abort; if the node does not answer, use the machine's direct STOP / E-STOP.`,
       nodeId: node.nodeId,
     },
     recipients,
