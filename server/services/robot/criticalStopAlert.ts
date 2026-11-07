@@ -86,14 +86,15 @@ export function raiseCriticalStopAlert(a: {
    */
   khuTrungBenVung?: { windowMs?: number };
   /**
-   * A2(n) T2 — told once, when the first try ended (its deadline included): is the URGENT stored? true ⇔ there is at least one recipient (M4: nobody to tell is not durable) and
-   * every recipient has the row, written now or found by the dedup. A late row does not answer again. Another call writing the same row is no proof (Q-7): false.
+   * A2(n) T2 — told once, when the first try ended (its deadline included): is the URGENT stored? true ⇔ at least one recipient has the row, written now or found by the dedup
+   * (coordinator's ruling: one recipient failing again and again must not hold every run; a person told durably meets decision 1). So nobody to tell is not durable (M4). A recipient
+   * left without a row is named in the log and stays in the retries. A late row does not answer again. Another call writing the same row is no proof (Q-7): that recipient does not count.
    */
   baoBen?: (ben: boolean) => void;
 }): Promise<void> {
   console.error(`[StopAlert] CRITICAL: ${a.message}`);
   const pending = new Set([...new Set(a.recipients)].filter((u) => Number.isSafeInteger(u) && u > 0));
-  const coNguoiNhan = pending.size > 0;
+  const soNguoiNhan = pending.size;
   const persist = async (attempt: number) => {
     const { sendNotification } = await import("../notificationService");
     if (attempt === 0 && a.khuTrungBenVung) {
@@ -155,8 +156,9 @@ export function raiseCriticalStopAlert(a: {
       console.error(`[StopAlert] ${a.kind} alert failed or is stuck: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
     })
     .finally(() => {
+      if (a.baoBen && pending.size > 0) console.error(`[StopAlert] ${a.kind}: no inbox row yet for recipients ${[...pending].join(", ")} (${soNguoiNhan - pending.size} of ${soNguoiNhan} stored)`);
       try {
-        a.baoBen?.(coNguoiNhan && pending.size === 0);
+        a.baoBen?.(pending.size < soNguoiNhan);
       } catch (err) {
         console.error(`[StopAlert] ${a.kind}: baoBen threw: ${String((err as Error)?.message ?? err).slice(0, 160)}`);
       }

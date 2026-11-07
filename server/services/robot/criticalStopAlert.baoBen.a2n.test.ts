@@ -1,6 +1,6 @@
 /**
- * SCADA R1b-2b-2a A2(n) T2 — raiseCriticalStopAlert's `baoBen`: the one answer the end of a latched run will rest on. true ⇔ every recipient has the inbox row, and there is at least
- * one recipient (M4). Another call writing the same row is no proof (Q-7, G12). Pure: sendNotification and the alert stream are recorders, getDb answers the durable pre-check from a list.
+ * SCADA R1b-2b-2a A2(n) T2 — raiseCriticalStopAlert's `baoBen`: the one answer the end of a latched run will rest on. true ⇔ at least one recipient has the inbox row (coordinator's
+ * ruling: one failing recipient must not hold every run), so no recipient is not durable (M4), and a recipient left without one is named in the log. Another call writing the same row is no proof (Q-7, G12). Pure: sendNotification and the alert stream are recorders, getDb answers the durable pre-check from a list.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -45,10 +45,13 @@ beforeEach(() => {
 });
 
 describe("A2(n) T2 — baoBen: is the URGENT stored?", () => {
-  it("every recipient's row landed: true, once", async () => {
+  it("every recipient's row landed: true, once, no recipient named as failed", async () => {
+    const log = vi.spyOn(console, "error");
     await bao("a", { recipients: [7, 8] });
     expect(nghe).toEqual([["a", true]]);
     expect(H.sent.map((x) => x.userId)).toEqual([7, 8]);
+    expect(log.mock.calls.flat().map(String)).not.toContainEqual(expect.stringContaining("no inbox row"));
+    log.mockRestore();
   });
 
   it("no row (null, a refused write): false", async () => {
@@ -64,10 +67,42 @@ describe("A2(n) T2 — baoBen: is the URGENT stored?", () => {
     ]);
   });
 
-  it("one recipient's row did not land: false, the others keep theirs", async () => {
+  it("one row landed, one recipient failed: durable, and the log names the one who failed", async () => {
+    const log = vi.spyOn(console, "error");
     H.gui = async (u) => (u === 8 ? null : { id: 1 });
     await bao("a", { recipients: [7, 8] });
+    expect(nghe).toEqual([["a", true]]);
+    const dong = log.mock.calls.flat().filter((x) => String(x).includes("no inbox row"));
+    log.mockRestore();
+    expect(dong).toHaveLength(1);
+    expect(String(dong[0])).toContain("recipients 8");
+    expect(String(dong[0])).not.toMatch(/\b7\b/);
+  });
+
+  it("nobody's row landed: not durable, the log names them all", async () => {
+    const log = vi.spyOn(console, "error");
+    H.gui = async () => null;
+    await bao("a", { recipients: [7, 8] });
     expect(nghe).toEqual([["a", false]]);
+    const dong = log.mock.calls.flat().filter((x) => String(x).includes("no inbox row"));
+    log.mockRestore();
+    expect(dong).toHaveLength(1);
+    expect(String(dong[0])).toContain("recipients 7, 8");
+  });
+
+  it("a row the dedup found counts: one recipient durable from before, the new one failing: durable", async () => {
+    H.daCo = [7];
+    H.gui = async () => null;
+    await bao("a", { recipients: [7, 8] });
+    expect(nghe).toEqual([["a", true]]);
+  });
+
+  it("the failed recipient still gets its retry", async () => {
+    H.gui = async (u, lan) => (u === 8 && lan === 2 ? null : { id: lan });
+    await bao("a", { recipients: [7, 8], retryUntilPersisted: { everyMs: 5, attempts: 3 } });
+    expect(nghe).toEqual([["a", true]]);
+    await vi.waitFor(() => expect(H.sent).toHaveLength(3));
+    expect(H.sent[2]).toEqual({ userId: 8, key: `${KHOA}:retry1` });
   });
 
   it("M4 no recipient: not durable, nothing written, whatever the ids", async () => {
@@ -97,7 +132,7 @@ describe("A2(n) T2 — baoBen: is the URGENT stored?", () => {
     expect(H.sent).toHaveLength(1);
   });
 
-  it("a new recipient on a durable key: only the new row, true once it landed", async () => {
+  it("a new recipient on a durable key: only the new row", async () => {
     H.daCo = [7];
     await bao("a", { recipients: [7, 8] });
     expect(H.sent.map((x) => x.userId)).toEqual([8]);
@@ -155,6 +190,18 @@ describe("A2(n) T2 — baoBen: is the URGENT stored?", () => {
 });
 
 describe("A2(n) T2 — Q-7: another call writing is no proof", () => {
+  it("G12f two recipients, both left to the other call: nobody's row is proven, not durable", async () => {
+    const w = treo();
+    H.gui = () => w.p;
+    const a = bao("A", { recipients: [7] });
+    await vi.waitFor(() => expect(H.sent).toHaveLength(1));
+    H.gui = async () => null;
+    await bao("B", { recipients: [7, 8] });
+    expect(nghe).toEqual([["B", false]]);
+    w.tra(null);
+    await a;
+  });
+
   it("G12 two calls on one key, the first fails: not durable", async () => {
     const w = treo();
     H.gui = () => w.p;
