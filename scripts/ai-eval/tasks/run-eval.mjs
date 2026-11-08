@@ -5,7 +5,7 @@
  *
  *   node scripts/ai-eval/tasks/run-eval.mjs --samples 3 [--bo tasks-hard,tasks-api2,agent-f] [--only <id,…|stack>] [--nhan <nhãn>]
  *       [--url http://127.0.0.1:8091] [--max-tokens 16000] [--sha] [--tran-phut 180] [--ra docs/ai/eval] [--tho D:/DO-AI/eval]
- *       [--agent-config agent|mau] [--noi tai-cho|tam]
+ *       [--agent-config agent|mau] [--noi tai-cho|tam] [--ghi-chu <chữ vào báo cáo>] [--mau-tai-giay 60]
  *
  * Trước lượt đo chạy `kiem-thuoc.mjs`: thước hỏng thì số vô nghĩa.
  * Thoát 0 = đo xong (kể cả có bài trượt) · 2 = VỨT, không ghi báo cáo (llama-server chết, thước hỏng) · 3 = chạm trần thời gian, báo cáo có `dungSom`.
@@ -22,6 +22,78 @@ import { docTienTrinh, layBam, tachDongLenh } from "../../ai/kiem-he-thong.mjs";
 
 const SAMPLING = { temperature: 0.2, top_p: 0.9 };
 const TEP_RUN_F = `${BENCH_CODEGEN}/agent-f/run-f.mjs`;
+
+/** Nhãn tiến trình nặng làm méo số đo. Báo cáo vào repo chỉ ghi nhãn, không ghi dòng lệnh (có thể chứa bí mật). */
+const NHAN_NANG = [
+  ["vitest", /vitest/i],
+  ["dot-bien", /dot-?bien/i],
+  ["tsc", /\btsc\b|typescript[\\/]lib/i],
+  ["esbuild-vite", /esbuild|vite(\.js|\.mjs|\s)/i],
+  ["dotnet", /\bdotnet(\.exe)?\b/i],
+  ["playwright", /playwright/i],
+  ["kiem-thuoc", /kiem-thuoc/i],
+];
+
+/** Nhãn nặng đang chạy, trừ `pidMinh` và con cháu của nó (bộ chấm của chính lượt đo). `ds`: [{ pid, cha, lenh }]. */
+export function nhanTienTrinhNang(ds, pidMinh) {
+  const con = new Map();
+  for (const x of ds) con.set(x.cha, [...(con.get(x.cha) ?? []), x.pid]);
+  const cuaMinh = new Set([pidMinh]);
+  for (const hang of [[pidMinh]]) {
+    while (hang.length) for (const c of con.get(hang.pop()) ?? []) if (!cuaMinh.has(c)) (cuaMinh.add(c), hang.push(c));
+  }
+  const ra = new Set();
+  for (const x of ds) {
+    if (cuaMinh.has(x.pid) || !x.lenh) continue;
+    for (const [nhan, re] of NHAN_NANG) if (re.test(x.lenh)) ra.add(nhan);
+  }
+  return [...ra].sort();
+}
+
+/** Gộp các mẫu tải { cpu, nhan: [] } thành phần `taiMay` của báo cáo. */
+export function tongHopTai(mau, soLuotSlotBan) {
+  const cpu = mau.map((m) => m.cpu).filter((x) => typeof x === "number");
+  const tienTrinhNang = {};
+  for (const m of mau) for (const n of m.nhan) tienTrinhNang[n] = (tienTrinhNang[n] ?? 0) + 1;
+  return {
+    soMauTai: mau.length,
+    cpuTb: cpu.length ? Math.round(cpu.reduce((a, b) => a + b, 0) / cpu.length) : null,
+    cpuMax: cpu.length ? Math.max(...cpu) : null,
+    tienTrinhNang,
+    soLuotSlotBan,
+    sach: Object.keys(tienTrinhNang).length === 0 && soLuotSlotBan === 0,
+  };
+}
+
+/** Một mẫu tải máy. Không đọc được thì trả cpu null, không làm hỏng lượt đo. */
+function docTai() {
+  return new Promise((resolve) => {
+    const lenh = "$c=(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average; $p=Get-CimInstance Win32_Process | Select-Object @{n='pid';e={$_.ProcessId}},@{n='cha';e={$_.ParentProcessId}},@{n='lenh';e={$_.CommandLine}}; @{cpu=$c;ds=@($p)} | ConvertTo-Json -Depth 3 -Compress";
+    const c = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", lenh], { windowsHide: true });
+    let out = "";
+    c.stdout.on("data", (d) => (out += d));
+    c.on("error", () => resolve({ cpu: null, nhan: [] }));
+    c.on("close", () => {
+      try {
+        const j = JSON.parse(out);
+        resolve({ cpu: j.cpu, nhan: nhanTienTrinhNang(j.ds, process.pid) });
+      } catch {
+        resolve({ cpu: null, nhan: [] });
+      }
+    });
+  });
+}
+
+/** Slot đang bận lúc sắp gửi = có người khác dùng :8091 (Thợ Cả trong VS Code), thời gian của bài đó bị méo. */
+async function slotBan(url) {
+  try {
+    const r = await fetch(`${url}/slots`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return false;
+    return (await r.json()).some((x) => x.is_processing);
+  } catch {
+    return false;
+  }
+}
 
 export function tinhBang(hang, soMau) {
   const theoStack = new Map();
@@ -66,6 +138,8 @@ export function bangMarkdown(bc) {
     `Commit \`${bc.commit}\`${bc.cayBan ? " (cây có thay đổi chưa commit)" : ""} · ${bc.soMau} mẫu/bài · trần ${bc.maxTokens} token`,
     `Model \`${m.tep ?? "?"}\` · sha256 \`${m.sha ?? "chưa băm"}\` · ctx ${m.ctx ?? "?"} · budget ${m.reasoningBudget ?? "?"}`,
     `Cờ: ${Object.keys(bc.co).length ? Object.entries(bc.co).map(([k, v]) => `\`${k}=${v}\``).join(" ") : "không đặt"}`,
+    ...(bc.ghiChu ? [`Ghi chú: ${bc.ghiChu}`] : []),
+    ...(bc.taiMay ? [bc.taiMay.sach ? `Tải máy: không thấy tiến trình nặng, slot không bận (${bc.taiMay.soMauTai} mẫu, CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %)` : `**Tải máy: có tiến trình khác trong lúc đo, thời gian có thể méo.** ${Object.entries(bc.taiMay.tienTrinhNang).map(([k, v]) => `${k} ${v}/${bc.taiMay.soMauTai} mẫu`).join(", ") || "không có tiến trình nặng"}; slot bận ${bc.taiMay.soLuotSlotBan} lượt; CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %`] : []),
     ...(bc.dungSom ? ["", `**Dừng sớm: ${bc.dungSom}. Số dưới đây chưa đủ mẫu.**`] : []),
     ...(bc.tong.cut ? ["", `**Cụt ${bc.tong.cut}/${bc.tong.luot}: số dưới đây là chặn dưới.**`] : []),
     "",
@@ -166,6 +240,11 @@ async function main() {
   const t0 = Date.now();
   const hang = [];
   let dungSom = null;
+  const mauTai = [];
+  let soLuotSlotBan = 0;
+  const giayTai = Number(lay("--mau-tai-giay", "60"));
+  let dangDocTai = giayTai > 0 ? docTai().then((m) => void mauTai.push(m)) : Promise.resolve();
+  const henTai = giayTai > 0 ? setInterval(() => void (dangDocTai = dangDocTai.then(docTai).then((m) => void mauTai.push(m))), giayTai * 1000) : null;
   // Vòng ngoài theo MẪU: dừng sớm vẫn còn mỗi mẫu đủ bài, không lệch về bài đầu danh sách.
   ngoai: for (let mau = 1; mau <= soMau; mau++) {
     for (const b of baiMa) {
@@ -174,6 +253,7 @@ async function main() {
         break ngoai;
       }
       const prompt = fs.readFileSync(`${b.dir}/prompt.md`, "utf8").trimEnd();
+      if (await slotBan(url)) soLuotSlotBan++;
       const g = await goiModel(url, SYS, prompt, maxTokens);
       const tep = `${thoDir}/${b.id}-${mau}.txt`;
       fs.writeFileSync(tep, g.text);
@@ -184,6 +264,8 @@ async function main() {
     }
   }
   if (baiF.length && !dungSom) hang.push(...doAgentF(baiF, soMau, { ngay, noi: lay("--noi", "tai-cho"), agentConfig: lay("--agent-config", "agent") }));
+  if (henTai) clearInterval(henTai);
+  await dangDocTai;
 
   const port = Number(new URL(url).port);
   const p = docTienTrinh().find((x) => x.port === port) ?? tachDongLenh("");
@@ -204,6 +286,8 @@ async function main() {
     model: { tep: p.model ? p.model.split(/[\\/]/).pop() : null, sha, ctx: p.ctx, reasoningBudget: p.reasoningBudget, slot: p.slot },
     // Tên + giá trị cờ agent trong env của lượt đo: không phải bí mật. Khoá khác không vào báo cáo.
     co: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/.test(k)).sort()),
+    ghiChu: lay("--ghi-chu") ?? null,
+    taiMay: giayTai > 0 ? tongHopTai(mauTai, soLuotSlotBan) : null,
     dungSom,
     chuaDo: baiPilot.length ? [`pilot-repo (${baiPilot.map((b) => b.id).join(", ")}): cần bộ chạy pilot và lượt _test`] : [],
     ...bang,

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, tenBaoCao, tinhBang } from "./run-eval.mjs";
+import { bangMarkdown, nhanTienTrinhNang, tenBaoCao, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -15,7 +15,7 @@ const tam = fs.mkdtempSync(path.join(os.tmpdir(), "run-eval-test-"));
 after(() => fs.rmSync(tam, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }));
 
 /** Giả llama-server: phát lần lượt các câu trả lời trong `kich`; `chetSau` lượt thì /health trả 503. */
-function gia(kich, { chetSau = Infinity } = {}) {
+function gia(kich, { chetSau = Infinity, slotBan = false } = {}) {
   let n = 0;
   const yeuCau = [];
   const sv = http.createServer((req, res) => {
@@ -23,6 +23,7 @@ function gia(kich, { chetSau = Infinity } = {}) {
       res.statusCode = n >= chetSau ? 503 : 200;
       return res.end("{}");
     }
+    if (req.url === "/slots") return res.end(JSON.stringify([{ id: 0, is_processing: slotBan }]));
     let b = "";
     req.on("data", (d) => (b += d));
     req.on("end", () => {
@@ -37,7 +38,7 @@ function gia(kich, { chetSau = Infinity } = {}) {
 
 function chay(args) {
   return new Promise((resolve) => {
-    const c = spawn(process.execPath, [path.join(DIR, "run-eval.mjs"), "--tho", path.join(tam, "tho"), ...args], { windowsHide: true });
+    const c = spawn(process.execPath, [path.join(DIR, "run-eval.mjs"), "--tho", path.join(tam, "tho"), ...(args.includes("--mau-tai-giay") ? [] : ["--mau-tai-giay", "0"]), ...args], { windowsHide: true });
     let out = "";
     let err = "";
     c.stdout.on("data", (d) => (out += d));
@@ -72,6 +73,46 @@ test("hai mẫu một đạt một trượt và cụt: đúng pass@1, pass@N, s�
   assert.equal(yeuCau[0].temperature, 0.2);
   assert.match(yeuCau[0].messages[1].content, /BoNhoLRU/);
   assert.ok(fs.existsSync(path.join(tam, "tho", "2026-11-08", "H-ts1-1.txt")), "câu trả lời thô ở ngoài thư mục báo cáo");
+});
+
+test("--ghi-chu và tải máy vào báo cáo: slot bận được đếm, mẫu tải đọc thật trên máy", async () => {
+  const { sv, url } = await gia([OK], { slotBan: true });
+  const ra = path.join(tam, "ra6");
+  const r = await chay(["--mau-tai-giay", "600", "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-08", "--ghi-chu", "lan dau goi model that"]);
+  sv.close();
+  assert.equal(r.ma, 0, r.err);
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-08.json"), "utf8"));
+  assert.equal(bc.ghiChu, "lan dau goi model that");
+  assert.equal(bc.taiMay.soLuotSlotBan, 1);
+  assert.equal(bc.taiMay.sach, false);
+  assert.ok(bc.taiMay.soMauTai >= 1);
+  assert.equal(typeof bc.taiMay.cpuTb, "number", "mẫu tải phải đọc được CPU thật");
+  const md = fs.readFileSync(path.join(ra, "2026-11-08.md"), "utf8");
+  assert.match(md, /Ghi chú: lan dau goi model that/);
+  assert.match(md, /có tiến trình khác trong lúc đo/);
+});
+
+test("nhanTienTrinhNang: trừ chính lượt đo và con cháu, không ghi dòng lệnh", () => {
+  const ds = [
+    { pid: 10, cha: 1, lenh: "node run-eval.mjs" },
+    { pid: 11, cha: 10, lenh: "node check.mjs" },
+    { pid: 12, cha: 11, lenh: "dotnet run --project p.csproj" },
+    { pid: 20, cha: 1, lenh: "node node_modules/vitest/vitest.mjs run --db=postgres://u:bimat@h/d" },
+    { pid: 21, cha: 1, lenh: "node dot-bien.cjs" },
+    { pid: 22, cha: 1, lenh: null },
+    { pid: 23, cha: 1, lenh: "notepad.exe" },
+  ];
+  const r = nhanTienTrinhNang(ds, 10);
+  assert.deepEqual(r, ["dot-bien", "vitest"]);
+  assert.ok(!JSON.stringify(r).includes("bimat"));
+  assert.deepEqual(nhanTienTrinhNang([{ pid: 12, cha: 11, lenh: "dotnet build" }], 10), ["dotnet"], "dotnet của người khác vẫn tính");
+});
+
+test("tongHopTai: gộp mẫu; sạch chỉ khi không tiến trình nặng và slot không bận", () => {
+  const t = tongHopTai([{ cpu: 10, nhan: [] }, { cpu: 30, nhan: ["vitest"] }, { cpu: null, nhan: ["vitest", "tsc"] }], 0);
+  assert.deepEqual(t, { soMauTai: 3, cpuTb: 20, cpuMax: 30, tienTrinhNang: { vitest: 2, tsc: 1 }, soLuotSlotBan: 0, sach: false });
+  assert.equal(tongHopTai([{ cpu: 5, nhan: [] }], 0).sach, true);
+  assert.equal(tongHopTai([{ cpu: 5, nhan: [] }], 1).sach, false);
 });
 
 test("llama-server chết giữa lượt: thoát 2 và KHÔNG ghi báo cáo", async () => {
