@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -400,6 +400,80 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: 
   for (const id of stopChuaRaTuNguCanh(ctx)) if (!daXong.has(id)) no.add(id);
   for (const id of xong) no.delete(id);
   return no;
+}
+
+/** A2(n) T7b-1c — what is read of a run at an Abort. `hang` null ⇔ the step rows could not be read. `daThu`: the live walk's memory of a hand-over. */
+export interface VaoPhanLoaiStopAbort {
+  hang: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown; attempt?: number | null }> | null;
+  ctx: Record<string, unknown> | null | undefined;
+  daThu?: (id: string) => boolean;
+}
+/**
+ * A2(n) T7b-1c — what ONE row says of a hand-over. "tuChoi": a word that it did not go (a dispatcher's refusal, the sink, state C). A dispatcher's answer that is no clean "no" (no answer, "may have flown", a device
+ * error) is "may have gone". A row that began, or failed with no dispatcher's word, cannot say.
+ */
+function dauVetCuaHang(r: { stepId: string; status?: string; error?: string | null; resultJson?: unknown } | undefined, id: string): "daGiao" | "coTheDaRa" | "tuChoi" | null {
+  if (!r) return null;
+  const kq = (r.resultJson ?? null) as { routedTo?: unknown; accepted?: unknown; status?: unknown; detail?: unknown } | null;
+  if (dauKhongXacNhan(kq) !== null) return "coTheDaRa";
+  if (r.status === "completed" || r.status === "compensated" || kq?.accepted === true) return "daGiao";
+  if (typeof kq?.routedTo === "string") {
+    const detail = (kq.detail ?? undefined) as { reason?: unknown } | undefined;
+    const ma = maTuChoiCua({ error: r.error, status: typeof kq.status === "string" ? kq.status : null, detail });
+    const coThe = kq.status === "timeout" || coTheDaBayCua({ ok: false, detail: detail as Record<string, unknown> | undefined }) !== null || nguonCuaKetQua(String(kq.status), ma, kq.routedTo === "robot-dispatcher") === "driverLoi";
+    return coThe ? "coTheDaRa" : "tuChoi";
+  }
+  if (laHangChuaRa(r, id) || laLoiKhongGuiChot(r.error)) return "tuChoi";
+  return r.status === "running" || r.status === "failed" ? "coTheDaRa" : null;
+}
+/**
+ * A2(n) T7b-1c (dieu-phoi 09/11) — THE classification of a STOP at an Abort of a latched run: what goes (stopAbortCoGui), its key (`khoaThu`), the words (chuStopAbort) and the answer all read this, from ONE read.
+ *   xong      — an `abort:` row that went or was settled, or a read-back that confirmed it;
+ *   no        — stopChuaRaTuHang (one definition of "owed"); `truoc` says what its rows know of an earlier hand-over, for the words only;
+ *   daGiao    — a dispatcher took it (accepted, or its row completed);
+ *   coTheDaRa — it may have gone: no answer, a device error, a row that began or failed with no word, or only the record of the hand-over. foeDispatchedSteps and the walk's `attempted` are written BEFORE the
+ *               dispatcher is called (foeEngine execCommandMot, the same tick) and never cleared on a refusal, so alone they prove only this;
+ *   chuaGiao  — read, and no trace, or a word that it did not go;
+ *   khongDoc  — nothing could be read (a debt the context holds is still `no`).
+ * dieu-phoi 09/11: khoá gần đúng cho attempt 0; dispatcher chỉ phát lại khi lần dưới khoá đó ok và không mô phỏng, nên không nuốt STOP; tệ nhất thêm một STOP
+ */
+export function phanLoaiStopAbort(id: string, vao: VaoPhanLoaiStopAbort): PhanLoaiStopAbort {
+  if (vao.hang === null) return stopChuaRaTuNguCanh(vao.ctx).includes(id) ? { lop: "no" } : { lop: "khongDoc" };
+  const cua = vao.hang.find((r) => r.stepId === id);
+  const ab = vao.hang.find((r) => r.stepId.startsWith(ABORT_ROW_PREFIX) && String((r.resultJson as { stepId?: unknown } | null | undefined)?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length)) === id);
+  if (ab?.status === "completed" || ab?.status === "skipped") return { lop: "xong" };
+  const vet = dauVetCuaHang(cua, id);
+  const vetAb = dauVetCuaHang(ab, id);
+  const truoc = vet === "daGiao" || vet === "coTheDaRa" ? vet : vetAb === "daGiao" || vetAb === "coTheDaRa" ? vetAb : undefined;
+  if (stopChuaRaTuHang(vao.hang, vao.ctx).has(id)) return truoc ? { lop: "no", truoc } : { lop: "no" };
+  if ((cua?.resultJson as { status?: unknown } | null | undefined)?.status === "acked_verified") return { lop: "xong" };
+  if (vet === "daGiao") return { lop: "daGiao" };
+  const khoaThu = typeof cua?.attempt === "number" && cua.attempt > 0 ? cua.attempt : 1;
+  if (vet === "coTheDaRa") return { lop: "coTheDaRa", khoaThu };
+  if (vet === "tuChoi") return { lop: "chuaGiao" };
+  const giao = vao.ctx?.[DISPATCHED_CTX_KEY];
+  if ((Array.isArray(giao) && giao.map(String).includes(id)) || vao.daThu?.(id) === true) return { lop: "coTheDaRa", khoaThu };
+  return { lop: "chuaGiao" };
+}
+/** Which press of an Abort this is: the first, on a run not ended; again on an aborted run, in ABORT_RESEND_WINDOW_MS or past it. */
+export type LanBamAbort = "dau" | "trongCua" | "ngoaiCua";
+/**
+ * A2(n) T7b-1c — does this class go at this press. Owed: always (B2). Handed over, never confirmed: the first Abort of a run not ended only (G, H3). No trace, or may have gone: not past the window. Unread: a first
+ * Abort sends what the planner has due (may add a STOP, never swallows one, L-7), a press sends nothing on it. Never reads `truoc`. Pure.
+ */
+export function stopAbortCoGui(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, lan: LanBamAbort): boolean {
+  switch (p.lop) {
+    case "no":
+      return true;
+    case "chuaGiao":
+    case "coTheDaRa":
+      return lan !== "ngoaiCua";
+    case "daGiao":
+    case "khongDoc":
+      return lan === "dau";
+    case "xong":
+      return false;
+  }
 }
 
 // ── A2(n) T7 — THE end decision of a run (decision 1, B, H1, H2, H18, M4; plan point 3) ────────────────────────────────────────────────────────────────────────────────────
@@ -1290,7 +1364,7 @@ export const centralRunStore: RunStore = Object.freeze({
   authorizeCommand: centralAuthorizeCommand,
   authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand, opts: { danhDau?: boolean } = {}): Promise<void> {
     // the abort key carries a per-sweep nonce (abortStopKey, ≤ 60 characters): a fresh row per sweep already
-    // A2(n) T7b-1 — the marked route: the same fresh row the key already gives (its per-sweep nonce), MARKED: inserted, never an existing row reused
+    // A2(n) T7b-1 — the marked route: the same fresh row the key already gives (its per-sweep nonce), MARKED: inserted, never an existing row reused. T7b-1c — a key used before (coTheDaRa): a fresh id in cmd.hitl, the same way
     const hangMoi = opts.danhDau === true && cmd.hitl ? { actionId: cmd.hitl.actionId } : null;
     return stopBoundedWrite(true, runId, step.id, "abort authorisation row", async () => {
       await ensureOrchestrationAction(user, idempotencyKey, step, args, cmd, undefined, hangMoi ? { hangMoi } : {});

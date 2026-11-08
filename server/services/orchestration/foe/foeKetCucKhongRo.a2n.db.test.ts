@@ -31,6 +31,8 @@ const H = vi.hoisted(() => ({
   /** A2(n) extension — the process "dies" the moment the latch reached the DB (chotRoiChet) */
   chetSauChot: false,
   chet: false,
+  /** A2(n) T7b-1c — the handle getDb answers, wrapped: a real timer in front of a real statement (trucTre) */
+  boc: null as null | ((tx: unknown) => unknown),
 }));
 
 vi.mock("../../../db/connection", async (importOriginal) => {
@@ -38,7 +40,7 @@ vi.mock("../../../db/connection", async (importOriginal) => {
   return {
     ...real,
     getDb: (async () => {
-      if (H.tx) return H.tx;
+      if (H.tx) return H.boc ? H.boc(H.tx) : H.tx;
       H.bay++; // outside the test's transaction: never touches the real DB (nothing is committed)
       H.bayStack.push(String(new Error("getDb outside the test transaction").stack).split("\n").slice(1, 9).join("\n"));
       return null;
@@ -298,6 +300,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     H.alerts.length = 0;
     H.chet = false;
     H.chetSauChot = false;
+    H.boc = null;
     ghiChinh = 0;
   });
 
@@ -781,4 +784,121 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
+
+  // ═══ A2(n) T7b-1c, for T15: what only the real dispatcher and the real rows can say. Written, not yet run (no `.db.test` here): a fixture may need adjusting ═══
+  const THUC_SU = { foeKetCucKhongRoChot: { stepId: "main", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-09T00:00:00.000Z" } };
+  /** a latched run held on a STOP `st` whose row only began (attempt 0, what the walker writes): class coTheDaRa, key -a1 */
+  const giuCoTheDaRa = async (tx: Tx) => {
+    const d = await dungThietBi(tx);
+    const runId = await dungRun([buTruStop(d.m1, "st")]);
+    await tx.update(orchestrationRuns).set({ status: "held", contextJson: THUC_SU }).where(eq(orchestrationRuns.id, runId));
+    await tx.insert(orchestrationRunSteps).values({ runId, stepId: "st", stepType: "command", status: "running", attempt: 0, startedAt: new Date() });
+    return { ...d, runId };
+  };
+  it("T7B1C-DB-CO-THE-A1-KHONG-HANG -a1 has no row in the ledger: the STOP really goes, 1 PDU, under -a1, on a fresh marked authorisation row", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId } = await giuCoTheDaRa(tx);
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      expect(a.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect((await soCuaKhoa(tx, `run${runId}-st-a1`)).map((x) => x.status)).toEqual(["acked"]);
+      expect((await uyQuyenCua(tx, `foe-run${runId}-st-a1#stop-`)).length).toBe(1);
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  it("T7B1C-DB-CO-THE-KHU-TRUNG-OK the try under -a1 was ok, its result never reached the row: the dispatcher replays: 0 PDU more, the row says it", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId } = await giuCoTheDaRa(tx);
+      await abortRun(runId, ADMIN, "the ok under that key", { scope: null });
+      // back to what a lost result leaves: a ledger row ok under -a1, nothing on the step's rows. A rename, inside the transaction that rolls back
+      await tx.update(orchestrationRunSteps).set({ stepId: "cu:st" }).where(and(eq(orchestrationRunSteps.runId, runId), eq(orchestrationRunSteps.stepId, "abort:st")));
+      await tx.update(orchestrationRuns).set({ status: "held", finishedAt: null }).where(eq(orchestrationRuns.id, runId));
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      expect(soPduGhi() - pdu0, "a replay").toBe(0);
+      expect(a.abortStops?.sent).toEqual(["st"]);
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  it("T7B1C-DB-CO-THE-GUI-KHOA-MOI -a1 holds an intent with no result (in flight, or the process died): 1 PDU under a new key, naming that try (lanTruoc): never swallowed", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { runId, a1, m1 } = await giuCoTheDaRa(tx);
+      await tx.insert(commandLog).values({ actionId: null, adapterId: a1, machineId: m1, tagKey: "a", address: "DB1,INT0", commandType: "stop", requestedValue: 0 as never, requestedBy: OWNER, confirmedBy: OWNER, status: "sent", ackValue: { ledger: "intent", bam: bamLenhOt({ commandType: "stop", writes: [{ tagKey: "a", value: 0 }] }) } as never, idempotencyKey: `intent:${perWriteKey(`run${runId}-st-a1`, "a", 0)}`, sentAt: new Date() });
+      const pdu0 = soPduGhi();
+      await abortRun(runId, ADMIN, "t15", { scope: null });
+      expect(soPduGhi() - pdu0).toBe(1);
+      const moi = await soCuaKhoa(tx, `run${runId}-st-a1#stop-`);
+      expect(moi.map((x) => x.status)).toEqual(["acked"]);
+      expect((moi[0]!.ackValue as { lanTruoc?: { idempotencyKey?: string } }).lanTruoc?.idempotencyKey).toBe(`run${runId}-st-a1`);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  /** a real timer in front of one real statement of the run's rows: the rest of the walk's statements go past it */
+  const trucTre = (la: (bang: string, v: Record<string, unknown>) => boolean, ms: number) => {
+    let con = 1;
+    H.boc = (tx) =>
+      new Proxy(tx as object, {
+        get(t, k, r) {
+          const v = Reflect.get(t, k, r) as unknown;
+          if (k !== "update" && k !== "insert") return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+          return (bang: Parameters<Tx["update"]>[0]) => {
+            const ten = String((bang as unknown as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]);
+            const b = (v as (x: unknown) => Record<string, (...x: unknown[]) => unknown>).call(t, bang);
+            const mo = k === "update" ? "set" : "values";
+            return new Proxy(b, {
+              get(t2, k2) {
+                if (k2 !== mo) return Reflect.get(t2, k2);
+                return (gt: Record<string, unknown>) => {
+                  if (con <= 0 || !la(ten, gt)) return (t2[mo] as (x: unknown) => unknown).call(t2, gt);
+                  con--;
+                  return { where: (...c: unknown[]) => ({ returning: async (...x: unknown[]) => (await new Promise((ok) => setTimeout(ok, ms)), (t2[mo] as (y: unknown) => { where: (...z: unknown[]) => { returning: (...w: unknown[]) => unknown } }).call(t2, gt).where(...c).returning(...x)) }), onConflictDoUpdate: async (...c: unknown[]) => (await new Promise((ok) => setTimeout(ok, ms)), (t2[mo] as (y: unknown) => { onConflictDoUpdate: (...z: unknown[]) => unknown }).call(t2, gt).onConflictDoUpdate(...c)) };
+                };
+              },
+            });
+          };
+        },
+      });
+  };
+  for (const ms of [5, 30]) {
+    it(`T7B1C-DB-RC12B-${ms} a run NOT latched, the Abort's own 'aborted' write ${ms} ms late, a real row: the walker it woke writes first: the sweep runs all the same: 1 STOP PDU, ok`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = await dungThietBi(tx);
+        const runId = await dungRun([buocChinh(d.m2), hop("b", [{ id: "w", type: "delay", ms: 3_000 } as WorkflowStep, buTruStop(d.m1, "st")], buTruReset(d.m1, "cx"))]);
+        const di = khoiDong(runId);
+        await vi.waitFor(async () => expect((await buoc(tx, runId, "w"))?.status).toBe("running"), { timeout: 10_000 });
+        trucTre((bang, v) => bang === "orchestration_runs" && v.status === "aborted", ms);
+        const pdu0 = soPduGhi();
+        const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+        H.boc = null;
+        await di;
+        expect(a.ok, String(a.message)).toBe(true);
+        expect(a.abortStops?.sent).toEqual(["st"]);
+        expect(soPduGhi() - pdu0).toBe(1);
+      });
+      expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+    });
+    it(`T7B1C-DB-RA2-4-${ms} a latched run, the walker alive, the Abort's STOP goes and abort:st lands ${ms} ms late on a real row: no later word that it did not go, st's row not written over`, async () => {
+      await trongGiaoDich(async (tx) => {
+        const d = await dungThietBi(tx);
+        const runId = await dungRun([{ id: "p", type: "parallel", failFast: false, steps: [buocChinh(d.m2), hop("b", [{ id: "w", type: "delay", ms: 3_000 } as WorkflowStep, buTruStop(d.m1, "st")], buTruReset(d.m1, "cx"))] } as WorkflowStep]);
+        await yDinhTruoc(tx, { ...d, runId });
+        const di = khoiDong(runId);
+        await vi.waitFor(async () => expect(((await ctxCua(tx, runId)) as Record<string, unknown>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeTruthy(), { timeout: 10_000 });
+        H.alerts.length = 0;
+        trucTre((bang, v) => bang === "orchestration_run_steps" && v.stepId === "abort:st", ms);
+        const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+        H.boc = null;
+        await di;
+        expect(a.ok, String(a.message)).toBe(true);
+        expect(a.abortStops?.sent ?? []).toContain("st");
+        expect(canhBao("stopNotSent", runId).filter((x) => String(x.dedupKey).split(":")[2] === "st")).toEqual([]);
+        expect(String((await buoc(tx, runId, "st"))?.error ?? "")).not.toMatch(/^FOE_STOP_NOT_SENT/);
+        expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+      });
+      expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+    });
+  }
 });

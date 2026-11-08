@@ -278,7 +278,7 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * abortStopNotSent — A2(n) T7b-1 (5a, B2, H1, C4): an Abort of a latched run handed `stepId` (a STOP, `compId` "-") over and it was refused or got no answer: the run is aborted, the STOP stays owed on
  *   its `abort:` row, and a person presses Abort again, with no time limit (the background only repeats this URGENT). Never "it went".
  */
-export type LoaiCanhBaoKhongRo = "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
+export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -299,6 +299,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   stopGhimLech: "foe_outcome_unknown_stop_pin_mismatch",
   stopGhimLechChuaGui: "foe_outcome_unknown_stop_pin_mismatch_not_sent",
   abortStopNotSent: "foe_outcome_unknown_abort_stop_not_sent",
+  abortDefUnread: "foe_outcome_unknown_abort_definition_unread",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -323,10 +324,34 @@ export interface CanhBaoKhongRo {
   vi?: ViChuaRa;
   /** A2(n) T6e K1 (dieu-phoi 08/11 T6e-K1, A) — forwardNotSent: a stop-typed step whose pin the STOP sweep could not verify (central's own walk only) */
   stopKhongXacMinh?: true;
-  /** A2(n) T7b-1 fix 1 (RA-1) — abortStopNotSent: nothing durable holds this debt (its `abort:` row lost, not in the context): no word of "no time limit" */
-  khongLuuDuoc?: true;
-  /** A2(n) T7b-1 fix 1 (RA-1, H3) — abortStopNotSent: a dispatcher took this STOP before the Abort's new hand-over: never "did NOT go out", and a press does not hand it over again unless it is owed */
-  daNhanTruoc?: true;
+  /** A2(n) T7b-1c — abortStopNotSent: the words of THE classification (chuStopAbort) */
+  chuAbort?: ChuStopAbort;
+}
+
+/**
+ * A2(n) T7b-1c (dieu-phoi 09/11) — THE classes of a STOP at an Abort of a latched run (foeRunStore.phanLoaiStopAbort). `truoc`: class `no` only, what its rows say of a hand-over before the debt: the words read
+ * it, what goes never does. `khoaThu`: class `coTheDaRa` only, the attempt whose key it goes under.
+ */
+export type LopStopAbort = "chuaGiao" | "no" | "coTheDaRa" | "daGiao" | "xong" | "khongDoc";
+export interface PhanLoaiStopAbort {
+  lop: LopStopAbort;
+  truoc?: "coTheDaRa" | "daGiao";
+  khoaThu?: number;
+}
+export type ChuStopAbort = "chuaRaKhongHan" | "chuaRa15" | "coTheKhongHan" | "coThe15" | "daGiaoKhongHan" | "daGiaoKiemMay" | "khongDocKhongHan" | "khongDoc15" | "daKetThuc";
+/** A2(n) T7b-1c — which words a STOP gets whose hand-over by this Abort did not go: its class, and whether its debt is durable ("no time limit" only then). `xong`: nothing to say. Pure. */
+export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: boolean): ChuStopAbort | null {
+  if (p.lop === "xong") return null;
+  const goc = p.truoc ?? p.lop;
+  if (goc === "coTheDaRa") return ben ? "coTheKhongHan" : "coThe15";
+  if (goc === "daGiao") return ben ? "daGiaoKhongHan" : "daGiaoKiemMay";
+  if (goc === "khongDoc") return ben ? "khongDocKhongHan" : "khongDoc15";
+  return ben ? "chuaRaKhongHan" : "chuaRa15";
+}
+
+/** A2(n) T7b-1c (dieu-phoi 09/11) — an Abort of a latched run that could not read its definition: no step to name, and the 15 minutes do not stretch. The URGENT and the answer say the same. */
+export function chuKhongDocDinhNghia(runId: number): string {
+  return `The system could not read the definition of run ${runId}, a STOP may still not be out: press Abort again within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes, after that check the machine on site.`;
 }
 
 /** The STOP of state C, as the words name it. */
@@ -345,20 +370,24 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [st
 }
 
 /**
- * A2(n) T7b-1 — the words of a STOP an Abort handed over and that did not go: true of the source (H11), never "it went". fix 1 (RA-1): "no time limit" (B2) only where the debt is durable (its `abort:` row, or the
- * context). Not durable: within the window a press still sends a STOP with no trace of a hand-over, past it nothing can; one a dispatcher already took is not handed over again (H3).
+ * A2(n) T7b-1 — the words of a STOP an Abort handed over and that did not go: true of the source (H11), never "it went". T7b-1c — they read THE classification (chuStopAbort): "no time limit" (B2) only where the
+ * debt is durable; "did NOT go out" never of a STOP that may have gone (coTheDaRa), was handed over (daGiao) or whose rows could not be read (khongDoc). Not durable: within the window a press still sends it, past
+ * it nothing can; one a dispatcher took is not handed over again (H3).
  */
-function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "khongLuuDuoc" | "daNhanTruoc">): [string, string] {
+function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "chuAbort">): [string, string] {
   const id = `"${stopCua(a)}"`;
   const ma = a.vi ? ` (${a.vi.ma})` : "";
   const tay = "use the machine's direct STOP / E-STOP";
   const phut = Math.round(ABORT_RESEND_WINDOW_MS / 60_000);
-  const sau = !a.khongLuuDuoc
-    ? `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`
-    : a.daNhanTruoc
-      ? `This could not be recorded and it is not sent again: check the machine on site and ${tay}.`
-      : `This could not be recorded: press Abort again within ${phut} minutes; after that it cannot be sent from here: check the machine on site and ${tay}.`;
-  if (a.daNhanTruoc) return [`run aborted, STOP ${id} NOT confirmed`, `The run is aborted. Its STOP ${id} was handed over earlier and never confirmed; the Abort's new hand-over was refused or got no answer${ma}. ${sau}`];
+  const chu = a.chuAbort ?? "chuaRaKhongHan";
+  const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`;
+  const han = `This could not be recorded: press Abort again within ${phut} minutes; after that it cannot be sent from here: check the machine on site and ${tay}.`;
+  // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
+  if (chu === "daKetThuc") return [`run has ended, STOP ${id} NOT confirmed out`, `The run has ended on its own, before this Abort. Its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device, and a further Abort cannot send it: check the machine on site and ${tay}.`];
+  if (chu === "daGiaoKhongHan" || chu === "daGiaoKiemMay") return [`run aborted, STOP ${id} NOT confirmed`, `The run is aborted. Its STOP ${id} was handed over earlier and never confirmed; the Abort's new hand-over was refused or got no answer${ma}. ${chu === "daGiaoKhongHan" ? khongHan : `This could not be recorded and it is not sent again: check the machine on site and ${tay}.`}`];
+  if (chu === "coTheKhongHan" || chu === "coThe15") return [`run aborted, STOP ${id} may have gone out`, `The run is aborted. Its STOP ${id} was handed over earlier with no answer, so it may have gone out: check the machine on site. The Abort's new hand-over was refused or got no answer${ma}. ${chu === "coTheKhongHan" ? khongHan : han}`];
+  if (chu === "khongDocKhongHan" || chu === "khongDoc15") return [`run aborted, STOP ${id}: its records could not be read`, `The run is aborted. Its records could not be read, so whether STOP ${id} went earlier is not known: check the machine on site. The Abort's hand-over was refused or got no answer${ma}. ${chu === "khongDocKhongHan" ? khongHan : han}`];
+  const sau = chu === "chuaRaKhongHan" ? khongHan : han;
   if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
   return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];
 }
@@ -368,7 +397,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
   const khongXd = a.loai === "forwardNotSent" && a.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name
-  const nhanh = a.loai === "stopUntakenBranch" || khongXd; // `stepId` is the listed STOP: nothing happened to it
+  const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || khongXd; // `stepId` is the listed STOP: nothing happened to it
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -404,6 +433,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       stopGhimLech: [`STOP "${stopCua(a)}": the pins differ, what went out may not be a STOP`, `The edge node reports step "${stopCua(a)}" handed over as a STOP, but the pins central reads do not match it: what went out may not have been a STOP. Check the machine on site and use its direct STOP / E-STOP.`],
       stopGhimLechChuaGui: [`STOP "${stopCua(a)}" NOT sent: the edge snapshot says it is not pinned`, `Central verified step "${stopCua(a)}" as a pinned STOP, but the edge node's dispatcher snapshot says it is not pinned: it was refused before any driver, so the STOP was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       abortStopNotSent: chuAbortChuaRa(a),
+      abortDefUnread: [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];

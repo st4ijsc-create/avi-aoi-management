@@ -107,6 +107,21 @@ const h = vi.hoisted(() => ({
   /** A2(n) T7 lượt sửa 1 — the alert's raise never answers and never resolves (a hung notifications write); treoLan counts the raises it swallowed */
   alertTreo: false,
   treoLan: 0,
+  /** A2(n) T7b-1c — a step-row upsert of this step lands this many ms later, by a real timer; treGhiLan counts the writes it held */
+  treGhi: new Map<string, number>(),
+  treGhiLan: 0,
+  /** A2(n) T7b-1c — a context write this answers true for throws, once; ctxNemLan counts them */
+  ctxNem: null as null | ((ctx: Record<string, any>) => boolean),
+  ctxNemLan: 0,
+  /** A2(n) T7b-1c — the next run status write to 'aborted' lands this many ms later (the Abort's own); treAbortedLan counts them */
+  treAborted: 0,
+  treAbortedLan: 0,
+  /** A2(n) T7b-1c — these writes of 'aborted' go first, undelayed: the delay is for a later one */
+  treAbortedBoQua: 0,
+  /** A2(n) T7b-1c — runs the moment that delayed write is about to land: what beat it to the row */
+  khiTreAborted: null as null | (() => void),
+  /** A2(n) T7b-1c — the dispatchers' ledger by key, modelled by THEIR rule: OT commandDispatcher.lyDoStopKhoaMoi (the real function), robot robotCommandDispatcher (only `done` replays). null: no ledger */
+  soCai: null as null | Map<string, { ok: boolean; simulated: boolean; status: string; dangBay?: boolean; kq: Record<string, any> }>,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -130,6 +145,8 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
     },
     // A2(n) T6e — the verifier's coercion is the dispatcher's own function: the real one
     epKieuGhiTheoTag: (orig as Record<string, unknown>).epKieuGhiTheoTag,
+    // A2(n) T7b-1c — the ledger of this fake decides by the dispatcher's own function
+    lyDoStopKhoaMoiCho: orig.lyDoStopKhoaMoiCho,
     dispatch: vi.fn(),
   };
 });
@@ -177,10 +194,35 @@ vi.mock("./foeScope", async (importOriginal) => {
 vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../equipment/equipmentAdapter")>();
   const adapter = (kind: string) => ({
+    /** A2(n) T7b-1c — the dispatcher's word on a key already used, then the hand-over. A replay writes nothing; a STOP whose earlier try is not ok goes for real under a new key, naming that try (lanTruoc) */
     async sendCommand(cmd: Record<string, any>) {
+      const so = h.soCai;
+      if (!so) return this.giao(cmd);
+      const khoa = String(cmd.idempotencyKey);
+      const truoc = so.get(khoa);
+      const m0 = /^run\d+-(.+)-a(\d+)$/.exec(khoa) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(khoa);
+      let lyDo: string | null = null;
+      if (truoc) {
+        if (kind === "robot") lyDo = truoc.status === "done" ? null : "robot_khac_done";
+        else lyDo = lyDoStopKhoaMoiCho((truoc.dangBay ? { loai: "dang_bay", hang: [] } : { loai: "phat_lai", existing: {}, hangLo: [] }) as never, (truoc.dangBay ? null : { ok: truoc.ok, simulated: truoc.simulated }) as never, khoa);
+        if (lyDo === null) {
+          h.sent.push({ kind, stepId: m0 ? m0[1] : "?", key: khoa, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl, sauKhoa: h.traTimeout > 0, lan: m0 ? m0[2] : null, khongGhi: true, phatLai: true });
+          return truoc.kq;
+        }
+      }
+      const n = h.sent.length;
+      const cho = this.giao(cmd);
+      const ghi = h.sent[n] as Record<string, unknown>;
+      const moi = lyDo ? (kind === "robot" ? "" : `${khoa}#stop-${randomUUID()}`) : khoa;
+      if (lyDo) Object.assign(ghi, { khoaMoi: moi, lanTruoc: { idempotencyKey: khoa, lyDo } });
+      const kq = (await cho) as Record<string, any>;
+      if (moi) so.set(moi, { ok: kq.ok === true, simulated: kq.status === "simulated", status: String(kq.status), kq });
+      return kq;
+    },
+    async giao(cmd: Record<string, any>) {
       const m = /^run\d+-(.+)-a(\d+)$/.exec(String(cmd.idempotencyKey)) ?? /^run\d+-abort-[^-]+-(.+)$/.exec(String(cmd.idempotencyKey));
       const stepId = m ? m[1] : "?";
-      const ghi: Record<string, unknown> = { kind, stepId, name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl, sauKhoa: h.traTimeout > 0, lan: m ? m[2] : null };
+      const ghi: Record<string, unknown> = { kind, stepId, key: String(cmd.idempotencyKey), name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl, sauKhoa: h.traTimeout > 0, lan: m ? m[2] : null };
       h.sent.push(ghi);
       const cham = h.slow.get(stepId);
       if (cham) await new Promise((r) => setTimeout(r, cham));
@@ -294,19 +336,19 @@ import {
   rehydrateInterruptedRuns,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
-import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, stopChuaRaTuHang, themBuocHongKhiTiepTuc, withResolvedAdapter } from "./foeRunStore";
+import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
 import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
 import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
 import { edgeRunStream } from "../../edge/edgeProtocol";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, chuStopAbort, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
 import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
-import { phanLoaiStopGhimChoFoe } from "../../ot/commandDispatcher";
+import { lyDoStopKhoaMoiCho, phanLoaiStopGhimChoFoe } from "../../ot/commandDispatcher";
 import { analyseDefinition } from "../../edge/edgeRunAnalysis";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
@@ -419,6 +461,15 @@ beforeEach(() => {
   h.docNemLan = 0;
   h.alertTreo = false;
   h.treoLan = 0;
+  h.treGhi.clear();
+  h.treGhiLan = 0;
+  h.ctxNem = null;
+  h.ctxNemLan = 0;
+  h.treAborted = 0;
+  h.treAbortedLan = 0;
+  h.khiTreAborted = null;
+  h.treAbortedBoQua = 0;
+  h.soCai = null;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -443,6 +494,11 @@ beforeEach(() => {
           if (h.hangNem?.({ ...v, ...(x?.set ?? {}) })) {
             h.hangNemLan++;
             throw new Error("db down at a step row write (test)");
+          }
+          const tre = h.treGhi.get(v.stepId);
+          if (tre) {
+            h.treGhiLan++;
+            return new Promise((ok, loi) => setTimeout(() => Promise.resolve(oc(x)).then(ok, loi), tre));
           }
           return oc(x);
         };
@@ -493,11 +549,29 @@ beforeEach(() => {
         }
         throw new Error("db down at the run status write (test)");
       }
+      if (h.ctxNem && v.contextJson !== undefined && h.ctxNem(v.contextJson)) {
+        h.ctxNem = null;
+        h.ctxNemLan++;
+        throw new Error("db down at the context write (test)");
+      }
       set(v);
       return b;
     };
     const where = b.where.bind(b);
     b.where = (c: any) => {
+      const tre = status === "aborted" ? h.treAborted : 0;
+      if (tre > 0 && h.treAbortedBoQua > 0) h.treAbortedBoQua--;
+      else if (tre > 0) {
+        h.treAborted = 0;
+        h.treAbortedLan++;
+        const dat = new Promise<Row[]>((ok) =>
+          setTimeout(() => {
+            h.khiTreAborted?.();
+            ok(Promise.resolve(where(c).returning()));
+          }, tre),
+        );
+        return { returning: () => dat, then: (a: (v: Row[]) => unknown, e?: (x: unknown) => unknown) => dat.then(a, e) };
+      }
       if (typeof status === "string") {
         for (const r of rows("orchestration_runs").filter((x) => (typeof c === "function" ? c(x) : true))) statusWrites.set(r.id, [...(statusWrites.get(r.id) ?? []), status as string]);
       }
@@ -2874,6 +2948,85 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
       h.classifyLan = 0;
       for (const r of await hoi(otStop("st"))) expect(r).toMatchObject({ failed: false, ids: new Set(["st"]) });
       expect(h.classifyLan).toBe(DONG_THOI);
+    }
+  });
+
+  it("★ h.treGhi (T7b-1c): on, the row is not there until the real timer fires, the write counted; off, it lands at once; 6 concurrent writes, 10 rounds", async () => {
+    for (let v = 0; v < VONG; v++) {
+      h.treGhiLan = 0;
+      for (let i = 0; i < DONG_THOI; i++) h.treGhi.set(`abort:t${v}-${i}`, 5);
+      const cho = dongThoi((i) => upsertStep(900, `abort:t${v}-${i}`, "command", { status: "failed" }));
+      await Promise.resolve();
+      expect(rows("orchestration_run_steps").filter((r) => String(r.stepId).startsWith(`abort:t${v}-`))).toEqual([]);
+      await cho;
+      expect(rows("orchestration_run_steps").filter((r) => String(r.stepId).startsWith(`abort:t${v}-`)).length).toBe(DONG_THOI);
+      expect(h.treGhiLan).toBe(DONG_THOI);
+      h.treGhi.clear();
+      await dongThoi((i) => upsertStep(900, `abort:n${v}-${i}`, "command", { status: "failed" }));
+      expect(h.treGhiLan).toBe(DONG_THOI);
+    }
+  });
+
+  it("★ h.ctxNem (T7b-1c): on, the one context write it names throws and is counted; off, it lands; 6 concurrent writes, 10 rounds", async () => {
+    fake.seed(orchestrationRuns, [{ id: 901, status: "running", contextJson: {} }]);
+    const rcCtx = (dau: string) => ({ runId: 901, context: { dau }, telemetry: new Map(), states: new Map() }) as never;
+    for (let v = 0; v < VONG; v++) {
+      h.ctxNemLan = 0;
+      h.ctxNem = (c) => c.dau === "nem";
+      await expect(persistContext(rcCtx("nem"))).rejects.toThrow("the context write");
+      expect(h.ctxNemLan).toBe(1);
+      expect(h.ctxNem).toBeNull();
+      await dongThoi(() => persistContext(rcCtx("ok")));
+      expect(h.ctxNemLan).toBe(1);
+      expect(runRow(901).contextJson.dau).toBe("ok");
+    }
+  });
+
+  it("★ h.treAborted (T7b-1c): on, the write of 'aborted' lands only after the real timer, counted, once; off, at once; 10 rounds", async () => {
+    for (let v = 0; v < VONG; v++) {
+      fake.seed(orchestrationRuns, [{ id: 902, status: "running", contextJson: {} }]);
+      h.treAborted = 5;
+      h.treAbortedLan = 0;
+      let khi = "";
+      h.khiTreAborted = () => (khi = String(runRow(902).status));
+      const cho = (fake as any).update(orchestrationRuns).set({ status: "aborted" }).where(() => true).returning();
+      await Promise.resolve();
+      expect(runRow(902).status).toBe("running");
+      await cho;
+      expect(runRow(902).status).toBe("aborted");
+      expect(khi, "the callback runs just before the write lands").toBe("running");
+      expect(h.treAbortedLan).toBe(1);
+      expect(h.treAborted).toBe(0);
+    }
+  });
+
+  it("★ h.soCai (T7b-1c): by the dispatchers' rule: OT ok replays, OT simulated / refused / no answer / in flight goes under a new key naming the earlier try, no row goes; robot: only done replays; 10 rounds", async () => {
+    const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
+    const gui = (kind: string, k: string) => (equipmentRegistry.getAdapter(kind as never) as any).sendCommand({ idempotencyKey: k, name: "stop" });
+    for (let v = 0; v < VONG; v++) {
+      h.soCai = new Map();
+      h.sent.length = 0;
+      await gui("ot", "run1-a-a1");
+      expect(h.sent.at(-1)).toMatchObject({ stepId: "a", key: "run1-a-a1" });
+      expect(h.sent.at(-1)?.lanTruoc).toBeUndefined();
+      const lai = (await gui("ot", "run1-a-a1")) as Row;
+      expect(lai.status, "simulated: no replay, as lyDoStopKhoaMoi").toBe("simulated");
+      expect(h.sent.at(-1)?.phatLai).toBeUndefined();
+      expect((h.sent.at(-1)?.lanTruoc as Row).lyDo).toBe("lan_truoc_khong_ok");
+      h.soCai.set("run1-b-a1", { ok: true, simulated: false, status: "acked", kq: { ok: true, status: "acked", routedTo: "ot-dispatcher", detail: {} } });
+      await gui("ot", "run1-b-a1");
+      expect(h.sent.at(-1)).toMatchObject({ stepId: "b", phatLai: true, khongGhi: true });
+      h.soCai.set("run1-c-a1", { ok: false, simulated: false, status: "sent", dangBay: true, kq: {} });
+      await gui("ot", "run1-c-a1");
+      expect((h.sent.at(-1)?.lanTruoc as Row).lyDo).toBe("dang_bay");
+      expect(String(h.sent.at(-1)?.khoaMoi)).toMatch(/^run1-c-a1#stop-/);
+      h.soCai.set("run1-d-a1", { ok: true, simulated: false, status: "done", kq: { ok: true, status: "done" } });
+      await gui("robot", "run1-d-a1");
+      expect(h.sent.at(-1)).toMatchObject({ stepId: "d", phatLai: true });
+      h.soCai.set("run1-e-a1", { ok: false, simulated: false, status: "timeout", kq: {} });
+      await gui("robot", "run1-e-a1");
+      expect(h.sent.at(-1)).toMatchObject({ stepId: "e", khoaMoi: "" });
+      h.soCai = null;
     }
   });
 
@@ -9368,4 +9521,1295 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(ids(), "the verified STOP behind the mark").toContain("s");
     expect(ids()).not.toContain("r2");
   });
+});
+
+// ═══ A2(n) T7b-1c ══════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * A2(n) T7b-1c (dieu-phoi 09/11) — ONE classification of every STOP at an Abort of a latched run (foeRunStore.phanLoaiStopAbort): what goes, under which key, and the words all read it. The rows these cases
+ * stand on are the walker's own wherever it can write them (measured: the walker's `running` writes leave `attempt` 0): hand-made rows only where said. Rule of the key: may add one STOP, never swallows one.
+ */
+describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, its key, the words", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const stopTyped = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const REF = { status: "rejected", error: "INTERLOCK_NOT_MET: refused" };
+  const ids = () => h.sent.map((x) => String(x.stepId));
+  const pdu = () => h.sent.filter((x) => x.phatLai !== true);
+  const khoaCuoi = () => String(h.sent.at(-1)?.key);
+  const hang = (c: number, id: string) => stepRows(c).find((r) => r.stepId === id);
+  const ctxCua = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null) ?? {};
+  const no = (c: number) => [...stopChuaRaTuHang(stepRows(c) as never, ctxCua(c))].sort();
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const chuCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => urgentCua(kind).map((a) => `${a.title} ${a.message}`).join(" | ");
+  const veBuoc = (id: string) => h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === id);
+  const quaCuaSo = (c: number) => (runRow(c).finishedAt = new Date(Date.now() - 2 * 3_600_000));
+  const bam = async (c: number, note = "press") => {
+    h.sent.length = 0;
+    const a = await abortRun(c, OWNER, note);
+    await wait(40);
+    return a;
+  };
+  const xong = async (c: number) => {
+    await waitFor(() => !["queued", "running", "compensating"].includes(runRow(c).status), "the end of the walk");
+    await wait(40);
+  };
+  const runDaChot = (c: number) => ctxCua(c)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null || chotTuHang(stepRows(c) as never) !== null;
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  beforeEach(() => {
+    vi.mocked(logCrudOperation).mockClear();
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+  });
+  afterEach(() => {
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    expect(sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+  });
+
+  /** a latched run the walker really held: x a move with no answer, the STOP behind a delay; no durable URGENT: held. Whatever `tiem` broke stays until it returns */
+  const giuThat = async (ref: string, st: WorkflowStep, them: WorkflowStep[] = []) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 40), st]), ...them])]), 1);
+    await xong(c);
+    expect(runRow(c).status, "latched, no durable URGENT: held").toBe("held");
+    h.alertDurable = true;
+    h.timeoutDispatch.clear();
+    h.alerts.length = 0;
+    h.hangNem = null;
+    return c;
+  };
+  /** the Abort's hand-over refused and its abort: row lost: nothing durable says it is owed */
+  const abortMat = async (c: number, id: string) => {
+    h.tuChoi.set(id, REF);
+    h.hangNem = (r) => r.stepId === `abort:${id}`;
+    const a = await bam(c);
+    expect(a.abortStops?.failed).toEqual([id]);
+    expect(hang(c, `abort:${id}`), "its abort row lost").toBeUndefined();
+    h.hangNem = null;
+    h.tuChoi.clear();
+    return a;
+  };
+  /** the latch forged, nobody handed a STOP s2 over: T7b-1's khoaChuaGiao */
+  const khoaChuaGiao = async (ref: string, them: WorkflowStep[] = []) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def(ref, [gate("g0"), ot("x"), gate("g1"), otStop("s2"), ...them]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    const ctx = ctxCua(c);
+    ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() };
+    runRow(c).contextJson = ctx;
+    runRow(c).status = "held";
+    h.traTimeout = 1;
+    return c;
+  };
+  /** the real path of a latch on the rows alone: an edge run, the node reports x unknown and goes */
+  const edgeMat = async (ref: string, them: WorkflowStep[] = [], hangThem: Array<Record<string, unknown>> = []) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const d = def(ref, [gate("g0"), otStop("s1"), otStop("cf"), ot("x"), otStop("s2"), ...them]);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await claimPackage(e, 2);
+    const t = new Date();
+    const w = (stepId: string, status: string, error: string | null, result: Record<string, unknown> | null) => ({ stepId, stepType: "command", status, attempt: 1, startedAt: t, finishedAt: status === "running" ? null : t, error, result });
+    await recordEdgeStepRows(fake as never, e.runId, [
+      w("s1", "completed", null, { routedTo: "ot-dispatcher", status: "simulated", accepted: true }),
+      w("cf", "completed", null, { routedTo: "ot-dispatcher", status: "acked_verified", accepted: true }),
+      w("x", "running", "FOE_OUTCOME_UNKNOWN: no answer from x", { routedTo: "ot-dispatcher", status: "timeout", accepted: false }),
+      ...(hangThem as never[]),
+    ] as never);
+    return { c: e.runId, t };
+  };
+  const moDi = async (d: WorkflowDefinition) => {
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    return { c, di };
+  };
+
+  // ── RA2-1: what the URGENT promises and what a press sends read one source ─────────────────────────────────────────
+  it("RA2-1-HUA-BAM (RC1) st handed over on the walk with no answer, the Abort refused, abort:st lost: coTheDaRa: never 'did NOT go out'; a press sends it under the walker's own key", async () => {
+    h.timeoutDispatch.add("st");
+    const c = await giuThat("ra21", otStop("st", { maxAttempts: 0 }));
+    const khoaDi = String(h.sent.filter((x) => x.stepId === "st").at(-1)?.key);
+    expect(hang(c, "st")).toMatchObject({ status: "failed", attempt: 1 });
+    const a1 = await abortMat(c, "st");
+    expect(a1.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+    expect(khoaCuoi(), "the first Abort under that key").toBe(khoaDi);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).not.toContain("did NOT go out");
+    expect(chu).toContain("may have gone out");
+    expect(chu).toContain("check the machine on site");
+    expect(chu).toContain("press Abort again within 15 minutes");
+    expect(chu).not.toContain("no time limit");
+    const a2 = await bam(c, "again");
+    expect(ids()).toEqual(["st"]);
+    expect(khoaCuoi(), "the press under that key").toBe(khoaDi);
+    expect(a2.message).not.toMatch(/owes no/);
+    expect(hang(c, "abort:st")?.status).toBe("completed");
+  });
+  it("RA2-1-HUA-BAM past the window: coTheDaRa is no debt: resendTooOld, the 15 minutes do not stretch", async () => {
+    h.timeoutDispatch.add("st");
+    const c = await giuThat("ra21n", otStop("st", { maxAttempts: 0 }));
+    await abortMat(c, "st");
+    quaCuaSo(c);
+    const a2 = await bam(c, "past");
+    expect(a2.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("RC1B-NO-TRUOC st with no answer, the Abort refused, abort:st landed: class no, truoc coTheDaRa: the words read truoc; what goes does not: past the window it goes, under the sweep's key", async () => {
+    h.timeoutDispatch.add("st");
+    const c = await giuThat("rc1b", otStop("st", { maxAttempts: 0 }));
+    h.tuChoi.set("st", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).not.toContain("did NOT go out");
+    expect(chu).toContain("may have gone out");
+    expect(chu).toContain("no time limit");
+    expect(no(c)).toEqual(["st"]);
+    quaCuaSo(c);
+    const a2 = await bam(c, "past");
+    expect(a2.abortStops?.phanLoai?.st).toMatchObject({ lop: "no", truoc: "coTheDaRa" });
+    expect(ids(), "class no goes, whatever truoc says").toEqual(["st"]);
+    expect(khoaCuoi()).toMatch(/-abort-/);
+  });
+  it("RC2-RUNNING-CO-THE (walker's rows) only the row that began is left, attempt 0: coTheDaRa: the Abort and the press under -a1, 'may have gone out'", async () => {
+    h.hangNem = (r) => r.stepId === "st" && (r.resultJson != null || r.status !== "running");
+    const c = await giuThat("rc2", otStop("st"));
+    expect(hang(c, "st")).toMatchObject({ status: "running", attempt: 0, resultJson: null });
+    await abortMat(c, "st");
+    expect(khoaCuoi()).toBe(`run${c}-st-a1`);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).toContain("may have gone out");
+    expect(chu).not.toContain("did NOT go out");
+    await bam(c, "again");
+    expect(ids()).toEqual(["st"]);
+    expect(khoaCuoi()).toBe(`run${c}-st-a1`);
+  });
+  it("RC3-FAILED-CO-THE (rows through recordEdgeStepRows: no walk writes this shape, see the report) failed, no dispatcher, no code, attempt 2: coTheDaRa: under -a2, 'may have gone out'", async () => {
+    const t = new Date();
+    const { c } = await edgeMat("rc3", [], [{ stepId: "s2", stepType: "command", status: "failed", attempt: 2, startedAt: t, finishedAt: t, error: "adapter not resolved", result: null }]);
+    h.alerts.length = 0;
+    h.traTimeout = 1;
+    await abortMat(c, "s2");
+    expect(h.sent.filter((x) => x.stepId === "s2").at(-1)?.key).toBe(`run${c}-s2-a2`);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).toContain("may have gone out");
+    expect(chu).not.toContain("did NOT go out");
+    await bam(c, "again");
+    expect(ids()).toEqual(["s2"]);
+    expect(khoaCuoi()).toBe(`run${c}-s2-a2`);
+  });
+  it("RC4-CHI-GIAO-NGU-CANH every row of st lost, the dispatched record holds it (written BEFORE the dispatcher is called, so it proves only 'may have gone'): coTheDaRa under -a1, the press sends it", async () => {
+    h.hangNem = (r) => r.stepId === "st";
+    const c = await giuThat("rc4", otStop("st"));
+    expect(hang(c, "st")).toBeUndefined();
+    expect(ctxCua(c).foeDispatchedSteps).toContain("st");
+    const a1 = await abortMat(c, "st");
+    expect(a1.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+    expect(chuCua("abortStopNotSent")).not.toContain("did NOT go out");
+    expect(chuCua("abortStopNotSent")).toContain("may have gone out");
+    await bam(c, "again");
+    expect(ids()).toEqual(["st"]);
+    expect(khoaCuoi()).toBe(`run${c}-st-a1`);
+  });
+  it("T7B1C-HOAN-THANH-KHONG-KET-QUA a STOP whose row says completed, its result lost: daGiao: G on the first Abort, a press sends nothing, the words say handed over", async () => {
+    h.hangNem = (r) => r.stepId === "st" && r.resultJson != null;
+    const c = await giuThat("rw3", otStop("st"));
+    expect(hang(c, "st")).toMatchObject({ status: "completed", resultJson: null });
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    const a = await bam(c, "press");
+    expect(a.abortStops?.phanLoai?.st?.lop).toBe("daGiao");
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1C-DANG-KHONG-GIAO a row with a dispatcher's yes (running, simulated: its completed write lost): daGiao: a press sends nothing", async () => {
+    h.timeoutOnce.add("st");
+    h.hangNem = (r) => r.stepId === "st" && r.status === "completed";
+    const c = await giuThat("rd3a", otStop("st"));
+    expect((hang(c, "st")?.resultJson as Row).status).toBe("simulated");
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    const a = await bam(c, "press");
+    expect(a.abortStops?.phanLoai?.st?.lop).toBe("daGiao");
+    expect(ids()).toEqual([]);
+  });
+
+  // ── the key: may add one STOP, never swallows one ──────────────────────────────────────────────────────────────────
+  it("CO-THE-KHU-TRUNG-OK the try under that key was ok, its result never reached the row: OT and robot: 0 PDU more, the row says the answer", async () => {
+    for (const [ref, st, status] of [["ckoot", otStop("st"), "acked"], ["ckorb", robotStop("st"), "done"]] as const) {
+      h.soCai = new Map();
+      h.acked = true;
+      h.ackStatus = status;
+      h.hangNem = (r) => r.stepId === "st" && (r.resultJson != null || r.status !== "running");
+      const c = await giuThat(ref, st);
+      expect(hang(c, "st")).toMatchObject({ status: "running", resultJson: null });
+      const a = await bam(c);
+      expect(a.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+      expect(h.sent.filter((x) => x.stepId === "st").map((x) => x.phatLai), "a replay").toEqual([true]);
+      expect(pdu().filter((x) => x.stepId === "st")).toEqual([]);
+      expect(a.abortStops?.sent).toEqual(["st"]);
+      expect(hang(c, "abort:st")).toMatchObject({ status: "completed" });
+      expect((hang(c, "abort:st")?.resultJson as Row).status).toBe(status);
+      expect(urgentCua("abortStopNotSent")).toEqual([]);
+    }
+  });
+  it("CO-THE-GUI-KHOA-MOI no answer, or in flight: OT: 1 PDU under a new key naming the earlier try; robot, no answer: 1 PDU, the key dropped: never swallowed", async () => {
+    for (const [ref, st, dangBay] of [["ckmto", otStop("st", { maxAttempts: 0 }), false], ["ckmdb", otStop("st", { maxAttempts: 0 }), true], ["ckmrb", robotStop("st"), false]] as const) {
+      h.soCai = new Map();
+      h.timeoutDispatch.add("st");
+      const c = await giuThat(ref, st);
+      const khoa = `run${c}-st-a1`;
+      if (dangBay) h.soCai.set(khoa, { ok: false, simulated: false, status: "sent", dangBay: true, kq: {} });
+      expect(h.soCai.has(khoa)).toBe(true);
+      const a = await bam(c);
+      expect(a.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+      const lan = pdu().filter((x) => x.stepId === "st");
+      expect(lan.length, "one PDU").toBe(1);
+      expect(lan[0]!.key).toBe(khoa);
+      expect((lan[0]!.lanTruoc as Row).idempotencyKey, "names the earlier try").toBe(khoa);
+      if (ref === "ckmrb") expect(lan[0]!.khoaMoi, "robot: the key dropped").toBe("");
+      else {
+        expect(String(lan[0]!.khoaMoi)).toMatch(new RegExp(`^${khoa}#stop-`));
+        expect((lan[0]!.lanTruoc as Row).lyDo).toBe(dangBay ? "dang_bay" : "lan_truoc_khong_ok");
+      }
+      expect(hang(c, "abort:st")?.status).toBe("completed");
+    }
+  });
+  it("CO-THE-A1-TRUNG-OK-CU -a1 hits an old ok, a3 was the last try with no answer: 0 PDU; the answer speaks of attempt 1 only, never of a later one", async () => {
+    h.soCai = new Map();
+    h.tuChoiLan.set("st", [REF]);
+    h.timeoutSauTuChoi.add("st");
+    h.hangNem = (r) => r.stepId === "st" && (r.resultJson != null || r.status !== "running");
+    const c = await giuThat("ca1ok", otStop("st"));
+    expect(h.sent.filter((x) => x.stepId === "st").map((x) => x.lan), "a3 was the last").toEqual(["1", "2", "3"]);
+    expect(hang(c, "st")).toMatchObject({ status: "running", attempt: 0, resultJson: null });
+    h.soCai.set(`run${c}-st-a1`, { ok: true, simulated: false, status: "acked", kq: { ok: true, status: "acked", routedTo: "ot-dispatcher", detail: {} } });
+    h.tuChoiLan.clear();
+    h.timeoutSauTuChoi.clear();
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    const a = await bam(c, "press");
+    expect(pdu().filter((x) => x.stepId === "st"), "0 PDU").toEqual([]);
+    expect(h.sent.at(-1)?.phatLai).toBe(true);
+    expect(a.abortStops?.sent).toEqual(["st"]);
+    expect(a.message).toMatch(/attempt 1/);
+    expect(a.message).toMatch(/check the machine on site/);
+    expect(a.message).not.toMatch(/attempt 3|a3\b/);
+    expect(a.message).not.toMatch(/STOP steps sent again/);
+    expect(a.message).not.toMatch(/confirmed/);
+  });
+  it("CO-THE-A1-KHONG-HANG -a1 has no row in the ledger (no earlier hand-over under it reached a dispatcher): the STOP really goes, under -a1, naming nothing", async () => {
+    h.hangNem = (r) => r.stepId === "st" && (r.resultJson != null || r.status !== "running");
+    const c = await giuThat("ca1kh", otStop("st"));
+    h.soCai = new Map();
+    const a = await bam(c);
+    expect(a.abortStops?.phanLoai?.st?.lop).toBe("coTheDaRa");
+    const lan = pdu().filter((x) => x.stepId === "st");
+    expect(lan.map((x) => x.key)).toEqual([`run${c}-st-a1`]);
+    expect(lan[0]!.lanTruoc).toBeUndefined();
+    expect(hang(c, "abort:st")?.status).toBe("completed");
+  });
+  it("CO-THE-HANG-UY-QUYEN-MOI the walker's key again: a fresh marked authorisation row, never the row an earlier dispatch may have spent", async () => {
+    h.hangNem = (r) => r.stepId === "st" && (r.resultJson != null || r.status !== "running");
+    const c = await giuThat("cuqm", otStop("st"));
+    const cu = { id: `foe-run${c}-st-a1`, tool: "foe", status: "executed", previewJson: {} };
+    fake.store.set("ai_pending_actions", [...rows("ai_pending_actions"), cu]);
+    await bam(c);
+    const id = String((h.sent.at(-1)?.hitl as Row | undefined)?.actionId);
+    expect(id).not.toBe(cu.id);
+    expect(JSON.stringify(rows("ai_pending_actions").find((r) => r.id === id)?.previewJson ?? {})).toContain("hangMoiStopGhim");
+  });
+
+  // ── RA2-2: a read lost once ────────────────────────────────────────────────────────────────────────────────────────
+  it("RA2-2-DOC-LOI-LAN-DAU (RC5) a debt on its abort: row, the press's first read lost once: the debt goes, no 'owes no STOP'", async () => {
+    const c = await khoaChuaGiao("ra22");
+    h.tuChoi.set("s2", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    expect(no(c)).toEqual(["s2"]);
+    h.docNem = { bang: "orchestration_run_steps", lan: 1 };
+    const a = await bam(c, "again");
+    expect(h.docNemLan).toBe(1);
+    h.docNem = null;
+    expect(ids()).toEqual(["s2"]);
+    expect(a.message).not.toMatch(/owes no/);
+    expect(a.abortStops?.khongDocDuoc).toBeUndefined();
+  });
+  it("RA2-2-DOC-LOI-LAN-DAU (RC5b) the same past the window: 'no time limit' holds: it goes", async () => {
+    const c = await khoaChuaGiao("ra22b");
+    h.tuChoi.set("s2", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    quaCuaSo(c);
+    h.docNem = { bang: "orchestration_run_steps", lan: 1 };
+    const a = await bam(c, "past");
+    h.docNem = null;
+    expect(a.reason).toBeUndefined();
+    expect(ids()).toEqual(["s2"]);
+  });
+  it("RA2-2-DOC-LOI-LAN-DAU (RC5c) every read lost: nothing goes on it, the words say why; a debt the context holds still goes", async () => {
+    const c = await khoaChuaGiao("ra22c");
+    h.tuChoi.set("s2", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    const a = await bam(c, "again");
+    expect(ids()).toEqual([]);
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(a.message).toMatch(/could not be read/);
+    const ctx = ctxCua(c);
+    ctx.foeStopChuaRa = ["s2"];
+    runRow(c).contextJson = ctx;
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    const a2 = await bam(c, "context");
+    h.docNem = null;
+    expect(a2.abortStops?.phanLoai?.s2?.lop).toBe("no");
+    expect(ids()).toEqual(["s2"]);
+  });
+  it("RA2-2-QUA-HAN-KHONG-NO past the window, the press's first read lost, nothing owed when the sweep reads: resendTooOld: a lost read does not stretch the 15 minutes", async () => {
+    const c = await khoaChuaGiao("ra22q");
+    runRow(c).status = "aborted";
+    quaCuaSo(c);
+    h.docNem = { bang: "orchestration_run_steps", lan: 1 };
+    const a = await bam(c, "past");
+    expect(h.docNemLan).toBe(1);
+    h.docNem = null;
+    expect(a.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("RC8-MOT-DOC-LOI the latch on the rows alone, one read lost: s1 handed over and cf confirmed do not go again; it reads as latched (closed by the one source)", async () => {
+    const { c } = await edgeMat("rc8m", [stopTyped("nt"), ot("m")]);
+    h.traTimeout = 1;
+    await bam(c);
+    expect(runRow(c).status).toBe("aborted");
+    h.docNem = { bang: "orchestration_run_steps", lan: 1 };
+    const a = await bam(c, "one read lost");
+    expect(h.docNemLan).toBe(1);
+    h.docNem = null;
+    expect(ids()).toEqual([]);
+    expect(a.abortStops?.phanLoai?.s1?.lop, "the first Abort's own hand-over went: its abort: row settles it").toBe("xong");
+    expect(a.abortStops?.phanLoai?.cf?.lop).toBe("xong");
+  });
+  it("RC8-MOT-DOC-LOI (no first Abort: the run read as aborted) one read lost: s1 handed over does not go, cf confirmed does not, s2 with no trace does", async () => {
+    const { c } = await edgeMat("rc8n", [stopTyped("nt"), ot("m")]);
+    h.traTimeout = 1;
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    h.docNem = { bang: "orchestration_run_steps", lan: 1 };
+    const a = await bam(c, "one read lost");
+    expect(h.docNemLan).toBe(1);
+    h.docNem = null;
+    expect(ids()).toEqual(["s2"]);
+    expect(a.abortStops?.phanLoai?.s1?.lop).toBe("daGiao");
+    expect(a.abortStops?.phanLoai?.cf?.lop).toBe("xong");
+  });
+  it("DIEU-LO-1-HIEN-TRANG the latch on the rows alone, EVERY read lost: a press sends s1 and cf too, never nt nor m. A stated exception to point 3, on condition every read fails, not the behaviour wanted (dieu-phoi 09/11)", async () => {
+    const { c } = await edgeMat("dl1", [stopTyped("nt"), ot("m")]);
+    h.traTimeout = 1;
+    await bam(c);
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    await bam(c, "every read lost");
+    h.docNem = null;
+    expect(ids()).toEqual(expect.arrayContaining(["s1", "cf"]));
+    expect(ids()).not.toContain("nt");
+    expect(ids()).not.toContain("m");
+  });
+
+  it("DIEU-LO-1-NGOAI-CUA-SO the same, past the window: nothing read says latched: nothing goes, resendTooOld: the exception is in the window only", async () => {
+    const { c } = await edgeMat("dl1n", [stopTyped("nt"), ot("m")]);
+    h.traTimeout = 1;
+    runRow(c).status = "aborted";
+    quaCuaSo(c);
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    const a = await bam(c, "every read lost");
+    h.docNem = null;
+    expect(a.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+
+  // ── RA2-3: a write of the walker's end that throws ─────────────────────────────────────────────────────────────────
+  const tuChoiRoiAbort = async (ref: string) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 200);
+    h.tuChoi.set("st", REF);
+    const { c, di } = await moDi(def(ref, [gate(), parF("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 500)])]));
+    await waitFor(() => hang(c, "st")?.status === "failed", "st refused");
+    h.tuChoi.clear();
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    await abortRun(c, OWNER, "before the latch");
+    return { c, di };
+  };
+  const nhanTuChoi = (c: number) => (runRow(c), h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === "st").map((a) => a.kind));
+  it("RA2-3-GHI-ABORTED-NEM (RC10) the walker refused st, an Abort, the latch, its guarded 'aborted' write throws once: owed, told, a press sends it", async () => {
+    const { c, di } = await tuChoiRoiAbort("ra23a");
+    h.statusThrow = "aborted";
+    await di;
+    await wait(40);
+    expect(h.statusThrowLan).toBe(1);
+    expect(no(c)).toEqual(["st"]);
+    expect(nhanTuChoi(c)).toContain(CANH_BAO_KHONG_RO_KIND.stopNotSent);
+    h.timeoutDispatch.clear();
+    quaCuaSo(c);
+    await bam(c, "past");
+    expect(ids()).toEqual(["st"]);
+  });
+  it("RA2-3-GHI-ABORTED-NEM (RC10b) the Abort's STOP refused before the latch, its abort: row lost, then that write throws: owed in the context, told by name, goes past the window", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 150);
+    const { c, di } = await moDi(def("ra23b", [gate(), parF("p", [move("x"), box("b", [delay("w", 400), otStop("st")])])]));
+    await waitFor(() => ids().includes("x"), "x handed over");
+    h.tuChoi.set("st", REF);
+    h.hangNem = (r) => r.stepId === "abort:st";
+    h.alerts.length = 0;
+    await abortRun(c, OWNER, "before the latch");
+    h.statusThrow = "aborted";
+    await di;
+    await wait(40);
+    expect(h.statusThrowLan).toBe(1);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    expect(no(c)).toEqual(["st"]);
+    expect(veBuoc("st").map((a) => a.kind)).toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+    quaCuaSo(c);
+    await bam(c, "past");
+    expect(ids()).toEqual(["st"]);
+  });
+  it("RA2-3-GHI-ABORTED-NEM (context write) that debt only in the context, and the context write throws: no 'no time limit' for a debt not durable: within 15 minutes, a press in the window sends it", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 150);
+    const { c, di } = await moDi(def("ra23c", [gate(), parF("p", [move("x"), box("b", [delay("w", 400), otStop("st")])])]));
+    await waitFor(() => ids().includes("x"), "x handed over");
+    h.tuChoi.set("st", REF);
+    h.hangNem = (r) => r.stepId === "abort:st";
+    h.ctxNem = (ctx) => Array.isArray(ctx.foeStopChuaRa) && ctx.foeStopChuaRa.includes("st");
+    h.alerts.length = 0;
+    await abortRun(c, OWNER, "before the latch");
+    await di;
+    await wait(40);
+    expect(h.ctxNemLan, "the injection reached the context write").toBe(1);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    expect(runRow(c).status).toBe("aborted");
+    expect(no(c), "nothing durable holds it").toEqual([]);
+    const chu = veBuoc("st").filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent).map((a) => `${a.title} ${a.message}`).join(" | ");
+    expect(chu, "told").toContain("within 15 minutes");
+    expect(chu).not.toContain("no time limit");
+    await bam(c, "again");
+    expect(ids()).toEqual(["st"]);
+  });
+  it("RA2-3-GHI-ABORTED-NEM (context write, the walker's refusal) the row of state C lost, the context write throws: told as not durable, never only 'Abort sends it again'", async () => {
+    const { c, di } = await tuChoiRoiAbort("ra23d");
+    h.hangNem = (r) => r.stepId === "st" && String(r.error ?? "").startsWith("FOE_STOP_NOT_SENT");
+    h.ctxNem = (ctx) => Array.isArray(ctx.foeStopChuaRa) && ctx.foeStopChuaRa.includes("st");
+    await di;
+    await wait(40);
+    expect(h.ctxNemLan).toBe(1);
+    expect(h.hangNemLan).toBeGreaterThan(0);
+    h.hangNem = null;
+    h.timeoutDispatch.clear();
+    expect(no(c)).toEqual([]);
+    const chu = veBuoc("st").map((a) => `${a.title} ${a.message}`).join(" | ");
+    expect(chu).toContain("within 15 minutes");
+    expect(chu).not.toContain("no time limit");
+    await bam(c, "again");
+    expect(ids()).toEqual(["st"]);
+  });
+
+  // ── RA2-4: the Abort's row lands late, the walk reads before it ────────────────────────────────────────────────────
+  for (const ms of [1, 5, 30]) {
+    it(`RA2-4-GHI-TRE-${ms} st refused before the latch, an Abort while the walker lives: st went, abort:st lands ${ms} ms late: no 'did NOT go out', st's row not written over`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 60);
+      h.tuChoi.set("st", REF);
+      const { c, di } = await moDi(def(`ra24${ms}`, [gate(), parF("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 600)])]));
+      await waitFor(() => runDaChot(c), "the latch");
+      h.tuChoi.clear();
+      h.alerts.length = 0;
+      h.sent.length = 0;
+      h.treGhi.set("abort:st", ms);
+      const a = await abortRun(c, OWNER, "walker alive");
+      await di;
+      await wait(60);
+      expect(h.treGhiLan, "the delay reached the write: without it this case proves nothing").toBeGreaterThan(0);
+      expect(a.abortStops?.sent).toEqual(["st"]);
+      expect(veBuoc("st").map((x) => x.kind), "st went: no word that it did not").toEqual([]);
+      expect(String(hang(c, "st")?.error ?? "")).not.toMatch(/^FOE_STOP_NOT_SENT/);
+      expect(hang(c, "abort:st")?.status).toBe("completed");
+      expect(no(c)).toEqual([]);
+    });
+  }
+  for (const ms of [5, 30]) {
+    it(`RC12B-ABORT-GHI-TRE-${ms} the Abort's own 'aborted' write answers ${ms} ms late: the walk ends before the sweep starts: st went: no 'did NOT go out', its row not written over`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 60);
+      h.tuChoi.set("st", REF);
+      const { c, di } = await moDi(def(`rc12b${ms}`, [gate(), parF("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 600)])]));
+      await waitFor(() => runDaChot(c), "the latch");
+      h.tuChoi.clear();
+      h.alerts.length = 0;
+      h.sent.length = 0;
+      h.treAborted = ms;
+      const a = await abortRun(c, OWNER, "walker alive");
+      await di;
+      await wait(60);
+      expect(h.treAbortedLan, "the delay reached the Abort's write").toBe(1);
+      expect(a.abortStops?.sent).toEqual(["st"]);
+      expect(veBuoc("st").map((x) => x.kind), "st went: no word that it did not").toEqual([]);
+      expect(String(hang(c, "st")?.error ?? "")).not.toMatch(/^FOE_STOP_NOT_SENT/);
+    });
+  }
+  // ── RC12b (dieu-phoi 09/11): the Abort's write of 'aborted' matches no row. Four branches, as ruled ─────────────────────────────────────
+  /** a run that acted, the STOP s behind a delay: the walker alive at it */
+  const diToiDelay = async (ref: string, khoa = false) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    if (khoa) h.timeoutDispatch.add("x");
+    const { c, di } = await moDi(def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 500), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    return { c, di };
+  };
+  for (const ms of [5, 30]) {
+    it(`RC12B-NHANH-1-CHUA-KHOA-${ms} a run NOT latched, the woken walker writes 'aborted' first: read back 'aborted': confirmed, the sweep runs: s goes, ok`, async () => {
+      const { c, di } = await diToiDelay(`rc12n1${ms}`);
+      h.treAborted = ms;
+      const a = await abortRun(c, OWNER, "walker alive");
+      await di;
+      expect(h.treAbortedLan).toBe(1);
+      expect(a.ok, String(a.message)).toBe(true);
+      expect(a.status).toBe("aborted");
+      expect(a.abortStops?.sent).toEqual(["s"]);
+      expect(h.sent.map((x) => x.stepId)).toEqual(["s"]);
+    });
+  }
+  it("RC12B-NHANH-2-DOC-LAI-LOI that read back throws, the walker was flagged by this Abort: the sweep runs all the same, pinned STOPs only; the answer says the state could not be confirmed", async () => {
+    const { c, di } = await diToiDelay("rc12n2");
+    h.treAborted = 5;
+    h.khiTreAborted = () => (h.docNem = { bang: "orchestration_runs", lan: 1 });
+    const a = await abortRun(c, OWNER, "walker alive");
+    await di;
+    expect(h.docNemLan, "the read back reached the injection").toBe(1);
+    expect(a.ok).toBe(false);
+    expect(a.message).toMatch(/not confirmed/);
+    expect(a.abortStops?.sent).toEqual(["s"]);
+    expect(h.sent.map((x) => x.stepId), "no non-STOP").toEqual(["s"]);
+  });
+  const ketThucKhac = async (ref: string, status: string, tuChoi: boolean) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.slow.set("x", 250); // the walker stands in x's hand-over: nothing of it writes while the Abort reads back
+    const { c, di } = await moDi(def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 800), otStop("s")])])]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "x"), "x handed over");
+    await wait(20);
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    if (tuChoi) h.tuChoi.set("s", REF);
+    h.treAborted = 5;
+    h.khiTreAborted = () => (runRow(c).status = status);
+    const a = await abortRun(c, OWNER, "walker alive");
+    h.tuChoi.clear();
+    const nhin = { ...a };
+    await di;
+    return { c, a: nhin };
+  };
+  it("RC12B-NHANH-3-TERMINAL-KHAC the row reads failed, the walker's own end: the answer says failed, never 'aborted'; a STOP not out goes by the classification", async () => {
+    const { a } = await ketThucKhac("rc12n3", "failed", false);
+    expect(a.ok).toBe(false);
+    expect(a.status).toBe("failed");
+    expect(a.message).toContain("failed");
+    expect(a.message).not.toMatch(/aborted\.|was aborted|already aborted/);
+    expect(a.abortStops?.sent).toEqual(["s"]);
+    expect(a.abortStops?.phanLoai?.s?.lop).toBe("chuaGiao");
+  });
+  it("RC12B-NHANH-3-TERMINAL-KHAC that STOP refused: an URGENT names it, true of a run that has ended: no press promised: a press cannot reach it", async () => {
+    const { a } = await ketThucKhac("rc12n3r", "failed", true);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    const chu = chuCua("abortStopNotSent");
+    expect(veBuoc("s").map((x) => x.kind)).toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+    expect(chu).toContain("has ended");
+    expect(chu).toContain("check the machine on site");
+    expect(chu).not.toMatch(/press Abort again|no time limit|run aborted/);
+  });
+  it("RC12B-NHANH-3-TERMINAL-KHAC the row reads completed: the answer says completed", async () => {
+    const { a } = await ketThucKhac("rc12n3c", "completed", false);
+    expect(a.ok).toBe(false);
+    expect(a.status).toBe("completed");
+    expect(a.message).toContain("completed");
+  });
+  it("RC12B-NHANH-3-CHUA-TAC-DONG a run that ended and never acted: R-6-b stands: its STOP is not sent", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const { c, di } = await moDi(def("rc12n3k", [gate(), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    h.sent.length = 0;
+    h.treAborted = 5;
+    h.khiTreAborted = () => (runRow(c).status = "completed");
+    const a = await abortRun(c, OWNER, "walker alive");
+    await di;
+    expect(a.status).toBe("completed");
+    expect(ids()).toEqual([]);
+  });
+  it("RC12B-NHANH-4-KHONG-LIVE no walker here (a double click, two people): the other Abort won: no read back, no sweep", async () => {
+    const c = await khoaChuaGiao("rc12n4");
+    h.sent.length = 0;
+    h.treAborted = 5;
+    h.khiTreAborted = () => (runRow(c).status = "aborted");
+    h.docNem = null;
+    const a = await abortRun(c, OWNER, "second");
+    expect(h.treAbortedLan).toBe(1);
+    expect(a.ok).toBe(false);
+    expect(a.message).toMatch(/already terminal/);
+    expect(ids()).toEqual([]);
+  });
+  it("RC12B-DA-DANH-DAU another Abort flagged this walker first: this one's write matches no row: it is the double click: no second sweep", async () => {
+    const { c, di } = await diToiDelay("rc12n5");
+    h.treAborted = 5;
+    h.treAbortedBoQua = 1;
+    const dau = abortRun(c, OWNER, "first");
+    const a = await abortRun(c, OWNER, "second");
+    await dau;
+    await di;
+    expect(h.treAbortedLan, "the second one's write is the late one").toBe(1);
+    expect(a.ok).toBe(false);
+    expect(a.message).toMatch(/already terminal/);
+    expect(a.abortStops).toBeUndefined();
+  });
+  it("T7B1C-BAM-LAI-CU-DOC-BAO-CAO a run not latched, pressed again with nothing to send: the answer never says 'were sent again'; with a STOP sent it says so", async () => {
+    const { c, di } = await diToiDelay("cbl");
+    const a0 = await abortRun(c, OWNER, "first");
+    await di;
+    expect(a0.abortStops?.sent).toEqual(["s"]);
+    const a1 = await bam(c, "again");
+    expect(ids()).toEqual([]);
+    expect(a1.message).not.toMatch(/sent again/);
+    expect(a1.message).toMatch(/this press sent no STOP step/);
+    const c2 = await centralRun(def("cbl2", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    h.tuChoi.set("s2", REF);
+    await bam(c2, "refused");
+    h.tuChoi.clear();
+    const a2 = await bam(c2, "again");
+    expect(ids()).toEqual(["s2"]);
+    expect(a2.message).toMatch(/were sent again/);
+  });
+
+  // ── abortSapQuet, noSauAbortKhoa (dieu-phoi 09/11): what the wait holds, and what a lost word costs ───────────────────────────────────
+  it("T7B1C-SAP-QUET-KHONG-HOAN-STOP the walker waits for the Abort on its way: the Abort's STOP goes while the walker still waits; another run's STOP is not behind it", async () => {
+    const { c, di } = await diToiDelay("sqk");
+    let xongDi = false;
+    void di.then(() => (xongDi = true));
+    const khac = await khoaChuaGiao("sqkb");
+    h.sent.length = 0;
+    h.treAborted = 120;
+    const t0 = Date.now();
+    const cho = abortRun(c, OWNER, "walker alive");
+    const b = await abortRun(khac, OWNER, "the other run");
+    const tB = Date.now() - t0;
+    expect(b.abortStops?.sent).toEqual(["s2"]);
+    expect(tB, "the other run's Abort waits for nothing of this one").toBeLessThan(120);
+    await wait(30);
+    expect(h.sent.some((x) => x.stepId === "s"), "the delayed write stands before this STOP, nothing else").toBe(false);
+    await waitFor(() => h.sent.some((x) => x.stepId === "s"), "the STOP goes when the write has landed");
+    const taiLucGui = Date.now() - t0;
+    expect(taiLucGui, "no wait of the walker's in front of the STOP").toBeLessThan(120 + 2 * STOP_DB_STEP_DEADLINE_MS);
+    await cho;
+    await di;
+    expect(xongDi).toBe(true);
+  });
+  it("T7B1C-SAP-QUET-CO-HAN a hung URGENT inside the sweep: the walker's end still comes, well inside the bound; the Abort answers within its own bound", async () => {
+    const { c, di } = await diToiDelay("sqh", true);
+    h.tuChoi.set("s", REF);
+    h.alertTreo = true;
+    const t0 = Date.now();
+    let tDi = 0;
+    void di.then(() => (tDi = Date.now() - t0));
+    const a = await abortRun(c, OWNER, "walker alive");
+    const tA = Date.now() - t0;
+    await di;
+    h.alertTreo = false;
+    h.tuChoi.clear();
+    console.log(`[PROBE thoi-gian] URGENT hung: the Abort answers in ${tA} ms, the walk ends in ${tDi} ms (D = ${STOP_DB_STEP_DEADLINE_MS})`);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(h.treoLan).toBeGreaterThan(0);
+    expect(tA, "the answer's bound (foeEngine ★ BOUND)").toBeLessThan(18 * STOP_DB_STEP_DEADLINE_MS);
+    expect(tDi, "the walk's end: released by the sweep, not by the 15·D ceiling").toBeLessThan(13 * STOP_DB_STEP_DEADLINE_MS);
+  }, 30_000);
+  it("T7B1C-MAT-BAO-KHONG-MAT-NO the Abort's STOP refused before the latch, its row lost, the URGENT of the walk's end hung: the debt is in the context BEFORE the word, whatever becomes of the word", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 150);
+    const { c, di } = await moDi(def("mbkmn", [gate(), parF("p", [move("x"), box("b", [delay("w", 400), otStop("st")])])]));
+    await waitFor(() => ids().includes("x"), "x handed over");
+    h.tuChoi.set("st", REF);
+    h.hangNem = (r) => r.stepId === "abort:st";
+    await abortRun(c, OWNER, "before the latch");
+    h.alertTreo = true;
+    h.treoLan = 0;
+    await waitFor(() => h.treoLan > 0 && (runRow(c).contextJson as Row).foeStopChuaRa?.includes("st") === true, "the word hangs, the debt is written", 4_000);
+    expect(no(c), "the word has not landed: the debt has").toEqual(["st"]);
+    h.alertTreo = false;
+    await di;
+    h.hangNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    quaCuaSo(c);
+    await bam(c, "past");
+    expect(ids()).toEqual(["st"]);
+  }, 30_000);
+
+  it("T7B1C-PENDING-LUC-WALKER (what stands today) st refused before the latch, the Abort's STOP has no answer when the walk ends: the walk tells it as owed; the late answer lands: the debt is gone. A word too many, never a STOP lost", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 60);
+    h.tuChoi.set("st", REF);
+    const { c, di } = await moDi(def("pdw", [gate(), parF("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 600)])]));
+    await waitFor(() => runDaChot(c), "the latch");
+    h.tuChoi.clear();
+    h.alerts.length = 0;
+    h.sent.length = 0;
+    h.slow.set("st", STOP_DB_STEP_DEADLINE_MS + 300);
+    const a = await abortRun(c, OWNER, "walker alive");
+    await di;
+    expect(a.abortStops?.pending).toEqual(["st"]);
+    expect(no(c)).toEqual(["st"]);
+    await waitFor(() => hang(c, "abort:st")?.status === "completed", "the late answer");
+    expect(no(c)).toEqual([]);
+  });
+  /**
+   * What stands today, NOT what is wanted (dieu-phoi 09/11): the words only, what goes is right, it takes two faults at once. The rows cannot say a2 went, because the walker writes no `attempt` on its `running` writes:
+   * the root is the backlog item "walker ghi attempt". When that lands this case changes.
+   */
+  it("T7B1C-MAT-KHI-THU-LAI (what stands today) a1 refused and that word landed, a2 no answer, every later write lost: the row's last word is a1's: class no: it goes with no time limit; a refused Abort says 'did NOT go out' of a STOP a2 may have sent", async () => {
+    h.tuChoiLan.set("st", [REF]);
+    h.timeoutSauTuChoi.add("st");
+    let kq = 0;
+    h.hangNem = (r) => r.stepId === "st" && (r.status !== "running" || (r.resultJson != null && ++kq > 2));
+    const c = await giuThat("mkt", otStop("st"));
+    expect(h.sent.filter((x) => x.stepId === "st").length).toBeGreaterThan(1);
+    expect(hang(c, "st")).toMatchObject({ status: "running", attempt: 0 });
+    expect((hang(c, "st")?.resultJson as Row).status).toBe("rejected");
+    h.tuChoiLan.clear();
+    h.timeoutSauTuChoi.clear();
+    h.tuChoi.set("st", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    expect(chuCua("abortStopNotSent"), "what stands today: the rows cannot say a2 went").toContain("did NOT go out");
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date(Date.now() - 2 * 3_600_000);
+    const a = await bam(c, "past");
+    expect(a.abortStops?.phanLoai?.st?.lop).toBe("no");
+    expect(ids()).toEqual(["st"]);
+  });
+
+  // ── the abort row's own key is nowhere: its answer still changes the words ─────────────────────────────────────────
+  it("T7B1C-ABORT-TIMEOUT-TRUOC the Abort's hand-over got no answer, abort:s2 landed; a press goes under a new sweep's key (the first key is nowhere to read); refused now: 'may have gone out', never 'did NOT go out'", async () => {
+    const c = await khoaChuaGiao("atot");
+    h.timeoutDispatch.add("s2");
+    await bam(c);
+    h.timeoutDispatch.clear();
+    expect((hang(c, "abort:s2")?.resultJson as Row).status).toBe("timeout");
+    const k1 = khoaCuoi();
+    h.tuChoi.set("s2", REF);
+    h.alerts.length = 0;
+    const a = await bam(c, "again");
+    h.tuChoi.clear();
+    expect(a.abortStops?.phanLoai?.s2).toMatchObject({ lop: "no", truoc: "coTheDaRa" });
+    expect(ids()).toEqual(["s2"]);
+    expect(khoaCuoi()).toMatch(/-abort-/);
+    expect(khoaCuoi()).not.toBe(k1);
+    expect(chuCua("abortStopNotSent")).toContain("may have gone out");
+    expect(chuCua("abortStopNotSent")).not.toContain("did NOT go out");
+  });
+
+  // ── what makes a debt durable ──────────────────────────────────────────────────────────────────────────────────────
+  it("T7B1C-NO-MOI-GHI-DUOC a new debt whose abort: row lands: 'no time limit'", async () => {
+    const c = await khoaChuaGiao("nmgd");
+    h.tuChoi.set("s2", REF);
+    h.alerts.length = 0;
+    await bam(c);
+    h.tuChoi.clear();
+    expect(chuCua("abortStopNotSent")).toContain("no time limit");
+    expect(chuCua("abortStopNotSent")).toContain('STOP "s2" did NOT go out');
+  });
+  it("T7B1C-NO-CU-GHI-MAT a debt its own row holds, the abort: row lost: durable all the same: 'no time limit'", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("st", REF);
+    const c = await centralRun(def("ncgm", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("st")])])]), 1);
+    await xong(c);
+    expect(runRow(c).status).toBe("held");
+    h.alerts.length = 0;
+    h.hangNem = (r) => r.stepId === "abort:st";
+    await bam(c);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    expect(hang(c, "abort:st")).toBeUndefined();
+    expect(chuCua("abortStopNotSent")).toContain("no time limit");
+  });
+  it("T7B1C-CHU-PENDING pressed again, no answer within the wait: the answer says so", async () => {
+    const c = await khoaChuaGiao("cpd");
+    h.tuChoi.set("s2", REF);
+    await bam(c);
+    h.tuChoi.clear();
+    h.slow.set("s2", STOP_DB_STEP_DEADLINE_MS + 200);
+    const a = await bam(c, "again");
+    expect(a.abortStops?.pending).toEqual(["s2"]);
+    expect(a.message).toMatch(/no answer yet: s2/);
+    await waitFor(() => hang(c, "abort:s2")?.status === "completed", "the late answer");
+  });
+  it("T7B1C-DA-GIAO-CHU a press on a STOP daGiao by its row: nothing sent, the answer says check the machine; a first Abort of the held run hands it over again under the sweep's key (G)", async () => {
+    const c = await giuThat("dgc", otStop("st"));
+    expect(hang(c, "st")?.status).toBe("completed");
+    const a1 = await bam(c);
+    expect(a1.abortStops?.phanLoai?.st?.lop).toBe("daGiao");
+    expect(ids()).toEqual(["st"]);
+    expect(khoaCuoi()).toMatch(/-abort-/);
+  });
+
+  // ── RA2-5: the definition unread on a latched run ──────────────────────────────────────────────────────────────────
+  const kiemKhongDoc = (c: number, a: { ok: boolean; message?: string; abortStops?: { khongDocDuoc?: true } }) => {
+    expect(a.abortStops?.khongDocDuoc, "kept for the Studio").toBe(true);
+    const u = urgentCua("abortDefUnread" as never);
+    expect(u.length, "an URGENT of its own, no step named").toBeGreaterThan(0);
+    const chu = `${u[0]!.title} ${u[0]!.message}`;
+    expect(chu).toContain(`could not read the definition of run ${c}`);
+    expect(chu).toContain("a STOP may still not be out");
+    expect(chu).toContain("press Abort again within 15 minutes");
+    expect(chu).toContain("after that check the machine on site");
+    expect(String(u[0]!.dedupKey).split(":")[2]).toBe("?");
+    expect(u[0]!.khuTrungBenVung, "durable").toBeDefined();
+    expect(a.message, "never a silent ok").toContain(`could not read the definition of run ${c}`);
+  };
+  it("RA2-5-KHONG-DOC-DINH-NGHIA (RC9) the latch's URGENT already durable (DA_BAO): told all the same; a press in the window sends s2; past it resendTooOld: the 15 minutes do not stretch", async () => {
+    const c = await khoaChuaGiao("ra25");
+    const ctx = ctxCua(c);
+    ctx.foeKetCucKhongRoDaBao = { stepId: "x", at: new Date().toISOString() };
+    h.docNem = { bang: "orchestration_workflows", lan: 2 };
+    h.alerts.length = 0;
+    const a = await bam(c);
+    h.docNem = null;
+    expect(ids()).toEqual([]);
+    kiemKhongDoc(c, a);
+    await bam(c, "again");
+    expect(ids()).toEqual(["s2"]);
+  });
+  it("RA2-5-KHONG-DOC-DINH-NGHIA (RC9b) no DA_BAO: told beside the run_end; past the window a press is refused", async () => {
+    const c = await khoaChuaGiao("ra25b");
+    h.docNem = { bang: "orchestration_workflows", lan: 2 };
+    h.alerts.length = 0;
+    const a = await bam(c);
+    h.docNem = null;
+    kiemKhongDoc(c, a);
+    quaCuaSo(c);
+    const a2 = await bam(c, "past");
+    expect(a2.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("RA2-5-KHONG-DOC-DINH-NGHIA (RC9c) unread on every read of two presses in the window: each says so", async () => {
+    const c = await khoaChuaGiao("ra25c");
+    h.docNem = { bang: "orchestration_workflows", lan: Infinity };
+    h.alerts.length = 0;
+    const a = await bam(c);
+    kiemKhongDoc(c, a);
+    const a2 = await bam(c, "again");
+    h.docNem = null;
+    expect(ids()).toEqual([]);
+    expect(a2.abortStops?.khongDocDuoc).toBe(true);
+    expect(a2.message).toMatch(/could not be read/);
+  });
+  it("RA2-5-KHONG-DOC-DINH-NGHIA (RC7c) the real path, the latch on the rows alone: told; a press sends s2", async () => {
+    const { c } = await edgeMat("ra25e");
+    h.traTimeout = 1;
+    h.docNem = { bang: "orchestration_workflows", lan: 2 };
+    h.alerts.length = 0;
+    const a = await bam(c);
+    h.docNem = null;
+    kiemKhongDoc(c, a);
+    await bam(c, "again");
+    expect(ids()).toContain("s2");
+  });
+  it("RA2-5-DOI-CHUNG a run NOT latched, the definition unread: no such URGENT", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def("ra25d", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    h.docNem = { bang: "orchestration_workflows", lan: 2 };
+    h.alerts.length = 0;
+    const a = await bam(c);
+    h.docNem = null;
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(urgentCua("abortDefUnread" as never)).toEqual([]);
+  });
+
+  // ── the table: every class × read × press × abort: write ───────────────────────────────────────────────────────────
+  const KHOA = { foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN" } };
+  const abortHang = (status: string, kq: Record<string, unknown>) => ({ stepId: "abort:s", status, error: null, resultJson: { stepId: "s", ...kq } });
+  const LOP: Record<string, { hang: Array<Record<string, unknown>>; ctx: Record<string, unknown> }> = {
+    chuaGiao: { hang: [], ctx: KHOA },
+    no: { hang: [abortHang("failed", { routedTo: "ot-dispatcher", status: "rejected", accepted: false })], ctx: KHOA },
+    coTheDaRa: { hang: [{ stepId: "s", status: "running", attempt: 0, error: null, resultJson: { routedTo: "ot-dispatcher", status: "timeout", accepted: false } }], ctx: KHOA },
+    daGiao: { hang: [{ stepId: "s", status: "completed", attempt: 1, error: null, resultJson: { routedTo: "ot-dispatcher", status: "simulated", accepted: true } }], ctx: KHOA },
+    xong: { hang: [abortHang("completed", { routedTo: "ot-dispatcher", status: "acked_verified", accepted: true })], ctx: KHOA },
+    khongDoc: { hang: [], ctx: KHOA },
+  };
+  const GUI: Record<string, Record<string, boolean>> = {
+    chuaGiao: { dau: true, trongCua: true, ngoaiCua: false },
+    no: { dau: true, trongCua: true, ngoaiCua: true },
+    coTheDaRa: { dau: true, trongCua: true, ngoaiCua: false },
+    daGiao: { dau: true, trongCua: false, ngoaiCua: false },
+    xong: { dau: false, trongCua: false, ngoaiCua: false },
+    khongDoc: { dau: true, trongCua: false, ngoaiCua: false },
+  };
+  // the words, by class, by whether the debt is durable
+  const CHU: Record<string, [string, string]> = {
+    chuaGiao: ["chuaRaKhongHan", "chuaRa15"],
+    no: ["chuaRaKhongHan", "chuaRaKhongHan"], // a row holds it: its new row lost changes nothing
+    coTheDaRa: ["coTheKhongHan", "coThe15"],
+    daGiao: ["daGiaoKhongHan", "daGiaoKiemMay"],
+    khongDoc: ["khongDocKhongHan", "khongDoc15"],
+  };
+  it("T7B1C-BANG-O every class × read (read, first read lost, every read lost) × press (first Abort, in the window, past it) × abort: write (lands, throws, late): what goes and the words; a cell with no meaning says why", () => {
+    const dong: string[] = [];
+    for (const ten of Object.keys(LOP)) {
+      for (const doc of ["duoc", "lanDauLoi", "moiLanLoi"] as const) {
+        for (const lan of ["dau", "trongCua", "ngoaiCua"] as const) {
+          for (const ghi of ["duoc", "nem", "tre"] as const) {
+            const voNghia: string[] = [];
+            let lop = ten;
+            // only a read that failed makes this class
+            if (ten === "khongDoc" && doc !== "moiLanLoi") {
+              voNghia.push("lop khongDoc chi co khi moi lan doc loi");
+            }
+            // a first Abort reads the rows once: its first read is its every read
+            const docThat = lan === "dau" && doc === "lanDauLoi" ? "moiLanLoi" : doc;
+            if (lan === "dau" && doc === "lanDauLoi") voNghia.push("Abort dau chi doc hang mot lan: lan dau loi = moi lan loi");
+            if (docThat === "moiLanLoi") lop = "khongDoc"; // nothing read: no class can be seen (the context's debt: T7B1C-BANG-NGU-CANH)
+            const vao = { hang: docThat === "moiLanLoi" ? null : LOP[ten]!.hang, ctx: LOP[ten]!.ctx };
+            const p = phanLoaiStopAbort("s", vao as never);
+            expect(p.lop, `${ten}/${doc}/${lan}/${ghi}`).toBe(ten === "khongDoc" && docThat !== "moiLanLoi" ? "chuaGiao" : lop);
+            const gui = stopAbortCoGui(p, lan);
+            expect(gui, `sends? ${ten}/${doc}/${lan}/${ghi}`).toBe(GUI[p.lop]![lan]);
+            const ben = ghi !== "nem" || stopChuaRaTuHang((vao.hang ?? []) as never, vao.ctx).has("s");
+            const chu = gui ? chuStopAbort(p, ben) : null;
+            if (gui) expect(chu, `words ${ten}/${doc}/${lan}/${ghi}`).toBe(CHU[p.lop]![ben ? 0 : 1]);
+            else voNghia.push("khong gui: khong co lan ghi abort:, khong co chu");
+            dong.push(`${ten}|${doc}|${lan}|${ghi}|${p.lop}|${gui ? "gui" : "khong"}|${chu ?? "-"}|${voNghia.join("; ") || "co nghia"}`);
+          }
+        }
+      }
+    }
+    expect(dong.length).toBe(6 * 3 * 3 * 3);
+    for (const d of dong) console.log(`[BANG O] ${d}`);
+  });
+  it("T7B1C-BANG-NGU-CANH every read lost, the debt in the context: class no: it goes whatever the press, durable", () => {
+    for (const lan of ["dau", "trongCua", "ngoaiCua"] as const) {
+      const p = phanLoaiStopAbort("s", { hang: null, ctx: { ...KHOA, foeStopChuaRa: ["s"] } } as never);
+      expect(p.lop).toBe("no");
+      expect(stopAbortCoGui(p, lan)).toBe(true);
+      expect(chuStopAbort(p, true)).toBe("chuaRaKhongHan");
+    }
+  });
+  it("T7B1C-PHAN-LOAI each piece of evidence, alone, decides its class; truoc is read by the words only", () => {
+    const pl = (h1: unknown[], ctx: Record<string, unknown> = KHOA, daThu?: (id: string) => boolean) => phanLoaiStopAbort("s", { hang: h1, ctx, daThu } as never);
+    const hangS = (x: Record<string, unknown>) => ({ stepId: "s", attempt: 0, error: null, resultJson: null, ...x });
+    const giao = (status: string, accepted: boolean, them: Record<string, unknown> = {}) => ({ routedTo: "ot-dispatcher", status, accepted, ...them });
+    // no trace
+    expect(pl([]).lop).toBe("chuaGiao");
+    expect(pl([hangS({ status: "held" })]).lop).toBe("chuaGiao");
+    expect(pl([hangS({ status: "failed", error: "FOE_NOT_SENT_RUN_LATCHED: not sent" })]).lop, "the sink's own word: it was not handed over").toBe("chuaGiao");
+    expect(pl([hangS({ status: "failed", error: "INTERLOCK_NOT_MET: no", resultJson: giao("rejected", false) })]).lop, "its dispatcher refused it: not out").toBe("chuaGiao");
+    expect(pl([hangS({ status: "failed", error: "INTERLOCK_NOT_MET: no", resultJson: giao("rejected", false) })], { ...KHOA, foeDispatchedSteps: ["s"] }).lop, "the refusal outranks the record written before the call").toBe("chuaGiao");
+    // may have gone: each form, and its key
+    expect(pl([hangS({ status: "running" })])).toMatchObject({ lop: "coTheDaRa", khoaThu: 1 });
+    expect(pl([hangS({ status: "failed", attempt: 2, error: "adapter not resolved" })])).toMatchObject({ lop: "coTheDaRa", khoaThu: 2 });
+    expect(pl([hangS({ status: "failed", attempt: 3, error: "FOE_OUTCOME_UNKNOWN: x", resultJson: giao("timeout", false) })])).toMatchObject({ lop: "coTheDaRa", khoaThu: 3 });
+    expect(pl([hangS({ status: "running", resultJson: giao("timeout", false) })])).toMatchObject({ lop: "coTheDaRa", khoaThu: 1 });
+    expect(pl([hangS({ status: "running", resultJson: giao("rejected", false, { detail: { reason: "DUPLICATE_IN_FLIGHT" } }) })]).lop, "may have flown").toBe("coTheDaRa");
+    expect(pl([hangS({ status: "failed", error: "DRIVER_FAILED: x", resultJson: giao("failed", false) })]).lop, "a device error: may have gone").toBe("coTheDaRa");
+    expect(pl([], { ...KHOA, foeDispatchedSteps: ["s"] })).toMatchObject({ lop: "coTheDaRa", khoaThu: 1 });
+    expect(pl([], KHOA, (id) => id === "s")).toMatchObject({ lop: "coTheDaRa", khoaThu: 1 });
+    expect(pl([hangS({ status: "held" })], { ...KHOA, foeDispatchedSteps: ["s"] }).lop, "a hold says nothing of a dispatcher").toBe("coTheDaRa");
+    // handed over
+    for (const st of ["simulated", "acked_unverified", "acked", "done"]) expect(pl([hangS({ status: "running", resultJson: giao(st, true) })]).lop, st).toBe("daGiao");
+    expect(pl([hangS({ status: "completed" })]).lop, "completed, its result lost").toBe("daGiao");
+    expect(pl([hangS({ status: "compensated" })]).lop).toBe("daGiao");
+    // done with
+    expect(pl([hangS({ status: "completed", resultJson: giao("acked_verified", true) })]).lop).toBe("xong");
+    expect(pl([abortHang("completed", giao("simulated", true))]).lop).toBe("xong");
+    expect(pl([{ stepId: "abort:s", status: "skipped", error: null, resultJson: { abortStop: "notPinned", stepId: "s" } }]).lop).toBe("xong");
+    expect(pl([hangS({ status: "failed", error: 'FOE_STOP_NOT_SENT: STOP "s" did NOT go out (attempt 1): refused before a driver [X].' }), abortHang("completed", giao("acked", true))]).lop, "an abort row that went settles state C").toBe("xong");
+    // owed; truoc
+    expect(pl([hangS({ status: "failed", error: 'FOE_STOP_NOT_SENT: STOP "s" did NOT go out (attempt 1): refused before a driver [X].' })])).toEqual({ lop: "no" });
+    expect(pl([hangS({ status: "failed", error: "x", resultJson: giao("timeout", false) }), abortHang("failed", giao("rejected", false))])).toEqual({ lop: "no", truoc: "coTheDaRa" });
+    expect(pl([hangS({ status: "completed", resultJson: giao("simulated", true) }), abortHang("failed", giao("rejected", false))])).toEqual({ lop: "no", truoc: "daGiao" });
+    expect(pl([abortHang("failed", giao("timeout", false))])).toEqual({ lop: "no", truoc: "coTheDaRa" });
+    expect(pl([abortHang("failed", giao("rejected", false))])).toEqual({ lop: "no" });
+    expect(pl([], { ...KHOA, foeStopChuaRa: ["s"] }).lop).toBe("no");
+    // nothing read
+    expect(phanLoaiStopAbort("s", { hang: null, ctx: KHOA } as never)).toEqual({ lop: "khongDoc" });
+    // truoc never decides what goes
+    for (const lan of ["dau", "trongCua", "ngoaiCua"] as const) {
+      expect(stopAbortCoGui({ lop: "no", truoc: "coTheDaRa" }, lan)).toBe(true);
+      expect(stopAbortCoGui({ lop: "no", truoc: "daGiao" }, lan)).toBe(true);
+    }
+    // the words read it
+    expect(chuStopAbort({ lop: "no", truoc: "coTheDaRa" }, true)).toBe("coTheKhongHan");
+    expect(chuStopAbort({ lop: "no", truoc: "daGiao" }, true)).toBe("daGiaoKhongHan");
+    expect(chuStopAbort({ lop: "xong" }, true)).toBeNull();
+  });
+  /** the same table on the engine: rows the walker's shape (measured K1..K9), hand-made here; the dispatcher refuses, so the words fire */
+  it("T7B1C-BANG-THAT the same cells on the engine: read through the real reads, the press through abortRun: what goes and the words", async () => {
+    const CHU_RE: Record<string, Array<[RegExp, boolean]>> = {
+      chuaRaKhongHan: [[/did NOT go out/, true], [/no time limit/, true]],
+      chuaRa15: [[/did NOT go out/, true], [/within 15 minutes/, true], [/no time limit/, false]],
+      coTheKhongHan: [[/may have gone out/, true], [/no time limit/, true], [/did NOT go out/, false]],
+      coThe15: [[/may have gone out/, true], [/within 15 minutes/, true], [/did NOT go out/, false], [/no time limit/, false]],
+      daGiaoKhongHan: [[/handed over earlier/, true], [/no time limit/, true], [/did NOT go out/, false]],
+      daGiaoKiemMay: [[/not sent again/, true], [/check the machine on site/, true], [/did NOT go out/, false], [/no time limit/, false]],
+      khongDocKhongHan: [[/could not be read/, true], [/no time limit/, true], [/did NOT go out/, false]],
+      khongDoc15: [[/could not be read/, true], [/within 15 minutes/, true], [/did NOT go out/, false], [/no time limit/, false]],
+    };
+    const dat = (c: number, ten: string) => {
+      const them = (x: Record<string, unknown>) => rows("orchestration_run_steps").push({ runId: c, stepType: "command", attempt: 0, error: null, resultJson: null, startedAt: new Date(), ...x } as never);
+      const kq = (status: string, accepted: boolean) => ({ routedTo: "ot-dispatcher", status, accepted });
+      if (ten === "no") them({ stepId: "abort:s2", status: "failed", error: "INTERLOCK_NOT_MET: refused", resultJson: { abortStop: "failed", stepId: "s2", ...kq("rejected", false) } });
+      if (ten === "coTheDaRa") them({ stepId: "s2", status: "running", resultJson: kq("timeout", false) });
+      if (ten === "daGiao") them({ stepId: "s2", status: "completed", attempt: 1, resultJson: kq("simulated", true) });
+      if (ten === "xong") them({ stepId: "abort:s2", status: "completed", resultJson: { abortStop: "sent", stepId: "s2", ...kq("acked_verified", true) } });
+    };
+    const sai: string[] = [];
+    let n = 0;
+    for (const ten of Object.keys(LOP)) {
+      for (const doc of ["duoc", "lanDauLoi", "moiLanLoi"] as const) {
+        for (const lan of ["dau", "trongCua", "ngoaiCua"] as const) {
+          for (const ghi of ["duoc", "nem", "tre"] as const) {
+            if (ten === "khongDoc" && doc !== "moiLanLoi") continue; // no such cell: only a read that failed makes this class
+            const c = await khoaChuaGiao(`bt${n++}`);
+            dat(c, ten);
+            if (lan !== "dau") {
+              runRow(c).status = "aborted";
+              runRow(c).finishedAt = lan === "trongCua" ? new Date() : new Date(Date.now() - 2 * 3_600_000);
+            }
+            h.tuChoi.set("s2", REF);
+            if (doc !== "duoc") h.docNem = { bang: "orchestration_run_steps", lan: doc === "lanDauLoi" ? 1 : Infinity };
+            if (ghi === "nem") h.hangNem = (r) => r.stepId === "abort:s2";
+            if (ghi === "tre") h.treGhi.set("abort:s2", 5);
+            h.alerts.length = 0;
+            await bam(c, "cell");
+            h.docNem = null;
+            h.hangNem = null;
+            h.treGhi.clear();
+            h.tuChoi.clear();
+            const docThat = lan === "dau" && doc === "lanDauLoi" ? "moiLanLoi" : doc;
+            const lop = docThat === "moiLanLoi" ? "khongDoc" : ten === "khongDoc" ? "chuaGiao" : ten;
+            const cho = GUI[lop]![lan]!;
+            const o = `${ten}/${doc}/${lan}/${ghi}`;
+            const coGui = ids().includes("s2");
+            if (coGui !== cho) sai.push(`${o}: sends ${coGui}, wanted ${cho}`);
+            if (ids().some((x) => x !== "s2")) sai.push(`${o}: other commands ${ids().join(",")}`);
+            const chu = chuCua("abortStopNotSent");
+            if (cho) {
+              const ben = ghi !== "nem" || (lop === "no" && docThat !== "moiLanLoi");
+              for (const [re, co] of CHU_RE[CHU[lop]![ben ? 0 : 1]!]!) if (re.test(chu) !== co) sai.push(`${o}: words ${re}: "${chu}"`);
+            } else if (chu) sai.push(`${o}: words with nothing sent: "${chu}"`);
+          }
+        }
+      }
+    }
+    console.log(`[BANG THAT] cells ${n}`);
+    expect(sai).toEqual([]);
+    expect(n).toBe(5 * 3 * 3 * 3 + 9);
+  }, 180_000);
+  /** the rows of each class, on any STOP id */
+  const datLop = (c: number, ten: string, id: string, ban = "ot-dispatcher") => {
+    const them = (x: Record<string, unknown>) => rows("orchestration_run_steps").push({ runId: c, stepType: "command", attempt: 0, error: null, resultJson: null, startedAt: new Date(), ...x } as never);
+    const kq = (status: string, accepted: boolean) => ({ routedTo: ban, status, accepted });
+    if (ten === "no") them({ stepId: `abort:${id}`, status: "failed", error: "INTERLOCK_NOT_MET: refused", resultJson: { abortStop: "failed", stepId: id, ...kq("rejected", false) } });
+    if (ten === "coTheDaRa") them({ stepId: id, status: "running", resultJson: kq("timeout", false) });
+    if (ten === "daGiao") them({ stepId: id, status: "completed", attempt: 1, resultJson: kq("simulated", true) });
+    if (ten === "xong") them({ stepId: `abort:${id}`, status: "completed", resultJson: { abortStop: "sent", stepId: id, ...kq("acked_verified", true) } });
+  };
+  const LOP5 = ["chuaGiao", "no", "coTheDaRa", "daGiao", "xong"];
+  const THU_TU = ["abortTruoc", "walkerTruoc", "docLaiLoi", "terminalKhac", "khongLive"] as const;
+  it("T7B1C-BANG-AI-GHI-TRUOC every class × who wrote the end first (the Abort, the woken walker, the read back lost, another end, no walker here): what goes, the words, the answer", async () => {
+    const sai: string[] = [];
+    let n = 0;
+    for (const ten of LOP5) {
+      for (const tt of THU_TU) {
+        const o = `${ten}/${tt}`;
+        n++;
+        h.timeoutDispatch.clear();
+        h.slow.clear();
+        h.tuChoi.clear();
+        let c: number;
+        let di: Promise<unknown> = Promise.resolve();
+        if (tt === "khongLive") {
+          c = await khoaChuaGiao(`bat${n}`);
+          datLop(c, ten, "s2");
+        } else {
+          seedHalt();
+          h.ghim = PIN_OK;
+          if (tt === "terminalKhac") h.slow.set("x", 150); // stands in its hand-over: nothing of the walk writes meanwhile
+          else h.timeoutDispatch.add("x");
+          const m = await moDi(def(`bat${n}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 500), otStop("s2")])])]));
+          c = m.c;
+          di = m.di;
+          await waitFor(() => h.sent.some((x) => x.stepId === "x"), "x handed over");
+          await wait(25);
+          if (tt === "terminalKhac") rows("orchestration_run_steps").push({ runId: c, stepId: "z", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: z", resultJson: null } as never);
+          datLop(c, ten, "s2");
+        }
+        h.traTimeout = 1;
+        h.sent.length = 0;
+        h.alerts.length = 0;
+        h.tuChoi.set("s2", REF);
+        if (tt !== "abortTruoc") h.treAborted = 8;
+        if (tt === "docLaiLoi") h.khiTreAborted = () => (h.docNem = { bang: "orchestration_runs", lan: 1 });
+        if (tt === "terminalKhac") h.khiTreAborted = () => (runRow(c).status = "failed");
+        if (tt === "khongLive") h.khiTreAborted = () => (runRow(c).status = "aborted");
+        const a = await abortRun(c, OWNER, "cell");
+        const nhin = { ok: a.ok, status: a.status, message: String(a.message ?? "") };
+        const chu = chuCua("abortStopNotSent");
+        await di;
+        await wait(10);
+        h.docNem = null;
+        h.khiTreAborted = null;
+        const lan = tt === "terminalKhac" ? "trongCua" : "dau";
+        const cho = tt === "khongLive" ? false : GUI[ten]![lan]!;
+        const coGui = h.sent.some((x) => x.stepId === "s2");
+        if (coGui !== cho) sai.push(`${o}: sends ${coGui}, wanted ${cho}`);
+        if (tt === "abortTruoc" || tt === "walkerTruoc") {
+          if (nhin.ok !== true) sai.push(`${o}: answer ${JSON.stringify(nhin)}`);
+          if (cho) for (const [re, co] of [[/no time limit/, true]] as const) if (re.test(chu) !== co) sai.push(`${o}: words ${re}: "${chu}"`);
+        }
+        if (tt === "docLaiLoi" && (nhin.ok !== false || !/not confirmed/.test(nhin.message))) sai.push(`${o}: answer ${JSON.stringify(nhin)}`);
+        if (tt === "terminalKhac") {
+          if (nhin.status !== "failed" || /was aborted/.test(nhin.message)) sai.push(`${o}: answer ${JSON.stringify(nhin)}`);
+          if (cho && (!/has ended/.test(chu) || /press Abort again/.test(chu))) sai.push(`${o}: words "${chu}"`);
+        }
+        if (tt === "khongLive" && (nhin.ok !== false || !/already terminal/.test(nhin.message) || chu)) sai.push(`${o}: answer ${JSON.stringify(nhin)} words "${chu}"`);
+        h.tuChoi.clear();
+      }
+    }
+    console.log(`[BANG AI-GHI-TRUOC] cells ${n}`);
+    expect(sai).toEqual([]);
+    expect(n).toBe(25);
+  }, 120_000);
+  const LAN3 = ["dau", "trongCua", "ngoaiCua"] as const;
+  const moKhoa = async (ref: string, st: WorkflowStep, buTru: boolean) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def(ref, buTru ? [gate("g0"), ot("x", { compensation: st }), gate("g1")] : [gate("g0"), ot("x"), gate("g1"), st]), 1);
+    await wait(30);
+    const ctx = ctxCua(c);
+    ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() };
+    runRow(c).contextJson = ctx;
+    runRow(c).status = "held";
+    h.traTimeout = 1;
+    return c;
+  };
+  const datLan = (c: number, lan: (typeof LAN3)[number]) => {
+    if (lan === "dau") return;
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = lan === "trongCua" ? new Date() : new Date(Date.now() - 2 * 3_600_000);
+  };
+  it("T7B1C-BANG-OK-GHI the hand-over answers ok × the abort: write lands, throws, lands late: what goes; no URGENT of a STOP that went; a row that landed settles it, a row lost leaves what the rows said", async () => {
+    const sai: string[] = [];
+    let n = 0;
+    for (const ten of LOP5) {
+      for (const lan of LAN3) {
+        for (const ghi of ["duoc", "nem", "tre"] as const) {
+          const o = `${ten}/${lan}/${ghi}`;
+          const c = await khoaChuaGiao(`bog${n++}`);
+          datLop(c, ten, "s2");
+          datLan(c, lan);
+          if (ghi === "nem") h.hangNem = (r) => r.stepId === "abort:s2";
+          if (ghi === "tre") h.treGhi.set("abort:s2", 5);
+          h.alerts.length = 0;
+          const a = await bam(c, "cell");
+          h.hangNem = null;
+          h.treGhi.clear();
+          const cho = GUI[ten]![lan]!;
+          if (ids().includes("s2") !== cho) sai.push(`${o}: sends ${ids().join(",")}, wanted ${cho}`);
+          if (cho && !a.abortStops?.sent.includes("s2")) sai.push(`${o}: the report does not say it went`);
+          if (chuCua("abortStopNotSent")) sai.push(`${o}: words of a STOP that went: ${chuCua("abortStopNotSent")}`);
+          if (cho && ghi !== "nem" && hang(c, "abort:s2")?.status !== "completed") sai.push(`${o}: its row: ${hang(c, "abort:s2")?.status}`);
+          if (cho && ghi === "nem" && ten === "no" && hang(c, "abort:s2")?.status !== "failed") sai.push(`${o}: the row lost: the old one stays: a later press may add one STOP`);
+        }
+      }
+    }
+    console.log(`[BANG OK-GHI] cells ${n}`);
+    expect(sai).toEqual([]);
+    expect(n).toBe(5 * 3 * 3);
+  }, 120_000);
+  it("T7B1C-BANG-LOAI every class × press, on a robot STOP, a STOP compensation, a stop-typed step on the marked route: what goes; the key of coTheDaRa; the refusal's URGENT names it", async () => {
+    const sai: string[] = [];
+    let n = 0;
+    for (const loai of ["robot", "buTru", "danhDau"] as const) {
+      for (const ten of LOP5) {
+        for (const lan of LAN3) {
+          const o = `${loai}/${ten}/${lan}`;
+          const st = loai === "robot" ? robotStop("s2") : loai === "buTru" ? otStop("s2") : stopTyped("s2");
+          const c = await moKhoa(`blo${n++}`, st, loai === "buTru");
+          datLop(c, ten, "s2", loai === "robot" ? "robot-dispatcher" : "ot-dispatcher");
+          datLan(c, lan);
+          if (loai === "danhDau") {
+            h.ghim = PIN_BAD;
+            h.classifyLoi = true;
+            h.dispatcherThat = true;
+            h.duocSauKhoa.add("s2");
+          }
+          h.tuChoi.set("s2", REF);
+          h.alerts.length = 0;
+          const a = await bam(c, "cell");
+          h.tuChoi.clear();
+          h.ghim = PIN_OK;
+          h.classifyLoi = false;
+          h.dispatcherThat = false;
+          const cho = GUI[ten]![lan]!;
+          const lenh = h.sent.filter((x) => x.stepId === "s2");
+          if ((lenh.length > 0) !== cho) sai.push(`${o}: sends ${lenh.length}, wanted ${cho}; answer ${a.reason ?? ""} ${JSON.stringify(a.abortStops?.phanLoai ?? null)} ${JSON.stringify(a.abortStops?.unverified ?? null)}`);
+          if (h.sent.some((x) => x.stepId !== "s2")) sai.push(`${o}: other commands ${ids().join(",")}`);
+          if (cho && ten === "coTheDaRa" && lenh[0]?.key !== `run${c}-s2-a1`) sai.push(`${o}: key ${String(lenh[0]?.key)}`);
+          if (cho && ten !== "coTheDaRa" && !/-abort-/.test(String(lenh[0]?.key))) sai.push(`${o}: key ${String(lenh[0]?.key)}`);
+          if (cho && !veBuoc("s2").some((x) => x.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent)) sai.push(`${o}: no URGENT names it`);
+          if (!cho && chuCua("abortStopNotSent")) sai.push(`${o}: words with nothing sent`);
+        }
+      }
+    }
+    console.log(`[BANG LOAI] cells ${n}`);
+    expect(sai).toEqual([]);
+    expect(n).toBe(3 * 5 * 3);
+  }, 120_000);
 });
