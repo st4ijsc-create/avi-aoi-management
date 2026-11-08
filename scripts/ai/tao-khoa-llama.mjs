@@ -4,7 +4,8 @@
  *
  *   node scripts/ai/tao-khoa-llama.mjs <đường tệp ngoài repo>
  *
- * Không ghi đè tệp có sẵn. Từ chối đường trong repo (dễ commit nhầm). Windows: gỡ quyền kế thừa, chỉ chừa tài khoản đang chạy.
+ * Không ghi đè tệp có sẵn. Từ chối đường trong repo (dễ commit nhầm), trong thư mục cha của repo (nơi các worktree và `_tho_ca_wt` nằm) và trong mọi gốc
+ * `AI_REPO_SANDBOX_ROOTS` (tool đọc tệp của agent đọc được ở đó). Windows: gỡ quyền kế thừa, chỉ chừa tài khoản đang chạy.
  * Thoát 0 = xong · 1 = từ chối · 2 = đặt quyền hỏng (tệp đã bị xoá).
  */
 import { spawnSync } from "node:child_process";
@@ -16,12 +17,23 @@ import { fileURLToPath } from "node:url";
 
 const GOC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** Đường hợp lệ: tuyệt đối sau resolve, ngoài `goc`, chưa tồn tại. Trả lý do từ chối hoặc null. */
-export function lyDoTuChoi(tep, goc = GOC) {
+const trong = (con, cha) => {
+  const rel = path.relative(cha, con);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+};
+
+/** Gốc dự án khai trong `AI_REPO_SANDBOX_ROOTS` (`id=nhãn|đường;...`). */
+export function gocDuAn(chuoi = "") {
+  return chuoi.split(";").map((m) => m.slice(m.indexOf("|") + 1).trim()).filter((d, i, a) => d && a[i].includes(":"));
+}
+
+/** Đường hợp lệ: ngoài repo, ngoài thư mục cha của repo, ngoài mọi gốc dự án, chưa tồn tại. Trả lý do từ chối hoặc null. */
+export function lyDoTuChoi(tep, goc = GOC, cacGoc = gocDuAn(process.env.AI_REPO_SANDBOX_ROOTS)) {
   if (!tep) return "thiếu đường tệp";
   const p = path.resolve(tep);
-  const rel = path.relative(goc, p);
-  if (rel === "" || (!rel.startsWith(`..${path.sep}`) && rel !== ".." && !path.isAbsolute(rel))) return "đường nằm trong repo";
+  if (trong(p, goc)) return "đường nằm trong repo";
+  if (trong(p, path.dirname(goc))) return "đường nằm trong thư mục chứa các worktree";
+  if (cacGoc.some((g) => trong(p, path.resolve(g)))) return "đường nằm trong gốc dự án mà agent đọc được";
   if (fs.existsSync(p)) return "tệp đã có, không ghi đè";
   return null;
 }

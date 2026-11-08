@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lyDoTuChoi, taoKhoa } from "./tao-khoa-llama.mjs";
+import { gocDuAn, lyDoTuChoi, taoKhoa } from "./tao-khoa-llama.mjs";
 
 const TEP = fileURLToPath(new URL("./tao-khoa-llama.mjs", import.meta.url));
 const GOC = path.resolve(path.dirname(TEP), "../..");
@@ -20,6 +20,19 @@ test("từ chối đường trống, trong repo, tệp đã có; nhận đườn
     fs.writeFileSync(path.join(d, "co"), "x");
     assert.match(lyDoTuChoi(path.join(d, "co")), /đã có/);
     assert.equal(lyDoTuChoi(path.join(d, "moi")), null);
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("từ chối thư mục anh em của repo và mọi gốc dự án agent đọc được", () => {
+  assert.match(lyDoTuChoi(path.join(path.dirname(GOC), "_tho_ca_wt", "k")), /worktree/);
+  const d = moi();
+  try {
+    const goc = gocDuAn(`a=A|${path.join(d, "du-an")};b=B|C:\khac`);
+    assert.deepEqual(goc, [path.join(d, "du-an"), "C:\khac"]);
+    assert.match(lyDoTuChoi(path.join(d, "du-an", "con", "k"), GOC, goc), /gốc dự án/);
+    assert.equal(lyDoTuChoi(path.join(d, "ngoai", "k"), GOC, goc), null);
   } finally {
     fs.rmSync(d, { recursive: true, force: true });
   }
