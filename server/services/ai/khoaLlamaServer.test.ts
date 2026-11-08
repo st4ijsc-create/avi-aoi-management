@@ -56,7 +56,7 @@ describe("D1: có --alias thì model đang giữ vẫn là tên tệp", () => {
   const ENV0 = { ...process.env };
   const traLoi = (o: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => o }) as unknown as Response;
   const datFetch = (props: Response, models: Response) => {
-    const f = vi.fn(async (u: string) => (String(u).endsWith("/props") ? props : models));
+    const f = vi.fn(async (u: string, _tuyChon?: RequestInit) => (String(u).endsWith("/props") ? props : models));
     vi.stubGlobal("fetch", f);
     return f;
   };
