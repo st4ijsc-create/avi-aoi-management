@@ -14,6 +14,9 @@ import { idsMayTrongPhamVi, kiemTraTrongPhamVi, locKiemTraTrongPhamVi, dieuKienM
  */
 async function giaiMaTuIdTimKiem<T extends { factoryId?: number; lineId?: number; machineId?: number; factoryCode?: string; lineCode?: string; machineCode?: string }>(input: T) {
   const { factoryId, lineId, machineId, ...codeInput } = input;
+  // dieu-phoi duyệt 08/11: id lọc mà KHÔNG giải được ra code (không tồn tại) ⇒ KHÔNG bỏ bộ lọc (trước: `if (m?.code)` im lặng bỏ ⇒ trả dữ liệu TOÀN phạm vi);
+  // đánh dấu `khongKhop` ⇒ tầng DB thêm điều kiện FALSE ⇒ kết quả RỖNG cùng hình dạng với id ngoài phạm vi (không lộ sự tồn tại).
+  let khongKhop = false;
   if (factoryId !== undefined || lineId !== undefined || machineId !== undefined) {
     const { getDb } = await import("../db/connection");
     const { machines, productionLines, factories } = await import("../../drizzle/schema");
@@ -23,18 +26,21 @@ async function giaiMaTuIdTimKiem<T extends { factoryId?: number; lineId?: number
       if (machineId !== undefined && !codeInput.machineCode) {
         const [m] = await dbc.select({ code: machines.code }).from(machines).where(eq(machines.id, machineId)).limit(1);
         if (m?.code) codeInput.machineCode = m.code;
+        else khongKhop = true;
       }
       if (lineId !== undefined && !codeInput.lineCode) {
         const [l] = await dbc.select({ code: productionLines.code }).from(productionLines).where(eq(productionLines.id, lineId)).limit(1);
         if (l?.code) codeInput.lineCode = l.code;
+        else khongKhop = true;
       }
       if (factoryId !== undefined && !codeInput.factoryCode) {
         const [f] = await dbc.select({ code: factories.code }).from(factories).where(eq(factories.id, factoryId)).limit(1);
         if (f?.code) codeInput.factoryCode = f.code;
+        else khongKhop = true;
       }
     }
   }
-  return codeInput;
+  return khongKhop ? { ...codeInput, khongKhop: true as const } : codeInput;
 }
 
 export const inspectionRouter = router({

@@ -1401,9 +1401,12 @@ async function dieuKienTimKiemKiemTra(
     endDate?: Date;
     userId?: number;
     userRole?: string;
+    /** Id lọc không giải được ra code (không tồn tại) ⇒ kết quả RỖNG như id ngoài phạm vi — KHÔNG bỏ bộ lọc. */
+    khongKhop?: boolean;
   },
 ): Promise<{ whereClause: SQL | undefined; scope: ScopeLabels }> {
   const conditions = [];
+  if (params.khongKhop) conditions.push(sql`false`);
   if (params.machineCode) {
     conditions.push(inArray(
       productInspections.machineId,
@@ -1461,6 +1464,7 @@ export async function searchInspections(params: {
   offset?: number;
   userId?: number;
   userRole?: string;
+  khongKhop?: boolean; // id lọc không tồn tại ⇒ rỗng (xem dieuKienTimKiemKiemTra)
   // W7-B (doc 27 V3): "ntfScore" pre-sorts the operator verify queue by
   // suspected-false-call likelihood (DESC NULLS LAST — unscored rows keep
   // newest-first order at the tail). Default stays newest-first.
