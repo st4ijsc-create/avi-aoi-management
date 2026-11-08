@@ -6885,3 +6885,188 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     expect(h.sent.map((a) => a.stepId)).toContain("cs");
   });
 });
+
+// ═══ A2(n) T6c ═════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the edge; a stop-typed step in a branch never evaluated", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const brn = (id: string, thenS: WorkflowStep[], elseS: WorkflowStep[] = []): WorkflowStep => ({ id, type: "branch", condition: { source: "telemetry", machineId: 2, key: "temp", op: "lt", value: 100 }, then: thenS, else: elseS }) as never;
+  /** stop-typed on a tag with no pin: not a STOP (R-5-j) */
+  const stopTyped = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 }, ...extra }) as never;
+  const ids = () => h.sent.map((x) => x.stepId as string);
+  const sentOf = (id: string) => h.sent.filter((x) => x.stepId === id);
+  const hang = (runId: number, id: string) => stepRows(runId).find((r) => r.stepId === id);
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const authCua = (e: EdgeHarness, id: string) => e.authorizeCalls.filter((a) => a.stepId === id).length;
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const buocBo = () => urgentCua("forwardNotSent").map((a) => a.dedupKey.split(":")[2]);
+  const veBuoc = (id: string) => h.alerts.filter((a) => String(a.title).includes(`"${id}"`) || String(a.dedupKey).split(":")[2] === id || String(a.dedupKey).split(":")[3] === id);
+  const khongGui = new RegExp(`^${FOE_NOT_SENT_RUN_LATCHED}: `);
+  const noCua = (c: number) => stopChuaRaTuHang(stepRows(c) as never);
+  const hangDau = () => (fake.store.get("ai_pending_actions") ?? []).filter((a) => JSON.stringify(a.previewJson ?? {}).includes("hangMoiStopGhim"));
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    return e;
+  }
+  /** T6a NP1: nt never reached by the door, a container never begun */
+  const NP1 = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])]);
+  /** the edge's own STOP check throws (e.laStopNem), the pins unreadable for central (PIN_BAD), the dispatcher decides by the real pins (dispatcherThat) */
+  async function q2Edge(ref: string, dat: () => void = () => undefined) {
+    const e = await denBuoc(NP1(ref));
+    e.laStopNem = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt"); // F4 (decision 2, A): it reaches the dispatcher on the marked route; the table below still counts what it WROTE (khongGhi)
+    dat();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    await wait(60);
+    return { e, s };
+  }
+  /** the dispatcher refuses nt before any driver: nothing written */
+  const offline = () => {
+    h.tuChoi.set("nt", { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+    h.tuChoiKhongGhi.add("nt");
+  };
+
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  const BANG: string[] = [];
+  beforeEach(() => vi.mocked(logCrudOperation).mockClear());
+  afterEach(() => {
+    delete process.env.FOE_DURABLE;
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    BANG.push(`${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 70)} | ${sau.map((x) => `${String(x.stepId)}:${String(x.name)}${x.khongGhi ? ":0PDU" : ""}`).join(" ") || "-"}`);
+    // by the PIN: an OT stop counts only when every write it carries is a pin of its adapter. A command the dispatcher itself refused wrote nothing (khongGhi)
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return LA_STOP.has(String(x.name));
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true);
+    expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+  });
+  afterAll(() => {
+    for (const l of BANG) console.log(`[PROBE sau-khoa T6c] ${l}`);
+  });
+
+  // ── Q2: the edge, its own STOP check throws ─────────────────────────────────────────────────────────────────────────
+  it("Q2-EDGE-NEM-T6c (1)(4) the edge's STOP check throws on nt: the marked route, not the door; the dispatcher's snapshot says not pinned: 0 PDU, forward work not sent, no STOP word", async () => {
+    const { e } = await q2Edge("q2a");
+    // (1) the marked route: handed to the dispatcher with no authorisation, never refused at the door
+    expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
+    expect(sentOf("nt").every((x) => x.edge?.authorization == null), "the marked route carries no authorisation").toBe(true);
+    expect(authCua(e, "nt"), "the marked route asks nobody").toBe(0);
+    expect(String(hang(e.runId, "nt")?.error ?? "")).not.toMatch(khongGui);
+    // (4) the dispatcher said: no pinned STOP. Nothing written (afterEach), forward work not sent, named, and no word says a STOP went
+    expect(sentOf("nt").every((x) => x.khongGhi === true), "the dispatcher wrote nothing").toBe(true);
+    expect(buocBo()).toEqual(["nt"]);
+    expect(urgentCua("stopNotSent").filter((a) => a.dedupKey.split(":")[2] === "nt")).toEqual([]);
+    const chu = veBuoc("nt").map((a) => `${a.kind} | ${a.title} | ${a.message}`).join(" || ");
+    expect(veBuoc("nt").map((a) => a.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.forwardNotSent]);
+    expect(chu).not.toMatch(/STOP "nt"/);
+    expect(chu, "it WAS handed to its dispatcher (H11: the words are true of the source)").not.toContain("NOT handed to a dispatcher");
+    expect(chu).toContain("nothing further goes forward");
+  });
+  it("Q2-EDGE-NEM-T6c (2) the same, the dispatcher refuses it before any driver (ADAPTER_OFFLINE): state C, stop_not_sent names nt, the run held; never failed FOE_NOT_SENT_RUN_LATCHED in silence", async () => {
+    const { e, s } = await q2Edge("q2b", offline);
+    expect(sentOf("nt").length).toBeGreaterThan(0);
+    expect(sentOf("nt").every((x) => x.edge?.authorization == null)).toBe(true);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(runRow(e.runId).status).toBe("held");
+    expect(String(hang(e.runId, "nt")!.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" did NOT go out/);
+    expect(urgentCua("stopNotSent").map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["nt", "-"]]);
+    expect(noCua(e.runId).has("nt"), "owed: an Abort sends it").toBe(true);
+    expect(buocBo(), "a STOP in state C is its own last word").toEqual([]);
+  });
+  it("Q2-EDGE-NEM-T6c (3) Abort on that held run, central cannot read the pins either: nt goes again by the marked route; refused again: still owed, an URGENT names it, no loop", async () => {
+    const { e } = await q2Edge("q2c", offline);
+    expect(runRow(e.runId).status).toBe("held");
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.timeoutDispatch.clear();
+    h.classifyLoi = true; // the Abort's own read throws too
+    const a = await abortRun(e.runId, OWNER, "press");
+    await wait(80);
+    expect(a.ok).toBe(true);
+    expect(sentOf("nt").length, "the Abort hands nt to the dispatcher").toBeGreaterThan(0);
+    expect(sentOf("nt").length, "no loop").toBeLessThanOrEqual(3);
+    expect(sentOf("nt").every((x) => x.khongGhi === true), "nothing written").toBe(true);
+    expect(hangDau().some((r) => String(r.id).includes("-nt")), "on a marked row: only the dispatcher's own verdict sends it").toBe(true);
+    expect(noCua(e.runId).has("nt"), "still owed").toBe(true);
+    expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
+  });
+  it("Q2-EDGE-NEM-T6c đối chứng central: the same tree, central's pins unreadable: the marked route, 0 PDU, state C, stop_not_sent:nt, held", async () => {
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(NP1("q2k"), 1);
+    await wait(60);
+    expect(sentOf("nt").length).toBeGreaterThan(0);
+    expect(sentOf("nt").every((x) => x.khongGhi === true)).toBe(true);
+    expect(String(hang(c, "nt")!.error)).toMatch(/^FOE_STOP_NOT_SENT: /);
+    expect(urgentCua("stopNotSent").map((a) => a.dedupKey.split(":")[2])).toEqual(["nt"]);
+    expect(runRow(c).status).toBe("held");
+    expect(buocBo()).toEqual([]);
+  });
+
+  // ── Q1: a stop-typed step in a branch never evaluated (H13) ─────────────────────────────────────────────────────────
+  const q1 = async (ref: string, nhanh: WorkflowStep) => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def(ref, [gate(), parF("p", [move("x"), delay("w", 30)]), nhanh]), 1);
+    await wait(60);
+    return c;
+  };
+  it("Q1-NHANH-T6c [gate, parF(x, delay w), brn b [stopTyped nt]]: forward_not_sent:nt, as a move in the same place; nothing sent", async () => {
+    await q1("q1a", brn("b", [stopTyped("nt")]));
+    expect(ids()).toEqual(["x"]);
+    expect(buocBo()).toEqual(["nt"]);
+  });
+  it("Q1-NHANH-T6c đối chứng: a move in the same place is named", async () => {
+    await q1("q1m", brn("b", [move("m")]));
+    expect(ids()).toEqual(["x"]);
+    expect(buocBo()).toEqual(["m"]);
+  });
+  it("Q1-NHANH-T6c brn b [nt] else [m]: both nt and m named", async () => {
+    await q1("q1b", brn("b", [stopTyped("nt")], [move("m")]));
+    expect(ids()).toEqual(["x"]);
+    expect([...buocBo()].sort()).toEqual(["m", "nt"]);
+  });
+  it("Q1-NHANH-T6c a stop-typed step WITH a valid pin in a branch never evaluated: not sent, listed in the URGENT stopUntakenBranch, not forward work", async () => {
+    seedHalt();
+    await q1("q1c", brn("b", [otStop("st")]));
+    expect(ids()).toEqual(["x"]);
+    expect(urgentCua("stopUntakenBranch").map((a) => a.dedupKey.split(":")[2])).toEqual(["st"]);
+    expect(buocBo()).toEqual([]);
+  });
+  it("Q1-NHANH-T6c the planner's pin read throws, a branch never evaluated: not sent, listed as a STOP of that branch (stopUntakenBranch), not forward work", async () => {
+    h.classifyLoi = true;
+    await q1("q1d", brn("b", [stopTyped("nt")]));
+    expect(ids()).toEqual(["x"]);
+    expect(urgentCua("stopUntakenBranch").map((a) => a.dedupKey.split(":")[2])).toEqual(["nt"]);
+    expect(buocBo()).toEqual([]);
+  });
+  it("Q1-NHANH-T6c the dispatch-time pin read is down (PIN_BAD), the planner's read answered not pinned: not sent, forward_not_sent:nt", async () => {
+    h.ghim = PIN_BAD;
+    await q1("q1e", brn("b", [stopTyped("nt")]));
+    expect(ids()).toEqual(["x"]);
+    expect(buocBo()).toEqual(["nt"]);
+    expect(urgentCua("stopUntakenBranch")).toEqual([]);
+  });
+  it("Q1-NHANH-T6c edge: the same tree, the edge names nt, central raises the URGENT", async () => {
+    const e = await denBuoc(def("q1f", [gate(), parF("p", [move("x"), delay("w", 30)]), brn("b", [stopTyped("nt")])]));
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(60);
+    expect(ids()).toEqual(["x"]);
+    expect(buocBo()).toEqual(["nt"]);
+  });
+});
