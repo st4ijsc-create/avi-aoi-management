@@ -1125,20 +1125,32 @@ async function writesEpKieuChoRangBuoc(db: NonNullable<Awaited<ReturnType<typeof
       })
       .from(deviceTags)
       .where(and(eq(deviceTags.adapterId, input.adapterId), inArray(deviceTags.tagKey, keys)));
-    const theoKhoa = new Map(rows.map((r) => [r.tagKey, r]));
-    let doi = false;
-    const out = input.writes.map((w) => {
-      const tag = theoKhoa.get(w.tagKey);
-      if (!tag || !kenhDaKhaiGhi(tag)) return w;
-      const kieu = epKieuKenh(tag, w.value);
-      if (!kieu.ok || canonicalOtValue(kieu.giaTri) === canonicalOtValue(w.value)) return w;
-      doi = true;
-      return { ...w, value: kieu.giaTri };
-    });
-    return doi ? out : null;
+    return epKieuGhiTheoTag(rows, input.writes);
   } catch {
     return null;
   }
+}
+
+/** A2(n) T6e — the columns of a written tag the coercion reads (writesEpKieuChoRangBuoc's select; the FOE stop verifier's pin read carries them too). */
+export type TagEpKieuGhi = Pick<DeviceTag, "tagKey" | "dataType" | "channelKind" | "writeMin" | "writeMax" | "writeStep"> & Partial<Pick<DeviceTag, "scale" | "offset">>;
+
+/**
+ * A2(n) T6e — PURE: the writes step 3b will send, from the written tags' rows: a DECLARED tag's value coerced by type (`epKieuKenh`), any other as sent; null when
+ * nothing would change. THE one coercion of a "pinned STOP" question: gate (1) (`writesEpKieuChoRangBuoc`, so 5a-stop and the binding see the same form) and the FOE
+ * stop verifier (foeStepClass.makeStopVerifier) call this function, never a copy (rà T6b: a verifier comparing the raw write left a pinned STOP unsent, nobody told).
+ */
+export function epKieuGhiTheoTag(tags: ReadonlyArray<TagEpKieuGhi>, writes: DispatchWrite[]): DispatchWrite[] | null {
+  const theoKhoa = new Map(tags.map((r) => [r.tagKey, r]));
+  let doi = false;
+  const out = writes.map((w) => {
+    const tag = theoKhoa.get(w.tagKey);
+    if (!tag || !kenhDaKhaiGhi(tag)) return w;
+    const kieu = epKieuKenh(tag, w.value);
+    if (!kieu.ok || canonicalOtValue(kieu.giaTri) === canonicalOtValue(w.value)) return w;
+    doi = true;
+    return { ...w, value: kieu.giaTri };
+  });
+  return doi ? out : null;
 }
 
 /**

@@ -43,6 +43,8 @@ const h = vi.hoisted(() => ({
   /** A2(n) T0 — phanLoaiStopGhimChoFoe's scripted answer (null ⇒ read fine, not pinned); ghimLan: the questions that reached it */
   ghim: null as null | ((d: unknown, i: { commandType: string }) => Promise<{ pinnedStop: boolean; loiDocGhim: string | null }>),
   ghimLan: [] as string[],
+  /** A2(n) T6e — phanLoaiStopGhimChoFoe is the dispatcher's REAL predicate (its pin read and its coercion, over the fake's device_tags), not h.ghim */
+  ghimThat: false,
   /** A2(n) T0 — classifyOtStop throws, as the pin read of a verifier; classifyLan: the calls that reached it */
   classifyLoi: false,
   classifyLan: 0,
@@ -110,8 +112,11 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
     },
     phanLoaiStopGhimChoFoe: async (d: unknown, i: { commandType: string }) => {
       h.ghimLan.push(i.commandType);
+      if (h.ghimThat) return orig.phanLoaiStopGhimChoFoe(d as never, i as never);
       return h.ghim ? h.ghim(d, i) : { pinnedStop: false, loiDocGhim: null };
     },
+    // A2(n) T6e — the verifier's coercion is the dispatcher's own function: the real one
+    epKieuGhiTheoTag: (orig as Record<string, unknown>).epKieuGhiTheoTag,
     dispatch: vi.fn(),
   };
 });
@@ -281,6 +286,7 @@ import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
 import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
+import { phanLoaiStopGhimChoFoe } from "../../ot/commandDispatcher";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
@@ -359,6 +365,7 @@ beforeEach(() => {
   h.timeoutOnce.clear();
   h.alerts.length = 0;
   h.ghim = null;
+  h.ghimThat = false;
   h.ghimLan.length = 0;
   h.classifyLoi = false;
   h.classifyLan = 0;
@@ -2914,6 +2921,27 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
  * KET_CUC_KHONG_RO mark, so the Continue would ask no person and no reason (resumeRun, M-4). A latched segment ends as the latched path ends it. An unlatched one keeps round C:
  * these cases and robotEdgeDiskStall.a2n.test.ts.
  */
+describe("A2(n) T0 — h.ghimThat (T6e) reaches its target", () => {
+  it("★ h.ghimThat (phanLoaiStopGhimChoFoe, the REAL predicate over device_tags): on, a pin read answers by the rows and h.ghim is not asked; off, h.ghim answers; 6 concurrent questions arrive, 10 rounds", async () => {
+    seedHalt();
+    const hoi = () => Promise.all(Array.from({ length: 6 }, () => phanLoaiStopGhimChoFoe(fake as never, { adapterId: 501, commandType: "stop", writes: [{ tagKey: "halt", value: true }] })));
+    let goiGhim = 0;
+    for (let v = 0; v < 10; v++) {
+      h.ghim = async () => (goiGhim++, { pinnedStop: false, loiDocGhim: null });
+      h.ghimThat = true;
+      h.ghimLan.length = 0;
+      goiGhim = 0;
+      for (const r of await hoi()) expect(r).toEqual({ pinnedStop: true, loiDocGhim: null });
+      expect(h.ghimLan).toHaveLength(6);
+      expect(goiGhim).toBe(0);
+      h.ghimThat = false;
+      h.ghimLan.length = 0;
+      for (const r of await hoi()) expect(r).toEqual({ pinnedStop: false, loiDocGhim: null });
+      expect(goiGhim).toBe(6);
+    }
+  });
+});
+
 describe("A2(n) T0 — the disk lot's round C applies only to a segment not latched", () => {
   const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
   async function denBuoc(d: WorkflowDefinition) {
@@ -4720,7 +4748,7 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
   });
 });
 
-// ═══ A2(n) T5═════════════════════════════════════════════════════════════════════════════════════════════════════════
+// ═══ A2(n) T5 ═════════════════════════════════════════════════════════════════════════════════════════════════════════
 describe("A2(n) T5 — a STOP that did not go: the marked route, state C, central and edge", () => {
   const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
   const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
@@ -7322,5 +7350,144 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     await wait(60);
     expect(ids()).toEqual(["x"]);
     expect(buocBo()).toEqual(["nt"]);
+  });
+});
+
+// ═══ A2(n) T6e ═════════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * A2(n) T6e — ONE "pinned" predicate for the sweep's verifier and the dispatcher. The dispatcher classifies the writes step 3b will send: a DECLARED tag's value coerced by type
+ * (writesEpKieuChoRangBuoc, epKieuKenh); the verifier used to compare the RAW write. A STOP writing "true" to a declared bool pin: the dispatcher's STOP, the verifier's notPinned, so
+ * no pass sent it and nobody was told (rà T6b, loại (2)). Here the dispatcher's predicate is the REAL one (h.ghimThat) over the fake's device_tags.
+ */
+describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the dispatcher", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const ids = () => h.sent.map((x) => x.stepId as string);
+  const hang = (runId: number, id: string) => stepRows(runId).find((r) => r.stepId === id);
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const mayMap = () => new Map<number, MachineForValidation>(rows("machines").map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities }] as const));
+  /** declared write channels (channel_kind): the dispatcher coerces what is written to them. An undeclared bool pin too: its write goes on as sent */
+  const seedKhai = () =>
+    fake.seed(deviceTags, [
+      ...rows("device_tags"),
+      { id: 81, adapterId: 501, tagKey: "haltk", address: "00011", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true, channelKind: "output" },
+      { id: 82, adapterId: 501, tagKey: "nk", address: "40011", dataType: "int", scale: "1", offset: "0", updatedAt: T0, writable: true, isEnabled: true, stopValue: 5, channelKind: "output" },
+      { id: 83, adapterId: 501, tagKey: "nks", address: "40012", dataType: "int", scale: "0.5", offset: "0", updatedAt: T0, writable: true, isEnabled: true, stopValue: 5, channelKind: "output" },
+      { id: 84, adapterId: 501, tagKey: "fk", address: "40013", dataType: "float", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: 1.5, channelKind: "output" },
+      { id: 85, adapterId: 501, tagKey: "sk", address: "40014", dataType: "string", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: "OFF", channelKind: "output" },
+      { id: 86, adapterId: 501, tagKey: "haltu", address: "00012", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true },
+    ]);
+  /** the step of the gap: a STOP writing the string "true" to the declared bool pin */
+  const stEp = (id: string, extra: Record<string, unknown> = {}) => otStop(id, { args: { tagKey: "haltk", value: "true" }, ...extra });
+  /** the rows a crash leaves on a latched run (as T3+T4 `chet`) */
+  function chet(runId: number, keep: string[]) {
+    process.env.FOE_DURABLE = "true";
+    const chot = runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+    expect(chot).toBeTruthy();
+    fake.store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== runId || keep.includes(r.stepId)));
+    const latched = stepRows(runId).find((r) => r.stepId === chot.stepId);
+    if (latched) Object.assign(latched, { status: "running", error: null, finishedAt: null });
+    Object.assign(runRow(runId), { status: "held", finishedAt: null, error: null, contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot, interrupted: true } });
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.traTimeout = 1;
+  }
+  async function chay(d: WorkflowDefinition) {
+    seedKhai();
+    h.ghimThat = true;
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(d, 1);
+    await wait(80);
+    return c;
+  }
+
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  const BANG: string[] = [];
+  afterEach(() => {
+    delete process.env.FOE_DURABLE;
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    BANG.push(`${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 70)} | ${sau.map((x) => `${String(x.stepId)}:${String(x.name)}`).join(" ") || "-"}`);
+    // by the PIN: an OT stop counts only when every write it carries is a pin of its adapter
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)));
+    expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached the dispatcher after the latch").toEqual([]);
+  });
+  afterAll(() => {
+    for (const l of BANG) console.log(`[PROBE sau-khoa] ${l}`);
+  });
+
+  // ── (1) the three silent shapes and the door, central: the STOP goes like any pinned STOP ──────────────────────────
+  it("T6E-NP1 a pinned STOP writing \"true\" to a declared bool pin, in a container never begun: it goes, once; nothing says it was not sent", async () => {
+    const c = await chay(def("t6enp1", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stEp("st")])])])]));
+    expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+    expect(String(hang(c, "st")?.error ?? "")).not.toMatch(/NOT_SENT|not sent/i);
+    expect(urgentCua("forwardNotSent").filter((a) => a.dedupKey.split(":")[2] === "st")).toEqual([]);
+  });
+  it("T6E-TREN the same STOP above a parallel that failed: it goes, once", async () => {
+    await chay(def("t6etren", [gate(), parF("p", [move("x"), delay("w", 30)]), stEp("st")]));
+    expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+  });
+  it("T6E-BOOT the same STOP of NP1, a crash before its row, the boot's walk: it goes, once", async () => {
+    const c = await chay(def("t6eboot", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stEp("st")])])])]));
+    chet(c, ["g1", "p", "x", "v"]);
+    h.ghimThat = true;
+    await autoResumeInterruptedRuns([c]);
+    await wait(80);
+    expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+  });
+  it("T6E-CUA the same STOP reached by the door: it goes, once; no forward_not_sent, no 'NOT handed', its row not 'not sent'", async () => {
+    const c = await chay(def("t6ecua", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), stEp("st")])])]));
+    expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+    expect(String(hang(c, "st")?.error ?? "")).not.toMatch(new RegExp(`^${FOE_NOT_SENT_RUN_LATCHED}`));
+    expect(urgentCua("forwardNotSent").filter((a) => a.dedupKey.split(":")[2] === "st")).toEqual([]);
+    expect(h.alerts.map((a) => `${a.title} ${a.message}`).join(" ")).not.toMatch(/"st" was NOT handed/);
+  });
+  it("T6E-DOI-CHUNG the same shapes with a value the dispatcher does not take for the pin (\"false\"): not sent, named as forward work (loại (1) side)", async () => {
+    const c = await chay(def("t6edc", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [otStop("st", { args: { tagKey: "haltk", value: "false" } })])])])]));
+    expect(ids()).toEqual(["x"]);
+    expect(urgentCua("forwardNotSent").map((a) => a.dedupKey.split(":")[2])).toContain("st");
+    expect(runRow(c).status).toBe("failed");
+  });
+
+  // ── (2) the equivalence table: the verifier and the dispatcher, the same verdict on every row ──────────────────────
+  const TAGS = ["haltk", "haltu", "nk", "nks", "fk", "sk"] as const;
+  const VALUES: unknown[] = ["true", "false", "1", "0", " TRUE ", 1, 0, true, false, null, "abc", 5, 2.5, "5", "5.0", 6, "6", 1.5, "1.5", "OFF", "off", "", [1], { v: 1 }];
+  const viTu = async (tagKey: string, value: unknown) => {
+    const st = otStop("s", { args: { tagKey, value } });
+    const v = await verifiedStopStepIds(def("t6ebang", [st]), mayMap(), fake as never);
+    h.ghimThat = true;
+    const dp = await phanLoaiStopGhimChoFoe(fake as never, { adapterId: 501, commandType: "stop", writes: [{ tagKey, value }] });
+    return { verifier: v.ids.has("s"), unsure: v.unsure.has("s"), dispatcher: dp.pinnedStop };
+  };
+  it("T6E-BANG every (tag, value) row: the verifier and the dispatcher give the same pinned / not pinned; never unsure on a readable pin", async () => {
+    seedKhai();
+    const lech: string[] = [];
+    const bang: string[] = [];
+    for (const t of TAGS) {
+      for (const v of VALUES) {
+        const r = await viTu(t, v);
+        bang.push(`${t}=${JSON.stringify(v)} v:${r.verifier ? 1 : 0} d:${r.dispatcher ? 1 : 0}`);
+        if (r.unsure || r.verifier !== r.dispatcher) lech.push(`${t}=${JSON.stringify(v)} verifier:${r.verifier}${r.unsure ? "(unsure)" : ""} dispatcher:${r.dispatcher}`);
+      }
+    }
+    console.log(`[PROBE t6e-bang] ${bang.join(" ; ")}`);
+    expect(lech).toEqual([]);
+  });
+  it("T6E-BANG-LOAI2 the rows the gap was: a coercible value equal to the pin is pinned on both sides", async () => {
+    seedKhai();
+    for (const [t, v] of [["haltk", "true"], ["haltk", "1"], ["haltk", " TRUE "], ["nk", "5"], ["fk", "1.5"]] as const) expect(await viTu(t, v), `${t}=${JSON.stringify(v)}`).toEqual({ verifier: true, unsure: false, dispatcher: true });
+  });
+  it("T6E-BANG-LOAI1 not pinned stays not pinned on both sides: a coercible value that is not the pin, one that cannot be coerced, null, a type that does not fit, an undeclared tag's string", async () => {
+    seedKhai();
+    for (const [t, v] of [["haltk", "false"], ["haltk", "0"], ["haltk", false], ["haltk", 0], ["haltk", null], ["haltk", "abc"], ["haltk", 5], ["haltk", 2.5], ["nk", 6], ["nk", "6"], ["nk", "abc"], ["nk", true], ["sk", "off"], ["sk", 1], ["fk", "abc"], ["haltu", "true"], ["haltu", "1"]] as const) {
+      expect(await viTu(t, v), `${t}=${JSON.stringify(v)}`).toEqual({ verifier: false, unsure: false, dispatcher: false });
+    }
   });
 });

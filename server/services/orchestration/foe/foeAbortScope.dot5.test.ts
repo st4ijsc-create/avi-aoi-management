@@ -37,6 +37,7 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
       return orig.classifyOtStop;
     },
     runningConnectionMatchesAdapterRow: orig.runningConnectionMatchesAdapterRow,
+    epKieuGhiTheoTag: orig.epKieuGhiTheoTag, // A2(n) T6e — the verifier coerces by the dispatcher's own function
     dispatch: otDispatchMock,
   };
 });

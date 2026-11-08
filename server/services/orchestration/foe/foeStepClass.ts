@@ -234,10 +234,13 @@ export async function makeStopVerifier(
   let batchFailed = false;
   const bound: Array<{ id: number; machineId: number | null }> = [];
   const pinsByAdapter = new Map<number, StopPin[]>();
+  /** A2(n) T6e — the same rows, for the dispatcher's own coercion of what is written (epKieuGhiTheoTag) */
+  const tagsByAdapter = new Map<number, ReadonlyArray<Record<string, unknown>>>();
   const connectionOk = new Map<number, boolean>();
   const fns: {
     classifyOtStop?: (name: string, writes: Array<{ tagKey: string; value: unknown }>, pins: StopPin[] | null) => { pinnedStop: boolean };
     connectionCheck?: (db: never, adapterId: number) => Promise<boolean>;
+    epKieu?: (tags: ReadonlyArray<never>, writes: Array<{ tagKey: string; value: unknown }>) => Array<{ tagKey: string; value: unknown }> | null;
   } = {};
   const adapterOf = (c: OtCandidate): number | null => {
     const args = (c.step.args ?? {}) as Record<string, unknown>;
@@ -253,6 +256,7 @@ export async function makeStopVerifier(
         const { stopPinsFromTagRows } = await import("../../ot/stopPin");
         fns.classifyOtStop = disp.classifyOtStop as never;
         fns.connectionCheck = disp.runningConnectionMatchesAdapterRow as never;
+        fns.epKieu = disp.epKieuGhiTheoTag as never; // A2(n) T6e — the dispatcher classifies the COERCED write (gate (1), 5a-stop): so does this, by its own function
         const machineIds = [...new Set(candidates.filter((c) => typeof (c.step.args ?? {}).adapterId !== "number").map((c) => (c.step as { machineId: number }).machineId))];
         if (machineIds.length) {
           const rows = (await db.select().from(deviceAdapters).where(and(inArray(deviceAdapters.machineId, machineIds), eq(deviceAdapters.isEnabled, true)))) as Array<{ id: number; machineId: number | null; isEnabled?: boolean }>;
@@ -260,7 +264,8 @@ export async function makeStopVerifier(
         }
         const adapterIds = [...new Set(candidates.map(adapterOf).filter((v): v is number => v != null))];
         if (adapterIds.length) {
-          // ONE read for every adapter's stop pins — the SAME rows + rule `loadStopPins` uses (enabled, writable).
+          // ONE read for every adapter's stop pins — the SAME rows + rule `loadStopPins` uses (enabled, writable). A2(n) T6e — with the columns the dispatcher's
+          // coercion reads (writesEpKieuChoRangBuoc): one read, so a failure is the batch's (unsure, F4), never "not pinned". A tag outside these rows is no pin either way
           const tagRows = (await db
             .select({
               adapterId: deviceTags.adapterId,
@@ -269,12 +274,19 @@ export async function makeStopVerifier(
               stopValue: deviceTags.stopValue,
               writable: deviceTags.writable,
               isEnabled: deviceTags.isEnabled,
+              channelKind: deviceTags.channelKind,
+              writeMin: deviceTags.writeMin,
+              writeMax: deviceTags.writeMax,
+              writeStep: deviceTags.writeStep,
+              scale: deviceTags.scale,
+              offset: deviceTags.offset,
             })
             .from(deviceTags)
             .where(and(inArray(deviceTags.adapterId, adapterIds), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))) as Array<{ adapterId: number } & StopPinTagRow>;
           for (const id of adapterIds) {
             const mine = tagRows.filter((r) => r.adapterId === id).sort((a, b) => (a.tagKey < b.tagKey ? -1 : a.tagKey > b.tagKey ? 1 : 0));
             pinsByAdapter.set(id, stopPinsFromTagRows(mine));
+            tagsByAdapter.set(id, mine);
           }
         }
       } catch {
@@ -296,7 +308,8 @@ export async function makeStopVerifier(
         if (!(await isOtStopCommandType(c.descriptor.name))) continue;
         const classifyOtStop = fns.classifyOtStop;
         const connectionCheck = fns.connectionCheck;
-        if (batchFailed || !classifyOtStop || !connectionCheck || !db) {
+        const epKieu = fns.epKieu;
+        if (batchFailed || !classifyOtStop || !connectionCheck || !epKieu || !db) {
           unsure.add(s.id);
           continue;
         }
@@ -307,7 +320,8 @@ export async function makeStopVerifier(
           unsure.add(s.id);
           continue;
         }
-        const writes = buildEquipmentCommand(c.descriptor, c.cap, (c.step as { machineId: number }).machineId, (c.step.args ?? {}) as Record<string, unknown>, "probe", { id: 0, role: "system" }).writes ?? [];
+        const tho = buildEquipmentCommand(c.descriptor, c.cap, (c.step as { machineId: number }).machineId, (c.step.args ?? {}) as Record<string, unknown>, "probe", { id: 0, role: "system" }).writes ?? [];
+        const writes = epKieu((tagsByAdapter.get(adapterId) ?? []) as never, tho) ?? tho; // T6e — what the dispatcher will classify
         if (!classifyOtStop(c.descriptor.name, writes, pins).pinnedStop) continue;
         if (!connectionOk.has(adapterId)) {
           try {

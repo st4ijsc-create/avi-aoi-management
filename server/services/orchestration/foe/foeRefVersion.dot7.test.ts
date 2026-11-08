@@ -26,6 +26,7 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
     isStopCommandType: orig.isStopCommandType,
     classifyOtStop: orig.classifyOtStop,
     runningConnectionMatchesAdapterRow: orig.runningConnectionMatchesAdapterRow,
+    epKieuGhiTheoTag: orig.epKieuGhiTheoTag, // A2(n) T6e — the verifier coerces by the dispatcher's own function
     dispatch: vi.fn(async () => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] })),
   };
 });
