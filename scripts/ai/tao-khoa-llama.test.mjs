@@ -29,8 +29,8 @@ test("từ chối thư mục anh em của repo và mọi gốc dự án agent đ
   assert.match(lyDoTuChoi(path.join(path.dirname(GOC), "_tho_ca_wt", "k")), /worktree/);
   const d = moi();
   try {
-    const goc = gocDuAn(`a=A|${path.join(d, "du-an")};b=B|C:\khac`);
-    assert.deepEqual(goc, [path.join(d, "du-an"), "C:\khac"]);
+    const goc = gocDuAn(`a=A|${path.join(d, "du-an")};b=B|C:/khac`);
+    assert.deepEqual(goc, [path.join(d, "du-an"), "C:/khac"]);
     assert.match(lyDoTuChoi(path.join(d, "du-an", "con", "k"), GOC, goc), /gốc dự án/);
     assert.equal(lyDoTuChoi(path.join(d, "ngoai", "k"), GOC, goc), null);
   } finally {
