@@ -10,6 +10,7 @@
  *   LỆNH KIỂM: npx vitest run a.test.ts
  *   GIỚI HẠN: 15 phút, 12 vòng
  */
+import { docDotBien, docKhangDinhCam, type DotBienThe } from "./dotBienThuan";
 
 export interface TheViec {
   ma: string;
@@ -22,6 +23,13 @@ export interface TheViec {
   lenhKiemGhiChu?: string;
   /** QUY TRÌNH: bước bắt buộc trước khi làm (vd in danh sách hành vi rồi chờ duyệt) — chuyển nguyên văn cho model */
   quyTrinh?: string;
+  /**
+   * L3b — CHỈ BỘ CHẠY ĐỌC. Đột biến do thẻ khai (tệp|tìm|thay) áp SAU khi model xong. KHÔNG BAO GIỜ vào lời nhắc của model, không ghi vào worktree lúc model chạy,
+   * và bị gỡ khỏi `the` đưa cho driver (xem chayMotViec: theChoDriver).
+   */
+  dotBien?: DotBienThe[];
+  /** L3b — chuỗi/regex test của model KHÔNG ĐƯỢC khẳng định (bộ chạy quét; không đưa cho model) */
+  khangDinhCam?: Array<string | RegExp>;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -34,6 +42,8 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "LENH KIEM": "lenhKiem",
   "GIOI HAN": "gioiHan",
   "QUY TRINH": "quyTrinh",
+  "DOT BIEN": "dotBien",
+  "KHONG DUOC KHANG DINH": "khangDinhCam",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -115,6 +125,12 @@ export function docTheViec(van: string): KetQuaThe {
   const { lenh: lenhKiem, ghiChu: lenhKiemGhiChu } = tachLenhKiem(lenhTho);
   if (lenhKiem === "") return { ok: false, loi: "LỆNH KIỂM không có phần lệnh (chỉ có lời văn)" };
   const quyTrinh = (truong.get("quyTrinh") ?? "").trim();
+  const db = docDotBien(truong.get("dotBien") as string ?? "");
+  if (db.loi.length > 0) return { ok: false, loi: db.loi.join("; ") };
+  for (const d of db.ds) {
+    if (tepDuocPhep.includes(d.tep)) return { ok: false, loi: `ĐỘT BIẾN ${d.tep}: nằm trong TỆP ĐƯỢC PHÉP của model (đột biến phải ở tệp NGUỒN, không phải bài làm)` };
+  }
+  const khangDinhCam = docKhangDinhCam((truong.get("khangDinhCam") as string) ?? "");
   return {
     ok: true,
     the: {
@@ -125,6 +141,8 @@ export function docTheViec(van: string): KetQuaThe {
       lenhKiem,
       ...(lenhKiemGhiChu ? { lenhKiemGhiChu } : {}),
       ...(quyTrinh ? { quyTrinh } : {}),
+      ...(db.ds.length ? { dotBien: db.ds } : {}),
+      ...(khangDinhCam.length ? { khangDinhCam } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };
@@ -220,7 +238,7 @@ function khop(mau: string, duong: string): boolean {
 
 export interface ViPhamDiff {
   duong: string;
-  loai: "ngoai-danh-sach" | "vung-cam" | "duong-khong-hop-le" | "cham-db";
+  loai: "ngoai-danh-sach" | "vung-cam" | "duong-khong-hop-le" | "cham-db" | "khang-dinh-cam";
   chiTiet?: string;
 }
 

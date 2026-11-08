@@ -441,3 +441,18 @@ describe("driverHost — hạn chờ người không vượt TTL thẻ + dang-ch
     expect(fs.readFileSync(tepDangCho(ra), "utf8")).toMatch(/^\(không có thẻ chờ\)/);
   });
 });
+
+describe("locTruocKhiCho — tự chạy CHỈ khi khớp NGUYÊN VĂN lệnh kiểm (mọi biến thể nối thêm đi đường duyệt người / từ chối)", () => {
+  const loc = (command: string) => locTruocKhiCho({ ten: "run_command", thamSo: { command } }, THE, WT);
+  it("★ nối thêm &&, ;, |, xuống dòng, $(), backtick, đổi tệp, thêm cờ ⇒ KHÔNG tự chạy (tu-choi)", () => {
+    const L = THE.lenhKiem;
+    for (const c of [`${L} && echo x`, `${L}; echo x`, `${L} | cat`, `${L}\nrm -rf x`, `${L} $(whoami)`, `${L} \`id\``, `${L} client/src/lib/b.test.ts`, `${L} --reporter=json`, `echo x && ${L}`, `${L}x`, L.replace("a.test.ts", "b.test.ts"), `${L} > ra.txt`]) {
+      expect(loc(c).loai, JSON.stringify(c)).toBe("tu-choi");
+    }
+  });
+  it("khoảng trắng đầu/cuối được bỏ (vẫn là cùng lệnh); khác hoa/thường hay thêm dấu cách GIỮA lệnh ⇒ không khớp", () => {
+    expect(loc(`  ${THE.lenhKiem}  `).loai).toBe("tu-chay");
+    expect(loc(THE.lenhKiem.replace("run", "RUN")).loai).toBe("tu-choi");
+    expect(loc(THE.lenhKiem.replace("vitest run", "vitest  run")).loai).toBe("tu-choi");
+  });
+});

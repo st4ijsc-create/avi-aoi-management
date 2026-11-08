@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import type { KetQuaDotBien } from "./dotBien";
 
 /** Hai URL cổng chết, tên DB khác nhau (vitest.setup từ chối khi trùng tên). */
 export const ENV_DB_CHET: Readonly<Record<string, string>> = {
@@ -111,6 +112,8 @@ export interface DauVaoQuyet {
   kiem: KetQuaKiem | null;
   /** L3c: kết quả tsc (chỉ lỗi nằm trong tệp model đổi); vắng/null = không chạy (không có tệp .ts đổi / không có tsconfig.tests.json) */
   tsc?: KetQuaTsc | null;
+  /** L3b: kết quả áp đột biến của thẻ (chỉ khi thẻ có ĐỘT BIẾN và các bước trước đều xanh); vắng/null = không áp */
+  dotBien?: KetQuaDotBien | null;
 }
 
 export interface QuyetKetCuc {
@@ -122,12 +125,25 @@ export interface QuyetKetCuc {
 /** THUẦN. Sticky: ketCuc xấu đến từ trước giữ nguyên; chỉ "xong" mới bị hạ bởi kiểm chứng (lệnh kiểm rồi tsc). */
 export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
   const r = quyetLenhKiem(v);
-  if (r.ketCuc !== "xong" || !v.tsc) return r;
+  if (r.ketCuc !== "xong") return r;
   const t = v.tsc;
-  if (t.hetGio) return { ketCuc: "kiem-do", lyDo: `tsc hết hạn sau ${t.giay}s — không kết luận được kiểu (fail-closed)` };
-  if (t.loi) return { ketCuc: "kiem-do", lyDo: `tsc không khởi chạy được: ${t.loi}` };
-  if (t.loiTrongTep.length > 0) {
-    return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
+  if (t) {
+    if (t.hetGio) return { ketCuc: "kiem-do", lyDo: `tsc hết hạn sau ${t.giay}s — không kết luận được kiểu (fail-closed)` };
+    if (t.loi) return { ketCuc: "kiem-do", lyDo: `tsc không khởi chạy được: ${t.loi}` };
+    if (t.loiTrongTep.length > 0) {
+      return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
+    }
+  }
+  const d = v.dotBien;
+  if (d) {
+    // lỗi CỦA BỘ CHẠY (không khôi phục sạch / tệp lạ sau revert) đi trước: kết quả đột biến không còn tin được
+    if (!d.khoiPhucSach) return { ketCuc: "vi-pham", lyDo: "L3b: khôi phục tệp sau đột biến KHÔNG sạch — worktree có thể đã bị bẩn" };
+    if (d.tepLa.length > 0) return { ketCuc: "vi-pham", lyDo: `L3b: tệp lạ sau khôi phục đột biến: ${d.tepLa.slice(0, 3).join(", ")}` };
+    if (d.song > 0) {
+      const song = d.chiTiet.filter((c) => c.ketQua === "song").map((c) => `${c.tep}: "${c.tim.slice(0, 40)}"`);
+      return { ketCuc: "dot-bien-song", lyDo: `L3b: ${d.song}/${d.tong} đột biến SỐNG (test vẫn xanh): ${song.slice(0, 3).join(" | ")}` };
+    }
+    if (d.khongApDung > 0) return { ketCuc: "kiem-do", lyDo: `L3b: ${d.khongApDung}/${d.tong} đột biến không áp dụng/không kết luận được (lỗi thẻ hoặc hết hạn)` };
   }
   return r;
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { chayLenhKiem, demCaTest, laLenhVitest, loiTscTrongTep, phanTichVitest, quyetKetCuc, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import type { KetQuaDotBien } from "./dotBien";
 
 const kiem = (o: Partial<KetQuaKiem> = {}): KetQuaKiem => ({
   lenh: "npx vitest run a.test.ts",
@@ -170,5 +171,28 @@ describe("L3c — tsc trên tệp model đổi", () => {
     expect(quyet(kiem(), { tsc: tscOk }).ketCuc).toBe("xong");
     expect(quyet(kiem(), { tsc: null }).ketCuc).toBe("xong");
     expect(quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }), { tsc: tscOk }).ketCuc).toBe("kiem-do");
+  });
+});
+
+describe("quyetKetCuc — L3b đột biến", () => {
+  const db = (o: Partial<KetQuaDotBien> = {}): KetQuaDotBien => ({ tong: 2, do: 2, song: 0, khongApDung: 0, chiTiet: [], khoiPhucSach: true, tepLa: [], ...o });
+  it("★ tất cả đột biến bị bắt ⇒ xong", () => {
+    expect(quyet(kiem(), { dotBien: db() }).ketCuc).toBe("xong");
+  });
+  it("★ có đột biến SỐNG ⇒ dot-bien-song, nêu đột biến", () => {
+    const r = quyet(kiem(), { dotBien: db({ do: 1, song: 1, chiTiet: [{ tep: "a.ts", tim: "n > 0", ketQua: "song", giay: 1 }] }) });
+    expect(r.ketCuc).toBe("dot-bien-song");
+    expect(r.lyDo).toContain('a.ts: "n > 0"');
+  });
+  it("★ không áp dụng được / không kết luận ⇒ kiem-do (không âm thầm coi là bắt được)", () => {
+    expect(quyet(kiem(), { dotBien: db({ do: 1, khongApDung: 1 }) }).ketCuc).toBe("kiem-do");
+  });
+  it("★ khôi phục không sạch hoặc tệp lạ ⇒ vi-pham (đi trước kết quả đột biến)", () => {
+    expect(quyet(kiem(), { dotBien: db({ khoiPhucSach: false }) }).ketCuc).toBe("vi-pham");
+    expect(quyet(kiem(), { dotBien: db({ tepLa: ["x.txt"], song: 1 }) }).ketCuc).toBe("vi-pham");
+  });
+  it("STICKY: đột biến không cứu được ketCuc xấu có sẵn; tsc đỏ thì đột biến không được che", () => {
+    expect(quyet(kiem(), { truoc: "vi-pham", dotBien: db() }).ketCuc).toBe("vi-pham");
+    expect(quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }), { dotBien: db() }).ketCuc).toBe("kiem-do");
   });
 });

@@ -25,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
+import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
 import { canChayTsc, chayLenhKiem, chayLenhTsc, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
@@ -94,6 +95,10 @@ export interface KetQuaViec {
   kiem?: Omit<KetQuaKiem, "lenh">;
   /** L3c: kết quả tsc trên tệp model đổi (vắng khi không chạy) */
   tsc?: KetQuaTsc;
+  /** L3b: kết quả áp đột biến của thẻ (vắng khi thẻ không có hoặc các bước trước chưa xanh) */
+  dotBien?: KetQuaDotBien;
+  /** L3b: nhãn nghi "ghim lỗi thành kỳ vọng" trong tệp test model viết — CHỈ cảnh báo, người đọc quyết */
+  ghimNghiNgo?: Array<{ duong: string; dong: number; trich: string }>;
   /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
   tepTest?: Array<{ duong: string; soCa: number }>;
   /** chưa đo được gì ở các trường trên null — nói rõ vì sao */
@@ -301,6 +306,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const nhanh = `pilot/tho-ca-${the.ma}`;
   const cb = git(["checkout", "-q", "-B", nhanh, baseSha], wt);
   if (!cb.ok) return tuChoi(`không tạo được nhánh ${nhanh}: ${cb.err.trim()}`, the.ma);
+  // L3b: đột biến của thẻ phải áp dụng được TRÊN BASE (đúng một chỗ khớp) — lỗi thẻ thì từ chối TRƯỚC khi tốn lượt model
+  if (the.dotBien?.length) {
+    const loiDb = kiemDotBienTrenBase(wt, the.dotBien);
+    if (loiDb.length > 0) return tuChoi(`thẻ lỗi — ${loiDb.join("; ")}`, the.ma);
+  }
 
   // luật dự án → AGENTS.md ở gốc worktree, ẩn khỏi git (info/exclude) để không lẫn vào diff
   const luat = p.luat ?? fs.readFileSync(duongTepLuat(), "utf8");
@@ -319,7 +329,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const driver = typeof p.driver === "string" ? DRIVERS[p.driver] : p.driver;
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
-  const kq = await driver({ the, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
+  // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
+  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, ...theChoDriver } = the;
+  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -343,6 +355,18 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       /* tệp bị xoá */
     }
   }
+  // L3b: KHÔNG ĐƯỢC KHẲNG ĐỊNH (vi phạm) + nhãn nghi ghim lỗi (chỉ cảnh báo)
+  const ghimNghiNgo: Array<{ duong: string; dong: number; trich: string }> = [];
+  for (const t of tepTestDoi(tepDoi)) {
+    let nguon: string;
+    try {
+      nguon = fs.readFileSync(path.join(wt, t), "utf8");
+    } catch {
+      continue;
+    }
+    for (const h of quetKhangDinhCam(nguon, the.khangDinhCam ?? [])) viPham.push({ duong: t, loai: "khang-dinh-cam", chiTiet: `dòng ${h.dong}: ${h.cam} — ${h.trich}` });
+    for (const g of quetGhimNghiNgo(nguon)) ghimNghiNgo.push({ duong: t, ...g });
+  }
   const crlf = tepCrlf(wt, tepDoi);
   const luuY: string[] = [...luuY0, ...(kq.luuY ?? [])];
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");
@@ -359,6 +383,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const tepTest = demTepTest(wt, tepDoi);
   let kiem: KetQuaKiem | null = null;
   let tsc: KetQuaTsc | null = null;
+  let dotBien: KetQuaDotBien | null = null;
   let lyDoKiem: string | null = null;
   const khongTepRong = !tepTest.some((t) => t.soCa === 0);
   if (ketCuc === "xong") {
@@ -372,6 +397,12 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       nhatKy("chạy tsc --noEmit -p tsconfig.tests.json (L3c)");
       tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
+    }
+    // L3b: đột biến của thẻ — chỉ khi mọi bước trước đều xanh (đột biến trên bài làm đã đỏ là vô nghĩa)
+    if (qd.ketCuc === "xong" && the.dotBien?.length) {
+      nhatKy(`áp ${the.dotBien.length} đột biến của thẻ (L3b)`);
+      dotBien = await apDungDotBien(wt, the.dotBien, tepDoi, the.lenhKiem, p.chayKiem ?? chayLenhKiem, p.hanKiemGiay ?? 300);
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, dotBien });
     }
     ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
     lyDoKiem = qd.lyDo;
@@ -405,6 +436,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     lenhKiem: the.lenhKiem,
     ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
     ...(tsc ? { tsc } : {}),
+    ...(dotBien ? { dotBien } : {}),
+    ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),
     ...(tepTest.length > 0 ? { tepTest } : {}),
     luuY: lyDoKiem ? [...luuY, `L3a: ${lyDoKiem}`] : luuY,
   };

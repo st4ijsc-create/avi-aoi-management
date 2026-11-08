@@ -326,3 +326,105 @@ describe("chayMotViec — tên trường thời gian đúng nghĩa", () => {
     expect(r.giayKhongChoNguoi).toBe(Math.round(((r.giayTuong as number) - 0.5) * 10) / 10);
   });
 });
+
+describe("chayMotViec — L3b đột biến trong thẻ / KHÔNG ĐƯỢC KHẲNG ĐỊNH / ghim-nghi-ngo", () => {
+  const TEST_OK = "import { it } from 'vitest';\nit('x', () => {});\n";
+  const NGUON = "export const f = (n: number) => (n > 0 ? 1 : 0);\n";
+  const THE_DB = (them: string) => `MÃ: TC-88
+MỤC TIÊU: thử đột biến
+TỆP ĐƯỢC PHÉP SỬA/TẠO: client/src/lib/a.test.ts
+LỆNH KIỂM: npx vitest run client/src/lib/a.test.ts
+${them}
+GIỚI HẠN: 1 phút, 3 vòng`;
+  const DB1 = "ĐỘT BIẾN: client/src/lib/f.ts|n > 0|n >= 0";
+  const caiNguon = () => {
+    fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "client/src/lib/f.ts"), NGUON);
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "nguon");
+  };
+  /** lệnh kiểm GIẢ: đỏ khi nguồn mang một trong các dấu hiệu */
+  const kiemTheoNguon = (dau: string[]): ChayKiem => async (lenh) => {
+    const ng = fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8");
+    return dau.some((d) => ng.includes(d)) ? { ...kiemXanh, lenh, exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } } : { ...kiemXanh, lenh };
+  };
+
+  it("★ đột biến BỊ BẮT ⇒ xong, JSON mang dotBien{do:1}; nguồn khôi phục nguyên văn, cây chỉ còn tệp model đổi", async () => {
+    caiNguon();
+    const r = await chay({ van: THE_DB(DB1), khoGhi: { "client/src/lib/a.test.ts": TEST_OK }, chayKiem: kiemTheoNguon(["n >= 0"]) });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", dotBien: { tong: 1, do: 1, song: 0, khoiPhucSach: true, tepLa: [] } });
+    expect(fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8")).toBe(NGUON);
+    expect(git(wt, "status", "--porcelain").split("\n").filter((x) => x && !x.endsWith("AGENTS.md")).map((x) => x.replace(/^\S+\s+/, ""))).toEqual(["client/src/lib/a.test.ts"]);
+  });
+  it("★ đột biến SỐNG ⇒ dot-bien-song, ok:false, nêu đột biến nào", async () => {
+    caiNguon();
+    const r = await chay({ van: THE_DB(DB1), khoGhi: { "client/src/lib/a.test.ts": TEST_OK }, chayKiem: kiemTheoNguon([]) });
+    expect(r).toMatchObject({ ok: false, ketCuc: "dot-bien-song", dotBien: { song: 1 } });
+    expect(r.luuY?.join(" ")).toMatch(/1\/1 đột biến SỐNG/);
+  });
+  it("★ thẻ lỗi (đột biến không khớp đúng 1 chỗ trên base) ⇒ tu-choi TRƯỚC khi gọi driver (không tốn lượt model)", async () => {
+    caiNguon();
+    let goi = 0;
+    const drv: Driver = async () => (goi++, { vong: 1, token: null, ghiChu: [], hetGio: false });
+    const r = await chay({ van: THE_DB("ĐỘT BIẾN: client/src/lib/f.ts|không-có-chuỗi-này|x"), driver: drv });
+    expect(r).toMatchObject({ ok: false, ketCuc: "tu-choi" });
+    expect(r.loi).toMatch(/0 lần/);
+    expect(goi).toBe(0);
+  });
+  it("★ CÁCH LY: model/driver KHÔNG thấy đột biến — không có trong lệnh (prompt), không trong `the` đưa cho driver, và nguồn trên đĩa lúc driver chạy chưa bị đột biến", async () => {
+    caiNguon();
+    let lenhThay = "";
+    let theThay: Record<string, unknown> = {};
+    let nguonLucDriver = "";
+    const drv: Driver = async (v) => {
+      lenhThay = v.lenh;
+      theThay = v.the as unknown as Record<string, unknown>;
+      nguonLucDriver = fs.readFileSync(path.join(v.wt, "client/src/lib/f.ts"), "utf8");
+      fs.writeFileSync(path.join(v.wt, "client/src/lib/a.test.ts"), TEST_OK);
+      return { vong: 1, token: null, ghiChu: [], hetGio: false };
+    };
+    await chay({
+      van: THE_DB(`${DB1}\nKHÔNG ĐƯỢC KHẲNG ĐỊNH: CHUOI-CAM-BI-MAT-123`),
+      driver: drv,
+      chayKiem: kiemTheoNguon(["n >= 0"]),
+    });
+    for (const bimat of ["n >= 0", "n > 0", "client/src/lib/f.ts", "CHUOI-CAM-BI-MAT-123", "ĐỘT BIẾN", "KHÔNG ĐƯỢC KHẲNG ĐỊNH"]) {
+      expect(lenhThay, `prompt chứa "${bimat}"`).not.toContain(bimat);
+    }
+    expect(theThay.dotBien).toBeUndefined();
+    expect(theThay.khangDinhCam).toBeUndefined();
+    expect(nguonLucDriver).toBe(NGUON);
+  });
+  it("★ KHÔNG ĐƯỢC KHẲNG ĐỊNH trong expect(...) của test model viết ⇒ vi-pham khang-dinh-cam (không chạy lệnh kiểm)", async () => {
+    caiNguon();
+    let goi = 0;
+    const test = "import { it, expect } from 'vitest';\nit('x', () => {\n  expect(f(1)).toBe('?old=1?new=2');\n});\n";
+    const r = await chay({
+      van: THE_DB("KHÔNG ĐƯỢC KHẲNG ĐỊNH: ?old=1?new=2"),
+      khoGhi: { "client/src/lib/a.test.ts": test },
+      chayKiem: async (l) => (goi++, { ...kiemXanh, lenh: l }),
+    });
+    expect(r).toMatchObject({ ok: false, ketCuc: "vi-pham" });
+    expect(r.viPham).toEqual([{ duong: "client/src/lib/a.test.ts", loai: "khang-dinh-cam", chiTiet: expect.stringContaining("?old=1?new=2") }]);
+    expect(goi).toBe(0);
+  });
+  it("★ nhãn nghi ghim lỗi ⇒ CẢNH BÁO ghimNghiNgo (kèm dòng), ketCuc vẫn xong", async () => {
+    const test = "import { it } from 'vitest';\n// HIỆN TRẠNG — lỗi đã biết\nit('x', () => {});\n";
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": test } });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", ghimNghiNgo: [{ duong: "client/src/lib/a.test.ts", dong: 2 }] });
+  });
+  it("không có ĐỘT BIẾN trong thẻ ⇒ không có trường dotBien; đột biến chỉ áp khi mọi bước trước xanh (lệnh kiểm đỏ ⇒ kiem-do, không áp)", async () => {
+    caiNguon();
+    const r0 = await chay({ khoGhi: { "client/src/lib/a.test.ts": TEST_OK } });
+    expect(r0.dotBien).toBeUndefined();
+    let goi = 0;
+    const r1 = await chay({
+      van: THE_DB(DB1),
+      khoGhi: { "client/src/lib/a.test.ts": `${TEST_OK}// lượt hai\n` },
+      chayKiem: async (l) => (goi++, { ...kiemXanh, lenh: l, exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }),
+    });
+    expect(r1.ketCuc).toBe("kiem-do");
+    expect(r1.dotBien).toBeUndefined();
+    expect(goi).toBe(1);
+  });
+});
