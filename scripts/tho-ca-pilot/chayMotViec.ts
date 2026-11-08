@@ -8,7 +8,9 @@
  * (`AGENTS.md`, ẩn khỏi diff) → chạy driver có hạn giờ → thu diff (kể cả tệp mới) + dòng thêm/xoá + thời gian tường → đối chiếu "chỉ sửa tệp
  * được phép" + vùng cấm cứng + CRLF → ghi `<ra>/<mã>.diff` và IN ĐÚNG MỘT DÒNG JSON kết quả ra stdout (nhật ký đi stderr).
  *
- * KHÔNG BAO GIỜ: commit · đụng main/.env/:3000/DB · in mật khẩu · chạy LỆNH KIỂM (dieu-phoi chạy, không tin lời khai của model).
+ * KHÔNG BAO GIỜ: commit · đụng main/.env/:3000/DB · in mật khẩu.
+ * L3a (kiểm chứng tự động): SAU khi driver xong và diff sạch, bộ chạy TỰ chạy LỆNH KIỂM của thẻ trong worktree pilot (env DB chết, hạn riêng),
+ * ĐỌC dòng "Test Files"/"Tests" của vitest và chỉ cho `xong` khi đạt; đỏ ⇒ `kiem-do`, 0 ca ⇒ `test-rong` (xem kiemChung.ts). Không tin lời khai của model.
  *
  * DRIVER
  *  • kho — chạy khô, KHÔNG gọi model: ghi các tệp mà `--kho-ghi` (JSON {đường: nộiDung}) nêu. Dùng để thử bộ chạy / ca kiểm.
@@ -23,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
+import { chayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type KetCucKiem, type KetQuaKiem } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -59,8 +62,8 @@ export type Driver = (v: DauVaoDriver) => Promise<KetQuaDriver & { hetGio: boole
 export interface KetQuaViec {
   ma: string | null;
   ok: boolean;
-  /** xong | het-gio | loi-driver | vi-pham | tu-choi */
-  ketCuc: "xong" | "het-gio" | "loi-driver" | "vi-pham" | "tu-choi" | "khong-lam";
+  /** xong | het-gio | loi-driver | vi-pham | tu-choi | khong-lam | kiem-do | test-rong | bao-sai | dot-bien-song (hai cuối: L4 / L3b) */
+  ketCuc: KetCucKiem;
   loi?: string;
   nhanh?: string;
   baseSha?: string;
@@ -84,6 +87,10 @@ export interface KetQuaViec {
   crlf?: string[];
   diff?: string;
   lenhKiem?: string;
+  /** L3a: kết quả bộ chạy TỰ chạy lệnh kiểm (vắng khi ketCuc đã xấu từ trước hoặc có tệp test rỗng) */
+  kiem?: Omit<KetQuaKiem, "lenh">;
+  /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
+  tepTest?: Array<{ duong: string; soCa: number }>;
   /** chưa đo được gì ở các trường trên null — nói rõ vì sao */
   luuY?: string[];
 }
@@ -225,6 +232,10 @@ export interface ThamSoViec {
   choPhepKhoRieng?: boolean;
   luat?: string;
   nhatKy?: (s: string) => void;
+  /** L3a: hàm chạy lệnh kiểm (mặc định chạy thật; ca kiểm đơn vị tiêm bản giả) */
+  chayKiem?: ChayKiem;
+  /** L3a: hạn giờ RIÊNG của lệnh kiểm, giây (mặc định 300) */
+  hanKiemGiay?: number;
 }
 
 export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
@@ -334,6 +345,20 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   else if (tepDoi.length === 0) ketCuc = "khong-lam";
   if (viPham.length > 0 || crlf.length > 0) ketCuc = "vi-pham";
 
+  // ── L3a: bộ chạy TỰ chạy LỆNH KIỂM và ĐỌC kết quả (chỉ khi còn đáng chạy: ứng viên "xong") ──
+  const tepTest = demTepTest(wt, tepDoi);
+  let kiem: KetQuaKiem | null = null;
+  let lyDoKiem: string | null = null;
+  if (ketCuc === "xong") {
+    if (!tepTest.some((t) => t.soCa === 0)) {
+      nhatKy(`chạy LỆNH KIỂM: ${the.lenhKiem}`);
+      kiem = await (p.chayKiem ?? chayLenhKiem)(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
+    }
+    const qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem });
+    ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
+    lyDoKiem = qd.lyDo;
+  }
+
   return {
     ma: the.ma,
     ok: ketCuc === "xong",
@@ -355,7 +380,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     crlf,
     diff: diffPath,
     lenhKiem: the.lenhKiem,
-    luuY,
+    ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
+    ...(tepTest.length > 0 ? { tepTest } : {}),
+    luuY: lyDoKiem ? [...luuY, `L3a: ${lyDoKiem}`] : luuY,
   };
 }
 

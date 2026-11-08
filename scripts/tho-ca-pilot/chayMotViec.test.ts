@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { chayMotViec, ghepLenh, driverKho, type Driver } from "./chayMotViec";
 import { docTheViec } from "./theViec";
+import type { ChayKiem, KetQuaKiem } from "./kiemChung";
 
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
 
@@ -33,8 +34,18 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(goc, { recursive: true, force: true }));
 
+const kiemXanh: KetQuaKiem = {
+  lenh: "x",
+  exit: 0,
+  hetGio: false,
+  giay: 1,
+  duoi: "",
+  vitest: { tep: { dat: 1, hong: 0, boQua: 0, tong: 1 }, ca: { dat: 2, hong: 0, boQua: 0, tong: 2 } },
+};
+/** Mặc định: lệnh kiểm GIẢ xanh (ca kiểm đơn vị không chạy npx thật). Các ca L3a cuối tệp tiêm bản riêng. */
+const chayKiemXanh: ChayKiem = async (lenh) => ({ ...kiemXanh, lenh });
 const chay = (over: Partial<Parameters<typeof chayMotViec>[0]> = {}) =>
-  chayMotViec({ van: THE(), wt, base: "HEAD", driver: "kho", ra, choPhepKhoRieng: true, luat: "# luat thu\n", ...over });
+  chayMotViec({ van: THE(), wt, base: "HEAD", driver: "kho", ra, choPhepKhoRieng: true, luat: "# luat thu\n", chayKiem: chayKiemXanh, ...over });
 
 describe("chayMotViec — chạy khô (driver kho, không model)", () => {
   it("★ ghi đúng tệp được phép ⇒ ok, diff thu đủ tệp MỚI, AGENTS.md không lẫn, KHÔNG commit", async () => {
@@ -150,7 +161,7 @@ describe("chayMotViec — cất kết quả lượt trước (cây bẩn trên n
     git(wt, "checkout", "-q", "-b", "pilot/tho-ca-TC-98");
     fs.writeFileSync(path.join(wt, "ket-qua-cu.txt"), "hồ sơ lượt trước\n");
     git(wt, "add", "ket-qua-cu.txt");
-    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "x\n" } });
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "it('x', () => {});\n" } });
     expect(r).toMatchObject({ ok: true, ketCuc: "xong", nhanh: "pilot/tho-ca-TC-99" });
     expect(r.luuY?.join(" ")).toContain("đã cất kết quả lượt trước vào nhánh pilot/tho-ca-TC-98");
     expect(git(wt, "show", "pilot/tho-ca-TC-98:ket-qua-cu.txt")).toBe("hồ sơ lượt trước");
@@ -184,7 +195,7 @@ esac
     git(wt, "checkout", "-q", "-b", "pilot/tho-ca-TC-97");
     fs.writeFileSync(path.join(wt, "ket-qua-cu.txt"), "lượt trước\n");
     git(wt, "add", "ket-qua-cu.txt");
-    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "x\n" } });
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "it('x', () => {});\n" } });
     expect(r).toMatchObject({ ok: true, ketCuc: "xong" });
     expect(git(wt, "show", "pilot/tho-ca-TC-97:ket-qua-cu.txt")).toBe("lượt trước");
     expect(git(wt, "log", "-1", "--format=%s", "pilot/tho-ca-TC-97")).toContain("cất kết quả lượt trước");
@@ -195,5 +206,39 @@ esac
     git(wt, "add", "x.txt");
     const r = spawnSync("git", ["commit", "-q", "-m", "tran"], { cwd: wt, encoding: "utf8" });
     expect(r.status).not.toBe(0);
+  });
+});
+
+describe("chayMotViec — L3a: bộ chạy TỰ chạy lệnh kiểm và đọc kết quả", () => {
+  const TEST_OK = "import { it } from 'vitest';\nit('x', () => {});\n";
+  it("★ lệnh kiểm XANH ⇒ xong, JSON mang kiem + tepTest, chạy ĐÚNG lệnh của thẻ trong ĐÚNG worktree", async () => {
+    const goi: Array<[string, string, number]> = [];
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": TEST_OK }, hanKiemGiay: 77, chayKiem: async (l, w, h) => (goi.push([l, w, h]), { ...kiemXanh, lenh: l }) });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", tepTest: [{ duong: "client/src/lib/a.test.ts", soCa: 1 }] });
+    expect(r.kiem).toMatchObject({ exit: 0, vitest: { ca: { dat: 2 } } });
+    expect(goi).toEqual([["npx vitest run client/src/lib/a.test.ts", path.resolve(wt), 77]]);
+    expect(JSON.parse(JSON.stringify(r))).toEqual(r);
+  });
+  it("★ lệnh kiểm ĐỎ ⇒ kiem-do, ok:false, lý do vào luuY (trước đây vẫn 'xong')", async () => {
+    const r = await chay({
+      khoGhi: { "client/src/lib/a.test.ts": TEST_OK },
+      chayKiem: async (l) => ({ ...kiemXanh, lenh: l, exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 1, hong: 1, boQua: 0, tong: 2 } } }),
+    });
+    expect(r).toMatchObject({ ok: false, ketCuc: "kiem-do" });
+    expect(r.luuY?.join(" ")).toMatch(/L3a: LỆNH KIỂM đỏ/);
+  });
+  it("★ tệp test model viết 0 ca ⇒ test-rong và KHÔNG chạy lệnh kiểm", async () => {
+    let goi = 0;
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": "import { describe } from 'vitest';\ndescribe('x', () => {});\n" }, chayKiem: async (l) => (goi++, { ...kiemXanh, lenh: l }) });
+    expect(r).toMatchObject({ ok: false, ketCuc: "test-rong" });
+    expect(goi).toBe(0);
+    expect(r.kiem).toBeUndefined();
+  });
+  it("★ STICKY: vi-pham / khong-lam KHÔNG chạy lệnh kiểm (không tốn giờ, không nâng lên)", async () => {
+    let goi = 0;
+    const dem: ChayKiem = async (l) => (goi++, { ...kiemXanh, lenh: l });
+    expect((await chay({ khoGhi: { "client/src/lib/a.test.ts": TEST_OK, "client/src/lib/khac.ts": "b\n" }, chayKiem: dem })).ketCuc).toBe("vi-pham");
+    expect((await chay({ chayKiem: dem })).ketCuc).toBe("khong-lam");
+    expect(goi).toBe(0);
   });
 });

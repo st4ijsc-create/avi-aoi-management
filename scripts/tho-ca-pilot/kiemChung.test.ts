@@ -1,0 +1,140 @@
+import { describe, it, expect } from "vitest";
+import { chayLenhKiem, demCaTest, laLenhVitest, phanTichVitest, quyetKetCuc, type KetQuaKiem } from "./kiemChung";
+
+const kiem = (o: Partial<KetQuaKiem> = {}): KetQuaKiem => ({
+  lenh: "npx vitest run a.test.ts",
+  exit: 0,
+  hetGio: false,
+  giay: 1,
+  duoi: "",
+  vitest: { tep: { dat: 1, hong: 0, boQua: 0, tong: 1 }, ca: { dat: 5, hong: 0, boQua: 0, tong: 5 } },
+  ...o,
+});
+const quyet = (k: KetQuaKiem | null, over: Partial<Parameters<typeof quyetKetCuc>[0]> = {}) =>
+  quyetKetCuc({ truoc: "xong", dungVitest: true, tepTest: [{ duong: "a.test.ts", soCa: 5 }], kiem: k, ...over });
+
+describe("phanTichVitest — đọc CẢ dòng Test Files lẫn Tests", () => {
+  it("xanh", () => {
+    const r = phanTichVitest(" Test Files  2 passed (2)\n      Tests  14 passed (14)\n");
+    expect(r.tep).toEqual({ dat: 2, hong: 0, boQua: 0, tong: 2 });
+    expect(r.ca).toEqual({ dat: 14, hong: 0, boQua: 0, tong: 14 });
+  });
+  it("đỏ + bỏ qua + mã màu", () => {
+    const r = phanTichVitest("\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[31m1 failed\x1b[39m | 1 passed\x1b[22m (2)\n      Tests  2 failed | 10 passed | 1 skipped (13)\n");
+    expect(r.tep).toEqual({ dat: 1, hong: 1, boQua: 0, tong: 2 });
+    expect(r.ca).toEqual({ dat: 10, hong: 2, boQua: 1, tong: 13 });
+  });
+  it("★ tệp hỏng khi nạp: có Test Files failed nhưng KHÔNG có dòng Tests ⇒ ca null (bẫy: chỉ đọc Tests thì thấy gì cả)", () => {
+    const r = phanTichVitest(" Test Files  1 failed (1)\n");
+    expect(r.tep?.hong).toBe(1);
+    expect(r.ca).toBeNull();
+  });
+  it("không có dòng nào ⇒ cả hai null", () => {
+    expect(phanTichVitest("No test files found, exiting with code 1")).toEqual({ tep: null, ca: null });
+  });
+  it("chuỗi 'Test Files' trong nội dung dòng khác không bị nhận nhầm", () => {
+    expect(phanTichVitest("stdout | x\nlog: Test Files  9 passed (9) lạ\n").tep).toBeNull();
+  });
+});
+
+describe("demCaTest — đếm tĩnh ca chạy được", () => {
+  it("đếm it/test, kể cả .only/.each, bỏ .skip/.todo và chú thích", () => {
+    const src = `
+      // it("trong chu thich", () => {});
+      /* test("cung vay", () => {}); */
+      describe("g", () => {
+        it("a", () => {});
+        test("b", () => {});
+        it.only("c", () => {});
+        it.each([1, 2])("d %i", () => {});
+        it.skip("e", () => {});
+        it.todo("f");
+        test.skip("g", () => {});
+      });`;
+    expect(demCaTest(src)).toBe(4);
+  });
+  it("tệp không có ca ⇒ 0 (chỉ import + describe rỗng)", () => {
+    expect(demCaTest(`import { describe } from "vitest";\ndescribe("x", () => {});\n`)).toBe(0);
+  });
+  it("không nhận nhầm hậu tố: split/commit/emit không phải it(", () => {
+    expect(demCaTest(`const a = permit(1); const b = commit(2); x.emit("e");`)).toBe(0);
+  });
+});
+
+describe("quyetKetCuc — L3a", () => {
+  it("★ xanh, có ca ⇒ xong", () => {
+    expect(quyet(kiem())).toEqual({ ketCuc: "xong", lyDo: null });
+  });
+  it("★ test ĐỎ ⇒ kiem-do (trước đây vẫn ra 'xong')", () => {
+    const r = quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 4, hong: 1, boQua: 0, tong: 5 } } }));
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.lyDo).toMatch(/1 ca hỏng/);
+  });
+  it("★ tệp hỏng khi nạp (không có dòng Tests, exit 1) ⇒ kiem-do", () => {
+    expect(quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: null } })).ketCuc).toBe("kiem-do");
+  });
+  it("★ 'No test files found' (exit 0, không dòng nào) ⇒ test-rong", () => {
+    expect(quyet(kiem({ vitest: { tep: null, ca: null } })).ketCuc).toBe("test-rong");
+  });
+  it("★ vitest xanh nhưng 0 ca chạy ⇒ test-rong", () => {
+    const r = quyet(kiem({ vitest: { tep: { dat: 1, hong: 0, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 0, boQua: 3, tong: 3 } } }));
+    expect(r.ketCuc).toBe("test-rong");
+  });
+  it("★ tệp test mới 0 ca ⇒ test-rong, KHÔNG cần chạy lệnh kiểm (kiem null)", () => {
+    const r = quyet(null, { tepTest: [{ duong: "a.test.ts", soCa: 3 }, { duong: "b.test.ts", soCa: 0 }] });
+    expect(r.ketCuc).toBe("test-rong");
+    expect(r.lyDo).toContain("b.test.ts");
+  });
+  it("hết hạn ⇒ kiem-do; lỗi khởi chạy ⇒ kiem-do; không có kết quả ⇒ kiem-do", () => {
+    expect(quyet(kiem({ hetGio: true, exit: null })).ketCuc).toBe("kiem-do");
+    expect(quyet(kiem({ loi: "spawn ENOENT", exit: null })).ketCuc).toBe("kiem-do");
+    expect(quyet(null).ketCuc).toBe("kiem-do");
+  });
+  it("★ tệp hỏng nhưng không ca hỏng và exit 0 (dòng Test Files đỏ) ⇒ kiem-do", () => {
+    const r = quyet(kiem({ exit: 0, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 3, hong: 0, boQua: 0, tong: 3 } } }));
+    expect(r.ketCuc).toBe("kiem-do");
+  });
+  it("★ hết hạn dù đầu ra xanh và exit 0 ⇒ kiem-do (không tin dòng xanh của tiến trình bị giết)", () => {
+    expect(quyet(kiem({ hetGio: true, exit: 0 })).ketCuc).toBe("kiem-do");
+  });
+  it("exit khác 0 dù đếm không thấy ca hỏng ⇒ kiem-do", () => {
+    expect(quyet(kiem({ exit: 2 })).ketCuc).toBe("kiem-do");
+  });
+  it("★ STICKY: ketCuc xấu từ trước (vi-pham/het-gio/loi-driver/khong-lam) giữ nguyên dù lệnh kiểm xanh", () => {
+    for (const truoc of ["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi"] as const) {
+      expect(quyet(kiem(), { truoc }).ketCuc).toBe(truoc);
+    }
+  });
+  it("lệnh kiểm không phải vitest: chỉ cần mã thoát", () => {
+    expect(quyet(kiem({ exit: 0, vitest: { tep: null, ca: null } }), { dungVitest: false, tepTest: [] }).ketCuc).toBe("xong");
+    expect(quyet(kiem({ exit: 1, vitest: { tep: null, ca: null } }), { dungVitest: false, tepTest: [] }).ketCuc).toBe("kiem-do");
+  });
+  it("laLenhVitest", () => {
+    expect(laLenhVitest("npx vitest run x")).toBe(true);
+    expect(laLenhVitest("node scripts/x.mjs")).toBe(false);
+  });
+});
+
+describe("chayLenhKiem — tiến trình thật (không vitest lồng)", () => {
+  it("★ chạy với env DB CHẾT, đọc đầu ra, mã thoát", async () => {
+    const k = await chayLenhKiem(
+      `node -e "console.log(process.env.DATABASE_URL + '|' + process.env.TEST_DATABASE_URL); console.log(' Test Files  1 passed (1)'); console.log('      Tests  3 passed (3)')"`,
+      process.cwd(),
+      60,
+    );
+    expect(k.exit).toBe(0);
+    expect(k.hetGio).toBe(false);
+    expect(k.duoi).toContain("127.0.0.1:9/aoi_management|postgresql://pilot_kiem:x@127.0.0.1:9/aoi_management_test");
+    expect(k.vitest.ca).toEqual({ dat: 3, hong: 0, boQua: 0, tong: 3 });
+  });
+  it("mã thoát khác 0 được báo đúng", async () => {
+    const k = await chayLenhKiem(`node -e "process.exit(7)"`, process.cwd(), 60);
+    expect(k.exit).toBe(7);
+  });
+  it("★ hết hạn ⇒ hetGio, giết tiến trình", async () => {
+    const k = await chayLenhKiem(`node -e "setTimeout(()=>{}, 60000)"`, process.cwd(), 1);
+    expect(k.hetGio).toBe(true);
+    expect(k.exit).toBeNull();
+    expect(k.giay).toBeLessThan(20);
+  });
+});
