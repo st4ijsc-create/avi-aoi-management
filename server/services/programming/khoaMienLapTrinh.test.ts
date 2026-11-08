@@ -2,10 +2,14 @@
  * SCADA R1b-2b-2a T6d — HÀM ĐẶT MIỀN khoá lập trình (thuần) + điểm DUY NHẤT đường lập trình gọi `dispatch()` (adapter Mitsubishi) luôn gửi khoá ở miền
  * `pd:u<người yêu cầu>:` — kể cả khoá THÔ của một hàng `program_deployments` ghi TRƯỚC T6d (duyệt sau nâng cấp). `dispatch()` là mock (không DB, không
  * thiết bị); không cờ nào được bật.
+ * C0-7: adapter tra `device_adapters.machineId` trước dispatch() ⇒ `getDb` được MOCK ở đây (một hàng machineId 7) để các ca không phụ thuộc DB ngầm.
  */
 import { describe, expect, it, vi } from "vitest";
 
 const H = vi.hoisted(() => ({ khoa: [] as string[] }));
+vi.mock("../../db/connection", () => ({
+  getDb: async () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ machineId: 7 }] }) }) }) }),
+}));
 vi.mock("../ot/commandDispatcher", () => ({
   dispatch: async (input: { idempotencyKey: string }) => {
     H.khoa.push(input.idempotencyKey);
