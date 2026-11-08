@@ -153,6 +153,8 @@ describe("A2(n) T2 — baoBen: is the URGENT stored?", () => {
       vi.useRealTimers();
     }
     expect(nghe).toEqual([["a", false]]);
+    // CHAP-CHON-BAOBEN: the fake clock can run out while this call is still in its lazy imports. It then writes during the NEXT test, under the same key, on the next test's fake write. Its own write has to happen here.
+    await vi.waitFor(() => expect(H.sent).toHaveLength(2));
   });
 
   it("told after the first try, not before it, and a later retry does not answer again", async () => {
