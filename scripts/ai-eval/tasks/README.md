@@ -25,7 +25,7 @@ Bài `pilot-repo` viết tay. Đột biến nằm trong `check.mjs`. Lời giả
 ```bash
 node scripts/ai-eval/tasks/kiem-thuoc.mjs                # toàn bộ; --only <id,…|stack|bộ>
 node scripts/ai-eval/tasks/dong-goi.mjs --kiem           # thiếu bài hoặc lệch nguồn thì thoát 1
-node --test scripts/ai-eval/tasks/lib/pilotRepo.test.mjs scripts/ai-eval/tasks/run-eval.test.mjs
+node --test scripts/ai-eval/tasks/lib/pilotRepo.test.mjs scripts/ai-eval/tasks/lib/maDon.test.mjs scripts/ai-eval/tasks/run-eval.test.mjs
 
 # Đo: chạy kiem-thuoc trước. Báo cáo vào docs/ai/eval/<ngày>[-nhãn].{json,md}, câu trả lời thô vào D:/DO-AI/eval/ (ngoài repo).
 node scripts/ai-eval/tasks/run-eval.mjs --samples 3 --sha

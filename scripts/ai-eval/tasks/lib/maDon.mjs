@@ -26,6 +26,20 @@ function loiGiaiKiemThuoc(bai, loai) {
   return "```\n" + ma + "\n```";
 }
 
+/**
+ * Dọn thư mục chấm. Không dọn được thì để lại trong `tmp/` (bị git bỏ qua): kết quả chấm đã có, không được biến thành "thước hỏng".
+ * Trên Windows, lời giải quá giờ có thể còn giữ thư mục một lúc (EPERM); bản đầu ném lỗi ở đây và vứt cả lượt đo 09/11.
+ */
+export function donThuMuc(dir, tuyChon = { maxRetries: 5, retryDelay: 500 }) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, ...tuyChon });
+    return true;
+  } catch (e) {
+    console.error(`không dọn được ${dir}: ${e?.code ?? e}`);
+    return false;
+  }
+}
+
 export async function cham({ bai }) {
   const { lay } = thamSo();
   const t = baiNguon(bai);
@@ -48,6 +62,6 @@ export async function cham({ bai }) {
     const lyDo = r.dat ? [] : [r.sinhDuocMa ? "TEST_DO" : "KHONG_SINH_DUOC_MA"];
     return ketThuc({ id: bai.id, dat: r.dat, lyDo, ...(kt ? { kiemThuoc: kt } : {}), ms: Date.now() - t0, loi: r.loi ? String(r.loi).slice(-600) : null });
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    donThuMuc(dir);
   }
 }
