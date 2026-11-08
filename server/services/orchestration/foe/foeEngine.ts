@@ -65,6 +65,10 @@ import {
   dauKhongXacNhan,
   laHangChuaRa,
   FOE_NOT_SENT_RUN_LATCHED,
+  quyetDinhKetThucAnh,
+  type AnhKetThuc,
+  type KetQuaKetThuc,
+  type LyDoKetThuc,
 } from "./foeRunStore";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // fix review 2 (R-10-ae) — central's authorisation ledger (0372)
 // R1b-2b-2a A2(m2) — a run interrupted while compensating: which compensation was in flight, and may the boot re-send it (b1–b3)
@@ -87,7 +91,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
+import { BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -684,6 +688,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   chuaRaDaBao?: Set<string>;
   /** A2(n) T5 (H1, race) — a STOP that failed before the latch with no code: duongKetThuc puts it in state C if the run latches after all. Not sent again. */
   stopTuChoiTruocKhoa?: Map<string, { attempt: number; vi: ViChuaRa }>;
+  /** A2(n) T7 — the answers of every URGENT this walk raised (central: stored or not). The end gate reads them: one stored is the run's durable URGENT (decision 1) */
+  baoCho?: Array<Promise<boolean>>;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -1615,7 +1621,7 @@ function baoNhanhChuaChon(rc: RunContext, stepId: string, loi: string): void {
   if (rc.nhanhDaBao?.has(stepId)) return;
   (rc.nhanhDaBao ??= new Set()).add(stepId);
   try {
-    rc.store.ketCucKhongRo?.(rc, { loai: "stopUntakenBranch", stepId, compId: KHONG_CO_BU_TRU, error: loi, lan: "chot" });
+    giuBao(rc, rc.store.ketCucKhongRo?.(rc, { loai: "stopUntakenBranch", stepId, compId: KHONG_CO_BU_TRU, error: loi, lan: "chot" }));
   } catch (err) {
     console.error(`[FOE] run ${rc.runId}: untaken branch report failed: ${(err as Error)?.message ?? err}`);
   }
@@ -1723,6 +1729,114 @@ async function goGiuDaDi(rc: RunContext, out: StepOutcome): Promise<StepOutcome>
 /** A2(n) (S-1) — is the run latched? This walk decided an unknown outcome, or its context says so. */
 function daChotKhongRo(rc: RunContext): boolean {
   return rc.khongRoChot === true || rc.khongRoChotHang === true || runDaChotKhongRo(rc.context);
+}
+
+/**
+ * A2(n) T7 — THE end gate of every end of a run (plan point 3, finding 10: one decision, one source). A live central walk brings its picture: the rows read now (bounded), and beside them what its
+ * memory holds (its latch, the STOPs it left owed, the answers of the URGENTs it raised); every other end brings the database's picture (docAnhKetThuc). The decision is
+ * foeRunStore.quyetDinhKetThucAnh, the edge segment end's too. Confirmation (XAC_NHAN, decision 3) joins it there at T9.
+ */
+async function quyetDinhKetThuc(x: { rc: RunContext; chiDoi?: boolean } | AnhKetThuc, lyDo: LyDoKetThuc, hanMs?: number): Promise<KetQuaKetThuc> {
+  if (!("rc" in x)) return quyetDinhKetThucAnh(x, lyDo, hanMs);
+  const rc = x.rc;
+  const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null);
+  return quyetDinhKetThucAnh({ runId: rc.runId, ctx: rc.context, owner: rc.runOwner, rows: src?.hang ?? null, def: rc.def, boNho: boNhoCua(rc), chiDoi: x.chiDoi }, lyDo, hanMs);
+}
+
+/** A2(n) T7 — what a live walk holds beside the rows: the first unknown it decided, the STOPs it left owed, the answers of its URGENTs. */
+function boNhoCua(rc: RunContext): NonNullable<AnhKetThuc["boNho"]> {
+  const dau = rc.khongRoTai ? [...rc.khongRoTai][0] : undefined;
+  return { chot: dau ? { stepId: dau[0], ma: maKetCucKhongRoCua(dau[1]) } : null, chuaRa: [...(rc.chuaRaStop?.keys() ?? [])], baoCho: rc.baoCho ?? [] };
+}
+
+/** A2(n) T7 — what the database shows of a run for an end with no walk to ask: its context, owner and step rows, bounded by D. null ⇔ not read: never "not latched". */
+async function docAnhKetThuc(runId: number): Promise<AnhKetThuc | null> {
+  try {
+    return await withDeadline(
+      (async () => {
+        const d = await getDb();
+        if (!d) throw new DbUnavailableError();
+        const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+        if (!run) return null;
+        const rows = await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+        return { runId, ctx: (run.contextJson as Record<string, unknown> | null) ?? {}, owner: run.startedBy ?? null, rows };
+      })(),
+      STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${runId} end-of-run read`,
+    );
+  } catch (err) {
+    console.error(`[FOE] run ${runId}: end-of-run read failed: ${(err as Error)?.message ?? err}`);
+    return null;
+  }
+}
+
+/**
+ * A2(n) T7 (C1, R3-A) — a walker threw (the last status write, a context write …). Not latched, nothing owed, nothing marked: 'failed' as ever. A STOP owed on the rows, no durable URGENT, or the run
+ * unread: held + interrupted, so an Abort still sends what is owed. From the database alone: the memory of a walk that threw is not its evidence. Answers the status written ('aborted' ⇔ an Abort got
+ * there first).
+ */
+async function ketThucNgoaiLe(runId: number, message: string): Promise<"failed" | "held" | "aborted"> {
+  const anh = await docAnhKetThuc(runId);
+  const q = anh ? await quyetDinhKetThuc(anh, "exception") : null;
+  const daBao = q?.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
+  if (!q || q.ghi === "held") {
+    const at = new Date().toISOString();
+    const loi = q?.loi ?? loiGiuChuaDocHang(runId, null);
+    // data-raw-ok: the run's error: the gate's words (code first), then the walker's own error text
+    const ok = await setRunStatusUnlessAborted(runId, "held", { currentStepId: null, error: `${loi} [${message.slice(0, 300)}]`, ...(anh ? { contextJson: { ...anh.ctx, interrupted: true, interruptedAt: at, interruptedFrom: "exception", ...daBao } } : {}) }).catch(() => true);
+    return ok ? "held" : "aborted";
+  }
+  const ok = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message, ...(anh && Object.keys(daBao).length ? { contextJson: { ...anh.ctx, ...daBao } } : {}) }).catch(() => true);
+  return ok ? "failed" : "aborted";
+}
+
+/** A2(n) T7 — DA_BAO on a run that may already be ended: a context-only write (no status guard reads it), bounded by D, best-effort. A live walk carries it in its own context too. */
+async function ghiDaBao(runId: number, chot: { stepId: string }, live?: RunContext | null): Promise<void> {
+  const dau = { stepId: chot.stepId, at: new Date().toISOString() };
+  if (live) live.context[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] = dau;
+  await withDeadline(
+    (async () => {
+      const d = await getDb();
+      if (!d) return;
+      const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+      if (run) await d.update(orchestrationRuns).set({ contextJson: { ...((run.contextJson as Record<string, unknown> | null) ?? {}), [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: dau } }).where(eq(orchestrationRuns.id, runId));
+    })(),
+    STOP_DB_STEP_DEADLINE_MS,
+    `FOE run ${runId} DA_BAO`,
+  ).catch((err: unknown) => console.error(`[FOE] run ${runId}: DA_BAO not written: ${(err as Error)?.message ?? err}`));
+}
+
+/**
+ * A2(n) T7 (decision B) — an Abort, or a person's gate rejection, ends a run whatever its URGENT did. Its status is written and its STOP sweep has run: then ONE try of the URGENT, bounded by D, and an
+ * audit row (foe_outcome_unknown_abort), written even when that try landed. Neither holds anything back; a failure of either leaves the obligation (no DA_BAO) for the scan (T12). A run not latched
+ * and with no marked row, or whose latch was already durably told: nothing here.
+ */
+async function nghiaVuKetThucNguoi(runId: number, user: FoeUser, lyDo: "abort" | "gateRejected", x: { live?: RunContext | null; ctx0: Record<string, unknown>; owner: number | null; stops: AbortStopReport; reason?: string | null }): Promise<void> {
+  try {
+    const doc = await docAnhKetThuc(runId);
+    const ctx = { ...(doc?.ctx ?? x.ctx0), ...(x.live?.context ?? {}) };
+    const daBen = ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] != null;
+    const anh: AnhKetThuc = { runId, ctx, owner: doc?.owner ?? x.owner, rows: doc?.rows ?? null, def: x.live?.def ?? null, ...(x.live ? { boNho: { ...boNhoCua(x.live), chuaRa: [] } } : {}) };
+    const q = await quyetDinhKetThuc(anh, lyDo, STOP_DB_STEP_DEADLINE_MS);
+    if (!((q.chot !== null && !daBen) || q.khongXacNhan.length > 0)) return;
+    if (q.moi && q.chot) await ghiDaBao(runId, q.chot, x.live);
+    const rows = anh.rows ?? [];
+    await ghiAuditKetCucKhongRo(user, runId, "abort", {
+      via: lyDo === "abort" ? "heldNoDurableUrgent" : "gateRejectedNoDurableUrgent",
+      latchStepId: q.chot?.stepId ?? null,
+      ma: q.chot?.ma ?? null,
+      khongRoStepIds: rows.filter((r) => !r.stepId.startsWith("abort:") && loiLaKetCucKhongRo(r.error)).map((r) => r.stepId),
+      forwardDropped: rows.find((r) => laLoiKhongGuiChot(r.error))?.stepId ?? null,
+      khongXacNhan: q.khongXacNhan,
+      urgentDurable: q.urgentBen,
+      recipients: q.nguoiNhan ?? null,
+      stopSweep: { sent: x.stops.sent.length, failed: x.stops.failed.length, unverified: x.stops.unverified.length, untakenBranch: x.stops.untakenBranch },
+      reason: x.reason?.trim() || null,
+      humanDecision: Number.isSafeInteger(user.id) && user.id > 0,
+    });
+  } catch (err) {
+    console.error(`[FOE] run ${runId}: end-of-run obligation not recorded: ${(err as Error)?.message ?? err}`);
+  }
 }
 
 /**
@@ -1945,11 +2059,19 @@ function baoKetCucKhongRo(rc: RunContext, a: Parameters<NonNullable<RunStore["ke
   rc.khongRoDaBao = true;
   try {
     // m-K — a failure whose own outcome is KNOWN, on a latched run: the words say so
-    return rc.store.ketCucKhongRo?.(rc, loiLaKetCucKhongRo(a.error) ? a : { ...a, biet: true }) ?? undefined;
+    return giuBao(rc, rc.store.ketCucKhongRo?.(rc, loiLaKetCucKhongRo(a.error) ? a : { ...a, biet: true }) ?? undefined);
   } catch (err) {
     console.error(`[FOE] run ${rc.runId}: outcome-unknown report failed: ${(err as Error)?.message ?? err}`);
     return undefined;
   }
+}
+
+/** A2(n) T7 — an URGENT's answer, kept for the end gate (rc.baoCho). Never rejects. */
+function giuBao(rc: RunContext, p: Promise<boolean> | void | undefined): Promise<boolean> | undefined {
+  if (!p) return undefined;
+  const q = p.catch(() => false);
+  (rc.baoCho ??= []).push(q);
+  return q;
 }
 
 /** R1b-2b-2a A2(n) — set the central-written resume state of one step in the walk's context (persisted with it). */
@@ -3322,11 +3444,24 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     status = "completed";
     patch = { finishedAt: new Date() };
   }
+  // A2(n) T7 — THE end gate (quyetDinhKetThuc; decision 1, H1, H2): a latched central walk ends only on a durable URGENT and never while a STOP is owed on the rows. A hold or a pause is no end:
+  // it only records that the latch is told (DA_BAO). An edge walker's end is central's to decide (applyEdgeSegmentEnd)
+  let giuCong = false;
+  if (rc.store.kind === "central" && daChotKhongRo(rc)) {
+    const ketThuc = status === "completed" || status === "failed" || status === "aborted";
+    const q = await quyetDinhKetThuc({ rc, chiDoi: !ketThuc }, "walk");
+    if (q.moi && q.chot) rc.context[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] = { stepId: q.chot.stepId, at: new Date().toISOString() };
+    if (ketThuc && q.ghi === "held") {
+      status = "held";
+      patch = { currentStepId: null, error: q.loi };
+      giuCong = true;
+    }
+  }
   const written = await rc.store.setStatusUnlessAborted(rc.runId, status, patch);
   // A2(n) (M-5) — held (or paused) over an unknown outcome: the URGENT already said Continue. A lost context never turns that into 'failed': the
   // run stays as it is, a Continue re-walks and splits again (the forward key is replayed, never a new attempt)
   // (m-N) — the same for ANY end of a latched run that a person answers (a gate inside a compensation)
-  if ((out.kind === "held" && out.reason === "outcomeUnknown") || (out.kind !== "failed" && (loiKhongRoKet !== undefined || daChotKhongRo(rc)))) {
+  if (giuCong || (out.kind === "held" && out.reason === "outcomeUnknown") || (out.kind !== "failed" && (loiKhongRoKet !== undefined || daChotKhongRo(rc)))) {
     await rc.store.persistContext(rc).catch((err: unknown) => console.error(`[FOE] run ${rc.runId}: context not persisted on an outcome-unknown hold: ${(err as Error)?.message ?? err}`));
   } else {
     await rc.store.persistContext(rc);
@@ -3945,7 +4080,8 @@ export async function startRun(
             // FAIL-SAFE — drive nền không được ném ra ngoài (không có ai await).
             const message = err instanceof Error ? err.message : String(err);
             // doc 80 ORC-01 (fix round 1) — conditional: an exception AFTER an abort never turns 'aborted' into 'failed'.
-            await setRunStatusUnlessAborted(asyncRunId, "failed", { finishedAt: new Date(), error: message }).catch(() => undefined);
+            // A2(n) T7 (C1) — through the end gate: a STOP owed, or no durable URGENT, holds the run
+            await ketThucNgoaiLe(asyncRunId, message).catch(() => undefined);
           }
         })();
       });
@@ -3960,11 +4096,9 @@ export async function startRun(
     const message = err instanceof Error ? err.message : String(err);
     // doc 80 ORC-01 (fix round 1) — conditional write: an exception AFTER an abort (e.g. persistContext
     // throwing) must not overwrite 'aborted' with 'failed'. 0 rows written ⇒ report 'aborted'.
-    let wroteFailed = true;
-    if (runId != null) {
-      wroteFailed = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => true);
-    }
-    return { ok: false, enabled: true, runId, status: wroteFailed ? "failed" : "aborted", message };
+    // A2(n) T7 (C1) — through the end gate: a STOP owed, or no durable URGENT, holds the run
+    const ghi = runId != null ? await ketThucNgoaiLe(runId, message) : "failed";
+    return { ok: false, enabled: true, runId, status: ghi, message };
   }
 }
 
@@ -4299,6 +4433,8 @@ export async function resumeRun(
             `FOE reject run ${runId} gate row`,
           ).catch(() => undefined);
         }
+        // A2(n) T7 (decision B, 3a) — a PERSON's rejection ends a latched run whatever its URGENT did: one bounded URGENT and the audit, after the sweep. A system rejection is not this
+        if (Number.isSafeInteger(user.id) && user.id > 0) await nghiaVuKetThucNguoi(runId, user, "gateRejected", { live: liveRuns.get(runId) ?? null, ctx0: (run.contextJson as Record<string, unknown> | null) ?? {}, owner: run.startedBy ?? null, stops: abortStops, reason: reason ?? null });
         return { abortStops, confirmed };
       };
       // doc 81 Đợt 7 task I6 — the rejection is finished (sweep, hook, final write, gate row) AT MOST ONCE per call, whichever
@@ -4591,9 +4727,9 @@ export async function resumeRun(
     // state change — surface them as-is; never mark the run failed for them.
     if (err instanceof TRPCError) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    // doc 80 ORC-01 (fix round 1) — conditional write (see startRun): never 'aborted' → 'failed'.
-    const wroteFailed = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message }).catch(() => true);
-    return { ok: false, enabled: true, runId, status: wroteFailed ? "failed" : "aborted", message };
+    // doc 80 ORC-01 (fix round 1) — conditional write (see startRun): never 'aborted' → 'failed'. A2(n) T7 (C1, R3-A) — through the end gate
+    const ghi = await ketThucNgoaiLe(runId, message);
+    return { ok: false, enabled: true, runId, status: ghi, message };
   }
 }
 
@@ -6246,6 +6382,8 @@ export async function abortRun(
     if (khongRoHuy.length > 0) void ghiAuditKetCucKhongRo(user, runId, "abort", { via: "abort", stepIds: khongRoHuy, reason: reason?.trim() || null, confirmed });
     // doc 81 Đợt 6 — skip every non-STOP step, still send the remaining STOP steps and the due STOP compensations.
     const abortStops = await abortStopSweep(runId, run, lateLive ?? live ?? null, user, scopeFor(user, opts.scope));
+    // A2(n) T7 (decision B) — the order: the status, the sweep, then one bounded URGENT and the audit. Neither blocks
+    await nghiaVuKetThucNguoi(runId, user, "abort", { live: lateLive ?? live ?? null, ctx0: (run.contextJson as Record<string, unknown> | null) ?? {}, owner: run.startedBy ?? null, stops: abortStops, reason });
     if (confirmed === "unknown") {
       return {
         ok: false,

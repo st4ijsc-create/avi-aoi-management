@@ -93,6 +93,8 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
       // I-4 — the REAL alert (its durable dedup on the notifications table, inside the test transaction) when a case asks for it
       // (to the run owner only: the dedup is per recipient; every admin / supervisor of `_test` would outlast the transaction)
       if (H.thatAlert) await orig.raiseCriticalStopAlert({ ...(a as object), recipients: [990_915_201] } as never);
+      // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers) (the real one answers itself)
+      else (a.baoBen as ((b: boolean) => void) | undefined)?.(true);
     },
   };
 });

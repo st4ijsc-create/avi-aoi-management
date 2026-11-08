@@ -230,7 +230,8 @@ beforeEach(() => {
   phanLoaiMock.mockReset();
   phanLoaiMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
   alertMock.mockReset();
-  alertMock.mockImplementation(async () => undefined);
+  // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+  alertMock.mockImplementation(async (a: Record<string, unknown>) => void (a.baoBen as ((b: boolean) => void) | undefined)?.(true));
 });
 
 const FAILED = { ok: false, simulated: false, status: "failed", results: [], commandLogIds: [] } as never;

@@ -65,7 +65,8 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
 // would outlast the transaction and trip the getDb trap)
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
-  return { ...orig, raiseCriticalStopAlert: async () => undefined };
+  // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void (a.baoBen as ((b: boolean) => void) | undefined)?.(true) };
 });
 
 import * as conn from "../../../db/connection";

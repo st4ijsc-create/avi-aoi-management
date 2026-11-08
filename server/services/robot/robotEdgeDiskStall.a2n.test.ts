@@ -51,7 +51,8 @@ vi.mock("../ot/adapterFacade", () => ({
 }));
 vi.mock("./criticalStopAlert", async (orig) => ({
   ...(await orig<typeof import("./criticalStopAlert")>()),
-  raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a),
+  // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+  raiseCriticalStopAlert: async (a: Record<string, unknown>) => void (H.alerts.push(a), (a.baoBen as ((b: boolean) => void) | undefined)?.(true)),
 }));
 vi.mock("../edge/edgeCentralCommon", async (orig) => ({ ...(await orig<typeof import("../edge/edgeCentralCommon")>()), nodeProtocolVersion: async () => 2, centralSigner: () => ({}) }));
 vi.mock("../edge/edgeNodeCommands", async (orig) => ({ ...(await orig<typeof import("../edge/edgeNodeCommands")>()), commandsForNode: async () => ({ signed: [], unsignedStops: [], incomplete: false }) }));

@@ -71,6 +71,8 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
     ...orig,
     raiseCriticalStopAlert: async (a: Record<string, unknown>) => {
       H.alerts.push(a);
+      // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+      (a.baoBen as ((b: boolean) => void) | undefined)?.(true);
     },
   };
 });

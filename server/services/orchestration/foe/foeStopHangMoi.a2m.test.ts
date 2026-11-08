@@ -109,7 +109,8 @@ beforeEach(() => {
   H.phanLoai.mockReset();
   H.phanLoai.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
   H.alert.mockReset();
-  H.alert.mockImplementation(async () => undefined);
+  // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+  H.alert.mockImplementation(async (a: Record<string, unknown>) => void (a.baoBen as ((b: boolean) => void) | undefined)?.(true));
 });
 
 describe("A2(m) M7 — orchestrationActionId never truncates", () => {

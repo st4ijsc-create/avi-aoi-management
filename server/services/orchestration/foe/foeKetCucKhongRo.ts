@@ -150,6 +150,11 @@ export function daDuyetBuTruKhongRo(ctx: Record<string, unknown> | null | undefi
 /** S-1 — run-context key (central-written, the moment an unknown outcome is decided): { stepId, ma, at }. Codes and ids only. Never cleared: the doubt stays with the run. */
 export const KET_CUC_KHONG_RO_CHOT_CTX_KEY = "foeKetCucKhongRoChot";
 /**
+ * A2(n) T7 (decision 1, plan point 4) — run-context key (central-written, by the end gate foeRunStore.quyetDinhKetThucAnh): { stepId, at }. A durable URGENT about this run's latch exists: a later end
+ * of the run needs no new one. Never written by an edge (edgeContextPolicy keeps central keys out). Absent ⇔ the obligation stands (the scan of T12 reads it).
+ */
+export const KET_CUC_KHONG_RO_DA_BAO_CTX_KEY = "foeKetCucKhongRoDaBao";
+/**
  * S-1 — is this run latched, from its context alone? The latch, a marker, the central-written list of an edge's unknown steps, or any resume state saying
  * so (an edge run's are central's to derive: the edge walker never writes the latch key). The walker adds its in-memory flag (rc.khongRoChot).
  */
@@ -379,7 +384,7 @@ export const KHONG_RO_DANG_BAY_AUDIT_OP = "foe_outcome_unknown_in_flight_at_latc
  * (KHONG_RO_KHONG_NGUOI_NHAN_AUDIT_OP, action KET_CUC_KHONG_RO_AUDIT_ACTION). Bounded; never throws. Callers do not await it on a STOP's path.
  * A2(n) T2 — true ⇔ the URGENT is stored: the alert said so (no word is not a yes) and there was somebody to tell (M4: the log, the stream and the audit row are no URGENT).
  */
-export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number | null; entityType?: string }): Promise<boolean> {
+export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number | null; entityType?: string; /** A2(n) T7 — how many people it went to (the Abort's audit, decision B) */ soNguoiNhan?: (n: number) => void }): Promise<boolean> {
   try {
     let nguoi: number[] = [];
     try {
@@ -396,6 +401,7 @@ export async function canhBaoKetCucKhongRo(a: CanhBaoKhongRo & { owner: number |
       /* the owner only */
     }
     const recipients = [...new Set([a.owner ?? 0, ...nguoi])].filter((u) => Number.isSafeInteger(u) && u > 0);
+    a.soNguoiNhan?.(recipients.length);
     const n = noiDungCanhBaoKhongRo(a);
     const { raiseCriticalStopAlert } = await napCanhBao();
     let ben = false;
@@ -470,6 +476,22 @@ export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined): string {
   if (vi?.nguon === "driverLoi") return `${dau} is not confirmed out: it may have reached the device (${vi.ma}). The run is held: Abort sends it again.`;
   if (vi?.nguon === "tuChoi") return `${dau} did NOT go out: it was refused before it reached a driver (${vi.ma}). The run is held: Abort sends it again.`;
   return `${dau} did NOT go out: nobody could read its pins. The run is held: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent.`;
+}
+/**
+ * A2(n) T7 (decision 1, H2, H18) — the run's error when the end gate holds it for want of a durable URGENT: the code first, then what nobody was told, then the way out. A Continue walks to the gate again
+ * and tries the URGENT again; an Abort ends the run whatever the URGENT does (decision B). Never "the run ended".
+ */
+export function loiGiuKhongBen(runId: number, x: { ma?: MaKetCucKhongRo | null; khongXacNhan?: readonly string[] }): string {
+  const tay = "The run is held and nothing further goes forward: Continue tries the URGENT again, Abort ends the run. Check the machine on site.";
+  const dau = x.ma
+    ? `${x.ma}: run ${runId} has a command whose outcome is unknown, and no URGENT about it could be stored: nobody has been told.`
+    : `FOE_OUTCOME_UNKNOWN: run ${runId} has a STOP central could not confirm, and no URGENT about it could be stored: nobody has been told.`;
+  const ds = x.khongXacNhan?.length ? ` STOP ${x.khongXacNhan.map((id) => `"${id}"`).join(", ")}: reported handed over, not confirmed by central.` : "";
+  return `${dau}${ds} ${tay}`;
+}
+/** A2(n) T7 — the run's error when its end could not read its step rows: nothing says no STOP is owed, so it does not end. */
+export function loiGiuChuaDocHang(runId: number, ma: MaKetCucKhongRo | null): string {
+  return `${ma ?? "FOE_OUTCOME_UNKNOWN"}: run ${runId}: its step records could not be read at its end, so whether a STOP is still owed cannot be told. The run is held: Continue walks it to its end again, Abort ends it and sends its STOPs. Check the machine on site.`;
 }
 const docViChuaRa = (v: unknown): ViChuaRa | undefined => {
   const x = v as { nguon?: unknown; ma?: unknown } | null | undefined;

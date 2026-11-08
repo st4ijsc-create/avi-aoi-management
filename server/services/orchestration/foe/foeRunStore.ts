@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 
 const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
@@ -375,6 +375,148 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: 
   }
   for (const id of xong) no.delete(id);
   return no;
+}
+
+// ── A2(n) T7 — THE end decision of a run (decision 1, B, H1, H2, H18, M4; plan point 3) ────────────────────────────────────────────────────────────────────────────────────
+
+/** Why a run reaches an end. walk / edgeSegment / exception: no durable URGENT, or a STOP still owed ⇒ held. abort / gateRejected (a person): always an end (decision B). */
+export type LyDoKetThuc = "walk" | "edgeSegment" | "exception" | "abort" | "gateRejected";
+export interface HangKetThuc {
+  stepId: string;
+  status?: string;
+  error?: string | null;
+  resultJson?: unknown;
+}
+/** What the gate is given: the database's picture of the run, plus what a live walk holds in memory beside it. */
+export interface AnhKetThuc {
+  runId: number;
+  ctx: Record<string, unknown>;
+  owner: number | null;
+  /** the run's step rows; null ⇔ they could not be read (nothing can say then that no STOP is owed) */
+  rows: ReadonlyArray<HangKetThuc> | null;
+  /** names the owner of a marked compensation in its URGENT, as the report path does */
+  def?: Pick<WorkflowDefinition, "steps"> | null;
+  /** central's live walk: its latch, the STOPs it left owed, the URGENTs it raised (a bounded row write may be the one lost) */
+  boNho?: { chot: { stepId: string; ma: MaKetCucKhongRo } | null; chuaRa: Iterable<string>; baoCho: ReadonlyArray<Promise<boolean>> };
+  /** an edge segment: the URGENTs of the reports riding on its end, and the latch they carry */
+  daCo?: ReadonlyArray<Promise<boolean>>;
+  chotTuBao?: { stepId: string; ma: MaKetCucKhongRo } | null;
+  /** a hold or a pause: no end. Waits for what is on its way, raises nothing new */
+  chiDoi?: boolean;
+  /** the claim of a marked row whose result does not name one (the segment's own) */
+  claimSeq?: number;
+}
+export interface KetQuaKetThuc {
+  ghi: "terminal" | "held";
+  /** why held: a STOP owed (H1), no durable URGENT (decision 1, H2, H18), the rows unread */
+  vi: "no" | "khongBen" | "chuaDoc" | null;
+  urgentBen: boolean;
+  chot: { stepId: string; ma: MaKetCucKhongRo } | null;
+  /** the STOPs the rows (and the walk's memory) hold owed */
+  no: string[];
+  /** marked steps whose URGENT is not durable */
+  khongXacNhan: string[];
+  /** this decision established the durability of the latch's URGENT: DA_BAO is to be written */
+  moi: boolean;
+  /** the people the run_end URGENT went to, when this decision raised it */
+  nguoiNhan?: number;
+  /** the run's error when held */
+  loi?: string;
+}
+
+/** true as soon as one says durable; false once all said no, or past `hanMs`. No answer is no yes. */
+async function motBen(ps: ReadonlyArray<Promise<boolean>>, hanMs: number, label: string): Promise<boolean> {
+  if (ps.length === 0) return false;
+  const mot = new Promise<boolean>((resolve) => {
+    let con = ps.length;
+    const xong = () => {
+      con -= 1;
+      if (con === 0) resolve(false);
+    };
+    for (const p of ps) p.then((b) => (b === true ? resolve(true) : xong()), xong);
+  });
+  return withDeadline(mot, hanMs, label).catch(() => false);
+}
+
+/** H18 — the URGENTs of the marked rows, by run + step + form + claim: what the report path raised, for the end gate (in-process; a restart asks again, the durable dedup answers). */
+const benKhongXacNhanCho = new Map<string, Promise<boolean>>();
+const BEN_KHONG_XAC_NHAN_TOI_DA = 5_000;
+const khoaKhongXacNhan = (runId: number, stepId: string, dang: DangKhongXacNhan, claimSeq: number | undefined) => `${runId}:${stepId}:${dang}:${claimSeq ?? "-"}`;
+/** A run that ended forgets its marks' answers. */
+export function quenBenKhongXacNhan(runId: number): void {
+  for (const k of [...benKhongXacNhanCho.keys()]) if (k.startsWith(`${runId}:`)) benKhongXacNhanCho.delete(k);
+}
+/**
+ * A2(n) T5 (H16), T7 (H18) — THE URGENT of a marked step: an edge reports this STOP handed over and central could not verify it. One text and one key for the report path (edgeReportsCentral) and
+ * the end gate: `stepId` the marked step, under its owner when it is a compensation's. Never throws. true ⇔ stored.
+ */
+export function baoKhongXacNhan(x: { runId: number; def?: Pick<WorkflowDefinition, "steps"> | null; stepId: string; dang: DangKhongXacNhan; claimSeq: number | undefined; owner: number | null }): Promise<boolean> {
+  const chu = x.def ? chuBuTruTrongDinhNghia(x.def.steps, x.stepId) : null;
+  const p = canhBaoKetCucKhongRo({ loai: x.dang === "docLoi" ? "stopKhongXacNhanDoc" : "stopGhimLech", runId: x.runId, stepId: chu ? chu.step.id : x.stepId, compId: chu ? x.stepId : KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: `claim${x.claimSeq ?? "-"}`, biet: true, owner: x.owner });
+  if (benKhongXacNhanCho.size >= BEN_KHONG_XAC_NHAN_TOI_DA) benKhongXacNhanCho.delete(benKhongXacNhanCho.keys().next().value as string);
+  benKhongXacNhanCho.set(khoaKhongXacNhan(x.runId, x.stepId, x.dang, x.claimSeq), p);
+  return p;
+}
+/** The claim an edge marked row was reported under (its result's `edge` mark). */
+function claimCuaHang(r: HangKetThuc): number | undefined {
+  const c = (r.resultJson as { edge?: { claimSeq?: unknown } } | null | undefined)?.edge?.claimSeq;
+  return Number.isSafeInteger(c) ? (c as number) : undefined;
+}
+
+/**
+ * A2(n) T7 — THE decision of every end of a run: the walk's own (central's memory comes in `boNho`, its evidence is the rows), an edge segment's end, an exception, an Abort and a person's gate
+ * rejection. Read from the ROWS (C1: an exception never passed duongKetThuc):
+ *   • a STOP still owed (stopChuaRaTuHang, H1): held, whatever the URGENT did. Not for a person's Abort or rejection (decision B: it ends; the Abort sends it);
+ *   • latched (the context's latch, the report's, the rows' code): an end needs a durable URGENT (decision 1). DA_BAO, or one of the URGENTs on their way, or one bounded run_end under the fixed key
+ *     `…run_end:<run>:<latch step>:-:chot`. recipients = 0 is no URGENT (M4: canhBaoKetCucKhongRo). No answer is no yes;
+ *   • a marked row (stopKhongXacNhan, H18), latched or not: its own URGENT durable, else held;
+ *   • the rows unread: held (nothing can say no STOP is owed).
+ * A hold or a pause (`chiDoi`) is no end: it waits for what is on its way and raises nothing. Never throws. Confirmation (decision 3, XAC_NHAN) is T9's: until then every latched end needs its URGENT.
+ */
+export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanMs = 5 * STOP_DB_STEP_DEADLINE_MS): Promise<KetQuaKetThuc> {
+  const nguoi = lyDo === "abort" || lyDo === "gateRejected";
+  const rows = x.rows ?? [];
+  const tuCtx = x.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | null | undefined;
+  const tuHang = chotTuHang(rows);
+  const chot =
+    tuCtx?.stepId != null
+      ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) }
+      : (x.chotTuBao ?? (tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null) ?? x.boNho?.chot ?? null);
+  const no = [...new Set([...stopChuaRaTuHang(rows), ...(x.boNho?.chuaRa ?? [])])];
+  if (x.rows === null && !nguoi) return { ghi: "held", vi: "chuaDoc", urgentBen: false, chot, no, khongXacNhan: [], moi: false, loi: loiGiuChuaDocHang(x.runId, chot?.ma ?? null) };
+  const giuNo = no.length > 0 && !nguoi;
+  const doi = x.chiDoi === true || giuNo; // held is no end: nothing new is raised
+  const dau = rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && dauKhongXacNhan(r.resultJson) !== null);
+  const label = `FOE run ${x.runId} end-of-run URGENT`;
+  let benChot = true;
+  let moi = false;
+  let nguoiNhan: number | undefined;
+  if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null) {
+    benChot = await motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label);
+    if (!benChot && !doi) {
+      benChot = await withDeadline(
+        canhBaoKetCucKhongRo({ loai: "runEnd", runId: x.runId, stepId: chot.stepId, compId: KHONG_CO_BU_TRU, error: chot.ma, lan: "chot", owner: x.owner, soNguoiNhan: (n) => (nguoiNhan = n) }),
+        hanMs,
+        label,
+      ).catch(() => false);
+    }
+    moi = benChot;
+  }
+  const khongXacNhan: string[] = [];
+  for (const r of dau) {
+    const dang = dauKhongXacNhan(r.resultJson) as DangKhongXacNhan;
+    const claimSeq = claimCuaHang(r) ?? x.claimSeq;
+    const cho = benKhongXacNhanCho.get(khoaKhongXacNhan(x.runId, r.stepId, dang, claimSeq));
+    let ben = cho ? await motBen([cho], hanMs, label) : false;
+    if (!ben && !doi) ben = await motBen([baoKhongXacNhan({ runId: x.runId, def: x.def, stepId: r.stepId, dang, claimSeq, owner: x.owner })], hanMs, label);
+    if (!ben) khongXacNhan.push(r.stepId);
+  }
+  const ben = benChot && khongXacNhan.length === 0;
+  const out: KetQuaKetThuc = { ghi: nguoi || (!giuNo && ben) ? "terminal" : "held", vi: null, urgentBen: ben, chot, no, khongXacNhan, moi, ...(nguoiNhan !== undefined ? { nguoiNhan } : {}) };
+  if (nguoi) return out;
+  if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error)) };
+  if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
+  return out;
 }
 
 /** doc 81 Đợt 4 fix round 1 (finding 7) — the step error per reason; the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
@@ -1365,7 +1507,8 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const end: EdgeSegmentEndApply = { ...endTho, error: loiEnd };
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };
-  for (const x of baoKhongRo) void stopKhongXacMinhEdge(runId, endTho.def, x).then((k) => canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null, k)); // dieu-phoi 08/11 T6e-K2
+  // dieu-phoi 08/11 T6e-K2; A2(n) T7 — the URGENTs of what rode on this end: the end gate waits for them (bounded), they are raised whatever this end becomes
+  const daCo = baoKhongRo.map((x) => stopKhongXacMinhEdge(runId, endTho.def, x).then((k) => canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null, k)).catch(() => false));
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
   const stopped = run.status === "aborted" || ctx[FOE_REJECT_CLAIM_CTX_KEY] != null;
   if (stopped || (run.status !== "running" && run.status !== "compensating")) return { ok: true, status: run.status, changed: false };
@@ -1403,6 +1546,35 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
       },
     });
   };
+  /**
+   * A2(n) T7 — THE end gate (quyetDinhKetThucAnh) for an end of this segment, central's, with what rode on it (C1: the same gate as central's own walk). A STOP owed on the rows, or no durable URGENT
+   * for a latched run or a marked row: central holds the run itself (not an edge's hold: no EDGE_HELD mark), a Continue walks to the gate again, an Abort ends it. Else the terminal write, with
+   * DA_BAO when this end made the URGENT durable. N-3 (T8): the wait is bounded, inside the batch's transaction.
+   */
+  const congCuoi = async (): Promise<{ giu: EdgeSegmentEndResult } | { patch: Partial<OrchestrationRun> }> => {
+    const hang = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+    const tuBao = chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId: string; ma: MaKetCucKhongRo } | undefined;
+    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment");
+    const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
+    if (q.ghi === "terminal") return { patch: Object.keys(daBao).length ? { contextJson: { ...ctx, ...chotTuBao, ...daBao } } : {} };
+    const at = new Date().toISOString();
+    const unknown = edgeOutcomeUnknownOf(end);
+    const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
+    return {
+      giu: await write("held", {
+        currentStepId: null,
+        error: q.loi,
+        contextJson: { ...ctx, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: "end gate", ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}), ...chotTuBao, ...daBao },
+      }),
+    };
+  };
+  const ketThuc = async (status: OrchestrationRun["status"], patch: Partial<OrchestrationRun>): Promise<EdgeSegmentEndResult> => {
+    const c = await congCuoi();
+    if ("giu" in c) return c.giu;
+    const out = await write(status, { ...patch, ...c.patch });
+    if (out.ok && out.changed) quenBenKhongXacNhan(runId);
+    return out;
+  };
   switch (end.outcome) {
     case "completed": {
       const rows = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
@@ -1412,7 +1584,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
       if (!allDone || anyRunning) {
         return { ok: false, code: "not_finished", message: `Run ${runId}: the reported step rows do not show every top-level step completed / skipped (or a step is still running) — not completed.` };
       }
-      return write("completed", { finishedAt: new Date() });
+      return ketThuc("completed", { finishedAt: new Date() });
     }
     case "paused": {
       const gate = end.gateStepId ? allStepsOf(end.def.steps).find((s) => s.id === end.gateStepId) : undefined;
@@ -1437,10 +1609,10 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
       // fix review 1 — the walk itself ended aborted (a precondition with onPreconditionFail "abort"): the same terminal status
       // central's own walk writes (finishWalk). A central abort never reaches here (the run is already 'aborted').
       // data-raw-ok: the run's error (the walker's own error text, prefixed with the node)
-      return write("aborted", { finishedAt: new Date(), error: `aborted on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
+      return ketThuc("aborted", { finishedAt: new Date(), error: `aborted on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
     default:
       // data-raw-ok: the run's error (the walker's own error text, prefixed with the node)
-      return write("failed", { finishedAt: new Date(), error: `failed on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
+      return ketThuc("failed", { finishedAt: new Date(), error: `failed on edge node ${end.nodeCode}${end.error ? `: ${end.error.slice(0, 2000)}` : ""}` });
   }
 }
 

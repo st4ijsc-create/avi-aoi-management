@@ -94,6 +94,9 @@ const h = vi.hoisted(() => ({
   audit: [] as Array<Record<string, unknown>>,
   /** A2(n) T5 — evaluateActionPolicy denies these steps; empty ⇒ SEC_PLATFORM off */
   policyTuChoi: new Set<string>(),
+  /** A2(n) T7 — the next write of this run status throws, once (the database drops exactly then); statusThrowLan counts the writes it broke */
+  statusThrow: null as null | string,
+  statusThrowLan: 0,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -272,6 +275,7 @@ import {
   applyEdgeSegmentEnd,
   edgePriorPictureOf,
   autoResumeInterruptedRuns,
+  rehydrateInterruptedRuns,
   FOE_GATE_REQUIRED,
 } from "./foeEngine";
 import { EDGE_HELD_CTX_KEY, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, stopChuaRaTuHang, themBuocHongKhiTiepTuc, withResolvedAdapter } from "./foeRunStore";
@@ -280,7 +284,7 @@ import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
 import { edgeRunStream } from "../../edge/edgeProtocol";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
@@ -390,6 +394,8 @@ beforeEach(() => {
   h.policyTuChoi.clear();
   h.sauTimeout = null;
   h.connCho = null;
+  h.statusThrow = null;
+  h.statusThrowLan = 0;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -415,6 +421,11 @@ beforeEach(() => {
     const set = b.set.bind(b);
     b.set = (v: Row) => {
       status = v.status;
+      if (h.statusThrow !== null && v.status === h.statusThrow) {
+        h.statusThrow = null;
+        h.statusThrowLan++;
+        throw new Error("db down at the run status write (test)");
+      }
       set(v);
       return b;
     };
@@ -2905,6 +2916,22 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
     }
   });
 
+  it("h.statusThrow (T7): on, the next write of that run status throws, once, whichever of 6 concurrent writes gets there; another status and off: written; 10 rounds", async () => {
+    const ID = Array.from({ length: DONG_THOI }, (_, i) => 9_100 + i);
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), ...ID.map((id) => ({ id, status: "running", contextJson: {} }))]);
+    const ghi = (st: string) => dongThoi((i) => Promise.resolve().then(() => fake.update(orchestrationRuns).set({ status: st }).where((r: Row) => r.id === ID[i])).then(() => "ok", () => "nem"));
+    for (let v = 0; v < VONG; v++) {
+      h.statusThrow = "held";
+      h.statusThrowLan = 0;
+      expect(await ghi("failed"), "another status is written").toEqual(Array(DONG_THOI).fill("ok"));
+      expect((await ghi("held")).filter((x) => x === "nem"), "exactly one write breaks").toHaveLength(1);
+      expect(h.statusThrowLan).toBe(1);
+      expect(h.statusThrow, "once: it clears itself").toBeNull();
+      expect(await ghi("held"), "off: every write goes").toEqual(Array(DONG_THOI).fill("ok"));
+      expect(ID.every((id) => runRow(id).status === "held")).toBe(true);
+    }
+  });
+
   it("h.acked: on, the dispatch answers acked; off, simulated", async () => {
     const chay = async (ref: string) => {
       const c = await centralRun(def(ref, [gate(), ot("m1")]), 1);
@@ -4295,12 +4322,15 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(runRow(c).status).toBe("held");
     expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
   });
-  it("K2-HOI confirmed: acked_verified with no durable URGENT: the run ends, by the one path, one STOP", async () => {
+  // A2(n) T7 — expectation changed by decision 1 (owner): was `failed`. cs's acked_verified lifts the hold of cs (R5a, unchanged), it confirms nothing of x, whose outcome is unknown: XAC_NHAN is
+  // the SAME step after its unknown attempt only (plan point 8, decision 3). No URGENT about the latch was stored, so the end gate holds the run
+  it("K2-HOI confirmed: acked_verified with no durable URGENT: the hold of cs ends with its STOP, the run does not: x is still unknown and nobody was durably told (decision 1), one STOP", async () => {
     h.acked = true;
     h.ackStatus = "acked_verified";
     h.alertDurable = false;
     const c = await denHoi("k2hx");
-    expect(runRow(c).status).toBe("failed");
+    expect(runRow(c).status).toBe("held");
+    expect(String(runRow(c).error), "the end gate's words, not the hold of cs").toMatch(/^FOE_OUTCOME_UNKNOWN: run \d+ has a command whose outcome is unknown, and no URGENT about it could be stored/);
     expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
   });
   it("K2-HOI no answer at the last attempt: handed over, not confirmed, a durable URGENT: the run ends (H2)", async () => {
@@ -7639,5 +7669,303 @@ describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the di
     expect(a.khuTrungBenVung, "durable: deduplicated per person and key").toBeDefined();
     chuKhongXacMinh(`${a.title} ${a.message}`);
     expect(h.alerts.map((x) => `${x.title} ${x.message}`).join(" ")).not.toMatch(/Command "st" was NOT handed/);
+  });
+});
+
+// ═══ A2(n) T7 ══════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7 — the end gate: one decision, the debt read from the rows, a durable URGENT (decision 1, B, H1, H2, M4)", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const REF = { status: "rejected", error: "INTERLOCK_NOT_MET: refused" };
+  const KET_THUC = ["completed", "failed", "aborted"];
+  const runEnd = () => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.runEnd);
+  const khoaRunEnd = (c: number, step: string) => `${CANH_BAO_KHONG_RO_KIND.runEnd}:${c}:${step}:${KHONG_CO_BU_TRU}:chot`;
+  const daBao = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY];
+  const auditAbort = (via: string) =>
+    vi
+      .mocked(logCrudOperation)
+      .mock.calls.map((c) => (c[1] as { details?: { operation?: string; metadata?: Record<string, any> } }).details)
+      .filter((d) => d?.operation === "foe_outcome_unknown_abort" && d.metadata?.via === via)
+      .map((d) => d!.metadata!);
+  const ids = () => h.sent.map((x) => String(x.stepId));
+  /** x answers no word: the run latches, x has no compensation of its own */
+  const dX = (ref: string) => def(ref, [gate(), ot("x")]);
+  /** state C: the STOP st refused by its dispatcher, three times, on a latched run. Without a gate the latch is a STOP with no answer (a non-STOP needs a gate approval) */
+  const dV = (ref: string, gateDau = true) => def(ref, [...(gateDau ? [gate()] : []), parF("p", [gateDau ? move("x") : robotStop("x"), box("b", [delay("w", 40), otStop("st")])])]);
+  const vaoC = () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("st", REF);
+  };
+  const tiepTuc = async (c: number, note?: string) => {
+    grantMachineControl();
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    return resumeRun(c, { approved: true, ...(note ? { note } : {}), expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+  };
+  /** G1: latched, nothing durable */
+  const g1 = async (ref: string) => {
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(dX(ref), 1);
+    await wait(20);
+    return c;
+  };
+  /** nobody to tell from here on: the run has no owner any more, and no admin / supervisor is active (M4). x was sent under its owner's gate (a run with no owner sends no non-STOP) */
+  const khongNguoi = (c: number) => {
+    runRow(c).startedBy = null;
+  };
+
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  const BANG: string[] = [];
+  beforeEach(() => {
+    vi.mocked(logCrudOperation).mockClear();
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+  });
+  afterEach(() => {
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    BANG.push(`${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 70)} | ${sau.map((x) => `${String(x.stepId)}:${String(x.name)}`).join(" ") || "-"}`);
+    // by the PIN: an OT stop counts only when every write it carries is a pin of its adapter; a robot's `abort` is the robot rule
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && !h.duocSauKhoa.has(String(x.stepId)));
+    expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached the dispatcher after the latch").toEqual([]);
+  });
+  afterAll(() => {
+    for (const l of BANG) console.log(`[PROBE sau-khoa T7] ${l}`);
+  });
+
+  // ── decision 1: no durable URGENT, no end ──────────────────────────────────────────────────────────────────────────
+  it("G1 central, the URGENT not durable: held, not failed; one run_end URGENT under the fixed key; the run's words say so", async () => {
+    const c = await g1("t7g1");
+    expect(runRow(c).status).toBe("held");
+    expect(runEnd().map((a) => a.dedupKey)).toEqual([khoaRunEnd(c, "x")]);
+    expect(String(runRow(c).error)).toMatch(/^FOE_OUTCOME_UNKNOWN: /);
+    expect(String(runRow(c).error)).toContain("URGENT");
+    expect(daBao(c), "nothing durable: the obligation stands").toBeUndefined();
+  });
+  it("G1b central, the URGENT durable: the run ends as the walk went, the mark DA_BAO is on the run, no run_end beside the walk's own", async () => {
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(dX("t7g1b"), 1);
+    await wait(20);
+    expect(runRow(c).status).toBe("failed");
+    expect(daBao(c)).toMatchObject({ stepId: "x" });
+    expect(runEnd()).toEqual([]);
+  });
+  it("G2 two boots after G1: the held run is not walked again, nothing sent, no URGENT more", async () => {
+    const c = await g1("t7g2");
+    expect(runRow(c).status).toBe("held");
+    const sent = h.sent.length;
+    const n = h.alerts.length;
+    await rehydrateInterruptedRuns();
+    await rehydrateInterruptedRuns();
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(h.sent.length).toBe(sent);
+    expect(h.alerts.length).toBe(n);
+  });
+  it("G3 Continue while the URGENT fails, then once it lands: held, held, then failed; every run_end under the one key", async () => {
+    const c = await g1("t7g3");
+    expect(runRow(c).status).toBe("held");
+    await tiepTuc(c);
+    await wait(20);
+    expect(runRow(c).status, "a Continue that cannot store the URGENT either").toBe("held");
+    h.alertDurable = true;
+    const goc = h.alerts.push.bind(h.alerts);
+    (h.alerts as any).push = (...a: any[]) => {
+      if (a[0]?.kind !== CANH_BAO_KHONG_RO_KIND.runEnd) throw new Error("sendNotification threw (test)");
+      return goc(...a);
+    };
+    try {
+      await tiepTuc(c);
+      await wait(20);
+    } finally {
+      (h.alerts as any).push = goc;
+    }
+    expect(runRow(c).status).toBe("failed");
+    expect(runEnd().map((a) => a.dedupKey)).toEqual([khoaRunEnd(c, "x"), khoaRunEnd(c, "x"), khoaRunEnd(c, "x")]);
+    expect(daBao(c)).toMatchObject({ stepId: "x" });
+  });
+  it("G8 recipients=0 (no owner, no admin / supervisor): not durable whatever the alert says, held (M4)", async () => {
+    const c = await g1("t7g8");
+    expect(runRow(c).status).toBe("held");
+    khongNguoi(c);
+    h.alertDurable = true;
+    h.alerts.length = 0;
+    await tiepTuc(c);
+    await wait(20);
+    expect(runRow(c).status, "the alert says stored, there was nobody to store it for").toBe("held");
+    expect(runEnd().map((a) => a.recipients)).toEqual([[]]);
+    expect(daBao(c)).toBeUndefined();
+  });
+  it("G12 the run_end raise gets no answer (the process stepped aside, nothing stored): no answer is no yes, held", async () => {
+    h.timeoutDispatch.add("x");
+    h.raiseChet = [];
+    const c = await centralRun(dX("t7g12"), 1);
+    await wait(20);
+    const chet = h.raiseChet;
+    h.raiseChet = null;
+    expect(runRow(c).status).toBe("held");
+    expect(chet.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.runEnd).map((a) => a.dedupKey)).toEqual([khoaRunEnd(c, "x")]);
+  });
+  it("G5 walk, then Continue: DA_BAO of the first walk's durable URGENT ends the second one with no new run_end; the STOP went once", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("t7g5", [gate(), box("b", [ot("x", { compensation: ot("cx") })], { compensation: otStop("cs") })]), 1);
+    await wait(30);
+    expect(runRow(c).status, "cx is held for a person").toBe("held");
+    expect(daBao(c), "the walk's URGENT was durable: the latch is told").toMatchObject({ stepId: "x" });
+    h.alertDurable = false;
+    h.duocSauKhoa.add("cx");
+    await tiepTuc(c, "checked on site");
+    await wait(30);
+    expect(KET_THUC).toContain(runRow(c).status);
+    expect(runEnd()).toEqual([]);
+    expect(ids().filter((x) => x === "cs")).toEqual(["cs"]);
+  });
+
+  // ── H1, C1: the debt on the rows holds the run, whatever ended it ──────────────────────────────────────────────────
+  /** `guiDuoc` false: a run that only ever sent STOPs: its Abort's sweep reads "not needed" (runHasActuated), T7b's A-STOPONLY (no-cho-T7b.md). What T7 owes: held, the Abort accepted */
+  const r3a = async (c: number, guiDuoc = true) => {
+    expect(runRow(c).status, "state C: never failed").toBe("held");
+    expect(String(runRow(c).error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
+    expect([...stopChuaRaTuHang(stepRows(c) as never)]).toEqual(["st"]);
+    h.tuChoi.clear();
+    h.sent.length = 0;
+    const a = await abortRun(c, OWNER, "press");
+    await wait(40);
+    expect(a.ok, String(a.message)).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    if (guiDuoc) expect(ids(), "the Abort sends it").toContain("st");
+  };
+  it("R3-A the last 'held' write throws once (resume walk): held, not failed; the Abort sends the STOP", async () => {
+    vaoC();
+    h.statusThrow = "held";
+    const c = await centralRun(dV("t7r3a"), 1);
+    await waitFor(() => h.statusThrow === null && runRow(c).status !== "running", "the end of the walk");
+    await wait(30);
+    expect(h.statusThrowLan, "the injection reached the write").toBe(1);
+    await r3a(c);
+  });
+  it("R3-A sync the same on startRun's own walk (a STOP-only run, latched by a STOP with no answer): held, not failed; the Abort is accepted", async () => {
+    vaoC();
+    h.statusThrow = "held";
+    const d = dV("t7r3as", false);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    await wait(30);
+    expect(h.statusThrowLan).toBe(1);
+    expect(s.status).toBe("held");
+    await r3a(s.runId!, false);
+  });
+  it("R3-A async the same on startRun's background walk (a STOP-only run): held, not failed; the Abort is accepted", async () => {
+    vaoC();
+    h.statusThrow = "held";
+    const d = dV("t7r3aa", false);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER, { async: true });
+    const c = s.runId!;
+    await waitFor(() => h.statusThrowLan === 1 && !["queued", "running", "compensating"].includes(runRow(c).status), "the end of the background walk");
+    await wait(30);
+    await r3a(c, false);
+  });
+
+  // ── decision B: an Abort, a person's gate rejection, end the run whatever the URGENT did: audit, one bounded try ────
+  it("G4 Abort from the held run of G1: aborted, the sweep runs", async () => {
+    const c = await g1("t7g4");
+    expect(runRow(c).status).toBe("held");
+    const a = await abortRun(c, OWNER, "checked");
+    expect(a.ok, String(a.message)).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(a.abortStops).toBeDefined();
+  });
+  it("G4b Abort, the URGENT still fails: aborted; the audit says urgentDurable false, names the latch, the sweep, the reason; the obligation stands", async () => {
+    const c = await g1("t7g4b");
+    const truoc = runEnd().length;
+    const a = await abortRun(c, OWNER, "checked");
+    expect(a.ok).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(runEnd().length - truoc, "one bounded try").toBe(1);
+    const au = auditAbort("heldNoDurableUrgent");
+    expect(au).toHaveLength(1);
+    expect(au[0]).toMatchObject({ runId: c, latchStepId: "x", ma: "FOE_OUTCOME_UNKNOWN", urgentDurable: false, recipients: 1, reason: "checked" });
+    expect(au[0]!.stopSweep).toMatchObject({ sent: expect.any(Number), failed: expect.any(Number), unverified: expect.any(Number), untakenBranch: expect.any(Array) });
+    expect(au[0]!.khongRoStepIds).toEqual(["x"]);
+    expect(daBao(c)).toBeUndefined();
+  });
+  it("G4c Abort, the URGENT lands at its try: aborted; the audit says urgentDurable true; exactly one URGENT more; DA_BAO", async () => {
+    const c = await g1("t7g4c");
+    const truoc = runEnd().length;
+    h.alertDurable = true;
+    const a = await abortRun(c, OWNER);
+    expect(a.ok).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(runEnd().length - truoc).toBe(1);
+    expect(auditAbort("heldNoDurableUrgent")).toMatchObject([{ urgentDurable: true, reason: null }]);
+    expect(daBao(c)).toMatchObject({ stepId: "x" });
+  });
+  it("G4d the audit fails and the URGENT fails: aborted all the same, the sweep not held back", async () => {
+    const c = await g1("t7g4d");
+    vi.mocked(logCrudOperation).mockImplementation(async () => {
+      throw new Error("audit down (test)");
+    });
+    const a = await abortRun(c, OWNER, "checked");
+    expect(a.ok, String(a.message)).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(a.abortStops).toBeDefined();
+    expect(vi.mocked(logCrudOperation).mock.calls.some((x) => (x[1] as { details?: { operation?: string } }).details?.operation === "foe_outcome_unknown_abort"), "the audit was tried").toBe(true);
+  });
+  it("G4e recipients=0, then Abort: aborted; the audit says recipients 0", async () => {
+    const c = await g1("t7g4e");
+    expect(runRow(c).status).toBe("held");
+    khongNguoi(c);
+    const a = await abortRun(c, OWNER);
+    expect(a.ok).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(auditAbort("heldNoDurableUrgent")).toMatchObject([{ recipients: 0, urgentDurable: false }]);
+  });
+  it("A1 (G4f) Abort while the walker is alive, the URGENT fails: aborted, the STOP goes, the obligation stands, the audit is written", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("y", 250);
+    h.alertDurable = false;
+    const d = def("t7a1", [gate(), parF("p", [ot("x"), move("y"), box("b", [delay("w", 30), otStop("st")])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    const c = s.runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => (runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null, "the latch");
+    const a = await abortRun(c, OWNER, "walker alive");
+    await di;
+    await wait(40);
+    expect(a.ok, String(a.message)).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(ids()).toContain("st");
+    expect(auditAbort("heldNoDurableUrgent")).toMatchObject([{ urgentDurable: false, latchStepId: "x", reason: "walker alive" }]);
+    expect(daBao(c)).toBeUndefined();
+  });
+  it("G4h a person rejects the gate of a latched run, the URGENT fails: aborted, an audit, the obligation stands", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 20);
+    h.alertDurable = false;
+    const c = await centralRun(def("t7g4h", [gate(), parF("p", [ot("x"), gate("g2")])]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    expect((runRow(c).contextJson as Record<string, unknown>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toBeTruthy();
+    const r = await resumeRun(c, { approved: false, note: "no", expectedStepId: "g2" }, OTHER);
+    await wait(30);
+    expect(r.status).toBe("aborted");
+    expect(runRow(c).status).toBe("aborted");
+    expect(auditAbort("gateRejectedNoDurableUrgent")).toMatchObject([{ urgentDurable: false, latchStepId: "x", reason: "no" }]);
+    expect(daBao(c)).toBeUndefined();
   });
 });

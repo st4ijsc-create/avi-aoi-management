@@ -52,8 +52,8 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, maTuChoiCua, nguonCuaKetQua } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
-import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, chuBuTruTrongDinhNghia, dauKhongXacNhan, laHangChuaRa, stopKhongXacMinhEdge, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
+import { canhBaoTuAnomalyEdge, maTuChoiCua, nguonCuaKetQua } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, baoKhongXacNhan, dauKhongXacNhan, laHangChuaRa, stopKhongXacMinhEdge, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
 import { commandOf, isRobotKind, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
 export class StreamAnswer extends Error {
@@ -384,8 +384,8 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     // A2(n) T5 (H16) — after the commit, once per step and form: a replayed record never reaches the handler, a later record of a marked step adds nothing. A mismatch is a person's: what went out may not be a STOP
     if (traLoi.http === 200) {
       for (const [id, dang] of khongXacNhan) {
-        const chu = chuBuTruTrongDinhNghia(def.steps, id);
-        void canhBaoKetCucKhongRo({ loai: dang === "docLoi" ? "stopKhongXacNhanDoc" : "stopGhimLech", runId, stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: `claim${req.claimSeq}`, biet: true, owner: run.startedBy ?? null }).then((ben) => {
+        // A2(n) T7 (H18) — THE URGENT of a marked step, one text and one key with the end gate's, which reads its answer
+        void baoKhongXacNhan({ runId, def, stepId: id, dang, claimSeq: req.claimSeq, owner: run.startedBy ?? null }).then((ben) => {
           if (!ben) console.error(`[EdgeReports] run ${runId} step ${id}: the URGENT of a STOP central could not verify (${dang}) is not stored`);
         });
       }

@@ -73,7 +73,8 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
 vi.mock("../runEventStore", () => ({ appendRunEvent: async () => undefined }));
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
-  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void H.alerts.push(a) };
+  // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
+  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void (H.alerts.push(a), (a.baoBen as ((b: boolean) => void) | undefined)?.(true)) };
 });
 
 // A2(n) extension — the crash boundary: the real central store up to the latch's write; after it the store answers as a dead process (nothing lands, nobody is told, no STOP).
