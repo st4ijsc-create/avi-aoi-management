@@ -503,21 +503,23 @@ export function docAnomalyKhongRo(detail: string | null | undefined): BaoCaoKhon
   }
 }
 /** I-5 — the same event for both edge routes (the anomaly and the segment end): the same dedup key, the same text ⇒ one inbox row. */
-export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: number | null): Promise<boolean> {
-  return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner, ...(x.biet ? { biet: true } : {}), ...(x.vi ? { vi: x.vi } : {}) });
+export function canhBaoTuBaoCaoEdge(runId: number, x: BaoCaoKhongRoEdge, owner: number | null, stopKhongXacMinh = false): Promise<boolean> {
+  // dieu-phoi 08/11 T6e-K2 — `stopKhongXacMinh` is CENTRAL's word (stopKhongXacMinhEdge), never the edge's: a forwardNotSent of a step central takes for a pinned STOP, or cannot verify,
+  // says so in the T6e-K1 words. Both edge routes ask the same function, so one event keeps one text (I-5)
+  return canhBaoKetCucKhongRo({ loai: x.loai, runId, stepId: x.stepId, compId: x.compId, error: x.ma, lan: `claim${x.claimSeq}`, owner, ...(x.biet ? { biet: true } : {}), ...(x.vi ? { vi: x.vi } : {}), ...(stopKhongXacMinh && x.loai === "forwardNotSent" ? { stopKhongXacMinh: true as const } : {}) });
 }
 /**
  * I-5, m-H — what central does with an EDGE anomaly: an A2(n) report of a run THIS node is assigned, that `kiem` finds valid (a claim of the run; a step of
  * the assigned definition paired with its own compensation) ⇒ the URGENT; anything else ⇒ nothing beyond the EDGE_ANOMALY audit its caller writes.
  * `kiem` answers the run's owner, or null when the report is not valid. true ⇔ an alert was raised. Never throws.
  */
-export async function canhBaoTuAnomalyEdge(rec: { code: string; runId: number | null; detail?: string | null }, runCuaNode: boolean, kiem: (x: BaoCaoKhongRoEdge) => Promise<{ owner: number | null } | null>): Promise<boolean> {
+export async function canhBaoTuAnomalyEdge(rec: { code: string; runId: number | null; detail?: string | null }, runCuaNode: boolean, kiem: (x: BaoCaoKhongRoEdge) => Promise<{ owner: number | null; stopKhongXacMinh?: boolean } | null>): Promise<boolean> {
   if (rec.code !== KHONG_RO_EDGE_ANOMALY || !runCuaNode || rec.runId == null) return false;
   const x = docAnomalyKhongRo(rec.detail);
   if (!x) return false;
   const hop = await kiem(x).catch(() => null);
   if (!hop) return false;
-  void canhBaoTuBaoCaoEdge(rec.runId, x, hop.owner);
+  void canhBaoTuBaoCaoEdge(rec.runId, x, hop.owner, hop.stopKhongXacMinh === true);
   return true;
 }
 

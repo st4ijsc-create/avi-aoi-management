@@ -53,7 +53,7 @@ import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
 import { KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, maTuChoiCua, nguonCuaKetQua } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
-import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, chuBuTruTrongDinhNghia, dauKhongXacNhan, laHangChuaRa, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
+import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, chuBuTruTrongDinhNghia, dauKhongXacNhan, laHangChuaRa, stopKhongXacMinhEdge, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
 import { commandOf, isRobotKind, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
 export class StreamAnswer extends Error {
@@ -781,7 +781,8 @@ export async function eventsForNode(node: EdgeNodePrincipal, body: unknown): Pro
           const def = a ? await assignedDefinition(tx, a) : null;
           if (!a || !def || x.claimSeq > Number(a.claimSeq ?? 0) || !baoCaoHopLe(def, x)) return null;
           const [r] = await tx.select({ startedBy: orchestrationRuns.startedBy }).from(orchestrationRuns).where(eq(orchestrationRuns.id, rec.runId as number)).limit(1);
-          return { owner: r?.startedBy ?? null };
+          // dieu-phoi 08/11 T6e-K2 — the same answer as the segment end's route (applyEdgeSegmentEnd): one event, one text
+          return { owner: r?.startedBy ?? null, stopKhongXacMinh: await stopKhongXacMinhEdge(rec.runId as number, def, x) };
         });
         // R1b-2b-2a A2(o) AMENDMENT 2 — a write refused for a MISSING safety PLC ⇒ URGENT alert (24 h dedup); EDGE_CONFIG_STALE stays this audit
         const { alertForEdgeAnomaly, alertRecipients } = await import("./edgeConfigCentral");

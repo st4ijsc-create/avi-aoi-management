@@ -7469,23 +7469,29 @@ describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the di
     const an = await analyseDefinition(fake as never, 1, def("t6ebang", [st]), mayMap());
     return { verifier: v.ids.has("s"), unsure: v.unsure.has("s"), dispatcher: dp.pinnedStop, goi: an.verifiedStops.some((x) => x.stepId === "s"), goiUnsure: an.stopsUnsure.includes("s") };
   };
-  it("T6E-BANG every (tag, value) row: the verifier, the dispatcher and the edge package (analyseDefinition) give the same pinned / not pinned; never unsure on a readable pin", async () => {
+  // commit đóng T6e — the edge package (analyseDefinition) compares the RAW write ON PURPOSE, with the edge dispatcher (EP-KIEU-EDGE, outside A2(n)): its column differs from central's
+  // on exactly the rows the coercion changes, and nowhere else
+  const DONG_EP = ['fk="1.5"', 'haltk=" TRUE "', 'haltk="1"', 'haltk="true"', 'nk="5"', 'nks="5"', 'nks="5.0"'];
+  it("T6E-BANG every (tag, value) row: the verifier and the dispatcher give the same pinned / not pinned, never unsure on a readable pin; the edge package (raw, on purpose) differs on the coerced rows only", async () => {
     seedKhai();
     const lech: string[] = [];
+    const khacGoi: string[] = [];
     const bang: string[] = [];
     for (const t of TAGS) {
       for (const v of VALUES) {
         const r = await viTu(t, v);
         bang.push(`${t}=${JSON.stringify(v)} v:${r.verifier ? 1 : 0} d:${r.dispatcher ? 1 : 0} g:${r.goi ? 1 : 0}`);
-        if (r.unsure || r.goiUnsure || r.verifier !== r.dispatcher || r.goi !== r.dispatcher) lech.push(`${t}=${JSON.stringify(v)} verifier:${r.verifier}${r.unsure ? "(unsure)" : ""} dispatcher:${r.dispatcher} package:${r.goi}${r.goiUnsure ? "(unsure)" : ""}`);
+        if (r.unsure || r.goiUnsure || r.verifier !== r.dispatcher) lech.push(`${t}=${JSON.stringify(v)} verifier:${r.verifier}${r.unsure ? "(unsure)" : ""} dispatcher:${r.dispatcher} package:${r.goi}${r.goiUnsure ? "(unsure)" : ""}`);
+        if (r.goi !== r.dispatcher) khacGoi.push(`${t}=${JSON.stringify(v)}${r.goi ? " package-only" : ""}`);
       }
     }
     console.log(`[PROBE t6e-bang] ${bang.join(" ; ")}`);
     expect(lech).toEqual([]);
+    expect(khacGoi.sort(), "the package (raw) differs from central on the coerced rows only, never pinned where central is not").toEqual([...DONG_EP].sort());
   });
   it("T6E-BANG-LOAI2 the rows the gap was: a coercible value equal to the pin is pinned on both sides", async () => {
     seedKhai();
-    for (const [t, v] of [["haltk", "true"], ["haltk", "1"], ["haltk", " TRUE "], ["nk", "5"], ["fk", "1.5"]] as const) expect(await viTu(t, v), `${t}=${JSON.stringify(v)}`).toEqual({ verifier: true, unsure: false, dispatcher: true, goi: true, goiUnsure: false });
+    for (const [t, v] of [["haltk", "true"], ["haltk", "1"], ["haltk", " TRUE "], ["nk", "5"], ["fk", "1.5"]] as const) expect(await viTu(t, v), `${t}=${JSON.stringify(v)}`).toEqual({ verifier: true, unsure: false, dispatcher: true, goi: false, goiUnsure: false }); // the package: raw on purpose (EP-KIEU-EDGE)
   });
   it("T6E-BANG-LOAI1 not pinned stays not pinned on both sides: a coercible value that is not the pin, one that cannot be coerced, null, a type that does not fit, an undeclared tag's string", async () => {
     seedKhai();
@@ -7581,34 +7587,57 @@ describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the di
     expect(String(veSt()[0].message)).toContain('Command "st" was NOT handed to a dispatcher');
   });
 
-  // ── T6e lượt sửa 2 — the edge package's builder (analyseDefinition) coerces by the same function: loại (1) guards, and E-C6 through the REAL package ──
-  it("T6E-GOI-LOAI1 only a STOP enters verifiedStops: a non-STOP command writing \"true\" to the bool pin does not, nor does a plain write; the verifier agrees", async () => {
+  // ── the edge package (analyseDefinition, the REAL one): raw on purpose (commit đóng T6e); loại (1) guards; the same input on an edge run, unlatched and latched ──
+  it("T6E-GOI-LOAI1 only a STOP enters verifiedStops: a pinned STOP does; a non-STOP command writing \"true\" or true to the bool pin does not, nor a plain write; the coerced STOP is no STOP to the package (raw), a STOP to central", async () => {
     seedKhai();
-    const d = def("t6egoi1", [stEp("st"), ot("m", { args: { tagKey: "haltk", value: "true" } }), ot("m2", { args: { tagKey: "haltk", value: true } }), ot("n")]);
+    const d = def("t6egoi1", [otStop("sv", { args: { tagKey: "haltk", value: true } }), stEp("st"), ot("m", { args: { tagKey: "haltk", value: "true" } }), ot("m2", { args: { tagKey: "haltk", value: true } }), ot("n")]);
     const an = await analyseDefinition(fake as never, 1, d, mayMap());
-    expect(an.verifiedStops.map((x) => x.stepId)).toEqual(["st"]);
+    expect(an.verifiedStops.map((x) => x.stepId)).toEqual(["sv"]);
     expect(an.stopsUnsure).toEqual([]);
-    expect([...(await verifiedStopStepIds(d, mayMap(), fake as never)).ids]).toEqual(["st"]);
+    expect([...(await verifiedStopStepIds(d, mayMap(), fake as never)).ids].sort()).toEqual(["st", "sv"]);
   });
-  const tuChoiEdge = (ly: string) => ({ status: "rejected", error: "AUTHORIZATION_REQUIRED", detail: { edge: true, stop: false, reason: "AUTHORIZATION_REQUIRED", refusal: `stop_not_pinned:${ly}` } });
-  it("T6E-EC6-EP a STOP writing \"true\" to a declared bool pin, edge run, the REAL package: central pinned it, the edge dispatcher refuses (value_mismatch): one URGENT stopGhimLechChuaGui names st, run failed, 0 PDU, no 'NOT handed'", async () => {
-    seedKhai();
-    const d = def("t6eec6", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), stEp("st")])])]);
-    const e = await denBuoc(d);
+  /** the edge segment's package is analyseDefinition's, not the harness's claimPackage (whose verifier coerces: HARNESS-GOI-THAT, T13) */
+  const goiThat = async (e: EdgeHarness, d: WorkflowDefinition) => {
     const an = await analyseDefinition(fake as never, e.runId, d, mayMap());
-    expect(an.verifiedStops.map((x) => x.stepId), "the real package verifies st").toEqual(["st"]);
-    e.suaGoi = (p) => ({ ...p, verifiedStops: an.verifiedStops, stopsUnsure: an.stopsUnsure }); // the package of this segment is analyseDefinition's, not the harness's claimPackage
-    h.timeoutDispatch.add("x");
-    h.tuChoi.set("st", tuChoiEdge("value_mismatch")); // classifyEdgeOtStop's own reason for this write (the edge does not coerce, EP-KIEU-EDGE)
-    h.tuChoiKhongGhi.add("st");
+    e.suaGoi = (p) => ({ ...p, verifiedStops: an.verifiedStops, stopsUnsure: an.stopsUnsure });
+    return an;
+  };
+  it("T6E-Q1 an edge run NOT latched, a STOP writing \"true\" to the declared bool pin, the REAL package: as the base: asks /authorize, goes with its authorisation, completed", async () => {
+    seedKhai();
+    h.dispatcherThat = true;
+    const d = def("t6eq1", [gate(), stEp("st")]);
+    const e = await denBuoc(d);
+    expect((await goiThat(e, d)).verifiedStops, "the package: raw, no verified STOP").toEqual([]);
     const s = await edgeSegment(e, 2);
     await wait(30);
+    expect(e.authorizeCalls.map((a) => a.stepId)).toContain("st");
+    const giao = h.sent.filter((x) => x.stepId === "st");
+    expect(giao.length).toBeGreaterThan(0);
+    expect(giao.every((x) => (x.edge as { authorization?: unknown } | null)?.authorization != null && x.khongGhi !== true), "handed over with its authorisation, written").toBe(true);
+    expect(s.out.outcome).toBe("completed");
+    expect(runRow(e.runId).status).toBe("completed");
+    expect(hang(e.runId, "st")).toMatchObject({ status: "completed" });
+  });
+  // dieu-phoi 08/11 T6e-K2 — was: E-C6 through a package that coerced (lượt sửa 2, reverted by the commit đóng). The package is raw: the edge never hands st over and names it forward
+  // work; central, which takes st for a pinned STOP, says so in the T6e-K1 words, in the run's durable URGENT. The edge's behaviour is the base's
+  it("T6E-EC6-EP a STOP writing \"true\" to a declared bool pin, edge run LATCHED, the REAL package: not sent, 0 PDU, run failed; central's durable URGENT names st in the T6e-K1 words (dieu-phoi 08/11 T6e-K2), never 'Command … NOT handed'", async () => {
+    seedKhai();
+    h.dispatcherThat = true;
+    const d = def("t6eec6", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), stEp("st")])])]);
+    const e = await denBuoc(d);
+    expect((await goiThat(e, d)).verifiedStops, "the package: raw, no verified STOP").toEqual([]);
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    await wait(60);
     expect(s.out.outcome).toBe("failed");
-    const lech = h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopGhimLechChuaGui);
-    expect(lech.map((a) => a.dedupKey.split(":").slice(2, 4)), "exactly one URGENT, by name").toEqual([["st", "-"]]);
+    expect(runRow(e.runId).status).toBe("failed");
     expect(h.sent.filter((x) => x.stepId === "st" && x.khongGhi !== true), "0 PDU").toEqual([]);
     expect(noCua(e.runId).size, "not state C").toBe(0);
-    expect(runRow(e.runId).status).toBe("failed");
-    expect(veSt().map((a) => `${a.title} ${a.message}`).join(" ")).not.toMatch(/"st" was NOT handed/);
+    expect(veSt(), "exactly one URGENT names st").toHaveLength(1);
+    const a = veSt()[0];
+    expect(a.kind).toBe(CANH_BAO_KHONG_RO_KIND.forwardNotSent);
+    expect(a.khuTrungBenVung, "durable: deduplicated per person and key").toBeDefined();
+    chuKhongXacMinh(`${a.title} ${a.message}`);
+    expect(h.alerts.map((x) => `${x.title} ${x.message}`).join(" ")).not.toMatch(/Command "st" was NOT handed/);
   });
 });

@@ -409,6 +409,32 @@ export function gateRequiredError(stepId: string, reason: GateRequiredReason): s
 /** A central database handle (the pool, or a transaction of it). */
 export type RunDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
+/**
+ * dieu-phoi 08/11 T6e-K2 — an edge's forwardNotSent of a stop-typed step that CENTRAL's own verifier takes for a pinned STOP, or cannot verify: the edge package compares the raw
+ * write (EP-KIEU-EDGE, with the edge dispatcher), central the coerced one, so a STOP central would send may be named as forward work. Its URGENT then says it is a STOP whose pin the sweep
+ * could not verify (the T6e-K1 words), never "Command … NOT handed". A read-only answer of central (verifyStopsForAbort: bounded, read failure ⇒ unsure); past the bound or on any
+ * error ⇒ false (the words stay as they were). Nothing on the wire changes: the edge never says it.
+ */
+export async function stopKhongXacMinhEdge(runId: number, def: WorkflowDefinition | null | undefined, x: { loai: string; stepId: string }): Promise<boolean> {
+  if (x.loai !== "forwardNotSent" || !def) return false;
+  try {
+    return await withDeadline(
+      (async () => {
+        const s = allStepsOf(def.steps).find((y) => y.id === x.stepId);
+        if (!s || s.type !== "command") return false;
+        const map = await loadMachines([...new Set(allStepsOf(def.steps).filter((y) => y.type === "command").map((y) => (y as { machineId: number }).machineId))]);
+        if (!(await laStopTheoBuoc(s, map))) return false;
+        const v = await verifyStopsForAbort(runId, { steps: [s] } as WorkflowDefinition, map);
+        return v.ids.has(s.id) || v.unsure.has(s.id);
+      })(),
+      2 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${runId} step ${x.stepId} STOP words`,
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function loadMachines(ids: number[]): Promise<Map<number, MachineForValidation>> {
   const map = new Map<number, MachineForValidation>();
   if (ids.length === 0) return map;
@@ -1339,7 +1365,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const end: EdgeSegmentEndApply = { ...endTho, error: loiEnd };
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };
-  for (const x of baoKhongRo) void canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null);
+  for (const x of baoKhongRo) void stopKhongXacMinhEdge(runId, endTho.def, x).then((k) => canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null, k)); // dieu-phoi 08/11 T6e-K2
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
   const stopped = run.status === "aborted" || ctx[FOE_REJECT_CLAIM_CTX_KEY] != null;
   if (stopped || (run.status !== "running" && run.status !== "compensating")) return { ok: true, status: run.status, changed: false };
