@@ -118,6 +118,8 @@ export interface AuthorizeInput {
   idempotencyKey: string;
   /** A2(n) T5 — the walker's reading of the latch at this ask: only a latched run takes the marked route */
   daChot?: boolean;
+  /** A2(n) T6c (Q2) — stop-typed, and the walker's own STOP check of it threw: no answer, never "not pinned". On a latched run it takes the marked route as an unreadable pin does (decision 2, A) */
+  chuaDocGhim?: true;
 }
 
 /**

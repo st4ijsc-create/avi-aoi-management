@@ -6896,6 +6896,8 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
   const stopTyped = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 }, ...extra }) as never;
   const ids = () => h.sent.map((x) => x.stepId as string);
   const sentOf = (id: string) => h.sent.filter((x) => x.stepId === id);
+  /** the hand-over carries no authorisation: the marked route */
+  const khongUyQuyen = (x: Record<string, unknown>) => (x.edge as { authorization?: unknown } | null | undefined)?.authorization == null;
   const hang = (runId: number, id: string) => stepRows(runId).find((r) => r.stepId === id);
   const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
   const authCua = (e: EdgeHarness, id: string) => e.authorizeCalls.filter((a) => a.stepId === id).length;
@@ -6936,7 +6938,12 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
 
   const LA_STOP = new Set(["abort", "stop", "e_stop"]);
   const BANG: string[] = [];
-  beforeEach(() => vi.mocked(logCrudOperation).mockClear());
+  /** what one case lets through the table, said there: a fake that answers no answer has not proved it wrote nothing */
+  const mien = new Set<string>();
+  beforeEach(() => {
+    vi.mocked(logCrudOperation).mockClear();
+    mien.clear();
+  });
   afterEach(() => {
     delete process.env.FOE_DURABLE;
     const sau = h.sent.filter((x) => x.sauKhoa === true);
@@ -6947,7 +6954,7 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       const w = (x.writes ?? []) as Array<{ tagKey: string }>;
       return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
     };
-    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true);
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true && !mien.has(String(x.stepId)));
     expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
   });
   afterAll(() => {
@@ -6959,7 +6966,7 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     const { e } = await q2Edge("q2a");
     // (1) the marked route: handed to the dispatcher with no authorisation, never refused at the door
     expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
-    expect(sentOf("nt").every((x) => x.edge?.authorization == null), "the marked route carries no authorisation").toBe(true);
+    expect(sentOf("nt").every(khongUyQuyen), "the marked route carries no authorisation").toBe(true);
     expect(authCua(e, "nt"), "the marked route asks nobody").toBe(0);
     expect(String(hang(e.runId, "nt")?.error ?? "")).not.toMatch(khongGui);
     // (4) the dispatcher said: no pinned STOP. Nothing written (afterEach), forward work not sent, named, and no word says a STOP went
@@ -6975,7 +6982,7 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
   it("Q2-EDGE-NEM-T6c (2) the same, the dispatcher refuses it before any driver (ADAPTER_OFFLINE): state C, stop_not_sent names nt, the run held; never failed FOE_NOT_SENT_RUN_LATCHED in silence", async () => {
     const { e, s } = await q2Edge("q2b", offline);
     expect(sentOf("nt").length).toBeGreaterThan(0);
-    expect(sentOf("nt").every((x) => x.edge?.authorization == null)).toBe(true);
+    expect(sentOf("nt").every(khongUyQuyen)).toBe(true);
     expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
     expect(runRow(e.runId).status).toBe("held");
     expect(String(hang(e.runId, "nt")!.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" did NOT go out/);
@@ -6999,6 +7006,41 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(hangDau().some((r) => String(r.id).includes("-nt")), "on a marked row: only the dispatcher's own verdict sends it").toBe(true);
     expect(noCua(e.runId).has("nt"), "still owed").toBe(true);
     expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
+  });
+  it("Q2-EDGE-NEM-T6c (2b) a STOP compensation, the edge's STOP check throws: the marked route, refused before any driver: state C under its owner, the run held", async () => {
+    const e = await denBuoc(def("q2d", [gate(), move("x", { compensation: stopTyped("cs") })]));
+    e.laStopNem = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("cs");
+    h.tuChoi.set("cs", { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+    h.tuChoiKhongGhi.add("cs");
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    await wait(60);
+    expect(sentOf("cs").length).toBeGreaterThan(0);
+    expect(sentOf("cs").every(khongUyQuyen), "the marked route").toBe(true);
+    expect(authCua(e, "cs"), "the marked route asks nobody").toBe(0);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(String(hang(e.runId, "cs")!.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "cs" did NOT go out/);
+    expect(urgentCua("stopNotSent").map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["x", "cs"]]);
+  });
+  it("Q2-EDGE-NEM-T6c (4b) maxAttempts 2: answered not pinned, then no answer: never told as refused with nothing written", async () => {
+    const e = await denBuoc(def("q2e", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt", { maxAttempts: 2 })])])])]));
+    e.laStopNem = true;
+    h.ghim = PIN_BAD;
+    h.duocSauKhoa.add("nt");
+    h.tuChoiLan.set("nt", [{ status: "rejected", error: "AUTHORIZATION_REQUIRED", detail: { edge: true, stop: false, reason: "AUTHORIZATION_REQUIRED", refusal: "stop_not_pinned:no_pins" } }]);
+    h.tuChoiKhongGhi.add("nt");
+    h.timeoutSauTuChoi.add("nt");
+    mien.add("nt"); // the fake's "no answer" comes before its pin check (h.dispatcherThat is not asked): the real edge dispatcher refuses an unpinned stop with no authorisation (classifyEdgeOtStop)
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(60);
+    expect(sentOf("nt").length, "handed over again after the answer").toBeGreaterThan(1);
+    expect(veBuoc("nt").map((a) => String(a.message)).join(" "), "the last answer was none: nothing says it was refused").not.toContain("refused by its dispatcher");
+    expect(buocBo()).not.toContain("nt");
   });
   it("Q2-EDGE-NEM-T6c đối chứng central: the same tree, central's pins unreadable: the marked route, 0 PDU, state C, stop_not_sent:nt, held", async () => {
     h.ghim = PIN_BAD;

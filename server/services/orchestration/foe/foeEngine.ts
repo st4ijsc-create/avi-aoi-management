@@ -647,6 +647,10 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongGuiDs?: string[];
   /** A2(n) T6a fix 1 (P1) — the last pass's reading: stop-typed steps whose pin read ANSWERED "not pinned". No STOP: forward work, read once, by the planner. */
   khongGhimCuoi?: Set<string>;
+  /** A2(n) T6c (Q2) — stop-typed steps whose STOP check of this walk did not answer (it threw): unreadable, never "not pinned". The store's marked route takes them (decision 2, A). */
+  phanLoaiKhongDoc?: Set<string>;
+  /** A2(n) T6c (Q2, item 4) — stop-typed steps of the marked route its dispatcher answered "no pinned STOP" for, with the code: forward work dropped, told in words true of what happened. */
+  dispatcherNoiKhongGhim?: Map<string, string>;
   /** A2(n) T6 (m-P) — compensations whose own unknown outcome a person was told of in this walk: once. */
   buTruKhongRoDaBao?: Set<string>;
   /** A2(n) (C-6) — STOP work running beside the walk: passes, and a STOP compensation started at the door. Side by side, never chained; finishWalk settles them. */
@@ -1390,6 +1394,9 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
   const chuaGui = async (s: WorkflowStep) => {
     const n = nhan.get(s.id);
     // P1 — a stop-typed step whose pin read answered "not pinned" at the last pass is no STOP: dropped forward work like any other, row or no row (F4: unreadable is not this)
+    // T6c (Q2, item 4) — the last hand-over of this walk, on the marked route, was answered "no pinned STOP" before any driver: nothing written, forward work dropped all the same.
+    // An edge keeps no row of it (its evidence reads "may have gone out"): the answer itself is the evidence, and only the last attempt's
+    if (n !== "xong" && rc.dispatcherNoiKhongGhim?.has(s.id) === true) return true;
     return n === "chuaGui" || (n === "chuaDen" && (rc.khongGhimCuoi?.has(s.id) === true || !(await laStopTheoBuoc(s, rc.machineById))));
   };
   const ten: string[] = [];
@@ -1573,7 +1580,7 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
     }),
   );
   plan.notPinned = xep.filter((x) => x.la !== "chuaDoc").map((x) => x.id);
-  if (cuoi) rc.khongGhimCuoi = new Set(xep.filter((x) => x.la === "khong").map((x) => x.id)); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4)
+  if (cuoi) rc.khongGhimCuoi = new Set([...xep.filter((x) => x.la === "khong").map((x) => x.id), ...plan.notPinnedUntaken]); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4). T6c (Q1) — and a branch never evaluated: never sent, named
   for (const x of xep) if (x.la === "chuaDoc" && x.s) viec.push(guiMotStop(rc, x.s, loi));
   if (cuoi) {
     if (plan.untakenBranch.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch, latched: true });
@@ -1794,9 +1801,14 @@ function luotDiCua(rc: RunContext): string {
 
 async function laBuTruStop(rc: RunContext, comp: WorkflowStep): Promise<LaStop> {
   try {
-    return rc.store.buTruLaStopGhim ? await rc.store.buTruLaStopGhim(rc, comp) : "khong";
+    const la = rc.store.buTruLaStopGhim ? await rc.store.buTruLaStopGhim(rc, comp) : "khong";
+    rc.phanLoaiKhongDoc?.delete(comp.id);
+    return la;
   } catch {
-    return (await isStopCandidate(comp, rc.machineById).catch(() => false)) ? "chuaDoc" : "khong"; // A2(n) T5 (C-2) — a read that failed is no answer: not "not a STOP" (decision 2, A). A non-STOP stays out
+    const la = (await isStopCandidate(comp, rc.machineById).catch(() => false)) ? "chuaDoc" : "khong"; // A2(n) T5 (C-2) — a read that failed is no answer: not "not a STOP" (decision 2, A). A non-STOP stays out
+    // T6c (Q2) — and the hand-over knows it: the store's own sets would read "not pinned" where nothing answered (an edge asks /authorize, the sink refuses, nobody is told)
+    if (la === "chuaDoc") (rc.phanLoaiKhongDoc ??= new Set()).add(comp.id);
+    return la;
   }
 }
 
@@ -2925,12 +2937,14 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   // The EDGE store (doc 81 Đợt 10 C) answers a NON-STOP command with central's per-step /authorize (a verified STOP never asks —
   // L-7): stopped ⇒ the local abort (non-STOP steps stop, STOPs still sent); stale ⇒ this walker lets go of the run without
   // writing it; unavailable ⇒ HELD (D5: nothing sent, no compensation). The central store only ever refuses.
-  const auth = await rc.store.authorizeCommand(rc, step, attempt, { isStop, robotKind, rawArgs, descriptor, cap, idempotencyKey, daChot: daChotKhongRo(rc) && !rc.chiGuiStopGhim });
+  // A2(n) T6c (Q2) — a STOP check of this walk that threw is no answer: the store takes the marked route for it, as for pins it could not read
+  const chuaDocGhim = isStop && rc.phanLoaiKhongDoc?.has(step.id) === true;
+  const auth = await rc.store.authorizeCommand(rc, step, attempt, { isStop, robotKind, rawArgs, descriptor, cap, idempotencyKey, daChot: daChotKhongRo(rc) && !rc.chiGuiStopGhim, ...(chuaDocGhim ? { chuaDocGhim: true as const } : {}) });
   if (!auth.ok) {
     switch (auth.verdict) {
       case "refused":
         tt.vi = { nguon: "tuChoi", ma: maTuChoiCua({ error: auth.error }) };
-        tt.khongGhim = rc.store.stopDocDuocKhongGhim?.(step.id) === true;
+        tt.khongGhim = !chuaDocGhim && rc.store.stopDocDuocKhongGhim?.(step.id) === true;
         return { kind: "failed", error: auth.error };
       case "stopped":
         void stopLiveRunForCentralAbort(rc.runId, EDGE_GUARD_ABORT_USER).catch(() => undefined);
@@ -2998,6 +3012,7 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   const already = Array.isArray(rc.context[DISPATCHED_CTX_KEY]) ? (rc.context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : [];
   if (!already.includes(step.id)) rc.context[DISPATCHED_CTX_KEY] = [...already, step.id];
   (rc.dangGui ??= new Map()).set(step.id, laStopGiao); // A2(n) (c) — in flight
+  rc.dispatcherNoiKhongGhim?.delete(step.id); // T6c — only the answer to THIS hand-over counts
   let result: EquipmentCommandResult;
   try {
     result = await adapter.sendCommand(cmd);
@@ -3021,7 +3036,11 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
     const ma = maTuChoiCua({ error: result.error, status: result.status, detail: result.detail as { reason?: unknown } | null | undefined });
     const khongQuyet = rc.store.dispatcherKhongQuyetDuoc?.(result) === true || (auth.stopChuaDocGhim === true && ma === "NOT_CONFIRMED");
     tt.vi = { nguon: khongQuyet ? "doc" : nguonCuaKetQua(String(result.status), ma, robotKind), ma };
-    if (rc.store.dispatcherNoiKhongGhim?.(result) === true) tt.khongGhim = true;
+    if (rc.store.dispatcherNoiKhongGhim?.(result) === true) {
+      tt.khongGhim = true;
+      // T6c (Q2, item 4) — the marked route's own answer: no pinned STOP. Forward work dropped, and the end of the walk names it in words true of it (it WAS handed over)
+      if (auth.stopChuaDocGhim === true) (rc.dispatcherNoiKhongGhim ??= new Map()).set(step.id, ma);
+    }
   }
   // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).
   // A2(n) (I-2) — an unknown outcome survives a failed write of this row (its throw would read as a KNOWN failure: retried, compensated)
@@ -3267,7 +3286,10 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
   }
   // A2(n) (decision 3) — forward work dropped: said in its own words, whatever else this walk told. T6 (H13) — one URGENT per branch dropped, read by duongKetThuc
-  for (const id of rc.khongGuiDs ?? []) baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan: luotDiCua(rc) });
+  for (const id of rc.khongGuiDs ?? []) {
+    const ma = rc.dispatcherNoiKhongGhim?.get(id); // T6c — handed over and answered "no pinned STOP": not "NOT handed to a dispatcher" (H11)
+    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan: luotDiCua(rc), ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}) });
+  }
   let status: OrchestrationRun["status"];
   let patch: Partial<OrchestrationRun>;
   if (out.kind === "paused") {
@@ -5728,6 +5750,8 @@ interface AbortPlan {
   unverified: string[];
   untakenBranch: string[];
   notPinned: string[];
+  /** A2(n) T6c (Q1) — stop-typed steps of a branch never evaluated whose pins the verifier READ and found none: no STOP, never sent; forward work a latched walk names (H13) */
+  notPinnedUntaken: string[];
 }
 
 /**
@@ -5735,7 +5759,7 @@ interface AbortPlan {
  * still holds STOPs nobody reached), and the compensations due are the walker's reach, not every step that started. A branch never evaluated stays a list (M1).
  */
 async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v: StopVerification, chot?: { chuDenHan: ReadonlySet<string> }): Promise<AbortPlan> {
-  const plan: AbortPlan = { send: [], unverified: [], untakenBranch: [], notPinned: [] };
+  const plan: AbortPlan = { send: [], unverified: [], untakenBranch: [], notPinned: [], notPinnedUntaken: [] };
   const seen = new Set<string>();
   const classify = async (s: CommandWorkflowStep) => {
     if (seen.has(s.id)) return;
@@ -5772,10 +5796,15 @@ async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v:
           else {
             // never evaluated ⇒ no guess: its STOPs (real or possible) are listed, not sent
             for (const x of allStepsOf([...s.then, ...(s.else ?? [])])) {
-              if (x.type === "command" && (v.ids.has(x.id) || v.unsure.has(x.id)) && !seen.has(x.id)) {
+              if (x.type !== "command" || seen.has(x.id)) continue;
+              if (v.ids.has(x.id) || v.unsure.has(x.id)) {
                 seen.add(x.id);
                 plan.untakenBranch.push(x.id);
+                continue;
               }
+              // T6c (Q1) — the same verification answered "not pinned" for a stop-typed one: no STOP, not listed as one; still never sent, nothing read again. What the sweep sees is unchanged (`seen`)
+              const c = commandOf(x, src.machineById);
+              if (c && !isRobotKind(c.cap.adapterKind) && (await isOtStopCommandType(c.descriptor.name))) plan.notPinnedUntaken.push(x.id);
             }
           }
           break;

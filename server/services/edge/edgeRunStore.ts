@@ -430,8 +430,9 @@ export class EdgeRunStore extends EdgeStoreBase {
     // L-7 — a VERIFIED STOP (robot abort / pinned OT stop, verified centrally into the package) never asks anyone.
     if (this.verifiedStopIds.has(step.id) || (x.robotKind && x.isStop)) return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null, stopXacMinh: true };
     // A2(n) T5 (F4) — stop-typed, on a latched run, the package could not verify it: NO authorisation at all, so the edge dispatcher sends it only if its own signed snapshot says pinned
-    // (classifyEdgeOtStop); anything else there answers AUTHORIZATION_REQUIRED. Nothing else comes through here.
-    if (x.daChot === true && x.isStop && !x.robotKind && this.unsureStopIds.has(step.id)) {
+    // (classifyEdgeOtStop); anything else there answers AUTHORIZATION_REQUIRED. Nothing else comes through here. T6c (Q2) — the walker's own STOP check threw: no answer either, the same route
+    const chuaDoc = this.unsureStopIds.has(step.id) || x.chuaDocGhim === true;
+    if (x.daChot === true && x.isStop && !x.robotKind && chuaDoc) {
       this.khongUyQuyen.add(step.id);
       return { ok: true, cmd: bindEdge(probe, { authorization: null, run, source: "local" }), args, approval: null, stopChuaDocGhim: true, ghimKhongDoc: true };
     }
@@ -466,7 +467,7 @@ export class EdgeRunStore extends EdgeStoreBase {
         run,
         source: "local",
       });
-      return { ok: true, cmd, args, approval, ...(x.isStop && this.unsureStopIds.has(step.id) ? { ghimKhongDoc: true as const } : {}) };
+      return { ok: true, cmd, args, approval, ...(x.isStop && chuaDoc ? { ghimKhongDoc: true as const } : {}) };
     }
     // A2(n) (b) — central's second check: the run is latched, this compensation not approved. Nothing sent; the walker holds it (foeEngine.execCommand)
     if (out.code === "outcome_unknown_held") {
