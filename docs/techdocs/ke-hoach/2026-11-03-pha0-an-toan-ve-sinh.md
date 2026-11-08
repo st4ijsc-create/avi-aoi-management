@@ -104,6 +104,32 @@
 
 route sống · trang không import · router 0 client · `notifications` 24 h **theo nguồn** (2 bộ dò = 0) + `mqtt_alert_history` THROUGHPUT_LOW không luồng = 0 · kích thước 6 bảng rác · `ot_telemetry` hàng/24 h · cửa lệnh ngoài dispatcher (census) · `rolsuper/rolbypassrls` của app · lỗi CSP console · cỡ bundle client · số khoá `.env` trùng.
 
+
+### 9.1 Kết quả "SAU" chính thức — kiem‑dinh 2026‑11‑08 (main b81a28cce, `:3000` build 90b980a24, DEV chỉ đọc; báo cáo `D:\SOURCES\_kd_out\PHA0-SAU.md`)
+
+| Chỉ số | Trước (04/11, main 46a7fd639) | Sau (08/11) | Ghi chú |
+|---|---|---|---|
+| Route có path | 236 (193 thật + 41 redirect) | 234 (42 redirect) | |
+| Trang không import | 6 (1 445 LOC) | **0** | |
+| Router 0 client / tổng | 30 / 263 | 24 / 249 | |
+| `notifications` · `alert_escalations` · `predictive_*` · `simulation_runs` | 56 460 · 7 779 · 992+1 635 · 84 127 | **0 · 0 · 0 · 0** | |
+| `mqtt_alert_history` | 3 221 | 75 | hàng mới sau xoá (rule còn bắn; AL0‑2 theo dõi) |
+| `vram_events` | 66 443 | 10 781 | job retention TẮT có chủ đích |
+| `machine_status_logs` | 95 971 | 97 776 | không xoá (OEE đọc) |
+| `machine_health_history` / `rul_estimates` | 2,88 M / 2,86 M | 2,997 M / 2,996 M | hàng > 90 d tái sinh 14 210 / 14 192; retention cắt tiếp; < 200 MB chỉ ở 30‑T8 |
+| `ot_telemetry` hàng/24 h | 18,97 M | **93 296** | −99,5 %; nguồn 1 699 máy gỡ (E0‑2), T0‑2 đo 2 h |
+| Kích thước DB | 73 GB | **44 GB** | `ot_telemetry` còn 41 GB (hypertable cũ; dọn ở 30‑T1/T8) |
+| App DB role | `avi_app` | `avi_app`, không super, không bypassrls | |
+| `.env` khoá trùng | 1 | **0** | |
+| Cửa lệnh ngoài dispatcher (grep vị trí gọi) | — | **không đổi** | hành vi C0‑8 chứng minh bằng test; gỡ cửa thật ở 50‑C1/C2 |
+| Lỗi console / HTTP ≥ 400 (24 lượt tải công khai) | — | 0 / 0 | |
+| Vi phạm CSP mỗi lượt tải | — | **1** (`script-src 'eval'` từ `assets/schemas-*.js` — zod 4 thăm dò `new Function`) | ⚠ xem P0‑3 bên dưới |
+| Bundle client | (không ghi đơn vị) | 48,4 MB; JS 841 chunk, 37,0 MB raw / 7,79 MB gzip; tải đầu 3,25 MiB raw / 0,83 MiB gzip | ≈ +20 % tải đầu so với trước (so xấp xỉ) → backlog 90‑P5 |
+
+Hành vi: Q0‑2 DEV không phân biệt được hai công thức (13 236 serial duy nhất, 0 NTF, 87,34 %) — chứng minh bằng test SQL thật (FPY 50 vs proxy 77,78); Q0‑4 DEV có 0 `quality_gates` — chỉ test chứng minh; ngưỡng yield FY 0 hàng cấu hình ⇒ mặc định 90 như cũ; bản build có chứa mã mới (grep dist). **Chưa đo**: trang trong app sau đăng nhập — cần tài khoản test cho kiem‑dinh (chủ dự án).
+
+**P0‑3 bước 2 — phát hiện làm đổi cách đo**: mỗi lượt tải trang luôn sinh đúng 1 vi phạm CSP (zod eval‑probe); server đếm được (`avi_aoi_security_events_total{csp_violation}` = 26 sau các lượt của kiem‑dinh) nhưng **log throttle 5 dòng/phút ⇒ đếm log là đếm thiếu**. Hệ quả: (1) "ngày 1" 0/0 thật ra = **không có lượt tải nào**, vô giá trị cho enforce; (2) phải đọc `/metrics` và chụp trước mỗi restart; (3) tiêu chí "0 vi phạm" không đạt được khi chưa xử lý zod ⇒ **sửa nhỏ `z.config({ jitless: true })` ở điểm vào client** (luong‑ui, nhánh nhỏ, kiem‑dinh đo lại phải 0 vi phạm/lượt) — không ghi ngoại lệ vì che vi phạm eval thật. **Mốc P0‑3 bước 2 tính lại từ lúc bản `jitless` chạy trên `:3000`**, và chỉ trên cửa sổ có lượt dùng thật.
+
 ## 10. Kết quả lô xoá dữ liệu (dieu‑phoi 2026‑11‑04, DEV `aoi_management`, avi_app, --test-only trước)
 
 | Mục | Trước | Xoá | Còn | Ghi chú |
