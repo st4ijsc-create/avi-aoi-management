@@ -27,10 +27,11 @@ const TEP_RUN_F = `${BENCH_CODEGEN}/agent-f/run-f.mjs`;
 const NHAN_NANG = [
   ["vitest", /vitest/i],
   ["dot-bien", /dot-?bien/i],
-  ["tsc", /\btsc\b|typescript[\\/]lib/i],
+  // tsserver của VS Code và máy chủ MCP / test-server của playwright chạy thường trực, gần như không tốn CPU: không tính.
+  ["tsc", /\btsc(\.js|\.cmd)?\b/i],
   ["esbuild-vite", /esbuild|vite(\.js|\.mjs|\s)/i],
   ["dotnet", /\bdotnet(\.exe)?\b/i],
-  ["playwright", /playwright/i],
+  ["playwright", /@playwright[\\/]test[\\/]cli\.js"?\s+test(?!-server)|\bplaywright\s+test\b/i],
   ["kiem-thuoc", /kiem-thuoc/i],
 ];
 

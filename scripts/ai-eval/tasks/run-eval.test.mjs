@@ -108,6 +108,17 @@ test("nhanTienTrinhNang: trừ chính lượt đo và con cháu, không ghi dòn
   assert.deepEqual(nhanTienTrinhNang([{ pid: 12, cha: 11, lenh: "dotnet build" }], 10), ["dotnet"], "dotnet của người khác vẫn tính");
 });
 
+test("nhanTienTrinhNang: tiến trình thường trực của VS Code và MCP không làm bẩn số đo; tsc và playwright test thật thì có", () => {
+  const nhan = (lenh) => nhanTienTrinhNang([{ pid: 2, cha: 1, lenh }], 9);
+  assert.deepEqual(nhan("Code.exe --max-old-space-size=3072 d:/x/node_modules/typescript/lib/tsserver.js"), []);
+  assert.deepEqual(nhan('"node" C:/npm-cache/_npx/1/node_modules/.bin/../@playwright/mcp/cli.js'), []);
+  assert.deepEqual(nhan('cmd /c npx "@playwright/mcp@latest"'), []);
+  assert.deepEqual(nhan("node node_modules/@playwright/test/cli.js test-server -c playwright.config.ts"), []);
+  assert.deepEqual(nhan("node node_modules/typescript/lib/tsc.js -p tsconfig.tests.json"), ["tsc"]);
+  assert.deepEqual(nhan("npx tsc --noEmit"), ["tsc"]);
+  assert.deepEqual(nhan("node node_modules/@playwright/test/cli.js test e2e/a.spec.ts"), ["playwright"]);
+});
+
 test("tongHopTai: gộp mẫu; sạch chỉ khi không tiến trình nặng và slot không bận", () => {
   const t = tongHopTai([{ cpu: 10, nhan: [] }, { cpu: 30, nhan: ["vitest"] }, { cpu: null, nhan: ["vitest", "tsc"] }], 0);
   assert.deepEqual(t, { soMauTai: 3, cpuTb: 20, cpuMax: 30, tienTrinhNang: { vitest: 2, tsc: 1 }, soLuotSlotBan: 0, sach: false });
