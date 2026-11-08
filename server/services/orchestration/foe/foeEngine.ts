@@ -66,6 +66,7 @@ import {
   laHangChuaRa,
   FOE_NOT_SENT_RUN_LATCHED,
   quyetDinhKetThucAnh,
+  quenBenKhongXacNhan,
   type AnhKetThuc,
   type KetQuaKetThuc,
   type LyDoKetThuc,
@@ -1746,7 +1747,7 @@ async function quyetDinhKetThuc(x: { rc: RunContext; chiDoi?: boolean } | AnhKet
 /** A2(n) T7 — what a live walk holds beside the rows: the first unknown it decided, the STOPs it left owed, the answers of its URGENTs. */
 function boNhoCua(rc: RunContext): NonNullable<AnhKetThuc["boNho"]> {
   const dau = rc.khongRoTai ? [...rc.khongRoTai][0] : undefined;
-  return { chot: dau ? { stepId: dau[0], ma: maKetCucKhongRoCua(dau[1]) } : null, chuaRa: [...(rc.chuaRaStop?.keys() ?? [])], baoCho: rc.baoCho ?? [] };
+  return { chot: dau ? { stepId: dau[0], ma: maKetCucKhongRoCua(dau[1]) } : null, chuaRa: [...(rc.chuaRaStop?.keys() ?? [])], baoCho: rc.baoCho ?? [], viCua: (id) => rc.chuaRaStop?.get(id) };
 }
 
 /** A2(n) T7 — what the database shows of a run for an end with no walk to ask: its context, owner and step rows, bounded by D. null ⇔ not read: never "not latched". */
@@ -1771,12 +1772,13 @@ async function docAnhKetThuc(runId: number): Promise<AnhKetThuc | null> {
 }
 
 /**
- * A2(n) T7 (C1, R3-A) — a walker threw (the last status write, a context write …). Not latched, nothing owed, nothing marked: 'failed' as ever. A STOP owed on the rows, no durable URGENT, or the run
- * unread: held + interrupted, so an Abort still sends what is owed. From the database alone: the memory of a walk that threw is not its evidence. Answers the status written ('aborted' ⇔ an Abort got
- * there first).
+ * A2(n) T7 (C1, R3-A) — a walker threw (the last status write, a context write …). Not latched, nothing owed, nothing marked: 'failed' as ever. A STOP owed, no durable URGENT, or the run unread: held +
+ * interrupted, so an Abort still sends what is owed. T7 lượt sửa 1 (K1) — the rows AND the walk in hand (`live`: its latch, the STOPs it left owed, the answers of its URGENTs): the row of a STOP in
+ * state C is a bounded write and may be the one lost, with the same database trouble that broke the last write. Answers the status written ('aborted' ⇔ an Abort got there first).
  */
-async function ketThucNgoaiLe(runId: number, message: string): Promise<"failed" | "held" | "aborted"> {
-  const anh = await docAnhKetThuc(runId);
+async function ketThucNgoaiLe(runId: number, message: string, live?: RunContext | null): Promise<"failed" | "held" | "aborted"> {
+  const doc = await docAnhKetThuc(runId);
+  const anh: AnhKetThuc | null = doc && live ? { ...doc, ctx: { ...doc.ctx, ...live.context }, def: live.def, boNho: boNhoCua(live) } : doc;
   const q = anh ? await quyetDinhKetThuc(anh, "exception") : null;
   const daBao = q?.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
   if (!q || q.ghi === "held") {
@@ -1787,6 +1789,7 @@ async function ketThucNgoaiLe(runId: number, message: string): Promise<"failed" 
     return ok ? "held" : "aborted";
   }
   const ok = await setRunStatusUnlessAborted(runId, "failed", { finishedAt: new Date(), error: message, ...(anh && Object.keys(daBao).length ? { contextJson: { ...anh.ctx, ...daBao } } : {}) }).catch(() => true);
+  quenBenKhongXacNhan(runId); // T7 lượt sửa 1 (c) — an end through the gate: the marks' answers of this run are no one's any more
   return ok ? "failed" : "aborted";
 }
 
@@ -1836,6 +1839,8 @@ async function nghiaVuKetThucNguoi(runId: number, user: FoeUser, lyDo: "abort" |
     });
   } catch (err) {
     console.error(`[FOE] run ${runId}: end-of-run obligation not recorded: ${(err as Error)?.message ?? err}`);
+  } finally {
+    quenBenKhongXacNhan(runId); // T7 lượt sửa 1 (c) — ended by a person
   }
 }
 
@@ -3458,6 +3463,7 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     }
   }
   const written = await rc.store.setStatusUnlessAborted(rc.runId, status, patch);
+  if (written && rc.store.kind === "central" && (status === "completed" || status === "failed" || status === "aborted")) quenBenKhongXacNhan(rc.runId); // T7 lượt sửa 1 (c)
   // A2(n) (M-5) — held (or paused) over an unknown outcome: the URGENT already said Continue. A lost context never turns that into 'failed': the
   // run stays as it is, a Continue re-walks and splits again (the forward key is replayed, never a new attempt)
   // (m-N) — the same for ANY end of a latched run that a person answers (a gate inside a compensation)
@@ -3987,6 +3993,7 @@ export async function startRun(
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
   }
   let runId: number | undefined;
+  let rcLuot: RunContext | null = null; // T7 lượt sửa 1 (K1) — the walk in hand, for the end gate
   try {
     const d = await db();
     // doc 81 Đợt 7 task I fix 1 — the ref is resolved WITHIN the starter's view (resolveWorkflowByRef: own namespace ›
@@ -4073,15 +4080,17 @@ export async function startRun(
       const asyncRunId = run.id;
       setImmediate(() => {
         void (async () => {
+          let rcNen: RunContext | null = null; // T7 lượt sửa 1 (K1) — the walk in hand, for the end gate
           try {
             const rc = await buildRunContext(run, def, user);
+            rcNen = rc;
             await driveRun(rc);
           } catch (err) {
             // FAIL-SAFE — drive nền không được ném ra ngoài (không có ai await).
             const message = err instanceof Error ? err.message : String(err);
             // doc 80 ORC-01 (fix round 1) — conditional: an exception AFTER an abort never turns 'aborted' into 'failed'.
             // A2(n) T7 (C1) — through the end gate: a STOP owed, or no durable URGENT, holds the run
-            await ketThucNgoaiLe(asyncRunId, message).catch(() => undefined);
+            await ketThucNgoaiLe(asyncRunId, message, rcNen).catch(() => undefined);
           }
         })();
       });
@@ -4089,6 +4098,7 @@ export async function startRun(
     }
 
     const rc = await buildRunContext(run, def, user);
+    rcLuot = rc;
     const status = await driveRun(rc);
     return { ok: status !== "failed" && status !== "aborted", enabled: true, runId: run.id, status };
   } catch (err) {
@@ -4097,7 +4107,7 @@ export async function startRun(
     // doc 80 ORC-01 (fix round 1) — conditional write: an exception AFTER an abort (e.g. persistContext
     // throwing) must not overwrite 'aborted' with 'failed'. 0 rows written ⇒ report 'aborted'.
     // A2(n) T7 (C1) — through the end gate: a STOP owed, or no durable URGENT, holds the run
-    const ghi = runId != null ? await ketThucNgoaiLe(runId, message) : "failed";
+    const ghi = runId != null ? await ketThucNgoaiLe(runId, message, rcLuot) : "failed";
     return { ok: false, enabled: true, runId, status: ghi, message };
   }
 }
@@ -4292,6 +4302,7 @@ export async function resumeRun(
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
   }
+  let rcLuot: RunContext | null = null; // T7 lượt sửa 1 (K1) — the walk in hand, for the end gate
   try {
     const d = await db();
     const scopeChecked = opts.scope !== undefined || (Number.isInteger(user.id) && user.id > 0);
@@ -4708,6 +4719,7 @@ export async function resumeRun(
     // buildRunContext nạp rc.completed từ _run_steps (đã gồm gate vừa đánh dấu completed
     // ở trên + mọi bước đã xong lần trước) → execStep bỏ qua chúng khi đi lại.
     const rc = await buildRunContext(run, def, user);
+    rcLuot = rc;
     delete rc.context[KHONG_RO_DUYET_CTX_KEY]; // only THIS Continue's approval counts (a crash can leave an older one in the row)
     if (lyDoKhongRo !== null) {
       // R1b-2b-2a A2(n) — the Continue passed its checks and won the claim: the approval recorded, the marker cleared (persisted with the walk's
@@ -4728,7 +4740,7 @@ export async function resumeRun(
     if (err instanceof TRPCError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     // doc 80 ORC-01 (fix round 1) — conditional write (see startRun): never 'aborted' → 'failed'. A2(n) T7 (C1, R3-A) — through the end gate
-    const ghi = await ketThucNgoaiLe(runId, message);
+    const ghi = await ketThucNgoaiLe(runId, message, rcLuot);
     return { ok: false, enabled: true, runId, status: ghi, message };
   }
 }

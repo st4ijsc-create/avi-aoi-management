@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 
 const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
@@ -397,7 +397,7 @@ export interface AnhKetThuc {
   /** names the owner of a marked compensation in its URGENT, as the report path does */
   def?: Pick<WorkflowDefinition, "steps"> | null;
   /** central's live walk: its latch, the STOPs it left owed, the URGENTs it raised (a bounded row write may be the one lost) */
-  boNho?: { chot: { stepId: string; ma: MaKetCucKhongRo } | null; chuaRa: Iterable<string>; baoCho: ReadonlyArray<Promise<boolean>> };
+  boNho?: { chot: { stepId: string; ma: MaKetCucKhongRo } | null; chuaRa: Iterable<string>; baoCho: ReadonlyArray<Promise<boolean>>; /** why a STOP it left owed stays owed (its row may be the write lost) */ viCua?: (stopId: string) => ViChuaRa | undefined };
   /** an edge segment: the URGENTs of the reports riding on its end, and the latch they carry */
   daCo?: ReadonlyArray<Promise<boolean>>;
   chotTuBao?: { stepId: string; ma: MaKetCucKhongRo } | null;
@@ -514,7 +514,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   const ben = benChot && khongXacNhan.length === 0;
   const out: KetQuaKetThuc = { ghi: nguoi || (!giuNo && ben) ? "terminal" : "held", vi: null, urgentBen: ben, chot, no, khongXacNhan, moi, ...(nguoiNhan !== undefined ? { nguoiNhan } : {}) };
   if (nguoi) return out;
-  if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error)) };
+  if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error) ?? x.boNho?.viCua?.(no[0] as string)) };
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
   return out;
 }
