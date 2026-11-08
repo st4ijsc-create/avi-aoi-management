@@ -53,6 +53,7 @@ vi.mock("../db", () => {
     createProductInspection: vi.fn(),
     createMeasurementResults: vi.fn(async () => undefined),
     getMachineStats: vi.fn(async () => ({ total: 10, ok: 10, ng: 0, ntf: 0, yieldRate: 100 })),
+    getYieldAlertThresholdByType: vi.fn(async () => null),
     // ⚠ 2026-08-18 — CHUỖI PHÂN CẤP PHẢI PHÂN GIẢI ĐƯỢC. Đường ingest nay SUY mã tenant từ máy
     // (`phamViGhiMay.macTenantChoGhi`) và TỪ CHỐI một máy không ra được nhà máy. Bốn stub cũ trả
     // `undefined` mô tả một cái máy KHÔNG THUỘC NHÀ MÁY NÀO — trạng thái mà lược đồ KHÔNG cho
@@ -91,6 +92,12 @@ vi.mock("../_core/socket", () => ({
   emitYieldWarning: vi.fn(),
   emitDashboardUpdate: vi.fn(),
 }));
+// Hai việc nền "bắn rồi quên" sau mỗi lần ghi (cảnh báo tỉ lệ NG, cổng chất lượng, WIP) nạp động module thật ⇒ mở kết nối DB thật.
+// Khi DB chết, mỗi ca để lại một vòng thử kết nối; dồn qua 14 ca làm các ca sau chậm 20–30 s (chạm trần 30 s, đỏ chập chờn cả trên main).
+// Test này kiểm bản ghi variant, không kiểm hai việc nền ⇒ thay bằng bản rỗng.
+vi.mock("../services/ngRateAlertService", () => ({ checkNgRateAfterInspection: vi.fn(async () => undefined) }));
+vi.mock("../services/qualityGateEvaluator", () => ({ evaluateGatesAfterInspection: vi.fn(async () => undefined) }));
+vi.mock("../services/wipIngestService", () => ({ ingestInspectionToWip: vi.fn(async () => undefined) }));
 vi.mock("../services/mqttService", () => ({
   publishNGAlert: vi.fn(async () => undefined),
   publishPointsConfigChanged: vi.fn(async () => undefined),

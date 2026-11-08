@@ -104,6 +104,7 @@ vi.mock("../db", () => {
       },
     ),
     getMachineStats: vi.fn(async () => ({ total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 100 })),
+    getYieldAlertThresholdByType: vi.fn(async () => null),
     getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
     getLineById: vi.fn(async () => ({ id: 1, code: "LINE-MOCK", workshopId: 1 })),
     getWorkshopById: vi.fn(async () => ({ id: 1, code: "WS-MOCK", factoryId: 1 })),
