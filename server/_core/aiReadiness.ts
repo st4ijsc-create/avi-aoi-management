@@ -52,6 +52,7 @@
  */
 import type { Request, RequestHandler } from "express";
 import type { AnhChupGiamSat } from "../services/ai/giamSatLlamaServer";
+import { tieuDeLlamaServer } from "../services/ai/khoaLlamaServer";
 // Đợt 0.3 — thống kê cổng ưu tiên trước llama-server (module LÁ, chỉ đọc bộ nhớ, không I/O).
 import { thongKeHangDoiLlm as thongKeHangDoiLlmThat } from "../services/ai/hangDoiUuTienLlm";
 
@@ -205,8 +206,7 @@ async function defaultCheckDb(timeoutMs: number): Promise<boolean> {
 }
 
 function authHeaders(env: NodeJS.ProcessEnv): Record<string, string> {
-  const key = (env.LLAMA_SERVER_API_KEY || "").trim();
-  return key ? { authorization: `Bearer ${key}` } : {};
+  return tieuDeLlamaServer(env);
 }
 
 /**

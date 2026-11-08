@@ -51,6 +51,7 @@
  * khác, script đo) bị cắt khi kịch bản giết server; lượt MỚI của họ gặp server chết ⇒ cửa fail-closed chờ
  * ≤ 120 s (không nạp in-process). Tiến trình anh em phủ env theo lựa chọn mới trong ≤ 15 s.
  */
+import { tieuDeLlamaServer } from "./khoaLlamaServer";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -153,8 +154,7 @@ export interface ThongTinProps {
 }
 
 function tieuDe(env: NodeJS.ProcessEnv): Record<string, string> {
-  const key = (env.LLAMA_SERVER_API_KEY || "").trim();
-  return key ? { authorization: `Bearer ${key}` } : {};
+  return tieuDeLlamaServer(env);
 }
 
 async function voiHetGio<T>(ms: number, f: (signal: AbortSignal) => Promise<T>): Promise<T> {
