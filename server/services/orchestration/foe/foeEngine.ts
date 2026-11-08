@@ -647,6 +647,9 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongGuiDs?: string[];
   /** A2(n) T6a fix 1 (P1) — the last pass's reading: stop-typed steps whose pin read ANSWERED "not pinned". No STOP: forward work, read once, by the planner. */
   khongGhimCuoi?: Set<string>;
+  /** A2(n) T6e lượt sửa 1 (dieu-phoi 08/11 T6e-K1, A) — of khongGhimCuoi: stop-typed steps the sweep's verifier read as not pinned while the dispatcher's own predicate, asked at the last pass,
+   *  said a pinned STOP (the pins read at two moments). Not sent, not state C: named, every one, in the words of a STOP whose pin could not be verified. Central only. */
+  khongXacMinhGhim?: Set<string>;
   /** A2(n) T6c (Q2, item 4) — stop-typed steps of the marked route its dispatcher answered "no pinned STOP" for, with the code: forward work dropped, told in words true of what happened. */
   dispatcherNoiKhongGhim?: Map<string, string>;
   /** A2(n) T6d (E-C6) — verified STOPs the edge snapshot refused as not pinned, told once in this walk. */
@@ -1418,6 +1421,11 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
     }
   };
   await di(rc.def.steps, false);
+  // T6e K1 (A) — a STOP whose pin the sweep could not verify is named however its branch was named: every one, never only the first of a sequence
+  for (const id of rc.khongXacMinhGhim ?? []) {
+    const s = findStepDeep(rc.def.steps, id);
+    if (s && !ten.includes(id) && (await chuaGui(s))) ten.push(id);
+  }
   return ten;
 }
 
@@ -1580,7 +1588,9 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
     }),
   );
   plan.notPinned = xep.filter((x) => x.la !== "chuaDoc").map((x) => x.id);
-  if (cuoi) rc.khongGhimCuoi = new Set([...xep.filter((x) => x.la === "khong").map((x) => x.id), ...plan.notPinnedUntaken]); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4). T6c (Q1) — and a branch never evaluated: never sent, named
+  // T6e K1 (A) — "stop" too: the verifier read no pin, the dispatcher's predicate says one (two moments). Still not sent (no direction B here): named, every one, as a STOP not verified
+  if (cuoi) rc.khongXacMinhGhim = new Set(rc.store.kind === "central" ? xep.filter((x) => x.la === "stop").map((x) => x.id) : []);
+  if (cuoi) rc.khongGhimCuoi = new Set([...xep.filter((x) => x.la === "khong" || rc.khongXacMinhGhim?.has(x.id) === true).map((x) => x.id), ...plan.notPinnedUntaken]); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4). T6c (Q1) — and a branch never evaluated: never sent, named
   for (const x of xep) if (x.la === "chuaDoc" && x.s) viec.push(guiMotStop(rc, x.s, loi));
   if (cuoi) {
     if (plan.untakenBranch.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch, latched: true });
@@ -3294,7 +3304,7 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
   // A2(n) (decision 3) — forward work dropped: said in its own words, whatever else this walk told. T6 (H13) — one URGENT per branch dropped, read by duongKetThuc
   for (const id of rc.khongGuiDs ?? []) {
     const ma = rc.dispatcherNoiKhongGhim?.get(id); // T6c — handed over and answered "no pinned STOP": not "NOT handed to a dispatcher" (H11)
-    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan: luotDiCua(rc), ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}) });
+    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan: luotDiCua(rc), ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}) });
   }
   let status: OrchestrationRun["status"];
   let patch: Partial<OrchestrationRun>;

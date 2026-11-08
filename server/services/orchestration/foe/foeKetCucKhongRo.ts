@@ -301,6 +301,8 @@ export interface CanhBaoKhongRo {
   biet?: boolean;
   /** A2(n) T5 — stopNotSent: why. A code, never a driver's text */
   vi?: ViChuaRa;
+  /** A2(n) T6e K1 (dieu-phoi 08/11 T6e-K1, A) — forwardNotSent: a stop-typed step whose pin the STOP sweep could not verify (central's own walk only) */
+  stopKhongXacMinh?: true;
 }
 
 /** The STOP of state C, as the words name it. */
@@ -348,7 +350,10 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
         : a.vi
           ? // T6c (Q2) — handed to its dispatcher on the marked route, answered "no pinned STOP" before any driver: nothing written (H11, true of the source)
             [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was refused by its dispatcher before any driver (${a.vi.ma}): it is no pinned STOP, nothing was written, and nothing further goes forward. Check the machine on site.`]
-          : [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
+          : a.stopKhongXacMinh
+            ? // T6e K1 (A) — the pins read at two moments: the dispatcher's predicate said pinned, the sweep could not verify it. Not sent, no Abort promised (it is no state C)
+              [`STOP-typed step "${a.stepId}" NOT sent: the STOP sweep could not verify its pin`, `Step "${a.stepId}" is a STOP-typed command, but the STOP sweep could not verify it as a pinned STOP, so it was NOT sent, and nothing further goes forward. Check the machine on site and use its direct STOP / E-STOP if needed.`]
+            : [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
       runEnd: [`nothing further goes forward, check the machine on site`, `The run has ended or is waiting; nothing further goes forward. A STOP this run sent, if any, could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopUntakenBranch: [`STOP "${a.stepId}" in a branch never taken: NOT sent`, `STOP step "${a.stepId}" sits in a branch this run never evaluated, so it was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopNotSent: chuStopChuaRa(a),

@@ -138,6 +138,8 @@ export interface KetCucKhongRoBaoCao {
   lan: string;
   /** m-K — `stepId`'s own failure is KNOWN; the doubt is another command's (the run is latched) */
   biet?: boolean;
+  /** A2(n) T6e K1 — forwardNotSent of a stop-typed step whose pin the sweep could not verify (the dispatcher's predicate said pinned). Central only: never on the wire */
+  stopKhongXacMinh?: true;
 }
 
 export type AuthorizeVerdict =

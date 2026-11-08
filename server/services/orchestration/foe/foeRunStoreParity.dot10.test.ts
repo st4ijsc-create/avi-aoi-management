@@ -7490,4 +7490,91 @@ describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the di
       expect(await viTu(t, v), `${t}=${JSON.stringify(v)}`).toEqual({ verifier: false, unsure: false, dispatcher: false });
     }
   });
+
+  // ── T6e lượt sửa 1 (dieu-phoi 08/11 T6e-K1, direction A) — the pin read at two moments: the sweep's verifier read no pin, the dispatcher's own predicate (asked later) says a
+  // pinned STOP. Not sent (direction B, "by the dispatcher", is not this lot), not state C, no Abort promised: named, in the words of a STOP whose pin could not be verified.
+  // Modelled with h.ghim (the dispatcher's predicate) answering pinned for a write device_tags does not pin: nothing of it is sent, so the GHIM table has nothing to forgive.
+  const noCua = (c: number) => stopChuaRaTuHang(stepRows(c) as never);
+  const chuCua = (a: Record<string, any>) => `${a.kind}|${String(a.title)}|${String(a.message).replace(/ \[event [^\]]*\]$/, "")}`;
+  const veSt = () => h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === "st");
+  const khongPin = (id: string) => otStop(id, { args: { tagKey: "run", value: 0 } });
+  async function haiThoiDiem(d: WorkflowDefinition) {
+    seedKhai();
+    h.ghim = PIN_OK;
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(d, 1);
+    await wait(80);
+    return c;
+  }
+  const chuKhongXacMinh = (s: string) => {
+    expect(s).toContain('"st"');
+    expect(s).toMatch(/STOP/);
+    expect(s).toMatch(/could not verify/);
+    expect(s).toContain("NOT sent");
+    expect(s).toContain("Check the machine on site");
+    expect(s).not.toMatch(/Abort/);
+    expect(s).not.toMatch(/NOT handed/);
+  };
+  it("T6E-K1-NP1 two moments, a container never begun: not sent, not state C, exactly one URGENT names st as a STOP whose pin could not be verified; no Abort", async () => {
+    const c = await haiThoiDiem(def("t6ek1np1", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]));
+    expect(ids()).toEqual(["x"]);
+    expect(veSt(), "exactly one URGENT names st").toHaveLength(1);
+    chuKhongXacMinh(`${veSt()[0].title} ${veSt()[0].message}`);
+    expect(noCua(c).size, "not state C").toBe(0);
+    expect(runRow(c).status).toBe("failed");
+  });
+  it("T6E-K1-CUA two moments, reached by the door: not sent, its row says not sent, one URGENT in the words of a STOP not verified (never 'NOT handed')", async () => {
+    const c = await haiThoiDiem(def("t6ek1cua", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), khongPin("st")])])]));
+    expect(ids()).toEqual(["x"]);
+    expect(veSt()).toHaveLength(1);
+    chuKhongXacMinh(`${veSt()[0].title} ${veSt()[0].message}`);
+    expect(noCua(c).size).toBe(0);
+  });
+  it("T6E-K1-SAU two moments, the STOP behind a dropped command of the same sequence: both named, the STOP in its own words (every one, not only the first of the branch)", async () => {
+    await haiThoiDiem(def("t6ek1sau", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [ot("m"), khongPin("st")])])])]));
+    expect(ids()).toEqual(["x"]);
+    expect(urgentCua("forwardNotSent").map((a) => a.dedupKey.split(":")[2]).sort()).toEqual(["m", "st"]);
+    chuKhongXacMinh(`${veSt()[0].title} ${veSt()[0].message}`);
+  });
+  it("T6E-K1-LAP two moments, the walk again (a crash, the boot): never two URGENTs in one walk; the boot's walk says the same words", async () => {
+    const c = await haiThoiDiem(def("t6ek1lap", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]));
+    const dau = veSt().map(chuCua);
+    expect(dau).toHaveLength(1);
+    chet(c, ["g1", "p", "x", "v"]);
+    h.ghim = PIN_OK;
+    await autoResumeInterruptedRuns([c]);
+    await wait(80);
+    expect(ids()).toEqual([]);
+    expect(veSt().map(chuCua), "one URGENT of the boot's walk, the same words").toEqual(dau);
+  });
+  it("T6E-K1-DOI-CHUNG the dispatcher's predicate also says not pinned (one moment): named as forward work in the old words, not as a STOP", async () => {
+    seedKhai();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("t6ek1dc", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]), 1);
+    await wait(80);
+    expect(veSt()).toHaveLength(1);
+    expect(String(veSt()[0].message)).toContain('Command "st" was NOT handed to a dispatcher');
+  });
+  // the edge: its verifier and its own STOP check both read the package (verifiedStops / stopsUnsure), so they never disagree by this mechanism: the shape cannot be built there
+  async function denBuoc(d: WorkflowDefinition) {
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    return e;
+  }
+  it("T6E-K1-EDGE the same model on an edge run: h.ghim is never the edge's word; the package said not pinned, st is forward work dropped, in the old words", async () => {
+    seedKhai();
+    h.ghim = PIN_OK;
+    const e = await denBuoc(def("t6ek1e", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]));
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(40);
+    expect(ids()).toEqual(["x"]);
+    expect(veSt()).toHaveLength(1);
+    expect(String(veSt()[0].message)).toContain('Command "st" was NOT handed to a dispatcher');
+  });
 });
