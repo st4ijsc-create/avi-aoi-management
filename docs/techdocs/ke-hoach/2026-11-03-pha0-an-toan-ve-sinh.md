@@ -41,8 +41,8 @@
 | C0‑4 | `MachineCockpit` bỏ nút "Đề xuất" ngõ cụt (`/control-plane?machineId=` không đọc tham số) | `pages/MachineCockpit.tsx` | grep = 0 |
 | C0‑5 | `CommandConsole`, `RobotControl`, `FleetOrchestration`, `SafetyWorkforce` (phần cộng tác người‑robot) → trang "Mô‑đun robot/AGV sẽ phát triển sau; chỉ xem" sau cờ `ROBOT_CONTROL_ENABLED=false` (không gỡ mã) | 4 trang | Playwright: vào route thấy dải tạm dừng, không mutation |
 | C0‑6 | `mqttClient.sendCommand` (`CHECK_UPDATE/RESTART_APP`) đóng băng cùng FactoryAlert (ẩn nút; server trả `MODULE_PAUSED`) | `MqttClientManagement.tsx` | |
-| C0‑7 | Sửa bug MELSEC `machineId: adapterId` (`mitsubishiEngineeringAdapter.ts:174`) — một dòng, có test | | test đột biến |
-| C0‑8 | Zmotion FFI: `zmotionBasicAdapter.deploy` trả `MODULE_PAUSED` (không gọi `ZmcLink`) tới khi 70 nối qua 50 | `zmotionBasicAdapter.ts:371-436` | test: deploy không chạm `zauxFfi` |
+| C0‑7 | Sửa bug MELSEC `machineId: adapterId` (`mitsubishiEngineeringAdapter.ts:174`) — một dòng, có test | — **XONG 08/11** main 293ebf6d8; fail‑closed `ADAPTER_MACHINE_LOOKUP_FAILED`; backlog c7f ca DB `machineIdCuaAdapter` | test đột biến |
+| C0‑8 | Zmotion FFI: `zmotionBasicAdapter.deploy` trả `MODULE_PAUSED` (không gọi `ZmcLink`) tới khi 70 nối qua 50 | `zmotionBasicAdapter.ts:371-436` — **XONG 08/11** main 293ebf6d8 | test: deploy không chạm `zauxFfi` |
 
 ## 3. 40‑AL0 + 30‑T0 — phiên nền (không chạm scada)
 
@@ -70,7 +70,7 @@
 | F0‑2 | Gỡ router 0 client: `kbVector`, `aiVisionLanguage`, `aiSmartAlertRouting` (tRPC — **service giữ tới 40‑AL6**), `parameterGuardrail` (→ 50 đọc), `ntfClassifier`; sub‑router comment `aiAdvanced.{training,abTest,edge}` + `aiEdgeDeployment.ts`; **bảng `ab_test_*`, `batch_inference_*`, `training_batch_*` GIỮ** (còn mã sống — mig 0590 bỏ khỏi pha 0, quyết ở 80‑F4) | 80‑N9 |
 | F0‑3 | `.env` 13 khoá trùng (phối hợp P0‑7); `.env.example` 5 nhóm cờ AI | |
 | Q0‑1 | Gỡ router chết `inspectionVariant`, `mpVariantSubform`, `thresholdSuggestion`, `measurementSamples`, `spcConfig`; trang chết `SPCAdvanced`, `AnnotationStatistics`, `AnalyticsSettings`, mồ côi `ImageAnnotation`, `ImageComparison`, `BatchImageExport`, `ProductMachineMappingContent`, annotation helpers, `HistoryBatchOperations` (≈ 5 700 LOC) | 60‑N9 census |
-| Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab, chờ kiem‑dinh) | 60‑N3 so khớp 3 bề mặt |
+| Q0‑2 | 6 công thức lệch về `shared/kpiYield.ts`; **"FPY" ở `productionDashboard` + `stationAnalysis` đổi từ proxy ok/total sang FPY THẬT theo serial ⇒ số hiển thị ĐỔI (thường thấp hơn)** — dieu‑phoi báo chủ dự án; ngưỡng yield ingest đọc cấu hình — **lô C xong 06/11** (tho-ca-agent 5ec7eefab → b27640b9a); đo DEV 08/11 chênh 0,00 (13 236 serial duy nhất); **chủ dự án DUYỆT 08/11** → kiem‑dinh rà rồi gộp | 60‑N3 so khớp 3 bề mặt |
 | Q0‑3 | `History` KPI tính server (tạm qua procedure hiện có trên toàn khoảng) — không tính trong trình duyệt | 60‑N4 |
 | Q0‑4 | `qualityGateEvaluator`: pause/stop nay **chỉ là khuyến cáo** (event + alert), không tự đổi `machines.operationStatus` — xong 06/11. **Q0‑4b `acquisitionWorker` qua WAL: HOÃN sang pha 1 (60‑Q2)** — WAL phát lại không mang danh tính máy ⇒ lỗi vĩnh viễn; cần thiết kế riêng (danh tính trong bản ghi WAL) | test gate không UPDATE `machines` |
 | Q0‑5 | `VACUUM FULL inspection_packages` (18 MB/0 hàng); **seed 13 236 KHÔNG xoá** — `product_inspections` là WORM (0279 REVOKE DELETE), chủ dự án chọn giữ 04/11 (60 §2.1‑13 sửa) — 08/11: VACUUM FULL **chưa chạy** (18 MB/0 hàng); **XONG 06:16:46 08/11** (uỷ quyền): đếm lại 0 hàng, owner `aoi`, lock_timeout 5 s, `VACUUM (FULL, ANALYZE)` 13 ms, **18 MB → 80 kB**, vẫn 0 hàng, readyz 200 | kích thước `inspection_packages` |
