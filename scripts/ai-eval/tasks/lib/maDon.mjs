@@ -30,9 +30,9 @@ function loiGiaiKiemThuoc(bai, loai) {
  * Dọn thư mục chấm. Không dọn được thì để lại trong `tmp/` (bị git bỏ qua): kết quả chấm đã có, không được biến thành "thước hỏng".
  * Trên Windows, lời giải quá giờ có thể còn giữ thư mục một lúc (EPERM); bản đầu ném lỗi ở đây và vứt cả lượt đo 09/11.
  */
-export function donThuMuc(dir, tuyChon = { maxRetries: 5, retryDelay: 500 }) {
+export function donThuMuc(dir, xoa = (d) => fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })) {
   try {
-    fs.rmSync(dir, { recursive: true, force: true, ...tuyChon });
+    xoa(dir);
     return true;
   } catch (e) {
     console.error(`không dọn được ${dir}: ${e?.code ?? e}`);
