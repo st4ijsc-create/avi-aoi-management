@@ -6990,23 +6990,6 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(noCua(e.runId).has("nt"), "owed: an Abort sends it").toBe(true);
     expect(buocBo(), "a STOP in state C is its own last word").toEqual([]);
   });
-  it("Q2-EDGE-NEM-T6c (3) Abort on that held run, central cannot read the pins either: nt goes again by the marked route; refused again: still owed, an URGENT names it, no loop", async () => {
-    const { e } = await q2Edge("q2c", offline);
-    expect(runRow(e.runId).status).toBe("held");
-    h.sent.length = 0;
-    h.alerts.length = 0;
-    h.timeoutDispatch.clear();
-    h.classifyLoi = true; // the Abort's own read throws too
-    const a = await abortRun(e.runId, OWNER, "press");
-    await wait(80);
-    expect(a.ok).toBe(true);
-    expect(sentOf("nt").length, "the Abort hands nt to the dispatcher").toBeGreaterThan(0);
-    expect(sentOf("nt").length, "no loop").toBeLessThanOrEqual(3);
-    expect(sentOf("nt").every((x) => x.khongGhi === true), "nothing written").toBe(true);
-    expect(hangDau().some((r) => String(r.id).includes("-nt")), "on a marked row: only the dispatcher's own verdict sends it").toBe(true);
-    expect(noCua(e.runId).has("nt"), "still owed").toBe(true);
-    expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
-  });
   it("Q2-EDGE-NEM-T6c (2b) a STOP compensation, the edge's STOP check throws: the marked route, refused before any driver: state C under its owner, the run held", async () => {
     const e = await denBuoc(def("q2d", [gate(), move("x", { compensation: stopTyped("cs") })]));
     e.laStopNem = true;
@@ -7042,6 +7025,73 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(veBuoc("nt").map((a) => String(a.message)).join(" "), "the last answer was none: nothing says it was refused").not.toContain("refused by its dispatcher");
     expect(buocBo()).not.toContain("nt");
   });
+  // ── Q2-ABORT-T7b (from T6c item 3; dieu-phoi đính chính 08/11 theo 5a): the Abort of that held run, task T7b ─────────────────
+  /** the run held in state C: nt refused before any driver on the marked route, its URGENT says "Abort sends it again" */
+  async function q2Giu(noi: "central" | "edge", ref: string): Promise<number> {
+    if (noi === "edge") return (await q2Edge(ref, offline)).e.runId;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    offline();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(NP1(ref), 1);
+    await wait(60);
+    return c;
+  }
+  const daGuiChu = /\b(was|were|been) sent\b|\bwent out\b/i;
+  /** one Abort by a person, the read still throwing (classifyLoi): what it handed over, and what was told */
+  async function bam(c: number) {
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.timeoutDispatch.clear();
+    h.classifyLoi = true;
+    const a = await abortRun(c, OWNER, "press");
+    await wait(80);
+    return a;
+  }
+  for (const noi of ["central", "edge"] as const) {
+    it(`Q2-ABORT-T7b ${noi}: Abort of the held NP1 run takes the marked route; refused again: aborted, owed on abort:nt, a durable URGENT names nt, pressed again it goes; not a STOP: 0 written, forward work`, async () => {
+      // (A) refused again / the read throws again
+      const c = await q2Giu(noi, `q7${noi[0]}`);
+      expect(runRow(c).status).toBe("held");
+      expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toContain("Abort sends it again");
+      const a1 = await bam(c);
+      expect(a1.ok).toBe(true);
+      expect(runRow(c).status).toBe("aborted");
+      expect(sentOf("nt").length, "the Abort hands nt to the dispatcher on the marked route").toBeGreaterThan(0);
+      expect(sentOf("nt").every((x) => x.khongGhi === true), "refused: nothing written").toBe(true);
+      expect(hangDau().some((r) => String(r.id).includes("-abort-") && String(r.id).endsWith("-nt")), "a marked row: only the dispatcher's own verdict sends it").toBe(true);
+      expect(hang(c, "abort:nt")?.status, "owed on its abort row").toBe("failed");
+      expect(noCua(c).has("nt"), "still owed").toBe(true);
+      const chu1 = veBuoc("nt").map((x) => `${x.title} ${x.message}`).join(" | ");
+      expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
+      expect(chu1, "never says the Abort sent it").not.toMatch(daGuiChu);
+      const n1 = h.sent.length;
+      await wait(150);
+      expect(h.sent.length, "no automatic loop: only a person presses again").toBe(n1);
+      // pressed again, the dispatcher now finds nt pinned: it goes, the debt is gone
+      for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+      const a2 = await bam(c);
+      expect(a2.ok).toBe(true);
+      expect(sentOf("nt").some((x) => x.khongGhi !== true), "it went").toBe(true);
+      expect(hang(c, "abort:nt")?.status).toBe("completed");
+      expect(noCua(c).has("nt"), "the debt is gone").toBe(false);
+      expect(runRow(c).status).toBe("aborted");
+      // (B) a second run, the dispatcher says: no pinned STOP: 0 written, the words are forward work not sent
+      for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = null;
+      h.classifyLoi = false;
+      const c2 = await q2Giu(noi, `q7${noi[0]}b`);
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+      await bam(c2);
+      expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
+      expect(sentOf("nt").every((x) => x.khongGhi === true), "nothing written").toBe(true);
+      expect(veBuoc("nt").map((x) => x.kind), "forward work not sent").toContain(CANH_BAO_KHONG_RO_KIND.forwardNotSent);
+      expect(veBuoc("nt").map((x) => `${x.title} ${x.message}`).join(" | ")).not.toMatch(daGuiChu);
+    });
+  }
   it("Q2-EDGE-NEM-T6c đối chứng central: the same tree, central's pins unreadable: the marked route, 0 PDU, state C, stop_not_sent:nt, held", async () => {
     h.ghim = PIN_BAD;
     h.dispatcherThat = true;
