@@ -611,7 +611,10 @@ export async function syncRunResult(
     // A sync would overwrite the row of a STOP not sent, replace the context (the latch, DA_BAO) and write the status past the gate. Refused, coded, logged; nothing is written.
     const khoa = await lyDoDongBoKhoa(d, run);
     if (khoa) {
-      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written`);
+      const dung = centralStopped(run);
+      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written${dung ? "; central stopped the run: the edge is told to stop" : ""}`);
+      // T7c fix 1 (P1) — central has stopped it (aborted, or a rejection's claim, 'compensating' too): the stale answer above, so the edge stops its walker (an ok:false is "unreachable" to it)
+      if (dung) return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: true, stale: true } };
       return { ok: false, enabled: true, message: `${EDGE_SYNC_RUN_LATCHED}: run ${payload.runId} is latched (${khoa}) — a sync writes none of its steps, context or status; only central ends it.` };
     }
 

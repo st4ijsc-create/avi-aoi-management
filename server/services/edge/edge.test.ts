@@ -187,6 +187,7 @@ import {
 } from "./edgeRuntime";
 import { FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
 import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, loiGiuChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c
+import { stopChuaRaTuHang } from "../orchestration/foe/foeRunStore"; // A2(n) T12-P4
 
 function reset() {
   store.clear();
@@ -767,10 +768,99 @@ describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run 
     await tuChoi(PAYLOAD_XONG, /\(stopChuaRa\)/);
   });
 
-  it("★ T7C-SYNC-KHOA an aborted latched run, a terminal payload: refused, its STOP row is not overwritten", async () => {
+  /** T7c fix 1 (P1) — a latched run central has STOPPED: nothing written, the stale answer (no new field), so the edge is told to stop. */
+  const dungBao = async (payload: Record<string, unknown>, lyDo: RegExp) => {
+    const truoc = anh();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const res = await syncRunResult(payload as never);
+      expect(res).toEqual({ ok: true, enabled: true, data: { runId: 1, stepsApplied: 0, abortRequested: true, stale: true } });
+      expect(anh()).toBe(truoc); // the step rows, the context, the status: byte for byte
+      expect(warn.mock.calls.some((c) => /EDGE_SYNC_RUN_LATCHED/.test(String(c[0])) && /run 1\b/.test(String(c[0])) && lyDo.test(String(c[0])))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  it("★ T7C-KHOA-ABORTED an aborted latched run, a terminal payload: nothing written (st stays), the answer tells the edge to stop (ok, abortRequested)", async () => {
     Object.assign(run1(), { status: "aborted", error: "Aborted by user 12.", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
     rows("orchestration_run_steps").push(hangSt());
-    await tuChoi(PAYLOAD_XONG, /\(chot\)/);
+    await dungBao(PAYLOAD_XONG, /\(chot\)/);
+    expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "st")!.error).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
+  });
+
+  it("★ T7C-KHOA-ABORTED a latched run under a central rejection (compensating + claim), a progress payload: nothing written, abortRequested", async () => {
+    Object.assign(run1(), { status: "compensating", contextJson: { [FOE_REJECT_CLAIM_CTX_KEY]: "tok", [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    await dungBao({ ...PAYLOAD_XONG, status: "running" }, /\(chot\)/);
+  });
+
+  for (const [tag, ctx, coSt] of [
+    ["a STOP owed on the rows", { [FOE_REJECT_CLAIM_CTX_KEY]: "tok" }, true],
+    ["the latch in the context", { [FOE_REJECT_CLAIM_CTX_KEY]: "tok", [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT }, false],
+  ] as const) {
+    it(`★ T7C-KHOA-DUNG-CLAIM central 'compensating' + claim, ${tag}, the edge walking: the real sync's answer reaches the edge, its walker stops (abortRun), st and the run stay`, async () => {
+      Object.assign(run1(), { status: "compensating", contextJson: { ...ctx } });
+      if (coSt) rows("orchestration_run_steps").push(hangSt());
+      const truoc = anh();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      // the edge's own view says st completed: a sync that wrote would overwrite central's row of state C
+      getRunMock.mockImplementation(async (runId: number) => ({ run: { id: runId, status: "running", error: null, currentStepId: "s1", startedAt: new Date(), finishedAt: null }, steps: [{ stepId: "st", stepType: "command", status: "completed", attempt: 2, result: null, error: null, startedAt: new Date(), finishedAt: new Date() }] }) as never);
+      // the local walk: goes on until the edge aborts it, at most 1.2 s
+      let ketThucWalk = "";
+      startRunMock.mockImplementationOnce(async (...a: unknown[]) => {
+        (a[3] as { onStarted: (id: number) => void }).onStarted(77);
+        const until = Date.now() + 1200;
+        while (abortRunMock.mock.calls.length === 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+        ketThucWalk = abortRunMock.mock.calls.length ? "aborted" : "completed";
+        return { ok: true, enabled: true, runId: 77, status: ketThucWalk as "aborted" | "completed" };
+      });
+      // the transport as a host maps central's answer (POST /edge/sync 202 data / tRPC data): ack = ok
+      setCentralSync(async (p) => {
+        const r = await syncRunResult(p as never);
+        return { ack: r.ok === true, abortRequested: (r.data as { abortRequested?: boolean } | undefined)?.abortRequested === true };
+      });
+      try {
+        const res = await executeAssignedRun({ id: 1, workflowId: 10, workflowRef: "wf-1", paramsJson: {}, startedBy: 5 });
+        expect(abortRunMock).toHaveBeenCalledTimes(1);
+        expect(abortRunMock.mock.calls[0]![0]).toBe(77);
+        expect(ketThucWalk).toBe("aborted"); // the local walk ended because the edge aborted it, not by running out
+        expect(res.ok).toBe(true);
+        expect(bufferedCount()).toBe(0); // every answer acknowledged: nothing left to replay
+        expect(anh()).toBe(truoc);
+      } finally {
+        getRunMock.mockImplementation(async (runId: number) => defaultGetRun(runId) as never);
+        warn.mockRestore();
+      }
+    });
+  }
+
+  it("★ T7C-TIEN-DO-HELD a held latched run, a PROGRESS payload ('running'): refused, the run stays 'held', st stays", async () => {
+    Object.assign(run1(), { status: "held", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    rows("orchestration_run_steps").push(hangSt());
+    await tuChoi({ ...PAYLOAD_XONG, status: "running", finishedAt: null }, /\(chot\)/);
+    expect(run1().status).toBe("held");
+    expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "st")!.error).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
+  });
+
+  it("★ T7C-NGU-CANH-MANG the run context is an array: refused (nguCanhKhongDoc), nothing written", async () => {
+    Object.assign(run1(), { status: "running", contextJson: ["a"] });
+    await tuChoi(PAYLOAD_XONG, /\(nguCanhKhongDoc\)/);
+  });
+
+  it("★ T7C-HANG-KHONG-MANG the step rows read back as something not an array: refused with the code (hangKhongDoc), nothing written", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const realSelect = fakeDb.select;
+    (fakeDb as any).select = () => ({
+      from(t: any) {
+        if (tbl(t) === "orchestration_run_steps") return { where: () => Promise.resolve({ not: "an array" }) };
+        return makeSelect(tbl(t)).from();
+      },
+    });
+    try {
+      await tuChoi(PAYLOAD_XONG, /\(hangKhongDoc\)/);
+    } finally {
+      (fakeDb as any).select = realSelect;
+    }
   });
 
   it("★ T7C-SYNC-KHONG-DOC the step rows cannot be read: refused (nothing can say no STOP is owed), nothing written", async () => {
@@ -826,5 +916,26 @@ describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run 
     expect(res.ok).toBe(false);
     expect(res.message).toMatch(/executed by an edge node under the node protocol/);
     expect(anh()).toBe(truoc);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T12 (P4, red until T12) — a payload that itself carries the latch, on a run NOT latched", () => {
+  const run1 = () => rows("orchestration_runs")[0];
+  it("T12-P4-PAYLOAD-MANG-KHOA a 'completed' payload with x FOE_OUTCOME_UNKNOWN and st FOE_STOP_NOT_SENT: the run is not ended outside the gate, st stays owed", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-x",
+      runId: 1,
+      status: "completed",
+      contextJson: { k: 1 },
+      steps: [
+        { stepId: "x", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" },
+        { stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) },
+      ],
+    } as never);
+    void res;
+    expect(run1().status).not.toBe("completed");
+    expect(stopChuaRaTuHang(rows("orchestration_run_steps") as never).has("st")).toBe(true);
   });
 });
