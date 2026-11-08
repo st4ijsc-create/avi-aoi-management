@@ -55,6 +55,8 @@ const h = vi.hoisted(() => ({
   acked: false,
   /** A2(n) T0 — what the alert reports through `baoBen`: was the URGENT stored? */
   alertDurable: true,
+  /** A2(n) T5 — the process dies inside the raise: the alert lands here, the mock stores nothing and never calls `baoBen` */
+  raiseChet: null as null | Array<Record<string, any>>,
   /** A2(n) T0 — these steps' dispatch is refused by a consumeAuthorization past its bound (the disk lot's round C): nothing sent, the journal says it overran */
   consumeQuaHan: new Set<string>(),
   /** A2(n) T0 — the REAL alert ran (its CRITICAL line): a mock that did not reach its target. Stays 0 */
@@ -119,6 +121,10 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   return {
     ...orig,
     raiseCriticalStopAlert: async (a: Record<string, any>) => {
+      if (h.raiseChet) {
+        h.raiseChet.push(a);
+        return;
+      }
       h.alerts.push(a);
       a.baoBen?.(h.alertDurable);
     },
@@ -361,6 +367,7 @@ beforeEach(() => {
   h.slow.clear();
   h.acked = false;
   h.alertDurable = true;
+  h.raiseChet = null;
   h.consumeQuaHan.clear();
   h.traTimeout = 0;
   h.ackStatus = "acked";
@@ -6510,6 +6517,33 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     await wait(30);
     expect(h.sent.filter((s) => s.stepId === "q"), "the Abort after it").toEqual([]);
   });
+  it("N2 central: a latched central run, a 'start' with args.jobType abort, its machine gone from central before the pass: 0 dispatches, not state C, no 'Abort sends it again', the Abort after it sends nothing", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    fake.seed(machines, [...rows("machines"), { id: 3, machineType: "AUTOMATION", capabilities: null, code: "M3", name: "M-3", operationStatus: "stopped", stationId: 1 }]);
+    fake.seed(deviceAdapters, [...rows("device_adapters"), { id: 503, machineId: 3, isEnabled: true, updatedAt: T0, protocol: "stub", code: "A503" }]);
+    const q = { id: "q", type: "command", machineId: 3, command: "start", args: { tagKey: "run", value: 1, jobType: "abort" } } as unknown as WorkflowStep;
+    const d = def("n2tt", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), q])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const s = await startRun(d.ref, {}, OWNER);
+    const c = s.runId!;
+    // the machine leaves central: nothing resolves the step any more, only its own fields say what it is
+    fake.store.set("machines", rows("machines").filter((m) => m.id !== 3));
+    h.timeoutDispatch.add("x");
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER).catch(() => undefined);
+    await wait(200);
+    const abortAgain = () => h.alerts.filter((a) => String(a.message).includes('"q"') && /Abort sends it again/.test(String(a.message)));
+    expect(h.sent.filter((x) => x.stepId === "q"), "the walk").toEqual([]);
+    expect(String(hang(c, "q")?.error ?? "")).not.toMatch(/FOE_STOP_NOT_SENT/);
+    expect(stopChuaRaTuHang(stepRows(c) as never).has("q")).toBe(false);
+    expect(abortAgain()).toEqual([]);
+    h.timeoutDispatch.clear();
+    await abortRun(c, OWNER, "press").catch(() => undefined);
+    await wait(40);
+    expect(h.sent.filter((x) => x.stepId === "q"), "the Abort after it").toEqual([]);
+    expect(abortAgain()).toEqual([]);
+  });
   // ── two named reds, each closed by its task ────────────────────────────────────────────────────────────────────────
   it("URGENT-LECH-MAT-T8 the mismatch URGENT lost between the commit and the raise: the records again, the segment end: a durable stop_pin_mismatch is owed", async () => {
     const x = await chayGiua(dMot("ulm"), undefined, false);
@@ -6520,18 +6554,35 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     const sh = new EdgeStreamShipper(J as never, trungTam(x.e.runId) as never, { log: () => undefined });
     sh.setClaim(x.e.runId, 2, TOKEN);
     for (const t of rows("device_tags")) if (t.tagKey === "halt") t.stopValue = null;
-    const goc = h.alerts.push.bind(h.alerts);
-    let chet = true; // the process dies after the commit: the raise never lands
-    (h.alerts as any).push = (...a: any[]) => (chet ? 0 : goc(...a));
+    // the crash: the process dies after the commit, inside the raise. Nothing is stored, no `baoBen` answers: the URGENT is not durable
+    const chet: Array<Record<string, any>> = [];
+    let benKhiChet = 0;
+    // every durability answer given to a raise of the crash is counted, whoever gives it
+    (chet as any).push = (...a: Array<Record<string, any>>) => {
+      for (const v of a) {
+        const bb = v.baoBen;
+        if (typeof bb === "function") v.baoBen = (b: unknown) => (benKhiChet++, bb(b));
+      }
+      return Array.prototype.push.apply(chet, a);
+    };
+    h.raiseChet = chet;
     await sh.flush(S);
     await wait(30);
-    chet = false;
+    h.raiseChet = null;
+    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
+    expect(chet.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopGhimLech), "the crash took the raise of the mismatch URGENT").toHaveLength(1);
+    expect(benKhiChet, "no durability answer in the crash").toBe(0);
+    expect(loaiCB("stopGhimLech"), "nothing stored in the crash").toEqual([]);
+    // after the restart: the same records again (a duplicate), then the segment end
     J.veLai(S);
     await sh.flush(S);
     await applyEdgeSegmentEnd(fake as never, x.e.runId, { ...(x.s.out as any), nodeCode: "EDGE-A", claimSeq: 2, def: x.d });
     await wait(40);
-    expect(dau(x.e.runId, "s1")).toBe("ghimLech");
-    expect(loaiCB("stopGhimLech"), "T8: the obligation of a durable URGENT lists the kind ghimLech").toHaveLength(1);
+    // T8 turns this green by one call of its obligation sweeper here (the URGENT not yet durable, raised again), nothing else:
+    // not the expectation below, not the crash above
+    expect(benKhiChet, "the crashed raise stays without an answer").toBe(0);
+    expect(h.alertDurable, "a raise outside the crash is stored: baoBen(true)").toBe(true);
+    expect(loaiCB("stopGhimLech"), "T8: exactly one durable stop_pin_mismatch URGENT after the crash").toHaveLength(1);
   });
   it("BC-HET-KHONG-BEN-T7 a run with a marked row ends only on a durable URGENT: not durable (nobody to tell), and the sink throwing: held, at the end gate", async () => {
     const ket: string[] = [];
