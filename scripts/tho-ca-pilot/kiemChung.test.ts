@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chayLenhKiem, demCaTest, laLenhVitest, phanTichVitest, quyetKetCuc, type KetQuaKiem } from "./kiemChung";
+import { chayLenhKiem, demCaTest, laLenhVitest, loiTscTrongTep, phanTichVitest, quyetKetCuc, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 const kiem = (o: Partial<KetQuaKiem> = {}): KetQuaKiem => ({
   lenh: "npx vitest run a.test.ts",
@@ -136,5 +136,39 @@ describe("chayLenhKiem — tiến trình thật (không vitest lồng)", () => {
     expect(k.hetGio).toBe(true);
     expect(k.exit).toBeNull();
     expect(k.giay).toBeLessThan(20);
+  });
+});
+
+describe("L3c — tsc trên tệp model đổi", () => {
+  const BS = String.fromCharCode(92);
+  const dau = [
+    "server/utils/msaReport.unit.test.ts(4,6): error TS2345: Argument of type 'string' is not assignable to type 'Verdict'.",
+    "server/khac/co-san.ts(10,1): error TS2322: nền đã đỏ sẵn ở tệp khác.",
+    `server${BS}utils${BS}b.unit.test.ts(2,3): error TS7006: Parameter 'x' implicitly has an 'any' type.`,
+    "Found 3 errors.",
+  ].join("\n");
+  it("★ chỉ tính lỗi nằm trong tệp model đổi; lỗi nền ở tệp khác không tính nhưng đếm vào tong", () => {
+    const r = loiTscTrongTep(dau, ["server/utils/msaReport.unit.test.ts", "server/utils/b.unit.test.ts"]);
+    expect(r.tong).toBe(3);
+    expect(r.trongTep).toHaveLength(2);
+    expect(r.trongTep[0]).toContain("TS2345");
+  });
+  it("không tệp nào đổi khớp ⇒ 0 lỗi trong tệp", () => {
+    expect(loiTscTrongTep(dau, ["server/khong/lien/quan.ts"]).trongTep).toEqual([]);
+  });
+  const tscOk: KetQuaTsc = { exit: 0, hetGio: false, giay: 5, loiTrongTep: [], tongLoi: 0 };
+  it("★ lệnh kiểm xanh nhưng tsc có lỗi trong tệp đổi ⇒ kiem-do (vitest không kiểm kiểu)", () => {
+    const r = quyet(kiem(), { tsc: { ...tscOk, exit: 2, loiTrongTep: ["server/utils/msaReport.unit.test.ts(4,6): error TS2345: x"], tongLoi: 1 } });
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.lyDo).toMatch(/tsc: 1 lỗi kiểu/);
+  });
+  it("★ tsc hết hạn / không khởi chạy được ⇒ kiem-do (fail-closed)", () => {
+    expect(quyet(kiem(), { tsc: { ...tscOk, exit: null, hetGio: true } }).ketCuc).toBe("kiem-do");
+    expect(quyet(kiem(), { tsc: { ...tscOk, exit: null, loi: "spawn ENOENT" } }).ketCuc).toBe("kiem-do");
+  });
+  it("tsc sạch ⇒ xong; tsc vắng ⇒ xong; lệnh kiểm đỏ thì tsc không được cứu", () => {
+    expect(quyet(kiem(), { tsc: tscOk }).ketCuc).toBe("xong");
+    expect(quyet(kiem(), { tsc: null }).ketCuc).toBe("xong");
+    expect(quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }), { tsc: tscOk }).ketCuc).toBe("kiem-do");
   });
 });

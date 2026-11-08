@@ -25,7 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
-import { chayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type KetCucKiem, type KetQuaKiem } from "./kiemChung";
+import { canChayTsc, chayLenhKiem, chayLenhTsc, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -89,6 +89,8 @@ export interface KetQuaViec {
   lenhKiem?: string;
   /** L3a: kết quả bộ chạy TỰ chạy lệnh kiểm (vắng khi ketCuc đã xấu từ trước hoặc có tệp test rỗng) */
   kiem?: Omit<KetQuaKiem, "lenh">;
+  /** L3c: kết quả tsc trên tệp model đổi (vắng khi không chạy) */
+  tsc?: KetQuaTsc;
   /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
   tepTest?: Array<{ duong: string; soCa: number }>;
   /** chưa đo được gì ở các trường trên null — nói rõ vì sao */
@@ -238,6 +240,9 @@ export interface ThamSoViec {
   chayKiem?: ChayKiem;
   /** L3a: hạn giờ RIÊNG của lệnh kiểm, giây (mặc định 300) */
   hanKiemGiay?: number;
+  /** L3c: hàm chạy tsc (mặc định chạy thật) và hạn giờ riêng, giây (mặc định 900) */
+  chayTsc?: ChayTsc;
+  hanTscGiay?: number;
 }
 
 export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
@@ -350,15 +355,28 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   // ── L3a: bộ chạy TỰ chạy LỆNH KIỂM và ĐỌC kết quả (chỉ khi còn đáng chạy: ứng viên "xong") ──
   const tepTest = demTepTest(wt, tepDoi);
   let kiem: KetQuaKiem | null = null;
+  let tsc: KetQuaTsc | null = null;
   let lyDoKiem: string | null = null;
+  const khongTepRong = !tepTest.some((t) => t.soCa === 0);
   if (ketCuc === "xong") {
-    if (!tepTest.some((t) => t.soCa === 0)) {
+    if (khongTepRong) {
       nhatKy(`chạy LỆNH KIỂM: ${the.lenhKiem}`);
       kiem = await (p.chayKiem ?? chayLenhKiem)(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
     }
-    const qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem });
+    let qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem });
+    // L3c: lệnh kiểm xanh vẫn chưa đủ — tsc trên tệp model đổi (vitest không kiểm kiểu; TC-05 tự định nghĩa lại kiểu đã export)
+    if (qd.ketCuc === "xong" && canChayTsc(wt, tepDoi)) {
+      nhatKy("chạy tsc --noEmit -p tsconfig.tests.json (L3c)");
+      tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
+    }
     ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
     lyDoKiem = qd.lyDo;
+  } else if ((ketCuc === "loi-driver" || ketCuc === "het-gio") && tepTest.some((t) => t.soCa > 0) && khongTepRong) {
+    // Lượt dừng giữa chừng nhưng ĐÃ có tệp test: vẫn chạy lệnh kiểm để KHÔNG MẤT số đo. ketCuc giữ nguyên (sticky) — chỉ ghi `kiem`.
+    nhatKy(`lượt ${ketCuc} nhưng có tệp test — vẫn chạy LỆNH KIỂM để ghi số đo: ${the.lenhKiem}`);
+    kiem = await (p.chayKiem ?? chayLenhKiem)(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
+    lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}`;
   }
 
   return {
@@ -383,6 +401,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     diff: diffPath,
     lenhKiem: the.lenhKiem,
     ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
+    ...(tsc ? { tsc } : {}),
     ...(tepTest.length > 0 ? { tepTest } : {}),
     luuY: lyDoKiem ? [...luuY, `L3a: ${lyDoKiem}`] : luuY,
   };

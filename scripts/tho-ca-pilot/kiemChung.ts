@@ -109,6 +109,8 @@ export interface DauVaoQuyet {
   tepTest: ReadonlyArray<{ duong: string; soCa: number }>;
   /** kết quả chạy lệnh kiểm; null = chưa chạy (vì có tệp test rỗng) */
   kiem: KetQuaKiem | null;
+  /** L3c: kết quả tsc (chỉ lỗi nằm trong tệp model đổi); vắng/null = không chạy (không có tệp .ts đổi / không có tsconfig.tests.json) */
+  tsc?: KetQuaTsc | null;
 }
 
 export interface QuyetKetCuc {
@@ -117,8 +119,20 @@ export interface QuyetKetCuc {
   lyDo: string | null;
 }
 
-/** THUẦN. Sticky: ketCuc xấu đến từ trước giữ nguyên; chỉ "xong" mới bị hạ bởi kiểm chứng. */
+/** THUẦN. Sticky: ketCuc xấu đến từ trước giữ nguyên; chỉ "xong" mới bị hạ bởi kiểm chứng (lệnh kiểm rồi tsc). */
 export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
+  const r = quyetLenhKiem(v);
+  if (r.ketCuc !== "xong" || !v.tsc) return r;
+  const t = v.tsc;
+  if (t.hetGio) return { ketCuc: "kiem-do", lyDo: `tsc hết hạn sau ${t.giay}s — không kết luận được kiểu (fail-closed)` };
+  if (t.loi) return { ketCuc: "kiem-do", lyDo: `tsc không khởi chạy được: ${t.loi}` };
+  if (t.loiTrongTep.length > 0) {
+    return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
+  }
+  return r;
+}
+
+function quyetLenhKiem(v: DauVaoQuyet): QuyetKetCuc {
   if (KET_CUC_XAU.has(v.truoc) || v.truoc !== "xong") return { ketCuc: v.truoc, lyDo: null };
 
   const rong = v.tepTest.filter((t) => t.soCa === 0).map((t) => t.duong);
@@ -145,6 +159,68 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
   // lệnh kiểm không phải vitest (vd script): chỉ có mã thoát
   return k.exit === 0 ? { ketCuc: "xong", lyDo: null } : { ketCuc: "kiem-do", lyDo: `LỆNH KIỂM thoát mã ${k.exit}` };
 }
+
+export interface KetQuaTsc {
+  exit: number | null;
+  hetGio: boolean;
+  giay: number;
+  /** dòng lỗi "tệp(dòng,cột): error TSxxxx: …" chỉ của các tệp model đổi (tsc báo cả lỗi có sẵn ở tệp khác — không tính) */
+  loiTrongTep: string[];
+  /** tổng số dòng lỗi tsc (mọi tệp) — để thấy ngay nếu nền đã đỏ sẵn */
+  tongLoi: number;
+  loi?: string;
+}
+
+/** THUẦN. Lọc dòng lỗi tsc theo danh sách tệp đổi (đường tương đối POSIX trong worktree). */
+export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongTep: string[]; tong: number } {
+  const tap = new Set(tepDoi.map((t) => t.replace(/\\/g, "/")));
+  const trongTep: string[] = [];
+  let tong = 0;
+  for (const d of boMau(dau).split(/\r?\n/)) {
+    const m = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/.exec(d);
+    if (!m) continue;
+    tong++;
+    if (tap.has(m[1].replace(/\\/g, "/"))) trongTep.push(d.trim());
+  }
+  return { trongTep, tong };
+}
+
+/** Có đáng chạy tsc không: có tệp .ts/.tsx/.mts/.cts đổi VÀ worktree có tsconfig.tests.json (cổng check:tests của dự án). */
+export function canChayTsc(wt: string, tepDoi: readonly string[]): boolean {
+  return tepDoi.some((t) => /\.(?:ts|tsx|mts|cts)$/.test(t)) && fs.existsSync(path.join(wt, "tsconfig.tests.json"));
+}
+
+export type ChayTsc =(wt: string, tepDoi: readonly string[], hanGiay: number) => Promise<KetQuaTsc>;
+
+/** Chạy `tsc --noEmit -p tsconfig.tests.json` (cùng cổng check:tests của dự án) trong worktree pilot; heap 12 GB; giết cả cây khi hết hạn. */
+export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay) =>
+  new Promise((xong) => {
+    const t0 = Date.now();
+    let dau = "";
+    let hetGio = false;
+    const env: NodeJS.ProcessEnv = { ...process.env, ...ENV_DB_CHET, NODE_OPTIONS: "--max-old-space-size=12288", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const ra = (exit: number | null, loi?: string) => {
+      clearTimeout(dongHo);
+      const { trongTep, tong } = loiTscTrongTep(dau, tepDoi);
+      xong({ exit, hetGio, giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10, loiTrongTep: trongTep, tongLoi: tong, ...(loi ? { loi } : {}) });
+    };
+    let con: ReturnType<typeof spawn>;
+    try {
+      con = spawn("npx tsc --noEmit -p tsconfig.tests.json", { cwd: wt, env, shell: true, windowsHide: true });
+    } catch (e) {
+      xong({ exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: String(e) });
+      return;
+    }
+    const dongHo = setTimeout(() => {
+      hetGio = true;
+      if (con.pid) spawnSync("taskkill", ["/PID", String(con.pid), "/T", "/F"], { stdio: "ignore" });
+      else con.kill();
+    }, Math.max(1, hanGiay) * 1000);
+    con.stdout?.on("data", (b) => (dau += String(b)));
+    con.stderr?.on("data", (b) => (dau += String(b)));
+    con.on("error", (e) => ra(null, String(e)));
+    con.on("close", (ma) => ra(hetGio ? null : ma));
+  });
 
 /** Lệnh kiểm có dùng vitest không (quyết việc đọc dòng tổng kết). */
 export function laLenhVitest(lenh: string): boolean {

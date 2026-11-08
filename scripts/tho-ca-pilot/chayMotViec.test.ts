@@ -259,3 +259,61 @@ GIỚI HẠN: 15 phút, 8 vòng.`);
     expect(lenh).toContain("QUY TRÌNH: Trước khi viết test, in danh sách hành vi (≤ 12 dòng) và chờ duyệt.");
   });
 });
+
+describe("chayMotViec — L3c tsc + chạy kiểm bổ sung khi lượt dừng giữa chừng", () => {
+  const TEST_OK = "import { it } from 'vitest';\nit('x', () => {});\n";
+  const tscSach = async () => ({ exit: 0, hetGio: false, giay: 1, loiTrongTep: [] as string[], tongLoi: 0 });
+  const caiTsconfig = () => {
+    fs.writeFileSync(path.join(wt, "tsconfig.tests.json"), "{}\n");
+    git(wt, "add", "tsconfig.tests.json");
+    git(wt, "commit", "-q", "-m", "tsconfig");
+  };
+  it("★ lệnh kiểm xanh + tsc BÁO LỖI trong tệp đổi ⇒ kiem-do, JSON mang tsc", async () => {
+    caiTsconfig();
+    const r = await chay({
+      khoGhi: { "client/src/lib/a.test.ts": TEST_OK },
+      chayTsc: async () => ({ exit: 2, hetGio: false, giay: 3, loiTrongTep: ["client/src/lib/a.test.ts(1,1): error TS2322: x"], tongLoi: 1 }),
+    });
+    expect(r).toMatchObject({ ok: false, ketCuc: "kiem-do", tsc: { exit: 2 } });
+    expect(r.luuY?.join(" ")).toMatch(/L3a: tsc: 1 lỗi kiểu/);
+  });
+  it("tsc sạch ⇒ xong, có trường tsc; không có tsconfig.tests.json ⇒ KHÔNG chạy tsc", async () => {
+    let goi = 0;
+    const dem = async () => (goi++, await tscSach());
+    expect((await chay({ khoGhi: { "client/src/lib/a.test.ts": TEST_OK }, chayTsc: dem })).ketCuc).toBe("xong");
+    expect(goi).toBe(0); // kho tạm chưa có tsconfig.tests.json
+  });
+  it("★ có tsconfig + tsc sạch ⇒ xong và tsc được gọi đúng một lần với tệp đổi", async () => {
+    caiTsconfig();
+    const goi: string[][] = [];
+    const r = await chay({ khoGhi: { "client/src/lib/a.test.ts": TEST_OK }, chayTsc: async (_w, tep) => (goi.push([...tep]), tscSach()) });
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", tsc: { exit: 0 } });
+    expect(goi).toEqual([["client/src/lib/a.test.ts"]]);
+  });
+  it("★ loi-driver MÀ có tệp test ⇒ ketCuc giữ loi-driver nhưng VẪN chạy lệnh kiểm và ghi kiem (không mất số đo)", async () => {
+    let goi = 0;
+    const loi: Driver = async (v) => {
+      fs.mkdirSync(path.join(v.wt, "client/src/lib"), { recursive: true });
+      fs.writeFileSync(path.join(v.wt, "client/src/lib/a.test.ts"), TEST_OK);
+      return { vong: 1, token: null, ghiChu: [], hetGio: false, loi: "lượt dừng không hoàn thành: lyDo=lap-lai" };
+    };
+    const r = await chay({ driver: loi, chayKiem: async (l) => (goi++, { ...kiemXanh, lenh: l }) });
+    expect(r).toMatchObject({ ok: false, ketCuc: "loi-driver", kiem: { exit: 0 } });
+    expect(goi).toBe(1);
+    expect(r.luuY?.join(" ")).toMatch(/ketCuc loi-driver giữ nguyên/);
+  });
+  it("het-gio có tệp test cũng chạy kiểm bổ sung; loi-driver KHÔNG có tệp test thì không chạy; vi-pham không chạy", async () => {
+    let goi = 0;
+    const dem: ChayKiem = async (l) => (goi++, { ...kiemXanh, lenh: l });
+    const ghiTest: Driver = async (v) => {
+      fs.mkdirSync(path.join(v.wt, "client/src/lib"), { recursive: true });
+      fs.writeFileSync(path.join(v.wt, "client/src/lib/a.test.ts"), TEST_OK);
+      return { vong: 1, token: null, ghiChu: [], hetGio: true };
+    };
+    expect((await chay({ driver: ghiTest, chayKiem: dem })).ketCuc).toBe("het-gio");
+    expect(goi).toBe(1);
+    const khongTest: Driver = async () => ({ vong: 1, token: null, ghiChu: [], hetGio: false, loi: "x" });
+    expect((await chay({ driver: khongTest, chayKiem: dem })).ketCuc).toBe("loi-driver");
+    expect(goi).toBe(1);
+  });
+});
