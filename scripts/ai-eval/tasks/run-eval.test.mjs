@@ -182,6 +182,72 @@ test("cùng tên id ở hai stack không bị gộp ở dòng tổng", () => {
   assert.equal(tinhBang([h("ts"), h("py")], 1).tong.bai, 2);
 });
 
+test("--truc H: gọi đúng đường sản phẩm với cookie, đọc SSE, done.answerRevised thay văn bản, cut không đo", async () => {
+  const yeuCau = [];
+  const sv = http.createServer((req, res) => {
+    if (req.url === "/health") return res.end("{}");
+    if (req.url === "/slots") return res.end("[]");
+    let b = "";
+    req.on("data", (d) => (b += d));
+    req.on("end", () => {
+      yeuCau.push({ url: req.url, cookie: req.headers.cookie, than: JSON.parse(b) });
+      res.write(`data: ${JSON.stringify({ type: "token", token: "rac" })}\n\n`);
+      res.write(`data: {hong\n\n`);
+      res.end(`data: ${JSON.stringify({ type: "done", answerRevised: true, answer: OK.text })}\n\n`);
+    });
+  });
+  await new Promise((r) => sv.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${sv.address().port}`;
+  const ck = path.join(tam, "ck.txt");
+  fs.writeFileSync(ck, "127.0.0.1\tFALSE\t/\tFALSE\t0\tapp_session_id\tabc\n");
+  const ra = path.join(tam, "ra7");
+  const r = await chay(["--truc", "H", "--base", url, "--cookie", ck, "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-08"]);
+  sv.close();
+  assert.equal(r.ma, 0, r.err);
+  assert.equal(yeuCau[0].url, "/api/ai/local-kb/stream");
+  assert.equal(yeuCau[0].cookie, "app_session_id=abc");
+  assert.equal(yeuCau[0].than.context.codingMode, true);
+  assert.match(yeuCau[0].than.question, /BoNhoLRU/);
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-08.json"), "utf8"));
+  assert.equal(bc.truc, "H");
+  assert.equal(bc.tong.dat, 1, "văn bản phải là bản done.answerRevised, không phải token rác");
+  assert.equal(bc.tong.cut, null);
+  assert.match(fs.readFileSync(path.join(ra, "2026-11-08.md"), "utf8"), /không đo/);
+});
+
+test("--truc H: máy chủ trả 401 là cấu hình sai: thoát 2, không ghi báo cáo", async () => {
+  const sv = http.createServer((req, res) => {
+    if (req.url === "/health") return res.end("{}");
+    res.statusCode = 401;
+    res.end("{}");
+  });
+  await new Promise((r) => sv.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${sv.address().port}`;
+  const ck = path.join(tam, "ck2.txt");
+  fs.writeFileSync(ck, "");
+  const ra = path.join(tam, "ra8");
+  const r = await chay(["--truc", "H", "--base", url, "--cookie", ck, "--url", url, "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra]);
+  sv.close();
+  assert.equal(r.ma, 2);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("--truc H thiếu --base hoặc --cookie: thoát 2", async () => {
+  const r = await chay(["--truc", "H", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "ra9")]);
+  assert.equal(r.ma, 2);
+  assert.match(r.err, /cần --base/);
+});
+
+test("agent-f qua run-f --config mau --noi tam: mỗi bài một lần, gom đúng bảng", async () => {
+  const ra = path.join(tam, "ra10");
+  const r = await chay(["--samples", "1", "--bo", "agent-f", "--only", "js-cli-viec", "--agent-config", "mau", "--noi", "tam", "--ra", ra, "--ngay", "2026-11-08", "--nhan", "thu-rf"]);
+  assert.equal(r.ma, 0, r.err);
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-08-thu-rf.json"), "utf8"));
+  assert.equal(bc.tong.dat, 1);
+  assert.equal(bc.tong.cut, null);
+  assert.equal(bc.hang[0].stack, "js");
+});
+
 test("tieuDeKhoa: tệp thắng khoá env; tệp hỏng không rơi về khoá env; không cấu hình thì không có tiêu đề", () => {
   const p = path.join(tam, "khoa.txt");
   fs.writeFileSync(p, "tu-tep\n");

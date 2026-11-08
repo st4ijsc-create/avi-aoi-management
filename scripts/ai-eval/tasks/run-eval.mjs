@@ -6,11 +6,14 @@
  *   node scripts/ai-eval/tasks/run-eval.mjs --samples 3 [--bo tasks-hard,tasks-api2,agent-f] [--only <id,…|stack>] [--nhan <nhãn>]
  *       [--url http://127.0.0.1:8091] [--max-tokens 16000] [--sha] [--tran-phut 180] [--ra docs/ai/eval] [--tho D:/DO-AI/eval]
  *       [--agent-config agent|mau] [--noi tai-cho|tam] [--ghi-chu <chữ vào báo cáo>] [--mau-tai-giay 60]
+ *       [--truc M|H] [--base http://127.0.0.1:3013] [--cookie <tệp>] [--project-id <id>]
  *
  * Trước lượt đo chạy `kiem-thuoc.mjs`: thước hỏng thì số vô nghĩa.
  * Thoát 0 = đo xong (kể cả có bài trượt) · 2 = VỨT, không ghi báo cáo (llama-server chết, thước hỏng) · 3 = chạm trần thời gian, báo cáo có `dungSom`.
  *
- * ma-don đo model THUẦN (trục M, cùng sampling và SYS với `run.mjs --config raw`): cờ AI_AGENT_* không tác động. Cờ chỉ tác động lên agent-f.
+ * ma-don mặc định đo model THUẦN (trục M, cùng sampling và SYS với `run.mjs --config raw`): cờ AI_AGENT_* không tác động, tài liệu và tool không tới model.
+ * `--truc H` đi đường sản phẩm `/api/ai/local-kb/stream` của máy chủ ở `--base` (cùng thân yêu cầu với `run.mjs --config pipeline`, có RAG và vòng tool).
+ * Trục H không có `finish_reason` nên không đếm được bài cụt: báo cáo để `cut: null`.
  * agent-f gọi `run-f.mjs`, cần máy chủ ở AI_EVAL_BASE và cookie như README của nó. Bài pilot-repo cần bộ chạy pilot + lượt `_test`: chưa đo ở đây, ghi trong `chuaDo`.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -132,7 +135,8 @@ export function tinhBang(hang, soMau) {
       passAt1: luot.length ? +(dat / luot.length).toFixed(3) : null,
       passAtN: nhom.size ? +([...nhom.values()].filter((g) => g.some((l) => l.dat)).length / nhom.size).toFixed(3) : null,
       moiMau,
-      cut: luot.filter((l) => l.cut).length,
+      // Trục H và agent-f không có finish_reason: "không đo được" khác 0 bài cụt.
+      cut: luot.some((l) => l.cut === null) ? null : luot.filter((l) => l.cut).length,
       tokRaTb: tb(so((l) => l.tokRa)),
       msTb: tb(so((l) => l.ms)),
     };
@@ -145,12 +149,12 @@ export function tinhBang(hang, soMau) {
 
 export function bangMarkdown(bc) {
   const pct = (x) => (x === null ? "—" : `${(x * 100).toFixed(1)} %`);
-  const dong = (s) => `| ${s.stack} | ${s.bai} | ${s.dat}/${s.luot} | ${pct(s.passAt1)} | ${pct(s.passAtN)} | ${s.moiMau.join(" · ")} | ${s.cut} | ${s.tokRaTb ?? "—"} | ${s.msTb === null ? "—" : (s.msTb / 1000).toFixed(1)} |`;
+  const dong = (s) => `| ${s.stack} | ${s.bai} | ${s.dat}/${s.luot} | ${pct(s.passAt1)} | ${pct(s.passAtN)} | ${s.moiMau.join(" · ")} | ${s.cut ?? "không đo"} | ${s.tokRaTb ?? "—"} | ${s.msTb === null ? "—" : (s.msTb / 1000).toFixed(1)} |`;
   const m = bc.model;
   return [
     `# Đo Thợ Cả ${bc.ngay}${bc.nhan ? ` (${bc.nhan})` : ""}`,
     "",
-    `Commit \`${bc.commit}\`${bc.cayBan ? " (cây có thay đổi chưa commit)" : ""} · ${bc.soMau} mẫu/bài · trần ${bc.maxTokens} token`,
+    `Trục ${bc.truc ?? "M"} · commit \`${bc.commit}\`${bc.cayBan ? " (cây có thay đổi chưa commit)" : ""} · ${bc.soMau} mẫu/bài · trần ${bc.maxTokens} token`,
     `Model \`${m.tep ?? "?"}\` · sha256 \`${m.sha ?? "chưa băm"}\` · ctx ${m.ctx ?? "?"} · budget ${m.reasoningBudget ?? "?"}`,
     `Cờ: ${Object.keys(bc.co).length ? Object.entries(bc.co).map(([k, v]) => `\`${k}=${v}\``).join(" ") : "không đặt"}`,
     ...(bc.ghiChu ? [`Ghi chú: ${bc.ghiChu}`] : []),
@@ -204,6 +208,38 @@ async function goiModel(url, sys, prompt, maxTokens) {
   return { text: c?.message?.content ?? "", cut: c?.finish_reason === "length", tokRa: j.usage?.completion_tokens ?? null, ms: Date.now() - t0 };
 }
 
+/** Một bài qua đường sản phẩm. Đọc SSE như client thật: `done.answerRevised` thay văn bản đã tích luỹ. */
+async function goiDuongSanPham(base, cookie, prompt) {
+  const t0 = Date.now();
+  const r = await fetch(`${base}/api/ai/local-kb/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ question: prompt, topK: 5, history: [], userRole: "admin", context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" } }),
+  });
+  // 401/403/404 là cấu hình lượt đo sai, không phải bài trượt.
+  if (!r.ok) throw new Vut(`${base}/api/ai/local-kb/stream HTTP ${r.status}`);
+  let text = "";
+  let buf = "";
+  const dec = new TextDecoder();
+  for await (const c of r.body) {
+    buf += dec.decode(c, { stream: true });
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
+      const m = buf.slice(0, i).match(/^data:\s*([\s\S]*)$/m);
+      buf = buf.slice(i + 2);
+      if (!m) continue;
+      let o;
+      try {
+        o = JSON.parse(m[1]);
+      } catch {
+        continue;
+      }
+      if (o.type === "token") text += o.token ?? "";
+      else if (o.type === "done" && o.answerRevised === true && typeof o.answer === "string") text = o.answer;
+    }
+  }
+  return { text, cut: null, tokRa: null, ms: Date.now() - t0 };
+}
+
 function chamMaDon(b, tepTraLoi) {
   return new Promise((resolve, reject) => {
     const c = spawn(process.execPath, [`${b.dir}/check.mjs`, "--tra-loi", tepTraLoi], { windowsHide: true });
@@ -223,14 +259,19 @@ function chamMaDon(b, tepTraLoi) {
   });
 }
 
+/** Mỗi bài một lần `run-f`: `--tien-to` chỉ nhận một thư mục, và dự án sandbox gốc là thư mục cha chứa các bài. */
 function doAgentF(baiF, soMau, y) {
-  const nhan = `run-eval-${y.ngay}-agentf-1`;
-  const r = spawnSync(process.execPath, [TEP_RUN_F, "--config", y.agentConfig, "--luot", String(soMau), "--label", nhan, "--noi", y.noi, "--only", baiF.map((b) => b.id).join(",")], { stdio: ["ignore", "inherit", "inherit"], windowsHide: true, env: process.env });
-  // run-f: 2 = vứt. Ở chế độ kiểm thước 1 cũng là thước hỏng.
-  if (r.status === 2 || (y.agentConfig !== "agent" && r.status !== 0)) throw new Vut(`run-f thoát ${r.status}`);
-  const bc = JSON.parse(fs.readFileSync(`${BENCH_CODEGEN}/reports/${nhan}.json`, "utf8"));
-  const stack = new Map(baiF.map((b) => [b.id, b.stack]));
-  return bc.rows.map((x) => ({ id: x.id, stack: stack.get(x.id), bo: "agent-f", mau: x.luot, dat: x.dat, lyDo: x.cham?.lyDo ?? [], cut: false, tokRa: x.agent?.usage?.ra ?? null, ms: x.agent?.ms ?? null, lyDoDung: x.agent?.lyDo ?? null }));
+  const ra = [];
+  for (const b of baiF) {
+    const nhan = `run-eval-${y.ngay}-${y.nhan || "x"}-${b.id}-1`;
+    const thamSoDuAn = y.projectId ? ["--project-id", y.projectId, "--tien-to", b.id] : [];
+    const r = spawnSync(process.execPath, [TEP_RUN_F, "--config", y.agentConfig, "--luot", String(soMau), "--label", nhan, "--noi", y.noi, "--only", b.id, ...thamSoDuAn, ...(y.cookie ? ["--cookie", y.cookie] : [])], { stdio: ["ignore", "inherit", "inherit"], windowsHide: true, env: { ...process.env, ...(y.base ? { AI_EVAL_BASE: y.base } : {}) } });
+    // run-f: 2 = vứt. Ở chế độ kiểm thước 1 cũng là thước hỏng.
+    if (r.status === 2 || (y.agentConfig !== "agent" && r.status !== 0)) throw new Vut(`run-f ${b.id} thoát ${r.status}`);
+    const bc = JSON.parse(fs.readFileSync(`${BENCH_CODEGEN}/reports/${nhan}.json`, "utf8"));
+    for (const x of bc.rows) ra.push({ id: x.id, stack: b.stack, bo: "agent-f", mau: x.luot, dat: x.dat, lyDo: x.cham?.lyDo ?? [], cut: null, tokRa: x.agent?.usage?.ra ?? null, ms: x.agent?.ms ?? null, lyDoDung: x.agent?.lyDo ?? null });
+  }
+  return ra;
 }
 
 /** Tên tệp báo cáo không đè lượt cùng ngày. */
@@ -243,6 +284,8 @@ export function tenBaoCao(thuMuc, ngay, nhan) {
 }
 
 async function main() {
+  // Như chayCheck: run-f chấm bằng `node --test`; biến này được kế thừa khi run-eval chạy dưới `node --test`, bộ chấm lồng sẽ thoát 0 dù đỏ.
+  delete process.env.NODE_TEST_CONTEXT;
   const { lay, co } = thamSo();
   const soMau = Number(lay("--samples", "3"));
   if (!Number.isInteger(soMau) || soMau < 1) throw new Vut(`--samples: ${lay("--samples")}`);
@@ -260,12 +303,18 @@ async function main() {
   const baiMa = bai.filter((b) => b.kieu === "ma-don");
   const baiF = bai.filter((b) => b.kieu === "agent-f");
   if (!bai.length) throw new Vut("không có bài nào khớp --bo/--only");
+  const truc = lay("--truc", "M");
+  if (!["M", "H"].includes(truc)) throw new Vut(`--truc M|H, nhận: ${truc}`);
+  const base = lay("--base", "").replace(/\/$/, "");
+  const tepCookie = lay("--cookie");
+  if (truc === "H" && baiMa.length && (!base || !tepCookie)) throw new Vut("--truc H cần --base và --cookie");
   const canModel = baiMa.length > 0 || (baiF.length > 0 && lay("--agent-config", "agent") === "agent");
   if (canModel && !(await suKhoe(url))) throw new Vut(`${url}/health không khoẻ trước khi đo`);
 
   const thoDir = `${tho}/${ngay}${nhan ? `-${nhan}` : ""}`;
   fs.mkdirSync(thoDir, { recursive: true });
   const { SYS } = await import(pathToFileURL(`${BENCH_CODEGEN}/cham.mjs`).href);
+  const cookie = truc === "H" && baiMa.length ? (await import(pathToFileURL(`${BENCH_CODEGEN}/cookie.mjs`).href)).ck(tepCookie) : "";
   const t0 = Date.now();
   const hang = [];
   let dungSom = null;
@@ -284,7 +333,7 @@ async function main() {
       }
       const prompt = fs.readFileSync(`${b.dir}/prompt.md`, "utf8").trimEnd();
       if (await slotBan(url)) soLuotSlotBan++;
-      const g = await goiModel(url, SYS, prompt, maxTokens);
+      const g = truc === "H" ? await goiDuongSanPham(base, cookie, prompt) : await goiModel(url, SYS, prompt, maxTokens);
       const tep = `${thoDir}/${b.id}-${mau}.txt`;
       fs.writeFileSync(tep, g.text);
       const c = await chamMaDon(b, tep);
@@ -293,7 +342,7 @@ async function main() {
       if (!(await suKhoe(url))) throw new Vut(`llama-server chết sau ${b.id} mẫu ${mau}`);
     }
   }
-  if (baiF.length && !dungSom) hang.push(...doAgentF(baiF, soMau, { ngay, noi: lay("--noi", "tai-cho"), agentConfig: lay("--agent-config", "agent") }));
+  if (baiF.length && !dungSom) hang.push(...doAgentF(baiF, soMau, { ngay, nhan, noi: lay("--noi", "tai-cho"), agentConfig: lay("--agent-config", "agent"), projectId: lay("--project-id"), cookie: tepCookie, base }));
   if (henTai) clearInterval(henTai);
   await dangDocTai;
 
@@ -310,6 +359,7 @@ async function main() {
     commit: git("rev-parse", "--short", "HEAD"),
     cayBan: git("status", "--porcelain", "--", "scripts/ai-eval", "server").length > 0,
     soMau,
+    truc,
     maxTokens,
     sampling: SAMPLING,
     giayTuong: Math.round((Date.now() - t0) / 1000),
