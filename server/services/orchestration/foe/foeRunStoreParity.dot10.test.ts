@@ -274,7 +274,9 @@ vi.mock("../../../db/connection", () => ({
   }),
 }));
 
-import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows, machines, deviceAdapters, deviceTags, robots, permissions } from "../../../../drizzle/schema";
+import { orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows, machines, deviceAdapters, deviceTags, robots, permissions, users } from "../../../../drizzle/schema";
+import { syncRunResult } from "../../edge/edgeCoordinator"; // A2(n) T7c-b
+import { EDGE_CENTRAL_ABORT_USER, _clearBuffer, bufferedCount, executeAssignedRun, setCentralSync } from "../../edge/edgeRuntime"; // A2(n) T7c-b
 import { runEdgeAssignments } from "../../edge/edgeExecutionSchema";
 import {
   deployWorkflow,
@@ -298,7 +300,7 @@ import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
 import { edgeRunStream } from "../../edge/edgeProtocol";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
@@ -8396,5 +8398,197 @@ describe("A2(n) T7 fix 1 — the walk's memory at an exception (K1), the gate's 
     expect(a.ok).toBe(true);
     expect(await quenChua(c)).toBe(true);
     quenBenKhongXacNhan(c);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7c-b — the old edge walker of a latched run is told to stop; what goes after the flag, by the PIN; the node protocol", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const ids = () => h.sent.map((x) => String(x.stepId));
+  const REF = { status: "rejected", error: "INTERLOCK_NOT_MET: refused" };
+  /** the central run and its own rows, as JSON: what a sync must leave byte for byte */
+  const anhRun = (c: number) => JSON.stringify({ run: runRow(c), steps: stepRows(c) });
+
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  const BANG: string[] = [];
+  beforeEach(() => {
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    process.env.EDGE_ABORT_POLL_MS = "50";
+    _clearBuffer();
+  });
+  afterEach(() => {
+    delete process.env.EDGE_RUNTIME_ENABLED;
+    delete process.env.EDGE_ABORT_POLL_MS;
+    _clearBuffer();
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    BANG.push(`${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 70)} | ${sau.map((x) => `${String(x.stepId)}:${String(x.name)}`).join(" ") || "-"}`);
+    // by the PIN: an OT stop counts only when every write it carries is a pin of its adapter; a robot's `abort` is the robot rule
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    const la = sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)));
+    expect(la.map((x) => x.stepId), "a command that is no pinned STOP reached the dispatcher after the latch / the flag").toEqual([]);
+  });
+  afterAll(() => {
+    for (const l of BANG) console.log(`[PROBE sau-khoa T7c-b] ${l}`);
+  });
+
+  it("★ T7CB-CENTRAL-HELD a central run 'held' in state C (latched, st refused, not stopped) gets the sync flag: still 'held', its rows and latch byte for byte; an Abort after it sends st", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("st", REF);
+    const c = await centralRun(def("t7cbh", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("st")])])]), 1);
+    await wait(80);
+    expect(runRow(c).status, "state C: held").toBe("held");
+    expect([...stopChuaRaTuHang(stepRows(c) as never)]).toEqual(["st"]);
+    const truoc = anhRun(c);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      for (const status of ["running", "completed"]) {
+        const res = await syncRunResult({ edgeNodeCode: "edge-x", runId: c, status, currentStepId: "end", contextJson: { k: 1 }, steps: [{ stepId: "st", stepType: "command", status: "completed", attempt: 2 }, { stepId: "x", stepType: "command", status: "completed", attempt: 2 }] } as never);
+        expect(res).toEqual({ ok: true, enabled: true, data: { runId: c, stepsApplied: 0, abortRequested: true, stale: true } });
+      }
+      expect(warn.mock.calls.some((x) => new RegExp(`^\\[EdgeCoordinator\\] EDGE_SYNC_RUN_LATCHED: sync of run ${c} `).test(String(x[0])))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(anhRun(c), "the flag wrote nothing").toBe(truoc);
+    expect(runRow(c).status).toBe("held");
+    h.tuChoi.clear();
+    h.sent.length = 0;
+    const a = await abortRun(c, OWNER, "press");
+    await wait(40);
+    expect(a.ok, String(a.message)).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(h.sent.filter((x) => x.stepId === "st").map((x) => x.name), "the Abort sends st").toEqual(["stop"]);
+  });
+
+  it("★ T7CB-APPLY-ABORT-GHIM the old edge walker (executeAssignedRun, the real engine) of a central run latched and not stopped: the first sync's flag aborts the local run; after it only pinned STOPs, no non-STOP, no non-STOP compensation", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    fake.seed(users, [{ id: OWNER.id, role: OWNER.role, isActive: true, name: OWNER.name }]);
+    // the local walk: STOPs that went (one with a non-STOP compensation, one with a STOP compensation), then a long delay, a non-STOP, a STOP
+    const d = def("t7cbg", [
+      { ...robotStop("s0"), compensation: move("c0") } as never,
+      otStop("s0b", { compensation: robotStop("c0b") }),
+      delay("w", 400),
+      move("m1"),
+      otStop("s9"),
+    ]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "t7cbg")!;
+    // the central run: held, latched (the latch, st owed), not stopped (no claim, not aborted), no assignment
+    const C = 900;
+    fake.seed(orchestrationRuns, [
+      ...rows("orchestration_runs"),
+      { id: C, workflowId: wf.id, workflowRef: "t7cbg", status: "held", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: T0, contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-08T00:00:00.000Z" } } },
+    ]);
+    fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 9001, runId: C, stepId: "st", stepType: "command", status: "failed", attempt: 1, resultJson: null, error: "FOE_STOP_NOT_SENT: STOP \"st\" (test)" }]);
+    const truoc = anhRun(C);
+    let dauSync = -1;
+    setCentralSync(async (p) => {
+      const r = await syncRunResult(p as never);
+      if (dauSync < 0) {
+        dauSync = h.sent.length;
+        h.traTimeout = 1; // every command from here on is marked: the table below is the table after the first sync
+      }
+      return { ack: r.ok === true, abortRequested: (r.data as { abortRequested?: boolean } | undefined)?.abortRequested === true };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let res: Awaited<ReturnType<typeof executeAssignedRun>>;
+    try {
+      res = await executeAssignedRun({ id: C, workflowId: wf.id, workflowRef: "t7cbg", paramsJson: {}, startedBy: OWNER.id });
+      await wait(60);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(dauSync, "a sync reached central during the walk").toBeGreaterThanOrEqual(0);
+    expect(h.sent.slice(0, dauSync).map((x) => x.stepId), "before the flag: the walk's own STOPs").toEqual(["s0", "s0b"]);
+    const L = rows("orchestration_runs").find((r) => r.id !== C && r.workflowId === wf.id)!;
+    expect(L.status, "the local run is aborted by the edge").toBe("aborted");
+    expect(String(L.error)).toMatch(new RegExp(`^Aborted by user ${EDGE_CENTRAL_ABORT_USER.id}: `));
+    const sau = h.sent.slice(dauSync).map((x) => `${String(x.stepId)}:${String(x.name)}`);
+    expect(sau.filter((x) => x.startsWith("m1:") || x.startsWith("c0:")), "no non-STOP and no non-STOP compensation after the flag").toEqual([]);
+    expect(res!.ok).toBe(true);
+    expect(bufferedCount()).toBe(0);
+    expect(anhRun(C), "central's latched run: byte for byte").toBe(truoc);
+  });
+
+  it("★ T7CB-NODE-PROTOCOL a run under the node protocol (a run_edge_assignments row) latches on the edge: its walker sends no non-STOP after the latch (the later r2, the compensation c1); a legacy sync of it stays the node-protocol refusal, nothing written", async () => {
+    const later = box("later", [delay("w", 60), move("r2")]);
+    const d = def("t7cbn", [gate(), parF("p", [later, move("r1", { compensation: ot("c1") })]), robotStop("bs")]);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(h.traTimeout, "the latch fell").toBeGreaterThan(0);
+    expect(ids().slice(n0).filter((x) => x === "r2" || x === "c1"), "no non-STOP after the latch").toEqual([]);
+    expect(rows("orchestration_run_edge_assignments").some((a) => a.runId === e.runId)).toBe(true);
+    const truoc = anhRun(e.runId);
+    const r = await syncRunResult({ edgeNodeCode: "EDGE-A", runId: e.runId, status: "completed", contextJson: { k: 1 }, steps: [{ stepId: "r2", stepType: "command", status: "completed", attempt: 1 }] } as never);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/executed by an edge node under the node protocol/);
+    expect(anhRun(e.runId)).toBe(truoc);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T12 (P4, red until T12) — a payload that itself carries the latch, on a run NOT latched", () => {
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const KET_THUC = ["completed", "failed", "aborted"];
+  const anhRun = (c: number) => JSON.stringify({ run: runRow(c), steps: stepRows(c) });
+  beforeEach(() => {
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+  });
+  afterEach(() => {
+    delete process.env.EDGE_RUNTIME_ENABLED;
+  });
+
+  it("T12-P4-PAYLOAD-MANG-KHOA a 'completed' payload with x FOE_OUTCOME_UNKNOWN and st FOE_STOP_NOT_SENT, on a run not latched: P, exactly one of Q1 / Q2, R", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const d = def("t12p4", [gate(), ot("x"), otStop("st")]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "t12p4")!;
+    const C = 950;
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: "t12p4", status: "running", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: T0, contextJson: {} }]);
+    const truoc = anhRun(C);
+    const bao0 = h.alerts.length;
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-x",
+      runId: C,
+      status: "completed",
+      contextJson: { k: 1 },
+      steps: [
+        { stepId: "x", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" },
+        { stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) },
+      ],
+    } as never);
+    // dieu-phoi 08/11: tính chất P ∧ (Q1 ∨ Q2) ∧ R; URGENT một mình không đủ (dạng K1)
+    // P — the run is not ended outside quyetDinhKetThucAnh (a sync never calls it: any end here is outside it)
+    expect(KET_THUC, "P: the sync ended the run outside the end gate").not.toContain(runRow(C).status);
+    // Q1 — the sync refused: no step row, no context, no status written (byte for byte)
+    const q1 = anhRun(C) === truoc && !(res.ok === true && Number((res.data as { stepsApplied?: number } | undefined)?.stepsApplied ?? 0) > 0);
+    // Q2 — st is still in the debt the Abort reads (the rows' state C; no context key carries a STOP debt), AND an Abort after it really sends st
+    const noSt = stopChuaRaTuHang(stepRows(C) as never).has("st");
+    const baoSau = h.alerts.slice(bao0).map((a) => JSON.stringify({ ...a, baoBen: undefined }));
+    h.sent.length = 0;
+    const a = await abortRun(C, OWNER, "press");
+    await wait(40);
+    const abortGuiSt = h.sent.some((x) => x.stepId === "st" && x.name === "stop");
+    const q2 = noSt && abortGuiSt;
+    expect([q1, q2].filter(Boolean).length, `exactly one of Q1 (refused, nothing written: ${q1}) / Q2 (st owed: ${noSt}, the Abort sent st: ${abortGuiSt}); abort: ${String(a.message ?? a.status)}`).toBe(1);
+    // R — an URGENT (durable here: the mock stores it) naming st promises the Abort only when the Abort sends st
+    const hua = baoSau.filter((t) => /\bst\b/.test(t) && /abort/i.test(t));
+    if (hua.length > 0) expect(abortGuiSt, `R: an URGENT names st and promises the Abort, the Abort did not send st: ${hua[0]}`).toBe(true);
   });
 });

@@ -1,7 +1,9 @@
 /**
- * A2(n) T7c (plan point 3 row 16) — the TWO doors of an edge result sync reach a latched run only through edgeCoordinator.syncRunResult, and both are refused:
+ * A2(n) T7c (plan point 3 row 16) — the TWO doors of an edge result sync reach a latched run only through edgeCoordinator.syncRunResult, and both write nothing:
  *   • tRPC edgeRuntime.syncRunResult (a session with machine_control);
- *   • REST POST /api/v1/edge/sync (an API key with the edge:sync scope): a coded error, never a silent ok:false.
+ *   • REST POST /api/v1/edge/sync (an API key with the edge:sync scope).
+ * T7c-b (i) — the answer to a latched run is the stale one, abortRequested (an edge walker of it stops); the code EDGE_SYNC_RUN_LATCHED is in the log.
+ * T7c-b (ii) — the one door of assignRun (tRPC edgeRuntime.assignRun) refuses a latched run with EDGE_ASSIGN_RUN_LATCHED: edgeNodeId unchanged.
  * Nothing is written: the step rows, the run context (the latch, DA_BAO), the status stay byte for byte. In-memory DB (FakeDb), no real DB.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
@@ -9,7 +11,7 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { FakeDb, makeEq, makeAnd, makeDesc, resetSeq } from "./__otFakeDb";
-import { orchestrationRuns, orchestrationRunSteps } from "../../drizzle/schema";
+import { edgeNodes, orchestrationRuns, orchestrationRunSteps } from "../../drizzle/schema";
 
 const fake = new FakeDb();
 
@@ -81,25 +83,45 @@ beforeEach(() => {
   warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
 
-describe("A2(n) T7c — both doors of an edge result sync: a latched run is refused, nothing is written", () => {
-  it("★ T7C-CUA-TRPC edgeRuntime.syncRunResult on a latched held run: refused with the code, the rows, the latch and 'held' stay", async () => {
+describe("A2(n) T7c — both doors of an edge result sync: a latched run is never written; T7c-b: the answer stops its walker, assignRun refuses it", () => {
+  const LOG_KHOA = (c: unknown[]) => /^\[EdgeCoordinator\] EDGE_SYNC_RUN_LATCHED: sync of run 41 /.test(String(c[0])) && /\(chot\)/.test(String(c[0]));
+  it("★ T7C-CUA-TRPC edgeRuntime.syncRunResult on a latched held run: nothing written (the rows, the latch, 'held' stay), the stale answer abortRequested, the code in the log", async () => {
     const truoc = anh();
     const res = await caller.syncRunResult(PAYLOAD);
-    expect(res).toMatchObject({ ok: false, enabled: true });
-    expect(res.message).toMatch(/^EDGE_SYNC_RUN_LATCHED: run 41 /);
+    expect(res).toEqual({ ok: true, enabled: true, data: { runId: 41, stepsApplied: 0, abortRequested: true, stale: true } });
     expect(anh()).toBe(truoc);
-    expect(warn.mock.calls.some((c) => /run 41\b/.test(String(c[0])) && /EDGE_SYNC_RUN_LATCHED|latched/.test(String(c[0])))).toBe(true);
+    expect(warn.mock.calls.some(LOG_KHOA)).toBe(true);
   });
 
-  it("★ T7C-CUA-REST POST /api/v1/edge/sync (edge:sync) on the same run: a 400 with the code, not a 202; nothing written", async () => {
+  it("★ T7C-CUA-REST POST /api/v1/edge/sync (edge:sync) on the same run: nothing written, a 202 whose data is the stale answer abortRequested, the code in the log", async () => {
     const truoc = anh();
     const r = await fetch(`${base}/api/v1/edge/sync`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer MASTER" }, body: JSON.stringify(PAYLOAD) });
-    const body = (await r.json()) as { ok: boolean; error?: { code: string; message: string } };
-    expect(r.status).toBe(400);
-    expect(body.ok).toBe(false);
-    expect(body.error?.code).toBe("edge_sync_failed");
-    expect(body.error?.message).toMatch(/^EDGE_SYNC_RUN_LATCHED: run 41 /);
+    const body = (await r.json()) as { ok: boolean; data?: Record<string, unknown> };
+    expect(r.status).toBe(202);
+    expect(body.ok).toBe(true);
+    expect(body.data).toEqual({ runId: 41, stepsApplied: 0, abortRequested: true, stale: true });
     expect(anh()).toBe(truoc);
+    expect(warn.mock.calls.some(LOG_KHOA)).toBe(true);
+  });
+
+  it("★ T7CB-ASSIGN-CUA-TRPC edgeRuntime.assignRun of the same latched run to a known node: refused with the code, edgeNodeId unchanged, nothing written", async () => {
+    fake.seed(edgeNodes, [{ id: 3, code: "edge-x", name: "edge-x", status: "online" }]);
+    const truoc = anh();
+    const res = await caller.assignRun({ runId: 41, edgeNodeId: 3 });
+    expect(res).toMatchObject({ ok: false, enabled: true });
+    expect(res.message).toMatch(/^EDGE_ASSIGN_RUN_LATCHED: run 41 /);
+    expect(fake.store.get("orchestration_runs")![0]!.edgeNodeId).toBeNull();
+    expect(anh()).toBe(truoc);
+    expect(warn.mock.calls.some((c) => /^\[EdgeCoordinator\] EDGE_ASSIGN_RUN_LATCHED: run 41 /.test(String(c[0])) && /\(chot\)/.test(String(c[0])))).toBe(true);
+  });
+
+  it("control: edgeRuntime.assignRun of the run NOT latched to the same node: assigned as before", async () => {
+    fake.seed(edgeNodes, [{ id: 3, code: "edge-x", name: "edge-x", status: "online" }]);
+    fake.seed(orchestrationRuns, [{ id: 41, workflowId: 10, workflowRef: "wf-1", status: "queued", paramsJson: {}, edgeNodeId: null, startedBy: 5, contextJson: {} }]);
+    fake.seed(orchestrationRunSteps, []);
+    const res = await caller.assignRun({ runId: 41, edgeNodeId: 3 });
+    expect(res).toEqual({ ok: true, enabled: true, data: { runId: 41, edgeNodeId: 3 } });
+    expect(fake.store.get("orchestration_runs")![0]!.edgeNodeId).toBe(3);
   });
 
   it("control: the same doors, the run NOT latched: written as before (tRPC ok, REST 202)", async () => {

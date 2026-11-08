@@ -469,6 +469,12 @@ export async function assignRun(runId: number, edgeNodeId: number): Promise<Edge
       nodeRun = undefined;
     }
     if (nodeRun !== null) return { ok: false, enabled: true, message: `Run ${runId} is assigned to an edge node for execution; it cannot be re-delegated.` };
+    // A2(n) T7c-b (ii) — a LATCHED run is never delegated: an edge would walk a fresh copy of it. The latch of syncRunResult (one source), fail-closed (unreadable ⇒ refused).
+    const khoa = await lyDoDongBoKhoa(d, run);
+    if (khoa) {
+      console.warn(`[EdgeCoordinator] ${EDGE_ASSIGN_RUN_LATCHED}: run ${runId} refused for edge node ${edgeNodeId} (${khoa}): not delegated`);
+      return { ok: false, enabled: true, message: `${EDGE_ASSIGN_RUN_LATCHED}: run ${runId} is latched (${khoa}) — it is not delegated to an edge node; only central ends it.` };
+    }
     const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.id, edgeNodeId)).limit(1);
     if (!node) return { ok: false, enabled: true, message: `Edge node ${edgeNodeId} not found.` };
     const retiredAt = await retiredAtOf(d, edgeNodeId); // doc 81 Đợt 12 O — a retired node is given no run (mig 0378 too)
@@ -520,11 +526,13 @@ export function centralStopped(run: { status: string; contextJson?: unknown }): 
 
 /** A2(n) T7c — the code of a sync refused because the run is latched (the message starts with it). Machine-to-machine: the edge, the API key's client. */
 export const EDGE_SYNC_RUN_LATCHED = "EDGE_SYNC_RUN_LATCHED";
+/** A2(n) T7c-b — the code of an assignRun refused because the run is latched (the message starts with it). Machine-control door (tRPC edgeRuntime.assignRun). */
+export const EDGE_ASSIGN_RUN_LATCHED = "EDGE_ASSIGN_RUN_LATCHED";
 /** Why: the context's latch (runDaChotKhongRo), the rows' latch (chotTuHang), a STOP the rows still owe (stopChuaRaTuHang), or what could not be read. */
 export type LyDoDongBoKhoa = "chot" | "hangKhongRo" | "stopChuaRa" | "nguCanhKhongDoc" | "hangKhongDoc";
 
 /**
- * A2(n) T7c (plan point 3 row 16) — is this run latched, from its context and its step rows? Fail-closed: a context that is not an object, or rows that cannot be read,
+ * A2(n) T7c (plan point 3 row 16) — is this run latched, from its context and its step rows? The one source of syncRunResult and assignRun (T7c-b). Fail-closed: a context that is not an object, or rows that cannot be read,
  * is a refusal (nothing can say no STOP is owed). null ⇔ nothing says so. The classifiers are the engine's own (one source): no rule is spelled here.
  */
 async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: number; contextJson?: unknown }): Promise<LyDoDongBoKhoa | null> {
@@ -558,6 +566,7 @@ async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: numb
  *   • `abort:<id>` rows are central's record of the STOPs its own sweep sent (they decide what a re-send sends): an edge
  *     never writes them; nor can an edge set or clear the server-only rejection claim token in the run context.
  * A2(n) T7c — a LATCHED run (lyDoDongBoKhoa) is refused before any write: no step row, no context, no status.
+ * A2(n) T7c-b (i) — and the answer is the stale one with abortRequested, for every latched run (stopped or not): an edge walker of it stops.
  * Every entry point (tRPC edgeRuntime.syncRunResult and POST /api/v1/edge/sync) reaches the run row only through here.
  *
  * IDEMPOTENT: each step is upserted on (runId, stepId) so a replay (offline-buffer
@@ -612,10 +621,9 @@ export async function syncRunResult(
     const khoa = await lyDoDongBoKhoa(d, run);
     if (khoa) {
       const dung = centralStopped(run);
-      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written${dung ? "; central stopped the run: the edge is told to stop" : ""}`);
-      // T7c fix 1 (P1) — central has stopped it (aborted, or a rejection's claim, 'compensating' too): the stale answer above, so the edge stops its walker (an ok:false is "unreachable" to it)
-      if (dung) return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: true, stale: true } };
-      return { ok: false, enabled: true, message: `${EDGE_SYNC_RUN_LATCHED}: run ${payload.runId} is latched (${khoa}) — a sync writes none of its steps, context or status; only central ends it.` };
+      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written; the edge is told to stop${dung ? " (central stopped the run)" : " (latched, not stopped: only central ends it)"}`);
+      // T7c-b (i) — EVERY latched run, stopped or not: the stale answer above, so an edge walker of it stops (an ok:false is "unreachable" to it and it walks on)
+      return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: true, stale: true } };
     }
 
     // ── Upsert each step (idempotent on runId+stepId) ──
