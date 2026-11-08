@@ -92,24 +92,30 @@ test("--ghi-chu và tải máy vào báo cáo: slot bận được đếm, mẫu
   assert.match(md, /có tiến trình khác trong lúc đo/);
 });
 
-test("nhanTienTrinhNang: trừ chính lượt đo và con cháu, không ghi dòng lệnh", () => {
+test("nhanTienTrinhNang: không tính con cháu, tổ tiên của lượt đo và tiến trình nhàn rỗi; không ghi dòng lệnh", () => {
   const ds = [
-    { pid: 10, cha: 1, lenh: "node run-eval.mjs" },
-    { pid: 11, cha: 10, lenh: "node check.mjs" },
-    { pid: 12, cha: 11, lenh: "dotnet run --project p.csproj" },
-    { pid: 20, cha: 1, lenh: "node node_modules/vitest/vitest.mjs run --db=postgres://u:bimat@h/d" },
-    { pid: 21, cha: 1, lenh: "node dot-bien.cjs" },
-    { pid: 22, cha: 1, lenh: null },
-    { pid: 23, cha: 1, lenh: "notepad.exe" },
+    { pid: 1, cha: 0, lenh: "bash -c 'grep vitest; tsc --noEmit'", cpuMs: 60_000 }, // shell bọc lượt đo: đúng lỗi của C3 đêm 08/11
+    { pid: 10, cha: 1, lenh: "node run-eval.mjs", cpuMs: 60_000 },
+    { pid: 11, cha: 10, lenh: "node check.mjs", cpuMs: 60_000 },
+    { pid: 12, cha: 11, lenh: "dotnet run --project p.csproj", cpuMs: 60_000 },
+    { pid: 20, cha: 5, lenh: "node node_modules/vitest/vitest.mjs run --db=postgres://u:bimat@h/d", cpuMs: 30_000 },
+    { pid: 21, cha: 5, lenh: "node dot-bien.cjs", cpuMs: 3_000 },
+    { pid: 22, cha: 5, lenh: null, cpuMs: 60_000 },
+    { pid: 23, cha: 5, lenh: "notepad.exe", cpuMs: 60_000 },
+    { pid: 24, cha: 5, lenh: "dotnet.exe C:/Users/x/.vscode/extensions/ms-dotnettools.csdevkit/CPS.dll", cpuMs: 500 }, // nhàn rỗi
+    { pid: 25, cha: 5, lenh: "dotnet build", cpuMs: 100_500 }, // đã chạy từ trước, khoảng này không làm gì
   ];
-  const r = nhanTienTrinhNang(ds, 10);
+  const r = nhanTienTrinhNang(ds, 10, new Map([[25, 100_000]]), 60);
   assert.deepEqual(r, ["dot-bien", "vitest"]);
   assert.ok(!JSON.stringify(r).includes("bimat"));
-  assert.deepEqual(nhanTienTrinhNang([{ pid: 12, cha: 11, lenh: "dotnet build" }], 10), ["dotnet"], "dotnet của người khác vẫn tính");
 });
 
-test("nhanTienTrinhNang: tiến trình thường trực của VS Code và MCP không làm bẩn số đo; tsc và playwright test thật thì có", () => {
-  const nhan = (lenh) => nhanTienTrinhNang([{ pid: 2, cha: 1, lenh }], 9);
+test("nhanTienTrinhNang: mẫu đầu chưa có mẫu trước thì không gắn nhãn", () => {
+  assert.deepEqual(nhanTienTrinhNang([{ pid: 2, cha: 1, lenh: "vitest run", cpuMs: 9e6 }], 9, null, 60), []);
+});
+
+test("nhanTienTrinhNang: dịch vụ thường trực không vào nhãn; tsc và playwright test thật thì có", () => {
+  const nhan = (lenh) => nhanTienTrinhNang([{ pid: 2, cha: 1, lenh, cpuMs: 60_000 }], 9, new Map(), 60);
   assert.deepEqual(nhan("Code.exe --max-old-space-size=3072 d:/x/node_modules/typescript/lib/tsserver.js"), []);
   assert.deepEqual(nhan('"node" C:/npm-cache/_npx/1/node_modules/.bin/../@playwright/mcp/cli.js'), []);
   assert.deepEqual(nhan('cmd /c npx "@playwright/mcp@latest"'), []);

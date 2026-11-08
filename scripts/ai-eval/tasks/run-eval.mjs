@@ -23,29 +23,41 @@ import { docTienTrinh, layBam, tachDongLenh } from "../../ai/kiem-he-thong.mjs";
 const SAMPLING = { temperature: 0.2, top_p: 0.9 };
 const TEP_RUN_F = `${BENCH_CODEGEN}/agent-f/run-f.mjs`;
 
-/** Nhãn tiến trình nặng làm méo số đo. Báo cáo vào repo chỉ ghi nhãn, không ghi dòng lệnh (có thể chứa bí mật). */
+/** Nhãn tiến trình làm méo số đo. Báo cáo vào repo chỉ ghi nhãn, không ghi dòng lệnh (có thể chứa bí mật). */
 const NHAN_NANG = [
   ["vitest", /vitest/i],
   ["dot-bien", /dot-?bien/i],
-  // tsserver của VS Code và máy chủ MCP / test-server của playwright chạy thường trực, gần như không tốn CPU: không tính.
   ["tsc", /\btsc(\.js|\.cmd)?\b/i],
   ["esbuild-vite", /esbuild|vite(\.js|\.mjs|\s)/i],
   ["dotnet", /\bdotnet(\.exe)?\b/i],
   ["playwright", /@playwright[\\/]test[\\/]cli\.js"?\s+test(?!-server)|\bplaywright\s+test\b/i],
   ["kiem-thuoc", /kiem-thuoc/i],
 ];
+/** Dùng ≥ 5 % một lõi trong khoảng giữa hai mẫu mới tính là đang làm việc. */
+const NGUONG_MOT_LOI = 0.05;
 
-/** Nhãn nặng đang chạy, trừ `pidMinh` và con cháu của nó (bộ chấm của chính lượt đo). `ds`: [{ pid, cha, lenh }]. */
-export function nhanTienTrinhNang(ds, pidMinh) {
+/**
+ * Nhãn tiến trình ĐANG LÀM VIỆC giữa hai mẫu. `ds`: [{ pid, cha, lenh, cpuMs }], `truoc`: Map pid → cpuMs của mẫu trước.
+ * Không tính chính lượt đo: con cháu của `pidMinh` (bộ chấm) và tổ tiên của nó (shell bọc lệnh, dòng lệnh có thể chứa chữ "vitest").
+ * Không tính tiến trình nhàn rỗi: cùng tên "dotnet" hay "tsc" có thể là dịch vụ thường trực của VS Code hoặc VBCSCompiler bộ chấm để lại.
+ * Mẫu đầu chưa có `truoc` nên không gắn nhãn được: trả rỗng.
+ */
+export function nhanTienTrinhNang(ds, pidMinh, truoc, giay) {
+  if (!truoc) return [];
   const con = new Map();
-  for (const x of ds) con.set(x.cha, [...(con.get(x.cha) ?? []), x.pid]);
-  const cuaMinh = new Set([pidMinh]);
-  for (const hang of [[pidMinh]]) {
-    while (hang.length) for (const c of con.get(hang.pop()) ?? []) if (!cuaMinh.has(c)) (cuaMinh.add(c), hang.push(c));
+  const cha = new Map();
+  for (const x of ds) {
+    con.set(x.cha, [...(con.get(x.cha) ?? []), x.pid]);
+    cha.set(x.pid, x.cha);
   }
+  const cuaMinh = new Set([pidMinh]);
+  const hang = [pidMinh];
+  while (hang.length) for (const c of con.get(hang.pop()) ?? []) if (!cuaMinh.has(c)) (cuaMinh.add(c), hang.push(c));
+  for (let p = cha.get(pidMinh); p !== undefined && !cuaMinh.has(p); p = cha.get(p)) cuaMinh.add(p);
   const ra = new Set();
   for (const x of ds) {
     if (cuaMinh.has(x.pid) || !x.lenh) continue;
+    if ((x.cpuMs - (truoc.get(x.pid) ?? 0)) / (giay * 1000) < NGUONG_MOT_LOI) continue;
     for (const [nhan, re] of NHAN_NANG) if (re.test(x.lenh)) ra.add(nhan);
   }
   return [...ra].sort();
@@ -66,10 +78,10 @@ export function tongHopTai(mau, soLuotSlotBan) {
   };
 }
 
-/** Một mẫu tải máy. Không đọc được thì trả cpu null, không làm hỏng lượt đo. */
-function docTai() {
+/** Một mẫu tải máy. Không đọc được thì trả cpu null, không làm hỏng lượt đo. `trangThai.truoc` giữ cpuMs của mẫu trước. */
+function docTai(trangThai, giay) {
   return new Promise((resolve) => {
-    const lenh = "$c=(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average; $p=Get-CimInstance Win32_Process | Select-Object @{n='pid';e={$_.ProcessId}},@{n='cha';e={$_.ParentProcessId}},@{n='lenh';e={$_.CommandLine}}; @{cpu=$c;ds=@($p)} | ConvertTo-Json -Depth 3 -Compress";
+    const lenh = "$c=(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average; $p=Get-CimInstance Win32_Process | Select-Object @{n='pid';e={$_.ProcessId}},@{n='cha';e={$_.ParentProcessId}},@{n='lenh';e={$_.CommandLine}},@{n='cpuMs';e={[math]::Round(($_.KernelModeTime+$_.UserModeTime)/10000)}}; @{cpu=$c;ds=@($p)} | ConvertTo-Json -Depth 3 -Compress";
     const c = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", lenh], { windowsHide: true });
     let out = "";
     c.stdout.on("data", (d) => (out += d));
@@ -77,7 +89,9 @@ function docTai() {
     c.on("close", () => {
       try {
         const j = JSON.parse(out);
-        resolve({ cpu: j.cpu, nhan: nhanTienTrinhNang(j.ds, process.pid) });
+        const nhan = nhanTienTrinhNang(j.ds, process.pid, trangThai.truoc, giay);
+        trangThai.truoc = new Map(j.ds.map((x) => [x.pid, x.cpuMs]));
+        resolve({ cpu: j.cpu, nhan });
       } catch {
         resolve({ cpu: null, nhan: [] });
       }
@@ -244,8 +258,9 @@ async function main() {
   const mauTai = [];
   let soLuotSlotBan = 0;
   const giayTai = Number(lay("--mau-tai-giay", "60"));
-  let dangDocTai = giayTai > 0 ? docTai().then((m) => void mauTai.push(m)) : Promise.resolve();
-  const henTai = giayTai > 0 ? setInterval(() => void (dangDocTai = dangDocTai.then(docTai).then((m) => void mauTai.push(m))), giayTai * 1000) : null;
+  const trangThaiTai = { truoc: null };
+  let dangDocTai = giayTai > 0 ? docTai(trangThaiTai, giayTai).then((m) => void mauTai.push(m)) : Promise.resolve();
+  const henTai = giayTai > 0 ? setInterval(() => void (dangDocTai = dangDocTai.then(() => docTai(trangThaiTai, giayTai)).then((m) => void mauTai.push(m))), giayTai * 1000) : null;
   // Vòng ngoài theo MẪU: dừng sớm vẫn còn mỗi mẫu đủ bài, không lệch về bài đầu danh sách.
   ngoai: for (let mau = 1; mau <= soMau; mau++) {
     for (const b of baiMa) {
