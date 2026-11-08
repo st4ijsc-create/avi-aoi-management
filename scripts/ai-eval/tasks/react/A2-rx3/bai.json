@@ -1,0 +1,12 @@
+{
+  "id": "A2-rx3",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "tsx",
+  "ten": "BangTab",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-rx3"
+  },
+  "canDb": false
+}

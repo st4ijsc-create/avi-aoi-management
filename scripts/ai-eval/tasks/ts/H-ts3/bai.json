@@ -1,0 +1,12 @@
+{
+  "id": "H-ts3",
+  "kieu": "ma-don",
+  "bo": "tasks-hard",
+  "lang": "ts",
+  "ten": "sapXepTopo",
+  "nguon": {
+    "tep": "tasks-hard.json",
+    "id": "H-ts3"
+  },
+  "canDb": false
+}

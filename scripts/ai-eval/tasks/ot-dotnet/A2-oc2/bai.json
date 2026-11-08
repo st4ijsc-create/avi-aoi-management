@@ -1,0 +1,12 @@
+{
+  "id": "A2-oc2",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "cs",
+  "ten": "NhanMqtt",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-oc2"
+  },
+  "canDb": false
+}

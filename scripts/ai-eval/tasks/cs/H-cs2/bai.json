@@ -1,0 +1,12 @@
+{
+  "id": "H-cs2",
+  "kieu": "ma-don",
+  "bo": "tasks-hard",
+  "lang": "cs",
+  "ten": "TinhBieuThuc",
+  "nguon": {
+    "tep": "tasks-hard.json",
+    "id": "H-cs2"
+  },
+  "canDb": false
+}

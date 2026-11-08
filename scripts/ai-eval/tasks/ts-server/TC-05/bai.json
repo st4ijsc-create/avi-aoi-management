@@ -1,0 +1,17 @@
+{
+  "id": "TC-05",
+  "kieu": "pilot-repo",
+  "bo": "pilot",
+  "repo": {
+    "commit": "1b4930fa9"
+  },
+  "tepDuocSua": [
+    "server/utils/msaReport.unit.test.ts"
+  ],
+  "lenhKiem": "npx vitest run server/utils/msaReport.unit.test.ts",
+  "nguonGhim": {
+    "server/utils/msaReport.ts": "a171e4291dd0ad0b12d5c5d32594f457c7a08313"
+  },
+  "mauBlob": "03946f5357c21864744b178d7aeb4b3c3fdb00f0",
+  "canDb": false
+}

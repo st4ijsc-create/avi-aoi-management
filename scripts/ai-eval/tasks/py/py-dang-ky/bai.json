@@ -1,0 +1,13 @@
+{
+  "id": "py-dang-ky",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "py",
+  "ten": "Kiểm tra hợp lệ form đăng ký + thông báo lỗi song ngữ vi/en: module mới, sửa bảng thông điệp, sửa dịch vụ + ngoại lệ",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "py-dang-ky"
+  },
+  "duAn": "sandbox-projects/agent-f/py-dang-ky",
+  "canDb": false
+}

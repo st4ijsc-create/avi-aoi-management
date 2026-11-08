@@ -1,0 +1,12 @@
+{
+  "id": "A2-pg2",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "pgsql",
+  "ten": "khung_15_phut",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-pg2"
+  },
+  "canDb": false
+}
