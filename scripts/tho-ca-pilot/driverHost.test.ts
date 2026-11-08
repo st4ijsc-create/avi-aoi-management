@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { driverHost, locTruocKhiCho, duongCuaDeXuat, duyetQuaTep, tomTatKiemChoModel, TRAN_TU_CHAY, hanDuyetHieuLucMs, tepDangCho, TTL_THE_DUYET_MS, tepChoDuyet, type PhuThuocHost, type ChinhSachDuyet } from "./driverHost";
+import { fileURLToPath } from "node:url";
+import { driverHost, locTruocKhiCho, duongCuaDeXuat, duyetQuaTep, tomTatKiemChoModel, TRAN_TU_CHAY, hanDuyetHieuLucMs, hanKeHoachHieuLucMs, idKeHoach, tepDangCho, TTL_THE_DUYET_MS, tepChoDuyet, type PhuThuocHost, type ChinhSachDuyet } from "./driverHost";
 import type { KetQuaKiem } from "./kiemChung";
 import { ghiQuyet } from "./duyet";
 import type { DauVaoDriver } from "./chayMotViec";
@@ -454,5 +455,138 @@ describe("locTruocKhiCho — tự chạy CHỈ khi khớp NGUYÊN VĂN lệnh ki
     expect(loc(`  ${THE.lenhKiem}  `).loai).toBe("tu-chay");
     expect(loc(THE.lenhKiem.replace("run", "RUN")).loai).toBe("tu-choi");
     expect(loc(THE.lenhKiem.replace("vitest run", "vitest  run")).loai).toBe("tu-choi");
+  });
+});
+
+describe("driverHost — CỔNG KẾ HOẠCH 11.3-C (chỉ khi env pilot bật AI_AGENT_CONG_KE_HOACH; kiem-dinh CHƯA rà ĐẠT)", () => {
+  const BAM = "abc123def4567890";
+  const VIEC = [{ noiDung: "đọc msaReport.ts", trangThai: "cho" }, { noiDung: "viết 12 ca", trangThai: "cho" }];
+  const keHoach = (bam = BAM) => ({ loai: "ke-hoach-cho-duyet", viec: VIEC, bam });
+  /** máy chủ GIẢ: chỉ nhận băm ĐÚNG băm đã nộp; ghi lại mọi lời gọi */
+  const mayChu = (daNop: string) => {
+    const goi: Array<{ runId: string; bam: string; quyetDinh: string }> = [];
+    const duyetKeHoach: PhuThuocHost["duyetKeHoach"] = async (runId, bam, quyetDinh) => {
+      goi.push({ runId, bam, quyetDinh });
+      return bam === daNop ? { ok: true, note: null } : { ok: false, note: "BAM_KHONG_KHOP" };
+    };
+    return { goi, duyetKeHoach };
+  };
+  it("★ người CHẤP NHẬN ⇒ thuTucDuyetKeHoach(runId, ĐÚNG băm của sự kiện, 'duyet'); KHÔNG gọi confirmAction (duyet) cho kế hoạch; hồ sơ ten=ke_hoach id=kh-<băm>; thống kê riêng", async () => {
+    const mc = mayChu(BAM);
+    const hoSo: Array<{ ten: string; id: string; hetHanLuc?: string; thamSo: Record<string, unknown> }> = [];
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        phat(keHoach());
+        await new Promise((r) => setTimeout(r, 150));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async (h) => (hoSo.push(h), { quyet: "chap-nhan" }),
+      { duyetKeHoach: mc.duyetKeHoach },
+    );
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(mc.goi).toEqual([{ runId: "r1", bam: BAM, quyetDinh: "duyet" }]);
+    expect(dd.duyet).toEqual([]); // duyệt kế hoạch KHÔNG đi đường confirmAction
+    expect(dd.bac).toEqual([]);
+    expect(hoSo[0]).toMatchObject({ ten: "ke_hoach", id: idKeHoach(BAM), thamSo: { bam: BAM } });
+    expect(hoSo[0].hetHanLuc).toBeTruthy();
+    expect(kq.keHoach).toEqual({ soLanCho: 1, soChapNhan: 1, soTuChoi: 0 });
+    expect(kq.duyet).toMatchObject({ soLanCho: 0, soChapNhan: 0 }); // không lẫn với thẻ ghi
+  });
+  it("★ người TỪ CHỐI / hết giờ ⇒ 'bac'; hết giờ đánh dấu hetGio", async () => {
+    const a = mayChu(BAM);
+    const ta = taoDep(
+      async (phat) => {
+        phat(keHoach());
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "tu-choi", lyDo: "kế hoạch thiếu bước chạy lệnh kiểm" }),
+      { duyetKeHoach: a.duyetKeHoach },
+    );
+    const kqa = await driverHost(ta.dep)(dauVao(ra));
+    expect(a.goi.map((g) => g.quyetDinh)).toEqual(["bac"]);
+    expect(kqa.keHoach).toEqual({ soLanCho: 1, soChapNhan: 0, soTuChoi: 1 });
+    expect(kqa.hetGio).toBe(false);
+    const b = mayChu(BAM);
+    const tb = taoDep(
+      async (phat) => {
+        phat(keHoach());
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "het-gio" }),
+      { duyetKeHoach: b.duyetKeHoach },
+    );
+    const kqb = await driverHost(tb.dep)(dauVao(ra));
+    expect(b.goi.map((g) => g.quyetDinh)).toEqual(["bac"]);
+    expect(kqb.hetGio).toBe(true);
+  });
+  it("★ máy chủ từ chối băm (lệch) ⇒ KHÔNG coi là đã duyệt: lỗi vào loiCongCu DUYET_KE_HOACH_LOI:<note>, ghiChu nêu ok=false", async () => {
+    const mc = mayChu("bam-da-nop-khac");
+    const { dep } = taoDep(
+      async (phat) => {
+        phat(keHoach(BAM));
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { duyetKeHoach: mc.duyetKeHoach },
+    );
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(kq.loiCongCu).toEqual({ "DUYET_KE_HOACH_LOI:BAM_KHONG_KHOP": 1 });
+    expect(kq.ghiChu.join(" ")).toMatch(/kế hoạch duyet .*ok=false note=BAM_KHONG_KHOP/);
+  });
+  it("★ hai kế hoạch (băm khác nhau): MỖI cái có hồ sơ + quyết định riêng; thẻ ghi xen giữa vẫn đi đường confirmAction", async () => {
+    const mc = mayChu(BAM);
+    const ids: string[] = [];
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        phat(keHoach());
+        await new Promise((r) => setTimeout(r, 80));
+        phat(canDuyet("apply_diff", { path: "client/src/lib/a.test.ts" }, "act-7"));
+        await new Promise((r) => setTimeout(r, 80));
+        phat(keHoach("bam-moi-0000000000"));
+        await new Promise((r) => setTimeout(r, 150));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async (h) => (ids.push(h.id), { quyet: "chap-nhan" }),
+      { duyetKeHoach: mc.duyetKeHoach },
+    );
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(ids).toEqual([idKeHoach(BAM), "act-7", idKeHoach("bam-moi-0000000000")]);
+    expect(mc.goi.map((g) => g.bam)).toEqual([BAM, "bam-moi-0000000000"]);
+    expect(dd.duyet).toEqual(["act-7"]);
+    expect(kq.keHoach).toMatchObject({ soLanCho: 2, soChapNhan: 2 });
+  });
+  it("★ quyết định của kế hoạch CŨ không duyệt kế hoạch MỚI (id kh-<băm> khác ⇒ duyetQuaTep bỏ qua ⇒ het-gio)", async () => {
+    const h = (bam: string) => ({ ma: "TC-97", id: idKeHoach(bam), ten: "ke_hoach", duong: [], moTa: null, lyDoModel: null, xemTruoc: null, thamSo: {}, nguonDangNgo: [], luc: new Date().toISOString() });
+    fs.mkdirSync(ra, { recursive: true });
+    fs.writeFileSync(path.join(ra, "TC-97.quyet.json"), JSON.stringify({ id: idKeHoach("bam-cu"), quyet: "chap-nhan" }));
+    const p = duyetQuaTep(h("bam-moi"), { ra, hanMs: 700 });
+    // duyetQuaTep xoá quyết định cũ lúc bắt đầu; ghi lại một quyết định mang id CŨ trong lúc chờ
+    await new Promise((r) => setTimeout(r, 150));
+    fs.writeFileSync(path.join(ra, "TC-97.quyet.json"), JSON.stringify({ id: idKeHoach("bam-cu"), quyet: "chap-nhan" }));
+    expect((await p).quyet).toBe("het-gio");
+  });
+  it("hanKeHoachHieuLucMs: trần chờ kế hoạch 15 phút (KHÁC TTL thẻ 5 phút)", () => {
+    expect(hanKeHoachHieuLucMs(600)).toBe(600_000);
+    expect(hanKeHoachHieuLucMs(5000)).toBe(15 * 60_000 - 15_000);
+    expect(hanDuyetHieuLucMs(600)).toBe(300_000 - 15_000); // thẻ ghi vẫn 5 phút
+  });
+});
+
+describe("phuThuocHostThat — nối THẬT của cổng kế hoạch (đọc nguồn: hàm này cần DB nên không chạy ở đây)", () => {
+  const nguon = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "driverHost.ts"), "utf8");
+  const than = (() => {
+    const i = nguon.indexOf("async duyetKeHoach(runId, bam, quyetDinh) {");
+    expect(i, "không tìm thấy duyetKeHoach thật").toBeGreaterThan(0);
+    return nguon.slice(i, nguon.indexOf("\n    },", i));
+  })();
+  it("★ duyệt kế hoạch gọi thuTucDuyetKeHoach với ĐÚNG (runId, bam, quyetDinh) của sự kiện; KHÔNG gọi thuTucDuyet / thuTucBac (thẻ ghi)", () => {
+    expect(than).toContain("tk.thuTucDuyetKeHoach(c.nguoi, { runId, bam, quyetDinh })");
+    expect(than).not.toMatch(/thuTucDuyet\(|thuTucBac\(|tt\./);
+  });
+  it("★ thủ tục kế hoạch nạp từ thuTucKeHoach (không phải thuTucLuotChay)", () => {
+    expect(nguon).toContain('const tk = await import("../../server/services/ai/agent/thuTucKeHoach");');
   });
 });

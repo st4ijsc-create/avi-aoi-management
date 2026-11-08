@@ -41,6 +41,8 @@ export interface KetQuaDriver {
   duyet?: { soLanCho: number; soChapNhan: number; soTuChoi: number; giayChoDuyet: number };
   /** lý do dừng của lượt (hoan-thanh | het-luot | het-gio | loi-model | …) nếu driver biết */
   lyDoDung?: string;
+  /** thống kê cổng kế hoạch 11.3-C (chỉ có khi cờ bật và có ít nhất một kế hoạch chờ) */
+  keHoach?: { soLanCho: number; soChapNhan: number; soTuChoi: number };
   /** lưu ý driver muốn ghi vào JSON (vd khoá checkpoint tạm) */
   luuY?: string[];
   /** đếm lỗi công cụ theo mã (vd { "CHECKPOINT_LOI:KHONG_CO_KHOA": 4 }) */
@@ -77,6 +79,8 @@ export interface KetQuaViec {
   giayKhongChoNguoi?: number;
   /** lý do dừng của lượt agent (hoan-thanh | het-luot | loi-model | …) — driver host */
   lyDoDung?: string;
+  /** cổng kế hoạch 11.3-C: số kế hoạch chờ / được duyệt / bị bác */
+  keHoach?: { soLanCho: number; soChapNhan: number; soTuChoi: number };
   soLanCho?: number;
   soChapNhan?: number;
   soTuChoi?: number;
@@ -97,6 +101,8 @@ export interface KetQuaViec {
   tsc?: KetQuaTsc;
   /** L3b: kết quả áp đột biến của thẻ (vắng khi thẻ không có hoặc các bước trước chưa xanh) */
   dotBien?: KetQuaDotBien;
+  /** cờ AI_AGENT_* có hiệu lực trong lượt này (tên → giá trị; không có bí mật) */
+  coAiAgent?: Record<string, string>;
   /** L3b: nhãn nghi "ghim lỗi thành kỳ vọng" trong tệp test model viết — CHỈ cảnh báo, người đọc quyết */
   ghimNghiNgo?: Array<{ duong: string; dong: number; trich: string }>;
   /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
@@ -251,6 +257,8 @@ export interface ThamSoViec {
   /** L3c: hàm chạy tsc (mặc định chạy thật) và hạn giờ riêng, giây (mặc định 900) */
   chayTsc?: ChayTsc;
   hanTscGiay?: number;
+  /** cờ AI_AGENT_* THỰC SỰ có trong env tiến trình lúc chạy (ghi vào JSON để số đo nói rõ chạy với cờ nào) */
+  coAiAgent?: Record<string, string>;
 }
 
 export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
@@ -369,6 +377,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   }
   const crlf = tepCrlf(wt, tepDoi);
   const luuY: string[] = [...luuY0, ...(kq.luuY ?? [])];
+  if (p.coAiAgent?.AI_AGENT_CONG_KE_HOACH === "1") {
+    luuY.push("cổng duyệt kế hoạch 11.3-C BẬT chỉ trong env tiến trình pilot này (lượt đo thử). kiem-dinh CHƯA rà ĐẠT 11.3-C (dieu-phoi 2026-11-08) ⇒ mặc định của cờ trong ứng dụng KHÔNG đổi.");
+  }
   if (kq.token === null) luuY.push("token xử lý: driver không có nguồn đo (CLI không qua goiModelMayChu); do-model đo ở llama-server nếu cần");
   if (kq.vong === null) luuY.push("số vòng: driver không biết");
 
@@ -425,6 +436,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     giayKhongChoNguoi: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
     ...(kq.duyet ? { soLanCho: kq.duyet.soLanCho, soChapNhan: kq.duyet.soChapNhan, soTuChoi: kq.duyet.soTuChoi, giayChoDuyet: kq.duyet.giayChoDuyet } : {}),
     ...(kq.lyDoDung ? { lyDoDung: kq.lyDoDung } : {}),
+    ...(kq.keHoach ? { keHoach: kq.keHoach } : {}),
     ...(kq.loiCongCu ? { loiCongCu: kq.loiCongCu } : {}),
     vong: kq.vong,
     token: kq.token,
@@ -435,6 +447,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     diff: diffPath,
     lenhKiem: the.lenhKiem,
     ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
+    ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
     ...(tsc ? { tsc } : {}),
     ...(dotBien ? { dotBien } : {}),
     ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),
@@ -464,6 +477,14 @@ async function main(): Promise<number> {
     process.stderr.write(`driver không hợp lệ: ${drv}\n`);
     return 2;
   }
+  // Cờ AI_AGENT_* khai TƯỜNG MINH (không nhận ngầm từ .env — xem napEnv.ts). `--cong-ke-hoach` = AI_AGENT_CONG_KE_HOACH=1 (cổng duyệt kế hoạch 11.3-C).
+  const { docCoTuongMinh, datCoTuongMinh, coAiAgentHieuLuc } = await import("./napEnv");
+  const tm = docCoTuongMinh(a.co === "1" ? "" : a.co);
+  if (tm.loi.length > 0) {
+    process.stderr.write(`--co không hợp lệ: ${tm.loi.join("; ")}\n`);
+    return 2;
+  }
+  if (a["cong-ke-hoach"]) tm.co.AI_AGENT_CONG_KE_HOACH = "1";
   let driver: TenDriver | Driver = drv;
   if (drv === "host") {
     if (a["env-tu"]) {
@@ -471,6 +492,9 @@ async function main(): Promise<number> {
       const kqNap = napEnvTuTep(a["env-tu"]);
       process.stderr.write(`[tho-ca-pilot] đã nạp từ --env-tu (chỉ tên khoá): ${kqNap.daNap.join(" ") || "(không)"}; đã có sẵn trong môi trường (giữ nguyên): ${kqNap.daCo.join(" ") || "(không)"}
 `);
+      if (kqNap.boQuaCoAgent.length > 0) {
+        process.stderr.write(`[tho-ca-pilot] BỎ QUA cờ AI_AGENT_* trong ${a["env-tu"]} (không nhận ngầm; khai bằng --co nếu muốn): ${kqNap.boQuaCoAgent.join(" ")}\n`);
+      }
     }
     const id = Number(a["nguoi-id"]);
     if (!Number.isInteger(id) || id <= 0) {
@@ -481,11 +505,16 @@ async function main(): Promise<number> {
       process.stderr.write("từ chối: pilot KHÔNG chạy bằng vai admin\n");
       return 2;
     }
+    datCoTuongMinh(tm.co);
     const { driverHost, phuThuocHostThat } = await import("./driverHost");
     const dep = await phuThuocHostThat({ nguoi: { id, role: a["nguoi-vai"] ?? "engineer", name: "pilot-tho-ca" } });
     driver = driverHost(dep, a["han-duyet"] ? Number(a["han-duyet"]) : 3600);
   }
+  datCoTuongMinh(tm.co);
+  const coAiAgent = coAiAgentHieuLuc();
+  process.stderr.write(`[tho-ca-pilot] cờ AI_AGENT_* CÓ HIỆU LỰC: ${Object.entries(coAiAgent).map(([k, v]) => `${k}=${v}`).join(" ") || "(không — mọi cờ ở mặc định trong mã)"}\n`);
   const kq = await chayMotViec({
+    coAiAgent,
     van: fs.readFileSync(a.the, "utf8"),
     wt: a.wt ?? "D:\\SOURCES\\_tho_ca_wt",
     base: a.base ?? "main",

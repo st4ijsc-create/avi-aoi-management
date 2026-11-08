@@ -428,3 +428,16 @@ GIỚI HẠN: 1 phút, 3 vòng`;
     expect(goi).toBe(1);
   });
 });
+
+describe("chayMotViec — cờ AI_AGENT_* có hiệu lực + ghi chú cổng kế hoạch chưa kiem-dinh", () => {
+  it("★ coAiAgent đi vào JSON; cổng kế hoạch BẬT ⇒ luuY nói rõ 'kiem-dinh CHƯA rà ĐẠT'; tắt ⇒ không có dòng đó", async () => {
+    const drv: Driver = async () => ({ vong: 1, token: null, ghiChu: [], hetGio: false, keHoach: { soLanCho: 1, soChapNhan: 1, soTuChoi: 0 } });
+    const bat = await chay({ driver: drv, coAiAgent: { AI_AGENT_CONG_KE_HOACH: "1", AI_AGENT_NEN_MOC: "0.5" } });
+    expect(bat.coAiAgent).toEqual({ AI_AGENT_CONG_KE_HOACH: "1", AI_AGENT_NEN_MOC: "0.5" });
+    expect(bat.keHoach).toEqual({ soLanCho: 1, soChapNhan: 1, soTuChoi: 0 });
+    expect(bat.luuY?.join(" ")).toMatch(/cổng duyệt kế hoạch 11\.3-C BẬT .*kiem-dinh CHƯA rà ĐẠT/);
+    const tat = await chay({ driver: drv, coAiAgent: { AI_AGENT_NEN_MOC: "0.5" } });
+    expect(tat.luuY?.join(" ")).not.toMatch(/11\.3-C/);
+    expect((await chay({ driver: drv })).coAiAgent).toBeUndefined();
+  });
+});

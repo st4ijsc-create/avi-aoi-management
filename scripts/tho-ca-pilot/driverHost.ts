@@ -95,6 +95,13 @@ export interface HoSoCho {
 /** App đặt `expiresAt = createdAt + 5 phút` cho thẻ (aiCopilotActions.PENDING_TTL_MS); quá hạn thẻ `invalid` dù bộ chạy còn đợi (TC-05 lượt 2). */
 export const TTL_THE_DUYET_MS = 5 * 60_000;
 export const BIEN_AN_TOAN_MS = 15_000;
+/** Cổng kế hoạch 11.3-C chờ người tối đa 15 phút (choDuyetKeHoach.TRAN_CHO_DUYET_KE_HOACH_MS) — KHÁC TTL thẻ ghi (5 phút). */
+export const TRAN_CHO_KE_HOACH_MS = 15 * 60_000;
+/** id hồ sơ của kế hoạch = `kh-<băm>`: băm đổi ⇒ id đổi ⇒ quyết định của kế hoạch cũ KHÔNG duyệt kế hoạch mới. */
+export const idKeHoach = (bam: string) => `kh-${bam}`;
+export function hanKeHoachHieuLucMs(hanDuyetGiay: number): number {
+  return Math.max(1000, Math.min(hanDuyetGiay * 1000, TRAN_CHO_KE_HOACH_MS - BIEN_AN_TOAN_MS));
+}
 /** Hạn chờ người HIỆU LỰC = min(--han-duyet, TTL của thẻ − biên an toàn). Không bao giờ dài hơn thời gian thẻ còn sống. */
 export function hanDuyetHieuLucMs(hanDuyetGiay: number): number {
   return Math.max(1000, Math.min(hanDuyetGiay * 1000, TTL_THE_DUYET_MS - BIEN_AN_TOAN_MS));
@@ -171,6 +178,11 @@ export interface PhuThuocHost {
   huy(runId: string): void;
   duyet(actionId: string): Promise<{ ok: boolean; daGhi: boolean; status: string | null }>;
   bac(actionId: string, lyDo: string): Promise<void>;
+  /**
+   * (cổng kế hoạch 11.3-C — chỉ khi env tiến trình có AI_AGENT_CONG_KE_HOACH=1) quyết kế hoạch của lượt qua `thuTucDuyetKeHoach` (KHÔNG phải confirmAction:
+   * duyệt kế hoạch không duyệt thẻ ghi/lệnh). `bam` PHẢI là băm của sự kiện `ke-hoach-cho-duyet` hiện tại — máy chủ so với băm đã lưu và từ chối nếu lệch.
+   */
+  duyetKeHoach?(runId: string, bam: string, quyetDinh: "duyet" | "bac"): Promise<{ ok: boolean; note: string | null }>;
   duAnId(wt: string): string;
   /** (tuỳ chọn) trạng thái lượt đọc từ kho sau khi dừng */
   trangThaiLuot?(runId: string): Promise<{ trangThai: string | null; lyDoDung: string | null } | null>;
@@ -200,6 +212,8 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     if (!tao.ok) return { vong: null, token: null, ghiChu, hetGio: false, loi: `không tạo được lượt: ${tao.loi}` };
 
     const th = { soLanCho: 0, soChapNhan: 0, soTuChoi: 0, msCho: 0 };
+    /** thống kê RIÊNG cho cổng kế hoạch (không lẫn với thẻ ghi/lệnh) */
+    const kh = { soLanCho: 0, soChapNhan: 0, soTuChoi: 0 };
     let vong = 0;
     let cache = 0;
     let prompt = 0;
@@ -277,9 +291,53 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       }
     };
 
+    /** (11.3-C) chờ NGƯỜI duyệt KẾ HOẠCH: cùng đường hồ sơ ↔ quyết định với thẻ ghi (cho-duyet.json / duyet.ts), id = `kh-<băm>` nên quyết định của kế hoạch CŨ không duyệt kế hoạch mới */
+    const xuLyKeHoach = async (runId: string, viec: unknown, bam: string) => {
+      kh.soLanCho++;
+      const t0 = dep.bay();
+      dangChoTu = t0;
+      const hanMs = hanKeHoachHieuLucMs(hanDuyetGiay);
+      const q = await dep.chinhSachDuyet(
+        {
+          ma: v.the.ma,
+          id: idKeHoach(bam),
+          ten: "ke_hoach",
+          duong: [],
+          moTa: `Kế hoạch của Thợ Cả (${Array.isArray(viec) ? viec.length : "?"} bước) — duyệt kế hoạch KHÔNG duyệt thẻ ghi/lệnh`,
+          lyDoModel: null,
+          xemTruoc: viec,
+          thamSo: { viec, bam },
+          nguonDangNgo: [],
+          luc: new Date().toISOString(),
+          hetHanLuc: new Date(Date.now() + hanMs).toISOString(),
+        },
+        { ra: v.ra, hanMs },
+      );
+      th.msCho += dep.bay() - t0;
+      dangChoTu = null;
+      const quyet: "duyet" | "bac" = q.quyet === "chap-nhan" ? "duyet" : "bac";
+      if (quyet === "duyet") kh.soChapNhan++;
+      else {
+        kh.soTuChoi++;
+        if (q.quyet === "het-gio") hetGioDuyet = true;
+      }
+      if (!dep.duyetKeHoach) {
+        ghiChu.push("dep không có duyetKeHoach — không thể quyết kế hoạch (lượt sẽ hết hạn chờ kế hoạch)");
+        return;
+      }
+      const r = await dep.duyetKeHoach(runId, bam, quyet);
+      ghiChu.push(`kế hoạch ${quyet} (băm ${bam.slice(0, 8)}): ok=${r.ok}${r.note ? ` note=${r.note}` : ""}`);
+      if (!r.ok) {
+        const k = `DUYET_KE_HOACH_LOI:${r.note ?? "?"}`;
+        loiCongCu[k] = (loiCongCu[k] ?? 0) + 1;
+      }
+    };
+
     const dung = dep.nghe(tao.runId, (m) => {
       const e = m.suKien;
-      if (e.loai === "can-duyet") {
+      if (e.loai === "ke-hoach-cho-duyet") {
+        chuoi = chuoi.then(() => xuLyKeHoach(tao.runId, e.viec, String(e.bam))).catch((err) => void ghiChu.push(`lỗi duyệt kế hoạch: ${String(err)}`));
+      } else if (e.loai === "can-duyet") {
         const de = e.deXuat as { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[]; pendingActionId?: string | number };
         const actionId = de.pendingActionId !== undefined ? String(de.pendingActionId) : String(e.id);
         chuoi = chuoi.then(() => xuLyDuyet(String(e.id), de, actionId)).catch((err) => void ghiChu.push(`lỗi duyệt: ${String(err)}`));
@@ -327,6 +385,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       ghiChu,
       hetGio,
       duyet: { soLanCho: th.soLanCho, soChapNhan: th.soChapNhan, soTuChoi: th.soTuChoi, giayChoDuyet: Math.round(th.msCho / 100) / 10 },
+      ...(kh.soLanCho > 0 ? { keHoach: { ...kh } } : {}),
     };
     if (loiLuot) kq.loi = loiLuot;
     else if (lyDoDung === "het-gio") kq.hetGio = true;
@@ -352,6 +411,7 @@ export interface CauHinhHostThat {
 export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost> {
   const { quanLyLuotChay } = await import("../../server/services/ai/agent/quanLyLuotChay");
   const tt = await import("../../server/services/ai/agent/thuTucLuotChay");
+  const tk = await import("../../server/services/ai/agent/thuTucKeHoach");
   const ql = quanLyLuotChay();
   return {
     async kiemMoiTruong(v) {
@@ -392,6 +452,10 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
     },
     async bac(actionId, lyDo) {
       await tt.thuTucBac(c.nguoi, { actionId, lyDo });
+    },
+    async duyetKeHoach(runId, bam, quyetDinh) {
+      const r = await tk.thuTucDuyetKeHoach(c.nguoi, { runId, bam, quyetDinh });
+      return { ok: r.ok, note: r.note };
     },
     duAnId: (wt) => path.basename(path.resolve(wt)),
     async trangThaiLuot(runId) {
