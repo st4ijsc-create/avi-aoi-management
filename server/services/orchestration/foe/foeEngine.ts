@@ -651,6 +651,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   phanLoaiKhongDoc?: Set<string>;
   /** A2(n) T6c (Q2, item 4) — stop-typed steps of the marked route its dispatcher answered "no pinned STOP" for, with the code: forward work dropped, told in words true of what happened. */
   dispatcherNoiKhongGhim?: Map<string, string>;
+  /** A2(n) T6d (E-C6) — verified STOPs the edge snapshot refused as not pinned, told once in this walk. */
+  ghimLechDaBao?: Set<string>;
   /** A2(n) T6 (m-P) — compensations whose own unknown outcome a person was told of in this walk: once. */
   buTruKhongRoDaBao?: Set<string>;
   /** A2(n) (C-6) — STOP work running beside the walk: passes, and a STOP compensation started at the door. Side by side, never chained; finishWalk settles them. */
@@ -1644,6 +1646,14 @@ function baoStopChuaRa(rc: RunContext, id: string, vi = rc.chuaRaStop?.get(id)):
   const chu = chuBuTruCua(rc, id);
   const stepId = chu ? chu.step.id : id;
   baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: "chot", ...(ketCucRiengKhongRo(rc, stepId) && chu ? {} : { biet: true }), ...(vi ? { vi } : {}) });
+}
+
+/** A2(n) T6d (E-C6) — the one URGENT of a verified STOP the edge snapshot refused as not pinned: a forward STOP in its own name, a compensation's under its owner. Once per walk; the key is durable. */
+function baoGhimLechChuaGui(rc: RunContext, id: string): void {
+  if (rc.ghimLechDaBao?.has(id)) return;
+  (rc.ghimLechDaBao ??= new Set()).add(id);
+  const chu = chuBuTruCua(rc, id);
+  baoKetCucKhongRo(rc, { loai: "stopGhimLechChuaGui", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: "chot", biet: true });
 }
 
 /** A2(n) T5 (H1, race) — refused before the latch: to the planner it is this walk's own, on its row a plain failure. It did not go out and it is not sent again here: state C, a person's Abort sends it. */
@@ -3040,6 +3050,8 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
       tt.khongGhim = true;
       // T6c (Q2, item 4) — the marked route's own answer: no pinned STOP. Forward work dropped, and the end of the walk names it in words true of it (it WAS handed over)
       if (auth.stopChuaDocGhim === true) (rc.dispatcherNoiKhongGhim ??= new Map()).set(step.id, ma);
+      // T6d (dieu-phoi 08/11 T6d-K1, E-C6) — central verified it a pinned STOP, the snapshot refused it as none: no state C (H1's exception), but never silent
+      if (auth.stopXacMinh === true && daChotKhongRo(rc)) baoGhimLechChuaGui(rc, step.id);
     }
   }
   // E4 — after a STOP was sent, recording its result is bounded too (the next STOP of the walk must not wait on it).

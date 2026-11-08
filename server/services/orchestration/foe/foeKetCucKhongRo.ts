@@ -256,8 +256,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * stopNotSent — A2(n) T5, state C: a STOP that stays owed (`vi` says why): the run is held so an Abort can send it. A forward STOP: `stepId` is the STOP, `compId` "-"; a compensation: its owner and the STOP;
  * stopKhongXacNhanDoc — A2(n) T5 (H16): an edge reports this STOP handed over, central could not read its pins to verify it. No confirmation;
  * stopGhimLech — A2(n) T5 (H16): an edge reports it handed over, central read the pins and they differ: what went out may not have been a STOP.
+ * stopGhimLechChuaGui — A2(n) T6d (dieu-phoi 08/11 T6d-K1, E-C6): central verified a pinned STOP, the edge dispatcher's snapshot said "not pinned" and refused it before any driver: NOT sent.
+ *   Not state C (H1's exception "read, not pinned"), no word that an Abort sends it: it would not.
  */
-export type LoaiCanhBaoKhongRo = "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent";
+export type LoaiCanhBaoKhongRo = "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -276,6 +278,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   stopNotSent: "foe_outcome_unknown_stop_not_sent",
   stopKhongXacNhanDoc: "foe_outcome_unknown_stop_unconfirmed_read",
   stopGhimLech: "foe_outcome_unknown_stop_pin_mismatch",
+  stopGhimLechChuaGui: "foe_outcome_unknown_stop_pin_mismatch_not_sent",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -351,6 +354,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       stopNotSent: chuStopChuaRa(a),
       stopKhongXacNhanDoc: [`STOP "${stopCua(a)}" reported sent, NOT confirmed`, `The edge node reports STOP "${stopCua(a)}" handed over, and central could not read its pins to verify it: this is no confirmation. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopGhimLech: [`STOP "${stopCua(a)}": the pins differ, what went out may not be a STOP`, `The edge node reports step "${stopCua(a)}" handed over as a STOP, but the pins central reads do not match it: what went out may not have been a STOP. Check the machine on site and use its direct STOP / E-STOP.`],
+      stopGhimLechChuaGui: [`STOP "${stopCua(a)}" NOT sent: the edge snapshot says it is not pinned`, `Central verified step "${stopCua(a)}" as a pinned STOP, but the edge node's dispatcher snapshot says it is not pinned: it was refused before any driver, so the STOP was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
