@@ -1,5 +1,5 @@
 /**
- * Pha 0 · C0-7 — bug MELSEC `machineId: adapterId`: MÃ ADAPTER bị dùng làm MÃ MÁY ở dispatch() ⇒ preflight an toàn đọc trạng thái MỘT MÁY KHÁC.
+ * C0-7 — bug MELSEC `machineId: adapterId`: MÃ ADAPTER bị dùng làm MÃ MÁY ở dispatch() ⇒ preflight an toàn đọc trạng thái MỘT MÁY KHÁC.
  * Sửa: machineId = `device_adapters.machineId` của chính adapter (null nếu chưa gắn máy); tra DB lỗi ⇒ failed có mã, KHÔNG gọi dispatch().
  * Mock: getDb (một hàng device_adapters) + dispatch. Đột biến: trả lại `machineId: adapterId` ⇒ các test "adapterId ≠ machineId" đỏ.
  */

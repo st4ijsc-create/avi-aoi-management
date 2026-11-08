@@ -5,7 +5,7 @@
  *   • validate: empty → error; no-motion → warning; unbalanced blocks → error; ok program.
  *   • compile: ok build with a zmc:// outputRef + move/op meta.
  *   • simulate: a motion timeline whose move steps dominate the duration.
- *   • deploy: MODULE_PAUSED → 'failed' (pha 0 C0-8; never a fake success), non-crashing.
+ *   • deploy: MODULE_PAUSED → 'failed' (C0-8; never a fake success), non-crashing.
  *   • registry: zmotion-basic is now implemented + advertises canDownload/Monitor.
  */
 import { describe, it, expect } from "vitest";
@@ -69,7 +69,7 @@ describe("ZmotionBasicAdapter.compile + simulate", () => {
 });
 
 describe("ZmotionBasicAdapter.deploy (honest guard)", () => {
-  // Pha 0 · C0-8: deploy ĐÓNG BĂNG (MODULE_PAUSED) trước cả kiểm endpoint — chi tiết hành vi ở zmotionBasicAdapter.tamDung.test.ts.
+  // C0-8: deploy ĐÓNG BĂNG (MODULE_PAUSED) trước cả kiểm endpoint — chi tiết hành vi ở zmotionBasicAdapter.tamDung.test.ts.
   it("deploy → failed MODULE_PAUSED, never a fake success", async () => {
     const a = new ZmotionBasicAdapter();
     const r = await a.deploy({ ok: true, diagnostics: [] }, { stage: "staging", idempotencyKey: "k", hitl: { actionId: "x", requestedBy: 1 } });

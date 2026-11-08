@@ -1,5 +1,5 @@
 /**
- * Pha 0 · C0-8 — Zmotion `deploy` ĐÓNG BĂNG (MODULE_PAUSED) tới khi 70 nối đường ghi qua 50.
+ * C0-8 — Zmotion `deploy` ĐÓNG BĂNG (MODULE_PAUSED) tới khi 70 nối đường ghi qua 50.
  * Bất biến cần ghim: deploy KHÔNG chạm bộ điều khiển — không probe TCP, không ZmcLink, không nạp zauxFfi/koffi — dù đã cấu hình endpoint
  * (opts.endpoint hoặc ZMC_ENDPOINT) và build có tệp .bas. Phép đo là HÀNH VI: một máy chủ TCP cục bộ đếm số kết nối tới.
  * Đột biến: đặt MODULE_ZMOTION_DEPLOY_TAM_DUNG = false ⇒ probe nối vào máy chủ ⇒ đỏ.
