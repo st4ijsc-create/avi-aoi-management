@@ -41,6 +41,7 @@ import {
   enabledAdapterIdsOfMachine,
   loadMachines,
   priorStepsOf,
+  readRunStepRows,
   setRunStatusUnlessAborted,
   stopBoundedWrite,
   upsertStep,
@@ -64,6 +65,7 @@ import {
   type LaStop,
   dauKhongXacNhan,
   laHangChuaRa,
+  stopChuaRaTuHang,
   FOE_NOT_SENT_RUN_LATCHED,
   quyetDinhKetThucAnh,
   quenBenKhongXacNhan,
@@ -92,7 +94,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
+import { STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -1652,6 +1654,15 @@ export const STOP_CHO_TRUOC_LUOT_CUOI_MS = 5 * STOP_DB_STEP_DEADLINE_MS;
 function datChuaRa(rc: RunContext, id: string, vi: ViChuaRa | undefined): void {
   if (vi) (rc.chuaRaStop ??= new Map()).set(id, vi);
   else rc.chuaRaStop?.delete(id);
+  // T7b-1 (no-cho-T7b, DUYỆT) — the same list in the run's context, persisted with it (the end gate's `held` write too): a row in state C is a bounded write and may be the one lost. Central's walk only
+  if (rc.store.kind !== "central") return;
+  const co = stopChuaRaTuNguCanh(rc.context);
+  if (vi && !co.includes(id)) rc.context[STOP_CHUA_RA_CTX_KEY] = [...co, id];
+  else if (!vi && co.includes(id)) {
+    const con = co.filter((x) => x !== id);
+    if (con.length) rc.context[STOP_CHUA_RA_CTX_KEY] = con;
+    else delete rc.context[STOP_CHUA_RA_CTX_KEY];
+  }
 }
 
 /** A2(n) T5 — the one URGENT of a STOP in state C, under the fixed event: a forward STOP in its own name, a compensation's under its owner. Never awaited on a STOP's path. Once per walk. */
@@ -3418,6 +3429,7 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     // matters if abortRun's own DB write failed — the run must not stay 'running' with no driver.
     await rc.store.setStatusUnlessAborted(rc.runId, "aborted", { finishedAt: new Date(), error: "Run aborted by request." });
     await rc.store.persistContext(rc);
+    if (rc.store.kind === "central" && daChotKhongRo(rc)) await baoAbortTruocKhoa(rc);
     return "aborted";
   }
   if (daChotKhongRo(rc)) out = await duongKetThuc(rc, out);
@@ -6029,6 +6041,8 @@ async function prepareAbortStop(
   step: CommandWorkflowStep,
   map: Map<number, MachineForValidation>,
   nonce: string,
+  /** A2(n) T7b-1 (5a) — nobody could verify it: the walker's marked route (authorizeAbortStop danhDau), the dispatcher decides */
+  danhDau = false,
 ): Promise<PreparedAbortStop> {
   try {
     const c = commandOf(step, map);
@@ -6064,7 +6078,7 @@ async function prepareAbortStop(
       if (!verdict.allow) return { step, error: `${verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED"}: ${verdict.reason}` };
     }
     if (!robot) {
-      await store.authorizeAbortStop(runId, user, step, idempotencyKey, args, cmd); // central: bounded by D (stopBoundedWrite)
+      await store.authorizeAbortStop(runId, user, step, idempotencyKey, args, cmd, { danhDau }); // central: bounded by D (stopBoundedWrite)
     }
     return { step, cmd, kind: c.cap.adapterKind };
   } catch (err) {
@@ -6128,6 +6142,26 @@ async function resendAbortStops(
   scope: FoeScope,
   ok: boolean,
 ): Promise<StartRunResult> {
+  // A2(n) T7b-1 (5a, B2, H3, A-OWED, G-OWED) — an aborted LATCHED run: what is owed is read from its rows and context when read (C4), and goes whenever a person presses, no window (B2);
+  // nothing else goes (G covers a run not ended only). Rows unread: the old way below
+  const ctxRun = (run.contextJson as Record<string, unknown> | null) ?? {};
+  const hang = await readRunStepRows(runId);
+  if (hang !== null && (runDaChotKhongRo(ctxRun) || chotTuHang(hang) !== null)) {
+    const no = stopChuaRaTuHang(hang, ctxRun);
+    if (no.size > 0 || abortResendAllowed(run.finishedAt)) {
+      auditAbortStop(user, runId, "abortStopResend", { resend: true, outcome: "started", abortedAt: run.finishedAt ?? null, owed: [...no] });
+      const abortStops = await abortStopSweep(runId, run, liveRuns.get(runId) ?? null, user, scope, { resend: true, chiNghiaVu: no });
+      return {
+        ok,
+        enabled: foeEnabled(),
+        runId,
+        status: "aborted",
+        resend: true,
+        message: no.size > 0 ? `Run ${runId} was already aborted — the STOP steps it still owed were sent again.` : `Run ${runId} was already aborted — it owes no STOP step: nothing was sent.`,
+        abortStops,
+      };
+    }
+  }
   if (!abortResendAllowed(run.finishedAt)) {
     auditAbortStop(user, runId, "abortStopResend", { resend: true, outcome: "refusedTooOld", abortedAt: run.finishedAt ?? null, windowMs: ABORT_RESEND_WINDOW_MS });
     return {
@@ -6167,8 +6201,8 @@ function abortStopSweep(
   live: RunContext | null,
   user: FoeUser,
   scope: FoeScope,
-  /** doc 81 Đợt 10 C — `store`: the store of a run with no live walker here (default: central). A live walker's own store wins. */
-  opts: { resend?: boolean; store?: RunStore } = {},
+  /** doc 81 Đợt 10 C — `store`: the store of a run with no live walker here (default: central). A live walker's own store wins. T7b-1 — `chiNghiaVu`: runAbortStopSweep */
+  opts: { resend?: boolean; store?: RunStore; chiNghiaVu?: ReadonlySet<string> } = {},
 ): Promise<AbortStopReport> {
   const running = abortSweepsInFlight.get(runId);
   if (running) return running;
@@ -6179,19 +6213,95 @@ function abortStopSweep(
   return p;
 }
 
+/**
+ * A2(n) T7b-1 (5a, A2) — a stored latched run has no walk to ask: the planner's picture from its rows (the walker's own `rc` shape, nothing in memory). `aborting`: nothing of it ever walks.
+ */
+function rcTuHang(runId: number, def: WorkflowDefinition, ctx: Record<string, unknown>, src: AbortSweepSource, store: RunStore, user: FoeUser, owner: number | null): RunContext {
+  const hang = (src.hang ?? []) as Parameters<typeof priorStepsOf>[0];
+  return {
+    runId,
+    def,
+    context: ctx,
+    store,
+    user,
+    machineById: src.machineById,
+    params: {},
+    telemetry: new Map(),
+    states: new Map(),
+    runOwner: owner,
+    startedViaApi: false,
+    aborting: true,
+    controller: new AbortController(),
+    dispatched: new Set(),
+    startOrder: [],
+    settled: new Set(),
+    attempted: new Set(),
+    prior: priorStepsOf(hang),
+    completed: new Set(hang.filter((r) => r.status === "completed").map((r) => r.stepId)),
+  } as unknown as RunContext;
+}
+
+/** A2(n) T7b-1 — why a STOP an Abort handed over stays owed: a code, never a driver's text (H11). The marked route's NOT_CONFIRMED is the walker's reading too: nobody could decide it. */
+function viAbortChuaRa(r: { result: EquipmentCommandResult | null; error: string | null; robot: boolean; danhDau: boolean; nem?: boolean; chuaTraLoi?: boolean }): ViChuaRa {
+  if (r.chuaTraLoi) return { nguon: "driverLoi", ma: "NO_ANSWER" };
+  if (r.nem) return { nguon: "driverLoi", ma: maTuChoiCua({ error: r.error }) };
+  if (!r.result) return { nguon: "tuChoi", ma: maTuChoiCua({ error: r.error }) };
+  const ma = maTuChoiCua({ error: r.result.error, status: r.result.status, detail: r.result.detail as { reason?: unknown } | null | undefined });
+  if (r.danhDau && ma === "NOT_CONFIRMED") return { nguon: "doc", ma };
+  return { nguon: nguonCuaKetQua(String(r.result.status), ma, r.robot), ma };
+}
+
+/** A2(n) T7b-1 (5a, A-REF, B2) — the URGENT of a STOP an Abort of a latched run handed over and that did not go: its own name, owed, press Abort again. One bounded try each; never a command. */
+async function baoStopChuaRaAbort(runId: number, ds: ReadonlyArray<{ id: string; vi: ViChuaRa }>, owner: number | null): Promise<void> {
+  await Promise.all(
+    ds.map((x) =>
+      withDeadline(canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi: x.vi, owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP ${x.id} not out URGENT`).catch(
+        (err: unknown) => console.error(`[FOE] abort of run ${runId}: the URGENT of STOP ${x.id} not out failed: ${(err as Error)?.message ?? err}`),
+      ),
+    ),
+  );
+}
+
+/**
+ * A2(n) T7b-1 (5a, R3-E, C4) — an Abort swept before this walk's latch fell: a STOP of it that did not go has an `abort:` row with no code and no word was raised then. The debt is read when read
+ * (stopChuaRaTuHang); this walk, ending latched, tells it, under the same fixed key. Never throws, never a command. A sweep whose answer lands after this end: the scan's (T12).
+ */
+async function baoAbortTruocKhoa(rc: RunContext): Promise<void> {
+  try {
+    const hang = (await readRunStepRows(rc.runId)) ?? [];
+    const ds = hang
+      .filter((r) => r.stepId.startsWith(ABORT_ROW_PREFIX) && r.status === "failed" && !String(r.error ?? "").startsWith(`${FOE_STOP_NOT_SENT}:`))
+      .map((r) => {
+        const kq = (r.resultJson ?? {}) as { stepId?: unknown; routedTo?: unknown; status?: unknown; detail?: unknown };
+        const id = String(kq.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length));
+        const ma = maTuChoiCua({ error: r.error, status: typeof kq.status === "string" ? kq.status : null, detail: (kq.detail ?? null) as { reason?: unknown } | null });
+        const vi: ViChuaRa = typeof kq.routedTo === "string" ? { nguon: nguonCuaKetQua(String(kq.status), ma, kq.routedTo === "robot-dispatcher"), ma } : { nguon: "driverLoi", ma };
+        return { id, vi };
+      });
+    if (ds.length) await baoStopChuaRaAbort(rc.runId, ds, rc.runOwner);
+  } catch (err) {
+    console.error(`[FOE] run ${rc.runId}: the URGENT of an Abort's STOP not out failed: ${(err as Error)?.message ?? err}`);
+  }
+}
+
 async function runAbortStopSweep(
   runId: number,
   run: OrchestrationRun | undefined,
   live: RunContext | null,
   user: FoeUser,
   scope: FoeScope,
-  opts: { resend?: boolean; store?: RunStore } = {},
+  /** T7b-1 (5a, A-OWED) — `chiNghiaVu`: an Abort again of an aborted latched run sends exactly the STOPs still owed, nothing else (G covers a run not ended only) */
+  opts: { resend?: boolean; store?: RunStore; chiNghiaVu?: ReadonlySet<string> } = {},
 ): Promise<AbortStopReport> {
   const report = emptyAbortReport();
   const extra: Record<string, unknown> = opts.resend ? { resend: true } : {}; // fix 3 (M2) — every audit of a re-send says so
   // doc 81 Đợt 10 C — the picture, the stop verification, the OT STOP rows and the records go through the store: the live
   // walker's own (central or edge), else the given one (an edge re-send from a sweep picture), else central.
   const store: RunStore = live?.store ?? opts.store ?? centralRunStore;
+  // A2(n) T7b-1 — a latched run (central): what did not go stays owed, on its `abort:` row (C4), and a person is told
+  let khoa = false;
+  const viNo = new Map<string, ViChuaRa>();
+  const owner = run?.startedBy ?? live?.runOwner ?? null;
   try {
     const src = await store.sweepSource({ live, run, hasLiveDriver: (id) => liveRuns.has(id) });
     if (!src?.def) {
@@ -6200,12 +6310,55 @@ async function runAbortStopSweep(
     }
     const def = src.def;
     const v = await store.verifyStops(runId, def, src.machineById);
-    const plan = await planAbortSweep(src, def, v);
+    // T7b-1 (5a, A2, 1b) — a latched run: THE planner of the end of a walk, for a person (nguoi: G, a hand-over never confirmed is due again). R-6-b is for a run NOT latched only: latched means
+    // "not known", not "never actuated" (A-STOPONLY). The edge's own walker is T7b-2's
+    const ctxRun = (live?.context ?? (run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+    khoa = store.kind === "central" && (runDaChotKhongRo(ctxRun) || (live !== null && daChotKhongRo(live)) || chotTuHang((src.hang ?? []) as Parameters<typeof chotTuHang>[0]) !== null);
+    const hangTheo = new Map((src.hang ?? []).map((r) => [r.stepId, r] as const));
+    const ketQua = (r: { resultJson?: unknown } | undefined) => (r?.resultJson ?? null) as { routedTo?: unknown; status?: unknown } | null;
+    const daGiao = (id: string) => typeof ketQua(hangTheo.get(id))?.routedTo === "string" || typeof ketQua(hangTheo.get(abortRowId(id)))?.routedTo === "string";
+    const daXacNhan = (id: string) => ketQua(hangTheo.get(id))?.status === "acked_verified" || ketQua(hangTheo.get(abortRowId(id)))?.status === "acked_verified";
+    const nhin = khoa ? (live ?? rcTuHang(runId, def, ctxRun, src, store, user, owner)) : null;
+    const plan = nhin ? await lapKeHoachStop(nhin, src, v, true, { xacNhan: daXacNhan, daGiao }) : await planAbortSweep(src, def, v);
     // R-6-b — a run that never actuated sends none of its STOPs (said out loud)
-    if (plan.send.length > 0 && !runHasActuated(def, src, v)) {
+    if (!nhin && plan.send.length > 0 && !runHasActuated(def, src, v)) {
       report.notNeeded = plan.send.map((s) => s.id);
       store.auditAbort(user, runId, "abortStopNotNeeded", { stepIds: report.notNeeded, reason: "runNeverActuated", ...extra });
       plan.send = [];
+    }
+    const danhDau = new Set<string>();
+    if (nhin) {
+      // nobody could verify it, and its own name says STOP: the walker's marked route (F4, decision 2, A): only its dispatcher's own pinned-STOP verdict sends it. A non-STOP never goes
+      for (const id of plan.unverified) {
+        const s = findStepDeep(def.steps, id);
+        if (s?.type === "command" && (await laStopTheoBuoc(s, src.machineById))) {
+          danhDau.add(id);
+          plan.send.push(s as CommandWorkflowStep);
+        }
+      }
+      // C-3 — the verifier cannot tell "read: not pinned" from "no adapter to read": sorted again, as at the end of a walk. Unread goes by the marked route; read and not pinned is an answer:
+      // nothing is owed any more (C-CLR, A-READ-3), its `abort:` row says so. One the dispatcher's predicate finds pinned stays listed, not sent (T6e K1, direction A)
+      const xep = await Promise.all(
+        plan.notPinned.map(async (id) => {
+          const s = findStepDeep(def.steps, id);
+          return { id, s, la: s ? await laBuTruStop(nhin, s) : ("khong" as const) };
+        }),
+      );
+      for (const x of xep) {
+        if (x.la === "chuaDoc" && x.s?.type === "command") {
+          danhDau.add(x.id);
+          plan.send.push(x.s as CommandWorkflowStep);
+        } else if (x.la === "khong" && src.chuaRa?.has(x.id)) {
+          const now = new Date();
+          void withDeadline(store.upsertStep(runId, abortRowId(x.id), "command", { status: "skipped", result: { abortStop: "notPinned", stepId: x.id }, error: null, startedAt: now, finishedAt: now }), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} stop ${x.id} row`).catch(
+            (err: unknown) => console.warn(`[FOE] abort of run ${runId}: stop ${x.id} row not written: ${(err as Error)?.message ?? err}`),
+          );
+        }
+      }
+      plan.notPinned = xep.filter((x) => !danhDau.has(x.id)).map((x) => x.id);
+      if (danhDau.size) store.auditAbort(user, runId, "abortStopUnverified", { stepIds: [...danhDau], rowsKnown: src.rowsKnown, routed: "markedRow", ...extra });
+      plan.unverified = plan.unverified.filter((id) => !danhDau.has(id));
+      if (opts.chiNghiaVu) plan.send = plan.send.filter((s) => opts.chiNghiaVu?.has(s.id) === true);
     }
     report.unverified = plan.unverified;
     report.untakenBranch = plan.untakenBranch;
@@ -6219,16 +6372,22 @@ async function runAbortStopSweep(
     // without waiting on a reply
     const nonce = `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
     const [prepared, markers] = await Promise.all([
-      Promise.all(plan.send.map((s) => prepareAbortStop(store, runId, user, s, src.machineById, nonce))),
+      Promise.all(plan.send.map((s) => prepareAbortStop(store, runId, user, s, src.machineById, nonce, danhDau.has(s.id)))),
       outOfScopeMarkers(runId, scope, plan.send, src.machineById),
     ]);
+    // T7b-1 — the error of an `abort:` row of a latched run: the code of state C, so the row alone is the obligation (C4)
+    const loiNo = (id: string, error: string | null, vi: ViChuaRa) => {
+      if (!khoa) return error;
+      viNo.set(id, vi);
+      return loiChuaRaStop(id, "abort", vi);
+    };
     const replies: Array<Promise<void>> = [];
     for (const p of prepared) {
       const id = p.step.id;
       const marker = markers.get(id) ?? "unknown";
       if ("error" in p) {
         report.failed.push(id);
-        recordAbortStop(store, runId, user, p.step, false, null, p.error, marker, extra);
+        recordAbortStop(store, runId, user, p.step, false, null, loiNo(id, p.error, viAbortChuaRa({ result: null, error: p.error, robot: false, danhDau: danhDau.has(id) })), marker, extra);
         continue;
       }
       report.pending.push(id);
@@ -6238,25 +6397,49 @@ async function runAbortStopSweep(
       } catch (err) {
         sent = Promise.reject(err);
       }
-      const settle = (ok: boolean, result: EquipmentCommandResult | null, error: string | null) => {
+      const robot = isRobotKind(p.kind);
+      const settle = (ok: boolean, result: EquipmentCommandResult | null, error: string | null, nem = false) => {
         report.pending = report.pending.filter((x) => x !== id);
         (ok ? report.sent : report.failed).push(id);
-        recordAbortStop(store, runId, user, p.step, ok, result, error, marker, extra);
+        recordAbortStop(store, runId, user, p.step, ok, result, ok ? error : loiNo(id, error, viAbortChuaRa({ result, error, robot, danhDau: danhDau.has(id), nem })), marker, extra);
+        if (ok) viNo.delete(id);
+        // 5a (R1, THAN-GIU) — a STOP a person had waiting, sent: its own row stops saying it waits (the debt itself is read from its `abort:` row)
+        if (ok && khoa && hangTheo.get(id)?.status === "held") {
+          const now = new Date();
+          void withDeadline(store.upsertStep(runId, id, "command", { status: "completed", result: { abortStop: "sent", stepId: id, routedTo: result?.routedTo, status: result?.status, accepted: true }, error: null, finishedAt: now }), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} step ${id} row`).catch(
+            (err: unknown) => console.warn(`[FOE] abort of run ${runId}: step ${id} row not rewritten: ${(err as Error)?.message ?? err}`),
+          );
+        }
       };
       replies.push(
         sent.then(
           (r) => settle(r.ok, r, r.ok ? null : r.error ?? `Command "${p.step.command}" rejected (${r.status}).`),
           // data-raw-ok: the dispatcher's failure, recorded in the `abort:<id>` step row + audit only.
-          (err: unknown) => settle(false, null, err instanceof Error ? err.message : String(err)),
+          (err: unknown) => settle(false, null, err instanceof Error ? err.message : String(err), true),
         ),
       );
     }
     await withDeadline(Promise.all(replies), ABORT_STOP_ANSWER_WAIT_MS, `FOE abort run ${runId} stop replies`).catch(() => {
       console.warn(`[FOE] abort of run ${runId}: STOP(s) ${report.pending.join(", ")} still awaiting the dispatcher — recorded when answered`);
     });
+    // T7b-1 — no answer yet on a latched run: owed until one lands (the answer's own write replaces this row)
+    if (khoa) {
+      for (const id of report.pending) {
+        const s = plan.send.find((x) => x.id === id);
+        if (!s) continue;
+        const now = new Date();
+        const vi = viAbortChuaRa({ result: null, error: null, robot: false, danhDau: danhDau.has(id), chuaTraLoi: true });
+        viNo.set(id, vi);
+        void withDeadline(store.upsertStep(runId, abortRowId(id), "command", { status: "failed", result: { abortStop: "failed", stepId: id }, error: loiChuaRaStop(id, "abort", vi), startedAt: now, finishedAt: now }), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} stop ${id} row`).catch(
+          (err: unknown) => console.warn(`[FOE] abort of run ${runId}: stop ${id} row not written: ${(err as Error)?.message ?? err}`),
+        );
+      }
+    }
   } catch (err) {
     console.error(`[FOE] abort of run ${runId}: STOP sweep error — ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
   }
+  // T7b-1 (5a, A-REF) — what did not go, by its name: owed, press Abort again (never "it went"). After the STOPs, before the answer
+  if (khoa && viNo.size) await baoStopChuaRaAbort(runId, [...viNo].map(([id, vi]) => ({ id, vi })), owner);
   // a snapshot: later replies keep updating the rows / audit, not this answer
   return { ...report, sent: [...report.sent], failed: [...report.failed], pending: [...report.pending] };
 }

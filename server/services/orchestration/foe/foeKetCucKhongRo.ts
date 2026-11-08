@@ -155,6 +155,17 @@ export const KET_CUC_KHONG_RO_CHOT_CTX_KEY = "foeKetCucKhongRoChot";
  */
 export const KET_CUC_KHONG_RO_DA_BAO_CTX_KEY = "foeKetCucKhongRoDaBao";
 /**
+ * A2(n) T7b-1 (no-cho-T7b, DUYỆT) — run-context key (central-written, by the walk: foeEngine.datChuaRa, persisted with the context, the `held` write of the end gate too): the STOPs this run's
+ * walk left in state C, ids only. The debt is the rows' AND this (foeRunStore.stopChuaRaTuHang): a row in state C is a bounded write and may be the one lost. It only ADDS evidence of a debt; it
+ * never clears one a row names. Never written by an edge (edgeContextPolicy keeps central keys out).
+ */
+export const STOP_CHUA_RA_CTX_KEY = "foeStopChuaRa";
+/** The ids the context holds owed (a value that is not a list of ids is none). Pure. */
+export function stopChuaRaTuNguCanh(ctx: Record<string, unknown> | null | undefined): string[] {
+  const v = ctx?.[STOP_CHUA_RA_CTX_KEY];
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+/**
  * S-1 — is this run latched, from its context alone? The latch, a marker, the central-written list of an edge's unknown steps, or any resume state saying
  * so (an edge run's are central's to derive: the edge walker never writes the latch key). The walker adds its in-memory flag (rc.khongRoChot).
  */
@@ -263,8 +274,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * stopGhimLech — A2(n) T5 (H16): an edge reports it handed over, central read the pins and they differ: what went out may not have been a STOP.
  * stopGhimLechChuaGui — A2(n) T6d (dieu-phoi 08/11 T6d-K1, E-C6): central verified a pinned STOP, the edge dispatcher's snapshot said "not pinned" and refused it before any driver: NOT sent.
  *   Not state C (H1's exception "read, not pinned"), no word that an Abort sends it: it would not.
+ * abortStopNotSent — A2(n) T7b-1 (5a, B2, H1, C4): an Abort of a latched run handed `stepId` (a STOP, `compId` "-") over and it was refused or got no answer: the run is aborted, the STOP stays owed on
+ *   its `abort:` row, and a person presses Abort again, with no time limit (the background only repeats this URGENT). Never "it went".
  */
-export type LoaiCanhBaoKhongRo = "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
+export type LoaiCanhBaoKhongRo = "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -284,6 +297,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   stopKhongXacNhanDoc: "foe_outcome_unknown_stop_unconfirmed_read",
   stopGhimLech: "foe_outcome_unknown_stop_pin_mismatch",
   stopGhimLechChuaGui: "foe_outcome_unknown_stop_pin_mismatch_not_sent",
+  abortStopNotSent: "foe_outcome_unknown_abort_stop_not_sent",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -323,6 +337,15 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [st
   if (a.vi?.nguon === "tuChoi") return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: it was refused before it reached a driver (${a.vi.ma}). ${giu}: Abort sends it again. ${tay}.`];
   const ma = a.vi ? ` (${a.vi.ma})` : "";
   return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: nobody could read its pins${ma}. ${giu}: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent. ${tay}.`];
+}
+
+/** A2(n) T7b-1 — the words of a STOP an Abort handed over and that did not go: true of the source (H11), never "it went"; a person presses again, there is no window for it (B2). */
+function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [string, string] {
+  const id = `"${stopCua(a)}"`;
+  const ma = a.vi ? ` (${a.vi.ma})` : "";
+  const sau = `It stays owed: press Abort again, there is no time limit on this STOP. Until then use the machine's direct STOP / E-STOP.`;
+  if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
+  return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];
 }
 
 /** The alert of one event (pure; exported for the unit test). Dedup key `<kind>:<run>:<step>:<comp>:<event>`. */
@@ -365,6 +388,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       stopKhongXacNhanDoc: [`STOP "${stopCua(a)}" reported sent, NOT confirmed`, `The edge node reports STOP "${stopCua(a)}" handed over, and central could not read its pins to verify it: this is no confirmation. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopGhimLech: [`STOP "${stopCua(a)}": the pins differ, what went out may not be a STOP`, `The edge node reports step "${stopCua(a)}" handed over as a STOP, but the pins central reads do not match it: what went out may not have been a STOP. Check the machine on site and use its direct STOP / E-STOP.`],
       stopGhimLechChuaGui: [`STOP "${stopCua(a)}" NOT sent: the edge snapshot says it is not pinned`, `Central verified step "${stopCua(a)}" as a pinned STOP, but the edge node's dispatcher snapshot says it is not pinned: it was refused before any driver, so the STOP was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
+      abortStopNotSent: chuAbortChuaRa(a),
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
@@ -459,10 +483,11 @@ export function nguonCuaKetQua(status: string, ma: string, robot: boolean): Nguo
   return status === "rejected" || (!robot && MA_CHUA_GHI.has(ma)) ? "tuChoi" : "driverLoi";
 }
 /** The row of a STOP in state C: the code first, then its source, so a later walk and a person read the same thing. No driver text. */
-export function loiChuaRaStop(stopId: string, attempt: number, vi: ViChuaRa): string {
-  if (vi.nguon === "driverLoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" is not confirmed out (attempt ${attempt}): may have gone out [${vi.ma}].`;
-  if (vi.nguon === "tuChoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (attempt ${attempt}): refused before a driver [${vi.ma}].`;
-  return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (attempt ${attempt}): nobody could decide it [${vi.ma}].`;
+export function loiChuaRaStop(stopId: string, attempt: number | "abort", vi: ViChuaRa): string {
+  const lan = attempt === "abort" ? "on the Abort" : `attempt ${attempt}`; // A2(n) T7b-1 — an `abort:` row of a latched run says it the same way (C4)
+  if (vi.nguon === "driverLoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" is not confirmed out (${lan}): may have gone out [${vi.ma}].`;
+  if (vi.nguon === "tuChoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (${lan}): refused before a driver [${vi.ma}].`;
+  return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (${lan}): nobody could decide it [${vi.ma}].`;
 }
 /** The source, read back from such a row: a later walk has no memory of the one that wrote it. undefined ⇔ not one. Pure. */
 export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | undefined {

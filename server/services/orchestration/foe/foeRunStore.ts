@@ -45,8 +45,9 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
+import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
 const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
 const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
@@ -236,8 +237,11 @@ export interface RunStore {
    * edge dispatch (its ledger record). The central store has none.
    */
   bindAbortStop?(runId: number, step: Extract<WorkflowStep, { type: "command" }>, cmd: EquipmentCommand): void;
-  /** The OT authorisation row of an abort STOP (central: self-confirmed engine row, bounded by D; edge: none — a STOP never asks). */
-  authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void>;
+  /**
+   * The OT authorisation row of an abort STOP (central: self-confirmed engine row, bounded by D; edge: none — a STOP never asks). A2(n) T7b-1 (5a) — `danhDau`: a stop-typed step of a latched run
+   * nobody could verify takes the SAME marked fresh row as the walker's F4 route: only the dispatcher's own pinned-STOP verdict consumes it.
+   */
+  authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand, opts?: { danhDau?: boolean }): Promise<void>;
   /** The abort sweep's picture: of the live walker (`live`), else of the stored run (`run`). null ⇔ neither is known. */
   sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null>;
   /** The REAL stops of the definition (central: the Đợt 5 classifier, bounded by D; edge: the package's verified list). */
@@ -349,8 +353,17 @@ export const laLoiKhongGuiChot = (error: string | null | undefined): boolean => 
 export { FOE_STOP_NOT_SENT };
 /** A2(n) T5 (C-2) — "chuaDoc" is NOT "khong": unreadable is never "not pinned" (decision 2, A). Only a stop-typed step can answer it. */
 export type LaStop = "stop" | "khong" | "chuaDoc";
-/** THE row of state C: the STOP's own (a container around it carries the same words, F-DB1). `id` the step's id: an `abort:` row's is shortened when long, its result has the whole one. */
-export const laHangChuaRa = (r: { stepId: string; error?: string | null }, id = r.stepId): boolean => typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
+/**
+ * THE row of a STOP not out (ONE source: priorStepsOf, stopChuaRaTuHang): the STOP's own row of state C (a container around it carries the same words, F-DB1), or — A2(n) T7b-1 — a row whose LAST
+ * word is its dispatcher's "no" to the attempt it records: handed over (routedTo), not taken (accepted false), an answer (not a timeout, not "may already have flown"), and nothing written after it
+ * (the row is still `running`: the row of state C that should have followed, or the known failure, is the write that was lost). A row whose walk wrote its end is read by that end. `id` the step's
+ * id: an `abort:` row's is shortened when long, its result has the whole one.
+ */
+export const laHangChuaRa = (r: { stepId: string; status?: string; error?: string | null; resultJson?: unknown }, id = r.stepId): boolean => {
+  if (typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`)) return true;
+  const kq = (r.resultJson ?? null) as { routedTo?: unknown; accepted?: unknown; status?: unknown; detail?: unknown } | null;
+  return r.stepId === id && r.status === "running" && typeof kq?.routedTo === "string" && kq.accepted === false && kq.status !== "timeout" && coTheDaBayCua({ ok: false, detail: (kq.detail ?? undefined) as Record<string, unknown> | undefined }) === null;
+};
 /**
  * A2(n) T5 (H16) — THE mark on a step row central could not verify: an edge reported a STOP step handed over with no authorisation, and central's own reading did not make it a verified STOP. `docLoi`:
  * the pins could not be read; `ghimLech`: they were read and they differ, or nothing resolves the step. Written only by edgeReportsCentral, never taken from a record. It is no confirmation: not
@@ -363,16 +376,28 @@ export function dauKhongXacNhan(result: unknown): DangKhongXacNhan | null {
   return v === "docLoi" || v === "ghimLech" ? v : null;
 }
 
-/** A2(n) T5 — MỘT định nghĩa of "still owed": the STOPs the rows hold in state C. An `abort:` row that went (or a read that found it no STOP) settles it. Pure. */
-export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined): Set<string> {
+/**
+ * A2(n) T5 — MỘT định nghĩa of "still owed": the STOPs the rows hold in state C. An `abort:` row that went (or a read that found it no STOP) settles it. Pure.
+ * T7b-1 — the rows ∪ the context (`ctx`, STOP_CHUA_RA_CTX_KEY: the walk's own list, a row may be the write lost). In doubt it is owed: the context only ADDS (an id it names is cleared only by the
+ * STOP's own row completed, or an `abort:` row that went); it never clears a debt a row names. On a latched run (the rows' code or the context's latch): a refused attempt that is the row's last
+ * word (laHangChuaRa) is owed, and so is an `abort:` row that failed, with the code or without it (C4: read when read, not when the sweep ran). Unlatched, a refused attempt is no debt: state C is a
+ * latched run's (H1).
+ */
+export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null): Set<string> {
   const no = new Set<string>();
   const xong = new Set<string>();
+  const daXong = new Set<string>();
+  const khoa = chotTuHang(rows ?? []) !== null || runDaChotKhongRo(ctx);
   for (const r of rows ?? []) {
     const abort = r.stepId.startsWith(ABORT_ROW_PREFIX);
     const id = abort ? String((r.resultJson as { stepId?: unknown } | null | undefined)?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length)) : r.stepId;
-    if (laHangChuaRa(r, id)) no.add(id);
+    const coMa = typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
+    if (laHangChuaRa(r, id) && (coMa || khoa)) no.add(id);
+    if (abort && khoa && r.status === "failed") no.add(id);
     if (abort && (r.status === "completed" || r.status === "skipped")) xong.add(id);
+    if (!abort && r.status === "completed") daXong.add(id);
   }
+  for (const id of stopChuaRaTuNguCanh(ctx)) if (!daXong.has(id)) no.add(id);
   for (const id of xong) no.delete(id);
   return no;
 }
@@ -482,7 +507,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
     tuCtx?.stepId != null
       ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) }
       : (x.chotTuBao ?? (tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null) ?? x.boNho?.chot ?? null);
-  const no = [...new Set([...stopChuaRaTuHang(rows), ...(x.boNho?.chuaRa ?? [])])];
+  const no = [...new Set([...stopChuaRaTuHang(rows, x.ctx), ...(x.boNho?.chuaRa ?? [])])];
   if (x.rows === null && !nguoi) return { ghi: "held", vi: "chuaDoc", urgentBen: false, chot, no, khongXacNhan: [], moi: false, loi: loiGiuChuaDocHang(x.runId, chot?.ma ?? null) };
   const giuNo = no.length > 0 && !nguoi;
   const doi = x.chiDoi === true || giuNo; // held is no end: nothing new is raised
@@ -1144,7 +1169,7 @@ export function auditAbortStop(user: RunStoreUser, runId: number, operation: Abo
 }
 
 /** The step rows of a run, bounded by D (null when they could not be read). */
-function readRunStepRows(runId: number) {
+export function readRunStepRows(runId: number) {
   return boundedAbortRead(async () => {
     const d = await getDb();
     return d ? d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId)) : null;
@@ -1177,7 +1202,7 @@ async function liveSweepSource(rc: RunStoreContext): Promise<AbortSweepSource> {
     mayHaveActuated: (id) => rc.prior.unknown || rc.attempted.has(id) || rc.prior.attempted.has(id) || !!fromRows?.attempted.has(id),
     sentBefore: abortSentOf(rows),
     hang: rows,
-    chuaRa: stopChuaRaTuHang(rows),
+    chuaRa: stopChuaRaTuHang(rows, rc.context),
   };
 }
 
@@ -1223,7 +1248,7 @@ async function storedSweepSource(run: OrchestrationRun, hasLiveDriver: (runId: n
     mayHaveActuated: (id) => undecidable || prior.attempted.has(id) || ctxDispatched.has(id),
     sentBefore: abortSentOf(rows),
     hang: rows,
-    chuaRa: stopChuaRaTuHang(rows),
+    chuaRa: stopChuaRaTuHang(rows, context),
   };
 }
 
@@ -1263,10 +1288,12 @@ export const centralRunStore: RunStore = Object.freeze({
     return withResolvedAdapter(kind, machineId, args);
   },
   authorizeCommand: centralAuthorizeCommand,
-  authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void> {
+  authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand, opts: { danhDau?: boolean } = {}): Promise<void> {
     // the abort key carries a per-sweep nonce (abortStopKey, ≤ 60 characters): a fresh row per sweep already
+    // A2(n) T7b-1 — the marked route: the same fresh row the key already gives (its per-sweep nonce), MARKED: inserted, never an existing row reused
+    const hangMoi = opts.danhDau === true && cmd.hitl ? { actionId: cmd.hitl.actionId } : null;
     return stopBoundedWrite(true, runId, step.id, "abort authorisation row", async () => {
-      await ensureOrchestrationAction(user, idempotencyKey, step, args, cmd);
+      await ensureOrchestrationAction(user, idempotencyKey, step, args, cmd, undefined, hangMoi ? { hangMoi } : {});
     });
   },
   async sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null> {
