@@ -4665,9 +4665,62 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(baoEdge(e, "stopNotSent")).toEqual([]);
     expect(runRow(e.runId).status).toBe("failed");
   });
+
+  // ── T6b: the two paths section 12 names before stopToTienMoi / stopToTienSauGiu go ─────────────────────────────────
+  // (1) a SECOND unknown step, in another branch, after the first pass started (the pass starts once per walk); its container waits on a hanging sibling
+  const haiKhongRo = (ref: string) => def(ref, [gate(), parF("p", [box("a", [move("x1")]), parF("q", [move("x2"), move("hang")], { compensation: robotStop("c2") })])]);
+  it("HAI-KHONG-RO central: two unknown steps in two branches, a sibling hangs: the STOP of the second one's container goes while it hangs, once", async () => {
+    h.slow.set("x1", 15);
+    h.timeoutDispatch.add("x1");
+    h.slow.set("x2", 75);
+    h.timeoutDispatch.add("x2");
+    h.slow.set("hang", 500);
+    const { runId: c, di } = await diKhongCho(haiKhongRo("hkr"));
+    await trongLuc(di, () => ids().includes("c2"), "the STOP of the second unknown step's container", 300);
+    expect(ids().filter((x) => x === "c2"), "once, the last pass does not send it again").toEqual(["c2"]);
+    expect(String(hang(c, "x2")!.error)).toMatch(/OUTCOME_UNKNOWN/);
+    expect(runRow(c).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x1" });
+  });
+  it("HAI-KHONG-RO edge: the same", async () => {
+    const e = await denBuoc(haiKhongRo("hkre"));
+    h.slow.set("x1", 15);
+    h.timeoutDispatch.add("x1");
+    h.slow.set("x2", 75);
+    h.timeoutDispatch.add("x2");
+    h.slow.set("hang", 500);
+    const seg = edgeSegment(e, 2);
+    await trongLuc(seg, () => ids().includes("c2"), "the STOP of the second unknown step's container", 300);
+    expect(ids().filter((x) => x === "c2"), "once, the last pass does not send it again").toEqual(["c2"]);
+  });
+  // (2) a compensation-only walk (a Continue) of a run latched from its context: the containers' STOPs still due go, each once. Their rows of the first walk are
+  // lost (a bounded write can be the one lost, as C7 edge), so nothing says they went: they are due again. x2 is a second unknown, not the latch's step
+  it("CHI-BU-TRU-KHOA a Continue of a run latched from its context, two held compensations: the containers' STOPs still due go, each once, with the approved ones", async () => {
+    const d = def("cbtk", [gate(), parF("p", [box("a", [move("x1", { compensation: ot("u1") })], { compensation: robotStop("ca") }), box("b", [move("x2", { compensation: ot("u2") })], { compensation: robotStop("cb") })])]);
+    h.slow.set("x1", 15);
+    h.timeoutDispatch.add("x1");
+    h.slow.set("x2", 45);
+    h.timeoutDispatch.add("x2");
+    const c = await centralRun(d, 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(runRow(c).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x1" });
+    expect(ids().filter((x) => x === "ca" || x === "cb").sort(), "the first walk sent both").toEqual(["ca", "cb"]);
+    fake.store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((r) => r.runId !== c || (r.stepId !== "ca" && r.stepId !== "cb")));
+    h.sent.length = 0;
+    h.timeoutDispatch.clear();
+    h.duocSauKhoa.add("u1");
+    h.duocSauKhoa.add("u2");
+    await continueOutcomeUnknown({ runId: c } as EdgeHarness, "checked on site");
+    await waitFor(() => ids().includes("ca") && ids().includes("cb"), "the containers' STOPs");
+    await wait(40);
+    expect(ids().filter((x) => x === "ca"), "ca once").toEqual(["ca"]);
+    expect(ids().filter((x) => x === "cb"), "cb once").toEqual(["cb"]);
+    expect(ids().filter((x) => x === "x1" || x === "x2"), "nothing forward").toEqual([]);
+    expect(ids()).toContain("u1");
+  });
 });
 
-// ═══ A2(n) T5 ═════════════════════════════════════════════════════════════════════════════════════════════════════════
+// ═══ A2(n) T5═════════════════════════════════════════════════════════════════════════════════════════════════════════
 describe("A2(n) T5 — a STOP that did not go: the marked route, state C, central and edge", () => {
   const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
   const parF = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "parallel", failFast: false, steps, ...extra }) as never;
