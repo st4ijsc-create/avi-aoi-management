@@ -6078,6 +6078,31 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
     expect(s.out.outcome).toBe("failed");
     expect(sentOf("st")).toEqual(["st"]);
     expect(urgentC()).toEqual([]);
+    // dieu-phoi 08/11 T6d-K1 — was: no URGENT at all. Central verified a pinned STOP, the edge snapshot refused it: exactly one URGENT names it, NOT sent, no "Abort sends it"
+    const lech = h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopGhimLechChuaGui);
+    expect(lech.map((a) => a.dedupKey.split(":").slice(2, 4)), "exactly one URGENT, by name").toEqual([["st", "-"]]);
+    const chuLech = lech.map((a) => `${a.title} ${a.message}`).join(" ");
+    expect(chuLech).toContain('"st"');
+    expect(chuLech).toContain("NOT sent");
+    expect(chuLech).toContain("Check the machine on site");
+    expect(chuLech).not.toMatch(/Abort sends/);
+    expect(noCua(e.runId).size, "not state C").toBe(0);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+  it("T6d-K1 E-C5 measured beside E-C6: the package could not verify, the snapshot says no_pins: no disagreement to tell, forward work refused by its dispatcher, no pin-mismatch URGENT", async () => {
+    seedHalt();
+    h.connOk = false;
+    const e = await denBuoc(dV("ec5k"));
+    h.timeoutDispatch.add("x");
+    h.tuChoi.set("st", tuChoiEdge("no_pins"));
+    h.tuChoiKhongGhi.add("st");
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopGhimLechChuaGui)).toEqual([]);
+    const fwd = h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.forwardNotSent && a.dedupKey.split(":")[2] === "st");
+    expect(fwd.length).toBe(1);
+    expect(String(fwd[0].message)).toContain("refused by its dispatcher before any driver");
+    expect(urgentC()).toEqual([]);
   });
   it("EDGE-BAO a STOP of the route its dispatcher refused: the row names no route: central would refuse the whole report (no jti); one that went keeps it", async () => {
     seedHalt();
@@ -6399,6 +6424,35 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     sh.setClaim(x.e.runId, 2, TOKEN);
     await sh.flush(S);
     expect(dau(x.e.runId, "s1")).toBeUndefined();
+  });
+  // ── dieu-phoi 08/11 T6d-K1 — E-C6 through the real report path: the package verified s1, the edge snapshot says no_pins ──
+  const ec6 = (ly: string) => () => {
+    h.tuChoi.set("s1", { status: "rejected", error: "AUTHORIZATION_REQUIRED", detail: { edge: true, stop: false, reason: "AUTHORIZATION_REQUIRED", refusal: `stop_not_pinned:${ly}` } });
+    h.tuChoiKhongGhi.add("s1");
+  };
+  it("T6d-K1 E-C6 real report path: one durable URGENT names s1, NOT sent, no 'Abort sends it'; not state C, the run failed; the events again: the same one key", async () => {
+    const x = await chayGiua(dMot("t6dk1"), ec6("no_pins"), false);
+    const { J, sh } = await giao(x, "khop");
+    expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
+    const lech = () => loaiCB("stopGhimLechChuaGui");
+    expect([...new Set(lech().map((a) => a.dedupKey))].map((k) => k.split(":").slice(2, 4))).toEqual([["s1", "-"]]);
+    const chu = lech().map((a) => `${a.title} ${a.message}`).join(" ");
+    expect(chu).toContain("NOT sent");
+    expect(chu).not.toMatch(/Abort sends/);
+    expect(stopChuaRaTuHang(stepRows(x.e.runId) as never).size).toBe(0);
+    expect(runRow(x.e.runId).status).toBe("failed");
+    const truoc = new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`));
+    J.veLai("events");
+    await sh.flush("events");
+    await wait(20);
+    expect(new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`)), "a replay keeps the one durable key and words").toEqual(truoc);
+  });
+  it("T6d-K1 đối chứng real report path: no_snapshot_adapter stays state C: stop_not_sent, held, no pin-mismatch URGENT", async () => {
+    const x = await chayGiua(dMot("t6dk1s"), ec6("no_snapshot_adapter"), false);
+    await giao(x, "khop");
+    expect(loaiCB("stopNotSent").map((a) => a.dedupKey.split(":")[2])).toContain("s1");
+    expect(runRow(x.e.runId).status).toBe("held");
+    expect(loaiCB("stopGhimLechChuaGui")).toEqual([]);
   });
   it("BC-PHAT-LAI the same records again, and a later record of the same step: one row, one URGENT", async () => {
     const x = await chayGiua(dMot("bcpl"));
