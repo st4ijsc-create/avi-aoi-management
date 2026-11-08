@@ -69,8 +69,11 @@ export interface KetQuaViec {
   baseSha?: string;
   driver?: TenDriver;
   giayTuong?: number;
-  /** giayTuong trừ thời gian chờ người duyệt = thời gian của model + công cụ */
-  giayModel?: number;
+  /**
+   * giayTuong trừ thời gian chờ người duyệt. KHÔNG phải thời gian model: gồm model + công cụ + lệnh kiểm bộ chạy tự chạy (trong lượt) + phần còn lại.
+   * (Trước đây đặt tên `giayModel` — do-model chỉ ra là sai nghĩa; thời gian model thật = tổng totalTimeMs trong lượt ghi AI_GHI_LUOT_DIR.)
+   */
+  giayKhongChoNguoi?: number;
   /** lý do dừng của lượt agent (hoan-thanh | het-luot | loi-model | …) — driver host */
   lyDoDung?: string;
   soLanCho?: number;
@@ -388,7 +391,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     baseSha,
     driver: tenDriver,
     giayTuong,
-    giayModel: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
+    giayKhongChoNguoi: Math.round((giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) * 10) / 10,
     ...(kq.duyet ? { soLanCho: kq.duyet.soLanCho, soChapNhan: kq.duyet.soChapNhan, soTuChoi: kq.duyet.soTuChoi, giayChoDuyet: kq.duyet.giayChoDuyet } : {}),
     ...(kq.lyDoDung ? { lyDoDung: kq.lyDoDung } : {}),
     ...(kq.loiCongCu ? { loiCongCu: kq.loiCongCu } : {}),

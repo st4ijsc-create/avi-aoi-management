@@ -317,3 +317,12 @@ describe("chayMotViec — L3c tsc + chạy kiểm bổ sung khi lượt dừng g
     expect(goi).toBe(1);
   });
 });
+
+describe("chayMotViec — tên trường thời gian đúng nghĩa", () => {
+  it("★ giayKhongChoNguoi = giayTuong − giayChoDuyet (driver có thống kê duyệt); KHÔNG còn trường giayModel gây hiểu nhầm", async () => {
+    const drv: Driver = async () => ({ vong: 1, token: null, ghiChu: [], hetGio: false, duyet: { soLanCho: 1, soChapNhan: 1, soTuChoi: 0, giayChoDuyet: 0.5 } });
+    const r = (await chay({ driver: drv })) as unknown as Record<string, unknown>;
+    expect(r.giayModel).toBeUndefined();
+    expect(r.giayKhongChoNguoi).toBe(Math.round(((r.giayTuong as number) - 0.5) * 10) / 10);
+  });
+});

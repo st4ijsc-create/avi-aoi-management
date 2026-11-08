@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { driverHost, locTruocKhiCho, duongCuaDeXuat, duyetQuaTep, tepChoDuyet, type PhuThuocHost, type ChinhSachDuyet } from "./driverHost";
+import { driverHost, locTruocKhiCho, duongCuaDeXuat, duyetQuaTep, tomTatKiemChoModel, TRAN_TU_CHAY, hanDuyetHieuLucMs, tepDangCho, TTL_THE_DUYET_MS, tepChoDuyet, type PhuThuocHost, type ChinhSachDuyet } from "./driverHost";
+import type { KetQuaKiem } from "./kiemChung";
 import { ghiQuyet } from "./duyet";
 import type { DauVaoDriver } from "./chayMotViec";
 import type { TheViec } from "./theViec";
@@ -38,7 +39,7 @@ describe("locTruocKhiCho — tự từ chối trước khi tới người duyệ
     expect(loc("apply_diff", { files: [{ path: "client/src/lib/a.test.ts" }, { path: "client/src/lib/b.ts" }] }).loai).toBe("tu-choi");
   });
   it("★ run_command: chỉ ĐÚNG lệnh kiểm", () => {
-    expect(loc("run_command", { command: THE.lenhKiem })).toMatchObject({ loai: "cho" });
+    expect(loc("run_command", { command: THE.lenhKiem })).toMatchObject({ loai: "tu-chay", lenh: THE.lenhKiem });
     expect(loc("run_command", { command: `${THE.lenhKiem} && rm -rf x` }).loai).toBe("tu-choi");
     expect(loc("run_command", { command: "npm test" }).loai).toBe("tu-choi");
     expect(loc("run_command", {}).loai).toBe("tu-choi");
@@ -308,5 +309,135 @@ describe("loiCongCu — nhãn riêng cho từ chối (không lẫn lỗi công c
       phat({ loai: "xong", lyDo: "hoan-thanh" });
     }, async () => ({ quyet: "tu-choi", lyDo: "sai" }));
     expect((await driverHost(dep)(dauVao(ra))).loiCongCu).toEqual({ TU_CHOI_NGUOI_DUYET: 1 });
+  });
+});
+
+describe("driverHost — TỰ CHẠY lệnh kiểm thay thẻ run_command chờ người (L2, TC-05)", () => {
+  const kiemFake = (over: Partial<KetQuaKiem> = {}): KetQuaKiem => ({
+    lenh: "x",
+    exit: 1,
+    hetGio: false,
+    giay: 2,
+    duoi: "FAIL a.test.ts > ca một\nAssertionError: expected 1 to be 2",
+    vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 3, hong: 1, boQua: 0, tong: 4 } },
+    ...over,
+  });
+  it("★ run_command đúng LỆNH KIỂM ⇒ bộ chạy tự chạy, KHÔNG hỏi người, kết quả thật về model qua lý do thẻ; nhãn TU_CHAY_LENH_KIEM", async () => {
+    let hoi = 0;
+    const goi: Array<[string, string]> = [];
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: THE.lenhKiem }));
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => {
+        hoi++;
+        return { quyet: "chap-nhan" };
+      },
+      { chayKiem: async (l, w) => (goi.push([l, w]), kiemFake({ lenh: l })) },
+    );
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(hoi).toBe(0);
+    expect(dd.duyet).toEqual([]);
+    expect(goi).toEqual([[THE.lenhKiem, WT]]);
+    expect(dd.bac).toHaveLength(1);
+    expect(dd.bac[0]).toContain("KHÔNG PHẢI bị người từ chối");
+    expect(dd.bac[0]).toContain("Tests 1 failed | 3 passed (4)");
+    expect(dd.bac[0]).toContain("Test Files 1 failed | 0 passed (1)");
+    expect(dd.bac[0]).toContain("AssertionError: expected 1 to be 2");
+    expect(kq.duyet).toMatchObject({ soLanCho: 0, soChapNhan: 0 });
+    expect(kq.ghiChu.join(" ")).toMatch(/tự chạy lệnh kiểm lần 1: exit 1/);
+  });
+  it("★ lệnh KHÁC lệnh kiểm vẫn tự từ chối, KHÔNG chạy gì", async () => {
+    let chay = 0;
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: `${THE.lenhKiem} && echo hi` }));
+        await new Promise((r) => setTimeout(r, 100));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => (chay++, kiemFake({ lenh: l })) },
+    );
+    await driverHost(dep)(dauVao(ra));
+    expect(chay).toBe(0);
+    expect(dd.bac[0]).toContain("tự từ chối");
+  });
+  it("★ nhãn loiCongCu của lần tự chạy là TU_CHAY_LENH_KIEM (không lẫn TU_CHOI_BO_CHAY / lỗi công cụ thật)", async () => {
+    const { dep } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: THE.lenhKiem }, "rc1"));
+        await new Promise((r) => setTimeout(r, 80));
+        phat({ loai: "ket-qua-tool", id: "tc1", ten: "run_command", ok: false, ma: "BI_BAC", tomTat: "rejected" });
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => kiemFake({ lenh: l, exit: 0 }) },
+    );
+    expect((await driverHost(dep)(dauVao(ra))).loiCongCu).toEqual({ TU_CHAY_LENH_KIEM: 1 });
+  });
+  it("★ quá trần số lần tự chạy ⇒ từ chối, không chạy thêm", async () => {
+    let chay = 0;
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        for (let i = 0; i < TRAN_TU_CHAY + 2; i++) {
+          phat(canDuyet("run_command", { command: THE.lenhKiem }));
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => (chay++, kiemFake({ lenh: l, exit: 0 })) },
+    );
+    await driverHost(dep)(dauVao(ra));
+    expect(chay).toBe(TRAN_TU_CHAY);
+    expect(dd.bac.at(-1)).toContain(`đã tự chạy lệnh kiểm ${TRAN_TU_CHAY} lần`);
+  });
+  it("tomTatKiemChoModel: hết hạn / không khởi chạy được / xanh đều nói rõ", () => {
+    expect(tomTatKiemChoModel(kiemFake({ hetGio: true, exit: null }), 2)).toContain("hết hạn sau 2s");
+    expect(tomTatKiemChoModel(kiemFake({ loi: "spawn ENOENT", exit: null }), 1)).toContain("không khởi chạy được: spawn ENOENT");
+    const xanh = tomTatKiemChoModel(kiemFake({ exit: 0, vitest: { tep: { dat: 1, hong: 0, boQua: 0, tong: 1 }, ca: { dat: 4, hong: 0, boQua: 0, tong: 4 } } }), 1);
+    expect(xanh).toContain("thoát mã 0");
+    expect(xanh).toContain("Tests 4 passed (4)");
+  });
+});
+
+describe("driverHost — hạn chờ người không vượt TTL thẻ + dang-cho.txt (L2, TC-05 lượt 2: thẻ hết hạn 14:04:27, hạn báo 14:09:27)", () => {
+  it("★ hanDuyetHieuLucMs: --han-duyet 600 s bị cắt về TTL thẻ − biên an toàn; giá trị nhỏ hơn giữ nguyên", () => {
+    expect(hanDuyetHieuLucMs(600)).toBe(TTL_THE_DUYET_MS - 15_000);
+    expect(hanDuyetHieuLucMs(120)).toBe(120_000);
+    expect(hanDuyetHieuLucMs(0)).toBe(1000);
+  });
+  it("★ thẻ ghi: chính sách nhận hanMs đã cắt + hetHanLuc ≈ lúc + hanMs; ghiChu nói rõ việc cắt", async () => {
+    const thay: Array<{ hanMs: number; hetHanLuc?: string; luc: string }> = [];
+    const { dep } = taoDep(
+      async (phat) => {
+        phat(canDuyet("apply_diff", { path: "client/src/lib/a.test.ts" }));
+        await new Promise((r) => setTimeout(r, 100));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async (h, ctx) => (thay.push({ hanMs: ctx.hanMs, hetHanLuc: h.hetHanLuc, luc: h.luc }), { quyet: "tu-choi", lyDo: "thử" }),
+    );
+    const kq = await driverHost(dep, 600)(dauVao(ra));
+    expect(thay[0].hanMs).toBe(TTL_THE_DUYET_MS - 15_000);
+    expect(Date.parse(thay[0].hetHanLuc!) - Date.parse(thay[0].luc)).toBeGreaterThan(TTL_THE_DUYET_MS - 20_000);
+    expect(Date.parse(thay[0].hetHanLuc!) - Date.parse(thay[0].luc)).toBeLessThan(TTL_THE_DUYET_MS);
+    expect(kq.ghiChu.join(" ")).toMatch(/--han-duyet 600s dài hơn TTL thẻ 300s/);
+  });
+  it("★ duyetQuaTep ghi dang-cho.txt (mã, id, HET HAN) ngay khi thẻ xuất hiện và xoá về '(không có thẻ chờ)' khi có quyết định", async () => {
+    const h = { ma: "TC-99", id: "act-9", ten: "write_file", duong: ["a.ts"], moTa: null, lyDoModel: null, xemTruoc: null, thamSo: {}, nguonDangNgo: [], luc: new Date().toISOString(), hetHanLuc: "2026-11-08T14:04:27.000Z" };
+    const p = duyetQuaTep(h, { ra, hanMs: 5000 });
+    await new Promise((r) => setTimeout(r, 200));
+    const dang = fs.readFileSync(tepDangCho(ra), "utf8");
+    expect(dang).toContain("TC-99 write_file a.ts id=act-9 HET HAN 2026-11-08T14:04:27.000Z");
+    fs.writeFileSync(path.join(ra, "TC-99.quyet.json"), JSON.stringify({ id: "act-9", quyet: "chap-nhan" }));
+    expect((await p).quyet).toBe("chap-nhan");
+    expect(fs.readFileSync(tepDangCho(ra), "utf8")).toMatch(/^\(không có thẻ chờ\)/);
+  });
+  it("hết hạn chờ ⇒ het-gio và dang-cho.txt về trống", async () => {
+    const h = { ma: "TC-98", id: "act-8", ten: "write_file", duong: [], moTa: null, lyDoModel: null, xemTruoc: null, thamSo: {}, nguonDangNgo: [], luc: new Date().toISOString() };
+    expect((await duyetQuaTep(h, { ra, hanMs: 600 })).quyet).toBe("het-gio");
+    expect(fs.readFileSync(tepDangCho(ra), "utf8")).toMatch(/^\(không có thẻ chờ\)/);
   });
 });

@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
+import { chayLenhKiem, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
 
 export const NHAN_PILOT = "pilot-tho-ca";
@@ -23,6 +24,10 @@ export const NHAN_PILOT = "pilot-tho-ca";
 export const NHAN_TU_CHOI_BO_CHAY = "TU_CHOI_BO_CHAY";
 export const NHAN_TU_CHOI_NGUOI = "TU_CHOI_NGUOI_DUYET";
 export const NHAN_HET_GIO_DUYET = "HET_GIO_DUYET";
+/** run_command đúng LỆNH KIỂM được bộ chạy tự chạy (không qua người) — không phải lỗi công cụ */
+export const NHAN_TU_CHAY_LENH_KIEM = "TU_CHAY_LENH_KIEM";
+/** trần số lần tự chạy lệnh kiểm trong MỘT lượt (chống vòng lặp tốn giờ) */
+export const TRAN_TU_CHAY = 8;
 export const CSDL_CHO_PHEP = "aoi_management_test";
 
 // ── Lọc trước khi tới người duyệt (thuần) ─────────────────────────────────────────────────────────
@@ -30,7 +35,7 @@ export const CSDL_CHO_PHEP = "aoi_management_test";
 const TOOL_GHI = new Set(["apply_diff", "write_file", "edit_file", "delete_file", "rename_file"]);
 const KHOA_DUONG = ["path", "file", "filePath", "file_path", "target", "from", "to", "oldPath", "newPath", "old_path", "new_path"];
 
-export type LocTruoc = { loai: "cho"; duong: string[] } | { loai: "tu-choi"; lyDo: string };
+export type LocTruoc = { loai: "cho"; duong: string[] } | { loai: "tu-choi"; lyDo: string } | { loai: "tu-chay"; lenh: string };
 
 /** Gom mọi đường tệp mà lời gọi tool nêu (thamSo cấp 1 + mảng `files`/`paths`). Rỗng ⇒ không xác định được. */
 export function duongCuaDeXuat(thamSo: Record<string, unknown>): string[] {
@@ -49,7 +54,9 @@ export function duongCuaDeXuat(thamSo: Record<string, unknown>): string[] {
 export function locTruocKhiCho(de: { ten: string; thamSo: Record<string, unknown> }, the: Pick<TheViec, "tepDuocPhep" | "lenhKiem">, wt: string): LocTruoc {
   if (de.ten === "run_command") {
     const lenh = typeof de.thamSo.command === "string" ? de.thamSo.command.trim() : "";
-    return lenh !== "" && lenh === the.lenhKiem.trim() ? { loai: "cho", duong: [] } : { loai: "tu-choi", lyDo: "run_command khác LỆNH KIỂM của thẻ" };
+    // L2 (TC-05): thẻ run_command vitest chờ NGƯỜI duyệt hết hạn sau 5 phút (expiresAt = createdAt + 5') trong khi người tới sau ~10 phút ⇒ model lặp ⇒ lap-lai.
+    // LỆNH KIỂM là việc bộ chạy vốn tự chạy (L3a, env DB chết) ⇒ chạy NGAY, không qua người, trả kết quả cho model. Lệnh khác ⇒ từ chối như cũ.
+    return lenh !== "" && lenh === the.lenhKiem.trim() ? { loai: "tu-chay", lenh } : { loai: "tu-choi", lyDo: "run_command khác LỆNH KIỂM của thẻ" };
   }
   if (!TOOL_GHI.has(de.ten)) return { loai: "tu-choi", lyDo: `tool "${de.ten}" không nằm trong danh sách được phép cho pilot` };
   const tho = duongCuaDeXuat(de.thamSo);
@@ -82,12 +89,23 @@ export interface HoSoCho {
   thamSo: Record<string, unknown>;
   nguonDangNgo: string[];
   luc: string;
+  /** hạn THẬT người duyệt phải trả lời trước (ISO) — thẻ của app hết hạn sau 5 phút kể từ lúc tạo, bất kể --han-duyet */
+  hetHanLuc?: string;
+}
+/** App đặt `expiresAt = createdAt + 5 phút` cho thẻ (aiCopilotActions.PENDING_TTL_MS); quá hạn thẻ `invalid` dù bộ chạy còn đợi (TC-05 lượt 2). */
+export const TTL_THE_DUYET_MS = 5 * 60_000;
+export const BIEN_AN_TOAN_MS = 15_000;
+/** Hạn chờ người HIỆU LỰC = min(--han-duyet, TTL của thẻ − biên an toàn). Không bao giờ dài hơn thời gian thẻ còn sống. */
+export function hanDuyetHieuLucMs(hanDuyetGiay: number): number {
+  return Math.max(1000, Math.min(hanDuyetGiay * 1000, TTL_THE_DUYET_MS - BIEN_AN_TOAN_MS));
 }
 export type QuyetDinh = { quyet: "chap-nhan" | "tu-choi"; lyDo?: string } | { quyet: "het-gio" };
 export type ChinhSachDuyet = (h: HoSoCho, ctx: { ra: string; hanMs: number }) => Promise<QuyetDinh>;
 
 export const tepChoDuyet = (ra: string, ma: string) => path.join(ra, `${ma}.cho-duyet.json`);
 export const tepQuyet = (ra: string, ma: string) => path.join(ra, `${ma}.quyet.json`);
+/** MỘT dòng cho người duyệt: thẻ đang chờ + id + hạn (hoặc "(không có thẻ chờ)"). Ghi ngay khi thẻ xuất hiện. */
+export const tepDangCho = (ra: string) => path.join(ra, "dang-cho.txt");
 
 export function ghiNguyenTu(tep: string, noiDung: string): void {
   const tam = `${tep}.${process.pid}.tmp`;
@@ -101,22 +119,46 @@ export const duyetQuaTep: ChinhSachDuyet = async (h, ctx) => {
   const qp = tepQuyet(ctx.ra, h.ma);
   fs.rmSync(qp, { force: true });
   ghiNguyenTu(tepChoDuyet(ctx.ra, h.ma), JSON.stringify(h, null, 2));
-  process.stderr.write(`[tho-ca-pilot] CHỜ DUYỆT ${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} → ${tepChoDuyet(ctx.ra, h.ma)}\n`);
   const han = Date.now() + ctx.hanMs;
+  const hetHan = h.hetHanLuc ?? new Date(han).toISOString();
+  ghiNguyenTu(tepDangCho(ctx.ra), `${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HET HAN ${hetHan}\n`);
+  process.stderr.write(`[tho-ca-pilot] CHỜ DUYỆT ${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HẾT HẠN ${hetHan} → ${tepChoDuyet(ctx.ra, h.ma)}\n`);
+  const xong = <T extends QuyetDinh>(q: T): T => {
+    ghiNguyenTu(tepDangCho(ctx.ra), `(không có thẻ chờ) ${new Date().toISOString()}\n`);
+    return q;
+  };
   while (Date.now() < han) {
     try {
       const q = JSON.parse(fs.readFileSync(qp, "utf8")) as { id?: unknown; quyet?: unknown; lyDo?: unknown };
       if (q.id === h.id && (q.quyet === "chap-nhan" || q.quyet === "tu-choi")) {
         fs.rmSync(qp, { force: true });
-        return { quyet: q.quyet, ...(typeof q.lyDo === "string" ? { lyDo: q.lyDo } : {}) };
+        return xong({ quyet: q.quyet, ...(typeof q.lyDo === "string" ? { lyDo: q.lyDo } : {}) });
       }
     } catch {
       /* chưa có / đang ghi */
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  return { quyet: "het-gio" };
+  return xong({ quyet: "het-gio" });
 };
+
+/**
+ * Văn bản trả cho model khi bộ chạy TỰ chạy LỆNH KIỂM thay cho thẻ duyệt. Kênh duy nhất để đưa kết quả về model là lý do từ chối của thẻ
+ * (host in nó sau "User rejected this change:"), nên câu đầu nói rõ đây là KẾT QUẢ THẬT, không phải bị người từ chối.
+ */
+export function tomTatKiemChoModel(k: KetQuaKiem, lan: number): string {
+  const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
+  const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
+  const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? `không khởi chạy được: ${k.loi}` : `thoát mã ${k.exit}`;
+  return [
+    `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
+    tep,
+    ca,
+    "--- đuôi đầu ra ---",
+    k.duoi.length > 1800 ? k.duoi.slice(-1800) : k.duoi,
+    "Đỏ ⇒ sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
+  ].join("\n");
+}
 
 // ── Phụ thuộc ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -135,6 +177,8 @@ export interface PhuThuocHost {
   chinhSachDuyet: ChinhSachDuyet;
   /** đo thời gian chờ người (ms) — tiêm được để test */
   bay(): number;
+  /** (tuỳ chọn) chạy lệnh kiểm tự động khi model xin run_command đúng LỆNH KIỂM; mặc định chạy thật (kiemChung.chayLenhKiem) */
+  chayKiem?: ChayKiem;
   /** Bảo đảm có khoá ký checkpoint (SECRET_ENCRYPTION_KEY|JWT_SECRET ≥ 16). `tam` = bộ chạy tự sinh khoá riêng của tiến trình. */
   datKhoaKy(): { ok: boolean; tam: boolean };
 }
@@ -172,6 +216,8 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     /** nhãn riêng cho các từ chối (id lời gọi tool → nhãn): để loiCongCu không trộn "bộ chạy/người từ chối" (mã BI_BAC của host) với lỗi công cụ THẬT */
     const nhanTuChoi = new Map<string, string>();
 
+    let soTuChay = 0;
+    let soLanBaoHan = 0;
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
       const loc = locTruocKhiCho(de, v.the, v.wt);
       if (loc.loai === "tu-choi") {
@@ -181,9 +227,26 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         await dep.bac(actionId, `[pilot tự từ chối] ${loc.lyDo}`);
         return;
       }
+      if (loc.loai === "tu-chay") {
+        nhanTuChoi.set(id, NHAN_TU_CHAY_LENH_KIEM);
+        soTuChay++;
+        if (soTuChay > TRAN_TU_CHAY) {
+          ghiChu.push(`quá ${TRAN_TU_CHAY} lần tự chạy lệnh kiểm trong một lượt — từ chối`);
+          await dep.bac(actionId, `[pilot] đã tự chạy lệnh kiểm ${TRAN_TU_CHAY} lần trong lượt này; dừng gọi lại và báo kết quả cuối.`);
+          return;
+        }
+        const k = await (dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
+        ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
+        await dep.bac(actionId, tomTatKiemChoModel(k, soTuChay));
+        return;
+      }
       th.soLanCho++;
       const t0 = dep.bay();
       dangChoTu = t0;
+      const hanMs = hanDuyetHieuLucMs(hanDuyetGiay);
+      if (hanDuyetGiay * 1000 > hanMs && soLanBaoHan++ === 0) {
+        ghiChu.push(`--han-duyet ${hanDuyetGiay}s dài hơn TTL thẻ ${TTL_THE_DUYET_MS / 1000}s ⇒ chờ người tối đa ${Math.round(hanMs / 1000)}s mỗi thẻ (thẻ hết hạn sau đó dù bộ chạy còn đợi)`);
+      }
       const q = await dep.chinhSachDuyet(
         {
           ma: v.the.ma,
@@ -196,8 +259,9 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           thamSo: de.thamSo,
           nguonDangNgo: de.nguonDangNgo ?? [],
           luc: new Date().toISOString(),
+          hetHanLuc: new Date(Date.now() + hanMs).toISOString(),
         },
-        { ra: v.ra, hanMs: hanDuyetGiay * 1000 },
+        { ra: v.ra, hanMs },
       );
       th.msCho += dep.bay() - t0;
       dangChoTu = null;
