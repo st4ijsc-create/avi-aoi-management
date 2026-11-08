@@ -128,6 +128,7 @@ Nghiệm thu mỗi pha = tổng các N của bước trong pha + cổng gộp (c
 | `ke-hoach/2026-11-03-pha0-an-toan-ve-sinh.md` | Gói việc pha 0 cho dieu-phoi: 4 nhánh, ~40 việc theo module (90-P0, 50-C0, 40-AL0, 30-T0, 70-E0, 80-F0, 60-Q0), thứ tự 7 ngày, 5 lần xoá dữ liệu cần duyệt, số đo trước/sau | chủ dự án chốt (a) 2026-11-03 |
 | `ke-hoach/2026-11-03-mockup-5-man-brief.md` | Brief mockup 5 màn (Home theo vai, Phòng vận hành, Máy L3, Cảnh báo, Tài sản) + vỏ + `token.css` cho luong-ui/scada-ui, song song pha 0 | chủ dự án chốt (b) 2026-11-03; **mockup ĐÃ DUYỆT 2026-11-04** (main ac0e63289) |
 | `ke-hoach/2026-11-06-pha1-nen-du-lieu.md` | Gói việc pha 1 (nền dữ liệu): lô 1A hierarchy → 1B asset (lối găng) → 1C telemetry ∥ 1D alarm ∥ 1E platform ∥ 1F inspection; 1G sau A2(o); dải mig theo module; chỉ thêm song song, không đổi tên bảng | soạn 2026-11-06, mở khi pha 0 gộp main |
+| `ke-hoach/2026-11-08-tho-ca-ke-hoach-cai-tien.md` | Kế hoạch cải tiến hoàn chỉnh Thợ Cả (AI local): đối chiếu 3 tài liệu chủ dự án (KH Qwen3.6 · UX Forge · canvas 9 màn) với hiện trạng 08/11; 7 layer L0–L6; lô A pilot GĐ2 (đang chạy) → B tri thức dự án → C đo lường chuẩn → D runtime → E bề mặt → F an toàn dữ liệu → G tự cải thiện (LoRA chờ); 12 chỉ số | DỰ THẢO 2026-11-08 chờ chủ dự án |
 
 ## Quy trình dùng TechDocs
 
