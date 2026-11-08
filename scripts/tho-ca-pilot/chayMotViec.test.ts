@@ -242,3 +242,20 @@ describe("chayMotViec — L3a: bộ chạy TỰ chạy lệnh kiểm và đọc 
     expect(goi).toBe(0);
   });
 });
+
+describe("ghepLenh — QUY TRÌNH và ghi chú lệnh kiểm tới tay model", () => {
+  it("★ thẻ TC-05: model thấy QUY TRÌNH và lệnh kiểm SẠCH (không lời văn dính vào lệnh)", () => {
+    const dt = docTheViec(`MÃ: TC-05
+MỤC TIÊU: viết test
+TỆP ĐƯỢC PHÉP SỬA/TẠO: server/utils/msaReport.unit.test.ts
+LỆNH KIỂM: npx vitest run server/utils/msaReport.unit.test.ts. Ngoài ra có đột biến.
+QUY TRÌNH: Trước khi viết test, in danh sách hành vi (≤ 12 dòng) và chờ duyệt.
+GIỚI HẠN: 15 phút, 8 vòng.`);
+    expect(dt.ok).toBe(true);
+    if (!dt.ok) return;
+    const lenh = ghepLenh(dt.the, "# luat");
+    expect(lenh).toContain("\nLỆNH KIỂM: npx vitest run server/utils/msaReport.unit.test.ts\n");
+    expect(lenh).toContain("GHI CHÚ LỆNH KIỂM: Ngoài ra có đột biến.");
+    expect(lenh).toContain("QUY TRÌNH: Trước khi viết test, in danh sách hành vi (≤ 12 dòng) và chờ duyệt.");
+  });
+});

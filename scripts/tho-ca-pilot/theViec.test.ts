@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { docTheViec, docGioiHan, kiemDiffTheoThe, chuanDuong, vungCamCua, mucVungCam } from "./theViec";
+import { docTheViec, docGioiHan, kiemDiffTheoThe, chuanDuong, vungCamCua, mucVungCam, tachLenhKiem, tepTestTrongLenh } from "./theViec";
 
 const THE = `MÃ: TC-01
 MỤC TIÊU: viết unit test cho relativeTime
@@ -127,5 +127,34 @@ describe("vùng cấm theo ĐOẠN THƯ MỤC, không theo chuỗi con tên tệ
     expect(the("client/src/lib/stateVocabulary.edge.unit.test.ts").ok).toBe(true);
     expect(the("server/services/edge/x.ts").ok).toBe(false);
     expect(the("server/utils/edgeCase.ts").ok).toBe(false);
+  });
+});
+
+describe("tachLenhKiem + QUY TRÌNH (thẻ TC-05: lệnh kiểm có lời văn, dòng QUY TRÌNH sau nó)", () => {
+  const THE_TC05 = `MÃ: TC-05
+MỤC TIÊU: viết test
+TỆP ĐƯỢC PHÉP SỬA/TẠO: server/utils/msaReport.unit.test.ts
+LỆNH KIỂM: npx vitest run server/utils/msaReport.unit.test.ts. Ngoài ra dieu-phoi đặt các đột biến vào msaReport.ts, và test phải ĐỎ với mỗi đột biến.
+QUY TRÌNH: Trước khi viết test, in danh sách hành vi sẽ kiểm (≤ 12 dòng) và chờ duyệt.
+GIỚI HẠN: 15 phút, 8 vòng.`;
+  it("★ lệnh kiểm SẠCH: không lời văn, không dòng QUY TRÌNH lọt vào lệnh; ghi chú tách riêng", () => {
+    const r = docTheViec(THE_TC05);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.the.lenhKiem).toBe("npx vitest run server/utils/msaReport.unit.test.ts");
+    expect(r.the.lenhKiemGhiChu).toContain("dieu-phoi đặt các đột biến");
+    expect(r.the.lenhKiemGhiChu).not.toContain("QUY TRÌNH");
+    expect(r.the.quyTrinh).toBe("Trước khi viết test, in danh sách hành vi sẽ kiểm (≤ 12 dòng) và chờ duyệt.");
+    expect(r.the.gioiHan).toEqual({ giay: 900, vong: 8 });
+    expect(tepTestTrongLenh(r.the.lenhKiem)).toEqual(["server/utils/msaReport.unit.test.ts"]);
+  });
+  it("tachLenhKiem: dấu chấm trong đường không bị cắt; dấu chấm cuối bị bỏ; chỉ dòng đầu là lệnh", () => {
+    expect(tachLenhKiem("npx vitest run a.unit.test.ts").lenh).toBe("npx vitest run a.unit.test.ts");
+    expect(tachLenhKiem("npx vitest run ./x/a.test.ts.").lenh).toBe("npx vitest run ./x/a.test.ts");
+    expect(tachLenhKiem("node scripts/x.mjs --a\nghi chú dòng hai")).toEqual({ lenh: "node scripts/x.mjs --a", ghiChu: "ghi chú dòng hai" });
+  });
+  it("thẻ chỉ có lời văn ở LỆNH KIỂM ⇒ từ chối", () => {
+    const r = docTheViec(THE_TC05.replace(/LỆNH KIỂM: .*/, "LỆNH KIỂM:   . Chỉ là lời"));
+    expect(r.ok).toBe(false);
   });
 });

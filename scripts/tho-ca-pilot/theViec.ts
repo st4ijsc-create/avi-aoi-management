@@ -16,7 +16,12 @@ export interface TheViec {
   mucTieu: string;
   tepDuocPhep: string[];
   nguCanhDoc: string[];
+  /** CHỈ phần lệnh (một dòng, đã cắt lời văn sau dấu chấm hết câu) — là thứ bộ chạy THỰC SỰ chạy và host so khớp run_command */
   lenhKiem: string;
+  /** lời văn đi kèm LỆNH KIỂM trong thẻ (không chạy) */
+  lenhKiemGhiChu?: string;
+  /** QUY TRÌNH: bước bắt buộc trước khi làm (vd in danh sách hành vi rồi chờ duyệt) — chuyển nguyên văn cho model */
+  quyTrinh?: string;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -28,6 +33,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "NGU CANH DOC": "nguCanhDoc",
   "LENH KIEM": "lenhKiem",
   "GIOI HAN": "gioiHan",
+  "QUY TRINH": "quyTrinh",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -50,6 +56,20 @@ function tachDanhSach(s: string): string[] {
     .split(/[,\n]/)
     .map((x) => x.replace(/^\s*[-*]\s+/, "").trim())
     .filter((x) => x !== "");
+}
+
+/**
+ * Tách LỆNH KIỂM thô của thẻ thành phần LỆNH (dòng đầu, cắt tại dấu chấm hết câu ". " + chữ, bỏ dấu chấm cuối) và GHI CHÚ (phần còn lại).
+ * Vì sao: thẻ viết văn xuôi ngay sau lệnh ("npx vitest run a.test.ts. Ngoài ra …") — bộ chạy NAY chạy lệnh này trong shell và host so khớp
+ * nguyên văn run_command, nên phải là lệnh sạch. Dấu chấm trong đường (a.unit.test.ts, ./x) không có khoảng trắng sau nên không bị cắt.
+ */
+export function tachLenhKiem(tho: string): { lenh: string; ghiChu: string } {
+  const dong = tho.replace(/\r\n/g, "\n").split("\n");
+  const dau = (dong[0] ?? "").trim();
+  const m = /\.\s+\S/.exec(dau);
+  const lenh = (m ? dau.slice(0, m.index) : dau).replace(/\.$/, "").trim();
+  const conLai = [m ? dau.slice(m.index + 1).trim() : "", ...dong.slice(1).map((x) => x.trim())].filter((x) => x !== "");
+  return { lenh, ghiChu: conLai.join(" ") };
 }
 
 /** `GIỚI HẠN: 15 phút, 12 vòng` (phút/giây/vòng, thứ tự tuỳ ý). Vắng ⇒ mặc định 15 phút, 12 vòng. */
@@ -90,8 +110,11 @@ export function docTheViec(van: string): KetQuaThe {
     const loi = kiemTepDuocPhep(t);
     if (loi) return { ok: false, loi: `TỆP ĐƯỢC PHÉP "${t}": ${loi}` };
   }
-  const lenhKiem = (truong.get("lenhKiem") ?? "").trim();
-  if (lenhKiem === "") return { ok: false, loi: "thiếu LỆNH KIỂM" };
+  const lenhTho = (truong.get("lenhKiem") ?? "").trim();
+  if (lenhTho === "") return { ok: false, loi: "thiếu LỆNH KIỂM" };
+  const { lenh: lenhKiem, ghiChu: lenhKiemGhiChu } = tachLenhKiem(lenhTho);
+  if (lenhKiem === "") return { ok: false, loi: "LỆNH KIỂM không có phần lệnh (chỉ có lời văn)" };
+  const quyTrinh = (truong.get("quyTrinh") ?? "").trim();
   return {
     ok: true,
     the: {
@@ -100,6 +123,8 @@ export function docTheViec(van: string): KetQuaThe {
       tepDuocPhep,
       nguCanhDoc: tachDanhSach(truong.get("nguCanhDoc") ?? ""),
       lenhKiem,
+      ...(lenhKiemGhiChu ? { lenhKiemGhiChu } : {}),
+      ...(quyTrinh ? { quyTrinh } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };

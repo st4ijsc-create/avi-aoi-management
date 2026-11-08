@@ -118,6 +118,8 @@ export function ghepLenh(the: TheViec, luat: string): string {
     `TỆP ĐƯỢC PHÉP SỬA/TẠO: ${the.tepDuocPhep.join(", ")}`,
     the.nguCanhDoc.length ? `NGỮ CẢNH ĐỌC: ${the.nguCanhDoc.join(", ")}` : "",
     `LỆNH KIỂM: ${the.lenhKiem}`,
+    the.lenhKiemGhiChu ? `GHI CHÚ LỆNH KIỂM: ${the.lenhKiemGhiChu}` : "",
+    the.quyTrinh ? `QUY TRÌNH: ${the.quyTrinh}` : "",
     `GIỚI HẠN: ${Math.round(the.gioiHan.giay / 60)} phút, ${the.gioiHan.vong} vòng`,
   ]
     .filter((x) => x !== "")
