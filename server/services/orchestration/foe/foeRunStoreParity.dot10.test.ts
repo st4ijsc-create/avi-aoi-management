@@ -1573,7 +1573,8 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "held" });
     expect(runRow(e.runId).status).toBe("held");
     expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1", ma: "EDGE_OUTCOME_UNKNOWN", lan: "claim3" });
-    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual([expect.objectContaining({ loai: "held", stepId: "r1", compId: "c1", claimSeq: 3 })]);
+    // A2(n) T6 (decision 3, H13) — r2 never goes forward on this latched run (the Continue below sends c1 only): a person is told now, nobody would later
+    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual([expect.objectContaining({ loai: "held", stepId: "r1", compId: "c1", claimSeq: 3 }), expect.objectContaining({ loai: "forwardNotSent", stepId: "r2", claimSeq: 3 })]);
     // n3 — refused (nothing changes) for a supervisor WITHOUT machine-control rights, then without a reason; with both, ONLY c1 is sent
     // (r1 never again), the run fails
     await expect(approveEdgeGate(e)).rejects.toThrow(/only a person with machine-control rights/);
@@ -4045,7 +4046,9 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await bootMat(c, ["b"]);
     await waitFor(() => ids().includes("s"), "the STOP");
     await wait(30);
-    expect(buocBo()).toEqual(["s"]);
+    // T6 (H1, H11, T5 bàn giao) — a STOP in state C is its own last word: its own URGENT names it, forwardNotSent never says it "was NOT handed to a dispatcher"
+    expect(buocBo()).toEqual([]);
+    expect(urgentCua("stopNotSent").filter((a) => String(a.title).includes('"s"')).length, "never silent").toBeGreaterThan(0);
   });
   it("MAT-HANG-B phủ định: nothing left behind the lost row: no forwardNotSent", async () => {
     const c = await denG2("mhn", [move("a"), gate("g2")]);
@@ -4133,7 +4136,9 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     h.failPlan.set("s", Infinity);
     await centralRun(def("ttc", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), robotStop("s")])])]), 1);
     await wait(30);
-    expect(buocBo()).toEqual(["s"]);
+    // T6 (H1, H11, T5 bàn giao) — it did not go and it is named, by its own URGENT: forwardNotSent never says a STOP in state C "was NOT handed to a dispatcher"
+    expect(buocBo()).toEqual([]);
+    expect(urgentCua("stopNotSent").filter((a) => String(a.title).includes('"s"')).length, "named").toBeGreaterThan(0);
   });
   it("TEN-STOP a container never begun holding only a STOP the pass sends: nothing forward was dropped: no forwardNotSent", async () => {
     h.slow.set("x", 10);
@@ -4409,6 +4414,146 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await waitFor(() => ids().includes("st"), "the STOP");
     expect(ids().filter((x) => x === "st")).toEqual(["st"]);
     await waitFor(() => hang(c, "st")?.status === "completed", "the STOP's row");
+  });
+
+  // ── A2(n) T6a: forwardNotSent over the whole tree (H13), giu by what came back (R5, H2, H14) ─────────────────────────────
+  const motLan = (id: string) => expect(ids().filter((x) => x === id), `${id} sent once`).toEqual([id]);
+  it("LONG-1 a nested tree: a begun container with a STOP compensation, a command unsent in it and one behind it: both named, never the STOP", async () => {
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("long1", [gate(), parF("p", [move("x"), box("v", [box("c", [move("a"), delay("w", 60), move("m1")], { compensation: robotStop("cs") }), move("m2")])])]), 1);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    await wait(30);
+    motLan("cs");
+    expect(buocBo().sort()).toEqual(["m1", "m2"]);
+  });
+  it("LONG-2 two levels: the first unsent command of each container and of the sequence around them, never the STOP compensation", async () => {
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("long2", [gate(), parF("p", [move("x"), box("v", [box("c", [box("d", [move("a"), delay("w", 60), move("m1"), move("m1b")], { compensation: robotStop("cs") }), move("m2")]), move("m3")])])]), 1);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    await wait(30);
+    motLan("cs");
+    expect(buocBo().sort()).toEqual(["m1", "m2", "m3"]);
+  });
+  it("LONG-SONG a parallel with a nested branch: each branch names its own first unsent command, the top level its own; the STOP goes once", async () => {
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    await centralRun(def("longs", [gate(), parF("p", [move("x"), parF("q", [box("c", [move("a"), delay("w", 60), move("m1"), move("m1b")], { compensation: robotStop("cs") }), box("e", [delay("w2", 60), box("f", [move("m4")])])])]), move("tail")]), 1);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    await wait(30);
+    motLan("cs");
+    expect(buocBo().sort()).toEqual(["m1", "m4", "tail"]);
+  });
+  it("LONG-EDGE the same nested tree on the edge: both named", async () => {
+    const e = await denBuoc(def("long1e", [gate(), parF("p", [move("x"), box("v", [box("c", [move("a"), delay("w", 60), move("m1")], { compensation: robotStop("cs") }), move("m2")])])]));
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await waitFor(() => ids().includes("cs"), "the container's STOP");
+    motLan("cs");
+    const ten = (e.events ?? []).filter((v) => v.kind === "anomaly" && String(v.detail).includes('"loai":"forwardNotSent"')).map((v) => JSON.parse(String(v.detail)).stepId as string);
+    expect(ten.sort()).toEqual(["m1", "m2"]);
+  });
+  it("TUCHOI-CAY a STOP in state C inside a door-stopped tree, a command behind it: the command is named, the STOP is its own last word, its own URGENT names it", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    h.failPlan.set("s", Infinity);
+    const c = await centralRun(def("tcay", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c", [robotStop("s")]), move("m")])])]), 1);
+    await wait(30);
+    expect(buocBo()).toEqual(["m"]);
+    expect(urgentCua("stopNotSent").filter((a) => String(a.title).includes('"s"')).length, "the refused STOP is told by its own URGENT").toBeGreaterThan(0);
+    expect(runRow(c).status).toBe("held");
+  });
+  it("KHONG-XD the rows cannot be read after the latch: what was dropped cannot be told: an URGENT all the same, its words say it could not be determined", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const goc = fake.select.bind(fake);
+    let hong = false;
+    let lan = 0;
+    const xau: Record<string, unknown> = {};
+    for (const k of ["where", "limit", "orderBy", "for", "leftJoin", "groupBy"]) xau[k] = () => xau;
+    xau.then = (ok: (v: unknown) => unknown, loi: (e: unknown) => unknown) => Promise.reject(new Error("step rows unreadable (test)")).then(ok, loi);
+    const spy = vi.spyOn(fake, "select").mockImplementation((p?: Record<string, any>) => {
+      const b = goc(p);
+      const tu = b.from;
+      b.from = (t: unknown) => (hong && t === orchestrationRunSteps ? (lan++, xau) : tu(t));
+      return b;
+    });
+    h.sauTimeout = () => (hong = true);
+    try {
+      await centralRun(def("kxd", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), move("m")])])]), 1);
+      await wait(30);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lan, "the step rows read failed after the latch").toBeGreaterThan(0);
+    expect(ids()).toEqual(["x"]);
+    const a = urgentCua("forwardNotSent");
+    expect(a.length, "forward work dropped: a person is told").toBe(1);
+    expect(`${a[0].title} ${a[0].message}`).toMatch(/could not be determined/i);
+    expect(a[0].message).not.toContain("NOT handed");
+  });
+  it("CHO-CONG a latched walk that pauses at a gate reached before the latch: what stands behind it never goes forward either (an approval walks into the door, a rejection walks nothing): named now", async () => {
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(khung("chc", CAC()), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    expect(hang(c, "r3")).toBeUndefined();
+    expect(buocBo(), "a rejected gate walks nothing: nobody else would name r3").toEqual(["r3"]);
+  });
+  it("CRASH-BAO a walk refused a command at the door and died before its end told anyone: the boot's walk names it from the row", async () => {
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def("crb", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), move("m")])])]), 1);
+    await wait(30);
+    expect(String(hang(c, "m")!.error)).toMatch(khongGui);
+    chet(c, ["g1", "p", "x", "v", "m"]);
+    await autoResumeInterruptedRuns([c]);
+    await wait(40);
+    expect(ids()).toEqual([]);
+    expect(buocBo(), "the row says m was not sent: a person is told, whatever walk wrote it").toEqual(["m"]);
+  });
+  it("K2-HOI no answer, the URGENT not durable: handed over, not confirmed: held (H2), not sent again", async () => {
+    h.alertDurable = false;
+    h.timeoutDispatch.add("cs");
+    const c = await denHoi("k2htb");
+    const n = ids().filter((x) => x === "cs").length;
+    expect(n).toBeGreaterThan(0);
+    expect(runRow(c).status).toBe("held");
+    await wait(30);
+    expect(ids().filter((x) => x === "cs").length, "not sent again").toBe(n);
+  });
+  const k2e = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: robotStop("cs") })])])]);
+  const diK2e = async (ref: string) => {
+    const e = await denBuoc(k2e(ref));
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await waitFor(() => ids().includes("cs"), "the refused step's STOP");
+    return e;
+  };
+  const baoEdge = (e: EdgeHarness, loai: string) => (e.events ?? []).filter((v) => v.kind === "anomaly" && String(v.detail).includes(`"loai":"${loai}"`));
+  it("GIU-EDGE chắc chưa ra: the edge's STOP compensation refused: state C, the segment ends held, an URGENT names it", async () => {
+    h.failPlan.set("cs", Infinity);
+    const e = await diK2e("gec");
+    expect(runRow(e.runId).status).toBe("held");
+    expect(baoEdge(e, "stopNotSent").length).toBeGreaterThan(0);
+  });
+  it("GIU-EDGE đã gửi, chưa xác nhận: no answer at the last attempt: not state C, the segment is not held for it, told not confirmed (H14)", async () => {
+    h.timeoutDispatch.add("cs");
+    const e = await diK2e("gek");
+    expect(baoEdge(e, "stopNotSent")).toEqual([]);
+    expect(baoEdge(e, "stopNotConfirmed").length).toBeGreaterThan(0);
+    expect(runRow(e.runId).status).not.toBe("held");
+  });
+  it("GIU-EDGE xác nhận: acked_verified: the segment ends by its walk, not held, one STOP", async () => {
+    h.acked = true;
+    h.ackStatus = "acked_verified";
+    const e = await diK2e("gex");
+    motLan("cs");
+    expect(baoEdge(e, "stopNotSent")).toEqual([]);
+    expect(runRow(e.runId).status).toBe("failed");
   });
 });
 

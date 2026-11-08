@@ -250,7 +250,7 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * approvedNotConfirmed — a compensation a Continue approved failed or got no answer (m-F); approvedNotSent — the same, nothing was handed over (its interlock, I-K);
  * failedNotSent — the run is FAILED, its compensation was not sent (m-C); compensationUnknown — a compensation's OWN outcome is unknown (I-I, m-P);
  * inFlight — `compId` was handed to a dispatcher before the run latched: it cannot be recalled (c);
- * forwardNotSent — A2(n) extension: `stepId` was refused at the sink and this walk told nobody of the latch (a STOP unknown on one attempt, confirmed on the next: nothing was split);
+ * forwardNotSent — A2(n) extension, T6 (H13): `stepId` is the first command not sent of a branch the latched walk dropped, one per branch (BUOC_KHONG_XAC_DINH: the evidence could not be read);
  * runEnd — A2(n) T2: the one URGENT of a latched run's end, `stepId` = the latch step, under the fixed event "chot". Check on site (H2): by then Abort may answer "already terminal";
  * stopUntakenBranch — A2(n) M1: `stepId` is a STOP in a branch the run never evaluated: listed, never sent, under the fixed event "chot";
  * stopNotSent — A2(n) T5, state C: a STOP that stays owed (`vi` says why): the run is held so an Abort can send it. A forward STOP: `stepId` is the STOP, `compId` "-"; a compensation: its owner and the STOP;
@@ -282,6 +282,8 @@ export const CHO_NGUOI_TIEU_DE = "waiting for a person";
 export const STOP_DA_GUI_TIEU_DE = "STOP compensation sent";
 /** The compensation id of an alert about a step with none (R-4): the dedup key keeps its shape. */
 export const KHONG_CO_BU_TRU = "-";
+/** A2(n) T6 (H13) — the step of a forwardNotSent whose evidence could not be read: which command was dropped is not known, and the words say so. Central's own walk only. */
+export const BUOC_KHONG_XAC_DINH = "?";
 
 export interface CanhBaoKhongRo {
   loai: LoaiCanhBaoKhongRo;
@@ -317,7 +319,8 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [st
 export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title: string; message: string; dedupKey: string } {
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
-  const nhanh = a.loai === "stopUntakenBranch"; // `stepId` is the listed STOP: nothing happened to it
+  const khongXd = a.loai === "forwardNotSent" && a.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name
+  const nhanh = a.loai === "stopUntakenBranch" || khongXd; // `stepId` is the listed STOP: nothing happened to it
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -337,7 +340,9 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       approvedNotSent: [`compensation ${c} NOT sent`, `Its compensation ${c}, approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher. Nothing reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment may have sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
-      forwardNotSent: [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
+      forwardNotSent: khongXd
+        ? [`forward work dropped, which command could not be determined`, `Forward work of this run was dropped, and which command was not sent could not be determined: the step records could not be read. Any command of this run may or may not have reached the device, and nothing further goes forward. Check the machine on site.`]
+        : [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
       runEnd: [`nothing further goes forward, check the machine on site`, `The run has ended or is waiting; nothing further goes forward. A STOP this run sent, if any, could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopUntakenBranch: [`STOP "${a.stepId}" in a branch never taken: NOT sent`, `STOP step "${a.stepId}" sits in a branch this run never evaluated, so it was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       stopNotSent: chuStopChuaRa(a),
