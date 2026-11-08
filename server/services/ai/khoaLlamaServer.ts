@@ -16,14 +16,15 @@ export function khoaLlamaServer(env: NodeJS.ProcessEnv = process.env, bayGio = D
   if (!tep) return (env.LLAMA_SERVER_API_KEY || "").trim();
   if (dem && dem.tep === tep && bayGio - dem.luc < HAN_DEM_MS) return dem.khoa;
   let khoa = "";
+  let loi = "tệp rỗng";
   try {
     khoa = fs.readFileSync(tep, "utf8").trim();
-    if (!khoa) throw new Error("tệp rỗng");
   } catch (e) {
-    if (!daCanhBao) {
-      daCanhBao = true;
-      console.warn(`[khoaLlamaServer] không đọc được khoá từ LLAMA_SERVER_API_KEY_FILE (${(e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message}): gọi llama-server sẽ bị 401`);
-    }
+    loi = (e as NodeJS.ErrnoException)?.code ?? "không đọc được";
+  }
+  if (!khoa && !daCanhBao) {
+    daCanhBao = true;
+    console.warn(`[khoaLlamaServer] không có khoá từ LLAMA_SERVER_API_KEY_FILE (${loi}): gọi llama-server sẽ bị 401`);
   }
   dem = { tep, luc: bayGio, khoa };
   return khoa;
