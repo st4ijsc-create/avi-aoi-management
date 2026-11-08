@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { coAiAgentHieuLuc, datCoTuongMinh, docCoTuongMinh, docEnvLoc, khoaDuocNap, napEnvTuTep } from "./napEnv";
+import { coAiAgentHieuLuc, datCoTuongMinh, docCoTuongMinh, docEnvLoc, khoaDuocNap, KHOA_DUONG_DAN_BI_MAT, napEnvTuTep } from "./napEnv";
 
 const MAU = [
   "# chú thích",
@@ -93,5 +93,26 @@ LLAMA_SERVER_URL=http://127.0.0.1:8091
     expect(env.AI_AGENT_NEN_MOC).toBe("0.5");
     expect(coAiAgentHieuLuc(env)).toEqual({ AI_AGENT_A: "1", AI_AGENT_B: "1", AI_AGENT_NEN_MOC: "0.5" });
     expect(Object.keys(coAiAgentHieuLuc(env))).toEqual(["AI_AGENT_A", "AI_AGENT_B", "AI_AGENT_NEN_MOC"]);
+  });
+});
+
+describe("khoá :8091 — LLAMA_SERVER_API_KEY_FILE (đường dẫn) được nạp, giá trị khoá thì không", () => {
+  it("★ khoaDuocNap: đúng LLAMA_SERVER_API_KEY_FILE ⇒ true; LLAMA_SERVER_API_KEY / API_KEY_FILE khác / biến tương tự ⇒ false", () => {
+    expect(khoaDuocNap("LLAMA_SERVER_API_KEY_FILE")).toBe(true);
+    for (const k of ["LLAMA_SERVER_API_KEY", "LLAMA_SERVER_API_KEY_FILE2", "LLAMA_SERVER_API_KEY_FILES", "OPENAI_API_KEY_FILE", "LLAMA_SERVER_TOKEN_FILE", "LLAMA_SERVER_SECRET"]) {
+      expect(khoaDuocNap(k), k).toBe(false);
+    }
+    expect([...KHOA_DUONG_DAN_BI_MAT]).toEqual(["LLAMA_SERVER_API_KEY_FILE"]);
+  });
+  it("★ napEnvTuTep nạp đường dẫn, bỏ giá trị khoá; kết quả chỉ chứa TÊN (không lộ đường dẫn / khoá)", () => {
+    const tep = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "env-")), "e.env");
+    fs.writeFileSync(tep, "LLAMA_SERVER_URL=http://127.0.0.1:8091\nLLAMA_SERVER_API_KEY_FILE=D:\\bi-mat\\khoa.txt\nLLAMA_SERVER_API_KEY=sk-that\n");
+    const env: NodeJS.ProcessEnv = {};
+    const kq = napEnvTuTep(tep, env);
+    expect(env.LLAMA_SERVER_API_KEY_FILE).toContain("khoa.txt");
+    expect(env.LLAMA_SERVER_API_KEY).toBeUndefined();
+    expect(kq.daNap).toEqual(["LLAMA_SERVER_API_KEY_FILE", "LLAMA_SERVER_URL"]);
+    expect(JSON.stringify(kq)).not.toMatch(/khoa\.txt|sk-that/);
+    fs.rmSync(path.dirname(tep), { recursive: true, force: true });
   });
 });

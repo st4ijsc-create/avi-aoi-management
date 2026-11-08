@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chayLenhKiem, demCaTest, laLenhVitest, loiTscTrongTep, phanTichVitest, quyetKetCuc, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { chayLenhKiem, envChoTsc, envSachChoTienTrinhCon, demCaTest, laLenhVitest, loiTscTrongTep, phanTichVitest, quyetKetCuc, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 import type { KetQuaDotBien } from "./dotBien";
 
 const kiem = (o: Partial<KetQuaKiem> = {}): KetQuaKiem => ({
@@ -194,5 +194,50 @@ describe("quyetKetCuc — L3b đột biến", () => {
   it("STICKY: đột biến không cứu được ketCuc xấu có sẵn; tsc đỏ thì đột biến không được che", () => {
     expect(quyet(kiem(), { truoc: "vi-pham", dotBien: db() }).ketCuc).toBe("vi-pham");
     expect(quyet(kiem({ exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }), { dotBien: db() }).ketCuc).toBe("kiem-do");
+  });
+});
+
+describe("envSachChoTienTrinhCon — test do model viết KHÔNG được thừa kế bí mật của tiến trình pilot", () => {
+  it("★ gỡ biến tên bí mật + *_KEY_FILE; giữ biến thường; ép DB chết", () => {
+    const r = envSachChoTienTrinhCon({
+      PATH: "p",
+      LLAMA_SERVER_URL: "http://127.0.0.1:8091",
+      LLAMA_SERVER_API_KEY: "sk-that",
+      LLAMA_SERVER_API_KEY_FILE: "D:/bi-mat/khoa.txt",
+      JWT_SECRET: "j",
+      SESSION_SECRET: "s",
+      OPENAI_API_KEY: "o",
+      DB_PASSWORD: "x",
+      GGUF_API_TOKEN: "t",
+      SECRET_ENCRYPTION_KEY: "e",
+      ADMIN_PASSWORD_FILE: "f",
+      SIGNING_KEY_FILE: "k",
+      DATABASE_URL: "postgres://aoi:that@127.0.0.1:5434/aoi_management",
+    });
+    expect(Object.keys(r).sort()).toEqual(["DATABASE_URL", "LLAMA_SERVER_URL", "PATH", "TEST_DATABASE_URL"]);
+    expect(r.DATABASE_URL).toContain("127.0.0.1:9/");
+    expect(r.TEST_DATABASE_URL).toContain("127.0.0.1:9/");
+  });
+  it("★ tiến trình con THẬT (chayLenhKiem) không thấy khoá / đường dẫn khoá của tiến trình cha", async () => {
+    process.env.LLAMA_SERVER_API_KEY_FILE = "D:/bi-mat/khoa-that.txt";
+    process.env.LLAMA_SERVER_API_KEY = "sk-that-123";
+    try {
+      const k = await chayLenhKiem(`node -e "console.log('F=' + process.env.LLAMA_SERVER_API_KEY_FILE + ' K=' + process.env.LLAMA_SERVER_API_KEY + ' D=' + process.env.DATABASE_URL)"`, process.cwd(), 60);
+      expect(k.duoi).toContain("F=undefined K=undefined");
+      expect(k.duoi).toContain("127.0.0.1:9");
+      expect(k.duoi).not.toMatch(/khoa-that|sk-that/);
+    } finally {
+      delete process.env.LLAMA_SERVER_API_KEY_FILE;
+      delete process.env.LLAMA_SERVER_API_KEY;
+    }
+  });
+});
+
+describe("envChoTsc", () => {
+  it("★ tsc cũng KHÔNG thừa kế bí mật; có heap 12 GB và DB chết", () => {
+    const r = envChoTsc({ PATH: "p", LLAMA_SERVER_API_KEY_FILE: "D:/bi-mat/k.txt", JWT_SECRET: "j", SIGNING_KEY_FILE: "k" });
+    expect(Object.keys(r).sort()).toEqual(["DATABASE_URL", "FORCE_COLOR", "NODE_OPTIONS", "NO_COLOR", "PATH", "TEST_DATABASE_URL"]);
+    expect(r.NODE_OPTIONS).toBe("--max-old-space-size=12288");
+    expect(r.DATABASE_URL).toContain("127.0.0.1:9/");
   });
 });

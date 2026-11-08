@@ -21,7 +21,16 @@ const CHINH_XAC = new Set(["AI_SAMPLING_PROFILE", "AI_CODING_MODEL_TASK", "AI_AG
 const CAM = /(API_KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL)/i;
 const CAM_TIEN_TO = ["DATABASE_", "REDIS_", "JWT_", "SESSION_", "AI_REPO_SANDBOX_ROOT", "AI_GHI_LUOT_DIR"];
 
+/**
+ * Khoá cấu hình chỉ mang ĐƯỜNG DẪN tới tệp bí mật (KHÔNG mang bí mật): server đọc khoá :8091 qua `khoaLlamaServer` từ tệp này. Tên có "API_KEY" nên bộ lọc bí mật sẽ loại
+ * nó và lượt pilot nhận 401 — cho phép ĐÚNG tên này (khớp nguyên văn). `LLAMA_SERVER_API_KEY` (giá trị khoá) vẫn BỊ LOẠI.
+ * ⚠ Tệp phải nằm NGOÀI worktree pilot. Và lệnh kiểm / tsc do bộ chạy chạy KHÔNG được thừa kế biến này (xem `envSachChoTienTrinhCon` ở kiemChung.ts):
+ * test do model viết chạy mã tuỳ ý, không được tự đọc được khoá.
+ */
+export const KHOA_DUONG_DAN_BI_MAT: ReadonlySet<string> = new Set(["LLAMA_SERVER_API_KEY_FILE"]);
+
 export function khoaDuocNap(ten: string): boolean {
+  if (KHOA_DUONG_DAN_BI_MAT.has(ten)) return true;
   if (CAM.test(ten)) return false;
   if (CAM_TIEN_TO.some((t) => ten.startsWith(t))) return false;
   return CHINH_XAC.has(ten) || TIEN_TO.some((t) => ten.startsWith(t));

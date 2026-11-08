@@ -14,6 +14,24 @@ import fs from "node:fs";
 import path from "node:path";
 import type { KetQuaDotBien } from "./dotBien";
 
+/**
+ * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ KHÔNG được thừa kế bí mật của tiến trình pilot
+ * (khoá :8091, đường dẫn tệp khoá, JWT/SECRET/PASSWORD/TOKEN, DATABASE_URL thật). Gỡ mọi biến có tên bí mật hoặc `*_KEY_FILE`, rồi ép DB chết.
+ */
+export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const ra: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(goc)) {
+    if (/(API_KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|_KEY_FILE|_PASSWORD_FILE)/i.test(k)) continue;
+    ra[k] = v;
+  }
+  return { ...ra, ...ENV_DB_CHET };
+}
+
+/** Môi trường của `tsc` do bộ chạy chạy: sạch bí mật + heap 12 GB (cùng cổng check:tests). Tách riêng để test được. */
+export function envChoTsc(goc: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...envSachChoTienTrinhCon(goc), NODE_OPTIONS: "--max-old-space-size=12288", NO_COLOR: "1", FORCE_COLOR: "0" };
+}
+
 /** Hai URL cổng chết, tên DB khác nhau (vitest.setup từ chối khi trùng tên). */
 export const ENV_DB_CHET: Readonly<Record<string, string>> = {
   DATABASE_URL: "postgresql://pilot_kiem:x@127.0.0.1:9/aoi_management",
@@ -214,7 +232,7 @@ export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay) =>
     const t0 = Date.now();
     let dau = "";
     let hetGio = false;
-    const env: NodeJS.ProcessEnv = { ...process.env, ...ENV_DB_CHET, NODE_OPTIONS: "--max-old-space-size=12288", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const env = envChoTsc();
     const ra = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
       const { trongTep, tong } = loiTscTrongTep(dau, tepDoi);
@@ -265,7 +283,7 @@ export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
     const t0 = Date.now();
     let dau = "";
     let hetGio = false;
-    const env: NodeJS.ProcessEnv = { ...process.env, ...ENV_DB_CHET, CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
       const sach = boMau(dau);
