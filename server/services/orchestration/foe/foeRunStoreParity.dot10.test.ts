@@ -4590,6 +4590,73 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(ten).toEqual(["m"]);
     expect(buocBo(), "central raised the URGENT").toEqual(["m"]);
   });
+  // ── T6a fix 1 (P1): a stop-typed step that is no STOP, never reached by the door ─────────────────────────────────────
+  const np = (ref: string, dang: "NP1" | "NP2" | "NP3") =>
+    def(ref, dang === "NP1" ? [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])] : [gate(), parF("p", [move("x"), delay("w", 30)]), dang === "NP2" ? box("c2", [stopTyped("nt")]) : stopTyped("nt")]);
+  for (const dang of ["NP1", "NP2", "NP3"] as const) {
+    it(`P1-${dang} central: a stop-typed step the last pass read as not pinned, the door never reached it: forward work, named; it never goes`, async () => {
+      h.slow.set("x", 10);
+      h.timeoutDispatch.add("x");
+      await centralRun(np(`p1${dang.toLowerCase()}`, dang), 1);
+      await wait(40);
+      expect(ids()).toEqual(["x"]);
+      expect(buocBo()).toEqual(["nt"]);
+    });
+  }
+  it("P1-NPE the NP1 tree on the edge: the edge names nt, central raises the URGENT", async () => {
+    const e = await denBuoc(np("p1npe", "NP1"));
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(40);
+    expect(ids()).toEqual(["x"]);
+    expect(baoEdge(e, "forwardNotSent").map((v) => JSON.parse(String(v.detail)).stepId)).toEqual(["nt"]);
+    expect(buocBo()).toEqual(["nt"]);
+  });
+  it("P1-F4 the NP1 tree, the pins cannot be read: no forwardNotSent for nt, the marked route hands it to the dispatcher, which decides (refuses: nothing written), state C", async () => {
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt"); // F4 (decision 2, A): unreadable is not "not pinned", the dispatcher decides on the marked row; it refuses an unpinned write, 0 PDU (khongGhi below)
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(np("p1f4", "NP1"), 1);
+    await wait(60);
+    const nt = h.sent.filter((x) => x.stepId === "nt");
+    expect(nt.length, "the marked route asked the dispatcher").toBeGreaterThan(0);
+    expect(nt.every((x) => x.khongGhi === true), "the dispatcher wrote nothing").toBe(true);
+    expect(buocBo()).toEqual([]);
+    expect(urgentCua("stopNotSent").filter((a) => String(a.title).includes('"nt"')).length).toBeGreaterThan(0);
+    expect(runRow(c).status).toBe("held");
+  });
+  const chuCua = (a: Record<string, any>) => [a.kind, a.dedupKey.split(":")[2], String(a.title), String(a.message).replace(/ \[event [^\]]*\]$/, "")].join(" | ");
+  it("LAP-CHU walked twice, the same step named twice: the second URGENT is the first one's words (kind, step, title, message), only the event differs", async () => {
+    // (a) work behind a gate a person still answers: named at the pause, named again by the approved walk
+    h.slow.set("x", 40);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(khung("lapa", CAC()), 1);
+    await wait(30);
+    const dau = urgentCua("forwardNotSent").map(chuCua);
+    h.timeoutDispatch.clear();
+    await duyetG2(c);
+    await waitFor(() => urgentCua("forwardNotSent").length === 2, "the second word");
+    const hai = urgentCua("forwardNotSent").map(chuCua);
+    expect(dau).toHaveLength(1);
+    expect(hai).toEqual([dau[0], dau[0]]);
+    expect(new Set(urgentCua("forwardNotSent").map((a) => a.dedupKey)).size, "two events").toBe(2);
+    // (b) a row "not sent" of an earlier walk, named again at the boot
+    h.alerts.length = 0;
+    h.sent.length = 0;
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c2 = await centralRun(def("lapb", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), move("m")])])]), 1);
+    await wait(30);
+    const mot = urgentCua("forwardNotSent").map(chuCua);
+    chet(c2, ["g1", "p", "x", "v", "m"]);
+    await autoResumeInterruptedRuns([c2]);
+    await wait(40);
+    expect(mot).toHaveLength(1);
+    expect(urgentCua("forwardNotSent").map(chuCua), "never 'did NOT go out' one walk and 'may have gone out' the next").toEqual([mot[0]]);
+  });
   it("GIU-EDGE xác nhận: acked_verified: the segment ends by its walk, not held, one STOP", async () => {
     h.acked = true;
     h.ackStatus = "acked_verified";

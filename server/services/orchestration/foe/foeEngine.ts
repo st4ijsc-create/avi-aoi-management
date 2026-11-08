@@ -645,6 +645,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongRoHang?: Set<string>;
   /** A2(n) T6 (decision 3, H13) — the forward work this latched walk dropped, read at its end from the evidence over the whole tree (buocTienBiBo): one step per branch. */
   khongGuiDs?: string[];
+  /** A2(n) T6a fix 1 (P1) — the last pass's reading: stop-typed steps whose pin read ANSWERED "not pinned". No STOP: forward work, read once, by the planner. */
+  khongGhimCuoi?: Set<string>;
   /** A2(n) T6 (m-P) — compensations whose own unknown outcome a person was told of in this walk: once. */
   buTruKhongRoDaBao?: Set<string>;
   /** A2(n) (C-6) — STOP work running beside the walk: passes, and a STOP compensation started at the door. Side by side, never chained; finishWalk settles them. */
@@ -1360,7 +1362,7 @@ function chayStopNen(rc: RunContext, viec: () => Promise<unknown>): void {
  * A2(n) T6 (decision 3, H13) — the forward work a latched walk dropped, read once the STOPs have answered, from THE evidence (bangChungSauChot) over the WHOLE tree: the first command not
  * sent of every branch that was dropped: of each sequence, of each child of a parallel, of the arm a branch took (both arms of one never evaluated). Proven not sent ("chuaGui"), or nothing
  * says it started ("chuaDen"). Never a step that finished, may have gone out or keeps a known last word ("giuNguyen": a device's own error, a STOP in state C, which its own URGENT names); never
- * a stop-typed step nothing proves is no STOP (a pass owes it or lists it); never a delay or a gate; never inside a container whose own last word is known (KTB). What stands behind a gate the
+ * a stop-typed step nothing proves is no STOP (a pass owes it or lists it; the last pass's pin read that answered "not pinned" proves it, P1); never a delay or a gate; never inside a container whose own last word is known (KTB). What stands behind a gate the
  * walk pauses on, or behind a hold, is dropped all the same: an approval walks into the door, a Continue walks only compensations, a rejection walks nothing (CHO-CONG). A Continue's
  * compensation-only walk drops nothing of its own. The rows of central cannot be read: nothing can be told apart, one URGENT says so (BUOC_KHONG_XAC_DINH). [] ⇔ nothing forward was dropped.
  */
@@ -1387,7 +1389,8 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
   // a row an earlier walk wrote is evidence all the same: that walk may have died before its end told anyone (CRASH-BAO); a second word is the safe side
   const chuaGui = async (s: WorkflowStep) => {
     const n = nhan.get(s.id);
-    return n === "chuaGui" || (n === "chuaDen" && !(await laStopTheoBuoc(s, rc.machineById)));
+    // P1 — a stop-typed step whose pin read answered "not pinned" at the last pass is no STOP: dropped forward work like any other, row or no row (F4: unreadable is not this)
+    return n === "chuaGui" || (n === "chuaDen" && (rc.khongGhimCuoi?.has(s.id) === true || !(await laStopTheoBuoc(s, rc.machineById))));
   };
   const ten: string[] = [];
   const di = async (steps: readonly WorkflowStep[], songSong: boolean): Promise<void> => {
@@ -1570,6 +1573,7 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
     }),
   );
   plan.notPinned = xep.filter((x) => x.la !== "chuaDoc").map((x) => x.id);
+  if (cuoi) rc.khongGhimCuoi = new Set(xep.filter((x) => x.la === "khong").map((x) => x.id)); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4)
   for (const x of xep) if (x.la === "chuaDoc" && x.s) viec.push(guiMotStop(rc, x.s, loi));
   if (cuoi) {
     if (plan.untakenBranch.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch, latched: true });
