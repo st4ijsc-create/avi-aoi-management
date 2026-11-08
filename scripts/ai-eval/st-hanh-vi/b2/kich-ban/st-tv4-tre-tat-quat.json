@@ -1,0 +1,47 @@
+{
+  "id": "st-tv4-tre-tat-quat",
+  "khoi": "TreTatQuat",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau t=0 = dtMs 0; TIME = ms; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "LENH": true, "DUNG_KHAN": false, "T_CHAY_THEM": 50 }, "dtMs": 0, "ky": { "QUAT": true }, "nhan": "lenh => quat chay" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "CON_LAI": 50 }, "nhan": "t=10 vua tha => con 50ms" },
+        { "dtMs": 10, "lan": 5, "ky": { "QUAT": false }, "nhan": "t=60 het 50ms => tat" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "LENH": false, "DUNG_KHAN": false, "T_CHAY_THEM": 50 }, "dtMs": 0, "ky": { "QUAT": false, "CON_LAI": 0 }, "nhan": "t=0 khong lenh => tat" },
+        { "vao": { "LENH": true }, "dtMs": 10, "ky": { "QUAT": true, "CON_LAI": 0 }, "nhan": "t=10 lenh => chay" },
+        { "dtMs": 10, "nhan": "t=20" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "QUAT": true, "CON_LAI": 50 }, "nhan": "t=30 chay them con 50" },
+        { "dtMs": 10, "ky": { "CON_LAI": 40 }, "nhan": "t=40 con 40" },
+        { "dtMs": 10, "lan": 3, "ky": { "QUAT": true, "CON_LAI": 10 }, "nhan": "t=70 van chay con 10" },
+        { "dtMs": 10, "ky": { "QUAT": false, "CON_LAI": 0 }, "nhan": "t=80 tat" },
+        { "vao": { "LENH": true }, "dtMs": 10, "nhan": "t=90" },
+        { "vao": { "LENH": false }, "dtMs": 10, "lan": 2, "nhan": "t=100..110" },
+        { "vao": { "LENH": true }, "dtMs": 10, "ky": { "QUAT": true, "CON_LAI": 0 }, "nhan": "t=120 lenh lai" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "CON_LAI": 50 }, "nhan": "t=130 moc moi con 50" },
+        { "dtMs": 10, "lan": 4, "ky": { "QUAT": true }, "nhan": "t=170 van chay" },
+        { "dtMs": 10, "ky": { "QUAT": false }, "nhan": "t=180 tat" },
+        { "vao": { "LENH": true }, "dtMs": 10, "nhan": "t=190" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "CON_LAI": 50 }, "nhan": "t=200 con 50" },
+        { "vao": { "DUNG_KHAN": true }, "dtMs": 10, "ky": { "QUAT": false, "CON_LAI": 0 }, "nhan": "t=210 dung khan => tat ngay" },
+        { "vao": { "DUNG_KHAN": false }, "dtMs": 10, "ky": { "QUAT": false, "CON_LAI": 0 }, "nhan": "t=220 nha dung khan, LENH FALSE => van tat" },
+        { "dtMs": 10, "ky": { "QUAT": false }, "nhan": "t=230 van tat" },
+        { "vao": { "LENH": true }, "dtMs": 10, "ky": { "QUAT": true }, "nhan": "t=240 lenh moi chay" },
+        { "vao": { "DUNG_KHAN": true }, "dtMs": 10, "ky": { "QUAT": false }, "nhan": "t=250 dung khan khi co lenh => tat" },
+        { "vao": { "DUNG_KHAN": false }, "dtMs": 10, "ky": { "QUAT": true }, "nhan": "t=260 nha, LENH TRUE => chay" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "CON_LAI": 50 }, "nhan": "t=270 chay them con 50" },
+        { "vao": { "LENH": true, "DUNG_KHAN": true }, "dtMs": 10, "ky": { "QUAT": false }, "nhan": "t=280 lenh + dung khan => tat" },
+        { "vao": { "LENH": false, "DUNG_KHAN": true }, "dtMs": 10, "nhan": "t=290" },
+        { "vao": { "LENH": false, "DUNG_KHAN": false }, "dtMs": 10, "ky": { "QUAT": false, "CON_LAI": 0 }, "nhan": "t=300 nha sau khi bo lenh => tat" },
+        { "vao": { "LENH": true }, "dtMs": 10, "nhan": "t=310" },
+        { "vao": { "LENH": false }, "dtMs": 10, "ky": { "QUAT": true, "CON_LAI": 50 }, "nhan": "t=320 chay them binh thuong" }
+      ]
+    }
+  ]
+}

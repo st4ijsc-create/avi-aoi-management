@@ -264,6 +264,19 @@ describe("L3 — chạy: bộ chuyển ngoài, không ngữ cảnh dự án, kh�
     expect(than).not.toContain("Project:");
   });
 
+  it("(rà kiem-dinh n13, H3.2b) lượt ngoài KHÔNG hỏi ngân sách ngữ cảnh cục bộ (n_ctx :8091 không phải giới hạn của model ngoài); đối chứng: lượt cục bộ hỏi đúng một lần", async () => {
+    let hoi = 0;
+    const nganSachNguCanh = async () => (hoi++, 32_768);
+    const kq = await taoQuanLyLuotChay({ ngoai: depGia(g), nganSachNguCanh }).taoLuotChay(yc());
+    if (kq.ok) await kq.luot.xong;
+    expect(kq.ok).toBe(true);
+    expect(g.goi.length).toBeGreaterThan(0);
+    expect(hoi).toBe(0);
+    const cb = await taoQuanLyLuotChay({ goiModel: modelCucBo({ n: 0 }), nganSachNguCanh }).taoLuotChay(yc({ chonModel: undefined }));
+    if (cb.ok) await cb.luot.xong;
+    expect(hoi).toBe(1);
+  });
+
   it("lớp 2 — host không dựng ngữ cảnh dự án cho lượt ngoài (không đọc tệp quy ước); đối chứng: lượt cục bộ CÓ đọc", async () => {
     quyUoc.n = 0;
     const kq = await taoQuanLyLuotChay({ ngoai: depGia(g) }).taoLuotChay(yc());

@@ -1,0 +1,5411 @@
+{
+ "luc": "2026-11-03T04:56:29.768Z",
+ "bamKichBan": {
+  "st-tt1-bo-phieu-2oo3": "545d09bc4b2d",
+  "st-tt10-noi-suy-bang": "befc6e2cf815",
+  "st-tt2-co-gian-tuong-tu": "218d81fc945a",
+  "st-tt3-tre-tru": "6a2be55742c7",
+  "st-tt4-trung-binh-truot": "1e72ebf884a7",
+  "st-tt5-crc16-modbus": "536c9b8edce9",
+  "st-tt6-chon-bom-chinh": "3aadfbb96388",
+  "st-tt7-bcd": "d1585db635fa",
+  "st-tt8-doc-tang-giam": "e247af11226c",
+  "st-tt9-dong-goi-bit": "1eb9c19a7713",
+  "st-tv1-chong-doi": "0f6d4ccf4ee5",
+  "st-tv10-chot-uu-tien": "f906156bfd0a",
+  "st-tv2-dem-san-pham": "885dc8007458",
+  "st-tv3-nhap-nhay": "f94706a441e2",
+  "st-tv4-tre-tat-quat": "761ea7c3488e",
+  "st-tv5-giam-sat-phan-hoi": "a414a1aae285",
+  "st-tv6-dem-gio-chay": "3d1dcef415e1",
+  "st-tv7-canh-bao-xac-nhan": "fc86f2e0f464",
+  "st-tv8-xung-khoi-dong": "e6238cc79145",
+  "st-tv9-dem-xuong": "e1f2af45b98b",
+  "st-ud1-bom-luan-phien": "a41ec265608c",
+  "st-ud10-thang-nang-2-tang": "cfdd072ced4a",
+  "st-ud2-den-giao-thong": "ccdc8eb54576",
+  "st-ud3-bang-tai-tuan-tu": "b30a86a94fdd",
+  "st-ud4-may-tron-me": "df7b0ce0a6bd",
+  "st-ud5-sao-tam-giac": "536f7b2424bd",
+  "st-ud6-nhiet-on-off": "1272511e1c54",
+  "st-ud7-van-hai-cuon": "61d3bf0a3ee0",
+  "st-ud8-pi-chong-bao-hoa": "c2f2a8acf581",
+  "st-ud9-ghi-dich-loai-bo": "545df67d1405"
+ },
+ "dong": [
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "a425fa989181"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 7,
+     "nhan": "bang i=7 + dem sau bang = 1 suon",
+     "ten": "DEM_LECH",
+     "ky": 1,
+     "thuc": 6
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 18,
+     "nhan": "nha reset khi LECH con TRUE => 0",
+     "ten": "DEM_LECH",
+     "ky": 0,
+     "thuc": 1
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 20,
+     "nhan": "suon moi sau reset => 1",
+     "ten": "DEM_LECH",
+     "ky": 1,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 33,
+   "bam": "ca065c392547"
+  },
+  {
+   "id": "st-tt10-noi-suy-bang",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 36,
+   "bam": "fa3b4a6897de"
+  },
+  {
+   "id": "st-tt10-noi-suy-bang",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 13,
+     "nhan": "trung X LOI, Y 0, NGOAI F",
+     "ten": "LOI",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 13,
+     "nhan": "trung X LOI, Y 0, NGOAI F",
+     "ten": "Y",
+     "ky": 0,
+     "thuc": 350
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 13,
+     "nhan": "trung X LOI, Y 0, NGOAI F",
+     "ten": "NGOAI_BANG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 36,
+   "bam": "b1ff2475b47b"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "b6880d29df63"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 12,
+     "nhan": "dao 6912 => 75",
+     "ten": "GIA_TRI",
+     "ky": 75,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 14,
+     "nhan": "dao -1000 => kep 100",
+     "ten": "GIA_TRI",
+     "ky": 100,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 33,
+   "bam": "b9ddf2c047ae"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "8e8e40d86a83"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-s",
+     "buoc": 2,
+     "nhan": "suoi 48 = nguong bat => T",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-s",
+     "buoc": 3,
+     "nhan": "suoi 51 giu T",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-s",
+     "buoc": 4,
+     "nhan": "suoi 51.99 giu T",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 28,
+   "bam": "5ba3ba39bd35"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "2cd293d68a54"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "giu TRUE chi nap 1; 10,20 => 15",
+     "ten": "SO_MAU",
+     "ky": 2,
+     "thuc": 4
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "giu TRUE chi nap 1; 10,20 => 15",
+     "ten": "TB",
+     "ky": 15,
+     "thuc": 57
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "7 mau TB 40",
+     "ten": "SO_MAU",
+     "ky": 7,
+     "thuc": 8
+    }
+   ],
+   "soKiem": 29,
+   "bam": "5c362668c6fa"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "baa73b44aa3c"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an",
+     "buoc": 11,
+     "nhan": "64 byte day du",
+     "ten": "Crc16Modbus",
+     "ky": 2265,
+     "thuc": 22817
+    },
+    {
+     "doan": "an",
+     "buoc": 13,
+     "nhan": "do dai 100 => kep 64",
+     "ten": "Crc16Modbus",
+     "ky": 2265,
+     "thuc": 22817
+    },
+    {
+     "doan": "an",
+     "buoc": 14,
+     "nhan": "do dai 65 => kep 64",
+     "ten": "Crc16Modbus",
+     "ky": 2265,
+     "thuc": 22817
+    }
+   ],
+   "soKiem": 18,
+   "bam": "62b5e843e8c5"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "8089d45bbb8b"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "D hoa",
+     "ten": "THU_TU_2",
+     "ky": 1,
+     "thuc": 4
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "D hoa",
+     "ten": "THU_TU_4",
+     "ky": 4,
+     "thuc": 1
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 4,
+     "nhan": "E chi 2 va 4",
+     "ten": "BOM",
+     "ky": 2,
+     "thuc": 4
+    }
+   ],
+   "soKiem": 25,
+   "bam": "91506b8eb019"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 10,
+   "bam": "25672953ff00"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an",
+     "buoc": 5,
+     "nhan": "B 000A LOI tra 0",
+     "ten": "BcdSangInt",
+     "ky": 0,
+     "thuc": 10
+    },
+    {
+     "doan": "an",
+     "buoc": 7,
+     "nhan": "B A000 LOI tra 0",
+     "ten": "BcdSangInt",
+     "ky": 0,
+     "thuc": 10000
+    }
+   ],
+   "soKiem": 10,
+   "bam": "43396a78f9cd"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "a9b7756b87f8"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "0f19061403de"
+  },
+  {
+   "id": "st-tt9-dong-goi-bit",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 8,
+   "bam": "942c011992e4"
+  },
+  {
+   "id": "st-tt9-dong-goi-bit",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "dat",
+   "ngoaiLe": "khong-phu",
+   "soKiem": 8,
+   "bam": "3de45a9be8d8"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "6ada8f8aed26"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "t=120 vua tha van TRUE",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "t=130 tha 10ms van TRUE",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 7,
+     "nhan": "t=140 nhieu ngan bi bo qua",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "d8c22ec8b0b7"
+  },
+  {
+   "id": "st-tv10-chot-uu-tien",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 39,
+   "bam": "ad7343f8d79c"
+  },
+  {
+   "id": "st-tv10-chot-uu-tien",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "buoc 4",
+     "ten": "Q_SR",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "buoc 4",
+     "ten": "DOI_TRANG_THAI",
+     "ky": 1,
+     "thuc": 2
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 4,
+     "nhan": "buoc 5",
+     "ten": "Q_SR",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 39,
+   "bam": "58c3cdebd0bd"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "3528b5200d27"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "suon 3 du lo => XONG_LO, SO_LO 1, DEM 0 ngay",
+     "ten": "DEM",
+     "ky": 0,
+     "thuc": 3
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "XONG_LO dung 1 chu ky",
+     "ten": "XONG_LO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "XONG_LO dung 1 chu ky",
+     "ten": "SO_LO",
+     "ky": 1,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 30,
+   "bam": "5bf56be8dadb"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "28f578e05bf4"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=190 bat lai tu pha sang",
+     "ten": "DEN",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 18,
+     "nhan": "t=220 toi",
+     "ten": "DEN",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 19,
+     "nhan": "t=230 doi nhip, toi du 10ms => sang",
+     "ten": "DEN",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 25,
+   "bam": "9033a54cc48c"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "c17e5981f135"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=220 nha dung khan, LENH FALSE => van tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=220 nha dung khan, LENH FALSE => van tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 30
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 17,
+     "nhan": "t=230 van tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 34,
+   "bam": "af95f716ca4e"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "9127b40f23c0"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=330 lan chay moi chua co => khong MAT",
+     "ten": "LOI_MAT_PHAN_HOI",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 25,
+     "nhan": "t=340 van khong MAT",
+     "ten": "BAO_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 30,
+   "bam": "e631310b0495"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "2be47629e6d0"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "10000 x 7ms = 70 s",
+     "ten": "GIAY_TONG",
+     "ky": 70,
+     "thuc": 69
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 4,
+     "nhan": "chu ky dung khong cong",
+     "ten": "GIAY_TONG",
+     "ky": 70,
+     "thuc": 69
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "dang dung khong cong",
+     "ten": "GIAY_TONG",
+     "ky": 70,
+     "thuc": 69
+    }
+   ],
+   "soKiem": 25,
+   "bam": "04d0c877674f"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "8dd400114330"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 22,
+     "nhan": "t=400 xac nhan giu => van 1",
+     "ten": "TRANG_THAI",
+     "ky": 1,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 34,
+   "bam": "e3e94f5484c1"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 32,
+   "bam": "c6a8ff26fd9d"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 12,
+     "nhan": "t=160 khoa cat xung",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 13,
+     "nhan": "t=170 nha khoa, nut giu => khong xung",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 15,
+     "nhan": "t=190 xung moi sau khi bi cat",
+     "ten": "SO_LAN",
+     "ky": 4,
+     "thuc": 3
+    }
+   ],
+   "soKiem": 32,
+   "bam": "7a2cec516c12"
+  },
+  {
+   "id": "st-tv9-dem-xuong",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "1af381a6ae01"
+  },
+  {
+   "id": "st-tv9-dem-xuong",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "dat",
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 30,
+   "bam": "baec165c0444"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "f05d5f9dae26"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 9,
+     "nhan": "t=240..270",
+     "ten": "BOM1",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 10,
+     "nhan": "t=280 LOI1",
+     "ten": "LOI1",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 11,
+     "nhan": "t=290 chuyen BOM2",
+     "ten": "BOM2",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 43,
+   "bam": "8b2d9b79fd2c"
+  },
+  {
+   "id": "st-ud10-thang-nang-2-tang",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 45,
+   "bam": "3f9286587ac9"
+  },
+  {
+   "id": "st-ud10-thang-nang-2-tang",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 6,
+     "nhan": "t=150 cua mo",
+     "ten": "TRANG_THAI",
+     "ky": 0,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 45,
+   "bam": "563184a08e95"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "0a31d09c8625"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 38,
+     "nhan": "t=1030 yeu cau da xoa van xanh",
+     "ten": "TRANG_THAI",
+     "ky": 0,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 43,
+   "bam": "5841921afb8a"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "167a1b112a68"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 22,
+     "nhan": "t=480 reset khi con QT",
+     "ten": "LOI",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 22,
+     "nhan": "t=480 reset khi con QT",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 23,
+     "nhan": "t=500 chua reset",
+     "ten": "LOI",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 51,
+   "bam": "1a145414e804"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 40,
+   "bam": "421eb4f082ba"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 53,
+     "nhan": "t=680 tiep tuc tron",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 53,
+     "nhan": "t=680 tiep tuc tron",
+     "ten": "MOTOR",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 55,
+     "nhan": "t=780 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    }
+   ],
+   "soKiem": 40,
+   "bam": "39cd861c3f1b"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 38,
+   "bam": "eda2dd41de8a"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 13,
+     "nhan": "t=430 reset khi con qua tai",
+     "ten": "LOI_QT",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 13,
+     "nhan": "t=430 reset khi con qua tai",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=450 chot",
+     "ten": "LOI_QT",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 38,
+   "bam": "868540095879"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "270f80686844"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 54,
+     "nhan": "k54 dung 95 => bat",
+     "ten": "SUOI",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 37,
+   "bam": "8c1356389889"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 38,
+   "bam": "7e70bad50efc"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 8,
+     "nhan": "t=190 dao, p 60",
+     "ten": "CUON_MO",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "bdcc84adf1f0"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "85ff7ee04493"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "5dc696539700"
+  },
+  {
+   "id": "st-ud9-ghi-dich-loai-bo",
+   "loai": "mau",
+   "nhan": "mau",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "cbc938206ee9"
+  },
+  {
+   "id": "st-ud9-ghi-dich-loai-bo",
+   "loai": "sai",
+   "nhan": "sai#0",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 12,
+     "nhan": "sau xung 6",
+     "ten": "DEM_GAT",
+     "ky": 0,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 13,
+     "nhan": "xung 7a gat",
+     "ten": "CAN_GAT",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 13,
+     "nhan": "xung 7a gat",
+     "ten": "DEM_GAT",
+     "ky": 1,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 25,
+   "bam": "d28b6b2524e2"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "60b0ae84a54d"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "d39732e6b2f9"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "281d98260575"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "760e388a88c1"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "9cffbe97f67f"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "46b76ca46399"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "02d5566aec14"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "13824 thang 0..100 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 1,
+     "nhan": "6912 => 25",
+     "ten": "GIA_TRI",
+     "ky": 25,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "13824 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 33,
+   "bam": "14711cc51567"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "865b89926a68"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "4bb0f010d062"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "0a49a9ec4ece"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "13824 thang 0..100 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 1,
+     "nhan": "6912 => 25",
+     "ten": "GIA_TRI",
+     "ky": 25,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "13824 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 33,
+   "bam": "f6625ef8cd77"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "20be533aaba6"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "c1f7d6b7e0d2"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "7a81a705c408"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "39d8bd006a6f"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "c02fdc104476"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "d64b0ee00883"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "cccc61abe541"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "38f4c5bf50ee"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "9ce8a8b777d7"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "dbae84b20c13"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "8f42a8598f1f"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "4e15e8ea4bca"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "7f218e06808b"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'XOR' in expression",
+   "soKiem": 2,
+   "bam": "d8027316a783"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "c868705d096a"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'WORD' in expression",
+   "soKiem": 2,
+   "bam": "16f24ad83723"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "3194f9eaf91d"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "7dd27f1c9fcb"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "523481163469"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "33429b63e32b"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "d9483fc27f74"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "d87db3905aac"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "ef264c43ce99"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "31d80677898e"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'BYTE' in expression",
+   "soKiem": 1,
+   "bam": "78ece114f44f"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ';'",
+   "soKiem": 1,
+   "bam": "b288554b922e"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'BYTE' in expression",
+   "soKiem": 1,
+   "bam": "8b568d1511cf"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ')'",
+   "soKiem": 1,
+   "bam": "5cb09f13c0cb"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'BYTE' in expression",
+   "soKiem": 1,
+   "bam": "f2ee7021a687"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ';'",
+   "soKiem": 1,
+   "bam": "ad4bc36dd843"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "57ff3326abb1"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "c6685f907921"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "48945b4a0839"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "b2da1d483266"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "ec8c0cbd9951"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "0571b348766c"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "145092b1510e"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: SR has no input 'S'",
+   "soKiem": 3,
+   "bam": "e207d9143f84"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "bdd8eda93c65"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "f790acd6d2ee"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 10,
+     "nhan": "t=190 nhieu bat 1 chu ky",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 12,
+     "nhan": "t=250 chua len",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 19,
+     "nhan": "t=350 T_BAT 20ms chua len",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "994603fbe02f"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "28b8e3be8592"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 12,
+     "nhan": "lo 2 du",
+     "ten": "SO_LO",
+     "ky": 2,
+     "thuc": 4
+    }
+   ],
+   "soKiem": 30,
+   "bam": "f8fe5d2a1a60"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "e27bc0a093dc"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "fe73a21c3149"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "b5b773f08572"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "265aec211cfc"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected END_IF",
+   "soKiem": 3,
+   "bam": "4e71c57f3202"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "1779052f131e"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "4d1e2313b86a"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "9c50777f4d65"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "210493968023"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "3354f15b3d66"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "3aa93fed96c9"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 0,
+     "nhan": "t=0 khong lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 50
+    }
+   ],
+   "soKiem": 34,
+   "bam": "24bba340c97a"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unterminated comment",
+   "soKiem": 3,
+   "bam": "fa1d1c278e93"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 40
+    }
+   ],
+   "soKiem": 34,
+   "bam": "33df1cde961f"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "7954807f19cc"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 40
+    }
+   ],
+   "soKiem": 34,
+   "bam": "d5912a66018a"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: undeclared variable 'RUN_ON_PERMITTED'",
+   "soKiem": 3,
+   "bam": "4b22b378b122"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "eda91b30d56f"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "a94104f08d0e"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "1bd5bcdb8c6c"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "e372b8b4d9fc"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "63d79bc180a1"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "cd0618d6aaa4"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "912a17e993f5"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "884e1a354ffd"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "soKiem": 3,
+   "bam": "36feb9e1947f"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "eea86a91d817"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "soKiem": 3,
+   "bam": "7cb186c26904"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "soKiem": 3,
+   "bam": "2ac672193aec"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "aa352f726aad"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "fe1a0c1cc049"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "3548a5b29eca"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "543eaca7ffda"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "575ab688f3fe"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "3e77d1f69ba5"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=230 con xung (do tu 190)",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "66f84dd63e18"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "t=70 xung moi",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem",
+     "ten": "SO_LAN",
+     "ky": 2,
+     "thuc": 3
+    }
+   ],
+   "soKiem": 32,
+   "bam": "c2969a293a2c"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "t=70 xung moi",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "t=70 xung moi",
+     "ten": "SO_LAN",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 32,
+   "bam": "6173f879ba8c"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=230 con xung (do tu 190)",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "46b85d7d7493"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 2,
+     "nhan": "t=60 het xung",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 5,
+     "nhan": "t=60 het xung dung 50ms",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "t=70 xung moi",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "95113e77d8fa"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=230 con xung (do tu 190)",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "7c53430b1b97"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "5f2a8e3a88ee"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "3100df3ebcbc"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "cb88963b5e1b"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "2cc0b3bf1c3d"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "33cb6e926319"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "25d9953d7edd"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "c8065dbf823e"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "ad2daeb18b49"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "49a0cb27d1b8"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "d4d3eabe1e73"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 4,
+     "nhan": "t=110 vang",
+     "ten": "TRANG_THAI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 4,
+     "nhan": "t=110 vang",
+     "ten": "XE_VANG",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 4,
+     "nhan": "t=110 vang",
+     "ten": "XE_XANH",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 43,
+   "bam": "f8bb36749cac"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "720c893c929f"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "B2",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=120 chay",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 1
+    }
+   ],
+   "soKiem": 51,
+   "bam": "f678157ee749"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "B2",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=120 chay",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 1
+    }
+   ],
+   "soKiem": 51,
+   "bam": "79b06d044988"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "B2",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=120 chay",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 51,
+   "bam": "73b13f998cbc"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "23dd79e017b2"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ')'",
+   "soKiem": 3,
+   "bam": "af87b0889714"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "B2",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=120 chay",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 51,
+   "bam": "e0cc0309710d"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "26a774bf14b3"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "3985da10a525"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "4bbafb0803e2"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "start => CAP_A",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 1,
+     "nhan": "t=20 cap A muc 0",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 11,
+     "nhan": "t=120 cap B",
+     "ten": "VAN_B",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 40,
+   "bam": "beca1f626d15"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "start => CAP_A",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 1,
+     "nhan": "t=20 cap A muc 0",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 11,
+     "nhan": "t=120 cap B",
+     "ten": "VAN_B",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 40,
+   "bam": "4cb477020448"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "939bd247fa59"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "82c5551b4496"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "d0804e97ceac"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: TON has no output 'IN'",
+   "soKiem": 3,
+   "bam": "c25e999b37ef"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "f21baf6c512d"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "27893da4ce31"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 4,
+     "nhan": "t=260 van khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    }
+   ],
+   "soKiem": 38,
+   "bam": "ba0a3816d531"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "3991d515a825"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "c6846feefba2"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "ea94de00eb25"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "ed5e87157464"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "02aac023a423"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "67ddac37e9f0"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "4382fd61a682"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 38,
+   "bam": "063033451bf6"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "d2844762d0a4"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "08690efa5fa4"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 38,
+   "bam": "a94bc4a3c1d7"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "207c80665242"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "9bec2ec9f7da"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "d5a8be01a300"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "f843f0b3003b"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "7c227eea4379"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#bat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "1858615ad555"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-1#tat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "e5911e1b6bfd"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "37d49b30c9a7"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "17e2171f3f06"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "15c6cebe1908"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "5056f546d8e8"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "48a77811355a"
+  },
+  {
+   "id": "st-tt1-bo-phieu-2oo3",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "b63da0cc7bd3"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "13824 thang 0..100 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 1,
+     "nhan": "6912 => 25",
+     "ten": "GIA_TRI",
+     "ky": 25,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "13824 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 33,
+   "bam": "41b508e24e4d"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "13824 thang 0..100 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 1,
+     "nhan": "6912 => 25",
+     "ten": "GIA_TRI",
+     "ky": 25,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "13824 => 50",
+     "ten": "GIA_TRI",
+     "ky": 50,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 33,
+   "bam": "f14514e4cac0"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "be1e0b70c3f6"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "b53f2fae0401"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "92e5ad5d1def"
+  },
+  {
+   "id": "st-tt2-co-gian-tuong-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 33,
+   "bam": "c7c00ad155d2"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "038da421ab14"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "79b8a2cfd659"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "c34589c037bc"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "0c985364f9b0"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "414755fdb559"
+  },
+  {
+   "id": "st-tt3-tre-tru",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 28,
+   "bam": "b64ba1282ebb"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "979ba7b03a71"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "b34cc38a3c20"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "071294b46cbb"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "407d98d2891a"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 29,
+   "bam": "c60593191b23"
+  },
+  {
+   "id": "st-tt4-trung-binh-truot",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'REAL' in expression",
+   "soKiem": 3,
+   "bam": "59e1b05a47e0"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "5efd17112fcb"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'WORD' in expression",
+   "soKiem": 2,
+   "bam": "429bf5aeee7e"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "6d40b4c02f90"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "24f7f6e328c6"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 18,
+   "bam": "485561ebf2bf"
+  },
+  {
+   "id": "st-tt5-crc16-modbus",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'WORD' in expression",
+   "soKiem": 2,
+   "bam": "fb9b7fe68aa1"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "f8847f70924a"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "3453c422ef14"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "0f55ac651204"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "49dfc456e414"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "876c89c0fc5e"
+  },
+  {
+   "id": "st-tt6-chon-bom-chinh",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "a14f3b313384"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'BYTE' in expression",
+   "soKiem": 1,
+   "bam": "0cf15c9bf209"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ';'",
+   "soKiem": 1,
+   "bam": "406e89ba536c"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 10,
+   "bam": "947c6932e2a5"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'BYTE' in expression",
+   "soKiem": 1,
+   "bam": "f1cfc8ca0262"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'INT' in expression",
+   "soKiem": 1,
+   "bam": "4cf99f2fcc61"
+  },
+  {
+   "id": "st-tt7-bcd",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ')'",
+   "soKiem": 1,
+   "bam": "ee0dfb637b67"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "0d28cf5e972a"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "8d2cd83ea5f3"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "d0b7a4a15931"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "c7d06165cf1a"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "6b74fcbc2464"
+  },
+  {
+   "id": "st-tt8-doc-tang-giam",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 3,
+   "bam": "81eb25fbe9be"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "a165c65c28d3"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "29af08248ea2"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "1be836a60d17"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 10,
+     "nhan": "t=190 nhieu bat 1 chu ky",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 11,
+     "nhan": "t=200 van FALSE",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 12,
+     "nhan": "t=250 chua len",
+     "ten": "Q",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "04043c39119e"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "42c210f95d18"
+  },
+  {
+   "id": "st-tv1-chong-doi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "lechNgoaiLe": [
+    {
+     "doan": "an-fb0",
+     "buoc": 1,
+     "nhan": "T_BAT=0 len ngay",
+     "ten": "Q",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "ngoaiLe": "ngu-nghia-oip",
+   "soKiem": 24,
+   "bam": "d76d5f14ff42"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "bb991d77a5c4"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "e910a2fc5eab"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "XONG_LO dung 1 chu ky",
+     "ten": "XONG_LO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 6,
+     "nhan": "XONG_LO dung 1 chu ky",
+     "ten": "SO_LO",
+     "ky": 1,
+     "thuc": 2
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "san pham ke tiep = 1",
+     "ten": "DEM",
+     "ky": 1,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 30,
+   "bam": "4073de7ab855"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "72c0f59a9ddd"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "d0207d15eb3e"
+  },
+  {
+   "id": "st-tv2-dem-san-pham",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: expected ':='",
+   "soKiem": 3,
+   "bam": "44c29f1688db"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "4e80edf4807a"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "39b19b44581d"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: TON has no output 'IN'",
+   "soKiem": 3,
+   "bam": "c9392690ab07"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "f65e7e6d9dca"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "a62139fcc49e"
+  },
+  {
+   "id": "st-tv3-nhap-nhay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 25,
+   "bam": "dc5395e5eaae"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 0,
+     "nhan": "t=0 khong lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 50
+    }
+   ],
+   "soKiem": 34,
+   "bam": "b71da6697569"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 40
+    }
+   ],
+   "soKiem": 34,
+   "bam": "b0c5886b7fb8"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 24,
+     "nhan": "t=300 nha sau khi bo lenh => tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 40
+    }
+   ],
+   "soKiem": 34,
+   "bam": "2cd0c529d38e"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=220 nha dung khan, LENH FALSE => van tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=220 nha dung khan, LENH FALSE => van tat",
+     "ten": "CON_LAI",
+     "ky": 0,
+     "thuc": 50
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 17,
+     "nhan": "t=230 van tat",
+     "ten": "QUAT",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 34,
+   "bam": "9a4652d4a1a6"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 1,
+     "nhan": "t=10 vua tha => con 50ms",
+     "ten": "CON_LAI",
+     "ky": 50,
+     "thuc": 0
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "t=30 chay them con 50",
+     "ten": "QUAT",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 3,
+     "nhan": "t=30 chay them con 50",
+     "ten": "CON_LAI",
+     "ky": 50,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 34,
+   "bam": "1a78b087a6bc"
+  },
+  {
+   "id": "st-tv4-tre-tat-quat",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: TOF has no input 'RESET'",
+   "soKiem": 3,
+   "bam": "3b0e4d3a8a8b"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "d8a47e56f455"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "ace75c09e92e"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "4387b7f551c3"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "654473aa2772"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "9f73262d01bb"
+  },
+  {
+   "id": "st-tv5-giam-sat-phan-hoi",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 30,
+   "bam": "3ed195e5e581"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "soKiem": 3,
+   "bam": "a197d8c7ac8b"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "f3d1e5f2e6b3"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "soKiem": 3,
+   "bam": "e6d96eb0389c"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "7b7ff281ec53"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: LINT is not supported: 64-bit integers need exact arithmetic a JS number cannot provide; use DINT, or LREAL if the range matters more than the last digits",
+   "soKiem": 3,
+   "bam": "1f26b1f11006"
+  },
+  {
+   "id": "st-tv6-dem-gio-chay",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unexpected 'UDINT' in expression",
+   "soKiem": 3,
+   "bam": "673c3711cc50"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "ef58b3b886bc"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "6289157ddbaf"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "ef925edef2e3"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "47763729e80f"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "25f995e2021f"
+  },
+  {
+   "id": "st-tv7-canh-bao-xac-nhan",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 34,
+   "bam": "f124f7c58864"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: cannot bind TP output 'Q' into function-block output 'Q'",
+   "soKiem": 3,
+   "bam": "82fc5daef898"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=230 con xung (do tu 190)",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "31f651ffb82e"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 13,
+     "nhan": "t=170 nha khoa, nut giu => khong xung",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 15,
+     "nhan": "t=190 xung moi sau khi bi cat",
+     "ten": "SO_LAN",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 16,
+     "nhan": "t=230 con xung (do tu 190)",
+     "ten": "XUNG",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 32,
+   "bam": "02685f2201db"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: undeclared variable '_'",
+   "soKiem": 3,
+   "bam": "7c283da44ef0"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 8,
+     "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem",
+     "ten": "SO_LAN",
+     "ky": 2,
+     "thuc": 3
+    },
+    {
+     "doan": "an-fb",
+     "buoc": 9,
+     "nhan": "t=130 giu nut khong phai suon",
+     "ten": "XUNG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 32,
+   "bam": "d381a54a8256"
+  },
+  {
+   "id": "st-tv8-xung-khoi-dong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unterminated comment",
+   "soKiem": 3,
+   "bam": "7d22b26fe4dc"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "a389718a0e45"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "a4e296327182"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "c0215a3a5ac7"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "4e6f01aa445f"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "5c86261efbcc"
+  },
+  {
+   "id": "st-ud1-bom-luan-phien",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "0175df169463"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "346684db1bf7"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "d5ad8d82ac98"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "16a933c0094d"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "0549872f6f0e"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=530 vang sang",
+     "ten": "XE_VANG",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 19,
+     "nhan": "t=540 vang tat",
+     "ten": "XE_VANG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 43,
+   "bam": "8dfd4b059753"
+  },
+  {
+   "id": "st-ud2-den-giao-thong",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 43,
+   "bam": "ee52631ac624"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "39afda52abf0"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "21f6349812d7"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "f35ebc5eb570"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "70c42e667c9d"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 51,
+   "bam": "6bd7d7e04767"
+  },
+  {
+   "id": "st-ud3-bang-tai-tuan-tu",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=70 kd B2",
+     "ten": "B2",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 4,
+     "nhan": "t=110 B1 chua",
+     "ten": "B1",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 51,
+   "bam": "4dcd232b2cf5"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 40,
+   "bam": "d5279e324da9"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "hien-thi",
+     "buoc": 0,
+     "nhan": "start => CAP_A",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 1,
+     "nhan": "t=20 cap A muc 0",
+     "ten": "VAN_A",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 11,
+     "nhan": "t=120 cap B",
+     "ten": "VAN_B",
+     "ky": true,
+     "thuc": false
+    }
+   ],
+   "soKiem": 40,
+   "bam": "adc0a24d87de"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "03a6f3452bec"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "3a9dcee22a7c"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "TRANG_THAI",
+     "ky": 4,
+     "thuc": 3
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "VAN_XA",
+     "ky": true,
+     "thuc": false
+    },
+    {
+     "doan": "an-k",
+     "buoc": 18,
+     "nhan": "t=270 xa",
+     "ten": "MOTOR",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 40,
+   "bam": "896650e6b577"
+  },
+  {
+   "id": "st-ud4-may-tron-me",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 40,
+   "bam": "491a3aa78858"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "378920512768"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "a0688d8eceeb"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "da2ee90603f5"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "02cea177fdad"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "TRANG_THAI",
+     "ky": 2,
+     "thuc": 1
+    },
+    {
+     "doan": "an-k",
+     "buoc": 3,
+     "nhan": "t=220 khe",
+     "ten": "KM_SAO",
+     "ky": false,
+     "thuc": true
+    },
+    {
+     "doan": "an-k",
+     "buoc": 5,
+     "nhan": "t=270 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 2
+    }
+   ],
+   "soKiem": 38,
+   "bam": "d5c5e28d7a0f"
+  },
+  {
+   "id": "st-ud5-sao-tam-giac",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 22,
+     "nhan": "t=960 tam giac",
+     "ten": "TRANG_THAI",
+     "ky": 3,
+     "thuc": 0
+    }
+   ],
+   "soKiem": 38,
+   "bam": "e20e8252ccbf"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "a809e9c06349"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "192b67117dd5"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "d584fecbcb4d"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "068d5764c60b"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "bab34a5c8802"
+  },
+  {
+   "id": "st-ud6-nhiet-on-off",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 37,
+   "bam": "b1896884407a"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "98ff16b675d0"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "05575f55e341"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "283c3380a13b"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": false,
+   "oip": "truot",
+   "lech": [
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "TRANG_THAI",
+     "ky": 9,
+     "thuc": 2
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "MA_LOI",
+     "ky": 1,
+     "thuc": 0
+    },
+    {
+     "doan": "an-k",
+     "buoc": 14,
+     "nhan": "t=400 loi hanh trinh",
+     "ten": "CUON_DONG",
+     "ky": false,
+     "thuc": true
+    }
+   ],
+   "soKiem": 38,
+   "bam": "81f42284ffe6"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": false,
+   "oip": "tu-choi-khac",
+   "loi": "hien-thi: bien-dich: unknown CASE label 'S_NGHI'",
+   "soKiem": 3,
+   "bam": "d872b1d824b9"
+  },
+  {
+   "id": "st-ud7-van-hai-cuon",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "dat",
+   "soKiem": 38,
+   "bam": "2b311871ec04"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "7c9bae62b8e5"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l1",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "4c527d55500d"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "b212a48a0837"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l2",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "f7481713983b"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#bat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "e3352173e879"
+  },
+  {
+   "id": "st-ud8-pi-chong-bao-hoa",
+   "loai": "model",
+   "nhan": "PLC-v1-ab-kiem-q36-27b-2#tat#l3",
+   "chinhThuc": true,
+   "oip": "tu-choi-tap-con",
+   "loi": "hien-thi: bien-dich: unknown function 'TIME_TO_LINT'",
+   "ngoaiLe": "tap-con-oip",
+   "soKiem": 2,
+   "bam": "40715130f9e1"
+  }
+ ]
+}

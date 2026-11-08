@@ -207,10 +207,13 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(chatCompletion).not.toHaveBeenCalled();
   });
 
-  it("router: copilotSuggest/copilotExplain chuyển `lang` của input xuống dịch vụ", () => {
+  it("router: copilotSuggest/copilotExplain/copilotStatus đã GỠ (0 caller, dọn vệ sinh E0-3); copilotGenerate chuyển TOÀN BỘ input (kể cả ngôn ngữ) xuống generateProgram", () => {
     const src = readFileSync(new URL("../../routers/programmingRouter.ts", import.meta.url), "utf8");
-    expect(src).toMatch(/copilotExplain:[\s\S]{0,400}lang: z\.enum\(\["vi", "en", "zh"\]\)\.optional\(\)[\s\S]{0,200}explainProgram\(input\.kind, input\.source, input\.lang\)/);
-    expect(src).toMatch(/copilotSuggest:[\s\S]{0,300}lang: z\.enum\(\["vi", "en", "zh"\]\)\.optional\(\)[\s\S]{0,120}suggestProgram\(input\)/);
+    for (const ten of ["copilotSuggest", "copilotExplain", "copilotStatus"]) {
+      expect(new RegExp("^  " + ten + ": ", "m").test(src), ten + " quay lại router").toBe(false);
+    }
+    // thủ tục còn sống phải vẫn là đường duy nhất chuyển input nguyên vẹn (không bỏ trường nào) xuống dịch vụ
+    expect(src).toMatch(/copilotGenerate:[\s\S]{0,1500}generateProgram\(\{ \.\.\.input, callerRole:/);
   });
 
   it("HARD-REFUSES safety-function requests BEFORE calling the model", async () => {

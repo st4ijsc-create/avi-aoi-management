@@ -213,10 +213,24 @@ describe("★★★ robot — ĐỌC", () => {
     const prB = await u.robot.interlockPreview({ robotId: B.robot });
     const prKhong = await u.robot.interlockPreview({ robotId: 2_000_000_000 });
     expect(prB).toEqual(prKhong);
-    // khoá cổng interlock của robot là machineId = robotId: một luật ĐÃ DUYỆT chặn máy B.mid KHÔNG được lộ cho A qua id robot trùng số (robot đó ngoài phạm vi / không có)
+    // SCADA R1b-2b-2a A2(l) — cổng interlock robot = các MÁY nơi robot đứng (robot B ở trạm của máy B.mid), không còn machineId = robotId:
+    // một luật ĐÃ DUYỆT chặn máy B.mid KHÔNG được lộ cho A — qua robot B (ngoài phạm vi ≡ không tồn tại) lẫn qua id trùng số B.mid; admin thấy qua robot B
     const [luatChan] = await dung(sql`INSERT INTO interlock_rules (name, scope, "machineId", "targetMachineId", "sourceType", "sourceKey", "comparisonOperator", action, enabled, "approvedBy") VALUES (${RUN + "-R-CHAN"}, 'machine', ${B.mid}, ${B.mid}, 'telemetry_tag', 'tk-chan', 'gt', 'stop_line', true, ${A.userId}) RETURNING id`);
-    expect((await u.robot.interlockPreview({ robotId: B.mid })).violations).toEqual([]);
-    expect((await uAdmin.robot.interlockPreview({ robotId: B.mid })).violations.map((v: { ruleId: number }) => v.ruleId)).toContain(luatChan.id);
+    expect((await u.robot.interlockPreview({ robotId: B.robot })).violations).toEqual([]);
+    expect(await u.robot.interlockPreview({ robotId: B.robot })).toEqual(prKhong);
+    // A2(l) fix round 1 (m8) — the id collision, rebuilt (was trivially true: no robot had id B.mid): a robot of A, placed at A's station,
+    // whose id EQUALS B's machine id. B's approved rule on machine B.mid must NOT reach it (no robot id is ever a machine id); a rule on A's
+    // own machine does (positive control: the preview really evaluates that robot's place).
+    expect(await dung(sql`SELECT id FROM robots WHERE id = ${B.mid}`), "a robot already has B's machine id — cannot rebuild the collision").toEqual([]);
+    await dung(sql`INSERT INTO robots (id, code, name, vendor, endpoint, kind, "lineId", "stationId", "isEnabled") VALUES (${B.mid}, ${A.code + "-RCOLL"}, 'rb va cham', 'sim', 'sim://x', 'arm', ${A.lid}, ${A.sid}, true)`);
+    const prVaCham = await u.robot.interlockPreview({ robotId: B.mid });
+    expect(prVaCham).toMatchObject({ blocked: false, viTri: "tram", maTuChoi: null, violations: [] });
+    const [luatA] = await dung(sql`INSERT INTO interlock_rules (name, scope, "machineId", "targetMachineId", "sourceType", "sourceKey", "comparisonOperator", action, enabled, "approvedBy") VALUES (${RUN + "-R-CHAN-A"}, 'machine', ${A.mid}, ${A.mid}, 'telemetry_tag', 'tk-chan-a', 'gt', 'stop_line', true, ${A.userId}) RETURNING id`);
+    const luatVaCham = (await u.robot.interlockPreview({ robotId: B.mid })).violations.map((v: { ruleId: number }) => v.ruleId);
+    expect(luatVaCham).toContain(luatA.id);
+    expect(luatVaCham).not.toContain(luatChan.id);
+    await dung(sql`UPDATE interlock_rules SET enabled = false WHERE id = ${luatA.id}`); // không ảnh hưởng các bài khác
+    expect((await uAdmin.robot.interlockPreview({ robotId: B.robot })).violations.map((v: { ruleId: number }) => v.ruleId)).toContain(luatChan.id);
     await dung(sql`UPDATE interlock_rules SET enabled = false WHERE id = ${luatChan.id}`); // không ảnh hưởng các bài khác
     expect((await uAdmin.robot.list()).map((r: { id: number }) => r.id)).toEqual(expect.arrayContaining([A.robot, B.robot]));
     expect((await uRong.robot.list()).map((r: { id: number }) => r.id)).not.toContain(A.robot);

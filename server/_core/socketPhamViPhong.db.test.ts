@@ -316,6 +316,30 @@ describe("không lộ tồn tại + chạy đua + socket máy", () => {
     expect(loi[0]).toMatchObject({ code: "SUBSCRIBE_DENIED" });
   });
 
+  it("SCADA 1a — robot KHÔNG TỒN TẠI (id lớn) ⇒ SUBSCRIBE_DENIED, 0 phòng robot:, gói thăm dò tới phòng đó không ai nhận (đối chứng cùng ca: robot của A ⇒ vào + nhận)", async () => {
+    const ID_KHONG_CO = 2_147_000_123;
+    const a = await ketNoi(uA);
+    const loi: any[] = [];
+    a.on("subscribe:error", (g) => loi.push(g));
+    const nhan = ghiNhan(a, "probe:robot");
+    a.emit("subscribe", { robotId: ID_KHONG_CO });
+    await vi.waitFor(() => expect(loi.length).toBe(1), { timeout: 5000 });
+    expect(loi[0]).toEqual({ code: "SUBSCRIBE_DENIED" });
+    expect(phongCua(a).filter((p) => p.startsWith("robot:"))).toEqual([]);
+    socketMod.getIO()!.to(`robot:${ID_KHONG_CO}`).emit("probe:robot", { p: "khongCo" });
+    // đối chứng dương cùng socket: robot của A ⇒ vào phòng và NHẬN gói thăm dò (bộ phát không hỏng)
+    a.emit("subscribe", { robotId: A.robotId });
+    await vi.waitFor(() => expect(phongCua(a)).toContain(`robot:${A.robotId}`), { timeout: 5000 });
+    socketMod.getIO()!.to(`robot:${A.robotId}`).emit("probe:robot", { p: "A" });
+    await vi.waitFor(() => expect(nhan.length).toBe(1), { timeout: 5000 });
+    await cho(200);
+    expect(nhan).toEqual([{ p: "A" }]);
+    expect(phongCua(a)).not.toContain(`robot:${ID_KHONG_CO}`);
+    expect(loi).toHaveLength(1); // lần subscribe hợp lệ không sinh lỗi
+    // không ai trên máy chủ ở phòng của robot không tồn tại
+    expect(socketMod.getIO()!.sockets.adapter.rooms.get(`robot:${ID_KHONG_CO}`)?.size ?? 0).toBe(0);
+  });
+
   it("subscribe rồi unsubscribe NGAY (kiểm quyền còn dở) ⇒ KHÔNG vào phòng", async () => {
     const a = await ketNoi(uA);
     a.emit("subscribe", { machineId: A.mid });

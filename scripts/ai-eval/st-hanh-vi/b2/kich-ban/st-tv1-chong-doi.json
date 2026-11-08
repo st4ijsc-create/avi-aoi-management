@@ -1,0 +1,49 @@
+{
+  "id": "st-tv1-chong-doi",
+  "khoi": "ChongDoi",
+  "nguon": "chuyen tu an/tests/an.st (fb + fb0) va khung/tests/hien_thi.st; moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau t=0 = dtMs 0",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "IN": false, "T_BAT": 50, "T_TAT": 30 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "ban dau Q = FALSE" },
+        { "vao": { "IN": true }, "dtMs": 10, "lan": 5, "ky": { "Q": false }, "nhan": "t=50 giu 40ms chua len" },
+        { "dtMs": 10, "ky": { "Q": true }, "nhan": "t=60 giu 50ms len" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "IN": false, "T_BAT": 50, "T_TAT": 30 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "t=0 Q = FALSE" },
+        { "vao": { "IN": true }, "dtMs": 10, "lan": 4, "ky": { "Q": false }, "nhan": "t=40 xung 30ms chua len" },
+        { "vao": { "IN": false }, "dtMs": 10, "ky": { "Q": false }, "nhan": "t=50 xung ngan bi bo qua" },
+        { "vao": { "IN": true }, "dtMs": 10, "lan": 5, "ky": { "Q": false }, "nhan": "t=100 giu 40ms chua len" },
+        { "dtMs": 10, "ky": { "Q": true }, "nhan": "t=110 giu 50ms len" },
+        { "vao": { "IN": false }, "dtMs": 10, "ky": { "Q": true }, "nhan": "t=120 vua tha van TRUE" },
+        { "dtMs": 10, "ky": { "Q": true }, "nhan": "t=130 tha 10ms van TRUE" },
+        { "vao": { "IN": true }, "dtMs": 10, "ky": { "Q": true }, "nhan": "t=140 nhieu ngan bi bo qua" },
+        { "vao": { "IN": false }, "dtMs": 10, "lan": 3, "ky": { "Q": true }, "nhan": "t=170 tha 20ms van TRUE" },
+        { "dtMs": 10, "ky": { "Q": false }, "nhan": "t=180 tha 30ms xuong" },
+        { "vao": { "IN": true }, "dtMs": 10, "ky": { "Q": false }, "nhan": "t=190 nhieu bat 1 chu ky" },
+        { "vao": { "IN": false }, "dtMs": 10, "ky": { "Q": false }, "nhan": "t=200 van FALSE" },
+        { "vao": { "IN": true }, "dtMs": 10, "lan": 5, "ky": { "Q": false }, "nhan": "t=250 chua len" },
+        { "dtMs": 10, "ky": { "Q": true }, "nhan": "t=260 len" },
+        { "vao": { "IN": false }, "dtMs": 10, "lan": 2, "nhan": "t=270..280" },
+        { "vao": { "IN": true }, "dtMs": 10, "nhan": "t=290" },
+        { "vao": { "IN": false }, "dtMs": 10, "lan": 3, "ky": { "Q": true }, "nhan": "t=320 moc tat dem lai tu 300" },
+        { "dtMs": 10, "ky": { "Q": false }, "nhan": "t=330 xuong" },
+        { "vao": { "IN": true, "T_BAT": 20 }, "dtMs": 10, "nhan": "t=340 doi T_BAT 20ms" },
+        { "dtMs": 10, "ky": { "Q": false }, "nhan": "t=350 T_BAT 20ms chua len" },
+        { "dtMs": 10, "ky": { "Q": true }, "nhan": "t=360 T_BAT 20ms len" }
+      ]
+    },
+    {
+      "ten": "an-fb0",
+      "buoc": [
+        { "vao": { "IN": false, "T_BAT": 0, "T_TAT": 0 }, "dtMs": 0, "ky": { "Q": false }, "nhan": "T=0 ban dau FALSE" },
+        { "vao": { "IN": true }, "dtMs": 10, "ky": { "Q": true }, "nhan": "T_BAT=0 len ngay" },
+        { "vao": { "IN": false }, "dtMs": 10, "ky": { "Q": false }, "nhan": "T_TAT=0 xuong ngay" }
+      ]
+    }
+  ]
+}

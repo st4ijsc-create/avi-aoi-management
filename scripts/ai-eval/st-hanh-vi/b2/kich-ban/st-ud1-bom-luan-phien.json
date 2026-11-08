@@ -1,0 +1,43 @@
+{
+  "id": "st-ud1-bom-luan-phien",
+  "khoi": "BomLuanPhien",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhBom.fb); moi chu ky cua k = mot buoc dtMs 10; lan goi dau hien_thi = dtMs 0. Vong kin PHx := fb.BOMx(chu ky truoc) AND khoex duoc thay bang quy dao ho mo theo duong mong doi (gia tri BOMx chu ky truoc theo cac moc chu thich cua an.st). KT 'reset chua bom' (BOM1 OR BOM2 = FALSE) tach thanh BOM1 = FALSE va BOM2 = FALSE. BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao, khong phai chan cua khoi).",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false, "PH1": false, "PH2": false, "RESET": false, "T_PHAN_HOI": 50 }, "dtMs": 0, "ky": { "BOM1": true, "BOM2": false, "BOM_CHINH": 1 }, "nhan": "khoi dong dau" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "MUC_CAO": false, "MUC_THAP": true, "PH1": false, "PH2": false, "RESET": false, "T_PHAN_HOI": 50 }, "dtMs": 10, "lan": 2, "ky": { "BOM1": false, "BOM2": false, "BOM_CHINH": 0 }, "nhan": "t=10,20 muc thap chua khoi dong" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false }, "dtMs": 10, "ky": { "CAN_BOM": true, "BOM1": true, "BOM2": false, "BOM_CHINH": 1 }, "nhan": "t=30 kd1 bom 1" },
+        { "vao": { "MUC_CAO": false, "MUC_THAP": false, "PH1": true }, "dtMs": 10, "lan": 10, "ky": { "BOM1": true, "LOI1": false }, "nhan": "t=40..130 giu chay" },
+        { "vao": { "MUC_THAP": true }, "dtMs": 10, "ky": { "CAN_BOM": false, "BOM1": false }, "nhan": "t=140 phao thap" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false, "PH1": false }, "dtMs": 10, "ky": { "BOM2": true, "BOM1": false, "BOM_CHINH": 2 }, "nhan": "t=150 kd2 bom 2" },
+        { "vao": { "MUC_CAO": false, "PH2": true }, "dtMs": 10, "lan": 5, "nhan": "t=160..200" },
+        { "vao": { "MUC_THAP": true }, "dtMs": 10, "nhan": "t=210" },
+        { "vao": { "PH2": false }, "dtMs": 10, "nhan": "t=220" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false }, "dtMs": 10, "nhan": "t=230 kd3 bom 1 hong (khoe1 FALSE)" },
+        { "vao": { "MUC_CAO": false }, "dtMs": 10, "lan": 4, "ky": { "BOM1": true, "LOI1": false }, "nhan": "t=240..270" },
+        { "dtMs": 10, "ky": { "LOI1": true, "BOM1": false, "BOM2": false }, "nhan": "t=280 LOI1" },
+        { "dtMs": 10, "ky": { "BOM2": true, "BOM_CHINH": 1 }, "nhan": "t=290 chuyen BOM2" },
+        { "vao": { "PH2": true }, "dtMs": 10, "lan": 10, "nhan": "t=300..390" },
+        { "vao": { "MUC_THAP": true }, "dtMs": 10, "ky": { "LOI1": true }, "nhan": "t=400 LOI1 chot" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false, "PH2": false }, "dtMs": 10, "ky": { "BOM2": true, "BOM_CHINH": 2 }, "nhan": "t=410 kd4" },
+        { "vao": { "MUC_CAO": false, "MUC_THAP": true, "PH2": true }, "dtMs": 10, "nhan": "t=420" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": false, "PH2": false }, "dtMs": 10, "ky": { "BOM2": true, "BOM1": false }, "nhan": "t=430 kd5 bom 2 ngay" },
+        { "vao": { "MUC_CAO": false, "PH2": true }, "dtMs": 10, "lan": 3, "nhan": "t=440..460" },
+        { "vao": { "PH2": false }, "dtMs": 10, "nhan": "t=470 bom 2 hong (khoe2 FALSE)" },
+        { "dtMs": 10, "lan": 4, "ky": { "BAO_DONG": false, "BOM2": true }, "nhan": "t=480..510" },
+        { "dtMs": 10, "ky": { "LOI2": true, "BAO_DONG": true, "BOM2": false, "BOM1": false }, "nhan": "t=520 LOI2" },
+        { "dtMs": 10, "lan": 3, "nhan": "t=530..550" },
+        { "vao": { "RESET": true }, "dtMs": 10, "ky": { "LOI1": false, "LOI2": false, "BAO_DONG": false, "BOM1": false, "BOM2": false }, "nhan": "t=560 RESET" },
+        { "vao": { "RESET": false }, "dtMs": 10, "ky": { "BOM1": true }, "nhan": "t=570 sau reset BOM1" },
+        { "vao": { "MUC_CAO": true, "MUC_THAP": true, "PH1": true }, "dtMs": 10, "ky": { "CAN_BOM": false, "BOM1": false }, "nhan": "t=580 hai phao" }
+      ]
+    }
+  ]
+}

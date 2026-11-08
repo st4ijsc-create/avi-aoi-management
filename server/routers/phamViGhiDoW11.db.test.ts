@@ -135,18 +135,15 @@ describe("aiFeedback — gợi ý · phản hồi · lô huấn luyện", () => 
 });
 
 describe("lô W11b (tt) — cảnh báo thông minh · insight · hàng đợi gán nhãn · suy luận · triển khai edge", () => {
-  it("smartAlert.acknowledge cảnh báo máy B · insight.setStatus insight máy B · activeLearning submitLabel/skipItem mục máy B · aiModel.runInference lần kiểm tra B ⇒ NOT_FOUND, không đổi", async () => {
+  it("insight.setStatus insight máy B · activeLearning submitLabel/skipItem mục máy B · aiModel.runInference lần kiểm tra B ⇒ NOT_FOUND, không đổi", async () => {
     const ctx = { user: { id: uid, role: "engineer", name: "x", twoFactorEnabled: true } } as never;
-    const sa = (await import("./aiSmartAlertRoutingRouter")).aiSmartAlertRoutingRouter.createCaller(ctx);
     const ins = (await import("./aiInsightRouter")).aiInsightRouter.createCaller(ctx);
     const al = (await import("./aiActiveLearningRouter")).aiActiveLearningRouter.createCaller(ctx);
     const am = (await import("./aiModelRouter")).aiModelRouter.createCaller(ctx);
-    const [pa] = await dung(sql`INSERT INTO predictive_alerts ("alertType", title, description, "machineId") VALUES ('DEFECT_SPIKE', ${RUN + "-pa"}, 'd', ${B.mid}) RETURNING id`);
     const [mb] = await dung(sql`SELECT code FROM machines WHERE id = ${B.mid}`);
     const [ib] = await dung(sql`INSERT INTO ai_insights (source, title, body, "machineCode") VALUES ('t', ${RUN + "-in"}, 'b', ${mb.code}) RETURNING id`);
     const [qb] = await dung(sql`INSERT INTO ai_label_queue ("imageUrl", "modelId", "machineId") VALUES ('u', 1, ${B.mid}) RETURNING id`);
     const l = [
-      await maLoi(() => sa.acknowledge({ alertId: Number(pa.id) } as never)),
       await maLoi(() => ins.setStatus({ id: Number(ib.id), status: "dismissed" } as never)),
       await maLoi(() => al.submitLabel({ queueId: Number(qb.id), humanLabel: "x" } as never)),
       await maLoi(() => al.skipItem({ queueId: Number(qb.id) } as never)),
@@ -154,10 +151,8 @@ describe("lô W11b (tt) — cảnh báo thông minh · insight · hàng đợi g
     ];
     expect({
       l,
-      alert: (await one(sql`SELECT status AS s FROM predictive_alerts WHERE id = ${pa.id}`)).s,
       insight: (await one(sql`SELECT status AS s FROM ai_insights WHERE id = ${ib.id}`)).s,
-    }).toEqual({ l: Array(5).fill(NF), alert: "ACTIVE", insight: "new" });
-    await dung(sql`DELETE FROM predictive_alerts WHERE title = ${RUN + "-pa"}`);
+    }).toEqual({ l: Array(4).fill(NF), insight: "new" });
     await dung(sql`DELETE FROM ai_insights WHERE title = ${RUN + "-in"}`);
     await dung(sql`DELETE FROM ai_label_queue WHERE id = ${qb.id}`);
   });

@@ -32,6 +32,7 @@
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
+import { boDocHetVaoBroker } from './mqttDocHet';
 import { readFileSync } from 'fs';
 import {
   BrokerTlsError,
@@ -1768,6 +1769,7 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
   
   // Create Aedes broker
   aedes = new Aedes();
+  boDocHetVaoBroker(aedes);
 
   // doc 81 dot 1B task 10 — `listen` lets a test bind 127.0.0.1 + port 0 through THIS
   // function; production passes nothing ⇒ 0.0.0.0 + MQTT_PORT/MQTT_WS_PORT exactly as before.
@@ -3247,25 +3249,23 @@ export async function publishBulletin(
     // Send FCM push notification to subscribed clients
     if (options.sendFcm) {
       try {
-        const { sendBulletinPushNotification } = await import('./fcmService') as any;
-        if (typeof sendBulletinPushNotification === 'function') {
-          const stats = payload.statistics || {};
-          const fcmResult = await sendBulletinPushNotification({
-            stationId,
-            stationName: payload.stationName || station[0].station.name,
-            totalCount: stats.totalCount || 0,
-            okCount: stats.okCount || 0,
-            ngCount: stats.ngCount || 0,
-            ntfCount: stats.ntfCount || 0,
-            yieldRate: stats.yieldRate || 0,
-            failPointsCount: (payload.failPoints || []).length,
-            period: payload.period,
-          });
-          console.log(`[FCM] Bulletin push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
-        }
+        const { sendBulletinPushNotification } = await import('./fcmService');
+        const stats = payload.statistics || {};
+        const fcmResult = await sendBulletinPushNotification({
+          stationId,
+          stationName: payload.stationName || station[0].station.name,
+          totalCount: stats.totalCount || 0,
+          okCount: stats.okCount || 0,
+          ngCount: stats.ngCount || 0,
+          ntfCount: stats.ntfCount || 0,
+          yieldRate: stats.yieldRate || 0,
+          failPointsCount: (payload.failPoints || []).length,
+          period: payload.period,
+        });
+        console.log(`[FCM] Bulletin push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
       } catch (fcmError) {
         // FCM is optional - don't fail bulletin if FCM fails
-        console.log('[FCM] Bulletin push notification skipped (function not available)');
+        console.log('[FCM] Bulletin push notification failed:', String(fcmError));
       }
     }
 

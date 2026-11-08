@@ -46,7 +46,8 @@ import { machineDataContractV1 } from "./machineDataContract";
 // server/contracts/taiLieuMetaJsonKhopHopDong.test.ts → GOC = repo root
 const GOC = resolve(__dirname, "..", "..");
 
-const DUONG_AOI_PACKAGE_SECTION = "client/src/components/apiDocs/AoiPackageSection.tsx";
+// Pha 0 · C0-1/P0-8 (2026-11-04): trang /api-docs ĐÃ GỠ (client/src/components/apiDocs/*, gồm AoiPackageSection.tsx) — bề mặt công bố "chạy trong sản phẩm" này không còn.
+// Các bề mặt CÒN SỐNG: docs/API_REFERENCE.md, docs/UNIFIED_API_STRUCTURE.md, docs/examples/*. Mệnh đề hợp đồng giữ nguyên cho chúng.
 const DUONG_META_EXAMPLE = "docs/examples/meta.json.example";
 const DUONG_META_LEGACY_EXAMPLE = "docs/examples/meta-legacy.json.example";
 const DUONG_API_REFERENCE = "docs/API_REFERENCE.md";
@@ -105,11 +106,6 @@ interface ViDuMetaJson {
 }
 
 const VI_DU: readonly ViDuMetaJson[] = [
-  {
-    ten: 'AoiPackageSection.tsx — "meta.json schema" (trang API docs CHẠY TRONG SẢN PHẨM)',
-    file: DUONG_AOI_PACKAGE_SECTION,
-    trich: (nd) => trichJsonCanBang(nd, nd.indexOf("meta.json schema — BG-85")),
-  },
   {
     ten: "docs/examples/meta.json.example (mẫu ĐÚNG — đối chứng dương, không thuộc năm nơi bị sửa)",
     file: DUONG_META_EXAMPLE,
@@ -192,11 +188,6 @@ describe("§2 — MỆNH ĐỀ 2: CHỐNG TỰ THOẢ — bộ trích phải tì
     expect(new Set(ten).size).toBe(ten.length);
   });
 
-  it("★★★ ÍT NHẤT MỘT ví dụ đến từ AoiPackageSection.tsx (trang API docs CHẠY TRONG SẢN PHẨM)", () => {
-    const tuAoiSection = VI_DU.filter((v) => v.file === DUONG_AOI_PACKAGE_SECTION);
-    expect(tuAoiSection.length).toBeGreaterThanOrEqual(1);
-  });
-
   it("mỗi ví dụ TRÍCH ĐƯỢC văn bản khác rỗng (chống trich() trả chuỗi rỗng lặng lẽ)", () => {
     for (const vd of VI_DU) {
       const noiDungDayDu = readFileSync(resolve(GOC, vd.file), "utf8");
@@ -261,7 +252,7 @@ describe("§3 — TỰ KIỂM: pipeline này THẬT SỰ bắt được hình d�
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Các bề mặt tài liệu MÔ TẢ hợp đồng `meta.json` (khác với nơi chỉ có ví dụ). */
-const BE_MAT_MO_TA_HOP_DONG: readonly string[] = [DUONG_AOI_PACKAGE_SECTION, DUONG_API_REFERENCE];
+const BE_MAT_MO_TA_HOP_DONG: readonly string[] = [DUONG_API_REFERENCE];
 
 /** Mọi bề mặt §5 canh — hợp của `VI_DU` và danh sách trên, không trùng lặp. */
 const MOI_BE_MAT: readonly string[] = Array.from(
@@ -293,7 +284,6 @@ function truongBatBuocCuaHopDong(): string[] {
  * còn sống. Đây là ranh giới CÓ CHỦ Ý, không phải sót.
  */
 const BE_MAT_CHI_META_JSON: readonly string[] = [
-  DUONG_AOI_PACKAGE_SECTION,
   DUONG_META_EXAMPLE,
   DUONG_META_LEGACY_EXAMPLE,
 ];
@@ -446,9 +436,11 @@ describe("§5.2 — LỜI VĂN: 0 khẳng định ĐÃ BỊ MÃ BÁC BỎ, trên
   });
 });
 
-describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict phải CÓ MẶT trên trang API docs chạy trong sản phẩm", () => {
+describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict phải CÓ MẶT trong tài liệu API tĩnh (BG-94, pha 0)", () => {
+  // Trang /api-docs (AoiPackageSection.tsx) từng là bề mặt công bố các câu này; đã gỡ ở pha 0. Phán quyết dieu-phoi 2026-11-06:
+  // công bố ở docs/API_REFERENCE.md (§11.2, "Hai bất biến server áp khi commit gói") — tích hợp viên máy đọc tài liệu tĩnh.
   it("★★★ nói rõ verdict/đếm CUỘN TỪ CÂY, và `summary` KHÔNG BAO GIỜ là nguồn", () => {
-    const nd = doc(DUONG_AOI_PACKAGE_SECTION);
+    const nd = doc(DUONG_API_REFERENCE);
     expect(/cu[ộo]n\s+từ\s+C[ÂA]Y/i.test(nd), "thiếu câu 'cuộn từ CÂY' — bất biến 3 không được công bố").toBe(true);
     expect(
       /summary[^\n]{0,120}KHÔNG BAO GIỜ/.test(nd),
@@ -457,9 +449,13 @@ describe("§5.3 — LỜI VĂN: khẳng định về NGUỒN cuộn verdict ph�
   });
 
   it("★ nói rõ HAI bất biến TỪ CHỐI CẢ GÓI (captureId lạ / thiếu tệp ảnh) — thứ quyết định gói commit được hay không", () => {
-    const nd = doc(DUONG_AOI_PACKAGE_SECTION);
+    const nd = doc(DUONG_API_REFERENCE);
     expect(/captureId[^\n]{0,120}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
     expect(/fileName[^\n]{0,160}(TỪ CHỐI|từ chối)/i.test(nd)).toBe(true);
+  });
+
+  it("bề mặt đã gỡ KHÔNG còn trong danh sách canh (chống tham chiếu tệp ma)", () => {
+    for (const duong of MOI_BE_MAT) expect(duong, duong).not.toMatch(/apiDocs\//);
   });
 });
 

@@ -39,6 +39,18 @@ async function coQuyenDoc(ctx: any): Promise<boolean> {
   }
 }
 
+/**
+ * G3 — soát lại DANH SÁCH TRẮNG dự án cho thủ tục THEO ID (mo/themLuot/doiTen/nhanBan/nopTomTat): phiên của dự án đã rời allowlist ⇒ NOT_FOUND
+ * (không lộ "phiên có nhưng dự án bị gỡ"; hàng không đổi). Hàng di sản `projectId = null` ⇒ chỉ chủ (như trước). Không có hàng của người này ⇒ để kho trả NOT_FOUND; LỖI ĐỌC dự án ⇒ NOT_FOUND (fail-closed).
+ * `xoa` CỐ Ý không qua cổng này (chủ dọn phiên của chính mình, không đọc/ghi nội dung).
+ */
+async function duAnPhienConHieuLuc(u: NguoiGoiDuAn, sessionId: string): Promise<boolean> {
+  const p = await kho.duAnCuaPhien(u.id, sessionId);
+  if (!p.ok) return p.ma === "NOT_FOUND"; // không có hàng ⇒ để kho trả NOT_FOUND; LỖI ĐỌC ⇒ KHÔNG cho qua (fail-closed ⇒ NOT_FOUND)
+  if (p.projectId === null) return true; // hàng di sản không dự án ⇒ chỉ chủ
+  return phanGiaiGoc(p.projectId, u).ok;
+}
+
 const turnSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(GIOI_HAN_PHIEN.BYTE_MOI_LUOT) }).strict();
 
 export const aiPhienRouter = router({
@@ -75,6 +87,7 @@ export const aiPhienRouter = router({
     const u = nguoiGoi(ctx);
     if (!u || !(await coQuyenDoc(ctx))) return { ok: false, note: "PERMISSION_DENIED", session: null };
     if (laIdChat(input.sessionId)) return { ok: false, note: "NOT_FOUND", session: null };
+    if (!(await duAnPhienConHieuLuc(u, input.sessionId))) return { ok: false, note: "NOT_FOUND", session: null };
     const r = await kho.mo(u.id, input.sessionId);
     return r.ok ? { ok: true, note: null, session: r.phien } : { ok: false, note: r.ma, session: null };
   }),
@@ -103,12 +116,15 @@ export const aiPhienRouter = router({
         expectedVersion: z.number().int().min(1),
         luot: z.array(turnSchema).min(1).max(kho.TRAN_LUOT_MOI_LAN_GHI),
         contextPct: z.number().int().min(0).max(200).optional(),
+        /** G1 — callId các lượt model NGOÀI mà lượt assistant trong lần ghi này đến từ (server XÁC MINH; không gửi vẫn tự dò theo băm 24 h) */
+        ngoaiCallIds: z.array(z.number().int().positive()).max(50).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const u = nguoiGoi(ctx);
       if (!u || !(await coQuyenDoc(ctx))) return { ok: false, note: "PERMISSION_DENIED" };
       if (laIdChat(input.sessionId)) return { ok: false, note: "NOT_FOUND" };
+      if (!(await duAnPhienConHieuLuc(u, input.sessionId))) return { ok: false, note: "NOT_FOUND" };
       const r = await kho.themLuot(u.id, input);
       return r.ok
         ? { ok: true, note: null, version: r.version, turnCount: r.turnCount }
@@ -121,6 +137,7 @@ export const aiPhienRouter = router({
       const u = nguoiGoi(ctx);
       if (!u || !(await coQuyenDoc(ctx))) return { ok: false, note: "PERMISSION_DENIED", title: "" };
       if (laIdChat(input.sessionId)) return { ok: false, note: "NOT_FOUND", title: "" };
+      if (!(await duAnPhienConHieuLuc(u, input.sessionId))) return { ok: false, note: "NOT_FOUND", title: "" };
       const r = await kho.doiTen(u.id, input);
       return r.ok ? { ok: true, note: null, title: r.title } : { ok: false, note: r.ma, title: "", ...(r.versionHienTai !== undefined ? { versionHienTai: r.versionHienTai } : {}) };
     }),
@@ -129,6 +146,7 @@ export const aiPhienRouter = router({
     const u = nguoiGoi(ctx);
     if (!u || !(await coQuyenDoc(ctx))) return { ok: false, note: "PERMISSION_DENIED", id: null };
     if (laIdChat(input.sessionId)) return { ok: false, note: "NOT_FOUND", id: null };
+    if (!(await duAnPhienConHieuLuc(u, input.sessionId))) return { ok: false, note: "NOT_FOUND", id: null };
     const r = await kho.nhanBan(u.id, input.sessionId);
     return r.ok ? { ok: true, note: null, id: r.id } : { ok: false, note: r.ma, id: null };
   }),
@@ -147,6 +165,7 @@ export const aiPhienRouter = router({
       const u = nguoiGoi(ctx);
       if (!u || !(await coQuyenDoc(ctx))) return { ok: false, note: "PERMISSION_DENIED", id: null };
       if (laIdChat(input.sessionId)) return { ok: false, note: "NOT_FOUND", id: null };
+      if (!(await duAnPhienConHieuLuc(u, input.sessionId))) return { ok: false, note: "NOT_FOUND", id: null };
       const r = await kho.nopTomTat(u.id, input);
       return r.ok ? { ok: true, note: null, id: r.id } : { ok: false, note: r.ma, id: null, ...(r.versionHienTai !== undefined ? { versionHienTai: r.versionHienTai } : {}) };
     }),

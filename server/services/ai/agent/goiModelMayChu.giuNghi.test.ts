@@ -15,6 +15,7 @@ async function goiVoi(tinNhan: TinNhan[], them: { nghi?: boolean } = {}) {
     khongGhiDauVet: true,
     chatStream: async function* (o) {
       nhan = o;
+      yield { type: "token", token: "ok" } as never; // (H3.1b) lượt rỗng nay là EMPTY_RESPONSE
       yield { type: "done", toolCalls: [] } as never;
     },
   });

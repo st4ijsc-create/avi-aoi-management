@@ -1,0 +1,58 @@
+{
+  "id": "st-ud2-den-giao-thong",
+  "khoi": "DenGiaoThong",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (KtCanhDen.fb); moi chu ky cua k = mot buoc dtMs 10 (lan goi dau cua an o t=10); lan goi dau hien_thi = dtMs 0. BO: 'bat bien moi chu ky' (k.vi - bien dem cua bo bao) va 5 KT cua khoi phu NhapNhay goi rieng (nn) - khong phai khoi chinh.",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "NUT_NGUOI": false, "NHAP_NHAY_VANG": false, "T_XANH_MIN": 100, "T_VANG": 30, "T_NGUOI": 50, "T_DO_CHUNG": 20, "T_NHAY": 20 }, "dtMs": 0, "ky": { "XE_XANH": true, "NG_DO": true, "TRANG_THAI": 0 }, "nhan": "dau tien xanh xe" },
+        { "vao": { "NHAP_NHAY_VANG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 4 }, "nhan": "nhap nhay => 4" }
+      ]
+    },
+    {
+      "ten": "an-k",
+      "buoc": [
+        { "vao": { "NUT_NGUOI": false, "NHAP_NHAY_VANG": false, "T_XANH_MIN": 100, "T_VANG": 30, "T_NGUOI": 50, "T_DO_CHUNG": 20, "T_NHAY": 20 }, "dtMs": 10, "ky": { "TRANG_THAI": 0, "XE_XANH": true, "NG_DO": true }, "nhan": "t=10 xanh xe" },
+        { "dtMs": 10, "lan": 2, "nhan": "t=20,30" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "nhan": "t=40 bam nut" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "lan": 6, "ky": { "TRANG_THAI": 0 }, "nhan": "t=100 van xanh" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 1, "XE_VANG": true, "XE_XANH": false }, "nhan": "t=110 vang" },
+        { "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 1 }, "nhan": "t=130 van vang" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 2, "NG_XANH": true, "XE_DO": true }, "nhan": "t=140 nguoi di" },
+        { "dtMs": 10, "nhan": "t=150" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "nhan": "t=160 nut khi khong xanh xe" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 2 }, "nhan": "t=180 van nguoi di" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 3, "NG_XANH": false }, "nhan": "t=190 do chung" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 3 }, "nhan": "t=200 van do chung" },
+        { "dtMs": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=210 xanh xe" },
+        { "dtMs": 10, "lan": 18, "ky": { "TRANG_THAI": 0 }, "nhan": "t=390 khong yeu cau van xanh" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "ky": { "TRANG_THAI": 1 }, "nhan": "t=400 vang ngay" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "lan": 10, "ky": { "TRANG_THAI": 0 }, "nhan": "t=500 xanh xe" },
+        { "dtMs": 10, "nhan": "t=510" },
+        { "vao": { "NHAP_NHAY_VANG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 4, "XE_VANG": true, "XE_XANH": false, "NG_DO": false }, "nhan": "t=520 nhap nhay" },
+        { "dtMs": 10, "ky": { "XE_VANG": true }, "nhan": "t=530 vang sang" },
+        { "dtMs": 10, "ky": { "XE_VANG": false }, "nhan": "t=540 vang tat" },
+        { "dtMs": 10, "lan": 2, "ky": { "XE_VANG": true }, "nhan": "t=560 vang sang lai" },
+        { "dtMs": 10, "lan": 3, "nhan": "t=570..590" },
+        { "vao": { "NHAP_NHAY_VANG": false }, "dtMs": 10, "ky": { "TRANG_THAI": 3, "XE_DO": true, "NG_DO": true }, "nhan": "t=600 do chung" },
+        { "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 0 }, "nhan": "t=620 xanh xe" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "nhan": "t=630" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "lan": 9, "ky": { "TRANG_THAI": 1 }, "nhan": "t=720 vang" },
+        { "dtMs": 10, "lan": 3, "ky": { "TRANG_THAI": 2 }, "nhan": "t=750 nguoi di" },
+        { "dtMs": 10, "nhan": "t=760" },
+        { "vao": { "NHAP_NHAY_VANG": true }, "dtMs": 10, "ky": { "TRANG_THAI": 4, "NG_XANH": false, "XE_VANG": true }, "nhan": "t=770 nhap nhay uu tien" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "nhan": "t=780 nut khi nhap nhay" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "nhan": "t=790" },
+        { "vao": { "NHAP_NHAY_VANG": false }, "dtMs": 10, "ky": { "TRANG_THAI": 3 }, "nhan": "t=800 do chung" },
+        { "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 0 }, "nhan": "t=820 xanh xe" },
+        { "vao": { "NUT_NGUOI": true }, "dtMs": 10, "nhan": "t=830 yeu cau" },
+        { "vao": { "NUT_NGUOI": false }, "dtMs": 10, "nhan": "t=840" },
+        { "vao": { "NHAP_NHAY_VANG": true }, "dtMs": 10, "nhan": "t=850 nhap nhay xoa yeu cau" },
+        { "vao": { "NHAP_NHAY_VANG": false }, "dtMs": 10, "nhan": "t=860 do chung" },
+        { "dtMs": 10, "lan": 2, "ky": { "TRANG_THAI": 0 }, "nhan": "t=880 xanh xe" },
+        { "dtMs": 10, "lan": 15, "ky": { "TRANG_THAI": 0 }, "nhan": "t=1030 yeu cau da xoa van xanh" }
+      ]
+    }
+  ]
+}

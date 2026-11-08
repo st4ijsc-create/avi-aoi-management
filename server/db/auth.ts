@@ -1,4 +1,4 @@
-import { eq, and, desc, like, sql, or, not, lte } from "drizzle-orm";
+import { eq, and, desc, like, sql, or, not, lte, lt } from "drizzle-orm";
 import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import {
@@ -858,6 +858,22 @@ export async function getSessionByToken(sessionToken: string) {
   return session;
 }
 
+/**
+ * ★ Pha 0 P0-11 — GIA HẠN TẠI CHỖ: chỉ đổi `expiresAt` (KHÔNG đụng `isActive` ⇒ trigger 0435 `socket_pham_vi` không bắn), chỉ khi hàng
+ * CÒN hoạt động và hạn mới LỚN hơn hạn hiện có (phiên vừa thu hồi giữa chừng không sống lại; lượt đồng thời không kéo lùi hạn).
+ * Trả số hàng đã đổi (0 ⇒ không gia hạn).
+ */
+export async function giaHanPhienTaiCho(sessionToken: string, hetHanMoi: Date, tx?: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<number> {
+  const db = tx ?? (await getDb());
+  if (!db) return 0;
+  const r = await db
+    .update(userSessions)
+    .set({ expiresAt: hetHanMoi })
+    .where(and(eq(userSessions.sessionToken, sessionToken), eq(userSessions.isActive, true), lt(userSessions.expiresAt, hetHanMoi)))
+    .returning({ id: userSessions.id });
+  return r.length;
+}
+
 export async function updateSessionActivity(sessionId: number) {
   const db = await getDb();
   if (!db) return;
@@ -1029,17 +1045,20 @@ export async function reassignCorporate(userId: number, oldCorporateCode: string
   const db = await getDb();
   if (!db) return null;
   
-  await db.delete(userCorporateAssignments)
-    .where(and(
-      eq(userCorporateAssignments.userId, userId),
-      eq(userCorporateAssignments.corporateCode, oldCorporateCode)
-    ));
-  const [result] = await db.insert(userCorporateAssignments).values({
-    userId,
-    corporateCode: newCorporateCode,
-    assignedBy,
-  }).returning({ id: userCorporateAssignments.id });
-  return result;
+  // ★★★ F5 đầy đủ (mục 6) — DELETE rồi INSERT trong MỘT giao dịch: sập giữa hai câu không được để người dùng MẤT phạm vi (nửa trạng thái).
+  return db.transaction(async (tx) => {
+    await tx.delete(userCorporateAssignments)
+      .where(and(
+        eq(userCorporateAssignments.userId, userId),
+        eq(userCorporateAssignments.corporateCode, oldCorporateCode)
+      ));
+    const [result] = await tx.insert(userCorporateAssignments).values({
+      userId,
+      corporateCode: newCorporateCode,
+      assignedBy,
+    }).returning({ id: userCorporateAssignments.id });
+    return result;
+  });
 }
 
 export async function reassignFactory(userId: number, oldFactoryCode: string, newFactoryCode: string, assignedBy: number) {
@@ -1047,17 +1066,20 @@ export async function reassignFactory(userId: number, oldFactoryCode: string, ne
   const db = await getDb();
   if (!db) return null;
   
-  await db.delete(userFactoryAssignments)
-    .where(and(
-      eq(userFactoryAssignments.userId, userId),
-      eq(userFactoryAssignments.factoryCode, oldFactoryCode)
-    ));
-  const [result] = await db.insert(userFactoryAssignments).values({
-    userId,
-    factoryCode: newFactoryCode,
-    assignedBy,
-  }).returning({ id: userFactoryAssignments.id });
-  return result;
+  // ★★★ F5 đầy đủ (mục 6) — DELETE rồi INSERT trong MỘT giao dịch: sập giữa hai câu không được để người dùng MẤT phạm vi (nửa trạng thái).
+  return db.transaction(async (tx) => {
+    await tx.delete(userFactoryAssignments)
+      .where(and(
+        eq(userFactoryAssignments.userId, userId),
+        eq(userFactoryAssignments.factoryCode, oldFactoryCode)
+      ));
+    const [result] = await tx.insert(userFactoryAssignments).values({
+      userId,
+      factoryCode: newFactoryCode,
+      assignedBy,
+    }).returning({ id: userFactoryAssignments.id });
+    return result;
+  });
 }
 
 // Helper to check if user has access to corporate/factory

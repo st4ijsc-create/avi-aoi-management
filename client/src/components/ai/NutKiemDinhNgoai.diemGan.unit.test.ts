@@ -1,5 +1,5 @@
 /**
- * Đợt 10.4 (T4b) — CENSUS điểm gắn nút kiểm định: mỗi bề mặt truyền ĐÚNG hình dạng ID lượt đã lưu; KHÔNG nơi nào dùng nguồn `van-ban` (đã bỏ ở 10.4); chỉ ba
+ * Đợt 10.4 (T4b) — CENSUS điểm gắn nút kiểm định: mỗi bề mặt truyền ĐÚNG hình dạng ID lượt đã lưu; KHÔNG nơi nào dùng nguồn `van-ban` (đã bỏ ở 10.4); chỉ bốn
  * điểm gắn được phép (thêm điểm mới phải khai ở đây + được rà). Đột biến: bỏ `chiSoLuotPhien` / đổi hình dạng nguồn ⇒ đỏ.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -24,6 +24,12 @@ describe("census — điểm gắn NutKiemDinhNgoai", () => {
     expect(s).toContain('nguon={{ loai: "chat", cuocTroChuyenId: selectedConvId, tinNhanId: msg.id }}');
     expect(s).toMatch(/msg\.role !== "user" && typeof msg\.id === "number" && selectedConvId !== null/);
   });
+  it("bong bóng (10.4b L4): CHỈ nhánh chat theo cặp id do MÁY CHỦ trả (daLuu); lượt chưa lưu ⇒ không nút (nhánh van-ban ẨN)", () => {
+    const s = doc("client/src/components/AILocalChatBubble.tsx");
+    expect(s).toContain('nguon={{ loai: "chat", cuocTroChuyenId: msg.ngoaiConvId, tinNhanId: msg.tinTraLoiId }}');
+    expect(s).toMatch(/msg\.tinTraLoiId !== undefined && \(\s*<NutKiemDinhNgoai/);
+    expect(s).toContain("tinTraLoiId: kq.daLuu.tinTraLoiId");
+  });
   it("lượt agent: runId của sổ lượt chạy (máy chủ ghi)", () => {
     expect(doc("client/src/components/aiCoding/agent/DongThoiGianAgent.tsx")).toContain('nguon={{ loai: "agent", runId }}');
   });
@@ -32,15 +38,21 @@ describe("census — điểm gắn NutKiemDinhNgoai", () => {
     expect(s).toContain('{ loai: "coding", phienId: sessionId, chiSoLuot: chiSoLuotPhien(transcript, i)! }');
     expect(s).toMatch(/sessionId && !isStreaming && chiSoLuotPhien\(transcript, i\) !== null/);
   });
-  it("đúng ba tệp dùng <NutKiemDinhNgoai (ngoài định nghĩa + test); không nơi nào dùng nguồn van-ban", () => {
+  it("đúng bốn tệp dùng <NutKiemDinhNgoai (ngoài định nghĩa + test); không nơi nào dùng nguồn van-ban", () => {
     const dung: string[] = [];
     for (const f of quet(join(GOC, "client", "src"))) {
       const rel = relative(GOC, f).split("\\").join("/");
       const s = readFileSync(f, "utf8");
       if (rel.endsWith("components/ai/NutKiemDinhNgoai.tsx")) continue;
       if (s.includes("<NutKiemDinhNgoai")) dung.push(rel);
-      expect(/loai:\s*["']van-ban["']/.test(s), `${rel} dùng nguồn van-ban`).toBe(false);
+      // 10.4b L4 nhánh van-ban: CHỈ bong bóng (qua `dungNguonVanBan` trong bongBongNgoai.ts) được dựng nguồn này.
+      if (rel !== "client/src/components/ai/bongBongNgoai.ts") expect(/loai:\s*["']van-ban["']/.test(s), `${rel} dùng nguồn van-ban`).toBe(false);
     }
-    expect(dung.sort()).toEqual(["client/src/components/aiCoding/agent/DongThoiGianAgent.tsx", "client/src/pages/AIChatPage.tsx", "client/src/pages/AICodingWorkspace.tsx"]);
+    expect(dung.sort()).toEqual([
+      "client/src/components/AILocalChatBubble.tsx",
+      "client/src/components/aiCoding/agent/DongThoiGianAgent.tsx",
+      "client/src/pages/AIChatPage.tsx",
+      "client/src/pages/AICodingWorkspace.tsx",
+    ]);
   });
 });

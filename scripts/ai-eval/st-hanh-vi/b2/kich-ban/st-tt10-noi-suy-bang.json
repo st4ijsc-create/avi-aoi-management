@@ -1,0 +1,41 @@
+{
+  "id": "st-tt10-noi-suy-bang",
+  "khoi": "NoiSuyBang",
+  "nguon": "chuyen tu khung/tests/hien_thi.st (fb) va an/tests/an.st (fb); moi lan goi = mot buoc dtMs 0; BANG_X / BANG_Y luon ghi du 8 phan tu theo trang thai mang tx / ty cua test tai lan goi do (khi lan goi khong truyen thi giu gia tri lan truyen truoc); vong FOR cuoi trai ra tx = 1..8, ty = i*i; KT_REAL cua test dung dung sai tuyet doi 0.001/0.0001, kich ban dung dung sai chung cua bo cham - gia tri ky vong chep nguyen; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "X": 5.0, "BANG_X": [0.0, 10.0, 20.0, 40.0, 0.0, 0.0, 0.0, 0.0], "BANG_Y": [0.0, 100.0, 150.0, 350.0, 0.0, 0.0, 0.0, 0.0], "SO_DIEM": 4 }, "dtMs": 0, "ky": { "Y": 50.0 }, "nhan": "X 5 => 50" },
+        { "vao": { "X": 30.0 }, "dtMs": 0, "ky": { "Y": 250.0 }, "nhan": "X 30 => 250" },
+        { "vao": { "X": -5.0 }, "dtMs": 0, "ky": { "NGOAI_BANG": true }, "nhan": "X -5 => ngoai bang" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "X": 5.0, "BANG_X": [0.0, 10.0, 20.0, 40.0, 5.0, 3.0, 1.0, 0.0], "BANG_Y": [0.0, 100.0, 150.0, 350.0, 0.0, 0.0, 0.0, 0.0], "SO_DIEM": 4 }, "dtMs": 0, "ky": { "LOI": false, "Y": 50.0 }, "nhan": "rac sau SO_DIEM khong LOI; X 5 => 50" },
+        { "vao": { "X": 10.0 }, "dtMs": 0, "ky": { "Y": 100.0 }, "nhan": "X 10 diem giua => 100" },
+        { "vao": { "X": 15.0 }, "dtMs": 0, "ky": { "Y": 125.0 }, "nhan": "X 15 => 125" },
+        { "vao": { "X": 30.0 }, "dtMs": 0, "ky": { "Y": 250.0, "NGOAI_BANG": false }, "nhan": "X 30 => 250 trong bang" },
+        { "vao": { "X": 40.0 }, "dtMs": 0, "ky": { "Y": 350.0, "NGOAI_BANG": false }, "nhan": "X 40 bien phai => 350" },
+        { "vao": { "X": 0.0 }, "dtMs": 0, "ky": { "Y": 0.0, "NGOAI_BANG": false }, "nhan": "X 0 bien trai => 0" },
+        { "vao": { "X": -5.0 }, "dtMs": 0, "ky": { "Y": 0.0, "NGOAI_BANG": true }, "nhan": "X -5 kep Y1, ngoai" },
+        { "vao": { "X": 50.0 }, "dtMs": 0, "ky": { "Y": 350.0, "NGOAI_BANG": true }, "nhan": "X 50 kep Y4, ngoai" },
+        { "vao": { "X": 20.0, "SO_DIEM": 2 }, "dtMs": 0, "ky": { "Y": 100.0, "NGOAI_BANG": true }, "nhan": "2 diem X 20 kep 100, ngoai" },
+        { "vao": { "X": 2.5 }, "dtMs": 0, "ky": { "Y": 25.0 }, "nhan": "2 diem X 2.5 => 25" },
+        { "vao": { "X": 5.0, "SO_DIEM": 1 }, "dtMs": 0, "ky": { "LOI": true, "Y": 0.0 }, "nhan": "SO_DIEM 1 LOI, Y 0" },
+        { "vao": { "SO_DIEM": 9 }, "dtMs": 0, "ky": { "LOI": true }, "nhan": "SO_DIEM 9 LOI" },
+        { "vao": { "SO_DIEM": 0 }, "dtMs": 0, "ky": { "LOI": true }, "nhan": "SO_DIEM 0 LOI" },
+        { "vao": { "X": 100.0, "BANG_X": [0.0, 10.0, 10.0, 20.0, 5.0, 3.0, 1.0, 0.0], "SO_DIEM": 4 }, "dtMs": 0, "ky": { "LOI": true, "Y": 0.0, "NGOAI_BANG": false }, "nhan": "trung X LOI, Y 0, NGOAI F" },
+        { "vao": { "X": 3.0, "BANG_X": [0.0, 10.0, 5.0, 20.0, 5.0, 3.0, 1.0, 0.0] }, "dtMs": 0, "ky": { "LOI": true }, "nhan": "X giam LOI" },
+        { "vao": { "X": 15.0, "BANG_X": [0.0, 10.0, 20.0, 40.0, 5.0, 3.0, 1.0, 0.0] }, "dtMs": 0, "ky": { "LOI": false, "Y": 125.0 }, "nhan": "hoi phuc X 15 => 125" },
+        { "vao": { "X": -5.0, "BANG_X": [-10.0, 0.0, 10.0, 40.0, 5.0, 3.0, 1.0, 0.0], "BANG_Y": [5.0, -5.0, 20.0, 350.0, 0.0, 0.0, 0.0, 0.0], "SO_DIEM": 3 }, "dtMs": 0, "ky": { "Y": 0.0 }, "nhan": "doc am X -5 => 0" },
+        { "vao": { "X": 4.0 }, "dtMs": 0, "ky": { "Y": 5.0 }, "nhan": "X 4 => 5" },
+        { "vao": { "X": 7.5, "BANG_X": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], "BANG_Y": [1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0, 64.0], "SO_DIEM": 8 }, "dtMs": 0, "ky": { "Y": 56.5 }, "nhan": "8 diem X 7.5 => 56.5" },
+        { "vao": { "X": 8.0 }, "dtMs": 0, "ky": { "Y": 64.0, "NGOAI_BANG": false }, "nhan": "8 diem X 8 => 64, khong ngoai" },
+        { "vao": { "X": 1.5 }, "dtMs": 0, "ky": { "Y": 2.5 }, "nhan": "8 diem X 1.5 => 2.5" }
+      ]
+    }
+  ]
+}

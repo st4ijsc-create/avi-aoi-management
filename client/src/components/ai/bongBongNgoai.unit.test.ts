@@ -1,0 +1,190 @@
+/**
+ * Đợt 10.4b L4 — phần thuần của bong bóng khi dùng model ngoài (hợp đồng docs/HOP_DONG_10_4B_L4_BONG_BONG.md: T1, T2, T3b, T11, T16).
+ */
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { dungNguCanhKb } from "@/hooks/useKbChatStream";
+import {
+  KHOA_NGU_CANH_NGOAI,
+  ROUTE_BE_MAT_NGOAI,
+  TRAN_VAN_BAN_BYTE,
+  catTheoByte,
+  catVanBan,
+  demByte,
+  dungNguCanhNgoai,
+  dungNguonVanBan,
+  maLoiVanBan,
+  vanBanBongBongBat,
+  laModelNgoai,
+  lichSuNgoai,
+  type LuotBongBong,
+} from "./bongBongNgoai";
+
+describe("laModelNgoai", () => {
+  it("chỉ mã ngoai:<ncc>:<model> hợp lệ", () => {
+    expect(laModelNgoai("ngoai:openai_compat:fake-1")).toBe(true);
+    expect(laModelNgoai("auto")).toBe(false);
+    expect(laModelNgoai("vai-tro:1")).toBe(false);
+    expect(laModelNgoai("ngoai:")).toBe(false);
+    expect(laModelNgoai("ngoai:x")).toBe(false);
+  });
+});
+
+describe("dungNguCanhNgoai — T3b: body ở nhánh ngoài chỉ gồm tập khoá L1 cho phép", () => {
+  const tat = dungNguCanhKb(dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "vi", xacNhanVanHanh: true }));
+  it("đúng tập khoá (toEqual) — không máy/trang/đính kèm", () => {
+    expect(Object.keys(tat).sort()).toEqual([...KHOA_NGU_CANH_NGOAI].sort());
+    expect(tat).toEqual({ route: ROUTE_BE_MAT_NGOAI, uiLanguage: "vi", chonModel: "ngoai:a:b", conversationId: 7, xacNhanVanHanh: true });
+  });
+  it("chưa xác nhận vận hành ⇒ KHÔNG có khoá xacNhanVanHanh", () => {
+    const k = dungNguCanhKb(dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "en", xacNhanVanHanh: false }));
+    expect("xacNhanVanHanh" in k).toBe(false);
+    expect(Object.keys(k).sort()).toEqual(["chonModel", "conversationId", "route", "uiLanguage"]);
+  });
+  it("m1 — đầu ra CỦA dungNguCanhNgoai (trước dungNguCanhKb) cũng chỉ đúng tập khoá L1", () => {
+    const x = dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "vi", xacNhanVanHanh: true });
+    expect(Object.keys(x).sort()).toEqual([...KHOA_NGU_CANH_NGOAI].sort());
+    const y = dungNguCanhNgoai({ chonModel: "ngoai:a:b", conversationId: 7, uiLanguage: "vi", xacNhanVanHanh: false });
+    expect(Object.keys(y).sort()).toEqual([...KHOA_NGU_CANH_NGOAI].filter((k) => k !== "xacNhanVanHanh").sort());
+  });
+  it("route là HẰNG của bề mặt, không phải trang đang đứng", () => {
+    expect(ROUTE_BE_MAT_NGOAI).toBe("/ai-chat");
+  });
+});
+
+describe("lichSuNgoai — T16: chỉ lượt của CHÍNH hội thoại ngoài này", () => {
+  const ds: LuotBongBong[] = [
+    { type: "user", content: "cục bộ 1" },
+    { type: "assistant", content: "cục bộ trả lời" },
+    { type: "user", content: "ngoài 1", ngoaiConvId: 5 },
+    { type: "assistant", content: "ngoài trả lời 1", ngoaiConvId: 5 },
+    { type: "user", content: "hội thoại khác", ngoaiConvId: 9 },
+    { type: "assistant", content: "đang stream", ngoaiConvId: 5, streaming: true },
+    { type: "assistant", content: "  ", ngoaiConvId: 5 },
+  ];
+  it("bỏ lượt cục bộ, hội thoại khác, đang stream, rỗng", () => {
+    expect(lichSuNgoai(ds, 5)).toEqual([
+      { role: "user", content: "ngoài 1" },
+      { role: "assistant", content: "ngoài trả lời 1" },
+    ]);
+  });
+  it("hội thoại chưa có lượt ⇒ rỗng (bắt đầu SẠCH)", () => {
+    expect(lichSuNgoai(ds, 123)).toEqual([]);
+  });
+  it("mặc định tối đa 10 lượt cuối (m5)", () => {
+    const nhieu: LuotBongBong[] = Array.from({ length: 30 }, (_, i) => ({ type: i % 2 ? "assistant" : "user", content: `m${i}`, ngoaiConvId: 1 }));
+    expect(lichSuNgoai(nhieu, 1)).toHaveLength(10);
+  });
+  it("chỉ lấy tối đa N lượt cuối", () => {
+    const nhieu: LuotBongBong[] = Array.from({ length: 30 }, (_, i) => ({ type: i % 2 ? "assistant" : "user", content: `m${i}`, ngoaiConvId: 1 }));
+    expect(lichSuNgoai(nhieu, 1, 4).map((x) => x.content)).toEqual(["m26", "m27", "m28", "m29"]);
+  });
+});
+
+describe("catTheoByte — T2: theo BYTE UTF-8, không cắt giữa ký tự", () => {
+  it("không cắt khi vừa", () => {
+    expect(catTheoByte("abc", 3)).toEqual({ text: "abc", daCat: false });
+  });
+  it("ASCII cắt đúng byte", () => {
+    expect(catTheoByte("abcdef", 4)).toEqual({ text: "abcd", daCat: true });
+  });
+  it("tiếng Việt (2–3 byte) ở biên: không để lại byte lẻ", () => {
+    const s = "Việt Nam đẹp lắm"; // nhiều ký tự 2–3 byte
+    for (let n = 0; n <= demByte(s); n++) {
+      const kq = catTheoByte(s, n);
+      expect(demByte(kq.text)).toBeLessThanOrEqual(n);
+      expect(kq.text).not.toContain("�");
+      expect(s.startsWith(kq.text)).toBe(true);
+    }
+  });
+  it("emoji 4 byte ở biên: cắt cả ký tự hoặc bỏ cả ký tự", () => {
+    const s = "a😀b"; // 1 + 4 + 1 byte
+    expect(catTheoByte(s, 1).text).toBe("a");
+    expect(catTheoByte(s, 2).text).toBe("a");
+    expect(catTheoByte(s, 4).text).toBe("a");
+    expect(catTheoByte(s, 5).text).toBe("a😀");
+    expect(catTheoByte(s, 6)).toEqual({ text: "a😀b", daCat: false });
+    for (let n = 0; n <= 6; n++) expect(catTheoByte(s, n).text).not.toContain("�");
+  });
+  it("ngưỡng 0 ⇒ rỗng", () => {
+    expect(catTheoByte("abc", 0)).toEqual({ text: "", daCat: true });
+    expect(catTheoByte("", 0)).toEqual({ text: "", daCat: false });
+  });
+});
+
+describe("catVanBan — trần TỔNG 16 KB; giữ traLoi, cắt cauHoi trước; T11 cờ 'đã cắt'", () => {
+  it("vừa ⇒ giữ nguyên, daCat=false", () => {
+    expect(catVanBan({ cauHoi: "hỏi", traLoi: "đáp" })).toEqual({ cauHoi: "hỏi", traLoi: "đáp", daCat: false });
+  });
+  it("tổng vượt ⇒ tổng byte ≤ trần, cauHoi bị cắt, traLoi giữ", () => {
+    const traLoi = "đ".repeat(4000); // 8000 byte
+    const cauHoi = "h".repeat(20_000);
+    const kq = catVanBan({ cauHoi, traLoi });
+    expect(demByte(kq.cauHoi) + demByte(kq.traLoi)).toBeLessThanOrEqual(TRAN_VAN_BAN_BYTE);
+    expect(kq.traLoi).toBe(traLoi);
+    expect(kq.cauHoi.length).toBe(TRAN_VAN_BAN_BYTE - 8000);
+    expect(kq.daCat).toBe(true);
+  });
+  it("traLoi một mình vượt trần ⇒ cắt traLoi, cauHoi rỗng", () => {
+    const kq = catVanBan({ cauHoi: "hỏi", traLoi: "x".repeat(TRAN_VAN_BAN_BYTE + 50) });
+    expect(demByte(kq.traLoi)).toBe(TRAN_VAN_BAN_BYTE);
+    expect(kq.cauHoi).toBe("");
+    expect(kq.daCat).toBe(true);
+  });
+  it("đúng bằng trần ⇒ KHÔNG báo đã cắt", () => {
+    const kq = catVanBan({ cauHoi: "a".repeat(100), traLoi: "b".repeat(TRAN_VAN_BAN_BYTE - 100) });
+    expect(kq.daCat).toBe(false);
+    expect(demByte(kq.cauHoi) + demByte(kq.traLoi)).toBe(TRAN_VAN_BAN_BYTE);
+  });
+  it("biên đa byte: không sinh ký tự hỏng", () => {
+    const kq = catVanBan({ cauHoi: "😀".repeat(5000), traLoi: "ệ".repeat(5000) });
+    expect(kq.cauHoi + kq.traLoi).not.toContain("�");
+    expect(demByte(kq.cauHoi) + demByte(kq.traLoi)).toBeLessThanOrEqual(TRAN_VAN_BAN_BYTE);
+  });
+});
+
+describe("nhánh van-ban của bong bóng (T9/T11/T13/T14)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const L = (o: Partial<LuotBongBong> & { tinTraLoiId?: number }): LuotBongBong & { tinTraLoiId?: number } => ({ type: "assistant", content: "đáp", ...o });
+  const hoi = L({ type: "user", content: "hỏi gì" });
+
+  it("T9 — cờ MẶC ĐỊNH TẮT; chỉ chuỗi đúng 'true' mới bật", () => {
+    expect(vanBanBongBongBat()).toBe(false);
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "1");
+    expect(vanBanBongBongBat()).toBe(false);
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "true");
+    expect(vanBanBongBongBat()).toBe(true);
+  });
+  it("lượt ngoài chưa lưu, xong ⇒ nguồn van-ban đúng hình dạng (cauHoi = lượt người dùng liền trước)", () => {
+    const r = dungNguonVanBan([hoi, L({ ngoaiConvId: 4 })], 1);
+    expect(r).toEqual({ nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "hỏi gì", traLoi: "đáp" }, daCat: false });
+  });
+  it("T13 — đang stream (kể cả đã abort giữa chừng) ⇒ null, không gửi traLoi dở", () => {
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, streaming: true })], 1)).toBeNull();
+  });
+  it("lượt đã lưu (nhánh chat) / lượt cục bộ / người dùng / rỗng ⇒ null", () => {
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, tinTraLoiId: 9 })], 1)).toBeNull();
+    expect(dungNguonVanBan([hoi, L({})], 1)).toBeNull(); // không ngoaiConvId = lượt cục bộ
+    expect(dungNguonVanBan([hoi], 0)).toBeNull();
+    expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, content: "  \n " })], 1)).toBeNull();
+    expect(dungNguonVanBan([hoi], 5)).toBeNull();
+  });
+  it("T11 — quá trần ⇒ daCat=true, tổng byte ≤ 16 KB, traLoi giữ; vắng lượt người dùng liền trước ⇒ cauHoi rỗng", () => {
+    const r = dungNguonVanBan([L({ type: "user", content: "h".repeat(20_000) }), L({ ngoaiConvId: 4, content: "đ".repeat(3000) })], 1)!;
+    expect(r.daCat).toBe(true);
+    expect(demByte(r.nguon.cauHoi) + demByte(r.nguon.traLoi)).toBeLessThanOrEqual(TRAN_VAN_BAN_BYTE);
+    expect(r.nguon.traLoi).toBe("đ".repeat(3000));
+    const r2 = dungNguonVanBan([L({ ngoaiConvId: 4 })], 0)!;
+    expect(r2.nguon.cauHoi).toBe("");
+  });
+  it("T14 — mã tRPC ⇒ khoá câu báo; mã lạ ⇒ null (dùng bộ dịch chung); KHÔNG đọc message", () => {
+    const e = (code: string) => Object.assign(new Error("ban-than-chua-bi-mat sk-123"), { data: { code } });
+    expect(maLoiVanBan(e("PAYLOAD_TOO_LARGE"))).toBe("loiQuaLon");
+    expect(maLoiVanBan(e("NOT_FOUND"))).toBe("loiKhongCo");
+    expect(maLoiVanBan(e("FORBIDDEN"))).toBe("loiKhongCo");
+    expect(maLoiVanBan(e("TOO_MANY_REQUESTS"))).toBe("loiVuotTran");
+    expect(maLoiVanBan(e("CONFLICT"))).toBe("loiDangChay");
+    expect(maLoiVanBan(e("BAD_GATEWAY"))).toBeNull();
+    expect(maLoiVanBan(new Error("x"))).toBeNull();
+    expect(maLoiVanBan(null)).toBeNull();
+  });
+});

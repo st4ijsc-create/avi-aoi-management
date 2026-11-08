@@ -179,6 +179,60 @@ describe.skipIf(!onTest)("R-10-bb / R-10-be / R-10-bc — the console STOP route
     expect(H.alerts.join("\n")).toMatch(/STOP accepted on degraded auth/);
   });
 
+  it("★ F5 fix round 1 C1 — DB DEAD + the socket receiver's onEpisodeLost sweep (+ an \"all\" + a malformed socket_pham_vi payload) ⇒ the degraded STOP STILL goes out with the remembered identity", async () => {
+    const xl = await import("../_core/socketXetLaiQuyen");
+    // minimal local io (no browser sockets): the sweep / "all" still run their cache-clearing step, which is what C1 is about
+    xl.ganIoXetLaiQuyen({
+      of: () => ({ sockets: new Map(), adapter: { rooms: new Map() } }),
+      local: { in: () => ({ disconnectSockets: () => undefined }) },
+    } as never);
+    xl.__datLaiChoTest();
+    xl.__datCauHinhChoTest({ cuaSoAllMs: 0, treAllToiDaMs: 0 });
+    const ctl = { hong: false, fn: null as null | ((p: string) => void) };
+    const kenh = await xl.batDauNgheSocketPhamVi({
+      listenClient: () => ({
+        listen: async (_c: string, fn: (p: string) => void, onlisten?: () => void) => {
+          ctl.fn = fn;
+          onlisten?.();
+          return { unlisten: async () => undefined };
+        },
+      }),
+      notifyClient: () => ({
+        notify: async (_c: string, p: string) => {
+          if (ctl.hong) throw new Error("db dead (simulated)");
+          setImmediate(() => ctl.fn?.(p));
+        },
+      }),
+      pingMs: 40,
+      pingDeadlineMs: 2_000,
+      alert: () => undefined,
+    });
+    try {
+      const tok = await token();
+      await warm(tok); // identity + machine_control grant + factory scope remembered by the real chain
+      H.mode = "dead";
+      const quetTruoc = xl.thongKeXetLaiQuyen().quet;
+      ctl.hong = true; // heartbeat cannot be sent ⇒ lost episode ⇒ onEpisodeLost ⇒ outage sweep
+      const bd = Date.now();
+      while (xl.thongKeXetLaiQuyen().quet <= quetTruoc && Date.now() - bd < 5_000) await new Promise((r) => setTimeout(r, 20));
+      expect(xl.thongKeXetLaiQuyen().quet, "the onEpisodeLost sweep ran").toBeGreaterThan(quetTruoc);
+      xl.nhanThongBaoPhamVi('{"all":1}');
+      xl.nhanThongBaoPhamVi("{not json");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(xl.thongKeXetLaiQuyen().allChay).toBeGreaterThanOrEqual(1);
+      const r = await stop(tok);
+      expect(r).toMatchObject({ ok: true, status: "done", degradedAuth: true });
+      expect(H.sent.map((s) => s.jobType)).toEqual(["abort"]);
+      expect(H.alerts.join("\n")).toMatch(/STOP accepted on degraded auth/);
+    } finally {
+      ctl.hong = false;
+      await kenh.stop();
+      xl.__datCauHinhChoTest(null);
+      xl.__datLaiChoTest();
+      xl.ganIoXetLaiQuyen(null);
+    }
+  });
+
   it("★ an invalid or EXPIRED token is refused (even with the DB hanging); no memory of the session ⇒ refused", async () => {
     const tok = await token();
     await warm(tok);

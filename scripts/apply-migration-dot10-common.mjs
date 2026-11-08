@@ -174,6 +174,10 @@ export function functionsDefinedIn(sqlText) {
 export async function verifyFunctionHygiene(appSql, sqlText, log, opts = {}) {
   const publicByDesign = opts.publicByDesign ?? new Set();
   const inlineByDesign = opts.inlineByDesign ?? new Set();
+  // F5 (0435) — a per-migration exception: functions avi_app may EXECUTE BY DESIGN for THIS file only (never PUBLIC); the global
+  // EDGE_FN_CALLABLE set is NOT widened. Every other function of the file is still "avi_app may NOT execute".
+  const callableByDesign = opts.callableByDesign ?? new Set();
+  const callable = (name) => EDGE_FN_CALLABLE.has(name) || callableByDesign.has(name);
   const fns = functionsDefinedIn(sqlText);
   if (fns.length === 0) return;
   const bad = [];
@@ -193,15 +197,17 @@ export async function verifyFunctionHygiene(appSql, sqlText, log, opts = {}) {
       continue;
     }
     if (r.pub) bad.push(`${f.name}: PUBLIC may EXECUTE`);
-    if (r.app !== EDGE_FN_CALLABLE.has(f.name)) bad.push(`${f.name}: avi_app EXECUTE=${r.app}`);
+    if (r.app !== callable(f.name)) bad.push(`${f.name}: avi_app EXECUTE=${r.app}`);
   }
   if (bad.length) throw new Error(`(R-10-e) function hygiene: ${bad.join("; ")}`);
-  const extra = publicByDesign.size || inlineByDesign.size ? ` (${publicByDesign.size} PUBLIC by design, ${inlineByDesign.size} inlinable sql without SET by design)` : "";
+  const extra = publicByDesign.size || inlineByDesign.size || callableByDesign.size
+    ? ` (${publicByDesign.size} PUBLIC by design, ${inlineByDesign.size} inlinable sql without SET by design, ${callableByDesign.size} avi_app-callable by design)`
+    : "";
   log(`(R-10-e) ${fns.length} function(s): search_path pinned (pg_temp last), no PUBLIC EXECUTE, avi_app EXECUTE only on the callable set${extra}`);
 }
 
 /**
- * @param {{ file: string, tag: string, hygiene?: { publicByDesign?: Set<string>, inlineByDesign?: Set<string> }, guard?: { before: (ctx: { sql: any, label: string, args: string[] }) => Promise<boolean>, after: (ctx: { label: string }) => void }, verify: (ctx: { sql: any, appSql: any, label: string, log: (m: string) => void }) => Promise<void> }} m
+ * @param {{ file: string, tag: string, hygiene?: { publicByDesign?: Set<string>, inlineByDesign?: Set<string>, callableByDesign?: Set<string> }, guard?: { before: (ctx: { sql: any, label: string, args: string[] }) => Promise<boolean>, after: (ctx: { label: string }) => void }, verify: (ctx: { sql: any, appSql: any, label: string, log: (m: string) => void }) => Promise<void> }} m
  *   guard (doc 81 Đợt 11 H, migration0377Guard.mjs): `before` runs before any DDL on each target (throws = refused, nothing run;
  *   true = a later migration must be re-applied afterwards), `after` re-applies it once this file is applied + verified.
  */

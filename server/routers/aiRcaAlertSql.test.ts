@@ -27,13 +27,23 @@
  * (now-fixed) router mutation/query, and RE-SELECTS via drizzle to prove the
  * write actually persisted — not just that a query string was built.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { initTRPC } from "@trpc/server";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
 import { rootCauseRouter, predictiveAlertRouter } from "./aiRouters";
 import { isMissingColumn, isMissingTable } from "../_core/dbErrors";
+
+// Mọi fixture nằm trong MỘT giao dịch bị hoàn tác (BEGIN … ROLLBACK trên kết nối riêng) — không DELETE, không owner aoi; getDb (mọi bộ định tuyến qua ../db) trỏ vào kết nối đó.
+const holder: { db: unknown } = { db: null };
+vi.mock("../db/connection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDb: async () => holder.db,
+}));
+let phien: ReturnType<typeof postgres> | null = null;
 
 const TEST_USER_ID = 990_101;
 const RUN_TAG = `W0-1-${Date.now()}`;
@@ -45,18 +55,24 @@ const rcaCaller = makeRcaCaller({ user: { id: TEST_USER_ID, name: "W0-1 Tester",
 const alertCaller = makeAlertCaller({ user: { id: TEST_USER_ID, name: "W0-1 Tester", role: "admin" } });
 
 let db: Awaited<ReturnType<typeof getDb>>;
-const alertIds: number[] = [];
-const rcaIds: number[] = [];
 
 beforeAll(async () => {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    phien = postgres(url, { max: 1, onnotice: () => undefined });
+    await phien`BEGIN`;
+    holder.db = drizzle(phien);
+  }
   db = await getDb();
-});
+}, 60_000);
 
 afterAll(async () => {
-  if (!db) return;
-  if (alertIds.length) await db.delete(predictiveAlerts).where(inArray(predictiveAlerts.id, alertIds));
-  if (rcaIds.length) await db.delete(rootCauseAnalysis).where(inArray(rootCauseAnalysis.id, rcaIds));
-});
+  holder.db = null;
+  if (phien) {
+    await phien`ROLLBACK`;
+    await phien.end({ timeout: 5 });
+  }
+}, 60_000);
 
 async function seedAlert(overrides: Partial<typeof predictiveAlerts.$inferInsert> = {}): Promise<number> {
   const [row] = await db!
@@ -69,7 +85,6 @@ async function seedAlert(overrides: Partial<typeof predictiveAlerts.$inferInsert
       ...overrides,
     })
     .returning({ id: predictiveAlerts.id });
-  alertIds.push(row.id);
   return row.id;
 }
 
@@ -91,7 +106,6 @@ async function seedRca(overrides: Partial<typeof rootCauseAnalysis.$inferInsert>
       ...overrides,
     })
     .returning({ id: rootCauseAnalysis.id });
-  rcaIds.push(row.id);
   return row.id;
 }
 
@@ -189,9 +203,17 @@ describe("predictiveAlert.list — Task 6 (Wave 4): resolutionNotes/status contr
 });
 
 describe("predictiveAlert.generatePredictions — W0-1 join/column fix (integration)", () => {
+  // Phạm vi hẹp CÓ CHỦ ĐÍCH: một machineId không tồn tại. Câu SELECT (join machines→stations→lines→workshops→factories, cột "overallResult")
+  // vẫn được Postgres phân tích + chạy ĐỦ ⇒ lỗi cột/join vẫn làm test đỏ; nhưng không còn quét vòng forecast qua MỌI máy có inspection của _test
+  // (trước: >30 s tuỳ kích thước _test ⇒ hết giờ không liên quan tới W0-1).
+  const MAY_KHONG_TON_TAI = 2_000_000_000;
   it("resolves without a SQL error (previously: hard failure — nonexistent m.factoryId / i.result)", async () => {
     if (!db) return;
-    await expect(alertCaller.generatePredictions({ daysToAnalyze: 7 })).resolves.toMatchObject({ success: true });
+    await expect(alertCaller.generatePredictions({ machineId: MAY_KHONG_TON_TAI, daysToAnalyze: 7 })).resolves.toEqual({
+      success: true,
+      alertsCreated: 0,
+      message: "Not enough data for prediction",
+    });
   });
 });
 

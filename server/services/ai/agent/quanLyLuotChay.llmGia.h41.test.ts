@@ -12,6 +12,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const so = vi.hoisted(() => ({ tao: [] as Array<Record<string, unknown>>, capNhat: [] as Array<{ userId: number; id: string; anh: Record<string, unknown> }> }));
+// P0-2: admin đọc bảng permissions; DB giả "không có hàng" (luật thật, không god-mode) để lưới không chạm CSDL.
+vi.mock("../../../db/connection", async (goc) => {
+  const { dbGiaChiCoBangQuyen } = await import("../../../testing/dbGiaQuyen");
+  return { ...(await goc<typeof import("../../../db/connection")>()), getDb: async () => dbGiaChiCoBangQuyen() };
+});
 vi.mock("../../../db/aiAgentRuns", async (goc) => {
   const that = await goc<typeof import("../../../db/aiAgentRuns")>();
   return {
@@ -196,9 +201,9 @@ describe("H4.1 · lượt chạy qua quản lý SẢN XUẤT + model mặc đị
     expect(r.cuoi).toMatchObject({ trangThai: "loi" });
   });
 
-  // LỖ ĐÃ BIẾT (C-P1 EMPTY_RESPONSE; `llmGia.test.ts` L5): server trả 200 không một chữ / tool ⇒ HIỆN lượt báo 'xong'/'hoan-thanh' với 0 chữ. Khi do-model
-  // đưa H3.1b lên main, ca này PHẢI chuyển sang xanh và `it.fails` đỏ ⇒ buộc người sửa gỡ `.fails` (lưới tự báo, không cần ai nhớ).
-  it.fails("LỖ L5 ở tầng quản lý: 200 rỗng ⇒ lượt KHÔNG được 'xong'/'hoan-thanh' im lặng với 0 chữ — HIỆN: xong rỗng", async () => {
+  // C-P1 EMPTY_RESPONSE (`llmGia.test.ts` L5): server trả 200 không một chữ / tool ⇒ lượt KHÔNG được báo 'xong'/'hoan-thanh' với 0 chữ.
+  // 2026-11-03 dieu-phoi: H3.1b lên main ⇒ `it.fails` đỏ đúng như hẹn ⇒ gỡ `.fails`, ca này nay là ràng buộc xanh.
+  it("L5 ở tầng quản lý: 200 rỗng ⇒ lượt KHÔNG được 'xong'/'hoan-thanh' im lặng với 0 chữ", async () => {
     await dung([{ loai: "rong" }]);
     const r = await chay();
     expect(r.luot.lyDoDung === "hoan-thanh" && chuSk(r.sk) === "").toBe(false);

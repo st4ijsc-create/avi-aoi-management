@@ -18,7 +18,7 @@ import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { getDb } from "../db/connection";
 import { aiAgentRuns } from "../../drizzle/schema";
 import { taoNguoiDungTest } from "./nguoiDungTest";
-import { chuanHoaSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
+import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");
 const GOC_REPO = path.join(__dirname, "..", "..");
@@ -41,14 +41,40 @@ afterAll(async () => {
   }
   const db = await getDb();
   if (db && uid) await db.delete(aiAgentRuns).where(eq(aiAgentRuns.userId, uid));
+  for (const t of tamDaTao) {
+    try {
+      fs.rmSync(t, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    } catch {
+      /* tệp còn bị khoá (máy chủ build dotnet) — thư mục tạm, không làm đỏ */
+    }
+  }
 }, 60_000);
+
+/**
+ * Thư mục tạm sao cho đường gốc phát lại CÙNG độ dài với lúc ghi (`fx.lenh.doDaiGoc`) — tóm tắt sự kiện / nén cắt theo số ký tự ⇒ đường
+ * dài ngắn khác nhau làm chỗ cắt lệch. Thử `os.tmpdir()` rồi thư mục cha của repo; không cách nào khớp ⇒ thư mục tạm thường (có thể lệch).
+ */
+function taoThuMucTam(fx: FixturePhatLai): string {
+  const duoi = path.join(...fx.lenh.duAnTuongDoi.split("/"));
+  if (fx.lenh.doDaiGoc) {
+    for (const cha of [fs.realpathSync(os.tmpdir()), path.dirname(GOC_REPO)]) {
+      const ten = fx.lenh.doDaiGoc - duoi.length - 2 - cha.length; // cha + sep + ten + sep + duoi
+      if (ten >= 9) return fs.realpathSync(fs.mkdtempSync(path.join(cha, "phat-lai-fx-".padEnd(ten - 6, "x").slice(0, ten - 6))));
+    }
+  }
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-fx-")));
+}
+
+const tamDaTao: string[] = [];
 
 /** Dự án mẫu ở commit lúc ghi ⇒ thư mục tạm; trả gốc dự án (thư mục `duAnTuongDoi` bên trong). */
 function dungDuAn(fx: FixturePhatLai): string {
-  const tam = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-fx-")));
+  const tam = taoThuMucTam(fx);
+  tamDaTao.push(tam);
   const tar = path.join(tam, "du-an.tar");
   execFileSync("git", ["-C", GOC_REPO, "archive", "--format=tar", "-o", tar, fx.lenh.commit ?? "HEAD", "--", fx.lenh.duAnTuongDoi]);
-  execFileSync("tar", ["-xf", tar, "-C", tam]);
+  // Đường TƯƠNG ĐỐI + cwd: GNU tar của Git Bash đọc `C:\…` là máy từ xa ("Cannot connect to C: resolve failed"); bsdtar Windows cũng chạy.
+  execFileSync("tar", ["-xf", "du-an.tar"], { cwd: tam });
   fs.rmSync(tar);
   const goc = path.join(tam, ...fx.lenh.duAnTuongDoi.split("/"));
   const git = (...a: string[]) => execFileSync("git", ["-C", goc, ...a], { encoding: "utf8" });
@@ -58,6 +84,8 @@ function dungDuAn(fx: FixturePhatLai): string {
   git("config", "core.autocrlf", "false");
   git("add", "-A");
   git("commit", "-q", "-m", "phat-lai");
+  // Thư mục bị git bỏ qua đã có lúc ghi (`git archive` không mang theo) — dựng RỖNG sau commit.
+  for (const d of fx.lenh.tonTaiTruoc ?? []) fs.mkdirSync(path.join(goc, ...d.split("/")), { recursive: true });
   return goc;
 }
 
@@ -69,16 +97,27 @@ describe("H4.2 — phát lại fixture thật", () => {
   it.each(tep)("%s", async (ten) => {
     const fx = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(THU_MUC, ten))).toString("utf8")) as FixturePhatLai;
     const goc = dungDuAn(fx);
-    process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
-    const p = taoStreamPhatLai(fx, { goc });
-    const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }) });
-    const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
-    if (!kq.ok) throw new Error(`${kq.ma} ${kq.thongDiep ?? ""}`);
-    await kq.luot.xong;
-    expect(p.lech, "lệch đầu tiên").toEqual([]);
-    expect(p.conLai(), "lượt chưa rút").toBe(0);
-    expect(kq.luot.lyDoDung).toBe(fx.ky.lyDo);
-    const ct = await ql.chiTiet(kq.luot.id, uid);
-    expect(chuanHoaSuKien(ct!.suKien, taoBoThay(goc))).toEqual(fx.ky.suKien);
+    // Cờ máy chủ LÚC GHI (vitest.setup không nạp .env) — đặt cho ca này rồi trả lại.
+    const env0 = Object.fromEntries(Object.keys(fx.lenh.moiTruong ?? {}).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, fx.lenh.moiTruong ?? {});
+    try {
+      process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
+      const p = taoStreamPhatLai(fx, { goc });
+      const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }) });
+      const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
+      if (!kq.ok) throw new Error(`${kq.ma} ${kq.thongDiep ?? ""}`);
+      await kq.luot.xong;
+      expect(p.lech, "lệch đầu tiên").toEqual([]);
+      expect(p.conLai(), "lượt chưa rút").toBe(0);
+      expect(kq.luot.lyDoDung).toBe(fx.ky.lyDo);
+      const ct = await ql.chiTiet(kq.luot.id, uid);
+      // Công cụ THẬT không tất định (thời gian, thứ tự dòng, chỗ cắt cụt) + siêu dữ liệu bat-dau ⇒ `soSuKien` (lệch đầu tiên hoặc null).
+      expect(soSuKien(fx.ky.suKien, chuanHoaSuKien(ct!.suKien, taoBoThay(goc))), "sự kiện lệch đầu tiên").toBeNull();
+    } finally {
+      for (const [k, v] of Object.entries(env0)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   }, 300_000);
 });

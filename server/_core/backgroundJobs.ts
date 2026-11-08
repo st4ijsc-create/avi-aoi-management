@@ -250,7 +250,7 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[ReportingMart] start failed:", (err as any)?.message || err);
   }
 
-  // P1 WS1.1 — Data retention pruning. Opt in via DATA_RETENTION_ENABLED=true.
+  // P1 WS1.1 — Data retention pruning. ★ Pha 0 P0-6: BẬT mặc định (tắt khẩn: DATA_RETENTION_ENABLED=false).
   try {
     const { startDataRetention } = await import("../services/dataRetentionService");
     startDataRetention();
@@ -404,7 +404,7 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[PmSchedule] init failed:", (err as any)?.message || err);
   }
 
-  // G3/G12 — DR verify-restore cadence. Opt in via DR_VERIFY_ENABLED=true.
+  // G3/G12 — DR verify-restore cadence. ★ Pha 0 P0-6: BẬT mặc định (tắt: DR_VERIFY_ENABLED=false).
   try {
     const { startDisasterRecoveryService } = await import("../services/disasterRecoveryService");
     startDisasterRecoveryService();
@@ -513,15 +513,6 @@ export async function startBackgroundSchedulers(): Promise<void> {
     void startLineController();
   } catch (err) {
     console.error("[LineController] init failed:", (err as any)?.message || err);
-  }
-
-  // Doc 44 W5-A1 (G4.1) — Twin fidelity loop: so DES-dự-đoán vs line_balance-thực
-  // → tự vô hiệu twin khi lệch ≥N lần liên tiếp (TWIN_FIDELITY_ENABLED, OFF → no-op).
-  try {
-    const { startTwinFidelitySweep } = await import("../services/twin/twinFidelityService");
-    startTwinFidelitySweep();
-  } catch (err) {
-    console.error("[TwinFidelity] start failed:", (err as any)?.message || err);
   }
 
   // Doc 44 W5-A2 (G4.20) — Parameter closed-loop verify sweep: sau verify_after so
@@ -858,7 +849,7 @@ export async function runWorkerProcess(): Promise<void> {
     console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
   }
 
-  // Observability bootstrap (Sentry/OTel) — no-op unless configured.
+  // Observability bootstrap (bộ đánh giá SLO) — no-op unless OBSERVABILITY is on.
   try {
     const { initObservability } = await import("./observability");
     await initObservability();

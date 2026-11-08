@@ -45,7 +45,6 @@ const caller = async (u: { id: number; role: string; name: string }): Promise<C>
     ra: await mk("./aiRobotAnomalyRouter", "aiRobotAnomalyRouter"),
     pa: await mk("./aiRouters", "predictiveAlertRouter"),
     rc: await mk("./aiRouters", "rootCauseRouter"),
-    sa: await mk("./aiSmartAlertRoutingRouter", "aiSmartAlertRoutingRouter"),
     th: await mk("./aiThresholdAdvisorRouter", "aiThresholdAdvisorRouter"),
     or: await mk("./aiOrchestrationRouter", "aiOrchestrationRouter"),
     su: await mk("./aiSetupAdvisorRouter", "aiSetupAdvisorRouter"),
@@ -220,7 +219,7 @@ describe("★★★ aiCalibration + aiInsight + RCA", () => {
   });
 });
 
-describe("★★★ aiRobotAnomaly + predictiveAlert + smartAlert", () => {
+describe("★★★ aiRobotAnomaly + predictiveAlert", () => {
   it("listAnomalies / rollbackHistory", async () => {
     const a = idsOf(await cA.ra.listAnomalies({ limit: 200 }));
     expect(a).toContain(ids.raA);
@@ -242,18 +241,6 @@ describe("★★★ aiRobotAnomaly + predictiveAlert + smartAlert", () => {
     expect((await cA.pa.stats()).total).toBe(1);
     expect((await cAdm.pa.stats()).total).toBeGreaterThanOrEqual(3);
     expect((await cRong.pa.stats()).total).toBe(0);
-  });
-  it("smartAlert detectSpike / detectYieldDrop / stats", async () => {
-    expect(await loi(() => cA.sa.detectSpike({ machineId: H.B.mid }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:machine");
-    expect(await loi(() => cA.sa.detectSpike({ machineId: H.A.mid }))).toBeNull();
-    expect(await loi(() => cAdm.sa.detectSpike({ machineId: H.B.mid }))).toBeNull();
-    expect(await loi(() => cA.sa.detectYieldDrop({ factoryId: H.B.fid }))).toBe("NOT_FOUND:ENTITY_NOT_FOUND:factory");
-    expect(await loi(() => cA.sa.detectYieldDrop({ factoryId: H.A.fid }))).toBeNull();
-    expect((await cA.sa.stats({ days: 7 })).totalAlerts).toBe(1);
-    const sa = await cA.sa.stats({ days: 7 });
-    expect(sa.byType).toEqual([{ type: "DEFECT_SPIKE", count: 1 }]);
-    expect(sa.pendingCount).toBe(1);
-    expect((await cAdm.sa.stats({ days: 7 })).totalAlerts).toBeGreaterThanOrEqual(3);
   });
 });
 

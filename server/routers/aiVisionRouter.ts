@@ -44,7 +44,6 @@ import { aiAdvancedVisionRouter } from "./aiAdvancedVisionRouter";
 import { aiAnomalyRouter } from "./aiAnomalyRouter";
 import { aiSegmentationRouter } from "./aiSegmentationRouter";
 import { aiImageSearchRouter } from "./aiImageSearchRouter";
-import { aiVisionLanguageRouter } from "./aiVisionLanguageRouter";
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 
@@ -189,5 +188,4 @@ export const aiVisionRouter = router({
   anomaly: aiAnomalyRouter,
   segmentation: aiSegmentationRouter,
   imageSearch: aiImageSearchRouter,
-  language: aiVisionLanguageRouter,
 });

@@ -16,7 +16,14 @@
  *
  * ★ Danh sách ở ĐÂY, không rải trong component: thêm tuyến = thêm một dòng + một ca test.
  */
-export const TUYEN_AN_BONG_BONG: readonly string[] = ["/ai-chat", "/andon", "/twin"];
+/**
+ * ★★★ PHA 0 · C0-2 (50-C0, 2026-11-04) — THÊM các tuyến có nút DỪNG MÁY: bong bóng / nút AI nổi KHÔNG ĐƯỢC phủ `NutDungMay` (đo `aiEntry` Task 1:
+ * che 1 152 px² main trên 9/14 màn). Tuyến có DỪNG: `/scada/*` (M10 chẩn đoán, kênh, nhật ký), `/command-console`, `/line-view`; sau này
+ * `/giam-sat/*` (faceplate máy) và `/ky-thuat/an-toan` (mục 50 §4). `ShellAiButton` dùng CÙNG vị từ ⇒ nút AI trên top bar cũng biến mất ở đó.
+ */
+export const TUYEN_CO_NUT_DUNG: readonly string[] = ["/scada", "/command-console", "/line-view", "/giam-sat", "/ky-thuat/an-toan"];
+
+export const TUYEN_AN_BONG_BONG: readonly string[] = ["/ai-chat", "/andon", "/twin", ...TUYEN_CO_NUT_DUNG];
 
 /** Tuyến này có ẩn bong bóng chat không? Khớp theo TIỀN TỐ đoạn đường (`/twin`, `/twin/…`, `/twin-studio`). */
 export function anBongBongTrenTuyen(duong: string): boolean {

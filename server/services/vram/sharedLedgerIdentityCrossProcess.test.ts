@@ -21,7 +21,12 @@
  *   lượt `await import("./vramBroker")` **muộn** trong `dungLaiTuSoCucBo()` nhận một bản sao module
  *   **mới, sổ RỖNG** ⇒ mục B đo nhầm thứ. Hai mục, hai file.
  */
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+// P0-2: admin đọc bảng permissions; DB giả "không có hàng" (luật thật, không god-mode) để lưới không chạm CSDL.
+vi.mock("../../db/connection", async (goc) => {
+  const { dbGiaChiCoBangQuyen } = await import("../../testing/dbGiaQuyen");
+  return { ...(await goc<typeof import("../../db/connection")>()), getDb: async () => dbGiaChiCoBangQuyen() };
+});
 import { VRAM_LEASE_COLUMN_MAX } from "./vramColumnLimits";
 import { __resetBrokerForTests, reserve } from "./vramBroker";
 import type { VramDecisionContext } from "./vramBroker";

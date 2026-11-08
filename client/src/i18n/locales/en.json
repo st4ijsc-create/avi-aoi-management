@@ -3630,6 +3630,7 @@
     "INVALID_VALUE": "Invalid value for {{field}}.",
     "INVALID_VALUE_WITH_REASON": "Invalid value for {{field}}. {{reason}}",
     "FEATURE_DISABLED": "The {{feature}} feature is not enabled on this system.",
+    "MODULE_PAUSED": "The {{module}} module is paused and will be developed later — the command was not sent.",
     "OPERATION_FAILED": "Could not complete: {{operation}}.",
     "OPERATION_FAILED_WITH_REASON": "Could not complete: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
@@ -4405,7 +4406,8 @@
       "ledgerWriteFailed": "The robot command ledger could not be written — the motion was refused and nothing was sent.",
       "idempotentJobInProgress": "A command with the same idempotency key is still running — it is not run twice.",
       "idempotencyKeyReused": "This idempotency key was already used for another robot or job — the motion was NOT started. That earlier job may already have run: check the robot, its position and the earlier job's state before commanding again.",
-      "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
+      "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published.",
+      "robotChuaDinhVi": "The robot is NOT PLACED (no station or line, or its station/line does not exist or contradicts) — the machines whose interlock rules guard it are unknown, so motion was refused. A STOP is still sent. Assign the robot to a station or a line."
     },
     "reason": {
       "can-nha-may": "the key must belong to a factory before it can be activated",
@@ -16373,8 +16375,8 @@
     "trendDesc": "kWh and CO₂ by period"
   },
   "cockpit": {
-    "actionsGate": "Read-only cockpit. \"Propose\" opens the gated Control Plane — it never dispatches a command directly.",
-    "actionsHint": "Commands you MAY propose. Execution stays behind the existing gated (HITL / dry-run) control surface — nothing runs from here.",
+    "actionsGate": "Read-only cockpit. It never dispatches a command; commands go through the gated machine control surface.",
+    "actionsHint": "Commands this machine's capability profile supports — for reference only. Nothing runs from here.",
     "active": "Active",
     "adapterKind": "Adapter kind",
     "alarmsHint": "Per-machine ISA-18.2 normalized feed",
@@ -20453,7 +20455,12 @@
     "queuedOnEdge": "STOP sent to the robot's edge node — waiting for its confirmation (see the job log).",
     "queuedEdgeUnreachable": "STOP queued, but the robot's edge node is UNREACHABLE — central attempted its own STOP and raised a critical alert. Use the hardware E-STOP if the robot is still moving.",
     "rejected": "Command not executed: {{status}}",
-    "pickRobot": "Select a robot first."
+    "pickRobot": "Select a robot first.",
+    "interlockSameLine": "rule on machine {{machine}} (same line)",
+    "interlockSameStation": "rule on machine {{machine}} (same station)",
+    "interlockStopNeverBlocked": "Interlocks gate motion only — a STOP is never blocked.",
+    "interlockNoMachines": "No machines to check — no interlock rule can guard this robot's station or line.",
+    "interlockStationNoMachines": "This station has no machines — the rules on line {{line}} apply."
   },
   "analysisHub": {
     "title": "AI Analysis Hub",
@@ -21025,7 +21032,11 @@
   },
   "connectionBanner": {
     "netDown": "Network connection lost — data may be out of date. Waiting to reconnect…",
-    "socketDown": "Realtime connection lost — reconnecting…"
+    "socketDown": "Realtime connection lost — reconnecting…",
+    "quyenDoi": "Your access has changed — reconnecting…",
+    "choDichVu": "The server cannot verify the connection right now — retrying automatically…",
+    "noiLaiDung": "Stopped reconnecting the realtime channel — it will retry when the network is back or when you return to this tab; or reload the page.",
+    "hetPhien": "Your session is no longer valid — redirecting to sign in…"
   },
   "aiStudioHub": {
     "models": "Models & Versions",
@@ -24598,6 +24609,10 @@
       }
     },
     "dungMay": {
+      "lopNoi": {
+        "nhan": "Emergency machine stop",
+        "nut": "STOP MACHINE — {{may}}"
+      },
       "nut": "STOP MACHINE",
       "tieuDe": "Stop machine {{may}}?",
       "moTa": "Sends the pinned STOP to {{n}} adapter(s).",
@@ -24666,9 +24681,12 @@
     },
     "truyenThong": {
       "chip": {
-        "nhan": "Communication {{ketNoi}}/{{tong}}",
-        "coEdge": "Communication {{ketNoi}}/{{tong}} · edge {{edge}}",
-        "moTa": "Reconnecting {{dangNoi}} · lost {{mat}} · other {{khac}} — click to open communication diagnostics"
+        "nhan": "Communication {{ketNoi}} connected · {{khac}} off",
+        "dangNoi": "{{dangNoi}} reconnecting",
+        "mat": "{{mat}} lost",
+        "edge": "edge {{edge}}",
+        "moTaCu": "Read failed — figures from the previous read (updated at {{luc}}).",
+        "moTa": "Of {{tong}} adapters enabled in configuration (edge not counted): {{ketNoi}} connected · {{dangNoi}} reconnecting · {{mat}} lost · {{khac}} off or unknown — click to open communication diagnostics"
       }
     },
     "orchestration": {
@@ -24726,6 +24744,17 @@
     "nhanNgoai": "external · sends data to"
   },
   "kiemDinhNgoai": {
+    "vanBan": {
+      "xemTruoc": "Text that will be sent (exactly this string, after truncation)",
+      "cauHoi": "Question",
+      "traLoi": "Answer",
+      "daCat": "The text exceeds 16 KB so it was truncated (the answer is kept, the question is cut first).",
+      "chuaLuu": "This turn is not saved on the server — exactly the text shown here is sent; the store is not read.",
+      "loiQuaLon": "The text is too large (16 KB limit) and the server refused it. Verify a shorter passage.",
+      "loiKhongCo": "Cannot send: the plant has not enabled verification from the bubble, or you lack permission.",
+      "loiVuotTran": "The external AI cost/rate cap has been reached. Retry later or ask an administrator.",
+      "loiDangChay": "This text is already being verified — please wait for the result."
+    },
     "khongHopLe": "The review result has an invalid format and is not shown.",
     "daChep": "Standardised version copied.",
     "chepLoi": "Could not copy — select the text and copy it manually.",
@@ -24858,5 +24887,12 @@
     "moTa": "This is the operations assistant: what you type counts as OPERATIONAL DATA. It is sent to an external (paid) model after pattern-based masking of sensitive data. Asked once per conversation.",
     "tuChoi": "Don't send",
     "dongY": "Agree, send"
+  },
+  "robotTamDung": {
+    "tieuDe": "The robot/AGV module will be developed later",
+    "moTa": "Robot/AGV control is paused: this page only reports status and sends no command. Other machines and lines are unaffected.",
+    "moTaNgan": "View only — human↔robot coordination is paused until the robot/AGV module is developed.",
+    "dangKiemTra": "Checking module status…",
+    "veTrangChu": "Back to home"
   }
 }

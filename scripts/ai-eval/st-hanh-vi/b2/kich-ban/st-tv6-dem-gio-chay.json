@@ -1,0 +1,36 @@
+{
+  "id": "st-tv6-dem-gio-chay",
+  "khoi": "DemGioChay",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb); KT_BUOC(T#x) = buoc dtMs x (ms: T#1s=1000, T#10s=10000, T#1h=3600000, T#58m59s=3539000); lan goi dau = dtMs 0; FOR i := 1 TO 9999 gop bang lan 9999; KT_DINT tren UDINT so nguyen nho => giu nguyen; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "DANG_CHAY": false, "RESET": false }, "dtMs": 0, "nhan": "t=0 dung" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 1000, "ky": { "GIAY_TONG": 0 }, "nhan": "chu ky dau chay khong cong" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 1000, "lan": 2, "ky": { "GIAY_TONG": 2 }, "nhan": "2 buoc 1s => 2" },
+        { "vao": { "DANG_CHAY": false }, "dtMs": 1000, "ky": { "GIAY_TONG": 2 }, "nhan": "dung => van 2" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "DANG_CHAY": false, "RESET": false }, "dtMs": 0, "ky": { "GIAY_TONG": 0 }, "nhan": "ban dau 0" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 7, "nhan": "chu ky bat dau chay khong cong" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 7, "lan": 9999, "ky": { "GIAY_TONG": 69 }, "nhan": "9999 x 7ms = 69,993 s => 69" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 7, "ky": { "GIAY_TONG": 70, "PHUT": 1, "GIO": 0 }, "nhan": "10000 x 7ms = 70 s" },
+        { "vao": { "DANG_CHAY": false }, "dtMs": 7, "ky": { "GIAY_TONG": 70 }, "nhan": "chu ky dung khong cong" },
+        { "vao": { "DANG_CHAY": false }, "dtMs": 10000, "ky": { "GIAY_TONG": 70 }, "nhan": "dang dung khong cong" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 1000, "ky": { "GIAY_TONG": 70 }, "nhan": "chay lai: chu ky dau khong cong" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 500, "ky": { "GIAY_TONG": 70 }, "nhan": "70,5 s => 70" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 500, "ky": { "GIAY_TONG": 71 }, "nhan": "71 s" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 3600000, "ky": { "GIAY_TONG": 3671, "GIO": 1, "PHUT": 1 }, "nhan": "buoc 1 h => 3671 s" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 3539000, "ky": { "GIAY_TONG": 7210, "GIO": 2, "PHUT": 0 }, "nhan": "+58m59s => 7210 s" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 300, "ky": { "GIAY_TONG": 7210 }, "nhan": "7210,3 s => 7210" },
+        { "vao": { "DANG_CHAY": true, "RESET": true }, "dtMs": 1000, "ky": { "GIAY_TONG": 0, "GIO": 0, "PHUT": 0 }, "nhan": "reset => 0" },
+        { "vao": { "DANG_CHAY": true, "RESET": false }, "dtMs": 700, "ky": { "GIAY_TONG": 0 }, "nhan": "0,7 s sau reset => 0" },
+        { "vao": { "DANG_CHAY": true }, "dtMs": 300, "ky": { "GIAY_TONG": 1 }, "nhan": "1,0 s sau reset => 1" }
+      ]
+    }
+  ]
+}

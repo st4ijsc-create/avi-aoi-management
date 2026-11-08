@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import { LopDungMayNoi } from "@/components/scada/LopDungMayNoi";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
@@ -24,6 +25,8 @@ const AILocalChatBubble = React.lazy(() =>
 );
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { UiPrefsSync } from "./components/UiPrefsSync";
+import { RobotModuleProvider } from "./hooks/useRobotModuleTamDung";
+import { CongMoDunRobot } from "./components/robot/CongMoDunRobot";
 import { RouteGuard } from "./components/RouteGuard";
 // ★★★ Đợt 21 lô Y (§13b 14.2.3) — 14 đường vào Twin cũ, mỗi đường ≤1 chặng.
 import { traDichCu } from "./components/twin3d/bo-cuc/dinhTuyenTwinCu";
@@ -39,7 +42,6 @@ import Home from "./pages/Home";
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const History = React.lazy(() => import("./pages/History"));
 const DataSettings = React.lazy(() => import("./pages/DataSettings"));
-const ApiDocs = React.lazy(() => import("./pages/ApiDocs"));
 const ProductModels = React.lazy(() => import("./pages/ProductModels"));
 const InspectionDetail = React.lazy(() => import("./pages/InspectionDetail")); // doc64 S5-OPT: eager→lazy
 const Layout = React.lazy(() => import("./pages/Layout")); // doc64 S5-OPT: eager→lazy
@@ -186,7 +188,7 @@ const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U
 //   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
 // ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
 //   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
-//   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
+//   vì §13b 3g xếp nó NGOÀI Twin (đo AST 2026-11-04: chỉ 1 thủ tục tRPC, `orchestration.simulate` chạy khô, không ghi; bản cũ ghi "0 lời gọi tRPC" là SAI).
 const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
 const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
 // ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
@@ -206,7 +208,6 @@ const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control 
 const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 13 / F0: Multi-site Federation sites registry (admin)
 const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
 const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")); // Doc 13 / F3: read-only modules + license marketplace (admin)
-const SynapsePlatformPage = React.lazy(() => import("./pages/SynapsePlatformPage")); // doc 33: read-only SYNAPSE platform cockpit
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 const HotFolderConfigPage = React.lazy(() => import("./pages/HotFolderConfigPage")); // Doc 27 C1 (W2-A): AOI/AVI hot-folder file-drop ingestion config + status + dry-run
 // doc 39 Wave 4 — device-monitoring surfaces (fleet list / health-OEE / field devices)
@@ -259,12 +260,10 @@ const LicenseManagement = React.lazy(() => import("./pages/LicenseManagement"));
 const MonitoringSettings = React.lazy(() => import("./pages/MonitoringSettings")); // doc64 S5-OPT: eager→lazy
 // doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
 const AdminMonitoring = React.lazy(() => import("./pages/AdminMonitoring")); // doc64 S5-OPT: eager→lazy
-const AnalyticsSettings = React.lazy(() => import("./pages/AnalyticsSettings")); // doc64 S5-OPT: eager→lazy
 const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc64 S5-OPT: eager→lazy
 const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
 const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy
 const StationAnalysis = React.lazy(() => import("./pages/StationAnalysis")); // Wave 1: code-split (2.7k LOC)
-const ComponentShowcase = React.lazy(() => import("./pages/ComponentShowcase")); // Wave 1: dev showcase of DS + foundation primitives
 
 function AIPageWrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -318,10 +317,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
-      <Route path="/api-docs" component={ApiDocs} />
-      {/* Wave 1 (foundation): dev-open showcase of the shared design-system +
-          the new foundation primitives (DataTable/AsyncBoundary/FilterBar/FormScaffold). */}
-      <Route path="/component-showcase" component={ComponentShowcase} />
 
       {/* ── OVERVIEW ─────────────────────────────────────────────────────── */}
       <Route path="/dashboard"><RouteGuard navHref="/dashboard"><Dashboard /></RouteGuard></Route>
@@ -589,15 +584,15 @@ function Router() {
       <Route path="/control-readiness"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlReadiness /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/hot-folders"><RouteGuard navHref="/hot-folders"><AIPageWrapper><HotFolderConfigPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CongMoDunRobot><RobotControl /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       {/* ENG-F1 (doc 40): gated command console — actuation qua HITL dispatcher (mode/commissioning/interlock gate giữ nguyên). */}
-      <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CommandConsole /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CongMoDunRobot><CommandConsole /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
           chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
           trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
       {/* doc 81 Đợt 3 Task 5 ([QĐ-3b]) — Fleet ở nhóm Labs: route mới, CÙNG cổng (navHref của chính mục nav = machine_status;
           giấy phép MOD_OT_CONTROL ở module-registry). URL cũ /fleet-orchestration chuyển hướng giữ query (engineeringLegacyRoutes). */}
-      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/labs/fleet-orchestration"><RouteGuard navHref="/labs/fleet-orchestration"><AIPageWrapper><CongMoDunRobot><FleetOrchestration /></CongMoDunRobot></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
@@ -625,7 +620,7 @@ function Router() {
           Bảng + test: lib/engineeringLegacyRedirects.tsx(.dom.test.tsx). */}
       {engineeringLegacyRoutes()}
       <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
-      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
+      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo AST 2026-11-04: chỉ `orchestration.simulate` chạy khô, không ghi — chú thích cũ "0 lời gọi tRPC" là SAI):
           nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
       <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       {/* ★ §13b 3f — phát lại workflow ĐÃ GỘP vào /twin (`orchestration.simulate`). */}
@@ -762,7 +757,7 @@ function Router() {
       <Route path="/sites"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SitesRegistry /></AIPageWrapper></RouteGuard></Route>
       <Route path="/federation-dashboard"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><FederationDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/modules"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><ModulesMarketplace /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/synapse-platform"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SynapsePlatformPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/synapse-platform"><Redirect to="/admin" /></Route> {/* trang SYNAPSE platform cockpit đã gỡ (dọn vệ sinh E0-3, chủ dự án chọn 2026-11-04) */}
       <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
       <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>
@@ -884,8 +879,12 @@ function App() {
               {/* doc 81 Đợt 4 Task D1 — sở thích giao diện theo tài khoản (localStorage ⇄ user_settings.uiPrefs). */}
               <UiPrefsSync />
               <Toaster />
+              {/* PHA 0 · C0-3 — nút DỪNG MÁY nổi ở tầng trên cùng khi hộp thoại lồng che nút DỪNG trong faceplate (dungMayNoi.ts) */}
+              <LopDungMayNoi />
+              {/* Pha 0 · C0-5 — cờ mô-đun robot/AGV (nguồn: máy chủ) cho CongMoDunRobot + SafetyWorkforce. */}
+              <RobotModuleProvider>
               {/* Wave 1 (foundation): a single top-level Suspense boundary so any
-                  code-split page (including bare `component={}` routes like /api-docs)
+                  code-split page (including bare `component={}` routes)
                   has a fallback while its chunk loads. Per-page AIPageWrapper boundaries
                   still take precedence where present.
                   Wave 1b: AppShell (flag-gated, default OFF) optionally hoists ONE
@@ -895,8 +894,7 @@ function App() {
                 <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
                   {/* ★★★★ Pha 7 / I-4 — CỔNG BUỘC ĐỔI MẬT KHẨU. Nó bọc CHÍNH `<Router/>`: khi khoá,
                       TOÀN BỘ bảng route không được render, nên không có "route lách được" — kể cả
-                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`, `/api-docs`,
-                      `/component-showcase`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
+                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
                       ⚠ Đừng hạ nó xuống trong cây (vào RouteGuard hay từng Route): làm thế là biến
                         một lượng từ ∀ thành một DANH SÁCH, đúng lớp lỗi "phần tử thứ N+1". Lưới
                         cấu trúc canh đúng vị trí này: client/src/lib/congDoiMatKhau.unit.test.ts §3. */}
@@ -905,6 +903,7 @@ function App() {
                   </CongDoiMatKhau>
                 </Suspense>
               </AppShell>
+              </RobotModuleProvider>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
                   lazy AI pages. The bubble hides itself when not logged in.

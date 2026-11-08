@@ -1,0 +1,48 @@
+{
+  "id": "st-tv8-xung-khoi-dong",
+  "khoi": "XungKhoiDong",
+  "nguon": "chuyen tu khung/tests/hien_thi.st va an/tests/an.st (fb + fb2); moi KT_BUOC(T#10ms); fb(...) = mot buoc dtMs 10; lan goi dau = dtMs 0; fb2 trong test goi luc G_NOW = 280 (doan moi bat dau G_NOW = 0) — chi kiem lan goi dau nen khong anh huong; khong bo kiem nao",
+  "doan": [
+    {
+      "ten": "hien-thi",
+      "buoc": [
+        { "vao": { "NUT": false, "T_XUNG": 50, "KHOA": false }, "dtMs": 0, "nhan": "t=0" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 1 }, "nhan": "t=10 nhan => xung, so lan 1" },
+        { "vao": { "NUT": false }, "dtMs": 10, "lan": 5, "ky": { "XUNG": false }, "nhan": "t=60 het xung" }
+      ]
+    },
+    {
+      "ten": "an-fb",
+      "buoc": [
+        { "vao": { "NUT": false, "T_XUNG": 50, "KHOA": false }, "dtMs": 0, "ky": { "XUNG": false, "SO_LAN": 0 }, "nhan": "t=0 khong xung" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 1 }, "nhan": "t=10 xung" },
+        { "vao": { "NUT": false }, "dtMs": 10, "nhan": "t=20" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 1 }, "nhan": "t=30 suon trong xung => van xung, khong dem" },
+        { "vao": { "NUT": false }, "dtMs": 10, "lan": 2, "ky": { "XUNG": true }, "nhan": "t=50 con xung" },
+        { "vao": { "NUT": false }, "dtMs": 10, "ky": { "XUNG": false, "SO_LAN": 1 }, "nhan": "t=60 het xung dung 50ms" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 2 }, "nhan": "t=70 xung moi" },
+        { "vao": { "NUT": false }, "dtMs": 10, "lan": 4, "nhan": "t=80..110" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": false, "SO_LAN": 2 }, "nhan": "t=120 suon o chu ky ket thuc => tat, khong dem" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": false }, "nhan": "t=130 giu nut khong phai suon" },
+        { "vao": { "NUT": false }, "dtMs": 10, "nhan": "t=140" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "SO_LAN": 3 }, "nhan": "t=150 so lan 3" },
+        { "vao": { "KHOA": true }, "dtMs": 10, "ky": { "XUNG": false }, "nhan": "t=160 khoa cat xung" },
+        { "vao": { "KHOA": false }, "dtMs": 10, "ky": { "XUNG": false, "SO_LAN": 3 }, "nhan": "t=170 nha khoa, nut giu => khong xung" },
+        { "vao": { "NUT": false }, "dtMs": 10, "nhan": "t=180" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 4 }, "nhan": "t=190 xung moi sau khi bi cat" },
+        { "vao": { "NUT": false }, "dtMs": 10, "lan": 4, "ky": { "XUNG": true }, "nhan": "t=230 con xung (do tu 190)" },
+        { "vao": { "NUT": false }, "dtMs": 10, "ky": { "XUNG": false }, "nhan": "t=240 het xung" },
+        { "vao": { "NUT": true, "KHOA": true }, "dtMs": 10, "ky": { "XUNG": false, "SO_LAN": 4 }, "nhan": "t=250 suon khi khoa => khong xung, khong dem" },
+        { "vao": { "NUT": true, "KHOA": false }, "dtMs": 10, "ky": { "XUNG": false }, "nhan": "t=260 nha khoa khi nut giu => khong xung" },
+        { "vao": { "NUT": false }, "dtMs": 10, "nhan": "t=270" },
+        { "vao": { "NUT": true }, "dtMs": 10, "ky": { "XUNG": true, "SO_LAN": 5 }, "nhan": "t=280 suon binh thuong => xung" }
+      ]
+    },
+    {
+      "ten": "an-fb2",
+      "buoc": [
+        { "vao": { "NUT": true, "T_XUNG": 20, "KHOA": false }, "dtMs": 0, "ky": { "XUNG": true, "SO_LAN": 1 }, "nhan": "goi dau NUT TRUE => xung, so lan 1" }
+      ]
+    }
+  ]
+}

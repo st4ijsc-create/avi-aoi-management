@@ -422,14 +422,25 @@ let drainTimer: NodeJS.Timeout | null = null;
 let programTimer: NodeJS.Timeout | null = null;
 let liveRunsOf: () => { live: number; max: number } = () => ({ live: 0, max: 1 });
 
-/** Write a liveness marker (mtime = last heartbeat) for a no-HTTP container healthcheck. */
+/** a2n — a liveness write is in flight: the next beats call no `fs` (each stuck call would hold one libuv thread, a beat at a time, until the pool is full). */
+let livenessDangGhi = false;
+
+/**
+ * Write a liveness marker (mtime = last heartbeat) for a no-HTTP container healthcheck. a2n: SINGLE-FLIGHT. A beat that finds a write in flight skips it and
+ * answers at once; the marker keeps its old mtime, which is what the healthcheck ages on a hung disk, as it did with one stuck call per beat. The flag is
+ * released in `finally`: an error or a disk that returns leaves the next beat free to write.
+ */
 async function writeLiveness(health: EdgeGatewayHealth): Promise<void> {
+  if (livenessDangGhi) return;
+  livenessDangGhi = true;
   const file = livenessFile();
   try {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify(health), "utf8");
   } catch {
     /* liveness marker is best-effort */
+  } finally {
+    livenessDangGhi = false;
   }
 }
 

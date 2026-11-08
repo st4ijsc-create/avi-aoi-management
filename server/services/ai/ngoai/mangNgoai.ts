@@ -9,8 +9,8 @@
  * Lỗi trước khi kết nối được (URL, DNS, TLS, từ chối kết nối) ⇒ `chuaGui` (cổng hoàn chỗ); lỗi sau đó ⇒ `thuLai` (cổng thử lại).
  */
 import { fetchGhim, kiemDichDen, docThanCoTran } from "../../flow/nut/mangAnToan";
-import { docRetryAfter } from "./nhaCungCap/chung";
-import { LoiNgoai } from "./loi";
+import { docRequestId, docRetryAfter } from "./nhaCungCap/chung";
+import { LoiNgoai, requestIdHopLe } from "./loi";
 import type { MangNgoai } from "./nhaCungCap/kieu";
 import { kiemEndpointLuu, laLinkLocalHoacMetadata } from "./urlNgoai";
 
@@ -31,7 +31,7 @@ const LOI_CHUA_KET_NOI = new Set([
 ]);
 
 /** Lưới: thay phần GỬI (sau mọi kiểm URL / DNS) bằng máy chủ giả trong tiến trình. */
-let fetchChoTest: ((url: string, init: { method: "POST"; headers: Record<string, string>; body: string }) => Promise<{ status: number; json: unknown; retryAfterMs?: number }>) | null = null;
+let fetchChoTest: ((url: string, init: { method: "POST"; headers: Record<string, string>; body: string }) => Promise<{ status: number; json: unknown; retryAfterMs?: number; requestId?: string }>) | null = null;
 export function datFetchNgoaiChoTest(f: typeof fetchChoTest): void {
   fetchChoTest = f;
 }
@@ -61,7 +61,12 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
       }
       // Rà kiem-dinh Task 8 E — host ĐÃ KHAI nội bộ nhưng PHÂN GIẢI ra link-local / metadata ⇒ vẫn cấm (danh sách trắng chỉ mở dải nội bộ thường).
       if (laLinkLocalHoacMetadata(dich.ip)) throw new LoiNgoai("NGOAI_URL_KHONG_HOP_LE", "metadata-sau-dns", { chuaGui: true });
-      if (fetchChoTest) return fetchChoTest(u.toString(), init);
+      if (fetchChoTest) {
+        // (H3.3a) id yêu cầu của máy chủ giả đi qua CÙNG bộ kiểm như tiêu đề thật
+        const { requestId: thoId, ...kq } = await fetchChoTest(u.toString(), init);
+        const rid = requestIdHopLe(thoId);
+        return { ...kq, ...(rid ? { requestId: rid } : {}) };
+      }
       let r: Response;
       try {
         r = await fetchGhim(u, { method: init.method, headers: init.headers, body: init.body, signal: AbortSignal.timeout(HAN_GOI_MS) }, dich);
@@ -89,7 +94,8 @@ export function taoMangNgoai(chinhSach: { hostNoiBo: ReadonlySet<string> }): Man
         json = { raw: than.slice(0, 500) };
       }
       const cho = r.status === 429 || r.status === 503 ? docRetryAfter(r.headers.get("retry-after")) : undefined;
-      return { status: r.status, json, ...(cho !== undefined ? { retryAfterMs: cho } : {}) };
+      const rid = docRequestId((t) => r.headers.get(t));
+      return { status: r.status, json, ...(cho !== undefined ? { retryAfterMs: cho } : {}), ...(rid ? { requestId: rid } : {}) };
     },
   };
 }

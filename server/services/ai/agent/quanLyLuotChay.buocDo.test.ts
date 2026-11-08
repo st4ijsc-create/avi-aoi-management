@@ -145,7 +145,7 @@ describe("H1.1 công tắc AI_AGENT_NEN_MOC nối tới lõi", () => {
     const rac = await chayNen("abc");
     expect(sau).toBeLessThan(macDinh); // nén sâu hơn ⇒ ít lần nén hơn
     expect(rac).toBe(macDinh);
-  }, 60_000);
+  }, 180_000); // 3 lượt × 20 vòng có ghi sổ: đo 2026-11-03 dưới tải sẵn có (CPU ~76 %) một lượt chạy 65 s > 60 s cũ ⇒ đỏ hết giờ; kết luận không đổi
 });
 
 describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực thi", () => {
@@ -168,7 +168,12 @@ describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực th
       if (!kq.ok) throw new Error(kq.ma);
       const nghe: SuKienAgent[] = [];
       const huy = ql.nghe(kq.luot.id, uid, 0, (m) => nghe.push(m.suKien));
-      await new Promise((r) => setTimeout(r, 1500));
+      // Đợi KẾT CỤC (thẻ duyệt ⇒ lượt dừng chờ người; hoặc lượt tự xong sau lời từ chối), KHÔNG ngủ cố định: đo 2026-11-03 thời gian tới
+      // thẻ duyệt chạy riêng 1,5–11,7 s (DB/đĩa dùng chung) — ngủ 1 500 ms là nguồn đỏ chập chờn trong cổng.
+      let daXong = false;
+      void kq.luot.xong.then(() => (daXong = true));
+      const t0 = Date.now();
+      while (!daXong && !nghe.some((e) => e.loai === "can-duyet") && Date.now() - t0 < 40_000) await new Promise((r) => setTimeout(r, 25));
       huy?.();
       ql.huy(kq.luot.id, uid);
       await kq.luot.xong;
@@ -186,7 +191,7 @@ describe("H1.4 công tắc AI_AGENT_DOC_TRUOC_KHI_GHI nối tới bộ thực th
     expect(tat).toEqual({ thePhat: true, tuChoi: false });
     const bat = await ghiTepChuaDoc(true);
     expect(bat).toEqual({ thePhat: false, tuChoi: true });
-  }, 90_000);
+  }, 150_000); // hai vòng × chờ kết cục tối đa 40 s + khởi/huỷ (rà kiem-dinh 2026-11-03)
 });
 
 describe("H1.5 công tắc AI_AGENT_TOOL_TIMEOUT nối tới bộ thực thi", () => {

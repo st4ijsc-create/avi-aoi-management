@@ -19,7 +19,7 @@ import { nhichChanPhienDaThuHoi, nhichChanPhienKhongCoHang } from "./demSoPhien"
 import { redactServerOnlyUserFields } from "./publicUser";
 import { ENV } from "./env";
 // ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, `SESSION_TTL_DAYS`).
-import { hanPhienMs } from "./hanPhien";
+import { hanGiaHanMoi, hanPhienMs } from "./hanPhien";
 import { canhBaoCookiePhienTrung } from "./cookiePhienTrung";
 import type {
   ExchangeTokenRequest,
@@ -174,13 +174,15 @@ export async function chanNeuTaiKhoanBiTat(user: User): Promise<void> {
  * ⚠ Vé **rỗng/thiếu** vẫn trả sớm: ở đó không có gì để tra, và người gọi phía trên
  *   (`xacThucTho` ⇒ `verifySession`) đã từ chối một cookie trống rồi.
  */
-export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Promise<void> {
-  if (!isNonEmptyString(token)) return;
+export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Promise<HangPhienSo | null> {
+  if (!isNonEmptyString(token)) return null;
   let daThuHoi = false;
   let khongCoHang = false;
+  let hangDoc: HangPhienSo | null = null;
   try {
     const hang = await db.getSessionByToken(token);
     if (hang) {
+      hangDoc = hang;
       const hetHan =
         hang.expiresAt != null && new Date(hang.expiresAt).getTime() <= Date.now();
       daThuHoi = hang.isActive === false || hetHan;
@@ -191,7 +193,7 @@ export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Pr
   } catch (error) {
     // Fail-open trên lỗi TRA CỨU (DB không với tới được), KHÔNG phải trên "không có hàng".
     console.warn("[Auth] Session-active check failed; failing open:", String(error));
-    return;
+    return null;
   }
   if (khongCoHang) {
     nhichChanPhienKhongCoHang();
@@ -202,6 +204,26 @@ export async function chanNeuPhienDaThuHoi(token: string | null | undefined): Pr
   if (daThuHoi) {
     nhichChanPhienDaThuHoi();
     throw ForbiddenError("Session has been revoked");
+  }
+  return hangDoc;
+}
+
+/** Hàng sổ phiên đọc được ở lượt tra (Pha 0 P0-11 dùng lại cho gia hạn trượt — không tra lần hai). */
+export type HangPhienSo = NonNullable<Awaited<ReturnType<typeof db.getSessionByToken>>>;
+
+/**
+ * ★ Pha 0 P0-11 — gia hạn TRƯỢT tại chỗ (xem `_core/hanPhien.ts`). Gọi MỘT chỗ: `authenticateRequest` (đường cookie), SAU mọi cổng chặn
+ * (thu hồi, hết hạn, tài khoản tắt, phải đổi mật khẩu). Chỉ ghi khi phiên còn < 50 % hạn vai ⇒ ~1 UPDATE / nửa hạn / phiên. Không ném.
+ */
+export async function giaHanPhienNeuCan(token: string | null | undefined, hang: HangPhienSo | null | undefined, vai: string | null | undefined): Promise<boolean> {
+  if (!isNonEmptyString(token) || !hang) return false;
+  const moi = hanGiaHanMoi(hang, vai);
+  if (!moi) return false;
+  try {
+    return (await db.giaHanPhienTaiCho(token, moi)) > 0;
+  } catch (err) {
+    console.warn("[Auth] gia hạn phiên thất bại (bỏ qua):", String(err));
+    return false;
   }
 }
 
@@ -523,13 +545,18 @@ class SDKServer {
    *   `path` nên tha được đúng bốn đường của vòng đời đổi mật khẩu.
    */
   async authenticateRequest(req: Request, tuyChon?: TuyChonXacThuc): Promise<User> {
-    const user = await this.xacThucTho(req);
-    if (tuyChon?.boQuaCongDoiMatKhau !== true) await chanNeuPhaiDoiMatKhau(user);
+    const ra: { hang?: HangPhienSo | null } = {};
+    const user = await this.xacThucTho(req, ra);
+    if (tuyChon?.boQuaCongDoiMatKhau !== true) {
+      await chanNeuPhaiDoiMatKhau(user);
+      // ★ Pha 0 P0-11 — gia hạn trượt SAU mọi cổng chặn; đường đổi mật khẩu (bỏ qua cổng) KHÔNG gia hạn.
+      await giaHanPhienNeuCan(docVePhienTuCookie(req.headers.cookie), ra.hang, user.role);
+    }
     return user;
   }
 
   /** Phân giải *"yêu cầu này là ai"* — **KHÔNG** quyết định người ấy có được đi tiếp hay không. */
-  private async xacThucTho(req: Request): Promise<User> {
+  private async xacThucTho(req: Request, ra?: { hang?: HangPhienSo | null }): Promise<User> {
     // Regular authentication flow
     canhBaoCookiePhienTrung(req.headers.cookie); // ★ Đợt 3c: CHỈ GHI LOG khi ≥ 2 app_session_id (cookie-tossing) — không chặn
     // R1b-2a T3 fix round 3 (C-2): the ONE shared reader — the HMI STOP tier reads the ticket with this same function.
@@ -572,7 +599,8 @@ class SDKServer {
      *     thành một** câu `JOIN`. Không làm trong lượt này vì gộp là dựng một **chủ thứ ba** cho hai
      *     bất biến đang có chủ riêng — một quyết định phải nói ra, không phải một lượt tối ưu lén.
      */
-    await chanNeuPhienDaThuHoi(sessionCookie);
+    const hangSo = await chanNeuPhienDaThuHoi(sessionCookie);
+    if (ra) ra.hang = hangSo;
 
     // W4-B (doc 27 B4): short-TTL session→user cache. The JWT signature was
     // verified above (stateless, no DB); a cache hit means the user lookup and

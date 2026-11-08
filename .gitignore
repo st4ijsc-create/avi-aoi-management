@@ -310,3 +310,6 @@ deploy/edge/secrets/*
 
 # Bo dem anh boc tu ZIP goi AOI (sinh ra luc chay, TTL 7 ngay) — khong theo doi (chu du an duyet xoa 2026-10-21)
 uploads/aoi-cache/
+
+# Phien dang nhap luu tay (chua token) - khong bao gio commit (chu du an 2026-11-08)
+/cookies.txt

@@ -6,6 +6,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ChonModel from "@/components/ai/ChonModel";
 import { docChonDaLuu } from "@/lib/chonModel";
+// ★ Đợt 10.4b L4 — model NGOÀI ở bong bóng: hội thoại thật (L1) + đồng ý + bộ render an toàn duy nhất + nút kiểm định.
+import { useXacNhanNgoai } from "@/hooks/useXacNhanNgoai";
+import { layThongTinNgoai } from "@/lib/thongTinNgoaiClient";
+import { daDongYNgoai, daXacNhanVanHanh, datDongYNgoai } from "@/lib/dongYNgoai";
+import { HuyHieuNgoai } from "@/components/ai/HuyHieuNgoai";
+import { NoiDungTraLoiNgoai } from "@/components/ai/NoiDungTraLoiNgoai";
+import { NutKiemDinhNgoai } from "@/components/ai/NutKiemDinhNgoai";
+import { dungNguCanhNgoai, dungNguonVanBan, laModelNgoai, lichSuNgoai, vanBanBongBongBat } from "@/components/ai/bongBongNgoai";
+import type { VetNgoai } from "@shared/ai/sinhChuNgoai";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -73,6 +82,7 @@ import {
   extractImageFromClipboard,
   MAX_CHAT_IMAGE_BYTES,
   ACCEPTED_CHAT_IMAGE_TYPES,
+  useKbChatStream,
   type ChatImageAttachment,
   type KbVisionNote,
 } from "@/hooks/useKbChatStream";
@@ -209,6 +219,12 @@ interface ChatMessage {
   // doc69 G2-7 — how-to answer grounded in a KNOWN operational card: a 1-tap
   // "Mở màn X" button (NOT auto-navigated — see the client_action handler below).
   navigateAction?: { route: string; message: string } | null;
+  // ★ Đợt 10.4b L4 — lượt do model NGOÀI sinh. CẶP (ngoaiConvId, tinTraLoiId) chỉ lấy từ phản hồi `done.daLuu` của MÁY CHỦ (không tự dựng);
+  // `ngoai`/`vet` cũng do máy chủ trả. Có `ngoai` ⇒ render bằng bộ an toàn duy nhất (KHÔNG Markdown) + huy hiệu + nút kiểm định.
+  ngoai?: { nhaCungCap: string; model: string };
+  vet?: VetNgoai | null;
+  ngoaiConvId?: number;
+  tinTraLoiId?: number;
 }
 
 // GĐ2 — pending write-action types (PendingAction / PendingActionChange) moved
@@ -359,6 +375,16 @@ export function AILocalChatBubble() {
   // ── G2.3c — agentic multi-step (FE flow control only) ───────────────────────
   const [agentSession, setAgentSession] = useState<AgentSessionState | null>(null);
   const utils = trpc.useUtils();
+  // ★ Đợt 10.4b L4 — model NGOÀI: id hội thoại thật CHỈ trong state (không localStorage/sessionStorage), tạo ở tin ngoài ĐẦU TIÊN; vết lượt lỗi cho huy hiệu đỏ.
+  const [ngoaiConvId, setNgoaiConvId] = useState<number | null>(null);
+  const [vetLoiNgoai, setVetLoiNgoai] = useState<VetNgoai | null>(null);
+  const kbNgoai = useKbChatStream();
+  const { xacNhanNgoai, hoiVanHanh, hopThoai } = useXacNhanNgoai({ beMat: "chat", layThongTin: layThongTinNgoai(utils, "chat") });
+  const createConvNgoai = trpc.aiChat.createConversation.useMutation();
+  const saveStreamedNgoai = trpc.aiChat.saveStreamedMessage.useMutation();
+  useEffect(() => {
+    if (kbNgoai.error) toast.error(kbNgoai.error);
+  }, [kbNgoai.error]);
   const startSessionMutation = trpc.aiAgent.startSession.useMutation();
   const approvePlanMutation = trpc.aiAgent.approvePlan.useMutation();
   const confirmStepMutation = trpc.aiAgent.confirmStep.useMutation();
@@ -521,6 +547,94 @@ export function AILocalChatBubble() {
     [notifyImageError],
   );
 
+  // ─── ★ Đợt 10.4b L4 — hỏi bằng model NGOÀI (đường L1: hội thoại THẬT + conversationId) ─────────────────────
+  // Hợp đồng docs/HOP_DONG_10_4B_L4_BONG_BONG.md: không đính kèm/ảnh; đồng ý theo phiên (hỏi ở đây nếu model lưu từ phiên trước chưa đồng ý);
+  // hội thoại tạo ở tin ngoài ĐẦU TIÊN (hiện trong lịch sử /ai-chat); chỉ gửi lịch sử của CHÍNH hội thoại ngoài này; ngữ cảnh trang KHÔNG đi.
+  const guiNgoai = useCallback(
+    async (query: string, image: ChatImageAttachment | null) => {
+      const ma = chonModel;
+      if (image) {
+        toast.error(t("errors.reason.NGOAI_CAM_DINH_KEM", "không gửi tệp đính kèm tới AI ngoài"));
+        return;
+      }
+      if (!daDongYNgoai(ma)) {
+        if (!(await xacNhanNgoai(ma))) return;
+        datDongYNgoai(ma);
+      }
+      let convId = ngoaiConvId;
+      if (convId === null) {
+        try {
+          convId = (await createConvNgoai.mutateAsync({ title: query.slice(0, 50) })).id;
+          setNgoaiConvId(convId);
+        } catch {
+          return;
+        }
+      }
+      const userMsgId = `u_${Date.now()}`;
+      const assistantMsgId = `a_${Date.now() + 1}`;
+      const lichSu = lichSuNgoai(messages, convId);
+      setMessages((prev) => [
+        ...prev,
+        { id: userMsgId, type: "user", content: query, timestamp: new Date().toISOString(), ngoaiConvId: convId! },
+        { id: assistantMsgId, type: "assistant", content: "", timestamp: new Date().toISOString(), streaming: true, ngoaiConvId: convId! },
+      ]);
+      setQuestion("");
+      setVetLoiNgoai(null);
+      startTypingAnimation();
+      setIsStreaming(true);
+      const boHaiTin = () => setMessages((prev) => prev.filter((m) => m.id !== userMsgId && m.id !== assistantMsgId));
+      try {
+        let daXN = daXacNhanVanHanh(String(convId), ma);
+        const goi = () =>
+          kbNgoai.startKbStream(
+            {
+              question: query,
+              topK: 5,
+              history: lichSu,
+              userRole,
+              context: dungNguCanhNgoai({ chonModel: ma, conversationId: convId!, uiLanguage: i18n.language, xacNhanVanHanh: daXN }),
+            },
+            { onText: (txt) => setMessages((prev) => prev.map((m) => (m.id === assistantMsgId ? { ...m, content: txt } : m))) },
+          );
+        let kq = await goi();
+        // 428: hỏi MỘT lần mỗi hội thoại rồi gửi lại với cờ xác nhận; từ chối ⇒ bỏ hai tin, trả câu về ô nhập.
+        if (!kq && kbNgoai.loiNgoaiRef.current?.canXacNhanVanHanh) {
+          if (await hoiVanHanh(String(convId), ma)) {
+            daXN = true;
+            kq = await goi();
+          } else {
+            boHaiTin();
+            setQuestion(query);
+            return;
+          }
+        }
+        if (kq) {
+          const text = kq.fullText.trim() || t("aiChat.noAnswer", "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: text, streaming: false, ...(kq.ngoai ? { ngoai: kq.ngoai } : {}), vet: kq.vet ?? null, ...(kq.daLuu ? { tinTraLoiId: kq.daLuu.tinTraLoiId } : {}) }
+                : m,
+            ),
+          );
+          // Máy chủ chưa tự lưu (lưu lỗi) ⇒ đường cũ kèm callId (máy chủ tự kiểm băm với sổ cổng).
+          if (!kq.daLuu) saveStreamedNgoai.mutate({ conversationId: convId, userMessage: query, assistantMessage: text, ...(kq.vet ? { ngoaiCallId: kq.vet.callId } : {}) });
+        } else {
+          // Hỏng/huỷ: KHÔNG lặng lẽ chuyển sang trả lời cục bộ. Trả câu về ô nhập; huy hiệu đỏ nếu máy chủ trả vết.
+          boHaiTin();
+          if (!kbNgoai.abortedRef.current) {
+            setQuestion(query);
+            setVetLoiNgoai(kbNgoai.loiNgoaiRef.current?.vet ?? null);
+          }
+        }
+      } finally {
+        stopTypingAnimation();
+        setIsStreaming(false);
+      }
+    },
+    [chonModel, ngoaiConvId, messages, userRole, i18n.language, t, xacNhanNgoai, hoiVanHanh, createConvNgoai, saveStreamedNgoai, kbNgoai, startTypingAnimation, stopTypingAnimation],
+  );
+
   // ─── Ask (streaming) ─────────────────────────────────────────────────────────
   const handleAsk = useCallback(
     async (q?: string) => {
@@ -532,6 +646,11 @@ export function AILocalChatBubble() {
       if (!query || isStreaming) return;
       if (!isReady) {
         toast.error(t("aiChat.notReady", "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau."));
+        return;
+      }
+      // ★ Đợt 10.4b L4 — model NGOÀI đi đường riêng (hội thoại thật); nhánh cục bộ/auto bên dưới KHÔNG đổi một byte.
+      if (laModelNgoai(chonModel)) {
+        await guiNgoai(query, image);
         return;
       }
 
@@ -819,7 +938,7 @@ export function AILocalChatBubble() {
         ),
       );
     },
-    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, attachedImage, chonModel, t, startTypingAnimation, stopTypingAnimation],
+    [question, isStreaming, isReady, messages, userRole, location, i18n.language, selection, attachedImage, chonModel, guiNgoai, t, startTypingAnimation, stopTypingAnimation],
   );
 
   // ─── Feedback ────────────────────────────────────────────────────────────────
@@ -1101,6 +1220,8 @@ export function AILocalChatBubble() {
   // ─── Clear history ────────────────────────────────────────────────────────────
   const handleClearHistory = useCallback(() => {
     setMessages([]);
+    setNgoaiConvId(null);
+    setVetLoiNgoai(null);
     localStorage.removeItem(STORAGE_MESSAGES_KEY);
     toast.success(t("aiChat.clearHistorySuccess", "Đã xóa lịch sử trò chuyện."));
   }, [t]);
@@ -1327,7 +1448,7 @@ export function AILocalChatBubble() {
               </div>
             ) : (
               <div className="space-y-3">
-                {messages.map((msg) => (
+                {messages.map((msg, chiMuc) => (
                   <div key={msg.id} className={cn("flex gap-2", msg.type === "user" ? "flex-row-reverse" : "flex-row")}>
                     <div
                       className={cn(
@@ -1425,10 +1546,30 @@ export function AILocalChatBubble() {
                                   t={t}
                                 />
                               )}
-                              <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed">
-                                <Markdown>{msg.content}</Markdown>
-                                {msg.streaming && <span className="inline-block size-1.5 rounded-full bg-muted-foreground animate-pulse ml-0.5" />}
-                              </div>
+                              {msg.ngoaiConvId !== undefined ? (
+                                // ★ Đợt 10.4b L4 — lượt do model NGOÀI: bộ render an toàn duy nhất (liên kết/ảnh không sống) + huy hiệu vết + nút kiểm định.
+                                <>
+                                  <div className="text-xs leading-relaxed">
+                                    <NoiDungTraLoiNgoai noiDung={msg.content} />
+                                    {msg.streaming && <span className="inline-block size-1.5 rounded-full bg-muted-foreground animate-pulse ml-0.5" />}
+                                  </div>
+                                  {!msg.streaming && msg.vet && <HuyHieuNgoai vet={msg.vet} />}
+                                  {/* Nhánh `chat` (lượt đã lưu, cặp id do MÁY CHỦ trả). */}
+                                  {!msg.streaming && msg.content.trim() !== "" && msg.tinTraLoiId !== undefined && (
+                                    <NutKiemDinhNgoai nguon={{ loai: "chat", cuocTroChuyenId: msg.ngoaiConvId, tinNhanId: msg.tinTraLoiId }} />
+                                  )}
+                                  {/* Nhánh `van-ban` (lượt KHÔNG có bản lưu) — sau cờ MẶC ĐỊNH TẮT (hợp đồng §9 T9); hộp xác nhận xem trước ĐÚNG chuỗi sẽ gửi + nói rõ "đã cắt". */}
+                                  {vanBanBongBongBat() && msg.tinTraLoiId === undefined && (() => {
+                                    const vb = dungNguonVanBan(messages, chiMuc);
+                                    return vb ? <NutKiemDinhNgoai nguon={vb.nguon} daCat={vb.daCat} /> : null;
+                                  })()}
+                                </>
+                              ) : (
+                                <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed">
+                                  <Markdown>{msg.content}</Markdown>
+                                  {msg.streaming && <span className="inline-block size-1.5 rounded-full bg-muted-foreground animate-pulse ml-0.5" />}
+                                </div>
+                              )}
                               {!msg.streaming && msg.result?.structured && (
                                 (msg.result.structured.navigationPath ||
                                   (msg.result.structured.steps && msg.result.structured.steps.length > 0) ||
@@ -1696,7 +1837,9 @@ export function AILocalChatBubble() {
                 e.target.value = "";
               }}
             />
-            <div className="mb-1.5 flex justify-end"><ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} compact testId="chon-model-bong-bong" /></div>
+            <div className="mb-1.5 flex justify-end"><ChonModel beMat="chat" giaTri={chonModel} onDoi={setChonModel} compact testId="chon-model-bong-bong" xacNhanNgoai={xacNhanNgoai} /></div>
+            {vetLoiNgoai && !isStreaming && <div className="mb-1.5"><HuyHieuNgoai vet={vetLoiNgoai} loi /></div>}
+            {hopThoai}
             <div className="flex gap-2 items-end border rounded-xl px-3 py-2 focus-within:border-primary/50 transition-colors bg-background">
               <Textarea
                 placeholder={

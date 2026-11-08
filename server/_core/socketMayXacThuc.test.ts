@@ -181,7 +181,8 @@ const mayCoKhoa = (machineCode: string, apiKey: string) => ketNoi({ auth: { clie
 function phongCua(c: ClientSocket): string[] {
   const sk = socketMod.getIO()!.sockets.sockets.get(c.id!);
   if (!sk) throw new Error(`không thấy socket server ${c.id}`);
-  return [...sk.rooms].filter((r) => r !== c.id).sort();
+  // F5 đầy đủ — bỏ hai phòng ĐIỀU KHIỂN `kiem:user:*` / `kiem:phien:*` (chỉ để ngắt, không mang sự kiện; đo ở socketXetLaiQuyen.test.ts)
+  return [...sk.rooms].filter((r) => r !== c.id && !r.startsWith("kiem:")).sort();
 }
 function ghiNhan(c: ClientSocket, evt: string): any[] {
   const arr: any[] = [];

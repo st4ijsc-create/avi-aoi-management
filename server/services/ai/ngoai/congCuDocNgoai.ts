@@ -7,6 +7,7 @@ import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { giaiThuMucNgoai, giaiTepNgoai, laNoiDungNhiPhan, locKetQuaTimNgoaiThuc, TRAN_BYTE_TEP_NGOAI, type ChamDia } from "../../../../shared/aiNgoaiDenyList";
 import type { CongCuNgoai } from "./nhaCungCap/kieu";
+import { laTaiLieuSanPham } from "./taiLieuSanPham";
 
 export const TOOL_DOC_NGOAI: readonly CongCuNgoai[] = Object.freeze([
   {
@@ -25,6 +26,17 @@ export const TOOL_DOC_NGOAI: readonly CongCuNgoai[] = Object.freeze([
     schema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" } }, required: ["pattern"], additionalProperties: false },
   },
 ]);
+/** (L3c) chunk tài liệu từ truy hồi KB (như `truyHoi` của L1 `routes/kbNgoai.ts`). */
+export interface ChunkTaiLieu {
+  sourceType: string;
+  sourcePath: string;
+  title: string;
+  text: string;
+}
+/** (L3c) trần chữ mỗi đoạn tài liệu (= L1) và số đoạn mỗi lần tìm. */
+export const TRAN_KY_TU_DOAN_TAI_LIEU = 1500;
+export const SO_DOAN_TAI_LIEU = 5;
+
 export interface NguoiGoi {
   id: number;
   role?: string | null;
@@ -52,7 +64,13 @@ export async function chayToolDocNgoai(
   ten: string,
   thamSo: Record<string, unknown>,
   o: { goc: string; user: NguoiGoi; doc: TrongThaiDoc },
-  dep: { realpath: ChamDia["realpath"]; thucThi: (tool: string, args: Record<string, unknown>) => Promise<{ data?: unknown; textSummary?: string } | null> },
+  dep: {
+    realpath: ChamDia["realpath"];
+    thucThi: (tool: string, args: Record<string, unknown>) => Promise<{ data?: unknown; textSummary?: string } | null>;
+    /** (L3c) truy hồi KB + gốc mã SẢN PHẨM (nơi `sourcePath` của chunk được giải) — vắng ⇒ `search_docs` bị từ chối. */
+    truyHoi?: (q: string, k: number) => Promise<ChunkTaiLieu[]>;
+    gocSanPham?: string;
+  },
 ): Promise<KetQuaTool> {
   const cd: ChamDia = { goc: o.goc, realpath: dep.realpath };
   const tuChoi = (ma: string, p?: string): KetQuaTool => ({ ok: false, ...(p ? { path: p } : {}), maTuChoi: ma, noiDung: `[TỪ CHỐI ${ma}${p ? ` ${p}` : ""}]` });
@@ -109,6 +127,47 @@ export async function chayToolDocNgoai(
     o.doc.byte += b;
     return { ok: true, path: rel, noiDung };
   }
+  if (ten === "search_docs") {
+    // ★ L3c — tài liệu SẢN PHẨM (bộ lọc L1 `laTaiLieuSanPham`, MỘT bộ) ⇒ từng chunk: đường `sourcePath` GIẢI trong gốc sản phẩm + deny-list
+    //   (như read_file) ⇒ lọc lại theo đường THẬT ⇒ nhị phân bỏ ⇒ trần byte / số tệp CỘNG DỒN của run. Chunk bị bỏ được KHAI.
+    const q = typeof thamSo.query === "string" ? thamSo.query.trim().slice(0, 300) : "";
+    if (!q) return tuChoi("THIEU_QUERY");
+    if (!dep.truyHoi || !dep.gocSanPham) return tuChoi("NGOAI_TOOL_KHONG_CAP");
+    const ds = await dep.truyHoi(q, SO_DOAN_TAI_LIEU).catch(() => [] as ChunkTaiLieu[]);
+    const cdSp: ChamDia = { goc: dep.gocSanPham, realpath: dep.realpath };
+    const gocSpThuc = await dep.realpath(dep.gocSanPham).catch(() => dep.gocSanPham!);
+    let boDi = 0;
+    const giu: Array<{ rel: string; title: string; text: string }> = [];
+    for (const t of ds) {
+      if (!laTaiLieuSanPham(t)) {
+        boDi++;
+        continue;
+      }
+      const g = await giaiTepNgoai(t.sourcePath, cdSp);
+      const rel = g.ok ? path.relative(gocSpThuc, g.duongThuc).split(path.sep).join("/") : "";
+      // đường THẬT (sau symlink / junction) cũng phải là tài liệu sản phẩm
+      if (!g.ok || !laTaiLieuSanPham({ sourceType: t.sourceType, sourcePath: rel })) {
+        boDi++;
+        continue;
+      }
+      const text = String(t.text ?? "");
+      if (!text.trim() || laNoiDungNhiPhan(text)) {
+        boDi++;
+        continue;
+      }
+      giu.push({ rel, title: String(t.title ?? "").slice(0, 120), text: text.slice(0, TRAN_KY_TU_DOAN_TAI_LIEU) });
+    }
+    if (o.doc.tep + giu.length > o.doc.tranTep) return tuChoi("TRAN_SO_TEP");
+    let noiDung = giu.length
+      ? giu.map((d, i) => `<<<TAI_LIEU [${i + 1}] ${d.rel} — ${d.title.replace(/<<<|>>>/g, "‹‹‹")}\n${d.text.replace(/<<<|>>>/g, "‹‹‹")}\n>>>`).join("\n")
+      : `Không tìm thấy tài liệu sản phẩm cho "${q.replace(/<<<|>>>/g, "‹‹‹")}".`;
+    if (boDi) noiDung += `\n[${boDi} đoạn bị ẩn — không phải tài liệu sản phẩm / cấm với AI ngoài]`;
+    const b = Buffer.byteLength(noiDung, "utf8");
+    if (o.doc.byte + b > o.doc.tranByte) return tuChoi("TRAN_BYTE_DOC");
+    o.doc.byte += b;
+    o.doc.tep += giu.length;
+    return { ok: true, noiDung };
+  }
   return tuChoi("NGOAI_TOOL_KHONG_CAP");
 }
 
@@ -117,6 +176,13 @@ export async function chayToolDocNgoaiThat(ten: string, thamSo: Record<string, u
   const { executeDecision } = await import("../../aiLocalTools");
   return chayToolDocNgoai(ten, thamSo, o, {
     realpath: (p) => fsp.realpath(p),
+    // (L3c) cùng truy hồi KB của L1; gốc sản phẩm = thư mục máy chủ đang chạy (repo)
+    gocSanPham: process.cwd(),
+    truyHoi: async (q, k) => {
+      const { retrieveKnowledge } = await import("../../aiLocalKnowledgeService");
+      const r = await retrieveKnowledge(q, k, {} as never);
+      return r.citations.map((c, i) => ({ sourceType: c.sourceType, sourcePath: c.sourcePath, title: c.title, text: r.contexts[i] ?? "" }));
+    },
     thucThi: async (tool, args) => {
       const out = await executeDecision(
         { tool, args },

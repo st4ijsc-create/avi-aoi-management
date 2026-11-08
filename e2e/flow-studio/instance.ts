@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ALWAYS_OFF, killTree, portBusy } from "../dot5-h6/instance";
 import { testDatabaseUrl } from "./fixtures";
+import { docNhatKyTuMoc, moNhatKyNoiThem } from "./nhatKyServer";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -45,14 +46,15 @@ export async function startInstance(logDir: string): Promise<RunningInstance> {
   for (const p of [SERVER_PORT, VITE_PORT]) if (await portBusy(p)) throw new Error(`FS: port ${p} busy — refusing`);
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, "server.log");
-  const log = fs.openSync(logFile, "w");
+  // NỐI THÊM + dòng đầu có mốc thời gian (log của lượt sụp không bị lượt sau ghi đè); chờ khởi động chỉ đọc phần của LƯỢT NÀY
+  const { fd: log, batDau } = moNhatKyNoiThem(logFile, `FS instance server :${SERVER_PORT} / vite :${VITE_PORT} · node ${process.version}`);
   const child = spawn(process.execPath, [path.join(REPO, "node_modules/tsx/dist/cli.mjs"), "server/_core/index.ts"], {
     cwd: REPO, env: serverEnv(logDir), stdio: ["ignore", log, log], windowsHide: true,
   });
   const t0 = Date.now();
   for (;;) {
     if (child.exitCode != null) throw new Error(`FS: server exited ${child.exitCode} — see ${logFile}`);
-    const m = /Server running on https?:\/\/localhost:(\d+)/.exec(fs.readFileSync(logFile, "utf8"));
+    const m = /Server running on https?:\/\/localhost:(\d+)/.exec(docNhatKyTuMoc(logFile, batDau));
     if (m) {
       if (Number(m[1]) !== SERVER_PORT) { killTree(child.pid); throw new Error(`FS: server on ${m[1]}, not ${SERVER_PORT}`); }
       break;

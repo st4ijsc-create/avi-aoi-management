@@ -137,6 +137,9 @@ describe("recipe versioning", () => {
   });
 });
 
+/** `recipes.getActive` đã gỡ khỏi router (dọn vệ sinh lô A2, 0 client-caller): đọc công thức đang chạy thẳng từ lớp db giả để vẫn đo hành vi deploy/rollback. */
+const dangKichHoat = async (code: string) => (await import("../db/machineRecipe")).getActiveRecipe({ code } as never);
+
 describe("deploy / rollback", () => {
   it("deploy flips active + writes ledger row with previousRecipeId + deployedBy", async () => {
     const v1 = await caller.recipes.create({ code: "R", name: "r", payload: { a: 1 } });
@@ -146,11 +149,11 @@ describe("deploy / rollback", () => {
     expect(dep1.status).toBe("deployed");
     expect(dep1.previousRecipeId).toBeNull();
     expect(dep1.deployedBy).toBe(7);
-    expect((await caller.recipes.getActive({ code: "R" }))!.id).toBe(v1.id);
+    expect((await dangKichHoat("R"))!.id).toBe(v1.id);
 
     const dep2 = await caller.recipes.deploy({ recipeId: v2.id, machineId: 100 });
     expect(dep2.previousRecipeId).toBe(v1.id);
-    expect((await caller.recipes.getActive({ code: "R" }))!.id).toBe(v2.id);
+    expect((await dangKichHoat("R"))!.id).toBe(v2.id);
   });
 
   it("rollback re-activates the previous recipe", async () => {
@@ -160,7 +163,7 @@ describe("deploy / rollback", () => {
     await caller.recipes.deploy({ recipeId: v2.id, machineId: 100 });
 
     await caller.recipes.rollback({ machineId: 100 });
-    expect((await caller.recipes.getActive({ code: "R" }))!.id).toBe(v1.id);
+    expect((await dangKichHoat("R"))!.id).toBe(v1.id);
   });
 
   it("deploy error surfaces as BAD_REQUEST", async () => {

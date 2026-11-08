@@ -53,7 +53,6 @@ vi.mock("../services/robot/robotCommandDispatcher", () => ({
     disp.calls.push(i);
     return { ok: false, status: "rejected", error: "ROBOT_OWNED_BY_EDGE" };
   }),
-  robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
 const stale = vi.hoisted(() => ({ on: false, clears: 0 }));
 vi.mock("../services/robot/robotManager", () => ({

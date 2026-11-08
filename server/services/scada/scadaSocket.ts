@@ -1,35 +1,67 @@
 /**
  * SCADA R0 Task 8 — KÊNH SOCKET `scada:subscribe` (C.6): màn SCADA nhận giá trị hiện tại theo từng tag, MỖI TAG KIỂM PHẠM VI NHÀ MÁY.
+ * SCADA 1a (2026-11-03, brief scada-ui 2026-11-02 đã duyệt) — thêm ngưỡng cũ theo tag (`staleAfterMs`), nhịp tim `scada:tick` 1 Hz,
+ * nhịp khung tuỳ chọn (`capMs`) và số thứ tự khung (`seq`) để màn hình NÓI THẬT khi dữ liệu cũ ("im vì không đổi" ≠ "im vì đường chết").
  *
- * Hợp đồng:
- *   vào  `scada:subscribe`   { subId?: string; tags: { adapterId: number; tagKey: string }[] }
- *   ra   `scada:snapshot`    { subId; values: GiaTriGoi[]; denied: { adapterId; tagKey }[] }
- *   ra   `scada:delta`       { subId; values: GiaTriGoi[] }   — mỗi đăng ký tối đa 1 khung / 250 ms, MỚI NHẤT mỗi tag, không bỏ tag
+ * Hợp đồng (kiểu TypeScript ở dưới: ScadaSubscribe / ScadaSnapshot / ScadaDelta / ScadaTick):
+ *   vào  `scada:subscribe`   { subId?; tags: { adapterId; tagKey }[]; capMs?: 50|100|250|1000 (vắng ⇒ 250); nguon?: "that" }
+ *   ra   `scada:snapshot`    { subId; seq: 0; serverTs; values: GiaTriGoi[]; staleAfterMs: { "<adapterId>:<tagKey>": ms }; denied }
+ *   ra   `scada:delta`       { subId; seq; serverTs; values: GiaTriGoi[]; staleAfterMs? }   — MỚI NHẤT mỗi tag, không bỏ tag
+ *   ra   `scada:tick`        { subId; seq; serverTs; adapters: { adapterId; trangThai; tuoiMauMoiNhatMs }[]; staleAfterMs? } — mỗi 1000 ms
  *   vào  `scada:unsubscribe` { subId?: string }               — bỏ trống = tất cả
- *   ra   `scada:error`       { code: "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" | "BUSY" }
- *   GiaTriGoi = [adapterId, tagKey, v, q, ts, ageMs, stale, reason]
+ *   ra   `scada:error`       { code: MaLoiScada }
+ *   GiaTriGoi = [adapterId, tagKey, v, q, ts, ageMs, stale, reason] — GIỮ NGUYÊN.
+ *   `seq`: MỘT dãy mỗi (socket, subId), chung cho snapshot (0) / delta / tick (+1 mỗi khung); đăng ký lại cùng subId ⇒ snapshot mới, seq 0.
+ *   `staleAfterMs` trong delta/tick: CHỈ khi ngưỡng của adapter ĐỔI so với lần gửi trước (đổi poll / bật deadband) — chỉ khoá đổi.
  *
  * An toàn (bảo mật — một người dùng KHÔNG BAO GIỜ nhận tag ngoài phạm vi của mình):
- *   • KHÔNG `socket.join`, KHÔNG `io.emit`: chỉ `socket.emit` tới đúng socket đã đăng ký (census phòng/phát không đổi).
+ *   • KHÔNG `socket.join`, KHÔNG `io.emit`: chỉ `socket.emit` tới đúng socket đã đăng ký (census phòng/phát không đổi). `scada:tick` cũng vậy.
  *   • Quyền kiểm TỪNG TAG lúc đăng ký (quyền MỘT lần + phạm vi MỘT `idsTrongPhamVi("machine")` mỗi đăng ký — `taoKiemPhamViTagScada`,
- *     final M4); tag bị từ chối ⇒ `denied`, KHÔNG gửi giá trị.
+ *     final M4); tag bị từ chối ⇒ `denied`, KHÔNG gửi giá trị, KHÔNG có khoá trong `staleAfterMs`, adapter của nó KHÔNG vào tick.
  *     Adapter không tồn tại ⇒ cũng `denied` (cùng kết quả với ngoài phạm vi: không lộ tồn tại).
- *   • Delta chỉ mang tag ĐÃ ĐĂNG KÝ + ĐÃ ĐƯỢC PHÉP. Máy hiệu lực của adapter được bộ đệm quyết lúc ĐỌC; nếu khác máy đã kiểm lúc đăng ký
- *     (adapter bị chuyển máy giữa chừng) ⇒ KHÔNG gửi (người dùng phải đăng ký lại để kiểm lại).
- *   • Quá giới hạn ⇒ từ chối có mã (`TOO_MANY_TAGS` / `TOO_MANY_SUBS`), KHÔNG cắt bớt im lặng.
+ *   • Delta/tick chỉ mang tag/adapter ĐÃ ĐĂNG KÝ + ĐÃ ĐƯỢC PHÉP. Máy hiệu lực của adapter được bộ đệm quyết lúc ĐỌC; nếu khác máy đã kiểm lúc
+ *     đăng ký (adapter bị chuyển máy giữa chừng) ⇒ KHÔNG gửi giá trị, ngưỡng hay trạng thái của nó (người dùng phải đăng ký lại để kiểm lại).
+ *   • Tick KHÔNG mang tagKey / giá trị (chỉ id adapter đã được phép + trạng thái kết nối + tuổi mẫu mới nhất trong các tag được phép).
+ *   • Quá giới hạn ⇒ từ chối có mã (`TOO_MANY_TAGS` / `TOO_MANY_SUBS` / `TOO_MANY_HOT`), KHÔNG cắt bớt im lặng.
  *   • Adapter có trong DB nhưng không do trung tâm quản (edge…): xét phạm vi theo `device_adapters.machineId`, trả `v:null, q:"bad", reason:"stale"`.
  *
- * Vòng đẩy: MỘT `setInterval(250)` (unref) + MỘT người nghe `dangKyThayDoi`, CHỈ tồn tại khi có ≥ 1 đăng ký (tạo lúc đăng ký đầu tiên,
- * dừng khi đăng ký cuối bị huỷ/ngắt). Trạng thái ở `socket.data.__scada`.
+ * Vòng đẩy (1a): MỘT `setInterval(GIOI_HAN.buocVongMs = 50 ms)` (unref) + MỘT người nghe `dangKyThayDoi`, CHỈ tồn tại khi có ≥ 1 đăng ký
+ * (tạo lúc đăng ký đầu tiên, dừng khi đăng ký cuối bị huỷ/ngắt). Bộ đếm bước `buoc` (đơn điệu, không đọc đồng hồ tường):
+ *   • delta: socket phát ở bước `buoc % buocMoiKhung === 0`, `buocMoiKhung = max(capMsToiThieu, min capMs các đăng ký sống của socket) / 50`
+ *     ⇒ một thay đổi tới client trong ≤ capMs hiệu lực (mọi đăng ký của socket theo nhịp min);
+ *   • tick: mỗi đăng ký có hạn riêng `buocTick` (= bước tạo + 20, rồi +20) ⇒ 1 tick / 1000 ms / đăng ký, kể cả khi không gì đổi.
+ * Trạng thái ở `socket.data.__scada`. Trần "nóng" (capMs < 250) đếm từ chính tập đăng ký sống (không bộ đếm riêng ⇒ ngắt / F5 đá socket ⇒ tự về 0);
+ * trần theo người dùng là THEO TIẾN TRÌNH (socket của người đó trên bản sao này). B3 (ganGiam — nâng capMs khi tải cao) CHƯA làm.
  */
 import { randomUUID } from "node:crypto";
 import { coQuyenXemScada, laSocketNguoiDung, taoKiemPhamViTagScada, type DuLieuSocket } from "../../_core/socketPhongQuyen";
-import { boDemDangBat, dangKyThayDoi, layGiaTri, thongTinAdapter, type GiaTriCoTuoi } from "./boDemHienTai";
+import { boDemDangBat, dangKyThayDoi, layGiaTri, nguongCuCuaAdapter, rxTheoKhoa, thongTinAdapter, type GiaTriCoTuoi } from "./boDemHienTai";
+import { layTrangThaiAdapter, type TrangThaiKetNoi } from "../ot/trangThaiAdapter";
 import { DbUnavailableError } from "../../_core/dbErrors";
 
-export const GIOI_HAN = { tagMoiDangKy: 500, dangKyMoiSocket: 10, chuKyDeltaMs: 250 } as const;
+export const GIOI_HAN = {
+  tagMoiDangKy: 500,
+  dangKyMoiSocket: 10,
+  /** capMs mặc định khi đăng ký không khai (= hành vi trước 1a). */
+  chuKyDeltaMs: 250,
+  /** Bước của vòng đẩy duy nhất (mọi capMs hợp lệ là bội của nó). */
+  buocVongMs: 50,
+  /** Kẹp dưới của nhịp khung hiệu lực. */
+  capMsToiThieu: 50,
+  /** Nhịp tim mỗi đăng ký. */
+  tickMs: 1000,
+  /** Đăng ký "nóng" = capMs < nguongNongMs. */
+  nguongNongMs: 250,
+  /** Tối đa đăng ký nóng mỗi socket. */
+  nongMoiSocket: 2,
+  /** Tối đa đăng ký nóng mỗi người dùng — trên các socket của người đó Ở TIẾN TRÌNH NÀY. */
+  nongMoiNguoi: 3,
+} as const;
 
-export type MaLoiScada = "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "DISABLED" | "BUSY";
+export const CAP_MS_HOP_LE = [50, 100, 250, 1000] as const;
+export type CapMs = (typeof CAP_MS_HOP_LE)[number];
+
+export type MaLoiScada = "BAD_REQUEST" | "TOO_MANY_TAGS" | "TOO_MANY_SUBS" | "TOO_MANY_HOT" | "DISABLED" | "BUSY";
 
 /** [adapterId, tagKey, v, q, ts, ageMs, stale, reason] — `ageMs = -1` và `ts = 0` khi bộ đệm CHƯA có mẫu. */
 export type GiaTriGoi = [
@@ -42,6 +74,52 @@ export type GiaTriGoi = [
   stale: boolean,
   reason: string | null,
 ];
+
+/** Khoá tag trên dây: `${adapterId}:${tagKey}` (cùng khoá bộ đệm). */
+export type KhoaTagScada = `${number}:${string}`;
+export type TagScada = { adapterId: number; tagKey: string };
+
+// ─── hợp đồng 1a ────────────────────────────────────────────────────────────────────────────────────
+export type ScadaSubscribe = {
+  subId?: string;
+  tags: TagScada[];
+  /** Vắng ⇒ 250. Ngoài tập ⇒ BAD_REQUEST. */
+  capMs?: CapMs;
+  /** Dự phòng pha 2B. Có mặt và khác "that" ⇒ BAD_REQUEST. */
+  nguon?: "that";
+};
+export type ScadaSnapshot = {
+  subId: string;
+  seq: number;
+  serverTs: number;
+  values: GiaTriGoi[];
+  /** Ngưỡng cũ (ms) của TỪNG tag được phép — `nguongCuCuaAdapter` của bộ đệm. */
+  staleAfterMs: Record<KhoaTagScada, number>;
+  denied: TagScada[];
+};
+export type ScadaDelta = {
+  subId: string;
+  seq: number;
+  serverTs: number;
+  values: GiaTriGoi[];
+  /** Chỉ khi ngưỡng của ≥ 1 adapter ĐỔI so với lần gửi trước; chỉ khoá đổi. */
+  staleAfterMs?: Record<KhoaTagScada, number>;
+};
+export type ScadaTickAdapter = {
+  adapterId: number;
+  /** Trạng thái phiên kết nối do TRUNG TÂM giữ (`layTrangThaiAdapter`); null = trung tâm không có (adapter do edge sở hữu / chưa từng báo). */
+  trangThai: TrangThaiKetNoi | null;
+  /** Tuổi (ms) mẫu mới nhất trong các tag ĐƯỢC PHÉP của adapter này; null = chưa có mẫu. */
+  tuoiMauMoiNhatMs: number | null;
+};
+export type ScadaTick = {
+  subId: string;
+  seq: number;
+  serverTs: number;
+  adapters: ScadaTickAdapter[];
+  /** Như delta: ngưỡng đổi mà chưa có delta nào mang đi. */
+  staleAfterMs?: Record<KhoaTagScada, number>;
+};
 
 /** Phần của `Socket` mà module này dùng (test dùng socket giả). */
 export interface SocketScada {
@@ -56,12 +134,27 @@ interface TagDangKy {
   /** Máy đã được kiểm phạm vi lúc đăng ký (null = adapter không gắn máy ⇒ đã kiểm "toàn quyền"). */
   machineId: number | null;
 }
+interface AdapterDangKy {
+  /** Máy đã kiểm lúc đăng ký (mọi tag của một adapter cùng máy). */
+  machineId: number | null;
+  /** Khoá các tag ĐƯỢC PHÉP của adapter này trong đăng ký. */
+  keys: KhoaTagScada[];
+  /** Ngưỡng cũ đã gửi lần cuối cho adapter này (snapshot hoặc khung sau). */
+  nguongDaGui: number;
+}
 interface DangKy {
   subId: string;
   /** Chỉ tag ĐƯỢC PHÉP. Khoá `${adapterId}:${tagKey}` (cùng khoá bộ đệm). */
   tags: Map<string, TagDangKy>;
+  /** Adapter có ≥ 1 tag được phép. */
+  adapters: Map<number, AdapterDangKy>;
   /** Khoá đã đổi từ khung trước; giá trị lấy MỚI NHẤT lúc đẩy. */
   cho: Set<string>;
+  capMs: CapMs;
+  /** seq của khung CUỐI đã phát (snapshot = 0). */
+  seq: number;
+  /** Bước vòng mà tick kế tiếp đến hạn. */
+  buocTick: number;
 }
 interface DangKyDangCho {
   subId: string;
@@ -75,14 +168,20 @@ interface TrangThaiScada {
   cho: DangKyDangCho | null;
   /** Tăng mỗi lần unsubscribe-tất-cả: lệnh subscribe bắt đầu trước đó bị huỷ. */
   the: number;
+  /** Số bước vòng giữa hai khung delta của socket (theo min capMs các đăng ký sống) — cập nhật ở `capNhatVong`. */
+  buocMoiKhung: number;
 }
 
-const khoa = (adapterId: number, tagKey: string): string => `${adapterId}:${tagKey}`;
+const khoa = (adapterId: number, tagKey: string): KhoaTagScada => `${adapterId}:${tagKey}`;
+const BUOC_TICK = Math.round(GIOI_HAN.tickMs / GIOI_HAN.buocVongMs);
+const laNong = (capMs: number): boolean => capMs < GIOI_HAN.nguongNongMs;
 
 /** Socket đang có ≥ 1 đăng ký. */
 const cacSocket = new Set<SocketScada>();
 let hen: ReturnType<typeof setInterval> | null = null;
 let huyNguoiNghe: (() => void) | null = null;
+/** Bộ đếm bước của vòng (về 0 khi vòng dừng — lúc đó không còn đăng ký nào). */
+let buoc = 0;
 
 /** Chỉ cho lưới: vòng đẩy có đang chạy không. */
 export function __vongDangChay(): boolean {
@@ -104,6 +203,59 @@ function phat(socket: SocketScada, ev: string, payload: unknown): void {
 
 function baoLoi(socket: SocketScada, code: MaLoiScada): void {
   phat(socket, "scada:error", { code });
+}
+
+// ─── trần "nóng" (B2) ───────────────────────────────────────────────────────────────────────────────
+const idNguoi = (socket: SocketScada): number | null => {
+  const id = (socket.data.user as { id?: unknown } | null | undefined)?.id;
+  return typeof id === "number" ? id : null;
+};
+function demNongSocket(st: TrangThaiScada, boQuaSubId: string | null): number {
+  let n = 0;
+  for (const s of st.subs.values()) if (s.subId !== boQuaSubId && laNong(s.capMs)) n++;
+  return n;
+}
+/** Số đăng ký nóng của người dùng trên MỌI socket của họ ở tiến trình này, trừ (socket hiện tại, subId sắp thay). */
+function demNongNguoi(userId: number, socket: SocketScada, boQuaSubId: string | null): number {
+  let n = 0;
+  for (const sk of cacSocket) {
+    const st = trangThai(sk);
+    if (!st || st.daNgat || idNguoi(sk) !== userId) continue;
+    n += demNongSocket(st, sk === socket ? boQuaSubId : null);
+  }
+  return n;
+}
+/** Thêm một đăng ký (capMs, thay subId) có vượt trần nóng không. */
+function vuotTranNong(socket: SocketScada, st: TrangThaiScada, subId: string, capMs: CapMs): boolean {
+  if (!laNong(capMs)) return false;
+  if (demNongSocket(st, subId) + 1 > GIOI_HAN.nongMoiSocket) return true;
+  const uid = idNguoi(socket);
+  return uid !== null && demNongNguoi(uid, socket, subId) + 1 > GIOI_HAN.nongMoiNguoi;
+}
+/** Chỉ cho lưới: số đăng ký nóng đang sống (của một người dùng, hoặc toàn tiến trình). */
+export function __soDangKyNong(userId?: number): number {
+  let n = 0;
+  for (const sk of cacSocket) {
+    const st = trangThai(sk);
+    if (!st || st.daNgat) continue;
+    if (userId !== undefined && idNguoi(sk) !== userId) continue;
+    n += demNongSocket(st, null);
+  }
+  return n;
+}
+/**
+ * SCADA 1a fix 1 (I-1) — socket có đang GIỮ dữ liệu theo phạm vi qua kênh này không: ≥ 1 đăng ký sống (tag đã kiểm phạm vi lúc đăng ký) hoặc
+ * một lệnh subscribe đang chờ (sẽ thành đăng ký với phạm vi đọc lúc ấy). Lượt quét F5 (`socketXetLaiQuyen.socketConHopLe`) coi socket như
+ * vậy NGANG với socket đang ở phòng có phạm vi — đăng ký SCADA không phải phòng nên trước đây lượt quét không thấy. Đã ngắt ⇒ false.
+ */
+export function coDuLieuPhamViScada(data: unknown): boolean {
+  const st = (data as { __scada?: TrangThaiScada } | null | undefined)?.__scada;
+  return !!st && !st.daNgat && (st.subs.size > 0 || st.cho !== null);
+}
+
+/** Chỉ cho lưới: số socket đang có ≥ 1 đăng ký (phát hiện rò đăng ký). */
+export function __soSocketDangKy(): number {
+  return cacSocket.size;
 }
 
 // ─── tra adapter trong DB (adapter không do trung tâm quản) ──────────────────────────────────────────
@@ -141,6 +293,26 @@ function giaTriCua(t: TagDangKy): GiaTriGoi | "doiMay" | null {
   return goiTuBoDem(g);
 }
 
+/** Adapter đã bị chuyển máy so với máy đã kiểm lúc đăng ký (theo sổ đăng ký adapter — cùng nguồn máy hiệu lực của bộ đệm). */
+function adapterDoiMay(adapterId: number, a: AdapterDangKy): boolean {
+  const info = thongTinAdapter(adapterId);
+  return info !== null && info.machineId !== a.machineId;
+}
+
+/** A2 — ngưỡng của adapter nào ĐỔI so với lần gửi trước ⇒ trả khoá (chỉ tag được phép của adapter đó) + ghi nhận đã gửi; không đổi ⇒ null. */
+function layNguongDoi(sub: DangKy): Record<KhoaTagScada, number> | null {
+  let out: Record<KhoaTagScada, number> | null = null;
+  for (const [adapterId, a] of sub.adapters) {
+    if (adapterDoiMay(adapterId, a)) continue; // A5: tag đổi máy vắng khỏi staleAfterMs mới
+    const n = nguongCuCuaAdapter(adapterId);
+    if (n === a.nguongDaGui) continue;
+    a.nguongDaGui = n;
+    out ??= {};
+    for (const k of a.keys) out[k] = n;
+  }
+  return out;
+}
+
 // ─── vòng đẩy ───────────────────────────────────────────────────────────────────────────────────────
 function khiBoDemDoi(keys: string[]): void {
   for (const sk of cacSocket) {
@@ -152,49 +324,99 @@ function khiBoDemDoi(keys: string[]): void {
   }
 }
 
-function dayKhung(): void {
+function phatDelta(sk: SocketScada, sub: DangKy, now: number): void {
+  if (sub.cho.size === 0) return;
+  const values: GiaTriGoi[] = [];
+  for (const k of sub.cho) {
+    const t = sub.tags.get(k);
+    if (!t) continue;
+    const gt = giaTriCua(t);
+    if (gt === null || gt === "doiMay") continue;
+    values.push(gt);
+  }
+  sub.cho.clear();
+  if (values.length === 0) return;
+  const doi = layNguongDoi(sub);
+  const goi: ScadaDelta = { subId: sub.subId, seq: ++sub.seq, serverTs: now, values };
+  if (doi) goi.staleAfterMs = doi;
+  phat(sk, "scada:delta", goi);
+}
+
+function phatTick(sk: SocketScada, sub: DangKy, now: number): void {
+  const adapters: ScadaTickAdapter[] = [];
+  for (const [adapterId, a] of sub.adapters) {
+    if (adapterDoiMay(adapterId, a)) continue; // không lộ trạng thái adapter đã sang máy khác
+    let rxMoiNhat: number | null = null;
+    for (const k of a.keys) {
+      const rx = rxTheoKhoa(k); // khoá đăng ký = khoá bộ đệm
+      if (rx !== null && (rxMoiNhat === null || rx > rxMoiNhat)) rxMoiNhat = rx;
+    }
+    adapters.push({
+      adapterId,
+      trangThai: layTrangThaiAdapter(adapterId)?.tt ?? null,
+      tuoiMauMoiNhatMs: rxMoiNhat === null ? null : Math.max(0, now - rxMoiNhat),
+    });
+  }
+  const doi = layNguongDoi(sub);
+  const goi: ScadaTick = { subId: sub.subId, seq: ++sub.seq, serverTs: now, adapters };
+  if (doi) goi.staleAfterMs = doi;
+  phat(sk, "scada:tick", goi);
+}
+
+function motBuoc(): void {
+  buoc++;
+  const now = Date.now();
   for (const sk of [...cacSocket]) {
     const st = trangThai(sk);
     if (!st || st.daNgat) continue;
-    for (const sub of st.subs.values()) {
-      if (sub.cho.size === 0) continue;
-      const values: GiaTriGoi[] = [];
-      for (const k of sub.cho) {
-        const t = sub.tags.get(k);
-        if (!t) continue;
-        const gt = giaTriCua(t);
-        if (gt === null || gt === "doiMay") continue;
-        values.push(gt);
+    const denKhung = buoc % st.buocMoiKhung === 0;
+    for (const sub of [...st.subs.values()]) {
+      if (denKhung) phatDelta(sk, sub, now);
+      if (buoc >= sub.buocTick) {
+        sub.buocTick = buoc + BUOC_TICK;
+        phatTick(sk, sub, now);
       }
-      sub.cho.clear();
-      if (values.length > 0) phat(sk, "scada:delta", { subId: sub.subId, values });
     }
   }
 }
 
 function batVong(): void {
   if (hen) return;
+  buoc = 0;
   huyNguoiNghe = dangKyThayDoi(khiBoDemDoi);
   hen = setInterval(() => {
     try {
-      dayKhung();
+      motBuoc();
     } catch (err) {
       console.error("[SCADA] vòng đẩy lỗi:", (err as Error)?.message ?? err);
     }
-  }, GIOI_HAN.chuKyDeltaMs);
+  }, GIOI_HAN.buocVongMs);
   hen.unref?.();
 }
 
 function dungVong(): void {
   if (hen) clearInterval(hen);
   hen = null;
+  buoc = 0;
   huyNguoiNghe?.();
   huyNguoiNghe = null;
 }
 
-/** Sau mỗi thay đổi tập đăng ký: bật vòng khi có ≥ 1 đăng ký, tắt khi không còn. */
+/** B1 — số bước giữa hai khung của socket: min capMs các đăng ký sống, kẹp ≥ capMsToiThieu. */
+function tinhBuocMoiKhung(st: TrangThaiScada): number {
+  let min: number = GIOI_HAN.chuKyDeltaMs;
+  let co = false;
+  for (const s of st.subs.values()) {
+    if (!co || s.capMs < min) min = s.capMs;
+    co = true;
+  }
+  return Math.max(1, Math.round(Math.max(GIOI_HAN.capMsToiThieu, min) / GIOI_HAN.buocVongMs));
+}
+
+/** Sau mỗi thay đổi tập đăng ký: tính lại nhịp khung; bật vòng khi có ≥ 1 đăng ký, tắt khi không còn. */
 function capNhatVong(socket: SocketScada): void {
   const st = trangThai(socket);
+  if (st) st.buocMoiKhung = tinhBuocMoiKhung(st);
   if (st && !st.daNgat && st.subs.size > 0) cacSocket.add(socket);
   else cacSocket.delete(socket);
   if (cacSocket.size > 0) batVong();
@@ -205,6 +427,11 @@ function capNhatVong(socket: SocketScada): void {
 export function __datLaiScadaSocket(): void {
   cacSocket.clear();
   dungVong();
+}
+
+/** Chỉ cho bench/lưới: chạy MỘT bước vòng ngay (không chờ bộ hẹn) — đo chi phí bước. */
+export function __motBuocChoTest(): void {
+  motBuoc();
 }
 
 // ─── kiểm đầu vào ───────────────────────────────────────────────────────────────────────────────────
@@ -220,6 +447,11 @@ function kiemSubId(v: unknown): string | null | "sai" {
   return typeof v === "string" && v.length > 0 && v.length <= SUBID_TOI_DA ? v : "sai";
 }
 
+function kiemCapMs(v: unknown): CapMs | "sai" {
+  if (v === undefined) return GIOI_HAN.chuKyDeltaMs;
+  return (CAP_MS_HOP_LE as readonly unknown[]).includes(v) ? (v as CapMs) : "sai";
+}
+
 // ─── xử lý ──────────────────────────────────────────────────────────────────────────────────────────
 async function xuLyDangKy(socket: SocketScada, st: TrangThaiScada, payload: unknown): Promise<void> {
   if (process.env.SCADA_SOCKET_ENABLED !== "true" || !boDemDangBat()) return baoLoi(socket, "DISABLED");
@@ -227,8 +459,12 @@ async function xuLyDangKy(socket: SocketScada, st: TrangThaiScada, payload: unkn
   if (payload.tags.length > GIOI_HAN.tagMoiDangKy) return baoLoi(socket, "TOO_MANY_TAGS");
   const subIdVao = kiemSubId(payload.subId);
   if (subIdVao === "sai") return baoLoi(socket, "BAD_REQUEST");
+  const capMs = kiemCapMs(payload.capMs);
+  if (capMs === "sai") return baoLoi(socket, "BAD_REQUEST");
+  // pha 2B sẽ có "mo_phong"; hôm nay mọi giá trị khác "that" bị TỪ CHỐI (không im lặng coi như thật)
+  if (payload.nguon !== undefined && payload.nguon !== "that") return baoLoi(socket, "BAD_REQUEST");
 
-  const yeuCau = new Map<string, { adapterId: number; tagKey: string }>();
+  const yeuCau = new Map<string, TagScada>();
   for (const t of payload.tags) {
     if (
       !laObj(t) ||
@@ -247,21 +483,23 @@ async function xuLyDangKy(socket: SocketScada, st: TrangThaiScada, payload: unkn
   const subId = subIdVao ?? randomUUID();
 
   // Socket KHÔNG phải người dùng (máy tự khai `clientType:"machine"`, handshake không cần cookie): mọi tag bị từ chối NGAY — KHÔNG truy cập CSDL,
-  // KHÔNG lưu đăng ký, KHÔNG bật vòng. Quyết định (23/10): trả `scada:snapshot` với toàn bộ tag trong `denied` (cùng hình dạng với người
-  // dùng không có quyền ⇒ không phân biệt được qua kênh này).
+  // KHÔNG lưu đăng ký, KHÔNG bật vòng, KHÔNG tick. Quyết định (23/10): trả `scada:snapshot` với toàn bộ tag trong `denied` (cùng hình dạng với
+  // người dùng không có quyền ⇒ không phân biệt được qua kênh này).
   if (!laSocketNguoiDung(socket.data)) {
-    phat(socket, "scada:snapshot", { subId, values: [], denied: [...yeuCau.values()].map(({ adapterId, tagKey }) => ({ adapterId, tagKey })) });
+    const sn: ScadaSnapshot = { subId, seq: 0, serverTs: Date.now(), values: [], staleAfterMs: {}, denied: [...yeuCau.values()].map(({ adapterId, tagKey }) => ({ adapterId, tagKey })) };
+    phat(socket, "scada:snapshot", sn);
     return;
   }
 
   // Tối đa một lệnh subscribe đang chờ mỗi socket: chặn khuếch đại (mỗi lệnh có thể kéo quyền + phạm vi + một truy vấn adapter).
   if (st.cho) return baoLoi(socket, "BUSY");
   if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS");
+  if (vuotTranNong(socket, st, subId, capMs)) return baoLoi(socket, "TOO_MANY_HOT");
   const cho: DangKyDangCho = { subId, huy: false };
   const the = st.the;
   st.cho = cho;
   try {
-    await hoanTatDangKy(socket, st, cho, the, subId, yeuCau);
+    await hoanTatDangKy(socket, st, cho, the, subId, capMs, yeuCau);
   } finally {
     if (st.cho === cho) st.cho = null;
   }
@@ -273,7 +511,8 @@ async function hoanTatDangKy(
   cho: DangKyDangCho,
   the: number,
   subId: string,
-  yeuCau: Map<string, { adapterId: number; tagKey: string }>,
+  capMs: CapMs,
+  yeuCau: Map<string, TagScada>,
 ): Promise<void> {
   // 1) QUYỀN người dùng (machine_monitoring/canView): MỘT lần mỗi lần đăng ký. Không có quyền ⇒ khỏi tra adapter/phạm vi: tất cả denied.
   const coQuyen = await coQuyenXemScada(socket.data);
@@ -312,9 +551,11 @@ async function hoanTatDangKy(
   // Socket ngắt / đăng ký bị huỷ (unsubscribe cùng subId, hoặc unsubscribe-tất-cả) trong lúc chờ ⇒ không tạo đăng ký, không snapshot, không bật vòng.
   if (st.daNgat || cho.huy || st.the !== the) return;
   if (!st.subs.has(subId) && st.subs.size >= GIOI_HAN.dangKyMoiSocket) return baoLoi(socket, "TOO_MANY_SUBS");
+  // Kiểm lại sau các await (socket khác của cùng người dùng có thể đã thêm đăng ký nóng); từ đây tới `st.subs.set` không còn await.
+  if (vuotTranNong(socket, st, subId, capMs)) return baoLoi(socket, "TOO_MANY_HOT");
 
   const tags = new Map<string, TagDangKy>();
-  const denied: { adapterId: number; tagKey: string }[] = [];
+  const denied: TagScada[] = [];
   for (const [k, y] of yeuCau) {
     const m = mayCuaAdapter.get(y.adapterId);
     if (m?.co && trongPhamVi(m.machineId) === true) tags.set(k, { adapterId: y.adapterId, tagKey: y.tagKey, machineId: m.machineId });
@@ -333,9 +574,25 @@ async function hoanTatDangKy(
     }
   }
 
-  st.subs.set(subId, { subId, tags, cho: new Set() });
+  // A1 — ngưỡng cũ của TỪNG tag được phép = ngưỡng hiện hành của adapter (cùng hàm với `stale` của bộ đệm); tag denied KHÔNG có khoá.
+  const adapters = new Map<number, AdapterDangKy>();
+  const staleAfterMs: Record<KhoaTagScada, number> = {};
+  for (const t of tags.values()) {
+    let a = adapters.get(t.adapterId);
+    if (!a) {
+      a = { machineId: t.machineId, keys: [], nguongDaGui: nguongCuCuaAdapter(t.adapterId) };
+      adapters.set(t.adapterId, a);
+    }
+    const k = khoa(t.adapterId, t.tagKey);
+    a.keys.push(k);
+    staleAfterMs[k] = a.nguongDaGui;
+  }
+
+  // C1 — đăng ký lại cùng subId THAY đăng ký cũ (khung cũ chưa phát bị bỏ; seq bắt đầu lại 0; không vòng thứ hai — `batVong` idempotent).
+  st.subs.set(subId, { subId, tags, adapters, cho: new Set(), capMs, seq: 0, buocTick: buoc + BUOC_TICK });
   capNhatVong(socket);
-  phat(socket, "scada:snapshot", { subId, values, denied });
+  const sn: ScadaSnapshot = { subId, seq: 0, serverTs: Date.now(), values, staleAfterMs, denied };
+  phat(socket, "scada:snapshot", sn);
 }
 
 function xuLyHuy(socket: SocketScada, st: TrangThaiScada, payload: unknown): void {
@@ -354,7 +611,7 @@ function xuLyHuy(socket: SocketScada, st: TrangThaiScada, payload: unknown): voi
 
 export function registerScadaHandlers(socket: SocketScada): void {
   if (socket.data.__scada) return; // đã đăng ký cho socket này
-  const st: TrangThaiScada = { subs: new Map(), daNgat: false, cho: null, the: 0 };
+  const st: TrangThaiScada = { subs: new Map(), daNgat: false, cho: null, the: 0, buocMoiKhung: Math.round(GIOI_HAN.chuKyDeltaMs / GIOI_HAN.buocVongMs) };
   socket.data.__scada = st;
 
   socket.on("scada:subscribe", async (payload: unknown) => {
@@ -373,6 +630,8 @@ export function registerScadaHandlers(socket: SocketScada): void {
       console.error("[SCADA] scada:unsubscribe lỗi:", (err as Error)?.message ?? err);
     }
   });
+  // Ngắt THƯỜNG và ngắt do F5 (`disconnectSockets(true)` / `socket.disconnect(true)` của socketXetLaiQuyen) đều tới đây: mọi đăng ký (và vì thế
+  // mọi suất "nóng") của socket được thả; vòng dừng nếu đây là socket cuối.
   socket.on("disconnect", () => {
     st.daNgat = true;
     st.subs.clear();

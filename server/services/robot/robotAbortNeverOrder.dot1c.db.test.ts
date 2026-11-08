@@ -10,6 +10,13 @@
  * Hai lớp độc lập: (a) dispatcher bỏ params (robotAbortCanonical.dot1c.test.ts), (b) driver luôn dựng tin dừng phía
  * server (vda5050StopNeverOrder.dot1c.test.ts) — ca đầu–cuối này phải xanh với MỖI lớp riêng lẻ.
  * CSDL THẬT (`_test`).
+ *
+ * PHA 0 · C0-1 (2026-11-04) — cửa REST v1 ĐÃ GỠ (410 GONE). BẢNG ĐỐI CHỨNG (tính chất AN TOÀN giữ trên cửa SỐNG, không chỉ đổi thành "assert 410"):
+ *   • ca REST `run_job abort + order` ⇒ giữ NGUYÊN các khẳng định (0 order, 1 instantActions [cancelOrder,startPause], sổ không mang order) nhưng gọi thẳng
+ *     `dispatchRobotJob` (dispatcher robot — cùng đích mà adapter của REST/FOE/tRPC đều đi qua) với đúng tham số REST từng gửi (hitl, requestedBy 0, actionId không tồn tại);
+ *   • ca FOE (cửa sống) giữ nguyên — vẫn là đường hoàn chỉnh adapter→dispatcher→driver;
+ *   • ca đối chứng `run_job move` ⇒ từ chối, 0 tin broker: gọi thẳng dispatcher với hình dạng hitl-không-xác-nhận của REST cũ;
+ *   • +1 ca MỚI: REST ⇒ 410 và broker KHÔNG nhận gì (cửa gỡ thật, không còn đường REST nào tới driver).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import express from "express";
@@ -21,6 +28,12 @@ const ROBOT_ID_HOISTED = vi.hoisted(() => ({ id: 990_730_000 + (Date.now() % 9_0
 const MACHINE_ID_HOISTED = vi.hoisted(() => ({ id: 990_730_000 + (Date.now() % 9_000) + 50_000 }));
 const broker = vi.hoisted(() => ({ published: [] as Array<{ topic: string; payload: any }>, driver: null as unknown }));
 
+// SCADA R1b-2b-2a A2(l) — this suite's robot has no robots row (fake id); WHERE a robot is is measured by tapMayChoRobot.a2l(.db).test.ts,
+// so the robot is placed (a station with one machine id no rule targets) here.
+vi.mock("../interlock/tapMayChoRobot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../interlock/tapMayChoRobot")>()),
+  tapMayChoRobot: async (_d: unknown, robotId: number) => ({ loai: "tram" as const, robotId, stationId: 1, lineId: 1, machineIds: [-990_912_499] }),
+}));
 vi.mock("./robotManager", () => ({
   getActiveRobot: (id: number) => (id === ROBOT_ID_HOISTED.id && broker.driver ? { driver: broker.driver } : undefined),
 }));
@@ -42,6 +55,7 @@ vi.mock("../../db", async (importOriginal) => {
 import { getDb } from "../../db/connection";
 import { aiPendingActions, robotJobs } from "../../../drizzle/schema";
 import { Vda5050RobotDriver } from "../vda5050/vda5050Driver";
+import { dispatchRobotJob } from "./robotCommandDispatcher";
 import { createV1Router } from "../../api/v1/router";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -128,20 +142,21 @@ describe.skipIf(!DB_URL)("R-1C-m — run_job abort mang order KHÔNG BAO GIỜ t
     delete process.env.EVENT_WEBHOOKS_ENABLED;
   });
 
-  it("★ api/v1 run_job {jobType:'abort', params:{order}} ⇒ broker nhận CHỈ instantActions [cancelOrder, startPause], 0 order; STOP tới nơi; sổ không mang order", async () => {
-    const res = await fetch(`${base}/api/v1/equipment/${MACHINE}/commands`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer MASTER" },
-      body: JSON.stringify({ command: "run_job", args: { robotId: ROBOT, jobType: "abort", params: { order: EVIL_ORDER, x: 99, y: 99 } }, idempotencyKey: `${DAU}-api` }),
+  it("★ dispatcher (hình dạng hitl của REST cũ: requestedBy 0, actionId không tồn tại) run_job {jobType:'abort', params:{order}} ⇒ broker nhận CHỈ instantActions [cancelOrder, startPause], 0 order; STOP tới nơi; sổ không mang order", async () => {
+    const r = await dispatchRobotJob({
+      robotId: ROBOT,
+      job: { jobType: "abort", params: { order: EVIL_ORDER, x: 99, y: 99 } as never },
+      triggerKind: "hitl",
+      actionId: `${DAU}-api`,
+      requestedBy: 0,
+      idempotencyKey: `${DAU}-api`,
     });
-    const body = (await res.json()) as any;
     // Thứ tự khẳng định = thứ tự quan trọng: 0 order TRƯỚC (bất biến an toàn), rồi STOP tới nơi, rồi trạng thái.
     expect(orders()).toHaveLength(0);
     expect(instants()).toHaveLength(1);
-    expect(res.status).toBe(200);
-    expect(body.data.status).toBe("done");
+    expect(r.status).toBe("done");
     expect(instants()[0].payload.actions.map((a: any) => a.actionType)).toEqual(["cancelOrder", "startPause"]);
-    const [row] = await (await d()).select().from(robotJobs).where(eq(robotJobs.id, body.data.detail.jobId)).limit(1);
+    const [row] = await (await d()).select().from(robotJobs).where(eq(robotJobs.id, r.jobId!)).limit(1);
     expect(row.jobType).toBe("abort");
     expect(row.params).toEqual({});
     expect(row.result).toMatchObject({ ignoredParams: true });
@@ -166,14 +181,28 @@ describe.skipIf(!DB_URL)("R-1C-m — run_job abort mang order KHÔNG BAO GIỜ t
     expect(instants()[0].payload.actions.map((a: any) => a.actionType)).toEqual(["cancelOrder", "startPause"]);
   });
 
-  it("đối chứng: run_job move (chuyển động) KHÔNG đi đường dừng — không có instantActions dừng nào được phát", async () => {
-    const res = await fetch(`${base}/api/v1/equipment/${MACHINE}/commands`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer MASTER" },
-      body: JSON.stringify({ command: "run_job", args: { robotId: ROBOT, jobType: "move", params: { order: EVIL_ORDER } }, idempotencyKey: `${DAU}-move` }),
+  it("đối chứng: run_job move (chuyển động) KHÔNG đi đường dừng — dispatcher (hitl không xác nhận, như REST cũ) ⇒ từ chối, 0 tin broker", async () => {
+    const r = await dispatchRobotJob({
+      robotId: ROBOT,
+      job: { jobType: "move", params: { order: EVIL_ORDER } as never },
+      triggerKind: "hitl",
+      actionId: `${DAU}-move`,
+      requestedBy: 0,
+      idempotencyKey: `${DAU}-move`,
     });
-    const body = (await res.json()) as any;
-    expect(body.data.status).toBe("rejected"); // api-key motion: no confirmed HITL action ⇒ refused
+    expect(r.status).toBe("rejected"); // không có hành động HITL đã xác nhận ⇒ chuyển động bị từ chối
+    expect(broker.published).toHaveLength(0);
+  });
+
+  it("★ MỚI (C0-1): REST v1 run_job abort / move ⇒ 410 gone; broker KHÔNG nhận tin nào (không còn đường REST tới driver)", async () => {
+    for (const jobType of ["abort", "move"]) {
+      const res = await fetch(`${base}/api/v1/equipment/${MACHINE}/commands`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer MASTER" },
+        body: JSON.stringify({ command: "run_job", args: { robotId: ROBOT, jobType, params: { order: EVIL_ORDER } }, idempotencyKey: `${DAU}-gone-${jobType}` }),
+      });
+      expect(res.status, jobType).toBe(410);
+    }
     expect(broker.published).toHaveLength(0);
   });
 });

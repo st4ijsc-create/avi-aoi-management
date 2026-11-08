@@ -13,7 +13,7 @@
  *       exactly one URGENT alert naming run / step / adapter.
  *   • M9 — source scan: the edge authorisation, the central row and the command all take the id from the ONE function.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
@@ -280,6 +280,53 @@ describe("A2(m) — the central store: fresh row per dispatch for a PINNED STOP 
     expect(v.ok && v.stopGhim).toBeUndefined();
     await vi.waitFor(() => expect(H.alert).toHaveBeenCalledTimes(1));
     expect(String((H.alert.mock.calls[0]![0] as Record<string, unknown>).message)).toMatch(/: boom./);
+  });
+});
+
+describe("A2(m)-test r12 — a STOP never waits on a HUNG pin read (L-7)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("★ the pin read never resolves ⇒ the STOP's verdict is ok within D (old path: deterministic row, not pinned) + one URGENT alert naming the deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    H.phanLoai.mockImplementation(() => new Promise(() => undefined)); // hangs for ever
+    const key = `run${RUN}-dung-a1`;
+    const got: { v?: Awaited<ReturnType<typeof authorize>> } = {};
+    void authorize(key).then((v) => {
+      got.v = v;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(STOP_DB_STEP_DEADLINE_MS - 1);
+    expect(H.phanLoai).toHaveBeenCalledTimes(1); // the pin read really started (and is the thing that hangs)
+    expect(got.v).toBeUndefined(); // still inside D: waiting for the read, nothing sent early
+    await vi.advanceTimersByTimeAsync(1 + 50); // D, plus a small margin for the rest of the (in-memory) authorisation
+    const verdict = got.v;
+    expect(verdict, "the STOP must be authorised within D + margin although the pin read never answers").toBeDefined();
+    expect(verdict!.ok).toBe(true);
+    if (!verdict || !verdict.ok) return;
+    expect(verdict.stopGhim).toBeUndefined(); // not pinned: the OLD path
+    expect(verdict.cmd.hitl?.actionId).toBe(orchestrationActionId(key));
+    expect(inserts.map((i) => i.values.id)).toEqual([orchestrationActionId(key)]);
+    expect(laHangMoiStopGhim(inserts[0]!.values.previewJson)).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(H.alert).toHaveBeenCalledTimes(1));
+    expect(String((H.alert.mock.calls[0]![0] as Record<string, unknown>).message)).toMatch(/pin check timeout after 1000ms/);
+  });
+
+  it("a pin read that answers ONLY after >> D is cut at D too (a late 'pinned' answer changes nothing)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    H.phanLoai.mockImplementation(() => new Promise((res) => setTimeout(() => res({ pinnedStop: true, loiDocGhim: null }), 30_000)));
+    type V = Awaited<ReturnType<typeof authorize>>;
+    let verdict = undefined as V | undefined;
+    void authorize(`run${RUN}-dung-a1`).then((v) => {
+      verdict = v;
+    });
+    await vi.advanceTimersByTimeAsync(STOP_DB_STEP_DEADLINE_MS + 50);
+    expect((verdict as V | undefined)?.ok).toBe(true);
+    expect((verdict as V | undefined)?.ok && (verdict as V & { ok: true }).stopGhim).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(30_000); // the late answer arrives: still not pinned
+    expect((verdict as V | undefined)?.ok && (verdict as V & { ok: true }).stopGhim).toBeUndefined();
   });
 });
 

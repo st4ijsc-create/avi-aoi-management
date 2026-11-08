@@ -18,7 +18,8 @@
  *     ⚠ KHÁC `chanNeuPhienDaThuHoi` (fail-OPEN trên lỗi tra cứu cho HTTP): ở đây hành động là ĐÚC KHOÁ / đổi trạng thái —
  *     "không hỏi được" phải rơi về CHẶN.
  *
- * Ngoài phạm vi (F5 đầy đủ): ngắt socket / rời phòng khi quyền đổi; handler chỉ-đọc theo phòng.
+ * F5 đầy đủ (socketXetLaiQuyen.ts) bổ sung chiều PHÒNG: đổi quyền / phạm vi / phiên ⇒ socket bị NGẮT (trigger 0435 + bộ nhận); lượt quét của nó
+ * dùng lại hàm này (cùng luật fail-closed) để kiểm lại mọi socket sống.
  */
 import { biChanBoiCongDoiMatKhau } from "@shared/buocDoiMatKhau";
 import { docVePhienTuCookie } from "./vePhienCookie";
@@ -57,6 +58,8 @@ function biBuocDoiMatKhau(nguoi: HangNguoiDungXacThucLai, vai: string): boolean 
 }
 /** Hàng sổ phiên tối thiểu. */
 export interface HangPhienXacThucLai {
+  /** F5 đầy đủ — `user_sessions.id`: khoá phòng điều khiển `kiem:phien:{id}` lúc handshake (KHÔNG BAO GIỜ là vé). */
+  id?: number | null;
   userId: number;
   isActive?: boolean | null;
   expiresAt?: Date | string | null;
@@ -72,7 +75,8 @@ let boDocGhiDe: BoDocChuThe | null = null;
 export function __datBoDocChuTheChoTest(b: BoDocChuThe | null): void {
   boDocGhiDe = b;
 }
-async function layBoDoc(): Promise<BoDocChuThe> {
+/** F5 đầy đủ — cùng bộ đọc (và cùng seam) cho khoá phiên lúc handshake và lượt quét xét lại quyền (`socketXetLaiQuyen.ts`). */
+export async function layBoDocChuThe(): Promise<BoDocChuThe> {
   if (boDocGhiDe) return boDocGhiDe;
   // Import động: giữ socket.ts không kéo thêm cây db lúc khởi động (như socketPhongQuyen).
   const db = await import("../db");
@@ -107,7 +111,7 @@ export async function xacThucLaiChoThaoTacSocket(socket: SocketXacThucLai): Prom
     const ve = docVePhienTuCookie(typeof cookie === "string" ? cookie : undefined);
     if (!ve) return { ok: false, lyDo: "KHONG_CO_VE_PHIEN" };
 
-    const boDoc = await layBoDoc();
+    const boDoc = await layBoDocChuThe();
     const [phien, nguoi] = await Promise.all([boDoc.docPhien(ve), boDoc.docNguoiDung(idChup)]);
 
     if (!phien) return { ok: false, lyDo: "PHIEN_KHONG_CO_TRONG_SO" };

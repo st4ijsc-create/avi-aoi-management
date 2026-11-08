@@ -28,6 +28,7 @@ import {
 } from "../utils/spc";
 import {
   finalYield,
+  fpyPctOver,
   factoryDateTruncSql,
   factoryHourOfDaySql,
   factoryDowSql,
@@ -159,7 +160,7 @@ export const stationAnalysisRouter = router({
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Build previous period query if date range provided
-      let prevQueryPromise: Promise<{ total: number; ok: number }[]> | null = null;
+      let prevQueryPromise: Promise<number> | null = null; // FPY thật của kỳ trước (dọn vệ sinh Q0-2)
       if (input.startDate && input.endDate) {
         const duration = input.endDate.getTime() - input.startDate.getTime();
         const prevEnd = new Date(input.startDate.getTime() - 1);
@@ -170,14 +171,11 @@ export const stationAnalysisRouter = router({
           lte(productInspections.inspectionTime, prevEnd),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : []),
         ];
-        prevQueryPromise = database.select({
-          total: sql<number>`count(*)`,
-          ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-        }).from(productInspections).where(and(...prevCond));
+        prevQueryPromise = fpyPctOver(database, and(...prevCond));
       }
 
       // Run current + previous period queries in parallel
-      const [stats, prevResult] = await Promise.all([
+      const [stats, prevFpy, fpyNow] = await Promise.all([
         database.select({
           total: sql<number>`count(*)`,
           ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
@@ -185,6 +183,8 @@ export const stationAnalysisRouter = router({
           ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
         }).from(productInspections).where(and(...conditions)),
         prevQueryPromise ?? Promise.resolve(null),
+        // FPY thật: kiểm tra ĐẦU TIÊN của mỗi serial (trước: ok/total — đếm cả lần kiểm lại, bỏ NTF)
+        fpyPctOver(database, and(...conditions)),
       ]);
 
       const { total: t, ok, ng, ntf } = {
@@ -194,17 +194,14 @@ export const stationAnalysisRouter = router({
         ntf: Number(stats[0]?.ntf) || 0,
       };
 
-      const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
+      const fpy = Math.round(fpyNow * 100) / 100;
       const fy = Math.round(finalYield({ ok, ntf, total: t }) * 100) / 100;
       const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
 
       // Previous period yield change
       let yieldChange = 0;
-      if (prevResult) {
-        const pt = Number(prevResult[0]?.total) || 0;
-        const po = Number(prevResult[0]?.ok) || 0;
-        const prevFPY = pt > 0 ? (po / pt) * 100 : 0;
-        yieldChange = Math.round((fpy - prevFPY) * 100) / 100;
+      if (prevFpy !== null) {
+        yieldChange = Math.round((fpy - prevFpy) * 100) / 100;
       }
 
       return {
@@ -829,7 +826,7 @@ export const stationAnalysisRouter = router({
       const ok = Number(stats[0]?.ok) || 0;
       const ng = Number(stats[0]?.ng) || 0;
       const ntf = Number(stats[0]?.ntf) || 0;
-      const fpy = total > 0 ? (ok / total) * 100 : 0;
+      const fpy = await fpyPctOver(database, and(...conditions)); // FPY thật (dọn vệ sinh Q0-2)
       const retestRate = total > 0 ? (ntf / total) * 100 : 0;
 
       // Daily yield for trend analysis

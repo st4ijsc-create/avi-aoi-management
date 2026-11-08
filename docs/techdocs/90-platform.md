@@ -1,0 +1,308 @@
+# 90 · Nền tảng và ứng dụng (platform)
+
+| | |
+|---|---|
+| Mục tiêu phục vụ | M1 quản lý toàn diện (trực tiếp: danh tính, quyền, phạm vi, cài đặt, nhật ký, báo cáo, MES/OEE, bảo trì); cắt ngang mọi mục tiêu (vỏ ứng dụng, hệ thiết kế, i18n, quan sát, lưu trữ, job nền) |
+| Phụ thuộc | 10 hierarchy (site_id, user_scope) — mọi module khác chỉ import từ 90 theo luật phụ thuộc (00‑INDEX) |
+| Module phụ thuộc vào đây | tất cả (10–80): procedure builder, quyền, audit, settings, storage, sender thông báo, token thiết kế, vỏ |
+| Mốc đo | `_ai8_wt d980d4844` (2026-11-03), DB `aoi_management@5434` read-only; báo cáo tổng quan §8–§11 (Q3/Q4/Q8/Q10 đã duyệt), doc 59 (IA, duyệt 2026-07-18), doc 68 (thị giác tổng quan), doc 32 (báo cáo), đợt tenant 2026-08-18 (mig 0327/0329), phạm vi GHI (kiem-dinh 2026-10-24, mig 0421) |
+| Trạng thái | **v1.1 — ĐÃ DUYỆT 2026-11-03** (9 câu hỏi §7 duyệt theo khuyến nghị; font body Be Vietnam Pro; mig 0610–0649) |
+
+## 0. Phạm vi của module
+
+Module này sở hữu phần **cắt ngang**: danh tính và phiên (JWT, 2FA/TOTP, khoá API các loại), **quyền và phạm vi** (procedure builder, `requirePermission`, phạm vi đọc/ghi theo cây 10, RLS), **cài đặt** (một bảng, `.env` chỉ cho hạ tầng), **audit** (một `audit_trail` WORM + chuỗi băm điều khiển), **quan sát và vận hành** (health, metrics, log, job nền, tách worker, retention, backup), **bề mặt API** (tRPC, REST v1, máy, OpenAI‑compatible), **lưu trữ tệp**, **sender thông báo** (email/webhook/push), **i18n**, **vỏ ứng dụng và hệ thiết kế** (một `AppFrame`, `ia.ts` một nguồn, token ISA‑101, pattern, ESLint), và các **ứng dụng còn lại**: Home theo vai, Phòng vận hành/Nhà máy L1, MES (đơn hàng/ca/WIP/downtime/truy xuất), **OEE một công thức**, Reporting Studio, Phân tích, Bảo trì, Người dùng & quyền, Cài đặt, Nhật ký, Hệ thống, twin **xem** (3 màn QĐ‑19/21, không sửa).
+
+Module này **không** sở hữu: dữ liệu nghiệp vụ của 10–80 (chỉ cung cấp khung); mảng thương mại hoá (license/edition/plugin/devPortal/marketplace/federation/sites/governance — **đóng băng** Q10, chỉ giữ cưỡng chế license trong RAM).
+
+Bất biến: (1) **ứng dụng kết nối DB bằng `avi_app`** (không superuser, không bypass RLS); (2) **phạm vi = `site_id`** + `user_scope` (10), đọc và ghi đều kiểm trước; ngoài phạm vi ≡ NOT_FOUND (luật kiem‑dinh 2026‑10‑24); (3) **admin không bypass `requirePermission`** (chỉ bypass phạm vi khi `scope=null`); (4) một `audit_trail` WORM cho mọi đột biến có danh tính `actor_kind user|ai|system|machine`; (5) **`.env` chỉ chứa hạ tầng và cờ an toàn**; mọi cấu hình nghiệp vụ nằm trong `setting` có audit; (6) một `PageHeader`, một `AppFrame`, token là nguồn màu duy nhất (ESLint cấm palette thô, `text-[Npx]`, `t()` có mặc định tiếng Việt).
+
+---
+
+## 1. Hiện trạng đo được
+
+### 1.1 Dữ liệu và vệ sinh lược đồ `[đo]`
+
+| Chỉ số | Đo được |
+|---|---|
+| DB dev | **70 GB**, 469 bảng (drizzle 415 `pgTable` + **26 bảng chỉ có trong SQL**), **174 pg enum**, 86 policy |
+| FK | **166 FK; 359/469 bảng không có FK nào** (drizzle: 347/415) |
+| Thời gian | **395 bảng naive, 79 tz** (drizzle: 351 naive / 37 tz / 4 lẫn / 23 không có); 76/968 cột timestamp là tz |
+| RLS | bật 43 bảng, **FORCE 2** (`audit_logs`, `control_audit_log`); **`aoi` superuser + BYPASSRLS sở hữu cả 468 bảng**; `avi_app` là vai trò app (CRUD từ 0224), `mcp_chi_doc` chỉ đọc |
+| RLS "trơ" | policy chỉ áp khi GUC `app.tenant_rls_active='on'` — đặt ở **một chỗ** (`tenantContext.ts:44`), gọi từ **3 router** (bom, masterData, stencil); hypertable nén (`product_inspections`, `oee_metrics`, `process_results`) **không bật RLS được** (0125 failed, 0328) |
+| Bảng lớn nhất | `machine_health_history` 1 041 MB, `rul_estimates` 780 MB (30), `ai_code_chunks` 479 MB (80), `vram_events` 87 MB (80), `simulation_runs` 74 MB (70), `genealogy_chain` 58 MB, `notifications` 20 MB (40), `machine_status_logs` 14 MB (40), `wip_tracking` 11 MB |
+| Hypertable | 8 (`ot_telemetry`, `product_inspections`, `measurement_results`, `machine_heartbeats`, `audit_logs` **không nén**, `oee_metrics`, `robot_telemetry`, `process_results`) |
+| Người dùng/quyền | 22 user (10 admin, 4 operator, 4 supervisor, 2 engineer, 1 maintenance, 1 user), 3 516 `user_sessions`, `permissions` 127 hàng (user × module; canView/Create/Edit/Delete/Export + expiresAt), **84 module quyền** (`shared/permissions.ts`), **không có** `role_permissions`/`permission_sets`/`custom_roles`; `api_keys` 1 717 (28 scope); 6 loại khoá/định danh |
+| Settings | **22 bảng kiểu settings/config**, 11 "settings" chính hầu hết rỗng (`system_settings` 0, `smtp_config`, `email_template_config` 0…); **không có `factory_settings`**; `.env` **326 khoá** (`.env.example` 397 sống/940 kể cả comment); mã đọc **1 279** `process.env.*`; **181 cờ** kiểu `=== "true"`; khoá trùng: 13 theo grep 03/11, **1** theo đo kiem‑dinh 04/11 (`AI_PROGRAMMING_COPILOT_ENABLED` ×2; 284 khoá khác nhau) |
+| Audit | `audit_logs` hypertable retention 365 d, HMAC mỗi hàng, FORCE RLS, 33 620 hàng, 3 140/24 h; `control_audit_log` chuỗi SHA‑256 (advisory lock); **không có `audit_trail`**; `logCrudOperation` 71 chỗ gọi/28 tệp + `auditMutationMiddleware` chỉ ở admin/role procedure; WORM trigger 6 bảng + REVOKE 4 bảng + guard một phần 10 bảng |
+
+### 1.2 Backend cắt ngang `[đo]`
+
+| Khối | Đo được | Vấn đề |
+|---|---|---|
+| Phiên | JWT HS256 (jose) + sổ `user_sessions`; TTL **30 ngày** (`SESSION_TTL_DAYS`); cookie httpOnly, sameSite lax | TTL dài cho panel vận hành; `cookies.txt` có JWT đang tracked (Q8 báo cáo) |
+| 2FA | `twoFactorRouter` 441; `require2FA`/`requireFreshTotp`/`requirePerCallFreshTotp`; `deployProcedure` = cả ba; `totp_consumed`, `totp_khoa_sai`, `backup_codes` | tốt; dev `AUTH_2FA_BAT_BUOC=0` |
+| Quyền | `requirePermission` **789 chỗ/93 tệp**; **admin bypass toàn bộ** trừ `RBAC_SCOPED_ADMIN=true` (vắng); builder: public/protected/admin/supervisor/quality/operator/write/actuation/deploy | phép đo quyền bằng admin vô nghĩa (Khối D) |
+| Phạm vi | `resolveTenantFactoryScope` (43 tệp) theo `corporateCode/factoryCode` text; phạm vi GHI: bộ quét AST + census ratchet + sổ nợ (0421); `aiAgentPhamVi` cho AI | 10 đổi sang `site_id` + `idsTrongPhamVi` |
+| Rate limit | 6 factory + 1 export + limiter theo procedure; Redis, dự phòng RAM khi Redis > 250 ms | miễn limiter phải cần vé ký (bài học R1b‑2a) |
+| Bảo mật HTTP | helmet 8 + CSP lớp riêng; CSRF = kiểm Origin/Referer; **`SEC_CSP_MODE`, `SEC_ORIGIN_CHECK_MODE` mặc định off** và vắng `.env` | |
+| License | 11 tệp 4 356 LOC; middleware mỗi request tRPC (RAM) **+ `moduleGate` 2 truy vấn DB mỗi lần gọi, không cache, 135 chỗ, fail‑open** | hot path |
+| Quan sát | Prometheus 7 metric (`METRICS_ENABLED`); `/health|/livez|/readyz|/api/health/ai`; **OTel và Sentry không có gói ⇒ chết**; RUM; correlation id qua AsyncLocalStorage + pino mixin | |
+| Job nền | `startBackgroundSchedulers` 128 `setInterval` + 18 cron trong **một** `backgroundJobs.ts` (≈ 50 job, bảng §1.5); `worker.ts` 54 LOC tách bằng `ROLE=api` + leader election (cờ) | API và scheduler cùng tiến trình mặc định |
+| DB pool | main 25 / jobs 8 / replica 15 (chưa đặt) / advisory 1; statement timeout 30 s | ngân sách STOP 8+8 ≤ pool−9 (SCADA) |
+| Socket | Redis adapter khoá theo tên DB (`SOCKET_REDIS_KEY`); phòng `global/admin/machine:/factory:/twin:/site:/plc:/user:` | 30 nhận 1a |
+| REST | `/api/v1` 16k LOC (15 module), `/api/external` 50 route/5,4k, `/api/machine` 15, `/api/aoi` 5, `/api/public/products` 6, factory‑alert, export, bi, ot/ingest, OpenAI gateway; OpenAPI/AsyncAPI sinh tự động + 10 md tay | 3 họ API song song |
+| Storage | `STORAGE_MODE forge|local` (`uploads/` 938 MB); backup pg_dump vào `uploads/backups/` (**rỗng**); retention 15 bảng sau `DATA_RETENTION_ENABLED` (tắt) | |
+| Sender | SMTP nodemailer, webhook HMAC, FCM v1; `notifications` (40) | |
+| i18n | 68 mã lỗi `appErrorCodes`; locale vi 1,3 MB / en / zh ≈ 21 858 khoá, parity 99,99 %; **1 042 khoá không dùng**, 419 khoá dùng mà thiếu; **6 227 `t()` mặc định tiếng Việt** (10 946 mọi ngôn ngữ) | |
+| Đóng băng | plugin 2 178, federation 1 863, governance 451, devPortal 167, edition 220, sites 317; marketplace chỉ 2 bảng | |
+
+### 1.3 Ứng dụng còn lại `[đo]`
+
+| Khối | Router/LOC | Bảng | Ghi chú |
+|---|---|---|---|
+| MES | 13 router ≈ 6 600 (`production` 926, `mqttOee` 1 618, `mesControlTower` 523, `productionDashboard` 685, `lineController` 335, `wip` 262, `bom` 489, `routing` 329…) | `production_orders` 6, `production_sessions` 3, `shift_configs`, `daily_statistics` 453, `wip_tracking` 17 492, `station_dwell_time` 8 699, `downtime_events` 91, `oee_targets`, `line_states/_transitions`, `genealogy_chain` | không có router downtime (service 323); ca làm việc không nối `product_inspections` (doc 32) |
+| **OEE** | `oeeService.ts` 1 668 | `oee_metrics` hypertable (A/P/Q basis point), `hourly_yield_cagg` **không ai đọc** (bi đọc matview `hourly_yield_cache`) | **6 công thức** A×P×Q khác nhau: `computeOEE` (lưu), `getMachineOEELive`, `getAllMachinesOEELive` (11 nơi), `getLineOEE` (pooled), `warRoomService:395` (theo ca), `socket.ts:2797` **chết + SQL sai cột**; cộng thêm 5 bộ gộp (mean đơn/mean theo units/`AVG(oee)`) |
+| Báo cáo | ≈ 20 khoá router (`pdfReport`, `powerpoint`, `reportBuilder`, `executiveReport`, `reportArtifact`, `reportingMart`, `scheduledReport`, `export`…) ≈ 7,4k | 8 bảng (`scheduled_reports` 0, `report_templates` 0, `report_artifacts`, `report_deliveries`, dim/fact) | 5 bộ sinh (pdfkit, pptxgen, exceljs, puppeteer, jspdf); font **đã vào dist** (6 tệp) |
+| Bảo trì | 3 router 779 + service ≈ 1 400 | `maintenance_work_orders` 29, `maintenance_schedules`, `spare_parts_inventory`, `work_order_parts`, `pm_effectiveness_metrics`, `rul_estimates` (780 MB, 30 T8) | PdM 40/80 |
+| Dashboard | `commandCenter`, `warRoom`, `factoryCommand`, `mesControlTower`, `productionDashboard`, `dashboard*`, `executiveReport`, `assetCockpit` ≈ 4 000 | | 9 trang tổng quan mỗi trang một router |
+| Twin xem | `twinCanh` 1 850 (đọc) + `db/twinCanh.ts` 2 674 + `twinStream.ts` 216; socket `twin:update` | `twin_*` (70 tạo) | 3 màn QĐ‑19/21 giữ |
+
+### 1.4 Frontend — vỏ, IA, hệ thiết kế `[đo]`
+
+| Chỉ số | Đo được (báo cáo tổng quan) |
+|---|---|
+| Nguồn định tuyến | **7 lớp**: `navigation.tsx` 2 910 LOC (10 nhóm, **162 href**, `HUB_ROUTES` 6, `COLLAPSED_INTO_HUB` 14), `module-registry` 649 (11 MOD, 73 route), `apps.ts` 387 (11 app), `roleLanding` (13 vai → 5 landing), `sidebarGroups`, ⌘K 271, `engineeringLegacyRedirectTable` + `CascadingNav` 633/`BottomNav`/`AppLauncher` |
+| Route | `App.tsx` 926: **235 `<Route>`** (125 `navHref` + 47 `requirePermission`; 9 public; **8 không guard** `/inbox /approvals-inbox /today /operator /maintenance-home /supervisor-home /viewer-home /request-role`); ≈ 46 redirect; `RouteGuard` trả **false khi href không có trong navGroups**; `LICENSE_ROUTE_GUARD` off |
+| Trang | 223 trang top‑level **169 959 LOC**; 181 có route; 6 chết 1 439 LOC; **≈ 28 trang "tổng quan/home"** (11 home theo vai + 17 bảng tổng hợp: `Dashboard` 3 800, `ProductionDashboard` 1 872, `CommandCenter` 1 315, `ExecutiveMobile` 1 302, `CorporateLayout` 1 292…) |
+| Vỏ | `DashboardLayout` 888: sidebar (SiteSwitcher, ThemeToggle, Language, FreshnessStrip, CascadingNav), thanh đầu (AppLauncher, Breadcrumb, NoticeStack, LicenseChip, AssetScopeBar, AIActionInbox, NotificationCenter, ShellAlertChip, SiteHealthDot, ShellAiButton, Search), BottomNav, ⌘K; **ContextDrawer không ở vỏ** (13 trang tự dùng) |
+| Header | PageHeader 163 trang, PageHeaderCompact 7, CockpitLayout 7, WorkbenchShell 2, `<h1>` 21, `title=` 69, Heading 1, local ×2 ⇒ **≈ 8–10 kiểu**; **20 trang không header** (ProductModels, TwinVanHanh/Line/May, WarRoom, FactoryCommandView, ConnectivityHub, QualityGates…) |
+| Hub/tab | TabbedHub 5, HubLauncher 6, CockpitLayout 7, WorkbenchShell 2 + **91 trang tự dựng `<Tabs>`** |
+| Token | `index.css` 824 LOC; `:root` = **tối**, `.light` ghi đè; 132 custom property; 29 token ISA‑101 (isa 4 · alarm 12 · packml 6 · e10 6 · stale 1); Geist/Geist Mono self‑host; `DensityProvider` **2 mức, chưa mount** (1 trang gọi); 21 `.mobile-*` |
+| Màu/chữ thô | **2 978 lớp palette** (components 2 095, pages 851, 229 tệp); **1 644 `text-[`** (717 `text-[11px]`, 650 `text-[10px]`); 410 `style={{`; hex thô MachineCockpit 17 / AnnotationStatistics 19 / StationAnalysis 40 |
+| Pattern | 53 primitive shadcn; 37 pattern (PageHeader 167, PageContainer 138, EmptyState 82, StatusBadge 80, MetricCard 51, ScopeFilterBar 24…); chartTokens dùng **29/32** trang Recharts (báo cáo ghi ngược); `Themed*Chart` và `ui/chart` 0 dùng; framer‑motion 0 (vẫn trong deps) |
+| Bảng/export | `DataTable` 28, shadcn `<Table>` 116, `<table>` 40; **không có virtualization**; 8 component export + 11 tệp import xlsx/jspdf/pptxgen trực tiếp + 39 `createObjectURL` tay |
+| Quyền UI | `usePermissions` 102 tệp, `PermissionGate` 62, `useCanWrite` 12; `canView` tự suy 46 tệp, `canEdit` 19 |
+| Cờ UI | 17 `VITE_*` (`WORKSPACE_SHELL_ENABLED`, `HMI_ISA101_V2` mặc định on; `LICENSE_ROUTE_GUARD` off; `ENABLE_SW` off…) |
+| i18n | 366 namespace top‑level trong locale, 348 prefix dùng; fallback `vi`; en/zh lazy |
+| Nhóm trang (LOC) | home 11/2 609 · tổng quan 17/18 359 · L1–L3 9/6 591 · kết nối 16/14 147 · twin 6/9 884 · báo cáo 11/7 111 · phân tích 10/9 517 · bảo trì 5/2 885 · settings 9/5 492 · admin 20/10 221 · thương mại 9/5 133 · hạ tầng 7/6 814 (`ApiDocs` 3 578, `ComponentShowcase` 1 833 **public không guard**) |
+
+### 1.5 Kết luận hiện trạng
+
+1. **Nền an toàn có "giấy" nhưng chưa "hiệu lực"**: RLS bật 43 bảng mà GUC chỉ được đặt ở 3 router; app chạy bằng superuser bypass; admin bypass quyền; CSP/CSRF‑origin tắt; license gate 2 truy vấn DB/lần gọi. Thứ thật sự bảo vệ phạm vi hôm nay là lớp ứng dụng (`resolveTenantFactoryScope` + bộ quét GHI) — đúng hướng nhưng theo `corporateCode/factoryCode` text.
+2. **Lược đồ chưa đồng bộ**: 359 bảng không FK, 395 bảng naive, 174 enum, 26 bảng ngoài drizzle, 22 bảng settings rỗng, `.env` 326 khoá là "bảng settings thật".
+3. **Một khái niệm nhiều bản ở tầng ứng dụng**: 6 công thức OEE (+5 bộ gộp; một bản chết có SQL sai), ≈ 28 trang tổng quan, 9 dashboard‑router, 8–10 header, 7 lớp nav, 5 bộ sinh báo cáo, 8 export.
+4. **Hệ thiết kế có token nhưng không được cưỡng chế**: 2 978 màu thô, 1 644 cỡ chữ tuỳ ý, 6 227 chuỗi tiếng Việt inline; density chưa mount; `:root` là tối trong khi vận hành cần sáng ISA‑101.
+5. **Vận hành**: ≈ 50 job trong một tiến trình với API; OTel/Sentry chết; backup rỗng; retention tắt; session 30 ngày.
+
+---
+
+## 2. Mục tiêu: mô hình dữ liệu
+
+### 2.1 Quyết định thiết kế `[QĐ 2026-11-03]`
+
+1. **Tenant = `site_id`** (10) trên mọi bảng nghiệp vụ; `corporateCode/factoryCode/lineCode` text gỡ theo từng module (10‑H, 20‑A, 40‑AL, 60‑Q); **RLS FORCE theo `app.site_ids`** cho bảng thường; **hypertable nén không RLS** ⇒ phạm vi cho chúng ở lớp ứng dụng (`idsTrongPhamVi` bắt buộc trong mọi truy vấn hypertable — census) và CAGG mang `site_id`. App kết nối bằng **`avi_app`** (REVOKE superuser khỏi chuỗi kết nối app; `aoi` chỉ cho migration/DDL — nguyên tắc DDL bằng owner `aoi` giữ). `[QĐ 2026-11-03]`
+2. **Quyền**: giữ ma trận `permission(user × module × 5 quyền)` + **thêm `role_template`** (bộ quyền theo vai, admin gán hàng loạt, không thay ma trận); **admin không bypass `requirePermission`** (`RBAC_SCOPED_ADMIN` thành mặc định, gỡ cờ); 84 module quyền → **≈ 40 khoá** theo module TechDocs (`hierarchy_*`, `asset_*`, `telemetry_*`, `alarm_*`, `control_*`, `inspection_*`, `quality_*`, `product_*`, `engineering_*`, `recipe_*`, `ai_*`, `report_*`, `mes_*`, `maintenance_*`, `admin_*`) với bảng ánh xạ một chiều.
+3. **Phiên/danh tính**: `user_session` TTL **12 h vận hành / 7 d kỹ sư‑admin** (theo vai), gia hạn trượt; `cookies.txt` gỡ + thu hồi phiên (Q8); 6 loại khoá → **`credential`** một bảng (`kind user_api|machine|edge|ai_gateway|service`, `scope[]`, `site_id`, băm) — 20 đã đặt `asset_credential` cho máy; 90 giữ user/service/ai_gateway.
+4. **Settings một bảng** `setting(scope global|site|user, site_id, user_id, key, value jsonb, schema_version, updated_by, updated_at)` + `setting_def` (key, Zod, mặc định, nhóm, quyền sửa, cần restart?); 22 bảng settings gỡ; `.env` chỉ còn hạ tầng + cờ an toàn (**mục tiêu ≤ 120 khoá**); cờ tính năng nghiệp vụ → `setting` (đổi được không restart, có audit). `[QĐ 2026-11-03]`
+5. **Audit một bảng `audit_trail`** (hypertable, WORM: trigger + REVOKE + FORCE RLS; HMAC từ `audit_logs`), `actor_kind user|ai|system|machine`, `site_id`, `entity_kind/id`, `action`, `before/after jsonb` (cắt có dấu, giữ định danh), `correlation_id`; `control_audit_log` giữ chuỗi băm riêng cho điều khiển (50); `audit_logs` → `audit_trail` (đổi tên + nén); `auditMutationMiddleware` áp **mọi** mutation có danh tính (không chỉ admin).
+6. **Thời gian**: timestamptz cho mọi bảng mới (01); bảng cũ di trú theo dải của module sở hữu; phần còn lại (≈ 120 bảng hạ tầng/MES/báo cáo) trong **một cửa sổ bảo trì 90‑P2** (ALTER TYPE … USING AT TIME ZONE 'Asia/Ho_Chi_Minh' — 10 §7). `[QĐ 2026-11-03]`
+7. **Enum → varchar + CHECK** cho khoá mở rộng (K14 §4.2 Q9: `machinetypeenum` 20‑A2; còn lại 174 → ≤ 30 theo module); không tạo pg enum mới (01).
+8. **26 bảng chỉ có trong SQL vào drizzle** (edge/stop ledgers 0368–0375, token máy, `db_feature_status`…); drizzle là nguồn duy nhất; migration SQL chỉ cho DDL Timescale/RLS/trigger.
+9. **MES**: `production_order`, `production_session` (ca thật: `shift_def` + `shift_instance` nối `inspection`/`signal` qua `site_id + thời gian`), `wip_event`, `downtime_event` (sinh từ 40 `alarm_event(kind=state_change)`), `line_state` (70 Q3), `genealogy_chain` (60); `daily_statistics`, `station_dwell_time` → CAGG/read‑model; `oee_target` giữ.
+10. **OEE một công thức** = `computeOEE` (A = thời gian chạy có xác nhận/thời gian kế hoạch theo `shift_instance`; P = min(1, Σ(count_total × ideal_cycle)/thời gian chạy); Q = (OK+NTF)/total từ 60 CAGG) tính ở **worker** từ `signal_1m` (30) + `inspection_1h` (60) vào `oee_1h` (CAGG/bảng), live = cùng hàm trên cửa sổ trượt từ LiveStore; 5 hàm còn lại + 5 bộ gộp gỡ; gộp nhiều máy = **trọng số theo thời gian kế hoạch**, không mean đơn. `[QĐ 2026-11-03]`
+11. **Báo cáo**: một engine `universalExportService` (doc 32 QĐ2; puppeteer tuỳ chọn) cho PDF/XLSX/PPTX/CSV; `report_def` (mẫu khai dữ liệu), `report_schedule`, `report_artifact`, `report_delivery`; dim/fact mart gỡ (dùng CAGG 30/60/90); client export qua `lib/export.ts` một đường (60 §4.2).
+12. **Đóng băng**: license giữ **cưỡng chế RAM** (middleware), `moduleGate` cache 60 s hoặc gỡ truy vấn DB; plugin/devPortal/marketplace/federation/sites/governance/edition → `frozen/` + README điều kiện mở; bảng của chúng giữ (0 hàng) tới pha 4.
+13. **Quan sát/vận hành**: OTel + Sentry **gỡ mã** (không gói) — giữ Prometheus + pino + RUM; **tách 3 tiến trình** `api / worker / edge` (báo cáo §9.2): worker chạy 100 % job nền (alarm engine 40, SPC/gate 60, OEE 90, retention, báo cáo, KB sync, VRAM reconciler), API chỉ `ROLE=api`; `backgroundJobs.ts` → registry job có tên/lịch/cờ/owner‑module + bảng `job_run` (lần chạy, thời lượng, lỗi); retention mặc định **bật**; backup pg_dump lịch + kiểm phục hồi (`DR_VERIFY`) bật.
+14. **Bảo mật HTTP**: CSP `enforce`, origin‑check `enforce` mặc định (dev cho phép localhost), gỡ cờ; rate limit miễn trừ chỉ với vé ký.
+
+### 2.2 Đặc tả bảng (cột lõi)
+
+| Bảng | Cột chính | Ghi chú |
+|---|---|---|
+| `user` (giữ) | + `default_site_id`, `locale`, `theme`, `density`, `deleted_at`, tz | |
+| `user_session` | id, user_id FK, kind web|extension|cli, ttl theo vai, ip/ua, issued_at, last_seen_at, revoked_at tz | |
+| `permission` (giữ) | user_id FK, module_key (≈ 40), can_view/create/edit/delete/export, expires_at, granted_by | |
+| `role_template` | key, name, permissions jsonb, scope_level | admin gán |
+| `credential` | id, kind, owner_kind user|service|ai_gateway, owner_id, site_id, hash, scopes text[], expires_at, revoked_at, last_used_at tz | máy ở 20 |
+| `setting` / `setting_def` | §2.1‑4 | unique (scope, site_id, user_id, key) |
+| `audit_trail` | §2.1‑5; hypertable chunk 7 d, nén 30 d, giữ 3 năm | WORM |
+| `job_run` | job_key, started_at, ended_at, status, error, rows_affected, worker_id | retention 30 d |
+| `shift_def` / `shift_instance` | site_id, name, start/end, days; instance: shift_def_id, date, started_at/ended_at tz | ca thật cho KPI/OEE/báo cáo |
+| `production_order` / `production_session` / `wip_event` / `downtime_event` / `oee_target` | FK site/line/asset/product; tz | |
+| `oee_1h` | site_id, line_id, asset_id, shift_instance_id, bucket tz, planned_s, run_s, count_total, count_ok, count_ntf, ideal_cycle_s, a, p, q, oee | nguồn duy nhất |
+| `report_def` / `report_schedule` / `report_artifact` / `report_delivery` | | |
+| `maintenance_work_order` / `maintenance_schedule` / `spare_part` / `work_order_part` | FK asset/site; tz | `rul_estimates` → 30 `signal_sample(role=rul_days)` |
+
+### 2.3 Bảng gỡ / chuyển (ngoài các module đã liệt kê)
+
+`audit_logs` (→ `audit_trail`), 22 bảng settings (→ `setting`), `api_keys`/`ai_api_keys`/`service_identities`/`edge_auth_signing_keys` phần user/service (→ `credential`; edge ở 20/50), `daily_statistics`, `station_dwell_time`, `fact_inspection_hourly`, `dim_*`, `hourly_yield_cache` (→ CAGG), `dashboard_templates`, `user_custom_dashboards`, `dashboard_widget_layouts`, `role_dashboard_defaults`, `template_marketplace`, `template_reviews` (0 hàng), `backup_logs` (→ `job_run`), `sites`/`site_kpi_rollup`/`site_sync_log` (đóng băng), `w3_backup_*` (không tồn tại — bỏ khỏi báo cáo), `mqtt_message_history` (0), `integrity_scan_results` (→ `job_run`). Mục tiêu toàn hệ: **469 → ≈ 200 bảng** (báo cáo §4), enum 174 → ≤ 30, FK ≥ 1 cho mọi bảng có cột tham chiếu, tz 100 %.
+
+---
+
+## 3. Mục tiêu: backend
+
+### 3.1 Cấu trúc `server/modules/platform/`
+
+| Thư mục | Vai trò |
+|---|---|
+| `identity/` | phiên, 2FA, `credential`, must‑change‑password, step‑up (`xacThucTheoMuc` dùng chung với 50/80) |
+| `access/` | `requirePermission` (không admin bypass), `procedure.ts` (5 loại builder theo 01 §4), `scope.ts` (`idsTrongPhamVi` 10, `rangBuocBanGhiTheoKhoa`), RLS GUC `app.site_ids` đặt **trong middleware mọi request** có danh tính (một chỗ), bộ quét phạm vi ĐỌC/GHI + census |
+| `settings/` | `setting`/`setting_def`, cache + pub/sub đổi cài đặt, UI schema |
+| `audit/` | `audit_trail` writer (middleware mọi mutation), HMAC/chuỗi băm, truy vấn |
+| `ops/` | health/livez/readyz, Prometheus, pino, correlation, `jobs/registry.ts` + `job_run`, retention, backup/DR, worker bootstrap (`ROLE`) |
+| `api/` | tRPC root (ghép router các module), REST v1 (một họ: `/api/v1` gồm máy + ngoài + edge + OpenAI gateway), OpenAPI sinh; `/api/external` → alias v1 một chu kỳ; `/api/machine` → `/api/v1/machine` |
+| `storage/` | `STORAGE_MODE`, khoá tệp theo module, uỷ quyền theo site, thumbnail |
+| `notify/` | sender email/webhook/push (40 quyết định ai nhận) |
+| `i18n/` | mã lỗi, từ điển thực thể, census khoá |
+| `license/` | cưỡng chế RAM; `frozen/` cho phần thương mại |
+| `mes/`, `oee/`, `report/`, `maintenance/`, `twinView/` | ứng dụng còn lại (§2.1‑9…11) |
+
+### 3.2 Procedure (tóm tắt)
+
+| Namespace | Procedure chính |
+|---|---|
+| `auth.*` | login/logout/me/refresh, `twoFactor.*`, `session.list/revoke`, `password.change` |
+| `admin.user.*`, `admin.role.*`, `admin.permission.*`, `admin.scope.*` (= 10 `hierarchy.scope.*`), `admin.credential.*` | SoD: admin không tự nâng quyền mình |
+| `setting.get/list/set/history`, `setting.def.list` | quyền theo `setting_def` |
+| `audit.list/get/verifyChain/export` | `audit_view` |
+| `ops.health/metrics/jobs.list/jobs.runNow/retention/backup.*` | admin_system |
+| `mes.order.*`, `mes.session.*`, `mes.shift.*`, `mes.wip.*`, `mes.downtime.*`, `mes.line.*` (= 70 Line FSM) | `mes_*` |
+| `oee.summary/trend/byAsset/byLine/live` | từ `oee_1h` + LiveStore |
+| `report.def.*`, `report.run`, `report.schedule.*`, `report.artifact.*`, `report.delivery.*`, `report.export` | `report_*` |
+| `maintenance.workOrder.*`, `maintenance.schedule.*`, `maintenance.part.*` | |
+| `twinView.scene/line/asset`, socket `twin:update` (→ 1a) | chỉ đọc |
+| `home.tiles` (theo vai + quyền), `shell.context` (phạm vi, chip cảnh báo 40, độ tươi 30, chế độ thật/sim) | protected |
+
+Gỡ: `commandCenter`, `warRoom`, `factoryCommand`, `mesControlTower`, `productionDashboard`, `dashboard*`, `executiveReport`, `assetCockpit` (→ `home.tiles` + `oee.*` + đọc module), `biRouter`/`reportingMart`/`realtimeReport` (→ `report.*` + CAGG), `enhancedAudit` + `commandLog` (→ `audit.*` + 50 `control.journal`), `orchestrationGov`/`twinGov`, 6 router thương mại (đóng băng), `sitesRouter`.
+
+### 3.3 Cờ
+
+`.env` mục tiêu ≤ 120 khoá: kết nối (DB/Redis/MQTT/NATS/llama/storage/SMTP), bí mật, cổng, `ROLE`, cờ an toàn (`OT_CONTROL_ENABLED`, `AI_OT_CONTROL_ENABLED`, `AI_NGOAI_ENABLED`, `LICENSE_BYPASS` chỉ dev, `SCADA_*` 2 cờ socket, `TENANT_RLS_ENABLED` → gỡ sau P1). Mọi cờ nghiệp vụ còn lại → `setting`. Gỡ: `RBAC_SCOPED_ADMIN`, `SEC_CSP_MODE`/`SEC_ORIGIN_CHECK_MODE` (enforce), `OTEL_*`, `SENTRY_*`, `DATA_RETENTION_ENABLED` (bật), `LICENSE_MODULE_GATE_ENABLED`, `WORKER_LEADER_ELECTION_ENABLED` (luôn), 17 `VITE_*` → 1 (`VITE_SHELL_V2` pha chuyển).
+
+---
+
+## 4. Mục tiêu: frontend
+
+### 4.1 Vỏ và IA
+
+- **`ia.ts` một nguồn** (vùng → màn → route → quyền → biểu tượng → vai thấy): sinh rail, breadcrumb, ⌘K, redirect bảng, `RouteGuard` (href không trong `ia.ts` ⇒ 404, không phải false im lặng); gỡ `navigation.tsx`, `module-registry` (phần route), `apps.ts`, `roleLanding`, `sidebarGroups`, `COLLAPSED_INTO_HUB`, `CascadingNav`, `AppLauncher*`, `engineeringLegacyRedirectTable`; **7 vùng** (báo cáo §8): Trang chủ · Giám sát · Sản xuất & Chất lượng · Dữ liệu chủ · Kỹ thuật · Thợ Cả · Phân tích & Quản trị.
+- **`AppFrame`** (thay `DashboardLayout` 888): thanh đầu 5 bất biến (phạm vi ISA‑95 = `hierarchy.scope` 10, `AlarmChip` 40, `FreshnessPill` 30, nhãn THẬT/MÔ PHỎNG, ⌘K) + người dùng; rail trái 7 vùng (64/240 px), đáy = cài đặt/theme; `ContextDrawer` **thuộc vỏ** (ngăn phải cho máy/cảnh báo/Thợ Cả); `BottomNav` cho panel ≤ 1024; không `AiChatFrame` nổi (80: side‑sheet từ vỏ, ẩn trên route có DỪNG — 50).
+- **Khung trang**: một `PageHeader` (tiêu đề, phụ đề ngữ cảnh, hành động, nút ngăn) + `PageBody` + `TabbedHub` (URL `?tab=`); gỡ `PageHeaderCompact`, `CockpitLayout`, `WorkbenchShell`, `EngineeringShell`, `PanelShell`, `WizardShell` (biến thể prop), `HubLauncher`; 91 `<Tabs>` tự dựng → `TabbedHub`; 20 trang không header → 0.
+- **Home theo vai** `/`: `RoleTileGrid` từ `home.tiles` (operator: máy được giao + andon + việc; supervisor: line + yield + cảnh báo; engineer: máy lỗi + phiên Thợ Cả + việc kỹ thuật; manager: KPI; admin: sức khoẻ) — thay 11 home + `TodayPage`/`InboxPage`; **Phòng vận hành** `/van-hanh` (ISA‑101 L1: lưới line, bất thường nổi, OEE/yield ca, 5 cảnh báo nặng, dòng sự kiện; persona là bộ lọc) + **Nhà máy L1** `/giam-sat/nha-may` thay 17 bảng tổng hợp (`Dashboard` 3 800, `CommandCenter`, `WarRoom`, `ControlTower`, `FactoryCommandView`, `MESControlTower`, `ProductionDashboard`, `ExecutiveMobile`, `Corporate*`, `DrillDown`, `ManagementInsight`…).
+- **Quyền UI**: `usePermission(key)` + `PermissionGate` duy nhất; gỡ `canView/canEdit` tự suy (65 tệp); mục nav ẩn khi quyền rỗng (ràng buộc #16); không "một lối vào rồi từ chối" (Khối D).
+
+### 4.2 Hệ thiết kế (một bộ token)
+
+- **Theme**: `:root` = **sáng ISA‑101** (vận hành mặc định); rail trái **sáng** (QĐ 2026‑11‑04); `--accent` xanh dương (~#0c5a85), `--sim` xanh ngọc độc quyền, `.dark` = Kỹ thuật (pha 2 sau SCADA pha 1); token `--isa-*`, `--alarm-p1..p4` (40), `--packml-*`, `--e10-*`, `--stale`, `--actuation-*` (50), `--sim` (nhãn mô phỏng); accent teal chỉ tương tác; **không xanh lá cho bình thường**.
+- **Chữ**: body **Be Vietnam Pro** `[QĐ 2026-11-03]` (self‑host, đóng Q4 báo cáo), `tabular-nums` cho số, Geist Mono; thang 6 bậc `.ds-h1…caption`; tối thiểu 11 px màn vận hành; **ESLint cấm `text-[`** (1 644 → 0) và palette thô (2 978 → 0) và `t("k","tiếng Việt")` (6 227 → 0).
+- **Mật độ**: `DensityProvider` 3 mức (comfortable panel 1280×800 target ≥ 48 px / default / compact 32 px) **mount ở vỏ**; gỡ 21 `.mobile-*` và ghi đè `.flex` toàn cục.
+- **Biểu đồ**: Recharts qua `chartTokens` (đã 29/32) + `ThemedCharts` gỡ hoặc dùng; `ui/chart` gỡ; hex thô 0; sparkline/gauge pattern.
+- **Bảng**: một `DataTable` ảo hoá (TanStack Virtual) cho danh sách > 200 hàng; `<table>` thô → 0.
+- **Export**: `lib/export.ts` một đường (server sinh tệp qua `report.export`); 8 component export → `ExportMenu`.
+- **Chuyển động**: CSS, `prefers-reduced-motion`; gỡ `framer-motion` khỏi deps.
+- **i18n**: namespace theo vùng (7) + `chung`; gỡ 1 042 khoá chết, thêm 419 thiếu; khoá sống ước ≈ 9k sau gộp trang; `vi` là nguồn, en/zh sinh từ pipeline có kiểm parity.
+- **Cờ UI**: 17 `VITE_*` → `VITE_SHELL_V2` (pha chuyển) + `VITE_ABOUT_*` build‑time.
+
+### 4.3 Màn của 90 (vùng 1 + vùng 7 + twin xem)
+
+| Màn | Route | Nội dung | Thay |
+|---|---|---|---|
+| Home theo vai | `/` | §4.1 | 11 home + 2 |
+| Phòng vận hành | `/van-hanh` | §4.1 | 7 bảng tổng hợp vận hành |
+| Nhà máy L1 | `/giam-sat/nha-may` | KPI + bất thường theo line/khu (ISA‑101 L1), OEE ca từ `oee.*` | 10 dashboard còn lại |
+| Twin | `/twin`, `/twin/line/:id`, `/twin/may/:id` | **giữ nguyên** (QĐ‑18/19/21/23, nghiệm thu 5/5); đổi nguồn sang `useAssetLive`/`useAlarmSong`/1a | — |
+| Đơn hàng & WIP | `/san-xuat/don-hang` (tab: Đơn hàng · Ca · WIP/cân bằng line · Downtime · Lập lịch) | MES | `ProductionOrders`, `ProductionScheduling`, `ProductionShifts`, `WipLineBalance`, `MESControlTower` phần MES |
+| Reporting Studio | `/bao-cao` (TabbedHub 5 tab giữ: Tổng quan · Tạo · Lịch · Xuất · So sánh) | một engine | 11 trang báo cáo |
+| Phân tích | `/phan-tich` (tab: OEE · Xu hướng · Tương quan · Năng lượng · Drill‑down) | từ CAGG 30/60/90 | 10 trang phân tích |
+| Bảo trì | `/bao-tri` (tab: Lệnh việc · Lịch PM · Vật tư · PdM) | | 5 trang |
+| Người dùng & quyền | `/quan-tri/nguoi-dung` (tab: Người dùng · Vai & bộ quyền · Phạm vi · Phiên · Khoá/credential · 2FA) | | 6 trang admin |
+| Cài đặt | `/quan-tri/cai-dat` (nhóm từ `setting_def`) | | 9 trang settings |
+| Nhật ký | `/quan-tri/nhat-ky` (tab: Audit · Lệnh (50) · Job) | | 3 trang audit + ScadaNhatKy |
+| Hệ thống | `/quan-tri/he-thong` (tab: Sức khoẻ · Job · Retention/Backup · License (đọc) · Tích hợp (webhook/SMTP/ERP) · Về hệ thống) | | SystemHealth, Backup, ImportExport, ApiKeys (→ credential), Observability, License, Modules, 9 trang thương mại (ẩn, frozen) |
+| Hạ tầng | login, setup, 404, đổi mật khẩu (có `KhoiDungKhanCap` 50), kiosk operator | giữ | `ApiDocs`, `ComponentShowcase` **ra khỏi app** (docs site / Storybook dev) |
+
+Tổng toàn hệ (báo cáo §10): **42 màn** = 35 chính + 7 hạ tầng; 235 route → 42 + redirect một chu kỳ.
+
+---
+
+## 5. Di trú từ hiện trạng
+
+Dải migration: **0610–0649** `[QĐ 2026-11-03: duyệt]` (90 là cắt ngang, dải lớn hơn). Thứ tự theo báo cáo §11: *an toàn → nền → vỏ → gộp → dọn*; không chen trước A2 (SCADA) và cửa sổ GPU A/B.
+
+| Bước | Việc | Nghiệm thu |
+|---|---|---|
+| **P0 An toàn & vệ sinh** (1 tuần, không GPU) | `cookies.txt` gỡ + thu hồi phiên; app kết nối `avi_app`; admin hết bypass quyền (+ test theo vai không‑admin); CSP/origin enforce; `moduleGate` cache; OTel/Sentry gỡ; retention + backup bật; `.env` 13 khoá trùng; `/api-docs`, `/component-showcase` ra khỏi app; 6 trang chết; `socket.ts:2797` OEE chết | N1, N2, N9 |
+| **P1 Nền dữ liệu** (cùng 10‑H/20‑A/40‑AL) | `site_id` + RLS FORCE `app.site_ids` (GUC đặt ở middleware); `setting`/`setting_def` + di trú 22 bảng + cờ nghiệp vụ khỏi `.env`; `audit_trail` + middleware mọi mutation; `credential`; `job_run` + registry; 26 bảng SQL‑only vào drizzle; worker tách (`ROLE`) | N3–N6 |
+| **P2 Lược đồ** (cửa sổ bảo trì) | timestamptz các bảng còn lại; enum → varchar; FK cho bảng còn lại; gỡ bảng §2.3 | N7 |
+| **P3 Vỏ & hệ thiết kế** | `ia.ts`, `AppFrame` sau `VITE_SHELL_V2`, token sáng, density mount, `PageHeader` duy nhất, ESLint 3 luật (đếm ratchet → 0), `DataTable` ảo hoá, `lib/export.ts`; Home theo vai + Phòng vận hành | N10–N13 |
+| **P4 Ứng dụng 90** | `oee_1h` một công thức + worker; MES (`shift_instance`, order/session/wip/downtime); Reporting một engine; Bảo trì; Người dùng/Cài đặt/Nhật ký/Hệ thống; Nhà máy L1; twin xem đổi nguồn | N8, N14 |
+| **P5 Dọn & đóng băng** | `frozen/`; gỡ redirect hết hạn; i18n dọn; `VITE_*` 17 → 1; `/api/external` → v1; `/api/machine` → v1; **bundle tải đầu** (backlog 08/11): so manifest vite (chunk tải đầu + modulepreload của `index.html`) giữa build 46a7fd639 và b81a28cce, liệt kê chunk mới/lớn lên > 50 kB gzip — lần "trước" không ghi đơn vị nên +20 % là xấp xỉ | N15 |
+
+---
+
+## 6. Tiêu chí nghiệm thu module
+
+| # | Tiêu chí | Đo bằng |
+|---|---|---|
+| N1 | `DATABASE_URL` của app là `avi_app`; `select rolsuper, rolbypassrls` của phiên app = false/false; migration vẫn bằng `aoi` | SQL từ trong app + script |
+| N2 | Admin không bypass: user `admin` thiếu `X.canEdit` ⇒ mutation X bị FORBIDDEN (ma trận 10 module); phép đo quyền chạy bằng vai không‑admin | vitest DB |
+| N3 | RLS hiệu lực: phiên `avi_app` với `app.site_ids={A}` không đọc được hàng site B trên 20 bảng thường (đột biến "quên set GUC" ⇒ đỏ vì FORCE + mặc định deny); hypertable: census `idsTrongPhamVi` trong mọi truy vấn | vitest DB + census |
+| N4 | Settings: `grep -E 'process.env\.' server` ngoài `modules/platform/ops|identity|api` ≤ 120 khoá; 0 cờ nghiệp vụ trong `.env`; đổi `setting` có hiệu lực không restart (pub/sub) | grep + test |
+| N5 | Audit: mọi mutation có danh tính ghi `audit_trail` (census builder); UPDATE/DELETE trên `audit_trail` bị từ chối cho `avi_app`; chuỗi HMAC xác minh | vitest + SQL |
+| N6 | Worker: tiến trình `ROLE=api` có 0 `setInterval` job; mọi job trong registry có `job_run`; job thiếu owner‑module ⇒ census đỏ | grep + SQL |
+| N7 | Lược đồ: bảng naive = 0; pg enum ≤ 30; bảng có cột `*_id` tham chiếu mà không FK = 0; bảng ngoài drizzle = 0; bảng toàn hệ ≤ 220 | SQL + script |
+| N8 | OEE: `grep -E "availability.*performance.*quality|oee *=" server` ngoài `modules/platform/oee/` = 0; 3 bề mặt (L1, Phân tích, báo cáo) cùng số tới 0,1 % trên cùng ca | grep + test |
+| N9 | Bảo mật HTTP: CSP enforce, origin enforce; `/metrics` chỉ nội bộ; license gate 0 truy vấn DB/lần gọi | test + đo |
+| N10 | IA: một `ia.ts`; `navigation.tsx|module-registry (route)|apps.ts|roleLanding|sidebarGroups|COLLAPSED_INTO_HUB` = 0; route sống 42 (+ redirect) | grep + Playwright |
+| N11 | Hệ thiết kế: ESLint `no-raw-palette`, `no-arbitrary-text-size`, `no-inline-vi-default` = 0 vi phạm ở `pages/`, `components/`; `PageHeader` = 1 kiểu; trang không header = 0; `:root` sáng | ESLint + Playwright chụp |
+| N12 | Density mount ở vỏ, 3 mức; target ≥ 48 px ở `comfortable` trên 1280×800 | Playwright |
+| N13 | LCP `/van-hanh` < 2 s trên panel; `/kiem-tra` 10 000 hàng ảo hoá | đo |
+| N14 | MES: mọi `inspection` và `oee_1h` nối `shift_instance`; downtime sinh từ 40, không bảng riêng ghi tay | SQL |
+| N15 | i18n: khoá chết 0, khoá thiếu 0, parity 100 %; `VITE_*` = 1 (+ về hệ thống) | script |
+
+---
+
+## 7. Câu hỏi mở — đã trả lời `[QĐ 2026-11-03]`
+
+| # | Câu hỏi | Quyết định | Hệ quả |
+|---|---|---|---|
+| 1 | `avi_app` + RLS FORCE `app.site_ids`; hypertable nén ở lớp app | **Đồng ý mô hình hai lớp** | P0 (avi_app), P1 (RLS); N1, N3 |
+| 2 | Settings một bảng; `.env` ≤ 120 khoá; cờ an toàn ở `.env` | **Đồng ý** | P1; N4 |
+| 3 | Cửa sổ bảo trì P2 (tz + enum + FK) trên bản sao rồi áp dev | **Đồng ý** | P2; N7 |
+| 4 | OEE một công thức theo `shift_instance`, gộp theo trọng số thời gian kế hoạch | **Đồng ý** | P4; N8 |
+| 5 | Phiên theo vai 12 h / 7 d; gỡ `cookies.txt` + thu hồi mọi phiên | **Đồng ý** (người dùng đăng nhập lại một lần) | P0 |
+| 6 | Font body | **Be Vietnam Pro** + Geist Mono (đóng Q4 báo cáo) | §4.2; P3 |
+| 7 | `ApiDocs`/`ComponentShowcase` ra khỏi app | **Đồng ý** (docs tĩnh từ OpenAPI; Storybook dev) | P0 |
+| 8 | Tách 3 tiến trình `api / worker / edge` mặc định; dev `ROLE=all` | **Đồng ý** | P1; N6 |
+| 9 | Dải migration 0610–0649 | **Đồng ý** | §5 |
+
+---
+
+## 8. Nhật ký
+
+| Ngày | Phiên | Việc | Số đo |
+|---|---|---|---|
+| 2026-11-03 | chủ dự án + chu-du-an-HST | **Duyệt v1.1**: 9 câu hỏi §7 theo khuyến nghị (avi_app + RLS hai lớp; settings một bảng; cửa sổ P2; OEE một công thức; phiên theo vai; Be Vietnam Pro; docs ra ngoài app; 3 tiến trình; mig 0610–0649) | — |
+| 2026-11-03 | chu-du-an-HST | Viết v1 từ kiểm kê read-only `_ai8_wt d980d4844` + DB live; kế thừa báo cáo tổng quan §8–§11, doc 59/68/32, đợt tenant 08/2026, phạm vi GHI 10/2026 | DB 70 GB/469 bảng/174 enum; 359 bảng không FK; 395 naive; RLS 43 bật/2 FORCE, GUC đặt ở 3 router, app chạy superuser; admin bypass; 6 công thức OEE; 7 lớp nav/235 route/≈ 28 trang tổng quan; 2 978 màu thô, 1 644 `text-[`, 6 227 t() tiếng Việt; ≈ 50 job một tiến trình; OTel/Sentry chết |
+| 2026-11-04 | chủ dự án + chu-du-an-HST | **Mockup 5 màn** (luong-ui `docs/mockup-man-1-4-5`, scada-ui `docs/mockup-man-2-3`): chốt `--accent` xanh dương (~#0c5a85), `--sim` xanh ngọc độc quyền; **rail trái sáng**; luật chữ ưu tiên dùng `--alarm-pN-ink`, glyph/viền màu chính; khoảng hở mất kết nối/bad = sọc tím, uncertain = chấm xám; `token.css` của mockup là nguồn `index.css` pha 2 (90‑P3); kiem-dinh kiểm bằng công cụ trước khi gộp | 32 + 20 ảnh; tương phản 58 + 19 cặp đạt |
+| 2026-11-04 | luong-ui | **Pha 0 · P0-8 + P0-9** (nhánh `feat/pha0-ui-luong`): gỡ `/api-docs` + `/component-showcase` (`ApiDocs` 3 578 + `ComponentShowcase` 1 833 + `components/apiDocs/*`; tab ApiDocs trong AdminSettings; nút "Tài liệu API" của CredentialGuide mở `/api/v1/openapi.json`) và 6 trang chết (`AIHub`, `AIStudioHub`, `AILocalKnowledgeBasePage`, `DashboardTemplates`, `TemplateMarketplace`, `TestAnnotationPage`) + `AIChatBox` + `AILocalKnowledgeBase` | Route trong App.tsx 237 → 235; bundle `dist/public/assets` 41 225 915 → 40 554 871 B (−671 044), tệp .js 852 → 843, 0 chunk ApiDocs/ComponentShowcase (trước 491 629 + 210 508 B); trần chuỗi VI trần 423 → 0; nền i18n 332 → 331; tsc 0, check:tests 0 |
+| 2026-11-04 | kiem-dinh | **Số đo "trước" pha 0** (main 46a7fd639, DB dev): 234 route có path (193 thật + 41 redirect); 6 trang không import 1 445 LOC; 30/263 router 0 client; `notifications` 24 h = 45; bảng rác 1,84 GB + sim; `ot_telemetry` 18,97 M hàng/24 h; cửa lệnh ngoài dispatcher: writeTags 2 · deployFile 2 · publishInstantActions 2 · executeOtDeviceWrite 4 · executeCommand 3; `.env` dùng `avi_app` (su/bypass false); **không có header CSP** (mode off); bundle 29,3 MB JS raw / 7,06 MB gzip, tải đầu 0,72 MB gzip; `.env` trùng 1. Báo cáo `D:\SOURCES\_kd_out\PHA0-TRUOC.md` | như trên |
+| 2026-11-04 | chủ dự án | **DUYỆT thị giác mockup 5 màn** (main ac0e63289, `docs/superpowers/specs/2026-11-mockup-5-man/`, 25 trạng thái × 2 cỡ, kiem-dinh ĐẠT trọn) ⇒ `token.css` + `shell.css/js` là nguồn của `index.css`/`AppFrame` ở 90‑P3 (pha 2); các quyết định thị giác trong `quyet-dinh-thi-giac.md` và `man-2-3-quyet-dinh.md` có hiệu lực | 50 ảnh |
+| 2026-11-04 | do-model | **Pha 0 · P0-10** `8be553da7`: gỡ khối OEE trong bộ nhớ chết ở `_core/socket.ts` (128 dòng; INSERT `oee_metrics` tên cột không trích; 0 nơi gọi) | census đếm điểm phát `socket.ts` 20 → 19 |
+| 2026-11-04 | do-model | **P0-5** `2fb113de2`: gỡ Sentry / OpenTelemetry (`observability.ts` chỉ còn SLO; xoá `otelBridge.ts`); `.env.example` + `ALWAYS_OFF` bỏ `OTEL_ENABLED`; `/metrics` Prometheus giữ | `git grep OTEL_\|SENTRY\|opentelemetry\|otelBridge` = 0 trừ 1 chú thích ở `services/edge/edgeGatewayRuntime.ts:1164` (vùng edge cấm chạm — scada-master sửa chữ sau) |
+| 2026-11-04 | do-model | **P0-4** `58961999f`: `moduleGate` bộ nhớ RAM 60 s (promise dùng chung; lỗi KHÔNG lưu ⇒ fail-safe allow giữ); `db/license.ts` 6 hàm ghi bỏ bộ nhớ ngay | 135 lượt gọi cổng ⇒ 2 truy vấn (trước: 2 / lượt); đột biến 5/5 |
+| 2026-11-04 | do-model | **P0-6** `e648771f9`: giữ dữ liệu + vòng đời ảnh + DR verify BẬT mặc định; **giữ công tắc khẩn `=false`** (lý do: dừng ngay một đợt xoá sai mà không cần build lại; dieu-phoi chấp nhận). Sao lưu mặc định khi chưa có lịch: 02:30 hằng ngày, các nhóm trừ `inspections` + `machine_health_history`/`heartbeats`/`status_logs`, giữ 7 tệp | DEV đã `DATA_RETENTION_ENABLED=true` ⇒ không đổi hành vi xoá DEV. Dung lượng ước (DEV, chỉ đọc 2026-11-04): 29 bảng ≈ 51 MB/tệp (bảng thường 4,3 MB + hypertable `audit_logs` 46,3 MB + `oee_metrics` 0,4 MB, gồm index) ⇒ 7 tệp ≲ 360 MB |
+| 2026-11-04 | do-model + dieu-phoi | **P0-1** `8613a0154`: `scripts/cap-quyen-avi-app.mjs` (mặc định chỉ KIỂM; `--ap` cấp đúng phần thiếu, không bao giờ cấp bảng cố ý hẹp có trong `REVOKE … FROM avi_app`). App DEV đã chạy `avi_app` ⇒ không cần đổi chuỗi kết nối | DEV (dieu-phoi chạy, chỉ kiểm): "DB aoi_management · avi_app: rolsuper=false rolbypassrls=false login=true · bang: 469 · du DML: 436 · THIEU: 0 · co y hep (khong cap): 33 · sequence thieu: 0"; `_test`: 467 / 434 / 0 / 33 / 0 |
+| 2026-11-04 | do-model | **P0-11** `5637627e7`: hạn phiên THEO VAI ở sổ `user_sessions."expiresAt"` (admin/engineer 7 ngày, vai khác 12 h) + gia hạn trượt TẠI CHỖ (< 50 % hạn ⇒ UPDATE `expiresAt`, trần 30 ngày từ `createdAt`); vé + cookie mang trần tuyệt đối 30 ngày, KHÔNG đúc lại vé / không xoay token / không lật `isActive` (trigger 0435 không bắn). `SESSION_TTL_DAYS` = trần trên. Không migration | ⚠ phiên ĐANG SỐNG trên DEV giữ hạn cũ trong sổ (≤ 30 ngày) tới khi hết — chỉ phiên mới theo vai; đột biến 7/7 |
+| 2026-11-04 | do-model | **P0-3 bước 1** `3cad9af79`: CSP mặc định **report-only** (`Content-Security-Policy-Report-Only` + `/api/csp-report`), origin-check mặc định **log**; `off` chỉ còn là công tắc khẩn. Bước 2 (enforce mặc định + gỡ cờ) sau ≥ 1 ngày đọc báo cáo vi phạm trên DEV | ⚠ nếu `.env` DEV đặt sẵn `SEC_CSP_MODE=off` / `SEC_ORIGIN_CHECK_MODE=off` thì mặc định mới bị che — gỡ ở diff `.env` P0-7 |
+| 2026-11-04 | do-model | **P0-2** `8921647c1`: admin hết bypass `requirePermission` mặc định (`RBAC_SCOPED_ADMIN` vắng ⇒ chế độ hạn quyền; `=false` công tắc khẩn); `robotStopAuth` cùng nguồn | DEV chỉ đọc: 10 admin (9 hoạt động); 3 có hàng quyền (`ai_repo_read` / `ai_repo_exec`) với vài hành động false — mã chỉ đòi `ai_repo_read.canView` + `ai_repo_exec.canCreate`, đều TRUE ⇒ 0 admin mất truy cập (đối chiếu dữ liệu, KHÔNG đăng nhập thử bằng tài khoản thật) |
+| 2026-11-06 | do-model | **P0-2 — CHỦ DỰ ÁN CHỐT (05/11, qua dieu-phoi): "Same rule for everyone"** | STOP robot khi DB chậm / mất: admin theo CÙNG luật mọi vai — có grant `machine_control` đã nhớ của phiên (≤ 15 phút) ⇒ qua; không có ⇒ từ chối + cảnh báo + "dùng E-STOP cứng" (kể cả ngay sau khởi động lại máy chủ). `RBAC_SCOPED_ADMIN=false` là công tắc khẩn trả lại god-mode. Ghim chính thức: `robotStopAuth.p02.test.ts` (`adminQuaKhiQuyenSuyGiam`, `58e3c8110`) |
+| 2026-11-06 | do-model | **P0-2 — sửa sau cổng gộp** (dieu-phoi): `getDb()` null ⇒ `checkPermission` từ chối MỌI vai, gồm admin; `RBAC_SCOPED_ADMIN=false` vẫn là công tắc khẩn | Trước đó null ⇒ admin qua, trong khi truy vấn ném ⇒ admin lỗi: hai đường lệch nhau. STOP robot gọi `kiemQuyenStop`: null = KHÔNG KIỂM ĐƯỢC (ném) ⇒ vào đường suy giảm đã chốt, thay vì thành lời từ chối chắc chắn; thay đổi này cũng áp cho vai khác. DEV chỉ đọc 06/11: 10 admin, 6 hàng quyền (admin 1/167/1546), bit mã đòi đều TRUE ⇒ 0 admin mất quyền. |
+| 2026-11-06 | dieu-phoi | `feat/pha0-platform` + `feat/pha0-ui-luong` lên main a9a8c9405 (push). Cổng đầy đủ 414 tệp DB `server/`: 6 đỏ → 4 xanh khi chạy riêng; 2 đỏ **có sẵn trên main cũ** (`scheduledReportScope.db` — dữ liệu `_test` dùng chung; `mqttBrokerAdmission.db` — ws username lạ, code undefined) — nợ ngoài lô. **P0‑2/P0‑3/P0‑11 chỉ có hiệu lực sau khi `:3000` build + restart (sau 15:08 07/11)**; khi đó chủ dự án đăng nhập admin 1 lần; P0‑3 bước 2 (enforce) tính ≥ 1 ngày báo cáo kể từ lúc restart | — |
+| 2026-11-07 | dieu-phoi | `:3000` khởi động lại **15:11:16 07/11** (pid 18196, bản 9715afabe gồm main f2fe69a6f có SCADA 1b + pha0-ui-scada); readyz ready, db + broker ok, 0 lỗi mức 50/60 lúc boot. **P0‑2, P0‑3 (report), P0‑11 có hiệu lực từ mốc này**. P0‑3 bước 2 enforce: ≥ 1 ngày sau mốc **và** sau khi chủ dự án đăng nhập admin 1 lần | — |
+| 2026-11-08 | dieu-phoi | `:3000` khởi động lại **04:08:59 08/11** (pid 9912, bản 60489b42f) với `OT_GATEWAY_ENABLED=true` từ `.env` (chủ dự án bật, cách B) ⇒ **mốc P0‑3 bước 2 mới: 04:08:59 08/11**; đăng nhập admin 1 lần vẫn chờ | — |
+| 2026-11-08 | dieu-phoi | **P0‑3 bước 2, ngày 1** (04:08:59–10:41:35 08/11, build 60489b42f, CSP report-only, origin‑check `log`, 4 origin allowlist, 9 prefix miễn): **0** dòng CSP violation, **0** dòng Origin mismatch, `avi_aoi_security_events_total` = 0. Log `:3000` có ghi tệp (41 019 dòng, giữ qua restart). **Số 0 chưa đủ làm căn cứ enforce — 08/11 11:xx kiem‑dinh chứng minh: mỗi lượt tải luôn sinh ≥ 1 vi phạm CSP (zod eval) ⇒ 0/0 nghĩa là KHÔNG có lượt tải nào trong cửa sổ, ngày 1 VÔ GIÁ TRỊ**: log không ghi từng request nên không đo được có lượt dùng UI thật trong cửa sổ; đăng nhập `admin` gần nhất 07/11 21:09, trước cửa sổ ⇒ có thể 0 lượt dùng. (Đo DEV: 10 admin, 9 active, 0 khoá, `admin` đăng nhập được sau P0‑2/P0‑11 — **không có sự cố P0‑2**.) Yêu cầu cho ngày 2: chủ dự án (hoặc người được chỉ định) mở các màn chính trên `:3000` (Home, SCADA, Twin, Kỹ thuật, AI, Báo cáo) ít nhất 1 lượt; quyết định enforce chỉ dựa trên cửa sổ có lượt dùng thật. Bộ đếm CSP/metric là trong bộ nhớ ⇒ bằng chứng = log tệp | — |
+| 2026-11-08 | dieu-phoi | **P0‑3 bước 2**: restart `:3000` lên 90b980a24 (= main b81a28cce: lô C + C0‑7/8 + MQTT), sẵn sàng **11:03:28 08/11**, pid 6172, readyz 200, log tệp `server3000-90b980a24.log`, CSP vẫn report-only, origin‑check vẫn `log`. `securityHeaders.ts`/`originCheck.ts` diff 60489b42f..b81a28cce = 0 ⇒ **giữ mốc 04:08:59**. Đoạn 1 (04:08:59–11:02:28): 0 CSP / 0 origin; **khoảng hở ~40 s không log** khi tiến trình cũ (pid 9912) chưa thoát (TaskStop chỉ dừng lớp npm; lần khởi động đầu nhảy sang 3001, đã giết cả hai và khởi động lại sạch). Đoạn 2 đếm trên log mới. kiem-dinh đo §9 trên hash này | — |
+| 2026-11-08 | kiem-dinh + dieu-phoi | **§9 "SAU" pha 0 chính thức** (main b81a28cce, `D:\SOURCES\_kd_out\PHA0-SAU.md`; bảng đầy đủ ở gói pha 0 §9.1): route 236→234, trang không import 6→**0**, router 0‑client 30→24, `.env` trùng 1→**0**, `avi_app` không super/bypassrls, DB 73→**44 GB**, `ot_telemetry` 18,97 M→**93 296**/24 h, 0 lỗi console/HTTP≥400 trên 24 lượt công khai. **Bundle tải đầu 3,25 MiB raw / 0,83 MiB gzip ≈ +20 %** → backlog 90‑P5. **P0‑3**: mỗi lượt tải sinh 1 vi phạm `script-src 'eval'` từ `assets/schemas-*.js` (zod 4 thăm dò `new Function`); metric `csp_violation` = 26 nhưng log throttle 5/phút ⇒ **đếm log là đếm thiếu, phải đọc `/metrics` và chụp trước restart**; sửa `z.config({ jitless: true })` ở điểm vào client (luong‑ui), đo lại phải 0/lượt; **mốc bước 2 tính lại từ bản jitless**. Chưa đo trang sau đăng nhập — cần tài khoản test | — |
+| 2026-11-08 | chủ dự án | **Uỷ quyền dieu-phoi** xử lý `cookies.txt`: gỡ khỏi git + `.gitignore` + commit (không mở tệp), rồi **thu hồi mọi phiên `user_sessions`** có đếm trước/sau — làm sau khi kiem‑dinh đo xong trang sau đăng nhập; chủ dự án đăng nhập lại sau đó. Tài khoản test: uỷ quyền tạo 8 `kd_test_<vai>` (DEV, department `KD_TEST`, mật khẩu chỉ kiem‑dinh giữ) | — |
+| 2026-11-08 | dieu-phoi | **`cookies.txt` gỡ xong**: 570481d2d (`.gitignore` `/cookies.txt`) + 3c923249e (gỡ khỏi chỉ mục), tệp xoá khỏi đĩa, không mở/in; **vẫn còn trong lịch sử git/remote** (vd c401821cf) — không viết lại lịch sử (force push = đổi kế hoạch, cần quyết riêng) ⇒ **thu hồi phiên là bước vô hiệu hoá thật**. Thu hồi phiên ĐÃ CHUẨN BỊ, chưa chạy (chờ kiem‑dinh đo xong): `user_sessions` không WORM, `avi_app` UPDATE, trigger `trg_socket_pham_vi_sessions_upd` NOTIFY khi `isActive` true→false; server kiểm sổ phiên trước cache ⇒ chặn ngay lượt kế, không cần restart. Đếm 13:19:53Z: 3 518 hàng, **171 còn hạn & active** (engineer1 131, ai_audit_0921 19, admin 5, operator1 5, supervisor1 4, maint1 3); `--test-only` ROLLBACK: 171/171, còn hạn sau 0, tổng không đổi. Khi chạy thật: thu hồi = số còn hạn lúc chạy, lệch ⇒ ROLLBACK. Phạm vi chỉ `user_sessions`; token cá nhân `/v1` (extension) không chạm | — |

@@ -228,7 +228,7 @@ describe("§2 — MÃ TÔ CÚ PHÁP + NÚT CHÉP, KHÔNG CÀI GÓI MỚI", () =>
   });
 
   it("★★ `Streamdown` đã được dùng ở nơi khác trong repo ⇒ lựa chọn ĐÃ CHẠY THẬT, không phải cược", () => {
-    expect(doc("client/src/components/AIChatBox.tsx")).toContain('from "streamdown"');
+    expect(doc("client/src/components/ai/TrinhXemMa.tsx")).toContain('from "streamdown"'); // AIChatBox (nơi dùng đầu tiên) đã gỡ ở pha 0 · P0-9
   });
 });
 

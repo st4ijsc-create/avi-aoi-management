@@ -236,6 +236,34 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
     expect(dB.flatMap((e: any) => e.values).some((v: any[]) => v[0] === ADAPTER_A || v[2] === 333)).toBe(false);
   });
 
+  it("SCADA 1a qua socket.io THAT: snapshot seq 0 + staleAfterMs CHI khoa tag duoc phep (poll 1 s => 3000); delta seq 1; scada:tick 1 Hz CHI adapter duoc phep (doi chung: B thay adapter B)", async () => {
+    napTuOt({ adapterId: ADAPTER_A, machineId: A.mid }, [mau("nhietDo", 1)]);
+    napTuOt({ adapterId: ADAPTER_B, machineId: B.mid }, [mau("nhietDo", 2)]);
+    const a = await ketNoi(uA);
+    const b = await ketNoi(uB);
+    const snA = ghiNhan(a, "scada:snapshot");
+    const dA = ghiNhan(a, "scada:delta");
+    const tA = ghiNhan(a, "scada:tick");
+    const tB = ghiNhan(b, "scada:tick");
+    a.emit("scada:subscribe", { subId: "s", capMs: 100, tags: [TAG_A, TAG_B] });
+    b.emit("scada:subscribe", { subId: "s", tags: [TAG_A, TAG_B] });
+    await vi.waitFor(() => expect(snA.length).toBe(1), { timeout: 5000 });
+    expect(snA[0].seq).toBe(0);
+    expect(typeof snA[0].serverTs).toBe("number");
+    expect(snA[0].staleAfterMs).toEqual({ [`${ADAPTER_A}:nhietDo`]: 3000 });
+    napTuOt({ adapterId: ADAPTER_A, machineId: A.mid }, [mau("nhietDo", 3)]);
+    await vi.waitFor(() => expect(dA.length).toBe(1), { timeout: 5000 });
+    expect(dA[0].seq).toBe(1);
+    await vi.waitFor(() => {
+      expect(tA.length).toBeGreaterThanOrEqual(1);
+      expect(tB.length).toBeGreaterThanOrEqual(1);
+    }, { timeout: 5000 });
+    expect(tA[0].seq).toBe(2);
+    expect(tA[0].adapters.map((x: any) => x.adapterId)).toEqual([ADAPTER_A]);
+    expect(tB[0].adapters.map((x: any) => x.adapterId)).toEqual([ADAPTER_B]);
+    expect(JSON.stringify(tA[0])).not.toContain("nhietDo");
+  });
+
   it("nguoi duoc gan ca hai nha may nhan ca hai; admin (toan quyen) nhan ca hai", async () => {
     napTuOt({ adapterId: ADAPTER_A, machineId: A.mid }, [mau("nhietDo", 5)]);
     napTuOt({ adapterId: ADAPTER_B, machineId: B.mid }, [mau("nhietDo", 6)]);
@@ -261,7 +289,7 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
     const sn = ghiNhan(kq, "scada:snapshot");
     kq.emit("scada:subscribe", { subId: "s", tags: [TAG_A] });
     await vi.waitFor(() => expect(sn.length).toBe(1), { timeout: 5000 });
-    expect(sn[0]).toEqual({ subId: "s", values: [], denied: [TAG_A] });
+    expect(sn[0]).toEqual({ subId: "s", seq: 0, serverTs: expect.any(Number), values: [], staleAfterMs: {}, denied: [TAG_A] });
   });
 
   it("adapter co trong DB nhung khong do trung tam quan: nguoi B xet theo machineId DB (v:null bad stale); A bi denied; adapter khong ton tai denied", async () => {
@@ -277,7 +305,7 @@ describe("scada:subscribe qua socket.io that - chi nhan tag trong pham vi nha ma
       expect(snA.length).toBe(1);
       expect(snB.length).toBe(1);
     }, { timeout: 5000 });
-    expect(snA[0]).toEqual({ subId: "s", values: [], denied: [tagDb, khongCo] });
+    expect(snA[0]).toEqual({ subId: "s", seq: 0, serverTs: expect.any(Number), values: [], staleAfterMs: {}, denied: [tagDb, khongCo] });
     expect(snB[0].denied).toEqual([khongCo]);
     expect(snB[0].values).toEqual([[adapterDbB, "x", null, "bad", 0, -1, true, "stale"]]);
   });

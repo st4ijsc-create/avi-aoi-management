@@ -71,6 +71,12 @@ export interface TinGhep {
   vaiTro: TinNhanNgoai["vaiTro"];
   phan: readonly PhanGhep[];
   tenTool?: string;
+  /**
+   * (H3.3b) khối tool GỐC: `goiTool` (assistant — tham số do model sinh ở vòng trước trong CÙNG chuỗi, như `dau-ra-model`: không thêm mức)
+   * và `idGoiTool` (tool — nội dung vẫn là phần `ma-repo`). Cổng kiểm id / tên / vai và CHE tham số.
+   */
+  goiTool?: TinNhanNgoai["goiTool"];
+  idGoiTool?: string;
   /** Chuỗi nối các phần trong MỘT tin (mặc định hai dòng trống). */
   noi?: string;
 }
@@ -87,6 +93,14 @@ export interface YeuCauDaGhep {
 
 const DAU = new WeakMap<object, MucDuLieu>();
 
+function dongBangSau<T>(v: T): T {
+  if (v && typeof v === "object") {
+    for (const x of Object.values(v as object)) dongBangSau(x);
+    Object.freeze(v);
+  }
+  return v;
+}
+
 function mucCuaPhan(p: PhanGhep): MucDuLieu | null | "bo" {
   const m = MUC_THEO_LOAI[p.loai];
   if (m === "theo-kho") return LOAI_KHO_KY_THUAT.has(String((p as { loaiKho?: unknown }).loaiKho ?? "").toLowerCase()) ? "ky-thuat" : "van-hanh";
@@ -98,7 +112,10 @@ function mucCuaPhan(p: PhanGhep): MucDuLieu | null | "bo" {
   return m;
 }
 
-/** Dựng yêu cầu. Tin rỗng sau khi bỏ phần ⇒ bỏ cả tin. Chỉ `vaiTro` / `noiDung` / `tenTool` đi ra (không chép trường thừa). */
+/**
+ * Dựng yêu cầu. Tin rỗng sau khi bỏ phần ⇒ bỏ cả tin (trừ assistant MANG `goiTool`). Chỉ `vaiTro` / `noiDung` / `tenTool` / `goiTool` /
+ * `idGoiTool` đi ra (không chép trường thừa; `goiTool` chép sâu + đóng băng — người gọi không sửa được sau khi ghép).
+ */
 export function ghepPhan(ds: readonly TinGhep[]): YeuCauDaGhep {
   const tinNhan: TinNhanNgoai[] = [];
   const phanDaGhep: MucDuLieu[] = [];
@@ -114,9 +131,18 @@ export function ghepPhan(ds: readonly TinGhep[]): YeuCauDaGhep {
       if (m) phanDaGhep.push(m);
       giu.push(String(p.noiDung ?? ""));
     }
-    if (giu.length === 0) continue;
+    const goiTool = t.goiTool?.length ? dongBangSau(t.goiTool.map((g) => ({ id: String(g.id), ten: String(g.ten), thamSo: structuredClone(g.thamSo) }))) : undefined;
+    if (giu.length === 0 && !goiTool) continue;
     const vaiTro = t.vaiTro;
-    tinNhan.push(Object.freeze({ vaiTro, noiDung: giu.join(t.noi ?? "\n\n"), ...(t.tenTool !== undefined ? { tenTool: String(t.tenTool) } : {}) }));
+    tinNhan.push(
+      Object.freeze({
+        vaiTro,
+        noiDung: giu.join(t.noi ?? "\n\n"),
+        ...(t.tenTool !== undefined ? { tenTool: String(t.tenTool) } : {}),
+        ...(goiTool ? { goiTool } : {}),
+        ...(t.idGoiTool !== undefined ? { idGoiTool: String(t.idGoiTool) } : {}),
+      }),
+    );
   }
   const muc: MucDuLieu = phanDaGhep.includes("van-hanh") ? "van-hanh" : "ky-thuat";
   const ra = Object.freeze(tinNhan);

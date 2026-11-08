@@ -348,7 +348,11 @@ export function edgeEngineActorOf(contextJson: unknown, newestApproval: { approv
   return { userId: newestApproval.approvedBy, path: "gate" };
 }
 
-/** Step 7 + 8 for a robot attempt — the robot dispatcher's order: enabled, lock, FIELD_V2, commissioning ⇒ mode, policy, safety, interlock. */
+/**
+ * Step 7 + 8 for a robot attempt — the robot dispatcher's order: enabled, lock, FIELD_V2, commissioning ⇒ mode, policy, safety, interlock.
+ * Internal: it ASSUMES steps 1–6 already ran (node / run / claim, payload, ownership, the step-5 STOP short-circuit, approval) — only
+ * authorizeForNode calls it. The A2(l) DB suite reaches it through `__robotGatesForTests` (below).
+ */
 async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { kind: "robot" }>, approvedBy: number, runOwner: number, ownerEpoch: number): Promise<Gate | Verdict> {
   const robotId = rb.robotId as number;
   const { readRobotEnabledForMotion } = await import("../robot/robotEnabledGate");
@@ -369,7 +373,7 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
     const authz = await authorizeCommand({ equipmentClass: "ROBOT", verb: "run_job", userId: approvedBy, userRole: role });
     if (!authz.ok) return { gate: "field_v2", detail: authz.reason ?? "command authorization denied" };
   }
-  const { isRobotControlEnabled, isRobotCommissioningRequired, isRobotCommissioned, robotInterlockTarget, ROBOT_NO_OT_ADAPTER_ID } = await import("../robot/robotCommandDispatcher");
+  const { isRobotControlEnabled, isRobotCommissioningRequired, isRobotCommissioned, ROBOT_NO_OT_ADAPTER_ID } = await import("../robot/robotCommandDispatcher");
   const commissioned = isRobotCommissioningRequired() ? await isRobotCommissioned(robotId) : true;
   const real = isRobotControlEnabled() && commissioned;
   let policy = "skipped";
@@ -392,9 +396,11 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
       const sg = await safetyPreflight({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null, robotId });
       if (sg) return sg;
     }
-    const { evaluateInterlockGate } = await import("../interlock/interlockGate");
-    const g = await evaluateInterlockGate(robotInterlockTarget(robotId));
-    if (g.blocked) return { gate: "interlock", detail: g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
+    // A2(l) — the SAME decision as central's dispatcher: the machines WHERE the robot is (tapMayChoRobot), never machineId = robotId; an unplaced
+    // robot ⇒ refused ROBOT_CHUA_DINH_VI (gate "interlock" — the protocol's gate list is unchanged), a placement read error ⇒ fail-closed
+    const { tapMayChoRobot, danhGiaInterlockRobot, moTaViTriKhongDung } = await import("../interlock/tapMayChoRobot");
+    const g = await danhGiaInterlockRobot(await tapMayChoRobot(d, robotId));
+    if (g.blocked) return { gate: "interlock", detail: g.maTuChoi || g.viTri.loai === "loi" ? moTaViTriKhongDung(g.viTri) : g.failClosed ? (g.vuotTran ? `interlock rule set for this target exceeds ${g.vuotTran.tran} rules — fail-closed` : "interlock evaluation error — fail-closed") : `interlock rule(s) ${g.violations.map((v) => `#${v.ruleId}`).join(", ")}` };
     interlock = "clear";
   }
   return {
@@ -404,6 +410,12 @@ async function robotGates(d: Db, nodeId: number, rb: Extract<RebuiltCommand, { k
     target: { robotId, jobType: rb.jobType as never },
   };
 }
+
+/**
+ * @internal test hook — the A2(l) DB suite (tapMayChoRobot.a2l.db.test.ts) drives the robot device gates on a rolled-back transaction. NEVER call
+ * it from production code: it skips steps 1–6 of authorizeForNode (pinned by the census in tapMayChoRobot.a2l.test.ts).
+ */
+export const __robotGatesForTests = robotGates;
 
 /**
  * Step 7 + 8 for an OT attempt — the OT dispatcher's order: adapter, tags, commissioning ⇒ mode, policy, safety, interlock.
