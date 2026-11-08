@@ -8,12 +8,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   hang: [] as Array<{ machineId: number | null }>,
   loiDb: false as boolean,
+  dbNull: false as boolean,
   dispatch: vi.fn(async (_i: unknown) => ({ ok: true, status: "acked", simulated: false })),
 }));
 
 vi.mock("../../../db/connection", () => ({
   getDb: async () => {
     if (h.loiDb) throw new Error("db sập");
+    if (h.dbNull) return null; // edge / DB từ chối: getDb() TRẢ null, không ném
     return { select: () => ({ from: () => ({ where: () => ({ limit: async () => h.hang }) }) }) };
   },
 }));
@@ -27,6 +29,7 @@ const opts = (deviceId: number) => ({ stage: "staging" as const, idempotencyKey:
 beforeEach(() => {
   h.hang = [];
   h.loiDb = false;
+  h.dbNull = false;
   h.dispatch.mockClear();
 });
 
@@ -57,6 +60,13 @@ describe("C0-7 MELSEC — machineId của dispatch() là MÁY của adapter, kh�
 
   it("★ tra DB lỗi ⇒ failed ADAPTER_MACHINE_LOOKUP_FAILED, dispatch KHÔNG được gọi (fail-closed)", async () => {
     h.loiDb = true;
+    const r = await new MitsubishiEngineeringAdapter().deploy(build, opts(41));
+    expect(r).toMatchObject({ ok: false, status: "failed", detail: { reason: "ADAPTER_MACHINE_LOOKUP_FAILED" } });
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("★ c7d: getDb() TRẢ null (không ném) ⇒ cũng failed ADAPTER_MACHINE_LOOKUP_FAILED, dispatch KHÔNG được gọi — không được hiểu null là 'adapter chưa gắn máy'", async () => {
+    h.dbNull = true;
     const r = await new MitsubishiEngineeringAdapter().deploy(build, opts(41));
     expect(r).toMatchObject({ ok: false, status: "failed", detail: { reason: "ADAPTER_MACHINE_LOOKUP_FAILED" } });
     expect(h.dispatch).not.toHaveBeenCalled();
