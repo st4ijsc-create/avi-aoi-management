@@ -1,0 +1,2448 @@
+{
+ "ngay": "2026-11-08",
+ "nhan": "baseline-luot-1",
+ "truc": "M (model thuần, gọi thẳng llama-server)",
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "maxTokens": 16000,
+ "co": {},
+ "luotDo": [
+  {
+   "luot": 1,
+   "commit": "7cfb13cd0",
+   "bo": "tasks-hard ×3, tasks-api2 ×3",
+   "giayTuong": 3219,
+   "taiMay": {
+    "soMauTai": 54,
+    "cpuTb": 7,
+    "cpuMax": 28,
+    "tienTrinhNang": {
+     "dotnet": 54,
+     "tsc": 54,
+     "vitest": 54
+    },
+    "soLuotSlotBan": 0,
+    "sach": false,
+    "dinhChinh": "Nhãn dotnet, tsc, vitest 54/54 mẫu là NHẬN DIỆN NHẦM của bản run-eval lúc đo (7cfb13cd0), đã sửa sau đó: tsc và vitest khớp chính dòng lệnh shell bọc lượt đo; dotnet khớp dịch vụ C# Dev Kit của VS Code (0 s CPU từ 21:15) và VBCSCompiler do bộ chấm để lại. Bằng chứng tải thật: CPU TB 7 %, đỉnh 28 %, slot bận 0 lượt. Máy không có tải làm méo số đo; không có số đo CPU theo tiến trình cho lượt này."
+   }
+  },
+  {
+   "luot": 2,
+   "commit": "5d36dce5c",
+   "bo": "tasks-hard ×3",
+   "giayTuong": 1307,
+   "taiMay": {
+    "soMauTai": 22,
+    "cpuTb": 5,
+    "cpuMax": 16,
+    "tienTrinhNang": {
+     "vitest": 2
+    },
+    "soLuotSlotBan": 0,
+    "sach": false
+   }
+  }
+ ],
+ "dieuKienSoVoiDot11": {
+  "bang": [
+   {
+    "ten": "Tệp model",
+    "cu": "Qwen3.6-35B-A3B-UD-Q4_K_XL, không ghi sha",
+    "nay": "cùng tên, sha ghi ở trên, tệp sửa lần cuối 22/09",
+    "ketLuan": "cùng tệp theo ngày sửa, không đối chiếu được sha"
+   },
+   {
+    "ten": "llama-server",
+    "cu": "không ghi bản",
+    "nay": "b9814, tệp sửa lần cuối 26/06",
+    "ketLuan": "cùng bản theo ngày sửa"
+   },
+   {
+    "ten": "ctx, budget, KV",
+    "cu": "65536, 12000, f16",
+    "nay": "65536, 12000, f16",
+    "ketLuan": "giống"
+   },
+   {
+    "ten": "Cờ khác của server",
+    "cu": "dòng lệnh chép không có --slots --metrics --no-webui",
+    "nay": "có ba cờ đó",
+    "ketLuan": "không đổi sinh chữ"
+   },
+   {
+    "ten": "preserve_thinking",
+    "cu": "không áp dụng",
+    "nay": "không áp dụng",
+    "ketLuan": "mỗi bài một lượt, không có suy luận lượt trước"
+   },
+   {
+    "ten": "Sampling, trần token",
+    "cu": "0,2 / 0,9, 16000",
+    "nay": "0,2 / 0,9, 16000",
+    "ketLuan": "giống"
+   },
+   {
+    "ten": "Cờ harness",
+    "cu": "không qua lõi agent",
+    "nay": "không qua lõi agent",
+    "ketLuan": "không áp dụng"
+   },
+   {
+    "ten": "Đường gọi",
+    "cu": "run.mjs --config raw",
+    "nay": "run-eval.mjs",
+    "ketLuan": "cùng thân yêu cầu, cùng SYS, cùng cham.mjs; khác thư mục chấm"
+   },
+   {
+    "ten": "Đề và bài kiểm ẩn",
+    "cu": "tasks-hard, tasks-api2",
+    "nay": "cùng tệp, không đổi từ 27/10",
+    "ketLuan": "giống"
+   },
+   {
+    "ten": "**Node và cách chạy TS**",
+    "cu": "api2 và 3 mẫu bộ khó đầu: Node trước v26, --experimental-transform-types",
+    "nay": "v26.13.0, esbuild (d55d30115)",
+    "ketLuan": "**KHÁC**, chỉ tác động bài lang ts"
+   }
+  ],
+  "ketLuan": [
+   "**Không so trực tiếp** ở ts-thu-vien, ot-node (api2) và ts (3 mẫu đầu của bộ khó), vì trình chạy TS đổi. Nhóm ts-lib + OT-Node 3/27 so với 8/27 cũ chưa phân định, không kết luận tụt.",
+   "So được ở các nhóm còn lại. Gộp các nhóm đó, số gần như bằng mốc cũ: api2 33 so với 33 (react 12/11, ot-dotnet 4/6, tsql 2/3, pgsql 6/4, powershell 9/9); bộ khó 41/54 so với 43/54 (py 10/14, cs 15/13, cpp 16/16).",
+   "`py` kém 4 bài vì `H-py3` 0/6, mốc cũ 4/6 (M11 1/3, M11b 3/3). Đọc 6 lần trượt đều là trượt thật ở lời giải: 4 lần sai khẳng định, 2 lần quá giờ 60 s. Chưa phân định nhiễu hay đổi.",
+   "Bằng chứng một phần cho nhóm TS: câu trả lời model từng đạt ở M11/H11 ngày 27/10, chấm lại bằng thước hiện tại, 12/12 vẫn đạt. Việc này chỉ cho thấy thước không khắt hơn với các câu đó, không chứng minh nhóm không tụt.",
+   "Nhiễu: các báo cáo trước ghi nhiễu một lượt lớn. Chênh vài bài trên 36 hoặc 90 không đủ để kết luận."
+  ],
+  "thuoc": [
+   "Kiểm thước `tasks/kiem-thuoc.mjs` tại `7ca51e4a7`: 52 bài, 114/114 lượt đúng (lời giải đúng đạt, lời giải sai trượt).",
+   "Lời giải đúng đã biết qua đúng đường `run-eval` với llama-server giả, 9 bài ot-node và ts-thu-vien: 9/9 đạt.",
+   "Sau khi sửa hết giờ và dọn thư mục, kiểm thước bộ khó tại `5d36dce5c`: 24/24 lượt đúng. Câu trả lời model từng đạt, chấm lại: 12/12 đạt."
+  ]
+ },
+ "dinhChinh": "Tin do-model gửi dieu-phoi tối 08/11 nói mốc api2 M 41/90 so trực tiếp được; sai ở nhóm TS vì Node khác.",
+ "luotDaVut": [
+  "Lượt bộ khó ×3 chạy 09/11 00:00–00:17 tại `152ca44a0`, không tính vào bảng trên.",
+  "Số từng mẫu: mẫu 1 10/12; mẫu 2 10/12; mẫu 3 8/8 bài đầu, `H-py3` TRƯỢT, 3 bài ts chưa chạy. Tổng 28/33 lượt có kết quả.",
+  "Lý do vứt: lỗi thiết bị đo, không phải kết quả. `H-py3` mẫu 3 vòng vô hạn, hết 60 s `execFile` chỉ giết `cmd.exe`, `python t.py` mồ côi giữ thư mục chấm, `rmSync` ném EPERM, `check.mjs` thoát 2, `run-eval` vứt cả lượt theo thiết kế.",
+  "Đã sửa ở `0b74789cf` và `5d36dce5c`, rồi chạy lại đủ 3 mẫu. Quyết định chạy lại đưa ra vì lỗi thiết bị, trước khi có đủ số của lượt. Câu trả lời thô giữ ở `D:/DO-AI/eval/2026-11-09-c3-bo-kho-them/`."
+ ],
+ "chuaDo": [
+  "pilot-repo (TC-02, TC-03, TC-04, TC-05): cần bộ chạy pilot và lượt _test"
+ ],
+ "tasksHard": {
+  "stacks": [
+   {
+    "stack": "cpp",
+    "bai": 3,
+    "luot": 18,
+    "dat": 16,
+    "passAt1": 0.889,
+    "passAtN": 1,
+    "moiMau": [
+     3,
+     2,
+     3,
+     3,
+     3,
+     2
+    ],
+    "cut": 0,
+    "tokRaTb": 5174,
+    "msTb": 24798
+   },
+   {
+    "stack": "cs",
+    "bai": 3,
+    "luot": 18,
+    "dat": 15,
+    "passAt1": 0.833,
+    "passAtN": 1,
+    "moiMau": [
+     3,
+     1,
+     3,
+     2,
+     3,
+     3
+    ],
+    "cut": 0,
+    "tokRaTb": 6139,
+    "msTb": 29255
+   },
+   {
+    "stack": "py",
+    "bai": 3,
+    "luot": 18,
+    "dat": 10,
+    "passAt1": 0.556,
+    "passAtN": 0.667,
+    "moiMau": [
+     2,
+     2,
+     1,
+     2,
+     2,
+     1
+    ],
+    "cut": 0,
+    "tokRaTb": 5083,
+    "msTb": 24172
+   },
+   {
+    "stack": "ts",
+    "bai": 3,
+    "luot": 18,
+    "dat": 12,
+    "passAt1": 0.667,
+    "passAtN": 1,
+    "moiMau": [
+     2,
+     1,
+     3,
+     2,
+     2,
+     2
+    ],
+    "cut": 0,
+    "tokRaTb": 7296,
+    "msTb": 35015
+   }
+  ],
+  "tong": {
+   "stack": "TỔNG",
+   "bai": 12,
+   "luot": 72,
+   "dat": 53,
+   "passAt1": 0.736,
+   "passAtN": 0.917,
+   "moiMau": [
+    10,
+    6,
+    10,
+    9,
+    10,
+    8
+   ],
+   "cut": 0,
+   "tokRaTb": 5923,
+   "msTb": 28310
+  }
+ },
+ "tasksApi2": {
+  "stacks": [
+   {
+    "stack": "ot-dotnet",
+    "bai": 6,
+    "luot": 18,
+    "dat": 4,
+    "passAt1": 0.222,
+    "passAtN": 0.333,
+    "moiMau": [
+     1,
+     1,
+     2
+    ],
+    "cut": 0,
+    "tokRaTb": 4600,
+    "msTb": 21592
+   },
+   {
+    "stack": "ot-node",
+    "bai": 5,
+    "luot": 15,
+    "dat": 0,
+    "passAt1": 0,
+    "passAtN": 0,
+    "moiMau": [
+     0,
+     0,
+     0
+    ],
+    "cut": 0,
+    "tokRaTb": 5542,
+    "msTb": 25990
+   },
+   {
+    "stack": "powershell",
+    "bai": 5,
+    "luot": 15,
+    "dat": 9,
+    "passAt1": 0.6,
+    "passAtN": 0.8,
+    "moiMau": [
+     4,
+     2,
+     3
+    ],
+    "cut": 0,
+    "tokRaTb": 5357,
+    "msTb": 25074
+   },
+   {
+    "stack": "react",
+    "bai": 4,
+    "luot": 12,
+    "dat": 12,
+    "passAt1": 1,
+    "passAtN": 1,
+    "moiMau": [
+     4,
+     4,
+     4
+    ],
+    "cut": 0,
+    "tokRaTb": 3998,
+    "msTb": 18650
+   },
+   {
+    "stack": "sql",
+    "bai": 6,
+    "luot": 18,
+    "dat": 8,
+    "passAt1": 0.444,
+    "passAtN": 0.667,
+    "moiMau": [
+     3,
+     3,
+     2
+    ],
+    "cut": 0,
+    "tokRaTb": 4901,
+    "msTb": 22947
+   },
+   {
+    "stack": "ts-thu-vien",
+    "bai": 4,
+    "luot": 12,
+    "dat": 3,
+    "passAt1": 0.25,
+    "passAtN": 0.75,
+    "moiMau": [
+     1,
+     1,
+     1
+    ],
+    "cut": 0,
+    "tokRaTb": 5186,
+    "msTb": 24420
+   }
+  ],
+  "tong": {
+   "stack": "TỔNG",
+   "bai": 30,
+   "luot": 90,
+   "dat": 36,
+   "passAt1": 0.4,
+   "passAtN": 0.567,
+   "moiMau": [
+    13,
+    11,
+    12
+   ],
+   "cut": 0,
+   "tokRaTb": 4941,
+   "msTb": 23161
+  }
+ },
+ "hang": [
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4945,
+   "ms": 24069,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3422,
+   "ms": 16815,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6549,
+   "ms": 31618,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3133,
+   "ms": 15704,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5961,
+   "ms": 28571,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4419,
+   "ms": 21360,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc1",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4647,
+   "ms": 22108,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc2",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7069,
+   "ms": 35226,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc3",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4212,
+   "ms": 21297,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc4",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3708,
+   "ms": 18694,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc5",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3431,
+   "ms": 16894,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc6",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4034,
+   "ms": 19052,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on1",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5059,
+   "ms": 24500,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on2",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8399,
+   "ms": 40839,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on3",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6547,
+   "ms": 31905,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on4",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4488,
+   "ms": 21351,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on5",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6144,
+   "ms": 30022,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps1",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7666,
+   "ms": 37219,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps2",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5440,
+   "ms": 26605,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps3",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5036,
+   "ms": 23942,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps4",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4767,
+   "ms": 23243,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps5",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4267,
+   "ms": 20777,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2546,
+   "ms": 12096,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4852,
+   "ms": 23024,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5920,
+   "ms": 28716,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx1",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5998,
+   "ms": 29116,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx2",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 1910,
+   "ms": 9692,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx3",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4317,
+   "ms": 20514,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx4",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3399,
+   "ms": 16414,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 2826,
+   "ms": 13662,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7997,
+   "ms": 39051,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6265,
+   "ms": 30767,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4734,
+   "ms": 22618,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5127,
+   "ms": 25035,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3713,
+   "ms": 17675,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts1",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5434,
+   "ms": 26420,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts2",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4237,
+   "ms": 21480,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts3",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4949,
+   "ms": 24310,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts4",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6412,
+   "ms": 30560,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6125,
+   "ms": 27740,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 7386,
+   "ms": 34433,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 8366,
+   "ms": 41437,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4482,
+   "ms": 22029,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4142,
+   "ms": 19947,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4864,
+   "ms": 24171,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2882,
+   "ms": 13730,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7594,
+   "ms": 37345,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5753,
+   "ms": 26529,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc1",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4287,
+   "ms": 19778,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc2",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5272,
+   "ms": 24319,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc3",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5203,
+   "ms": 23588,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc4",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4205,
+   "ms": 19579,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc5",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4511,
+   "ms": 20365,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc6",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3817,
+   "ms": 17498,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on1",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4949,
+   "ms": 23028,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on2",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6537,
+   "ms": 30104,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on3",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4090,
+   "ms": 18969,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on4",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4196,
+   "ms": 18928,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on5",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5538,
+   "ms": 25589,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps1",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7627,
+   "ms": 35302,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps2",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4422,
+   "ms": 20138,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps3",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4298,
+   "ms": 20001,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps4",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4347,
+   "ms": 19741,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps5",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5117,
+   "ms": 23704,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2207,
+   "ms": 10330,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4540,
+   "ms": 20412,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7256,
+   "ms": 33569,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx1",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5600,
+   "ms": 25230,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx2",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2208,
+   "ms": 10129,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx3",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4677,
+   "ms": 21905,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx4",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3969,
+   "ms": 17859,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 2139,
+   "ms": 9805,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 8101,
+   "ms": 37558,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6113,
+   "ms": 28025,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4508,
+   "ms": 21085,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4097,
+   "ms": 18478,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4864,
+   "ms": 22098,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts1",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5494,
+   "ms": 25277,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts2",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4546,
+   "ms": 20654,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts3",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5889,
+   "ms": 27986,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts4",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5882,
+   "ms": 27731,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8984,
+   "ms": 41799,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6220,
+   "ms": 28509,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5938,
+   "ms": 27611,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4013,
+   "ms": 18069,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4669,
+   "ms": 21391,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6372,
+   "ms": 29182,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3210,
+   "ms": 14806,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 7841,
+   "ms": 36317,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5276,
+   "ms": 24136,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc1",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6222,
+   "ms": 28511,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc2",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7137,
+   "ms": 33183,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc3",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3937,
+   "ms": 17894,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc4",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3525,
+   "ms": 16001,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc5",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3856,
+   "ms": 17589,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-oc6",
+   "stack": "ot-dotnet",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3726,
+   "ms": 17072,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on1",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4705,
+   "ms": 21418,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on2",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5954,
+   "ms": 27701,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on3",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7051,
+   "ms": 32102,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on4",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3947,
+   "ms": 17994,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-on5",
+   "stack": "ot-node",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5521,
+   "ms": 25394,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps1",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8304,
+   "ms": 38754,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps2",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4928,
+   "ms": 22185,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps3",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5838,
+   "ms": 26573,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps4",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4750,
+   "ms": 21885,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ps5",
+   "stack": "powershell",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3550,
+   "ms": 16034,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2936,
+   "ms": 13522,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4061,
+   "ms": 19000,
+   "luotDo": 1
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8577,
+   "ms": 39162,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx1",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4538,
+   "ms": 20977,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx2",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2281,
+   "ms": 10263,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx3",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5081,
+   "ms": 23158,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-rx4",
+   "stack": "react",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3998,
+   "ms": 18538,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 2436,
+   "ms": 10941,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7149,
+   "ms": 32939,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ms3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4822,
+   "ms": 22380,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg1",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4515,
+   "ms": 20513,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg2",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4731,
+   "ms": 21975,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-pg3",
+   "stack": "sql",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4082,
+   "ms": 18433,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts1",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 3798,
+   "ms": 17191,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts2",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4948,
+   "ms": 22776,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts3",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5055,
+   "ms": 22903,
+   "luotDo": 1
+  },
+  {
+   "id": "A2-ts4",
+   "stack": "ts-thu-vien",
+   "bo": "tasks-api2",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5587,
+   "ms": 25754,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 9507,
+   "ms": 44022,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5929,
+   "ms": 27471,
+   "luotDo": 1
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 10034,
+   "ms": 46154,
+   "luotDo": 1
+  },
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4833,
+   "ms": 24084,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4123,
+   "ms": 19457,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 8178,
+   "ms": 39393,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2093,
+   "ms": 9706,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12670,
+   "ms": 60556,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3946,
+   "ms": 18567,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2515,
+   "ms": 12255,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5226,
+   "ms": 24299,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8910,
+   "ms": 42620,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 8545,
+   "ms": 40355,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6861,
+   "ms": 32447,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6955,
+   "ms": 34051,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4812,
+   "ms": 22450,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 5080,
+   "ms": 23531,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6807,
+   "ms": 32565,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3117,
+   "ms": 14614,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 12741,
+   "ms": 60569,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6498,
+   "ms": 30701,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 2951,
+   "ms": 13738,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6542,
+   "ms": 31200,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6502,
+   "ms": 30845,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 7489,
+   "ms": 39233,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4896,
+   "ms": 27049,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6386,
+   "ms": 31083,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp1",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4528,
+   "ms": 21327,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp2",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 4966,
+   "ms": 24689,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cpp3",
+   "stack": "cpp",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6342,
+   "ms": 31576,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3830,
+   "ms": 19014,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 12690,
+   "ms": 61903,
+   "luotDo": 2
+  },
+  {
+   "id": "H-cs3",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6844,
+   "ms": 32453,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py1",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 3277,
+   "ms": 16031,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py2",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 4518,
+   "ms": 22418,
+   "luotDo": 2
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8164,
+   "ms": 41859,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts1",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 9640,
+   "ms": 45504,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts2",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6850,
+   "ms": 36086,
+   "luotDo": 2
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5213,
+   "ms": 25290,
+   "luotDo": 2
+  }
+ ]
+}
