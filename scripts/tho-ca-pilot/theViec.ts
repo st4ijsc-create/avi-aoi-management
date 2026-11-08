@@ -42,6 +42,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "LENH KIEM": "lenhKiem",
   "GIOI HAN": "gioiHan",
   "QUY TRINH": "quyTrinh",
+  "GHI CHU LENH KIEM": "lenhKiemGhiChu",
   "DOT BIEN": "dotBien",
   "KHONG DUOC KHANG DINH": "khangDinhCam",
 };
@@ -122,7 +123,9 @@ export function docTheViec(van: string): KetQuaThe {
   }
   const lenhTho = (truong.get("lenhKiem") ?? "").trim();
   if (lenhTho === "") return { ok: false, loi: "thiếu LỆNH KIỂM" };
-  const { lenh: lenhKiem, ghiChu: lenhKiemGhiChu } = tachLenhKiem(lenhTho);
+  const { lenh: lenhKiem, ghiChu: ghiChuTuLenh } = tachLenhKiem(lenhTho);
+  // khoá GHI CHÚ LỆNH KIỂM riêng (thẻ viết từ TC-06) + lời văn dính sau lệnh (thẻ cũ) gộp thành một
+  const lenhKiemGhiChu = [ghiChuTuLenh, (truong.get("lenhKiemGhiChu") ?? "").trim()].filter((x) => x !== "").join(" ");
   if (lenhKiem === "") return { ok: false, loi: "LỆNH KIỂM không có phần lệnh (chỉ có lời văn)" };
   const quyTrinh = (truong.get("quyTrinh") ?? "").trim();
   const db = docDotBien(truong.get("dotBien") as string ?? "");

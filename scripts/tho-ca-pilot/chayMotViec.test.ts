@@ -441,3 +441,21 @@ describe("chayMotViec — cờ AI_AGENT_* có hiệu lực + ghi chú cổng k�
     expect((await chay({ driver: drv })).coAiAgent).toBeUndefined();
   });
 });
+
+describe("ghepLenh — thứ tự: QUY TRÌNH ngay sau MÃ (trước MỤC TIÊU)", () => {
+  it("★ QUY TRÌNH đứng ngay sau MÃ và trước MỤC TIÊU / LỆNH KIỂM", () => {
+    const dt = docTheViec(`MÃ: TC-06
+QUY TRÌNH: in danh sách rồi DỪNG.
+MỤC TIÊU: viết test
+TỆP ĐƯỢC PHÉP SỬA/TẠO: a.test.ts
+LỆNH KIỂM: npx vitest run a.test.ts
+GIỚI HẠN: 15 phút, 8 vòng`);
+    expect(dt.ok).toBe(true);
+    if (!dt.ok) return;
+    const dong = ghepLenh(dt.the, "# luat").split("\n");
+    const iMa = dong.indexOf("MÃ: TC-06");
+    expect(dong[iMa + 1]).toBe("QUY TRÌNH: in danh sách rồi DỪNG.");
+    expect(dong[iMa + 2]).toMatch(/^MỤC TIÊU:/);
+    expect(dong.filter((d) => d.startsWith("QUY TRÌNH:"))).toHaveLength(1);
+  });
+});

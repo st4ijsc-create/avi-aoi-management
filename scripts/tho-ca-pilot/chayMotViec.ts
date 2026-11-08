@@ -130,12 +130,13 @@ export function ghepLenh(the: TheViec, luat: string): string {
     "",
     "=== THẺ VIỆC ===",
     `MÃ: ${the.ma}`,
+    // QUY TRÌNH ngay sau MÃ (L1, TC-05: ở cuối thẻ model bỏ qua — in danh sách rồi vẫn gọi write_file)
+    the.quyTrinh ? `QUY TRÌNH: ${the.quyTrinh}` : "",
     `MỤC TIÊU: ${the.mucTieu}`,
     `TỆP ĐƯỢC PHÉP SỬA/TẠO: ${the.tepDuocPhep.join(", ")}`,
     the.nguCanhDoc.length ? `NGỮ CẢNH ĐỌC: ${the.nguCanhDoc.join(", ")}` : "",
     `LỆNH KIỂM: ${the.lenhKiem}`,
     the.lenhKiemGhiChu ? `GHI CHÚ LỆNH KIỂM: ${the.lenhKiemGhiChu}` : "",
-    the.quyTrinh ? `QUY TRÌNH: ${the.quyTrinh}` : "",
     `GIỚI HẠN: ${Math.round(the.gioiHan.giay / 60)} phút, ${the.gioiHan.vong} vòng`,
   ]
     .filter((x) => x !== "")

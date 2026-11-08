@@ -158,3 +158,34 @@ GIỚI HẠN: 15 phút, 8 vòng.`;
     expect(r.ok).toBe(false);
   });
 });
+
+describe("thẻ kiểu TC-06: QUY TRÌNH đứng đầu + khoá GHI CHÚ LỆNH KIỂM riêng", () => {
+  const THE06 = `MÃ: TC-06
+QUY TRÌNH: Bước 1 — in danh sách rồi DỪNG. Bước 2 (chỉ khi có "ĐÃ DUYỆT:") viết test.
+MỤC TIÊU: viết test cho monteCarlo.ts
+TỆP ĐƯỢC PHÉP SỬA/TẠO: server/services/simulation/monteCarlo.test.ts
+NGỮ CẢNH ĐỌC: server/services/simulation/monteCarlo.ts (chỉ đọc)
+LỆNH KIỂM: npx vitest run server/services/simulation/monteCarlo.test.ts
+GHI CHÚ LỆNH KIỂM: bộ chạy tự chạy vitest + tsc; test yếu không tính.
+GIỚI HẠN: 15 phút, 8 vòng mỗi lượt.`;
+  it("★ lệnh một dòng sạch; ghi chú tách; QUY TRÌNH đứng đầu không nuốt MỤC TIÊU; GIỚI HẠN đúng", () => {
+    const r = docTheViec(THE06);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.the.lenhKiem).toBe("npx vitest run server/services/simulation/monteCarlo.test.ts");
+    expect(r.the.lenhKiemGhiChu).toBe("bộ chạy tự chạy vitest + tsc; test yếu không tính.");
+    expect(r.the.quyTrinh).toBe('Bước 1 — in danh sách rồi DỪNG. Bước 2 (chỉ khi có "ĐÃ DUYỆT:") viết test.');
+    expect(r.the.mucTieu).toBe("viết test cho monteCarlo.ts");
+    expect(r.the.nguCanhDoc).toEqual(["server/services/simulation/monteCarlo.ts (chỉ đọc)"]);
+    expect(r.the.gioiHan).toEqual({ giay: 900, vong: 8 });
+  });
+  it("★ khối ĐÃ DUYỆT dán sau QUY TRÌNH đi vào quyTrinh (không vào MỤC TIÊU / lệnh); gộp ghi chú cũ (văn xuôi dính lệnh) với khoá mới", () => {
+    const r = docTheViec(THE06.replace("MỤC TIÊU:", 'ĐÃ DUYỆT:\n1. mulberry32 tái lập theo seed.\n2. n lẻ ⇒ floor.\nMỤC TIÊU:').replace("monteCarlo.test.ts\nGHI CHÚ", "monteCarlo.test.ts. Văn xuôi cũ.\nGHI CHÚ"));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.the.quyTrinh).toContain("ĐÃ DUYỆT:\n1. mulberry32 tái lập theo seed.\n2. n lẻ ⇒ floor.");
+    expect(r.the.mucTieu).toBe("viết test cho monteCarlo.ts");
+    expect(r.the.lenhKiem).toBe("npx vitest run server/services/simulation/monteCarlo.test.ts");
+    expect(r.the.lenhKiemGhiChu).toBe("Văn xuôi cũ. bộ chạy tự chạy vitest + tsc; test yếu không tính.");
+  });
+});
