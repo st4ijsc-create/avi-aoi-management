@@ -6432,7 +6432,7 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
   };
   it("T6d-K1 E-C6 real report path: one durable URGENT names s1, NOT sent, no 'Abort sends it'; not state C, the run failed; the events again: the same one key", async () => {
     const x = await chayGiua(dMot("t6dk1"), ec6("no_pins"), false);
-    const { J, sh } = await giao(x, "khop");
+    const { J, S, sh } = await giao(x, "khop");
     expect(traLoi.filter((a) => a.http !== 200)).toEqual([]);
     const lech = () => loaiCB("stopGhimLechChuaGui");
     expect([...new Set(lech().map((a) => a.dedupKey))].map((k) => k.split(":").slice(2, 4))).toEqual([["s1", "-"]]);
@@ -6442,10 +6442,16 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     expect(stopChuaRaTuHang(stepRows(x.e.runId) as never).size).toBe(0);
     expect(runRow(x.e.runId).status).toBe("failed");
     const truoc = new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`));
+    // T6d lượt sửa 1 — the same events again through the real eventsForNode, and the run stream again: one durable key, the same words; every raise asks the durable dedup
     J.veLai("events");
     await sh.flush("events");
+    J.veLai(S);
+    await sh.flush(S);
     await wait(20);
+    expect(traLoi.filter((a) => a.http !== 200), "the replays are accepted").toEqual([]);
+    expect(lech().length, "the replay reached the alert").toBeGreaterThan(truoc.size);
     expect(new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`)), "a replay keeps the one durable key and words").toEqual(truoc);
+    expect(lech().every((a) => a.khuTrungBenVung !== undefined && a.retryUntilPersisted !== undefined), "durable: deduplicated per person and key").toBe(true);
   });
   it("T6d-K1 đối chứng real report path: no_snapshot_adapter stays state C: stop_not_sent, held, no pin-mismatch URGENT", async () => {
     const x = await chayGiua(dMot("t6dk1s"), ec6("no_snapshot_adapter"), false);
@@ -6971,13 +6977,13 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
   /** T6a NP1: nt never reached by the door, a container never begun */
   const NP1 = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])]);
   /** the edge's own STOP check throws (e.laStopNem), the pins unreadable for central (PIN_BAD), the dispatcher decides by the real pins (dispatcherThat) */
-  async function q2Edge(ref: string, dat: () => void = () => undefined) {
+  async function q2Edge(ref: string, dat: (e: EdgeHarness) => void = () => undefined) {
     const e = await denBuoc(NP1(ref));
     e.laStopNem = true;
     h.ghim = PIN_BAD;
     h.dispatcherThat = true;
     h.duocSauKhoa.add("nt"); // F4 (decision 2, A): it reaches the dispatcher on the marked route; the table below still counts what it WROTE (khongGhi)
-    dat();
+    dat(e);
     h.slow.set("x", 10);
     h.timeoutDispatch.add("x");
     const s = await edgeSegment(e, 2);
@@ -7016,37 +7022,80 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
   });
 
   // ── Q2: the edge, its own STOP check throws ─────────────────────────────────────────────────────────────────────────
+  // dieu-phoi 08/11 T6d-K2 — the package READ the pins and found none (PIN_BAD breaks only central's dispatch-time read, not the package): that answer stands, a check that throws does not make
+  // it "unread". Not sent, no marked route, named as forward work. The marked route is for a package that could NOT read (stopsUnsure): (1u), (2u), (2bu)
+  /** the package could not read nt's pins (what classifyLoi at the claim gives: stopsUnsure ["nt"]) */
+  const goiChuaDoc = (id: string) => (e: EdgeHarness) => (e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, id] }));
   it("Q2-EDGE-NEM-T6c (1)(4) the edge's STOP check throws on nt: the marked route, not the door; the dispatcher's snapshot says not pinned: 0 PDU, forward work not sent, no STOP word", async () => {
+    // T6d-K2 — was: the marked route. The package answered "not pinned": nt is never handed over, nobody is asked, forward work named
     const { e } = await q2Edge("q2a");
-    // (1) the marked route: handed to the dispatcher with no authorisation, never refused at the door
-    expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
-    expect(sentOf("nt").every(khongUyQuyen), "the marked route carries no authorisation").toBe(true);
-    expect(authCua(e, "nt"), "the marked route asks nobody").toBe(0);
-    expect(String(hang(e.runId, "nt")?.error ?? "")).not.toMatch(khongGui);
-    // (4) the dispatcher said: no pinned STOP. Nothing written (afterEach), forward work not sent, named, and no word says a STOP went
-    expect(sentOf("nt").every((x) => x.khongGhi === true), "the dispatcher wrote nothing").toBe(true);
+    expect(sentOf("nt"), "never handed over").toEqual([]);
+    expect(authCua(e, "nt"), "nobody asked").toBe(0);
     expect(buocBo()).toEqual(["nt"]);
     expect(urgentCua("stopNotSent").filter((a) => a.dedupKey.split(":")[2] === "nt")).toEqual([]);
     const chu = veBuoc("nt").map((a) => `${a.kind} | ${a.title} | ${a.message}`).join(" || ");
     expect(veBuoc("nt").map((a) => a.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.forwardNotSent]);
     expect(chu).not.toMatch(/STOP "nt"/);
-    expect(chu, "it WAS handed to its dispatcher (H11: the words are true of the source)").not.toContain("NOT handed to a dispatcher");
+    expect(chu, "never handed: the words say so (H11)").toContain("NOT handed to a dispatcher");
     expect(chu).toContain("nothing further goes forward");
   });
   it("Q2-EDGE-NEM-T6c (2) the same, the dispatcher refuses it before any driver (ADAPTER_OFFLINE): state C, stop_not_sent names nt, the run held; never failed FOE_NOT_SENT_RUN_LATCHED in silence", async () => {
+    // T6d-K2 — was: state C. The dispatcher is never asked (the package answered): no C, not held, never silent
     const { e, s } = await q2Edge("q2b", offline);
+    expect(sentOf("nt")).toEqual([]);
+    expect(authCua(e, "nt")).toBe(0);
+    expect(s.out.outcome).toBe("failed");
+    expect(noCua(e.runId).has("nt")).toBe(false);
+    expect(urgentCua("stopNotSent")).toEqual([]);
+    expect(buocBo()).toEqual(["nt"]);
+  });
+  it("Q2-EDGE-NEM-T6c (1u) the STOP check throws, the package could NOT read the pins: the marked route as T5, the dispatcher's snapshot says not pinned: 0 PDU, forward work refused by its dispatcher", async () => {
+    const { e } = await q2Edge("q2au", goiChuaDoc("nt"));
+    expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
+    expect(sentOf("nt").every(khongUyQuyen), "the marked route carries no authorisation").toBe(true);
+    expect(authCua(e, "nt"), "the marked route asks nobody").toBe(0);
+    expect(sentOf("nt").every((x) => x.khongGhi === true), "the dispatcher wrote nothing").toBe(true);
+    expect(buocBo()).toEqual(["nt"]);
+    const chu = veBuoc("nt").map((a) => `${a.title} ${a.message}`).join(" || ");
+    expect(chu).toContain("refused by its dispatcher before any driver");
+    expect(chu).not.toContain("NOT handed to a dispatcher");
+  });
+  it("Q2-EDGE-NEM-T6c (2u) the STOP check throws, the package could NOT read the pins, the dispatcher refuses ADAPTER_OFFLINE: the marked route, state C, stop_not_sent names nt, the run held", async () => {
+    const { e, s } = await q2Edge("q2bu", (x) => {
+      goiChuaDoc("nt")(x);
+      offline();
+    });
     expect(sentOf("nt").length).toBeGreaterThan(0);
     expect(sentOf("nt").every(khongUyQuyen)).toBe(true);
+    expect(authCua(e, "nt")).toBe(0);
     expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
     expect(runRow(e.runId).status).toBe("held");
     expect(String(hang(e.runId, "nt")!.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" did NOT go out/);
     expect(urgentCua("stopNotSent").map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["nt", "-"]]);
-    expect(noCua(e.runId).has("nt"), "owed: an Abort sends it").toBe(true);
+    expect(noCua(e.runId).has("nt"), "owed").toBe(true);
     expect(buocBo(), "a STOP in state C is its own last word").toEqual([]);
   });
   it("Q2-EDGE-NEM-T6c (2b) a STOP compensation, the edge's STOP check throws: the marked route, refused before any driver: state C under its owner, the run held", async () => {
+    // T6d-K2 — was: the marked route, state C. The package answered "not pinned": no STOP, never handed over, held for a person (the split)
     const e = await denBuoc(def("q2d", [gate(), move("x", { compensation: stopTyped("cs") })]));
     e.laStopNem = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.tuChoi.set("cs", { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+    h.tuChoiKhongGhi.add("cs");
+    h.timeoutDispatch.add("x");
+    const s = await edgeSegment(e, 2);
+    await wait(60);
+    expect(sentOf("cs")).toEqual([]);
+    expect(authCua(e, "cs"), "nobody asked").toBe(0);
+    expect(s.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(urgentCua("stopNotSent")).toEqual([]);
+    expect(urgentCua("held").map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["x", "cs"]]);
+  });
+  it("Q2-EDGE-NEM-T6c (2bu) a STOP compensation, the check throws, the package could NOT read the pins: the marked route, refused before any driver: state C under its owner, the run held", async () => {
+    const e = await denBuoc(def("q2du", [gate(), move("x", { compensation: stopTyped("cs") })]));
+    e.laStopNem = true;
+    goiChuaDoc("cs")(e);
     h.ghim = PIN_BAD;
     h.dispatcherThat = true;
     h.duocSauKhoa.add("cs");
@@ -7063,8 +7112,10 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(urgentCua("stopNotSent").map((a) => a.dedupKey.split(":").slice(2, 4))).toEqual([["x", "cs"]]);
   });
   it("Q2-EDGE-NEM-T6c (4b) maxAttempts 2: answered not pinned, then no answer: never told as refused with nothing written", async () => {
+    // T6d-K2 — the package could NOT read (else nt is never handed over): the marked route answers twice
     const e = await denBuoc(def("q2e", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt", { maxAttempts: 2 })])])])]));
     e.laStopNem = true;
+    goiChuaDoc("nt")(e);
     h.ghim = PIN_BAD;
     h.duocSauKhoa.add("nt");
     h.tuChoiLan.set("nt", [{ status: "rejected", error: "AUTHORIZATION_REQUIRED", detail: { edge: true, stop: false, reason: "AUTHORIZATION_REQUIRED", refusal: "stop_not_pinned:no_pins" } }]);
@@ -7082,7 +7133,7 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
   // ── Q2-ABORT-T7b (from T6c item 3; dieu-phoi đính chính 08/11 theo 5a): the Abort of that held run, task T7b ─────────────────
   /** the run held in state C: nt refused before any driver on the marked route, its URGENT says "Abort sends it again" */
   async function q2Giu(noi: "central" | "edge", ref: string): Promise<number> {
-    if (noi === "edge") return (await q2Edge(ref, offline)).e.runId;
+    if (noi === "edge") return (await q2Edge(ref, (e) => { goiChuaDoc("nt")(e); offline(); })).e.runId; // T6d-K2 — "the pins unreadable" on an edge is the package's stopsUnsure
     h.ghim = PIN_BAD;
     h.dispatcherThat = true;
     offline();

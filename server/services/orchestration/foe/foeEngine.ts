@@ -647,8 +647,6 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongGuiDs?: string[];
   /** A2(n) T6a fix 1 (P1) — the last pass's reading: stop-typed steps whose pin read ANSWERED "not pinned". No STOP: forward work, read once, by the planner. */
   khongGhimCuoi?: Set<string>;
-  /** A2(n) T6c (Q2) — stop-typed steps whose STOP check of this walk did not answer (it threw): unreadable, never "not pinned". The store's marked route takes them (decision 2, A). */
-  phanLoaiKhongDoc?: Set<string>;
   /** A2(n) T6c (Q2, item 4) — stop-typed steps of the marked route its dispatcher answered "no pinned STOP" for, with the code: forward work dropped, told in words true of what happened. */
   dispatcherNoiKhongGhim?: Map<string, string>;
   /** A2(n) T6d (E-C6) — verified STOPs the edge snapshot refused as not pinned, told once in this walk. */
@@ -1811,14 +1809,12 @@ function luotDiCua(rc: RunContext): string {
 
 async function laBuTruStop(rc: RunContext, comp: WorkflowStep): Promise<LaStop> {
   try {
-    const la = rc.store.buTruLaStopGhim ? await rc.store.buTruLaStopGhim(rc, comp) : "khong";
-    rc.phanLoaiKhongDoc?.delete(comp.id);
-    return la;
+    return rc.store.buTruLaStopGhim ? await rc.store.buTruLaStopGhim(rc, comp) : "khong";
   } catch {
-    const la = (await isStopCandidate(comp, rc.machineById).catch(() => false)) ? "chuaDoc" : "khong"; // A2(n) T5 (C-2) — a read that failed is no answer: not "not a STOP" (decision 2, A). A non-STOP stays out
-    // T6c (Q2) — and the hand-over knows it: the store's own sets would read "not pinned" where nothing answered (an edge asks /authorize, the sink refuses, nobody is told)
-    if (la === "chuaDoc") (rc.phanLoaiKhongDoc ??= new Set()).add(comp.id);
-    return la;
+    // dieu-phoi 08/11 T6d-K2 — a check that throws does not unmake an answer the store already has: an edge's package that READ the pins and found none says "not pinned" (F4 A is for
+    // pins nobody could read). Not sent, never the marked route; the end of the walk names it as forward work (P1, khongGhimCuoi)
+    if (rc.store.stopDocDuocKhongGhim?.(comp.id) === true) return "khong";
+    return (await isStopCandidate(comp, rc.machineById).catch(() => false)) ? "chuaDoc" : "khong"; // A2(n) T5 (C-2) — a read that failed is no answer: not "not a STOP" (decision 2, A). A non-STOP stays out
   }
 }
 
@@ -2947,14 +2943,12 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   // The EDGE store (doc 81 Đợt 10 C) answers a NON-STOP command with central's per-step /authorize (a verified STOP never asks —
   // L-7): stopped ⇒ the local abort (non-STOP steps stop, STOPs still sent); stale ⇒ this walker lets go of the run without
   // writing it; unavailable ⇒ HELD (D5: nothing sent, no compensation). The central store only ever refuses.
-  // A2(n) T6c (Q2) — a STOP check of this walk that threw is no answer: the store takes the marked route for it, as for pins it could not read
-  const chuaDocGhim = isStop && rc.phanLoaiKhongDoc?.has(step.id) === true;
-  const auth = await rc.store.authorizeCommand(rc, step, attempt, { isStop, robotKind, rawArgs, descriptor, cap, idempotencyKey, daChot: daChotKhongRo(rc) && !rc.chiGuiStopGhim, ...(chuaDocGhim ? { chuaDocGhim: true as const } : {}) });
+  const auth = await rc.store.authorizeCommand(rc, step, attempt, { isStop, robotKind, rawArgs, descriptor, cap, idempotencyKey, daChot: daChotKhongRo(rc) && !rc.chiGuiStopGhim });
   if (!auth.ok) {
     switch (auth.verdict) {
       case "refused":
         tt.vi = { nguon: "tuChoi", ma: maTuChoiCua({ error: auth.error }) };
-        tt.khongGhim = !chuaDocGhim && rc.store.stopDocDuocKhongGhim?.(step.id) === true;
+        tt.khongGhim = rc.store.stopDocDuocKhongGhim?.(step.id) === true;
         return { kind: "failed", error: auth.error };
       case "stopped":
         void stopLiveRunForCentralAbort(rc.runId, EDGE_GUARD_ABORT_USER).catch(() => undefined);
