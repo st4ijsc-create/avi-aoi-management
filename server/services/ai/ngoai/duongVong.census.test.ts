@@ -124,7 +124,7 @@ const MIEN_TRU: Readonly<Record<string, { so: number; lyDo: string }>> = {
 // 2026-11-02 (A2 test scada): + server/services/edge/__edgeE2eSweep.dot10.ts (1 điểm import:net, dò cổng loopback của harness, test-only) ⇒ 64→65 tệp, 97→98 điểm.
 // 2026-11-01 gộp main: H4.1 (+1 tệp, +1 điểm: server/testing/llmGia.ts) + Đợt 12 H3.2b (+1 điểm: aiLlamaServerClient GET /props n_ctx).
 // 2026-11-03 gộp H3.2 vào main: 65 tệp (main) + H3.2b +1 điểm (/props) ⇒ 65 tệp, 99 điểm.
-const GHIM = { tep: 64, diem: 98 } as const; // 2026-11-04: gỡ services/aiEdgeDeployment.ts (−1 tệp, −1 điểm)
+const GHIM = { tep: 64, diem: 100 } as const; // 2026-11-04: gỡ services/aiEdgeDeployment.ts (−1 tệp, −1 điểm)
 
 const tatCa = (() => {
   const m: Record<string, { diem: string[]; chan: boolean }> = {};
