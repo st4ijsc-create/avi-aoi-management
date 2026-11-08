@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phiên bản | **v1.0 — DỰ THẢO chờ chủ dự án** (chu-du-an-HST, 2026‑11‑08) |
+| Phiên bản | **v1.0 — ĐÃ DUYỆT 2026‑11‑08** (chủ dự án: "Duyệt kế hoạch; chu-du-an-HST là chủ dự án uỷ quyền, có quyền quyết tất cả để đạt kết quả cao nhất; chủ dự án kiểm chứng lại sau khi hoàn thành") |
 | Nguồn | (1) `D:\SOURCES\AI Local\AI Local improvement\Kế hoạch tối ưu Qwen3.6-35B-A3B cho lập trình.pdf` (34 tr, 24/10 — gọi tắt **KH**, dẫn theo chương "KH Ch.x" và bài kiểm "T6.x"); (2) `…\Yêu cầu trải nghiệm người dùng — Forge Desktop và extension VS Code.pdf` (13 tr — gọi tắt **UX**, mã UX‑C/D/V/S/P/A); (3) `…\Forge — AI Local cho lập trình.html` (canvas 9 màn — gọi tắt **Canvas**); (4) hiện trạng đo 08/11 trên main `1b4930fa9` (kiểm kê từ spec Đợt 11/12, git, extension 0.6.0, runtime agent, `scripts/ai-eval`, `.env` chỉ tên khoá). |
 | Liên hệ TechDocs | [80-ai.md](../80-ai.md) (một cổng / một runtime / một phiên / một duyệt, F0–F6), [90-platform.md](../90-platform.md) (vỏ, P3), [50-control.md](../50-control.md) (tool thiết bị → `command_request`), [00-INDEX.md](../00-INDEX.md) lộ trình 5 pha; gói pilot `D:\SOURCES\_tho_ca_pilot\ke-hoach.md`. |
 | Nguyên tắc | **Máy kiểm chứng, người quyết định** (UX nguyên tắc 3); **đúng hơn nhanh** (tiêu chí chủ dự án 2026‑10); **đo trước – đổi sau** (mọi cờ đổi hành vi model mặc định TẮT, có A/B GPU); không ghi gì vào repo khi chưa duyệt; dữ liệu không phải mệnh lệnh. |
@@ -281,3 +281,4 @@ Cổng chung mỗi lô: lưới bàn giao đầy đủ của tho‑ca‑agent (a
 | Ngày | Ai | Việc | Mig |
 |---|---|---|---|
 | 2026-11-08 | chu-du-an-HST | v1.0 dự thảo từ 3 tài liệu chủ dự án + kiểm kê hiện trạng (spec Đợt 11/12, git 163 commit AI từ 27/10, extension 0.6.0, runtime, ai-eval, `.env` tên khoá). Pilot GĐ2 = lô A đang chạy (L3a → TC‑05). Câu hỏi 2 card: trả lời ở D6 | — |
+| 2026-11-08 | chủ dự án | **DUYỆT v1.0**; uỷ quyền chu-du-an-HST quyết mọi việc trong kế hoạch (kể cả §7 mục 2–5, 7) để đạt kết quả cao nhất; chủ dự án kiểm chứng sau. Giữ nguyên: xoá dữ liệu/tệp, LoRA thuê GPU (§7‑6), bật `AI_OT_CONTROL_ENABLED`/`AI_NGOAI_ENABLED` vẫn hỏi chủ dự án. Khởi động lô B + C ngay; D theo cửa sổ GPU | — |
