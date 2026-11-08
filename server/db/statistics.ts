@@ -1385,39 +1385,28 @@ export async function getHourlyStats(filters?: {
 }
 
 // ============ SEARCH INSPECTIONS ============
-export async function searchInspections(params: {
-  factoryCode?: string;
-  workshopCode?: string;
-  lineCode?: string;
-  stationCode?: string;
-  machineCode?: string;
-  serialNumber?: string;
-  productModel?: string;
-  result?: "OK" | "NG" | "NTF";
-  startDate?: Date;
-  endDate?: Date;
-  limit?: number;
-  offset?: number;
-  userId?: number;
-  userRole?: string;
-  // W7-B (doc 27 V3): "ntfScore" pre-sorts the operator verify queue by
-  // suspected-false-call likelihood (DESC NULLS LAST — unscored rows keep
-  // newest-first order at the tail). Default stays newest-first.
-  sortBy?: "time" | "ntfScore";
-}) {
-  const db = await getDb();
-  if (!db) return { data: [], total: 0, ...UNSCOPED_LABELS };
-
-  // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of
-  // up to 6 sequential round-trips (factories→workshops→lines→stations→machines
-  // + per-level LIKE intersections). Preserved semantics: `machineCode` still
-  // OVERRIDES the other hierarchy filters (old `if/else if` shape); "no machine
-  // matches" still yields { data: [], total: 0 } (now simply because the IN-set
-  // is empty). Deliberate fix: a code filter that matches nothing at some level
-  // is no longer silently dropped (the old intersect chain could fall through
-  // and return UNFILTERED rows, e.g. nonexistent factoryCode + valid
-  // workshopCode ignored the factory).
+/** Điều kiện lọc DÙNG CHUNG của `searchInspections` và `summarizeInspections` (một nguồn, để KPI toàn khoảng khớp danh sách). */
+async function dieuKienTimKiemKiemTra(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  params: {
+    factoryCode?: string;
+    workshopCode?: string;
+    lineCode?: string;
+    stationCode?: string;
+    machineCode?: string;
+    serialNumber?: string;
+    productModel?: string;
+    result?: "OK" | "NG" | "NTF";
+    startDate?: Date;
+    endDate?: Date;
+    userId?: number;
+    userRole?: string;
+    /** Id lọc không giải được ra code (không tồn tại) ⇒ kết quả RỖNG như id ngoài phạm vi — KHÔNG bỏ bộ lọc. */
+    khongKhop?: boolean;
+  },
+): Promise<{ whereClause: SQL | undefined; scope: ScopeLabels }> {
   const conditions = [];
+  if (params.khongKhop) conditions.push(sql`false`);
   if (params.machineCode) {
     conditions.push(inArray(
       productInspections.machineId,
@@ -1457,6 +1446,43 @@ export async function searchInspections(params: {
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  return { whereClause, scope };
+}
+
+export async function searchInspections(params: {
+  factoryCode?: string;
+  workshopCode?: string;
+  lineCode?: string;
+  stationCode?: string;
+  machineCode?: string;
+  serialNumber?: string;
+  productModel?: string;
+  result?: "OK" | "NG" | "NTF";
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+  userId?: number;
+  userRole?: string;
+  khongKhop?: boolean; // id lọc không tồn tại ⇒ rỗng (xem dieuKienTimKiemKiemTra)
+  // W7-B (doc 27 V3): "ntfScore" pre-sorts the operator verify queue by
+  // suspected-false-call likelihood (DESC NULLS LAST — unscored rows keep
+  // newest-first order at the tail). Default stays newest-first.
+  sortBy?: "time" | "ntfScore";
+}) {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0, ...UNSCOPED_LABELS };
+
+  // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of
+  // up to 6 sequential round-trips (factories→workshops→lines→stations→machines
+  // + per-level LIKE intersections). Preserved semantics: `machineCode` still
+  // OVERRIDES the other hierarchy filters (old `if/else if` shape); "no machine
+  // matches" still yields { data: [], total: 0 } (now simply because the IN-set
+  // is empty). Deliberate fix: a code filter that matches nothing at some level
+  // is no longer silently dropped (the old intersect chain could fall through
+  // and return UNFILTERED rows, e.g. nonexistent factoryCode + valid
+  // workshopCode ignored the factory).
+  const { whereClause, scope } = await dieuKienTimKiemKiemTra(db, params);
 
   // W7-B (V3): partial index idx_inspections_ntf_score covers the scored rows.
   const orderBy = params.sortBy === "ntfScore"
@@ -1476,6 +1502,56 @@ export async function searchInspections(params: {
 
   // ⚠ `...scope` = BA ô nhãn. `filter` sống ở `conditions`, KHÔNG bao giờ trong đối tượng này.
   return { data, total: countResult[0]?.count || 0, ...scope };
+}
+
+// ============ KPI TOÀN KHOẢNG CHO TRANG LỊCH SỬ (Q0-3) ============
+/**
+ * KPI của trang Lịch sử TÍNH Ở SERVER trên TOÀN BỘ tập đã lọc (cùng điều kiện với `searchInspections`), không phải trên mẫu
+ * `limit` hàng đầu gửi xuống trình duyệt (trước đây: tối đa vài trăm hàng mới nhất ⇒ yield sai khi tập lớn hơn mẫu).
+ * Công thức: `finalYield` chuẩn (OK + NTF) / total, cộng dồn theo SQL rồi áp `finalYield` ở đây.
+ */
+export async function summarizeInspections(params: Parameters<typeof dieuKienTimKiemKiemTra>[1]) {
+  const db = await getDb();
+  const rong = {
+    total: 0, okCount: 0, ngCount: 0, ntfCount: 0, yieldRate: 0,
+    machineStats: [] as Array<{ id: number; name: string; ok: number; ng: number; ntf: number; total: number; yieldRate: number }>,
+    dateStats: [] as Array<{ day: string; ok: number; ng: number; ntf: number; total: number; yieldRate: number }>,
+    productStats: [] as Array<{ model: string; ok: number; ng: number; ntf: number; total: number; yieldRate: number }>,
+  };
+  if (!db) return { ...rong, ...UNSCOPED_LABELS };
+  const { whereClause, scope } = await dieuKienTimKiemKiemTra(db, params);
+
+  const dem = {
+    total: sql<number>`count(*)`,
+    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+  };
+  const dayExpr = factoryDayTextSql(productInspections.inspectionTime);
+  const [tong, theoMay, theoNgay, theoSp] = await Promise.all([
+    db.select(dem).from(productInspections).where(whereClause),
+    db.select({ id: productInspections.machineId, name: machines.name, ...dem })
+      .from(productInspections).leftJoin(machines, eq(productInspections.machineId, machines.id))
+      .where(whereClause).groupBy(productInspections.machineId, machines.name),
+    db.select({ day: sql<string>`${dayExpr}`.as("day"), ...dem })
+      .from(productInspections).where(whereClause).groupBy(sql`day`).orderBy(sql`day`),
+    db.select({ model: productInspections.productModel, ...dem })
+      .from(productInspections).where(whereClause).groupBy(productInspections.productModel),
+  ]);
+
+  const n = (v: unknown) => Number(v) || 0;
+  const goi = (r: { total: unknown; ok: unknown; ng: unknown; ntf: unknown }) => {
+    const total = n(r.total), ok = n(r.ok), ng = n(r.ng), ntf = n(r.ntf);
+    return { total, ok, ng, ntf, yieldRate: finalYield({ ok, ntf, total }) };
+  };
+  const t = goi(tong[0] ?? { total: 0, ok: 0, ng: 0, ntf: 0 });
+  return {
+    total: t.total, okCount: t.ok, ngCount: t.ng, ntfCount: t.ntf, yieldRate: t.yieldRate,
+    machineStats: theoMay.map((r) => ({ id: Number(r.id), name: r.name ?? `Machine #${r.id}`, ...goi(r) })),
+    dateStats: theoNgay.map((r) => ({ day: String(r.day), ...goi(r) })),
+    productStats: theoSp.map((r) => ({ model: r.model ?? "", ...goi(r) })),
+    ...scope,
+  };
 }
 
 // ============ TOP NG MEASUREMENT POINTS ============

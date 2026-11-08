@@ -96,7 +96,6 @@ export const TU_DON: readonly string[] = [
   "server/services/programming/deployPreview.db.test.ts",
   "server/services/programming/expectedProjectGuard.db.test.ts",
   "server/services/robot/criticalStopAlert.khuTrung.db.test.ts",
-  "server/services/scheduledReportScope.db.test.ts",
 ];
 
 /** Tệp tạo người dùng KHÔNG xoá ⇒ RÒ. ĐÃ RỖNG (2026-10-23): bốn tệp rò đã chuyển sang `taoNguoiDungTest`, bảy tệp còn lại hoá ra không rò (chúng nằm trong giao dịch hoàn tác). Phải GIỮ rỗng. */
@@ -210,7 +209,7 @@ export function tepMienCommitNotify(docTep: (f: string) => string | null): Set<s
 
 /** Trần — hạ khi chuyển thêm. */
 const TRAN_CHUA_DON = 0;
-const TRAN_TU_DON = 72;
+const TRAN_TU_DON = 71; // 72 → 71: scheduledReportScope.db.test.ts chuyển sang giao dịch BEGIN…ROLLBACK (2026-11-06)
 
 function lietKeTest(): string[] {
   const kq: string[] = [];
@@ -334,6 +333,7 @@ const TUNG_HOAN_TAC: readonly string[] = [
   "server/services/edge/otIntentResultRace.dot10.db.test.ts",
   "server/routers/khoaMienLapTrinh.t6d.db.test.ts",
   "server/services/ot/khoaIdempotency.t6d.r1b2b2.db.test.ts",
+  "server/services/scheduledReportScope.db.test.ts", // 2026-11-06: BEGIN…ROLLBACK trên một kết nối
 ];
 
 describe("census — test không tự insert(users) ngoài giao dịch hoàn tác (hoặc helper / danh sách cũ)", () => {
@@ -374,7 +374,7 @@ describe("census — test không tự insert(users) ngoài giao dịch hoàn tá
     expect(CHUA_DON.filter((f) => ket.get(f)?.xoa)).toEqual([]);
   });
 
-  it("★ bộ quét vẫn nhận mười tệp hoàn tác cũ (không yếu đi trong im lặng) và không tệp nào trong danh sách cũ lọt vào nhóm hoàn tác", () => {
+  it("★ bộ quét vẫn nhận mười một tệp hoàn tác cũ (không yếu đi trong im lặng) và không tệp nào trong danh sách cũ lọt vào nhóm hoàn tác", () => {
     expect(TUNG_HOAN_TAC.filter((f) => !hoanTac.includes(f))).toEqual([]);
     expect(hoanTac.filter((f) => ngoaiLe.has(f))).toEqual([]);
   });

@@ -14,7 +14,7 @@ import { scopeLabelsOf, UNSCOPED_LABELS, type ScopeLabels } from "../_core/acces
 import { resolveLogicalModel } from "./ai/modelResolver";
 // ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
 import { stripThinking } from "./ai/thinkingStrip";
-import { finalYield } from "../utils/kpi";
+import { finalYield, finalYieldPctSql } from "../utils/kpi";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -263,9 +263,7 @@ async function getDailyBreakdown(
       COUNT(*)::int as "totalInspections",
       SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END)::int as "okCount",
       SUM(CASE WHEN product_inspections."overallResult" = 'NG' THEN 1 ELSE 0 END)::int as "ngCount",
-      CASE WHEN COUNT(*) > 0 THEN
-        ROUND(SUM(CASE WHEN product_inspections."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1)
-      ELSE 0 END as "yieldRate"
+      COALESCE(${finalYieldPctSql(sql.raw('product_inspections."overallResult"'), { digits: 1 })}, 0) as "yieldRate"
     FROM product_inspections
     LEFT JOIN machines m ON product_inspections."machineId" = m.id
     LEFT JOIN stations st ON m."stationId" = st.id

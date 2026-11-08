@@ -370,82 +370,64 @@ export default function History() {
     return Math.ceil(data.total / limit);
   }, [data?.total]);
 
-  // Calculate analysis statistics
+  // Q0-3 (dọn vệ sinh): KPI phân tích tính Ở SERVER trên TOÀN BỘ tập đã lọc (trước: cộng trong trình duyệt trên mẫu `analysisLimit`
+  // hàng mới nhất ⇒ yield sai khi tập lớn hơn mẫu). Cùng bộ lọc với danh sách; client chỉ định dạng hiển thị.
+  const { data: kpiServer } = trpc.inspection.searchKpi.useQuery({
+    factoryCode: filters.factoryCode || undefined,
+    workshopCode: filters.workshopCode || undefined,
+    lineCode: filters.lineCode || undefined,
+    stationCode: filters.stationCode || undefined,
+    machineCode: filters.machineCode || undefined,
+    serialNumber: filters.serialNumber || undefined,
+    productModel: filters.productModel || undefined,
+    result: filters.result !== "all" ? filters.result : undefined,
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
+  });
+
   const analysisStats = useMemo(() => {
-    if (!allData?.data || allData.data.length === 0) {
+    if (!kpiServer || kpiServer.total === 0) {
       return null;
     }
-
-    const inspections = allData.data;
-    const total = inspections.length;
-    const okCount = inspections.filter((i: any) => i.overallResult === "OK").length;
-    const ngCount = inspections.filter((i: any) => i.overallResult === "NG").length;
-    const ntfCount = inspections.filter((i: any) => i.overallResult === "NTF").length;
-    const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }) : 0;
-
-    // Group by machine
-    const machineStats: Record<string, { ok: number; ng: number; ntf: number; total: number; name: string }> = {};
-    inspections.forEach((i: any) => {
-      const machineId = i.machineId;
-      const machineName = machines?.find(m => m.id === machineId)?.name || `Machine #${machineId}`;
-      if (!machineStats[machineId]) {
-        machineStats[machineId] = { ok: 0, ng: 0, ntf: 0, total: 0, name: machineName };
-      }
-      machineStats[machineId].total++;
-      if (i.overallResult === "OK") machineStats[machineId].ok++;
-      else if (i.overallResult === "NG") machineStats[machineId].ng++;
-      else if (i.overallResult === "NTF") machineStats[machineId].ntf++;
-    });
-
-    // Group by date
-    const dateStats: Record<string, { ok: number; ng: number; ntf: number; total: number }> = {};
-    inspections.forEach((i: any) => {
-      const date = formatDate(new Date(i.inspectionTime), "dd/MM");
-      if (!dateStats[date]) {
-        dateStats[date] = { ok: 0, ng: 0, ntf: 0, total: 0 };
-      }
-      dateStats[date].total++;
-      if (i.overallResult === "OK") dateStats[date].ok++;
-      else if (i.overallResult === "NG") dateStats[date].ng++;
-      else if (i.overallResult === "NTF") dateStats[date].ntf++;
-    });
-
-    // Group by product model
-    const productStats: Record<string, { ok: number; ng: number; ntf: number; total: number }> = {};
-    inspections.forEach((i: any) => {
-      const model = i.productModel || t("common.unknown");
-      if (!productStats[model]) {
-        productStats[model] = { ok: 0, ng: 0, ntf: 0, total: 0 };
-      }
-      productStats[model].total++;
-      if (i.overallResult === "OK") productStats[model].ok++;
-      else if (i.overallResult === "NG") productStats[model].ng++;
-      else if (i.overallResult === "NTF") productStats[model].ntf++;
-    });
-
     return {
-      total,
-      okCount,
-      ngCount,
-      ntfCount,
-      yieldRate,
-      machineStats: Object.entries(machineStats).map(([id, stats]) => ({
-        id,
-        ...stats,
-        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
+      total: kpiServer.total,
+      okCount: kpiServer.okCount,
+      ngCount: kpiServer.ngCount,
+      ntfCount: kpiServer.ntfCount,
+      yieldRate: kpiServer.yieldRate,
+      machineStats: kpiServer.machineStats.map((m) => ({
+        id: String(m.id),
+        ok: m.ok,
+        ng: m.ng,
+        ntf: m.ntf,
+        total: m.total,
+        name: m.name,
+        yieldRate: m.yieldRate,
       })),
-      dateStats: Object.entries(dateStats).map(([date, stats]) => ({
-        date,
-        ...stats,
-        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
-      })).slice(-14), // Last 14 days
-      productStats: Object.entries(productStats).map(([model, stats]) => ({
-        model,
-        ...stats,
-        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
+      // 'yyyy-MM-dd' (múi giờ nhà máy, từ server) → 'dd/MM' như cũ; 14 ngày cuối
+      dateStats: kpiServer.dateStats
+        .map((d) => ({
+          date: `${d.day.slice(8, 10)}/${d.day.slice(5, 7)}`,
+          ok: d.ok,
+          ng: d.ng,
+          ntf: d.ntf,
+          total: d.total,
+          yieldRate: d.yieldRate,
+        }))
+        .slice(-14),
+      productStats: kpiServer.productStats.map((m) => ({
+        model: m.model || t("common.unknown"),
+        ok: m.ok,
+        ng: m.ng,
+        ntf: m.ntf,
+        total: m.total,
+        yieldRate: m.yieldRate,
       })),
     };
-  }, [allData?.data, machines]);
+  }, [kpiServer, t]);
 
   // Load more data for analysis
   const handleLoadMore = () => {

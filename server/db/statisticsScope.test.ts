@@ -334,6 +334,10 @@ const PROBES: Probe[] = [
   { fn: "searchInspections", admin: 5, userA: 2,
     run: async (w) => { const r = await db.searchInspections({ ...win, machineCode, ...w }); return { n: Number(r.total), res: r }; } },
 
+  // Q0-3 (dọn vệ sinh): KPI toàn khoảng của trang Lịch sử — CÙNG điều kiện với searchInspections (một hàm dùng chung) ⇒ cùng số hàng thấy được.
+  { fn: "summarizeInspections", admin: 5, userA: 2,
+    run: async (w) => { const r = await db.summarizeInspections({ ...win, machineCode, ...w }); return { n: Number(r.total), res: r }; } },
+
   { fn: "getTopNGMeasurementPoints", admin: 2, userA: 1,
     run: async (w) => {
       const r = await db.getTopNGMeasurementPoints({ ...win, machineId, limit: 50, ...w });

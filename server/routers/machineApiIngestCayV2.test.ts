@@ -84,6 +84,7 @@ vi.mock("../db", () => {
       },
     ),
     getMachineStats: vi.fn(async () => ({ total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 100 })),
+    getYieldAlertThresholdByType: vi.fn(async () => null),
     // Chuỗi phân cấp (macTenantChoGhi → maTenantCuaMay) — máy PHẢI suy ra được
     // factory/workshop/line, đúng khuôn `machineApiVersionGate.test.ts`.
     getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
