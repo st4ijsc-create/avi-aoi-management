@@ -550,7 +550,7 @@ async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: numb
   }
   if (!Array.isArray(hang)) return "hangKhongDoc";
   if (chotTuHang(hang) !== null) return "hangKhongRo";
-  if (stopChuaRaTuHang(hang).size > 0) return "stopChuaRa";
+  if (stopChuaRaTuHang(hang, ctx as Record<string, unknown> | null).size > 0) return "stopChuaRa"; // T7b-1 fix 1 — one source: the rows ∪ the context
   return null;
 }
 

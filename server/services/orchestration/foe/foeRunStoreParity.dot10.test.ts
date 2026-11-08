@@ -7393,7 +7393,7 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     return a;
   }
   for (const noi of ["central", "edge"] as const) {
-    it(`Q2-ABORT-T7b ${noi}: Abort of the held NP1 run takes the marked route; refused again: aborted, owed on abort:nt, a durable URGENT names nt, pressed again it goes; not a STOP: 0 written, forward work`, async () => {
+    it(`Q2-ABORT-T7b ${noi}: Abort of the held NP1 run takes the marked route; refused again: aborted, owed on abort:nt, a durable URGENT names nt, pressed again it goes; not a STOP: 0 written, forward work`, async () => { // the name stays; (B) is (i), below
       // (A) refused again / the read throws again
       const c = await q2Giu(noi, `q7${noi[0]}`);
       expect(runRow(c).status).toBe("held");
@@ -7431,7 +7431,11 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       await bam(c2);
       expect(sentOf("nt").length, "the dispatcher decides").toBeGreaterThan(0);
       expect(sentOf("nt").every((x) => x.khongGhi === true), "nothing written").toBe(true);
-      expect(veBuoc("nt").map((x) => x.kind), "forward work not sent").toContain(CANH_BAO_KHONG_RO_KIND.forwardNotSent);
+      // dieu-phoi 08/11: Q2(B) = (i); dispatcher không phân biệt không ghim / không đọc được
+      expect(runRow(c2).status).toBe("aborted");
+      expect(noCua(c2).has("nt"), "owed").toBe(true);
+      expect(veBuoc("nt").map((x) => x.kind), "abort_stop_not_sent").toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+      expect(veBuoc("nt").map((x) => x.kind), "no forward_not_sent").not.toContain(CANH_BAO_KHONG_RO_KIND.forwardNotSent);
       expect(veBuoc("nt").map((x) => `${x.title} ${x.message}`).join(" | ")).not.toMatch(daGuiChu);
     });
   }
@@ -8154,7 +8158,7 @@ describe("A2(n) T7 fix 1 — the walk's memory at an exception (K1), the gate's 
     await wait(40);
     expect(h.hangNemLan, "st's row in state C was never written").toBeGreaterThan(0);
     expect(h.statusThrowLan).toBe(1);
-    // T7b-1 (no-cho-T7b, dieu-phoi 08/11: one source of "not out", laHangChuaRa) — was: "the rows hold no debt". The refused attempt left on st's row is now read as not out; what K1 needs is
+    // dieu-phoi 08/11, một nguồn laHangChuaRa. T7b-1 (no-cho-T7b: one source of "not out") — was: "the rows hold no debt". The refused attempt left on st's row is now read as not out; what K1 needs is
     // that the row of state C (its code) is the write lost
     expect(stepRows(c).filter((r) => String(r.error ?? "").startsWith("FOE_STOP_NOT_SENT")).map((r) => r.stepId), "no row carries the code of state C: that write was lost").toEqual([]);
     return c;
@@ -8864,6 +8868,7 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     await waitFor(() => runDaChot(c), "the latch");
     expect(hang(c, "st")?.status, "st refused before the latch: a known failure").toBe("failed");
     h.tuChoi.clear();
+    h.alerts.length = 0;
     const a = await bam(c, "walker alive");
     await di;
     await wait(40);
@@ -8871,6 +8876,7 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(runRow(c).status).toBe("aborted");
     expect(ids(), "the Abort sends st").toContain("st");
     expect(no(c)).toEqual([]);
+    expect(urgentCua("stopNotSent").map((x) => String(x.dedupKey).split(":")[2]), "st went: no word that it did not").toEqual([]);
   });
 
   // ── việc 6: a run NOT latched ────────────────────────────────────────────────────────────────────────────────────
@@ -9018,6 +9024,305 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(no(c)).toEqual(["nt"]);
     expect(urgentCua("abortStopNotSent").map((x) => String(x.dedupKey).split(":")[2])).toEqual(["nt"]);
     expect(chuCua("abortStopNotSent")).not.toMatch(daGuiChu);
+  });
+
+  // ── T7b-1 fix 1, RA-1: pressed again on an aborted latched run: what is owed ∪ a verified STOP with no trace of a hand-over, in the window; nothing handed over again (H3) ─────
+  /** a latched run, no live walker, a verified STOP s2 nobody handed over and not in the context (the latch forged: a crash before the first STOP pass, or an edge run whose node went) */
+  const khoaChuaGiao = async (ref: string, them: WorkflowStep[] = []) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def(ref, [gate("g0"), ot("x"), gate("g1"), otStop("s2"), ...them]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    const ctx = ((runRow(c).contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+    ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() };
+    runRow(c).contextJson = ctx;
+    runRow(c).status = "held";
+    h.traTimeout = 1; // the pin table counts from here
+    return c;
+  };
+  /** the first Abort: s2 refused, its abort: row lost: nothing durable says it is owed */
+  const motLanMat = async (c: number) => {
+    h.tuChoi.set("s2", REF);
+    h.hangNem = (r) => r.stepId === "abort:s2";
+    h.alerts.length = 0;
+    const a = await bam(c);
+    expect(a.abortStops?.failed).toEqual(["s2"]);
+    expect(hang(c, "abort:s2"), "its abort row lost").toBeUndefined();
+    expect(no(c), "nothing durable holds it").toEqual([]);
+    h.hangNem = null;
+    h.tuChoi.clear();
+  };
+  it("RA1-BAM-LAI-MAT-HANG one abort: row lost: the words promise no 'no time limit'; pressed again in the window s2 goes", async () => {
+    const c = await khoaChuaGiao("ra1ml");
+    await motLanMat(c);
+    expect(chuCua("abortStopNotSent")).not.toContain("no time limit");
+    expect(chuCua("abortStopNotSent")).toContain("press Abort again within 15 minutes");
+    expect(chuCua("abortStopNotSent"), "the words say what is left past it").toContain("check the machine on site");
+    const a2 = await bam(c, "again");
+    expect(a2.ok, String(a2.message)).toBe(true);
+    expect(ids()).toEqual(["s2"]);
+    expect(hang(c, "abort:s2")?.status).toBe("completed");
+  });
+  it("RA1-NGOAI-CUA-SO-CHU the same, past the window: resendTooOld, the 15 minutes do not stretch; the URGENT had not promised otherwise", async () => {
+    const c = await khoaChuaGiao("ra1nc");
+    await motLanMat(c);
+    expect(chuCua("abortStopNotSent")).not.toContain("no time limit");
+    quaCuaSo(c);
+    const a2 = await bam(c, "past the window");
+    expect(a2.ok).toBe(false);
+    expect(a2.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("RA1-KHONG-DOC-DINH-NGHIA the first Abort cannot read the definition: nothing sent, the report says it could not read; pressed again s2 goes", async () => {
+    const c = await khoaChuaGiao("ra1dn");
+    h.docNem = { bang: "orchestration_workflows", lan: 2 };
+    const a1 = await bam(c);
+    expect(h.docNemLan).toBeGreaterThan(0);
+    expect(ids()).toEqual([]);
+    expect(a1.abortStops?.khongDocDuoc).toBe(true);
+    h.docNem = null;
+    const a2 = await bam(c, "again");
+    expect(ids()).toEqual(["s2"]);
+    expect(a2.message).toContain("s2");
+  });
+  it("RA1-DOC-LOI pressed again, the step rows unread: no trace is no 'no trace': nothing sent, the words say it could not be read, press again, past 15 minutes check on site", async () => {
+    const c = await khoaChuaGiao("ra1dl");
+    await motLanMat(c);
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    const a2 = await bam(c, "again");
+    h.docNem = null;
+    expect(ids(), "never read: not sent").toEqual([]);
+    expect(a2.abortStops?.khongDocDuoc).toBe(true);
+    expect(a2.message).toMatch(/could not be read/);
+    expect(a2.message).toMatch(/press Abort again/);
+    expect(a2.message).toMatch(/15 minutes/);
+    expect(a2.message).not.toMatch(/sent again|owes no/);
+    const a3 = await bam(c, "read again");
+    expect(a3.ok).toBe(true);
+    expect(ids(), "read: s2 has no trace, it goes").toEqual(["s2"]);
+  });
+  it("RA1-CHI-GHIM the set of the new path is the planner's: a stop-typed step not pinned and a non-STOP, neither ever handed over, do not go; only the pinned s2", async () => {
+    const c = await khoaChuaGiao("ra1cg", [stopTyped("nt2"), ot("m2")]);
+    await motLanMat(c);
+    await bam(c, "again");
+    expect(ids()).toEqual(["s2"]);
+    expect(hang(c, "abort:nt2")).toBeUndefined();
+    expect(hang(c, "abort:m2")).toBeUndefined();
+  });
+  it("RA1-DA-GIAO-KHONG-DI-LAI st handed over and never confirmed, the run aborted: pressed again IN the window it is not handed over again (H3, the freeze); G stands on the first Abort of the held run", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(def("ra1dg", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("st")])])]), 1);
+    await xong(c);
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "st")?.status).toBe("completed");
+    h.alertDurable = true;
+    h.timeoutDispatch.clear();
+    await bam(c);
+    expect(ids(), "G: the first Abort of a held run hands it over again").toEqual(["st"]);
+    const a2 = await bam(c, "again");
+    expect(ids(), "the run has ended: not again").toEqual([]);
+    expect(a2.message, "RA-3").toMatch(/owes no STOP step/);
+  });
+  it("RA1-R3E-MAT the Abort sweeps before the latch, st refused, its abort: row lost; the walk ends latched: it tells st by name and holds the debt in the context; past the window st goes", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 150);
+    const d = def("ra1re", [gate(), parF("p", [move("x"), box("b", [delay("w", 400), otStop("st")])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => ids().includes("x"), "x handed over");
+    h.tuChoi.set("st", REF);
+    h.hangNem = (r) => r.stepId === "abort:st";
+    const a1 = await abortRun(c, OWNER, "before the latch");
+    expect(a1.abortStops?.failed).toContain("st");
+    await di;
+    await waitFor(() => runDaChot(c), "the latch, after the Abort");
+    await wait(40);
+    expect(hang(c, "abort:st")).toBeUndefined();
+    expect(urgentCua("abortStopNotSent").map((x) => String(x.dedupKey).split(":")[2])).toEqual(["st"]);
+    expect(no(c), "the context holds it").toEqual(["st"]);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    quaCuaSo(c);
+    const a2 = await bam(c, "past the window");
+    expect(a2.ok, String(a2.message)).toBe(true);
+    expect(ids()).toEqual(["st"]);
+    expect(no(c)).toEqual([]);
+  });
+  it("RA1-G-MAT s2 went on the walk, the Abort's new hand-over refused, its abort: row lost: the words never say 'did NOT go out' of a STOP handed over once and promise no press; pressed again nothing goes", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(def("ra1gm", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), otStop("s2")])])]), 1);
+    await xong(c);
+    expect(runRow(c).status).toBe("held");
+    h.alertDurable = true;
+    h.timeoutDispatch.clear();
+    h.tuChoi.set("s2", REF);
+    h.hangNem = (r) => r.stepId === "abort:s2";
+    h.alerts.length = 0;
+    await bam(c);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).not.toContain("did NOT go out");
+    expect(chu).toContain('STOP "s2" NOT confirmed');
+    expect(chu).not.toContain("no time limit");
+    expect(chu).not.toMatch(/press Abort again/i);
+    expect(chu).toContain("check the machine on site");
+    h.hangNem = null;
+    h.tuChoi.clear();
+    await bam(c, "again");
+    expect(ids()).toEqual([]);
+  });
+
+  // ── T7b-1 fix 1, RA-2: the walker refused st, an Abort, THEN the latch ─────────────────────────────────────────────
+  const tuChoiRoiAbort = async (ref: string, khoa: boolean) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    if (khoa) h.timeoutDispatch.add("x");
+    h.slow.set("x", 200);
+    h.tuChoi.set("st", REF);
+    const d = def(ref, [gate(), parF("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 500)])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => hang(c, "st")?.status === "failed", "st refused");
+    expect(runDaChot(c), "not latched yet").toBe(false);
+    h.tuChoi.clear();
+    h.alerts.length = 0;
+    const a1 = await bam(c, "before the latch");
+    expect(a1.ok, String(a1.message)).toBe(true);
+    expect(ids(), "R-6: a known failure is not sent again").toEqual([]);
+    await di;
+    await wait(40);
+    return c;
+  };
+  it("RA2-ABORT-ROI-KHOA st refused by the walker, an Abort, then the latch: owed, an URGENT names st; pressed again st goes", async () => {
+    const c = await tuChoiRoiAbort("ra2ab", true);
+    await waitFor(() => runDaChot(c), "the latch, after the Abort");
+    expect(runRow(c).status).toBe("aborted");
+    expect(no(c), "owed").toEqual(["st"]);
+    expect(String(hang(c, "st")?.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
+    expect(h.alerts.filter((x) => String(x.dedupKey).split(":")[2] === "st").map((x) => x.kind), "an URGENT names st").toContain(CANH_BAO_KHONG_RO_KIND.stopNotSent);
+    h.timeoutDispatch.clear();
+    const a2 = await bam(c, "again");
+    expect(a2.ok, String(a2.message)).toBe(true);
+    expect(ids()).toEqual(["st"]);
+    expect(no(c)).toEqual([]);
+  });
+  it("RA2-DOI-CHUNG the same on a run that never latches: R-6 stands: no debt, no URGENT, its row as it was; pressed again nothing", async () => {
+    const c = await tuChoiRoiAbort("ra2dc", false);
+    expect(runDaChot(c)).toBe(false);
+    expect(no(c)).toEqual([]);
+    expect(h.alerts.filter((x) => String(x.dedupKey).split(":")[2] === "st" || x.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent), "no word of st").toEqual([]);
+    expect(String(hang(c, "st")?.error)).toMatch(/^INTERLOCK_NOT_MET/);
+    await bam(c, "again");
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1-KHONG-KHOA-KHONG-BAO the Abort's STOP refused on a run that never latches: no abort_stop_not_sent, no debt", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const d = def("t7b1kk", [gate(), parF("p", [move("x"), box("b", [delay("w", 300), otStop("st")])])]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    h.slow.set("x", 100);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => ids().includes("x"), "x handed over");
+    h.tuChoi.set("st", REF);
+    const a1 = await abortRun(c, OWNER, "not latched");
+    expect(a1.abortStops?.failed).toContain("st");
+    await di;
+    await wait(40);
+    expect(runDaChot(c)).toBe(false);
+    expect(hang(c, "abort:st")?.status).toBe("failed");
+    expect(urgentCua("abortStopNotSent")).toEqual([]);
+    expect(no(c)).toEqual([]);
+  });
+  it("T7B1-UNVERIFIED-KHONG-LA-STOP a non-STOP whose machine nothing resolves, in the sweep's unverified: not on the marked route, no abort: row, no debt", async () => {
+    const c = await khoaChuaGiao("t7b1uv", [move("m9")]);
+    fake.store.set("machines", rows("machines").filter((m) => m.id !== 2));
+    const a = await bam(c);
+    expect(a.abortStops?.unverified).toContain("m9");
+    expect(a.abortStops?.failed).not.toContain("m9");
+    expect(hang(c, "abort:m9"), "no row for it").toBeUndefined();
+    expect(no(c)).toEqual([]);
+    expect(ids()).toEqual(["s2"]);
+  });
+
+  // ── T7b-1 fix 1, RA-3: the answer to a press reads the report ──────────────────────────────────────────────────────
+  it("RA3-CHU-TU-CHOI pressed again, refused again: the answer says refused and stays owed, never 'sent again'", async () => {
+    const c = await khoaChuaGiao("ra3tc");
+    h.tuChoi.set("s2", REF);
+    await bam(c);
+    const a2 = await bam(c, "again");
+    expect(a2.abortStops?.failed).toEqual(["s2"]);
+    expect(a2.message).toMatch(/refused or not answered: s2/);
+    expect(a2.message).not.toMatch(/sent again|owes no/);
+    expect(no(c)).toEqual(["s2"]);
+  });
+  const npGiu = async (ref: string) => {
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    h.tuChoi.set("nt", { status: "failed", error: "ADAPTER_OFFLINE", detail: { reason: "ADAPTER_OFFLINE" } });
+    h.tuChoiKhongGhi.add("nt");
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const c = await centralRun(def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])]), 1);
+    await wait(60);
+    expect(runRow(c).status).toBe("held");
+    h.tuChoi.clear();
+    h.tuChoiKhongGhi.clear();
+    h.classifyLoi = true;
+    await bam(c);
+    return c;
+  };
+  it("RA3-CHU-0PDU pressed again, the marked route answers NOT_CONFIRMED: 0 written: the answer says refused, never 'sent'", async () => {
+    const c = await npGiu("ra3pd");
+    const a2 = await bam(c, "again");
+    expect(h.sent.every((x) => x.khongGhi === true)).toBe(true);
+    expect(a2.message).toMatch(/refused or not answered: nt/);
+    expect(a2.message).not.toMatch(/sent again|owes no/);
+  });
+  it("RA3-CHU-NOTPINNED pressed again, the read recovered says not pinned: the answer says so, nothing sent", async () => {
+    const c = await npGiu("ra3np");
+    h.classifyLoi = false;
+    h.ghim = null;
+    const a2 = await bam(c, "again");
+    expect(ids()).toEqual([]);
+    expect(a2.abortStops?.notPinned).toContain("nt");
+    expect(a2.message).toMatch(/no pinned STOP: nt/);
+    expect(a2.message).not.toMatch(/sent again|owes no/);
+  });
+  it("RA3-CHU-NO-NONSTOP a false debt on a non-STOP (its 'failed' write lost on a latched run): nothing sent; the answer names it, never 'sent again' nor 'owes no'", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 60);
+    h.tuChoi.set("y", REF);
+    h.hangNem = (r) => r.stepId === "y" && r.status === "failed";
+    const c = await centralRun(def("ra3ns", [gate(), parF("p", [move("x"), ot("y", { maxAttempts: 0 }), box("b", [delay("w", 120), otStop("st")])])]), 1);
+    await xong(c);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    await bam(c);
+    expect(no(c)).toContain("y");
+    const a2 = await bam(c, "again");
+    expect(ids().filter((x) => x === "y")).toEqual([]);
+    expect(a2.message).toMatch(/nothing was sent/);
+    expect(a2.message).toContain("y");
+    expect(a2.message).not.toMatch(/sent again|owes no/);
   });
 
   // ── 5a: a read that recovered says "not pinned" at the Abort: an answer, no debt (C-CLR, A-READ-3) ──────────────────

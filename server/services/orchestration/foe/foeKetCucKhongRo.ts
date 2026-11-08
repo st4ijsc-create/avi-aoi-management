@@ -53,6 +53,7 @@ import { appError } from "../../../_core/appError";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { withDeadline } from "../../ot/drivers/boundedClose";
 import { napMotLan } from "./foeNapMotLan";
+import { ABORT_RESEND_WINDOW_MS } from "@shared/foeAbortResend"; // T7b-1 fix 1 — the words name the window the engine applies
 
 const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
 const napAudit = napMotLan(() => import("../../auditTrailService"));
@@ -322,6 +323,10 @@ export interface CanhBaoKhongRo {
   vi?: ViChuaRa;
   /** A2(n) T6e K1 (dieu-phoi 08/11 T6e-K1, A) — forwardNotSent: a stop-typed step whose pin the STOP sweep could not verify (central's own walk only) */
   stopKhongXacMinh?: true;
+  /** A2(n) T7b-1 fix 1 (RA-1) — abortStopNotSent: nothing durable holds this debt (its `abort:` row lost, not in the context): no word of "no time limit" */
+  khongLuuDuoc?: true;
+  /** A2(n) T7b-1 fix 1 (RA-1, H3) — abortStopNotSent: a dispatcher took this STOP before the Abort's new hand-over: never "did NOT go out", and a press does not hand it over again unless it is owed */
+  daNhanTruoc?: true;
 }
 
 /** The STOP of state C, as the words name it. */
@@ -339,11 +344,21 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [st
   return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: nobody could read its pins${ma}. ${giu}: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent. ${tay}.`];
 }
 
-/** A2(n) T7b-1 — the words of a STOP an Abort handed over and that did not go: true of the source (H11), never "it went"; a person presses again, there is no window for it (B2). */
-function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [string, string] {
+/**
+ * A2(n) T7b-1 — the words of a STOP an Abort handed over and that did not go: true of the source (H11), never "it went". fix 1 (RA-1): "no time limit" (B2) only where the debt is durable (its `abort:` row, or the
+ * context). Not durable: within the window a press still sends a STOP with no trace of a hand-over, past it nothing can; one a dispatcher already took is not handed over again (H3).
+ */
+function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "khongLuuDuoc" | "daNhanTruoc">): [string, string] {
   const id = `"${stopCua(a)}"`;
   const ma = a.vi ? ` (${a.vi.ma})` : "";
-  const sau = `It stays owed: press Abort again, there is no time limit on this STOP. Until then use the machine's direct STOP / E-STOP.`;
+  const tay = "use the machine's direct STOP / E-STOP";
+  const phut = Math.round(ABORT_RESEND_WINDOW_MS / 60_000);
+  const sau = !a.khongLuuDuoc
+    ? `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`
+    : a.daNhanTruoc
+      ? `This could not be recorded and it is not sent again: check the machine on site and ${tay}.`
+      : `This could not be recorded: press Abort again within ${phut} minutes; after that it cannot be sent from here: check the machine on site and ${tay}.`;
+  if (a.daNhanTruoc) return [`run aborted, STOP ${id} NOT confirmed`, `The run is aborted. Its STOP ${id} was handed over earlier and never confirmed; the Abort's new hand-over was refused or got no answer${ma}. ${sau}`];
   if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
   return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];
 }

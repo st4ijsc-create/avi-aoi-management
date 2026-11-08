@@ -765,6 +765,11 @@ describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run 
     await tuChoi(PAYLOAD_XONG, /\(stopChuaRa\)/);
   });
 
+  it("★ T7B1-SYNC-NO-NGU-CANH a STOP owed in the context alone (foeStopChuaRa), no latch key, no row: refused (one source: rows ∪ context)", async () => {
+    Object.assign(run1(), { status: "held", contextJson: { foeStopChuaRa: ["st"] } });
+    await tuChoi(PAYLOAD_XONG, /\(stopChuaRa\)/);
+  });
+
   /** T7c fix 1 (P1) — a latched run central has STOPPED: nothing written, the stale answer (no new field), so the edge is told to stop. */
   const dungBao = async (payload: Record<string, unknown>, lyDo: RegExp) => {
     const truoc = anh();
