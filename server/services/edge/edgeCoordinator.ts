@@ -24,6 +24,8 @@ import { FOE_APPROVAL_SOURCE_EDGE, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestra
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { readEdgeAssignment } from "./edgeExecutionSchema"; // doc 81 Đợt 9 S2 — runs executed under the node protocol
+import { chotTuHang, runDaChotKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c — the latch, one source
+import { stopChuaRaTuHang } from "../orchestration/foe/foeRunStore"; // A2(n) T7c — a STOP still owed, one source
 import { getDb } from "../../db/connection";
 import {
   edgeNodes,
@@ -516,6 +518,34 @@ export function centralStopped(run: { status: string; contextJson?: unknown }): 
   return run.status === "aborted" || (ctx != null && typeof ctx === "object" && ctx[FOE_REJECT_CLAIM_CTX_KEY] != null);
 }
 
+/** A2(n) T7c — the code of a sync refused because the run is latched (the message starts with it). Machine-to-machine: the edge, the API key's client. */
+export const EDGE_SYNC_RUN_LATCHED = "EDGE_SYNC_RUN_LATCHED";
+/** Why: the context's latch (runDaChotKhongRo), the rows' latch (chotTuHang), a STOP the rows still owe (stopChuaRaTuHang), or what could not be read. */
+export type LyDoDongBoKhoa = "chot" | "hangKhongRo" | "stopChuaRa" | "nguCanhKhongDoc" | "hangKhongDoc";
+
+/**
+ * A2(n) T7c (plan point 3 row 16) — is this run latched, from its context and its step rows? Fail-closed: a context that is not an object, or rows that cannot be read,
+ * is a refusal (nothing can say no STOP is owed). null ⇔ nothing says so. The classifiers are the engine's own (one source): no rule is spelled here.
+ */
+async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: number; contextJson?: unknown }): Promise<LyDoDongBoKhoa | null> {
+  const ctx = run.contextJson ?? null;
+  if (ctx !== null && (typeof ctx !== "object" || Array.isArray(ctx))) return "nguCanhKhongDoc";
+  if (runDaChotKhongRo(ctx as Record<string, unknown> | null)) return "chot";
+  let hang: Array<{ stepId: string; status: string; error: string | null; resultJson: unknown }>;
+  try {
+    hang = await d
+      .select({ stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status, error: orchestrationRunSteps.error, resultJson: orchestrationRunSteps.resultJson })
+      .from(orchestrationRunSteps)
+      .where(eq(orchestrationRunSteps.runId, run.id));
+  } catch {
+    return "hangKhongDoc";
+  }
+  if (!Array.isArray(hang)) return "hangKhongDoc";
+  if (chotTuHang(hang) !== null) return "hangKhongRo";
+  if (stopChuaRaTuHang(hang).size > 0) return "stopChuaRa";
+  return null;
+}
+
 /**
  * Reconcile a run-result payload SYNCED from an edge node into the E2 tables.
  *
@@ -527,6 +557,7 @@ export function centralStopped(run: { status: string; contextJson?: unknown }): 
  *     and the write makes it write NOTHING (and the answer then says abortRequested);
  *   • `abort:<id>` rows are central's record of the STOPs its own sweep sent (they decide what a re-send sends): an edge
  *     never writes them; nor can an edge set or clear the server-only rejection claim token in the run context.
+ * A2(n) T7c — a LATCHED run (lyDoDongBoKhoa) is refused before any write: no step row, no context, no status.
  * Every entry point (tRPC edgeRuntime.syncRunResult and POST /api/v1/edge/sync) reaches the run row only through here.
  *
  * IDEMPOTENT: each step is upserted on (runId, stepId) so a replay (offline-buffer
@@ -574,6 +605,14 @@ export async function syncRunResult(
     // snapshot that lost the race with the final sync): nothing of it is applied, step rows included.
     if (TERMINAL_RUN_STATUSES.has(run.status) && !TERMINAL_RUN_STATUSES.has(payload.status)) {
       return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: centralStopped(run), stale: true } };
+    }
+
+    // ── A2(n) T7c (plan point 3 row 16) — a LATCHED run is never written by a sync, BEFORE any step row: only central's end gate (foeRunStore.quyetDinhKetThucAnh) ends it.
+    // A sync would overwrite the row of a STOP not sent, replace the context (the latch, DA_BAO) and write the status past the gate. Refused, coded, logged; nothing is written.
+    const khoa = await lyDoDongBoKhoa(d, run);
+    if (khoa) {
+      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written`);
+      return { ok: false, enabled: true, message: `${EDGE_SYNC_RUN_LATCHED}: run ${payload.runId} is latched (${khoa}) — a sync writes none of its steps, context or status; only central ends it.` };
     }
 
     // ── Upsert each step (idempotent on runId+stepId) ──

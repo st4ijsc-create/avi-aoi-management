@@ -186,6 +186,7 @@ import {
   EDGE_CENTRAL_ABORT_USER,
 } from "./edgeRuntime";
 import { FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, loiGiuChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c
 
 function reset() {
   store.clear();
@@ -696,5 +697,134 @@ describe("flag-off no-op", () => {
   it("replayBuffer is a no-op when disabled", async () => {
     const r = await replayBuffer();
     expect(r.enabled).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run (plan point 3 row 16: refused, the rows and the latch stay)", () => {
+  const run1 = () => rows("orchestration_runs")[0];
+  const CHOT = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-08T00:00:00.000Z" };
+  const DA_BAO = { stepId: "x", at: "2026-11-08T00:00:01.000Z" };
+  /** the STOP central could not send: the row of state C (foeRunStore.laHangChuaRa), written by its own writer */
+  const hangSt = () => ({ id: 801, runId: 1, stepId: "st", stepType: "command", status: "failed", attempt: 1, resultJson: null, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) });
+  /** the step whose outcome is unknown: the code on its row */
+  const hangX = () => ({ id: 802, runId: 1, stepId: "x", stepType: "command", status: "failed", attempt: 1, resultJson: null, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" });
+  const PAYLOAD_XONG = {
+    edgeNodeCode: "edge-x",
+    runId: 1,
+    status: "completed",
+    error: null,
+    currentStepId: "end",
+    finishedAt: new Date("2026-11-08T03:00:00Z"),
+    contextJson: { k: 1 },
+    steps: [
+      { stepId: "st", stepType: "command", status: "completed", attempt: 2 },
+      { stepId: "x", stepType: "command", status: "completed", attempt: 2 },
+      { stepId: "s9", stepType: "command", status: "completed", attempt: 1 },
+    ],
+  };
+  const anh = () => JSON.stringify({ run: rows("orchestration_runs"), steps: rows("orchestration_run_steps") });
+  const tuChoi = async (payload: Record<string, unknown>, lyDo: RegExp) => {
+    const truoc = anh();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const res = await syncRunResult(payload as never);
+      expect(res).toMatchObject({ ok: false, enabled: true });
+      expect(res.data).toBeUndefined();
+      expect(res.message).toMatch(/^EDGE_SYNC_RUN_LATCHED: run 1 /);
+      expect(res.message).toMatch(lyDo);
+      expect(anh()).toBe(truoc); // the step rows, the context, the status: byte for byte
+      expect(warn.mock.calls.some((c) => /run 1\b/.test(String(c[0])) && lyDo.test(String(c[0])))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  it("★ T7C-SYNC-KHOA a held run, latched, its STOP not sent, no assignment, a 'completed' payload: refused; st, the latch, DA_BAO and 'held' stay", async () => {
+    Object.assign(run1(), { status: "held", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT, [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: DA_BAO, foeDispatchedSteps: ["x"] } });
+    rows("orchestration_run_steps").push(hangX(), hangSt());
+    await tuChoi(PAYLOAD_XONG, /\(chot\)/);
+    expect(run1().status).toBe("held");
+    expect(run1().contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toEqual(CHOT);
+    expect(rows("orchestration_run_steps").find((r: any) => r.stepId === "st")!.error).toMatch(/^FOE_STOP_NOT_SENT: STOP "st"/);
+    expect(rows("orchestration_run_steps").some((r: any) => r.stepId === "s9")).toBe(false);
+  });
+
+  it("★ T7C-SYNC-KHOA the latch in the context alone (no row yet): refused", async () => {
+    Object.assign(run1(), { status: "running", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    await tuChoi(PAYLOAD_XONG, /\(chot\)/);
+  });
+
+  it("★ T7C-SYNC-KHOA the latch on the rows alone (chotTuHang: the code on x's row), context clean: refused", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    rows("orchestration_run_steps").push(hangX());
+    await tuChoi(PAYLOAD_XONG, /\(hangKhongRo\)/);
+  });
+
+  it("★ T7C-SYNC-KHOA a STOP still owed on the rows alone (stopChuaRaTuHang), context clean: refused", async () => {
+    Object.assign(run1(), { status: "held", contextJson: {} });
+    rows("orchestration_run_steps").push(hangSt());
+    await tuChoi(PAYLOAD_XONG, /\(stopChuaRa\)/);
+  });
+
+  it("★ T7C-SYNC-KHOA an aborted latched run, a terminal payload: refused, its STOP row is not overwritten", async () => {
+    Object.assign(run1(), { status: "aborted", error: "Aborted by user 12.", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    rows("orchestration_run_steps").push(hangSt());
+    await tuChoi(PAYLOAD_XONG, /\(chot\)/);
+  });
+
+  it("★ T7C-SYNC-KHONG-DOC the step rows cannot be read: refused (nothing can say no STOP is owed), nothing written", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const realSelect = fakeDb.select;
+    (fakeDb as any).select = () => ({
+      from(t: any) {
+        if (tbl(t) === "orchestration_run_steps") throw new Error("read failed");
+        return makeSelect(tbl(t)).from();
+      },
+    });
+    try {
+      await tuChoi(PAYLOAD_XONG, /\(hangKhongDoc\)/);
+    } finally {
+      (fakeDb as any).select = realSelect;
+    }
+  });
+
+  it("★ T7C-SYNC-KHONG-DOC the run context is not an object: refused, nothing written", async () => {
+    Object.assign(run1(), { status: "running", contextJson: "garbled" });
+    await tuChoi(PAYLOAD_XONG, /\(nguCanhKhongDoc\)/);
+  });
+
+  it("control T7C-CHUA-KHOA a run NOT latched, no assignment, a valid payload: written as before", async () => {
+    Object.assign(run1(), { status: "running", contextJson: { foeDispatchedSteps: ["s1"] } });
+    const res = await syncRunResult(PAYLOAD_XONG as never);
+    expect(res).toMatchObject({ ok: true, data: { runId: 1, stepsApplied: 3, abortRequested: false } });
+    expect(run1()).toMatchObject({ status: "completed", contextJson: { k: 1 }, currentStepId: "end" });
+    expect(rows("orchestration_run_steps").map((r: any) => r.stepId)).toEqual(["st", "x", "s9"]);
+  });
+
+  it("control T7C-CHUA-KHOA a STOP the sweep already sent (abort:st completed) owes nothing: written as before", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    rows("orchestration_run_steps").push(hangSt(), { id: 803, runId: 1, stepId: "abort:st", stepType: "command", status: "completed", attempt: 1, resultJson: { stepId: "st" }, error: null });
+    const res = await syncRunResult(PAYLOAD_XONG as never);
+    expect(res).toMatchObject({ ok: true, data: { stepsApplied: 3, abortRequested: false } });
+    expect(run1().status).toBe("completed");
+  });
+
+  it("control an edge node syncing its own run (not latched): written as before", async () => {
+    const node = await registerNode({ code: "edge-own" });
+    await assignRun(1, node.data!.id);
+    const res = await syncRunResult({ ...PAYLOAD_XONG, edgeNodeCode: "edge-own" } as never);
+    expect(res).toMatchObject({ ok: true, data: { stepsApplied: 3, abortRequested: false } });
+    expect(run1().status).toBe("completed");
+  });
+
+  it("control a run under the node protocol (a run_edge_assignments row), latched or not: the refusal stays the node-protocol one", async () => {
+    Object.assign(run1(), { status: "held", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    rows("orchestration_run_edge_assignments").push({ id: 1, runId: 1, edgeNodeId: 3 });
+    const truoc = anh();
+    const res = await syncRunResult(PAYLOAD_XONG as never);
+    expect(res.ok).toBe(false);
+    expect(res.message).toMatch(/executed by an edge node under the node protocol/);
+    expect(anh()).toBe(truoc);
   });
 });
