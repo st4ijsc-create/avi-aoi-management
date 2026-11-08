@@ -5,7 +5,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { danhSachBai } from "./chung.mjs";
 import { apDotBien, docTongKet, tepNgoaiThe } from "./pilotRepo.mjs";
+
+test("prompt.md của bài pilot không có khoá ĐỘT BIẾN của thẻ (bộ chạy đọc khoá đó, model không được thấy)", () => {
+  const bai = danhSachBai().filter((b) => b.kieu === "pilot-repo");
+  assert.ok(bai.length >= 4);
+  for (const b of bai) {
+    const de = fs.readFileSync(`${b.dir}/prompt.md`, "utf8");
+    assert.doesNotMatch(de, /^\s*(ĐỘT BIẾN|DOT BIEN)\s*:/imu, b.id);
+    assert.ok(!de.includes(b.mauBlob), b.id);
+  }
+});
 
 test("docTongKet đọc đúng dòng Tests, bỏ mã màu, không lấy dòng Test Files", () => {
   assert.deepEqual(docTongKet(" Test Files  1 passed (1)\n      Tests  34 passed (34)\n"), { pass: 34, fail: 0, dong: "Tests  34 passed (34)" });
