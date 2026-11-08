@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import { renderMsaReportMarkdown } from "./msaReport";
+import { renderMsaReportMarkdown, type MsaReportInput } from "./msaReport";
 
-type MsaReportInput = {
+// Kiểu lỏng có chủ đích: test truyền cả null, "" và "abc" mà kiểu thật của hàm không cho phép.
+type DauVaoLong = {
   instrument: {
     id: number;
     code: string;
@@ -33,8 +34,8 @@ type MsaReportInput = {
 };
 
 function makeInput(overrides?: {
-  instrument?: Partial<MsaReportInput["instrument"]>;
-  msa?: Partial<MsaReportInput["msa"]>;
+  instrument?: Partial<DauVaoLong["instrument"]>;
+  msa?: Partial<DauVaoLong["msa"]>;
 }): MsaReportInput {
   return {
     instrument: {
@@ -67,7 +68,7 @@ function makeInput(overrides?: {
       notes: null,
       ...overrides?.msa,
     },
-  };
+  } as unknown as MsaReportInput;
 }
 
 describe("renderMsaReportMarkdown", () => {
