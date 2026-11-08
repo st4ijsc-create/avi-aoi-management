@@ -1366,9 +1366,16 @@ function chayStopNen(rc: RunContext, viec: () => Promise<unknown>): void {
  */
 async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promise<string[]> {
   if (duongBuTruCua(rc) || rc.chiGuiStopGhim) return [];
-  if (!src || (rc.store.kind === "central" && !src.hang)) return [BUOC_KHONG_XAC_DINH];
-  const nhan = bangChungSauChot(rc, src.hang);
-  const hang = new Map((src.hang ?? []).map((r) => [r.stepId, r] as const));
+  // central raises its URGENT itself: what it cannot read it says it cannot tell. An edge's word is checked by central against the definition (baoCaoHopLe): a step id
+  // that is none would be dropped there, so an edge whose read threw names from the walk's own memory, the evidence an edge has anyway (bangChungSauChot with no rows)
+  if (rc.store.kind === "central" && !src?.hang) return [BUOC_KHONG_XAC_DINH];
+  const nhan = bangChungSauChot(rc, src?.hang);
+  const hang = new Map((src?.hang ?? []).map((r) => [r.stepId, r] as const));
+  const nhanhCua = (id: string) => {
+    if (src) return src.branchOf(id);
+    const b = rc.context[`branch:${id}`];
+    return b === "then" || b === "else" ? b : rc.prior.branches.get(id);
+  };
   // a container's failure carries its children's words ("Parallel branch failed: …"): one of them the latch's is enough, the child that failed on its own keeps its row
   const laLoiCuaKhoa = (e: string | null | undefined) => typeof e === "string" && (e.includes(`${FOE_NOT_SENT_RUN_LATCHED}:`) || e.includes(`${FOE_STOP_NOT_SENT}:`) || loiLaKetCucKhongRo(e));
   // KTB — a container whose own row (an earlier segment's picture on an edge) keeps a last word that is not the latch's: what stayed unsent in it was not dropped here
@@ -1394,7 +1401,7 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
       } else if (s.type === "sequence" || s.type === "parallel") {
         if (!loiRieng(s)) await di(s.steps, s.type === "parallel");
       } else if (s.type === "branch" && !loiRieng(s)) {
-        const nhanh = src.branchOf(s.id);
+        const nhanh = nhanhCua(s.id);
         if (nhanh !== "else") await di(s.then, false);
         if (nhanh !== "then") await di(s.else ?? [], false);
       }
@@ -1409,8 +1416,8 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
  * again, and a person is told, even when no walk entered it (its step failed in an earlier walk, the door kept that last word). Once per walk, whoever told first.
  */
 async function baoBuTruKhongRoDenHan(rc: RunContext, src: AbortSweepSource | null): Promise<void> {
-  if (!src) return;
-  for (const id of chuDenHan(rc, bangChungSauChot(rc, src.hang))) {
+  // T6a (rà) — a read that threw is no reason for silence: the walk's own memory still says what is due
+  for (const id of chuDenHan(rc, bangChungSauChot(rc, src?.hang))) {
     const s = findStepDeep(rc.def.steps, id);
     const comp = s?.compensation;
     if (!s || !comp || rc.buTruKhongRoDaBao?.has(comp.id) || outcomeUnknownOf(rc, comp.id) === null || (await isStopCommandStep(rc, comp))) continue;
@@ -1856,7 +1863,8 @@ async function guiStopKhongRo(rc: RunContext, step: WorkflowStep, comp: Workflow
   // R5 — it went: confirmed ends a hold by itself, handed over only with a durable URGENT (H2; an edge's durable word is central's, at its segment end).
   // T6 (H14) — no answer at the last attempt went too: handed over, not confirmed. Only state C (above) did not go
   const khongTraLoi = c?.kind === "failed" && (c.outcomeUnknown === true || c.khongRo === true) && rc.attempted.has(comp.id);
-  if (c?.kind === "ok" || khongTraLoi) (rc.buTruDaDi ??= new Map()).set(comp.id, rc.ketQuaBuTru?.get(comp.id)?.xacNhan === true || rc.store.kind !== "central" ? Promise.resolve(true) : (ben ?? Promise.resolve(false)));
+  // T6a (rà) — an edge has no durable word of its own: an answer it got stands for central's at the segment end, no answer does not (that hold stays for central's end gate)
+  if (c?.kind === "ok" || khongTraLoi) (rc.buTruDaDi ??= new Map()).set(comp.id, rc.ketQuaBuTru?.get(comp.id)?.xacNhan === true || (rc.store.kind !== "central" && !khongTraLoi) ? Promise.resolve(true) : rc.store.kind !== "central" ? Promise.resolve(false) : (ben ?? Promise.resolve(false)));
   return false;
 }
 

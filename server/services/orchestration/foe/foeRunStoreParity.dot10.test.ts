@@ -491,6 +491,9 @@ interface EdgeHarness {
   authNem?: Set<string>;
   /** A2(n) T5 — the store's own STOP check of a compensation throws */
   laStopNem?: boolean;
+  /** A2(n) T6a — the store's sweepSource throws (the evidence of the walk's end cannot be read); sweepLan counts the calls that reached it */
+  sweepNem?: boolean;
+  sweepLan?: number;
   /** A2(n) T5 fix 1 — nothing is applied by the harness: only the report path writes */
   quaBaoCao?: boolean;
 }
@@ -633,6 +636,12 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
   if (x.laStopNem) {
     store.buTruLaStopGhim = async () => {
       throw new Error("the STOP check threw (test)");
+    };
+  }
+  if (x.sweepNem) {
+    store.sweepSource = async () => {
+      x.sweepLan = (x.sweepLan ?? 0) + 1;
+      throw new Error("the evidence read threw (test)");
     };
   }
   // ★ the edge walk (and a local abort sweep) run against a database that THROWS — and is never even asked
@@ -4546,6 +4555,40 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(baoEdge(e, "stopNotSent")).toEqual([]);
     expect(baoEdge(e, "stopNotConfirmed").length).toBeGreaterThan(0);
     expect(runRow(e.runId).status).not.toBe("held");
+  });
+  it("RA-HANG a body STOP that went with no answer at its last attempt, the URGENT not durable: held (H2), its row says it was handed over (never 'held'), not sent again", async () => {
+    seedHalt();
+    let n = 0;
+    h.ghim = async (d, i) => {
+      if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+      await wait(80);
+      return n++ < 2 ? { pinnedStop: false, loiDocGhim: null } : PIN_OK(d, i);
+    };
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.failPlan.set("f", 1);
+    h.timeoutDispatch.add("cs");
+    h.alertDurable = false;
+    const c = await centralRun(dinhComp("rah", box("cb", [otStop("cs")])), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "cs")?.status, "a STOP handed over keeps the row that says so").toBe("failed");
+    expect(String(hang(c, "cs")?.error)).toMatch(/OUTCOME_UNKNOWN/);
+    expect(urgentCua("stopNotConfirmed").filter((a) => a.dedupKey.includes(":f:cs:")).length, "told: handed over, not confirmed").toBeGreaterThan(0);
+    await wait(30);
+    motLan("cs");
+  });
+  it("RA-XD-EDGE the edge's evidence read throws at the end of the walk: what was dropped is named from the walk's own memory, a step central can check, never '?'", async () => {
+    const e = await denBuoc(def("raxe", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), move("m")])])]));
+    e.sweepNem = true;
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(30);
+    expect(e.sweepLan ?? 0, "the read threw").toBeGreaterThan(0);
+    const ten = baoEdge(e, "forwardNotSent").map((v) => JSON.parse(String(v.detail)).stepId as string);
+    expect(ten).toEqual(["m"]);
+    expect(buocBo(), "central raised the URGENT").toEqual(["m"]);
   });
   it("GIU-EDGE xác nhận: acked_verified: the segment ends by its walk, not held, one STOP", async () => {
     h.acked = true;
