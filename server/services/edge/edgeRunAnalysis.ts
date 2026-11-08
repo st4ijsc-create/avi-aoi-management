@@ -101,20 +101,41 @@ export function requestPayloadHash(c: { kind: "ot"; adapterId: number; machineId
     : robotPayloadHash({ robotId: c.robotId, jobType: c.jobType, params: c.params ?? null });
 }
 
+/**
+ * The enabled + writable tag rows of adapters (loadStopPins' rule), per adapter, by tagKey. A2(n) T6e lượt sửa 2 — with the columns the dispatcher's coercion reads
+ * (commandDispatcher.epKieuGhiTheoTag): ONE read gives the pins and the coerced form. Read failure ⇒ throws.
+ */
+async function hangGhimCua(d: Db, adapterIds: readonly number[]): Promise<Map<number, Array<Record<string, unknown> & { tagKey: string }>>> {
+  const out = new Map<number, Array<Record<string, unknown> & { tagKey: string }>>();
+  const ids = [...new Set(adapterIds)];
+  if (ids.length === 0) return out;
+  const rows = await d
+    .select({
+      adapterId: deviceTags.adapterId,
+      tagKey: deviceTags.tagKey,
+      dataType: deviceTags.dataType,
+      stopValue: deviceTags.stopValue,
+      writable: deviceTags.writable,
+      isEnabled: deviceTags.isEnabled,
+      channelKind: deviceTags.channelKind,
+      writeMin: deviceTags.writeMin,
+      writeMax: deviceTags.writeMax,
+      writeStep: deviceTags.writeStep,
+      scale: deviceTags.scale,
+      offset: deviceTags.offset,
+    })
+    .from(deviceTags)
+    .where(and(inArray(deviceTags.adapterId, ids), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)));
+  for (const id of ids) out.set(id, rows.filter((r) => r.adapterId === id).sort((a, b) => (a.tagKey < b.tagKey ? -1 : a.tagKey > b.tagKey ? 1 : 0)) as never);
+  return out;
+}
+
 /** The stop pins of adapters (the enabled + writable stop-pin rows — loadStopPins' rule). Read failure ⇒ throws. */
 export async function stopPinsOf(d: Db, adapterIds: readonly number[]): Promise<Map<number, Array<{ tagKey: string; value: unknown }>>> {
   const out = new Map<number, Array<{ tagKey: string; value: unknown }>>();
-  const ids = [...new Set(adapterIds)];
-  if (ids.length === 0) return out;
+  if (adapterIds.length === 0) return out;
   const { stopPinsFromTagRows } = await import("../ot/stopPin");
-  const rows = await d
-    .select({ adapterId: deviceTags.adapterId, tagKey: deviceTags.tagKey, dataType: deviceTags.dataType, stopValue: deviceTags.stopValue, writable: deviceTags.writable, isEnabled: deviceTags.isEnabled })
-    .from(deviceTags)
-    .where(and(inArray(deviceTags.adapterId, ids), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)));
-  for (const id of ids) {
-    const mine = rows.filter((r) => r.adapterId === id).sort((a, b) => (a.tagKey < b.tagKey ? -1 : a.tagKey > b.tagKey ? 1 : 0));
-    out.set(id, stopPinsFromTagRows(mine as never));
-  }
+  for (const [id, mine] of await hangGhimCua(d, adapterIds)) out.set(id, stopPinsFromTagRows(mine as never));
   return out;
 }
 
@@ -149,9 +170,12 @@ export async function analyseDefinition(d: Db, runId: number, def: Pick<Workflow
     else if (s.type === "command") out.unresolved.push(s.id);
   }
   let pins: Map<number, Array<{ tagKey: string; value: unknown }>> | null = null;
+  let hang: Map<number, Array<Record<string, unknown> & { tagKey: string }>> | null = null;
   const otAdapters = rebuilt.filter((r): r is Extract<RebuiltCommand, { kind: "ot" }> => r.kind === "ot" && r.adapterId !== null).map((r) => r.adapterId as number);
   try {
-    pins = await stopPinsOf(d, otAdapters);
+    hang = await hangGhimCua(d, otAdapters);
+    const { stopPinsFromTagRows } = await import("../ot/stopPin");
+    pins = new Map([...hang].map(([id, mine]) => [id, stopPinsFromTagRows(mine as never)] as const));
   } catch {
     pins = null;
   }
@@ -173,7 +197,18 @@ export async function analyseDefinition(d: Db, runId: number, def: Pick<Workflow
       out.stopsUnsure.push(rb.step.id);
       continue;
     }
-    const p = await isPinnedOtStop(rb, pins.get(rb.adapterId) ?? []);
+    // A2(n) T6e lượt sửa 2 — the write central's dispatcher would classify: coerced by its own function (one source with the FOE verifier and gate (1)). Missing ⇒ unsure
+    let epKieu: ((tags: never, writes: Array<{ tagKey: string; value: unknown }>) => Array<{ tagKey: string; value: unknown }> | null) | undefined;
+    try {
+      epKieu = (await import("../ot/commandDispatcher")).epKieuGhiTheoTag as typeof epKieu;
+    } catch {
+      epKieu = undefined;
+    }
+    if (typeof epKieu !== "function") {
+      out.stopsUnsure.push(rb.step.id);
+      continue;
+    }
+    const p = await isPinnedOtStop({ ...rb, writes: epKieu((hang?.get(rb.adapterId) ?? []) as never, rb.writes) ?? rb.writes }, pins.get(rb.adapterId) ?? []);
     if (p.pinned && p.writes && p.writes.length > 0) out.verifiedStops.push({ kind: "ot", stepId: rb.step.id, adapterId: rb.adapterId, pins: p.writes });
   }
   out.robotIds = [...new Set(out.robotIds)].sort((a, b) => a - b);
