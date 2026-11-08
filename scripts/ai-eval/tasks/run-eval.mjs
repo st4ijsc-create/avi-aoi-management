@@ -102,7 +102,7 @@ function docTai(trangThai, giay) {
 /** Slot đang bận lúc sắp gửi = có người khác dùng :8091 (Thợ Cả trong VS Code), thời gian của bài đó bị méo. */
 async function slotBan(url) {
   try {
-    const r = await fetch(`${url}/slots`, { signal: AbortSignal.timeout(5000) });
+    const r = await fetch(`${url}/slots`, { headers: tieuDeKhoa(), signal: AbortSignal.timeout(5000) });
     if (!r.ok) return false;
     return (await r.json()).some((x) => x.is_processing);
   } catch {
@@ -177,11 +177,25 @@ async function suKhoe(url) {
 
 class Vut extends Error {}
 
+/** Khoá llama-server trong env tiến trình, cùng luật với server/services/ai/khoaLlamaServer.ts: tệp thắng khoá env. Tệp khai mà hỏng ⇒ không rơi về khoá env. */
+export function tieuDeKhoa(env = process.env) {
+  const tep = (env.LLAMA_SERVER_API_KEY_FILE || "").trim();
+  let khoa = (env.LLAMA_SERVER_API_KEY || "").trim();
+  if (tep) {
+    try {
+      khoa = fs.readFileSync(tep, "utf8").trim();
+    } catch {
+      khoa = "";
+    }
+  }
+  return khoa ? { authorization: `Bearer ${khoa}` } : {};
+}
+
 async function goiModel(url, sys, prompt, maxTokens) {
   const t0 = Date.now();
   const r = await fetch(`${url}/v1/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...tieuDeKhoa() },
     body: JSON.stringify({ messages: [{ role: "system", content: sys }, { role: "user", content: prompt }], ...SAMPLING, max_tokens: maxTokens, stream: false }),
   });
   if (!r.ok) throw new Vut(`llama-server HTTP ${r.status}`);

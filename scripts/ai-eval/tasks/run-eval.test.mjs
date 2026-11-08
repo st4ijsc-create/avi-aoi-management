@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, nhanTienTrinhNang, tenBaoCao, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -180,6 +180,15 @@ test("tinhBang: gom theo stack, pass@N tính theo bài, moiMau theo mẫu", () =
 test("cùng tên id ở hai stack không bị gộp ở dòng tổng", () => {
   const h = (stack) => ({ stack, id: "x", mau: 1, dat: true, cut: false });
   assert.equal(tinhBang([h("ts"), h("py")], 1).tong.bai, 2);
+});
+
+test("tieuDeKhoa: tệp thắng khoá env; tệp hỏng không rơi về khoá env; không cấu hình thì không có tiêu đề", () => {
+  const p = path.join(tam, "khoa.txt");
+  fs.writeFileSync(p, "tu-tep\n");
+  assert.deepEqual(tieuDeKhoa({}), {});
+  assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k" }), { authorization: "Bearer k" });
+  assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k", LLAMA_SERVER_API_KEY_FILE: p }), { authorization: "Bearer tu-tep" });
+  assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k", LLAMA_SERVER_API_KEY_FILE: path.join(tam, "khong-co") }), {});
 });
 
 test("tenBaoCao không đè lượt cùng ngày", () => {
