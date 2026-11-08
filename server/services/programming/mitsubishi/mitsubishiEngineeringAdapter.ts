@@ -41,6 +41,22 @@ import type {
   ProgDeployResult,
 } from "../programmingAdapter";
 
+/**
+ * Máy mà adapter OT đang gắn (`device_adapters.machineId`); null nếu adapter chưa gắn máy / không có hàng; `undefined` nếu DB không sẵn sàng
+ * (người gọi coi như lỗi tra cứu). Nạp trễ để import mô-đun không chạm DB.
+ */
+export async function machineIdCuaAdapter(adapterId: number): Promise<number | null | undefined> {
+  const [{ getDb }, { deviceAdapters }, { eq }] = await Promise.all([
+    import("../../../db/connection"),
+    import("../../../../drizzle/schema"),
+    import("drizzle-orm"),
+  ]);
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select({ machineId: deviceAdapters.machineId }).from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
+  return row?.machineId ?? null;
+}
+
 // MELSEC device prefixes (bit + word). Address may be decimal or hex (X/Y/B/W are hex).
 const DEVICE_RE = /^([XYMLFBVSTCDWRZ])(\d+|[0-9A-Fa-f]+)$/;
 const HEX_DEVICES = new Set(["X", "Y", "B", "W"]);
@@ -168,10 +184,30 @@ export class MitsubishiEngineeringAdapter implements ProgrammingAdapter {
       return { ok: false, status: "rejected", simulated: true, error: LOI_KHOA_LAP_TRINH_RONG, detail: { reason: "IDEMPOTENCY_KEY_REQUIRED" } };
     }
 
+    // Pha 0 · C0-7 (2026-11-06): trước đây `machineId: adapterId` — MÃ ADAPTER bị dùng làm MÃ MÁY, nên preflight an toàn của dispatch() đọc trạng thái
+    // an toàn của MỘT MÁY KHÁC (máy có id trùng số với adapter). Máy đúng = cột `device_adapters.machineId` của chính adapter (null nếu adapter chưa gắn máy).
+    // Tra lỗi ⇒ từ chối có mã (fail-closed), KHÔNG đoán.
+    let machineId: number | null | undefined;
+    let loiTra: string | undefined;
+    try {
+      machineId = await machineIdCuaAdapter(adapterId);
+    } catch (err) {
+      loiTra = (err as Error)?.message ?? "lỗi không rõ";
+    }
+    if (machineId === undefined) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        error: `Không tra được máy của adapter ${adapterId} — không đẩy tham số MELSEC.`,
+        detail: { reason: "ADAPTER_MACHINE_LOOKUP_FAILED", message: loiTra ?? "DB không sẵn sàng" },
+      };
+    }
+
     const { dispatch } = await import("../../ot/commandDispatcher");
     const res = await dispatch({
       adapterId,
-      machineId: adapterId,
+      machineId,
       commandType: "recipe_param_push",
       writes,
       triggeredBy: {
