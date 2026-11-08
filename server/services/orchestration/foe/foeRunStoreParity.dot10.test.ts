@@ -6495,14 +6495,18 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     expect(stopChuaRaTuHang(stepRows(x.e.runId) as never).size).toBe(0);
     expect(runRow(x.e.runId).status).toBe("failed");
     const truoc = new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`));
+    const lanTruoc = lech().length;
     // T6d lượt sửa 1 — the same events again through the real eventsForNode, and the run stream again: one durable key, the same words; every raise asks the durable dedup
+    // T6b (rà T6d) — measured: the replays are accepted and raise NOTHING new (as many raises after as before); the one durable key stays one
     J.veLai("events");
     await sh.flush("events");
     J.veLai(S);
     await sh.flush(S);
     await wait(20);
     expect(traLoi.filter((a) => a.http !== 200), "the replays are accepted").toEqual([]);
-    expect(lech().length, "the replay reached the alert").toBeGreaterThan(truoc.size);
+    expect(lanTruoc, "the first delivery raised it").toBeGreaterThan(0);
+    expect(lech().length, "a replay raises no new URGENT").toBe(lanTruoc);
+    expect(new Set(lech().map((a) => a.dedupKey)).size, "one durable key").toBe(1);
     expect(new Set(lech().map((a) => `${a.dedupKey}|${a.title}|${a.message}`)), "a replay keeps the one durable key and words").toEqual(truoc);
     expect(lech().every((a) => a.khuTrungBenVung !== undefined && a.retryUntilPersisted !== undefined), "durable: deduplicated per person and key").toBe(true);
   });
