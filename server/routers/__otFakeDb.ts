@@ -30,6 +30,8 @@ export function makeDesc(col: Col): OrderRef {
 
 let seq = 1;
 export function resetSeq() { seq = 1; }
+/** A2(n) T7b-1d lượt sửa 2 — the next ids jump: a suite whose code keeps something by id past a case gives each case ids of its own. */
+export function nhayId(n: number) { seq += n; }
 
 /**
  * A2(n) T7b-1d lượt sửa 1 — a database never shares a value with its caller: what a caller holds after a read or a write is its own. Before this the walk held the very object its row held, so a context

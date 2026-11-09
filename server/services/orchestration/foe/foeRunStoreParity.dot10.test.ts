@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, vi, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
+import { FakeDb, makeEq, makeAnd, nhayId, resetSeq } from "../../../routers/__otFakeDb";
 
 const h = vi.hoisted(() => ({
   sent: [] as Array<Record<string, unknown>>,
@@ -9373,7 +9373,7 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(ids(), "never read: not sent").toEqual([]);
     expect(a2.abortStops?.khongDocDuoc).toBe(true);
     expect(a2.message).toMatch(/could not be read/);
-    expect(a2.message).toMatch(/press Abort again/);
+    expect(a2.message).toMatch(/may not reach it/); // H32, dieu-phoi 09/11: was /press Abort again/
     expect(a2.message).toMatch(/15 minutes/);
     expect(a2.message).not.toMatch(/sent again|owes no/);
     const a3 = await bam(c, "read again");
@@ -10530,8 +10530,9 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     const chu = `${u[0]!.title} ${u[0]!.message}`;
     expect(chu).toContain(`could not read the definition of run ${c}`);
     expect(chu).toContain("a STOP may still not be out");
-    expect(chu).toContain("press Abort again within 15 minutes");
-    expect(chu).toContain("after that check the machine on site");
+    expect(chu).toContain("may not reach it"); // H32, dieu-phoi 09/11: was "press Abort again within 15 minutes"
+    expect(chu).toContain("after 15 minutes none can be counted on"); // H32: was "after that check the machine on site"
+    expect(chu).toContain("Check the machine on site");
     expect(String(u[0]!.dedupKey).split(":")[2]).toBe("?");
     expect(u[0]!.khuTrungBenVung, "durable").toBeDefined();
     expect(a.message, "never a silent ok").toContain(`could not read the definition of run ${c}`);
@@ -10990,7 +10991,10 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   const ghimHalt = (co: boolean) => fake.seed(deviceTags, rows("device_tags").map((t) => (t.tagKey === "halt" ? { ...t, stopValue: co ? true : null } : t)));
   const KHONG_GHIM = async () => ({ pinnedStop: false, loiDocGhim: null });
   const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  // fix 2 — a run id of its own in each case: the engine's sweep registry is by run id and outlives a case: a sweep a hanging case leaves behind must not be joined by the next (measured: 15 s per case behind T7B1D-TREO-DUOI-WALKER)
+  let lanCa = 0;
   beforeEach(() => {
+    nhayId(++lanCa * 1000);
     seedHalt();
     h.ghim = PIN_OK;
     vi.mocked(logCrudOperation).mockClear();
@@ -12113,7 +12117,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     ds.splice(ds.indexOf(hong), 1);
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(a.message).toMatch(/could not read the definition/);
-    expect(a.message).toMatch(/press Abort again within 15 minutes/);
+    expect(a.message).toMatch(/may not reach it/); // H32, dieu-phoi 09/11: was /press Abort again within 15 minutes/
+    expect(a.message).toMatch(/after 15 minutes none can be counted on/);
     expect(h.alerts.map((x) => x.kind), "H23").toEqual([]);
     expect(ids()).toEqual([]);
     expect(hang(c, "b")?.error).toBe("Run is aborting.");
@@ -12379,9 +12384,9 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     h.treoLaStop = () => n.cho;
     const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
     expect(a, "the Abort answered").not.toBeNull();
-    expect(a!.abortStops?.khongDocDuoc).toBe(true);
-    expect(a!.message).toMatch(/press Abort again/);
-    expect(urgentCua("abortDefUnread").length, "told").toBeGreaterThan(0);
+    expect(a!.abortStops?.quetChuaXong).toBe(true); // H32, dieu-phoi 09/11: was khongDocDuoc
+    expect(a!.message).toMatch(/has not finished and is still running/); // H32: was /press Abort again/
+    await waitFor(() => urgentCua("abortSweepUnfinished").length > 0, "told"); // H32: was urgentCua("abortDefUnread"), awaited
     const { kq: a1 } = await traLoi(abortRun(c, OTHER, "joins it"));
     expect(a1, "a press joining it answered").not.toBeNull();
     h.classifyLoi = false;
@@ -12429,6 +12434,438 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(kq, "the walk ended").toBe("xong");
     expect(runDaChot(c)).toBe(true);
   }, 15_000);
+
+  // ── T7b-1d fix 2 (H32): the fallback of the verifier, then the ceilings as measured, on the same 1/20 ─────────────────────────────────────────────────────────
+  it("T7B1D-XM-ROBOT-NON-STOP both verifier paths hanging: a robot command that is no STOP is no STOP of the fallback: 0 commands of it, no row; the robot STOP goes", async () => {
+    const { c, di } = await moDi(def("d1dxr", [gate(), ot("x"), delay("w", 300), robotStop("rs"), move("m")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.heSoHan = 0.05;
+    h.treoVerifier = "ca";
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    await di;
+    await wait(40);
+    expect(ids()).toEqual(["rs"]);
+    expect(a!.abortStops?.sent).toEqual(["rs"]);
+    expect(a!.abortStops?.unverified).toEqual([]);
+    expect(hang(c, "abort:m")).toBeUndefined();
+  }, 15_000);
+  /** when each command reached its dispatcher, in ms from `t0`, for as long as the case runs */
+  const gioGiao = () => {
+    const goc = h.sent.push;
+    const luc = new Map<string, number>();
+    h.sent.push = function (...x: Array<Record<string, unknown>>) {
+      for (const m of x) luc.set(String(m.stepId), Date.now());
+      return goc.apply(h.sent, x);
+    };
+    return { luc, go: () => (h.sent.push = goc) };
+  };
+  const TREO_DOC = (() => new Promise<never>(() => undefined)) as never;
+  const CEILING = (15 * STOP_DB_STEP_DEADLINE_MS) / 20;
+  it("T7B1D-TREO-DAU-VET-N nine traces whose pin read hangs, a press on a run not latched: read side by side: s and rs go after one read, the answer under the ceiling names the nine, in the order of the plan, and sends none of them", async () => {
+    const nts = Array.from({ length: 9 }, (_, i) => stopTyped(`nt${i}`));
+    const { c, di } = await moDi(def("d1dvn", [gate(), ot("x"), box("b", [delay("w", 300), ...nts, otStop("s"), robotStop("rs")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.tuChoi.set("rs", REF);
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.tuChoi.clear();
+    for (const [i, s] of nts.entries()) rows("orchestration_run_steps").push({ id: 910_000 + c * 100 + i, runId: c, stepId: `abort:${(s as { id: string }).id}`, stepType: "command", status: "failed", attempt: 0, error: null, startedAt: new Date(), finishedAt: new Date(), resultJson: { abortStop: "chuaXacMinh", stepId: (s as { id: string }).id } });
+    ve0();
+    h.ghim = TREO_DOC;
+    h.heSoHan = 0.05;
+    const g = gioGiao();
+    const t0 = Date.now();
+    const { kq: a, ms } = await traLoi(abortRun(c, OWNER, "press"));
+    g.go();
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(ids().sort()).toEqual(["rs", "s"]);
+    expect([...a!.abortStops!.sent].sort(), "the answer holds what went").toEqual(["rs", "s"]);
+    // the read 2·D, the verifier and the rows at most what they take here, the preparation at most 3·D: all on the 1/20
+    expect((g.luc.get("s") ?? Infinity) - t0, "s went after one read of 2·D, not nine").toBeLessThan((6 * STOP_DB_STEP_DEADLINE_MS) / 20);
+    expect((g.luc.get("rs") ?? Infinity) - t0).toBeLessThan((6 * STOP_DB_STEP_DEADLINE_MS) / 20);
+    expect(ms, "under the ceiling").toBeLessThan(CEILING);
+    expect(a!.abortStops?.unverified.slice(0, 9), "unread: named, in the order of the plan").toEqual(nts.map((s) => (s as { id: string }).id));
+    for (const n of nts) expect(a!.message).toContain((n as { id: string }).id);
+    expect(a!.abortStops?.quetChuaXong).toBeUndefined();
+  }, 15_000);
+  it("T7B1D-TREO-DOC-LAI-N nine reads of a first Abort hanging: side by side: every trace has landed when it answers, no read left behind the wait for the traces", async () => {
+    const nts = Array.from({ length: 9 }, (_, i) => stopTyped(`nt${i}`));
+    const { c, di } = await moDi(def("d1ddl", [gate(), ot("x"), box("b", [delay("w", 300), ...nts, otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.ghim = TREO_DOC;
+    h.heSoHan = 0.05;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    const luc = stepRows(c).filter((r) => r.stepId.startsWith("abort:nt")).length;
+    h.ghim = PIN_OK;
+    h.heSoHan = 0;
+    await di;
+    expect(ids()).toEqual(["s"]);
+    expect(luc, "all nine, at the answer").toBe(9);
+  }, 15_000);
+  it("T7B1D-TREO-TRAN-15D a latched run, its sweep and the URGENT of it both hanging: the answer comes at the ceiling, not after the URGENT's own bound; the URGENT keeps that bound and its own catch; the sweep goes on", async () => {
+    const c = await khoaChuaGiao("d1dtt");
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    h.alertTreo = true;
+    const baoLoi = vi.spyOn(console, "error");
+    const dongUrgent = () => baoLoi.mock.calls.filter((x) => /the URGENT of a sweep not finished failed/.test(String(x[0])));
+    const { kq: a, ms } = await traLoi(abortRun(c, OWNER, "first"));
+    const luc = dongUrgent().length;
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.abortStops?.quetChuaXong).toBe(true);
+    expect(ms, "not before the ceiling").toBeGreaterThanOrEqual(CEILING - 10);
+    expect(ms, "at the ceiling, 15·D, not at 60·D").toBeLessThan(2 * CEILING);
+    expect(luc, "it did not wait for the URGENT's bound").toBe(0);
+    expect(a!.message, "nothing says it was told").not.toMatch(/URGENT|alert|told|notified/i);
+    await waitFor(() => dongUrgent().length > 0, "the URGENT's own bound fired, its own catch");
+    expect(h.treoLan, "the URGENT was tried").toBeGreaterThan(0);
+    baoLoi.mockRestore();
+    h.alertTreo = false;
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    await waitFor(() => ids().includes("s2"), "the sweep went on");
+  }, 15_000);
+  // the words of a sweep past its ceiling: what is known, on each road they reach a person. Each of them, read
+  const chuQuaTran = (chu: string | undefined) => {
+    expect(chu).toMatch(/has not finished and is still running/);
+    expect(chu, "gone or still may go").toMatch(/may have gone out or may still go/);
+    expect(chu, "unconfirmed").toMatch(/nothing confirms them yet/);
+    expect(chu).toMatch(/Check the machine on site/);
+    expect(chu, "one may press").toMatch(/Abort can be pressed again/);
+    expect(chu, "which steps: unknown").toMatch(/which ones is not known/);
+    expect(chu).not.toMatch(/not sent|could not read|could not be read|within \d+|\d+ minutes|was sent|owed/);
+  };
+  it("T7B1D-TREO-CHU-QUA-TRAN a latched run: the sweep past its ceiling: its own words, not those of an unread definition, one URGENT that says the same under one key, a press and a press joining; the sweep free, nothing twice", async () => {
+    const c = await khoaChuaGiao("d1dtcq");
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.abortStops?.quetChuaXong).toBe(true);
+    expect(a!.abortStops?.khongDocDuoc, "the definition was read").toBeUndefined();
+    chuQuaTran(a!.message);
+    await waitFor(() => urgentCua("abortSweepUnfinished").length > 0, "the URGENT");
+    expect(urgentCua("abortDefUnread"), "not the URGENT of an unread definition").toEqual([]);
+    chuQuaTran(chuCua("abortSweepUnfinished"));
+    const khoa1 = urgentCua("abortSweepUnfinished").map((x) => x.dedupKey);
+    const { kq: a1 } = await traLoi(abortRun(c, OTHER, "joins it"));
+    expect(a1, "a press joining it answered").not.toBeNull();
+    chuQuaTran(a1!.message);
+    await wait(30);
+    expect(new Set(urgentCua("abortSweepUnfinished").map((x) => x.dedupKey)), "one fixed key, a press or two").toEqual(new Set(khoa1));
+    expect(ids(), "nothing of a press").toEqual([]);
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    await waitFor(() => ids().includes("s2"), "the sweep went on");
+    await wait(60);
+    expect(ids(), "once").toEqual(["s2"]);
+  }, 15_000);
+  it("T7B1D-TREO-CHU-QUA-TRAN a run its answer cannot know as latched (only the rows its sweep read say so, the sweep has not answered): the same words, no URGENT of it; a press joining: the same words", async () => {
+    const { c, di } = await moDi(def("d1dtcc", [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    hang(c, "x")!.error = "FOE_OUTCOME_UNKNOWN: no answer (test)";
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.abortStops?.phanLoai, "the answer read nothing").toBeUndefined();
+    chuQuaTran(a!.message);
+    hang(c, "x")!.error = null;
+    const { kq: a1 } = await traLoi(abortRun(c, OTHER, "joins it"));
+    expect(a1, "a press joining it answered").not.toBeNull();
+    chuQuaTran(a1!.message);
+    await wait(30);
+    expect(urgentCua("abortSweepUnfinished")).toEqual([]);
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    await di.catch(() => undefined);
+    await wait(40);
+  }, 15_000);
+  it("T7B1D-TREO-CHU-QUA-TRAN a latched run past its window, a debt on its rows, the sweep past its ceiling: it is told what is known, not refused as too old", async () => {
+    const c = await khoaChuaGiao("d1dtcw");
+    runRow(c).status = "aborted";
+    quaCuaSo(c);
+    rows("orchestration_run_steps").push({ id: 920_000 + c, runId: c, stepId: "abort:s2", stepType: "command", status: "failed", attempt: 0, error: "FOE_OUTCOME_UNKNOWN: refused (test)", startedAt: new Date(), finishedAt: new Date(), resultJson: { abortStop: "failed", stepId: "s2" } });
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "press"));
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.reason).toBeUndefined();
+    chuQuaTran(a!.message);
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    await wait(40);
+  }, 15_000);
+  it("T7B1D-TREO-QUA-TRAN-LIVE the latch only a walker knows: its rows carry the code, its context none: past the ceiling it is told all the same", async () => {
+    const c = await centralRun(def("d1dtl", [gate("g0"), ot("x"), gate("g1"), otStop("s"), otStop("s2")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    hang(c, "x")!.error = "FOE_OUTCOME_UNKNOWN: no answer (test)";
+    ve0();
+    h.slow.set("s", 300);
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => h.sent.some((x) => x.stepId === "s"), "the walker at its STOP");
+    expect(ctxCua(c)[KET_CUC_KHONG_RO_CHOT_CTX_KEY], "its context holds no latch").toBeUndefined();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.abortStops?.quetChuaXong).toBe(true);
+    await waitFor(() => urgentCua("abortSweepUnfinished").length > 0, "told");
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    h.slow.clear();
+    await di.catch(() => undefined);
+  }, 15_000);
+  it("T7B1D-TREO-CUOI-MOT-TRAN a walk behind an Abort still on its way and then behind its sweep, both hanging: one ceiling from when it began to wait, not two", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 30);
+    const { c, di } = await moDi(def("d1dtm", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
+    await wait(20);
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const t0 = Date.now();
+    const dau = abortRun(c, OWNER, "first");
+    const { kq } = await traLoi(di.then(() => "xong", () => "xong"));
+    const ms = Date.now() - t0;
+    await traLoi(dau);
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.timeoutDispatch.clear();
+    expect(kq, "the walk ended").toBe("xong");
+    expect(ms, "one ceiling and its last words (1500 ms was two)").toBeLessThan(1.8 * CEILING);
+  }, 15_000);
+
+  // ── P2-Y: the read of a sweep throws: the reason is true, a press is no promise, and 0 commands is what this shape sends ───────────────────────────────────────
+  const HINH_NEM: Array<[string, () => WorkflowStep[], string, () => void, string[]]> = [
+    ["CHU-RIENG", () => [gate(), move("x"), box("b", [move("y"), otStop("s")])], "y", () => { h.slow.set("y", 100); h.failPlan.set("y", Infinity); }, []],
+    ["HANG-HANG", () => [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])], "w", () => undefined, ["s"]],
+    ["BU-TRU", () => [gate(), move("x", { compensation: otStop("s") }), delay("w", 300)], "w", () => undefined, ["s"]],
+  ];
+  for (const [ten, cay, cho, chuan, diSau] of HINH_NEM) {
+    it(`T7B1D-P2-Y ${ten}: the read of the sweep throws on a run not latched: "could not read" with no promise of a press, 15 minutes only as an upper limit; a press sends ${diSau.length ? diSau.join() : "nothing, twice"}`, async () => {
+      chuan();
+      const { c, di } = await moDi(def(`d1dp2${ten}`.replace(/-/g, "").toLowerCase(), cay()));
+      await waitFor(() => h.sent.some((x) => x.stepId === cho) || stepRows(c).some((r) => r.stepId === cho), `at ${cho}`);
+      await wait(15);
+      ve0();
+      const hong = { id: 930_000 + c, runId: c, stepId: 5, stepType: "command", status: "failed", error: null, resultJson: null };
+      rows("orchestration_run_steps").push(hong);
+      const a = await abortRun(c, OWNER, "first");
+      await di.catch(() => undefined);
+      await wait(200);
+      h.slow.clear();
+      h.failPlan.clear();
+      const ds = rows("orchestration_run_steps");
+      ds.splice(ds.indexOf(hong), 1);
+      expect(ids()).toEqual([]);
+      expect(a.abortStops?.khongDocDuoc).toBe(true);
+      expect(a.abortStops?.quetChuaXong).toBeUndefined();
+      expect(a.message).toMatch(/could not read the definition/);
+      expect(a.message, "no promise").not.toMatch(/press Abort again/);
+      expect(a.message).toMatch(/may not reach it/);
+      expect(a.message, "an upper limit, not a promise").toMatch(/after 15 minutes none can be counted on/);
+      expect(a.message, "the other road's words").not.toMatch(/has not finished/);
+      const a2 = await bam(c);
+      expect(ids()).toEqual(diSau);
+      if (!diSau.length) {
+        expect(a2.message).toMatch(/this press sent no STOP step/);
+        await bam(c);
+        expect(ids(), "and again").toEqual([]);
+      }
+    });
+  }
+  it("T7B1D-P2-Y a press on a latched run its sweep cannot read: its records could not be read: nothing promised, 15 minutes only as an upper limit; the same URGENT", async () => {
+    const c = await khoaChuaGiao("d1dp2k");
+    hongDinhNghia(c);
+    await bam(c);
+    expect(chuCua("abortDefUnread")).not.toMatch(/press Abort again/);
+    expect(chuCua("abortDefUnread")).toMatch(/may not reach it/);
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    const a = await bam(c);
+    expect(a.message).toMatch(/records could not be read/);
+    expect(a.message, "no promise").not.toMatch(/press Abort again/);
+    expect(a.message).toMatch(/may not reach it/);
+    expect(a.message).toMatch(/after 15 minutes none can be counted on/);
+    expect(a.message, "the other road's words").not.toMatch(/has not finished/);
+    expect(ids()).toEqual([]);
+  });
+
+  // ── H30 × a STOP that went: measured, accepted, on the record ────────────────────────────────────────────────────────────────────────────────────────────
+  it("T7B1D-DDM the first Abort's STOP went, its abort: row lost, the walker's cancel over it: a press sends s again, once, under the key of its own Abort (a new one, the ledger's lyDoStopKhoaMoi never reached); its words do not say it never went", async () => {
+    h.soCai = new Map();
+    h.acked = true;
+    const { c, di } = await moDi(def("d1dddm", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(15);
+    ve0();
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.hangNem = null;
+    expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
+    expect(a.abortStops?.sent).toEqual(["s"]);
+    expect(ids()).toEqual(["s"]);
+    const khoaDau = String(h.sent[0].key);
+    expect(hang(c, "abort:s"), "its row is lost").toBeUndefined();
+    expect(hang(c, "b")?.error).toBe("Run is aborting.");
+    const a2 = await bam(c);
+    expect(ids(), "H30: once more, once").toEqual(["s"]);
+    expect(String(h.sent[0].key), "a key of its own: no replay of the first").not.toBe(khoaDau);
+    expect(String(h.sent[0].key)).toMatch(new RegExp(`^run${c}-abort-[^-]+-s$`));
+    expect(h.sent[0].lanTruoc, "nothing the ledger had to rule on").toBeUndefined();
+    expect(a2.message).toMatch(/sent again/);
+    expect(a2.message).not.toMatch(/never|did not go|did NOT go|not sent|for the first time/i);
+    await bam(c);
+    expect(ids(), "not a third time").toEqual([]);
+    h.soCai = null;
+  });
+
+  // ── H31-K: pinned again, the read lost, a latched run: 0 commands at this press, and the words do not lose the step ──────────────────────────────────────────
+  it("T7B1D-H31-K pinned again, the read lost, a latched run: 0 commands at this press; s is named as not read, no word that nothing is owed; a later press that reads it sends it", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def("d1dh3k", [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.classifyLoi = true;
+    await abortRun(c, OWNER, "first");
+    h.classifyLoi = false;
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    await bam(c);
+    expect(hang(c, "abort:s")?.status, "read: no pinned STOP").toBe("skipped");
+    ghimHalt(true);
+    h.classifyLoi = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.dispatcherKhongDoc = true;
+    const a = await bam(c);
+    expect(ids(), "0 commands at this press").toEqual([]);
+    expect(a.abortStops?.unverified).toEqual(["s"]);
+    expect(a.message).toMatch(/Could not be verified as a pinned STOP: s/);
+    expect(a.message).not.toMatch(/hold no STOP step owed|owes no STOP/);
+    expect(a.message, "the window is what holds a later press").toMatch(/within 15 minutes/);
+    expect(a.message).toMatch(/if its read finds a pinned STOP/);
+    h.classifyLoi = false;
+    h.dispatcherKhongDoc = false;
+    h.ghim = PIN_OK;
+    await bam(c);
+    expect(ids(), "read: it goes").toEqual(["s"]);
+    await bam(c);
+    expect(ids(), "once").toEqual([]);
+  });
+  it("T7B1D-H31-K the control: a step that went on an earlier press, the read lost: it is not called unverified, and nothing is promised for it", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    h.acked = true;
+    const { c, di } = await moDi(def("d1dh3d", [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    expect(ids()).toEqual(["s"]);
+    h.classifyLoi = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.dispatcherKhongDoc = true;
+    const a = await bam(c);
+    expect(ids()).toEqual([]);
+    expect(a.abortStops?.unverified).toEqual([]);
+    expect(a.message).not.toMatch(/Could not be verified/);
+  });
+
+  // ── a press that joins a sweep in flight: the words are of that sweep, never of a command this press sent (measured, fix 2 job 9) ────────────────────────────
+  for (const [ten, ks] of [["CHUA-KHOA", false], ["KHOA", true]] as const) {
+    it(`T7B1D-NHAP-QUET ${ten} a press while the first Abort waits for its answer: it joins: no sweep of its own, no second command; "sent" is said of that sweep, never "sent again" by this press`, async () => {
+      h.acked = true;
+      if (ks) {
+        h.timeoutDispatch.add("x");
+        h.slow.set("x", 30);
+      }
+      const { c, di } = await moDi(def(`d1dnq${ks ? "k" : "c"}`, ks ? [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])] : [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && (!ks || h.traTimeout > 0), "at the delay");
+      await wait(20);
+      ve0();
+      h.slow.set("s", 200);
+      const p1 = abortRun(c, OWNER, "first");
+      await waitFor(() => h.sent.some((x) => x.stepId === "s"), "s handed over");
+      const a2 = await abortRun(c, OTHER, "joins");
+      await p1;
+      await di.catch(() => undefined);
+      h.slow.clear();
+      h.timeoutDispatch.clear();
+      expect(ids(), "one command").toEqual(["s"]);
+      expect(a2.abortStops?.sent).toEqual(["s"]);
+      expect(a2.message).not.toMatch(/sent again/);
+      expect(a2.message, "by whom").toMatch(/joined the sweep already under way and sent nothing itself: that sweep sent: s/);
+    });
+  }
+  it("T7B1D-NHAP-QUET the control: a press of its own sweep says what it sent, as before", async () => {
+    h.tuChoi.set("s", REF);
+    const { c, di } = await moDi(def("d1dnqd", [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.tuChoi.clear();
+    const a = await bam(c);
+    expect(ids()).toEqual(["s"]);
+    expect(a.message).toMatch(/sent again/);
+    expect(a.message).not.toMatch(/joined the sweep/);
+  });
 
   // ── the controls: nothing here sends more than it did ───────────────────────────────────────────────────────────────
   it("T7B1D-DC-HOP a container failed on its own before the Abort, the STOP behind it never meant: nothing goes, no word", async () => {
@@ -12802,7 +13239,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(urgentCua("abortDefUnread").length).toBe(1);
     expect(a.message).toMatch(/could not read the definition/);
-    expect(a.message).toMatch(/within 15 minutes/);
+    expect(a.message).toMatch(/after 15 minutes none can be counted on/); // H32, dieu-phoi 09/11: was /within 15 minutes/
     expect(ids()).toEqual([]);
     quaCuaSo(c);
     const a2 = await bam(c, "past");
