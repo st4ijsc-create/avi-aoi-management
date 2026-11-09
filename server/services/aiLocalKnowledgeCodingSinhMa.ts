@@ -432,12 +432,14 @@ export async function* streamCodingGenerate(
   const boSung = boSungUsingChoCauTraLoi(kq.text, language);
   // ★ T1 (2026-11-10) — tự kiểm mã (cờ AI_CHAT_TU_KIEM_MA=1; TẮT ⇒ `null`, mọi dòng dưới chạy y như cũ). Kiểm trên văn bản SAU khi
   // bổ sung `using` (nếu không, thiếu `using` bị báo là lỗi của model). Chỉ khi SỬA ĐƯỢC mới thay câu trả lời (answerRevised).
-  const tuKiem = await chayTuKiemMa({
+  const tuKiemKq = await chayTuKiemMa({
     cauTraLoi: boSung?.text ?? kq.text,
     goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal, modelId: context.modelVaiTro?.modelId }),
     signal: execCtx?.signal,
+    tuKiemMaLuot: context.tuKiemMa === true,
   });
-  const oTuKiem = tuKiem ? { tuKiemMa: headerTuKiemMa(tuKiem) } : {};
+  const tuKiem = tuKiemKq?.ketQua ?? null;
+  const oTuKiem = tuKiemKq ? { tuKiemMa: headerTuKiemMa(tuKiemKq.ketQua, tuKiemKq.nguon) } : {};
   const daSuaMa = tuKiem?.trangThai === "da-sua";
   if (boSung) yield { type: "token", token: boSung.thongBao };
   if (boSung || daSuaMa) {

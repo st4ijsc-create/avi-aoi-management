@@ -5,16 +5,19 @@
  * Không bao giờ ném (trừ huỷ): hạ tầng hỏng ⇒ "khong-kiem-duoc", câu trả lời giữ nguyên.
  */
 import { bienDichMa } from "./ai/tuKiemMa/bienDichMa";
-import { kiemVaSuaMa, soVongTuKiem, tuKiemMaBat, type KetQuaTuKiemMa } from "./ai/tuKiemMa/tuKiemMa";
+import { cheDoTuKiemMa, kiemVaSuaMa, soVongTuKiem, type KetQuaTuKiemMa, type NguonTuKiem } from "./ai/tuKiemMa/tuKiemMa";
 
 export async function chayTuKiemMa(y: {
   cauTraLoi: string;
   goiLai: (tinSua: string, lanTruoc: string) => Promise<string>;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
-}): Promise<KetQuaTuKiemMa | null> {
+  /** `context.tuKiemMa === true` của lượt — chỉ có nghĩa khi cờ env = `theo-luot`. */
+  tuKiemMaLuot?: boolean;
+}): Promise<{ ketQua: KetQuaTuKiemMa; nguon: NguonTuKiem } | null> {
   const env = y.env ?? process.env;
-  if (!tuKiemMaBat(env)) return null;
+  const nguon = cheDoTuKiemMa(env, y.tuKiemMaLuot);
+  if (!nguon) return null;
   try {
     const k = await kiemVaSuaMa({
       cauTraLoi: y.cauTraLoi,
@@ -23,7 +26,7 @@ export async function chayTuKiemMa(y: {
       vongToiDa: soVongTuKiem(env),
       signal: y.signal,
     });
-    return k;
+    return { ketQua: k, nguon };
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw e;
     console.warn("[aiLocalKnowledge] tự kiểm mã lỗi (bỏ qua, giữ nguyên câu trả lời):", (e as Error)?.message);

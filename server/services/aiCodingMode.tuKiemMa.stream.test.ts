@@ -73,10 +73,10 @@ const HONG = "```csharp\npublic class A { class P { void X(){} } public void Y()
 const DUNG = "```csharp\npublic class A { class P { internal void X(){} } public void Y(){ new P().X(); } }\n```";
 const LOI = { trangThai: "loi" as const, chanDoan: [{ dong: 1, cot: 70, ma: "CS0122", thongDiep: "'A.P.X()' is inaccessible due to its protection level" }] };
 
-async function chay(): Promise<{ done: Extract<StreamEvent, { type: "done" }>; chu: string; sk: StreamEvent[] }> {
+async function chay(themCtx: Record<string, unknown> = {}): Promise<{ done: Extract<StreamEvent, { type: "done" }>; chu: string; sk: StreamEvent[] }> {
   const sk: StreamEvent[] = [];
   let chu = "";
-  for await (const e of streamAnswer(CAU, 5, [], "engineer", { codingMode: true, uiLanguage: "vi" }, undefined)) {
+  for await (const e of streamAnswer(CAU, 5, [], "engineer", { codingMode: true, uiLanguage: "vi", ...themCtx } as never, undefined)) {
     sk.push(e);
     if (e.type === "token") chu += e.token;
   }
@@ -139,6 +139,48 @@ describe("T1 tự kiểm mã trong streamCodingGenerate", () => {
     expect(chu).toContain("class P { void X()"); // bản đầu đã stream (không thay lặng lẽ: client thay bằng answer)
   });
 
+  it("★★★ theo-luot: context.tuKiemMa=true ⇒ chạy, done.tuKiemMa mang nguon=luot", async () => {
+    process.env.AI_CHAT_TU_KIEM_MA = "theo-luot";
+    h.bienDich = [LOI, { trangThai: "ok", chanDoan: [] }];
+    h.sua = [DUNG];
+    const { done } = await chay({ tuKiemMa: true });
+    expect(h.soLanBienDich).toBe(2);
+    expect(done.tuKiemMa).toContain("nguon=luot");
+    expect(done.answerRevised).toBe(true);
+  });
+
+  it("★★★ theo-luot nhưng lượt KHÔNG xin ⇒ không đổi một byte (A/B nhánh tắt)", async () => {
+    process.env.AI_CHAT_TU_KIEM_MA = "theo-luot";
+    h.bienDich = [LOI];
+    const { done, chu } = await chay();
+    expect(h.soLanBienDich).toBe(0);
+    expect(h.prompts).toHaveLength(1);
+    expect(done.tuKiemMa).toBeUndefined();
+    expect(done.answerRevised).toBeUndefined();
+    expect(chu).toContain("class P { void X()");
+  });
+
+  it("★★★ cờ env vắng / 0 + context.tuKiemMa=true ⇒ context BỊ BỎ QUA, không đổi một byte", async () => {
+    h.bienDich = [LOI];
+    for (const v of [undefined, "0", "true"]) {
+      if (v === undefined) delete process.env.AI_CHAT_TU_KIEM_MA;
+      else process.env.AI_CHAT_TU_KIEM_MA = v;
+      h.prompts = [];
+      h.soLanBienDich = 0;
+      const { done } = await chay({ tuKiemMa: true });
+      expect(h.soLanBienDich).toBe(0);
+      expect(h.prompts).toHaveLength(1);
+      expect(done.tuKiemMa).toBeUndefined();
+      expect(done.answerRevised).toBeUndefined();
+    }
+  });
+
+  it("★★ cờ '1' ghi nguon=env", async () => {
+    process.env.AI_CHAT_TU_KIEM_MA = "1";
+    const { done } = await chay();
+    expect(done.tuKiemMa).toContain("nguon=env");
+  });
+
   it("★★ còn lỗi sau hết vòng: answer GIỮ NGUYÊN (không revised), tuKiemMa con-loi ok=0, đúng số lượt model", async () => {
     process.env.AI_CHAT_TU_KIEM_MA = "1";
     process.env.AI_CHAT_TU_KIEM_VONG = "1";
@@ -166,7 +208,7 @@ describe("T1 tự kiểm mã trong streamCodingGenerate", () => {
     h.chinh = "Bạn dùng TcpListener ở phía máy chủ.";
     const { done } = await chay();
     expect(h.soLanBienDich).toBe(0);
-    expect(done.tuKiemMa).toBe("ok=skip");
+    expect(done.tuKiemMa).toBe("ok=skip; nguon=env");
   });
 
   it("★★★ thứ tự: kiểm trên văn bản SAU khi bổ sung `using` (thiếu using không bị đổ cho model); bản sửa xong thay cả bản bổ sung", async () => {

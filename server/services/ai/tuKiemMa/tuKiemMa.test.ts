@@ -9,6 +9,7 @@ import {
   kiemVaSuaMa,
   soVongTuKiem,
   trichKhoiMaKiem,
+  cheDoTuKiemMa,
   tuKiemMaBat,
   type ChanDoanMa,
   type KetQuaBienDichMa,
@@ -27,6 +28,21 @@ describe("cờ", () => {
     expect(tuKiemMaBat({ AI_CHAT_TU_KIEM_MA: "true" })).toBe(false);
     expect(tuKiemMaBat({ AI_CHAT_TU_KIEM_MA: "0" })).toBe(false);
     expect(tuKiemMaBat({ AI_CHAT_TU_KIEM_MA: " 1 " })).toBe(true);
+  });
+  it("cheDoTuKiemMa: '1' ⇒ env bất kể context; 'theo-luot' ⇒ luot CHỈ khi context === true; còn lại ⇒ null và BỎ QUA context", () => {
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "1" })).toBe("env");
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "1" }, true)).toBe("env");
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "theo-luot" }, true)).toBe("luot");
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: " Theo-Luot " }, true)).toBe("luot");
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "theo-luot" })).toBeNull();
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "theo-luot" }, false)).toBeNull();
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "theo-luot" }, "true" as unknown as boolean)).toBeNull();
+    // client không bật được khi máy chủ không cho
+    expect(cheDoTuKiemMa({}, true)).toBeNull();
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "0" }, true)).toBeNull();
+    expect(cheDoTuKiemMa({ AI_CHAT_TU_KIEM_MA: "true" }, true)).toBeNull();
+    expect(tuKiemMaBat({ AI_CHAT_TU_KIEM_MA: "theo-luot" }, true)).toBe(true);
+    expect(tuKiemMaBat({ AI_CHAT_TU_KIEM_MA: "theo-luot" })).toBe(false);
   });
   it("số vòng: mặc định 2, kẹp 1..3, rác ⇒ 2", () => {
     expect(soVongTuKiem({})).toBe(2);
@@ -257,6 +273,8 @@ describe("chữ gửi model / header", () => {
   });
   it("headerTuKiemMa", () => {
     expect(headerTuKiemMa(mau({ trangThai: "bo-qua" }))).toBe("ok=skip");
+    expect(headerTuKiemMa(mau({ trangThai: "bo-qua" }), "luot")).toBe("ok=skip; nguon=luot");
+    expect(headerTuKiemMa(mau({}), "env")).toBe("ok=1; trang-thai=sach; ngon-ngu=cs; vong=0; sua=0; con=0; ky-tu-them=0; ms=12; nguon=env");
     expect(headerTuKiemMa(mau({}))).toBe("ok=1; trang-thai=sach; ngon-ngu=cs; vong=0; sua=0; con=0; ky-tu-them=0; ms=12");
     expect(headerTuKiemMa(mau({ trangThai: "da-sua", soVong: 2, soLoiDaSua: 3, kyTuSinhThem: 700 }))).toBe("ok=1; trang-thai=da-sua; ngon-ngu=cs; vong=2; sua=3; con=0; ky-tu-them=700; ms=12");
     expect(headerTuKiemMa(mau({ trangThai: "con-loi", chanDoanCuoi: loi(2) }))).toContain("ok=0");

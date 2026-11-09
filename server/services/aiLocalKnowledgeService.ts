@@ -249,6 +249,11 @@ export interface KbQueryContext {
    */
   kiemBienDichST?: false;
   /**
+   * ★ T1 (2026-11-10) — bật tự kiểm mã THEO LƯỢT: chỉ `true` có nghĩa, và CHỈ khi máy chủ đặt `AI_CHAT_TU_KIEM_MA=theo-luot`
+   * (nhánh "bật" của A/B trên CÙNG server). Cờ env vắng / `0` / `1` ⇒ trường này bị BỎ QUA.
+   */
+  tuKiemMa?: true;
+  /**
    * ★ Đợt 9 (2026-10-23) — SERVER-ONLY: model đã định tuyến theo vai trò cho lượt (trợ lý theo vai trò, `aiLocalKnowledgeCoding.streamCodingAnswer`).
    * `parseContext` KHÔNG BAO GIỜ đặt ô này (dựng ctx từng ô) ⇒ client không chọn được model qua đây.
    */

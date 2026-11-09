@@ -167,6 +167,8 @@ export function parseContext(raw: unknown): KbQueryContext | undefined {
   }
   // ★ Đợt 9 (2026-10-23) — CHỈ `false` được nhận (opt-out vòng kiểm biên dịch ST); giá trị khác bỏ — client không BẬT được vòng.
   if (r.kiemBienDichST === false) ctx.kiemBienDichST = false;
+  // ★ T1 — CHỈ `true` được nhận, và chỉ có tác dụng khi máy chủ đặt AI_CHAT_TU_KIEM_MA=theo-luot (cờ env vắng/0/1 BỎ QUA trường này).
+  if (r.tuKiemMa === true) ctx.tuKiemMa = true;
   // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
   // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì
   // `gocTheoId` không tìm thấy id ⇒ TỪ CHỐI (lớp 2). Server KHÔNG BAO GIỜ nhận đường dẫn từ client.

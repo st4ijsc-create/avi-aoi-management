@@ -12,7 +12,7 @@
  * GIỚI HẠN TRUNG THỰC (ghi sẵn cho báo cáo): vòng chỉ sửa được cái trình biên dịch THẤY. H-ts3 (sai đặc tả), py-dang-ky (đề mơ hồ)
  * và phần lớn H-py3 (sai logic case biên) KHÔNG đổi ở T1; py_compile chỉ bắt lỗi cú pháp.
  *
- * Cờ: `AI_CHAT_TU_KIEM_MA=1` bật (mặc định TẮT ⇒ không một byte nào đổi); `AI_CHAT_TU_KIEM_VONG` (1–3, mặc định 2).
+ * Cờ: `AI_CHAT_TU_KIEM_MA=1` bật · `theo-luot` bật khi `context.tuKiemMa===true` (mặc định TẮT ⇒ không một byte nào đổi); `AI_CHAT_TU_KIEM_VONG` (1–3, mặc định 2).
  */
 
 export type NgonNguKiem = "cs" | "ts" | "py";
@@ -24,9 +24,22 @@ export const TRAN_TONG_MS = 90_000;
 /** Trần MỘT lượt biên dịch. */
 export const TRAN_MOT_LUOT_MS = 10_000;
 
-/** Cờ bật: CHỈ khi đúng `"1"` (mặc định TẮT). */
-export function tuKiemMaBat(env: NodeJS.ProcessEnv = process.env): boolean {
-  return String(env.AI_CHAT_TU_KIEM_MA ?? "").trim() === "1";
+export type NguonTuKiem = "env" | "luot";
+
+/**
+ * Cờ `AI_CHAT_TU_KIEM_MA`: `1` ⇒ luôn bật (nguồn `env`); `theo-luot` ⇒ bật CHỈ khi lượt gửi `context.tuKiemMa === true` (nguồn `luot`);
+ * vắng / `0` / giá trị khác ⇒ TẮT và BỎ QUA hoàn toàn `context` (client không bật được khi máy chủ không cho).
+ */
+export function cheDoTuKiemMa(env: NodeJS.ProcessEnv = process.env, tuKiemMaLuot?: boolean): NguonTuKiem | null {
+  const v = String(env.AI_CHAT_TU_KIEM_MA ?? "").trim().toLowerCase();
+  if (v === "1") return "env";
+  if (v === "theo-luot" && tuKiemMaLuot === true) return "luot";
+  return null;
+}
+
+/** Cờ bật (bất kể nguồn): mặc định TẮT. `theo-luot` không có context ⇒ tắt. */
+export function tuKiemMaBat(env: NodeJS.ProcessEnv = process.env, tuKiemMaLuot?: boolean): boolean {
+  return cheDoTuKiemMa(env, tuKiemMaLuot) !== null;
 }
 
 /** Số vòng sửa tối đa: số nguyên 1..3; vắng / sai ⇒ 2. */
@@ -198,10 +211,11 @@ export async function kiemVaSuaMa(y: TuyChonTuKiemMa): Promise<KetQuaTuKiemMa> {
 }
 
 /** Tóm tắt máy đọc trên `done.tuKiemMa` — cùng khuôn `kiemBienDichST`; kèm ký tự sinh thêm (thước token thô) và ms. */
-export function headerTuKiemMa(k: KetQuaTuKiemMa): string {
-  if (k.trangThai === "bo-qua") return "ok=skip";
+export function headerTuKiemMa(k: KetQuaTuKiemMa, nguon?: NguonTuKiem): string {
+  const duoi = nguon ? `; nguon=${nguon}` : "";
+  if (k.trangThai === "bo-qua") return `ok=skip${duoi}`;
   const ok = k.trangThai === "sach" || k.trangThai === "da-sua" ? "1" : k.trangThai === "khong-kiem-duoc" ? "na" : "0";
-  return `ok=${ok}; trang-thai=${k.trangThai}; ngon-ngu=${k.ngonNgu ?? "-"}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${k.chanDoanCuoi.length}; ky-tu-them=${k.kyTuSinhThem}; ms=${k.msThem}`;
+  return `ok=${ok}; trang-thai=${k.trangThai}; ngon-ngu=${k.ngonNgu ?? "-"}; vong=${k.soVong}; sua=${k.soLoiDaSua}; con=${k.chanDoanCuoi.length}; ky-tu-them=${k.kyTuSinhThem}; ms=${k.msThem}${duoi}`;
 }
 
 /** Dòng ghi chú nối vào bản đã sửa (không thay lặng lẽ). */
