@@ -11690,6 +11690,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const chu = chuCua("abortStopNotSent");
     expect(chu).toMatch(/may have gone out/);
     expect(chu).not.toMatch(/did NOT go out/);
+    expect(chu, "the code of what it read: no answer").toMatch(/NO_ANSWER/);
     quaCuaSo(c);
     await bam(c);
     expect(ids()).toEqual(["s"]);
@@ -12015,6 +12016,78 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(pdu("s").length).toBe(1);
   });
 
+  // ── P1 (T7b-1d\ra\p6): the choice of a branch lost, a STOP the Abort tried in it: "seen" must not stand between the trace and the verification ──────────
+  it("T7B1D-BR-MAT the row and the context of the choice lost, the latch after the sweep, s refused: owed, the URGENT says no time limit: a press sends it, the debt goes, 'never evaluated' is not said of it; a STOP of a branch truly never evaluated, with no trace: still listed, still not sent", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 200);
+    const { c, di } = await moDi(def("d1dbm", [gate(), par("root", [move("x"), box("a", [delay("w0", 60), brn("b", [delay("w", 300), otStop("s")]), brn("b2", [otStop("s3")])])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w0"), "w0");
+    h.hangNem = (v) => v.stepId === "b";
+    const nem = () => {
+      queueMicrotask(() => (h.ctxNem = nem));
+      return true;
+    };
+    h.ctxNem = nem;
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay", 1500);
+    await wait(5);
+    expect(hang(c, "b"), "the row of the choice lost").toBeUndefined();
+    expect(ctxCua(c)["branch:b"], "the context of the choice lost").toBeUndefined();
+    ve0();
+    h.tuChoi.set("s", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await di.catch(() => undefined);
+    await wait(80);
+    h.hangNem = null;
+    h.ctxNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(runDaChot(c)).toBe(true);
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    expect(no(c)).toEqual(["s"]);
+    expect(chuCua("abortStopNotSent")).toMatch(/no time limit/);
+    const a2 = await bam(c);
+    expect(pdu("s").length, String(a2.message)).toBe(1);
+    expect(ids(), "s3 has no trace: no guess").toEqual(["s"]);
+    expect(a2.abortStops?.untakenBranch).toEqual(["s3"]);
+    expect(a2.message).toMatch(/never evaluated: s3/);
+    expect(a2.message).not.toMatch(/never evaluated: s[,:. ]/);
+    expect(no(c), "the debt goes once it went").toEqual([]);
+    expect(veBuoc("s").map((x) => x.kind)).not.toContain(CANH_BAO_KHONG_RO_KIND.stopUntakenBranch);
+  });
+  // ── step 6: what the review's mutations found no case for ─────────────────────────────────────────────────────────────────────
+  it("T7B1D-HAI-VET two compensations not due, both refused, the latch after the sweep: every trace enters the press's set, past the window too (only the traces reach them)", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def("d1dhv", [gate(), par("root", [move("x"), box("b", [move("y", { compensation: otStop("s1") }), move("y2", { compensation: otStop("s2") }), delay("w", 300)])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.tuChoi.set("s1", REF);
+    h.tuChoi.set("s2", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    expect([...(a.abortStops?.failed ?? [])].sort()).toEqual(["s1", "s2"]);
+    expect(no(c)).toEqual(["s1", "s2"]);
+    quaCuaSo(c);
+    await bam(c);
+    expect(ids().sort(), "both").toEqual(["s1", "s2"]);
+    expect(no(c)).toEqual([]);
+  });
+  it("T7B1D-KHONG-BEN-CHI-CHUA-KHOA khongBen is a run not latched's: a latched run's lost row is told by its URGENT, the answer does not carry the field", async () => {
+    const c = await khoaChuaGiao("d1dkbk");
+    h.tuChoi.set("s2", REF);
+    h.hangNem = (v) => v.stepId === "abort:s2";
+    const a = await bam(c);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    expect(a.abortStops?.failed).toEqual(["s2"]);
+    expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
+    expect(a.abortStops?.khongBen, "not of a latched run").toBeUndefined();
+  });
   // ── the controls: nothing here sends more than it did ───────────────────────────────────────────────────────────────
   it("T7B1D-DC-HOP a container failed on its own before the Abort, the STOP behind it never meant: nothing goes, no word", async () => {
     h.failPlan.set("y", Infinity);
@@ -12174,11 +12247,11 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await bam(c, "one landed");
     expect(tenH13().tien).toEqual([]);
   });
-  for (const noi of ["edge", "khac"] as const) {
-    it(`T7B1D-H13-ABORT a latched run driven elsewhere (${noi === "edge" ? "an edge node" : "another instance"}): its rows lag: no step is named as not handed over; that it cannot be determined is told`, async () => {
+  for (const noi of ["edge", "khac", "khac-bu-tru"] as const) {
+    it(`T7B1D-H13-ABORT a latched run driven elsewhere (${noi === "edge" ? "an edge node" : noi === "khac" ? "another instance" : "another instance, compensating"}): its rows lag: no step is named as not handed over; that it cannot be determined is told`, async () => {
       const c = await khoaChuaGiao(`d1dh7${noi}`, [move("m")]);
       if (noi === "edge") runRow(c).edgeNodeId = NODE;
-      else runRow(c).status = "running";
+      else runRow(c).status = noi === "khac" ? "running" : "compensating";
       const a = await bam(c);
       expect(a.abortStops?.sent).toEqual(["s2"]);
       expect(tenH13().tien.filter((x) => x === "m"), "no step named from rows that lag").toEqual([]);

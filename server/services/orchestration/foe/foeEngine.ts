@@ -6052,6 +6052,11 @@ async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v:
   // A2(n) T7b-1d (H22) — what an earlier Abort tried or meant to send and did not go (foeRunStore.dauVetAbort): whoever wrote over its rows, due or not. The verification above decides: a trace sends nothing that is no pinned STOP
   for (const id of daDinh ?? []) {
     const s = findStepDeep(def.steps, id);
+    // P1 (rà T7b-1d) — the walk listed it as a branch never evaluated, yet an Abort tried it: the choice was lost, not never made. The trace outranks the list; a STOP of such a branch with no trace stays listed, no guess
+    if (s?.type === "command" && plan.untakenBranch.includes(id)) {
+      plan.untakenBranch = plan.untakenBranch.filter((x) => x !== id);
+      seen.delete(id);
+    }
     if (s?.type === "command") await classify(s as CommandWorkflowStep);
   }
   return plan;
