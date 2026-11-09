@@ -12515,7 +12515,9 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   it("T7B1D-TREO-TRAN-15D a latched run, its sweep and the URGENT of it both hanging: the answer comes at the ceiling, not after the URGENT's own bound; the URGENT keeps that bound and its own catch; the sweep goes on", async () => {
     const c = await khoaChuaGiao("d1dtt");
     ve0();
-    h.heSoHan = 0.05;
+    // this case at 1/5 of the bounds, not 1/20: one D here is 200 ms, so 16·D and 17·D lie 200 ms apart and a lagging timer is not taken for a D (measured at 1/20: 826 ms against 825, idle)
+    h.heSoHan = 0.2;
+    const D5 = STOP_DB_STEP_DEADLINE_MS / 5;
     h.classifyLoi = true;
     const n = moTha();
     h.treoLaStop = () => n.cho;
@@ -12526,8 +12528,9 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const luc = dongUrgent().length;
     expect(a, "the Abort answered").not.toBeNull();
     expect(a!.abortStops?.quetChuaXong).toBe(true);
-    expect(ms, "not before the ceiling").toBeGreaterThanOrEqual(CEILING - 10);
-    expect(ms, "at the ceiling, 15·D, not at 60·D").toBeLessThan(2 * CEILING);
+    expect(ms, "not before the ceiling").toBeGreaterThanOrEqual(15 * D5 - 10);
+    // dieu-phoi 10/11: the answer's ceiling is 16·D (15·D of the sweep, 1·D of nghiaVuKetThucNguoi). Slack: half of one D (100 ms): what timers and the fake add past the bounds, and still below 17·D, so one D more is red
+    expect(ms, "at most 16·D, not 17·D, not 60·D").toBeLessThanOrEqual(16 * D5 + D5 / 2);
     expect(luc, "it did not wait for the URGENT's bound").toBe(0);
     expect(a!.message, "nothing says it was told").not.toMatch(/URGENT|alert|told|notified/i);
     await waitFor(() => dongUrgent().length > 0, "the URGENT's own bound fired, its own catch");

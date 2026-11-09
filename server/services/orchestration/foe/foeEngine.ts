@@ -6353,7 +6353,8 @@ function abortStopSweep(
   opts: { resend?: boolean; store?: RunStore; bamLai?: { trongCua: boolean }; ketThucKhac?: true } = {},
 ): Promise<AbortStopReport> {
   // T7b-1d lượt sửa 1 (H29) — every wait of a sweep has its bound; this one is for the sweep itself and whoever joins it: never a silent ok. The sweep goes on behind it. Lượt sửa 2 (H32) — past it the words are of a sweep not finished (nothing was unread),
-  // and this is the ceiling of the answer: the URGENT of it is not waited for, it keeps its own bound and its own catch, and the answer does not say it landed
+  // and this is the ceiling of the sweep's part of the answer: the URGENT of it is not waited for, it keeps its own bound and its own catch, and the answer does not say it landed. The ceiling of the answer of an Abort is 16·D (dieu-phoi 10/11):
+  // these 15·D, then 1·D of nghiaVuKetThucNguoi in abortRun, bounded on its own (measured 16017 ms with the URGENT hanging)
   const coTran = (q: Promise<AbortStopReport>) =>
     withDeadline(q, ABORT_SAP_QUET_HAN_MS, `FOE abort run ${runId} STOP sweep`).catch((err: unknown): AbortStopReport => {
       console.error(`[FOE] abort of run ${runId}: STOP sweep not answered: ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
