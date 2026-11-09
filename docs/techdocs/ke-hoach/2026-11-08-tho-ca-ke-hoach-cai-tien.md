@@ -235,8 +235,8 @@ Ràng buộc: **không viết mã vỏ trước 90‑P3**; E2–E4 dùng `token.
 | M1 | Việc pilot **đạt lần 1** | 3/4 (việc test nhỏ) | ≥ 70 % trên lô việc thật (sửa mã, test DB, script) | ≥ 80 % |
 | M2 | Đột biến bị bắt | 9/9 · 8/8 · 9/9 (tay) | ≥ 90 % tự động | ≥ 95 % |
 | M3 | `bao-sai` (lời khai ≠ kết quả) | không đo được | 0 | 0 |
-| M4 | pass@1×3 tasks‑hard (12) | M 73,6 % (baseline 08/11, 6 mẫu); H 75 % (11.0) | H ≥ 85 % với L1 đầy đủ; M không tụt | giữ |
-| M5 | pass@1×3 tasks‑api2 (30) — **trục H** (qua đường sản phẩm, agent có tool `lookup_api`/`search_docs`, `:3013` + `_test`) | M 40 % (baseline 08/11); H chưa có | ≥ 60 % trục H (ưu tiên nhóm yếu ot‑node/.NET, ts‑lib, T‑SQL bằng vendor docs B4 — B4 chỉ tới model qua trục H, không đổi số M); trục M giữ không tụt | ≥ 70 % H |
+| M4 | pass@1×3 tasks‑hard (12) | M 73,6 % (baseline 08/11, 6 mẫu); **H 61,1 % (22/36, baseline 09/11 `:3013`+`_test`, 0750a413c; 0 điểm H‑cs2/H‑py3/H‑ts3)**; H 75 % (11.0, không so trực tiếp) | H ≥ 85 % với L1 đầy đủ; M không tụt | giữ |
+| M5 | pass@1×3 tasks‑api2 (30) — **trục H** (qua đường sản phẩm, agent có tool `lookup_api`/`search_docs`, `:3013` + `_test`) | M 40 % (baseline 08/11); **H 44,4 % (40/90, baseline 09/11, 0750a413c)** | ≥ 60 % trục H (ưu tiên nhóm yếu ot‑node/.NET, ts‑lib, T‑SQL bằng vendor docs B4 — B4 chỉ tới model qua trục H, không đổi số M); trục M giữ không tụt | ≥ 70 % H |
 | M6 | Lỗi L1 trên mỗi việc | chưa phân loại | −50 % so lô 1 | −75 % |
 | M7 | Công tắc harness có số đo GPU | 1/8 | 8/8 (C6) | mặc định đổi theo số |
 | M8 | P0 UX đạt | ≈ 23/31 một phần | — | 31/31 (kiem‑dinh đo) |
@@ -283,3 +283,4 @@ Cổng chung mỗi lô: lưới bàn giao đầy đủ của tho‑ca‑agent (a
 | 2026-11-08 | chu-du-an-HST | v1.0 dự thảo từ 3 tài liệu chủ dự án + kiểm kê hiện trạng (spec Đợt 11/12, git 163 commit AI từ 27/10, extension 0.6.0, runtime, ai-eval, `.env` tên khoá). Pilot GĐ2 = lô A đang chạy (L3a → TC‑05). Câu hỏi 2 card: trả lời ở D6 | — |
 | 2026-11-08 | chủ dự án | **DUYỆT v1.0**; uỷ quyền chu-du-an-HST quyết mọi việc trong kế hoạch (kể cả §7 mục 2–5, 7) để đạt kết quả cao nhất; chủ dự án kiểm chứng sau. Giữ nguyên: xoá dữ liệu/tệp, LoRA thuê GPU (§7‑6), bật `AI_OT_CONTROL_ENABLED`/`AI_NGOAI_ENABLED` vẫn hỏi chủ dự án. Khởi động lô B + C ngay; D theo cửa sổ GPU | — |
 | 2026-11-09 | chu-du-an-HST | Sửa M4/M5 theo do-model: `run-eval` hiện chỉ đo **trục M** (gọi thẳng model, không tool) nên vendor docs B4 không thể đổi số M ⇒ M5 nghiệm thu theo **trục H** (đường sản phẩm `:3013` + `_test`, do-model thêm đo H vào `run-eval` cùng đêm agent-f); baseline M 08/11: khó 73,6 %, api2 40 %. ot‑node 7 mẫu lỗi đã gửi tho-ca-agent cho B4 | — |
+| 2026-11-10 | chu-du-an-HST | Điền baseline trục H (đêm 09/11, do-model 0750a413c): M4 bộ khó 22/36 = 61,1 % (mục tiêu ≥ 85 %, cách ~24 điểm); M5 api2 40/90 = 44,4 % (mục tiêu ≥ 60 %). agent‑f ×3 12/18, py‑dang‑ky 0/3. Hai trục khác máy chủ/số mẫu ⇒ không so M với H. |
