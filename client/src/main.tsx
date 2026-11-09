@@ -1,3 +1,4 @@
+import "./lib/zodJitless"; // PHẢI là import đầu tiên: tắt thăm dò JIT của zod (CSP không 'unsafe-eval') trước mọi schema
 import { trpc } from "@/lib/trpc";
 import { isUnauthorizedError } from "@/lib/authRedirect";
 import { mapTrpcError } from "@/lib/trpcErrors";
