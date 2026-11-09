@@ -16,6 +16,16 @@ def cap(loi):
     return [(l.truong, l.ma) for l in loi]
 
 
+def bang_tieng_viet():
+    """Bảng tiếng Việt của dang_ky.thong_diep: dict cấp module có khoá "vi" chứa `email_trung` (không phụ thuộc tên biến)."""
+    import dang_ky.thong_diep as td
+
+    for v in vars(td).values():
+        if isinstance(v, dict) and isinstance(v.get("vi"), dict) and "email_trung" in v["vi"]:
+            return v["vi"]
+    raise AssertionError("không tìm thấy bảng tiếng Việt (dict cấp module có khoá 'vi') trong dang_ky.thong_diep")
+
+
 def test_an_hop_le_khong_loi():
     assert kiem_tra(hop_le()) == []
     assert kiem_tra(hop_le(tuoi="16", so_dien_thoai="+84 912.345.678")) == []
@@ -63,13 +73,15 @@ def test_an_nhieu_loi_theo_thu_tu_truong():
     assert cap(loi) == [("ho_ten", "bat_buoc"), ("email", "email_sai"), ("tuoi", "ngoai_khoang"), ("so_dien_thoai", "sdt_sai")]
 
 
-def test_an_thong_diep_hai_ngon_ngu_va_du_phong():
+def test_an_thong_diep_hai_ngon_ngu_va_du_phong(monkeypatch):
     assert t("email_trung") == "Email đã được đăng ký"
     assert t("email_trung", "en") == "Email is already registered"
     assert t("bat_buoc", "en", ten_truong="Age") == "Age is required"
     assert t("bat_buoc", "fr", ten_truong="Tuổi") == "Tuổi là bắt buộc"
-    # khoá thiếu trong tiếng Anh ⇒ dùng tiếng Việt
-    assert t("thanh_cong", "en", ma="DK-0001") == "Đăng ký thành công, mã của bạn là DK-0001"
+    # khoá thiếu trong tiếng Anh ⇒ dùng tiếng Việt. Dùng một khoá không có trong bảng vi/en của đề (10/11: trước đây dùng
+    # `thanh_cong`, nhưng đề không nói khoá này phải thiếu bản tiếng Anh, nên dịch nó là cách đọc hợp lý).
+    monkeypatch.setitem(bang_tieng_viet(), "khoa_an_chi_tieng_viet", "Khoá ẩn chỉ có tiếng Việt {ma}")
+    assert t("khoa_an_chi_tieng_viet", "en", ma="DK-0001") == "Khoá ẩn chỉ có tiếng Việt DK-0001"
 
 
 def test_an_dang_ky_loi_tieng_viet():
