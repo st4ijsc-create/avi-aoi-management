@@ -283,6 +283,13 @@ export const DISPATCHED_CTX_KEY = "foeDispatchedSteps";
 export const ABORT_ROW_PREFIX = "abort:";
 
 /**
+ * A2(n) T7b-1d lượt sửa 1 (H30, chu du an 09/11) — THE words a walk writes on a step an Abort cancelled. Read back by laHangHuyBoiAbort, exactly: every source goes through this constant (foeHuyBoiAbortCensus). A row with other
+ * words (a step that failed on its own, a precondition's abort, an edge claim let go) is the last word it always was. No mark in `result`: a row with a result would lose what the walker recorded (routedTo, accepted).
+ */
+export const LOI_HUY_BOI_ABORT = "Run is aborting.";
+export const laHangHuyBoiAbort = (r: { status?: string; error?: string | null } | undefined): boolean => r?.status === "failed" && r.error === LOI_HUY_BOI_ABORT;
+
+/**
  * doc 81 Đợt 6 — the abort sweep's picture of a run from its step rows (pure). A row whose command left the engine
  * (a dispatcher result is recorded) or that finished / failed counts as settled: a STOP there is never sent again.
  */
@@ -424,6 +431,8 @@ export interface VaoPhanLoaiStopAbort {
   hang: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown; attempt?: number | null }> | null;
   ctx: Record<string, unknown> | null | undefined;
   daThu?: (id: string) => boolean;
+  /** T7b-1d lượt sửa 1 (H31) — this press's own read verifies it as a pinned STOP: a row that said "read: not pinned" is an older answer, no last word */
+  ghimLai?: (id: string) => boolean;
 }
 /**
  * A2(n) T7b-1c — what ONE row says of a hand-over. "tuChoi": a word that it did not go (a dispatcher's refusal, the sink, state C). A dispatcher's answer that is no clean "no" (no answer, "may have flown", a device
@@ -458,7 +467,7 @@ export function phanLoaiStopAbort(id: string, vao: VaoPhanLoaiStopAbort): PhanLo
   if (vao.hang === null) return stopChuaRaTuNguCanh(vao.ctx).includes(id) ? { lop: "no" } : { lop: "khongDoc" };
   const cua = vao.hang.find((r) => r.stepId === id);
   const ab = vao.hang.find((r) => r.stepId.startsWith(ABORT_ROW_PREFIX) && String((r.resultJson as { stepId?: unknown } | null | undefined)?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length)) === id);
-  if (ab?.status === "completed" || ab?.status === "skipped") return { lop: "xong" };
+  if (ab?.status === "completed" || (ab?.status === "skipped" && vao.ghimLai?.(id) !== true)) return { lop: "xong" };
   const vet = dauVetCuaHang(cua, id);
   const vetAb = dauVetCuaHang(ab, id);
   const dv = dauVetAbort(vao.hang).get(id);

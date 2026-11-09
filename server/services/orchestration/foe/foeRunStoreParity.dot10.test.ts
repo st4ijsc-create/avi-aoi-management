@@ -11421,13 +11421,16 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(ids()).toEqual([]);
     expect(a2.abortStops?.notPinned).toEqual(["s"]);
     expect(hang(c, "abort:s")?.status, "the trace removed").toBe("skipped");
+    expect(a2.message).not.toMatch(/owes no STOP|has stopped|machine is stopped/);
+    expect(a2.message).toMatch(/no pinned STOP/);
     ghimHalt(true);
     h.ghim = PIN_OK;
     const a3 = await bam(c, "after");
-    expect(ids(), "read and found none: settled").toEqual([]);
+    expect(ids(), "H31: pinned again, pressed in the window: it goes").toEqual(["s"]);
+    expect(pdu("s").length).toBe(1);
     expect(a3.ok).toBe(true);
   });
-  it("T7B1D-CHUA-DOC-LAI flat: the planner still reaches s after the trace was removed: one definition: read and found none is settled, as on a latched run", async () => {
+  it("T7B1D-CHUA-DOC-LAI flat: H31: the trace removed (read: no pinned STOP), pinned again, pressed in the window: s goes; the press that read none says nothing of a stopped machine", async () => {
     const { c, di } = await moDi(def("d1dcp", [gate(), move("x"), delay("w", 300), otStop("s")]));
     await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
     await wait(20);
@@ -11440,13 +11443,17 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(hang(c, "abort:s")?.status, "a trace").toBe("failed");
     ghimHalt(false);
     h.ghim = KHONG_GHIM;
-    await bam(c, "read: none");
+    const a1 = await bam(c, "read: none");
     expect(hang(c, "abort:s")?.status).toBe("skipped");
+    expect(ids()).toEqual([]);
+    expect(a1.message).not.toMatch(/owes no STOP|has stopped|machine is stopped/);
     ghimHalt(true);
     h.ghim = PIN_OK;
     const a = await bam(c, "after");
-    expect(a.abortStops?.phanLoai?.s?.lop).toBe("xong");
-    expect(ids(), "the class decides, on this run too").toEqual([]);
+    expect(a.abortStops?.phanLoai?.s?.lop).toBe("chuaGiao");
+    expect(ids(), "H31").toEqual(["s"]);
+    expect(pdu("s").length).toBe(1);
+    expect(hang(c, "abort:s")?.status).toBe("completed");
   });
   it("T7B1D-CHUA-KHONG-CO-ADAPTER a run not latched, the verifier reads 'not pinned' because nothing could be read: a trace, not an answer; a press whose read answers sends it", async () => {
     const { c, di } = await moDi(def("d1dca", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
@@ -11470,7 +11477,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(pdu("s").length).toBe(1);
     expect(ids()).toEqual(["s"]);
   });
-  it("T7B1D-CHUA-DOC-KHONG-GHIM a run not latched, read and not pinned at the Abort: no trace (only what could not be verified)", async () => {
+  it("T7B1D-CHUA-DOC-KHONG-GHIM H31: a run not latched, read and not pinned at the Abort: no trace (only what could not be verified); a person pins it, presses in the window: it goes; left unpinned: it does not", async () => {
     const { c, di } = await moDi(def("d1dcn", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
     await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
     await wait(20);
@@ -11482,10 +11489,14 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await wait(40);
     expect(a.abortStops?.notPinned).toEqual(["s"]);
     expect(hang(c, "abort:s"), "no trace").toBeUndefined();
+    const a1 = await bam(c, "still not pinned");
+    expect(ids(), "never a step read as no pinned STOP").toEqual([]);
+    expect(a1.abortStops?.notPinned).toEqual(["s"]);
     ghimHalt(true);
     h.ghim = PIN_OK;
     await bam(c);
-    expect(ids(), "never meant to go, the container failed: R-6").toEqual([]);
+    expect(ids(), "H31").toEqual(["s"]);
+    expect(pdu("s").length).toBe(1);
   });
   it("T7B1D-UNV-KHONG-LA-STOP a non-STOP in the sweep's unverified on a run not latched: no trace, no debt when it latches later", async () => {
     const c = await centralRun(def("d1dun", [gate("g0"), ot("x"), gate("g1"), move("m9"), otStop("s2")]), 1);
@@ -11629,9 +11640,9 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await bam(c);
     expect(ids()).toEqual(["s"]);
   }, 10_000);
-  // H27 (chu du an 09/11): a known limit, pinned as measured. A run not latched, the one write of the Abort's trace lost, the walker's rows over the STOP: the press sends nothing; the first answer names it and promises nothing
+  // H30 (chu du an 09/11), in place of H27 on these shapes: a run not latched, the one write of the Abort's trace lost, the walker's cancel over the STOP: a step cancelled by an Abort is no last word. The first answer still names it: at that moment nothing durable says it was tried
   for (const hinh of ["hop", "phang"] as const) {
-    it(`T7B1D-MAT-HANG-ABORT-CHUA-KHOA gioi han da biet H27, ${hinh}: refused, the abort: row lost, the walker wrote failed and ended: the first answer names s, promises nothing; a press sends nothing`, async () => {
+    it(`T7B1D-MAT-HANG-ABORT-CHUA-KHOA H30, ${hinh}: refused, the abort: row lost, the walker wrote its cancel and ended: the first answer names s, promises nothing; a press sends s, once`, async () => {
       if (hinh === "phang") h.tuChoi.set("s", REF);
       const { c, di } = await moDi(def(`d1dmh${hinh}`, hinh === "hop" ? [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])] : [gate(), move("x"), otStop("s")]));
       if (hinh === "hop") await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
@@ -11649,17 +11660,19 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       expect(a.abortStops?.failed).toEqual(["s"]);
       expect(a.abortStops?.khongBen).toEqual(["s"]);
       expect(hang(c, "abort:s"), "lost").toBeUndefined();
-      expect(hang(c, hinh === "hop" ? "b" : "s")?.status, "the walker's row says failed").toBe("failed");
+      expect(hang(c, hinh === "hop" ? "b" : "s")?.error, "the walker's cancel").toBe("Run is aborting.");
       expect(a.message, "the first answer names the STOP").toMatch(/could not be recorded: s:/);
       expect(a.message).toMatch(/may not reach/);
       expect(a.message).not.toMatch(/owed|press Abort again/);
       expect(no(c), "no debt").toEqual([]);
       expect(runDaChot(c)).toBe(false);
       expect(urgentCua("abortStopNotSent"), "H23").toEqual([]);
-      const a2 = await bam(c);
-      expect(ids(), "H27: what this write lost costs").toEqual([]);
-      expect(a2.message).toMatch(/this press sent no STOP step/);
-      expect(a2.message).not.toMatch(/owed/);
+      await bam(c);
+      expect(ids(), "H30").toEqual(["s"]);
+      expect(pdu("s").length).toBe(1);
+      expect(no(c)).toEqual([]);
+      await bam(c, "again");
+      expect(ids(), "once").toEqual([]);
     });
   }
   it("T7B1D-MAT-HANG-ABORT-CHUA-KHOA the walker never wrote over it (flat, not reached): the same definition reaches s: it goes; a press refused and its row lost again: named, no promise", async () => {
@@ -11703,6 +11716,249 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a1.message).not.toMatch(/sends it if its read finds/);
     h.classifyLoi = false;
     h.hangNem = null;
+  });
+
+  // ── H30: every shape measured again: which shape still sends nothing keeps H27, by its name ───────────────────────────────────────────────────────────────
+  const HINH_H30: Array<[string, () => WorkflowStep[], "x" | "w"]> = [
+    ["HOP", () => [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])], "w"],
+    ["HOP-LONG", () => [gate(), move("x"), box("a", [box("b", [delay("w", 300), otStop("s")])])], "w"],
+    ["SEQ-TRONG-PAR", () => [gate(), move("x"), par("a", [box("b", [delay("w", 300), otStop("s")])])], "w"],
+    ["PAR-ANH-EM", () => [gate(), par("a", [move("x"), box("b", [delay("w", 300), otStop("s")])])], "w"],
+    ["BRANCH-TRAN", () => [gate(), move("x"), brn("b", [delay("w", 300), otStop("s")])], "w"],
+    ["BRANCH-TRONG-SEQ", () => [gate(), move("x"), box("a", [brn("b", [delay("w", 300), otStop("s")])])], "w"],
+    ["BU-TRU-LENH", () => [gate(), move("x", { compensation: otStop("s") }), delay("w", 300)], "w"],
+    ["BU-TRU-TRONG-HOP", () => [gate(), move("x"), box("b", [move("y", { compensation: otStop("s") }), delay("w", 300)])], "w"],
+    ["BU-TRU-CUA-HOP", () => [gate(), move("x"), box("b", [delay("w", 300)], { compensation: otStop("s") })], "w"],
+  ];
+  for (const [ten, cay] of HINH_H30) {
+    for (const loi of ["TU-CHOI", "UNV", "PENDING"] as const) {
+      it(`T7B1D-H30-HINH ${ten} ${loi}: the abort: row lost, the walker's cancel over it: a press in the window sends s once; nothing else`, async () => {
+        const { c, di } = await moDi(def(`d1dh30${ten}${loi}`.replace(/-/g, ""), cay()));
+        await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+        await wait(20);
+        ve0();
+        if (loi === "TU-CHOI") h.tuChoi.set("s", REF);
+        if (loi === "UNV") h.classifyLoi = true;
+        if (loi === "PENDING") h.khongTraLoi.add("s");
+        h.hangNem = (r) => r.stepId === "abort:s";
+        await abortRun(c, OWNER, "first");
+        h.classifyLoi = false;
+        await di;
+        await wait(40);
+        h.hangNem = null;
+        h.tuChoi.clear();
+        h.khongTraLoi.clear();
+        expect(hang(c, "abort:s"), "lost").toBeUndefined();
+        expect(no(c)).toEqual([]);
+        await bam(c);
+        expect(ids(), "H30").toEqual(["s"]);
+        expect(pdu("s").length).toBe(1);
+      }, 15_000);
+    }
+  }
+  it("T7B1D-H30-NGUON-EXEC the other source of the words: y answers ok after the Abort, the walk reaches its next step and execStep refuses it: the container carries the same constant: a press sends s", async () => {
+    h.slow.set("y", 100);
+    const { c, di } = await moDi(def("d1dhne", [gate(), move("x"), box("b", [move("y"), otStop("s")])]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "y"), "y handed over");
+    await wait(15);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.hangNem = (r) => r.stepId === "abort:s";
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(200);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    expect(hang(c, "y")?.status, "y's own answer").toBe("completed");
+    expect(hang(c, "b")?.error).toBe("Run is aborting.");
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+  // H27 stands for this shape, measured after H30: the container ended in another step's own words, so it is no cancel; the Abort's row is all that said s was meant
+  for (const mat of [true, false]) {
+    it(`T7B1D-H27-Y-TU-HONG ${mat ? "gioi han da biet H27: the abort: row lost: the first answer names s, promises nothing; a press sends nothing" : "the row landed: the trace reaches s"}: y in flight at the Abort, its own failure lands after, the container carries its words`, async () => {
+      h.slow.set("y", 100);
+      h.failPlan.set("y", Infinity);
+      const { c, di } = await moDi(def(`d1dh27${mat ? "m" : "g"}`, [gate(), move("x"), box("b", [move("y"), otStop("s")])]));
+      await waitFor(() => h.sent.some((x) => x.stepId === "y"), "y handed over");
+      await wait(15);
+      ve0();
+      h.tuChoi.set("s", REF);
+      if (mat) h.hangNem = (r) => r.stepId === "abort:s";
+      const a = await abortRun(c, OWNER, "first");
+      await di;
+      await wait(200);
+      h.hangNem = null;
+      h.tuChoi.clear();
+      expect(a.abortStops?.failed).toEqual(["s"]);
+      expect(hang(c, "b")?.error, "another step's own words: no cancel").toBe("scripted failure of y");
+      expect(runDaChot(c)).toBe(false);
+      expect(no(c)).toEqual([]);
+      if (mat) {
+        expect(a.abortStops?.khongBen).toEqual(["s"]);
+        expect(a.message).toMatch(/could not be recorded: s:/);
+        expect(a.message).not.toMatch(/owed|press Abort again/);
+      }
+      const a2 = await bam(c);
+      if (mat) {
+        expect(ids(), "H27").toEqual([]);
+        expect(a2.message).not.toMatch(/owed/);
+      } else expect(ids()).toEqual(["s"]);
+    });
+  }
+  // the process died: nothing of the walker is left, only what it wrote. Half of this is the fake: PostgreSQL is T15's
+  const chup = (c: number) => ({ run: structuredClone({ ...runRow(c) }), hang: structuredClone(stepRows(c).map((r) => ({ ...r }))) as Row[] });
+  const khoiPhuc = (c: number, a: ReturnType<typeof chup>) => {
+    const ds = rows("orchestration_run_steps");
+    for (let i = ds.length - 1; i >= 0; i--) if (ds[i].runId === c) ds.splice(i, 1);
+    ds.push(...structuredClone(a.hang));
+    Object.assign(runRow(c), structuredClone(a.run), { status: "aborted", finishedAt: new Date() });
+  };
+  for (const [ten, cay, idHong] of [["HOP", () => [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])], "b"], ["PHANG", () => [gate(), move("x"), otStop("s")], "s"]] as const) {
+    for (const diem of ["WALKER-GHI-HUY", "TU-CHOI-CHUA-GHI-HANG"] as const) {
+      it(`T7B1D-CHET-${ten} ${diem}: the process died there, 'aborted' written: nothing of the walker left: a press sends s, once`, async () => {
+        if (ten === "PHANG") h.tuChoi.set("s", REF);
+        const { c, di } = await moDi(def(`d1dct${ten}${diem}`.replace(/-/g, ""), cay() as WorkflowStep[]));
+        if (ten === "PHANG") await waitFor(() => h.sent.some((x) => x.stepId === "s"), "s tried once");
+        else await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+        await wait(10);
+        h.tuChoi.set("s", REF);
+        let anh: ReturnType<typeof chup> | null = null;
+        h.hangNem = (v) => {
+          if (anh) return false;
+          if (diem === "WALKER-GHI-HUY" && v.stepId === idHong && v.status === "failed") {
+            anh = chup(c);
+            const r0 = anh.hang.find((x) => x.stepId === idHong);
+            if (r0) Object.assign(r0, { status: "failed", error: "Run is aborting." });
+          }
+          if (diem === "TU-CHOI-CHUA-GHI-HANG" && v.stepId === "abort:s" && v.status === "failed") anh = chup(c);
+          return false;
+        };
+        await abortRun(c, OWNER, "first");
+        await di.catch(() => undefined);
+        await wait(60);
+        h.hangNem = null;
+        h.tuChoi.clear();
+        expect(anh, "the point of death was reached").not.toBeNull();
+        khoiPhuc(c, anh!);
+        expect(hang(c, "abort:s"), "nothing of the Abort's trace").toBeUndefined();
+        await bam(c);
+        expect(ids(), "H30").toEqual(["s"]);
+        expect(pdu("s").length).toBe(1);
+        await bam(c, "again");
+        expect(ids(), "once").toEqual([]);
+      }, 15_000);
+    }
+  }
+  it("T7B1D-KHONG-LIVE-CHUA-ABORTED not covered, as decided: the rows of a walker elsewhere, the run still running here: the first Abort sends nothing and does not say no STOP is left; the press after it sends s", async () => {
+    const c = await centralRun(def("d1dklc", [gate("g0"), move("x"), gate("g1"), box("b", [delay("w", 10), otStop("s")])]), 1);
+    await wait(30);
+    runRow(c).status = "running";
+    rows("orchestration_run_steps").push({ id: 800_106, runId: c, attempt: 1, startedAt: new Date(), finishedAt: new Date(), stepId: "b", stepType: "sequence", status: "failed", error: "Run is aborting.", resultJson: null });
+    const a1 = await bam(c, "first");
+    expect(a1.resend).toBeUndefined();
+    expect(ids(), "H30 is for a press").toEqual([]);
+    expect(String(a1.message ?? "")).not.toMatch(/owes no STOP|no STOP step|no STOP left|nothing was sent/);
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+    expect(pdu("s").length).toBe(1);
+  });
+  // the constant: only exactly that row, only failed
+  const rowHuy = (c: number, them: Record<string, unknown>) => {
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    rows("orchestration_run_steps").push({ id: 800_100 + c, runId: c, stepId: "b", stepType: "sequence", status: "failed", attempt: 1, error: "Run is aborting.", startedAt: new Date(), finishedAt: new Date(), resultJson: null, ...them });
+  };
+  for (const [ten, them] of [
+    ["COMPLETED", { status: "completed" }],
+    ["RUNNING-XONG", { status: "compensated" }],
+    ["CHU-KHAC-TU-HONG", { error: "scripted failure of y" }],
+    ["CHU-KHAC-PRECONDITION", { error: 'Precondition failed for step "b" (abort).' }],
+    ["CHU-KHAC-EDGE", { error: "Edge claim is no longer current — this walker let go of the run." }],
+  ] as const) {
+    it(`T7B1D-H30-CHI-DUNG-HANG ${ten}: not a row an Abort cancelled: a last word as before: a press sends nothing`, async () => {
+      const c = await centralRun(def(`d1dhd${ten}`.replace(/-/g, ""), [gate("g0"), move("x"), gate("g1"), box("b", [delay("w", 10), otStop("s")])]), 1);
+      await wait(30);
+      rowHuy(c, them);
+      await bam(c);
+      expect(ids()).toEqual([]);
+    });
+  }
+  it("T7B1D-H30-CHI-DUNG-HANG a row an Abort cancelled, nothing else about it: a press walks in, s goes (the control of the cases above)", async () => {
+    const c = await centralRun(def("d1dhdk", [gate("g0"), move("x"), gate("g1"), box("b", [delay("w", 10), otStop("s")])]), 1);
+    await wait(30);
+    rowHuy(c, {});
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+  // the STOP's own row cancelled, by what else its row knows: the class decides, the pins decide
+  for (const [ten, them, cho] of [
+    ["DA-NHAN", { resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "acked_unverified" } }, null],
+    ["XAC-NHAN", { resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "acked_verified" } }, null],
+    ["TIMEOUT", { resultJson: { routedTo: "ot-dispatcher", accepted: false, status: "timeout" } }, "a1"],
+    ["KHONG-KET-QUA", { resultJson: null }, "a1"],
+    ["THU-3", { resultJson: null, attempt: 3 }, "a3"],
+    ["TU-CHOI", { resultJson: { routedTo: "ot-dispatcher", accepted: false, status: "rejected" } }, "nonce"],
+  ] as const) {
+    for (const hinh of ["STOP", "NON-STOP", "KHONG-GHIM"] as const) {
+      it(`T7B1D-H30-HANG-CUA-S ${ten} ${hinh}: s cancelled with this on its row: ${hinh === "STOP" ? String(cho ?? "not sent again") : "never sent"}`, async () => {
+        const buoc = hinh === "STOP" ? otStop("s") : hinh === "NON-STOP" ? move("s") : stopTyped("s");
+        const c = await centralRun(def(`d1dhc${ten}${hinh}`.replace(/-/g, ""), [gate("g0"), move("x"), gate("g1"), buoc]), 1);
+        await wait(30);
+        runRow(c).status = "aborted";
+        runRow(c).finishedAt = new Date();
+        rows("orchestration_run_steps").push({ id: 800_200 + c, runId: c, stepId: "s", stepType: "command", status: "failed", attempt: 1, error: "Run is aborting.", startedAt: new Date(), finishedAt: new Date(), ...them });
+        await bam(c);
+        if (hinh !== "STOP" || cho === null) expect(ids()).toEqual([]);
+        else {
+          expect(ids()).toEqual(["s"]);
+          expect(String(h.sent[0]?.key)).toMatch(cho === "nonce" ? /-abort-/ : new RegExp(`-s-${cho}$`));
+        }
+      });
+    }
+  }
+  it("T7B1D-KS-UNV-DOC-LAI H31: a latched run, the trace removed (read: no pinned STOP), pinned again: in the window it goes; the class is no debt: past the window resendTooOld", async () => {
+    for (const ngoai of [false, true]) {
+      const c = await ksUnv(`d1dkdl${ngoai ? "n" : "t"}`);
+      ghimHalt(false);
+      h.ghim = KHONG_GHIM;
+      await bam(c, "read: none");
+      expect(hang(c, "abort:s")?.status).toBe("skipped");
+      expect(no(c)).toEqual([]);
+      ghimHalt(true);
+      h.ghim = PIN_OK;
+      if (ngoai) quaCuaSo(c);
+      const a = await bam(c, "after");
+      if (ngoai) {
+        expect(a.reason).toBe("resendTooOld");
+        expect(ids()).toEqual([]);
+      } else {
+        expect(ids(), "H31").toEqual(["s"]);
+        expect(pdu("s").length).toBe(1);
+      }
+    }
+  }, 15_000);
+  it("T7B1D-QUET-NEM-WALKER the sweep throws, a live walker, a run not latched: told to the one who pressed; the walker's cancel over the container is no last word: the press it promises sends s", async () => {
+    const { c, di } = await moDi(def("d1dqw", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    const hong = { id: 800_300, runId: c, stepId: 5, stepType: "command", status: "failed", error: null, resultJson: null };
+    rows("orchestration_run_steps").push(hong); // a row that breaks the read of the picture: the sweep throws
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    const ds = rows("orchestration_run_steps");
+    ds.splice(ds.indexOf(hong), 1);
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(a.message).toMatch(/could not read the definition/);
+    expect(a.message).toMatch(/press Abort again within 15 minutes/);
+    expect(h.alerts.map((x) => x.kind), "H23").toEqual([]);
+    expect(ids()).toEqual([]);
+    expect(hang(c, "b")?.error).toBe("Run is aborting.");
+    const a2 = await bam(c);
+    expect(ids(), `what the answer promised: ${String(a2.message)}`).toEqual(["s"]);
+    expect(pdu("s").length).toBe(1);
   });
 
   // ── the controls: nothing here sends more than it did ───────────────────────────────────────────────────────────────

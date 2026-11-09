@@ -68,6 +68,8 @@ import {
   laHangChuaRa,
   phanLoaiStopAbort,
   dauVetAbort,
+  LOI_HUY_BOI_ABORT,
+  laHangHuyBoiAbort,
   stopAbortCoGui,
   type LanBamAbort,
   stopChuaRaTuHang,
@@ -865,7 +867,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-const ABORTED_OUTCOME: StepOutcome = { kind: "aborted", error: "Run is aborting." };
+const ABORTED_OUTCOME: StepOutcome = { kind: "aborted", error: LOI_HUY_BOI_ABORT };
 
 /** Run a precondition/interlock for a step. Returns null if it holds, else an outcome. */
 async function checkPrecondition(rc: RunContext, step: WorkflowStep, stop = false): Promise<StepOutcome | null> {
@@ -973,7 +975,7 @@ export function stopGhimLuiMs(attempt: number): number {
 
 /** Execute ONE step subtree. Persists state; routes commands via E0. Fail-safe. `quaCua`: a STOP pass (diStopTien) sends this STOP: no door, no precondition, no gate of the walk in front of it. */
 async function execStep(rc: RunContext, step: WorkflowStep, quaCua = false): Promise<StepOutcome> {
-  if (rc.aborting) return { kind: "aborted", error: "Run is aborting." };
+  if (rc.aborting) return { kind: "aborted", error: LOI_HUY_BOI_ABORT };
 
   // Doc 25 T1 — RESUME idempotent: bước đã hoàn tất ở lần chạy trước thì KHÔNG chạy lại.
   // Tránh tái-dispatch lệnh OT (mất idempotency khi OT thật) và tránh re-pause gate đã
@@ -6512,15 +6514,17 @@ async function runAbortStopSweep(
     const daXacNhan = (id: string) => ketQua(hangTheo.get(id))?.status === "acked_verified" || ketQua(hangTheo.get(abortRowId(id)))?.status === "acked_verified";
     noDaBen = stopChuaRaTuHang(src.hang ?? [], ctxRun);
     const docDuoc = src.rowsKnown && src.hang != null; // T7b-1c — a read that failed is no "no trace"
-    const vaoPhanLoai = { hang: docDuoc ? (src.hang as NonNullable<typeof src.hang>) : null, ctx: ctxRun, ...(live ? { daThu: (x: string) => live.attempted.has(x) } : {}) };
+    const vaoPhanLoai = { hang: docDuoc ? (src.hang as NonNullable<typeof src.hang>) : null, ctx: ctxRun, ...(live ? { daThu: (x: string) => live.attempted.has(x) } : {}), ghimLai: (x: string) => v.ids.has(x) };
     phanCua = (id) => phanLoaiStopAbort(id, vaoPhanLoai);
     // T7b-1d (H22) — one set for a press, on every run: what the planner has due plus an earlier Abort's trace, then the classification. An edge's run is T7b-2's: it keeps no trace here
     const dauVet = store.kind === "central" && docDuoc ? dauVetAbort(src.hang) : new Map<string, DangDauVetAbort>();
     // ... and what is owed by the one definition of a debt (rows and context): an URGENT that promises a press promises this set. A row lost on a latched run stays owed here (not H27), due or not. The verification still decides
     const daDinh: ReadonlySet<string> = store.kind === "central" ? new Set([...dauVet.keys(), ...noDaBen]) : new Set(dauVet.keys());
     const bamChuaKhoa = !khoa && opts.bamLai !== undefined && docDuoc && store.kind === "central";
+    // T7b-1d lượt sửa 1 (H30, chu du an 09/11) — a press on a run not latched: a step an Abort cancelled is no last word: what stands behind it is planned, and the verification and the classification decide as for any other. At a press only: a first
+    // Abort over the rows of a walker elsewhere is not covered, as decided (a latched run reads no `failed` as settled at all: lapKeHoachStop)
     const nhin = khoa ? (live ?? rcTuHang(runId, def, ctxRun, src, store, user, owner)) : null;
-    const plan = nhin ? await lapKeHoachStop(nhin, src, v, true, { xacNhan: daXacNhan, daGiao, daDinh }) : await planAbortSweep(src, def, v, undefined, daDinh);
+    const plan = nhin ? await lapKeHoachStop(nhin, src, v, true, { xacNhan: daXacNhan, daGiao, daDinh }) : await planAbortSweep(bamChuaKhoa ? { ...src, settled: (id) => src.settled(id) && !laHangHuyBoiAbort(hangTheo.get(id)) } : src, def, v, undefined, daDinh);
     // R-6-b — a run that never actuated sends none of its STOPs (said out loud)
     if (!nhin && plan.send.length > 0 && !runHasActuated(def, src, v)) {
       report.notNeeded = plan.send.map((s) => s.id);
