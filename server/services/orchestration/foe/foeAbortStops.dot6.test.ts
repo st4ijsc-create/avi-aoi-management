@@ -46,6 +46,7 @@ vi.mock("../../ot/otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/otManager")>();
   return { ...orig, getActiveConnectionFingerprint: (adapterId: number) => conn.fp.get(adapterId) };
 });
+const ghimThat = vi.hoisted(() => ({ bat: false }));
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../ot/commandDispatcher")>();
   return {
@@ -53,6 +54,11 @@ vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
     classifyOtStop: orig.classifyOtStop,
     runningConnectionMatchesAdapterRow: orig.runningConnectionMatchesAdapterRow,
     epKieuGhiTheoTag: orig.epKieuGhiTheoTag, // A2(n) T6e — the verifier coerces by the dispatcher's own function
+    // A2(n) T7b-1d — the sweep asks it after "not pinned" (read, or nothing read). Off, as this mock was: it throws, which reads as unread; the walker's own path asks it too
+    phanLoaiStopGhimChoFoe: (...x: Parameters<typeof orig.phanLoaiStopGhimChoFoe>) => {
+      if (!ghimThat.bat) throw new Error("no pin read in this mock");
+      return orig.phanLoaiStopGhimChoFoe(...x);
+    },
     dispatch: otDispatchMock,
   };
 });
@@ -277,7 +283,9 @@ describe("doc 81 Đợt 6 — abort still sends the remaining REAL STOP steps", 
 
   it("★ an UNPINNED 'stop' (stop-typed, writes another tag) is NOT sent — not a real STOP (R-5-j); listed as notPinned", async () => {
     const { runId, walk } = await liveRunAt("unp", [START, DELAY, UNPINNED], "d");
+    ghimThat.bat = true; // A2(n) T7b-1d — fixture: the read of the pins answers, as on a real database
     const ab = await abortRun(runId, SUP);
+    ghimThat.bat = false;
     expect(ab.ok).toBe(true);
     expect(ab.abortStops).toMatchObject({ sent: [], notPinned: ["stopU"], unverified: [] });
     expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);

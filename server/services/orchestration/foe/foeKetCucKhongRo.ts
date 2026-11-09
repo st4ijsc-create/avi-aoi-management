@@ -161,6 +161,11 @@ export const KET_CUC_KHONG_RO_DA_BAO_CTX_KEY = "foeKetCucKhongRoDaBao";
  * never clears one a row names. Never written by an edge (edgeContextPolicy keeps central keys out).
  */
 export const STOP_CHUA_RA_CTX_KEY = "foeStopChuaRa";
+/**
+ * A2(n) T7b-1d (H22) — what an Abort left of a STOP it tried or meant to send and that did not go, on its `abort:` row (result.abortStop). `daThu`: handed over and refused. `chuaXacMinh`: it could not verify it as a
+ * pinned STOP, so it did not send it. `chuaTraLoi`: handed over, no answer yet. foeRunStore.dauVetAbort reads it.
+ */
+export type DangDauVetAbort = "daThu" | "chuaXacMinh" | "chuaTraLoi";
 /** The ids the context holds owed (a value that is not a list of ids is none). Pure. */
 export function stopChuaRaTuNguCanh(ctx: Record<string, unknown> | null | undefined): string[] {
   const v = ctx?.[STOP_CHUA_RA_CTX_KEY];
@@ -335,14 +340,16 @@ export interface CanhBaoKhongRo {
 export type LopStopAbort = "chuaGiao" | "no" | "coTheDaRa" | "daGiao" | "xong" | "khongDoc";
 export interface PhanLoaiStopAbort {
   lop: LopStopAbort;
-  truoc?: "coTheDaRa" | "daGiao";
+  /** T7b-1d — `chuaXacMinh`: the trace of an Abort that could not verify it, it never handed it over. Only the words read this */
+  truoc?: "coTheDaRa" | "daGiao" | "chuaXacMinh";
   khoaThu?: number;
 }
-export type ChuStopAbort = "chuaRaKhongHan" | "chuaRa15" | "coTheKhongHan" | "coThe15" | "daGiaoKhongHan" | "daGiaoKiemMay" | "khongDocKhongHan" | "khongDoc15" | "daKetThuc";
+export type ChuStopAbort = "chuaRaKhongHan" | "chuaRa15" | "coTheKhongHan" | "coThe15" | "daGiaoKhongHan" | "daGiaoKiemMay" | "khongDocKhongHan" | "khongDoc15" | "khongXacMinhKhongHan" | "khongXacMinh15" | "daKetThuc" | "daKetThucChuaKhoa" | "daKetThucKhongXacMinh";
 /** A2(n) T7b-1c — which words a STOP gets whose hand-over by this Abort did not go: its class, and whether its debt is durable ("no time limit" only then). `xong`: nothing to say. Pure. */
 export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: boolean): ChuStopAbort | null {
   if (p.lop === "xong") return null;
   const goc = p.truoc ?? p.lop;
+  if (goc === "chuaXacMinh") return ben ? "khongXacMinhKhongHan" : "khongXacMinh15";
   if (goc === "coTheDaRa") return ben ? "coTheKhongHan" : "coThe15";
   if (goc === "daGiao") return ben ? "daGiaoKhongHan" : "daGiaoKiemMay";
   if (goc === "khongDoc") return ben ? "khongDocKhongHan" : "khongDoc15";
@@ -383,10 +390,14 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`;
   const han = `This could not be recorded: press Abort again within ${phut} minutes; after that it cannot be sent from here: check the machine on site and ${tay}.`;
   // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
-  if (chu === "daKetThuc") return [`run has ended, STOP ${id} NOT confirmed out`, `The run has ended on its own, before this Abort. Its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device, and a further Abort cannot send it: check the machine on site and ${tay}.`];
+  // T7b-1d (H26) — a run that never latched, the pins unreadable at its other end: listed and told, no marked route, and no word that calls a step a STOP nobody could verify
+  if (chu === "daKetThucKhongXacMinh") return [`run has ended, step ${id} NOT sent`, `The run has ended on its own, before this Abort. Step ${id} could not be verified as a pinned STOP, so it was NOT sent, and a further Abort cannot send it: check the machine on site and ${tay}.`];
+  if (chu === "daKetThuc" || chu === "daKetThucChuaKhoa") return [`run has ended, STOP ${id} NOT confirmed out`, `The run has ended on its own, before this Abort. Its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device, and a further Abort cannot send it: check the machine on site and ${tay}.`];
   if (chu === "daGiaoKhongHan" || chu === "daGiaoKiemMay") return [`run aborted, STOP ${id} NOT confirmed`, `The run is aborted. Its STOP ${id} was handed over earlier and never confirmed; the Abort's new hand-over was refused or got no answer${ma}. ${chu === "daGiaoKhongHan" ? khongHan : `This could not be recorded and it is not sent again: check the machine on site and ${tay}.`}`];
   if (chu === "coTheKhongHan" || chu === "coThe15") return [`run aborted, STOP ${id} may have gone out`, `The run is aborted. Its STOP ${id} was handed over earlier with no answer, so it may have gone out: check the machine on site. The Abort's new hand-over was refused or got no answer${ma}. ${chu === "coTheKhongHan" ? khongHan : han}`];
   if (chu === "khongDocKhongHan" || chu === "khongDoc15") return [`run aborted, STOP ${id}: its records could not be read`, `The run is aborted. Its records could not be read, so whether STOP ${id} went earlier is not known: check the machine on site. The Abort's hand-over was refused or got no answer${ma}. ${chu === "khongDocKhongHan" ? khongHan : han}`];
+  // T7b-1d (H22, KS-UNV) — the Abort never handed it over: not "refused", and a press sends it only if its read finds a pinned STOP
+  if (chu === "khongXacMinhKhongHan" || chu === "khongXacMinh15") return [`run aborted, step ${id} NOT sent: not verified as a pinned STOP`, `The run is aborted. The Abort could not verify step ${id} as a pinned STOP and did NOT send it. ${chu === "khongXacMinhKhongHan" ? khongHan : han} If that read finds no pinned STOP, nothing is sent.`];
   const sau = chu === "chuaRaKhongHan" ? khongHan : han;
   if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
   return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];
@@ -397,7 +408,9 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
   const khongXd = a.loai === "forwardNotSent" && a.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name
-  const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || khongXd; // `stepId` is the listed STOP: nothing happened to it
+  const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || khongXd || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
+  // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
+  const khongChot = a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh");
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -437,7 +450,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
-  return { kind, title: `Run ${a.runId}: ${dau} — ${duoi}`, message: `${mo} ${than} [event ${a.lan}]`, dedupKey: `${kind}:${a.runId}:${a.stepId}:${a.compId}:${a.lan}` };
+  return { kind, title: khongChot ? `Run ${a.runId}: ${duoi}` : `Run ${a.runId}: ${dau} — ${duoi}`, message: khongChot ? `${than} [event ${a.lan}]` : `${mo} ${than} [event ${a.lan}]`, dedupKey: `${kind}:${a.runId}:${a.stepId}:${a.compId}:${a.lan}` };
 }
 
 /** The audit action of a URGENT that had nobody to go to (I-5 / condition 3): the durable trace, with the log line and the alert stream. */

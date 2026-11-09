@@ -69,6 +69,8 @@ const h = vi.hoisted(() => ({
   ackStatus: "acked",
   /** A2(n) T3+T4 — what a case allows after the latch beyond a STOP: a compensation a person approved */
   duocSauKhoa: new Set<string>(),
+  /** A2(n) T7b-1d — this step's dispatch never answers (no timer behind it) */
+  khongTraLoi: new Set<string>(),
   /** A2(n) T5 — the dispatcher's own answer for a step: a refusal, or `nem`: the dispatch throws */
   tuChoi: new Map<string, { status?: string; error?: string; detail?: Record<string, unknown>; nem?: string }>(),
   /** A2(n) T5 — refusals answered in order, one per attempt, then h.tuChoi as usual */
@@ -224,6 +226,7 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       const stepId = m ? m[1] : "?";
       const ghi: Record<string, unknown> = { kind, stepId, key: String(cmd.idempotencyKey), name: cmd.name, adapterId: cmd.adapterId ?? null, robotId: cmd.robotId ?? null, writes: cmd.writes ?? null, job: cmd.job ?? null, edge: cmd.edge ?? null, hitl: cmd.hitl, sauKhoa: h.traTimeout > 0, lan: m ? m[2] : null };
       h.sent.push(ghi);
+      if (h.khongTraLoi.has(stepId)) await new Promise<never>(() => undefined);
       const cham = h.slow.get(stepId);
       if (cham) await new Promise((r) => setTimeout(r, cham));
       const routedTo = kind === "robot" ? "robot-dispatcher" : "ot-dispatcher";
@@ -463,6 +466,7 @@ beforeEach(() => {
   h.treoLan = 0;
   h.treGhi.clear();
   h.treGhiLan = 0;
+  h.khongTraLoi.clear();
   h.ctxNem = null;
   h.ctxNemLan = 0;
   h.treAborted = 0;
@@ -2979,6 +2983,21 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
       await dongThoi(() => persistContext(rcCtx("ok")));
       expect(h.ctxNemLan).toBe(1);
       expect(runRow(901).contextJson.dau).toBe("ok");
+    }
+  });
+
+  it("★ h.khongTraLoi (T7b-1d): on, the dispatch reached the fake and never answers; off, it answers; 6 concurrent hand-overs, 10 rounds", async () => {
+    const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
+    const gui = (k: string) => (equipmentRegistry.getAdapter("ot" as never) as any).sendCommand({ idempotencyKey: k, name: "stop" });
+    for (let v = 0; v < VONG; v++) {
+      h.sent.length = 0;
+      h.khongTraLoi.add("treo");
+      const treo = await Promise.race([dongThoi((i) => gui(`run1-treo-a${i + 1}`)), new Promise((ok) => setTimeout(() => ok("no answer"), 15))]);
+      expect(treo).toBe("no answer");
+      expect(h.sent.length, "it reached the fake").toBe(DONG_THOI);
+      h.khongTraLoi.clear();
+      const dap = await dongThoi((i) => gui(`run1-treo-a${i + 1}`));
+      for (const r of dap) expect(r).toMatchObject({ status: "simulated" });
     }
   });
 
@@ -10812,4 +10831,1274 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(sai).toEqual([]);
     expect(n).toBe(3 * 5 * 3);
   }, 120_000);
+});
+
+describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later press, on every run (H22, H23, H25, H26)", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const par = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const brn = (id: string, t: WorkflowStep[]): WorkflowStep => ({ id, type: "branch", condition: { source: "telemetry", machineId: 2, key: "temp", op: "lt", value: 100 }, then: t, else: [] }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const stopTyped = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const REF = { status: "rejected", error: "INTERLOCK_NOT_MET: refused" };
+  const ids = () => h.sent.map((x) => String(x.stepId));
+  const pdu = (id: string) => h.sent.filter((x) => x.stepId === id && x.khongGhi !== true);
+  const hang = (c: number, id: string) => stepRows(c).find((r) => r.stepId === id);
+  const ctxCua = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null) ?? {};
+  const no = (c: number) => [...stopChuaRaTuHang(stepRows(c) as never, ctxCua(c))].sort();
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const chuCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => urgentCua(kind).map((a) => `${a.title} ${a.message}`).join(" | ");
+  const veBuoc = (id: string) => h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === id);
+  const quaCuaSo = (c: number) => (runRow(c).finishedAt = new Date(Date.now() - 2 * 3_600_000));
+  const runDaChot = (c: number) => ctxCua(c)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null || chotTuHang(stepRows(c) as never) !== null;
+  const ve0 = () => {
+    h.sent.length = 0;
+    h.alerts.length = 0;
+  };
+  const bam = async (c: number, note = "press") => {
+    ve0();
+    const a = await abortRun(c, OWNER, note);
+    await wait(40);
+    return a;
+  };
+  const moDi = async (d: WorkflowDefinition) => {
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    return { c, di };
+  };
+  /** the latch forged on a run at its gate, no walker alive: T7b-1's khoaChuaGiao */
+  const khoaChuaGiao = async (ref: string, them: WorkflowStep[] = []) => {
+    const c = await centralRun(def(ref, [gate("g0"), ot("x"), gate("g1"), otStop("s2"), ...them]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    const ctx = ctxCua(c);
+    ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() };
+    runRow(c).contextJson = ctx;
+    runRow(c).status = "held";
+    h.traTimeout = 1;
+    return c;
+  };
+  /** the verifier reads the real pins: this STOP read and found not pinned, or pinned again */
+  const ghimHalt = (co: boolean) => fake.seed(deviceTags, rows("device_tags").map((t) => (t.tagKey === "halt" ? { ...t, stopValue: co ? true : null } : t)));
+  const KHONG_GHIM = async () => ({ pinnedStop: false, loiDocGhim: null });
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  beforeEach(() => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    vi.mocked(logCrudOperation).mockClear();
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+  });
+  afterEach(() => {
+    const sau = h.sent.filter((x) => x.sauKhoa === true);
+    const ghim = (x: Record<string, unknown>) => {
+      if (x.robotId != null) return x.name === "abort";
+      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    };
+    expect(sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+  });
+
+  // ── RM-KHONG-XN first (the direction that loses a STOP): a row central could not verify is no hand-over, whatever it says of itself ───────────────────────
+  it("T7B1D-KHONG-XN a row with the mark and accepted: true is 'may have gone', never 'handed over': a press within the window sends it, under the walker's key", async () => {
+    const hangDau = { stepId: "s2", status: "completed", error: null, attempt: 2, resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "acked_unverified", stopKhongXacNhan: "ghimLech" } };
+    expect(phanLoaiStopAbort("s2", { hang: [hangDau], ctx: {} }).lop).toBe("coTheDaRa");
+    expect(stopAbortCoGui(phanLoaiStopAbort("s2", { hang: [hangDau], ctx: {} }), "trongCua")).toBe(true);
+    expect(stopAbortCoGui(phanLoaiStopAbort("s2", { hang: [hangDau], ctx: {} }), "ngoaiCua")).toBe(false);
+    const c = await khoaChuaGiao("t7b1dxn");
+    runRow(c).status = "aborted";
+    runRow(c).finishedAt = new Date();
+    rows("orchestration_run_steps").push({ id: 99_001, runId: c, stepType: "command", ...hangDau });
+    const a = await bam(c);
+    expect(a.abortStops?.phanLoai?.s2?.lop).toBe("coTheDaRa");
+    expect(pdu("s2").map((x) => x.key)).toEqual([`run${c}-s2-a2`]);
+    expect(ids()).toEqual(["s2"]);
+  });
+
+  it("T7B1D-DAU-VET-THUAN the trace is the abort: row: the same class on every run, read or not; read and found none is settled; no answer: may have gone; no debt on a run not latched", () => {
+    const hang = (abortStop: string, status = "failed") => [{ stepId: "abort:s", status, resultJson: { abortStop, stepId: "s" } }];
+    expect(phanLoaiStopAbort("s", { hang: hang("chuaXacMinh"), ctx: {} })).toEqual({ lop: "no", truoc: "chuaXacMinh" });
+    expect(phanLoaiStopAbort("s", { hang: hang("failed"), ctx: {} }).lop, "a refusal on a run not latched: the class it has on a latched one").toBe("no");
+    expect(phanLoaiStopAbort("s", { hang: hang("chuaTraLoi"), ctx: {} }), "no answer: may have gone").toEqual({ lop: "coTheDaRa", khoaThu: 1 });
+    expect(phanLoaiStopAbort("s", { hang: hang("notPinned", "skipped"), ctx: {} }).lop, "read and found none: settled").toBe("xong");
+    expect(phanLoaiStopAbort("s", { hang: null, ctx: {} }).lop, "unread is no trace").toBe("khongDoc");
+    expect([...stopChuaRaTuHang(hang("chuaXacMinh"), {})], "H23: no debt on a run not latched").toEqual([]);
+    expect([...stopChuaRaTuHang(hang("chuaXacMinh"), { foeKetCucKhongRoChot: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN" } })], "latched: the row is the debt").toEqual(["s"]);
+    expect(stopAbortCoGui({ lop: "coTheDaRa" }, "ngoaiCua"), "the window").toBe(false);
+  });
+
+  // ── the 80 cells of the review of T7b-1c, on the real path. Each: the evidence the injection reached its target, then the answer, the URGENT, the press ─────
+  type MaDau = "s" | "s0" | "unv" | "lst" | "kkh";
+  type MaUrg = "U" | "Uv" | "H13" | "-";
+  type O = [MaDau, MaUrg, "s" | "0"];
+  const COT = ["CHUA-TU-CHOI", "CHUA-DOC-LOI", "KHOA-SAU-TU-CHOI", "KHOA-SAU-DOC-LOI", "KHOA-TRUOC-TU-CHOI", "KHOA-TRUOC-DOC-LOI", "KHOA-HELD-TU-CHOI", "KHOA-HELD-DOC-LOI"] as const;
+  const CHUAN: O[] = [["s", "-", "s"], ["unv", "-", "s"], ["s", "U", "s"], ["unv", "Uv", "s"], ["s", "U", "s"], ["s0", "U", "s"], ["s", "U", "s"], ["s0", "U", "s"]];
+  const CHUA_CHON: O[] = [["lst", "-", "0"], ["lst", "-", "0"], ["lst", "H13", "0"], ["lst", "H13", "0"], ["lst", "H13", "0"], ["lst", "H13", "0"], ["lst", "H13", "0"], ["lst", "H13", "0"]];
+  const BU_TRU_XA: O[] = [["s", "-", "s"], ["unv", "-", "s"], ["s", "U", "s"], ["unv", "Uv", "s"], ["kkh", "-", "0"], ["kkh", "-", "0"], ["kkh", "-", "0"], ["kkh", "-", "0"]];
+  const W = 300;
+  const HINH: Array<[string, () => { x?: Record<string, unknown>; inner: WorkflowStep[]; sau?: WorkflowStep[] }, O[]]> = [
+    ["PHANG", () => ({ inner: [delay("w", W), otStop("s")], sau: [otStop("s")] }), CHUAN],
+    ["SEQ", () => ({ inner: [box("b", [delay("w", W), otStop("s")])] }), CHUAN],
+    ["SEQ-LONG", () => ({ inner: [box("b", [box("c", [delay("w", W), otStop("s")])])] }), CHUAN],
+    ["SEQ-TRONG-PAR", () => ({ inner: [par("b", [box("c", [delay("w", W), otStop("s")])])] }), CHUAN],
+    ["BRANCH-TRAN", () => ({ inner: [brn("b", [delay("w", W), otStop("s")])] }), CHUAN],
+    ["BRANCH-TRONG-SEQ", () => ({ inner: [box("a", [brn("b", [delay("w", W), otStop("s")])])] }), CHUAN],
+    ["BRANCH-CHUA-CHON", () => ({ inner: [delay("w", W), brn("b", [otStop("s")])], sau: [brn("b", [otStop("s")])] }), CHUA_CHON],
+    ["BU-TRU-LENH", () => ({ x: { compensation: otStop("s") }, inner: [delay("w", W)] }), CHUAN],
+    ["BU-TRU-TRONG-HOP", () => ({ inner: [box("b", [move("y", { compensation: otStop("s") }), delay("w", W)])] }), BU_TRU_XA],
+    ["BU-TRU-CUA-HOP", () => ({ inner: [box("b", [delay("w", W)], { compensation: otStop("s") })] }), BU_TRU_XA],
+  ];
+  const tiem = (loi: string) => {
+    if (loi === "TU-CHOI") h.tuChoi.set("s", REF);
+    else {
+      h.classifyLoi = true; // the verifier's pin read throws: s is unsure
+      h.dispatcherThat = true;
+      h.dispatcherKhongDoc = true; // the dispatcher cannot read the pins either
+    }
+  };
+  const go = () => {
+    h.tuChoi.clear();
+    h.classifyLoi = false;
+    h.dispatcherKhongDoc = false;
+  };
+  const dung = async (cot: string, ten: string, cay: (typeof HINH)[number][1], loi: string, ref: string) => {
+    const { x, inner, sau } = cay();
+    if (cot === "CHUA") {
+      const { c, di } = await moDi(def(ref, [gate(), move("x", x ?? {}), ...inner]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      await wait(20);
+      ve0();
+      tiem(loi);
+      const a = await abortRun(c, OWNER, "first");
+      await di;
+      await wait(40);
+      return { c, a };
+    }
+    if (cot === "KHOA-SAU") {
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 120);
+      const { c, di } = await moDi(def(ref, sau ? [gate(), move("x", x ?? {}), ...sau] : [gate(), par("root", [move("x", x ?? {}), ...inner])]));
+      await waitFor(() => (sau ? h.sent.some((r) => r.stepId === "x") : stepRows(c).some((r) => r.stepId === "w")), "at the delay");
+      await wait(10);
+      ve0();
+      tiem(loi);
+      const a = await abortRun(c, OWNER, "first");
+      await di;
+      await wait(60);
+      h.timeoutDispatch.clear();
+      return { c, a };
+    }
+    if (cot === "KHOA-TRUOC") {
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 40);
+      tiem(loi);
+      h.classifyLoi = false;
+      const { c, di } = await moDi(def(ref, sau ? [gate(), par("root", [move("x", x ?? {}), delay("w", W)]), ...sau] : [gate(), par("root", [move("x", x ?? {}), ...inner])]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "at the delay");
+      await wait(30);
+      ve0();
+      tiem(loi);
+      const a = await abortRun(c, OWNER, "first");
+      await di;
+      await wait(60);
+      h.timeoutDispatch.clear();
+      return { c, a };
+    }
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    h.alertDurable = false;
+    const { c, di } = await moDi(def(ref, sau ? [gate(), par("root", [move("x", x ?? {}), delay("w", 60)]), ...sau] : [gate(), par("root", [move("x", x ?? {}), ...inner])]));
+    await di;
+    await waitFor(() => !["queued", "running", "compensating"].includes(runRow(c).status), "the end of the walk");
+    await wait(40);
+    expect(runRow(c).status, "latched, no durable URGENT: held").toBe("held");
+    h.alertDurable = true;
+    h.timeoutDispatch.clear();
+    ve0();
+    tiem(loi);
+    const a = await abortRun(c, OWNER, "first");
+    await wait(60);
+    return { c, a };
+  };
+  for (const [ten, cay, oCua] of HINH) {
+    COT.forEach((cotLoi, i) => {
+      const loi = cotLoi.endsWith("TU-CHOI") ? "TU-CHOI" : "DOC-LOI";
+      const cot = cotLoi.slice(0, -loi.length - 1);
+      it(`T7B1D-BANG ${cotLoi} ${ten}`, async () => {
+        const [dau, urg, lai] = oCua[i]!;
+        const { c, a } = await dung(cot, ten, cay, loi, `b${i}${ten}`.replace(/-/g, ""));
+        const st = a.abortStops!;
+        // the evidence, first: what the injection did to s at this Abort
+        if (dau === "s") {
+          expect(st.failed, "refused").toContain("s");
+          expect(hang(c, "abort:s")?.status).toBe("failed");
+          expect(pdu("s").length).toBe(1);
+        }
+        if (dau === "s0") {
+          expect(st.failed, "marked route, no PDU").toContain("s");
+          expect(ids()).toContain("s");
+          expect(pdu("s")).toEqual([]);
+        }
+        if (dau === "unv") {
+          expect(st.unverified).toContain("s");
+          expect(ids()).not.toContain("s");
+        }
+        if (dau === "lst") {
+          expect(st.untakenBranch).toContain("s");
+          expect(ids()).not.toContain("s");
+        }
+        if (dau === "kkh") {
+          expect([...st.sent, ...st.failed, ...st.pending, ...st.unverified], "not in the plan").not.toContain("s");
+          expect(ids()).not.toContain("s");
+        }
+        expect(ids().filter((x) => x !== "s"), "no other command").toEqual([]);
+        // the URGENT
+        const tenLoai = veBuoc("s").map((x) => x.kind);
+        if (urg === "U" || urg === "Uv") {
+          expect(tenLoai).toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+          const chu = veBuoc("s").filter((x) => x.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent).map((x) => `${x.title} ${x.message}`).join(" | ");
+          expect(chu).toMatch(/press Abort again/);
+          expect(chu).toMatch(/no time limit/);
+          if (urg === "Uv") {
+            expect(chu).toMatch(/could not verify/);
+            expect(chu).toMatch(/did NOT send/);
+            expect(chu).toMatch(/finds no pinned STOP, nothing is sent/);
+            expect(chu).not.toMatch(/refused or got no answer/);
+          } else expect(chu).not.toMatch(/could not verify/);
+        }
+        if (urg === "H13") {
+          expect(tenLoai).toContain(CANH_BAO_KHONG_RO_KIND.stopUntakenBranch);
+          expect(tenLoai).not.toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+        }
+        if (urg === "-") {
+          expect(tenLoai, "not a word of s").toEqual([]);
+          expect(urgentCua("abortStopNotSent")).toEqual([]);
+        }
+        if (cot === "CHUA") {
+          expect(runDaChot(c)).toBe(false);
+          expect(no(c), "H23: a run not latched owes nothing").toEqual([]);
+        }
+        // the press, the fault gone
+        go();
+        const a2 = await bam(c);
+        if (lai === "s") {
+          expect(pdu("s").length, `pressed: ${JSON.stringify(a2.abortStops)} ${a2.message}`).toBe(1);
+          expect(hang(c, "abort:s")?.status).toBe("completed");
+          expect(no(c)).not.toContain("s");
+        } else {
+          expect(ids(), "this press sends nothing").toEqual([]);
+          if (urg === "H13" || dau === "lst") {
+            expect(a2.message, "never beside a branch never evaluated").not.toMatch(/owes no STOP/);
+            expect(a2.message).toMatch(/never evaluated/);
+          }
+        }
+        expect(ids().filter((x) => x !== "s"), "no other command").toEqual([]);
+      }, 20_000);
+    });
+  }
+
+  it("T7B1D-BR-CHOT a branch that completed before the latch, its STOP handed over and never confirmed, the run held: G: the first Abort goes into it and sends it", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 80);
+    h.alertDurable = false;
+    const { c, di } = await moDi(def("d1dbr", [gate(), par("root", [move("x"), brn("b", [otStop("s")])])]));
+    await di;
+    await waitFor(() => !["queued", "running", "compensating"].includes(runRow(c).status), "the end of the walk");
+    await wait(40);
+    h.alertDurable = true;
+    h.timeoutDispatch.clear();
+    expect(runRow(c).status).toBe("held");
+    expect(hang(c, "b")?.status, "settled: the row a sequence reads the same").toBe("completed");
+    const a = await bam(c);
+    expect(a.abortStops?.phanLoai?.s?.lop).toBe("daGiao");
+    expect(a.abortStops?.sent).toEqual(["s"]);
+    expect(ids()).toEqual(["s"]);
+  });
+
+  // ── the cases apart ─────────────────────────────────────────────────────────────────────────────────────────────────
+  it("T7B1D-THU-LAI flat: the walker refused it, in its back-off when the Abort falls, refused again: a press sends it, once", async () => {
+    h.tuChoi.set("s", REF);
+    const { c, di } = await moDi(def("d1dtl", [gate(), move("x"), otStop("s")]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "s"), "s tried once");
+    await wait(5);
+    ve0();
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(hang(c, "s")?.status).toBe("failed");
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    h.tuChoi.clear();
+    const a2 = await bam(c);
+    expect(pdu("s").length, String(a2.message)).toBe(1);
+    expect(ids()).toEqual(["s"]);
+    expect(a2.message).toMatch(/sent again/);
+    expect(a2.abortStops?.phanLoai?.s?.lop, "one definition: the Abort's own trace").toBe("no");
+    expect(/-abort-/.test(String(h.sent[0]?.key)), "a new key per sweep").toBe(true);
+    expect((await bam(c, "third")).message).toMatch(/this press sent no STOP step/);
+    expect(ids(), "once").toEqual([]);
+  });
+  it("T7B1D-HUY-S flat: the walker stood in its pin read, the flag cancelled it, the sweep refused: a press sends it", async () => {
+    let tha: () => void = () => undefined;
+    const cho = new Promise<void>((ok) => (tha = ok));
+    h.slow.set("x", 50);
+    const { c, di } = await moDi(def("d1dhuy", [gate(), move("x"), otStop("s")]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "x"), "x");
+    const lan0 = h.ghimLan.length;
+    h.ghim = (d, i) => cho.then(() => PIN_OK(d, i));
+    await waitFor(() => hang(c, "s")?.status === "running" && h.ghimLan.length > lan0, "s in its pin read", 4000);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const p = abortRun(c, OWNER, "first");
+    await wait(5);
+    tha();
+    h.ghim = PIN_OK;
+    const a = await p;
+    await di;
+    await wait(40);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    h.tuChoi.clear();
+    await bam(c);
+    expect(pdu("s").length).toBe(1);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-ROBOT a robot STOP in a container, refused: a press sends it", async () => {
+    const { c, di } = await moDi(def("d1drb", [gate(), move("x"), box("b", [delay("w", 300), robotStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(hang(c, "b")?.status).toBe("failed");
+    h.tuChoi.clear();
+    await bam(c);
+    expect(pdu("s").map((x) => x.kind)).toEqual(["robot"]);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-MOT-PHAN two STOPs in a container, s1 went, s2 refused: a press sends s2, s1 not again", async () => {
+    const { c, di } = await moDi(def("d1dmp", [gate(), move("x"), box("b", [delay("w", 300), otStop("s1"), otStop("s2")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s2", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.sent).toEqual(["s1"]);
+    expect(a.abortStops?.failed).toEqual(["s2"]);
+    h.tuChoi.clear();
+    await bam(c);
+    expect(ids()).toEqual(["s2"]);
+    expect(hang(c, "abort:s1")?.status).toBe("completed");
+    expect(hang(c, "abort:s2")?.status).toBe("completed");
+  });
+  const btSau = async (ref: string) => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def(ref, [gate(), par("root", [move("x"), box("b", [move("y", { compensation: otStop("s") }), delay("w", 300)])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    h.tuChoi.clear();
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(runDaChot(c), "the latch fell after the sweep").toBe(true);
+    return c;
+  };
+  for (const ngoai of [false, true]) {
+    it(`T7B1D-BT-SAU a compensation not due, refused, the latch after the sweep: the URGENT's 'no time limit' is true ${ngoai ? "past" : "in"} the window`, async () => {
+      const c = await btSau(`d1dbs${ngoai ? "n" : "t"}`);
+      expect(no(c)).toEqual(["s"]);
+      expect(chuCua("abortStopNotSent")).toMatch(/no time limit/);
+      if (ngoai) quaCuaSo(c);
+      const a2 = await bam(c);
+      expect(pdu("s").length, String(a2.message)).toBe(1);
+      expect(ids()).toEqual(["s"]);
+      expect(/-abort-/.test(String(h.sent[0]?.key))).toBe(true);
+      expect(no(c)).toEqual([]);
+      expect(a2.message).toMatch(/sent again: s/);
+      expect(a2.message).not.toMatch(/nothing was sent for them/);
+    });
+  }
+  for (const [loi, ten] of [["TU-CHOI", "refused"], ["DOC-LOI", "not verified"]] as const) {
+    for (const ngoai of [false, true]) {
+      it(`T7B1D-BT-SAU-MAT-HANG a run that latches is outside H27: a compensation not due, ${ten}, its abort: row lost, the latch after the sweep: the debt the walk's memory saved: it goes ${ngoai ? "past" : "in"} the window`, async () => {
+        h.timeoutDispatch.add("x");
+        h.slow.set("x", 120);
+        const { c, di } = await moDi(def(`d1dbm${loi === "TU-CHOI" ? "t" : "d"}${ngoai ? "n" : "c"}`, [gate(), par("root", [move("x"), box("b", [move("y", { compensation: otStop("s") }), delay("w", 300)])])]));
+        await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+        await wait(10);
+        ve0();
+        if (loi === "TU-CHOI") h.tuChoi.set("s", REF);
+        else h.classifyLoi = true;
+        h.hangNem = (r) => r.stepId === "abort:s";
+        await abortRun(c, OWNER, "first");
+        h.classifyLoi = false;
+        await di;
+        await wait(60);
+        expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
+        h.hangNem = null;
+        h.tuChoi.clear();
+        h.timeoutDispatch.clear();
+        expect(hang(c, "abort:s"), "lost").toBeUndefined();
+        expect(runDaChot(c)).toBe(true);
+        expect(no(c), "the context holds it").toEqual(["s"]);
+        expect(chuCua("abortStopNotSent")).toMatch(/no time limit/);
+        if (ngoai) quaCuaSo(c);
+        const a2 = await bam(c);
+        expect(pdu("s").length, `what the URGENT promised: ${String(a2.message)}`).toBe(1);
+        expect(ids()).toEqual(["s"]);
+        expect(no(c)).toEqual([]);
+      });
+    }
+  }
+  const ksUnv = async (ref: string, truocAbort?: () => void) => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def(ref, [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.classifyLoi = true;
+    truocAbort?.();
+    const a = await abortRun(c, OWNER, "first");
+    h.classifyLoi = false;
+    await di.catch((e: unknown) => {
+      if (!truocAbort) throw e; // the context write thrown on purpose reaches the walk's exception path
+    });
+    await wait(60);
+    h.timeoutDispatch.clear();
+    expect(a.abortStops?.unverified).toEqual(["s"]);
+    expect(ids()).toEqual([]);
+    return c;
+  };
+  for (const ngoai of [false, true]) {
+    it(`T7B1D-KS-UNV not verified, the latch after the sweep: an URGENT names s in the true words; it goes ${ngoai ? "past" : "in"} the window`, async () => {
+      const c = await ksUnv(`d1dku${ngoai ? "n" : "t"}`);
+      expect(no(c)).toEqual(["s"]);
+      const chu = chuCua("abortStopNotSent");
+      expect(veBuoc("s").map((x) => x.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.abortStopNotSent]);
+      expect(chu).toMatch(/could not verify/);
+      expect(chu).toMatch(/did NOT send/);
+      expect(chu).toMatch(/press Abort again/);
+      expect(chu).toMatch(/no time limit/);
+      expect(chu).toMatch(/finds no pinned STOP, nothing is sent/);
+      if (ngoai) quaCuaSo(c);
+      await bam(c);
+      expect(pdu("s").length).toBe(1);
+      expect(ids()).toEqual(["s"]);
+      expect(no(c)).toEqual([]);
+    });
+  }
+  it("T7B1D-KS-UNV the read back answers: no pinned STOP: it does not go, nothing is owed any more", async () => {
+    const c = await ksUnv("d1dkup");
+    expect(no(c)).toEqual(["s"]);
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    const a = await bam(c);
+    expect(ids(), "the trace sends no STOP that is none").toEqual([]);
+    expect(a.abortStops?.notPinned).toEqual(["s"]);
+    expect(no(c)).toEqual([]);
+    expect(hang(c, "abort:s")?.status).toBe("skipped");
+    expect(a.message).toMatch(/no pinned STOP/);
+  });
+  it("T7B1D-KS-UNV the read still lost on a latched run: the marked route as ever: 0 PDU when the dispatcher cannot read either; still owed", async () => {
+    const c = await ksUnv("d1dkuv");
+    h.classifyLoi = true;
+    h.dispatcherThat = true;
+    h.dispatcherKhongDoc = true;
+    const a = await bam(c);
+    h.classifyLoi = false;
+    h.dispatcherKhongDoc = false;
+    expect(ids()).toEqual(["s"]);
+    expect(pdu("s")).toEqual([]);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(no(c)).toEqual(["s"]);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu, "this press handed it over").toMatch(/refused or got no answer/);
+    expect(chu).not.toMatch(/could not verify/);
+  });
+  it("T7B1D-KS-UNV a trace lost with everything else: the words promise no more than the window", async () => {
+    const nem = () => {
+      queueMicrotask(() => (h.ctxNem = nem));
+      return true;
+    };
+    const c = await ksUnv("d1dkum", () => {
+      h.hangNem = (r) => r.stepId === "abort:s";
+      h.ctxNem = nem;
+    });
+    expect(h.ctxNemLan, "the injection reached the context").toBeGreaterThan(0);
+    h.hangNem = null;
+    h.ctxNem = null;
+    expect(chuCua("abortStopNotSent")).toMatch(/could not verify/);
+    expect(chuCua("abortStopNotSent")).toMatch(/within 15 minutes/);
+    expect(chuCua("abortStopNotSent")).not.toMatch(/no time limit/);
+  });
+  it("T7B1D-CHUA-DOC-LAI a run not latched, not verified: a press whose read answers 'no pinned STOP' sends nothing, the trace goes; a read still lost sends nothing, the trace stays", async () => {
+    const { c, di } = await moDi(def("d1dcd", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.classifyLoi = true;
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.unverified).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status, "a trace").toBe("failed");
+    expect(no(c), "no debt").toEqual([]);
+    expect(h.alerts.map((a) => a.kind), "H23: no URGENT").toEqual([]);
+    const a1 = await bam(c, "still lost");
+    expect(ids()).toEqual([]);
+    expect(a1.abortStops?.unverified).toEqual(["s"]);
+    expect(a1.message).toMatch(/ould not be verified/);
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    h.classifyLoi = false;
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    const a2 = await bam(c, "read: none");
+    expect(ids()).toEqual([]);
+    expect(a2.abortStops?.notPinned).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status, "the trace removed").toBe("skipped");
+    ghimHalt(true);
+    h.ghim = PIN_OK;
+    const a3 = await bam(c, "after");
+    expect(ids(), "read and found none: settled").toEqual([]);
+    expect(a3.ok).toBe(true);
+  });
+  it("T7B1D-CHUA-DOC-LAI flat: the planner still reaches s after the trace was removed: one definition: read and found none is settled, as on a latched run", async () => {
+    const { c, di } = await moDi(def("d1dcp", [gate(), move("x"), delay("w", 300), otStop("s")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.classifyLoi = true;
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.classifyLoi = false;
+    expect(hang(c, "abort:s")?.status, "a trace").toBe("failed");
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    await bam(c, "read: none");
+    expect(hang(c, "abort:s")?.status).toBe("skipped");
+    ghimHalt(true);
+    h.ghim = PIN_OK;
+    const a = await bam(c, "after");
+    expect(a.abortStops?.phanLoai?.s?.lop).toBe("xong");
+    expect(ids(), "the class decides, on this run too").toEqual([]);
+  });
+  it("T7B1D-CHUA-KHONG-CO-ADAPTER a run not latched, the verifier reads 'not pinned' because nothing could be read: a trace, not an answer; a press whose read answers sends it", async () => {
+    const { c, di } = await moDi(def("d1dca", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    ghimHalt(false);
+    h.ghim = PIN_BAD;
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.notPinned).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status, "unread is no answer: a trace").toBe("failed");
+    const a1 = await bam(c, "still unread");
+    expect(ids()).toEqual([]);
+    expect(hang(c, "abort:s")?.status, "the trace stays").toBe("failed");
+    expect(a1.abortStops?.unverified).toEqual(["s"]);
+    ghimHalt(true);
+    h.ghim = PIN_OK;
+    await bam(c, "read");
+    expect(pdu("s").length).toBe(1);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-CHUA-DOC-KHONG-GHIM a run not latched, read and not pinned at the Abort: no trace (only what could not be verified)", async () => {
+    const { c, di } = await moDi(def("d1dcn", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.notPinned).toEqual(["s"]);
+    expect(hang(c, "abort:s"), "no trace").toBeUndefined();
+    ghimHalt(true);
+    h.ghim = PIN_OK;
+    await bam(c);
+    expect(ids(), "never meant to go, the container failed: R-6").toEqual([]);
+  });
+  it("T7B1D-UNV-KHONG-LA-STOP a non-STOP in the sweep's unverified on a run not latched: no trace, no debt when it latches later", async () => {
+    const c = await centralRun(def("d1dun", [gate("g0"), ot("x"), gate("g1"), move("m9"), otStop("s2")]), 1);
+    await wait(30);
+    fake.store.set("machines", rows("machines").filter((m) => m.id !== 2));
+    const a = await bam(c);
+    expect(a.abortStops?.unverified).toContain("m9");
+    expect(hang(c, "abort:m9"), "no row").toBeUndefined();
+    const ctx = ctxCua(c);
+    ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] = { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() };
+    runRow(c).contextJson = ctx;
+    expect(no(c)).toEqual([]);
+    h.traTimeout = 1;
+    await bam(c, "again");
+    expect(ids().filter((x) => x === "m9")).toEqual([]);
+  });
+  it("T7B1D-R6B a run that never acted, not verified: R-6-b stands: no trace, a press sends nothing", async () => {
+    const { c, di } = await moDi(def("d1dr6", [gate(), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.classifyLoi = true;
+    const a = await abortRun(c, OWNER, "first");
+    h.classifyLoi = false;
+    await di;
+    await wait(40);
+    expect(a.abortStops?.unverified).toEqual(["s"]);
+    expect(hang(c, "abort:s"), "no trace").toBeUndefined();
+    await bam(c);
+    expect(ids()).toEqual([]);
+  });
+  for (const nhip of ["song", "xong"] as const) {
+    it(`T7B1D-WALKER-SONG-XONG the same input, pressed while the walker ${nhip === "song" ? "lives" : "has ended"}: the same command`, async () => {
+      h.slow.set("x", 200);
+      const { c, di } = await moDi(def(`d1dw${nhip}`, [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s")])])]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.sent.some((x) => x.stepId === "x"), "at the delay");
+      await wait(10);
+      ve0();
+      h.tuChoi.set("s", REF);
+      const a = await abortRun(c, OWNER, "first");
+      expect(a.abortStops?.failed).toEqual(["s"]);
+      h.tuChoi.clear();
+      if (nhip === "xong") {
+        await di;
+        await wait(40);
+        expect(hang(c, "b")?.status).toBe("failed");
+      }
+      await bam(c);
+      expect(ids()).toEqual(["s"]);
+      expect(pdu("s").length).toBe(1);
+      await di;
+    });
+  }
+  it("T7B1D-CUA-SO a run not latched, past the window: resendTooOld, no command: the limit that stands", async () => {
+    const { c, di } = await moDi(def("d1dcs", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s", REF);
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.tuChoi.clear();
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    quaCuaSo(c);
+    const a = await bam(c);
+    expect(a.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1D-PENDING-KHONG-TRA-LOI a run not latched, the dispatcher never answers: a trace of class coTheDaRa: a press within the window sends it under the attempt's key, in words that say it may have gone", async () => {
+    const { c, di } = await moDi(def("d1dpk", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.khongTraLoi.add("s");
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.khongTraLoi.clear();
+    expect(a.abortStops?.pending).toEqual(["s"]);
+    expect(ids()).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status, "a trace").toBe("failed");
+    expect(no(c), "no debt").toEqual([]);
+    expect(h.alerts.map((a) => a.kind), "H23").toEqual([]);
+    const a2 = await bam(c);
+    expect(a2.abortStops?.phanLoai?.s?.lop).toBe("coTheDaRa");
+    expect(h.sent.map((x) => x.key)).toEqual([`run${c}-s-a1`]);
+    expect(a2.message).toMatch(/under the key of attempt 1/);
+    expect(a2.message).not.toMatch(/were sent again/);
+    expect(hang(c, "abort:s")?.status).toBe("completed");
+  });
+  it("T7B1D-PENDING-KHONG-TRA-LOI past the window: resendTooOld, no command", async () => {
+    const { c, di } = await moDi(def("d1dpn", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.khongTraLoi.add("s");
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    h.khongTraLoi.clear();
+    quaCuaSo(c);
+    const a = await bam(c);
+    expect(a.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1D-PENDING-KHONG-TRA-LOI the answer lands late, ok: its row replaces the trace: a press sends nothing", async () => {
+    const { c, di } = await moDi(def("d1dpl", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.slow.set("s", 1400);
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    expect(a.abortStops?.pending).toEqual(["s"]);
+    await waitFor(() => hang(c, "abort:s")?.status === "completed", "the late answer's row");
+    h.slow.clear();
+    await bam(c);
+    expect(ids()).toEqual([]);
+  }, 10_000);
+  it("T7B1D-PENDING-KHONG-TRA-LOI the latch falls after: owed, told as what may have gone, never 'did NOT go out'", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 1300);
+    const { c, di } = await moDi(def("d1dps", [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.khongTraLoi.add("s");
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.khongTraLoi.clear();
+    h.timeoutDispatch.clear();
+    expect(a.abortStops?.pending).toEqual(["s"]);
+    expect(runDaChot(c)).toBe(true);
+    expect(no(c)).toEqual(["s"]);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).toMatch(/may have gone out/);
+    expect(chu).not.toMatch(/did NOT go out/);
+    quaCuaSo(c);
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  }, 10_000);
+  // H27 (chu du an 09/11): a known limit, pinned as measured. A run not latched, the one write of the Abort's trace lost, the walker's rows over the STOP: the press sends nothing; the first answer names it and promises nothing
+  for (const hinh of ["hop", "phang"] as const) {
+    it(`T7B1D-MAT-HANG-ABORT-CHUA-KHOA gioi han da biet H27, ${hinh}: refused, the abort: row lost, the walker wrote failed and ended: the first answer names s, promises nothing; a press sends nothing`, async () => {
+      if (hinh === "phang") h.tuChoi.set("s", REF);
+      const { c, di } = await moDi(def(`d1dmh${hinh}`, hinh === "hop" ? [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])] : [gate(), move("x"), otStop("s")]));
+      if (hinh === "hop") await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      else await waitFor(() => h.sent.some((x) => x.stepId === "s"), "s tried once, in its back-off");
+      await wait(hinh === "hop" ? 20 : 5);
+      ve0();
+      h.tuChoi.set("s", REF);
+      h.hangNem = (r) => r.stepId === "abort:s";
+      const a = await abortRun(c, OWNER, "first");
+      await di;
+      await wait(40);
+      expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
+      h.hangNem = null;
+      h.tuChoi.clear();
+      expect(a.abortStops?.failed).toEqual(["s"]);
+      expect(a.abortStops?.khongBen).toEqual(["s"]);
+      expect(hang(c, "abort:s"), "lost").toBeUndefined();
+      expect(hang(c, hinh === "hop" ? "b" : "s")?.status, "the walker's row says failed").toBe("failed");
+      expect(a.message, "the first answer names the STOP").toMatch(/could not be recorded: s:/);
+      expect(a.message).toMatch(/may not reach/);
+      expect(a.message).not.toMatch(/owed|press Abort again/);
+      expect(no(c), "no debt").toEqual([]);
+      expect(runDaChot(c)).toBe(false);
+      expect(urgentCua("abortStopNotSent"), "H23").toEqual([]);
+      const a2 = await bam(c);
+      expect(ids(), "H27: what this write lost costs").toEqual([]);
+      expect(a2.message).toMatch(/this press sent no STOP step/);
+      expect(a2.message).not.toMatch(/owed/);
+    });
+  }
+  it("T7B1D-MAT-HANG-ABORT-CHUA-KHOA the walker never wrote over it (flat, not reached): the same definition reaches s: it goes; a press refused and its row lost again: named, no promise", async () => {
+    const { c, di } = await moDi(def("d1dmht", [gate(), move("x"), delay("w", 300), otStop("s")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.khongBen).toEqual(["s"]);
+    expect(hang(c, "abort:s")).toBeUndefined();
+    const a1 = await bam(c, "refused, lost again");
+    expect(ids(), "the planner reaches it").toEqual(["s"]);
+    expect(a1.abortStops?.failed).toEqual(["s"]);
+    expect(a1.message).toMatch(/could not be recorded: s:/);
+    expect(a1.message).not.toMatch(/stay owed|within 15 minutes/);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    await bam(c, "the fault gone");
+    expect(pdu("s").length).toBe(1);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-MAT-HANG-ABORT-CHUA-KHOA a trace not verified, its row lost, a press whose read still fails: no promise of a later press", async () => {
+    const { c, di } = await moDi(def("d1dmhu", [gate(), move("x"), delay("w", 300), otStop("s")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.classifyLoi = true;
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.unverified).toEqual(["s"]);
+    expect(a.abortStops?.khongBen).toEqual(["s"]);
+    expect(a.message).toMatch(/could not be recorded: s:/);
+    const a1 = await bam(c, "still lost");
+    expect(a1.abortStops?.khongBen).toEqual(["s"]);
+    expect(a1.message).not.toMatch(/sends it if its read finds/);
+    h.classifyLoi = false;
+    h.hangNem = null;
+  });
+
+  // ── the controls: nothing here sends more than it did ───────────────────────────────────────────────────────────────
+  it("T7B1D-DC-HOP a container failed on its own before the Abort, the STOP behind it never meant: nothing goes, no word", async () => {
+    h.failPlan.set("y", Infinity);
+    const { c, di } = await moDi(def("d1ddc", [gate(), par("root", [move("x"), box("b", [move("y"), otStop("s")]), delay("w", 300)])]));
+    await waitFor(() => hang(c, "b")?.status === "failed", "b failed on its own");
+    await wait(20);
+    ve0();
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(ids()).toEqual([]);
+    expect([...(a.abortStops?.failed ?? []), ...(a.abortStops?.unverified ?? [])]).toEqual([]);
+    expect(hang(c, "abort:s")).toBeUndefined();
+    await bam(c);
+    expect(ids()).toEqual([]);
+    expect(veBuoc("s")).toEqual([]);
+  });
+  it("T7B1D-DC-RA2 a STOP refused by the walker before the Abort, a sibling alive: never meant by the Abort: nothing goes", async () => {
+    h.slow.set("x", 200);
+    h.tuChoi.set("st", REF);
+    const { c, di } = await moDi(def("d1ddr", [gate(), par("p", [move("x"), otStop("st", { maxAttempts: 0 }), delay("w", 400)])]));
+    await waitFor(() => hang(c, "st")?.status === "failed", "st refused");
+    h.tuChoi.clear();
+    ve0();
+    await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(ids()).toEqual([]);
+    expect(hang(c, "abort:st")).toBeUndefined();
+    await bam(c);
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1D-GATE-HOP no walker at the Abort, a gate in the container: s refused, a press sends it", async () => {
+    const c = await centralRun(def("d1dgh", [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+    await wait(30);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const a = await abortRun(c, OWNER, "first");
+    await wait(40);
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    h.tuChoi.clear();
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-GATE-HOP no walker at the Abort, its abort: row lost: no walker wrote over the rows: a press still reaches it", async () => {
+    const c = await centralRun(def("d1dgm", [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+    await wait(30);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const a = await abortRun(c, OWNER, "first");
+    await wait(40);
+    h.hangNem = null;
+    h.tuChoi.clear();
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+  it("T7B1D-TU-CHOI-GATE the rejection of a gate in the container, its sweep refused: a press sends s", async () => {
+    const c = await centralRun(def("d1dtg", [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+    await wait(30);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER);
+    await wait(40);
+    h.tuChoi.clear();
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+
+  // ── H13 × Abort (H25), a latched run ───────────────────────────────────────────────────────────────────────────────
+  const dieuKienH13 = (ref: string) => def(ref, [gate(), par("root", [move("x"), delay("w", 300)]), brn("b", [otStop("s"), move("m")]), move("m2")]);
+  const tenH13 = () => ({
+    nhanh: urgentCua("stopUntakenBranch").map((a) => String(a.dedupKey).split(":")[2]).sort(),
+    tien: urgentCua("forwardNotSent").map((a) => String(a.dedupKey).split(":")[2]).sort(),
+  });
+  it("T7B1D-H13-ABORT the latch before the Abort, the walker alive: the Abort tells what the walk would have, each once; the press does not say 'owes no STOP'", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    const { c, di } = await moDi(dieuKienH13("d1dh1"));
+    await waitFor(() => h.traTimeout > 0, "the latch");
+    await wait(40);
+    ve0();
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    expect(a.abortStops?.untakenBranch).toEqual(["s"]);
+    expect(tenH13()).toEqual({ nhanh: ["s"], tien: ["m", "m2"] });
+    expect(ids()).toEqual([]);
+    const a2 = await bam(c);
+    expect(ids()).toEqual([]);
+    expect(a2.message).not.toMatch(/owes no STOP/);
+    expect(a2.message).toMatch(/never evaluated: s/);
+    expect(tenH13().tien, "a press does not tell the forward work again").toEqual([]);
+  });
+  it("T7B1D-H13-ABORT the latch after the sweep: the walk's end tells it, each once", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(dieuKienH13("d1dh2"));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    expect(runDaChot(c)).toBe(true);
+    expect(a.abortStops?.untakenBranch).toEqual(["s"]);
+    expect(tenH13()).toEqual({ nhanh: ["s"], tien: ["m", "m2"] });
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1D-H13-ABORT the same source as the walk's: with no Abort the walk names the same steps", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    const { c, di } = await moDi(def("d1dh3", [gate(), par("root", [move("x"), delay("w", 60)]), brn("b", [otStop("s"), move("m")]), move("m2")]));
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    expect(runDaChot(c)).toBe(true);
+    expect(tenH13()).toEqual({ nhanh: ["s"], tien: ["m", "m2"] });
+  });
+  it("T7B1D-H13-ABORT a run not latched: no new URGENT", async () => {
+    const { c, di } = await moDi(def("d1dh4", [gate(), move("x"), delay("w", 300), brn("b", [otStop("s"), move("m")]), move("m2")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    const a = await abortRun(c, OWNER, "first");
+    await di;
+    await wait(40);
+    expect(a.abortStops?.untakenBranch).toEqual(["s"]);
+    expect(h.alerts.map((a) => a.kind)).toEqual([]);
+  });
+  for (const daBao of [true, false]) {
+    it(`T7B1D-H13-ABORT a stored run, ${daBao ? "its URGENT known durable: the walker's word stands: no second word of the forward work" : "no word known to have landed: the forward work is told"}`, async () => {
+      const c = await khoaChuaGiao(`d1dh6${daBao ? "b" : "k"}`, [move("m")]);
+      if (daBao) runRow(c).contextJson = { ...ctxCua(c), [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: "x", at: new Date().toISOString() } };
+      const a = await bam(c);
+      expect(a.abortStops?.sent).toEqual(["s2"]);
+      expect(tenH13().tien).toEqual(daBao ? [] : ["m"]);
+      await bam(c, "again");
+      expect(tenH13().tien, "a press does not tell the forward work again").toEqual([]);
+    });
+  }
+  it("T7B1D-H13-ABORT no word landed at the first Abort: a press tells the forward work again, under the same key; once one landed, no more", async () => {
+    const c = await khoaChuaGiao("d1dh8", [move("m")]);
+    h.alertDurable = false;
+    await bam(c);
+    expect(tenH13().tien).toEqual(["m"]);
+    const khoa = urgentCua("forwardNotSent")[0]?.dedupKey;
+    await bam(c, "no word landed");
+    expect(tenH13().tien, "CO BAO").toEqual(["m"]);
+    expect(urgentCua("forwardNotSent")[0]?.dedupKey, "one fixed key: the inbox holds one").toBe(khoa);
+    h.alertDurable = true;
+    runRow(c).contextJson = { ...ctxCua(c), [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: "x", at: new Date().toISOString() } };
+    await bam(c, "one landed");
+    expect(tenH13().tien).toEqual([]);
+  });
+  for (const noi of ["edge", "khac"] as const) {
+    it(`T7B1D-H13-ABORT a latched run driven elsewhere (${noi === "edge" ? "an edge node" : "another instance"}): its rows lag: no step is named as not handed over; that it cannot be determined is told`, async () => {
+      const c = await khoaChuaGiao(`d1dh7${noi}`, [move("m")]);
+      if (noi === "edge") runRow(c).edgeNodeId = NODE;
+      else runRow(c).status = "running";
+      const a = await bam(c);
+      expect(a.abortStops?.sent).toEqual(["s2"]);
+      expect(tenH13().tien.filter((x) => x === "m"), "no step named from rows that lag").toEqual([]);
+      expect(chuCua("forwardNotSent")).toMatch(/could not be determined/);
+    });
+  }
+  it("T7B1D-H13-ABORT what cannot be determined is told: the rows unread on a latched Abort", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 40);
+    const { c, di } = await moDi(dieuKienH13("d1dh5"));
+    await waitFor(() => h.traTimeout > 0, "the latch");
+    await wait(40);
+    ve0();
+    h.docNem = { bang: "orchestration_run_steps", lan: Infinity };
+    await abortRun(c, OWNER, "first");
+    await wait(20);
+    const chu = chuCua("forwardNotSent");
+    h.docNem = null;
+    await di;
+    h.timeoutDispatch.clear();
+    expect(chu).toMatch(/could not be determined/);
+  });
+
+  // ── branch 3 of RC12b (H26): the real path: the walker's own end in flight, the Abort reads 'running', flags, its own write lands after ────────────────────
+  const nhanh3 = async (d: WorkflowDefinition, chuanBi: (c: number) => void, trang: "failed" | "completed") => {
+    let moi = true;
+    let aP: Promise<any> | null = null;
+    const update0 = (fake as any).update;
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const c = (await startRun(d.ref, {}, OWNER)).runId!;
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    (fake as any).update = (t: any) => {
+      const b = update0(t);
+      if (t?.[Symbol.for("drizzle:Name")] !== "orchestration_runs") return b;
+      let st: unknown;
+      const s0 = b.set;
+      const w0 = b.where;
+      b.set = (v: Row) => {
+        st = v.status;
+        s0(v);
+        return b;
+      };
+      b.where = (x: any) => {
+        if (st === trang && moi) {
+          moi = false;
+          ve0();
+          chuanBi(c);
+          h.treAborted = 40;
+          aP = abortRun(c, OWNER, "in the race");
+          const dat = new Promise<Row[]>((ok) => setTimeout(() => ok(Promise.resolve(w0(x).returning())), 15));
+          return { returning: () => dat, then: (a: (v: Row[]) => unknown, e?: (y: unknown) => unknown) => dat.then(a, e) };
+        }
+        return w0(x);
+      };
+      return b;
+    };
+    const di = resumeRun(c, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => aP !== null, "the walker's own end in flight");
+    const a = await aP!;
+    await di;
+    await wait(60);
+    (fake as any).update = update0;
+    return { c, a };
+  };
+  const SAU_LOI = (ref: string, them: WorkflowStep[]) => def(ref, [gate(), move("x"), box("b", [move("y")]), ...them]);
+  it("T7B1D-N3A a run failed by itself: the pinned STOPs go, a STOP-typed step not pinned is listed, a non-STOP never", async () => {
+    h.failPlan.set("y", Infinity);
+    const { c, a } = await nhanh3(SAU_LOI("d1dn3a", [otStop("s"), stopTyped("nt"), move("m"), robotStop("rs")]), () => undefined, "failed");
+    expect(a.ok).toBe(false);
+    expect(a.status).toBe("failed");
+    expect(ids().sort()).toEqual(["rs", "s"]);
+    expect(a.abortStops?.notPinned).toContain("nt");
+    expect(h.alerts.map((a) => a.kind)).toEqual([]);
+    expect(hang(c, "abort:s")?.status).toBe("completed");
+  });
+  it("T7B1D-N3B the STOP refused, a run that never latched: the row keeps its code, an URGENT names it, no word of an unknown outcome, none of a later press", async () => {
+    h.failPlan.set("y", Infinity);
+    const { c, a } = await nhanh3(SAU_LOI("d1dn3b", [otStop("s")]), () => h.tuChoi.set("s", REF), "failed");
+    h.tuChoi.clear();
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(String(hang(c, "abort:s")?.error), "RM-N3-MA-C: the row says it").toMatch(/^FOE_STOP_NOT_SENT: STOP "s"/);
+    expect(veBuoc("s").map((x) => x.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.abortStopNotSent]);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).toMatch(/has ended/);
+    expect(chu).toMatch(/cannot send it/);
+    expect(chu).not.toMatch(/FOE_OUTCOME_UNKNOWN|UNKNOWN|outcome is unknown|state of the machine is unknown/);
+    const dep = await deployWorkflow(def("d1dn3b", [gate(), move("x"), otStop("s9")]), OWNER);
+    expect(dep.ok, "a run that ended holds no deploy (T12 reads aborted runs only)").toBe(true);
+  });
+  it("T7B1D-N3B on a run that did latch the words stay those of an unknown outcome", async () => {
+    const { c, di } = await moDi(def("d1dn3k", [gate(), par("p", [move("x"), box("b", [delay("w", 800), otStop("s")])])]));
+    h.slow.set("x", 250);
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const ctx = ctxCua(c);
+    h.treAborted = 5;
+    h.khiTreAborted = () => {
+      runRow(c).status = "failed";
+      rows("orchestration_run_steps").push({ id: 99_002, runId: c, stepId: "zz", stepType: "command", status: "failed", error: "FOE_OUTCOME_UNKNOWN: step \"zz\" outcome unknown", resultJson: null });
+    };
+    void ctx;
+    const a = await abortRun(c, OWNER, "walker alive");
+    h.tuChoi.clear();
+    await di;
+    expect(a.status).toBe("failed");
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).toMatch(/has ended/);
+    expect(chu).toMatch(/outcome is unknown/);
+  });
+  it("T7B1D-N3C a run that never latched, the pins unreadable: NOT the marked route: listed, told, no command: step words, not 'STOP \"nt\"'", async () => {
+    h.failPlan.set("y", Infinity);
+    const { c, a } = await nhanh3(SAU_LOI("d1dn3c", [otStop("s"), stopTyped("nt"), move("m")]), () => {
+      h.classifyLoi = true;
+      h.dispatcherThat = true;
+    }, "failed");
+    h.classifyLoi = false;
+    h.dispatcherThat = false;
+    expect(a.status).toBe("failed");
+    expect(ids(), "no marked route on a run never latched").toEqual([]);
+    expect(a.abortStops?.unverified).toEqual(expect.arrayContaining(["s", "nt"]));
+    expect(a.abortStops?.failed).toEqual([]);
+    expect(veBuoc("s").map((x) => x.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.abortStopNotSent]);
+    expect(veBuoc("nt").map((x) => x.kind)).toEqual([CANH_BAO_KHONG_RO_KIND.abortStopNotSent]);
+    expect(veBuoc("m")).toEqual([]);
+    const chu = chuCua("abortStopNotSent");
+    expect(chu).not.toMatch(/STOP "nt"/);
+    expect(chu).toMatch(/step "nt"/);
+    expect(chu).toMatch(/could not be verified as a pinned STOP/);
+    expect(chu).toMatch(/NOT sent/);
+    expect(chu).toMatch(/check the machine on site/);
+    expect(chu).not.toMatch(/press Abort again|FOE_OUTCOME_UNKNOWN|UNKNOWN/);
+    expect(hang(c, "abort:s"), "no later press reads it").toBeUndefined();
+  });
+  it("T7B1D-N3C a run that did latch keeps the marked route (the dispatcher decides)", async () => {
+    const { c, di } = await moDi(def("d1dn3m", [gate(), par("p", [move("x"), box("b", [delay("w", 800), otStop("s")])])]));
+    h.slow.set("x", 250);
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.classifyLoi = true;
+    h.dispatcherThat = true;
+    h.traTimeout = 1;
+    h.treAborted = 5;
+    h.khiTreAborted = () => {
+      runRow(c).status = "failed";
+      rows("orchestration_run_steps").push({ id: 99_003, runId: c, stepId: "zz", stepType: "command", status: "failed", error: "FOE_OUTCOME_UNKNOWN: step \"zz\" outcome unknown", resultJson: null });
+    };
+    const a = await abortRun(c, OWNER, "walker alive");
+    h.classifyLoi = false;
+    await di;
+    expect(a.status).toBe("failed");
+    expect(pdu("s").length, "marked row, real pins: the dispatcher lets it").toBe(1);
+    expect(ids()).toEqual(["s"]);
+    h.dispatcherThat = false;
+  });
+  it("T7B1D-N3-CO-THE accepted behaviour (H26): class coTheDaRa goes at branch 3, under the attempt's key: at worst one STOP more, pressed by a person", async () => {
+    h.failPlan.set("y", Infinity);
+    const { c, a } = await nhanh3(SAU_LOI("d1dn3t", [otStop("s")]), (c0) => {
+      void upsertStep(c0, "s", "command", { status: "running", attempt: 0, startedAt: new Date() });
+    }, "failed");
+    expect(a.abortStops?.phanLoai?.s?.lop).toBe("coTheDaRa");
+    expect(h.sent.map((x) => x.key)).toEqual([`run${c}-s-a1`]);
+  });
+  it("T7B1D-N3E accepted behaviour (H26): a run completed, a container its precondition skipped: its pinned STOP goes: one STOP more, never a non-STOP", async () => {
+    const { c, a } = await nhanh3(def("d1dn3e", [gate(), move("x"), box("c", [otStop("s"), move("m")], { precondition: { source: "telemetry", machineId: 2, key: "temp", op: "gt", value: 100 }, onPreconditionFail: "skip" })]), () => undefined, "completed");
+    expect(a.status).toBe("completed");
+    expect(ids()).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status).toBe("completed");
+    expect(h.alerts.map((a) => a.kind)).toEqual([]);
+  });
+  it("T7B1D-HN3 a second person pressing while the first sweep waits, run not latched, refused: the words are true of the next press, which sends it", async () => {
+    const { c, di } = await moDi(def("d1dhn", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(20);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.slow.set("s", 100);
+    const aP = abortRun(c, OWNER, "A");
+    await waitFor(() => runRow(c).status === "aborted" && ids().includes("s"), "A's sweep waits on the dispatcher");
+    const b = await abortRun(c, OTHER, "B");
+    const a = await aP;
+    await di;
+    await wait(40);
+    h.tuChoi.clear();
+    h.slow.clear();
+    expect(a.abortStops?.failed).toEqual(["s"]);
+    expect(b.abortStops?.failed).toEqual(["s"]);
+    expect(b.message).not.toMatch(/stay owed/);
+    expect(b.message).toMatch(/refused or not answered: s/);
+    expect(b.message).toMatch(/within 15 minutes/);
+    await bam(c);
+    expect(ids()).toEqual(["s"]);
+  });
+
+  // ── an exception in the sweep (H26): never a silent ok ─────────────────────────────────────────────────────────────
+  const hongDinhNghia = (c: number) => {
+    const wf = rows("orchestration_workflows").find((w) => w.id === runRow(c).workflowId)!;
+    wf.definitionJson = { ...wf.definitionJson, steps: [...wf.definitionJson.steps, { id: "hong", type: "sequence", steps: 5 }] };
+  };
+  it("T7B1D-QUET-NEM a latched run: khongDocDuoc, the URGENT and the words of RA2-5, the 15 minutes do not stretch", async () => {
+    const c = await khoaChuaGiao("d1dqk");
+    hongDinhNghia(c);
+    const a = await bam(c);
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(urgentCua("abortDefUnread").length).toBe(1);
+    expect(a.message).toMatch(/could not read the definition/);
+    expect(a.message).toMatch(/within 15 minutes/);
+    expect(ids()).toEqual([]);
+    quaCuaSo(c);
+    const a2 = await bam(c, "past");
+    expect(a2.reason).toBe("resendTooOld");
+    expect(ids()).toEqual([]);
+  });
+  it("T7B1D-QUET-NEM a run not latched: told to the one who pressed, no URGENT (H23)", async () => {
+    const c = await centralRun(def("d1dqc", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    hongDinhNghia(c);
+    const a = await bam(c);
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(a.message).toMatch(/could not read the definition/);
+    expect(h.alerts.map((a) => a.kind)).toEqual([]);
+    expect(ids()).toEqual([]);
+  });
+
+  // ── every way out of abortRun lets the waiting walk go (RM-THA-*): a walker latched behind the Abort ends long before the bound of the wait ────────────────
+  const dungTrongX = async (ref: string) => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 250);
+    const { c, di } = await moDi(def(ref, [gate(), par("p", [move("x"), box("b", [delay("w", 800), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.sent.some((x) => x.stepId === "x"), "x handed over");
+    await wait(20);
+    ve0();
+    return { c, di };
+  };
+  it("T7B1D-THA-N3 another end at branch 3: the walk behind it does not wait for its bound", async () => {
+    const { c, di } = await dungTrongX("d1dt3");
+    h.treAborted = 5;
+    h.khiTreAborted = () => (runRow(c).status = "failed");
+    const a = await abortRun(c, OWNER, "walker alive");
+    const t0 = Date.now();
+    expect(a.status).toBe("failed");
+    await di;
+    h.timeoutDispatch.clear();
+    expect(Date.now() - t0).toBeLessThan(8_000);
+  }, 30_000);
+  it("T7B1D-THA-FALSE the write matched no row and the read back says neither aborted nor an end: 'already terminal': the walk does not wait for its bound", async () => {
+    const { c, di } = await dungTrongX("d1dtf");
+    h.treAborted = 5;
+    const select0 = (fake as any).select;
+    h.khiTreAborted = () => {
+      runRow(c).status = "failed";
+      (fake as any).select = (pr?: unknown) => {
+        (fake as any).select = select0;
+        runRow(c).status = "running";
+        return select0(pr);
+      };
+    };
+    const a = await abortRun(c, OWNER, "walker alive");
+    const t0 = Date.now();
+    (fake as any).select = select0;
+    expect(a.ok).toBe(false);
+    expect(a.message).toMatch(/already terminal/);
+    await di;
+    h.timeoutDispatch.clear();
+    expect(Date.now() - t0).toBeLessThan(8_000);
+  }, 30_000);
+  it("T7B1D-THA-CATCH an exception out of abortRun after the flag: the walk does not wait for its bound", async () => {
+    const { c, di } = await dungTrongX("d1dtc");
+    let doc = 0;
+    const opts = {
+      get scope(): never {
+        if (++doc >= 3) throw new Error("scope read throws (test)");
+        return undefined as never;
+      },
+    };
+    const a = await abortRun(c, OWNER, "walker alive", opts);
+    const t0 = Date.now();
+    expect(a.ok).toBe(false);
+    expect(a.message).toMatch(/scope read throws/);
+    await di;
+    h.timeoutDispatch.clear();
+    expect(Date.now() - t0).toBeLessThan(8_000);
+  }, 30_000);
 });

@@ -45,7 +45,7 @@ import {
 import { toRobotJob } from "../../equipment/robotJobMapping";
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -402,6 +402,23 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: 
   return no;
 }
 
+/**
+ * A2(n) T7b-1d (H22) — THE trace of what an earlier Abort tried or meant to send and did not go, read the same on every run: an `abort:` row that failed (its result says which kind). An `abort:` row that went or was
+ * settled ends it. Whoever wrote the STOP's own row or its container's has no say: this is the Abort's own record. What a press does with it: planAbortSweep (it enters the plan, the verification decides),
+ * phanLoaiStopAbort (its class). The row is all there is: H27 (chu du an 09/11), a run not latched, that one write lost and the walker's rows over it: the press may send nothing; the first answer says so by name. Pure.
+ */
+export function dauVetAbort(rows: ReadonlyArray<{ stepId: string; status?: string; resultJson?: unknown }> | null | undefined): Map<string, DangDauVetAbort> {
+  const out = new Map<string, DangDauVetAbort>();
+  for (const r of rows ?? []) {
+    if (!r.stepId.startsWith(ABORT_ROW_PREFIX)) continue;
+    const kq = (r.resultJson ?? null) as { stepId?: unknown; abortStop?: unknown } | null;
+    const id = String(kq?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length));
+    if (r.status === "completed" || r.status === "skipped") out.delete(id);
+    else if (r.status === "failed") out.set(id, kq?.abortStop === "chuaXacMinh" || kq?.abortStop === "chuaTraLoi" ? kq.abortStop : "daThu");
+  }
+  return out;
+}
+
 /** A2(n) T7b-1c — what is read of a run at an Abort. `hang` null ⇔ the step rows could not be read. `daThu`: the live walk's memory of a hand-over. */
 export interface VaoPhanLoaiStopAbort {
   hang: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown; attempt?: number | null }> | null;
@@ -427,12 +444,12 @@ function dauVetCuaHang(r: { stepId: string; status?: string; error?: string | nu
   return r.status === "running" || r.status === "failed" ? "coTheDaRa" : null;
 }
 /**
- * A2(n) T7b-1c (dieu-phoi 09/11) — THE classification of a STOP at an Abort of a latched run: what goes (stopAbortCoGui), its key (`khoaThu`), the words (chuStopAbort) and the answer all read this, from ONE read.
+ * A2(n) T7b-1c (dieu-phoi 09/11) — THE classification of a STOP at an Abort, of a latched run, and T7b-1d (H22) of a press on any run: what goes (stopAbortCoGui), its key (`khoaThu`), the words (chuStopAbort) and the answer all read this, from ONE read.
  *   xong      — an `abort:` row that went or was settled, or a read-back that confirmed it;
- *   no        — stopChuaRaTuHang (one definition of "owed"); `truoc` says what its rows know of an earlier hand-over, for the words only;
+ *   no        — stopChuaRaTuHang (one definition of "owed"), or, on a run not latched, an Abort's trace it did not go (dauVetAbort: no debt, H23; a press sends it, the window of such a run stands at the door of the sweep); `truoc` says what its rows know of an earlier hand-over, for the words only;
  *   daGiao    — a dispatcher took it (accepted, or its row completed);
  *   coTheDaRa — it may have gone: no answer, a device error, a row that began or failed with no word, or only the record of the hand-over. foeDispatchedSteps and the walk's `attempted` are written BEFORE the
- *               dispatcher is called (foeEngine execCommandMot, the same tick) and never cleared on a refusal, so alone they prove only this;
+ *               dispatcher is called (foeEngine execCommandMot, the same tick) and never cleared on a refusal, so alone they prove only this. T7b-1d — so does an Abort's hand-over with no answer yet;
  *   chuaGiao  — read, and no trace, or a word that it did not go;
  *   khongDoc  — nothing could be read (a debt the context holds is still `no`).
  * dieu-phoi 09/11: khoá gần đúng cho attempt 0; dispatcher chỉ phát lại khi lần dưới khoá đó ok và không mô phỏng, nên không nuốt STOP; tệ nhất thêm một STOP
@@ -444,12 +461,13 @@ export function phanLoaiStopAbort(id: string, vao: VaoPhanLoaiStopAbort): PhanLo
   if (ab?.status === "completed" || ab?.status === "skipped") return { lop: "xong" };
   const vet = dauVetCuaHang(cua, id);
   const vetAb = dauVetCuaHang(ab, id);
-  const truoc = vet === "daGiao" || vet === "coTheDaRa" ? vet : vetAb === "daGiao" || vetAb === "coTheDaRa" ? vetAb : undefined;
-  if (stopChuaRaTuHang(vao.hang, vao.ctx).has(id)) return truoc ? { lop: "no", truoc } : { lop: "no" };
+  const dv = dauVetAbort(vao.hang).get(id);
+  const truoc = dv === "chuaXacMinh" ? dv : vet === "daGiao" || vet === "coTheDaRa" ? vet : vetAb === "daGiao" || vetAb === "coTheDaRa" ? vetAb : undefined;
+  if (stopChuaRaTuHang(vao.hang, vao.ctx).has(id) || dv === "daThu" || dv === "chuaXacMinh") return truoc ? { lop: "no", truoc } : { lop: "no" };
   if ((cua?.resultJson as { status?: unknown } | null | undefined)?.status === "acked_verified") return { lop: "xong" };
   if (vet === "daGiao") return { lop: "daGiao" };
   const khoaThu = typeof cua?.attempt === "number" && cua.attempt > 0 ? cua.attempt : 1;
-  if (vet === "coTheDaRa") return { lop: "coTheDaRa", khoaThu };
+  if (vet === "coTheDaRa" || dv === "chuaTraLoi") return { lop: "coTheDaRa", khoaThu };
   if (vet === "tuChoi") return { lop: "chuaGiao" };
   const giao = vao.ctx?.[DISPATCHED_CTX_KEY];
   if ((Array.isArray(giao) && giao.map(String).includes(id)) || vao.daThu?.(id) === true) return { lop: "coTheDaRa", khoaThu };

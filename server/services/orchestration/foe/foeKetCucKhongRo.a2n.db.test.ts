@@ -901,4 +901,129 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
     });
   }
+
+  // ═══ A2(n) T7b-1d, for T15 (ke-hoach 18): written, NOT run (no `.db.test` here): a fixture may need adjusting. PostgreSQL and the real dispatcher: an Abort refused, the press: exactly 1 PDU of a pinned STOP ═══
+  /** what the real dispatcher refuses with: no authorisation row, written by nobody (NOT_CONFIRMED), for as long as `bat` says. Thrown before any SQL: the transaction stays usable */
+  const tuChoiThat = (bat: () => boolean) => {
+    H.boc = (tx) =>
+      new Proxy(tx as object, {
+        get(t, k, r) {
+          const v = Reflect.get(t, k, r) as unknown;
+          if (k !== "insert") return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+          return (bang: Parameters<Tx["insert"]>[0]) => {
+            if (bat() && String((bang as unknown as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]) === "ai_pending_actions") throw new Error("authorisation row not written (test)");
+            return (v as (x: unknown) => unknown).call(t, bang);
+          };
+        },
+      });
+  };
+  /** a real pin read that throws while `bat` says, for the verifier and the dispatcher alike. Thrown before any SQL */
+  const ghimKhongDoc = (bat: () => boolean) => {
+    H.boc = (tx) =>
+      new Proxy(tx as object, {
+        get(t, k, r) {
+          const v = Reflect.get(t, k, r) as unknown;
+          if (k !== "select") return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+          return (...c: unknown[]) => {
+            const b = (v as (...x: unknown[]) => Record<string, (...y: unknown[]) => unknown>).apply(t, c);
+            return new Proxy(b, {
+              get(t2, k2) {
+                if (k2 !== "from") return Reflect.get(t2, k2);
+                return (bang: unknown) => {
+                  if (bat() && String((bang as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]) === "device_tags") throw new Error("pin read down (test)");
+                  return (t2.from as (x: unknown) => unknown).call(t2, bang);
+                };
+              },
+            });
+          };
+        },
+      });
+  };
+  it("SEQ-DB a run not latched, a live walker, a STOP in a container, the Abort refused: the walker writes the container failed: a press sends it: 1 PDU, no debt on the way", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buocChinh(d.m2), hop("b", [{ id: "w", type: "delay", ms: 3_000 } as WorkflowStep, buTruStop(d.m1, "st")], buTruReset(d.m1, "cx"))]);
+      const di = khoiDong(runId);
+      await vi.waitFor(async () => expect((await buoc(tx, runId, "w"))?.status).toBe("running"), { timeout: 10_000 });
+      let tuChoi = true;
+      tuChoiThat(() => tuChoi);
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      await di;
+      expect(a.abortStops?.failed).toEqual(["st"]);
+      expect(soPduGhi() - pdu0, "refused before a driver").toBe(0);
+      expect((await buoc(tx, runId, "b"))?.status).toBe("failed");
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("failed");
+      expect(canhBao("abortStopNotSent", runId), "H23").toEqual([]);
+      tuChoi = false;
+      H.boc = null;
+      await abortRun(runId, ADMIN, "press", { scope: null });
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  it("THU-LAI-DB flat: the walker refused it and stands in its back-off when the Abort falls, refused again: a press sends it: 1 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buocChinh(d.m2), buTruStop(d.m1, "st")]);
+      let tuChoi = true;
+      tuChoiThat(() => tuChoi);
+      const di = khoiDong(runId);
+      await vi.waitFor(async () => expect((await buoc(tx, runId, "st"))?.status).toBe("running"), { timeout: 10_000 });
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      await di;
+      expect(a.abortStops?.failed).toEqual(["st"]);
+      expect((await buoc(tx, runId, "st"))?.status).toBe("failed");
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("failed");
+      tuChoi = false;
+      H.boc = null;
+      await abortRun(runId, ADMIN, "press", { scope: null });
+      expect(soPduGhi() - pdu0).toBe(1);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  it("BT-SAU-DB a STOP compensation, refused, the latch falling after the sweep, nothing due by then: owed, and a press past the window sends it: 1 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buocChinh(d.m2, buTruStop(d.m1, "st")), { id: "w", type: "delay", ms: 3_000 } as WorkflowStep]);
+      const di = khoiDong(runId);
+      await vi.waitFor(async () => expect((await buoc(tx, runId, "w"))?.status).toBe("running"), { timeout: 10_000 });
+      let tuChoi = true;
+      tuChoiThat(() => tuChoi);
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      await di;
+      expect(a.abortStops?.failed).toEqual(["st"]);
+      // the latch after the sweep: its effect on the rows and the context, as the walk's own end leaves them; the walk's own path is the fake's (T7B1D-BT-SAU)
+      await tx.update(orchestrationRuns).set({ contextJson: THUC_SU, finishedAt: new Date(Date.now() - 2 * 3_600_000) }).where(eq(orchestrationRuns.id, runId));
+      tuChoi = false;
+      H.boc = null;
+      await abortRun(runId, ADMIN, "press", { scope: null });
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+  it("S-0PDU-DB a latched run, the pins unreadable by the verifier and by the real dispatcher: the marked row: 0 PDU, owed; the read back, a press: 1 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buTruStop(d.m1, "st")]);
+      await tx.update(orchestrationRuns).set({ status: "held", contextJson: THUC_SU }).where(eq(orchestrationRuns.id, runId));
+      let hong = true;
+      ghimKhongDoc(() => hong);
+      const pdu0 = soPduGhi();
+      const a = await abortRun(runId, ADMIN, "t15", { scope: null });
+      expect(soPduGhi() - pdu0, "the dispatcher cannot read: nothing written").toBe(0);
+      expect(a.abortStops?.failed).toEqual(["st"]);
+      expect(String((await buoc(tx, runId, "abort:st"))?.error ?? "")).toMatch(/^FOE_STOP_NOT_SENT/);
+      hong = false;
+      H.boc = null;
+      await abortRun(runId, ADMIN, "press", { scope: null });
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
 });
