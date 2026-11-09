@@ -7,6 +7,7 @@
  * foeKetCucKhongRo.a2n.db.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { banSaoHang } from "../../../routers/__otFakeDb"; // A2(n) T7b-1d lượt sửa 1 — one definition of what a database hands back
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -118,10 +119,10 @@ function makeSelect(tableName: string) {
       return chain;
     },
     limit(n: number) {
-      return Promise.resolve(current.slice(0, n));
+      return Promise.resolve(current.slice(0, n).map(banSaoHang));
     },
     then(res: any, rej: any) {
-      return Promise.resolve(current).then(res, rej);
+      return Promise.resolve(current.map(banSaoHang)).then(res, rej);
     },
   };
   return chain;
@@ -144,12 +145,12 @@ const fakeDb = {
     const ins: any = {
       values(v: Row | Row[]) {
         const arr = Array.isArray(v) ? v : [v];
-        pending = arr.map((row) => ({ id: nextId(tableName), ...row }));
+        pending = arr.map((row) => banSaoHang({ id: nextId(tableName), ...row }));
         return ins;
       },
       returning() {
         rows(tableName).push(...pending);
-        return Promise.resolve(pending);
+        return Promise.resolve(pending.map(banSaoHang));
       },
       onConflictDoUpdate(opts: any) {
         // upsert on (runId, stepId) for run_steps
@@ -159,8 +160,8 @@ const fakeDb = {
         const apply = () => {
           for (const row of pending) {
             const existing = list.find((r) => r.runId === row.runId && r.stepId === row.stepId);
-            if (existing) Object.assign(existing, opts.set);
-            else list.push(row);
+            if (existing) Object.assign(existing, banSaoHang(opts.set));
+            else list.push(banSaoHang(row));
           }
         };
         const cham = Math.max(0, ...pending.map((row) => HX.rowSlowMs?.(row) ?? 0));
@@ -170,7 +171,7 @@ const fakeDb = {
       },
       then(res: any, rej: any) {
         rows(tableName).push(...pending);
-        return Promise.resolve(pending).then(res, rej);
+        return Promise.resolve(pending.map(banSaoHang)).then(res, rej);
       },
     };
     return ins;
@@ -186,8 +187,8 @@ const fakeDb = {
       where(cond: any) {
         if (HX.contextThrows && tableName === "orchestration_runs" && patch.status === undefined && patch.contextJson !== undefined) throw new Error("context write failed (test)");
         const matched = applyWhere(rows(tableName), cond);
-        for (const r of matched) Object.assign(r, patch);
-        const result = matched.map((r) => ({ ...r }));
+        for (const r of matched) Object.assign(r, banSaoHang(patch));
+        const result = matched.map((r) => banSaoHang(r));
         return {
           returning: () => Promise.resolve(result),
           then: (res: any, rej: any) => Promise.resolve(result).then(res, rej),

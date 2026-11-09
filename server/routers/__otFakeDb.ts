@@ -31,6 +31,20 @@ export function makeDesc(col: Col): OrderRef {
 let seq = 1;
 export function resetSeq() { seq = 1; }
 
+/**
+ * A2(n) T7b-1d lượt sửa 1 — a database never shares a value with its caller: what a caller holds after a read or a write is its own. Before this the walk held the very object its row held, so a context
+ * write that threw still "landed" (rà T7b-1d mục 5). Plain objects, arrays and dates are copied; anything else (an `sql` fragment, a Map a test seeded) is passed as it is.
+ */
+export function sauJson<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(sauJson) as unknown as T;
+  if (v instanceof Date) return new Date(v.getTime()) as unknown as T;
+  if (v !== null && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) return Object.fromEntries(Object.entries(v as object).map(([k, x]) => [k, sauJson(x)])) as T;
+  return v;
+}
+export function banSaoHang(r: Row): Row {
+  return sauJson(r);
+}
+
 const NAME_SYM = Symbol.for("drizzle:Name");
 function keyOf(t: any): string {
   return t[NAME_SYM];
@@ -48,7 +62,7 @@ export class FakeDb {
   }
 
   seed(t: any, rows: Row[]) {
-    this.store.set(keyOf(t), rows.map((r) => ({ ...r })));
+    this.store.set(keyOf(t), rows.map((r) => banSaoHang(r)));
   }
   setUnique(t: any, keys: string[][]) { this.uniqueKeys.set(keyOf(t), keys); }
 
@@ -76,7 +90,7 @@ export class FakeDb {
   }
 
   private run(table: any, cond: Cond | undefined, order: OrderRef | undefined, lim: number | undefined): Row[] {
-    let rows = this.rows(table).filter((r) => (cond ? cond(r) : true)).map((r) => ({ ...r }));
+    let rows = this.rows(table).filter((r) => (cond ? cond(r) : true)).map((r) => banSaoHang(r));
     if (order) {
       rows.sort((a, b) => {
         const av = a[order.name]; const bv = b[order.name];
@@ -102,20 +116,20 @@ export class FakeDb {
         const finalize = () => {
           if (done) return done;
           done = arr.map((v) => {
-            const base: Row = { createdAt: new Date(), updatedAt: new Date(), ...v };
+            const base: Row = banSaoHang({ createdAt: new Date(), updatedAt: new Date(), ...v });
             const existing = self.findConflict(table, base);
             if (existing) {
               if (conflictSet) {
                 // onConflictDoUpdate → patch the existing row, do NOT insert a new one.
-                if (conflictWhere && !conflictWhere(existing)) return { ...existing };
-                Object.assign(existing, conflictSet, { updatedAt: new Date() });
-                return { ...existing };
+                if (conflictWhere && !conflictWhere(existing)) return banSaoHang(existing);
+                Object.assign(existing, banSaoHang(conflictSet), { updatedAt: new Date() });
+                return banSaoHang(existing);
               }
               self.checkUnique(table, base); // no handler → throw 23505 as before
             }
             const row: Row = { id: seq++, ...base };
             self.rows(table).push(row);
-            return { ...row };
+            return banSaoHang(row);
           });
           return done;
         };
@@ -164,8 +178,8 @@ export class FakeDb {
       set(p: Row) { patch = p; return b; },
       where(cond?: Cond) {
         const matched = self.rows(table).filter((r) => (cond ? cond(r) : true));
-        for (const r of matched) Object.assign(r, patch);
-        const result = matched.map((r) => ({ ...r }));
+        for (const r of matched) Object.assign(r, banSaoHang(patch));
+        const result = matched.map((r) => banSaoHang(r));
         return {
           returning() { return Promise.resolve(result); },
           then(resolve: any, reject: any) { return Promise.resolve(result).then(resolve, reject); },
@@ -182,7 +196,7 @@ export class FakeDb {
         const arr = self.rows(table);
         const removed: Row[] = [];
         for (let i = arr.length - 1; i >= 0; i--) {
-          if (!cond || cond(arr[i])) { removed.push({ ...arr[i] }); arr.splice(i, 1); }
+          if (!cond || cond(arr[i])) { removed.push(banSaoHang(arr[i])); arr.splice(i, 1); }
         }
         removed.reverse();
         return {

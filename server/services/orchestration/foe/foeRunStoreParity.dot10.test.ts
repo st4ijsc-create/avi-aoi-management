@@ -10900,6 +10900,59 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
   });
 
+  // ── the fake (fix 1, step 1): what a caller holds is its own, as with a database ────────────────────────────────────────────────────────────────────────────────────
+  it("T7B1D-FAKE-KHONG-CHIA read, seed, insert, update, delete: nothing a caller holds is what the fake stores", async () => {
+    const f = new FakeDb();
+    const moc = { a: { b: 1 } };
+    f.seed(orchestrationRuns, [{ id: 1, contextJson: moc }]);
+    moc.a.b = 9;
+    const trong = () => (f.store.get("orchestration_runs") ?? []).find((r) => r.id === 1)!.contextJson.a.b;
+    expect(trong(), "seed").toBe(1);
+    const [doc] = await f.select().from(orchestrationRuns).where(() => true);
+    doc.contextJson.a.b = 9;
+    expect(trong(), "read").toBe(1);
+    const vao = { contextJson: { a: { b: 2 } } };
+    const [capNhat] = await f.update(orchestrationRuns).set(vao).where(() => true).returning();
+    vao.contextJson.a.b = 9;
+    capNhat.contextJson.a.b = 9;
+    expect(trong(), "update: its patch, its answer").toBe(2);
+    const moi = { id: 2, contextJson: { a: { b: 3 } } };
+    const [dau] = await f.insert(orchestrationRuns).values(moi).returning();
+    moi.contextJson.a.b = 9;
+    dau.contextJson.a.b = 9;
+    expect((f.store.get("orchestration_runs") ?? []).find((r) => r.id === 2)!.contextJson.a.b, "insert: its values, its answer").toBe(3);
+    const [xoa] = await f.delete(orchestrationRuns).where((r: Row) => r.id === 1).returning();
+    expect(xoa.contextJson.a.b).toBe(2);
+  });
+  it("T7B1D-FAKE-KHONG-CHIA a walk's context lost is lost: refused, its abort: row and every context write thrown, the compensation not due: no debt, no command (p1, no hand-made copy)", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def("d1dfk", [gate(), par("root", [move("x"), box("b", [move("y", { compensation: otStop("s") }), delay("w", 300)])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.tuChoi.set("s", REF);
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const nem = () => {
+      queueMicrotask(() => (h.ctxNem = nem));
+      return true;
+    };
+    h.ctxNem = nem;
+    await abortRun(c, OWNER, "first");
+    await di.catch(() => undefined);
+    await wait(300);
+    expect(h.ctxNemLan, "the injection reached the context").toBeGreaterThan(0);
+    expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
+    h.hangNem = null;
+    h.ctxNem = null;
+    h.tuChoi.clear();
+    h.timeoutDispatch.clear();
+    expect(runDaChot(c), "the latch is on the rows").toBe(true);
+    expect(no(c), "nothing durable holds it").toEqual([]);
+    await bam(c);
+    expect(ids()).toEqual([]);
+  }, 20_000);
+
   // ── RM-KHONG-XN first (the direction that loses a STOP): a row central could not verify is no hand-over, whatever it says of itself ───────────────────────
   it("T7B1D-KHONG-XN a row with the mark and accepted: true is 'may have gone', never 'handed over': a press within the window sends it, under the walker's key", async () => {
     const hangDau = { stepId: "s2", status: "completed", error: null, attempt: 2, resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "acked_unverified", stopKhongXacNhan: "ghimLech" } };
