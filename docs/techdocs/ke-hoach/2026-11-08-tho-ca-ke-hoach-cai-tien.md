@@ -235,7 +235,7 @@ Ràng buộc: **không viết mã vỏ trước 90‑P3**; E2–E4 dùng `token.
 | M1 | Việc pilot **đạt lần 1** | 3/4 (việc test nhỏ) | ≥ 70 % trên lô việc thật (sửa mã, test DB, script) | ≥ 80 % |
 | M2 | Đột biến bị bắt | 9/9 · 8/8 · 9/9 (tay) | ≥ 90 % tự động | ≥ 95 % |
 | M3 | `bao-sai` (lời khai ≠ kết quả) | không đo được | 0 | 0 |
-| M4 | pass@1×3 tasks‑hard (12) | M 73,6 % (baseline 08/11, 6 mẫu); **H 61,1 % (22/36, baseline 09/11 `:3013`+`_test`, 0750a413c; 0 điểm H‑cs2/H‑py3/H‑ts3)**; H 75 % (11.0, không so trực tiếp) | H ≥ 85 % với L1 đầy đủ; M không tụt | giữ |
+| M4 | pass@1×3 tasks‑hard (12) | M 73,6 % (baseline 08/11, 6 mẫu); **H 61,1 % (22/36, baseline 09/11 `:3013`+`_test`, 0750a413c; 0 điểm H‑cs2/H‑py3/H‑ts3)**; H 75 % (11.0) là điều kiện khác (DEV, nhúng GPU, Node cũ) ⇒ **không phải tụt 14 điểm**, chỉ tham khảo; mốc M4 là 61,1 % | H ≥ 85 % với L1 đầy đủ; M không tụt | giữ |
 | M5 | pass@1×3 tasks‑api2 (30) — **trục H** (qua đường sản phẩm, agent có tool `lookup_api`/`search_docs`, `:3013` + `_test`) | M 40 % (baseline 08/11); **H 44,4 % (40/90, baseline 09/11, 0750a413c)** | ≥ 60 % trục H (ưu tiên nhóm yếu ot‑node/.NET, ts‑lib, T‑SQL bằng vendor docs B4 — B4 chỉ tới model qua trục H, không đổi số M); trục M giữ không tụt | ≥ 70 % H |
 | M6 | Lỗi L1 trên mỗi việc | chưa phân loại | −50 % so lô 1 | −75 % |
 | M7 | Công tắc harness có số đo GPU | 1/8 | 8/8 (C6) | mặc định đổi theo số |
