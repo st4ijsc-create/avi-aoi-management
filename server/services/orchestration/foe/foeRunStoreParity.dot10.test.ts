@@ -12676,6 +12676,51 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(kq, "the walk ended").toBe("xong");
     expect(ms, "one ceiling and its last words (1500 ms was two)").toBeLessThan(1.8 * CEILING);
   }, 15_000);
+  it("T7B1D-CUOI-CHO-SAP the one ceiling still waits for both: a latched walk whose Abort is on its way (its write held, no sweep yet) does not end before that Abort's sweep has answered, and tells nothing that sweep sends", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 30);
+    const { c, di } = await moDi(def("d1dcs", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
+    await wait(20);
+    ve0();
+    let xongDi = false;
+    void di.then(() => (xongDi = true), () => (xongDi = true));
+    h.treAborted = 200;
+    const cho = abortRun(c, OWNER, "first");
+    await wait(100);
+    expect(xongDi, "it waits for the Abort on its way").toBe(false);
+    await cho;
+    await di.catch(() => undefined);
+    h.timeoutDispatch.clear();
+    expect(ids()).toEqual(["s"]);
+    expect(urgentCua("abortStopNotSent"), "nothing told as not out that the sweep sent").toEqual([]);
+  }, 15_000);
+  it("T7B1D-CUOI-CHO-QUET ... and for a sweep a later press started while the walk still stands in a command: the walk's end comes after that sweep has answered", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 30);
+    h.slow.set("y", 350);
+    h.tuChoi.set("s", REF);
+    const { c, di } = await moDi(def("d1dcq", [gate(), par("root", [ot("x"), box("b", [move("y"), otStop("s")])])]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "y") && h.traTimeout > 0, "latched, y in flight");
+    await wait(10);
+    ve0();
+    let xongDi = false;
+    const t0 = Date.now();
+    let tDi = 0;
+    void di.then(() => { xongDi = true; tDi = Date.now() - t0; }, () => { xongDi = true; tDi = Date.now() - t0; });
+    await abortRun(c, OWNER, "first");
+    expect(xongDi, "y still answers").toBe(false);
+    h.tuChoi.clear();
+    h.slow.set("s", 700);
+    const bam2 = abortRun(c, OWNER, "press");
+    await waitFor(() => xongDi || Date.now() - t0 > 500, "past y's answer");
+    expect(xongDi, "the press's sweep is still waiting for s").toBe(false);
+    await bam2;
+    await di.catch(() => undefined);
+    h.slow.clear();
+    h.timeoutDispatch.clear();
+    expect(tDi).toBeGreaterThanOrEqual(500);
+  }, 15_000);
 
   // ── P2-Y: the read of a sweep throws: the reason is true, a press is no promise, and 0 commands is what this shape sends ───────────────────────────────────────
   const HINH_NEM: Array<[string, () => WorkflowStep[], string, () => void, string[]]> = [
@@ -12864,6 +12909,18 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const a = await bam(c);
     expect(ids()).toEqual(["s"]);
     expect(a.message).toMatch(/sent again/);
+    expect(a.message).not.toMatch(/joined the sweep/);
+  });
+  it("T7B1D-NHAP-QUET the control, a latched run: a press of its own sweep names what it sent", async () => {
+    const c = await khoaChuaGiao("d1dnqk2");
+    ve0();
+    h.tuChoi.set("s2", REF);
+    await abortRun(c, OWNER, "first");
+    await wait(40);
+    h.tuChoi.clear();
+    const a = await bam(c);
+    expect(ids()).toEqual(["s2"]);
+    expect(a.message).toMatch(/STOP steps sent again: s2/);
     expect(a.message).not.toMatch(/joined the sweep/);
   });
 
