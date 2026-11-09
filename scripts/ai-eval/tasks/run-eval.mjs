@@ -28,6 +28,33 @@ import { docTienTrinh, layBam, tachDongLenh } from "../../ai/kiem-he-thong.mjs";
 const SAMPLING = { temperature: 0.2, top_p: 0.9 };
 const TEP_RUN_F = `${BENCH_CODEGEN}/agent-f/run-f.mjs`;
 
+const CO_GIA_TRI = ["--samples", "--bo", "--only", "--nhan", "--url", "--max-tokens", "--tran-phut", "--ra", "--tho", "--agent-config", "--noi", "--ghi-chu", "--mau-tai-giay", "--truc", "--base", "--cookie", "--project-id", "--ngay"];
+const CO_BAT = ["--sha"];
+
+/**
+ * Dòng lệnh hợp lệ thì trả null, không thì trả lý do. Đêm 10/11 `run-eval --help` đã chạy thật một lượt lên :8091
+ * vì tham số lạ bị bỏ qua: nay `--help`, `-h`, cờ lạ, cờ thiếu giá trị, hay chữ thừa đều làm thoát 2 trước khi gọi model.
+ */
+export function loiThamSo(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--help" || a === "-h") return "in cú pháp";
+    if (CO_BAT.includes(a)) continue;
+    if (CO_GIA_TRI.includes(a)) {
+      if (argv[i + 1] === undefined || CO_GIA_TRI.includes(argv[i + 1]) || CO_BAT.includes(argv[i + 1])) return `${a} thiếu giá trị`;
+      i++;
+      continue;
+    }
+    return a.startsWith("-") ? `cờ lạ: ${a}` : `chữ thừa không thuộc cờ nào: ${a}`;
+  }
+  return null;
+}
+
+const CU_PHAP = `node scripts/ai-eval/tasks/run-eval.mjs [--samples N] [--bo …] [--only …] [--nhan …] [--url …] [--max-tokens N] [--sha]
+  [--tran-phut N] [--ra …] [--tho …] [--agent-config agent|mau] [--noi tai-cho|tam] [--ghi-chu …] [--mau-tai-giay N]
+  [--truc M|H] [--base …] [--cookie …] [--project-id …] [--ngay YYYY-MM-DD]
+Không có chế độ khô: thiếu lỗi tham số là CHẠY THẬT lên model. Xem docblock đầu tệp.`;
+
 /** Nhãn tiến trình làm méo số đo. Báo cáo vào repo chỉ ghi nhãn, không ghi dòng lệnh (có thể chứa bí mật). */
 const NHAN_NANG = [
   ["vitest", /vitest/i],
@@ -292,6 +319,11 @@ export function tenBaoCao(thuMuc, ngay, nhan) {
 async function main() {
   // Như chayCheck: run-f chấm bằng `node --test`; biến này được kế thừa khi run-eval chạy dưới `node --test`, bộ chấm lồng sẽ thoát 0 dù đỏ.
   delete process.env.NODE_TEST_CONTEXT;
+  const loiTs = loiThamSo(process.argv.slice(2));
+  if (loiTs) {
+    console.error(`${loiTs}\n${CU_PHAP}`);
+    return 2;
+  }
   const { lay, co } = thamSo();
   const soMau = Number(lay("--samples", "3"));
   if (!Number.isInteger(soMau) || soMau < 1) throw new Vut(`--samples: ${lay("--samples")}`);

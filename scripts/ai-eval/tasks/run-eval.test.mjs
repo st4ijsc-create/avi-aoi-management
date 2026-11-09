@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, loiThamSo, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -253,6 +253,31 @@ test("--truc H: server từ chối dự án là cấu hình sai: thoát 2, khôn
   assert.equal(r.ma, 2, r.err);
   assert.match(r.err, /từ chối dự án/);
   assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("loiThamSo: --help, cờ lạ, thiếu giá trị, chữ thừa bị chặn; dòng lệnh đêm đo thì qua", () => {
+  assert.match(loiThamSo(["--help"]), /cú pháp/);
+  assert.match(loiThamSo(["-h"]), /cú pháp/);
+  assert.match(loiThamSo(["--samples", "1", "--dry-run"]), /cờ lạ: --dry-run/);
+  assert.match(loiThamSo(["--samples"]), /--samples thiếu giá trị/);
+  assert.match(loiThamSo(["--nhan", "--sha"]), /--nhan thiếu giá trị/);
+  assert.match(loiThamSo(["H-ts1"]), /chữ thừa/);
+  assert.equal(loiThamSo([]), null);
+  assert.equal(
+    loiThamSo(["--truc", "H", "--base", "http://127.0.0.1:3013", "--cookie", "ck.txt", "--ra", "r", "--tho", "t", "--samples", "3", "--bo", "tasks-hard,tasks-api2", "--nhan", "x", "--tran-phut", "60", "--ghi-chu", "a b", "--sha", "--only", "H-cs2", "--project-id", "p", "--ngay", "2026-11-10", "--url", "u", "--max-tokens", "1", "--agent-config", "agent", "--noi", "tam", "--mau-tai-giay", "0"]),
+    null,
+  );
+});
+
+test("--help: thoát 2, in cú pháp, KHÔNG gọi model", async () => {
+  const { sv, url, yeuCau } = await gia([OK]);
+  const ra = path.join(tam, "ra11");
+  const r = await chay(["--help", "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra]);
+  sv.close();
+  assert.equal(r.ma, 2);
+  assert.match(r.err, /run-eval\.mjs \[--samples N\]/);
+  assert.equal(yeuCau.length, 0);
+  assert.ok(!fs.existsSync(ra));
 });
 
 test("--truc H thiếu --base hoặc --cookie: thoát 2", async () => {
