@@ -14,12 +14,10 @@
  * (POLICY_DEFAULT_DENY_ACTIONS) and DB policy store (POLICY_STORE_ENABLED) are opt-in, default OFF.
  */
 import { evaluatePolicy } from "./policyEvaluate";
+import { secPlatformEnabled } from "./secPlatformFlag"; // A2(n) T7b-1d lượt sửa 1 — its one definition; exported again below
 import { recordDecision } from "../observability/decisionTrace";
 
-/** Is the platform-grade security enforcement active? Default OFF. */
-export function secPlatformEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.SEC_PLATFORM === "true" || env.SEC_PLATFORM === "1";
-}
+export { secPlatformEnabled } from "./secPlatformFlag";
 
 export interface PolicyGateResult {
   allow: boolean;

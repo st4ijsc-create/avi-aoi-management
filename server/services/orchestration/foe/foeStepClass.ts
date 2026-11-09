@@ -23,6 +23,7 @@
  * ONLY because of such steps as UNDECIDED, never as "out of scope" (foeEngine.decideDefinition).
  */
 import { createHash } from "node:crypto";
+import { isStopCommandType } from "../../ot/loaiLenhStop";
 import { and, eq, inArray } from "drizzle-orm";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import type { StopPin, StopPinTagRow } from "../../ot/stopPin"; // types only — the module is loaded lazily (heavy, cycle-free)
@@ -144,16 +145,11 @@ export function buildEquipmentCommand(
 }
 
 /**
- * The OT dispatcher's OWN stop-type predicate (commandDispatcher.isStopCommandType), imported lazily (heavy module; test
- * suites replace it). Unavailable ⇒ false.
+ * The OT dispatcher's OWN stop-type predicate, from the module that imports nothing (ot/loaiLenhStop, commandDispatcher exports the same function). A2(n) T7b-1d lượt sửa 1 (H29) — nothing to load here, so no load that hangs or fails
+ * can answer "not a STOP". A test's mock of commandDispatcher does not replace it. Async as every caller reads it.
  */
 export async function isOtStopCommandType(name: string): Promise<boolean> {
-  try {
-    const mod = await napDispatcher();
-    return typeof mod.isStopCommandType === "function" && mod.isStopCommandType(name) === true;
-  } catch {
-    return false;
-  }
+  return isStopCommandType(name);
 }
 
 /** Capability + descriptor of a command step (null: not a command / unknown machine / unsupported command). */

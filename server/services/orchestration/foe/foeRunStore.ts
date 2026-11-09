@@ -14,6 +14,7 @@
  * the edge store answers a STOP without asking central.
  */
 import { randomUUID } from "node:crypto";
+import { isStopCommandType } from "../../ot/loaiLenhStop";
 import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
@@ -1368,10 +1369,25 @@ export async function verifyStopsForAbort(runId: number, def: WorkflowDefinition
   } catch (err) {
     console.warn(`[FOE] abort of run ${runId}: OT stops not verified in time (${(err as Error)?.message ?? err}) — robot stops only (L-7)`);
     try {
-      return await (await makeStopVerifier(null, [def], map)).verified(def, map);
-    } catch {
-      const unsure = new Set(allStepsOf(def.steps).filter((s) => s.type === "command").map((s) => s.id));
-      return { ids: new Set(), failed: true, unsure };
+      // T7b-1d lượt sửa 1 (H29) — this path has its bound too; what it would have answered is known with nothing read
+      return await withDeadline(
+        (async () => (await makeStopVerifier(null, [def], map)).verified(def, map))(),
+        STOP_DB_STEP_DEADLINE_MS,
+        `FOE abort run ${runId} stop verification, no database`,
+      );
+    } catch (loi) {
+      console.warn(`[FOE] abort of run ${runId}: stop verification with no database: ${(loi as Error)?.message ?? loi}`);
+      const ids = new Set<string>();
+      const unsure = new Set<string>();
+      for (const s of allStepsOf(def.steps)) {
+        const c = commandOf(s, map);
+        if (!c) {
+          if (s.type === "command") unsure.add(s.id);
+        } else if (isRobotKind(c.cap.adapterKind)) {
+          if (isRobotStopStep(c)) ids.add(s.id);
+        } else if (isStopCommandType(c.descriptor.name)) unsure.add(s.id);
+      }
+      return { ids, failed: true, unsure };
     }
   }
 }

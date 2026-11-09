@@ -69,6 +69,18 @@ const h = vi.hoisted(() => ({
   ackStatus: "acked",
   /** A2(n) T3+T4 — what a case allows after the latch beyond a STOP: a compensation a person approved */
   duocSauKhoa: new Set<string>(),
+  /** A2(n) T7b-1d lượt sửa 1 (H29) — every withDeadline of the code under test runs at this fraction of its bound: 0 ⇔ as written. A hang's case costs no real seconds */
+  heSoHan: 0,
+  /** H29 — a lazily imported module whose name holds this key: its load waits on the promise, then goes on; napGoi counts the loads asked; napTuChoi: the load rejects */
+  treoNap: new Map<string, Promise<void>>(),
+  napTuChoi: new Set<string>(),
+  napGoi: new Map<string, number>(),
+  /** H29 — makeStopVerifier with a database ("co"), without ("khong"), or both ("ca") never answers */
+  treoVerifier: null as null | "co" | "khong" | "ca",
+  /** H29 — laStopTheoBuoc and isStopCandidate wait on what this answers; undefined: as written */
+  treoLaStop: null as null | (() => Promise<void> | undefined),
+  /** H29 — SEC_PLATFORM on, with no policy denying anything */
+  coBat: false,
   /** A2(n) T7b-1d — this step's dispatch never answers (no timer behind it) */
   khongTraLoi: new Set<string>(),
   /** A2(n) T5 — the dispatcher's own answer for a step: a refusal, or `nem`: the dispatch throws */
@@ -184,8 +196,48 @@ vi.mock("../../security/policyGate", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../security/policyGate")>();
   return {
     ...orig,
-    secPlatformEnabled: () => h.policyTuChoi.size > 0,
+    secPlatformEnabled: () => h.policyTuChoi.size > 0 || h.coBat,
     evaluateActionPolicy: (_s: string, _a: string, _r: string | null, ctx: { stepId?: string }) => (h.policyTuChoi.has(String(ctx.stepId)) ? { allow: false, effect: "deny", reason: "denied by policy p1 at 10.1.2.3", policyId: 1 } : { allow: true, effect: "allow", reason: "ok" }),
+  };
+});
+// A2(n) T7b-1d lượt sửa 1 (H29) — where a hang is injected, each with its case in the T0 block
+vi.mock("../../security/secPlatformFlag", () => ({ secPlatformEnabled: () => h.policyTuChoi.size > 0 || h.coBat }));
+vi.mock("../../ot/drivers/boundedClose", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../ot/drivers/boundedClose")>();
+  return { ...orig, withDeadline: <T,>(p: Promise<T>, ms: number, nhan: string, opts?: { unref?: boolean; loi?: () => Error }) => orig.withDeadline(p, h.heSoHan > 0 ? Math.max(5, ms * h.heSoHan) : ms, nhan, opts) };
+});
+vi.mock("./foeNapMotLan", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeNapMotLan")>();
+  return {
+    napMotLan: <T,>(nap: () => Promise<T>) => {
+      const lay = orig.napMotLan(nap);
+      const ten = String(nap);
+      return () => {
+        for (const k of ["commandDispatcher", "policyGate"]) {
+          if (!ten.includes(k)) continue;
+          h.napGoi.set(k, (h.napGoi.get(k) ?? 0) + 1);
+          if (h.napTuChoi.has(k)) return Promise.reject(new Error(`load of ${k} refused (test)`)) as Promise<T>;
+          const cho = h.treoNap.get(k);
+          if (cho) return cho.then(() => lay());
+        }
+        return lay();
+      };
+    },
+  };
+});
+vi.mock("./foeStepClass", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./foeStepClass")>();
+  return {
+    ...orig,
+    makeStopVerifier: (db: never, defs: never, map: never) => (h.treoVerifier === "ca" || h.treoVerifier === (db ? "co" : "khong") ? new Promise<never>(() => undefined) : orig.makeStopVerifier(db, defs, map)),
+    laStopTheoBuoc: async (st: never, map: never) => {
+      await h.treoLaStop?.();
+      return orig.laStopTheoBuoc(st, map);
+    },
+    isStopCandidate: async (st: never, map: never) => {
+      await h.treoLaStop?.();
+      return orig.isStopCandidate(st, map);
+    },
   };
 });
 vi.mock("./foeScope", async (importOriginal) => {
@@ -464,6 +516,13 @@ beforeEach(() => {
   h.docNemLan = 0;
   h.alertTreo = false;
   h.treoLan = 0;
+  h.heSoHan = 0;
+  h.treoNap.clear();
+  h.napTuChoi.clear();
+  h.napGoi.clear();
+  h.treoVerifier = null;
+  h.treoLaStop = null;
+  h.coBat = false;
   h.treGhi.clear();
   h.treGhiLan = 0;
   h.khongTraLoi.clear();
@@ -2986,6 +3045,53 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
     }
   });
 
+  it("★ h.heSoHan (T7b-1d lượt sửa 1): on, a real withDeadline of the code fires at that fraction; off, as written; 6 concurrent, 10 rounds", async () => {
+    const { withDeadline } = await import("../../ot/drivers/boundedClose");
+    for (let v = 0; v < VONG; v++) {
+      h.heSoHan = 0.01;
+      const t0 = Date.now();
+      await dongThoi(() => expect(withDeadline(new Promise(() => undefined), 1000, "t0")).rejects.toThrow("timeout"));
+      expect(Date.now() - t0, "at the fraction").toBeLessThan(500);
+      h.heSoHan = 0;
+      await expect(Promise.race([withDeadline(new Promise(() => undefined), 1000, "t0"), new Promise((ok) => setTimeout(() => ok("con cho"), 20))])).resolves.toBe("con cho");
+    }
+  });
+  it("★ h.treoNap, h.napTuChoi (T7b-1d lượt sửa 1): the engine's lazy load of the dispatcher reaches them, counted; off, it loads; 6 concurrent, 10 rounds", async () => {
+    const { napMotLan } = await import("./foeNapMotLan");
+    const lay = napMotLan(() => import("../../ot/commandDispatcher"));
+    for (let v = 0; v < VONG; v++) {
+      let tha: () => void = () => undefined;
+      h.treoNap.set("commandDispatcher", new Promise<void>((ok) => (tha = ok)));
+      h.napGoi.clear();
+      const cho = Promise.all(Array.from({ length: DONG_THOI }, () => lay()));
+      await expect(Promise.race([cho, new Promise((ok) => setTimeout(() => ok("con cho"), 15))])).resolves.toBe("con cho");
+      expect(h.napGoi.get("commandDispatcher")).toBe(DONG_THOI);
+      tha();
+      await cho;
+      h.treoNap.clear();
+      h.napTuChoi.add("commandDispatcher");
+      await expect(lay()).rejects.toThrow("refused");
+      h.napTuChoi.clear();
+      expect(typeof (await lay()).dispatch).toBe("function");
+    }
+  });
+  it("★ h.treoVerifier, h.treoLaStop (T7b-1d lượt sửa 1): what the code imports reaches them; off, it answers; 10 rounds", async () => {
+    const { makeStopVerifier, laStopTheoBuoc, isStopCandidate } = await import("./foeStepClass");
+    const conCho = <T,>(p: Promise<T>) => Promise.race([p, new Promise((ok) => setTimeout(() => ok("con cho"), 15))]);
+    for (let v = 0; v < VONG; v++) {
+      h.treoVerifier = "khong";
+      expect(await conCho(makeStopVerifier(null, [], new Map()))).toBe("con cho");
+      h.treoVerifier = "co";
+      expect(await conCho(makeStopVerifier(fake as never, [], new Map()))).toBe("con cho");
+      expect(await conCho(makeStopVerifier(null, [], new Map()))).not.toBe("con cho");
+      h.treoVerifier = null;
+      h.treoLaStop = () => new Promise<void>(() => undefined);
+      expect(await conCho(laStopTheoBuoc(otStop("st"), new Map()))).toBe("con cho");
+      expect(await conCho(isStopCandidate(otStop("st"), new Map()))).toBe("con cho");
+      h.treoLaStop = null;
+      expect(await conCho(laStopTheoBuoc(otStop("st"), new Map()))).not.toBe("con cho");
+    }
+  });
   it("★ h.khongTraLoi (T7b-1d): on, the dispatch reached the fake and never answers; off, it answers; 6 concurrent hand-overs, 10 rounds", async () => {
     const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
     const gui = (k: string) => (equipmentRegistry.getAdapter("ot" as never) as any).sendCommand({ idempotencyKey: k, name: "stop" });
@@ -12088,6 +12194,242 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(h.hangNemLan, "the injection reached the row").toBeGreaterThan(0);
     expect(a.abortStops?.khongBen, "not of a latched run").toBeUndefined();
   });
+  // ── H29: a wait with no bound of its own on an Abort's road: every case at 1/20 of the bounds (h.heSoHan), so a hang costs no real seconds ─────────────────────
+  const HAN_DO = 4000; // the case's own patience: past it the Abort "did not answer"
+  const traLoi = async <T,>(p: Promise<T>) => {
+    const t0 = Date.now();
+    const kq = await Promise.race([p, wait(HAN_DO).then(() => null)]);
+    return { kq, ms: Date.now() - t0 };
+  };
+  const moTha = () => {
+    let tha: () => void = () => undefined;
+    const cho = new Promise<void>((ok) => (tha = ok));
+    return { cho, tha };
+  };
+  afterEach(() => {
+    h.treoNap.clear();
+    h.treoLaStop = null;
+    h.treoVerifier = null;
+  });
+  for (const kieu of ["TREO", "TU-CHOI"] as const) {
+    it(`T7B1D-TREO-DISPATCHER ${kieu} the dispatcher's module ${kieu === "TREO" ? "hangs" : "fails"} to load: a STOP stays a STOP: not verified, a trace, the Abort answers within its bound; a non-STOP has no trace and never goes; the fault gone a press sends the STOP only`, async () => {
+      const { c, di } = await moDi(def(`d1dtd${kieu === "TREO" ? "t" : "c"}`, [gate(), ot("x"), box("b", [delay("w", 300), otStop("s"), ot("m")])]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      await wait(10);
+      ve0();
+      h.heSoHan = 0.05;
+      const n = moTha();
+      if (kieu === "TREO") h.treoNap.set("commandDispatcher", n.cho);
+      else h.napTuChoi.add("commandDispatcher");
+      const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+      expect(a, "the Abort answered").not.toBeNull();
+      await di;
+      await wait(40);
+      expect(a!.abortStops?.unverified, "not read is no 'no STOP'").toEqual(["s"]);
+      expect(hang(c, "abort:s")?.status, "its trace").toBe("failed");
+      expect(hang(c, "abort:m"), "a non-STOP: no trace").toBeUndefined();
+      expect(ids()).toEqual([]);
+      expect(no(c)).toEqual([]);
+      n.tha();
+      h.treoNap.clear();
+      h.napTuChoi.clear();
+      h.heSoHan = 0;
+      await bam(c);
+      expect(ids(), "the STOP, not x, not m").toEqual(["s"]);
+    }, 15_000);
+  }
+  it("T7B1D-TREO-KHOA a latched run, the dispatcher's module hanging: the Abort answers; the robot STOP and the OT STOP on the marked route went; nothing else", async () => {
+    const c = await khoaChuaGiao("d1dtk", [robotStop("rs"), ot("m")]);
+    h.heSoHan = 0.05;
+    const n = moTha();
+    h.treoNap.set("commandDispatcher", n.cho);
+    ve0();
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    await wait(40);
+    n.tha();
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(ids().sort(), "both STOPs reached the dispatcher's door; no m").toEqual(["rs", "s2"]);
+  }, 15_000);
+  // the flag: one definition, read with no load behind it
+  for (const robot of [false, true]) {
+    it(`T7B1D-TREO-POLICY-TAT the flag off, the policy's module hanging: never loaded: the ${robot ? "robot" : "OT"} STOP goes at once`, async () => {
+      const { c, di } = await moDi(def(`d1dtp${robot ? "r" : "o"}`, [gate(), ot("x"), delay("w", 300), robot ? robotStop("s") : otStop("s")]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      await wait(10);
+      ve0();
+      const n = moTha();
+      h.treoNap.set("policyGate", n.cho);
+      h.napGoi.clear();
+      const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+      n.tha();
+      expect(a, "the Abort answered").not.toBeNull();
+      await di;
+      expect(a!.abortStops?.sent).toEqual(["s"]);
+      expect(ids()).toEqual(["s"]);
+      expect(h.napGoi.get("policyGate") ?? 0, "not loaded").toBe(0);
+    }, 15_000);
+  }
+  for (const kieu of ["TREO", "TU-CHOI"] as const) {
+    it(`T7B1D-TREO-WK-TAT ${kieu} the flag off, the policy's module ${kieu === "TREO" ? "hanging" : "failing"}: the walk never asks it: its commands and its STOP go, the run ends as it would`, async () => {
+      const n = moTha();
+      if (kieu === "TREO") h.treoNap.set("policyGate", n.cho);
+      else h.napTuChoi.add("policyGate");
+      h.napGoi.clear();
+      const { c, di } = await moDi(def(`d1dtw${kieu === "TREO" ? "t" : "c"}`, [gate(), ot("x"), otStop("s")]));
+      const { kq } = await traLoi(di.then(() => "xong"));
+      n.tha();
+      expect(kq, "the walk ended").toBe("xong");
+      await wait(20);
+      expect(ids()).toEqual(["x", "s"]);
+      expect(runRow(c).status).toBe("completed");
+      expect(h.napGoi.get("policyGate") ?? 0, "not loaded").toBe(0);
+    }, 15_000);
+  }
+  for (const robot of [false, true]) {
+    it(`T7B1D-TREO-POLICY-BAT the flag on, the policy's module hanging past its bound: the ${robot ? "robot" : "OT"} STOP is not sent around the gate: abort: failed with its reason, named; a press still hanging is bounded; the module back, a press sends it`, async () => {
+      const { c, di } = await moDi(def(`d1dtb${robot ? "r" : "o"}`, [gate(), ot("x"), delay("w", 300), robot ? robotStop("s") : otStop("s")]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      await wait(10);
+      ve0();
+      h.coBat = true;
+      h.heSoHan = 0.05;
+      const n = moTha();
+      h.treoNap.set("policyGate", n.cho);
+      const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+      expect(a, "the Abort answered").not.toBeNull();
+      await di;
+      await wait(40);
+      expect(a!.abortStops?.failed).toEqual(["s"]);
+      expect(ids(), "not around the gate").toEqual([]);
+      expect(hang(c, "abort:s")?.status).toBe("failed");
+      expect(String(hang(c, "abort:s")?.error)).toMatch(/policy/);
+      ve0();
+      const { kq: a1 } = await traLoi(abortRun(c, OWNER, "still hanging"));
+      expect(a1, "a press is bounded too").not.toBeNull();
+      expect(ids()).toEqual([]);
+      n.tha();
+      h.treoNap.clear();
+      h.heSoHan = 0;
+      await wait(20);
+      await bam(c);
+      expect(ids()).toEqual(["s"]);
+    }, 15_000);
+  }
+  it("T7B1D-TREO-WK-BAT the flag on, the policy's module hanging past its bound, the walk at a command: refused by the road it has: nothing sent around the gate; the walk does not stand still", async () => {
+    h.coBat = true;
+    h.heSoHan = 0.05;
+    const n = moTha();
+    h.treoNap.set("policyGate", n.cho);
+    const { c, di } = await moDi(def("d1dtwb", [gate(), ot("x"), otStop("s")]));
+    const { kq } = await traLoi(di.then(() => "xong", () => "xong"));
+    n.tha();
+    expect(kq, "the walk did not stand still").toBe("xong");
+    expect(ids(), "not around the gate").toEqual([]);
+    expect(["running", "queued"]).not.toContain(runRow(c).status);
+  }, 15_000);
+  it("T7B1D-TREO-XAC-MINH both verifier paths hanging: the Abort answers; robot STOPs need no database and go; an OT STOP is not verified, with its trace; a non-STOP is neither", async () => {
+    const { c, di } = await moDi(def("d1dtx", [gate(), ot("x"), delay("w", 300), otStop("s"), robotStop("rs"), ot("m")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.heSoHan = 0.05;
+    h.treoVerifier = "ca";
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    await di;
+    await wait(40);
+    expect(ids()).toEqual(["rs"]);
+    expect(a!.abortStops?.unverified).toEqual(["s"]);
+    expect(hang(c, "abort:s")?.status).toBe("failed");
+    expect(hang(c, "abort:m")).toBeUndefined();
+  }, 15_000);
+  for (const dang of ["CHUA-XAC-MINH", "CHUA-DOC"] as const) {
+    it(`T7B1D-TREO-VET ${dang} only the question of the trace hangs: it is left, on the side that keeps a STOP; no promise stays behind the answer; a press sends s`, async () => {
+      const { c, di } = await moDi(def(`d1dtv${dang === "CHUA-DOC" ? "d" : "x"}`, [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      await wait(10);
+      ve0();
+      h.heSoHan = 0.05;
+      if (dang === "CHUA-XAC-MINH") h.classifyLoi = true;
+      else {
+        ghimHalt(false);
+        h.ghim = PIN_BAD;
+      }
+      h.treoLaStop = () => new Promise<void>(() => undefined);
+      const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+      expect(a, "the Abort answered").not.toBeNull();
+      h.classifyLoi = false;
+      h.treoLaStop = null;
+      h.heSoHan = 0;
+      await di;
+      await wait(40);
+      expect(hang(c, "abort:s")?.status, "its trace").toBe("failed");
+      ghimHalt(true);
+      h.ghim = PIN_OK;
+      await bam(c);
+      expect(ids()).toEqual(["s"]);
+    }, 15_000);
+  }
+  it("T7B1D-TREO-QUET a sweep that does not end, a latched run: the Abort answers within the ceiling: not a silent ok: told; a second press joins it and is bounded too; the sweep free, it goes on and sends the STOP, once: a press after it has nothing to add", async () => {
+    const c = await khoaChuaGiao("d1dtq");
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
+    expect(a, "the Abort answered").not.toBeNull();
+    expect(a!.abortStops?.khongDocDuoc).toBe(true);
+    expect(a!.message).toMatch(/press Abort again/);
+    expect(urgentCua("abortDefUnread").length, "told").toBeGreaterThan(0);
+    const { kq: a1 } = await traLoi(abortRun(c, OTHER, "joins it"));
+    expect(a1, "a press joining it answered").not.toBeNull();
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.heSoHan = 0;
+    await waitFor(() => ids().includes("s2"), "the sweep went on");
+    await wait(60);
+    expect(ids(), "once, and nothing else").toEqual(["s2"]);
+    await bam(c, "free");
+    expect(ids(), "not again").toEqual([]);
+  }, 15_000);
+  it("T7B1D-TREO-CUOI-WALKER a latched walk behind a sweep that does not end: the walk ends within its bound", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 30);
+    const { c, di } = await moDi(def("d1dtc", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
+    await wait(20);
+    ve0();
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    await traLoi(abortRun(c, OWNER, "first"));
+    const { kq } = await traLoi(di.then(() => "xong", () => "xong"));
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    h.timeoutDispatch.clear();
+    expect(kq, "the walk ended").toBe("xong");
+  }, 15_000);
+  it("T7B1D-TREO-DUOI-WALKER the latch after the sweep, the walk's last word hanging: the walk ends within its bound", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 80);
+    const { c, di } = await moDi(def("d1dtd2", [gate(), par("root", [ot("x"), delay("w", 300)]), move("m")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(5);
+    ve0();
+    h.heSoHan = 0.05;
+    await abortRun(c, OWNER, "first");
+    h.treoLaStop = () => new Promise<void>(() => undefined);
+    const { kq } = await traLoi(di.then(() => "xong", () => "xong"));
+    h.treoLaStop = null;
+    h.timeoutDispatch.clear();
+    expect(kq, "the walk ended").toBe("xong");
+    expect(runDaChot(c)).toBe(true);
+  }, 15_000);
+
   // ── the controls: nothing here sends more than it did ───────────────────────────────────────────────────────────────
   it("T7B1D-DC-HOP a container failed on its own before the Abort, the STOP behind it never meant: nothing goes, no word", async () => {
     h.failPlan.set("y", Infinity);

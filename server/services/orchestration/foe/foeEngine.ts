@@ -195,6 +195,7 @@ import { napMotLan } from "./foeNapMotLan";
 const napAudit = napMotLan(() => import("../../auditTrailService"));
 const napCanhBao = napMotLan(() => import("../../robot/criticalStopAlert"));
 const napPolicy = napMotLan(() => import("../../security/policyGate"));
+import { secPlatformEnabled } from "../../security/secPlatformFlag"; // A2(n) T7b-1d lượt sửa 1 (H29) — read with nothing loaded: flag off, the policy's module is never waited for
 const napEdgeChung = napMotLan(() => import("../../edge/edgeCentralCommon"));
 const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
 
@@ -3077,8 +3078,9 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   // kênh phê duyệt per-step ngoài hitl_gate khai báo trong workflow ⇒ reject honest
   // POLICY_APPROVAL_REQUIRED (tác giả workflow thêm hitl_gate TRƯỚC bước lệnh nếu muốn).
   {
-    const { evaluateActionPolicy, secPlatformEnabled } = await napPolicy();
     if (secPlatformEnabled()) {
+      // T7b-1d lượt sửa 1 (H29) — flag on: its load has a bound; past it this attempt throws, the road a load that fails already has
+      const { evaluateActionPolicy } = await withDeadline(napPolicy(), STOP_DB_STEP_DEADLINE_MS, `FOE run ${rc.runId} step ${step.id} policy load`);
       const verdict = evaluateActionPolicy(
         `foe-run:${rc.runId}`,
         `foe.command.${step.command}`,
@@ -6128,8 +6130,9 @@ async function prepareAbortStop(
     }
     store.bindAbortStop?.(runId, step, cmd); // doc 81 Đợt 10 C — edge only (synchronous): the run binding for the edge dispatch
     // the SAME policy seam as a run's own command step (SEC_PLATFORM off by default ⇒ nothing)
-    const { evaluateActionPolicy, secPlatformEnabled } = await napPolicy();
     if (secPlatformEnabled()) {
+      // T7b-1d lượt sửa 1 (H29) — flag on: its load has a bound; past it the `catch` below: its `abort:` row failed with the reason, named, a press can send it; never around the gate
+      const { evaluateActionPolicy } = await withDeadline(napPolicy(), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} stop ${step.id} policy load`);
       const verdict = evaluateActionPolicy(`foe-run:${runId}`, `foe.command.${step.command}`, `machine:${step.machineId}`, {
         runId,
         stepId: step.id,
@@ -6343,13 +6346,32 @@ function abortStopSweep(
   /** doc 81 Đợt 10 C — `store`: the store of a run with no live walker here (default: central). A live walker's own store wins. T7b-1c — `bamLai`, `ketThucKhac`: runAbortStopSweep */
   opts: { resend?: boolean; store?: RunStore; bamLai?: { trongCua: boolean }; ketThucKhac?: true } = {},
 ): Promise<AbortStopReport> {
+  // T7b-1d lượt sửa 1 (H29) — every wait of a sweep has its bound; this one is for the sweep itself and whoever joins it: past it the answer is what is known: nothing read, press again, never a silent ok. The sweep goes on behind it
+  const coTran = (q: Promise<AbortStopReport>) =>
+    withDeadline(q, ABORT_SAP_QUET_HAN_MS, `FOE abort run ${runId} STOP sweep`).catch(async (err: unknown): Promise<AbortStopReport> => {
+      console.error(`[FOE] abort of run ${runId}: STOP sweep not answered: ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
+      const report: AbortStopReport = { ...emptyAbortReport(), khongDocDuoc: true };
+      const ctx = (live?.context ?? (run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      if ((opts.store ?? live?.store ?? centralRunStore).kind === "central" && (runDaChotKhongRo(ctx) || (live !== null && daChotKhongRo(live)))) {
+        report.phanLoai = {};
+        await baoKhongDocDinhNghia(runId, run?.startedBy ?? live?.runOwner ?? null);
+      }
+      return report;
+    });
   const running = abortSweepsInFlight.get(runId);
-  if (running) return running;
+  if (running) return coTran(running);
   const p = runAbortStopSweep(runId, run, live, user, scope, opts).finally(() => {
     if (abortSweepsInFlight.get(runId) === p) abortSweepsInFlight.delete(runId);
   });
   abortSweepsInFlight.set(runId, p);
-  return p;
+  return coTran(p);
+}
+
+/** A2(n) T7b-1c (RA2-5) — the URGENT of a latched run whose sweep could not read what it needs: no step to name. One bounded try; never a command. */
+async function baoKhongDocDinhNghia(runId: number, owner: number | null): Promise<void> {
+  await withDeadline(canhBaoKetCucKhongRo({ loai: "abortDefUnread", runId, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} definition unread URGENT`).catch((err: unknown) =>
+    console.error(`[FOE] abort of run ${runId}: the URGENT of its definition unread failed: ${(err as Error)?.message ?? err}`),
+  );
 }
 
 /**
@@ -6413,7 +6435,8 @@ async function noSauAbortKhoa(rc: RunContext): Promise<unknown> {
   try {
     const sap = abortSapQuet.get(rc.runId);
     if (sap) await withDeadline(sap, ABORT_SAP_QUET_HAN_MS, `FOE run ${rc.runId} Abort on its way to its sweep`).catch(() => undefined);
-    await abortSweepsInFlight.get(rc.runId); // never rejects; every wait of a sweep is bounded
+    // T7b-1d lượt sửa 1 (H29) — the walk ends: it does not stand behind a sweep past that sweep's own ceiling
+    await withDeadline<unknown>(abortSweepsInFlight.get(rc.runId) ?? Promise.resolve(), ABORT_SAP_QUET_HAN_MS, `FOE run ${rc.runId} the sweep of its Abort`).catch(() => undefined);
     const hang = (await readRunStepRows(rc.runId)) ?? [];
     const daDi = new Set([...abortSentOf(hang), ...(rc.abortDaDi ?? [])]);
     for (const id of daDi) rc.stopTuChoiTruocKhoa?.delete(id);
@@ -6453,9 +6476,16 @@ async function noSauAbortKhoa(rc: RunContext): Promise<unknown> {
     };
     if (ds.length) await baoStopChuaRaAbort(rc.runId, ds.map((x) => ({ id: x.id, vi: x.vi, chu: chuStopAbort(chuCua(x), x.ben || ctxBen) })), rc.runOwner);
     // T7b-1d (H25) — the latch fell after the sweep, or the sweep's word was lost: the same reading as the walk's end, once
-    const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null);
-    const v = await rc.store.verifyStops(rc.runId, rc.def, rc.machineById);
-    await baoH13KhiAbort(rc, src, src ? await lapKeHoachStop(rc, src, v, true) : { untakenBranch: [], notPinned: [], notPinnedUntaken: [] }, true);
+    // T7b-1d lượt sửa 1 (H29) — bounded as a whole: a last word that hangs does not hold the end of the walk
+    await withDeadline(
+      (async () => {
+        const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null);
+        const v = await rc.store.verifyStops(rc.runId, rc.def, rc.machineById);
+        await baoH13KhiAbort(rc, src, src ? await lapKeHoachStop(rc, src, v, true) : { untakenBranch: [], notPinned: [], notPinnedUntaken: [] }, true);
+      })(),
+      5 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${rc.runId} what its Abort dropped`,
+    );
   } catch (err) {
     console.error(`[FOE] run ${rc.runId}: what an aborted latched walk owes could not be told: ${(err as Error)?.message ?? err}`);
   }
@@ -6490,11 +6520,9 @@ async function runAbortStopSweep(
   let hoChuaKhoa = false;
   const khongXacMinhKetThuc = new Set<string>();
   const cho: Array<Promise<unknown>> = []; // T7b-1d — started beside the STOPs, waited for after them: traces and words
-  const baoKhongDocDinhNghia = async () => {
+  const baoKhongDoc = async () => {
     report.phanLoai ??= {};
-    await withDeadline(canhBaoKetCucKhongRo({ loai: "abortDefUnread", runId, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} definition unread URGENT`).catch((err: unknown) =>
-      console.error(`[FOE] abort of run ${runId}: the URGENT of its definition unread failed: ${(err as Error)?.message ?? err}`),
-    );
+    await baoKhongDocDinhNghia(runId, owner);
   };
   try {
     const src = await store.sweepSource({ live, run, hasLiveDriver: (id) => liveRuns.has(id) });
@@ -6506,7 +6534,7 @@ async function runAbortStopSweep(
       store.auditAbort(user, runId, "abortStopUnverified", { stepIds: [], reason: "definitionUnreadable", ...extra });
       report.khongDocDuoc = true; // T7b-1 fix 1 (RA-1) — never read as "nothing to send"
       // T7b-1c (RA2-5, dieu-phoi 09/11) — a latched run: never a silent ok: an URGENT of its own, no step to name, whether or not the latch was told
-      if (khoa) await baoKhongDocDinhNghia();
+      if (khoa) await baoKhongDoc();
       return report;
     }
     if (opts.bamLai && !opts.bamLai.trongCua && !khoa) return report; // past the window a run not latched sends nothing (resendAbortStops says so)
@@ -6634,11 +6662,12 @@ async function runAbortStopSweep(
           };
           for (const id of chuaXacMinh) {
             const s = findStepDeep(def.steps, id);
-            if (s?.type === "command" && (await laStopTheoBuoc(s, src.machineById))) await them(id);
+            // T7b-1d lượt sửa 1 (H29) — bounded: past it the side that keeps a STOP. A press reads it again: read and no STOP, the trace goes
+            if (s?.type === "command" && (await withDeadline(laStopTheoBuoc(s, src.machineById), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} stop ${id} trace`).catch(() => true))) await them(id);
           }
           for (const id of docLai) {
             const s = findStepDeep(def.steps, id);
-            if (s && (await laBuTruStop(xem, s)) === "chuaDoc") await them(id);
+            if (s && (await withDeadline(laBuTruStop(xem, s), STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} stop ${id} trace`).catch(() => "chuaDoc" as const)) === "chuaDoc") await them(id);
           }
         })().catch((err: unknown) => console.error(`[FOE] abort of run ${runId}: the trace of a STOP not verified: ${(err as Error)?.message ?? err}`)),
       );
@@ -6749,9 +6778,9 @@ async function runAbortStopSweep(
     // T7b-1d (H26) — never a silent ok: told as what it is. A latched run by RA2-5's road, the 15 minutes do not stretch; a run not latched only to the one who pressed (H23)
     report.khongDocDuoc = true;
     const ctxNem = (live?.context ?? (run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
-    if (khoa || (store.kind === "central" && (runDaChotKhongRo(ctxNem) || (live !== null && daChotKhongRo(live))))) await baoKhongDocDinhNghia();
+    if (khoa || (store.kind === "central" && (runDaChotKhongRo(ctxNem) || (live !== null && daChotKhongRo(live))))) await baoKhongDoc();
   }
-  await withDeadline(Promise.allSettled(cho), 2 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} traces`).catch((err: unknown) => console.warn(`[FOE] abort of run ${runId}: ${(err as Error)?.message ?? err}`));
+  await withDeadline(Promise.allSettled(cho), 3 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} traces`).catch((err: unknown) => console.warn(`[FOE] abort of run ${runId}: ${(err as Error)?.message ?? err}`));
   // T7b-1d (H27, chu du an 09/11) — a run not latched, the one write of a trace lost: a known limit, no second path for it: where the walker wrote over the rows a press sends nothing. The answer says so now, by name
   if (!khoa && store.kind === "central") {
     const mat: string[] = [];

@@ -186,6 +186,7 @@ import { isCommissioned, isCommissioningRequired } from "./commissioningService"
 // không tạo vòng phụ thuộc).
 import { evaluateInterlockGate } from "../interlock/interlockGate";
 import { tapMayChoInterlock } from "../interlock/tapMayChoInterlock";
+import { isStopCommandType } from "./loaiLenhStop"; // A2(n) T7b-1d lượt sửa 1 — its one definition; exported again below
 import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGate"; // doc 33 I2 (F5): policy-as-code gate
 // G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
 // caller did not pass an explicit correlationId we read the ambient one (if any).
@@ -556,10 +557,7 @@ export interface DispatchResult {
  * Task 2: the exemption is decided by DATA — classifyOtStop — and only for a stop that writes exactly the
  * pinned (tagKey, value) pairs of the target adapter; the name only selects which commands are looked at.
  */
-export function isStopCommandType(commandType: string): boolean {
-  const t = String(commandType ?? "").trim().toLowerCase();
-  return t === "stop" || t === "e_stop";
-}
+export { isStopCommandType } from "./loaiLenhStop";
 
 /** Why a stop-typed command was NOT treated as a pinned stop (match reasons + the pin read failing). */
 export type StopPinRefusalReason =

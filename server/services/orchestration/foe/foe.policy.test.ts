@@ -42,6 +42,7 @@ const policyMock = vi.hoisted(() => ({
   })),
 }));
 vi.mock("../../security/policyGate", () => policyMock);
+vi.mock("../../security/secPlatformFlag", () => ({ secPlatformEnabled: () => policyMock.secPlatformEnabled() })); // A2(n) T7b-1d lượt sửa 1 — the engine reads the flag from the leaf: the same seam, the same expectations
 
 // ── tiny in-memory drizzle stand-in (bản rút gọn của foe.test.ts) ────────────
 import { getTableName } from "drizzle-orm";
