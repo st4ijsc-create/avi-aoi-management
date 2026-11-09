@@ -12,7 +12,9 @@
  * Thoát 0 = đo xong (kể cả có bài trượt) · 2 = VỨT, không ghi báo cáo (llama-server chết, thước hỏng) · 3 = chạm trần thời gian, báo cáo có `dungSom`.
  *
  * ma-don mặc định đo model THUẦN (trục M, cùng sampling và SYS với `run.mjs --config raw`): cờ AI_AGENT_* không tác động, tài liệu và tool không tới model.
- * `--truc H` đi đường sản phẩm `/api/ai/local-kb/stream` của máy chủ ở `--base` (cùng thân yêu cầu với `run.mjs --config pipeline`, có RAG và vòng tool).
+ * `--truc H` đi đường sản phẩm `/api/ai/local-kb/stream` của máy chủ ở `--base` (cùng thân yêu cầu với `run.mjs --config pipeline`).
+ * Với bài sinh mã, đường này là MỘT lượt gọi model (`streamCodingGenerate`, audit `kb_sinh_ma`) có persona + ngữ cảnh mã repo
+ * (`AI_CODING_REPO_CONTEXT`), KHÔNG vòng tool, không lookup_api/search_docs: đêm 09/11 đếm 127 hàng `kb_sinh_ma` cho 127 mẫu, 0 hàng khác.
  * Trục H không có `finish_reason` nên không đếm được bài cụt: báo cáo để `cut: null`.
  * agent-f gọi `run-f.mjs`, cần máy chủ ở AI_EVAL_BASE và cookie như README của nó. Bài pilot-repo cần bộ chạy pilot + lượt `_test`: chưa đo ở đây, ghi trong `chuaDo`.
  */
