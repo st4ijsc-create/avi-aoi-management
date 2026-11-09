@@ -39,7 +39,8 @@ describe("A2(n) T7b-1d — the leaf modules of a STOP's road", () => {
     expect(doc("services/ot/commandDispatcher.ts")).toMatch(/export \{ isStopCommandType \} from "\.\/loaiLenhStop"/);
     const lop = doc("services/orchestration/foe/foeStepClass.ts");
     expect(lop).toMatch(/import \{ isStopCommandType \} from "\.\.\/\.\.\/ot\/loaiLenhStop"/);
-    expect(lop).not.toMatch(/mod\.isStopCommandType/);
+    const than = /export async function isOtStopCommandType\(name: string\): Promise<boolean> \{([\s\S]*?)\n\}/.exec(boChuThich(lop))?.[1] ?? "";
+    expect(than.trim(), "nothing loaded on the way: the leaf's answer, no other").toBe("return isStopCommandType(name);");
   });
   it("what it says: the two stop types, any case, trimmed; nothing else", () => {
     for (const t of ["stop", "e_stop", " STOP ", "E_Stop"]) expect(isStopCommandType(t)).toBe(true);
