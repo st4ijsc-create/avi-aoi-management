@@ -232,6 +232,29 @@ test("--truc H: máy chủ trả 401 là cấu hình sai: thoát 2, không ghi b
   assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
 });
 
+test("--truc H: server từ chối dự án là cấu hình sai: thoát 2, không ghi báo cáo", async () => {
+  const sv = http.createServer((req, res) => {
+    if (req.url === "/health") return res.end("{}");
+    if (req.url === "/slots") return res.end("[]");
+    req.resume();
+    req.on("end", () => {
+      const msg = "Dự án đang chọn (`repo`) KHÔNG nằm trong danh sách cho phép.";
+      res.write(`data: ${JSON.stringify({ type: "token", token: msg })}\n\n`);
+      res.end(`data: ${JSON.stringify({ type: "done", provider: "tool", answer: msg })}\n\n`);
+    });
+  });
+  await new Promise((r) => sv.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${sv.address().port}`;
+  const ck = path.join(tam, "ck3.txt");
+  fs.writeFileSync(ck, "127.0.0.1\tFALSE\t/\tFALSE\t0\tapp_session_id\tabc\n");
+  const ra = path.join(tam, "ra10");
+  const r = await chay(["--truc", "H", "--base", url, "--cookie", ck, "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra]);
+  sv.close();
+  assert.equal(r.ma, 2, r.err);
+  assert.match(r.err, /từ chối dự án/);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
 test("--truc H thiếu --base hoặc --cookie: thoát 2", async () => {
   const r = await chay(["--truc", "H", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "ra9")]);
   assert.equal(r.ma, 2);

@@ -237,8 +237,12 @@ async function goiDuongSanPham(base, cookie, prompt) {
       else if (o.type === "done" && o.answerRevised === true && typeof o.answer === "string") text = o.answer;
     }
   }
+  // Server từ chối dự án (`codingProjectDeniedMessage`) mà không gọi model: lượt đo cấu hình sai, không phải bài trượt (đêm 09/11).
+  if (TU_CHOI_DU_AN.test(text.trimStart())) throw new Vut(`server từ chối dự án "repo" (thiếu trong AI_REPO_SANDBOX_ROOTS?): ${text.slice(0, 120)}`);
   return { text, cut: null, tokRa: null, ms: Date.now() - t0 };
 }
+
+const TU_CHOI_DU_AN = /^(Dự án đang chọn \(`|The selected project \(`|所选项目（`)/;
 
 function chamMaDon(b, tepTraLoi) {
   return new Promise((resolve, reject) => {
