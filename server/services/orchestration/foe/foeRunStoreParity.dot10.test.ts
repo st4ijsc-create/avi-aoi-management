@@ -9229,7 +9229,7 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     const c = await khoaChuaGiao("ra1ml");
     await motLanMat(c);
     expect(chuCua("abortStopNotSent")).not.toContain("no time limit");
-    expect(chuCua("abortStopNotSent")).toContain("press Abort again within 15 minutes");
+    expect(chuCua("abortStopNotSent")).toContain("may not reach it"); // H28, dieu-phoi 09/11: was "press Abort again within 15 minutes"
     expect(chuCua("abortStopNotSent"), "the words say what is left past it").toContain("check the machine on site");
     const a2 = await bam(c, "again");
     expect(a2.ok, String(a2.message)).toBe(true);
@@ -9297,7 +9297,7 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(ids(), "G: the first Abort of a held run hands it over again").toEqual(["st"]);
     const a2 = await bam(c, "again");
     expect(ids(), "the run has ended: not again").toEqual([]);
-    expect(a2.message, "RA-3").toMatch(/owes no STOP step/);
+    expect(a2.message, "RA-3").toMatch(/records hold no STOP step owed/); // H28, dieu-phoi 09/11: was /owes no STOP step/
   });
   it("RA1-R3E-MAT the Abort sweeps before the latch, st refused, its abort: row lost; the walk ends latched: it tells st by name and holds the debt in the context; past the window st goes", async () => {
     seedHalt();
@@ -9670,7 +9670,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(chu).not.toContain("did NOT go out");
     expect(chu).toContain("may have gone out");
     expect(chu).toContain("check the machine on site");
-    expect(chu).toContain("press Abort again within 15 minutes");
+    expect(chu).toContain("may not reach it"); // H28, dieu-phoi 09/11: was "press Abort again within 15 minutes"
     expect(chu).not.toContain("no time limit");
     const a2 = await bam(c, "again");
     expect(ids()).toEqual(["st"]);
@@ -10033,7 +10033,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(runRow(c).status).toBe("aborted");
     expect(no(c), "nothing durable holds it").toEqual([]);
     const chu = veBuoc("st").filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent).map((a) => `${a.title} ${a.message}`).join(" | ");
-    expect(chu, "told").toContain("within 15 minutes");
+    expect(chu, "told").toContain("may not reach it"); // H28, dieu-phoi 09/11: was "within 15 minutes"
     expect(chu).not.toContain("no time limit");
     await bam(c, "again");
     expect(ids()).toEqual(["st"]);
@@ -10050,7 +10050,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     h.timeoutDispatch.clear();
     expect(no(c)).toEqual([]);
     const chu = veBuoc("st").map((a) => `${a.title} ${a.message}`).join(" | ");
-    expect(chu).toContain("within 15 minutes");
+    expect(chu).toContain("may not reach it"); // H28, dieu-phoi 09/11: was "within 15 minutes"
     expect(chu).not.toContain("no time limit");
     await bam(c, "again");
     expect(ids()).toEqual(["st"]);
@@ -10611,13 +10611,13 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
   it("T7B1C-BANG-THAT the same cells on the engine: read through the real reads, the press through abortRun: what goes and the words", async () => {
     const CHU_RE: Record<string, Array<[RegExp, boolean]>> = {
       chuaRaKhongHan: [[/did NOT go out/, true], [/no time limit/, true]],
-      chuaRa15: [[/did NOT go out/, true], [/within 15 minutes/, true], [/no time limit/, false]],
+      chuaRa15: [[/did NOT go out/, true], [/may not reach it/, true], [/no time limit/, false]], // H28, dieu-phoi 09/11: was /within 15 minutes/
       coTheKhongHan: [[/may have gone out/, true], [/no time limit/, true], [/did NOT go out/, false]],
-      coThe15: [[/may have gone out/, true], [/within 15 minutes/, true], [/did NOT go out/, false], [/no time limit/, false]],
+      coThe15: [[/may have gone out/, true], [/may not reach it/, true], [/did NOT go out/, false], [/no time limit/, false]], // H28, dieu-phoi 09/11: was /within 15 minutes/
       daGiaoKhongHan: [[/handed over earlier/, true], [/no time limit/, true], [/did NOT go out/, false]],
       daGiaoKiemMay: [[/not sent again/, true], [/check the machine on site/, true], [/did NOT go out/, false], [/no time limit/, false]],
       khongDocKhongHan: [[/could not be read/, true], [/no time limit/, true], [/did NOT go out/, false]],
-      khongDoc15: [[/could not be read/, true], [/within 15 minutes/, true], [/did NOT go out/, false], [/no time limit/, false]],
+      khongDoc15: [[/could not be read/, true], [/may not reach it/, true], [/did NOT go out/, false], [/no time limit/, false]], // H28, dieu-phoi 09/11: was /within 15 minutes/
     };
     const dat = (c: number, ten: string) => {
       const them = (x: Record<string, unknown>) => rows("orchestration_run_steps").push({ runId: c, stepType: "command", attempt: 0, error: null, resultJson: null, startedAt: new Date(), ...x } as never);
@@ -11314,6 +11314,60 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       });
     }
   }
+  // H28: a latched run, the debt durable nowhere: the words of what is known. Measured on 498dbba83 (T7b-1d\ra.md part 2): "within 15 minutes", 0 commands, "owes no STOP"
+  const haiLoi = async (ref: string, cay: WorkflowStep, loi: "TU-CHOI" | "UNV" | "PENDING") => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def(ref, [gate(), par("root", [move("x"), cay])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    if (loi === "TU-CHOI") h.tuChoi.set("s", REF);
+    if (loi === "UNV") h.classifyLoi = true;
+    if (loi === "PENDING") h.khongTraLoi.add("s");
+    h.hangNem = (r) => r.stepId === "abort:s";
+    const nem = () => {
+      queueMicrotask(() => (h.ctxNem = nem));
+      return true;
+    };
+    h.ctxNem = nem;
+    await abortRun(c, OWNER, "first");
+    h.classifyLoi = false;
+    await di.catch(() => undefined);
+    await wait(300);
+    expect(h.ctxNemLan, "the injection reached the context").toBeGreaterThan(0);
+    h.hangNem = null;
+    h.ctxNem = null;
+    h.tuChoi.clear();
+    h.khongTraLoi.clear();
+    h.timeoutDispatch.clear();
+    expect(runDaChot(c)).toBe(true);
+    expect(no(c), "nothing durable holds it").toEqual([]);
+    const chu = veBuoc("s").filter((x) => x.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent).map((x) => `${x.title} ${x.message}`).join(" | ");
+    expect(chu, "the URGENT names s").toMatch(/"s"/);
+    expect(chu).toMatch(/could not be recorded/);
+    expect(chu, "a press may send it").toMatch(/may send it/);
+    expect(chu).toMatch(/may not reach it/);
+    expect(chu).toMatch(/check the machine on site/);
+    expect(chu).not.toMatch(/within 15 minutes|no time limit|\d+ minutes/);
+    return c;
+  };
+  for (const loi of ["TU-CHOI", "UNV", "PENDING"] as const) {
+    it(`T7B1D-H28-HAI-LOI ${loi}: a compensation not due, its row and the context lost: no promise; the press sends nothing and does not say nothing is owed: only that the records hold none`, async () => {
+      const c = await haiLoi(`d1dh28${loi}`.replace(/-/g, ""), box("b", [move("y", { compensation: otStop("s") }), delay("w", 300)]), loi);
+      const a2 = await bam(c);
+      expect(ids()).toEqual([]);
+      expect(a2.message).not.toMatch(/owes no STOP/);
+      expect(a2.message).toMatch(/records hold no STOP step owed/);
+      expect(a2.message).toMatch(/Check the machine on site/);
+    }, 15_000);
+    it(`T7B1D-H28-HAI-LOI ${loi} the control: s in the container's body: the same words: a press does send it`, async () => {
+      const c = await haiLoi(`d1dh28t${loi}`.replace(/-/g, ""), box("b", [delay("w", 300), otStop("s")]), loi);
+      await bam(c);
+      expect(ids()).toEqual(["s"]);
+      expect(pdu("s").length).toBe(1);
+    }, 15_000);
+  }
   const ksUnv = async (ref: string, truocAbort?: () => void) => {
     h.timeoutDispatch.add("x");
     h.slow.set("x", 120);
@@ -11393,7 +11447,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     h.hangNem = null;
     h.ctxNem = null;
     expect(chuCua("abortStopNotSent")).toMatch(/could not verify/);
-    expect(chuCua("abortStopNotSent")).toMatch(/within 15 minutes/);
+    expect(chuCua("abortStopNotSent")).toMatch(/may not reach it/); // H28, dieu-phoi 09/11: was /within 15 minutes/
     expect(chuCua("abortStopNotSent")).not.toMatch(/no time limit/);
   });
   it("T7B1D-CHUA-DOC-LAI a run not latched, not verified: a press whose read answers 'no pinned STOP' sends nothing, the trace goes; a read still lost sends nothing, the trace stays", async () => {

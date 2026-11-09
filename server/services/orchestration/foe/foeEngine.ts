@@ -6230,7 +6230,8 @@ function chuBamLai(runId: number, r: AbortStopReport, chuaKhoa = false): string 
   const dongChua = new Set([...r.sent, ...r.failed, ...r.pending, ...r.notPinned, ...r.unverified, ...r.untakenBranch]);
   const conLai = [...no].filter((id) => !dongChua.has(id));
   if (conLai.length) cau.push(`Recorded as owed and not sent by this press: ${conLai.join(", ")}: nothing was sent for them; check the machine on site.`);
-  if (!cau.length) cau.push("it owes no STOP step: nothing was sent. Check the machine on site.");
+  // H28 (dieu-phoi 09/11) — what the records say, never a fact about the machine: a debt durable nowhere reads the same
+  if (!cau.length) cau.push("its records hold no STOP step owed and this press sent none: that says nothing of the machine. Check the machine on site.");
   return `Run ${runId} was already aborted — ${cau.join(" ")}`;
 }
 

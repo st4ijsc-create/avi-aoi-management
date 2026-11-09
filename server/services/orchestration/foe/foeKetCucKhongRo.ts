@@ -385,10 +385,10 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   const id = `"${stopCua(a)}"`;
   const ma = a.vi ? ` (${a.vi.ma})` : "";
   const tay = "use the machine's direct STOP / E-STOP";
-  const phut = Math.round(ABORT_RESEND_WINDOW_MS / 60_000);
   const chu = a.chuAbort ?? "chuaRaKhongHan";
   const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`;
-  const han = `This could not be recorded: press Abort again within ${phut} minutes; after that it cannot be sent from here: check the machine on site and ${tay}.`;
+  // H28 (dieu-phoi 09/11) — a debt durable nowhere: a press may send it (the body of a container: it does) or may not reach it (a compensation not due): no promise, no minutes
+  const han = `This could not be recorded: a further press of Abort may send it, but may not reach it: check the machine on site and ${tay}.`;
   // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
   // T7b-1d (H26) — a run that never latched, the pins unreadable at its other end: listed and told, no marked route, and no word that calls a step a STOP nobody could verify
   if (chu === "daKetThucKhongXacMinh") return [`run has ended, step ${id} NOT sent`, `The run has ended on its own, before this Abort. Step ${id} could not be verified as a pinned STOP, so it was NOT sent, and a further Abort cannot send it: check the machine on site and ${tay}.`];
