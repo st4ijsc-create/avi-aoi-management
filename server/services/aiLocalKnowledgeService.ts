@@ -3561,6 +3561,11 @@ export type StreamEvent =
        * header `x-st4i-bien-dich` của /v1). Vắng = vòng không chạy. Kiểm nhánh A/B + tra cứu; UI không cần đọc.
        */
       kiemBienDichST?: string;
+      /**
+       * ★ T1 (2026-11-10) — tóm tắt máy đọc của vòng TỰ KIỂM MÃ (`ok=…; trang-thai=…; ngon-ngu=…; vong=…; sua=…; con=…; ky-tu-them=…; ms=…`).
+       * Vắng = cờ `AI_CHAT_TU_KIEM_MA` tắt. UI không cần đọc; do-model đọc để ghi số vòng + chi phí thêm.
+       */
+      tuKiemMa?: string;
       /** ★ Hoá đơn nguồn dữ liệu — THÊM MỚI, thuần bổ sung: consumer SSE cũ đọc
        *  `done` theo từng ô sẽ bỏ qua ô lạ mà không đổi hành vi. */
       dataCitations?: KbDataCitation[];

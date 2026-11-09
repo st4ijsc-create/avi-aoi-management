@@ -48,6 +48,8 @@ import { doneSinhMa, nguCanhDuAnChoPrompt } from "./aiLocalKnowledgeCoding";
 import { chayKiemBienDichST, goiLaiBangModel, khoiBoSungSauBienDich } from "./aiLocalKnowledgeCodingKiemST";
 import { kiemBienDichBat } from "./ai/st/kiemBienDichSt";
 import { headerKiemBienDich } from "./ai/st/auditKiemBienDich";
+import { chayTuKiemMa } from "./aiLocalKnowledgeCodingTuKiemMa";
+import { ghiChuDaSua, headerTuKiemMa } from "./ai/tuKiemMa/tuKiemMa";
 
 
 /** Vì sao nhánh sinh mã KHÔNG chạy — mỗi lý do là một câu khác nhau với người dùng. */
@@ -428,13 +430,23 @@ export async function* streamCodingGenerate(
     kiemBienDichBat("tro-ly") && context.kiemBienDichST !== false ? { kiemBienDichST: kiemST ? headerKiemBienDich(kiemST) : "ok=skip" } : {};
 
   const boSung = boSungUsingChoCauTraLoi(kq.text, language);
-  if (boSung) {
-    yield { type: "token", token: boSung.thongBao };
-    const doneDaSua = doneSinhMa(boSung.text + chan + boSungST + boSung.thongBao, "ollama") as Extract<StreamEvent, { type: "done" }>;
-    yield { ...doneDaSua, answerRevised: true, ...oKiem };
+  // ★ T1 (2026-11-10) — tự kiểm mã (cờ AI_CHAT_TU_KIEM_MA=1; TẮT ⇒ `null`, mọi dòng dưới chạy y như cũ). Kiểm trên văn bản SAU khi
+  // bổ sung `using` (nếu không, thiếu `using` bị báo là lỗi của model). Chỉ khi SỬA ĐƯỢC mới thay câu trả lời (answerRevised).
+  const tuKiem = await chayTuKiemMa({
+    cauTraLoi: boSung?.text ?? kq.text,
+    goiLai: goiLaiBangModel({ heThong, promptGoc: promptCuoi, maxTokens: tran, userId: execCtx?.user?.id, tacVu: (context as { modelTask?: unknown })?.modelTask, signal: execCtx?.signal, modelId: context.modelVaiTro?.modelId }),
+    signal: execCtx?.signal,
+  });
+  const oTuKiem = tuKiem ? { tuKiemMa: headerTuKiemMa(tuKiem) } : {};
+  const daSuaMa = tuKiem?.trangThai === "da-sua";
+  if (boSung) yield { type: "token", token: boSung.thongBao };
+  if (boSung || daSuaMa) {
+    const than = daSuaMa ? tuKiem!.cauTraLoiCuoi + ghiChuDaSua(tuKiem!) : boSung!.text;
+    const doneDaSua = doneSinhMa(than + chan + boSungST + (boSung?.thongBao ?? ""), "ollama") as Extract<StreamEvent, { type: "done" }>;
+    yield { ...doneDaSua, answerRevised: true, ...oKiem, ...oTuKiem };
     return "xong";
   }
-  yield { ...(doneSinhMa(kq.text + chan + boSungST, "ollama") as Extract<StreamEvent, { type: "done" }>), ...oKiem };
+  yield { ...(doneSinhMa(kq.text + chan + boSungST, "ollama") as Extract<StreamEvent, { type: "done" }>), ...oKiem, ...oTuKiem };
   return "xong";
 }
 

@@ -757,6 +757,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       let answerRevised = false;
       // ★ Đợt 9 — tóm tắt vòng kiểm biên dịch ST của trợ lý (vắng = không chạy).
       let kiemBienDichST: string | undefined;
+      // ★ T1 — tóm tắt vòng tự kiểm mã (vắng = cờ AI_CHAT_TU_KIEM_MA tắt).
+      let tuKiemMa: string | undefined;
 
       for await (const evt of streamAnswer(effectiveQuestion, topK, history, userRole, ngCanhVoiAnh(context, question, vision), execCtx)) {
         if (closed) return;
@@ -860,6 +862,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
             degradedReason = evt.degradedReason;
             answerRevised = evt.answerRevised === true;
             kiemBienDichST = evt.kiemBienDichST;
+            tuKiemMa = evt.tuKiemMa;
             break;
         }
       }
@@ -876,6 +879,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           ...(degraded ? { degraded: true, degradedReason } : {}),
           ...(answerRevised ? { answerRevised: true } : {}),
           ...(kiemBienDichST ? { kiemBienDichST } : {}),
+          ...(tuKiemMa ? { tuKiemMa } : {}),
         });
       }
     } catch (error: any) {
