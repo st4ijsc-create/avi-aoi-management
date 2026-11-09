@@ -24,4 +24,5 @@ Chưa đo:
 - **Bài thử** `2026-11-09-thu-f.*` (js-cli-viec 10/12, 23:16) là lượt thử đường chạy, không tính.
 - **Theo bài:** js-cli-viec 3/3, ts-gio-hang 3/3, py-kho-cache 3/3, cs-dat-phong 2/3, cs-nhat-ky 1/3, py-dang-ky 0/3 (cả ba lượt trượt đúng 1 test, 13/14).
 - **Hàng trên `_test` của người dùng đo** (id 223473, đếm 00:45, giờ UTC): `ai_agent_runs` 19 (16:16–16:42, đều `xong`), `ai_pending_actions` 193 (188 `executed`, 5 `bi_tu_choi_ghi`, không thẻ nào treo), `ai_llm_audit` 146, `ai_gateway_metrics` 630, `audit_logs` 581, `user_sessions` 2; cộng hàng gieo `users`, `user_secrets`, `factories`, `user_factory_assignments`. Không DELETE.
+- **5 thẻ `bi_tu_choi_ghi` là chặn đúng ý định:** cả 5 thuộc agent-f, không thuộc trục H: run 33303297 (cs-dat-phong lượt 1), 16:18:06 UTC. Model gọi `delete_file` cho 5 tệp build trong `cs-dat-phong/src/DatPhong/obj/` (`project.assets.json`, `*.nuget.*`). Server từ chối vì tệp bị `.gitignore`, git không có bản để dựng lại. Không liên quan tới `AI_CODING_TU_TRI_GHI` (cờ này chỉ tắt ở lần dựng trục H, 23:45). Lượt đó vẫn đạt 15/15.
 - Worktree sau agent-f không còn tệp đổi (bộ chạy run-f khôi phục `sandbox-projects/agent-f`).
