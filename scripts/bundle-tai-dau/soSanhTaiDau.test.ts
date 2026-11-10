@@ -5,9 +5,9 @@
  * + asset giả nội dung biết trước), xoá trong afterEach; KHÔNG đọc dist thật.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   phanTichIndex,
@@ -55,6 +55,7 @@ function dungIndexHtml(script: string[], preload: string[], style: string[]) {
 
 /** Dựng asset giả với nội dung biết trước */
 async function dungAsset(thuMuc: string, ten: string, noiDung: string) {
+  await mkdir(dirname(join(thuMuc, ten)), { recursive: true });
   await writeFile(join(thuMuc, ten), noiDung);
 }
 
@@ -184,9 +185,9 @@ describe("doKichThuoc", () => {
     expect(ketQua.tongGzip).toBe(ketQua.danhSach[0].byteGzip + ketQua.danhSach[1].byteGzip);
   });
 
-  it("tệp có tên bắt đầu bằng /: /app.js → đọc đúng", async () => {
-    await dungAsset(thuMucTam, "app.js", "content");
-    const ketQua = await doKichThuoc(thuMucTam, ["/app.js"]);
+  it("tệp có tên bắt đầu bằng /: /assets/app.js → đọc đúng trong assets/", async () => {
+    await dungAsset(thuMucTam, "assets/app.js", "content");
+    const ketQua = await doKichThuoc(thuMucTam, ["/assets/app.js"]);
     expect(ketQua.danhSach).toHaveLength(1);
     expect(ketQua.danhSach[0].byteRo).toBe(7);
   });
@@ -313,10 +314,10 @@ describe("soHaiBanChup", () => {
 
 describe("taoBanChup", () => {
   it("đóng gói đúng cấu trúc JSON", async () => {
-    const html = dungIndexHtml(["/assets/app-abc12345.js"], [], []);
+    const html = dungIndexHtml(["/assets/app-abc12345.js"], ["/assets/chunk-def67890.js"], []);
     await writeFile(join(thuMucTam, "index.html"), html);
-    await dungAsset(thuMucTam, "app-abc12345.js", "app content");
-    await dungAsset(thuMucTam, "chunk-def67890.js", "chunk content");
+    await dungAsset(thuMucTam, "assets/app-abc12345.js", "app content");
+    await dungAsset(thuMucTam, "assets/chunk-def67890.js", "chunk content");
 
     const banChup = await taoBanChup(thuMucTam);
 
@@ -360,7 +361,7 @@ describe("chayCLI", () => {
   it("chup: ghi JSON ra tệp và trả mã thoát 0", async () => {
     const html = dungIndexHtml(["/assets/app-abc12345.js"], [], []);
     await writeFile(join(thuMucTam, "index.html"), html);
-    await dungAsset(thuMucTam, "app-abc12345.js", "app content");
+    await dungAsset(thuMucTam, "assets/app-abc12345.js", "app content");
 
     const tepJson = join(thuMucTam, "snapshot.json");
     const logs: string[] = [];
@@ -469,7 +470,7 @@ describe("entry point", () => {
 
     const html = dungIndexHtml(["/assets/app-abc12345.js"], [], []);
     await writeFile(join(thuMucTam, "index.html"), html);
-    await dungAsset(thuMucTam, "app-abc12345.js", "app content");
+    await dungAsset(thuMucTam, "assets/app-abc12345.js", "app content");
 
     const tepJson = join(thuMucTam, "entry-snapshot.json");
 
