@@ -94,6 +94,10 @@ export interface HoSoCho {
 }
 /** App đặt `expiresAt = createdAt + 5 phút` cho thẻ (aiCopilotActions.PENDING_TTL_MS); quá hạn thẻ `invalid` dù bộ chạy còn đợi (TC-05 lượt 2). */
 export const TTL_THE_DUYET_MS = 5 * 60_000;
+/**
+ * Biên an toàn 15 s: hạn ghi trong `cho-duyet.json` (và hạn chờ của bộ chạy) SỚM hơn `expiresAt` của hàng thẻ đúng khoảng này — cố ý,
+ * lệch về phía an toàn: người duyệt ở sát hạn không làm thẻ `invalid` giữa lúc bộ chạy còn đợi (TC-05 lượt 2). Đo ở TC-06: lệch 15 s.
+ */
 export const BIEN_AN_TOAN_MS = 15_000;
 /** Cổng kế hoạch 11.3-C chờ người tối đa 15 phút (choDuyetKeHoach.TRAN_CHO_DUYET_KE_HOACH_MS) — KHÁC TTL thẻ ghi (5 phút). */
 export const TRAN_CHO_KE_HOACH_MS = 15 * 60_000;
