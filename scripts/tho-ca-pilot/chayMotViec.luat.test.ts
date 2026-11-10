@@ -110,6 +110,27 @@ describe("docLuatTuTep (--luat <tệp>)", () => {
     fs.writeFileSync(f, " \n\n", "utf8");
     expect(() => docLuatTuTep(f)).toThrow(/rỗng/);
   });
+
+  it("★★★ tệp CRLF + BOM: đọc NGUYÊN VĂN (không đổi CRLF→LF, không bỏ BOM); sha trong JSON = sha BYTE của tệp = sha BYTE của AGENTS.md ghi vào worktree", async () => {
+    const BOM = String.fromCharCode(0xfeff);
+    const noiDung = `${BOM}# luật thử${"\r\n"}dòng hai có dấu: Thợ Cả${"\r\n"}`;
+    const f = path.join(goc, "crlf-bom.md");
+    fs.writeFileSync(f, noiDung, "utf8");
+    const bytes = fs.readFileSync(f);
+    expect(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(true);
+    expect(bytes.includes(Buffer.from("\r\n"))).toBe(true);
+
+    const doc = docLuatTuTep(f);
+    expect(doc.luat).toBe(noiDung);
+
+    const r = await chay({ luat: doc.luat, luatNguon: doc.nguon });
+    const shaBytes = createHash("sha256").update(bytes).digest("hex");
+    expect(r.luat?.sha256).toBe(shaBytes);
+    expect(r.luat?.byte).toBe(bytes.length);
+    const ghi = fs.readFileSync(path.join(wt, "AGENTS.md"));
+    expect(ghi.equals(bytes)).toBe(true);
+    expect(createHash("sha256").update(ghi).digest("hex")).toBe(r.luat?.sha256);
+  });
 });
 
 describe("commitBoChay", () => {
