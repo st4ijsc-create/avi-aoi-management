@@ -186,6 +186,7 @@ export function bangMarkdown(bc) {
     `Trục ${bc.truc ?? "M"} · commit \`${bc.commit}\`${bc.cayBan ? " (cây có thay đổi chưa commit)" : ""} · ${bc.soMau} mẫu/bài · trần ${bc.maxTokens} token`,
     `Model \`${m.tep ?? "?"}\` · sha256 \`${m.sha ?? "chưa băm"}\` · ctx ${m.ctx ?? "?"} · budget ${m.reasoningBudget ?? "?"}`,
     `Cờ: ${Object.keys(bc.co).length ? Object.entries(bc.co).map(([k, v]) => `\`${k}=${v}\``).join(" ") : "không đặt"}`,
+    ...(bc.coBoQua?.length ? [`Cờ bị loại khỏi báo cáo (tên/giá trị dáng bí mật, chỉ ghi tên): ${bc.coBoQua.join(", ")}`] : []),
     ...(bc.ghiChu ? [`Ghi chú: ${bc.ghiChu}`] : []),
     ...(bc.taiMay ? [bc.taiMay.sach ? `Tải máy: không thấy tiến trình nặng, slot không bận (${bc.taiMay.soMauTai} mẫu, CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %)` : `**Tải máy: có tiến trình khác trong lúc đo, thời gian có thể méo.** ${Object.entries(bc.taiMay.tienTrinhNang).map(([k, v]) => `${k} ${v}/${bc.taiMay.soMauTai} mẫu`).join(", ") || "không có tiến trình nặng"}; slot bận ${bc.taiMay.soLuotSlotBan} lượt; CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %`] : []),
     ...(bc.dungSom ? ["", `**Dừng sớm: ${bc.dungSom}. Số dưới đây chưa đủ mẫu.**`] : []),
@@ -225,13 +226,35 @@ export function tieuDeKhoa(env = process.env) {
 }
 
 const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/;
-// Tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp; TOKEN đứng một mình là đếm token, giữ.
-const DANG_BI_MAT = /(^|_)(KEY|APIKEY|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|BEARER|AUTH|COOKIE|SESSION|PRIVATE)(_|$)|(ACCESS|API|AUTH|BEARER|REFRESH|ID|SESSION)_TOKEN/;
+// Lớp 1, GIÁ TRỊ: chỉ nhận giá trị dạng cờ — rỗng, true/false, số, từ ngắn ≤ 32 ký tự chỉ gồm chữ/số/_ . + - (không `:` `/` `=`
+// hay khoảng trắng, nên không URL/DSN/chuỗi kết nối/JWT/base64). Chuỗi liền ≥ 16 chữ-số không dấu nối (dáng khoá hex/base62) bị loại.
+const GIA_TRI_CO = /^[A-Za-z0-9_.+-]{0,32}$/;
+const DANG_KHOA_LIEN = /^[A-Za-z0-9]{16,}$/;
+// Lớp 2, TÊN: đoạn tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp.
+const DOAN_BI_MAT =
+  /(^|_)(KEYS?|APIKEY|PRIVKEY|PRIVATEKEY|SECRETS?|PASSWORD|PASSWD|PASS|PWD|PW|PASSPHRASE|PASSCODE|PIN|CREDS?|CREDENTIALS?|BEARER|O?AUTH|COOKIES?|SESSION|SESSID|SID|PRIVATE|JWT|DSN|URL|URI|CONN|CONNECTION|CONNSTR|WEBHOOK|HOOK|SALT|HMAC|M?OTP|TOTP|MFA|SIGNATURE|SIGNING|SIG|CERT|PEM|SSH|GPG|PGP|ENCRYPTION|CIPHER|NONCE|ACCOUNT|USER|USERNAME|LOGIN|EMAIL|PHONE)(_|$)/;
+// TOKEN số ít là bí mật (BOT_TOKEN, ACCESS_TOKEN…), trừ dạng đếm token của cờ thật; TOKENS số nhiều là đếm (MAX_TOKENS).
+const TOKEN_BI_MAT = /(^|_)TOKEN(_|$)/;
+const TOKEN_DEM = /(UOC_LUONG|MAX|SO|DEM|TRAN|NGAN_SACH)_TOKEN(_|$)/;
+const tenBiMat = (k) => DOAN_BI_MAT.test(k) || (TOKEN_BI_MAT.test(k) && !TOKEN_DEM.test(k));
+const giaTriCo = (v) => typeof v === "string" && GIA_TRI_CO.test(v) && !DANG_KHOA_LIEN.test(v);
 
-/** Cờ agent của lượt đo vào báo cáo (tên + giá trị). Chỉ ba tiền tố trên, trừ tên có dáng bí mật; mọi biến env khác không vào. */
-export function coBaoCao(env = process.env) {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => TIEN_TO_CO.test(k) && !DANG_BI_MAT.test(k)).sort());
+/**
+ * Cờ agent của lượt đo vào báo cáo. Đúng tiền tố mới xét; vào `co` (tên + giá trị) chỉ khi qua CẢ hai lớp giá trị và tên.
+ * Bị loại thì chỉ ghi TÊN vào `boQua`, không bao giờ ghi giá trị. Mọi biến env ngoài ba tiền tố không vào đâu cả.
+ */
+export function locCo(env = process.env) {
+  const co = {};
+  const boQua = [];
+  for (const [k, v] of Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!TIEN_TO_CO.test(k)) continue;
+    if (giaTriCo(v) && !tenBiMat(k)) co[k] = v;
+    else boQua.push(k);
+  }
+  return { co, boQua };
 }
+
+export const coBaoCao = (env = process.env) => locCo(env).co;
 
 async function goiModel(url, sys, prompt, maxTokens) {
   const t0 = Date.now();
@@ -411,7 +434,7 @@ async function main() {
     sampling: SAMPLING,
     giayTuong: Math.round((Date.now() - t0) / 1000),
     model: { tep: p.model ? p.model.split(/[\\/]/).pop() : null, sha, ctx: p.ctx, reasoningBudget: p.reasoningBudget, slot: p.slot },
-    co: coBaoCao(process.env),
+    ...(({ co, boQua }) => ({ co, ...(boQua.length ? { coBoQua: boQua } : {}) }))(locCo(process.env)),
     ghiChu: lay("--ghi-chu") ?? null,
     taiMay: giayTai > 0 ? tongHopTai(mauTai, soLuotSlotBan) : null,
     dungSom,
