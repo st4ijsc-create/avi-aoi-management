@@ -137,6 +137,54 @@ export function dieuKienMienCommitNotify(nguon: string): string[] {
   return hong;
 }
 /**
+ * ★ MIỄN TRỪ DB GIẢ, ĐÚNG MỘT TỆP (2026-11-10, kiem-dinh chặn lô runner @6f42bfe5f) — chuỗi `INSERT INTO users` nằm trong một hàm `sql` GIẢ chạy trong bộ nhớ:
+ * không có kết nối nào, nên không có hàng nào để rò hay để dọn. KHÔNG đổi chuỗi để lách cổng; khai tệp ở đây kèm bằng chứng được census KIỂM.
+ * Bằng chứng (kiểm trên NGUỒN tệp, mất một ⇒ ĐỎ): mọi `import` / `export … from` / `require()` / `import()` chỉ trỏ tới `vitest` và `./dungNguoiPilot`; nguồn không
+ * nhắc `getDb`, `postgres`, `drizzle`, `DATABASE_URL`, `process.env`; hàm giả được khai kiểu `Sql`. Phía mô-đun được test: `dungNguoiPilot.ts` chỉ gọi `postgres(url…)` trong
+ * `main()` (dòng 60), và `main()` chỉ chạy khi `process.argv[1]` khớp tên tệp (dòng 70) ⇒ nạp mô-đun từ test không mở kết nối.
+ * Chỉ ĐÚNG tệp này; tệp thứ hai cùng hình dạng ⇒ vẫn VI PHẠM. KHÔNG được thêm mục.
+ */
+export const MIEN_DB_GIA: readonly { file: string; ngay: string; lyDo: string; chiImport: readonly string[] }[] = [
+  {
+    file: "scripts/tho-ca-pilot/dungNguoiPilot.test.ts",
+    ngay: "2026-11-10",
+    lyDo: "DB giả trong bộ nhớ, không chạm Postgres",
+    chiImport: ["vitest", "./dungNguoiPilot"],
+  },
+];
+const TRAN_MIEN_DB_GIA = 1;
+/** Điều kiện của miễn trừ DB giả trên NGUỒN tệp; trả danh sách điều kiện HỎNG (rỗng = hợp lệ). */
+export function dieuKienMienDbGia(nguon: string, chiImport: readonly string[]): string[] {
+  const sf = ts.createSourceFile("mien-db-gia.test.ts", nguon, ts.ScriptTarget.Latest, true);
+  const hong: string[] = [];
+  const dacTa = new Set<string>();
+  const di = (n: ts.Node): void => {
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteralLike(n.moduleSpecifier)) dacTa.add(n.moduleSpecifier.text);
+    if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference) && ts.isStringLiteralLike(n.moduleReference.expression)) dacTa.add(n.moduleReference.expression.text);
+    if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === "require"))) {
+      const a = n.arguments[0];
+      dacTa.add(a && ts.isStringLiteralLike(a) ? a.text : "<không-tĩnh>");
+    }
+    if (ts.isImportTypeNode(n)) dacTa.add(ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal) ? n.argument.literal.text : "<không-tĩnh>");
+    ts.forEachChild(n, di);
+  };
+  di(sf);
+  for (const d of dacTa) if (!chiImport.includes(d)) hong.push(`import ngoài danh sách cho phép: ${d}`);
+  const ma = boChuThich(nguon);
+  if (/\b(getDb|postgres|drizzle|DATABASE_URL)\b|process\.env/.test(ma)) hong.push("nhắc tới getDb / postgres / drizzle / DATABASE_URL / process.env");
+  if (!/:\s*Sql\b/.test(ma)) hong.push("không khai hàm giả kiểu Sql");
+  return hong;
+}
+/** Tệp được miễn DB giả: CÓ trong danh sách VÀ thoả mọi điều kiện. */
+export function tepMienDbGia(docTep: (f: string) => string | null): Set<string> {
+  const out = new Set<string>();
+  for (const m of MIEN_DB_GIA) {
+    const nguon = docTep(m.file);
+    if (nguon !== null && dieuKienMienDbGia(nguon, m.chiImport).length === 0) out.add(m.file);
+  }
+  return out;
+}
+/**
  * fix round 2 (M-3) — dấu bằng chứng phải nằm trong một ca CHẠY THẬT: chuỗi chứa `dau` nằm trong một lời gọi `it` / `test` / `describe`, và
  * không lời gọi nào bao quanh nó (kể cả chính nó) là `.skip` / `.todo` / `.skipIf` / `.runIf` / `xit` / `xdescribe`; nếu lời gọi gần nhất là
  * `describe`, nó phải chứa ít nhất một `it` / `test` không bị bỏ qua. Chỉ nhắc trong chú thích / chuỗi ngoài ca ⇒ KHÔNG phải bằng chứng.
@@ -340,6 +388,7 @@ describe("census — test không tự insert(users) ngoài giao dịch hoàn tá
   const ket = quetTatCa();
   const docTep = (f: string) => (fs.existsSync(path.join(GOC, f)) ? fs.readFileSync(path.join(GOC, f), "utf8") : null);
   const mienCommit = tepMienCommitNotify(docTep);
+  const mienDbGia = tepMienDbGia(docTep);
   const ngoaiLe = new Set([...TU_DON, ...CHUA_DON]);
   const hoanTac = [...ket].filter(([, k]) => laHoanTac(k)).map(([f]) => f);
 
@@ -356,8 +405,21 @@ describe("census — test không tự insert(users) ngoài giao dịch hoàn tá
     }
   });
 
+  it("★ miễn trừ DB GIẢ (2026-11-10): đúng MỘT mục, có ngày + lý do, mọi điều kiện thoả, thật sự khớp mẫu INSERT; không mở rộng", () => {
+    expect(MIEN_DB_GIA.length).toBe(TRAN_MIEN_DB_GIA);
+    for (const m of MIEN_DB_GIA) {
+      expect(m.ngay).toBe("2026-11-10");
+      expect(m.lyDo).toBe("DB giả trong bộ nhớ, không chạm Postgres");
+      const nguon = docTep(m.file);
+      expect(nguon, `tệp miễn ${m.file} phải tồn tại`).not.toBeNull();
+      expect(dieuKienMienDbGia(nguon!, m.chiImport), m.file).toEqual([]);
+      expect(ket.get(m.file)?.tao, "tệp miễn phải thật sự khớp mẫu tạo người dùng (không thì xoá mục)").toBe(true);
+      expect(mienDbGia.has(m.file)).toBe(true);
+    }
+  });
+
   it("★ mọi tệp test tạo người dùng là: giao dịch hoàn tác (AST), hoặc nằm trong danh sách cũ", () => {
-    const vi = tepViPham(ket, new Set([...ngoaiLe, ...mienCommit]));
+    const vi = tepViPham(ket, new Set([...ngoaiLe, ...mienCommit, ...mienDbGia]));
     expect(
       vi,
       "tệp mới tạo người dùng: chèn TRONG `db.transaction(async (tx) => { … throw new Rollback() })` và KHÔNG qua kết nối chung db/conn/getDb() (luật 2026-11-02: không DELETE, dọn bằng ROLLBACK)",
@@ -468,6 +530,37 @@ describe("census — đột biến của chính bộ quét", () => {
       expect(dieuKienMienCommitNotify(dotBien).length, ten).toBeGreaterThan(0);
       expect(tepMienCommitNotify(() => dotBien).size, ten).toBe(0);
     }
+  });
+  it("miễn DB GIẢ không mở rộng: tệp THỨ HAI cùng hình dạng ⇒ vẫn vi phạm; mỗi cách chạm DB thật / thêm import ⇒ hết miễn", () => {
+    const m = MIEN_DB_GIA[0];
+    const that = fs.readFileSync(path.join(GOC, m.file), "utf8");
+    expect(dieuKienMienDbGia(that, m.chiImport)).toEqual([]);
+    const k = quetNguon("scripts/zzBanSao.test.ts", that);
+    expect(k.tao).toBe(true);
+    const mien = tepMienDbGia((f) => (f === m.file ? that : null));
+    expect(mien.has(m.file)).toBe(true);
+    expect(tepViPham(new Map([["scripts/zzBanSao.test.ts", k]]), mien)).toEqual(["scripts/zzBanSao.test.ts"]);
+    for (const [ten, dotBien] of [
+      ["import getDb", `import { getDb } from "../../server/db";\n${that}`],
+      ["import postgres", `import postgres from "postgres";\n${that}`],
+      ["import mô-đun khác cạnh bên", `import { x } from "./chayMotViec";\n${that}`],
+      ["export from", `${that}\nexport { y } from "../../server/db";`],
+      ["require", `${that}\nconst p = require("./chayMotViec");`],
+      ["import() động", `${that}\nconst p = await import("postgres");`],
+      ["import() không tĩnh", `${that}\nconst n = "post"; const p = await import(n + "gres");`],
+      ["import = require", `import pg = require("pg");\n${that}`],
+      ["kiểu import()", `${that}\ntype T = import("../../server/db").Foo;`],
+      ["nhắc DATABASE_URL", `${that}\nconst u = DATABASE_URL;`],
+      ["process.env", `${that}\nconst u = process.env.X;`],
+      ["nhắc drizzle", `${that}\nconst d = drizzle;`],
+      ["bỏ hàm giả kiểu Sql", that.replace(/:\s*Sql\b/g, "")],
+    ] as const) {
+      expect(that).not.toBe(dotBien);
+      expect(dieuKienMienDbGia(dotBien, m.chiImport).length, ten).toBeGreaterThan(0);
+      expect(tepMienDbGia(() => dotBien).size, ten).toBe(0);
+    }
+    // chú thích nhắc tên KHÔNG làm hỏng (chỉ mã thật mới tính)
+    expect(dieuKienMienDbGia(`${that}\n// không dùng getDb hay postgres ở đây\n`, m.chiImport)).toEqual([]);
   });
   it("(M-3) bằng chứng phải nằm trong ca CHẠY THẬT: it.skip / describe.skip / .todo / skipIf / chỉ trong chú thích ⇒ KHÔNG phải bằng chứng", () => {
     const D = "ROLLBACK_KHONG_GIAO_THONG_BAO";
