@@ -20,6 +20,7 @@
  *          (luật được ghép vào đầu `--lenh`).
  */
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -103,6 +104,10 @@ export interface KetQuaViec {
   dotBien?: KetQuaDotBien;
   /** cờ AI_AGENT_* có hiệu lực trong lượt này (tên → giá trị; không có bí mật) */
   coAiAgent?: Record<string, string>;
+  /** LUẬT dự án thật sự gửi model (ghi vào AGENTS.md của worktree VÀ ghép vào lệnh): sha256 của đúng chuỗi đó, nguồn (đường tệp hoặc "tham-so") và số byte UTF-8 */
+  luat?: { sha256: string; nguon: string; byte: number };
+  /** commit của repo chứa BỘ CHẠY lúc chạy, và liệu thư mục bộ chạy/luật có lệch commit đó không (bản tạm chưa commit ⇒ sach=false) */
+  boChay?: BoChay;
   /** L3b: nhãn nghi "ghim lỗi thành kỳ vọng" trong tệp test model viết — CHỈ cảnh báo, người đọc quyết */
   ghimNghiNgo?: Array<{ duong: string; dong: number; trich: string }>;
   /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
@@ -118,6 +123,34 @@ function git(args: string[], cwd: string, dauVao?: string): { ok: boolean; out: 
 
 const NHANH_PILOT = /^pilot\/tho-ca-[A-Za-z0-9-]+$/;
 const RE_NHANH_MA =/^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/;
+
+export interface BoChay {
+  commit: string | null;
+  /** false khi `scripts/tho-ca-pilot` hoặc `docs/tho-ca-pilot` có thay đổi chưa commit (kể cả tệp luật chép tạm); null khi không đọc được git */
+  sach: boolean | null;
+  tepLech?: string[];
+}
+
+export const sha256Hex = (van: string): string => createHash("sha256").update(van, "utf8").digest("hex");
+
+/** Commit HEAD của repo chứa bộ chạy + có tệp lệch (chỉ xét thư mục bộ chạy và luật; tệp khác của cây dev không ảnh hưởng số đo). */
+export function commitBoChay(goc: string = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")): BoChay {
+  const h = git(["rev-parse", "HEAD"], goc);
+  if (!h.ok) return { commit: null, sach: null };
+  const st = git(["status", "--porcelain=v1", "--untracked-files=all", "--", "scripts/tho-ca-pilot", "docs/tho-ca-pilot"], goc);
+  if (!st.ok) return { commit: h.out.trim(), sach: null };
+  const lech = st.out.split(/\r?\n/).filter((x) => x !== "").map((x) => x.slice(3));
+  return { commit: h.out.trim(), sach: lech.length === 0, ...(lech.length > 0 ? { tepLech: lech } : {}) };
+}
+
+/** `--luat <tệp>`: đọc tệp luật (UTF-8). Tệp vắng/rỗng ⇒ ném lỗi (không lùi lặng lẽ về luật mặc định: số đo sẽ nói sai luật). */
+export function docLuatTuTep(duong: string): { luat: string; nguon: string } {
+  const abs = path.resolve(duong);
+  if (!fs.existsSync(abs)) throw new Error(`--luat: không có tệp ${abs}`);
+  const luat = fs.readFileSync(abs, "utf8");
+  if (luat.trim() === "") throw new Error(`--luat: tệp rỗng ${abs}`);
+  return { luat, nguon: abs };
+}
 
 /** Luật dự án nguồn sự thật (cạnh bộ chạy trong repo). */
 export function duongTepLuat(): string {
@@ -250,6 +283,10 @@ export interface ThamSoViec {
   /** CHỈ cho ca kiểm: cho phép worktree không phải worktree LIÊN KẾT (kho tạm). Không có cờ CLI tương ứng. */
   choPhepKhoRieng?: boolean;
   luat?: string;
+  /** nguồn của `luat` để ghi vào JSON (đường tệp); vắng ⇒ "tham-so" khi `luat` được truyền, ngược lại đường luat-du-an.md mặc định */
+  luatNguon?: string;
+  /** commit bộ chạy (dòng lệnh tính bằng `commitBoChay`); vắng ⇒ không ghi */
+  boChay?: BoChay;
   nhatKy?: (s: string) => void;
   /** L3a: hàm chạy lệnh kiểm (mặc định chạy thật; ca kiểm đơn vị tiêm bản giả) */
   chayKiem?: ChayKiem;
@@ -323,6 +360,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
 
   // luật dự án → AGENTS.md ở gốc worktree, ẩn khỏi git (info/exclude) để không lẫn vào diff
   const luat = p.luat ?? fs.readFileSync(duongTepLuat(), "utf8");
+  const luatNguon = p.luatNguon ?? (p.luat !== undefined ? "tham-so" : duongTepLuat());
   fs.writeFileSync(path.join(wt, TEP_LUAT), luat, "utf8");
   const ex = git(["rev-parse", "--git-path", "info/exclude"], wt).out.trim();
   const exPath = path.resolve(wt, ex);
@@ -449,6 +487,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     lenhKiem: the.lenhKiem,
     ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
     ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
+    luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
+    ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
     ...(dotBien ? { dotBien } : {}),
     ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),
@@ -470,7 +510,7 @@ function docThamSo(argv: string[]): Record<string, string> {
 async function main(): Promise<number> {
   const a = docThamSo(process.argv.slice(2));
   if (!a.the) {
-    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
+    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
     return 2;
   }
   const drv = (a.driver ?? "cli") as TenDriver;
@@ -519,6 +559,8 @@ async function main(): Promise<number> {
     van: fs.readFileSync(a.the, "utf8"),
     wt: a.wt ?? "D:\\SOURCES\\_tho_ca_wt",
     base: a.base ?? "main",
+    ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),
+    boChay: commitBoChay(),
     driver,
     tenDriver: drv,
     ra: a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"),
