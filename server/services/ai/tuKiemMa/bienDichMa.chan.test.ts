@@ -143,6 +143,16 @@ describe("bienDichMa — chặn tham chiếu ngoài chạy TRƯỚC khi giữ kh
   }, 70_000);
 });
 
+describe("bienDichMa.ts — giữ spawn nhìn thấy được với kiểm kê VRAM", () => {
+  it("★★★ dòng khai regex đặc tả mô-đun KHÔNG chứa dấu nháy đơn/kép/ngược (bộ quét vramAllocationSites không hiểu regex và sẽ nuốt mã phía sau)", () => {
+    const nguon = fs.readFileSync(path.join(__dirname, "bienDichMa.ts"), "utf8");
+    const dong = nguon.split(/\r?\n/).find((l) => l.startsWith("const RE_DAC_TA"));
+    expect(dong).toBeDefined();
+    expect(dong).not.toMatch(/[\x22\x27\x60]/);
+    expect(nguon).toMatch(/\bspawn\(/);
+  });
+});
+
 describe("soKheDongThoi", () => {
   it.each([
     [undefined, DONG_THOI_MAC_DINH],

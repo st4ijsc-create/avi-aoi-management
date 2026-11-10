@@ -65,7 +65,8 @@ export const TSCONFIG = JSON.stringify({
 });
 
 const RE_THAM_CHIEU = /\/\/\/\s*<reference\b/;
-const RE_DAC_TA = /\b(?:from|import|require|export)\s*\(?\s*(["'`])([^"'`\r\n]+)\1/g;
+// Không đặt dấu nháy đơn/kép/ngược TRỰC TIẾP trong regex: bộ quét kiểm kê VRAM (vramAllocationSites) bóc chuỗi mà không hiểu regex, và sẽ nuốt mã phía sau (spawn thành vô hình). Dùng \x22 \x27 \x60.
+const RE_DAC_TA = /\b(?:from|import|require|export)\s*\(?\s*([\x22\x27\x60])([^\x22\x27\x60\r\n]+)\1/g;
 /** Đặc tả mô-đun trỏ ra NGOÀI thư mục tạm: tuyệt đối (`/`, `\`, `C:`, UNC), `file:`, `~`, hoặc có đoạn `..`. */
 export function laDacTaNgoaiThuMucTam(dacTa: string): boolean {
   if (/^(?:[\\/~]|[A-Za-z]:|file:)/i.test(dacTa)) return true;
