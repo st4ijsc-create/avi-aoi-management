@@ -52,13 +52,93 @@ const CSPROJ = `<Project Sdk="Microsoft.NET.Sdk">
 </Project>
 `;
 
-const TSCONFIG = JSON.stringify({
+/**
+ * `noResolve: true` — tsc KHÔNG đi theo `/// <reference path=…>` hay `import` sang tệp khác: chẩn đoán trả cho model chỉ nói về `code.ts`.
+ * (kiem-dinh đo được: không có cờ này, tên hằng trong một tệp .ts ngoài thư mục tạm bị lộ qua "Cannot find name …".) Import thiếu ⇒ TS2307 ⇒ bị gạt là lỗi môi trường.
+ */
+export const TSCONFIG = JSON.stringify({
   compilerOptions: {
     target: "es2022", module: "esnext", moduleResolution: "bundler", lib: ["es2022", "dom"], strict: true, noEmit: true,
-    skipLibCheck: true, types: [], noErrorTruncation: true,
+    skipLibCheck: true, types: [], noErrorTruncation: true, noResolve: true,
   },
   files: ["code.ts"],
 });
+
+const RE_THAM_CHIEU = /\/\/\/\s*<reference\b/;
+const RE_DAC_TA = /\b(?:from|import|require|export)\s*\(?\s*(["'`])([^"'`\r\n]+)\1/g;
+/** Đặc tả mô-đun trỏ ra NGOÀI thư mục tạm: tuyệt đối (`/`, `\`, `C:`, UNC), `file:`, `~`, hoặc có đoạn `..`. */
+export function laDacTaNgoaiThuMucTam(dacTa: string): boolean {
+  if (/^(?:[\\/~]|[A-Za-z]:|file:)/i.test(dacTa)) return true;
+  return dacTa.split(/[\\/]/).includes("..");
+}
+/**
+ * Chặn TRƯỚC khi biên dịch (lớp thứ hai cùng `noResolve`): mã TS có `/// <reference …>` (mọi dạng) hoặc `import` / `export … from` / `require` / `import()` tới đường
+ * tuyệt đối hay ra ngoài thư mục tạm ⇒ trả lý do (không biên dịch), ngược lại null. Quét cả trong chú thích / chuỗi: thà chặn thừa còn hơn để lộ tệp máy chủ.
+ */
+export function phatHienThamChieuNgoai(ma: string): string | null {
+  if (RE_THAM_CHIEU.test(ma)) return "tham-chieu-triple-slash";
+  for (const m of ma.matchAll(RE_DAC_TA)) if (laDacTaNgoaiThuMucTam(m[2])) return "tham-chieu-ngoai-thu-muc-tam";
+  return null;
+}
+
+/** Trần số lần biên dịch ĐỒNG THỜI (mỗi lần dựng tiến trình dotnet/tsc/python): mặc định 2, chỉnh bằng AI_CHAT_TU_KIEM_DONG_THOI, kẹp 1..4. */
+export const DONG_THOI_MAC_DINH = 2;
+export const DONG_THOI_TOI_DA = 4;
+export function soKheDongThoi(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.AI_CHAT_TU_KIEM_DONG_THOI);
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, DONG_THOI_TOI_DA) : DONG_THOI_MAC_DINH;
+}
+/** Khe đồng thời có hàng đợi FIFO; chờ quá hạn hoặc bị huỷ ⇒ null (không giữ khe). `nha()` gọi nhiều lần chỉ trả khe MỘT lần. */
+export class GioiHanDongThoi {
+  private dang = 0;
+  private readonly hang: Array<() => void> = [];
+  get soDangGiu(): number {
+    return this.dang;
+  }
+  get soDangCho(): number {
+    return this.hang.length;
+  }
+  layKhe(toiDa: number, hanChoMs: number, signal?: AbortSignal): Promise<(() => void) | null> {
+    if (signal?.aborted) return Promise.resolve(null);
+    const cap = () => {
+      this.dang++;
+      let daNha = false;
+      return () => {
+        if (daNha) return;
+        daNha = true;
+        this.dang--;
+        this.chuyen(toiDa);
+      };
+    };
+    if (this.dang < toiDa && this.hang.length === 0) return Promise.resolve(cap());
+    return new Promise((resolve) => {
+      const vao = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", huy);
+        resolve(cap());
+      };
+      const roi = () => {
+        const i = this.hang.indexOf(vao);
+        if (i >= 0) this.hang.splice(i, 1);
+        resolve(null);
+      };
+      const huy = () => {
+        clearTimeout(timer);
+        roi();
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", huy);
+        roi();
+      }, Math.max(0, hanChoMs));
+      signal?.addEventListener("abort", huy, { once: true });
+      this.hang.push(vao);
+    });
+  }
+  private chuyen(toiDa: number): void {
+    while (this.dang < toiDa && this.hang.length > 0) this.hang.shift()!();
+  }
+}
+const GIOI_HAN = new GioiHanDongThoi();
 
 /** Mã lỗi do MÔI TRƯỜNG (thiếu gói / kiểu Node), không phải lỗi của model. */
 const LOI_MOI_TRUONG: Record<NgonNguKiem, RegExp> = {
@@ -188,7 +268,22 @@ export function namTrongCay(goc: string, dich: string): boolean {
 /** Tham số python: `-I` = chế độ cô lập (bỏ biến PYTHON*, bỏ site người dùng, không thêm cwd vào sys.path). */
 export const ARGS_PYTHON: readonly string[] = ["-I", "-m", "py_compile", "code.py"];
 
-export async function bienDichMa(khoi: KhoiMaKiem, tranMs: number, signal?: AbortSignal, opt: { cwdRepo?: string } = {}): Promise<KetQuaBienDichMa> {
+export async function bienDichMa(khoi: KhoiMaKiem, tranMs: number, signal?: AbortSignal, opt: { cwdRepo?: string; gioiHan?: GioiHanDongThoi; toiDaDongThoi?: number } = {}): Promise<KetQuaBienDichMa> {
+  if (khoi.ngonNgu === "ts") {
+    const ngoai = phatHienThamChieuNgoai(khoi.ma);
+    if (ngoai) return { trangThai: "khong-kiem-duoc", chanDoan: [], lyDo: ngoai };
+  }
+  const t0 = Date.now();
+  const nha = await (opt.gioiHan ?? GIOI_HAN).layKhe(opt.toiDaDongThoi ?? soKheDongThoi(), tranMs, signal);
+  if (!nha) return { trangThai: "khong-kiem-duoc", chanDoan: [], lyDo: signal?.aborted ? "huy" : "day-khe-bien-dich" };
+  try {
+    return await bienDichTrongKhe(khoi, Math.max(1, tranMs - (Date.now() - t0)), signal, opt);
+  } finally {
+    nha();
+  }
+}
+
+async function bienDichTrongKhe(khoi: KhoiMaKiem, tranMs: number, signal: AbortSignal | undefined, opt: { cwdRepo?: string }): Promise<KetQuaBienDichMa> {
   const goc = os.tmpdir();
   if (namTrongCay(opt.cwdRepo ?? process.cwd(), goc)) return { trangThai: "khong-kiem-duoc", chanDoan: [], lyDo: "thu-muc-tam-trong-repo" };
   let dir: string;
