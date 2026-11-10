@@ -240,40 +240,56 @@ const TOKEN_DEM = /(UOC_LUONG|MAX|SO|DEM|TRAN|NGAN_SACH)_TOKEN(_|$)/;
 const tenBiMat = (k) => DOAN_BI_MAT.test(k) || (TOKEN_BI_MAT.test(k) && !TOKEN_DEM.test(k));
 const giaTriChung = (v) => v === "" || (v.length <= 10 && SO_CO.test(v)) || TU_CO.has(v.toLowerCase());
 
-let tenCongCuDem = null;
+export const TEP_TEN_CONG_CU = `${ROOT}/shared/agentCore/congCu.ts`;
+
+/** Tên tool trong NỘI DUNG nguồn `congCu.ts` (mảng `TEN_CONG_CU`). Không phải chuỗi, hoặc không thấy mảng ⇒ tập rỗng. Thuần. */
+export function tachTenCongCu(noiDung) {
+  const m = typeof noiDung === "string" ? noiDung.match(/export const TEN_CONG_CU = \[([\s\S]*?)\] as const;/) : null;
+  return new Set(m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []);
+}
+
+const tenCongCuDem = new Map();
 /**
- * Tên tool biết trước = `TEN_CONG_CU` trong `shared/agentCore/congCu.ts` (đọc nguồn một lần). Đọc hỏng ⇒ tập rỗng ⇒ cờ dùng nó bị loại
- * (nghiêng về không ghi), không đoán.
+ * Tên tool biết trước = `TEN_CONG_CU` trong `shared/agentCore/congCu.ts` (đọc mỗi tệp một lần). Đọc hỏng ⇒ tập rỗng ⇒ cờ dùng nó bị loại
+ * (nghiêng về không ghi), không đoán. `tep` chỉ để lưới tiêm đường hỏng.
  */
-export function tenCongCuBiet() {
-  if (!tenCongCuDem) {
+export function tenCongCuBiet(tep = TEP_TEN_CONG_CU) {
+  if (!tenCongCuDem.has(tep)) {
+    let noiDung = null;
     try {
-      const m = fs.readFileSync(`${ROOT}/shared/agentCore/congCu.ts`, "utf8").match(/export const TEN_CONG_CU = \[([\s\S]*?)\] as const;/);
-      tenCongCuDem = new Set(m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []);
+      noiDung = fs.readFileSync(tep, "utf8");
     } catch {
-      tenCongCuDem = new Set();
+      noiDung = null;
     }
+    tenCongCuDem.set(tep, tachTenCongCu(noiDung));
   }
-  return tenCongCuDem;
+  return tenCongCuDem.get(tep);
 }
 
 // Cờ chuỗi có luật GIÁ TRỊ riêng (quét 48 cờ thật 10/11: chỉ cờ này mang giá trị ngoài số/từ cố định). Cờ có luật riêng KHÔNG rơi về luật chung.
-const LUAT_GIA_TRI = {
+// Luật riêng chỉ thay lớp GIÁ TRỊ; lớp TÊN (`tenBiMat`) vẫn áp cho MỌI cờ trong `locCo`, kể cả cờ có luật riêng.
+export const LUAT_GIA_TRI = {
   // Bộ đo tìm mã (`boThucThiMayChu.congCuBiAn`, `run-tim-ma.mjs`): danh sách tên tool, phân tách bằng phẩy, mọi tên phải là tool biết trước.
-  AI_AGENT_AN_CONG_CU: (v) => v === "" || (/^[a-z_]+(,[a-z_]+)*$/.test(v) && v.split(",").every((t) => tenCongCuBiet().has(t))),
+  AI_AGENT_AN_CONG_CU: (v, nd) => v === "" || (/^[a-z_]+(,[a-z_]+)*$/.test(v) && v.split(",").every((t) => nd.tenCongCu.has(t))),
 };
-const giaTriCo = (k, v) => typeof v === "string" && (LUAT_GIA_TRI[k] ? LUAT_GIA_TRI[k](v) : giaTriChung(v));
+const giaTriCo = (k, v, nd) => typeof v === "string" && (LUAT_GIA_TRI[k] ? LUAT_GIA_TRI[k](v, nd) : giaTriChung(v));
 
 /**
  * Cờ agent của lượt đo vào báo cáo. Đúng tiền tố mới xét; vào `co` (tên + giá trị) chỉ khi qua CẢ hai lớp giá trị và tên.
  * Bị loại thì chỉ ghi TÊN vào `boQua`, không bao giờ ghi giá trị. Mọi biến env ngoài ba tiền tố không vào đâu cả.
+ * `tepCongCu`: nguồn tên tool cho luật của AI_AGENT_AN_CONG_CU (lưới tiêm đường hỏng).
  */
-export function locCo(env = process.env) {
+export function locCo(env = process.env, { tepCongCu = TEP_TEN_CONG_CU } = {}) {
+  const nd = {
+    get tenCongCu() {
+      return tenCongCuBiet(tepCongCu);
+    },
+  };
   const co = {};
   const boQua = [];
   for (const [k, v] of Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (!TIEN_TO_CO.test(k)) continue;
-    if (giaTriCo(k, v) && !tenBiMat(k)) co[k] = v;
+    if (giaTriCo(k, v, nd) && !tenBiMat(k)) co[k] = v;
     else boQua.push(k);
   }
   return { co, boQua };
