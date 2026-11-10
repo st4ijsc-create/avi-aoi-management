@@ -1,0 +1,123 @@
+{
+ "ngay": "2026-11-10",
+ "nhan": "h-cs2-nc0-k1",
+ "commit": "2231f6425",
+ "cayBan": false,
+ "soMau": 3,
+ "truc": "H",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 110,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {
+  "AI_AGENT_CONG_KE_HOACH": "0",
+  "AI_AGENT_CON_BAO_CAO": "0",
+  "AI_AGENT_CUU_TRAN": "1",
+  "AI_AGENT_DAU_RA_DAI": "0",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI": "0",
+  "AI_AGENT_GIAO_VIEC": "0",
+  "AI_AGENT_GIU_NGHI": "1",
+  "AI_AGENT_HOUSEKEEPING_ENABLED": "false",
+  "AI_AGENT_KIEM_DAC_TA": "1",
+  "AI_AGENT_NEN_MOC": "0",
+  "AI_AGENT_NEN_SO_THAT": "0",
+  "AI_AGENT_NGHI": "1",
+  "AI_AGENT_THEO_VAI_TRO": "1",
+  "AI_AGENT_TIEP_TUC": "0",
+  "AI_AGENT_TOM_TAT_80": "0",
+  "AI_AGENT_TOOL_TIMEOUT": "0",
+  "AI_AGENT_TU_TRA_API": "1",
+  "AI_CODING_AUTOLOOP": "0",
+  "AI_CODING_REPO_CONTEXT": "0",
+  "AI_CODING_TU_TRI_GHI": "0"
+ },
+ "ghiChu": "H-cs2 khoi 1/4 (C,B,C,B), AI_CODING_REPO_CONTEXT=0. May :3013 tren aoi_management_test, vai avi_app, dist baseline 09/11 (a4eb85df4), co khai tuong minh, RAG embed CPU, llama-server :8091 khong restart.",
+ "taiMay": {
+  "soMauTai": 2,
+  "cpuTb": 2,
+  "cpuMax": 2,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [],
+ "stacks": [
+  {
+   "stack": "cs",
+   "bai": 1,
+   "luot": 3,
+   "dat": 3,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    1,
+    1
+   ],
+   "cut": null,
+   "tokRaTb": null,
+   "msTb": 33701
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 1,
+  "luot": 3,
+  "dat": 3,
+  "passAt1": 1,
+  "passAtN": 1,
+  "moiMau": [
+   1,
+   1,
+   1
+  ],
+  "cut": null,
+  "tokRaTb": null,
+  "msTb": 33701
+ },
+ "hang": [
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31808
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 30339
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 38955
+  }
+ ]
+}
