@@ -4,7 +4,7 @@ Mỗi bài là một thư mục `tasks/<stack>/<id>/`:
 
 | Tệp | Nội dung |
 |---|---|
-| `prompt.md` | Đề đưa cho model. Không chứa đột biến, không chứa bài kiểm ẩn. |
+| `prompt.md` | Đề đưa cho model. Không chứa danh sách đột biến (nằm trong `check.mjs`) và không chứa bài kiểm ẩn. Đề pilot có thể nói chung rằng có đột biến, ví dụ TC-05: "test phải ĐỎ với mỗi đột biến". |
 | `check.mjs` | Chấm. Thoát **0 = ĐẠT, 1 = TRƯỢT, 2 = thước hoặc môi trường hỏng** (vứt số, không tính là trượt). Dòng cuối stdout là một dòng JSON. |
 | `bai.json` | `id`, `kieu`, `bo`, `canDb`, nguồn, và với bài repo thì commit gốc, tệp được sửa, blob nguồn ghim. |
 

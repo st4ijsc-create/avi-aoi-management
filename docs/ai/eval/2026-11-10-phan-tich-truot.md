@@ -88,6 +88,11 @@ Dịch cả `thanh_cong` khi được giao "thêm tiếng Anh" là cách đọc 
 
 **Gợi ý:** sửa đề (thêm "`thanh_cong` chưa có bản tiếng Anh, giữ nguyên") hoặc đổi test dùng một khoá chắc chắn không có trong bảng. Cả hai đều đổi thước đo, nên cần chu-du-an-HST quyết, và baseline agent-f sẽ phải ghi rõ trước/sau.
 
+## Backlog từ rà soát kiem-dinh (10/11, lô C @9aea33fea)
+
+- **Test ẩn py-dang-ky mới (c99b21d79) ràng buộc cấu trúc mà đề không đòi.** `bang_tieng_viet()` tìm một `dict` cấp module có khoá `"vi"`, rồi `monkeypatch.setitem` thêm khoá. Lời giải đúng mà giữ bảng trong `MappingProxyType` (hoặc dựng bảng trong hàm) sẽ trượt 13/14 (kiem-dinh đo). Đây là âm tính giả có thể xảy ra. Khi agent-f trượt đúng test `test_an_thong_diep_hai_ngon_ngu_va_du_phong`, phải đọc lời giải trước khi tính là lỗi model. Chưa sửa, vì sửa lại là đổi thước lần nữa ngay trước đêm 10/11.
+- **README `tasks/` từng ghi `prompt.md` "không chứa đột biến".** Câu đó quá lời: đề TC-05 có câu chung "test phải ĐỎ với mỗi đột biến". Đã sửa câu README; danh sách đột biến vẫn chỉ nằm trong `check.mjs`.
+
 ## Tệp và cách chạy lại
 
 - **Câu trả lời thô:**

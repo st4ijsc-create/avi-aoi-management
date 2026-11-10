@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, loiThamSo, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, coBaoCao, loiThamSo, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -18,7 +18,9 @@ after(() => fs.rmSync(tam, { recursive: true, force: true, maxRetries: 3, retryD
 function gia(kich, { chetSau = Infinity, slotBan = false } = {}) {
   let n = 0;
   const yeuCau = [];
+  const tieuDe = [];
   const sv = http.createServer((req, res) => {
+    tieuDe.push({ url: req.url, authorization: req.headers.authorization ?? null });
     if (req.url === "/health") {
       res.statusCode = n >= chetSau ? 503 : 200;
       return res.end("{}");
@@ -33,12 +35,13 @@ function gia(kich, { chetSau = Infinity, slotBan = false } = {}) {
       res.end(JSON.stringify({ choices: [{ message: { content: k.text }, finish_reason: k.finish ?? "stop" }], usage: { completion_tokens: k.tok ?? 100 } }));
     });
   });
-  return new Promise((r) => sv.listen(0, "127.0.0.1", () => r({ sv, url: `http://127.0.0.1:${sv.address().port}`, yeuCau })));
+  return new Promise((r) => sv.listen(0, "127.0.0.1", () => r({ sv, url: `http://127.0.0.1:${sv.address().port}`, yeuCau, tieuDe })));
 }
 
-function chay(args) {
+/** `env` thay hẳn env tiến trình con (khi có): test cờ/khoá không phụ thuộc env của máy chạy test. */
+function chay(args, env) {
   return new Promise((resolve) => {
-    const c = spawn(process.execPath, [path.join(DIR, "run-eval.mjs"), "--tho", path.join(tam, "tho"), ...(args.includes("--mau-tai-giay") ? [] : ["--mau-tai-giay", "0"]), ...args], { windowsHide: true });
+    const c = spawn(process.execPath, [path.join(DIR, "run-eval.mjs"), "--tho", path.join(tam, "tho"), ...(args.includes("--mau-tai-giay") ? [] : ["--mau-tai-giay", "0"]), ...args], { windowsHide: true, ...(env ? { env } : {}) });
     let out = "";
     let err = "";
     c.stdout.on("data", (d) => (out += d));
@@ -303,6 +306,67 @@ test("tieuDeKhoa: tệp thắng khoá env; tệp hỏng không rơi về khoá e
   assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k" }), { authorization: "Bearer k" });
   assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k", LLAMA_SERVER_API_KEY_FILE: p }), { authorization: "Bearer tu-tep" });
   assert.deepEqual(tieuDeKhoa({ LLAMA_SERVER_API_KEY: "k", LLAMA_SERVER_API_KEY_FILE: path.join(tam, "khong-co") }), {});
+});
+
+// Giá trị bí mật giả, mỗi cái có đuôi riêng để tìm trong mọi tệp ra. Tên chứa KEY/TOKEN/SECRET/PASSWORD, ngoài và trong tiền tố cờ.
+const BI_MAT = {
+  LLAMA_SERVER_API_KEY: "bm-llama-q7z",
+  AI_NGOAI_API_KEY: "bm-ngoai-q7z",
+  OPENAI_API_KEY: "bm-openai-q7z",
+  GITHUB_TOKEN: "bm-gh-q7z",
+  DB_PASSWORD: "bm-db-q7z",
+  SESSION_SECRET: "bm-ss-q7z",
+  DATABASE_URL: "postgres://u:bm-url-q7z@127.0.0.1:9/x",
+  XAI_AGENT_KEY: "bm-x-q7z",
+  ai_agent_thuong: "bm-thuong-q7z",
+  AI_CODING_API_KEY: "bm-coding-key-q7z",
+  AI_AGENT_SECRET: "bm-agent-secret-q7z",
+  AI_AGENTIC_ACCESS_TOKEN: "bm-at-q7z",
+  AI_AGENT_DB_PASSWORD: "bm-agent-pw-q7z",
+};
+const CO_THAT = { AI_AGENT_NEN_MOC: "0.5", AI_AGENT_UOC_LUONG_TOKEN: "1", AI_CODING_REPO_CONTEXT: "0" };
+/** Env tiến trình con: env máy chạy test bỏ hết cờ/khoá liên quan, rồi thêm `them`. Giữ PATH, SystemRoot… để git/mạng chạy. */
+const envSach = (them) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(AI_|LLAMA_SERVER_)/i.test(k))), ...them });
+
+function docCay(d) {
+  return fs.readdirSync(d, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => fs.readFileSync(path.join(e.parentPath ?? e.path, e.name), "utf8")).join("\n");
+}
+
+test("coBaoCao: chỉ cờ ba tiền tố; tên có dáng bí mật bị loại kể cả trong tiền tố; biến khác không bao giờ vào", () => {
+  assert.deepEqual(coBaoCao({ ...BI_MAT, ...CO_THAT, AI_AGENT_MAX_TOKENS_MOT_LUOT: "4000" }), { ...CO_THAT, AI_AGENT_MAX_TOKENS_MOT_LUOT: "4000" });
+  assert.deepEqual(coBaoCao(BI_MAT), {});
+});
+
+test("báo cáo không chứa bí mật trong env; khoá llama-server THẬT SỰ được gửi trong tiêu đề gọi model", async () => {
+  const { sv, url, tieuDe } = await gia([OK]);
+  const ra = path.join(tam, "ra-bm");
+  const tho = path.join(tam, "tho", "2026-11-10");
+  const r = await chay(["--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-10"], envSach({ ...BI_MAT, ...CO_THAT }));
+  sv.close();
+  assert.equal(r.ma, 0, r.err);
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-10.json"), "utf8"));
+  assert.deepEqual(bc.co, CO_THAT);
+  const raHet = `${docCay(ra)}\n${docCay(tho)}\n${r.out}\n${r.err}`;
+  for (const [k, v] of Object.entries(BI_MAT)) assert.ok(!raHet.includes(v), `${k} lọt ra báo cáo/thô/log`);
+  assert.ok(!/q7z/.test(raHet));
+  const goi = tieuDe.filter((t) => t.url === "/v1/chat/completions");
+  assert.equal(goi.length, 1);
+  assert.equal(goi[0].authorization, "Bearer bm-llama-q7z");
+});
+
+test("gọi model: khoá từ tệp thắng khoá env; không cấu hình khoá thì không gửi tiêu đề authorization", async () => {
+  const p = path.join(tam, "khoa-goi.txt");
+  fs.writeFileSync(p, "tu-tep-q8\n");
+  for (const [env, mong] of [
+    [{ LLAMA_SERVER_API_KEY: "env-q8", LLAMA_SERVER_API_KEY_FILE: p }, "Bearer tu-tep-q8"],
+    [{}, null],
+  ]) {
+    const { sv, url, tieuDe } = await gia([OK]);
+    const r = await chay(["--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, `ra-khoa-${mong ? 1 : 0}`), "--ngay", "2026-11-10"], envSach(env));
+    sv.close();
+    assert.equal(r.ma, 0, r.err);
+    assert.deepEqual(tieuDe.filter((t) => t.url === "/v1/chat/completions").map((t) => t.authorization), [mong]);
+  }
 });
 
 test("tenBaoCao không đè lượt cùng ngày", () => {

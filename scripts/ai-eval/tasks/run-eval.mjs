@@ -224,6 +224,15 @@ export function tieuDeKhoa(env = process.env) {
   return khoa ? { authorization: `Bearer ${khoa}` } : {};
 }
 
+const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/;
+// Tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp; TOKEN đứng một mình là đếm token, giữ.
+const DANG_BI_MAT = /(^|_)(KEY|APIKEY|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|BEARER|AUTH|COOKIE|SESSION|PRIVATE)(_|$)|(ACCESS|API|AUTH|BEARER|REFRESH|ID|SESSION)_TOKEN/;
+
+/** Cờ agent của lượt đo vào báo cáo (tên + giá trị). Chỉ ba tiền tố trên, trừ tên có dáng bí mật; mọi biến env khác không vào. */
+export function coBaoCao(env = process.env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => TIEN_TO_CO.test(k) && !DANG_BI_MAT.test(k)).sort());
+}
+
 async function goiModel(url, sys, prompt, maxTokens) {
   const t0 = Date.now();
   const r = await fetch(`${url}/v1/chat/completions`, {
@@ -402,8 +411,7 @@ async function main() {
     sampling: SAMPLING,
     giayTuong: Math.round((Date.now() - t0) / 1000),
     model: { tep: p.model ? p.model.split(/[\\/]/).pop() : null, sha, ctx: p.ctx, reasoningBudget: p.reasoningBudget, slot: p.slot },
-    // Tên + giá trị cờ agent trong env của lượt đo: không phải bí mật. Khoá khác không vào báo cáo.
-    co: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/.test(k)).sort()),
+    co: coBaoCao(process.env),
     ghiChu: lay("--ghi-chu") ?? null,
     taiMay: giayTai > 0 ? tongHopTai(mauTai, soLuotSlotBan) : null,
     dungSom,
