@@ -18,13 +18,14 @@ import type { KetQuaDotBien } from "./dotBien";
  * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ KHÔNG được thừa kế bí mật của tiến trình pilot
  * (khoá :8091, đường dẫn tệp khoá, JWT/SECRET/PASSWORD/TOKEN, DATABASE_URL thật). Gỡ mọi biến có tên bí mật hoặc `*_KEY_FILE`, rồi ép DB chết.
  */
-export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env, opt: { testDbUrl?: string } = {}): NodeJS.ProcessEnv {
   const ra: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(goc)) {
     if (/(API_KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|_KEY_FILE|_PASSWORD_FILE)/i.test(k)) continue;
     ra[k] = v;
   }
-  return { ...ra, ...ENV_DB_CHET };
+  // `--cho-phep-db`: CHỈ TEST_DATABASE_URL (URL của CSDL _test, vai ứng dụng) được thật; DATABASE_URL vẫn là cổng chết (vitest.setup ép DATABASE_URL về bản sao _test).
+  return { ...ra, ...ENV_DB_CHET, ...(opt.testDbUrl ? { TEST_DATABASE_URL: opt.testDbUrl } : {}) };
 }
 
 /** Môi trường của `tsc` do bộ chạy chạy: sạch bí mật + heap 12 GB (cùng cổng check:tests). Tách riêng để test được. */
@@ -278,12 +279,12 @@ export function demTepTest(wt: string, tepDoi: readonly string[]): Array<{ duong
 export type ChayKiem = (lenh: string, wt: string, hanGiay: number) => Promise<KetQuaKiem>;
 
 /** Chạy LỆNH KIỂM thật: shell, cwd = worktree pilot, env DB chết, hạn giờ riêng (giết cả cây tiến trình khi hết hạn). */
-export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
+export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (lenh, wt, hanGiay) =>
   new Promise((xong) => {
     const t0 = Date.now();
     let dau = "";
     let hetGio = false;
-    const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
       const sach = boMau(dau);
@@ -314,3 +315,5 @@ export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
     con.on("error", (e) => ketThuc(null, String(e)));
     con.on("close", (ma) => ketThuc(hetGio ? null : ma));
   });
+
+export const chayLenhKiem: ChayKiem = taoChayLenhKiem();
