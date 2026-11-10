@@ -1,0 +1,371 @@
+{
+ "ngay": "2026-11-09",
+ "nhan": "agent-f-baseline",
+ "commit": "a4eb85df4",
+ "cayBan": false,
+ "soMau": 3,
+ "truc": "M",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 1600,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {
+  "AI_AGENT_CONG_KE_HOACH": "0",
+  "AI_AGENT_CON_BAO_CAO": "0",
+  "AI_AGENT_CUU_TRAN": "1",
+  "AI_AGENT_DAU_RA_DAI": "0",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI": "0",
+  "AI_AGENT_GIAO_VIEC": "0",
+  "AI_AGENT_GIU_NGHI": "1",
+  "AI_AGENT_HOUSEKEEPING_ENABLED": "false",
+  "AI_AGENT_KIEM_DAC_TA": "1",
+  "AI_AGENT_NEN_MOC": "0",
+  "AI_AGENT_NEN_SO_THAT": "0",
+  "AI_AGENT_NGHI": "1",
+  "AI_AGENT_THEO_VAI_TRO": "1",
+  "AI_AGENT_TIEP_TUC": "0",
+  "AI_AGENT_TOM_TAT_80": "0",
+  "AI_AGENT_TOOL_TIMEOUT": "0",
+  "AI_AGENT_TU_TRA_API": "1"
+ },
+ "ghiChu": "Baseline agent-f. May :3013 tren aoi_management_test, vai avi_app, co khai tuong minh (NEN_MOC=0 tat, cong ke hoach tat), RAG embed CPU, llama-server :8091 khong restart.",
+ "taiMay": {
+  "soMauTai": 1,
+  "cpuTb": 33,
+  "cpuMax": 33,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [
+  "pilot-repo (TC-02, TC-03, TC-04, TC-05): cần bộ chạy pilot và lượt _test"
+ ],
+ "stacks": [
+  {
+   "stack": "cs",
+   "bai": 2,
+   "luot": 6,
+   "dat": 3,
+   "passAt1": 0.5,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    2,
+    0
+   ],
+   "cut": null,
+   "tokRaTb": 15209,
+   "msTb": 89921
+  },
+  {
+   "stack": "js",
+   "bai": 1,
+   "luot": 3,
+   "dat": 3,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    1,
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 12224,
+   "msTb": 70522
+  },
+  {
+   "stack": "py",
+   "bai": 2,
+   "luot": 6,
+   "dat": 3,
+   "passAt1": 0.5,
+   "passAtN": 0.5,
+   "moiMau": [
+    1,
+    1,
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 17398,
+   "msTb": 98222
+  },
+  {
+   "stack": "ts",
+   "bai": 1,
+   "luot": 3,
+   "dat": 3,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    1,
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 12761,
+   "msTb": 72469
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 6,
+  "luot": 18,
+  "dat": 12,
+  "passAt1": 0.667,
+  "passAtN": 0.833,
+  "moiMau": [
+   4,
+   5,
+   3
+  ],
+  "cut": null,
+  "tokRaTb": 15033,
+  "msTb": 86546
+ },
+ "hang": [
+  {
+   "id": "cs-dat-phong",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 7814,
+   "ms": 49499,
+   "lyDoDung": "het-luot"
+  },
+  {
+   "id": "cs-dat-phong",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 46849,
+   "ms": 268955,
+   "lyDoDung": "lap-lai"
+  },
+  {
+   "id": "cs-dat-phong",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 5830,
+   "ms": 38873,
+   "lyDoDung": "het-luot"
+  },
+  {
+   "id": "cs-nhat-ky",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 17272,
+   "ms": 95996,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "cs-nhat-ky",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 6431,
+   "ms": 41231,
+   "lyDoDung": "het-luot"
+  },
+  {
+   "id": "cs-nhat-ky",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 7057,
+   "ms": 44970,
+   "lyDoDung": "het-luot"
+  },
+  {
+   "id": "js-cli-viec",
+   "stack": "js",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 11906,
+   "ms": 70118,
+   "lyDoDung": "het-luot"
+  },
+  {
+   "id": "js-cli-viec",
+   "stack": "js",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 14599,
+   "ms": 80987,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "js-cli-viec",
+   "stack": "js",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 10168,
+   "ms": 60461,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-dang-ky",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:13<14"
+   ],
+   "cut": null,
+   "tokRa": 16665,
+   "ms": 94495,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-dang-ky",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:13<14"
+   ],
+   "cut": null,
+   "tokRa": 12932,
+   "ms": 75481,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-dang-ky",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:13<14"
+   ],
+   "cut": null,
+   "tokRa": 25711,
+   "ms": 146000,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-kho-cache",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 18738,
+   "ms": 104043,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-kho-cache",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 9923,
+   "ms": 57234,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-kho-cache",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 20416,
+   "ms": 112078,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "ts-gio-hang",
+   "stack": "ts",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 11560,
+   "ms": 66821,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "ts-gio-hang",
+   "stack": "ts",
+   "bo": "agent-f",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 14000,
+   "ms": 79237,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "ts-gio-hang",
+   "stack": "ts",
+   "bo": "agent-f",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 12724,
+   "ms": 71348,
+   "lyDoDung": "hoan-thanh"
+  }
+ ]
+}

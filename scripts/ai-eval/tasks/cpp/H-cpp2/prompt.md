@@ -1,0 +1,1 @@
+Viết C++20: hàm std::vector<std::string> sapXepTopo(const std::vector<std::pair<std::string,std::string>>& canh) nhận danh sách cạnh có hướng (a,b) nghĩa là a PHẢI đứng trước b. Trả về một thứ tự topo hợp lệ chứa ĐỦ mọi đỉnh xuất hiện trong danh sách cạnh. Nếu đồ thị CÓ CHU TRÌNH thì trả về vector RỖNG. Chỉ dùng thư viện chuẩn. Chỉ trả về MỘT khối mã, KHÔNG viết hàm main.

@@ -1,0 +1,13 @@
+{
+  "id": "js-cli-viec",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "js",
+  "ten": "Lệnh con CLI `export --csv [--out] [--chua-xong]`: module CSV mới + lệnh mới, đăng ký vào bảng lệnh, sửa trợ giúp",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "js-cli-viec"
+  },
+  "duAn": "sandbox-projects/agent-f/js-cli-viec",
+  "canDb": false
+}

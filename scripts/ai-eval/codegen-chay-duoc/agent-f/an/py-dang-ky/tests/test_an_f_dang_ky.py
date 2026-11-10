@@ -1,4 +1,8 @@
 # TEST ẨN bộ F (py-dang-ky) — chép vào dự án lúc chấm, xoá sau khi chấm. Không phải tệp của dự án.
+import string
+import types
+from collections.abc import Mapping
+
 import pytest
 
 from dang_ky import DichVuDangKy, LoiDangKy
@@ -14,6 +18,67 @@ def hop_le(**ghi_de):
 
 def cap(loi):
     return [(l.truong, l.ma) for l in loi]
+
+
+VI_EMAIL_TRUNG = "Email đã được đăng ký"
+EN_EMAIL_TRUNG = "Email is already registered"
+
+
+def _nhu_bang(o, ten_module):
+    """Xem `o` như bảng khoá → giá trị: Mapping bất kỳ (dict, MappingProxyType, lớp tự viết), hoặc lớp/đối tượng do chính module định nghĩa."""
+    if isinstance(o, Mapping):
+        return o
+    if isinstance(o, types.ModuleType) or callable(o) and not isinstance(o, type):
+        return None
+    if getattr(o if isinstance(o, type) else type(o), "__module__", None) != ten_module:
+        return None
+    try:
+        return {k: v for k, v in vars(o).items() if not k.startswith("__")}
+    except TypeError:
+        return None
+
+
+def khoa_chi_tieng_viet():
+    """Khoá có bản tiếng Việt mà KHÔNG có bản tiếng Anh, đọc từ bảng thật của lời giải, kèm mẫu tiếng Việt của khoá.
+
+    Chỉ đọc, không sửa bảng. Tìm bảng theo NỘI DUNG (thông điệp `email_trung` của đề), không theo tên biến, kiểu hay bố cục:
+    hai bảng theo ngôn ngữ (lồng `{"vi": …, "en": …}` hoặc hai biến riêng) hoặc một bảng theo khoá (`{khoa: {"vi": …, "en": …}}`).
+    Không tìm thấy bảng hoặc mọi khoá đều có tiếng Anh ⇒ []: khi đó nhánh "thiếu khoá" không quan sát được qua `t`.
+    """
+    import dang_ky.thong_diep as td
+
+    vi = en = theo_khoa = None
+    da_xem, hang = set(), [(v, 0) for v in vars(td).values()]
+    while hang:
+        o, sau = hang.pop()
+        if id(o) in da_xem or sau > 4:
+            continue
+        da_xem.add(id(o))
+        b = _nhu_bang(o, td.__name__)
+        if b is None:
+            continue
+        try:
+            g = b.get("email_trung") if hasattr(b, "get") else None
+            con = list(b.values())
+        except Exception:
+            continue
+        if g == VI_EMAIL_TRUNG and vi is None:
+            vi = b
+        elif g == EN_EMAIL_TRUNG and en is None:
+            en = b
+        gb = _nhu_bang(g, td.__name__)
+        if gb is not None and gb.get("vi") == VI_EMAIL_TRUNG and gb.get("en") == EN_EMAIL_TRUNG:
+            theo_khoa = b
+        hang.extend((v, sau + 1) for v in con)
+    ra = []
+    if vi is not None and en is not None:
+        ra = [(k, vi[k]) for k in list(vi.keys()) if k not in en]
+    elif theo_khoa is not None:
+        for k, v in theo_khoa.items():
+            vb = _nhu_bang(v, td.__name__)
+            if vb is not None and "vi" in vb and "en" not in vb:
+                ra.append((k, vb["vi"]))
+    return [(k, m) for k, m in ra if isinstance(k, str) and isinstance(m, str)]
 
 
 def test_an_hop_le_khong_loi():
@@ -64,12 +129,19 @@ def test_an_nhieu_loi_theo_thu_tu_truong():
 
 
 def test_an_thong_diep_hai_ngon_ngu_va_du_phong():
-    assert t("email_trung") == "Email đã được đăng ký"
-    assert t("email_trung", "en") == "Email is already registered"
+    assert t("email_trung") == VI_EMAIL_TRUNG
+    assert t("email_trung", "en") == EN_EMAIL_TRUNG
     assert t("bat_buoc", "en", ten_truong="Age") == "Age is required"
     assert t("bat_buoc", "fr", ten_truong="Tuổi") == "Tuổi là bắt buộc"
-    # khoá thiếu trong tiếng Anh ⇒ dùng tiếng Việt
-    assert t("thanh_cong", "en", ma="DK-0001") == "Đăng ký thành công, mã của bạn là DK-0001"
+    # Khoá thiếu trong tiếng Anh ⇒ dùng tiếng Việt: thử bằng hành vi trên mọi khoá mà CHÍNH lời giải để thiếu tiếng Anh.
+    # (10/11: bản đầu đòi `thanh_cong` thiếu tiếng Anh — đề không nói; bản c99b21d79 monkeypatch vào dict cấp module — trượt
+    # lời giải đúng dùng MappingProxyType. Bản này không sửa bảng, không phụ thuộc kiểu bảng.)
+    for khoa, mau in khoa_chi_tieng_viet():
+        ten = [f for _, f, _, _ in string.Formatter().parse(mau) if f is not None]
+        if any(not f or not f.isidentifier() for f in ten):
+            continue
+        tham_so = {f: f"<{f}>" for f in ten}
+        assert t(khoa, "en", **tham_so) == mau.format(**tham_so), khoa
 
 
 def test_an_dang_ky_loi_tieng_viet():

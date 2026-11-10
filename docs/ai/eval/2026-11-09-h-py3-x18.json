@@ -1,0 +1,323 @@
+{
+ "ngay": "2026-11-09",
+ "nhan": "h-py3-x18",
+ "commit": "a4eb85df4",
+ "cayBan": false,
+ "soMau": 18,
+ "truc": "M",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 930,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {},
+ "ghiChu": "H-py3 x18 de phan dinh 0/6 (baseline luot 1) so voi 4/6 (Dot 11.0). Truc M.",
+ "taiMay": {
+  "soMauTai": 16,
+  "cpuTb": 7,
+  "cpuMax": 21,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [],
+ "stacks": [
+  {
+   "stack": "py",
+   "bai": 1,
+   "luot": 18,
+   "dat": 5,
+   "passAt1": 0.278,
+   "passAtN": 1,
+   "moiMau": [
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0
+   ],
+   "cut": 0,
+   "tokRaTb": 9116,
+   "msTb": 43204
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 1,
+  "luot": 18,
+  "dat": 5,
+  "passAt1": 0.278,
+  "passAtN": 1,
+  "moiMau": [
+   0,
+   1,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   1,
+   0,
+   1,
+   0,
+   0
+  ],
+  "cut": 0,
+  "tokRaTb": 9116,
+  "msTb": 43204
+ },
+ "hang": [
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12377,
+   "ms": 59044
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 6571,
+   "ms": 30857
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6906,
+   "ms": 32442
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8161,
+   "ms": 38411
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 9901,
+   "ms": 47308
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12346,
+   "ms": 59907
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 7,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12781,
+   "ms": 60575
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 8,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5283,
+   "ms": 25002
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 9,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12340,
+   "ms": 58763
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 10,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 7607,
+   "ms": 35489
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 11,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5633,
+   "ms": 26499
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 12,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 8995,
+   "ms": 42851
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 13,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 5389,
+   "ms": 24830
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 14,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 12342,
+   "ms": 59150
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 15,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 8491,
+   "ms": 40202
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 16,
+   "dat": true,
+   "lyDo": [],
+   "cut": false,
+   "tokRa": 9862,
+   "ms": 46466
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 17,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 12324,
+   "ms": 58053
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 18,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": false,
+   "tokRa": 6775,
+   "ms": 31831
+  }
+ ]
+}

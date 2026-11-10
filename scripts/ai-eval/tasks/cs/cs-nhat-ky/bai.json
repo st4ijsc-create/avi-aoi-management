@@ -1,0 +1,13 @@
+{
+  "id": "cs-nhat-ky",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "cs",
+  "ten": "Mức FATAL + dòng nối tiếp (stack trace) + báo cáo theo nguồn có lọc thời gian và xuất JSON",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "cs-nhat-ky"
+  },
+  "duAn": "sandbox-projects/agent-f/cs-nhat-ky",
+  "canDb": false
+}

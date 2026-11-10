@@ -1,0 +1,12 @@
+{
+  "id": "A2-ps5",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "ps1",
+  "ten": "Remove-NhatKyCu",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-ps5"
+  },
+  "canDb": false
+}

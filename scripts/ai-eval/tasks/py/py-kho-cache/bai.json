@@ -1,0 +1,13 @@
+{
+  "id": "py-kho-cache",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "py",
+  "ten": "Lớp repo có cache TTL (ghi xuyên, trả bản sao, thống kê) + sửa DichVuKho dùng nó + xuất package",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "py-kho-cache"
+  },
+  "duAn": "sandbox-projects/agent-f/py-kho-cache",
+  "canDb": false
+}
