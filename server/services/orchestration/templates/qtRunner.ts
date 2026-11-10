@@ -53,6 +53,11 @@ async function resumeUnlessClaimed(
   }
 }
 
+/** A2(n) T7b-2 (3a, G4i) — the engine did not end the run (a latched run is no system rejection's to end): its own status and words are the answer, never "aborted". */
+function khongKetThuc(r: Awaited<ReturnType<typeof resumeRun>>): boolean {
+  return r.status === "awaiting_confirm" || r.status === "held";
+}
+
 /** Trạng thái THẬT hiện tại của run (sau khi thua CAS) — không đoán. */
 async function currentStatus(runId: number): Promise<string> {
   const view = await getRun(runId);
@@ -244,6 +249,7 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
       const status = await currentStatus(runId);
       return { ok: false, runId, status, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
     }
+    if (khongKetThuc(rejected)) return { ok: false, runId, status: String(rejected.status), pausedStepId: stepId, notes, message: rejected.message };
     return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes };
   }
   return { ok: false, runId, status: "pump_limit", notes, message: `vượt trần ${MAX_PUMP_ITERATIONS} lượt pump` };
@@ -320,6 +326,7 @@ export async function resolveQtGate(
       const current = await currentStatus(runId);
       return { ok: false, runId, status: current, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
     }
+    if (khongKetThuc(rejected)) return { ok: false, runId, status: String(rejected.status), pausedStepId: stepId, notes, message: rejected.message };
     const notRun = tpl.kind === "unknown" && notes.some((n) => n.includes(QT_COMPENSATION_NOT_RUN));
     return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes, ...(notRun ? { message: compensationNotRunNote(tpl.reason) } : {}) };
   }

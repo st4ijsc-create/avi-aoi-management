@@ -327,6 +327,15 @@ export async function docClaimCuaNode(d: PullDb, node: Pick<EdgeNodePrincipal, "
 type AbortRow = { a: RunEdgeAssignment; finishedAt: Date | null };
 
 /**
+ * A2(n) T7b-2 (P4, EDGE-VET) — an `abort:<step>` row that lists its run for the node's picture: a STOP central handed over and could not confirm. A central Abort's trace of a STOP it never handed over (`chuaXacMinh`:
+ * not verified, T7b-1d H22) is central's own, for a later press: not one. The picture carries only verified STOPs, and a re-send that nobody pressed is no press. Pure.
+ */
+export function laHangAbortChoAnh(r: { stepId?: unknown; status?: unknown; resultJson?: unknown }): boolean {
+  if (!String(r.stepId ?? "").startsWith("abort:") || r.status !== "failed") return false;
+  return (r.resultJson as { abortStop?: unknown } | null | undefined)?.abortStop !== "chuaXacMinh";
+}
+
+/**
  * SCADA R1b-2b-2a A2(j) — EVERY run of the node that central ABORTED inside the re-send window (ABORT_RESEND_WINDOW_MS, abortResendAllowed) and that
  * has a failed `abort:<step>` row (a STOP central could not confirm — the node re-sends it, L-7). Before: the 50 most recent aborted runs, then the
  * window ⇒ the 51st+ such STOP was silently dropped. The window is pushed into SQL (1 s wider on each side — the JS check stays the exact rule), runs
@@ -365,10 +374,10 @@ export async function docRunAbortCanGuiLaiStop(
   for (let i = 0; i < recent.length; i += CO) {
     const ids = recent.slice(i, i + CO).map((x) => x.a.runId);
     const rows = await d
-      .select({ runId: orchestrationRunSteps.runId })
+      .select({ runId: orchestrationRunSteps.runId, stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status, resultJson: orchestrationRunSteps.resultJson })
       .from(orchestrationRunSteps)
       .where(and(inArray(orchestrationRunSteps.runId, ids), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")));
-    for (const x of rows) failed.add(x.runId);
+    for (const x of rows) if (laHangAbortChoAnh(x)) failed.add(x.runId);
   }
   if (r.catBot) {
     baoDocCatBot({

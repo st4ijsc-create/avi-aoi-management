@@ -152,6 +152,9 @@ const h = vi.hoisted(() => ({
     return ca;
   },
   soCai: null as null | Map<string, { ok: boolean; simulated: boolean; status: string; dangBay?: boolean; kq: Record<string, any> }>,
+  /** A2(n) T7b-2 — adapter → the edge node that owns it: central's route (a command with no edge part) to it answers ADAPTER_OWNED_BY_EDGE (commandDispatcher step 4, routeEdgeOwnedAdapterCommand); chuEdgeLan counts those answers */
+  chuEdge: new Map<number, number>(),
+  chuEdgeLan: 0,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -311,6 +314,22 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       if (h.khongTraLoi.has(stepId)) await new Promise<never>(() => undefined);
       const cham = h.slow.get(stepId);
       if (cham) await new Promise((r) => setTimeout(r, cham));
+      // A2(n) T7b-2 — central's route to an adapter a node owns: commandDispatcher step (4), no driver here, routeEdgeOwnedAdapterCommand: a STOP is queued for the node (an adapter STOP of its pinned
+      // values, on the node), any other write refused; never ok, nothing written by central. Step (4) stands before the reservation's pinned check (step 5); step (1) on a marked row: not modelled (EDGE-OWNED-DB)
+      const chuNut = cmd.edge ? undefined : h.chuEdge.get(Number(cmd.adapterId));
+      if (chuNut !== undefined && kind !== "robot") {
+        h.chuEdgeLan++;
+        ghi.khongGhi = true;
+        const laStopLenh = cmd.name === "stop" || cmd.name === "e_stop";
+        if (laStopLenh) ghi.xepChoNut = true;
+        return {
+          ok: false,
+          status: "rejected",
+          routedTo: "ot-dispatcher",
+          error: laStopLenh ? `adapter ${cmd.adapterId} is owned by edge node ${chuNut}: STOP queued for it as request #${h.chuEdgeLan} (delivered on its next pull — central holds no driver)` : `adapter ${cmd.adapterId} is owned by edge node ${chuNut} — central does not write to it (the edge node is the only writer)`,
+          detail: { simulated: false, commandLogIds: [], reason: "ADAPTER_OWNED_BY_EDGE" },
+        };
+      }
       const routedTo = kind === "robot" ? "robot-dispatcher" : "ot-dispatcher";
       const traLoi = (t: { status?: string; error?: string; detail?: Record<string, unknown> }) => ({ ok: false, status: t.status ?? "rejected", routedTo, ...(t.error ? { error: t.error } : {}), detail: t.detail ?? {} });
       const tc = h.tuChoi.get(stepId);
@@ -423,6 +442,7 @@ import {
 } from "./foeEngine";
 import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
 import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
+import { docRunAbortCanGuiLaiStop } from "../../edge/edgeExecutionCentral"; // A2(n) T7b-2 (P4)
 import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
@@ -564,6 +584,8 @@ beforeEach(() => {
   h.treAbortedBoQua = 0;
   h.soCai = null;
   h.ranhGioi = null;
+  h.chuEdge.clear();
+  h.chuEdgeLan = 0;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -3142,6 +3164,26 @@ describe("A2(n) T0 — every injection of this harness reaches its target", () =
       h.khongTraLoi.clear();
       const dap = await dongThoi((i) => gui(`run1-treo-a${i + 1}`));
       for (const r of dap) expect(r).toMatchObject({ status: "simulated" });
+    }
+  });
+
+  it("★ h.chuEdge (T7b-2): on, central's route (no edge part) to an adapter a node owns answers ADAPTER_OWNED_BY_EDGE as routeEdgeOwnedAdapterCommand does (a STOP queued for the node, any other write refused), the edge's route is untouched; off, simulated; 6 concurrent hand-overs, 10 rounds", async () => {
+    const { equipmentRegistry } = await import("../../equipment/equipmentAdapter");
+    const gui = (k: string, name: string, edge?: Record<string, unknown>) => (equipmentRegistry.getAdapter("ot" as never) as any).sendCommand({ idempotencyKey: k, name, adapterId: 501, writes: [{ tagKey: "run", value: 0 }], ...(edge ? { edge } : {}) });
+    for (let v = 0; v < VONG; v++) {
+      h.sent.length = 0;
+      h.chuEdge.set(501, NODE);
+      h.chuEdgeLan = 0;
+      for (const r of await dongThoi((i) => gui(`run1-o${i}-a1`, "stop"))) expect(r).toMatchObject({ ok: false, status: "rejected", routedTo: "ot-dispatcher", detail: { reason: "ADAPTER_OWNED_BY_EDGE" }, error: expect.stringMatching(/^adapter 501 is owned by edge node 7: STOP queued for it as request #\d+ /) });
+      expect(h.chuEdgeLan).toBe(DONG_THOI);
+      expect(h.sent.every((x) => x.khongGhi === true && x.xepChoNut === true), "nothing written by central, queued for the node").toBe(true);
+      for (const r of await dongThoi((i) => gui(`run1-m${i}-a1`, "start"))) expect(r).toMatchObject({ ok: false, status: "rejected", detail: { reason: "ADAPTER_OWNED_BY_EDGE" }, error: "adapter 501 is owned by edge node 7 — central does not write to it (the edge node is the only writer)" });
+      expect(h.chuEdgeLan).toBe(2 * DONG_THOI);
+      for (const r of await dongThoi((i) => gui(`run1-e${i}-a1`, "stop", { authorization: null }))) expect(r).toMatchObject({ ok: true, status: "simulated" });
+      expect(h.chuEdgeLan, "the edge's own route is not central's").toBe(2 * DONG_THOI);
+      h.chuEdge.clear();
+      for (const r of await dongThoi((i) => gui(`run1-f${i}-a1`, "stop"))) expect(r).toMatchObject({ ok: true, status: "simulated" });
+      expect(h.chuEdgeLan).toBe(2 * DONG_THOI);
     }
   });
 
@@ -14121,5 +14163,630 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     vi.useRealTimers();
     await wait(1_000);
     expect(kiemLac(), "a command kept apart (a walker an earlier case left alive) is no pinned STOP and went after its run's latch").toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, central answered ADAPTER_OWNED_BY_EDGE, the picture route, the code an abort_stop carries, the QT pump on a latched run", () => {
+  const TOKEN = "ect_" + "a".repeat(43);
+  const NUT = { nodeId: NODE, nodeCode: "EDGE-A", credentialId: 1, factoryCode: "F1" } as never;
+  const EPOCH = "e".repeat(32);
+  /** the node's agent: what aborts a live walker on the edge (edgeExecutionAgent's EDGE_AGENT_ABORT_USER shape) */
+  const TAC_NHAN = { id: 0, role: "system", name: "edge: central abort" };
+  /** the QT pump's principal (qtRunner.QT_SYSTEM_USER): no person */
+  const QT = { id: 0, role: "system", name: "qt-orchestrator" };
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  /** stop-typed on a tag with no pin: what the dispatcher calls a STOP only once the pin is set */
+  const stopTyped = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const sentOf = (id: string) => h.sent.filter((x) => x.stepId === id);
+  const hang = (c: number, id: string) => stepRows(c).find((r) => r.stepId === id);
+  const noCua = (c: number) => stopChuaRaTuHang(stepRows(c) as never, ((runRow(c).contextJson as Record<string, unknown> | null) ?? {}) as never);
+  const veBuoc = (id: string) => h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === id);
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const chuCua = (id: string) => veBuoc(id).map((a) => `${a.title} ${a.message}`).join(" | ");
+  const daGuiChu = /\b(was|were|been) sent\b|\bwent out\b/i;
+  const khongUyQuyen = (x: Record<string, unknown>) => (x.edge as { authorization?: unknown } | null | undefined)?.authorization == null;
+  const hangDau = () => (fake.store.get("ai_pending_actions") ?? []).filter((a) => JSON.stringify(a.previewJson ?? {}).includes("hangMoiStopGhim"));
+  const ghimRun = (co: boolean) => {
+    for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = co ? 0 : null;
+  };
+  /** the dispatcher refuses nt before any driver: nothing written (T6c) */
+  const offline = (id = "nt") => {
+    h.tuChoi.set(id, { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+    h.tuChoiKhongGhi.add(id);
+  };
+  /** T6c's NP1 with a longer delay: nt is handed over at the latch (marked route, refused), the walker still walks w when the Abort comes */
+  const NP1S = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 400), box("c2", [stopTyped("nt")])])])]);
+
+  // ── the fence of T7b-1d (lượt sửa 4, 5): a run id range per case, a command of an older run kept apart and judged by ITS run ─────────────────────────────────
+  let lanCa = 0;
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  /** what one case lets through the check below, said there: a fake that throws before its pin check has not proved it wrote nothing */
+  const mien = new Set<string>();
+  const ghim = (x: Record<string, unknown>) => {
+    if (x.robotId != null) return x.name === "abort";
+    const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+    const cua = x.lac === true ? h.caCua(Number(x.runId))?.ghim : null;
+    return w.length > 0 && w.every((v) => (cua ? cua.includes(`${String(x.adapterId)}:${v.tagKey}`) : rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null)));
+  };
+  const laLoai1 = (x: Record<string, unknown>) => x.sauKhoa === true && !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true && !mien.has(String(x.stepId));
+  const lacKhoi: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    h.ranhGioi = nhayId(800_000 + ++lanCa * 1000);
+    for (let i = h.sent.length - 1; i >= 0; i--) {
+      const so = /^run(\d+)-/.exec(String(h.sent[i]!.key));
+      if (!so || Number(so[1]) >= h.ranhGioi) continue;
+      const x = h.sent.splice(i, 1)[0]!;
+      Object.assign(x, { lac: true, sauKhoa: h.caCua(Number(so[1]))?.khoa ?? true });
+      h.lacTatCa.push(x);
+      lacKhoi.push(x);
+    }
+    h.caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?", khoa: null, ghim: null });
+    h.lac.length = 0;
+    mien.clear();
+    vi.mocked(logCrudOperation).mockClear();
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+    // the report path (T5 fix 1): the batch's transaction really rolls back, an insert may say onConflictDoNothing
+    (fake as any).transaction = async (fn: (t: unknown) => Promise<unknown>) => {
+      const anh = new Map([...fake.store].map(([k, v]) => [k, v.map((r) => ({ ...r }))] as const));
+      try {
+        return await fn(fake);
+      } catch (e) {
+        fake.store.clear();
+        for (const [k, v] of anh) fake.store.set(k, v);
+        throw e;
+      }
+    };
+    const ins = (fake as any).insert;
+    (fake as any).insert = (t: any) => {
+      const q = ins(t);
+      const val = q.values.bind(q);
+      q.values = (x: unknown) => {
+        const r = val(x);
+        r.onConflictDoNothing ??= () => r;
+        return r;
+      };
+      return q;
+    };
+  });
+  afterEach(() => {
+    try {
+      expect(h.sent.filter(laLoai1).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      delete (fake as any).transaction;
+      delete (fake as any).execute;
+      delete process.env.EDGE_RUNTIME_ENABLED;
+      delete process.env.EDGE_ABORT_POLL_MS;
+      const ca = h.caCuaRun[h.caCuaRun.length - 1];
+      if (ca) Object.assign(ca, { khoa: h.traTimeout > 0, ghim: rows("device_tags").filter((t) => t.stopValue != null).map((t) => `${String(t.adapterId)}:${String(t.tagKey)}`) });
+      h.ranhGioi = Number.MAX_SAFE_INTEGER;
+      for (const x of h.lac) lacKhoi.push(x);
+    }
+  });
+  afterAll(() => {
+    console.log(`[T7B2 lac] ${lacKhoi.length} commands of an older run kept apart in the block: ${lacKhoi.map((x) => `${String(x.key)}:${String(x.name)}:sauKhoa=${String(x.sauKhoa)}`).join(" ") || "-"}`);
+    expect(lacKhoi.filter(laLoai1).map((x) => String(x.key)), "a command kept apart is no pinned STOP and went after its run's latch").toEqual([]);
+  });
+
+  // ── the report path: the run stream of a segment through the real shipper and reportForNode (T5 fix 1), then its end ─────────────────────────────────────
+  function nhatKy() {
+    const dong = new Map<string, { recs: Array<{ seq: number; record: Record<string, unknown> }>; acked: number }>();
+    const cua = (s: string) => dong.get(s) ?? (dong.set(s, { recs: [], acked: 0 }), dong.get(s)!);
+    return {
+      epoch: EPOCH,
+      them(s: string, r: Record<string, unknown>) {
+        const c = cua(s);
+        const seq = c.recs.length + 1;
+        c.recs.push({ seq, record: { ...r, seq } });
+      },
+      pending: (s: string, n: number) => cua(s).recs.filter((r) => r.seq > cua(s).acked).slice(0, n),
+      ack(s: string, q: number) {
+        cua(s).acked = Math.max(cua(s).acked, q);
+      },
+      ackedSeq: (s: string) => cua(s).acked,
+      pendingStreams: () => [],
+      appendEvent: async () => ({ seq: 1 }),
+      veLai(s: string) {
+        cua(s).acked = 0;
+      },
+    };
+  }
+  const traLoi: Array<{ http: number; code?: string }> = [];
+  const trungTam = (runId: number) => ({
+    async post(route: string, body: unknown) {
+      const a = (route === "report" ? await reportForNode(NUT, runId, body) : await eventsForNode(NUT, body)) as Record<string, any>;
+      traLoi.push({ http: a.http, code: a.code });
+      return a.http === 200 ? { ok: true, status: 200, data: a.data } : { ok: false, status: a.http, code: a.code, data: a.data, unavailable: a.http === 503 };
+    },
+  });
+  function chuanBi(e: EdgeHarness, claimSeq: number) {
+    fake.seed(edgeNodeProtocol, [{ id: NODE, protocolVersion: 2, v: 2 }]);
+    for (const w of rows("orchestration_workflows")) w.def = w.definitionJson;
+    for (const r of rows("edge_step_authorizations")) r.edgeNodeId = NODE;
+    const [a] = rows("orchestration_run_edge_assignments").filter((r) => r.runId === e.runId);
+    a.claimTokenHash = hashEdgeSecret(TOKEN);
+    a.claimSeq = claimSeq;
+    a.edgeNodeId = NODE;
+  }
+  async function giao(e: EdgeHarness, claimSeq: number, moc: number, out: Record<string, any>, d: WorkflowDefinition) {
+    chuanBi(e, claimSeq);
+    const J = nhatKy();
+    const S = edgeRunStream(e.runId, claimSeq);
+    for (const r of e.records.slice(moc)) J.them(S, r as never);
+    for (const r of e.events ?? []) J.them("events", r);
+    const sh = new EdgeStreamShipper(J as never, trungTam(e.runId) as never, { log: () => undefined });
+    sh.setClaim(e.runId, claimSeq, TOKEN);
+    traLoi.length = 0;
+    await sh.flush(S);
+    await sh.flush("events");
+    await wait(20);
+    if (J.pending(S, 1).length === 0 && out.outcome) await applyEdgeSegmentEnd(fake as never, e.runId, { ...(out as any), nodeCode: "EDGE-A", claimSeq, def: d });
+    await wait(20);
+    return { J, S, sh };
+  }
+  /**
+   * (a) — the NP1 run on the edge: x went unknown (the latch), nt handed over at the latch on the marked route and refused (in the walker's hands), the walker still in w. Central's Abort
+   * writes 'aborted' (its own sweep reaches no device of the node: the shape of ★ abort sweep); the node's agent aborts the live walker. `vaoAbort`: what changes at the Abort's own hand-over
+   */
+  async function songAbort(ref: string, vaoAbort: () => void) {
+    const d = NP1S(ref);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.quaBaoCao = true; // nothing applied by the harness from here: only the report path writes
+    e.laStopNem = true;
+    e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] }); // T6d-K2 — "the pins unreadable" on an edge is the package's stopsUnsure
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    offline();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const moc = e.records.length;
+    let song: Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null = null;
+    let truoc = 0;
+    const s = await edgeSegment(e, 2, {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running") && sentOf("nt").length > 0, "the walker in w, nt handed over at the latch");
+        truoc = sentOf("nt").length;
+        runRow(e.runId).status = "aborted";
+        runRow(e.runId).finishedAt = new Date();
+        vaoAbort();
+        song = await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+      },
+    });
+    await wait(40);
+    const g = await giao(e, 2, moc, s.out, d);
+    return { e, s, d, song: song as Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null, truoc, ...g };
+  }
+  /** a press at central: the run aborted, central's verifier cannot read the pins (the marked route) */
+  async function bam(c: number) {
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    h.timeoutDispatch.clear();
+    h.classifyLoi = true;
+    const a = await abortRun(c, OWNER, "press");
+    await wait(80);
+    return a;
+  }
+
+  // ── 1 (a): the Abort while the edge walker still walks, nt's pins unreadable (Q2-ABORT-T7b on the edge side) ───────────────────────────────────────────────
+  // T7b-2 decides: the edge's own sweep takes the marked route (the edge's dispatcher owns the device and decides by its signed snapshot; central's can only queue a STOP for the node,
+  // ADAPTER_OWNED_BY_EDGE), at the Abort, not at a later press; a STOP that did not go is owed on its abort:<id> row with the code, carried in the abort_stop's own `result` (H7), told once by central
+  for (const dang of ["tuChoi", "nem", "khongTraLoi"] as const) {
+    it(`T7B2-SONG-${dang} (a) the Abort while the edge walker of the NP1 run still walks, nt's pins unreadable: the edge's sweep takes the marked route; ${dang === "tuChoi" ? "refused again" : dang === "nem" ? "the hand-over throws" : "no answer within the Abort's wait"}: aborted, owed on abort:nt with the code, ONE durable URGENT names nt and never says it went, no automatic loop; pressed again with nt pinned, it goes, the debt is gone`, async () => {
+      const x = await songAbort(`t2s${dang[0]}`, () => {
+        if (dang === "nem") {
+          h.tuChoi.set("nt", { nem: "the hand-over threw (test)" });
+          mien.add("nt"); // the fake throws before its pin check: the real edge dispatcher refuses an unpinned stop with no authorisation (classifyEdgeOtStop)
+        }
+        if (dang === "khongTraLoi") {
+          h.tuChoi.clear();
+          h.tuChoiKhongGhi.clear();
+          h.khongTraLoi.add("nt");
+          mien.add("nt"); // the same: the fake's "no answer" comes before its pin check
+        }
+      });
+      const c = x.e.runId;
+      expect(x.song?.live, "the node's agent reached the live walker").toBe(true);
+      const cuaAbort = sentOf("nt").slice(x.truoc);
+      expect(cuaAbort.length, "the Abort hands nt to the edge's dispatcher on the marked route").toBeGreaterThan(0);
+      expect(cuaAbort.every((s) => s.edge != null && khongUyQuyen(s)), "the edge's route, no authorisation: only its dispatcher's own pinned-STOP verdict sends it").toBe(true);
+      if (dang === "tuChoi") expect(cuaAbort.every((s) => s.khongGhi === true), "refused: nothing written").toBe(true);
+      expect(dang === "khongTraLoi" ? x.song?.abortStops?.pending : x.song?.abortStops?.failed, "the answer of the edge's sweep").toContain("nt");
+      expect(traLoi.filter((a) => a.http !== 200), "the stream runs").toEqual([]);
+      expect(runRow(c).status).toBe("aborted");
+      const ab = hang(c, "abort:nt");
+      expect(ab?.status, "owed on its abort row").toBe("failed");
+      expect(String(ab?.error), "the code of state C, as central's own (C4)").toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" (did NOT go out|is not confirmed out) \(on the Abort\)/);
+      expect((ab?.resultJson as Record<string, unknown> | null)?.chuaRa, "the closed value the edge carried (H7)").toEqual(dang === "tuChoi" ? { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" } : dang === "nem" ? { nguon: "driverLoi", ma: expect.any(String) } : { nguon: "driverLoi", ma: "NO_ANSWER" });
+      expect(noCua(c).has("nt"), "still owed").toBe(true);
+      const u = urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt");
+      expect(u.length, "one durable URGENT names nt").toBe(1);
+      expect(chuCua("nt"), "never says the Abort sent it").not.toMatch(daGuiChu);
+      expect(chuCua("nt"), "it says it stays owed and a press sends it").toMatch(/press Abort again/);
+      // A-EDGE-C — told once: the same records again (a replay) reach no handler
+      x.J.veLai(x.S);
+      await x.sh.flush(x.S);
+      await wait(20);
+      expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").length, "a replay tells nobody again").toBe(1);
+      const n1 = h.sent.length;
+      await wait(150);
+      expect(h.sent.length, "no automatic loop: only a person presses again").toBe(n1);
+      // pressed again at central, the dispatcher now finds nt pinned: it goes, the debt is gone ("press Abort again" is true)
+      ghimRun(true);
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+      h.khongTraLoi.clear();
+      mien.clear();
+      const a2 = await bam(c);
+      expect(a2.ok).toBe(true);
+      expect(sentOf("nt").some((s) => s.khongGhi !== true && s.edge == null), "it went, from central").toBe(true);
+      expect(hang(c, "abort:nt")?.status).toBe("completed");
+      expect(noCua(c).has("nt"), "the debt is gone").toBe(false);
+      expect(runRow(c).status).toBe("aborted");
+    });
+  }
+  it("T7B2-SONG-DI (a) the same, the edge's dispatcher finds nt pinned at the Abort's hand-over: it goes, once, by the Abort; aborted, nothing owed, no URGENT says it did not go", async () => {
+    const x = await songAbort("t2sd", () => {
+      ghimRun(true);
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+    });
+    const c = x.e.runId;
+    const cuaAbort = sentOf("nt").slice(x.truoc);
+    expect(cuaAbort.filter((s) => s.khongGhi !== true).length, "the Abort's hand-over went").toBe(1);
+    expect(cuaAbort.every((s) => s.edge != null && khongUyQuyen(s))).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(noCua(c).has("nt"), "nothing owed").toBe(false);
+    expect(hang(c, "abort:nt")?.status ?? "none", "no row says it did not go").not.toBe("failed");
+    expect(urgentCua("abortStopNotSent")).toEqual([]);
+  });
+  it("T7B2-SONG-Q2B (a) the same, the edge's dispatcher says: no pinned STOP (stop_not_pinned): 0 written, aborted, owed, abort_stop_not_sent names nt, no forward_not_sent", async () => {
+    const x = await songAbort("t2sq", () => {
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+    });
+    const c = x.e.runId;
+    const cuaAbort = sentOf("nt").slice(x.truoc);
+    expect(cuaAbort.length, "the dispatcher decides").toBeGreaterThan(0);
+    expect(cuaAbort.every((s) => s.khongGhi === true), "nothing written").toBe(true);
+    // dieu-phoi 08/11: Q2(B) = (i); dispatcher không phân biệt không ghim / không đọc được
+    expect(runRow(c).status).toBe("aborted");
+    expect(noCua(c).has("nt"), "owed").toBe(true);
+    expect(veBuoc("nt").map((a) => a.kind), "abort_stop_not_sent").toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+    expect(veBuoc("nt").map((a) => a.kind), "no forward_not_sent").not.toContain(CANH_BAO_KHONG_RO_KIND.forwardNotSent);
+    expect(chuCua("nt")).not.toMatch(daGuiChu);
+  });
+
+  // ── central answered ADAPTER_OWNED_BY_EDGE (commandDispatcher.routeEdgeOwnedAdapterCommand: a STOP queued for the node, never ok) ─────────────────────────────
+  // T9 (T9-CHU-Q2B): here "press Abort again" / "Abort sends it again" is only half true: the press hands it over, central's dispatcher queues an adapter STOP for the node and nothing
+  // confirms it; the debt is never cleared by central. The case pins the behaviour; the words are T9's
+  it("T7B2-SONG-OWNED (a), then a press at central whose dispatcher answers ADAPTER_OWNED_BY_EDGE: handed over once (queued for the node), not confirmed: aborted, still owed with that code, an URGENT names nt and never says it went; no loop", async () => {
+    const x = await songAbort("t2so", () => undefined);
+    const c = x.e.runId;
+    expect(noCua(c).has("nt")).toBe(true);
+    ghimRun(true);
+    h.tuChoi.clear();
+    h.tuChoiKhongGhi.clear();
+    h.chuEdge.set(501, NODE);
+    const a2 = await bam(c);
+    expect(a2.ok).toBe(true);
+    const giaoTT = sentOf("nt").filter((s) => s.edge == null);
+    expect(giaoTT.length, "the press hands nt to central's dispatcher once").toBe(1);
+    expect(giaoTT[0]?.xepChoNut, "central's dispatcher queued it for the node").toBe(true);
+    expect(a2.abortStops?.sent ?? [], "nothing confirmed sent").not.toContain("nt");
+    expect(String(hang(c, "abort:nt")?.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" is not confirmed out \(on the Abort\): may have gone out \[ADAPTER_OWNED_BY_EDGE\]/);
+    expect(noCua(c).has("nt"), "still owed").toBe(true);
+    expect(veBuoc("nt").map((a) => a.kind)).toContain(CANH_BAO_KHONG_RO_KIND.abortStopNotSent);
+    expect(chuCua("nt")).not.toMatch(daGuiChu);
+    expect(runRow(c).status).toBe("aborted");
+    const n1 = h.sent.length;
+    await wait(150);
+    expect(h.sent.length, "no automatic loop").toBe(n1);
+  });
+  it("T7B2-SAU-OWNED (b) the Abort after the edge segment ended held (state C on nt, its URGENT says 'Abort sends it again'), central's dispatcher answers ADAPTER_OWNED_BY_EDGE: the marked route hands nt over (queued), aborted, owed with that code, an URGENT names nt, never 'went'; a press again the same", async () => {
+    const e = await edgeAssignedRun(def("t2sb", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.laStopNem = true;
+    e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] });
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    offline();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(60);
+    const c = e.runId;
+    expect(runRow(c).status).toBe("held");
+    expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toContain("Abort sends it again");
+    h.tuChoi.clear();
+    h.tuChoiKhongGhi.clear();
+    h.chuEdge.set(501, NODE);
+    for (const lan of [1, 2]) {
+      const a = await bam(c);
+      expect(a.ok, `press ${lan}`).toBe(true);
+      expect(runRow(c).status).toBe("aborted");
+      const giaoTT = sentOf("nt").filter((s) => s.edge == null);
+      expect(giaoTT.length, `press ${lan}: the marked route hands nt to central's dispatcher`).toBe(1);
+      expect(giaoTT[0]?.xepChoNut).toBe(true);
+      expect(hangDau().some((r) => String(r.id).includes("-abort-") && String(r.id).endsWith("-nt")), "a marked row").toBe(true);
+      expect(String(hang(c, "abort:nt")?.error)).toMatch(/may have gone out \[ADAPTER_OWNED_BY_EDGE\]/);
+      expect(noCua(c).has("nt"), "still owed").toBe(true);
+      expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
+      expect(chuCua("nt")).not.toMatch(daGuiChu);
+    }
+  });
+
+  // ── 0: P4 (EDGE-VET) — central's trace on a run assigned to a node ─────────────────────────────────────────────────────────────────────────────────────────
+  // T7b-2 decides: a central sweep of a run assigned to a node keeps its trace as on any run (H22: a later press reads it). The node's picture route (stopsUnconfirmed) is for a STOP central handed over
+  // and could not confirm: a trace of a STOP never handed over (chuaXacMinh) is not one (the picture carries only verified STOPs, and an automatic re-send is no person's press)
+  /** central's pull, read with this case's rows: the assignments of the node aborted in the window, then the failed abort rows as the SQL selects them (like 'abort:%', status 'failed') */
+  const dbPull = (runIds: number[]) => ({
+    select: () => ({
+      from: (t: any) =>
+        t?.[Symbol.for("drizzle:Name")] === "orchestration_run_edge_assignments"
+          ? { innerJoin: () => ({ where: () => ({ orderBy: () => ({ limit: async () => runIds.map((id) => ({ a: rows("orchestration_run_edge_assignments").find((r) => r.runId === id)!, finishedAt: runRow(id).finishedAt })) }) }) }) }
+          : { where: async () => rows("orchestration_run_steps").filter((r) => runIds.includes(r.runId) && String(r.stepId).startsWith("abort:") && r.status === "failed") },
+    }),
+  });
+  async function denG2(ref: string) {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("x"), gate("g2"), box("b", [delay("w", 10), otStop("s")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await wait(20);
+    expect(runRow(e.runId).status).toBe("awaiting_confirm");
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    return e;
+  }
+  it("T7B2-P4-VET central's Abort of a run on a node, s not verified (its pins unreadable at central): the trace abort:s 'chuaXacMinh' is central's and stays; the node's picture route does not list the run for it; a press once the read answers sends s once", async () => {
+    const e = await denG2("t2v");
+    h.classifyLoi = true; // central's pin read throws: s not verified
+    const a = await abortRun(e.runId, OWNER, "first");
+    await wait(40);
+    expect(a.ok).toBe(true);
+    expect(sentOf("s"), "not verified: not sent").toEqual([]);
+    expect(hang(e.runId, "abort:s")).toMatchObject({ status: "failed", resultJson: { abortStop: "chuaXacMinh" } });
+    const lap = await docRunAbortCanGuiLaiStop(dbPull([e.runId]) as never, NUT);
+    expect(lap.hang.map((r) => r.a.runId), "no STOP central handed over and could not confirm: not listed for the node's picture").toEqual([]);
+    // a press, the read answers: H22, it goes once
+    h.classifyLoi = false;
+    const a2 = await abortRun(e.runId, OWNER, "press");
+    await wait(40);
+    expect(a2.ok).toBe(true);
+    expect(sentOf("s").filter((x) => x.khongGhi !== true).length).toBe(1);
+    expect(hang(e.runId, "abort:s")?.status).toBe("completed");
+  });
+  it("T7B2-P4-VET đối chứng: central handed s over and it was refused: its abort:s 'failed' lists the run for the node's picture, as before", async () => {
+    const e = await denG2("t2vd");
+    h.tuChoi.set("s", { status: "rejected", error: "INTERLOCK_NOT_MET: refused" });
+    await abortRun(e.runId, OWNER, "first");
+    await wait(40);
+    expect(hang(e.runId, "abort:s")).toMatchObject({ status: "failed", resultJson: { abortStop: "failed" } });
+    const lap = await docRunAbortCanGuiLaiStop(dbPull([e.runId]) as never, NUT);
+    expect(lap.hang.map((r) => r.a.runId)).toEqual([e.runId]);
+  });
+  it("T7B2-PENDING-EDGE an Abort of a live edge walker NOT latched, its STOP answers past the Abort's wait: the edge journals no 'failed' trace for it before its answer (the edge's rows are central's to keep), only the answer", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const d = def("t2p", [gate(), move("r1"), delay("w", 3_000), otStop("s")]);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.slow.set("s", 1_300);
+    let song: Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null = null;
+    await edgeSegment(e, 2, {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running"), "the walker in w");
+        runRow(e.runId).status = "aborted";
+        song = await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+      },
+    });
+    expect((song as Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null)?.abortStops?.pending, "past the Abort's wait").toEqual(["s"]);
+    await waitFor(() => e.records.some((r: any) => r.kind === "abort_stop" && r.stepId === "s"), "the answer", 5_000);
+    await wait(30);
+    expect(e.records.filter((r: any) => r.kind === "abort_stop" && r.stepId === "s").map((r: any) => r.status), "the answer only, no trace before it").toEqual(["completed"]);
+  });
+
+  // ── EDGE-HT (rà lượt sửa 1 T7b-1d): the box row with the words "Run is aborting." from the node, a press at central ─────────────────────────────────────
+  const hopHang = (c: number) => recordEdgeStepRows(fake as never, c, [{ stepId: "b", stepType: "sequence", status: "failed", attempt: 1, error: "Run is aborting.", result: null, startedAt: new Date(), finishedAt: new Date() }] as never);
+  it("T7B2-EDGE-HT a run on a node, its box reported failed with the words of an Abort's cancel, then a press at central: the row reads as cancelled by the Abort, s goes from central (no edge route), once; a second press sends nothing more", async () => {
+    const e = await denG2("t2h");
+    runRow(e.runId).status = "aborted";
+    runRow(e.runId).finishedAt = new Date();
+    await hopHang(e.runId);
+    expect(hang(e.runId, "b")?.error, "the words kept through central").toBe("Run is aborting.");
+    const a = await abortRun(e.runId, OWNER, "press");
+    await wait(40);
+    expect(a.ok).toBe(true);
+    expect(sentOf("s").map((x) => ({ edge: x.edge ?? null, pdu: x.khongGhi !== true })), "once, from central").toEqual([{ edge: null, pdu: true }]);
+    const a2 = await abortRun(e.runId, OWNER, "press again");
+    await wait(40);
+    expect(a2.ok).toBe(true);
+    expect(sentOf("s").length, "nothing more").toBe(1);
+  });
+  it("T7B2-EDGE-HT ADAPTER_OWNED_BY_EDGE: the same press, central's dispatcher queues s for the node: handed over once, nothing confirmed, the answer never says it went", async () => {
+    const e = await denG2("t2ho");
+    runRow(e.runId).status = "aborted";
+    runRow(e.runId).finishedAt = new Date();
+    await hopHang(e.runId);
+    h.chuEdge.set(501, NODE);
+    const a = await abortRun(e.runId, OWNER, "press");
+    await wait(40);
+    expect(a.ok).toBe(true);
+    expect(sentOf("s").map((x) => ({ edge: x.edge ?? null, xep: x.xepChoNut === true })), "once, queued for the node").toEqual([{ edge: null, xep: true }]);
+    expect(a.abortStops?.sent ?? []).not.toContain("s");
+    expect(String(a.message ?? ""), "never says it went").not.toMatch(daGuiChu);
+  });
+  it("T7B2-HT-STORE-EDGE a press at central while the run's edge walker lives in this process (an aborted run, not latched): the press reads the walker's own picture, it is no press over central's rows (no classification of a run not latched, H30 is central's)", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def("t2hs", [gate(), move("r1"), delay("w", 3_000), otStop("s")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    let a: Awaited<ReturnType<typeof abortRun>> | null = null;
+    await edgeSegment(e, 2, {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running"), "the walker in w");
+        runRow(e.runId).status = "aborted";
+        runRow(e.runId).finishedAt = new Date();
+        h.dbThrows = false;
+        try {
+          a = await abortRun(e.runId, OWNER, "press");
+        } finally {
+          h.dbThrows = true;
+        }
+        await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+      },
+    });
+    expect(a!.ok).toBe(true);
+    expect((a!.abortStops as Record<string, unknown> | undefined)?.chuaKhoa, "no press of a run not latched over central's rows").toBeUndefined();
+  });
+  it("T7B2-TRAN-EDGE the sweep of a latched edge walker does not answer within its ceiling: the answer says the sweep is not finished; the edge raises no URGENT of its own (no database there: central tells, from the node's records)", async () => {
+    const x = await songAbort("t2t", () => {
+      h.heSoHan = 0.01; // the ceiling 15·D at 1/100: a hang costs no real seconds
+      h.treoLaStop = () => new Promise<void>(() => undefined);
+    });
+    h.treoLaStop = null;
+    expect(x.song?.abortStops?.quetChuaXong, "the sweep not finished").toBe(true);
+    expect(urgentCua("abortSweepUnfinished"), "no URGENT raised by the edge's sweep").toEqual([]);
+  });
+
+  // ── the picture route (5a): a STOP re-sent from the signed picture (edgeSweepStopRecord) writes no debt row, its failure has its own URGENT ─────────────────────
+  it("T7B2-ANH a STOP re-sent from the node's picture: 'failed' writes no debt row (abort:s1 stays as central left it), one URGENT edge_sweep_stop_failed names s1; 'completed' confirms abort:s1", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def("t2a", [gate(), ot("x"), gate("g2"), otStop("s1")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await wait(20);
+    h.tuChoi.set("s1", { status: "rejected", error: "INTERLOCK_NOT_MET: refused" });
+    await abortRun(e.runId, OWNER, "first");
+    await wait(40);
+    h.tuChoi.clear();
+    const truoc = JSON.stringify(hang(e.runId, "abort:s1"));
+    expect(hang(e.runId, "abort:s1")?.status).toBe("failed");
+    const noTruoc = [...noCua(e.runId)];
+    h.alerts.length = 0;
+    chuanBi(e, 2);
+    (fake as any).execute = async () => []; // the admins' read of applySweepStop (raw SQL): nobody beyond the owner
+    const ban = (seq: number, status: "failed" | "completed") => eventsForNode(NUT, { stream: "events", epoch: EPOCH, records: [{ kind: "sweep_stop", seq, runId: e.runId, stepId: "s1", target: { adapterId: 501 }, ownerEpoch: 1, pictureIssuedAt: Date.now(), status, at: Date.now() }] });
+    const r1 = (await ban(1, "failed")) as Record<string, any>;
+    await wait(20);
+    expect(r1.http).toBe(200);
+    expect(JSON.stringify(hang(e.runId, "abort:s1")), "no debt row written, nothing changed").toBe(truoc);
+    expect([...noCua(e.runId)]).toEqual(noTruoc);
+    expect(h.alerts.filter((a) => a.kind === "edge_sweep_stop_failed").map((a) => String(a.title)), "its own URGENT").toEqual([`STOP not confirmed — run ${e.runId} step s1`]);
+    const r2 = (await ban(2, "completed")) as Record<string, any>;
+    await wait(20);
+    expect(r2.http).toBe(200);
+    expect(hang(e.runId, "abort:s1")?.status, "confirmed").toBe("completed");
+  });
+
+  // ── 4: G4i (3a) — the QT pump's rejection of a latched run is no person's ──────────────────────────────────────────────────────────────────────────────────────
+  async function khoaTaiCong(ref: string) {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def(ref, [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    runRow(c).contextJson = { ...((runRow(c).contextJson as Record<string, unknown> | null) ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() } };
+    h.traTimeout = 1;
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    return c;
+  }
+  it("G4i the QT pump rejects the gate of a latched run (a system rejection, with its compensation hook): not rejected, the run stays awaiting_confirm, nothing sent, no compensation run; a person's rejection then ends it (decision B)", async () => {
+    const c = await khoaTaiCong("t2g");
+    let buTru = 0;
+    const r = await resumeRun(c, { approved: false, note: "QT saga fail at g1 (test)", expectedStepId: "g1" }, QT, {
+      compensate: async () => {
+        buTru++;
+        return "compensated (test)";
+      },
+    });
+    await wait(40);
+    expect(r.ok).toBe(false);
+    expect(r.status, "the answer says where the run is").toBe("awaiting_confirm");
+    expect(runRow(c).status, "the run is not rejected").toBe("awaiting_confirm");
+    expect(buTru, "no business compensation ran").toBe(0);
+    expect(h.sent.map((x) => String(x.stepId)), "nothing sent").toEqual([]);
+    expect(String(r.message), "it waits for a person").toMatch(/person/);
+    // a person rejects: the run ends, its STOP goes (L-7)
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: false, note: "a person", expectedStepId: view.run.currentStepId }, OTHER);
+    await wait(40);
+    expect(runRow(c).status).toBe("aborted");
+  });
+  it("G4i đối chứng: the QT pump rejects the gate of a run NOT latched: rejected as before (aborted, its compensation ran)", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def("t2gd", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    let buTru = 0;
+    await resumeRun(c, { approved: false, note: "QT saga fail at g1 (test)", expectedStepId: "g1" }, QT, {
+      compensate: async () => {
+        buTru++;
+        return "compensated (test)";
+      },
+    });
+    await wait(40);
+    expect(runRow(c).status).toBe("aborted");
+    expect(buTru).toBe(1);
+  });
+
+  // ── 5: RA-B2 (rà T7c-b F2) — the CURRENT behaviour, not the wanted one ──────────────────────────────────────────────────────────────────────────────────────
+  // Plan item 21: a precondition, not a wanted behaviour: an old edge runtime is not connected to a live host (edgeRuntimeLatent) until a push mechanism exists (the edge asks central before the step after a gate).
+  // The census edgeRuntimeLatent.dot8 is the net of that condition. When the push exists, this expectation changes
+  it("RA-B2 (current behaviour, plan item 21) central latches after the old edge runtime's last sync; a person approves the local gate on the edge: the forward command m1 still goes, and no sync carries the flag", async () => {
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    process.env.EDGE_ABORT_POLL_MS = "50";
+    _clearBuffer();
+    seedHalt();
+    h.ghim = PIN_OK;
+    fake.seed(users, [...rows("users"), { id: OWNER.id, role: OWNER.role, isActive: true, name: OWNER.name }]);
+    const d = def("t2rb", [gate(), move("m1")]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "t2rb")!;
+    const C = h.ranhGioi! + 900;
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: "t2rb", status: "running", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: T0, contextJson: {} }]);
+    const log: string[] = [];
+    setCentralSync(async (p) => {
+      const r = await syncRunResult(p as never);
+      log.push(`${String((p as { status?: string }).status)}->${String(r.ok)}/${String((r.data as { abortRequested?: boolean } | undefined)?.abortRequested)}`);
+      return { ack: r.ok === true, abortRequested: (r.data as { abortRequested?: boolean } | undefined)?.abortRequested === true };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await executeAssignedRun({ id: C, workflowId: wf.id, workflowRef: "t2rb", paramsJson: {}, startedBy: OWNER.id });
+      await wait(60);
+      const L = rows("orchestration_runs").find((r) => r.id !== C && r.workflowId === wf.id)!;
+      expect(L.status, "the local run waits at its gate").toBe("awaiting_confirm");
+      // central latches now (state C appears on central)
+      Object.assign(runRow(C), { status: "held", contextJson: { ...((runRow(C).contextJson as Record<string, unknown> | null) ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() } } });
+      const n0 = h.sent.length;
+      const nSync = log.length;
+      const view = (await getRun(L.id, { bindingDigest: true }))!;
+      await resumeRun(L.id, { approved: true, expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+      await wait(80);
+      expect(h.sent.slice(n0).map((x) => `${String(x.stepId)}:${String(x.name)}`), "the forward command goes (CURRENT behaviour)").toContain("m1:run_job");
+      expect(log.slice(nSync).filter((l) => l.endsWith("/true")), "no sync carried the flag before it").toEqual([]);
+    } finally {
+      warn.mockRestore();
+      _clearBuffer();
+    }
   });
 });

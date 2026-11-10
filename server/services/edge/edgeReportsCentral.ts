@@ -52,7 +52,7 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { canhBaoTuAnomalyEdge, maTuChoiCua, nguonCuaKetQua } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { FOE_STOP_NOT_SENT, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, loiChuaRaStop, maTuChoiCua, nguonCuaKetQua, viChuaRaDong, type ViChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, baoKhongXacNhan, dauKhongXacNhan, laHangChuaRa, stopKhongXacMinhEdge, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
 import { commandOf, isRobotKind, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
@@ -297,6 +297,7 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     const stopped = centralStopped(run);
     const edgeMark = (jti: string | null) => ({ nodeId: node.nodeId, claimSeq: req.claimSeq, ...(jti ? { jti } : {}) });
     const khongXacNhan = new Map<string, DangKhongXacNhan>(); // A2(n) T5 — told after the commit: a batch that rolls back told nobody
+    const abortChuaRa = new Map<string, ViChuaRa>(); // A2(n) T7b-2 (H7) — the same: a STOP an edge's Abort could not send, told once the rows are in
 
     const traLoi = await applyStream<EdgeRunReportRecord>(d, node, req.stream, req.epoch, req.records, async (tx, rec, audits) => {
       if (rec.kind === "step") {
@@ -347,10 +348,15 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
       }
       if (rec.kind === "abort_stop") {
         const step = findStep(def.steps, rec.stepId);
-        if (!step || step.type !== "command" || !verifiedStopIds.has(step.id)) {
+        // A2(n) T7b-2 (H7, 5a) — the Abort of a latched edge walker: a STOP that did not go says why, the closed value of the record's own result. Read only from a `failed` record of a step whose own
+        // name says STOP in the definition's snapshot (LaStop, never the edge's word for what a step is), verified or not: the marked route is for a STOP nobody could verify. Its row: state C's code, owed
+        const vi = rec.status === "failed" && step?.type === "command" ? viChuaRaDong((rec.result as { chuaRa?: unknown } | null | undefined)?.chuaRa) : undefined;
+        const coMa = vi !== undefined && step !== undefined && (verifiedStopIds.has(step.id) || (await laStopTheoBuoc(step, machineMap)));
+        if (!step || step.type !== "command" || (!verifiedStopIds.has(step.id) && !coMa)) {
           audits.push({ action: "EDGE_ANOMALY", entity: { type: "orchestration_run", id: runId }, details: { anomaly: "unknown_stop_step", stepId: rec.stepId, seq: rec.seq }, status: "failure" });
           return;
         }
+        if (coMa && vi) abortChuaRa.set(step.id, vi);
         const at = new Date(rec.at);
         await sink.recordEdgeStepRows(tx, runId, [
           {
@@ -360,7 +366,7 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
             attempt: 0,
             startedAt: at,
             finishedAt: at,
-            error: rec.status === "failed" ? "STOP not confirmed by the edge node" : null,
+            error: rec.status === "failed" ? (coMa && vi ? loiChuaRaStop(step.id, "abort", vi) : "STOP not confirmed by the edge node") : null,
             result: { ...(rec.result ?? {}), abortStop: rec.status === "completed" ? "sent" : "failed", stepId: step.id, source: `edge:${node.nodeId}`, approvalSource: "edge", edge: edgeMark(null) },
           },
         ]);
@@ -383,6 +389,12 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     });
     // A2(n) T5 (H16) — after the commit, once per step and form: a replayed record never reaches the handler, a later record of a marked step adds nothing. A mismatch is a person's: what went out may not be a STOP
     if (traLoi.http === 200) {
+      // A2(n) T7b-2 (H7, 5a) — the URGENT of a STOP the edge's Abort could not send: central's own text and key (abortStopNotSent, one per run and step), after the commit; a replayed record reaches no handler
+      for (const [id, vi] of abortChuaRa) {
+        void canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi, owner: run.startedBy ?? null }).then((ben) => {
+          if (!ben) console.error(`[EdgeReports] run ${runId} step ${id}: the URGENT of a STOP the edge's Abort could not send is not stored`);
+        });
+      }
       for (const [id, dang] of khongXacNhan) {
         // A2(n) T7 (H18) — THE URGENT of a marked step, one text and one key with the end gate's, which reads its answer
         void baoKhongXacNhan({ runId, def, stepId: id, dang, claimSeq: req.claimSeq, owner: run.startedBy ?? null }).then((ben) => {

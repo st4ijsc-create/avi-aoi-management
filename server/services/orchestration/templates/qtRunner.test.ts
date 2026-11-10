@@ -184,6 +184,7 @@ import { registerQtTemplates } from "./registerQtTemplates";
 import { QT1_REF } from "./qtTemplates";
 import { startQtRun, resolveQtGate, pumpQtRun } from "./qtRunner";
 import { getRun } from "../foe/foeEngine";
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY } from "../foe/foeKetCucKhongRo"; // A2(n) T7b-2 (G4i)
 
 const ORDER_ID = 11;
 const LINE_ID = 2;
@@ -431,6 +432,21 @@ describe("QT-1 end-to-end trên engine thật (in-memory)", () => {
     } finally {
       h.restore();
     }
+  });
+
+  it("G4i (A2(n) T7b-2, 3a): run đã khoá (một lệnh không rõ kết cục) — từ chối của bơm QT KHÔNG kết thúc run: giữ awaiting_confirm, không bù trừ, câu trả lời nói trạng thái thật (không 'aborted')", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    const run = rows("orchestration_runs").find((r) => r.id === res.runId)!;
+    run.contextJson = { ...((run.contextJson as Row | null) ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() } };
+    const r = await resolveQtGate(res.runId, { approved: false, note: "hủy đơn giữa chừng (test)" });
+    expect(r.ok).toBe(false);
+    expect(r.status, "trạng thái thật, không phải 'aborted'").toBe("awaiting_confirm");
+    expect(String(r.message)).toMatch(/waits for a person/);
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+    expect(svc.transitionLine).not.toHaveBeenCalled();
+    expect((await getRun(res.runId))?.run.status).toBe("awaiting_confirm");
   });
 
   it("fix #6: FORBIDDEN (vai ngoài approverRoles của gate) VẪN nổi lên — không bị nuốt", async () => {

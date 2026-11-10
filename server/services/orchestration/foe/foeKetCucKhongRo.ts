@@ -569,6 +569,17 @@ export function loiChuaRaStop(stopId: string, attempt: number | "abort", vi: ViC
   if (vi.nguon === "tuChoi") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (${lan}): refused before a driver [${vi.ma}].`;
   return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" did NOT go out (${lan}): nobody could decide it [${vi.ma}].`;
 }
+/**
+ * A2(n) T7b-2 (H7, 5a) — the closed value an edge's `abort_stop` record carries in its own `result` (`chuaRa`): a source of the three, a code. Anything else is not one (undefined): never a driver's text, never
+ * a value central did not define. Pure.
+ */
+export function viChuaRaDong(x: unknown): ViChuaRa | undefined {
+  const v = x as { nguon?: unknown; ma?: unknown } | null | undefined;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  if (v.nguon !== "doc" && v.nguon !== "tuChoi" && v.nguon !== "driverLoi") return undefined;
+  if (typeof v.ma !== "string" || !RE_MA.test(v.ma)) return undefined;
+  return { nguon: v.nguon, ma: v.ma };
+}
 /** The source, read back from such a row: a later walk has no memory of the one that wrote it. undefined ⇔ not one. Pure. */
 export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | undefined {
   const m = /(refused before a driver|may have gone out|nobody could decide it) \[([A-Za-z0-9_]{1,64})\]/.exec(String(error ?? ""));
