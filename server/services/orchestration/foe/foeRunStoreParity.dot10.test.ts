@@ -12464,6 +12464,80 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   };
   const TREO_DOC = (() => new Promise<never>(() => undefined)) as never;
   const CEILING = (15 * STOP_DB_STEP_DEADLINE_MS) / 20;
+  /**
+   * T7b-1d lượt sửa 2 (dieu-phoi 10/11) — a ceiling read on a clock of the case's own, not the CPU's: vitest's fake timers over every timer of the engine (withDeadline is setTimeout), the real bounds (no heSoHan), stepped
+   * by `buoc` ms of that clock; the case's set-up is done before on real time. `tra` resolves with the clock's ms at which `p` settled; `den` stops the stepping (or `toi` ms of the clock). The real timers come back after
+   */
+  const dongHoAo = async <T,>(chay: () => Promise<T>, o: { toi: number; buoc: number; den?: () => boolean }) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    try {
+      const t0 = Date.now();
+      let kq: { v: T; luc: number } | null = null;
+      void chay().then((v) => (kq = { v, luc: Date.now() - t0 }));
+      while (Date.now() - t0 < o.toi && !(kq !== null && (o.den?.() ?? true))) await vi.advanceTimersByTimeAsync(o.buoc);
+      return { kq: kq as { v: T; luc: number } | null, het: Date.now() - t0 };
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+  /** ... and of a whole case: `cho` steps the clock until `fn` (or `toi` ms of it), `troi` lets `ms` of it pass. Every timer is the clock's from the first line */
+  const caAo = async (than: (ao: { cho: (fn: () => boolean, nhan: string, toi?: number) => Promise<void>; troi: (ms: number) => Promise<void> }) => Promise<void>) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const BUOC = STOP_DB_STEP_DEADLINE_MS / 50;
+    try {
+      await than({
+        cho: async (fn, nhan, toi = 60 * STOP_DB_STEP_DEADLINE_MS) => {
+          const t0 = Date.now();
+          while (!fn()) {
+            if (Date.now() - t0 > toi) throw new Error(`timed out on the case's clock waiting for: ${nhan}`);
+            await vi.advanceTimersByTimeAsync(BUOC);
+          }
+        },
+        troi: async (ms) => {
+          await vi.advanceTimersByTimeAsync(ms);
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+  it("T7B1D-TREO-TRAN-15D a latched run, its sweep and the URGENT of it both hanging: the answer comes at the ceiling, not after the URGENT's own bound; the URGENT keeps that bound and its own catch; the sweep goes on", async () => {
+    const c = await khoaChuaGiao("d1dtt");
+    ve0();
+    h.classifyLoi = true;
+    const n = moTha();
+    h.treoLaStop = () => n.cho;
+    h.alertTreo = true;
+    const baoLoi = vi.spyOn(console, "error");
+    const dongUrgent = () => baoLoi.mock.calls.filter((x) => /the URGENT of a sweep not finished failed/.test(String(x[0])));
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    let luc = -1;
+    // the clock of the case, the real bounds: 22·D of it is the URGENT's own bound (15·D + 5·D) and room; stepped by 1/20 of D
+    const { kq } = await dongHoAo(
+      () =>
+        abortRun(c, OWNER, "first").then((a) => {
+          luc = dongUrgent().length;
+          return a;
+        }),
+      { toi: 22 * D, buoc: D / 20, den: () => dongUrgent().length > 0 },
+    );
+    expect(kq, "the Abort answered").not.toBeNull();
+    const a = kq!.v;
+    expect(a.abortStops?.quetChuaXong).toBe(true);
+    expect(kq!.luc, "not before the ceiling").toBeGreaterThanOrEqual(15 * D);
+    // dieu-phoi 10/11: the answer's ceiling is 16·D (15·D of the sweep, 1·D of nghiaVuKetThucNguoi). On this clock no slack: what the CPU does costs no time on it
+    expect(kq!.luc, "at most 16·D, not 17·D, not 60·D").toBeLessThanOrEqual(16 * D);
+    expect(luc, "it did not wait for the URGENT's bound").toBe(0);
+    expect(a.message, "nothing says it was told").not.toMatch(/URGENT|alert|told|notified/i);
+    expect(dongUrgent().length, "the URGENT's own bound fired, its own catch (by 22·D of the clock)").toBeGreaterThan(0);
+    expect(h.treoLan, "the URGENT was tried").toBeGreaterThan(0);
+    baoLoi.mockRestore();
+    h.alertTreo = false;
+    h.classifyLoi = false;
+    h.treoLaStop = null;
+    n.tha();
+    await waitFor(() => ids().includes("s2"), "the sweep went on");
+  }, 15_000);
   it("T7B1D-TREO-DAU-VET-N nine traces whose pin read hangs, a press on a run not latched: read side by side: s and rs go after one read, the answer under the ceiling names the nine, in the order of the plan, and sends none of them", async () => {
     const nts = Array.from({ length: 9 }, (_, i) => stopTyped(`nt${i}`));
     const { c, di } = await moDi(def("d1dvn", [gate(), ot("x"), box("b", [delay("w", 300), ...nts, otStop("s"), robotStop("rs")])]));
@@ -12479,21 +12553,29 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     for (const [i, s] of nts.entries()) rows("orchestration_run_steps").push({ id: 910_000 + c * 100 + i, runId: c, stepId: `abort:${(s as { id: string }).id}`, stepType: "command", status: "failed", attempt: 0, error: null, startedAt: new Date(), finishedAt: new Date(), resultJson: { abortStop: "chuaXacMinh", stepId: (s as { id: string }).id } });
     ve0();
     h.ghim = TREO_DOC;
-    h.heSoHan = 0.05;
-    const g = gioGiao();
-    const t0 = Date.now();
-    const { kq: a, ms } = await traLoi(abortRun(c, OWNER, "press"));
-    g.go();
-    expect(a, "the Abort answered").not.toBeNull();
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    let g: ReturnType<typeof gioGiao> | null = null;
+    let t0 = 0;
+    // the case's clock (dongHoAo), the real bounds: one read is 2·D of it, nine one after the other 18·D, the ceiling 15·D
+    const { kq } = await dongHoAo(
+      () => {
+        g = gioGiao();
+        t0 = Date.now();
+        return abortRun(c, OWNER, "press");
+      },
+      { toi: 20 * D, buoc: D / 20 },
+    );
+    g!.go();
+    expect(kq, "the Abort answered").not.toBeNull();
+    const a = kq!.v;
     expect(ids().sort()).toEqual(["rs", "s"]);
-    expect([...a!.abortStops!.sent].sort(), "the answer holds what went").toEqual(["rs", "s"]);
-    // the read 2·D, the verifier and the rows at most what they take here, the preparation at most 3·D: all on the 1/20
-    expect((g.luc.get("s") ?? Infinity) - t0, "s went after one read of 2·D, not nine").toBeLessThan((6 * STOP_DB_STEP_DEADLINE_MS) / 20);
-    expect((g.luc.get("rs") ?? Infinity) - t0).toBeLessThan((6 * STOP_DB_STEP_DEADLINE_MS) / 20);
-    expect(ms, "under the ceiling").toBeLessThan(CEILING);
-    expect(a!.abortStops?.unverified.slice(0, 9), "unread: named, in the order of the plan").toEqual(nts.map((s) => (s as { id: string }).id));
-    for (const n of nts) expect(a!.message).toContain((n as { id: string }).id);
-    expect(a!.abortStops?.quetChuaXong).toBeUndefined();
+    expect([...a.abortStops!.sent].sort(), "the answer holds what went").toEqual(["rs", "s"]);
+    expect((g!.luc.get("s") ?? Infinity) - t0, "s went after one read of 2·D, not nine").toBeLessThanOrEqual(2 * D);
+    expect((g!.luc.get("rs") ?? Infinity) - t0).toBeLessThanOrEqual(2 * D);
+    expect(kq!.luc, "under the ceiling").toBeLessThan(15 * D);
+    expect(a.abortStops?.unverified.slice(0, 9), "unread: named, in the order of the plan").toEqual(nts.map((s) => (s as { id: string }).id));
+    for (const n of nts) expect(a.message).toContain((n as { id: string }).id);
+    expect(a.abortStops?.quetChuaXong).toBeUndefined();
   }, 15_000);
   it("T7B1D-TREO-DOC-LAI-N nine reads of a first Abort hanging: side by side: every trace has landed when it answers, no read left behind the wait for the traces", async () => {
     const nts = Array.from({ length: 9 }, (_, i) => stopTyped(`nt${i}`));
@@ -12502,46 +12584,22 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await wait(10);
     ve0();
     h.ghim = TREO_DOC;
-    h.heSoHan = 0.05;
-    const { kq: a } = await traLoi(abortRun(c, OWNER, "first"));
-    expect(a, "the Abort answered").not.toBeNull();
-    const luc = stepRows(c).filter((r) => r.stepId.startsWith("abort:nt")).length;
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    let luc = -1;
+    // the case's clock: each read of a trace is bounded by D of it, the wait on the traces by 3·D: side by side all nine land at D; one after the other three
+    const { kq } = await dongHoAo(
+      () =>
+        abortRun(c, OWNER, "first").then((a) => {
+          luc = stepRows(c).filter((r) => r.stepId.startsWith("abort:nt")).length;
+          return a;
+        }),
+      { toi: 20 * D, buoc: D / 20 },
+    );
+    expect(kq, "the Abort answered").not.toBeNull();
     h.ghim = PIN_OK;
-    h.heSoHan = 0;
     await di;
     expect(ids()).toEqual(["s"]);
     expect(luc, "all nine, at the answer").toBe(9);
-  }, 15_000);
-  it("T7B1D-TREO-TRAN-15D a latched run, its sweep and the URGENT of it both hanging: the answer comes at the ceiling, not after the URGENT's own bound; the URGENT keeps that bound and its own catch; the sweep goes on", async () => {
-    const c = await khoaChuaGiao("d1dtt");
-    ve0();
-    // this case at 1/5 of the bounds, not 1/20: one D here is 200 ms, so 16·D and 17·D lie 200 ms apart and a lagging timer is not taken for a D (measured at 1/20: 826 ms against 825, idle)
-    h.heSoHan = 0.2;
-    const D5 = STOP_DB_STEP_DEADLINE_MS / 5;
-    h.classifyLoi = true;
-    const n = moTha();
-    h.treoLaStop = () => n.cho;
-    h.alertTreo = true;
-    const baoLoi = vi.spyOn(console, "error");
-    const dongUrgent = () => baoLoi.mock.calls.filter((x) => /the URGENT of a sweep not finished failed/.test(String(x[0])));
-    const { kq: a, ms } = await traLoi(abortRun(c, OWNER, "first"));
-    const luc = dongUrgent().length;
-    expect(a, "the Abort answered").not.toBeNull();
-    expect(a!.abortStops?.quetChuaXong).toBe(true);
-    expect(ms, "not before the ceiling").toBeGreaterThanOrEqual(15 * D5 - 10);
-    // dieu-phoi 10/11: the answer's ceiling is 16·D (15·D of the sweep, 1·D of nghiaVuKetThucNguoi). Slack: half of one D (100 ms): what timers and the fake add past the bounds, and still below 17·D, so one D more is red
-    expect(ms, "at most 16·D, not 17·D, not 60·D").toBeLessThanOrEqual(16 * D5 + D5 / 2);
-    expect(luc, "it did not wait for the URGENT's bound").toBe(0);
-    expect(a!.message, "nothing says it was told").not.toMatch(/URGENT|alert|told|notified/i);
-    await waitFor(() => dongUrgent().length > 0, "the URGENT's own bound fired, its own catch");
-    expect(h.treoLan, "the URGENT was tried").toBeGreaterThan(0);
-    baoLoi.mockRestore();
-    h.alertTreo = false;
-    h.classifyLoi = false;
-    h.treoLaStop = null;
-    n.tha();
-    h.heSoHan = 0;
-    await waitFor(() => ids().includes("s2"), "the sweep went on");
   }, 15_000);
   // the words of a sweep past its ceiling: what is known, on each road they reach a person. Each of them, read
   const chuQuaTran = (chu: string | undefined) => {
@@ -12657,74 +12715,94 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await di.catch(() => undefined);
   }, 15_000);
   it("T7B1D-TREO-CUOI-MOT-TRAN a walk behind an Abort still on its way and then behind its sweep, both hanging: one ceiling from when it began to wait, not two", async () => {
-    h.timeoutDispatch.add("x");
-    h.slow.set("x", 30);
-    const { c, di } = await moDi(def("d1dtm", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
-    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
-    await wait(20);
-    ve0();
-    h.heSoHan = 0.05;
-    h.classifyLoi = true;
-    const n = moTha();
-    h.treoLaStop = () => n.cho;
-    const t0 = Date.now();
-    const dau = abortRun(c, OWNER, "first");
-    const { kq } = await traLoi(di.then(() => "xong", () => "xong"));
-    const ms = Date.now() - t0;
-    await traLoi(dau);
-    h.classifyLoi = false;
-    h.treoLaStop = null;
-    n.tha();
-    h.timeoutDispatch.clear();
-    expect(kq, "the walk ended").toBe("xong");
-    expect(ms, "one ceiling and its last words (1500 ms was two)").toBeLessThan(1.8 * CEILING);
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    let tDi = -1;
+    // the whole case on its own clock, the real bounds: the walk ends 15·D after the Abort (two ceilings: 30·D)
+    await caAo(async (ao) => {
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 30);
+      const { c, di } = await moDi(def("d1dtm", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
+      await ao.cho(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
+      await ao.troi(20);
+      ve0();
+      h.classifyLoi = true;
+      const n = moTha();
+      h.treoLaStop = () => n.cho;
+      const t0 = Date.now();
+      void di.then(() => (tDi = Date.now() - t0), () => (tDi = Date.now() - t0));
+      void abortRun(c, OWNER, "first");
+      await ao.cho(() => tDi >= 0, "the walk ended", 40 * D);
+      h.classifyLoi = false;
+      h.treoLaStop = null;
+      n.tha();
+      h.timeoutDispatch.clear();
+      await ao.troi(5 * D);
+    });
+    expect(tDi, "the walk ended").toBeGreaterThanOrEqual(0);
+    expect(tDi, "it waited for the sweep, to its ceiling").toBeGreaterThanOrEqual(15 * D);
+    expect(tDi, "one ceiling and its last words, not two").toBeLessThanOrEqual(16 * D);
   }, 15_000);
   it("T7B1D-CUOI-CHO-SAP the one ceiling still waits for both: a latched walk whose Abort is on its way (its write held, no sweep yet) does not end before that Abort's sweep has answered, and tells nothing that sweep sends", async () => {
-    h.timeoutDispatch.add("x");
-    h.slow.set("x", 30);
-    const { c, di } = await moDi(def("d1dcs", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
-    await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
-    await wait(20);
-    ve0();
     let xongDi = false;
-    void di.then(() => (xongDi = true), () => (xongDi = true));
-    h.treAborted = 200;
-    const cho = abortRun(c, OWNER, "first");
-    await wait(100);
-    expect(xongDi, "it waits for the Abort on its way").toBe(false);
-    await cho;
-    await di.catch(() => undefined);
-    h.timeoutDispatch.clear();
+    let luc100 = true;
+    let c = 0;
+    // the case's clock: the Abort's write lands at 200 ms of it; at 100 the walk still waits
+    await caAo(async (ao) => {
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 30);
+      const m = await moDi(def("d1dcs", [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])]));
+      c = m.c;
+      await ao.cho(() => stepRows(c).some((r) => r.stepId === "w") && h.traTimeout > 0, "latched, at the delay");
+      await ao.troi(20);
+      ve0();
+      void m.di.then(() => (xongDi = true), () => (xongDi = true));
+      h.treAborted = 200;
+      let tra = false;
+      void abortRun(c, OWNER, "first").then(() => (tra = true));
+      await ao.troi(100);
+      luc100 = xongDi;
+      await ao.cho(() => tra && xongDi, "the Abort answered and the walk ended");
+      h.timeoutDispatch.clear();
+    });
+    expect(luc100, "it waits for the Abort on its way").toBe(false);
     expect(ids()).toEqual(["s"]);
     expect(urgentCua("abortStopNotSent"), "nothing told as not out that the sweep sent").toEqual([]);
   }, 15_000);
   it("T7B1D-CUOI-CHO-QUET ... and for a sweep a later press started while the walk still stands in a command: the walk's end comes after that sweep has answered", async () => {
-    h.timeoutDispatch.add("x");
-    h.slow.set("x", 30);
-    h.slow.set("y", 350);
-    h.tuChoi.set("s", REF);
-    const { c, di } = await moDi(def("d1dcq", [gate(), par("root", [ot("x"), box("b", [move("y"), otStop("s")])])]));
-    await waitFor(() => h.sent.some((x) => x.stepId === "y") && h.traTimeout > 0, "latched, y in flight");
-    await wait(10);
-    ve0();
-    let xongDi = false;
-    const t0 = Date.now();
-    let tDi = 0;
-    void di.then(() => { xongDi = true; tDi = Date.now() - t0; }, () => { xongDi = true; tDi = Date.now() - t0; });
-    await abortRun(c, OWNER, "first");
-    expect(xongDi, "y still answers").toBe(false);
-    h.tuChoi.clear();
-    h.slow.set("s", 700);
-    const bam2 = abortRun(c, OWNER, "press");
-    await waitFor(() => xongDi || Date.now() - t0 > 500, "past y's answer");
-    expect(xongDi, "the press's sweep is still waiting for s").toBe(false);
-    await bam2;
-    await di.catch(() => undefined);
-    h.slow.clear();
-    h.timeoutDispatch.clear();
+    let tDi = -1;
+    let luc500 = true;
+    let lucAbort = true;
+    // the case's clock: y answers at 350 ms of it, the press's STOP at 700 after the press: the walk ends after that, not at y's answer
+    await caAo(async (ao) => {
+      h.timeoutDispatch.add("x");
+      h.slow.set("x", 30);
+      h.slow.set("y", 350);
+      h.tuChoi.set("s", REF);
+      const { c, di } = await moDi(def("d1dcq", [gate(), par("root", [ot("x"), box("b", [move("y"), otStop("s")])])]));
+      await ao.cho(() => h.sent.some((x) => x.stepId === "y") && h.traTimeout > 0, "latched, y in flight");
+      await ao.troi(10);
+      ve0();
+      let xongDi = false;
+      const t0 = Date.now();
+      void di.then(() => { xongDi = true; tDi = Date.now() - t0; }, () => { xongDi = true; tDi = Date.now() - t0; });
+      let dau = false;
+      void abortRun(c, OWNER, "first").then(() => (dau = true));
+      await ao.cho(() => dau, "the first Abort answered");
+      lucAbort = xongDi;
+      h.tuChoi.clear();
+      h.slow.set("s", 700);
+      let bam2 = false;
+      void abortRun(c, OWNER, "press").then(() => (bam2 = true));
+      await ao.cho(() => Date.now() - t0 >= 500, "past y's answer");
+      luc500 = xongDi;
+      await ao.cho(() => bam2 && xongDi, "the press answered and the walk ended");
+      h.slow.clear();
+      h.timeoutDispatch.clear();
+    });
+    expect(lucAbort, "y still answers").toBe(false);
+    expect(luc500, "the press's sweep is still waiting for s").toBe(false);
     expect(tDi).toBeGreaterThanOrEqual(500);
   }, 15_000);
-
   // ── P2-Y: the read of a sweep throws: the reason is true, a press is no promise, and 0 commands is what this shape sends ───────────────────────────────────────
   const HINH_NEM: Array<[string, () => WorkflowStep[], string, () => void, string[]]> = [
     ["CHU-RIENG", () => [gate(), move("x"), box("b", [move("y"), otStop("s")])], "y", () => { h.slow.set("y", 100); h.failPlan.set("y", Infinity); }, []],
@@ -12881,22 +12959,28 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
         h.timeoutDispatch.add("x");
         h.slow.set("x", 30);
       }
-      const { c, di } = await moDi(def(`d1dnq${ks ? "k" : "c"}`, ks ? [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])] : [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
-      await waitFor(() => stepRows(c).some((r) => r.stepId === "w") && (!ks || h.traTimeout > 0), "at the delay");
-      await wait(20);
-      ve0();
-      h.slow.set("s", 200);
-      const p1 = abortRun(c, OWNER, "first");
-      await waitFor(() => h.sent.some((x) => x.stepId === "s"), "s handed over");
-      const a2 = await abortRun(c, OTHER, "joins");
-      await p1;
-      await di.catch(() => undefined);
-      h.slow.clear();
-      h.timeoutDispatch.clear();
+      let a2: Awaited<ReturnType<typeof abortRun>> | null = null;
+      // the case's clock: s answers 200 ms of it after its hand-over, the press comes at its hand-over: inside the first sweep whatever the CPU does
+      await caAo(async (ao) => {
+        const { c, di } = await moDi(def(`d1dnq${ks ? "k" : "c"}`, ks ? [gate(), par("root", [ot("x"), box("b", [delay("w", 300), otStop("s")])])] : [gate(), ot("x"), box("b", [delay("w", 300), otStop("s")])]));
+        await ao.cho(() => stepRows(c).some((r) => r.stepId === "w") && (!ks || h.traTimeout > 0), "at the delay");
+        await ao.troi(20);
+        ve0();
+        h.slow.set("s", 200);
+        let dau = false;
+        void abortRun(c, OWNER, "first").then(() => (dau = true));
+        await ao.cho(() => h.sent.some((x) => x.stepId === "s"), "s handed over");
+        void abortRun(c, OTHER, "joins").then((r) => (a2 = r));
+        let xongDi = false;
+        void di.then(() => (xongDi = true), () => (xongDi = true));
+        await ao.cho(() => a2 !== null && dau && xongDi, "both answered, the walk ended");
+        h.slow.clear();
+        h.timeoutDispatch.clear();
+      });
       expect(ids(), "one command").toEqual(["s"]);
-      expect(a2.abortStops?.sent).toEqual(["s"]);
-      expect(a2.message).not.toMatch(/sent again/);
-      expect(a2.message, "by whom").toMatch(/joined the sweep already under way and sent nothing itself: that sweep sent: s/);
+      expect(a2!.abortStops?.sent).toEqual(["s"]);
+      expect(a2!.message).not.toMatch(/sent again/);
+      expect(a2!.message, "by whom").toMatch(/joined the sweep already under way and sent nothing itself: that sweep sent: s/);
     });
   }
   it("T7B1D-NHAP-QUET the control: a press of its own sweep says what it sent, as before", async () => {
