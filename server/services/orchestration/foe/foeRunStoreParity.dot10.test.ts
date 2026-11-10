@@ -139,6 +139,8 @@ const h = vi.hoisted(() => ({
   ranhGioi: null as null | number,
   /** ... and what landed there, for the proof and the log */
   lac: [] as Array<Record<string, unknown>>,
+  /** ... every such command of the file, never cleared: the block's afterAll checks them for type (1) (dieu-phoi 10/11: nothing kept apart is dropped silently) */
+  lacTatCa: [] as Array<Record<string, unknown>>,
   soCai: null as null | Map<string, { ok: boolean; simulated: boolean; status: string; dangBay?: boolean; kq: Record<string, any> }>,
 }));
 
@@ -254,7 +256,10 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
   // A2(n) T7b-1d lượt sửa 4 (B-4) — every command the fake hands over is recorded here: an older run's past the fence lands apart
   const ghiLenh = (x: Record<string, unknown>) => {
     const so = /^run(\d+)-/.exec(String(x.key));
-    if (h.ranhGioi !== null && so && Number(so[1]) < h.ranhGioi) h.lac.push(x);
+    if (h.ranhGioi !== null && so && Number(so[1]) < h.ranhGioi) {
+      h.lac.push(x);
+      h.lacTatCa.push(x);
+    }
     else h.sent.push(x);
   };
   const adapter = (kind: string) => ({
@@ -11020,9 +11025,18 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   const LA_STOP = new Set(["abort", "stop", "e_stop"]);
   // fix 2 — a run id of its own in each case: the engine's sweep registry is by run id and outlives a case: a sweep a hanging case leaves behind must not be joined by the next (measured: 15 s per case behind T7B1D-TREO-DUOI-WALKER)
   let lanCa = 0;
+  // lượt sửa 4 (B-4, dieu-phoi 10/11): which case made which runs: a command kept apart is told by the case that left its walker behind
+  const caCuaRun: Array<{ tu: number; ten: string }> = [];
+  const tenCaCua = (key: unknown) => {
+    const so = Number(/^run(\d+)-/.exec(String(key))?.[1] ?? NaN);
+    let ten = "?";
+    for (const x of caCuaRun) if (x.tu <= so) ten = x.ten;
+    return ten;
+  };
   beforeEach(() => {
     // lượt sửa 4 (B-4): this case's runs start here; an older run's command lands apart (h.lac), never in this case
     h.ranhGioi = nhayId(++lanCa * 1000);
+    caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?" });
     h.lac.length = 0;
     seedHalt();
     h.ghim = PIN_OK;
@@ -11038,15 +11052,23 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       if (h.lac.length) console.log(`[T7B1D lac] ${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 60)}: commands of an older run, kept apart: ${h.lac.map((x) => `${String(x.key)}:${String(x.name)}`).join(" ")}`);
     }
   });
-  const kiemLoai1 = () => {
-    const sau = h.sent.filter((x) => x.sauKhoa === true);
-    const ghim = (x: Record<string, unknown>) => {
-      if (x.robotId != null) return x.name === "abort";
-      const w = (x.writes ?? []) as Array<{ tagKey: string }>;
-      return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
-    };
-    expect(sau.filter((x) => !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+  // THE predicate of type (1): handed over after the latch and no pinned STOP (the dispatcher's own refusal, khongGhi, wrote nothing). One, for this case's commands and for those kept apart
+  const ghim = (x: Record<string, unknown>) => {
+    if (x.robotId != null) return x.name === "abort";
+    const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+    return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
   };
+  const laLoai1 = (x: Record<string, unknown>) => x.sauKhoa === true && !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true;
+  const kiemLoai1 = () => {
+    expect(h.sent.filter(laLoai1).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+  };
+  /** every command kept apart in the file that is of type (1), with the case that left its walker behind. A pinned STOP kept apart is only logged */
+  const kiemLac = () => h.lacTatCa.filter(laLoai1).map((x) => `${String(x.key)}:${String(x.name)} (a run of "${tenCaCua(x.key)}")`);
+  afterAll(() => {
+    console.log(`[T7B1D lac tong] ${h.lacTatCa.length} commands kept apart in the block: ${h.lacTatCa.map((x) => `${String(x.key)}:${String(x.name)}`).join(" ") || "-"}`);
+    // after every clean-up: what the fence kept apart is checked as this case's own would be, by the case that made it
+    expect(kiemLac(), "a command kept apart (a walker an earlier case left alive) is no pinned STOP and went after the latch").toEqual([]);
+  });
 
   // ── lượt sửa 4 (B-4): a case that goes red half-way leaves nothing behind it. Run with T7B1D_EP_DO=1 to force the first red (never in the suite): the second must stay green ───
   const EP_DO = process.env.T7B1D_EP_DO === "1";
@@ -11068,6 +11090,12 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(ids(), "nothing of the older run here").not.toContain("nt");
     if (EP_DO) expect(h.lac.map((x) => String(x.stepId)), "the older walker did send, after its case: kept apart").toContain("nt");
     else expect(h.lac, "no older walker").toEqual([]);
+  });
+  it("T7B1D-DON-C the check of what was kept apart: under T7B1D_EP_DO=1 it finds the older walker's 'nt' (no pinned STOP, after this run's latch) and names the case that left it, DON-A; otherwise nothing is kept apart of type (1)", async () => {
+    if (EP_DO) {
+      await waitFor(() => h.lacTatCa.some((x) => x.stepId === "nt"), "the older walker's command, kept apart");
+      expect(kiemLac(), "found, by the case that made the run").toEqual([expect.stringContaining('(a run of "T7B1D-DON-A')]);
+    } else expect(kiemLac()).toEqual([]);
   });
 
   // ── the fake (fix 1, step 1): what a caller holds is its own, as with a database ────────────────────────────────────────────────────────────────────────────────────
