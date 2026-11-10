@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, coBaoCao, locCo, loiThamSo, nhanTienTrinhNang, tenBaoCao, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, coBaoCao, locCo, loiThamSo, nhanTienTrinhNang, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -363,10 +363,27 @@ test("locCo lớp GIÁ TRỊ: chỉ rỗng, số ngắn, từ trong tập cố �
 
 test("locCo: 48 cờ thật với giá trị dạng cờ đều vào báo cáo; biến ngoài tiền tố không vào cả co lẫn boQua", () => {
   const giaTri = ["1", "0", "0.5", "true", "false", "", "persona-khong-khoi", "code", "120000", "-1", "khoi-khong-persona", "chat", "TRUE", "3600000"];
-  const env = Object.fromEntries(CO_THAT_48.map((k, i) => [k, giaTri[i % giaTri.length]]));
+  const env = { ...Object.fromEntries(CO_THAT_48.map((k, i) => [k, giaTri[i % giaTri.length]])), AI_AGENT_AN_CONG_CU: "find_symbol,search_code,search_docs" };
   const r = locCo({ ...env, ...BI_MAT, PATH: "/usr/bin" });
   assert.deepEqual(r.co, Object.fromEntries(Object.entries(env).sort()));
   assert.deepEqual(r.boQua, ["AI_AGENTIC_ACCESS_TOKEN", "AI_AGENT_DB_PASSWORD", "AI_AGENT_SECRET", "AI_CODING_API_KEY"]);
+});
+
+test("tenCongCuBiet đọc TEN_CONG_CU thật trong shared/agentCore/congCu.ts", () => {
+  const ten = tenCongCuBiet();
+  for (const t of ["read_file", "find_symbol", "search_code", "search_docs", "lookup_api", "read_output"]) assert.ok(ten.has(t), t);
+  assert.ok(ten.size >= 19, String(ten.size));
+  for (const t of ten) assert.match(t, /^[a-z_]+$/);
+});
+
+test("AI_AGENT_AN_CONG_CU: luật riêng — danh sách tool biết trước phân tách bằng phẩy thì vào; ngoài tập/sai dạng thì chỉ ghi tên", () => {
+  for (const v of ["find_symbol,search_code,search_docs", "lookup_api", "find_symbol", ""]) assert.deepEqual(locCo({ AI_AGENT_AN_CONG_CU: v }), { co: { AI_AGENT_AN_CONG_CU: v }, boQua: [] }, v);
+  for (const v of ["find_symbol,khong_co_tool", "find_symbol, search_code", "find_symbol,,search_code", "FIND_SYMBOL", "sk_live_abc", "0", "true", "find_symbol;rm"]) {
+    const r = locCo({ AI_AGENT_AN_CONG_CU: v });
+    assert.deepEqual(r, { co: {}, boQua: ["AI_AGENT_AN_CONG_CU"] }, v);
+  }
+  // Luật riêng không mở rộng sang cờ khác: danh sách tool dưới tên cờ thường vẫn bị loại.
+  assert.deepEqual(locCo({ AI_AGENT_NEN_MOC: "find_symbol" }).co, {});
 });
 
 test("báo cáo không chứa bí mật trong env; khoá llama-server THẬT SỰ được gửi trong tiêu đề gọi model", async () => {
