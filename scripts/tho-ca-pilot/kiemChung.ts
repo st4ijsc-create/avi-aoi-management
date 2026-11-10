@@ -67,6 +67,16 @@ export interface KetQuaKiem {
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
+/**
+ * `--cho-phep-db`: lọc chuỗi kết nối CSDL (có thể kèm mật khẩu) khỏi ĐẦU RA LỆNH KIỂM trước khi nó vào lời nhắc của model, JSON `kiem` hay nhật ký.
+ * Postgres.js/drizzle có thể in URL trong lỗi kết nối. Chỉ áp cho đầu ra lệnh kiểm do BỘ CHẠY chạy; công cụ model tự gọi không đi qua đây.
+ */
+export function loaiUrlCsdl(s: string): string {
+  return s
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://***")
+    .replace(/\b[\w.%-]+:[^\s@/:]+@[\w.-]+(?::\d+)?(?:\/\S*)?/g, "***");
+}
+
 function docDem(phan: string): DemVitest {
   const lay = (tu: string) => {
     const m = new RegExp(`(\\d+)\\s+${tu}`).exec(phan);
@@ -287,7 +297,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const sach = boMau(dau);
+      const sach = loaiUrlCsdl(boMau(dau));
       xong({
         lenh,
         exit,
@@ -302,7 +312,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     try {
       con = spawn(lenh, { cwd: wt, env, shell: true, windowsHide: true });
     } catch (e) {
-      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: String(e) });
+      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: loaiUrlCsdl(String(e)) });
       return;
     }
     const dongHo = setTimeout(() => {
@@ -312,7 +322,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     }, Math.max(1, hanGiay) * 1000);
     con.stdout?.on("data", (b) => (dau += String(b)));
     con.stderr?.on("data", (b) => (dau += String(b)));
-    con.on("error", (e) => ketThuc(null, String(e)));
+    con.on("error", (e) => ketThuc(null, loaiUrlCsdl(String(e))));
     con.on("close", (ma) => ketThuc(hetGio ? null : ma));
   });
 
