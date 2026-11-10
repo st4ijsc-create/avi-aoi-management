@@ -214,7 +214,8 @@ function authHeaders(env: NodeJS.ProcessEnv): Record<string, string> {
  * toàn bộ phép thăm dò bị chặn bởi `timeoutMs` — kể cả khi server nhận TCP rồi treo không trả lời
  * (chính là lớp lỗi mà `probeHealthy` của `aiLlamaServerClient` đã phải vá ở doc69 G2-6).
  */
-async function defaultProbeLlamaServer(
+/** Xuất cho lưới (khoaLlamaServer.noiGoi.test): ghim tiêu đề khoá ở /health + /props. */
+export async function defaultProbeLlamaServer(
   baseUrl: string,
   timeoutMs: number,
   env: NodeJS.ProcessEnv = process.env,

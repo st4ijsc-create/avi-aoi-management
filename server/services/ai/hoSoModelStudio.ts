@@ -57,7 +57,8 @@ const soDuong = (x: unknown) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-async function docProps(): Promise<HoSoModel["dangPhucVu"]> {
+/** Xuất cho lưới (khoaLlamaServer.noiGoi.test): ghim tiêu đề khoá ở /props. */
+export async function docProps(): Promise<HoSoModel["dangPhucVu"]> {
   if (String(process.env.LLAMA_SERVER_ENABLED ?? "").toLowerCase() !== "true") return { trangThai: "tat", lyDo: "LLAMA_SERVER_ENABLED" };
   const url = (process.env.LLAMA_SERVER_URL || "http://127.0.0.1:8091").replace(/\/+$/, "");
   try {
