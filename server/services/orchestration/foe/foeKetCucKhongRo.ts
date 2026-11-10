@@ -357,9 +357,15 @@ export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: b
   return ben ? "chuaRaKhongHan" : "chuaRa15";
 }
 
+/**
+ * T7b-1d lượt sửa 4 (H34, dieu-phoi 10/11) — where the window of a press starts, as the code counts it: the run's `finishedAt` (abortResendAllowed), written by the Abort, or by the rejection of a gate that aborted the
+ * run (rejectGate). Every word that names the 15 minutes names this start
+ */
+export const MOC_CUA_SO = "the Abort (or the gate rejection) that aborted the run";
+
 /** T7b-1d lượt sửa 2 (H32) — what a later press can do when a read failed: it may send, it may not reach it (P2-Y: a container ended in another step's words), and the window is an upper limit, never a promise (as H28). */
 export function chuBamSauKhongDoc(): string {
-  return `A further press of Abort may send it but may not reach it, and after ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes none can be counted on`;
+  return `A further press of Abort may send it but may not reach it, and none can be counted on after ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}`;
 }
 
 /** A2(n) T7b-1c (dieu-phoi 09/11) — an Abort of a run that could not read its definition: no step to name, and the 15 minutes do not stretch. The URGENT and the answer say the same. T7b-1d lượt sửa 2 — no press promised: chuBamSauKhongDoc. */
@@ -399,7 +405,7 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   const chu = a.chuAbort ?? "chuaRaKhongHan";
   // T7b-1d lượt sửa 3 (F1, dieu-phoi 10/11, (a)) — "no time limit" is of the debt while it stands. A press that reads it as no pinned STOP ends it (C-CLR); a pin set again after that is sent only within the window of the Abort (H31):
   // the upper limit is said, nothing is promised past it. One key, as before
-  const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of the Abort: past that, check the machine on site and use its direct STOP / E-STOP.`;
+  const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO}: past that, check the machine on site and use its direct STOP / E-STOP.`;
   // H28 (dieu-phoi 09/11) — a debt durable nowhere: a press may send it (the body of a container: it does) or may not reach it (a compensation not due): no promise, no minutes
   const han = `This could not be recorded: a further press of Abort may send it, but may not reach it: check the machine on site and ${tay}.`;
   // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
@@ -410,7 +416,7 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   if (chu === "coTheKhongHan" || chu === "coThe15") return [`run aborted, STOP ${id} may have gone out`, `The run is aborted. Its STOP ${id} was handed over earlier with no answer, so it may have gone out: check the machine on site. The Abort's new hand-over was refused or got no answer${ma}. ${chu === "coTheKhongHan" ? khongHan : han}`];
   if (chu === "khongDocKhongHan" || chu === "khongDoc15") return [`run aborted, STOP ${id}: its records could not be read`, `The run is aborted. Its records could not be read, so whether STOP ${id} went earlier is not known: check the machine on site. The Abort's hand-over was refused or got no answer${ma}. ${chu === "khongDocKhongHan" ? khongHan : han}`];
   // T7b-1d (H22, KS-UNV) — the Abort never handed it over: not "refused", and a press sends it only if its read finds a pinned STOP
-  if (chu === "khongXacMinhKhongHan" || chu === "khongXacMinh15") return [`run aborted, step ${id} NOT sent: not verified as a pinned STOP`, `The run is aborted. The Abort could not verify step ${id} as a pinned STOP and did NOT send it. ${chu === "khongXacMinhKhongHan" ? khongHan : han} If that read finds no pinned STOP, nothing is sent.`];
+  if (chu === "khongXacMinhKhongHan" || chu === "khongXacMinh15") return [`run aborted, step ${id} NOT sent: not verified as a pinned STOP`, `The run is aborted. The Abort could not verify step ${id} as a pinned STOP and did NOT send it. ${chu === "khongXacMinhKhongHan" ? khongHan : `${han} If a press finds it not pinned, nothing is sent.`}`];
   const sau = chu === "chuaRaKhongHan" ? khongHan : han;
   if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
   return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];

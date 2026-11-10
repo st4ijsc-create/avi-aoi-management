@@ -101,7 +101,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -6236,12 +6236,12 @@ function chuBamLai(runId: number, r: AbortStopReport, chuaKhoa = false): string 
   cau.push(...cauCoTheDaRa(r));
   const phut = Math.round(ABORT_RESEND_WINDOW_MS / 60_000);
   const conBen = r.failed.filter((id) => !r.khongBen?.includes(id));
-  if (conBen.length) cau.push(chuaKhoa ? `STOP steps refused or not answered: ${conBen.join(", ")}: press Abort again within ${phut} minutes; past that check the machine on site.` : `STOP steps refused or not answered: ${conBen.join(", ")}; they stay owed unless a later press sends them.`);
+  if (conBen.length) cau.push(chuaKhoa ? `STOP steps refused or not answered: ${conBen.join(", ")}: press Abort again within ${phut} minutes of ${MOC_CUA_SO}; past that check the machine on site.` : `STOP steps refused or not answered: ${conBen.join(", ")}; they stay owed unless a later press sends them.`);
   if (r.khongBen?.length) cau.push(chuKhongBen(r.khongBen));
   if (r.pending.length) cau.push(`STOP steps with no answer yet: ${r.pending.join(", ")}.`);
   const khongGuiLai = new Set(r.khongGuiLai ?? []);
   const chuaXacMinh = r.unverified.filter((id) => !r.khongBen?.includes(id) && !khongGuiLai.has(id));
-  if (chuaXacMinh.length) cau.push(`Could not be verified as a pinned STOP: ${chuaXacMinh.join(", ")}: not sent; a later press${chuaKhoa || chuaXacMinh.some((id) => pl[id]?.lop === "xong") ? ` within ${phut} minutes` : ""} sends it if its read finds a pinned STOP.`);
+  if (chuaXacMinh.length) cau.push(`Could not be verified as a pinned STOP: ${chuaXacMinh.join(", ")}: not sent; a later press${chuaKhoa || chuaXacMinh.some((id) => pl[id]?.lop === "xong") ? ` within ${phut} minutes of ${MOC_CUA_SO}` : ""} sends it if its read finds a pinned STOP.`);
   // T7b-1d lượt sửa 3 (F1, F7) — what a later press does not send, said so: never promised
   const quaCua = (ds: readonly string[], dau: string) => `${dau}: ${ds.join(", ")}: not sent, and a later press does not send it (past the window for a pin set again): check the machine on site and use its direct STOP / E-STOP.`;
   const ngoaiCua = r.unverified.filter((id) => khongGuiLai.has(id));
@@ -7265,7 +7265,7 @@ export async function resendStopsOfAbortedRun(picture: EdgeSweepPicture, user: F
       status: "aborted",
       reason: FOE_RESEND_TOO_OLD,
       resend: true,
-      message: `The STOP picture of run ${runId} is older than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes — its STOP steps are not sent again. To stop equipment now, use the machine's direct STOP / E-STOP.`,
+      message: `Run ${runId} was aborted more than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes ago, counted from the abort its STOP picture carries (from the picture itself when that is unknown) — its STOP steps are not sent again. To stop equipment now, use the machine's direct STOP / E-STOP.`,
     };
   }
   store.auditAbort(user, runId, "abortStopResend", { resend: true, outcome: "started", abortedAt, pictureIssuedAt: picture.issuedAt });

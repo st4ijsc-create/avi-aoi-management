@@ -10531,7 +10531,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(chu).toContain(`could not read the definition of run ${c}`);
     expect(chu).toContain("a STOP may still not be out");
     expect(chu).toContain("may not reach it"); // H32, dieu-phoi 09/11: was "press Abort again within 15 minutes"
-    expect(chu).toContain("after 15 minutes none can be counted on"); // H32: was "after that check the machine on site"
+    expect(chu).toContain("none can be counted on after 15 minutes from the Abort (or the gate rejection) that aborted the run"); // H34, dieu-phoi 10/11: was "after 15 minutes none can be counted on"; H32: was "after that check the machine on site"
     expect(chu).toContain("Check the machine on site");
     expect(String(u[0]!.dedupKey).split(":")[2]).toBe("?");
     expect(u[0]!.khuTrungBenVung, "durable").toBeDefined();
@@ -11226,7 +11226,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
           if (urg === "Uv") {
             expect(chu).toMatch(/could not verify/);
             expect(chu).toMatch(/did NOT send/);
-            expect(chu).toMatch(/finds no pinned STOP, nothing is sent/);
+            expect(chu).toMatch(/If a press finds it not pinned, nothing is sent/); // B-1, lượt sửa 4: was /finds no pinned STOP, nothing is sent/
             expect(chu).not.toMatch(/refused or got no answer/);
           } else expect(chu).not.toMatch(/could not verify/);
         }
@@ -11508,7 +11508,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       expect(chu).toMatch(/did NOT send/);
       expect(chu).toMatch(/press Abort again/);
       expect(chu).toMatch(/no time limit/);
-      expect(chu).toMatch(/finds no pinned STOP, nothing is sent/);
+      expect(chu).toMatch(/If a press finds it not pinned, nothing is sent/); // B-1, lượt sửa 4: was /finds no pinned STOP, nothing is sent/
       if (ngoai) quaCuaSo(c);
       await bam(c);
       expect(pdu("s").length).toBe(1);
@@ -12126,7 +12126,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(a.message).toMatch(/could not read the definition/);
     expect(a.message).toMatch(/may not reach it/); // H32, dieu-phoi 09/11: was /press Abort again within 15 minutes/
-    expect(a.message).toMatch(/after 15 minutes none can be counted on/);
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
     expect(h.alerts.map((x) => x.kind), "H23").toEqual([]);
     expect(ids()).toEqual([]);
     expect(hang(c, "b")?.error).toBe("Run is aborting.");
@@ -12840,7 +12840,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       expect(a.message).toMatch(/could not read the definition/);
       expect(a.message, "no promise").not.toMatch(/press Abort again/);
       expect(a.message).toMatch(/may not reach it/);
-      expect(a.message, "an upper limit, not a promise").toMatch(/after 15 minutes none can be counted on/);
+      expect(a.message, "an upper limit, not a promise").toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
       expect(a.message, "the other road's words").not.toMatch(/has not finished/);
       const a2 = await bam(c);
       expect(ids()).toEqual(diSau);
@@ -12863,7 +12863,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.message).toMatch(/records could not be read/);
     expect(a.message, "no promise").not.toMatch(/press Abort again/);
     expect(a.message).toMatch(/may not reach it/);
-    expect(a.message).toMatch(/after 15 minutes none can be counted on/);
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
     expect(a.message, "the other road's words").not.toMatch(/has not finished/);
     expect(ids()).toEqual([]);
   });
@@ -12927,7 +12927,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.unverified).toEqual(["s"]);
     expect(a.message).toMatch(/Could not be verified as a pinned STOP: s/);
     expect(a.message).not.toMatch(/hold no STOP step owed|owes no STOP/);
-    expect(a.message, "the window is what holds a later press").toMatch(/within 15 minutes/);
+    expect(a.message, "the window is what holds a later press, from the Abort").toMatch(/within 15 minutes of the Abort \(or the gate rejection\) that aborted the run sends it/);
     expect(a.message).toMatch(/if its read finds a pinned STOP/);
     h.classifyLoi = false;
     h.dispatcherKhongDoc = false;
@@ -12956,7 +12956,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(urgS.map((x) => x.dedupKey), "one URGENT of s, one key").toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:chot`]);
     const chuS = `${urgS[0]!.title} ${urgS[0]!.message}`;
     expect(chuS).toContain('step "s"');
-    expect(chuS, "the upper limit, as ruled").toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort: past that, check the machine on site and use its direct STOP / E-STOP.");
+    expect(chuS, "the upper limit, as ruled").toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort (or the gate rejection) that aborted the run: past that, check the machine on site and use its direct STOP / E-STOP.");
+    expect(chuS, "B-1: no sentence left pointing at no read").not.toContain("If that read finds");
     let soUrgS = urgS.length;
     ghimHalt(false);
     h.ghim = KHONG_GHIM;
@@ -12999,7 +13000,62 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const u = veBuoc("s2");
     expect(u.map((x) => x.dedupKey)).toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s2:-:chot`]);
     expect(`${u[0]!.title} ${u[0]!.message}`).toContain("there is no time limit on this STOP");
-    expect(`${u[0]!.title} ${u[0]!.message}`).toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort: past that, check the machine on site and use its direct STOP / E-STOP.");
+    expect(`${u[0]!.title} ${u[0]!.message}`).toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort (or the gate rejection) that aborted the run: past that, check the machine on site and use its direct STOP / E-STOP.");
+  });
+  it("T7B1D-H31-K-MOC-ABORT the window counts from the Abort: pressed at minute 14, its read lost, the words name the Abort as the start; at minute 16, read and pinned, s goes nowhere and nothing of s is promised", async () => {
+    h.timeoutDispatch.add("x");
+    h.slow.set("x", 120);
+    const { c, di } = await moDi(def("d1dh3m", [gate(), par("root", [move("x"), box("b", [delay("w", 300), otStop("s"), robotStop("rs")])])]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    await wait(10);
+    ve0();
+    h.classifyLoi = true;
+    h.tuChoi.set("rs", REF);
+    await abortRun(c, OWNER, "first");
+    h.classifyLoi = false;
+    await di;
+    await wait(60);
+    h.timeoutDispatch.clear();
+    ghimHalt(false);
+    h.ghim = KHONG_GHIM;
+    await bam(c);
+    expect(hang(c, "abort:s")?.status, "read: no pinned STOP").toBe("skipped");
+    ghimHalt(true);
+    h.classifyLoi = true;
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.dispatcherKhongDoc = true;
+    runRow(c).finishedAt = new Date(Date.now() - 14 * 60_000);
+    const a = await bam(c);
+    expect(ids()).toEqual(["rs"]);
+    expect(a.message, "minute 14: the start of the window is the Abort").toMatch(/s: not sent; a later press within 15 minutes of the Abort \(or the gate rejection\) that aborted the run sends it if its read finds a pinned STOP\./);
+    h.classifyLoi = false;
+    h.dispatcherKhongDoc = false;
+    h.dispatcherThat = false;
+    h.ghim = PIN_OK;
+    runRow(c).finishedAt = new Date(Date.now() - 16 * 60_000);
+    const a2 = await bam(c);
+    expect(ids(), "minute 16, read and pinned: H31: s does not go").toEqual(["rs"]);
+    expect(pdu("s")).toEqual([]);
+    expect(a2.message).toMatch(/Read as a pinned STOP again: s: not sent, and a later press does not send it/);
+    expect(a2.message, "nothing of s promised").not.toMatch(/\bs\b[^.]*: not sent; a later press[^.]* sends it/);
+    h.tuChoi.clear();
+  });
+  it("T7B1D-MOC-TU-CHOI-GATE a run a rejected gate aborted: the window counts from that rejection (its finishedAt), and the words name it", async () => {
+    const c = await centralRun(def("d1dmtg", [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+    await wait(30);
+    ve0();
+    h.tuChoi.set("s", REF);
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    const luc = Date.now();
+    await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER);
+    await wait(40);
+    expect(runRow(c).status).toBe("aborted");
+    expect(Math.abs(new Date(runRow(c).finishedAt).getTime() - luc), "the window's start is the rejection").toBeLessThan(2_000);
+    const a = await bam(c);
+    expect(ids(), "refused again").toEqual(["s"]);
+    expect(a.message).toMatch(/s: press Abort again within 15 minutes of the Abort \(or the gate rejection\) that aborted the run; past that check the machine on site\./);
+    h.tuChoi.clear();
   });
   it("T7B1D-H31-K the control: a step that went on an earlier press, the read lost: it is not called unverified, and nothing is promised for it", async () => {
     h.timeoutDispatch.add("x");
@@ -13456,7 +13512,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(urgentCua("abortDefUnread").length).toBe(1);
     expect(a.message).toMatch(/could not read the definition/);
-    expect(a.message).toMatch(/after 15 minutes none can be counted on/); // H32, dieu-phoi 09/11: was /within 15 minutes/
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/); // H32, dieu-phoi 09/11: was /within 15 minutes/
     expect(ids()).toEqual([]);
     quaCuaSo(c);
     const a2 = await bam(c, "past");
