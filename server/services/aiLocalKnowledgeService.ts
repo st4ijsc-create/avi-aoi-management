@@ -249,6 +249,11 @@ export interface KbQueryContext {
    */
   kiemBienDichST?: false;
   /**
+   * ★ T1 (2026-11-10) — bật tự kiểm mã THEO LƯỢT: chỉ `true` có nghĩa, và CHỈ khi máy chủ đặt `AI_CHAT_TU_KIEM_MA=theo-luot`
+   * (nhánh "bật" của A/B trên CÙNG server). Cờ env vắng / `0` / `1` ⇒ trường này bị BỎ QUA.
+   */
+  tuKiemMa?: true;
+  /**
    * ★ Đợt 9 (2026-10-23) — SERVER-ONLY: model đã định tuyến theo vai trò cho lượt (trợ lý theo vai trò, `aiLocalKnowledgeCoding.streamCodingAnswer`).
    * `parseContext` KHÔNG BAO GIỜ đặt ô này (dựng ctx từng ô) ⇒ client không chọn được model qua đây.
    */
@@ -3561,6 +3566,11 @@ export type StreamEvent =
        * header `x-st4i-bien-dich` của /v1). Vắng = vòng không chạy. Kiểm nhánh A/B + tra cứu; UI không cần đọc.
        */
       kiemBienDichST?: string;
+      /**
+       * ★ T1 (2026-11-10) — tóm tắt máy đọc của vòng TỰ KIỂM MÃ (`ok=…; trang-thai=…; ngon-ngu=…; vong=…; sua=…; con=…; ky-tu-them=…; ms=…`).
+       * Vắng = cờ `AI_CHAT_TU_KIEM_MA` tắt. UI không cần đọc; do-model đọc để ghi số vòng + chi phí thêm.
+       */
+      tuKiemMa?: string;
       /** ★ Hoá đơn nguồn dữ liệu — THÊM MỚI, thuần bổ sung: consumer SSE cũ đọc
        *  `done` theo từng ô sẽ bỏ qua ô lạ mà không đổi hành vi. */
       dataCitations?: KbDataCitation[];
