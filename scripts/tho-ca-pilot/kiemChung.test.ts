@@ -119,13 +119,13 @@ describe("quyetKetCuc — L3a", () => {
 describe("chayLenhKiem — tiến trình thật (không vitest lồng)", () => {
   it("★ chạy với env DB CHẾT, đọc đầu ra, mã thoát", async () => {
     const k = await chayLenhKiem(
-      `node -e "console.log(process.env.DATABASE_URL + '|' + process.env.TEST_DATABASE_URL); console.log(' Test Files  1 passed (1)'); console.log('      Tests  3 passed (3)')"`,
+      `node -e "const U=function(s){const u=new URL(s);return u.host+u.pathname}; console.log(U(process.env.DATABASE_URL) + '|' + U(process.env.TEST_DATABASE_URL)); console.log(' Test Files  1 passed (1)'); console.log('      Tests  3 passed (3)')"`,
       process.cwd(),
       60,
     );
     expect(k.exit).toBe(0);
     expect(k.hetGio).toBe(false);
-    expect(k.duoi).toContain("127.0.0.1:9/aoi_management|postgresql://pilot_kiem:x@127.0.0.1:9/aoi_management_test");
+    expect(k.duoi).toContain("127.0.0.1:9/aoi_management|127.0.0.1:9/aoi_management_test"); // in host+đường, không in URL (đầu ra lệnh kiểm được lọc chuỗi kết nối)
     expect(k.vitest.ca).toEqual({ dat: 3, hong: 0, boQua: 0, tong: 3 });
   });
   it("mã thoát khác 0 được báo đúng", async () => {
@@ -222,7 +222,7 @@ describe("envSachChoTienTrinhCon — test do model viết KHÔNG được thừa
     process.env.LLAMA_SERVER_API_KEY_FILE = "D:/bi-mat/khoa-that.txt";
     process.env.LLAMA_SERVER_API_KEY = "sk-that-123";
     try {
-      const k = await chayLenhKiem(`node -e "console.log('F=' + process.env.LLAMA_SERVER_API_KEY_FILE + ' K=' + process.env.LLAMA_SERVER_API_KEY + ' D=' + process.env.DATABASE_URL)"`, process.cwd(), 60);
+      const k = await chayLenhKiem(`node -e "console.log('F=' + process.env.LLAMA_SERVER_API_KEY_FILE + ' K=' + process.env.LLAMA_SERVER_API_KEY + ' D=' + new URL(process.env.DATABASE_URL).host)"`, process.cwd(), 60);
       expect(k.duoi).toContain("F=undefined K=undefined");
       expect(k.duoi).toContain("127.0.0.1:9");
       expect(k.duoi).not.toMatch(/khoa-that|sk-that/);

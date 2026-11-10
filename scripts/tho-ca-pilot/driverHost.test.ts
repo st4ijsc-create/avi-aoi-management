@@ -395,6 +395,58 @@ describe("driverHost — TỰ CHẠY lệnh kiểm thay thẻ run_command chờ 
     expect(chay).toBe(TRAN_TU_CHAY);
     expect(dd.bac.at(-1)).toContain(`đã tự chạy lệnh kiểm ${TRAN_TU_CHAY} lần`);
   });
+  it("★★★ `chayKiem` trong DauVaoDriver (do chayMotViec đặt khi --cho-phep-db) THẮNG hàm của phụ thuộc: vòng tự chạy trong lượt dùng đúng hàm có DB _test", async () => {
+    const goiPhuThuoc: string[] = [];
+    const goiDauVao: string[] = [];
+    const { dep } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: THE.lenhKiem }));
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => (goiPhuThuoc.push(l), kiemFake({ lenh: l })) },
+    );
+    await driverHost(dep)({ ...dauVao(ra), chayKiem: async (l) => (goiDauVao.push(l), kiemFake({ lenh: l })) });
+    expect(goiDauVao).toEqual([THE.lenhKiem]);
+    expect(goiPhuThuoc).toEqual([]);
+  });
+  it("★★ không có `chayKiem` trong DauVaoDriver ⇒ vẫn dùng hàm của phụ thuộc (DB chết mặc định, hành vi cũ)", async () => {
+    const goiPhuThuoc: string[] = [];
+    const { dep } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: THE.lenhKiem }));
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => (goiPhuThuoc.push(l), kiemFake({ lenh: l })) },
+    );
+    await driverHost(dep)(dauVao(ra));
+    expect(goiPhuThuoc).toEqual([THE.lenhKiem]);
+  });
+  it("★★★ KÊNH tới model: lý do thẻ bác (tomTatKiemChoModel) không chứa mật khẩu dù hàm chạy lệnh kiểm trả URL chưa lọc", async () => {
+    const DAU = "MATKHAU_GIA_123";
+    const { dep, dd } = taoDep(
+      async (phat) => {
+        phat(canDuyet("run_command", { command: THE.lenhKiem }));
+        await new Promise((r) => setTimeout(r, 120));
+        phat({ loai: "xong", lyDo: "hoan-thanh" });
+      },
+      async () => ({ quyet: "chap-nhan" }),
+      { chayKiem: async (l) => kiemFake({ lenh: l, duoi: `ECONNREFUSED postgresql://avi_app:${DAU}@127.0.0.1:5434/aoi_management_test`, exit: null, loi: `spawn lỗi avi_app:${DAU}@127.0.0.1:5434` }) },
+    );
+    await driverHost(dep)(dauVao(ra));
+    expect(dd.bac).toHaveLength(1);
+    expect(dd.bac[0]).not.toContain(DAU);
+    expect(dd.bac[0]).toContain("postgres://***");
+  });
+  it("tomTatKiemChoModel: URL trong đuôi và trong lỗi khởi chạy đều bị lọc; chữ thường giữ nguyên", () => {
+    const DAU = "MATKHAU_GIA_123";
+    const s = tomTatKiemChoModel(kiemFake({ duoi: `postgres://u:${DAU}@h/db`, loi: `không chạy: postgresql://u:${DAU}@h/db`, exit: null }), 1);
+    expect(s).not.toContain(DAU);
+    expect(s).toContain("Test Files");
+  });
   it("tomTatKiemChoModel: hết hạn / không khởi chạy được / xanh đều nói rõ", () => {
     expect(tomTatKiemChoModel(kiemFake({ hetGio: true, exit: null }), 2)).toContain("hết hạn sau 2s");
     expect(tomTatKiemChoModel(kiemFake({ loi: "spawn ENOENT", exit: null }), 1)).toContain("không khởi chạy được: spawn ENOENT");

@@ -25,7 +25,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
+import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
 import { canChayTsc, chayLenhTsc, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
@@ -60,6 +60,8 @@ export interface DauVaoDriver {
   ra: string;
   ghiLuotDir: string | null;
   khoGhi: Record<string, string>;
+  /** hàm chạy lệnh kiểm cho vòng TỰ CHẠY trong lượt (chỉ đặt khi `--cho-phep-db` hoặc ca kiểm tiêm); vắng ⇒ driver dùng mặc định (DB chết) */
+  chayKiem?: ChayKiem;
 }
 export type Driver = (v: DauVaoDriver) => Promise<KetQuaDriver & { hetGio: boolean; loi?: string }>;
 
@@ -131,9 +133,16 @@ export function thamSoDbTuDongLenh(a: Record<string, string>, env: NodeJS.Proces
   return { choPhepDb: a["cho-phep-db"] !== undefined, testDbUrl: env.DATABASE_URL };
 }
 
+/** `aoi_management_test` phải là MỘT token nguyên trong dòng CSDL (ranh giới từ: chữ, số, gạch dưới) — `aoi_management_test_x` không tính. */
+const RE_TEN_DB_TEST = /(^|[^A-Za-z0-9_])aoi_management_test($|[^A-Za-z0-9_])/;
+/** Máy chủ và cổng CSDL được phép cho `--cho-phep-db`; vai chỉ `avi_app` (danh sách trắng). */
+const MAY_CHU_DUOC_PHEP: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const CONG_DUOC_PHEP = "5434";
+const VAI_DUOC_PHEP = "avi_app";
+
 /** Lý do TỪ CHỐI `--cho-phep-db` (null = đủ điều kiện). Thuần. */
 export function kiemChoPhepDb(the: Pick<TheViec, "csdl">, testDbUrl: string | undefined): string | null {
-  if (!the.csdl || !the.csdl.includes("aoi_management_test")) return "--cho-phep-db: thẻ không có dòng CSDL: nêu aoi_management_test";
+  if (!the.csdl || !RE_TEN_DB_TEST.test(the.csdl)) return "--cho-phep-db: thẻ không có dòng CSDL: nêu aoi_management_test";
   if (!testDbUrl) return "--cho-phep-db: thiếu URL CSDL của tiến trình (DATABASE_URL)";
   let u: URL;
   try {
@@ -142,7 +151,9 @@ export function kiemChoPhepDb(the: Pick<TheViec, "csdl">, testDbUrl: string | un
     return "--cho-phep-db: URL CSDL không hợp lệ";
   }
   if (decodeURIComponent(u.pathname.replace(/^\//, "")) !== "aoi_management_test") return "--cho-phep-db: URL CSDL không trỏ aoi_management_test";
-  if (decodeURIComponent(u.username).toLowerCase() === "aoi") return "--cho-phep-db: URL CSDL dùng owner aoi — chỉ vai ứng dụng";
+  if (!MAY_CHU_DUOC_PHEP.has(u.hostname.toLowerCase())) return "--cho-phep-db: máy chủ CSDL không thuộc 127.0.0.1 / localhost / ::1";
+  if (u.port !== CONG_DUOC_PHEP) return "--cho-phep-db: cổng CSDL không phải 5434";
+  if (decodeURIComponent(u.username) !== VAI_DUOC_PHEP) return "--cho-phep-db: URL CSDL không dùng vai avi_app (chỉ vai ứng dụng, không owner aoi)";
   return null;
 }
 
@@ -417,7 +428,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
   // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
   const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, ...theChoDriver } = the;
-  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
+  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}) });
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -433,7 +444,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const viPham = kiemDiffTheoThe(tepDoi, the.tepDuocPhep);
   // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó).
   // `--cho-phep-db`: miễn ĐÚNG các tệp test có trong LỆNH KIỂM (chính tệp thẻ cho phép chạy trên _test); tệp test khác chạm DB vẫn vi phạm.
-  const tepTestDuocCho = new Set(dbCho ? tepTestTrongLenh(the.lenhKiem) : []);
+  const tepTestDuocCho = new Set(dbCho ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : []);
   for (const t of tepDoi) {
     if (!/\.test\.[cm]?[jt]sx?$/.test(t)) continue;
     try {

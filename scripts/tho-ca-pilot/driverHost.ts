@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
-import { chayLenhKiem, type ChayKiem, type KetQuaKiem } from "./kiemChung";
+import { chayLenhKiem, loaiUrlCsdl, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
 
 export const NHAN_PILOT = "pilot-tho-ca";
@@ -161,14 +161,14 @@ export function tomTatKiemChoModel(k: KetQuaKiem, lan: number): string {
   const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
   const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
   const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? `không khởi chạy được: ${k.loi}` : `thoát mã ${k.exit}`;
-  return [
+  return loaiUrlCsdl([
     `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
     tep,
     ca,
     "--- đuôi đầu ra ---",
     k.duoi.length > 1800 ? k.duoi.slice(-1800) : k.duoi,
     "Đỏ ⇒ sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
-  ].join("\n");
+  ].join("\n"));
 }
 
 // ── Phụ thuộc ──────────────────────────────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           await dep.bac(actionId, `[pilot] đã tự chạy lệnh kiểm ${TRAN_TU_CHAY} lần trong lượt này; dừng gọi lại và báo kết quả cuối.`);
           return;
         }
-        const k = await (dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
+        const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
         ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
         await dep.bac(actionId, tomTatKiemChoModel(k, soTuChay));
         return;
