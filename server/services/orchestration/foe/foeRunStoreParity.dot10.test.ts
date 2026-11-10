@@ -13,7 +13,7 @@
  * branch, parallel, retry, compensation, abort sweep (+ the gate refusal text, the STOP that never asks, D5 held).
  * The equipment registry is replaced by a recording fake (the walker is under test, not the dispatchers — group D).
  */
-import { describe, it, expect, vi, afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterAll, afterEach, beforeAll, beforeEach, onTestFinished } from "vitest";
 import { randomUUID } from "node:crypto";
 import { FakeDb, makeEq, makeAnd, nhayId, resetSeq } from "../../../routers/__otFakeDb";
 
@@ -141,6 +141,16 @@ const h = vi.hoisted(() => ({
   lac: [] as Array<Record<string, unknown>>,
   /** ... every such command of the file, never cleared: the block's afterAll checks them for type (1) (dieu-phoi 10/11: nothing kept apart is dropped silently) */
   lacTatCa: [] as Array<Record<string, unknown>>,
+  /**
+   * A2(n) T7b-1d lượt sửa 5 (F-2) — which case made which runs (T7b-1d block, from run id `tu`), and what that case left them when it ended: the latch the harness counted (its h.traTimeout) and the pins of its
+   * device_tags. null while the case runs. A command kept apart is judged by ITS run's, never by the case it lands in
+   */
+  caCuaRun: [] as Array<{ tu: number; ten: string; khoa: boolean | null; ghim: string[] | null }>,
+  caCua(run: number): { tu: number; ten: string; khoa: boolean | null; ghim: string[] | null } | undefined {
+    let ca: { tu: number; ten: string; khoa: boolean | null; ghim: string[] | null } | undefined;
+    for (const x of this.caCuaRun) if (x.tu <= run) ca = x;
+    return ca;
+  },
   soCai: null as null | Map<string, { ok: boolean; simulated: boolean; status: string; dangBay?: boolean; kq: Record<string, any> }>,
 }));
 
@@ -256,7 +266,11 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
   // A2(n) T7b-1d lượt sửa 4 (B-4) — every command the fake hands over is recorded here: an older run's past the fence lands apart
   const ghiLenh = (x: Record<string, unknown>) => {
     const so = /^run(\d+)-/.exec(String(x.key));
+    // lượt sửa 5 (F-2) — every command carries its run; one kept apart carries the latch of ITS run, as the case that made it left it (unknown: latched, fail-closed), never this case's
+    x.runId = so ? Number(so[1]) : null;
     if (h.ranhGioi !== null && so && Number(so[1]) < h.ranhGioi) {
+      x.lac = true;
+      x.sauKhoa = h.caCua(Number(so[1]))?.khoa ?? true;
       h.lac.push(x);
       h.lacTatCa.push(x);
     }
@@ -10375,7 +10389,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     h.tuChoi.clear();
     const a2 = await bam(c2, "again");
     expect(ids()).toEqual(["s2"]);
-    expect(a2.message).toMatch(/were sent again/);
+    expect(a2.message).toMatch(/were sent \(again, if they had gone before\)\./); // T7b-1d lượt sửa 5 (bảng câu dòng 13): was /were sent again/ (s2 had only been refused)
   });
 
   // ── abortSapQuet, noSauAbortKhoa (dieu-phoi 09/11): what the wait holds, and what a lost word costs ───────────────────────────────────
@@ -10563,7 +10577,7 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(chu).toContain(`could not read the definition of run ${c}`);
     expect(chu).toContain("a STOP may still not be out");
     expect(chu).toContain("may not reach it"); // H32, dieu-phoi 09/11: was "press Abort again within 15 minutes"
-    expect(chu).toContain("none can be counted on after 15 minutes from the Abort (or the gate rejection) that aborted the run"); // H34, dieu-phoi 10/11: was "after 15 minutes none can be counted on"; H32: was "after that check the machine on site"
+    expect(chu).toContain("none can be counted on after 15 minutes from when the run was aborted"); // H34, dieu-phoi 10/11: was "after 15 minutes none can be counted on"; H32: was "after that check the machine on site"
     expect(chu).toContain("Check the machine on site");
     expect(String(u[0]!.dedupKey).split(":")[2]).toBe("?");
     expect(u[0]!.khuTrungBenVung, "durable").toBeDefined();
@@ -11025,18 +11039,12 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   const LA_STOP = new Set(["abort", "stop", "e_stop"]);
   // fix 2 — a run id of its own in each case: the engine's sweep registry is by run id and outlives a case: a sweep a hanging case leaves behind must not be joined by the next (measured: 15 s per case behind T7B1D-TREO-DUOI-WALKER)
   let lanCa = 0;
-  // lượt sửa 4 (B-4, dieu-phoi 10/11): which case made which runs: a command kept apart is told by the case that left its walker behind
-  const caCuaRun: Array<{ tu: number; ten: string }> = [];
-  const tenCaCua = (key: unknown) => {
-    const so = Number(/^run(\d+)-/.exec(String(key))?.[1] ?? NaN);
-    let ten = "?";
-    for (const x of caCuaRun) if (x.tu <= so) ten = x.ten;
-    return ten;
-  };
+  // lượt sửa 4 (B-4, dieu-phoi 10/11): which case made which runs: a command kept apart is told by the case that left its walker behind. lượt sửa 5 (F-2): the table is h.caCuaRun, the one the fence reads
+  const tenCaCua = (key: unknown) => h.caCua(Number(/^run(\d+)-/.exec(String(key))?.[1] ?? NaN))?.ten ?? "?";
   beforeEach(() => {
     // lượt sửa 4 (B-4): this case's runs start here; an older run's command lands apart (h.lac), never in this case
     h.ranhGioi = nhayId(++lanCa * 1000);
-    caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?" });
+    h.caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?", khoa: null, ghim: null });
     h.lac.length = 0;
     seedHalt();
     h.ghim = PIN_OK;
@@ -11049,14 +11057,20 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       kiemLoai1();
     } finally {
       vi.useRealTimers();
+      // lượt sửa 5 (F-2): what this case leaves its runs (its latch, its pins), then the fence closes on them: what they send from here on, between this case and the next too, is kept apart
+      const ca = h.caCuaRun[h.caCuaRun.length - 1];
+      if (ca) Object.assign(ca, { khoa: h.traTimeout > 0, ghim: rows("device_tags").filter((t) => t.stopValue != null).map((t) => `${String(t.adapterId)}:${String(t.tagKey)}`) });
+      h.ranhGioi = Number.MAX_SAFE_INTEGER;
       if (h.lac.length) console.log(`[T7B1D lac] ${String(expect.getState().currentTestName).split(" > ").pop()?.slice(0, 60)}: commands of an older run, kept apart: ${h.lac.map((x) => `${String(x.key)}:${String(x.name)}`).join(" ")}`);
     }
   });
-  // THE predicate of type (1): handed over after the latch and no pinned STOP (the dispatcher's own refusal, khongGhi, wrote nothing). One, for this case's commands and for those kept apart
+  // THE predicate of type (1): handed over after the latch and no pinned STOP (the dispatcher's own refusal, khongGhi, wrote nothing). One, for this case's commands and for those kept apart.
+  // lượt sửa 5 (F-2): a command kept apart is read by the pins ITS run's case left (its own are gone with the store), never by the store of the case it lands in
   const ghim = (x: Record<string, unknown>) => {
     if (x.robotId != null) return x.name === "abort";
     const w = (x.writes ?? []) as Array<{ tagKey: string }>;
-    return w.length > 0 && w.every((v) => rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null));
+    const cua = x.lac === true ? h.caCua(Number(x.runId))?.ghim : null;
+    return w.length > 0 && w.every((v) => (cua ? cua.includes(`${String(x.adapterId)}:${v.tagKey}`) : rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null)));
   };
   const laLoai1 = (x: Record<string, unknown>) => x.sauKhoa === true && !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true;
   const kiemLoai1 = () => {
@@ -11065,7 +11079,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   /** every command kept apart in the file that is of type (1), with the case that left its walker behind. A pinned STOP kept apart is only logged */
   const kiemLac = () => h.lacTatCa.filter(laLoai1).map((x) => `${String(x.key)}:${String(x.name)} (a run of "${tenCaCua(x.key)}")`);
   afterAll(() => {
-    console.log(`[T7B1D lac tong] ${h.lacTatCa.length} commands kept apart in the block: ${h.lacTatCa.map((x) => `${String(x.key)}:${String(x.name)}`).join(" ") || "-"}`);
+    console.log(`[T7B1D lac tong] ${h.lacTatCa.length} commands kept apart in the block: ${h.lacTatCa.map((x) => `${String(x.key)}:${String(x.name)}:sauKhoa=${String(x.sauKhoa)} (${tenCaCua(x.key).slice(0, 40)})`).join(" ") || "-"}`);
     // after every clean-up: what the fence kept apart is checked as this case's own would be, by the case that made it
     expect(kiemLac(), "a command kept apart (a walker an earlier case left alive) is no pinned STOP and went after the latch").toEqual([]);
   });
@@ -11091,11 +11105,74 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     if (EP_DO) expect(h.lac.map((x) => String(x.stepId)), "the older walker did send, after its case: kept apart").toContain("nt");
     else expect(h.lac, "no older walker").toEqual([]);
   });
-  it("T7B1D-DON-C the check of what was kept apart: under T7B1D_EP_DO=1 it finds the older walker's 'nt' (no pinned STOP, after this run's latch) and names the case that left it, DON-A; otherwise nothing is kept apart of type (1)", async () => {
+  it("T7B1D-DON-C the check of what was kept apart: under T7B1D_EP_DO=1 the older walker's 'nt' is kept apart, named by the case that left it, DON-A, and judged by the latch of ITS run (DON-A never latched; DON-B, where it landed, did): no type (1); otherwise nothing is kept apart of type (1)", async () => {
     if (EP_DO) {
       await waitFor(() => h.lacTatCa.some((x) => x.stepId === "nt"), "the older walker's command, kept apart");
-      expect(kiemLac(), "found, by the case that made the run").toEqual([expect.stringContaining('(a run of "T7B1D-DON-A')]);
+      const nt = h.lacTatCa.filter((x) => x.stepId === "nt");
+      expect(nt.map((x) => tenCaCua(x.key).slice(0, 13)), "by the case that made the run").toEqual(["T7B1D-DON-A a"]);
+      // lượt sửa 5 (F-2): was red here (DON-B's latch read for DON-A's command), a false alarm of a run that never latched
+      expect(nt.map((x) => x.sauKhoa), "the latch of its own run").toEqual([false]);
+      expect(kiemLac()).toEqual([]);
     } else expect(kiemLac()).toEqual([]);
+  });
+  // ── lượt sửa 5 (F-2, r3b): the check of what was kept apart reads the latch of the run that sent it. A latched case leaves its walker alive (A), a case not latched does the same (A2), and a latched case
+  // whose pins say 'halt' is no pinned STOP (A3): their commands land in D, a case not latched, where 'halt' is pinned again. A's 'nt' and A3's 's' are type (1), by ITS run; A2's 'nt' is not ──────
+  const donD: Array<{ ten: string; c: number; di: Promise<unknown> }> = [];
+  const deDiD = async (ten: string, ref: string, buoc: WorkflowStep, khoa: boolean) => {
+    const { c, di } = await moDi(def(ref, [gate(), ot("x"), delay("w", 250), buoc]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    if (khoa) h.traTimeout = 1;
+    donD.push({ ten, c, di: di.catch(() => undefined) });
+  };
+  /** the proof made these: taken out once checked, so the block's own checks (LAC-CUOI, afterAll) read the rest. Under T7B1D_EP_DO=1 they stay: LAC-CUOI goes red with them */
+  const boDaKiem = (khoa: ReadonlyArray<string>) => {
+    if (EP_DO) return;
+    for (let i = h.lacTatCa.length - 1; i >= 0; i--) if (khoa.includes(String(h.lacTatCa[i]!.key))) h.lacTatCa.splice(i, 1);
+  };
+  it("T7B1D-DON-D-A a latched case (h.traTimeout = 1) leaves its walker alive: its 'nt' (stop-typed, no pin) comes after the case", async () => {
+    await deDiD("A", "d1dddA", stopTyped("nt"), true);
+  });
+  it("T7B1D-DON-D-A2 the control: a case NOT latched leaves its walker alive the same way", async () => {
+    await deDiD("A2", "d1dddA2", stopTyped("nt"), false);
+  });
+  it("T7B1D-DON-D-A3 a latched case whose pins say 'halt' is no pinned STOP leaves its walker alive: its STOP 's' (writes 'halt') comes after the case", async () => {
+    ghimHalt(false);
+    await deDiD("A3", "d1dddA3", otStop("s"), true);
+  });
+  it("T7B1D-DON-D the case after them, not latched, 'halt' pinned: the check finds A's 'nt' and A3's 's' as type (1) by the latch and the pins of THEIR run, and names their cases; A2's 'nt' is not", async () => {
+    await Promise.all(donD.map((x) => x.di));
+    await wait(20);
+    expect(h.traTimeout, "this case is not latched").toBe(0);
+    expect(ghim({ adapterId: 501, writes: [{ tagKey: "halt" }] }), "here 'halt' is pinned").toBe(true);
+    const cua = (ten: string) => h.lacTatCa.filter((x) => x.key !== undefined && String(x.key).startsWith(`run${donD.find((d) => d.ten === ten)!.c}-`));
+    expect(cua("A").map((x) => `${String(x.stepId)}:${String(x.sauKhoa)}`), "A's command carries A's latch").toEqual(["nt:true"]);
+    expect(cua("A2").map((x) => `${String(x.stepId)}:${String(x.sauKhoa)}`), "A2's carries A2's").toEqual(["nt:false"]);
+    expect(cua("A3").map((x) => String(x.stepId))).toEqual(["s"]);
+    const lac = kiemLac();
+    expect(lac, "found, by the case that made each run").toHaveLength(2);
+    expect(lac).toEqual(expect.arrayContaining([expect.stringContaining('(a run of "T7B1D-DON-D-A a latched'), expect.stringContaining('(a run of "T7B1D-DON-D-A3')]));
+    expect(lac.join(" "), "never the control").not.toContain("DON-D-A2");
+    expect(ids(), "nothing of theirs among this case's commands").toEqual([]);
+    boDaKiem([...cua("A"), ...cua("A3")].map((x) => String(x.key)));
+  });
+  // ── lượt sửa 5 (F-2): what a walker sends between two cases (after the afterEach of its case, before the next case's beforeEach) is kept apart, never lost with the next case's clean-up ─────
+  let cDonE = 0;
+  it("T7B1D-DON-E-A a latched case whose walker's 'nt' lands after its afterEach, before the next case (onTestFinished waits for it there)", async () => {
+    const { c, di } = await moDi(def("d1ddea", [gate(), ot("x"), delay("w", 120), stopTyped("nt")]));
+    await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+    h.traTimeout = 1;
+    cDonE = c;
+    onTestFinished(async () => {
+      await di.catch(() => undefined);
+    });
+  });
+  it("T7B1D-DON-E the case after it: the 'nt' that came between the two cases is kept apart, found as type (1) by the latch of its run, named by its case", async () => {
+    const nt = h.lacTatCa.filter((x) => String(x.key).startsWith(`run${cDonE}-nt-`));
+    expect(nt.map((x) => String(x.sauKhoa)), "kept apart, with its run's latch").toEqual(["true"]);
+    expect(kiemLac(), "found").toEqual(expect.arrayContaining([expect.stringContaining('(a run of "T7B1D-DON-E-A')]));
+    if (!EP_DO) expect(kiemLac(), "only it (DON-D took its own out)").toHaveLength(1);
+    expect(ids()).toEqual([]);
+    boDaKiem(nt.map((x) => String(x.key)));
   });
 
   // ── the fake (fix 1, step 1): what a caller holds is its own, as with a database ────────────────────────────────────────────────────────────────────────────────────
@@ -11384,7 +11461,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const a2 = await bam(c);
     expect(pdu("s").length, String(a2.message)).toBe(1);
     expect(ids()).toEqual(["s"]);
-    expect(a2.message).toMatch(/sent again/);
+    expect(a2.message).toMatch(/were sent \(again, if they had gone before\)\./); // T7b-1d lượt sửa 5 (bảng câu dòng 13): was /sent again/
     expect(a2.abortStops?.phanLoai?.s?.lop, "one definition: the Abort's own trace").toBe("no");
     expect(/-abort-/.test(String(h.sent[0]?.key)), "a new key per sweep").toBe(true);
     expect((await bam(c, "third")).message).toMatch(/this press sent no STOP step/);
@@ -12214,7 +12291,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(a.message).toMatch(/could not read the definition/);
     expect(a.message).toMatch(/may not reach it/); // H32, dieu-phoi 09/11: was /press Abort again within 15 minutes/
-    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from when the run was aborted/);
     expect(h.alerts.map((x) => x.kind), "H23").toEqual([]);
     expect(ids()).toEqual([]);
     expect(hang(c, "b")?.error).toBe("Run is aborting.");
@@ -12928,7 +13005,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       expect(a.message).toMatch(/could not read the definition/);
       expect(a.message, "no promise").not.toMatch(/press Abort again/);
       expect(a.message).toMatch(/may not reach it/);
-      expect(a.message, "an upper limit, not a promise").toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
+      expect(a.message, "an upper limit, not a promise").toMatch(/none can be counted on after 15 minutes from when the run was aborted/);
       expect(a.message, "the other road's words").not.toMatch(/has not finished/);
       const a2 = await bam(c);
       expect(ids()).toEqual(diSau);
@@ -12951,7 +13028,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.message).toMatch(/records could not be read/);
     expect(a.message, "no promise").not.toMatch(/press Abort again/);
     expect(a.message).toMatch(/may not reach it/);
-    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/);
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from when the run was aborted/);
     expect(a.message, "the other road's words").not.toMatch(/has not finished/);
     expect(ids()).toEqual([]);
   });
@@ -12980,7 +13057,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(String(h.sent[0].key), "a key of its own: no replay of the first").not.toBe(khoaDau);
     expect(String(h.sent[0].key)).toMatch(new RegExp(`^run${c}-abort-[^-]+-s$`));
     expect(h.sent[0].lanTruoc, "nothing the ledger had to rule on").toBeUndefined();
-    expect(a2.message).toMatch(/sent again/);
+    expect(a2.message).toMatch(/sent again|sent \(again, if they had gone before\)/); // lượt sửa 5 (bảng câu dòng 13): the rows lost say nothing of it: "(again, if they had gone before)"
     expect(a2.message).not.toMatch(/never|did not go|did NOT go|not sent|for the first time/i);
     await bam(c);
     expect(ids(), "not a third time").toEqual([]);
@@ -13015,7 +13092,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.unverified).toEqual(["s"]);
     expect(a.message).toMatch(/Could not be verified as a pinned STOP: s/);
     expect(a.message).not.toMatch(/hold no STOP step owed|owes no STOP/);
-    expect(a.message, "the window is what holds a later press, from the Abort").toMatch(/within 15 minutes of the Abort \(or the gate rejection\) that aborted the run sends it/);
+    expect(a.message, "the window is what holds a later press, from the Abort").toMatch(/within 15 minutes of when the run was aborted sends it/);
     expect(a.message).toMatch(/if its read finds a pinned STOP/);
     h.classifyLoi = false;
     h.dispatcherKhongDoc = false;
@@ -13044,7 +13121,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(urgS.map((x) => x.dedupKey), "one URGENT of s, one key").toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:chot`]);
     const chuS = `${urgS[0]!.title} ${urgS[0]!.message}`;
     expect(chuS).toContain('step "s"');
-    expect(chuS, "the upper limit, as ruled").toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort (or the gate rejection) that aborted the run: past that, check the machine on site and use its direct STOP / E-STOP.");
+    expect(chuS, "the upper limit, as ruled").toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of when the run was aborted: past that, check the machine on site and use its direct STOP / E-STOP.");
     expect(chuS, "B-1: no sentence left pointing at no read").not.toContain("If that read finds");
     let soUrgS = urgS.length;
     ghimHalt(false);
@@ -13088,7 +13165,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const u = veBuoc("s2");
     expect(u.map((x) => x.dedupKey)).toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s2:-:chot`]);
     expect(`${u[0]!.title} ${u[0]!.message}`).toContain("there is no time limit on this STOP");
-    expect(`${u[0]!.title} ${u[0]!.message}`).toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of the Abort (or the gate rejection) that aborted the run: past that, check the machine on site and use its direct STOP / E-STOP.");
+    expect(`${u[0]!.title} ${u[0]!.message}`).toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of when the run was aborted: past that, check the machine on site and use its direct STOP / E-STOP.");
   });
   it("T7B1D-H31-K-MOC-ABORT the window counts from the Abort: pressed at minute 14, its read lost, the words name the Abort as the start; at minute 16, read and pinned, s goes nowhere and nothing of s is promised", async () => {
     h.timeoutDispatch.add("x");
@@ -13116,7 +13193,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     runRow(c).finishedAt = new Date(Date.now() - 14 * 60_000);
     const a = await bam(c);
     expect(ids()).toEqual(["rs"]);
-    expect(a.message, "minute 14: the start of the window is the Abort").toMatch(/s: not sent; a later press within 15 minutes of the Abort \(or the gate rejection\) that aborted the run sends it if its read finds a pinned STOP\./);
+    expect(a.message, "minute 14: the start of the window is the Abort").toMatch(/s: not sent; a later press within 15 minutes of when the run was aborted sends it if its read finds a pinned STOP\./);
     h.classifyLoi = false;
     h.dispatcherKhongDoc = false;
     h.dispatcherThat = false;
@@ -13142,9 +13219,170 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(Math.abs(new Date(runRow(c).finishedAt).getTime() - luc), "the window's start is the rejection").toBeLessThan(2_000);
     const a = await bam(c);
     expect(ids(), "refused again").toEqual(["s"]);
-    expect(a.message).toMatch(/s: press Abort again within 15 minutes of the Abort \(or the gate rejection\) that aborted the run; past that check the machine on site\./);
+    expect(a.message).toMatch(/s: press Abort again within 15 minutes of when the run was aborted; past that check the machine on site\./);
     h.tuChoi.clear();
   });
+  // ── lượt sửa 5 (F-1, dieu-phoi 10/11): the start the words name is the one every source of 'aborted' shares, "when the run was aborted": a precondition, an edge's end, not only an Abort or a gate ──────
+  const PRE_ABORT = { precondition: { source: "telemetry", machineId: 1, key: "temp", op: "lt", value: 0 }, onPreconditionFail: "abort" };
+  const mocChung = async (c: number) => {
+    expect(runRow(c).status).toBe("aborted");
+    runRow(c).finishedAt = new Date(Date.now() - 13 * 60_000);
+    h.tuChoi.set("s", REF);
+    const a = await bam(c);
+    h.tuChoi.clear();
+    expect(ids(), "minute 13: refused").toEqual(["s"]);
+    expect(a.message).toContain("STOP steps refused or not answered: s: press Abort again within 15 minutes of when the run was aborted; past that check the machine on site.");
+    expect(a.message, "no Abort, no gate rejection happened: none is named").not.toMatch(/of the Abort|gate/);
+    runRow(c).finishedAt = new Date(Date.now() - 16 * 60_000);
+    const a2 = await bam(c);
+    expect(ids(), "minute 16: nothing").toEqual([]);
+    expect(a2.reason).toBe("resendTooOld");
+    expect(a2.message, "nothing promised").not.toMatch(/press Abort again|a later press|retry/);
+  };
+  it("T7B1D-MOC-PRECONDITION a precondition aborted the run (no Abort, no gate rejection): a press at minute 13, refused, is told the window from when the run was aborted; at minute 16: 0 commands, nothing promised", async () => {
+    const c = await centralRun(def("d1dmpc", [gate(), move("x", PRE_ABORT), otStop("s")]), 1);
+    await wait(80);
+    expect(String(runRow(c).error)).toMatch(/^Precondition failed for step "x" \(abort\)/);
+    await mocChung(c);
+  });
+  it("T7B1D-MOC-EDGE-ABORTED a precondition aborted the run on an edge (central applied 'aborted'): the same start, the same words; at minute 16: 0 commands, nothing promised", async () => {
+    const e = await edgeAssignedRun(def("d1dmea", [gate(), ot("o"), move("x", PRE_ABORT), otStop("s")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await wait(200);
+    expect(String(runRow(e.runId).error)).toMatch(/^aborted on edge node/);
+    await mocChung(e.runId);
+  });
+  // ── lượt sửa 5 (F-5, bảng câu dòng 25): "check the run and retry" names the window as an upper limit and the machine; a retry at minute 14 sends, at minute 16 nothing ─────────────────────────────
+  for (const via of ["abort", "reject"] as const) {
+    it(`T7B1D-THU-LAI-CHUA-XAC-NHAN ${via === "abort" ? "an Abort" : "a gate rejection"} whose 'aborted' write lands late: the retry it is told is bounded by 15 minutes from when the run was aborted, and the machine is to be checked; a retry at minute 14 sends, at minute 16 nothing`, async () => {
+      for (const phut of [14, 16] as const) {
+        let c: number;
+        let a: { reason?: string; message?: string };
+        ve0();
+        h.tuChoi.set("s", REF);
+        h.treAborted = 1_600;
+        if (via === "abort") {
+          const m = await moDi(def(`d1dtla${phut}`, [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
+          c = m.c;
+          await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+          await wait(10);
+          a = await abortRun(c, OWNER, "first");
+          await m.di.catch(() => undefined);
+        } else {
+          c = await centralRun(def(`d1dtlr${phut}`, [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+          await wait(30);
+          const view = (await getRun(c, { bindingDigest: true }))!;
+          a = await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER);
+        }
+        expect(a.reason).toBe("abortUnconfirmed");
+        expect(a.message).toMatch(via === "abort" ? /^Abort of run \d+ not confirmed by the database in time/ : /^Rejection of run \d+ not confirmed by the database in time/);
+        expect(a.message).toContain("check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.");
+        await waitFor(() => runRow(c).status === "aborted", "the late write lands", 5_000);
+        await wait(300);
+        h.tuChoi.clear();
+        h.treAborted = 0;
+        runRow(c).finishedAt = new Date(Date.now() - phut * 60_000);
+        const a2 = await bam(c);
+        if (phut === 14) expect(ids(), "minute 14: the retry sends").toEqual(["s"]);
+        else {
+          expect(ids(), "minute 16: nothing").toEqual([]);
+          expect(a2.reason).toBe("resendTooOld");
+        }
+      }
+    }, 30_000);
+  }
+  // ── lượt sửa 5 (bảng câu dòng 13, r2 (i)): a press that sends a STOP of a run not latched does not say it went before: whether it had, its rows cannot say cheaply ─────────────────────────────────
+  it("T7B1D-GUI-LAI-CHUA-TUNG-DI a precondition aborted the run before anything acted: its STOP never went; a press at minute 14 sends it and says 'sent (again, if they had gone before)', never 'sent again'; at minute 16 nothing", async () => {
+    const c = await centralRun(def("d1dgcd", [gate(), move("x", PRE_ABORT), otStop("s")]), 1);
+    await wait(80);
+    expect(runRow(c).status).toBe("aborted");
+    expect(ids(), "nothing went at the precondition").toEqual([]);
+    runRow(c).finishedAt = new Date(Date.now() - 14 * 60_000);
+    const a = await bam(c);
+    expect(ids()).toEqual(["s"]);
+    expect(a.message).toBe(`Run ${c} was already aborted — its STOP steps not yet confirmed were sent (again, if they had gone before).`);
+    const c2 = await centralRun(def("d1dgcd2", [gate(), move("x", PRE_ABORT), otStop("s")]), 1);
+    await wait(80);
+    runRow(c2).finishedAt = new Date(Date.now() - 16 * 60_000);
+    const a2 = await bam(c2);
+    expect(ids()).toEqual([]);
+    expect(a2.reason).toBe("resendTooOld");
+  });
+  // ── lượt sửa 5 (bảng câu dòng 23): a latched walk held on a STOP that did not go: the run's words say what Abort does, and the Abort does it ─────────────────────────────────────────────────────
+  for (const ten of ["tuChoi", "driverLoi", "doc"] as const) {
+    it(`T7B1D-HO-GIU-CHUA-RA ${ten} a latched walk held on a STOP that did not go: the run's words say what Abort does; the Abort does it`, async () => {
+      const chuGiu = {
+        tuChoi: 'did NOT go out: it was refused before it reached a driver (INTERLOCK_NOT_MET). The run is held: Abort sends it again.',
+        driverLoi: "is not confirmed out: it may have reached the device (DRIVER_ERROR). The run is held: Abort sends it again.",
+        doc: "did NOT go out: nobody could read its pins. The run is held: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent.",
+      }[ten];
+      const mo = async (ref: string) => {
+        h.ghim = PIN_OK;
+        h.timeoutDispatch.add("x");
+        if (ten === "tuChoi") h.tuChoi.set("st", REF);
+        else if (ten === "driverLoi") h.tuChoi.set("st", { status: "failed", error: "socket hang up while writing 10.1.2.3", detail: { reason: "DRIVER_ERROR" } });
+        else {
+          h.dispatcherThat = true;
+          h.dispatcherKhongDoc = true;
+          h.ghim = PIN_BAD;
+        }
+        const c = await centralRun(def(ref, [gate(), par("p", [move("x"), box("b", [delay("w", 40), otStop("st")])])]), 1);
+        await waitFor(() => !["running", "compensating", "queued"].includes(String(runRow(c).status)), "the end of the walk", 3_000);
+        await wait(30);
+        expect(runRow(c).status).toBe("held");
+        expect(String(runRow(c).error)).toBe(`FOE_STOP_NOT_SENT: STOP "st" ${chuGiu}`);
+        h.tuChoi.clear();
+        h.timeoutDispatch.clear();
+        h.dispatcherThat = false;
+        h.dispatcherKhongDoc = false;
+        h.ghim = PIN_OK;
+        ve0();
+        return c;
+      };
+      const c = await mo(`d1dhgr${ten}`);
+      const a = await abortRun(c, OWNER, "checked on site");
+      await wait(40);
+      expect(ids(), "the Abort sends it").toEqual(["st"]);
+      expect(a.abortStops?.sent).toEqual(["st"]);
+      expect(runRow(c).status).toBe("aborted");
+      if (ten === "doc") {
+        // "if it is not, nothing is sent": the read recovers and finds it not pinned
+        const c2 = await mo("d1dhgrdoc2");
+        ghimHalt(false);
+        h.ghim = KHONG_GHIM;
+        const a2 = await abortRun(c2, OWNER, "checked on site");
+        await wait(40);
+        expect(ids(), "not pinned: nothing").toEqual([]);
+        expect(a2.abortStops?.sent ?? []).toEqual([]);
+        ghimHalt(true);
+      }
+    });
+  }
+  // ── lượt sửa 5 (bảng câu dòng 28): a compensation that could not be confirmed as a STOP holds the run: its URGENT says what Abort does; the Abort does it ────────────────────────────────────────
+  // (measured before: a compensation that is no STOP does not reach this hold; only one that may be a STOP does)
+  for (const luc of ["ghim", "khongGhim"] as const) {
+    it(`T7B1D-HO-GIU-BU-TRU a STOP compensation not confirmed as a STOP holds the run: 'or Abort (sends the run's STOPs, …; no compensation that is not a STOP is sent)': the Abort sends the run's STOPs, the compensation only if its pins ${luc === "ghim" ? "say STOP (they do)" : "say STOP (they do not)"}`, async () => {
+      let n = 0;
+      h.ghim = async (d, i) => (i.commandType !== "stop" ? { pinnedStop: false, loiDocGhim: null } : ++n === 1 ? PIN_OK(d, i) : { pinnedStop: false, loiDocGhim: null });
+      h.timeoutDispatch.add("x");
+      const c = await centralRun(def(`d1dhgb${luc}`, [gate(), par("p", [move("x"), box("b", [delay("w", 30), move("r3", { compensation: otStop("cs") })])]), robotStop("rs")]), 1);
+      await waitFor(() => runRow(c).status === "held", "held", 3_000);
+      await wait(30);
+      expect(chuCua("held")).toContain(`Its compensation "cs" could not be confirmed as a STOP, so it was NOT sent`);
+      expect(chuCua("held")).toContain("Continue (sends only that compensation; a reason is required) or Abort (sends the run's STOPs, no reason needed; no compensation that is not a STOP is sent).");
+      h.timeoutDispatch.clear();
+      if (luc === "khongGhim") ghimHalt(false);
+      ve0();
+      const a = await abortRun(c, OWNER, "checked on site");
+      await wait(40);
+      expect(a.ok, a.message).toBe(true);
+      expect(ids().sort(), luc === "ghim" ? "the run's STOPs, the compensation a pinned STOP among them" : "the run's STOP; the compensation, no STOP by its pins, not sent").toEqual(luc === "ghim" ? ["cs", "rs"] : ["rs"]);
+      expect(runRow(c).status).toBe("aborted");
+      if (luc === "khongGhim") ghimHalt(true);
+    });
+  }
   // ── lượt sửa 4 (mục 4): the family of the words of a later press, each with the input that shows it and the press after that does what it says ──────────────────
   it("T7B1D-HO-TU-CHOI-CHUA-KHOA a run not latched, its STOP refused: 'press Abort again within 15 minutes of the Abort…': a press in the window sends it; past it: refused as too old, in words that name the abort", async () => {
     const mo = async (ref: string) => {
@@ -13158,7 +13396,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       await wait(40);
       const a = await bam(c);
       expect(ids(), "refused again").toEqual(["s"]);
-      expect(a.message).toMatch(/STOP steps refused or not answered: s: press Abort again within 15 minutes of the Abort \(or the gate rejection\) that aborted the run; past that check the machine on site\./);
+      expect(a.message).toMatch(/STOP steps refused or not answered: s: press Abort again within 15 minutes of when the run was aborted; past that check the machine on site\./);
       h.tuChoi.clear();
       return c;
     };
@@ -13202,7 +13440,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       const a = await bam(c);
       h.classifyLoi = false;
       expect(ids()).toEqual([]);
-      expect(a.message).toMatch(/Could not be verified as a pinned STOP: s: not sent; a later press within 15 minutes of the Abort \(or the gate rejection\) that aborted the run sends it if its read finds a pinned STOP\./);
+      expect(a.message).toMatch(/Could not be verified as a pinned STOP: s: not sent; a later press within 15 minutes of when the run was aborted sends it if its read finds a pinned STOP\./);
       return c;
     };
     const c = await mo("d1dhuc");
@@ -13360,7 +13598,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     h.tuChoi.clear();
     const a = await bam(c);
     expect(ids()).toEqual(["s"]);
-    expect(a.message).toMatch(/sent again/);
+    expect(a.message).toMatch(/were sent \(again, if they had gone before\)\./); // T7b-1d lượt sửa 5 (bảng câu dòng 13): was /sent again/
     expect(a.message).not.toMatch(/joined the sweep/);
   });
   it("T7B1D-NHAP-QUET the control, a latched run: a press of its own sweep names what it sent", async () => {
@@ -13753,7 +13991,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(urgentCua("abortDefUnread").length).toBe(1);
     expect(a.message).toMatch(/could not read the definition/);
-    expect(a.message).toMatch(/none can be counted on after 15 minutes from the Abort \(or the gate rejection\) that aborted the run/); // H32, dieu-phoi 09/11: was /within 15 minutes/
+    expect(a.message).toMatch(/none can be counted on after 15 minutes from when the run was aborted/); // H32, dieu-phoi 09/11: was /within 15 minutes/
     expect(ids()).toEqual([]);
     quaCuaSo(c);
     const a2 = await bam(c, "past");
@@ -13830,4 +14068,12 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     h.timeoutDispatch.clear();
     expect(Date.now() - t0).toBeLessThan(8_000);
   }, 30_000);
+
+  // ── lượt sửa 5 (F-2): the block's last case. What a walker the cases before left alive sends after them is checked HERE, so a red shows in the Tests line (afterAll's red is a describe-level FAIL only).
+  // A bounded wait on the real clock, no API of the product: what comes later still reaches afterAll ──────────────────────────────────────────────────────────────────
+  it("T7B1D-LAC-CUOI after the last case: a bounded wait (1 s, real clock), then what was kept apart in the block is checked for type (1), by the case that made each run", async () => {
+    vi.useRealTimers();
+    await wait(1_000);
+    expect(kiemLac(), "a command kept apart (a walker an earlier case left alive) is no pinned STOP and went after its run's latch").toEqual([]);
+  });
 });

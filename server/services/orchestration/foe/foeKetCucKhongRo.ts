@@ -360,8 +360,10 @@ export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: b
 /**
  * T7b-1d lượt sửa 4 (H34, dieu-phoi 10/11) — where the window of a press starts, as the code counts it: the run's `finishedAt` (abortResendAllowed), written by the Abort, or by the rejection of a gate that aborted the
  * run (rejectGate). Every word that names the 15 minutes names this start
+ * T7b-1d lượt sửa 5 (F-1, dieu-phoi 10/11) — and by every other writer of 'aborted': a precondition that aborts (finishWalk), an edge's end applied by central (applyEdgeSegmentEnd), the walker that lost its
+ * write to an Abort. The words name what they share, never one of them
  */
-export const MOC_CUA_SO = "the Abort (or the gate rejection) that aborted the run";
+export const MOC_CUA_SO = "when the run was aborted";
 
 /** T7b-1d lượt sửa 2 (H32) — what a later press can do when a read failed: it may send, it may not reach it (P2-Y: a container ended in another step's words), and the window is an upper limit, never a promise (as H28). */
 export function chuBamSauKhongDoc(): string {

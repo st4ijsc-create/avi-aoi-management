@@ -4559,7 +4559,7 @@ export async function resumeRun(
           enabled: true,
           runId,
           reason: FOE_ABORT_UNCONFIRMED,
-          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: 0; check the run and retry.`,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: 0; ${chuThuLai()}`,
           abortStops: emptyAbortReport(),
         };
       }
@@ -4570,7 +4570,7 @@ export async function resumeRun(
           enabled: true,
           runId,
           reason: FOE_ABORT_UNCONFIRMED,
-          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; check the run and retry.`,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; ${chuThuLai()}`,
           abortStops,
         };
       }
@@ -6222,6 +6222,11 @@ function chuKhongBen(ids: readonly string[]): string {
   return `STOP steps this Abort did not get out could not be recorded: ${ids.join(", ")}: a later press may not reach them: check the machine on site and use its direct STOP / E-STOP.`;
 }
 
+/** A2(n) T7b-1d lượt sửa 5 (F-5) — an Abort or a gate rejection the database did not confirm in time: a retry is a press like any, its window an upper limit from MOC_CUA_SO, never a promise; the machine first. */
+function chuThuLai(): string {
+  return `check the run and retry, but no retry can be counted on after ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}: check the machine on site and use its direct STOP / E-STOP.`;
+}
+
 /**
  * A2(n) T7b-1 fix 1 (RA-3) — the answer to a press on an aborted latched run: what the report says, nothing else. API text; the Studio reads `abortStops`. T7b-1c — what is owed: THE classification of the sweep's read.
  * T7b-1d (H23) — `chuaKhoa`: nothing is owed on such a run and the window stands: the words say what the next press can do.
@@ -6263,7 +6268,8 @@ function chuBamLai(runId: number, r: AbortStopReport, chuaKhoa = false): string 
 function chuBamLaiChuaKhoa(runId: number, r: AbortStopReport): string {
   const conGi = r.failed.length || r.pending.length || r.notPinned.length || r.unverified.length || r.untakenBranch.length || r.khongDocDuoc || r.quetChuaXong || r.khongBen?.length || (r.nhapQuet && r.sent.length);
   if (conGi || r.sent.some((id) => r.phanLoai?.[id]?.lop === "coTheDaRa")) return chuBamLai(runId, r, true);
-  return r.sent.length ? `Run ${runId} was already aborted — its STOP steps not yet confirmed were sent again.` : `Run ${runId} was already aborted — this press sent no STOP step. Check the machine on site.`;
+  // T7b-1d lượt sửa 5 (bảng câu dòng 13) — whether they went before, the rows cannot say cheaply (H27: a write lost reads as no trace; a precondition's abort sent nothing): "again" only as an if
+  return r.sent.length ? `Run ${runId} was already aborted — its STOP steps not yet confirmed were sent (again, if they had gone before).` : `Run ${runId} was already aborted — this press sent no STOP step. Check the machine on site.`;
 }
 
 /** A2(n) T7b-1d — which words a press gets: what its own sweep read of the run. */
@@ -7031,7 +7037,7 @@ export async function abortRun(
         enabled: foeEnabled(),
         runId,
         reason: FOE_ABORT_UNCONFIRMED,
-        message: `Abort of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; check the run and retry.`,
+        message: `Abort of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; ${chuThuLai()}`,
         abortStops,
       };
     }
