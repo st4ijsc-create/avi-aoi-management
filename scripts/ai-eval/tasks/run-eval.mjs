@@ -226,18 +226,19 @@ export function tieuDeKhoa(env = process.env) {
 }
 
 const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/;
-// Lớp 1, GIÁ TRỊ: chỉ nhận giá trị dạng cờ — rỗng, true/false, số, từ ngắn ≤ 32 ký tự chỉ gồm chữ/số/_ . + - (không `:` `/` `=`
-// hay khoảng trắng, nên không URL/DSN/chuỗi kết nối/JWT/base64). Chuỗi liền ≥ 16 chữ-số không dấu nối (dáng khoá hex/base62) bị loại.
-const GIA_TRI_CO = /^[A-Za-z0-9_.+-]{0,32}$/;
-const DANG_KHOA_LIEN = /^[A-Za-z0-9]{16,}$/;
+// Lớp 1, GIÁ TRỊ: chỉ nhận rỗng, số ngắn (≤ 10 ký tự, có thể âm/thập phân), hoặc MỘT từ trong tập cố định. Cờ thật dưới ba tiền tố
+// (10/11) là bool/số, cộng hai cờ chuỗi: AI_CODING_MODEL_TASK (code|chat) và AI_CODING_ABLATION_NGU_CANH (hai giá trị dưới).
+// Thêm cờ chuỗi mới ⇒ thêm giá trị vào tập này; giá trị lạ bị loại (chỉ ghi tên vào coBoQua), không đoán.
+const SO_CO = /^-?\d{1,9}(\.\d{1,6})?$/;
+const TU_CO = new Set(["true", "false", "on", "off", "yes", "no", "code", "chat", "auto", "persona-khong-khoi", "khoi-khong-persona"]);
 // Lớp 2, TÊN: đoạn tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp.
 const DOAN_BI_MAT =
-  /(^|_)(KEYS?|APIKEY|PRIVKEY|PRIVATEKEY|SECRETS?|PASSWORD|PASSWD|PASS|PWD|PW|PASSPHRASE|PASSCODE|PIN|CREDS?|CREDENTIALS?|BEARER|O?AUTH|COOKIES?|SESSION|SESSID|SID|PRIVATE|JWT|DSN|URL|URI|CONN|CONNECTION|CONNSTR|WEBHOOK|HOOK|SALT|HMAC|M?OTP|TOTP|MFA|SIGNATURE|SIGNING|SIG|CERT|PEM|SSH|GPG|PGP|ENCRYPTION|CIPHER|NONCE|ACCOUNT|USER|USERNAME|LOGIN|EMAIL|PHONE)(_|$)/;
+  /(^|_)(KEYS?|APIKEY|PRIVKEY|PRIVATEKEY|SECRETS?|PASSWORD|PASSWD|PASS|PWD|PW|PASSPHRASE|PASSCODE|PIN|CREDS?|CREDENTIALS?|BEARER|O?AUTH|COOKIES?|SESSION|SESSID|SID|PRIVATE|JWT|DSN|URL|URI|CONN|CONNECTION|CONNSTR|WEBHOOK|HOOK|SALT|HMAC|M?OTP|TOTP|MFA|SIGNATURE|SIGNING|SIG|CERT|PEM|SSH|GPG|PGP|ENCRYPTION|CIPHER|NONCE|ACCOUNT|USER|USERNAME|LOGIN|EMAIL|PHONE|LICENSE|LICENCE|SEED|SIGN|SERIAL|ACTIVATION)(_|$)/;
 // TOKEN số ít là bí mật (BOT_TOKEN, ACCESS_TOKEN…), trừ dạng đếm token của cờ thật; TOKENS số nhiều là đếm (MAX_TOKENS).
 const TOKEN_BI_MAT = /(^|_)TOKEN(_|$)/;
 const TOKEN_DEM = /(UOC_LUONG|MAX|SO|DEM|TRAN|NGAN_SACH)_TOKEN(_|$)/;
 const tenBiMat = (k) => DOAN_BI_MAT.test(k) || (TOKEN_BI_MAT.test(k) && !TOKEN_DEM.test(k));
-const giaTriCo = (v) => typeof v === "string" && GIA_TRI_CO.test(v) && !DANG_KHOA_LIEN.test(v);
+const giaTriCo = (v) => typeof v === "string" && (v === "" || (v.length <= 10 && SO_CO.test(v)) || TU_CO.has(v.toLowerCase()));
 
 /**
  * Cờ agent của lượt đo vào báo cáo. Đúng tiền tố mới xét; vào `co` (tên + giá trị) chỉ khi qua CẢ hai lớp giá trị và tên.

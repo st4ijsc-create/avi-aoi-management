@@ -337,14 +337,14 @@ test("coBaoCao: chỉ cờ ba tiền tố; tên có dáng bí mật bị loại 
   assert.deepEqual(coBaoCao(BI_MAT), {});
 });
 
-// 33 đuôi dáng bí mật × 3 tiền tố = 99 tên (kiem-dinh 10/11 đo bản cũ: 66/99 lọt).
-const DUOI_BI_MAT = ["PASS", "PW", "JWT", "BOT_TOKEN", "DSN", "DATABASE_URL", "CONNECTION_STRING", "WEBHOOK_URL", "SALT", "HMAC", "CRED", "PRIVKEY", "OTP", "PASSPHRASE", "API_KEY", "SECRET", "PASSWORD", "ACCESS_TOKEN", "REFRESH_TOKEN", "AUTH_HEADER", "COOKIE", "SESSION_ID", "PRIVATE_KEY", "SIGNING_KEY", "CLIENT_SECRET", "SSH_KEY", "CERT_PEM", "TOTP_SEED", "USERNAME", "LOGIN", "GITHUB_TOKEN", "REDIS_URI", "SMTP_PASSWD"];
+// 36 đuôi dáng bí mật × 3 tiền tố = 108 tên (kiem-dinh 10/11: bộ lọc tên cũ để lọt 66/99; P3 thêm LICENSE, SEED, SIGN).
+const DUOI_BI_MAT = ["PASS", "PW", "JWT", "BOT_TOKEN", "DSN", "DATABASE_URL", "CONNECTION_STRING", "WEBHOOK_URL", "SALT", "HMAC", "CRED", "PRIVKEY", "OTP", "PASSPHRASE", "API_KEY", "SECRET", "PASSWORD", "ACCESS_TOKEN", "REFRESH_TOKEN", "AUTH_HEADER", "COOKIE", "SESSION_ID", "PRIVATE_KEY", "SIGNING_KEY", "CLIENT_SECRET", "SSH_KEY", "CERT_PEM", "TOTP_SEED", "USERNAME", "LOGIN", "GITHUB_TOKEN", "REDIS_URI", "SMTP_PASSWD", "LICENSE", "SEED", "SIGN"];
 const TEN_99 = ["AI_AGENT_", "AI_AGENTIC_", "AI_CODING_"].flatMap((p) => DUOI_BI_MAT.map((d) => p + d));
 // 48 cờ thật dưới ba tiền tố trong server/shared/scripts/client (10/11): không cờ nào được bị lọc theo tên.
 const CO_THAT_48 = "AI_AGENTIC_ENABLED AI_AGENT_AN_CONG_CU AI_AGENT_CONG_KE_HOACH AI_AGENT_CON_BAO_CAO AI_AGENT_CUU_TRAN AI_AGENT_DAU_RA_DAI AI_AGENT_DOC_TRUOC_KHI_GHI AI_AGENT_GIAO_VIEC AI_AGENT_GIU_NGHI AI_AGENT_HOAN_TAC AI_AGENT_HOUSEKEEPING_ENABLED AI_AGENT_HOUSEKEEPING_INTERVAL_MS AI_AGENT_KIEM_DAC_TA AI_AGENT_MAX_TOKENS_MOT_LUOT AI_AGENT_NEN_MOC AI_AGENT_NEN_SO_THAT AI_AGENT_NGHI AI_AGENT_THEO_VAI_TRO AI_AGENT_TIEP_TUC AI_AGENT_TOM_TAT_80 AI_AGENT_TOOL_TIMEOUT AI_AGENT_TU_DONG AI_AGENT_TU_TRA_API AI_AGENT_UOC_LUONG_TOKEN AI_CODING_ABLATION_NGU_CANH AI_CODING_AUTOLOOP AI_CODING_AUTOLOOP_MAX AI_CODING_AUTOLOOP_VERIFY AI_CODING_BO_SUNG_USING AI_CODING_EDIT AI_CODING_EDIT_HUNKS AI_CODING_GEN AI_CODING_KHOI_SUA AI_CODING_LESSONS AI_CODING_MODEL_TASK AI_CODING_REPO_CONTEXT AI_CODING_REPO_CONTEXT_MIN_SCORE AI_CODING_REPO_CONTEXT_TIMEOUT_MS AI_CODING_TOOL_LLM AI_CODING_TOOL_LOOP AI_CODING_TOOL_LOOP_MAX_ROUNDS AI_CODING_TOOL_VETO AI_CODING_TU_TRI_GHI AI_CODING_TU_TRI_GHI_MAX AI_CODING_TU_TRI_GHI_REPO_CHINH AI_CODING_TU_TRI_LUOT AI_CODING_USING_MO_RONG".split(" ");
 
-test("locCo lớp TÊN: 99 tên dáng bí mật bị loại kể cả khi giá trị trông như cờ; chỉ ghi tên vào boQua", () => {
-  assert.equal(new Set(TEN_99).size, 99);
+test("locCo lớp TÊN: 108 tên dáng bí mật bị loại kể cả khi giá trị trông như cờ; chỉ ghi tên vào boQua", () => {
+  assert.equal(new Set(TEN_99).size, 108);
   for (const v of ["1", "hunter2", "true"]) {
     const r = locCo(Object.fromEntries(TEN_99.map((k) => [k, v])));
     assert.deepEqual(r.co, {}, `giá trị ${v}: ${Object.keys(r.co).join(", ")}`);
@@ -352,8 +352,8 @@ test("locCo lớp TÊN: 99 tên dáng bí mật bị loại kể cả khi giá t
   }
 });
 
-test("locCo lớp GIÁ TRỊ: tên vô hại mà giá trị dáng bí mật (URL, DSN, JWT, base64, khoá hex, có dấu cách, dài) bị loại", () => {
-  const xau = ["postgres://u:p@127.0.0.1:5434/db", "https://hooks.vidu.vn/abc", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln", "dGVzdA==", "0123456789abcdef0123456789abcdef", "sk1234567890ABCDEFGH", "mat khau", "x".repeat(33), "a=b", "C:\\khoa.txt"];
+test("locCo lớp GIÁ TRỊ: chỉ rỗng, số ngắn, từ trong tập cố định; tên vô hại mà giá trị khác (JWT ngắn, từ lạ, URL, DSN, base64, khoá hex, số dài…) bị loại", () => {
+  const xau = ["eyJhbGci.eyJ9.c2ln", "hunter2", "abc", "qwen3.6-35b", "12345678901", "123456789.123456", "1e9","postgres://u:p@127.0.0.1:5434/db", "https://hooks.vidu.vn/abc", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln", "dGVzdA==", "0123456789abcdef0123456789abcdef", "sk1234567890ABCDEFGH", "mat khau", "x".repeat(33), "a=b", "C:\\khoa.txt"];
   const env = Object.fromEntries(xau.map((v, i) => [`AI_AGENT_VO_HAI_${i}`, v]));
   const r = locCo(env);
   assert.deepEqual(r.co, {});
@@ -362,7 +362,7 @@ test("locCo lớp GIÁ TRỊ: tên vô hại mà giá trị dáng bí mật (URL
 });
 
 test("locCo: 48 cờ thật với giá trị dạng cờ đều vào báo cáo; biến ngoài tiền tố không vào cả co lẫn boQua", () => {
-  const giaTri = ["1", "0", "0.5", "true", "false", "", "persona-khong-khoi", "qwen3.6-35b-a3b-ud-q4_k_xl", "120000", "-1"];
+  const giaTri = ["1", "0", "0.5", "true", "false", "", "persona-khong-khoi", "code", "120000", "-1", "khoi-khong-persona", "chat", "TRUE", "3600000"];
   const env = Object.fromEntries(CO_THAT_48.map((k, i) => [k, giaTri[i % giaTri.length]]));
   const r = locCo({ ...env, ...BI_MAT, PATH: "/usr/bin" });
   assert.deepEqual(r.co, Object.fromEntries(Object.entries(env).sort()));
