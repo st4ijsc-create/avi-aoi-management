@@ -397,6 +397,10 @@ export interface AbortStopReport {
   chuaKhoa?: true;
   /** A2(n) T7b-1d (H27) — a run not latched: what this Abort did not get out and whose `abort:` row did not land: nothing remembers it. Absent otherwise */
   khongBen?: string[];
+  /** A2(n) T7b-1d lượt sửa 3 (F1) — unread, read earlier as no pinned STOP and pinned again: the send path's own verdict (stopAbortCoGui at this press) says a later press does not send it. Absent otherwise */
+  khongGuiLai?: string[];
+  /** A2(n) T7b-1d lượt sửa 3 (F7) — read earlier as no pinned STOP, read pinned now, and not sent by the same verdict: past the window. Absent otherwise */
+  ghimNgoaiCua?: string[];
 }
 
 /** doc 81 Đợt 4 (R-4-j, R-4-n, final wave G3) — why a definition was refused (deploy, and since G4 run start). */
@@ -6235,8 +6239,14 @@ function chuBamLai(runId: number, r: AbortStopReport, chuaKhoa = false): string 
   if (conBen.length) cau.push(chuaKhoa ? `STOP steps refused or not answered: ${conBen.join(", ")}: press Abort again within ${phut} minutes; past that check the machine on site.` : `STOP steps refused or not answered: ${conBen.join(", ")}; they stay owed unless a later press sends them.`);
   if (r.khongBen?.length) cau.push(chuKhongBen(r.khongBen));
   if (r.pending.length) cau.push(`STOP steps with no answer yet: ${r.pending.join(", ")}.`);
-  const chuaXacMinh = r.unverified.filter((id) => !r.khongBen?.includes(id));
+  const khongGuiLai = new Set(r.khongGuiLai ?? []);
+  const chuaXacMinh = r.unverified.filter((id) => !r.khongBen?.includes(id) && !khongGuiLai.has(id));
   if (chuaXacMinh.length) cau.push(`Could not be verified as a pinned STOP: ${chuaXacMinh.join(", ")}: not sent; a later press${chuaKhoa || chuaXacMinh.some((id) => pl[id]?.lop === "xong") ? ` within ${phut} minutes` : ""} sends it if its read finds a pinned STOP.`);
+  // T7b-1d lượt sửa 3 (F1, F7) — what a later press does not send, said so: never promised
+  const quaCua = (ds: readonly string[], dau: string) => `${dau}: ${ds.join(", ")}: not sent, and a later press does not send it (past the window for a pin set again): check the machine on site and use its direct STOP / E-STOP.`;
+  const ngoaiCua = r.unverified.filter((id) => khongGuiLai.has(id));
+  if (ngoaiCua.length) cau.push(quaCua(ngoaiCua, "Could not be verified as a pinned STOP"));
+  if (r.ghimNgoaiCua?.length) cau.push(quaCua(r.ghimNgoaiCua, "Read as a pinned STOP again"));
   if (r.notPinned.length) cau.push(`Read as no pinned STOP: ${r.notPinned.join(", ")}: not sent.`);
   if (r.untakenBranch.length) cau.push(`STOP steps in a branch never evaluated: ${r.untakenBranch.join(", ")}: not sent; check the machine on site.`);
   if (r.khongDocDuoc) cau.push(`Its records could not be read, so what they would show was not sent. ${chuBamSauKhongDoc()}: check the machine on site.`);
@@ -6654,8 +6664,16 @@ async function runAbortStopSweep(
       const lan: LanBamAbort = !opts.bamLai ? "dau" : opts.bamLai.trongCua ? "trongCua" : "ngoaiCua";
       // T7b-1d lượt sửa 2 (H31-K) — read earlier as no pinned STOP, its read lost now: it was on the marked route only for want of a read, and it does not go on that (0 commands, as before). It stays listed as unread: never `xong` with no word
       const macChuaDoc = plan.send.filter((s) => danhDau.has(s.id) && hangTheo.get(abortRowId(s.id))?.status === "skipped").map((s) => s.id);
+      // T7b-1d lượt sửa 3 (F7) — read pinned again, its row the one of a read "not pinned", dropped by the verdict below: past the window
+      const ghimLaiBoLoc = plan.send.filter((s) => !danhDau.has(s.id) && hangTheo.get(abortRowId(s.id))?.status === "skipped" && !stopAbortCoGui(phanCua(s.id), lan)).map((s) => s.id);
+      if (ghimLaiBoLoc.length) report.ghimNgoaiCua = ghimLaiBoLoc;
       plan.send = plan.send.filter((s) => stopAbortCoGui(phanCua(s.id), lan));
-      for (const id of macChuaDoc) if (!plan.send.some((s) => s.id === id)) plan.unverified.push(id);
+      for (const id of macChuaDoc) {
+        if (plan.send.some((s) => s.id === id)) continue;
+        plan.unverified.push(id);
+        // T7b-1d lượt sửa 3 (F1) — whether a later press sends it once its read finds a pin: the class it would then have, under the send path's own verdict at this press (the window only closes)
+        if (!stopAbortCoGui(phanLoaiStopAbort(id, { ...vaoPhanLoai, ghimLai: () => true }), lan)) (report.khongGuiLai ??= []).push(id);
+      }
     }
     report.unverified = plan.unverified;
     report.untakenBranch = plan.untakenBranch;

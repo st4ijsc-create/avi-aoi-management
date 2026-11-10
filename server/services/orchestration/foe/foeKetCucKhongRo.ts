@@ -397,7 +397,9 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   const ma = a.vi ? ` (${a.vi.ma})` : "";
   const tay = "use the machine's direct STOP / E-STOP";
   const chu = a.chuAbort ?? "chuaRaKhongHan";
-  const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}.`;
+  // T7b-1d lượt sửa 3 (F1, dieu-phoi 10/11, (a)) — "no time limit" is of the debt while it stands. A press that reads it as no pinned STOP ends it (C-CLR); a pin set again after that is sent only within the window of the Abort (H31):
+  // the upper limit is said, nothing is promised past it. One key, as before
+  const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of the Abort: past that, check the machine on site and use its direct STOP / E-STOP.`;
   // H28 (dieu-phoi 09/11) — a debt durable nowhere: a press may send it (the body of a container: it does) or may not reach it (a compensation not due): no promise, no minutes
   const han = `This could not be recorded: a further press of Abort may send it, but may not reach it: check the machine on site and ${tay}.`;
   // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
