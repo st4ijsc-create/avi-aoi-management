@@ -139,6 +139,8 @@ LLAMA_SERVER_ENABLED=true
 LLAMA_SERVER_URL=http://127.0.0.1:8091   # ⚠ 8091, KHÔNG 8080 (8080 = Apache trên máy này)
 LLAMA_SERVER_MODEL=<GGUF_DEFAULT_MODEL>.gguf
 # LLAMA_SERVER_API_KEY=...       # only if you started the server with --api-key
+# LLAMA_SERVER_API_KEY_FILE=...  # thắng khoá trên: start-llama-server.ps1 truyền --api-key-file, máy chủ ứng dụng đọc cùng tệp (tạo: node scripts/ai/tao-khoa-llama.mjs <đường ngoài repo>)
+# LLAMA_SERVER_ALIAS=thoca-coder  # --alias: GET /v1/models trả bí danh; tên tệp thật đọc ở /props.model_path
 # LLAMA_SERVER_STRICT=false      # true → no in-process fallback (honest offline template instead)
 ```
 

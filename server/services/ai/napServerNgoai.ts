@@ -16,6 +16,7 @@
  *      llama-server ngoài đang sống (không biết ⇒ không đoán là trống); không có server ngoài ⇒ cho qua như cũ (máy CPU / không GPU).
  * Hằng số chỉnh bằng env: `AI_NAP_PHU_TROI_MB` (3112), `AI_NAP_BIEN_AN_TOAN_MB` (1536), `AI_NAP_HE_SO_TEP` (1.0).
  */
+import { tieuDeLlamaServer } from "./khoaLlamaServer";
 export type MaLoiNapServerNgoai = "NAP_TRUNG_SERVER_NGOAI" | "VRAM_KHONG_DU_NAP" | "NAP_IN_PROCESS_BI_TAT";
 
 export class LoiNapServerNgoai extends Error {
@@ -63,8 +64,15 @@ export const phuThuocMacDinh: PhuThuocNapServerNgoai = {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), hanMs);
     try {
-      const key = (process.env.LLAMA_SERVER_API_KEY || "").trim();
-      const res = await fetch(`${url.replace(/\/+$/, "")}/v1/models`, { signal: ctrl.signal, headers: key ? { authorization: `Bearer ${key}` } : {} });
+      const goc = url.replace(/\/+$/, "");
+      const headers = tieuDeLlamaServer();
+      // D1: có `--alias` thì `/v1/models` trả bí danh, không phải tệp ⇒ `/props.model_path` trước.
+      const props = await fetch(`${goc}/props`, { signal: ctrl.signal, headers }).catch(() => null);
+      if (props?.ok) {
+        const p = (await props.json().catch(() => null)) as { model_path?: unknown } | null;
+        if (typeof p?.model_path === "string" && p.model_path.trim()) return baseModel(p.model_path);
+      }
+      const res = await fetch(`${goc}/v1/models`, { signal: ctrl.signal, headers });
       if (!res.ok) return null;
       const j = (await res.json()) as { data?: Array<{ id?: unknown }>; models?: Array<{ model?: unknown; name?: unknown }> };
       const id = j?.data?.[0]?.id ?? j?.models?.[0]?.model ?? j?.models?.[0]?.name;

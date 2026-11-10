@@ -10,6 +10,7 @@
  *                   máy phát triển; vắng ⇒ `null`, không phải "0 %").
  * FAIL-SAFE từng phần: một nguồn hỏng chỉ làm ô ĐÓ ra `null` + lý do, không làm hỏng cả hồ sơ.
  */
+import { tieuDeLlamaServer } from "./khoaLlamaServer";
 import fs from "node:fs";
 import path from "node:path";
 import { sql } from "drizzle-orm";
@@ -56,11 +57,12 @@ const soDuong = (x: unknown) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-async function docProps(): Promise<HoSoModel["dangPhucVu"]> {
+/** Xuất cho lưới (khoaLlamaServer.noiGoi.test): ghim tiêu đề khoá ở /props. */
+export async function docProps(): Promise<HoSoModel["dangPhucVu"]> {
   if (String(process.env.LLAMA_SERVER_ENABLED ?? "").toLowerCase() !== "true") return { trangThai: "tat", lyDo: "LLAMA_SERVER_ENABLED" };
   const url = (process.env.LLAMA_SERVER_URL || "http://127.0.0.1:8091").replace(/\/+$/, "");
   try {
-    const r = await fetch(`${url}/props`, { signal: AbortSignal.timeout(2500) });
+    const r = await fetch(`${url}/props`, { headers: tieuDeLlamaServer(), signal: AbortSignal.timeout(2500) });
     if (!r.ok) return { trangThai: "khong-lien-lac", lyDo: `HTTP ${r.status}` };
     const j = (await r.json()) as Record<string, any>;
     return {

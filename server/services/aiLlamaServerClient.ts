@@ -51,6 +51,7 @@
  * `LLAMA_SERVER_ENABLED` off (the default) makes `generateFim` behave EXACTLY as before C2 —
  * see the runbook (docs/ECOSYSTEM/70_AI_PERSISTENT_LLAMA_SERVER_RUNBOOK_2026-07-26.md §10).
  */
+import { tieuDeLlamaServer } from "./ai/khoaLlamaServer";
 import type {
   GgufChatMessage,
   GgufChatOptions,
@@ -604,8 +605,7 @@ function fimBaseUrl(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  const key = (process.env.LLAMA_SERVER_API_KEY || "").trim();
-  return key ? { authorization: `Bearer ${key}` } : {};
+  return tieuDeLlamaServer();
 }
 
 /**
@@ -681,11 +681,18 @@ export async function modelServerDangChay(timeoutMs = 2000): Promise<string | nu
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    // D1: có `--alias` thì `/v1/models` trả bí danh, không phải tệp ⇒ `/props.model_path` trước; `/v1/models` chỉ là đường lùi.
+    const props = await fetch(`${url}/props`, { headers: authHeaders(), signal: ctrl.signal }).catch(() => null);
+    if (props?.ok) {
+      const p = (await props.json().catch(() => null)) as { model_path?: unknown } | null;
+      if (typeof p?.model_path === "string" && p.model_path.trim()) return basename(p.model_path) || null;
+    }
     const res = await fetch(`${url}/v1/models`, { headers: authHeaders(), signal: ctrl.signal });
     if (!res.ok) return null;
     const j = (await res.json()) as { data?: Array<{ id?: unknown }>; models?: Array<{ model?: unknown; name?: unknown }> };
     const id = j?.data?.[0]?.id ?? j?.models?.[0]?.model ?? j?.models?.[0]?.name;
     if (typeof id !== "string" || !id.trim()) return null;
+    if (id === (process.env.LLAMA_SERVER_ALIAS || "").trim()) return null; // bí danh không phải tên model: "không biết" đúng hơn đoán
     return basename(id) || null;
   } catch {
     return null;

@@ -215,8 +215,16 @@ $srvArgs = @(
     '--metrics',
     '--no-webui'
 )
+# F5: khoa tu tep thang khoa trong env; tep khai ma khong co => dung lai, khong chay server khong khoa.
+$apiKeyFile = $cfg['LLAMA_SERVER_API_KEY_FILE']
 $apiKey = $cfg['LLAMA_SERVER_API_KEY']
-if (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
+if (-not [string]::IsNullOrWhiteSpace($apiKeyFile)) {
+    if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE khong ton tai: $apiKeyFile"; exit 2 }
+    $srvArgs += @('--api-key-file', $apiKeyFile)
+} elseif (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
+# D1: bi danh cho client (GET /v1/models). Ten tep that van doc o /props.model_path.
+$biDanh = $cfg['LLAMA_SERVER_ALIAS']
+if (-not [string]::IsNullOrWhiteSpace($biDanh)) { $srvArgs += @('--alias', $biDanh) }
 
 # ── B4 (2026-09-22, ĐO ĐƯỢC) — NGÂN SÁCH TOKEN cho `<think>` của model biết nghĩ ─────────────────
 # Qwen3.6-35B-A3B nghĩ mặc định; lượt SỬA có prompt lớn từng tiêu HẾT trần sinh 16k vào suy luận rồi trả RỖNG (G5-D,
