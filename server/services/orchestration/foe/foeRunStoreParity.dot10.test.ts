@@ -11044,6 +11044,15 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   beforeEach(() => {
     // lượt sửa 4 (B-4): this case's runs start here; an older run's command lands apart (h.lac), never in this case
     h.ranhGioi = nhayId(++lanCa * 1000);
+    // phán quyết sau rà (C3): first, what landed in h.sent between the file's beforeEach and this one (the fence was null there) is an older run's: kept apart, with the latch of ITS run.
+    // Here, not where the file's beforeEach empties h.sent: those commands come AFTER that emptying, and keeping the fence closed through it would carry it into every other block
+    for (let i = h.sent.length - 1; i >= 0; i--) {
+      const so = /^run(\d+)-/.exec(String(h.sent[i]!.key));
+      if (!so || Number(so[1]) >= h.ranhGioi) continue;
+      const x = h.sent.splice(i, 1)[0]!;
+      Object.assign(x, { lac: true, sauKhoa: h.caCua(Number(so[1]))?.khoa ?? true });
+      h.lacTatCa.push(x);
+    }
     h.caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?", khoa: null, ghim: null });
     h.lac.length = 0;
     seedHalt();
@@ -11174,6 +11183,39 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(ids()).toEqual([]);
     boDaKiem(nt.map((x) => String(x.key)));
   });
+  // ── phán quyết sau rà (C3, R5-1, probe r6): the gap between the file's beforeEach (h.sent emptied, the fence null, the latch 0) and the block's. A latched case's walker reads the pin of 'nt'
+  // after the case; that read answers K microtask ticks after it is released, and K = 0, 1 puts the hand-over in that gap (measured by the reviewer, 3/3). It must be kept apart, by its run ──────
+  for (const K of [0, 1]) {
+    let cKhe = 0;
+    it(`T7B1D-DON-E-KHE-A K=${K} a latched case leaves its walker; its pin read of 'nt' is released after the case, then answers ${K} ticks later`, async () => {
+      let tha: () => void = () => undefined;
+      const toi = new Promise<void>((ok) => (tha = ok));
+      let lan = 0;
+      h.ghim = async (d: unknown, i: { commandType: string }) => {
+        if (i.commandType === "stop" && ++lan === 1) {
+          tha();
+          for (let j = 0; j < K; j++) await null;
+        }
+        return PIN_OK(d, i);
+      };
+      const { c, di } = await moDi(def(`d1ddek${K}`, [gate(), ot("x"), delay("w", 120), stopTyped("nt")]));
+      await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
+      h.traTimeout = 1;
+      cKhe = c;
+      void di.catch(() => undefined);
+      onTestFinished(async () => {
+        await Promise.race([toi, new Promise<void>((ok) => setTimeout(ok, 2_000))]);
+      });
+    });
+    it(`T7B1D-DON-E-KHE K=${K} the next case: A's 'nt' is kept apart with the latch of its run and named by its case, never among this case's commands`, async () => {
+      await waitFor(() => [...h.sent, ...h.lacTatCa].some((x) => String(x.key).startsWith(`run${cKhe}-nt-`)), "A's command, wherever it landed", 2_000);
+      expect(ids(), "not this case's").not.toContain("nt");
+      const nt = h.lacTatCa.filter((x) => String(x.key).startsWith(`run${cKhe}-nt-`));
+      expect(nt.map((x) => `${String(x.sauKhoa)}:${String(x.lac)}`), "kept apart, with its run's latch").toEqual(["true:true"]);
+      expect(kiemLac(), "found, by its case").toEqual(expect.arrayContaining([expect.stringContaining(`(a run of "T7B1D-DON-E-KHE-A K=${K}`)]));
+      boDaKiem(nt.map((x) => String(x.key)));
+    });
+  }
 
   // ── the fake (fix 1, step 1): what a caller holds is its own, as with a database ────────────────────────────────────────────────────────────────────────────────────
   it("T7B1D-FAKE-KHONG-CHIA read, seed, insert, update, delete: nothing a caller holds is what the fake stores", async () => {
@@ -13255,8 +13297,10 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await mocChung(e.runId);
   });
   // ── lượt sửa 5 (F-5, bảng câu dòng 25): "check the run and retry" names the window as an upper limit and the machine; a retry at minute 14 sends, at minute 16 nothing ─────────────────────────────
-  for (const via of ["abort", "reject"] as const) {
-    it(`T7B1D-THU-LAI-CHUA-XAC-NHAN ${via === "abort" ? "an Abort" : "a gate rejection"} whose 'aborted' write lands late: the retry it is told is bounded by 15 minutes from when the run was aborted, and the machine is to be checked; a retry at minute 14 sends, at minute 16 nothing`, async () => {
+  // phán quyết sau rà (R5-6): the road of a rejection with a business hook (QT, foeEngine :4573): its claim writes 'compensating', its final write of 'aborted' lands late
+  for (const via of ["abort", "reject", "qt"] as const) {
+    const ten = via === "qt" ? "T7B1D-THU-LAI-QT a gate rejection with a business hook (QT)" : `T7B1D-THU-LAI-CHUA-XAC-NHAN ${via === "abort" ? "an Abort" : "a gate rejection"}`;
+    it(`${ten} whose 'aborted' write lands late: the retry it is told is bounded by 15 minutes from when the run was aborted, and the machine is to be checked; a retry at minute 14 sends, at minute 16 nothing`, async () => {
       for (const phut of [14, 16] as const) {
         let c: number;
         let a: { reason?: string; message?: string };
@@ -13271,10 +13315,12 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
           a = await abortRun(c, OWNER, "first");
           await m.di.catch(() => undefined);
         } else {
-          c = await centralRun(def(`d1dtlr${phut}`, [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+          c = await centralRun(def(`d1dtl${via === "qt" ? "q" : "r"}${phut}`, [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
           await wait(30);
           const view = (await getRun(c, { bindingDigest: true }))!;
-          a = await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER);
+          const hook = via === "qt" ? { compensate: async () => (await wait(50), "qt hook ran") } : {};
+          a = await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER, hook);
+          if (via === "qt") expect(runRow(c).status, "the claim with a hook: compensating, its final write not landed (the :4573 road)").toBe("compensating");
         }
         expect(a.reason).toBe("abortUnconfirmed");
         expect(a.message).toMatch(via === "abort" ? /^Abort of run \d+ not confirmed by the database in time/ : /^Rejection of run \d+ not confirmed by the database in time/);
