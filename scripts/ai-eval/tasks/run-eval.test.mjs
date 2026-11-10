@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, coBaoCao, locCo, loiThamSo, nhanTienTrinhNang, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, coBaoCao, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -384,6 +384,36 @@ test("AI_AGENT_AN_CONG_CU: luật riêng — danh sách tool biết trước ph�
   }
   // Luật riêng không mở rộng sang cờ khác: danh sách tool dưới tên cờ thường vẫn bị loại.
   assert.deepEqual(locCo({ AI_AGENT_NEN_MOC: "find_symbol" }).co, {});
+});
+
+test("nguồn tên tool hỏng (đọc lỗi, không có mảng, không phải chuỗi) ⇒ tập rỗng ⇒ AI_AGENT_AN_CONG_CU bị loại, chỉ ghi tên", () => {
+  for (const nd of [null, undefined, 42, "", "export const KHAC = [\"find_symbol\"] as const;", "export const TEN_CONG_CU = [\"find_symbol\""]) {
+    const t = tachTenCongCu(nd);
+    assert.equal(t.size, 0, String(nd));
+    assert.equal(t.has("find_symbol"), false, String(nd));
+  }
+  assert.deepEqual([...tachTenCongCu('export const TEN_CONG_CU = [\n  "find_symbol",\n  // ghi chú\n  "lookup_api",\n] as const;')], ["find_symbol", "lookup_api"]);
+  const hong = path.join(tam, "khong-co", "congCu.ts");
+  assert.equal(tenCongCuBiet(hong).size, 0);
+  assert.equal(tenCongCuBiet(hong).has("find_symbol"), false);
+  const sai = path.join(tam, "congCu-sai.ts");
+  fs.writeFileSync(sai, "export const KHONG_PHAI = [\"find_symbol\"];\n");
+  for (const tepCongCu of [hong, sai]) {
+    for (const v of ["find_symbol,search_code,search_docs", "lookup_api"]) assert.deepEqual(locCo({ AI_AGENT_AN_CONG_CU: v }, { tepCongCu }), { co: {}, boQua: ["AI_AGENT_AN_CONG_CU"] }, `${tepCongCu} ${v}`);
+    assert.deepEqual(locCo({ AI_AGENT_AN_CONG_CU: "" }, { tepCongCu }).co, { AI_AGENT_AN_CONG_CU: "" }, "rỗng = không ẩn gì, vẫn ghi được");
+  }
+});
+
+test("cờ có luật GIÁ TRỊ riêng vẫn qua lớp TÊN: tên dáng bí mật bị loại dù luật riêng nhận giá trị", () => {
+  LUAT_GIA_TRI.AI_AGENT_GIA_SECRET = () => true;
+  LUAT_GIA_TRI.AI_AGENT_GIA_BOT_TOKEN = () => true;
+  try {
+    const r = locCo({ AI_AGENT_GIA_SECRET: "bm-luat-rieng-q7z", AI_AGENT_GIA_BOT_TOKEN: "1" });
+    assert.deepEqual(r, { co: {}, boQua: ["AI_AGENT_GIA_BOT_TOKEN", "AI_AGENT_GIA_SECRET"] });
+  } finally {
+    delete LUAT_GIA_TRI.AI_AGENT_GIA_SECRET;
+    delete LUAT_GIA_TRI.AI_AGENT_GIA_BOT_TOKEN;
+  }
 });
 
 test("báo cáo không chứa bí mật trong env; khoá llama-server THẬT SỰ được gửi trong tiêu đề gọi model", async () => {
