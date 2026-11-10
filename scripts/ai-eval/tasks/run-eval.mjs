@@ -186,6 +186,7 @@ export function bangMarkdown(bc) {
     `Trục ${bc.truc ?? "M"} · commit \`${bc.commit}\`${bc.cayBan ? " (cây có thay đổi chưa commit)" : ""} · ${bc.soMau} mẫu/bài · trần ${bc.maxTokens} token`,
     `Model \`${m.tep ?? "?"}\` · sha256 \`${m.sha ?? "chưa băm"}\` · ctx ${m.ctx ?? "?"} · budget ${m.reasoningBudget ?? "?"}`,
     `Cờ: ${Object.keys(bc.co).length ? Object.entries(bc.co).map(([k, v]) => `\`${k}=${v}\``).join(" ") : "không đặt"}`,
+    ...(bc.coBoQua?.length ? [`Cờ bị loại khỏi báo cáo (tên/giá trị dáng bí mật, chỉ ghi tên): ${bc.coBoQua.join(", ")}`] : []),
     ...(bc.ghiChu ? [`Ghi chú: ${bc.ghiChu}`] : []),
     ...(bc.taiMay ? [bc.taiMay.sach ? `Tải máy: không thấy tiến trình nặng, slot không bận (${bc.taiMay.soMauTai} mẫu, CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %)` : `**Tải máy: có tiến trình khác trong lúc đo, thời gian có thể méo.** ${Object.entries(bc.taiMay.tienTrinhNang).map(([k, v]) => `${k} ${v}/${bc.taiMay.soMauTai} mẫu`).join(", ") || "không có tiến trình nặng"}; slot bận ${bc.taiMay.soLuotSlotBan} lượt; CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %`] : []),
     ...(bc.dungSom ? ["", `**Dừng sớm: ${bc.dungSom}. Số dưới đây chưa đủ mẫu.**`] : []),
@@ -225,13 +226,60 @@ export function tieuDeKhoa(env = process.env) {
 }
 
 const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/;
-// Tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp; TOKEN đứng một mình là đếm token, giữ.
-const DANG_BI_MAT = /(^|_)(KEY|APIKEY|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|BEARER|AUTH|COOKIE|SESSION|PRIVATE)(_|$)|(ACCESS|API|AUTH|BEARER|REFRESH|ID|SESSION)_TOKEN/;
+// Lớp 1, GIÁ TRỊ: chỉ nhận rỗng, số ngắn (≤ 10 ký tự, có thể âm/thập phân), hoặc MỘT từ trong tập cố định. Cờ thật dưới ba tiền tố
+// (10/11) là bool/số, cộng hai cờ chuỗi: AI_CODING_MODEL_TASK (code|chat) và AI_CODING_ABLATION_NGU_CANH (hai giá trị dưới).
+// Thêm cờ chuỗi mới ⇒ thêm giá trị vào tập này; giá trị lạ bị loại (chỉ ghi tên vào coBoQua), không đoán.
+const SO_CO = /^-?\d{1,9}(\.\d{1,6})?$/;
+const TU_CO = new Set(["true", "false", "on", "off", "yes", "no", "code", "chat", "auto", "persona-khong-khoi", "khoi-khong-persona"]);
+// Lớp 2, TÊN: đoạn tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp.
+const DOAN_BI_MAT =
+  /(^|_)(KEYS?|APIKEY|PRIVKEY|PRIVATEKEY|SECRETS?|PASSWORD|PASSWD|PASS|PWD|PW|PASSPHRASE|PASSCODE|PIN|CREDS?|CREDENTIALS?|BEARER|O?AUTH|COOKIES?|SESSION|SESSID|SID|PRIVATE|JWT|DSN|URL|URI|CONN|CONNECTION|CONNSTR|WEBHOOK|HOOK|SALT|HMAC|M?OTP|TOTP|MFA|SIGNATURE|SIGNING|SIG|CERT|PEM|SSH|GPG|PGP|ENCRYPTION|CIPHER|NONCE|ACCOUNT|USER|USERNAME|LOGIN|EMAIL|PHONE|LICENSE|LICENCE|SEED|SIGN|SERIAL|ACTIVATION)(_|$)/;
+// TOKEN số ít là bí mật (BOT_TOKEN, ACCESS_TOKEN…), trừ dạng đếm token của cờ thật; TOKENS số nhiều là đếm (MAX_TOKENS).
+const TOKEN_BI_MAT = /(^|_)TOKEN(_|$)/;
+const TOKEN_DEM = /(UOC_LUONG|MAX|SO|DEM|TRAN|NGAN_SACH)_TOKEN(_|$)/;
+const tenBiMat = (k) => DOAN_BI_MAT.test(k) || (TOKEN_BI_MAT.test(k) && !TOKEN_DEM.test(k));
+const giaTriChung = (v) => v === "" || (v.length <= 10 && SO_CO.test(v)) || TU_CO.has(v.toLowerCase());
 
-/** Cờ agent của lượt đo vào báo cáo (tên + giá trị). Chỉ ba tiền tố trên, trừ tên có dáng bí mật; mọi biến env khác không vào. */
-export function coBaoCao(env = process.env) {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => TIEN_TO_CO.test(k) && !DANG_BI_MAT.test(k)).sort());
+let tenCongCuDem = null;
+/**
+ * Tên tool biết trước = `TEN_CONG_CU` trong `shared/agentCore/congCu.ts` (đọc nguồn một lần). Đọc hỏng ⇒ tập rỗng ⇒ cờ dùng nó bị loại
+ * (nghiêng về không ghi), không đoán.
+ */
+export function tenCongCuBiet() {
+  if (!tenCongCuDem) {
+    try {
+      const m = fs.readFileSync(`${ROOT}/shared/agentCore/congCu.ts`, "utf8").match(/export const TEN_CONG_CU = \[([\s\S]*?)\] as const;/);
+      tenCongCuDem = new Set(m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []);
+    } catch {
+      tenCongCuDem = new Set();
+    }
+  }
+  return tenCongCuDem;
 }
+
+// Cờ chuỗi có luật GIÁ TRỊ riêng (quét 48 cờ thật 10/11: chỉ cờ này mang giá trị ngoài số/từ cố định). Cờ có luật riêng KHÔNG rơi về luật chung.
+const LUAT_GIA_TRI = {
+  // Bộ đo tìm mã (`boThucThiMayChu.congCuBiAn`, `run-tim-ma.mjs`): danh sách tên tool, phân tách bằng phẩy, mọi tên phải là tool biết trước.
+  AI_AGENT_AN_CONG_CU: (v) => v === "" || (/^[a-z_]+(,[a-z_]+)*$/.test(v) && v.split(",").every((t) => tenCongCuBiet().has(t))),
+};
+const giaTriCo = (k, v) => typeof v === "string" && (LUAT_GIA_TRI[k] ? LUAT_GIA_TRI[k](v) : giaTriChung(v));
+
+/**
+ * Cờ agent của lượt đo vào báo cáo. Đúng tiền tố mới xét; vào `co` (tên + giá trị) chỉ khi qua CẢ hai lớp giá trị và tên.
+ * Bị loại thì chỉ ghi TÊN vào `boQua`, không bao giờ ghi giá trị. Mọi biến env ngoài ba tiền tố không vào đâu cả.
+ */
+export function locCo(env = process.env) {
+  const co = {};
+  const boQua = [];
+  for (const [k, v] of Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!TIEN_TO_CO.test(k)) continue;
+    if (giaTriCo(k, v) && !tenBiMat(k)) co[k] = v;
+    else boQua.push(k);
+  }
+  return { co, boQua };
+}
+
+export const coBaoCao = (env = process.env) => locCo(env).co;
 
 async function goiModel(url, sys, prompt, maxTokens) {
   const t0 = Date.now();
@@ -411,7 +459,7 @@ async function main() {
     sampling: SAMPLING,
     giayTuong: Math.round((Date.now() - t0) / 1000),
     model: { tep: p.model ? p.model.split(/[\\/]/).pop() : null, sha, ctx: p.ctx, reasoningBudget: p.reasoningBudget, slot: p.slot },
-    co: coBaoCao(process.env),
+    ...(({ co, boQua }) => ({ co, ...(boQua.length ? { coBoQua: boQua } : {}) }))(locCo(process.env)),
     ghiChu: lay("--ghi-chu") ?? null,
     taiMay: giayTai > 0 ? tongHopTai(mauTai, soLuotSlotBan) : null,
     dungSom,
