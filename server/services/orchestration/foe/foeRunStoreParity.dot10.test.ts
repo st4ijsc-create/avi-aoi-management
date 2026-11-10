@@ -11827,6 +11827,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       expect(hang(c, "abort:s"), "lost").toBeUndefined();
       expect(hang(c, hinh === "hop" ? "b" : "s")?.error, "the walker's cancel").toBe("Run is aborting.");
       expect(a.message, "the first answer names the STOP").toMatch(/could not be recorded: s:/);
+      expect(a.message, "H33: check the machine on site").toMatch(/could not be recorded: s:[^]*check the machine on site and use its direct STOP \/ E-STOP/);
+      expect(a.message, "H33: no press promised").not.toMatch(/press Abort again|a later press (will )?sends?\b/);
       expect(a.message).toMatch(/may not reach/);
       expect(a.message).not.toMatch(/owed|press Abort again/);
       expect(no(c), "no debt").toEqual([]);
@@ -11856,6 +11858,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(ids(), "the planner reaches it").toEqual(["s"]);
     expect(a1.abortStops?.failed).toEqual(["s"]);
     expect(a1.message).toMatch(/could not be recorded: s:/);
+    expect(a1.message, "H33: check the machine on site").toMatch(/could not be recorded: s:[^]*check the machine on site and use its direct STOP \/ E-STOP/);
+    expect(a1.message, "H33: no press promised").not.toMatch(/press Abort again|a later press (will )?sends?\b/);
     expect(a1.message).not.toMatch(/stay owed|within 15 minutes/);
     h.hangNem = null;
     h.tuChoi.clear();
@@ -11876,6 +11880,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(a.abortStops?.unverified).toEqual(["s"]);
     expect(a.abortStops?.khongBen).toEqual(["s"]);
     expect(a.message).toMatch(/could not be recorded: s:/);
+    expect(a.message, "H33: check the machine on site").toMatch(/could not be recorded: s:[^]*check the machine on site and use its direct STOP \/ E-STOP/);
+    expect(a.message, "H33: no press promised").not.toMatch(/press Abort again|a later press (will )?sends?\b/);
     const a1 = await bam(c, "still lost");
     expect(a1.abortStops?.khongBen).toEqual(["s"]);
     expect(a1.message).not.toMatch(/sends it if its read finds/);
@@ -11962,6 +11968,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       if (mat) {
         expect(a.abortStops?.khongBen).toEqual(["s"]);
         expect(a.message).toMatch(/could not be recorded: s:/);
+        expect(a.message, "H33: check the machine on site").toMatch(/could not be recorded: s:[^]*check the machine on site and use its direct STOP \/ E-STOP/);
+        expect(a.message, "H33: no press promised").not.toMatch(/press Abort again|a later press (will )?sends?\b/);
         expect(a.message).not.toMatch(/owed|press Abort again/);
       }
       const a2 = await bam(c);
@@ -12740,7 +12748,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     });
     expect(tDi, "the walk ended").toBeGreaterThanOrEqual(0);
     expect(tDi, "it waited for the sweep, to its ceiling").toBeGreaterThanOrEqual(15 * D);
-    expect(tDi, "one ceiling and its last words, not two").toBeLessThanOrEqual(16 * D);
+    // T7b-1d lượt sửa 3 (F3): exactly the one ceiling on this clock: one D more (16·D) is red as two ceilings (30·D) are
+    expect(tDi, "one ceiling, not one D more, not two").toBeLessThanOrEqual(15 * D);
   }, 15_000);
   it("T7B1D-CUOI-CHO-SAP the one ceiling still waits for both: a latched walk whose Abort is on its way (its write held, no sweep yet) does not end before that Abort's sweep has answered, and tells nothing that sweep sends", async () => {
     let xongDi = false;
