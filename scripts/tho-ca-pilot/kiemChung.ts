@@ -18,13 +18,14 @@ import type { KetQuaDotBien } from "./dotBien";
  * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ KHÔNG được thừa kế bí mật của tiến trình pilot
  * (khoá :8091, đường dẫn tệp khoá, JWT/SECRET/PASSWORD/TOKEN, DATABASE_URL thật). Gỡ mọi biến có tên bí mật hoặc `*_KEY_FILE`, rồi ép DB chết.
  */
-export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env, opt: { testDbUrl?: string } = {}): NodeJS.ProcessEnv {
   const ra: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(goc)) {
     if (/(API_KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|_KEY_FILE|_PASSWORD_FILE)/i.test(k)) continue;
     ra[k] = v;
   }
-  return { ...ra, ...ENV_DB_CHET };
+  // `--cho-phep-db`: CHỈ TEST_DATABASE_URL (URL của CSDL _test, vai ứng dụng) được thật; DATABASE_URL vẫn là cổng chết (vitest.setup ép DATABASE_URL về bản sao _test).
+  return { ...ra, ...ENV_DB_CHET, ...(opt.testDbUrl ? { TEST_DATABASE_URL: opt.testDbUrl } : {}) };
 }
 
 /** Môi trường của `tsc` do bộ chạy chạy: sạch bí mật + heap 12 GB (cùng cổng check:tests). Tách riêng để test được. */
@@ -62,9 +63,88 @@ export interface KetQuaKiem {
   vitest: KetQuaVitest;
   /** lỗi khởi chạy tiến trình nếu có */
   loi?: string;
+  /** tên các ca ĐỎ trích từ TOÀN BỘ đầu ra (không chỉ đuôi), đã lọc URL/giá trị bí mật; tối đa 40 tên, mỗi tên ≤ 200 ký tự */
+  tenCaDo?: string[];
+  /** (chỉ khi `--cho-phep-db`) TOÀN BỘ đầu ra đã lọc URL + giá trị bí mật, cho NGƯỜI duyệt đọc qua tệp kết quả — KHÔNG bao giờ đưa cho model; tối đa ~400 KB (cắt giữa) */
+  dauRaDayDu?: string;
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * `--cho-phep-db`: lọc chuỗi kết nối CSDL (có thể kèm mật khẩu) khỏi ĐẦU RA LỆNH KIỂM trước khi nó vào lời nhắc của model, JSON `kiem` hay nhật ký.
+ * Postgres.js/drizzle có thể in URL trong lỗi kết nối. Chỉ áp cho đầu ra lệnh kiểm do BỘ CHẠY chạy; công cụ model tự gọi không đi qua đây.
+ */
+/** Mật khẩu (đã giải mã) trong URL CSDL, để lọc khỏi đầu ra ở MỌI dạng. Rỗng / quá ngắn (< 6) ⇒ không có gì để lọc. */
+export function giaTriBiMatTuUrl(url: string | undefined): string[] {
+  if (!url) return [];
+  try {
+    const mk = decodeURIComponent(new URL(url).password);
+    return mk.length >= 6 ? [mk] : [];
+  } catch {
+    return [];
+  }
+}
+
+const thoatRegex = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Mọi dạng một giá trị bí mật có thể xuất hiện trong đầu ra: nguyên dạng, urlencoded, base64 (3 căn chỉnh, chuẩn + url-safe), hex, đảo ngược, tách ký tự. */
+export function cacDangBiMat(mk: string): { chuoi: string[]; tachKyTu: RegExp } {
+  const dang = new Set<string>([mk, encodeURIComponent(mk), encodeURI(mk), mk.split("").reverse().join("")]);
+  const buf = Buffer.from(mk, "utf8");
+  dang.add(buf.toString("hex"));
+  dang.add(buf.toString("hex").toUpperCase());
+  for (let k = 0; k < 3; k++) {
+    const b = Buffer.concat([Buffer.alloc(k), buf]).toString("base64");
+    // chỉ những ký tự base64 nằm HOÀN TOÀN trong các byte của mật khẩu (không phụ thuộc byte đứng trước/sau)
+    const dau = Math.ceil((k * 8) / 6);
+    const cuoi = Math.floor(((k + buf.length) * 8) / 6);
+    const manh = b.slice(dau, cuoi);
+    if (manh.length >= 6) {
+      dang.add(manh);
+      dang.add(manh.replace(/\+/g, "-").replace(/\//g, "_"));
+    }
+  }
+  const tach = mk.split("").map(thoatRegex).join("[^A-Za-z0-9]{0,3}");
+  return { chuoi: [...dang].filter((x) => x.length >= 6).sort((a, b) => b.length - a.length), tachKyTu: new RegExp(tach, "gi") };
+}
+
+/** Xoá mọi dạng của các giá trị bí mật khỏi `s` (thay bằng ***). */
+export function xoaGiaTriBiMat(s: string, giaTri: readonly string[]): string {
+  let ra = s;
+  for (const mk of giaTri) {
+    if (mk.length < 6) continue;
+    const { chuoi, tachKyTu } = cacDangBiMat(mk);
+    for (const d of chuoi) ra = ra.split(d).join("***").split(d.toLowerCase()).join("***").split(d.toUpperCase()).join("***");
+    ra = ra.replace(tachKyTu, "***");
+  }
+  return ra;
+}
+
+/** Tên ca ĐỎ trong đầu ra vitest (dòng `×` / `FAIL <tệp> > …`), KHÔNG kèm thông điệp lỗi (`→ …`). Thuần. */
+export function trichTenCaDo(sach: string): string[] {
+  const ra: string[] = [];
+  const them = (t: string) => {
+    const x = t.replace(/\s+\d+ms\s*$/, "").trim().slice(0, 200);
+    if (x !== "" && !ra.includes(x)) ra.push(x);
+  };
+  for (const dong of sach.split(/\r?\n/)) {
+    const m1 = /^\s*[×✗✕]\s+(.+)$/.exec(dong);
+    if (m1) {
+      them(m1[1]);
+      continue;
+    }
+    const m2 = /^\s*FAIL\s+\S+\s+>\s+(.+)$/.exec(dong);
+    if (m2) them(m2[1]);
+  }
+  return ra.slice(0, 40);
+}
+
+export function loaiUrlCsdl(s: string): string {
+  return s
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://***")
+    .replace(/\b[\w.%-]+:[^\s@/:]+@[\w.-]+(?::\d+)?(?:\/\S*)?/g, "***");
+}
 
 function docDem(phan: string): DemVitest {
   const lay = (tu: string) => {
@@ -278,15 +358,19 @@ export function demTepTest(wt: string, tepDoi: readonly string[]): Array<{ duong
 export type ChayKiem = (lenh: string, wt: string, hanGiay: number) => Promise<KetQuaKiem>;
 
 /** Chạy LỆNH KIỂM thật: shell, cwd = worktree pilot, env DB chết, hạn giờ riêng (giết cả cây tiến trình khi hết hạn). */
-export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
+export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (lenh, wt, hanGiay) =>
   new Promise((xong) => {
     const t0 = Date.now();
     let dau = "";
     let hetGio = false;
-    const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const locLoi = (x: string) => (opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const sach = boMau(dau);
+      const coDb = opt.testDbUrl !== undefined;
+      const tho = boMau(dau);
+      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte; chỉ khi có `--cho-phep-db` mới lọc URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
+      const sach = coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho;
       xong({
         lenh,
         exit,
@@ -294,6 +378,9 @@ export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
         giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10,
         duoi: sach.length > 3000 ? sach.slice(-3000) : sach,
         vitest: phanTichVitest(sach),
+        ...(coDb ? { tenCaDo: trichTenCaDo(sach), dauRaDayDu: sach.length > 400_000 ? `${sach.slice(0, 100_000)}
+…(cắt giữa)…
+${sach.slice(-300_000)}` : sach } : {}),
         ...(loi ? { loi } : {}),
       });
     };
@@ -301,7 +388,7 @@ export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
     try {
       con = spawn(lenh, { cwd: wt, env, shell: true, windowsHide: true });
     } catch (e) {
-      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: String(e) });
+      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: locLoi(String(e)) });
       return;
     }
     const dongHo = setTimeout(() => {
@@ -311,6 +398,8 @@ export const chayLenhKiem: ChayKiem = (lenh, wt, hanGiay) =>
     }, Math.max(1, hanGiay) * 1000);
     con.stdout?.on("data", (b) => (dau += String(b)));
     con.stderr?.on("data", (b) => (dau += String(b)));
-    con.on("error", (e) => ketThuc(null, String(e)));
+    con.on("error", (e) => ketThuc(null, locLoi(String(e))));
     con.on("close", (ma) => ketThuc(hetGio ? null : ma));
   });
+
+export const chayLenhKiem: ChayKiem = taoChayLenhKiem();

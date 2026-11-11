@@ -30,6 +30,8 @@ export interface TheViec {
   dotBien?: DotBienThe[];
   /** L3b — chuỗi/regex test của model KHÔNG ĐƯỢC khẳng định (bộ chạy quét; không đưa cho model) */
   khangDinhCam?: Array<string | RegExp>;
+  /** CSDL: khai việc có chạm CSDL _test (CHỈ BỘ CHẠY đọc, KHÔNG vào lời nhắc của model). Điều kiện 2 của `--cho-phep-db`: phải nêu aoi_management_test. */
+  csdl?: string;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -45,6 +47,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "GHI CHU LENH KIEM": "lenhKiemGhiChu",
   "DOT BIEN": "dotBien",
   "KHONG DUOC KHANG DINH": "khangDinhCam",
+  "CSDL": "csdl",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -134,6 +137,7 @@ export function docTheViec(van: string): KetQuaThe {
     if (tepDuocPhep.includes(d.tep)) return { ok: false, loi: `ĐỘT BIẾN ${d.tep}: nằm trong TỆP ĐƯỢC PHÉP của model (đột biến phải ở tệp NGUỒN, không phải bài làm)` };
   }
   const khangDinhCam = docKhangDinhCam((truong.get("khangDinhCam") as string) ?? "");
+  const csdl = (truong.get("csdl") ?? "").trim();
   return {
     ok: true,
     the: {
@@ -146,6 +150,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(quyTrinh ? { quyTrinh } : {}),
       ...(db.ds.length ? { dotBien: db.ds } : {}),
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
+      ...(csdl ? { csdl } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };

@@ -25,9 +25,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
+import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
-import { canChayTsc, chayLenhKiem, chayLenhTsc, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, chayLenhTsc, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -60,6 +60,12 @@ export interface DauVaoDriver {
   ra: string;
   ghiLuotDir: string | null;
   khoGhi: Record<string, string>;
+  /** hàm chạy lệnh kiểm cho vòng TỰ CHẠY trong lượt (chỉ đặt khi `--cho-phep-db` hoặc ca kiểm tiêm); vắng ⇒ driver dùng mặc định (DB chết) */
+  chayKiem?: ChayKiem;
+  /** `chi-so` (đặt khi `--cho-phep-db`): vòng tự chạy lệnh kiểm trong lượt CHỈ trả cho model con số + tên ca đỏ, KHÔNG kèm đuôi đầu ra */
+  cheDoKiem?: "chi-so";
+  /** giá trị bí mật (vd mật khẩu CSDL) phải bị xoá khỏi mọi thứ trả cho model, ở mọi dạng mã hoá */
+  giaTriBiMat?: string[];
 }
 export type Driver = (v: DauVaoDriver) => Promise<KetQuaDriver & { hetGio: boolean; loi?: string }>;
 
@@ -106,6 +112,10 @@ export interface KetQuaViec {
   coAiAgent?: Record<string, string>;
   /** LUẬT dự án thật sự gửi model (ghi vào AGENTS.md của worktree VÀ ghép vào lệnh): sha256 của đúng chuỗi đó, nguồn (đường tệp hoặc "tham-so") và số byte UTF-8 */
   luat?: { sha256: string; nguon: string; byte: number };
+  /** `--cho-phep-db` đã bật cho lượt này (mặc định vắng = TẮT) */
+  choPhepDb?: true;
+  /** vai CSDL mà lệnh kiểm dùng khi có cờ (tên vai, không phải bí mật) */
+  vaiCsdl?: string;
   /** commit của repo chứa BỘ CHẠY lúc chạy, và liệu thư mục bộ chạy/luật có lệch commit đó không (bản tạm chưa commit ⇒ sach=false) */
   boChay?: BoChay;
   /** L3b: nhãn nghi "ghim lỗi thành kỳ vọng" trong tệp test model viết — CHỈ cảnh báo, người đọc quyết */
@@ -123,6 +133,89 @@ function git(args: string[], cwd: string, dauVao?: string): { ok: boolean; out: 
 
 const NHANH_PILOT = /^pilot\/tho-ca-[A-Za-z0-9-]+$/;
 const RE_NHANH_MA =/^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/;
+
+/**
+ * Đọc URL CSDL của vai `tho_ca_test` từ TỆP (một dòng, ngoài repo và ngoài worktree pilot). KHÔNG bao giờ đưa nội dung tệp vào thông báo lỗi.
+ * `cacThuMucCam`: tệp nằm TRONG các thư mục này (repo bộ chạy, worktree) ⇒ từ chối.
+ */
+export function docUrlTuTep(duong: string, cacThuMucCam: readonly string[] = []): string {
+  const abs = path.resolve(duong);
+  for (const t of cacThuMucCam) {
+    const rel = path.relative(path.resolve(t), abs);
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) throw new Error("--tep-url-csdl: tệp nằm trong repo / worktree — đặt ngoài repo");
+  }
+  if (!fs.existsSync(abs)) throw new Error("--tep-url-csdl: không có tệp");
+  const dong = fs.readFileSync(abs, "utf8").split(/\r?\n/).map((x) => x.trim()).filter((x) => x !== "");
+  if (dong.length === 0) throw new Error("--tep-url-csdl: tệp rỗng");
+  if (dong.length > 1) throw new Error("--tep-url-csdl: tệp phải có đúng MỘT dòng");
+  return dong[0];
+}
+
+/** Tham số DB của dòng lệnh: cờ `--cho-phep-db` và URL CSDL đọc từ `--tep-url-csdl <tệp>` (không còn lấy DATABASE_URL của tiến trình). `docTep` được tiêm để test không đọc tệp thật. Thuần. */
+export function thamSoDbTuDongLenh(a: Record<string, string>, docTep: (duong: string) => string): { choPhepDb: boolean; testDbUrl: string | undefined; loi?: string } {
+  if (a["cho-phep-db"] === undefined) return { choPhepDb: false, testDbUrl: undefined };
+  const duong = a["tep-url-csdl"];
+  if (duong === undefined || duong === "1" || duong === "") return { choPhepDb: true, testDbUrl: undefined, loi: "--cho-phep-db cần --tep-url-csdl <tệp chứa URL CSDL của vai tho_ca_test>" };
+  try {
+    return { choPhepDb: true, testDbUrl: docTep(duong) };
+  } catch (e) {
+    return { choPhepDb: true, testDbUrl: undefined, loi: e instanceof Error ? e.message : "--tep-url-csdl: không đọc được tệp" };
+  }
+}
+
+/**
+ * Các gốc sandbox của lượt (AI_REPO_SANDBOX_ROOTS: `ten=duong|duong;ten2=duong2`) — công cụ đọc của model chỉ thấy tệp nằm TRONG các gốc này.
+ * Lấy phần đường cuối của mỗi mục (cùng cách `kiemMoiTruong` ở driverHost đọc). Thuần.
+ */
+export function gocSandboxTuEnv(env: NodeJS.ProcessEnv): string[] {
+  return (env.AI_REPO_SANDBOX_ROOTS ?? "")
+    .split(";")
+    .map((m) => {
+      const i = m.indexOf("=");
+      return i < 0 ? "" : (m.slice(i + 1).split("|").pop() ?? "").trim();
+    })
+    .filter((x) => x !== "")
+    .map((x) => path.resolve(x));
+}
+
+const CHUOI_RA_TRONG_SANDBOX = "--cho-phep-db: thư mục kết quả (--ra) nằm trong gốc sandbox / worktree — đặt ngoài để model không đọc được đầu ra đầy đủ của lệnh kiểm";
+/**
+ * `--cho-phep-db`: tệp `<ra>/<mã>.kiem-*.txt` chứa đầu ra ĐẦY ĐỦ nên `<ra>` KHÔNG được nằm trong bất kỳ gốc sandbox nào của lượt hay trong worktree
+ * (công cụ read_file / list_dir / grep của model sẽ đọc được). Trả chuỗi cố định nếu vi phạm, ngược lại null. Thuần.
+ */
+export function raTrongGocSandbox(ra: string, wt: string, env: NodeJS.ProcessEnv): string | null {
+  const chuan = (x: string) => path.resolve(x).toLowerCase();
+  const raC = chuan(ra);
+  for (const goc of [...gocSandboxTuEnv(env), path.resolve(wt)]) {
+    const rel = path.relative(chuan(goc), raC);
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return CHUOI_RA_TRONG_SANDBOX;
+  }
+  return null;
+}
+
+/** `aoi_management_test` phải là MỘT token nguyên trong dòng CSDL (ranh giới từ: chữ, số, gạch dưới) — `aoi_management_test_x` không tính. */
+const RE_TEN_DB_TEST = /(^|[^A-Za-z0-9_])aoi_management_test($|[^A-Za-z0-9_])/;
+/** Máy chủ và cổng CSDL được phép cho `--cho-phep-db`; vai CHỈ `tho_ca_test` (vai riêng chỉ CONNECT aoi_management_test; KHÔNG avi_app vì chung mật khẩu với DEV). */
+const MAY_CHU_DUOC_PHEP: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const CONG_DUOC_PHEP = "5434";
+const VAI_DUOC_PHEP = "tho_ca_test";
+
+/** Lý do TỪ CHỐI `--cho-phep-db` (null = đủ điều kiện). Thuần. */
+export function kiemChoPhepDb(the: Pick<TheViec, "csdl">, testDbUrl: string | undefined): string | null {
+  if (!the.csdl || !RE_TEN_DB_TEST.test(the.csdl)) return "--cho-phep-db: thẻ không có dòng CSDL: nêu aoi_management_test";
+  if (!testDbUrl) return "--cho-phep-db: thiếu URL CSDL của tiến trình (DATABASE_URL)";
+  let u: URL;
+  try {
+    u = new URL(testDbUrl);
+  } catch {
+    return "--cho-phep-db: URL CSDL không hợp lệ";
+  }
+  if (decodeURIComponent(u.pathname.replace(/^\//, "")) !== "aoi_management_test") return "--cho-phep-db: URL CSDL không trỏ aoi_management_test";
+  if (!MAY_CHU_DUOC_PHEP.has(u.hostname.toLowerCase())) return "--cho-phep-db: máy chủ CSDL không thuộc 127.0.0.1 / localhost / ::1";
+  if (u.port !== CONG_DUOC_PHEP) return "--cho-phep-db: cổng CSDL không phải 5434";
+  if (decodeURIComponent(u.username) !== VAI_DUOC_PHEP) return "--cho-phep-db: URL CSDL không dùng vai tho_ca_test (vai riêng chỉ cho _test; không avi_app, không owner aoi)";
+  return null;
+}
 
 export interface BoChay {
   commit: string | null;
@@ -285,6 +378,18 @@ export interface ThamSoViec {
   luat?: string;
   /** nguồn của `luat` để ghi vào JSON (đường tệp); vắng ⇒ "tham-so" khi `luat` được truyền, ngược lại đường luat-du-an.md mặc định */
   luatNguon?: string;
+  /**
+   * `--cho-phep-db` (mặc định TẮT): bỏ qua ĐÚNG MỘT kiểm — "LỆNH KIỂM trỏ vào tệp test chạm DB". Kiểm cùng họ sau lượt (tệp test do model viết chạm DB) cũng được miễn, CHỈ cho tệp có trong LỆNH KIỂM. Mọi kiểm khác (vùng cấm, TỆP ĐƯỢC PHÉP, L3b…) giữ nguyên.
+   * Điều kiện (kiemChoPhepDb): thẻ có dòng `CSDL:` nêu aoi_management_test, và `testDbUrl` trỏ đúng CSDL aoi_management_test bằng vai KHÔNG phải owner `aoi`.
+   * Có cờ ⇒ tiến trình con chạy lệnh kiểm nhận TEST_DATABASE_URL = testDbUrl (DATABASE_URL vẫn là cổng chết).
+   */
+  choPhepDb?: boolean;
+  /** chỉ cho ca kiểm: thay `process.env` khi đọc AI_REPO_SANDBOX_ROOTS để kiểm `--ra` nằm ngoài gốc sandbox */
+  envSandbox?: NodeJS.ProcessEnv;
+  /** URL CSDL của tiến trình pilot (dòng lệnh truyền process.env.DATABASE_URL); chỉ dùng khi choPhepDb */
+  testDbUrl?: string;
+  /** chỉ cho ca kiểm: thay nhà máy dựng hàm chạy lệnh kiểm để quan sát tham số (mặc định taoChayLenhKiem) */
+  taoChayKiem?: typeof taoChayLenhKiem;
   /** commit bộ chạy (dòng lệnh tính bằng `commitBoChay`); vắng ⇒ không ghi */
   boChay?: BoChay;
   nhatKy?: (s: string) => void;
@@ -309,9 +414,20 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const the = dt.the;
   if (!RE_NHANH_MA.test(the.ma)) return tuChoi("mã thẻ không dùng được làm tên nhánh", the.ma);
 
+  const dbCho = p.choPhepDb === true;
+  if (dbCho) {
+    const lyDoDb = kiemChoPhepDb(the, p.testDbUrl);
+    if (lyDoDb) return tuChoi(lyDoDb, the.ma);
+  }
+  const chayKiemDung: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
+
   const wt = path.resolve(p.wt);
   if (!/^_tho_ca/i.test(path.basename(wt)) && !p.choPhepKhoRieng) return tuChoi(`worktree "${wt}" không phải thư mục _tho_ca* — từ chối để không sửa nhầm nơi khác`, the.ma);
   if (!fs.existsSync(wt)) return tuChoi(`worktree không tồn tại: ${wt}`, the.ma);
+  if (dbCho) {
+    const lyDoRa = raTrongGocSandbox(p.ra, wt, p.envSandbox ?? process.env);
+    if (lyDoRa) return tuChoi(lyDoRa, the.ma);
+  }
   const top = git(["rev-parse", "--show-toplevel"], wt);
   if (!top.ok || path.resolve(top.out.trim()) !== wt) return tuChoi("đường không phải gốc một worktree git", the.ma);
   const gitDir = git(["rev-parse", "--git-dir"], wt).out.trim();
@@ -341,8 +457,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const f = path.join(wt, t);
     if (fs.existsSync(f)) {
       const dau = quetChamDb(t, fs.readFileSync(f, "utf8"));
-      if (dau.length > 0) return tuChoi(`LỆNH KIỂM trỏ vào tệp chạm DB (${t}: ${dau.join(", ")}) — pilot không chạy test DB`, the.ma);
-    } else if (quetChamDb(t, "").length > 0) {
+      if (dau.length > 0 && !dbCho) return tuChoi(`LỆNH KIỂM trỏ vào tệp chạm DB (${t}: ${dau.join(", ")}) — pilot không chạy test DB`, the.ma);
+    } else if (quetChamDb(t, "").length > 0 && !dbCho) {
       return tuChoi(`LỆNH KIỂM trỏ vào tệp .db.test (${t}) — pilot không chạy test DB`, the.ma);
     }
   }
@@ -377,8 +493,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
   // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
-  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, ...theChoDriver } = the;
-  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {} });
+  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, ...theChoDriver } = the;
+  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat), hanGiay: the.gioiHan.giay, ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}), ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}) });
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -392,12 +508,14 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   fs.writeFileSync(diffPath, diffText, "utf8");
 
   const viPham = kiemDiffTheoThe(tepDoi, the.tepDuocPhep);
-  // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó)
+  // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó).
+  // `--cho-phep-db`: miễn ĐÚNG các tệp test có trong LỆNH KIỂM (chính tệp thẻ cho phép chạy trên _test); tệp test khác chạm DB vẫn vi phạm.
+  const tepTestDuocCho = new Set(dbCho ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : []);
   for (const t of tepDoi) {
     if (!/\.test\.[cm]?[jt]sx?$/.test(t)) continue;
     try {
       const dau = quetChamDb(t, fs.readFileSync(path.join(wt, t), "utf8"));
-      if (dau.length > 0) viPham.push({ duong: t, loai: "cham-db", chiTiet: dau.join(", ") });
+      if (dau.length > 0 && !tepTestDuocCho.has(t)) viPham.push({ duong: t, loai: "cham-db", chiTiet: dau.join(", ") });
     } catch {
       /* tệp bị xoá */
     }
@@ -439,7 +557,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   if (ketCuc === "xong") {
     if (khongTepRong) {
       nhatKy(`chạy LỆNH KIỂM: ${the.lenhKiem}`);
-      kiem = await (p.chayKiem ?? chayLenhKiem)(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
+      kiem = await chayKiemDung(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
     }
     let qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem });
     // L3c: lệnh kiểm xanh vẫn chưa đủ — tsc trên tệp model đổi (vitest không kiểm kiểu; TC-05 tự định nghĩa lại kiểu đã export)
@@ -451,7 +569,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // L3b: đột biến của thẻ — chỉ khi mọi bước trước đều xanh (đột biến trên bài làm đã đỏ là vô nghĩa)
     if (qd.ketCuc === "xong" && the.dotBien?.length) {
       nhatKy(`áp ${the.dotBien.length} đột biến của thẻ (L3b)`);
-      dotBien = await apDungDotBien(wt, the.dotBien, tepDoi, the.lenhKiem, p.chayKiem ?? chayLenhKiem, p.hanKiemGiay ?? 300);
+      dotBien = await apDungDotBien(wt, the.dotBien, tepDoi, the.lenhKiem, chayKiemDung, p.hanKiemGiay ?? 300);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, dotBien });
     }
     ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
@@ -459,10 +577,18 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   } else if ((ketCuc === "loi-driver" || ketCuc === "het-gio") && tepTest.some((t) => t.soCa > 0) && khongTepRong) {
     // Lượt dừng giữa chừng nhưng ĐÃ có tệp test: vẫn chạy lệnh kiểm để KHÔNG MẤT số đo. ketCuc giữ nguyên (sticky) — chỉ ghi `kiem`.
     nhatKy(`lượt ${ketCuc} nhưng có tệp test — vẫn chạy LỆNH KIỂM để ghi số đo: ${the.lenhKiem}`);
-    kiem = await (p.chayKiem ?? chayLenhKiem)(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
+    kiem = await chayKiemDung(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}`;
   }
 
+  // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
+  if (dbCho && kiem?.dauRaDayDu !== undefined) {
+    try {
+      fs.writeFileSync(path.join(p.ra, `${the.ma}.kiem-cuoi.txt`), kiem.dauRaDayDu, "utf8");
+    } catch {
+      /* tệp phụ */
+    }
+  }
   return {
     ma: the.ma,
     ok: ketCuc === "xong",
@@ -485,8 +611,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     crlf,
     diff: diffPath,
     lenhKiem: the.lenhKiem,
-    ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
+    ...(kiem ? { kiem: (({ lenh: _l, dauRaDayDu: _d, ...r }) => r)(kiem) } : {}),
     ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
+    ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
     ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
@@ -510,8 +637,21 @@ function docThamSo(argv: string[]): Record<string, string> {
 async function main(): Promise<number> {
   const a = docThamSo(process.argv.slice(2));
   if (!a.the) {
-    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
+    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--cho-phep-db --tep-url-csdl <tep>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
     return 2;
+  }
+  // `--cho-phep-db`: URL CSDL đọc từ TỆP ngoài repo / worktree (vai tho_ca_test); lỗi ⇒ dừng, thông báo không chứa nội dung tệp
+  const thamDb = thamSoDbTuDongLenh(a, (d) => docUrlTuTep(d, [process.cwd(), ...(a.wt ? [a.wt] : [])]));
+  if (thamDb.loi) {
+    process.stderr.write(`${thamDb.loi}\n`);
+    return 2;
+  }
+  if (thamDb.choPhepDb) {
+    const lyDoRa = raTrongGocSandbox(a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"), a.wt ?? "D:\\SOURCES\\_tho_ca_wt", process.env);
+    if (lyDoRa) {
+      process.stderr.write(`${lyDoRa}\n`);
+      return 2;
+    }
   }
   const drv = (a.driver ?? "cli") as TenDriver;
   if (drv !== "kho" && drv !== "cli" && drv !== "host") {
@@ -561,6 +701,7 @@ async function main(): Promise<number> {
     base: a.base ?? "main",
     ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),
     boChay: commitBoChay(),
+    ...(({ choPhepDb, testDbUrl }) => ({ choPhepDb, testDbUrl }))(thamDb),
     driver,
     tenDriver: drv,
     ra: a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"),
