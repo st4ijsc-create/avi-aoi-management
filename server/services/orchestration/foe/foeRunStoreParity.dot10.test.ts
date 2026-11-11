@@ -15925,14 +15925,18 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     }
   });
 
-  it("CHEDO-T8 the engine's process mode from what this process can see: a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY", () => {
-    expect(cheDoProcessEngine({}, false)).toBe("mot");
-    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "1" }, false)).toBe("mot");
-    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "4" }, false)).toBe("nhieu");
-    expect(cheDoProcessEngine({ NODE_APP_INSTANCE: "0" }, false)).toBe("nhieu");
-    expect(cheDoProcessEngine({}, true)).toBe("nhieu");
-    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "abc" }, false)).toBe("khongRo");
-    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "0" }, false)).toBe("khongRo");
+  // lượt sửa 2 (dieu-phoi 11/11, (A) the floor): one process only when confirmed (FOE_ENGINE_MOT_PROCESS=1); what this process sees of more still wins; else not known
+  it("CHEDO-T8 the engine's process mode: one process only when FOE_ENGINE_MOT_PROCESS=1 confirms it and nothing this process sees says more (a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY); else not known", () => {
+    expect(cheDoProcessEngine({}, false), "no confirmation: the floor").toBe("khongRo");
+    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "1" }, false)).toBe("khongRo");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1" }, false)).toBe("mot");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "1" }, false)).toBe("mot");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "true" }, false), "only 1 confirms").toBe("khongRo");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "4" }, false)).toBe("nhieu");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1", NODE_APP_INSTANCE: "0" }, false)).toBe("nhieu");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1" }, true)).toBe("nhieu");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "abc" }, false)).toBe("khongRo");
+    expect(cheDoProcessEngine({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "0" }, false)).toBe("khongRo");
   });
 
   it("M9A-T8 the minimum age holds for compensating and queued too: young, nothing; old, told", async () => {
@@ -15966,5 +15970,162 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     asg.lastProgressAt = cu;
     expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + 60_000 }), "nothing of it newer than two hours: told").toMatchObject({ quet: 1, ben: 1 });
     expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
+  });
+
+  // ── T8 lượt sửa 2 (rà T8 fix1, dieu-phoi 11/11): CHAN-4, the one-process floor (A), the nets ──────────────────────────
+  /** a central run latched whose run_end did not land at the walk (held), the alerts answering again */
+  const trungTamKhoa = async (ref: string) => {
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(def(ref, [gate(), ot("x")]), 1);
+    await wait(20);
+    expect(runRow(c).status).toBe("held");
+    h.alertDurable = true;
+    h.timeoutDispatch.delete("x");
+    return c;
+  };
+  /** the edge assignment table missing (0370 not applied): its read throws 42P01, as Postgres does */
+  const thieu0370 = () => {
+    const goc = (fake as any).select;
+    (fake as any).select = (...a: unknown[]) => {
+      const b = FakeDb.prototype.select.apply(fake, a as never);
+      const f = b.from.bind(b);
+      b.from = (t: unknown) => {
+        if (t === runEdgeAssignments) throw Object.assign(new Error('relation "orchestration_run_edge_assignments" does not exist'), { code: "42P01" });
+        return f(t);
+      };
+      return b;
+    };
+    return () => {
+      (fake as any).select = goc;
+    };
+  };
+  /** FOE_ENGINE_MOT_PROCESS for one call, then as it was */
+  const voiXacNhan = async <T,>(gt: string | undefined, fn: () => Promise<T>): Promise<T> => {
+    const cu = process.env.FOE_ENGINE_MOT_PROCESS;
+    if (gt === undefined) delete process.env.FOE_ENGINE_MOT_PROCESS;
+    else process.env.FOE_ENGINE_MOT_PROCESS = gt;
+    try {
+      return await fn();
+    } finally {
+      if (cu === undefined) delete process.env.FOE_ENGINE_MOT_PROCESS;
+      else process.env.FOE_ENGINE_MOT_PROCESS = cu;
+    }
+  };
+
+  it("RB-0370-T8 the edge assignment table missing (42P01): a central held run latched is told all the same (as 94f215649): {ben: 1}, its run_end", async () => {
+    const c = await trungTamKhoa("rb0370");
+    h.alerts.length = 0;
+    const tra = thieu0370();
+    let r: Awaited<ReturnType<typeof quetUrgentChuaBen>>;
+    try {
+      r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
+    } finally {
+      tra();
+    }
+    expect(r).toMatchObject({ quet: 1, ben: 1, chuaBen: 0 });
+    expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
+  });
+  it("MOT-RUN-NEM-T8 one run's read throws: logged and counted, the next run is told all the same", async () => {
+    const a = await trungTamKhoa("mrn1");
+    const b = await trungTamKhoa("mrn2");
+    h.alerts.length = 0;
+    let lan = 0;
+    const goc = (fake as any).select;
+    (fake as any).select = (...x: unknown[]) => {
+      const q = FakeDb.prototype.select.apply(fake, x as never);
+      const f = q.from.bind(q);
+      q.from = (t: unknown) => {
+        if (t === orchestrationRunSteps && lan++ === 0) throw new Error("the rows of the first run cannot be read (test)");
+        return f(t);
+      };
+      return q;
+    };
+    const err = vi.spyOn(console, "error");
+    let r: Awaited<ReturnType<typeof quetUrgentChuaBen>>;
+    try {
+      r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
+    } finally {
+      (fake as any).select = goc;
+    }
+    const loi = err.mock.calls.some((x) => new RegExp(`run ${a}: URGENT obligation sweep failed`).test(String(x[0])));
+    err.mockRestore();
+    expect(r).toMatchObject({ quet: 2, ben: 1, chuaBen: 1 });
+    expect(loi, "the failing run is named").toBe(true);
+    expect(runEnd(), "the other run is told").toEqual([khoaRunEnd(b, buocKhoa(b))]);
+  });
+  it("SAN-KHONG-XAC-NHAN-T8 no confirmation of one engine process (FOE_ENGINE_MOT_PROCESS absent, the floor): a central running run whose walker may live in another pod is not told, and logged; a dead edge run is told", async () => {
+    const c = await trungTamKhoa("sank");
+    runRow(c).status = "running"; // its walker in another pod: this process's liveRuns does not hold it
+    const e = await edgeChet("sane");
+    h.alerts.length = 0;
+    const warn = vi.spyOn(console, "warn");
+    try {
+      await voiXacNhan(undefined, () => quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() }));
+      expect(runEnd(), "the central run: not told; the edge run: once").toEqual([khoaRunEnd(e, buocKhoa(e))]);
+      expect(warn.mock.calls.some((x) => new RegExp(`\\(khongRo\\): central run\\(s\\) ${c}`).test(String(x[0]))), "named in the log").toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("SAN-CO-XAC-NHAN-T8 FOE_ENGINE_MOT_PROCESS=1: a central run a crash left running (no walker) is told; a dead edge run is told in both modes", async () => {
+    const c = await trungTamKhoa("sanc");
+    runRow(c).status = "running";
+    expect(coWalkerSongTrongProcess(c)).toBe(false);
+    const e = await edgeChet("sance");
+    h.alerts.length = 0;
+    await voiXacNhan("1", () => quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() }));
+    expect(runEnd().sort()).toEqual([khoaRunEnd(c, buocKhoa(c)), khoaRunEnd(e, buocKhoa(e))].sort());
+    expect(await voiXacNhan("1", async () => cheDoProcessEngine(undefined, false))).toBe("mot");
+    expect(await voiXacNhan(undefined, async () => cheDoProcessEngine(undefined, false))).toBe("khongRo");
+  });
+  it("SONG-COMP-T8 a central walker alive at 'compensating' (its STOP compensation slow): not told, in one-process mode too; after its end, its own word stands (rà fix1 RV-C1)", async () => {
+    const d = def("t8songc", [gate(), box("b", [move("x")], { compensation: robotStop("cs") })]);
+    h.timeoutDispatch.add("x");
+    h.slow.set("cs", 1500);
+    const p = centralRun(d, 1);
+    await waitFor(() => h.sent.some((x) => x.stepId === "cs"), "cs handed over");
+    const c = Number(h.sent.find((x) => x.stepId === "cs")!.runId);
+    expect(runRow(c).status).toBe("compensating");
+    expect(coWalkerSongTrongProcess(c)).toBe(true);
+    h.alerts.length = 0;
+    const r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, cheDo: "mot", bayGio: SAU() });
+    expect(r.quet).toBe(0);
+    expect(runEnd()).toEqual([]);
+    expect(daBaoQuet(c)).toBeUndefined();
+    await p;
+    await wait(30);
+    expect(h.sent.filter((x) => x.stepId === "cs").length).toBe(1);
+  });
+  it("DAU-GOP-T8 two marks of one run stored at two sweeps: the mark keeps both (merged), a restart 25 hours later raises nothing (rà fix1 RV-B2)", async () => {
+    const e = await edgeAssignedRun(def("t8daugop", [gate(), box("b", [robotStop("s1"), robotStop("s2")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    const c = e.runId;
+    runRow(c).status = "aborted";
+    const danh = (id: string) => {
+      const r = stepRows(c).find((x) => x.stepId === id)!;
+      r.resultJson = { ...(r.resultJson ?? {}), stopKhongXacNhan: "docLoi", edge: { claimSeq: 2 } };
+    };
+    h.alerts.length = 0;
+    danh("s1");
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+    danh("s2");
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+    expect(Object.keys(daBaoQuet(c)?.dau ?? {}).sort()).toEqual([`${c}:s1:docLoi:2`, `${c}:s2:docLoi:2`]);
+    khoiDongLai(c);
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + GIO25 })).toMatchObject({ quet: 0 });
+    expect(h.alerts.length).toBe(2);
+  });
+  it("CHOT-NHO-T8 the sweep's mark write fails after the latch's run_end landed: one line for this process, the next sweep raises nothing (rà fix1 RV-B5)", async () => {
+    const c = await trungTamKhoa("t8chotnho");
+    h.alerts.length = 0;
+    h.ctxNem = (ctx) => ctx[KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY] != null;
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+    expect(h.ctxNemLan, "the mark's write threw").toBe(1);
+    expect(daBaoQuet(c)).toBeUndefined();
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 0 });
+    expect(runEnd(), "one line for this process").toEqual([khoaRunEnd(c, buocKhoa(c))]);
   });
 });

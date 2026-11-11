@@ -2289,43 +2289,98 @@ describe("A2(n) T7b-3 H37 — the words of a stuck edge report stream", () => {
 });
 
 // A2(n) T8 (plan point 4, dieu-phoi 11/11) — CENSUS (AST): the URGENT obligation sweeper only raises. Every function it reaches, followed through foeRunStore.ts and foeKetCucKhongRo.ts (the modules of its
-// raises), calls no walk, no engine, no dispatcher, no status write. lượt sửa 1 (rà T8 M12, M13): a call by a computed name (`o["dis" + "patch"](…)`) is refused outright, a `.set(…)` takes an object literal
-// only (no variable, no spread), and every name called that is not a function of the two files is in the list CHO_PHEP below: a new one is red until it is read and listed
+// raises), calls no walk, no engine, no dispatcher, no status write. lượt sửa 1 (rà T8 M12, M13): a call by a computed name (`o["dis" + "patch"](…)`) is refused outright, an update's `.set(…)` takes an
+// object literal only (no variable, no spread), and every name called that is not a function of the two files is in the list CHO_PHEP below: a new one is red until it is read and listed.
+// lượt sửa 2 (rà T8 fix1 RV-D1..D3): no `import()` in what it reaches; a bare name called is a function of the two files, a local function of that body, an import, a global or a Promise's `resolve`,
+// never a name bound otherwise in that body (an alias: `const { dispatch: t } = …`); `.set(…)` on an `update(…)` is checked whatever its arguments and casts; `update(…)` of `orchestrationRuns`
+// only, no `insert(…)`, no `delete(…)` of a table (a step row is never written)
 describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes no status", () => {
   const TEP = ["foeRunStore.ts", "foeKetCucKhongRo.ts"];
   const CAM = new Set(["execStep", "dispatch", "sendCommand", "dispatchRobotJob", "getAdapter", "abortRun", "abortStopSweep", "runAbortStopSweep", "resumeRun", "startRun", "driveRun", "driveRunFromResume", "guiStopSauChot", "resendAbortStops", "setRunStatus", "setRunStatusUnlessAborted", "setRunStatusUnlessAbortedOn", "upsertStep", "upsertStepOn", "recordEdgeStepRows", "applyEdgeSegmentEnd"]);
   /** the names it may call that are no function of the two files: the database's reads and the mark's write, the bound, the alert, the log, the language's own */
-  const CHO_PHEP = new Set<string>(["Number", "String", "add", "allStepsOf", "and", "catch", "clear", "createAuditContext", "delete", "entries", "eq", "error", "exec", "filter", "find", "flatMap", "for", "from", "fromEntries", "get", "getDb", "getTime", "has", "inArray", "isArray", "isFinite", "isSafeInteger", "join", "keys", "limit", "logCrudOperation", "map", "max", "napAudit", "napCanhBao", "next", "now", "push", "raiseCriticalStopAlert", "resolve", "round", "select", "set", "soNguoiNhan", "some", "sort", "startsWith", "t", "test", "then", "toISOString", "transaction", "trim", "update", "walkerSong", "warn", "where", "withDeadline", "xong"]);
+  const CHO_PHEP = new Set<string>(["Number", "String", "add", "allStepsOf", "and", "catch", "clear", "createAuditContext", "delete", "entries", "eq", "error", "exec", "filter", "find", "flatMap", "for", "from", "fromEntries", "get", "getDb", "getTime", "has", "inArray", "isArray", "isFinite", "isSafeInteger", "join", "keys", "limit", "logCrudOperation", "map", "max", "napAudit", "napCanhBao", "next", "now", "push", "raiseCriticalStopAlert", "readEdgeAssignment", "resolve", "round", "select", "set", "soNguoiNhan", "some", "sort", "startsWith", "t", "test", "then", "toISOString", "transaction", "trim", "update", "walkerSong", "warn", "where", "withDeadline", "xong"]);
+  /** the lazy loaders of the two files (napMotLan of ONE module each) and the names a body may take from what they load: a name destructured from anything else is an alias */
+  const NAP: Record<string, { module: string; ten: readonly string[] }> = { napCanhBao: { module: "../../robot/criticalStopAlert", ten: ["raiseCriticalStopAlert"] }, napAudit: { module: "../../auditTrailService", ten: ["logCrudOperation", "createAuditContext"] } };
+  /** a bare name called that is bound by nothing of the body: the language's own, and a Promise's resolve */
+  const TOAN_CUC = new Set(["Number", "String", "Boolean", "Array", "Object", "Promise", "Date", "JSON", "Error", "Set", "Map", "isFinite", "resolve"]);
   const nguon = new Map(TEP.map((t) => [t, ts.createSourceFile(t, readFileSync(resolve(__dirname, t), "utf8"), ts.ScriptTarget.Latest, true)] as const));
   /** every top-level function of the two files, by name (a declaration, or a const holding an arrow / function) */
   const ham = new Map<string, ts.Node>();
+  /** the names the two files import as code (a type import is no code) */
+  const nhap = new Set<string>();
+  /** the tables the two files import from the schema */
+  const bang = new Set<string>();
   for (const sf of nguon.values()) {
     for (const st of sf.statements) {
       if (ts.isFunctionDeclaration(st) && st.name && st.body) ham.set(st.name.text, st.body);
       if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) ham.set(d.name.text, d.initializer.body);
+      if (ts.isImportDeclaration(st) && st.importClause && !st.importClause.isTypeOnly) {
+        const m = (st.moduleSpecifier as ts.StringLiteral).text;
+        const ten: string[] = [];
+        if (st.importClause.name) ten.push(st.importClause.name.text);
+        const nb = st.importClause.namedBindings;
+        if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!e.isTypeOnly) ten.push(e.name.text);
+        if (nb && ts.isNamespaceImport(nb)) ten.push(nb.name.text);
+        for (const t of ten) nhap.add(t);
+        if (/drizzle\/schema|edgeExecutionSchema|edgeControlSchema/.test(m)) for (const t of ten) bang.add(t);
+      }
     }
   }
-  /** the names called in a body (a.b(): b), the calls by a computed name, and the argument of a one-argument .set(...) (an update's) that is no plain object literal or that writes `status` */
+  /** what one body does: the names it calls, and what the rules refuse in it */
   const goiTrong = (n: ts.Node) => {
     const goi: string[] = [];
     const tenTinh: string[] = [];
     const ghiTrangThai: string[] = [];
+    const ghiBang: string[] = [];
+    const biDanh: string[] = [];
+    const hamCucBo = new Set<string>();
+    const tenKhac = new Set<string>();
+    const ganTen = (b: ts.BindingName) => {
+      if (ts.isIdentifier(b)) tenKhac.add(b.text);
+      else for (const e of b.elements) if (!ts.isOmittedExpression(e)) ganTen(e.name);
+    };
+    const thao = (e: ts.Expression): ts.Expression => {
+      while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e) || ts.isTypeAssertionExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+      return e;
+    };
+    const khaiBao = (x: ts.Node) => {
+      if (ts.isVariableDeclaration(x)) {
+        const nap = x.initializer && ts.isAwaitExpression(thao(x.initializer)) ? thao((thao(x.initializer) as ts.AwaitExpression).expression) : null;
+        const tuNap = nap && ts.isCallExpression(nap) && nap.arguments.length === 0 && ts.isIdentifier(nap.expression) ? NAP[nap.expression.text] : undefined;
+        if (ts.isIdentifier(x.name) && x.initializer && (ts.isArrowFunction(thao(x.initializer)) || ts.isFunctionExpression(thao(x.initializer)))) hamCucBo.add(x.name.text);
+        else if (tuNap && ts.isObjectBindingPattern(x.name) && x.name.elements.every((el) => !el.propertyName && ts.isIdentifier(el.name) && tuNap.ten.includes(el.name.text))) for (const el of x.name.elements) hamCucBo.add((el.name as ts.Identifier).text);
+        else ganTen(x.name);
+      } else if (ts.isFunctionDeclaration(x) && x.name && x !== n) hamCucBo.add(x.name.text);
+      else if (ts.isParameter(x)) ganTen(x.name);
+      ts.forEachChild(x, khaiBao);
+    };
+    khaiBao(n);
     const di = (x: ts.Node) => {
       if (ts.isCallExpression(x)) {
-        let e: ts.Expression = x.expression;
-        while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e)) e = e.expression;
+        const e = thao(x.expression);
+        if (x.expression.kind === ts.SyntaxKind.ImportKeyword) tenTinh.push(`import(): ${x.getText().slice(0, 70)}`);
         const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
         if (ten) goi.push(ten);
         else if (ts.isElementAccessExpression(e)) tenTinh.push(x.getText().slice(0, 80));
-        if (ten === "set" && x.arguments.length === 1) // a drizzle update's .set (a Map's .set takes two)
-          for (const a of x.arguments) {
-            if (!ts.isObjectLiteralExpression(a) || a.properties.some((p) => ts.isSpreadAssignment(p) || (p.name !== undefined && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === "status") || (p.name !== undefined && ts.isComputedPropertyName(p.name)))) ghiTrangThai.push(a.getText().slice(0, 80));
+        if (ts.isIdentifier(e) && !TOAN_CUC.has(e.text) && !((hamCucBo.has(e.text) || ham.has(e.text) || nhap.has(e.text) || e.text in NAP) && !tenKhac.has(e.text))) biDanh.push(e.text);
+        // an update's .set: whatever its arguments, its casts; a one-argument .set anywhere (a Map's takes two)
+        const nhanUpdate = ts.isPropertyAccessExpression(e) && ts.isCallExpression(thao(e.expression)) && (() => {
+          const c = thao((thao(e.expression) as ts.CallExpression).expression);
+          return ts.isPropertyAccessExpression(c) && c.name.text === "update";
+        })();
+        if (ten === "set" && (nhanUpdate || x.arguments.length === 1))
+          for (const a0 of x.arguments.slice(0, 1)) {
+            const a = thao(a0);
+            if (!ts.isObjectLiteralExpression(a) || a.properties.some((p) => ts.isSpreadAssignment(p) || (p.name !== undefined && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === "status") || (p.name !== undefined && ts.isComputedPropertyName(p.name)))) ghiTrangThai.push(a0.getText().slice(0, 80));
           }
+        if (ten === "update" && ts.isPropertyAccessExpression(e) && !(x.arguments.length === 1 && ts.isIdentifier(thao(x.arguments[0]!)) && (thao(x.arguments[0]!) as ts.Identifier).text === "orchestrationRuns")) ghiBang.push(x.getText().slice(0, 80));
+        if (ten === "insert" && ts.isPropertyAccessExpression(e)) ghiBang.push(x.getText().slice(0, 80));
+        if (ten === "delete" && ts.isPropertyAccessExpression(e) && x.arguments.some((a) => ts.isIdentifier(thao(a)) && bang.has((thao(a) as ts.Identifier).text))) ghiBang.push(x.getText().slice(0, 80));
       }
       ts.forEachChild(x, di);
     };
     di(n);
-    return { goi, tenTinh, ghiTrangThai };
+    return { goi, tenTinh, ghiTrangThai, ghiBang, biDanh };
   };
   const tamVoi = () => {
     const thay = new Set<string>();
@@ -2333,6 +2388,8 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     const goi = new Set<string>();
     const tenTinh: string[] = [];
     const ghiTrangThai: string[] = [];
+    const ghiBang: string[] = [];
+    const biDanh: string[] = [];
     while (cho.length) {
       const t = cho.pop()!;
       if (thay.has(t)) continue;
@@ -2342,12 +2399,14 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       const g = goiTrong(than);
       tenTinh.push(...g.tenTinh);
       ghiTrangThai.push(...g.ghiTrangThai);
+      ghiBang.push(...g.ghiBang);
+      biDanh.push(...g.biDanh.map((b) => `${t}: ${b}`));
       for (const x of g.goi) {
         goi.add(x);
         if (ham.has(x)) cho.push(x);
       }
     }
-    return { thay, goi, tenTinh, ghiTrangThai };
+    return { thay, goi, tenTinh, ghiTrangThai, ghiBang, biDanh };
   };
   it("the sweeper is there, and what it reaches: its raises (baoKhongXacNhan, canhBaoKetCucKhongRo), the bound, the reads, its own mark's write", () => {
     const { thay } = tamVoi();
@@ -2357,15 +2416,27 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     const { goi } = tamVoi();
     expect([...goi].filter((x) => CAM.has(x))).toEqual([]);
   });
-  it("no call by a computed name (M12): a name the census cannot read is refused", () => {
+  it("no call by a computed name (M12), no import() (an alias's source, rà fix1 RV-D1): a name the census cannot read is refused", () => {
     expect(tamVoi().tenTinh).toEqual([]);
+  });
+  it("no alias (rà fix1 RV-D1): a bare name called is a function of the two files, a local function of its body, an import, a global, or a listed name of a listed loader (NAP), and nothing else of that body bears the name", () => {
+    expect(tamVoi().biDanh).toEqual([]);
+    // the loaders are what NAP says: napMotLan of exactly that module
+    const sf = nguon.get("foeKetCucKhongRo.ts")!;
+    for (const [ten, x] of Object.entries(NAP)) {
+      const st = sf.statements.find((s) => ts.isVariableStatement(s) && s.declarationList.declarations.some((d) => d.name.getText() === ten));
+      expect(st?.getText(), ten).toBe(`const ${ten} = napMotLan(() => import("${x.module}"));`);
+    }
   });
   it("every name it calls outside the two files is listed (CHO_PHEP): nothing new reaches it unread", () => {
     const { goi } = tamVoi();
     expect([...goi].filter((x) => !ham.has(x) && !CHO_PHEP.has(x)).sort()).toEqual([]);
   });
-  it("no status write: a .set(...) takes an object literal only, no variable, no spread, no computed key, no status (M13); its mark is a context write", () => {
+  it("no status write: an update's .set(...) takes an object literal only, whatever its arguments or casts: no variable, no spread, no computed key, no status (M13, rà fix1 RV-D2); its mark is a context write", () => {
     expect(tamVoi().ghiTrangThai).toEqual([]);
+  });
+  it("no other table written: update(...) of orchestrationRuns only, no insert(...), no delete(...) of a table (rà fix1 RV-D3: no step row)", () => {
+    expect(tamVoi().ghiBang).toEqual([]);
   });
   it("no static import of a dispatcher, the equipment adapter or the engine in the two files (a type import is no code)", () => {
     for (const [t, sf] of nguon) {
@@ -2374,7 +2445,8 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     }
   });
   // lượt sửa 1 (CHAN-1, kế hoạch mục 13 "Bài học": census of the readers of a mark) — who reads DA_BAO, who reads the sweep's own mark
-  it("CHAN1-DOC-DA_BAO the readers of DA_BAO and of the sweep's mark DA_BAO_QUET: the sweep alone reads its own mark; abortStopSweep reads DA_BAO only; the raw keys only at their constants", () => {
+  // lượt sửa 2 (rà fix1 RV-A2, RV-A3): every statement of the two files that names the sweep's mark, whatever its form (a function, an arrow, a const), and the key's name in any form anywhere
+  it("CHAN1-DOC-DA_BAO the readers of DA_BAO and of the sweep's mark DA_BAO_QUET: the sweep alone reads its own mark (no helper, no arrow); abortStopSweep reads DA_BAO only; the raw keys only at their constants", () => {
     const GOC = resolve(__dirname, "../../..");
     const tep = (dir: string, out: string[] = []): string[] => {
       for (const ten of readdirSync(dir)) {
@@ -2389,18 +2461,23 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     const co = (re: RegExp) => ds.filter((p) => re.test(readFileSync(p, "utf8"))).map(ten).sort();
     expect(co(/KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\b/), "DA_BAO").toEqual(["services/orchestration/foe/foeEngine.ts", "services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
     expect(co(/KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY\b/), "DA_BAO_QUET").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
-    expect(co(/"foeKetCucKhongRoDaBao(Quet)?"/), "the raw keys").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts"]);
-    // in foeRunStore the sweep's mark is read and written only by the sweep's own functions
-    const sf = nguon.get("foeRunStore.ts")!;
-    const nguoiDoc: string[] = [];
-    for (const st of sf.statements) {
-      const tenHam = ts.isFunctionDeclaration(st) && st.name ? st.name.text : null;
-      if (tenHam && st.getText().includes("KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY")) nguoiDoc.push(tenHam);
-    }
-    expect(nguoiDoc.sort()).toEqual(["ghiDaBaoQuet", "quetMotRun"]);
+    expect(co(/foeKetCucKhongRoDaBao/), "the raw keys, in any form").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts"]);
+    const nguoiNoi = (sf: ts.SourceFile) => {
+      const ra: string[] = [];
+      for (const st of sf.statements) {
+        if (ts.isImportDeclaration(st) || !st.getText().includes("KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY")) continue;
+        const tenSt = ts.isFunctionDeclaration(st) && st.name ? st.name.text : ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => d.name.getText()).join(",") : ts.SyntaxKind[st.kind];
+        ra.push(tenSt);
+      }
+      return ra.sort();
+    };
+    expect(nguoiNoi(nguon.get("foeRunStore.ts")!), "foeRunStore: the sweep's own functions only").toEqual(["ghiDaBaoQuet", "quetMotRun"]);
+    expect(nguoiNoi(nguon.get("foeKetCucKhongRo.ts")!), "foeKetCucKhongRo: the constant only").toEqual(["KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY"]);
     const e = readFileSync(resolve(__dirname, "foeEngine.ts"), "utf8");
     const tien = e.split(/\r?\n/).filter((l) => /const tien = /.test(l));
     expect(tien, "abortStopSweep: the walker's word (DA_BAO), never the sweep's mark").toHaveLength(1);
-    expect(tien[0]).toMatch(/KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\] == null/);
+    expect(tien[0]).toMatch(/const tien = live !== null \|\| ctxRun\[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\] == null; /);
+    const daBen = e.split(/\r?\n/).filter((l) => /const daBen = /.test(l));
+    expect(daBen, "the Abort's end duty: the walker's word only").toEqual(["    const daBen = ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] != null;"]);
   });
 });

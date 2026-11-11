@@ -45,7 +45,7 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
-import { runEdgeAssignments } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat
+import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
 import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
@@ -668,18 +668,21 @@ const QUET_URGENT_SONG: ReadonlySet<string> = new Set(["running", "compensating"
 const QUET_URGENT_WALKER_TRUNG_TAM: ReadonlySet<string> = new Set(["running", "compensating"]);
 
 /**
- * A2(n) T8 lượt sửa 1 (CHAN-3) — how many processes may run the central engine. The live-walker check of the sweep (`walkerSong`, the engine's liveRuns) sees this process only: it holds on the
- * assumption of ONE central engine process (the Dockerfile's `node dist/index.js`). What this process can see of more: a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY above 1 ("nhieu");
- * WEB_CONCURRENCY that is no positive integer ("khongRo"). Another host or container running the engine is not visible from here: the assumption is the deployment's (bàn giao).
+ * A2(n) T8 lượt sửa 1 (CHAN-3) — how many processes may run the central engine. The live-walker check of the sweep (`walkerSong`, the engine's liveRuns) sees this process only.
+ * lượt sửa 2 (dieu-phoi 11/11, (A) the FLOOR): the walker runs in the api pods (routers, boot's rehydrate; helm `replicaCount` 2, HA 3 and more), each with its own liveRuns, so ONE process
+ * is never assumed: only FOE_ENGINE_MOT_PROCESS=1 confirms it ("mot"), and only when nothing this process can see says more (a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY above 1:
+ * "nhieu"; WEB_CONCURRENCY that is no positive integer: "khongRo"). Absent: "khongRo". Read from the environment the process was given (never a .env file).
  */
 export type CheDoProcessEngine = "mot" | "nhieu" | "khongRo";
 export function cheDoProcessEngine(env: NodeJS.ProcessEnv = process.env, laWorker: boolean = cluster.isWorker === true): CheDoProcessEngine {
   if (laWorker || env.NODE_APP_INSTANCE !== undefined) return "nhieu";
   const wc = env.WEB_CONCURRENCY;
-  if (wc === undefined || wc.trim() === "") return "mot";
-  const n = Number(wc);
-  if (!Number.isSafeInteger(n) || n < 1) return "khongRo";
-  return n > 1 ? "nhieu" : "mot";
+  if (wc !== undefined && wc.trim() !== "") {
+    const n = Number(wc);
+    if (!Number.isSafeInteger(n) || n < 1) return "khongRo";
+    if (n > 1) return "nhieu";
+  }
+  return env.FOE_ENGINE_MOT_PROCESS === "1" ? "mot" : "khongRo";
 }
 
 /** the latest moment the run, its rows or its edge claim (the node's progress: the edge walker's heartbeat) changed; NaN ⇔ nothing says (then the run is old enough: the side that raises) */
@@ -815,7 +818,8 @@ async function quetMotRun(d: RunDb, run: OrchestrationRun, x: QuetMot): Promise<
     .filter((m) => !(m.khoa in dq.dau) && !quetDaBenTrongProcess.has(m.khoa));
   if (!noChot && dau.length === 0) return null;
   // CHAN-3 — whose walker: a run given to an edge node has none at central; its claim's progress is its heartbeat
-  const [claim] = (await d.select().from(runEdgeAssignments).where(eq(runEdgeAssignments.runId, run.id)).limit(1)) as Array<{ lastProgressAt?: unknown; claimedAt?: unknown }>;
+  // lượt sửa 2 (CHAN-4) — the shared read: 0370 not applied (42P01 / 42703) ⇒ no edge assignment, the run is central; any other error throws to the per-run catch (this run only)
+  const claim = (await readEdgeAssignment(d, run.id)) as { lastProgressAt?: unknown; claimedAt?: unknown } | null;
   if (!claim && QUET_URGENT_WALKER_TRUNG_TAM.has(run.status)) {
     if (x.walkerSong(run.id)) return null;
     if (x.cheDo !== "mot") {
