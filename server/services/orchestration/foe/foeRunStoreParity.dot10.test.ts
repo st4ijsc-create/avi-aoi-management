@@ -15244,3 +15244,232 @@ describe("A2(n) T7b-3 — a run that acted, never latched, and ended with no STO
     });
   }
 });
+
+// ══ A2(n) T7b-3 H37 (chu du an 11/11) ════════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7b-3 H37 — a run's edge report stream wedged by a batch refused and rolled back (409): one durable URGENT per (run, refusal), the mark edge_stream_stuck, nothing sent", () => {
+  const KIND = "foe_outcome_unknown_edge_stream_stuck";
+  const TOKEN = "ect_" + "a".repeat(43);
+  const NUT = { nodeId: NODE, nodeCode: "EDGE-A", credentialId: 1, factoryCode: "F1" } as never;
+  const EPOCH = "e".repeat(32);
+  const TAC_NHAN = { id: 0, role: "system", name: "edge: central abort" };
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const stopTyped = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const XONG_S = (ref: string) => def(ref, [gate(), move("x"), otStop("s")]);
+  const NP1S = (ref: string) => def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 400), box("c2", [stopTyped("nt")])])])]);
+  const h37 = () => h.alerts.filter((a) => a.kind === KIND);
+  const khoa = (c: number, ma: string) => `${KIND}:${c}:${ma}:-:luong`;
+  const dau = (c: number) => ((runRow(c).contextJson as Record<string, unknown> | null) ?? {}).edge_stream_stuck as Record<string, unknown> | undefined;
+  const hua = /press(?:ing)? Abort|Abort (?:sends|will send|can send)|\ba (?:later |further )?press (?:sends|will send)/i;
+  beforeEach(() => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    (fake as any).transaction = async (fn: (t: unknown) => Promise<unknown>) => {
+      const anh = new Map([...fake.store].map(([k, v]) => [k, v.map((r: any) => ({ ...r }))] as const));
+      try {
+        return await fn(fake);
+      } catch (e) {
+        fake.store.clear();
+        for (const [k, v] of anh) fake.store.set(k, v);
+        throw e;
+      }
+    };
+    const ins = (fake as any).insert;
+    (fake as any).insert = (t: any) => {
+      const q = ins(t);
+      const val = q.values.bind(q);
+      q.values = (x: unknown) => {
+        const r = val(x);
+        r.onConflictDoNothing ??= () => r;
+        return r;
+      };
+      return q;
+    };
+  });
+  afterEach(() => {
+    delete (fake as any).transaction;
+    delete (fake as any).insert;
+    vi.useRealTimers();
+  });
+  function nhatKy() {
+    const dong = new Map<string, { recs: Array<{ seq: number; record: Record<string, unknown> }>; acked: number }>();
+    const cua = (s: string) => dong.get(s) ?? (dong.set(s, { recs: [], acked: 0 }), dong.get(s)!);
+    return {
+      epoch: EPOCH,
+      them(s: string, r: Record<string, unknown>) {
+        const c = cua(s);
+        c.recs.push({ seq: c.recs.length + 1, record: { ...r, seq: c.recs.length + 1 } });
+      },
+      pending: (s: string, n: number) => cua(s).recs.filter((r) => r.seq > cua(s).acked).slice(0, n),
+      ack(s: string, q: number) {
+        cua(s).acked = Math.max(cua(s).acked, q);
+      },
+      ackedSeq: (s: string) => cua(s).acked,
+      pendingStreams: () => [],
+      appendEvent: async () => ({ seq: 1 }),
+      /** the record of `seq` as the journal holds it (a test only changes one that central never stored) */
+      ban: (s: string, seq: number) => cua(s).recs.find((r) => r.seq === seq)!.record,
+      veLai(s: string) {
+        cua(s).acked = 0;
+      },
+    };
+  }
+  /**
+   * The run walked on the edge up to its records, `doc` adds what makes central refuse the batch, then the report path: the real shipper → reportForNode, `lan` sends of the run stream. Returns the answers
+   * of every send, the journal, and the commands the edge walk sent before the report path (nothing after it may go)
+   */
+  async function lo(ref: string, cay: "xongS" | "np1", doc: ((recs: any[], c: number) => void) | null, lan = 3) {
+    const d = cay === "np1" ? NP1S(ref) : XONG_S(ref);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.quaBaoCao = true;
+    h.dispatcherThat = true;
+    h.slow.set("x", 10);
+    if (cay === "np1") {
+      e.laStopNem = true;
+      e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] });
+      h.ghim = PIN_BAD;
+      h.tuChoi.set("nt", { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+      h.tuChoiKhongGhi.add("nt");
+      h.timeoutDispatch.add("x");
+    }
+    const moc = e.records.length;
+    const s = await edgeSegment(e, 2, cay !== "np1" ? {} : {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running") && h.traTimeout > 0, "the walker in w");
+        runRow(e.runId).status = "aborted";
+        runRow(e.runId).finishedAt = new Date();
+        await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+      },
+    });
+    await wait(40);
+    const c = e.runId;
+    const recs = e.records.slice(moc) as any[];
+    doc?.(recs, c);
+    fake.seed(edgeNodeProtocol, [{ id: NODE, protocolVersion: 2, v: 2 }]);
+    for (const w of rows("orchestration_workflows")) w.def = w.definitionJson;
+    for (const r of rows("edge_step_authorizations")) r.edgeNodeId = NODE;
+    const [a] = rows("orchestration_run_edge_assignments").filter((r) => r.runId === c);
+    a.claimTokenHash = hashEdgeSecret(TOKEN);
+    a.claimSeq = 2;
+    a.edgeNodeId = NODE;
+    const J = nhatKy();
+    const S = edgeRunStream(c, 2);
+    for (const r of recs) J.them(S, r as never);
+    for (const r of e.events ?? []) J.them("events", r);
+    const tl: string[] = [];
+    const sh = new EdgeStreamShipper(
+      J as never,
+      {
+        post: async (route: string, body: unknown) => {
+          const x = (route === "report" ? await reportForNode(NUT, c, body) : await eventsForNode(NUT, body)) as Record<string, any>;
+          if (route === "report") tl.push(`${x.http}${x.code ? ":" + x.code : ""}`);
+          return x.http === 200 ? { ok: true, status: 200, data: x.data } : { ok: false, status: x.http, code: x.code, data: x.data };
+        },
+      } as never,
+      { log: () => undefined },
+    );
+    sh.setClaim(c, 2, TOKEN);
+    await sh.flush("events");
+    await wait(20);
+    h.alerts.length = 0;
+    const truoc = h.sent.length;
+    for (let i = 0; i < lan; i++) {
+      await sh.flush(S);
+      await wait(30);
+    }
+    return { c, d, J, S, sh, tl, tong: recs.length, truoc, out: s.out };
+  }
+  /** a non-STOP's result with no authorisation central issued, last in the batch: 409 unauthorised_actuation, the whole batch rolled back (edgeReportsCentral :263) */
+  const docUyQuyen = (recs: any[]) => {
+    const goc = recs.find((r) => r.kind === "step" && r.stepId === "x");
+    recs.push({ ...goc, attempt: 7, status: "completed", startedAt: Date.now(), finishedAt: Date.now(), error: null, result: { routedTo: "ot-dispatcher", status: "acked" }, jti: null });
+  };
+  const lenhSau = (x: { truoc: number }) => h.sent.slice(x.truoc).map((m) => `${String(m.stepId)}:${String(m.name)}`);
+
+  it("T7B3-H37-UYQUYEN-N3 a batch refused unauthorised_actuation, sent 3 times: 3 × 409, ONE durable key (run, refusal), names the STOP of the batch, the mark written once; nothing sent", async () => {
+    const x = await lo("t7b3h37u", "xongS", docUyQuyen);
+    expect(x.tl, "every send refused, nothing acknowledged").toEqual(["409:unauthorised_actuation", "409:unauthorised_actuation", "409:unauthorised_actuation"]);
+    expect(x.J.ackedSeq(x.S)).toBe(0);
+    expect([...new Set(h37().map((a) => String(a.dedupKey)))], "one inbox row whatever the sends").toEqual([khoa(x.c, "unauthorised_actuation")]);
+    const a = h37()[0]!;
+    expect(a.recipients).toContain(OWNER.id);
+    const t = `${String(a.title)} ${String(a.message)}`;
+    expect(t).toContain(`run ${x.c}`);
+    expect(t).toContain("unauthorised_actuation");
+    expect(t).toMatch(/stuck/);
+    expect(t).toContain(`"s"`);
+    expect(t).toMatch(/may still owe a STOP/);
+    expect(t).toMatch(/check the machine on site/i);
+    expect(t).toContain("E-STOP");
+    expect(t, "no promise").not.toMatch(hua);
+    expect(dau(x.c), "the mark of a debt (H24 reads it at T12b)").toMatchObject({ code: "unauthorised_actuation", stream: x.S, epoch: EPOCH, tuSeq: 1, denSeq: x.tong });
+    expect(lenhSau(x), "H37 sends nothing").toEqual([]);
+    expect(h.alerts.filter((y) => y.kind !== KIND).map((y) => String(y.kind)), "nothing else is told of a batch that did not commit").toEqual([]);
+  });
+
+  it("T7B3-H37-GO the next batch of that stream commits: the mark goes, no URGENT more; a stream that commits from the start: 0 URGENT, no mark", async () => {
+    // no `context` record in the batch: FakeDb stores the SQL patch object of one as the whole contextJson, which would clear the mark by itself (a harness limit, not the product's clearing)
+    const x = await lo("t7b3h37g", "xongS", (recs) => {
+      for (let i = recs.length - 1; i >= 0; i--) if (recs[i].kind === "context") recs.splice(i, 1);
+      docUyQuyen(recs);
+    }, 2);
+    expect(dau(x.c)?.code).toBe("unauthorised_actuation");
+    const n = h37().length;
+    // central's reading would now take it: the record is the plain running row it was before the edge wrote it again (never stored: no conflict)
+    const r = x.J.ban(x.S, x.tong);
+    Object.assign(r, { status: "running", result: null, finishedAt: null });
+    await x.sh.flush(x.S);
+    await wait(40);
+    expect(x.tl.slice(-1), "the batch commits").toEqual(["200"]);
+    const ctx = runRow(x.c).contextJson as Record<string, unknown>;
+    expect(ctx && typeof ctx === "object" && !("queryChunks" in ctx), "the context is still the run's own object (no SQL patch over it)").toBe(true);
+    expect(dau(x.c), "the mark goes with the commit").toBeUndefined();
+    expect(h37().length, "no URGENT more").toBe(n);
+    const y = await lo("t7b3h37d", "xongS", null, 1);
+    expect(y.tl).toEqual(["200"]);
+    expect(h37(), "a stream that commits tells nothing").toEqual([]);
+    expect(dau(y.c), "and marks nothing").toBeUndefined();
+  });
+
+  it("T7B3-H37-REPLAYED a ledger record whose authorisation already has its result: 409 replayed, rolled back: its own key, the mark", async () => {
+    const x = await lo("t7b3h37r", "xongS", (recs, c) => {
+      const au = rows("edge_step_authorizations").find((a) => a.runId === c && a.stepId === "x" && a.claimSeq === 2)!;
+      Object.assign(au, { kind: "robot", verdictJson: { target: { robotId: 2 } }, resultReportedAt: new Date() });
+      recs.push({ kind: "ledger", stepId: "x", attempt: 1, idempotencyKey: `run${c}-x-a1`, jti: au.jti, stop: false, target: { robotId: 2, jobType: "move" }, status: "done", result: null, at: Date.now() });
+    });
+    expect(x.tl).toEqual(["409:replayed", "409:replayed", "409:replayed"]);
+    expect([...new Set(h37().map((a) => String(a.dedupKey)))]).toEqual([khoa(x.c, "replayed")]);
+    expect(dau(x.c)?.code).toBe("replayed");
+    expect(lenhSau(x)).toEqual([]);
+  });
+
+  it("T7B3-H37-SEQ-CONFLICT a seq already stored sent again with other content: 409 seq_conflict, the batch rolled back, the shipper keeps it: its own key, the mark", async () => {
+    const x = await lo("t7b3h37c", "xongS", null, 1);
+    expect(x.tl).toEqual(["200"]);
+    const r = x.J.ban(x.S, 1);
+    Object.assign(r, { error: "other content (test)" });
+    x.J.veLai(x.S);
+    for (let i = 0; i < 3; i++) {
+      await x.sh.flush(x.S);
+      await wait(30);
+    }
+    expect(x.tl.slice(1)).toEqual(["409:seq_conflict", "409:seq_conflict", "409:seq_conflict"]);
+    expect([...new Set(h37().map((a) => String(a.dedupKey)))]).toEqual([khoa(x.c, "seq_conflict")]);
+    expect(dau(x.c)?.code).toBe("seq_conflict");
+    expect(lenhSau(x)).toEqual([]);
+  });
+
+  it("T7B3-H37-ABORT-NT the latched run's batch carrying nt's abort_stop, refused: the stream URGENT names nt, still no abort_stop_not_sent of it (T7B2-EDGE-C-409 holds)", async () => {
+    const x = await lo("t7b3h37n", "np1", docUyQuyen);
+    expect(x.tl.every((t) => t === "409:unauthorised_actuation")).toBe(true);
+    expect([...new Set(h37().map((a) => String(a.dedupKey)))]).toEqual([khoa(x.c, "unauthorised_actuation")]);
+    expect(String(h37()[0]!.message)).toContain(`"nt"`);
+    expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent && String(a.dedupKey).split(":")[2] === "nt"), "the batch did not commit").toEqual([]);
+    expect(dau(x.c)?.code).toBe("unauthorised_actuation");
+  });
+});

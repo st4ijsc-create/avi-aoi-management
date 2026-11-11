@@ -52,7 +52,7 @@ import { resolveEngineSink, type EdgeStepRowWrite } from "./edgeEngineSink";
 import { ackEdgeCommand, lockAckRequestsInOrder } from "./edgeNodeCommands";
 import type { WorkflowDefinition, WorkflowStep } from "../orchestration/foe/workflowModel";
 import { MA_MOT_PHAN, moTaMotPhan, motPhanCua } from "../ot/motPhan"; // R1b-2b-2a T3E fix 1 (review I-1) — lô edge áp MỘT PHẦN
-import { FOE_STOP_NOT_SENT, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, loiChuaRaStop, maTuChoiCua, nguonCuaKetQua, viChuaRaDong, type ViChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { EDGE_STREAM_STUCK_CTX_KEY, MA_LUONG_EDGE_KET, dauLuongEdgeKetCua, type DauLuongEdgeKet, FOE_STOP_NOT_SENT, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuAnomalyEdge, loiChuaRaStop, maTuChoiCua, nguonCuaKetQua, viChuaRaDong, type ViChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { DAU_KHONG_XAC_NHAN, baoCaoHopLe, baoKhongXacNhan, dauKhongXacNhan, laHangChuaRa, stopKhongXacMinhEdge, type DangKhongXacNhan } from "../orchestration/foe/foeRunStore"; // R1b-2b-2a A2(n) (m-H)
 import { commandOf, isRobotKind, laStopTheoBuoc } from "../orchestration/foe/foeStepClass";
 
@@ -263,6 +263,55 @@ function unauthorised(runId: number, stepId: string, audits: Audit[], detail: Re
   throw new StreamAnswer(edgeError("unauthorised_actuation", `Run ${runId} step "${stepId}": a non-STOP command result without an authorisation issued for it — refused and recorded.`));
 }
 
+/** A2(n) T7b-3 (H37) — the STOP steps of the definition a refused batch named (a step's own row, an Abort's record, a ledger record): by the snapshot's verification or its own name (LaStop), never the edge's word. Ids, at most 20 */
+async function stopTrongLo(records: readonly EdgeRunReportRecord[], def: WorkflowDefinition, verified: ReadonlySet<string>, machineMap: Awaited<ReturnType<typeof loadMachineMap>>): Promise<string[]> {
+  const out: string[] = [];
+  for (const rec of records) {
+    if (rec.kind !== "step" && rec.kind !== "abort_stop" && rec.kind !== "ledger") continue;
+    const id = rec.stepId.startsWith("abort:") ? rec.stepId.slice("abort:".length) : rec.stepId;
+    if (out.includes(id) || out.length >= 20) continue;
+    const step = findStep(def.steps, id);
+    if (step?.type === "command" && (verified.has(id) || (await laStopTheoBuoc(step, machineMap).catch(() => true)))) out.push(id);
+  }
+  return out;
+}
+
+/** A2(n) T7b-3 (H37) — the URGENT of a wedged stream, one key per (run, refusal), and the mark beside it: a short transaction of its own holding the run row, never the batch's. Never throws, never a command. */
+async function baoLuongKet(d: Db, x: Omit<DauLuongEdgeKet, "at"> & { runId: number; owner: number | null }): Promise<void> {
+  try {
+    await d.transaction(async (txRaw) => {
+      const tx = txRaw as unknown as Db;
+      const [r] = await tx.select({ contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, x.runId)).for("update").limit(1);
+      if (!r) return;
+      const ctx = ((r.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      const cu = dauLuongEdgeKetCua(ctx);
+      if (cu && cu.stream === x.stream && cu.code === x.code) return; // one mark per wedge: a send again changes nothing
+      const dau: DauLuongEdgeKet = { code: x.code, stream: x.stream, epoch: x.epoch, claimSeq: x.claimSeq, tuSeq: x.tuSeq, denSeq: x.denSeq, stops: x.stops, at: new Date().toISOString() };
+      await tx.update(orchestrationRuns).set({ contextJson: { ...ctx, [EDGE_STREAM_STUCK_CTX_KEY]: dau }, updatedAt: new Date() }).where(eq(orchestrationRuns.id, x.runId));
+    });
+  } catch (err) {
+    console.error(`[EdgeReports] run ${x.runId}: the mark of a stuck report stream (${x.code}) is not written: ${(err as Error)?.message ?? err}`);
+  }
+  const ben = await canhBaoKetCucKhongRo({ loai: "edgeStreamStuck", runId: x.runId, stepId: x.code, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "luong", stopTrongLo: x.stops, owner: x.owner });
+  if (!ben) console.error(`[EdgeReports] run ${x.runId}: the URGENT of a stuck report stream (${x.code}) is not stored`);
+}
+
+/** A2(n) T7b-3 (H37) — a later batch of the stream committed: the mark goes, if it is still that stream's. Its own short transaction; never throws. */
+async function goDauLuongKet(d: Db, runId: number, stream: string): Promise<void> {
+  try {
+    await d.transaction(async (txRaw) => {
+      const tx = txRaw as unknown as Db;
+      const [r] = await tx.select({ contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
+      const ctx = ((r?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      if (!r || dauLuongEdgeKetCua(ctx)?.stream !== stream) return;
+      const { [EDGE_STREAM_STUCK_CTX_KEY]: _go, ...con } = ctx;
+      await tx.update(orchestrationRuns).set({ contextJson: con, updatedAt: new Date() }).where(eq(orchestrationRuns.id, runId));
+    });
+  } catch (err) {
+    console.error(`[EdgeReports] run ${runId}: the mark of a stuck report stream is not cleared: ${(err as Error)?.message ?? err}`);
+  }
+}
+
 /** POST /edge/node/runs/:runId/report */
 export async function reportForNode(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeStreamAnswer>> {
   const parsed = parseEdgeBody(edgeReportRequestSchema, body);
@@ -401,6 +450,14 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
           if (!ben) console.error(`[EdgeReports] run ${runId} step ${id}: the URGENT of a STOP central could not verify (${dang}) is not stored`);
         });
       }
+      // A2(n) T7b-3 (H37) — a batch of THIS stream committed: the stream is no longer wedged, its mark goes (read from the run as this report found it: nothing to do in the usual case)
+      const dauCu = dauLuongEdgeKetCua((run.contextJson as Record<string, unknown> | null) ?? null);
+      if (dauCu && dauCu.stream === req.stream) void goDauLuongKet(d, runId, req.stream);
+    } else if (traLoi.code && MA_LUONG_EDGE_KET.has(traLoi.code)) {
+      // A2(n) T7b-3 (H37, chu du an 11/11) — the batch was refused as a whole and its transaction has ROLLED BACK (applyStream returned): what it carried is not recorded, and the node keeps sending it.
+      // Told once per (run, refusal), the mark of a debt for H24 beside it, both outside the batch's transaction; the batch's semantics are unchanged; nothing is sent
+      const stops = await stopTrongLo(req.records, def, verifiedStopIds, machineMap);
+      void baoLuongKet(d, { runId, code: traLoi.code, stream: req.stream, epoch: req.epoch, claimSeq: req.claimSeq, tuSeq: req.records[0]?.seq ?? 0, denSeq: req.records[req.records.length - 1]?.seq ?? 0, stops, owner: run.startedBy ?? null });
     }
     return traLoi;
   } catch (err) {

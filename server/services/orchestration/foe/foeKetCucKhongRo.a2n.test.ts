@@ -2265,3 +2265,28 @@ describe("A2(n) T7b-3 — the words of a pinned STOP a run ended with, unswept (
     expect(ham.split("baoKetThucKhongQuetSauDoanEdge").length - 1, "one call").toBe(1);
   });
 });
+
+// A2(n) T7b-3 (H37, chu du an 11/11) — the words of a run's edge report stream wedged by a refused batch, and the mark H24 reads: pure
+describe("A2(n) T7b-3 H37 — the words of a stuck edge report stream, the mark edge_stream_stuck", () => {
+  it("T7B3-H37-CHU the run, the refusal, what may be owed by name when the batch named a STOP, the machine on site; one key per (run, refusal); no promise", async () => {
+    const { noiDungCanhBaoKhongRo: n, KHONG_CO_BU_TRU: K } = await import("./foeKetCucKhongRo");
+    const a = n({ loai: "edgeStreamStuck", runId: 9, stepId: "unauthorised_actuation", compId: K, error: "FOE_STOP_NOT_SENT", lan: "luong", stopTrongLo: ["s", "nt"] } as never);
+    expect(a.kind).toBe("foe_outcome_unknown_edge_stream_stuck");
+    expect(a.dedupKey).toBe("foe_outcome_unknown_edge_stream_stuck:9:unauthorised_actuation:-:luong");
+    expect(a.message).toContain("run 9");
+    expect(a.message).toContain(`STOP steps in the refused batch: "s", "nt".`);
+    expect(a.message).toMatch(/may still owe a STOP/);
+    expect(a.message).toMatch(/Check the machine on site and use its direct STOP \/ E-STOP/);
+    expect(`${a.title} ${a.message}`).not.toMatch(/press(?:ing)? Abort|Abort (?:sends|will send|can send)|UNKNOWN|outcome/);
+    const b = n({ loai: "edgeStreamStuck", runId: 9, stepId: "replayed", compId: K, error: "FOE_STOP_NOT_SENT", lan: "luong" } as never);
+    expect(b.message).not.toContain("refused batch:");
+    expect(b.dedupKey).not.toBe(a.dedupKey);
+  });
+  it("T7B3-H37-DAU the mark as the context holds it: none, one, and a value that is no mark still marks (fail-closed for H24)", async () => {
+    const { dauLuongEdgeKetCua: doc, EDGE_STREAM_STUCK_CTX_KEY: KEY } = await import("./foeKetCucKhongRo");
+    expect(KEY).toBe("edge_stream_stuck");
+    expect(doc({})).toBeNull();
+    expect(doc({ [KEY]: { code: "replayed", stream: "run:9:2", epoch: "e", claimSeq: 2, tuSeq: 1, denSeq: 4, stops: ["s"], at: "t" } })).toMatchObject({ code: "replayed", stream: "run:9:2", denSeq: 4, stops: ["s"] });
+    expect(doc({ [KEY]: "garbage" })).toMatchObject({ code: "?", stream: "?" });
+  });
+});

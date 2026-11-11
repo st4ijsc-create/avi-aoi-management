@@ -284,8 +284,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  *   its `abort:` row, and a person presses Abort again, with no time limit (the background only repeats this URGENT). Never "it went".
  * stopEndedUnswept — A2(n) T7b-3 (H36, chu du an 10/11): a run that acted and never latched ended (`ketThuc`) with no STOP sweep, and `stepId` is a pinned STOP still owed by the sweep's own reading
  *   (`stopKhongXacMinh`: its pins could not be read; BUOC_KHONG_XAC_DINH: the records could not be read). Nothing is sent: a person checks the machine. Under the fixed event "ket". No command has an unknown outcome.
+ * edgeStreamStuck — A2(n) T7b-3 (H37, chu du an 11/11): central refused a batch of a run's edge report stream as a whole (409, rolled back: `stepId` is the refusal code) and the node keeps sending it: what
+ *   the run did since is not recorded, a STOP may still be owed (`stopTrongLo`: the STOP steps the batch named). One key per (run, refusal), under the fixed event "luong". Nothing is sent.
  */
-export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept";
+export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept" | "edgeStreamStuck";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -309,6 +311,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   abortDefUnread: "foe_outcome_unknown_abort_definition_unread",
   abortSweepUnfinished: "foe_outcome_unknown_abort_sweep_unfinished",
   stopEndedUnswept: "foe_outcome_unknown_stop_ended_unswept",
+  edgeStreamStuck: "foe_outcome_unknown_edge_stream_stuck",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -337,6 +340,8 @@ export interface CanhBaoKhongRo {
   chuAbort?: ChuStopAbort;
   /** A2(n) T7b-3 (H36) — stopEndedUnswept: how the run ended (`completed`: with a step of it failed) */
   ketThuc?: KetThucKhongQuet;
+  /** A2(n) T7b-3 (H37) — edgeStreamStuck: the STOP steps of the definition the refused batch named (ids only) */
+  stopTrongLo?: readonly string[];
 }
 
 /** A2(n) T7b-3 (H36) — the terminal statuses of a run that ends with no STOP sweep */
@@ -369,6 +374,53 @@ function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopK
   if (a.stopKhongXacMinh) return [`step "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)}, not verified as a pinned STOP`, `${dau}: step "${a.stepId}" could not be verified as a pinned STOP, so it was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
   return [`STOP "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)} with no STOP sweep`, `${dau}: its STOP "${a.stepId}" was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
 }
+/**
+ * A2(n) T7b-3 (H37, chu du an 11/11) — the words of a run's edge report stream wedged by a refused batch: the run, the refusal, what may be owed (the batch's STOP steps by name when it named any), the machine
+ * on site. No promise: nothing central holds can send what the batch did not record.
+ */
+function chuLuongEdgeKet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopTrongLo">): [string, string] {
+  const ten = a.stopTrongLo?.length ? ` STOP steps in the refused batch: ${a.stopTrongLo.map((id) => `"${id}"`).join(", ")}.` : "";
+  return [
+    `edge report stream stuck (${a.stepId}), a STOP may not be out`,
+    `The edge node's report stream of run ${a.runId} is stuck: central refused a batch of it as a whole (${a.stepId}) and kept nothing of that batch, and the node keeps sending it. What the run did since is not recorded, and the run may still owe a STOP that did not go out.${ten} Check the machine on site and use its direct STOP / E-STOP.`,
+  ];
+}
+/** A2(n) T7b-3 (H37) — the refusals of a run-stream batch that roll the whole batch back and that the node's shipper keeps sending (edgeStreams: kept, retried, never acknowledged) */
+export const MA_LUONG_EDGE_KET: ReadonlySet<string> = new Set(["unauthorised_actuation", "replayed", "seq_conflict"]);
+/**
+ * A2(n) T7b-3 (H37, dieu-phoi 11/11) — run-context key (central-written by edgeReportsCentral.reportForNode, outside the batch's transaction, where the URGENT is raised): the run's edge report stream is wedged by
+ * a refused batch. A debt for H24 (the deploy / rollback / delete gate of T12b reads it, no-cho-T12.md). Cleared when a later batch of THAT stream commits. Never written by an edge (edgeContextPolicy).
+ */
+export const EDGE_STREAM_STUCK_CTX_KEY = "edge_stream_stuck";
+export interface DauLuongEdgeKet {
+  code: string;
+  stream: string;
+  epoch: string;
+  claimSeq: number;
+  /** the seqs of the refused batch */
+  tuSeq: number;
+  denSeq: number;
+  /** STOP steps the batch named (ids) */
+  stops: string[];
+  at: string;
+}
+/** The mark, as the context holds it; null ⇔ none. A value that is not one still marks (fail-closed for H24). Pure. */
+export function dauLuongEdgeKetCua(ctx: Record<string, unknown> | null | undefined): DauLuongEdgeKet | null {
+  const v = ctx?.[EDGE_STREAM_STUCK_CTX_KEY];
+  if (v == null) return null;
+  const d = (typeof v === "object" && !Array.isArray(v) ? v : {}) as Partial<DauLuongEdgeKet>;
+  return {
+    code: typeof d.code === "string" ? d.code : "?",
+    stream: typeof d.stream === "string" ? d.stream : "?",
+    epoch: typeof d.epoch === "string" ? d.epoch : "?",
+    claimSeq: Number.isSafeInteger(d.claimSeq) ? (d.claimSeq as number) : 0,
+    tuSeq: Number.isSafeInteger(d.tuSeq) ? (d.tuSeq as number) : 0,
+    denSeq: Number.isSafeInteger(d.denSeq) ? (d.denSeq as number) : 0,
+    stops: Array.isArray(d.stops) ? d.stops.filter((x): x is string => typeof x === "string") : [],
+    at: typeof d.at === "string" ? d.at : "",
+  };
+}
+
 /**
  * A2(n) T7b-3 (H36, brief point 3) — the answer to a press of Abort on a run that has ended `failed` / `completed` and still owes a STOP by the same reading as its URGENT: the STOPs by name, nothing sent, the machine
  * on site, no promise. "already terminal" stays: the Studio and the callers key on it. Pure.
@@ -480,7 +532,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
   const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
   // T7b-3 (H36) — the same for a run that ended with no sweep and never latched
-  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh")) || a.loai === "stopEndedUnswept";
+  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck";
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -519,6 +571,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       abortDefUnread: [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
       abortSweepUnfinished: [`STOP sweep has not finished, a STOP may have gone out or may still go`, chuQuetChuaXong(a.runId)],
       stopEndedUnswept: chuKetThucKhongQuet(a),
+      edgeStreamStuck: chuLuongEdgeKet(a),
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
