@@ -14178,6 +14178,8 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
   const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
   const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
   const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  /** a branch whose condition is never evaluated when the walk stops before it */
+  const brn2 = (id: string, thenS: WorkflowStep[], elseS: WorkflowStep[] = []): WorkflowStep => ({ id, type: "branch", condition: { source: "telemetry", machineId: 2, key: "temp", op: "lt", value: 100 }, then: thenS, else: elseS }) as never;
   /** stop-typed on a tag with no pin: what the dispatcher calls a STOP only once the pin is set */
   const stopTyped = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } }) as never;
   const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -14332,41 +14334,60 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
    * (a) — the NP1 run on the edge: x went unknown (the latch), nt handed over at the latch on the marked route and refused (in the walker's hands), the walker still in w. Central's Abort
    * writes 'aborted' (its own sweep reaches no device of the node: the shape of ★ abort sweep); the node's agent aborts the live walker. `vaoAbort`: what changes at the Abort's own hand-over
    */
-  async function songAbort(ref: string, vaoAbort: () => void) {
-    const d = NP1S(ref);
+  async function songAbort(ref: string, vaoAbort: () => void, opts: { coDb?: boolean; d?: WorkflowDefinition; goi?: (p: EdgeRunPackage) => EdgeRunPackage; khongTuChoi?: boolean; nem?: boolean; ghimOk?: boolean } = {}) {
+    const d = opts.d ?? NP1S(ref);
     const e = await edgeAssignedRun(d);
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
     e.events = [];
     e.quaBaoCao = true; // nothing applied by the harness from here: only the report path writes
     e.laStopNem = true;
-    e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] }); // T6d-K2 — "the pins unreadable" on an edge is the package's stopsUnsure
-    h.ghim = PIN_BAD;
+    e.suaGoi = opts.goi ?? ((p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] })); // T6d-K2 — "the pins unreadable" on an edge is the package's stopsUnsure
+    e.laStopNem = opts.nem ?? true;
+    h.ghim = opts.ghimOk ? PIN_OK : PIN_BAD;
     h.dispatcherThat = true;
     h.duocSauKhoa.add("nt");
-    offline();
+    if (!opts.khongTuChoi) offline();
     h.slow.set("x", 10);
     h.timeoutDispatch.add("x");
     const moc = e.records.length;
     let song: Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null = null;
     let truoc = 0;
+    let dbLan = 0;
     const s = await edgeSegment(e, 2, {
       beforeEnd: async () => {
-        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running") && sentOf("nt").length > 0, "the walker in w, nt handed over at the latch");
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running") && h.traTimeout > 0 && (opts.d !== undefined || sentOf("nt").length > 0), "the walker in w, the latch fallen (nt handed over at the latch)");
         truoc = sentOf("nt").length;
         runRow(e.runId).status = "aborted";
         runRow(e.runId).finishedAt = new Date();
         vaoAbort();
-        song = await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+        // T7b-2 lượt sửa 1 — a database for the Abort's own window: what the edge's sweep would ask of one is counted and answered, so a word it must not say reaches the case's own check
+        if (opts.coDb) h.dbThrows = false;
+        const db0 = vi.mocked(getDb).mock.calls.length;
+        try {
+          song = await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+          if (opts.coDb) await wait(40);
+        } finally {
+          dbLan = vi.mocked(getDb).mock.calls.length - db0;
+          if (opts.coDb) h.dbThrows = true;
+        }
       },
     });
     await wait(40);
     const g = await giao(e, 2, moc, s.out, d);
-    return { e, s, d, song: song as Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null, truoc, ...g };
+    return { e, s, d, song: song as Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null, truoc, dbLan, moc, ...g };
   }
   /** a press at central: the run aborted, central's verifier cannot read the pins (the marked route) */
   async function bam(c: number) {
-    h.sent.length = 0;
+    // T7b-2 lượt sửa 1 (rà J) — the commands of the Abort before this press: THE check of type (1) on them now (a red names this case), then kept apart in h.lacTatCa by T7b-1d lượt sửa 5's rule
+    // (lac, the block's afterAll reads it again); their `sauKhoa` is the one their own run had when they were handed over (this case's run: the harness's latch at that moment)
+    const truocBam = h.sent.splice(0, h.sent.length);
+    expect(truocBam.filter(laLoai1).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch (before the press)").toEqual([]);
+    for (const x of truocBam) {
+      x.lac = true;
+      h.lacTatCa.push(x);
+      lacKhoi.push(x);
+    }
     h.alerts.length = 0;
     h.timeoutDispatch.clear();
     h.classifyLoi = true;
@@ -14526,6 +14547,135 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     }
   });
 
+
+  // ── T7b-2 lượt sửa 1 — H25 on the edge (H13 × Abort, run latched, dieu-phoi 09/11): the Abort of a latched edge walker tells what the walk's end would, from the same reading ─────────────
+  const cayH25 = (ref: string) => def(ref, [gate(), parF("p", [move("x"), delay("w", 400)]), brn2("b", [otStop("s"), move("m")]), move("m2")]);
+  const khoaCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND, id: string) => [...new Set(urgentCua(kind).filter((a) => String(a.dedupKey).split(":")[2] === id).map((a) => String(a.dedupKey)))];
+  it("T7B2-H25-EDGE the first Abort of a latched edge walker (a branch never evaluated, forward work dropped): the edge reports stop_untaken_branch s and forward_not_sent m, m2; central raises each under one key; a press at central adds no key; no 'owes no STOP step' beside an untaken branch", async () => {
+    seedHalt();
+    const x = await songAbort("t2h25", () => undefined, { d: cayH25("t2h25"), goi: (p) => p, khongTuChoi: true, ghimOk: true });
+    const c = x.e.runId;
+    expect(x.song?.abortStops?.untakenBranch, "the sweep's own answer").toEqual(["s"]);
+    const bao = (x.e.events ?? []).filter((v: any) => v.kind === "anomaly" && v.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((v: any) => JSON.parse(String(v.detail))).map((v: any) => `${String(v.loai)}|${String(v.stepId)}`);
+    expect(bao, "the edge reports them").toEqual(expect.arrayContaining(["stopUntakenBranch|s", "forwardNotSent|m", "forwardNotSent|m2"]));
+    expect(khoaCua("stopUntakenBranch", "s").length, "central raises stop_untaken_branch s, one key").toBe(1);
+    expect(khoaCua("forwardNotSent", "m").length, "central raises forward_not_sent m, one key").toBe(1);
+    expect(khoaCua("forwardNotSent", "m2").length, "central raises forward_not_sent m2, one key").toBe(1);
+    // a press at central: its own words of the same items under central's key (the node's are under its claim, `claim<seq>`, I-5): one more key per item at most, as a press made them at the base
+    // (lượt sửa 1, đo: nền raised them only at the press). One key for both needs the event of the key on the wire: the edge report contract, not done here (bao-cao). A second press adds nothing
+    const keys = () => ({ s: khoaCua("stopUntakenBranch", "s"), m: khoaCua("forwardNotSent", "m"), m2: khoaCua("forwardNotSent", "m2") });
+    const giuKhoa: string[] = [];
+    const a = await bam(c);
+    expect(a.ok).toBe(true);
+    if ((a.abortStops?.untakenBranch ?? []).length) expect(String(a.message ?? ""), "never beside an untaken branch").not.toMatch(/owes no STOP step/);
+    const sau1 = keys();
+    for (const [ten, ds] of Object.entries(sau1)) expect(ds.length, `the press adds at most its own one key for ${ten}`).toBeLessThanOrEqual(1);
+    giuKhoa.push(...sau1.s, ...sau1.m, ...sau1.m2);
+    const a2 = await bam(c);
+    expect(a2.ok).toBe(true);
+    const sau2 = keys();
+    expect([...sau2.s, ...sau2.m, ...sau2.m2].filter((k) => !giuKhoa.includes(k)), "a second press adds no key").toEqual([]);
+  });
+  // ── lượt sửa 1 (rà H) — the package READ nt's pins and found none: the edge's marked route is not for it ────────────────────────────────────────────────────
+  for (const nem of [false, true]) {
+    it(`T7B2-EDGE-KHONG-GHIM the package read nt and found no pin${nem ? ", the edge's STOP check throws" : ""}: the edge's Abort hands nt to nobody (0 tries, 0 PDU), lists it as not pinned`, async () => {
+      const x = await songAbort(`t2k${nem ? "n" : "k"}`, () => undefined, { d: NP1S(`t2k${nem ? "n" : "k"}`), goi: (p) => p, khongTuChoi: true, nem });
+      const c = x.e.runId;
+      expect(sentOf("nt").slice(x.truoc), "no try on the marked route").toEqual([]);
+      expect(x.song?.abortStops?.notPinned, "read: not pinned").toContain("nt");
+      expect(noCua(c).has("nt")).toBe(false);
+      expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt")).toEqual([]);
+    });
+  }
+  // ── lượt sửa 1 (rà H) — prepareAbortStop refuses on the edge (a policy): the debt carries its code too ───────────────────────────────────────────────────────
+  it("T7B2-EDGE-PREP-MA the edge's Abort cannot even prepare nt (a policy denies it): aborted, owed on abort:nt with the code, ONE URGENT names nt", async () => {
+    const x = await songAbort("t2pm", () => h.policyTuChoi.add("nt"));
+    h.policyTuChoi.clear();
+    const c = x.e.runId;
+    expect(sentOf("nt").slice(x.truoc), "never handed over").toEqual([]);
+    const ab = hang(c, "abort:nt");
+    expect(ab?.status).toBe("failed");
+    expect(String(ab?.error)).toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" did NOT go out \(on the Abort\): refused before a driver \[POLICY_DENIED\]/);
+    expect((ab?.resultJson as Record<string, unknown> | null)?.chuaRa).toEqual({ nguon: "tuChoi", ma: "POLICY_DENIED" });
+    expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").length).toBe(1);
+  });
+  // ── lượt sửa 1 (rà D) — central reads only the closed value, only on a STOP by its name, and tells only after the commit ─────────────────────────────────────
+  /** (a) up to the records, then `sua` changes what the edge ships, then the report path */
+  async function songRoiSua(ref: string, sua: (recs: any[], e: EdgeHarness) => void, truocGiao?: () => void) {
+    const d = NP1S(ref);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.quaBaoCao = true;
+    e.laStopNem = true;
+    e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] });
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    offline();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    const moc = e.records.length;
+    const s = await edgeSegment(e, 2, {
+      beforeEnd: async () => {
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running") && sentOf("nt").length > 0, "the walker in w, nt handed over at the latch");
+        runRow(e.runId).status = "aborted";
+        runRow(e.runId).finishedAt = new Date();
+        await stopLiveRunForCentralAbort(e.runId, TAC_NHAN);
+      },
+    });
+    await wait(40);
+    sua(e.records.filter((r: any) => r.kind === "abort_stop"), e);
+    truocGiao?.();
+    h.alerts.length = 0;
+    const g = await giao(e, 2, moc, s.out, d);
+    return { e, s, d, ...g };
+  }
+  const DRIVER = "adapter 501 offline: the driver said E_SOCK 10.0.0.5";
+  for (const [ten, gt] of [["maChuDriver", { nguon: "tuChoi", ma: DRIVER }], ["nguonLa", { nguon: "khac", ma: "ADAPTER_OFFLINE" }]] as const) {
+    it(`T7B2-EDGE-C-DONG ${ten}: an abort_stop whose chuaRa is no closed value: central writes no row from it and tells nothing; no driver text reaches a row or an URGENT`, async () => {
+      const x = await songRoiSua(`t2d${ten.slice(0, 4)}`, (recs) => {
+        for (const r of recs) if (r.stepId === "nt") r.result = { ...(r.result ?? {}), chuaRa: gt, error: undefined };
+      });
+      const c = x.e.runId;
+      expect(hang(c, "abort:nt"), "no row from a value central did not define").toBeUndefined();
+      expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt")).toEqual([]);
+      expect(JSON.stringify(stepRows(c)) + JSON.stringify(h.alerts), "no driver text").not.toContain("E_SOCK");
+    });
+  }
+  it("T7B2-EDGE-C-KHONG-STOP an abort_stop with a valid chuaRa for a step whose own name says no STOP (x, a move): central writes no row and tells nothing", async () => {
+    const x = await songRoiSua("t2dks", (recs, e) => {
+      const goc = recs.find((r) => r.stepId === "nt");
+      e.records.push({ ...goc, stepId: "x", result: { abortStop: "failed", stepId: "x", chuaRa: { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" } } } as never);
+    });
+    const c = x.e.runId;
+    expect(hang(c, "abort:x"), "no row for a step that is no STOP").toBeUndefined();
+    expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "x")).toEqual([]);
+    expect(hang(c, "abort:nt")?.status, "the STOP's own record still lands").toBe("failed");
+  });
+  it("T7B2-EDGE-C-COMMIT the batch carrying nt's abort_stop fails to commit once: no row, no URGENT; the shipper sends it again: the row with its code, exactly one URGENT", async () => {
+    let lan = 0;
+    const x = await songRoiSua("t2dcm", () => undefined, () => {
+      const t0 = (fake as any).transaction;
+      (fake as any).transaction = async (fn: (t: unknown) => Promise<unknown>) => {
+        if (lan++ > 0) return t0(fn);
+        const anh = new Map([...fake.store].map(([k, v]) => [k, v.map((r) => ({ ...r }))] as const));
+        await fn(fake);
+        fake.store.clear();
+        for (const [k, v] of anh) fake.store.set(k, v);
+        throw new Error("commit failed (test)");
+      };
+    });
+    const c = x.e.runId;
+    expect(hang(c, "abort:nt"), "rolled back").toBeUndefined();
+    expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt"), "nobody told of a batch that did not commit").toEqual([]);
+    await x.sh.flush(x.S);
+    await wait(30);
+    expect(hang(c, "abort:nt")?.status).toBe("failed");
+    expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").length, "exactly one, after the commit").toBe(1);
+  });
+
   // ── 0: P4 (EDGE-VET) — central's trace on a run assigned to a node ─────────────────────────────────────────────────────────────────────────────────────────
   // T7b-2 decides: a central sweep of a run assigned to a node keeps its trace as on any run (H22: a later press reads it). The node's picture route (stopsUnconfirmed) is for a STOP central handed over
   // and could not confirm: a trace of a STOP never handed over (chuaXacMinh) is not one (the picture carries only verified STOPs, and an automatic re-send is no person's press)
@@ -14654,14 +14804,20 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     expect(a!.ok).toBe(true);
     expect((a!.abortStops as Record<string, unknown> | undefined)?.chuaKhoa, "no press of a run not latched over central's rows").toBeUndefined();
   });
-  it("T7B2-TRAN-EDGE the sweep of a latched edge walker does not answer within its ceiling: the answer says the sweep is not finished; the edge raises no URGENT of its own (no database there: central tells, from the node's records)", async () => {
-    const x = await songAbort("t2t", () => {
-      h.heSoHan = 0.01; // the ceiling 15·D at 1/100: a hang costs no real seconds
-      h.treoLaStop = () => new Promise<void>(() => undefined);
-    });
+  it("T7B2-TRAN-EDGE the sweep of a latched edge walker hangs past its ceiling: the answer says the sweep is not finished; the edge raises no URGENT and asks no database; no record of it reaches central (H29/H32 on the edge: backlog)", async () => {
+    const x = await songAbort(
+      "t2t",
+      () => {
+        h.heSoHan = 0.01; // the ceiling 15·D at 1/100: a hang costs no real seconds
+        h.treoLaStop = () => new Promise<void>(() => undefined);
+      },
+      { coDb: true },
+    );
     h.treoLaStop = null;
     expect(x.song?.abortStops?.quetChuaXong, "the sweep not finished").toBe(true);
     expect(urgentCua("abortSweepUnfinished"), "no URGENT raised by the edge's sweep").toEqual([]);
+    expect(x.dbLan, "the edge's sweep asked no database").toBe(0);
+    expect(x.e.records.slice(x.moc).filter((r: any) => r.kind === "abort_stop" && r.stepId === "nt"), "no record of the hung sweep for nt (nothing for central to tell)").toEqual([]);
   });
 
   // ── the picture route (5a): a STOP re-sent from the signed picture (edgeSweepStopRecord) writes no debt row, its failure has its own URGENT ─────────────────────
@@ -14730,6 +14886,19 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     await resumeRun(c, { approved: false, note: "a person", expectedStepId: view.run.currentStepId }, OTHER);
     await wait(40);
     expect(runRow(c).status).toBe("aborted");
+  });
+  it("G4i-HANG the latch only on the rows (x's row carries the code, the context none): the QT pump's rejection is refused the same, the run stays awaiting_confirm", async () => {
+    const c = await khoaTaiCong("t2gh");
+    const ctx = { ...((runRow(c).contextJson as Record<string, unknown> | null) ?? {}) };
+    delete ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+    runRow(c).contextJson = ctx;
+    hang(c, "x")!.error = "FOE_OUTCOME_UNKNOWN: no answer from x (test)";
+    let buTru = 0;
+    const r = await resumeRun(c, { approved: false, note: "QT saga fail at g1 (test)", expectedStepId: "g1" }, QT, { compensate: async () => (buTru++, "compensated (test)") });
+    await wait(40);
+    expect(r.status).toBe("awaiting_confirm");
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    expect(buTru).toBe(0);
   });
   it("G4i đối chứng: the QT pump rejects the gate of a run NOT latched: rejected as before (aborted, its compensation ran)", async () => {
     seedHalt();

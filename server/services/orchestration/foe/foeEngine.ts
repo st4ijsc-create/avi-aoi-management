@@ -6739,7 +6739,8 @@ async function runAbortStopSweep(
       );
     }
     // T7b-1d (H25) — a latched run: what the walk would have told at its end. Stored and told durably already: the walker's word stands (a second key only where no word is known to have landed)
-    if (nhin && khoa && !opts.ketThucKhac) {
+    // T7b-2 lượt sửa 1 (H25 on the edge, dieu-phoi 09/11) — a latched edge walker's Abort says what its walk's end would, from the same reading: its words go the edge's way (store.ketCucKhongRo: the node reports, central raises)
+    if (nhin && (khoa || khoaEdge) && !opts.ketThucKhac) {
       const tien = live !== null || ctxRun[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null; // a press too, while no word is known to have landed: under one fixed key
       // driven elsewhere (an edge node, another instance): its rows lag, they cannot say what was not handed over: which step is not determined, and that is told (buocTienBiBo, no rows)
       const noiKhac = live === null && (run?.edgeNodeId != null || run?.status === "running" || run?.status === "compensating");

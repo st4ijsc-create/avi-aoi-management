@@ -449,6 +449,46 @@ describe("QT-1 end-to-end trên engine thật (in-memory)", () => {
     expect((await getRun(res.runId))?.run.status).toBe("awaiting_confirm");
   });
 
+  // A2(n) T7b-2 lượt sửa 1 (rà E) — đường bơm (bước nghiệp vụ hỏng, :239), run `held`, khoá chỉ trên hàng
+  const khoaRun = (runId: number) => {
+    const run = rows("orchestration_runs").find((r) => r.id === runId)!;
+    run.contextJson = { ...((run.contextJson as Row | null) ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() } };
+  };
+  it("G4i-BOM (A2(n) T7b-2): bước nghiệp vụ hỏng khi run vừa khoá — bơm QT từ chối, engine không kết thúc: trả trạng thái thật (không 'aborted'), không bù trừ", async () => {
+    await register();
+    svc.executeLineCommand.mockImplementation(async () => {
+      khoaRun(rows("orchestration_runs").at(-1)!.id);
+      return { ok: false, code: "POLICY_DENIED", message: "policy chặn line.command.producing" };
+    });
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status, "trạng thái thật").toBe("awaiting_confirm");
+    expect(res.pausedStepId).toBe("qt1-line-start");
+    expect(String(res.message)).toMatch(/waits for a person/);
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+    expect((await getRun(res.runId))?.run.status).toBe("awaiting_confirm");
+  });
+  it("G4i-HELD (A2(n) T7b-2): run khoá đang `held` — từ chối của bơm QT trả `held`, không 'aborted', không bù trừ", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    khoaRun(res.runId);
+    rows("orchestration_runs").find((r) => r.id === res.runId)!.status = "held";
+    const r = await resolveQtGate(res.runId, { approved: false, note: "hủy (test)" });
+    expect(r.status).toBe("held");
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+    expect((await getRun(res.runId))?.run.status).toBe("held");
+  });
+  it("G4i-HANG (A2(n) T7b-2): khoá chỉ trên hàng (một hàng mang mã, ngữ cảnh không) — từ chối của bơm QT vẫn không kết thúc run", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    const hang = rows("orchestration_run_steps").find((r) => r.runId === res.runId && r.stepId === "qt1-allocate")!;
+    hang.error = "FOE_OUTCOME_UNKNOWN: no answer (test)";
+    const r = await resolveQtGate(res.runId, { approved: false, note: "hủy (test)" });
+    expect(r.status).toBe("awaiting_confirm");
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+  });
+
   it("fix #6: FORBIDDEN (vai ngoài approverRoles của gate) VẪN nổi lên — không bị nuốt", async () => {
     await register();
     const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
